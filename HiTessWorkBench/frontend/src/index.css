@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Pretendard', sans-serif;
+
+  --color-brand-blue: #002554;
+  --color-brand-green: #008233;
+  --color-brand-accent: #00E600;
+  --color-brand-gray: #F5F7FA;
+
+  --animate-fade-in: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}

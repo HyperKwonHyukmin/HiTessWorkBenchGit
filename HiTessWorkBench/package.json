@@ -1,0 +1,36 @@
+{
+  "name": "hitess-workbench",
+  "version": "1.0.0",
+  "description": "Hi-TESS Structural Analysis Workbench",
+  "author": "Kwon Hyuk min",
+  "main": "./electron/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:react\" \"npm run dev:electron\"",
+    "dev:react": "cd frontend && npm run dev",
+    "dev:electron": "cd electron && npm start",
+    "build:frontend": "cd frontend && npm run build",
+    "dist": "npm run build:frontend && electron-builder"
+  },
+  "build": {
+    "appId": "com.hitess.workbench",
+    "productName": "HiTESS WorkBench",
+    "directories": {
+      "output": "dist_electron"
+    },
+    "files": [
+      "electron/**/*",
+      "frontend/dist/**/*"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "./electron/icon.ico"
+    }
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "electron": "26.0.0",
+    "electron-builder": "^24.6.4",
+    "wait-on": "^7.0.1"
+  }
+}

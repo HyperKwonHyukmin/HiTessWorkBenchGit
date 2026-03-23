@@ -1,0 +1,13 @@
+directories:
+  output: dist_electron
+  buildResources: build
+appId: com.hitess.workbench
+productName: HiTESS WorkBench
+files:
+  - filter:
+      - electron/**/*
+      - frontend/dist/**/*
+win:
+  target: portable
+  icon: electron/icon.ico
+electronVersion: 26.0.0

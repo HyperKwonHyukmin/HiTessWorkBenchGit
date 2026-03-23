@@ -1,0 +1,19 @@
+[2026-03-05 13:40:46] [INFO ] 로거가 초기화되었습니다. 프로그램 실행을 시작합니다.
+[2026-03-05 13:40:46] [DEBUG] 프로젝트 경로: C:\Coding\WorkBench\HiTessWorkBenchBackEnd\InHouseProgram\TrussModelBuilder
+[2026-03-05 13:40:46] [DEBUG] 노드 CSV 경로: C:\Coding\WorkBench\HiTessWorkBenchBackEnd\userConnection\A476854_20260305_134046\NODE.csv
+[2026-03-05 13:40:46] [DEBUG] 요소 CSV 경로: C:\Coding\WorkBench\HiTessWorkBenchBackEnd\userConnection\A476854_20260305_134046\WAY.csv
+[2026-03-05 13:40:46] [INFO ] FE Model 구축 인스턴스 생성을 시작합니다.
+[2026-03-05 13:40:46] [INFO ] CSV 파싱을 시작합니다.
+[2026-03-05 13:40:46] [DEBUG] [CsvParse] CSV 데이터 파싱을 시작합니다.
+[2026-03-05 13:40:46] [DEBUG] [CsvParse] Node 파싱 완료. 총 2229개의 노드 확보.
+[2026-03-05 13:40:46] [DEBUG] [CsvParse 경고] Element ID 3413의 Property('G:SCG6-1R')가 변환 사전에 존재하지 않습니다.
+[2026-03-05 13:40:46] [DEBUG] [CsvParse 경고] Element ID 3414의 Property('G:SCG6-1L')가 변환 사전에 존재하지 않습니다.
+[2026-03-05 13:40:46] [DEBUG] [CsvParse 경고] Element ID 3415의 Property('G:SCG6-1R')가 변환 사전에 존재하지 않습니다.
+[2026-03-05 13:40:46] [DEBUG] [CsvParse 경고] Element ID 3416의 Property('G:SCG6-1L')가 변환 사전에 존재하지 않습니다.
+[2026-03-05 13:40:46] [DEBUG] [CsvParse] Element 파싱 완료. 총 3553개의 요소 확보.
+[2026-03-05 13:40:46] [DEBUG] [CsvParse] 경계조건 설정 완료. Z축 최하단 노드 42개 추출.
+[2026-03-05 13:40:46] [INFO ] FE 모델 유효성 검증을 시작합니다.
+[2026-03-05 13:40:46] [DEBUG] [Validator] 노드 간섭에 의한 요소 분할 처리 완료. 총 984개의 원본 요소가 분할되었습니다.
+[2026-03-05 13:40:47] [DEBUG] [Validator] 커스텀 메쉬 생성(Girder/Column/Bracket/Leg) 완료. 3125개의 부재가 9980개의 세부 요소로 재구성되었습니다.
+[2026-03-05 13:40:47] [INFO ] BDF 파일 생성을 시작합니다.
+[2026-03-05 13:40:47] [INFO ] 해석 파일이 성공적으로 생성되었습니다. 위치: C:\Coding\WorkBench\HiTessWorkBenchBackEnd\userConnection\A476854_20260305_134046\20260305_134046.bdf

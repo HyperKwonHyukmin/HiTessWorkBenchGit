@@ -1,0 +1,48 @@
+# --- User Specific ---
+# 요청하신 테스트 폴더 제외
+TestFiles/
+*.csv
+
+# --- Operating System Files ---
+.DS_Store
+Thumbs.db
+*.swp
+
+# --- IDE/Editor Files ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# --- Programming Languages ---
+
+# Python (Flask, FastAPI 등 사용 시)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# --- Environment Variables & Secrets ---
+# 보안을 위해 환경 변수 파일은 반드시 제외해야 합니다.
+.env
+.env.local
+.env.dev
+.env.test
+.env.prod
+
+# --- Logs & Databases ---
+*.log
+*.sqlite
