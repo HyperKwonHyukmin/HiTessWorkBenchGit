@@ -13,6 +13,7 @@ import time
 from sqlalchemy import text
 from pydantic import BaseModel
 from concurrent.futures import ThreadPoolExecutor
+import json
 
 # DB 테이블 자동 생성
 models.Base.metadata.create_all(bind=database.engine)
@@ -647,4 +648,147 @@ async def request_truss_assessment(
   )
 
   # 즉시 Job ID만 반환 (브라우저 블로킹 방지)
+  return {"job_id": job_id}
+
+
+# ------------------------------------------------------------------------------
+# [NEW] Simple Beam Analyzer 전용 비동기 해석 파이프라인 API
+# ------------------------------------------------------------------------------
+
+# ✅ 12. 백그라운드에서 실행될 Simple Beam 해석 함수
+def task_execute_beam(job_id: str, input_json_path: str, work_dir: str, employee_id: str, timestamp: str, source: str):
+  job_status_store[job_id].update({
+    "status": "Running",
+    "progress": 10,
+    "message": "Initiating Beam Solver..."
+  })
+
+  db = database.SessionLocal()
+  status_msg = "Success"
+  engine_output = ""
+
+  # C# 프로그램이 출력 폴더(work_dir) 안에 만들어낼 예상 결과 파일명 (예: beam_Result.json)
+  base_filename = os.path.splitext(os.path.basename(input_json_path))[0]
+  result_filename = f"{base_filename}_Result.json"
+  result_json_path = os.path.join(work_dir, result_filename)
+
+  # 💡 [반영 완료] 사용자가 지정한 실제 C# 실행 파일 경로
+  exe_path = r"C:\Coding\WorkBench\HiTessWorkBenchBackEnd\InHouseProgram\SimpleBeamAssessment\HiTESS.FemEngine.Adapter.exe"
+
+  try:
+    job_status_store[job_id].update({"progress": 40, "message": "Executing Solver..."})
+
+    # 💡 [핵심 복구] 사용자의 원래 규칙대로 복구: 실행.exe [beam.json] [BDF 및 결과물 출력 위치(work_dir)]
+    cmd_args = [exe_path, input_json_path, work_dir]
+
+    # 외부 프로그램 실행 (안전성을 위해 cwd도 work_dir로 함께 고정)
+    result = subprocess.run(
+      cmd_args,
+      cwd=work_dir,
+      capture_output=True,
+      text=True,
+      check=True
+    )
+    engine_output = result.stdout
+
+    # C# 실행 후 beam_Result.json 이 제대로 생성되었는지 확인
+    if not os.path.exists(result_json_path):
+      raise Exception(f"해석은 종료되었으나, 결과 파일({result_filename})이 생성되지 않았습니다. C# 내부 에러를 확인하세요.\n로그: {engine_output}")
+
+    job_status_store[job_id].update({"progress": 80, "message": "Parsing Results..."})
+
+  except subprocess.CalledProcessError as e:
+    status_msg = "Failed"
+    engine_output = e.stderr if e.stderr else e.stdout
+  except Exception as e:
+    status_msg = "Failed"
+    engine_output = f"System Error: {str(e)}"
+
+  # 2. DB 기록 단계
+  job_status_store[job_id].update({"progress": 95, "message": "Saving to Database..."})
+  project_data = None
+
+  try:
+    new_analysis = models.Analysis(
+      project_name=f"SimpleBeam_{timestamp}",
+      program_name="Simple Beam Assessment",
+      employee_id=employee_id,
+      status=status_msg,
+      input_info={"input_json": input_json_path},
+      result_info={"result_json": result_json_path} if status_msg == "Success" else None,
+      source=source
+    )
+    db.add(new_analysis)
+    db.commit()
+    db.refresh(new_analysis)
+
+    project_data = {
+      "id": new_analysis.id,
+      "project_name": new_analysis.project_name,
+      "program_name": new_analysis.program_name,
+      "employee_id": new_analysis.employee_id,
+      "status": new_analysis.status,
+      "input_info": new_analysis.input_info,
+      "result_info": new_analysis.result_info,
+      "created_at": new_analysis.created_at.isoformat() if new_analysis.created_at else datetime.now().isoformat()
+    }
+  except Exception as db_e:
+    status_msg = "Failed"
+    engine_output += f"\nDB 기록 오류: {str(db_e)}"
+  finally:
+    db.close()  # 메모리 누수 방지
+
+  # 3. 완료 상태 100% 업데이트
+  job_status_store[job_id].update({
+    "status": status_msg,
+    "progress": 100,
+    "message": "Analysis Completed Successfully" if status_msg == "Success" else "Analysis Failed",
+    "engine_log": engine_output,
+    "result_path": result_json_path if status_msg == "Success" else None,
+    "project": project_data
+  })
+
+
+# ✅ 13. Simple Beam 해석 '요청' API (파일 저장 및 큐 등록)
+@app.post("/api/analysis/beam/request")
+async def request_beam_analysis(
+        beam_file: UploadFile = File(...),
+        employee_id: str = Form(...),
+        source: str = Form("Workbench")
+):
+  # 1. 파일이 저장될 전용 디렉토리 세팅
+  base_dir = os.path.dirname(os.path.abspath(__file__))
+  parent_dir = os.path.dirname(base_dir)
+
+  # 시간 포맷: YYYYMMDD_HHMMSS (예: 20260324_143022)
+  timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+  # 💡 [요청 사항 반영] 폴더 네이밍 규칙: 시간_사번_프로그램명
+  unique_folder = f"{timestamp}_{employee_id}_SimpleBeam"
+  work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+
+  os.makedirs(work_dir, exist_ok=True)
+
+  # 2. JSON 파일을 input.json(또는 빔.json)으로 서버 디스크에 저장
+  input_json_path = os.path.join(work_dir, beam_file.filename)
+  try:
+    with open(input_json_path, "wb") as buffer:
+      buffer.write(await beam_file.read())
+  except Exception as e:
+    raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
+
+  # 3. 고유 Job ID 생성 및 메모리 큐 상태 초기화
+  job_id = str(uuid.uuid4())
+  job_status_store[job_id] = {
+    "status": "Pending",
+    "progress": 0,
+    "message": "Waiting in Queue..."
+  }
+
+  # 4. 제한된 ThreadPoolExecutor 큐에 백그라운드 해석 작업 밀어넣기
+  analysis_executor.submit(
+    task_execute_beam, job_id, input_json_path, work_dir, employee_id, timestamp, source
+  )
+
+  # 브라우저가 기다리지 않도록 Job ID만 즉시 반환
   return {"job_id": job_id}

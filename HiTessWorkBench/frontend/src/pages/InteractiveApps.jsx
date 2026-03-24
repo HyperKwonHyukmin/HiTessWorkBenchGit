@@ -37,8 +37,8 @@ export default function InteractiveApps({ setCurrentMenu }) {
   const { favorites, toggleFavorite } = useDashboard();
 
   const handleStart = (appTitle) => {
-    if (appTitle === "Simple Beam Analyzer") {
-      setCurrentMenu('Simple Beam Analyzer'); // ✅ 빔 해석기로 이동!
+    if (appTitle === "Simple Beam Assessment") {
+      setCurrentMenu('Simple Beam Assessment'); // ✅ 빔 해석기로 이동!
     } else {
       alert(`[안내] ${appTitle} 앱은 현재 개발 중입니다.`);
     }

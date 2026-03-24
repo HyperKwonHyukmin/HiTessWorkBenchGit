@@ -1,39 +1,32 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { 
-  Home,           // Dashboard
-  UploadCloud,    // File-Based Analysis
-  PenTool,        // Interactive Apps
-  FolderOpen,     // My Project
-  Megaphone,      // Notice & Updates
-  Lightbulb,      // User Requests
-  BookOpen,       // User Guide
-  Bot,            // AI Lab Assistant
-  Library,        // Knowledge Archive
-  Settings,       // System Settings
-  BarChart3,      // Analysis Management
+  Home,           
+  UploadCloud,    
+  PenTool,        
+  FolderOpen,     
+  Megaphone,      
+  Lightbulb,      
+  BookOpen,       
+  Bot,            
+  Library,        
+  Settings,       
+  BarChart3,      
   ChevronLeft,
   ChevronRight,
-  ShieldAlert,    // User Management
-  Lock,           // 모달용 아이콘
-  Key,            // 모달용 아이콘
-  X               // 모달용 아이콘
+  ShieldAlert,    
+  Lock,           
+  Key,            
+  X               
 } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 
 export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, setCurrentMenu }) {
   
-  // 연구실 소속 여부
   const [isResearchLab, setIsResearchLab] = useState(false);
-
-  // ==========================================
-  // [신규] 관리자 메뉴 2차 보안 인증 (2FA) State
-  // ==========================================
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [pendingMenu, setPendingMenu] = useState(null);
   const [adminPassword, setAdminPassword] = useState('');
   const [authError, setAuthError] = useState('');
-  
-  // 한 번 인증을 통과하면 새로고침 전까지는 묻지 않음 (세션 유지)
   const [isSecondaryAuthPassed, setIsSecondaryAuthPassed] = useState(false);
 
   useEffect(() => {
@@ -50,6 +43,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
     }
   }, []);
 
+  // 💡 [변경 완료] 메뉴 구성 배열 재배치 (RESEARCH & AI -> SUPPORT & COMMUNITY 순서)
   const menuItems = [
     { 
       category: "WORKBENCH", 
@@ -60,21 +54,14 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
     { 
       category: "ANALYSIS", 
       items: [
-        { icon: UploadCloud, label: "File-Based Analysis" },
+        { icon: UploadCloud, label: "File-Based Apps" }, // 💡 명칭 변경
         { icon: PenTool, label: "Interactive Apps" },
         { icon: FolderOpen, label: "My Projects" }, 
-      ]
-    },
-    { 
-      category: "SUPPORT & COMMUNITY", 
-      items: [
-        { icon: Megaphone, label: "Notice & Updates" },
-        { icon: Lightbulb, label: "User Requests" }, // (이전 라벨 변경사항 반영)
-        { icon: BookOpen, label: "User Guide" },
       ]
     }
   ];
 
+  // 1. RESEARCH & AI 먼저 푸시
   if (isResearchLab) {
     menuItems.push({
       category: "RESEARCH & AI", 
@@ -85,6 +72,17 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
     });
   }
 
+  // 2. SUPPORT & COMMUNITY 다음으로 푸시
+  menuItems.push({
+    category: "SUPPORT & COMMUNITY", 
+    items: [
+      { icon: Megaphone, label: "Notice & Updates" },
+      { icon: Lightbulb, label: "User Requests" }, 
+      { icon: BookOpen, label: "User Guide" },
+    ]
+  });
+
+  // 3. ADMIN 마지막 푸시
   if (isAdmin) {
     menuItems.push({
       category: "ADMINISTRATION", 
@@ -96,30 +94,23 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
     });
   }
 
-  // ==========================================
-  // [신규] 메뉴 클릭 인터셉트 로직
-  // ==========================================
   const handleMenuClick = (category, label) => {
-    // 관리자 카테고리의 메뉴를 눌렀는데, 아직 2차 인증을 안 했다면?
     if (category === "ADMINISTRATION" && !isSecondaryAuthPassed) {
-      setPendingMenu(label);     // 가고자 했던 메뉴를 기억해둠
-      setAdminPassword('');      // 비밀번호 초기화
-      setAuthError('');          // 에러 메시지 초기화
-      setIsAuthModalOpen(true);  // 보안 모달 띄우기
+      setPendingMenu(label);     
+      setAdminPassword('');      
+      setAuthError('');          
+      setIsAuthModalOpen(true);  
     } else {
-      setCurrentMenu(label);     // 일반 메뉴거나, 이미 인증되었으면 바로 이동
+      setCurrentMenu(label);     
     }
   };
 
-  // 모달에서 비밀번호 제출 시
   const handleAuthSubmit = (e) => {
     e.preventDefault();
-    // [중요] 2차 보안 비밀번호 설정 (기본값: admin1234)
-    // 상용화 시에는 이 부분도 백엔드 API와 통신하여 검증하도록 변경해야 합니다.
     if (adminPassword === 'str_2006') {
-      setIsSecondaryAuthPassed(true);  // 세션 인증 통과 마킹
-      setIsAuthModalOpen(false);       // 모달 닫기
-      setCurrentMenu(pendingMenu);     // 원래 가려던 메뉴로 이동
+      setIsSecondaryAuthPassed(true);  
+      setIsAuthModalOpen(false);       
+      setCurrentMenu(pendingMenu);     
     } else {
       setAuthError('접속 비밀번호가 일치하지 않습니다.');
     }
@@ -131,7 +122,6 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
           isCollapsed ? 'w-20' : 'w-64'
         }`}>
         
-        {/* 로고 영역 */}
         <div className="h-16 flex items-center justify-center border-b border-[#003366] relative shrink-0">
           {isCollapsed ? (
             <span className="text-xl font-bold text-[#00E600]">H</span>
@@ -142,7 +132,6 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
           )}
         </div>
 
-        {/* 메뉴 렌더링 영역 */}
         <nav className="flex-1 overflow-y-auto py-4 custom-scrollbar">
           {menuItems.map((section, idx) => (
             <div key={idx} className="mb-6">
@@ -160,7 +149,6 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
                   return (
                     <li key={i}>
                       <button 
-                        // [신규] 직접 이동하지 않고 인터셉트 함수 호출
                         onClick={() => handleMenuClick(section.category, item.label)} 
                         className={`w-full flex items-center px-4 py-3 transition-colors relative group cursor-pointer ${
                           isActive 
@@ -188,7 +176,6 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
           ))}
         </nav>
 
-        {/* 접기/펴기 버튼 */}
         <div className="p-4 border-t border-[#003366] bg-[#001f45] shrink-0">
           <button onClick={toggleSidebar} className="w-full flex items-center justify-center p-2 rounded bg-[#003366] hover:bg-[#004080] text-white transition-colors cursor-pointer">
             {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
@@ -196,9 +183,6 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
         </div>
       </aside>
 
-      {/* ========================================== */}
-      {/* [신규] 관리자 전용 2차 인증(비밀번호) 모달 */}
-      {/* ========================================== */}
       <Transition appear show={isAuthModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsAuthModalOpen(false)}>
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" />
@@ -231,7 +215,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
                       value={adminPassword}
                       onChange={(e) => {
                         setAdminPassword(e.target.value);
-                        setAuthError(''); // 치는 순간 에러 메시지 감춤
+                        setAuthError(''); 
                       }}
                       className={`w-full pl-10 pr-3 py-3 border-2 rounded-xl outline-none transition-all text-slate-800 font-bold ${
                         authError ? 'border-red-400 focus:border-red-500 bg-red-50/30' : 'border-slate-200 focus:border-red-500 bg-white'
@@ -257,6 +241,6 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
           </div>
         </Dialog>
       </Transition>
-    </  >
+    </>
   );
 }

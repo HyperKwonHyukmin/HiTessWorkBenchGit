@@ -77,7 +77,7 @@ export default function NewAnalysis({ setCurrentMenu }) {
     <div className="max-w-7xl mx-auto pb-16">
       
       <div className="mb-8 text-center md:text-left">
-        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">File-Based Analysis</h1>
+        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">File-Based Apps</h1>
         <p className="text-slate-500 mt-2">수행하고자 하는 파일 업로드 기반 해석 모델을 선택하십시오.</p>
       </div>
 

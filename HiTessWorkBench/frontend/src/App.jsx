@@ -1,6 +1,5 @@
 /// <summary>
 /// React 애플리케이션의 최상위 라우터(Router) 및 상태 관리자입니다.
-/// (개선) TrussAssessment 컴포넌트 임포트 및 라우팅 switch-case 구문을 추가했습니다.
 /// </summary>
 import React, { useState } from 'react';
 import SplashScreen from './pages/SplashScreen';
@@ -16,7 +15,7 @@ import InteractiveApps from './pages/InteractiveApps';
 import NoticeBoard from './pages/Support/NoticeBoard';
 import UserGuide from './pages/Support/UserGuide';
 import TrussAnalysis from './pages/TrussAnalysis'; 
-import TrussAssessment from './pages/TrussAssessment'; // ✅ [신규] 추가된 앱 Import
+import TrussAssessment from './pages/TrussAssessment'; 
 import UserRequests from './pages/Support/UserRequests'; 
 import UserManagement from './pages/Administration/UserManagement'; 
 import SystemSettings from './pages/Administration/SystemSettings';
@@ -68,33 +67,23 @@ function App() {
       case 'My Project':
       case 'My Projects': return <MyProjects setCurrentMenu={setCurrentMenu} />;
       case 'New Analysis':
-      case 'File-Based Analysis': return <NewAnalysis setCurrentMenu={setCurrentMenu} />;
-      
-      // ✅ 해석 앱들
+      case 'File-Based Apps': return <NewAnalysis setCurrentMenu={setCurrentMenu} />;
       case 'Truss Analysis': return <TrussAnalysis setCurrentMenu={setCurrentMenu} />;
-      case 'Truss Structural Assessment': return <TrussAssessment setCurrentMenu={setCurrentMenu} />; // ✅ 라우팅 등록
-      
+      case 'Truss Structural Assessment': return <TrussAssessment setCurrentMenu={setCurrentMenu} />; 
       case 'Interactive Apps': return <InteractiveApps setCurrentMenu={setCurrentMenu} />;
       case 'Component Wizard':
+      case 'Simple Beam Assessment': 
       case 'Simple Beam Analyzer': return <ComponentWizard />;
-        
-      // 지원 및 관리
       case 'Notice & Updates': return <NoticeBoard />;
       case 'Feature Requests': 
       case 'User Requests': return <UserRequests />;
       case 'User Guide': return <UserGuide />;
-      
       case 'User Management': return <UserManagement />;
       case 'Analysis Management': return <AnalysisManagement />;
       case 'System Settings': return <SystemSettings />;
-
       case 'AI Lab Assistant': 
-      case 'AI Assistant': 
-        return <AiAssistantHub setCurrentMenu={setCurrentMenu} />;
-        
-      case 'Hi-Lab Insight': 
-        return <HiLabInsight setCurrentMenu={setCurrentMenu} />;
-      
+      case 'AI Assistant': return <AiAssistantHub setCurrentMenu={setCurrentMenu} />;
+      case 'Hi-Lab Insight': return <HiLabInsight setCurrentMenu={setCurrentMenu} />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">
@@ -115,7 +104,8 @@ function App() {
   };
 
   return (
-    <DashboardProvider>
+    // 💡 [수정] DashboardProvider에 setCurrentMenu를 전달하여 전역 위젯에서 메뉴 이동이 가능하게 함
+    <DashboardProvider setCurrentMenu={setCurrentMenu}>
       {appState === APP_STATE.SPLASH && <SplashScreen onFinish={handleSplashFinish} />}
       {appState === APP_STATE.LOGIN && <LoginScreen onLoginSuccess={() => setAppState(APP_STATE.MAIN)} />}
       {appState === APP_STATE.MAIN && (

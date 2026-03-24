@@ -1,12 +1,21 @@
-"""RAG 체인: 하이브리드 검색 (벡터+BM25) → Multi-Query → Re-ranking → 대화 기억 → LLM 답변."""
+"""
+================================================================================
+File: chain.py
+Description: RAG 체인 파이프라인 (벡터+BM25 하이브리드 검색, Multi-Query, Re-ranking)
+Architecture Note:
+  - 예외 처리(Graceful Degradation) 추가: 벡터 DB 부재 시 500 에러 방어
+  - 직렬화 안정성(Serialization Safety): Numpy float32 등 비표준 타입을 Native Python 타입으로 강제 변환
+================================================================================
+"""
 
 import json
 import pickle
+import os
+from pathlib import Path
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
 from .config import (
     VECTORSTORE_DIR,
@@ -20,9 +29,11 @@ from .config import (
     CHAT_HISTORY_LIMIT,
 )
 
-PARENT_STORE_PATH = VECTORSTORE_DIR / "parent_docs.json"
-BM25_INDEX_PATH = VECTORSTORE_DIR / "bm25_index.pkl"
-DOC_SUMMARIES_PATH = VECTORSTORE_DIR / "doc_summaries.json"
+# OS 독립적이고 안전한 Path 객체 캐스팅
+VECTORSTORE_PATH = Path(VECTORSTORE_DIR)
+PARENT_STORE_PATH = VECTORSTORE_PATH / "parent_docs.json"
+BM25_INDEX_PATH = VECTORSTORE_PATH / "bm25_index.pkl"
+DOC_SUMMARIES_PATH = VECTORSTORE_PATH / "doc_summaries.json"
 
 # ── 대화 기반 질문 재구성 프롬프트 ──
 CONDENSE_PROMPT = """\
@@ -94,7 +105,6 @@ prompt = ChatPromptTemplate.from_messages([
 
 
 def load_parent_store() -> dict:
-    """부모 청크 저장소를 로드한다."""
     if PARENT_STORE_PATH.exists():
         with open(PARENT_STORE_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -102,7 +112,6 @@ def load_parent_store() -> dict:
 
 
 def load_bm25_index():
-    """BM25 인덱스를 로드한다."""
     if BM25_INDEX_PATH.exists():
         with open(BM25_INDEX_PATH, "rb") as f:
             return pickle.load(f)
@@ -110,7 +119,6 @@ def load_bm25_index():
 
 
 def load_doc_summaries() -> dict:
-    """문서 요약 인덱스를 로드한다."""
     if DOC_SUMMARIES_PATH.exists():
         with open(DOC_SUMMARIES_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -118,29 +126,29 @@ def load_doc_summaries() -> dict:
 
 
 def load_vectorstore():
-    """FAISS 벡터 DB를 로드한다."""
+    index_file = VECTORSTORE_PATH / "index.faiss"
+    if not index_file.exists():
+        return None
+
     embeddings = OllamaEmbeddings(
         model=EMBEDDING_MODEL,
         base_url=OLLAMA_BASE_URL,
     )
     return FAISS.load_local(
-        str(VECTORSTORE_DIR),
+        str(VECTORSTORE_PATH),
         embeddings,
         allow_dangerous_deserialization=True,
     )
 
 
 def condense_question(question: str, chat_history: list[dict], llm) -> str:
-    """대화 기록을 반영하여 독립적인 질문으로 재구성한다."""
     if not chat_history:
         return question
 
-    # 최근 N개 대화만 사용
     recent = chat_history[-CHAT_HISTORY_LIMIT * 2:]
     history_text = ""
     for msg in recent:
         role = "사용자" if msg["role"] == "user" else "AI"
-        # 답변은 앞 200자만 사용
         content = msg["content"][:200] if msg["role"] == "assistant" else msg["content"]
         history_text += f"{role}: {content}\n"
 
@@ -158,7 +166,6 @@ def condense_question(question: str, chat_history: list[dict], llm) -> str:
 
 
 def generate_multi_queries(question: str, llm) -> list[str]:
-    """원래 질문을 여러 관점으로 변형하여 검색 범위를 넓힌다."""
     multi_prompt = ChatPromptTemplate.from_messages([
         ("human", MULTI_QUERY_PROMPT),
     ])
@@ -170,11 +177,6 @@ def generate_multi_queries(question: str, llm) -> list[str]:
 
 
 def bm25_search(query: str, bm25_data: dict, k: int = 10) -> list[tuple[int, float]]:
-    """BM25 키워드 검색을 수행한다.
-
-    Returns:
-        [(chunk_index, score), ...] 상위 k개
-    """
     tokens = [t for t in query.split() if len(t) >= 2]
     if not tokens:
         return []
@@ -182,9 +184,8 @@ def bm25_search(query: str, bm25_data: dict, k: int = 10) -> list[tuple[int, flo
     bm25 = bm25_data["bm25"]
     scores = bm25.get_scores(tokens)
 
-    # 상위 k개 인덱스
     top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:k]
-    return [(i, scores[i]) for i in top_indices if scores[i] > 0]
+    return [(i, float(scores[i])) for i in top_indices if scores[i] > 0]
 
 
 def retrieve_parent_docs(
@@ -195,82 +196,85 @@ def retrieve_parent_docs(
         llm=None,
         chat_history: list[dict] | None = None,
         bm25_data: dict | None = None,
-        target_document: str = "all",  # ✅ [신규] 특정 문서 필터링 옵션
+        target_document: str = "all",
 ):
-  """하이브리드 검색 (벡터 + BM25) → Multi-Query → 부모 청크 확장 → Re-ranking."""
+    if not vectorstore:
+        return []
 
-  # 1) 대화 기억: 이전 대화를 반영한 질문 재구성
-  search_question = question
-  if llm and chat_history:
-    search_question = condense_question(question, chat_history, llm)
+    search_question = question
+    if llm and chat_history:
+        search_question = condense_question(question, chat_history, llm)
 
-  # 2) Multi-Query: 여러 변형 질문 생성
-  if llm:
-    queries = generate_multi_queries(search_question, llm)
-  else:
-    queries = [search_question]
-
-  # 3) 하이브리드 검색: 벡터 + BM25 점수 결합
-  parent_scores = {}
-
-  for q in queries:
-    # ✅ [수정] 벡터 검색 (특정 문서 필터링 적용)
-    if target_document and target_document != "all":
-      results_with_scores = vectorstore.similarity_search_with_score(q, k=k, filter={"source_file": target_document})
+    if llm:
+        queries = generate_multi_queries(search_question, llm)
     else:
-      results_with_scores = vectorstore.similarity_search_with_score(q, k=k)
+        queries = [search_question]
 
-    for child, score in results_with_scores:
-      parent_id = child.metadata.get("parent_id")
-      if parent_id and parent_id in parent_store:
-        relevance = 1.0 / (1.0 + score)  # 거리 → 유사도 변환
-        vector_score = relevance * VECTOR_WEIGHT
-        if parent_id not in parent_scores:
-          parent_scores[parent_id] = 0.0
-        parent_scores[parent_id] = max(parent_scores[parent_id], vector_score)
+    parent_scores = {}
 
-    # ✅ [수정] BM25 검색 (특정 문서 필터링 적용)
-    if bm25_data:
-      bm25_results = bm25_search(q, bm25_data, k=k * 2)  # 필터링을 고려해 넉넉히 추출
-      if bm25_results:
-        max_bm25 = max(s for _, s in bm25_results) or 1.0
-        for idx, score in bm25_results:
-          metadata = bm25_data["metadata"][idx]
+    for q in queries:
+        results_with_scores = vectorstore.similarity_search_with_score(q, k=k * 3)
 
-          # 대상 문서가 'all'이 아닌데, 파일명이 다르면 스킵!
-          if target_document != "all" and metadata.get("source_file") != target_document:
-            continue
+        for child, raw_score in results_with_scores:
+            # ✅ [Fix 1] FAISS가 반환하는 numpy.float32를 Native Python float으로 변환
+            score = float(raw_score)
 
-          parent_id = metadata.get("parent_id")
-          if parent_id and parent_id in parent_store:
-            norm_score = (score / max_bm25) * BM25_WEIGHT
-            if parent_id not in parent_scores:
-              parent_scores[parent_id] = 0.0
-            parent_scores[parent_id] += norm_score
+            if target_document and target_document != "all":
+                if child.metadata.get("source_file") != target_document:
+                    continue
 
-  # 4) Re-ranking: 결합 점수 기준 정렬
-  sorted_parents = sorted(parent_scores.items(), key=lambda x: x[1], reverse=True)
+            parent_id = child.metadata.get("parent_id")
+            if parent_id and parent_id in parent_store:
+                relevance = 1.0 / (1.0 + score)
+                vector_score = relevance * VECTOR_WEIGHT
+                if parent_id not in parent_scores:
+                    parent_scores[parent_id] = 0.0
+                parent_scores[parent_id] = max(parent_scores[parent_id], vector_score)
 
-  # 🚀 [수정] 점수가 1.0(100%)을 초과하지 않도록 상대 평가(정규화) 스케일링
-  max_score = sorted_parents[0][1] if sorted_parents else 1.0
-  scale_factor = 1.0 if max_score <= 1.0 else (1.0 / max_score)
+        if bm25_data:
+            bm25_results = bm25_search(q, bm25_data, k=k * 3)
+            if bm25_results:
+                max_bm25 = max(s for _, s in bm25_results) or 1.0
+                for idx, b_score in bm25_results:
+                    metadata = bm25_data["metadata"][idx]
 
-  max_parents = max(k // 2, 5)
-  parent_docs = []
-  for parent_id, score in sorted_parents[:max_parents]:
-    doc = parent_store[parent_id].copy()
+                    if target_document != "all" and metadata.get("source_file") != target_document:
+                        continue
 
-    # 🚀 [수정] 정규화된 점수에 최대 0.99(99%) 캡을 씌워 현실적인 신뢰도로 표현
-    normalized_score = min(score * scale_factor, 0.99)
-    doc["relevance_score"] = round(normalized_score, 4)
+                    parent_id = metadata.get("parent_id")
+                    if parent_id and parent_id in parent_store:
+                        norm_score = (b_score / max_bm25) * BM25_WEIGHT
+                        if parent_id not in parent_scores:
+                            parent_scores[parent_id] = 0.0
+                        parent_scores[parent_id] += norm_score
 
-    parent_docs.append(doc)
+    sorted_parents = sorted(parent_scores.items(), key=lambda x: x[1], reverse=True)
 
-  return parent_docs
+    max_score = sorted_parents[0][1] if sorted_parents else 1.0
+    scale_factor = 1.0 if max_score <= 1.0 else (1.0 / max_score)
+
+    max_parents = max(k // 2, 5)
+    parent_docs = []
+
+    for parent_id, score in sorted_parents[:max_parents]:
+        doc = parent_store[parent_id].copy()
+
+        # ✅ [Fix 2] 최종 스코어 계산 후 다시 한 번 명확하게 Native float 형으로 바인딩
+        normalized_score = float(min(score * scale_factor, 0.99))
+        doc["relevance_score"] = float(round(normalized_score, 4))
+
+        # ✅ [Fix 3] Metadata 내에 숨어있는 Numpy 타입 (예: page 번호의 int64 등) 일괄 정제
+        if "metadata" in doc:
+            for key, val in doc["metadata"].items():
+                if hasattr(val, "item"):  # Numpy 스칼라 객체인지 확인
+                    doc["metadata"][key] = val.item()
+
+        parent_docs.append(doc)
+
+    return parent_docs
 
 
 def format_parent_docs(parent_docs: list[dict]) -> str:
-    """부모 문서를 포맷팅한다."""
     parts = []
     for doc in parent_docs:
         source = doc["metadata"].get("source_file", "unknown")
@@ -281,8 +285,11 @@ def format_parent_docs(parent_docs: list[dict]) -> str:
 
 
 def get_rag_chain():
-    """RAG 체인을 구성하여 반환한다."""
     vectorstore = load_vectorstore()
+
+    if not vectorstore:
+        raise FileNotFoundError("학습된 지식 DB가 없습니다. 먼저 [지식 DB 업데이트] 버튼을 눌러 문서를 학습해주세요.")
+
     parent_store = load_parent_store()
     bm25_data = load_bm25_index()
     doc_summaries = load_doc_summaries()
@@ -294,67 +301,42 @@ def get_rag_chain():
         num_ctx=16384,
     )
 
-    # 스트리밍용 LLM (동일 설정)
-    llm_streaming = ChatOllama(
-        model=LLM_MODEL,
-        base_url=OLLAMA_BASE_URL,
-        temperature=0.1,
-        num_ctx=16384,
-        streaming=True,
-    )
-
     return {
         "vectorstore": vectorstore,
         "parent_store": parent_store,
         "bm25_data": bm25_data,
         "doc_summaries": doc_summaries,
         "llm": llm,
-        "llm_streaming": llm_streaming,
         "prompt": prompt,
     }
 
 
-def stream_answer(question: str, rag_components: dict, chat_history: list[dict] | None = None):
-    """스트리밍 방식으로 답변을 생성한다. (토큰 단위로 yield)"""
-    vs = rag_components["vectorstore"]
-    ps = rag_components["parent_store"]
-    bm25 = rag_components["bm25_data"]
-    llm = rag_components["llm"]
-    llm_streaming = rag_components["llm_streaming"]
+def query(question: str, chat_history: list[dict] = None, target_document: str = "all"):
+    """
+    사용자의 질문을 처리하고 답변을 반환합니다.
+    """
+    try:
+        components = get_rag_chain()
+    except FileNotFoundError as e:
+        return f"⚠️ **안내**: {str(e)}", []
+    except Exception as sys_e:
+        return f"⚠️ **시스템 오류**: 검색 모듈 초기화 중 문제가 발생했습니다. ({str(sys_e)})", []
 
-    # 검색
+    vs = components["vectorstore"]
+    ps = components["parent_store"]
+    bm25 = components["bm25_data"]
+    llm = components["llm"]
+
     parent_docs = retrieve_parent_docs(
-        question, vs, ps,
-        llm=llm,
-        chat_history=chat_history,
-        bm25_data=bm25,
+        question, vs, ps, llm=llm, bm25_data=bm25, chat_history=chat_history, target_document=target_document
     )
 
     context = format_parent_docs(parent_docs)
-
-    # 스트리밍 답변 생성
     messages = prompt.format_messages(context=context, question=question)
 
-    for chunk in llm_streaming.stream(messages):
-        if chunk.content:
-            yield chunk.content, parent_docs
+    try:
+        answer = llm.invoke(messages).content
+    except Exception as llm_e:
+        return f"⚠️ **LLM 서버 접속 지연**: 답변을 생성할 수 없습니다. Ollama 서버 상태를 확인해주세요. ({str(llm_e)})", []
 
-
-# ✅ 수정된 query 함수
-def query(question: str, chat_history: list[dict] = None, target_document: str = "all"):
-  """질문에 대한 답변과 출처 문서를 반환한다."""
-  components = get_rag_chain()
-  vs = components["vectorstore"]
-  ps = components["parent_store"]
-  bm25 = components["bm25_data"]
-  llm = components["llm"]
-
-  # ✅ 검색기 호출 시 target_document 파라미터 전달
-  parent_docs = retrieve_parent_docs(
-    question, vs, ps, llm=llm, bm25_data=bm25, chat_history=chat_history, target_document=target_document
-  )
-  context = format_parent_docs(parent_docs)
-  messages = prompt.format_messages(context=context, question=question)
-  answer = llm.invoke(messages).content
-
-  return answer, parent_docs  # 답변과 함께 참조한 원문(docs)도 뱉어냄
+    return answer, parent_docs

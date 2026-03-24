@@ -290,8 +290,8 @@ export default function Dashboard({ setCurrentMenu }) {
 
     if (title === "Truss Model Builder") {
       setCurrentMenu('Truss Analysis');
-    } else if (title === "Simple Beam Analyzer") {
-      setCurrentMenu('Simple Beam Analyzer'); 
+    } else if (title === "Simple Beam Assessment") {
+      setCurrentMenu('Simple Beam A'); 
     } else {
       alert(`[안내] ${title} 기능은 현재 준비 중입니다.`);
     }

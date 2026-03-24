@@ -29,7 +29,7 @@ class UserResponse(BaseModel):
     created_at: Optional[datetime] = None
 
     class Config:
-        orm_mode = True  # SQLAlchemy 모델을 Pydantic으로 변환 허용
+      from_attributes = True
 
 
 # ==========================================
