@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRight, Info, Zap, PenTool, Star } from 'lucide-react';
-import { useDashboard, ANALYSIS_DATA } from '../contexts/DashboardContext'; 
+import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext'; 
 
 const AppCard = ({ title, description, icon: Icon, color, tags, isFav, onToggleFav, onClick }) => (
   <div 

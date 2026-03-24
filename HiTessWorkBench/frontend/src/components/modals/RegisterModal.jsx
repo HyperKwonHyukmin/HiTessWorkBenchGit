@@ -1,8 +1,7 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { Dialog, Transition, Listbox } from '@headlessui/react';
 import { X, UserPlus, Building, Briefcase, User, CheckCircle, ChevronDown, Check, Users, PenTool } from 'lucide-react';
-import axios from 'axios';
-import { API_BASE_URL } from '../config';
+import { register } from '../../api/auth';
 
 // ==========================================
 // [설정] 부서 목록 관리
@@ -91,7 +90,7 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
     };
 
     try {
-      await axios.post(`${API_BASE_URL}/api/register`, payload);
+      await register(payload);
       setIsSuccess(true);
     } catch (error) {
       console.error("Register Error:", error);

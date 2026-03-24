@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, Fragment } from 'react';
-import axios from 'axios';
-import { API_BASE_URL } from '../../config';
+import { chatWithAI, getAIDocuments, triggerIngest } from '../../api/ai';
 import { Send, Bot, User, RefreshCw, Database, Lock, Key, X, FileText, BarChart2 } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 
@@ -27,7 +26,7 @@ export default function HiLabInsight({ setCurrentMenu }) {
 
   const fetchIngestedDocs = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/api/ai/documents`);
+      const res = await getAIDocuments();
       if (res.data.documents) setIngestedDocs(res.data.documents);
     } catch (error) { console.error("문서 현황 로드 실패:", error); }
   };
@@ -53,11 +52,7 @@ export default function HiLabInsight({ setCurrentMenu }) {
     setIsLoading(true);
 
     try {
-      const res = await axios.post(`${API_BASE_URL}/api/ai/chat`, { 
-        question: userMessage.text,
-        chat_history: chatHistory,
-        target_document: targetDoc // ✅ 선택한 문서 범위를 서버에 전송
-      });
+      const res = await chatWithAI(userMessage.text, chatHistory, targetDoc);
       
       // ✅ 서버에서 넘어온 answer와 sources(참조 원문)를 상태에 함께 저장
       setMessages(prev => [...prev, { role: 'ai', text: res.data.answer, sources: res.data.sources }]);
@@ -74,7 +69,7 @@ export default function HiLabInsight({ setCurrentMenu }) {
       setIsAuthModalOpen(false); 
       setIsIngesting(true);
       try {
-        const res = await axios.post(`${API_BASE_URL}/api/ai/ingest`);
+        const res = await triggerIngest();
         alert(res.data.message);
         setTimeout(fetchIngestedDocs, 5000); 
       } catch (error) { alert("Ingest 요청에 실패했습니다."); } 

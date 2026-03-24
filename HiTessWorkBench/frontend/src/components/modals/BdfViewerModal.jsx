@@ -6,13 +6,12 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import axios from 'axios';
 import { Dialog, Transition } from '@headlessui/react';
-import { 
-  X, Box, RefreshCw, Eye, EyeOff, 
-  Hexagon, LayoutGrid, RotateCcw, PlayCircle, PauseCircle 
+import {
+  X, Box, RefreshCw, Eye, EyeOff,
+  Hexagon, LayoutGrid, RotateCcw, PlayCircle, PauseCircle
 } from 'lucide-react';
-import { API_BASE_URL } from '../config';
+import { downloadFileText } from '../../api/analysis';
 
 export default function BdfViewerModal({ isOpen, project, onClose }) {
   const mountRef = useRef(null);
@@ -45,8 +44,7 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
       setLoading(true);
       try {
         // 1. BDF 파일 로드
-        const url = `${API_BASE_URL}/api/download?filepath=${encodeURIComponent(project.result_info.bdf)}`;
-        const response = await axios.get(url, { responseType: 'text' });
+        const response = await downloadFileText(project.result_info.bdf);
         const bdfText = response.data;
 
         // 2. BDF 파싱

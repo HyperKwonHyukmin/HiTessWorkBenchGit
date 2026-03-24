@@ -4,10 +4,9 @@
 /// (최적화) 부재(Element) 렌더링에도 InstancedMesh를 적용하여 대용량 BDF 모델 업로드 시 브라우저가 멈추는 현상을 원천 차단했습니다.
 /// </summary>
 import React, { useState, useRef, useEffect, Fragment } from 'react';
-import axios from 'axios';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { API_BASE_URL } from '../config';
+import { requestAssessment, getJobStatus } from '../../api/analysis';
 import { 
   ArrowLeft, Upload, Play, Database, RefreshCw, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Eye, EyeOff,
@@ -360,9 +359,7 @@ export default function TrussAssessment({ setCurrentMenu }) {
     formData.append('source', 'Workbench');
 
     try {
-      const requestRes = await axios.post(`${API_BASE_URL}/api/analysis/assessment/request`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const requestRes = await requestAssessment(formData);
 
       const jobId = requestRes.data.job_id;
       addLog(`해석 작업이 성공적으로 큐에 등록되었습니다. [Job ID: ${jobId}]`, 'success');
@@ -371,7 +368,7 @@ export default function TrussAssessment({ setCurrentMenu }) {
 
       const pollInterval = setInterval(async () => {
         try {
-          const statusRes = await axios.get(`${API_BASE_URL}/api/analysis/status/${jobId}`);
+          const statusRes = await getJobStatus(jobId);
           const { status, progress, message, engine_log } = statusRes.data;
 
           setProgress(progress);

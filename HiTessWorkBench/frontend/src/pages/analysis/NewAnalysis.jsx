@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import { 
   ArrowRight, Info, Zap, Compass, Star 
 } from 'lucide-react';
-import { useDashboard, ANALYSIS_DATA } from '../contexts/DashboardContext'; 
+import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext'; 
 
 const AnalysisCard = ({ title, description, icon: Icon, color, tags, isFav, onToggleFav, onClick }) => (
   <div 
@@ -61,6 +61,8 @@ export default function NewAnalysis({ setCurrentMenu }) {
       setCurrentMenu('Truss Analysis');
     } else if (categoryTitle === "Truss Structural Assessment") {
       setCurrentMenu('Truss Structural Assessment');
+    } else if (categoryTitle === "Beam Result Viewer") {
+      setCurrentMenu('Beam Result Viewer');
     } else {
       alert(`[안내] ${categoryTitle} 기능은 현재 준비 중입니다.`);
     }

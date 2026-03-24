@@ -4,8 +4,7 @@
 /// </summary>
 import React, { useState, useEffect } from 'react';
 import { Settings, Server, HardDrive, Cpu, Activity, AlertTriangle, Power, Save } from 'lucide-react';
-import axios from 'axios';
-import { API_BASE_URL } from '../../config'; // (폴더 위치에 따라 '../../config' 일 수 있습니다. 에러나면 점 개수를 조절해주세요)
+import { getSystemStatus } from '../../api/admin';
 
 export default function SystemSettings() {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
@@ -23,7 +22,7 @@ export default function SystemSettings() {
   useEffect(() => {
     const fetchSystemStatus = async () => {
       try {
-        const response = await axios.get(`${API_BASE_URL}/api/system/status`);
+        const response = await getSystemStatus();
         setSysStats(response.data);
       } catch (error) {
         console.error("System status fetch error:", error);

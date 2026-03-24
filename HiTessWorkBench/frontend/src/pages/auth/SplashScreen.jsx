@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 // [1] 저장해둔 로고 이미지 불러오기
-import logo from '../assets/images/HD_Logo.png'; 
+import logo from '../../assets/images/HD_Logo.png'; 
 
 export default function SplashScreen({ onFinish }) {
   const [loadingText, setLoadingText] = useState('Initializing Core Systems...');

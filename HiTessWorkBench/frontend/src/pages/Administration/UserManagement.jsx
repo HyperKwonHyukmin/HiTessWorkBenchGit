@@ -3,13 +3,12 @@
 /// 사용자의 승인(is_active), 권한(is_admin) 토글 및 전체 메타데이터 수정/삭제를 지원합니다.
 /// </summary>
 import React, { useEffect, useState, Fragment } from 'react';
-import axios from 'axios';
 import { Dialog, Transition } from '@headlessui/react';
-import { 
-  Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Calendar, 
+import {
+  Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Calendar,
   Clock, UserCheck, UserX, Edit2, X, Building, Briefcase, Tag
 } from 'lucide-react';
-import { API_BASE_URL } from '../../config';
+import { getUsers, updateUser, deleteUser } from '../../api/admin';
 
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
@@ -23,7 +22,7 @@ export default function UserManagement() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/users`);
+      const response = await getUsers();
       // 승인 대기자(Pending)가 위로 오도록 정렬, 그다음 생성일 역순
       const sorted = response.data.sort((a, b) => {
         if (a.is_active === b.is_active) return new Date(b.created_at) - new Date(a.created_at);
@@ -44,7 +43,7 @@ export default function UserManagement() {
   // 상태 즉각 토글 (승인/권한)
   const handleToggle = async (userId, field, currentValue) => {
     try {
-      await axios.put(`${API_BASE_URL}/api/users/${userId}`, { [field]: !currentValue });
+      await updateUser(userId, { [field]: !currentValue });
       setUsers(users.map(u => u.id === userId ? { ...u, [field]: !currentValue } : u));
     } catch (error) {
       alert("상태 업데이트에 실패했습니다.");
@@ -55,7 +54,7 @@ export default function UserManagement() {
   const handleDelete = async (userId, userName) => {
     if (!window.confirm(`[경고] '${userName}' 사용자를 시스템에서 완전히 삭제하시겠습니까?`)) return;
     try {
-      await axios.delete(`${API_BASE_URL}/api/users/${userId}`);
+      await deleteUser(userId);
       setUsers(users.filter(u => u.id !== userId));
     } catch (error) {
       alert("사용자 삭제에 실패했습니다.");
@@ -73,7 +72,7 @@ export default function UserManagement() {
     e.preventDefault();
     try {
       const { id, name, company, department, position } = editingUser;
-      await axios.put(`${API_BASE_URL}/api/users/${id}`, { name, company, department, position });
+      await updateUser(id, { name, company, department, position });
       setIsEditModalOpen(false);
       fetchUsers(); // 갱신
     } catch (error) {

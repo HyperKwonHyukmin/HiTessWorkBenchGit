@@ -3,15 +3,15 @@
 /// 최상단에 로드맵 배너를 배치하고 View 계층에서만 데이터를 로컬라이징하여 렌더링합니다.
 /// </summary>
 import React, { useState, useEffect, Fragment } from 'react';
-import axios from 'axios';
 import { Dialog, Transition } from '@headlessui/react';
-import { API_BASE_URL } from '../config';
+import { getQueueStatus } from '../../api/admin';
+import { getAnalysisHistory } from '../../api/analysis';
 import { 
   MoreVertical, Activity, FileText, Server, CheckCircle2, 
   ArrowUpRight, Star, CalendarDays, Database, Map, Rocket, 
   Wrench, Clock, X, ChevronRight
 } from 'lucide-react';
-import { useDashboard, ANALYSIS_DATA } from '../contexts/DashboardContext';
+import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 
 // ---------------------------------------------------------
 // [신규] View Layer용 로컬라이징 딕셔너리
@@ -243,7 +243,7 @@ export default function Dashboard({ setCurrentMenu }) {
   useEffect(() => {
     const fetchQueue = async () => {
       try {
-        const res = await axios.get(`${API_BASE_URL}/api/system/queue-status`);
+        const res = await getQueueStatus();
         setQueueStatus(res.data);
       } catch (error) {
         console.error("Queue Status fetch error", error);
@@ -261,7 +261,7 @@ export default function Dashboard({ setCurrentMenu }) {
         const employeeId = userStr ? JSON.parse(userStr).employee_id : null;
         if (!employeeId) return;
 
-        const response = await axios.get(`${API_BASE_URL}/api/analysis/history/${employeeId}`);
+        const response = await getAnalysisHistory(employeeId);
         const sortedData = response.data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         setProjects(sortedData);
       } catch (error) {

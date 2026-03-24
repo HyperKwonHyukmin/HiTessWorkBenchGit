@@ -2,26 +2,27 @@
 /// React 애플리케이션의 최상위 라우터(Router) 및 상태 관리자입니다.
 /// </summary>
 import React, { useState } from 'react';
-import SplashScreen from './pages/SplashScreen';
-import LoginScreen from './pages/LoginScreen';
-import Dashboard from './pages/Dashboard';
-import MyProjects from './pages/MyProjects';
-import NewAnalysis from './pages/NewAnalysis';
-import Layout from './components/Layout';
+import SplashScreen from './pages/auth/SplashScreen';
+import LoginScreen from './pages/auth/LoginScreen';
+import Dashboard from './pages/dashboard/Dashboard';
+import MyProjects from './pages/analysis/MyProjects';
+import NewAnalysis from './pages/analysis/NewAnalysis';
+import Layout from './components/layout/Layout';
 import { Wand2 } from 'lucide-react';
-import ComponentWizard from './pages/ComponentWizard';
+import ComponentWizard from './pages/analysis/ComponentWizard';
 import { DashboardProvider } from './contexts/DashboardContext';
-import InteractiveApps from './pages/InteractiveApps';
+import InteractiveApps from './pages/analysis/InteractiveApps';
 import NoticeBoard from './pages/Support/NoticeBoard';
 import UserGuide from './pages/Support/UserGuide';
-import TrussAnalysis from './pages/TrussAnalysis'; 
-import TrussAssessment from './pages/TrussAssessment'; 
-import UserRequests from './pages/Support/UserRequests'; 
-import UserManagement from './pages/Administration/UserManagement'; 
+import TrussAnalysis from './pages/analysis/TrussAnalysis';
+import TrussAssessment from './pages/analysis/TrussAssessment';
+import UserRequests from './pages/Support/UserRequests';
+import UserManagement from './pages/Administration/UserManagement';
 import SystemSettings from './pages/Administration/SystemSettings';
 import AnalysisManagement from './pages/Administration/AnalysisManagement';
 import AiAssistantHub from './pages/AI/AiAssistantHub';
 import HiLabInsight from './pages/AI/HiLabInsight';
+import BeamAnalysisViewer from './pages/analysis/BeamAnalysisViewer';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 
@@ -84,6 +85,7 @@ function App() {
       case 'AI Lab Assistant': 
       case 'AI Assistant': return <AiAssistantHub setCurrentMenu={setCurrentMenu} />;
       case 'Hi-Lab Insight': return <HiLabInsight setCurrentMenu={setCurrentMenu} />;
+      case 'Beam Result Viewer': return <BeamAnalysisViewer />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">

@@ -3,8 +3,8 @@
 /// Recharts 라이브러리를 활용하여 모듈별, 부서별, 기간별 통계를 시각화합니다.
 /// </summary>
 import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
-import { API_BASE_URL } from '../../config';
+import { getAllAnalysisHistory } from '../../api/analysis';
+import { getUsers } from '../../api/admin';
 import { 
   BarChart3, Download, Search, Activity, CheckCircle2, XCircle,
   Layers, Server, Users, Calendar, RefreshCw
@@ -29,8 +29,8 @@ export default function AnalysisManagement() {
       try {
         // 해석 이력과 유저 메타데이터를 동시에 가져와서 조인(Join)
         const [analysisRes, userRes] = await Promise.all([
-          axios.get(`${API_BASE_URL}/api/analysis/all`),
-          axios.get(`${API_BASE_URL}/api/users`)
+          getAllAnalysisHistory(),
+          getUsers()
         ]);
         
         const usersData = userRes.data;

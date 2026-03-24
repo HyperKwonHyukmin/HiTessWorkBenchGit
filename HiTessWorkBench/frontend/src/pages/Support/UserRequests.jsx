@@ -1,8 +1,7 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { Lightbulb, Plus, ThumbsUp, MessageCircle, X, Trash2, Send, Tag, Flag } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
-import axios from 'axios';
-import { API_BASE_URL } from '../../config';
+import { getFeatureRequests, createFeatureRequest, upvoteFeatureRequest, commentFeatureRequest, deleteFeatureRequest } from '../../api/admin';
 
 export default function UserRequests() {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -34,13 +33,13 @@ export default function UserRequests() {
 
   const fetchRequests = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/api/feature-requests`);
+      const res = await getFeatureRequests();
       setRequests(res.data);
     } catch (err) { console.error("데이터 로드 실패", err); }
   };
 
   const handleUpvote = async (id) => {
-    try { await axios.put(`${API_BASE_URL}/api/feature-requests/${id}/upvote`); fetchRequests(); } 
+    try { await upvoteFeatureRequest(id); fetchRequests(); }
     catch (err) { console.error("추천 실패", err); }
   };
 
@@ -63,7 +62,7 @@ export default function UserRequests() {
       // ✅ 백엔드 DB 수정 없이 모듈과 중요도를 본문에 깔끔하게 병합하여 전송
       const finalContent = `[관련 모듈: ${formData.module}]\n[희망 중요도: ${formData.priority}]\n\n${formData.content}`;
       
-      await axios.post(`${API_BASE_URL}/api/feature-requests`, {
+      await createFeatureRequest({
         title: formData.title,
         content: finalContent,
         author_id: currentUser.employee_id,
@@ -80,14 +79,14 @@ export default function UserRequests() {
   const handleDelete = async () => {
     if(!window.confirm("게시글을 삭제하시겠습니까?")) return;
     try {
-      await axios.delete(`${API_BASE_URL}/api/feature-requests/${selectedReq.id}`);
+      await deleteFeatureRequest(selectedReq.id);
       setIsViewModalOpen(false); fetchRequests();
     } catch (err) { alert("삭제 실패: " + err.message); }
   };
 
   const handleAdminReplySave = async () => {
     try {
-      await axios.put(`${API_BASE_URL}/api/feature-requests/${selectedReq.id}/comment`, adminReply);
+      await commentFeatureRequest(selectedReq.id, adminReply);
       alert("관리자 답변이 저장되었습니다.");
       setIsViewModalOpen(false); fetchRequests();
     } catch (err) { alert("저장 실패: " + err.message); }

@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { User, ArrowRight, ShieldCheck, AlertCircle, Clock, Wifi, WifiOff, DownloadCloud, AlertTriangle } from 'lucide-react';
-import axios from 'axios';
-import logoCI from '../assets/images/HHI_white2_ko.png';
-import RegisterModal from '../components/RegisterModal';
-import { API_BASE_URL } from '../config'; 
+import logoCI from '../../assets/images/HHI_white2_ko.png';
+import RegisterModal from '../../components/modals/RegisterModal';
+import { checkVersion, login } from '../../api/auth';
 
 // ==========================================
 // [설정] 클라이언트 버전
@@ -27,7 +26,7 @@ export default function LoginScreen({ onLoginSuccess }) {
     const initCheck = async () => {
       try {
         // [수정 포인트 1] 작은따옴표(') 대신 백틱(`) 사용
-        const response = await axios.get(`${API_BASE_URL}/api/version`); // <--- 여기!
+        const response = await checkVersion();
         
         const fetchedServerVersion = response.data.version;
         setServerVersion(fetchedServerVersion);
@@ -67,10 +66,7 @@ export default function LoginScreen({ onLoginSuccess }) {
     localStorage.setItem('savedEmployeeId', employeeId);
 
     try {
-      // [수정 포인트 2] 작은따옴표(') 대신 백틱(`) 사용
-      const response = await axios.post(`${API_BASE_URL}/api/login`, { // <--- 여기!
-        employee_id: employeeId
-      });
+      const response = await login(employeeId);
 
       console.log('Login Success:', response.data);
       localStorage.setItem('user', JSON.stringify(response.data));

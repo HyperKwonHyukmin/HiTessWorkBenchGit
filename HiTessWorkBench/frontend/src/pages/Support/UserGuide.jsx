@@ -1,8 +1,7 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { BookOpen, Edit3, FileText, X, Terminal, Eye, Trash2, Edit2 } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
-import axios from 'axios';
-import { API_BASE_URL } from '../../config';
+import { getUserGuides, createUserGuide, updateUserGuide, deleteUserGuide } from '../../api/admin';
 
 export default function UserGuide() {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -31,7 +30,7 @@ export default function UserGuide() {
 
   const fetchGuides = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/api/user-guides`);
+      const res = await getUserGuides();
       setGuides(res.data);
     } catch (err) { console.error("가이드 로드 실패", err); }
   };
@@ -51,7 +50,7 @@ export default function UserGuide() {
   const handleDelete = async (id) => {
     if(!window.confirm("이 가이드를 삭제하시겠습니까?")) return;
     try { 
-      await axios.delete(`${API_BASE_URL}/api/user-guides/${id}`); 
+      await deleteUserGuide(id);
       fetchGuides(); 
     } catch (err) { alert("삭제 실패"); }
   };
@@ -61,8 +60,8 @@ export default function UserGuide() {
     if(!currentUser) { alert("로그인이 필요합니다."); return; }
     try {
       const payload = { ...formData, author_id: currentUser.employee_id };
-      if (editMode) await axios.put(`${API_BASE_URL}/api/user-guides/${selectedGuideId}`, payload);
-      else await axios.post(`${API_BASE_URL}/api/user-guides`, payload);
+      if (editMode) await updateUserGuide(selectedGuideId, payload);
+      else await createUserGuide(payload);
       setIsModalOpen(false); fetchGuides();
     } catch (err) { alert("저장 실패"); }
   };

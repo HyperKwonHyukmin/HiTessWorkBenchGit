@@ -3,8 +3,7 @@
 /// 노드(Node) 및 멤버(Member) CSV 양식 다운로드, 파일 파싱, 해석 요청 및 3D 뷰어 모달 호출을 담당합니다.
 /// </summary>
 import React, { useState, useRef, useEffect, Fragment } from 'react';
-import axios from 'axios';
-import { API_BASE_URL } from '../config';
+import { requestTrussAnalysis, getJobStatus, downloadFileBlob } from '../../api/analysis';
 import { Dialog, Transition } from '@headlessui/react';
 import { 
   ArrowLeft, Upload, Play, Download, Trash2, Database,
@@ -13,7 +12,7 @@ import {
   FileOutput, XCircle, Clock, Eye
 } from 'lucide-react';
 
-import BdfViewerModal from '../components/BdfViewerModal';
+import BdfViewerModal from '../../components/modals/BdfViewerModal';
 
 export default function TrussAnalysis({ setCurrentMenu }) {
   const [nodeFile, setNodeFile] = useState(null);
@@ -128,9 +127,7 @@ export default function TrussAnalysis({ setCurrentMenu }) {
     formData.append('source', 'Workbench');
 
     try {
-      const requestRes = await axios.post(`${API_BASE_URL}/api/analysis/truss/request`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const requestRes = await requestTrussAnalysis(formData);
 
       const jobId = requestRes.data.job_id;
       if (!jobId) throw new Error("서버로부터 Job ID를 받지 못했습니다.");
@@ -140,7 +137,7 @@ export default function TrussAnalysis({ setCurrentMenu }) {
 
       const pollInterval = setInterval(async () => {
         try {
-          const statusRes = await axios.get(`${API_BASE_URL}/api/analysis/status/${jobId}`);
+          const statusRes = await getJobStatus(jobId);
           const { status, progress, message, engine_log, project } = statusRes.data;
 
           setProgress(progress);
@@ -386,8 +383,7 @@ const ProjectDetailModal = ({ project, onClose }) => {
   const handleDownload = async (filePath) => {
     if (!filePath) return;
     try {
-      const url = `${API_BASE_URL}/api/download?filepath=${encodeURIComponent(filePath)}`;
-      const response = await axios.get(url, { responseType: 'blob' });
+      const response = await downloadFileBlob(filePath);
       const filename = filePath.split('\\').pop().split('/').pop();
       const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');

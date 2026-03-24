@@ -9,7 +9,7 @@ import {
 import { 
   Box, Activity, Plus, Trash2, ShieldCheck, ArrowDown, RefreshCw, SlidersHorizontal, Play, FileJson, Upload, BarChart2, Camera, Info 
 } from 'lucide-react';
-import { useDashboard } from '../contexts/DashboardContext'; // 💡 글로벌 작업 관리 가져오기
+import { useDashboard } from '../../contexts/DashboardContext'; // 💡 글로벌 작업 관리 가져오기
 
 const engFormat = (val) => {
   if (val === undefined || val === null) return '';

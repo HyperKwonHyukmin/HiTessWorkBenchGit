@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { API_BASE_URL } from '../config';
+import { getAnalysisHistory, downloadFileBlob } from '../../api/analysis';
 import { 
   Search, Filter, Download, FileText, 
   MoreVertical, ChevronRight, Box, 
@@ -9,7 +8,7 @@ import {
 } from 'lucide-react';
 
 // 공통 3D 뷰어 컴포넌트 임포트
-import BdfViewerModal from '../components/BdfViewerModal';
+import BdfViewerModal from '../../components/modals/BdfViewerModal';
 
 // ==========================================
 // 1. 상태 뱃지 헬퍼
@@ -59,8 +58,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
   const handleDownload = async (filePath) => {
     if (!filePath) return;
     try {
-      const url = `${API_BASE_URL}/api/download?filepath=${encodeURIComponent(filePath)}`;
-      const response = await axios.get(url, { responseType: 'blob' });
+      const response = await downloadFileBlob(filePath);
       const filename = filePath.split('\\').pop().split('/').pop();
       const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
@@ -163,7 +161,7 @@ export default function MyProjects() {
       const employeeId = userStr ? JSON.parse(userStr).employee_id : null;
       if (!employeeId) return;
       
-      const response = await axios.get(`${API_BASE_URL}/api/analysis/history/${employeeId}`);
+      const response = await getAnalysisHistory(employeeId);
       setProjects(response.data);
     } catch (error) {
       console.error("이력 불러오기 실패:", error);

@@ -1,8 +1,7 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { Megaphone, Plus, ChevronRight, Pin, X, Edit2, Trash2, Bold, Italic, List, Link, Paperclip } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
-import axios from 'axios';
-import { API_BASE_URL } from '../../config';
+import { getNotices, createNotice, updateNotice, deleteNotice } from '../../api/admin';
 
 export default function NoticeBoard() {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -28,7 +27,7 @@ export default function NoticeBoard() {
 
   const fetchNotices = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/api/notices`);
+      const res = await getNotices();
       setNotices(res.data);
     } catch (err) { console.error("공지사항 로드 실패", err); }
   };
@@ -57,7 +56,7 @@ export default function NoticeBoard() {
   const handleDelete = async () => {
     if(!window.confirm("정말 삭제하시겠습니까?")) return;
     try {
-      await axios.delete(`${API_BASE_URL}/api/notices/${selectedNotice.id}`);
+      await deleteNotice(selectedNotice.id);
       setIsViewModalOpen(false);
       fetchNotices();
     } catch (err) { alert("삭제 실패: " + err.message); }
@@ -71,9 +70,9 @@ export default function NoticeBoard() {
     try {
       const payload = { ...formData, author_id: currentUser.employee_id };
       if (editMode) {
-        await axios.put(`${API_BASE_URL}/api/notices/${selectedNotice.id}`, payload);
+        await updateNotice(selectedNotice.id, payload);
       } else {
-        await axios.post(`${API_BASE_URL}/api/notices`, payload);
+        await createNotice(payload);
       }
       setIsWriteModalOpen(false);
       fetchNotices();
