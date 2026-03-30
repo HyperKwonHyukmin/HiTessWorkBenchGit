@@ -410,10 +410,10 @@ export default function TrussAssessment({ setCurrentMenu }) {
       
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <button onClick={() => setCurrentMenu('File-Based Analysis')} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-[#002554] hover:bg-slate-50 transition-colors cursor-pointer"><ArrowLeft size={20} /></button>
+          <button onClick={() => setCurrentMenu('File-Based Apps')} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-[#002554] hover:bg-slate-50 transition-colors cursor-pointer"><ArrowLeft size={20} /></button>
           <div>
             <h1 className="text-2xl font-bold text-[#002554] tracking-tight">Truss Structural Assessment</h1>
-            <p className="text-sm text-slate-500 mt-1">BDF 모델 파일을 업로드하여 구조적 건전성을 즉시 평가합니다.</p>
+            <p className="text-sm text-slate-500 mt-1">BDF 모델 파일을 업로드하여 구조 안정성을 즉시 평가합니다.</p>
           </div>
         </div>
       </div>

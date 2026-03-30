@@ -4,7 +4,8 @@
       "Bash(grep -E \"\\\\.\\(py|json|txt\\)$\")",
       "Bash(wc -l /c/Coding/WorkBench/HiTessWorkBench/frontend/src/pages/*.jsx)",
       "Bash(npx vite:*)",
-      "Bash(python -c \"from app.main import app; print\\(''Backend import OK''\\); from app.routers import auth, users, analysis, system, support, ai; print\\(''All routers OK''\\); from app.services import job_manager, truss_service, assessment_service, beam_service; print\\(''All services OK''\\)\")"
+      "Bash(python -c \"from app.main import app; print\\(''Backend import OK''\\); from app.routers import auth, users, analysis, system, support, ai; print\\(''All routers OK''\\); from app.services import job_manager, truss_service, assessment_service, beam_service; print\\(''All services OK''\\)\")",
+      "Bash(find /c/Coding/WorkBench/HiTessWorkBench/frontend/src -name *BdfViewer* -o -name *bdf* -type f)"
     ]
   }
 }

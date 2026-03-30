@@ -33,8 +33,14 @@ def task_execute_truss(job_id: str, node_path: str, member_path: str, work_dir: 
 
         job_status_store[job_id].update({"progress": 80, "message": "Extracting Results & Writing BDF..."})
 
-        bdf_files = [f for f in os.listdir(work_dir) if f.endswith('.bdf')]
+        # [핵심 수정 구간]
+        # 1. 레퍼런스(Material_Property_Info) 파일 제외
+        # 2. 파일 수정 시간(mtime) 기준 내림차순 정렬하여 가장 마지막에 생성된 결과 BDF를 명시적으로 타겟팅
+        bdf_files = [f for f in os.listdir(work_dir) if f.endswith('.bdf') and "Material" not in f]
+
         if bdf_files:
+          # 시간 기준 최신 정렬
+          bdf_files.sort(key=lambda x: os.path.getmtime(os.path.join(work_dir, x)), reverse=True)
           final_bdf_path = os.path.join(work_dir, bdf_files[0])
           result_data = {"bdf": final_bdf_path}
         else:

@@ -19,33 +19,44 @@ router = APIRouter(prefix="/api", tags=["analysis"])
 
 @router.get("/analysis/history/{employee_id}")
 def get_analysis_history(employee_id: str, db: Session = Depends(database.get_db)):
-  history = db.query(models.Analysis).filter(models.Analysis.employee_id == employee_id).order_by(
-    models.Analysis.created_at.desc()).all()
-  return history
+    """
+    특정 사용자의 해석 이력을 최신순으로 조회합니다.
+    """
+    history = db.query(models.Analysis).filter(models.Analysis.employee_id == employee_id).order_by(
+        models.Analysis.created_at.desc()).all()
+    return history
 
 
 @router.get("/analysis/all")
 def get_all_analysis_history(db: Session = Depends(database.get_db)):
-  """관리자용 전체 해석 이력 조회"""
-  return db.query(models.Analysis).order_by(models.Analysis.created_at.desc()).all()
+    """
+    관리자용 전체 해석 이력을 최신순으로 조회합니다.
+    """
+    return db.query(models.Analysis).order_by(models.Analysis.created_at.desc()).all()
 
 
 @router.get("/download")
 def download_file(filepath: str):
-  decoded_path = urllib.parse.unquote(filepath)
-  if not os.path.exists(decoded_path):
-    raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
-  filename = os.path.basename(decoded_path)
-  return FileResponse(path=decoded_path, filename=filename, media_type='application/octet-stream')
+    """
+    지정된 경로의 파일을 다운로드합니다.
+    """
+    decoded_path = urllib.parse.unquote(filepath)
+    if not os.path.exists(decoded_path):
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+    filename = os.path.basename(decoded_path)
+    return FileResponse(path=decoded_path, filename=filename, media_type='application/octet-stream')
 
 
 # ==================== 작업 상태 조회 ====================
 
 @router.get("/analysis/status/{job_id}")
 def get_job_status(job_id: str):
-  if job_id not in job_status_store:
-    raise HTTPException(status_code=404, detail="Job not found")
-  return job_status_store[job_id]
+    """
+    특정 Job ID의 현재 진행 상태를 반환합니다.
+    """
+    if job_id not in job_status_store:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job_status_store[job_id]
 
 
 # ==================== Truss Model Builder ====================
@@ -57,35 +68,41 @@ async def request_truss_analysis(
         employee_id: str = Form(...),
         source: str = Form("Workbench")
 ):
-  base_dir = os.path.dirname(os.path.abspath(__file__))
-  parent_dir = os.path.dirname(os.path.dirname(base_dir))
-  timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-  unique_folder = f"{employee_id}_{timestamp}"
-  work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
-  os.makedirs(work_dir, exist_ok=True)
+    """
+    Truss Model Builder 해석을 요청받아 파일을 저장하고 백그라운드 작업을 실행합니다.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(os.path.dirname(base_dir))
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-  node_path = os.path.join(work_dir, node_file.filename)
-  member_path = os.path.join(work_dir, member_file.filename)
+    # [변경 사항] 기존 사번_시간 포맷에서 시간_사번_모듈명 포맷으로 일관성 확보
+    unique_folder = f"{timestamp}_{employee_id}_TrussModelBuilder"
+    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
 
-  try:
-    with open(node_path, "wb") as buffer:
-      buffer.write(await node_file.read())
-    with open(member_path, "wb") as buffer:
-      buffer.write(await member_file.read())
-  except Exception as e:
-    raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
+    os.makedirs(work_dir, exist_ok=True)
 
-  exe_dir = os.path.abspath(os.path.join(parent_dir, "InHouseProgram", "TrussModelBuilder"))
-  exe_path = os.path.join(exe_dir, "TrussModelBuilder.exe")
+    node_path = os.path.join(work_dir, node_file.filename)
+    member_path = os.path.join(work_dir, member_file.filename)
 
-  job_id = str(uuid.uuid4())
-  job_status_store[job_id] = {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."}
+    try:
+        with open(node_path, "wb") as buffer:
+            buffer.write(await node_file.read())
+        with open(member_path, "wb") as buffer:
+            buffer.write(await member_file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
 
-  analysis_executor.submit(
-    task_execute_truss, job_id, node_path, member_path, work_dir, exe_path, exe_dir, employee_id, timestamp, source
-  )
+    exe_dir = os.path.abspath(os.path.join(parent_dir, "InHouseProgram", "TrussModelBuilder"))
+    exe_path = os.path.join(exe_dir, "TrussModelBuilder.exe")
 
-  return {"job_id": job_id}
+    job_id = str(uuid.uuid4())
+    job_status_store[job_id] = {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."}
+
+    analysis_executor.submit(
+        task_execute_truss, job_id, node_path, member_path, work_dir, exe_path, exe_dir, employee_id, timestamp, source
+    )
+
+    return {"job_id": job_id}
 
 
 # ==================== Truss Structural Assessment ====================
@@ -96,31 +113,35 @@ async def request_truss_assessment(
         employee_id: str = Form(...),
         source: str = Form("Workbench")
 ):
-  base_dir = os.path.dirname(os.path.abspath(__file__))
-  parent_dir = os.path.dirname(os.path.dirname(base_dir))
-  timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    """
+    Truss Structural Assessment 해석을 요청받아 BDF 파일을 저장하고 백그라운드 작업을 실행합니다.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(os.path.dirname(base_dir))
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-  unique_folder = f"{employee_id}_assessment_{timestamp}"
-  work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+    # [변경 사항] 일관성을 위해 Assessment 폴더명도 시간_사번_모듈명 구조로 통일
+    unique_folder = f"{timestamp}_{employee_id}_TrussAssessment"
+    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
 
-  os.makedirs(work_dir, exist_ok=True)
+    os.makedirs(work_dir, exist_ok=True)
 
-  bdf_path = os.path.join(work_dir, bdf_file.filename)
+    bdf_path = os.path.join(work_dir, bdf_file.filename)
 
-  try:
-    with open(bdf_path, "wb") as buffer:
-      buffer.write(await bdf_file.read())
-  except Exception as e:
-    raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
+    try:
+        with open(bdf_path, "wb") as buffer:
+            buffer.write(await bdf_file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
 
-  job_id = str(uuid.uuid4())
-  job_status_store[job_id] = {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."}
+    job_id = str(uuid.uuid4())
+    job_status_store[job_id] = {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."}
 
-  analysis_executor.submit(
-    task_execute_assessment, job_id, bdf_path, work_dir, employee_id, timestamp, source
-  )
+    analysis_executor.submit(
+        task_execute_assessment, job_id, bdf_path, work_dir, employee_id, timestamp, source
+    )
 
-  return {"job_id": job_id}
+    return {"job_id": job_id}
 
 
 # ==================== Simple Beam Assessment ====================
@@ -131,32 +152,35 @@ async def request_beam_analysis(
         employee_id: str = Form(...),
         source: str = Form("Workbench")
 ):
-  base_dir = os.path.dirname(os.path.abspath(__file__))
-  parent_dir = os.path.dirname(os.path.dirname(base_dir))
+    """
+    Simple Beam Assessment 해석을 요청받아 JSON 파일을 저장하고 백그라운드 작업을 실행합니다.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(os.path.dirname(base_dir))
 
-  timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-  unique_folder = f"{timestamp}_{employee_id}_SimpleBeam"
-  work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+    unique_folder = f"{timestamp}_{employee_id}_SimpleBeam"
+    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
 
-  os.makedirs(work_dir, exist_ok=True)
+    os.makedirs(work_dir, exist_ok=True)
 
-  input_json_path = os.path.join(work_dir, beam_file.filename)
-  try:
-    with open(input_json_path, "wb") as buffer:
-      buffer.write(await beam_file.read())
-  except Exception as e:
-    raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
+    input_json_path = os.path.join(work_dir, beam_file.filename)
+    try:
+        with open(input_json_path, "wb") as buffer:
+            buffer.write(await beam_file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
 
-  job_id = str(uuid.uuid4())
-  job_status_store[job_id] = {
-    "status": "Pending",
-    "progress": 0,
-    "message": "Waiting in Queue..."
-  }
+    job_id = str(uuid.uuid4())
+    job_status_store[job_id] = {
+        "status": "Pending",
+        "progress": 0,
+        "message": "Waiting in Queue..."
+    }
 
-  analysis_executor.submit(
-    task_execute_beam, job_id, input_json_path, work_dir, employee_id, timestamp, source
-  )
+    analysis_executor.submit(
+        task_execute_beam, job_id, input_json_path, work_dir, employee_id, timestamp, source
+    )
 
-  return {"job_id": job_id}
+    return {"job_id": job_id}

@@ -131,7 +131,7 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
       <Map size={120} className="absolute -left-10 -bottom-10 text-white/5 rotate-12 pointer-events-none" />
       <div className="p-5 md:w-1/3 border-b md:border-b-0 md:border-r border-white/10 relative z-10 flex flex-col justify-center">
         <h3 className="text-white font-bold text-sm flex items-center gap-2 mb-1">
-          <Map size={16} className="text-blue-300"/> 시스템 해석 앱 로드맵
+          <Map size={16} className="text-blue-300"/> Workbench 해석 앱 로드맵
         </h3>
         <p className="text-blue-200/70 text-xs mb-3">플랫폼 내 해석 모듈 통합 개발 현황</p>
         <div className="flex gap-2 text-[10px] font-bold">
@@ -175,7 +175,7 @@ const RoadmapModal = ({ isOpen, onClose }) => {
             <div className="bg-[#002554] p-5 flex justify-between items-center text-white shrink-0">
               <div>
                 <Dialog.Title className="font-bold text-lg flex items-center gap-2">
-                  <Map size={20} className="text-blue-400"/> HiTESS 워크벤치 로드맵
+                  <Map size={20} className="text-blue-400"/> HiTESS Workbench 로드맵
                 </Dialog.Title>
                 <p className="text-xs text-blue-200 mt-1">플랫폼 내 도입 예정 및 개발 중인 해석 앱들의 전체 현황입니다.</p>
               </div>
@@ -187,7 +187,7 @@ const RoadmapModal = ({ isOpen, onClose }) => {
                  if (apps.length === 0) return null;
                  const groupTitle = statusGroup === 'Active' ? '현재 서비스 중' 
                                   : statusGroup === 'Developing' ? '개발 진행 중' 
-                                  : '출시 및 개발 예정';
+                                  : '개발 예정';
                  return (
                    <div key={statusGroup} className="mb-8 last:mb-0">
                      <h3 className="text-sm font-bold text-slate-700 tracking-wide border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
@@ -303,13 +303,13 @@ export default function Dashboard({ setCurrentMenu }) {
       {/* 1. Page Header */}
       <div className="flex justify-between items-end mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">워크벤치 종합 현황</h1>
+          <h1 className="text-2xl font-bold text-slate-800">HiTESS Workbench 종합 현황</h1>
           <p className="text-sm text-gray-500 mt-1">실행 중인 시뮬레이션 상태 및 시스템 리소스를 확인하세요.</p>
         </div>
         <div className="text-right">
            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200 shadow-sm">
              <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-             해석 엔진 연결됨
+             해석 서버 연결됨
            </span>
         </div>
       </div>

@@ -58,7 +58,7 @@ export default function InteractiveApps({ setCurrentMenu }) {
         <h1 className="text-3xl font-bold text-slate-800 tracking-tight flex items-center gap-3">
           <PenTool className="text-blue-600" size={32} /> Interactive Apps
         </h1>
-        <p className="text-slate-500 mt-2">웹 UI에서 치수와 파라미터를 직접 입력하여 실시간으로 결과를 확인하세요.</p>
+        <p className="text-slate-500 mt-2">UI에서 설계 정보를 직접 입력하여 실시간으로 결과를 확인하세요.</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-8 border-b border-gray-200 pb-5">

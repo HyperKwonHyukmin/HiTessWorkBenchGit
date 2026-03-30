@@ -4,7 +4,7 @@
 /// </summary>
 import React, { useState } from 'react';
 import { 
-  ArrowRight, Info, Zap, Compass, Star 
+  ArrowRight, Info, Zap, Compass, Star, UploadCloud
 } from 'lucide-react';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext'; 
 
@@ -79,23 +79,11 @@ export default function NewAnalysis({ setCurrentMenu }) {
     <div className="max-w-7xl mx-auto pb-16">
       
       <div className="mb-8 text-center md:text-left">
-        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">File-Based Apps</h1>
-        <p className="text-slate-500 mt-2">수행하고자 하는 파일 업로드 기반 해석 모델을 선택하십시오.</p>
+        <h1 className="text-3xl font-bold text-slate-800 tracking-tight flex items-center gap-3">
+          <UploadCloud className="text-blue-600" size={32} /> File-Based Apps
+        </h1>
+        <p className="text-slate-500 mt-2">수행하고자 하는 파일 업로드 기반 해석 앱을 선택하세요.</p>
       </div>
-
-      <div className="bg-blue-600 rounded-2xl p-6 mb-10 text-white flex items-center justify-between shadow-lg shadow-blue-200 relative overflow-hidden">
-        <div className="relative z-10">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <Zap size={20} className="text-yellow-300" />
-            Quick Start Tip
-          </h2>
-          <p className="text-blue-100 text-sm mt-1">
-            간단한 빔(Beam)이나 정반(Plate) 해석은 좌측 메뉴의 <strong className="text-white">Interactive Apps</strong>를 이용하면 더 빠릅니다.
-          </p>
-        </div>
-        <Compass size={80} className="absolute -right-4 -bottom-4 text-white/10 rotate-12" />
-      </div>
-
       <div className="flex flex-wrap items-center gap-2 mb-8 border-b border-gray-200 pb-5">
         {categories.map(category => (
           <button
