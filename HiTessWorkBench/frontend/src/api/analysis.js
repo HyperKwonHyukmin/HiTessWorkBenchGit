@@ -42,3 +42,9 @@ export const downloadFileText = (filepath) =>
   axios.get(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(filepath)}`, {
     responseType: 'text'
   });
+
+/** Assessment JSON → XLSX 변환 다운로드 (DRM 우회: 서버 메모리에서 생성) */
+export const exportAssessmentXlsx = (jsonPath) =>
+  axios.get(`${API_BASE_URL}/api/analysis/export-xlsx?json_path=${encodeURIComponent(jsonPath)}`, {
+    responseType: 'blob'
+  });

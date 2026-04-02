@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from './Sidebar'; 
 // ✅ ChevronLeft, ChevronRight 아이콘 추가
 import { LogOut, User, Bell, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import TrussAssessment from '../pages/analysis/TrussAssessment';
 
 // ✅ 파라미터에 goBack 등 히스토리 관련 props 추가
 export default function Layout({ 

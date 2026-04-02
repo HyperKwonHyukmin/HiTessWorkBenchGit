@@ -11,13 +11,16 @@ def get_users(db: Session = Depends(database.get_db)):
   return db.query(models.User).all()
 
 
+_USER_ALLOWED_FIELDS = {"name", "company", "department", "position", "is_active", "is_admin"}
+
 @router.put("/users/{user_id}")
 def update_user(user_id: int, update_data: dict, db: Session = Depends(database.get_db)):
   user = db.query(models.User).filter(models.User.id == user_id).first()
   if not user:
     raise HTTPException(status_code=404, detail="User not found")
   for key, value in update_data.items():
-    setattr(user, key, value)
+    if key in _USER_ALLOWED_FIELDS:
+      setattr(user, key, value)
   db.commit()
   return {"message": "Update successful"}
 

@@ -1,6 +1,6 @@
 /// <summary>
 /// 메인 대시보드 UI 컴포넌트입니다.
-/// 최상단에 로드맵 배너를 배치하고 View 계층에서만 데이터를 로컬라이징하여 렌더링합니다.
+/// (수정) 즐겨찾기에서 Truss Assessment 진입 시 글로벌 상태를 초기화하는 로직 추가
 /// </summary>
 import React, { useState, useEffect, Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
@@ -13,17 +13,11 @@ import {
 } from 'lucide-react';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 
-// ---------------------------------------------------------
-// [신규] View Layer용 로컬라이징 딕셔너리
-// ---------------------------------------------------------
 const MODE_KO = {
   File: "파일 기반",
   Interactive: "대화형 앱"
 };
 
-// ---------------------------------------------------------
-// UI Helper Components
-// ---------------------------------------------------------
 const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color }) => (
   <div className="relative bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-start justify-between hover:shadow-lg hover:border-blue-300 transition-all duration-200 group">
     <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400">
@@ -97,9 +91,6 @@ const ProjectRow = ({ id, name, type, status, date }) => {
   );
 };
 
-// ---------------------------------------------------------
-// 로드맵 관련 컴포넌트
-// ---------------------------------------------------------
 const StatusBadge = ({ status }) => {
   if (status === 'Active') return <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold flex items-center gap-1"><Rocket size={12}/> 서비스 중</span>;
   if (status === 'Developing') return <span className="px-2 py-0.5 bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] font-bold flex items-center gap-1"><Wrench size={12}/> 개발 중</span>;
@@ -131,7 +122,7 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
       <Map size={120} className="absolute -left-10 -bottom-10 text-white/5 rotate-12 pointer-events-none" />
       <div className="p-5 md:w-1/3 border-b md:border-b-0 md:border-r border-white/10 relative z-10 flex flex-col justify-center">
         <h3 className="text-white font-bold text-sm flex items-center gap-2 mb-1">
-          <Map size={16} className="text-blue-300"/> Workbench 해석 앱 로드맵
+          <Map size={16} className="text-blue-300"/> 시스템 해석 앱 로드맵
         </h3>
         <p className="text-blue-200/70 text-xs mb-3">플랫폼 내 해석 모듈 통합 개발 현황</p>
         <div className="flex gap-2 text-[10px] font-bold">
@@ -147,7 +138,6 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
            </div>
            <div className="flex-1 min-w-0">
              <div className="flex items-center gap-2 mb-1">
-               {/* 뷰 계층에서 영문 Key를 한국어로 매핑하여 렌더링 */}
                <span className="text-blue-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-300/30 tracking-wider">
                  {MODE_KO[currentApp.mode] || currentApp.mode}
                </span>
@@ -175,7 +165,7 @@ const RoadmapModal = ({ isOpen, onClose }) => {
             <div className="bg-[#002554] p-5 flex justify-between items-center text-white shrink-0">
               <div>
                 <Dialog.Title className="font-bold text-lg flex items-center gap-2">
-                  <Map size={20} className="text-blue-400"/> HiTESS Workbench 로드맵
+                  <Map size={20} className="text-blue-400"/> HiTESS 워크벤치 로드맵
                 </Dialog.Title>
                 <p className="text-xs text-blue-200 mt-1">플랫폼 내 도입 예정 및 개발 중인 해석 앱들의 전체 현황입니다.</p>
               </div>
@@ -187,7 +177,7 @@ const RoadmapModal = ({ isOpen, onClose }) => {
                  if (apps.length === 0) return null;
                  const groupTitle = statusGroup === 'Active' ? '현재 서비스 중' 
                                   : statusGroup === 'Developing' ? '개발 진행 중' 
-                                  : '개발 예정';
+                                  : '출시 및 개발 예정';
                  return (
                    <div key={statusGroup} className="mb-8 last:mb-0">
                      <h3 className="text-sm font-bold text-slate-700 tracking-wide border-b border-slate-200 pb-2 mb-4 flex items-center gap-2">
@@ -203,7 +193,6 @@ const RoadmapModal = ({ isOpen, onClose }) => {
                              <div className="p-2.5 bg-slate-50 text-slate-600 rounded-lg border border-slate-100">
                                <app.icon size={20} />
                              </div>
-                             {/* 뷰 계층 매핑 적용 */}
                              <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
                                {MODE_KO[app.mode] || app.mode}
                              </span>
@@ -229,11 +218,10 @@ const RoadmapModal = ({ isOpen, onClose }) => {
   );
 };
 
-// ---------------------------------------------------------
-// MAIN DASHBOARD COMPONENT
-// ---------------------------------------------------------
 export default function Dashboard({ setCurrentMenu }) {
-  const { favorites } = useDashboard();
+  // [핵심 변경] 상태 초기화를 위해 setAssessmentPageState 가져오기
+  const { favorites, setAssessmentPageState } = useDashboard();
+  
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -258,7 +246,8 @@ export default function Dashboard({ setCurrentMenu }) {
     const fetchHistory = async () => {
       try {
         const userStr = localStorage.getItem('user');
-        const employeeId = userStr ? JSON.parse(userStr).employee_id : null;
+        let employeeId = null;
+        try { employeeId = userStr ? JSON.parse(userStr).employee_id : null; } catch { /* 세션 데이터 손상 시 무시 */ }
         if (!employeeId) return;
 
         const response = await getAnalysisHistory(employeeId);
@@ -290,6 +279,10 @@ export default function Dashboard({ setCurrentMenu }) {
 
     if (title === "Truss Model Builder") {
       setCurrentMenu('Truss Analysis');
+    } else if (title === "Truss Structural Assessment") {
+      // [동작] 카드를 누르면 이전 글로벌 상태를 빈 객체로 덮어씌워 완전 초기화합니다.
+      if (setAssessmentPageState) setAssessmentPageState({});
+      setCurrentMenu('Truss Structural Assessment');
     } else if (title === "Simple Beam Assessment") {
       setCurrentMenu('Simple Beam A'); 
     } else {
@@ -300,25 +293,22 @@ export default function Dashboard({ setCurrentMenu }) {
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-10 animate-fade-in-up">
       
-      {/* 1. Page Header */}
       <div className="flex justify-between items-end mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">HiTESS Workbench 종합 현황</h1>
+          <h1 className="text-2xl font-bold text-slate-800">워크벤치 종합 현황</h1>
           <p className="text-sm text-gray-500 mt-1">실행 중인 시뮬레이션 상태 및 시스템 리소스를 확인하세요.</p>
         </div>
         <div className="text-right">
            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200 shadow-sm">
              <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-             해석 서버 연결됨
+             해석 엔진 연결됨
            </span>
         </div>
       </div>
 
-      {/* 2. Roadmap Banner (최상단) */}
       <AppRoadmapBanner onOpenModal={() => setIsRoadmapModalOpen(true)} />
       <RoadmapModal isOpen={isRoadmapModalOpen} onClose={() => setIsRoadmapModalOpen(false)} />
 
-      {/* 3. KPI Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-2">
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 relative overflow-hidden group hover:border-blue-300 transition-colors">
           <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
@@ -359,7 +349,6 @@ export default function Dashboard({ setCurrentMenu }) {
         />
       </div>
 
-      {/* 4. Quick Actions (Favorites) */}
       <div className="space-y-4 pt-4 border-t border-slate-200 border-dashed">
         <h2 className="text-sm font-bold text-slate-600 flex items-center gap-2">
           <Star size={16} className="text-yellow-500" fill="currentColor" /> 자주 사용하는 앱 (즐겨찾기)
@@ -393,7 +382,6 @@ export default function Dashboard({ setCurrentMenu }) {
         )}
       </div>
 
-      {/* 5. Tracking (Recent Projects) */}
       <div className="pt-4 border-t border-slate-200 border-dashed">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-sm font-bold text-slate-600 flex items-center gap-2">

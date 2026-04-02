@@ -1,18 +1,24 @@
 """해석 요청, 상태 조회, 이력 관리 API 라우터."""
+import io
 import os
 import uuid
 import urllib.parse
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models, database
 from ..services.job_manager import job_status_store, analysis_executor
 from ..services.truss_service import task_execute_truss
-from ..services.assessment_service import task_execute_assessment
+from ..services.assessment_service import task_execute_assessment, _json_to_xlsx_bytes
 from ..services.beam_service import task_execute_beam
 
 router = APIRouter(prefix="/api", tags=["analysis"])
+
+# 파일 다운로드 허용 기준 경로: userConnection/ 디렉터리만 허용
+_ROUTER_DIR = os.path.dirname(os.path.abspath(__file__))         # app/routers
+_BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))     # HiTessWorkBenchBackEnd
+_ALLOWED_DOWNLOAD_BASE = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
 
 
 # ==================== 이력 및 다운로드 ====================
@@ -39,12 +45,43 @@ def get_all_analysis_history(db: Session = Depends(database.get_db)):
 def download_file(filepath: str):
     """
     지정된 경로의 파일을 다운로드합니다.
+    보안: userConnection/ 디렉터리 내 파일만 허용합니다.
     """
-    decoded_path = urllib.parse.unquote(filepath)
+    decoded_path = os.path.abspath(urllib.parse.unquote(filepath))
+    if not decoded_path.startswith(_ALLOWED_DOWNLOAD_BASE):
+        raise HTTPException(status_code=403, detail="접근 권한이 없는 경로입니다.")
     if not os.path.exists(decoded_path):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
     filename = os.path.basename(decoded_path)
     return FileResponse(path=decoded_path, filename=filename, media_type='application/octet-stream')
+
+
+@router.get("/analysis/export-xlsx")
+def export_assessment_xlsx(json_path: str):
+    """
+    TrussAssessment JSON 결과를 XLSX로 변환하여 반환합니다.
+    openpyxl로 메모리(BytesIO)에서만 생성하므로 디스크에 저장되지 않아
+    회사 DRM 소프트웨어의 자동 암호화를 피할 수 있습니다.
+    """
+    decoded_path = os.path.abspath(urllib.parse.unquote(json_path))
+    if not decoded_path.startswith(_ALLOWED_DOWNLOAD_BASE):
+        raise HTTPException(status_code=403, detail="접근 권한이 없는 경로입니다.")
+    if not os.path.exists(decoded_path):
+        raise HTTPException(status_code=404, detail="JSON 파일을 찾을 수 없습니다.")
+
+    base_name = os.path.splitext(os.path.basename(decoded_path))[0]
+    xlsx_filename = f"{base_name}_Results.xlsx"
+
+    try:
+        xlsx_bytes = _json_to_xlsx_bytes(decoded_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Excel 변환 실패: {str(e)}")
+
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename="{xlsx_filename}"'}
+    )
 
 
 # ==================== 작업 상태 조회 ====================

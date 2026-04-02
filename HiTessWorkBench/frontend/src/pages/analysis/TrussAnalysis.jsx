@@ -1,6 +1,6 @@
 /// <summary>
 /// 파일 기반(File-Based)의 비동기 트러스 모델 구축 패널입니다.
-/// 노드(Node) 및 멤버(Member) CSV 양식 다운로드, 파일 파싱, 해석 요청 및 3D 뷰어 모달 호출을 담당합니다.
+/// (수정) 해석 완료 시 XLSX 파일의 다이렉트 다운로드 및 JSON 데이터의 테이블 렌더링 기능을 추가했습니다.
 /// </summary>
 import React, { useState, useRef, useEffect, Fragment } from 'react';
 import { requestTrussAnalysis, getJobStatus, downloadFileBlob } from '../../api/analysis';
@@ -28,12 +28,22 @@ export default function TrussAnalysis({ setCurrentMenu }) {
 
   const [activeTab, setActiveTab] = useState('node'); 
   
+  // (추가) 파싱된 JSON 결과 데이터를 담을 State
+  const [resultJsonData, setResultJsonData] = useState(null);
+  
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [analysisResultData, setAnalysisResultData] = useState(null);
   const [isResultModalOpen, setIsResultModalOpen] = useState(false);  
   const [is3DViewerOpen, setIs3DViewerOpen] = useState(false); 
   
   const logEndRef = useRef(null);
+  const pollIntervalRef = useRef(null);
+
+  // 컴포넌트 언마운트 시 폴링 인터벌 정리
+  useEffect(() => {
+    return () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); };
+  }, []);
+
   const numNodes = nodeData.length > 1 ? nodeData.length - 1 : 0;
   const numMembers = memberData.length > 1 ? memberData.length - 1 : 0;
   const isDataReady = numNodes > 0 && numMembers > 0;
@@ -42,7 +52,6 @@ export default function TrussAnalysis({ setCurrentMenu }) {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
   }, [logs]);
 
-  // CSV 표준 템플릿 다운로드 로직
   const downloadTemplate = (type) => {
     let content = "";
     let filename = "";
@@ -110,6 +119,7 @@ export default function TrussAnalysis({ setCurrentMenu }) {
     setProgress(0);
     setStatusMessage('서버에 작업 요청 중...');
     setAnalysisResultData(null);
+    setResultJsonData(null); // (추가) 재실행 시 기존 결과 초기화
     setIsResultModalOpen(false);
     setIs3DViewerOpen(false);
     setLogs([]);
@@ -134,8 +144,15 @@ export default function TrussAnalysis({ setCurrentMenu }) {
 
       addLog(`Job submitted successfully. [Job ID: ${jobId}]`, 'info');
       let lastMsg = '';
-
-      const pollInterval = setInterval(async () => {
+      let retryCount = 0;
+      pollIntervalRef.current = setInterval(async () => {
+        retryCount++;
+        if (retryCount > 120) {
+          clearInterval(pollIntervalRef.current);
+          setIsRunning(false);
+          addLog('해석 시간 초과 (3분). 서버 상태를 확인하세요.', 'error');
+          return;
+        }
         try {
           const statusRes = await getJobStatus(jobId);
           const { status, progress, message, engine_log, project } = statusRes.data;
@@ -149,7 +166,7 @@ export default function TrussAnalysis({ setCurrentMenu }) {
           }
 
           if (status === 'Success' || status === 'Failed') {
-            clearInterval(pollInterval);
+            clearInterval(pollIntervalRef.current);
             setIsRunning(false);
             
             if (status === 'Success') {
@@ -161,6 +178,28 @@ export default function TrussAnalysis({ setCurrentMenu }) {
                 addDetailedLog(engine_log);
               }
               setAnalysisResultData(project); 
+
+              // ==========================================
+              // (핵심 로직) JSON 결과 Fetch 및 렌더링 준비
+              // ==========================================
+              if (project?.result_info) {
+                const jsonKey = Object.keys(project.result_info).find(k => project.result_info[k].endsWith('.json'));
+                if (jsonKey) {
+                  addLog('JSON 결과 데이터를 파싱 중입니다...', 'info');
+                  try {
+                    const res = await downloadFileBlob(project.result_info[jsonKey]);
+                    const text = await res.data.text();
+                    const parsedData = JSON.parse(text);
+                    setResultJsonData(parsedData);
+                    setActiveTab('result'); // 파싱 성공 시 자동으로 Result 탭으로 포커싱 이동
+                    addLog('결과 테이블 렌더링 완료.', 'success');
+                  } catch (e) {
+                    console.error("JSON Fetch/Parse Error:", e);
+                    addLog('JSON 결과를 화면에 표시하는 데 실패했습니다.', 'error');
+                  }
+                }
+              }
+
             } else {
               addLog('ENGINE EXECUTION FAILED.', 'error');
               if (engine_log) addDetailedLog(engine_log);
@@ -168,7 +207,7 @@ export default function TrussAnalysis({ setCurrentMenu }) {
           }
         } catch (pollError) {
           console.error("Polling Error:", pollError);
-          clearInterval(pollInterval);
+          clearInterval(pollIntervalRef.current);
           setIsRunning(false);
           addLog('STATUS CHECK FAILED.', 'error');
         }
@@ -178,6 +217,36 @@ export default function TrussAnalysis({ setCurrentMenu }) {
       addLog('SERVER COMMUNICATION FAILED.', 'error');
       addDetailedLog(error.response ? `SERVER ERROR [${error.response.status}]` : `NETWORK ERROR: ${error.message}`);
       setIsRunning(false);
+    }
+  };
+
+  // ==========================================
+  // (신규) 다이렉트 엑셀 다운로드 핸들러
+  // ==========================================
+  const handleDirectExcelDownload = async () => {
+    if (!analysisResultData?.result_info) return;
+    const excelKey = Object.keys(analysisResultData.result_info).find(k => analysisResultData.result_info[k].endsWith('.xlsx') || analysisResultData.result_info[k].endsWith('.csv'));
+    
+    if (excelKey) {
+      const filePath = analysisResultData.result_info[excelKey];
+      try {
+        const response = await downloadFileBlob(filePath);
+        const filename = filePath.split('\\').pop().split('/').pop();
+        const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+      } catch (error) {
+        console.error("Excel download failed", error);
+        alert("엑셀 파일 다운로드에 실패했습니다.");
+      }
+    } else {
+      // 엑셀이 명시적으로 없을 경우엔 기존 폴더/모달을 엽니다.
+      setIsResultModalOpen(true);
     }
   };
 
@@ -279,13 +348,20 @@ export default function TrussAnalysis({ setCurrentMenu }) {
               </div>
             </button>
             
+            {/* (수정) 결과 액션 버튼: 엑셀 직접 다운로드 지원 */}
             {analysisResultData && analysisResultData.status === "Success" && (
-              <div className="flex gap-2 animate-fade-in-up mt-1">
-                <button onClick={() => setIsResultModalOpen(true)} className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-sm cursor-pointer">
-                  <Download size={18} /> 결과 확인
-                </button>
-                <button onClick={() => setIs3DViewerOpen(true)} className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-[#002554] text-white hover:bg-[#003366] transition-colors shadow-lg cursor-pointer">
-                  <Eye size={18} /> 3D 모델 시각화
+              <div className="flex flex-col gap-2 animate-fade-in-up mt-1">
+                <div className="flex gap-2">
+                  <button onClick={handleDirectExcelDownload} className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-sm cursor-pointer">
+                    <FileSpreadsheet size={18} /> 엑셀 다운로드
+                  </button>
+                  <button onClick={() => setIs3DViewerOpen(true)} className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-[#002554] text-white hover:bg-[#003366] transition-colors shadow-lg cursor-pointer">
+                    <Eye size={18} /> 3D 시각화
+                  </button>
+                </div>
+                {/* 만약을 대비한 모달 호출 버튼(기타 BDF 등 파일 접근용) */}
+                <button onClick={() => setIsResultModalOpen(true)} className="text-[11px] text-slate-400 hover:text-blue-500 underline flex justify-center items-center gap-1 cursor-pointer mt-1">
+                  <Database size={12}/> 전체 생성된 파일 보기
                 </button>
               </div>
             )}
@@ -298,9 +374,15 @@ export default function TrussAnalysis({ setCurrentMenu }) {
             <div className="flex border-b border-slate-200 bg-slate-50 px-4 pt-4 gap-2">
               <TabButton active={activeTab === 'node'} onClick={() => setActiveTab('node')} icon={Database} label="Node Preview" count={numNodes} />
               <TabButton active={activeTab === 'member'} onClick={() => setActiveTab('member')} icon={Layers} label="Member Preview" count={numMembers} />
+              {/* (추가) JSON 데이터가 들어오면 자동으로 Result 탭 생성 */}
+              {resultJsonData && (
+                <TabButton active={activeTab === 'result'} onClick={() => setActiveTab('result')} icon={FileText} label="Result Viewer" count={Array.isArray(resultJsonData) ? resultJsonData.length : 1} />
+              )}
             </div>
             <div className="flex-1 overflow-auto bg-white custom-scrollbar relative">
-              {activeTab === 'node' ? <DataTable data={nodeData} emptyMsg="Node CSV 파일을 업로드하면 데이터를 미리볼 수 있습니다." /> : <DataTable data={memberData} emptyMsg="Member CSV 파일을 업로드하면 데이터를 미리볼 수 있습니다." />}
+              {activeTab === 'node' && <DataTable data={nodeData} emptyMsg="Node CSV 파일을 업로드하면 데이터를 미리볼 수 있습니다." />}
+              {activeTab === 'member' && <DataTable data={memberData} emptyMsg="Member CSV 파일을 업로드하면 데이터를 미리볼 수 있습니다." />}
+              {activeTab === 'result' && <JsonDataTable data={resultJsonData} emptyMsg="결과 데이터가 없습니다." />}
             </div>
           </div>
 
@@ -343,7 +425,7 @@ export default function TrussAnalysis({ setCurrentMenu }) {
         </Dialog>
       </Transition>
 
-      {/* 모달 2: 결과 다운로드 */}
+      {/* 모달 2: 전체 결과 파일 다운로드 */}
       <ProjectDetailModal project={isResultModalOpen ? analysisResultData : null} onClose={() => setIsResultModalOpen(false)} />
       
       {/* 모달 3: 3D BDF 뷰어 */}
@@ -356,6 +438,54 @@ export default function TrussAnalysis({ setCurrentMenu }) {
 // ==========================================
 // Helper Components
 // ==========================================
+
+// (신규) JSON 기반 동적 테이블 렌더러
+function JsonDataTable({ data, emptyMsg }) {
+  if (!data) return <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400"><Database size={48} className="mb-4 opacity-20" /><p className="text-sm">{emptyMsg}</p></div>;
+  
+  let tableData = [];
+  // 1. JSON 최상위가 배열인 경우 (일반적인 행/열 구조)
+  if (Array.isArray(data)) {
+    tableData = data;
+  } 
+  // 2. JSON 최상위가 객체인 경우
+  else if (typeof data === 'object') {
+    // 혹시 객체 내부에 배열이 들어있는지 탐색 ("Results": [...] 등)
+    const arrayKey = Object.keys(data).find(key => Array.isArray(data[key]));
+    if (arrayKey) {
+      tableData = data[arrayKey];
+    } else {
+      // 순수 객체라면 Key-Value 형태로 평탄화(Flatten)하여 표시
+      tableData = Object.entries(data).map(([key, value]) => ({ 
+        Key: key, 
+        Value: typeof value === 'object' ? JSON.stringify(value) : String(value) 
+      }));
+    }
+  }
+
+  if (tableData.length === 0) return <div className="p-4 text-center text-slate-500">표시할 데이터가 없습니다.</div>;
+
+  const headers = Object.keys(tableData[0]);
+
+  return (
+    <table className="w-full text-left text-sm font-mono whitespace-nowrap">
+      <thead className="sticky top-0 bg-slate-50 shadow-sm z-10">
+        <tr>
+          {headers.map((h, i) => <th key={i} className="px-6 py-3 text-[#002554] font-bold uppercase tracking-wider text-xs border-b border-slate-200">{h}</th>)}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {tableData.map((row, i) => (
+          <tr key={i} className="hover:bg-blue-50/50 transition-colors">
+            {headers.map((h, j) => <td key={j} className="px-6 py-2.5 text-slate-700">{String(row[h])}</td>)}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+
 const StatusBadge = ({ status }) => {
   const styles = {
     Success: "bg-emerald-100 text-emerald-700 border-emerald-200",

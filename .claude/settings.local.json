@@ -5,7 +5,17 @@
       "Bash(wc -l /c/Coding/WorkBench/HiTessWorkBench/frontend/src/pages/*.jsx)",
       "Bash(npx vite:*)",
       "Bash(python -c \"from app.main import app; print\\(''Backend import OK''\\); from app.routers import auth, users, analysis, system, support, ai; print\\(''All routers OK''\\); from app.services import job_manager, truss_service, assessment_service, beam_service; print\\(''All services OK''\\)\")",
-      "Bash(find /c/Coding/WorkBench/HiTessWorkBench/frontend/src -name *BdfViewer* -o -name *bdf* -type f)"
+      "Bash(find /c/Coding/WorkBench/HiTessWorkBench/frontend/src -name *BdfViewer* -o -name *bdf* -type f)",
+      "Bash(xargs wc:*)",
+      "Bash(xargs grep:*)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(WorkBenchEnvScriptspython.exe -c \"import openpyxl; print\\(''openpyxl'', openpyxl.__version__, ''OK''\\)\")",
+      "Bash(C:/Coding/WorkBench/HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/python.exe -c \"import openpyxl; print\\('openpyxl', openpyxl.__version__, 'OK'\\)\" 2>&1)",
+      "Bash(C:/Coding/WorkBench/HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/pip.exe install:*)",
+      "Bash(C:/Coding/WorkBench/HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/python.exe -c \"\nimport sys\nsys.path.insert\\(0, 'C:/Coding/WorkBench/HiTessWorkBenchBackEnd'\\)\nfrom app.services.assessment_service import _json_to_xlsx_bytes\ndata = _json_to_xlsx_bytes\\('C:/Coding/WorkBench/HiTessWorkBenchBackEnd/userConnection/20260330_152122_A476854_TrussAssessment/8276NO1Tank-LV2.json'\\)\nprint\\(f'XLSX 생성 성공: {len\\(data\\):,} bytes \\({len\\(data\\)/1024:.1f} KB\\)'\\)\n\" 2>&1)",
+      "Bash(C:/Coding/WorkBench/HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/python.exe -c \"\nimport sys, io\nsys.path.insert\\(0, 'C:/Coding/WorkBench/HiTessWorkBenchBackEnd'\\)\nfrom app.services.assessment_service import _json_to_xlsx_bytes\nfrom openpyxl import load_workbook\n\ndata = _json_to_xlsx_bytes\\('C:/Coding/WorkBench/HiTessWorkBenchBackEnd/userConnection/20260330_152122_A476854_TrussAssessment/8276NO1Tank-LV2.json'\\)\nwb = load_workbook\\(io.BytesIO\\(data\\)\\)\nprint\\(f'총 시트 수: {len\\(wb.sheetnames\\)}'\\)\nfor name in wb.sheetnames:\n    ws = wb[name]\n    print\\(f'  [{name}]  {ws.max_row}행 x {ws.max_column}열'\\)\n\" 2>&1)",
+      "Bash(C:/Coding/WorkBench/HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/python.exe -c \"\nimport sys, io\nsys.path.insert\\(0, 'C:/Coding/WorkBench/HiTessWorkBenchBackEnd'\\)\nfrom app.services.assessment_service import _json_to_xlsx_bytes\nfrom openpyxl import load_workbook\ndata = _json_to_xlsx_bytes\\('C:/Coding/WorkBench/HiTessWorkBenchBackEnd/userConnection/20260330_152122_A476854_TrussAssessment/8276NO1Tank-LV2.json'\\)\nwb = load_workbook\\(io.BytesIO\\(data\\)\\)\nprint\\('\\\\n'.join\\(wb.sheetnames\\)\\)\n\" 2>&1)"
     ]
   }
 }

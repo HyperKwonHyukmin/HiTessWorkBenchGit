@@ -1,106 +1,137 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+이 파일은 Claude Code(claude.ai/code)가 이 저장소에서 작업할 때 참고하는 지침서입니다.
 
-## Project Overview
+## 프로젝트 개요
 
-**HiTESS WorkBench** is a structural engineering analysis platform for internal use. It wraps legacy native analysis executables (`.exe`) with a modern web UI and adds an AI assistant. The system runs as an Electron desktop app (distributed as a portable `.exe`) that connects to a shared team server.
+**HiTESS WorkBench**는 사내 구조 해석 플랫폼입니다. 기존의 레거시 구조 해석 실행 파일(`.exe`)들을 현대적인 웹 UI로 감싸고 AI 어시스턴트를 결합한 시스템으로, Electron 데스크톱 앱(포터블 `.exe`)으로 배포되며 팀 공용 서버와 통신합니다.
 
-## Development Commands
+## 개발 명령어
 
-### Backend (FastAPI)
+### 백엔드 (FastAPI)
 
 ```bash
-# Activate virtual environment (Windows)
+# 가상환경 활성화 (Windows)
 HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/activate
 
-# Run dev server (from HiTessWorkBenchBackEnd/)
+# 개발 서버 실행 (HiTessWorkBenchBackEnd/ 에서)
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Install dependencies
+# 의존성 설치
 pip install -r requirements.txt
 ```
 
-### Frontend (React + Vite)
+### 프론트엔드 (React + Vite)
 
 ```bash
-# Dev server only (from HiTessWorkBench/frontend/)
+# 개발 서버 단독 실행 (HiTessWorkBench/frontend/ 에서)
 npm run dev
 
-# Build frontend for Electron packaging
+# Electron 패키징용 빌드
 npm run build
 ```
 
-### Electron Desktop App
+### Electron 데스크톱 앱
 
 ```bash
-# Run full dev environment (React dev server + Electron) (from HiTessWorkBench/)
+# 전체 개발 환경 실행 (HiTessWorkBench/ 에서)
+# concurrently로 React 개발 서버(5173 포트)와 Electron을 동시에 실행
 npm run dev
 
-# Build distributable portable .exe
+# 배포용 포터블 .exe 생성
 npm run dist
 ```
 
-> `npm run dev` from `HiTessWorkBench/` uses `concurrently` to start both the React dev server (port 5173) and Electron simultaneously.
-
-## Architecture
-
-The project has three layers:
+## 아키텍처
 
 ```
-[Electron shell]  →  loads localhost:5173 (dev) or frontend/dist/index.html (prod)
-[React SPA]       →  communicates via REST to backend server
-[FastAPI backend] →  runs analysis jobs, serves DB data, handles AI queries
+[Electron shell]  →  개발: localhost:5173 로드 / 프로덕션: frontend/dist/index.html 로드
+[React SPA]       →  REST API로 백엔드 서버와 통신
+[FastAPI backend] →  해석 작업 수행, DB 데이터 제공, AI 질의 처리
 ```
 
-### Key Configuration Points
+### 주요 설정 포인트
 
-- **Backend URL**: `HiTessWorkBench/frontend/src/config.js` — change `API_BASE_URL` to point at the server IP. Currently `http://10.133.122.70:8000`.
-- **Database**: MySQL at `localhost:3306/hitessworkbench`, credentials in `HiTessWorkBenchBackEnd/app/database.py`. Tables are auto-created on server startup via SQLAlchemy.
-- **Electron mode detection**: `electron/index.js` checks `app.isPackaged` — dev loads `localhost:5173`, production loads `frontend/dist/index.html`.
+- **백엔드 URL**: `HiTessWorkBench/frontend/src/config.js`의 `API_BASE_URL` — 서버 IP에 맞게 변경. 현재 `http://10.133.122.70:8000`.
+- **데이터베이스**: MySQL `localhost:3306/hitessworkbench`, 접속 정보는 `HiTessWorkBenchBackEnd/app/database.py`. SQLAlchemy로 서버 시작 시 테이블 자동 생성.
+- **Electron 환경 감지**: `electron/index.js`의 `app.isPackaged` 여부로 개발/프로덕션 로드 경로 분기.
 
-### Analysis Job Flow
+### 프론트엔드 내비게이션 구조
 
-1. Frontend uploads files → `POST /api/analysis/{type}/request`
-2. Backend saves files to `userConnection/{timestamp}_{employee_id}_{program}/`
-3. Job submitted to `ThreadPoolExecutor` (max 5 concurrent) in `app/services/job_manager.py`
-4. Service file (`truss_service.py`, `assessment_service.py`, `beam_service.py`) executes the corresponding `.exe` in `InHouseProgram/`
-5. Frontend polls `GET /api/analysis/status/{job_id}` until complete (0–100%)
-6. Results stored in DB (`result_info` JSON column = file paths), downloadable via `GET /api/download?filepath=...`
+React Router 대신 **커스텀 히스토리 스택**을 사용합니다. `App.jsx`가 `history[]` 배열과 `currentIndex`를 관리하며, `setCurrentMenu(name)` 호출로 페이지를 push합니다. 페이지 컴포넌트는 `setCurrentMenu`를 props로 받아 사용합니다. 전체 라우팅 분기는 `App.jsx:renderPage()`에 있습니다.
 
-Job state is stored in memory (`job_status_store` dict). A server restart loses all in-flight job status — this is a known limitation noted in the code (Redis recommended for production).
+### DashboardContext (`src/contexts/DashboardContext.jsx`)
 
-### AI Pipeline
+앱 전체를 감싸는 전역 상태 Provider. `useDashboard()`로 접근하는 주요 값:
 
-- Triggered by admin via `POST /api/ai/ingest` → `app/AI/ingest.py` chunks documents, builds FAISS index + BM25 pickle
-- Chat via `POST /api/ai/chat` → `app/AI/chain.py` runs multi-query reformulation → hybrid search (30% BM25 + 70% vector) → Ollama LLM (`qwen2.5:7b` at `localhost:11434`)
-- Embeddings: BGE-M3 multilingual model
+- `ANALYSIS_DATA` — 전체 해석 앱 메타데이터 목록 (mode, category, title, devStatus)
+- `globalJob` / `startGlobalJob` / `clearGlobalJob` — 화면 우측 하단 고정 백그라운드 작업 추적 위젯
+- `assessmentPageState` / `setAssessmentPageState` — 페이지 이탈 시에도 TrussAssessment 상태 유지
+- `favorites` / `toggleFavorite` — 사용자 즐겨찾기 앱 목록
 
-### Authentication
+### 해석 작업 흐름
 
-- Login is employee_id only (no password). Users are inactive by default until an admin approves them.
-- User session stored in `localStorage` on the frontend and passed via props/context — there is no JWT or session token.
+1. 프론트엔드에서 파일 업로드 → `POST /api/analysis/{type}/request` (type: `truss`, `assessment`, `beam`)
+2. 백엔드가 `userConnection/{timestamp}_{employee_id}_{ProgramName}/` 폴더에 파일 저장
+3. `app/services/job_manager.py`의 `ThreadPoolExecutor`(최대 5개 동시 실행)에 작업 제출
+4. 서비스 파일(`truss_service.py`, `assessment_service.py`, `beam_service.py`)이 `InHouseProgram/`의 `.exe` 실행
+5. 프론트엔드에서 1.5초마다 `GET /api/analysis/status/{job_id}` 폴링 (0~100%)
+6. 완료 후 결과 파일 경로를 DB `result_info` (JSON 컬럼)에 저장, `GET /api/download?filepath=...`로 다운로드
 
-### Router Structure (Backend)
+작업 상태는 인메모리(`job_status_store` dict)에 저장됩니다. 서버 재시작 시 진행 중인 작업 상태가 소실되는 구조적 한계가 있습니다(프로덕션에서는 Redis 권장).
 
-| File | Prefix | Responsibility |
-|------|--------|----------------|
-| `routers/auth.py` | `/api` | Login, Register |
-| `routers/users.py` | `/api/users` | User CRUD, approval |
-| `routers/analysis.py` | `/api/analysis` | Job submission, status, history, download |
-| `routers/support.py` | `/api` | Notices, user guides, feature requests |
-| `routers/system.py` | `/api/system` | CPU/memory/DB health, queue status |
-| `routers/ai.py` | `/api/ai` | Chat, ingest, document list |
+**다운로드 보안**: `GET /api/download`는 `os.path.abspath` 프리픽스 검사로 `userConnection/` 디렉토리 외부 경로 접근을 차단합니다.
 
-### Frontend Page Structure (React)
+**Excel 내보내기**: `GET /api/analysis/export-xlsx`는 TrussAssessment JSON 결과를 BytesIO 메모리에서 XLSX로 변환하여 반환합니다. 디스크에 저장하지 않아 회사 DRM 소프트웨어의 자동 암호화를 우회합니다.
 
-Pages live in `HiTessWorkBench/frontend/src/pages/` and are routed from `App.jsx` via a `currentPage` state (not React Router). Navigation is sidebar-driven.
+### AI 파이프라인
 
-Key pages:
-- `analysis/NewAnalysis.jsx` — program selection entry point
-- `analysis/TrussAnalysis.jsx` — Truss Model Builder form + 3D viewer
-- `analysis/TrussAssessment.jsx` — BDF upload + assessment
-- `analysis/ComponentWizard.jsx` — interactive component-based analysis
-- `dashboard/Dashboard.jsx` — main landing with stats
-- `Administration/` — user management, system monitoring (admin only)
-- `AI/` — AI Lab Assistant and Hi-Lab Insight pages
+- 관리자가 `POST /api/ai/ingest` 호출 → `app/AI/ingest.py`가 문서를 청킹하여 FAISS 인덱스 + BM25 피클 생성 (`app/AI/vectorstore/`에 저장)
+- 채팅: `POST /api/ai/chat` → `app/AI/chain.py`에서 멀티 쿼리 재구성 → 하이브리드 검색(BM25 30% + 벡터 70%) → Ollama LLM(`qwen2.5:7b`, `localhost:11434`)으로 답변 생성
+- 임베딩 모델: BGE-M3 (다국어)
+
+### 인증
+
+- 사번(employee_id)만으로 로그인 (별도 비밀번호 없음). 신규 사용자는 기본 비활성 상태이며 관리자 승인 후 사용 가능.
+- 세션은 `localStorage`의 `'user'` 키에 저장되고 props/context로 전달. JWT 없음.
+- `User` 모델의 `is_admin` 플래그로 관리자 페이지 접근 제어.
+
+### DB 모델 (`app/models.py`)
+
+| 모델 | 테이블 | 주요 컬럼 |
+|------|--------|-----------|
+| `User` | `users` | employee_id, is_active, is_admin, login_count |
+| `Analysis` | `analysis` | program_name, input_info (JSON), result_info (JSON), source |
+| `Notice` | `notices` | type, is_pinned |
+| `UserGuide` | `user_guides` | category, content |
+| `FeatureRequest` | `feature_requests` | status, upvotes, admin_comment |
+
+### 백엔드 라우터 구조
+
+| 파일 | 프리픽스 | 역할 |
+|------|----------|------|
+| `routers/auth.py` | `/api` | 로그인, 회원가입 |
+| `routers/users.py` | `/api/users` | 사용자 CRUD, 승인 |
+| `routers/analysis.py` | `/api/analysis` | 작업 제출, 상태 조회, 이력, 다운로드, xlsx 내보내기 |
+| `routers/support.py` | `/api` | 공지사항, 사용자 가이드, 기능 요청 |
+| `routers/system.py` | `/api/system` | CPU/메모리/DB 상태, 큐 현황 |
+| `routers/ai.py` | `/api/ai` | 채팅, 인덱싱, 문서 목록 |
+
+### 프론트엔드 페이지 구조
+
+`HiTessWorkBench/frontend/src/pages/`에 위치하며 `App.jsx`의 메뉴 이름 문자열로 라우팅됩니다.
+
+| 메뉴 이름 | 컴포넌트 | 설명 |
+|-----------|----------|------|
+| `'Dashboard'` | `Dashboard.jsx` | 메인 대시보드, 통계 및 즐겨찾기 |
+| `'New Analysis'` / `'File-Based Apps'` | `NewAnalysis.jsx` | 파일 업로드 기반 해석 선택 |
+| `'Truss Analysis'` | `TrussAnalysis.jsx` | CSV 업로드 + 3D 모델 뷰어 |
+| `'Truss Structural Assessment'` | `TrussAssessment.jsx` | BDF 업로드 + 구조 안정성 평가 |
+| `'Component Wizard'` / `'Simple Beam Assessment'` | `ComponentWizard.jsx` | 대화형 보(Beam) 해석 |
+| `'Beam Result Viewer'` | `BeamAnalysisViewer.jsx` | JSON/CSV 결과 시각화 |
+| `'Interactive Apps'` | `InteractiveApps.jsx` | 대화형 해석 앱 진입점 |
+| `'AI Lab Assistant'` | `AiAssistantHub.jsx` | RAG 기반 AI 채팅 |
+| `'Hi-Lab Insight'` | `HiLabInsight.jsx` | AI 인사이트 페이지 |
+| `'User Management'` | `UserManagement.jsx` | 관리자: 사용자 승인/관리 |
+| `'Analysis Management'` | `AnalysisManagement.jsx` | 관리자: 전체 해석 이력 |
+| `'System Settings'` | `SystemSettings.jsx` | 관리자: 시스템 모니터링 |

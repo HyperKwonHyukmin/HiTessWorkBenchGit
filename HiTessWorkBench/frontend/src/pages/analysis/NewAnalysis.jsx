@@ -1,10 +1,10 @@
 /// <summary>
 /// 파일 기반 해석 앱 목록을 보여주는 페이지입니다.
-/// (개선) Truss Structural Assessment 카드 클릭 시 해당 컴포넌트로 이동하도록 라우팅을 추가했습니다.
+/// (수정) 카드 메뉴를 클릭하여 새 작업을 시작할 때 글로벌 상태(Context)를 초기화하는 로직을 추가했습니다.
 /// </summary>
 import React, { useState } from 'react';
 import { 
-  ArrowRight, Info, Zap, Compass, Star, UploadCloud
+  ArrowRight, Info, Zap, Compass, Star, UploadCloud 
 } from 'lucide-react';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext'; 
 
@@ -53,13 +53,16 @@ const AnalysisCard = ({ title, description, icon: Icon, color, tags, isFav, onTo
 
 export default function NewAnalysis({ setCurrentMenu }) {
   const [activeCategory, setActiveCategory] = useState("All");
-  const { favorites, toggleFavorite } = useDashboard();
+  
+  // [핵심 변경] 상태 초기화를 위해 setAssessmentPageState 가져오기
+  const { favorites, toggleFavorite, setAssessmentPageState } = useDashboard();
 
-  // ✅ [수정] 신규 앱 라우팅 로직 추가
   const handleStart = (categoryTitle) => {
     if (categoryTitle === "Truss Model Builder") {
       setCurrentMenu('Truss Analysis');
     } else if (categoryTitle === "Truss Structural Assessment") {
+      // [동작] 카드를 누르면 이전 글로벌 상태를 빈 객체로 덮어씌워 완전 초기화합니다.
+      if (setAssessmentPageState) setAssessmentPageState({});
       setCurrentMenu('Truss Structural Assessment');
     } else if (categoryTitle === "Beam Result Viewer") {
       setCurrentMenu('Beam Result Viewer');
@@ -79,11 +82,26 @@ export default function NewAnalysis({ setCurrentMenu }) {
     <div className="max-w-7xl mx-auto pb-16">
       
       <div className="mb-8 text-center md:text-left">
-        <h1 className="text-3xl font-bold text-slate-800 tracking-tight flex items-center gap-3">
-          <UploadCloud className="text-blue-600" size={32} /> File-Based Apps
+        <h1 className="text-3xl font-bold text-slate-800 tracking-tight flex items-center justify-center md:justify-start gap-3">
+          <UploadCloud className="w-8 h-8 text-slate-500" aria-hidden="true" />
+          <span>File-Based Apps</span>
         </h1>
-        <p className="text-slate-500 mt-2">수행하고자 하는 파일 업로드 기반 해석 앱을 선택하세요.</p>
+        <p className="text-slate-500 mt-2">수행하고자 하는 파일 업로드 기반 해석 모델을 선택하십시오.</p>
       </div>
+
+      <div className="bg-blue-600 rounded-2xl p-6 mb-10 text-white flex items-center justify-between shadow-lg shadow-blue-200 relative overflow-hidden">
+        <div className="relative z-10">
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <Zap size={20} className="text-yellow-300" />
+            Quick Start Tip
+          </h2>
+          <p className="text-blue-100 text-sm mt-1">
+            간단한 빔(Beam)이나 정반(Plate) 해석은 좌측 메뉴의 <strong className="text-white">Interactive Apps</strong>를 이용하면 더 빠릅니다.
+          </p>
+        </div>
+        <Compass size={80} className="absolute -right-4 -bottom-4 text-white/10 rotate-12" />
+      </div>
+
       <div className="flex flex-wrap items-center gap-2 mb-8 border-b border-gray-200 pb-5">
         {categories.map(category => (
           <button

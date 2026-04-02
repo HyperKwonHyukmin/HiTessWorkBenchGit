@@ -1,6 +1,7 @@
 /// <summary>
 /// 대시보드 및 전체 해석 앱의 메타데이터를 관리하는 전역 Context입니다.
 /// (신규) 백그라운드 해석 작업을 추적하고 플로팅 위젯을 제공합니다.
+/// (신규) Truss Assessment 페이지 이탈 시에도 상태를 유지하기 위한 글로벌 State를 추가했습니다.
 /// </summary>
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { Layers, Ruler, Ship, Activity, ShieldCheck, Box, Square, FileText, BarChart2, RefreshCw, CheckCircle, AlertCircle, X } from 'lucide-react';
@@ -24,6 +25,26 @@ const DashboardContext = createContext();
 export function DashboardProvider({ children, setCurrentMenu }) {
   const [stats, setStats] = useState({ activeTasks: 1, runningOnServer: 8, monthlyUsage: 42 });
   const [favorites, setFavorites] = useState(["Simple Beam Assessment", "Truss Model Builder"]); 
+
+  // =========================================================
+  // [핵심 추가] Truss Assessment 페이지의 상태를 전역으로 보존
+  // =========================================================
+  const [assessmentPageState, setAssessmentPageState] = useState({
+    bdfFile: null,
+    nodes: {},
+    elements: [],
+    nodeTableData: [],
+    elemTableData: [],
+    logs: [],
+    detailedLogs: [],
+    isRunning: false,
+    progress: 0,
+    statusMessage: '',
+    activeTab: '3d',
+    currentJobId: null,
+    resultJsonData: null,
+    activeResultCase: null
+  });
 
   const [globalJob, setGlobalJob] = useState(null);
 
@@ -70,10 +91,15 @@ export function DashboardProvider({ children, setCurrentMenu }) {
   };
 
   return (
-    <DashboardContext.Provider value={{ stats, favorites, toggleFavorite, globalJob, startGlobalJob, clearGlobalJob }}>
+    // [추가] Provider의 value에 assessmentPageState와 setAssessmentPageState를 넘겨줌
+    <DashboardContext.Provider value={{ 
+        stats, favorites, toggleFavorite, 
+        globalJob, startGlobalJob, clearGlobalJob,
+        assessmentPageState, setAssessmentPageState 
+    }}>
       {children}
 
-      {/* 💡 글로벌 해석 추적 위젯 (화면 우측 하단 고정) */}
+      {/* 글로벌 해석 추적 위젯 (화면 우측 하단 고정) */}
       {globalJob && (
         <div 
           onClick={() => setCurrentMenu && setCurrentMenu(globalJob.menu)}
@@ -89,7 +115,7 @@ export function DashboardProvider({ children, setCurrentMenu }) {
             </span>
             <button 
               onClick={(e) => { e.stopPropagation(); clearGlobalJob(); }} 
-              className="text-slate-500 hover:text-white transition-colors"
+              className="text-slate-500 hover:text-white transition-colors cursor-pointer"
             >
               <X size={16}/>
             </button>
@@ -111,5 +137,4 @@ export function DashboardProvider({ children, setCurrentMenu }) {
   );
 }
 
-// 💡 [에러 원인 수정 완료!] 원래대로 이름 지정 내보내기(named export)로 복구
 export const useDashboard = () => useContext(DashboardContext);

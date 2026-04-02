@@ -1,5 +1,5 @@
 """공지사항, 기능 요청, 사용자 가이드 CRUD API 라우터."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from .. import models, schemas, database
 
@@ -25,6 +25,8 @@ def create_notice(notice: schemas.NoticeCreate, db: Session = Depends(database.g
 @router.put("/notices/{notice_id}", response_model=schemas.NoticeResponse)
 def update_notice(notice_id: int, notice: schemas.NoticeCreate, db: Session = Depends(database.get_db)):
   db_notice = db.query(models.Notice).filter(models.Notice.id == notice_id).first()
+  if not db_notice:
+    raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
   for key, value in notice.dict().items():
     setattr(db_notice, key, value)
   db.commit()
@@ -35,6 +37,8 @@ def update_notice(notice_id: int, notice: schemas.NoticeCreate, db: Session = De
 @router.delete("/notices/{notice_id}")
 def delete_notice(notice_id: int, db: Session = Depends(database.get_db)):
   db_notice = db.query(models.Notice).filter(models.Notice.id == notice_id).first()
+  if not db_notice:
+    raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
   db.delete(db_notice)
   db.commit()
   return {"message": "Deleted"}
@@ -73,7 +77,7 @@ def comment_feature_request(req_id: int, comment_data: schemas.FeatureRequestCom
   if req:
     req.status = comment_data.status
     req.admin_comment = comment_data.admin_comment
-    req.comments_count = 1 if comment_data.admin_comment else 0
+    req.comments_count = (req.comments_count or 0) + 1 if comment_data.admin_comment else (req.comments_count or 0)
     db.commit()
     db.refresh(req)
   return req
