@@ -3,11 +3,7 @@ import { User, ArrowRight, ShieldCheck, AlertCircle, Clock, Wifi, WifiOff, Downl
 import logoCI from '../../assets/images/HHI_white2_ko.png';
 import RegisterModal from '../../components/modals/RegisterModal';
 import { checkVersion, login } from '../../api/auth';
-
-// ==========================================
-// [설정] 클라이언트 버전
-// ==========================================
-const CLIENT_VERSION = "1.0.0"; 
+import { version as CLIENT_VERSION } from '../../../../package.json';
 const structureBgUrl = "https://images.unsplash.com/photo-1553653841-453082536a9d?q=80&w=1000&auto=format&fit=crop";
 
 export default function LoginScreen({ onLoginSuccess }) {

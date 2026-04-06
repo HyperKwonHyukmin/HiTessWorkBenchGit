@@ -2,7 +2,7 @@
 // 서버 주소는 앱 첫 실행 시 사용자가 설정하거나, 기본값(빌드 시 지정된 주소)을 사용합니다.
 // localStorage의 'server_url' 키에 저장된 값이 있으면 해당 값을 우선 사용합니다.
 
-const DEFAULT_API_BASE_URL = "http://10.133.122.70:8000";
+const DEFAULT_API_BASE_URL = "http://10.14.42.145:8000";
 
 function getApiBaseUrl() {
   try {
