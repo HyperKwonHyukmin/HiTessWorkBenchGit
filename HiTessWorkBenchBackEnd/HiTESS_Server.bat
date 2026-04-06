@@ -1,4 +1,5 @@
 @echo off
-cd /d %~dp0\HiTessWorkBenchBackEnd
-start "" WorkBenchEnv\Scripts\pythonw.exe server_manager.py
+cd /d %~dp0
+call WorkBenchEnv\Scripts\activate
+start "" pythonw server_manager.py
 exit

@@ -9,8 +9,8 @@ from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-PYTHON = str(BASE_DIR / "WorkBenchEnv" / "Scripts" / "python.exe")
-PIP    = str(BASE_DIR / "WorkBenchEnv" / "Scripts" / "pip.exe")
+PYTHON = sys.executable
+PIP    = str(Path(sys.executable).parent / "pip.exe")
 SERVER_CMD = [PYTHON, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # ── 색상 팔레트 ──
