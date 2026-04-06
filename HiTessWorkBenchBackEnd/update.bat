@@ -23,9 +23,11 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo [3/3] 서비스 재시작...
-nssm restart HiTessBackend
+schtasks /end /tn "HiTessBackend" >nul 2>&1
+timeout /t 2 >nul
+schtasks /run /tn "HiTessBackend"
 if %ERRORLEVEL% neq 0 (
-    echo [경고] 서비스 재시작 실패. NSSM이 설치되지 않았거나 서비스명을 확인하세요.
+    echo [경고] 서비스 재시작 실패. 작업 스케줄러에 HiTessBackend 등록 여부 확인.
 )
 
 echo.
