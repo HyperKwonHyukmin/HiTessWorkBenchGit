@@ -7,7 +7,7 @@ export function useBeamModeling() {
   const [beamType, setBeamType] = useState('I');
   const [params, setParams] = useState({ length: 1000, dim1: 100, dim2: 200, dim3: 10, dim4: 8 });
   const [loads, setLoads] = useState([{ pos: 1000, fx: 0, fy: 0, fz: -5000 }]);
-  const [boundaries, setBoundaries] = useState([{ pos: 0, type: 'Fix', dof: '' }, { pos: 1000, type: 'Hinge', dof: '' }]);
+  const [boundaries, setBoundaries] = useState([{ pos: 0, type: 'Fix', dof: '' }]);
   const [validationErrors, setValidationErrors] = useState([]);
 
   // 입력값 유효성 검사

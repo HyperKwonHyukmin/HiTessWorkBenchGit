@@ -288,7 +288,7 @@ export default function Dashboard() {
       if (setAssessmentPageState) setAssessmentPageState({});
       setCurrentMenu('Truss Structural Assessment');
     } else if (title === "Simple Beam Assessment") {
-      setCurrentMenu('Simple Beam A'); 
+      setCurrentMenu('Simple Beam Assessment');
     } else {
       alert(`[안내] ${title} 기능은 현재 준비 중입니다.`);
     }
