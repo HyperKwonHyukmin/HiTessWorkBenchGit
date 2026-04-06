@@ -2,6 +2,8 @@
 /// React 애플리케이션의 최상위 라우터(Router) 및 상태 관리자입니다.
 /// </summary>
 import React, { useState, useEffect } from 'react';
+import { version as CLIENT_VERSION } from '../package.json';
+import { checkVersion } from './api/auth';
 import SplashScreen from './pages/auth/SplashScreen';
 import LoginScreen from './pages/auth/LoginScreen';
 import Dashboard from './pages/dashboard/Dashboard';
@@ -36,9 +38,22 @@ function AppInner() {
   const [appState, setAppState] = useState(APP_STATE.SPLASH);
   const { currentMenu, setCurrentMenu, goBack, goForward, canGoBack, canGoForward, resetNavigation } = useNavigation();
 
-  const handleSplashFinish = () => {
+  const handleSplashFinish = async () => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
+      try {
+        const res = await checkVersion();
+        const serverVersion = res.data?.version;
+        if (serverVersion && serverVersion !== CLIENT_VERSION) {
+          localStorage.removeItem('user');
+          setAppState(APP_STATE.LOGIN);
+          return;
+        }
+      } catch {
+        // 서버 응답 없으면 로그인 화면으로
+        setAppState(APP_STATE.LOGIN);
+        return;
+      }
       setAppState(APP_STATE.MAIN);
     } else {
       setAppState(APP_STATE.LOGIN);

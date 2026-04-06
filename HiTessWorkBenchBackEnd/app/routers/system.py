@@ -1,7 +1,11 @@
 """시스템 모니터링 및 서버 상태 API 라우터."""
+import os
 import time
+import glob
 import psutil
-from fastapi import APIRouter, Depends
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from .. import database
@@ -10,12 +14,34 @@ from ..state import server_state
 
 SERVER_VERSION = "1.0.0"
 
+# 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+LATEST_CLIENT_DIR = Path(os.environ.get("LATEST_CLIENT_DIR", str(_BACKEND_DIR / "LastestVersionProgram")))
+
 router = APIRouter(prefix="/api", tags=["system"])
 
 
 @router.get("/version")
 def check_version():
   return {"version": SERVER_VERSION}
+
+
+@router.get("/download/client")
+def download_client():
+  """최신 클라이언트 exe를 다운로드합니다."""
+  if not LATEST_CLIENT_DIR.exists():
+    raise HTTPException(status_code=404, detail=f"클라이언트 폴더가 없습니다: {LATEST_CLIENT_DIR}")
+
+  exe_files = sorted(LATEST_CLIENT_DIR.glob("*.exe"), key=lambda f: f.stat().st_mtime, reverse=True)
+  if not exe_files:
+    raise HTTPException(status_code=404, detail="클라이언트 exe 파일이 없습니다. 서버 관리자에게 문의하세요.")
+
+  latest_exe = exe_files[0]
+  return FileResponse(
+    path=str(latest_exe),
+    filename=latest_exe.name,
+    media_type="application/octet-stream"
+  )
 
 
 @router.get("/system/status")

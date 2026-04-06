@@ -24,7 +24,8 @@
     ],
     "win": {
       "target": "portable",
-      "icon": "./electron/icon.ico"
+      "icon": "./electron/icon.ico",
+      "artifactName": "HiTESS-WorkBench-v${version}.exe"
     }
   },
   "devDependencies": {

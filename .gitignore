@@ -62,3 +62,5 @@ HiTessWorkBenchBackEnd/InHouseProgram/
 # Claude MCP / 도구 데이터
 shrimp_data/
 shrimp-rules.md
+# 서버 전용 스크립트 (경로 하드코딩)
+start_server.bat

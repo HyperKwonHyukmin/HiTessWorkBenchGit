@@ -3,7 +3,8 @@ import { User, ArrowRight, ShieldCheck, AlertCircle, Clock, Wifi, WifiOff, Downl
 import logoCI from '../../assets/images/HHI_white2_ko.png';
 import RegisterModal from '../../components/modals/RegisterModal';
 import { checkVersion, login } from '../../api/auth';
-import { version as CLIENT_VERSION } from '../../../../package.json';
+import { API_BASE_URL } from '../../config';
+import { version as CLIENT_VERSION } from '../../../package.json';
 const structureBgUrl = "https://images.unsplash.com/photo-1553653841-453082536a9d?q=80&w=1000&auto=format&fit=crop";
 
 export default function LoginScreen({ onLoginSuccess }) {
@@ -163,9 +164,9 @@ export default function LoginScreen({ onLoginSuccess }) {
                   <span className="font-bold text-green-600">{serverVersion}</span>
                 </div>
               </div>
-              <button 
+              <button
                 className="w-full flex items-center justify-center py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-colors shadow-md"
-                onClick={() => alert("사내 포털에서 최신 설치 파일을 다운로드 해주세요.")}
+                onClick={() => { window.location.href = `${API_BASE_URL}/api/download/client`; }}
               >
                 <DownloadCloud className="mr-2 h-5 w-5" />
                 최신 버전 다운로드
