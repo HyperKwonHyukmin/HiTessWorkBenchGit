@@ -9,5 +9,6 @@ files:
       - frontend/dist/**/*
 win:
   target: portable
-  icon: electron/icon.ico
+  icon: ./electron/icon.ico
+  artifactName: HiTESS-WorkBench-v${version}.exe
 electronVersion: 26.0.0

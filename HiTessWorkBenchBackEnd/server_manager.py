@@ -204,6 +204,7 @@ class ServerManagerApp:
             return
         self._log("서버를 시작하는 중...", "info")
         self._kill_port(9091)
+        self._kill_port(8000)
         try:
             self.server_proc = subprocess.Popen(
                 SERVER_CMD,
