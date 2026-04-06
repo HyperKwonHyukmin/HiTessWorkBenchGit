@@ -1,5 +1,6 @@
 Set fso = CreateObject("Scripting.FileSystemObject")
-backendDir = fso.GetParentFolderName(WScript.ScriptFullName)
+gitDir = fso.GetParentFolderName(WScript.ScriptFullName)
+backendDir = gitDir & "\HiTessWorkBenchBackEnd"
 
 Set shell = CreateObject("WScript.Shell")
 shell.CurrentDirectory = backendDir
