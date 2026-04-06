@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 from .. import models, schemas, database
+from ..state import server_state
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
@@ -14,6 +15,8 @@ def login(request: schemas.LoginRequest, db: Session = Depends(database.get_db))
     raise HTTPException(status_code=404, detail="User not found")
   if not user.is_active:
     raise HTTPException(status_code=403, detail="Approval Pending")
+  if server_state["maintenance_mode"] and not user.is_admin:
+    raise HTTPException(status_code=503, detail="Maintenance Mode")
 
   user.login_count += 1
   user.last_login = datetime.now()

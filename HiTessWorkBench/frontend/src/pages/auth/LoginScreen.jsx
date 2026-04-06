@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, ArrowRight, ShieldCheck, AlertCircle, Clock, Wifi, WifiOff, DownloadCloud, AlertTriangle } from 'lucide-react';
+import { User, ArrowRight, ShieldCheck, AlertCircle, Clock, Wifi, WifiOff, DownloadCloud, AlertTriangle, Construction } from 'lucide-react';
 import logoCI from '../../assets/images/HHI_white2_ko.png';
 import RegisterModal from '../../components/modals/RegisterModal';
 import { checkVersion, login } from '../../api/auth';
@@ -83,7 +83,10 @@ export default function LoginScreen({ onLoginSuccess }) {
           setErrorMsg("등록되지 않은 사번입니다.");
         } 
         else if (error.response.status === 403) {
-          setErrorMsg("PENDING_APPROVAL"); 
+          setErrorMsg("PENDING_APPROVAL");
+        }
+        else if (error.response.status === 503) {
+          setErrorMsg("MAINTENANCE_MODE");
         }
         else {
           setErrorMsg(`로그인 오류: ${error.response.status}`);
@@ -98,7 +101,7 @@ export default function LoginScreen({ onLoginSuccess }) {
     <div className="flex min-h-screen w-full bg-brand-gray font-sans overflow-hidden relative">
       
       {/* 1. 좌측 브랜딩 패널 */}
-      <div className="hidden lg:flex w-1/3 relative flex-col p-12 text-white overflow-hidden" style={{ backgroundColor: '#002554' }}>
+      <div className="hidden lg:flex w-1/3 relative flex-col p-12 text-white overflow-hidden bg-brand-blue">
         <div className="absolute inset-0 z-0 pointer-events-none">
           <img src={structureBgUrl} alt="Structure" className="w-full h-full object-cover opacity-50 mix-blend-overlay grayscale contrast-125 transform scale-105" />
           <div className="absolute inset-0 bg-gradient-to-b from-[#002554]/90 via-[#002554]/40 to-[#002554]/90"></div>
@@ -109,9 +112,9 @@ export default function LoginScreen({ onLoginSuccess }) {
              <img src={logoCI} alt="HD Hyundai CI" className="h-10 w-auto object-contain" />
            </div>
            <h1 className="text-4xl font-extrabold leading-tight text-white drop-shadow-md">
-            HiTESS <br/> <span style={{ color: '#00E600' }}>WorkBench</span>
+            HiTESS <br/> <span className="text-brand-accent">WorkBench</span>
           </h1>
-          <div className="h-1.5 w-20 bg-[#008233] mt-8 rounded-full"></div>
+          <div className="h-1.5 w-20 bg-brand-green mt-8 rounded-full"></div>
           <p className="mt-4 text-xs text-blue-200 opacity-60 font-mono">
             Client v{CLIENT_VERSION}
           </p>
@@ -119,7 +122,7 @@ export default function LoginScreen({ onLoginSuccess }) {
 
         <div className="relative z-10 mt-auto pointer-events-none">
            <h3 className="text-lg font-bold mb-2 text-white">System Solution Team</h3>
-           <p className="text-gray-300 text-xs font-light leading-relaxed">Structural System Research Department<br/>Hyundai Maritime Research Institute</p>
+           <p className="text-slate-300 text-xs font-light leading-relaxed">Structural System Research Department<br/>Hyundai Maritime Research Institute</p>
         </div>
       </div>
 
@@ -154,12 +157,12 @@ export default function LoginScreen({ onLoginSuccess }) {
                 클라이언트 버전이 서버와 일치하지 않습니다.<br/>
                 안정적인 서비스를 위해 업데이트가 필요합니다.
               </p>
-              <div className="bg-white p-3 rounded-lg border border-red-100 text-xs text-gray-500 mb-6 font-mono">
+              <div className="bg-white p-3 rounded-lg border border-red-100 text-xs text-slate-500 mb-6 font-mono">
                 <div className="flex justify-between mb-1">
                   <span>Your Version:</span>
                   <span className="font-bold text-red-500">{CLIENT_VERSION}</span>
                 </div>
-                <div className="flex justify-between border-t border-gray-100 pt-1">
+                <div className="flex justify-between border-t border-slate-100 pt-1">
                   <span>Server Version:</span>
                   <span className="font-bold text-green-600">{serverVersion}</span>
                 </div>
@@ -176,27 +179,38 @@ export default function LoginScreen({ onLoginSuccess }) {
             <>
               <div className="text-center lg:text-left">
                 <h2 className="text-3xl font-bold text-slate-800">Hi-TESS Access</h2>
-                <p className="mt-2 text-sm text-gray-500 font-medium">사번을 입력하여 접속하십시오.</p>
+                <p className="mt-2 text-sm text-slate-500 font-medium">사번을 입력하여 접속하십시오.</p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
                 {errorMsg && (
                   <div className={`p-4 rounded-lg border flex items-start animate-pulse ${
-                    errorMsg === "PENDING_APPROVAL" 
-                      ? "bg-yellow-50 border-yellow-200 text-yellow-700" 
+                    errorMsg === "PENDING_APPROVAL"
+                      ? "bg-yellow-50 border-yellow-200 text-yellow-700"
+                      : errorMsg === "MAINTENANCE_MODE"
+                      ? "bg-orange-50 border-orange-200 text-orange-700"
                       : "bg-red-50 border-red-200 text-red-600"
                   }`}>
-                    {errorMsg === "PENDING_APPROVAL" ? <Clock className="mr-3 h-5 w-5 flex-shrink-0" /> : <AlertCircle className="mr-3 h-5 w-5 flex-shrink-0" />}
+                    {errorMsg === "PENDING_APPROVAL"
+                      ? <Clock className="mr-3 h-5 w-5 flex-shrink-0" />
+                      : errorMsg === "MAINTENANCE_MODE"
+                      ? <Construction className="mr-3 h-5 w-5 flex-shrink-0" />
+                      : <AlertCircle className="mr-3 h-5 w-5 flex-shrink-0" />}
                     <div className="flex-1">
                       {errorMsg === "PENDING_APPROVAL" ? (
                         <div>
                           <span className="font-bold block text-sm">승인 대기 중입니다.</span>
                           <span className="text-xs opacity-90">관리자 승인 후 접속 가능합니다.</span>
                         </div>
+                      ) : errorMsg === "MAINTENANCE_MODE" ? (
+                        <div>
+                          <span className="font-bold block text-sm">시스템 점검 중입니다.</span>
+                          <span className="text-xs opacity-90">현재 서버 점검으로 일시적으로 서비스를 이용할 수 없습니다. 잠시 후 다시 시도해 주세요.</span>
+                        </div>
                       ) : (
                         <span className="text-sm font-bold block">{errorMsg}</span>
                       )}
-                      
+
                       {errorMsg.includes("등록되지 않은") && (
                         <button type="button" onClick={() => setIsRegisterOpen(true)} className="mt-2 w-full py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold rounded">
                           신규 회원가입 진행하기
@@ -208,14 +222,14 @@ export default function LoginScreen({ onLoginSuccess }) {
 
                 <div className="space-y-5">
                   <div>
-                    <label className="block text-xs font-bold text-[#003087] uppercase mb-2">Employee ID</label>
+                    <label className="block text-xs font-bold text-brand-blue uppercase mb-2">Employee ID</label>
                     <div className="relative group z-10">
-                      <User className="absolute left-3 top-3.5 h-5 w-5 text-gray-400 group-focus-within:text-[#008233] transition-colors z-20" />
+                      <User className="absolute left-3 top-3.5 h-5 w-5 text-slate-400 group-focus-within:text-[#008233] transition-colors z-20" />
                       <input
                         type="text"
                         required
                         autoFocus 
-                        className="block w-full pl-10 pr-3 py-4 border-2 border-gray-200 rounded-lg focus:border-[#008233] focus:ring-0 outline-none transition-all text-slate-800 text-lg font-medium placeholder:text-base placeholder:font-normal relative z-10 bg-transparent"
+                        className="block w-full pl-10 pr-3 py-4 border-2 border-slate-200 rounded-lg focus:border-brand-green focus:ring-0 outline-none transition-all text-slate-800 text-lg font-medium placeholder:text-base placeholder:font-normal relative z-10 bg-transparent"
                         placeholder="사번 입력"
                         value={employeeId}
                         onChange={handleInputChange}
@@ -228,7 +242,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                   type="submit"
                   disabled={isLoading || isServerLive === false}
                   className={`w-full flex justify-center items-center py-4 px-4 text-sm font-bold rounded-lg text-white shadow-md transition-all transform hover:-translate-y-1 mt-4 cursor-pointer relative z-10 ${
-                    isLoading || isServerLive === false ? 'bg-gray-400 cursor-not-allowed hover:transform-none' : 'bg-[#008233] hover:shadow-lg'
+                    isLoading || isServerLive === false ? 'bg-gray-400 cursor-not-allowed hover:transform-none' : 'bg-brand-green hover:shadow-lg'
                   }`}
                 >
                   {isLoading ? (
@@ -239,15 +253,15 @@ export default function LoginScreen({ onLoginSuccess }) {
                 </button>
               </form>
 
-              <div className="text-center text-sm text-gray-500">
+              <div className="text-center text-sm text-slate-500">
                 계정이 없으신가요? 
-                <button onClick={() => setIsRegisterOpen(true)} className="ml-2 font-bold text-[#003087] hover:underline cursor-pointer">
+                <button onClick={() => setIsRegisterOpen(true)} className="ml-2 font-bold text-brand-blue hover:underline cursor-pointer">
                   신규 등록
                 </button>
               </div>
 
-              <div className="mt-6 pt-6 border-t border-gray-100 flex justify-center">
-                <div className="flex items-center space-x-2 text-xs text-gray-400 font-medium">
+              <div className="mt-6 pt-6 border-t border-slate-100 flex justify-center">
+                <div className="flex items-center space-x-2 text-xs text-slate-400 font-medium">
                     <ShieldCheck size={14} /> <span>© 2026 Kwon Hyuk min . All rights reserved.</span>
                 </div>
               </div>

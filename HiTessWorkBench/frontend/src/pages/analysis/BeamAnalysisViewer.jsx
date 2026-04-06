@@ -3,29 +3,9 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import { Upload, Activity, Layers, BarChart2, FileJson, Box } from 'lucide-react';
+import GuideButton from '../../components/ui/GuideButton';
+import { useFileParser, parseTsvText } from '../../hooks/useFileParser';
 
-/**
- * @summary TSV(Tab-Separated Values) 형식의 문자열 데이터를 파싱하여 객체 배열로 반환합니다.
- * @param {string} text - 파일에서 읽어온 원본 텍스트 데이터
- * @returns {Array<Object>} 파싱된 JSON 형태의 데이터 배열
- */
-const parseTSV = (text) => {
-  const lines = text.trim().split('\n');
-  if (lines.length < 2) return [];
-
-  const headers = lines[0].split('\t').map((h) => h.trim());
-  const data = lines.slice(1).map((line) => {
-    const values = line.split('\t');
-    const obj = {};
-    headers.forEach((header, index) => {
-      const parsedValue = parseFloat(values[index]);
-      obj[header] = isNaN(parsedValue) ? values[index]?.trim() : parsedValue;
-    });
-    return obj;
-  });
-
-  return data;
-};
 
 /**
  * @summary 보(Beam) 해석 모델 및 결과를 시각화하는 통합 대시보드 컴포넌트입니다.
@@ -38,43 +18,25 @@ const BeamAnalysisViewer = () => {
   const [elForceData, setElForceData] = useState([]);
   const [stressData, setStressData] = useState([]);
 
-  /**
-   * @summary CSV 파일 업로드 핸들러
-   * @param {React.ChangeEvent<HTMLInputElement>} e - 파일 입력 이벤트
-   * @param {Function} setDataSetter - 데이터를 업데이트할 상태 설정 함수
-   */
-  const handleCsvUpload = (e, setDataSetter) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const { readFile: readDispFile } = useFileParser(parseTsvText, setDispData,
+    () => alert('변위 CSV 파싱에 실패했습니다. 파일 형식을 확인해주세요.'));
+  const { readFile: readForceFile } = useFileParser(parseTsvText, setElForceData,
+    () => alert('단면력 CSV 파싱에 실패했습니다. 파일 형식을 확인해주세요.'));
+  const { readFile: readStressFile } = useFileParser(parseTsvText, setStressData,
+    () => alert('응력 CSV 파싱에 실패했습니다. 파일 형식을 확인해주세요.'));
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target.result;
-      const parsedData = parseTSV(text);
-      setDataSetter(parsedData);
-    };
-    reader.readAsText(file);
+  const handleCsvUpload = (e, fileReader) => {
+    if (e.target.files[0]) fileReader(e.target.files[0]);
   };
 
-  /**
-   * @summary JSON 모델 파일 업로드 핸들러 (역변환 시각화용)
-   * @param {React.ChangeEvent<HTMLInputElement>} e - 파일 입력 이벤트
-   */
-  const handleJsonUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const { readFile: readJsonFile } = useFileParser(
+    (text) => JSON.parse(text),
+    setBeamModel,
+    () => alert('JSON 파싱 중 오류가 발생했습니다. 파일 형식을 확인해주세요.')
+  );
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target.result);
-        setBeamModel(json);
-      } catch (error) {
-        alert("JSON 파싱 중 오류가 발생했습니다. 파일 형식을 확인해주세요.");
-        console.error("JSON Parsing Error:", error);
-      }
-    };
-    reader.readAsText(file);
+  const handleJsonUpload = (e) => {
+    if (e.target.files[0]) readJsonFile(e.target.files[0]);
   };
 
   /**
@@ -106,12 +68,12 @@ const BeamAnalysisViewer = () => {
     const viewBox = `-${paddingX} -${paddingY} ${L + paddingX * 2} ${paddingY * 2}`;
 
     return (
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-        <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+        <h3 className="text-xl font-bold mb-4 text-slate-800 flex items-center gap-2">
           <Box className="text-indigo-600" />
           Beam Model Schematic (Imported)
         </h3>
-        <div className="w-full overflow-x-auto bg-gray-50/50 rounded-lg border border-gray-200 p-4">
+        <div className="w-full overflow-x-auto bg-slate-50/50 rounded-lg border border-slate-200 p-4">
           <svg viewBox={viewBox} className="w-full h-80 min-w-[600px]">
             <defs>
               {/* 화살표 헤드 정의 */}
@@ -193,18 +155,19 @@ const BeamAnalysisViewer = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8 text-gray-800">
+    <div className="min-h-screen bg-slate-50 p-8 text-slate-800">
       <div className="max-w-7xl mx-auto space-y-8">
         
         {/* Header Section */}
         <header className="flex items-center justify-between border-b pb-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-brand-blue tracking-tight flex items-center gap-2">
               <Activity className="text-blue-600" />
               Simple Beam Assessment Dashboard
             </h1>
-            <p className="text-gray-500 mt-2">해석 모델(JSON) 및 결과(CSV) 파일을 업로드하여 시각화하세요.</p>
+            <p className="text-slate-500 mt-2">해석 모델(JSON) 및 결과(CSV) 파일을 업로드하여 시각화하세요.</p>
           </div>
+          <GuideButton guideTitle="[대화형] Simple Beam Assessment — 보 해석" />
         </header>
 
         {/* File Upload Section */}
@@ -227,49 +190,49 @@ const BeamAnalysisViewer = () => {
           </div>
 
           {/* Displacement Upload */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-4">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col gap-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <Layers className="text-blue-500" size={20} />
               Disp (disp.csv)
             </h2>
-            <label className="flex items-center justify-center w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+            <label className="flex items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
               <div className="flex flex-col items-center">
-                <Upload size={24} className="text-gray-400 mb-1" />
-                <span className="text-sm text-gray-500">Upload disp.csv</span>
+                <Upload size={24} className="text-slate-400 mb-1" />
+                <span className="text-sm text-slate-500">Upload disp.csv</span>
               </div>
-              <input type="file" accept=".csv,.txt" className="hidden" onChange={(e) => handleCsvUpload(e, setDispData)} />
+              <input type="file" accept=".csv,.txt" className="hidden" onChange={(e) => handleCsvUpload(e, readDispFile)} />
             </label>
             {dispData.length > 0 && <p className="text-sm text-green-600 font-medium">✅ {dispData.length} records</p>}
           </div>
 
           {/* Element Force Upload */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-4">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col gap-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <Activity className="text-red-500" size={20} />
               Force (elforce.csv)
             </h2>
-            <label className="flex items-center justify-center w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+            <label className="flex items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
               <div className="flex flex-col items-center">
-                <Upload size={24} className="text-gray-400 mb-1" />
-                <span className="text-sm text-gray-500">Upload elforce.csv</span>
+                <Upload size={24} className="text-slate-400 mb-1" />
+                <span className="text-sm text-slate-500">Upload elforce.csv</span>
               </div>
-              <input type="file" accept=".csv,.txt" className="hidden" onChange={(e) => handleCsvUpload(e, setElForceData)} />
+              <input type="file" accept=".csv,.txt" className="hidden" onChange={(e) => handleCsvUpload(e, readForceFile)} />
             </label>
             {elForceData.length > 0 && <p className="text-sm text-green-600 font-medium">✅ {elForceData.length} records</p>}
           </div>
 
           {/* Stress Upload */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-4">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col gap-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <BarChart2 className="text-purple-500" size={20} />
               Stress (stress.csv)
             </h2>
-            <label className="flex items-center justify-center w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+            <label className="flex items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
               <div className="flex flex-col items-center">
-                <Upload size={24} className="text-gray-400 mb-1" />
-                <span className="text-sm text-gray-500">Upload stress.csv</span>
+                <Upload size={24} className="text-slate-400 mb-1" />
+                <span className="text-sm text-slate-500">Upload stress.csv</span>
               </div>
-              <input type="file" accept=".csv,.txt" className="hidden" onChange={(e) => handleCsvUpload(e, setStressData)} />
+              <input type="file" accept=".csv,.txt" className="hidden" onChange={(e) => handleCsvUpload(e, readStressFile)} />
             </label>
             {stressData.length > 0 && <p className="text-sm text-green-600 font-medium">✅ {stressData.length} records</p>}
           </div>
@@ -283,8 +246,8 @@ const BeamAnalysisViewer = () => {
 
           {/* 1. Displacement Chart */}
           {dispData.length > 0 && (
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <h3 className="text-xl font-bold mb-4 text-gray-800">Vertical Displacement (DispZ)</h3>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+              <h3 className="text-xl font-bold mb-4 text-slate-800">Vertical Displacement (DispZ)</h3>
               <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={dispData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
@@ -303,8 +266,8 @@ const BeamAnalysisViewer = () => {
           {/* 2. Bending Moment & Shear Force Charts */}
           {formattedElForceData.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <h3 className="text-xl font-bold mb-4 text-gray-800">Bending Moment</h3>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 className="text-xl font-bold mb-4 text-slate-800">Bending Moment</h3>
                 <div className="h-80 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={formattedElForceData}>
@@ -319,8 +282,8 @@ const BeamAnalysisViewer = () => {
                 </div>
               </div>
 
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <h3 className="text-xl font-bold mb-4 text-gray-800">Shear Force</h3>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 className="text-xl font-bold mb-4 text-slate-800">Shear Force</h3>
                 <div className="h-80 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={formattedElForceData}>
@@ -339,8 +302,8 @@ const BeamAnalysisViewer = () => {
 
           {/* 3. Stress Chart */}
           {formattedStressData.length > 0 && (
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <h3 className="text-xl font-bold mb-4 text-gray-800">Element Stress (Max / Min)</h3>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+              <h3 className="text-xl font-bold mb-4 text-slate-800">Element Stress (Max / Min)</h3>
               <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={formattedStressData}>
@@ -359,9 +322,9 @@ const BeamAnalysisViewer = () => {
 
           {/* Empty State Fallback */}
           {!beamModel && dispData.length === 0 && elForceData.length === 0 && stressData.length === 0 && (
-            <div className="text-center py-20 bg-white rounded-xl shadow-sm border border-gray-100">
-              <BarChart2 className="mx-auto text-gray-300 mb-4" size={48} />
-              <p className="text-gray-500 text-lg">해석 데이터(CSV) 및 모델(JSON) 파일을 업로드하시면 대시보드가 생성됩니다.</p>
+            <div className="text-center py-20 bg-white rounded-xl shadow-sm border border-slate-100">
+              <BarChart2 className="mx-auto text-slate-300 mb-4" size={48} />
+              <p className="text-slate-500 text-lg">해석 데이터(CSV) 및 모델(JSON) 파일을 업로드하시면 대시보드가 생성됩니다.</p>
             </div>
           )}
           

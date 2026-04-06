@@ -3,7 +3,9 @@
 /// (수정) 해석 완료 시 XLSX 파일의 다이렉트 다운로드 및 JSON 데이터의 테이블 렌더링 기능을 추가했습니다.
 /// </summary>
 import React, { useState, useRef, useEffect, Fragment } from 'react';
-import { requestTrussAnalysis, getJobStatus, downloadFileBlob } from '../../api/analysis';
+import { requestTrussAnalysis, downloadFileBlob } from '../../api/analysis';
+import { extractFilename } from '../../utils/fileHelper';
+import { usePolling } from '../../hooks/usePolling';
 import { Dialog, Transition } from '@headlessui/react';
 import { 
   ArrowLeft, Upload, Play, Download, Trash2, Database,
@@ -13,8 +15,12 @@ import {
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
+import GuideButton from '../../components/ui/GuideButton';
+import { useNavigation } from '../../contexts/NavigationContext';
+import { useFileParser, parseCsvText } from '../../hooks/useFileParser';
 
-export default function TrussAnalysis({ setCurrentMenu }) {
+export default function TrussAnalysis() {
+  const { setCurrentMenu } = useNavigation();
   const [nodeFile, setNodeFile] = useState(null);
   const [memberFile, setMemberFile] = useState(null);
   const [nodeData, setNodeData] = useState([]);
@@ -37,12 +43,63 @@ export default function TrussAnalysis({ setCurrentMenu }) {
   const [is3DViewerOpen, setIs3DViewerOpen] = useState(false); 
   
   const logEndRef = useRef(null);
-  const pollIntervalRef = useRef(null);
+  const lastMsgRef = useRef('');
+  const [currentJobId, setCurrentJobId] = useState(null);
 
-  // 컴포넌트 언마운트 시 폴링 인터벌 정리
-  useEffect(() => {
-    return () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); };
-  }, []);
+  usePolling({
+    jobId: currentJobId,
+    interval: 1500,
+    maxRetries: 120,
+    onProgress: ({ progress, message }) => {
+      setProgress(progress);
+      setStatusMessage(message);
+      if (message !== lastMsgRef.current) {
+        addLog(`[${progress}%] ${message}`, 'warning');
+        lastMsgRef.current = message;
+      }
+    },
+    onComplete: async ({ progress, message, engine_log, project }) => {
+      setProgress(progress);
+      setStatusMessage(message);
+      setIsRunning(false);
+      setCurrentJobId(null);
+      addLog('MODEL BUILDING COMPLETED SUCCESSFULLY.', 'success');
+      addLog('결과가 DB에 기록되었습니다.', 'info');
+      if (engine_log) {
+        addDetailedLog('*** HITESS WORKBENCH SOLVER OUTPUT ***');
+        addDetailedLog(engine_log);
+      }
+      setAnalysisResultData(project);
+      if (project?.result_info) {
+        const jsonKey = Object.keys(project.result_info).find(k => project.result_info[k].endsWith('.json'));
+        if (jsonKey) {
+          addLog('JSON 결과 데이터를 파싱 중입니다...', 'info');
+          try {
+            const res = await downloadFileBlob(project.result_info[jsonKey]);
+            const text = await res.data.text();
+            setResultJsonData(JSON.parse(text));
+            setActiveTab('result');
+            addLog('결과 테이블 렌더링 완료.', 'success');
+          } catch (e) {
+            console.error("JSON Fetch/Parse Error:", e);
+            addLog('JSON 결과를 화면에 표시하는 데 실패했습니다.', 'error');
+          }
+        }
+      }
+    },
+    onError: (err) => {
+      setIsRunning(false);
+      setCurrentJobId(null);
+      if (err?.timeout) {
+        addLog('해석 시간 초과 (3분). 서버 상태를 확인하세요.', 'error');
+      } else if (err?.engine_log) {
+        addLog('ENGINE EXECUTION FAILED.', 'error');
+        addDetailedLog(err.engine_log);
+      } else {
+        addLog('STATUS CHECK FAILED.', 'error');
+      }
+    }
+  });
 
   const numNodes = nodeData.length > 1 ? nodeData.length - 1 : 0;
   const numMembers = memberData.length > 1 ? memberData.length - 1 : 0;
@@ -72,22 +129,31 @@ export default function TrussAnalysis({ setCurrentMenu }) {
     document.body.removeChild(link);
   };
 
-  const parseCSV = (file, setter, type) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target.result;
-      const rows = text.trim().split('\n').filter(row => row.trim() !== '').map(row => row.split(',').map(cell => cell.trim()));
-      setter(rows);
-      addLog(`[DATA] ${type.toUpperCase()} 데이터 로드 완료 (${rows.length - 1}행)`, 'info');
-      addDetailedLog(`PARSING ${file.name} ... OK (${rows.length - 1} Entries)`);
-    };
-    reader.readAsText(file);
+  const handleCsvParsed = (rows, file, setter, type) => {
+    setter(rows);
+    addLog(`[DATA] ${type.toUpperCase()} 데이터 로드 완료 (${rows.length - 1}행)`, 'info');
+    addDetailedLog(`PARSING ${file.name} ... OK (${rows.length - 1} Entries)`);
   };
+
+  const handleCsvError = (err, file) => {
+    addLog(`[ERROR] ${file.name} 파싱 실패: ${err.message}`, 'error');
+  };
+
+  const { readFile: readNodeFile } = useFileParser(
+    parseCsvText,
+    (rows, file) => handleCsvParsed(rows, file, setNodeData, 'node'),
+    handleCsvError
+  );
+  const { readFile: readMemberFile } = useFileParser(
+    parseCsvText,
+    (rows, file) => handleCsvParsed(rows, file, setMemberData, 'member'),
+    handleCsvError
+  );
 
   const handleFile = (file, type) => {
     if (!file || !file.name.endsWith('.csv')) { alert('CSV 파일만 업로드 가능합니다!'); return; }
-    if (type === 'node') { setNodeFile(file); parseCSV(file, setNodeData, type); }
-    else { setMemberFile(file); parseCSV(file, setMemberData, type); }
+    if (type === 'node') { setNodeFile(file); readNodeFile(file); }
+    else { setMemberFile(file); readMemberFile(file); }
     setActiveTab(type);
   };
 
@@ -143,75 +209,8 @@ export default function TrussAnalysis({ setCurrentMenu }) {
       if (!jobId) throw new Error("서버로부터 Job ID를 받지 못했습니다.");
 
       addLog(`Job submitted successfully. [Job ID: ${jobId}]`, 'info');
-      let lastMsg = '';
-      let retryCount = 0;
-      pollIntervalRef.current = setInterval(async () => {
-        retryCount++;
-        if (retryCount > 120) {
-          clearInterval(pollIntervalRef.current);
-          setIsRunning(false);
-          addLog('해석 시간 초과 (3분). 서버 상태를 확인하세요.', 'error');
-          return;
-        }
-        try {
-          const statusRes = await getJobStatus(jobId);
-          const { status, progress, message, engine_log, project } = statusRes.data;
-
-          setProgress(progress);
-          setStatusMessage(message);
-
-          if (message !== lastMsg) {
-             addLog(`[${progress}%] ${message}`, 'warning');
-             lastMsg = message;
-          }
-
-          if (status === 'Success' || status === 'Failed') {
-            clearInterval(pollIntervalRef.current);
-            setIsRunning(false);
-            
-            if (status === 'Success') {
-              addLog('MODEL BUILDING COMPLETED SUCCESSFULLY.', 'success');
-              addLog('결과가 DB에 기록되었습니다.', 'info');
-              
-              if (engine_log) {
-                addDetailedLog('*** HITESS WORKBENCH SOLVER OUTPUT ***');
-                addDetailedLog(engine_log);
-              }
-              setAnalysisResultData(project); 
-
-              // ==========================================
-              // (핵심 로직) JSON 결과 Fetch 및 렌더링 준비
-              // ==========================================
-              if (project?.result_info) {
-                const jsonKey = Object.keys(project.result_info).find(k => project.result_info[k].endsWith('.json'));
-                if (jsonKey) {
-                  addLog('JSON 결과 데이터를 파싱 중입니다...', 'info');
-                  try {
-                    const res = await downloadFileBlob(project.result_info[jsonKey]);
-                    const text = await res.data.text();
-                    const parsedData = JSON.parse(text);
-                    setResultJsonData(parsedData);
-                    setActiveTab('result'); // 파싱 성공 시 자동으로 Result 탭으로 포커싱 이동
-                    addLog('결과 테이블 렌더링 완료.', 'success');
-                  } catch (e) {
-                    console.error("JSON Fetch/Parse Error:", e);
-                    addLog('JSON 결과를 화면에 표시하는 데 실패했습니다.', 'error');
-                  }
-                }
-              }
-
-            } else {
-              addLog('ENGINE EXECUTION FAILED.', 'error');
-              if (engine_log) addDetailedLog(engine_log);
-            }
-          }
-        } catch (pollError) {
-          console.error("Polling Error:", pollError);
-          clearInterval(pollIntervalRef.current);
-          setIsRunning(false);
-          addLog('STATUS CHECK FAILED.', 'error');
-        }
-      }, 1500);
+      lastMsgRef.current = '';
+      setCurrentJobId(jobId);
 
     } catch (error) {
       addLog('SERVER COMMUNICATION FAILED.', 'error');
@@ -231,7 +230,7 @@ export default function TrussAnalysis({ setCurrentMenu }) {
       const filePath = analysisResultData.result_info[excelKey];
       try {
         const response = await downloadFileBlob(filePath);
-        const filename = filePath.split('\\').pop().split('/').pop();
+        const filename = extractFilename(filePath);
         const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
         link.href = blobUrl;
@@ -280,12 +279,13 @@ export default function TrussAnalysis({ setCurrentMenu }) {
       {/* Header Area */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <button onClick={() => setCurrentMenu('File-Based Apps')} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-[#002554] hover:bg-slate-50 transition-colors cursor-pointer"><ArrowLeft size={20} /></button>
+          <button onClick={() => setCurrentMenu('File-Based Apps')} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-brand-blue hover:bg-slate-50 transition-colors cursor-pointer"><ArrowLeft size={20} /></button>
           <div>
-            <h1 className="text-2xl font-bold text-[#002554] tracking-tight">Truss Model Builder</h1>
+            <h1 className="text-2xl font-bold text-brand-blue tracking-tight">Truss Model Builder</h1>
             <p className="text-sm text-slate-500 mt-1">Node 및 Member CSV 데이터를 기반으로 구조 해석 모델을 구축합니다.</p>
           </div>
         </div>
+        <GuideButton guideTitle="[파일] Truss Model Builder — CSV로 트러스 모델 만들기" />
       </div>
 
       {/* Main Workspace */}
@@ -315,11 +315,11 @@ export default function TrussAnalysis({ setCurrentMenu }) {
             <div className="space-y-3">
               <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
                 <div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><GitMerge size={16} className="text-indigo-400" /> Total Nodes</div>
-                <span className="font-mono font-bold text-[#002554]">{numNodes.toLocaleString()} EA</span>
+                <span className="font-mono font-bold text-brand-blue">{numNodes.toLocaleString()} EA</span>
               </div>
               <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
                 <div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><Layers size={16} className="text-cyan-400" /> Total Members</div>
-                <span className="font-mono font-bold text-[#002554]">{numMembers.toLocaleString()} EA</span>
+                <span className="font-mono font-bold text-brand-blue">{numMembers.toLocaleString()} EA</span>
               </div>
               <div className={`mt-2 flex items-center justify-center gap-2 p-3 rounded-lg border border-dashed text-sm font-bold transition-colors ${isDataReady ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-300 text-slate-500'}`}>
                 {isDataReady ? <><CheckCircle2 size={18} /> Ready to Build</> : <><AlertCircle size={18} /> Awaiting CSV Data</>}
@@ -336,7 +336,7 @@ export default function TrussAnalysis({ setCurrentMenu }) {
                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' 
                   : isRunning 
                     ? 'bg-[#001b3d] text-white cursor-wait'
-                    : 'bg-[#002554] hover:bg-[#003366] text-white hover:-translate-y-1 cursor-pointer'
+                    : 'bg-brand-blue hover:bg-brand-blue-dark text-white hover:-translate-y-1 cursor-pointer'
               }`}
             >
               {isRunning && (
@@ -353,16 +353,12 @@ export default function TrussAnalysis({ setCurrentMenu }) {
               <div className="flex flex-col gap-2 animate-fade-in-up mt-1">
                 <div className="flex gap-2">
                   <button onClick={handleDirectExcelDownload} className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-sm cursor-pointer">
-                    <FileSpreadsheet size={18} /> 엑셀 다운로드
+                    <FileSpreadsheet size={18} /> 결과 BDF 다운로드
                   </button>
-                  <button onClick={() => setIs3DViewerOpen(true)} className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-[#002554] text-white hover:bg-[#003366] transition-colors shadow-lg cursor-pointer">
+                  <button onClick={() => setIs3DViewerOpen(true)} className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-brand-blue text-white hover:bg-brand-blue-dark transition-colors shadow-lg cursor-pointer">
                     <Eye size={18} /> 3D 시각화
                   </button>
                 </div>
-                {/* 만약을 대비한 모달 호출 버튼(기타 BDF 등 파일 접근용) */}
-                <button onClick={() => setIsResultModalOpen(true)} className="text-[11px] text-slate-400 hover:text-blue-500 underline flex justify-center items-center gap-1 cursor-pointer mt-1">
-                  <Database size={12}/> 전체 생성된 파일 보기
-                </button>
               </div>
             )}
           </div>
@@ -471,7 +467,7 @@ function JsonDataTable({ data, emptyMsg }) {
     <table className="w-full text-left text-sm font-mono whitespace-nowrap">
       <thead className="sticky top-0 bg-slate-50 shadow-sm z-10">
         <tr>
-          {headers.map((h, i) => <th key={i} className="px-6 py-3 text-[#002554] font-bold uppercase tracking-wider text-xs border-b border-slate-200">{h}</th>)}
+          {headers.map((h, i) => <th key={i} className="px-6 py-3 text-brand-blue font-bold uppercase tracking-wider text-xs border-b border-slate-200">{h}</th>)}
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
@@ -491,7 +487,7 @@ const StatusBadge = ({ status }) => {
     Success: "bg-emerald-100 text-emerald-700 border-emerald-200",
     Solving: "bg-blue-100 text-blue-700 border-blue-200 animate-pulse",
     Failed: "bg-red-100 text-red-700 border-red-200",
-    Pending: "bg-gray-100 text-gray-600 border-gray-200",
+    Pending: "bg-slate-100 text-slate-600 border-slate-200",
   };
   const icons = {
     Success: <CheckCircle2 size={12} className="mr-1" />,
@@ -535,7 +531,7 @@ const ProjectDetailModal = ({ project, onClose }) => {
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-slide-up">
         
         {/* Header */}
-        <div className="bg-[#002554] p-6 text-white flex justify-between items-start">
+        <div className="bg-brand-blue p-6 text-white flex justify-between items-start">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="bg-white/20 text-blue-100 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">
@@ -581,7 +577,7 @@ const ProjectDetailModal = ({ project, onClose }) => {
               <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 mt-4">Input Data (CSV)</h3>
               <div className="space-y-2 mb-6">
                 {Object.entries(project.input_info).map(([key, path]) => (
-                  <button key={key} onClick={() => handleDownload(path)} className="w-full flex items-center justify-between p-3 border border-gray-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group cursor-pointer">
+                  <button key={key} onClick={() => handleDownload(path)} className="w-full flex items-center justify-between p-3 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group cursor-pointer">
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-slate-100 text-slate-500 rounded-lg group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
                         <Database size={18} />
@@ -601,7 +597,7 @@ const ProjectDetailModal = ({ project, onClose }) => {
           {/* Result Files */}
           {project.status === 'Success' && project.result_info && Object.keys(project.result_info).length > 0 && (
             <>
-              <h3 className="text-sm font-bold text-[#008233] uppercase tracking-wider mb-3">Analysis Results</h3>
+              <h3 className="text-sm font-bold text-brand-green uppercase tracking-wider mb-3">Analysis Results</h3>
               <div className="space-y-2">
                 {Object.entries(project.result_info).map(([key, path]) => (
                   <button key={key} onClick={() => handleDownload(path)} className="w-full flex items-center justify-between p-4 border border-green-200 rounded-xl hover:border-green-500 hover:bg-green-50 transition-all group cursor-pointer">
@@ -635,7 +631,7 @@ const ProjectDetailModal = ({ project, onClose }) => {
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer">
             Close
           </button>
@@ -649,10 +645,10 @@ function UploadDropzone({ type, title, file, rowCount, onDrop, onChange }) {
   const inputRef = useRef(null);
   const isUploaded = !!file;
   return (
-    <div onDrop={onDrop} onDragOver={e => e.preventDefault()} onClick={() => inputRef.current?.click()} className={`relative p-4 rounded-xl border-2 border-dashed cursor-pointer transition-all ${isUploaded ? 'border-[#00E600]/50 bg-green-50/30' : 'border-slate-300 hover:border-blue-400 hover:bg-blue-50/50'}`}>
+    <div onDrop={onDrop} onDragOver={e => e.preventDefault()} onClick={() => inputRef.current?.click()} className={`relative p-4 rounded-xl border-2 border-dashed cursor-pointer transition-all ${isUploaded ? 'border-brand-accent/50 bg-green-50/30' : 'border-slate-300 hover:border-blue-400 hover:bg-blue-50/50'}`}>
       <input type="file" accept=".csv" className="hidden" ref={inputRef} onChange={onChange} />
       <div className="flex items-center gap-4">
-        <div className={`p-3 rounded-lg ${isUploaded ? 'bg-[#00E600]/20 text-[#00E600]' : 'bg-slate-100 text-slate-400'}`}>{isUploaded ? <FileSpreadsheet size={24} /> : <Upload size={24} />}</div>
+        <div className={`p-3 rounded-lg ${isUploaded ? 'bg-brand-accent/20 text-brand-accent' : 'bg-slate-100 text-slate-400'}`}>{isUploaded ? <FileSpreadsheet size={24} /> : <Upload size={24} />}</div>
         <div className="flex-1"><h4 className="text-sm font-bold text-slate-700">{title}</h4><p className="text-xs text-slate-500 truncate">{isUploaded ? file.name : 'Click to upload'}</p></div>
       </div>
     </div>
@@ -661,7 +657,7 @@ function UploadDropzone({ type, title, file, rowCount, onDrop, onChange }) {
 
 function TabButton({ active, onClick, icon: Icon, label, count }) {
   return (
-    <button onClick={onClick} className={`px-4 py-2.5 rounded-t-lg font-bold text-sm flex items-center gap-2 cursor-pointer ${active ? 'bg-white text-[#002554] border-t-2 border-t-[#002554]' : 'text-slate-500 hover:bg-slate-100'}`}>
+    <button onClick={onClick} className={`px-4 py-2.5 rounded-t-lg font-bold text-sm flex items-center gap-2 cursor-pointer ${active ? 'bg-white text-brand-blue border-t-2 border-t-brand-blue' : 'text-slate-500 hover:bg-slate-100'}`}>
       <Icon size={16} /> {label}
     </button>
   );

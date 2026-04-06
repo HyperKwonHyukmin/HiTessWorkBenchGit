@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import Sidebar from './Sidebar'; 
-// ✅ ChevronLeft, ChevronRight 아이콘 추가
-import { LogOut, User, Bell, Search, ChevronLeft, ChevronRight } from 'lucide-react';
-import TrussAssessment from '../pages/analysis/TrussAssessment';
+import React, { useState, useEffect, useRef } from 'react';
+import Sidebar from './Sidebar';
+import { LogOut, User, Search, ChevronLeft, ChevronRight, Server } from 'lucide-react';
+import { API_BASE_URL, setApiBaseUrl } from '../../config';
+import { useServerStatus } from '../../hooks/useServerStatus';
+import { ANALYSIS_DATA } from '../../contexts/DashboardContext';
+import Modal from '../ui/Modal';
+import Button from '../ui/Button';
+import Input from '../ui/Input';
 
 // ✅ 파라미터에 goBack 등 히스토리 관련 props 추가
 export default function Layout({ 
@@ -10,11 +14,46 @@ export default function Layout({
   goBack, goForward, canGoBack, canGoForward 
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [userInfo, setUserInfo] = useState({
-    name: 'User',
-    position: 'Engineer',
-    is_admin: false
-  });
+  const [userInfo, setUserInfo] = useState({ name: 'User', position: 'Engineer', is_admin: false });
+  const [isServerModalOpen, setIsServerModalOpen] = useState(false);
+  const [serverUrlInput, setServerUrlInput] = useState(API_BASE_URL);
+  const isServerOnline = useServerStatus();
+
+  // 검색
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchRef = useRef(null);
+
+  // 검색 가능한 전체 항목: 사이드바 메뉴 + ANALYSIS_DATA 앱
+  const MENU_ITEMS = [
+    { label: 'Dashboard',        menu: 'Dashboard' },
+    { label: 'File-Based Apps',  menu: 'File-Based Apps' },
+    { label: 'Interactive Apps', menu: 'Interactive Apps' },
+    { label: 'Parametric Apps',  menu: 'Parametric Apps' },
+    { label: 'API Apps',         menu: 'API Apps' },
+    { label: 'My Projects',      menu: 'My Projects' },
+    { label: 'Notice & Updates', menu: 'Notice & Updates' },
+    { label: 'User Guide',       menu: 'User Guide' },
+  ];
+
+  // mode → 목록 페이지 메뉴명
+  const modeToMenu = { File: 'File-Based Apps', Interactive: 'Interactive Apps', Parametric: 'Parametric Apps' };
+
+  const searchResults = searchTerm.trim().length < 1 ? [] : [
+    ...MENU_ITEMS.filter(m => m.label.toLowerCase().includes(searchTerm.toLowerCase()))
+      .map(m => ({ label: m.label, sub: '메뉴', menu: m.menu })),
+    ...ANALYSIS_DATA.filter(a =>
+      a.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.description.toLowerCase().includes(searchTerm.toLowerCase())
+    ).map(a => ({ label: a.title, sub: a.category, menu: modeToMenu[a.mode] || 'Dashboard' })),
+  ].slice(0, 8);
+
+  // 바깥 클릭 시 드롭다운 닫기
+  useEffect(() => {
+    const handler = (e) => { if (searchRef.current && !searchRef.current.contains(e.target)) setShowDropdown(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   useEffect(() => {
     try {
@@ -73,16 +112,45 @@ export default function Layout({
               {currentMenu}
             </h2>
             
-            <div className="relative hidden lg:block ml-4">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-              <input type="text" placeholder="Search..." className="pl-9 pr-4 py-2 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-64" />
+            <div ref={searchRef} className="relative hidden lg:block ml-4">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search menus & apps..."
+                value={searchTerm}
+                onChange={e => { setSearchTerm(e.target.value); setShowDropdown(true); }}
+                onFocus={() => setShowDropdown(true)}
+                onKeyDown={e => { if (e.key === 'Escape') { setShowDropdown(false); setSearchTerm(''); } }}
+                className="pl-9 pr-4 py-2 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-64"
+              />
+              {showDropdown && searchResults.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 w-72 bg-white rounded-xl shadow-xl border border-slate-200 z-[9999] overflow-hidden">
+                  {searchResults.map((item, i) => (
+                    <button
+                      key={i}
+                      onMouseDown={() => { setCurrentMenu(item.menu); setSearchTerm(''); setShowDropdown(false); }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center justify-between gap-3 cursor-pointer border-b border-slate-50 last:border-0"
+                    >
+                      <span className="text-sm font-medium text-slate-800 truncate">{item.label}</span>
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap shrink-0">{item.sub}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-4">
-            <button className="p-2 text-gray-500 hover:bg-slate-100 rounded-full relative">
-              <Bell size={20} />
-              <span className="absolute top-2 right-2 h-2 w-2 bg-red-500 rounded-full border border-white"></span>
+            <button
+              onClick={() => { setServerUrlInput(API_BASE_URL); setIsServerModalOpen(true); }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              title="서버 주소 설정"
+            >
+              <span className={`h-2 w-2 rounded-full ${isServerOnline ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} />
+              <span className={`text-xs font-bold hidden sm:block ${isServerOnline ? 'text-emerald-600' : 'text-red-500'}`}>
+                {isServerOnline ? 'Online' : 'Offline'}
+              </span>
+              <Server size={16} className="text-slate-400" />
             </button>
             <div className="h-6 w-px bg-gray-200 mx-1"></div>
             <div className="flex items-center gap-3">
@@ -104,6 +172,45 @@ export default function Layout({
           {children}
         </main>
       </div>
+
+      {/* 서버 주소 설정 모달 */}
+      <Modal
+        isOpen={isServerModalOpen}
+        onClose={() => setIsServerModalOpen(false)}
+        title="서버 연결 설정"
+        size="md"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="md" onClick={() => setIsServerModalOpen(false)}>
+              취소
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => {
+                if (serverUrlInput.trim()) {
+                  setApiBaseUrl(serverUrlInput);
+                  setIsServerModalOpen(false);
+                }
+              }}
+            >
+              저장 및 적용
+            </Button>
+          </div>
+        }
+      >
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-slate-600">백엔드 서버의 주소를 입력하세요. 변경 즉시 적용됩니다.</p>
+          <Input
+            label="서버 URL"
+            type="text"
+            value={serverUrlInput}
+            onChange={(e) => setServerUrlInput(e.target.value)}
+            placeholder="http://10.133.122.70:8000"
+            className="font-mono"
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

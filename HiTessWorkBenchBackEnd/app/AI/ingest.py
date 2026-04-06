@@ -49,8 +49,8 @@ from .config import (
     CHILD_CHUNK_OVERLAP,
 )
 
-# Tesseract 경로 (설치된 경우)
-TESSERACT_CMD = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Tesseract 경로 (설치된 경우) — 환경변수 TESSERACT_CMD로 오버라이드 가능
+TESSERACT_CMD = os.environ.get("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 
 # 부모 청크 저장 경로
 PARENT_STORE_PATH = VECTORSTORE_DIR / "parent_docs.json"

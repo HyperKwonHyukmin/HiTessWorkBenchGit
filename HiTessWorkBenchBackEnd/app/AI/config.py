@@ -1,15 +1,15 @@
 """프로젝트 전역 설정."""
 
+import os
 from pathlib import Path
 
 # ── 경로 ──
 BASE_DIR = Path(__file__).resolve().parent
-# REPORTS_DIR = BASE_DIR / "reports_data"
-REPORTS_DIR = Path(r"C:\Users\HHI\Desktop\reports_data")
+REPORTS_DIR = Path(os.environ.get("REPORTS_DIR", str(BASE_DIR / "reports_data")))
 VECTORSTORE_DIR = BASE_DIR / "vectorstore"
 
 # ── Ollama 모델 ──
-OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 LLM_MODEL = "qwen2.5:7b"               # 답변 생성용 LLM (한국어 우수)
 EMBEDDING_MODEL = "bge-m3"             # 임베딩 모델 (다국어 최강)
 

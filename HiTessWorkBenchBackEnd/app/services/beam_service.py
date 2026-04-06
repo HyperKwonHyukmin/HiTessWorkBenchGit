@@ -1,13 +1,16 @@
 """Simple Beam Assessment 해석 백그라운드 실행 로직."""
 import os
+import logging
 import subprocess
 from datetime import datetime
 from .. import models, database
 from .job_manager import job_status_store
 
+logger = logging.getLogger(__name__)
+
 
 def task_execute_beam(job_id: str, input_json_path: str, work_dir: str, employee_id: str, timestamp: str, source: str):
-  job_status_store[job_id].update({
+  job_status_store.update_job(job_id, {
     "status": "Running",
     "progress": 10,
     "message": "Initiating Beam Solver..."
@@ -21,10 +24,14 @@ def task_execute_beam(job_id: str, input_json_path: str, work_dir: str, employee
   result_filename = f"{base_filename}_Result.json"
   result_json_path = os.path.join(work_dir, result_filename)
 
-  exe_path = r"C:\Coding\WorkBench\HiTessWorkBenchBackEnd\InHouseProgram\SimpleBeamAssessment\HiTESS.FemEngine.Adapter.exe"
+  base_dir = os.path.dirname(os.path.abspath(__file__))  # app/services
+  app_dir = os.path.dirname(base_dir)                    # app
+  backend_dir = os.path.dirname(app_dir)                 # HiTessWorkBenchBackEnd
+  default_exe = os.path.join(backend_dir, "InHouseProgram", "SimpleBeamAssessment", "HiTESS.FemEngine.Adapter.exe")
+  exe_path = os.getenv("BEAM_EXE_PATH", default_exe)
 
   try:
-    job_status_store[job_id].update({"progress": 40, "message": "Executing Solver..."})
+    job_status_store.update_job(job_id, {"progress": 40, "message": "Executing Solver..."})
 
     cmd_args = [exe_path, input_json_path, work_dir]
 
@@ -40,16 +47,18 @@ def task_execute_beam(job_id: str, input_json_path: str, work_dir: str, employee
     if not os.path.exists(result_json_path):
       raise Exception(f"해석은 종료되었으나, 결과 파일({result_filename})이 생성되지 않았습니다. C# 내부 에러를 확인하세요.\n로그: {engine_output}")
 
-    job_status_store[job_id].update({"progress": 80, "message": "Parsing Results..."})
+    job_status_store.update_job(job_id, {"progress": 80, "message": "Parsing Results..."})
 
   except subprocess.CalledProcessError as e:
     status_msg = "Failed"
-    engine_output = e.stderr if e.stderr else e.stdout
+    logger.error("SimpleBeam subprocess failed: %s", e.stderr or e.stdout)
+    engine_output = "해석 엔진 실행 중 오류가 발생했습니다. 관리자에게 문의하세요."
   except Exception as e:
     status_msg = "Failed"
-    engine_output = f"System Error: {str(e)}"
+    logger.error("SimpleBeam unexpected error: %s", str(e), exc_info=True)
+    engine_output = "예기치 않은 오류가 발생했습니다. 관리자에게 문의하세요."
 
-  job_status_store[job_id].update({"progress": 95, "message": "Saving to Database..."})
+  job_status_store.update_job(job_id, {"progress": 95, "message": "Saving to Database..."})
   project_data = None
 
   try:
@@ -82,7 +91,7 @@ def task_execute_beam(job_id: str, input_json_path: str, work_dir: str, employee
   finally:
     db.close()
 
-  job_status_store[job_id].update({
+  job_status_store.update_job(job_id, {
     "status": status_msg,
     "progress": 100,
     "message": "Analysis Completed Successfully" if status_msg == "Success" else "Analysis Failed",

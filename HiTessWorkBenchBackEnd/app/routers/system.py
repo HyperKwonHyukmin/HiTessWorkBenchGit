@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from .. import database
 from ..services.job_manager import job_status_store, MAX_CONCURRENT_JOBS
+from ..state import server_state
 
 SERVER_VERSION = "1.0.0"
 
@@ -25,6 +26,10 @@ def get_system_status(db: Session = Depends(database.get_db)):
   mem_used_gb = round(mem.used / (1024 ** 3), 1)
   mem_total_gb = round(mem.total / (1024 ** 3), 1)
 
+  disk = psutil.disk_usage('/')
+  disk_used_gb = round(disk.used / (1024 ** 3), 1)
+  disk_total_gb = round(disk.total / (1024 ** 3), 1)
+
   db_status = "Disconnected"
   latency_ms = 0
   try:
@@ -40,16 +45,32 @@ def get_system_status(db: Session = Depends(database.get_db)):
     "cpu_usage": cpu_usage,
     "memory_used_gb": mem_used_gb,
     "memory_total_gb": mem_total_gb,
+    "disk_used_gb": disk_used_gb,
+    "disk_total_gb": disk_total_gb,
     "db_status": db_status,
     "latency_ms": latency_ms
   }
 
 
+@router.get("/system/maintenance")
+def get_maintenance_mode():
+  """현재 유지보수 모드 상태를 반환합니다."""
+  return {"maintenance": server_state["maintenance_mode"]}
+
+
+@router.post("/system/maintenance")
+def set_maintenance_mode(payload: dict):
+  """유지보수 모드를 설정합니다. {"maintenance": true/false}"""
+  server_state["maintenance_mode"] = bool(payload.get("maintenance", False))
+  return {"maintenance": server_state["maintenance_mode"]}
+
+
 @router.get("/system/queue-status")
 def get_queue_status():
   """현재 실행 중인 해석과 큐에서 대기 중인 해석 건수를 반환합니다."""
-  running_count = sum(1 for job in job_status_store.values() if job["status"] == "Running")
-  pending_count = sum(1 for job in job_status_store.values() if job["status"] == "Pending")
+  all_jobs = job_status_store.get_all_values()
+  running_count = sum(1 for job in all_jobs if job.get("status") == "Running")
+  pending_count = sum(1 for job in all_jobs if job.get("status") == "Pending")
 
   return {
     "running": running_count,

@@ -4,7 +4,7 @@ import os
 import uuid
 import urllib.parse
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models, database
@@ -24,21 +24,43 @@ _ALLOWED_DOWNLOAD_BASE = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnect
 # ==================== 이력 및 다운로드 ====================
 
 @router.get("/analysis/history/{employee_id}")
-def get_analysis_history(employee_id: str, db: Session = Depends(database.get_db)):
+def get_analysis_history(
+    employee_id: str,
+    skip: int = Query(0, ge=0, description="건너뛸 항목 수"),
+    limit: int = Query(50, ge=1, le=200, description="반환할 최대 항목 수"),
+    db: Session = Depends(database.get_db)
+):
     """
-    특정 사용자의 해석 이력을 최신순으로 조회합니다.
+    특정 사용자의 해석 이력을 최신순으로 조회합니다. 페이지네이션 지원.
     """
-    history = db.query(models.Analysis).filter(models.Analysis.employee_id == employee_id).order_by(
-        models.Analysis.created_at.desc()).all()
-    return history
+    total = db.query(models.Analysis).filter(models.Analysis.employee_id == employee_id).count()
+    history = (
+        db.query(models.Analysis)
+        .filter(models.Analysis.employee_id == employee_id)
+        .order_by(models.Analysis.created_at.desc())
+        .offset(skip).limit(limit)
+        .all()
+    )
+    return {"total": total, "skip": skip, "limit": limit, "items": history}
 
 
 @router.get("/analysis/all")
-def get_all_analysis_history(db: Session = Depends(database.get_db)):
+def get_all_analysis_history(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(database.get_db)
+):
     """
-    관리자용 전체 해석 이력을 최신순으로 조회합니다.
+    관리자용 전체 해석 이력을 최신순으로 조회합니다. 페이지네이션 지원.
     """
-    return db.query(models.Analysis).order_by(models.Analysis.created_at.desc()).all()
+    total = db.query(models.Analysis).count()
+    items = (
+        db.query(models.Analysis)
+        .order_by(models.Analysis.created_at.desc())
+        .offset(skip).limit(limit)
+        .all()
+    )
+    return {"total": total, "skip": skip, "limit": limit, "items": items}
 
 
 @router.get("/download")
@@ -93,7 +115,7 @@ def get_job_status(job_id: str):
     """
     if job_id not in job_status_store:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job_status_store[job_id]
+    return job_status_store.get(job_id)
 
 
 # ==================== Truss Model Builder ====================
@@ -133,7 +155,7 @@ async def request_truss_analysis(
     exe_path = os.path.join(exe_dir, "TrussModelBuilder.exe")
 
     job_id = str(uuid.uuid4())
-    job_status_store[job_id] = {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."}
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
 
     analysis_executor.submit(
         task_execute_truss, job_id, node_path, member_path, work_dir, exe_path, exe_dir, employee_id, timestamp, source
@@ -172,7 +194,7 @@ async def request_truss_assessment(
         raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
 
     job_id = str(uuid.uuid4())
-    job_status_store[job_id] = {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."}
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
 
     analysis_executor.submit(
         task_execute_assessment, job_id, bdf_path, work_dir, employee_id, timestamp, source
@@ -210,11 +232,11 @@ async def request_beam_analysis(
         raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
 
     job_id = str(uuid.uuid4())
-    job_status_store[job_id] = {
+    job_status_store.set(job_id, {
         "status": "Pending",
         "progress": 0,
         "message": "Waiting in Queue..."
-    }
+    })
 
     analysis_executor.submit(
         task_execute_beam, job_id, input_json_path, work_dir, employee_id, timestamp, source

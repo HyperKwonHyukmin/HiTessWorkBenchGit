@@ -1,24 +1,18 @@
 /**
- * @fileoverview 리팩토링된 ComponentWizard 메인 컴포넌트 (Orchestrator)
+ * @fileoverview Simple Beam Assessment 페이지 오케스트레이터 (BeamModelPreview)
  */
 import React, { useState, useRef } from 'react';
 import { toPng } from 'html-to-image';
 import { Box, Activity, Plus, Trash2, ShieldCheck, ArrowDown, RefreshCw, SlidersHorizontal, Play, FileJson, Upload, BarChart2, Camera, Info } from 'lucide-react';
+import GuideButton from '../ui/GuideButton';
 import { useBeamModeling } from '../../hooks/useBeamModeling';
 import { useAnalysisManager } from '../../hooks/useAnalysisManager';
 import { InputRow, SummaryRow, SectionGuide } from '../../components/analysis/BeamSharedUI';
 import Viewer3D from '../../components/analysis/Viewer3D';
 import EngineeringCharts from '../../components/analysis/EngineeringCharts';
+import { formatEngineering as engFormat } from '../../utils/formatting';
 
-const engFormat = (val) => {
-  if (val === undefined || val === null) return '';
-  if (val === 0) return '0';
-  const abs = Math.abs(val);
-  if (abs >= 10000 || abs < 0.001) return val.toExponential(2);
-  return Number.isInteger(val) ? val.toString() : val.toFixed(2);
-};
-
-export default function ComponentWizard() {
+export default function BeamModelPreview() {
   const captureRef = useRef(null);
   const [activeTab, setActiveTab] = useState('modeling');
   const [isCapturing, setIsCapturing] = useState(false);
@@ -110,13 +104,16 @@ export default function ComponentWizard() {
       {/* --- Left Panel (Modeling & Controls) --- */}
       {!isCapturing && (
         <div className="flex flex-col h-full overflow-hidden bg-slate-900 rounded-xl border border-slate-800 shadow-2xl relative z-10">
-          <div className="flex border-b border-slate-800 bg-slate-800/80 sticky top-0 z-20 backdrop-blur-md">
+          <div className="flex items-center border-b border-slate-800 bg-slate-800/80 sticky top-0 z-20 backdrop-blur-md">
             <button onClick={() => setActiveTab('modeling')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${activeTab === 'modeling' ? 'text-[#00E600] border-b-2 border-[#00E600] bg-slate-800' : 'text-slate-400 hover:text-white'}`}>
               <SlidersHorizontal size={14} className="inline mr-2 mb-0.5"/> Modeling
             </button>
             <button onClick={() => setActiveTab('results')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${activeTab === 'results' ? 'text-[#00E600] border-b-2 border-[#00E600] bg-slate-800' : 'text-slate-400 hover:text-white'}`}>
               <BarChart2 size={14} className="inline mr-2 mb-0.5"/> Analysis Results
             </button>
+            <div className="px-2">
+              <GuideButton guideTitle="[대화형] Simple Beam Assessment — 보 해석" />
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar relative">

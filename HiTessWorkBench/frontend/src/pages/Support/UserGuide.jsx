@@ -72,7 +72,7 @@ export default function UserGuide() {
     <div className="flex flex-col h-[calc(100vh-120px)] animate-fade-in-up">
       <div className="flex justify-between items-end mb-6 shrink-0">
         <div>
-          <h1 className="text-3xl font-bold text-[#002554] flex items-center gap-3"><BookOpen className="text-indigo-500" size={32} /> User Guide</h1>
+          <h1 className="text-2xl font-bold text-brand-blue tracking-tight flex items-center gap-3"><BookOpen className="text-indigo-500" size={32} /> User Guide</h1>
           <p className="text-slate-500 mt-2">시스템 매뉴얼 및 해석 기준 가이드라인을 확인하세요.</p>
         </div>
         <div className="flex gap-3">
@@ -98,7 +98,7 @@ export default function UserGuide() {
           {currentGuides.length === 0 ? <p className="text-slate-400">등록된 가이드라인이 없습니다.</p> : 
             currentGuides.map(guide => (
               <div key={guide.id} className="mb-10 prose prose-slate max-w-none text-slate-600 group relative pr-20">
-                <h3 className="text-xl font-extrabold text-[#002554] mb-3">{guide.title}</h3>
+                <h3 className="text-xl font-extrabold text-brand-blue mb-3">{guide.title}</h3>
                 {isAdmin && (
                   <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                      <button onClick={() => openEditModal(guide)} className="p-2 bg-slate-100 text-slate-600 rounded hover:bg-blue-100 hover:text-blue-600 cursor-pointer"><Edit2 size={16}/></button>

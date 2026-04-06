@@ -83,13 +83,13 @@ export default function NoticeBoard() {
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
       <div className="flex justify-between items-end mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-[#002554] flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-brand-blue tracking-tight flex items-center gap-3">
             <Megaphone className="text-blue-500" size={32} /> Notice & Updates
           </h1>
           <p className="text-slate-500 mt-2">시스템 업데이트 내역 및 중요 공지사항을 확인하세요.</p>
         </div>
         {isAdmin && (
-          <button onClick={openWriteModal} className="flex items-center gap-2 px-4 py-2 bg-[#002554] text-white rounded-lg text-sm font-bold hover:bg-[#003366] transition-colors shadow-md cursor-pointer">
+          <button onClick={openWriteModal} className="flex items-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg text-sm font-bold hover:bg-brand-blue-dark transition-colors shadow-md cursor-pointer">
             <Plus size={18} /> 새 공지 작성
           </button>
         )}
@@ -120,7 +120,7 @@ export default function NoticeBoard() {
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
             <Dialog.Panel className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-              <div className="bg-[#002554] p-5 flex justify-between items-center text-white shrink-0">
+              <div className="bg-brand-blue p-5 flex justify-between items-center text-white shrink-0">
                 <div>
                   <Dialog.Title className="font-bold text-lg flex items-center gap-2">
                     <Megaphone size={20} className="text-blue-400" /> {editMode ? '공지사항 수정' : '공식 공지사항 및 업데이트 배포'}
@@ -150,7 +150,7 @@ export default function NoticeBoard() {
                     <span className="text-sm font-bold text-slate-700">대시보드 상단 고정 (중요)</span>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" checked={formData.is_pinned} onChange={e => setFormData({...formData, is_pinned: e.target.checked})} className="sr-only peer" />
-                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
                     </label>
                   </div>
                 </div>
@@ -174,7 +174,7 @@ export default function NoticeBoard() {
 
                 <div className="flex justify-end gap-3 pt-4 shrink-0">
                   <button type="button" onClick={() => setIsWriteModalOpen(false)} className="px-6 py-2.5 rounded-xl font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 transition-colors cursor-pointer">취소</button>
-                  <button type="submit" className="px-8 py-2.5 bg-[#008233] text-white font-bold rounded-xl hover:bg-[#006b29] transition-colors shadow-lg cursor-pointer">공지 배포하기</button>
+                  <button type="submit" className="px-8 py-2.5 bg-brand-green text-white font-bold rounded-xl hover:bg-brand-green transition-colors shadow-lg cursor-pointer">공지 배포하기</button>
                 </div>
               </form>
             </Dialog.Panel>
@@ -190,7 +190,7 @@ export default function NoticeBoard() {
               <div className="p-6 border-b border-slate-100 flex justify-between items-start shrink-0">
                 <div>
                   <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded mb-2 inline-block">{selectedNotice?.type}</span>
-                  <Dialog.Title className="text-2xl font-bold text-[#002554] mt-1">{selectedNotice?.title}</Dialog.Title>
+                  <Dialog.Title className="text-2xl font-bold text-brand-blue mt-1">{selectedNotice?.title}</Dialog.Title>
                   <p className="text-xs text-slate-400 mt-2">{selectedNotice && new Date(selectedNotice.created_at).toLocaleString()}</p>
                 </div>
                 <button onClick={() => setIsViewModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X size={24}/></button>
@@ -201,7 +201,7 @@ export default function NoticeBoard() {
               {isAdmin && (
                 <div className="p-4 bg-white border-t border-slate-100 flex justify-end gap-2 shrink-0">
                   <button onClick={handleDelete} className="flex items-center gap-1 px-4 py-2 text-red-600 font-bold hover:bg-red-50 rounded-lg cursor-pointer"><Trash2 size={16}/> 삭제</button>
-                  <button onClick={handleEditClick} className="flex items-center gap-1 px-4 py-2 text-[#002554] font-bold hover:bg-slate-100 rounded-lg cursor-pointer"><Edit2 size={16}/> 수정</button>
+                  <button onClick={handleEditClick} className="flex items-center gap-1 px-4 py-2 text-brand-blue font-bold hover:bg-slate-100 rounded-lg cursor-pointer"><Edit2 size={16}/> 수정</button>
                 </div>
               )}
             </Dialog.Panel>

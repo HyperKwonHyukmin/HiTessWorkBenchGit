@@ -6,25 +6,27 @@ import React, { useState, useEffect, Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { getQueueStatus } from '../../api/admin';
 import { getAnalysisHistory } from '../../api/analysis';
-import { 
-  MoreVertical, Activity, FileText, Server, CheckCircle2, 
-  ArrowUpRight, Star, CalendarDays, Database, Map, Rocket, 
+import {
+  Activity, FileText, Server, CheckCircle2,
+  ArrowUpRight, Star, CalendarDays, Database, Map, Rocket,
   Wrench, Clock, X, ChevronRight
 } from 'lucide-react';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
+import { useNavigation } from '../../contexts/NavigationContext';
 
 const MODE_KO = {
   File: "파일 기반",
-  Interactive: "대화형 앱"
+  Interactive: "대화형 앱",
+  Parametric: "파라메트릭"
 };
 
 const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color }) => (
-  <div className="relative bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-start justify-between hover:shadow-lg hover:border-blue-300 transition-all duration-200 group">
+  <div className="relative bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-start justify-between hover:shadow-lg hover:border-blue-300 transition-all duration-200 group">
     <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400">
       <ArrowUpRight size={18} />
     </div>
     <div>
-      <h3 className="text-gray-600 text-sm font-bold tracking-tight group-hover:text-blue-600 transition-colors">
+      <h3 className="text-slate-600 text-sm font-bold tracking-tight group-hover:text-blue-600 transition-colors">
         {title}
       </h3>
       <div className="mt-2 flex items-center space-x-2 mb-1">
@@ -32,14 +34,14 @@ const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color }) => (
       </div>
       <p className="text-xs font-medium text-slate-400">{subtext}</p>
     </div>
-    <div className={`p-3 rounded-lg ${color} bg-opacity-10 group-hover:bg-opacity-20 transition-all`}>
-      <Icon size={22} className={color.replace('bg-', 'text-')} />
+    <div className={`p-3 rounded-xl ${color} shadow-sm group-hover:scale-110 transition-transform`}>
+      <Icon size={22} className="text-white" />
     </div>
   </div>
 );
 
 const FavoriteCard = ({ title, icon: Icon, color, desc, onClick }) => (
-  <button onClick={onClick} className="flex flex-col items-center justify-center p-6 bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-blue-500 hover:-translate-y-1 transition-all group w-full text-center h-full relative overflow-hidden cursor-pointer">
+  <button onClick={onClick} className="flex flex-col items-center justify-center p-6 bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-500 hover:-translate-y-1 transition-all group w-full text-center h-full relative overflow-hidden cursor-pointer">
     <div className="absolute top-3 right-3 text-yellow-400">
       <Star size={16} fill="currentColor" />
     </div>
@@ -47,15 +49,15 @@ const FavoriteCard = ({ title, icon: Icon, color, desc, onClick }) => (
       <Icon size={28} />
     </div>
     <h3 className="font-bold text-slate-700 text-sm">{title}</h3>
-    <p className="text-xs text-gray-400 mt-1 truncate max-w-full px-2">{desc}</p>
+    <p className="text-xs text-slate-400 mt-1 truncate max-w-full px-2">{desc}</p>
   </button>
 );
 
-const ProjectRow = ({ id, name, type, status, date }) => {
+const ProjectRow = ({ id, name, type, status, date, onClick }) => {
   const statusStyles = {
     Success: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     Failed: 'bg-red-100 text-red-700 border-red-200',
-    Pending: 'bg-gray-100 text-gray-600 border-gray-200',
+    Pending: 'bg-gray-100 text-slate-600 border-slate-200',
   };
 
   const statusKo = {
@@ -65,8 +67,8 @@ const ProjectRow = ({ id, name, type, status, date }) => {
   };
 
   return (
-    <tr className="border-b border-gray-50 last:border-0 hover:bg-slate-50 transition-colors group">
-      <td className="py-3 px-4 font-mono text-xs text-gray-500 text-center">{id}</td>
+    <tr onClick={onClick} className="border-b border-gray-50 last:border-0 hover:bg-blue-50/50 transition-colors group cursor-pointer">
+      <td className="py-3 px-4 font-mono text-xs text-slate-500 text-center">{id}</td>
       <td className="py-3 px-4">
         <div className="flex items-center">
           <FileText size={16} className="text-slate-400 mr-2 group-hover:text-blue-600 transition-colors" />
@@ -75,7 +77,7 @@ const ProjectRow = ({ id, name, type, status, date }) => {
           </span>
         </div>
       </td>
-      <td className="py-3 px-4 text-xs text-gray-500 font-mono">
+      <td className="py-3 px-4 text-xs text-slate-500 font-mono">
         <span className="bg-slate-100 px-2 py-1 rounded border border-slate-200">{type}</span>
       </td>
       <td className="py-3 px-4">
@@ -83,10 +85,7 @@ const ProjectRow = ({ id, name, type, status, date }) => {
           {statusKo[status] || status}
         </span>
       </td>
-      <td className="py-3 px-4 text-xs text-gray-400 text-right">{new Date(date).toLocaleString()}</td>
-      <td className="py-3 px-4 text-center">
-        <button className="text-gray-300 hover:text-gray-600 cursor-pointer"><MoreVertical size={16} /></button>
-      </td>
+      <td className="py-3 px-4 text-xs text-slate-400 text-right">{new Date(date).toLocaleString()}</td>
     </tr>
   );
 };
@@ -162,7 +161,7 @@ const RoadmapModal = ({ isOpen, onClose }) => {
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" />
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <Dialog.Panel className="w-full max-w-5xl bg-slate-50 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="bg-[#002554] p-5 flex justify-between items-center text-white shrink-0">
+            <div className="bg-brand-blue p-5 flex justify-between items-center text-white shrink-0">
               <div>
                 <Dialog.Title className="font-bold text-lg flex items-center gap-2">
                   <Map size={20} className="text-blue-400"/> HiTESS 워크벤치 로드맵
@@ -218,7 +217,8 @@ const RoadmapModal = ({ isOpen, onClose }) => {
   );
 };
 
-export default function Dashboard({ setCurrentMenu }) {
+export default function Dashboard() {
+  const { setCurrentMenu } = useNavigation();
   // [핵심 변경] 상태 초기화를 위해 setAssessmentPageState 가져오기
   const { favorites, setAssessmentPageState } = useDashboard();
   
@@ -226,6 +226,7 @@ export default function Dashboard({ setCurrentMenu }) {
   const [loading, setLoading] = useState(true);
 
   const [queueStatus, setQueueStatus] = useState({ running: 0, pending: 0, limit: 2 });
+  const [isBackendConnected, setIsBackendConnected] = useState(false);
   const [isRoadmapModalOpen, setIsRoadmapModalOpen] = useState(false);
 
   useEffect(() => {
@@ -233,8 +234,10 @@ export default function Dashboard({ setCurrentMenu }) {
       try {
         const res = await getQueueStatus();
         setQueueStatus(res.data);
+        setIsBackendConnected(true);
       } catch (error) {
         console.error("Queue Status fetch error", error);
+        setIsBackendConnected(false);
       }
     };
     fetchQueue();
@@ -251,7 +254,8 @@ export default function Dashboard({ setCurrentMenu }) {
         if (!employeeId) return;
 
         const response = await getAnalysisHistory(employeeId);
-        const sortedData = response.data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        const rawData = response.data?.items ?? response.data;
+        const sortedData = [...rawData].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         setProjects(sortedData);
       } catch (error) {
         console.error("이력 불러오기 실패:", error);
@@ -295,14 +299,21 @@ export default function Dashboard({ setCurrentMenu }) {
       
       <div className="flex justify-between items-end mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">워크벤치 종합 현황</h1>
-          <p className="text-sm text-gray-500 mt-1">실행 중인 시뮬레이션 상태 및 시스템 리소스를 확인하세요.</p>
+          <h1 className="text-2xl font-bold text-brand-blue tracking-tight">워크벤치 종합 현황</h1>
+          <p className="text-sm text-slate-500 mt-1">실행 중인 시뮬레이션 상태 및 시스템 리소스를 확인하세요.</p>
         </div>
         <div className="text-right">
-           <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200 shadow-sm">
-             <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-             해석 엔진 연결됨
-           </span>
+          {isBackendConnected ? (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200 shadow-sm">
+              <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+              해석 엔진 연결됨
+            </span>
+          ) : (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200 shadow-sm">
+              <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
+              서버 연결 끊김
+            </span>
+          )}
         </div>
       </div>
 
@@ -310,14 +321,14 @@ export default function Dashboard({ setCurrentMenu }) {
       <RoadmapModal isOpen={isRoadmapModalOpen} onClose={() => setIsRoadmapModalOpen(false)} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-2">
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 relative overflow-hidden group hover:border-blue-300 transition-colors">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 relative overflow-hidden group hover:border-blue-300 transition-colors">
           <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
             <Server size={100} />
           </div>
-          <h3 className="text-gray-600 text-sm font-bold tracking-tight flex items-center gap-2 mb-3">
+          <h3 className="text-slate-600 text-sm font-bold tracking-tight flex items-center gap-2 mb-3">
             <Activity size={16} className="text-blue-500" /> 해석 서버 부하 현황
           </h3>
-          <p className="text-[11px] text-gray-400 font-bold mb-2">현재 서버 구동 현황</p>
+          <p className="text-[11px] text-slate-400 font-bold mb-2">현재 서버 구동 현황</p>
           <div className="text-2xl font-extrabold text-slate-800 tracking-tight mb-2">
             {queueStatus.running} <span className="text-sm text-slate-400 font-medium">/ {queueStatus.limit} 구동 중</span>
           </div>
@@ -355,7 +366,7 @@ export default function Dashboard({ setCurrentMenu }) {
         </h2>
         
         {favorites.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-10 text-center text-slate-400 text-sm shadow-sm flex flex-col items-center">
+          <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-slate-400 text-sm shadow-sm flex flex-col items-center">
             <div className="p-4 bg-slate-50 rounded-full mb-4">
               <Star size={32} className="text-slate-300" />
             </div>
@@ -392,34 +403,41 @@ export default function Dashboard({ setCurrentMenu }) {
           </button>
         </div>
         
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wider">
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
                   <th className="py-3 px-4 font-bold w-24 text-center">ID</th>
                   <th className="py-3 px-4 font-bold">프로젝트명</th>
                   <th className="py-3 px-4 font-bold">모듈 (유형)</th>
                   <th className="py-3 px-4 font-bold">진행 상태</th>
                   <th className="py-3 px-4 font-bold text-right">수행 일시</th>
-                  <th className="py-3 px-4 font-bold text-center w-16">상세</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-slate-50">
                 {loading ? (
                   <tr>
-                    <td colSpan="6" className="py-10 text-center text-slate-400 text-sm">
+                    <td colSpan="5" className="py-10 text-center text-slate-400 text-sm">
                       <div className="animate-spin inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mb-2"></div>
                       <p>이력 데이터를 불러오는 중입니다...</p>
                     </td>
                   </tr>
                 ) : projects.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="py-10 text-center text-slate-400 text-sm">최근 수행된 프로젝트 내역이 없습니다.</td>
+                    <td colSpan="5" className="py-10 text-center text-slate-400 text-sm">최근 수행된 프로젝트 내역이 없습니다.</td>
                   </tr>
                 ) : (
                   projects.slice(0, 5).map((project) => (
-                    <ProjectRow key={project.id} id={project.id} name={project.project_name} type={project.program_name} status={project.status} date={project.created_at} />
+                    <ProjectRow
+                      key={project.id}
+                      id={project.id}
+                      name={project.project_name}
+                      type={project.program_name}
+                      status={project.status}
+                      date={project.created_at}
+                      onClick={() => setCurrentMenu('My Projects')}
+                    />
                   ))
                 )}
               </tbody>

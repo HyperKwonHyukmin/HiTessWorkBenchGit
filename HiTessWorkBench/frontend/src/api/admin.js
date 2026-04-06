@@ -25,6 +25,14 @@ export const getSystemStatus = () =>
 export const getQueueStatus = () =>
   axios.get(`${API_BASE_URL}/api/system/queue-status`);
 
+/** 유지보수 모드 상태 조회 */
+export const getMaintenanceMode = () =>
+  axios.get(`${API_BASE_URL}/api/system/maintenance`);
+
+/** 유지보수 모드 설정 */
+export const setMaintenanceMode = (maintenance) =>
+  axios.post(`${API_BASE_URL}/api/system/maintenance`, { maintenance });
+
 // ==================== Notices ====================
 
 /** 공지사항 목록 조회 */

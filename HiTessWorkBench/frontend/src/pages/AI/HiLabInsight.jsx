@@ -2,8 +2,10 @@ import React, { useState, useRef, useEffect, Fragment } from 'react';
 import { chatWithAI, getAIDocuments, triggerIngest } from '../../api/ai';
 import { Send, Bot, User, RefreshCw, Database, Lock, Key, X, FileText, BarChart2 } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
+import { useNavigation } from '../../contexts/NavigationContext';
 
-export default function HiLabInsight({ setCurrentMenu }) {
+export default function HiLabInsight() {
+  const { setCurrentMenu } = useNavigation();
   const [messages, setMessages] = useState([
     { role: 'ai', text: '안녕하세요! 사내 기술 보고서 학습 챗봇 **Hi-Lab Insight**입니다. 무엇을 도와드릴까요?' }
   ]);
@@ -84,7 +86,7 @@ export default function HiLabInsight({ setCurrentMenu }) {
         <div className="flex items-center gap-3">
           <div className="p-2 bg-purple-100 text-purple-600 rounded-lg"><Bot size={24} /></div>
           <div>
-            <h2 className="font-bold text-[#002554] text-lg">Hi-Lab Insight</h2>
+            <h2 className="font-bold text-brand-blue text-lg">Hi-Lab Insight</h2>
             <p className="text-xs text-slate-500">Document Scoped Search & Source Verification</p>
           </div>
         </div>
@@ -98,11 +100,11 @@ export default function HiLabInsight({ setCurrentMenu }) {
       <div className="flex-1 bg-slate-50 p-6 overflow-y-auto border border-slate-200 custom-scrollbar flex flex-col gap-4">
         {messages.map((msg, i) => (
           <div key={i} className={`flex gap-3 max-w-[85%] ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-[#002554] text-white' : 'bg-purple-600 text-white'}`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-brand-blue text-white' : 'bg-purple-600 text-white'}`}>
               {msg.role === 'user' ? <User size={16}/> : <Bot size={16}/>}
             </div>
             
-            <div className={`p-4 rounded-2xl shadow-sm text-sm whitespace-pre-wrap leading-relaxed ${msg.role === 'user' ? 'bg-[#002554] text-white rounded-tr-sm' : 'bg-white text-slate-700 border border-slate-200 rounded-tl-sm w-full'}`}>
+            <div className={`p-4 rounded-2xl shadow-sm text-sm whitespace-pre-wrap leading-relaxed ${msg.role === 'user' ? 'bg-brand-blue text-white rounded-tr-sm' : 'bg-white text-slate-700 border border-slate-200 rounded-tl-sm w-full'}`}>
               {/* 메인 답변 텍스트 */}
               <div>{msg.text}</div>
               
@@ -213,8 +215,8 @@ export default function HiLabInsight({ setCurrentMenu }) {
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
             <Dialog.Panel className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] transform animate-fade-in-up">
-              <div className="bg-[#002554] p-5 flex justify-between items-center text-white shrink-0">
-                <Dialog.Title className="font-bold text-lg flex items-center gap-2"><Database size={20} className="text-[#00E600]"/> 지식 DB 벡터 반영 현황</Dialog.Title>
+              <div className="bg-brand-blue p-5 flex justify-between items-center text-white shrink-0">
+                <Dialog.Title className="font-bold text-lg flex items-center gap-2"><Database size={20} className="text-brand-accent"/> 지식 DB 벡터 반영 현황</Dialog.Title>
                 <button onClick={() => setIsDocsModalOpen(false)} className="hover:bg-white/20 p-1.5 rounded-lg transition-colors cursor-pointer"><X size={20}/></button>
               </div>
               <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-50">

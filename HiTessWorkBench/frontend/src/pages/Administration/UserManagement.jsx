@@ -98,7 +98,7 @@ export default function UserManagement() {
       {/* 1. Header & Stats */}
       <div className="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-[#002554] flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-brand-blue flex items-center gap-3">
             <Users className="text-blue-600" size={32} /> User Management
           </h1>
           <p className="text-slate-500 mt-2">시스템 접근 권한 부여 및 사용자 메타데이터를 관리합니다.</p>
@@ -125,7 +125,7 @@ export default function UserManagement() {
              <p className="text-xs font-bold text-slate-400 uppercase mb-1">Active Admins</p>
              <h3 className="text-3xl font-extrabold text-slate-800">{adminUsers}</h3>
            </div>
-           <div className="p-4 bg-slate-100 text-[#002554] rounded-xl"><Shield size={28}/></div>
+           <div className="p-4 bg-slate-100 text-brand-blue rounded-xl"><Shield size={28}/></div>
         </div>
       </div>
 
@@ -201,8 +201,8 @@ export default function UserManagement() {
                       onClick={() => handleToggle(user.id, 'is_active', user.is_active)}
                       className={`flex items-center justify-center gap-1.5 px-3 py-1.5 mx-auto rounded-lg text-xs font-bold transition-all cursor-pointer ${
                         user.is_active 
-                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100' 
-                          : 'bg-[#002554] text-white shadow-md hover:bg-[#003366] animate-pulse'
+                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100'
+                          : 'bg-brand-blue text-white shadow-md hover:bg-brand-blue-dark animate-pulse'
                       }`}
                     >
                       {user.is_active ? <><UserCheck size={14}/> Approved</> : <><UserX size={14}/> Approve?</>}
@@ -245,7 +245,7 @@ export default function UserManagement() {
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
             <Dialog.Panel className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-              <div className="bg-[#002554] p-5 flex justify-between items-center text-white">
+              <div className="bg-brand-blue p-5 flex justify-between items-center text-white">
                 <Dialog.Title className="font-bold text-lg flex items-center gap-2">
                   <Edit2 size={18} className="text-blue-400"/> 사용자 정보 수정
                 </Dialog.Title>
@@ -277,7 +277,7 @@ export default function UserManagement() {
 
                 <div className="flex justify-end gap-2 pt-4">
                   <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 bg-white border border-slate-300 text-slate-600 font-bold rounded-lg hover:bg-slate-50 cursor-pointer">취소</button>
-                  <button type="submit" className="px-6 py-2 bg-[#008233] text-white font-bold rounded-lg hover:bg-[#006b29] shadow-md cursor-pointer">정보 저장</button>
+                  <button type="submit" className="px-6 py-2 bg-brand-green text-white font-bold rounded-lg hover:opacity-90 shadow-md cursor-pointer">정보 저장</button>
                 </div>
               </form>
             </Dialog.Panel>

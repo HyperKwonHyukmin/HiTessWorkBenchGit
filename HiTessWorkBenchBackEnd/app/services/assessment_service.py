@@ -3,10 +3,13 @@ import io
 import os
 import csv
 import json
+import logging
 import subprocess
 from datetime import datetime
 from .. import models, database
 from .job_manager import job_status_store
+
+logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────
@@ -234,7 +237,7 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
   TrussAssessment.exe 엔진을 호출하고, 결과로 생성된 json 파일을 스캔하여 반환합니다.
   xlsx는 회사 DRM에 의해 즉시 암호화되므로 JSON → CSV 변환 결과를 함께 제공합니다.
   """
-  job_status_store[job_id].update({
+  job_status_store.update_job(job_id, {
     "status": "Running",
     "progress": 10,
     "message": "Initiating Assessment Solver..."
@@ -258,7 +261,7 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
     if not os.path.exists(exe_path):
       raise FileNotFoundError(f"Executable not found: {exe_path}")
 
-    job_status_store[job_id].update({
+    job_status_store.update_job(job_id, {
       "progress": 40,
       "message": "Running Nastran Analysis & Evaluation..."
     })
@@ -275,7 +278,7 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
     )
     engine_output = result.stdout
 
-    job_status_store[job_id].update({
+    job_status_store.update_job(job_id, {
       "progress": 80,
       "message": "Extracting Results & Converting to CSV..."
     })
@@ -297,7 +300,7 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
         result_data[f"JSON_{name_without_ext}"] = full_path
 
         # JSON → CSV 변환 (DRM 우회)
-        job_status_store[job_id].update({"message": f"Converting {f} to CSV..."})
+        job_status_store.update_job(job_id, {"message": f"Converting {f} to CSV..."})
         csv_files = _json_to_csv(full_path, work_dir, name_without_ext)
         result_data.update(csv_files)
 
@@ -309,12 +312,14 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
 
   except subprocess.CalledProcessError as e:
     status_msg = "Failed"
-    engine_output = e.stderr if e.stderr else e.stdout
+    logger.error("TrussAssessment subprocess failed: %s", e.stderr or e.stdout)
+    engine_output = "해석 엔진 실행 중 오류가 발생했습니다. 관리자에게 문의하세요."
   except Exception as e:
     status_msg = "Failed"
-    engine_output = f"System Error: {str(e)}"
+    logger.error("TrussAssessment unexpected error: %s", str(e), exc_info=True)
+    engine_output = "예기치 않은 오류가 발생했습니다. 관리자에게 문의하세요."
 
-  job_status_store[job_id].update({"progress": 95, "message": "Saving to Database..."})
+  job_status_store.update_job(job_id, {"progress": 95, "message": "Saving to Database..."})
 
   # 4. DB 기록 및 상태 동기화
   try:
@@ -348,7 +353,7 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
     db.close()
 
   # 최종 클라이언트(UI) 응답용 스토어 업데이트
-  job_status_store[job_id].update({
+  job_status_store.update_job(job_id, {
     "status": status_msg,
     "progress": 100,
     "message": "Analysis Completed Successfully" if status_msg == "Success" else "Analysis Failed",

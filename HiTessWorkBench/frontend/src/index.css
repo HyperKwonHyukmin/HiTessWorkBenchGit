@@ -3,15 +3,41 @@
 @theme {
   --font-sans: 'Pretendard', sans-serif;
 
+  /* 브랜드 색상 토큰 */
   --color-brand-blue: #002554;
+  --color-brand-blue-dark: #003366;
+  --color-brand-blue-light: #004080;
   --color-brand-green: #008233;
   --color-brand-accent: #00E600;
   --color-brand-gray: #F5F7FA;
+  --color-surface: #F8F9FC;
 
+  /* 애니메이션 */
   --animate-fade-in: fadeIn 0.5s ease-out forwards;
+  --animate-slide-up: slideUp 0.3s ease-out forwards;
+  --animate-fade-in-up: fadeInUp 0.4s ease-out forwards;
 }
 
 @keyframes fadeIn {
   0% { opacity: 0; }
   100% { opacity: 1; }
+}
+
+@keyframes slideUp {
+  0% { opacity: 0; transform: translateY(16px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* 사이드바 스크롤바 완전 숨김 (스크롤 기능은 유지) */
+.custom-scrollbar {
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE / Edge */
+}
+.custom-scrollbar::-webkit-scrollbar {
+  display: none;                /* Chrome / Electron */
 }

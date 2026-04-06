@@ -2,7 +2,8 @@
  * @fileoverview 결과 데이터(변위, 단면력, 응력) 상태 관리 및 서버 통신(API/JSON) 로직
  */
 import { useState, useEffect } from 'react';
-import { useDashboard } from '../../contexts/DashboardContext';
+import { useDashboard } from '../contexts/DashboardContext';
+import { requestBeamAnalysis, downloadFileText } from '../api/analysis';
 
 export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
   const [dispData, setDispData] = useState([]);
@@ -74,15 +75,15 @@ export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
       };
       
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+      const userStr = localStorage.getItem('user');
+      const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
       const formData = new FormData();
       formData.append('beam_file', blob, 'beam.json');
-      formData.append('employee_id', "A476854");
+      formData.append('employee_id', employeeId);
       formData.append('source', 'Workbench');
 
-      const res = await fetch('http://localhost:8000/api/analysis/beam/request', { method: 'POST', body: formData });
-      if (!res.ok) throw new Error(`서버 요청 실패 (${res.status})`);
-      const resData = await res.json();
-      startGlobalJob(resData.job_id, 'Simple Beam Assessment');
+      const requestRes = await requestBeamAnalysis(formData);
+      startGlobalJob(requestRes.data.job_id, 'Simple Beam Assessment');
     } catch (err) { 
       showToast(`해석 요청 중 오류가 발생했습니다.\n${err.message}`, "error");
     }
@@ -93,8 +94,8 @@ export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
       if (globalJob.status === 'Success' && !hasCharts) {
         const fetchResult = async () => {
           try {
-            const res = await fetch(`http://localhost:8000/api/download?filepath=${encodeURIComponent(globalJob.result_path)}`);
-            const json = await res.json();
+            const downloadRes = await downloadFileText(globalJob.result_path);
+            const json = JSON.parse(downloadRes.data);
             processResultJson(json);
             showToast("서버 해석이 성공적으로 완료되었습니다.", "success");
           } catch (e) {

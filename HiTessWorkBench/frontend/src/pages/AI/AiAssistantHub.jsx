@@ -1,11 +1,13 @@
 import React from 'react';
 import { Bot, ArrowRight, FileText } from 'lucide-react';
+import { useNavigation } from '../../contexts/NavigationContext';
 
-export default function AiAssistantHub({ setCurrentMenu }) {
+export default function AiAssistantHub() {
+  const { setCurrentMenu } = useNavigation();
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-[#002554] tracking-tight flex items-center gap-3">
+        <h1 className="text-3xl font-bold text-brand-blue tracking-tight flex items-center gap-3">
           <Bot className="text-purple-600" size={32} /> AI Lab Assistant
         </h1>
         <p className="text-slate-500 mt-2">최신 인공지능 기술을 활용하여 업무 생산성을 극대화하십시오.</p>
@@ -15,7 +17,7 @@ export default function AiAssistantHub({ setCurrentMenu }) {
         {/* Hi-Lab Insight 챗봇 카드 */}
         <div 
           onClick={() => setCurrentMenu('Hi-Lab Insight')}
-          className="group bg-white p-8 rounded-2xl border border-gray-200 shadow-sm hover:shadow-xl hover:border-purple-400 transition-all duration-300 cursor-pointer flex flex-col h-full"
+          className="group bg-white p-8 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl hover:border-purple-400 transition-all duration-300 cursor-pointer flex flex-col h-full"
         >
           <div className="w-14 h-14 rounded-xl bg-purple-100 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
             <FileText className="text-purple-600" size={28} />

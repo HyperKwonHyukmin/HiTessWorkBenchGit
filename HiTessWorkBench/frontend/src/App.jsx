@@ -1,7 +1,7 @@
 /// <summary>
 /// React 애플리케이션의 최상위 라우터(Router) 및 상태 관리자입니다.
 /// </summary>
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import SplashScreen from './pages/auth/SplashScreen';
 import LoginScreen from './pages/auth/LoginScreen';
 import Dashboard from './pages/dashboard/Dashboard';
@@ -9,8 +9,10 @@ import MyProjects from './pages/analysis/MyProjects';
 import NewAnalysis from './pages/analysis/NewAnalysis';
 import Layout from './components/layout/Layout';
 import { Wand2 } from 'lucide-react';
-import ComponentWizard from './pages/analysis/ComponentWizard';
+import SimpleBeamAssessmentPage from './pages/analysis/SimpleBeamAssessmentPage';
 import { DashboardProvider } from './contexts/DashboardContext';
+import { NavigationProvider, useNavigation } from './contexts/NavigationContext';
+import { ToastProvider } from './contexts/ToastContext';
 import InteractiveApps from './pages/analysis/InteractiveApps';
 import NoticeBoard from './pages/Support/NoticeBoard';
 import UserGuide from './pages/Support/UserGuide';
@@ -23,32 +25,20 @@ import AnalysisManagement from './pages/Administration/AnalysisManagement';
 import AiAssistantHub from './pages/AI/AiAssistantHub';
 import HiLabInsight from './pages/AI/HiLabInsight';
 import BeamAnalysisViewer from './pages/analysis/BeamAnalysisViewer';
+import ParametricApps from './pages/analysis/ParametricApps';
+import MastPostAssessment from './pages/analysis/MastPostAssessment';
+import JibRestAssessment from './pages/analysis/JibRestAssessment';
+import ApiApps from './pages/Administration/ApiApps';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 
-function App() {
+function AppInner() {
   const [appState, setAppState] = useState(APP_STATE.SPLASH);
-  const [history, setHistory] = useState(['Dashboard']);
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  const currentMenu = history[currentIndex];
-
-  const setCurrentMenu = (menu) => {
-    const newHistory = history.slice(0, currentIndex + 1);
-    if (newHistory[newHistory.length - 1] !== menu) { 
-      newHistory.push(menu);
-      setHistory(newHistory);
-      setCurrentIndex(newHistory.length - 1);
-    }
-  };
-
-  const goBack = () => { if (currentIndex > 0) setCurrentIndex(currentIndex - 1); };
-  const goForward = () => { if (currentIndex < history.length - 1) setCurrentIndex(currentIndex + 1); };
+  const { currentMenu, setCurrentMenu, goBack, goForward, canGoBack, canGoForward, resetNavigation } = useNavigation();
 
   const handleSplashFinish = () => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
-      setCurrentMenu('Dashboard');
       setAppState(APP_STATE.MAIN);
     } else {
       setAppState(APP_STATE.LOGIN);
@@ -58,33 +48,58 @@ function App() {
   const handleLogout = () => {
     localStorage.removeItem('user');
     setAppState(APP_STATE.LOGIN);
-    setHistory(['Dashboard']);
-    setCurrentIndex(0);
+    resetNavigation('Dashboard');
   };
+
+  // 전역 키보드 단축키
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // F5: 새로고침 방지 (Electron에서 페이지 새로고침 대신 뒤로가기)
+      if (e.key === 'F5') {
+        e.preventDefault();
+      }
+      // Alt + ← : 뒤로 가기
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+      }
+      // Alt + → : 앞으로 가기
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        goForward();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [goBack, goForward]);
 
   const renderPage = () => {
     switch (currentMenu) {
-      case 'Dashboard': return <Dashboard setCurrentMenu={setCurrentMenu} />;
+      case 'Dashboard': return <Dashboard />;
       case 'My Project':
-      case 'My Projects': return <MyProjects setCurrentMenu={setCurrentMenu} />;
+      case 'My Projects': return <MyProjects />;
       case 'New Analysis':
-      case 'File-Based Apps': return <NewAnalysis setCurrentMenu={setCurrentMenu} />;
-      case 'Truss Analysis': return <TrussAnalysis setCurrentMenu={setCurrentMenu} />;
-      case 'Truss Structural Assessment': return <TrussAssessment setCurrentMenu={setCurrentMenu} />; 
-      case 'Interactive Apps': return <InteractiveApps setCurrentMenu={setCurrentMenu} />;
+      case 'File-Based Apps': return <NewAnalysis />;
+      case 'Truss Analysis': return <TrussAnalysis />;
+      case 'Truss Structural Assessment': return <TrussAssessment />;
+      case 'Interactive Apps': return <InteractiveApps />;
+      case 'Parametric Apps': return <ParametricApps />;
+      case 'Mast Post Assessment': return <MastPostAssessment />;
+      case 'Jib Rest Assessment': return <JibRestAssessment />;
+      case 'API Apps': return <ApiApps />;
       case 'Component Wizard':
-      case 'Simple Beam Assessment': 
-      case 'Simple Beam Analyzer': return <ComponentWizard />;
+      case 'Simple Beam Assessment':
+      case 'Simple Beam Analyzer': return <SimpleBeamAssessmentPage />;
       case 'Notice & Updates': return <NoticeBoard />;
-      case 'Feature Requests': 
+      case 'Feature Requests':
       case 'User Requests': return <UserRequests />;
       case 'User Guide': return <UserGuide />;
       case 'User Management': return <UserManagement />;
       case 'Analysis Management': return <AnalysisManagement />;
       case 'System Settings': return <SystemSettings />;
-      case 'AI Lab Assistant': 
-      case 'AI Assistant': return <AiAssistantHub setCurrentMenu={setCurrentMenu} />;
-      case 'Hi-Lab Insight': return <HiLabInsight setCurrentMenu={setCurrentMenu} />;
+      case 'AI Lab Assistant':
+      case 'AI Assistant': return <AiAssistantHub />;
+      case 'Hi-Lab Insight': return <HiLabInsight />;
       case 'Beam Result Viewer': return <BeamAnalysisViewer />;
       default:
         return (
@@ -94,7 +109,7 @@ function App() {
             </div>
             <p className="text-lg font-bold text-slate-600">"{currentMenu}"</p>
             <p className="text-sm">해당 페이지는 현재 시스템 최적화 및 개발 진행 중입니다.</p>
-            <button 
+            <button
               onClick={() => setCurrentMenu('Dashboard')}
               className="mt-6 px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
             >
@@ -106,14 +121,18 @@ function App() {
   };
 
   return (
-    // 💡 [수정] DashboardProvider에 setCurrentMenu를 전달하여 전역 위젯에서 메뉴 이동이 가능하게 함
-    <DashboardProvider setCurrentMenu={setCurrentMenu}>
+    <DashboardProvider>
       {appState === APP_STATE.SPLASH && <SplashScreen onFinish={handleSplashFinish} />}
       {appState === APP_STATE.LOGIN && <LoginScreen onLoginSuccess={() => setAppState(APP_STATE.MAIN)} />}
       {appState === APP_STATE.MAIN && (
-        <Layout 
-          onLogout={handleLogout} currentMenu={currentMenu} setCurrentMenu={setCurrentMenu}
-          goBack={goBack} goForward={goForward} canGoBack={currentIndex > 0} canGoForward={currentIndex < history.length - 1}
+        <Layout
+          onLogout={handleLogout}
+          currentMenu={currentMenu}
+          setCurrentMenu={setCurrentMenu}
+          goBack={goBack}
+          goForward={goForward}
+          canGoBack={canGoBack}
+          canGoForward={canGoForward}
         >
           {renderPage()}
         </Layout>
@@ -122,4 +141,12 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <NavigationProvider>
+      <ToastProvider>
+        <AppInner />
+      </ToastProvider>
+    </NavigationProvider>
+  );
+}

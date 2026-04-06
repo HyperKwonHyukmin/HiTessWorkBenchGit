@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "shrimp-task-manager": {
+      "command": "node",
+      "args": [
+        "C:\\Coding\\MCP\\mcp-shrimp-task-manager\\dist\\index.js"
+      ],
+      "env": {
+        "DATA_DIR": "C:\\Coding\\WorkBench\\shrimp_data",
+        "TEMPLATES_USE": "en",
+        "ENABLE_GUI": "false"
+      }
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest"
+      ],
+      "env": {}
+    },
+    "shadcn": {
+      "command": "npx",
+      "args": [
+        "shadcn@latest",
+        "mcp"
+      ]
+    }
+  }
+}

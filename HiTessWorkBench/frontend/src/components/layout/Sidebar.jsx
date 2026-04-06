@@ -1,22 +1,24 @@
-import React, { useState, useEffect, Fragment } from 'react';
-import { 
-  Home,           
-  UploadCloud,    
-  PenTool,        
-  FolderOpen,     
-  Megaphone,      
-  Lightbulb,      
-  BookOpen,       
-  Bot,            
-  Library,        
-  Settings,       
-  BarChart3,      
+import React, { useState, useEffect, useMemo, Fragment } from 'react';
+import {
+  Home,
+  UploadCloud,
+  PenTool,
+  SlidersHorizontal,
+  FolderOpen,
+  Megaphone,
+  Lightbulb,
+  BookOpen,
+  Bot,
+  Library,
+  Settings,
+  BarChart3,
   ChevronLeft,
   ChevronRight,
-  ShieldAlert,    
-  Lock,           
-  Key,            
-  X               
+  ShieldAlert,
+  Lock,
+  Key,
+  X,
+  Webhook
 } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 
@@ -43,56 +45,56 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
     }
   }, []);
 
-  // 💡 [변경 완료] 메뉴 구성 배열 재배치 (RESEARCH & AI -> SUPPORT & COMMUNITY 순서)
-  const menuItems = [
-    { 
-      category: "WORKBENCH", 
-      items: [
-        { icon: Home, label: "Dashboard" },
-      ]
-    },
-    { 
-      category: "ANALYSIS", 
-      items: [
-        { icon: UploadCloud, label: "File-Based Apps" }, // 💡 명칭 변경
-        { icon: PenTool, label: "Interactive Apps" },
-        { icon: FolderOpen, label: "My Projects" }, 
-      ]
+  const menuItems = useMemo(() => {
+    const items = [
+      {
+        category: "WORKBENCH",
+        items: [{ icon: Home, label: "Dashboard" }]
+      },
+      {
+        category: "ANALYSIS",
+        items: [
+          { icon: UploadCloud, label: "File-Based Apps" },
+          { icon: PenTool, label: "Interactive Apps" },
+          { icon: SlidersHorizontal, label: "Parametric Apps" },
+          { icon: FolderOpen, label: "My Projects" },
+        ]
+      }
+    ];
+
+    if (isResearchLab) {
+      items.push({
+        category: "RESEARCH & AI",
+        items: [
+          { icon: Bot, label: "AI Assistant" },
+          { icon: Library, label: "Knowledge Archive" },
+        ]
+      });
     }
-  ];
 
-  // 1. RESEARCH & AI 먼저 푸시
-  if (isResearchLab) {
-    menuItems.push({
-      category: "RESEARCH & AI", 
+    items.push({
+      category: "SUPPORT & COMMUNITY",
       items: [
-        { icon: Bot, label: "AI Assistant" },
-        { icon: Library, label: "Knowledge Archive" },
+        { icon: Megaphone, label: "Notice & Updates" },
+        { icon: Lightbulb, label: "User Requests" },
+        { icon: BookOpen, label: "User Guide" },
       ]
     });
-  }
 
-  // 2. SUPPORT & COMMUNITY 다음으로 푸시
-  menuItems.push({
-    category: "SUPPORT & COMMUNITY", 
-    items: [
-      { icon: Megaphone, label: "Notice & Updates" },
-      { icon: Lightbulb, label: "User Requests" }, 
-      { icon: BookOpen, label: "User Guide" },
-    ]
-  });
+    if (isAdmin) {
+      items.push({
+        category: "ADMINISTRATION",
+        items: [
+          { icon: ShieldAlert, label: "User Management" },
+          { icon: BarChart3, label: "Analysis Management" },
+          { icon: Settings, label: "System Settings" },
+          { icon: Webhook, label: "API Apps" }
+        ]
+      });
+    }
 
-  // 3. ADMIN 마지막 푸시
-  if (isAdmin) {
-    menuItems.push({
-      category: "ADMINISTRATION", 
-      items: [
-        { icon: ShieldAlert, label: "User Management" },
-        { icon: BarChart3, label: "Analysis Management" },
-        { icon: Settings, label: "System Settings" }
-      ]
-    });
-  }
+    return items;
+  }, [isAdmin, isResearchLab]);
 
   const handleMenuClick = (category, label) => {
     if (category === "ADMINISTRATION" && !isSecondaryAuthPassed) {
@@ -132,9 +134,9 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
           )}
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-4 custom-scrollbar">
+        <nav className="flex-1 overflow-y-auto py-2 custom-scrollbar">
           {menuItems.map((section, idx) => (
-            <div key={idx} className="mb-6">
+            <div key={idx} className="mb-4">
               {!isCollapsed && (
                 <div className={`px-6 mb-2 text-xs font-bold uppercase tracking-wider ${
                   section.category === "ADMINISTRATION" ? "text-red-400" : "text-slate-400"
@@ -150,9 +152,9 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
                     <li key={i}>
                       <button 
                         onClick={() => handleMenuClick(section.category, item.label)} 
-                        className={`w-full flex items-center px-4 py-3 transition-colors relative group cursor-pointer ${
+                        className={`w-full flex items-center px-4 py-2 transition-colors relative group cursor-pointer ${
                           isActive 
-                            ? 'bg-[#00E600] text-[#002554] font-bold' 
+                            ? 'bg-[#00E600] text-brand-blue font-bold'
                             : 'text-slate-300 hover:bg-[#003366] hover:text-white'
                         }`}
                       >
@@ -177,7 +179,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
         </nav>
 
         <div className="p-4 border-t border-[#003366] bg-[#001f45] shrink-0">
-          <button onClick={toggleSidebar} className="w-full flex items-center justify-center p-2 rounded bg-[#003366] hover:bg-[#004080] text-white transition-colors cursor-pointer">
+          <button onClick={toggleSidebar} className="w-full flex items-center justify-center p-2 rounded bg-[#003366] hover:bg-brand-blue-dark text-white transition-colors cursor-pointer">
             {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </button>
         </div>

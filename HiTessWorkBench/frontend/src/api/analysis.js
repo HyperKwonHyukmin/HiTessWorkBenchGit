@@ -2,12 +2,12 @@ import axios from 'axios';
 import { API_BASE_URL } from '../config';
 
 /** 사용자 해석 이력 조회 */
-export const getAnalysisHistory = (employeeId) =>
-  axios.get(`${API_BASE_URL}/api/analysis/history/${employeeId}`);
+export const getAnalysisHistory = (employeeId, skip = 0, limit = 200) =>
+  axios.get(`${API_BASE_URL}/api/analysis/history/${employeeId}`, { params: { skip, limit } });
 
 /** 전체 해석 이력 조회 (관리자용) */
-export const getAllAnalysisHistory = () =>
-  axios.get(`${API_BASE_URL}/api/analysis/all`);
+export const getAllAnalysisHistory = (limit = 200) =>
+  axios.get(`${API_BASE_URL}/api/analysis/all`, { params: { limit } });
 
 /** 해석 작업 상태 조회 (폴링용) */
 export const getJobStatus = (jobId) =>

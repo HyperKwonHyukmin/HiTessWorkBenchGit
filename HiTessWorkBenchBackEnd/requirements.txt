@@ -5,3 +5,19 @@ pymysql
 python-multipart
 cryptography
 openpyxl
+python-dotenv
+
+# AI
+langchain-ollama
+langchain-community
+langchain-core
+langchain-text-splitters
+faiss-cpu
+rank-bm25
+PyMuPDF
+pdfplumber
+pytesseract
+Pillow
+
+# 시스템 모니터링
+psutil

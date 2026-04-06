@@ -127,20 +127,20 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
               enter="ease-out duration-300" enterFrom="opacity-0 scale-95 translate-y-4" enterTo="opacity-100 scale-100 translate-y-0"
               leave="ease-in duration-200" leaveFrom="opacity-100 scale-100 translate-y-0" leaveTo="opacity-0 scale-95 translate-y-4"
             >
-              <Dialog.Panel className="w-full max-w-md transform overflow-visible rounded-2xl bg-white text-left align-middle shadow-2xl transition-all border border-gray-100">
+              <Dialog.Panel className="w-full max-w-md transform overflow-visible rounded-2xl bg-white text-left align-middle shadow-2xl transition-all border border-slate-100">
                 
                 {isSuccess ? (
                    <div className="p-8 text-center">
                       <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100 mb-6 animate-bounce">
                         <CheckCircle className="h-10 w-10 text-green-600" />
                       </div>
-                      <Dialog.Title as="h3" className="text-2xl font-bold text-gray-900 mb-2">가입 신청 완료</Dialog.Title>
-                      <p className="text-sm text-gray-500 mb-6">관리자 승인 후 이용 가능합니다.</p>
-                      <button onClick={handleClose} className="w-full py-3 bg-[#008233] text-white font-bold rounded-xl">확인</button>
+                      <Dialog.Title as="h3" className="text-2xl font-bold text-slate-900 mb-2">가입 신청 완료</Dialog.Title>
+                      <p className="text-sm text-slate-500 mb-6">관리자 승인 후 이용 가능합니다.</p>
+                      <button onClick={handleClose} className="w-full py-3 bg-brand-green text-white font-bold rounded-xl">확인</button>
                    </div>
                 ) : (
                   <>
-                    <div className="bg-gradient-to-r from-[#002554] to-[#003366] p-6 flex justify-between items-center text-white rounded-t-2xl">
+                    <div className="bg-gradient-to-r from-brand-blue to-brand-blue-dark p-6 flex justify-between items-center text-white rounded-t-2xl">
                        <h3 className="text-lg font-bold">Hi-TESS Join</h3>
                        <button onClick={handleClose}><X size={20}/></button>
                     </div>
@@ -190,7 +190,7 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
                            <StyledListbox label="직급" value={formData.position} onChange={(v)=>handleSelectChange('position', v)} options={positionOptions} icon={Briefcase} zIndex="z-10"/>
                         </div>
 
-                        <button type="submit" disabled={isLoading} className="w-full py-3 bg-[#008233] text-white font-bold rounded-xl hover:bg-[#006b29] transition-colors shadow-lg transform active:scale-[0.98]">
+                        <button type="submit" disabled={isLoading} className="w-full py-3 bg-brand-green text-white font-bold rounded-xl hover:opacity-90 transition-colors shadow-lg transform active:scale-[0.98]">
                            {isLoading ? 'Processing...' : '가입 신청하기'}
                         </button>
                       </form>
@@ -213,15 +213,15 @@ function StyledListbox({ label, value, onChange, options, icon: Icon, zIndex = "
       <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">{label}</label>
       <Listbox value={value} onChange={onChange}>
         <div className="relative mt-1">
-          <Listbox.Button className="relative w-full cursor-pointer py-2 pl-10 pr-10 text-left bg-slate-50 border border-gray-200 rounded-lg focus:bg-white sm:text-sm shadow-sm hover:border-blue-300 transition-colors">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3"><Icon className="h-4 w-4 text-gray-400"/></span>
+          <Listbox.Button className="relative w-full cursor-pointer py-2 pl-10 pr-10 text-left bg-slate-50 border border-slate-200 rounded-lg focus:bg-white sm:text-sm shadow-sm hover:border-blue-300 transition-colors">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3"><Icon className="h-4 w-4 text-slate-400"/></span>
             <span className="block truncate text-slate-700 font-medium">{value}</span>
-            <span className="absolute inset-y-0 right-0 flex items-center pr-2"><ChevronDown className="h-4 w-4 text-gray-400"/></span>
+            <span className="absolute inset-y-0 right-0 flex items-center pr-2"><ChevronDown className="h-4 w-4 text-slate-400"/></span>
           </Listbox.Button>
           <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
             <Listbox.Options className="absolute mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-xl ring-1 ring-black/5 sm:text-sm">
               {options.map((option, idx) => (
-                <Listbox.Option key={idx} value={option} className={({ active }) => `relative cursor-pointer select-none py-2 pl-10 pr-4 transition-colors ${active ? 'bg-green-50 text-green-900' : 'text-gray-900'}`}>
+                <Listbox.Option key={idx} value={option} className={({ active }) => `relative cursor-pointer select-none py-2 pl-10 pr-4 transition-colors ${active ? 'bg-green-50 text-green-900' : 'text-slate-900'}`}>
                   {({ selected }) => (
                     <>
                       <span className={`block truncate ${selected ? 'font-bold' : 'font-normal'}`}>{option}</span>

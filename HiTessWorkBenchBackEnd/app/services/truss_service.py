@@ -1,14 +1,17 @@
 """Truss Model Builder 해석 백그라운드 실행 로직."""
 import os
+import logging
 import subprocess
 from datetime import datetime
 from .. import models, database
 from .job_manager import job_status_store
 
+logger = logging.getLogger(__name__)
+
 
 def task_execute_truss(job_id: str, node_path: str, member_path: str, work_dir: str, exe_path: str, exe_dir: str,
                        employee_id: str, timestamp: str, source: str):
-  job_status_store[job_id].update({"status": "Running", "progress": 10, "message": "Initiating Truss Solver..."})
+  job_status_store.update_job(job_id, {"status": "Running", "progress": 10, "message": "Initiating Truss Solver..."})
 
   input_data = {"node_csv": node_path, "member_csv": member_path}
   result_data = {}
@@ -24,14 +27,14 @@ def task_execute_truss(job_id: str, node_path: str, member_path: str, work_dir: 
       status_msg = "Failed"
       engine_output = f"Executable not found: {exe_path}"
     else:
-      job_status_store[job_id].update({"progress": 40, "message": "Solving Linear Equations..."})
+      job_status_store.update_job(job_id, {"progress": 40, "message": "Solving Linear Equations..."})
       cmd_args = [exe_path, exe_dir, node_path, member_path]
 
       try:
         result = subprocess.run(cmd_args, capture_output=True, text=True, check=True)
         engine_output = result.stdout
 
-        job_status_store[job_id].update({"progress": 80, "message": "Extracting Results & Writing BDF..."})
+        job_status_store.update_job(job_id, {"progress": 80, "message": "Extracting Results & Writing BDF..."})
 
         # [핵심 수정 구간]
         # 1. 레퍼런스(Material_Property_Info) 파일 제외
@@ -49,12 +52,14 @@ def task_execute_truss(job_id: str, node_path: str, member_path: str, work_dir: 
 
       except subprocess.CalledProcessError as e:
         status_msg = "Failed"
-        engine_output = e.stderr if e.stderr else e.stdout
+        logger.error("TrussModelBuilder subprocess failed: %s", e.stderr or e.stdout)
+        engine_output = "해석 엔진 실행 중 오류가 발생했습니다. 관리자에게 문의하세요."
       except Exception as e:
         status_msg = "Failed"
-        engine_output = f"System Error: {str(e)}"
+        logger.error("TrussModelBuilder unexpected error: %s", str(e), exc_info=True)
+        engine_output = "예기치 않은 오류가 발생했습니다. 관리자에게 문의하세요."
 
-    job_status_store[job_id].update({"progress": 95, "message": "Saving to Database..."})
+    job_status_store.update_job(job_id, {"progress": 95, "message": "Saving to Database..."})
 
     try:
       new_analysis = models.Analysis(
@@ -84,7 +89,7 @@ def task_execute_truss(job_id: str, node_path: str, member_path: str, work_dir: 
       status_msg = "Failed"
       engine_output += f"\nDB 기록 오류: {str(db_e)}"
 
-    job_status_store[job_id].update({
+    job_status_store.update_job(job_id, {
       "status": status_msg,
       "progress": 100,
       "message": "Analysis Completed Successfully" if status_msg == "Success" else "Analysis Failed",

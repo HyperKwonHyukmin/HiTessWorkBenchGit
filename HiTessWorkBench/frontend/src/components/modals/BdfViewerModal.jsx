@@ -166,8 +166,8 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
         controls.dampingFactor = 0.05;
         controlsRef.current = controls;
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
         dirLight.position.set(1, 1, 2);
         scene.add(dirLight);
 
@@ -209,10 +209,10 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
 
         const cylinderGeo = new THREE.CylinderGeometry(rodRadius, rodRadius, 1, 8);
         cylinderGeo.rotateX(Math.PI / 2); 
-        const cylinderMat = new THREE.MeshStandardMaterial({ 
-          color: 0x3b82f6, 
-          roughness: 0.3, 
-          metalness: 0.7 
+        const cylinderMat = new THREE.MeshStandardMaterial({
+          color: 0x93c5fd,
+          roughness: 0.2,
+          metalness: 0.3
         });
 
         elements.forEach(([n1, n2]) => {

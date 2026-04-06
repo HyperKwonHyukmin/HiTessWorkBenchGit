@@ -3,14 +3,7 @@
  */
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine } from 'recharts';
-
-const engFormat = (val) => {
-  if (val === undefined || val === null) return '';
-  if (val === 0) return '0';
-  const abs = Math.abs(val);
-  if (abs >= 10000 || abs < 0.001) return val.toExponential(2);
-  return Number.isInteger(val) ? val.toString() : val.toFixed(2);
-};
+import { formatEngineering as engFormat } from '../../utils/formatting';
 
 export default function EngineeringCharts({ dispData, elForceData, stressData, isCapturing }) {
   return (
