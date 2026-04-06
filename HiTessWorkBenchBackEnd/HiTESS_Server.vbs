@@ -1,6 +1,5 @@
 Set fso = CreateObject("Scripting.FileSystemObject")
-vbsDir = fso.GetParentFolderName(WScript.ScriptFullName)
-backendDir = vbsDir & "\HiTessWorkBenchBackEnd"
+backendDir = fso.GetParentFolderName(WScript.ScriptFullName)
 
 Set shell = CreateObject("WScript.Shell")
 shell.CurrentDirectory = backendDir
