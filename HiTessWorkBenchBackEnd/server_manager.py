@@ -9,8 +9,21 @@ from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-PYTHON = sys.executable
-PIP    = str(Path(sys.executable).parent / "pip.exe")
+
+# WorkBenchEnv가 HiTessWorkBenchBackEnd 안에 있으면 BASE_DIR/WorkBenchEnv,
+# 상위 폴더(HiTessWorkBenchGit)에 있으면 BASE_DIR.parent/WorkBenchEnv 를 사용
+_venv_inner = BASE_DIR / "WorkBenchEnv" / "Scripts" / "python.exe"
+_venv_outer = BASE_DIR.parent / "WorkBenchEnv" / "Scripts" / "python.exe"
+if _venv_inner.exists():
+    PYTHON = str(_venv_inner)
+    PIP    = str(_venv_inner.parent / "pip.exe")
+elif _venv_outer.exists():
+    PYTHON = str(_venv_outer)
+    PIP    = str(_venv_outer.parent / "pip.exe")
+else:
+    PYTHON = sys.executable
+    PIP    = str(Path(sys.executable).parent / "pip.exe")
+
 SERVER_CMD = [PYTHON, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # ── 색상 팔레트 ──
