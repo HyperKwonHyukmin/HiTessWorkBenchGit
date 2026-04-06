@@ -132,7 +132,7 @@ nssm start HiTessBackend
 1. `.env`의 `REPORTS_DIR` 경로에 학습 문서(PDF/DOCX/TXT) 배치
 2. 관리자 계정 로그인 → 앱 내 "인덱싱" 실행, 또는:
 ```bash
-curl -X POST http://서버IP:8000/api/ai/ingest
+curl -X POST http://서버IP:9091/api/ai/ingest
 ```
 
 또는 기존 `app/AI/vectorstore/` 폴더를 USB로 복사해도 됨.
@@ -164,7 +164,7 @@ update.bat 더블클릭
 
 | # | 항목 | 방법 |
 |---|------|------|
-| 1 | 헬스 체크 | 브라우저 `http://서버IP:8000/` → `{"status":"ok"}` |
+| 1 | 헬스 체크 | 브라우저 `http://서버IP:9091/` → `{"status":"ok"}` |
 | 2 | DB 연결 | System Settings 페이지 DB 상태 초록 확인 |
 | 3 | 해석 엔진 | Truss Analysis 파일 업로드 → 결과 확인 |
 | 4 | AI | AI Lab Assistant 채팅 답변 생성 확인 |

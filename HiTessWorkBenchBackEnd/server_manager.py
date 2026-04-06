@@ -24,7 +24,7 @@ else:
     PYTHON = sys.executable
     PIP    = str(Path(sys.executable).parent / "pip.exe")
 
-SERVER_CMD = [PYTHON, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+SERVER_CMD = [PYTHON, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9091"]
 
 # ── 색상 팔레트 ──
 BG        = "#1e2130"
@@ -165,7 +165,7 @@ class ServerManagerApp:
         if running:
             self.status_dot.configure(fg=GREEN)
             self.status_label.configure(text="Running", fg=GREEN)
-            self.port_label.configure(text="  port 8000")
+            self.port_label.configure(text="  port 9091")
             self.toggle_btn.configure(text="Stop", bg=RED, activebackground="#d45f5f")
         else:
             self.status_dot.configure(fg=RED)
@@ -173,11 +173,37 @@ class ServerManagerApp:
             self.port_label.configure(text="")
             self.toggle_btn.configure(text="Start", bg=GREEN, activebackground="#2db87a")
 
+    # ── 포트 점유 프로세스 강제 종료 ─────────────────────────────────────
+    def _kill_port(self, port: int):
+        try:
+            result = subprocess.run(
+                ["netstat", "-ano"],
+                capture_output=True, text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            pids = set()
+            for line in result.stdout.splitlines():
+                if f":{port}" in line and ("LISTENING" in line or "0.0.0.0:0" in line):
+                    parts = line.split()
+                    if parts:
+                        pids.add(parts[-1])
+            for pid in pids:
+                if pid.isdigit() and pid != "0":
+                    subprocess.run(
+                        ["taskkill", "/PID", pid, "/F"],
+                        capture_output=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    self._log(f"  기존 프로세스 종료: PID {pid}", "warning")
+        except Exception as e:
+            self._log(f"  포트 정리 중 오류: {e}", "error")
+
     # ── 서버 시작 ────────────────────────────────────────────────────────
     def _start_server(self):
         if self.server_proc and self.server_proc.poll() is None:
             return
         self._log("서버를 시작하는 중...", "info")
+        self._kill_port(9091)
         try:
             self.server_proc = subprocess.Popen(
                 SERVER_CMD,
@@ -190,7 +216,7 @@ class ServerManagerApp:
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             self._set_running(True)
-            self._log("uvicorn 서버 시작됨 (port 8000)", "success")
+            self._log("uvicorn 서버 시작됨 (port 9091)", "success")
             threading.Thread(target=self._stream_output, daemon=True).start()
         except FileNotFoundError:
             self._log(f"Python 실행 파일을 찾을 수 없습니다:\n  {PYTHON}", "error")

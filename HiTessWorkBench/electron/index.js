@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen } = require("electron");
+const { app, BrowserWindow, screen, ipcMain, shell } = require("electron");
 const path = require("path");
 
 let mainWindow;
@@ -53,6 +53,10 @@ function createWindow() {
     mainWindow = null;
   });
 }
+
+ipcMain.on("open-external", (_, url) => {
+  shell.openExternal(url);
+});
 
 app.whenReady().then(() => {
   createWindow();

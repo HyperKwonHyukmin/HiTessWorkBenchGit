@@ -166,7 +166,14 @@ export default function LoginScreen({ onLoginSuccess }) {
               </div>
               <button
                 className="w-full flex items-center justify-center py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-colors shadow-md"
-                onClick={() => { window.location.href = `${API_BASE_URL}/api/download/client`; }}
+                onClick={() => {
+                  const url = `${API_BASE_URL}/api/download/client`;
+                  if (window.electron) {
+                    window.electron.sendMessage('open-external', url);
+                  } else {
+                    window.location.href = url;
+                  }
+                }}
               >
                 <DownloadCloud className="mr-2 h-5 w-5" />
                 최신 버전 다운로드

@@ -206,7 +206,7 @@ export default function Layout({
             type="text"
             value={serverUrlInput}
             onChange={(e) => setServerUrlInput(e.target.value)}
-            placeholder="http://10.133.122.70:8000"
+            placeholder="http://10.133.122.70:9091"
             className="font-mono"
           />
         </div>

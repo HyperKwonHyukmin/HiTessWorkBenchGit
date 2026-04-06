@@ -52,7 +52,7 @@ npm run dist
 
 ### 주요 설정 포인트
 
-- **백엔드 URL**: `HiTessWorkBench/frontend/src/config.js`의 `API_BASE_URL` — 서버 IP에 맞게 변경. 현재 `http://10.133.122.70:8000`.
+- **백엔드 URL**: `HiTessWorkBench/frontend/src/config.js`의 `API_BASE_URL` — 서버 IP에 맞게 변경. 현재 `http://10.133.122.70:9091`.
 - **데이터베이스**: MySQL `localhost:3306/hitessworkbench`, 접속 정보는 `HiTessWorkBenchBackEnd/app/database.py`. SQLAlchemy로 서버 시작 시 테이블 자동 생성.
 - **Electron 환경 감지**: `electron/index.js`의 `app.isPackaged` 여부로 개발/프로덕션 로드 경로 분기.
 

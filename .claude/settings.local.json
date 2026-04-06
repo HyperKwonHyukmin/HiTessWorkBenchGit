@@ -34,7 +34,10 @@
       "mcp__shrimp-task-manager__verify_task",
       "mcp__shrimp-task-manager__list_tasks",
       "Bash(\"WorkBenchEnv/Scripts/python.exe\" insert_guides.py --force)",
-      "Bash(WorkBenchEnv/Scripts/python.exe -c ':*)"
+      "Bash(WorkBenchEnv/Scripts/python.exe -c ':*)",
+      "Bash(dir C:\\\\Coding\\\\WorkBench\\\\HiTessWorkBench\\\\dist_electron:*)",
+      "Bash(netstat -ano)",
+      "Bash(findstr :8000)"
     ]
   },
   "enableAllProjectMcpServers": true,

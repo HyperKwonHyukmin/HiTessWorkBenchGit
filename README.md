@@ -79,7 +79,7 @@ npm run dist                           # 포터블 .exe 생성
 
 ```js
 // 팀 서버 IP로 변경
-export const API_BASE_URL = 'http://10.133.122.70:8000';
+export const API_BASE_URL = 'http://10.133.122.70:9091';
 ```
 
 데이터베이스 접속 정보는 `HiTessWorkBenchBackEnd/app/database.py`에서 설정합니다. 서버 최초 실행 시 SQLAlchemy가 테이블을 자동으로 생성합니다.
