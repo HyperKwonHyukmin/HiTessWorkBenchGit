@@ -309,6 +309,14 @@ export default function Dashboard() {
       setCurrentMenu('Truss Structural Assessment');
     } else if (title === "Simple Beam Assessment") {
       setCurrentMenu('Simple Beam Assessment');
+    } else if (title === "Mast Post Assessment") {
+      setCurrentMenu('Mast Post Assessment');
+    } else if (title === "Jib Rest Assessment") {
+      setCurrentMenu('Jib Rest Assessment');
+    } else if (title === "Column Buckling Load Calculator") {
+      setCurrentMenu('Column Buckling Load Calculator');
+    } else if (title === "BDF Scanner") {
+      setCurrentMenu('BDF Scanner');
     } else {
       alert(`[안내] ${title} 기능은 현재 준비 중입니다.`);
     }

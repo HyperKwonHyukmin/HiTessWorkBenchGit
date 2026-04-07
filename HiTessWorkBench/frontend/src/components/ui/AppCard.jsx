@@ -5,7 +5,7 @@
 /// </summary>
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Star, ArrowRight } from 'lucide-react';
+import { Star, ArrowRight, User } from 'lucide-react';
 import Badge from './Badge';
 
 // --- 정적 클래스 맵 (Tailwind JIT 호환을 위해 동적 생성 금지) ---
@@ -79,6 +79,7 @@ export default function AppCard({
     iconBg      = 'bg-blue-100',
     tags        = [],
     devStatus,
+    contributor,
   } = app;
 
   const accentBorderClass = ACCENT_BORDER_CLASSES[accentColor] ?? ACCENT_BORDER_CLASSES.blue;
@@ -166,6 +167,14 @@ export default function AppCard({
                 {tag}
               </span>
             ))}
+          </div>
+        )}
+
+        {/* Solver 기여자 */}
+        {contributor && (
+          <div className="flex items-center gap-1.5 mt-4 text-xs text-slate-400">
+            <User size={12} />
+            <span>Solver Contributed by <span className="font-medium text-slate-500">{contributor}</span></span>
           </div>
         )}
       </div>

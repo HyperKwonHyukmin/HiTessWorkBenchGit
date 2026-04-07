@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, JSON, Float
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, JSON, Float, Text
 from sqlalchemy.sql import func
 from .database import Base
 from datetime import datetime
@@ -52,7 +52,7 @@ class UserGuide(Base):
   id = Column(Integer, primary_key=True, index=True)
   category = Column(String(100))
   title = Column(String(200))
-  content = Column(String(10000))
+  content = Column(Text)
   author_id = Column(String(50))
   created_at = Column(DateTime(timezone=True), default=datetime.now)
 

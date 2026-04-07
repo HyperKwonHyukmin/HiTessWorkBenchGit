@@ -5,6 +5,7 @@ import {
 import { Upload, Activity, Layers, BarChart2, FileJson, Box } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
 import { useFileParser, parseTsvText } from '../../hooks/useFileParser';
+import SolverCredit from '../../components/ui/SolverCredit';
 
 
 /**
@@ -330,6 +331,7 @@ const BeamAnalysisViewer = () => {
           
         </section>
       </div>
+      <SolverCredit contributor="권혁민" />
     </div>
   );
 };

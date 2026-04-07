@@ -48,12 +48,13 @@ export default function Viewer3D({ beamType, params, loads, boundaries, dispData
     let height = mountRef.current.clientHeight || 600;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0B1120); 
+    scene.background = new THREE.Color(0x0a0a1a);
     const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100000);
-    
+
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -63,18 +64,20 @@ export default function Viewer3D({ beamType, params, loads, boundaries, dispData
     const modelGroup = new THREE.Group();
     scene.add(modelGroup);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    dirLight.position.set(1000, 2000, 1000);
-    scene.add(dirLight);
-
     const { length, dim1, dim2, dim3, dim4 } = {
-      length: Number(params.length)||1, dim1: Number(params.dim1)||1, 
+      length: Number(params.length)||1, dim1: Number(params.dim1)||1,
       dim2: Number(params.dim2)||1, dim3: Number(params.dim3)||1, dim4: Number(params.dim4)||1
     };
 
+    scene.add(new THREE.AmbientLight(0x334466, 0.8));
+    const dirLight = new THREE.DirectionalLight(0x88aaff, 1.5);
+    dirLight.position.set(length * 0.5, length * 1.0, length * 0.7);
+    scene.add(dirLight);
+    const pointLight = new THREE.PointLight(0x00ccff, 2, length * 3);
+    scene.add(pointLight);
+
     const maxHeight = (beamType === 'ROD' || beamType === 'TUBE') ? dim1 / 2 : dim2 / 2;
-    const gridHelper = new THREE.GridHelper(length * 2, 40, 0x334155, 0x1e293b);
+    const gridHelper = new THREE.GridHelper(length * 2, 40, 0x223355, 0x112233);
     gridHelper.position.set(0, -maxHeight - 20, 0); 
     modelGroup.add(gridHelper);
 
@@ -194,19 +197,24 @@ export default function Viewer3D({ beamType, params, loads, boundaries, dispData
     resizeObserver.observe(mountRef.current);
 
     let animationId;
-    const animate = () => { 
-      animationId = requestAnimationFrame(animate); 
-      controls.update(); 
+    let t = 0;
+    const animate = () => {
+      animationId = requestAnimationFrame(animate);
+      t += 0.01;
+      pointLight.position.x = Math.sin(t) * length * 0.5;
+      pointLight.position.z = Math.cos(t) * length * 0.5;
+      pointLight.position.y = maxHeight + length * 0.2;
+      controls.update();
       if (dispData.length > 0 && geometry) {
         const pos = geometry.attributes.position;
         const basePos = geometry.attributes.basePosition;
         const tDisp = geometry.attributes.targetDispZ;
         if (basePos && tDisp) {
           for (let i = 0; i < pos.count; i++) pos.setY(i, basePos.getY(i) + tDisp.getX(i) * defScaleRef.current);
-          pos.needsUpdate = true; 
+          pos.needsUpdate = true;
         }
       }
-      renderer.render(scene, camera); 
+      renderer.render(scene, camera);
     };
     animate();
 

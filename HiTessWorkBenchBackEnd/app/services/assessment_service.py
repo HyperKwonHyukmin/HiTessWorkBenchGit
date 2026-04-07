@@ -323,9 +323,10 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
 
   # 4. DB 기록 및 상태 동기화
   try:
+    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     new_analysis = models.Analysis(
-      project_name=f"Assessment_Job_{timestamp}",
-      program_name="Truss Structural Assessment",
+      project_name=f"Truss Assessment_{date_str}",
+      program_name="Truss Assessment",
       employee_id=employee_id,
       status=status_msg,
       input_info={"bdf_model": bdf_path},

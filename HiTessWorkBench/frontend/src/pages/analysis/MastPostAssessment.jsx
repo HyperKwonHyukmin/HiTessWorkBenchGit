@@ -10,6 +10,7 @@ import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import mastPostRef from '../../assets/images/mast_post_reference.png';
 import { formatFixed as fmt } from '../../utils/formatting';
+import SolverCredit from '../../components/ui/SolverCredit';
 
 const downloadJson = (data, filename) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -460,6 +461,7 @@ export default function MastPostAssessment() {
           )}
         </div>
       </div>
+      <SolverCredit contributor="박준석" />
     </div>
   );
 }

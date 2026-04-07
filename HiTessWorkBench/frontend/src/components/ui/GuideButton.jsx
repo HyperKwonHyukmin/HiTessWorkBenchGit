@@ -6,6 +6,7 @@ import React, { useState, useRef } from 'react';
 import { BookOpen, Loader2 } from 'lucide-react';
 import Modal from './Modal';
 import { getUserGuides } from '../../api/admin';
+import MarkdownRenderer from './MarkdownRenderer';
 
 /**
  * GuideButton
@@ -88,10 +89,10 @@ export default function GuideButton({ guideTitle, size = 'sm', variant = 'light'
               <Loader2 size={20} className="animate-spin" />
               <span className="text-sm">가이드를 불러오는 중...</span>
             </div>
+          ) : error ? (
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-red-500">{content}</p>
           ) : (
-            <p className={`whitespace-pre-wrap text-sm leading-relaxed ${error ? 'text-red-500' : 'text-slate-600'}`}>
-              {content}
-            </p>
+            <MarkdownRenderer content={content} />
           )}
         </div>
       </Modal>

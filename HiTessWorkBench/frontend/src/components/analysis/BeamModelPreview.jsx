@@ -10,6 +10,7 @@ import { useAnalysisManager } from '../../hooks/useAnalysisManager';
 import { InputRow, SummaryRow, SectionGuide } from '../../components/analysis/BeamSharedUI';
 import Viewer3D from '../../components/analysis/Viewer3D';
 import EngineeringCharts from '../../components/analysis/EngineeringCharts';
+import SolverCredit from '../ui/SolverCredit';
 import { formatEngineering as engFormat } from '../../utils/formatting';
 
 export default function BeamModelPreview() {
@@ -73,6 +74,7 @@ export default function BeamModelPreview() {
   };
 
   return (
+    <>
     <div ref={captureRef} className={isCapturing ? "w-[1200px] bg-slate-950 p-12 flex flex-col gap-8 absolute top-0 left-0 z-[9999]" : "grid grid-cols-[400px_1fr] w-full h-[calc(100vh-100px)] min-h-[600px] bg-slate-950 p-4 gap-4 rounded-2xl shadow-inner overflow-hidden relative"}>
       
       {/* Toast */}
@@ -276,5 +278,7 @@ export default function BeamModelPreview() {
         {hasCharts && <EngineeringCharts dispData={dispData} elForceData={elForceData} stressData={stressData} isCapturing={isCapturing} />}
       </div>
     </div>
+    <SolverCredit contributor="권혁민" />
+    </>
   );
 }

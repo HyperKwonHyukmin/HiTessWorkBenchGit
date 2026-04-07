@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from . import models, database
-from .routers import auth, users, analysis, system, support, ai, davit
+from .routers import auth, users, analysis, system, support, ai, davit, column_buckling
 from .seed_guides import seed_default_guides
 
 # DB 테이블 자동 생성
@@ -26,6 +26,7 @@ app.include_router(system.router)
 app.include_router(support.router)
 app.include_router(ai.router)
 app.include_router(davit.router)
+app.include_router(column_buckling.router)
 
 
 @app.on_event("startup")

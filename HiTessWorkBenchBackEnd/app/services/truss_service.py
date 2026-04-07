@@ -63,7 +63,7 @@ def task_execute_truss(job_id: str, node_path: str, member_path: str, work_dir: 
 
     try:
       new_analysis = models.Analysis(
-        project_name=f"Truss_Job_{timestamp}",
+        project_name=f"Truss Model Builder_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         program_name="TrussModelBuilder",
         employee_id=employee_id,
         status=status_msg,

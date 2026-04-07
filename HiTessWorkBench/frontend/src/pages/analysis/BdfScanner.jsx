@@ -1,13 +1,15 @@
 /// <summary>
 /// BDF Scanner — BDF 파일 유효성 검증 및 Nastran F06 요약 페이지.
-/// Route B 스코프: CSV 없이 BDF만 입력, 모델 정보/검증/F06 요약 결과를 탭으로 표시.
 /// </summary>
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Upload, Play, Terminal, FileSearch, AlertTriangle, Info, FileText } from 'lucide-react';
+import { ArrowLeft, Upload, Play, Terminal, FileSearch, AlertOctagon, Info } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { usePolling } from '../../hooks/usePolling';
 import { requestBdfScanner, downloadFileText } from '../../api/analysis';
+import SolverCredit from '../../components/ui/SolverCredit';
+import BdfModelViewer from '../../components/analysis/BdfModelViewer';
+import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -22,9 +24,17 @@ export default function BdfScanner() {
   const [statusMessage, setStatusMessage] = useState('');
   const [logs, setLogs] = useState([]);
   const [currentPollingJobId, setCurrentPollingJobId] = useState(null);
-  const [resultData, setResultData] = useState(null); // { ModelInfo, Validation, F06Summary }
-  const [activeTab, setActiveTab] = useState('Validation');
+  const [modelData, setModelData] = useState(null);
+  const [step1Data, setStep1Data] = useState(null);
+  const [step2Data, setStep2Data] = useState(null);
+  const [unsupportedElements, setUnsupportedElements] = useState(null); // { CQUAD4: 3, ... }
   const [isDragOver, setIsDragOver] = useState(false);
+
+  // 2D / 3D 요소 카드 타입 목록
+  const UNSUPPORTED_TYPES = new Set([
+    'CQUAD4','CQUAD8','CQUADR','CTRIA3','CTRIA6','CTRIAR', // 2D Shell
+    'CHEXA','CTETRA','CPENTA','CPYRAM','CHEXA20','CTETRA10', // 3D Solid
+  ]);
 
   const fileInputRef = useRef(null);
   const logEndRef = useRef(null);
@@ -38,7 +48,7 @@ export default function BdfScanner() {
 
   usePolling({
     jobId: currentPollingJobId,
-    maxRetries: 240, // Nastran 해석 시 최대 6분
+    maxRetries: 240,
     onProgress: (data) => {
       const { progress: p, message } = data;
       setProgress(p);
@@ -57,41 +67,47 @@ export default function BdfScanner() {
 
       const { engine_log, project } = data;
       if (engine_log) addLog(`[SOLVER] ${engine_log.trim()}`, 'info');
-
       if (!project?.result_info) return;
 
-      const keyMap = {
-        JSON_ModelInfo: 'ModelInfo',
-        JSON_Validation: 'Validation',
-        JSON_F06Summary: 'F06Summary',
-      };
+      const result_info = project.result_info;
+      addLog('JSON 결과 로드 중...', 'info');
 
-      const filesToLoad = Object.entries(project.result_info)
-        .filter(([key]) => keyMap[key])
-        .map(([key, path]) => ({ tab: keyMap[key], path }));
-
-      if (filesToLoad.length === 0) {
-        addLog('[안내] 생성된 JSON 결과 파일이 없습니다.', 'warning');
-        return;
-      }
-
-      addLog(`JSON 결과 ${filesToLoad.length}건 로드 중...`, 'info');
-
-      const parsed = {};
       await Promise.allSettled(
-        filesToLoad.map(async ({ tab, path }) => {
+        Object.entries(result_info).map(async ([key, path]) => {
+          if (!path) return;
           try {
             const res = await downloadFileText(path);
-            parsed[tab] = JSON.parse(res.data);
+            const parsed = JSON.parse(res.data);
+
+            const isStep1 = key === 'JSON_Validation' || path.endsWith('_validation_step1.json');
+            const isStep2 = key === 'JSON_F06Summary'  || path.endsWith('_validation_step2.json');
+            const isModel = key === 'JSON_ModelInfo'   || (!isStep1 && !isStep2 && path.endsWith('.json'));
+
+            if (isStep1) {
+              setStep1Data(parsed);
+            } else if (isStep2) {
+              setStep2Data(parsed);
+            } else if (isModel && parsed.grids && parsed.elements) {
+              // 2D/3D 요소 감지
+              const found = {};
+              parsed.elements.forEach(el => {
+                if (UNSUPPORTED_TYPES.has(el.cardType)) {
+                  found[el.cardType] = (found[el.cardType] || 0) + 1;
+                }
+              });
+              if (Object.keys(found).length > 0) {
+                setUnsupportedElements(found);
+                addLog(`[경고] 지원하지 않는 2D/3D 요소 감지: ${Object.entries(found).map(([k,v]) => `${k}(${v})`).join(', ')}`, 'error');
+              } else {
+                setModelData(parsed);
+              }
+            }
           } catch {
-            addLog(`[경고] ${tab} 결과 파일 로드 실패.`, 'error');
+            addLog(`[경고] ${key} 결과 파일 로드 실패.`, 'error');
           }
         })
       );
 
-      setResultData(parsed);
-      // 기본 탭: Validation 우선, 없으면 ModelInfo
-      setActiveTab(parsed.Validation ? 'Validation' : 'ModelInfo');
       addLog('결과 렌더링 완료.', 'success');
     },
     onError: (errData) => {
@@ -110,7 +126,10 @@ export default function BdfScanner() {
       return;
     }
     setBdfFile(file);
-    setResultData(null);
+    setModelData(null);
+    setStep1Data(null);
+    setStep2Data(null);
+    setUnsupportedElements(null);
     setLogs([{ time: new Date().toLocaleTimeString(), message: `[FILE] ${file.name} 선택됨.`, type: 'info' }]);
   };
 
@@ -126,7 +145,10 @@ export default function BdfScanner() {
     setIsRunning(true);
     setProgress(0);
     setStatusMessage('서버 요청 중...');
-    setResultData(null);
+    setModelData(null);
+    setStep1Data(null);
+    setStep2Data(null);
+    setUnsupportedElements(null);
     setLogs([]);
     lastMsgRef.current = '';
 
@@ -151,17 +173,14 @@ export default function BdfScanner() {
     }
   };
 
-  const tabs = [
-    { key: 'ModelInfo', label: 'Model Info', icon: Info },
-    { key: 'Validation', label: 'Validation', icon: AlertTriangle },
-    ...(useNastran ? [{ key: 'F06Summary', label: 'F06 Summary', icon: FileText }] : []),
-  ];
-
   const formatBytes = (bytes) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
+
+  const hasResult = !!(modelData || step1Data || step2Data);
+  const hasUnsupported = !!(unsupportedElements && Object.keys(unsupportedElements).length > 0);
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
@@ -188,6 +207,16 @@ export default function BdfScanner() {
         </div>
       </div>
 
+      {/* ── 1D 전용 안내 배너 ── */}
+      <div className="flex items-start gap-3 mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl shrink-0">
+        <Info size={16} className="text-amber-500 shrink-0 mt-0.5" />
+        <div className="text-xs text-amber-700 leading-relaxed">
+          <span className="font-bold">현재 1D 요소만 지원합니다</span>
+          {' — '}CBEAM, CBAR, CROD, RBE2, CONM2 기반 모델에 대해 검증합니다.
+          <span className="text-amber-500 ml-1">2D Shell / 3D Solid 요소 지원은 향후 구현 예정입니다.</span>
+        </div>
+      </div>
+
       {/* 본문: 좌우 분할 */}
       <div className="flex gap-5 flex-1 min-h-0">
         {/* 왼쪽 사이드바 */}
@@ -198,61 +227,68 @@ export default function BdfScanner() {
               <p className="text-xs font-bold text-white uppercase tracking-widest">BDF 파일 선택</p>
             </div>
             <div className="p-5">
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-              onDragLeave={() => setIsDragOver(false)}
-              onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                isDragOver ? 'border-teal-400 bg-teal-50' : 'border-slate-300 hover:border-teal-400 hover:bg-slate-50'
-              }`}
-            >
-              <Upload size={28} className="mx-auto mb-2 text-slate-400" />
-              {bdfFile ? (
-                <div>
-                  <p className="text-sm font-semibold text-slate-700 truncate">{bdfFile.name}</p>
-                  <p className="text-xs text-slate-400 mt-1">{formatBytes(bdfFile.size)}</p>
-                </div>
-              ) : (
-                <div>
-                  <p className="text-sm text-slate-500">클릭하거나 파일을 드래그하세요</p>
-                  <p className="text-xs text-slate-400 mt-1">.bdf / .dat</p>
-                </div>
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".bdf,.dat"
-              className="hidden"
-              onChange={(e) => handleFile(e.target.files?.[0])}
-            />
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                  isDragOver ? 'border-teal-400 bg-teal-50' : 'border-slate-300 hover:border-teal-400 hover:bg-slate-50'
+                }`}
+              >
+                <Upload size={28} className="mx-auto mb-2 text-slate-400" />
+                {bdfFile ? (
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700 truncate">{bdfFile.name}</p>
+                    <p className="text-xs text-slate-400 mt-1">{formatBytes(bdfFile.size)}</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-sm text-slate-500">클릭하거나 파일을 드래그하세요</p>
+                    <p className="text-xs text-slate-400 mt-1">.bdf / .dat</p>
+                  </div>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".bdf,.dat"
+                className="hidden"
+                onChange={(e) => handleFile(e.target.files?.[0])}
+              />
             </div>
           </div>
 
-          {/* Nastran 옵션 */}
+          {/* 해석 옵션 */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="bg-gradient-to-r from-slate-700 to-slate-600 px-5 py-3">
               <p className="text-xs font-bold text-white uppercase tracking-widest">해석 옵션</p>
             </div>
             <div className="p-5">
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={useNastran}
-                onChange={(e) => setUseNastran(e.target.checked)}
-                disabled={isRunning}
-                className="mt-0.5 w-4 h-4 accent-teal-600 cursor-pointer"
-              />
-              <div>
-                <p className="text-sm font-medium text-slate-700 group-hover:text-teal-700 transition-colors">
-                  Nastran 해석 실행
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={useNastran}
+                  onChange={(e) => setUseNastran(e.target.checked)}
+                  disabled={isRunning}
+                  className="mt-0.5 w-4 h-4 accent-teal-600 cursor-pointer"
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-700 group-hover:text-teal-700 transition-colors">
+                    Nastran 해석 실행
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                    BDF 검증 후 Nastran을 실행하여 F06 결과에서 오류·경고를 추출합니다.
+                    <br />
+                    <span className="text-teal-600 font-medium">Step 1 + Step 2</span> 결과가 모두 표시됩니다.
+                  </p>
+                </div>
+              </label>
+              {!useNastran && (
+                <p className="mt-3 text-[11px] text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                  미체크 시 <span className="font-medium text-slate-600">Step 1</span> (BDF 기본 검토)만 실행됩니다.
                 </p>
-                <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
-                  BDF 검증 후 Nastran을 실행하여 F06 결과에서 오류·경고를 추출합니다.
-                </p>
-              </div>
-            </label>
+              )}
             </div>
           </div>
 
@@ -289,70 +325,75 @@ export default function BdfScanner() {
 
         {/* 오른쪽 메인 영역 */}
         <div className="flex-1 flex flex-col gap-4 min-h-0">
-          {/* 결과 탭 */}
-          {resultData ? (
-            <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col min-h-0">
-              {/* 탭 헤더 */}
-              <div className="flex items-end border-b border-slate-200 bg-gradient-to-r from-teal-900 to-teal-700 px-4 pt-3 gap-1 shrink-0">
-                {tabs.map(({ key, label, icon: Icon }) => (
-                  <button
-                    key={key}
-                    onClick={() => setActiveTab(key)}
-                    disabled={!resultData[key]}
-                    className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap ${
-                      activeTab === key
-                        ? 'bg-white text-teal-700 shadow-sm'
-                        : resultData[key]
-                        ? 'text-teal-200 hover:text-white hover:bg-white/10'
-                        : 'text-teal-800/50 cursor-not-allowed'
-                    }`}
-                  >
-                    <Icon size={14} />
-                    {label}
-                    {!resultData[key] && <span className="text-xs opacity-50">(없음)</span>}
-                  </button>
-                ))}
-              </div>
-              {/* 탭 내용 */}
-              <div className="flex-1 overflow-auto p-4 min-h-0">
-                {resultData[activeTab] ? (
-                  <pre className="text-xs font-mono text-slate-700 leading-relaxed whitespace-pre-wrap break-words">
-                    {JSON.stringify(resultData[activeTab], null, 2)}
-                  </pre>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-slate-400 text-sm">
-                    결과 없음
+          {/* 3D 모델 뷰어 */}
+          <div className="flex-1 rounded-2xl border overflow-hidden min-h-0"
+               style={{ minHeight: '280px', borderColor: hasUnsupported ? '#7f1d1d' : '#334155' }}>
+            {hasUnsupported ? (
+              <div className="bg-red-950/80 flex flex-col items-center justify-center h-full gap-4 px-8">
+                <AlertOctagon size={48} className="text-red-400" />
+                <div className="text-center">
+                  <p className="text-base font-bold text-red-300 mb-1">지원하지 않는 요소 감지 — 시각화 불가</p>
+                  <p className="text-xs text-red-400/80 mb-3">
+                    이 BDF에는 현재 지원하지 않는 2D Shell / 3D Solid 요소가 포함되어 있습니다.
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {Object.entries(unsupportedElements).map(([type, count]) => (
+                      <span key={type} className="bg-red-900/60 border border-red-700 text-red-200 text-xs font-mono px-3 py-1 rounded-lg">
+                        {type}: {count}개
+                      </span>
+                    ))}
                   </div>
-                )}
+                  <p className="text-[11px] text-slate-500 mt-4">
+                    2D/3D 요소 지원은 향후 구현 예정입니다. 현재는 1D 전용 모델만 사용 가능합니다.
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center">
-              <div className="text-center text-slate-400">
-                <FileSearch size={40} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm">BDF 파일을 업로드하고 스캔을 실행하세요.</p>
+            ) : modelData ? (
+              <BdfModelViewer modelData={modelData} />
+            ) : (
+              <div className="bg-slate-900 flex items-center justify-center h-full">
+                <div className="text-center text-slate-600">
+                  <FileSearch size={40} className="mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">스캔 완료 후 3D 모델이 표시됩니다.</p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* 실행 콘솔 */}
-          {logs.length > 0 && (
-            <div className="bg-slate-900 rounded-2xl border border-slate-700 p-4 h-44 shrink-0 overflow-y-auto">
-              <div className="flex items-center gap-2 mb-2">
-                <Terminal size={14} className="text-slate-400" />
-                <span className="text-xs text-slate-400 font-mono">Console</span>
+          {/* 검증 결과 로그 또는 실행 콘솔 */}
+          <div className="flex-1 min-h-0" style={{ minHeight: '220px' }}>
+            {hasResult ? (
+              <ValidationStepLog
+                step1Data={step1Data}
+                step2Data={step2Data}
+                useNastran={useNastran}
+              />
+            ) : logs.length > 0 ? (
+              <div className="bg-slate-900 rounded-2xl border border-slate-700 p-4 h-full overflow-y-auto">
+                <div className="flex items-center gap-2 mb-2">
+                  <Terminal size={14} className="text-slate-400" />
+                  <span className="text-xs text-slate-400 font-mono">Console</span>
+                </div>
+                {logs.map((log, i) => (
+                  <p key={i} className={`text-xs font-mono leading-relaxed ${LOG_COLORS[log.type] || 'text-slate-300'}`}>
+                    <span className="text-slate-500 mr-2">{log.time}</span>
+                    {log.message}
+                  </p>
+                ))}
+                <div ref={logEndRef} />
               </div>
-              {logs.map((log, i) => (
-                <p key={i} className={`text-xs font-mono leading-relaxed ${LOG_COLORS[log.type] || 'text-slate-300'}`}>
-                  <span className="text-slate-500 mr-2">{log.time}</span>
-                  {log.message}
-                </p>
-              ))}
-              <div ref={logEndRef} />
-            </div>
-          )}
+            ) : (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center h-full">
+                <div className="text-center text-slate-400">
+                  <FileSearch size={32} className="mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">BDF 파일을 업로드하고 스캔을 실행하세요.</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+      <SolverCredit contributor="권혁민" />
     </div>
   );
 }

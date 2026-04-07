@@ -148,17 +148,18 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
 
         // 3. Three.js Scene Setup
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1e293b); 
-        
+        scene.background = new THREE.Color(0x0a0a1a);
+
         const width = mountRef.current.clientWidth;
         const height = mountRef.current.clientHeight;
-        
+
         camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000000);
-        camera.up.set(0, 0, 1); 
-        
+        camera.up.set(0, 0, 1);
+
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(width, height);
         renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
         mountRef.current.appendChild(renderer.domElement);
 
         controls = new OrbitControls(camera, renderer.domElement);
@@ -166,10 +167,13 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
         controls.dampingFactor = 0.05;
         controlsRef.current = controls;
 
-        scene.add(new THREE.AmbientLight(0xffffff, 1.0));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-        dirLight.position.set(1, 1, 2);
+        scene.add(new THREE.AmbientLight(0x445577, 1.2));
+        const dirLight = new THREE.DirectionalLight(0x88aaff, 1.5);
+        dirLight.position.set(5, 10, 7);
+        dirLight.castShadow = true;
         scene.add(dirLight);
+        const pointLight = new THREE.PointLight(0x00ccff, 2, 30);
+        scene.add(pointLight);
 
         // 4. 모델 구축
         const modelGroup = new THREE.Group();
@@ -181,15 +185,17 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
         const tempSize = new THREE.Vector3();
         tempBox.getSize(tempSize);
         const maxDim = Math.max(tempSize.x, tempSize.y, tempSize.z) || 1000;
-        
-        const rodRadius = maxDim * 0.0015; 
+
+        const rodRadius = maxDim * 0.0015;
 
         if (nKeys.length > 0) {
-          const sphereGeo = new THREE.SphereGeometry(rodRadius * 1.8, 16, 16);
-          const sphereMat = new THREE.MeshStandardMaterial({ 
-            color: 0xFF3333, 
-            roughness: 0.3,
-            metalness: 0.2
+          const sphereGeo = new THREE.SphereGeometry(rodRadius * 1.8, 12, 12);
+          const sphereMat = new THREE.MeshStandardMaterial({
+            color: 0xffa040,
+            metalness: 0.6,
+            roughness: 0.2,
+            emissive: 0xff6600,
+            emissiveIntensity: 0.5
           });
           
           const instancedNodes = new THREE.InstancedMesh(sphereGeo, sphereMat, nKeys.length);
@@ -208,11 +214,13 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
         }
 
         const cylinderGeo = new THREE.CylinderGeometry(rodRadius, rodRadius, 1, 8);
-        cylinderGeo.rotateX(Math.PI / 2); 
+        cylinderGeo.rotateX(Math.PI / 2);
         const cylinderMat = new THREE.MeshStandardMaterial({
-          color: 0x93c5fd,
+          color: 0x66ccff,
+          metalness: 0.7,
           roughness: 0.2,
-          metalness: 0.3
+          emissive: 0x0055aa,
+          emissiveIntensity: 0.4
         });
 
         elements.forEach(([n1, n2]) => {
@@ -238,7 +246,7 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
         box.getSize(size);
         const center = new THREE.Vector3();
         box.getCenter(center);
-        
+
         const actualMaxDim = Math.max(size.x, size.y, size.z) || 1000;
         const fovInRadians = (camera.fov * Math.PI) / 180;
         const cameraDistance = Math.abs(actualMaxDim / Math.sin(fovInRadians / 2)) * 1.5;
@@ -259,10 +267,15 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
         controls.saveState();
 
         // 6. Animation Loop
+        let t = 0;
+        const pointLightRadius = maxDim * 0.5;
         const animate = () => {
           animationId = requestAnimationFrame(animate);
+          t += 0.01;
+          pointLight.position.x = Math.sin(t) * pointLightRadius;
+          pointLight.position.z = Math.cos(t) * pointLightRadius;
+          pointLight.position.y = maxDim * 0.3;
           controls.update();
-          dirLight.position.copy(camera.position);
           renderer.render(scene, camera);
         };
         animate();

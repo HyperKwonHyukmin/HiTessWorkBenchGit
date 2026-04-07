@@ -18,6 +18,7 @@ import BdfViewerModal from '../../components/modals/BdfViewerModal';
 import GuideButton from '../../components/ui/GuideButton';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useFileParser, parseCsvText } from '../../hooks/useFileParser';
+import SolverCredit from '../../components/ui/SolverCredit';
 
 export default function TrussAnalysis() {
   const { setCurrentMenu } = useNavigation();
@@ -415,6 +416,8 @@ export default function TrussAnalysis() {
           </div>
         </div>
       </div>
+
+      <SolverCredit contributor="권혁민" />
 
       {/* 모달 1: 텍스트 로그 */}
       <Transition appear show={isLogModalOpen} as={Fragment}>

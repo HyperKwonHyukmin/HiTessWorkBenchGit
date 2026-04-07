@@ -2,6 +2,7 @@ import React, { useState, useEffect, Fragment } from 'react';
 import { BookOpen, Edit3, FileText, X, Terminal, Eye, Trash2, Edit2 } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { getUserGuides, createUserGuide, updateUserGuide, deleteUserGuide } from '../../api/admin';
+import MarkdownRenderer from '../../components/ui/MarkdownRenderer';
 
 export default function UserGuide() {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -105,7 +106,9 @@ export default function UserGuide() {
                      <button onClick={() => handleDelete(guide.id)} className="p-2 bg-slate-100 text-slate-600 rounded hover:bg-red-100 hover:text-red-600 cursor-pointer"><Trash2 size={16}/></button>
                   </div>
                 )}
-                <p className="bg-slate-50 p-5 rounded-xl border border-slate-100 whitespace-pre-wrap leading-relaxed">{guide.content}</p>
+                <div className="bg-slate-50 p-5 rounded-xl border border-slate-100">
+                  <MarkdownRenderer content={guide.content} />
+                </div>
               </div>
             ))
           }
@@ -152,8 +155,11 @@ export default function UserGuide() {
                     {!isPreview ? (
                       <textarea required placeholder="가이드 내용을 작성하세요." value={formData.content} onChange={e=>setFormData({...formData, content: e.target.value})} className="flex-1 p-4 outline-none focus:ring-inset focus:ring-2 focus:ring-indigo-500/20 resize-none font-mono text-sm text-slate-700 leading-relaxed bg-slate-50" />
                     ) : (
-                      <div className="flex-1 p-5 overflow-y-auto bg-white text-sm text-slate-800 leading-relaxed whitespace-pre-wrap border-[3px] border-indigo-100 m-2 rounded-xl">
-                        {formData.content || <span className="text-slate-400 italic">내용이 없습니다.</span>}
+                      <div className="flex-1 p-5 overflow-y-auto bg-white border-[3px] border-indigo-100 m-2 rounded-xl">
+                        {formData.content
+                          ? <MarkdownRenderer content={formData.content} />
+                          : <span className="text-slate-400 italic">내용이 없습니다.</span>
+                        }
                       </div>
                     )}
                   </div>

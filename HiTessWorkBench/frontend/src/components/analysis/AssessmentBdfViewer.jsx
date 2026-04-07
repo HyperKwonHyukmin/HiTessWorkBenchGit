@@ -103,7 +103,7 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
     if (!mountRef.current || nodeKeys.length === 0) return;
     let renderer, scene, camera, controls, animationId;
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1e293b);
+    scene.background = new THREE.Color(0x0a0a1a);
     const width = mountRef.current.clientWidth;
     const height = mountRef.current.clientHeight;
     camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000000);
@@ -112,15 +112,18 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
     mountRef.current.appendChild(renderer.domElement);
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controlsRef.current = controls;
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    dirLight.position.set(1, 1, 2);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(5, 10, 7);
     scene.add(dirLight);
+    const pointLight = new THREE.PointLight(0x00ccff, 1.5, 0);
+    scene.add(pointLight);
     const modelGroup = new THREE.Group();
     const tempBox = new THREE.Box3();
     Object.values(nodes).forEach(pos => tempBox.expandByPoint(new THREE.Vector3(...pos)));
@@ -128,8 +131,8 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
     tempBox.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z) || 1000;
     const rodRadius = maxDim * 0.0015;
-    const sphereGeo = new THREE.SphereGeometry(rodRadius * 1.8, 16, 16);
-    const sphereMat = new THREE.MeshStandardMaterial({ color: 0xFF3333, roughness: 0.3, metalness: 0.2 });
+    const sphereGeo = new THREE.SphereGeometry(rodRadius * 1.8, 12, 12);
+    const sphereMat = new THREE.MeshStandardMaterial({ color: 0xffa040, metalness: 0.6, roughness: 0.2, emissive: 0xff6600, emissiveIntensity: 0.5 });
     const instancedNodes = new THREE.InstancedMesh(sphereGeo, sphereMat, nodeKeys.length);
     const dummyNode = new THREE.Object3D();
     nodeKeys.forEach((key, index) => {
@@ -144,11 +147,11 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
       const cylinderGeo = new THREE.CylinderGeometry(rodRadius, rodRadius, 1, 8);
       cylinderGeo.rotateX(Math.PI / 2);
       const hasColorResult = assessmentMap && Object.keys(assessmentMap).length > 0 && showResult;
-      const cylinderMat = new THREE.MeshStandardMaterial({ color: hasColorResult ? 0xffffff : 0x7dd3fc, roughness: 0.4, metalness: 0.3 });
+      const cylinderMat = new THREE.MeshStandardMaterial({ color: hasColorResult ? 0xffffff : 0x66ccff, metalness: 0.7, roughness: 0.2, emissive: hasColorResult ? 0x000000 : 0x0055aa, emissiveIntensity: hasColorResult ? 0 : 0.4 });
       const instancedElements = new THREE.InstancedMesh(cylinderGeo, cylinderMat, elements.length);
       instancedElements.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(elements.length * 3), 3);
       const dummyElem = new THREE.Object3D();
-      const defaultColor = new THREE.Color(hasColorResult ? 0x94a3b8 : 0x7dd3fc);
+      const defaultColor = new THREE.Color(hasColorResult ? 0x94a3b8 : 0x66ccff);
       const eidMapping = [];
       let validElemCount = 0;
       elements.forEach(([n1, n2, eid]) => {
@@ -179,6 +182,7 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
     const box = new THREE.Box3().setFromObject(modelGroup);
     const center = new THREE.Vector3();
     box.getCenter(center);
+
     camera.position.set(center.x + maxDim, center.y - maxDim, center.z + maxDim * 0.8);
     controls.target.copy(center);
     camera.lookAt(center);
@@ -195,7 +199,17 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
       }
     });
     resizeObserver.observe(mountRef.current);
-    const animate = () => { animationId = requestAnimationFrame(animate); controls.update(); dirLight.position.copy(camera.position); renderer.render(scene, camera); };
+    let t = 0;
+    const pointLightRadius = maxDim * 0.5;
+    const animate = () => {
+      animationId = requestAnimationFrame(animate);
+      t += 0.01;
+      pointLight.position.x = center.x + Math.sin(t) * pointLightRadius;
+      pointLight.position.z = center.y + Math.cos(t) * pointLightRadius;
+      pointLight.position.y = center.z + maxDim * 0.3;
+      controls.update();
+      renderer.render(scene, camera);
+    };
     animate();
     return () => {
       cancelAnimationFrame(animationId);

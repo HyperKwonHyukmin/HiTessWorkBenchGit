@@ -4,6 +4,7 @@ import {
   UploadCloud,
   PenTool,
   SlidersHorizontal,
+  Wrench,
   FolderOpen,
   Megaphone,
   Lightbulb,
@@ -57,6 +58,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
           { icon: UploadCloud, label: "File-Based Apps" },
           { icon: PenTool, label: "Interactive Apps" },
           { icon: SlidersHorizontal, label: "Parametric Apps" },
+          { icon: Wrench, label: "Productivity Apps" },
           { icon: FolderOpen, label: "My Projects" },
         ]
       }

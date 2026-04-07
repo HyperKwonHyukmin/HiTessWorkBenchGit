@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { getAnalysisHistory, downloadFileBlob } from '../../api/analysis';
+import { getAnalysisHistory, downloadFileBlob, exportAssessmentXlsx } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import {
-  Search, Filter, Download,
+  Search, Filter, Download, RefreshCw,
   ChevronRight, ChevronLeft, Box,
   CheckCircle2, XCircle, AlertCircle,
   FileCode, Database, FileOutput, Eye
@@ -54,6 +54,8 @@ const FileDownloadRow = ({ label, path, icon: Icon, onClick, isResult }) => (
 // 3. 프로젝트 상세 모달 (공유 Modal 컴포넌트 사용)
 // ==========================================
 const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
+  const [xlsxDownloading, setXlsxDownloading] = useState({});
+
   const handleDownload = async (filePath) => {
     if (!filePath) return;
     try {
@@ -71,6 +73,40 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
       alert("파일 다운로드에 실패했습니다.");
     }
   };
+
+  const handleXlsxDownload = async (jsonPath, label) => {
+    setXlsxDownloading(prev => ({ ...prev, [label]: true }));
+    try {
+      const response = await exportAssessmentXlsx(jsonPath);
+      const baseName = extractFilename(jsonPath).replace(/\.json$/i, '');
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', `${baseName}_Results.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      alert('Excel 파일 생성에 실패했습니다.');
+    } finally {
+      setXlsxDownloading(prev => ({ ...prev, [label]: false }));
+    }
+  };
+
+  const isAssessment = project?.program_name === 'Truss Assessment';
+
+  // result_info 필터링: CSV_Error 제외, bdf key는 "BDF Model"로 표시
+  const getResultLabel = (key) => {
+    if (key === 'bdf') return 'BDF Model';
+    return `${key.replace(/_/g, ' ')} Result`;
+  };
+  const filteredResultEntries = project?.result_info
+    ? Object.entries(project.result_info).filter(([key]) =>
+        key !== 'CSV_Error' && !(isAssessment && key.startsWith('Excel_'))
+      )
+    : [];
+  const jsonFiles = filteredResultEntries.filter(([key]) => key.startsWith('JSON_'));
 
   return (
     <Modal
@@ -103,6 +139,40 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
             </button>
           )}
 
+          {/* Truss Assessment 결과 보고서 저장 */}
+          {isAssessment && project.status === 'Success' && jsonFiles.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">결과 보고서 저장</h3>
+              <div className="space-y-2">
+                {jsonFiles.map(([key, jsonPath]) => {
+                  const label = key.replace(/^JSON_/i, '');
+                  const isLoading = xlsxDownloading[label];
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => handleXlsxDownload(jsonPath, label)}
+                      disabled={isLoading}
+                      className={`w-full flex items-center justify-between p-4 border-2 rounded-xl transition-all duration-200 group cursor-pointer ${
+                        isLoading ? 'border-emerald-300 bg-emerald-50 cursor-wait' : 'border-emerald-200 hover:border-emerald-500 hover:bg-emerald-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2.5 rounded-xl transition-colors ${isLoading ? 'bg-emerald-200 text-emerald-700' : 'bg-emerald-100 text-emerald-600 group-hover:bg-emerald-500 group-hover:text-white'}`}>
+                          {isLoading ? <RefreshCw size={20} className="animate-spin"/> : <FileOutput size={20}/>}
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-bold text-slate-700">{label}.xlsx</p>
+                          <p className="text-[10px] text-slate-400">{isLoading ? 'Excel 파일 생성 중...' : '클릭하여 Excel 다운로드'}</p>
+                        </div>
+                      </div>
+                      <Download size={18} className={`transition-colors ${isLoading ? 'text-emerald-400' : 'text-slate-300 group-hover:text-emerald-600'}`}/>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Analysis Status</h3>
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -127,15 +197,19 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
 
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Files</h3>
           <div className="space-y-2">
-            {project.input_info && project.program_name !== "Mast Post Assessment" &&
+            {/* input_info: Truss Assessment는 bdf_model 입력 파일 숨김 */}
+            {project.input_info && !isAssessment && project.program_name !== "Mast Post Assessment" &&
               Object.entries(project.input_info).map(([key, path]) => (
                 typeof path === 'string'
                   ? <FileDownloadRow key={key} label={key.replace(/_/g, ' ')} path={path} icon={Database} onClick={() => handleDownload(path)} />
                   : null
               ))
             }
-            {project.result_info && Object.entries(project.result_info).map(([key, path]) => (
-              <FileDownloadRow key={key} label={`${key.replace(/_/g, ' ')} Result`} path={path} icon={FileOutput} onClick={() => handleDownload(path)} isResult />
+            {/* result_info: CSV_Error 제외, bdf → BDF Model */}
+            {filteredResultEntries.map(([key, path]) => (
+              typeof path === 'string'
+                ? <FileDownloadRow key={key} label={getResultLabel(key)} path={path} icon={FileOutput} onClick={() => handleDownload(path)} isResult />
+                : null
             ))}
           </div>
         </div>
@@ -147,7 +221,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
 // ==========================================
 // 4. 메인 MyProjects 페이지 컴포넌트
 // ==========================================
-const PROGRAM_FILTERS = ['All', 'TrussModelBuilder', 'Truss Structural Assessment', 'Simple Beam Assessment'];
+const PROGRAM_FILTERS = ['All', 'TrussModelBuilder', 'Truss Assessment', 'Simple Beam Assessment'];
 const STATUS_FILTERS = ['All', 'Success', 'Failed'];
 const PAGE_SIZE = 10;
 

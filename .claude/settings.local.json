@@ -37,7 +37,16 @@
       "Bash(WorkBenchEnv/Scripts/python.exe -c ':*)",
       "Bash(dir C:\\\\Coding\\\\WorkBench\\\\HiTessWorkBench\\\\dist_electron:*)",
       "Bash(netstat -ano)",
-      "Bash(findstr :8000)"
+      "Bash(findstr :8000)",
+      "Bash(npm install:*)",
+      "Bash(\"C:/Coding/WorkBench/HiTessWorkBenchBackEnd/InHouseProgram/BdfScanner/BdfScanner.exe\" \"8276NO1Tank-LV2.bdf\")",
+      "Bash(cp:*)",
+      "Bash(dotnet publish:*)",
+      "Bash(cp -r \"publish/.\" \"C:/Coding/WorkBench/HiTessWorkBenchBackEnd/InHouseProgram/BdfScanner/\")",
+      "Bash(mv \"C:/Coding/WorkBench/HiTessWorkBenchBackEnd/InHouseProgram/BdfScanner/FemScanner.exe\" \"C:/Coding/WorkBench/HiTessWorkBenchBackEnd/InHouseProgram/BdfScanner/BdfScanner.exe\")",
+      "Bash(\"C:/Coding/WorkBench/HiTessWorkBenchBackEnd/InHouseProgram/BdfScanner/BdfScanner.exe\" \"8276NO1Tank-LV2.bdf\" --nastran)",
+      "Bash(find . -not -name \"BdfScanner.exe\" -type f -delete)",
+      "Bash(cp \"C:/Coding/Csharp/Projects/FemScanner/publish_single/FemScanner.exe\" \"BdfScanner.exe\")"
     ]
   },
   "enableAllProjectMcpServers": true,

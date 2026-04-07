@@ -4,35 +4,38 @@
 /// (신규) Truss Assessment 페이지 이탈 시에도 상태를 유지하기 위한 글로벌 State를 추가했습니다.
 /// </summary>
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { UploadCloud, PenTool, SlidersHorizontal, RefreshCw, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { UploadCloud, PenTool, SlidersHorizontal, Wrench, RefreshCw, CheckCircle, AlertCircle, X } from 'lucide-react';
 import { useNavigation } from './NavigationContext';
 import { usePolling } from '../hooks/usePolling';
 
 export const ANALYSIS_DATA = [
   // ── File-Based Apps ─────────────────────────────── Active ──
-  { mode: "File", category: "트러스(Truss)", title: "Truss Model Builder", description: "Truss 설계 정보를 활용하여 구조 해석 모델을 구축합니다.", icon: UploadCloud, color: "bg-cyan-600", tags: ["트러스", "모델생성", "CSV"], devStatus: "Active" },
-  { mode: "File", category: "트러스(Truss)", title: "Truss Structural Assessment", description: "Truss BDF 모델을 업로드하여 구조적 안정성을 평가합니다.", icon: UploadCloud, color: "bg-cyan-700", tags: ["트러스", "구조평가", "BDF"], devStatus: "Active" },
-  { mode: "File", category: "기타", title: "BDF Scanner", description: "BDF 모델 파일의 유효성을 검증하고, 선택적으로 Nastran 해석 후 F06 결과를 요약합니다.", icon: UploadCloud, color: "bg-teal-600", tags: ["BDF", "유효성검증", "Nastran"], devStatus: "Active" },
-  { mode: "File", category: "1D 빔(Beam)", title: "Beam Result Viewer", description: "Simple Beam 해석 결과(JSON/CSV) 파일을 업로드하여 처짐, 모멘트, 전단력, 응력 분포를 시각화합니다.", icon: UploadCloud, color: "bg-blue-500", tags: ["1D요소", "결과시각화", "차트"], devStatus: "Active" },
+  { mode: "File", category: "트러스(Truss)", title: "Truss Model Builder", description: "Truss 설계 정보를 활용하여 구조 해석 모델을 구축합니다.", icon: UploadCloud, color: "bg-cyan-600", tags: ["트러스", "모델생성", "CSV"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "File", category: "트러스(Truss)", title: "Truss Structural Assessment", description: "Truss BDF 모델을 업로드하여 구조적 안정성을 평가합니다.", icon: UploadCloud, color: "bg-cyan-700", tags: ["트러스", "구조평가", "BDF"], devStatus: "Active", contributor: "권혁민" },
+  // ── Productivity Apps ─────────────────────────────── Active ──
+  { mode: "Productivity", category: "BDF 도구", title: "BDF Scanner", description: "BDF 모델 파일의 유효성을 검증하고, 선택적으로 Nastran 해석 후 F06 결과를 요약합니다.", icon: Wrench, color: "bg-teal-600", tags: ["BDF", "유효성검증", "Nastran"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "File", category: "1D 빔(Beam)", title: "Beam Result Viewer", description: "Simple Beam 해석 결과(JSON/CSV) 파일을 업로드하여 처짐, 모멘트, 전단력, 응력 분포를 시각화합니다.", icon: UploadCloud, color: "bg-blue-500", tags: ["1D요소", "결과시각화", "차트"], devStatus: "Active", contributor: "권혁민" },
   // ── File-Based Apps ───────────────────────────── Developing ──
-  { mode: "File", category: "권상(Lifting)", title: "Group & Unit 권상 구조 해석", description: "Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.", icon: UploadCloud, color: "bg-emerald-600", tags: ["유닛", "블록", "국부강도"], devStatus: "Developing" },
+  { mode: "File", category: "권상(Lifting)", title: "Group & Unit 권상 구조 해석", description: "Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.", icon: UploadCloud, color: "bg-emerald-600", tags: ["유닛", "블록", "국부강도"], devStatus: "Developing", contributor: "권혁민" },
   // ── File-Based Apps ─────────────────────────────── Planned ──
-  { mode: "File", category: "배관(Pipe)", title: "Pipe 구조 해석", description: "배관 시스템의 지지대 및 진동에 대한 전반적인 구조 해석을 수행합니다.", icon: UploadCloud, color: "bg-indigo-600", tags: ["배관", "파운데이션", "진동"], devStatus: "Planned" },
-  { mode: "File", category: "전선해석", title: "Whole Ship Analysis", description: "선박 전체 모델에 대한 전역 강도 및 항해 조건별 응답을 통합 해석합니다.", icon: UploadCloud, color: "bg-slate-600", tags: ["전선해석", "선체보", "전체모델"], devStatus: "Planned" },
-  { mode: "File", category: "기타", title: "구조 최적화 (Optimization)", description: "중량 절감 및 구조 효율성 극대화를 위한 AI 기반 최적화 프로세스를 진행합니다.", icon: UploadCloud, color: "bg-orange-600", tags: ["중량절감", "위상최적화", "민감도"], devStatus: "Planned" },
+  { mode: "File", category: "배관(Pipe)", title: "Pipe 구조 해석", description: "배관 시스템의 지지대 및 진동에 대한 전반적인 구조 해석을 수행합니다.", icon: UploadCloud, color: "bg-indigo-600", tags: ["배관", "파운데이션", "진동"], devStatus: "Planned", contributor: "권혁민" },
+  { mode: "File", category: "전선해석", title: "Whole Ship Analysis", description: "선박 전체 모델에 대한 전역 강도 및 항해 조건별 응답을 통합 해석합니다.", icon: UploadCloud, color: "bg-slate-600", tags: ["전선해석", "선체보", "전체모델"], devStatus: "Planned", contributor: "권혁민" },
+  { mode: "File", category: "기타", title: "구조 최적화 (Optimization)", description: "중량 절감 및 구조 효율성 극대화를 위한 AI 기반 최적화 프로세스를 진행합니다.", icon: UploadCloud, color: "bg-orange-600", tags: ["중량절감", "위상최적화", "민감도"], devStatus: "Planned", contributor: "권혁민" },
   // ── Interactive Apps ─────────────────────────────── Active ──
-  { mode: "Interactive", category: "1D 빔(Beam)", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-cyan-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active" },
+  { mode: "Interactive", category: "1D 빔(Beam)", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-cyan-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active", contributor: "권혁민" },
   // ── Interactive Apps ───────────────────────────── Developing ──
-  { mode: "Interactive", category: "러그(Lug)", title: "Lifting Lug Evaluator", description: "Lifting Lug의 상세 치수와 작용 하중을 입력하여 러그의 구조 강도를 즉각 평가합니다.", icon: PenTool, color: "bg-emerald-600", tags: ["러그", "권상하중", "실시간"], devStatus: "Developing" },
+  { mode: "Interactive", category: "러그(Lug)", title: "Lifting Lug Evaluator", description: "Lifting Lug의 상세 치수와 작용 하중을 입력하여 러그의 구조 강도를 즉각 평가합니다.", icon: PenTool, color: "bg-emerald-600", tags: ["러그", "권상하중", "실시간"], devStatus: "Developing", contributor: "권혁민" },
   // ── Interactive Apps ─────────────────────────────── Planned ──
-  { mode: "Interactive", category: "평판(Plate)", title: "2D Plate Analyzer", description: "평판의 두께와 보강재 제원을 설정하여 좌굴(Buckling) 및 국부 강도를 평가합니다.", icon: PenTool, color: "bg-indigo-600", tags: ["평판", "좌굴", "실시간"], devStatus: "Planned" },
+  { mode: "Interactive", category: "평판(Plate)", title: "2D Plate Analyzer", description: "평판의 두께와 보강재 제원을 설정하여 좌굴(Buckling) 및 국부 강도를 평가합니다.", icon: PenTool, color: "bg-indigo-600", tags: ["평판", "좌굴", "실시간"], devStatus: "Planned", contributor: "권혁민" },
   // ── Parametric Apps ──────────────────────────────── Active ──
-  { mode: "Parametric", category: "다빗(Davit)", title: "Jib Rest Assessment", description: "Jib Rest 구조물의 1단/2단 파이프 설계 후보를 산출합니다.", icon: SlidersHorizontal, color: "bg-indigo-600", tags: ["다빗", "Jib Rest", "1단", "2단"], devStatus: "Active" },
-  { mode: "Parametric", category: "다빗(Davit)", title: "Mast Post Assessment", description: "Post 높이와 플랫폼 하중을 입력하여 기준을 만족하는 최적 파이프 후보를 산출합니다.", icon: SlidersHorizontal, color: "bg-violet-700", tags: ["다빗", "Post", "파이프선정"], devStatus: "Active" },
+  { mode: "Parametric", category: "다빗(Davit)", title: "Jib Rest Assessment", description: "Jib Rest 구조물의 1단/2단 파이프 설계 후보를 산출합니다.", icon: SlidersHorizontal, color: "bg-indigo-600", tags: ["다빗", "Jib Rest", "1단", "2단"], devStatus: "Active", contributor: "박준석" },
+  { mode: "Parametric", category: "다빗(Davit)", title: "Mast Post Assessment", description: "Post 높이와 플랫폼 하중을 입력하여 기준을 만족하는 최적 파이프 후보를 산출합니다.", icon: SlidersHorizontal, color: "bg-violet-700", tags: ["다빗", "Post", "파이프선정"], devStatus: "Active", contributor: "박준석" },
+  // ── Parametric Apps ──────────────────────────────── Active ──
+  { mode: "Parametric", category: "기둥(Column)", title: "Column Buckling Load Calculator", description: "AISC 기준 핀-핀 경계 조건의 강재 기둥 최대 허용 사용하중을 계산합니다. 동심·편심 하중 모두 지원.", icon: SlidersHorizontal, color: "bg-violet-700", tags: ["기둥", "좌굴", "AISC", "Secant"], devStatus: "Active", contributor: "권혁민" },
   // ── Parametric Apps ────────────────────────────── Developing ──
-  { mode: "Parametric", category: "단면(Section)", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: SlidersHorizontal, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Developing" },
+  { mode: "Parametric", category: "단면(Section)", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: SlidersHorizontal, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Developing", contributor: "권혁민" },
   // ── Parametric Apps ──────────────────────────────── Planned ──
-  { mode: "Parametric", category: "하중(Load)", title: "Load Combination Tool", description: "구조 설계 기준에 따른 하중 조합을 자동으로 생성하고 지배 하중 케이스를 산출합니다.", icon: SlidersHorizontal, color: "bg-rose-600", tags: ["하중조합", "설계기준", "케이스"], devStatus: "Planned" }
+  { mode: "Parametric", category: "하중(Load)", title: "Load Combination Tool", description: "구조 설계 기준에 따른 하중 조합을 자동으로 생성하고 지배 하중 케이스를 산출합니다.", icon: SlidersHorizontal, color: "bg-rose-600", tags: ["하중조합", "설계기준", "케이스"], devStatus: "Planned", contributor: "권혁민" }
 ];
 
 const DashboardContext = createContext();

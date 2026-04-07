@@ -11,6 +11,7 @@ import AssessmentBdfViewer from '../../components/analysis/AssessmentBdfViewer';
 import MultiJsonViewer from '../../components/analysis/AssessmentResultTable';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
 import GuideButton from '../../components/ui/GuideButton';
+import SolverCredit from '../../components/ui/SolverCredit';
 import {
   ArrowLeft, Upload, Play, Database, RefreshCw, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Eye,
@@ -21,6 +22,7 @@ export default function TrussAssessment() {
   const { setCurrentMenu } = useNavigation();
   const dashboardCtx = useDashboard();
   const startGlobalJob = dashboardCtx?.startGlobalJob || (() => {});
+  const globalJob = dashboardCtx?.globalJob || null;
 
   const assessmentPageState = dashboardCtx?.assessmentPageState || {};
   const {
@@ -36,6 +38,27 @@ export default function TrussAssessment() {
     }
   };
 
+  const loadResultsFromProject = async (project) => {
+    if (!project?.result_info) return;
+    const jsonFiles = Object.entries(project.result_info)
+      .filter(([, path]) => typeof path === 'string' && path.toLowerCase().endsWith('.json'))
+      .map(([key, path]) => ({ key: key.replace(/^JSON_/i, ''), path }));
+    if (jsonFiles.length === 0) return;
+    const results = await Promise.allSettled(jsonFiles.map(async (f) => {
+      const res = await downloadFileBlob(f.path);
+      const text = await res.data.text();
+      return { key: f.key, data: JSON.parse(text) };
+    }));
+    const parsedResultsMap = {};
+    results.forEach((r) => {
+      if (r.status === 'fulfilled') parsedResultsMap[r.value.key] = r.value.data;
+    });
+    const caseNames = Object.keys(parsedResultsMap);
+    if (caseNames.length > 0) {
+      updateState({ resultJsonData: parsedResultsMap, activeResultCase: caseNames[0], activeTab: 'result' });
+    }
+  };
+
   const [isResultModalOpen, setIsResultModalOpen] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentPollingJobId, setCurrentPollingJobId] = useState(null);
@@ -44,6 +67,21 @@ export default function TrussAssessment() {
   const logEndRef = useRef(null);
   const elapsedTimerRef = useRef(null);
   const lastMsgRef = useRef('');
+
+  // 페이지 이탈 중 globalJob이 완료/실패된 경우 로컬 상태와 동기화
+  useEffect(() => {
+    if (!isRunning || !currentJobId || !globalJob) return;
+    if (globalJob.jobId !== currentJobId) return;
+
+    if (globalJob.status === 'Success') {
+      setCurrentPollingJobId(null);
+      updateState({ isRunning: false, progress: 100, statusMessage: '해석 완료' });
+      if (globalJob.project) loadResultsFromProject(globalJob.project);
+    } else if (globalJob.status === 'Failed') {
+      setCurrentPollingJobId(null);
+      updateState({ isRunning: false, statusMessage: '해석 실패' });
+    }
+  }, [globalJob?.status]);
 
   useEffect(() => {
     if (isRunning) {
@@ -76,45 +114,10 @@ export default function TrussAssessment() {
     onComplete: async (data) => {
       setCurrentPollingJobId(null);
       const { engine_log, project } = data;
-      let finalLogs = [...logs, { time: new Date().toLocaleTimeString(), message: '구조 평가 해석 완료.', type: 'success' }];
+      const finalLogs = [...logs, { time: new Date().toLocaleTimeString(), message: '구조 평가 해석 완료.', type: 'success' }];
       updateState({ isRunning: false, logs: finalLogs, projectData: project });
       if (engine_log) updateState({ detailedLogs: [...detailedLogs, `*** SOLVER OUTPUT ***\n${engine_log}`] });
-
-      if (project?.result_info) {
-        const jsonFiles = Object.entries(project.result_info)
-          .filter(([, path]) => typeof path === 'string' && path.toLowerCase().endsWith('.json'))
-          .map(([key, path]) => ({ key: key.replace(/^JSON_/i, ''), path }));
-
-        if (jsonFiles.length > 0) {
-          finalLogs = [...finalLogs, { time: new Date().toLocaleTimeString(), message: `JSON 결과 ${jsonFiles.length}건 수신. 파싱 중...`, type: 'info' }];
-          updateState({ logs: finalLogs, activeTab: 'result' });
-
-          const results = await Promise.allSettled(jsonFiles.map(async (f) => {
-            const res = await downloadFileBlob(f.path);
-            const text = await res.data.text();
-            return { key: f.key, data: JSON.parse(text) };
-          }));
-
-          const parsedResultsMap = {};
-          results.forEach((r, idx) => {
-            if (r.status === 'fulfilled') {
-              parsedResultsMap[r.value.key] = r.value.data;
-            } else {
-              finalLogs = [...finalLogs, { time: new Date().toLocaleTimeString(), message: `[경고] ${jsonFiles[idx].key} 결과 파일 로드 실패.`, type: 'error' }];
-            }
-          });
-
-          const caseNames = Object.keys(parsedResultsMap);
-          if (caseNames.length > 0) {
-            finalLogs = [...finalLogs, { time: new Date().toLocaleTimeString(), message: '결과 테이블 렌더링 완료.', type: 'success' }];
-            updateState({ resultJsonData: parsedResultsMap, activeResultCase: caseNames[0], logs: finalLogs });
-          } else {
-            updateState({ logs: [...finalLogs, { time: new Date().toLocaleTimeString(), message: '모든 JSON 결과 파일 로드에 실패했습니다.', type: 'error' }] });
-          }
-        } else {
-          updateState({ logs: [...finalLogs, { time: new Date().toLocaleTimeString(), message: '[안내] 생성된 JSON 결과 파일이 없습니다.', type: 'warning' }] });
-        }
-      }
+      await loadResultsFromProject(project);
     },
     onError: (errData) => {
       setCurrentPollingJobId(null);
@@ -256,13 +259,13 @@ export default function TrussAssessment() {
             {projectData ? (
               <div className="flex flex-col gap-1">
                 <button onClick={() => setIsResultModalOpen(true)} className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-amber-50 border-2 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-500 hover:-translate-y-0.5 transition-all cursor-pointer shadow-sm">
-                  <FileOutput size={18} className="text-amber-500"/> 해석 결과 저장
+                  <FileOutput size={18} className="text-amber-500"/> 결과 보고서 저장
                 </button>
                 <p className="text-[10px] text-slate-400 text-center leading-relaxed">클릭하면 해석 결과를 Excel 파일로 다운로드할 수 있습니다.</p>
               </div>
             ) : (
               <div className="flex flex-col gap-1">
-                <div className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-slate-50 border-2 border-dashed border-slate-200 text-slate-300 select-none"><FileOutput size={18}/> 해석 결과 저장</div>
+                <div className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-slate-50 border-2 border-dashed border-slate-200 text-slate-300 select-none"><FileOutput size={18}/> 결과 보고서 저장</div>
                 <p className="text-[10px] text-slate-300 text-center">해석 완료 후 활성화됩니다.</p>
               </div>
             )}
@@ -309,6 +312,8 @@ export default function TrussAssessment() {
           </div>
         </div>
       </div>
+
+      <SolverCredit contributor="권혁민" />
 
       {isResultModalOpen && <AssessmentProjectModal project={projectData} onClose={() => setIsResultModalOpen(false)} />}
     </div>

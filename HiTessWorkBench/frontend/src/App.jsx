@@ -29,8 +29,10 @@ import HiLabInsight from './pages/AI/HiLabInsight';
 import BeamAnalysisViewer from './pages/analysis/BeamAnalysisViewer';
 import BdfScanner from './pages/analysis/BdfScanner';
 import ParametricApps from './pages/analysis/ParametricApps';
+import ProductivityApps from './pages/analysis/ProductivityApps';
 import MastPostAssessment from './pages/analysis/MastPostAssessment';
 import JibRestAssessment from './pages/analysis/JibRestAssessment';
+import ColumnBucklingCalculator from './pages/analysis/ColumnBucklingCalculator';
 import ApiApps from './pages/Administration/ApiApps';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
@@ -102,6 +104,7 @@ function AppInner() {
       case 'Parametric Apps': return <ParametricApps />;
       case 'Mast Post Assessment': return <MastPostAssessment />;
       case 'Jib Rest Assessment': return <JibRestAssessment />;
+      case 'Column Buckling Load Calculator': return <ColumnBucklingCalculator />;
       case 'API Apps': return <ApiApps />;
       case 'Component Wizard':
       case 'Simple Beam Assessment':
@@ -118,6 +121,7 @@ function AppInner() {
       case 'Hi-Lab Insight': return <HiLabInsight />;
       case 'Beam Result Viewer': return <BeamAnalysisViewer />;
       case 'BDF Scanner': return <BdfScanner />;
+      case 'Productivity Apps': return <ProductivityApps />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">
