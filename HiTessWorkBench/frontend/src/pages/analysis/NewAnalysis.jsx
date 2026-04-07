@@ -19,6 +19,8 @@ export default function NewAnalysis() {
       setCurrentMenu('Truss Structural Assessment');
     } else if (categoryTitle === "Beam Result Viewer") {
       setCurrentMenu('Beam Result Viewer');
+    } else if (categoryTitle === "BDF Scanner") {
+      setCurrentMenu('BDF Scanner');
     } else {
       alert(`[안내] ${categoryTitle} 기능은 현재 준비 중입니다.`);
     }

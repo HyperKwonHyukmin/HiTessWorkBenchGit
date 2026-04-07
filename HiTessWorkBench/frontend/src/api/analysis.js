@@ -31,6 +31,12 @@ export const requestBeamAnalysis = (formData) =>
     headers: { 'Content-Type': 'multipart/form-data' }
   });
 
+/** BDF Scanner 요청 */
+export const requestBdfScanner = (formData) =>
+  axios.post(`${API_BASE_URL}/api/analysis/bdfscanner/request`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+
 /** 파일 다운로드 (blob) */
 export const downloadFileBlob = (filepath) =>
   axios.get(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(filepath)}`, {

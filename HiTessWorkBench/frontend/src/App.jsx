@@ -27,6 +27,7 @@ import AnalysisManagement from './pages/Administration/AnalysisManagement';
 import AiAssistantHub from './pages/AI/AiAssistantHub';
 import HiLabInsight from './pages/AI/HiLabInsight';
 import BeamAnalysisViewer from './pages/analysis/BeamAnalysisViewer';
+import BdfScanner from './pages/analysis/BdfScanner';
 import ParametricApps from './pages/analysis/ParametricApps';
 import MastPostAssessment from './pages/analysis/MastPostAssessment';
 import JibRestAssessment from './pages/analysis/JibRestAssessment';
@@ -116,6 +117,7 @@ function AppInner() {
       case 'AI Assistant': return <AiAssistantHub />;
       case 'Hi-Lab Insight': return <HiLabInsight />;
       case 'Beam Result Viewer': return <BeamAnalysisViewer />;
+      case 'BDF Scanner': return <BdfScanner />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">

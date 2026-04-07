@@ -12,7 +12,7 @@ from .. import database
 from ..services.job_manager import job_status_store, MAX_CONCURRENT_JOBS
 from ..state import server_state
 
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "0.0.1"
 
 # 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent

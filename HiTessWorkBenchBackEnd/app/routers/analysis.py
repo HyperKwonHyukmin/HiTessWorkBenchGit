@@ -12,6 +12,7 @@ from ..services.job_manager import job_status_store, analysis_executor
 from ..services.truss_service import task_execute_truss
 from ..services.assessment_service import task_execute_assessment, _json_to_xlsx_bytes
 from ..services.beam_service import task_execute_beam
+from ..services.bdfscanner_service import task_execute_bdfscanner
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -198,6 +199,44 @@ async def request_truss_assessment(
 
     analysis_executor.submit(
         task_execute_assessment, job_id, bdf_path, work_dir, employee_id, timestamp, source
+    )
+
+    return {"job_id": job_id}
+
+
+# ==================== BDF Scanner ====================
+
+@router.post("/analysis/bdfscanner/request")
+async def request_bdfscanner(
+        bdf_file: UploadFile = File(...),
+        employee_id: str = Form(...),
+        use_nastran: bool = Form(False),
+        source: str = Form("Workbench")
+):
+    """
+    BDF Scanner 작업을 요청받아 BDF 파일을 저장하고 백그라운드 작업을 실행합니다.
+    use_nastran=True 이면 --nastran 옵션으로 Nastran 해석 후 F06 요약까지 수행합니다.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(os.path.dirname(base_dir))
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    unique_folder = f"{timestamp}_{employee_id}_BdfScanner"
+    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+    os.makedirs(work_dir, exist_ok=True)
+
+    bdf_path = os.path.join(work_dir, bdf_file.filename)
+    try:
+        with open(bdf_path, "wb") as buffer:
+            buffer.write(await bdf_file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
+
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
+
+    analysis_executor.submit(
+        task_execute_bdfscanner, job_id, bdf_path, work_dir, employee_id, timestamp, source, use_nastran
     )
 
     return {"job_id": job_id}
