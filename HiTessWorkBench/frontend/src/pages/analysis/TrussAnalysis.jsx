@@ -275,17 +275,28 @@ export default function TrussAnalysis() {
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
-      
-      {/* Header Area */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <button onClick={() => setCurrentMenu('File-Based Apps')} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-brand-blue hover:bg-slate-50 transition-colors cursor-pointer"><ArrowLeft size={20} /></button>
-          <div>
-            <h1 className="text-2xl font-bold text-brand-blue tracking-tight">Truss Model Builder</h1>
-            <p className="text-sm text-slate-500 mt-1">Node 및 Member CSV 데이터를 기반으로 구조 해석 모델을 구축합니다.</p>
-          </div>
+
+      {/* ── 그라디언트 배너 헤더 ── */}
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-[#002554] via-[#003a7a] to-blue-700 overflow-hidden shrink-0">
+        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
+          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
+          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
         </div>
-        <GuideButton guideTitle="[파일] Truss Model Builder — CSV로 트러스 모델 만들기" />
+        <div className="relative flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setCurrentMenu('File-Based Apps')}
+              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-white tracking-tight">Truss Model Builder</h1>
+              <p className="text-sm text-blue-200/80 mt-0.5">Node 및 Member CSV 데이터를 기반으로 구조 해석 모델을 구축합니다.</p>
+            </div>
+          </div>
+          <GuideButton guideTitle="[파일] Truss Model Builder — CSV로 트러스 모델 만들기" variant="dark" />
+        </div>
       </div>
 
       {/* Main Workspace */}
@@ -293,36 +304,39 @@ export default function TrussAnalysis() {
         
         {/* LEFT PANE */}
         <div className="w-full lg:w-[400px] flex flex-col gap-5 shrink-0 overflow-y-auto pr-1 custom-scrollbar">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Database size={16} className="text-blue-500"/> 1. Data Input</h3>
-              {/* 템플릿 다운로드 메뉴 */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-3 flex justify-between items-center">
+              <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2"><Database size={14}/> 1. Data Input</h3>
               <div className="flex gap-2">
-                 <button onClick={() => downloadTemplate('node')} className="text-[10px] bg-slate-100 text-slate-500 px-2 py-1 rounded border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors cursor-pointer flex items-center gap-1"><Download size={10}/> Node 양식</button>
-                 <button onClick={() => downloadTemplate('member')} className="text-[10px] bg-slate-100 text-slate-500 px-2 py-1 rounded border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors cursor-pointer flex items-center gap-1"><Download size={10}/> Member 양식</button>
+                <button onClick={() => downloadTemplate('node')} className="text-[10px] bg-white/20 text-white px-2 py-1 rounded border border-white/10 hover:bg-white/30 transition-colors cursor-pointer flex items-center gap-1"><Download size={10}/> Node 양식</button>
+                <button onClick={() => downloadTemplate('member')} className="text-[10px] bg-white/20 text-white px-2 py-1 rounded border border-white/10 hover:bg-white/30 transition-colors cursor-pointer flex items-center gap-1"><Download size={10}/> Member 양식</button>
               </div>
             </div>
-            <div className="space-y-4">
+            <div className="p-5 space-y-4">
               <UploadDropzone type="node" title="Node Data" file={nodeFile} rowCount={numNodes} onDrop={(e) => handleDrop(e, 'node')} onChange={(e) => handleFile(e.target.files[0], 'node')} />
               <UploadDropzone type="member" title="Member Data" file={memberFile} rowCount={numMembers} onDrop={(e) => handleDrop(e, 'member')} onChange={(e) => handleFile(e.target.files[0], 'member')} />
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <Box size={16} className="text-slate-500"/> 2. Model Summary
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><GitMerge size={16} className="text-indigo-400" /> Total Nodes</div>
-                <span className="font-mono font-bold text-brand-blue">{numNodes.toLocaleString()} EA</span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><Layers size={16} className="text-cyan-400" /> Total Members</div>
-                <span className="font-mono font-bold text-brand-blue">{numMembers.toLocaleString()} EA</span>
-              </div>
-              <div className={`mt-2 flex items-center justify-center gap-2 p-3 rounded-lg border border-dashed text-sm font-bold transition-colors ${isDataReady ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-300 text-slate-500'}`}>
-                {isDataReady ? <><CheckCircle2 size={18} /> Ready to Build</> : <><AlertCircle size={18} /> Awaiting CSV Data</>}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-slate-700 to-slate-600 px-5 py-3">
+              <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                <Box size={14}/> 2. Model Summary
+              </h3>
+            </div>
+            <div className="p-5">
+              <div className="space-y-3">
+                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><GitMerge size={16} className="text-indigo-400" /> Total Nodes</div>
+                  <span className="font-mono font-bold text-brand-blue">{numNodes.toLocaleString()} EA</span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><Layers size={16} className="text-cyan-400" /> Total Members</div>
+                  <span className="font-mono font-bold text-brand-blue">{numMembers.toLocaleString()} EA</span>
+                </div>
+                <div className={`mt-2 flex items-center justify-center gap-2 p-3 rounded-lg border border-dashed text-sm font-bold transition-colors ${isDataReady ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-300 text-slate-500'}`}>
+                  {isDataReady ? <><CheckCircle2 size={18} /> Ready to Build</> : <><AlertCircle size={18} /> Awaiting CSV Data</>}
+                </div>
               </div>
             </div>
           </div>
@@ -344,7 +358,7 @@ export default function TrussAnalysis() {
               )}
               <div className="relative z-10 flex items-center gap-3 drop-shadow-md">
                 {isRunning ? <RefreshCw className="animate-spin" size={24} /> : <Play size={24} fill="currentColor" />}
-                {isRunning ? `${progress}% - ${statusMessage || 'Building...'}` : 'Run Async Model Builder'}
+                {isRunning ? `${progress}% - ${statusMessage || '생성 중...'}` : 'BDF 생성 시작'}
               </div>
             </button>
             
@@ -367,10 +381,9 @@ export default function TrussAnalysis() {
         {/* RIGHT PANE */}
         <div className="flex-1 flex flex-col gap-6 min-h-0">
           <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-            <div className="flex border-b border-slate-200 bg-slate-50 px-4 pt-4 gap-2">
+            <div className="flex items-end border-b border-slate-200 bg-gradient-to-r from-indigo-900 to-blue-800 px-4 pt-3 gap-1">
               <TabButton active={activeTab === 'node'} onClick={() => setActiveTab('node')} icon={Database} label="Node Preview" count={numNodes} />
               <TabButton active={activeTab === 'member'} onClick={() => setActiveTab('member')} icon={Layers} label="Member Preview" count={numMembers} />
-              {/* (추가) JSON 데이터가 들어오면 자동으로 Result 탭 생성 */}
               {resultJsonData && (
                 <TabButton active={activeTab === 'result'} onClick={() => setActiveTab('result')} icon={FileText} label="Result Viewer" count={Array.isArray(resultJsonData) ? resultJsonData.length : 1} />
               )}
@@ -657,8 +670,20 @@ function UploadDropzone({ type, title, file, rowCount, onDrop, onChange }) {
 
 function TabButton({ active, onClick, icon: Icon, label, count }) {
   return (
-    <button onClick={onClick} className={`px-4 py-2.5 rounded-t-lg font-bold text-sm flex items-center gap-2 cursor-pointer ${active ? 'bg-white text-brand-blue border-t-2 border-t-brand-blue' : 'text-slate-500 hover:bg-slate-100'}`}>
+    <button
+      onClick={onClick}
+      className={`px-4 py-2.5 rounded-t-lg font-bold text-sm flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${
+        active
+          ? 'bg-white text-brand-blue shadow-sm'
+          : 'text-blue-200 hover:text-white hover:bg-white/10'
+      }`}
+    >
       <Icon size={16} /> {label}
+      {count !== undefined && count > 0 && (
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${active ? 'bg-blue-100 text-blue-600' : 'bg-white/20 text-white'}`}>
+          {count}
+        </span>
+      )}
     </button>
   );
 }

@@ -194,21 +194,39 @@ export default function TrussAssessment() {
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <button onClick={() => setCurrentMenu('File-Based Apps')} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-brand-blue hover:bg-slate-50 transition-colors cursor-pointer"><ArrowLeft size={20} /></button>
-          <div>
-            <h1 className="text-2xl font-bold text-brand-blue tracking-tight flex items-center gap-3"><Layers className="text-blue-500"/> Truss Structural Assessment</h1>
-            <p className="text-sm text-slate-500 mt-1">BDF 모델 파일을 업로드하여 구조적 건전성을 즉시 평가합니다.</p>
-          </div>
+
+      {/* ── 그라디언트 배너 헤더 ── */}
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-[#002554] via-emerald-900 to-emerald-700 overflow-hidden shrink-0">
+        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
+          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
+          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
         </div>
-        <GuideButton guideTitle="[파일] Truss Structural Assessment — 트러스 구조 안정성 평가" />
+        <div className="relative flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setCurrentMenu('File-Based Apps')}
+              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                <Layers size={18}/> Truss Structural Assessment
+              </h1>
+              <p className="text-sm text-emerald-200/80 mt-0.5">BDF 모델 파일을 업로드하여 구조적 건전성을 즉시 평가합니다.</p>
+            </div>
+          </div>
+          <GuideButton guideTitle="[파일] Truss Structural Assessment — 트러스 구조 안정성 평가" variant="dark" />
+        </div>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
         <div className="w-full lg:w-[400px] flex flex-col gap-5 shrink-0 overflow-y-auto pr-1 custom-scrollbar">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-4"><Database size={16} className="text-blue-500"/> 1. Model Input (.bdf)</h3>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-5 py-3">
+              <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2"><Database size={14}/> 1. Model Input (.bdf)</h3>
+            </div>
+            <div className="p-5">
             <div onClick={() => fileInputRef.current?.click()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }} onDragOver={e => e.preventDefault()}
               className={`relative p-6 rounded-xl border-2 border-dashed text-center cursor-pointer transition-all ${bdfFile ? 'border-emerald-400 bg-emerald-50/50' : 'border-slate-300 hover:border-blue-400 hover:bg-blue-50/50'}`}>
               <input type="file" accept=".bdf,.dat" className="hidden" ref={fileInputRef} onChange={(e) => handleFile(e.target.files[0])} />
@@ -220,11 +238,14 @@ export default function TrussAssessment() {
                 </div>
               </div>
             </div>
+            </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2"><Box size={16} className="text-slate-500"/> 2. Model Summary</h3>
-            <div className="space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-slate-700 to-slate-600 px-5 py-3">
+              <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2"><Box size={14}/> 2. Model Summary</h3>
+            </div>
+            <div className="p-5 space-y-3">
               <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100"><div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><GitMerge size={16} className="text-indigo-400" /> Parsed Nodes</div><span className="font-mono font-bold text-brand-blue">{numNodes.toLocaleString()} EA</span></div>
               <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100"><div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><Layers size={16} className="text-cyan-400" /> Parsed Elements</div><span className="font-mono font-bold text-brand-blue">{numMembers.toLocaleString()} EA</span></div>
               <div className={`mt-2 flex items-center justify-center gap-2 p-3 rounded-lg border border-dashed text-sm font-bold ${isDataReady ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-300 text-slate-500'}`}>{isDataReady ? <><CheckCircle2 size={18} /> Model Ready</> : <><AlertCircle size={18} /> Awaiting BDF Data</>}</div>
@@ -250,7 +271,7 @@ export default function TrussAssessment() {
               {isRunning && <div className="absolute left-0 top-0 bottom-0 bg-blue-600 transition-all duration-500 ease-out opacity-80" style={{ width: `${progress}%` }}></div>}
               <div className="relative z-10 flex items-center gap-3 drop-shadow-md">
                 {isRunning ? <RefreshCw className="animate-spin" size={24} /> : <Play size={24} fill="currentColor" />}
-                {isRunning ? `${progress}% - ${statusMessage} (${elapsedSeconds}s)` : 'Run Structural Assessment'}
+                {isRunning ? `${progress}% - ${statusMessage} (${elapsedSeconds}s)` : '구조 해석 시작'}
               </div>
             </button>
           </div>
@@ -258,7 +279,7 @@ export default function TrussAssessment() {
 
         <div className="flex-1 flex flex-col gap-6 min-h-0">
           <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden relative">
-            <div className="flex border-b border-slate-200 bg-slate-50 px-4 pt-4 gap-2 shrink-0 z-10 overflow-x-auto custom-scrollbar">
+            <div className="flex items-end border-b border-slate-200 bg-gradient-to-r from-emerald-900 to-emerald-700 px-4 pt-3 gap-1 shrink-0 z-10 overflow-x-auto custom-scrollbar">
               <TabButton active={activeTab === '3d'}     onClick={() => updateState({ activeTab: '3d' })}     icon={Eye}      label="3D Preview" />
               <TabButton active={activeTab === 'node'}   onClick={() => updateState({ activeTab: 'node' })}   icon={Database} label="Input Nodes" />
               <TabButton active={activeTab === 'member'} onClick={() => updateState({ activeTab: 'member' })} icon={Layers}   label="Input Elements" />
@@ -295,9 +316,16 @@ export default function TrussAssessment() {
 }
 
 function TabButton({ active, onClick, icon: Icon, label, color }) {
-  const activeColor = color === 'emerald' ? 'text-emerald-700 border-t-emerald-600 bg-emerald-50/30' : 'text-brand-blue border-t-brand-blue';
+  const activeTextColor = color === 'emerald' ? 'text-emerald-700' : 'text-brand-blue';
   return (
-    <button onClick={onClick} className={`px-4 py-2.5 rounded-t-lg font-bold text-sm flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${active ? `bg-white ${activeColor} border-t-2 border-x border-slate-200` : 'text-slate-500 hover:bg-slate-200 border-t-2 border-transparent border-x border-transparent'}`}>
+    <button
+      onClick={onClick}
+      className={`px-4 py-2.5 rounded-t-lg font-bold text-sm flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${
+        active
+          ? `bg-white ${activeTextColor} shadow-sm`
+          : 'text-emerald-200 hover:text-white hover:bg-white/10'
+      }`}
+    >
       <Icon size={16} /> {label}
     </button>
   );

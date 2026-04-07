@@ -3,6 +3,7 @@
 /// (수정) 즐겨찾기에서 Truss Assessment 진입 시 글로벌 상태를 초기화하는 로직 추가
 /// </summary>
 import React, { useState, useEffect, Fragment } from 'react';
+import { motion } from 'framer-motion';
 import { Dialog, Transition } from '@headlessui/react';
 import { getQueueStatus } from '../../api/admin';
 import { getAnalysisHistory } from '../../api/analysis';
@@ -21,7 +22,13 @@ const MODE_KO = {
 };
 
 const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color }) => (
-  <div className="relative bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-start justify-between hover:shadow-lg hover:border-blue-300 transition-all duration-200 group">
+  <motion.div
+    className="relative bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-start justify-between hover:shadow-lg hover:border-blue-300 transition-all duration-200 group"
+    initial={{ opacity: 0, y: 12 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.3, ease: 'easeOut' }}
+    whileHover={{ y: -3, transition: { type: 'spring', stiffness: 350, damping: 28 } }}
+  >
     <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400">
       <ArrowUpRight size={18} />
     </div>
@@ -37,11 +44,24 @@ const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color }) => (
     <div className={`p-3 rounded-xl ${color} shadow-sm group-hover:scale-110 transition-transform`}>
       <Icon size={22} className="text-white" />
     </div>
-  </div>
+  </motion.div>
 );
 
 const FavoriteCard = ({ title, icon: Icon, color, desc, onClick }) => (
-  <button onClick={onClick} className="flex flex-col items-center justify-center p-6 bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-500 hover:-translate-y-1 transition-all group w-full text-center h-full relative overflow-hidden cursor-pointer">
+  <motion.button
+    onClick={onClick}
+    className="flex flex-col items-center justify-center p-6 bg-white rounded-xl border border-slate-200 shadow-sm group w-full text-center h-full relative overflow-hidden cursor-pointer"
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.28, ease: 'easeOut' }}
+    whileHover={{
+      y: -5,
+      boxShadow: '0 12px 28px -8px rgba(0, 37, 84, 0.18)',
+      borderColor: '#3b82f6',
+      transition: { type: 'spring', stiffness: 380, damping: 28 },
+    }}
+    whileTap={{ scale: 0.97 }}
+  >
     <div className="absolute top-3 right-3 text-yellow-400">
       <Star size={16} fill="currentColor" />
     </div>
@@ -50,7 +70,7 @@ const FavoriteCard = ({ title, icon: Icon, color, desc, onClick }) => (
     </div>
     <h3 className="font-bold text-slate-700 text-sm">{title}</h3>
     <p className="text-xs text-slate-400 mt-1 truncate max-w-full px-2">{desc}</p>
-  </button>
+  </motion.button>
 );
 
 const ProjectRow = ({ id, name, type, status, date, onClick }) => {
@@ -374,22 +394,27 @@ export default function Dashboard() {
             <p>New Analysis 메뉴에서 자주 사용하는 해석에 별(★)을 눌러 대시보드에 추가해 보세요.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <motion.div
+            className="grid grid-cols-2 md:grid-cols-4 gap-4"
+            initial="hidden"
+            animate="show"
+            variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }}
+          >
             {favorites.map(favTitle => {
               const analysisInfo = ANALYSIS_DATA.find(a => a.title === favTitle);
               if (!analysisInfo) return null;
               return (
-                <FavoriteCard 
+                <FavoriteCard
                   key={favTitle}
-                  title={analysisInfo.title} 
-                  desc={analysisInfo.description} 
-                  icon={analysisInfo.icon} 
-                  color={analysisInfo.color} 
+                  title={analysisInfo.title}
+                  desc={analysisInfo.description}
+                  icon={analysisInfo.icon}
+                  color={analysisInfo.color}
                   onClick={() => handleFavoriteClick(analysisInfo.title)}
                 />
               );
             })}
-          </div>
+          </motion.div>
         )}
       </div>
 

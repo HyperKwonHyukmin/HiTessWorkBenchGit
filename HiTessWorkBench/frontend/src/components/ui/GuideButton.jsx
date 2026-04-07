@@ -10,10 +10,11 @@ import { getUserGuides } from '../../api/admin';
 /**
  * GuideButton
  *
- * @param {string} guideTitle  - DB user_guides.title과 정확히 일치하는 문자열
- * @param {string} [size='sm'] - 'sm' | 'md' — 버튼 크기
+ * @param {string}  guideTitle          - DB user_guides.title과 정확히 일치하는 문자열
+ * @param {string}  [size='sm']         - 'sm' | 'md' — 버튼 크기
+ * @param {'light'|'dark'} [variant='light'] - 배경 테마 ('dark' 시 흰색 계열로 렌더링)
  */
-export default function GuideButton({ guideTitle, size = 'sm' }) {
+export default function GuideButton({ guideTitle, size = 'sm', variant = 'light' }) {
   const [isOpen, setIsOpen]     = useState(false);
   const [content, setContent]   = useState('');
   const [title, setTitle]       = useState('');
@@ -63,7 +64,11 @@ export default function GuideButton({ guideTitle, size = 'sm' }) {
       <button
         type="button"
         onClick={handleOpen}
-        className={`inline-flex items-center font-bold rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:border-indigo-300 transition-colors cursor-pointer shrink-0 ${sizeClass}`}
+        className={`inline-flex items-center font-bold rounded-lg transition-colors cursor-pointer shrink-0 ${sizeClass} ${
+          variant === 'dark'
+            ? 'border border-white/20 bg-white/10 text-white hover:bg-white/20'
+            : 'border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:border-indigo-300'
+        }`}
         title={`사용 가이드: ${guideTitle}`}
       >
         <BookOpen size={size === 'md' ? 16 : 14} />

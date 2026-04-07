@@ -3,9 +3,10 @@ import axios from 'axios';
 import {
   TableProperties, Calculator, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, AlertCircle, Loader2,
-  Ruler, Weight, BarChart3, ChevronRight, ImageIcon, Download
+  Ruler, Weight, BarChart3, ChevronRight, ImageIcon, Download, ArrowLeft
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
+import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import mastPostRef from '../../assets/images/mast_post_reference.png';
 import { formatFixed as fmt } from '../../utils/formatting';
@@ -91,6 +92,7 @@ const CandidateDetail = ({ c }) => {
 // ─────────────────────────────────────────────
 
 export default function MastPostAssessment() {
+  const { setCurrentMenu } = useNavigation();
   const [heightMm, setHeightMm] = useState('');
   const [weightKg, setWeightKg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -133,16 +135,30 @@ export default function MastPostAssessment() {
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
-      {/* 헤더 */}
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-            <TableProperties className="text-violet-600" size={28} />
-            Mast Post Assessment
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">Post 높이와 플랫폼 하중을 입력하여 LR Rule 기준 최적 파이프 후보를 산출합니다.</p>
+      {/* ── 그라디언트 배너 헤더 ── */}
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-[#002554] via-violet-900 to-violet-700 overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
+          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
+          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
         </div>
-        <GuideButton guideTitle="[파라메트릭] Mast Post Assessment — Post 파이프 자동 선정" />
+        <div className="relative flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setCurrentMenu('Parametric Apps')}
+              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                <TableProperties size={18} className="text-violet-300" />
+                Mast Post Assessment
+              </h1>
+              <p className="text-sm text-violet-200/80 mt-0.5">Post 높이와 플랫폼 하중을 입력하여 LR Rule 기준 최적 파이프 후보를 산출합니다.</p>
+            </div>
+          </div>
+          <GuideButton guideTitle="[파라메트릭] Mast Post Assessment — Post 파이프 자동 선정" variant="dark" />
+        </div>
       </div>
 
 
@@ -246,10 +262,12 @@ export default function MastPostAssessment() {
 
         {/* 좌측: 입력 패널 */}
         <div className="space-y-4">
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 space-y-5">
-            <h2 className="text-sm font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
-              <Ruler size={16} className="text-violet-500" /> 입력 조건
-            </h2>
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-violet-700 to-violet-600 px-6 py-3 flex items-center gap-2">
+              <Ruler size={14} className="text-white" />
+              <h2 className="text-xs font-bold text-white uppercase tracking-wider">입력 조건</h2>
+            </div>
+            <div className="p-6 space-y-5">
             <InputField
               label="Post 전체 높이"
               desc="플랫폼 하단부터 Post 상단까지의 전체 높이"
@@ -273,6 +291,7 @@ export default function MastPostAssessment() {
                 ? <><Loader2 size={18} className="animate-spin" /> 계산 중...</>
                 : <><Calculator size={18} /> Calculate</>}
             </button>
+            </div>
           </div>
 
           {/* 계산 기준 */}
@@ -355,9 +374,9 @@ export default function MastPostAssessment() {
               </div>
 
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
-                  <Weight size={16} className="text-violet-500" /> 파이프 후보 목록
+              <div className="bg-gradient-to-r from-slate-700 to-slate-600 px-6 py-3 flex items-center justify-between">
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Weight size={14} className="text-white" /> 파이프 후보 목록
                 </h3>
                 <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
                   passCount > 0

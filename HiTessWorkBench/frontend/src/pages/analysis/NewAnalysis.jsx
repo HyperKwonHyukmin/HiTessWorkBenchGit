@@ -4,6 +4,8 @@ import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import AppCard from '../../components/ui/AppCard';
 import PageHeader from '../../components/ui/PageHeader';
+import FilterTabs from '../../components/ui/FilterTabs';
+import AnimatedGrid from '../../components/ui/AnimatedGrid';
 import Button from '../../components/ui/Button';
 
 export default function NewAnalysis() {
@@ -41,27 +43,14 @@ export default function NewAnalysis() {
         subtitle="수행하고자 하는 파일 업로드 기반 해석 모델을 선택하십시오."
       />
 
-      {/* 카테고리 필터 탭 */}
-      <div className="flex flex-wrap items-center gap-2 mb-8 border-b border-slate-200 pb-5">
-        {categories.map(category => (
-          <button
-            key={category}
-            onClick={() => setActiveCategory(category)}
-            className={`cursor-pointer px-6 py-2.5 rounded-lg text-sm font-bold tracking-wide transition-all duration-200 ${
-              activeCategory === category
-                ? 'bg-brand-blue text-white shadow-md border border-brand-blue'
-                : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 shadow-sm'
-            }`}
-          >
-            {category}
-          </button>
-        ))}
-      </div>
+      <FilterTabs
+        categories={categories}
+        active={activeCategory}
+        onChange={setActiveCategory}
+      />
 
-      {/* 앱 카드 그리드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {filteredAnalyses.map((item, index) => {
-          // ANALYSIS_DATA의 icon(컴포넌트)을 JSX로 변환하여 AppCard에 전달
+      <AnimatedGrid>
+        {filteredAnalyses.map((item) => {
           const IconComponent = item.icon;
           const iconColorClass = item.color.replace('bg-', 'text-');
           const appData = {
@@ -70,11 +59,11 @@ export default function NewAnalysis() {
             icon: <IconComponent className={iconColorClass} size={28} />,
             iconBg: item.color,
             tags: item.tags,
-            devStatus: item.devStatus === 'Active' ? 'stable' : 'dev',
+            devStatus: item.devStatus,
           };
           return (
             <AppCard
-              key={index}
+              key={item.title}
               app={appData}
               accentColor="blue"
               isFavorite={favorites.includes(item.title)}
@@ -83,7 +72,7 @@ export default function NewAnalysis() {
             />
           );
         })}
-      </div>
+      </AnimatedGrid>
 
       {/* 하단 도움말 배너 */}
       <div className="mt-16 bg-slate-50 rounded-2xl p-8 border border-dashed border-slate-300 flex flex-col md:flex-row items-center gap-6">

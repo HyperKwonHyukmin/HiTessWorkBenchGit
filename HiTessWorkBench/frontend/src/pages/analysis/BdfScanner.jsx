@@ -165,21 +165,25 @@ export default function BdfScanner() {
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-      {/* 헤더 */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
+      {/* ── 그라디언트 배너 헤더 ── */}
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-[#002554] via-teal-900 to-teal-700 overflow-hidden shrink-0">
+        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
+          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
+          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
+        </div>
+        <div className="relative flex items-center gap-4">
           <button
             onClick={() => setCurrentMenu('File-Based Apps')}
-            className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-brand-blue hover:bg-slate-50 transition-colors cursor-pointer"
+            className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={18} />
           </button>
           <div>
-            <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              <FileSearch size={22} className="text-teal-600" />
+            <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+              <FileSearch size={18} className="text-teal-300" />
               BDF Scanner
             </h1>
-            <p className="text-sm text-slate-500 mt-0.5">BDF 모델 유효성 검증 및 Nastran F06 요약</p>
+            <p className="text-sm text-teal-200/80 mt-0.5">BDF 모델 유효성 검증 및 Nastran F06 요약</p>
           </div>
         </div>
       </div>
@@ -189,8 +193,11 @@ export default function BdfScanner() {
         {/* 왼쪽 사이드바 */}
         <div className="w-[360px] shrink-0 flex flex-col gap-4">
           {/* 파일 업로드 */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-            <p className="text-sm font-semibold text-slate-700 mb-3">BDF 파일 선택</p>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-teal-700 to-teal-600 px-5 py-3">
+              <p className="text-xs font-bold text-white uppercase tracking-widest">BDF 파일 선택</p>
+            </div>
+            <div className="p-5">
             <div
               onClick={() => fileInputRef.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
@@ -220,11 +227,15 @@ export default function BdfScanner() {
               className="hidden"
               onChange={(e) => handleFile(e.target.files?.[0])}
             />
+            </div>
           </div>
 
           {/* Nastran 옵션 */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-            <p className="text-sm font-semibold text-slate-700 mb-3">해석 옵션</p>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-slate-700 to-slate-600 px-5 py-3">
+              <p className="text-xs font-bold text-white uppercase tracking-widest">해석 옵션</p>
+            </div>
+            <div className="p-5">
             <label className="flex items-start gap-3 cursor-pointer group">
               <input
                 type="checkbox"
@@ -242,6 +253,7 @@ export default function BdfScanner() {
                 </p>
               </div>
             </label>
+            </div>
           </div>
 
           {/* 실행 버튼 */}
@@ -281,23 +293,23 @@ export default function BdfScanner() {
           {resultData ? (
             <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col min-h-0">
               {/* 탭 헤더 */}
-              <div className="flex border-b border-slate-200 px-4 pt-3 gap-1 shrink-0">
+              <div className="flex items-end border-b border-slate-200 bg-gradient-to-r from-teal-900 to-teal-700 px-4 pt-3 gap-1 shrink-0">
                 {tabs.map(({ key, label, icon: Icon }) => (
                   <button
                     key={key}
                     onClick={() => setActiveTab(key)}
                     disabled={!resultData[key]}
-                    className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+                    className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap ${
                       activeTab === key
-                        ? 'border-teal-500 text-teal-700 bg-teal-50'
+                        ? 'bg-white text-teal-700 shadow-sm'
                         : resultData[key]
-                        ? 'border-transparent text-slate-500 hover:text-slate-700'
-                        : 'border-transparent text-slate-300 cursor-not-allowed'
+                        ? 'text-teal-200 hover:text-white hover:bg-white/10'
+                        : 'text-teal-800/50 cursor-not-allowed'
                     }`}
                   >
                     <Icon size={14} />
                     {label}
-                    {!resultData[key] && <span className="text-xs text-slate-300">(없음)</span>}
+                    {!resultData[key] && <span className="text-xs opacity-50">(없음)</span>}
                   </button>
                 ))}
               </div>

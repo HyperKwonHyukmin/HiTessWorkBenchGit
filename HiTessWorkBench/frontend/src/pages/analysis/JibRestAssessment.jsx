@@ -3,9 +3,10 @@ import axios from 'axios';
 import {
   TableProperties, Calculator, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, AlertCircle, Loader2,
-  Weight, BarChart3, ChevronRight, ImageIcon, Wind, Download
+  Weight, BarChart3, ChevronRight, ImageIcon, Wind, Download, ArrowLeft
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
+import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import jibRestRef from '../../assets/images/jib_rest_reference.png';
 import jibCraneRef from '../../assets/images/jib_crane_reference.png';
@@ -111,9 +112,9 @@ const CandidateTable = ({ result, selectedRank, setSelectedRank, on2danSelect })
   const passCount = result?.candidates?.filter(c => c.stressOk && c.displacementOk).length ?? 0;
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-        <h3 className="text-sm font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
-          <Weight size={16} className="text-indigo-500" /> 파이프 후보 목록
+      <div className="bg-gradient-to-r from-slate-700 to-slate-600 px-6 py-3 flex items-center justify-between">
+        <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+          <Weight size={14} className="text-white" /> 파이프 후보 목록
         </h3>
         <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
           passCount > 0 ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200'
@@ -211,6 +212,7 @@ const EMPTY_1DAN = { jh: '990', jb: '670', wj: '14500', ww: '1200', wc: '3000', 
 const EMPTY_2DAN = { h2: '2454', h3: '1000', d1: '762', t1: '7.9' };
 
 export default function JibRestAssessment() {
+  const { setCurrentMenu } = useNavigation();
   const [activeTab, setActiveTab] = useState('1dan');
   const [inputs1dan, setInputs1dan] = useState(EMPTY_1DAN);
   const [inputs2dan, setInputs2dan] = useState(EMPTY_2DAN);
@@ -291,19 +293,33 @@ export default function JibRestAssessment() {
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
-      {/* 헤더 */}
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-            <TableProperties className="text-indigo-600" size={28} />
-            Jib Rest Assessment
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">Jib Rest 구조물의 1단/2단 파이프 설계 후보를 LR Rule 기준으로 산출합니다.</p>
+      {/* ── 그라디언트 배너 헤더 ── */}
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-[#002554] via-indigo-900 to-indigo-700 overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
+          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
+          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
         </div>
-        <GuideButton guideTitle="[파라메트릭] Jib Rest Assessment — 1단/2단 파이프 설계" />
+        <div className="relative flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setCurrentMenu('Parametric Apps')}
+              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                <TableProperties size={18} className="text-indigo-300" />
+                Jib Rest Assessment
+              </h1>
+              <p className="text-sm text-indigo-200/80 mt-0.5">Jib Rest 구조물의 1단/2단 파이프 설계 후보를 LR Rule 기준으로 산출합니다.</p>
+            </div>
+          </div>
+          <GuideButton guideTitle="[파라메트릭] Jib Rest Assessment — 1단/2단 파이프 설계" variant="dark" />
+        </div>
       </div>
 
-      {/* 탭 */}
+      {/* 1단/2단 탭 */}
       <div className="flex gap-2 mb-6 border-b border-gray-200">
         {[
           { id: '1dan', label: '1단 계산' },
@@ -465,9 +481,11 @@ export default function JibRestAssessment() {
 
         {/* 좌측: 입력 패널 */}
         <div className="space-y-4">
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 space-y-4">
-            <h2 className="text-sm font-bold text-slate-600 uppercase tracking-wider">입력 조건</h2>
-
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-700 to-indigo-600 px-6 py-3">
+              <h2 className="text-xs font-bold text-white uppercase tracking-wider">입력 조건</h2>
+            </div>
+            <div className="p-6 space-y-4">
             {/* 1단 공통 입력 */}
             <GroupLabel>치수</GroupLabel>
             <div className="grid grid-cols-2 gap-3">
@@ -544,6 +562,7 @@ export default function JibRestAssessment() {
                 ? <><Loader2 size={18} className="animate-spin" /> 계산 중...</>
                 : <><Calculator size={18} /> {activeTab === '1dan' ? '1단 Calculate' : '2단 Calculate'}</>}
             </button>
+            </div>
           </div>
 
           {/* 계산 기준 */}
