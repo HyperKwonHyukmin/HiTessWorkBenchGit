@@ -8,6 +8,7 @@ from .. import models, schemas, database
 from ..state import server_state
 
 router = APIRouter(prefix="/api", tags=["auth"])
+member_router = APIRouter(prefix="/member", tags=["member"])
 
 
 class CheckUserRequest(BaseModel):
@@ -15,6 +16,7 @@ class CheckUserRequest(BaseModel):
     company: str
 
 
+@member_router.post("/check_user")
 @router.post("/check_user")
 def check_user(req: CheckUserRequest, db: Session = Depends(database.get_db)):
     user_id = req.userID.upper()

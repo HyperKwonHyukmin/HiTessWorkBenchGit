@@ -20,6 +20,7 @@ app.add_middleware(
 
 # 라우터 등록
 app.include_router(auth.router)
+app.include_router(auth.member_router)
 app.include_router(users.router)
 app.include_router(analysis.router)
 app.include_router(system.router)
