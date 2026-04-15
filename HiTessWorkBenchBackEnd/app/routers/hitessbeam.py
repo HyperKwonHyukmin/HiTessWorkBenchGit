@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 router = APIRouter(prefix="/hitessbeam", tags=["hitessbeam-temp"])
 
@@ -116,6 +117,31 @@ async def csv_to_bdf(
         "userFolder": os.path.basename(work_dir),
         "bdfFilename": bdf_filename,
     }
+
+
+_USER_CONN_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
+
+
+@router.get("/csvToBdf/download/{user_folder}/{filename}")
+def download_bdf(user_folder: str, filename: str):
+    """
+    BDF 파일 다운로드 엔드포인트.
+    userConnection/{user_folder}/{filename} 경로의 파일을 반환합니다.
+    """
+    file_path = os.path.abspath(os.path.join(_USER_CONN_DIR, user_folder, filename))
+
+    # 경로 탈출 방지 (userConnection/ 외부 접근 차단)
+    if not file_path.startswith(_USER_CONN_DIR + os.sep):
+        raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/octet-stream",
+    )
 
 
 def _clean_grav_card(file_path: str) -> None:
