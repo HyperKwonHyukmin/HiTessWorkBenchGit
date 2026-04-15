@@ -13,12 +13,17 @@ export default function LoginScreen({ onLoginSuccess }) {
   const [errorMsg, setErrorMsg] = useState('');
   
   // 상태 관리
-  const [isServerLive, setIsServerLive] = useState(null); 
-  const [isVersionMismatch, setIsVersionMismatch] = useState(false); 
-  const [serverVersion, setServerVersion] = useState(''); 
+  const [isServerLive, setIsServerLive] = useState(null);
+  const [isVersionMismatch, setIsVersionMismatch] = useState(false);
+  const [serverVersion, setServerVersion] = useState('');
+  const [serverErrorReason, setServerErrorReason] = useState('');
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [downloadState, setDownloadState] = useState(null); // null | 'downloading' | 'done' | 'error'
   const [downloadProgress, setDownloadProgress] = useState(0);
+
+  const serverHost = (() => {
+    try { return new URL(API_BASE_URL).host; } catch { return API_BASE_URL; }
+  })();
 
   // [초기화] 서버 상태 및 버전 체크
   useEffect(() => {
@@ -41,6 +46,15 @@ export default function LoginScreen({ onLoginSuccess }) {
       } catch (error) {
         console.error("Server Check Failed:", error);
         setIsServerLive(false);
+        if (error.code === 'ECONNABORTED') {
+          setServerErrorReason('연결 시간 초과');
+        } else if (error.code === 'ERR_NETWORK' || !error.response) {
+          setServerErrorReason('서버에 연결할 수 없음');
+        } else if (error.response?.status === 503) {
+          setServerErrorReason('서버 점검 중');
+        } else {
+          setServerErrorReason(`HTTP ${error.response?.status ?? '오류'}`);
+        }
       }
     };
 
@@ -141,18 +155,33 @@ export default function LoginScreen({ onLoginSuccess }) {
       <div className="flex-1 flex flex-col justify-center items-center p-10 bg-white shadow-xl relative z-50">
         <div className="absolute top-6 right-6 transition-all duration-500 ease-in-out">
           {isServerLive === true && !isVersionMismatch && (
-            <div className="flex items-center space-x-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-full shadow-sm animate-fade-in-down">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-              </span>
-              <span className="text-xs font-bold text-green-700 tracking-wide">Server v{serverVersion}</span>
+            <div className="flex flex-col items-end space-y-1 animate-fade-in-down">
+              <div className="flex items-center space-x-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-full shadow-sm">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
+                <span className="text-xs font-bold text-green-700 tracking-wide">Server v{serverVersion}</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-mono pr-1">{serverHost}</span>
             </div>
           )}
           {isServerLive === false && (
-            <div className="flex items-center space-x-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-full shadow-sm">
-              <WifiOff className="h-4 w-4 text-red-500" />
-              <span className="text-xs font-bold text-red-600">Offline</span>
+            <div className="flex flex-col items-end space-y-1">
+              <div className="flex items-center space-x-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-full shadow-sm">
+                <WifiOff className="h-4 w-4 text-red-500" />
+                <span className="text-xs font-bold text-red-600">Offline</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-mono pr-1">{serverHost}</span>
+              {serverErrorReason && (
+                <span className="text-[10px] text-red-400 font-medium pr-1">{serverErrorReason}</span>
+              )}
+            </div>
+          )}
+          {isServerLive === null && (
+            <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full shadow-sm">
+              <span className="animate-spin h-3 w-3 border-2 border-slate-300 border-t-slate-500 rounded-full"></span>
+              <span className="text-xs text-slate-400 font-mono">{serverHost}</span>
             </div>
           )}
         </div>

@@ -624,8 +624,8 @@ export default function Dashboard() {
       
       <div className="flex justify-between items-end mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-brand-blue tracking-tight">워크벤치 종합 현황</h1>
-          <p className="text-sm text-slate-500 mt-1">실행 중인 시뮬레이션 상태 및 시스템 리소스를 확인하세요.</p>
+          <h1 className="text-2xl font-bold text-brand-blue tracking-tight">WorkBench Overview</h1>
+          <p className="text-sm text-slate-500 mt-1">해석 서버 현황, 수행 통계, 즐겨찾기 앱을 한눈에 확인하세요.</p>
         </div>
         <div className="text-right">
           {isBackendConnected ? (
