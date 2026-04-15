@@ -17,6 +17,18 @@ ModuleUnit_HiTESS.exe 래퍼 스크립트
 import sys
 import traceback
 
+# PyInstaller 번들 환경에서는 .py 소스 파일이 없어
+# pyNastran deprecated() 내부의 inspect.getsourcelines()가 OSError를 발생시킴.
+# 번들 실행 시 소스 조회를 건너뛰도록 패치.
+import inspect
+_orig_getsourcelines = inspect.getsourcelines
+def _safe_getsourcelines(obj):
+    try:
+        return _orig_getsourcelines(obj)
+    except OSError:
+        return ([''], 1)
+inspect.getsourcelines = _safe_getsourcelines
+
 
 def _inforget_mode(bdf_path: str):
     """BDF에서 $$Hydro/$$Goliat 마커를 파싱하여 해석 파라미터를 반환합니다."""
