@@ -1,11 +1,15 @@
 """
 [TEMP] HiTessBeam 임시 라우터
 향후 HiTess ModelFlow 통합 시 제거 예정.
-제거 방법: 이 파일 삭제 + main.py의 import/include_router 한 줄 제거
+제거 방법:
+  1. 이 파일 삭제
+  2. _hitessbeam_pymod/ 폴더 삭제
+  3. main.py의 hitessbeam import/include_router 두 줄 제거
 """
 import os
 import pickle
 import subprocess
+import traceback
 from datetime import datetime
 from typing import List
 
@@ -142,6 +146,227 @@ def download_bdf(user_folder: str, filename: str):
         filename=filename,
         media_type="application/octet-stream",
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# [TEMP] moduleUnit 블록 시작
+# 제거 시: 이 블록 전체 + _hitessbeam_pymod/ 폴더 삭제
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Lazy & safe import — 의존 모듈이 없어도 import 시점에 서버가 죽지 않게
+_HookTrolley = None
+_HookTrolley_GU = None
+_HOOKTROLLEY_IMPORT_ERROR = None
+try:
+    from ._hitessbeam_pymod.HookTrolley import HookTrolley as _HookTrolley
+    from ._hitessbeam_pymod.HookTrolley_GU import HookTrolley_GU as _HookTrolley_GU
+except Exception as _imp_e:
+    _HOOKTROLLEY_IMPORT_ERROR = _imp_e  # 실제 요청 시점에 에러 txt로 보고
+
+
+def _inforget_mode(bdf_path: str):
+    """BDF에서 $$Hydro/$$Goliat 마커를 파싱하여 해석 파라미터를 반환합니다.
+    반환: (bdf_path, ModuleInfo_list, lineLength_list, lifting_method)
+    """
+    ModulePoint_idx_list = []
+    lifting_method = None
+
+    with open(bdf_path, "r", encoding="utf8") as f:
+        lines = f.readlines()
+
+    for line_idx, line in enumerate(lines):
+        if "$$Hydro" in line or "$$Goliat" in line:
+            lifting_method = 0 if "$$Hydro" in line else 1
+            ModulePoint_idx_list.append(line_idx + 1)
+        if "$$------------------------------------------------------------------------------$" in line:
+            ModulePoint_idx_list.append(line_idx)
+            break
+
+    if len(ModulePoint_idx_list) < 2:
+        raise ValueError("BDF 분석 실패: '$$Hydro' 또는 '$$Goliat' 시작/종료 마커를 찾지 못했습니다.")
+
+    ModuleInfo_text = lines[ModulePoint_idx_list[0]: ModulePoint_idx_list[1]]
+    ModuleInfo_dict = {}
+    lineLength_list = []
+
+    for line in ModuleInfo_text:
+        clean_item = line.replace("$$", "").strip()
+        parts = clean_item.split()
+        if len(parts) < 3:
+            continue
+        try:
+            category = int(parts[0].split("-")[0])
+            val1 = int(parts[1])
+            val2 = int(parts[2])
+            if category not in ModuleInfo_dict:
+                ModuleInfo_dict[category] = [val1]
+                lineLength_list.append(val2)
+            else:
+                ModuleInfo_dict[category].append(val1)
+        except ValueError:
+            continue
+
+    ModuleInfo_list = list(ModuleInfo_dict.values())
+    return bdf_path, ModuleInfo_list, lineLength_list, lifting_method
+
+
+def _write_error_fallback(user_folder: str, filename: str, exc: Exception) -> dict:
+    """오류 발생 시 더미 bdf/f06 + 에러 리포트 txt를 생성하고 200 응답 바디를 반환합니다.
+    Flask 원본의 graceful 에러 반환 동작을 이식한 것입니다.
+    """
+    bdf_filename = filename.replace(".bdf", "_r.bdf")
+    f06_filename = filename.replace(".bdf", "_r.f06")
+    txt_filename = filename.replace(".bdf", "_r.txt")
+
+    error_txt_path = os.path.join(user_folder, txt_filename)
+    try:
+        with open(error_txt_path, "w", encoding="utf-8") as err_f:
+            err_f.write("======================================================\n")
+            err_f.write("Module Unit 해석 준비 중 치명적 오류(FATAL) 발생\n")
+            err_f.write("======================================================\n\n")
+            err_f.write(f"오류 원인: {str(exc)}\n\n")
+            err_f.write("상세 로그 (서버 에러 트레이스):\n")
+            err_f.write(traceback.format_exc())
+    except Exception:
+        pass
+
+    # 클라이언트 일괄 다운로드가 404로 깨지지 않도록 빈 더미 파일 생성
+    for dummy_name in (bdf_filename, f06_filename):
+        try:
+            open(os.path.join(user_folder, dummy_name), "w").close()
+        except Exception:
+            pass
+
+    return {
+        "message": "서버 처리 중 오류가 발생하여 에러 로그를 반환합니다.",
+        "userFolder": os.path.basename(user_folder),
+        "bdf_filename": bdf_filename,
+        "f06_filename": f06_filename,
+        "txt_filename": txt_filename,
+    }
+
+
+_MODULE_UNIT_WORK_SUBDIR = "ModuleUnit"
+
+
+@router.post("/moduleUnit")
+async def module_unit(
+    userID: str = Form(...),
+    programName: str = Form(...),
+    file: UploadFile = File(...),
+):
+    """
+    ModuleUnit / GroupUnit BDF 해석 엔드포인트.
+    multipart/form-data: file(.bdf), userID, programName("ModuleUnit"|"GroupUnit")
+    """
+    req_id = datetime.now().strftime("%H%M%S")
+    user_folder = None
+    filename = None
+
+    try:
+        # ── 1. 파일 검증 ─────────────────────────────────────────────
+        filename = os.path.basename(file.filename or "")
+        if not filename:
+            raise HTTPException(status_code=400, detail="파일 이름이 비어있습니다.")
+        if not filename.lower().endswith(".bdf"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"잘못된 파일 확장자입니다: {filename} (.bdf 파일만 가능)"
+            )
+
+        # ── 2. 작업 폴더 및 파일 저장 ────────────────────────────────
+        employee_id = userID.strip()
+        if not employee_id:
+            raise HTTPException(status_code=400, detail="userID is required")
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        user_folder = os.path.abspath(
+            os.path.join(
+                _BACKEND_DIR, "userConnection",
+                f"{timestamp}_{employee_id}_{_MODULE_UNIT_WORK_SUBDIR}"
+            )
+        )
+        os.makedirs(user_folder, exist_ok=True)
+
+        input_bdf = os.path.join(user_folder, filename)
+        output_bdf = os.path.join(user_folder, filename.replace(".bdf", "_r.bdf"))
+        try:
+            with open(input_bdf, "wb") as buf:
+                buf.write(await file.read())
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
+
+        # ── 3. import 실패 상태 확인 ──────────────────────────────────
+        if _HookTrolley is None or _HookTrolley_GU is None:
+            raise RuntimeError(
+                f"HookTrolley 모듈 로딩 실패: {_HOOKTROLLEY_IMPORT_ERROR}"
+            )
+
+        # ── 4. BDF 파싱 ───────────────────────────────────────────────
+        bdf, HookTrolley_list, lineLength, lifting_method = _inforget_mode(input_bdf)
+
+        # ── 5. programName 분기 실행 ──────────────────────────────────
+        prog = programName.strip()
+        if prog == "ModuleUnit":
+            instance = _HookTrolley(
+                bdf, output_bdf, HookTrolley_list, lineLength,
+                Safety_Factor=1.2, lifting_method=lifting_method,
+                analysis=True, debugPrint=True,
+            )
+            instance.HookTrolleyRun()
+        elif prog == "GroupUnit":
+            instance = _HookTrolley_GU(
+                bdf, output_bdf, HookTrolley_list, lineLength,
+                Safety_Factor=1.2, lifting_method=lifting_method,
+                analysis=True, debugPrint=True,
+            )
+            instance.HookTrolleyRun()
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"알 수 없는 programName: '{prog}' (예상값: 'ModuleUnit' 또는 'GroupUnit')"
+            )
+
+        # ── 6. 성공 응답 ──────────────────────────────────────────────
+        folder_name_only = os.path.basename(user_folder)
+        bdf_out = os.path.basename(output_bdf)
+        return {
+            "message": "서버에서 BDF 변환 및 해석이 완료되었습니다.",
+            "userFolder": folder_name_only,
+            "bdf_filename": bdf_out,
+            "f06_filename": bdf_out.replace(".bdf", ".f06"),
+            "txt_filename": bdf_out.replace(".bdf", ".txt"),
+        }
+
+    except HTTPException:
+        raise  # 400 등 클라이언트 오류는 그대로 전파
+    except Exception as e:
+        # Flask 원본 동작: 200 + 에러 txt + 빈 더미 파일
+        if user_folder and filename:
+            return _write_error_fallback(user_folder, filename, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/moduleUnit/download/{user_folder}/{filename}")
+def download_module_unit(user_folder: str, filename: str):
+    """ModuleUnit 결과 파일 다운로드.
+    경로 탈출 방지 로직은 csvToBdf/download와 동일합니다.
+    """
+    file_path = os.path.abspath(os.path.join(_USER_CONN_DIR, user_folder, filename))
+    if not file_path.startswith(_USER_CONN_DIR + os.sep):
+        raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/octet-stream",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# [TEMP] moduleUnit 블록 끝
+# ══════════════════════════════════════════════════════════════════════════════
 
 
 def _clean_grav_card(file_path: str) -> None:
