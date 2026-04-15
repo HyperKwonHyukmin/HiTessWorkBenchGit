@@ -18,16 +18,21 @@ import sys
 import traceback
 
 # PyInstaller 번들 환경에서는 .py 소스 파일이 없어
-# pyNastran deprecated() 내부의 inspect.getsourcelines()가 OSError를 발생시킴.
-# 번들 실행 시 소스 조회를 건너뛰도록 패치.
+# pyNastran deprecated() -> inspect.getsourcelines() -> inspect.findsource()
+# 순서로 호출되다 OSError 발생.
+#
+# pyNastran이 'from inspect import getsourcelines'로 로컬 복사하므로
+# getsourcelines 자체를 패치해도 무효 → findsource를 패치해야 함.
+# (getsourcelines는 어디서 호출되든 __globals__ = inspect.__dict__를 통해
+#  findsource를 조회하므로, findsource 패치가 확실하게 적용됨)
 import inspect
-_orig_getsourcelines = inspect.getsourcelines
-def _safe_getsourcelines(obj):
+_orig_findsource = inspect.findsource
+def _safe_findsource(obj):
     try:
-        return _orig_getsourcelines(obj)
+        return _orig_findsource(obj)
     except OSError:
-        return ([''], 1)
-inspect.getsourcelines = _safe_getsourcelines
+        return ([], 0)
+inspect.findsource = _safe_findsource
 
 
 def _inforget_mode(bdf_path: str):
