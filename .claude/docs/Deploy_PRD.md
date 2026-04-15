@@ -34,6 +34,7 @@ CI/CD
 GitLab CI (self-hosted runner)
 사내망 완전 동작
 환경 이식
+
 Docker + docker-compose
 환경 100% 재현 보장
 대용량 파일
