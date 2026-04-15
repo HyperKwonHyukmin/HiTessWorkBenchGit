@@ -65,7 +65,9 @@
       "Bash(\"C:/Coding/WorkBench/HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/python.exe\" -c \"import numpy; print\\('numpy', numpy.__version__\\)\")",
       "Bash(\"C:/Coding/WorkBench/HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/pip.exe\" show *)",
       "Skill(git:commit)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(cp \"C:/Coding/WorkBench/HiTessCloudTemp/HookTrolley.py\" \"C:/Coding/WorkBench/build_moduleunit/HookTrolley.py\")",
+      "Bash(cp \"C:/Coding/WorkBench/HiTessCloudTemp/HookTrolley_GU.py\" \"C:/Coding/WorkBench/build_moduleunit/HookTrolley_GU.py\")"
     ]
   },
   "enableAllProjectMcpServers": true,
