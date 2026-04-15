@@ -68,7 +68,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
       items.push({
         category: "RESEARCH & AI",
         items: [
-          { icon: Bot, label: "AI Assistant" },
+          { icon: Bot, label: "AI Based Apps" },
           { icon: Library, label: "Knowledge Archive" },
         ]
       });

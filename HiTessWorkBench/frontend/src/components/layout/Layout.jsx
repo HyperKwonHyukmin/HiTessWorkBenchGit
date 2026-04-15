@@ -17,7 +17,16 @@ export default function Layout({
   const [userInfo, setUserInfo] = useState({ name: 'User', position: 'Engineer', is_admin: false });
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
   const [serverUrlInput, setServerUrlInput] = useState(API_BASE_URL);
+  const [currentServerUrl, setCurrentServerUrl] = useState(API_BASE_URL);
   const isServerOnline = useServerStatus();
+
+  const getServerHost = (url) => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return url.replace(/^https?:\/\//, '');
+    }
+  };
 
   // 검색
   const [searchTerm, setSearchTerm] = useState('');
@@ -142,14 +151,19 @@ export default function Layout({
 
           <div className="flex items-center gap-4">
             <button
-              onClick={() => { setServerUrlInput(API_BASE_URL); setIsServerModalOpen(true); }}
+              onClick={() => { setServerUrlInput(currentServerUrl); setIsServerModalOpen(true); }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
-              title="서버 주소 설정"
+              title={`서버 주소 설정 (${currentServerUrl})`}
             >
-              <span className={`h-2 w-2 rounded-full ${isServerOnline ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} />
-              <span className={`text-xs font-bold hidden sm:block ${isServerOnline ? 'text-emerald-600' : 'text-red-500'}`}>
-                {isServerOnline ? 'Online' : 'Offline'}
-              </span>
+              <span className={`h-2 w-2 rounded-full shrink-0 ${isServerOnline ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} />
+              <div className="hidden sm:flex flex-col items-start leading-none gap-0.5">
+                <span className={`text-[10px] font-bold ${isServerOnline ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {isServerOnline ? 'Online' : 'Offline'}
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {getServerHost(currentServerUrl)}
+                </span>
+              </div>
               <Server size={16} className="text-slate-400" />
             </button>
             <div className="h-6 w-px bg-gray-200 mx-1"></div>
@@ -190,6 +204,7 @@ export default function Layout({
               onClick={() => {
                 if (serverUrlInput.trim()) {
                   setApiBaseUrl(serverUrlInput);
+                  setCurrentServerUrl(serverUrlInput);
                   setIsServerModalOpen(false);
                 }
               }}

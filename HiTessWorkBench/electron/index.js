@@ -1,5 +1,6 @@
-const { app, BrowserWindow, screen, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, screen, ipcMain, shell, session } = require("electron");
 const path = require("path");
+const fs   = require("fs");
 
 let mainWindow;
 
@@ -56,6 +57,64 @@ function createWindow() {
 
 ipcMain.on("open-external", (_, url) => {
   shell.openExternal(url);
+});
+
+ipcMain.handle("download-client", (event, url) => {
+  return new Promise((resolve, reject) => {
+    session.defaultSession.once("will-download", (_, item) => {
+      item.on("updated", (_, state) => {
+        if (state === "progressing" && mainWindow) {
+          const received = item.getReceivedBytes();
+          const total    = item.getTotalBytes();
+          const progress = total > 0 ? Math.round((received / total) * 100) : -1;
+          mainWindow.webContents.send("download-progress", { progress, received, total });
+        }
+      });
+      item.once("done", (_, state) => {
+        if (state === "completed") {
+          const savePath = item.getSavePath();
+          if (mainWindow) mainWindow.webContents.send("download-progress", { progress: 100, done: true, savePath });
+          resolve({ success: true, savePath });
+        } else {
+          if (mainWindow) mainWindow.webContents.send("download-progress", { progress: -1, done: true, error: state });
+          reject(new Error(`다운로드 실패: ${state}`));
+        }
+      });
+    });
+    mainWindow.webContents.downloadURL(url);
+  });
+});
+
+ipcMain.handle("get-intro-page-html", (_evt, which) => {
+  const fileName = which === "workbench" ? "hitess-workbench.html" : "hitess-platform.html";
+  const filePath = path.join(__dirname, "../IntroductionPage/", fileName);
+  try {
+    return fs.readFileSync(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+});
+
+// 지정 폴더의 CSV 파일 목록 반환
+ipcMain.handle("list-dir-csvs", (_, dirPath) => {
+  try {
+    return fs.readdirSync(dirPath)
+      .filter(f => f.toLowerCase().endsWith('.csv'))
+      .map(f => ({ name: f, filePath: path.join(dirPath, f) }));
+  } catch {
+    return [];
+  }
+});
+
+// 지정 경로의 파일 내용을 ArrayBuffer로 반환
+ipcMain.handle("read-file-buffer", (_, filePath) => {
+  try {
+    const buf = fs.readFileSync(filePath);
+    // structuredClone 가능한 형태로 변환
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  } catch {
+    return null;
+  }
 });
 
 app.whenReady().then(() => {

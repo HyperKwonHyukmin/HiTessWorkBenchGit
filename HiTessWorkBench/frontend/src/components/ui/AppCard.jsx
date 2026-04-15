@@ -5,7 +5,7 @@
 /// </summary>
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Star, ArrowRight, User } from 'lucide-react';
+import { Star, ArrowRight, User, Lock } from 'lucide-react';
 import Badge from './Badge';
 
 // --- 정적 클래스 맵 (Tailwind JIT 호환을 위해 동적 생성 금지) ---
@@ -62,6 +62,7 @@ function DevStatusBadge({ devStatus }) {
  * @param {'Active'|'Developing'|'Planned'|'stable'|'dev'} [props.app.devStatus]
  * @param {'blue'|'violet'|'emerald'|'purple'} [props.accentColor='blue']
  * @param {boolean}  [props.isFavorite=false]
+ * @param {boolean}  [props.isRestricted=false] - 비관리자 접근 제한 여부 (잠금 UI 표시)
  * @param {() => void} [props.onFavorite]
  * @param {() => void} [props.onStart]
  */
@@ -69,6 +70,7 @@ export default function AppCard({
   app = {},
   accentColor = 'blue',
   isFavorite = false,
+  isRestricted = false,
   onFavorite,
   onStart,
 }) {
@@ -170,22 +172,34 @@ export default function AppCard({
           </div>
         )}
 
-        {/* Solver 기여자 */}
-        {contributor && (
-          <div className="flex items-center gap-1.5 mt-4 text-xs text-slate-400">
-            <User size={12} />
-            <span>Solver Contributed by <span className="font-medium text-slate-500">{contributor}</span></span>
-          </div>
-        )}
       </div>
 
+      {/* ── Solver 기여자 (항상 하단 구분선 바로 위, 우측 정렬) ── */}
+      {contributor && (
+        <div className="flex items-center justify-end gap-1.5 mt-8 mb-1 text-xs text-slate-400">
+          <User size={11} />
+          <span>Solver Contributed by <span className="font-medium text-slate-500">{contributor}</span></span>
+        </div>
+      )}
+
       {/* ── 하단: 시작 버튼 영역 ── */}
-      <div className="mt-8 pt-5 border-t border-slate-100 flex items-center text-brand-blue font-bold text-sm">
-        <span className="group-hover:opacity-80 transition-opacity">시작하기</span>
-        <ArrowRight
-          size={16}
-          className="ml-1.5 group-hover:translate-x-1.5 transition-transform duration-200"
-        />
+      <div className={`${contributor ? 'mt-0' : 'mt-8'} pt-5 border-t border-slate-100 flex items-center font-bold text-sm ${
+        isRestricted ? 'text-slate-400' : 'text-brand-blue'
+      }`}>
+        {isRestricted ? (
+          <>
+            <Lock size={13} className="mr-1.5 opacity-60" />
+            <span className="opacity-60">관리자 전용</span>
+          </>
+        ) : (
+          <>
+            <span className="group-hover:opacity-80 transition-opacity">시작하기</span>
+            <ArrowRight
+              size={16}
+              className="ml-1.5 group-hover:translate-x-1.5 transition-transform duration-200"
+            />
+          </>
+        )}
       </div>
     </motion.div>
   );

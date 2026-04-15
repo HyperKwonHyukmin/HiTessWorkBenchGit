@@ -7,20 +7,31 @@ import PageHeader from '../../components/ui/PageHeader';
 import FilterTabs from '../../components/ui/FilterTabs';
 import AnimatedGrid from '../../components/ui/AnimatedGrid';
 import Button from '../../components/ui/Button';
+import AdminGateModal from '../../components/ui/AdminGateModal';
+
+const getIsAdmin = () => {
+  try { return JSON.parse(localStorage.getItem('user') || '{}').is_admin === true; } catch { return false; }
+};
 
 export default function NewAnalysis() {
   const { setCurrentMenu } = useNavigation();
   const [activeCategory, setActiveCategory] = useState("All");
   const { favorites, toggleFavorite, setAssessmentPageState } = useDashboard();
+  const [gateApp, setGateApp] = useState(null); // { title, devStatus }
 
   const handleStart = (categoryTitle) => {
+    const appMeta = ANALYSIS_DATA.find(a => a.title === categoryTitle);
+    if (appMeta && (appMeta.devStatus === 'Developing' || appMeta.devStatus === 'Planned') && !getIsAdmin()) {
+      setGateApp({ title: appMeta.title, devStatus: appMeta.devStatus });
+      return;
+    }
     if (categoryTitle === "Truss Model Builder") {
       setCurrentMenu('Truss Analysis');
     } else if (categoryTitle === "Truss Structural Assessment") {
       if (setAssessmentPageState) setAssessmentPageState({});
       setCurrentMenu('Truss Structural Assessment');
-    } else if (categoryTitle === "Beam Result Viewer") {
-      setCurrentMenu('Beam Result Viewer');
+    } else if (categoryTitle === "HiTess ModelFlow") {
+      setCurrentMenu('HiTess ModelFlow');
     } else {
       alert(`[안내] ${categoryTitle} 기능은 현재 준비 중입니다.`);
     }
@@ -51,6 +62,7 @@ export default function NewAnalysis() {
         {filteredAnalyses.map((item) => {
           const IconComponent = item.icon;
           const iconColorClass = item.color.replace('bg-', 'text-');
+          const isRestricted = (item.devStatus === 'Developing' || item.devStatus === 'Planned') && !getIsAdmin();
           const appData = {
             title: item.title,
             description: item.description,
@@ -58,12 +70,14 @@ export default function NewAnalysis() {
             iconBg: item.color,
             tags: item.tags,
             devStatus: item.devStatus,
+            contributor: item.contributor,
           };
           return (
             <AppCard
               key={item.title}
               app={appData}
               accentColor="blue"
+              isRestricted={isRestricted}
               isFavorite={favorites.includes(item.title)}
               onFavorite={() => toggleFavorite(item.title)}
               onStart={() => handleStart(item.title)}
@@ -71,6 +85,13 @@ export default function NewAnalysis() {
           );
         })}
       </AnimatedGrid>
+
+      <AdminGateModal
+        isOpen={!!gateApp}
+        onClose={() => setGateApp(null)}
+        appTitle={gateApp?.title}
+        devStatus={gateApp?.devStatus}
+      />
 
       {/* 하단 도움말 배너 */}
       <div className="mt-16 bg-slate-50 rounded-2xl p-8 border border-dashed border-slate-300 flex flex-col md:flex-row items-center gap-6">

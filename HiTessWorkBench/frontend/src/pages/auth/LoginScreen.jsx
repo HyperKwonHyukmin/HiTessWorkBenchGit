@@ -17,6 +17,8 @@ export default function LoginScreen({ onLoginSuccess }) {
   const [isVersionMismatch, setIsVersionMismatch] = useState(false); 
   const [serverVersion, setServerVersion] = useState(''); 
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [downloadState, setDownloadState] = useState(null); // null | 'downloading' | 'done' | 'error'
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   // [초기화] 서버 상태 및 버전 체크
   useEffect(() => {
@@ -47,6 +49,17 @@ export default function LoginScreen({ onLoginSuccess }) {
     const savedId = localStorage.getItem('savedEmployeeId');
     if (savedId) setEmployeeId(savedId);
 
+    const removeListener = window.electron?.onMessage('download-progress', (data) => {
+      if (data.done) {
+        setDownloadState(data.error ? 'error' : 'done');
+        setDownloadProgress(100);
+      } else if (data.progress >= 0) {
+        setDownloadState('downloading');
+        setDownloadProgress(data.progress);
+      }
+    });
+    return () => { if (removeListener) removeListener(); };
+
   }, []);
 
   const handleInputChange = (e) => {
@@ -67,7 +80,8 @@ export default function LoginScreen({ onLoginSuccess }) {
 
       console.log('Login Success:', response.data);
       localStorage.setItem('user', JSON.stringify(response.data));
-      onLoginSuccess(); 
+      localStorage.setItem('user_login_at', String(Date.now())); // 자동 로그인 만료 기준
+      onLoginSuccess();
 
     } catch (error) {
       console.error('Login Error:', error);
@@ -165,19 +179,45 @@ export default function LoginScreen({ onLoginSuccess }) {
                 </div>
               </div>
               <button
-                className="w-full flex items-center justify-center py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-colors shadow-md"
-                onClick={() => {
+                disabled={downloadState === 'downloading'}
+                className="w-full flex items-center justify-center py-3 bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-colors shadow-md"
+                onClick={async () => {
                   const url = `${API_BASE_URL}/api/download/client`;
-                  if (window.electron) {
-                    window.electron.sendMessage('open-external', url);
+                  if (window.electron?.invoke) {
+                    setDownloadState('downloading');
+                    setDownloadProgress(0);
+                    try {
+                      await window.electron.invoke('download-client', url);
+                    } catch {
+                      setDownloadState('error');
+                    }
                   } else {
                     window.location.href = url;
                   }
                 }}
               >
                 <DownloadCloud className="mr-2 h-5 w-5" />
-                최신 버전 다운로드
+                {downloadState === 'downloading'
+                  ? `다운로드 중... ${downloadProgress}%`
+                  : downloadState === 'done'
+                  ? '다운로드 완료!'
+                  : downloadState === 'error'
+                  ? '다운로드 실패 — 재시도'
+                  : '최신 버전 다운로드'}
               </button>
+              {downloadState === 'downloading' && (
+                <div className="w-full bg-red-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                  <div
+                    className="bg-red-500 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${downloadProgress}%` }}
+                  />
+                </div>
+              )}
+              {downloadState === 'done' && (
+                <p className="text-xs text-green-600 text-center mt-2 font-medium">
+                  다운로드 폴더에서 설치 파일을 실행하세요.
+                </p>
+              )}
             </div>
           ) : (
             <>

@@ -1,8 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 // 허용된 IPC 채널 화이트리스트
-const VALID_SEND_CHANNELS = ['app-ready', 'open-external'];
-const VALID_RECEIVE_CHANNELS = ['app-update', 'server-status'];
+const VALID_SEND_CHANNELS    = ['app-ready', 'open-external'];
+const VALID_RECEIVE_CHANNELS = ['app-update', 'server-status', 'download-progress'];
+const VALID_INVOKE_CHANNELS  = ['list-dir-csvs', 'read-file-buffer', 'get-intro-page-html', 'download-client'];
 
 contextBridge.exposeInMainWorld("electron", {
   sendMessage: (channel, data) => {
@@ -14,9 +15,15 @@ contextBridge.exposeInMainWorld("electron", {
     if (VALID_RECEIVE_CHANNELS.includes(channel)) {
       const listener = (_, data) => callback(data);
       ipcRenderer.on(channel, listener);
-      // cleanup 함수 반환 — 호출 측에서 컴포넌트 언마운트 시 제거 가능
       return () => ipcRenderer.removeListener(channel, listener);
     }
     return () => {};
-  }
+  },
+  // 파일시스템 접근 (폴더 내 CSV 목록 조회, 파일 내용 읽기)
+  invoke: (channel, data) => {
+    if (VALID_INVOKE_CHANNELS.includes(channel)) {
+      return ipcRenderer.invoke(channel, data);
+    }
+    return Promise.resolve(null);
+  },
 });

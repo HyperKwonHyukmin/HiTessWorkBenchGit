@@ -25,8 +25,6 @@ import UserManagement from './pages/Administration/UserManagement';
 import SystemSettings from './pages/Administration/SystemSettings';
 import AnalysisManagement from './pages/Administration/AnalysisManagement';
 import AiAssistantHub from './pages/AI/AiAssistantHub';
-import HiLabInsight from './pages/AI/HiLabInsight';
-import BeamAnalysisViewer from './pages/analysis/BeamAnalysisViewer';
 import BdfScanner from './pages/analysis/BdfScanner';
 import ParametricApps from './pages/analysis/ParametricApps';
 import ProductivityApps from './pages/analysis/ProductivityApps';
@@ -34,6 +32,7 @@ import MastPostAssessment from './pages/analysis/MastPostAssessment';
 import JibRestAssessment from './pages/analysis/JibRestAssessment';
 import ColumnBucklingCalculator from './pages/analysis/ColumnBucklingCalculator';
 import ApiApps from './pages/Administration/ApiApps';
+import HiTessModelFlow from './pages/analysis/HiTessModelFlow';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 
@@ -44,11 +43,22 @@ function AppInner() {
   const handleSplashFinish = async () => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
+      // 자동 로그인 만료 체크 (3일)
+      const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+      const loginAt = parseInt(localStorage.getItem('user_login_at') || '0', 10);
+      if (!loginAt || Date.now() - loginAt > THREE_DAYS_MS) {
+        localStorage.removeItem('user');
+        localStorage.removeItem('user_login_at');
+        setAppState(APP_STATE.LOGIN);
+        return;
+      }
+
       try {
         const res = await checkVersion();
         const serverVersion = res.data?.version;
         if (serverVersion && serverVersion !== CLIENT_VERSION) {
           localStorage.removeItem('user');
+          localStorage.removeItem('user_login_at');
           setAppState(APP_STATE.LOGIN);
           return;
         }
@@ -65,6 +75,7 @@ function AppInner() {
 
   const handleLogout = () => {
     localStorage.removeItem('user');
+    localStorage.removeItem('user_login_at');
     setAppState(APP_STATE.LOGIN);
     resetNavigation('Dashboard');
   };
@@ -117,11 +128,12 @@ function AppInner() {
       case 'Analysis Management': return <AnalysisManagement />;
       case 'System Settings': return <SystemSettings />;
       case 'AI Lab Assistant':
-      case 'AI Assistant': return <AiAssistantHub />;
-      case 'Hi-Lab Insight': return <HiLabInsight />;
-      case 'Beam Result Viewer': return <BeamAnalysisViewer />;
+      case 'AI Assistant':
+      case 'AI Based Apps': return <AiAssistantHub />;
+
       case 'BDF Scanner': return <BdfScanner />;
       case 'Productivity Apps': return <ProductivityApps />;
+      case 'HiTess ModelFlow': return <HiTessModelFlow />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">

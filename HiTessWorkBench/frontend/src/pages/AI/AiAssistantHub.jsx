@@ -1,44 +1,81 @@
-import React from 'react';
-import { Bot, ArrowRight, FileText } from 'lucide-react';
-import { useNavigation } from '../../contexts/NavigationContext';
+import React, { useState } from 'react';
+import { Bot } from 'lucide-react';
+import { ANALYSIS_DATA } from '../../contexts/DashboardContext';
+import { useDashboard } from '../../contexts/DashboardContext';
+import AppCard from '../../components/ui/AppCard';
+import PageHeader from '../../components/ui/PageHeader';
+import AnimatedGrid from '../../components/ui/AnimatedGrid';
+import AdminGateModal from '../../components/ui/AdminGateModal';
+
+const getIsAdmin = () => {
+  try { return JSON.parse(localStorage.getItem('user') || '{}').is_admin === true; } catch { return false; }
+};
 
 export default function AiAssistantHub() {
-  const { setCurrentMenu } = useNavigation();
-  return (
-    <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-brand-blue tracking-tight flex items-center gap-3">
-          <Bot className="text-purple-600" size={32} /> AI Lab Assistant
-        </h1>
-        <p className="text-slate-500 mt-2">최신 인공지능 기술을 활용하여 업무 생산성을 극대화하십시오.</p>
-      </div>
+  const { favorites, toggleFavorite } = useDashboard();
+  const [gateApp, setGateApp] = useState(null);
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {/* Hi-Lab Insight 챗봇 카드 */}
-        <div 
-          onClick={() => setCurrentMenu('Hi-Lab Insight')}
-          className="group bg-white p-8 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl hover:border-purple-400 transition-all duration-300 cursor-pointer flex flex-col h-full"
-        >
-          <div className="w-14 h-14 rounded-xl bg-purple-100 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-            <FileText className="text-purple-600" size={28} />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-xl font-bold text-slate-800 mb-2 group-hover:text-purple-600 transition-colors">
-              Hi-Lab Insight
-            </h3>
-            <p className="text-sm text-slate-500 leading-relaxed mb-4">
-              C:\Users\HHI\Desktop\reports_data 경로의 사내 연구 보고서 및 기술 문서를 학습하여 엔지니어의 질문에 답변하는 RAG 챗봇입니다.
-            </p>
-            <div className="flex flex-wrap gap-2 mt-auto">
-              <span className="text-[10px] font-bold px-2 py-1 bg-slate-100 text-slate-500 rounded uppercase tracking-wider">LLM</span>
-              <span className="text-[10px] font-bold px-2 py-1 bg-slate-100 text-slate-500 rounded uppercase tracking-wider">RAG</span>
-            </div>
-          </div>
-          <div className="mt-8 flex items-center text-purple-600 font-bold text-sm">
-            Launch Chatbot <ArrowRight size={16} className="ml-2 group-hover:translate-x-2 transition-transform" />
-          </div>
+  const aiApps = ANALYSIS_DATA.filter(item => item.mode === 'AI');
+
+  const handleStart = (appTitle) => {
+    const appMeta = ANALYSIS_DATA.find(a => a.title === appTitle);
+    if (appMeta && (appMeta.devStatus === 'Developing' || appMeta.devStatus === 'Planned') && !getIsAdmin()) {
+      setGateApp({ title: appMeta.title, devStatus: appMeta.devStatus });
+      return;
+    }
+    alert(`[안내] '${appTitle}' 앱은 현재 준비 중입니다.`);
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto pb-16">
+      <PageHeader
+        title="AI Based Apps"
+        icon={Bot}
+        subtitle="최신 인공지능 기술을 활용하여 구조 해석 업무 생산성을 극대화하십시오."
+      />
+
+      {aiApps.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+          <Bot size={48} className="text-slate-200 mb-4" />
+          <p className="font-bold text-slate-500 text-sm">준비 중인 AI 서비스가 곧 추가될 예정입니다.</p>
+          <p className="text-xs mt-1">새로운 AI 도구를 기대해 주세요.</p>
         </div>
-      </div>
+      ) : (
+        <AnimatedGrid>
+          {aiApps.map((item) => {
+            const IconComponent = item.icon;
+            const iconColorClass = item.color.replace('bg-', 'text-');
+            const isRestricted = (item.devStatus === 'Developing' || item.devStatus === 'Planned') && !getIsAdmin();
+            const appData = {
+              title: item.title,
+              description: item.description,
+              icon: <IconComponent className={iconColorClass} size={28} />,
+              iconBg: item.color,
+              tags: item.tags,
+              devStatus: item.devStatus,
+              contributor: item.contributor,
+            };
+            return (
+              <AppCard
+                key={item.title}
+                app={appData}
+                accentColor="purple"
+                isRestricted={isRestricted}
+                isFavorite={favorites.includes(item.title)}
+                onFavorite={() => toggleFavorite(item.title)}
+                onStart={() => handleStart(item.title)}
+              />
+            );
+          })}
+        </AnimatedGrid>
+      )}
+
+      <AdminGateModal
+        isOpen={!!gateApp}
+        onClose={() => setGateApp(null)}
+        appTitle={gateApp?.title}
+        devStatus={gateApp?.devStatus}
+      />
     </div>
   );
 }

@@ -6,13 +6,24 @@ import AppCard from '../../components/ui/AppCard';
 import PageHeader from '../../components/ui/PageHeader';
 import FilterTabs from '../../components/ui/FilterTabs';
 import AnimatedGrid from '../../components/ui/AnimatedGrid';
+import AdminGateModal from '../../components/ui/AdminGateModal';
+
+const getIsAdmin = () => {
+  try { return JSON.parse(localStorage.getItem('user') || '{}').is_admin === true; } catch { return false; }
+};
 
 export default function ProductivityApps() {
   const { setCurrentMenu } = useNavigation();
   const [activeCategory, setActiveCategory] = useState("All");
   const { favorites, toggleFavorite } = useDashboard();
+  const [gateApp, setGateApp] = useState(null);
 
   const handleStart = (appTitle) => {
+    const appMeta = ANALYSIS_DATA.find(a => a.title === appTitle);
+    if (appMeta && (appMeta.devStatus === 'Developing' || appMeta.devStatus === 'Planned') && !getIsAdmin()) {
+      setGateApp({ title: appMeta.title, devStatus: appMeta.devStatus });
+      return;
+    }
     if (appTitle === "BDF Scanner") {
       setCurrentMenu('BDF Scanner');
     } else {
@@ -45,6 +56,7 @@ export default function ProductivityApps() {
         {filteredApps.map((item) => {
           const IconComponent = item.icon;
           const iconColorClass = item.color.replace('bg-', 'text-');
+          const isRestricted = (item.devStatus === 'Developing' || item.devStatus === 'Planned') && !getIsAdmin();
           const appData = {
             title: item.title,
             description: item.description,
@@ -52,12 +64,14 @@ export default function ProductivityApps() {
             iconBg: item.color,
             tags: item.tags,
             devStatus: item.devStatus,
+            contributor: item.contributor,
           };
           return (
             <AppCard
               key={item.title}
               app={appData}
               accentColor="teal"
+              isRestricted={isRestricted}
               isFavorite={favorites.includes(item.title)}
               onFavorite={() => toggleFavorite(item.title)}
               onStart={() => handleStart(item.title)}
@@ -65,6 +79,12 @@ export default function ProductivityApps() {
           );
         })}
       </AnimatedGrid>
+      <AdminGateModal
+        isOpen={!!gateApp}
+        onClose={() => setGateApp(null)}
+        appTitle={gateApp?.title}
+        devStatus={gateApp?.devStatus}
+      />
     </div>
   );
 }
