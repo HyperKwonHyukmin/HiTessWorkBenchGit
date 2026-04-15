@@ -117,7 +117,11 @@ ipcMain.handle("read-file-buffer", (_, filePath) => {
   }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // 외부 회사 네트워크 등 시스템 프록시가 설정된 환경에서도 정상 동작하도록
+  // 시스템 프록시 설정을 자동으로 적용
+  await session.defaultSession.setProxy({ mode: 'system' });
+
   createWindow();
 
   app.on("activate", () => {

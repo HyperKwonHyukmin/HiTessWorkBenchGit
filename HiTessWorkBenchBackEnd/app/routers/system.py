@@ -13,7 +13,7 @@ from ..services.job_manager import job_status_store, MAX_CONCURRENT_JOBS
 from ..services.cleanup_service import run_cleanup, _USER_CONN_DIR, RETENTION_DAYS
 from ..state import server_state
 
-SERVER_VERSION = "0.0.4"
+SERVER_VERSION = "0.0.5"
 
 # 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
