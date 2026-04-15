@@ -1,6 +1,6 @@
 {
   "name": "hitess-workbench",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Hi-TESS Structural Analysis Workbench",
   "author": "Kwon Hyuk min",
   "main": "./electron/index.js",
@@ -20,7 +20,8 @@
     },
     "files": [
       "electron/**/*",
-      "frontend/dist/**/*"
+      "frontend/dist/**/*",
+      "IntroductionPage/**/*"
     ],
     "win": {
       "target": "portable",

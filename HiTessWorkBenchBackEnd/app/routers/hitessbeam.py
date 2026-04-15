@@ -22,8 +22,8 @@ _EXE_PATH = os.path.abspath(
 
 @router.post("/csvToBdf")
 async def csv_to_bdf(
-    files: List[UploadFile] = File(...),
     employee_id: str = Form(...),
+    files: List[UploadFile] = File(...),
 ):
     """
     CSV → BDF 변환 엔드포인트.
