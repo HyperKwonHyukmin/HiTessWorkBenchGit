@@ -60,7 +60,12 @@
       "Bash(curl -s http://localhost:9091/)",
       "Bash(curl -s -X POST http://localhost:9091/hitessbeam/csvToBdf -F employee_id=test_user -F files=@3454-35020-struData-A505080_20251021.csv -F files=@3454-35020-pipeData-A505080_20251021.csv -F files=@3454-35020-equpData-A505080_20251021.csv -F files=@input.pkl)",
       "Bash(curl -s -X POST http://localhost:9091/hitessbeam/csvToBdf -F \"employee_id=A476854\" -F \"files=@3454-35020-struData-A505080_20251021.csv\" -F \"files=@3454-35020-pipeData-A505080_20251021.csv\" -F \"files=@3454-35020-equpData-A505080_20251021.csv\" -F \"files=@input.pkl\")",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(\"C:/Coding/WorkBench/HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/python.exe\" -c \"import pyNastran; print\\('pyNastran OK', pyNastran.__version__\\)\")",
+      "Bash(\"C:/Coding/WorkBench/HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/python.exe\" -c \"import numpy; print\\('numpy', numpy.__version__\\)\")",
+      "Bash(\"C:/Coding/WorkBench/HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/pip.exe\" show *)",
+      "Skill(git:commit)",
+      "Bash(curl *)"
     ]
   },
   "enableAllProjectMcpServers": true,
