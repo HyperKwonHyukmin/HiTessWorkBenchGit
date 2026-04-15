@@ -22,15 +22,16 @@ _EXE_PATH = os.path.abspath(
 
 @router.post("/csvToBdf")
 async def csv_to_bdf(
-    employee_id: str = Form(...),
-    files: List[UploadFile] = File(...),
+    userID: str = Form(...),
+    file: List[UploadFile] = File(...),
 ):
     """
     CSV → BDF 변환 엔드포인트.
-    multipart/form-data로 files(여러 파일)와 employee_id를 받습니다.
+    multipart/form-data로 file(여러 파일)와 userID를 받습니다.
     input.pkl 파일이 반드시 포함되어야 합니다.
     """
-    employee_id = employee_id.strip()
+    employee_id = userID.strip()
+    files = file
     if not employee_id:
         raise HTTPException(status_code=400, detail="employee_id is required")
 
