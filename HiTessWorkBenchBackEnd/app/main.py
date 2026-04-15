@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from . import models, database
-from .routers import auth, users, analysis, system, support, ai, davit, column_buckling
+from .routers import auth, users, analysis, system, support, ai, davit, column_buckling, hitessbeam
 from .seed_guides import seed_default_guides
+from .services.cleanup_service import start_cleanup_scheduler
 
 # DB 테이블 자동 생성
 models.Base.metadata.create_all(bind=database.engine)
@@ -28,17 +29,21 @@ app.include_router(support.router)
 app.include_router(ai.router)
 app.include_router(davit.router)
 app.include_router(column_buckling.router)
+app.include_router(hitessbeam.router)  # [TEMP] HiTessBeam 임시 라우터
 
 
 @app.on_event("startup")
 def on_startup():
-    """서버 시작 시 기본 가이드 및 공지 데이터를 시드합니다."""
+    """서버 시작 시 기본 가이드·공지 시드 및 userConnection 정리 스케줄러를 시작합니다."""
     db = database.SessionLocal()
     try:
         seed_default_guides(db)
         seed_default_notices(db)
     finally:
         db.close()
+
+    # userConnection/ 30일 초과 폴더 자동 정리 (서버 시작 즉시 1회 + 매일 자정 반복)
+    start_cleanup_scheduler()
 
 
 def seed_default_notices(db):

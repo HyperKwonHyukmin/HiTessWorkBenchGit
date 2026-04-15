@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from .. import database
 from ..services.job_manager import job_status_store, MAX_CONCURRENT_JOBS
+from ..services.cleanup_service import run_cleanup, _USER_CONN_DIR, RETENTION_DAYS
 from ..state import server_state
 
 SERVER_VERSION = "0.0.2"
@@ -89,6 +90,31 @@ def set_maintenance_mode(payload: dict):
   """유지보수 모드를 설정합니다. {"maintenance": true/false}"""
   server_state["maintenance_mode"] = bool(payload.get("maintenance", False))
   return {"maintenance": server_state["maintenance_mode"]}
+
+
+@router.get("/system/storage/preview")
+def preview_cleanup():
+    """삭제 예정 폴더 목록을 dry-run으로 반환합니다 (실제 삭제 없음)."""
+    result = run_cleanup(dry_run=True)
+    return {
+        "retention_days": RETENTION_DAYS,
+        "user_connection_dir": _USER_CONN_DIR,
+        "to_delete": result["deleted"],
+        "to_keep": result["skipped"],
+    }
+
+
+@router.post("/system/storage/cleanup")
+def manual_cleanup():
+    """30일 초과 폴더를 즉시 삭제합니다 (관리자 수동 실행용)."""
+    result = run_cleanup(dry_run=False)
+    return {
+        "deleted_count": len(result["deleted"]),
+        "error_count":   len(result["errors"]),
+        "skipped_count": result["skipped"],
+        "deleted":  result["deleted"],
+        "errors":   result["errors"],
+    }
 
 
 @router.get("/system/queue-status")

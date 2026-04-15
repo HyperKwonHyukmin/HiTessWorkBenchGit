@@ -1,9 +1,11 @@
 """해석 요청, 상태 조회, 이력 관리 API 라우터."""
 import io
 import os
+import shutil
 import uuid
 import urllib.parse
 from datetime import datetime
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
@@ -13,6 +15,7 @@ from ..services.truss_service import task_execute_truss
 from ..services.assessment_service import task_execute_assessment, _json_to_xlsx_bytes
 from ..services.beam_service import task_execute_beam
 from ..services.bdfscanner_service import task_execute_bdfscanner
+from ..services.hitess_modelflow_service import task_execute_modelflow
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -279,6 +282,177 @@ async def request_beam_analysis(
 
     analysis_executor.submit(
         task_execute_beam, job_id, input_json_path, work_dir, employee_id, timestamp, source
+    )
+
+    return {"job_id": job_id}
+
+
+# ==================== HiTess ModelFlow ====================
+
+@router.post("/analysis/modelflow/request")
+async def request_modelflow_analysis(
+    stru_file: UploadFile = File(...),
+    pipe_file: Optional[UploadFile] = File(None),
+    equip_file: Optional[UploadFile] = File(None),
+    employee_id: str = Form(...),
+    source: str = Form("Workbench"),
+    stop_mode: str = Form("7"),         # 항상 --stage 3 (힐링 전체, BDF 생성)
+    ubolt: bool = Form(False),          # U-bolt RBE2 강체 고정 여부
+    mesh_size: float = Form(500.0),     # 목표 메시 크기 (mm)
+    verbose: bool = Form(False),        # 요소별 세부 처리 로그 출력
+    csvdebug: bool = Form(True),        # CSV 파싱 디버그 출력
+    femodeldebug: bool = Form(True),    # 초기 FE 모델 디버그 출력
+    pipelinedebug: bool = Form(True),   # 파이프라인 스테이지 배너 및 통계 출력
+):
+    """
+    HiTess ModelFlow 파이프라인 전 과정 실행 (--stage 3).
+    mesh_size → --mesh {mm} 로 전달.
+    ubolt=True → U-bolt RBE2를 123456 DOF로 강제 고정 (--ubolt true)
+    verbose/csvdebug/femodeldebug/pipelinedebug → 디버그 출력 제어
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(os.path.dirname(base_dir))
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    unique_folder = f"{timestamp}_{employee_id}_HiTessModelFlow"
+    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+    os.makedirs(work_dir, exist_ok=True)
+
+    # 구조물 CSV (필수)
+    stru_path = os.path.join(work_dir, stru_file.filename)
+    try:
+        with open(stru_path, "wb") as f:
+            f.write(await stru_file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
+
+    # 배관 CSV (선택)
+    pipe_path = None
+    if pipe_file and pipe_file.filename:
+        pipe_path = os.path.join(work_dir, pipe_file.filename)
+        try:
+            with open(pipe_path, "wb") as f:
+                f.write(await pipe_file.read())
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"배관 파일 저장 오류: {str(e)}")
+
+    # 장비 CSV (선택)
+    equip_path = None
+    if equip_file and equip_file.filename:
+        equip_path = os.path.join(work_dir, equip_file.filename)
+        try:
+            with open(equip_path, "wb") as f:
+                f.write(await equip_file.read())
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"장비 파일 저장 오류: {str(e)}")
+
+    exe_dir = os.path.abspath(os.path.join(parent_dir, "InHouseProgram", "HiTessModelFlow"))
+    exe_path = os.path.join(exe_dir, "HiTessModelBuilder.exe")
+
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "대기 중..."})
+
+    analysis_executor.submit(
+        task_execute_modelflow,
+        job_id, stru_path, pipe_path, equip_path, work_dir, exe_path, employee_id, timestamp, source,
+        stop_mode, ubolt, mesh_size, verbose, csvdebug, femodeldebug, pipelinedebug,
+    )
+
+    return {"job_id": job_id}
+
+
+# ==================== HiTess ModelFlow — Nastran 해석 (Stage 4) ====================
+
+@router.post("/analysis/modelflow/nastran-request")
+async def request_modelflow_nastran(
+    bdf_path: str = Form(...),
+    work_dir: str = Form(...),
+    employee_id: str = Form(...),
+    source: str = Form("Workbench"),
+):
+    """
+    Stage 3에서 생성된 STAGE_07 BDF에 BdfScanner --nastran을 실행합니다.
+    보안: bdf_path 및 work_dir은 userConnection/ 하위만 허용합니다.
+    """
+    decoded_bdf = os.path.abspath(urllib.parse.unquote(bdf_path))
+    decoded_work = os.path.abspath(urllib.parse.unquote(work_dir))
+    if not decoded_bdf.startswith(_ALLOWED_DOWNLOAD_BASE):
+        raise HTTPException(status_code=403, detail="접근 권한이 없는 BDF 경로입니다.")
+    if not decoded_work.startswith(_ALLOWED_DOWNLOAD_BASE):
+        raise HTTPException(status_code=403, detail="접근 권한이 없는 작업 디렉터리입니다.")
+    if not os.path.exists(decoded_bdf):
+        raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Nastran 해석 대기 중..."})
+
+    analysis_executor.submit(
+        task_execute_bdfscanner,
+        job_id, decoded_bdf, decoded_work, employee_id, timestamp, source, True,
+    )
+
+    return {"job_id": job_id}
+
+
+@router.post("/analysis/modelflow/ubolt-retry")
+async def request_ubolt_retry(
+    stru_path: str = Form(...),
+    pipe_path: Optional[str] = Form(None),
+    equip_path: Optional[str] = Form(None),
+    work_dir: str = Form(...),
+    employee_id: str = Form(...),
+    source: str = Form("Workbench"),
+):
+    """
+    U-bolt RBE2를 강체(123456 DOF)로 고정한 BDF를 재생성합니다.
+    기존 작업 디렉터리 내 ubolt_rigid/ 서브폴더에 CSV를 복사하고
+    HiTessModelBuilder.exe --ubolt를 실행합니다.
+    보안: 모든 경로는 userConnection/ 하위만 허용합니다.
+    """
+    decoded_stru = os.path.abspath(urllib.parse.unquote(stru_path))
+    decoded_work = os.path.abspath(urllib.parse.unquote(work_dir))
+
+    for path in [decoded_stru, decoded_work]:
+        if not path.startswith(_ALLOWED_DOWNLOAD_BASE):
+            raise HTTPException(status_code=403, detail=f"접근 권한이 없는 경로입니다: {path}")
+    if not os.path.exists(decoded_stru):
+        raise HTTPException(status_code=404, detail="Structural CSV 파일을 찾을 수 없습니다.")
+
+    # ubolt_rigid/ 서브폴더 생성 및 CSV 복사
+    ubolt_dir = os.path.join(decoded_work, "ubolt_rigid")
+    os.makedirs(ubolt_dir, exist_ok=True)
+
+    new_stru = os.path.join(ubolt_dir, os.path.basename(decoded_stru))
+    shutil.copy2(decoded_stru, new_stru)
+
+    new_pipe = None
+    if pipe_path:
+        decoded_pipe = os.path.abspath(urllib.parse.unquote(pipe_path))
+        if decoded_pipe.startswith(_ALLOWED_DOWNLOAD_BASE) and os.path.exists(decoded_pipe):
+            new_pipe = os.path.join(ubolt_dir, os.path.basename(decoded_pipe))
+            shutil.copy2(decoded_pipe, new_pipe)
+
+    new_equip = None
+    if equip_path:
+        decoded_equip = os.path.abspath(urllib.parse.unquote(equip_path))
+        if decoded_equip.startswith(_ALLOWED_DOWNLOAD_BASE) and os.path.exists(decoded_equip):
+            new_equip = os.path.join(ubolt_dir, os.path.basename(decoded_equip))
+            shutil.copy2(decoded_equip, new_equip)
+
+    # HiTessModelBuilder exe 경로
+    _ROUTER_DIR_LOCAL = os.path.dirname(os.path.abspath(__file__))
+    _BACKEND_DIR_LOCAL = os.path.dirname(os.path.dirname(_ROUTER_DIR_LOCAL))
+    exe_dir = os.path.abspath(os.path.join(_BACKEND_DIR_LOCAL, "InHouseProgram", "HiTessModelFlow"))
+    exe_path = os.path.join(exe_dir, "HiTessModelBuilder.exe")
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "U-bolt Rigid 모드 재실행 대기 중..."})
+
+    analysis_executor.submit(
+        task_execute_modelflow,
+        job_id, new_stru, new_pipe, new_equip, ubolt_dir, exe_path, employee_id, timestamp, source, "7", True,
     )
 
     return {"job_id": job_id}

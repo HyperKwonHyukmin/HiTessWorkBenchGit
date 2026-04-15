@@ -65,15 +65,36 @@ def task_execute_bdfscanner(
             "message": progress_msg,
         })
 
+        # ── 디버그: 실행 환경 로그 ──────────────────────────────────────
+        logger.info("[BdfScanner] exe   : %s (exists=%s)", exe_path, os.path.exists(exe_path))
+        logger.info("[BdfScanner] bdf   : %s (exists=%s)", bdf_path, os.path.exists(bdf_path))
+        logger.info("[BdfScanner] cwd   : %s", work_dir)
+        logger.info("[BdfScanner] cmd   : %s", " ".join(cmd_args))
+        # ───────────────────────────────────────────────────────────────
+
+        # bytes 모드로 실행: .NET 콘솔 인코딩(OEM) 문제 회피
         result = subprocess.run(
             cmd_args,
             cwd=work_dir,
-            capture_output=True,
-            text=True,
-            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             timeout=360,   # exe 내부 Nastran 타임아웃 300초 + 여유 60초
         )
-        engine_output = result.stdout
+        engine_output = result.stdout.decode("utf-8", errors="replace")
+        stderr_text = result.stderr.decode("utf-8", errors="replace")
+
+        # ── 디버그: 실행 결과 로그 ──────────────────────────────────────
+        logger.info("[BdfScanner] exit  : %d", result.returncode)
+        logger.info("[BdfScanner] stdout: %s", engine_output[:500] if engine_output.strip() else "(empty)")
+        if stderr_text.strip():
+            logger.warning("[BdfScanner] stderr: %s", stderr_text[:500])
+        # ───────────────────────────────────────────────────────────────
+
+        if stderr_text.strip():
+            engine_output += f"\n[stderr] {stderr_text.strip()}"
+        if result.returncode != 0:
+            logger.warning("BdfScanner exited with code %d", result.returncode)
+            engine_output += f"\n[Exit code: {result.returncode}]"
 
         job_status_store.update_job(job_id, {
             "progress": 80,
@@ -89,6 +110,14 @@ def task_execute_bdfscanner(
             f"{bdf_stem}_validation_step1.json": "JSON_Validation",
             f"{bdf_stem}_validation_step2.json": "JSON_F06Summary",
         }
+
+        # 디버깅: 실행 후 work_dir 파일 목록
+        try:
+            _dir_files = os.listdir(work_dir)
+            logger.info("[BdfScanner] work_dir 파일 목록: %s", _dir_files)
+        except Exception:
+            pass
+        logger.info("[BdfScanner] 탐색 대상 파일: %s", list(expected_files.keys()))
 
         found_count = 0
         for filename, key in expected_files.items():
@@ -137,10 +166,6 @@ def task_execute_bdfscanner(
     except subprocess.TimeoutExpired:
         status_msg = "Failed"
         engine_output = "Nastran 해석 시간이 초과되었습니다 (6분). 모델 크기 또는 Nastran 설정을 확인하세요."
-    except subprocess.CalledProcessError as e:
-        status_msg = "Failed"
-        logger.error("BdfScanner subprocess 실패: %s", e.stderr or e.stdout)
-        engine_output = f"BDF Scanner 실행 중 오류가 발생했습니다.\n{e.stderr or e.stdout or ''}"
     except Exception as e:
         status_msg = "Failed"
         logger.error("BdfScanner 예기치 않은 오류: %s", str(e), exc_info=True)
