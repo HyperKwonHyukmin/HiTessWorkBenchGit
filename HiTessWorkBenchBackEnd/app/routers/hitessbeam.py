@@ -3,7 +3,7 @@
 향후 HiTess ModelFlow 통합 시 제거 예정.
 제거 방법:
   1. 이 파일 삭제
-  2. _hitessbeam_pymod/ 폴더 삭제
+  2. InHouseProgram/HiTessBeam/ModuleUnit_HiTESS.exe 삭제
   3. main.py의 hitessbeam import/include_router 두 줄 제거
 """
 import os
@@ -150,64 +150,12 @@ def download_bdf(user_folder: str, filename: str):
 
 # ══════════════════════════════════════════════════════════════════════════════
 # [TEMP] moduleUnit 블록 시작
-# 제거 시: 이 블록 전체 + _hitessbeam_pymod/ 폴더 삭제
+# 제거 시: 이 블록 전체 + InHouseProgram/HiTessBeam/ModuleUnit_HiTESS.exe 삭제
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Lazy & safe import — 의존 모듈이 없어도 import 시점에 서버가 죽지 않게
-_HookTrolley = None
-_HookTrolley_GU = None
-_HOOKTROLLEY_IMPORT_ERROR = None
-try:
-    from ._hitessbeam_pymod.HookTrolley import HookTrolley as _HookTrolley
-    from ._hitessbeam_pymod.HookTrolley_GU import HookTrolley_GU as _HookTrolley_GU
-except Exception as _imp_e:
-    _HOOKTROLLEY_IMPORT_ERROR = _imp_e  # 실제 요청 시점에 에러 txt로 보고
-
-
-def _inforget_mode(bdf_path: str):
-    """BDF에서 $$Hydro/$$Goliat 마커를 파싱하여 해석 파라미터를 반환합니다.
-    반환: (bdf_path, ModuleInfo_list, lineLength_list, lifting_method)
-    """
-    ModulePoint_idx_list = []
-    lifting_method = None
-
-    with open(bdf_path, "r", encoding="utf8") as f:
-        lines = f.readlines()
-
-    for line_idx, line in enumerate(lines):
-        if "$$Hydro" in line or "$$Goliat" in line:
-            lifting_method = 0 if "$$Hydro" in line else 1
-            ModulePoint_idx_list.append(line_idx + 1)
-        if "$$------------------------------------------------------------------------------$" in line:
-            ModulePoint_idx_list.append(line_idx)
-            break
-
-    if len(ModulePoint_idx_list) < 2:
-        raise ValueError("BDF 분석 실패: '$$Hydro' 또는 '$$Goliat' 시작/종료 마커를 찾지 못했습니다.")
-
-    ModuleInfo_text = lines[ModulePoint_idx_list[0]: ModulePoint_idx_list[1]]
-    ModuleInfo_dict = {}
-    lineLength_list = []
-
-    for line in ModuleInfo_text:
-        clean_item = line.replace("$$", "").strip()
-        parts = clean_item.split()
-        if len(parts) < 3:
-            continue
-        try:
-            category = int(parts[0].split("-")[0])
-            val1 = int(parts[1])
-            val2 = int(parts[2])
-            if category not in ModuleInfo_dict:
-                ModuleInfo_dict[category] = [val1]
-                lineLength_list.append(val2)
-            else:
-                ModuleInfo_dict[category].append(val1)
-        except ValueError:
-            continue
-
-    ModuleInfo_list = list(ModuleInfo_dict.values())
-    return bdf_path, ModuleInfo_list, lineLength_list, lifting_method
+_MODULE_UNIT_EXE = os.path.abspath(
+    os.path.join(_BACKEND_DIR, "InHouseProgram", "HiTessBeam", "ModuleUnit_HiTESS.exe")
+)
 
 
 def _write_error_fallback(user_folder: str, filename: str, exc: Exception) -> dict:
@@ -246,9 +194,6 @@ def _write_error_fallback(user_folder: str, filename: str, exc: Exception) -> di
     }
 
 
-_MODULE_UNIT_WORK_SUBDIR = "ModuleUnit"
-
-
 @router.post("/moduleUnit")
 async def module_unit(
     userID: str = Form(...),
@@ -259,89 +204,68 @@ async def module_unit(
     ModuleUnit / GroupUnit BDF 해석 엔드포인트.
     multipart/form-data: file(.bdf), userID, programName("ModuleUnit"|"GroupUnit")
     """
-    req_id = datetime.now().strftime("%H%M%S")
     user_folder = None
     filename = None
 
     try:
         # ── 1. 파일 검증 ─────────────────────────────────────────────
         filename = os.path.basename(file.filename or "")
-        if not filename:
-            raise HTTPException(status_code=400, detail="파일 이름이 비어있습니다.")
-        if not filename.lower().endswith(".bdf"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"잘못된 파일 확장자입니다: {filename} (.bdf 파일만 가능)"
-            )
+        if not filename or not filename.lower().endswith(".bdf"):
+            raise HTTPException(status_code=400, detail="유효한 .bdf 파일이 필요합니다.")
 
-        # ── 2. 작업 폴더 및 파일 저장 ────────────────────────────────
+        # ── 2. 작업 폴더 생성 + 파일 저장 ────────────────────────────
         employee_id = userID.strip()
         if not employee_id:
             raise HTTPException(status_code=400, detail="userID is required")
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        user_folder = os.path.abspath(
-            os.path.join(
-                _BACKEND_DIR, "userConnection",
-                f"{timestamp}_{employee_id}_{_MODULE_UNIT_WORK_SUBDIR}"
-            )
-        )
+        user_folder = os.path.abspath(os.path.join(
+            _BACKEND_DIR, "userConnection",
+            f"{timestamp}_{employee_id}_ModuleUnit"
+        ))
         os.makedirs(user_folder, exist_ok=True)
-
         input_bdf = os.path.join(user_folder, filename)
         output_bdf = os.path.join(user_folder, filename.replace(".bdf", "_r.bdf"))
-        try:
-            with open(input_bdf, "wb") as buf:
-                buf.write(await file.read())
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
+        with open(input_bdf, "wb") as buf:
+            buf.write(await file.read())
 
-        # ── 3. import 실패 상태 확인 ──────────────────────────────────
-        if _HookTrolley is None or _HookTrolley_GU is None:
-            raise RuntimeError(
-                f"HookTrolley 모듈 로딩 실패: {_HOOKTROLLEY_IMPORT_ERROR}"
-            )
-
-        # ── 4. BDF 파싱 ───────────────────────────────────────────────
-        bdf, HookTrolley_list, lineLength, lifting_method = _inforget_mode(input_bdf)
-
-        # ── 5. programName 분기 실행 ──────────────────────────────────
+        # ── 3. programName 검증 ───────────────────────────────────────
         prog = programName.strip()
-        if prog == "ModuleUnit":
-            instance = _HookTrolley(
-                bdf, output_bdf, HookTrolley_list, lineLength,
-                Safety_Factor=1.2, lifting_method=lifting_method,
-                analysis=True, debugPrint=True,
-            )
-            instance.HookTrolleyRun()
-        elif prog == "GroupUnit":
-            instance = _HookTrolley_GU(
-                bdf, output_bdf, HookTrolley_list, lineLength,
-                Safety_Factor=1.2, lifting_method=lifting_method,
-                analysis=True, debugPrint=True,
-            )
-            instance.HookTrolleyRun()
-        else:
+        if prog not in ("ModuleUnit", "GroupUnit"):
             raise HTTPException(
                 status_code=400,
                 detail=f"알 수 없는 programName: '{prog}' (예상값: 'ModuleUnit' 또는 'GroupUnit')"
             )
 
-        # ── 6. 성공 응답 ──────────────────────────────────────────────
-        folder_name_only = os.path.basename(user_folder)
+        # ── 4. exe 존재 확인 ──────────────────────────────────────────
+        if not os.path.exists(_MODULE_UNIT_EXE):
+            raise RuntimeError(f"실행 파일을 찾을 수 없습니다: {_MODULE_UNIT_EXE}")
+
+        # ── 5. subprocess 실행 (csvToBdf 패턴과 동일) ─────────────────
+        cmd = f'"{_MODULE_UNIT_EXE}" "{input_bdf}" "{output_bdf}" "{prog}"'
+        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=600)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"ModuleUnit_HiTESS.exe 실패 (rc={proc.returncode}):\n{proc.stderr}"
+            )
+
+        # ── 6. 결과 파일 확인 ─────────────────────────────────────────
+        if not os.path.exists(output_bdf) or os.path.getsize(output_bdf) == 0:
+            raise RuntimeError("해석 결과 BDF 파일이 비어있습니다.")
+
+        # ── 7. 성공 응답 ──────────────────────────────────────────────
         bdf_out = os.path.basename(output_bdf)
         return {
             "message": "서버에서 BDF 변환 및 해석이 완료되었습니다.",
-            "userFolder": folder_name_only,
+            "userFolder": os.path.basename(user_folder),
             "bdf_filename": bdf_out,
             "f06_filename": bdf_out.replace(".bdf", ".f06"),
             "txt_filename": bdf_out.replace(".bdf", ".txt"),
         }
 
     except HTTPException:
-        raise  # 400 등 클라이언트 오류는 그대로 전파
+        raise
     except Exception as e:
-        # Flask 원본 동작: 200 + 에러 txt + 빈 더미 파일
         if user_folder and filename:
             return _write_error_fallback(user_folder, filename, e)
         raise HTTPException(status_code=500, detail=str(e))
