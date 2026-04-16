@@ -21,6 +21,7 @@ import UserGuide from './pages/Support/UserGuide';
 import TrussAnalysis from './pages/analysis/TrussAnalysis';
 import TrussAssessment from './pages/analysis/TrussAssessment';
 import UserRequests from './pages/Support/UserRequests';
+import DownloadCenter from './pages/Support/DownloadCenter';
 import UserManagement from './pages/Administration/UserManagement';
 import SystemSettings from './pages/Administration/SystemSettings';
 import AnalysisManagement from './pages/Administration/AnalysisManagement';
@@ -124,6 +125,7 @@ function AppInner() {
       case 'Feature Requests':
       case 'User Requests': return <UserRequests />;
       case 'User Guide': return <UserGuide />;
+      case 'Download Center': return <DownloadCenter />;
       case 'User Management': return <UserManagement />;
       case 'Analysis Management': return <AnalysisManagement />;
       case 'System Settings': return <SystemSettings />;

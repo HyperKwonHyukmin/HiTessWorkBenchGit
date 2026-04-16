@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api", tags=["analysis"])
 _ROUTER_DIR = os.path.dirname(os.path.abspath(__file__))         # app/routers
 _BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))     # HiTessWorkBenchBackEnd
 _ALLOWED_DOWNLOAD_BASE = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
+_PROGRAM_DOWNLOAD_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "DownloadProgram"))
 
 
 # ==================== 이력 및 다운로드 ====================
@@ -80,6 +81,21 @@ def download_file(filepath: str):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
     filename = os.path.basename(decoded_path)
     return FileResponse(path=decoded_path, filename=filename, media_type='application/octet-stream')
+
+
+@router.get("/download/program/{filename}")
+def download_program(filename: str):
+    """
+    DownloadProgram/ 디렉터리의 배포용 프로그램 파일을 다운로드합니다.
+    보안: DownloadProgram/ 디렉터리 내 파일만 허용하며 경로 탈출을 차단합니다.
+    """
+    safe_name = os.path.basename(filename)
+    file_path = os.path.abspath(os.path.join(_PROGRAM_DOWNLOAD_DIR, safe_name))
+    if not file_path.startswith(_PROGRAM_DOWNLOAD_DIR + os.sep) and file_path != _PROGRAM_DOWNLOAD_DIR:
+        raise HTTPException(status_code=403, detail="접근 권한이 없는 경로입니다.")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다. 관리자에게 문의하세요.")
+    return FileResponse(path=file_path, filename=safe_name, media_type='application/octet-stream')
 
 
 @router.get("/analysis/export-xlsx")

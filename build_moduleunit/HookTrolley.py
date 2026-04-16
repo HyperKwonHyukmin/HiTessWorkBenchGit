@@ -1219,11 +1219,21 @@ class HookTrolley(hmNastranBDF_Importer, hmNastranBDF_Exporter, CalcFunc):
     f06_file = self.new_bdf.replace('.bdf', '.f06')
     self.ResultTxt = self.new_bdf.replace('.bdf', '.txt')
 
-    # 1. 해석 성공: OP2 파일이 존재하는 경우
+    # 1. 해석 성공: OP2 파일이 존재하고 결과가 있는 경우
+    op2_has_results = False
     if os.path.exists(op2_file):
-      self.op2Results = hmNastranOP2_Analyzer(op2_file)
-      self.op2Results.resultsSetting()
+      try:
+        self.op2Results = hmNastranOP2_Analyzer(op2_file)
+        self.op2Results.resultsSetting()
+        op2_has_results = (
+          bool(self.op2Results.disp_results) and
+          bool(self.op2Results.stress1D_results) and
+          bool(self.op2Results.ELForceROD_results)
+        )
+      except Exception as e:
+        print(f"## 에러: OP2 파일 파싱 실패 - {e}")
 
+    if op2_has_results:
       displacement_sorted = self.op2Results.disp_results[0].sort_values(by='disp', ascending=False).head(1)
       stress_sorted = self.op2Results.stress1D_results[0].sort_values(by='Stress', ascending=False).head(1)
       ELForceROD_df = self.op2Results.ELForceROD_results[0]
@@ -1284,9 +1294,9 @@ class HookTrolley(hmNastranBDF_Importer, hmNastranBDF_Exporter, CalcFunc):
 
       print('## 9단계 : Module Unit 해석 완료  ')
 
-    # 2. 해석 실패: OP2 파일이 없는 경우 (FATAL 처리)
+    # 2. 해석 실패: OP2가 없거나 결과가 비어있는 경우 (FATAL 처리)
     else:
-      print("## 에러: op2 파일이 생성되지 않았습니다. f06 파일에서 FATAL 내역을 파싱합니다.")
+      print("## 에러: op2 파일이 없거나 결과가 비어있습니다. f06 파일에서 FATAL 내역을 파싱합니다.")
       self.ModuleUnitResultText_list.append("NASTRAN 해석 실패 (FATAL ERROR 발생)\n")
 
       fatal_messages = self.ExtractFatalErrors(f06_file, context_lines=10)

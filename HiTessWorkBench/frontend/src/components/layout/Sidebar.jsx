@@ -19,7 +19,8 @@ import {
   Lock,
   Key,
   X,
-  Webhook
+  Webhook,
+  Download
 } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 
@@ -80,6 +81,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
         { icon: Megaphone, label: "Notice & Updates" },
         { icon: Lightbulb, label: "User Requests" },
         { icon: BookOpen, label: "User Guide" },
+        { icon: Download, label: "Download Center" },
       ]
     });
 
