@@ -2,18 +2,7 @@ import React, { useState } from 'react';
 import { Download, CheckCircle, Clock, Package, AlertCircle } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 
-const DOWNLOADS = [
-  {
-    name: 'HiTess Beam',
-    version: 'v1.0.0',
-    description: 'HiTess 1D Beam 시각화 및 Module, Group Unit 권상 해석 프로그램',
-    category: 'Software',
-    size: '-',
-    updatedAt: '2026-04-16',
-    status: 'stable',
-    filename: 'HiTESSBEAM.zip',
-  },
-];
+const DOWNLOADS = [];
 
 const STATUS_CONFIG = {
   stable: { label: 'Stable', className: 'bg-emerald-100 text-emerald-700 border border-emerald-200' },
@@ -134,6 +123,13 @@ export default function DownloadCenter() {
               </tr>
             </thead>
             <tbody>
+              {DOWNLOADS.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-10 text-center text-slate-400 text-sm">
+                    등록된 다운로드 항목이 없습니다.
+                  </td>
+                </tr>
+              )}
               {DOWNLOADS.map((item, idx) => (
                 <tr
                   key={item.name}
