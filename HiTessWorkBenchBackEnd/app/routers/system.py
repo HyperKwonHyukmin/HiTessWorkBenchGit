@@ -18,7 +18,7 @@ SERVER_VERSION = "0.0.7"
 
 # 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
-LATEST_CLIENT_DIR = Path(os.environ.get("LATEST_CLIENT_DIR", str(_BACKEND_DIR / "LatestVersionProgram")))
+LATEST_CLIENT_DIR = Path(os.environ.get("LATEST_CLIENT_DIR", str(_BACKEND_DIR / "LastestVersionProgram")))
 
 router = APIRouter(prefix="/api", tags=["system"])
 
