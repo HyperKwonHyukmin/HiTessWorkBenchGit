@@ -12,12 +12,13 @@ from .. import database
 from ..services.job_manager import job_status_store, MAX_CONCURRENT_JOBS
 from ..services.cleanup_service import run_cleanup, _USER_CONN_DIR, RETENTION_DAYS
 from ..state import server_state
+from ..dependencies import require_admin
 
 SERVER_VERSION = "0.0.6"
 
 # 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
-LATEST_CLIENT_DIR = Path(os.environ.get("LATEST_CLIENT_DIR", str(_BACKEND_DIR / "LastestVersionProgram")))
+LATEST_CLIENT_DIR = Path(os.environ.get("LATEST_CLIENT_DIR", str(_BACKEND_DIR / "LatestVersionProgram")))
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -31,7 +32,7 @@ def check_version():
 def download_client():
   """최신 클라이언트 exe를 다운로드합니다."""
   if not LATEST_CLIENT_DIR.exists():
-    raise HTTPException(status_code=404, detail=f"클라이언트 폴더가 없습니다: {LATEST_CLIENT_DIR}")
+    raise HTTPException(status_code=404, detail="클라이언트 폴더를 찾을 수 없습니다.")
 
   exe_files = sorted(LATEST_CLIENT_DIR.glob("*.exe"), key=lambda f: f.stat().st_mtime, reverse=True)
   if not exe_files:
@@ -86,7 +87,7 @@ def get_maintenance_mode():
 
 
 @router.post("/system/maintenance")
-def set_maintenance_mode(payload: dict):
+def set_maintenance_mode(payload: dict, current_admin: str = Depends(require_admin)):
   """유지보수 모드를 설정합니다. {"maintenance": true/false}"""
   server_state["maintenance_mode"] = bool(payload.get("maintenance", False))
   return {"maintenance": server_state["maintenance_mode"]}
@@ -105,7 +106,7 @@ def preview_cleanup():
 
 
 @router.post("/system/storage/cleanup")
-def manual_cleanup():
+def manual_cleanup(current_admin: str = Depends(require_admin)):
     """30일 초과 폴더를 즉시 삭제합니다 (관리자 수동 실행용)."""
     result = run_cleanup(dry_run=False)
     return {

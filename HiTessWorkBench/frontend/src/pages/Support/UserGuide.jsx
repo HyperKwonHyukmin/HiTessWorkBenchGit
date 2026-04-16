@@ -6,6 +6,7 @@ import {
 import { Dialog, Transition } from '@headlessui/react';
 import { getUserGuides, createUserGuide, updateUserGuide, deleteUserGuide } from '../../api/admin';
 import MarkdownRenderer from '../../components/ui/MarkdownRenderer';
+import { useToast } from '../../contexts/ToastContext';
 
 const CATEGORY_CONFIG = {
   "Getting Started": {
@@ -49,6 +50,7 @@ const CATEGORY_CONFIG = {
 const CATEGORIES = Object.keys(CATEGORY_CONFIG);
 
 export default function UserGuide() {
+  const { showToast } = useToast();
   const [isAdmin, setIsAdmin]       = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [guides, setGuides]         = useState([]);
@@ -101,19 +103,19 @@ export default function UserGuide() {
   const handleDelete = async (id) => {
     if (!window.confirm('이 가이드를 삭제하시겠습니까?')) return;
     try { await deleteUserGuide(id); fetchGuides(); }
-    catch { alert('삭제 실패'); }
+    catch { showToast('삭제 실패', 'error'); }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!currentUser) { alert('로그인이 필요합니다.'); return; }
+    if (!currentUser) { showToast('로그인이 필요합니다.', 'warning'); return; }
     try {
       const payload = { ...formData, author_id: currentUser.employee_id };
       if (editMode) await updateUserGuide(selectedGuideId, payload);
       else await createUserGuide(payload);
       setIsModalOpen(false);
       fetchGuides();
-    } catch { alert('저장 실패'); }
+    } catch { showToast('저장 실패', 'error'); }
   };
 
   const currentGuides = guides.filter(g => g.category === activeCategory);

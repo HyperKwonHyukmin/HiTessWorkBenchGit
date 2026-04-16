@@ -91,7 +91,7 @@ async def csv_to_bdf(
     if not os.path.exists(_EXE_PATH):
         raise HTTPException(
             status_code=500,
-            detail=f"실행 파일을 찾을 수 없습니다: {_EXE_PATH}"
+            detail="실행 파일을 찾을 수 없습니다. 서버 관리자에게 문의하세요."
         )
 
     # ── BDF 출력 경로 결정 ────────────────────────────────────────
@@ -104,9 +104,9 @@ async def csv_to_bdf(
     equi = role_files["equi"] or "None"
 
     # ── exe 실행 ─────────────────────────────────────────────────
-    cmd = f'"{_EXE_PATH}" "{stru}" "{pipe}" "{equi}" "{bdf_file}"'
+    cmd_args = [_EXE_PATH, stru, pipe, equi, bdf_file]
     try:
-        subprocess.Popen(cmd, shell=True).wait()
+        subprocess.run(cmd_args, shell=False, check=False, timeout=600)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"exe 실행 오류: {str(e)}")
 
@@ -181,7 +181,8 @@ def _write_error_fallback(user_folder: str, filename: str, exc: Exception) -> di
     # 클라이언트 일괄 다운로드가 404로 깨지지 않도록 빈 더미 파일 생성
     for dummy_name in (bdf_filename, f06_filename):
         try:
-            open(os.path.join(user_folder, dummy_name), "w").close()
+            with open(os.path.join(user_folder, dummy_name), "w"):
+                pass
         except Exception:
             pass
 
@@ -242,8 +243,8 @@ async def module_unit(
             raise RuntimeError(f"실행 파일을 찾을 수 없습니다: {_MODULE_UNIT_EXE}")
 
         # ── 5. subprocess 실행 (csvToBdf 패턴과 동일) ─────────────────
-        cmd = f'"{_MODULE_UNIT_EXE}" "{input_bdf}" "{output_bdf}" "{prog}"'
-        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=600)
+        cmd_args = [_MODULE_UNIT_EXE, input_bdf, output_bdf, prog]
+        proc = subprocess.run(cmd_args, shell=False, capture_output=True, text=True, timeout=600)
         if proc.returncode != 0:
             raise RuntimeError(
                 f"ModuleUnit_HiTESS.exe 실패 (rc={proc.returncode}):\n{proc.stderr}"

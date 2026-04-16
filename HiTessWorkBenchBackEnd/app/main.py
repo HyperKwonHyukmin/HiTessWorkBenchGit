@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from . import models, database
@@ -8,12 +9,33 @@ from .services.cleanup_service import start_cleanup_scheduler
 # DB 테이블 자동 생성
 models.Base.metadata.create_all(bind=database.engine)
 
-app = FastAPI()
 
-# CORS 설정
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """서버 시작 시 기본 가이드·공지 시드 및 userConnection 정리 스케줄러를 시작합니다."""
+    db = database.SessionLocal()
+    try:
+        seed_default_guides(db)
+        seed_default_notices(db)
+    finally:
+        db.close()
+
+    # userConnection/ 30일 초과 폴더 자동 정리 (서버 시작 즉시 1회 + 매일 자정 반복)
+    start_cleanup_scheduler()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+# CORS 설정 — 허용 출처를 명시적으로 지정
 app.add_middleware(
   CORSMiddleware,
-  allow_origins=["*"],
+  allow_origins=[
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "app://.",
+    "file://",
+  ],
   allow_credentials=False,
   allow_methods=["*"],
   allow_headers=["*"],
@@ -30,20 +52,6 @@ app.include_router(ai.router)
 app.include_router(davit.router)
 app.include_router(column_buckling.router)
 app.include_router(hitessbeam.router)  # [TEMP] HiTessBeam 임시 라우터
-
-
-@app.on_event("startup")
-def on_startup():
-    """서버 시작 시 기본 가이드·공지 시드 및 userConnection 정리 스케줄러를 시작합니다."""
-    db = database.SessionLocal()
-    try:
-        seed_default_guides(db)
-        seed_default_notices(db)
-    finally:
-        db.close()
-
-    # userConnection/ 30일 초과 폴더 자동 정리 (서버 시작 즉시 1회 + 매일 자정 반복)
-    start_cleanup_scheduler()
 
 
 def seed_default_notices(db):

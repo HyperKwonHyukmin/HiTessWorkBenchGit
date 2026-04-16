@@ -35,7 +35,7 @@ def run_mast_post(height_mm: float, weight_kg: float, employee_id: str) -> dict:
         logger.error("PostDavitCalculation.exe not found at: %s", _EXE_PATH)
         raise HTTPException(
             status_code=503,
-            detail=f"계산 엔진(PostDavitCalculation.exe)을 찾을 수 없습니다. 경로: {_EXE_PATH}"
+            detail="계산 엔진을 찾을 수 없습니다. 서버 관리자에게 문의하세요."
         )
 
     work_dir, timestamp = _make_work_dir(employee_id, "PostDavitCalculation")
@@ -95,7 +95,7 @@ def _run_jib_rest(cmd_name: str, inputs: dict, employee_id: str, program_name: s
         logger.error("PostDavitCalculation.exe not found at: %s", _EXE_PATH)
         raise HTTPException(
             status_code=503,
-            detail=f"계산 엔진(PostDavitCalculation.exe)을 찾을 수 없습니다. 경로: {_EXE_PATH}"
+            detail="계산 엔진을 찾을 수 없습니다. 서버 관리자에게 문의하세요."
         )
 
     work_dir, timestamp = _make_work_dir(employee_id, "JibRestCalculation")

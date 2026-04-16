@@ -1,7 +1,7 @@
 /**
  * @fileoverview Simple Beam Assessment 페이지 오케스트레이터 (BeamModelPreview)
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { toPng } from 'html-to-image';
 import { Box, Activity, Plus, Trash2, ShieldCheck, ArrowDown, RefreshCw, SlidersHorizontal, Play, FileJson, Upload, BarChart2, Camera, Info } from 'lucide-react';
 import GuideButton from '../ui/GuideButton';
@@ -15,13 +15,23 @@ import { formatEngineering as engFormat } from '../../utils/formatting';
 
 export default function BeamModelPreview() {
   const captureRef = useRef(null);
+  const toastTimerRef = useRef(null);
+  const captureTimerRef = useRef(null);
   const [activeTab, setActiveTab] = useState('modeling');
   const [isCapturing, setIsCapturing] = useState(false);
   const [toast, setToast] = useState(null);
 
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
+    };
+  }, []);
+
   const showToast = (message, type = 'success') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3500);
   };
 
   // 비즈니스 로직 분리
@@ -51,8 +61,8 @@ export default function BeamModelPreview() {
 
   const handleCapture = async () => {
     if (!captureRef.current) return;
-    setIsCapturing(true); 
-    setTimeout(async () => {
+    setIsCapturing(true);
+    captureTimerRef.current = setTimeout(async () => {
       try {
         const dataUrl = await toPng(captureRef.current, { backgroundColor: '#020617', pixelRatio: 2, cacheBust: true });
         const link = document.createElement('a');

@@ -12,6 +12,7 @@ import MultiJsonViewer from '../../components/analysis/AssessmentResultTable';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
 import GuideButton from '../../components/ui/GuideButton';
 import SolverCredit from '../../components/ui/SolverCredit';
+import { useToast } from '../../contexts/ToastContext';
 import {
   ArrowLeft, Upload, Play, Database, RefreshCw, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Eye,
@@ -20,6 +21,7 @@ import {
 
 export default function TrussAssessment() {
   const { setCurrentMenu } = useNavigation();
+  const { showToast } = useToast();
   const dashboardCtx = useDashboard();
   const startGlobalJob = dashboardCtx?.startGlobalJob || (() => {});
   const globalJob = dashboardCtx?.globalJob || null;
@@ -154,7 +156,7 @@ export default function TrussAssessment() {
 
   const handleFile = (file) => {
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.bdf') && !file.name.toLowerCase().endsWith('.dat')) { alert('BDF 또는 DAT 파일만 업로드 가능합니다!'); return; }
+    if (!file.name.toLowerCase().endsWith('.bdf') && !file.name.toLowerCase().endsWith('.dat')) { showToast('BDF 또는 DAT 파일만 업로드 가능합니다!', 'error'); return; }
     updateState({ bdfFile: file, resultJsonData: null, activeResultCase: null, projectData: null, logs: [...logs, { time: new Date().toLocaleTimeString(), message: `[FILE] ${file.name} 업로드됨. 파싱 중...`, type: 'info' }] });
     setIsResultModalOpen(false);
     const reader = new FileReader();
@@ -185,7 +187,7 @@ export default function TrussAssessment() {
   };
 
   const downloadDetailedLog = () => {
-    if (detailedLogs.length === 0) return alert('상세 로그가 없습니다.');
+    if (detailedLogs.length === 0) { showToast('상세 로그가 없습니다.', 'warning'); return; }
     const blob = new Blob([detailedLogs.join('\n')], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `Detailed_Log_${Date.now()}.out`; a.click(); URL.revokeObjectURL(url);

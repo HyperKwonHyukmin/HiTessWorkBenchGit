@@ -8,10 +8,7 @@ import FilterTabs from '../../components/ui/FilterTabs';
 import AnimatedGrid from '../../components/ui/AnimatedGrid';
 import GuideButton from '../../components/ui/GuideButton';
 import AdminGateModal from '../../components/ui/AdminGateModal';
-
-const getIsAdmin = () => {
-  try { return JSON.parse(localStorage.getItem('user') || '{}').is_admin === true; } catch { return false; }
-};
+import { isAdmin as getIsAdmin } from '../../utils/auth';
 
 export default function ParametricApps() {
   const { setCurrentMenu } = useNavigation();

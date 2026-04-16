@@ -31,7 +31,7 @@ def task_execute_truss(job_id: str, node_path: str, member_path: str, work_dir: 
       cmd_args = [exe_path, exe_dir, node_path, member_path]
 
       try:
-        result = subprocess.run(cmd_args, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd_args, capture_output=True, text=True, check=True, timeout=600)
         engine_output = result.stdout
 
         job_status_store.update_job(job_id, {"progress": 80, "message": "Extracting Results & Writing BDF..."})
@@ -50,6 +50,10 @@ def task_execute_truss(job_id: str, node_path: str, member_path: str, work_dir: 
           status_msg = "Failed"
           engine_output += "\n[Error] Engine execution finished, but no .bdf file was created."
 
+      except subprocess.TimeoutExpired:
+        status_msg = "Failed"
+        logger.error("TrussModelBuilder subprocess timed out after 600s")
+        engine_output = "해석 엔진이 제한 시간(600초)을 초과했습니다. 관리자에게 문의하세요."
       except subprocess.CalledProcessError as e:
         status_msg = "Failed"
         logger.error("TrussModelBuilder subprocess failed: %s", e.stderr or e.stdout)

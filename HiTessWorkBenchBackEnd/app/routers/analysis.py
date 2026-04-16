@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models, database
 from ..services.job_manager import job_status_store, analysis_executor
+from ..dependencies import require_auth
 from ..services.truss_service import task_execute_truss
 from ..services.assessment_service import task_execute_assessment, _json_to_xlsx_bytes
 from ..services.beam_service import task_execute_beam
@@ -117,7 +118,7 @@ def export_assessment_xlsx(json_path: str):
     try:
         xlsx_bytes = _json_to_xlsx_bytes(decoded_path)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Excel 변환 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail="Excel 변환 중 오류가 발생했습니다.")
 
     return StreamingResponse(
         io.BytesIO(xlsx_bytes),
@@ -145,7 +146,8 @@ async def request_truss_analysis(
         node_file: UploadFile = File(...),
         member_file: UploadFile = File(...),
         employee_id: str = Form(...),
-        source: str = Form("Workbench")
+        source: str = Form("Workbench"),
+        current_user: str = Depends(require_auth)
 ):
     """
     Truss Model Builder 해석을 요청받아 파일을 저장하고 백그라운드 작업을 실행합니다.
@@ -160,8 +162,8 @@ async def request_truss_analysis(
 
     os.makedirs(work_dir, exist_ok=True)
 
-    node_path = os.path.join(work_dir, node_file.filename)
-    member_path = os.path.join(work_dir, member_file.filename)
+    node_path = os.path.join(work_dir, os.path.basename(node_file.filename))
+    member_path = os.path.join(work_dir, os.path.basename(member_file.filename))
 
     try:
         with open(node_path, "wb") as buffer:
@@ -190,7 +192,8 @@ async def request_truss_analysis(
 async def request_truss_assessment(
         bdf_file: UploadFile = File(...),
         employee_id: str = Form(...),
-        source: str = Form("Workbench")
+        source: str = Form("Workbench"),
+        current_user: str = Depends(require_auth)
 ):
     """
     Truss Structural Assessment 해석을 요청받아 BDF 파일을 저장하고 백그라운드 작업을 실행합니다.
@@ -205,7 +208,7 @@ async def request_truss_assessment(
 
     os.makedirs(work_dir, exist_ok=True)
 
-    bdf_path = os.path.join(work_dir, bdf_file.filename)
+    bdf_path = os.path.join(work_dir, os.path.basename(bdf_file.filename))
 
     try:
         with open(bdf_path, "wb") as buffer:
@@ -230,7 +233,8 @@ async def request_bdfscanner(
         bdf_file: UploadFile = File(...),
         employee_id: str = Form(...),
         use_nastran: bool = Form(False),
-        source: str = Form("Workbench")
+        source: str = Form("Workbench"),
+        current_user: str = Depends(require_auth)
 ):
     """
     BDF Scanner 작업을 요청받아 BDF 파일을 저장하고 백그라운드 작업을 실행합니다.
@@ -244,7 +248,7 @@ async def request_bdfscanner(
     work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
     os.makedirs(work_dir, exist_ok=True)
 
-    bdf_path = os.path.join(work_dir, bdf_file.filename)
+    bdf_path = os.path.join(work_dir, os.path.basename(bdf_file.filename))
     try:
         with open(bdf_path, "wb") as buffer:
             buffer.write(await bdf_file.read())
@@ -267,7 +271,8 @@ async def request_bdfscanner(
 async def request_beam_analysis(
         beam_file: UploadFile = File(...),
         employee_id: str = Form(...),
-        source: str = Form("Workbench")
+        source: str = Form("Workbench"),
+        current_user: str = Depends(require_auth)
 ):
     """
     Simple Beam Assessment 해석을 요청받아 JSON 파일을 저장하고 백그라운드 작업을 실행합니다.
@@ -282,7 +287,7 @@ async def request_beam_analysis(
 
     os.makedirs(work_dir, exist_ok=True)
 
-    input_json_path = os.path.join(work_dir, beam_file.filename)
+    input_json_path = os.path.join(work_dir, os.path.basename(beam_file.filename))
     try:
         with open(input_json_path, "wb") as buffer:
             buffer.write(await beam_file.read())
@@ -312,6 +317,7 @@ async def request_modelflow_analysis(
     equip_file: Optional[UploadFile] = File(None),
     employee_id: str = Form(...),
     source: str = Form("Workbench"),
+    current_user: str = Depends(require_auth),
     stop_mode: str = Form("7"),         # 항상 --stage 3 (힐링 전체, BDF 생성)
     ubolt: bool = Form(False),          # U-bolt RBE2 강체 고정 여부
     mesh_size: float = Form(500.0),     # 목표 메시 크기 (mm)
@@ -335,7 +341,7 @@ async def request_modelflow_analysis(
     os.makedirs(work_dir, exist_ok=True)
 
     # 구조물 CSV (필수)
-    stru_path = os.path.join(work_dir, stru_file.filename)
+    stru_path = os.path.join(work_dir, os.path.basename(stru_file.filename))
     try:
         with open(stru_path, "wb") as f:
             f.write(await stru_file.read())
@@ -345,7 +351,7 @@ async def request_modelflow_analysis(
     # 배관 CSV (선택)
     pipe_path = None
     if pipe_file and pipe_file.filename:
-        pipe_path = os.path.join(work_dir, pipe_file.filename)
+        pipe_path = os.path.join(work_dir, os.path.basename(pipe_file.filename))
         try:
             with open(pipe_path, "wb") as f:
                 f.write(await pipe_file.read())
@@ -355,7 +361,7 @@ async def request_modelflow_analysis(
     # 장비 CSV (선택)
     equip_path = None
     if equip_file and equip_file.filename:
-        equip_path = os.path.join(work_dir, equip_file.filename)
+        equip_path = os.path.join(work_dir, os.path.basename(equip_file.filename))
         try:
             with open(equip_path, "wb") as f:
                 f.write(await equip_file.read())
@@ -385,6 +391,7 @@ async def request_modelflow_nastran(
     work_dir: str = Form(...),
     employee_id: str = Form(...),
     source: str = Form("Workbench"),
+    current_user: str = Depends(require_auth),
 ):
     """
     Stage 3에서 생성된 STAGE_07 BDF에 BdfScanner --nastran을 실행합니다.
@@ -419,6 +426,7 @@ async def request_ubolt_retry(
     work_dir: str = Form(...),
     employee_id: str = Form(...),
     source: str = Form("Workbench"),
+    current_user: str = Depends(require_auth),
 ):
     """
     U-bolt RBE2를 강체(123456 DOF)로 고정한 BDF를 재생성합니다.

@@ -6,10 +6,7 @@ import AppCard from '../../components/ui/AppCard';
 import PageHeader from '../../components/ui/PageHeader';
 import AnimatedGrid from '../../components/ui/AnimatedGrid';
 import AdminGateModal from '../../components/ui/AdminGateModal';
-
-const getIsAdmin = () => {
-  try { return JSON.parse(localStorage.getItem('user') || '{}').is_admin === true; } catch { return false; }
-};
+import { isAdmin as getIsAdmin } from '../../utils/auth';
 
 export default function AiAssistantHub() {
   const { favorites, toggleFavorite } = useDashboard();

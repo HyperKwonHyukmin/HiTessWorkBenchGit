@@ -27,6 +27,7 @@ class UserResponse(BaseModel):
     login_count: int
     last_login: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    token: Optional[str] = None  # 로그인 성공 시 세션 토큰
 
     class Config:
       from_attributes = True

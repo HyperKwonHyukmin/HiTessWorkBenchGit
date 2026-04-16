@@ -56,7 +56,16 @@ function createWindow() {
 }
 
 ipcMain.on("open-external", (_, url) => {
-  shell.openExternal(url);
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      console.warn("[Security] open-external blocked non-http protocol:", parsed.protocol);
+      return;
+    }
+    shell.openExternal(url);
+  } catch {
+    console.warn("[Security] open-external blocked invalid URL:", url);
+  }
 });
 
 ipcMain.handle("download-client", (event, url) => {
@@ -98,9 +107,15 @@ ipcMain.handle("get-intro-page-html", (_evt, which) => {
 // 지정 폴더의 CSV 파일 목록 반환
 ipcMain.handle("list-dir-csvs", (_, dirPath) => {
   try {
-    return fs.readdirSync(dirPath)
+    const resolvedPath = path.resolve(dirPath);
+    const allowedBases = [app.getPath("userData"), app.getPath("home"), app.getAppPath()].map(p => path.resolve(p));
+    if (!allowedBases.some(base => resolvedPath.startsWith(base))) {
+      console.warn("[Security] list-dir-csvs blocked path:", resolvedPath);
+      return [];
+    }
+    return fs.readdirSync(resolvedPath)
       .filter(f => f.toLowerCase().endsWith('.csv'))
-      .map(f => ({ name: f, filePath: path.join(dirPath, f) }));
+      .map(f => ({ name: f, filePath: path.join(resolvedPath, f) }));
   } catch {
     return [];
   }
@@ -109,7 +124,13 @@ ipcMain.handle("list-dir-csvs", (_, dirPath) => {
 // 지정 경로의 파일 내용을 ArrayBuffer로 반환
 ipcMain.handle("read-file-buffer", (_, filePath) => {
   try {
-    const buf = fs.readFileSync(filePath);
+    const resolvedPath = path.resolve(filePath);
+    const allowedBases = [app.getPath("userData"), app.getPath("home"), app.getAppPath()].map(p => path.resolve(p));
+    if (!allowedBases.some(base => resolvedPath.startsWith(base))) {
+      console.warn("[Security] read-file-buffer blocked path:", resolvedPath);
+      return null;
+    }
+    const buf = fs.readFileSync(resolvedPath);
     // structuredClone 가능한 형태로 변환
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   } catch {
@@ -121,6 +142,22 @@ app.whenReady().then(async () => {
   // 외부 회사 네트워크 등 시스템 프록시가 설정된 환경에서도 정상 동작하도록
   // 시스템 프록시 설정을 자동으로 적용
   await session.defaultSession.setProxy({ mode: 'system' });
+
+  // CSP 헤더 설정 — XSS 방어 및 불필요한 외부 리소스 로드 차단
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [
+          "default-src 'self' http://localhost:* http://10.*:* https:; " +
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+          "style-src 'self' 'unsafe-inline'; " +
+          "img-src 'self' data: blob:; " +
+          "connect-src 'self' http://localhost:* http://10.*:* ws://localhost:*;"
+        ]
+      }
+    });
+  });
 
   createWindow();
 

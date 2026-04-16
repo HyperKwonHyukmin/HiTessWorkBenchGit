@@ -40,7 +40,8 @@ def task_execute_beam(job_id: str, input_json_path: str, work_dir: str, employee
       cwd=work_dir,
       capture_output=True,
       text=True,
-      check=True
+      check=True,
+      timeout=600
     )
     engine_output = result.stdout
 
@@ -49,6 +50,10 @@ def task_execute_beam(job_id: str, input_json_path: str, work_dir: str, employee
 
     job_status_store.update_job(job_id, {"progress": 80, "message": "Parsing Results..."})
 
+  except subprocess.TimeoutExpired:
+    status_msg = "Failed"
+    logger.error("SimpleBeam subprocess timed out after 600s")
+    engine_output = "해석 엔진이 제한 시간(600초)을 초과했습니다. 관리자에게 문의하세요."
   except subprocess.CalledProcessError as e:
     status_msg = "Failed"
     logger.error("SimpleBeam subprocess failed: %s", e.stderr or e.stdout)

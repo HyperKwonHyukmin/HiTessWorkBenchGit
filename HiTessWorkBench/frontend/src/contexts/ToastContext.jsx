@@ -34,6 +34,7 @@ export function ToastProvider({ children }) {
 
   const dismiss = useCallback((id) => {
     clearTimeout(timersRef.current[id]);
+    delete timersRef.current[id];
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 

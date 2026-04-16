@@ -274,7 +274,8 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
       cwd=work_dir,
       capture_output=True,
       text=True,
-      check=True
+      check=True,
+      timeout=600
     )
     engine_output = result.stdout
 
@@ -310,6 +311,10 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
     if json_count == 0:
       engine_output += "\n[Warning] JSON result files were NOT found in the user's work directory. C# 엔진의 출력 경로를 확인하세요."
 
+  except subprocess.TimeoutExpired:
+    status_msg = "Failed"
+    logger.error("TrussAssessment subprocess timed out after 600s")
+    engine_output = "해석 엔진이 제한 시간(600초)을 초과했습니다. 관리자에게 문의하세요."
   except subprocess.CalledProcessError as e:
     status_msg = "Failed"
     logger.error("TrussAssessment subprocess failed: %s", e.stderr or e.stdout)

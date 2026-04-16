@@ -9,10 +9,7 @@ import AnimatedGrid from '../../components/ui/AnimatedGrid';
 import Button from '../../components/ui/Button';
 import AdminGateModal from '../../components/ui/AdminGateModal';
 import GuideButton from '../../components/ui/GuideButton';
-
-const getIsAdmin = () => {
-  try { return JSON.parse(localStorage.getItem('user') || '{}').is_admin === true; } catch { return false; }
-};
+import { isAdmin as getIsAdmin } from '../../utils/auth';
 
 export default function NewAnalysis() {
   const { setCurrentMenu } = useNavigation();

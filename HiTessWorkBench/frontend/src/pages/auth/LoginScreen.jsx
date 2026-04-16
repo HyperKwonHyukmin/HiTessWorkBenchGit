@@ -92,8 +92,11 @@ export default function LoginScreen({ onLoginSuccess }) {
     try {
       const response = await login(employeeId);
 
-      console.log('Login Success:', response.data);
-      localStorage.setItem('user', JSON.stringify(response.data));
+      if (response.data.token) {
+        localStorage.setItem('session_token', response.data.token);
+      }
+      const { token: _token, ...userObj } = response.data;
+      localStorage.setItem('user', JSON.stringify(userObj));
       localStorage.setItem('user_login_at', String(Date.now())); // 자동 로그인 만료 기준
       onLoginSuccess();
 

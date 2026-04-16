@@ -35,7 +35,7 @@ def run_column_buckling(
         logger.error("ColumnBucklingApp.exe not found at: %s", _EXE_PATH)
         raise HTTPException(
             status_code=503,
-            detail=f"계산 엔진을 찾을 수 없습니다. 경로: {_EXE_PATH}",
+            detail="계산 엔진을 찾을 수 없습니다. 서버 관리자에게 문의하세요.",
         )
 
     # 1. userConnection 작업 폴더 생성

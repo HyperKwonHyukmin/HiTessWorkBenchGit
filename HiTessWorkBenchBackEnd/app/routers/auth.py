@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import Optional
 from .. import models, schemas, database
 from ..state import server_state
+from ..sessions import session_store
 
 router = APIRouter(prefix="/api", tags=["auth"])
 member_router = APIRouter(prefix="/member", tags=["member"])
@@ -54,7 +55,21 @@ def login(request: schemas.LoginRequest, db: Session = Depends(database.get_db))
   db.commit()
   db.refresh(user)
 
-  return user
+  token = session_store.create(user.employee_id)
+  return schemas.UserResponse(
+      id=user.id,
+      employee_id=user.employee_id,
+      name=user.name,
+      company=user.company,
+      department=user.department,
+      position=user.position,
+      is_active=user.is_active,
+      is_admin=user.is_admin,
+      login_count=user.login_count,
+      last_login=user.last_login,
+      created_at=user.created_at,
+      token=token,
+  )
 
 
 @router.post("/register", response_model=schemas.UserResponse)

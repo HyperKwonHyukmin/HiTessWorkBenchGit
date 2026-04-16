@@ -19,10 +19,10 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.0",
     "remark-gfm": "^4.0.1",
-    "three": "^0.155.0"
+    "three": "^0.155.0",
+    "@headlessui/react": "^2.2.9"
   },
   "devDependencies": {
-    "@headlessui/react": "^2.2.9",
     "@tailwindcss/vite": "^4.2.2",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",

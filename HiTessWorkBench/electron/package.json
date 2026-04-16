@@ -1,7 +1,7 @@
 {
   "name": "electron-app",
   "version": "1.0.0",
-  "description": "GoodClock",
+  "description": "HiTESS WorkBench Electron Shell",
   "main": "index.js",
   "scripts": {
     "start": "electron .",
