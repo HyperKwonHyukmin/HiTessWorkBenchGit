@@ -91,3 +91,9 @@ export const updateUserGuide = (guideId, payload) =>
 /** 사용자 가이드 삭제 */
 export const deleteUserGuide = (guideId) =>
   axios.delete(`${API_BASE_URL}/api/user-guides/${guideId}`, { headers: getAuthHeaders() });
+
+// ==================== Admin Gate ====================
+
+/** 관리자 게이트 비밀번호 검증 */
+export const verifyAdminGate = (password) =>
+  axios.post(`${API_BASE_URL}/api/admin/verify-gate`, { password }, { headers: getAuthHeaders() });

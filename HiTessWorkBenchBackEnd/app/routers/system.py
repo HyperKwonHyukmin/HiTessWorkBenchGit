@@ -14,7 +14,7 @@ from ..services.cleanup_service import run_cleanup, _USER_CONN_DIR, RETENTION_DA
 from ..state import server_state
 from ..dependencies import require_admin
 
-SERVER_VERSION = "0.0.6"
+SERVER_VERSION = "0.0.7"
 
 # 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
@@ -116,6 +116,16 @@ def manual_cleanup(current_admin: str = Depends(require_admin)):
         "deleted":  result["deleted"],
         "errors":   result["errors"],
     }
+
+
+@router.post("/admin/verify-gate")
+def verify_admin_gate(payload: dict):
+    """관리자 게이트 비밀번호를 검증합니다. 환경변수 ADMIN_GATE_PASSWORD로 비밀번호 설정.
+    세션 의존 없이 비밀번호만 검증합니다 — 실제 관리자 API는 별도로 require_admin이 적용됩니다."""
+    gate_password = os.environ.get("ADMIN_GATE_PASSWORD", "str_2006")
+    if payload.get("password") != gate_password:
+        raise HTTPException(status_code=403, detail="비밀번호가 올바르지 않습니다.")
+    return {"ok": True}
 
 
 @router.get("/system/queue-status")

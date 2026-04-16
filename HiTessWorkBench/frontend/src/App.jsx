@@ -2,6 +2,7 @@
 /// React 애플리케이션의 최상위 라우터(Router) 및 상태 관리자입니다.
 /// </summary>
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { version as CLIENT_VERSION } from '../package.json';
 import { checkVersion } from './api/auth';
 import SplashScreen from './pages/auth/SplashScreen';
@@ -77,9 +78,25 @@ function AppInner() {
   const handleLogout = () => {
     localStorage.removeItem('user');
     localStorage.removeItem('user_login_at');
+    localStorage.removeItem('session_token');
+    sessionStorage.removeItem('admin_gate_unlocked');
     setAppState(APP_STATE.LOGIN);
     resetNavigation('Dashboard');
   };
+
+  // 세션 만료(401) 자동 로그아웃 인터셉터
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      (res) => res,
+      (error) => {
+        if (error.response?.status === 401 && appState === APP_STATE.MAIN) {
+          handleLogout();
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => axios.interceptors.response.eject(interceptor);
+  }, [appState]);
 
   // 전역 키보드 단축키
   useEffect(() => {

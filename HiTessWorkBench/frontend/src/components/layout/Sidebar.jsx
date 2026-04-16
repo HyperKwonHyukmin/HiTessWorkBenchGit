@@ -19,10 +19,19 @@ import {
   Webhook,
   Download
 } from 'lucide-react';
+import AdminPasswordGateModal from '../ui/AdminPasswordGateModal';
+import { verifyAdminGate } from '../../api/admin';
+
+const ADMIN_CATEGORIES = ['ADMINISTRATION'];
+const SESSION_KEY = 'admin_gate_unlocked';
 
 export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, setCurrentMenu }) {
 
   const [isResearchLab, setIsResearchLab] = useState(false);
+  const [isGateOpen, setIsGateOpen] = useState(false);
+  const [pendingMenu, setPendingMenu] = useState(null);
+  const [gateLoading, setGateLoading] = useState(false);
+  const [gateError, setGateError] = useState('');
 
   useEffect(() => {
     try {
@@ -91,8 +100,46 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
     return items;
   }, [isAdmin, isResearchLab]);
 
-  const handleMenuClick = (label) => {
+  const isAdminMenu = (sectionCategory) => ADMIN_CATEGORIES.includes(sectionCategory);
+
+  const handleMenuClick = (label, sectionCategory) => {
+    if (isAdminMenu(sectionCategory)) {
+      // 이미 이번 세션에서 인증된 경우 바로 이동
+      if (sessionStorage.getItem(SESSION_KEY)) {
+        setCurrentMenu(label);
+        return;
+      }
+      // 미인증 → 게이트 모달 표시
+      setPendingMenu(label);
+      setGateError('');
+      setIsGateOpen(true);
+      return;
+    }
     setCurrentMenu(label);
+  };
+
+  const handleGateClose = () => {
+    setIsGateOpen(false);
+    setPendingMenu(null);
+    setGateError('');
+  };
+
+  const handleGateConfirm = async (password) => {
+    setGateLoading(true);
+    setGateError('');
+    try {
+      await verifyAdminGate(password);
+      sessionStorage.setItem(SESSION_KEY, String(Date.now()));
+      setIsGateOpen(false);
+      setGateError('');
+      if (pendingMenu) setCurrentMenu(pendingMenu);
+      setPendingMenu(null);
+    } catch (err) {
+      const msg = err?.response?.data?.detail || '비밀번호 확인 중 오류가 발생했습니다.';
+      setGateError(msg);
+    } finally {
+      setGateLoading(false);
+    }
   };
 
   return (
@@ -127,7 +174,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
                 return (
                   <li key={i}>
                     <button
-                      onClick={() => handleMenuClick(item.label)}
+                      onClick={() => handleMenuClick(item.label, section.category)}
                       className={`w-full flex items-center px-4 py-2 transition-colors relative group cursor-pointer ${
                         isActive
                           ? 'bg-[#00E600] text-brand-blue font-bold'
@@ -159,6 +206,14 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
           {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
       </div>
+
+      <AdminPasswordGateModal
+        isOpen={isGateOpen}
+        onClose={handleGateClose}
+        onConfirm={handleGateConfirm}
+        isLoading={gateLoading}
+        error={gateError}
+      />
     </aside>
   );
 }
