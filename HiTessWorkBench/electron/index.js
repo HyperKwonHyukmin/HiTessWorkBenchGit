@@ -143,17 +143,18 @@ app.whenReady().then(async () => {
   // 시스템 프록시 설정을 자동으로 적용
   await session.defaultSession.setProxy({ mode: 'system' });
 
-  // CSP 헤더 설정 — XSS 방어 및 불필요한 외부 리소스 로드 차단
+  // CSP 헤더 설정 — XSS 방어
+  // connect-src는 사용자가 설정한 내부망 서버 URL을 허용해야 하므로 http:/https:/ws: 전체 허용
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         "Content-Security-Policy": [
-          "default-src 'self' http://localhost:* http://10.*:* https:; " +
+          "default-src 'self' http: https:; " +
           "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
           "style-src 'self' 'unsafe-inline'; " +
-          "img-src 'self' data: blob:; " +
-          "connect-src 'self' http://localhost:* http://10.*:* ws://localhost:*;"
+          "img-src 'self' data: blob: https:; " +
+          "connect-src 'self' http: https: ws: wss:;"
         ]
       }
     });
