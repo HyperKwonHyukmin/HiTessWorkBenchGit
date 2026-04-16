@@ -7,6 +7,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import FilterTabs from '../../components/ui/FilterTabs';
 import AnimatedGrid from '../../components/ui/AnimatedGrid';
 import AdminGateModal from '../../components/ui/AdminGateModal';
+import GuideButton from '../../components/ui/GuideButton';
 
 const getIsAdmin = () => {
   try { return JSON.parse(localStorage.getItem('user') || '{}').is_admin === true; } catch { return false; }
@@ -44,6 +45,7 @@ export default function ProductivityApps() {
         title="Productivity Apps"
         icon={Wrench}
         subtitle="업무 효율을 높이는 유틸리티 도구 모음입니다."
+        actions={<GuideButton guideTitle="[생산성] Productivity Apps — 도구 소개" variant="dark" />}
       />
 
       <FilterTabs

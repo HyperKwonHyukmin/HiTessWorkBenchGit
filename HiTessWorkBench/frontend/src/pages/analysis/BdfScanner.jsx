@@ -3,6 +3,7 @@
 /// </summary>
 import React, { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Upload, Play, Terminal, FileSearch, AlertOctagon, Info } from 'lucide-react';
+import GuideButton from '../../components/ui/GuideButton';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { usePolling } from '../../hooks/usePolling';
@@ -190,20 +191,23 @@ export default function BdfScanner() {
           <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
           <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
         </div>
-        <div className="relative flex items-center gap-4">
-          <button
-            onClick={() => setCurrentMenu('File-Based Apps')}
-            className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              <FileSearch size={18} className="text-teal-300" />
-              BDF Scanner
-            </h1>
-            <p className="text-sm text-teal-200/80 mt-0.5">BDF 모델 유효성 검증 및 Nastran F06 요약</p>
+        <div className="relative flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setCurrentMenu('File-Based Apps')}
+              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                <FileSearch size={18} className="text-teal-300" />
+                BDF Scanner
+              </h1>
+              <p className="text-sm text-teal-200/80 mt-0.5">BDF 모델 유효성 검증 및 Nastran F06 요약</p>
+            </div>
           </div>
+          <GuideButton guideTitle="[생산성] BDF Scanner — BDF 파일 유효성 검증" variant="dark" />
         </div>
       </div>
 

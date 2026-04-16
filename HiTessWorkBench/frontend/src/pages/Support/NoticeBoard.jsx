@@ -2,6 +2,7 @@ import React, { useState, useEffect, Fragment } from 'react';
 import { Megaphone, Plus, ChevronRight, Pin, X, Edit2, Trash2, Bold, Italic, List, Link, Paperclip } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { getNotices, createNotice, updateNotice, deleteNotice } from '../../api/admin';
+import GuideButton from '../../components/ui/GuideButton';
 
 export default function NoticeBoard() {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -88,11 +89,14 @@ export default function NoticeBoard() {
           </h1>
           <p className="text-slate-500 mt-2">시스템 업데이트 내역 및 중요 공지사항을 확인하세요.</p>
         </div>
-        {isAdmin && (
-          <button onClick={openWriteModal} className="flex items-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg text-sm font-bold hover:bg-brand-blue-dark transition-colors shadow-md cursor-pointer">
-            <Plus size={18} /> 새 공지 작성
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <GuideButton guideTitle="Notice & Updates — HiTess WorkBench 개발 현황 및 로드맵" />
+          {isAdmin && (
+            <button onClick={openWriteModal} className="flex items-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg text-sm font-bold hover:bg-brand-blue-dark transition-colors shadow-md cursor-pointer">
+              <Plus size={18} /> 새 공지 작성
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

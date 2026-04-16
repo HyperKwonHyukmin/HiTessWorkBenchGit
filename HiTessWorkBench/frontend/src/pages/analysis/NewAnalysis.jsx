@@ -8,6 +8,7 @@ import FilterTabs from '../../components/ui/FilterTabs';
 import AnimatedGrid from '../../components/ui/AnimatedGrid';
 import Button from '../../components/ui/Button';
 import AdminGateModal from '../../components/ui/AdminGateModal';
+import GuideButton from '../../components/ui/GuideButton';
 
 const getIsAdmin = () => {
   try { return JSON.parse(localStorage.getItem('user') || '{}').is_admin === true; } catch { return false; }
@@ -50,6 +51,7 @@ export default function NewAnalysis() {
         title="File-Based Apps"
         icon={UploadCloud}
         subtitle="수행하고자 하는 파일 업로드 기반 해석 모델을 선택하십시오."
+        actions={<GuideButton guideTitle="해석 앱 유형 안내 — 어떤 것을 선택해야 하나요?" variant="dark" />}
       />
 
       <FilterTabs

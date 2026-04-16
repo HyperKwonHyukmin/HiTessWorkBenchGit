@@ -12,6 +12,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
+import GuideButton from '../../components/ui/GuideButton';
 
 // ── Three.js FEM 모델 뷰어 ────────────────────────────────────
 // mode: 'raw'    → 2단계 (자유노드 표시, BC 없음)
@@ -2230,6 +2231,7 @@ export default function HiTessModelFlow() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <GuideButton guideTitle="[파일] HiTess ModelFlow — CSV→BDF→Nastran FEM 파이프라인" variant="dark" />
             <button
               onClick={handleReset}
               className="text-xs bg-white/10 hover:bg-white/20 border border-white/10 text-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"

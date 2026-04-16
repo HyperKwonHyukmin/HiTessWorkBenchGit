@@ -75,7 +75,7 @@ export default function TrussAssessment() {
 
     if (globalJob.status === 'Success') {
       setCurrentPollingJobId(null);
-      updateState({ isRunning: false, progress: 100, statusMessage: '해석 완료' });
+      updateState({ isRunning: false, progress: 100, statusMessage: '해석 완료', projectData: globalJob.project });
       if (globalJob.project) loadResultsFromProject(globalJob.project);
     } else if (globalJob.status === 'Failed') {
       setCurrentPollingJobId(null);
