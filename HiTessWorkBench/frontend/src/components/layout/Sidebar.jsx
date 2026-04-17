@@ -143,21 +143,21 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
   };
 
   return (
-    <aside className={`h-full bg-[#002554] text-white flex flex-col transition-all duration-300 shadow-xl z-40 relative ${
+    <aside className={`h-full bg-brand-blue text-white flex flex-col transition-all duration-300 shadow-xl z-40 relative ${
         isCollapsed ? 'w-20' : 'w-64'
       }`}>
 
-      <div className="h-16 flex items-center justify-center border-b border-[#003366] relative shrink-0">
+      <div className="h-16 flex items-center justify-center border-b border-brand-blue-dark relative shrink-0">
         {isCollapsed ? (
-          <span className="text-xl font-bold text-[#00E600]">H</span>
+          <span className="text-xl font-bold text-brand-accent">H</span>
         ) : (
           <h1 className="text-xl font-bold tracking-wider">
-            HiTESS <span className="text-[#00E600] text-sm font-light">Workbench</span>
+            HiTESS <span className="text-brand-accent text-sm font-light">Workbench</span>
           </h1>
         )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-2 custom-scrollbar">
+      <nav className="flex-1 overflow-y-auto pt-6 pb-2 custom-scrollbar">
         {menuItems.map((section, idx) => (
           <div key={idx} className="mb-4">
             {!isCollapsed && (
@@ -177,12 +177,12 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
                       onClick={() => handleMenuClick(item.label, section.category)}
                       className={`w-full flex items-center px-4 py-2 transition-colors relative group cursor-pointer ${
                         isActive
-                          ? 'bg-[#00E600] text-brand-blue font-bold'
-                          : 'text-slate-300 hover:bg-[#003366] hover:text-white'
+                          ? 'bg-brand-accent text-brand-blue font-bold'
+                          : 'text-slate-300 hover:bg-brand-blue-dark hover:text-white'
                       }`}
                     >
                       {isActive && isCollapsed && (
-                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00E600]"></div>
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-accent"></div>
                       )}
 
                       <div className={`${isCollapsed ? 'mx-auto' : 'mr-3'}`}>
@@ -201,8 +201,13 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
         ))}
       </nav>
 
-      <div className="p-4 border-t border-[#003366] bg-[#001f45] shrink-0">
-        <button onClick={toggleSidebar} className="w-full flex items-center justify-center p-2 rounded bg-[#003366] hover:bg-brand-blue-dark text-white transition-colors cursor-pointer">
+      <div className="p-4 border-t border-brand-blue-dark bg-brand-blue/80 shrink-0">
+        {!isCollapsed && (
+          <p className="text-[10px] text-white/30 text-center mb-3 leading-relaxed select-none">
+            © 2026 Kwon Hyuk Min<br/>All rights reserved.
+          </p>
+        )}
+        <button onClick={toggleSidebar} className="w-full flex items-center justify-center p-2 rounded bg-brand-blue-dark hover:bg-brand-blue-dark/80 text-white transition-colors cursor-pointer">
           {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
       </div>

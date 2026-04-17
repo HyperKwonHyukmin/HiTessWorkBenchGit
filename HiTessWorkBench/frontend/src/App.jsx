@@ -15,7 +15,7 @@ import { Wand2 } from 'lucide-react';
 import SimpleBeamAssessmentPage from './pages/analysis/SimpleBeamAssessmentPage';
 import { DashboardProvider } from './contexts/DashboardContext';
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext';
-import { ToastProvider } from './contexts/ToastContext';
+import { ToastProvider, useToast } from './contexts/ToastContext';
 import InteractiveApps from './pages/analysis/InteractiveApps';
 import NoticeBoard from './pages/Support/NoticeBoard';
 import UserGuide from './pages/Support/UserGuide';
@@ -41,6 +41,7 @@ const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 function AppInner() {
   const [appState, setAppState] = useState(APP_STATE.SPLASH);
   const { currentMenu, setCurrentMenu, goBack, goForward, canGoBack, canGoForward, resetNavigation } = useNavigation();
+  const { showToast } = useToast();
 
   const handleSplashFinish = async () => {
     const storedUser = localStorage.getItem('user');
@@ -96,6 +97,27 @@ function AppInner() {
       }
     );
     return () => axios.interceptors.response.eject(interceptor);
+  }, [appState]);
+
+  // MAIN 상태에서 5분마다 서버 버전 체크 — 불일치 시 자동 로그아웃
+  useEffect(() => {
+    if (appState !== APP_STATE.MAIN) return;
+
+    const poll = setInterval(async () => {
+      try {
+        const res = await checkVersion();
+        const serverVersion = res.data?.version;
+        if (serverVersion && serverVersion !== CLIENT_VERSION) {
+          clearInterval(poll);
+          showToast('새 버전이 배포되었습니다. 최신 클라이언트로 업데이트해 주세요.', 'warning');
+          setTimeout(handleLogout, 3000);
+        }
+      } catch {
+        // 서버 일시 다운은 무시 (401 인터셉터가 별도 처리)
+      }
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(poll);
   }, [appState]);
 
   // 전역 키보드 단축키
