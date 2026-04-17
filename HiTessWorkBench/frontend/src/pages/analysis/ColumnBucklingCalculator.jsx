@@ -13,7 +13,13 @@ import SolverCredit from '../../components/ui/SolverCredit';
 const MEMBER_GROUPS = [
   {
     label: 'H형강',
-    members: ['H200x200', 'H200x204', 'H295x302', 'H300x300', 'H300x305'],
+    members: [
+      'H200x200 (200x200x8/12)',
+      'H200x204 (200x204x12/12)',
+      'H294x302 (294x302x12/12)',
+      'H300x300 (300x300x10/15)',
+      'H300x305 (300x305x15/15)',
+    ],
   },
   {
     label: 'Pipe',
