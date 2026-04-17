@@ -18,15 +18,13 @@ _EXE_PATH = os.path.join(
 _EXE_DIR = os.path.dirname(_EXE_PATH)
 _USER_CONNECTION_DIR = os.path.join(_BACKEND_DIR, "userConnection")
 
-
 def run_column_buckling(
     member_name: str,
     length_mm: float,
-    eccentricity_ratio: float,
     employee_id: str,
 ) -> dict:
     """
-    기둥 좌굴 허용 사용하중을 계산합니다.
+    기둥 좌굴 허용 사용하중을 계산합니다. 편심량은 EXE 내부에서 20mm 고정 적용.
     1) userConnection에 input.json 저장
     2) ColumnBucklingApp.exe {input_path} {output_path} 실행
     3) output.json 읽어 반환
@@ -48,7 +46,6 @@ def run_column_buckling(
     input_data = {
         "memberName": member_name,
         "columnLengthMm": int(length_mm),
-        "eccentricityRatio": eccentricity_ratio,
     }
     input_path = os.path.join(work_dir, "input.json")
     output_path = os.path.join(work_dir, "output.json")

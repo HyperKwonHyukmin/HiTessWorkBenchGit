@@ -71,7 +71,6 @@ export default function ColumnBucklingCalculator() {
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [memberName, setMemberName] = useState('300A PIPE');
   const [lengthMm, setLengthMm] = useState('4470');
-  const [eccentricityPct, setEccentricityPct] = useState('25');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -81,8 +80,7 @@ export default function ColumnBucklingCalculator() {
 
   const isValid =
     memberName.trim() !== '' &&
-    lengthMm !== '' && Number(lengthMm) > 0 &&
-    eccentricityPct !== '' && Number(eccentricityPct) >= 0;
+    lengthMm !== '' && Number(lengthMm) > 0;
 
   const getEmployeeId = () => {
     try { return JSON.parse(localStorage.getItem('user') || '{}').employee_id || 'unknown'; }
@@ -98,7 +96,6 @@ export default function ColumnBucklingCalculator() {
       const res = await axios.post(`${API_BASE_URL}/api/column-buckling/calculate`, {
         member_name: memberName,
         length_mm: parseFloat(lengthMm),
-        eccentricity_ratio: parseFloat(eccentricityPct) / 100,
         employee_id: getEmployeeId(),
       });
       setResult(res.data);
@@ -167,9 +164,8 @@ export default function ColumnBucklingCalculator() {
               <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">편심량 (e)</p>
               <div className="space-y-2.5">
                 {[
-                  ['일반 단면', 'e = 편심비율 × (B / 2)', 'mm'],
-                  ['I.A 단면', 'e = 편심비율 × (RefDim − c_y)', 'mm'],
-                  ['비고', 'I.A 단면은 비대칭 → 도심 보정', '—'],
+                  ['설계 고정값', 'e = 20mm', 'mm'],
+                  ['비고', '단면 종류에 무관하게 일정', '—'],
                 ].map(([name, expr, unit]) => (
                   <div key={name} className="bg-slate-50 rounded-lg px-3 py-2">
                     <p className="text-[10px] text-slate-400 font-bold">{name}</p>
@@ -258,16 +254,14 @@ export default function ColumnBucklingCalculator() {
               />
 
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">편심 비율</label>
-                <p className="text-[11px] text-slate-400 mb-1.5">0이면 순수 압축, 0 초과면 Secant Formula 적용</p>
-                <div className="flex items-center border-2 border-slate-100 rounded-xl overflow-hidden bg-slate-50">
-                  <input
-                    type="number"
-                    value={eccentricityPct}
-                    readOnly
-                    className="flex-1 px-4 py-3 text-sm font-bold text-slate-400 outline-none bg-transparent cursor-not-allowed"
-                  />
-                  <span className="px-4 py-3 bg-slate-100 text-slate-400 text-sm font-bold border-l border-slate-200">%</span>
+                <label className="block text-sm font-bold text-slate-700 mb-1">편심량</label>
+                <p className="text-[11px] text-slate-400 mb-1.5">Secant Formula 적용 — 단면 무관 고정값</p>
+                <div className="flex items-center justify-between border-2 border-slate-100 rounded-xl px-4 py-3 bg-slate-50">
+                  <span className="text-sm font-extrabold text-slate-700">20</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">고정</span>
+                    <span className="text-sm font-bold text-slate-400">mm</span>
+                  </div>
                 </div>
               </div>
 
@@ -325,7 +319,7 @@ export default function ColumnBucklingCalculator() {
                 <SlidersHorizontal size={40} className="opacity-20" />
               </div>
               <p className="font-bold text-slate-500">입력값을 입력하고 Calculate를 실행하세요.</p>
-              <p className="text-sm mt-1">부재명, 기둥 길이, 편심 비율을 입력하면 최대 허용 사용하중을 산출합니다.</p>
+              <p className="text-sm mt-1">부재명과 기둥 길이를 입력하면 최대 허용 사용하중을 산출합니다. (편심량 20mm 고정)</p>
             </div>
           )}
 
@@ -379,9 +373,9 @@ export default function ColumnBucklingCalculator() {
                   <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">입력 정보 요약</h3>
                 </div>
                 <div className="p-5 grid grid-cols-3 gap-4">
-                  <PropCell label="부재명"   value={inp.memberName}                                         unit="" />
-                  <PropCell label="기둥 길이" value={inp.columnLengthMm?.toLocaleString()}                  unit="mm" />
-                  <PropCell label="편심 비율" value={((inp.eccentricityRatio ?? 0) * 100).toFixed(1)}       unit="%" />
+                  <PropCell label="부재명"      value={inp.memberName}                       unit="" />
+                  <PropCell label="기둥 길이"   value={inp.columnLengthMm?.toLocaleString()} unit="mm" />
+                  <PropCell label="편심량 (고정)" value="20"                                  unit="mm" />
                 </div>
               </div>
 
