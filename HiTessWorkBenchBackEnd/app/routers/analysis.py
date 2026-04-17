@@ -56,6 +56,25 @@ def get_top_programs(
 
 # ==================== 이력 및 다운로드 ====================
 
+def _files_available(record: models.Analysis) -> bool:
+    """input_info 또는 result_info의 첫 번째 파일 경로 존재 여부로 파일 만료 판단."""
+    for info in (record.input_info, record.result_info):
+        if not isinstance(info, dict):
+            continue
+        for v in info.values():
+            if isinstance(v, str) and v:
+                path = os.path.abspath(urllib.parse.unquote(v))
+                if path.startswith(_ALLOWED_DOWNLOAD_BASE):
+                    return os.path.exists(path)
+    return False
+
+
+def _serialize_analysis(record: models.Analysis) -> dict:
+    d = {c.name: getattr(record, c.name) for c in record.__table__.columns}
+    d['files_available'] = _files_available(record)
+    return d
+
+
 @router.get("/analysis/history/{employee_id}")
 def get_analysis_history(
     employee_id: str,
@@ -74,7 +93,7 @@ def get_analysis_history(
         .offset(skip).limit(limit)
         .all()
     )
-    return {"total": total, "skip": skip, "limit": limit, "items": history}
+    return {"total": total, "skip": skip, "limit": limit, "items": [_serialize_analysis(r) for r in history]}
 
 
 @router.get("/analysis/all")
@@ -93,7 +112,7 @@ def get_all_analysis_history(
         .offset(skip).limit(limit)
         .all()
     )
-    return {"total": total, "skip": skip, "limit": limit, "items": items}
+    return {"total": total, "skip": skip, "limit": limit, "items": [_serialize_analysis(r) for r in items]}
 
 
 @router.get("/download")

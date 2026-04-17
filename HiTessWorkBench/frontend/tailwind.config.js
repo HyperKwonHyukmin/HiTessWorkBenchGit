@@ -7,7 +7,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Pretendard', 'sans-serif'],
+        sans: ['Inter', 'SUIT', 'sans-serif'],
       },
       colors: {
         // HD 현대 공식 컬러 (이름을 더 직관적으로 변경)

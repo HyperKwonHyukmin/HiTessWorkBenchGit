@@ -5,7 +5,7 @@ import {
   Search, Filter, Download, RefreshCw,
   ChevronRight, ChevronLeft, Box,
   CheckCircle2, XCircle, AlertCircle,
-  FileCode, Database, FileOutput, Eye
+  FileCode, Database, FileOutput, Eye, Clock
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
@@ -131,7 +131,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
           </div>
 
           {/* 3D 시각화 버튼 */}
-          {project.status === 'Success' && project.result_info?.bdf && (
+          {project.status === 'Success' && project.result_info?.bdf && project.files_available !== false && (
             <button
               onClick={onOpen3D}
               className="w-full mb-6 py-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-center gap-3 text-indigo-700 font-bold hover:bg-indigo-100 transition-all duration-200 shadow-sm cursor-pointer group"
@@ -198,22 +198,32 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
           </div>
 
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Files</h3>
-          <div className="space-y-2">
-            {/* input_info: Truss Assessment는 bdf_model 입력 파일 숨김 */}
-            {project.input_info && !isAssessment && project.program_name !== "Mast Post Assessment" &&
-              Object.entries(project.input_info).map(([key, path]) => (
+          {project.files_available === false ? (
+            <div className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-500">
+              <Clock size={18} className="text-slate-400 shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-slate-600">파일이 만료되었습니다</p>
+                <p className="text-xs text-slate-400 mt-0.5">보존 기간(30일)이 지나 서버에서 자동 삭제되었습니다. 해석 이력은 계속 유지됩니다.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {/* input_info: Truss Assessment는 bdf_model 입력 파일 숨김 */}
+              {project.input_info && !isAssessment && project.program_name !== "Mast Post Assessment" &&
+                Object.entries(project.input_info).map(([key, path]) => (
+                  typeof path === 'string'
+                    ? <FileDownloadRow key={key} label={key.replace(/_/g, ' ')} path={path} icon={Database} onClick={() => handleDownload(path)} />
+                    : null
+                ))
+              }
+              {/* result_info: CSV_Error 제외, bdf → BDF Model */}
+              {filteredResultEntries.map(([key, path]) => (
                 typeof path === 'string'
-                  ? <FileDownloadRow key={key} label={key.replace(/_/g, ' ')} path={path} icon={Database} onClick={() => handleDownload(path)} />
+                  ? <FileDownloadRow key={key} label={getResultLabel(key)} path={path} icon={FileOutput} onClick={() => handleDownload(path)} isResult />
                   : null
-              ))
-            }
-            {/* result_info: CSV_Error 제외, bdf → BDF Model */}
-            {filteredResultEntries.map(([key, path]) => (
-              typeof path === 'string'
-                ? <FileDownloadRow key={key} label={getResultLabel(key)} path={path} icon={FileOutput} onClick={() => handleDownload(path)} isResult />
-                : null
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </Modal>
@@ -357,7 +367,16 @@ export default function MyProjects() {
                       </div>
                     </td>
                     <td className="py-4 px-6 text-xs font-medium text-slate-600"><span className="bg-slate-100 px-2 py-1 rounded border border-slate-200">{project.program_name}</span></td>
-                    <td className="py-4 px-6"><StatusBadge status={project.status} /></td>
+                    <td className="py-4 px-6">
+                      <div className="flex flex-col gap-1">
+                        <StatusBadge status={project.status} />
+                        {project.files_available === false && (
+                          <span className="flex items-center gap-1 text-[10px] text-slate-400 font-bold">
+                            <Clock size={10} /> 파일 만료
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-4 px-6 text-xs text-slate-400 text-right font-mono">{new Date(project.created_at).toLocaleString()}</td>
                     <td className="py-4 px-6 text-center"><button className="p-1.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-blue-600 transition-all"><ChevronRight size={18} /></button></td>
                   </tr>
