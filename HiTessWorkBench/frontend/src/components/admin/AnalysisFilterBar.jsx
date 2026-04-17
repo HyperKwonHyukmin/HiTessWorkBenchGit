@@ -5,7 +5,7 @@ export default function AnalysisFilterBar({ dateFrom, dateTo, onDateFromChange, 
   return (
     <div className="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
       <div>
-        <h1 className="text-3xl font-bold text-[#002554] flex items-center gap-3">
+        <h1 className="text-3xl font-bold text-brand-blue flex items-center gap-3">
           <BarChart3 className="text-emerald-600" size={32} /> Analysis Management
         </h1>
         <p className="text-slate-500 mt-2">전체 구조 해석 수행 통계 및 호출 출처(API/UI) 트래킹 대시보드</p>

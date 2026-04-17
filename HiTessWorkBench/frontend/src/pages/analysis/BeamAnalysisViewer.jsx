@@ -6,13 +6,10 @@ import { Upload, Activity, Layers, BarChart2, FileJson, Box } from 'lucide-react
 import GuideButton from '../../components/ui/GuideButton';
 import { useFileParser, parseTsvText } from '../../hooks/useFileParser';
 import SolverCredit from '../../components/ui/SolverCredit';
+import { useToast } from '../../contexts/ToastContext';
 
-
-/**
- * @summary 보(Beam) 해석 모델 및 결과를 시각화하는 통합 대시보드 컴포넌트입니다.
- * @description JSON 모델 데이터 및 CSV 해석 결과 데이터를 업로드 받아 대시보드 형태로 표현합니다.
- */
 const BeamAnalysisViewer = () => {
+  const { showToast } = useToast();
   // 상태 관리: 모델 데이터 (JSON) 및 해석 결과 (CSV)
   const [beamModel, setBeamModel] = useState(null);
   const [dispData, setDispData] = useState([]);
@@ -20,11 +17,11 @@ const BeamAnalysisViewer = () => {
   const [stressData, setStressData] = useState([]);
 
   const { readFile: readDispFile } = useFileParser(parseTsvText, setDispData,
-    () => alert('변위 CSV 파싱에 실패했습니다. 파일 형식을 확인해주세요.'));
+    () => showToast('변위 CSV 파싱에 실패했습니다. 파일 형식을 확인해주세요.', 'error'));
   const { readFile: readForceFile } = useFileParser(parseTsvText, setElForceData,
-    () => alert('단면력 CSV 파싱에 실패했습니다. 파일 형식을 확인해주세요.'));
+    () => showToast('단면력 CSV 파싱에 실패했습니다. 파일 형식을 확인해주세요.', 'error'));
   const { readFile: readStressFile } = useFileParser(parseTsvText, setStressData,
-    () => alert('응력 CSV 파싱에 실패했습니다. 파일 형식을 확인해주세요.'));
+    () => showToast('응력 CSV 파싱에 실패했습니다. 파일 형식을 확인해주세요.', 'error'));
 
   const handleCsvUpload = (e, fileReader) => {
     if (e.target.files[0]) fileReader(e.target.files[0]);
@@ -33,7 +30,7 @@ const BeamAnalysisViewer = () => {
   const { readFile: readJsonFile } = useFileParser(
     (text) => JSON.parse(text),
     setBeamModel,
-    () => alert('JSON 파싱 중 오류가 발생했습니다. 파일 형식을 확인해주세요.')
+    () => showToast('JSON 파싱 중 오류가 발생했습니다. 파일 형식을 확인해주세요.', 'error')
   );
 
   const handleJsonUpload = (e) => {

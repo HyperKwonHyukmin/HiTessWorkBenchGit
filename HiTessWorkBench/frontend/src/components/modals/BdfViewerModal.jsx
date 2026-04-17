@@ -356,7 +356,7 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
           <Dialog.Panel className="w-full h-full bg-slate-900 rounded-2xl flex flex-col border border-slate-700 overflow-hidden shadow-2xl relative">
             
             <div className="absolute top-4 left-6 z-10 pointer-events-none flex flex-col gap-1">
-               <h3 className="text-[#00E600] font-bold tracking-widest text-xl drop-shadow-md flex items-center gap-2">
+               <h3 className="text-brand-accent font-bold tracking-widest text-xl drop-shadow-md flex items-center gap-2">
                  <Box size={24} className="text-white"/> BDF 3D Viewer
                </h3>
                <p className="text-slate-300 text-xs font-mono bg-black/50 px-2 py-1 rounded w-fit mt-1">
@@ -412,7 +412,7 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
             </div>
 
             {loading && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center z-20 text-[#00E600] font-mono bg-slate-900/80 backdrop-blur-sm">
+              <div className="absolute inset-0 flex flex-col items-center justify-center z-20 text-brand-accent font-mono bg-slate-900/80 backdrop-blur-sm">
                 <RefreshCw size={48} className="animate-spin mb-4" />
                 Parsing BDF and Generating 3D Solid Model...
               </div>

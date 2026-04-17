@@ -228,7 +228,7 @@ export default function Viewer3D({ beamType, params, loads, boundaries, dispData
 
   if (!isLayoutReady && !isCapturing) {
     return (
-      <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-sm text-[#00E600]">
+      <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-sm text-brand-accent">
         <RefreshCw className="animate-spin mb-4" size={48} />
         <p className="font-mono font-bold tracking-widest uppercase">Initializing Engine...</p>
       </div>

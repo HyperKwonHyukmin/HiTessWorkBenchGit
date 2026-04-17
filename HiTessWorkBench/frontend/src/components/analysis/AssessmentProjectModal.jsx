@@ -4,8 +4,10 @@ import { exportAssessmentXlsx } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function AssessmentProjectModal({ project, onClose }) {
+  const { showToast } = useToast();
   const [downloading, setDownloading] = useState({});
 
   const handleXlsxDownload = async (jsonPath, label) => {
@@ -24,7 +26,7 @@ export default function AssessmentProjectModal({ project, onClose }) {
       window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
       console.error('Excel export failed:', error);
-      alert('Excel 파일 생성에 실패했습니다.');
+      showToast('Excel 파일 생성에 실패했습니다.', 'error');
     } finally {
       setDownloading(prev => ({ ...prev, [label]: false }));
     }

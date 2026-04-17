@@ -7,8 +7,8 @@ export function InputRow({ label, value, unit, onChange, disabled }) {
   return (
     <div className={`flex items-center justify-between bg-slate-900 border border-transparent rounded p-1 transition-colors group ${disabled ? 'opacity-60' : 'hover:border-slate-700'}`}>
       <span className="text-[11px] text-slate-400 pl-2 group-hover:text-slate-300 w-2/5 truncate">{label}</span>
-      <div className={`flex items-center w-3/5 bg-slate-950 border border-slate-800 rounded px-2 ${!disabled && 'focus-within:border-[#00E600]'}`}>
-        <input type="number" value={value} onChange={onChange} disabled={disabled} className="w-full bg-transparent py-1 text-sm text-[#00E600] font-bold outline-none font-mono text-right disabled:cursor-not-allowed" />
+      <div className={`flex items-center w-3/5 bg-slate-950 border border-slate-800 rounded px-2 ${!disabled && 'focus-within:border-brand-accent'}`}>
+        <input type="number" value={value} onChange={onChange} disabled={disabled} className="w-full bg-transparent py-1 text-sm text-brand-accent font-bold outline-none font-mono text-right disabled:cursor-not-allowed" />
         <span className="text-[10px] text-slate-600 font-mono ml-1 w-6 text-right">{unit}</span>
       </div>
     </div>

@@ -7,6 +7,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { getUserGuides, createUserGuide, updateUserGuide, deleteUserGuide } from '../../api/admin';
 import MarkdownRenderer from '../../components/ui/MarkdownRenderer';
 import { useToast } from '../../contexts/ToastContext';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 
 const CATEGORY_CONFIG = {
   "Getting Started": {
@@ -62,6 +63,7 @@ export default function UserGuide() {
 
   const [activeCategory, setActiveCategory] = useState("Getting Started");
   const [expandedId, setExpandedId]         = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const [formData, setFormData] = useState({ category: 'Getting Started', title: '', content: '' });
 
@@ -100,9 +102,9 @@ export default function UserGuide() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('이 가이드를 삭제하시겠습니까?')) return;
-    try { await deleteUserGuide(id); fetchGuides(); }
+  const handleDelete = async () => {
+    if (!confirmDeleteId) return;
+    try { await deleteUserGuide(confirmDeleteId); setConfirmDeleteId(null); fetchGuides(); }
     catch { showToast('삭제 실패', 'error'); }
   };
 
@@ -125,7 +127,7 @@ export default function UserGuide() {
     <div className="flex flex-col h-[calc(100vh-120px)] animate-fade-in-up">
 
       {/* ── 그라디언트 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-6 bg-gradient-to-r from-[#002554] via-indigo-900 to-indigo-700 overflow-hidden shrink-0">
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-6 bg-gradient-to-r from-brand-blue via-indigo-900 to-indigo-700 overflow-hidden shrink-0">
         <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
           <div className="absolute -right-8 -top-8 w-64 h-64 bg-white rounded-full" />
           <div className="absolute right-32 bottom-0 w-32 h-32 bg-white rounded-full" />
@@ -219,7 +221,7 @@ export default function UserGuide() {
                           className="p-1.5 rounded-lg text-slate-300 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                         ><Edit2 size={13} /></button>
                         <button
-                          onClick={(e) => { e.stopPropagation(); handleDelete(guide.id); }}
+                          onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(guide.id); }}
                           className="p-1.5 rounded-lg text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors"
                         ><Trash2 size={13} /></button>
                       </>
@@ -358,6 +360,15 @@ export default function UserGuide() {
           </div>
         </Dialog>
       </Transition>
+
+      <ConfirmDialog
+        isOpen={!!confirmDeleteId}
+        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={handleDelete}
+        title="가이드 삭제"
+        message="이 사용자 가이드를 삭제하면 복구할 수 없습니다. 계속하시겠습니까?"
+        confirmLabel="삭제"
+      />
     </div>
   );
 }

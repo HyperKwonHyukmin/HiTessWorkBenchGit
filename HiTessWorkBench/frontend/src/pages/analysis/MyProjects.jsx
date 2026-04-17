@@ -11,6 +11,8 @@ import {
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
+import PageHeader from '../../components/ui/PageHeader';
+import { useToast } from '../../contexts/ToastContext';
 
 // ==========================================
 // 1. 상태 뱃지 헬퍼
@@ -70,7 +72,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
-      alert("파일 다운로드에 실패했습니다.");
+      showToast('파일 다운로드에 실패했습니다.', 'error');
     }
   };
 
@@ -88,7 +90,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
     } catch {
-      alert('Excel 파일 생성에 실패했습니다.');
+      showToast('Excel 파일 생성에 실패했습니다.', 'error');
     } finally {
       setXlsxDownloading(prev => ({ ...prev, [label]: false }));
     }
@@ -226,6 +228,7 @@ const STATUS_FILTERS = ['All', 'Success', 'Failed'];
 const PAGE_SIZE = 10;
 
 export default function MyProjects() {
+  const { showToast } = useToast();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -279,42 +282,42 @@ export default function MyProjects() {
   return (
     <div className="max-w-7xl mx-auto pb-10">
       
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4 animate-fade-in-up">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">My Projects</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage and track your structural analysis history.</p>
-        </div>
+      <PageHeader
+        title="My Projects"
+        icon={Database}
+        subtitle="구조 해석 수행 이력 및 결과 파일을 관리합니다."
+        accentColor="blue"
+      />
 
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          <div className="relative group flex-1 md:w-56">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
-            <input
-              type="text"
-              placeholder="Search by Project or Module..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-full shadow-sm transition-all"
-            />
-          </div>
-          <select
-            value={programFilter}
-            onChange={(e) => setProgramFilter(e.target.value)}
-            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
-          >
-            {PROGRAM_FILTERS.map(f => <option key={f} value={f}>{f === 'All' ? 'All Modules' : f}</option>)}
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
-          >
-            {STATUS_FILTERS.map(f => <option key={f} value={f}>{f === 'All' ? 'All Status' : f}</option>)}
-          </select>
-          <button onClick={() => fetchHistory()} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 text-sm font-bold hover:bg-slate-50 transition-colors shadow-sm cursor-pointer">
-            <Filter size={16} /> <span className="hidden sm:inline">Refresh</span>
-          </button>
+      {/* 검색 / 필터 영역 */}
+      <div className="flex flex-wrap items-center gap-2 mb-6 animate-fade-in-up">
+        <div className="relative group flex-1 min-w-48 md:w-56">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+          <input
+            type="text"
+            placeholder="Search by Project or Module..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-full shadow-sm transition-all"
+          />
         </div>
+        <select
+          value={programFilter}
+          onChange={(e) => setProgramFilter(e.target.value)}
+          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+        >
+          {PROGRAM_FILTERS.map(f => <option key={f} value={f}>{f === 'All' ? 'All Modules' : f}</option>)}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+        >
+          {STATUS_FILTERS.map(f => <option key={f} value={f}>{f === 'All' ? 'All Status' : f}</option>)}
+        </select>
+        <button onClick={() => fetchHistory()} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 text-sm font-bold hover:bg-slate-50 transition-colors shadow-sm cursor-pointer">
+          <Filter size={16} /> <span className="hidden sm:inline">Refresh</span>
+        </button>
       </div>
 
       {/* Table */}

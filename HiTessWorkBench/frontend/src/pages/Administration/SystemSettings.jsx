@@ -9,6 +9,7 @@ import {
   Users, BarChart3, Tag, Database, Layers, Power, AlertTriangle
 } from 'lucide-react';
 import { getSystemStatus, getQueueStatus, getUsers, getMaintenanceMode, setMaintenanceMode } from '../../api/admin';
+import PageHeader from '../../components/ui/PageHeader';
 import { getAllAnalysisHistory } from '../../api/analysis';
 import { API_BASE_URL } from '../../config';
 import axios from 'axios';
@@ -108,22 +109,21 @@ export default function SystemSettings() {
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
 
-      {/* 헤더 */}
-      <div className="flex justify-between items-end mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-brand-blue flex items-center gap-3">
-            <Settings className="text-slate-600" size={32} /> System Settings
-          </h1>
-          <p className="text-slate-500 mt-2">시스템 리소스, 작업 큐, 서비스 현황을 실시간으로 모니터링합니다.</p>
-        </div>
-        <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full text-xs font-bold shadow-sm">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          Live Monitoring Active
-        </div>
-      </div>
+      <PageHeader
+        title="System Settings"
+        icon={Settings}
+        subtitle="시스템 리소스, 작업 큐, 서비스 현황을 실시간으로 모니터링합니다."
+        accentColor="teal"
+        actions={
+          <div className="flex items-center gap-2 px-3 py-1 bg-white/10 border border-white/20 text-emerald-300 rounded-full text-xs font-bold">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            Live Monitoring Active
+          </div>
+        }
+      />
 
       {/* D. 요약 KPI 카드 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

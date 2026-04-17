@@ -3,16 +3,21 @@ import { Megaphone, Plus, ChevronRight, Pin, X, Edit2, Trash2, Bold, Italic, Lis
 import { Dialog, Transition } from '@headlessui/react';
 import { getNotices, createNotice, updateNotice, deleteNotice } from '../../api/admin';
 import GuideButton from '../../components/ui/GuideButton';
+import PageHeader from '../../components/ui/PageHeader';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function NoticeBoard() {
+  const { showToast } = useToast();
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [notices, setNotices] = useState([]);
-  
+
   const [isWriteModalOpen, setIsWriteModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedNotice, setSelectedNotice] = useState(null);
   const [editMode, setEditMode] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const [formData, setFormData] = useState({ type: 'Notice', title: '', content: '', is_pinned: false });
 
@@ -55,19 +60,17 @@ export default function NoticeBoard() {
   };
 
   const handleDelete = async () => {
-    if(!window.confirm("정말 삭제하시겠습니까?")) return;
     try {
       await deleteNotice(selectedNotice.id);
       setIsViewModalOpen(false);
+      setConfirmDeleteOpen(false);
       fetchNotices();
-    } catch (err) { alert("삭제 실패: " + err.message); }
+    } catch (err) { showToast('삭제 실패: ' + err.message, 'error'); }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if(!currentUser) {
-        alert("로그인 정보가 없습니다."); return;
-    }
+    if (!currentUser) { showToast('로그인 정보가 없습니다.', 'warning'); return; }
     try {
       const payload = { ...formData, author_id: currentUser.employee_id };
       if (editMode) {
@@ -77,27 +80,27 @@ export default function NoticeBoard() {
       }
       setIsWriteModalOpen(false);
       fetchNotices();
-    } catch (err) { alert("저장 실패: 서버 연결을 확인하세요."); console.error(err); }
+    } catch (err) { showToast('저장 실패: 서버 연결을 확인하세요.', 'error'); console.error(err); }
   };
 
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
-      <div className="flex justify-between items-end mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-brand-blue tracking-tight flex items-center gap-3">
-            <Megaphone className="text-blue-500" size={32} /> Notice & Updates
-          </h1>
-          <p className="text-slate-500 mt-2">시스템 업데이트 내역 및 중요 공지사항을 확인하세요.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <GuideButton guideTitle="Notice & Updates — HiTess WorkBench 개발 현황 및 로드맵" />
-          {isAdmin && (
-            <button onClick={openWriteModal} className="flex items-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg text-sm font-bold hover:bg-brand-blue-dark transition-colors shadow-md cursor-pointer">
-              <Plus size={18} /> 새 공지 작성
-            </button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Notice & Updates"
+        icon={Megaphone}
+        subtitle="시스템 업데이트 내역 및 중요 공지사항을 확인하세요."
+        accentColor="blue"
+        actions={
+          <>
+            <GuideButton guideTitle="Notice & Updates — HiTess WorkBench 개발 현황 및 로드맵" />
+            {isAdmin && (
+              <button onClick={openWriteModal} className="flex items-center gap-2 px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg text-sm font-bold hover:bg-white/20 transition-colors cursor-pointer">
+                <Plus size={18} /> 새 공지 작성
+              </button>
+            )}
+          </>
+        }
+      />
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex bg-slate-50 px-6 py-4 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -204,7 +207,7 @@ export default function NoticeBoard() {
               </div>
               {isAdmin && (
                 <div className="p-4 bg-white border-t border-slate-100 flex justify-end gap-2 shrink-0">
-                  <button onClick={handleDelete} className="flex items-center gap-1 px-4 py-2 text-red-600 font-bold hover:bg-red-50 rounded-lg cursor-pointer"><Trash2 size={16}/> 삭제</button>
+                  <button onClick={() => setConfirmDeleteOpen(true)} className="flex items-center gap-1 px-4 py-2 text-red-600 font-bold hover:bg-red-50 rounded-lg cursor-pointer"><Trash2 size={16}/> 삭제</button>
                   <button onClick={handleEditClick} className="flex items-center gap-1 px-4 py-2 text-brand-blue font-bold hover:bg-slate-100 rounded-lg cursor-pointer"><Edit2 size={16}/> 수정</button>
                 </div>
               )}
@@ -212,6 +215,14 @@ export default function NoticeBoard() {
           </div>
         </Dialog>
       </Transition>
+      <ConfirmDialog
+        isOpen={confirmDeleteOpen}
+        onCancel={() => setConfirmDeleteOpen(false)}
+        onConfirm={handleDelete}
+        title="공지 삭제"
+        message="이 공지사항을 삭제하면 복구할 수 없습니다. 계속하시겠습니까?"
+        confirmLabel="삭제"
+      />
     </div>
   );
 }

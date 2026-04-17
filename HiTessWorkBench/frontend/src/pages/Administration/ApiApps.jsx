@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Webhook, ChevronDown, ChevronUp, Terminal, CheckCircle, Clock, ArrowRight, Server } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
+import PageHeader from '../../components/ui/PageHeader';
 
 // ─── 데이터 정의 ──────────────────────────────────────────────────────────────
 
@@ -239,16 +240,12 @@ export default function ApiApps() {
 
   return (
     <div className="max-w-7xl mx-auto pb-16">
-      {/* 헤더 */}
-      <div className="mb-8 text-center md:text-left">
-        <h1 className="text-3xl font-bold text-slate-800 tracking-tight flex items-center gap-3">
-          <Webhook className="text-violet-600" size={32} /> API Apps
-        </h1>
-        <p className="text-slate-500 mt-2">
-          클라이언트 exe 또는 외부 프로그램이 워크벤치 백엔드를 직접 호출하는 API 목록입니다.
-          사용 방법과 파라미터 명세를 확인하세요.
-        </p>
-      </div>
+      <PageHeader
+        title="API Apps"
+        icon={Webhook}
+        subtitle="클라이언트 exe 또는 외부 프로그램이 워크벤치 백엔드를 직접 호출하는 API 목록입니다. 사용 방법과 파라미터 명세를 확인하세요."
+        accentColor="violet"
+      />
 
       {/* 아키텍처 설명 */}
       <div className="mb-6 bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">

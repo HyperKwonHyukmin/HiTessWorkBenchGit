@@ -18,8 +18,7 @@ export default function SplashScreen({ onFinish }) {
   }, [onFinish]);
 
   return (
-    // 배경색을 HD현대 테마(Trust Blue)에 맞게 조정 (bg-slate-900 -> bg-[#002554])
-    <div className="flex flex-col items-center justify-center h-screen bg-[#002554] text-white z-50">
+    <div className="flex flex-col items-center justify-center h-screen bg-brand-blue text-white z-50">
       <div className="animate-slide-up flex flex-col items-center">
         
         {/* [2] Logo Image 영역 수정 */}
@@ -34,7 +33,7 @@ export default function SplashScreen({ onFinish }) {
         
         {/* Title */}
         <h1 className="text-4xl font-bold tracking-widest mb-2 font-mono drop-shadow-md">
-          HiTESS <span className="text-[#00E600]">WorkBench</span>
+          HiTESS <span className="text-brand-accent">WorkBench</span>
         </h1>
         <p className="text-slate-300 text-sm tracking-widest uppercase mb-12">
           Structural Analysis Platform
@@ -42,7 +41,7 @@ export default function SplashScreen({ onFinish }) {
 
         {/* Loading Bar (색상도 테마에 맞춤) */}
         <div className="w-64 h-1 bg-slate-700 rounded-full overflow-hidden">
-          <div className="h-full bg-[#00E600] animate-[width_3s_ease-in-out_forwards]" style={{ width: '100%' }}></div>
+          <div className="h-full bg-brand-accent animate-[width_3s_ease-in-out_forwards]" style={{ width: '100%' }}></div>
         </div>
         
         {/* Dynamic Loading Text */}

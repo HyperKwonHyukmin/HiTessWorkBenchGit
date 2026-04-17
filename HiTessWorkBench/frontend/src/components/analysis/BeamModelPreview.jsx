@@ -3,7 +3,7 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { toPng } from 'html-to-image';
-import { Box, Activity, Plus, Trash2, ShieldCheck, ArrowDown, RefreshCw, SlidersHorizontal, Play, FileJson, Upload, BarChart2, Camera, Info } from 'lucide-react';
+import { Box, Activity, Plus, Trash2, ShieldCheck, ArrowDown, RefreshCw, SlidersHorizontal, Play, FileJson, Upload, BarChart2, Camera } from 'lucide-react';
 import GuideButton from '../ui/GuideButton';
 import { useBeamModeling } from '../../hooks/useBeamModeling';
 import { useAnalysisManager } from '../../hooks/useAnalysisManager';
@@ -12,29 +12,21 @@ import Viewer3D from '../../components/analysis/Viewer3D';
 import EngineeringCharts from '../../components/analysis/EngineeringCharts';
 import SolverCredit from '../ui/SolverCredit';
 import { formatEngineering as engFormat } from '../../utils/formatting';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function BeamModelPreview() {
+  const { showToast } = useToast();
   const captureRef = useRef(null);
-  const toastTimerRef = useRef(null);
   const captureTimerRef = useRef(null);
   const [activeTab, setActiveTab] = useState('modeling');
   const [isCapturing, setIsCapturing] = useState(false);
-  const [toast, setToast] = useState(null);
 
   useEffect(() => {
     return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
     };
   }, []);
 
-  const showToast = (message, type = 'success') => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast({ message, type });
-    toastTimerRef.current = setTimeout(() => setToast(null), 3500);
-  };
-
-  // 비즈니스 로직 분리
   const modelingHook = useBeamModeling();
   const analysisManager = useAnalysisManager(modelingHook, showToast, setActiveTab);
 
@@ -87,19 +79,6 @@ export default function BeamModelPreview() {
     <>
     <div ref={captureRef} className={isCapturing ? "w-[1200px] bg-slate-950 p-12 flex flex-col gap-8 absolute top-0 left-0 z-[9999]" : "grid grid-cols-[400px_1fr] w-full h-[calc(100vh-100px)] min-h-[600px] bg-slate-950 p-4 gap-4 rounded-2xl shadow-inner overflow-hidden relative"}>
       
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed top-12 left-1/2 -translate-x-1/2 z-[99999] flex items-center gap-4 px-8 py-5 rounded-2xl shadow-[0_20px_50px_-10px_rgba(0,0,0,0.7)] border transition-all animate-fade-in-up backdrop-blur-xl ${
-          toast.type === 'success' ? 'bg-emerald-950/95 border-emerald-500/60 text-emerald-400' :
-          toast.type === 'error' ? 'bg-red-950/95 border-red-500/60 text-red-400' : 'bg-indigo-950/95 border-indigo-500/60 text-indigo-400'
-        }`}>
-          {toast.type === 'success' && <ShieldCheck size={28} />}
-          {toast.type === 'error' && <Activity size={28} />}
-          {toast.type === 'info' && <Info size={28} />}
-          <span className="text-base font-bold tracking-wide whitespace-pre-line">{toast.message}</span>
-        </div>
-      )}
-
       {isCapturing && (
         <div className="w-full flex justify-between items-end border-b border-slate-800 pb-6 shrink-0">
            <div>
@@ -117,10 +96,10 @@ export default function BeamModelPreview() {
       {!isCapturing && (
         <div className="flex flex-col h-full overflow-hidden bg-slate-900 rounded-xl border border-slate-800 shadow-2xl relative z-10">
           <div className="flex items-center border-b border-slate-800 bg-slate-800/80 sticky top-0 z-20 backdrop-blur-md">
-            <button onClick={() => setActiveTab('modeling')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${activeTab === 'modeling' ? 'text-[#00E600] border-b-2 border-[#00E600] bg-slate-800' : 'text-slate-400 hover:text-white'}`}>
+            <button onClick={() => setActiveTab('modeling')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${activeTab === 'modeling' ? 'text-brand-accent border-b-2 border-brand-accent bg-slate-800' : 'text-slate-400 hover:text-white'}`}>
               <SlidersHorizontal size={14} className="inline mr-2 mb-0.5"/> Modeling
             </button>
-            <button onClick={() => setActiveTab('results')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${activeTab === 'results' ? 'text-[#00E600] border-b-2 border-[#00E600] bg-slate-800' : 'text-slate-400 hover:text-white'}`}>
+            <button onClick={() => setActiveTab('results')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${activeTab === 'results' ? 'text-brand-accent border-b-2 border-brand-accent bg-slate-800' : 'text-slate-400 hover:text-white'}`}>
               <BarChart2 size={14} className="inline mr-2 mb-0.5"/> Analysis Results
             </button>
             <div className="px-2">
@@ -149,10 +128,10 @@ export default function BeamModelPreview() {
 
                 <section>
                   <div className="flex justify-between items-end mb-4">
-                    <h3 className="text-xs font-bold text-[#00E600] uppercase tracking-wider flex items-center gap-2"><Box size={14} /> Cross Section</h3>
+                    <h3 className="text-xs font-bold text-brand-accent uppercase tracking-wider flex items-center gap-2"><Box size={14} /> Cross Section</h3>
                     <div className="w-16 h-16 bg-slate-800 border border-slate-700 rounded-lg p-1 flex items-center justify-center"><SectionGuide type={beamType} /></div>
                   </div>
-                  <select disabled={isReadOnly} value={beamType} onChange={(e) => modelingHook.handleBeamTypeChange(e.target.value)} className={`w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-bold mb-4 outline-none ${isReadOnly ? 'opacity-50 cursor-not-allowed' : 'focus:border-[#00E600] cursor-pointer'}`}>
+                  <select disabled={isReadOnly} value={beamType} onChange={(e) => modelingHook.handleBeamTypeChange(e.target.value)} className={`w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-bold mb-4 outline-none ${isReadOnly ? 'opacity-50 cursor-not-allowed' : 'focus:border-brand-accent cursor-pointer'}`}>
                     <option value="I">I-Beam</option><option value="H">H-Beam</option><option value="BAR">BAR (Solid Box)</option><option value="L">L-Beam (Angle)</option><option value="T">T-Beam</option><option value="CHAN">Channel (C-Shape)</option><option value="ROD">ROD (Solid Cylinder)</option><option value="TUBE">TUBE (Hollow Pipe)</option>
                   </select>
                   <div className="space-y-1">
@@ -166,7 +145,7 @@ export default function BeamModelPreview() {
 
                 <section className="border-t border-slate-800 pt-6">
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xs font-bold text-[#00E600] uppercase tracking-wider flex items-center gap-2"><ShieldCheck size={14} /> Boundaries</h3>
+                    <h3 className="text-xs font-bold text-brand-accent uppercase tracking-wider flex items-center gap-2"><ShieldCheck size={14} /> Boundaries</h3>
                     {!isReadOnly && <button onClick={() => modelingHook.setBoundaries([...boundaries, { pos: (Number(params.length)||0)/2, type: 'Hinge', dof: '' }])} className="text-slate-400 hover:text-blue-400 cursor-pointer"><Plus size={16}/></button>}
                   </div>
                   <div className="space-y-2">
@@ -185,7 +164,7 @@ export default function BeamModelPreview() {
 
                 <section className="border-t border-slate-800 pt-6 mb-6">
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xs font-bold text-[#00E600] uppercase tracking-wider flex items-center gap-2"><ArrowDown size={14} /> Static Loads</h3>
+                    <h3 className="text-xs font-bold text-brand-accent uppercase tracking-wider flex items-center gap-2"><ArrowDown size={14} /> Static Loads</h3>
                     {!isReadOnly && <button onClick={() => modelingHook.setLoads([...loads, { pos: (Number(params.length)||0)/2, fx: 0, fy: 0, fz: -5000 }])} className="text-slate-400 hover:text-red-400 cursor-pointer"><Plus size={16}/></button>}
                   </div>
                   <div className="space-y-3">
@@ -269,7 +248,7 @@ export default function BeamModelPreview() {
                 </div>
               </div>
             ) : (
-              <button onClick={analysisManager.handleRunAnalysis} disabled={validationErrors.length > 0} className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg ${validationErrors.length > 0 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-[#00E600] text-[#002554] hover:shadow-[0_0_20px_rgba(0,230,0,0.4)]'}`}>
+              <button onClick={analysisManager.handleRunAnalysis} disabled={validationErrors.length > 0} className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg ${validationErrors.length > 0 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-brand-accent text-brand-blue hover:shadow-[0_0_20px_rgba(0,230,0,0.4)]'}`}>
                 <Play size={18} className="fill-current" /> 서버에서 해석 실행 (Run)
               </button>
             )}

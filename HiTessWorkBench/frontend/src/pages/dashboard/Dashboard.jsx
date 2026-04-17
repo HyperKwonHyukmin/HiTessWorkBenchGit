@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
+import { useToast } from '../../contexts/ToastContext';
 
 const MODE_KO = {
   File: "파일 기반",
@@ -213,7 +214,7 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
   return (
     <div 
       onClick={onOpenModal}
-      className="bg-gradient-to-r from-[#002554] to-indigo-900 rounded-xl shadow-lg border border-indigo-500/30 overflow-hidden cursor-pointer hover:shadow-xl transition-all group flex flex-col md:flex-row relative"
+      className="bg-gradient-to-r from-brand-blue to-indigo-900 rounded-xl shadow-lg border border-indigo-500/30 overflow-hidden cursor-pointer hover:shadow-xl transition-all group flex flex-col md:flex-row relative"
     >
       <Map size={120} className="absolute -left-10 -bottom-10 text-white/5 rotate-12 pointer-events-none" />
       <div className="p-5 md:w-1/3 border-b md:border-b-0 md:border-r border-white/10 relative z-10 flex flex-col justify-center">
@@ -425,7 +426,7 @@ function IntroModal({ isOpen, onClose, content, onRetry, modalTitle = 'Discover 
             enter="ease-out duration-250" enterFrom="opacity-0 scale-95 translate-y-4" enterTo="opacity-100 scale-100 translate-y-0"
             leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-full max-w-6xl bg-[#002554] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            <Dialog.Panel className="w-full max-w-6xl bg-brand-blue rounded-2xl shadow-2xl overflow-hidden flex flex-col"
               style={{ height: 'min(90vh, 860px)' }}
             >
               {/* 헤더 */}
@@ -489,8 +490,8 @@ function IntroModal({ isOpen, onClose, content, onRetry, modalTitle = 'Discover 
 }
 
 export default function Dashboard() {
+  const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
-  // [핵심 변경] 상태 초기화를 위해 setAssessmentPageState 가져오기
   const { favorites, setAssessmentPageState } = useDashboard();
   
   const [projects, setProjects] = useState([]);
@@ -594,7 +595,7 @@ export default function Dashboard() {
   const handleFavoriteClick = (title) => {
     const targetApp = ANALYSIS_DATA.find(a => a.title === title);
     if (targetApp && targetApp.devStatus !== 'Active') {
-      alert(`[안내] '${title}' 앱은 현재 개발 중이거나 출시 예정인 모듈입니다.`);
+      showToast(`'${title}' 앱은 현재 개발 중이거나 출시 예정인 모듈입니다.`, 'info');
       return;
     }
 
@@ -615,7 +616,7 @@ export default function Dashboard() {
     } else if (title === "BDF Scanner") {
       setCurrentMenu('BDF Scanner');
     } else {
-      alert(`[안내] ${title} 기능은 현재 준비 중입니다.`);
+      showToast(`'${title}' 기능은 현재 준비 중입니다.`, 'info');
     }
   };
 

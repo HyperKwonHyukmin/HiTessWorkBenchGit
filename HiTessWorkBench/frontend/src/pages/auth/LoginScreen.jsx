@@ -132,7 +132,7 @@ export default function LoginScreen({ onLoginSuccess }) {
       <div className="hidden lg:flex w-1/3 relative flex-col p-12 text-white overflow-hidden bg-brand-blue">
         <div className="absolute inset-0 z-0 pointer-events-none">
           <img src={structureBgUrl} alt="Structure" className="w-full h-full object-cover opacity-50 mix-blend-overlay grayscale contrast-125 transform scale-105" />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#002554]/90 via-[#002554]/40 to-[#002554]/90"></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/90 via-brand-blue/40 to-brand-blue/90"></div>
         </div>
 
         <div className="relative z-10 flex-1 flex flex-col justify-center pointer-events-none">
@@ -300,7 +300,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                   <div>
                     <label className="block text-xs font-bold text-brand-blue uppercase mb-2">Employee ID</label>
                     <div className="relative group z-10">
-                      <User className="absolute left-3 top-3.5 h-5 w-5 text-slate-400 group-focus-within:text-[#008233] transition-colors z-20" />
+                      <User className="absolute left-3 top-3.5 h-5 w-5 text-slate-400 group-focus-within:text-brand-green transition-colors z-20" />
                       <input
                         type="text"
                         required

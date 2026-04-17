@@ -9,15 +9,19 @@ import {
   Clock, UserCheck, UserX, Edit2, X, Building, Briefcase, Tag
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser } from '../../api/admin';
+import PageHeader from '../../components/ui/PageHeader';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function UserManagement() {
+  const { showToast } = useToast();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // 편집 모달 상태
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [confirmDeleteTarget, setConfirmDeleteTarget] = useState(null);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -46,18 +50,18 @@ export default function UserManagement() {
       await updateUser(userId, { [field]: !currentValue });
       setUsers(users.map(u => u.id === userId ? { ...u, [field]: !currentValue } : u));
     } catch (error) {
-      alert("상태 업데이트에 실패했습니다.");
+      showToast('상태 업데이트에 실패했습니다.', 'error');
     }
   };
 
-  // 사용자 완전 삭제
-  const handleDelete = async (userId, userName) => {
-    if (!window.confirm(`[경고] '${userName}' 사용자를 시스템에서 완전히 삭제하시겠습니까?`)) return;
+  const handleDelete = async () => {
+    if (!confirmDeleteTarget) return;
     try {
-      await deleteUser(userId);
-      setUsers(users.filter(u => u.id !== userId));
+      await deleteUser(confirmDeleteTarget.id);
+      setUsers(users.filter(u => u.id !== confirmDeleteTarget.id));
+      setConfirmDeleteTarget(null);
     } catch (error) {
-      alert("사용자 삭제에 실패했습니다.");
+      showToast('사용자 삭제에 실패했습니다.', 'error');
     }
   };
 
@@ -76,7 +80,7 @@ export default function UserManagement() {
       setIsEditModalOpen(false);
       fetchUsers(); // 갱신
     } catch (error) {
-      alert("사용자 정보 수정에 실패했습니다.");
+      showToast('사용자 정보 수정에 실패했습니다.', 'error');
     }
   };
 
@@ -95,15 +99,12 @@ export default function UserManagement() {
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
       
-      {/* 1. Header & Stats */}
-      <div className="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-brand-blue flex items-center gap-3">
-            <Users className="text-blue-600" size={32} /> User Management
-          </h1>
-          <p className="text-slate-500 mt-2">시스템 접근 권한 부여 및 사용자 메타데이터를 관리합니다.</p>
-        </div>
-      </div>
+      <PageHeader
+        title="User Management"
+        icon={Users}
+        subtitle="시스템 접근 권한 부여 및 사용자 메타데이터를 관리합니다."
+        accentColor="blue"
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -226,7 +227,7 @@ export default function UserManagement() {
                       <button onClick={() => openEditModal(user)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer" title="정보 수정">
                         <Edit2 size={18}/>
                       </button>
-                      <button onClick={() => handleDelete(user.id, user.name)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer" title="계정 삭제">
+                      <button onClick={() => setConfirmDeleteTarget(user)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer" title="계정 삭제">
                         <Trash2 size={18}/>
                       </button>
                     </div>
@@ -285,6 +286,14 @@ export default function UserManagement() {
         </Dialog>
       </Transition>
 
+      <ConfirmDialog
+        isOpen={!!confirmDeleteTarget}
+        onCancel={() => setConfirmDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title="사용자 삭제"
+        message={`'${confirmDeleteTarget?.name}' 사용자를 시스템에서 완전히 삭제합니다. 이 작업은 되돌릴 수 없습니다.`}
+        confirmLabel="삭제"
+      />
     </div>
   );
 }

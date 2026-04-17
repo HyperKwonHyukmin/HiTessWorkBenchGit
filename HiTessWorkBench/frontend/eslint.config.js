@@ -25,7 +25,14 @@ export default defineConfig([
     rules: {
       'no-unused-vars':'off',
       'react/prop-type':'off',
-
+      'no-restricted-globals': ['error', 'alert', 'confirm', 'prompt'],
+      'no-restricted-syntax': [
+        'warn',
+        {
+          selector: 'Literal[value=/^#[0-9a-fA-F]{3,8}$/]',
+          message: 'HEX 색상 리터럴 대신 Tailwind 브랜드 토큰(brand-blue, brand-accent 등)을 사용하세요.',
+        },
+      ],
     },
   },
 ])
