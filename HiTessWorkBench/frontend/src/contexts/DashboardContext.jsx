@@ -47,9 +47,9 @@ export function DashboardProvider({ children }) {
   const [favorites, setFavorites] = useState(() => {
     try {
       const stored = localStorage.getItem('favorites');
-      return stored ? JSON.parse(stored) : ["Simple Beam Assessment", "Truss Model Builder"];
+      return stored ? JSON.parse(stored) : [];
     } catch {
-      return ["Simple Beam Assessment", "Truss Model Builder"];
+      return [];
     }
   });
 
