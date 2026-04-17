@@ -23,6 +23,7 @@ export const ANALYSIS_DATA = [
   { mode: "File", category: "기타", title: "구조 최적화 (Optimization)", description: "중량 절감 및 구조 효율성 극대화를 위한 AI 기반 최적화 프로세스를 진행합니다.", icon: UploadCloud, color: "bg-orange-600", tags: ["중량절감", "위상최적화", "민감도"], devStatus: "Planned", contributor: "권혁민" },
   // ── Interactive Apps ─────────────────────────────── Active ──
   { mode: "Interactive", category: "1D 빔(Beam)", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-cyan-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "Interactive", category: "단면(Section)", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: SlidersHorizontal, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Active", contributor: "권혁민" },
   // ── Interactive Apps ───────────────────────────── Developing ──
   { mode: "Interactive", category: "러그(Lug)", title: "Lifting Lug Evaluator", description: "Lifting Lug의 상세 치수와 작용 하중을 입력하여 러그의 구조 강도를 즉각 평가합니다.", icon: PenTool, color: "bg-emerald-600", tags: ["러그", "권상하중", "실시간"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "AI", category: "AI 기반 해석", title: "GNN 기반 Beam 구조 안정성 검토", description: "Graph Neural Network(GNN)를 활용하여 보(Beam) 구조물의 응력 분포 및 구조적 안정성을 AI 기반으로 평가합니다.", icon: Bot, color: "bg-cyan-600", tags: ["GNN", "AI", "Beam", "구조안정성"], devStatus: "Developing", contributor: "권혁민" },
@@ -33,8 +34,6 @@ export const ANALYSIS_DATA = [
   { mode: "Parametric", category: "다빗(Davit)", title: "Mast Post Assessment", description: "Post 높이와 플랫폼 하중을 입력하여 기준을 만족하는 최적 파이프 후보를 산출합니다.", icon: SlidersHorizontal, color: "bg-violet-700", tags: ["다빗", "Post", "파이프선정"], devStatus: "Active", contributor: "박준석" },
   // ── Parametric Apps ──────────────────────────────── Active ──
   { mode: "Parametric", category: "기둥(Column)", title: "Column Buckling Load Calculator", description: "AISC 기준 핀-핀 경계 조건의 강재 기둥 최대 허용 사용하중을 계산합니다. 동심·편심 하중 모두 지원.", icon: SlidersHorizontal, color: "bg-violet-700", tags: ["기둥", "좌굴", "AISC", "Secant"], devStatus: "Active", contributor: "김병훈" },
-  // ── Parametric Apps ────────────────────────────── Developing ──
-  { mode: "Parametric", category: "단면(Section)", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: SlidersHorizontal, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Developing", contributor: "권혁민" },
   // ── Parametric Apps ──────────────────────────────── Planned ──
   { mode: "Parametric", category: "하중(Load)", title: "Load Combination Tool", description: "구조 설계 기준에 따른 하중 조합을 자동으로 생성하고 지배 하중 케이스를 산출합니다.", icon: SlidersHorizontal, color: "bg-rose-600", tags: ["하중조합", "설계기준", "케이스"], devStatus: "Planned", contributor: "권혁민" }
 ];

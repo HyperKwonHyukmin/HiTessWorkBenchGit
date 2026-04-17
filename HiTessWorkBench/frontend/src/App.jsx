@@ -33,6 +33,7 @@ import ProductivityApps from './pages/analysis/ProductivityApps';
 import MastPostAssessment from './pages/analysis/MastPostAssessment';
 import JibRestAssessment from './pages/analysis/JibRestAssessment';
 import ColumnBucklingCalculator from './pages/analysis/ColumnBucklingCalculator';
+import SectionPropertyCalculator from './pages/analysis/SectionPropertyCalculator';
 import ApiApps from './pages/Administration/ApiApps';
 import HiTessModelFlow from './pages/analysis/HiTessModelFlow';
 
@@ -166,6 +167,7 @@ function AppInner() {
       case 'Mast Post Assessment': return <MastPostAssessment />;
       case 'Jib Rest Assessment': return <JibRestAssessment />;
       case 'Column Buckling Load Calculator': return <ColumnBucklingCalculator />;
+      case 'Section Property Calculator': return <SectionPropertyCalculator />;
       case 'API Apps': return <ApiApps />;
       case 'Component Wizard':
       case 'Simple Beam Assessment':
