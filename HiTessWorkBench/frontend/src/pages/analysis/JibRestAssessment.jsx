@@ -3,9 +3,10 @@ import axios from 'axios';
 import {
   TableProperties, Calculator, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, AlertCircle, Loader2,
-  Weight, BarChart3, ChevronRight, ImageIcon, Wind, Download, ArrowLeft
+  Weight, BarChart3, ChevronRight, ImageIcon, Wind, Download, ArrowLeft, History
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
+import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import jibRestRef from '../../assets/images/jib_rest_reference.png';
@@ -214,6 +215,7 @@ const EMPTY_2DAN = { h2: '2454', h3: '1000', d1: '762', t1: '7.9' };
 
 export default function JibRestAssessment() {
   const { setCurrentMenu } = useNavigation();
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('1dan');
   const [inputs1dan, setInputs1dan] = useState(EMPTY_1DAN);
   const [inputs2dan, setInputs2dan] = useState(EMPTY_2DAN);
@@ -295,7 +297,7 @@ export default function JibRestAssessment() {
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
       {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-[#002554] via-indigo-900 to-indigo-700 overflow-hidden">
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-indigo-900 to-indigo-700 overflow-hidden">
         <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
           <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
           <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
@@ -316,7 +318,12 @@ export default function JibRestAssessment() {
               <p className="text-sm text-indigo-200/80 mt-0.5">Jib Rest 구조물의 1단/2단 파이프 설계 후보를 LR Rule 기준으로 산출합니다.</p>
             </div>
           </div>
-          <GuideButton guideTitle="[파라메트릭] Jib Rest Assessment — 1단/2단 파이프 설계" variant="dark" />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
+              <History size={14} /> 이력
+            </button>
+            <GuideButton guideTitle="[파라메트릭] Jib Rest Assessment — 1단/2단 파이프 설계" variant="dark" />
+          </div>
         </div>
       </div>
 
@@ -676,6 +683,7 @@ export default function JibRestAssessment() {
         </div>
       </div>
       <SolverCredit contributor="박준석" />
+      <ChangelogModal programKey="JibRestAssessment" title="Jib Rest Assessment" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }

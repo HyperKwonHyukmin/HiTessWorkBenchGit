@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import {
   SlidersHorizontal, Calculator, ChevronDown, ChevronUp,
-  AlertCircle, Loader2, Ruler, BarChart3, ArrowLeft, Activity
+  AlertCircle, Loader2, Ruler, BarChart3, ArrowLeft, Activity, History
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
+import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import SolverCredit from '../../components/ui/SolverCredit';
@@ -67,6 +68,7 @@ const PropCell = ({ label, value, unit }) => (
 
 export default function ColumnBucklingCalculator() {
   const { setCurrentMenu } = useNavigation();
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const [memberName, setMemberName] = useState('300A PIPE');
   const [lengthMm, setLengthMm] = useState('4470');
   const [eccentricityPct, setEccentricityPct] = useState('25');
@@ -117,7 +119,7 @@ export default function ColumnBucklingCalculator() {
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
       {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-[#002554] via-violet-900 to-violet-700 overflow-hidden">
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-violet-900 to-violet-700 overflow-hidden">
         <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
           <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
           <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
@@ -138,7 +140,12 @@ export default function ColumnBucklingCalculator() {
               <p className="text-sm text-violet-200/80 mt-0.5">AISC 기준 핀-핀 기둥의 최대 허용 사용하중을 산출합니다. (동심·편심 하중 지원)</p>
             </div>
           </div>
-          <GuideButton guideTitle="[파라메트릭] Column Buckling Load Calculator" variant="dark" />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
+              <History size={14} /> 이력
+            </button>
+            <GuideButton guideTitle="[파라메트릭] Column Buckling Load Calculator" variant="dark" />
+          </div>
         </div>
       </div>
 
@@ -435,6 +442,7 @@ export default function ColumnBucklingCalculator() {
       </div>
 
       <SolverCredit contributor="김병훈" />
+      <ChangelogModal programKey="ColumnBucklingCalculator" title="Column Buckling Load Calculator" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }

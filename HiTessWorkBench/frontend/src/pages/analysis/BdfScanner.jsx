@@ -2,12 +2,14 @@
 /// BDF Scanner — BDF 파일 유효성 검증 및 Nastran F06 요약 페이지.
 /// </summary>
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Upload, Play, Terminal, FileSearch, AlertOctagon, Info } from 'lucide-react';
+import { ArrowLeft, Upload, Play, Terminal, FileSearch, AlertOctagon, Info, History } from 'lucide-react';
+import ChangelogModal from '../../components/ui/ChangelogModal';
 import GuideButton from '../../components/ui/GuideButton';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { usePolling } from '../../hooks/usePolling';
 import { requestBdfScanner, downloadFileText } from '../../api/analysis';
+import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import BdfModelViewer from '../../components/analysis/BdfModelViewer';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
@@ -15,8 +17,10 @@ import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
 export default function BdfScanner() {
+  const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
   const { startGlobalJob } = useDashboard();
+  const [changelogOpen, setChangelogOpen] = useState(false);
 
   const [bdfFile, setBdfFile] = useState(null);
   const [useNastran, setUseNastran] = useState(false);
@@ -123,7 +127,7 @@ export default function BdfScanner() {
     if (!file) return;
     const ext = file.name.toLowerCase();
     if (!ext.endsWith('.bdf') && !ext.endsWith('.dat')) {
-      alert('BDF 또는 DAT 파일만 업로드 가능합니다.');
+      showToast('BDF 또는 DAT 파일만 업로드 가능합니다.', 'warning');
       return;
     }
     setBdfFile(file);
@@ -186,7 +190,7 @@ export default function BdfScanner() {
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
       {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-[#002554] via-teal-900 to-teal-700 overflow-hidden shrink-0">
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-teal-900 to-teal-700 overflow-hidden shrink-0">
         <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
           <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
           <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
@@ -207,7 +211,12 @@ export default function BdfScanner() {
               <p className="text-sm text-teal-200/80 mt-0.5">BDF 모델 유효성 검증 및 Nastran F06 요약</p>
             </div>
           </div>
-          <GuideButton guideTitle="[생산성] BDF Scanner — BDF 파일 유효성 검증" variant="dark" />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
+              <History size={14} /> 이력
+            </button>
+            <GuideButton guideTitle="[생산성] BDF Scanner — BDF 파일 유효성 검증" variant="dark" />
+          </div>
         </div>
       </div>
 
@@ -398,6 +407,7 @@ export default function BdfScanner() {
         </div>
       </div>
       <SolverCredit contributor="권혁민" />
+      <ChangelogModal programKey="BdfScanner" title="BDF Scanner" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }

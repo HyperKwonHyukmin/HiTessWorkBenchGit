@@ -7,21 +7,25 @@ import { requestTrussAnalysis, downloadFileBlob } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import { usePolling } from '../../hooks/usePolling';
 import { Dialog, Transition } from '@headlessui/react';
-import { 
+import {
   ArrowLeft, Upload, Play, Download, Trash2, Database,
   RefreshCw, FileSpreadsheet, Terminal, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Maximize2, X, FileText,
-  FileOutput, XCircle, Clock, Eye
+  FileOutput, XCircle, Clock, Eye, History
 } from 'lucide-react';
+import ChangelogModal from '../../components/ui/ChangelogModal';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
 import GuideButton from '../../components/ui/GuideButton';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useFileParser, parseCsvText } from '../../hooks/useFileParser';
 import SolverCredit from '../../components/ui/SolverCredit';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function TrussAnalysis() {
+  const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const [nodeFile, setNodeFile] = useState(null);
   const [memberFile, setMemberFile] = useState(null);
   const [nodeData, setNodeData] = useState([]);
@@ -152,7 +156,7 @@ export default function TrussAnalysis() {
   );
 
   const handleFile = (file, type) => {
-    if (!file || !file.name.endsWith('.csv')) { alert('CSV 파일만 업로드 가능합니다!'); return; }
+    if (!file || !file.name.endsWith('.csv')) { showToast('CSV 파일만 업로드 가능합니다.', 'warning'); return; }
     if (type === 'node') { setNodeFile(file); readNodeFile(file); }
     else { setMemberFile(file); readMemberFile(file); }
     setActiveTab(type);
@@ -242,7 +246,7 @@ export default function TrussAnalysis() {
         window.URL.revokeObjectURL(blobUrl);
       } catch (error) {
         console.error("Excel download failed", error);
-        alert("엑셀 파일 다운로드에 실패했습니다.");
+        showToast('엑셀 파일 다운로드에 실패했습니다.', 'error');
       }
     } else {
       // 엑셀이 명시적으로 없을 경우엔 기존 폴더/모달을 엽니다.
@@ -253,13 +257,13 @@ export default function TrussAnalysis() {
   const canRun = nodeFile && memberFile && !isRunning;
   
   const downloadSummaryLog = () => {
-    if (logs.length === 0) return alert('다운로드할 로그가 없습니다.');
+    if (logs.length === 0) { showToast('다운로드할 로그가 없습니다.', 'warning'); return; }
     const logText = logs.map(l => `[${l.time}] ${l.message}`).join('\n');
     downloadFile(logText, `Summary_Log_${new Date().getTime()}.txt`);
   };
   
   const downloadDetailedLog = () => {
-    if (detailedLogs.length === 0) return alert('상세 로그가 없습니다.');
+    if (detailedLogs.length === 0) { showToast('상세 로그가 없습니다.', 'warning'); return; }
     const logText = detailedLogs.join('\n');
     downloadFile(logText, `Detailed_Raw_Log_${new Date().getTime()}.out`);
   };
@@ -278,7 +282,7 @@ export default function TrussAnalysis() {
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
 
       {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-[#002554] via-[#003a7a] to-blue-700 overflow-hidden shrink-0">
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-brand-blue-dark to-blue-700 overflow-hidden shrink-0">
         <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
           <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
           <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
@@ -296,7 +300,12 @@ export default function TrussAnalysis() {
               <p className="text-sm text-blue-200/80 mt-0.5">Node 및 Member CSV 데이터를 기반으로 구조 해석 모델을 구축합니다.</p>
             </div>
           </div>
-          <GuideButton guideTitle="[파일] Truss Model Builder — CSV로 트러스 모델 만들기" variant="dark" />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
+              <History size={14} /> 이력
+            </button>
+            <GuideButton guideTitle="[파일] Truss Model Builder — CSV로 트러스 모델 만들기" variant="dark" />
+          </div>
         </div>
       </div>
 
@@ -407,7 +416,7 @@ export default function TrussAnalysis() {
             </div>
             <div className="flex-1 p-4 font-mono text-[13px] overflow-y-auto custom-scrollbar">
               {logs.length === 0 ? <p className="text-slate-600">Waiting for task execution...</p> : logs.map((log, i) => (
-                <div key={i} className={`mb-1 ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-[#00E600] font-bold' : log.type === 'warning' ? 'text-yellow-400' : 'text-slate-300'}`}>
+                <div key={i} className={`mb-1 ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-brand-accent font-bold' : log.type === 'warning' ? 'text-yellow-400' : 'text-slate-300'}`}>
                   <span className="text-slate-500 mr-3">[{log.time}]</span>{log.message}
                 </div>
               ))}
@@ -443,6 +452,7 @@ export default function TrussAnalysis() {
       {/* 모달 3: 3D BDF 뷰어 */}
       <BdfViewerModal isOpen={is3DViewerOpen} project={analysisResultData} onClose={() => setIs3DViewerOpen(false)} />
 
+      <ChangelogModal programKey="TrussAnalysis" title="Truss Model Builder" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }
@@ -537,7 +547,7 @@ const ProjectDetailModal = ({ project, onClose }) => {
       window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
       console.error("Download failed:", error);
-      alert("파일 다운로드에 실패했습니다.");
+      showToast('파일 다운로드에 실패했습니다.', 'error');
     }
   };
 

@@ -10,8 +10,10 @@ import Button from '../../components/ui/Button';
 import AdminGateModal from '../../components/ui/AdminGateModal';
 import GuideButton from '../../components/ui/GuideButton';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function NewAnalysis() {
+  const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
   const [activeCategory, setActiveCategory] = useState("All");
   const { favorites, toggleFavorite, setAssessmentPageState } = useDashboard();
@@ -31,7 +33,7 @@ export default function NewAnalysis() {
     } else if (categoryTitle === "HiTess ModelFlow") {
       setCurrentMenu('HiTess ModelFlow');
     } else {
-      alert(`[안내] ${categoryTitle} 기능은 현재 준비 중입니다.`);
+      showToast(`${categoryTitle} 기능은 현재 준비 중입니다.`, 'info');
     }
   };
 

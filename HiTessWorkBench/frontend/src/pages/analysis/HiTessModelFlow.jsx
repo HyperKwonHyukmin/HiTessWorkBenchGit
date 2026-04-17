@@ -5,14 +5,16 @@ import {
   FileSpreadsheet, Wrench, ShieldCheck, Cpu, FileBarChart2,
   X, CheckCircle2, AlertCircle, Loader2,
   Eye, EyeOff, PlayCircle, PauseCircle, RotateCcw, Maximize2, Minimize2, Weight, Unlink, Anchor, Frame,
-  Download, AlertOctagon, RefreshCw
+  Download, AlertOctagon, RefreshCw, History
 } from 'lucide-react';
+import ChangelogModal from '../../components/ui/ChangelogModal';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import GuideButton from '../../components/ui/GuideButton';
+import { useToast } from '../../contexts/ToastContext';
 
 // ── Three.js FEM 모델 뷰어 ────────────────────────────────────
 // mode: 'raw'    → 2단계 (자유노드 표시, BC 없음)
@@ -751,7 +753,7 @@ function CsvDropZone({ label, required, file, fileError, onFile, onClear, multip
   const handleSingleFile = (f) => {
     if (!f) return;
     if (!f.name.endsWith('.csv')) {
-      alert('CSV 파일(.csv)만 업로드 가능합니다.');
+      showToast('CSV 파일(.csv)만 업로드 가능합니다.', 'warning');
       return;
     }
     onFile(f);
@@ -1662,7 +1664,9 @@ const DETAIL_MAP = {
 
 // ── 메인 컴포넌트 ──────────────────────────────────────────────
 export default function HiTessModelFlow() {
+  const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const [steps, setSteps]           = useState(INITIAL_STEPS.map(s => ({ ...s })));
   const [activeIdx, setActiveIdx]   = useState(0);
   const [meshSize, setMeshSize]     = useState('500');
@@ -1958,8 +1962,8 @@ export default function HiTessModelFlow() {
 
   // ModelFlow 실행 (전체 파이프라인 한 번에)
   const handleRunModelFlow = async () => {
-    if (!struFile) { alert('Structural CSV 파일이 필요합니다.'); return; }
-    if (struError || pipeError || equiError) { alert('파일 형식 오류를 먼저 해결하세요.'); return; }
+    if (!struFile) { showToast('Structural CSV 파일이 필요합니다.', 'warning'); return; }
+    if (struError || pipeError || equiError) { showToast('파일 형식 오류를 먼저 해결하세요.', 'warning'); return; }
     const user = JSON.parse(localStorage.getItem('user') || '{}');
 
     const formData = new FormData();
@@ -2209,7 +2213,7 @@ export default function HiTessModelFlow() {
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
 
       {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-[#002554] via-[#003a7a] to-blue-700 overflow-hidden shrink-0">
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-brand-blue-dark to-blue-700 overflow-hidden shrink-0">
         <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
           <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
           <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
@@ -2231,6 +2235,9 @@ export default function HiTessModelFlow() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
+              <History size={14} /> 이력
+            </button>
             <GuideButton guideTitle="[파일] HiTess ModelFlow — CSV→BDF→Nastran FEM 파이프라인" variant="dark" />
             <button
               onClick={handleReset}
@@ -2305,7 +2312,7 @@ export default function HiTessModelFlow() {
               <button
                 onClick={handleRunModelFlow}
                 disabled={jobStatus?.status === 'Running' || jobStatus?.status === 'Pending'}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#002554] hover:bg-[#003a7a] active:bg-[#001a3d] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-colors cursor-pointer shadow-sm"
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-blue hover:bg-brand-blue-dark active:bg-brand-blue/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-colors cursor-pointer shadow-sm"
               >
                 {(jobStatus?.status === 'Running' || jobStatus?.status === 'Pending')
                   ? <><Loader2 size={15} className="animate-spin" /> 실행 중...</>
@@ -2593,6 +2600,7 @@ export default function HiTessModelFlow() {
         </div>
       </div>
 
+      <ChangelogModal programKey="HiTessModelFlow" title="HiTess ModelFlow" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }

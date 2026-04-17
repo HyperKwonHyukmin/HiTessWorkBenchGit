@@ -16,13 +16,15 @@ import { useToast } from '../../contexts/ToastContext';
 import {
   ArrowLeft, Upload, Play, Database, RefreshCw, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Eye,
-  Terminal, FileText, FileOutput, Download
+  Terminal, FileText, FileOutput, Download, History
 } from 'lucide-react';
+import ChangelogModal from '../../components/ui/ChangelogModal';
 
 export default function TrussAssessment() {
   const { setCurrentMenu } = useNavigation();
   const { showToast } = useToast();
   const dashboardCtx = useDashboard();
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const startGlobalJob = dashboardCtx?.startGlobalJob || (() => {});
   const globalJob = dashboardCtx?.globalJob || null;
 
@@ -201,7 +203,7 @@ export default function TrussAssessment() {
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
 
       {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-[#002554] via-emerald-900 to-emerald-700 overflow-hidden shrink-0">
+      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-emerald-900 to-emerald-700 overflow-hidden shrink-0">
         <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
           <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
           <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
@@ -221,7 +223,12 @@ export default function TrussAssessment() {
               <p className="text-sm text-emerald-200/80 mt-0.5">BDF 모델 파일을 업로드하여 구조적 건전성을 즉시 평가합니다.</p>
             </div>
           </div>
-          <GuideButton guideTitle="[파일] Truss Structural Assessment — 트러스 구조 안정성 평가" variant="dark" />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
+              <History size={14} /> 이력
+            </button>
+            <GuideButton guideTitle="[파일] Truss Structural Assessment — 트러스 구조 안정성 평가" variant="dark" />
+          </div>
         </div>
       </div>
 
@@ -305,7 +312,7 @@ export default function TrussAssessment() {
             </div>
             <div className="flex-1 p-4 font-mono text-[13px] overflow-y-auto custom-scrollbar">
               {logs.length === 0 ? <p className="text-slate-600">Waiting for user action...</p> : logs.map((log, i) => (
-                <div key={i} className={`mb-1 ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-[#00E600] font-bold' : log.type === 'warning' ? 'text-yellow-400' : 'text-slate-300'}`}>
+                <div key={i} className={`mb-1 ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-brand-accent font-bold' : log.type === 'warning' ? 'text-yellow-400' : 'text-slate-300'}`}>
                   <span className="text-slate-500 mr-3">[{log.time}]</span>{log.message}
                 </div>
               ))}
@@ -318,6 +325,7 @@ export default function TrussAssessment() {
       <SolverCredit contributor="권혁민" />
 
       {isResultModalOpen && <AssessmentProjectModal project={projectData} onClose={() => setIsResultModalOpen(false)} />}
+      <ChangelogModal programKey="TrussAssessment" title="Truss Structural Assessment" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }
