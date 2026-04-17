@@ -89,6 +89,25 @@ export default function UserManagement() {
   const pendingUsers = users.filter(u => !u.is_active).length;
   const adminUsers = users.filter(u => u.is_admin).length;
 
+  const makeStats = (key) =>
+    Object.entries(
+      users.reduce((acc, u) => {
+        const v = u[key] || '미입력';
+        acc[v] = (acc[v] || 0) + 1;
+        return acc;
+      }, {})
+    ).sort((a, b) => b[1] - a[1]);
+
+  const companyStats    = makeStats('company');
+  const departmentStats = makeStats('department');
+  const positionStats   = makeStats('position');
+
+  const DIST_COLORS = {
+    company:    { icon: 'text-blue-500',    bar: 'bg-blue-400'    },
+    department: { icon: 'text-violet-500',  bar: 'bg-violet-400'  },
+    position:   { icon: 'text-emerald-500', bar: 'bg-emerald-400' },
+  };
+
   // 검색 필터링
   const filteredUsers = users.filter(user => 
     user.name.includes(searchTerm) || 
@@ -130,7 +149,45 @@ export default function UserManagement() {
         </div>
       </div>
 
-      {/* 2. Controls */}
+      {/* 2. 분포 통계 */}
+      {users.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          {[
+            { label: '회사별 분포',  icon: Building,  data: companyStats,    key: 'company'    },
+            { label: '부서별 분포',  icon: Briefcase, data: departmentStats, key: 'department' },
+            { label: '직급별 분포',  icon: Tag,       data: positionStats,   key: 'position'   },
+          ].map(({ label, icon: Icon, data, key }) => {
+            const { icon: iconCls, bar: barCls } = DIST_COLORS[key];
+            return (
+              <div key={label} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                  <Icon size={15} className={iconCls} />
+                  <p className="text-xs font-bold text-slate-500 uppercase">{label}</p>
+                </div>
+                <ul className="space-y-2.5">
+                  {data.slice(0, 5).map(([name, count]) => (
+                    <li key={name}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-slate-700 font-medium truncate max-w-[140px]">{name}</span>
+                        <span className="text-slate-400 font-bold ml-2">{count}명</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5">
+                        <div className={`${barCls} h-1.5 rounded-full transition-all duration-500`}
+                             style={{ width: `${(count / totalUsers) * 100}%` }} />
+                      </div>
+                    </li>
+                  ))}
+                  {data.length > 5 && (
+                    <p className="text-[10px] text-slate-400 text-right mt-1">+{data.length - 5}개 더</p>
+                  )}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 3. Controls */}
       <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
         <div className="relative w-72">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"/>

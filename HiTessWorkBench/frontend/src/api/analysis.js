@@ -58,3 +58,7 @@ export const exportAssessmentXlsx = (jsonPath) =>
     responseType: 'blob',
     headers: getAuthHeaders()
   });
+
+/** 프로그램별 사용 건수 집계 (days=0이면 전체 기간) */
+export const getTopPrograms = (days = 30, limit = 10) =>
+  axios.get(`${API_BASE_URL}/api/analysis/stats/top-programs`, { params: { days, limit } });

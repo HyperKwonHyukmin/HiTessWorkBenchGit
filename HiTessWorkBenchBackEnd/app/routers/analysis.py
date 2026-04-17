@@ -4,8 +4,9 @@ import os
 import shutil
 import uuid
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
+from sqlalchemy import func
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
@@ -25,6 +26,32 @@ _ROUTER_DIR = os.path.dirname(os.path.abspath(__file__))         # app/routers
 _BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))     # HiTessWorkBenchBackEnd
 _ALLOWED_DOWNLOAD_BASE = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
 _PROGRAM_DOWNLOAD_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "DownloadProgram"))
+
+
+# ==================== 통계 ====================
+
+@router.get("/analysis/stats/top-programs")
+def get_top_programs(
+    days: int = Query(30, ge=0, description="집계 기간(일). 0이면 전체 기간"),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(database.get_db)
+):
+    """프로그램별 사용 건수 집계 (대시보드 Top 5 / 전체 기간 순위 모달용)."""
+    query = db.query(
+        models.Analysis.program_name,
+        func.count(models.Analysis.id).label("count")
+    )
+    if days > 0:
+        since = datetime.now() - timedelta(days=days)
+        query = query.filter(models.Analysis.created_at >= since)
+    results = (
+        query
+        .group_by(models.Analysis.program_name)
+        .order_by(func.count(models.Analysis.id).desc())
+        .limit(limit)
+        .all()
+    )
+    return [{"program_name": r.program_name, "count": r.count} for r in results]
 
 
 # ==================== 이력 및 다운로드 ====================

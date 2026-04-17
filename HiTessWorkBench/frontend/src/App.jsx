@@ -46,16 +46,26 @@ function AppInner() {
   const handleSplashFinish = async () => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
-      // 자동 로그인 만료 체크 (3일)
-      const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+      // 당일 로그인 여부 확인 — 새 날이면 수동 로그인 요구
       const loginAt = parseInt(localStorage.getItem('user_login_at') || '0', 10);
-      if (!loginAt || Date.now() - loginAt > THREE_DAYS_MS) {
+      const loginDate = new Date(loginAt);
+      const today = new Date();
+      const isSameDay =
+        loginAt > 0 &&
+        loginDate.getFullYear() === today.getFullYear() &&
+        loginDate.getMonth() === today.getMonth() &&
+        loginDate.getDate() === today.getDate();
+
+      if (!isSameDay) {
+        // 새 날 첫 접속 → 세션 초기화 후 수동 로그인 (savedEmployeeId는 보존)
         localStorage.removeItem('user');
         localStorage.removeItem('user_login_at');
+        localStorage.removeItem('session_token');
         setAppState(APP_STATE.LOGIN);
         return;
       }
 
+      // 당일 재접속 → 버전 체크 후 자동 진입
       try {
         const res = await checkVersion();
         const serverVersion = res.data?.version;

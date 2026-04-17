@@ -27,7 +27,7 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
     employee_id: '',
     name: '',
     company: 'HD 현대중공업',
-    position: '책임 엔지니어',
+    position: '책임엔지니어',
     department: DEPARTMENT_OPTIONS[0]
   });
   

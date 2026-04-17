@@ -6,11 +6,11 @@ import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { motion } from 'framer-motion';
 import { Dialog, Transition } from '@headlessui/react';
 import { getQueueStatus } from '../../api/admin';
-import { getAnalysisHistory } from '../../api/analysis';
+import { getAnalysisHistory, getTopPrograms } from '../../api/analysis';
 import {
   Activity, FileText, Server, CheckCircle2,
   ArrowUpRight, Star, CalendarDays, Database, Map, Rocket,
-  Wrench, Clock, X, ChevronRight, Layers, Cpu, FlaskConical, FileBarChart2, Maximize2
+  Wrench, Clock, X, ChevronRight, Layers, Cpu, FlaskConical, FileBarChart2, Maximize2, Trophy
 } from 'lucide-react';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
@@ -502,6 +502,9 @@ export default function Dashboard() {
   const [isBackendConnected, setIsBackendConnected] = useState(false);
   const [isRoadmapModalOpen, setIsRoadmapModalOpen] = useState(false);
   const [isIntroModalOpen, setIsIntroModalOpen] = useState(false);
+  const [topPrograms30, setTopPrograms30] = useState([]);
+  const [topProgramsAll, setTopProgramsAll] = useState([]);
+  const [isTopProgramsModalOpen, setIsTopProgramsModalOpen] = useState(false);
   // { mode: 'srcdoc', value: htmlString } | { mode: 'src', value: url } | null
   const [introContent, setIntroContent] = useState(null);
   const [introTarget, setIntroTarget] = useState('platform');
@@ -544,6 +547,11 @@ export default function Dashboard() {
       console.error('소개 페이지 로드 실패:', err);
     }
   };
+
+  useEffect(() => {
+    getTopPrograms(30, 5).then(r => setTopPrograms30(r.data)).catch(() => {});
+    getTopPrograms(0, 10).then(r => setTopProgramsAll(r.data)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const fetchQueue = async () => {
@@ -667,6 +675,62 @@ export default function Dashboard() {
         <AppRoadmapBanner onOpenModal={() => setIsRoadmapModalOpen(true)} />
       </div>
       <RoadmapModal isOpen={isRoadmapModalOpen} onClose={() => setIsRoadmapModalOpen(false)} />
+
+      {/* ── 전체 기간 순위 모달 ── */}
+      <Transition appear show={isTopProgramsModalOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setIsTopProgramsModalOpen(false)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
+            leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" />
+          </Transition.Child>
+          <div className="fixed inset-0 overflow-y-auto flex items-center justify-center p-4">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100"
+              leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+                <div className="flex items-center justify-between mb-5">
+                  <div className="flex items-center gap-2">
+                    <Trophy size={18} className="text-amber-500" />
+                    <Dialog.Title className="text-base font-bold text-slate-800">전체 기간 인기 프로그램</Dialog.Title>
+                  </div>
+                  <button onClick={() => setIsTopProgramsModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="space-y-1 max-h-[60vh] overflow-y-auto pr-1">
+                  {topProgramsAll.map((item, i) => {
+                    const maxCount = topProgramsAll[0]?.count || 1;
+                    const MEDAL = ['🥇', '🥈', '🥉'];
+                    return (
+                      <div key={item.program_name} className="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0 px-1">
+                        <span className="text-base w-6 shrink-0 text-center">
+                          {i < 3 ? MEDAL[i] : <span className="text-xs font-bold text-slate-400">{i + 1}</span>}
+                        </span>
+                        <span className="flex-1 text-sm font-medium text-slate-700 truncate">{item.program_name}</span>
+                        <div className="w-20 bg-slate-100 rounded-full h-1.5 shrink-0">
+                          <div
+                            className="bg-blue-400 h-1.5 rounded-full"
+                            style={{ width: `${(item.count / maxCount) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-bold text-slate-500 w-12 text-right shrink-0">{item.count}건</span>
+                      </div>
+                    );
+                  })}
+                  {topProgramsAll.length === 0 && (
+                    <p className="text-sm text-slate-400 text-center py-8">데이터가 없습니다.</p>
+                  )}
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </Dialog>
+      </Transition>
       <IntroModal
         isOpen={isIntroModalOpen}
         onClose={() => setIsIntroModalOpen(false)}
@@ -679,7 +743,7 @@ export default function Dashboard() {
         modalSubtitle={introTarget === 'workbench' ? 'HiTESS WorkBench 해석 플랫폼 소개' : '차세대 조선해양 구조 해석 플랫폼 소개'}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-2">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-2">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 relative overflow-hidden group hover:border-blue-300 transition-colors">
           <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
             <Server size={100} />
@@ -710,13 +774,42 @@ export default function Dashboard() {
           icon={CalendarDays} 
           color="bg-indigo-500"
         />
-        <EngineeringStatCard 
-          title="누적 해석 수행 건수" 
+        <EngineeringStatCard
+          title="누적 해석 수행 건수"
           value={`${totalExecutions} 건`}
-          subtext="지금까지 실행된 총 프로젝트 내역" 
-          icon={Database} 
+          subtext="지금까지 실행된 총 프로젝트 내역"
+          icon={Database}
           color="bg-blue-500"
         />
+        <div
+          className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 relative overflow-hidden group hover:border-amber-300 transition-colors cursor-pointer"
+          onClick={() => setIsTopProgramsModalOpen(true)}
+        >
+          <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <Trophy size={100} />
+          </div>
+          <h3 className="text-slate-600 text-sm font-bold tracking-tight flex items-center gap-2 mb-3">
+            <Trophy size={16} className="text-amber-500" /> 인기 해석 프로그램
+          </h3>
+          <p className="text-[11px] text-slate-400 font-bold mb-2">최근 30일 Top 5</p>
+          {topPrograms30.length > 0 ? (
+            <div className="space-y-1.5">
+              {topPrograms30.slice(0, 3).map((item, i) => {
+                const RANK_COLORS = ['text-amber-500', 'text-slate-400', 'text-orange-400'];
+                return (
+                  <div key={item.program_name} className="flex items-center gap-2">
+                    <span className={`text-xs font-extrabold w-4 shrink-0 ${RANK_COLORS[i]}`}>{i + 1}</span>
+                    <span className="flex-1 text-xs font-medium text-slate-700 truncate">{item.program_name}</span>
+                    <span className="text-[10px] text-slate-400 font-bold shrink-0">{item.count}건</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-300 mt-2">데이터 없음</p>
+          )}
+          <p className="text-[10px] text-amber-500 font-semibold mt-3 group-hover:text-amber-600 transition-colors">전체 순위 보기 →</p>
+        </div>
       </div>
 
       <div className="space-y-4 pt-4 border-t border-slate-200 border-dashed">
