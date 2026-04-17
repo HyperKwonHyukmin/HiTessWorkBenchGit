@@ -15,6 +15,9 @@ const ACCENT_BORDER_CLASSES = {
   violet:  'hover:border-violet-400',
   emerald: 'hover:border-emerald-400',
   purple:  'hover:border-purple-400',
+  amber:   'hover:border-amber-400',
+  indigo:  'hover:border-indigo-400',
+  cyan:    'hover:border-cyan-400',
 };
 
 const ACCENT_TITLE_CLASSES = {
@@ -22,6 +25,9 @@ const ACCENT_TITLE_CLASSES = {
   violet:  'group-hover:text-violet-600',
   emerald: 'group-hover:text-emerald-600',
   purple:  'group-hover:text-purple-600',
+  amber:   'group-hover:text-amber-600',
+  indigo:  'group-hover:text-indigo-600',
+  cyan:    'group-hover:text-cyan-600',
 };
 
 // hover 시 상단에 나타나는 accent 컬러 상단 바
@@ -30,6 +36,9 @@ const ACCENT_TOP_BAR = {
   violet:  'bg-violet-500',
   emerald: 'bg-emerald-500',
   purple:  'bg-purple-500',
+  amber:   'bg-amber-500',
+  indigo:  'bg-indigo-500',
+  cyan:    'bg-cyan-500',
 };
 
 /**

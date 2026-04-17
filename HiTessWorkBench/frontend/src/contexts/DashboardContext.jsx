@@ -4,7 +4,7 @@
 /// (신규) Truss Assessment 페이지 이탈 시에도 상태를 유지하기 위한 글로벌 State를 추가했습니다.
 /// </summary>
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { UploadCloud, PenTool, SlidersHorizontal, Wrench, RefreshCw, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { UploadCloud, PenTool, SlidersHorizontal, Wrench, RefreshCw, CheckCircle, AlertCircle, X, Bot } from 'lucide-react';
 import { useNavigation } from './NavigationContext';
 import { usePolling } from '../hooks/usePolling';
 
@@ -25,7 +25,7 @@ export const ANALYSIS_DATA = [
   { mode: "Interactive", category: "1D 빔(Beam)", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-cyan-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active", contributor: "권혁민" },
   // ── Interactive Apps ───────────────────────────── Developing ──
   { mode: "Interactive", category: "러그(Lug)", title: "Lifting Lug Evaluator", description: "Lifting Lug의 상세 치수와 작용 하중을 입력하여 러그의 구조 강도를 즉각 평가합니다.", icon: PenTool, color: "bg-emerald-600", tags: ["러그", "권상하중", "실시간"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "AI", category: "AI 기반 해석", title: "GNN 기반 Beam 구조 안정성 검토", description: "Graph Neural Network(GNN)를 활용하여 보(Beam) 구조물의 응력 분포 및 구조적 안정성을 AI 기반으로 평가합니다.", icon: PenTool, color: "bg-violet-600", tags: ["GNN", "AI", "Beam", "구조안정성"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "AI", category: "AI 기반 해석", title: "GNN 기반 Beam 구조 안정성 검토", description: "Graph Neural Network(GNN)를 활용하여 보(Beam) 구조물의 응력 분포 및 구조적 안정성을 AI 기반으로 평가합니다.", icon: Bot, color: "bg-cyan-600", tags: ["GNN", "AI", "Beam", "구조안정성"], devStatus: "Developing", contributor: "권혁민" },
   // ── Interactive Apps ─────────────────────────────── Planned ──
   { mode: "Interactive", category: "평판(Plate)", title: "2D Plate Analyzer", description: "평판의 두께와 보강재 제원을 설정하여 좌굴(Buckling) 및 국부 강도를 평가합니다.", icon: PenTool, color: "bg-indigo-600", tags: ["평판", "좌굴", "실시간"], devStatus: "Planned", contributor: "권혁민" },
   // ── Parametric Apps ──────────────────────────────── Active ──

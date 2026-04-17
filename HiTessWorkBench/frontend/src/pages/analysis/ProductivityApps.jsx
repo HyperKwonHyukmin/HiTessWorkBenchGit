@@ -9,8 +9,10 @@ import AnimatedGrid from '../../components/ui/AnimatedGrid';
 import AdminGateModal from '../../components/ui/AdminGateModal';
 import GuideButton from '../../components/ui/GuideButton';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function ProductivityApps() {
+  const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
   const [activeCategory, setActiveCategory] = useState("All");
   const { favorites, toggleFavorite } = useDashboard();
@@ -25,7 +27,7 @@ export default function ProductivityApps() {
     if (appTitle === "BDF Scanner") {
       setCurrentMenu('BDF Scanner');
     } else {
-      alert(`[안내] ${appTitle} 앱은 현재 개발 중입니다.`);
+      showToast(`'${appTitle}' 앱은 현재 개발 중입니다.`, 'info');
     }
   };
 
@@ -42,6 +44,7 @@ export default function ProductivityApps() {
         title="Productivity Apps"
         icon={Wrench}
         subtitle="업무 효율을 높이는 유틸리티 도구 모음입니다."
+        accentColor="amber"
         actions={<GuideButton guideTitle="[생산성] Productivity Apps — 도구 소개" variant="dark" />}
       />
 
@@ -69,7 +72,7 @@ export default function ProductivityApps() {
             <AppCard
               key={item.title}
               app={appData}
-              accentColor="teal"
+              accentColor="amber"
               isRestricted={isRestricted}
               isFavorite={favorites.includes(item.title)}
               onFavorite={() => toggleFavorite(item.title)}

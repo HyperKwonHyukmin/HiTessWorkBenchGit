@@ -7,8 +7,10 @@ import PageHeader from '../../components/ui/PageHeader';
 import AnimatedGrid from '../../components/ui/AnimatedGrid';
 import AdminGateModal from '../../components/ui/AdminGateModal';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function AiAssistantHub() {
+  const { showToast } = useToast();
   const { favorites, toggleFavorite } = useDashboard();
   const [gateApp, setGateApp] = useState(null);
 
@@ -20,7 +22,7 @@ export default function AiAssistantHub() {
       setGateApp({ title: appMeta.title, devStatus: appMeta.devStatus });
       return;
     }
-    alert(`[안내] '${appTitle}' 앱은 현재 준비 중입니다.`);
+    showToast(`'${appTitle}' 앱은 현재 준비 중입니다.`, 'info');
   };
 
   return (
@@ -29,6 +31,7 @@ export default function AiAssistantHub() {
         title="AI Based Apps"
         icon={Bot}
         subtitle="최신 인공지능 기술을 활용하여 구조 해석 업무 생산성을 극대화하십시오."
+        accentColor="cyan"
       />
 
       {aiApps.length === 0 ? (
@@ -56,7 +59,7 @@ export default function AiAssistantHub() {
               <AppCard
                 key={item.title}
                 app={appData}
-                accentColor="purple"
+                accentColor="cyan"
                 isRestricted={isRestricted}
                 isFavorite={favorites.includes(item.title)}
                 onFavorite={() => toggleFavorite(item.title)}

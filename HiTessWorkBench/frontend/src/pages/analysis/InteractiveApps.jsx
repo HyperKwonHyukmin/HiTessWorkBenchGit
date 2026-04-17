@@ -9,8 +9,10 @@ import AnimatedGrid from '../../components/ui/AnimatedGrid';
 import GuideButton from '../../components/ui/GuideButton';
 import AdminGateModal from '../../components/ui/AdminGateModal';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function InteractiveApps() {
+  const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
   const [activeCategory, setActiveCategory] = useState("All");
   const { favorites, toggleFavorite } = useDashboard();
@@ -25,7 +27,7 @@ export default function InteractiveApps() {
     if (appTitle === "Simple Beam Assessment") {
       setCurrentMenu('Simple Beam Assessment');
     } else {
-      alert(`[안내] ${appTitle} 앱은 현재 개발 중입니다.`);
+      showToast(`'${appTitle}' 앱은 현재 개발 중입니다.`, 'info');
     }
   };
 
@@ -42,6 +44,7 @@ export default function InteractiveApps() {
         title="Interactive Apps"
         icon={PenTool}
         subtitle="UI에서 설계 정보를 직접 입력하여 실시간으로 결과를 확인하세요."
+        accentColor="violet"
         actions={<GuideButton guideTitle="해석 앱 유형 안내 — 어떤 것을 선택해야 하나요?" variant="dark" />}
       />
 
