@@ -305,6 +305,14 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
         csv_files = _json_to_csv(full_path, work_dir, name_without_ext)
         result_data.update(csv_files)
 
+      elif lower_f.endswith('.f06'):
+        name_without_ext = os.path.splitext(f)[0]
+        result_data[f"F06_{name_without_ext}"] = full_path
+
+      elif lower_f.endswith('.op2'):
+        name_without_ext = os.path.splitext(f)[0]
+        result_data[f"OP2_{name_without_ext}"] = full_path
+
     # BDF 원본도 결과로 함께 반환
     result_data["bdf"] = bdf_path
 

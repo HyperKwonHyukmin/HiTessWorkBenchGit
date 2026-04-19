@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { CheckCircle2, RefreshCw, FileOutput, Download } from 'lucide-react';
-import { exportAssessmentXlsx } from '../../api/analysis';
+import { CheckCircle2, RefreshCw, FileOutput, Download, FileText, FileCode } from 'lucide-react';
+import { exportAssessmentXlsx, downloadFileBlob } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -32,8 +32,36 @@ export default function AssessmentProjectModal({ project, onClose }) {
     }
   };
 
+  const handleRawDownload = async (filePath, label, keyPrefix) => {
+    const downKey = `${keyPrefix}_${label}`;
+    setDownloading(prev => ({ ...prev, [downKey]: true }));
+    try {
+      const response = await downloadFileBlob(filePath);
+      const filename = extractFilename(filePath);
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error(`${keyPrefix} download failed:`, error);
+      showToast(`${keyPrefix} 파일 다운로드에 실패했습니다.`, 'error');
+    } finally {
+      setDownloading(prev => ({ ...prev, [downKey]: false }));
+    }
+  };
+
   const jsonFiles = project?.result_info
     ? Object.entries(project.result_info).filter(([k]) => k.startsWith('JSON_'))
+    : [];
+  const f06Files = project?.result_info
+    ? Object.entries(project.result_info).filter(([k]) => k.startsWith('F06_'))
+    : [];
+  const op2Files = project?.result_info
+    ? Object.entries(project.result_info).filter(([k]) => k.startsWith('OP2_'))
     : [];
 
   return (
@@ -55,54 +83,138 @@ export default function AssessmentProjectModal({ project, onClose }) {
           Job ID: {project?.id}
         </p>
 
-        {jsonFiles.length > 0 ? (
-          <div className="space-y-3">
-            <p className="text-xs text-slate-500 mb-4">
-              아래 버튼을 클릭하면 JSON 결과를 기반으로 Excel 파일을 생성하여 다운로드합니다.<br/>
-              <span className="text-slate-400">시트 구성: Load Case별 Summary / Element Assessment / Distribution Panel / Side Support</span>
-            </p>
-            {jsonFiles.map(([key, jsonPath]) => {
-              const label = key.replace(/^JSON_/i, '');
-              const isLoading = downloading[label];
-              return (
-                <button
-                  key={key}
-                  onClick={() => handleXlsxDownload(jsonPath, label)}
-                  disabled={isLoading}
-                  className={`w-full flex items-center justify-between p-4 border-2 rounded-xl transition-all duration-200 group cursor-pointer ${
-                    isLoading
-                      ? 'border-emerald-300 bg-emerald-50 cursor-wait'
-                      : 'border-emerald-200 hover:border-emerald-500 hover:bg-emerald-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2.5 rounded-xl transition-colors ${
+        <div className="space-y-6">
+          {jsonFiles.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500 mb-4">
+                아래 버튼을 클릭하면 JSON 결과를 기반으로 Excel 파일을 생성하여 다운로드합니다.<br/>
+                <span className="text-slate-400">시트 구성: Load Case별 Summary / Element Assessment / Distribution Panel / Side Support</span>
+              </p>
+              {jsonFiles.map(([key, jsonPath]) => {
+                const label = key.replace(/^JSON_/i, '');
+                const isLoading = downloading[label];
+                return (
+                  <button
+                    key={key}
+                    onClick={() => handleXlsxDownload(jsonPath, label)}
+                    disabled={isLoading}
+                    className={`w-full flex items-center justify-between p-4 border-2 rounded-xl transition-all duration-200 group cursor-pointer ${
                       isLoading
-                        ? 'bg-emerald-200 text-emerald-700'
-                        : 'bg-emerald-100 text-emerald-600 group-hover:bg-emerald-500 group-hover:text-white'
-                    }`}>
-                      {isLoading
-                        ? <RefreshCw size={20} className="animate-spin"/>
-                        : <FileOutput size={20}/>
-                      }
+                        ? 'border-emerald-300 bg-emerald-50 cursor-wait'
+                        : 'border-emerald-200 hover:border-emerald-500 hover:bg-emerald-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2.5 rounded-xl transition-colors ${
+                        isLoading
+                          ? 'bg-emerald-200 text-emerald-700'
+                          : 'bg-emerald-100 text-emerald-600 group-hover:bg-emerald-500 group-hover:text-white'
+                      }`}>
+                        {isLoading
+                          ? <RefreshCw size={20} className="animate-spin"/>
+                          : <FileOutput size={20}/>
+                        }
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-slate-700">{label}.xlsx</p>
+                        <p className="text-[10px] text-slate-400">
+                          {isLoading ? 'DRM 문제로 XLSX 파일 직접 생성 중..' : '클릭하여 Excel 다운로드'}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <p className="text-sm font-bold text-slate-700">{label}.xlsx</p>
-                      <p className="text-[10px] text-slate-400">
-                        {isLoading ? 'DRM 문제로 XLSX 파일 직접 생성 중..' : '클릭하여 Excel 다운로드'}
-                      </p>
+                    <Download size={18} className={`transition-colors ${
+                      isLoading ? 'text-emerald-400' : 'text-slate-300 group-hover:text-emerald-600'
+                    }`}/>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {f06Files.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500 mb-2">Nastran 텍스트 출력 파일 (.f06)</p>
+              {f06Files.map(([key, filePath]) => {
+                const label = key.replace(/^F06_/i, '');
+                const downKey = `F06_${label}`;
+                const isLoading = downloading[downKey];
+                return (
+                  <button
+                    key={key}
+                    onClick={() => handleRawDownload(filePath, label, 'F06')}
+                    disabled={isLoading}
+                    className={`w-full flex items-center justify-between p-4 border-2 rounded-xl transition-all duration-200 group cursor-pointer ${
+                      isLoading
+                        ? 'border-blue-300 bg-blue-50 cursor-wait'
+                        : 'border-blue-200 hover:border-blue-500 hover:bg-blue-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2.5 rounded-xl transition-colors ${
+                        isLoading
+                          ? 'bg-blue-200 text-blue-700'
+                          : 'bg-blue-100 text-blue-600 group-hover:bg-blue-500 group-hover:text-white'
+                      }`}>
+                        {isLoading ? <RefreshCw size={20} className="animate-spin"/> : <FileText size={20}/>}
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-slate-700">{label}.f06</p>
+                        <p className="text-[10px] text-slate-400">Nastran 텍스트 출력 파일</p>
+                      </div>
                     </div>
-                  </div>
-                  <Download size={18} className={`transition-colors ${
-                    isLoading ? 'text-emerald-400' : 'text-slate-300 group-hover:text-emerald-600'
-                  }`}/>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-center text-slate-500 py-8">결과 파일이 없습니다.</div>
-        )}
+                    <Download size={18} className={`transition-colors ${
+                      isLoading ? 'text-blue-400' : 'text-slate-300 group-hover:text-blue-600'
+                    }`}/>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {op2Files.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500 mb-2">Nastran 바이너리 결과 파일 (.op2)</p>
+              {op2Files.map(([key, filePath]) => {
+                const label = key.replace(/^OP2_/i, '');
+                const downKey = `OP2_${label}`;
+                const isLoading = downloading[downKey];
+                return (
+                  <button
+                    key={key}
+                    onClick={() => handleRawDownload(filePath, label, 'OP2')}
+                    disabled={isLoading}
+                    className={`w-full flex items-center justify-between p-4 border-2 rounded-xl transition-all duration-200 group cursor-pointer ${
+                      isLoading
+                        ? 'border-violet-300 bg-violet-50 cursor-wait'
+                        : 'border-violet-200 hover:border-violet-500 hover:bg-violet-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2.5 rounded-xl transition-colors ${
+                        isLoading
+                          ? 'bg-violet-200 text-violet-700'
+                          : 'bg-violet-100 text-violet-600 group-hover:bg-violet-500 group-hover:text-white'
+                      }`}>
+                        {isLoading ? <RefreshCw size={20} className="animate-spin"/> : <FileCode size={20}/>}
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-slate-700">{label}.op2</p>
+                        <p className="text-[10px] text-slate-400">Nastran 바이너리 결과 파일</p>
+                      </div>
+                    </div>
+                    <Download size={18} className={`transition-colors ${
+                      isLoading ? 'text-violet-400' : 'text-slate-300 group-hover:text-violet-600'
+                    }`}/>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {jsonFiles.length === 0 && f06Files.length === 0 && op2Files.length === 0 && (
+            <div className="text-center text-slate-500 py-8">결과 파일이 없습니다.</div>
+          )}
+        </div>
       </div>
     </Modal>
   );
