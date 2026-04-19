@@ -41,7 +41,7 @@ export const ANALYSIS_DATA = [
 const DashboardContext = createContext();
 
 export function DashboardProvider({ children }) {
-  const { setCurrentMenu } = useNavigation();
+  const { setCurrentMenu, currentMenu } = useNavigation();
   const [stats, setStats] = useState({ activeTasks: 1, runningOnServer: 8, monthlyUsage: 42 });
   const [favorites, setFavorites] = useState(() => {
     try {
@@ -84,6 +84,16 @@ export function DashboardProvider({ children }) {
     setGlobalJob({ jobId, menu: menuName, status: 'Running', progress: 0, message: '서버에 작업을 요청하는 중...' });
     setPendingJobId(jobId);
   };
+
+  useEffect(() => {
+    if (
+      globalJob &&
+      (globalJob.status === 'Success' || globalJob.status === 'Failed') &&
+      globalJob.menu === currentMenu
+    ) {
+      clearGlobalJob();
+    }
+  }, [globalJob, currentMenu]);
 
   usePolling({
     jobId: pendingJobId,
