@@ -26,7 +26,9 @@ function StatBadge({ label, value, color }) {
   );
 }
 
-function AssessmentTable({ data }) {
+const SIDE_SUPPORT_ALLOWABLE = 100800;
+
+function AssessmentTable({ data, section }) {
   const [sortConfig, setSortConfig] = useState(null);
   if (!data || data.length === 0) return <EmptyState msg="데이터가 없습니다." Icon={FileText} />;
 
@@ -48,6 +50,11 @@ function AssessmentTable({ data }) {
   const formatCell = (header, val) => {
     if (val === null || val === undefined) return '—';
     if (header === 'result') return val;
+    if (header === 'allowable') {
+      const num = parseFloat(val);
+      if (!isNaN(num)) return `${Math.round(num).toLocaleString()} N`;
+      return String(val);
+    }
     const num = parseFloat(val);
     if (!isNaN(num)) {
       if (['element','set','property','leg','support','loadCaseIndex'].includes(header)) return String(Math.round(num));
@@ -64,13 +71,18 @@ function AssessmentTable({ data }) {
       return 'text-slate-700';
     }
     if (header === 'reactionForce' && row) {
-      const rf = parseFloat(val) || 0;
+      const rf = parseFloat(val);
+      if (section === 'panel' && !isNaN(rf) && rf < 0) return 'text-red-600 font-bold';
       const panelType = row.panel || '';
       const allowKey = panelType === 'BF-02' ? 'allowBF02' : panelType === 'BF-06' ? 'allowBF06' : 'allowBF03';
       const allow = parseFloat(row[allowKey]) || Infinity;
-      const ratio = rf / allow;
+      const ratio = Math.abs(rf || 0) / allow;
       if (ratio >= 1.0) return 'text-red-600 font-bold';
       if (ratio >= 0.8) return 'text-amber-600 font-bold';
+    }
+    if (section === 'support' && (header === 'reaction' || header === 'reactionForce')) {
+      const r = Math.abs(parseFloat(val) || 0);
+      if (r > SIDE_SUPPORT_ALLOWABLE) return 'text-red-600 font-bold';
     }
     return 'text-slate-700';
   };
@@ -86,6 +98,7 @@ function AssessmentTable({ data }) {
       allowBF03: 'Allow BF-03', allowBF02: 'Allow BF-02', allowBF06: 'Allow BF-06',
       panel: 'Panel Type',
       support: 'Support Node', reaction: 'Reaction',
+      allowable: 'Allowable',
       loadCaseId: 'LC',
     };
     return map[h] || h;
@@ -118,9 +131,9 @@ function AssessmentTable({ data }) {
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {sortedData.map((row, i) => {
-              const isFail = row.result !== 'OK';
+              const isFail = row.result !== undefined && row.result !== null && row.result !== 'OK';
               return (
-                <tr key={i} className={`hover:bg-emerald-50/60 transition-colors ${isFail ? 'bg-red-50/40' : ''}`}>
+                <tr key={i} className={`transition-colors ${isFail ? 'bg-red-100 hover:bg-red-200/70' : 'hover:bg-emerald-50/60'}`}>
                   <td className="px-3 py-2 text-slate-400 text-xs text-center">{i + 1}</td>
                   {headers.map((h) => (
                     <td key={h} className={`px-4 py-2 ${getCellClass(h, row[h], row)}`}>
@@ -242,7 +255,11 @@ function LoadCaseViewer({ data }) {
       { key: 'summary',  label: 'Summary',  icon: Database, getData: lc => lc.summary           || [] },
       { key: 'elements', label: 'Elements', icon: Layers,   getData: lc => lc.elementAssessment || [] },
       { key: 'panel',    label: 'Panel',    icon: GitMerge, getData: lc => lc.distributionPanel || [] },
-      { key: 'support',  label: 'Support',  icon: Box,      getData: lc => lc.sideSupport        || [] },
+      { key: 'support',  label: 'Support',  icon: Box,      getData: lc => (lc.sideSupport || []).map(row => {
+        const reactionRaw = row.reaction ?? row.reactionForce;
+        const r = Math.abs(parseFloat(reactionRaw) || 0);
+        return { ...row, allowable: SIDE_SUPPORT_ALLOWABLE, result: r > SIDE_SUPPORT_ALLOWABLE ? 'Fail' : 'OK' };
+      }) },
     ];
     const result = [];
     data.loadCases.forEach((lc, lcIdx) => {
@@ -316,7 +333,7 @@ function LoadCaseViewer({ data }) {
       </div>
 
       <div className="flex-1 relative overflow-hidden">
-        <AssessmentTable key={activeTab.id} data={activeTab.rows} />
+        <AssessmentTable key={activeTab.id} data={activeTab.rows} section={activeTab.section} />
       </div>
     </div>
   );
