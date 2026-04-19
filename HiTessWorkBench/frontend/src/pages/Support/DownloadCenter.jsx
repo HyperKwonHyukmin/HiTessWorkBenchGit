@@ -1,8 +1,19 @@
 import React, { useState } from 'react';
-import { Download, CheckCircle, Clock, Package, AlertCircle } from 'lucide-react';
+import { Download, CheckCircle, Clock, Package, BookOpen, Wrench, Cpu, FileText, LayoutGrid } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 
-const DOWNLOADS = [];
+const DOWNLOADS = [
+  {
+    name: 'HiTESS BEAM',
+    category: 'Software',
+    description: '1D Beam 구조해석을 위한 사용자 데스크탑 어플리케이션.',
+    version: 'v1.0.0',
+    status: 'stable',
+    filename: 'HiTESSBEAM.zip',
+    size: '131 MB',
+    updatedAt: '2026-04-20',
+  },
+];
 
 const STATUS_CONFIG = {
   stable: { label: 'Stable', className: 'bg-emerald-100 text-emerald-700 border border-emerald-200' },
@@ -10,52 +21,38 @@ const STATUS_CONFIG = {
   dev:    { label: 'Dev',    className: 'bg-slate-100  text-slate-500  border border-slate-200'  },
 };
 
-const CATEGORY_COLORS = {
-  'Software':      'bg-blue-50   text-blue-700',
-  'Solver':        'bg-violet-50 text-violet-700',
-  'Pre-processor': 'bg-cyan-50   text-cyan-700',
-  'Utility':       'bg-orange-50 text-orange-700',
-  'Report':        'bg-pink-50   text-pink-700',
+const CATEGORIES = [
+  { key: 'all',          label: '전체',      icon: LayoutGrid, color: 'text-slate-600',  activeColor: 'bg-slate-700  text-white' },
+  { key: 'Software',     label: '소프트웨어', icon: Cpu,        color: 'text-blue-600',   activeColor: 'bg-blue-600   text-white' },
+  { key: 'User Guide',   label: '사용가이드', icon: BookOpen,   color: 'text-emerald-600', activeColor: 'bg-emerald-600 text-white' },
+  { key: 'Utility',      label: '유틸리티',   icon: Wrench,     color: 'text-orange-600', activeColor: 'bg-orange-500 text-white' },
+  { key: 'Report',       label: '보고서',     icon: FileText,   color: 'text-pink-600',   activeColor: 'bg-pink-500   text-white' },
+];
+
+const CATEGORY_BADGE = {
+  'Software':   'bg-blue-50    text-blue-700',
+  'User Guide': 'bg-emerald-50 text-emerald-700',
+  'Utility':    'bg-orange-50  text-orange-700',
+  'Report':     'bg-pink-50    text-pink-700',
+  'Solver':     'bg-violet-50  text-violet-700',
 };
 
 export default function DownloadCenter() {
-  const [hoveredRow, setHoveredRow] = useState(null);
-  const [loadingFile, setLoadingFile] = useState(null);
-  const [errorMsg, setErrorMsg] = useState(null);
+  const [hoveredRow, setHoveredRow]     = useState(null);
+  const [activeCategory, setActiveCategory] = useState('all');
 
-  const handleDownload = async (item) => {
-    if (loadingFile) return;
-    setErrorMsg(null);
-    setLoadingFile(item.filename);
+  const filtered = activeCategory === 'all'
+    ? DOWNLOADS
+    : DOWNLOADS.filter(d => d.category === activeCategory);
 
-    try {
-      const url = `${API_BASE_URL}/api/download/program/${encodeURIComponent(item.filename)}`;
-      const res = await fetch(url);
-
-      if (!res.ok) {
-        let detail = '파일을 찾을 수 없습니다. 관리자에게 문의하세요.';
-        try {
-          const json = await res.json();
-          if (json?.detail) detail = json.detail;
-        } catch (_) { /* ignore */ }
-        setErrorMsg(detail);
-        return;
-      }
-
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = item.filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(blobUrl);
-    } catch (e) {
-      setErrorMsg('서버에 연결할 수 없습니다. 서버 상태를 확인하세요.');
-    } finally {
-      setLoadingFile(null);
-    }
+  const handleDownload = (item) => {
+    const url = `${API_BASE_URL}/api/download/program/${encodeURIComponent(item.filename)}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = item.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   return (
@@ -72,7 +69,7 @@ export default function DownloadCenter() {
       </div>
 
       {/* 통계 뱃지 */}
-      <div className="flex flex-wrap gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-5">
         <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 shadow-sm">
           <Package size={15} className="text-blue-500 shrink-0" />
           <span className="text-xs font-medium text-slate-600 whitespace-nowrap">총 {DOWNLOADS.length}개 패키지</span>
@@ -91,31 +88,50 @@ export default function DownloadCenter() {
         </div>
       </div>
 
-      {/* 오류 알림 배너 */}
-      {errorMsg && (
-        <div className="flex items-start gap-3 mb-5 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-          <AlertCircle size={16} className="shrink-0 mt-0.5" />
-          <span>{errorMsg}</span>
-          <button
-            onClick={() => setErrorMsg(null)}
-            className="ml-auto text-red-400 hover:text-red-600 cursor-pointer"
-          >✕</button>
-        </div>
-      )}
+      {/* 카테고리 필터 탭 */}
+      <div className="flex flex-wrap gap-2 mb-5">
+        {CATEGORIES.map(({ key, label, icon: Icon, color, activeColor }) => {
+          const isActive = activeCategory === key;
+          const count = key === 'all' ? DOWNLOADS.length : DOWNLOADS.filter(d => d.category === key).length;
+          return (
+            <button
+              key={key}
+              onClick={() => setActiveCategory(key)}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                isActive
+                  ? `${activeColor} border-transparent shadow-sm`
+                  : `bg-white ${color} border-slate-200 hover:border-slate-300 hover:bg-slate-50`
+              }`}
+            >
+              <Icon size={13} />
+              {label}
+              <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-xs font-bold ${
+                isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+              }`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {/* 테이블 카드 */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+        <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
             Available Packages
           </h2>
+          {activeCategory !== 'all' && (
+            <span className="text-xs text-slate-400">{filtered.length}개 항목</span>
+          )}
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm" style={{ minWidth: '640px' }}>
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-slate-500 text-xs uppercase tracking-wide">
-                <th className="px-5 py-3 text-left font-semibold" style={{ width: '22%' }}>프로그램</th>
+                <th className="px-5 py-3 text-left font-semibold" style={{ width: '20%' }}>프로그램</th>
+                <th className="px-4 py-3 text-center font-semibold whitespace-nowrap" style={{ width: '10%' }}>분류</th>
                 <th className="px-5 py-3 text-left font-semibold">설명</th>
                 <th className="px-4 py-3 text-center font-semibold whitespace-nowrap" style={{ width: '7%' }}>버전</th>
                 <th className="px-4 py-3 text-center font-semibold" style={{ width: '7%' }}>상태</th>
@@ -123,14 +139,14 @@ export default function DownloadCenter() {
               </tr>
             </thead>
             <tbody>
-              {DOWNLOADS.length === 0 && (
+              {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-slate-400 text-sm">
-                    등록된 다운로드 항목이 없습니다.
+                  <td colSpan={6} className="px-5 py-10 text-center text-slate-400 text-sm">
+                    해당 카테고리에 등록된 항목이 없습니다.
                   </td>
                 </tr>
               )}
-              {DOWNLOADS.map((item, idx) => (
+              {filtered.map((item, idx) => (
                 <tr
                   key={item.name}
                   className={`border-b border-slate-50 transition-colors ${
@@ -145,13 +161,17 @@ export default function DownloadCenter() {
                   <td className="px-5 py-4 align-top">
                     <div className="font-semibold text-slate-800 whitespace-nowrap">{item.name}</div>
                     <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                      <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${CATEGORY_COLORS[item.category] ?? 'bg-slate-100 text-slate-600'}`}>
-                        {item.category}
-                      </span>
-                      {item.size !== '-' && <span className="text-xs text-slate-400">{item.size}</span>}
+                      {item.size && item.size !== '-' && <span className="text-xs text-slate-400">{item.size}</span>}
                       <span className="text-xs text-slate-300">·</span>
                       <span className="text-xs text-slate-400">{item.updatedAt}</span>
                     </div>
+                  </td>
+
+                  {/* 분류 */}
+                  <td className="px-4 py-4 text-center align-top">
+                    <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap ${CATEGORY_BADGE[item.category] ?? 'bg-slate-100 text-slate-600'}`}>
+                      {CATEGORIES.find(c => c.key === item.category)?.label ?? item.category}
+                    </span>
                   </td>
 
                   {/* 설명 */}
@@ -180,17 +200,9 @@ export default function DownloadCenter() {
                     {item.filename ? (
                       <button
                         onClick={() => handleDownload(item)}
-                        disabled={loadingFile === item.filename}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
-                          loadingFile === item.filename
-                            ? 'bg-blue-300 text-white cursor-not-allowed'
-                            : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
-                        }`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                       >
-                        {loadingFile === item.filename
-                          ? <><Clock size={12} className="animate-spin" />받는 중...</>
-                          : <><Download size={12} />다운로드</>
-                        }
+                        <Download size={12} />다운로드
                       </button>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-400 text-xs font-medium rounded-lg cursor-not-allowed whitespace-nowrap">
