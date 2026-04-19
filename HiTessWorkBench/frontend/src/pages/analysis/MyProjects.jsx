@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { getAnalysisHistory, downloadFileBlob, exportAssessmentXlsx } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import {
@@ -277,6 +277,15 @@ export default function MyProjects() {
   // 필터 변경 시 첫 페이지로 리셋
   useEffect(() => { setCurrentPage(1); }, [searchTerm, programFilter, statusFilter]);
 
+  const userSeqById = useMemo(() => {
+    const sortedAsc = [...projects].sort(
+      (a, b) => new Date(a.created_at) - new Date(b.created_at)
+    );
+    const map = new Map();
+    sortedAsc.forEach((p, idx) => map.set(p.id, idx + 1));
+    return map;
+  }, [projects]);
+
   const filteredProjects = projects.filter(p => {
     const matchesSearch = !searchTerm ||
       (p.project_name && p.project_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -359,7 +368,7 @@ export default function MyProjects() {
                     onClick={() => setSelectedProject(project)}
                     className="hover:bg-blue-50/50 transition-colors cursor-pointer group"
                   >
-                    <td className="py-4 px-6 font-mono text-xs text-slate-500 font-bold text-center">{project.id}</td>
+                    <td className="py-4 px-6 font-mono text-xs text-slate-500 font-bold text-center">{userSeqById.get(project.id) ?? '-'}</td>
                     <td className="py-4 px-6">
                       <div className="flex items-center">
                         <div className="p-2 bg-slate-100 rounded text-slate-400 mr-3 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors"><Box size={18} /></div>
