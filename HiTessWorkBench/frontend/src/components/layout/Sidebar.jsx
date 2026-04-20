@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Home,
   UploadCloud,
@@ -9,8 +9,7 @@ import {
   Megaphone,
   Lightbulb,
   BookOpen,
-  Bot,
-  Library,
+  GraduationCap,
   Settings,
   BarChart3,
   ChevronLeft,
@@ -27,25 +26,10 @@ const SESSION_KEY = 'admin_gate_unlocked';
 
 export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, setCurrentMenu }) {
 
-  const [isResearchLab, setIsResearchLab] = useState(false);
   const [isGateOpen, setIsGateOpen] = useState(false);
   const [pendingMenu, setPendingMenu] = useState(null);
   const [gateLoading, setGateLoading] = useState(false);
   const [gateError, setGateError] = useState('');
-
-  useEffect(() => {
-    try {
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        const user = JSON.parse(userStr);
-        if (user.department === '구조시스템연구실' || user.company === '구조시스템연구실') {
-          setIsResearchLab(true);
-        }
-      }
-    } catch (error) {
-      console.error("Failed to parse user info in Sidebar:", error);
-    }
-  }, []);
 
   const menuItems = useMemo(() => {
     const items = [
@@ -59,21 +43,12 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
           { icon: UploadCloud, label: "File-Based Apps" },
           { icon: PenTool, label: "Interactive Apps" },
           { icon: SlidersHorizontal, label: "Parametric Apps" },
+          { icon: GraduationCap, label: "Academic Apps" },
           { icon: Wrench, label: "Productivity Apps" },
           { icon: FolderOpen, label: "My Projects" },
         ]
       }
     ];
-
-    if (isResearchLab) {
-      items.push({
-        category: "RESEARCH & AI",
-        items: [
-          { icon: Bot, label: "AI Based Apps" },
-          { icon: Library, label: "Knowledge Archive" },
-        ]
-      });
-    }
 
     items.push({
       category: "SUPPORT & COMMUNITY",
@@ -98,7 +73,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
     }
 
     return items;
-  }, [isAdmin, isResearchLab]);
+  }, [isAdmin]);
 
   const isAdminMenu = (sectionCategory) => ADMIN_CATEGORIES.includes(sectionCategory);
 

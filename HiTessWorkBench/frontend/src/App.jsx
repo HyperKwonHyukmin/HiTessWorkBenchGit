@@ -27,6 +27,7 @@ import UserManagement from './pages/Administration/UserManagement';
 import SystemSettings from './pages/Administration/SystemSettings';
 import AnalysisManagement from './pages/Administration/AnalysisManagement';
 import AiAssistantHub from './pages/AI/AiAssistantHub';
+import AcademicApps from './pages/analysis/AcademicApps';
 import BdfScanner from './pages/analysis/BdfScanner';
 import ParametricApps from './pages/analysis/ParametricApps';
 import ProductivityApps from './pages/analysis/ProductivityApps';
@@ -166,6 +167,7 @@ function AppInner() {
       case 'Truss Structural Assessment': return <TrussAssessment />;
       case 'Interactive Apps': return <InteractiveApps />;
       case 'Parametric Apps': return <ParametricApps />;
+      case 'Academic Apps': return <AcademicApps />;
       case 'Mast Post Assessment': return <MastPostAssessment />;
       case 'Jib Rest Assessment': return <JibRestAssessment />;
       case 'Column Buckling Load Calculator': return <ColumnBucklingCalculator />;

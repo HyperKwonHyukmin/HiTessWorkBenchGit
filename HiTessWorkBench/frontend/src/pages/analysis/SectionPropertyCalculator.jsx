@@ -142,8 +142,97 @@ const DEFAULT_POLY = [
   { x: 50, y: 75 },  { x: -50, y: 75 },
 ];
 
+const MAX_POLY_VERTICES = 20;
+const MIN_COORD = -5000;
+const MAX_COORD = 5000;
+const MIN_VERTEX_DIST = 1.0;
+
+// ── 폴리곤 기하 유효성 검사 ────────────────────────────────────
+function crossProduct(o, a, b) {
+  return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+}
+
+function segmentsProperlyIntersect(p1, p2, p3, p4) {
+  const d1 = crossProduct(p3, p4, p1);
+  const d2 = crossProduct(p3, p4, p2);
+  const d3 = crossProduct(p1, p2, p3);
+  const d4 = crossProduct(p1, p2, p4);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+  return false;
+}
+
+function validatePolygon(verts) {
+  const errors = [];
+
+  if (verts.length > MAX_POLY_VERTICES) {
+    errors.push(`꼭짓점은 최대 ${MAX_POLY_VERTICES}개까지 허용됩니다 (현재 ${verts.length}개).`);
+  }
+
+  const outOfRange = verts.findIndex(v =>
+    v.x < MIN_COORD || v.x > MAX_COORD || v.y < MIN_COORD || v.y > MAX_COORD
+  );
+  if (outOfRange !== -1) {
+    errors.push(`꼭짓점 ${outOfRange + 1}: 좌표는 ${MIN_COORD}~${MAX_COORD} mm 범위 내여야 합니다.`);
+  }
+
+  for (let i = 0; i < verts.length; i++) {
+    for (let j = i + 1; j < verts.length; j++) {
+      const dx = verts[i].x - verts[j].x;
+      const dy = verts[i].y - verts[j].y;
+      if (Math.sqrt(dx * dx + dy * dy) < MIN_VERTEX_DIST) {
+        errors.push(`꼭짓점 ${i + 1}과 ${j + 1}이 너무 가깝습니다 (${MIN_VERTEX_DIST}mm 이상 이격 필요).`);
+      }
+    }
+  }
+
+  const n = verts.length;
+  if (n >= 3) {
+    let area = 0;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      area += verts[i].x * verts[j].y - verts[j].x * verts[i].y;
+    }
+    if (Math.abs(area / 2) < 10) {
+      errors.push('폴리곤 면적이 너무 작습니다 (10 mm² 이상이어야 합니다). 꼭짓점이 거의 일직선 상에 있을 수 있습니다.');
+    }
+
+    const selfIntersections = [];
+    for (let i = 0; i < n && selfIntersections.length < 3; i++) {
+      const i2 = (i + 1) % n;
+      for (let j = i + 2; j < n && selfIntersections.length < 3; j++) {
+        const j2 = (j + 1) % n;
+        if (i === 0 && j === n - 1) continue;
+        if (segmentsProperlyIntersect(verts[i], verts[i2], verts[j], verts[j2])) {
+          selfIntersections.push(`변 ${i + 1}-${i2 + 1}과 변 ${j + 1}-${j2 + 1}`);
+        }
+      }
+    }
+    if (selfIntersections.length > 0) {
+      errors.push(`자기교차(Self-intersection) 발생: ${selfIntersections.join(', ')}. 폴리곤 변끼리 교차하면 안 됩니다.`);
+    }
+
+    const collinear = [];
+    for (let i = 0; i < n && collinear.length < 2; i++) {
+      const prev = verts[(i - 1 + n) % n];
+      const curr = verts[i];
+      const next = verts[(i + 1) % n];
+      if (Math.abs(crossProduct(prev, curr, next)) < 1e-6) {
+        collinear.push(i + 1);
+      }
+    }
+    if (collinear.length > 0) {
+      errors.push(`꼭짓점 ${collinear.join(', ')}이(가) 인접 변과 일직선입니다. 불필요한 꼭짓점을 제거하거나 위치를 조정하세요.`);
+    }
+  }
+
+  return errors;
+}
+
 // ── 임의 형상 꼭짓점 편집기 ─────────────────────────────────────
 function PolygonEditor({ vertices, onChange }) {
+  const validationErrors = useMemo(() => validatePolygon(vertices), [vertices]);
+
   const update = (i, axis, raw) => {
     const val = parseFloat(raw);
     if (isNaN(val)) return;
@@ -151,6 +240,7 @@ function PolygonEditor({ vertices, onChange }) {
   };
 
   const add = () => {
+    if (vertices.length >= MAX_POLY_VERTICES) return;
     const last = vertices[vertices.length - 1] ?? { x: 0, y: 0 };
     onChange([...vertices, { x: last.x + 20, y: last.y }]);
   };
@@ -208,12 +298,25 @@ function PolygonEditor({ vertices, onChange }) {
           </tbody>
         </table>
       </div>
+
+      {validationErrors.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 space-y-1">
+          {validationErrors.map((msg, idx) => (
+            <div key={idx} className="flex items-start gap-1.5">
+              <AlertCircle size={11} className="text-red-500 mt-0.5 shrink-0"/>
+              <span className="text-[10px] text-red-700 leading-tight">{msg}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex gap-2">
         <button
           onClick={add}
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-[11px] font-bold text-slate-500 hover:text-violet-700 transition-colors cursor-pointer"
+          disabled={vertices.length >= MAX_POLY_VERTICES}
+          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-[11px] font-bold text-slate-500 hover:text-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
         >
-          <Plus size={11}/> 꼭짓점 추가
+          <Plus size={11}/> 꼭짓점 추가 ({vertices.length}/{MAX_POLY_VERTICES})
         </button>
         <button
           onClick={() => onChange([...DEFAULT_POLY])}
@@ -622,8 +725,10 @@ export default function SectionPropertyCalculator() {
   const setValue = (key, val) =>
     setParamValues(prev => ({ ...prev, [`${shapeKey}_${key}`]: val }));
 
+  const polyErrors = useMemo(() => isPolygon ? validatePolygon(polyVerts) : [], [isPolygon, polyVerts]);
+
   const isValid = isPolygon
-    ? polyVerts.length >= 3
+    ? polyVerts.length >= 3 && polyErrors.length === 0
     : shape.params.every(p => {
         const v = getValue(p.key, p.defaultValue);
         if (p.min === 0) return v !== '' && Number(v) >= 0;
