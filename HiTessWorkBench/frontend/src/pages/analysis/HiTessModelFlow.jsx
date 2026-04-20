@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import ChangelogModal from '../../components/ui/ChangelogModal';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { createThreeScene } from '../../hooks/useThreeScene';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
@@ -91,17 +91,8 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
     if (!jsonPath || !mountRef.current) return;
 
     const destroy = () => {
-      const t = threeRef.current;
-      if (!t) return;
-      cancelAnimationFrame(t.animId);
-      t.ro?.disconnect();
-      t.scene?.traverse(obj => {
-        obj.geometry?.dispose();
-        if (obj.material) {
-          (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(m => m.dispose());
-        }
-      });
-      controlsRef.current?.dispose();
+      if (!threeRef.current) return;
+      threeRef.current.cleanup();
       controlsRef.current     = null;
       nodesMeshRef.current    = null;
       conm2MeshRef.current    = null;
@@ -109,12 +100,7 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
       bcMeshRef.current       = null;
       pipeMeshRef.current     = null;
       supportMeshRef.current  = null;
-      if (t.renderer) {
-        t.renderer.dispose();
-        t.renderer.forceContextLoss();
-        t.renderer.domElement?.remove();
-      }
-      threeRef.current = null;
+      threeRef.current        = null;
     };
     destroy();
 
@@ -133,41 +119,10 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
         const fem = JSON.parse(clean);
 
         const el = mountRef.current;
-        const w  = el.clientWidth  || 800;
-        const h  = el.clientHeight || 500;
 
-        // Scene
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0a0a1a);
-
-        // Camera (Z-up)
-        const camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 10_000_000);
-        camera.up.set(0, 0, 1);
-
-        // Renderer
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(w, h);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.shadowMap.enabled = true;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.2;
-        renderer.domElement.style.width  = '100%';
-        renderer.domElement.style.height = '100%';
-        el.appendChild(renderer.domElement);
-
-        // Controls
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
+        const { scene, camera, renderer, controls, startAnimate, cleanup } =
+          createThreeScene(el, { zUp: true });
         controlsRef.current = controls;
-
-        // Lights
-        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-        const dir = new THREE.DirectionalLight(0xffffff, 1.2);
-        dir.position.set(5, 10, 7);
-        scene.add(dir);
-        const pt = new THREE.PointLight(0x00ccff, 1.5, 0);
-        scene.add(pt);
 
         // 노드 맵 + bounding box
         const nodes = fem.nodes || {};
@@ -340,31 +295,8 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
         camera.lookAt(center);
         controls.saveState();
 
-        // ResizeObserver
-        const ro = new ResizeObserver(() => {
-          const rw = el.clientWidth, rh = el.clientHeight;
-          if (!rw || !rh) return;
-          camera.aspect = rw / rh; camera.updateProjectionMatrix();
-          renderer.setSize(rw, rh);
-          renderer.domElement.style.width = '100%';
-          renderer.domElement.style.height = '100%';
-        });
-        ro.observe(el);
-
-        // 애니메이션 루프
-        let t = 0;
-        const lightRadius = maxDim * 0.5;
-        const animate = () => {
-          const animId = requestAnimationFrame(animate);
-          if (threeRef.current) threeRef.current.animId = animId;
-          t += 0.008;
-          pt.position.set(center.x + Math.sin(t) * lightRadius, center.y + maxDim * 0.3, center.z + Math.cos(t) * lightRadius);
-          controls.update();
-          renderer.render(scene, camera);
-        };
-
-        threeRef.current = { renderer, scene, animId: 0, ro };
-        animate();
+        threeRef.current = { cleanup };
+        startAnimate(center, maxDim);
         if (!cancelled) setViewState('ready');
       })
       .catch(err => {

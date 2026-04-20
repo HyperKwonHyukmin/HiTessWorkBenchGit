@@ -4,7 +4,7 @@
 /// </summary>
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { createThreeScene } from '../../hooks/useThreeScene';
 import { Dialog, Transition } from '@headlessui/react';
 import {
   X, Box, RefreshCw, Eye, EyeOff,
@@ -22,9 +22,10 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
   const [isWireframe, setIsWireframe] = useState(false);
   const [autoRotate, setAutoRotate] = useState(false);
 
-  const controlsRef = useRef(null);
-  const nodesMeshRef = useRef(null);
+  const controlsRef      = useRef(null);
+  const nodesMeshRef     = useRef(null);
   const elementsGroupRef = useRef(null);
+  const threeCleanupRef  = useRef(null);
 
   // ==========================================
   // 1. 초기 3D 모델 렌더링 및 BDF 파싱
@@ -147,33 +148,13 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
         setElementCount(elements.length);
 
         // 3. Three.js Scene Setup
-        scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0a0a1a);
-
-        const width = mountRef.current.clientWidth;
-        const height = mountRef.current.clientHeight;
-
-        camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000000);
-        camera.up.set(0, 0, 1);
-
-        renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(width, height);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.shadowMap.enabled = true;
-        mountRef.current.appendChild(renderer.domElement);
-
-        controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controlsRef.current = controls;
-
-        scene.add(new THREE.AmbientLight(0x445577, 1.2));
-        const dirLight = new THREE.DirectionalLight(0x88aaff, 1.5);
-        dirLight.position.set(5, 10, 7);
-        dirLight.castShadow = true;
-        scene.add(dirLight);
-        const pointLight = new THREE.PointLight(0x00ccff, 2, 30);
-        scene.add(pointLight);
+        const threeSetup = createThreeScene(mountRef.current, { zUp: true });
+        scene    = threeSetup.scene;
+        camera   = threeSetup.camera;
+        renderer = threeSetup.renderer;
+        controls = threeSetup.controls;
+        controlsRef.current   = controls;
+        threeCleanupRef.current = threeSetup.cleanup;
 
         // 4. 모델 구축
         const modelGroup = new THREE.Group();
@@ -192,10 +173,10 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
           const sphereGeo = new THREE.SphereGeometry(rodRadius * 1.8, 12, 12);
           const sphereMat = new THREE.MeshStandardMaterial({
             color: 0xffa040,
-            metalness: 0.6,
-            roughness: 0.2,
-            emissive: 0xff6600,
-            emissiveIntensity: 0.5
+            metalness: 0.9,
+            roughness: 0.1,
+            emissive: 0xcc4400,
+            emissiveIntensity: 0.6,
           });
           
           const instancedNodes = new THREE.InstancedMesh(sphereGeo, sphereMat, nKeys.length);
@@ -217,10 +198,10 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
         cylinderGeo.rotateX(Math.PI / 2);
         const cylinderMat = new THREE.MeshStandardMaterial({
           color: 0x66ccff,
-          metalness: 0.7,
-          roughness: 0.2,
-          emissive: 0x0055aa,
-          emissiveIntensity: 0.4
+          metalness: 0.85,
+          roughness: 0.15,
+          emissive: 0x0044aa,
+          emissiveIntensity: 0.35,
         });
 
         elements.forEach(([n1, n2]) => {
@@ -267,18 +248,9 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
         controls.saveState();
 
         // 6. Animation Loop
-        let t = 0;
-        const pointLightRadius = maxDim * 0.5;
-        const animate = () => {
-          animationId = requestAnimationFrame(animate);
-          t += 0.01;
-          pointLight.position.x = Math.sin(t) * pointLightRadius;
-          pointLight.position.z = Math.cos(t) * pointLightRadius;
-          pointLight.position.y = maxDim * 0.3;
-          controls.update();
-          renderer.render(scene, camera);
-        };
-        animate();
+        const modelCenter = new THREE.Vector3();
+        new THREE.Box3().setFromObject(modelGroup).getCenter(modelCenter);
+        threeSetup.startAnimate(modelCenter, maxDim);
         
       } catch (err) {
         console.error("Three.js Viewer Error:", err);
@@ -293,28 +265,10 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
     initViewer();
 
     return () => {
-      if (animationId) cancelAnimationFrame(animationId);
-      if (scene) {
-        scene.traverse((object) => {
-          if (object.geometry) object.geometry.dispose();
-          if (object.material) {
-            if (Array.isArray(object.material)) {
-              object.material.forEach(mat => mat.dispose());
-            } else {
-              object.material.dispose();
-            }
-          }
-        });
-      }
-      if (renderer) {
-        renderer.dispose();
-        renderer.forceContextLoss(); 
-      }
-      if (mountRef.current && renderer && renderer.domElement) {
-        try { mountRef.current.removeChild(renderer.domElement); } catch(e) {}
-      }
-      controlsRef.current = null;
-      nodesMeshRef.current = null;
+      threeCleanupRef.current?.();
+      threeCleanupRef.current  = null;
+      controlsRef.current      = null;
+      nodesMeshRef.current     = null;
       elementsGroupRef.current = null;
     };
   }, [isOpen, project]);

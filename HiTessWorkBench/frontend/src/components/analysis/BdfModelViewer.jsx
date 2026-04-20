@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { createThreeScene } from '../../hooks/useThreeScene';
 import {
   Eye, EyeOff, PlayCircle, PauseCircle, RotateCcw, Maximize2, Minimize2, Weight
 } from 'lucide-react';
@@ -60,39 +60,11 @@ export default function BdfModelViewer({ modelData }) {
     if (!mountRef.current || Object.keys(nodesDict).length === 0) return;
 
     const el = mountRef.current;
-    const w  = el.clientWidth  || 800;
-    const h  = el.clientHeight || 500;
 
-    /* scene */
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a1a);
-
-    /* camera */
-    const camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 10_000_000);
-    camera.up.set(0, 0, 1);
-
-    /* renderer */
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(w, h);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.domElement.style.width  = '100%';
-    renderer.domElement.style.height = '100%';
-    el.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
-
-    /* controls */
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controlsRef.current = controls;
-
-    /* lights */
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.2);
-    dir.position.set(5, 10, 7);
-    scene.add(dir);
-    const pt = new THREE.PointLight(0x00ccff, 1.5, 0);
-    scene.add(pt);
+    const { scene, camera, renderer, controls, startAnimate, cleanup } =
+      createThreeScene(el, { zUp: true });
+    rendererRef.current  = renderer;
+    controlsRef.current  = controls;
 
     /* bounding box → rodRadius */
     const tmpBox = new THREE.Box3();
@@ -108,8 +80,8 @@ export default function BdfModelViewer({ modelData }) {
     /* ── 노드 구체 (초기 비표시) ── */
     const nodeIds = Object.keys(nodesDict);
     const nodeMat = new THREE.MeshStandardMaterial({
-      color: 0xffa040, metalness: 0.6, roughness: 0.2,
-      emissive: 0xff6600, emissiveIntensity: 0.5,
+      color: 0xffa040, metalness: 0.9, roughness: 0.1,
+      emissive: 0xcc4400, emissiveIntensity: 0.6,
     });
     const instNodes = new THREE.InstancedMesh(
       new THREE.SphereGeometry(rodRadius * 1.8, 8, 8), nodeMat, nodeIds.length);
@@ -129,8 +101,8 @@ export default function BdfModelViewer({ modelData }) {
       const geo = new THREE.CylinderGeometry(rodRadius, rodRadius, 1, 8);
       geo.rotateX(Math.PI / 2);
       const mat = new THREE.MeshStandardMaterial({
-        color: 0x66ccff, metalness: 0.7, roughness: 0.2,
-        emissive: 0x0055aa, emissiveIntensity: 0.4,
+        color: 0x66ccff, metalness: 0.85, roughness: 0.15,
+        emissive: 0x0044aa, emissiveIntensity: 0.35,
       });
       const inst = new THREE.InstancedMesh(geo, mat, validBeams.length);
       const d = new THREE.Object3D();
@@ -176,7 +148,7 @@ export default function BdfModelViewer({ modelData }) {
       const geo = new THREE.OctahedronGeometry(rodRadius * 4, 0);
       const mat = new THREE.MeshStandardMaterial({
         color: 0xffcc00, metalness: 0.3, roughness: 0.3,
-        emissive: 0x886600, emissiveIntensity: 0.6,
+        emissive: 0x997700, emissiveIntensity: 0.9,
       });
       const inst = new THREE.InstancedMesh(geo, mat, validConm2.length);
       const d = new THREE.Object3D();
@@ -196,7 +168,7 @@ export default function BdfModelViewer({ modelData }) {
       const geo = new THREE.BoxGeometry(rodRadius * 3.5, rodRadius * 3.5, rodRadius * 3.5);
       const mat = new THREE.MeshStandardMaterial({
         color: 0x44ff88, metalness: 0.3, roughness: 0.4,
-        emissive: 0x00aa44, emissiveIntensity: 0.5,
+        emissive: 0x00cc55, emissiveIntensity: 1.0,
       });
       const inst = new THREE.InstancedMesh(geo, mat, validSpc.length);
       const d = new THREE.Object3D();
@@ -219,49 +191,10 @@ export default function BdfModelViewer({ modelData }) {
     camera.lookAt(center);
     controls.saveState();
 
-    /* ResizeObserver — 전체화면 복귀 포함 */
-    const resizeObserver = new ResizeObserver(() => {
-      const rw = el.clientWidth;
-      const rh = el.clientHeight;
-      if (!rw || !rh) return;
-      camera.aspect = rw / rh;
-      camera.updateProjectionMatrix();
-      renderer.setSize(rw, rh);
-      // 전체화면 복귀 시 canvas 스타일 명시적 리셋
-      renderer.domElement.style.width  = '100%';
-      renderer.domElement.style.height = '100%';
-    });
-    resizeObserver.observe(el);
-
-    /* animate */
-    let animId;
-    let t = 0;
-    const radius = maxDim * 0.5;
-    const animate = () => {
-      animId = requestAnimationFrame(animate);
-      t += 0.008;
-      pt.position.set(
-        center.x + Math.sin(t) * radius,
-        center.y + maxDim * 0.3,
-        center.z + Math.cos(t) * radius,
-      );
-      controls.update();
-      renderer.render(scene, camera);
-    };
-    animate();
+    startAnimate(center, maxDim);
 
     return () => {
-      cancelAnimationFrame(animId);
-      resizeObserver.disconnect();
-      scene.traverse(obj => {
-        obj.geometry?.dispose();
-        if (obj.material) {
-          (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(m => m.dispose());
-        }
-      });
-      renderer.dispose();
-      renderer.forceContextLoss();
-      try { el.removeChild(renderer.domElement); } catch (_) {}
+      cleanup();
       rendererRef.current = null;
     };
   }, [nodesDict, beamElems, rbe2Pairs, conm2Nodes, spcNodeIds]);

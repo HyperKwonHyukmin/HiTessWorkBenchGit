@@ -3,7 +3,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { createThreeScene } from '../../hooks/useThreeScene';
 import { RefreshCw } from 'lucide-react';
 
 export default function Viewer3D({ beamType, params, loads, boundaries, dispData, hasCharts, isCapturing }) {
@@ -44,22 +44,9 @@ export default function Viewer3D({ beamType, params, loads, boundaries, dispData
 
   useEffect(() => {
     if (!isLayoutReady || !mountRef.current) return;
-    let width = mountRef.current.clientWidth || 800;
-    let height = mountRef.current.clientHeight || 600;
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a1a);
-    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100000);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    mountRef.current.appendChild(renderer.domElement);
+    const { scene, camera, renderer, controls, startAnimate, cleanup } =
+      createThreeScene(mountRef.current, { zUp: false, preserveDrawingBuffer: true });
     rendererRef.current = renderer;
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true; controls.dampingFactor = 0.05;
 
     const modelGroup = new THREE.Group();
     scene.add(modelGroup);
@@ -69,15 +56,8 @@ export default function Viewer3D({ beamType, params, loads, boundaries, dispData
       dim2: Number(params.dim2)||1, dim3: Number(params.dim3)||1, dim4: Number(params.dim4)||1
     };
 
-    scene.add(new THREE.AmbientLight(0x334466, 0.8));
-    const dirLight = new THREE.DirectionalLight(0x88aaff, 1.5);
-    dirLight.position.set(length * 0.5, length * 1.0, length * 0.7);
-    scene.add(dirLight);
-    const pointLight = new THREE.PointLight(0x00ccff, 2, length * 3);
-    scene.add(pointLight);
-
     const maxHeight = (beamType === 'ROD' || beamType === 'TUBE') ? dim1 / 2 : dim2 / 2;
-    const gridHelper = new THREE.GridHelper(length * 2, 40, 0x223355, 0x112233);
+    const gridHelper = new THREE.GridHelper(length * 2, 40, 0x1a3355, 0x0d1f33);
     gridHelper.position.set(0, -maxHeight - 20, 0); 
     modelGroup.add(gridHelper);
 
@@ -151,7 +131,8 @@ export default function Viewer3D({ beamType, params, loads, boundaries, dispData
       else if (bc.type === 'Roller') { bColor = 0x10b981; bcGeo = new THREE.CylinderGeometry(sphereRadius, sphereRadius, dim1 * 1.5, 32); bcGeo.rotateX(Math.PI / 2); }
       else { bColor = 0x64748b; bcGeo = new THREE.BoxGeometry(sphereRadius*1.5, sphereRadius*1.5, sphereRadius*1.5); yOffset = -maxHeight - (sphereRadius*1.5)/2; }
 
-      const bcMesh = new THREE.Mesh(bcGeo, new THREE.MeshStandardMaterial({ color: bColor, roughness: 0.5 }));
+      const emissiveColor = bColor === 0xef4444 ? 0x880000 : bColor === 0x3b82f6 ? 0x112266 : 0x115533;
+      const bcMesh = new THREE.Mesh(bcGeo, new THREE.MeshStandardMaterial({ color: bColor, roughness: 0.3, metalness: 0.5, emissive: emissiveColor, emissiveIntensity: 0.7 }));
       bcMesh.position.set((Number(bc.pos) || 0) - length / 2, yOffset, 0);
       modelGroup.add(bcMesh);
     });
@@ -185,45 +166,21 @@ export default function Viewer3D({ beamType, params, loads, boundaries, dispData
     camera.position.set(viewDist * 0.7, viewDist * 0.5, viewDist * 0.9);
     controls.update();
 
-    const resizeObserver = new ResizeObserver(entries => {
-      for (let entry of entries) {
-        const { width, height } = entry.contentRect;
-        if (width === 0 || height === 0) continue;
-        renderer.setSize(width, height);
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-      }
-    });
-    resizeObserver.observe(mountRef.current);
-
-    let animationId;
-    let t = 0;
-    const animate = () => {
-      animationId = requestAnimationFrame(animate);
-      t += 0.01;
-      pointLight.position.x = Math.sin(t) * length * 0.5;
-      pointLight.position.z = Math.cos(t) * length * 0.5;
-      pointLight.position.y = maxHeight + length * 0.2;
-      controls.update();
+    const viewCenter = new THREE.Vector3(0, 0, 0);
+    startAnimate(viewCenter, length, () => {
       if (dispData.length > 0 && geometry) {
-        const pos = geometry.attributes.position;
+        const pos     = geometry.attributes.position;
         const basePos = geometry.attributes.basePosition;
-        const tDisp = geometry.attributes.targetDispZ;
+        const tDisp   = geometry.attributes.targetDispZ;
         if (basePos && tDisp) {
-          for (let i = 0; i < pos.count; i++) pos.setY(i, basePos.getY(i) + tDisp.getX(i) * defScaleRef.current);
+          for (let i = 0; i < pos.count; i++)
+            pos.setY(i, basePos.getY(i) + tDisp.getX(i) * defScaleRef.current);
           pos.needsUpdate = true;
         }
       }
-      renderer.render(scene, camera);
-    };
-    animate();
+    });
 
-    return () => {
-      cancelAnimationFrame(animationId);
-      resizeObserver.disconnect();
-      if (mountRef.current && renderer.domElement) { try { mountRef.current.removeChild(renderer.domElement); } catch(e) {} }
-      renderer.dispose();
-    };
+    return () => { cleanup(); };
   }, [isLayoutReady, params, beamType, loads, boundaries, dispData]);
 
   if (!isLayoutReady && !isCapturing) {
