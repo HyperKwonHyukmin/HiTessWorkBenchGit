@@ -1,6 +1,9 @@
 const { app, BrowserWindow, screen, ipcMain, shell, session } = require("electron");
-const path = require("path");
-const fs   = require("fs");
+const path  = require("path");
+const fs    = require("fs");
+const http  = require("http");
+const https = require("https");
+const os    = require("os");
 
 let mainWindow;
 
@@ -91,6 +94,117 @@ ipcMain.handle("download-client", (event, url) => {
       });
     });
     mainWindow.webContents.downloadURL(url);
+  });
+});
+
+ipcMain.handle("start-self-update", (event, url) => {
+  return new Promise((resolve, reject) => {
+    // 항상 temp 폴더에 저장 — 쓰기 권한 문제 없음
+    let tmpPath = path.join(os.tmpdir(), "HiTESS-WorkBench-update.exe");
+
+    const protocol = url.startsWith("https") ? https : http;
+    const request = protocol.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`서버 오류: HTTP ${response.statusCode}`));
+        return;
+      }
+
+      // 서버가 보내는 실제 파일명 사용 (예: HiTESS-WorkBench-v0.0.15.exe)
+      const disposition = response.headers["content-disposition"] || "";
+      const nameMatch = disposition.match(/filename="?([^";\r\n]+)"?/i);
+      if (nameMatch) tmpPath = path.join(os.tmpdir(), nameMatch[1].trim());
+
+      try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
+
+      const total = parseInt(response.headers["content-length"] || "0", 10);
+      let received = 0;
+      const fileStream = fs.createWriteStream(tmpPath);
+
+      response.on("data", (chunk) => {
+        received += chunk.length;
+        fileStream.write(chunk);
+        const progress = total > 0 ? Math.round((received / total) * 100) : -1;
+        if (mainWindow)
+          mainWindow.webContents.send("download-progress", { progress, received, total, done: false });
+      });
+
+      response.on("end", () => {
+        fileStream.end();
+        fileStream.on("finish", () => {
+          // 파일이 실제로 존재하는지 확인
+          if (!fs.existsSync(tmpPath)) {
+            reject(new Error(`다운로드 파일을 찾을 수 없습니다: ${tmpPath}`));
+            return;
+          }
+
+          if (mainWindow)
+            mainWindow.webContents.send("download-progress", { progress: 100, done: true });
+
+          if (!app.isPackaged) {
+            resolve({ success: true, devMode: true });
+            return;
+          }
+
+          const { spawn } = require("child_process");
+          // portable EXE는 실행 시 temp에 압축 해제 후 동작하므로
+          // process.execPath는 temp 경로를 가리킴.
+          // electron-builder가 설정한 PORTABLE_EXECUTABLE_FILE이 실제 원본 EXE 경로.
+          const currentExe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+          const vbsPath = path.join(os.tmpdir(), "hitess_update_helper.vbs");
+          const vbs = [
+            "WScript.Sleep 2000",
+            "Dim oldPath, tmpPath, destPath",
+            "oldPath = WScript.Arguments(0)",
+            "tmpPath = WScript.Arguments(1)",
+            "Set fso = CreateObject(\"Scripting.FileSystemObject\")",
+            "destPath = fso.BuildPath(fso.GetParentFolderName(oldPath), fso.GetFileName(tmpPath))",
+            "fso.CopyFile tmpPath, destPath, True",
+            "If fso.FileExists(oldPath) Then",
+            "  On Error Resume Next",
+            "  fso.DeleteFile oldPath, True",
+            "  On Error GoTo 0",
+            "End If",
+            "Set shell = CreateObject(\"WScript.Shell\")",
+            "shell.Run Chr(34) & destPath & Chr(34)",
+            "On Error Resume Next",
+            "fso.DeleteFile tmpPath, True",
+            "WScript.Quit",
+          ].join("\r\n");
+          fs.writeFileSync(vbsPath, vbs, "utf8");
+
+          const child = spawn("wscript.exe", [vbsPath, currentExe, tmpPath], {
+            detached: true,
+            stdio: "ignore",
+            windowsHide: true,
+          });
+          child.unref();
+
+          resolve({ success: true });
+          setTimeout(() => app.quit(), 500);
+        });
+        fileStream.on("error", (err) => {
+          try { fs.unlinkSync(tmpPath); } catch {}
+          reject(err);
+        });
+      });
+
+      response.on("error", (err) => {
+        fileStream.destroy();
+        try { fs.unlinkSync(tmpPath); } catch {}
+        reject(err);
+      });
+    });
+
+    request.setTimeout(120000, () => {
+      request.destroy();
+      try { fs.unlinkSync(tmpPath); } catch {}
+      reject(new Error("다운로드 타임아웃 (120초)"));
+    });
+
+    request.on("error", (err) => {
+      try { fs.unlinkSync(tmpPath); } catch {}
+      reject(err);
+    });
   });
 });
 

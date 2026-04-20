@@ -36,15 +36,33 @@ import ColumnBucklingCalculator from './pages/analysis/ColumnBucklingCalculator'
 import SectionPropertyCalculator from './pages/analysis/SectionPropertyCalculator';
 import ApiApps from './pages/Administration/ApiApps';
 import HiTessModelFlow from './pages/analysis/HiTessModelFlow';
+import UpdateModal from './components/UpdateModal';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 
 function AppInner() {
-  const [appState, setAppState] = useState(APP_STATE.SPLASH);
+  const [appState, setAppState]           = useState(APP_STATE.SPLASH);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [latestVersion, setLatestVersion]     = useState('');
   const { currentMenu, setCurrentMenu, goBack, goForward, canGoBack, canGoForward, resetNavigation } = useNavigation();
   const { showToast } = useToast();
 
   const handleSplashFinish = async () => {
+    // 세션 여부와 무관하게 항상 버전 체크 먼저 수행
+    try {
+      const res = await checkVersion();
+      const serverVersion = res.data?.version;
+      if (serverVersion && serverVersion !== CLIENT_VERSION) {
+        setLatestVersion(serverVersion);
+        setUpdateAvailable(true);
+        return;
+      }
+    } catch {
+      // 서버 응답 없으면 로그인 화면으로
+      setAppState(APP_STATE.LOGIN);
+      return;
+    }
+
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       // 당일 로그인 여부 확인 — 새 날이면 수동 로그인 요구
@@ -58,7 +76,6 @@ function AppInner() {
         loginDate.getDate() === today.getDate();
 
       if (!isSameDay) {
-        // 새 날 첫 접속 → 세션 초기화 후 수동 로그인 (savedEmployeeId는 보존)
         localStorage.removeItem('user');
         localStorage.removeItem('user_login_at');
         localStorage.removeItem('session_token');
@@ -66,21 +83,6 @@ function AppInner() {
         return;
       }
 
-      // 당일 재접속 → 버전 체크 후 자동 진입
-      try {
-        const res = await checkVersion();
-        const serverVersion = res.data?.version;
-        if (serverVersion && serverVersion !== CLIENT_VERSION) {
-          localStorage.removeItem('user');
-          localStorage.removeItem('user_login_at');
-          setAppState(APP_STATE.LOGIN);
-          return;
-        }
-      } catch {
-        // 서버 응답 없으면 로그인 화면으로
-        setAppState(APP_STATE.LOGIN);
-        return;
-      }
       setAppState(APP_STATE.MAIN);
     } else {
       setAppState(APP_STATE.LOGIN);
@@ -120,8 +122,8 @@ function AppInner() {
         const serverVersion = res.data?.version;
         if (serverVersion && serverVersion !== CLIENT_VERSION) {
           clearInterval(poll);
-          showToast('새 버전이 배포되었습니다. 최신 클라이언트로 업데이트해 주세요.', 'warning');
-          setTimeout(handleLogout, 3000);
+          setLatestVersion(serverVersion);
+          setUpdateAvailable(true);
         }
       } catch {
         // 서버 일시 다운은 무시 (401 인터셉터가 별도 처리)
@@ -208,6 +210,9 @@ function AppInner() {
 
   return (
     <DashboardProvider>
+      {updateAvailable && (
+        <UpdateModal currentVersion={CLIENT_VERSION} serverVersion={latestVersion} />
+      )}
       {appState === APP_STATE.SPLASH && <SplashScreen onFinish={handleSplashFinish} />}
       {appState === APP_STATE.LOGIN && <LoginScreen onLoginSuccess={() => setAppState(APP_STATE.MAIN)} />}
       {appState === APP_STATE.MAIN && (
