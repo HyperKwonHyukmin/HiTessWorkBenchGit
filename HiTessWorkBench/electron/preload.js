@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 // 허용된 IPC 채널 화이트리스트
 const VALID_SEND_CHANNELS    = ['app-ready', 'open-external'];
 const VALID_RECEIVE_CHANNELS = ['app-update', 'server-status', 'download-progress'];
-const VALID_INVOKE_CHANNELS  = ['list-dir-csvs', 'read-file-buffer', 'get-intro-page-html', 'download-client'];
+const VALID_INVOKE_CHANNELS  = ['list-dir-csvs', 'read-file-buffer', 'get-intro-page-html', 'download-client', 'start-self-update'];
 
 contextBridge.exposeInMainWorld("electron", {
   sendMessage: (channel, data) => {

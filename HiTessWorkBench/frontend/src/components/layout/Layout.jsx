@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from './Sidebar';
 import { LogOut, User, Search, ChevronLeft, ChevronRight, Server } from 'lucide-react';
 import { API_BASE_URL, setApiBaseUrl } from '../../config';
+import { version as CLIENT_VERSION } from '../../../package.json';
 import { useServerStatus } from '../../hooks/useServerStatus';
 import { ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import Modal from '../ui/Modal';
@@ -162,6 +163,9 @@ export default function Layout({
                 </span>
                 <span className="text-[10px] text-slate-400 font-mono">
                   {getServerHost(currentServerUrl)}
+                </span>
+                <span className="text-[10px] text-slate-300 font-mono">
+                  v{CLIENT_VERSION}
                 </span>
               </div>
               <Server size={16} className="text-slate-400" />
