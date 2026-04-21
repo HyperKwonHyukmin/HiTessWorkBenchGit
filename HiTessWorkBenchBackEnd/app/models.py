@@ -19,6 +19,14 @@ class User(Base):
   created_at = Column(DateTime(timezone=True), default=datetime.now)
 
 
+class UserSession(Base):
+  __tablename__ = "user_sessions"
+  token       = Column(String(36), primary_key=True)
+  employee_id = Column(String(50), nullable=False, index=True)
+  created_at  = Column(DateTime, default=datetime.now)
+  expires_at  = Column(DateTime, nullable=False)
+
+
 class Analysis(Base):
   __tablename__ = "analysis"
   id = Column(Integer, primary_key=True, index=True)
@@ -69,3 +77,14 @@ class FeatureRequest(Base):
   author_name = Column(String(50))
   admin_comment = Column(String(5000), nullable=True)  # 관리자 댓글
   created_at = Column(DateTime(timezone=True), default=datetime.now)
+
+
+class ActivityLog(Base):
+  __tablename__ = "activity_logs"
+  id = Column(Integer, primary_key=True, index=True)
+  employee_id = Column(String(50), index=True, nullable=True)
+  action_type = Column(String(50), index=True)  # LOGIN, LOGOUT, FILE_DOWNLOAD, PROGRAM_DOWNLOAD, VERSION_UPDATE
+  action_detail = Column(JSON, nullable=True)
+  status = Column(String(20), nullable=True)     # success, failure
+  ip_address = Column(String(50), nullable=True)
+  created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)

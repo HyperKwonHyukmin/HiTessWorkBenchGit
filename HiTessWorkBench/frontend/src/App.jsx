@@ -5,6 +5,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { version as CLIENT_VERSION } from '../package.json';
 import { checkVersion } from './api/auth';
+import { reportVersionUpdate, callLogout } from './api/activity';
 import SplashScreen from './pages/auth/SplashScreen';
 import LoginScreen from './pages/auth/LoginScreen';
 import Dashboard from './pages/dashboard/Dashboard';
@@ -37,9 +38,11 @@ import ColumnBucklingCalculator from './pages/analysis/ColumnBucklingCalculator'
 import SectionPropertyCalculator from './pages/analysis/SectionPropertyCalculator';
 import ApiApps from './pages/Administration/ApiApps';
 import HiTessModelFlow from './pages/analysis/HiTessModelFlow';
+import F06ParserPage from './pages/analysis/F06ParserPage';
 import UpdateModal from './components/UpdateModal';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
+const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8시간 미활동 시 자동 로그아웃
 
 function AppInner() {
   const [appState, setAppState]           = useState(APP_STATE.SPLASH);
@@ -54,6 +57,9 @@ function AppInner() {
       const res = await checkVersion();
       const serverVersion = res.data?.version;
       if (serverVersion && serverVersion !== CLIENT_VERSION) {
+        const storedUser = localStorage.getItem('user');
+        const employeeId = storedUser ? JSON.parse(storedUser).employee_id : null;
+        reportVersionUpdate(CLIENT_VERSION, serverVersion, employeeId);
         setLatestVersion(serverVersion);
         setUpdateAvailable(true);
         return;
@@ -79,6 +85,19 @@ function AppInner() {
       if (!isSameDay) {
         localStorage.removeItem('user');
         localStorage.removeItem('user_login_at');
+        localStorage.removeItem('user_last_active');
+        localStorage.removeItem('session_token');
+        setAppState(APP_STATE.LOGIN);
+        return;
+      }
+
+      // 장시간 미활동 체크 — 마지막 활동 시간 기준 8시간 초과 시 재로그인 요구
+      const lastActive = parseInt(localStorage.getItem('user_last_active') || loginAt.toString(), 10);
+      if (Date.now() - lastActive > INACTIVITY_TIMEOUT_MS) {
+        callLogout();
+        localStorage.removeItem('user');
+        localStorage.removeItem('user_login_at');
+        localStorage.removeItem('user_last_active');
         localStorage.removeItem('session_token');
         setAppState(APP_STATE.LOGIN);
         return;
@@ -91,15 +110,17 @@ function AppInner() {
   };
 
   const handleLogout = () => {
+    callLogout();
     localStorage.removeItem('user');
     localStorage.removeItem('user_login_at');
+    localStorage.removeItem('user_last_active');
     localStorage.removeItem('session_token');
     sessionStorage.removeItem('admin_gate_unlocked');
     setAppState(APP_STATE.LOGIN);
     resetNavigation('Dashboard');
   };
 
-  // 세션 만료(401) 자동 로그아웃 인터셉터
+  // 세션 만료(401) 자동 로그아웃 인터셉터 — axios 요청용
   useEffect(() => {
     const interceptor = axios.interceptors.response.use(
       (res) => res,
@@ -113,16 +134,37 @@ function AppInner() {
     return () => axios.interceptors.response.eject(interceptor);
   }, [appState]);
 
+  // 세션 만료(401) 자동 로그아웃 — fetch 요청용 (session-expired 커스텀 이벤트)
+  useEffect(() => {
+    const onSessionExpired = () => {
+      if (appState === APP_STATE.MAIN) handleLogout();
+    };
+    window.addEventListener('session-expired', onSessionExpired);
+    return () => window.removeEventListener('session-expired', onSessionExpired);
+  }, [appState]);
+
   // MAIN 상태에서 5분마다 서버 버전 체크 — 불일치 시 자동 로그아웃
   useEffect(() => {
     if (appState !== APP_STATE.MAIN) return;
 
     const poll = setInterval(async () => {
+      // 미활동 타임아웃 체크
+      const loginAt = parseInt(localStorage.getItem('user_login_at') || '0', 10);
+      const lastActive = parseInt(localStorage.getItem('user_last_active') || loginAt.toString(), 10);
+      if (lastActive > 0 && Date.now() - lastActive > INACTIVITY_TIMEOUT_MS) {
+        clearInterval(poll);
+        handleLogout();
+        return;
+      }
+
       try {
         const res = await checkVersion();
         const serverVersion = res.data?.version;
         if (serverVersion && serverVersion !== CLIENT_VERSION) {
           clearInterval(poll);
+          const storedUser = localStorage.getItem('user');
+          const employeeId = storedUser ? JSON.parse(storedUser).employee_id : null;
+          reportVersionUpdate(CLIENT_VERSION, serverVersion, employeeId);
           setLatestVersion(serverVersion);
           setUpdateAvailable(true);
         }
@@ -134,26 +176,56 @@ function AppInner() {
     return () => clearInterval(poll);
   }, [appState]);
 
-  // 전역 키보드 단축키
+  // 사용자 활동 감지 — 클릭/키 입력 시 마지막 활동 시간 갱신 (throttle: 60초)
+  useEffect(() => {
+    if (appState !== APP_STATE.MAIN) return;
+    let lastUpdate = 0;
+    const updateLastActive = () => {
+      const now = Date.now();
+      if (now - lastUpdate > 60_000) {
+        localStorage.setItem('user_last_active', String(now));
+        lastUpdate = now;
+      }
+    };
+    window.addEventListener('click', updateLastActive);
+    window.addEventListener('keydown', updateLastActive);
+    return () => {
+      window.removeEventListener('click', updateLastActive);
+      window.removeEventListener('keydown', updateLastActive);
+    };
+  }, [appState]);
+
+  // 전역 키보드 단축키 + 마우스 뒤로/앞으로 버튼
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // F5: 새로고침 방지 (Electron에서 페이지 새로고침 대신 뒤로가기)
       if (e.key === 'F5') {
         e.preventDefault();
       }
-      // Alt + ← : 뒤로 가기
       if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault();
         goBack();
       }
-      // Alt + → : 앞으로 가기
       if (e.altKey && e.key === 'ArrowRight') {
         e.preventDefault();
         goForward();
       }
     };
+    // 마우스 버튼 3 = 뒤로, 버튼 4 = 앞으로 (일반 마우스 사이드 버튼)
+    const handleMouseDown = (e) => {
+      if (e.button === 3) {
+        e.preventDefault();
+        goBack();
+      } else if (e.button === 4) {
+        e.preventDefault();
+        goForward();
+      }
+    };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('mousedown', handleMouseDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('mousedown', handleMouseDown);
+    };
   }, [goBack, goForward]);
 
   const renderPage = () => {
@@ -183,12 +255,14 @@ function AppInner() {
       case 'Download Center': return <DownloadCenter />;
       case 'User Management': return <UserManagement />;
       case 'Analysis Management': return <AnalysisManagement />;
-      case 'System Settings': return <SystemSettings />;
+      case 'System Settings':
+      case 'System Management': return <SystemSettings />;
       case 'AI Lab Assistant':
       case 'AI Assistant':
       case 'AI Based Apps': return <AiAssistantHub />;
 
       case 'BDF Scanner': return <BdfScanner />;
+      case 'F06 Parser': return <F06ParserPage />;
       case 'Productivity Apps': return <ProductivityApps />;
       case 'HiTess ModelFlow': return <HiTessModelFlow />;
       default:

@@ -20,3 +20,10 @@ export const getSessionToken = () => localStorage.getItem('session_token') ?? ''
 export const getAuthHeaders = () => ({
   Authorization: `Bearer ${getSessionToken()}`,
 });
+
+/** fetch 응답 status가 401이면 session-expired 이벤트를 발행하여 자동 로그아웃을 트리거한다 */
+export const handleUnauthorized = (status) => {
+  if (status === 401) {
+    window.dispatchEvent(new CustomEvent('session-expired'));
+  }
+};

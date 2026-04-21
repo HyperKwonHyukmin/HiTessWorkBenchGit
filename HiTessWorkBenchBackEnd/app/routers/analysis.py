@@ -7,17 +7,19 @@ import urllib.parse
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy import func
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models, database
 from ..services.job_manager import job_status_store, analysis_executor
 from ..dependencies import require_auth
+from ..services.activity_service import log_activity
 from ..services.truss_service import task_execute_truss
 from ..services.assessment_service import task_execute_assessment, _json_to_xlsx_bytes
 from ..services.beam_service import task_execute_beam
 from ..services.bdfscanner_service import task_execute_bdfscanner
 from ..services.hitess_modelflow_service import task_execute_modelflow
+from ..services.f06parser_service import task_execute_f06parser
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -29,6 +31,35 @@ _PROGRAM_DOWNLOAD_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "DownloadProg
 
 
 # ==================== 통계 ====================
+
+@router.get("/analysis/stats/monthly")
+def get_monthly_analysis_count(
+    employee_id: str = Query(..., description="사번"),
+    year: int = Query(None),
+    month: int = Query(None),
+    db: Session = Depends(database.get_db)
+):
+    """특정 사용자의 당월(또는 지정 연월) 해석 수행 건수를 반환합니다."""
+    now = datetime.now()
+    y = year or now.year
+    m = month or now.month
+    date_from = datetime(y, m, 1)
+    if m == 12:
+        date_to = datetime(y + 1, 1, 1)
+    else:
+        date_to = datetime(y, m + 1, 1)
+
+    count = (
+        db.query(func.count(models.Analysis.id))
+        .filter(
+            models.Analysis.employee_id == employee_id,
+            models.Analysis.created_at >= date_from,
+            models.Analysis.created_at < date_to,
+        )
+        .scalar()
+    )
+    return {"year": y, "month": m, "count": count}
+
 
 @router.get("/analysis/stats/top-programs")
 def get_top_programs(
@@ -116,7 +147,7 @@ def get_all_analysis_history(
 
 
 @router.get("/download")
-def download_file(filepath: str):
+def download_file(filepath: str, req: Request, db: Session = Depends(database.get_db), employee_id: str = Depends(require_auth)):
     """
     지정된 경로의 파일을 다운로드합니다.
     보안: userConnection/ 디렉터리 내 파일만 허용합니다.
@@ -127,11 +158,17 @@ def download_file(filepath: str):
     if not os.path.exists(decoded_path):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
     filename = os.path.basename(decoded_path)
+    log_activity(
+        db, "FILE_DOWNLOAD",
+        employee_id=employee_id,
+        action_detail={"filename": filename, "filepath": filepath},
+        ip_address=req.client.host if req.client else None,
+    )
     return FileResponse(path=decoded_path, filename=filename, media_type='application/octet-stream')
 
 
 @router.get("/download/program/{filename}")
-def download_program(filename: str):
+def download_program(filename: str, req: Request, db: Session = Depends(database.get_db), employee_id: str = Depends(require_auth)):
     """
     DownloadProgram/ 디렉터리의 배포용 프로그램 파일을 다운로드합니다.
     보안: DownloadProgram/ 디렉터리 내 파일만 허용하며 경로 탈출을 차단합니다.
@@ -142,6 +179,12 @@ def download_program(filename: str):
         raise HTTPException(status_code=403, detail="접근 권한이 없는 경로입니다.")
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다. 관리자에게 문의하세요.")
+    log_activity(
+        db, "PROGRAM_DOWNLOAD",
+        employee_id=employee_id,
+        action_detail={"filename": safe_name},
+        ip_address=req.client.host if req.client else None,
+    )
     return FileResponse(path=file_path, filename=safe_name, media_type='application/octet-stream')
 
 
@@ -171,6 +214,17 @@ def export_assessment_xlsx(json_path: str):
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers={'Content-Disposition': f'attachment; filename="{xlsx_filename}"'}
     )
+
+
+# ==================== 단건 조회 ====================
+
+@router.get("/analysis/{analysis_id}")
+def get_analysis_by_id(analysis_id: int, db: Session = Depends(database.get_db)):
+    """DB에 저장된 특정 해석 기록을 ID로 조회합니다."""
+    record = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Analysis record not found")
+    return _serialize_analysis(record)
 
 
 # ==================== 작업 상태 조회 ====================
@@ -311,6 +365,44 @@ async def request_bdfscanner(
     return {"job_id": job_id}
 
 
+# ==================== F06 Parser ====================
+
+@router.post("/analysis/f06parser/request")
+async def request_f06parser(
+        f06_file: UploadFile = File(...),
+        employee_id: str = Form(...),
+        source: str = Form("Workbench"),
+        current_user: str = Depends(require_auth)
+):
+    """
+    F06 Parser 작업을 요청받아 F06 파일을 저장하고 백그라운드 작업을 실행합니다.
+    Displacement, SPC Force, CBAR/CBEAM/CROD Force/Stress를 추출합니다.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(os.path.dirname(base_dir))
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    unique_folder = f"{timestamp}_{employee_id}_F06Parser"
+    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+    os.makedirs(work_dir, exist_ok=True)
+
+    f06_path = os.path.join(work_dir, os.path.basename(f06_file.filename))
+    try:
+        with open(f06_path, "wb") as buffer:
+            buffer.write(await f06_file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
+
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
+
+    analysis_executor.submit(
+        task_execute_f06parser, job_id, f06_path, work_dir, employee_id, timestamp, source
+    )
+
+    return {"job_id": job_id}
+
+
 # ==================== Simple Beam Assessment ====================
 
 @router.post("/analysis/beam/request")
@@ -371,6 +463,9 @@ async def request_modelflow_analysis(
     csvdebug: bool = Form(True),        # CSV 파싱 디버그 출력
     femodeldebug: bool = Form(True),    # 초기 FE 모델 디버그 출력
     pipelinedebug: bool = Form(True),   # 파이프라인 스테이지 배너 및 통계 출력
+    spc_z_band: float = Form(-1.0),    # SPC Z-band 필터 (mm). -1이면 비활성
+    debug_stages: bool = Form(False),  # 힐링 단계별 BDF 스냅샷
+    stop_at: int = Form(0),            # 0=전체 실행, 1~5=지정 단계까지
 ):
     """
     HiTess ModelFlow 파이프라인 전 과정 실행 (--stage 3).
@@ -414,16 +509,21 @@ async def request_modelflow_analysis(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"장비 파일 저장 오류: {str(e)}")
 
-    exe_dir = os.path.abspath(os.path.join(parent_dir, "InHouseProgram", "HiTessModelFlow"))
-    exe_path = os.path.join(exe_dir, "HiTessModelBuilder.exe")
+    # HiTessModelBuilder exe 경로
+    _ROUTER_DIR_LOCAL = os.path.dirname(os.path.abspath(__file__))
+    _BACKEND_DIR_LOCAL = os.path.dirname(os.path.dirname(_ROUTER_DIR_LOCAL))
+    exe_dir  = os.path.abspath(os.path.join(_BACKEND_DIR_LOCAL, "InHouseProgram", "HiTessModelFlow"))
+    exe_path = os.path.join(exe_dir, "HiTessModelBuilder_26_01.exe")
 
     job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "대기 중..."})
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "해석 대기 중..."})
 
     analysis_executor.submit(
         task_execute_modelflow,
-        job_id, stru_path, pipe_path, equip_path, work_dir, exe_path, employee_id, timestamp, source,
+        job_id, stru_path, pipe_path, equip_path, work_dir, exe_path,
+        employee_id, timestamp, source,
         stop_mode, ubolt, mesh_size, verbose, csvdebug, femodeldebug, pipelinedebug,
+        spc_z_band, debug_stages, stop_at,
     )
 
     return {"job_id": job_id}
@@ -514,7 +614,7 @@ async def request_ubolt_retry(
     _ROUTER_DIR_LOCAL = os.path.dirname(os.path.abspath(__file__))
     _BACKEND_DIR_LOCAL = os.path.dirname(os.path.dirname(_ROUTER_DIR_LOCAL))
     exe_dir = os.path.abspath(os.path.join(_BACKEND_DIR_LOCAL, "InHouseProgram", "HiTessModelFlow"))
-    exe_path = os.path.join(exe_dir, "HiTessModelBuilder.exe")
+    exe_path = os.path.join(exe_dir, "HiTessModelBuilder_26_01.exe")
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     job_id = str(uuid.uuid4())

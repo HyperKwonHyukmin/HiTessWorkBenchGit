@@ -15,6 +15,7 @@ import { API_BASE_URL } from '../../config';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import GuideButton from '../../components/ui/GuideButton';
 import { useToast } from '../../contexts/ToastContext';
+import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
 
 // ── Three.js FEM 모델 뷰어 ────────────────────────────────────
 // mode: 'raw'    → 2단계 (자유노드 표시, BC 없음)
@@ -108,7 +109,7 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
     setViewState('loading');
     setErrorMsg('');
 
-    fetch(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(jsonPath)}`)
+    fetch(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(jsonPath)}`, { headers: getAuthHeaders() })
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.text();
@@ -467,7 +468,7 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',     sub: '',                      icon: FileSpreadsheet, status: 'wait' },
   { id: 'model-qc',       title: '모델 알고리즘 적용', sub: 'HiTESS Heal 알고리즘', icon: ShieldCheck,     status: 'wait' },
-  { id: 'nastran',        title: 'Nastran 해석',      sub: 'SOL 선택 및 F06 파싱',  icon: Cpu,             status: 'wait' },
+  { id: 'nastran',        title: 'Nastran을 통한 검증', sub: 'F06 파싱 및 결과 검증', icon: Cpu,             status: 'wait' },
 ];
 
 const STATUS_CONFIG = {
@@ -651,9 +652,9 @@ function guessTypeFromFilename(filename) {
 
 // 2단계: CSV 첫 행(헤더)을 읽어 필수 컬럼 존재 여부로 유형 검증
 const CSV_REQUIRED_COLS = {
-  stru:  ['mark', 'memberid'],                    // 구조물 CSV 필수 컬럼 (소문자)
-  pipe:  ['pipelineno', 'diameter'],               // 배관 CSV 필수 컬럼
-  equip: ['equipno', 'weight'],                    // 장비 CSV 필수 컬럼
+  stru:  ['ori'],       // 구조물 CSV 필수 컬럼 — ori(방향) 컬럼
+  pipe:  ['outdia'],    // 배관 CSV 필수 컬럼 — outDia(외경) 컬럼
+  equip: ['cog'],       // 장비 CSV 필수 컬럼 — cog(무게중심) 컬럼
 };
 function readCsvHeader(file) {
   return new Promise((resolve, reject) => {
@@ -681,6 +682,8 @@ async function detectCsvType(file) {
 // multiple=true 이면 여러 파일 선택 허용 (stru 존에서 일괄 선택 시 자동 분류)
 function CsvDropZone({ label, required, file, fileError, onFile, onClear, multiple = false, onMultipleFiles }) {
   const inputRef = useRef(null);
+  const isWarn = fileError?.startsWith('__warn__');
+  const displayError = isWarn ? fileError.slice(8) : fileError;
 
   const handleSingleFile = (f) => {
     if (!f) return;
@@ -711,10 +714,10 @@ function CsvDropZone({ label, required, file, fileError, onFile, onClear, multip
 
   return (
     <div className={`rounded-xl border bg-white shadow-sm overflow-hidden transition-colors
-      ${fileError ? 'border-red-300' : 'border-slate-200'}`}>
+      ${fileError && !isWarn ? 'border-red-300' : isWarn ? 'border-amber-300' : 'border-slate-200'}`}>
       <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
         <div className="flex items-center gap-2">
-          <FileSpreadsheet size={13} className={fileError ? 'text-red-400' : 'text-slate-400'} />
+          <FileSpreadsheet size={13} className={fileError && !isWarn ? 'text-red-400' : isWarn ? 'text-amber-400' : 'text-slate-400'} />
           <span className="text-xs font-semibold text-slate-700">{label}</span>
           {required
             ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">필수</span>
@@ -729,13 +732,17 @@ function CsvDropZone({ label, required, file, fileError, onFile, onClear, multip
       </div>
       {file ? (
         <div className="flex flex-col items-center justify-center gap-0.5 px-3 py-3 text-center">
-          {fileError
+          {fileError && !isWarn
             ? <AlertCircle size={15} className="text-red-500 shrink-0 mb-0.5" />
+            : isWarn
+            ? <AlertCircle size={15} className="text-amber-400 shrink-0 mb-0.5" />
             : <CheckCircle2 size={15} className="text-green-500 shrink-0 mb-0.5" />
           }
           <p className="text-[10px] font-semibold text-slate-700 truncate w-full text-center">{file.name}</p>
-          {fileError
-            ? <p className="text-[10px] text-red-500 leading-tight text-center">{fileError}</p>
+          {fileError && !isWarn
+            ? <p className="text-[10px] text-red-500 leading-tight text-center">{displayError}</p>
+            : isWarn
+            ? <p className="text-[10px] text-amber-500 leading-tight text-center">{displayError}</p>
             : <p className="text-[10px] text-slate-400">{(file.size / 1024).toFixed(1)} KB</p>
           }
         </div>
@@ -942,12 +949,25 @@ function DetailAlgorithm({ jobStatus, logData }) {
 }
 
 // ── STAGE별 알고리즘 로그 패널 ──────────────────────────────────
-function AlgorithmLogPanel({ logData, jobStatus }) {
+function AlgorithmLogPanel({ logData, jobStatus, processLog, engineLog }) {
   const isRunning  = jobStatus?.status === 'Running' || jobStatus?.status === 'Pending';
+  const isFailed   = jobStatus?.status === 'Failed';
   const stages     = logData?.stageResults ?? [];
   const [expanded, setExpanded] = useState(null); // 펼쳐진 STAGE id
 
   if (stages.length === 0) {
+    if (isFailed && engineLog) {
+      return (
+        <div className="h-full flex flex-col gap-2 px-3 py-3">
+          <div className="flex items-center gap-1.5 text-red-600">
+            <span className="text-xs font-bold">실행 오류</span>
+          </div>
+          <pre className="flex-1 overflow-auto text-[10px] font-mono leading-relaxed text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2 whitespace-pre-wrap break-all">
+            {engineLog}
+          </pre>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
         {isRunning
@@ -960,6 +980,36 @@ function AlgorithmLogPanel({ logData, jobStatus }) {
 
   return (
     <div className="h-full overflow-y-auto px-3 py-2 space-y-1">
+      {/* ProcessLog 배너 */}
+      {processLog && (
+        <div className={`mb-2 px-3 py-2 rounded-xl border text-xs font-medium ${
+          processLog.exitReason === 'Completed'
+            ? 'bg-green-50 border-green-200 text-green-700'
+            : processLog.exitReason === 'EarlyStop'
+            ? 'bg-amber-50 border-amber-200 text-amber-700'
+            : 'bg-red-50 border-red-200 text-red-700'
+        }`}>
+          <span className="font-bold">
+            {processLog.exitReason === 'Completed' ? '✓ 정상 완료'
+              : processLog.exitReason === 'EarlyStop' ? '⚠ 조기 종료'
+              : `✗ 오류 (Stage ${processLog.errorStage ?? '?'})`}
+          </span>
+          {processLog.errorMessage && (
+            <p className="text-[10px] mt-1 font-mono opacity-90">{processLog.errorMessage}</p>
+          )}
+          {processLog.stages?.length > 0 && (
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[10px] opacity-80">
+              {processLog.stages.map(s => (
+                <span key={s.id}>
+                  {s.name}: {s.elapsedMs >= 1000
+                    ? `${(s.elapsedMs / 1000).toFixed(1)}s`
+                    : `${s.elapsedMs}ms`}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {stages.map(({ stage, checks, bdfExported, bdfFile }) => {
         const warnCount  = checks.filter(c => c.type === 'warn').length;
         const passCount  = checks.filter(c => c.type === 'pass').length;
@@ -1604,9 +1654,8 @@ export default function HiTessModelFlow() {
   const [meshSize, setMeshSize]     = useState('500');
   const [useNastran, setUseNastran] = useState(false);
   const [verbose,       setVerbose]       = useState(false);
-  const [csvDebug,      setCsvDebug]      = useState(true);
-  const [feModelDebug,  setFeModelDebug]  = useState(true);
-  const [pipelineDebug, setPipelineDebug] = useState(true);
+  const [debugStages,   setDebugStages]   = useState(false);
+  const [processLog,    setProcessLog]    = useState(null);
 
   // CSV 파일 (DetailCSV에서 lift-up)
   const [struFile,  setStruFile]  = useState(null);
@@ -1618,9 +1667,10 @@ export default function HiTessModelFlow() {
   const [equiError, setEquiError] = useState(null);
 
   // 작업 상태
-  const [jobStatus, setJobStatus] = useState(null); // { status, progress, message }
-  const [logData,   setLogData]   = useState(null); // parseModelFlowLog 결과
-  const [bdfResult, setBdfResult] = useState(null); // { bdfPath, jsonPath }
+  const [jobStatus,   setJobStatus]   = useState(null); // { status, progress, message }
+  const [logData,     setLogData]     = useState(null); // parseModelFlowLog 결과
+  const [engineLog,   setEngineLog]   = useState(null); // 실패 시 raw 엔진 출력
+  const [bdfResult,   setBdfResult]   = useState(null); // { bdfPath, jsonPath }
   const pollRef = useRef(null);
 
   // ── Stage 4 (Nastran) 상태 ──
@@ -1670,7 +1720,8 @@ export default function HiTessModelFlow() {
 
     pollRef.current = setInterval(async () => {
       try {
-        const res  = await fetch(`${API_BASE_URL}/api/analysis/status/${jobId}`);
+        const res  = await fetch(`${API_BASE_URL}/api/analysis/status/${jobId}`, { headers: getAuthHeaders() });
+        if (!res.ok) { handleUnauthorized(res.status); return; }
         const data = await res.json();
         setJobStatus(data);
 
@@ -1724,6 +1775,12 @@ export default function HiTessModelFlow() {
 
           if (data.log_content) {
             setLogData(parseModelFlowLog(data.log_content));
+          }
+          if (data.process_log) {
+            setProcessLog(data.process_log);
+          }
+          if (data.status === 'Failed') {
+            setEngineLog(data.engine_log || data.message || '알 수 없는 오류');
           }
         }
       } catch (_) {
@@ -1849,21 +1906,18 @@ export default function HiTessModelFlow() {
       // 헤더 감지 성공 시 에러 없음, 실패 시 경고
       if (setErr) {
         if (headerType && headerType === slotHint) {
-          setErr(null); // 헤더까지 맞음
+          setErr(null);
         } else if (!headerType && guessed === slotHint) {
-          setErr(null); // 파일명 기준 맞음
+          setErr(null);
         } else if (!headerType && !guessed) {
-          setErr('CSV 헤더를 인식할 수 없습니다. 올바른 파일인지 확인하세요.');
+          // 헤더·파일명 모두 인식 불가 → 경고만 표시 (실행은 차단하지 않음)
+          setErr('__warn__CSV 헤더/파일명 자동 인식 불가. 올바른 파일인지 확인하세요.');
         } else {
           setErr(null);
         }
       }
     }
 
-    // stru 파일 선택 시 Electron 환경에서 동일 폴더 자동 스캔
-    if (finalType === 'stru') {
-      scanSiblingCsvs(file); // 비동기, 결과 무시해도 무방
-    }
   };
 
   // 여러 CSV 파일 일괄 자동 분류 (stru 존에서 여러 파일 선택 시 호출)
@@ -1895,8 +1949,24 @@ export default function HiTessModelFlow() {
   // ModelFlow 실행 (전체 파이프라인 한 번에)
   const handleRunModelFlow = async () => {
     if (!struFile) { showToast('Structural CSV 파일이 필요합니다.', 'warning'); return; }
-    if (struError || pipeError || equiError) { showToast('파일 형식 오류를 먼저 해결하세요.', 'warning'); return; }
+    // __warn__ 접두어는 경고(황색) 표시용 — 실행 차단 대상 아님
+    const isHardError = (e) => e && !e.startsWith('__warn__');
+    if (isHardError(struError) || isHardError(pipeError) || isHardError(equiError)) {
+      showToast('파일 형식 오류를 먼저 해결하세요.', 'warning'); return;
+    }
     const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+    // ── 진단 로그 ──────────────────────────────────────────────
+    const authHeaders = getAuthHeaders();
+    console.group('[ModelFlow] 요청 진단');
+    console.log('서버 URL :', API_BASE_URL);
+    console.log('Auth 헤더 :', authHeaders);
+    console.log('user (localStorage) :', user);
+    console.log('struFile :', struFile?.name, struFile?.size, 'bytes');
+    console.log('pipeFile :', pipeFile?.name ?? '없음');
+    console.log('equiFile :', equiFile?.name ?? '없음');
+    console.groupEnd();
+    // ────────────────────────────────────────────────────────────
 
     const formData = new FormData();
     formData.append('stru_file', struFile);
@@ -1906,9 +1976,11 @@ export default function HiTessModelFlow() {
     formData.append('stop_mode', '7');
     formData.append('mesh_size', meshSize || '500');
     formData.append('verbose', verbose);
-    formData.append('csvdebug', csvDebug);
-    formData.append('femodeldebug', feModelDebug);
-    formData.append('pipelinedebug', pipelineDebug);
+    formData.append('csvdebug', 'true');
+    formData.append('femodeldebug', 'true');
+    formData.append('pipelinedebug', 'true');
+    formData.append('spc_z_band', '-1');
+    formData.append('debug_stages', debugStages);
 
     // 상태 초기화
     setActiveIdx(0);
@@ -1928,13 +2000,19 @@ export default function HiTessModelFlow() {
     setJobStatus({ status: 'Running', progress: 10, message: '파일 전송 중...' });
 
     try {
-      const res  = await fetch(`${API_BASE_URL}/api/analysis/modelflow/request`, { method: 'POST', body: formData });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res  = await fetch(`${API_BASE_URL}/api/analysis/modelflow/request`, { method: 'POST', body: formData, headers: getAuthHeaders() });
+      if (!res.ok) {
+        handleUnauthorized(res.status);
+        let detail = `HTTP ${res.status}`;
+        try { const b = await res.json(); detail += ` — ${b.detail ?? JSON.stringify(b)}`; } catch {}
+        throw new Error(detail);
+      }
       const data = await res.json();
       startPolling(data.job_id, useNastran);
     } catch (e) {
       setSteps(prev => prev.map((s, i) => i === 0 ? { ...s, status: 'error' } : s));
       setJobStatus({ status: 'Failed', progress: 0, message: `서버 연결 실패: ${e.message}` });
+      setEngineLog(`[요청 실패]\n서버: ${API_BASE_URL}\n오류: ${e.message}`);
     }
   };
 
@@ -1953,9 +2031,8 @@ export default function HiTessModelFlow() {
     setMeshSize('500');
     setUseNastran(false);
     setVerbose(false);
-    setCsvDebug(true);
-    setFeModelDebug(true);
-    setPipelineDebug(true);
+    setDebugStages(false);
+    setProcessLog(null);
     setStruFile(null);
     setPipeFile(null);
     setEquiFile(null);
@@ -1964,6 +2041,7 @@ export default function HiTessModelFlow() {
     setEquiError(null);
     setJobStatus(null);
     setLogData(null);
+    setEngineLog(null);
     setBdfResult(null);
     // Stage 4 초기화
     setNastranJobId(null);
@@ -1991,7 +2069,7 @@ export default function HiTessModelFlow() {
     for (const [key, path] of Object.entries(resultInfo)) {
       if (!path || typeof path !== 'string') continue;
       try {
-        const res = await fetch(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(path)}`);
+        const res = await fetch(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(path)}`, { headers: getAuthHeaders() });
         if (!res.ok) continue;
         const text = await res.text();
         const parsed = JSON.parse(text);
@@ -2006,7 +2084,8 @@ export default function HiTessModelFlow() {
     if (nastranPollRef.current) clearInterval(nastranPollRef.current);
     nastranPollRef.current = setInterval(async () => {
       try {
-        const res  = await fetch(`${API_BASE_URL}/api/analysis/status/${jobId}`);
+        const res  = await fetch(`${API_BASE_URL}/api/analysis/status/${jobId}`, { headers: getAuthHeaders() });
+        if (!res.ok) { handleUnauthorized(res.status); return; }
         const data = await res.json();
         setNastranStatus(data);
         if (data.status === 'Success' || data.status === 'Failed') {
@@ -2036,9 +2115,9 @@ export default function HiTessModelFlow() {
     });
     try {
       const res = await fetch(`${API_BASE_URL}/api/analysis/modelflow/nastran-request`, {
-        method: 'POST', body,
+        method: 'POST', body, headers: getAuthHeaders(),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) { handleUnauthorized(res.status); throw new Error(`HTTP ${res.status}`); }
       const data = await res.json();
       setNastranJobId(data.job_id);
       startNastranPolling(data.job_id);
@@ -2053,7 +2132,8 @@ export default function HiTessModelFlow() {
     if (uboltPollRef.current) clearInterval(uboltPollRef.current);
     uboltPollRef.current = setInterval(async () => {
       try {
-        const res  = await fetch(`${API_BASE_URL}/api/analysis/status/${jobId}`);
+        const res  = await fetch(`${API_BASE_URL}/api/analysis/status/${jobId}`, { headers: getAuthHeaders() });
+        if (!res.ok) { handleUnauthorized(res.status); return; }
         const data = await res.json();
         if (data.status === 'Success' || data.status === 'Failed') {
           clearInterval(uboltPollRef.current);
@@ -2077,7 +2157,8 @@ export default function HiTessModelFlow() {
     if (uboltPollRef.current) clearInterval(uboltPollRef.current);
     uboltPollRef.current = setInterval(async () => {
       try {
-        const res  = await fetch(`${API_BASE_URL}/api/analysis/status/${jobId}`);
+        const res  = await fetch(`${API_BASE_URL}/api/analysis/status/${jobId}`, { headers: getAuthHeaders() });
+        if (!res.ok) { handleUnauthorized(res.status); return; }
         const data = await res.json();
         if (data.status === 'Success' || data.status === 'Failed') {
           clearInterval(uboltPollRef.current);
@@ -2093,7 +2174,7 @@ export default function HiTessModelFlow() {
             });
             try {
               const scanRes = await fetch(`${API_BASE_URL}/api/analysis/modelflow/nastran-request`, {
-                method: 'POST', body,
+                method: 'POST', body, headers: getAuthHeaders(),
               });
               if (scanRes.ok) {
                 const scanData = await scanRes.json();
@@ -2130,9 +2211,9 @@ export default function HiTessModelFlow() {
     if (stage3Meta.equip_path) body.append('equip_path', stage3Meta.equip_path);
     try {
       const res = await fetch(`${API_BASE_URL}/api/analysis/modelflow/ubolt-retry`, {
-        method: 'POST', body,
+        method: 'POST', body, headers: getAuthHeaders(),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) { handleUnauthorized(res.status); throw new Error(`HTTP ${res.status}`); }
       const data = await res.json();
       setUboltJobId(data.job_id);
       startUboltModelflowPolling(data.job_id);
@@ -2196,9 +2277,10 @@ export default function HiTessModelFlow() {
 
             <div className="flex-1 overflow-y-auto custom-scrollbar py-3 px-3">
               {steps.map((step, idx) => {
-                const StepIcon = step.icon;
-                const cfg      = STATUS_CONFIG[step.status];
-                const isActive = idx === activeIdx;
+                const StepIcon       = step.icon;
+                const effectiveStatus = (step.id === 'nastran' && !useNastran && step.status === 'wait') ? 'disabled' : step.status;
+                const cfg            = STATUS_CONFIG[effectiveStatus];
+                const isActive       = idx === activeIdx;
                 const isLast   = idx === steps.length - 1;
 
                 return (
@@ -2215,11 +2297,13 @@ export default function HiTessModelFlow() {
                     {/* ② 스텝 카드 */}
                     <div
                       className={`flex-1 mb-2 ml-2 rounded-xl border px-3.5 py-3 transition-all duration-200 cursor-pointer
-                        ${isActive
+                        ${effectiveStatus === 'disabled'
+                          ? 'border-slate-100 bg-slate-50 opacity-50 cursor-default'
+                          : isActive
                           ? 'border-blue-500 bg-blue-50 shadow-sm'
                           : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                         }`}
-                      onClick={() => goStep(idx)}
+                      onClick={() => effectiveStatus !== 'disabled' && goStep(idx)}
                     >
                       <div className="flex items-start justify-between gap-2 mb-0.5">
                         <div className="flex items-center gap-1.5">
@@ -2229,7 +2313,7 @@ export default function HiTessModelFlow() {
                           </span>
                         </div>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 whitespace-nowrap ${cfg.badge}`}>
-                          {isActive && step.status === 'wait' ? '선택됨' : cfg.label}
+                          {effectiveStatus === 'disabled' ? '비활성' : isActive && step.status === 'wait' ? '선택됨' : cfg.label}
                         </span>
                       </div>
                       <p className="text-xs text-slate-400 pl-5">{step.sub}</p>
@@ -2277,49 +2361,34 @@ export default function HiTessModelFlow() {
                 </div>
               </div>
               <div className="h-px bg-slate-100" />
-              {/* Nastran 토글 */}
+              {/* Nastran 검증 토글 */}
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-slate-700">Nastran 해석</p>
-                  <p className="text-[10px] text-slate-400">BDF 변환 후 자동 실행 여부</p>
+                  <p className="text-xs font-medium text-slate-700">Nastran을 통한 검증</p>
+                  <p className="text-[10px] text-slate-400">ModelFlow 완료 후 Nastran 검증 실행</p>
                 </div>
                 <Toggle checked={useNastran} onChange={setUseNastran} />
               </div>
               {useNastran && (
                 <div className="text-[10px] px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-blue-600">
-                  ModelFlow 완료 후 Nastran 해석이 자동 시작됩니다.
+                  BDF 생성 완료 후 Nastran 검증 절차가 자동으로 시작됩니다.
                 </div>
               )}
               <div className="h-px bg-slate-100" />
               {/* 디버그 옵션 */}
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">디버그 옵션</p>
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-slate-700">Verbose</p>
-                  <p className="text-[10px] text-slate-400">요소별 세부 처리 로그</p>
+                  <p className="text-xs font-medium text-slate-700">알고리즘 상세 로그</p>
+                  <p className="text-[10px] text-slate-400">노드·요소 단위 처리 과정 기록 (출력량 증가)</p>
                 </div>
                 <Toggle checked={verbose} onChange={setVerbose} />
               </div>
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-slate-700">CSV Debug</p>
-                  <p className="text-[10px] text-slate-400">CSV 파싱 결과 로그</p>
+                  <p className="text-xs font-medium text-slate-700">단계별 BDF 저장</p>
+                  <p className="text-[10px] text-slate-400">힐링 완료 시 각 단계별 BDF 파일 생성</p>
                 </div>
-                <Toggle checked={csvDebug} onChange={setCsvDebug} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium text-slate-700">FE Model Debug</p>
-                  <p className="text-[10px] text-slate-400">초기 FE 모델 덤프</p>
-                </div>
-                <Toggle checked={feModelDebug} onChange={setFeModelDebug} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium text-slate-700">Pipeline Debug</p>
-                  <p className="text-[10px] text-slate-400">힐링 단계별 로그</p>
-                </div>
-                <Toggle checked={pipelineDebug} onChange={setPipelineDebug} />
+                <Toggle checked={debugStages} onChange={setDebugStages} />
               </div>
             </div>
           </div>
@@ -2431,7 +2500,7 @@ export default function HiTessModelFlow() {
                   </div>
                 </div>
                 <div className="flex-1 min-h-0">
-                  <AlgorithmLogPanel logData={logData} jobStatus={jobStatus} />
+                  <AlgorithmLogPanel logData={logData} jobStatus={jobStatus} processLog={processLog} engineLog={engineLog} />
                 </div>
               </div>
             </>
