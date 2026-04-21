@@ -1,6 +1,6 @@
 """
 [TEMP] HiTessBeam 임시 라우터
-향후 HiTess ModelFlow 통합 시 제거 예정.
+향후 HiTess Model Builder 통합 시 제거 예정.
 제거 방법:
   1. 이 파일 삭제
   2. InHouseProgram/HiTessBeam/ModuleUnit_HiTESS.exe 삭제

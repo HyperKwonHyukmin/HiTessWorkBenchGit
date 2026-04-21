@@ -1,4 +1,4 @@
-"""HiTess ModelFlow 파이프라인 단계별 백그라운드 실행 로직.
+"""HiTess Model Builder 파이프라인 단계별 백그라운드 실행 로직.
 
 stop_mode (API 값):
   'load' → --stage 1  (CSV 파싱 + FE 초기 모델 빌드, BDF 미생성)
@@ -260,10 +260,10 @@ def task_execute_modelflow(
                                 # bytes 모드로 실행: .NET 콘솔 인코딩(OEM) 문제 회피
                                 # bdf_path는 절대경로 → C# Path.GetDirectoryName()이 BDF 폴더에 JSON 출력
                                 _scanner_cmd = [_BDFSCANNER_EXE, bdf_path]
-                                logger.info("[ModelFlow/BdfScanner] exe : %s", _BDFSCANNER_EXE)
-                                logger.info("[ModelFlow/BdfScanner] bdf : %s (exists=%s)", bdf_path, os.path.exists(bdf_path))
-                                logger.info("[ModelFlow/BdfScanner] cwd : %s", work_dir)
-                                logger.info("[ModelFlow/BdfScanner] cmd : %s", " ".join(_scanner_cmd))
+                                logger.info("[ModelBuilder/BdfScanner] exe : %s", _BDFSCANNER_EXE)
+                                logger.info("[ModelBuilder/BdfScanner] bdf : %s (exists=%s)", bdf_path, os.path.exists(bdf_path))
+                                logger.info("[ModelBuilder/BdfScanner] cwd : %s", work_dir)
+                                logger.info("[ModelBuilder/BdfScanner] cmd : %s", " ".join(_scanner_cmd))
                                 scanner_result = subprocess.run(
                                     _scanner_cmd,
                                     cwd=work_dir,
@@ -273,10 +273,10 @@ def task_execute_modelflow(
                                 )
                                 stdout_text = scanner_result.stdout.decode("utf-8", errors="replace")
                                 stderr_text = scanner_result.stderr.decode("utf-8", errors="replace")
-                                logger.info("[ModelFlow/BdfScanner] exit: %d", scanner_result.returncode)
-                                logger.info("[ModelFlow/BdfScanner] stdout: %s", stdout_text[:500] if stdout_text.strip() else "(empty)")
+                                logger.info("[ModelBuilder/BdfScanner] exit: %d", scanner_result.returncode)
+                                logger.info("[ModelBuilder/BdfScanner] stdout: %s", stdout_text[:500] if stdout_text.strip() else "(empty)")
                                 if stderr_text.strip():
-                                    logger.warning("[ModelFlow/BdfScanner] stderr: %s", stderr_text[:500])
+                                    logger.warning("[ModelBuilder/BdfScanner] stderr: %s", stderr_text[:500])
                                 engine_output += f"\n[BdfScanner] exit={scanner_result.returncode}"
                                 if stdout_text.strip():
                                     engine_output += f"\n{stdout_text.strip()}"
@@ -287,17 +287,17 @@ def task_execute_modelflow(
                                 bdf_dir  = os.path.dirname(os.path.abspath(bdf_path))
                                 bdf_stem = os.path.splitext(os.path.basename(bdf_path))[0]
                                 scanner_json_path = os.path.join(bdf_dir, f"{bdf_stem}.json")
-                                logger.info("[ModelFlow/BdfScanner] 기대 JSON: %s", scanner_json_path)
+                                logger.info("[ModelBuilder/BdfScanner] 기대 JSON: %s", scanner_json_path)
 
                                 # work_dir 내 모든 파일 목록 (디버깅용)
                                 try:
                                     _dir_files = os.listdir(bdf_dir)
-                                    logger.info("[ModelFlow/BdfScanner] bdf_dir 파일 목록: %s", _dir_files)
+                                    logger.info("[ModelBuilder/BdfScanner] bdf_dir 파일 목록: %s", _dir_files)
                                 except Exception:
                                     pass
 
                                 if os.path.exists(scanner_json_path):
-                                    logger.info("[ModelFlow/BdfScanner] JSON 발견 — 변환 중")
+                                    logger.info("[ModelBuilder/BdfScanner] JSON 발견 — 변환 중")
                                     with open(scanner_json_path, "r", encoding="utf-8-sig", errors="replace") as f:
                                         scanner_data = json.load(f)
 
@@ -310,9 +310,9 @@ def task_execute_modelflow(
 
                                     json_path = fem_json_path
                                     result_data["json_path"] = json_path
-                                    logger.info("[ModelFlow/BdfScanner] FemModel JSON 저장 완료: %s", fem_json_path)
+                                    logger.info("[ModelBuilder/BdfScanner] FemModel JSON 저장 완료: %s", fem_json_path)
                                 else:
-                                    logger.warning("[ModelFlow/BdfScanner] JSON 미생성: %s", scanner_json_path)
+                                    logger.warning("[ModelBuilder/BdfScanner] JSON 미생성: %s", scanner_json_path)
                                     engine_output += f"\n[경고] BdfScanner JSON 미생성: {scanner_json_path}"
 
                             except subprocess.TimeoutExpired:
@@ -334,15 +334,15 @@ def task_execute_modelflow(
                 engine_output = "실행 시간 초과 (10분). 입력 파일을 확인하세요."
             except Exception as e:
                 status_msg = "Failed"
-                logger.error("HiTessModelFlow subprocess error: %s", str(e), exc_info=True)
+                logger.error("HiTessModelBuilder subprocess error: %s", str(e), exc_info=True)
                 engine_output = f"실행 오류: {str(e)}"
 
         job_status_store.update_job(job_id, {"progress": 90, "message": "DB 저장 중..."})
 
         try:
             new_analysis = models.Analysis(
-                project_name=f"HiTessModelFlow_{timestamp}",
-                program_name="HiTessModelFlow",
+                project_name=f"HiTessModelBuilder_{timestamp}",
+                program_name="HiTessModelBuilder",
                 employee_id=employee_id,
                 status=status_msg,
                 input_info=input_data,

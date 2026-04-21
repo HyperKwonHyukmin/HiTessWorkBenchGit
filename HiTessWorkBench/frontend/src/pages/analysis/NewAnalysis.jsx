@@ -29,8 +29,8 @@ export default function NewAnalysis() {
     } else if (categoryTitle === "Truss Structural Assessment") {
       if (setAssessmentPageState) setAssessmentPageState({});
       setCurrentMenu('Truss Structural Assessment');
-    } else if (categoryTitle === "HiTess ModelFlow") {
-      setCurrentMenu('HiTess ModelFlow');
+    } else if (categoryTitle === "HiTess Model Builder") {
+      setCurrentMenu('HiTess Model Builder');
     } else {
       showToast(`${categoryTitle} 기능은 현재 준비 중입니다.`, 'info');
     }

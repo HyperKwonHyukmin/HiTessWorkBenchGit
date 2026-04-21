@@ -446,7 +446,7 @@ async def request_beam_analysis(
     return {"job_id": job_id}
 
 
-# ==================== HiTess ModelFlow ====================
+# ==================== HiTess Model Builder ====================
 
 @router.post("/analysis/modelflow/request")
 async def request_modelflow_analysis(
@@ -468,7 +468,7 @@ async def request_modelflow_analysis(
     stop_at: int = Form(0),            # 0=전체 실행, 1~5=지정 단계까지
 ):
     """
-    HiTess ModelFlow 파이프라인 전 과정 실행 (--stage 3).
+    HiTess Model Builder 파이프라인 전 과정 실행 (--stage 3).
     mesh_size → --mesh {mm} 로 전달.
     ubolt=True → U-bolt RBE2를 123456 DOF로 강제 고정 (--ubolt true)
     verbose/csvdebug/femodeldebug/pipelinedebug → 디버그 출력 제어
@@ -477,7 +477,7 @@ async def request_modelflow_analysis(
     parent_dir = os.path.dirname(os.path.dirname(base_dir))
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-    unique_folder = f"{timestamp}_{employee_id}_HiTessModelFlow"
+    unique_folder = f"{timestamp}_{employee_id}_HiTessModelBuilder"
     work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
     os.makedirs(work_dir, exist_ok=True)
 
@@ -512,7 +512,7 @@ async def request_modelflow_analysis(
     # HiTessModelBuilder exe 경로
     _ROUTER_DIR_LOCAL = os.path.dirname(os.path.abspath(__file__))
     _BACKEND_DIR_LOCAL = os.path.dirname(os.path.dirname(_ROUTER_DIR_LOCAL))
-    exe_dir  = os.path.abspath(os.path.join(_BACKEND_DIR_LOCAL, "InHouseProgram", "HiTessModelFlow"))
+    exe_dir  = os.path.abspath(os.path.join(_BACKEND_DIR_LOCAL, "InHouseProgram", "HiTessModeBuilder"))
     exe_path = os.path.join(exe_dir, "HiTessModelBuilder_26_01.exe")
 
     job_id = str(uuid.uuid4())
@@ -529,7 +529,7 @@ async def request_modelflow_analysis(
     return {"job_id": job_id}
 
 
-# ==================== HiTess ModelFlow — Nastran 해석 (Stage 4) ====================
+# ==================== HiTess Model Builder — Nastran 해석 (Stage 4) ====================
 
 @router.post("/analysis/modelflow/nastran-request")
 async def request_modelflow_nastran(
@@ -613,7 +613,7 @@ async def request_ubolt_retry(
     # HiTessModelBuilder exe 경로
     _ROUTER_DIR_LOCAL = os.path.dirname(os.path.abspath(__file__))
     _BACKEND_DIR_LOCAL = os.path.dirname(os.path.dirname(_ROUTER_DIR_LOCAL))
-    exe_dir = os.path.abspath(os.path.join(_BACKEND_DIR_LOCAL, "InHouseProgram", "HiTessModelFlow"))
+    exe_dir = os.path.abspath(os.path.join(_BACKEND_DIR_LOCAL, "InHouseProgram", "HiTessModeBuilder"))
     exe_path = os.path.join(exe_dir, "HiTessModelBuilder_26_01.exe")
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')

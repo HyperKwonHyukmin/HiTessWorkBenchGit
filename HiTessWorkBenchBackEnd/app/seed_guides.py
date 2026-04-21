@@ -21,7 +21,7 @@ DEFAULT_GUIDES = [
             "|----|------|\n"
             "| **Truss Model Builder** | CSV 2개(노드·부재) → Nastran BDF 자동 생성, 3D 미리보기 |\n"
             "| **Truss Structural Assessment** | BDF → 전 부재 응력비 평가, Excel 내보내기 |\n"
-            "| **HiTess ModelFlow** | CSV → BDF 변환 → 유효성 검증 → Nastran 해석 통합 파이프라인 |\n\n"
+            "| **HiTess Model Builder** | CSV → BDF 변환 → 유효성 검증 → Nastran 해석 통합 파이프라인 |\n\n"
             "**Interactive Apps (대화형 입력 방식)**\n\n"
             "| 앱 | 설명 |\n"
             "|----|------|\n"
@@ -56,7 +56,7 @@ DEFAULT_GUIDES = [
             "- **Download Center** 추가 — HiTess Beam 등 관련 프로그램을 WorkBench에서 직접 다운로드할 수 있습니다\n"
             "- 각 해석 앱에 **사용 가이드 버튼** 추가 — 앱별 상세 사용법을 언제든 확인할 수 있습니다\n\n"
             "**개선**\n"
-            "- HiTess ModelFlow 안정성 향상 — 해석 오류 발생 시 에러 리포트를 자동으로 제공합니다\n"
+            "- HiTess Model Builder 안정성 향상 — 해석 오류 발생 시 에러 리포트를 자동으로 제공합니다\n"
             "- Truss Assessment 결과 보고서 버튼 버그 수정 (다른 페이지 이탈 후 복귀 시 버튼 비활성 현상)\n\n"
             "---\n\n"
             "### ✅ v0.0.5 (2026년 4월)\n\n"
@@ -72,7 +72,7 @@ DEFAULT_GUIDES = [
             "---\n\n"
             "### ✅ v0.0.3 (2026년 4월)\n\n"
             "**새 기능**\n"
-            "- **HiTess ModelFlow** 출시 — CSV부터 Nastran 해석까지 전 과정을 관리합니다\n"
+            "- **HiTess Model Builder** 출시 — CSV부터 Nastran 해석까지 전 과정을 관리합니다\n"
             "- **BDF Scanner** 출시 — BDF 파일 유효성을 단계별로 검증합니다\n"
             "- **Mast Post Assessment**, **Jib Rest Assessment** — 다빗 구조 파이프 자동 설계\n"
             "- **Column Buckling Load Calculator** — AISC 기준 좌굴 허용 하중 계산\n\n"
@@ -139,7 +139,7 @@ DEFAULT_GUIDES = [
             "**[WORKBENCH]**\n"
             "- Dashboard — 로그인 후 첫 화면. 종합 현황과 즐겨찾기.\n\n"
             "**[ANALYSIS]**\n"
-            "- File-Based Apps — 파일을 업로드하여 해석 (Truss, HiTess ModelFlow)\n"
+            "- File-Based Apps — 파일을 업로드하여 해석 (Truss, HiTess Model Builder)\n"
             "- Interactive Apps — 화면에서 직접 입력하여 즉시 해석 (Simple Beam)\n"
             "- Parametric Apps — 숫자 파라미터를 넣어 반복 계산 (다빗 설계, 좌굴 계산)\n"
             "- Productivity Apps — 유틸리티 도구 (BDF Scanner 등)\n"
@@ -227,7 +227,7 @@ DEFAULT_GUIDES = [
             "|---------|------|------|\n"
             "| Truss Model Builder | CSV → BDF 모델 자동 생성 | ✅ 서비스 중 |\n"
             "| Truss Structural Assessment | BDF → 구조 안정성 평가, Excel 내보내기 | ✅ 서비스 중 |\n"
-            "| HiTess ModelFlow | CSV→BDF→검증→Nastran 통합 파이프라인 | ✅ 서비스 중 |\n"
+            "| HiTess Model Builder | CSV→BDF→검증→Nastran 통합 파이프라인 | ✅ 서비스 중 |\n"
             "| Group & Unit 권상 구조 해석 | 권상 작업 검토 | 🔧 개발 중 |\n"
             "| Pipe 구조 해석 | 배관 구조 | 📋 예정 |\n"
             "| Whole Ship Analysis | 전선 해석 | 📋 예정 |\n"
@@ -395,13 +395,13 @@ DEFAULT_GUIDES = [
     },
     {
         "category": "Analysis Modules",
-        "title": "[파일] HiTess ModelFlow — CSV→BDF→Nastran FEM 파이프라인",
+        "title": "[파일] HiTess Model Builder — CSV→BDF→Nastran FEM 파이프라인",
         "content": (
-            "HiTess ModelFlow는 CSV 형태의 구조 모델 데이터를 Nastran BDF로 변환하고, 유효성 검증을 거쳐 Nastran 해석까지 수행하는 **FEM 파이프라인 통합 도구**입니다.\n\n"
+            "HiTess Model Builder는 CSV 형태의 구조 모델 데이터를 Nastran BDF로 변환하고, 유효성 검증을 거쳐 Nastran 해석까지 수행하는 **FEM 파이프라인 통합 도구**입니다.\n\n"
             "## 진입 경로\n\n"
-            "사이드바 → **File-Based Apps** → `HiTess ModelFlow` 카드 클릭\n\n"
+            "사이드바 → **File-Based Apps** → `HiTess Model Builder` 카드 클릭\n\n"
             "## 5단계 파이프라인 구조\n\n"
-            "HiTess ModelFlow는 총 5단계로 나뉘어 있으며, 각 단계가 성공적으로 완료되어야 다음 단계로 진행됩니다.\n\n"
+            "HiTess Model Builder는 총 5단계로 나뉘어 있으며, 각 단계가 성공적으로 완료되어야 다음 단계로 진행됩니다.\n\n"
             "| 단계 | 이름 | 설명 |\n"
             "|------|------|------|\n"
             "| 1단계 | CSV 업로드 | 구조(stru), 배관(pipe), 장비(equi) CSV 파일 업로드 |\n"

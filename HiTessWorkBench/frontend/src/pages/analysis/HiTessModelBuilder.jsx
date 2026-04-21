@@ -481,7 +481,7 @@ const STATUS_CONFIG = {
 };
 
 // ── 로그 파서 ──────────────────────────────────────────────────
-function parseModelFlowLog(rawText) {
+function parseModelBuilderLog(rawText) {
   // 신규 엔진은 각 줄을 2번 출력함 → 연속 중복 줄 제거
   const lines = rawText.split('\n');
   const deduped = [];
@@ -1357,7 +1357,7 @@ function CsvLogPanel({ logData, jobStatus }) {
       <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-300 px-6 text-center">
         <FileSpreadsheet size={32} className="opacity-30" />
         <p className="text-xs leading-relaxed">
-          CSV 파일을 업로드하고 <span className="font-semibold text-violet-400">ModelFlow 실행</span>을 누르면<br />파싱 결과가 여기에 표시됩니다.
+          CSV 파일을 업로드하고 <span className="font-semibold text-violet-400">Model Builder 실행</span>을 누르면<br />파싱 결과가 여기에 표시됩니다.
         </p>
       </div>
     );
@@ -1645,7 +1645,7 @@ const DETAIL_MAP = {
 };
 
 // ── 메인 컴포넌트 ──────────────────────────────────────────────
-export default function HiTessModelFlow() {
+export default function HiTessModelBuilder() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
   const [changelogOpen, setChangelogOpen] = useState(false);
@@ -1668,7 +1668,7 @@ export default function HiTessModelFlow() {
 
   // 작업 상태
   const [jobStatus,   setJobStatus]   = useState(null); // { status, progress, message }
-  const [logData,     setLogData]     = useState(null); // parseModelFlowLog 결과
+  const [logData,     setLogData]     = useState(null); // parseModelBuilderLog 결과
   const [engineLog,   setEngineLog]   = useState(null); // 실패 시 raw 엔진 출력
   const [bdfResult,   setBdfResult]   = useState(null); // { bdfPath, jsonPath }
   const pollRef = useRef(null);
@@ -1774,7 +1774,7 @@ export default function HiTessModelFlow() {
           }
 
           if (data.log_content) {
-            setLogData(parseModelFlowLog(data.log_content));
+            setLogData(parseModelBuilderLog(data.log_content));
           }
           if (data.process_log) {
             setProcessLog(data.process_log);
@@ -1946,8 +1946,8 @@ export default function HiTessModelFlow() {
     }
   };
 
-  // ModelFlow 실행 (전체 파이프라인 한 번에)
-  const handleRunModelFlow = async () => {
+  // Model Builder 실행 (전체 파이프라인 한 번에)
+  const handleRunModelBuilder = async () => {
     if (!struFile) { showToast('Structural CSV 파일이 필요합니다.', 'warning'); return; }
     // __warn__ 접두어는 경고(황색) 표시용 — 실행 차단 대상 아님
     const isHardError = (e) => e && !e.startsWith('__warn__');
@@ -1958,7 +1958,7 @@ export default function HiTessModelFlow() {
 
     // ── 진단 로그 ──────────────────────────────────────────────
     const authHeaders = getAuthHeaders();
-    console.group('[ModelFlow] 요청 진단');
+    console.group('[ModelBuilder] 요청 진단');
     console.log('서버 URL :', API_BASE_URL);
     console.log('Auth 헤더 :', authHeaders);
     console.log('user (localStorage) :', user);
@@ -2152,7 +2152,7 @@ export default function HiTessModelFlow() {
     }, 1500);
   };
 
-  // U-bolt ModelFlow 결과 폴링 (BDF 재생성 완료 후 BdfScanner 체이닝)
+  // U-bolt Model Builder 결과 폴링 (BDF 재생성 완료 후 BdfScanner 체이닝)
   const startUboltModelflowPolling = (jobId) => {
     if (uboltPollRef.current) clearInterval(uboltPollRef.current);
     uboltPollRef.current = setInterval(async () => {
@@ -2242,7 +2242,7 @@ export default function HiTessModelFlow() {
             <div>
               <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
                 <UploadCloud size={20} className="opacity-80" />
-                HiTess ModelFlow
+                HiTess Model Builder
               </h1>
               <p className="text-sm text-blue-200/80 mt-0.5">CSV부터 Nastran 해석까지 FEM 파이프라인 전 과정을 관리합니다.</p>
             </div>
@@ -2251,7 +2251,7 @@ export default function HiTessModelFlow() {
             <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
               <History size={14} /> 이력
             </button>
-            <GuideButton guideTitle="[파일] HiTess ModelFlow — CSV→BDF→Nastran FEM 파이프라인" variant="dark" />
+            <GuideButton guideTitle="[파일] HiTess Model Builder — CSV→BDF→Nastran FEM 파이프라인" variant="dark" />
             <button
               onClick={handleReset}
               className="text-xs bg-white/10 hover:bg-white/20 border border-white/10 text-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
@@ -2326,13 +2326,13 @@ export default function HiTessModelFlow() {
             {/* 실행 버튼 푸터 */}
             <div className="px-3 py-3 border-t border-slate-100 bg-slate-50/60">
               <button
-                onClick={handleRunModelFlow}
+                onClick={handleRunModelBuilder}
                 disabled={jobStatus?.status === 'Running' || jobStatus?.status === 'Pending'}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-blue hover:bg-brand-blue-dark active:bg-brand-blue/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-colors cursor-pointer shadow-sm"
               >
                 {(jobStatus?.status === 'Running' || jobStatus?.status === 'Pending')
                   ? <><Loader2 size={15} className="animate-spin" /> 실행 중...</>
-                  : <><ChevronsRight size={16} /> ModelFlow 실행</>
+                  : <><ChevronsRight size={16} /> Model Builder 실행</>
                 }
               </button>
             </div>
@@ -2365,7 +2365,7 @@ export default function HiTessModelFlow() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium text-slate-700">Nastran을 통한 검증</p>
-                  <p className="text-[10px] text-slate-400">ModelFlow 완료 후 Nastran 검증 실행</p>
+                  <p className="text-[10px] text-slate-400">Model Builder 완료 후 Nastran 검증 실행</p>
                 </div>
                 <Toggle checked={useNastran} onChange={setUseNastran} />
               </div>
@@ -2601,7 +2601,7 @@ export default function HiTessModelFlow() {
         </div>
       </div>
 
-      <ChangelogModal programKey="HiTessModelFlow" title="HiTess ModelFlow" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
+      <ChangelogModal programKey="HiTessModelBuilder" title="HiTess Model Builder" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }

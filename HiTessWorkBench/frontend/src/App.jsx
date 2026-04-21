@@ -37,7 +37,7 @@ import JibRestAssessment from './pages/analysis/JibRestAssessment';
 import ColumnBucklingCalculator from './pages/analysis/ColumnBucklingCalculator';
 import SectionPropertyCalculator from './pages/analysis/SectionPropertyCalculator';
 import ApiApps from './pages/Administration/ApiApps';
-import HiTessModelFlow from './pages/analysis/HiTessModelFlow';
+import HiTessModelBuilder from './pages/analysis/HiTessModelBuilder';
 import F06ParserPage from './pages/analysis/F06ParserPage';
 import UpdateModal from './components/UpdateModal';
 
@@ -264,7 +264,7 @@ function AppInner() {
       case 'BDF Scanner': return <BdfScanner />;
       case 'F06 Parser': return <F06ParserPage />;
       case 'Productivity Apps': return <ProductivityApps />;
-      case 'HiTess ModelFlow': return <HiTessModelFlow />;
+      case 'HiTess Model Builder': return <HiTessModelBuilder />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">

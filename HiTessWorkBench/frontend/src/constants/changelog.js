@@ -31,7 +31,7 @@ export const CHANGELOG = {
     },
   ],
 
-  HiTessModelFlow: [
+  HiTessModelBuilder: [
     {
       version: '0.0.7',
       date: '2026-04-17',
