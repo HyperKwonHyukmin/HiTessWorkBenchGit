@@ -59,7 +59,14 @@ def get_activity_logs(
         q = q.filter(models.ActivityLog.created_at <= dt_to)
 
     total = q.count()
-    items = q.order_by(models.ActivityLog.created_at.desc()).offset(skip).limit(limit).all()
+    rows = (
+        q.outerjoin(models.User, models.ActivityLog.employee_id == models.User.employee_id)
+        .add_columns(models.User.name)
+        .order_by(models.ActivityLog.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
     return {
         "total": total,
@@ -67,15 +74,16 @@ def get_activity_logs(
         "limit": limit,
         "items": [
             {
-                "id": r.id,
-                "employee_id": r.employee_id,
-                "action_type": r.action_type,
-                "action_detail": r.action_detail,
-                "status": r.status,
-                "ip_address": r.ip_address,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "id": r.ActivityLog.id,
+                "employee_id": r.ActivityLog.employee_id,
+                "name": r.name,
+                "action_type": r.ActivityLog.action_type,
+                "action_detail": r.ActivityLog.action_detail,
+                "status": r.ActivityLog.status,
+                "ip_address": r.ActivityLog.ip_address,
+                "created_at": r.ActivityLog.created_at.isoformat() if r.ActivityLog.created_at else None,
             }
-            for r in items
+            for r in rows
         ],
     }
 
@@ -101,15 +109,20 @@ def export_activity_logs_csv(
         dt_to = datetime.fromisoformat(date_to).replace(hour=23, minute=59, second=59)
         q = q.filter(models.ActivityLog.created_at <= dt_to)
 
-    items = q.order_by(models.ActivityLog.created_at.desc()).all()
+    rows = (
+        q.outerjoin(models.User, models.ActivityLog.employee_id == models.User.employee_id)
+        .add_columns(models.User.name)
+        .order_by(models.ActivityLog.created_at.desc())
+        .all()
+    )
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["ID", "사번", "이벤트", "상태", "세부정보", "IP", "시간"])
-    for r in items:
-        detail_str = str(r.action_detail) if r.action_detail else ""
-        created = r.created_at.isoformat() if r.created_at else ""
-        writer.writerow([r.id, r.employee_id or "", r.action_type, r.status or "", detail_str, r.ip_address or "", created])
+    writer.writerow(["ID", "사번", "이름", "이벤트", "상태", "세부정보", "IP", "시간"])
+    for r in rows:
+        detail_str = str(r.ActivityLog.action_detail) if r.ActivityLog.action_detail else ""
+        created = r.ActivityLog.created_at.isoformat() if r.ActivityLog.created_at else ""
+        writer.writerow([r.ActivityLog.id, r.ActivityLog.employee_id or "", r.name or "", r.ActivityLog.action_type, r.ActivityLog.status or "", detail_str, r.ActivityLog.ip_address or "", created])
 
     output.seek(0)
     filename = f"activity_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"

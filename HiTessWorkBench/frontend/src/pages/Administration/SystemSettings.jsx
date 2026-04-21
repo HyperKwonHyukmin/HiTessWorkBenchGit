@@ -423,7 +423,7 @@ export default function SystemSettings() {
             <thead>
               <tr className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase">
                 <th className="px-3 py-2.5 text-left">시간</th>
-                <th className="px-3 py-2.5 text-left">사번</th>
+                <th className="px-3 py-2.5 text-left">사번 / 이름</th>
                 <th className="px-3 py-2.5 text-left">이벤트</th>
                 <th className="px-3 py-2.5 text-left">상태</th>
                 <th className="px-3 py-2.5 text-left">세부정보</th>
@@ -449,7 +449,10 @@ export default function SystemSettings() {
                     <td className="px-3 py-2 font-mono text-slate-500 whitespace-nowrap">
                       {row.created_at ? new Date(row.created_at).toLocaleString('ko-KR') : '—'}
                     </td>
-                    <td className="px-3 py-2 font-mono font-bold text-slate-700">{row.employee_id || '—'}</td>
+                    <td className="px-3 py-2">
+                      <span className="font-mono font-bold text-slate-700">{row.employee_id || '—'}</span>
+                      {row.name && <span className="block text-[11px] text-slate-400 mt-0.5">{row.name}</span>}
+                    </td>
                     <td className="px-3 py-2">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${ACTION_TYPE_COLORS[row.action_type] || 'bg-slate-100 text-slate-600'}`}>
                         {ACTION_TYPE_LABELS[row.action_type] || row.action_type}
