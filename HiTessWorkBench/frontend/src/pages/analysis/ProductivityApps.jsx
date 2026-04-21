@@ -24,7 +24,9 @@ export default function ProductivityApps() {
       setGateApp({ title: appMeta.title, devStatus: appMeta.devStatus });
       return;
     }
-    if (appTitle === "BDF Scanner") {
+    if (appTitle === "F06 Parser") {
+      setCurrentMenu('F06 Parser');
+    } else if (appTitle === "BDF Scanner") {
       setCurrentMenu('BDF Scanner');
     } else {
       showToast(`'${appTitle}' 앱은 현재 개발 중입니다.`, 'info');

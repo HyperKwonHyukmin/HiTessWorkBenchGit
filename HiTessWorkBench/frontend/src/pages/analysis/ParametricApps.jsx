@@ -49,7 +49,7 @@ export default function ParametricApps() {
         icon={SlidersHorizontal}
         subtitle="설계 파라미터를 직접 입력하여 계산 결과를 즉시 확인하세요."
         accentColor="emerald"
-        actions={<GuideButton guideTitle="해석 앱 유형 안내 — 어떤 것을 선택해야 하나요?" variant="dark" />}
+        actions={<GuideButton guideTitle="[파라메트릭] Parametric Apps — 도구 소개" variant="dark" />}
       />
 
       <FilterTabs

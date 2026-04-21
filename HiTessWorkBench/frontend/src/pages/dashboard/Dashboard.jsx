@@ -6,11 +6,12 @@ import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { motion } from 'framer-motion';
 import { Dialog, Transition } from '@headlessui/react';
 import { getQueueStatus } from '../../api/admin';
-import { getAnalysisHistory, getTopPrograms } from '../../api/analysis';
+import { getAnalysisHistory, getTopPrograms, getMonthlyAnalysisCount } from '../../api/analysis';
 import {
   Activity, FileText, Server, CheckCircle2,
   ArrowUpRight, Star, CalendarDays, Database, Map, Rocket,
-  Wrench, Clock, X, ChevronRight, Layers, Cpu, FlaskConical, FileBarChart2, Maximize2, Trophy
+  Wrench, Clock, X, ChevronRight, Layers, Cpu, FlaskConical, FileBarChart2, Maximize2, Trophy,
+  UploadCloud, PenTool, SlidersHorizontal, GraduationCap
 } from 'lucide-react';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
@@ -20,6 +21,62 @@ const MODE_KO = {
   File: "파일 기반",
   Interactive: "대화형 앱",
   Parametric: "파라메트릭"
+};
+
+const APP_CATEGORIES = [
+  {
+    mode: 'File',
+    menuName: 'New Analysis',
+    label: 'File-Based Apps',
+    labelKo: '파일 기반 해석',
+    description: 'CSV, BDF 등 파일을 업로드하여 구조 모델링·해석을 수행하는 앱',
+    icon: UploadCloud,
+    accent: 'blue',
+  },
+  {
+    mode: 'Interactive',
+    menuName: 'Interactive Apps',
+    label: 'Interactive Apps',
+    labelKo: '인터랙티브 계산',
+    description: '수치를 직접 입력하고 즉시 구조 응답을 확인하는 대화형 계산 앱',
+    icon: PenTool,
+    accent: 'violet',
+  },
+  {
+    mode: 'Parametric',
+    menuName: 'Parametric Apps',
+    label: 'Parametric Apps',
+    labelKo: '파라메트릭 설계',
+    description: '치수·하중 파라미터를 조합해 최적 설계 후보를 자동 산출하는 앱',
+    icon: SlidersHorizontal,
+    accent: 'emerald',
+  },
+  {
+    mode: 'Academic',
+    menuName: 'Academic Apps',
+    label: 'Academic Apps',
+    labelKo: '학술 해석',
+    description: '이론·학술 기반 구조 해석 및 검증 도구',
+    icon: GraduationCap,
+    accent: 'cyan',
+  },
+  {
+    mode: 'Productivity',
+    menuName: 'Productivity Apps',
+    label: 'Productivity Apps',
+    labelKo: '생산성 도구',
+    description: '해석 결과 시각화·변환·검토를 지원하는 생산성 보조 도구',
+    icon: Wrench,
+    accent: 'amber',
+  },
+];
+
+const ACCENT_CLASSES = {
+  blue:    { iconBg: 'bg-blue-100',    iconText: 'text-blue-600',    countBg: 'bg-blue-50',    countText: 'text-blue-600',    border: 'hover:border-blue-300'    },
+  violet:  { iconBg: 'bg-violet-100',  iconText: 'text-violet-600',  countBg: 'bg-violet-50',  countText: 'text-violet-600',  border: 'hover:border-violet-300'  },
+  emerald: { iconBg: 'bg-emerald-100', iconText: 'text-emerald-600', countBg: 'bg-emerald-50', countText: 'text-emerald-600', border: 'hover:border-emerald-300' },
+  amber:   { iconBg: 'bg-amber-100',   iconText: 'text-amber-600',   countBg: 'bg-amber-50',   countText: 'text-amber-600',   border: 'hover:border-amber-300'   },
+  cyan:    { iconBg: 'bg-cyan-100',    iconText: 'text-cyan-700',    countBg: 'bg-cyan-50',    countText: 'text-cyan-700',    border: 'hover:border-cyan-300'    },
 };
 
 const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color }) => (
@@ -496,6 +553,7 @@ export default function Dashboard() {
   
   const [projects, setProjects] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [monthlyUsageCount, setMonthlyUsageCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const [queueStatus, setQueueStatus] = useState({ running: 0, pending: 0, limit: 2 });
@@ -577,12 +635,17 @@ export default function Dashboard() {
         try { employeeId = userStr ? JSON.parse(userStr).employee_id : null; } catch { /* 세션 데이터 손상 시 무시 */ }
         if (!employeeId) return;
 
-        const response = await getAnalysisHistory(employeeId);
-        const rawData = response.data?.items ?? response.data;
+        const now = new Date();
+        const [historyRes, monthlyRes] = await Promise.all([
+          getAnalysisHistory(employeeId),
+          getMonthlyAnalysisCount(employeeId, now.getFullYear(), now.getMonth() + 1),
+        ]);
+
+        const rawData = historyRes.data?.items ?? historyRes.data;
         const sortedData = [...rawData].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         setProjects(sortedData);
-        // 백엔드가 반환하는 실제 전체 건수 사용 (items.length는 최대 200으로 제한됨)
-        setTotalCount(response.data?.total ?? sortedData.length);
+        setTotalCount(historyRes.data?.total ?? sortedData.length);
+        setMonthlyUsageCount(monthlyRes.data?.count ?? 0);
       } catch (error) {
         console.error("이력 불러오기 실패:", error);
       } finally {
@@ -593,12 +656,6 @@ export default function Dashboard() {
   }, []);
 
   const totalExecutions = totalCount;
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-  const monthlyUsageCount = projects.filter(p => {
-    const d = new Date(p.created_at);
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-  }).length;
 
   const handleFavoriteClick = (title) => {
     const targetApp = ANALYSIS_DATA.find(a => a.title === title);
@@ -743,7 +800,55 @@ export default function Dashboard() {
         modalSubtitle={introTarget === 'workbench' ? 'HiTESS WorkBench 해석 플랫폼 소개' : '차세대 조선해양 구조 해석 플랫폼 소개'}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-2">
+      {/* 앱 카테고리 */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+            <Layers size={15} className="text-blue-400" /> 앱 카테고리
+          </h2>
+          <span className="text-xs text-slate-400">클릭하면 해당 앱 목록으로 이동합니다</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {APP_CATEGORIES.map((cat) => {
+            const appCount = ANALYSIS_DATA.filter(a => a.mode === cat.mode).length;
+            const ac = ACCENT_CLASSES[cat.accent];
+            const Icon = cat.icon;
+            return (
+              <motion.div
+                key={cat.mode}
+                whileHover={{ y: -3, boxShadow: '0 6px 20px -4px rgba(0,0,0,0.09)' }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setCurrentMenu(cat.menuName)}
+                className={`bg-white rounded-xl border border-slate-200 px-4 py-3 cursor-pointer transition-colors flex items-start gap-3 ${ac.border}`}
+              >
+                <div className={`w-8 h-8 rounded-lg ${ac.iconBg} flex items-center justify-center shrink-0 mt-0.5`}>
+                  <Icon className={ac.iconText} size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-800 leading-tight">{cat.label}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{cat.labelKo}</p>
+                  <p className="text-[10px] text-slate-500 leading-snug mt-1.5">{cat.description}</p>
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${ac.countBg} ${ac.countText}`}>
+                      앱 {appCount}개
+                    </span>
+                    <span className="text-[10px] text-slate-400">→</span>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 서비스 현황 */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+            <Activity size={15} className="text-blue-400" /> 서비스 현황
+          </h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 relative overflow-hidden group hover:border-blue-300 transition-colors">
           <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
             <Server size={100} />
@@ -811,11 +916,15 @@ export default function Dashboard() {
           <p className="text-[10px] text-amber-500 font-semibold mt-3 group-hover:text-amber-600 transition-colors">전체 순위 보기 →</p>
         </div>
       </div>
+      </div>
 
-      <div className="space-y-4 pt-4 border-t border-slate-200 border-dashed">
-        <h2 className="text-sm font-bold text-slate-600 flex items-center gap-2">
-          <Star size={16} className="text-yellow-500" fill="currentColor" /> 자주 사용하는 앱 (즐겨찾기)
-        </h2>
+      {/* 즐겨찾기 */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+            <Star size={15} className="text-amber-400" fill="currentColor" /> 즐겨찾기
+          </h2>
+        </div>
         
         {favorites.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-slate-400 text-sm shadow-sm flex flex-col items-center">
@@ -850,12 +959,13 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="pt-4 border-t border-slate-200 border-dashed">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-sm font-bold text-slate-600 flex items-center gap-2">
-            <Activity size={16} /> 최근 수행 프로젝트 이력
+      {/* 프로젝트 이력 */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+            <Clock size={15} className="text-slate-400" /> 프로젝트 이력
           </h2>
-          <button onClick={() => setCurrentMenu('My Project')} className="text-xs font-bold text-blue-600 hover:underline cursor-pointer">
+          <button onClick={() => setCurrentMenu('My Project')} className="text-xs font-bold text-blue-500 hover:text-blue-600 cursor-pointer">
             전체 이력 보기 →
           </button>
         </div>

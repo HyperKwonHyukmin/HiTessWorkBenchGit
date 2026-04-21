@@ -3,14 +3,17 @@
 /// CPU, Memory, Disk, DB, 작업 큐를 3초 주기로 폴링합니다.
 /// 서버 버전, 총 사용자/해석 건수 요약 카드를 제공합니다.
 /// </summary>
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Settings, Server, HardDrive, Cpu, Activity,
-  Users, BarChart3, Tag, Database, Layers, Power, AlertTriangle
+  Users, BarChart3, Tag, Database, Layers, Power, AlertTriangle,
+  ClipboardList, Download, RefreshCw, Filter
 } from 'lucide-react';
 import { getSystemStatus, getQueueStatus, getUsers, getMaintenanceMode, setMaintenanceMode } from '../../api/admin';
 import PageHeader from '../../components/ui/PageHeader';
 import { getAllAnalysisHistory } from '../../api/analysis';
+import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
+import { getAuthHeaders } from '../../utils/auth';
 import { API_BASE_URL } from '../../config';
 import axios from 'axios';
 
@@ -31,6 +34,13 @@ export default function SystemSettings() {
   // 유지보수 모드
   const [maintenanceMode, setMaintenanceModeState] = useState(false);
   const [maintenanceLoading, setMaintenanceLoading] = useState(false);
+
+  // Activity Log
+  const [logFilters, setLogFilters] = useState({ employee_id: '', action_type: '', date_from: '', date_to: '' });
+  const [logData, setLogData] = useState({ total: 0, items: [] });
+  const [logLoading, setLogLoading] = useState(false);
+  const [logPage, setLogPage] = useState(0);
+  const LOG_PAGE_SIZE = 50;
 
   // 1회성 요약 데이터
   const [version, setVersion] = useState('—');
@@ -81,6 +91,60 @@ export default function SystemSettings() {
     fetchSummary();
   }, []);
 
+  const fetchLogs = useCallback(async (page = 0) => {
+    setLogLoading(true);
+    try {
+      const params = { skip: page * LOG_PAGE_SIZE, limit: LOG_PAGE_SIZE };
+      if (logFilters.employee_id) params.employee_id = logFilters.employee_id;
+      if (logFilters.action_type) params.action_type = logFilters.action_type;
+      if (logFilters.date_from) params.date_from = logFilters.date_from;
+      if (logFilters.date_to) params.date_to = logFilters.date_to;
+      const res = await getActivityLogs(params);
+      setLogData(res.data);
+      setLogPage(page);
+    } catch {
+      // 오류 시 빈 목록 유지
+    } finally {
+      setLogLoading(false);
+    }
+  }, [logFilters]);
+
+  useEffect(() => { fetchLogs(0); }, []);
+
+  const handleExportCsv = () => {
+    const params = {};
+    if (logFilters.employee_id) params.employee_id = logFilters.employee_id;
+    if (logFilters.action_type) params.action_type = logFilters.action_type;
+    if (logFilters.date_from) params.date_from = logFilters.date_from;
+    if (logFilters.date_to) params.date_to = logFilters.date_to;
+    const url = getActivityLogsExportUrl(params);
+    const token = localStorage.getItem('session_token') || '';
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `activity_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+      });
+  };
+
+  const ACTION_TYPE_LABELS = {
+    LOGIN: '로그인',
+    LOGOUT: '로그아웃',
+    FILE_DOWNLOAD: '파일 다운로드',
+    PROGRAM_DOWNLOAD: '프로그램 다운로드',
+    VERSION_UPDATE: '버전 업데이트',
+  };
+
+  const ACTION_TYPE_COLORS = {
+    LOGIN: 'bg-emerald-100 text-emerald-700',
+    LOGOUT: 'bg-slate-100 text-slate-600',
+    FILE_DOWNLOAD: 'bg-blue-100 text-blue-700',
+    PROGRAM_DOWNLOAD: 'bg-indigo-100 text-indigo-700',
+    VERSION_UPDATE: 'bg-amber-100 text-amber-700',
+  };
+
   const handleToggleMaintenance = async () => {
     setMaintenanceLoading(true);
     try {
@@ -110,7 +174,7 @@ export default function SystemSettings() {
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
 
       <PageHeader
-        title="System Settings"
+        title="System Management"
         icon={Settings}
         subtitle="시스템 리소스, 작업 큐, 서비스 현황을 실시간으로 모니터링합니다."
         accentColor="teal"
@@ -276,6 +340,156 @@ export default function SystemSettings() {
             {maintenanceLoading ? '처리 중...' : maintenanceMode ? '점검 모드 해제' : '점검 모드 켜기'}
           </button>
         </div>
+      </div>
+
+      {/* Activity Log */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mt-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+            <ClipboardList size={18} className="text-teal-500" /> Activity Log
+          </h3>
+          <div className="flex gap-2">
+            <button
+              onClick={() => fetchLogs(0)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+            >
+              <RefreshCw size={13} /> 새로고침
+            </button>
+            <button
+              onClick={handleExportCsv}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors cursor-pointer"
+            >
+              <Download size={13} /> CSV 내보내기
+            </button>
+          </div>
+        </div>
+
+        {/* 필터 */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">사번</label>
+            <input
+              type="text"
+              placeholder="예: EMP001"
+              value={logFilters.employee_id}
+              onChange={e => setLogFilters(f => ({ ...f, employee_id: e.target.value }))}
+              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-400"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">이벤트 유형</label>
+            <select
+              value={logFilters.action_type}
+              onChange={e => setLogFilters(f => ({ ...f, action_type: e.target.value }))}
+              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white"
+            >
+              <option value="">전체</option>
+              {Object.entries(ACTION_TYPE_LABELS).map(([v, l]) => (
+                <option key={v} value={v}>{l}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">시작일</label>
+            <input
+              type="date"
+              value={logFilters.date_from}
+              onChange={e => setLogFilters(f => ({ ...f, date_from: e.target.value }))}
+              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-400"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">종료일</label>
+            <input
+              type="date"
+              value={logFilters.date_to}
+              onChange={e => setLogFilters(f => ({ ...f, date_to: e.target.value }))}
+              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-400"
+            />
+          </div>
+          <div className="col-span-2 md:col-span-4 flex justify-end">
+            <button
+              onClick={() => fetchLogs(0)}
+              className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors cursor-pointer"
+            >
+              <Filter size={13} /> 조회
+            </button>
+          </div>
+        </div>
+
+        {/* 테이블 */}
+        <div className="overflow-x-auto rounded-xl border border-slate-100">
+          <table className="w-full text-xs text-slate-700">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase">
+                <th className="px-3 py-2.5 text-left">시간</th>
+                <th className="px-3 py-2.5 text-left">사번</th>
+                <th className="px-3 py-2.5 text-left">이벤트</th>
+                <th className="px-3 py-2.5 text-left">상태</th>
+                <th className="px-3 py-2.5 text-left">세부정보</th>
+                <th className="px-3 py-2.5 text-left">IP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logLoading ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-8 text-slate-400">
+                    <RefreshCw size={16} className="inline animate-spin mr-2" />불러오는 중...
+                  </td>
+                </tr>
+              ) : logData.items.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-8 text-slate-400">
+                    로그 데이터가 없습니다.
+                  </td>
+                </tr>
+              ) : (
+                logData.items.map(row => (
+                  <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
+                    <td className="px-3 py-2 font-mono text-slate-500 whitespace-nowrap">
+                      {row.created_at ? new Date(row.created_at).toLocaleString('ko-KR') : '—'}
+                    </td>
+                    <td className="px-3 py-2 font-mono font-bold text-slate-700">{row.employee_id || '—'}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${ACTION_TYPE_COLORS[row.action_type] || 'bg-slate-100 text-slate-600'}`}>
+                        {ACTION_TYPE_LABELS[row.action_type] || row.action_type}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${row.status === 'success' ? 'text-emerald-600' : row.status === 'failure' ? 'text-red-500' : 'text-slate-400'}`}>
+                        {row.status || '—'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-500 max-w-[200px] truncate" title={JSON.stringify(row.action_detail)}>
+                      {row.action_detail ? Object.entries(row.action_detail).map(([k, v]) => `${k}: ${v}`).join(' | ') : '—'}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-slate-400">{row.ip_address || '—'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 페이지네이션 */}
+        {logData.total > LOG_PAGE_SIZE && (
+          <div className="flex items-center justify-between mt-3">
+            <p className="text-xs text-slate-400">총 {logData.total}건</p>
+            <div className="flex gap-2">
+              <button
+                disabled={logPage === 0}
+                onClick={() => fetchLogs(logPage - 1)}
+                className="px-3 py-1 text-xs font-bold rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
+              >이전</button>
+              <span className="px-3 py-1 text-xs text-slate-500">{logPage + 1} / {Math.ceil(logData.total / LOG_PAGE_SIZE)}</span>
+              <button
+                disabled={(logPage + 1) * LOG_PAGE_SIZE >= logData.total}
+                onClick={() => fetchLogs(logPage + 1)}
+                className="px-3 py-1 text-xs font-bold rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
+              >다음</button>
+            </div>
+          </div>
+        )}
       </div>
 
     </div>

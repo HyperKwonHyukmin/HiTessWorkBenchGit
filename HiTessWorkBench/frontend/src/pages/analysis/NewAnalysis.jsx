@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { Info, UploadCloud } from 'lucide-react';
+import { UploadCloud } from 'lucide-react';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import AppCard from '../../components/ui/AppCard';
 import PageHeader from '../../components/ui/PageHeader';
 import FilterTabs from '../../components/ui/FilterTabs';
 import AnimatedGrid from '../../components/ui/AnimatedGrid';
-import Button from '../../components/ui/Button';
 import AdminGateModal from '../../components/ui/AdminGateModal';
 import GuideButton from '../../components/ui/GuideButton';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
@@ -50,7 +49,7 @@ export default function NewAnalysis() {
         title="File-Based Apps"
         icon={UploadCloud}
         subtitle="수행하고자 하는 파일 업로드 기반 해석 모델을 선택하십시오."
-        actions={<GuideButton guideTitle="해석 앱 유형 안내 — 어떤 것을 선택해야 하나요?" variant="dark" />}
+        actions={<GuideButton guideTitle="[파일] File-Based Apps — 도구 소개" variant="dark" />}
       />
 
       <FilterTabs
@@ -94,21 +93,6 @@ export default function NewAnalysis() {
         devStatus={gateApp?.devStatus}
       />
 
-      {/* 하단 도움말 배너 */}
-      <div className="mt-16 bg-slate-50 rounded-2xl p-8 border border-dashed border-slate-300 flex flex-col md:flex-row items-center gap-6">
-        <div className="p-4 bg-white rounded-full shadow-sm text-blue-500">
-          <Info size={32} />
-        </div>
-        <div>
-          <h3 className="font-bold text-slate-700">도움이 필요하신가요?</h3>
-          <p className="text-sm text-slate-500 mt-1">
-            해석 유형 선택이 어렵다면 사내 기술 표준 가이드를 참고하거나 시스템 솔루션 팀에 문의하십시오.
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" className="md:ml-auto" onClick={() => setCurrentMenu('User Guide')}>
-          View Guide
-        </Button>
-      </div>
 
     </div>
   );

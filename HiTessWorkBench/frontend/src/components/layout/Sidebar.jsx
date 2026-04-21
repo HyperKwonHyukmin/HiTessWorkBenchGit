@@ -66,7 +66,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
         items: [
           { icon: ShieldAlert, label: "User Management" },
           { icon: BarChart3, label: "Analysis Management" },
-          { icon: Settings, label: "System Settings" },
+          { icon: Settings, label: "System Management" },
           { icon: Webhook, label: "API Apps" }
         ]
       });

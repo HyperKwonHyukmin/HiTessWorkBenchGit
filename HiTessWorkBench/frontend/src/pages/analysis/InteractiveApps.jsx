@@ -47,7 +47,7 @@ export default function InteractiveApps() {
         icon={PenTool}
         subtitle="UI에서 설계 정보를 직접 입력하여 실시간으로 결과를 확인하세요."
         accentColor="violet"
-        actions={<GuideButton guideTitle="해석 앱 유형 안내 — 어떤 것을 선택해야 하나요?" variant="dark" />}
+        actions={<GuideButton guideTitle="[대화형] Interactive Apps — 도구 소개" variant="dark" />}
       />
 
       <FilterTabs

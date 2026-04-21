@@ -440,6 +440,82 @@ DEFAULT_GUIDES = [
     },
     {
         "category": "Analysis Modules",
+        "title": "[생산성] F06 Parser — F06 결과 추출",
+        "content": (
+            "F06 Parser는 Nastran SOL 101 정적 해석의 F06 출력 파일을 파싱하여 **Displacement · SPC Force · 1D 요소 내력/응력** 결과를 테이블과 차트로 조회하고 CSV로 다운로드하는 도구입니다.\n\n"
+            "## 적용 범위\n\n"
+            "> **현재 버전은 SOL 101 정적 해석의 1D Beam 요소에 한하여 지원됩니다.**\n\n"
+            "| 결과 유형 | 지원 요소 | 지원 여부 |\n"
+            "|----------|----------|----------|\n"
+            "| Displacement (변위) | 전 노드 | ✅ 지원 |\n"
+            "| SPC Force (반력) | 전 구속 노드 | ✅ 지원 |\n"
+            "| CBAR Force / Stress | CBAR 요소 | ✅ 지원 |\n"
+            "| CBEAM Force / Stress | CBEAM 요소 | ✅ 지원 |\n"
+            "| CROD Force / Stress | CROD 요소 | ✅ 지원 |\n"
+            "| CQUAD4 / CTRIA3 등 | 2D Shell 요소 | 🚧 미지원 |\n"
+            "| CHEXA / CTETRA 등 | 3D Solid 요소 | 🚧 미지원 |\n\n"
+            "## 진입 경로\n\n"
+            "사이드바 → **Productivity Apps** → `F06 Parser` 카드 클릭\n\n"
+            "## 사용 순서\n\n"
+            "1. **F06 파일 선택** — 좌측 사이드바에서 `.f06` 파일을 드래그하거나 클릭하여 선택합니다.\n"
+            "2. **파싱 실행** 버튼을 클릭합니다.\n"
+            "3. 하단 **PARSER LOG** 콘솔에서 진행 상황과 결과 요약을 확인합니다.\n"
+            "4. 파싱이 완료되면 우측 결과 영역에 탭과 차트가 활성화됩니다.\n\n"
+            "## 결과 화면 구성\n\n"
+            "### 상단 컨트롤 바\n\n"
+            "| 요소 | 설명 |\n"
+            "|------|------|\n"
+            "| Subcase 드롭다운 | 여러 하중 케이스(Subcase)가 있을 때 선택하여 전환합니다 |\n"
+            "| 통계 차트 버튼 | 상위 10개 요소 랭킹 차트와 Subcase별 최대값 추세 차트를 토글합니다 |\n"
+            "| CSV 다운로드 | 현재 Subcase · 현재 탭의 결과를 CSV 파일로 저장합니다 |\n\n"
+            "### 탭 구성\n\n"
+            "| 탭 | 내용 | 주요 컬럼 |\n"
+            "|----|------|-----------|\n"
+            "| **Displacement** | 전 노드 변위 | NodeID, X, Y, Z, Total |\n"
+            "| **SPC Force** | 구속 노드 반력 (≈0 행 자동 제거) | NodeID, Fx, Fy, Fz |\n"
+            "| **CBAR Force** | CBAR 요소 내력 | ElemID, Axial, BendMomentA-1/2, BendMomentB-1/2, ShearPlane-1/2, Torque |\n"
+            "| **CBAR Stress** | CBAR 요소 응력 | ElemID, Axial Stress, SA-Stress, SB-Stress |\n"
+            "| **CBEAM Force** | CBEAM 요소 내력 | ElemID, GridID, End, Axial, BendMoment-1/2, ShearPlane-1/2, TotalTorque, WarpTorque |\n"
+            "| **CBEAM Stress** | CBEAM 요소 응력 | ElemID, GridID, End, S Max, S Min |\n"
+            "| **CROD Force** | CROD 요소 내력 | ElemID, Axial, Torque |\n"
+            "| **CROD Stress** | CROD 요소 응력 | ElemID, Axial Stress, Torsional |\n\n"
+            "> **참고**: 데이터가 없는 탭(예: CBEAM이 없는 모델에서 CBEAM Force)은 비활성화되어 선택할 수 없습니다.\n\n"
+            "## 통계 차트\n\n"
+            "**통계 차트** 버튼을 켜면 탭 아래에 두 개의 차트가 나타납니다.\n\n"
+            "| 차트 | 설명 |\n"
+            "|------|------|\n"
+            "| **상위 10개 요소 랭킹** (좌) | 현재 Subcase에서 메트릭(응력/변위/내력)이 가장 큰 요소 10개를 수평 바 차트로 표시. 1위는 진한 인디고, 나머지는 단계별 옅은 색. |\n"
+            "| **Subcase별 최대값 추세** (우) | 전체 Subcase에 걸쳐 각 Subcase의 최대값을 수직 바 차트로 표시. 현재 선택된 Subcase는 진한 색으로 강조. |\n\n"
+            "**탭별 차트 메트릭**\n\n"
+            "| 탭 | 메트릭 기준 |\n"
+            "|----|------------|\n"
+            "| Displacement | Total 변위 |\n"
+            "| SPC Force | 합력 크기 √(Fx²+Fy²+Fz²) |\n"
+            "| CBAR/CBEAM/CROD Stress | max(\\|SA-Stress\\|, \\|SB-Stress\\|) 또는 S Max |\n"
+            "| CBAR/CBEAM/CROD Force | \\|Axial\\| |\n\n"
+            "## 컬럼 정렬\n\n"
+            "테이블 컬럼 헤더를 클릭하면 해당 컬럼 기준으로 오름차순/내림차순 정렬됩니다. Subcase 또는 탭을 전환하면 정렬 상태가 초기화됩니다.\n\n"
+            "## CSV 다운로드\n\n"
+            "- 우측 상단의 **CSV 다운로드** 버튼을 클릭하면 현재 선택된 Subcase · 탭의 전체 데이터를 CSV로 저장합니다.\n"
+            "- 화면에는 최대 1,000행이 표시되지만 CSV에는 **전체 행**이 포함됩니다.\n"
+            "- 파일명 형식: `{F06파일명}_SC{N}_{result_type}.csv`\n\n"
+            "## 결과 항목 해설\n\n"
+            "### CBAR Stress — SA-Stress / SB-Stress\n\n"
+            "Nastran CBAR 응력 출력에서 각 단면의 회복점 C/D/E/F에서의 응력 최대·최솟값(SA-MAX, SA-MIN, SB-MAX, SB-MIN) 중 **절대값이 큰 쪽의 부호 포함 값**을 표시합니다.\n\n"
+            "- `SA-Stress` — End A 단면의 지배 응력 (결합 응력 = 굽힘 + 축력)\n"
+            "- `SB-Stress` — End B 단면의 지배 응력\n\n"
+            "압축(-) 값이 표시되어도 절대값이 크면 지배 응력으로 선정됩니다.\n\n"
+            "### SPC Force — 근사 0 자동 필터\n\n"
+            "모든 방향 반력(Fx, Fy, Fz)의 절대값이 모두 1×10⁻¹⁰ 이하인 노드는 자유 DOF(구속되지 않은 방향)로 판단하여 **자동으로 제외**됩니다. 실제 반력이 있는 구속 노드만 표시됩니다.\n\n"
+            "## 주의사항\n\n"
+            "- 현재 **SOL 101** (Linear Static) 해석 결과만 지원합니다. SOL 103(모드 해석), SOL 105(좌굴) 등의 F06 파일은 지원하지 않습니다.\n"
+            "- 2D/3D 요소(CQUAD4, CHEXA 등)의 응력 결과는 추출되지 않습니다.\n"
+            "- 파일 파싱은 서버에서 수행되며 결과는 My Projects에 자동 저장됩니다."
+        ),
+        "author_id": "A476854",
+    },
+    {
+        "category": "Analysis Modules",
         "title": "[생산성] BDF Scanner — BDF 파일 유효성 검증",
         "content": (
             "BDF Scanner는 Nastran BDF 파일의 구조 유효성을 단계별로 검증하고, 선택적으로 MSC Nastran 해석까지 수행하는 **유틸리티 도구**입니다.\n\n"
@@ -477,21 +553,147 @@ DEFAULT_GUIDES = [
         "category": "Analysis Modules",
         "title": "[생산성] Productivity Apps — 도구 소개",
         "content": (
-            "Productivity Apps는 구조 해석 업무를 지원하는 **독립 유틸리티 도구**를 모아둔 공간입니다. 해석 자체보다는 모델 검증, 결과 시각화 등 부가 작업을 빠르게 수행할 때 사용합니다.\n\n"
+            "Productivity Apps는 구조 해석 업무를 지원하는 **유틸리티 도구 모음**입니다. 해석 작업 전후로 파일 검증, 결과 추출 등 반복 작업을 빠르게 처리할 때 사용합니다.\n\n"
             "## 포함된 도구\n\n"
+            "| 앱 이름 | 한 줄 설명 |\n"
+            "|---------|------------|\n"
+            "| **BDF Scanner** | Nastran BDF 파일의 구조 유효성을 단계별로 검증합니다 |\n"
+            "| **F06 Parser** | Nastran F06 결과 파일에서 변위·반력·1D 요소 응력을 추출하여 조회합니다 |\n\n"
+            "## BDF Scanner\n\n"
+            "BDF 파일을 업로드하면 노드·요소·재질·경계조건을 파싱하고 두 단계로 유효성을 검증합니다.\n\n"
+            "- 자유 노드(연결이 끊긴 노드) 탐지\n"
+            "- 요소 연결성 및 재질·단면 참조 확인\n"
+            "- 검증 후 선택적으로 Nastran 해석까지 이어 실행 가능\n"
+            "- 파싱된 모델은 3D 뷰어에서 즉시 확인 가능\n\n"
+            "자세한 사용법은 BDF Scanner 앱 상단의 **사용 가이드** 버튼을 확인하세요.\n\n"
+            "## F06 Parser\n\n"
+            "Nastran SOL 101 정적 해석의 F06 출력 파일을 업로드하면 결과를 자동으로 추출합니다.\n\n"
+            "- **지원 결과**: Displacement · SPC Force · CBAR / CBEAM / CROD 내력 및 응력\n"
+            "- Subcase별로 탭을 나눠 테이블로 조회, 컬럼 클릭으로 정렬 가능\n"
+            "- 상위 10개 요소 랭킹 차트 + Subcase별 최대값 추세 차트 시각화\n"
+            "- Subcase · 결과 유형별 CSV 개별 다운로드\n\n"
+            "> **적용 범위**: SOL 101 정적 해석 / 1D Beam 요소(CBAR·CBEAM·CROD) 전용. 2D·3D 요소 결과는 아직 지원되지 않습니다.\n\n"
+            "자세한 사용법은 F06 Parser 앱 상단의 **사용 가이드** 버튼을 확인하세요.\n\n"
+            "## 즐겨찾기 등록\n\n"
+            "앱 카드의 **★** 아이콘을 클릭하면 Dashboard 즐겨찾기에 등록됩니다. 자주 쓰는 도구를 등록해두면 Dashboard에서 한 번에 바로 진입할 수 있습니다."
+        ),
+        "author_id": "SYSTEM",
+    },
+    {
+        "category": "Analysis Modules",
+        "title": "[학술] Academic Apps — AI 기반 해석 앱",
+        "content": (
+            "Academic Apps는 **학술 연구 기반의 AI·고급 알고리즘**을 활용한 구조 해석 도구를 모아둔 공간입니다. 기존 FEM 해석과 달리 인공지능 모델이 구조 거동을 예측하거나 평가에 활용됩니다.\n\n"
+            "## 포함된 앱\n\n"
             "| 앱 이름 | 설명 | 상태 |\n"
             "|---------|------|------|\n"
-            "| **BDF Scanner** | BDF 파일 유효성 검증 + 선택적 Nastran 해석 실행 | ✅ 서비스 중 |\n"
-            "| Beam Result Viewer | 해석 결과 JSON 파일 차트 시각화 | 🔧 개발 중 |\n"
-            "| Section Property Calculator | 단면 특성값 자동 산출 | 🔧 개발 중 |\n\n"
-            "## BDF Scanner\n\n"
-            "BDF Scanner는 Nastran BDF 파일에서 노드, 요소, 재질, 경계조건 등을 파싱하여 단계별로 유효성을 검증합니다.\n\n"
-            "- **대상**: 1D 요소 기반 BDF (CBEAM, CBAR, CROD, RBE2, CONM2)\n"
-            "- **출력**: Step별 검증 로그, 자유노드 목록, 3D 모델 미리보기\n"
-            "- **옵션**: 검증 후 Nastran 해석까지 연속 수행 가능\n\n"
-            "자세한 사용 방법은 BDF Scanner 페이지 상단의 **사용 가이드** 버튼에서 확인하세요.\n\n"
+            "| **GNN 기반 Beam 구조 안정성 검토** | Graph Neural Network를 활용하여 보(Beam) 구조물의 응력 분포 및 안정성을 AI로 평가 | 🔧 개발 중 |\n\n"
+            "## GNN 기반 Beam 구조 안정성 검토\n\n"
+            "기존 FEM 해석은 메시 생성, 경계조건 설정, 솔버 실행 등 여러 단계가 필요합니다. GNN 기반 해석은 구조물의 위상(노드·요소 연결 관계)을 그래프로 표현하여 **학습된 AI 모델이 응력 분포를 직접 예측**합니다.\n\n"
+            "**주요 특징**\n\n"
+            "- 구조물 형상 정보를 그래프 형태로 입력\n"
+            "- 학습된 GNN 모델이 각 요소/노드의 응력 분포를 예측\n"
+            "- FEM 대비 빠른 응답 속도 — 대규모 파라메트릭 스터디에 활용 가능\n"
+            "- AI 예측값과 FEM 검증 결과를 비교하여 모델 신뢰도 확인\n\n"
+            "**현재 상태**: 개발 중입니다. 출시 시 별도 안내될 예정입니다.\n\n"
+            "## Academic Apps에 대하여\n\n"
+            "이 공간의 앱들은 사내 연구 과제나 학술 협력을 통해 개발됩니다. 현용 설계 도구와 달리 연구 목적의 검증 단계 기능도 포함될 수 있으며, 결과 해석 시 엔지니어링 판단이 함께 요구됩니다."
+        ),
+        "author_id": "SYSTEM",
+    },
+    {
+        "category": "Analysis Modules",
+        "title": "[파라메트릭] Parametric Apps — 도구 소개",
+        "content": (
+            "Parametric Apps는 **숫자 파라미터 몇 개**만 입력하면 구조 기준을 만족하는 최적 부재를 자동으로 선정하거나 허용 하중을 계산해 주는 도구 모음입니다. 파일 작성 없이 빠르게 반복 검토할 수 있어 **설계 초기 단계**에 유용합니다.\n\n"
+            "## 포함된 앱\n\n"
+            "| 앱 이름 | 한 줄 설명 |\n"
+            "|---------|------------|\n"
+            "| **Jib Rest Assessment** | Jib Rest 구조물의 1단/2단 파이프 설계 후보를 산출합니다 |\n"
+            "| **Mast Post Assessment** | Post 높이와 플랫폼 하중을 입력하면 최적 파이프 후보를 순위별로 산출합니다 |\n"
+            "| **Column Buckling Load Calculator** | AISC 기준으로 강재 기둥의 최대 허용 하중을 계산합니다 |\n\n"
+            "## Jib Rest Assessment\n\n"
+            "다빗(Davit) Jib Rest 구조물의 파이프 규격을 산출합니다. **1단(단일 파이프)**과 **2단(상하 복합 파이프)** 두 가지 모드를 제공합니다.\n\n"
+            "- 1단: Jib 높이·폭, 윈치·실린더 자중, 모멘트 팔 등 12개 파라미터 입력\n"
+            "- 2단: 1단 파라미터 + 1단에서 선정한 하단 파이프 규격(D1, T1) 추가 입력\n"
+            "- 기준을 만족하는 파이프 후보 목록 출력\n\n"
+            "자세한 사용법은 Jib Rest Assessment 앱 상단의 **사용 가이드** 버튼을 확인하세요.\n\n"
+            "## Mast Post Assessment\n\n"
+            "다빗 Mast Post의 높이와 플랫폼 하중만 입력하면 구조 기준을 만족하는 **최적 파이프 후보를 1~5순위**로 산출합니다.\n\n"
+            "- 입력: Post 전체 높이 (mm), 플랫폼 하중 (kg)\n"
+            "- 결과: 응력 적합도·처짐 적합도를 기준으로 순위별 파이프 규격 표시\n"
+            "- 행 클릭 시 굽힘 모멘트·단면적·처짐 등 상세 계산 결과 확인 가능\n\n"
+            "자세한 사용법은 Mast Post Assessment 앱 상단의 **사용 가이드** 버튼을 확인하세요.\n\n"
+            "## Column Buckling Load Calculator\n\n"
+            "AISC 기준 핀-핀 경계 조건의 강재 기둥에 대해 **최대 허용 사용하중**을 계산합니다.\n\n"
+            "- 동심 하중(중심 축하중)과 편심 하중(Secant Formula) 모두 지원\n"
+            "- 유효 길이 계수(K), 단면 특성, 항복강도 입력\n"
+            "- 세장비(L/r), 임계 응력, 허용 하중을 즉시 산출\n\n"
+            "자세한 사용법은 Column Buckling Load Calculator 앱 상단의 **사용 가이드** 버튼을 확인하세요.\n\n"
             "## 즐겨찾기 등록\n\n"
-            "앱 카드의 **★** 아이콘을 클릭하면 Dashboard 즐겨찾기에 등록됩니다. 자주 쓰는 도구를 등록해두면 Dashboard에서 한 번의 클릭으로 바로 진입할 수 있습니다."
+            "앱 카드의 **★** 아이콘을 클릭하면 Dashboard 즐겨찾기에 등록됩니다."
+        ),
+        "author_id": "SYSTEM",
+    },
+    {
+        "category": "Analysis Modules",
+        "title": "[대화형] Interactive Apps — 도구 소개",
+        "content": (
+            "Interactive Apps는 웹 화면에서 **치수와 하중을 직접 입력**하면 즉시 해석 결과를 확인할 수 있는 대화형 도구 모음입니다. 별도의 입력 파일 없이 빠르게 검토할 수 있어 **개략 설계 및 간이 검증**에 적합합니다.\n\n"
+            "## 포함된 앱\n\n"
+            "| 앱 이름 | 한 줄 설명 |\n"
+            "|---------|------------|\n"
+            "| **Simple Beam Assessment** | 단면 형상·치수·하중 조건을 입력하여 보의 응력과 처짐을 즉시 평가합니다 |\n"
+            "| **Section Property Calculator** | 단면 형상과 치수를 입력하면 단면 2차 모멘트·단면계수·회전반경 등을 자동 산출합니다 |\n\n"
+            "## Simple Beam Assessment\n\n"
+            "1D 보(Beam)의 응력 및 변위를 단계별 마법사 형식으로 빠르게 평가합니다.\n\n"
+            "1. **지지 조건** — 단순지지, 캔틸레버, 양단고정 등 선택\n"
+            "2. **보 길이 및 하중** — 집중하중·분포하중·모멘트 입력\n"
+            "3. **단면 형상** — I형, H형, 원형관, 각형관 등 선택\n"
+            "4. **단면 치수** — 높이·폭·두께 등 입력 후 해석 실행\n\n"
+            "해석 완료 후 모멘트·전단력·처짐·응력 분포도를 차트로 확인합니다. 차트의 임의 지점을 클릭하면 해당 위치의 정확한 수치가 표시됩니다.\n\n"
+            "자세한 사용법은 Simple Beam Assessment 앱 상단의 **사용 가이드** 버튼을 확인하세요.\n\n"
+            "## Section Property Calculator\n\n"
+            "단면 형상과 치수를 입력하면 구조 계산에 필요한 단면 특성값을 자동으로 산출합니다.\n\n"
+            "- 단면 2차 모멘트 Ix, Iy\n"
+            "- 단면계수 Sx, Sy\n"
+            "- 회전반경(Radius of Gyration) rx, ry\n"
+            "- 단면적 A, 도심 위치\n\n"
+            "지원 단면: I형, H형, T형, L형, 채널(C), 원형관, 각형관 등\n\n"
+            "## 즐겨찾기 등록\n\n"
+            "앱 카드의 **★** 아이콘을 클릭하면 Dashboard 즐겨찾기에 등록됩니다."
+        ),
+        "author_id": "SYSTEM",
+    },
+    {
+        "category": "Analysis Modules",
+        "title": "[파일] File-Based Apps — 도구 소개",
+        "content": (
+            "File-Based Apps는 **CSV, BDF 등의 파일을 업로드**하면 서버가 해석을 실행하는 파일 기반 구조 해석 도구 모음입니다. 해석은 서버에서 비동기로 수행되며, 진행률을 실시간으로 확인하고 다른 메뉴를 자유롭게 이용할 수 있습니다.\n\n"
+            "## 포함된 앱\n\n"
+            "| 앱 이름 | 한 줄 설명 |\n"
+            "|---------|------------|\n"
+            "| **Truss Model Builder** | 노드·부재 CSV 두 개를 업로드하면 Nastran BDF 모델을 자동으로 생성합니다 |\n"
+            "| **Truss Structural Assessment** | BDF 파일을 업로드하면 전 부재의 응력비를 계산하여 구조 안전성을 평가합니다 |\n\n"
+            "## Truss Model Builder\n\n"
+            "노드 좌표와 부재 연결 정보를 담은 CSV 두 개를 업로드하면 Nastran BDF 형식의 트러스 모델을 자동으로 생성합니다.\n\n"
+            "- **노드 CSV**: `ID, X, Y, Z` (단위: mm, 헤더 행 없이)\n"
+            "- **부재 CSV**: `ID, StartNode, EndNode, Material, SectionID`\n"
+            "- 파일 업로드 후 3D 뷰어에서 모델 미리보기 확인 (드래그: 회전, 스크롤: 확대/축소)\n"
+            "- 완료 후 생성된 BDF 파일을 다운로드하거나 Truss Structural Assessment에 바로 활용 가능\n\n"
+            "자세한 사용법은 Truss Model Builder 앱 상단의 **사용 가이드** 버튼을 확인하세요.\n\n"
+            "## Truss Structural Assessment\n\n"
+            "Nastran BDF 파일을 업로드하면 전 부재의 인장·압축·좌굴 응력비를 계산하여 구조 안전성을 평가합니다.\n\n"
+            "- 로드 케이스(Load Case)별 결과를 탭으로 구분하여 조회\n"
+            "- 응력비 > 1.0(FAIL): 빨간 배경 / 응력비 0.8~1.0(주의): 주황 표시\n"
+            "- SUMMARY · ELEMENT ASSESSMENT · DISTRIBUTION PANEL · SIDE SUPPORT 탭 제공\n"
+            "- Excel 내보내기: 로드 케이스별 시트로 구성된 XLSX 파일 다운로드\n\n"
+            "> **Excel 내보내기 참고**: 서버 메모리에서 직접 파일을 생성하므로 DRM 자동 암호화가 적용되지 않습니다. 일반 다운로드 파일이 암호화되어 열리지 않을 때 이 버튼을 사용하세요.\n\n"
+            "자세한 사용법은 Truss Structural Assessment 앱 상단의 **사용 가이드** 버튼을 확인하세요.\n\n"
+            "## 공통 사항\n\n"
+            "- 해석 실행 후 다른 메뉴로 이동해도 우측 하단 위젯에서 진행률을 계속 확인할 수 있습니다.\n"
+            "- 모든 해석 결과는 **My Projects**에 자동 저장되어 언제든 재조회·다운로드 가능합니다.\n"
+            "- 앱 카드의 **★** 아이콘을 클릭하면 Dashboard 즐겨찾기에 등록됩니다."
         ),
         "author_id": "SYSTEM",
     },

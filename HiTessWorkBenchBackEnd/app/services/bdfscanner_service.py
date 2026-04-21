@@ -135,13 +135,12 @@ def task_execute_bdfscanner(
         if found_count == 0:
             engine_output += "\n[Warning] JSON 결과 파일이 생성되지 않았습니다. EXE 출력 경로를 확인하세요."
 
-        # Nastran 요청 시 F06 파일 존재 여부 검증
+        # Nastran 요청 시 F06 파일 존재 여부 검증 및 경로 저장
         if use_nastran:
-            f06_found = any(
-                f.lower().endswith("_check.f06")
-                for f in os.listdir(work_dir)
-            )
-            if not f06_found:
+            f06_candidates = [f for f in os.listdir(work_dir) if f.lower().endswith("_check.f06")]
+            if f06_candidates:
+                result_data["f06"] = os.path.join(work_dir, f06_candidates[0])
+            else:
                 status_msg = "Failed"
                 engine_output += "\n[Error] Nastran 해석 후 F06 파일이 생성되지 않았습니다. Nastran이 정상 실행되지 않았습니다."
 

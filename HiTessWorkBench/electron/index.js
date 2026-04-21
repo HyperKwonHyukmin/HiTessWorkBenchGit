@@ -51,6 +51,10 @@ function createWindow() {
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
     mainWindow.focus();
+    // 개발 모드에서만 개발자 도구 자동 오픈 (Network/Console 디버깅용)
+    if (!app.isPackaged) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
   });
 
   mainWindow.on("closed", () => {

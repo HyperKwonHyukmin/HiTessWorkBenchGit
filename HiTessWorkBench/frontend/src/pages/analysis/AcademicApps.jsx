@@ -5,6 +5,7 @@ import AppCard from '../../components/ui/AppCard';
 import PageHeader from '../../components/ui/PageHeader';
 import AnimatedGrid from '../../components/ui/AnimatedGrid';
 import AdminGateModal from '../../components/ui/AdminGateModal';
+import GuideButton from '../../components/ui/GuideButton';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -31,6 +32,7 @@ export default function AcademicApps() {
         icon={GraduationCap}
         subtitle="학술 연구 기반의 AI·고급 알고리즘 해석 앱입니다."
         accentColor="cyan"
+        actions={<GuideButton guideTitle="[학술] Academic Apps — AI 기반 해석 앱" variant="dark" />}
       />
 
       {academicApps.length === 0 ? (

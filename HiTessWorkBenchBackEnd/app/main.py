@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from . import models, database
-from .routers import auth, users, analysis, system, support, ai, davit, column_buckling, hitessbeam, section_property
+from .routers import auth, users, analysis, system, support, ai, davit, column_buckling, hitessbeam, section_property, activity
 from .seed_guides import seed_default_guides
 from .services.cleanup_service import start_cleanup_scheduler
 
@@ -53,6 +53,7 @@ app.include_router(davit.router)
 app.include_router(column_buckling.router)
 app.include_router(hitessbeam.router)  # [TEMP] HiTessBeam 임시 라우터
 app.include_router(section_property.router)
+app.include_router(activity.router)
 
 
 def seed_default_notices(db):

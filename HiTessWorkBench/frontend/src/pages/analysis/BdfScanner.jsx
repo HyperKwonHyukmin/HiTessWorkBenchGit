@@ -11,6 +11,8 @@ import { usePolling } from '../../hooks/usePolling';
 import { requestBdfScanner, downloadFileText } from '../../api/analysis';
 import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
+import RelatedAppsWidget from '../../components/ui/RelatedAppsWidget';
+import TransferButton from '../../components/ui/TransferButton';
 import BdfModelViewer from '../../components/analysis/BdfModelViewer';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 
@@ -33,6 +35,8 @@ export default function BdfScanner() {
   const [step1Data, setStep1Data] = useState(null);
   const [step2Data, setStep2Data] = useState(null);
   const [unsupportedElements, setUnsupportedElements] = useState(null); // { CQUAD4: 3, ... }
+  const [resultInfo, setResultInfo] = useState(null);
+  const [analysisDbId, setAnalysisDbId] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
   // 2D / 3D 요소 카드 타입 목록
@@ -75,6 +79,8 @@ export default function BdfScanner() {
       if (!project?.result_info) return;
 
       const result_info = project.result_info;
+      setResultInfo(result_info);
+      setAnalysisDbId(project.id);
       addLog('JSON 결과 로드 중...', 'info');
 
       await Promise.allSettled(
@@ -135,6 +141,8 @@ export default function BdfScanner() {
     setStep1Data(null);
     setStep2Data(null);
     setUnsupportedElements(null);
+    setResultInfo(null);
+    setAnalysisDbId(null);
     setLogs([{ time: new Date().toLocaleTimeString(), message: `[FILE] ${file.name} 선택됨.`, type: 'info' }]);
   };
 
@@ -334,6 +342,8 @@ export default function BdfScanner() {
               </div>
             </div>
           )}
+          <RelatedAppsWidget appTitle="BDF Scanner" />
+          <TransferButton analysisId={analysisDbId} resultInfo={resultInfo} sourceApp="BDF Scanner" />
         </div>
 
         {/* 오른쪽 메인 영역 */}

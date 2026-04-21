@@ -127,12 +127,16 @@ def task_execute_modelflow(
     csvdebug: bool = True,        # CSV 파싱 디버그 출력
     femodeldebug: bool = True,    # 초기 FE 모델 디버그 출력
     pipelinedebug: bool = True,   # 파이프라인 스테이지 배너 및 통계 출력
+    spc_z_band: float = -1.0,     # Z-band SPC 필터 (mm). -1이면 비활성
+    debug_stages: bool = False,   # 힐링 단계별 BDF 스냅샷 저장
+    stop_at: int = 0,             # 0=전체 실행, 1~5=지정 단계까지
 ):
     msgs = _STAGE_MESSAGES.get(stop_mode, _STAGE_MESSAGES["load"])
     job_status_store.update_job(job_id, {"status": "Running", "progress": 10, "message": msgs["start"]})
 
     input_data = {"stru_csv": stru_path, "pipe_csv": pipe_path, "equip_csv": equip_path}
     result_data: dict = {}
+    process_log_data = None
     status_msg = "Success"
     engine_output = ""
     log_content = ""
@@ -169,6 +173,12 @@ def task_execute_modelflow(
                 cmd_args += ["--femodeldebug", "false"]
             if not pipelinedebug:
                 cmd_args += ["--pipelinedebug", "false"]
+            if spc_z_band >= 0:
+                cmd_args += ["--spc-z-band", str(int(spc_z_band))]
+            if debug_stages:
+                cmd_args += ["--debug-stages", "true"]
+            if stop_at and 1 <= stop_at <= 5:
+                cmd_args += ["--stopat", str(stop_at)]
 
             try:
                 # 전체 파이프라인 실행 → 타임아웃 600초
@@ -183,11 +193,13 @@ def task_execute_modelflow(
                     timeout=timeout_sec,
                 )
                 engine_output = result.stdout
+                if result.stderr and result.stderr.strip():
+                    engine_output += f"\n[stderr]\n{result.stderr}"
 
                 job_status_store.update_job(job_id, {"progress": 70, "message": "결과 파일 수집 중..."})
 
                 # 프로세스 로그 파일 수집
-                log_files = glob.glob(os.path.join(work_dir, "*_ProcessLog_*.txt"))
+                log_files = glob.glob(os.path.join(work_dir, "**", "*_ProcessLog_*.txt"), recursive=True)
                 if log_files:
                     log_files.sort(key=os.path.getmtime, reverse=True)
                     log_path = log_files[0]
@@ -197,10 +209,42 @@ def task_execute_modelflow(
                 else:
                     log_content = engine_output
 
+                # JSON ProcessLog 파싱
+                json_log_files = glob.glob(os.path.join(work_dir, "**", "*_ProcessLog_*.json"), recursive=True)
+                if json_log_files:
+                    json_log_files.sort(key=os.path.getmtime, reverse=True)
+                    try:
+                        with open(json_log_files[0], "r", encoding="utf-8", errors="replace") as f:
+                            raw_plog = json.load(f)
+                        if raw_plog.get("SchemaVersion") == 1:
+                            run_info = raw_plog.get("Run", {})
+                            process_log_data = {
+                                "exitReason":   run_info.get("ExitReason"),
+                                "startedAt":    run_info.get("StartedAt"),
+                                "finishedAt":   run_info.get("FinishedAt"),
+                                "stopAtStage":  run_info.get("StopAtStage", 0),
+                                "errorStage":   run_info.get("ErrorStage"),
+                                "errorMessage": run_info.get("ErrorMessage"),
+                                "stages": [
+                                    {
+                                        "id":        s.get("Id"),
+                                        "name":      s.get("Name"),
+                                        "status":    s.get("Status"),
+                                        "elapsedMs": s.get("ElapsedMs"),
+                                        "summary":   s.get("Summary"),
+                                    }
+                                    for s in raw_plog.get("Stages", [])
+                                ],
+                            }
+                            if run_info.get("ExitReason") == "Error":
+                                status_msg = "Failed"
+                    except Exception as plog_e:
+                        logger.warning("ProcessLog JSON 파싱 오류: %s", str(plog_e))
+
                 # BDF 수집: <struName>.bdf (Verification/Material/STAGE 제외)
                 if stop_mode == "7":
                     bdf_files = [
-                        f for f in glob.glob(os.path.join(work_dir, "*.bdf"))
+                        f for f in glob.glob(os.path.join(work_dir, "**", "*.bdf"), recursive=True)
                         if not any(kw in os.path.basename(f) for kw in ("Material", "Verification", "STAGE_"))
                     ]
                     if bdf_files:
@@ -341,6 +385,10 @@ def task_execute_modelflow(
             "equip_path": equip_path,
             "work_dir": work_dir,
             "project": project_data,
+            "process_log":  process_log_data,
+            "spc_z_band":   spc_z_band,
+            "debug_stages": debug_stages,
+            "stop_at":      stop_at,
         })
 
     finally:

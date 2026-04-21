@@ -42,6 +42,34 @@ export const CHANGELOG = {
     },
   ],
 
+  F06Parser: [
+    {
+      version: '1.0.1',
+      date: '2026-04-20',
+      type: 'improve',
+      changes: [
+        'CBAR Stress 컬럼 명칭 개선 — SA-Stress / SB-Stress로 변경',
+        '테이블에서 불필요한 여유강도(MS) 컬럼 제거 — CSV 다운로드에서 확인 가능',
+        '통계 차트 기본 활성화',
+        '적용 범위 안내 추가 (SOL 101 정적 해석 / 1D Beam 전용)',
+        'SPC Force 결과에서 반력이 발생하지 않은 노드 자동 제거',
+      ],
+    },
+    {
+      version: '1.0.0',
+      date: '2026-04-20',
+      type: 'feat',
+      changes: [
+        'Nastran SOL 101 F06 파일 파싱 기능 출시',
+        'Displacement · SPC Force · CBAR / CBEAM / CROD 내력 및 응력 결과 조회',
+        'Subcase별 탭 뷰 — 컬럼 클릭으로 오름·내림차순 정렬',
+        'Subcase별 최대값 추세 및 상위 10개 요소 랭킹 차트 시각화',
+        'Subcase · 결과 유형별 CSV 개별 다운로드',
+        '각 탭에서 핵심 요약 값만 표시 (전체 상세 데이터는 CSV로 확인)',
+      ],
+    },
+  ],
+
   BdfScanner: [
     {
       version: '0.0.7',
