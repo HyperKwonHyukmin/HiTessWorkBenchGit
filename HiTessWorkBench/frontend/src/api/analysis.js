@@ -38,6 +38,12 @@ export const requestBdfScanner = (formData) =>
     headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
   });
 
+/** F06 Parser 요청 */
+export const requestF06Parser = (formData) =>
+  axios.post(`${API_BASE_URL}/api/analysis/f06parser/request`, formData, {
+    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
+  });
+
 /** 파일 다운로드 (blob) */
 export const downloadFileBlob = (filepath) =>
   axios.get(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(filepath)}`, {
@@ -62,3 +68,14 @@ export const exportAssessmentXlsx = (jsonPath) =>
 /** 프로그램별 사용 건수 집계 (days=0이면 전체 기간) */
 export const getTopPrograms = (days = 30, limit = 10) =>
   axios.get(`${API_BASE_URL}/api/analysis/stats/top-programs`, { params: { days, limit } });
+
+/** 특정 Analysis ID로 단건 조회 */
+export const getAnalysisById = (id) =>
+  axios.get(`${API_BASE_URL}/api/analysis/${id}`, { headers: getAuthHeaders() });
+
+/** 사용자 당월 해석 수행 건수 조회 (limit 제약 없음) */
+export const getMonthlyAnalysisCount = (employeeId, year, month) =>
+  axios.get(`${API_BASE_URL}/api/analysis/stats/monthly`, {
+    params: { employee_id: employeeId, year, month },
+    headers: getAuthHeaders()
+  });
