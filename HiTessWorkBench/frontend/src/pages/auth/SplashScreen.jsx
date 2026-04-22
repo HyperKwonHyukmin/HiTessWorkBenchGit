@@ -1,6 +1,4 @@
 import React, { useEffect, useState } from 'react';
-// [1] 저장해둔 로고 이미지 불러오기
-import logo from '../../assets/images/HD_Logo.png'; 
 
 export default function SplashScreen({ onFinish }) {
   const [loadingText, setLoadingText] = useState('Initializing Core Systems...');
@@ -20,14 +18,13 @@ export default function SplashScreen({ onFinish }) {
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-brand-blue text-white z-50">
       <div className="animate-slide-up flex flex-col items-center">
-        
-        {/* [2] Logo Image 영역 수정 */}
-        {/* 로고가 잘 보이도록 흰색 박스(bg-white) 안에 배치 */}
+
+        {/* 앱 아이콘 */}
         <div className="mb-8 p-6 bg-white rounded-3xl shadow-2xl shadow-black/30">
-          <img 
-            src={logo} 
-            alt="HiTESS Logo" 
-            className="h-20 w-auto object-contain" // h-20: 높이 약 80px
+          <img
+            src="/icon.ico"
+            alt="HiTESS WorkBench"
+            className="h-20 w-auto object-contain"
           />
         </div>
         

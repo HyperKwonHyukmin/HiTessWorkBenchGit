@@ -49,9 +49,9 @@ def task_execute_bdfscanner(
         if not os.path.exists(exe_path):
             raise FileNotFoundError(f"실행 파일을 찾을 수 없습니다: {exe_path}")
 
-        # 커맨드 구성
-        # --nastran 옵션이 있으면 Nastran 해석 후 F06 요약까지 수행
-        # bdf_filename: work_dir 기준 파일명만 전달 (EXE가 JSON을 같은 폴더에 출력)
+        # BDF가 work_dir의 하위 폴더에 있을 수 있으므로 실제 BDF 위치 기준으로 cwd 설정
+        # BdfScanner.exe는 입력 BDF와 동일한 디렉터리에 JSON/F06 파일을 출력함
+        bdf_dir = os.path.dirname(os.path.abspath(bdf_path))
         bdf_filename = os.path.basename(bdf_path)
         if use_nastran:
             cmd_args = [exe_path, bdf_filename, "--nastran"]
@@ -68,14 +68,14 @@ def task_execute_bdfscanner(
         # ── 디버그: 실행 환경 로그 ──────────────────────────────────────
         logger.info("[BdfScanner] exe   : %s (exists=%s)", exe_path, os.path.exists(exe_path))
         logger.info("[BdfScanner] bdf   : %s (exists=%s)", bdf_path, os.path.exists(bdf_path))
-        logger.info("[BdfScanner] cwd   : %s", work_dir)
+        logger.info("[BdfScanner] bdf_dir: %s", bdf_dir)
         logger.info("[BdfScanner] cmd   : %s", " ".join(cmd_args))
         # ───────────────────────────────────────────────────────────────
 
         # bytes 모드로 실행: .NET 콘솔 인코딩(OEM) 문제 회피
         result = subprocess.run(
             cmd_args,
-            cwd=work_dir,
+            cwd=bdf_dir,   # BDF 파일이 있는 디렉터리에서 실행
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=360,   # exe 내부 Nastran 타임아웃 300초 + 여유 60초
@@ -101,9 +101,8 @@ def task_execute_bdfscanner(
             "message": "결과 파일 수집 중...",
         })
 
-        # 출력 파일 수집
-        # BDF 파일명 stem 기준으로 3가지 JSON 파일을 탐색
-        bdf_stem = os.path.splitext(os.path.basename(bdf_path))[0]
+        # 출력 파일 수집 — BDF와 동일한 디렉터리(bdf_dir)에서 탐색
+        bdf_stem = os.path.splitext(bdf_filename)[0]
 
         expected_files = {
             f"{bdf_stem}.json":                  "JSON_ModelInfo",
@@ -111,20 +110,19 @@ def task_execute_bdfscanner(
             f"{bdf_stem}_validation_step2.json": "JSON_F06Summary",
         }
 
-        # 디버깅: 실행 후 work_dir 파일 목록
+        # 디버깅: 실행 후 bdf_dir 파일 목록
         try:
-            _dir_files = os.listdir(work_dir)
-            logger.info("[BdfScanner] work_dir 파일 목록: %s", _dir_files)
+            _dir_files = os.listdir(bdf_dir)
+            logger.info("[BdfScanner] bdf_dir 파일 목록: %s", _dir_files)
         except Exception:
             pass
         logger.info("[BdfScanner] 탐색 대상 파일: %s", list(expected_files.keys()))
 
         found_count = 0
         for filename, key in expected_files.items():
-            # 대소문자 무관하게 탐색
-            for f in os.listdir(work_dir):
+            for f in os.listdir(bdf_dir):
                 if f.lower() == filename.lower():
-                    result_data[key] = os.path.join(work_dir, f)
+                    result_data[key] = os.path.join(bdf_dir, f)
                     found_count += 1
                     break
 
@@ -137,9 +135,9 @@ def task_execute_bdfscanner(
 
         # Nastran 요청 시 F06 파일 존재 여부 검증 및 경로 저장
         if use_nastran:
-            f06_candidates = [f for f in os.listdir(work_dir) if f.lower().endswith("_check.f06")]
+            f06_candidates = [f for f in os.listdir(bdf_dir) if f.lower().endswith("_check.f06")]
             if f06_candidates:
-                result_data["f06"] = os.path.join(work_dir, f06_candidates[0])
+                result_data["f06"] = os.path.join(bdf_dir, f06_candidates[0])
             else:
                 status_msg = "Failed"
                 engine_output += "\n[Error] Nastran 해석 후 F06 파일이 생성되지 않았습니다. Nastran이 정상 실행되지 않았습니다."
@@ -180,7 +178,7 @@ def task_execute_bdfscanner(
             employee_id=employee_id,
             status=status_msg,
             input_info={"bdf_model": bdf_path, "use_nastran": use_nastran},
-            result_info=result_data if status_msg == "Success" else None,
+            result_info=result_data if result_data else None,
             source=source,
         )
         db.add(new_analysis)

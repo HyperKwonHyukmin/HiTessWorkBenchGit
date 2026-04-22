@@ -110,6 +110,47 @@ def _transform_bdfscanner_to_fem(data: dict) -> dict:
     }
 
 
+def append_rbe2_to_bdf(bdf_path: str, pairs: list) -> None:
+    """ENDDATA 직전에 RBE2 카드를 삽입한다.
+    EID는 기존 BDF 내 최대 EID + 1부터 순차 발급하여 충돌을 방지한다."""
+    with open(bdf_path, "r", encoding="utf-8", errors="replace") as f:
+        lines = f.readlines()
+
+    max_eid = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("$"):
+            continue
+        parts = stripped.split()
+        if len(parts) >= 2:
+            try:
+                eid = int(parts[1])
+                if eid > max_eid:
+                    max_eid = eid
+            except ValueError:
+                pass
+
+    new_cards = []
+    for i, p in enumerate(pairs):
+        eid  = max_eid + 1 + i
+        gn   = int(p["indep"])
+        dep  = int(p["dep"])
+        dof  = p.get("dof", "123456")
+        card = f"RBE2    {eid:<8d}{gn:<8d}{dof:<8s}{dep:<8d}\n"
+        new_cards.append(card)
+        new_cards.append(f"$--- User RBE2 pair {i+1}: Node {gn} <-> Node {dep}\n")
+
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].strip().upper() == "ENDDATA":
+            lines[i:i] = new_cards
+            break
+    else:
+        lines.extend(new_cards)
+
+    with open(bdf_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
 def task_execute_modelflow(
     job_id: str,
     stru_path: str,
@@ -311,6 +352,13 @@ def task_execute_modelflow(
                                     json_path = fem_json_path
                                     result_data["json_path"] = json_path
                                     logger.info("[ModelBuilder/BdfScanner] FemModel JSON 저장 완료: %s", fem_json_path)
+
+                                    # ConnectivityGroups JSON 탐지 (work_dir 하위 재귀 검색)
+                                    cg_files = glob.glob(os.path.join(work_dir, "**", "*ConnectivityGroups*.json"), recursive=True)
+                                    if cg_files:
+                                        cg_files.sort(key=os.path.getmtime, reverse=True)
+                                        result_data["connectivity_path"] = cg_files[0]
+                                        logger.info("[ModelBuilder/BdfScanner] ConnectivityGroups: %s", cg_files[0])
                                 else:
                                     logger.warning("[ModelBuilder/BdfScanner] JSON 미생성: %s", scanner_json_path)
                                     engine_output += f"\n[경고] BdfScanner JSON 미생성: {scanner_json_path}"
@@ -378,6 +426,7 @@ def task_execute_modelflow(
             "log_path": log_path,
             "bdf_path": bdf_path,
             "json_path": json_path,
+            "connectivity_path": result_data.get("connectivity_path"),
             "stop_mode": stop_mode,
             "ubolt": ubolt,
             "stru_path": stru_path,
@@ -393,3 +442,121 @@ def task_execute_modelflow(
 
     finally:
         db.close()
+
+
+def task_execute_rbe_retry(
+    job_id: str,
+    bdf_path: str,
+    work_dir: str,
+    employee_id: str,
+    timestamp: str,
+    source: str,
+):
+    """사용자 RBE2가 이미 append된 BDF에 BdfScanner를 실행하고 FemModel JSON으로 변환한다.
+    top-level bdf_path/json_path/connectivity_path/work_dir을 job_status_store에 저장.
+    Nastran은 실행하지 않음 — 프론트가 useNastran 플래그로 별도 체이닝."""
+    job_status_store.update_job(job_id, {
+        "status": "Running", "progress": 20, "message": "BDF 재스캔 중...",
+    })
+
+    engine_output = ""
+    json_path = None
+    status_msg = "Success"
+    project_data = None
+    result_data: dict = {"bdf_path": bdf_path}
+
+    db = database.SessionLocal()
+    try:
+        if not os.path.exists(_BDFSCANNER_EXE):
+            status_msg = "Failed"
+            engine_output = f"BdfScanner.exe를 찾을 수 없습니다: {_BDFSCANNER_EXE}"
+        else:
+            job_status_store.update_job(job_id, {"progress": 40, "message": "BdfScanner 실행 중..."})
+            scanner_result = subprocess.run(
+                [_BDFSCANNER_EXE, bdf_path],
+                cwd=work_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=120,
+            )
+            stdout_text = scanner_result.stdout.decode("utf-8", errors="replace")
+            stderr_text = scanner_result.stderr.decode("utf-8", errors="replace")
+            engine_output = stdout_text + (f"\n[stderr] {stderr_text}" if stderr_text.strip() else "")
+            logger.info("[RbeRetry/BdfScanner] exit=%d", scanner_result.returncode)
+
+            bdf_dir  = os.path.dirname(os.path.abspath(bdf_path))
+            bdf_stem = os.path.splitext(os.path.basename(bdf_path))[0]
+            scanner_json = os.path.join(bdf_dir, f"{bdf_stem}.json")
+
+            job_status_store.update_job(job_id, {"progress": 70, "message": "FemModel JSON 변환 중..."})
+
+            if os.path.exists(scanner_json):
+                with open(scanner_json, "r", encoding="utf-8-sig", errors="replace") as f:
+                    scanner_data = json.load(f)
+                fem_data = _transform_bdfscanner_to_fem(scanner_data)
+                fem_json_path = os.path.join(work_dir, f"{timestamp}_FemModel.json")
+                with open(fem_json_path, "w", encoding="utf-8") as f:
+                    json.dump(fem_data, f, ensure_ascii=False)
+                json_path = fem_json_path
+                result_data["json_path"] = json_path
+                logger.info("[RbeRetry/BdfScanner] FemModel JSON 저장: %s", fem_json_path)
+
+                cg_files = glob.glob(os.path.join(work_dir, "**", "*ConnectivityGroups*.json"), recursive=True)
+                if cg_files:
+                    cg_files.sort(key=os.path.getmtime, reverse=True)
+                    result_data["connectivity_path"] = cg_files[0]
+            else:
+                status_msg = "Failed"
+                engine_output += f"\n[경고] BdfScanner JSON 미생성: {scanner_json}"
+                logger.warning("[RbeRetry/BdfScanner] JSON 미생성: %s", scanner_json)
+
+        job_status_store.update_job(job_id, {"progress": 90, "message": "DB 저장 중..."})
+        try:
+            new_analysis = models.Analysis(
+                project_name=f"HiTessModelBuilder_RBE_{timestamp}",
+                program_name="HiTessModelBuilder",
+                employee_id=employee_id,
+                status=status_msg,
+                input_info={"bdf_model": bdf_path, "mode": "rbe_retry"},
+                result_info=result_data if status_msg == "Success" else None,
+                source=source,
+            )
+            db.add(new_analysis)
+            db.commit()
+            db.refresh(new_analysis)
+            project_data = {
+                "id":           new_analysis.id,
+                "project_name": new_analysis.project_name,
+                "program_name": new_analysis.program_name,
+                "employee_id":  new_analysis.employee_id,
+                "status":       new_analysis.status,
+                "created_at":   (
+                    new_analysis.created_at.isoformat()
+                    if new_analysis.created_at
+                    else datetime.now().isoformat()
+                ),
+            }
+        except Exception as db_e:
+            logger.error("[RbeRetry] DB 저장 오류: %s", str(db_e))
+            engine_output += f"\nDB 오류: {str(db_e)}"
+    except subprocess.TimeoutExpired:
+        status_msg = "Failed"
+        engine_output += "\nBdfScanner 실행 시간 초과 (2분)"
+    except Exception as e:
+        status_msg = "Failed"
+        logger.error("[RbeRetry] 오류: %s", str(e), exc_info=True)
+        engine_output += f"\nRBE retry 오류: {str(e)}"
+    finally:
+        db.close()
+
+    job_status_store.update_job(job_id, {
+        "status":            status_msg,
+        "progress":          100,
+        "message":           "RBE2 반영 완료" if status_msg == "Success" else "RBE2 반영 실패",
+        "engine_log":        engine_output,
+        "bdf_path":          bdf_path,
+        "json_path":         json_path,
+        "connectivity_path": result_data.get("connectivity_path"),
+        "work_dir":          work_dir,
+        "project":           project_data,
+    })

@@ -20,7 +20,7 @@ export const ANALYSIS_DATA = [
   { mode: "File", category: "권상(Lifting)", title: "Group & Unit 권상 구조 해석", description: "Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.", icon: UploadCloud, color: "bg-emerald-600", tags: ["유닛", "블록", "국부강도"], devStatus: "Developing", contributor: "권혁민" },
   // ── Interactive Apps ─────────────────────────────── Active ──
   { mode: "Interactive", category: "1D 빔(Beam)", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-cyan-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active", contributor: "권혁민" },
-  { mode: "Interactive", category: "단면(Section)", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: SlidersHorizontal, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "Interactive", category: "단면(Section)", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Active", contributor: "권혁민" },
   // ── Interactive Apps ───────────────────────────── Developing ──
   { mode: "Interactive", category: "러그(Lug)", title: "Lifting Lug Evaluator", description: "Lifting Lug의 상세 치수와 작용 하중을 입력하여 러그의 구조 강도를 즉각 평가합니다.", icon: PenTool, color: "bg-emerald-600", tags: ["러그", "권상하중", "실시간"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "Academic", category: "AI 기반 해석", title: "GNN 기반 Beam 구조 안정성 검토", description: "Graph Neural Network(GNN)를 활용하여 보(Beam) 구조물의 응력 분포 및 구조적 안정성을 AI 기반으로 평가합니다.", icon: Bot, color: "bg-cyan-600", tags: ["GNN", "AI", "Beam", "구조안정성"], devStatus: "Developing", contributor: "권혁민" },
@@ -64,6 +64,8 @@ export function DashboardProvider({ children }) {
     resultJsonData: null,
     activeResultCase: null
   });
+
+  const [modelBuilderPageState, setModelBuilderPageState] = useState(null);
 
   const [pendingJobTransfer, setPendingJobTransferRaw] = useState(null);
   const setPendingJobTransfer = (payload) => setPendingJobTransferRaw(payload);
@@ -137,6 +139,7 @@ export function DashboardProvider({ children }) {
         stats, favorites, toggleFavorite,
         globalJob, startGlobalJob, clearGlobalJob,
         assessmentPageState, setAssessmentPageState,
+        modelBuilderPageState, setModelBuilderPageState,
         pendingJobTransfer, setPendingJobTransfer, clearPendingJobTransfer
     }}>
       {children}

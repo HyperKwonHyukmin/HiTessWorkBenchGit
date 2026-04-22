@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { User, ArrowRight, ShieldCheck, AlertCircle, Clock, Wifi, WifiOff, DownloadCloud, AlertTriangle, Construction } from 'lucide-react';
-import logoCI from '../../assets/images/HHI_white2_ko.png';
 import RegisterModal from '../../components/modals/RegisterModal';
 import { checkVersion, login } from '../../api/auth';
 import { API_BASE_URL } from '../../config';
@@ -136,9 +135,9 @@ export default function LoginScreen({ onLoginSuccess }) {
         </div>
 
         <div className="relative z-10 flex-1 flex flex-col justify-center pointer-events-none">
-           <div className="mb-8">
-             <img src={logoCI} alt="HD Hyundai CI" className="h-10 w-auto object-contain" />
-           </div>
+          <div className="mb-8">
+            <img src="/icon.ico" alt="HiTESS WorkBench" className="h-12 w-auto object-contain" />
+          </div>
            <h1 className="text-4xl font-extrabold leading-tight text-white drop-shadow-md">
             HiTESS <br/> <span className="text-brand-accent">WorkBench</span>
           </h1>

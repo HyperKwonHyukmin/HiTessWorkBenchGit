@@ -15,7 +15,7 @@ from ..state import server_state
 from ..dependencies import require_admin, require_auth
 from ..services.activity_service import log_activity
 
-SERVER_VERSION = "0.1.1"
+SERVER_VERSION = "0.1.2"
 
 # 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent

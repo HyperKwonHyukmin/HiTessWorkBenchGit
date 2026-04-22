@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 // 허용된 IPC 채널 화이트리스트
 const VALID_SEND_CHANNELS    = ['app-ready', 'open-external'];
@@ -25,5 +25,9 @@ contextBridge.exposeInMainWorld("electron", {
       return ipcRenderer.invoke(channel, data);
     }
     return Promise.resolve(null);
+  },
+  // Electron 32+ 대응: File 객체에서 절대 경로 추출 (File.path 제거 대체)
+  getPathForFile: (file) => {
+    try { return webUtils.getPathForFile(file); } catch { return ''; }
   },
 });

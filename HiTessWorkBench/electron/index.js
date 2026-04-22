@@ -226,11 +226,8 @@ ipcMain.handle("get-intro-page-html", (_evt, which) => {
 ipcMain.handle("list-dir-csvs", (_, dirPath) => {
   try {
     const resolvedPath = path.resolve(dirPath);
-    const allowedBases = [app.getPath("userData"), app.getPath("home"), app.getAppPath()].map(p => path.resolve(p));
-    if (!allowedBases.some(base => resolvedPath.startsWith(base))) {
-      console.warn("[Security] list-dir-csvs blocked path:", resolvedPath);
-      return [];
-    }
+    const stat = fs.statSync(resolvedPath);
+    if (!stat.isDirectory()) return [];
     return fs.readdirSync(resolvedPath)
       .filter(f => f.toLowerCase().endsWith('.csv'))
       .map(f => ({ name: f, filePath: path.join(resolvedPath, f) }));
@@ -239,17 +236,12 @@ ipcMain.handle("list-dir-csvs", (_, dirPath) => {
   }
 });
 
-// 지정 경로의 파일 내용을 ArrayBuffer로 반환
+// 지정 경로의 파일 내용을 ArrayBuffer로 반환 (CSV 파일만 허용)
 ipcMain.handle("read-file-buffer", (_, filePath) => {
   try {
     const resolvedPath = path.resolve(filePath);
-    const allowedBases = [app.getPath("userData"), app.getPath("home"), app.getAppPath()].map(p => path.resolve(p));
-    if (!allowedBases.some(base => resolvedPath.startsWith(base))) {
-      console.warn("[Security] read-file-buffer blocked path:", resolvedPath);
-      return null;
-    }
+    if (!resolvedPath.toLowerCase().endsWith('.csv')) return null;
     const buf = fs.readFileSync(resolvedPath);
-    // structuredClone 가능한 형태로 변환
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   } catch {
     return null;

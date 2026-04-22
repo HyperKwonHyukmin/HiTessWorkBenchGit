@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy import func
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query, Request
+from pydantic import BaseModel
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models, database
@@ -18,7 +19,7 @@ from ..services.truss_service import task_execute_truss
 from ..services.assessment_service import task_execute_assessment, _json_to_xlsx_bytes
 from ..services.beam_service import task_execute_beam
 from ..services.bdfscanner_service import task_execute_bdfscanner
-from ..services.hitess_modelflow_service import task_execute_modelflow
+from ..services.hitess_modelflow_service import task_execute_modelflow, append_rbe2_to_bdf, task_execute_rbe_retry
 from ..services.f06parser_service import task_execute_f06parser
 
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -623,6 +624,68 @@ async def request_ubolt_retry(
     analysis_executor.submit(
         task_execute_modelflow,
         job_id, new_stru, new_pipe, new_equip, ubolt_dir, exe_path, employee_id, timestamp, source, "7", True,
+    )
+
+    return {"job_id": job_id}
+
+
+class _RbePair(BaseModel):
+    indep: int
+    dep: int
+    dof: str = "123456"
+
+
+class RbeRetryPayload(BaseModel):
+    bdf_path: str
+    work_dir: str
+    pairs: list[_RbePair]
+    employee_id: str
+    source: str = "Workbench"
+
+
+@router.post("/analysis/modelflow/rbe-retry")
+async def request_rbe_retry(
+    payload: RbeRetryPayload,
+    current_user: str = Depends(require_auth),
+):
+    """
+    사용자가 지정한 RBE2 페어를 기존 BDF에 삽입하고 BdfScanner로 재스캔합니다.
+    기존 작업 디렉터리 내 rbe_retry_{ts}/ 서브폴더에 BDF를 복사한 뒤 RBE2 카드를 append합니다.
+    """
+    decoded_bdf  = os.path.abspath(urllib.parse.unquote(payload.bdf_path))
+    decoded_work = os.path.abspath(urllib.parse.unquote(payload.work_dir))
+
+    for path in [decoded_bdf, decoded_work]:
+        if not path.startswith(_ALLOWED_DOWNLOAD_BASE):
+            raise HTTPException(status_code=403, detail=f"접근 권한이 없는 경로입니다: {path}")
+    if not os.path.exists(decoded_bdf):
+        raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
+    if not payload.pairs:
+        raise HTTPException(status_code=400, detail="RBE2 페어가 비어 있습니다.")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    retry_dir = os.path.join(decoded_work, f"rbe_retry_{timestamp}")
+    os.makedirs(retry_dir, exist_ok=True)
+
+    new_bdf = os.path.join(retry_dir, os.path.basename(decoded_bdf))
+    shutil.copy2(decoded_bdf, new_bdf)
+
+    pairs_data = [p.model_dump() for p in payload.pairs]
+    with open(os.path.join(retry_dir, "rbe_pairs.json"), "w", encoding="utf-8") as f:
+        import json as _j
+        _j.dump({"created_at": datetime.now().isoformat(), "pairs": pairs_data}, f, ensure_ascii=False, indent=2)
+
+    try:
+        append_rbe2_to_bdf(new_bdf, pairs_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"BDF RBE2 삽입 오류: {str(e)}")
+
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "RBE2 페어 삽입 후 BdfScanner 재실행 대기 중..."})
+
+    analysis_executor.submit(
+        task_execute_rbe_retry,
+        job_id, new_bdf, retry_dir, payload.employee_id, timestamp, payload.source,
     )
 
     return {"job_id": job_id}

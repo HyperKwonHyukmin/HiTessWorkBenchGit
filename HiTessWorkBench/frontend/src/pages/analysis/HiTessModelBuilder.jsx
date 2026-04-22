@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   UploadCloud, ArrowLeft, ChevronDown,
   ChevronsRight,
@@ -11,16 +11,44 @@ import ChangelogModal from '../../components/ui/ChangelogModal';
 import * as THREE from 'three';
 import { createThreeScene } from '../../hooks/useThreeScene';
 import { useNavigation } from '../../contexts/NavigationContext';
+import { useDashboard } from '../../contexts/DashboardContext';
 import { API_BASE_URL } from '../../config';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import GuideButton from '../../components/ui/GuideButton';
 import { useToast } from '../../contexts/ToastContext';
 import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
+import { downloadFileBlob } from '../../api/analysis';
+
+const triggerBlobDownload = async (filepath) => {
+  const res = await downloadFileBlob(filepath);
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filepath.split(/[\\/]/).pop();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+// ── 연결 그룹 색상 팔레트 ─────────────────────────────────────
+const GROUP_PALETTE     = [0x6366f1, 0xf97316, 0xec4899, 0x22c55e, 0xeab308, 0x06b6d4, 0xf43f5e, 0xa855f7];
+const GROUP_PALETTE_CSS = ['#6366f1','#f97316','#ec4899','#22c55e','#eab308','#06b6d4','#f43f5e','#a855f7'];
+const GROUP_GHOST_HEX   = 0x9aa0b0;
 
 // ── Three.js FEM 모델 뷰어 ────────────────────────────────────
 // mode: 'raw'    → 2단계 (자유노드 표시, BC 없음)
 //       'healed' → 3단계 (BC/SPC 경계조건 표시, 자유노드 없음)
-function FemModelViewer({ jsonPath, mode = 'raw' }) {
+function FemModelViewer({
+  jsonPath, connectivityPath, mode = 'raw',
+  rbeEditMode = false,
+  selectedRbeNode = null,
+  manualRbePairs = [],
+  onNodePick = null,
+  onRigidsLoad = null,
+  blockedNodeIds = null,
+  onCancelSelection = null,
+}) {
   const isHealed = mode === 'healed';
 
   const containerRef = useRef(null); // 전체화면 대상
@@ -30,18 +58,27 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
   const conm2MeshRef     = useRef(null);
   const freeNodeMeshRef  = useRef(null);
   const bcMeshRef        = useRef(null); // 경계조건 (healed 모드)
+  const rbe2MeshRef      = useRef(null); // RBE2 강체
   const pipeMeshRef      = useRef(null);
   const supportMeshRef   = useRef(null);
-  const threeRef         = useRef(null); // { renderer, scene, animId, ro }
+  const threeRef         = useRef(null); // { cleanup, scene, camera, controls, maxDim }
+  const elemIdToInstanceRef = useRef({}); // { elemId: { mesh, idx } }
+  // RBE 픽킹용 보조 refs
+  const nodesDataRef        = useRef(null);  // { nodeId: {x,y,z} }
+  const nodeIdxMapRef       = useRef([]);    // nodeIds 배열 (instanceId → nodeId)
+  const rodRadiusRef        = useRef(5);
+  const manualRbe2MeshRef   = useRef(null);
+  const selectedHighlightRef = useRef(null);
 
   const [viewState,    setViewState]    = useState('idle'); // 'idle'|'loading'|'ready'|'error'
   const [errorMsg,     setErrorMsg]     = useState('');
-  const [showNodes,     setShowNodes]     = useState(false);  // 기본 Off (붉은 구)
-  const [showConm2,     setShowConm2]     = useState(false);  // 기본 Off
-  const [showFreeNodes, setShowFreeNodes] = useState(false);  // 기본 Off (자유노드, raw 모드)
-  const [showBc,        setShowBc]        = useState(true);   // 기본 On  (경계조건, healed 모드)
-  const [showPipe,      setShowPipe]      = useState(true);   // 기본 On (초록)
-  const [showSupport,   setShowSupport]   = useState(true);   // 기본 On (주황)
+  const [inViewerWarning, setInViewerWarning] = useState(null); // 전체화면용 인뷰어 경고
+  const [showNodes,     setShowNodes]     = useState(false);
+  const [showConm2,     setShowConm2]     = useState(false);
+  const [showFreeNodes, setShowFreeNodes] = useState(false);
+  const [showBc,        setShowBc]        = useState(false);
+  const [showPipe,      setShowPipe]      = useState(true);
+  const [showSupport,   setShowSupport]   = useState(true);
   const [autoRotate,    setAutoRotate]    = useState(false);
   const [isFullscreen,  setIsFullscreen]  = useState(false);
   const [conm2Count,    setConm2Count]    = useState(0);
@@ -49,6 +86,11 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
   const [bcCount,       setBcCount]       = useState(0);
   const [pipeCount,     setPipeCount]     = useState(0);
   const [supportCount,  setSupportCount]  = useState(0);
+  // 연결 그룹
+  const [connectivityGroups, setConnectivityGroups] = useState([]);
+  const [groupColorMode,     setGroupColorMode]     = useState(false);
+  const [selectedGroupId,    setSelectedGroupId]    = useState(null);
+  const [isolateMode,        setIsolateMode]        = useState(false);
 
   // 전체화면 토글
   const toggleFullscreen = () => {
@@ -93,15 +135,35 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
 
     const destroy = () => {
       if (!threeRef.current) return;
+      const sc = threeRef.current.scene;
+      // overlay meshes 먼저 정리 (scene이 살아있을 때)
+      [manualRbe2MeshRef, selectedHighlightRef].forEach(ref => {
+        if (ref.current) {
+          sc?.remove(ref.current);
+          ref.current.geometry?.dispose();
+          ref.current.material?.dispose();
+          ref.current = null;
+        }
+      });
+      // userData에 보관된 여분 material dispose (cleanup의 traverse는 현재 material만 처리)
+      [pipeMeshRef, supportMeshRef, rbe2MeshRef].forEach(ref => {
+        const m = ref.current;
+        m?.userData?.standardMat?.dispose();
+        m?.userData?.basicMat?.dispose();
+      });
       threeRef.current.cleanup();
-      controlsRef.current     = null;
-      nodesMeshRef.current    = null;
-      conm2MeshRef.current    = null;
-      freeNodeMeshRef.current = null;
-      bcMeshRef.current       = null;
-      pipeMeshRef.current     = null;
-      supportMeshRef.current  = null;
-      threeRef.current        = null;
+      controlsRef.current       = null;
+      nodesMeshRef.current      = null;
+      conm2MeshRef.current      = null;
+      freeNodeMeshRef.current   = null;
+      bcMeshRef.current         = null;
+      pipeMeshRef.current       = null;
+      supportMeshRef.current    = null;
+      rbe2MeshRef.current       = null;
+      elemIdToInstanceRef.current = {};
+      nodesDataRef.current      = null;
+      nodeIdxMapRef.current     = [];
+      threeRef.current          = null;
     };
     destroy();
 
@@ -118,6 +180,7 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
         if (cancelled || !mountRef.current) return;
         const clean = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
         const fem = JSON.parse(clean);
+        onRigidsLoad?.(fem.rigids || {});
 
         const el = mountRef.current;
 
@@ -139,27 +202,36 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
         const group = new THREE.Group();
 
         // ── 배관 / 서포트 빔 (classification 기준) ───────────
-        // Stru → Support, Pipe → Pipe
         const pipeElems = [], supportElems = [];
-        Object.values(fem.elements || {}).forEach(elem => {
+        Object.entries(fem.elements || {}).forEach(([eid, elem]) => {
           const [n1, n2] = elem.nodeIds || [];
           if (!nodes[n1] || !nodes[n2]) return;
           if (elem.classification === 'Pipe') {
-            pipeElems.push({ n1, n2 });
+            pipeElems.push({ n1, n2, elemId: eid });
           } else {
-            supportElems.push({ n1, n2 }); // Stru = Support
+            supportElems.push({ n1, n2, elemId: eid });
           }
         });
         setPipeCount(pipeElems.length);
         setSupportCount(supportElems.length);
 
+        const idxMap = {}; // elemId → { mesh, idx }
         const buildBeams = (elems, color, emissive) => {
           if (elems.length === 0) return null;
-          const geo = new THREE.CylinderGeometry(rodRadius, rodRadius, 1, 12);
+          const geo = new THREE.CylinderGeometry(rodRadius, rodRadius, 1, 8);
           geo.rotateX(Math.PI / 2);
-          const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.5, roughness: 0.25, emissive, emissiveIntensity: 0.3 });
+          // 분류별 모드용: glow 있는 화려한 standard material
+          const mat = new THREE.MeshStandardMaterial({
+            color: 0xffffff, metalness: 0.85, roughness: 0.15,
+            emissive, emissiveIntensity: 0.35,
+          });
+          // 그룹 모드용: 조명 무관 basic material → instanceColor가 순수하게 선명히 표시됨
+          const basicMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
           const inst = new THREE.InstancedMesh(geo, mat, elems.length);
+          inst.userData.standardMat = mat;
+          inst.userData.basicMat    = basicMat;
           const d = new THREE.Object3D();
+          const baseColor = new THREE.Color(color);
           elems.forEach((e, i) => {
             const p1 = new THREE.Vector3(nodes[e.n1].x, nodes[e.n1].y, nodes[e.n1].z);
             const p2 = new THREE.Vector3(nodes[e.n2].x, nodes[e.n2].y, nodes[e.n2].z);
@@ -167,13 +239,18 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
             d.scale.set(1, 1, p1.distanceTo(p2));
             d.lookAt(p2); d.updateMatrix();
             inst.setMatrixAt(i, d.matrix);
+            inst.setColorAt(i, baseColor); // instanceColor 버퍼 초기화
+            if (e.elemId != null) idxMap[e.elemId] = { mesh: inst, idx: i };
           });
           inst.instanceMatrix.needsUpdate = true;
+          if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+          inst.userData.elemIds          = elems.map(e => String(e.elemId));
+          inst.userData.originalMatrices = new Float32Array(inst.instanceMatrix.array);
           group.add(inst);
           return inst;
         };
-        const pipeInst    = buildBeams(pipeElems,    0x34d399, 0x00aa55); // Pipe: 초록
-        const supportInst = buildBeams(supportElems, 0x4488ff, 0x1133aa); // Support: 파란색
+        const pipeInst    = buildBeams(pipeElems,    0x6ee7b7, 0x0a7a4a);
+        const supportInst = buildBeams(supportElems, 0x66ccff, 0x0044aa);
         if (pipeInst)    { pipeMeshRef.current    = pipeInst;    }
         if (supportInst) { supportMeshRef.current = supportInst; }
 
@@ -182,9 +259,10 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
         const nodeMat = new THREE.MeshStandardMaterial({
           color: 0xff3333, metalness: 0.5, roughness: 0.3,
           emissive: 0x880000, emissiveIntensity: 0.5,
+          depthTest: false, // element 빔 depth buffer를 무시 → 빔 뒤 노드도 항상 표시
         });
         const instNodes = new THREE.InstancedMesh(
-          new THREE.SphereGeometry(rodRadius * 1.4, 8, 8), nodeMat, nodeIds.length
+          new THREE.SphereGeometry(rodRadius * 1.12, 8, 8), nodeMat, nodeIds.length
         );
         const dN = new THREE.Object3D();
         nodeIds.forEach((k, i) => {
@@ -193,25 +271,35 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
           instNodes.setMatrixAt(i, dN.matrix);
         });
         instNodes.instanceMatrix.needsUpdate = true;
+        instNodes.renderOrder = 1; // element 빔보다 나중에 렌더링 → 겹침 시 노드 우선
         instNodes.visible = showNodes;
         nodesMeshRef.current = instNodes;
         group.add(instNodes);
 
         // ── RBE2 강체 ────────────────────────────────────────
         const rbe2Pairs = [];
-        Object.values(fem.rigids || {}).forEach(r => {
+        Object.entries(fem.rigids || {}).forEach(([rid, r]) => {
           const ind = r.independentNodeId;
           if (!nodes[ind]) return;
           (r.dependentNodeIds || []).forEach(dep => {
-            if (nodes[dep]) rbe2Pairs.push({ n1: ind, n2: dep });
+            if (nodes[dep]) rbe2Pairs.push({ n1: ind, n2: dep, rigidId: String(rid) });
           });
         });
         if (rbe2Pairs.length > 0) {
           const geo = new THREE.CylinderGeometry(rodRadius * 0.5, rodRadius * 0.5, 1, 6);
           geo.rotateX(Math.PI / 2);
-          const mat = new THREE.MeshStandardMaterial({ color: 0xff6644, metalness: 0.5, roughness: 0.4, emissive: 0x881100, emissiveIntensity: 0.4 });
+          // 분류별 모드용: 빨강 glow 포함
+          const mat = new THREE.MeshStandardMaterial({
+            color: 0xffffff, metalness: 0.5, roughness: 0.4,
+            emissive: 0x881100, emissiveIntensity: 0.4,
+          });
+          // 그룹 모드용: 조명 무관 basic → ghost 회색이 확실히 보임
+          const basicMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
           const inst = new THREE.InstancedMesh(geo, mat, rbe2Pairs.length);
+          inst.userData.standardMat = mat;
+          inst.userData.basicMat    = basicMat;
           const d = new THREE.Object3D();
+          const rbeColor = new THREE.Color(0xff6644);
           rbe2Pairs.forEach((e, i) => {
             const p1 = new THREE.Vector3(nodes[e.n1].x, nodes[e.n1].y, nodes[e.n1].z);
             const p2 = new THREE.Vector3(nodes[e.n2].x, nodes[e.n2].y, nodes[e.n2].z);
@@ -219,8 +307,13 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
             d.scale.set(1, 1, p1.distanceTo(p2));
             d.lookAt(p2); d.updateMatrix();
             inst.setMatrixAt(i, d.matrix);
+            inst.setColorAt(i, rbeColor);
           });
           inst.instanceMatrix.needsUpdate = true;
+          if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+          inst.userData.rigidIds         = rbe2Pairs.map(p => p.rigidId);
+          inst.userData.originalMatrices = new Float32Array(inst.instanceMatrix.array);
+          rbe2MeshRef.current = inst;
           group.add(inst);
         }
 
@@ -261,7 +354,7 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
               inst.setMatrixAt(i, dB.matrix);
             });
             inst.instanceMatrix.needsUpdate = true;
-            inst.visible = true; // 기본 On
+            inst.visible = false; // 기본 Off
             bcMeshRef.current = inst;
             group.add(inst);
           }
@@ -296,7 +389,11 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
         camera.lookAt(center);
         controls.saveState();
 
-        threeRef.current = { cleanup };
+        elemIdToInstanceRef.current = idxMap;
+        nodesDataRef.current  = nodes;
+        nodeIdxMapRef.current = nodeIds;
+        rodRadiusRef.current  = rodRadius;
+        threeRef.current = { cleanup, camera, controls, maxDim, scene };
         startAnimate(center, maxDim);
         if (!cancelled) setViewState('ready');
       })
@@ -307,8 +404,225 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
     return () => { cancelled = true; destroy(); };
   }, [jsonPath]);
 
+  // ConnectivityGroups JSON 로드
+  useEffect(() => {
+    if (!connectivityPath) { setConnectivityGroups([]); return; }
+    fetch(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(connectivityPath)}`, { headers: getAuthHeaders() })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => setConnectivityGroups(data.Groups || []))
+      .catch(() => setConnectivityGroups([]));
+  }, [connectivityPath]);
+
+  // RBE 편집 모드 ON 시 노드 자동 표시
+  useEffect(() => {
+    if (rbeEditMode) setShowNodes(true);
+  }, [rbeEditMode]);
+
+  // 선택된 노드 하이라이트 (노란 구체 overlay)
+  useEffect(() => {
+    if (viewState !== 'ready') return;
+    const sc    = threeRef.current?.scene;
+    const nodes = nodesDataRef.current;
+    if (!sc) return;
+    if (selectedHighlightRef.current) {
+      sc.remove(selectedHighlightRef.current);
+      selectedHighlightRef.current.geometry?.dispose();
+      selectedHighlightRef.current.material?.dispose();
+      selectedHighlightRef.current = null;
+    }
+    if (!selectedRbeNode?.nodeId) return;
+    const n = nodes?.[String(selectedRbeNode.nodeId)];
+    if (!n) return;
+    const r   = (rodRadiusRef.current || 5) * 2.8;
+    const geo = new THREE.SphereGeometry(r, 12, 12);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffcc00, toneMapped: false });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(n.x, n.y, n.z);
+    sc.add(mesh);
+    selectedHighlightRef.current = mesh;
+  }, [selectedRbeNode, viewState]);
+
+  // 수동 RBE2 페어 렌더링 (amber InstancedMesh overlay)
+  useEffect(() => {
+    if (viewState !== 'ready') return;
+    const sc    = threeRef.current?.scene;
+    const nodes = nodesDataRef.current;
+    if (!sc) return;
+    if (manualRbe2MeshRef.current) {
+      sc.remove(manualRbe2MeshRef.current);
+      manualRbe2MeshRef.current.geometry?.dispose();
+      manualRbe2MeshRef.current.material?.dispose();
+      manualRbe2MeshRef.current = null;
+    }
+    const validPairs = manualRbePairs.filter(
+      p => nodes?.[String(p.indep)] && nodes?.[String(p.dep)]
+    );
+    if (validPairs.length === 0) return;
+    const r   = (rodRadiusRef.current || 5) * 0.9;
+    const geo = new THREE.CylinderGeometry(r, r, 1, 6);
+    geo.rotateX(Math.PI / 2);
+    const mat   = new THREE.MeshBasicMaterial({ color: 0xfbbf24, toneMapped: false });
+    const inst  = new THREE.InstancedMesh(geo, mat, validPairs.length);
+    const d     = new THREE.Object3D();
+    const amber = new THREE.Color(0xfbbf24);
+    validPairs.forEach((p, i) => {
+      const p1 = new THREE.Vector3(nodes[String(p.indep)].x, nodes[String(p.indep)].y, nodes[String(p.indep)].z);
+      const p2 = new THREE.Vector3(nodes[String(p.dep)].x,   nodes[String(p.dep)].y,   nodes[String(p.dep)].z);
+      d.position.copy(p1).lerp(p2, 0.5);
+      d.scale.set(1, 1, p1.distanceTo(p2));
+      d.lookAt(p2); d.updateMatrix();
+      inst.setMatrixAt(i, d.matrix);
+      inst.setColorAt(i, amber);
+    });
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    sc.add(inst);
+    manualRbe2MeshRef.current = inst;
+  }, [manualRbePairs, viewState]);
+
+  // 그룹 색상 모드 ON/OFF 전환 시 색상 적용/복원
+  useEffect(() => {
+    const map = elemIdToInstanceRef.current;
+    if (!map || Object.keys(map).length === 0) return;
+    const meshSet = new Set(Object.values(map).map(e => e.mesh));
+
+    const rbe2 = rbe2MeshRef.current;
+    const paintRbe2 = (hex) => {
+      if (!rbe2) return;
+      const c = new THREE.Color(hex);
+      for (let i = 0; i < rbe2.count; i++) rbe2.setColorAt(i, c);
+      if (rbe2.instanceColor) rbe2.instanceColor.needsUpdate = true;
+    };
+
+    // 머티리얼 교체: 분류별=MeshStandardMaterial(glow), 그룹별=MeshBasicMaterial(조명 무관, 선명)
+    const swapMaterial = (mesh, toGroupMode) => {
+      if (!mesh) return;
+      const target = toGroupMode ? mesh.userData.basicMat : mesh.userData.standardMat;
+      if (target && mesh.material !== target) mesh.material = target;
+    };
+
+    if (!groupColorMode) {
+      // 분류별 원래 색상 복원
+      const PIPE_COL    = new THREE.Color(0x6ee7b7);
+      const SUPPORT_COL = new THREE.Color(0x66ccff);
+      Object.values(map).forEach(({ mesh, idx }) => {
+        mesh.setColorAt(idx, mesh === pipeMeshRef.current ? PIPE_COL : SUPPORT_COL);
+      });
+      meshSet.forEach(mesh => { if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; });
+      paintRbe2(0xff6644);
+      swapMaterial(pipeMeshRef.current,    false);
+      swapMaterial(supportMeshRef.current, false);
+      swapMaterial(rbe2MeshRef.current,    false);
+      setSelectedGroupId(null);
+      return;
+    }
+
+    // 그룹 색상 적용
+    const GHOST = new THREE.Color(GROUP_GHOST_HEX);
+    Object.values(map).forEach(({ mesh, idx }) => mesh.setColorAt(idx, GHOST));
+    connectivityGroups.forEach((g, gi) => {
+      const col = new THREE.Color(GROUP_PALETTE[gi % GROUP_PALETTE.length]);
+      const active = selectedGroupId === null || selectedGroupId === g.Id;
+      const finalCol = active ? col : GHOST;
+      (g.ElementIds || []).forEach(eid => {
+        const entry = map[String(eid)];
+        if (entry) entry.mesh.setColorAt(entry.idx, finalCol);
+      });
+    });
+    meshSet.forEach(mesh => { if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; });
+    paintRbe2(GROUP_GHOST_HEX);
+    // MeshBasicMaterial로 교체 → 조명 무관하게 instanceColor가 선명히 표시됨
+    swapMaterial(pipeMeshRef.current,    true);
+    swapMaterial(supportMeshRef.current, true);
+    swapMaterial(rbe2MeshRef.current,    true);
+  }, [groupColorMode, selectedGroupId, connectivityGroups, viewState]);
+
+  // 격리 모드 — 선택 그룹에 속하지 않은 인스턴스의 매트릭스를 zero-scale로 덮어 숨김
+  useEffect(() => {
+    if (viewState !== 'ready') return;
+    const ZERO_ELS = new THREE.Matrix4().makeScale(0, 0, 0).elements;
+
+    const applyIsolation = (mesh, memberSet, keyList) => {
+      if (!mesh || !mesh.userData.originalMatrices || !keyList) return;
+      const orig = mesh.userData.originalMatrices;
+      const arr  = mesh.instanceMatrix.array;
+      for (let i = 0; i < keyList.length; i++) {
+        const keep = memberSet === null || memberSet.has(keyList[i]);
+        if (keep) {
+          for (let j = 0; j < 16; j++) arr[i * 16 + j] = orig[i * 16 + j];
+        } else {
+          for (let j = 0; j < 16; j++) arr[i * 16 + j] = ZERO_ELS[j];
+        }
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    };
+
+    const selected = connectivityGroups.find(g => g.Id === selectedGroupId);
+    const doIsolate = isolateMode && !!selected;
+    const beamSet  = doIsolate ? new Set((selected.ElementIds || []).map(String)) : null;
+    const rigidSet = doIsolate ? new Set((selected.RigidIds   || []).map(String)) : null;
+
+    applyIsolation(pipeMeshRef.current,    beamSet,  pipeMeshRef.current?.userData.elemIds);
+    applyIsolation(supportMeshRef.current, beamSet,  supportMeshRef.current?.userData.elemIds);
+    applyIsolation(rbe2MeshRef.current,    rigidSet, rbe2MeshRef.current?.userData.rigidIds);
+  }, [isolateMode, selectedGroupId, connectivityGroups, viewState]);
+
+  // 그룹 선택 시 카메라를 해당 그룹의 BBox로 이동 (fly-to)
+  useEffect(() => {
+    if (viewState !== 'ready' || selectedGroupId === null) return;
+    const three = threeRef.current;
+    if (!three?.camera || !three?.controls) return;
+    const selected = connectivityGroups.find(g => g.Id === selectedGroupId);
+    const bbox = selected?.BBox;
+    if (!bbox?.Min || !bbox?.Max) return;
+
+    const min = new THREE.Vector3(bbox.Min.X, bbox.Min.Y, bbox.Min.Z);
+    const max = new THREE.Vector3(bbox.Max.X, bbox.Max.Y, bbox.Max.Z);
+    const center = min.clone().add(max).multiplyScalar(0.5);
+    const diag   = max.clone().sub(min).length();
+
+    const cam      = three.camera;
+    const controls = three.controls;
+    const dir = cam.position.clone().sub(controls.target);
+    if (dir.lengthSq() < 1e-6) dir.set(1, -1, 0.8);
+    dir.normalize();
+
+    // 1개짜리 그룹은 diag가 매우 작으므로 모델 전체 크기(maxDim)로 최소 거리 보장
+    const distance = Math.max(diag * 2.2, (three.maxDim || 1000) * 0.15);
+    cam.position.copy(center).add(dir.multiplyScalar(distance));
+    controls.target.copy(center);
+    controls.update();
+  }, [selectedGroupId, connectivityGroups, viewState]);
+
+  // RBE 편집 모드: 노드 클릭 → 픽킹
+  const handleNodeClick = (event) => {
+    if (!rbeEditMode || !nodesMeshRef.current || !threeRef.current?.camera) return;
+    const el = mountRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x =  ((event.clientX - rect.left) / rect.width)  * 2 - 1;
+    const y = -((event.clientY - rect.top)  / rect.height) * 2 + 1;
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera({ x, y }, threeRef.current.camera);
+    const hits = raycaster.intersectObject(nodesMeshRef.current);
+    if (!hits.length) return;
+    const instanceId = hits[0].instanceId;
+    if (instanceId == null) return;
+    const ids = nodeIdxMapRef.current;
+    if (!ids?.length || instanceId >= ids.length) return;
+    const nodeId = ids[instanceId];
+    if (nodeId == null) return;
+    // 차단 노드(기존 RBE2 구성)를 뷰어 내부에서도 감지 → 전체화면에서도 경고 표시
+    if (blockedNodeIds?.has(String(nodeId))) {
+      setInViewerWarning(`Node ${nodeId}는 기존 RBE2 요소를 구성하는 노드입니다`);
+      setTimeout(() => setInViewerWarning(null), 3000);
+    }
+    onNodePick?.(String(nodeId));
+  };
+
   const LEGEND = [
-    { color: '#4488ff', label: 'Support (구조물)' },
+    { color: '#6ee7b7', label: 'Pipe (배관)' },
+    { color: '#66ccff', label: 'Support (구조물)' },
     { color: '#ff6644', label: 'RBE2 (강체)' },
     { color: '#ff3333', label: 'Node (토글) ●' },
     ...(isHealed
@@ -316,12 +630,18 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
       : [{ color: '#00ffff', label: 'Free Node (토글) ◆' }]
     ),
     { color: '#ffcc00', label: 'CONM2 (점질량) ◆' },
+    ...(manualRbePairs.length > 0 ? [{ color: '#fbbf24', label: `RBE2 (사용자 ${manualRbePairs.length}개) ━` }] : []),
   ];
 
   return (
     <div ref={containerRef} className="relative w-full h-full bg-[#0a0a1a]">
       {/* Three.js 마운트 */}
-      <div ref={mountRef} className="absolute inset-0 cursor-move overflow-hidden" />
+      <div
+        ref={mountRef}
+        className={`absolute inset-0 overflow-hidden ${rbeEditMode ? 'cursor-crosshair' : 'cursor-move'}`}
+        onClick={rbeEditMode ? handleNodeClick : undefined}
+        onContextMenu={rbeEditMode ? (e) => { e.preventDefault(); if (selectedRbeNode) onCancelSelection?.(); } : undefined}
+      />
 
       {/* 로딩 */}
       {viewState === 'loading' && (
@@ -349,11 +669,128 @@ function FemModelViewer({ jsonPath, mode = 'raw' }) {
           {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
 
+        {/* RBE 편집 모드 안내 (상단 중앙, 전체화면에서도 유지) */}
+        {rbeEditMode && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none">
+            <div className="bg-amber-500/90 backdrop-blur text-white px-4 py-2 rounded-xl shadow-lg border border-amber-300 whitespace-nowrap">
+              <p className="text-[11px] font-bold text-center">
+                {selectedRbeNode
+                  ? `Node ${selectedRbeNode.nodeId} 선택됨 — 두 번째 노드를 클릭 / 우클릭으로 해제`
+                  : '첫 번째 노드를 클릭하세요'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* 인뷰어 경고 (전체화면에서도 표시) */}
+        {inViewerWarning && (
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none">
+            <div className="bg-red-500/90 backdrop-blur text-white px-4 py-2 rounded-xl shadow-lg border border-red-400 whitespace-nowrap">
+              <p className="text-[11px] font-bold text-center">⚠ {inViewerWarning}</p>
+            </div>
+          </div>
+        )}
+
+        {/* 연결 그룹 패널 (우측, 전체화면 버튼 아래) */}
+        {connectivityGroups.length > 0 && (
+          <div className="absolute top-11 right-3 z-10 w-52 bg-slate-900/90 backdrop-blur rounded-xl border border-slate-700 shadow-xl overflow-hidden">
+            {/* 헤더 — 분류별/그룹별 토글 */}
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+              <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                Connectivity
+              </span>
+              <button
+                onClick={() => setGroupColorMode(v => !v)}
+                className={`text-[9px] font-bold px-2 py-0.5 rounded-full transition-colors cursor-pointer ${
+                  groupColorMode
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-slate-700 text-slate-400 hover:text-white'
+                }`}
+              >
+                {groupColorMode ? '그룹별' : '분류별'}
+              </button>
+            </div>
+
+            {/* 그룹 목록 */}
+            <div className="max-h-52 overflow-y-auto py-1">
+              {connectivityGroups.map((g, gi) => {
+                const css   = GROUP_PALETTE_CSS[gi % GROUP_PALETTE_CSS.length];
+                const isActive = selectedGroupId === g.Id;
+                return (
+                  <button
+                    key={g.Id}
+                    onClick={() => {
+                      if (selectedGroupId === g.Id) {
+                        setGroupColorMode(false);
+                        setSelectedGroupId(null);
+                        setIsolateMode(false);
+                      } else {
+                        if (!groupColorMode) setGroupColorMode(true);
+                        setSelectedGroupId(g.Id);
+                        setShowNodes(true);
+                        if (nodesMeshRef.current) nodesMeshRef.current.visible = true;
+                      }
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors cursor-pointer ${
+                      isActive ? 'bg-slate-700/80' : 'hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-white/20"
+                         style={{ backgroundColor: css }} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[10px] font-bold truncate ${isActive ? 'text-white' : 'text-slate-300'}`}>
+                        Group {g.Id}
+                      </p>
+                      <p className="text-[9px] text-slate-500 font-mono">
+                        {g.ElementCount.toLocaleString()}개 요소 · {g.NodeCount.toLocaleString()}개 노드
+                      </p>
+                    </div>
+                    {isActive && <div className="w-1 h-4 rounded-full bg-violet-400 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 격리 토글 + 전체 보기 */}
+            {selectedGroupId !== null && (
+              <div className="border-t border-slate-700">
+                <div className="flex items-center justify-between px-3 py-1.5">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">격리 모드</span>
+                  <button
+                    onClick={() => setIsolateMode(v => !v)}
+                    title="선택 그룹만 표시"
+                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full transition-colors cursor-pointer ${
+                      isolateMode
+                        ? 'bg-amber-500 text-slate-900'
+                        : 'bg-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {isolateMode ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+                <button
+                  onClick={() => {
+                    setGroupColorMode(false);
+                    setSelectedGroupId(null);
+                    setIsolateMode(false);
+                  }}
+                  className="w-full text-[9px] font-bold text-slate-400 hover:text-white transition-colors cursor-pointer text-center py-1.5 border-t border-slate-700"
+                >
+                  모두 보기
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 범례 (좌상단) */}
         <div className="absolute top-3 left-3 z-10 bg-slate-900/85 backdrop-blur rounded-xl border border-slate-700 px-3 py-2.5 pointer-events-none shadow-lg">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Legend</p>
           <div className="flex flex-col gap-1">
-            {LEGEND.map(({ color, label }) => (
+            {(groupColorMode ? connectivityGroups.map((g, gi) => ({
+              color: GROUP_PALETTE_CSS[gi % GROUP_PALETTE_CSS.length],
+              label: `Group ${g.Id} (${g.ElementCount}개)`,
+            })) : LEGEND).map(({ color, label }) => (
               <div key={label} className="flex items-center gap-2">
                 <div className="w-4 h-2 rounded-sm shrink-0" style={{ backgroundColor: color }} />
                 <span className="text-[10px] font-mono text-slate-300">{label}</span>
@@ -623,7 +1060,7 @@ function parseModelBuilderLog(rawText) {
 const CSV_TYPE_KEYWORDS = {
   stru:  ['stru', 'struct', 'str', 'structural', 'structure', '구조'],
   pipe:  ['pipe', 'pip', 'piping', '배관'],
-  equip: ['equip', 'equipment', 'eq', 'eqp', '장비'],
+  equip: ['equip', 'equipment', 'eq', 'eqp', '장비', 'cargo', 'load', 'weight', 'mass'],
 };
 
 // 파일명에서 타입 키워드를 제거한 base 이름 추출
@@ -1084,7 +1521,7 @@ function AlgorithmLogPanel({ logData, jobStatus, processLog, engineLog }) {
 
 function DetailNastran({
   nastranStatus, nastranStep1, nastranStep2,
-  bdfResult, uboltBdfResult,
+  bdfResult, uboltBdfResult, rbeResult,
   uboltStep1, uboltStep2,
   uboltRunning, hasFatal, stage3Meta,
   nastranTab, setNastranTab,
@@ -1092,17 +1529,21 @@ function DetailNastran({
 }) {
   const isRunning = nastranStatus?.status === 'Running' || nastranStatus?.status === 'Pending';
   const hasUboltResult = !!uboltStep1;
+  const hasPivotFatal = useMemo(() => {
+    const msgs = nastranStep2?.f06Summary?.messages || [];
+    return msgs.some(m =>
+      m.level === 'fatal' &&
+      (m.message || '').toUpperCase().includes('PIVOT RATIOS IN MATRIX KLL')
+    );
+  }, [nastranStep2]);
 
   // 다운로드 버튼
   const DownloadBtn = ({ path, label }) => {
     if (!path) return null;
-    const handleDownload = () => {
-      window.open(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(path)}`, '_blank');
-    };
     const filename = path.split(/[\\/]/).pop();
     return (
       <button
-        onClick={handleDownload}
+        onClick={() => triggerBlobDownload(path)}
         className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg transition-colors cursor-pointer"
         title={filename}
       >
@@ -1187,6 +1628,12 @@ function DetailNastran({
             {uboltRunning ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
             {uboltRunning ? 'Rigid 모드 실행 중...' : 'U-bolt Rigid 모드로 재시도'}
           </button>
+          {hasPivotFatal && (
+            <p className="text-[10px] text-red-600 mt-2 leading-relaxed bg-red-100/60 rounded-lg px-2 py-1.5">
+              💡 U-bolt 연결 노드의 자유도가 구속되지 않아 발생하는 메커니즘(Mechanism) 오류입니다.
+              Rigid 모드로 재시도하면 DOF 123456을 강제 구속하여 해석을 계속합니다.
+            </p>
+          )}
         </div>
       )}
 
@@ -1216,11 +1663,14 @@ function DetailNastran({
         </Section>
       )}
 
-      {/* BDF 다운로드 */}
-      {(bdfResult?.bdfPath || uboltBdfResult?.bdfPath) && (
+      {/* BDF 다운로드 — 최종본 (RBE2 반영 시 그 버전, 아니면 원본) */}
+      {(bdfResult?.bdfPath || uboltBdfResult?.bdfPath || rbeResult?.bdfPath) && (
         <Section label="BDF 다운로드">
           <div className="flex flex-wrap gap-2">
-            <DownloadBtn path={bdfResult?.bdfPath}      label="일반 BDF (Freed)" />
+            <DownloadBtn
+              path={rbeResult?.bdfPath || bdfResult?.bdfPath}
+              label={rbeResult?.bdfPath ? '일반 BDF (Freed, RBE2 반영)' : '일반 BDF (Freed)'}
+            />
             <DownloadBtn path={uboltBdfResult?.bdfPath} label="Rigid BDF (U-Bolt 고정)" />
           </div>
         </Section>
@@ -1648,50 +2098,143 @@ const DETAIL_MAP = {
 export default function HiTessModelBuilder() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
+  const dashboardCtx = useDashboard();
+  const startGlobalJob = dashboardCtx?.startGlobalJob || (() => {});
+  const globalJob      = dashboardCtx?.globalJob      || null;
+  // 이전 페이지 방문 시 저장된 스냅샷 (있으면 복원, 없으면 초기값)
+  const saved = dashboardCtx?.modelBuilderPageState;
+
   const [changelogOpen, setChangelogOpen] = useState(false);
-  const [steps, setSteps]           = useState(INITIAL_STEPS.map(s => ({ ...s })));
-  const [activeIdx, setActiveIdx]   = useState(0);
-  const [meshSize, setMeshSize]     = useState('500');
-  const [useNastran, setUseNastran] = useState(false);
-  const [verbose,       setVerbose]       = useState(false);
-  const [debugStages,   setDebugStages]   = useState(false);
-  const [processLog,    setProcessLog]    = useState(null);
+  const [hasRunOnce,    setHasRunOnce]    = useState(() => saved?.hasRunOnce ?? false);
+  const [steps, setSteps]           = useState(() => saved?.steps || INITIAL_STEPS.map(s => ({ ...s })));
+  const [activeIdx, setActiveIdx]   = useState(() => saved?.activeIdx ?? 0);
+  const [meshSize, setMeshSize]     = useState(() => saved?.meshSize ?? '500');
+  const [useNastran,    setUseNastran]    = useState(() => saved?.useNastran    ?? true);
+  const [manualRbeMode, setManualRbeMode] = useState(() => saved?.manualRbeMode ?? true);
+  const [verbose,       setVerbose]       = useState(() => saved?.verbose       ?? false);
+  const [processLog,    setProcessLog]    = useState(() => saved?.processLog    ?? null);
 
   // CSV 파일 (DetailCSV에서 lift-up)
-  const [struFile,  setStruFile]  = useState(null);
-  const [pipeFile,  setPipeFile]  = useState(null);
-  const [equiFile,  setEquiFile]  = useState(null);
+  const [struFile,  setStruFile]  = useState(() => saved?.struFile  ?? null);
+  const [pipeFile,  setPipeFile]  = useState(() => saved?.pipeFile  ?? null);
+  const [equiFile,  setEquiFile]  = useState(() => saved?.equiFile  ?? null);
   // CSV 파일 검증 오류
-  const [struError, setStruError] = useState(null);
-  const [pipeError, setPipeError] = useState(null);
-  const [equiError, setEquiError] = useState(null);
+  const [struError, setStruError] = useState(() => saved?.struError ?? null);
+  const [pipeError, setPipeError] = useState(() => saved?.pipeError ?? null);
+  const [equiError, setEquiError] = useState(() => saved?.equiError ?? null);
 
   // 작업 상태
-  const [jobStatus,   setJobStatus]   = useState(null); // { status, progress, message }
-  const [logData,     setLogData]     = useState(null); // parseModelBuilderLog 결과
-  const [engineLog,   setEngineLog]   = useState(null); // 실패 시 raw 엔진 출력
-  const [bdfResult,   setBdfResult]   = useState(null); // { bdfPath, jsonPath }
+  const [jobStatus,   setJobStatus]   = useState(() => saved?.jobStatus  ?? null);
+  const [logData,     setLogData]     = useState(() => saved?.logData    ?? null);
+  const [engineLog,   setEngineLog]   = useState(() => saved?.engineLog  ?? null);
+  const [bdfResult,   setBdfResult]   = useState(() => saved?.bdfResult  ?? null);
   const pollRef = useRef(null);
 
   // ── Stage 4 (Nastran) 상태 ──
-  const [nastranJobId,  setNastranJobId]  = useState(null);
-  const [nastranStatus, setNastranStatus] = useState(null);
-  const [nastranStep1,  setNastranStep1]  = useState(null); // validation_step1.json
-  const [nastranStep2,  setNastranStep2]  = useState(null); // validation_step2.json
+  const [nastranJobId,  setNastranJobId]  = useState(() => saved?.nastranJobId  ?? null);
+  const [nastranStatus, setNastranStatus] = useState(() => saved?.nastranStatus ?? null);
+  const [nastranStep1,  setNastranStep1]  = useState(() => saved?.nastranStep1  ?? null);
+  const [nastranStep2,  setNastranStep2]  = useState(() => saved?.nastranStep2  ?? null);
   const nastranPollRef = useRef(null);
 
   // ── U-bolt 재시도 상태 ──
-  const [uboltJobId,       setUboltJobId]       = useState(null);
-  const [uboltNastranJobId,setUboltNastranJobId] = useState(null);
-  const [uboltBdfResult,   setUboltBdfResult]   = useState(null); // { bdfPath, jsonPath }
-  const [uboltStep1,       setUboltStep1]       = useState(null);
-  const [uboltStep2,       setUboltStep2]       = useState(null);
-  const [uboltRunning,     setUboltRunning]     = useState(false);
+  const [uboltJobId,       setUboltJobId]       = useState(() => saved?.uboltJobId       ?? null);
+  const [uboltNastranJobId,setUboltNastranJobId] = useState(() => saved?.uboltNastranJobId ?? null);
+  const [uboltBdfResult,   setUboltBdfResult]   = useState(() => saved?.uboltBdfResult   ?? null);
+  const [uboltStep1,       setUboltStep1]       = useState(() => saved?.uboltStep1       ?? null);
+  const [uboltStep2,       setUboltStep2]       = useState(() => saved?.uboltStep2       ?? null);
+  const [uboltRunning,     setUboltRunning]     = useState(() => saved?.uboltRunning     ?? false);
   const uboltPollRef = useRef(null);
 
   // ── 탭 & 메타 ──
-  const [nastranTab,  setNastranTab]  = useState('normal'); // 'normal' | 'rigid'
-  const [stage3Meta,  setStage3Meta]  = useState(null);     // { stru_path, pipe_path, equip_path, work_dir }
+  const [nastranTab,  setNastranTab]  = useState(() => saved?.nastranTab  ?? 'normal');
+  const [stage3Meta,  setStage3Meta]  = useState(() => saved?.stage3Meta  ?? null);
+
+  // ── 알고리즘 단계 패널 접힘 상태 ──
+  const [algoDetailOpen, setAlgoDetailOpen] = useState(false);
+  const [algoStepsOpen,  setAlgoStepsOpen]  = useState(false);
+
+  // ── 수동 RBE2 편집 ──
+  const [rbeEditMode,       setRbeEditMode]       = useState(false);
+  const [selectedRbeNode,   setSelectedRbeNode]   = useState(null); // { nodeId }
+  const [manualRbePairs,    setManualRbePairs]     = useState(() => saved?.manualRbePairs ?? []);
+  const [rbeRunning,        setRbeRunning]         = useState(false);
+  const [rbeResult,         setRbeResult]          = useState(() => saved?.rbeResult ?? null);
+  const [rbeBlockedNodeIds, setRbeBlockedNodeIds]  = useState(() => new Set());
+  const rbePollRef = useRef(null);
+
+  const handleRigidsLoad = useCallback((rigids) => {
+    const blocked = new Set();
+    Object.values(rigids || {}).forEach(r => {
+      if (r.independentNodeId != null) blocked.add(String(r.independentNodeId));
+      (r.dependentNodeIds || []).forEach(d => blocked.add(String(d)));
+    });
+    setRbeBlockedNodeIds(blocked);
+  }, []);
+
+  // manualRbeMode=ON + 모델 준비 시 편집 모드 자동 진입 (별도 버튼 클릭 불필요)
+  const _rbeModelReady = !!(bdfResult?.jsonPath || rbeResult?.jsonPath);
+  useEffect(() => {
+    if (manualRbeMode && _rbeModelReady && !rbeRunning && !rbeEditMode) {
+      setRbeEditMode(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualRbeMode, _rbeModelReady, rbeRunning]);
+
+  // ── 상태 스냅샷: 렌더마다 갱신 → 언마운트 시 context에 저장 ──
+  const snapshotRef = useRef({});
+  useEffect(() => {
+    snapshotRef.current = {
+      hasRunOnce, steps, activeIdx, meshSize, useNastran, manualRbeMode, verbose,
+      processLog, struFile, pipeFile, equiFile,
+      struError, pipeError, equiError,
+      jobStatus, logData, engineLog, bdfResult,
+      nastranJobId, nastranStatus, nastranStep1, nastranStep2,
+      uboltJobId, uboltNastranJobId, uboltBdfResult, uboltStep1, uboltStep2, uboltRunning,
+      nastranTab, stage3Meta,
+      manualRbePairs, rbeResult,
+    };
+  });
+
+  // 마운트: 이탈 중 작업이 완료됐으면 최종 결과를 서버에서 한 번 fetch
+  // 언마운트: 스냅샷을 context에 저장
+  useEffect(() => {
+    const gj = dashboardCtx?.globalJob;
+    if (saved?.jobStatus?.status === 'Running' && gj?.menu === 'HiTess Model Builder') {
+      if (gj.status === 'Success' || gj.status === 'Failed') {
+        fetch(`${API_BASE_URL}/api/analysis/status/${gj.jobId}`, { headers: getAuthHeaders() })
+          .then(r => r.ok ? r.json() : Promise.reject(r.status))
+          .then(data => {
+            setJobStatus(data);
+            if (data.status === 'Success') {
+              setSteps(prev => prev.map((s, i) => i > 1 ? s : { ...s, status: 'done' }));
+              if (data.log_content) setLogData(parseModelBuilderLog(data.log_content));
+              if (data.process_log) setProcessLog(data.process_log);
+              if (data.bdf_path || data.json_path) setBdfResult({
+                bdfPath: data.bdf_path ?? null,
+                jsonPath: data.json_path ?? null,
+                connectivityPath: data.connectivity_path ?? null,
+              });
+              if (data.stru_path) setStage3Meta({
+                stru_path:  data.stru_path,
+                pipe_path:  data.pipe_path  || null,
+                equip_path: data.equip_path || null,
+                work_dir:   data.work_dir,
+              });
+            } else if (data.status === 'Failed') {
+              setSteps(prev => prev.map((s, i) => i > 1 ? s : { ...s, status: 'error' }));
+              setEngineLog(data.engine_log || data.message || '알 수 없는 오류');
+            }
+          })
+          .catch(() => setJobStatus({ status: 'Failed', progress: 0, message: '상태 조회 실패' }));
+      } else if (gj.status === 'Running') {
+        startPolling(gj.jobId, saved.useNastran ?? false, saved.manualRbeMode ?? false);
+      }
+    }
+    return () => {
+      dashboardCtx?.setModelBuilderPageState?.(null);
+    };
+  }, []);
 
   const activeStep    = steps[activeIdx];
   const doneCount     = steps.filter(s => s.status === 'done').length;
@@ -1712,10 +2255,11 @@ export default function HiTessModelBuilder() {
     if (pollRef.current) clearInterval(pollRef.current);
     if (nastranPollRef.current) clearInterval(nastranPollRef.current);
     if (uboltPollRef.current) clearInterval(uboltPollRef.current);
+    if (rbePollRef.current) clearInterval(rbePollRef.current);
   }, []);
 
   // 폴링 — currentUseNastran: 실행 시점의 useNastran 값 (클로저 캡처)
-  const startPolling = (jobId, currentUseNastran) => {
+  const startPolling = (jobId, currentUseNastran, currentManualRbeMode = false) => {
     if (pollRef.current) clearInterval(pollRef.current);
 
     pollRef.current = setInterval(async () => {
@@ -1750,7 +2294,7 @@ export default function HiTessModelBuilder() {
           if (data.status === 'Success') {
             setActiveIdx(1);
             if (data.bdf_path || data.json_path) {
-              setBdfResult({ bdfPath: data.bdf_path ?? null, jsonPath: data.json_path ?? null });
+              setBdfResult({ bdfPath: data.bdf_path ?? null, jsonPath: data.json_path ?? null, connectivityPath: data.connectivity_path ?? null });
             }
 
             // Stage3 메타 저장 (U-bolt 재시도용)
@@ -1763,8 +2307,8 @@ export default function HiTessModelBuilder() {
               });
             }
 
-            // Nastran 토글 ON이면 자동 시작
-            if (currentUseNastran && data.bdf_path && data.work_dir) {
+            // Nastran 토글 ON + RBE 수동 연결 모드 OFF일 때만 자동 시작
+            if (currentUseNastran && !currentManualRbeMode && data.bdf_path && data.work_dir) {
               setSteps(prev => prev.map((s, i) =>
                 i === 2 ? { ...s, status: 'running' } : s
               ));
@@ -1792,15 +2336,21 @@ export default function HiTessModelBuilder() {
 
   // Electron 환경에서 같은 폴더의 CSV를 스캔하여 pipe/equip 자동 배치
   // file.path는 Electron이 File 객체에 추가하는 절대 경로
-  const scanSiblingCsvs = async (struFile) => {
-    if (!struFile.path || !window.electron?.invoke) return; // 브라우저 환경이면 스킵
+  // options.skipPipe / options.skipEquip: 이미 사용자가 채운 슬롯은 건드리지 않음
+  // 반환값: 자동 배치된 타입 배열 (e.g. ['pipe', 'equip'])
+  const scanSiblingCsvs = async (struFile, options = {}) => {
+    if (!struFile || !window.electron?.invoke) return []; // 브라우저 환경이면 스킵
 
-    const dirPath = struFile.path.replace(/[/\\][^/\\]+$/, ''); // dirname
+    // Electron 32+에서는 webUtils.getPathForFile 사용, 구버전 fallback
+    const struPath = window.electron.getPathForFile?.(struFile) || struFile.path || '';
+    if (!struPath) return [];
+
+    const dirPath = struPath.replace(/[/\\][^/\\]+$/, ''); // dirname
     let siblings;
     try {
       siblings = await window.electron.invoke('list-dir-csvs', dirPath);
-    } catch { return; }
-    if (!siblings?.length) return;
+    } catch { return []; }
+    if (!siblings?.length) return [];
 
     const setters = {
       stru:  [setStruFile,  setStruError],
@@ -1810,20 +2360,28 @@ export default function HiTessModelBuilder() {
 
     // stru 파일의 base 이름 추출 (예: 'Ship_stru.csv' → 'ship')
     const struInfo = extractBaseAndKeyword(struFile.name, CSV_TYPE_KEYWORDS.stru);
+    const placed = [];
 
     for (const { name, filePath } of siblings) {
       if (name === struFile.name) continue; // stru 자신은 건너뜀
 
       // 파일명으로 타입 추측
       const guessed = guessTypeFromFilename(name);
-      if (!guessed || guessed === 'stru') continue; // stru 아닌 타입만 처리
-      if (!setters[guessed]) continue;
+      if (guessed === 'stru') continue; // stru는 건너뜀
 
-      // base name 매칭: stru 파일과 동일한 base여야 자동 선택
-      // (예: 'Ship_stru.csv' 와 'Ship_pipe.csv' → base 'ship' 동일 → 매칭)
-      if (struInfo) {
-        const sibInfo = extractBaseAndKeyword(name, CSV_TYPE_KEYWORDS[guessed] || []);
-        if (sibInfo && sibInfo.base !== struInfo.base) continue; // base 불일치면 스킵
+      // 파일명으로 감지된 경우 조기 검사
+      if (guessed) {
+        if (!setters[guessed]) continue;
+        if (guessed === 'pipe'  && options.skipPipe)  continue;
+        if (guessed === 'equip' && options.skipEquip) continue;
+        // base name 매칭: stru 파일과 동일한 base여야 자동 선택
+        if (struInfo) {
+          const sibInfo = extractBaseAndKeyword(name, CSV_TYPE_KEYWORDS[guessed] || []);
+          if (sibInfo && sibInfo.base !== struInfo.base) continue; // base 불일치면 스킵
+        }
+      } else {
+        // 파일명 키워드 미매칭 — base name 포함 여부로 안전 필터링
+        if (struInfo && !name.toLowerCase().includes(struInfo.base)) continue;
       }
 
       // Electron IPC로 파일 내용 읽기 → File 객체 생성
@@ -1833,23 +2391,37 @@ export default function HiTessModelBuilder() {
 
       const siblingFile = new File([buffer], name, { type: 'text/csv' });
 
-      // 헤더 검증 (optional, 실패해도 파일명 기반으로 배치)
+      // 헤더 검증: guessed가 있으면 일치 확인, 없으면 헤더만으로 결정
       let headerType = null;
       try { headerType = await detectCsvType(siblingFile); } catch { /* skip */ }
       const finalType = headerType || guessed;
-      if (finalType !== guessed) continue; // 헤더와 파일명이 불일치면 스킵
+      if (!finalType || finalType === 'stru') continue;
+      if (!setters[finalType]) continue;
+      // 파일명 추측과 헤더가 둘 다 있는데 다르면 스킵 (신뢰도 낮음)
+      if (guessed && headerType && guessed !== headerType) continue;
+
+      // 헤더로 결정된 타입에도 skip 옵션 적용
+      if (finalType === 'pipe'  && options.skipPipe)  continue;
+      if (finalType === 'equip' && options.skipEquip) continue;
 
       const [setFile, setErrFn] = setters[finalType] || [];
       if (setFile) {
         setFile(siblingFile);
         if (setErrFn) setErrFn(null);
+        placed.push(finalType);
       }
     }
+
+    return placed;
   };
 
   // CSV 파일 자동 분류 + 2단계 헤더 검증
   // slotHint: 사용자가 드롭한 존('stru'|'pipe'|'equip')
   const handleAutoAssign = async (file, slotHint) => {
+    // stru 배치 전 다른 슬롯 현황 스냅샷 (나중에 skipPipe/skipEquip 판단에 사용)
+    const prevPipe  = pipeFile;
+    const prevEquip = equiFile;
+
     // 1단계: 파일명으로 실제 유형 추측
     const guessed = guessTypeFromFilename(file.name);
 
@@ -1918,19 +2490,28 @@ export default function HiTessModelBuilder() {
       }
     }
 
+    // stru 파일 확정 시 동일 폴더의 pipe/equip 형제 CSV 자동 배치
+    if (finalType === 'stru') {
+      const placed = await scanSiblingCsvs(file, {
+        skipPipe:  !!prevPipe,
+        skipEquip: !!prevEquip,
+      });
+      if (placed.length > 0) {
+        showToast(`동일 폴더에서 CSV ${placed.length}개를 자동 배치했습니다.`, 'success');
+      }
+    }
   };
 
   // 여러 CSV 파일 일괄 자동 분류 (stru 존에서 여러 파일 선택 시 호출)
   const handleMultipleFiles = async (files) => {
-    // 각 파일을 handleAutoAssign으로 분류 (파일명 힌트 없이 헤더 기반)
+    let assignedStru = null;
+    // 각 파일을 분류 (파일명·헤더 기반)
     for (const file of files) {
-      // 헤더 읽어 타입 감지
       let headerType = null;
       try { headerType = await detectCsvType(file); } catch (_) {}
       const guessed   = guessTypeFromFilename(file.name);
       const finalType = headerType || guessed;
 
-      // 타입을 알 수 없으면 건너뜀 (자동 선택 안되면 하지 않음)
       if (!finalType) continue;
 
       const setters = {
@@ -1942,6 +2523,18 @@ export default function HiTessModelBuilder() {
       if (setFile) {
         setFile(file);
         if (setErr) setErr(null);
+        if (finalType === 'stru') assignedStru = file;
+      }
+    }
+
+    // stru가 포함됐고 빈 슬롯이 있으면 형제 CSV 자동 감지
+    if (assignedStru) {
+      const placed = await scanSiblingCsvs(assignedStru, {
+        skipPipe:  !!pipeFile,
+        skipEquip: !!equiFile,
+      });
+      if (placed.length > 0) {
+        showToast(`동일 폴더에서 CSV ${placed.length}개를 자동 배치했습니다.`, 'success');
       }
     }
   };
@@ -1980,7 +2573,7 @@ export default function HiTessModelBuilder() {
     formData.append('femodeldebug', 'true');
     formData.append('pipelinedebug', 'true');
     formData.append('spc_z_band', '-1');
-    formData.append('debug_stages', debugStages);
+    setHasRunOnce(true);
 
     // 상태 초기화
     setActiveIdx(0);
@@ -2008,7 +2601,8 @@ export default function HiTessModelBuilder() {
         throw new Error(detail);
       }
       const data = await res.json();
-      startPolling(data.job_id, useNastran);
+      startPolling(data.job_id, useNastran, manualRbeMode);
+      startGlobalJob(data.job_id, 'HiTess Model Builder');
     } catch (e) {
       setSteps(prev => prev.map((s, i) => i === 0 ? { ...s, status: 'error' } : s));
       setJobStatus({ status: 'Failed', progress: 0, message: `서버 연결 실패: ${e.message}` });
@@ -2029,9 +2623,9 @@ export default function HiTessModelBuilder() {
     setSteps(INITIAL_STEPS.map(s => ({ ...s })));
     setActiveIdx(0);
     setMeshSize('500');
-    setUseNastran(false);
+    setUseNastran(true);
+    setManualRbeMode(true);
     setVerbose(false);
-    setDebugStages(false);
     setProcessLog(null);
     setStruFile(null);
     setPipeFile(null);
@@ -2056,6 +2650,15 @@ export default function HiTessModelBuilder() {
     setUboltRunning(false);
     setNastranTab('normal');
     setStage3Meta(null);
+    setHasRunOnce(false);
+    setRbeEditMode(false);
+    setSelectedRbeNode(null);
+    setManualRbePairs([]);
+    setRbeRunning(false);
+    setRbeResult(null);
+    setRbeBlockedNodeIds(new Set());
+    if (rbePollRef.current) { clearInterval(rbePollRef.current); rbePollRef.current = null; }
+    dashboardCtx?.clearGlobalJob?.();
   };
 
   // ── Stage 4: Nastran 해석 함수들 ──────────────────────────────
@@ -2139,9 +2742,9 @@ export default function HiTessModelBuilder() {
           clearInterval(uboltPollRef.current);
           uboltPollRef.current = null;
           setUboltRunning(false);
-          if (data.status === 'Success' && data.project?.result_info) {
+          if ((data.status === 'Success' || data.status === 'Failed') && data.project?.result_info) {
             await loadValidationJsons(data.project.result_info, 'rigid');
-            setNastranTab('rigid'); // 결과가 나오면 rigid 탭으로 자동 전환
+            setNastranTab('rigid'); // step1이라도 존재하면 rigid 탭으로 전환
           }
         }
       } catch {
@@ -2198,6 +2801,107 @@ export default function HiTessModelBuilder() {
     }, 1500);
   };
 
+  // 수동 RBE2 노드 픽킹 핸들러
+  const handleNodePick = (nodeId) => {
+    if (rbeBlockedNodeIds.has(String(nodeId))) {
+      showToast(`Node ${nodeId}는 기존 RBE2 요소를 구성하는 노드입니다. 선택할 수 없습니다.`, 'warning');
+      if (selectedRbeNode) setSelectedRbeNode(null);
+      return;
+    }
+    if (!selectedRbeNode) {
+      setSelectedRbeNode({ nodeId });
+      showToast(`Node ${nodeId} 선택됨. 연결할 두 번째 노드를 클릭하세요.`, 'info');
+    } else {
+      if (String(nodeId) === String(selectedRbeNode.nodeId)) {
+        showToast('같은 노드를 두 번 선택할 수 없습니다.', 'warning');
+        setSelectedRbeNode(null);
+        return;
+      }
+      const alreadyExists = manualRbePairs.some(
+        p => (String(p.indep) === String(selectedRbeNode.nodeId) && String(p.dep) === String(nodeId)) ||
+             (String(p.indep) === String(nodeId) && String(p.dep) === String(selectedRbeNode.nodeId))
+      );
+      if (alreadyExists) {
+        showToast('이미 등록된 노드 조합입니다.', 'warning');
+        setSelectedRbeNode(null);
+        return;
+      }
+      setManualRbePairs(prev => [...prev, { indep: selectedRbeNode.nodeId, dep: nodeId, dof: '123456' }]);
+      setSelectedRbeNode(null);
+      showToast(`RBE2 페어 추가: Node ${selectedRbeNode.nodeId} ↔ Node ${nodeId}`, 'success');
+    }
+  };
+
+  // RBE retry 폴링 (BdfScanner 완료 후 rbeResult 세팅)
+  const startRbePolling = (jobId) => {
+    if (rbePollRef.current) clearInterval(rbePollRef.current);
+    rbePollRef.current = setInterval(async () => {
+      try {
+        const res  = await fetch(`${API_BASE_URL}/api/analysis/status/${jobId}`, { headers: getAuthHeaders() });
+        if (!res.ok) { handleUnauthorized(res.status); return; }
+        const data = await res.json();
+        if (data.status === 'Success' || data.status === 'Failed') {
+          clearInterval(rbePollRef.current);
+          rbePollRef.current = null;
+          setRbeRunning(false);
+          if (data.status === 'Success' && data.json_path) {
+            setRbeResult({ bdfPath: data.bdf_path ?? null, jsonPath: data.json_path, connectivityPath: data.connectivity_path ?? null });
+            setManualRbePairs([]);
+            setSelectedRbeNode(null);
+            setRbeEditMode(false);
+            showToast('RBE2 페어가 BDF에 반영되어 모델이 업데이트됐습니다.', 'success');
+            // rbe-retry BDF는 서브폴더(rbe_retry_{ts}/)에 있으므로 data.work_dir을 우선 사용
+            const chainWorkDir = data.work_dir || stage3Meta?.work_dir;
+            if (useNastran && data.bdf_path && chainWorkDir) {
+              setSteps(prev => prev.map((s, i) => i === 2 ? { ...s, status: 'running' } : s));
+              setActiveIdx(2);
+              triggerNastranScan(data.bdf_path, chainWorkDir);
+            }
+          } else {
+            showToast('RBE2 BDF 재생성 실패: ' + (data.message || '오류'), 'error');
+          }
+        }
+      } catch {
+        clearInterval(rbePollRef.current);
+        rbePollRef.current = null;
+        setRbeRunning(false);
+      }
+    }, 1500);
+  };
+
+  const handleSkipRbeRunNastran = () => {
+    if (!bdfResult?.bdfPath || !stage3Meta?.work_dir) return;
+    setSteps(prev => prev.map((s, i) => i === 2 ? { ...s, status: 'running' } : s));
+    setActiveIdx(2);
+    triggerNastranScan(bdfResult.bdfPath, stage3Meta.work_dir);
+  };
+
+  const handleApplyRbePairs = async () => {
+    // 이미 재생성된 BDF가 있으면 그 위에 추가 적용 (반복 수행 지원)
+    const sourceBdf = rbeResult?.bdfPath || bdfResult?.bdfPath;
+    if (!sourceBdf || !stage3Meta?.work_dir || manualRbePairs.length === 0) return;
+    setRbeRunning(true);
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/analysis/modelflow/rbe-retry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          bdf_path:    sourceBdf,
+          work_dir:    stage3Meta.work_dir,
+          pairs:       manualRbePairs,
+          employee_id: user.employee_id || 'unknown',
+        }),
+      });
+      if (!res.ok) { handleUnauthorized(res.status); throw new Error(`HTTP ${res.status}`); }
+      const data = await res.json();
+      startRbePolling(data.job_id);
+    } catch {
+      setRbeRunning(false);
+      showToast('RBE2 재생성 요청 실패', 'error');
+    }
+  };
+
   // U-bolt 재시도 핸들러
   const handleUboltRetry = async () => {
     if (!stage3Meta) return;
@@ -2252,12 +2956,6 @@ export default function HiTessModelBuilder() {
               <History size={14} /> 이력
             </button>
             <GuideButton guideTitle="[파일] HiTess Model Builder — CSV→BDF→Nastran FEM 파이프라인" variant="dark" />
-            <button
-              onClick={handleReset}
-              className="text-xs bg-white/10 hover:bg-white/20 border border-white/10 text-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-            >
-              전체 초기화
-            </button>
           </div>
         </div>
       </div>
@@ -2324,7 +3022,7 @@ export default function HiTessModelBuilder() {
             </div>
 
             {/* 실행 버튼 푸터 */}
-            <div className="px-3 py-3 border-t border-slate-100 bg-slate-50/60">
+            <div className="px-3 py-3 border-t border-slate-100 bg-slate-50/60 space-y-2">
               <button
                 onClick={handleRunModelBuilder}
                 disabled={jobStatus?.status === 'Running' || jobStatus?.status === 'Pending'}
@@ -2334,6 +3032,13 @@ export default function HiTessModelBuilder() {
                   ? <><Loader2 size={15} className="animate-spin" /> 실행 중...</>
                   : <><ChevronsRight size={16} /> Model Builder 실행</>
                 }
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={!hasRunOnce || jobStatus?.status === 'Running' || jobStatus?.status === 'Pending'}
+                className="w-full flex items-center justify-center gap-1.5 py-2 border border-slate-200 bg-white hover:bg-red-50 hover:border-red-300 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-500 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                <RotateCcw size={13} /> 전체 초기화
               </button>
             </div>
           </div>
@@ -2361,6 +3066,25 @@ export default function HiTessModelBuilder() {
                 </div>
               </div>
               <div className="h-px bg-slate-100" />
+              {/* RBE 수동 연결 토글 */}
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-slate-700">RBE 수동 연결</p>
+                  <p className="text-[10px] text-slate-400">Model Builder 완료 후 2단계에서 RBE 페어 입력 대기</p>
+                </div>
+                <Toggle checked={manualRbeMode} onChange={setManualRbeMode} />
+              </div>
+              {manualRbeMode && useNastran && (
+                <div className="text-[10px] px-3 py-2 bg-amber-50 border border-amber-100 rounded-lg text-amber-700">
+                  RBE 연결 후 "BDF 재생성"을 클릭하면 Nastran이 자동 실행됩니다.
+                </div>
+              )}
+              {manualRbeMode && !useNastran && (
+                <div className="text-[10px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-500">
+                  Model Builder 완료 후 2단계에서 RBE 연결 및 BDF 재생성을 수행합니다.
+                </div>
+              )}
+              <div className="h-px bg-slate-100" />
               {/* Nastran 검증 토글 */}
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -2369,7 +3093,7 @@ export default function HiTessModelBuilder() {
                 </div>
                 <Toggle checked={useNastran} onChange={setUseNastran} />
               </div>
-              {useNastran && (
+              {useNastran && !manualRbeMode && (
                 <div className="text-[10px] px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-blue-600">
                   BDF 생성 완료 후 Nastran 검증 절차가 자동으로 시작됩니다.
                 </div>
@@ -2383,13 +3107,6 @@ export default function HiTessModelBuilder() {
                 </div>
                 <Toggle checked={verbose} onChange={setVerbose} />
               </div>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium text-slate-700">단계별 BDF 저장</p>
-                  <p className="text-[10px] text-slate-400">힐링 완료 시 각 단계별 BDF 파일 생성</p>
-                </div>
-                <Toggle checked={debugStages} onChange={setDebugStages} />
-              </div>
             </div>
           </div>
 
@@ -2398,46 +3115,47 @@ export default function HiTessModelBuilder() {
         {/* ── Right Panel ── */}
         <div className="flex-1 flex flex-col min-h-0 gap-3">
 
-          {/* 상단: 단계 설정 패널 (컴팩트) */}
-          <div className="shrink-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
-              <h2 className="text-xs font-bold text-slate-700">{activeIdx + 1}. {activeStep.title}</h2>
-              {activeStep.sub && <span className="text-[10px] text-slate-400">— {activeStep.sub}</span>}
+          {/* 상단: 단계 설정 패널 (알고리즘 단계에서는 별도 collapsible로 대체) */}
+          {!isAlgorithmStep && (
+            <div className="shrink-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+                <h2 className="text-xs font-bold text-slate-700">{activeIdx + 1}. {activeStep.title}</h2>
+                {activeStep.sub && <span className="text-[10px] text-slate-400">— {activeStep.sub}</span>}
+              </div>
+              <div className="p-4">
+                {isCSVStep
+                  ? <DetailCSV
+                      struFile={struFile} setStruFile={setStruFile}
+                      pipeFile={pipeFile} setPipeFile={setPipeFile}
+                      equiFile={equiFile} setEquiFile={setEquiFile}
+                      struError={struError} setStruError={setStruError}
+                      pipeError={pipeError} setPipeError={setPipeError}
+                      equiError={equiError} setEquiError={setEquiError}
+                      onAutoAssign={handleAutoAssign}
+                      onMultipleFiles={handleMultipleFiles}
+                    />
+                  : isNastranStep
+                  ? <DetailNastran
+                      nastranStatus={nastranStatus}
+                      nastranStep1={nastranStep1}
+                      nastranStep2={nastranStep2}
+                      bdfResult={bdfResult}
+                      uboltBdfResult={uboltBdfResult}
+                      rbeResult={rbeResult}
+                      uboltStep1={uboltStep1}
+                      uboltStep2={uboltStep2}
+                      uboltRunning={uboltRunning}
+                      hasFatal={hasFatal}
+                      stage3Meta={stage3Meta}
+                      nastranTab={nastranTab}
+                      setNastranTab={setNastranTab}
+                      onUboltRetry={handleUboltRetry}
+                    />
+                  : <DetailPanel />
+                }
+              </div>
             </div>
-            <div className="p-4">
-              {isCSVStep
-                ? <DetailCSV
-                    struFile={struFile} setStruFile={setStruFile}
-                    pipeFile={pipeFile} setPipeFile={setPipeFile}
-                    equiFile={equiFile} setEquiFile={setEquiFile}
-                    struError={struError} setStruError={setStruError}
-                    pipeError={pipeError} setPipeError={setPipeError}
-                    equiError={equiError} setEquiError={setEquiError}
-                    onAutoAssign={handleAutoAssign}
-                    onMultipleFiles={handleMultipleFiles}
-                  />
-                : isAlgorithmStep
-                ? <DetailAlgorithm jobStatus={jobStatus} logData={logData} />
-                : isNastranStep
-                ? <DetailNastran
-                    nastranStatus={nastranStatus}
-                    nastranStep1={nastranStep1}
-                    nastranStep2={nastranStep2}
-                    bdfResult={bdfResult}
-                    uboltBdfResult={uboltBdfResult}
-                    uboltStep1={uboltStep1}
-                    uboltStep2={uboltStep2}
-                    uboltRunning={uboltRunning}
-                    hasFatal={hasFatal}
-                    stage3Meta={stage3Meta}
-                    nastranTab={nastranTab}
-                    setNastranTab={setNastranTab}
-                    onUboltRetry={handleUboltRetry}
-                  />
-                : <DetailPanel />
-              }
-            </div>
-          </div>
+          )}
 
           {/* CSV 단계: 파싱 로그가 전체 남은 공간 차지 (3D 뷰어 숨김) */}
           {isCSVStep && (
@@ -2456,14 +3174,84 @@ export default function HiTessModelBuilder() {
             </div>
           )}
 
-          {/* 알고리즘 단계: 3D 뷰어(flex-1) + 알고리즘 로그(280px) */}
+          {/* 알고리즘 단계: 모델 알고리즘 적용(collapsible) + 단계별 검사 결과(collapsible) + 3D 뷰어(flex-1) */}
           {isAlgorithmStep && (
             <>
-              {/* 3D 뷰어 */}
+              {/* 모델 알고리즘 적용 (접기/펼치기, 기본 접힘) */}
+              <div className="shrink-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                <button
+                  onClick={() => setAlgoDetailOpen(v => !v)}
+                  className="flex items-center justify-between px-4 py-2.5 w-full text-left hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xs font-bold text-slate-700">{activeIdx + 1}. {activeStep.title}</h2>
+                    {activeStep.sub && <span className="text-[10px] text-slate-400">— {activeStep.sub}</span>}
+                  </div>
+                  <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${algoDetailOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {algoDetailOpen && (
+                  <div className="border-t border-slate-100 p-4">
+                    <DetailAlgorithm jobStatus={jobStatus} logData={logData} />
+                  </div>
+                )}
+              </div>
+
+              {/* 단계별 검사 결과 (접기/펼치기, 기본 접힘) */}
+              <div className="shrink-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                <button
+                  onClick={() => setAlgoStepsOpen(v => !v)}
+                  className="flex items-center justify-between px-4 py-2.5 w-full text-left hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">단계별 검사 결과</span>
+                    {jobStatus?.status === 'Success' && <><div className="w-1.5 h-1.5 rounded-full bg-green-400" /><span className="text-[10px] text-slate-400">완료</span></>}
+                    {jobStatus?.status === 'Failed'  && <><div className="w-1.5 h-1.5 rounded-full bg-red-400"   /><span className="text-[10px] text-red-400">실패</span></>}
+                    {(jobStatus?.status === 'Running' || jobStatus?.status === 'Pending') && <><Loader2 size={11} className="animate-spin text-blue-400" /><span className="text-[10px] text-blue-400">실행 중</span></>}
+                  </div>
+                  <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${algoStepsOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {algoStepsOpen && (
+                  <div className="border-t border-slate-100 overflow-y-auto" style={{ maxHeight: '240px' }}>
+                    <AlgorithmLogPanel logData={logData} jobStatus={jobStatus} processLog={processLog} engineLog={engineLog} />
+                  </div>
+                )}
+              </div>
+
+              {/* 3D 뷰어 (나머지 공간 전부) */}
               <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 shrink-0">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">3D 모델 뷰어 — STAGE_07</span>
                   <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">3D 모델 뷰어</span>
+                    {rbeResult && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">RBE2 반영됨</span>}
+                    {(rbeResult?.bdfPath || bdfResult?.bdfPath) && (
+                      <button
+                        onClick={() => triggerBlobDownload(rbeResult?.bdfPath || bdfResult.bdfPath)}
+                        className="flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 transition-colors cursor-pointer"
+                        title={(rbeResult?.bdfPath || bdfResult?.bdfPath).split(/[\\/]/).pop()}
+                      >
+                        <Download size={10} />
+                        {rbeResult?.bdfPath ? 'BDF 다운로드 (RBE2 반영)' : 'BDF 다운로드'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* manualRbeMode=OFF일 때만 수동 토글 버튼 표시 */}
+                    {!manualRbeMode && (bdfResult?.jsonPath || rbeResult?.jsonPath) && (
+                      <button
+                        onClick={() => {
+                          setRbeEditMode(v => !v);
+                          if (rbeEditMode) { setSelectedRbeNode(null); }
+                        }}
+                        title={rbeEditMode ? 'RBE 편집 모드 종료' : '노드를 클릭해 RBE2 연결 페어를 추가합니다'}
+                        className={`text-[9px] font-bold px-2 py-1 rounded-lg border transition-colors cursor-pointer ${
+                          rbeEditMode
+                            ? 'bg-amber-500 text-white border-amber-400'
+                            : 'bg-white text-slate-500 border-slate-200 hover:border-amber-300 hover:text-amber-600'
+                        }`}
+                      >
+                        {rbeEditMode ? '● RBE 편집 중' : 'RBE 연결'}
+                      </button>
+                    )}
                     {bdfResult?.jsonPath
                       ? <><div className="w-1.5 h-1.5 rounded-full bg-green-400" /><span className="text-[10px] text-slate-400">모델 준비됨</span></>
                       : jobStatus?.status === 'Running' || jobStatus?.status === 'Pending'
@@ -2472,35 +3260,112 @@ export default function HiTessModelBuilder() {
                     }
                   </div>
                 </div>
-                <div className="flex-1 min-h-0 rounded-b-2xl overflow-hidden">
-                  {bdfResult?.jsonPath
-                    ? <FemModelViewer jsonPath={bdfResult.jsonPath} mode="healed" />
+
+                {/* ── RBE 통합 액션 바 ─────────────────────────────────────────── */}
+                {/* manualRbeMode=ON이면 모델 준비 즉시, OFF면 편집 활성/페어 있을 때만 표시 */}
+                {(rbeEditMode || manualRbePairs.length > 0 || (manualRbeMode && _rbeModelReady)) && (
+                  <div className="shrink-0 bg-amber-50 border-b border-amber-100">
+                    {/* 상태 행 */}
+                    <div className="px-4 py-2.5 flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${rbeEditMode ? 'bg-amber-500 animate-pulse' : 'bg-amber-300'}`} />
+                          <p className="text-[11px] font-bold text-amber-800 leading-tight">
+                            {rbeEditMode
+                              ? selectedRbeNode
+                                ? `Node ${selectedRbeNode.nodeId} 선택됨 — 두 번째 노드를 클릭하세요 (다른 그룹)`
+                                : 'RBE 편집 중 — 뷰어에서 연결할 첫 번째 노드(빨간 구체)를 클릭하세요'
+                              : `RBE2 페어 ${manualRbePairs.length}개 등록됨 — BDF 재생성을 클릭하세요`
+                            }
+                          </p>
+                        </div>
+                        {!selectedRbeNode && manualRbePairs.length === 0 && useNastran && rbeEditMode && (
+                          <p className="text-[10px] text-amber-600 mt-0.5 ml-4">
+                            페어 등록 완료 후 BDF 재생성 클릭 → Nastran 자동 실행
+                          </p>
+                        )}
+                      </div>
+                      {/* 액션 버튼 */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {manualRbePairs.length > 0 ? (
+                          <>
+                            <button
+                              onClick={handleApplyRbePairs}
+                              disabled={rbeRunning || !(bdfResult?.bdfPath || rbeResult?.bdfPath)}
+                              className="text-[11px] font-bold px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-200 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                            >
+                              {rbeRunning
+                                ? <><Loader2 size={12} className="animate-spin" /> 재생성 중...</>
+                                : useNastran
+                                  ? `BDF 재생성 후 Nastran 해석 수행 (${manualRbePairs.length}쌍)`
+                                  : `BDF 재생성 (${manualRbePairs.length}쌍)`
+                              }
+                            </button>
+                            <button
+                              onClick={() => { setManualRbePairs([]); setSelectedRbeNode(null); }}
+                              className="text-[10px] text-slate-400 hover:text-red-500 cursor-pointer px-1.5 py-1 rounded transition-colors"
+                            >
+                              전체삭제
+                            </button>
+                          </>
+                        ) : (
+                          useNastran && manualRbeMode && !rbeRunning && (
+                            <button
+                              onClick={handleSkipRbeRunNastran}
+                              className="text-[10px] font-bold px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg transition-colors cursor-pointer"
+                            >
+                              RBE 없이 Nastran 실행
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                    {/* 페어 칩 목록 */}
+                    {manualRbePairs.length > 0 && (
+                      <div className="px-4 pb-2.5 flex flex-wrap gap-1">
+                        {manualRbePairs.map((p, idx) => (
+                          <span key={idx} className="inline-flex items-center gap-1 text-[9px] font-mono bg-white text-amber-800 px-2 py-0.5 rounded-full border border-amber-200 shadow-sm">
+                            Node {p.indep} ↔ Node {p.dep}
+                            <button onClick={() => setManualRbePairs(prev => prev.filter((_, i) => i !== idx))} className="text-amber-400 hover:text-red-600 cursor-pointer ml-0.5">✕</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex-1 min-h-0 rounded-b-2xl overflow-hidden relative">
+                  {rbeRunning && (
+                    <div className="absolute inset-0 z-30 bg-slate-900/75 backdrop-blur-sm flex flex-col items-center justify-center gap-3 rounded-b-2xl">
+                      <Loader2 size={28} className="animate-spin text-amber-400" />
+                      <p className="text-[12px] font-bold text-amber-300">BDF 재생성 중...</p>
+                      <p className="text-[10px] text-slate-400">RBE2 카드를 BDF에 반영하고 있습니다</p>
+                    </div>
+                  )}
+                  {(rbeResult?.jsonPath || bdfResult?.jsonPath)
+                    ? <FemModelViewer
+                        jsonPath={rbeResult?.jsonPath || bdfResult.jsonPath}
+                        mode="healed"
+                        connectivityPath={rbeResult?.connectivityPath || bdfResult?.connectivityPath}
+                        rbeEditMode={rbeEditMode && !rbeRunning}
+                        selectedRbeNode={selectedRbeNode}
+                        manualRbePairs={manualRbePairs}
+                        onNodePick={handleNodePick}
+                        onRigidsLoad={handleRigidsLoad}
+                        blockedNodeIds={rbeBlockedNodeIds}
+                        onCancelSelection={() => setSelectedRbeNode(null)}
+                      />
                     : (
                       <div className="w-full h-full bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 flex flex-col items-center justify-center gap-3">
                         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.8" className="text-slate-700">
                           <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
                         </svg>
                         <p className="text-[11px] text-slate-600 text-center leading-relaxed">
-                          알고리즘 적용 완료 후<br />STAGE_07 모델이 여기에 렌더링됩니다.
+                          알고리즘 적용 완료 후<br />3D 모델이 여기에 렌더링됩니다.
                         </p>
                       </div>
                     )
                   }
-                </div>
-              </div>
-
-              {/* 알고리즘 로그 패널 (하단 고정) */}
-              <div className="shrink-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden" style={{ height: '280px' }}>
-                <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 shrink-0">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">단계별 검사 결과</span>
-                  <div className="flex items-center gap-2">
-                    {jobStatus?.status === 'Success' && <><div className="w-1.5 h-1.5 rounded-full bg-green-400" /><span className="text-[10px] text-slate-400">완료</span></>}
-                    {jobStatus?.status === 'Failed'  && <><div className="w-1.5 h-1.5 rounded-full bg-red-400"   /><span className="text-[10px] text-red-400">실패</span></>}
-                    {(jobStatus?.status === 'Running' || jobStatus?.status === 'Pending') && <><Loader2 size={11} className="animate-spin text-blue-400" /><span className="text-[10px] text-blue-400">실행 중</span></>}
-                  </div>
-                </div>
-                <div className="flex-1 min-h-0">
-                  <AlgorithmLogPanel logData={logData} jobStatus={jobStatus} processLog={processLog} engineLog={engineLog} />
                 </div>
               </div>
             </>
@@ -2512,47 +3377,61 @@ export default function HiTessModelBuilder() {
               <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 shrink-0">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nastran 검증 결과</span>
                 <div className="flex items-center gap-2">
-                  {nastranStep1?.status && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                      nastranStep2?.summary?.f06Fatals > 0
-                        ? 'bg-red-50 text-red-600 border-red-200'
-                        : nastranStep2?.summary?.f06Warnings > 0
-                        ? 'bg-yellow-50 text-yellow-600 border-yellow-200'
-                        : 'bg-green-50 text-green-600 border-green-200'
-                    }`}>
-                      {nastranStep2?.summary?.f06Fatals > 0 ? 'FATAL' : nastranStep2?.summary?.f06Warnings > 0 ? 'WARNING' : 'PASS'}
-                    </span>
-                  )}
-                  {nastranStep1 && <><div className="w-1.5 h-1.5 rounded-full bg-green-400" /><span className="text-[10px] text-slate-400">검증 완료</span></>}
+                  {(() => {
+                    const _badgeStep1 = nastranTab === 'rigid' ? uboltStep1 : nastranStep1;
+                    const _badgeStep2 = nastranTab === 'rigid' ? uboltStep2 : nastranStep2;
+                    return (
+                      <>
+                        {_badgeStep1?.status && (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                            _badgeStep2?.summary?.f06Fatals > 0
+                              ? 'bg-red-50 text-red-600 border-red-200'
+                              : _badgeStep2?.summary?.f06Warnings > 0
+                              ? 'bg-yellow-50 text-yellow-600 border-yellow-200'
+                              : 'bg-green-50 text-green-600 border-green-200'
+                          }`}>
+                            {_badgeStep2?.summary?.f06Fatals > 0 ? 'FATAL' : _badgeStep2?.summary?.f06Warnings > 0 ? 'WARNING' : 'PASS'}
+                          </span>
+                        )}
+                        {_badgeStep1 && <><div className="w-1.5 h-1.5 rounded-full bg-green-400" /><span className="text-[10px] text-slate-400">검증 완료</span></>}
+                      </>
+                    );
+                  })()}
                   {(nastranStatus?.status === 'Running' || nastranStatus?.status === 'Pending') &&
                     <><Loader2 size={11} className="animate-spin text-blue-400" /><span className="text-[10px] text-blue-400">실행 중</span></>
                   }
                 </div>
               </div>
               <div className="flex-1 min-h-0 overflow-auto bg-slate-950 rounded-b-2xl">
-                {nastranStep1
-                  ? <ValidationStepLog
-                      step1Data={nastranTab === 'rigid' ? uboltStep1 : nastranStep1}
-                      step2Data={nastranTab === 'rigid' ? uboltStep2 : nastranStep2}
-                      useNastran={true}
-                    />
-                  : nastranStatus?.status === 'Running' || nastranStatus?.status === 'Pending'
-                  ? (
-                    <div className="flex flex-col items-center justify-center h-full gap-3">
-                      <Loader2 size={24} className="animate-spin text-blue-500" />
-                      <p className="text-xs text-slate-400">{nastranStatus?.message || 'Nastran 해석 중...'}</p>
-                      <div className="w-48 bg-slate-800 rounded-full h-1.5">
-                        <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${nastranStatus?.progress || 0}%` }} />
+                {(() => {
+                  const _activeStep1 = nastranTab === 'rigid' ? uboltStep1 : nastranStep1;
+                  const _activeStep2 = nastranTab === 'rigid' ? uboltStep2 : nastranStep2;
+                  const _isLoading   = nastranStatus?.status === 'Running' || nastranStatus?.status === 'Pending' || uboltRunning;
+                  if (_activeStep1) {
+                    return <ValidationStepLog step1Data={_activeStep1} step2Data={_activeStep2} useNastran={true} />;
+                  }
+                  if (_isLoading) {
+                    return (
+                      <div className="flex flex-col items-center justify-center h-full gap-3">
+                        <Loader2 size={24} className="animate-spin text-blue-500" />
+                        <p className="text-xs text-slate-400">
+                          {uboltRunning ? 'U-bolt Rigid BDF 재생성 및 Nastran 해석 중...' : (nastranStatus?.message || 'Nastran 해석 중...')}
+                        </p>
+                        {nastranStatus?.progress != null && (
+                          <div className="w-48 bg-slate-800 rounded-full h-1.5">
+                            <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${nastranStatus.progress}%` }} />
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )
-                  : (
+                    );
+                  }
+                  return (
                     <div className="flex flex-col items-center justify-center h-full gap-2">
                       <Cpu size={24} className="text-slate-700" />
                       <p className="text-xs text-slate-600">Stage 3 완료 후 Nastran 해석이 자동 시작됩니다.</p>
                     </div>
-                  )
-                }
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -2567,7 +3446,7 @@ export default function HiTessModelBuilder() {
                 </div>
                 <div className="flex-1 min-h-0 rounded-b-2xl overflow-hidden">
                   {bdfResult?.jsonPath
-                    ? <FemModelViewer jsonPath={bdfResult.jsonPath} />
+                    ? <FemModelViewer jsonPath={bdfResult.jsonPath} connectivityPath={bdfResult?.connectivityPath} />
                     : (
                       <div className="w-full h-full bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 flex flex-col items-center justify-center gap-3">
                         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.8" className="text-slate-700">
