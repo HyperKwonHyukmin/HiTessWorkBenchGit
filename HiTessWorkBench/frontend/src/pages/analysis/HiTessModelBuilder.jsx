@@ -4,7 +4,7 @@ import {
   ChevronsRight,
   FileSpreadsheet, Wrench, ShieldCheck, Cpu, FileBarChart2,
   X, CheckCircle2, AlertCircle, Loader2,
-  Eye, EyeOff, PlayCircle, PauseCircle, RotateCcw, Maximize2, Minimize2, Weight, Unlink, Anchor, Frame,
+  Eye, EyeOff, PlayCircle, PauseCircle, RotateCcw, Maximize2, Minimize2, Weight, Unlink, Anchor, Frame, Link,
   Download, AlertOctagon, RefreshCw, History
 } from 'lucide-react';
 import ChangelogModal from '../../components/ui/ChangelogModal';
@@ -48,6 +48,8 @@ function FemModelViewer({
   onRigidsLoad = null,
   blockedNodeIds = null,
   onCancelSelection = null,
+  onDeleteGroup = null,
+  groupDeleteSelectMode = false,
 }) {
   const isHealed = mode === 'healed';
 
@@ -69,6 +71,8 @@ function FemModelViewer({
   const rodRadiusRef        = useRef(5);
   const manualRbe2MeshRef   = useRef(null);
   const selectedHighlightRef = useRef(null);
+  const uboltConnectedMeshRef = useRef(null);
+  const uboltOrphanMeshRef    = useRef(null);
 
   const [viewState,    setViewState]    = useState('idle'); // 'idle'|'loading'|'ready'|'error'
   const [errorMsg,     setErrorMsg]     = useState('');
@@ -79,6 +83,7 @@ function FemModelViewer({
   const [showBc,        setShowBc]        = useState(false);
   const [showPipe,      setShowPipe]      = useState(true);
   const [showSupport,   setShowSupport]   = useState(true);
+  const [showUbolts,    setShowUbolts]    = useState(true);
   const [autoRotate,    setAutoRotate]    = useState(false);
   const [isFullscreen,  setIsFullscreen]  = useState(false);
   const [conm2Count,    setConm2Count]    = useState(0);
@@ -86,6 +91,7 @@ function FemModelViewer({
   const [bcCount,       setBcCount]       = useState(0);
   const [pipeCount,     setPipeCount]     = useState(0);
   const [supportCount,  setSupportCount]  = useState(0);
+  const [uboltStats,    setUboltStats]    = useState(null); // {total, connected, orphan}
   // 연결 그룹
   const [connectivityGroups, setConnectivityGroups] = useState([]);
   const [groupColorMode,     setGroupColorMode]     = useState(false);
@@ -107,6 +113,10 @@ function FemModelViewer({
   useEffect(() => {
     if (nodesMeshRef.current) nodesMeshRef.current.visible = showNodes;
   }, [showNodes]);
+  useEffect(() => {
+    if (uboltConnectedMeshRef.current) uboltConnectedMeshRef.current.visible = showUbolts;
+    if (uboltOrphanMeshRef.current)    uboltOrphanMeshRef.current.visible    = showUbolts;
+  }, [showUbolts]);
   useEffect(() => {
     if (conm2MeshRef.current) conm2MeshRef.current.visible = showConm2;
   }, [showConm2]);
@@ -159,7 +169,9 @@ function FemModelViewer({
       bcMeshRef.current         = null;
       pipeMeshRef.current       = null;
       supportMeshRef.current    = null;
-      rbe2MeshRef.current       = null;
+      rbe2MeshRef.current         = null;
+      uboltConnectedMeshRef.current = null;
+      uboltOrphanMeshRef.current    = null;
       elemIdToInstanceRef.current = {};
       nodesDataRef.current      = null;
       nodeIdxMapRef.current     = [];
@@ -276,24 +288,43 @@ function FemModelViewer({
         nodesMeshRef.current = instNodes;
         group.add(instNodes);
 
-        // ── RBE2 강체 ────────────────────────────────────────
-        const rbe2Pairs = [];
+        // ── RBE2 강체 — 일반 / U-bolt 연결 / U-bolt 미연결 3분류 ─
+        const rbe2Pairs    = []; // 일반 RBE2 (isUbolt 없거나 false)
+        const uboltPairs   = []; // 연결된 U-bolt (isUbolt=true + dep 존재)
+        const uboltOrphans = []; // 미연결 U-bolt (isUbolt=true + dep 없음)
+
         Object.entries(fem.rigids || {}).forEach(([rid, r]) => {
-          const ind = r.independentNodeId;
+          const ind  = r.independentNodeId;
           if (!nodes[ind]) return;
-          (r.dependentNodeIds || []).forEach(dep => {
-            if (nodes[dep]) rbe2Pairs.push({ n1: ind, n2: dep, rigidId: String(rid) });
+          const deps = r.dependentNodeIds || [];
+          if (r.isUbolt && deps.length === 0) {
+            uboltOrphans.push({ n1: ind, rigidId: String(rid) });
+            return;
+          }
+          deps.forEach(dep => {
+            if (!nodes[dep]) return;
+            const pair = { n1: ind, n2: dep, rigidId: String(rid) };
+            if (r.isUbolt) uboltPairs.push(pair);
+            else           rbe2Pairs.push(pair);
           });
         });
+
+        // U-bolt 통계 노출 (Info 배지 + 부모 콜백)
+        const uboltTotal = uboltPairs.length + uboltOrphans.length;
+        if (uboltTotal > 0) {
+          setUboltStats({ total: uboltTotal, connected: uboltPairs.length, orphan: uboltOrphans.length });
+        } else {
+          setUboltStats(null);
+        }
+
+        // 일반 RBE2
         if (rbe2Pairs.length > 0) {
           const geo = new THREE.CylinderGeometry(rodRadius * 0.5, rodRadius * 0.5, 1, 6);
           geo.rotateX(Math.PI / 2);
-          // 분류별 모드용: 빨강 glow 포함
           const mat = new THREE.MeshStandardMaterial({
             color: 0xffffff, metalness: 0.5, roughness: 0.4,
             emissive: 0x881100, emissiveIntensity: 0.4,
           });
-          // 그룹 모드용: 조명 무관 basic → ghost 회색이 확실히 보임
           const basicMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
           const inst = new THREE.InstancedMesh(geo, mat, rbe2Pairs.length);
           inst.userData.standardMat = mat;
@@ -314,6 +345,58 @@ function FemModelViewer({
           inst.userData.rigidIds         = rbe2Pairs.map(p => p.rigidId);
           inst.userData.originalMatrices = new Float32Array(inst.instanceMatrix.array);
           rbe2MeshRef.current = inst;
+          group.add(inst);
+        }
+
+        // 연결된 U-bolt — 청록색 실린더
+        if (uboltPairs.length > 0) {
+          const geo = new THREE.CylinderGeometry(rodRadius * 0.55, rodRadius * 0.55, 1, 8);
+          geo.rotateX(Math.PI / 2);
+          const mat = new THREE.MeshStandardMaterial({
+            color: 0xffee00, metalness: 0.3, roughness: 0.3,
+            emissive: 0xcc9900, emissiveIntensity: 0.7,
+          });
+          const inst = new THREE.InstancedMesh(geo, mat, uboltPairs.length);
+          const d2 = new THREE.Object3D();
+          const ubColor = new THREE.Color(0xffee00);
+          uboltPairs.forEach((e, i) => {
+            const p1 = new THREE.Vector3(nodes[e.n1].x, nodes[e.n1].y, nodes[e.n1].z);
+            const p2 = new THREE.Vector3(nodes[e.n2].x, nodes[e.n2].y, nodes[e.n2].z);
+            d2.position.copy(p1).lerp(p2, 0.5);
+            d2.scale.set(1, 1, p1.distanceTo(p2));
+            d2.lookAt(p2); d2.updateMatrix();
+            inst.setMatrixAt(i, d2.matrix);
+            inst.setColorAt(i, ubColor);
+          });
+          inst.instanceMatrix.needsUpdate = true;
+          if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+          inst.userData.rigidIds = uboltPairs.map(p => p.rigidId);
+          inst.visible = showUbolts;
+          uboltConnectedMeshRef.current = inst;
+          group.add(inst);
+        }
+
+        // 미연결 U-bolt — 빨간 경광등 마커 (Icosahedron)
+        if (uboltOrphans.length > 0) {
+          const geo = new THREE.IcosahedronGeometry(rodRadius * 3.5, 0);
+          const mat = new THREE.MeshStandardMaterial({
+            color: 0xff00cc, metalness: 0.3, roughness: 0.2,
+            emissive: 0xaa0088, emissiveIntensity: 0.9,
+          });
+          const inst = new THREE.InstancedMesh(geo, mat, uboltOrphans.length);
+          const d3 = new THREE.Object3D();
+          uboltOrphans.forEach((e, i) => {
+            d3.position.set(nodes[e.n1].x, nodes[e.n1].y, nodes[e.n1].z);
+            d3.scale.set(1, 1, 1);
+            d3.quaternion.identity();
+            d3.updateMatrix();
+            inst.setMatrixAt(i, d3.matrix);
+          });
+          inst.instanceMatrix.needsUpdate = true;
+          inst.userData.rigidIds = uboltOrphans.map(o => o.rigidId);
+          inst.renderOrder = 2;
+          inst.visible = showUbolts;
+          uboltOrphanMeshRef.current = inst;
           group.add(inst);
         }
 
@@ -413,6 +496,17 @@ function FemModelViewer({
       .catch(() => setConnectivityGroups([]));
   }, [connectivityPath]);
 
+  // selectedGroupId가 갱신된 connectivityGroups에 없으면 선택·격리 해제
+  // (Group 삭제 후 stale ID로 인해 남은 그룹이 GHOST 색상으로 표시되는 현상 방지)
+  useEffect(() => {
+    if (selectedGroupId !== null
+        && connectivityGroups.length > 0
+        && !connectivityGroups.some(g => g.Id === selectedGroupId)) {
+      setSelectedGroupId(null);
+      setIsolateMode(false);
+    }
+  }, [connectivityGroups, selectedGroupId]);
+
   // RBE 편집 모드 ON 시 노드 자동 표시
   useEffect(() => {
     if (rbeEditMode) setShowNodes(true);
@@ -487,11 +581,11 @@ function FemModelViewer({
     const meshSet = new Set(Object.values(map).map(e => e.mesh));
 
     const rbe2 = rbe2MeshRef.current;
-    const paintRbe2 = (hex) => {
-      if (!rbe2) return;
+    const paintMesh = (mesh, hex) => {
+      if (!mesh) return;
       const c = new THREE.Color(hex);
-      for (let i = 0; i < rbe2.count; i++) rbe2.setColorAt(i, c);
-      if (rbe2.instanceColor) rbe2.instanceColor.needsUpdate = true;
+      for (let i = 0; i < mesh.count; i++) mesh.setColorAt(i, c);
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     };
 
     // 머티리얼 교체: 분류별=MeshStandardMaterial(glow), 그룹별=MeshBasicMaterial(조명 무관, 선명)
@@ -509,7 +603,8 @@ function FemModelViewer({
         mesh.setColorAt(idx, mesh === pipeMeshRef.current ? PIPE_COL : SUPPORT_COL);
       });
       meshSet.forEach(mesh => { if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; });
-      paintRbe2(0xff6644);
+      paintMesh(rbe2MeshRef.current,          0xff6644);
+      paintMesh(uboltConnectedMeshRef.current, 0xffee00);
       swapMaterial(pipeMeshRef.current,    false);
       swapMaterial(supportMeshRef.current, false);
       swapMaterial(rbe2MeshRef.current,    false);
@@ -530,7 +625,8 @@ function FemModelViewer({
       });
     });
     meshSet.forEach(mesh => { if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; });
-    paintRbe2(GROUP_GHOST_HEX);
+    paintMesh(rbe2MeshRef.current,          GROUP_GHOST_HEX);
+    paintMesh(uboltConnectedMeshRef.current, GROUP_GHOST_HEX);
     // MeshBasicMaterial로 교체 → 조명 무관하게 instanceColor가 선명히 표시됨
     swapMaterial(pipeMeshRef.current,    true);
     swapMaterial(supportMeshRef.current, true);
@@ -562,9 +658,10 @@ function FemModelViewer({
     const beamSet  = doIsolate ? new Set((selected.ElementIds || []).map(String)) : null;
     const rigidSet = doIsolate ? new Set((selected.RigidIds   || []).map(String)) : null;
 
-    applyIsolation(pipeMeshRef.current,    beamSet,  pipeMeshRef.current?.userData.elemIds);
-    applyIsolation(supportMeshRef.current, beamSet,  supportMeshRef.current?.userData.elemIds);
-    applyIsolation(rbe2MeshRef.current,    rigidSet, rbe2MeshRef.current?.userData.rigidIds);
+    applyIsolation(pipeMeshRef.current,             beamSet,  pipeMeshRef.current?.userData.elemIds);
+    applyIsolation(supportMeshRef.current,          beamSet,  supportMeshRef.current?.userData.elemIds);
+    applyIsolation(rbe2MeshRef.current,             rigidSet, rbe2MeshRef.current?.userData.rigidIds);
+    applyIsolation(uboltConnectedMeshRef.current,   rigidSet, uboltConnectedMeshRef.current?.userData.rigidIds);
   }, [isolateMode, selectedGroupId, connectivityGroups, viewState]);
 
   // 그룹 선택 시 카메라를 해당 그룹의 BBox로 이동 (fly-to)
@@ -624,6 +721,12 @@ function FemModelViewer({
     { color: '#6ee7b7', label: 'Pipe (배관)' },
     { color: '#66ccff', label: 'Support (구조물)' },
     { color: '#ff6644', label: 'RBE2 (강체)' },
+    ...(uboltStats && uboltStats.total > 0
+      ? [{ color: '#ffee00', label: `U-bolt 연결 (${uboltStats.connected}개) ━` }]
+      : []),
+    ...(uboltStats && uboltStats.orphan > 0
+      ? [{ color: '#ff00cc', label: `U-bolt 미연결 (${uboltStats.orphan}개) ◆` }]
+      : []),
     { color: '#ff3333', label: 'Node (토글) ●' },
     ...(isHealed
       ? [{ color: '#ff69b4', label: 'BC/SPC (경계조건) ■' }]
@@ -669,7 +772,7 @@ function FemModelViewer({
           {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
 
-        {/* RBE 편집 모드 안내 (상단 중앙, 전체화면에서도 유지) */}
+        {/* 모드 안내 오버레이 (상단 중앙, 전체화면에서도 유지) */}
         {rbeEditMode && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none">
             <div className="bg-amber-500/90 backdrop-blur text-white px-4 py-2 rounded-xl shadow-lg border border-amber-300 whitespace-nowrap">
@@ -677,6 +780,15 @@ function FemModelViewer({
                 {selectedRbeNode
                   ? `Node ${selectedRbeNode.nodeId} 선택됨 — 두 번째 노드를 클릭 / 우클릭으로 해제`
                   : '첫 번째 노드를 클릭하세요'}
+              </p>
+            </div>
+          </div>
+        )}
+        {groupDeleteSelectMode && !rbeEditMode && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none">
+            <div className="bg-red-500/90 backdrop-blur text-white px-4 py-2 rounded-xl shadow-lg border border-red-400 whitespace-nowrap">
+              <p className="text-[11px] font-bold text-center">
+                Connectivity 패널에서 그룹을 선택 후 삭제 버튼을 클릭하세요
               </p>
             </div>
           </div>
@@ -778,6 +890,25 @@ function FemModelViewer({
                 >
                   모두 보기
                 </button>
+                {onDeleteGroup && (() => {
+                  const g = connectivityGroups.find(x => x.Id === selectedGroupId);
+                  const elementCount = (g?.ElementIds || []).length;
+                  const rigidCount   = (g?.RigidIds   || []).length;
+                  return (elementCount + rigidCount) > 0 ? (
+                    <button
+                      onClick={() => {
+                        if (!window.confirm(
+                          `Group ${g.Id}의 ${elementCount}개 element + ${rigidCount}개 rigid를 BDF에서 삭제합니다.\n` +
+                          `되돌리려면 처음부터 다시 실행해야 합니다. 계속하시겠습니까?`
+                        )) return;
+                        onDeleteGroup(g.Id, g.ElementIds || [], g.RigidIds || []);
+                      }}
+                      className="w-full text-[9px] font-bold text-red-400 hover:text-white hover:bg-red-500/80 transition-colors cursor-pointer text-center py-1.5 border-t border-slate-700"
+                    >
+                      이 그룹 Element 삭제
+                    </button>
+                  ) : null;
+                })()}
               </div>
             )}
           </div>
@@ -798,6 +929,26 @@ function FemModelViewer({
             ))}
           </div>
         </div>
+
+        {/* U-bolt 상태 배지 (좌하단) */}
+        {uboltStats && uboltStats.total > 0 && (
+          <div className="absolute bottom-20 left-3 z-10 pointer-events-none">
+            <div className={`backdrop-blur rounded-xl px-3 py-2 border shadow-lg ${
+              uboltStats.orphan > 0
+                ? 'bg-purple-950/90 border-fuchsia-700'
+                : 'bg-slate-900/90 border-slate-700'
+            }`}>
+              <p className="text-[10px] font-bold text-slate-300">
+                U-bolt
+                <span className="text-yellow-400 ml-2 font-mono">{uboltStats.connected}</span>
+                <span className="text-slate-500 mx-1">연결</span>
+                {uboltStats.orphan > 0 && (
+                  <span className="text-fuchsia-400 font-mono ml-1">⚠ {uboltStats.orphan} 미연결</span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* 컨트롤 툴바 (하단 중앙) */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex gap-2 bg-slate-800/80 backdrop-blur-md p-2 rounded-2xl border border-slate-700 shadow-2xl">
@@ -876,6 +1027,23 @@ function FemModelViewer({
             <Weight size={18} className="mb-1" />
             <span className="text-[8px] font-bold uppercase tracking-wider">Mass</span>
           </button>
+
+          {/* U-bolt 토글 */}
+          {uboltStats && uboltStats.total > 0 && (
+            <button
+              onClick={() => setShowUbolts(v => !v)}
+              title={`U-bolt ${uboltStats.total}개 (연결 ${uboltStats.connected} · 미연결 ${uboltStats.orphan})`}
+              className={`flex flex-col items-center justify-center w-14 h-12 rounded-xl transition-colors cursor-pointer
+                ${showUbolts
+                  ? uboltStats.orphan > 0
+                    ? 'bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30'
+                    : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                  : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+            >
+              <Link size={18} className="mb-1" />
+              <span className="text-[8px] font-bold uppercase tracking-wider">U-bolt</span>
+            </button>
+          )}
 
           {/* 자동 회전 */}
           <button
@@ -2111,7 +2279,6 @@ export default function HiTessModelBuilder() {
   const [meshSize, setMeshSize]     = useState(() => saved?.meshSize ?? '500');
   const [useNastran,    setUseNastran]    = useState(() => saved?.useNastran    ?? true);
   const [manualRbeMode, setManualRbeMode] = useState(() => saved?.manualRbeMode ?? true);
-  const [verbose,       setVerbose]       = useState(() => saved?.verbose       ?? false);
   const [processLog,    setProcessLog]    = useState(() => saved?.processLog    ?? null);
 
   // CSV 파일 (DetailCSV에서 lift-up)
@@ -2162,6 +2329,9 @@ export default function HiTessModelBuilder() {
   const [rbeResult,         setRbeResult]          = useState(() => saved?.rbeResult ?? null);
   const [rbeBlockedNodeIds, setRbeBlockedNodeIds]  = useState(() => new Set());
   const rbePollRef = useRef(null);
+  const [groupDeleteRunning,    setGroupDeleteRunning]    = useState(false);
+  const [groupDeleteSelectMode, setGroupDeleteSelectMode] = useState(() => saved?.groupDeleteSelectMode ?? false);
+  const groupDeletePollRef = useRef(null);
 
   const handleRigidsLoad = useCallback((rigids) => {
     const blocked = new Set();
@@ -2172,27 +2342,85 @@ export default function HiTessModelBuilder() {
     setRbeBlockedNodeIds(blocked);
   }, []);
 
-  // manualRbeMode=ON + 모델 준비 시 편집 모드 자동 진입 (별도 버튼 클릭 불필요)
-  const _rbeModelReady = !!(bdfResult?.jsonPath || rbeResult?.jsonPath);
-  useEffect(() => {
-    if (manualRbeMode && _rbeModelReady && !rbeRunning && !rbeEditMode) {
-      setRbeEditMode(true);
+  const startGroupDeletePolling = (jobId) => {
+    clearInterval(groupDeletePollRef.current);
+    groupDeletePollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/analysis/status/${jobId}`, {
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.status === 'Success' && data.json_path) {
+          clearInterval(groupDeletePollRef.current);
+          setGroupDeleteRunning(false);
+          setBdfResult({ bdfPath: data.bdf_path ?? null, jsonPath: data.json_path, connectivityPath: data.connectivity_path ?? null });
+          setRbeResult(null);
+          setManualRbePairs([]);
+          setRbeBlockedNodeIds(new Set());
+          // groupDeleteSelectMode는 유지 — 연속 삭제 가능. 종료는 사용자가 헤더 버튼으로 명시적으로 해제.
+          showToast('그룹 element 삭제 및 BDF 재생성 완료', 'success');
+          // 자동 Nastran 체이닝 없음 — 사용자가 2단계에서 결과 확인 후 "수정 없이 Nastran 실행"으로 명시적 진입
+        } else if (data.status === 'Failed') {
+          clearInterval(groupDeletePollRef.current);
+          setGroupDeleteRunning(false);
+          showToast(`그룹 삭제 실패: ${data.message || '알 수 없는 오류'}`, 'error');
+        }
+      } catch (_) {}
+    }, 1500);
+  };
+
+  const handleDeleteGroup = useCallback(async (groupId, elementIds, rigidIds) => {
+    const sourceBdf = rbeResult?.bdfPath || bdfResult?.bdfPath;
+    if (!sourceBdf || !stage3Meta?.work_dir) {
+      showToast('삭제할 BDF 경로가 없습니다.', 'warning');
+      return;
+    }
+    const allIds = [...(elementIds || []), ...(rigidIds || [])];
+    if (allIds.length === 0) return;
+    setGroupDeleteRunning(true);
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/analysis/modelflow/group-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          bdf_path:    sourceBdf,
+          work_dir:    stage3Meta.work_dir,
+          element_ids: allIds,
+          employee_id: user.employee_id || 'unknown',
+          source:      'Workbench',
+          group_id:    groupId,
+        }),
+      });
+      if (!res.ok) {
+        handleUnauthorized?.(res.status);
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || '그룹 삭제 요청 실패');
+      }
+      const { job_id } = await res.json();
+      startGroupDeletePolling(job_id);
+    } catch (e) {
+      setGroupDeleteRunning(false);
+      showToast(`그룹 삭제 실패: ${e.message}`, 'error');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manualRbeMode, _rbeModelReady, rbeRunning]);
+  }, [rbeResult, bdfResult, stage3Meta, useNastran]);
+
+  const _rbeModelReady = !!(bdfResult?.jsonPath || rbeResult?.jsonPath);
 
   // ── 상태 스냅샷: 렌더마다 갱신 → 언마운트 시 context에 저장 ──
   const snapshotRef = useRef({});
   useEffect(() => {
     snapshotRef.current = {
-      hasRunOnce, steps, activeIdx, meshSize, useNastran, manualRbeMode, verbose,
+      hasRunOnce, steps, activeIdx, meshSize, useNastran, manualRbeMode,
       processLog, struFile, pipeFile, equiFile,
       struError, pipeError, equiError,
       jobStatus, logData, engineLog, bdfResult,
       nastranJobId, nastranStatus, nastranStep1, nastranStep2,
       uboltJobId, uboltNastranJobId, uboltBdfResult, uboltStep1, uboltStep2, uboltRunning,
       nastranTab, stage3Meta,
-      manualRbePairs, rbeResult,
+      manualRbePairs, rbeResult, groupDeleteSelectMode,
     };
   });
 
@@ -2256,6 +2484,7 @@ export default function HiTessModelBuilder() {
     if (nastranPollRef.current) clearInterval(nastranPollRef.current);
     if (uboltPollRef.current) clearInterval(uboltPollRef.current);
     if (rbePollRef.current) clearInterval(rbePollRef.current);
+    if (groupDeletePollRef.current) clearInterval(groupDeletePollRef.current);
   }, []);
 
   // 폴링 — currentUseNastran: 실행 시점의 useNastran 값 (클로저 캡처)
@@ -2307,7 +2536,7 @@ export default function HiTessModelBuilder() {
               });
             }
 
-            // Nastran 토글 ON + RBE 수동 연결 모드 OFF일 때만 자동 시작
+            // Nastran 토글 ON + 해석 모델 수정 모드 OFF일 때만 자동 시작
             if (currentUseNastran && !currentManualRbeMode && data.bdf_path && data.work_dir) {
               setSteps(prev => prev.map((s, i) =>
                 i === 2 ? { ...s, status: 'running' } : s
@@ -2568,7 +2797,6 @@ export default function HiTessModelBuilder() {
     formData.append('employee_id', user.employee_id || 'unknown');
     formData.append('stop_mode', '7');
     formData.append('mesh_size', meshSize || '500');
-    formData.append('verbose', verbose);
     formData.append('csvdebug', 'true');
     formData.append('femodeldebug', 'true');
     formData.append('pipelinedebug', 'true');
@@ -2625,7 +2853,6 @@ export default function HiTessModelBuilder() {
     setMeshSize('500');
     setUseNastran(true);
     setManualRbeMode(true);
-    setVerbose(false);
     setProcessLog(null);
     setStruFile(null);
     setPipeFile(null);
@@ -2658,6 +2885,9 @@ export default function HiTessModelBuilder() {
     setRbeResult(null);
     setRbeBlockedNodeIds(new Set());
     if (rbePollRef.current) { clearInterval(rbePollRef.current); rbePollRef.current = null; }
+    setGroupDeleteRunning(false);
+    setGroupDeleteSelectMode(false);
+    if (groupDeletePollRef.current) { clearInterval(groupDeletePollRef.current); groupDeletePollRef.current = null; }
     dashboardCtx?.clearGlobalJob?.();
   };
 
@@ -3066,22 +3296,22 @@ export default function HiTessModelBuilder() {
                 </div>
               </div>
               <div className="h-px bg-slate-100" />
-              {/* RBE 수동 연결 토글 */}
+              {/* 해석 모델 수정 토글 */}
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-slate-700">RBE 수동 연결</p>
-                  <p className="text-[10px] text-slate-400">Model Builder 완료 후 2단계에서 RBE 페어 입력 대기</p>
+                  <p className="text-xs font-medium text-slate-700">해석 모델 수정</p>
+                  <p className="text-[10px] text-slate-400">Model Builder 완료 후 2단계에서 RBE 연결 · Group 삭제 수행</p>
                 </div>
                 <Toggle checked={manualRbeMode} onChange={setManualRbeMode} />
               </div>
               {manualRbeMode && useNastran && (
                 <div className="text-[10px] px-3 py-2 bg-amber-50 border border-amber-100 rounded-lg text-amber-700">
-                  RBE 연결 후 "BDF 재생성"을 클릭하면 Nastran이 자동 실행됩니다.
+                  수정 완료 후 BDF 재생성을 클릭하면 Nastran이 자동 실행됩니다.
                 </div>
               )}
               {manualRbeMode && !useNastran && (
                 <div className="text-[10px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-500">
-                  Model Builder 완료 후 2단계에서 RBE 연결 및 BDF 재생성을 수행합니다.
+                  Model Builder 완료 후 2단계에서 모델 수정 및 BDF 재생성을 수행합니다.
                 </div>
               )}
               <div className="h-px bg-slate-100" />
@@ -3098,15 +3328,6 @@ export default function HiTessModelBuilder() {
                   BDF 생성 완료 후 Nastran 검증 절차가 자동으로 시작됩니다.
                 </div>
               )}
-              <div className="h-px bg-slate-100" />
-              {/* 디버그 옵션 */}
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium text-slate-700">알고리즘 상세 로그</p>
-                  <p className="text-[10px] text-slate-400">노드·요소 단위 처리 과정 기록 (출력량 증가)</p>
-                </div>
-                <Toggle checked={verbose} onChange={setVerbose} />
-              </div>
             </div>
           </div>
 
@@ -3235,22 +3456,53 @@ export default function HiTessModelBuilder() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    {/* manualRbeMode=OFF일 때만 수동 토글 버튼 표시 */}
-                    {!manualRbeMode && (bdfResult?.jsonPath || rbeResult?.jsonPath) && (
-                      <button
-                        onClick={() => {
-                          setRbeEditMode(v => !v);
-                          if (rbeEditMode) { setSelectedRbeNode(null); }
-                        }}
-                        title={rbeEditMode ? 'RBE 편집 모드 종료' : '노드를 클릭해 RBE2 연결 페어를 추가합니다'}
-                        className={`text-[9px] font-bold px-2 py-1 rounded-lg border transition-colors cursor-pointer ${
-                          rbeEditMode
-                            ? 'bg-amber-500 text-white border-amber-400'
-                            : 'bg-white text-slate-500 border-slate-200 hover:border-amber-300 hover:text-amber-600'
-                        }`}
-                      >
-                        {rbeEditMode ? '● RBE 편집 중' : 'RBE 연결'}
-                      </button>
+                    {/* 모델 수정 모드 버튼 — manualRbeMode=ON일 때 RBE연결/Group삭제 버튼 2종, OFF일 때 RBE연결 단독 */}
+                    {(bdfResult?.jsonPath || rbeResult?.jsonPath) && (
+                      <>
+                        <button
+                          onClick={() => {
+                            const next = !rbeEditMode;
+                            setRbeEditMode(next);
+                            if (!next) setSelectedRbeNode(null);
+                            if (next) setGroupDeleteSelectMode(false);
+                          }}
+                          title={rbeEditMode ? 'RBE 연결 모드 종료' : '노드를 클릭해 RBE2 페어를 추가합니다'}
+                          className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                            rbeEditMode
+                              ? 'bg-amber-500 text-white border-amber-400'
+                              : 'bg-white text-slate-500 border-slate-200 hover:border-amber-300 hover:text-amber-600'
+                          }`}
+                        >
+                          {rbeEditMode ? '● RBE 연결 중' : 'RBE 연결'}
+                        </button>
+                        {manualRbeMode && (
+                          <button
+                            onClick={() => {
+                              const next = !groupDeleteSelectMode;
+                              setGroupDeleteSelectMode(next);
+                              if (next) { setRbeEditMode(false); setSelectedRbeNode(null); }
+                            }}
+                            title={groupDeleteSelectMode ? 'Group 삭제 모드 종료' : 'Connectivity 패널에서 그룹을 선택해 삭제합니다'}
+                            className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                              groupDeleteSelectMode
+                                ? 'bg-red-500 text-white border-red-400'
+                                : 'bg-white text-slate-500 border-slate-200 hover:border-red-300 hover:text-red-600'
+                            }`}
+                          >
+                            {groupDeleteSelectMode ? '● Group 삭제 중' : 'Group 삭제'}
+                          </button>
+                        )}
+                        {manualRbeMode && useNastran && !rbeRunning && !groupDeleteRunning &&
+                         manualRbePairs.length === 0 && !rbeEditMode && !groupDeleteSelectMode && (
+                          <button
+                            onClick={handleSkipRbeRunNastran}
+                            title="현재 BDF로 Nastran 해석을 바로 실행합니다"
+                            className="text-[11px] font-bold px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg border border-blue-400 transition-colors cursor-pointer"
+                          >
+                            Nastran 실행
+                          </button>
+                        )}
+                      </>
                     )}
                     {bdfResult?.jsonPath
                       ? <><div className="w-1.5 h-1.5 rounded-full bg-green-400" /><span className="text-[10px] text-slate-400">모델 준비됨</span></>
@@ -3262,8 +3514,8 @@ export default function HiTessModelBuilder() {
                 </div>
 
                 {/* ── RBE 통합 액션 바 ─────────────────────────────────────────── */}
-                {/* manualRbeMode=ON이면 모델 준비 즉시, OFF면 편집 활성/페어 있을 때만 표시 */}
-                {(rbeEditMode || manualRbePairs.length > 0 || (manualRbeMode && _rbeModelReady)) && (
+                {/* 편집 모드 활성 또는 페어 등록 시에만 표시 */}
+                {(rbeEditMode || manualRbePairs.length > 0) && (
                   <div className="shrink-0 bg-amber-50 border-b border-amber-100">
                     {/* 상태 행 */}
                     <div className="px-4 py-2.5 flex items-center gap-3">
@@ -3309,12 +3561,12 @@ export default function HiTessModelBuilder() {
                             </button>
                           </>
                         ) : (
-                          useNastran && manualRbeMode && !rbeRunning && (
+                          useNastran && manualRbeMode && !rbeRunning && !groupDeleteRunning && (
                             <button
                               onClick={handleSkipRbeRunNastran}
                               className="text-[10px] font-bold px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg transition-colors cursor-pointer"
                             >
-                              RBE 없이 Nastran 실행
+                              Nastran 실행
                             </button>
                           )
                         )}
@@ -3342,6 +3594,13 @@ export default function HiTessModelBuilder() {
                       <p className="text-[10px] text-slate-400">RBE2 카드를 BDF에 반영하고 있습니다</p>
                     </div>
                   )}
+                  {groupDeleteRunning && (
+                    <div className="absolute inset-0 z-30 bg-slate-900/75 backdrop-blur-sm flex flex-col items-center justify-center gap-3 rounded-b-2xl">
+                      <Loader2 size={28} className="animate-spin text-red-400" />
+                      <p className="text-[12px] font-bold text-red-300">그룹 삭제 처리 중...</p>
+                      <p className="text-[10px] text-slate-400">BDF에서 element를 제거하고 재스캔 중입니다</p>
+                    </div>
+                  )}
                   {(rbeResult?.jsonPath || bdfResult?.jsonPath)
                     ? <FemModelViewer
                         jsonPath={rbeResult?.jsonPath || bdfResult.jsonPath}
@@ -3354,6 +3613,8 @@ export default function HiTessModelBuilder() {
                         onRigidsLoad={handleRigidsLoad}
                         blockedNodeIds={rbeBlockedNodeIds}
                         onCancelSelection={() => setSelectedRbeNode(null)}
+                        onDeleteGroup={groupDeleteSelectMode && !groupDeleteRunning ? handleDeleteGroup : null}
+                        groupDeleteSelectMode={groupDeleteSelectMode}
                       />
                     : (
                       <div className="w-full h-full bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 flex flex-col items-center justify-center gap-3">

@@ -68,7 +68,10 @@
       "Bash(curl *)",
       "Bash(cp \"C:/Coding/WorkBench/HiTessCloudTemp/HookTrolley.py\" \"C:/Coding/WorkBench/build_moduleunit/HookTrolley.py\")",
       "Bash(cp \"C:/Coding/WorkBench/HiTessCloudTemp/HookTrolley_GU.py\" \"C:/Coding/WorkBench/build_moduleunit/HookTrolley_GU.py\")",
-      "PowerShell(Invoke-WebRequest -Uri \"https://cdn.jsdelivr.net/gh/sunn-us/SUIT@latest/fonts/variable/woff2/SUIT-Variable.woff2\" -OutFile \"C:\\\\Coding\\\\WorkBench\\\\HiTessWorkBench\\\\frontend\\\\public\\\\fonts\\\\SUIT-Variable.woff2\" -UseBasicParsing; Write-Output \"Done: $\\(\\(Get-Item 'C:\\\\Coding\\\\WorkBench\\\\HiTessWorkBench\\\\frontend\\\\public\\\\fonts\\\\SUIT-Variable.woff2'\\).Length\\) bytes\")"
+      "PowerShell(Invoke-WebRequest -Uri \"https://cdn.jsdelivr.net/gh/sunn-us/SUIT@latest/fonts/variable/woff2/SUIT-Variable.woff2\" -OutFile \"C:\\\\Coding\\\\WorkBench\\\\HiTessWorkBench\\\\frontend\\\\public\\\\fonts\\\\SUIT-Variable.woff2\" -UseBasicParsing; Write-Output \"Done: $\\(\\(Get-Item 'C:\\\\Coding\\\\WorkBench\\\\HiTessWorkBench\\\\frontend\\\\public\\\\fonts\\\\SUIT-Variable.woff2'\\).Length\\) bytes\")",
+      "mcp__claude_ai_Three_js_3D_Viewer__show_threejs_scene",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_file_upload"
     ]
   },
   "enableAllProjectMcpServers": true,

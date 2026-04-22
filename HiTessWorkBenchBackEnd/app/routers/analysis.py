@@ -19,7 +19,10 @@ from ..services.truss_service import task_execute_truss
 from ..services.assessment_service import task_execute_assessment, _json_to_xlsx_bytes
 from ..services.beam_service import task_execute_beam
 from ..services.bdfscanner_service import task_execute_bdfscanner
-from ..services.hitess_modelflow_service import task_execute_modelflow, append_rbe2_to_bdf, task_execute_rbe_retry
+from ..services.hitess_modelflow_service import (
+    task_execute_modelflow, append_rbe2_to_bdf, task_execute_rbe_retry,
+    remove_elements_from_bdf, task_execute_group_delete,
+)
 from ..services.f06parser_service import task_execute_f06parser
 
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -686,6 +689,69 @@ async def request_rbe_retry(
     analysis_executor.submit(
         task_execute_rbe_retry,
         job_id, new_bdf, retry_dir, payload.employee_id, timestamp, payload.source,
+    )
+
+    return {"job_id": job_id}
+
+
+class GroupDeletePayload(BaseModel):
+    bdf_path: str
+    work_dir: str
+    element_ids: list[int]
+    employee_id: str
+    source: str = "Workbench"
+    group_id: int | None = None
+
+
+@router.post("/analysis/modelflow/group-delete")
+async def request_group_delete(
+    payload: GroupDeletePayload,
+    current_user: str = Depends(require_auth),
+):
+    """
+    선택한 Connectivity Group의 element 카드를 BDF에서 제거하고 BdfScanner로 재스캔합니다.
+    group_delete_{ts}/ 서브폴더에 BDF를 복사하고 동기적으로 element를 삭제한 뒤 백그라운드 스캔을 시작합니다.
+    """
+    decoded_bdf  = os.path.abspath(urllib.parse.unquote(payload.bdf_path))
+    decoded_work = os.path.abspath(urllib.parse.unquote(payload.work_dir))
+
+    for path in [decoded_bdf, decoded_work]:
+        if not path.startswith(_ALLOWED_DOWNLOAD_BASE):
+            raise HTTPException(status_code=403, detail=f"접근 권한이 없는 경로입니다: {path}")
+    if not os.path.exists(decoded_bdf):
+        raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
+    if not payload.element_ids:
+        raise HTTPException(status_code=400, detail="삭제할 element_ids가 비어 있습니다.")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    del_dir = os.path.join(decoded_work, f"group_delete_{timestamp}")
+    os.makedirs(del_dir, exist_ok=True)
+
+    new_bdf = os.path.join(del_dir, os.path.basename(decoded_bdf))
+    shutil.copy2(decoded_bdf, new_bdf)
+
+    import json as _j
+    with open(os.path.join(del_dir, "group_delete_params.json"), "w", encoding="utf-8") as f:
+        _j.dump({
+            "created_at":  datetime.now().isoformat(),
+            "group_id":    payload.group_id,
+            "element_ids": list(payload.element_ids),
+        }, f, ensure_ascii=False, indent=2)
+
+    try:
+        removed = remove_elements_from_bdf(new_bdf, payload.element_ids)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"BDF element 삭제 오류: {str(e)}")
+    if removed == 0:
+        raise HTTPException(status_code=400, detail="지정한 EID가 BDF에서 발견되지 않았습니다.")
+
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "그룹 element 삭제 후 재스캔 대기 중..."})
+
+    analysis_executor.submit(
+        task_execute_group_delete,
+        job_id, new_bdf, del_dir, payload.employee_id, timestamp, payload.source,
+        payload.group_id, removed,
     )
 
     return {"job_id": job_id}
