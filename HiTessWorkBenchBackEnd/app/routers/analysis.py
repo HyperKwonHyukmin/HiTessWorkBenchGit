@@ -1,7 +1,6 @@
 """해석 요청, 상태 조회, 이력 관리 API 라우터."""
 import io
 import os
-import shutil
 import uuid
 import urllib.parse
 from datetime import datetime, timedelta
@@ -20,8 +19,11 @@ from ..services.assessment_service import task_execute_assessment, _json_to_xlsx
 from ..services.beam_service import task_execute_beam
 from ..services.bdfscanner_service import task_execute_bdfscanner
 from ..services.hitess_modelflow_service import (
-    task_execute_modelflow, append_rbe2_to_bdf, task_execute_rbe_retry,
-    remove_elements_from_bdf, task_execute_group_delete,
+    task_execute_modelflow,
+    task_execute_apply_edit,
+    detect_edit_json,
+    detect_edited_artifacts,
+    scan_f06_diagnostics,
 )
 from ..services.f06parser_service import task_execute_f06parser
 
@@ -338,17 +340,20 @@ async def request_bdfscanner(
         employee_id: str = Form(...),
         use_nastran: bool = Form(False),
         source: str = Form("Workbench"),
+        program_name: str = Form("BdfScanner"),
         current_user: str = Depends(require_auth)
 ):
     """
     BDF Scanner 작업을 요청받아 BDF 파일을 저장하고 백그라운드 작업을 실행합니다.
     use_nastran=True 이면 --nastran 옵션으로 Nastran 해석 후 F06 요약까지 수행합니다.
+    program_name 으로 userConnection 하위 폴더 접미사를 지정합니다 (기본값: BdfScanner).
     """
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(os.path.dirname(base_dir))
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-    unique_folder = f"{timestamp}_{employee_id}_BdfScanner"
+    safe_name = "".join(c for c in program_name if c.isalnum() or c in "_-")[:40] or "BdfScanner"
+    unique_folder = f"{timestamp}_{employee_id}_{safe_name}"
     work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
     os.makedirs(work_dir, exist_ok=True)
 
@@ -450,7 +455,7 @@ async def request_beam_analysis(
     return {"job_id": job_id}
 
 
-# ==================== HiTess Model Builder ====================
+# ==================== HiTess Model Builder (Cmb.Cli build-full) ====================
 
 @router.post("/analysis/modelflow/request")
 async def request_modelflow_analysis(
@@ -460,22 +465,22 @@ async def request_modelflow_analysis(
     employee_id: str = Form(...),
     source: str = Form("Workbench"),
     current_user: str = Depends(require_auth),
-    stop_mode: str = Form("7"),         # 항상 --stage 3 (힐링 전체, BDF 생성)
-    ubolt: bool = Form(False),          # U-bolt RBE2 강체 고정 여부
-    mesh_size: float = Form(500.0),     # 목표 메시 크기 (mm)
-    verbose: bool = Form(False),        # 요소별 세부 처리 로그 출력
-    csvdebug: bool = Form(True),        # CSV 파싱 디버그 출력
-    femodeldebug: bool = Form(True),    # 초기 FE 모델 디버그 출력
-    pipelinedebug: bool = Form(True),   # 파이프라인 스테이지 배너 및 통계 출력
-    spc_z_band: float = Form(-1.0),    # SPC Z-band 필터 (mm). -1이면 비활성
-    debug_stages: bool = Form(False),  # 힐링 단계별 BDF 스냅샷
-    stop_at: int = Form(0),            # 0=전체 실행, 1~5=지정 단계까지
+    mesh_size: float = Form(500.0),
+    ubolt_full_fix: bool = Form(False),
+    run_nastran: bool = Form(False),
+    nastran_path: Optional[str] = Form(None),
+    leg_z_tol: Optional[float] = Form(None),
+    mesh_size_structure: Optional[float] = Form(None),
+    mesh_size_pipe: Optional[float] = Form(None),
 ):
-    """
-    HiTess Model Builder 파이프라인 전 과정 실행 (--stage 3).
-    mesh_size → --mesh {mm} 로 전달.
-    ubolt=True → U-bolt RBE2를 123456 DOF로 강제 고정 (--ubolt true)
-    verbose/csvdebug/femodeldebug/pipelinedebug → 디버그 출력 제어
+    """Cmb.Cli build-full 한 번 호출로 phase JSON/BDF + InputAudit + StageSummary 생성.
+
+    옵션은 README §5.1 매핑 그대로:
+      mesh_size            → --mesh-size <MM>
+      mesh_size_structure  → --mesh-size-structure <MM>
+      mesh_size_pipe       → --mesh-size-pipe <MM>
+      ubolt_full_fix       → --ubolt-full-fix
+      run_nastran          → --run-nastran (+ --nastran-path / --leg-z-tol)
     """
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(os.path.dirname(base_dir))
@@ -485,7 +490,6 @@ async def request_modelflow_analysis(
     work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
     os.makedirs(work_dir, exist_ok=True)
 
-    # 구조물 CSV (필수)
     stru_path = os.path.join(work_dir, os.path.basename(stru_file.filename))
     try:
         with open(stru_path, "wb") as f:
@@ -493,7 +497,6 @@ async def request_modelflow_analysis(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
 
-    # 배관 CSV (선택)
     pipe_path = None
     if pipe_file and pipe_file.filename:
         pipe_path = os.path.join(work_dir, os.path.basename(pipe_file.filename))
@@ -503,7 +506,6 @@ async def request_modelflow_analysis(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"배관 파일 저장 오류: {str(e)}")
 
-    # 장비 CSV (선택)
     equip_path = None
     if equip_file and equip_file.filename:
         equip_path = os.path.join(work_dir, os.path.basename(equip_file.filename))
@@ -513,11 +515,9 @@ async def request_modelflow_analysis(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"장비 파일 저장 오류: {str(e)}")
 
-    # HiTessModelBuilder exe 경로
-    _ROUTER_DIR_LOCAL = os.path.dirname(os.path.abspath(__file__))
-    _BACKEND_DIR_LOCAL = os.path.dirname(os.path.dirname(_ROUTER_DIR_LOCAL))
-    exe_dir  = os.path.abspath(os.path.join(_BACKEND_DIR_LOCAL, "InHouseProgram", "HiTessModeBuilder"))
-    exe_path = os.path.join(exe_dir, "HiTessModelBuilder_26_01.exe")
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "HiTessModeBuilder", "Cmb.Cli.exe"
+    ))
 
     job_id = str(uuid.uuid4())
     job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "해석 대기 중..."})
@@ -526,232 +526,145 @@ async def request_modelflow_analysis(
         task_execute_modelflow,
         job_id, stru_path, pipe_path, equip_path, work_dir, exe_path,
         employee_id, timestamp, source,
-        stop_mode, ubolt, mesh_size, verbose, csvdebug, femodeldebug, pipelinedebug,
-        spc_z_band, debug_stages, stop_at,
+        mesh_size, ubolt_full_fix, run_nastran, nastran_path, leg_z_tol,
+        mesh_size_structure, mesh_size_pipe,
     )
 
     return {"job_id": job_id}
 
 
-# ==================== HiTess Model Builder — Nastran 해석 (Stage 4) ====================
+# ==================== apply-edit-intent (Studio 편집 결과 적용) ====================
 
-@router.post("/analysis/modelflow/nastran-request")
-async def request_modelflow_nastran(
-    bdf_path: str = Form(...),
-    work_dir: str = Form(...),
-    employee_id: str = Form(...),
-    source: str = Form("Workbench"),
+class ApplyEditPayload(BaseModel):
+    output_dir: str
+    strict: bool = False
+    run_nastran: bool = True            # Edit BDF 에 Nastran 자동 실행 (기본 ON)
+    nastran_path: Optional[str] = None  # 미지정 시 _DEFAULT_NASTRAN_PATH 사용
+    parse_f06: bool = True              # F06Parser 자동 실행
+
+
+def _validate_userconnection_path(p: str) -> str:
+    """userConnection/ 외부 경로 차단. 절대경로로 정규화 후 반환."""
+    abs_p = os.path.abspath(p)
+    if not abs_p.startswith(_ALLOWED_DOWNLOAD_BASE):
+        raise HTTPException(status_code=400, detail="허용되지 않은 경로")
+    return abs_p
+
+
+@router.get("/analysis/modelflow/edit-status")
+def get_edit_status(
+    output_dir: str = Query(..., description="build-full timestamp 폴더의 절대경로"),
     current_user: str = Depends(require_auth),
 ):
+    """폴더 안 *_edit.json 존재 여부 + edited/ 산출물 존재 여부를 한 번에 반환.
+
+    프론트는 Studio 종료 후 이 엔드포인트를 호출해 자동 적용 트리거 여부를 결정.
     """
-    Stage 3에서 생성된 STAGE_07 BDF에 BdfScanner --nastran을 실행합니다.
-    보안: bdf_path 및 work_dir은 userConnection/ 하위만 허용합니다.
+    abs_dir = _validate_userconnection_path(output_dir)
+    if not os.path.isdir(abs_dir):
+        raise HTTPException(status_code=404, detail="output_dir 없음")
+
+    edit_json = detect_edit_json(abs_dir)
+    edited = detect_edited_artifacts(abs_dir)
+    edit_json_mtime = os.path.getmtime(edit_json) if edit_json else None
+    edited_bdf_mtime = (
+        os.path.getmtime(edited["edited_bdf_path"])
+        if edited.get("edited_bdf_path") else None
+    )
+    # 편집본이 최신 _edit.json 보다 오래됐으면 재적용이 필요한 상태
+    needs_apply = (
+        edit_json_mtime is not None and (
+            edited_bdf_mtime is None or edited_bdf_mtime < edit_json_mtime
+        )
+    )
+    # Nastran F06 FATAL/ERROR 진단 (있으면 sample 텍스트도 포함)
+    f06_diag = scan_f06_diagnostics(edited.get("edited_f06_path")) if edited.get("edited_f06_path") else {"available": False}
+
+    return {
+        "has_edit_json":   edit_json is not None,
+        "edit_json_path":  edit_json,
+        "edit_json_mtime": edit_json_mtime,
+        "has_edited":      edited.get("edited_bdf_path") is not None,
+        "edited_dir":      edited.get("edited_dir"),
+        "edited_bdf_path": edited.get("edited_bdf_path"),
+        "edited_json_path": edited.get("edited_json_path"),
+        "apply_trace_path": edited.get("apply_trace_path"),
+        "edited_bdf_mtime": edited_bdf_mtime,
+        "needs_apply":     needs_apply,
+        "edited_f06_path":          edited.get("edited_f06_path"),
+        "f06_diagnostics":          f06_diag,
+    }
+
+
+@router.post("/analysis/modelflow/apply-edit")
+def request_apply_edit(
+    payload: ApplyEditPayload,
+    current_user: str = Depends(require_auth),
+):
+    """Studio 가 작성한 *_edit.json 을 base 모델에 적용하여 edited/ 폴더 생성."""
+    abs_dir = _validate_userconnection_path(payload.output_dir)
+    if not os.path.isdir(abs_dir):
+        raise HTTPException(status_code=404, detail="output_dir 없음")
+
+    if detect_edit_json(abs_dir) is None:
+        raise HTTPException(status_code=404, detail="*_edit.json 을 찾을 수 없음")
+
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "HiTessModeBuilder", "Cmb.Cli.exe"
+    ))
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "편집 적용 대기 중..."})
+
+    analysis_executor.submit(
+        task_execute_apply_edit,
+        job_id, abs_dir, exe_path, payload.strict,
+        payload.run_nastran, payload.nastran_path, payload.parse_f06,
+    )
+    return {"job_id": job_id}
+
+
+# ==================== Group Module Unit ====================
+
+_GROUPMODULE_EXE = os.path.abspath(os.path.join(
+    _BACKEND_DIR, "InHouseProgram", "GroupModuleAnalysis", "ModuleGroupUnitAnalysis.exe"
+))
+
+
+class CogRequest(BaseModel):
+    bdf_path: str
+
+
+@router.post("/analysis/groupmodule/cog")
+def compute_cog(
+    payload: CogRequest,
+    current_user: str = Depends(require_auth),
+):
+    """BDF 파일에서 무게중심(COG)과 총 질량을 계산합니다.
+    ModuleGroupUnitAnalysis.exe cog <bdf_path> 를 동기 실행하여 stdout JSON을 반환합니다.
     """
-    decoded_bdf = os.path.abspath(urllib.parse.unquote(bdf_path))
-    decoded_work = os.path.abspath(urllib.parse.unquote(work_dir))
-    if not decoded_bdf.startswith(_ALLOWED_DOWNLOAD_BASE):
+    import subprocess, json as _json
+
+    decoded = os.path.abspath(urllib.parse.unquote(payload.bdf_path))
+    if not decoded.startswith(_ALLOWED_DOWNLOAD_BASE):
         raise HTTPException(status_code=403, detail="접근 권한이 없는 BDF 경로입니다.")
-    if not decoded_work.startswith(_ALLOWED_DOWNLOAD_BASE):
-        raise HTTPException(status_code=403, detail="접근 권한이 없는 작업 디렉터리입니다.")
-    if not os.path.exists(decoded_bdf):
+    if not os.path.isfile(decoded):
         raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
-
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Nastran 해석 대기 중..."})
-
-    analysis_executor.submit(
-        task_execute_bdfscanner,
-        job_id, decoded_bdf, decoded_work, employee_id, timestamp, source, True,
-    )
-
-    return {"job_id": job_id}
-
-
-@router.post("/analysis/modelflow/ubolt-retry")
-async def request_ubolt_retry(
-    stru_path: str = Form(...),
-    pipe_path: Optional[str] = Form(None),
-    equip_path: Optional[str] = Form(None),
-    work_dir: str = Form(...),
-    employee_id: str = Form(...),
-    source: str = Form("Workbench"),
-    current_user: str = Depends(require_auth),
-):
-    """
-    U-bolt RBE2를 강체(123456 DOF)로 고정한 BDF를 재생성합니다.
-    기존 작업 디렉터리 내 ubolt_rigid/ 서브폴더에 CSV를 복사하고
-    HiTessModelBuilder.exe --ubolt를 실행합니다.
-    보안: 모든 경로는 userConnection/ 하위만 허용합니다.
-    """
-    decoded_stru = os.path.abspath(urllib.parse.unquote(stru_path))
-    decoded_work = os.path.abspath(urllib.parse.unquote(work_dir))
-
-    for path in [decoded_stru, decoded_work]:
-        if not path.startswith(_ALLOWED_DOWNLOAD_BASE):
-            raise HTTPException(status_code=403, detail=f"접근 권한이 없는 경로입니다: {path}")
-    if not os.path.exists(decoded_stru):
-        raise HTTPException(status_code=404, detail="Structural CSV 파일을 찾을 수 없습니다.")
-
-    # ubolt_rigid/ 서브폴더 생성 및 CSV 복사
-    ubolt_dir = os.path.join(decoded_work, "ubolt_rigid")
-    os.makedirs(ubolt_dir, exist_ok=True)
-
-    new_stru = os.path.join(ubolt_dir, os.path.basename(decoded_stru))
-    shutil.copy2(decoded_stru, new_stru)
-
-    new_pipe = None
-    if pipe_path:
-        decoded_pipe = os.path.abspath(urllib.parse.unquote(pipe_path))
-        if decoded_pipe.startswith(_ALLOWED_DOWNLOAD_BASE) and os.path.exists(decoded_pipe):
-            new_pipe = os.path.join(ubolt_dir, os.path.basename(decoded_pipe))
-            shutil.copy2(decoded_pipe, new_pipe)
-
-    new_equip = None
-    if equip_path:
-        decoded_equip = os.path.abspath(urllib.parse.unquote(equip_path))
-        if decoded_equip.startswith(_ALLOWED_DOWNLOAD_BASE) and os.path.exists(decoded_equip):
-            new_equip = os.path.join(ubolt_dir, os.path.basename(decoded_equip))
-            shutil.copy2(decoded_equip, new_equip)
-
-    # HiTessModelBuilder exe 경로
-    _ROUTER_DIR_LOCAL = os.path.dirname(os.path.abspath(__file__))
-    _BACKEND_DIR_LOCAL = os.path.dirname(os.path.dirname(_ROUTER_DIR_LOCAL))
-    exe_dir = os.path.abspath(os.path.join(_BACKEND_DIR_LOCAL, "InHouseProgram", "HiTessModeBuilder"))
-    exe_path = os.path.join(exe_dir, "HiTessModelBuilder_26_01.exe")
-
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "U-bolt Rigid 모드 재실행 대기 중..."})
-
-    analysis_executor.submit(
-        task_execute_modelflow,
-        job_id, new_stru, new_pipe, new_equip, ubolt_dir, exe_path, employee_id, timestamp, source, "7", True,
-    )
-
-    return {"job_id": job_id}
-
-
-class _RbePair(BaseModel):
-    indep: int
-    dep: int
-    dof: str = "123456"
-
-
-class RbeRetryPayload(BaseModel):
-    bdf_path: str
-    work_dir: str
-    pairs: list[_RbePair]
-    employee_id: str
-    source: str = "Workbench"
-
-
-@router.post("/analysis/modelflow/rbe-retry")
-async def request_rbe_retry(
-    payload: RbeRetryPayload,
-    current_user: str = Depends(require_auth),
-):
-    """
-    사용자가 지정한 RBE2 페어를 기존 BDF에 삽입하고 BdfScanner로 재스캔합니다.
-    기존 작업 디렉터리 내 rbe_retry_{ts}/ 서브폴더에 BDF를 복사한 뒤 RBE2 카드를 append합니다.
-    """
-    decoded_bdf  = os.path.abspath(urllib.parse.unquote(payload.bdf_path))
-    decoded_work = os.path.abspath(urllib.parse.unquote(payload.work_dir))
-
-    for path in [decoded_bdf, decoded_work]:
-        if not path.startswith(_ALLOWED_DOWNLOAD_BASE):
-            raise HTTPException(status_code=403, detail=f"접근 권한이 없는 경로입니다: {path}")
-    if not os.path.exists(decoded_bdf):
-        raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
-    if not payload.pairs:
-        raise HTTPException(status_code=400, detail="RBE2 페어가 비어 있습니다.")
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    retry_dir = os.path.join(decoded_work, f"rbe_retry_{timestamp}")
-    os.makedirs(retry_dir, exist_ok=True)
-
-    new_bdf = os.path.join(retry_dir, os.path.basename(decoded_bdf))
-    shutil.copy2(decoded_bdf, new_bdf)
-
-    pairs_data = [p.model_dump() for p in payload.pairs]
-    with open(os.path.join(retry_dir, "rbe_pairs.json"), "w", encoding="utf-8") as f:
-        import json as _j
-        _j.dump({"created_at": datetime.now().isoformat(), "pairs": pairs_data}, f, ensure_ascii=False, indent=2)
+    if not os.path.isfile(_GROUPMODULE_EXE):
+        raise HTTPException(status_code=500, detail="ModuleGroupUnitAnalysis.exe를 찾을 수 없습니다.")
 
     try:
-        append_rbe2_to_bdf(new_bdf, pairs_data)
+        proc = subprocess.run(
+            [_GROUPMODULE_EXE, "cog", decoded],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=60,
+        )
+        stdout = proc.stdout.decode("utf-8", errors="replace").strip()
+        cog_data = _json.loads(stdout)
+        return cog_data
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=408, detail="COG 계산 시간 초과 (60초)")
+    except _json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"COG 결과 파싱 실패: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"BDF RBE2 삽입 오류: {str(e)}")
-
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "RBE2 페어 삽입 후 BdfScanner 재실행 대기 중..."})
-
-    analysis_executor.submit(
-        task_execute_rbe_retry,
-        job_id, new_bdf, retry_dir, payload.employee_id, timestamp, payload.source,
-    )
-
-    return {"job_id": job_id}
-
-
-class GroupDeletePayload(BaseModel):
-    bdf_path: str
-    work_dir: str
-    element_ids: list[int]
-    employee_id: str
-    source: str = "Workbench"
-    group_id: int | None = None
-
-
-@router.post("/analysis/modelflow/group-delete")
-async def request_group_delete(
-    payload: GroupDeletePayload,
-    current_user: str = Depends(require_auth),
-):
-    """
-    선택한 Connectivity Group의 element 카드를 BDF에서 제거하고 BdfScanner로 재스캔합니다.
-    group_delete_{ts}/ 서브폴더에 BDF를 복사하고 동기적으로 element를 삭제한 뒤 백그라운드 스캔을 시작합니다.
-    """
-    decoded_bdf  = os.path.abspath(urllib.parse.unquote(payload.bdf_path))
-    decoded_work = os.path.abspath(urllib.parse.unquote(payload.work_dir))
-
-    for path in [decoded_bdf, decoded_work]:
-        if not path.startswith(_ALLOWED_DOWNLOAD_BASE):
-            raise HTTPException(status_code=403, detail=f"접근 권한이 없는 경로입니다: {path}")
-    if not os.path.exists(decoded_bdf):
-        raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
-    if not payload.element_ids:
-        raise HTTPException(status_code=400, detail="삭제할 element_ids가 비어 있습니다.")
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    del_dir = os.path.join(decoded_work, f"group_delete_{timestamp}")
-    os.makedirs(del_dir, exist_ok=True)
-
-    new_bdf = os.path.join(del_dir, os.path.basename(decoded_bdf))
-    shutil.copy2(decoded_bdf, new_bdf)
-
-    import json as _j
-    with open(os.path.join(del_dir, "group_delete_params.json"), "w", encoding="utf-8") as f:
-        _j.dump({
-            "created_at":  datetime.now().isoformat(),
-            "group_id":    payload.group_id,
-            "element_ids": list(payload.element_ids),
-        }, f, ensure_ascii=False, indent=2)
-
-    try:
-        removed = remove_elements_from_bdf(new_bdf, payload.element_ids)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"BDF element 삭제 오류: {str(e)}")
-    if removed == 0:
-        raise HTTPException(status_code=400, detail="지정한 EID가 BDF에서 발견되지 않았습니다.")
-
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "그룹 element 삭제 후 재스캔 대기 중..."})
-
-    analysis_executor.submit(
-        task_execute_group_delete,
-        job_id, new_bdf, del_dir, payload.employee_id, timestamp, payload.source,
-        payload.group_id, removed,
-    )
-
-    return {"job_id": job_id}
+        raise HTTPException(status_code=500, detail=f"COG 계산 실패: {str(e)}")

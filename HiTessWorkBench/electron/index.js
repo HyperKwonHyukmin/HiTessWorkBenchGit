@@ -1,11 +1,22 @@
-const { app, BrowserWindow, screen, ipcMain, shell, session } = require("electron");
-const path  = require("path");
-const fs    = require("fs");
-const http  = require("http");
-const https = require("https");
-const os    = require("os");
+const { app, BrowserWindow, screen, ipcMain, shell, session, dialog, net } = require("electron");
+const path    = require("path");
+const fs      = require("fs");
+const http    = require("http");
+const https   = require("https");
+const os      = require("os");
+const crypto  = require("crypto");
+const { spawn } = require("child_process");
+
+// 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
+// 다이얼로그 제목으로 사용됨. 미설정 시 개발 모드 기본값 'electron-app' 이 노출되므로,
+// 패키징 여부와 무관하게 일관된 브랜드명을 강제 설정한다.
+// userData 폴더 경로(viewers 캐시 등)도 이 이름을 따라 결정됨.
+app.setName("HiTESS WorkBench");
 
 let mainWindow;
+let viewerWindow = null;
+// viewer:getInitialFolder 가 호출될 때 반환할 절대경로(보통 jsonPath 의 디렉터리)
+let viewerInitialFolder = null;
 
 function createWindow() {
   // 기준 해상도(1920px) 대비 현재 화면 비율로 zoomFactor 자동 계산
@@ -245,6 +256,409 @@ ipcMain.handle("read-file-buffer", (_, filePath) => {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   } catch {
     return null;
+  }
+});
+
+// ============================================================
+// Viewer 라이프사이클 (다운로드 → 압축 해제 → 풀스크린 보조 창 오픈)
+// ============================================================
+
+function getViewersRoot() {
+  return path.join(app.getPath("userData"), "viewers");
+}
+
+function getViewerDir(viewerId) {
+  // viewerId 는 a-z0-9-_ 만 허용 — 디렉터리 탈출 방지
+  const safe = String(viewerId).replace(/[^a-z0-9_-]/gi, "");
+  return path.join(getViewersRoot(), safe);
+}
+
+// 폴더(재귀)에서 .json 파일을 모두 읽어 [{name, content}] 형태로 반환
+async function readJsonFolderRecursive(folderPath) {
+  const files = [];
+  const stack = [folderPath];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+      } else if (entry.name.toLowerCase().endsWith(".json")) {
+        try {
+          files.push({ name: entry.name, content: fs.readFileSync(full, "utf-8") });
+        } catch { /* 개별 파일 오류는 스킵 */ }
+      }
+    }
+  }
+  return { folderPath, files };
+}
+
+// Electron net 모듈 기반 다운로드 (Chromium 네트워크 스택 — 시스템 프록시 자동 적용,
+// FastAPI/uvicorn keep-alive/응답 종료 비표준에도 관대함)
+function downloadToFile(url, destPath, viewerId, totalRangeStart = 0, totalRangePct = 90) {
+  return new Promise((resolve, reject) => {
+    const stream = fs.createWriteStream(destPath);
+    let settled = false;
+    const settle = (fn, arg) => { if (!settled) { settled = true; fn(arg); } };
+
+    const request = net.request({ url, method: "GET", redirect: "follow", useSessionCookies: false });
+
+    request.on("response", (response) => {
+      if (response.statusCode !== 200) {
+        stream.destroy();
+        try { fs.unlinkSync(destPath); } catch {}
+        settle(reject, new Error(`HTTP ${response.statusCode}`));
+        return;
+      }
+      const total = parseInt(response.headers["content-length"] || "0", 10);
+      let received = 0;
+
+      response.on("data", (chunk) => {
+        received += chunk.length;
+        stream.write(chunk);
+        if (mainWindow && total > 0) {
+          const dlPct = (received / total) * totalRangePct;
+          mainWindow.webContents.send("viewer:install-progress", {
+            viewerId,
+            phase: "downloading",
+            progress: Math.round(totalRangeStart + dlPct),
+            received,
+            total,
+          });
+        }
+      });
+      response.on("end", () => {
+        stream.end();
+        stream.on("finish", () => settle(resolve));
+        stream.on("error", (e) => settle(reject, e));
+      });
+      response.on("error", (e) => {
+        stream.destroy();
+        settle(reject, e instanceof Error ? e : new Error(String(e)));
+      });
+      response.on("aborted", () => {
+        stream.destroy();
+        settle(reject, new Error("response aborted"));
+      });
+    });
+    request.on("error", (e) => {
+      stream.destroy();
+      settle(reject, e instanceof Error ? e : new Error(String(e)));
+    });
+    request.on("abort", () => {
+      stream.destroy();
+      settle(reject, new Error("request aborted"));
+    });
+    request.end();
+
+    // 120초 타임아웃
+    setTimeout(() => {
+      if (!settled) {
+        try { request.abort(); } catch {}
+      }
+    }, 120000);
+  });
+}
+
+function sha256OfFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const h = crypto.createHash("sha256");
+    const s = fs.createReadStream(filePath);
+    s.on("data", (chunk) => h.update(chunk));
+    s.on("end", () => resolve(h.digest("hex")));
+    s.on("error", reject);
+  });
+}
+
+// Windows 내장 PowerShell Expand-Archive 로 zip 풀기 (외부 의존성 0).
+// Windows 의 tar.exe(bsdtar) 는 'C:' 를 원격 호스트로 오인하는 이슈가 있어 PowerShell 사용.
+function extractZipWithTar(zipPath, destDir) {
+  return new Promise((resolve, reject) => {
+    // PowerShell single-quoted 문자열 escape: ' → ''
+    const esc = (s) => String(s).replace(/'/g, "''");
+    const cmd = `Expand-Archive -LiteralPath '${esc(zipPath)}' -DestinationPath '${esc(destDir)}' -Force`;
+    const proc = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", cmd],
+      { windowsHide: true }
+    );
+    let stderr = "";
+    proc.stderr.on("data", (d) => { stderr += d.toString(); });
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Expand-Archive 종료 코드 ${code}: ${stderr.trim()}`));
+    });
+    proc.on("error", reject);
+  });
+}
+
+// 1) 설치 여부 + manifest 반환
+ipcMain.handle("viewer:check-installed", (_e, viewerId) => {
+  try {
+    const dir = getViewerDir(viewerId);
+    const manifestPath = path.join(dir, "manifest.json");
+    const indexPath    = path.join(dir, "index.html");
+    if (!fs.existsSync(manifestPath) || !fs.existsSync(indexPath)) {
+      return { installed: false, dir };
+    }
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    return { installed: true, manifest, dir };
+  } catch (e) {
+    return { installed: false, error: e.message };
+  }
+});
+
+// 2) 다운로드 + 해시 검증 + 압축 해제
+ipcMain.handle("viewer:install", async (_e, payload) => {
+  const { viewerId, downloadUrl, expectedSha256 } = payload || {};
+  if (!viewerId || !downloadUrl) {
+    return { ok: false, error: "viewerId/downloadUrl 누락" };
+  }
+  const tmpZip = path.join(app.getPath("temp"), `${viewerId}-${Date.now()}.zip`);
+  const targetDir = getViewerDir(viewerId);
+
+  try {
+    if (mainWindow) {
+      mainWindow.webContents.send("viewer:install-progress", {
+        viewerId, phase: "starting", progress: 0,
+      });
+    }
+
+    // 다운로드 (0 → 90%)
+    await downloadToFile(downloadUrl, tmpZip, viewerId, 0, 90);
+
+    // 해시 검증
+    if (expectedSha256) {
+      const actual = await sha256OfFile(tmpZip);
+      if (actual.toLowerCase() !== String(expectedSha256).toLowerCase()) {
+        try { fs.unlinkSync(tmpZip); } catch {}
+        throw new Error(`SHA256 불일치 — expected ${expectedSha256}, got ${actual}`);
+      }
+    }
+    if (mainWindow) {
+      mainWindow.webContents.send("viewer:install-progress", {
+        viewerId, phase: "extracting", progress: 95,
+      });
+    }
+
+    // 기존 폴더 정리 후 재생성
+    if (fs.existsSync(targetDir)) {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+    fs.mkdirSync(targetDir, { recursive: true });
+
+    // 압축 해제
+    await extractZipWithTar(tmpZip, targetDir);
+
+    // 임시 zip 정리
+    try { fs.unlinkSync(tmpZip); } catch {}
+
+    // manifest.json / index.html 검증
+    const manifestPath = path.join(targetDir, "manifest.json");
+    const indexPath    = path.join(targetDir, "index.html");
+    if (!fs.existsSync(manifestPath) || !fs.existsSync(indexPath)) {
+      throw new Error("압축 해제 후 manifest.json 또는 index.html 발견 안 됨");
+    }
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+
+    if (mainWindow) {
+      mainWindow.webContents.send("viewer:install-progress", {
+        viewerId, phase: "completed", progress: 100,
+      });
+    }
+    return { ok: true, dir: targetDir, manifest };
+  } catch (e) {
+    try { if (fs.existsSync(tmpZip)) fs.unlinkSync(tmpZip); } catch {}
+    if (mainWindow) {
+      mainWindow.webContents.send("viewer:install-progress", {
+        viewerId, phase: "failed", progress: -1, error: e.message,
+      });
+    }
+    return { ok: false, error: e.message };
+  }
+});
+
+// 3) 풀스크린 보조 BrowserWindow 로 viewer 오픈
+ipcMain.handle("viewer:open", async (_e, payload) => {
+  const { viewerId, initialFolder } = payload || {};
+  if (!viewerId) return { ok: false, error: "viewerId 누락" };
+
+  const dir = getViewerDir(viewerId);
+  const indexPath = path.join(dir, "index.html");
+  if (!fs.existsSync(indexPath)) {
+    return { ok: false, error: `viewer 미설치: ${viewerId}` };
+  }
+
+  // viewer:getInitialFolder 가 사용
+  viewerInitialFolder = initialFolder ? path.resolve(initialFolder) : null;
+
+  if (viewerWindow && !viewerWindow.isDestroyed()) {
+    viewerWindow.focus();
+    viewerWindow.webContents.reload();  // 새 initialFolder 로 갱신
+    return { ok: true, reused: true };
+  }
+
+  viewerWindow = new BrowserWindow({
+    parent: mainWindow,
+    modal: false,
+    show: false,                     // ready-to-show 까지 숨김 (깜빡임 방지)
+    frame: true,                     // OS 표준 타이틀바 (최소화/최대화/닫기 버튼 살림)
+    backgroundColor: "#0d0d1a",
+    autoHideMenuBar: true,
+    title: "HiTess Model Viewer",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  viewerWindow.loadFile(indexPath);
+
+  viewerWindow.once("ready-to-show", () => {
+    viewerWindow.maximize();         // 최대화로 시작 (전체화면처럼 보이지만 OS 컨트롤 유지)
+    viewerWindow.show();
+    viewerWindow.focus();
+  });
+
+  // 키보드 단축키:
+  //   F11        → 풀스크린 토글
+  //   Esc        → 풀스크린 해제 (창모드일 땐 무시)
+  //   Ctrl+W     → 창 닫기
+  //   Ctrl+Shift+I (개발 모드) → DevTools 토글
+  viewerWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    const key = input.key;
+
+    if (key === "F11") {
+      viewerWindow.setFullScreen(!viewerWindow.isFullScreen());
+      event.preventDefault();
+    } else if (key === "Escape" && viewerWindow.isFullScreen()) {
+      viewerWindow.setFullScreen(false);
+      event.preventDefault();
+    } else if (input.control && (key === "w" || key === "W")) {
+      viewerWindow.close();
+      event.preventDefault();
+    }
+  });
+
+  viewerWindow.on("closed", () => { viewerWindow = null; });
+
+  // 개발 모드에서는 viewer 창 디버깅 도구 자동 오픈
+  if (!app.isPackaged) {
+    viewerWindow.webContents.once("did-finish-load", () => {
+      try { viewerWindow.webContents.openDevTools({ mode: "detach" }); } catch {}
+    });
+  }
+  return { ok: true };
+});
+
+ipcMain.handle("viewer:close", () => {
+  if (viewerWindow && !viewerWindow.isDestroyed()) {
+    viewerWindow.close();
+  }
+  return { ok: true };
+});
+
+// ── viewer 측 host adapter (window.workbenchAPI) ─────────────
+
+ipcMain.handle("viewer:pickFolder", async () => {
+  const target = (viewerWindow && !viewerWindow.isDestroyed()) ? viewerWindow : mainWindow;
+  const r = await dialog.showOpenDialog(target, { properties: ["openDirectory"] });
+  if (r.canceled || r.filePaths.length === 0) return null;
+  return await readJsonFolderRecursive(r.filePaths[0]);
+});
+
+ipcMain.handle("viewer:getInitialFolder", async () => {
+  if (!viewerInitialFolder) return null;
+  if (!fs.existsSync(viewerInitialFolder)) return null;
+  return await readJsonFolderRecursive(viewerInitialFolder);
+});
+
+// ── Studio "최종 모델 출력" → workbench 자동 처리 ────────────────────
+// Studio 가 _edit.json 을 folderPath 에 쓴 직후 호출.
+// main 이 mainWindow 렌더러로 작업을 디스패치 (POST /apply-edit + 폴링 + Edit 탭 활성화),
+// 결과를 받아 Studio 에 { ok, error } 로 반환. 성공 시 viewer 창 자동 종료.
+const _pendingFinalizeReqs = new Map();   // requestId → resolve
+
+ipcMain.handle("viewer:finalizeEditedModel", async (_e, payload) => {
+  try {
+    const folderPath   = payload?.folderPath;
+    const editFileName = payload?.request?.editFileName;
+    if (!folderPath || !editFileName) {
+      return { ok: false, error: "folderPath / editFileName 누락" };
+    }
+    // 경로 탈출 차단 + 파일 실존 확인
+    const baseAbs = path.resolve(folderPath);
+    const editAbs = path.resolve(baseAbs, editFileName);
+    if (!editAbs.startsWith(baseAbs)) {
+      return { ok: false, error: "경로 탈출 시도 차단" };
+    }
+    if (!fs.existsSync(editAbs)) {
+      return { ok: false, error: `_edit.json 파일이 없습니다: ${editFileName}` };
+    }
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { ok: false, error: "워크벤치 메인 창이 활성화되지 않았습니다." };
+    }
+
+    const requestId = crypto.randomUUID();
+    const result = await new Promise((resolve) => {
+      _pendingFinalizeReqs.set(requestId, resolve);
+      // 10분 안전 타임아웃 (apply-edit-intent 자체는 백엔드에서 10분)
+      setTimeout(() => {
+        if (_pendingFinalizeReqs.has(requestId)) {
+          _pendingFinalizeReqs.delete(requestId);
+          resolve({ ok: false, error: "워크벤치 응답 시간 초과" });
+        }
+      }, 10 * 60 * 1000);
+
+      mainWindow.webContents.send("modelflow:finalize-edit-request", {
+        requestId,
+        folderPath: baseAbs,
+        editFileName,
+      });
+    });
+
+    // 성공 시 Studio 창 자동 종료 (Studio 의 await 가 결과를 받은 직후 닫히도록 마이크로태스크로)
+    if (result?.ok) {
+      setImmediate(() => {
+        if (viewerWindow && !viewerWindow.isDestroyed()) viewerWindow.close();
+      });
+    }
+    return result;
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
+// mainWindow 렌더러가 finalize-edit 처리 결과를 보고하는 채널
+ipcMain.on("modelflow:finalize-edit-response", (_e, msg) => {
+  const { requestId, ok, error } = msg || {};
+  const resolve = _pendingFinalizeReqs.get(requestId);
+  if (resolve) {
+    _pendingFinalizeReqs.delete(requestId);
+    resolve({ ok: !!ok, ...(error ? { error } : {}) });
+  }
+});
+
+ipcMain.handle("viewer:writeFile", async (_e, folderPath, fileName, content) => {
+  try {
+    if (!folderPath || !fileName) return { ok: false, error: "인자 누락" };
+    const baseAbs = path.resolve(folderPath);
+    const safeAbs = path.resolve(baseAbs, fileName);
+    if (!safeAbs.startsWith(baseAbs)) {
+      return { ok: false, error: "경로 탈출 시도 차단" };
+    }
+    fs.writeFileSync(safeAbs, content, "utf-8");
+    return { ok: true, location: "folder" };
+  } catch (e) {
+    return { ok: false, error: e.message };
   }
 });
 

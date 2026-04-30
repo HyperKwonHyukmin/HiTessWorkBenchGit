@@ -38,6 +38,7 @@ import ColumnBucklingCalculator from './pages/analysis/ColumnBucklingCalculator'
 import SectionPropertyCalculator from './pages/analysis/SectionPropertyCalculator';
 import ApiApps from './pages/Administration/ApiApps';
 import HiTessModelBuilder from './pages/analysis/HiTessModelBuilder';
+import GroupModuleUnitLiftingAnalysis from './pages/analysis/GroupModuleUnitLiftingAnalysis';
 import F06ParserPage from './pages/analysis/F06ParserPage';
 import UpdateModal from './components/UpdateModal';
 
@@ -265,6 +266,7 @@ function AppInner() {
       case 'F06 Parser': return <F06ParserPage />;
       case 'Productivity Apps': return <ProductivityApps />;
       case 'HiTess Model Builder': return <HiTessModelBuilder />;
+      case 'Group & Module Unit 권상 구조 해석': return <GroupModuleUnitLiftingAnalysis />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">

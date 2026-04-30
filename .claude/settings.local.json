@@ -71,7 +71,17 @@
       "PowerShell(Invoke-WebRequest -Uri \"https://cdn.jsdelivr.net/gh/sunn-us/SUIT@latest/fonts/variable/woff2/SUIT-Variable.woff2\" -OutFile \"C:\\\\Coding\\\\WorkBench\\\\HiTessWorkBench\\\\frontend\\\\public\\\\fonts\\\\SUIT-Variable.woff2\" -UseBasicParsing; Write-Output \"Done: $\\(\\(Get-Item 'C:\\\\Coding\\\\WorkBench\\\\HiTessWorkBench\\\\frontend\\\\public\\\\fonts\\\\SUIT-Variable.woff2'\\).Length\\) bytes\")",
       "mcp__claude_ai_Three_js_3D_Viewer__show_threejs_scene",
       "mcp__playwright__browser_take_screenshot",
-      "mcp__playwright__browser_file_upload"
+      "mcp__playwright__browser_file_upload",
+      "PowerShell(Test-Path *)",
+      "PowerShell($zip = \"C:\\\\Coding\\\\ClaudeModelBuilerViewer\\\\viewer\\\\release\\\\model-builder-viewer-0.0.0.zip\"; Add-Type -AssemblyName System.IO.Compression.FileSystem; $archive = [System.IO.Compression.ZipFile]::OpenRead\\($zip\\); $archive.Entries | Select-Object FullName, Length, CompressedLength | Format-Table -AutoSize; $archive.Dispose\\(\\))",
+      "PowerShell(Get-Content *)",
+      "PowerShell(tar *)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://10.133.122.70:9091/\" -TimeoutSec 3 -UseBasicParsing; \"STATUS: $\\($r.StatusCode\\)\"; $r.Content } catch { \"SERVER NOT RUNNING OR UNREACHABLE: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://10.133.122.70:9091/api/viewers/manifest/model-builder-viewer\" -TimeoutSec 3 -UseBasicParsing; \"STATUS: $\\($r.StatusCode\\)\"; $r.Content } catch { \"ENDPOINT NOT AVAILABLE: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(Get-FileHash *)",
+      "PowerShell(Get-Item *)",
+      "PowerShell(Copy-Item *)",
+      "PowerShell(Get-NetTCPConnection *)"
     ]
   },
   "enableAllProjectMcpServers": true,

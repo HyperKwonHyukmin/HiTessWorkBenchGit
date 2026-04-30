@@ -79,3 +79,10 @@ export const getMonthlyAnalysisCount = (employeeId, year, month) =>
     params: { employee_id: employeeId, year, month },
     headers: getAuthHeaders()
   });
+
+/** Group Module Unit — BDF COG(무게중심) 계산 */
+export const requestGroupModuleCog = (bdfPath) =>
+  axios.post(`${API_BASE_URL}/api/analysis/groupmodule/cog`,
+    { bdf_path: bdfPath },
+    { headers: getAuthHeaders() }
+  );

@@ -31,6 +31,8 @@ export default function NewAnalysis() {
       setCurrentMenu('Truss Structural Assessment');
     } else if (categoryTitle === "HiTess Model Builder") {
       setCurrentMenu('HiTess Model Builder');
+    } else if (categoryTitle === "Group & Module Unit 권상 구조 해석") {
+      setCurrentMenu('Group & Module Unit 권상 구조 해석');
     } else {
       showToast(`${categoryTitle} 기능은 현재 준비 중입니다.`, 'info');
     }

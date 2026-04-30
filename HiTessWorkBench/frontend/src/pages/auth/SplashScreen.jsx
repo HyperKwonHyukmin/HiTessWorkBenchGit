@@ -22,7 +22,7 @@ export default function SplashScreen({ onFinish }) {
         {/* 앱 아이콘 */}
         <div className="mb-8 p-6 bg-white rounded-3xl shadow-2xl shadow-black/30">
           <img
-            src="/icon.ico"
+            src="/logo.png"
             alt="HiTESS WorkBench"
             className="h-20 w-auto object-contain"
           />

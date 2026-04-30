@@ -1,9 +1,36 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 // 허용된 IPC 채널 화이트리스트
-const VALID_SEND_CHANNELS    = ['app-ready', 'open-external'];
-const VALID_RECEIVE_CHANNELS = ['app-update', 'server-status', 'download-progress'];
-const VALID_INVOKE_CHANNELS  = ['list-dir-csvs', 'read-file-buffer', 'get-intro-page-html', 'download-client', 'start-self-update'];
+const VALID_SEND_CHANNELS    = [
+  'app-ready', 'open-external',
+  // mainWindow 렌더러가 finalize-edit 처리 결과를 main 으로 보고
+  'modelflow:finalize-edit-response',
+];
+const VALID_RECEIVE_CHANNELS = [
+  'app-update',
+  'server-status',
+  'download-progress',
+  'viewer:install-progress',
+  // main 이 mainWindow 렌더러에게 finalize-edit 처리를 요청
+  'modelflow:finalize-edit-request',
+];
+const VALID_INVOKE_CHANNELS  = [
+  'list-dir-csvs',
+  'read-file-buffer',
+  'get-intro-page-html',
+  'download-client',
+  'start-self-update',
+  // viewer 라이프사이클
+  'viewer:check-installed',
+  'viewer:install',
+  'viewer:open',
+  'viewer:close',
+  // viewer 호스트 어댑터(window.workbenchAPI)
+  'viewer:pickFolder',
+  'viewer:getInitialFolder',
+  'viewer:writeFile',
+  'viewer:finalizeEditedModel',
+];
 
 contextBridge.exposeInMainWorld("electron", {
   sendMessage: (channel, data) => {
@@ -30,4 +57,17 @@ contextBridge.exposeInMainWorld("electron", {
   getPathForFile: (file) => {
     try { return webUtils.getPathForFile(file); } catch { return ''; }
   },
+});
+
+// ClaudeModelBuilderViewer(host.js)가 기대하는 workbenchAPI 인터페이스.
+// ElectronHost 가 window.workbenchAPI 존재 여부로 자동 감지됨.
+contextBridge.exposeInMainWorld("workbenchAPI", {
+  pickFolder: () => ipcRenderer.invoke('viewer:pickFolder'),
+  getInitialFolder: () => ipcRenderer.invoke('viewer:getInitialFolder'),
+  writeFile: (folderPath, fileName, content) =>
+    ipcRenderer.invoke('viewer:writeFile', folderPath, fileName, content),
+  // Studio "최종 모델 출력" → 워크벤치 백엔드 apply-edit-intent 자동 수행
+  // → mainWindow Edit 탭 표시 → Studio 창 닫기 → { ok, error }
+  finalizeEditedModel: (folderPath, request) =>
+    ipcRenderer.invoke('viewer:finalizeEditedModel', { folderPath, request }),
 });
