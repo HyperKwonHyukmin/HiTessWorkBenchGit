@@ -136,7 +136,7 @@ export default function LoginScreen({ onLoginSuccess }) {
 
         <div className="relative z-10 flex-1 flex flex-col justify-center pointer-events-none">
           <div className="mb-8">
-            <img src="/icon.ico" alt="HiTESS WorkBench" className="h-12 w-auto object-contain" />
+            <img src={`${import.meta.env.BASE_URL}icon.ico`} alt="HiTESS WorkBench" className="h-12 w-auto object-contain" />
           </div>
            <h1 className="text-4xl font-extrabold leading-tight text-white drop-shadow-md">
             HiTESS <br/> <span className="text-brand-accent">WorkBench</span>
