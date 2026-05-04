@@ -7,6 +7,138 @@ import PageHeader from '../../components/ui/PageHeader';
 
 const API_LIST = [
   {
+    id: 'truss-model-builder',
+    name: 'Truss Model Builder',
+    method: 'POST',
+    endpoint: '/api/analysis/truss/request',
+    status: 'Active',
+    category: '파일 기반(File-Based)',
+    description: 'CSV 형식의 노드/부재 파일을 업로드하여 트러스 구조 해석 모델(BDF)을 생성합니다. 비동기 처리이며 job_id로 진행 상태를 폴링합니다.',
+    cli: 'TrussModelBuilder.exe <exe_dir> <node_csv_path> <member_csv_path>',
+    params: [
+      { name: 'node_file', type: 'file (CSV, form)', required: true, desc: '노드 좌표 CSV 파일' },
+      { name: 'member_file', type: 'file (CSV, form)', required: true, desc: '부재 정보 CSV 파일' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Workbench, 외부 연동 시 External API 권장' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/truss/request \\
+  -F "node_file=@nodes.csv" \\
+  -F "member_file=@members.csv" \\
+  -F "employee_id=20001234" \\
+  -F "source=External API"`,
+  },
+  {
+    id: 'truss-assessment',
+    name: 'Truss Structural Assessment',
+    method: 'POST',
+    endpoint: '/api/analysis/assessment/request',
+    status: 'Active',
+    category: '파일 기반(File-Based)',
+    description: 'Nastran BDF 파일을 업로드하여 트러스 구조 안정성 평가를 수행합니다. 결과는 JSON 및 XLSX 형식으로 제공됩니다. 비동기 처리입니다.',
+    cli: 'TrussAssessment.exe <bdf_file_path>',
+    params: [
+      { name: 'bdf_file', type: 'file (BDF, form)', required: true, desc: 'Nastran BDF 입력 파일' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Workbench' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/assessment/request \\
+  -F "bdf_file=@model.bdf" \\
+  -F "employee_id=20001234" \\
+  -F "source=External API"`,
+  },
+  {
+    id: 'bdf-scanner',
+    name: 'BDF Scanner',
+    method: 'POST',
+    endpoint: '/api/analysis/bdfscanner/request',
+    status: 'Active',
+    category: '파일 기반(File-Based)',
+    description: 'BDF 파일의 유효성 및 모델 정보를 스캔합니다. 옵션으로 Nastran 실행 후 F06 요약까지 수행할 수 있습니다. 비동기 처리입니다.',
+    cli: 'BdfScanner.exe <bdf_file_path> [--nastran]',
+    params: [
+      { name: 'bdf_file', type: 'file (BDF, form)', required: true, desc: '스캔할 BDF 파일' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'use_nastran', type: 'boolean (form)', required: false, desc: 'Nastran 실행 여부. 기본값: false' },
+      { name: 'program_name', type: 'string (form)', required: false, desc: '작업 폴더 접미사. 기본값: BdfScanner' },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Workbench' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/bdfscanner/request \\
+  -F "bdf_file=@model.bdf" \\
+  -F "employee_id=20001234" \\
+  -F "use_nastran=true" \\
+  -F "source=External API"`,
+  },
+  {
+    id: 'f06-parser',
+    name: 'F06 Parser',
+    method: 'POST',
+    endpoint: '/api/analysis/f06parser/request',
+    status: 'Active',
+    category: '파일 기반(File-Based)',
+    description: 'Nastran F06 파일에서 Displacement, SPC Force, CBAR/CBEAM/CROD Force/Stress 결과를 추출합니다. 비동기 처리입니다.',
+    cli: 'F06Parser.Console.exe <f06_file_path> <output_dir>',
+    params: [
+      { name: 'f06_file', type: 'file (F06, form)', required: true, desc: '파싱할 Nastran F06 결과 파일' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Workbench' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/f06parser/request \\
+  -F "f06_file=@result.f06" \\
+  -F "employee_id=20001234" \\
+  -F "source=External API"`,
+  },
+  {
+    id: 'beam-analysis',
+    name: 'Simple Beam Assessment',
+    method: 'POST',
+    endpoint: '/api/analysis/beam/request',
+    status: 'Active',
+    category: '파일 기반(File-Based)',
+    description: 'JSON 형식의 보 해석 입력 파일을 업로드하여 FEM 기반 1D 보 해석을 수행합니다. 결과 JSON은 Beam Result Viewer에서 시각화됩니다. 비동기 처리입니다.',
+    cli: 'HiTESS.FemEngine.Adapter.exe <input_json_path> <work_dir>',
+    params: [
+      { name: 'beam_file', type: 'file (JSON, form)', required: true, desc: '보 해석 입력 JSON 파일' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Workbench' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/beam/request \\
+  -F "beam_file=@beam_input.json" \\
+  -F "employee_id=20001234" \\
+  -F "source=External API"`,
+  },
+  {
+    id: 'hitess-model-builder',
+    name: 'HiTess Model Builder',
+    method: 'POST',
+    endpoint: '/api/analysis/modelflow/request',
+    status: 'Active',
+    category: '파일 기반(File-Based)',
+    description: '구조 CSV를 기준으로 선택적 배관/장비 CSV를 함께 받아 phase JSON, BDF, InputAudit, StageSummary를 생성합니다. Nastran 실행 옵션도 포함합니다. 비동기 처리입니다.',
+    cli: 'Cmb.Cli.exe build-full --input <csv_dir> --output <work_dir> [options]',
+    params: [
+      { name: 'stru_file', type: 'file (CSV, form)', required: true, desc: '구조 CSV 파일' },
+      { name: 'pipe_file', type: 'file (CSV, form)', required: false, desc: '배관 CSV 파일' },
+      { name: 'equip_file', type: 'file (CSV, form)', required: false, desc: '장비 CSV 파일' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'mesh_size', type: 'float (form)', required: false, desc: '전체 기본 메시 크기(mm). 기본값: 500.0' },
+      { name: 'mesh_size_structure', type: 'float (form)', required: false, desc: '구조 전용 메시 크기(mm)' },
+      { name: 'mesh_size_pipe', type: 'float (form)', required: false, desc: '배관 전용 메시 크기(mm)' },
+      { name: 'ubolt_full_fix', type: 'boolean (form)', required: false, desc: 'U-bolt 구속을 full fix로 적용. 기본값: false' },
+      { name: 'run_nastran', type: 'boolean (form)', required: false, desc: 'BDF 생성 후 Nastran 실행 여부. 기본값: false' },
+      { name: 'nastran_path', type: 'string (form)', required: false, desc: 'Nastran 실행 파일 경로' },
+      { name: 'leg_z_tol', type: 'float (form)', required: false, desc: 'Leg Z 좌표 허용 오차' },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Workbench' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/modelflow/request \\
+  -F "stru_file=@structure.csv" \\
+  -F "pipe_file=@pipe.csv" \\
+  -F "equip_file=@equipment.csv" \\
+  -F "employee_id=20001234" \\
+  -F "mesh_size=500" \\
+  -F "run_nastran=false" \\
+  -F "source=External API"`,
+  },
+  {
     id: 'mast-post',
     name: 'Mast Post Assessment',
     method: 'POST',
@@ -67,57 +199,135 @@ const API_LIST = [
     example: JSON.stringify({ jh: 990, jb: 670, wj: 14500, ww: 1200, wc: 3000, lj: 12074, lw: 4604, lc: 2478, lr: 22100, h1: 9029, h4: 4111, pw: 288, h2: 2454, h3: 1000, d1: 762, t1: 7.9, employee_id: "20001234" }, null, 2),
   },
   {
-    id: 'truss-model-builder',
-    name: 'Truss Model Builder',
+    id: 'column-buckling',
+    name: 'Column Buckling Load Calculator',
     method: 'POST',
-    endpoint: '/api/analysis/truss/request',
+    endpoint: '/api/column-buckling/calculate',
     status: 'Active',
-    category: '파일 기반(File-Based)',
-    description: 'CSV 형식의 노드/부재 파일을 업로드하여 트러스 구조 해석 모델(BDF)을 생성합니다. 비동기 처리이며 job_id로 진행 상태를 폴링합니다.',
-    cli: 'TrussModelBuilder.exe <exe_dir> <node_csv_path> <member_csv_path>',
+    category: '파라메트릭(Parametric)',
+    description: 'AISC 기준으로 기둥 좌굴 허용 사용하중을 계산합니다. 편심량은 서버 계산 로직에서 20mm로 고정됩니다.',
+    cli: 'ColumnBucklingApp.exe <member_name> <length_mm>',
     params: [
-      { name: 'node_file', type: 'file (CSV)', required: true, desc: '노드 좌표 CSV 파일' },
-      { name: 'member_file', type: 'file (CSV)', required: true, desc: '부재 정보 CSV 파일' },
-      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'member_name', type: 'string', required: true, desc: '단면 부재명. 예: 300A PIPE' },
+      { name: 'length_mm', type: 'float', required: true, desc: '기둥 길이(mm)' },
+      { name: 'employee_id', type: 'string', required: false, desc: '요청 사번. 기본값: unknown' },
     ],
-    example: `curl -X POST ${API_BASE_URL}/api/analysis/truss/request \\
-  -F "node_file=@nodes.csv" \\
-  -F "member_file=@members.csv" \\
-  -F "employee_id=20001234"`,
+    example: JSON.stringify({ member_name: "300A PIPE", length_mm: 3500, employee_id: "20001234" }, null, 2),
   },
   {
-    id: 'truss-assessment',
-    name: 'Truss Structural Assessment',
+    id: 'section-property',
+    name: 'Section Property Calculator',
     method: 'POST',
-    endpoint: '/api/analysis/assessment/request',
+    endpoint: '/api/section-property/calculate',
     status: 'Active',
-    category: '파일 기반(File-Based)',
-    description: 'Nastran BDF 파일을 업로드하여 트러스 구조 안정성 평가를 수행합니다. 결과는 JSON 및 XLSX 형식으로 제공됩니다. 비동기 처리.',
-    cli: 'TrussAssessment.exe <bdf_file_path>',
+    category: '파라메트릭(Parametric)',
+    description: '단면 형상과 치수를 입력하여 면적, 도심, 단면 2차 모멘트 등 단면 특성값을 계산합니다. polygon은 꼭짓점 좌표 3개 이상이 필요합니다.',
+    cli: 'SectionPropertyCalculator.exe <input_json_path>',
     params: [
-      { name: 'bdf_file', type: 'file (BDF)', required: true, desc: 'Nastran BDF 입력 파일' },
-      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'shape', type: 'string', required: true, desc: 'rod, tube, rectangle, rectTube, ishape, channel, angle, tee, polygon' },
+      { name: 'params', type: 'object', required: false, desc: '단면별 치수 파라미터(mm). 예: tube는 { d, t }' },
+      { name: 'vertices', type: 'array<object>', required: false, desc: 'polygon 전용 꼭짓점 배열. 예: [{ x, y }, ...]' },
+      { name: 'units', type: 'string', required: false, desc: 'mm 또는 in. 기본값: mm' },
+      { name: 'employee_id', type: 'string', required: false, desc: '요청 사번. 기본값: unknown' },
     ],
-    example: `curl -X POST ${API_BASE_URL}/api/analysis/assessment/request \\
-  -F "bdf_file=@model.bdf" \\
-  -F "employee_id=20001234"`,
+    example: JSON.stringify({ shape: "tube", params: { d: 318.5, t: 10.3 }, units: "mm", employee_id: "20001234" }, null, 2),
   },
   {
-    id: 'beam-analysis',
-    name: 'Beam Analysis (FEM Engine)',
+    id: 'section-property-shapes',
+    name: 'Section Property Shapes',
+    method: 'GET',
+    endpoint: '/api/section-property/shapes',
+    status: 'Active',
+    category: '파라메트릭(Parametric)',
+    description: 'Section Property Calculator에서 지원하는 단면 종류와 각 형상의 필수 치수 파라미터 목록을 반환합니다.',
+    cli: null,
+    params: [],
+    example: `curl -X GET ${API_BASE_URL}/api/section-property/shapes`,
+  },
+  {
+    id: 'groupmodule-cog',
+    name: 'Group Module COG',
     method: 'POST',
-    endpoint: '/api/analysis/beam/request',
+    endpoint: '/api/analysis/groupmodule/cog',
+    status: 'Active',
+    category: '생산성(Productivity)',
+    description: 'userConnection 하위 BDF 파일 경로를 입력하여 ModuleGroupUnitAnalysis.exe로 무게중심(COG)과 총 질량을 계산합니다.',
+    cli: 'ModuleGroupUnitAnalysis.exe cog <bdf_path>',
+    params: [
+      { name: 'bdf_path', type: 'string', required: true, desc: 'userConnection 폴더 내부의 BDF 절대경로 또는 URL 인코딩된 경로' },
+    ],
+    example: JSON.stringify({ bdf_path: "C:\\Coding\\WorkBench\\HiTessWorkBenchBackEnd\\userConnection\\20260504_082938_A476854_HiTessModelBuilder\\model.bdf" }, null, 2),
+  },
+  {
+    id: 'modelflow-edit-status',
+    name: 'HiTess Model Builder Edit Status',
+    method: 'GET',
+    endpoint: '/api/analysis/modelflow/edit-status',
     status: 'Active',
     category: '파일 기반(File-Based)',
-    description: 'JSON 형식의 보 해석 입력 파일을 업로드하여 FEM 기반 1D 보 해석을 수행합니다. 결과 JSON은 Beam Result Viewer에서 시각화됩니다. 비동기 처리.',
-    cli: 'HiTESS.FemEngine.Adapter.exe <input_json_path> <work_dir>',
+    description: 'Studio가 생성한 *_edit.json 존재 여부와 edited 산출물 상태를 확인합니다. output_dir은 userConnection 하위 build-full 결과 폴더여야 합니다.',
+    cli: null,
     params: [
-      { name: 'beam_file', type: 'file (JSON)', required: true, desc: '보 해석 입력 JSON 파일' },
-      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'output_dir', type: 'string (query)', required: true, desc: 'HiTess Model Builder 결과 폴더 절대경로' },
     ],
-    example: `curl -X POST ${API_BASE_URL}/api/analysis/beam/request \\
-  -F "beam_file=@beam_input.json" \\
-  -F "employee_id=20001234"`,
+    example: `curl -X GET "${API_BASE_URL}/api/analysis/modelflow/edit-status?output_dir=C%3A%5C...%5CuserConnection%5C20260504_082938_A476854_HiTessModelBuilder"`,
+  },
+  {
+    id: 'modelflow-apply-edit',
+    name: 'HiTess Model Builder Apply Edit',
+    method: 'POST',
+    endpoint: '/api/analysis/modelflow/apply-edit',
+    status: 'Active',
+    category: '파일 기반(File-Based)',
+    description: 'Studio가 작성한 *_edit.json을 base 모델에 적용하여 edited 폴더 산출물을 생성합니다. 옵션으로 Nastran 실행과 F06 파싱을 함께 수행합니다. 비동기 처리입니다.',
+    cli: 'Cmb.Cli.exe apply-edit <output_dir> [options]',
+    params: [
+      { name: 'output_dir', type: 'string', required: true, desc: 'HiTess Model Builder 결과 폴더 절대경로' },
+      { name: 'strict', type: 'boolean', required: false, desc: '엄격 적용 모드. 기본값: false' },
+      { name: 'run_nastran', type: 'boolean', required: false, desc: 'Edit BDF에 Nastran 자동 실행. 기본값: true' },
+      { name: 'nastran_path', type: 'string', required: false, desc: 'Nastran 실행 파일 경로' },
+      { name: 'parse_f06', type: 'boolean', required: false, desc: 'F06Parser 자동 실행. 기본값: true' },
+    ],
+    example: JSON.stringify({ output_dir: "C:\\Coding\\WorkBench\\HiTessWorkBenchBackEnd\\userConnection\\20260504_082938_A476854_HiTessModelBuilder", strict: false, run_nastran: true, parse_f06: true }, null, 2),
+  },
+  {
+    id: 'hitessbeam-csv-to-bdf',
+    name: 'HiTessBeam CSV to BDF',
+    method: 'POST',
+    endpoint: '/hitessbeam/csvToBdf',
+    status: 'Developing',
+    category: '임시 호환(Temp)',
+    description: '기존 HiTessBeam 클라이언트 호환용 CSV to BDF 변환 API입니다. 여러 파일을 업로드하며 input.pkl에 stru/pipe/equi 파일 매핑이 포함되어야 합니다.',
+    cli: 'CsvToBdf_HiTESS.exe <stru_csv> <pipe_csv|None> <equi_csv|None> <output_bdf>',
+    params: [
+      { name: 'userID', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'file', type: 'file[] (form)', required: true, desc: 'input.pkl 및 구조/배관/장비 CSV 파일들. 구조 CSV는 필수' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/hitessbeam/csvToBdf \\
+  -F "userID=20001234" \\
+  -F "file=@input.pkl" \\
+  -F "file=@structure.csv" \\
+  -F "file=@pipe.csv" \\
+  -F "file=@equipment.csv"`,
+  },
+  {
+    id: 'hitessbeam-module-unit',
+    name: 'HiTessBeam Module/Group Unit',
+    method: 'POST',
+    endpoint: '/hitessbeam/moduleUnit',
+    status: 'Developing',
+    category: '임시 호환(Temp)',
+    description: '기존 HiTessBeam 클라이언트 호환용 ModuleUnit/GroupUnit BDF 해석 API입니다. 입력 BDF를 받아 결과 BDF/F06/TXT 파일명을 반환합니다.',
+    cli: 'ModuleUnit_HiTESS.exe <input_bdf> <output_bdf> <ModuleUnit|GroupUnit>',
+    params: [
+      { name: 'userID', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'programName', type: 'string (form)', required: true, desc: 'ModuleUnit 또는 GroupUnit' },
+      { name: 'file', type: 'file (BDF, form)', required: true, desc: '입력 BDF 파일' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/hitessbeam/moduleUnit \\
+  -F "userID=20001234" \\
+  -F "programName=ModuleUnit" \\
+  -F "file=@module.bdf"`,
   },
 ];
 
