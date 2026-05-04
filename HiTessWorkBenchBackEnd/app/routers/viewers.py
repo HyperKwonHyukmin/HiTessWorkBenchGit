@@ -27,20 +27,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/viewers", tags=["viewers"])
 
-# 백엔드 패키지 루트 (HiTessWorkBenchBackEnd/) — 로컬 fallback 경로 계산에 사용
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# ── viewer zip 탐색 후보 디렉터리 ────────────────────────────────────────────
-# 환경별 동작:
-#   • 운영 서버 (10.14.42.145) 에서 작동 시:
-#     `<backend>/Studio/ModelBuilderStudio` 에 zip 을 두면 거기서 찾아 HTTP 로 서빙.
-#     서버 머신엔 DRM 이 없어 HTTP 다운로드가 변조되지 않음.
-#   • 개발 PC (10.133.122.70 — DRM 있는 사내 컴퓨터) 에서 작동 시:
-#     서버 로컬 폴더가 없으니 자동으로 사내 storage UNC 로 폴백.
-#     사용자 PC 가 UNC 에 직접 접근하면서 DRM 우회.
-_SERVER_LOCAL_VIEWER_DIR = os.path.join(_BACKEND_DIR, "Studio", "ModelBuilderStudio")
-_LEGACY_LOCAL_VIEWER_DIR = os.path.join(_BACKEND_DIR, "StudioProgram")  # 레거시 호환
-
+# ── viewer zip 탐색 ──────────────────────────────────────────────────────────
+# 모든 환경(개발/운영) 에서 사내 storage UNC 한 곳만 사용한다.
+# 배경: 사내 컴퓨터에는 DRM 이 걸려 있어 HTTP 로 zip 을 받으면 변조되어 SHA256 가
+# 어긋난다. 사용자 PC 는 UNC 에 직접 접근 가능하므로 백엔드 manifest 응답의
+# uncPath 를 받아 fs.copyFile 로 DRM 을 우회한다.
+# 환경변수(VIEWER_DIR/VIEWER_DIRS) 는 테스트/특수 환경 override 용으로만 유지.
 _DEFAULT_VIEWER_DIR = (
     r"\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44"
     r"\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram"
@@ -51,11 +43,9 @@ def _candidate_dirs() -> list[str]:
     """zip 검색 후보 디렉터리를 우선순위 순으로 반환 (중복 제거, 순서 보존).
 
     우선순위:
-      1) VIEWER_DIRS env (콤마 구분 다중 경로)
-      2) VIEWER_DIR env (단일 경로)
-      3) <backend>/Studio/ModelBuilderStudio  ★ 운영 서버 표준 (DRM 없음 → HTTP)
-      4) <backend>/StudioProgram              레거시 호환
-      5) 사내 storage UNC                     개발 PC 기본 (DRM 우회)
+      1) VIEWER_DIRS env (콤마 구분 다중 경로) — 테스트 override
+      2) VIEWER_DIR env (단일 경로) — 테스트 override
+      3) 사내 storage UNC — 표준 (개발/운영 모두)
     """
     cands: list[str] = []
 
@@ -67,8 +57,6 @@ def _candidate_dirs() -> list[str]:
     if single:
         cands.append(single)
 
-    cands.append(_SERVER_LOCAL_VIEWER_DIR)
-    cands.append(_LEGACY_LOCAL_VIEWER_DIR)
     cands.append(_DEFAULT_VIEWER_DIR)
 
     seen: set[str] = set()
