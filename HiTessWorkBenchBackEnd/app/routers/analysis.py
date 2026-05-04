@@ -10,7 +10,7 @@ from typing import Optional
 from sqlalchemy import func
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query, Request
 from pydantic import BaseModel
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models, database
 from ..services.job_manager import job_status_store, analysis_executor
@@ -604,28 +604,38 @@ def get_result_zip(
     output_dir: str = Query(..., description="userConnection 하위 build-full timestamp 폴더의 절대경로"),
     current_user: str = Depends(require_auth),
 ):
-    """output_dir 의 모든 파일을 zip 으로 묶어 스트리밍 반환.
+    """output_dir 의 모든 파일을 zip 으로 묶어 반환.
 
     백엔드와 사용자 PC 가 다른 머신일 때, 사용자 PC 가 결과 폴더를 직접 fs 로 못 읽으므로
     이 엔드포인트로 zip 을 받아 사용자 PC 로컬에 풀어 Studio 의 initialFolder 로 사용한다.
+
+    StreamingResponse + BytesIO 조합은 BytesIO 가 줄 단위로 이터레이트되어
+    바이너리 zip 의 chunk 가 어긋나며 h11 LocalProtocolError 를 유발하므로,
+    bytes 를 일괄 빌드한 뒤 Response 로 한 번에 회신한다.
     """
     abs_dir = _validate_userconnection_path(output_dir)
     if not os.path.isdir(abs_dir):
         raise HTTPException(status_code=404, detail="output_dir 없음")
 
-    # BytesIO 메모리 zip — DRM 의 디스크 후킹 우회 (export-xlsx 와 동일 패턴)
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, _, files in os.walk(abs_dir):
-            for f in files:
-                full = os.path.join(root, f)
-                arcname = os.path.relpath(full, abs_dir)
-                zf.write(full, arcname)
-    buf.seek(0)
+    try:
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for root, _, files in os.walk(abs_dir):
+                for f in files:
+                    full = os.path.join(root, f)
+                    arcname = os.path.relpath(full, abs_dir)
+                    try:
+                        zf.write(full, arcname)
+                    except OSError:
+                        # 잠긴 파일/접근 거부 등은 스킵하여 zip 자체는 정상 생성
+                        continue
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"zip 생성 실패: {e}")
 
+    body = buf.getvalue()
     fname = f"result-{os.path.basename(abs_dir)}.zip"
-    return StreamingResponse(
-        buf,
+    return Response(
+        content=body,
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename=\"{fname}\""},
     )
