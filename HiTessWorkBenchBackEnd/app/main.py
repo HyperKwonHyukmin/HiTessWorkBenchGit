@@ -11,6 +11,7 @@ from .routers import (
     auth,
     column_buckling,
     davit,
+    dev_runbooks,
     hitessbeam,
     section_property,
     support,
@@ -18,6 +19,7 @@ from .routers import (
     users,
     viewers,
 )
+from .seed_dev_runbooks import seed_default_dev_runbooks
 from .seed_guides import seed_default_guides
 from .services.cleanup_service import start_cleanup_scheduler
 
@@ -32,6 +34,7 @@ async def lifespan(app: FastAPI):
     try:
         seed_default_guides(db)
         seed_default_notices(db)
+        seed_default_dev_runbooks(db)
     finally:
         db.close()
 
@@ -70,6 +73,7 @@ app.include_router(hitessbeam.router)  # [TEMP] HiTessBeam 임시 라우터
 app.include_router(section_property.router)
 app.include_router(activity.router)
 app.include_router(viewers.router)
+app.include_router(dev_runbooks.router)
 
 
 def seed_default_notices(db):

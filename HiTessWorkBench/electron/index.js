@@ -86,6 +86,34 @@ ipcMain.on("open-external", (_, url) => {
   }
 });
 
+// 개발자 런북에서 "탐색기 열기" 액션용. 파일이면 부모 폴더가 선택된 채 열림,
+// 폴더면 해당 폴더가 열림. UNC/환경변수(%APPDATA% 등) 도 그대로 통과.
+// 보안: 외부 URL 은 open-external 로 분리되어 있고, 여기서는 로컬 파일시스템만 허용.
+ipcMain.handle("shell:openPath", async (_, rawPath) => {
+  if (typeof rawPath !== "string" || !rawPath.trim()) {
+    return { ok: false, error: "경로가 비어 있습니다." };
+  }
+  let resolved = rawPath.trim();
+  // %ENV% 확장 (Windows)
+  resolved = resolved.replace(/%([^%]+)%/g, (_, name) => process.env[name] || `%${name}%`);
+
+  try {
+    let stat = null;
+    try { stat = fs.statSync(resolved); } catch {}
+
+    // 파일이면 탐색기에서 해당 항목 선택, 폴더/UNC/존재 안 함은 openPath 시도
+    if (stat && stat.isFile()) {
+      shell.showItemInFolder(resolved);
+      return { ok: true };
+    }
+    const errMsg = await shell.openPath(resolved);
+    if (errMsg) return { ok: false, error: errMsg };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+});
+
 ipcMain.handle("download-client", (event, url) => {
   return new Promise((resolve, reject) => {
     session.defaultSession.once("will-download", (_, item) => {
@@ -224,13 +252,24 @@ ipcMain.handle("start-self-update", (event, url) => {
 });
 
 ipcMain.handle("get-intro-page-html", (_evt, which) => {
-  const fileName = which === "workbench" ? "hitess-workbench.html" : "hitess-platform.html";
-  const filePath = path.join(__dirname, "../IntroductionPage/", fileName);
-  try {
-    return fs.readFileSync(filePath, "utf-8");
-  } catch {
-    return null;
+  // 대시보드 두 배너의 매핑:
+  //   'platform'  → hitess-introduction.html  (Discover HiTESS 버튼)
+  //   'workbench' → hitess-platform.html      (HiTESS WorkBench 버튼)
+  const fileName = which === "workbench" ? "hitess-platform.html" : "hitess-introduction.html";
+  // 패키지된 .exe 는 process.resourcesPath 아래 IntroductionPage/ 를 우선 시도하고,
+  // 실패 시 app.asar 내부(레거시 빌드 호환)로 폴백. dev 모드는 워크스페이스 루트.
+  const candidates = app.isPackaged
+    ? [
+        path.join(process.resourcesPath, "IntroductionPage", fileName),
+        path.join(__dirname, "../IntroductionPage/", fileName),
+      ]
+    : [path.join(__dirname, "../IntroductionPage/", fileName)];
+  for (const p of candidates) {
+    try {
+      return fs.readFileSync(p, "utf-8");
+    } catch {}
   }
+  return null;
 });
 
 // 지정 폴더의 CSV 파일 목록 반환
@@ -416,9 +455,9 @@ ipcMain.handle("viewer:check-installed", (_e, viewerId) => {
 
 // 2) 다운로드 + 해시 검증 + 압축 해제
 ipcMain.handle("viewer:install", async (_e, payload) => {
-  const { viewerId, downloadUrl, expectedSha256 } = payload || {};
-  if (!viewerId || !downloadUrl) {
-    return { ok: false, error: "viewerId/downloadUrl 누락" };
+  const { viewerId, downloadUrl, uncPath, expectedSha256 } = payload || {};
+  if (!viewerId || (!downloadUrl && !uncPath)) {
+    return { ok: false, error: "viewerId/downloadUrl/uncPath 누락" };
   }
   const tmpZip = path.join(app.getPath("temp"), `${viewerId}-${Date.now()}.zip`);
   const targetDir = getViewerDir(viewerId);
@@ -430,15 +469,55 @@ ipcMain.handle("viewer:install", async (_e, payload) => {
       });
     }
 
-    // 다운로드 (0 → 90%)
-    await downloadToFile(downloadUrl, tmpZip, viewerId, 0, 90);
+    // 우선순위: UNC 직접 복사 (회사 DRM/프록시가 HTTP 응답을 변조하는 환경 우회)
+    //          → 실패 시 HTTP fallback
+    let usedSource = null;
+    let lastErr = null;
+
+    if (uncPath) {
+      try {
+        if (mainWindow) {
+          mainWindow.webContents.send("viewer:install-progress", {
+            viewerId, phase: "downloading", progress: 10,
+          });
+        }
+        // fs.copyFile 은 Windows UNC 경로를 그대로 받아들임.
+        // 큰 파일도 OS 의 CopyFile2 syscall 로 효율적으로 복사.
+        await fs.promises.copyFile(uncPath, tmpZip);
+        usedSource = "unc";
+        if (mainWindow) {
+          mainWindow.webContents.send("viewer:install-progress", {
+            viewerId, phase: "downloading", progress: 90,
+          });
+        }
+      } catch (e) {
+        lastErr = e;
+        console.warn(`[viewer:install] UNC copy 실패, HTTP 로 폴백: ${e.message}`);
+      }
+    }
+
+    if (usedSource === null && downloadUrl) {
+      try {
+        await downloadToFile(downloadUrl, tmpZip, viewerId, 0, 90);
+        usedSource = "http";
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+
+    if (usedSource === null) {
+      throw new Error(`다운로드 실패 (UNC/HTTP 모두): ${lastErr?.message || "원인 불명"}`);
+    }
 
     // 해시 검증
     if (expectedSha256) {
       const actual = await sha256OfFile(tmpZip);
       if (actual.toLowerCase() !== String(expectedSha256).toLowerCase()) {
         try { fs.unlinkSync(tmpZip); } catch {}
-        throw new Error(`SHA256 불일치 — expected ${expectedSha256}, got ${actual}`);
+        throw new Error(
+          `SHA256 불일치 — expected ${expectedSha256}, got ${actual} (source: ${usedSource}). ` +
+          `회사 DRM/프록시가 ${usedSource === "unc" ? "UNC 복사" : "HTTP 다운로드"} 도중 zip 을 변조한 것으로 추정됩니다.`
+        );
       }
     }
     if (mainWindow) {

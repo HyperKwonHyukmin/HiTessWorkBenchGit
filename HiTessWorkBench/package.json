@@ -20,8 +20,14 @@
     },
     "files": [
       "electron/**/*",
-      "frontend/dist/**/*",
-      "IntroductionPage/**/*"
+      "frontend/dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "IntroductionPage",
+        "to": "IntroductionPage",
+        "filter": ["**/*"]
+      }
     ],
     "win": {
       "target": "portable",

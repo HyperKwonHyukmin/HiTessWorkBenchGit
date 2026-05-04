@@ -595,8 +595,10 @@ export default function Dashboard() {
           setIntroContent(content);
         }
       } else {
-        // 웹: Vite 플러그인이 서빙하는 경로 사용
-        const fileName = target === 'workbench' ? 'hitess-workbench.html' : 'hitess-platform.html';
+        // 웹: Vite 플러그인이 서빙하는 경로 사용.
+        //   'platform'  → hitess-introduction.html (Discover HiTESS)
+        //   'workbench' → hitess-platform.html     (HiTESS WorkBench)
+        const fileName = target === 'workbench' ? 'hitess-platform.html' : 'hitess-introduction.html';
         const content = { mode: 'src', value: `/IntroductionPage/${fileName}` };
         introCache.current[target] = content;
         setIntroContent(content);

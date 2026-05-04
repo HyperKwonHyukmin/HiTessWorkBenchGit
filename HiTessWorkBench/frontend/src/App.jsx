@@ -37,6 +37,7 @@ import JibRestAssessment from './pages/analysis/JibRestAssessment';
 import ColumnBucklingCalculator from './pages/analysis/ColumnBucklingCalculator';
 import SectionPropertyCalculator from './pages/analysis/SectionPropertyCalculator';
 import ApiApps from './pages/Administration/ApiApps';
+import DeveloperRunbooks from './pages/Administration/DeveloperRunbooks';
 import HiTessModelBuilder from './pages/analysis/HiTessModelBuilder';
 import GroupModuleUnitLiftingAnalysis from './pages/analysis/GroupModuleUnitLiftingAnalysis';
 import F06ParserPage from './pages/analysis/F06ParserPage';
@@ -246,6 +247,7 @@ function AppInner() {
       case 'Column Buckling Load Calculator': return <ColumnBucklingCalculator />;
       case 'Section Property Calculator': return <SectionPropertyCalculator />;
       case 'API Apps': return <ApiApps />;
+      case 'Developer Runbooks': return <DeveloperRunbooks />;
       case 'Component Wizard':
       case 'Simple Beam Assessment':
       case 'Simple Beam Analyzer': return <SimpleBeamAssessmentPage />;

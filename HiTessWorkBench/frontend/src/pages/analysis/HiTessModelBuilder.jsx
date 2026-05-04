@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronsRight,
   Cpu, Download, ExternalLink, FileEdit, FileSpreadsheet, History, Loader2,
-  PackageX, RotateCcw, ShieldCheck, Sliders, UploadCloud, X,
+  PackageX, RotateCcw, ShieldCheck, UploadCloud, X,
 } from 'lucide-react';
 
 import ChangelogModal from '../../components/ui/ChangelogModal';
@@ -593,7 +593,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                 ? <AlertCircle size={15} className="text-red-600 shrink-0" />
                 : <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />}
               <span className={`text-sm font-bold ${isFailed ? 'text-red-700' : 'text-emerald-700'}`}>
-                {isFailed ? 'CSV 검증 실패' : 'CSV 입력 감사 완료'}
+                {isFailed ? 'CSV 검증 실패' : 'CSV 입력 검증 완료'}
               </span>
             </div>
 
@@ -666,7 +666,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
       )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          D. 행 단위 감사 (기본 접힘)
+          D. 행 단위 검증 (기본 접힘)
          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {audit.rowAudit?.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm w-full max-w-full min-w-0">
@@ -677,7 +677,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
           >
             <div className="flex items-center gap-2">
               <History size={14} className="text-slate-500" />
-              <span className="text-sm font-semibold text-slate-700">행 단위 감사</span>
+              <span className="text-sm font-semibold text-slate-700">행 단위 검증</span>
               <span className="text-xs font-mono font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
                 {audit.rowAudit.length.toLocaleString()}행
               </span>
@@ -2061,11 +2061,6 @@ function OptionsPanel({
   meshSize, setMeshSize,
   uboltFullFix, setUboltFullFix,
   useNastran, setUseNastran,
-  showAdvanced, setShowAdvanced,
-  meshStru, setMeshStru,
-  meshPipe, setMeshPipe,
-  legZTol, setLegZTol,
-  nastranPath, setNastranPath,
   disabled,
 }) {
   return (
@@ -2108,45 +2103,6 @@ function OptionsPanel({
             className="w-4 h-4 rounded text-blue-600 cursor-pointer disabled:opacity-50"
           />
         </label>
-        <div className="h-px bg-slate-100" />
-        <button
-          onClick={() => setShowAdvanced(v => !v)}
-          className="w-full flex items-center justify-center gap-1.5 text-[10px] font-semibold text-slate-500 hover:text-slate-700 cursor-pointer"
-        >
-          <Sliders size={11} /> 고급 옵션 {showAdvanced ? '닫기' : '펼치기'}
-        </button>
-        {showAdvanced && (
-          <div className="space-y-2 pt-2 border-t border-slate-100">
-            <AdvancedNumber label="Mesh (구조)" value={meshStru}  onChange={setMeshStru} unit="mm" placeholder="기본=Mesh Size" disabled={disabled} />
-            <AdvancedNumber label="Mesh (배관)" value={meshPipe}  onChange={setMeshPipe} unit="mm" placeholder="기본=Mesh Size" disabled={disabled} />
-            <AdvancedNumber label="Leg Z Tol"   value={legZTol}   onChange={setLegZTol}  unit="mm" placeholder="500" disabled={disabled || !useNastran} />
-            <div>
-              <p className="text-[10px] text-slate-500 mb-1">Nastran 경로 (run-nastran 시)</p>
-              <input
-                type="text" value={nastranPath || ''} onChange={(e) => setNastranPath(e.target.value)}
-                disabled={disabled || !useNastran}
-                placeholder="기본: C:\MSC.Software\MSC_Nastran\20131\bin\nastran.exe"
-                className="w-full text-[10px] px-2 py-1.5 border border-slate-200 bg-white text-slate-700 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 cursor-text"
-              />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AdvancedNumber({ label, value, onChange, unit, placeholder, disabled }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <p className="text-[11px] text-slate-600">{label}</p>
-      <div className="flex items-center gap-1">
-        <input
-          type="number" value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}
-          disabled={disabled} placeholder={placeholder}
-          className="w-20 text-right text-[10px] px-1.5 py-1 border border-slate-200 bg-white text-slate-700 rounded font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 cursor-text"
-        />
-        <span className="text-[10px] text-slate-400 w-6">{unit}</span>
       </div>
     </div>
   );
@@ -2176,11 +2132,6 @@ export default function HiTessModelBuilder() {
   const [meshSize,      setMeshSize]      = useState(saved?.meshSize      ?? '500');
   const [uboltFullFix,  setUboltFullFix]  = useState(saved?.uboltFullFix  ?? true);
   const [useNastran,    setUseNastran]    = useState(saved?.useNastran    ?? true);
-  const [showAdvanced,  setShowAdvanced]  = useState(false);
-  const [meshStru,      setMeshStru]      = useState(saved?.meshStru      ?? null);
-  const [meshPipe,      setMeshPipe]      = useState(saved?.meshPipe      ?? null);
-  const [legZTol,       setLegZTol]       = useState(saved?.legZTol       ?? null);
-  const [nastranPath,   setNastranPath]   = useState(saved?.nastranPath   ?? '');
 
   // ── 작업/결과 상태 ──
   const [steps,      setSteps]      = useState(() => saved?.steps ?? INITIAL_STEPS.map(s => ({ ...s })));
@@ -2263,18 +2214,8 @@ export default function HiTessModelBuilder() {
     return () => { try { unsub?.(); } catch {} };
   }, []);
 
-  // ── 페이지 상태 스냅샷 ──
-  const snapshotRef = useRef({});
-  useEffect(() => {
-    snapshotRef.current = {
-      struFile, pipeFile, equiFile,
-      meshSize, uboltFullFix, useNastran,
-      meshStru, meshPipe, legZTol, nastranPath,
-      steps, activeIdx, hasRunOnce,
-      jobStatus, bdfResult, engineLog, runNastranRequested,
-    };
-  });
-  useEffect(() => () => { setPageState(snapshotRef.current); }, [setPageState]);
+  // ── 언마운트 시 상태 초기화: 다른 앱으로 나가면 모두 리셋 ──
+  useEffect(() => () => { setPageState(null); }, [setPageState]);
 
   // ── 최초 마운트: globalJob 동기화 ──
   useEffect(() => {
@@ -2478,10 +2419,6 @@ export default function HiTessModelBuilder() {
     formData.append('mesh_size',      String(parseInt(meshSize, 10) || 500));
     formData.append('ubolt_full_fix', String(!!uboltFullFix));
     formData.append('run_nastran',    String(!!useNastran));
-    if (meshStru)             formData.append('mesh_size_structure', String(parseInt(meshStru, 10)));
-    if (meshPipe)             formData.append('mesh_size_pipe',      String(parseInt(meshPipe, 10)));
-    if (legZTol != null && legZTol !== '') formData.append('leg_z_tol', String(parseFloat(legZTol)));
-    if (nastranPath?.trim()) formData.append('nastran_path', nastranPath.trim());
 
     setHasRunOnce(true);
     setRunNastranRequested(!!useNastran);
@@ -2605,6 +2542,9 @@ export default function HiTessModelBuilder() {
         const installRes = await window.electron.invoke('viewer:install', {
           viewerId:       VIEWER_ID,
           downloadUrl:    `${API_BASE_URL}${meta.downloadUrl}`,
+          // 사내 storage UNC 경로 — DRM/프록시 우회용. Electron 측 핸들러가 우선 시도하고
+          // 실패 시 downloadUrl 로 폴백.
+          uncPath:        meta.uncPath,
           expectedSha256: meta.sha256,
         });
         if (installRes === null) throw new Error('IPC viewer:install 미등록');
@@ -2815,7 +2755,6 @@ export default function HiTessModelBuilder() {
     setStruFile(null); setPipeFile(null); setEquiFile(null);
     setStruError(null); setPipeError(null); setEquiError(null);
     setMeshSize('500'); setUboltFullFix(true); setUseNastran(true);
-    setMeshStru(null); setMeshPipe(null); setLegZTol(null); setNastranPath('');
     setSteps(INITIAL_STEPS.map(s => ({ ...s })));
     setActiveIdx(0); setHasRunOnce(false);
     setJobStatus(null); setBdfResult(null); setEngineLog(null);
@@ -2944,11 +2883,6 @@ export default function HiTessModelBuilder() {
             meshSize={meshSize} setMeshSize={setMeshSize}
             uboltFullFix={uboltFullFix} setUboltFullFix={setUboltFullFix}
             useNastran={useNastran} setUseNastran={setUseNastran}
-            showAdvanced={showAdvanced} setShowAdvanced={setShowAdvanced}
-            meshStru={meshStru} setMeshStru={setMeshStru}
-            meshPipe={meshPipe} setMeshPipe={setMeshPipe}
-            legZTol={legZTol} setLegZTol={setLegZTol}
-            nastranPath={nastranPath} setNastranPath={setNastranPath}
             disabled={isRunning}
           />
         </div>

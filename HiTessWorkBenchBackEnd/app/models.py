@@ -79,6 +79,25 @@ class FeatureRequest(Base):
   created_at = Column(DateTime(timezone=True), default=datetime.now)
 
 
+class DevRunbook(Base):
+  """개발자 전용 런북 — 빌드/배포/경로/명령어 메모.
+
+  ADMINISTRATION → Developer Runbooks 페이지에서 관리.
+  paths/commands 는 JSON 배열로, 각 항목은 {label, value, kind?} 형태.
+  """
+  __tablename__ = "dev_runbooks"
+  id = Column(Integer, primary_key=True, index=True)
+  title = Column(String(200))
+  category = Column(String(50), index=True)   # Studio, Builder, AI, Build, Nastran, Other
+  summary = Column(String(500), nullable=True)
+  paths = Column(JSON, nullable=True)         # [{label, value, kind: 'file'|'folder'|'unc'|'url'}]
+  commands = Column(JSON, nullable=True)      # [{label, value}]
+  content = Column(Text, nullable=True)       # markdown 본문
+  owner = Column(String(50), nullable=True)
+  created_at = Column(DateTime(timezone=True), default=datetime.now)
+  updated_at = Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now)
+
+
 class ActivityLog(Base):
   __tablename__ = "activity_logs"
   id = Column(Integer, primary_key=True, index=True)

@@ -92,6 +92,25 @@ export const updateUserGuide = (guideId, payload) =>
 export const deleteUserGuide = (guideId) =>
   axios.delete(`${API_BASE_URL}/api/user-guides/${guideId}`, { headers: getAuthHeaders() });
 
+// ==================== Dev Runbooks ====================
+
+/** 개발자 런북 목록 조회 (관리자 전용) */
+export const getDevRunbooks = () =>
+  axios.get(`${API_BASE_URL}/api/dev-runbooks`, { headers: getAuthHeaders() });
+
+/** 개발자 런북 생성 */
+export const createDevRunbook = (payload) =>
+  axios.post(`${API_BASE_URL}/api/dev-runbooks`, payload, { headers: getAuthHeaders() });
+
+/** 개발자 런북 수정 */
+export const updateDevRunbook = (runbookId, payload) =>
+  axios.put(`${API_BASE_URL}/api/dev-runbooks/${runbookId}`, payload, { headers: getAuthHeaders() });
+
+/** 개발자 런북 삭제 */
+export const deleteDevRunbook = (runbookId) =>
+  axios.delete(`${API_BASE_URL}/api/dev-runbooks/${runbookId}`, { headers: getAuthHeaders() });
+
+
 // ==================== Admin Gate ====================
 
 /** 관리자 게이트 비밀번호 검증 */

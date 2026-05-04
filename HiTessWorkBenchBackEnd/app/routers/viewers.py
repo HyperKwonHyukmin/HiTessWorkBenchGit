@@ -81,6 +81,9 @@ def get_viewer_manifest(viewer_id: str):
     return JSONResponse({
         "manifest": manifest,
         "downloadUrl": f"/api/viewers/download/{viewer_id}",
+        # 사내 storage UNC 절대경로. 사용자 PC 도 이 경로에 직접 접근 가능하므로
+        # DRM/프록시가 HTTP 다운로드를 변조하는 환경에서 fs.copyFile 로 우회 가능.
+        "uncPath": zip_path,
         "sha256": _sha256(zip_path),
         "size": os.path.getsize(zip_path),
         "fileName": os.path.basename(zip_path),

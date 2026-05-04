@@ -92,3 +92,28 @@ class UserGuideResponse(UserGuideCreate):
 
     class Config:
         orm_mode = True
+
+
+# ==========================================
+# 5. Developer Runbook (개발자 메모) 스키마
+# ==========================================
+class DevRunbookBase(BaseModel):
+    title: str
+    category: str
+    summary: Optional[str] = None
+    paths: Optional[list] = None
+    commands: Optional[list] = None
+    content: Optional[str] = ""
+    owner: Optional[str] = None
+
+class DevRunbookCreate(DevRunbookBase):
+    pass
+
+class DevRunbookResponse(DevRunbookBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+        orm_mode = True

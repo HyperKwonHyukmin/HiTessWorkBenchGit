@@ -30,6 +30,8 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:getInitialFolder',
   'viewer:writeFile',
   'viewer:finalizeEditedModel',
+  // 개발자 런북: 탐색기 열기
+  'shell:openPath',
 ];
 
 contextBridge.exposeInMainWorld("electron", {
