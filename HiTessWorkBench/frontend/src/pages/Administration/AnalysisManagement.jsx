@@ -50,36 +50,107 @@ export default function AnalysisManagement() {
     if (!dateFilteredAnalyses.length) return null;
     const total = dateFilteredAnalyses.length;
     const success = dateFilteredAnalyses.filter(a => a.status === 'Success').length;
+    const failed = total - success;
     const apiCalls = dateFilteredAnalyses.filter(a => a.source === 'External API').length;
-    const programMap = {};
-    dateFilteredAnalyses.forEach(a => programMap[a.program_name] = (programMap[a.program_name] || 0) + 1);
-    const deptMap = {};
-    dateFilteredAnalyses.forEach(a => deptMap[a.department] = (deptMap[a.department] || 0) + 1);
-    const dateMap = {};
-    dateFilteredAnalyses.forEach(a => { const d = new Date(a.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); dateMap[d] = (dateMap[d] || 0) + 1; });
-    const moduleUsageData = Object.keys(programMap).map(k => ({ name: k, count: programMap[k], success: dateFilteredAnalyses.filter(a => a.program_name === k && a.status === 'Success').length })).sort((a, b) => b.count - a.count);
-    const userMap = {};
-    dateFilteredAnalyses.forEach(a => { if (!userMap[a.employee_id]) userMap[a.employee_id] = { name: a.userName, dept: a.department, count: 0 }; userMap[a.employee_id].count++; });
-    const deptData = Object.keys(deptMap).map(k => ({ name: k, count: deptMap[k] }));
-    const topDepts = [...deptData].sort((a, b) => b.count - a.count).slice(0, 5).map(d => ({ ...d, success: dateFilteredAnalyses.filter(a => a.department === d.name && a.status === 'Success').length }));
-    const crossModules = Object.keys(programMap);
-    const crossDepts = Object.keys(deptMap);
-    const crossMatrix = crossDepts.map(dept => crossModules.map(mod => dateFilteredAnalyses.filter(a => a.department === dept && a.program_name === mod).length));
-    const failuresByModuleData = Object.entries(
-      dateFilteredAnalyses.filter(a => a.status !== 'Success').reduce((acc, a) => { acc[a.program_name || 'Unknown'] = (acc[a.program_name || 'Unknown'] || 0) + 1; return acc; }, {})
-    ).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 5);
+
+    const sortedByDate = [...dateFilteredAnalyses].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const firstDate = new Date(sortedByDate[0].created_at);
+    const lastDate = new Date(sortedByDate[sortedByDate.length - 1].created_at);
+    const coveredDays = Math.max(1, Math.ceil((lastDate - firstDate) / 86400000) + 1);
+
+    const programMap = new Map();
+    const userMap = new Map();
+    const deptMap = new Map();
+    const sourceMap = new Map();
+
+    dateFilteredAnalyses.forEach(a => {
+      const programName = a.program_name || 'Unknown';
+      const employeeId = a.employee_id || 'unknown';
+      const department = a.department || 'Unknown';
+      const source = a.source || 'Workbench';
+      const createdAt = new Date(a.created_at);
+      const ok = a.status === 'Success';
+
+      if (!programMap.has(programName)) {
+        programMap.set(programName, { name: programName, count: 0, success: 0, failed: 0, api: 0, users: new Set(), lastRun: null });
+      }
+      const program = programMap.get(programName);
+      program.count += 1;
+      program.success += ok ? 1 : 0;
+      program.failed += ok ? 0 : 1;
+      program.api += source === 'External API' ? 1 : 0;
+      program.users.add(employeeId);
+      if (!program.lastRun || createdAt > program.lastRun) program.lastRun = createdAt;
+
+      if (!userMap.has(employeeId)) {
+        userMap.set(employeeId, { employee_id: employeeId, name: a.userName || 'Unknown', dept: department, count: 0, success: 0, failed: 0, api: 0, programs: new Set(), lastRun: null });
+      }
+      const user = userMap.get(employeeId);
+      user.count += 1;
+      user.success += ok ? 1 : 0;
+      user.failed += ok ? 0 : 1;
+      user.api += source === 'External API' ? 1 : 0;
+      user.programs.add(programName);
+      if (!user.lastRun || createdAt > user.lastRun) user.lastRun = createdAt;
+
+      deptMap.set(department, (deptMap.get(department) || 0) + 1);
+      sourceMap.set(source, (sourceMap.get(source) || 0) + 1);
+    });
+
+    const programRows = [...programMap.values()]
+      .map(p => ({
+        ...p,
+        share: Math.round((p.count / total) * 100),
+        successRate: Math.round((p.success / p.count) * 100),
+        apiRate: Math.round((p.api / p.count) * 100),
+        userCount: p.users.size,
+        lastRunLabel: p.lastRun ? p.lastRun.toLocaleString() : '-',
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    const userRows = [...userMap.values()]
+      .map(u => ({
+        ...u,
+        share: Math.round((u.count / total) * 100),
+        successRate: Math.round((u.success / u.count) * 100),
+        apiRate: Math.round((u.api / u.count) * 100),
+        programCount: u.programs.size,
+        lastRunLabel: u.lastRun ? u.lastRun.toLocaleString() : '-',
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    const trendMap = new Map();
+    sortedByDate.forEach(a => {
+      const dayKey = new Date(a.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      trendMap.set(dayKey, (trendMap.get(dayKey) || 0) + 1);
+    });
+    const trendData = [...trendMap.entries()].map(([date, count]) => ({ date, count })).slice(-14);
+    const busiestProgram = programRows[0] || null;
+    const riskyPrograms = programRows.filter(p => p.failed > 0).sort((a, b) => b.failed - a.failed).slice(0, 5);
+
     return {
-      total, successRate: ((success / total) * 100).toFixed(1), apiCalls,
-      programData: Object.keys(programMap).map(k => ({ name: k, value: programMap[k] })),
-      deptData,
-      trendData: Object.keys(dateMap).slice(0, 7).reverse().map(k => ({ date: k, count: dateMap[k] })),
-      moduleUsageData,
-      topUsers: Object.values(userMap).sort((a, b) => b.count - a.count).slice(0, 5),
-      topDepts,
-      failedCount: total - success,
-      failuresByModuleData,
-      recentFailures: dateFilteredAnalyses.filter(a => a.status !== 'Success').slice(0, 3),
-      crossTable: { depts: crossDepts, modules: crossModules, matrix: crossMatrix, maxVal: Math.max(1, ...crossMatrix.flat()) }
+      total,
+      success,
+      failed,
+      successRate: Math.round((success / total) * 100),
+      apiCalls,
+      apiRate: Math.round((apiCalls / total) * 100),
+      workbenchCalls: total - apiCalls,
+      activePrograms: programMap.size,
+      activeUsers: userMap.size,
+      activeDepartments: deptMap.size,
+      avgPerDay: (total / coveredDays).toFixed(1),
+      coveredDays,
+      busiestProgram,
+      programRows,
+      userRows,
+      topPrograms: programRows.slice(0, 8),
+      topUsers: userRows.slice(0, 8),
+      riskyPrograms,
+      trendData,
+      sourceData: [...sourceMap.entries()].map(([name, value]) => ({ name, value })),
+      deptData: [...deptMap.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 8),
+      recentFailures: dateFilteredAnalyses.filter(a => a.status !== 'Success').slice(0, 5),
     };
   }, [dateFilteredAnalyses]);
 
@@ -92,8 +163,10 @@ export default function AnalysisManagement() {
 
   const filteredAnalyses = dateFilteredAnalyses.filter(a =>
     (a.program_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    a.department.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    a.userName.toLowerCase().includes(searchTerm.toLowerCase())
+    (a.project_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (a.department || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (a.employee_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (a.userName || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (

@@ -8,7 +8,7 @@ export default function AnalysisFilterBar({ dateFrom, dateTo, onDateFromChange, 
         <h1 className="text-3xl font-bold text-brand-blue flex items-center gap-3">
           <BarChart3 className="text-emerald-600" size={32} /> Analysis Management
         </h1>
-        <p className="text-slate-500 mt-2">전체 구조 해석 수행 통계 및 호출 출처(API/UI) 트래킹 대시보드</p>
+        <p className="text-slate-500 mt-2">해석 프로그램 사용량, 성공률, 사용자별 활용 현황을 확인하는 관리자 대시보드</p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm">

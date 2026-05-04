@@ -8,7 +8,7 @@ export default function AnalysisHistoryTable({ filteredAnalyses, searchTerm, onS
         <h3 className="font-bold text-slate-700">Detailed Execution History</h3>
         <div className="relative w-64">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"/>
-          <input type="text" placeholder="검색 (모듈, 부서, 이름)..." value={searchTerm}
+          <input type="text" placeholder="검색 (프로그램, 프로젝트, 사용자, 부서)..." value={searchTerm}
             onChange={e => onSearchChange(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500 shadow-sm"/>
         </div>
