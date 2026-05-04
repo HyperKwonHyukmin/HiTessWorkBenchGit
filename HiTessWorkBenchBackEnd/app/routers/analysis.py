@@ -628,6 +628,12 @@ def get_result_zip(
         logger.error("[result-zip] output_dir 없음: %s", abs_dir)
         raise HTTPException(status_code=404, detail=f"output_dir 없음: {abs_dir}")
 
+    # arcname 계산은 os.path.relpath() 를 피하고 prefix 제거로 처리.
+    # relpath 내부의 abspath() 가 Windows 예약 디바이스명(NUL/CON/PRN/AUX/COM*/LPT*) 을
+    # 만나면 '\\.\nul' 같은 디바이스 경로로 변환돼 ValueError 가 발생하기 때문.
+    abs_dir_norm = os.path.normpath(abs_dir)
+    prefix_len = len(abs_dir_norm) + 1  # 끝 separator 포함
+
     skipped: list[str] = []
     buf = io.BytesIO()
     try:
@@ -635,15 +641,27 @@ def get_result_zip(
             for root, _, files in os.walk(abs_dir):
                 for f in files:
                     full = os.path.join(root, f)
-                    arcname = os.path.relpath(full, abs_dir)
+                    full_norm = os.path.normpath(full)
+
+                    if full_norm.startswith(abs_dir_norm):
+                        arcname = full_norm[prefix_len:]
+                    else:
+                        # os.walk 가 abs_dir 외부를 반환하는 일은 거의 없지만 방어적 처리
+                        arcname = f
+                    if not arcname:
+                        continue
+
                     try:
                         zf.write(full, arcname)
                     except OSError as e:
-                        # 잠긴 파일/접근 거부 등은 스킵하여 zip 자체는 정상 생성
+                        # 잠긴 파일/접근 거부 — 스킵하고 zip 은 계속 빌드
                         skipped.append(f"{arcname} ({e})")
                         continue
+                    except ValueError as e:
+                        # 예약 디바이스명 등 zipfile 내부 abspath 실패
+                        skipped.append(f"{arcname} (ValueError: {e})")
+                        continue
                     except Exception as e:
-                        # 그 외 zipfile 내부 예외는 진단 정보 남기고 스킵
                         skipped.append(f"{arcname} ({type(e).__name__}: {e})")
                         continue
     except Exception as e:
