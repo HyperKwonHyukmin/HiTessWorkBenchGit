@@ -1,46 +1,129 @@
 """Viewer 다운로드/배포 라우터.
 
-ViewerProgram/ 디렉터리에 보관된 viewer zip 패키지를 사내 클라이언트(Workbench)에
+viewer zip 패키지(예: model-studio-0.0.2.zip)를 사내 클라이언트(Workbench)에
 배포한다. Workbench는 viewer 미설치 상태에서 manifest 로 메타데이터/해시를 받아
 무결성 검증 후 download 엔드포인트로 zip 본체를 받아 자동 압축 해제한다.
 
 엔드포인트:
 - GET /api/viewers/manifest/{viewer_id}  : zip 내부 manifest.json + sha256 + size 반환
 - GET /api/viewers/download/{viewer_id}  : zip 본체 스트리밍 다운로드
+
+zip 검색 디렉터리 우선순위 (먼저 발견되는 곳 사용):
+  1) VIEWER_DIRS  — 콤마 구분 다중 경로 (운영 환경 추천)
+  2) VIEWER_DIR   — 단일 경로 (레거시 호환)
+  3) <백엔드>/StudioProgram/   — 백엔드 옆 로컬 폴더 (운영 표준)
+  4) 사내 storage UNC          — 개발 환경 기본값
 """
 import hashlib
 import json
+import logging
 import os
 import zipfile
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/viewers", tags=["viewers"])
 
-# 회사 DRM 이 로컬 zip 을 자동 변형하는 문제를 우회하기 위해 사내 스토리지(UNC) 경로 사용.
-# 환경변수 VIEWER_DIR 로 오버라이드 가능. 미설정 시 권혁민 책임의 사내 스토리지 폴더 사용.
-# 2026-04-30: ModelBuilderStudio 재구성에 따라 ViewerProgram → StudioProgram 폴더로 이전.
+# 백엔드 패키지 루트 (HiTessWorkBenchBackEnd/) — 로컬 fallback 경로 계산에 사용
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# ── viewer zip 탐색 후보 디렉터리 ────────────────────────────────────────────
+# 환경별 동작:
+#   • 운영 서버 (10.14.42.145) 에서 작동 시:
+#     `<backend>/Studio/ModelBuilderStudio` 에 zip 을 두면 거기서 찾아 HTTP 로 서빙.
+#     서버 머신엔 DRM 이 없어 HTTP 다운로드가 변조되지 않음.
+#   • 개발 PC (10.133.122.70 — DRM 있는 사내 컴퓨터) 에서 작동 시:
+#     서버 로컬 폴더가 없으니 자동으로 사내 storage UNC 로 폴백.
+#     사용자 PC 가 UNC 에 직접 접근하면서 DRM 우회.
+_SERVER_LOCAL_VIEWER_DIR = os.path.join(_BACKEND_DIR, "Studio", "ModelBuilderStudio")
+_LEGACY_LOCAL_VIEWER_DIR = os.path.join(_BACKEND_DIR, "StudioProgram")  # 레거시 호환
+
 _DEFAULT_VIEWER_DIR = (
     r"\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44"
     r"\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram"
 )
-VIEWER_DIR = os.environ.get("VIEWER_DIR", _DEFAULT_VIEWER_DIR)
+
+
+def _candidate_dirs() -> list[str]:
+    """zip 검색 후보 디렉터리를 우선순위 순으로 반환 (중복 제거, 순서 보존).
+
+    우선순위:
+      1) VIEWER_DIRS env (콤마 구분 다중 경로)
+      2) VIEWER_DIR env (단일 경로)
+      3) <backend>/Studio/ModelBuilderStudio  ★ 운영 서버 표준 (DRM 없음 → HTTP)
+      4) <backend>/StudioProgram              레거시 호환
+      5) 사내 storage UNC                     개발 PC 기본 (DRM 우회)
+    """
+    cands: list[str] = []
+
+    multi = os.environ.get("VIEWER_DIRS", "")
+    if multi:
+        cands.extend(p.strip() for p in multi.split(",") if p.strip())
+
+    single = os.environ.get("VIEWER_DIR", "")
+    if single:
+        cands.append(single)
+
+    cands.append(_SERVER_LOCAL_VIEWER_DIR)
+    cands.append(_LEGACY_LOCAL_VIEWER_DIR)
+    cands.append(_DEFAULT_VIEWER_DIR)
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for c in cands:
+        norm = os.path.normpath(c)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        out.append(c)
+    return out
 
 
 def _find_zip(viewer_id: str) -> str | None:
-    """viewer_id 로 시작하는 zip 파일 중 가장 최신 버전을 반환한다."""
-    if not os.path.isdir(VIEWER_DIR):
-        return None
-    candidates = [
-        f for f in os.listdir(VIEWER_DIR)
-        if f.startswith(viewer_id) and f.lower().endswith(".zip")
-    ]
-    if not candidates:
-        return None
-    # 파일명에 버전이 포함되어 있어 단순 역정렬로 최신 우선
-    candidates.sort(reverse=True)
-    return os.path.join(VIEWER_DIR, candidates[0])
+    """viewer_id 로 시작하는 zip 파일 중 가장 최신 버전을 반환한다.
+
+    여러 후보 디렉터리를 순서대로 탐색하여 첫 매칭을 사용한다.
+    """
+    for d in _candidate_dirs():
+        if not os.path.isdir(d):
+            continue
+        try:
+            files = os.listdir(d)
+        except OSError as e:
+            logger.warning("[viewers] listdir(%s) 실패: %s", d, e)
+            continue
+        candidates = [
+            f for f in files
+            if f.startswith(viewer_id) and f.lower().endswith(".zip")
+        ]
+        if not candidates:
+            continue
+        # 파일명에 버전이 포함되어 있어 단순 역정렬로 최신 우선
+        candidates.sort(reverse=True)
+        return os.path.join(d, candidates[0])
+    return None
+
+
+def _diagnostic_search(viewer_id: str) -> list[dict]:
+    """404 응답에 포함될 진단 정보 — 어느 후보가 어떻게 실패했는지 기록."""
+    diags: list[dict] = []
+    for d in _candidate_dirs():
+        info: dict = {"dir": d, "exists": os.path.isdir(d)}
+        if info["exists"]:
+            try:
+                files = os.listdir(d)
+                info["fileCount"] = len(files)
+                info["matchingZips"] = [
+                    f for f in files
+                    if f.startswith(viewer_id) and f.lower().endswith(".zip")
+                ]
+            except OSError as e:
+                info["error"] = str(e)
+        diags.append(info)
+    return diags
 
 
 def _sha256(path: str) -> str:
@@ -72,22 +155,41 @@ def get_viewer_manifest(viewer_id: str):
     """
     zip_path = _find_zip(viewer_id)
     if not zip_path:
-        raise HTTPException(status_code=404, detail=f"viewer not found: {viewer_id}")
+        diag = _diagnostic_search(viewer_id)
+        logger.error("[viewers] manifest 404 — viewer_id=%s, searched=%s", viewer_id, diag)
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "message": f"viewer not found: {viewer_id}",
+                "searched": diag,
+                "hint": (
+                    "백엔드가 viewer zip 을 못 찾음. 운영 환경에선 "
+                    "HiTessWorkBenchBackEnd/StudioProgram/ 에 zip 을 복사하거나 "
+                    "VIEWER_DIR/VIEWER_DIRS 환경변수로 zip 폴더를 지정하세요."
+                ),
+            },
+        )
 
     manifest = _read_manifest_from_zip(zip_path)
     if not manifest:
         raise HTTPException(status_code=500, detail="manifest.json missing in zip")
 
-    return JSONResponse({
+    # uncPath 는 사용자 PC 가 직접 접근 가능한 UNC 경로(`\\server\...`)일 때만 의미가 있다.
+    # 백엔드 로컬 디스크 경로(예: D:\app\...)는 사용자 PC 에서 접근 불가하므로 제외해야
+    # Electron 측이 자동으로 HTTP 다운로드 경로로 폴백한다.
+    is_unc = zip_path.startswith("\\\\") or zip_path.startswith("//")
+    response_body = {
         "manifest": manifest,
         "downloadUrl": f"/api/viewers/download/{viewer_id}",
-        # 사내 storage UNC 절대경로. 사용자 PC 도 이 경로에 직접 접근 가능하므로
-        # DRM/프록시가 HTTP 다운로드를 변조하는 환경에서 fs.copyFile 로 우회 가능.
-        "uncPath": zip_path,
         "sha256": _sha256(zip_path),
         "size": os.path.getsize(zip_path),
         "fileName": os.path.basename(zip_path),
-    })
+    }
+    if is_unc:
+        # DRM/프록시가 HTTP 다운로드를 변조하는 환경에서 사용자 PC 가 직접 fs.copyFile 가능
+        response_body["uncPath"] = zip_path
+
+    return JSONResponse(response_body)
 
 
 @router.get("/download/{viewer_id}")
@@ -95,6 +197,7 @@ def download_viewer(viewer_id: str):
     """zip 본체 다운로드. Content-Disposition 으로 파일명 명시."""
     zip_path = _find_zip(viewer_id)
     if not zip_path:
+        logger.error("[viewers] download 404 — viewer_id=%s", viewer_id)
         raise HTTPException(status_code=404, detail=f"viewer not found: {viewer_id}")
 
     return FileResponse(

@@ -1,8 +1,10 @@
 """해석 요청, 상태 조회, 이력 관리 API 라우터."""
 import io
 import os
+import shutil
 import uuid
 import urllib.parse
+import zipfile
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy import func
@@ -32,7 +34,8 @@ router = APIRouter(prefix="/api", tags=["analysis"])
 # 파일 다운로드 허용 기준 경로: userConnection/ 디렉터리만 허용
 _ROUTER_DIR = os.path.dirname(os.path.abspath(__file__))         # app/routers
 _BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))     # HiTessWorkBenchBackEnd
-_ALLOWED_DOWNLOAD_BASE = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
+_USER_CONNECTION_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
+_ALLOWED_DOWNLOAD_BASE = _USER_CONNECTION_DIR
 _PROGRAM_DOWNLOAD_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "DownloadProgram"))
 
 
@@ -264,7 +267,7 @@ async def request_truss_analysis(
 
     # [변경 사항] 기존 사번_시간 포맷에서 시간_사번_모듈명 포맷으로 일관성 확보
     unique_folder = f"{timestamp}_{employee_id}_TrussModelBuilder"
-    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
 
     os.makedirs(work_dir, exist_ok=True)
 
@@ -310,7 +313,7 @@ async def request_truss_assessment(
 
     # [변경 사항] 일관성을 위해 Assessment 폴더명도 시간_사번_모듈명 구조로 통일
     unique_folder = f"{timestamp}_{employee_id}_TrussAssessment"
-    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
 
     os.makedirs(work_dir, exist_ok=True)
 
@@ -354,7 +357,7 @@ async def request_bdfscanner(
 
     safe_name = "".join(c for c in program_name if c.isalnum() or c in "_-")[:40] or "BdfScanner"
     unique_folder = f"{timestamp}_{employee_id}_{safe_name}"
-    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
     os.makedirs(work_dir, exist_ok=True)
 
     bdf_path = os.path.join(work_dir, os.path.basename(bdf_file.filename))
@@ -392,7 +395,7 @@ async def request_f06parser(
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
     unique_folder = f"{timestamp}_{employee_id}_F06Parser"
-    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
     os.makedirs(work_dir, exist_ok=True)
 
     f06_path = os.path.join(work_dir, os.path.basename(f06_file.filename))
@@ -430,7 +433,7 @@ async def request_beam_analysis(
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
     unique_folder = f"{timestamp}_{employee_id}_SimpleBeam"
-    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
 
     os.makedirs(work_dir, exist_ok=True)
 
@@ -487,7 +490,7 @@ async def request_modelflow_analysis(
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
     unique_folder = f"{timestamp}_{employee_id}_HiTessModelBuilder"
-    work_dir = os.path.abspath(os.path.join(parent_dir, "userConnection", unique_folder))
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
     os.makedirs(work_dir, exist_ok=True)
 
     stru_path = os.path.join(work_dir, os.path.basename(stru_file.filename))
@@ -594,6 +597,67 @@ def get_edit_status(
         "edited_f06_path":          edited.get("edited_f06_path"),
         "f06_diagnostics":          f06_diag,
     }
+
+
+@router.get("/analysis/modelflow/result-zip")
+def get_result_zip(
+    output_dir: str = Query(..., description="userConnection 하위 build-full timestamp 폴더의 절대경로"),
+    current_user: str = Depends(require_auth),
+):
+    """output_dir 의 모든 파일을 zip 으로 묶어 스트리밍 반환.
+
+    백엔드와 사용자 PC 가 다른 머신일 때, 사용자 PC 가 결과 폴더를 직접 fs 로 못 읽으므로
+    이 엔드포인트로 zip 을 받아 사용자 PC 로컬에 풀어 Studio 의 initialFolder 로 사용한다.
+    """
+    abs_dir = _validate_userconnection_path(output_dir)
+    if not os.path.isdir(abs_dir):
+        raise HTTPException(status_code=404, detail="output_dir 없음")
+
+    # BytesIO 메모리 zip — DRM 의 디스크 후킹 우회 (export-xlsx 와 동일 패턴)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(abs_dir):
+            for f in files:
+                full = os.path.join(root, f)
+                arcname = os.path.relpath(full, abs_dir)
+                zf.write(full, arcname)
+    buf.seek(0)
+
+    fname = f"result-{os.path.basename(abs_dir)}.zip"
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=\"{fname}\""},
+    )
+
+
+@router.post("/analysis/modelflow/upload-edit")
+def upload_edit_file(
+    target_dir: str = Form(..., description="userConnection 하위 백엔드 output_dir 절대경로"),
+    file: UploadFile = File(..., description="Studio 가 작성한 *_edit.json"),
+    current_user: str = Depends(require_auth),
+):
+    """사용자 PC 로컬에서 Studio 가 작성한 *_edit.json 을 백엔드 output_dir 로 업로드.
+
+    apply-edit-intent 는 백엔드 로컬 파일을 읽으므로, Studio 가 사용자 PC 의 로컬 추출
+    폴더에 *_edit.json 을 쓴 경우 이 엔드포인트로 백엔드에 먼저 올려야 적용 가능하다.
+    """
+    abs_dir = _validate_userconnection_path(target_dir)
+    if not os.path.isdir(abs_dir):
+        raise HTTPException(status_code=404, detail="target_dir 없음")
+
+    fname = os.path.basename(file.filename or "")
+    if not fname.endswith("_edit.json"):
+        raise HTTPException(status_code=400, detail="파일명이 _edit.json 으로 끝나야 합니다.")
+    # 추가 보안: 경로 구분자 차단
+    if "/" in fname or "\\" in fname:
+        raise HTTPException(status_code=400, detail="파일명에 경로 구분자 불가")
+
+    dest = os.path.join(abs_dir, fname)
+    with open(dest, "wb") as out:
+        shutil.copyfileobj(file.file, out)
+
+    return {"saved": dest, "size": os.path.getsize(dest)}
 
 
 @router.post("/analysis/modelflow/apply-edit")

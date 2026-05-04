@@ -2159,6 +2159,9 @@ export default function HiTessModelBuilder() {
   // 버전 동기화: 워크벤치(서버 측 최신 zip 의 manifest.version) ↔ 로컬 설치본 manifest.version
   const [installedVersion, setInstalledVersion] = useState(null); // 로컬 설치본
   const [latestVersion,    setLatestVersion]    = useState(null); // 서버 zip 의 최신
+  // 백엔드가 다른 머신일 때 result-zip 을 받아 사용자 PC 로컬에 풀어 둔 경로.
+  // null 이면 backend.outputDir 을 직접 사용 (dev: 같은 PC).
+  const [localResultDir,   setLocalResultDir]   = useState(null);
 
   // ── Studio 편집 결과(*_edit.json → edited/) 상태 ──
   const [editStatus, setEditStatus] = useState(null); // /edit-status 응답
@@ -2554,9 +2557,35 @@ export default function HiTessModelBuilder() {
       }
 
       setViewerStatus('ready');
+
+      // ── 결과 폴더 접근 가능성 검사 + 필요 시 다운로드 ──────────────────
+      // dev: 백엔드와 사용자 PC 가 같은 머신 → outputDir 이 직접 fs 로 접근 가능 → 그대로 사용.
+      // production: 백엔드가 다른 머신 → result-zip 으로 받아 사용자 PC 로컬 temp 에 풀어서 사용.
+      let initialFolder = bdfResult.outputDir;
+      const access = await window.electron.invoke('viewer:checkPathAccess', {
+        path: bdfResult.outputDir,
+      });
+      if (!access?.accessible) {
+        showToast('결과 폴더 다운로드 중...', 'info');
+        const params = new URLSearchParams({ output_dir: bdfResult.outputDir });
+        const downloadUrl = `${API_BASE_URL}/api/analysis/modelflow/result-zip?${params}`;
+        const token = localStorage.getItem('session_token');
+        const fetchRes = await window.electron.invoke('viewer:fetchResultDir', {
+          downloadUrl,
+          jobId: jobStatus?.job_id || bdfResult.outputDir.split(/[\\/]/).pop(),
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (fetchRes === null) throw new Error('IPC viewer:fetchResultDir 미등록');
+        if (!fetchRes?.ok) throw new Error(fetchRes?.error || '결과 폴더 다운로드 실패');
+        initialFolder = fetchRes.dir;
+        setLocalResultDir(fetchRes.dir);
+      } else {
+        setLocalResultDir(null);
+      }
+
       const openRes = await window.electron.invoke('viewer:open', {
         viewerId:      VIEWER_ID,
-        initialFolder: bdfResult.outputDir,
+        initialFolder,
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok)     throw new Error(openRes?.error || '오픈 실패');
@@ -2716,7 +2745,7 @@ export default function HiTessModelBuilder() {
   useEffect(() => {
     if (!window.electron?.onMessage) return;
     const unsub = window.electron.onMessage('modelflow:finalize-edit-request', async (msg) => {
-      const { requestId, folderPath } = msg || {};
+      const { requestId, folderPath, editFileName } = msg || {};
       if (!requestId) return;
 
       // 1) 사용자가 워크벤치를 봤을 때 곧바로 Edit 탭이 활성화되어 있도록 step 1 로 전환
@@ -2724,10 +2753,43 @@ export default function HiTessModelBuilder() {
       // 2) editStatus 한 번 갱신 (선택적, 빠른 GET)
       try { await refreshEditStatus(); } catch {}
 
-      // 3) Phase 1: POST → job_id 즉시 회수
-      const startResult = await startApplyEditJob(folderPath);
+      // 3) folderPath 가 사용자 PC 로컬 추출 폴더이면, *_edit.json 을 백엔드 output_dir 로 업로드 선행.
+      //    apply-edit-intent 는 백엔드 로컬 파일을 읽으므로 업로드 없이는 동작 안 함.
+      const isLocalExtract = !!localResultDir && folderPath === localResultDir;
+      const backendOutputDir = bdfResult?.outputDir || folderPath;
+      let uploadFailed = null;
 
-      // 4) Studio 에는 Phase 1 결과만 즉시 회신 — Studio 창은 곧 닫힘
+      if (isLocalExtract && editFileName) {
+        try {
+          const editPath = `${folderPath}\\${editFileName}`;
+          const readRes = await window.electron.invoke('viewer:readLocalFile', { filePath: editPath });
+          if (!readRes?.ok) throw new Error(readRes?.error || '_edit.json 읽기 실패');
+
+          const blob = new Blob([readRes.data], { type: 'application/json' });
+          const fd = new FormData();
+          fd.append('target_dir', backendOutputDir);
+          fd.append('file', blob, editFileName);
+          const r = await fetch(`${API_BASE_URL}/api/analysis/modelflow/upload-edit`, {
+            method: 'POST',
+            headers: getAuthHeaders(),  // multipart 는 Content-Type 자동 — auth 만 명시
+            body: fd,
+          });
+          if (!r.ok) {
+            let detail = `HTTP ${r.status}`;
+            try { const b = await r.json(); detail += ` — ${b.detail ?? JSON.stringify(b)}`; } catch {}
+            throw new Error(detail);
+          }
+        } catch (e) {
+          uploadFailed = e.message || String(e);
+        }
+      }
+
+      // 4) Phase 1: POST → job_id 즉시 회수 (backend output_dir 기준)
+      const startResult = uploadFailed
+        ? { ok: false, error: `*_edit.json 업로드 실패: ${uploadFailed}` }
+        : await startApplyEditJob(backendOutputDir);
+
+      // 5) Studio 에는 Phase 1 결과만 즉시 회신 — Studio 창은 곧 닫힘
       try {
         window.electron.sendMessage('modelflow:finalize-edit-response', {
           requestId,
@@ -2738,7 +2800,7 @@ export default function HiTessModelBuilder() {
         console.warn('[finalize-edit] response send failed', err);
       }
 
-      // 5) Phase 2: 백그라운드 폴링 — 오버레이가 보이는 워크벤치 페이지에서 진행 표시
+      // 6) Phase 2: 백그라운드 폴링 — 오버레이가 보이는 워크벤치 페이지에서 진행 표시
       if (startResult.ok) {
         pollEditJobInBackground(startResult.jobId);
       } else {
@@ -2746,7 +2808,7 @@ export default function HiTessModelBuilder() {
       }
     });
     return () => { try { unsub?.(); } catch {} };
-  }, [startApplyEditJob, pollEditJobInBackground, refreshEditStatus, showToast]);
+  }, [startApplyEditJob, pollEditJobInBackground, refreshEditStatus, showToast, localResultDir, bdfResult?.outputDir]);
 
   /* ── 리셋 ──────────────────────────────────────────────────────────── */
   const handleReset = () => {
@@ -2755,6 +2817,7 @@ export default function HiTessModelBuilder() {
     setStruFile(null); setPipeFile(null); setEquiFile(null);
     setStruError(null); setPipeError(null); setEquiError(null);
     setMeshSize('500'); setUboltFullFix(true); setUseNastran(true);
+    setLocalResultDir(null);
     setSteps(INITIAL_STEPS.map(s => ({ ...s })));
     setActiveIdx(0); setHasRunOnce(false);
     setJobStatus(null); setBdfResult(null); setEngineLog(null);

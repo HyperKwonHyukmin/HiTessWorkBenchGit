@@ -30,6 +30,10 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:getInitialFolder',
   'viewer:writeFile',
   'viewer:finalizeEditedModel',
+  // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
+  'viewer:checkPathAccess',
+  'viewer:fetchResultDir',
+  'viewer:readLocalFile',
   // 개발자 런북: 탐색기 열기
   'shell:openPath',
 ];

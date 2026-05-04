@@ -340,13 +340,16 @@ async function readJsonFolderRecursive(folderPath) {
 
 // Electron net 모듈 기반 다운로드 (Chromium 네트워크 스택 — 시스템 프록시 자동 적용,
 // FastAPI/uvicorn keep-alive/응답 종료 비표준에도 관대함)
-function downloadToFile(url, destPath, viewerId, totalRangeStart = 0, totalRangePct = 90) {
+function downloadToFile(url, destPath, viewerId, totalRangeStart = 0, totalRangePct = 90, headers = {}) {
   return new Promise((resolve, reject) => {
     const stream = fs.createWriteStream(destPath);
     let settled = false;
     const settle = (fn, arg) => { if (!settled) { settled = true; fn(arg); } };
 
     const request = net.request({ url, method: "GET", redirect: "follow", useSessionCookies: false });
+    for (const [k, v] of Object.entries(headers || {})) {
+      try { request.setHeader(k, String(v)); } catch {}
+    }
 
     request.on("response", (response) => {
       if (response.statusCode !== 200) {
@@ -559,6 +562,85 @@ ipcMain.handle("viewer:install", async (_e, payload) => {
         viewerId, phase: "failed", progress: -1, error: e.message,
       });
     }
+    return { ok: false, error: e.message };
+  }
+});
+
+// 2.5) 결과 폴더 경로가 사용자 PC 에서 직접 fs.readdir 가능한지 검사
+//      (dev: 같은 PC 면 true, production: 백엔드가 다른 머신이면 false)
+ipcMain.handle("viewer:checkPathAccess", async (_e, payload) => {
+  const { path: p } = payload || {};
+  if (!p || typeof p !== "string") return { accessible: false };
+  try {
+    const stat = fs.statSync(p);
+    return { accessible: stat.isDirectory() };
+  } catch {
+    return { accessible: false };
+  }
+});
+
+// 2.6) 백엔드 result-zip 을 다운로드하여 사용자 PC 로컬 temp 에 압축 해제.
+//      Studio 의 initialFolder 로 사용할 로컬 경로를 반환.
+ipcMain.handle("viewer:fetchResultDir", async (_e, payload) => {
+  const { downloadUrl, jobId, headers } = payload || {};
+  if (!downloadUrl || !jobId) {
+    return { ok: false, error: "downloadUrl/jobId 누락" };
+  }
+
+  const tmpZip   = path.join(app.getPath("temp"), `result-${jobId}-${Date.now()}.zip`);
+  const targetDir = path.join(app.getPath("userData"), "results", String(jobId));
+
+  try {
+    if (mainWindow) {
+      mainWindow.webContents.send("viewer:install-progress", {
+        viewerId: "result", phase: "starting", progress: 0,
+      });
+    }
+
+    await downloadToFile(downloadUrl, tmpZip, "result", 0, 90, headers || {});
+
+    if (fs.existsSync(targetDir)) {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+    fs.mkdirSync(targetDir, { recursive: true });
+
+    await extractZipWithTar(tmpZip, targetDir);
+    try { fs.unlinkSync(tmpZip); } catch {}
+
+    if (mainWindow) {
+      mainWindow.webContents.send("viewer:install-progress", {
+        viewerId: "result", phase: "completed", progress: 100,
+      });
+    }
+    return { ok: true, dir: targetDir };
+  } catch (e) {
+    try { if (fs.existsSync(tmpZip)) fs.unlinkSync(tmpZip); } catch {}
+    if (mainWindow) {
+      mainWindow.webContents.send("viewer:install-progress", {
+        viewerId: "result", phase: "failed", progress: -1, error: e.message,
+      });
+    }
+    return { ok: false, error: e.message };
+  }
+});
+
+// 2.7) 사용자 PC 로컬 파일을 읽어 Uint8Array 로 반환 (apply-edit 업로드용).
+//      보안: app.getPath("userData")/"temp" 하위 파일만 허용.
+ipcMain.handle("viewer:readLocalFile", async (_e, payload) => {
+  const { filePath } = payload || {};
+  if (!filePath || typeof filePath !== "string") {
+    return { ok: false, error: "filePath 누락" };
+  }
+  const userData = path.normalize(app.getPath("userData"));
+  const tempDir  = path.normalize(app.getPath("temp"));
+  const norm     = path.normalize(filePath);
+  if (!norm.startsWith(userData) && !norm.startsWith(tempDir)) {
+    return { ok: false, error: "허용되지 않은 경로" };
+  }
+  try {
+    const buf = await fs.promises.readFile(norm);
+    return { ok: true, data: new Uint8Array(buf), size: buf.byteLength };
+  } catch (e) {
     return { ok: false, error: e.message };
   }
 });
