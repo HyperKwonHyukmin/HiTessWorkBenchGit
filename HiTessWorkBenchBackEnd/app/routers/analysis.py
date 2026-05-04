@@ -1,10 +1,13 @@
 """해석 요청, 상태 조회, 이력 관리 API 라우터."""
 import io
+import logging
 import os
 import shutil
 import uuid
 import urllib.parse
 import zipfile
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy import func
@@ -613,10 +616,19 @@ def get_result_zip(
     바이너리 zip 의 chunk 가 어긋나며 h11 LocalProtocolError 를 유발하므로,
     bytes 를 일괄 빌드한 뒤 Response 로 한 번에 회신한다.
     """
-    abs_dir = _validate_userconnection_path(output_dir)
-    if not os.path.isdir(abs_dir):
-        raise HTTPException(status_code=404, detail="output_dir 없음")
+    try:
+        abs_dir = _validate_userconnection_path(output_dir)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[result-zip] path validation 실패: %r", output_dir)
+        raise HTTPException(status_code=400, detail=f"경로 검증 실패: {type(e).__name__}: {e}")
 
+    if not os.path.isdir(abs_dir):
+        logger.error("[result-zip] output_dir 없음: %s", abs_dir)
+        raise HTTPException(status_code=404, detail=f"output_dir 없음: {abs_dir}")
+
+    skipped: list[str] = []
     buf = io.BytesIO()
     try:
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -626,14 +638,31 @@ def get_result_zip(
                     arcname = os.path.relpath(full, abs_dir)
                     try:
                         zf.write(full, arcname)
-                    except OSError:
+                    except OSError as e:
                         # 잠긴 파일/접근 거부 등은 스킵하여 zip 자체는 정상 생성
+                        skipped.append(f"{arcname} ({e})")
+                        continue
+                    except Exception as e:
+                        # 그 외 zipfile 내부 예외는 진단 정보 남기고 스킵
+                        skipped.append(f"{arcname} ({type(e).__name__}: {e})")
                         continue
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"zip 생성 실패: {e}")
+        logger.exception("[result-zip] zip 빌드 실패: abs_dir=%s", abs_dir)
+        raise HTTPException(
+            status_code=500,
+            detail=f"zip 빌드 실패: {type(e).__name__}: {e}",
+        )
+
+    if skipped:
+        logger.warning("[result-zip] 스킵된 파일 %d 개 (앞 5건): %s", len(skipped), skipped[:5])
 
     body = buf.getvalue()
+    if not body:
+        logger.error("[result-zip] 빈 zip — abs_dir=%s, skipped=%d", abs_dir, len(skipped))
+        raise HTTPException(status_code=500, detail="zip 이 비어 있음 (모든 파일 스킵됨)")
+
     fname = f"result-{os.path.basename(abs_dir)}.zip"
+    logger.info("[result-zip] 응답 준비 완료: %s (size=%d bytes)", fname, len(body))
     return Response(
         content=body,
         media_type="application/zip",
