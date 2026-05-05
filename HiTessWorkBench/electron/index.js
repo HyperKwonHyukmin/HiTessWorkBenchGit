@@ -140,13 +140,18 @@ ipcMain.handle("download-client", (event, url) => {
   });
 });
 
-ipcMain.handle("start-self-update", (event, url) => {
+ipcMain.handle("start-self-update", (event, payload) => {
   return new Promise((resolve, reject) => {
+    // 호환성: 구버전은 url 문자열 하나만 넘김. 신버전은 { url, headers } 객체.
+    const url = typeof payload === "string" ? payload : payload?.url;
+    const headers = (typeof payload === "object" && payload?.headers) || {};
+    if (!url) { reject(new Error("update URL이 비어있습니다.")); return; }
+
     // 항상 temp 폴더에 저장 — 쓰기 권한 문제 없음
     let tmpPath = path.join(os.tmpdir(), "HiTESS-WorkBench-update.exe");
 
     const protocol = url.startsWith("https") ? https : http;
-    const request = protocol.get(url, (response) => {
+    const request = protocol.get(url, { headers }, (response) => {
       if (response.statusCode !== 200) {
         reject(new Error(`서버 오류: HTTP ${response.statusCode}`));
         return;

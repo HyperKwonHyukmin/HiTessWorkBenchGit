@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, RefreshCw, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { API_BASE_URL } from '../config';
+import { getAuthHeaders } from '../utils/auth';
 
 const PHASE = { IDLE: 'idle', DOWNLOADING: 'downloading', DONE: 'done', ERROR: 'error' };
 
@@ -31,7 +32,10 @@ export default function UpdateModal({ currentVersion, serverVersion }) {
     setProgress(0);
     setErrorMsg('');
     try {
-      await window.electron.invoke('start-self-update', `${API_BASE_URL}/api/download/client`);
+      await window.electron.invoke('start-self-update', {
+        url: `${API_BASE_URL}/api/download/client`,
+        headers: getAuthHeaders(),
+      });
     } catch (err) {
       setPhase(PHASE.ERROR);
       setErrorMsg(err?.message || '알 수 없는 오류');

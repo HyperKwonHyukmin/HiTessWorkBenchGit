@@ -5,7 +5,7 @@ import glob
 import psutil
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -14,6 +14,7 @@ from ..services.job_manager import job_status_store, MAX_CONCURRENT_JOBS
 from ..services.cleanup_service import run_cleanup, _USER_CONN_DIR, RETENTION_DAYS
 from ..state import server_state
 from ..dependencies import require_admin, require_auth
+from ..sessions import session_store
 from ..services.activity_service import log_activity
 
 SERVER_VERSION = "1.0.0"
@@ -31,8 +32,16 @@ def check_version():
 
 
 @router.get("/download/client")
-def download_client(req: Request, db: Session = Depends(database.get_db), employee_id: str = Depends(require_auth)):
-  """최신 클라이언트 exe를 다운로드합니다."""
+def download_client(
+  req: Request,
+  db: Session = Depends(database.get_db),
+  authorization: str = Header(default=None),
+):
+  """최신 클라이언트 exe를 다운로드합니다.
+
+  자가 업데이트(구버전 클라이언트가 헤더 없이 호출하는 케이스 포함) 호환을 위해
+  인증을 강제하지 않는다. 토큰이 있으면 활동 로그에 employee_id를 기록한다.
+  """
   if not LATEST_CLIENT_DIR.exists():
     raise HTTPException(status_code=404, detail="클라이언트 폴더를 찾을 수 없습니다.")
 
@@ -41,6 +50,15 @@ def download_client(req: Request, db: Session = Depends(database.get_db), employ
     raise HTTPException(status_code=404, detail="클라이언트 exe 파일이 없습니다. 서버 관리자에게 문의하세요.")
 
   latest_exe = exe_files[0]
+
+  # best-effort: 토큰 있으면 employee_id 추출
+  employee_id = None
+  if authorization and authorization.startswith("Bearer "):
+    try:
+      employee_id = session_store.get_employee_id(authorization.removeprefix("Bearer ").strip())
+    except Exception:
+      employee_id = None
+
   log_activity(
     db, "PROGRAM_DOWNLOAD",
     employee_id=employee_id,
