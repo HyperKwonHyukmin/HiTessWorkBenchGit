@@ -1,6 +1,6 @@
 {
   "name": "hitess-workbench",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Hi-TESS Structural Analysis Workbench",
   "author": "Kwon Hyuk min",
   "main": "./electron/index.js",
