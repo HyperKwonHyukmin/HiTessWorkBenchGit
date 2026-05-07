@@ -13,6 +13,8 @@ const VALID_RECEIVE_CHANNELS = [
   'viewer:install-progress',
   // main 이 mainWindow 렌더러에게 finalize-edit 처리를 요청
   'modelflow:finalize-edit-request',
+  // main 이 viewer 창에 Unit 구조 해석 진행 상황을 stream
+  'viewer:unit-structural-progress',
 ];
 const VALID_INVOKE_CHANNELS  = [
   'list-dir-csvs',
@@ -30,6 +32,8 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:getInitialFolder',
   'viewer:writeFile',
   'viewer:finalizeEditedModel',
+  'viewer:runStabilityAnalysis',
+  'viewer:runUnitStructural',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
   'viewer:checkPathAccess',
   'viewer:fetchResultDir',
@@ -72,6 +76,17 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   getInitialFolder: () => ipcRenderer.invoke('viewer:getInitialFolder'),
   writeFile: (folderPath, fileName, content) =>
     ipcRenderer.invoke('viewer:writeFile', folderPath, fileName, content),
+  runStabilityAnalysis: (posturePath) =>
+    ipcRenderer.invoke('viewer:runStabilityAnalysis', posturePath),
+  // Studio "Unit 구조 해석 실행" → 백엔드 unit-structural endpoint 호출 + 폴링까지
+  // main 이 처리. 진행 상황은 onUnitStructuralProgress() 로 stream.
+  runUnitStructural: (opts) =>
+    ipcRenderer.invoke('viewer:runUnitStructural', opts),
+  onUnitStructuralProgress: (callback) => {
+    const listener = (_, data) => callback(data);
+    ipcRenderer.on('viewer:unit-structural-progress', listener);
+    return () => ipcRenderer.removeListener('viewer:unit-structural-progress', listener);
+  },
   // Studio "최종 모델 출력" → 워크벤치 백엔드 apply-edit-intent 자동 수행
   // → mainWindow Edit 탭 표시 → Studio 창 닫기 → { ok, error }
   finalizeEditedModel: (folderPath, request) =>

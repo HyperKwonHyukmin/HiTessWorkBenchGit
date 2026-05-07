@@ -23,6 +23,9 @@ from ..services.truss_service import task_execute_truss
 from ..services.assessment_service import task_execute_assessment, _json_to_xlsx_bytes
 from ..services.beam_service import task_execute_beam
 from ..services.bdfscanner_service import task_execute_bdfscanner
+from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
+from ..services.unit_structural_service import task_execute_unit_structural
+from ..services.module_stability_service import task_execute_module_stability
 from ..services.hitess_modelflow_service import (
     task_execute_modelflow,
     task_execute_apply_edit,
@@ -142,11 +145,12 @@ def get_analysis_history(
 @router.get("/analysis/all")
 def get_all_analysis_history(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=100000),
     db: Session = Depends(database.get_db)
 ):
     """
     관리자용 전체 해석 이력을 최신순으로 조회합니다. 페이지네이션 지원.
+    상한 le=100000 — 통계 대시보드가 전체 이력을 받아 집계하기 위함.
     """
     total = db.query(models.Analysis).count()
     items = (
@@ -375,6 +379,165 @@ async def request_bdfscanner(
 
     analysis_executor.submit(
         task_execute_bdfscanner, job_id, bdf_path, work_dir, employee_id, timestamp, source, use_nastran
+    )
+
+    return {"job_id": job_id}
+
+
+# ==================== ModuleUnitStudio 자세안정성 해석 ====================
+
+class ModuleStabilityRequest(BaseModel):
+    posturePath: str
+    source: Optional[str] = "ModuleUnitStudio"
+
+
+@router.post("/analysis/module-stability/request")
+async def request_module_stability(
+        req: ModuleStabilityRequest,
+        current_user: str = Depends(require_auth)
+):
+    """
+    ModuleUnitStudio 자세안정성 해석 요청.
+    Electron viewer host adapter 가 _posture.json 절대경로를 넘기면 백엔드가
+    ModuleAnalysis.Cli.exe 를 실행하고 _stability.json 결과를 job 상태에 보관한다.
+    """
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "자세안정성 해석 대기 중..."})
+
+    analysis_executor.submit(
+        task_execute_module_stability,
+        job_id,
+        req.posturePath,
+        current_user,
+        timestamp,
+        req.source or "ModuleUnitStudio",
+    )
+
+    return {"job_id": job_id, "jobId": job_id}
+
+
+@router.get("/analysis/module-stability/{job_id}/status")
+async def get_module_stability_status(job_id: str):
+    """ModuleUnitStudio 전용 job status alias."""
+    if job_id not in job_status_store:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job_status_store.get(job_id)
+
+
+# ==================== Group & Module Unit 권상 구조 해석 ====================
+
+@router.post("/analysis/groupmoduleunit/request")
+async def request_groupmoduleunit(
+        bdf_file: UploadFile = File(...),
+        employee_id: str = Form(...),
+        use_nastran: bool = Form(False),
+        source: str = Form("Workbench"),
+        current_user: str = Depends(require_auth)
+):
+    """
+    Group & Module Unit 권상 구조 해석 — Step1 BDF 입력 검증.
+    NastranBridge (`nastran_bridge.exe`) 로 BDF 모델 JSON 을 산출하고
+    프론트 ValidationStepLog 가 기대하는 step1 schema 로 변환한다.
+    use_nastran=True 인 경우 추후 단계에서 validate-run 으로 F06 검증까지 확장한다.
+    """
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    unique_folder = f"{timestamp}_{employee_id}_GroupModuleUnit"
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
+    os.makedirs(work_dir, exist_ok=True)
+
+    bdf_path = os.path.join(work_dir, os.path.basename(bdf_file.filename))
+    try:
+        with open(bdf_path, "wb") as buffer:
+            buffer.write(await bdf_file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
+
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
+
+    analysis_executor.submit(
+        task_execute_groupmoduleunit,
+        job_id, bdf_path, work_dir, employee_id, timestamp, source, use_nastran,
+    )
+
+    return {"job_id": job_id}
+
+
+# ==================== Unit Structural Analysis (Lifting + Nastran) ===========
+
+@router.post("/analysis/unit-structural/request")
+async def request_unit_structural(
+        stability_path: str = Form(...),
+        parent_analysis_id: int = Form(...),
+        safety_factor: float = Form(1.2),
+        allowable_mpa: float = Form(220.0),
+        employee_id: str = Form(...),
+        source: str = Form("Studio"),
+        current_user: str = Depends(require_auth)
+):
+    """
+    Unit 구조 해석 요청 — 자세 안정성 PASS 후 wire 포함 BDF 빌드 + Nastran SOL 101 + F06 매핑.
+
+    Studio (Workbench Electron main) 가 이미 백엔드 폴더에 저장된 stability JSON 의
+    절대경로를 직접 전달한다. 보안: stability_path 는 parent BDF 와 같은 디렉터리,
+    그리고 _USER_CONNECTION_DIR 하위에 있어야 한다.
+    """
+    if safety_factor <= 0:
+        raise HTTPException(status_code=400, detail="safety_factor must be > 0")
+    if allowable_mpa <= 0:
+        raise HTTPException(status_code=400, detail="allowable_mpa must be > 0")
+
+    db = database.SessionLocal()
+    try:
+        parent = db.query(models.Analysis).filter(
+            models.Analysis.id == parent_analysis_id
+        ).first()
+        if parent is None:
+            raise HTTPException(status_code=404,
+                                detail=f"Parent Analysis (id={parent_analysis_id}) not found")
+        if parent.program_name != "GroupModuleUnit":
+            raise HTTPException(status_code=400,
+                                detail=f"Parent program_name '{parent.program_name}' is not 'GroupModuleUnit'")
+        if parent.status != "Success":
+            raise HTTPException(status_code=400,
+                                detail=f"Parent BDF 검증이 성공 상태가 아닙니다 (status={parent.status})")
+        bdf_path = (parent.input_info or {}).get("bdf_model")
+        if not bdf_path or not os.path.exists(bdf_path):
+            raise HTTPException(status_code=400,
+                                detail=f"Parent BDF 파일을 찾을 수 없습니다: {bdf_path}")
+    finally:
+        db.close()
+
+    # 보안 — stability_path 는 (1) 절대경로, (2) parent BDF 와 같은 폴더 안,
+    # (3) userConnection 디렉터리 하위, (4) .json 확장자, (5) 실제 존재 — 모두 만족해야 함.
+    stab_abs = os.path.abspath(stability_path)
+    bdf_dir_abs = os.path.dirname(os.path.abspath(bdf_path))
+    user_root_abs = os.path.abspath(_USER_CONNECTION_DIR)
+    if not os.path.isabs(stability_path):
+        raise HTTPException(status_code=400, detail="stability_path 는 절대경로여야 합니다.")
+    if not stab_abs.lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="stability_path 는 .json 파일이어야 합니다.")
+    if not stab_abs.startswith(user_root_abs):
+        raise HTTPException(status_code=400,
+                            detail="stability_path 가 userConnection 디렉터리 안에 있지 않습니다.")
+    if os.path.dirname(stab_abs) != bdf_dir_abs:
+        raise HTTPException(status_code=400,
+                            detail="stability_path 가 parent BDF 와 같은 폴더에 있지 않습니다.")
+    if not os.path.exists(stab_abs):
+        raise HTTPException(status_code=400, detail=f"stability_path 파일을 찾을 수 없습니다: {stab_abs}")
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {
+        "status": "Pending", "progress": 0, "message": "Waiting in Queue...",
+    })
+
+    analysis_executor.submit(
+        task_execute_unit_structural,
+        job_id, parent_analysis_id, stab_abs,
+        safety_factor, allowable_mpa,
+        employee_id, timestamp, source,
     )
 
     return {"job_id": job_id}

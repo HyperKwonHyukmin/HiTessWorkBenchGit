@@ -25,7 +25,7 @@ export default function AnalysisManagement() {
         const usersData = userRes.data;
         setAnalyses((analysisRes.data.items || analysisRes.data).map(a => {
           const u = usersData.find(user => user.employee_id === a.employee_id);
-          return { ...a, department: u ? u.department || 'Unknown' : 'Unknown', userName: u ? u.name : 'Deleted User', source: a.source || 'Workbench' };
+          return { ...a, department: u ? u.department || 'Unknown' : 'Unknown', userName: u ? u.name : 'Deleted User' };
         }));
       } catch (err) {
         setError(err?.response?.data?.detail || err?.message || '데이터를 불러오지 못했습니다.');
@@ -49,9 +49,6 @@ export default function AnalysisManagement() {
   const stats = useMemo(() => {
     if (!dateFilteredAnalyses.length) return null;
     const total = dateFilteredAnalyses.length;
-    const success = dateFilteredAnalyses.filter(a => a.status === 'Success').length;
-    const failed = total - success;
-    const apiCalls = dateFilteredAnalyses.filter(a => a.source === 'External API').length;
 
     const sortedByDate = [...dateFilteredAnalyses].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     const firstDate = new Date(sortedByDate[0].created_at);
@@ -61,48 +58,44 @@ export default function AnalysisManagement() {
     const programMap = new Map();
     const userMap = new Map();
     const deptMap = new Map();
-    const sourceMap = new Map();
+    const dayCountMap = new Map();
+    const hourBuckets = Array.from({ length: 24 }, () => 0);
+    const weekdayBuckets = Array.from({ length: 7 }, () => 0); // 0=일 ~ 6=토
 
     dateFilteredAnalyses.forEach(a => {
       const programName = a.program_name || 'Unknown';
       const employeeId = a.employee_id || 'unknown';
       const department = a.department || 'Unknown';
-      const source = a.source || 'Workbench';
       const createdAt = new Date(a.created_at);
-      const ok = a.status === 'Success';
+      const dayKey = createdAt.toISOString().slice(0, 10);
 
       if (!programMap.has(programName)) {
-        programMap.set(programName, { name: programName, count: 0, success: 0, failed: 0, api: 0, users: new Set(), lastRun: null });
+        programMap.set(programName, { name: programName, count: 0, users: new Set(), lastRun: null });
       }
       const program = programMap.get(programName);
       program.count += 1;
-      program.success += ok ? 1 : 0;
-      program.failed += ok ? 0 : 1;
-      program.api += source === 'External API' ? 1 : 0;
       program.users.add(employeeId);
       if (!program.lastRun || createdAt > program.lastRun) program.lastRun = createdAt;
 
       if (!userMap.has(employeeId)) {
-        userMap.set(employeeId, { employee_id: employeeId, name: a.userName || 'Unknown', dept: department, count: 0, success: 0, failed: 0, api: 0, programs: new Set(), lastRun: null });
+        userMap.set(employeeId, { employee_id: employeeId, name: a.userName || 'Unknown', dept: department, count: 0, programs: new Set(), firstRun: null, lastRun: null });
       }
       const user = userMap.get(employeeId);
       user.count += 1;
-      user.success += ok ? 1 : 0;
-      user.failed += ok ? 0 : 1;
-      user.api += source === 'External API' ? 1 : 0;
       user.programs.add(programName);
+      if (!user.firstRun || createdAt < user.firstRun) user.firstRun = createdAt;
       if (!user.lastRun || createdAt > user.lastRun) user.lastRun = createdAt;
 
       deptMap.set(department, (deptMap.get(department) || 0) + 1);
-      sourceMap.set(source, (sourceMap.get(source) || 0) + 1);
+      dayCountMap.set(dayKey, (dayCountMap.get(dayKey) || 0) + 1);
+      hourBuckets[createdAt.getHours()] += 1;
+      weekdayBuckets[createdAt.getDay()] += 1;
     });
 
     const programRows = [...programMap.values()]
       .map(p => ({
         ...p,
         share: Math.round((p.count / total) * 100),
-        successRate: Math.round((p.success / p.count) * 100),
-        apiRate: Math.round((p.api / p.count) * 100),
         userCount: p.users.size,
         lastRunLabel: p.lastRun ? p.lastRun.toLocaleString() : '-',
       }))
@@ -112,8 +105,6 @@ export default function AnalysisManagement() {
       .map(u => ({
         ...u,
         share: Math.round((u.count / total) * 100),
-        successRate: Math.round((u.success / u.count) * 100),
-        apiRate: Math.round((u.api / u.count) * 100),
         programCount: u.programs.size,
         lastRunLabel: u.lastRun ? u.lastRun.toLocaleString() : '-',
       }))
@@ -125,38 +116,48 @@ export default function AnalysisManagement() {
       trendMap.set(dayKey, (trendMap.get(dayKey) || 0) + 1);
     });
     const trendData = [...trendMap.entries()].map(([date, count]) => ({ date, count })).slice(-14);
+
     const busiestProgram = programRows[0] || null;
-    const riskyPrograms = programRows.filter(p => p.failed > 0).sort((a, b) => b.failed - a.failed).slice(0, 5);
+
+    // 신규 사용자: 첫 실행이 데이터 범위 후반부(최근 30%)에 처음 등장한 사용자
+    const cutoff = new Date(firstDate.getTime() + (lastDate - firstDate) * 0.7);
+    const newUsers = userRows.filter(u => u.firstRun && u.firstRun >= cutoff).length;
+
+    // 가장 바쁜 시간대(피크)
+    const peakHour = hourBuckets.reduce((acc, v, i) => (v > acc.v ? { v, i } : acc), { v: 0, i: 0 });
+
+    // 최대 일일 실행
+    const maxDay = [...dayCountMap.values()].reduce((m, v) => Math.max(m, v), 0);
+
+    const hourData = hourBuckets.map((count, hour) => ({ hour: `${String(hour).padStart(2, '0')}시`, count }));
+    const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+    const weekdayData = weekdayBuckets.map((count, idx) => ({ name: WEEKDAY_LABELS[idx], count }));
 
     return {
       total,
-      success,
-      failed,
-      successRate: Math.round((success / total) * 100),
-      apiCalls,
-      apiRate: Math.round((apiCalls / total) * 100),
-      workbenchCalls: total - apiCalls,
       activePrograms: programMap.size,
       activeUsers: userMap.size,
       activeDepartments: deptMap.size,
+      newUsers,
       avgPerDay: (total / coveredDays).toFixed(1),
+      maxDay,
       coveredDays,
       busiestProgram,
+      peakHour: peakHour.v ? `${String(peakHour.i).padStart(2, '0')}시` : '-',
       programRows,
       userRows,
       topPrograms: programRows.slice(0, 8),
       topUsers: userRows.slice(0, 8),
-      riskyPrograms,
       trendData,
-      sourceData: [...sourceMap.entries()].map(([name, value]) => ({ name, value })),
+      hourData,
+      weekdayData,
       deptData: [...deptMap.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 8),
-      recentFailures: dateFilteredAnalyses.filter(a => a.status !== 'Success').slice(0, 5),
     };
   }, [dateFilteredAnalyses]);
 
   const downloadCSV = () => {
-    const rows = dateFilteredAnalyses.map(a => `${a.id},${a.project_name || ''},${a.program_name},${a.userName}(${a.employee_id}),${a.department},${a.source},${a.status},${new Date(a.created_at).toLocaleString()}`).join('\n');
-    const blob = new Blob(['\uFEFF' + 'ID,Project,Module,Requester,Department,Source,Status,Date\n' + rows], { type: 'text/csv;charset=utf-8;' });
+    const rows = dateFilteredAnalyses.map(a => `${a.id},${a.project_name || ''},${a.program_name},${a.userName}(${a.employee_id}),${a.department},${a.status},${new Date(a.created_at).toLocaleString()}`).join('\n');
+    const blob = new Blob(['\uFEFF' + 'ID,Project,Module,Requester,Department,Status,Date\n' + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `Analysis_Report_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(url);
   };

@@ -6,8 +6,8 @@ import { getAuthHeaders } from '../utils/auth';
 export const getAnalysisHistory = (employeeId, skip = 0, limit = 200) =>
   axios.get(`${API_BASE_URL}/api/analysis/history/${employeeId}`, { params: { skip, limit }, headers: getAuthHeaders() });
 
-/** 전체 해석 이력 조회 (관리자용) */
-export const getAllAnalysisHistory = (limit = 200) =>
+/** 전체 해석 이력 조회 (관리자용) — 통계 집계 위해 사실상 전량 로드 */
+export const getAllAnalysisHistory = (limit = 100000) =>
   axios.get(`${API_BASE_URL}/api/analysis/all`, { params: { limit }, headers: getAuthHeaders() });
 
 /** 해석 작업 상태 조회 (폴링용) */
@@ -35,6 +35,12 @@ export const requestBeamAnalysis = (formData) =>
 /** BDF Scanner 요청 */
 export const requestBdfScanner = (formData) =>
   axios.post(`${API_BASE_URL}/api/analysis/bdfscanner/request`, formData, {
+    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
+  });
+
+/** Group & Module Unit 권상 구조 해석 — BDF 검증 (NastranBridge) */
+export const requestGroupModuleUnit = (formData) =>
+  axios.post(`${API_BASE_URL}/api/analysis/groupmoduleunit/request`, formData, {
     headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
   });
 

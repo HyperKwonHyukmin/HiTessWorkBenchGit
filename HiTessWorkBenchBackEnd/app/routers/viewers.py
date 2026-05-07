@@ -18,6 +18,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import zipfile
 
 from fastapi import APIRouter, HTTPException
@@ -89,10 +90,16 @@ def _find_zip(viewer_id: str) -> str | None:
         ]
         if not candidates:
             continue
-        # 파일명에 버전이 포함되어 있어 단순 역정렬로 최신 우선
-        candidates.sort(reverse=True)
+        # 버전 숫자 자연 정렬 (lex 정렬 시 0.0.9 > 0.0.11 로 잘못 비교되는 문제 회피).
+        # 파일명에서 정수 시퀀스를 모두 추출해 튜플 비교 — semver 0.0.x 부터 1.2.3 까지 일관 동작.
+        candidates.sort(key=_version_key, reverse=True)
         return os.path.join(d, candidates[0])
     return None
+
+
+def _version_key(filename: str) -> tuple[int, ...]:
+    """파일명의 정수 시퀀스를 튜플로 반환. 비교 키로 사용."""
+    return tuple(int(n) for n in re.findall(r"\d+", filename))
 
 
 def _diagnostic_search(viewer_id: str) -> list[dict]:

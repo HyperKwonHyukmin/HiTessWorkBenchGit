@@ -17,6 +17,9 @@ let mainWindow;
 let viewerWindow = null;
 // viewer:getInitialFolder 가 호출될 때 반환할 절대경로(보통 jsonPath 의 디렉터리)
 let viewerInitialFolder = null;
+// viewer:runUnitStructural 가 백엔드에 전달할 GroupModuleUnit Analysis.id (DB record).
+// viewer:open 에서 등록되며, viewer 창이 닫혀도 다음 viewer:open 이 덮어쓸 때까지 유지된다.
+let viewerParentAnalysisId = null;
 
 function createWindow() {
   // 기준 해상도(1920px) 대비 현재 화면 비율로 zoomFactor 자동 계산
@@ -652,7 +655,7 @@ ipcMain.handle("viewer:readLocalFile", async (_e, payload) => {
 
 // 3) 풀스크린 보조 BrowserWindow 로 viewer 오픈
 ipcMain.handle("viewer:open", async (_e, payload) => {
-  const { viewerId, initialFolder } = payload || {};
+  const { viewerId, initialFolder, parentAnalysisId } = payload || {};
   if (!viewerId) return { ok: false, error: "viewerId 누락" };
 
   const dir = getViewerDir(viewerId);
@@ -663,6 +666,9 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
 
   // viewer:getInitialFolder 가 사용
   viewerInitialFolder = initialFolder ? path.resolve(initialFolder) : null;
+  // viewer:runUnitStructural 가 사용 — null 이면 그 IPC 가 거부 응답
+  const parsedParentId = Number(parentAnalysisId);
+  viewerParentAnalysisId = Number.isFinite(parsedParentId) && parsedParentId > 0 ? parsedParentId : null;
 
   if (viewerWindow && !viewerWindow.isDestroyed()) {
     viewerWindow.focus();
@@ -753,6 +759,39 @@ ipcMain.handle("viewer:getInitialFolder", async () => {
 // 결과를 받아 Studio 에 { ok, error } 로 반환. 성공 시 viewer 창 자동 종료.
 const _pendingFinalizeReqs = new Map();   // requestId → resolve
 
+const DEFAULT_BACKEND_BASE_URL = "http://10.133.122.70:9091";
+
+async function getWorkbenchRuntimeConfig() {
+  const fallback = { serverUrl: DEFAULT_BACKEND_BASE_URL, token: "" };
+  if (!mainWindow || mainWindow.isDestroyed()) return fallback;
+
+  try {
+    const raw = await mainWindow.webContents.executeJavaScript(`
+      JSON.stringify({
+        serverUrl: localStorage.getItem('server_url') || '',
+        token: localStorage.getItem('session_token') || ''
+      })
+    `, true);
+    const cfg = JSON.parse(raw || "{}");
+    return {
+      serverUrl: String(cfg.serverUrl || DEFAULT_BACKEND_BASE_URL).replace(/\/$/, ""),
+      token: String(cfg.token || ""),
+    };
+  } catch (e) {
+    console.warn("[viewer] runtime config read failed:", e?.message || e);
+    return fallback;
+  }
+}
+
+async function readBackendError(res) {
+  try {
+    const body = await res.json();
+    return body?.detail || body?.message || JSON.stringify(body);
+  } catch {
+    try { return await res.text(); } catch { return ""; }
+  }
+}
+
 ipcMain.handle("viewer:finalizeEditedModel", async (_e, payload) => {
   try {
     const folderPath   = payload?.folderPath;
@@ -825,6 +864,186 @@ ipcMain.handle("viewer:writeFile", async (_e, folderPath, fileName, content) => 
     return { ok: true, location: "folder" };
   } catch (e) {
     return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle("viewer:runStabilityAnalysis", async (_e, posturePath) => {
+  try {
+    if (!posturePath) return { ok: false, error: "posturePath 누락" };
+    if (!path.isAbsolute(posturePath)) {
+      return { ok: false, error: `_posture.json 절대경로가 아닙니다: ${posturePath}` };
+    }
+    if (!fs.existsSync(posturePath)) {
+      return { ok: false, error: `_posture.json 파일이 없습니다: ${posturePath}` };
+    }
+
+    const { serverUrl, token } = await getWorkbenchRuntimeConfig();
+    const headers = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const reqRes = await fetch(`${serverUrl}/api/analysis/module-stability/request`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ posturePath, source: "ModuleUnitStudio" }),
+    });
+    if (!reqRes.ok) {
+      const detail = await readBackendError(reqRes);
+      return { ok: false, error: `백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}` };
+    }
+
+    const reqBody = await reqRes.json();
+    const jobId = reqBody.jobId || reqBody.job_id;
+    if (!jobId) return { ok: false, error: "백엔드 응답에 jobId가 없습니다." };
+
+    for (let i = 0; i < 120; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const statusRes = await fetch(`${serverUrl}/api/analysis/module-stability/${jobId}/status`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!statusRes.ok) continue;
+
+      const job = await statusRes.json();
+      if (job.status === "Success") {
+        const resultInfo = job.project?.result_info || {};
+        return {
+          ok: true,
+          report: resultInfo.stabilityReport,
+          stabilityPath: resultInfo.stabilityPath,
+          job,
+        };
+      }
+      if (job.status === "Failed") {
+        return {
+          ok: false,
+          error: job.message || "CLI 실행 실패",
+          stderr: job.engine_log || "",
+          job,
+        };
+      }
+    }
+
+    return { ok: false, error: "시간 초과 (2분)" };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
+// ── Unit 구조 해석 (자세 안정성 PASS 후 wire 포함 BDF + Nastran SOL 101 + F06 매핑) ──
+// Studio 측에서 IPC 한 번으로 호출 → main 이 백엔드 unit-structural endpoint 에 양식
+// 데이터를 보내 job 시작 → 1.5초 간격으로 30분 폴링 → 완료 시 nastranResult JSON 의
+// 내용까지 함께 돌려준다. 진행 상황은 viewer:unit-structural-progress 로 stream.
+ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
+  try {
+    const stabilityPath = payload?.stabilityPath;
+    const safetyFactor  = Number(payload?.safetyFactor ?? 1.2);
+    const allowableMpa  = Number(payload?.allowableMpa ?? 220);
+
+    if (!stabilityPath) return { ok: false, error: "stabilityPath 누락" };
+    if (!path.isAbsolute(stabilityPath)) {
+      return { ok: false, error: `stabilityPath 절대경로가 아닙니다: ${stabilityPath}` };
+    }
+    if (!fs.existsSync(stabilityPath)) {
+      return { ok: false, error: `stability JSON 파일이 없습니다: ${stabilityPath}` };
+    }
+    if (!viewerParentAnalysisId) {
+      return { ok: false, error: "parentAnalysisId 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 BDF 검증을 먼저 마치고 Studio 를 여세요." };
+    }
+    if (!Number.isFinite(safetyFactor) || safetyFactor <= 0) {
+      return { ok: false, error: `safetyFactor 가 양수여야 합니다: ${safetyFactor}` };
+    }
+    if (!Number.isFinite(allowableMpa) || allowableMpa <= 0) {
+      return { ok: false, error: `allowableMpa 가 양수여야 합니다: ${allowableMpa}` };
+    }
+
+    const userStr = await mainWindow.webContents.executeJavaScript(
+      `localStorage.getItem('user') || ''`, true
+    ).catch(() => "");
+    let employeeId = "guest";
+    try {
+      const u = userStr ? JSON.parse(userStr) : null;
+      if (u?.employee_id) employeeId = String(u.employee_id);
+    } catch {}
+
+    const { serverUrl, token } = await getWorkbenchRuntimeConfig();
+    const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+    const form = new URLSearchParams();
+    form.set("stability_path", stabilityPath);
+    form.set("parent_analysis_id", String(viewerParentAnalysisId));
+    form.set("safety_factor", String(safetyFactor));
+    form.set("allowable_mpa", String(allowableMpa));
+    form.set("employee_id", employeeId);
+    form.set("source", "Studio");
+
+    const reqRes = await fetch(`${serverUrl}/api/analysis/unit-structural/request`, {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+    if (!reqRes.ok) {
+      const detail = await readBackendError(reqRes);
+      return { ok: false, error: `백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}` };
+    }
+    const reqBody = await reqRes.json();
+    const jobId = reqBody.jobId || reqBody.job_id;
+    if (!jobId) return { ok: false, error: "백엔드 응답에 jobId 가 없습니다." };
+
+    const sendProgress = (data) => {
+      try {
+        if (viewerWindow && !viewerWindow.isDestroyed()) {
+          viewerWindow.webContents.send("viewer:unit-structural-progress", { jobId, ...data });
+        }
+      } catch {}
+    };
+    sendProgress({ status: "Pending", progress: 0, message: "큐 대기..." });
+
+    // SOL 101 + 모델 크기 고려해 30분 (1.5s × 1200) 폴링
+    for (let i = 0; i < 1200; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const statusRes = await fetch(`${serverUrl}/api/analysis/status/${jobId}`, { headers: authHeaders });
+      if (!statusRes.ok) continue;
+
+      const job = await statusRes.json();
+      sendProgress({
+        status: job.status,
+        progress: job.progress,
+        message: job.message,
+      });
+
+      if (job.status === "Success") {
+        const resultInfo = job.project?.result_info || {};
+        const resultPath = resultInfo.nastranResultJson || null;
+        let resultContent = null;
+        if (resultPath && fs.existsSync(resultPath)) {
+          try {
+            resultContent = JSON.parse(fs.readFileSync(resultPath, "utf-8"));
+          } catch (e) {
+            return { ok: false, error: `결과 JSON 파싱 실패: ${e.message}`, job };
+          }
+        }
+        return {
+          ok: true,
+          analysisId: job.project?.id ?? null,
+          summary: resultInfo.summary ?? null,
+          warnings: resultInfo.warnings ?? [],
+          resultPath,
+          result: resultContent,
+          job,
+        };
+      }
+      if (job.status === "Failed") {
+        return {
+          ok: false,
+          error: job.message || "Unit 구조 해석 실패",
+          stderr: job.engine_log || "",
+          job,
+        };
+      }
+    }
+
+    return { ok: false, error: "시간 초과 (30분)" };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
   }
 });
 
