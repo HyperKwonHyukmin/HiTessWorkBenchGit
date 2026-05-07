@@ -24,7 +24,7 @@ const VIEWER_ID = 'model-studio';
 
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',  icon: FileSpreadsheet, status: 'wait' },
-  { id: 'model-qc',       title: '해석 모델 검증', icon: ShieldCheck,     status: 'wait' },
+  { id: 'model-qc',       title: 'Model Builder Studio', icon: ShieldCheck,     status: 'wait' },
   { id: 'nastran',        title: '해석 모델 저장', icon: Cpu,             status: 'wait' },
 ];
 

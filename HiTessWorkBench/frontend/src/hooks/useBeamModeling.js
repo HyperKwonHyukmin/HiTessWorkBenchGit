@@ -3,10 +3,19 @@
  */
 import { useState, useEffect } from 'react';
 
+// 1 ton-force(metric) = 9806.65 N. 사용자는 N/ton 양쪽으로 입력하지만 해석 제출 시 N으로 정규화한다.
+export const TON_TO_N = 9806.65;
+
+/** load 행의 fx/fy/fz 를 N 으로 환산 (해석/뷰어 공용) */
+export const loadToNewton = (l) => {
+  const f = (l?.unit === 'ton') ? TON_TO_N : 1;
+  return { fx: (Number(l?.fx) || 0) * f, fy: (Number(l?.fy) || 0) * f, fz: (Number(l?.fz) || 0) * f };
+};
+
 export function useBeamModeling() {
   const [beamType, setBeamType] = useState('I');
   const [params, setParams] = useState({ length: 1000, dim1: 100, dim2: 200, dim3: 10, dim4: 8 });
-  const [loads, setLoads] = useState([{ pos: 1000, fx: 0, fy: 0, fz: -5000 }]);
+  const [loads, setLoads] = useState([{ pos: 1000, fx: 0, fy: 0, fz: -5000, unit: 'N' }]);
   const [boundaries, setBoundaries] = useState([{ pos: 0, type: 'Fix', dof: '' }]);
   const [validationErrors, setValidationErrors] = useState([]);
 
@@ -62,6 +71,24 @@ export function useBeamModeling() {
     setLoads(newLoads);
   };
 
+  /** 단위 토글 시 fx/fy/fz 값을 동등 힘(force)으로 자동 환산. (예: 5 ton → 49033 N) */
+  const updateLoadUnit = (idx, newUnit) => {
+    const newLoads = [...loads];
+    const cur = { ...newLoads[idx] };
+    const oldUnit = cur.unit || 'N';
+    if (oldUnit === newUnit) return;
+    let factor = 1;
+    if (oldUnit === 'N' && newUnit === 'ton') factor = 1 / TON_TO_N;
+    else if (oldUnit === 'ton' && newUnit === 'N') factor = TON_TO_N;
+    ['fx', 'fy', 'fz'].forEach(axis => {
+      const v = (Number(cur[axis]) || 0) * factor;
+      cur[axis] = parseFloat(v.toFixed(4));
+    });
+    cur.unit = newUnit;
+    newLoads[idx] = cur;
+    setLoads(newLoads);
+  };
+
   const overrideModelData = (type, dimensions, newBoundaries, newLoads) => {
     setBeamType(type);
     setParams(dimensions);
@@ -72,13 +99,13 @@ export function useBeamModeling() {
   const resetModeling = () => {
     setBeamType('I');
     setParams({ length: 1000, dim1: 100, dim2: 200, dim3: 10, dim4: 8 });
-    setLoads([{ pos: 500, fx: 0, fy: 0, fz: -5000 }]);
+    setLoads([{ pos: 500, fx: 0, fy: 0, fz: -5000, unit: 'N' }]);
     setBoundaries([{ pos: 0, type: 'Fix', dof: '' }, { pos: 1000, type: 'Hinge', dof: '' }]);
   };
 
   return {
     beamType, params, loads, boundaries, validationErrors,
     setParams, setLoads, setBoundaries,
-    handleBeamTypeChange, updateBc, updateLoad, overrideModelData, resetModeling
+    handleBeamTypeChange, updateBc, updateLoad, updateLoadUnit, overrideModelData, resetModeling
   };
 }

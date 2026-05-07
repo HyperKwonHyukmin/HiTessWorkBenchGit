@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '../contexts/DashboardContext';
 import { requestBeamAnalysis, downloadFileText } from '../api/analysis';
+import { loadToNewton } from './useBeamModeling';
 
 export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
   const [dispData, setDispData] = useState([]);
@@ -38,7 +39,7 @@ export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
           dim2: json.model.dimensions.dim2 || 200, dim3: json.model.dimensions.dim3 || 0, dim4: json.model.dimensions.dim4 || 0,
         },
         json.model.boundaries?.map(b => ({ pos: b.position, type: b.type, dof: b.dof || '' })),
-        json.model.loads?.map(l => ({ pos: l.position, fx: l.fx || 0, fy: l.fy || 0, fz: l.fz !== undefined ? l.fz : (l.magnitude ? -l.magnitude : 0) }))
+        json.model.loads?.map(l => ({ pos: l.position, fx: l.fx || 0, fy: l.fy || 0, fz: l.fz !== undefined ? l.fz : (l.magnitude ? -l.magnitude : 0), unit: l.unit || 'N' }))
       );
     }
 
@@ -70,7 +71,11 @@ export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
           beamType: modelingHook.beamType,
           dimensions: { length: Number(modelingHook.params.length), dim1: Number(modelingHook.params.dim1), dim2: Number(modelingHook.params.dim2), dim3: Number(modelingHook.params.dim3), dim4: Number(modelingHook.params.dim4) },
           boundaries: modelingHook.boundaries.map(b => ({ position: Number(b.pos), type: b.type, ...(b.type === 'Custom' ? { dof: b.dof } : {}) })),
-          loads: modelingHook.loads.map(l => ({ position: Number(l.pos), fx: Number(l.fx), fy: Number(l.fy), fz: Number(l.fz) }))
+          // 해석 입력은 항상 N 으로 정규화 (사용자 입력이 ton 이어도 fx/fy/fz 환산해서 전송)
+          loads: modelingHook.loads.map(l => {
+            const n = loadToNewton(l);
+            return { position: Number(l.pos), fx: n.fx, fy: n.fy, fz: n.fz };
+          })
         }
       };
       

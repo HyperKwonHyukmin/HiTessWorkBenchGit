@@ -4,14 +4,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { createThreeScene } from '../../hooks/useThreeScene';
+import { loadToNewton } from '../../hooks/useBeamModeling';
 import { RefreshCw } from 'lucide-react';
 
 export default function Viewer3D({ beamType, params, loads, boundaries, dispData, hasCharts, isCapturing }) {
   const mountRef = useRef(null);
   const rendererRef = useRef(null);
   const [isLayoutReady, setIsLayoutReady] = useState(false);
-  const [defScale, setDefScale] = useState(1.0);
-  const defScaleRef = useRef(1.0);
+  const [defScale, setDefScale] = useState(0.3);
+  const defScaleRef = useRef(0.3);
 
   const handleScaleChange = (e) => {
     const val = parseFloat(e.target.value);
@@ -57,9 +58,6 @@ export default function Viewer3D({ beamType, params, loads, boundaries, dispData
     };
 
     const maxHeight = (beamType === 'ROD' || beamType === 'TUBE') ? dim1 / 2 : dim2 / 2;
-    const gridHelper = new THREE.GridHelper(length * 2, 40, 0x1a3355, 0x0d1f33);
-    gridHelper.position.set(0, -maxHeight - 20, 0); 
-    modelGroup.add(gridHelper);
 
     let geometry;
     const extrudeSettings = { depth: length, bevelEnabled: false, steps: 100 }; 
@@ -138,7 +136,9 @@ export default function Viewer3D({ beamType, params, loads, boundaries, dispData
     });
 
     loads.forEach(load => {
-      const vec = new THREE.Vector3(Number(load.fx)||0, Number(load.fz)||0, -(Number(load.fy)||0)); 
+      // 화살표 크기/라벨 기준은 항상 N 단위 (ton 입력은 환산)
+      const nf = loadToNewton(load);
+      const vec = new THREE.Vector3(nf.fx, nf.fz, -nf.fy);
       const magVal = vec.length();
       if (magVal < 1e-5) return; 
 

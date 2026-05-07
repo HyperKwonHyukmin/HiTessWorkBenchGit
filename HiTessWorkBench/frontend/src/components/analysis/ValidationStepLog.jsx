@@ -1,45 +1,149 @@
+/**
+ * @fileoverview BDF 입력 검증 결과 뷰어
+ *
+ * HiTessModelBuilder 의 CSV 입력 검증 패널(CsvAuditPanel) 과 동일한 시각 형식을 사용한다.
+ *  1) Hero 요약 (좌측 원형 게이지 + 우측 핵심 지표 3개)
+ *  2) 카드 분류 (Grid / Element / Rigid / Property / Material 등 KindBar)
+ *  3) 검출 이슈 분포 (free-end / isolated / multi-group … horizontal bar)
+ *  4) 좌표 범위 / 미사용 항목 (보조 박스)
+ *  5) 행 단위 검증 상세 (FilterPills + 접이식 테이블)
+ *  6) 전체 판정 배너
+ */
 import React, { useState } from 'react';
 import {
   AlertTriangle, CheckCircle2, Info, ChevronDown, ChevronRight,
-  Shield, FileText, Clock, Hash, Box, Layers, Cpu, Anchor, Zap,
-  AlertOctagon, Wrench
+  AlertOctagon, History, AlertCircle, Move3d, Wrench as WrenchIcon,
 } from 'lucide-react';
 
-/* ── 공용 UI ─────────────────────────────────────────────────── */
-
-const StatusBadge = ({ status }) => {
-  const map = {
-    pass:    { cls: 'bg-emerald-900/60 text-emerald-300 border-emerald-700', label: 'PASS' },
-    warning: { cls: 'bg-yellow-900/60  text-yellow-300  border-yellow-700',  label: 'WARNING' },
-    error:   { cls: 'bg-red-900/60     text-red-300     border-red-700',     label: 'ERROR' },
-  };
-  const s = map[status] || { cls: 'bg-slate-700 text-slate-300 border-slate-600', label: status?.toUpperCase() ?? '—' };
-  return <span className={`text-xs font-bold px-2.5 py-0.5 rounded border ${s.cls}`}>{s.label}</span>;
+/* ── 카드 종류별 아이콘/라벨 ─────────────────────────────────── */
+const CARD_KIND_META = {
+  grid:      { icon: '⚙️', label: 'Grid (절점)' },
+  element:   { icon: '🏗️', label: 'Element (요소)' },
+  property:  { icon: '🧩', label: 'Property (물성)' },
+  material:  { icon: '🔬', label: 'Material (재질)' },
+  pointMass: { icon: '⚖️', label: 'Point Mass' },
+  load:      { icon: '⚡', label: 'Load (하중)' },
+  boundaryCondition: { icon: '⚓', label: 'Boundary' },
+  subcase:   { icon: '🧪', label: 'Subcase' },
+  param:     { icon: '🛠️', label: 'Param' },
 };
 
-const SectionTitle = ({ icon: Icon, children, iconColor = 'text-slate-400' }) => (
-  <div className="flex items-center gap-2 mt-5 mb-2.5">
-    {Icon && <Icon size={13} className={iconColor} />}
-    <p className="text-xs font-bold text-slate-300 uppercase tracking-wider">{children}</p>
-  </div>
-);
-
-const BreakdownPills = ({ data, colorCls }) => {
-  if (!data || Object.keys(data).length === 0) return null;
+/* ── KindBar — CsvAuditPanel 의 KindBar 와 시각적 동등 ───────── */
+function KindBar({ label, icon, count, errorCount = 0, warnCount = 0, breakdown }) {
+  const hasIssue = errorCount > 0 || warnCount > 0;
+  const total = count + errorCount + warnCount;
   return (
-    <div className="flex flex-wrap gap-2">
-      {Object.entries(data).map(([k, v]) => (
-        <span key={k} className={`text-xs font-mono px-2.5 py-0.5 rounded border ${colorCls}`}>
-          {k}: <strong>{v.toLocaleString()}</strong>
-        </span>
+    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <span className="text-base leading-none">{icon}</span>
+          <span className="text-sm font-bold text-slate-700">{label}</span>
+        </div>
+        {count > 0
+          ? <span className={`text-xs font-bold font-mono ${hasIssue ? 'text-amber-600' : 'text-emerald-600'}`}>
+              {hasIssue ? '⚠' : '✓'}
+            </span>
+          : <span className="text-xs text-slate-300 italic">없음</span>
+        }
+      </div>
+
+      {count > 0 && (
+        <>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-2xl font-bold text-slate-800 font-mono leading-none">{count.toLocaleString()}</span>
+            <span className="text-xs text-slate-400">개</span>
+          </div>
+
+          {/* 스택 막대 — 정상/경고/오류 */}
+          <div className="h-2 rounded-full bg-slate-100 overflow-hidden flex">
+            <div
+              className="h-full bg-emerald-500 transition-all duration-700 rounded-l-full"
+              style={{ width: `${(count / Math.max(total, 1)) * 100}%` }}
+            />
+            {warnCount > 0 && (
+              <div className="h-full bg-amber-400 transition-all duration-700"
+                   style={{ width: `${(warnCount / Math.max(total, 1)) * 100}%` }} />
+            )}
+            {errorCount > 0 && (
+              <div className="h-full bg-red-400 transition-all duration-700 rounded-r-full"
+                   style={{ width: `${(errorCount / Math.max(total, 1)) * 100}%` }} />
+            )}
+          </div>
+
+          {(warnCount > 0 || errorCount > 0) && (
+            <div className="flex items-center gap-3 flex-wrap">
+              {warnCount > 0 && (
+                <span className="flex items-center gap-1 text-xs text-amber-700">
+                  <span className="w-2 h-2 rounded-sm bg-amber-400 inline-block" /> 경고 {warnCount.toLocaleString()}
+                </span>
+              )}
+              {errorCount > 0 && (
+                <span className="flex items-center gap-1 text-xs text-red-600">
+                  <span className="w-2 h-2 rounded-sm bg-red-400 inline-block" /> 오류 {errorCount.toLocaleString()}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* 카드 종류 breakdown */}
+          {breakdown && Object.keys(breakdown).length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-100">
+              {Object.entries(breakdown).map(([k, v]) => (
+                <span key={k} className="text-[10px] font-mono text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+                  {k}: <strong className="text-slate-700">{v.toLocaleString()}</strong>
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ── IssueBar — IgnoreReasonRow 와 시각적 동등 ──────────────── */
+function IssueBar({ label, count, maxCount, severity = 'warning' }) {
+  const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+  const colorMap = {
+    warning: { track: 'bg-amber-50',   bar: 'bg-amber-400',   text: 'text-amber-700' },
+    error:   { track: 'bg-red-50',     bar: 'bg-red-400',     text: 'text-red-700' },
+  };
+  const c = colorMap[severity] || colorMap.warning;
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-sm text-slate-700 w-56 shrink-0 truncate" title={label}>{label}</span>
+      <div className={`flex-1 ${c.track} rounded-full h-2.5 overflow-hidden`}>
+        <div className={`h-full ${c.bar} rounded-full transition-all duration-700`}
+             style={{ width: `${pct}%` }} />
+      </div>
+      <span className={`text-sm font-bold font-mono ${c.text} w-12 text-right shrink-0`}>
+        {count.toLocaleString()}
+      </span>
+    </div>
+  );
+}
+
+/* ── FilterPills ─────────────────────────────────────────────── */
+function FilterPills({ label, value, onChange, options }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs text-slate-400 font-semibold">{label}</span>
+      {options.map(o => (
+        <button
+          key={o.v}
+          onClick={() => onChange(o.v)}
+          className={`text-xs px-2.5 py-1 rounded-full font-medium cursor-pointer transition-colors
+            ${value === o.v ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+        >
+          {o.label}
+        </button>
       ))}
     </div>
   );
-};
+}
 
 /* ── F06 메시지 (Step 2) ─────────────────────────────────────── */
 
-// context 문자열에서 "USER ACTION:" 이후 내용을 추출
 function extractUserAction(context) {
   if (!context) return null;
   const idx = context.toUpperCase().indexOf('USER ACTION:');
@@ -47,73 +151,60 @@ function extractUserAction(context) {
   return context.slice(idx + 'USER ACTION:'.length).trim().replace(/^\s+/gm, '').trim();
 }
 
-function F06Message({ msg, index }) {
+function F06Message({ msg }) {
   const [open, setOpen] = useState(false);
-  const isFatal   = msg.level === 'fatal';
-  const isCopyright = msg.lineNumber <= 10; // 저작권 경고는 라인 초반
-  const userAction = extractUserAction(msg.context);
-
-  // 저작권 warning은 접힌 상태로 최소화
+  const isFatal     = msg.level === 'fatal';
+  const isCopyright = msg.lineNumber <= 10;
+  const userAction  = extractUserAction(msg.context);
   const defaultCollapsed = isCopyright;
 
   return (
     <div className={`border rounded-xl overflow-hidden mb-2 ${
-      isFatal       ? 'border-red-800/70'
-      : isCopyright ? 'border-slate-700/50'
-                    : 'border-yellow-800/70'
+      isFatal ? 'border-red-200' : isCopyright ? 'border-slate-200' : 'border-amber-200'
     }`}>
-      {/* 헤더 행 */}
       <button
         onClick={() => setOpen(v => !v)}
         className={`w-full flex items-start gap-2.5 px-4 py-2.5 text-left cursor-pointer transition-colors ${
-          isFatal       ? 'bg-red-950/70 hover:bg-red-950/90'
-          : isCopyright ? 'bg-slate-800/40 hover:bg-slate-800/60'
-                        : 'bg-yellow-950/70 hover:bg-yellow-950/90'
+          isFatal ? 'bg-red-50 hover:bg-red-100'
+          : isCopyright ? 'bg-slate-50 hover:bg-slate-100'
+          : 'bg-amber-50 hover:bg-amber-100'
         }`}
       >
         {(open || !defaultCollapsed)
-          ? <ChevronDown  size={14} className="mt-0.5 shrink-0 text-slate-400" />
-          : <ChevronRight size={14} className="mt-0.5 shrink-0 text-slate-400" />}
-
+          ? <ChevronDown size={14} className="mt-0.5 shrink-0 text-slate-500" />
+          : <ChevronRight size={14} className="mt-0.5 shrink-0 text-slate-500" />}
         {isFatal
-          ? <AlertOctagon size={14} className="mt-0.5 shrink-0 text-red-400" />
-          : <AlertTriangle size={14} className={`mt-0.5 shrink-0 ${isCopyright ? 'text-slate-500' : 'text-yellow-400'}`} />}
-
+          ? <AlertOctagon size={14} className="mt-0.5 shrink-0 text-red-500" />
+          : <AlertTriangle size={14} className={`mt-0.5 shrink-0 ${isCopyright ? 'text-slate-400' : 'text-amber-500'}`} />}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-xs font-bold font-mono ${
-              isFatal ? 'text-red-300' : isCopyright ? 'text-slate-500' : 'text-yellow-300'
+              isFatal ? 'text-red-700' : isCopyright ? 'text-slate-500' : 'text-amber-700'
             }`}>
               {isFatal ? 'FATAL' : 'WARNING'} — Line {msg.lineNumber}
             </span>
-            {isCopyright && (
-              <span className="text-[10px] text-slate-600 font-mono">(저작권 고지)</span>
-            )}
+            {isCopyright && <span className="text-[10px] text-slate-400 font-mono">(저작권 고지)</span>}
           </div>
           <p className={`text-xs font-mono mt-0.5 break-all ${
-            isFatal ? 'text-red-200' : isCopyright ? 'text-slate-600' : 'text-yellow-200'
+            isFatal ? 'text-red-800' : isCopyright ? 'text-slate-500' : 'text-amber-800'
           }`}>
             {msg.message}
           </p>
         </div>
       </button>
-
-      {/* 펼쳤을 때 */}
       {open && (
-        <div className="border-t border-slate-800 bg-slate-950/60">
-          {/* 원문 context */}
+        <div className="border-t border-slate-200 bg-slate-50">
           {msg.context && (
-            <pre className="text-xs font-mono text-slate-400 px-5 py-3 leading-relaxed whitespace-pre-wrap break-words overflow-x-auto">
+            <pre className="text-xs font-mono text-slate-600 px-5 py-3 leading-relaxed whitespace-pre-wrap break-words overflow-x-auto">
               {msg.context}
             </pre>
           )}
-          {/* USER ACTION 별도 강조 */}
           {userAction && (
-            <div className="mx-4 mb-3 flex items-start gap-2 px-3 py-2.5 bg-amber-950/50 border border-amber-800/50 rounded-lg">
-              <Wrench size={14} className="text-amber-400 shrink-0 mt-0.5" />
+            <div className="mx-4 mb-3 flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+              <WrenchIcon size={14} className="text-amber-500 shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-bold text-amber-300 mb-1">USER ACTION (권장 조치)</p>
-                <p className="text-xs font-mono text-amber-200 leading-relaxed">{userAction}</p>
+                <p className="text-xs font-bold text-amber-700 mb-1">USER ACTION (권장 조치)</p>
+                <p className="text-xs font-mono text-amber-800 leading-relaxed">{userAction}</p>
               </div>
             </div>
           )}
@@ -123,383 +214,403 @@ function F06Message({ msg, index }) {
   );
 }
 
-/* ── 메인 컴포넌트 ───────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────
+   Step 1 — BDF 입력 검증 (CSV 입력 검증 형식)
+   ──────────────────────────────────────────────────────────── */
+
+function Step1View({ step1Data }) {
+  const [showRows,     setShowRows]     = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [kindFilter,   setKindFilter]   = useState('all');
+
+  const ps      = step1Data?.parsingSummary || {};
+  const summary = step1Data?.summary || {};
+  const counts  = ps.cardCounts || {};
+  const isFailed = step1Data.status === 'error';
+
+  // pass-rate: 검증 오류/경고가 0 이면 100%, 아니면 (전체 카드 - 결함 카드) / 전체 비율로 시각화
+  const totalCards = Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0);
+  const issues = (summary.totalErrors || 0) + (summary.totalWarnings || 0);
+  // 단순 시각화: 오류 0+경고 0 -> 100%, 그 외에는 issue/totalCards 비율을 반대로
+  const passRate = totalCards > 0
+    ? Math.max(0, Math.min(100, Math.round(100 - (issues / totalCards) * 100 * 5))) // 5x weighting
+    : (issues === 0 ? 100 : 0);
+
+  /* ── 검출 이슈 항목 추출 ───────────────────────────────────────
+     README (NastranBridge) 의 정의 중:
+       - orphan   : element/rigid/CONM2 어디에서도 참조 안 한 GRID (error)
+       - isolated : connectivity 그래프 edge 0 (error)
+       - free-end : (단순 degree 기반 카운트로 의사결정에 큰 영향 없음 — 표시 안 함) */
+  const orphanCount   = ps.orphanNodes      ?? 0;
+  const isolatedCnt   = ps.isolatedNodes    ?? 0;
+  const disconnGroups = ps.disconnectedGroupCount ?? 0;
+
+  const zeroLenCount  = (step1Data.validationResults || []).filter(v => v.cardType === 'ELEMENT' && v.severity === 'error').length;
+  const shortLenCount = (step1Data.validationResults || []).filter(v => v.cardType === 'ELEMENT' && v.severity === 'warning').length;
+
+  const issueItems = [];
+  if (orphanCount   > 0) issueItems.push({ key: 'orphan',    label: '미참조 GRID (orphan — element/rigid/CONM2 어디에서도 참조 안 함)', count: orphanCount,   severity: 'error' });
+  if (isolatedCnt   > 0) issueItems.push({ key: 'isolated',  label: '고립 GRID (connectivity 그래프 edge 0)',                          count: isolatedCnt,   severity: 'error' });
+  if (zeroLenCount  > 0) issueItems.push({ key: 'zeroLen',   label: '길이 0 요소',                                                     count: zeroLenCount,  severity: 'error' });
+  if (disconnGroups > 0) issueItems.push({ key: 'disconn',   label: `분리 그룹 (메인 외 추가 ${disconnGroups}개 — 단일 그룹 권장)`,    count: disconnGroups, severity: 'warning' });
+  if (shortLenCount > 0) issueItems.push({ key: 'shortLen',  label: '짧은 요소 (수치 안정성 영향)',                                    count: shortLenCount, severity: 'warning' });
+  if ((ps.orphanProperties ?? 0) > 0) issueItems.push({ key: 'orphanProp', label: '미사용 Property', count: ps.orphanProperties, severity: 'warning' });
+  if ((ps.orphanMaterials  ?? 0) > 0) issueItems.push({ key: 'orphanMat',  label: '미사용 Material', count: ps.orphanMaterials,  severity: 'warning' });
+
+  const maxIssue = issueItems.length > 0 ? Math.max(...issueItems.map(i => i.count)) : 1;
+
+  /* ── 검증 상세 행 필터 ─────────────────────────────────────── */
+  const allRows = step1Data.validationResults || [];
+  const filteredRows = allRows
+    .filter(r => statusFilter === 'all' || r.severity === statusFilter)
+    .filter(r => kindFilter   === 'all' || r.cardType  === kindFilter);
+
+  // 카드 종류 필터 옵션 — 실제 데이터에 등장한 cardType 들
+  const kindOptions = [
+    { v: 'all', label: '전체' },
+    ...Array.from(new Set(allRows.map(r => r.cardType))).filter(Boolean).map(t => ({ v: t, label: t })),
+  ];
+
+  return (
+    <div className="space-y-4 w-full min-w-0">
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          A. Hero 검증 요약 (CSV 형식)
+         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <div className={`rounded-2xl border px-5 py-4 shadow-sm ${
+        isFailed ? 'bg-red-50 border-red-200' : 'bg-gradient-to-br from-slate-50 to-white border-slate-200'
+      }`}>
+        <div className="flex items-start gap-5">
+          {/* 좌측: 원형 게이지 */}
+          <div className="shrink-0 flex flex-col items-center gap-1">
+            <div className="relative w-16 h-16">
+              <svg viewBox="0 0 64 64" className="w-16 h-16 -rotate-90">
+                <circle cx="32" cy="32" r="26" fill="none" stroke="#e2e8f0" strokeWidth="7" />
+                <circle
+                  cx="32" cy="32" r="26" fill="none"
+                  stroke={isFailed ? '#ef4444' : (summary.totalWarnings ?? 0) > 0 ? '#f59e0b' : '#10b981'}
+                  strokeWidth="7"
+                  strokeDasharray={`${2 * Math.PI * 26}`}
+                  strokeDashoffset={`${2 * Math.PI * 26 * (1 - passRate / 100)}`}
+                  strokeLinecap="round"
+                  className="transition-all duration-700"
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className={`text-base font-bold font-mono leading-none ${isFailed ? 'text-red-600' : 'text-slate-800'}`}>
+                  {passRate}%
+                </span>
+              </div>
+            </div>
+            <span className="text-xs text-slate-400 font-medium">건전도</span>
+          </div>
+
+          {/* 우측: 핵심 지표 */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-2">
+              {isFailed
+                ? <AlertCircle size={15} className="text-red-600 shrink-0" />
+                : <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />}
+              <span className={`text-sm font-bold ${isFailed ? 'text-red-700' : 'text-emerald-700'}`}>
+                {isFailed ? 'BDF 검증 실패' : 'BDF 입력 검증 완료'}
+              </span>
+              {step1Data.sourceFile && (
+                <span className="text-xs font-mono text-slate-400 ml-1 truncate">— {step1Data.sourceFile}</span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="text-center">
+                <p className="text-2xl font-bold font-mono text-slate-800 leading-none">{totalCards.toLocaleString()}</p>
+                <p className="text-xs text-slate-400 mt-0.5">전체 카드</p>
+              </div>
+              <div className="text-center">
+                <p className={`text-2xl font-bold font-mono leading-none ${(summary.totalWarnings ?? 0) > 0 ? 'text-amber-600' : 'text-slate-300'}`}>
+                  {(summary.totalWarnings ?? 0).toLocaleString()}
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">경고</p>
+              </div>
+              <div className="text-center">
+                <p className={`text-2xl font-bold font-mono leading-none ${(summary.totalErrors ?? 0) > 0 ? 'text-red-600' : 'text-slate-300'}`}>
+                  {(summary.totalErrors ?? 0).toLocaleString()}
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">오류</p>
+              </div>
+            </div>
+
+            {(summary.parserWarnings ?? 0) > 0 && (
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-sky-600 font-semibold">
+                <Info size={12} /> 파서 경고 {(summary.parserWarnings).toLocaleString()}건 — 미인식 카드 검토 필요
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          B. 카드 분류 (KindBar 5칼럼)
+         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <div>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">카드 분류 — Bdf Card Counts</p>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+          <KindBar
+            label={CARD_KIND_META.grid.label} icon={CARD_KIND_META.grid.icon}
+            count={counts.grid || 0}
+            errorCount={orphanCount + isolatedCnt}
+          />
+          <KindBar
+            label={CARD_KIND_META.element.label} icon={CARD_KIND_META.element.icon}
+            count={counts.element || 0}
+            warnCount={shortLenCount}
+            errorCount={zeroLenCount}
+            breakdown={ps.elementBreakdown}
+          />
+          <KindBar
+            label={CARD_KIND_META.property.label} icon={CARD_KIND_META.property.icon}
+            count={counts.property || 0}
+            warnCount={ps.orphanProperties || 0}
+            breakdown={ps.propertyBreakdown}
+          />
+          <KindBar
+            label={CARD_KIND_META.material.label} icon={CARD_KIND_META.material.icon}
+            count={counts.material || 0}
+            warnCount={ps.orphanMaterials || 0}
+            breakdown={ps.materialBreakdown}
+          />
+          {!!counts.pointMass && (
+            <KindBar
+              label={CARD_KIND_META.pointMass.label} icon={CARD_KIND_META.pointMass.icon}
+              count={counts.pointMass || 0}
+            />
+          )}
+          {!!counts.load && (
+            <KindBar
+              label={CARD_KIND_META.load.label} icon={CARD_KIND_META.load.icon}
+              count={counts.load || 0}
+              breakdown={ps.loadBreakdown}
+            />
+          )}
+          {!!counts.boundaryCondition && (
+            <KindBar
+              label={CARD_KIND_META.boundaryCondition.label} icon={CARD_KIND_META.boundaryCondition.icon}
+              count={counts.boundaryCondition || 0}
+              breakdown={ps.bcBreakdown}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          C. 검출 이슈 분포 (있을 때만)
+         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {issueItems.length > 0 && (
+        <div className="bg-white border border-amber-200 rounded-xl px-4 py-4 shadow-sm">
+          <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-3">
+            검출 이슈 분포 — {issueItems.reduce((s, i) => s + i.count, 0).toLocaleString()}건
+          </p>
+          <div className="space-y-2.5">
+            {issueItems.map(it => (
+              <IssueBar
+                key={it.key}
+                label={it.label}
+                count={it.count}
+                maxCount={maxIssue}
+                severity={it.severity}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          D. 좌표 범위 (보조 정보)
+         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {ps.boundingBox && (
+        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+            <Move3d size={11} /> 좌표 범위 (Bounding Box)
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            {['x', 'y', 'z'].map(a => (
+              <div key={a} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                <p className="text-[10px] font-bold text-sky-600 font-mono uppercase mb-0.5">{a}</p>
+                <p className="text-xs text-slate-700 font-mono">
+                  {Number(ps.boundingBox[`${a}Min`]).toLocaleString()} ~ {Number(ps.boundingBox[`${a}Max`]).toLocaleString()}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          E. 검증 상세 (FilterPills + 접이식 테이블)
+         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {allRows.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm w-full max-w-full min-w-0">
+          <button
+            onClick={() => setShowRows(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <History size={14} className="text-slate-500" />
+              <span className="text-sm font-semibold text-slate-700">검증 상세</span>
+              <span className="text-xs font-mono font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                {allRows.length.toLocaleString()}건
+              </span>
+              {!showRows && <span className="text-[11px] text-slate-400 ml-1">— 클릭하여 자세히 보기</span>}
+            </div>
+            <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${showRows ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showRows && (
+            <>
+              <div className="flex items-center gap-3 px-4 py-2.5 border-t border-b border-slate-100 bg-slate-50 flex-wrap">
+                <FilterPills
+                  label="종류" value={kindFilter} onChange={setKindFilter}
+                  options={kindOptions}
+                />
+                <span className="text-slate-200">|</span>
+                <FilterPills
+                  label="심각도" value={statusFilter} onChange={setStatusFilter}
+                  options={[
+                    { v: 'all',     label: '전체' },
+                    { v: 'error',   label: '오류' },
+                    { v: 'warning', label: '경고' },
+                  ]}
+                />
+                <span className="ml-auto text-xs font-mono text-slate-400">
+                  {filteredRows.length.toLocaleString()} / {allRows.length.toLocaleString()}건
+                </span>
+              </div>
+
+              <div className="max-h-96 w-full overflow-y-auto overflow-x-hidden custom-scrollbar">
+                <table className="w-full table-fixed text-xs">
+                  <colgroup>
+                    <col className="w-[120px]" />
+                    <col className="w-[110px]" />
+                    <col className="w-[80px]" />
+                    <col />
+                  </colgroup>
+                  <thead className="sticky top-0 bg-slate-50 border-b border-slate-100 z-10">
+                    <tr>
+                      <th className="px-3 py-2 text-left  font-semibold text-slate-500">카드 종류</th>
+                      <th className="px-3 py-2 text-left  font-semibold text-slate-500">ID</th>
+                      <th className="px-3 py-2 text-left  font-semibold text-slate-500">심각도</th>
+                      <th className="px-3 py-2 text-left  font-semibold text-slate-500">메시지</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {filteredRows.slice(0, 1000).map((r, i) => {
+                      const rowBg = r.severity === 'error'   ? 'bg-red-50/60'
+                                  : r.severity === 'warning' ? 'bg-amber-50/40' : '';
+                      const badge = r.severity === 'error'   ? 'bg-red-100 text-red-700'
+                                  : 'bg-amber-100 text-amber-700';
+                      return (
+                        <tr key={i} className={`hover:bg-blue-50/30 transition-colors ${rowBg}`}>
+                          <td className="px-3 py-1.5 text-slate-600 truncate" title={r.cardType}>{r.cardType}</td>
+                          <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500 truncate" title={r.cardId}>{r.cardId}</td>
+                          <td className="px-3 py-1.5">
+                            <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full ${badge}`}>
+                              {(r.severity || '').toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1.5 text-slate-700 truncate" title={r.message}>
+                            {r.fieldName && <span className="text-slate-400 mr-1">({r.fieldName})</span>}
+                            {r.message}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {filteredRows.length > 1000 && (
+                  <p className="text-center text-xs text-slate-400 py-3 italic border-t border-slate-100">
+                    상위 1,000건만 표시 — 전체 {filteredRows.length.toLocaleString()}건
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────
+   메인 컴포넌트
+   ──────────────────────────────────────────────────────────── */
 
 export default function ValidationStepLog({ step1Data, step2Data, useNastran }) {
-  const ps = step1Data?.parsingSummary;
-
-  const overallStatus = (() => {
-    if (!step1Data) return null;
-    if (step1Data.status === 'error' || step2Data?.status === 'error') return 'error';
-    if (step1Data.status === 'warning' || step2Data?.status === 'warning') return 'warning';
-    return 'pass';
-  })();
-
-  const rulesChecked  = Array.isArray(step1Data?.rulesChecked) ? step1Data.rulesChecked : [];
-  const rulesAreObjs  = rulesChecked.length > 0 && typeof rulesChecked[0] === 'object';
-
-  const ruleLabels = {
-    GridRule: 'Grid 절점', ElementRule: '요소 참조',  PropertyRule: '물성 참조',
-    MaterialRule: '재질',  LoadRule: '하중 참조', BcRule: '경계조건',
-  };
-
-  /* Step2 메시지 분류 */
   const f06Messages = step2Data?.f06Summary?.messages || [];
   const fatals   = f06Messages.filter(m => m.level === 'fatal');
   const warnings = f06Messages.filter(m => m.level === 'warning');
 
   return (
-    <div className="bg-slate-900 rounded-2xl border border-slate-700 h-full overflow-y-auto">
+    <div className="bg-white p-5 space-y-6">
+      {/* ── Step 1 — CSV 입력 검증 형식 ── */}
+      {step1Data && <Step1View step1Data={step1Data} />}
 
-      {/* ══════ Step 1 ══════ */}
-      {step1Data && (
-        <div className={`p-5 ${useNastran ? 'border-b border-slate-700/60' : ''}`}>
-
-          {/* 헤더 */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <span className="text-base font-bold text-teal-300 font-mono">Step 1</span>
-              <span className="text-sm text-slate-400">{step1Data.stepName}</span>
-              <StatusBadge status={step1Data.status} />
-            </div>
-            {step1Data.generatedAt && (
-              <div className="flex items-center gap-1 text-xs text-slate-500 font-mono">
-                <Clock size={11} />
-                <span>{new Date(step1Data.generatedAt).toLocaleString('ko-KR')}</span>
-              </div>
-            )}
-          </div>
-
-          {/* 소스 */}
-          {step1Data.sourceFile && (
-            <div className="flex items-center gap-2 mb-4 text-xs font-mono text-slate-500">
-              <FileText size={12} />
-              <span>{step1Data.sourceFile}</span>
-              {step1Data.version && <span className="text-slate-600 ml-2">v{step1Data.version}</span>}
-            </div>
-          )}
-
-          {/* 요약 카운트 */}
-          <div className="grid grid-cols-3 gap-3 mb-5 p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
-            {[
-              { label: '검증 오류', val: step1Data.summary?.totalErrors   ?? 0, bad: v => v > 0, errCls: 'text-red-300',    okCls: 'text-emerald-300' },
-              { label: '검증 경고', val: step1Data.summary?.totalWarnings  ?? 0, bad: v => v > 0, errCls: 'text-yellow-300', okCls: 'text-emerald-300' },
-              { label: '파서 경고', val: step1Data.summary?.parserWarnings ?? 0, bad: v => v > 0, errCls: 'text-sky-300',    okCls: 'text-emerald-300' },
-            ].map(({ label, val, bad, errCls, okCls }) => (
-              <div key={label} className="flex flex-col items-center justify-center py-1">
-                <span className={`text-2xl font-bold font-mono ${bad(val) ? errCls : okCls}`}>{val}</span>
-                <span className="text-xs text-slate-500 mt-1">{label}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* 카드 수량 */}
-          {ps?.cardCounts && (
-            <>
-              <SectionTitle icon={Hash} iconColor="text-teal-400">카드 수량 (Card Counts)</SectionTitle>
-              <div className="grid grid-cols-4 gap-2">
-                {Object.entries(ps.cardCounts).map(([k, v]) => {
-                  const labels = {
-                    grid: 'Grid', element: 'Element', property: 'Property',
-                    material: 'Material', load: 'Load', boundaryCondition: 'BC',
-                    subcase: 'Subcase', param: 'Param',
-                  };
-                  return (
-                    <div key={k} className="bg-slate-800/70 rounded-lg px-3 py-2.5 flex flex-col gap-0.5">
-                      <span className="text-xs text-slate-500">{labels[k] || k}</span>
-                      <span className="text-lg font-bold text-teal-300 font-mono">{v.toLocaleString()}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          {/* Orphan + BoundingBox */}
-          {ps && (ps.orphanNodes != null || ps.boundingBox) && (
-            <>
-              <SectionTitle iconColor="text-orange-400">추가 분석 정보</SectionTitle>
-              <div className="grid grid-cols-2 gap-3">
-                {/* Orphan */}
-                {(ps.orphanNodes != null || ps.orphanProperties != null || ps.orphanMaterials != null) && (
-                  <div className="bg-slate-800/60 rounded-xl px-4 py-3 space-y-2">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">미사용 항목</p>
-                    {[
-                      { label: 'Orphan Nodes',      val: ps.orphanNodes },
-                      { label: 'Orphan Properties', val: ps.orphanProperties },
-                      { label: 'Orphan Materials',  val: ps.orphanMaterials },
-                    ].filter(r => r.val != null).map(({ label, val }) => (
-                      <div key={label} className="flex justify-between items-center">
-                        <span className="text-xs text-slate-400 font-mono">{label}</span>
-                        <span className={`text-sm font-bold font-mono ${val > 0 ? 'text-yellow-300' : 'text-emerald-400'}`}>
-                          {val > 0 ? `⚠ ${val}` : '✓ 0'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {/* BoundingBox */}
-                {ps.boundingBox && (
-                  <div className="bg-slate-800/60 rounded-xl px-4 py-3">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">좌표 범위</p>
-                    {['x', 'y', 'z'].map(a => (
-                      <div key={a} className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-bold text-sky-400 font-mono uppercase w-4">{a}</span>
-                        <span className="text-xs text-slate-300 font-mono">
-                          {ps.boundingBox[`${a}Min`].toLocaleString()} ~ {ps.boundingBox[`${a}Max`].toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Element Breakdown */}
-          {ps?.elementBreakdown && Object.keys(ps.elementBreakdown).length > 0 && (
-            <>
-              <SectionTitle icon={Box} iconColor="text-sky-400">요소 분류 (Element)</SectionTitle>
-              <BreakdownPills data={ps.elementBreakdown} colorCls="bg-sky-900/40 border-sky-800/50 text-sky-200" />
-            </>
-          )}
-
-          {/* Property Breakdown */}
-          {ps?.propertyBreakdown && Object.keys(ps.propertyBreakdown).length > 0 && (
-            <>
-              <SectionTitle icon={Layers} iconColor="text-violet-400">물성 분류 (Property)</SectionTitle>
-              <BreakdownPills data={ps.propertyBreakdown} colorCls="bg-violet-900/40 border-violet-800/50 text-violet-200" />
-            </>
-          )}
-
-          {/* Material Breakdown */}
-          {ps?.materialBreakdown && Object.keys(ps.materialBreakdown).length > 0 && (
-            <>
-              <SectionTitle icon={Cpu} iconColor="text-amber-400">재질 분류 (Material)</SectionTitle>
-              <BreakdownPills data={ps.materialBreakdown} colorCls="bg-amber-900/40 border-amber-800/50 text-amber-200" />
-            </>
-          )}
-
-          {/* Load Breakdown */}
-          {ps?.loadBreakdown && Object.keys(ps.loadBreakdown).length > 0 && (
-            <>
-              <SectionTitle icon={Zap} iconColor="text-rose-400">하중 분류 (Load)</SectionTitle>
-              <BreakdownPills data={ps.loadBreakdown} colorCls="bg-rose-900/40 border-rose-800/50 text-rose-200" />
-            </>
-          )}
-
-          {/* BC Breakdown */}
-          {ps?.bcBreakdown && Object.keys(ps.bcBreakdown).length > 0 && (
-            <>
-              <SectionTitle icon={Anchor} iconColor="text-emerald-400">경계조건 분류 (BC)</SectionTitle>
-              <BreakdownPills data={ps.bcBreakdown} colorCls="bg-emerald-900/40 border-emerald-800/50 text-emerald-200" />
-            </>
-          )}
-
-          {/* Parser Warnings */}
-          {ps?.parserWarnings?.length > 0 && (
-            <>
-              <SectionTitle icon={Info} iconColor="text-yellow-400">미인식 카드 (Parser Warnings)</SectionTitle>
-              <div className="space-y-1">
-                {ps.parserWarnings.map((w, i) => (
-                  <p key={i} className="text-xs font-mono text-yellow-300/80 leading-relaxed pl-3 border-l-2 border-yellow-800/50">
-                    {w}
-                  </p>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Rules Checked */}
-          {rulesChecked.length > 0 && (
-            <>
-              <SectionTitle icon={Shield} iconColor="text-blue-400">검증 규칙 결과 (Rules Checked)</SectionTitle>
-              <div className="grid grid-cols-3 gap-2">
-                {rulesChecked.map(item => {
-                  const ruleName   = rulesAreObjs ? item.rule   : item;
-                  const ruleStatus = rulesAreObjs ? item.status : 'pass';
-                  const checked    = rulesAreObjs ? item.checkedCount : null;
-                  const errCnt     = rulesAreObjs ? item.errorCount   : 0;
-                  const warnCnt    = rulesAreObjs ? item.warningCount : 0;
-
-                  const bgCls = ruleStatus === 'pass'    ? 'bg-emerald-950/40 border-emerald-800/40'
-                               : ruleStatus === 'error'  ? 'bg-red-950/40     border-red-800/40'
-                                                         : 'bg-yellow-950/40  border-yellow-800/40';
-                  const icon  = ruleStatus === 'pass'
-                    ? <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
-                    : ruleStatus === 'error'
-                    ? <AlertTriangle size={15} className="text-red-400 shrink-0" />
-                    : <AlertTriangle size={15} className="text-yellow-400 shrink-0" />;
-
-                  return (
-                    <div key={ruleName} className={`flex items-start gap-2.5 px-3 py-3 rounded-xl border ${bgCls}`}>
-                      <div className="mt-0.5">{icon}</div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-slate-200">{ruleLabels[ruleName] || ruleName}</p>
-                        <p className="text-xs text-slate-500 font-mono mt-0.5">
-                          {checked != null && `${checked.toLocaleString()}개`}
-                          {errCnt  > 0 && <span className="text-red-400 ml-1">/ {errCnt} err</span>}
-                          {warnCnt > 0 && <span className="text-yellow-400 ml-1">/ {warnCnt} warn</span>}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          {/* Validation Results */}
-          <SectionTitle
-            icon={AlertTriangle}
-            iconColor={step1Data.validationResults?.length > 0 ? 'text-red-400' : 'text-emerald-400'}
-          >
-            검증 결과 상세 ({step1Data.validationResults?.length ?? 0}건)
-          </SectionTitle>
-          {step1Data.validationResults?.length > 0 ? (
-            <div className="space-y-1.5">
-              {step1Data.validationResults.map((r, i) => (
-                <div
-                  key={i}
-                  className={`flex items-start gap-2.5 px-4 py-2.5 rounded-xl text-xs font-mono ${
-                    r.severity === 'error'
-                      ? 'bg-red-950/50 border border-red-800/40'
-                      : 'bg-yellow-950/50 border border-yellow-800/40'
-                  }`}
-                >
-                  <AlertTriangle
-                    size={13}
-                    className={`mt-0.5 shrink-0 ${r.severity === 'error' ? 'text-red-400' : 'text-yellow-400'}`}
-                  />
-                  <div className="leading-relaxed">
-                    <span className={`font-bold mr-2 ${r.severity === 'error' ? 'text-red-300' : 'text-yellow-300'}`}>
-                      [{r.severity?.toUpperCase()}]
-                    </span>
-                    <span className="text-slate-100">{r.cardType} #{r.cardId}</span>
-                    {r.fieldName && <span className="text-slate-400 ml-1.5">({r.fieldName})</span>}
-                    <span className="text-slate-300 ml-2">{r.message}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex items-center gap-2.5 px-4 py-3 bg-emerald-950/40 border border-emerald-800/30 rounded-xl">
-              <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-              <span className="text-sm font-mono text-emerald-300 font-bold">모든 검증 규칙 통과 — 참조 무결성 이상 없음</span>
-            </div>
-          )}
-
-          {/* 전체 판정 배너 */}
-          <div className={`mt-6 px-5 py-4 rounded-2xl border flex items-center gap-3 ${
-            overallStatus === 'pass'    ? 'bg-emerald-950/60 border-emerald-700/60'
-            : overallStatus === 'error' ? 'bg-red-950/60     border-red-700/60'
-                                        : 'bg-yellow-950/60  border-yellow-700/60'
-          }`}>
-            {overallStatus === 'pass'
-              ? <CheckCircle2  size={24} className="text-emerald-400 shrink-0" />
-              : <AlertTriangle size={24} className={overallStatus === 'error' ? 'text-red-400' : 'text-yellow-400'} />}
-            <div>
-              <p className={`text-base font-bold ${
-                overallStatus === 'pass'    ? 'text-emerald-300'
-                : overallStatus === 'error' ? 'text-red-300'
-                                            : 'text-yellow-300'
-              }`}>
-                {overallStatus === 'pass'
-                  ? '모델 유효성 검증 통과'
-                  : overallStatus === 'error'
-                  ? '모델 유효성 오류 — 수정 필요'
-                  : '모델 유효성 경고 — 항목 확인 필요'}
-              </p>
-              <p className="text-xs text-slate-400 mt-1 font-mono">
-                오류 {step1Data.summary?.totalErrors ?? 0}건 / 경고 {step1Data.summary?.totalWarnings ?? 0}건
-                {useNastran && step2Data && (
-                  <span className="ml-4">
-                    F06: Fatal {step2Data.summary?.f06Fatals ?? 0} / Warning {step2Data.summary?.f06Warnings ?? 0}
-                  </span>
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══════ Step 2 ══════ */}
+      {/* ── Step 2 — F06 (Nastran 토글 ON 시) ── */}
       {useNastran && step2Data && (
-        <div className="p-5">
-          {/* 헤더 */}
+        <div className="pt-5 border-t border-slate-200">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <span className="text-base font-bold text-purple-300 font-mono">Step 2</span>
-              <span className="text-sm text-slate-400">{step2Data.stepName}</span>
-              <StatusBadge status={step2Data.status} />
+              <span className="text-base font-bold text-purple-600 font-mono">Step 2 — Nastran F06 검증</span>
+              {step2Data.summary?.f06Fatals > 0
+                ? <span className="text-xs font-bold px-2.5 py-0.5 rounded border bg-red-50 text-red-700 border-red-200">FATAL</span>
+                : step2Data.summary?.f06Warnings > 0
+                ? <span className="text-xs font-bold px-2.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">WARNING</span>
+                : <span className="text-xs font-bold px-2.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">PASS</span>}
             </div>
-            {step2Data.generatedAt && (
-              <div className="flex items-center gap-1 text-xs text-slate-500 font-mono">
-                <Clock size={11} />
-                <span>{new Date(step2Data.generatedAt).toLocaleString('ko-KR')}</span>
-              </div>
-            )}
           </div>
 
-          {/* F06 카운트 */}
-          <div className="grid grid-cols-2 gap-3 mb-5 p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
-            {[
-              { label: 'F06 Fatal',   val: step2Data.summary?.f06Fatals ?? 0,   errCls: 'text-red-300',    okCls: 'text-emerald-300' },
-              { label: 'F06 Warning', val: step2Data.summary?.f06Warnings ?? 0, errCls: 'text-yellow-300', okCls: 'text-emerald-300' },
-            ].map(({ label, val, errCls, okCls }) => (
-              <div key={label} className="flex flex-col items-center justify-center py-1">
-                <span className={`text-3xl font-bold font-mono ${val > 0 ? errCls : okCls}`}>{val}</span>
-                <span className="text-xs text-slate-500 mt-1">{label}</span>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 gap-3 mb-5 p-4 bg-slate-50 rounded-xl border border-slate-200">
+            <div className="flex flex-col items-center justify-center py-1">
+              <span className={`text-3xl font-bold font-mono ${(step2Data.summary?.f06Fatals ?? 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                {step2Data.summary?.f06Fatals ?? 0}
+              </span>
+              <span className="text-xs text-slate-500 mt-1">F06 Fatal</span>
+            </div>
+            <div className="flex flex-col items-center justify-center py-1">
+              <span className={`text-3xl font-bold font-mono ${(step2Data.summary?.f06Warnings ?? 0) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                {step2Data.summary?.f06Warnings ?? 0}
+              </span>
+              <span className="text-xs text-slate-500 mt-1">F06 Warning</span>
+            </div>
           </div>
 
-          {/* Fatal 먼저 */}
           {fatals.length > 0 && (
-            <>
-              <SectionTitle icon={AlertOctagon} iconColor="text-red-400">
-                Fatal 메시지 ({fatals.length}건)
-              </SectionTitle>
-              {fatals.map((msg, i) => <F06Message key={i} msg={msg} index={i} />)}
-            </>
+            <div className="mb-3">
+              <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-2">Fatal 메시지 ({fatals.length}건)</p>
+              {fatals.map((msg, i) => <F06Message key={i} msg={msg} />)}
+            </div>
           )}
 
-          {/* Warning */}
           {warnings.length > 0 && (
-            <>
-              <SectionTitle icon={AlertTriangle} iconColor="text-yellow-400">
-                Warning 메시지 ({warnings.length}건)
-              </SectionTitle>
-              {warnings.map((msg, i) => <F06Message key={i} msg={msg} index={i} />)}
-            </>
+            <div>
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-2">Warning 메시지 ({warnings.length}건)</p>
+              {warnings.map((msg, i) => <F06Message key={i} msg={msg} />)}
+            </div>
           )}
 
           {f06Messages.length === 0 && (
-            <div className="flex items-center gap-2.5 px-4 py-3 bg-emerald-950/40 border border-emerald-800/30 rounded-xl">
-              <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-              <span className="text-sm font-mono text-emerald-300 font-bold">Nastran F06 — Fatal / Warning 없음</span>
+            <div className="flex items-center gap-2.5 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+              <span className="text-sm font-mono text-emerald-700 font-bold">Nastran F06 — Fatal / Warning 없음</span>
             </div>
           )}
-
-          {/* Step2 exe 추가 권고 안내 */}
-          <div className="mt-4 flex items-start gap-2 px-4 py-3 bg-slate-800/40 border border-slate-700/40 rounded-xl">
-            <Info size={13} className="text-slate-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Step 2를 더 풍부하게 하려면 exe에서 <span className="text-slate-300">해석 경과 시간</span>,{' '}
-              <span className="text-slate-300">행렬 조건수(condition number)</span>,{' '}
-              <span className="text-slate-300">해석 완료 여부(terminated / completed)</span>를 별도 필드로 출력해 주세요.
-            </p>
-          </div>
         </div>
       )}
 
-      {/* Step2 미실행 */}
+      {/* Step2 미실행 안내 */}
       {useNastran && !step2Data && step1Data && (
-        <div className="p-5">
-          <div className="flex items-start gap-2.5 px-4 py-3.5 bg-slate-800/50 border border-slate-700/50 rounded-xl">
+        <div className="pt-5 border-t border-slate-200">
+          <div className="flex items-start gap-2.5 px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl">
             <Info size={14} className="text-slate-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-bold text-slate-300 mb-0.5">Step 2: Nastran 해석 검토</p>
+              <p className="text-sm font-bold text-slate-700 mb-0.5">Step 2: Nastran 해석 검토</p>
               <p className="text-xs font-mono text-slate-500">결과 파일을 로드 중이거나 아직 생성되지 않았습니다.</p>
             </div>
           </div>
