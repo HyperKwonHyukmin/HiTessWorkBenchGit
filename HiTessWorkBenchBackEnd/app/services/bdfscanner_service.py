@@ -19,7 +19,7 @@ def task_execute_bdfscanner(
     use_nastran: bool,
 ):
     """
-    BdfScanner.exe를 호출하여 BDF 유효성 검증 및 (선택) Nastran F06 요약을 수행합니다.
+    FemScanner.exe를 호출하여 BDF 유효성 검증 및 (선택) Nastran F06 요약을 수행합니다.
     출력 파일:
       - {BdfName}.json                  : BDF 모델 전체 (grids, elements 등)
       - {BdfName}_validation_step1.json : Step1 BDF 기본 검토 결과
@@ -43,14 +43,14 @@ def task_execute_bdfscanner(
     backend_dir = os.path.dirname(app_dir)                 # HiTessWorkBenchBackEnd
 
     exe_dir = os.path.join(backend_dir, "InHouseProgram", "BdfScanner")
-    exe_path = os.path.join(exe_dir, "BdfScanner.exe")
+    exe_path = os.path.join(exe_dir, "FemScanner.exe")
 
     try:
         if not os.path.exists(exe_path):
             raise FileNotFoundError(f"실행 파일을 찾을 수 없습니다: {exe_path}")
 
         # BDF가 work_dir의 하위 폴더에 있을 수 있으므로 실제 BDF 위치 기준으로 cwd 설정
-        # BdfScanner.exe는 입력 BDF와 동일한 디렉터리에 JSON/F06 파일을 출력함
+        # FemScanner.exe는 입력 BDF와 동일한 디렉터리에 JSON/F06 파일을 출력함
         bdf_dir = os.path.dirname(os.path.abspath(bdf_path))
         bdf_filename = os.path.basename(bdf_path)
         if use_nastran:
