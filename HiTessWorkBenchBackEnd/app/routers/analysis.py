@@ -45,6 +45,19 @@ _ALLOWED_DOWNLOAD_BASE = _USER_CONNECTION_DIR
 _PROGRAM_DOWNLOAD_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "DownloadProgram"))
 
 
+def _verify_employee_self(form_employee_id: str, current_user: str) -> None:
+    """request 핸들러의 Form employee_id 가 인증 사용자(current_user) 와 일치하는지 검증.
+
+    Form 으로 전달된 employee_id 는 클라이언트 임의값이므로 인증 토큰의 사번과
+    반드시 대조해야 한다. 정상 클라이언트는 본인 사번을 보내므로 동작 영향 없음.
+    """
+    if form_employee_id != current_user:
+        raise HTTPException(
+            status_code=403,
+            detail="employee_id 가 인증 사용자와 일치하지 않습니다.",
+        )
+
+
 # ==================== 통계 ====================
 
 @router.get("/analysis/stats/monthly")
@@ -268,6 +281,7 @@ async def request_truss_analysis(
     """
     Truss Model Builder 해석을 요청받아 파일을 저장하고 백그라운드 작업을 실행합니다.
     """
+    _verify_employee_self(employee_id, current_user)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(os.path.dirname(base_dir))
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -314,6 +328,7 @@ async def request_truss_assessment(
     """
     Truss Structural Assessment 해석을 요청받아 BDF 파일을 저장하고 백그라운드 작업을 실행합니다.
     """
+    _verify_employee_self(employee_id, current_user)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(os.path.dirname(base_dir))
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -358,6 +373,7 @@ async def request_bdfscanner(
     use_nastran=True 이면 --nastran 옵션으로 Nastran 해석 후 F06 요약까지 수행합니다.
     program_name 으로 userConnection 하위 폴더 접미사를 지정합니다 (기본값: BdfScanner).
     """
+    _verify_employee_self(employee_id, current_user)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(os.path.dirname(base_dir))
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -483,6 +499,18 @@ async def request_module_stability(
     Electron viewer host adapter 가 _posture.json 절대경로를 넘기면 백엔드가
     ModuleAnalysis.Cli.exe 를 실행하고 _stability.json 결과를 job 상태에 보관한다.
     """
+    # posturePath 는 Studio (viewer) 가 제공하는 절대경로. 반드시 userConnection 디렉터리 내부여야 한다.
+    # prefix 검사 누락 시 서버 디스크의 임의 JSON 파일을 ModuleAnalysis.Cli.exe 에 spawn 인자로 넘길 수 있다.
+    posture_abs = os.path.abspath(req.posturePath or "")
+    user_root = _USER_CONNECTION_DIR
+    if not (posture_abs == user_root or posture_abs.startswith(user_root + os.sep)):
+        raise HTTPException(
+            status_code=400,
+            detail="posturePath 가 userConnection 디렉터리 밖에 있습니다.",
+        )
+    if not os.path.isfile(posture_abs):
+        raise HTTPException(status_code=400, detail=f"posturePath 가 파일이 아닙니다: {posture_abs}")
+
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     job_id = str(uuid.uuid4())
     job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "자세안정성 해석 대기 중..."})
@@ -490,7 +518,7 @@ async def request_module_stability(
     analysis_executor.submit(
         task_execute_module_stability,
         job_id,
-        req.posturePath,
+        posture_abs,
         current_user,
         timestamp,
         req.source or "ModuleUnitStudio",
@@ -523,6 +551,7 @@ async def request_groupmoduleunit(
     프론트 ValidationStepLog 가 기대하는 step1 schema 로 변환한다.
     use_nastran=True 인 경우 추후 단계에서 validate-run 으로 F06 검증까지 확장한다.
     """
+    _verify_employee_self(employee_id, current_user)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     unique_folder = f"{timestamp}_{employee_id}_GroupModuleUnit"
     work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
@@ -565,6 +594,7 @@ async def request_unit_structural(
     절대경로를 직접 전달한다. 보안: stability_path 는 parent BDF 와 같은 디렉터리,
     그리고 _USER_CONNECTION_DIR 하위에 있어야 한다.
     """
+    _verify_employee_self(employee_id, current_user)
     if safety_factor <= 0:
         raise HTTPException(status_code=400, detail="safety_factor must be > 0")
     if allowable_mpa <= 0:
@@ -638,6 +668,7 @@ async def request_f06parser(
     F06 Parser 작업을 요청받아 F06 파일을 저장하고 백그라운드 작업을 실행합니다.
     Displacement, SPC Force, CBAR/CBEAM/CROD Force/Stress를 추출합니다.
     """
+    _verify_employee_self(employee_id, current_user)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(os.path.dirname(base_dir))
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -675,6 +706,7 @@ async def request_beam_analysis(
     """
     Simple Beam Assessment 해석을 요청받아 JSON 파일을 저장하고 백그라운드 작업을 실행합니다.
     """
+    _verify_employee_self(employee_id, current_user)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(os.path.dirname(base_dir))
 
@@ -733,6 +765,7 @@ async def request_modelflow_analysis(
       ubolt_full_fix       → --ubolt-full-fix
       run_nastran          → --run-nastran (+ --nastran-path / --leg-z-tol)
     """
+    _verify_employee_self(employee_id, current_user)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(os.path.dirname(base_dir))
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
