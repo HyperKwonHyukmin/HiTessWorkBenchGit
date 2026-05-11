@@ -5,6 +5,7 @@ import { getNotices, createNotice, updateNotice, deleteNotice } from '../../api/
 import GuideButton from '../../components/ui/GuideButton';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import NoticeDetailModal from '../../components/modals/NoticeDetailModal';
 import { useToast } from '../../contexts/ToastContext';
 
 export default function NoticeBoard() {
@@ -189,32 +190,27 @@ export default function NoticeBoard() {
         </Dialog>
       </Transition>
 
-      <Transition appear show={isViewModalOpen} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={() => setIsViewModalOpen(false)}>
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-              <div className="p-6 border-b border-slate-100 flex justify-between items-start shrink-0">
-                <div>
-                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded mb-2 inline-block">{selectedNotice?.type}</span>
-                  <Dialog.Title className="text-2xl font-bold text-brand-blue mt-1">{selectedNotice?.title}</Dialog.Title>
-                  <p className="text-xs text-slate-400 mt-2">{selectedNotice && new Date(selectedNotice.created_at).toLocaleString()}</p>
-                </div>
-                <button onClick={() => setIsViewModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X size={24}/></button>
-              </div>
-              <div className="p-6 bg-slate-50 min-h-[200px] whitespace-pre-wrap text-slate-700 leading-relaxed overflow-y-auto">
-                {selectedNotice?.content}
-              </div>
-              {isAdmin && (
-                <div className="p-4 bg-white border-t border-slate-100 flex justify-end gap-2 shrink-0">
-                  <button onClick={() => setConfirmDeleteOpen(true)} className="flex items-center gap-1 px-4 py-2 text-red-600 font-bold hover:bg-red-50 rounded-lg cursor-pointer"><Trash2 size={16}/> 삭제</button>
-                  <button onClick={handleEditClick} className="flex items-center gap-1 px-4 py-2 text-brand-blue font-bold hover:bg-slate-100 rounded-lg cursor-pointer"><Edit2 size={16}/> 수정</button>
-                </div>
-              )}
-            </Dialog.Panel>
-          </div>
-        </Dialog>
-      </Transition>
+      <NoticeDetailModal
+        isOpen={isViewModalOpen}
+        notice={selectedNotice}
+        onClose={() => setIsViewModalOpen(false)}
+        extraActions={isAdmin ? (
+          <>
+            <button
+              onClick={() => setConfirmDeleteOpen(true)}
+              className="inline-flex items-center gap-1 px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
+            >
+              <Trash2 size={15} /> 삭제
+            </button>
+            <button
+              onClick={handleEditClick}
+              className="inline-flex items-center gap-1 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
+            >
+              <Edit2 size={15} /> 수정
+            </button>
+          </>
+        ) : null}
+      />
       <ConfirmDialog
         isOpen={confirmDeleteOpen}
         onCancel={() => setConfirmDeleteOpen(false)}

@@ -29,11 +29,10 @@ models.Base.metadata.create_all(bind=database.engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """서버 시작 시 기본 가이드/공지 시드와 userConnection 정리 스케줄러를 시작합니다."""
+    """서버 시작 시 기본 가이드 시드와 userConnection 정리 스케줄러를 시작합니다."""
     db = database.SessionLocal()
     try:
         seed_default_guides(db)
-        seed_default_notices(db)
         seed_default_dev_runbooks(db)
     finally:
         db.close()
@@ -74,33 +73,6 @@ app.include_router(section_property.router)
 app.include_router(activity.router)
 app.include_router(viewers.router)
 app.include_router(dev_runbooks.router)
-
-
-def seed_default_notices(db):
-    """해당 공지가 없을 때만 기본 공지를 삽입합니다."""
-    notice_title = "[운영] HiTESS WorkBench 프로토타입 테스트 진행 중"
-    if db.query(models.Notice).filter(models.Notice.title == notice_title).first():
-        return
-
-    default_notice = models.Notice(
-        type="Notice",
-        title=notice_title,
-        content=(
-            "안녕하세요. HiTESS WorkBench 운영팀입니다.\n"
-            "\n"
-            "현재 HiTESS WorkBench는 프로토타입 테스트 단계로 운영 중입니다.\n"
-            "\n"
-            "테스트 기간 중 일부 기능이 변경되거나 일시적으로 제한될 수 있으며,\n"
-            "사용 중 불편 사항이나 개선 의견은 '기능 요청(Feature Requests)' 게시판을 통해 남겨 주시기 바랍니다.\n"
-            "\n"
-            "여러분의 소중한 피드백이 시스템 완성도를 높이는 데 큰 도움이 됩니다.\n"
-            "감사합니다."
-        ),
-        is_pinned=True,
-        author_id="admin",
-    )
-    db.add(default_notice)
-    db.commit()
 
 
 @app.get("/")
