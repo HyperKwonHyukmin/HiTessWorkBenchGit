@@ -398,6 +398,9 @@ export default function GroupModuleUnitLiftingAnalysis() {
       if (s2) setStep2Data(s2);
       const hasError = s1?.status === 'error';
       setStepStatus('bdf-validation', hasError ? 'error' : 'done');
+      // 검증이 error 로 끝났을 때는 다음 단계(Studio) 진입 게이트(hasRunOnce)를 풀지 않는다.
+      // 잘못된 BDF 로 Studio 가 열려 후속 Nastran 해석에서 원인 불명 오류가 나는 것을 차단.
+      if (!hasError) setHasRunOnce(true);
       showToast(hasError ? 'BDF 검증 — 오류 발견' : 'BDF 검증 완료', hasError ? 'warning' : 'success');
     },
     onError: (errData) => {
@@ -590,6 +593,8 @@ export default function GroupModuleUnitLiftingAnalysis() {
   };
 
   // ── 해석 실행 ─────────────────────────────────────────────
+  // hasRunOnce 는 validation 성공 후에만 true 가 된다(polling.onComplete 의 !hasError 분기).
+  // 여기서는 게이트를 풀지 않는다 — 잘못된 BDF 로 다음 단계 진입을 막기 위함.
   const handleRun = () => {
     const bdfDone = steps.find(s => s.id === 'bdf-validation')?.status === 'done';
     if (!bdfDone) {
@@ -598,11 +603,10 @@ export default function GroupModuleUnitLiftingAnalysis() {
         setActiveIdx(0);
         return;
       }
-      setHasRunOnce(true);
       handleValidate();
       return;
     }
-    setHasRunOnce(true);
+    // bdfDone(=done) 상태이므로 검증을 통과했음이 보장된다 → 게이트는 onComplete 에서 이미 true.
     setActiveIdx(1);
     showToast('Group Module Unit Studio를 열어 후속 작업을 진행하세요.', 'info');
   };
