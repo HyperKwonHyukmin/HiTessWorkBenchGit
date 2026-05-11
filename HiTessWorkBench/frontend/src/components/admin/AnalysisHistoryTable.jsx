@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, CheckCircle2, XCircle } from 'lucide-react';
+import { Search, CheckCircle2, XCircle, FileX } from 'lucide-react';
 
 export default function AnalysisHistoryTable({ filteredAnalyses, searchTerm, onSearchChange }) {
   return (
@@ -40,9 +40,16 @@ export default function AnalysisHistoryTable({ filteredAnalyses, searchTerm, onS
                   <span className="text-xs text-slate-500">{item.department}</span>
                 </td>
                 <td className="py-3 px-6 text-center">
-                  {item.status === 'Success'
-                    ? <span className="text-xs font-bold text-emerald-600 flex items-center justify-center gap-1"><CheckCircle2 size={14}/> Success</span>
-                    : <span className="text-xs font-bold text-red-500 flex items-center justify-center gap-1"><XCircle size={14}/> Failed</span>}
+                  <div className="flex flex-col items-center gap-1">
+                    {item.status === 'Success'
+                      ? <span className="text-xs font-bold text-emerald-600 flex items-center justify-center gap-1"><CheckCircle2 size={14}/> Success</span>
+                      : <span className="text-xs font-bold text-red-500 flex items-center justify-center gap-1"><XCircle size={14}/> Failed</span>}
+                    {item.files_available === false && (
+                      <span className="text-[10px] font-bold text-slate-400 flex items-center justify-center gap-1">
+                        <FileX size={11}/> 파일 없음
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="py-3 px-6 text-right text-xs text-slate-500 font-mono">
                   {new Date(item.created_at).toLocaleString()}

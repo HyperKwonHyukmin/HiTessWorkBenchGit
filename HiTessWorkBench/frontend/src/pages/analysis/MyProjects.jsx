@@ -5,7 +5,7 @@ import {
   Search, Filter, Download, RefreshCw,
   ChevronRight, ChevronLeft, Box,
   CheckCircle2, XCircle, AlertCircle,
-  FileCode, Database, FileOutput, Eye, Clock
+  FileCode, Database, FileOutput, Eye, FileX
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
@@ -56,10 +56,16 @@ const FileDownloadRow = ({ label, path, icon: Icon, onClick, isResult }) => (
 // 3. 프로젝트 상세 모달 (공유 Modal 컴포넌트 사용)
 // ==========================================
 const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
+  const { showToast } = useToast();
   const [xlsxDownloading, setXlsxDownloading] = useState({});
+  const [filesMissing, setFilesMissing] = useState(false);
+
+  useEffect(() => {
+    setFilesMissing(project?.files_available === false);
+  }, [project?.id, project?.files_available]);
 
   const handleDownload = async (filePath) => {
-    if (!filePath) return;
+    if (!filePath || filesMissing) return;
     try {
       const response = await downloadFileBlob(filePath);
       const filename = extractFilename(filePath);
@@ -72,11 +78,16 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
+      if (error?.response?.status === 404) {
+        setFilesMissing(true);
+        return;
+      }
       showToast('파일 다운로드에 실패했습니다.', 'error');
     }
   };
 
   const handleXlsxDownload = async (jsonPath, label) => {
+    if (filesMissing) return;
     setXlsxDownloading(prev => ({ ...prev, [label]: true }));
     try {
       const response = await exportAssessmentXlsx(jsonPath);
@@ -89,7 +100,11 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
-    } catch {
+    } catch (error) {
+      if (error?.response?.status === 404) {
+        setFilesMissing(true);
+        return;
+      }
       showToast('Excel 파일 생성에 실패했습니다.', 'error');
     } finally {
       setXlsxDownloading(prev => ({ ...prev, [label]: false }));
@@ -131,7 +146,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
           </div>
 
           {/* 3D 시각화 버튼 */}
-          {project.status === 'Success' && project.result_info?.bdf && project.files_available !== false && (
+          {project.status === 'Success' && project.result_info?.bdf && !filesMissing && (
             <button
               onClick={onOpen3D}
               className="w-full mb-6 py-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-center gap-3 text-indigo-700 font-bold hover:bg-indigo-100 transition-all duration-200 shadow-sm cursor-pointer group"
@@ -142,7 +157,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
           )}
 
           {/* Truss Assessment 결과 보고서 저장 */}
-          {isAssessment && project.status === 'Success' && jsonFiles.length > 0 && (
+          {isAssessment && project.status === 'Success' && jsonFiles.length > 0 && !filesMissing && (
             <div className="mb-6">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">결과 보고서 저장</h3>
               <div className="space-y-2">
@@ -198,12 +213,12 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
           </div>
 
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Files</h3>
-          {project.files_available === false ? (
+          {filesMissing ? (
             <div className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-500">
-              <Clock size={18} className="text-slate-400 shrink-0" />
+              <FileX size={18} className="text-slate-400 shrink-0" />
               <div>
-                <p className="text-sm font-bold text-slate-600">파일이 만료되었습니다</p>
-                <p className="text-xs text-slate-400 mt-0.5">보존 기간(30일)이 지나 서버에서 자동 삭제되었습니다. 해석 이력은 계속 유지됩니다.</p>
+                <p className="text-sm font-bold text-slate-600">파일 없음</p>
+                <p className="text-xs text-slate-400 mt-0.5">해당 해석의 작업 폴더 또는 결과 파일이 서버에서 삭제되었습니다. 해석 이력은 계속 유지됩니다.</p>
               </div>
             </div>
           ) : (
@@ -381,7 +396,7 @@ export default function MyProjects() {
                         <StatusBadge status={project.status} />
                         {project.files_available === false && (
                           <span className="flex items-center gap-1 text-[10px] text-slate-400 font-bold">
-                            <Clock size={10} /> 파일 만료
+                            <FileX size={10} /> 파일 없음
                           </span>
                         )}
                       </div>

@@ -328,6 +328,8 @@ export default function GroupModuleUnitLiftingAnalysis() {
   // ── 파이프라인 상태 ──────────────────────────────────────
   const [steps, setSteps]     = useState(INITIAL_STEPS);
   const [activeIdx, setActiveIdx] = useState(0);
+  // 해석 실행이 한 번이라도 트리거됐는지 여부 (다음 단계 이동 버튼 활성화 조건)
+  const [hasRunOnce, setHasRunOnce] = useState(false);
 
 
   // ── Step 0: BDF 입력 ─────────────────────────────────────
@@ -596,9 +598,11 @@ export default function GroupModuleUnitLiftingAnalysis() {
         setActiveIdx(0);
         return;
       }
+      setHasRunOnce(true);
       handleValidate();
       return;
     }
+    setHasRunOnce(true);
     setActiveIdx(1);
     showToast('Group Module Unit Studio를 열어 후속 작업을 진행하세요.', 'info');
   };
@@ -623,6 +627,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
     setSteps(INITIAL_STEPS);
     setActiveIdx(0);
     setUseNastran(true);
+    setHasRunOnce(false);
   };
 
   // ── 렌더 ─────────────────────────────────────────────────
@@ -753,6 +758,21 @@ export default function GroupModuleUnitLiftingAnalysis() {
                 </p>
                 <Toggle checked={useNastran} onChange={setUseNastran} />
               </div>
+              {activeIdx < steps.length - 1 && (
+                <button
+                  onClick={() => setActiveIdx(prev => Math.min(prev + 1, steps.length - 1))}
+                  disabled={!hasRunOnce}
+                  title={!hasRunOnce ? '권상 구조 해석 수행 후 활성화됩니다' : `다음 단계: ${steps[activeIdx + 1].title}`}
+                  className={`w-full flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-xl transition-colors ${
+                    hasRunOnce
+                      ? 'bg-white border border-blue-200 hover:bg-blue-50 hover:border-blue-300 text-blue-600 cursor-pointer'
+                      : 'bg-slate-50 border border-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <span>다음 단계: {steps[activeIdx + 1].title}</span>
+                  <ArrowRight size={13} />
+                </button>
+              )}
               <button
                 onClick={handleRun}
                 disabled={validating || jobStatus?.status === 'Running'}
@@ -761,8 +781,8 @@ export default function GroupModuleUnitLiftingAnalysis() {
                 {validating
                   ? <><Loader2 size={15} className="animate-spin" /> BDF 검증 중...</>
                   : jobStatus?.status === 'Running'
-                  ? <><Loader2 size={15} className="animate-spin" /> 해석 실행 중...</>
-                  : <><ChevronsRight size={16} /> 해석 실행</>
+                  ? <><Loader2 size={15} className="animate-spin" /> 권상 구조 해석 수행 중...</>
+                  : <><ChevronsRight size={16} /> 권상 구조 해석 수행</>
                 }
               </button>
               <button

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CheckCircle2, RefreshCw, FileOutput, Download, FileText, FileCode } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle2, RefreshCw, FileOutput, Download, FileText, FileCode, FileX } from 'lucide-react';
 import { exportAssessmentXlsx, downloadFileBlob } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import Modal from '../ui/Modal';
@@ -9,8 +9,14 @@ import { useToast } from '../../contexts/ToastContext';
 export default function AssessmentProjectModal({ project, onClose }) {
   const { showToast } = useToast();
   const [downloading, setDownloading] = useState({});
+  const [filesMissing, setFilesMissing] = useState(project?.files_available === false);
+
+  useEffect(() => {
+    setFilesMissing(project?.files_available === false);
+  }, [project?.id, project?.files_available]);
 
   const handleXlsxDownload = async (jsonPath, label) => {
+    if (filesMissing) return;
     setDownloading(prev => ({ ...prev, [label]: true }));
     try {
       const response = await exportAssessmentXlsx(jsonPath);
@@ -26,6 +32,10 @@ export default function AssessmentProjectModal({ project, onClose }) {
       window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
       console.error('Excel export failed:', error);
+      if (error?.response?.status === 404) {
+        setFilesMissing(true);
+        return;
+      }
       showToast('Excel 파일 생성에 실패했습니다.', 'error');
     } finally {
       setDownloading(prev => ({ ...prev, [label]: false }));
@@ -33,6 +43,7 @@ export default function AssessmentProjectModal({ project, onClose }) {
   };
 
   const handleRawDownload = async (filePath, label, keyPrefix) => {
+    if (filesMissing) return;
     const downKey = `${keyPrefix}_${label}`;
     setDownloading(prev => ({ ...prev, [downKey]: true }));
     try {
@@ -48,6 +59,10 @@ export default function AssessmentProjectModal({ project, onClose }) {
       window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
       console.error(`${keyPrefix} download failed:`, error);
+      if (error?.response?.status === 404) {
+        setFilesMissing(true);
+        return;
+      }
       showToast(`${keyPrefix} 파일 다운로드에 실패했습니다.`, 'error');
     } finally {
       setDownloading(prev => ({ ...prev, [downKey]: false }));
@@ -83,6 +98,15 @@ export default function AssessmentProjectModal({ project, onClose }) {
           Job ID: {project?.id}
         </p>
 
+        {filesMissing ? (
+          <div className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-500">
+            <FileX size={18} className="text-slate-400 shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-slate-600">파일 없음</p>
+              <p className="text-xs text-slate-400 mt-0.5">해당 해석의 작업 폴더 또는 결과 파일이 서버에서 삭제되었습니다.</p>
+            </div>
+          </div>
+        ) : (
         <div className="space-y-6">
           {jsonFiles.length > 0 && (
             <div className="space-y-3">
@@ -215,6 +239,7 @@ export default function AssessmentProjectModal({ project, onClose }) {
             <div className="text-center text-slate-500 py-8">결과 파일이 없습니다.</div>
           )}
         </div>
+        )}
       </div>
     </Modal>
   );

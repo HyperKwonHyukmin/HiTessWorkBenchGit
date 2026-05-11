@@ -8,13 +8,14 @@ import { createThreeScene } from '../../hooks/useThreeScene';
 import { Dialog, Transition } from '@headlessui/react';
 import {
   X, Box, RefreshCw, Eye, EyeOff,
-  Hexagon, LayoutGrid, RotateCcw, PlayCircle, PauseCircle
+  Hexagon, LayoutGrid, RotateCcw, PlayCircle, PauseCircle, FileX
 } from 'lucide-react';
 import { downloadFileText } from '../../api/analysis';
 
 export default function BdfViewerModal({ isOpen, project, onClose }) {
   const mountRef = useRef(null);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [nodeCount, setNodeCount] = useState(0);
   const [elementCount, setElementCount] = useState(0);
 
@@ -31,13 +32,34 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
   // 1. 초기 3D 모델 렌더링 및 BDF 파싱
   // ==========================================
   useEffect(() => {
-    if (!isOpen || !project || !project.result_info || !project.result_info.bdf) return;
+    if (!isOpen) {
+      setLoading(false);
+      setErrorMessage('');
+      setNodeCount(0);
+      setElementCount(0);
+      return;
+    }
+    if (!project || !project.result_info || !project.result_info.bdf) {
+      setLoading(false);
+      setErrorMessage('파일 없음');
+      setNodeCount(0);
+      setElementCount(0);
+      return;
+    }
+    if (project.files_available === false) {
+      setLoading(false);
+      setErrorMessage('파일 없음');
+      setNodeCount(0);
+      setElementCount(0);
+      return;
+    }
     
     let renderer, scene, camera, controls;
     let animationId;
 
     const initViewer = async () => {
       setLoading(true);
+      setErrorMessage('');
       try {
         const response = await downloadFileText(project.result_info.bdf);
         const bdfText = response.data;
@@ -253,6 +275,11 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
         threeSetup.startAnimate(modelCenter, maxDim);
         
       } catch (err) {
+        if (err?.response?.status === 404) {
+          setErrorMessage('파일 없음');
+          return;
+        }
+        setErrorMessage('3D 모델을 불러오지 못했습니다.');
         console.error("Three.js Viewer Error:", err);
       } finally {
         setLoading(false);
@@ -320,7 +347,7 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
 
             <button onClick={onClose} className="absolute top-4 right-6 z-10 text-white hover:text-red-400 cursor-pointer bg-black/50 p-2 rounded-full transition-colors"><X size={24} /></button>
 
-            {!loading && (
+            {!loading && !errorMessage && (
               <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex gap-2 bg-slate-800/80 backdrop-blur-md p-2 rounded-2xl border border-slate-700 shadow-2xl">
                 <button 
                   onClick={() => setShowNodes(!showNodes)}
@@ -369,6 +396,14 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
               <div className="absolute inset-0 flex flex-col items-center justify-center z-20 text-brand-accent font-mono bg-slate-900/80 backdrop-blur-sm">
                 <RefreshCw size={48} className="animate-spin mb-4" />
                 Parsing BDF and Generating 3D Solid Model...
+              </div>
+            )}
+
+            {!loading && errorMessage && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-slate-900 text-slate-300">
+                <FileX size={48} className="mb-4 text-slate-500" />
+                <p className="text-lg font-bold text-slate-100">{errorMessage}</p>
+                <p className="text-sm text-slate-500 mt-2">해당 해석의 작업 폴더 또는 BDF 파일이 서버에 없습니다.</p>
               </div>
             )}
             
