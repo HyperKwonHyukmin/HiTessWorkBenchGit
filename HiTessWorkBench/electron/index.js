@@ -763,28 +763,89 @@ ipcMain.handle("viewer:getInitialFolder", async () => {
 // 결과를 받아 Studio 에 { ok, error } 로 반환. 성공 시 viewer 창 자동 종료.
 const _pendingFinalizeReqs = new Map();   // requestId → resolve
 
-const DEFAULT_BACKEND_BASE_URL = "http://10.133.122.70:9091";
+const DEFAULT_BACKEND_BASE_URL = "http://10.14.42.145:9091";
 
 async function getWorkbenchRuntimeConfig() {
-  const fallback = { serverUrl: DEFAULT_BACKEND_BASE_URL, token: "" };
+  const fallback = { serverUrl: DEFAULT_BACKEND_BASE_URL, token: "", employeeId: "" };
   if (!mainWindow || mainWindow.isDestroyed()) return fallback;
 
   try {
     const raw = await mainWindow.webContents.executeJavaScript(`
-      JSON.stringify({
-        serverUrl: localStorage.getItem('server_url') || '',
-        token: localStorage.getItem('session_token') || ''
-      })
+      (() => {
+        let employeeId = '';
+        try {
+          const u = JSON.parse(localStorage.getItem('user') || '{}');
+          employeeId = u.employee_id || u.employeeId || '';
+        } catch {}
+        return JSON.stringify({
+          serverUrl: localStorage.getItem('server_url') || '',
+          token: localStorage.getItem('session_token') || '',
+          employeeId
+        });
+      })()
     `, true);
     const cfg = JSON.parse(raw || "{}");
     return {
       serverUrl: String(cfg.serverUrl || DEFAULT_BACKEND_BASE_URL).replace(/\/$/, ""),
       token: String(cfg.token || ""),
+      employeeId: String(cfg.employeeId || ""),
     };
   } catch (e) {
     console.warn("[viewer] runtime config read failed:", e?.message || e);
     return fallback;
   }
+}
+
+async function refreshWorkbenchSession(serverUrl, employeeId) {
+  if (!mainWindow || mainWindow.isDestroyed() || !employeeId) return "";
+
+  const res = await fetch(`${serverUrl}/api/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ employee_id: employeeId }),
+  });
+  if (!res.ok) return "";
+
+  const body = await res.json();
+  const nextToken = String(body?.token || "");
+  if (!nextToken) return "";
+
+  const user = { ...body };
+  delete user.token;
+  await mainWindow.webContents.executeJavaScript(`
+      JSON.stringify({
+        ok: (() => {
+          localStorage.setItem('session_token', ${JSON.stringify(nextToken)});
+          localStorage.setItem('user', ${JSON.stringify(JSON.stringify(user))});
+          localStorage.setItem('user_login_at', String(Date.now()));
+          localStorage.setItem('user_last_active', String(Date.now()));
+          return true;
+        })()
+      })
+    `, true);
+
+  return nextToken;
+}
+
+async function fetchWithSessionRefresh(url, optionsOrFactory = {}, runtimeConfig = null) {
+  const cfg = runtimeConfig || await getWorkbenchRuntimeConfig();
+  const makeOptions = (token) => {
+    const options = typeof optionsOrFactory === "function"
+      ? optionsOrFactory(token)
+      : optionsOrFactory;
+    const headers = { ...(options.headers || {}) };
+    if (token && !headers.Authorization) headers.Authorization = `Bearer ${token}`;
+    return { ...options, headers };
+  };
+
+  let res = await fetch(url, makeOptions(cfg.token));
+  if (res.status !== 401) return { res, token: cfg.token };
+
+  const nextToken = await refreshWorkbenchSession(cfg.serverUrl, cfg.employeeId);
+  if (!nextToken) return { res, token: cfg.token };
+
+  res = await fetch(url, makeOptions(nextToken));
+  return { res, token: nextToken };
 }
 
 async function readBackendError(res) {
@@ -885,34 +946,30 @@ ipcMain.handle("viewer:uploadEvaluationArtifact", async (_e, payload) => {
       return { ok: false, error: "fileName / content 누락" };
     }
 
-    const { serverUrl, token } = await getWorkbenchRuntimeConfig();
+    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const { serverUrl } = runtimeConfig;
     // employee_id 는 백엔드의 require_auth 가 검증한 current_user 와 일치해야 한다.
-    // localStorage 의 'user' (JSON) 에서 employee_id 를 꺼낸다.
-    let employeeId = "";
-    try {
-      const userRaw = await mainWindow.webContents.executeJavaScript(
-        `localStorage.getItem('user')`, true,
-      );
-      const u = JSON.parse(userRaw || "{}");
-      employeeId = String(u.employee_id || u.employeeId || "");
-    } catch {}
+    const employeeId = runtimeConfig.employeeId;
     if (!employeeId) {
       return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
     }
+    if (!viewerParentAnalysisId) {
+      return { ok: false, error: "parentAnalysisId 가 없습니다. WorkBench 에서 BDF 검증을 완료한 뒤 Studio 를 여세요." };
+    }
 
-    const form = new FormData();
-    form.append("file", new Blob([content], { type: "application/json" }), fileName);
-    form.append("employee_id", employeeId);
-    form.append("artifact_kind", artifactKind);
+    const makeForm = () => {
+      const form = new FormData();
+      form.append("file", new Blob([content], { type: "application/json" }), fileName);
+      form.append("employee_id", employeeId);
+      form.append("parent_analysis_id", String(viewerParentAnalysisId));
+      form.append("artifact_kind", artifactKind);
+      return form;
+    };
 
-    const headers = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-
-    const res = await fetch(`${serverUrl}/api/analysis/module-stability/upload`, {
+    const { res } = await fetchWithSessionRefresh(`${serverUrl}/api/analysis/module-stability/upload`, () => ({
       method: "POST",
-      headers,
-      body: form,
-    });
+      body: makeForm(),
+    }), runtimeConfig);
     if (!res.ok) {
       const detail = await readBackendError(res);
       return { ok: false, error: `업로드 실패: ${res.status}${detail ? ` - ${detail}` : ""}` };
@@ -935,19 +992,15 @@ ipcMain.handle("viewer:runStabilityAnalysis", async (_e, posturePath) => {
     if (!path.isAbsolute(posturePath)) {
       return { ok: false, error: `_posture.json 절대경로가 아닙니다: ${posturePath}` };
     }
-    if (!fs.existsSync(posturePath)) {
-      return { ok: false, error: `_posture.json 파일이 없습니다: ${posturePath}` };
-    }
 
-    const { serverUrl, token } = await getWorkbenchRuntimeConfig();
-    const headers = { "Content-Type": "application/json" };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const { serverUrl } = runtimeConfig;
 
-    const reqRes = await fetch(`${serverUrl}/api/analysis/module-stability/request`, {
+    const { res: reqRes, token } = await fetchWithSessionRefresh(`${serverUrl}/api/analysis/module-stability/request`, {
       method: "POST",
-      headers,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ posturePath, source: "ModuleUnitStudio" }),
-    });
+    }, runtimeConfig);
     if (!reqRes.ok) {
       const detail = await readBackendError(reqRes);
       return { ok: false, error: `백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}` };
@@ -1004,9 +1057,6 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
     if (!path.isAbsolute(stabilityPath)) {
       return { ok: false, error: `stabilityPath 절대경로가 아닙니다: ${stabilityPath}` };
     }
-    if (!fs.existsSync(stabilityPath)) {
-      return { ok: false, error: `stability JSON 파일이 없습니다: ${stabilityPath}` };
-    }
     if (!viewerParentAnalysisId) {
       return { ok: false, error: "parentAnalysisId 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 BDF 검증을 먼저 마치고 Studio 를 여세요." };
     }
@@ -1017,17 +1067,12 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
       return { ok: false, error: `allowableMpa 가 양수여야 합니다: ${allowableMpa}` };
     }
 
-    const userStr = await mainWindow.webContents.executeJavaScript(
-      `localStorage.getItem('user') || ''`, true
-    ).catch(() => "");
-    let employeeId = "guest";
-    try {
-      const u = userStr ? JSON.parse(userStr) : null;
-      if (u?.employee_id) employeeId = String(u.employee_id);
-    } catch {}
-
-    const { serverUrl, token } = await getWorkbenchRuntimeConfig();
-    const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const { serverUrl } = runtimeConfig;
+    const employeeId = runtimeConfig.employeeId;
+    if (!employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
 
     const form = new URLSearchParams();
     form.set("stability_path", stabilityPath);
@@ -1037,11 +1082,11 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
     form.set("employee_id", employeeId);
     form.set("source", "Studio");
 
-    const reqRes = await fetch(`${serverUrl}/api/analysis/unit-structural/request`, {
+    const { res: reqRes, token } = await fetchWithSessionRefresh(`${serverUrl}/api/analysis/unit-structural/request`, {
       method: "POST",
-      headers: { ...authHeaders, "Content-Type": "application/x-www-form-urlencoded" },
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: form.toString(),
-    });
+    }, runtimeConfig);
     if (!reqRes.ok) {
       const detail = await readBackendError(reqRes);
       return { ok: false, error: `백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}` };
@@ -1062,7 +1107,9 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
     // SOL 101 + 모델 크기 고려해 30분 (1.5s × 1200) 폴링
     for (let i = 0; i < 1200; i++) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      const statusRes = await fetch(`${serverUrl}/api/analysis/status/${jobId}`, { headers: authHeaders });
+      const statusRes = await fetch(`${serverUrl}/api/analysis/status/${jobId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (!statusRes.ok) continue;
 
       const job = await statusRes.json();

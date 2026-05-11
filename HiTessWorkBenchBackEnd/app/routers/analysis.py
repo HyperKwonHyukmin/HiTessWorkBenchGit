@@ -395,17 +395,19 @@ class ModuleStabilityRequest(BaseModel):
 async def upload_module_stability_artifact(
         file: UploadFile = File(...),
         employee_id: str = Form(...),
+        parent_analysis_id: int = Form(...),
         artifact_kind: str = Form("posture"),
         current_user: str = Depends(require_auth)
 ):
     """
-    ModuleUnitStudio 자세안정성 평가 입력 파일을 서버의 userConnection 폴더로 업로드한다.
+    ModuleUnitStudio 자세안정성 평가 입력 파일을 GroupModuleUnit BDF 폴더로 업로드한다.
     Studio (Electron) 가 자기 PC 의 로컬 폴더에만 파일을 갖고 있을 때, 서버 PC 가 그 파일을
-    읽을 수 있도록 동일 채널(userConnection/{ts}_{empid}_GroupModuleUnit/) 로 옮긴다.
+    읽을 수 있도록 원본 BDF 와 같은 폴더로 옮긴다.
 
     body (multipart/form-data):
       file           : 업로드 파일 (예: <stem>_edit_posture.json 또는 <stem>_edited.json)
       employee_id    : 업로드 주체 사번 (require_auth 의 current_user 와 같아야 한다)
+      parent_analysis_id : BDF 검증으로 생성된 GroupModuleUnit Analysis.id
       artifact_kind  : 'posture' | 'edited' — 로깅/식별용. 폴더 분기는 안 함.
 
     반환: { ok, remotePath, folderPath, fileName }
@@ -414,11 +416,37 @@ async def upload_module_stability_artifact(
     if employee_id != current_user:
         raise HTTPException(status_code=403, detail="employee_id 가 인증 사용자와 일치하지 않습니다.")
 
-    # 동일 사용자/같은 분(분단위 timestamp)이면 이미 만든 폴더 재사용해서 _edited + _posture 한 묶음 유지.
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    unique_folder = f"{timestamp}_{employee_id}_GroupModuleUnit"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
-    os.makedirs(work_dir, exist_ok=True)
+    db = database.SessionLocal()
+    try:
+        parent = db.query(models.Analysis).filter(
+            models.Analysis.id == parent_analysis_id
+        ).first()
+        if parent is None:
+            raise HTTPException(status_code=404, detail=f"Parent Analysis (id={parent_analysis_id}) not found")
+        if parent.employee_id != current_user:
+            raise HTTPException(status_code=403, detail="Parent Analysis 의 사용자와 인증 사용자가 일치하지 않습니다.")
+        if parent.program_name != "GroupModuleUnit":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Parent program_name '{parent.program_name}' is not 'GroupModuleUnit'",
+            )
+        bdf_path = (parent.input_info or {}).get("bdf_model")
+    finally:
+        db.close()
+
+    if not bdf_path or not os.path.exists(bdf_path):
+        raise HTTPException(status_code=400, detail=f"Parent BDF 파일을 찾을 수 없습니다: {bdf_path}")
+
+    user_root_abs = os.path.abspath(_USER_CONNECTION_DIR)
+    bdf_abs = os.path.abspath(bdf_path)
+    user_root_cmp = os.path.normcase(user_root_abs)
+    bdf_cmp = os.path.normcase(bdf_abs)
+    if not bdf_cmp.startswith(user_root_cmp + os.sep):
+        raise HTTPException(status_code=403, detail="Parent BDF 경로가 userConnection 디렉터리 밖에 있습니다.")
+
+    # ModuleAnalysis.Cli 와 unit-structural endpoint 모두 posture/stability 파일이
+    # parent BDF 와 같은 폴더에 있다고 가정한다.
+    work_dir = os.path.dirname(bdf_abs)
 
     # 파일명에 경로 분리자 차단 (..\ ../ 등 보안).
     safe_name = os.path.basename(file.filename or "artifact.json")
