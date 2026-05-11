@@ -5,17 +5,18 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { motion } from 'framer-motion';
 import { Dialog, Transition } from '@headlessui/react';
-import { getQueueStatus } from '../../api/admin';
+import { getQueueStatus, getNotices } from '../../api/admin';
 import { getAnalysisHistory, getTopPrograms, getMonthlyAnalysisCount } from '../../api/analysis';
 import {
-  Activity, FileText, Server, CheckCircle2,
+  Activity, FileText, Server,
   ArrowUpRight, Star, CalendarDays, Database, Map, Rocket,
-  Wrench, Clock, X, ChevronRight, Layers, Cpu, FlaskConical, FileBarChart2, Maximize2, Trophy,
-  UploadCloud, PenTool, SlidersHorizontal, GraduationCap
+  Wrench, Clock, X, ChevronRight, Layers, Cpu, Maximize2, Trophy,
+  Megaphone, Pin, Sparkles
 } from 'lucide-react';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
+import NoticeDetailModal, { NOTICE_TYPE_STYLE } from '../../components/modals/NoticeDetailModal';
 
 const MODE_KO = {
   File: "파일 기반",
@@ -23,87 +24,42 @@ const MODE_KO = {
   Parametric: "파라메트릭"
 };
 
-const APP_CATEGORIES = [
-  {
-    mode: 'File',
-    menuName: 'New Analysis',
-    label: 'File-Based Apps',
-    labelKo: '파일 기반 해석',
-    description: 'CSV, BDF 등 파일을 업로드하여 구조 모델링·해석을 수행하는 앱',
-    icon: UploadCloud,
-    accent: 'blue',
-  },
-  {
-    mode: 'Interactive',
-    menuName: 'Interactive Apps',
-    label: 'Interactive Apps',
-    labelKo: '인터랙티브 계산',
-    description: '수치를 직접 입력하고 즉시 구조 응답을 확인하는 대화형 계산 앱',
-    icon: PenTool,
-    accent: 'violet',
-  },
-  {
-    mode: 'Parametric',
-    menuName: 'Parametric Apps',
-    label: 'Parametric Apps',
-    labelKo: '파라메트릭 설계',
-    description: '치수·하중 파라미터를 조합해 최적 설계 후보를 자동 산출하는 앱',
-    icon: SlidersHorizontal,
-    accent: 'emerald',
-  },
-  {
-    mode: 'Academic',
-    menuName: 'Academic Apps',
-    label: 'Academic Apps',
-    labelKo: '학술 해석',
-    description: '이론·학술 기반 구조 해석 및 검증 도구',
-    icon: GraduationCap,
-    accent: 'cyan',
-  },
-  {
-    mode: 'Productivity',
-    menuName: 'Productivity Apps',
-    label: 'Productivity Apps',
-    labelKo: '생산성 도구',
-    description: '해석 결과 시각화·변환·검토를 지원하는 생산성 보조 도구',
-    icon: Wrench,
-    accent: 'amber',
-  },
-];
-
-const ACCENT_CLASSES = {
-  blue:    { iconBg: 'bg-blue-100',    iconText: 'text-blue-600',    countBg: 'bg-blue-50',    countText: 'text-blue-600',    border: 'hover:border-blue-300'    },
-  violet:  { iconBg: 'bg-violet-100',  iconText: 'text-violet-600',  countBg: 'bg-violet-50',  countText: 'text-violet-600',  border: 'hover:border-violet-300'  },
-  emerald: { iconBg: 'bg-emerald-100', iconText: 'text-emerald-600', countBg: 'bg-emerald-50', countText: 'text-emerald-600', border: 'hover:border-emerald-300' },
-  amber:   { iconBg: 'bg-amber-100',   iconText: 'text-amber-600',   countBg: 'bg-amber-50',   countText: 'text-amber-600',   border: 'hover:border-amber-300'   },
-  cyan:    { iconBg: 'bg-cyan-100',    iconText: 'text-cyan-700',    countBg: 'bg-cyan-50',    countText: 'text-cyan-700',    border: 'hover:border-cyan-300'    },
-};
-
-const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color }) => (
-  <motion.div
-    className="relative bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-start justify-between hover:shadow-lg hover:border-blue-300 transition-all duration-200 group"
-    initial={{ opacity: 0, y: 12 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.3, ease: 'easeOut' }}
-    whileHover={{ y: -3, transition: { type: 'spring', stiffness: 350, damping: 28 } }}
-  >
-    <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400">
-      <ArrowUpRight size={18} />
-    </div>
-    <div>
-      <h3 className="text-slate-600 text-sm font-bold tracking-tight group-hover:text-blue-600 transition-colors">
-        {title}
-      </h3>
-      <div className="mt-2 flex items-center space-x-2 mb-1">
-        <span className="text-2xl font-extrabold text-slate-800 tracking-tight">{value}</span>
+const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick }) => {
+  const isClickable = typeof onClick === 'function';
+  return (
+    <motion.div
+      onClick={onClick}
+      role={isClickable ? 'button' : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      className={`relative bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-start justify-between transition-all duration-200 group ${
+        isClickable ? 'hover:shadow-lg hover:border-blue-300 cursor-pointer' : ''
+      }`}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      whileHover={isClickable ? { y: -3, transition: { type: 'spring', stiffness: 350, damping: 28 } } : undefined}
+    >
+      {isClickable && (
+        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400">
+          <ArrowUpRight size={18} />
+        </div>
+      )}
+      <div>
+        <h3 className={`text-slate-600 text-sm font-bold tracking-tight transition-colors ${isClickable ? 'group-hover:text-blue-600' : ''}`}>
+          {title}
+        </h3>
+        <div className="mt-2 flex items-center space-x-2 mb-1">
+          <span className="text-2xl font-extrabold text-slate-800 tracking-tight">{value}</span>
+        </div>
+        <p className="text-xs font-medium text-slate-400">{subtext}</p>
       </div>
-      <p className="text-xs font-medium text-slate-400">{subtext}</p>
-    </div>
-    <div className={`p-3 rounded-xl ${color} shadow-sm group-hover:scale-110 transition-transform`}>
-      <Icon size={22} className="text-white" />
-    </div>
-  </motion.div>
-);
+      <div className={`p-3 rounded-xl ${color} shadow-sm ${isClickable ? 'group-hover:scale-110' : ''} transition-transform`}>
+        <Icon size={22} className="text-white" />
+      </div>
+    </motion.div>
+  );
+};
 
 const FavoriteCard = ({ title, icon: Icon, color, desc, onClick }) => (
   <motion.button
@@ -131,7 +87,7 @@ const FavoriteCard = ({ title, icon: Icon, color, desc, onClick }) => (
   </motion.button>
 );
 
-const ProjectRow = ({ id, name, type, status, date, onClick }) => {
+const ProjectRow = ({ id, name, type, status, date }) => {
   const statusStyles = {
     Success: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     Failed: 'bg-red-100 text-red-700 border-red-200',
@@ -145,12 +101,12 @@ const ProjectRow = ({ id, name, type, status, date, onClick }) => {
   };
 
   return (
-    <tr onClick={onClick} className="border-b border-gray-50 last:border-0 hover:bg-blue-50/50 transition-colors group cursor-pointer">
+    <tr className="border-b border-gray-50 last:border-0 hover:bg-slate-50/60 transition-colors">
       <td className="py-3 px-4 font-mono text-xs text-slate-500 text-center">{id}</td>
       <td className="py-3 px-4">
         <div className="flex items-center">
-          <FileText size={16} className="text-slate-400 mr-2 group-hover:text-blue-600 transition-colors" />
-          <span className="font-bold text-sm text-slate-700 group-hover:text-blue-600 transition-colors">
+          <FileText size={16} className="text-slate-400 mr-2" />
+          <span className="font-bold text-sm text-slate-700">
             {name || '이름 없는 프로젝트'}
           </span>
         </div>
@@ -167,13 +123,6 @@ const ProjectRow = ({ id, name, type, status, date, onClick }) => {
     </tr>
   );
 };
-
-const StatusBadge = ({ status }) => {
-  if (status === 'Active') return <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold flex items-center gap-1"><Rocket size={12}/> 서비스 중</span>;
-  if (status === 'Developing') return <span className="px-2 py-0.5 bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] font-bold flex items-center gap-1"><Wrench size={12}/> 개발 중</span>;
-  return <span className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded text-[10px] font-bold flex items-center gap-1"><Clock size={12}/> 출시 예정</span>;
-};
-
 
 const BANNER_THEMES = {
   platform: {
@@ -252,24 +201,16 @@ const DiscoverHiTessBanner = ({ variant = 'platform', badge, title, subtitle, ct
 };
 
 const AppRoadmapBanner = ({ onOpenModal }) => {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  
-  const activeCount = ANALYSIS_DATA.filter(a => a.devStatus === 'Active').length;
+  const activeApps = ANALYSIS_DATA.filter(a => a.devStatus === 'Active');
   const devCount = ANALYSIS_DATA.filter(a => a.devStatus === 'Developing').length;
-  const planCount = ANALYSIS_DATA.filter(a => a.devStatus === 'Planned').length;
+  const activeCount = activeApps.length;
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % ANALYSIS_DATA.length);
-    }, 4000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const currentApp = ANALYSIS_DATA[currentIndex];
-  const AppIcon = currentApp.icon;
+  // 자동 회전 대신 가장 최근 서비스 중인 앱을 고정 노출
+  const featuredApp = activeApps[activeApps.length - 1];
+  const AppIcon = featuredApp.icon;
 
   return (
-    <div 
+    <div
       onClick={onOpenModal}
       className="bg-gradient-to-r from-brand-blue to-indigo-900 rounded-xl shadow-lg border border-indigo-500/30 overflow-hidden cursor-pointer hover:shadow-xl transition-all group flex flex-col md:flex-row relative"
     >
@@ -282,23 +223,24 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
         <div className="flex gap-2 text-[10px] font-bold">
           <span className="px-2 py-1 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">서비스 중: {activeCount}</span>
           <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded border border-blue-500/30">개발 중: {devCount}</span>
-          <span className="px-2 py-1 bg-slate-500/20 text-slate-300 rounded border border-slate-500/30">예정: {planCount}</span>
         </div>
       </div>
       <div className="p-5 md:flex-1 relative overflow-hidden flex items-center">
-        <div key={currentApp.title} className="animate-fade-in-up flex items-start gap-4 w-full">
+        <div className="flex items-start gap-4 w-full">
            <div className={`p-3 rounded-xl bg-white/10 text-white shrink-0 shadow-inner border border-white/5`}>
              <AppIcon size={24} />
            </div>
            <div className="flex-1 min-w-0">
-             <div className="flex items-center gap-2 mb-1">
-               <span className="text-blue-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-300/30 tracking-wider">
-                 {MODE_KO[currentApp.mode] || currentApp.mode}
+             <div className="flex items-center gap-2 mb-1 flex-wrap">
+               <span className="text-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-emerald-300/30 tracking-wider flex items-center gap-1">
+                 <Sparkles size={10}/> 최신 출시
                </span>
-               <h4 className="text-white font-bold text-sm truncate">{currentApp.title}</h4>
-               <StatusBadge status={currentApp.devStatus} />
+               <span className="text-blue-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-300/30 tracking-wider">
+                 {MODE_KO[featuredApp.mode] || featuredApp.mode}
+               </span>
+               <h4 className="text-white font-bold text-sm truncate">{featuredApp.title}</h4>
              </div>
-             <p className="text-blue-100/70 text-xs line-clamp-2 pr-8">{currentApp.description}</p>
+             <p className="text-blue-100/70 text-xs line-clamp-2 pr-8">{featuredApp.description}</p>
            </div>
         </div>
         <div className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 group-hover:text-white transition-colors flex items-center gap-1 text-xs font-bold">
@@ -306,6 +248,156 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
         </div>
       </div>
     </div>
+  );
+};
+
+const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
+  const [notices, setNotices] = useState([]);
+  const [lastSeenId, setLastSeenId] = useState(0);
+
+  useEffect(() => {
+    getNotices()
+      .then(res => {
+        const data = Array.isArray(res.data) ? res.data : [];
+        const sorted = [...data].sort((a, b) => {
+          if (!!a.is_pinned !== !!b.is_pinned) return a.is_pinned ? -1 : 1;
+          return new Date(b.created_at) - new Date(a.created_at);
+        });
+        setNotices(sorted.slice(0, 5));
+      })
+      .catch(() => {});
+    const seen = parseInt(localStorage.getItem('notice_last_seen_id') || '0', 10);
+    if (Number.isFinite(seen)) setLastSeenId(seen);
+  }, []);
+
+  if (notices.length === 0) return null;
+
+  const unreadCount = notices.filter(n => Number(n.id) > lastSeenId).length;
+  const current = notices[0];
+  const style = NOTICE_TYPE_STYLE[current.type] || NOTICE_TYPE_STYLE.Notice;
+
+  const formatRelative = (s) => {
+    if (!s) return '';
+    const d = new Date(s);
+    const now = new Date();
+    const diffH = (now - d) / 36e5;
+    if (diffH < 1) return '방금 전';
+    if (diffH < 24) return `${Math.floor(diffH)}시간 전`;
+    if (diffH < 24 * 7) return `${Math.floor(diffH / 24)}일 전`;
+    return d.toLocaleDateString();
+  };
+
+  const markAsSeen = () => {
+    const maxId = notices.reduce((m, n) => Math.max(m, Number(n.id) || 0), 0);
+    if (maxId > lastSeenId) {
+      localStorage.setItem('notice_last_seen_id', String(maxId));
+      setLastSeenId(maxId);
+    }
+  };
+
+  const handleOpenCurrent = () => {
+    markAsSeen();
+    if (current) onOpenDetail(current);
+  };
+
+  const handleOpenAll = (e) => {
+    e.stopPropagation();
+    markAsSeen();
+    onOpenList();
+  };
+
+  return (
+    <motion.div
+      onClick={handleOpenCurrent}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpenCurrent(); }
+      }}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: 'easeOut' }}
+      whileHover={{ y: -1, boxShadow: `0 10px 24px -10px ${style.glow}` }}
+      className="relative bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors cursor-pointer overflow-hidden group mb-6"
+    >
+      {/* 좌측 강조 그라데이션 바 */}
+      <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${style.bar}`} />
+      {/* 미세한 우측 글로우 */}
+      <div
+        className="absolute -right-10 -top-10 w-40 h-40 rounded-full opacity-40 blur-2xl pointer-events-none"
+        style={{ background: style.glow }}
+      />
+
+      <div className="relative flex items-center gap-3 px-4 py-3 pl-5">
+        {/* 좌측 라벨 + NEW 배지 */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="relative">
+            <div className="p-1.5 rounded-lg bg-slate-50 border border-slate-100 group-hover:bg-blue-50 group-hover:border-blue-100 transition-colors">
+              <Megaphone size={14} className="text-slate-600 group-hover:text-blue-600 transition-colors" />
+            </div>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 ring-2 ring-white" />
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col leading-none">
+            <span className="text-[11px] font-bold text-slate-700 tracking-tight">공지 &amp; 업데이트</span>
+            <span className="text-[9px] text-slate-400 font-medium mt-0.5">최근 알림</span>
+          </div>
+          {unreadCount > 0 && (
+            <motion.span
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="inline-flex items-center gap-1 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-gradient-to-r from-red-500 to-rose-500 text-white shadow-sm"
+            >
+              <Sparkles size={9} />
+              NEW {unreadCount}
+            </motion.span>
+          )}
+        </div>
+
+        {/* 구분선 */}
+        <div className="h-6 w-px bg-slate-200 shrink-0" />
+
+        {/* 본문 (회전) */}
+        <div className="flex-1 min-w-0 flex items-center gap-2 overflow-hidden">
+          <span className={`shrink-0 inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded border ${style.chip}`}>
+            {current.is_pinned && <Pin size={9} className="-mt-px" />}
+            {style.label}
+          </span>
+          <motion.div
+            key={current.id}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+            className="flex-1 min-w-0 flex items-center gap-2"
+          >
+            <span className="text-sm font-semibold text-slate-700 truncate group-hover:text-blue-600 transition-colors">
+              {current.title || '(제목 없음)'}
+            </span>
+            <span className="text-[10px] text-slate-400 shrink-0 hidden sm:inline">
+              {formatRelative(current.created_at)}
+            </span>
+          </motion.div>
+        </div>
+
+        {/* 우측 CTA */}
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={handleOpenAll}
+            title="전체 공지 목록으로 이동"
+            className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-blue-600 px-2 py-1 rounded-md hover:bg-blue-50 transition-colors cursor-pointer"
+          >
+            <span className="hidden md:inline">전체보기</span>
+            <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
+          </button>
+        </div>
+      </div>
+    </motion.div>
   );
 };
 
@@ -319,7 +411,6 @@ const MODE_BADGE = {
 const STATUS_GROUP_STYLE = {
   Active:     { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', bar: 'bg-emerald-400', border: 'border-l-emerald-400' },
   Developing: { bg: 'bg-blue-50 border-blue-200',       text: 'text-blue-700',    bar: 'bg-blue-400',    border: 'border-l-blue-400' },
-  Planned:    { bg: 'bg-slate-100 border-slate-200',    text: 'text-slate-500',   bar: 'bg-slate-300',   border: 'border-l-slate-300' },
 };
 
 const RoadmapModal = ({ isOpen, onClose }) => {
@@ -345,7 +436,6 @@ const RoadmapModal = ({ isOpen, onClose }) => {
               {[
                 { key: 'Active',     label: '서비스 중', icon: Rocket, cls: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
                 { key: 'Developing', label: '개발 중',   icon: Wrench, cls: 'bg-blue-100 text-blue-700 border-blue-300' },
-                { key: 'Planned',    label: '출시 예정', icon: Clock,  cls: 'bg-slate-200 text-slate-600 border-slate-300' },
               ].map(({ key, label, icon: Icon, cls }) => (
                 <span key={key} className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${cls}`}>
                   <Icon size={11} />
@@ -355,12 +445,10 @@ const RoadmapModal = ({ isOpen, onClose }) => {
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 pb-6 custom-scrollbar space-y-8">
-              {['Active', 'Developing', 'Planned'].map((statusGroup) => {
+              {['Active', 'Developing'].map((statusGroup) => {
                 const apps = ANALYSIS_DATA.filter(a => a.devStatus === statusGroup);
                 if (apps.length === 0) return null;
-                const groupTitle = statusGroup === 'Active' ? '현재 서비스 중'
-                                 : statusGroup === 'Developing' ? '개발 진행 중'
-                                 : '출시 및 개발 예정';
+                const groupTitle = statusGroup === 'Active' ? '현재 서비스 중' : '개발 진행 중';
                 const sg = STATUS_GROUP_STYLE[statusGroup];
                 return (
                   <div key={statusGroup}>
@@ -369,7 +457,6 @@ const RoadmapModal = ({ isOpen, onClose }) => {
                       <div className={`w-2 h-5 rounded-full ${sg.bar} shrink-0`} />
                       {statusGroup === 'Active'     && <Rocket size={15} className="text-emerald-500"/>}
                       {statusGroup === 'Developing' && <Wrench size={15} className="text-blue-500"/>}
-                      {statusGroup === 'Planned'    && <Clock  size={15} className="text-slate-400"/>}
                       <h3 className={`text-sm font-bold tracking-wide ${sg.text}`}>
                         {groupTitle}
                       </h3>
@@ -563,6 +650,8 @@ export default function Dashboard() {
   const [topPrograms30, setTopPrograms30] = useState([]);
   const [topProgramsAll, setTopProgramsAll] = useState([]);
   const [isTopProgramsModalOpen, setIsTopProgramsModalOpen] = useState(false);
+  const [selectedNotice, setSelectedNotice] = useState(null);
+  const [isNoticeDetailOpen, setIsNoticeDetailOpen] = useState(false);
   // { mode: 'srcdoc', value: htmlString } | { mode: 'src', value: url } | null
   const [introContent, setIntroContent] = useState(null);
   const [introTarget, setIntroTarget] = useState('platform');
@@ -662,7 +751,7 @@ export default function Dashboard() {
   const handleFavoriteClick = (title) => {
     const targetApp = ANALYSIS_DATA.find(a => a.title === title);
     if (targetApp && targetApp.devStatus !== 'Active') {
-      showToast(`'${title}' 앱은 현재 개발 중이거나 출시 예정인 모듈입니다.`, 'info');
+      showToast(`'${title}' 앱은 현재 개발 중인 모듈입니다.`, 'info');
       return;
     }
 
@@ -674,6 +763,8 @@ export default function Dashboard() {
       setCurrentMenu('Truss Structural Assessment');
     } else if (title === "Simple Beam Assessment") {
       setCurrentMenu('Simple Beam Assessment');
+    } else if (title === "Plate Structure Analysis") {
+      setCurrentMenu('Plate Structure Analysis');
     } else if (title === "Mast Post Assessment") {
       setCurrentMenu('Mast Post Assessment');
     } else if (title === "Jib Rest Assessment") {
@@ -690,49 +781,11 @@ export default function Dashboard() {
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-10 animate-fade-in-up">
       
-      <div className="flex justify-between items-end mb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-brand-blue tracking-tight">WorkBench Overview</h1>
-          <p className="text-sm text-slate-500 mt-1">해석 서버 현황, 수행 통계, 즐겨찾기 앱을 한눈에 확인하세요.</p>
-        </div>
-        <div className="text-right">
-          {isBackendConnected ? (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200 shadow-sm">
-              <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-              서버 연결 확인
-            </span>
-          ) : (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200 shadow-sm">
-              <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
-              서버 연결 끊김
-            </span>
-          )}
-        </div>
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold text-brand-blue tracking-tight">WorkBench Overview</h1>
+        <p className="text-sm text-slate-500 mt-1">해석 서버 현황, 수행 통계, 즐겨찾기 앱을 한눈에 확인하세요.</p>
       </div>
 
-      <div className="flex flex-col gap-3 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <DiscoverHiTessBanner
-            variant="platform"
-            badge="Platform Introduction"
-            title="Discover HiTESS"
-            subtitle="차세대 조선해양 구조 해석 플랫폼을 살펴보세요"
-            ctaText="살펴보기"
-            MainIcon={Layers}
-            onClick={() => handleDiscoverHiTess('platform')}
-          />
-          <DiscoverHiTessBanner
-            variant="workbench"
-            badge="WorkBench Introduction"
-            title="HiTESS WorkBench"
-            subtitle="해석 도구 모음과 AI 어시스턴트를 경험해보세요"
-            ctaText="살펴보기"
-            MainIcon={Cpu}
-            onClick={() => handleDiscoverHiTess('workbench')}
-          />
-        </div>
-        <AppRoadmapBanner onOpenModal={() => setIsRoadmapModalOpen(true)} />
-      </div>
       <RoadmapModal isOpen={isRoadmapModalOpen} onClose={() => setIsRoadmapModalOpen(false)} />
 
       {/* ── 전체 기간 순위 모달 ── */}
@@ -802,44 +855,52 @@ export default function Dashboard() {
         modalSubtitle={introTarget === 'workbench' ? 'HiTESS WorkBench 해석 플랫폼 소개' : '차세대 조선해양 구조 해석 플랫폼 소개'}
       />
 
-      {/* 앱 카테고리 */}
+      {/* 공지 & 업데이트 슬림 스트립 */}
+      <NoticeStrip
+        onOpenDetail={(n) => { setSelectedNotice(n); setIsNoticeDetailOpen(true); }}
+        onOpenList={() => setCurrentMenu('Notice & Updates')}
+      />
+      <NoticeDetailModal
+        isOpen={isNoticeDetailOpen}
+        notice={selectedNotice}
+        onClose={() => setIsNoticeDetailOpen(false)}
+        primaryAction={{
+          label: '전체 공지 보기',
+          onClick: () => setCurrentMenu('Notice & Updates'),
+          icon: <ChevronRight size={14} />,
+        }}
+      />
+
+      {/* 플랫폼 소개 & 로드맵 — 신규/숙련 사용자 모두를 위한 컨텍스트 정보 */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
-            <Layers size={15} className="text-blue-400" /> 앱 카테고리
+          <h2 className="text-sm font-bold text-slate-500 flex items-center gap-1.5">
+            <Layers size={15} className="text-slate-400" /> 플랫폼 소개 &amp; 로드맵
           </h2>
-          <span className="text-xs text-slate-400">클릭하면 해당 앱 목록으로 이동합니다</span>
+          <span className="text-xs text-slate-400">처음이신가요? 플랫폼 소개를 살펴보세요</span>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {APP_CATEGORIES.map((cat) => {
-            const appCount = ANALYSIS_DATA.filter(a => a.mode === cat.mode).length;
-            const ac = ACCENT_CLASSES[cat.accent];
-            const Icon = cat.icon;
-            return (
-              <motion.div
-                key={cat.mode}
-                whileHover={{ y: -3, boxShadow: '0 6px 20px -4px rgba(0,0,0,0.09)' }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => setCurrentMenu(cat.menuName)}
-                className={`bg-white rounded-xl border border-slate-200 px-4 py-3 cursor-pointer transition-colors flex items-start gap-3 ${ac.border}`}
-              >
-                <div className={`w-8 h-8 rounded-lg ${ac.iconBg} flex items-center justify-center shrink-0 mt-0.5`}>
-                  <Icon className={ac.iconText} size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-slate-800 leading-tight">{cat.label}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">{cat.labelKo}</p>
-                  <p className="text-[10px] text-slate-500 leading-snug mt-1.5">{cat.description}</p>
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${ac.countBg} ${ac.countText}`}>
-                      앱 {appCount}개
-                    </span>
-                    <span className="text-[10px] text-slate-400">→</span>
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })}
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <DiscoverHiTessBanner
+              variant="platform"
+              badge="Platform Introduction"
+              title="Discover HiTESS"
+              subtitle="차세대 조선해양 구조 해석 플랫폼을 살펴보세요"
+              ctaText="살펴보기"
+              MainIcon={Layers}
+              onClick={() => handleDiscoverHiTess('platform')}
+            />
+            <DiscoverHiTessBanner
+              variant="workbench"
+              badge="WorkBench Introduction"
+              title="HiTESS WorkBench"
+              subtitle="해석 도구 모음과 AI 어시스턴트를 경험해보세요"
+              ctaText="살펴보기"
+              MainIcon={Cpu}
+              onClick={() => handleDiscoverHiTess('workbench')}
+            />
+          </div>
+          <AppRoadmapBanner onOpenModal={() => setIsRoadmapModalOpen(true)} />
         </div>
       </div>
 
@@ -855,9 +916,22 @@ export default function Dashboard() {
           <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
             <Server size={100} />
           </div>
-          <h3 className="text-slate-600 text-sm font-bold tracking-tight flex items-center gap-2 mb-3">
-            <Activity size={16} className="text-blue-500" /> 해석 서버 부하 현황
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-slate-600 text-sm font-bold tracking-tight flex items-center gap-2">
+              <Activity size={16} className="text-blue-500" /> 해석 서버 부하 현황
+            </h3>
+            {isBackendConnected ? (
+              <span className="inline-flex items-center text-[10px] font-bold text-emerald-700" title="백엔드 서버와 정상적으로 연결되어 있습니다.">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1 animate-pulse"></span>
+                온라인
+              </span>
+            ) : (
+              <span className="inline-flex items-center text-[10px] font-bold text-red-700" title="백엔드 서버 연결이 끊겼습니다.">
+                <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-1"></span>
+                오프라인
+              </span>
+            )}
+          </div>
           <p className="text-[11px] text-slate-400 font-bold mb-2">현재 서버 구동 현황</p>
           <div className="text-2xl font-extrabold text-slate-800 tracking-tight mb-2">
             {queueStatus.running} <span className="text-sm text-slate-400 font-medium">/ {queueStatus.limit} 구동 중</span>
@@ -929,12 +1003,20 @@ export default function Dashboard() {
         </div>
         
         {favorites.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-slate-400 text-sm shadow-sm flex flex-col items-center">
+          <div className="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-sm flex flex-col items-center">
             <div className="p-4 bg-slate-50 rounded-full mb-4">
               <Star size={32} className="text-slate-300" />
             </div>
             <p className="font-bold text-slate-500 mb-1">즐겨찾기 항목이 없습니다.</p>
-            <p>New Analysis 메뉴에서 자주 사용하는 해석에 별(★)을 눌러 대시보드에 추가해 보세요.</p>
+            <p className="text-sm text-slate-400 mb-5">자주 사용하는 해석 앱에 별(★)을 눌러 대시보드에 추가해 보세요.</p>
+            <button
+              onClick={() => setCurrentMenu('File-Based Apps')}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-sm hover:shadow"
+            >
+              <Layers size={14}/>
+              해석 앱 둘러보기
+              <ChevronRight size={14}/>
+            </button>
           </div>
         ) : (
           <motion.div
@@ -1005,7 +1087,6 @@ export default function Dashboard() {
                       type={project.program_name}
                       status={project.status}
                       date={project.created_at}
-                      onClick={() => setCurrentMenu('My Projects')}
                     />
                   ))
                 )}
