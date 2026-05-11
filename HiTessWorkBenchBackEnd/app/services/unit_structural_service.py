@@ -106,16 +106,51 @@ def task_execute_unit_structural(
         lifting_f06  = os.path.join(bdf_dir, f"{bdf_stem}_lifting.f06")
         result_json  = os.path.join(bdf_dir, f"{bdf_stem}_lifting_nastranResult.json")
 
+        # Studio 가 업로드한 편집 적용 결과 (이미 편집이 반영된 완전한 모델 JSON).
+        # 존재하면 lift-run 의 입력으로 이 모델로부터 생성한 _edited.bdf 를 사용한다.
+        edited_json = os.path.join(bdf_dir, f"{bdf_stem}_edited.json")
+        edited_bdf  = os.path.join(bdf_dir, f"{bdf_stem}_edited.bdf")
+
         # 기존 산출물 정리 (덮어쓰기 보장)
-        for stale in (lifting_bdf, lifting_meta, lifting_f06, result_json):
+        for stale in (lifting_bdf, lifting_meta, lifting_f06, result_json, edited_bdf):
             if os.path.exists(stale):
                 try: os.remove(stale)
                 except OSError: pass
 
+        # 1.5. Studio 편집(_edited.json) 이 있으면 nastran_bridge 로 BDF 변환 후
+        #      그 _edited.bdf 를 lift-run 입력으로 사용한다. 편집이 없으면 원본 BDF 그대로.
+        #      nastran_bridge 는 입력이 plain model JSON 이면 -o 로 지정된 경로에 BDF 를 출력한다.
+        lift_input_bdf = bdf_filename
+        if os.path.exists(edited_json):
+            job_status_store.update_job(job_id, {
+                "progress": 10, "message": "Studio 편집 적용 BDF 생성 중...",
+            })
+            apply_args = [
+                exe_path, os.path.basename(edited_json),
+                "-o", os.path.basename(edited_bdf),
+            ]
+            logger.info("[UnitStructural] apply-edit cmd: %s (cwd=%s)", " ".join(apply_args), bdf_dir)
+            apply_proc = subprocess.run(
+                apply_args, cwd=bdf_dir,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
+            )
+            engine_output += "\n[apply-edit]\n" + _decode_completed(apply_proc)
+            if apply_proc.returncode != 0:
+                raise RuntimeError(
+                    f"Studio 편집 적용 실패 (exit={apply_proc.returncode}). "
+                    f"_edited.json 을 BDF 로 변환할 수 없습니다."
+                )
+            if not os.path.exists(edited_bdf):
+                raise FileNotFoundError(f"편집 적용 BDF 가 생성되지 않았습니다: {edited_bdf}")
+            lift_input_bdf = os.path.basename(edited_bdf)
+            logger.info("[UnitStructural] Studio 편집 반영된 BDF 를 lift-run 입력으로 사용: %s", edited_bdf)
+        else:
+            logger.info("[UnitStructural] _edited.json 없음 — 원본 BDF 를 lift-run 입력으로 사용: %s", bdf_filename)
+
         # 2. lift-run --prepare-only — Wire 포함 BDF + meta 빌드
         job_status_store.update_job(job_id, {"progress": 15, "message": "Wire 포함 BDF 생성 중..."})
         prepare_args = [
-            exe_path, "lift-run", bdf_filename,
+            exe_path, "lift-run", lift_input_bdf,
             "--stability", stability_json_path,
             "-o", lifting_bdf,
             "--meta", lifting_meta,
