@@ -88,9 +88,8 @@ DEFAULT_GUIDES = [
             "## 개발 로드맵 (예정)\n\n"
             "| 기능 | 설명 | 예정 시기 |\n"
             "|------|------|----------|\n"
-            "| Group & Unit 권상 구조 해석 | 권상 작업 전 구조 안전성 검토 | 2026 Q2 |\n"
-            "| Section Property Calculator | 단면 특성값 자동 산출 | 2026 Q2 |\n"
-            "| Lifting Lug Evaluator | 러그 강도 자동 평가 | 2026 Q3 |\n"
+            "| Group & Module Unit 권상 구조 해석 | 권상 작업 전 구조 안전성 검토 | 2026 Q2 |\n"
+            "| GNN 기반 Beam 구조 안정성 검토 | AI 기반 보 구조 평가 | 2026 Q3 |\n"
             "| 2D Plate Analyzer | 평판 좌굴 평가 | 2026 Q3 |\n"
             "| Pipe 구조 해석 | 배관 구조 FEM 해석 | 미정 |\n"
             "| Whole Ship Analysis | 전선 구조 해석 파이프라인 | 미정 |\n\n"
@@ -238,7 +237,7 @@ DEFAULT_GUIDES = [
             "| 앱 이름 | 설명 | 상태 |\n"
             "|---------|------|------|\n"
             "| Simple Beam Assessment | 1D 보 해석 | ✅ 서비스 중 |\n"
-            "| Lifting Lug Evaluator | 러그 강도 평가 | 🔧 개발 중 |\n"
+            "| Section Property Calculator | 단면 특성값 산출 | ✅ 서비스 중 |\n"
             "| 2D Plate Analyzer | 평판 좌굴 평가 | 📋 예정 |\n\n"
             "## Parametric Apps (파라미터 입력 방식)\n\n"
             "숫자 파라미터 몇 개만 입력하면 기준에 맞는 최적 부재를 자동 선정합니다. 반복 계산이 빠르게 가능하여 설계 초기 단계에 유용합니다.\n\n"
@@ -670,19 +669,24 @@ DEFAULT_GUIDES = [
         "title": "[파일] File-Based Apps — 도구 소개",
         "content": (
             "File-Based Apps는 **CSV, BDF 등의 파일을 업로드**하면 서버가 해석을 실행하는 파일 기반 구조 해석 도구 모음입니다. 해석은 서버에서 비동기로 수행되며, 진행률을 실시간으로 확인하고 다른 메뉴를 자유롭게 이용할 수 있습니다.\n\n"
+            "## 진입 경로\n\n"
+            "사이드바 → **File-Based Apps**\n\n"
             "## 포함된 앱\n\n"
-            "| 앱 이름 | 한 줄 설명 |\n"
-            "|---------|------------|\n"
-            "| **Truss Model Builder** | 노드·부재 CSV 두 개를 업로드하면 Nastran BDF 모델을 자동으로 생성합니다 |\n"
-            "| **Truss Structural Assessment** | BDF 파일을 업로드하면 전 부재의 응력비를 계산하여 구조 안전성을 평가합니다 |\n\n"
-            "## Truss Model Builder\n\n"
+            "| 앱 이름 | 카테고리 | 상태 | 한 줄 설명 |\n"
+            "|---------|----------|------|------------|\n"
+            "| **Truss Model Builder** | 트러스(Truss) | 🟢 서비스 중 | 노드·부재 CSV 두 개로 Nastran BDF 트러스 모델을 자동 생성 |\n"
+            "| **Truss Structural Assessment** | 트러스(Truss) | 🟢 서비스 중 | BDF 파일 업로드로 전 부재의 응력비를 계산해 구조 안전성을 평가 |\n"
+            "| **HiTess Model Builder** | 파이프라인(Pipeline) | 🔵 개발 중 | CSV → BDF → Nastran 해석까지 FEM 파이프라인 전 과정을 단일 UI에서 관리 |\n"
+            "| **Group & Module Unit 권상 구조 해석** | 권상(Lifting) | 🔵 개발 중 | Group/Module Unit 권상 작업 시 발생하는 국부 강도를 사전 검토 |\n\n"
+            "> 💡 **서비스 중(Active)** 앱만 즉시 사용 가능하며, **개발 중(Developing)** 앱은 카드 클릭 시 안내 토스트가 표시됩니다.\n\n"
+            "## Truss Model Builder 🟢\n\n"
             "노드 좌표와 부재 연결 정보를 담은 CSV 두 개를 업로드하면 Nastran BDF 형식의 트러스 모델을 자동으로 생성합니다.\n\n"
             "- **노드 CSV**: `ID, X, Y, Z` (단위: mm, 헤더 행 없이)\n"
             "- **부재 CSV**: `ID, StartNode, EndNode, Material, SectionID`\n"
             "- 파일 업로드 후 3D 뷰어에서 모델 미리보기 확인 (드래그: 회전, 스크롤: 확대/축소)\n"
-            "- 완료 후 생성된 BDF 파일을 다운로드하거나 Truss Structural Assessment에 바로 활용 가능\n\n"
+            "- 완료 후 생성된 BDF 파일을 다운로드하거나 **Truss Structural Assessment**에 바로 연계 가능\n\n"
             "자세한 사용법은 Truss Model Builder 앱 상단의 **사용 가이드** 버튼을 확인하세요.\n\n"
-            "## Truss Structural Assessment\n\n"
+            "## Truss Structural Assessment 🟢\n\n"
             "Nastran BDF 파일을 업로드하면 전 부재의 인장·압축·좌굴 응력비를 계산하여 구조 안전성을 평가합니다.\n\n"
             "- 로드 케이스(Load Case)별 결과를 탭으로 구분하여 조회\n"
             "- 응력비 > 1.0(FAIL): 빨간 배경 / 응력비 0.8~1.0(주의): 주황 표시\n"
@@ -690,10 +694,21 @@ DEFAULT_GUIDES = [
             "- Excel 내보내기: 로드 케이스별 시트로 구성된 XLSX 파일 다운로드\n\n"
             "> **Excel 내보내기 참고**: 서버 메모리에서 직접 파일을 생성하므로 DRM 자동 암호화가 적용되지 않습니다. 일반 다운로드 파일이 암호화되어 열리지 않을 때 이 버튼을 사용하세요.\n\n"
             "자세한 사용법은 Truss Structural Assessment 앱 상단의 **사용 가이드** 버튼을 확인하세요.\n\n"
+            "## HiTess Model Builder 🔵\n\n"
+            "Truss Model Builder + Truss Structural Assessment를 하나로 묶은 통합 파이프라인 도구입니다. CSV 업로드부터 BDF 생성, Nastran SOL 101 해석, 결과 검토까지 단일 UI에서 처리하는 것을 목표로 합니다.\n\n"
+            "- 단일 화면에서 입력 → 모델 검증 → 해석 실행 → 결과 확인 흐름 관리\n"
+            "- 중간 산출물(BDF·F06)도 단계별로 다운로드 가능\n"
+            "- **현재 개발 중**으로, 정식 출시 전까지는 Truss Model Builder → Truss Structural Assessment 흐름을 권장합니다.\n\n"
+            "## Group & Module Unit 권상 구조 해석 🔵\n\n"
+            "Group 및 Module Unit 권상(Lifting) 작업 시 러그·트러니언 주변에서 발생하는 국부 응력과 변위를 사전에 검토하기 위한 전용 워크플로우입니다.\n\n"
+            "- 권상 시나리오에 특화된 입력 템플릿 제공 예정\n"
+            "- 러그·트러니언·인서트 등 권상 기구물의 안전율 자동 평가\n"
+            "- **현재 개발 중**으로, 출시 시점에 맞춰 별도 공지가 게시됩니다.\n\n"
             "## 공통 사항\n\n"
             "- 해석 실행 후 다른 메뉴로 이동해도 우측 하단 위젯에서 진행률을 계속 확인할 수 있습니다.\n"
             "- 모든 해석 결과는 **My Projects**에 자동 저장되어 언제든 재조회·다운로드 가능합니다.\n"
-            "- 앱 카드의 **★** 아이콘을 클릭하면 Dashboard 즐겨찾기에 등록됩니다."
+            "- 앱 카드의 **★** 아이콘을 클릭하면 Dashboard 즐겨찾기에 등록됩니다.\n"
+            "- BDF 파일의 유효성을 사전 점검하려면 **Productivity Apps → BDF Scanner**를 활용하세요."
         ),
         "author_id": "SYSTEM",
     },
@@ -926,6 +941,132 @@ DEFAULT_GUIDES = [
             "| **Analysis Management** | 전체 사용자의 해석 이력 조회, 필터링 및 검색 |\n"
             "| **System Settings** | 서버 CPU/메모리 사용률 모니터링, DB 연결 상태 확인, 해석 큐 현황 |\n"
             "| **API Apps** | 외부 프로그램이 호출할 수 있는 REST API 명세서. 엔드포인트, 파라미터, 예시, CLI 명령어 확인 |"
+        ),
+        "author_id": "SYSTEM",
+    },
+    {
+        "category": "Analysis Modules",
+        "title": "[파일] Group & Module Unit 권상 구조 해석 — 권상 작업 안전성 사전 검토",
+        "content": (
+            "Group / Module Unit 권상(Lifting) 작업 시 발생하는 **자세 안정성, 와이어 간섭, 슬링각, 부재 응력**을 사전에 검토하는 통합 파이프라인입니다.\n\n"
+            "> ⚠ 본 모듈은 **개발 중 (Developing)** 상태이며, 운영 배포 전 사내 시범 검증 단계에 있습니다.\n\n"
+            "## 진입 경로\n\n"
+            "사이드바 → **File-Based Apps** → `Group & Module Unit 권상 구조 해석` 카드 클릭\n\n"
+            "## 입력 파일\n\n"
+            "| 파일 | 역할 |\n"
+            "|------|------|\n"
+            "| `<name>.bdf` | Nastran 입력 모델 (GRID / CBAR / 속성 / 재료) |\n"
+            "| `<name>_posture.json` | 권상 설정 — 권상 방식, 와이어 길이, 권상 노드 그룹, 모델 질량/COG |\n"
+            "| `<name>_edited.json` | (선택) Studio에서 편집된 모델 스냅샷 |\n\n"
+            "권상 방식은 **Hook(Hydro) / Trolley(Goliat) / Crane(Ceiling)** 3종을 지원합니다.\n\n"
+            "## 해석 단계 (Stability Pipeline)\n\n"
+            "1. **입력 검증** — 스키마, 그룹 수, 노드 수, 질량 정보 검사\n"
+            "2. **권상 형상 분류** — 2/3/4점 형상 + 권상 방식별 적합성\n"
+            "3. **권상 형상 검증** — 4점 사각형 평면도 / 3점 삼각형 내각 등 수치 검증\n"
+            "4. **정점 좌표 산출** — 권상 그룹 중심에서 와이어 길이만큼 수직 정점 계산\n"
+            "5. **슬링각 검사** — 와이어가 수평면과 이루는 각도 ≥ 60° 검사\n"
+            "6. **와이어-구조물 간섭 검사** — 단면 치수 기준 최단거리 검출\n"
+            "7. **자세 안정성 평가** — COG가 정점 다각형 내부에 있는지 확인 (전도 위험 평가)\n\n"
+            "## 결과 활용\n\n"
+            "- 각 단계가 **pass / warn / fail** 상태로 반환되며, 위반 시 사유와 권장 조치가 함께 제공됩니다.\n"
+            "- 후속으로 wire 포함 BDF + Nastran SOL 101 해석을 통해 **부재별 응력비, 와이어 압축 여부**를 추가 검토할 수 있습니다.\n\n"
+            "## 자주 발생하는 이슈\n\n"
+            "- 4점 권상 사각형의 평면도가 100mm를 초과하면 reject — 권상 노드 위치를 다시 확인하세요.\n"
+            "- COG가 정점 분포 외부로 벗어나면 fail — 권상 위치 재배치 또는 와이어 길이 조정이 필요합니다.\n"
+            "- Trolley 4점 사각형의 단변이 900mm 미만이면 reject — Stage 3 분할이 불가합니다."
+        ),
+        "author_id": "SYSTEM",
+    },
+    {
+        "category": "Analysis Modules",
+        "title": "[대화형] Section Property Calculator — 단면 특성값 산출",
+        "content": (
+            "단면 형상과 치수를 입력하면 구조 설계에 필요한 **단면 2차 모멘트(I), 단면계수(S), 회전반경(r), 단면적(A)** 등을 즉시 계산합니다.\n\n"
+            "## 진입 경로\n\n"
+            "사이드바 → **Interactive Apps** → `Section Property Calculator` 카드 클릭\n\n"
+            "## 지원 단면 형상\n\n"
+            "| 분류 | 형상 |\n"
+            "|------|------|\n"
+            "| 폐단면 | 원형관(TUBE), 각형관(RECT-TUBE), 정사각관 |\n"
+            "| 개단면 | I형(H-Beam), 채널(C), L형(앵글), T형 |\n"
+            "| 충실 단면 | 원형(ROD), 사각(BAR) |\n\n"
+            "## 사용 순서\n\n"
+            "1. **단면 형상 선택** — 위 목록에서 적용할 형상을 클릭합니다.\n"
+            "2. **치수 입력** — 형상별로 외경/두께/높이/폭 등 필요한 치수를 mm 단위로 입력합니다.\n"
+            "3. 입력 즉시 우측에 단면 특성값 표가 자동 갱신됩니다 (서버 호출 없음).\n\n"
+            "## 산출 항목\n\n"
+            "| 기호 | 항목 | 단위 |\n"
+            "|------|------|------|\n"
+            "| A | 단면적 | mm² |\n"
+            "| Ix, Iy | 주축 단면 2차 모멘트 | mm⁴ |\n"
+            "| Sx, Sy | 단면계수 | mm³ |\n"
+            "| rx, ry | 회전반경 (좌굴 검토용) | mm |\n"
+            "| J | 비틀림 상수 (지원 단면 한정) | mm⁴ |\n\n"
+            "## 활용 팁\n\n"
+            "- 산출된 값을 **Simple Beam Assessment**에 그대로 입력하여 응력·처짐 검토에 사용할 수 있습니다.\n"
+            "- **Column Buckling Load Calculator**에서 r 값을 활용하면 좌굴 허용 하중 산출이 가능합니다.\n"
+            "- 결과 표는 클립보드 복사 또는 CSV로 내보낼 수 있습니다."
+        ),
+        "author_id": "SYSTEM",
+    },
+    {
+        "category": "Analysis Modules",
+        "title": "[파라메트릭] Column Buckling Load Calculator — AISC 기둥 좌굴 허용 하중",
+        "content": (
+            "**AISC 기준** 핀-핀 경계 조건에서 강재 기둥의 **최대 허용 사용 하중**을 산출합니다. 동심·편심 하중을 모두 지원합니다.\n\n"
+            "## 진입 경로\n\n"
+            "사이드바 → **Parametric Apps** → `Column Buckling Load Calculator` 카드 클릭\n\n"
+            "## 입력 항목\n\n"
+            "| 항목 | 단위 | 설명 |\n"
+            "|------|------|------|\n"
+            "| 기둥 길이 L | mm | 핀-핀 사이의 유효 길이 |\n"
+            "| 단면 형상 / 치수 | — | TUBE, RECT-TUBE, H, C 등에서 선택 후 치수 입력 |\n"
+            "| 재료 (Fy) | MPa | 항복 강도 |\n"
+            "| 하중 편심거리 e | mm | 동심 하중이면 0 |\n\n"
+            "## 산출 결과\n\n"
+            "- **허용 사용 하중 P_allow** (kgf 또는 kN)\n"
+            "- **세장비 (Slenderness Ratio)** kL/r — 기준 비교 가능\n"
+            "- **임계 좌굴 하중 P_cr** — Euler / Inelastic 영역 자동 판정\n"
+            "- 편심 하중 시 **Secant Formula** 적용 결과를 별도 표시\n\n"
+            "## 결과 화면 주요 지표\n\n"
+            "| 항목 | 의미 |\n"
+            "|------|------|\n"
+            "| Slenderness Limit | 탄성/비탄성 좌굴 경계 (KL/r vs Cc) |\n"
+            "| Buckling Mode | Elastic / Inelastic 표시 |\n"
+            "| Safety Factor | AISC 기준 적용 안전계수 |\n"
+            "| 응력 비율 | f_a / F_a — 1.0 초과 시 NG |\n\n"
+            "## 활용 팁\n\n"
+            "- 같은 기둥을 다양한 단면으로 비교하려면 단면을 바꿔가며 즉시 재계산할 수 있습니다.\n"
+            "- 회전반경 r은 **Section Property Calculator**에서도 미리 확인 가능합니다.\n"
+            "- 결과는 **My Projects**에 자동 저장되어 이후 다시 조회·다운로드할 수 있습니다."
+        ),
+        "author_id": "SYSTEM",
+    },
+    {
+        "category": "Analysis Modules",
+        "title": "[학술] GNN 기반 Beam 구조 안정성 검토 — AI 기반 평가",
+        "content": (
+            "**Graph Neural Network(GNN)** 기반 모델을 활용하여 보(Beam) 구조물의 응력 분포와 구조적 안정성을 AI가 평가하는 학술용 모듈입니다.\n\n"
+            "> ⚠ 본 모듈은 **개발 중 (Developing)** 상태이며, 사내 검증 결과 신뢰도 수준 공유 후 일반 배포가 예정되어 있습니다.\n\n"
+            "## 진입 경로\n\n"
+            "사이드바 → **Academic Apps** → `GNN 기반 Beam 구조 안정성 검토` 카드 클릭\n\n"
+            "## 동작 원리\n\n"
+            "1. 보를 **노드(Node) 와 부재(Edge)** 의 그래프 구조로 변환\n"
+            "2. 단면 특성, 하중, 경계 조건을 노드/에지의 feature로 입력\n"
+            "3. 사전 학습된 GNN이 응력비·변위·취약 부재를 예측\n"
+            "4. 동일 모델을 전통 FEM 해석(SOL 101)과 병렬로 비교 → 오차율 표시\n\n"
+            "## 사용 시나리오\n\n"
+            "- **빠른 사전 검토** — 본 해석 전 후보 설계의 적정 여부를 수초 내 확인\n"
+            "- **응력 핫스팟 탐지** — 모델 전체에서 임계 부재를 우선 표시\n"
+            "- **FEM 결과와 비교** — AI 추론값 vs 기존 FEM 값을 한 화면에서 대조\n\n"
+            "## 사용 시 유의사항\n\n"
+            "- 학습 데이터 외 형상(예: 매우 비대칭, 비정형 단면)에 대한 예측 정확도는 보장되지 않습니다.\n"
+            "- 본 결과는 **참고용**이며, 실제 설계 승인은 전통 FEM 해석 결과로 검증해야 합니다.\n"
+            "- 산출되는 신뢰도(confidence) 값을 함께 확인하세요. 0.85 미만이면 재검토를 권장합니다.\n\n"
+            "## 향후 로드맵\n\n"
+            "- 다양한 단면/하중 조건 학습 데이터 확장\n"
+            "- Plate / Shell 구조로 모델 확장\n"
+            "- 실 구조물 계측 데이터와의 cross-validation"
         ),
         "author_id": "SYSTEM",
     },
