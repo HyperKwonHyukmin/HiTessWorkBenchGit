@@ -7,7 +7,11 @@ files:
   - filter:
       - electron/**/*
       - frontend/dist/**/*
-      - IntroductionPage/**/*
+extraResources:
+  - from: IntroductionPage
+    to: IntroductionPage
+    filter:
+      - '**/*'
 win:
   target: portable
   icon: ./electron/icon.ico
