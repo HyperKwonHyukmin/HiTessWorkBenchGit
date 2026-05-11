@@ -69,8 +69,9 @@ def task_execute_module_stability(
             stderr=subprocess.PIPE,
             timeout=180,
         )
-        engine_output = result.stdout.decode("utf-8", errors="replace")
-        stderr_text = result.stderr.decode("utf-8", errors="replace")
+        from ._subproc_decode import safe_decode
+        engine_output = safe_decode(result.stdout)
+        stderr_text = safe_decode(result.stderr)
         if stderr_text.strip():
             engine_output += f"\n[stderr] {stderr_text.strip()}"
 

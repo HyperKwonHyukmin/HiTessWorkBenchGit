@@ -41,8 +41,11 @@ def _resolve_nastran_exe() -> Optional[str]:
 
 
 def _decode_completed(proc: subprocess.CompletedProcess) -> str:
-    out = proc.stdout.decode("utf-8", errors="replace") if proc.stdout else ""
-    err = proc.stderr.decode("utf-8", errors="replace") if proc.stderr else ""
+    # MSC Nastran 한글 오류 메시지가 cp949 로 출력되는 케이스를 보존하기 위해
+    # utf-8 → cp949 → euc-kr fallback. 기존 호출자 시그니처/의미는 동일.
+    from ._subproc_decode import safe_decode
+    out = safe_decode(proc.stdout)
+    err = safe_decode(proc.stderr)
     if err.strip():
         out += "\n[stderr] " + err.strip()
     return out
@@ -184,6 +187,15 @@ def task_execute_unit_structural(
             timeout=1800,  # SOL 101 + 모델 크기 고려해 30분 여유
         )
         engine_output += "\n" + _decode_completed(run)
+        # Nastran 의 비정상 종료(returncode != 0) 는 F06 가 존재해도 결과 신뢰성이 없을 수 있다.
+        # FATAL 9050(Mechanism) 등의 케이스가 returncode != 0 으로 끝나면서 빈 결과가 그대로
+        # 다음 단계(lift-result) 까지 흘러가는 것을 방지한다. 실제 fatal 분류는 lift-result 의
+        # f06.hasFatal 에서 다시 한 번 확정하므로 여기서는 경고만 누적하고 진행한다.
+        if run.returncode != 0:
+            engine_output += (
+                f"\n[Warning] Nastran exit code {run.returncode} — "
+                f"F06 결과 신뢰도가 낮을 수 있습니다 (FATAL/메커니즘 가능성)."
+            )
         if not os.path.exists(lifting_f06):
             raise RuntimeError(f"Nastran F06 파일이 생성되지 않았습니다: {lifting_f06}")
 

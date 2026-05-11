@@ -585,8 +585,9 @@ def _run_nastran_validate(
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             timeout=600,  # Nastran 실행 시간 + buffer (10분)
         )
-        out = prepare.stdout.decode("utf-8", errors="replace")
-        err = prepare.stderr.decode("utf-8", errors="replace")
+        from ._subproc_decode import safe_decode
+        out = safe_decode(prepare.stdout)
+        err = safe_decode(prepare.stderr)
         log = out + (("\n[stderr] " + err.strip()) if err.strip() else "")
         if prepare.returncode != 0:
             log += f"\n[validate-run prepare exit code: {prepare.returncode}]"
@@ -628,8 +629,8 @@ def _run_nastran_validate(
             stderr=subprocess.PIPE,
             timeout=600,
         )
-        run_out = run_result.stdout.decode("utf-8", errors="replace")
-        run_err = run_result.stderr.decode("utf-8", errors="replace")
+        run_out = safe_decode(run_result.stdout)
+        run_err = safe_decode(run_result.stderr)
         log += "\n" + run_out + (("\n[stderr] " + run_err.strip()) if run_err.strip() else "")
 
         f06_path = os.path.splitext(validation_bdf)[0] + ".f06"
@@ -709,8 +710,9 @@ def task_execute_groupmoduleunit(
             stderr=subprocess.PIPE,
             timeout=180,
         )
-        engine_output = result.stdout.decode("utf-8", errors="replace")
-        stderr_text   = result.stderr.decode("utf-8", errors="replace")
+        from ._subproc_decode import safe_decode
+        engine_output = safe_decode(result.stdout)
+        stderr_text   = safe_decode(result.stderr)
 
         if stderr_text.strip():
             engine_output += f"\n[stderr] {stderr_text.strip()}"
