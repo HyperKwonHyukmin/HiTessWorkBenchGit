@@ -1123,11 +1123,24 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
         const resultInfo = job.project?.result_info || {};
         const resultPath = resultInfo.nastranResultJson || null;
         let resultContent = null;
-        if (resultPath && fs.existsSync(resultPath)) {
+        // 서버 PC 가 클라이언트와 분리된 환경에서는 resultPath 가 서버 로컬 경로라
+        // fs.existsSync 가 항상 false 가 된다. 백엔드 /api/download 로 HTTP 다운로드하여
+        // 결과 JSON 을 가져와야 Studio 하단 결과 dock(useUnitStructuralStore.result) 이 표시된다.
+        if (resultPath) {
           try {
-            resultContent = JSON.parse(fs.readFileSync(resultPath, "utf-8"));
+            const dlUrl = `${serverUrl}/api/download?filepath=${encodeURIComponent(resultPath)}`;
+            const { res: dlRes } = await fetchWithSessionRefresh(dlUrl, { method: "GET" });
+            if (!dlRes.ok) {
+              const detail = await readBackendError(dlRes);
+              return {
+                ok: false,
+                error: `결과 JSON 다운로드 실패: ${dlRes.status}${detail ? ` - ${detail}` : ""}`,
+                job,
+              };
+            }
+            resultContent = JSON.parse(await dlRes.text());
           } catch (e) {
-            return { ok: false, error: `결과 JSON 파싱 실패: ${e.message}`, job };
+            return { ok: false, error: `결과 JSON 다운로드/파싱 실패: ${e.message}`, job };
           }
         }
         return {
