@@ -36,6 +36,7 @@ import MastPostAssessment from './pages/analysis/MastPostAssessment';
 import JibRestAssessment from './pages/analysis/JibRestAssessment';
 import ColumnBucklingCalculator from './pages/analysis/ColumnBucklingCalculator';
 import SectionPropertyCalculator from './pages/analysis/SectionPropertyCalculator';
+import PlateStructureAnalysis from './pages/analysis/PlateStructureAnalysis';
 import ApiApps from './pages/Administration/ApiApps';
 import DeveloperRunbooks from './pages/Administration/DeveloperRunbooks';
 import HiTessModelBuilder from './pages/analysis/HiTessModelBuilder';
@@ -246,6 +247,7 @@ function AppInner() {
       case 'Jib Rest Assessment': return <JibRestAssessment />;
       case 'Column Buckling Load Calculator': return <ColumnBucklingCalculator />;
       case 'Section Property Calculator': return <SectionPropertyCalculator />;
+      case 'Plate Structure Analysis': return <PlateStructureAnalysis />;
       case 'API Apps': return <ApiApps />;
       case 'Developer Runbooks': return <DeveloperRunbooks />;
       case 'Component Wizard':

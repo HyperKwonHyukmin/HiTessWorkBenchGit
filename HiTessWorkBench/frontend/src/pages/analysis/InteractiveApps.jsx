@@ -28,6 +28,8 @@ export default function InteractiveApps() {
       setCurrentMenu('Simple Beam Assessment');
     } else if (appTitle === "Section Property Calculator") {
       setCurrentMenu('Section Property Calculator');
+    } else if (appTitle === "Plate Structure Analysis") {
+      setCurrentMenu('Plate Structure Analysis');
     } else {
       showToast(`'${appTitle}' 앱은 현재 개발 중입니다.`, 'info');
     }
