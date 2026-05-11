@@ -694,7 +694,11 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
   viewerWindow.loadFile(indexPath);
 
   viewerWindow.once("ready-to-show", () => {
-    viewerWindow.maximize();         // 최대화로 시작 (전체화면처럼 보이지만 OS 컨트롤 유지)
+    // 화면 우측 절반에 배치 — WorkBench 본체(좌측)와 Studio(우측)를 동시에 볼 수 있도록.
+    // 사용자가 이후 최대화/직접 리사이즈하면 OS 표준 동작에 따라 그대로 적용됨.
+    const wa = screen.getPrimaryDisplay().workArea;
+    const halfW = Math.floor(wa.width / 2);
+    viewerWindow.setBounds({ x: wa.x + halfW, y: wa.y, width: halfW, height: wa.height });
     viewerWindow.show();
     viewerWindow.focus();
   });
@@ -864,6 +868,64 @@ ipcMain.handle("viewer:writeFile", async (_e, folderPath, fileName, content) => 
     return { ok: true, location: "folder" };
   } catch (e) {
     return { ok: false, error: e.message };
+  }
+});
+
+// ── Studio 평가 입력 산출물 업로드 ───────────────────────────────────
+// Studio (다른 PC) 가 자기 로컬 폴더에 _edit_posture.json / _edited.json 을 저장한 직후
+// 서버 PC 의 userConnection/{ts}_{empid}_GroupModuleUnit/ 로 같은 파일을 올린다.
+// 그 후 viewer:runStabilityAnalysis 는 반환된 remotePath 로 호출되어 같은 PC 디스크에서
+// 자세안정성 평가가 실행된다. 이로써 Studio/서버 PC 분리 운영을 지원한다.
+ipcMain.handle("viewer:uploadEvaluationArtifact", async (_e, payload) => {
+  try {
+    const fileName = payload?.fileName;
+    const content  = payload?.content;
+    const artifactKind = payload?.artifactKind || "posture";
+    if (!fileName || typeof content !== "string") {
+      return { ok: false, error: "fileName / content 누락" };
+    }
+
+    const { serverUrl, token } = await getWorkbenchRuntimeConfig();
+    // employee_id 는 백엔드의 require_auth 가 검증한 current_user 와 일치해야 한다.
+    // localStorage 의 'user' (JSON) 에서 employee_id 를 꺼낸다.
+    let employeeId = "";
+    try {
+      const userRaw = await mainWindow.webContents.executeJavaScript(
+        `localStorage.getItem('user')`, true,
+      );
+      const u = JSON.parse(userRaw || "{}");
+      employeeId = String(u.employee_id || u.employeeId || "");
+    } catch {}
+    if (!employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+
+    const form = new FormData();
+    form.append("file", new Blob([content], { type: "application/json" }), fileName);
+    form.append("employee_id", employeeId);
+    form.append("artifact_kind", artifactKind);
+
+    const headers = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const res = await fetch(`${serverUrl}/api/analysis/module-stability/upload`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+    if (!res.ok) {
+      const detail = await readBackendError(res);
+      return { ok: false, error: `업로드 실패: ${res.status}${detail ? ` - ${detail}` : ""}` };
+    }
+    const body = await res.json();
+    return {
+      ok: true,
+      remotePath: body.remotePath || null,
+      folderPath: body.folderPath || null,
+      fileName: body.fileName || fileName,
+    };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
   }
 });
 

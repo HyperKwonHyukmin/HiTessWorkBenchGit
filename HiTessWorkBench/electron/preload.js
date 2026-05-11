@@ -32,6 +32,7 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:getInitialFolder',
   'viewer:writeFile',
   'viewer:finalizeEditedModel',
+  'viewer:uploadEvaluationArtifact',
   'viewer:runStabilityAnalysis',
   'viewer:runUnitStructural',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
@@ -76,6 +77,11 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   getInitialFolder: () => ipcRenderer.invoke('viewer:getInitialFolder'),
   writeFile: (folderPath, fileName, content) =>
     ipcRenderer.invoke('viewer:writeFile', folderPath, fileName, content),
+  // Studio (다른 PC) 가 자기 로컬 폴더에 저장한 _edit_posture.json / _edited.json 을
+  // 서버 PC 의 userConnection 폴더로 업로드. 반환된 remotePath 를 그대로 runStabilityAnalysis 에 넘긴다.
+  // payload = { fileName, content, artifactKind? }
+  uploadEvaluationArtifact: (fileName, content, artifactKind) =>
+    ipcRenderer.invoke('viewer:uploadEvaluationArtifact', { fileName, content, artifactKind }),
   runStabilityAnalysis: (posturePath) =>
     ipcRenderer.invoke('viewer:runStabilityAnalysis', posturePath),
   // Studio "Unit 구조 해석 실행" → 백엔드 unit-structural endpoint 호출 + 폴링까지

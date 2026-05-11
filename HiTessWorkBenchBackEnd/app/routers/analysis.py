@@ -391,6 +391,60 @@ class ModuleStabilityRequest(BaseModel):
     source: Optional[str] = "ModuleUnitStudio"
 
 
+@router.post("/analysis/module-stability/upload")
+async def upload_module_stability_artifact(
+        file: UploadFile = File(...),
+        employee_id: str = Form(...),
+        artifact_kind: str = Form("posture"),
+        current_user: str = Depends(require_auth)
+):
+    """
+    ModuleUnitStudio 자세안정성 평가 입력 파일을 서버의 userConnection 폴더로 업로드한다.
+    Studio (Electron) 가 자기 PC 의 로컬 폴더에만 파일을 갖고 있을 때, 서버 PC 가 그 파일을
+    읽을 수 있도록 동일 채널(userConnection/{ts}_{empid}_GroupModuleUnit/) 로 옮긴다.
+
+    body (multipart/form-data):
+      file           : 업로드 파일 (예: <stem>_edit_posture.json 또는 <stem>_edited.json)
+      employee_id    : 업로드 주체 사번 (require_auth 의 current_user 와 같아야 한다)
+      artifact_kind  : 'posture' | 'edited' — 로깅/식별용. 폴더 분기는 안 함.
+
+    반환: { ok, remotePath, folderPath, fileName }
+      remotePath  = 절대경로. 이후 /api/analysis/module-stability/request 의 posturePath 로 사용.
+    """
+    if employee_id != current_user:
+        raise HTTPException(status_code=403, detail="employee_id 가 인증 사용자와 일치하지 않습니다.")
+
+    # 동일 사용자/같은 분(분단위 timestamp)이면 이미 만든 폴더 재사용해서 _edited + _posture 한 묶음 유지.
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    unique_folder = f"{timestamp}_{employee_id}_GroupModuleUnit"
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
+    os.makedirs(work_dir, exist_ok=True)
+
+    # 파일명에 경로 분리자 차단 (..\ ../ 등 보안).
+    safe_name = os.path.basename(file.filename or "artifact.json")
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="유효하지 않은 파일명입니다.")
+
+    target_path = os.path.abspath(os.path.join(work_dir, safe_name))
+    # 경로 탈출 차단 — work_dir 외부로 못 빠져나가게.
+    if not target_path.startswith(work_dir + os.sep) and target_path != work_dir:
+        raise HTTPException(status_code=400, detail="경로 탈출 시도 차단")
+
+    try:
+        with open(target_path, "wb") as buffer:
+            buffer.write(await file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
+
+    return {
+        "ok": True,
+        "remotePath": target_path,
+        "folderPath": work_dir,
+        "fileName": safe_name,
+        "artifactKind": artifact_kind,
+    }
+
+
 @router.post("/analysis/module-stability/request")
 async def request_module_stability(
         req: ModuleStabilityRequest,
