@@ -10,7 +10,7 @@ import { motion } from 'framer-motion';
  * @param {string}  active        - 현재 활성 탭
  * @param {(c:string)=>void} onChange - 탭 변경 핸들러
  */
-export default function FilterTabs({ categories = [], active, onChange }) {
+export default function FilterTabs({ categories = [], active, onChange, rightSlot }) {
   const layoutId = useId();
 
   return (
@@ -42,6 +42,7 @@ export default function FilterTabs({ categories = [], active, onChange }) {
           </button>
         );
       })}
+      {rightSlot && <div className="ml-auto shrink-0">{rightSlot}</div>}
     </div>
   );
 }
