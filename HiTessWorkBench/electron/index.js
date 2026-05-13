@@ -328,20 +328,24 @@ async function readJsonFolderRecursive(folderPath) {
     const dir = stack.pop();
     let entries;
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch {
       continue;
     }
+    const readPromises = [];
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         stack.push(full);
       } else if (entry.name.toLowerCase().endsWith(".json")) {
-        try {
-          files.push({ name: entry.name, content: fs.readFileSync(full, "utf-8") });
-        } catch { /* 개별 파일 오류는 스킵 */ }
+        readPromises.push(
+          fs.promises.readFile(full, "utf-8")
+            .then(content => files.push({ name: entry.name, content }))
+            .catch(() => { /* 개별 파일 오류는 스킵 */ })
+        );
       }
     }
+    await Promise.all(readPromises);
   }
   return { folderPath, files };
 }
@@ -677,8 +681,8 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
   }
 
   viewerWindow = new BrowserWindow({
-    parent: mainWindow,
-    modal: false,
+    // parent 미설정: Windows에서 child window가 parent를 비활성화하는 OS 동작 방지.
+    // 독립 창으로 두어 WorkBench와 상호 작용 가능.
     show: false,                     // ready-to-show 까지 숨김 (깜빡임 방지)
     frame: true,                     // OS 표준 타이틀바 (최소화/최대화/닫기 버튼 살림)
     backgroundColor: "#0d0d1a",
