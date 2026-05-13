@@ -195,12 +195,16 @@ function CollapseSection({ label, open, onToggle, children, accent }) {
   );
 }
 
-function ProgressBar({ progress, message, error }) {
+function ProgressBar({ progress, message, error, elapsed }) {
+  const fmtTime = (s) => s >= 60 ? `${Math.floor(s / 60)}분 ${s % 60}초` : `${s}초`;
   return (
     <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-slate-700">{message || '진행 중...'}</p>
-        <p className="text-xs font-bold text-blue-600 font-mono">{progress ?? 0}%</p>
+        <div className="flex items-center gap-2">
+          {elapsed != null && <span className="text-xs text-slate-400 font-mono">{fmtTime(elapsed)}</span>}
+          <p className="text-xs font-bold text-blue-600 font-mono">{progress ?? 0}%</p>
+        </div>
       </div>
       <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
         <div
@@ -1974,7 +1978,7 @@ function SummaryMetric({ label, value, variant }) {
    Nastran 패널
    ──────────────────────────────────────────────────────────────────────── */
 
-function NastranPanel({ bdfResult, hasResult, editStatus }) {
+function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu }) {
   // step 3 "해석 모델 저장" — BDF 다운로드 전용 페이지.
   //   • 원본 최종 BDF (build-full) — 항상 표시
   //   • 최종 Edit BDF (apply-edit-intent) — 편집 적용 시에만 표시. 파일명은 *_edit.bdf 로 받음.
@@ -2031,6 +2035,23 @@ function NastranPanel({ bdfResult, hasResult, editStatus }) {
         <p className="text-[10px] text-slate-400 italic px-1">
           모델 수정을 수행하면 "최종 Edit BDF" 다운로드가 추가됩니다.
         </p>
+      )}
+
+      {/* 연계 프로그램 */}
+      {onSendToGmu && (bdfResult.bdfPath || editBdf) && (
+        <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 space-y-2">
+          <p className="text-[10px] font-bold text-violet-500 uppercase tracking-widest">연계 프로그램</p>
+          <button
+            onClick={() => onSendToGmu(editBdf || bdfResult.bdfPath)}
+            className="w-full flex items-center justify-center gap-2 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-lg cursor-pointer"
+          >
+            <ExternalLink size={13} />
+            Group Module Unit으로 결과 모델 보내기
+          </button>
+          <p className="text-[10px] text-violet-400 text-center">
+            {editBdf ? 'Edit BDF' : '원본 최종 BDF'}를 GMU 권상 해석으로 바로 전달합니다.
+          </p>
+        </div>
       )}
     </div>
   );
@@ -2118,6 +2139,7 @@ export default function HiTessModelBuilder() {
   const dashboardCtx = useDashboard();
   const startGlobalJob = dashboardCtx?.startGlobalJob || (() => {});
   const setPageState   = dashboardCtx?.setModelBuilderPageState || (() => {});
+  const setGmuHandoff  = dashboardCtx?.setGmuHandoff  || (() => {});
   const saved          = dashboardCtx?.modelBuilderPageState;
 
   // ── 입력 상태 ──
@@ -2138,6 +2160,7 @@ export default function HiTessModelBuilder() {
   const [activeIdx,  setActiveIdx]  = useState(saved?.activeIdx ?? 0);
   const [hasRunOnce, setHasRunOnce] = useState(saved?.hasRunOnce ?? false);
   const [jobStatus,  setJobStatus]  = useState(saved?.jobStatus ?? null);
+  const [elapsedSecs, setElapsedSecs] = useState(0);
   const [bdfResult,  setBdfResult]  = useState(saved?.bdfResult ?? null);
   const [engineLog,  setEngineLog]  = useState(saved?.engineLog ?? null);
   const [runNastranRequested, setRunNastranRequested] = useState(saved?.runNastranRequested ?? false);
@@ -2172,7 +2195,8 @@ export default function HiTessModelBuilder() {
   const [editError, setEditError] = useState(null);
   const editPollRef = useRef(null);
 
-  const pollRef = useRef(null);
+  const pollRef    = useRef(null);
+  const elapsedRef = useRef(null);
 
   // ── 마운트 시 Studio 설치 여부 + 서버 최신 버전 동시 조회 ──
   useEffect(() => {
@@ -2238,7 +2262,8 @@ export default function HiTessModelBuilder() {
 
   // ── 언마운트: 폴링 정리 ──
   useEffect(() => () => {
-    if (pollRef.current) clearInterval(pollRef.current);
+    if (pollRef.current)    clearInterval(pollRef.current);
+    if (elapsedRef.current) clearInterval(elapsedRef.current);
   }, []);
 
   // ── 결과 도착 시 audit/summary 자동 로드 ──
@@ -2427,6 +2452,9 @@ export default function HiTessModelBuilder() {
     setRunNastranRequested(!!useNastran);
     setActiveIdx(0);
     setBdfResult(null);
+    setElapsedSecs(0);
+    if (elapsedRef.current) clearInterval(elapsedRef.current);
+    elapsedRef.current = setInterval(() => setElapsedSecs(s => s + 1), 1000);
     setAuditData(null);
     setSummaryData(null);
     setEngineLog(null);
@@ -2482,11 +2510,13 @@ export default function HiTessModelBuilder() {
       } catch {
         clearInterval(pollRef.current);
         pollRef.current = null;
+        if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
       }
     }, 1500);
   };
 
   const applyJobResult = useCallback((data) => {
+    if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
     setJobStatus(data);
     if (data.status === 'Success') {
       setBdfResult({
@@ -2921,13 +2951,29 @@ export default function HiTessModelBuilder() {
               })}
             </div>
             <div className="px-3 py-3 border-t border-slate-100 bg-slate-50/60 space-y-2">
+              {activeIdx < steps.length - 1 && (
+                <button
+                  onClick={() => setActiveIdx(activeIdx + 1)}
+                  disabled={isRunning || !hasRunOnce}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 border border-violet-200 bg-violet-50 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed text-violet-700 text-xs font-semibold rounded-xl cursor-pointer"
+                >
+                  <ChevronsRight size={13} />
+                  {steps[activeIdx + 1]?.title} 보기
+                </button>
+              )}
               <button
                 onClick={handleRunModelBuilder}
                 disabled={isRunning}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl shadow-sm cursor-pointer"
               >
                 {isRunning
-                  ? <><Loader2 size={15} className="animate-spin" /> 실행 중...</>
+                  ? <>
+                      <Loader2 size={15} className="animate-spin" />
+                      실행 중...
+                      <span className="font-mono text-blue-200 text-xs font-normal">
+                        {elapsedSecs >= 60 ? `${Math.floor(elapsedSecs / 60)}분 ${elapsedSecs % 60}초` : `${elapsedSecs}초`}
+                      </span>
+                    </>
                   : <><ChevronsRight size={16} /> Model Builder 실행</>
                 }
               </button>
@@ -2958,6 +3004,7 @@ export default function HiTessModelBuilder() {
               progress={jobStatus?.progress ?? 0}
               message={jobStatus?.message}
               error={jobStatus?.status === 'Failed'}
+              elapsed={elapsedSecs}
             />
           )}
 
@@ -3030,6 +3077,10 @@ export default function HiTessModelBuilder() {
                 bdfResult={bdfResult}
                 hasResult={hasResult}
                 editStatus={editStatus}
+                onSendToGmu={(bdfPath) => {
+                  setGmuHandoff({ bdfServerPath: bdfPath, sourceApp: 'HiTess Model Builder' });
+                  setCurrentMenu('Group & Module Unit 권상 구조 해석');
+                }}
               />
             )}
           </div>

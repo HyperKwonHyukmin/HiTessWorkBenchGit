@@ -66,6 +66,10 @@ export function DashboardProvider({ children }) {
 
   const [modelBuilderPageState, setModelBuilderPageState] = useState(null);
 
+  // 프로그램 간 연계: 다른 앱에서 GMU로 BDF를 바로 전달할 때 사용
+  const [gmuHandoff, setGmuHandoff]   = useState(null); // { bdfServerPath, sourceApp }
+  const clearGmuHandoff = () => setGmuHandoff(null);
+
   const [pendingJobTransfer, setPendingJobTransferRaw] = useState(null);
   const setPendingJobTransfer = (payload) => setPendingJobTransferRaw(payload);
   const clearPendingJobTransfer = () => setPendingJobTransferRaw(null);
@@ -128,6 +132,7 @@ export function DashboardProvider({ children }) {
         globalJob, startGlobalJob, clearGlobalJob,
         assessmentPageState, setAssessmentPageState,
         modelBuilderPageState, setModelBuilderPageState,
+        gmuHandoff, setGmuHandoff, clearGmuHandoff,
         pendingJobTransfer, setPendingJobTransfer, clearPendingJobTransfer
     }}>
       {children}

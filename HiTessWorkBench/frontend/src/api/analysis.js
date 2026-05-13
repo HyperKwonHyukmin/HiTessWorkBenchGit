@@ -44,6 +44,12 @@ export const requestGroupModuleUnit = (formData) =>
     headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
   });
 
+/** Group & Module Unit — 서버 경로로 BDF 검증 요청 (프로그램 간 연계용) */
+export const requestGroupModuleUnitFromPath = (formData) =>
+  axios.post(`${API_BASE_URL}/api/analysis/groupmoduleunit/request-from-path`, formData, {
+    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
+  });
+
 /** F06 Parser 요청 */
 export const requestF06Parser = (formData) =>
   axios.post(`${API_BASE_URL}/api/analysis/f06parser/request`, formData, {

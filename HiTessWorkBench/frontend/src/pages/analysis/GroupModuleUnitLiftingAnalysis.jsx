@@ -11,7 +11,7 @@ import { useDashboard } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
 import GuideButton from '../../components/ui/GuideButton';
 import { usePolling } from '../../hooks/usePolling';
-import { requestGroupModuleUnit, downloadFileText } from '../../api/analysis';
+import { requestGroupModuleUnit, requestGroupModuleUnitFromPath, downloadFileText } from '../../api/analysis';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import { API_BASE_URL } from '../../config';
 
@@ -322,7 +322,7 @@ function ModuleStudioLauncher({
 // ── 메인 컴포넌트 ────────────────────────────────────────────
 export default function GroupModuleUnitLiftingAnalysis() {
   const { setCurrentMenu } = useNavigation();
-  const { currentUser } = useDashboard();
+  const { currentUser, gmuHandoff, clearGmuHandoff } = useDashboard();
   const { showToast } = useToast();
 
   // ── 파이프라인 상태 ──────────────────────────────────────
@@ -417,6 +417,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
   // ── Step 2: Nastran 해석 ─────────────────────────────────
   const [jobStatus, setJobStatus]   = useState(null); // null | { status, progress, message }
   const [engineLog, setEngineLog]   = useState([]);
+  const [handoffSource, setHandoffSource] = useState(null); // 프로그램 간 연계로 진입한 경우 출처 앱 이름
   const pollRef = useRef(null);
 
   // ── Step 3: 결과 ─────────────────────────────────────────
@@ -559,6 +560,41 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const isLiftingStep  = activeStep?.id === 'lifting-points';
   const isNastranStep  = activeStep?.id === 'nastran';
   const isResultsStep  = activeStep?.id === 'results';
+
+  // ── 마운트: 프로그램 간 연계 핸드오프 처리 ───────────────────
+  useEffect(() => {
+    if (!gmuHandoff?.bdfServerPath) return;
+    const { bdfServerPath, sourceApp } = gmuHandoff;
+    setHandoffSource(sourceApp || '외부 프로그램');
+    clearGmuHandoff();
+    showToast(`${sourceApp || '외부 프로그램'}에서 BDF를 전달받았습니다. 자동으로 검증을 시작합니다.`, 'info');
+
+    (async () => {
+      setValidating(true);
+      setStepStatus('bdf-validation', 'running');
+      setStep1Data(null);
+      setStep2Data(null);
+      setValidProgress(0);
+      setValidStatusMsg('서버 요청 중...');
+      try {
+        const userStr = localStorage.getItem('user');
+        const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
+        const formData = new FormData();
+        formData.append('bdf_server_path', bdfServerPath);
+        formData.append('employee_id', employeeId);
+        formData.append('use_nastran', String(true));
+        formData.append('source', 'Workbench');
+        const res = await requestGroupModuleUnitFromPath(formData);
+        setValidJobId(res.data.job_id);
+      } catch (e) {
+        setValidating(false);
+        setValidJobId(null);
+        setStepStatus('bdf-validation', 'error');
+        const detail = e?.response?.data?.detail || e?.message || '알 수 없는 오류';
+        showToast(`BDF 검증 요청 실패 — ${detail}`, 'error');
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── BDF 검증 ─────────────────────────────────────────────
   const handleValidate = async () => {
@@ -814,13 +850,23 @@ export default function GroupModuleUnitLiftingAnalysis() {
                   <h2 className="text-xs font-bold text-slate-700">1. BDF 입력 검증</h2>
                   <span className="text-[10px] text-slate-400">— BDF 파일 업로드 및 유효성 검증</span>
                 </div>
-                <div className="p-4">
-                  <BdfDropZone
-                    file={bdfFile}
-                    onFile={f => { setBdfFile(f); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait'); }}
-                    onClear={() => { setBdfFile(null); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait'); }}
-                    disabled={validating}
-                  />
+                <div className="p-4 space-y-3">
+                  {handoffSource && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-200">
+                      <ExternalLink size={13} className="text-violet-500 shrink-0" />
+                      <p className="text-xs text-violet-700 font-medium">
+                        <span className="font-bold">{handoffSource}</span>에서 전달된 BDF — 자동 검증 진행 중
+                      </p>
+                    </div>
+                  )}
+                  {!handoffSource && (
+                    <BdfDropZone
+                      file={bdfFile}
+                      onFile={f => { setBdfFile(f); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait'); }}
+                      onClear={() => { setBdfFile(null); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait'); }}
+                      disabled={validating}
+                    />
+                  )}
                 </div>
               </div>
 

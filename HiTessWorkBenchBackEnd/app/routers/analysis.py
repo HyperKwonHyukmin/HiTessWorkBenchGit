@@ -575,6 +575,48 @@ async def request_groupmoduleunit(
     return {"job_id": job_id}
 
 
+@router.post("/analysis/groupmoduleunit/request-from-path")
+async def request_groupmoduleunit_from_path(
+        bdf_server_path: str = Form(...),
+        employee_id: str = Form(...),
+        use_nastran: bool = Form(False),
+        source: str = Form("Workbench"),
+        current_user: str = Depends(require_auth)
+):
+    """
+    기존 서버 BDF 경로로 GMU 검증을 요청합니다.
+    HiTess Model Builder 등 다른 프로그램에서 생성된 BDF를 프로그램 간 연계로 바로 넘길 때 사용합니다.
+    """
+    _verify_employee_self(employee_id, current_user)
+
+    abs_path = os.path.abspath(bdf_server_path)
+    if not abs_path.startswith(_USER_CONNECTION_DIR):
+        raise HTTPException(status_code=400, detail="허용되지 않은 파일 경로입니다.")
+    if not os.path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    unique_folder = f"{timestamp}_{employee_id}_GroupModuleUnit"
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
+    os.makedirs(work_dir, exist_ok=True)
+
+    bdf_path = os.path.join(work_dir, os.path.basename(abs_path))
+    try:
+        shutil.copy2(abs_path, bdf_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파일 복사 오류: {str(e)}")
+
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
+
+    analysis_executor.submit(
+        task_execute_groupmoduleunit,
+        job_id, bdf_path, work_dir, employee_id, timestamp, source, use_nastran,
+    )
+
+    return {"job_id": job_id}
+
+
 # ==================== Unit Structural Analysis (Lifting + Nastran) ===========
 
 @router.post("/analysis/unit-structural/request")
