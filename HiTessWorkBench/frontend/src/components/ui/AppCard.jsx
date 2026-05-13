@@ -7,14 +7,14 @@ import Badge from './Badge';
 
 // 카드 배경 그라데이션 (accent-50 tint → white, 세로)
 const ACCENT_CARD_BG = {
-  blue:    'from-blue-50/80',
-  violet:  'from-violet-50/80',
-  emerald: 'from-emerald-50/80',
-  purple:  'from-purple-50/80',
-  amber:   'from-amber-50/80',
-  indigo:  'from-indigo-50/80',
-  cyan:    'from-cyan-50/80',
-  teal:    'from-teal-50/80',
+  blue:    'from-blue-50/100',
+  violet:  'from-violet-50/100',
+  emerald: 'from-emerald-50/100',
+  purple:  'from-purple-50/100',
+  amber:   'from-amber-50/100',
+  indigo:  'from-indigo-50/100',
+  cyan:    'from-cyan-50/100',
+  teal:    'from-teal-50/100',
 };
 
 // 아이콘 박스 배경 (solid)
@@ -55,14 +55,14 @@ const ACCENT_TITLE = {
 
 // 태그 accent tint
 const ACCENT_TAG = {
-  blue:    'bg-blue-100/80 text-blue-700 border-blue-200',
-  violet:  'bg-violet-100/80 text-violet-700 border-violet-200',
-  emerald: 'bg-emerald-100/80 text-emerald-700 border-emerald-200',
-  purple:  'bg-purple-100/80 text-purple-700 border-purple-200',
-  amber:   'bg-amber-100/80 text-amber-700 border-amber-200',
-  indigo:  'bg-indigo-100/80 text-indigo-700 border-indigo-200',
-  cyan:    'bg-cyan-100/80 text-cyan-700 border-cyan-200',
-  teal:    'bg-teal-100/80 text-teal-700 border-teal-200',
+  blue:    'bg-blue-100/100 text-blue-700 border-blue-200',
+  violet:  'bg-violet-100/100 text-violet-700 border-violet-200',
+  emerald: 'bg-emerald-100/100 text-emerald-700 border-emerald-200',
+  purple:  'bg-purple-100/100 text-purple-700 border-purple-200',
+  amber:   'bg-amber-100/100 text-amber-700 border-amber-200',
+  indigo:  'bg-indigo-100/100 text-indigo-700 border-indigo-200',
+  cyan:    'bg-cyan-100/100 text-cyan-700 border-cyan-200',
+  teal:    'bg-teal-100/100 text-teal-700 border-teal-200',
 };
 
 // CTA 색상
@@ -204,7 +204,7 @@ export default function AppCard({
         )}
 
         {/* CTA */}
-        <div className={`mt-3 pt-3 border-t border-slate-200/80 flex items-center font-semibold text-[13px] ${
+        <div className={`mt-3 pt-3 border-t border-slate-200/100 flex items-center font-semibold text-[13px] ${
           isRestricted ? 'text-slate-400' : accentCta
         }`}>
           {isRestricted ? (
