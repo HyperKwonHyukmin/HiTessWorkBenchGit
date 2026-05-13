@@ -269,7 +269,7 @@ function AppInner() {
       case 'BDF Scanner': return <BdfScanner />;
       case 'F06 Parser': return <F06ParserPage />;
       case 'Productivity Apps': return <ProductivityApps />;
-      case 'HiTess Model Builder': return <HiTessModelBuilder />;
+      case 'HiTESS Model Builder': return <HiTessModelBuilder />;
       case 'Group & Module Unit 권상 구조 해석': return <GroupModuleUnitLiftingAnalysis />;
       default:
         return (

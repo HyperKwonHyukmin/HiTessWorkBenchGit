@@ -30,10 +30,10 @@ _OBSOLETE_SEED_TITLES = [
     "아이콘 파이프라인 — 투명 PNG → 멀티사이즈 ICO",
     "Nastran 경로 표준",
     # 다른 런북에 통합되어 단독 항목 폐기
-    "F06 Parser — Nastran 결과 자동 파싱",       # → 'HiTess Model Builder' 안으로 이동
+    "F06 Parser — Nastran 결과 자동 파싱",       # → 'HiTESS Model Builder' 안으로 이동
     "Electron 패키징 — npm run dist",             # → 'Workbench 빌드·버전 관리' 안으로 이동
     # 옛 제목 — 현재 시드는 더 자세한 제목으로 바뀌어 매칭되지 않음 (orphan 정리)
-    "HiTess Model Builder — Cmb.Cli build-full",          # → "… Cmb.Cli 단일 단계 FE 모델 생성"
+    "HiTESS Model Builder — Cmb.Cli build-full",          # → "… Cmb.Cli 단일 단계 FE 모델 생성"
     "HiTess Model Studio — 빌드·배포·설치 흐름",         # → "… Viewer 빌드·배포·설치 전체 흐름"
     "Workbench 버전 관리 — Frontend·Backend 동기화",     # → "Workbench 빌드·버전 관리 — …"
 ]
@@ -120,11 +120,11 @@ _DEFAULT_RUNBOOKS = [
     },
 
     # ────────────────────────────────────────────────────────────────────
-    # 2. HiTess Model Builder
+    # 2. HiTESS Model Builder
     #    (Cmb.Cli + Nastran 자동 실행 + F06 Parser 결과 파싱까지 통합)
     # ────────────────────────────────────────────────────────────────────
     {
-        "title": "HiTess Model Builder — Cmb.Cli 단일 단계 FE 모델 생성",
+        "title": "HiTESS Model Builder — Cmb.Cli 단일 단계 FE 모델 생성",
         "category": "Builder",
         "summary": "구조 CSV(stru/pipe/equip) 3종 → Cmb.Cli build-full 한 번 호출 → phase JSON+BDF + InputAudit + StageSummary + 최종 BDF/JSON. --run-nastran 옵션으로 Nastran 자동 실행 + F06 결과 자동 파싱(F06Parser.Console.exe)까지 한 큐에 끝냄.",
         "paths": [

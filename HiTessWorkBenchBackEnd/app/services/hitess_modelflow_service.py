@@ -1,4 +1,4 @@
-"""HiTess Model Builder - Cmb.Cli `build-full` 호출 래퍼.
+"""HiTESS Model Builder - Cmb.Cli `build-full` 호출 래퍼.
 
 stdout 첫 줄의 `출력 폴더: <path>` 또는 `폴더: <path>` 를 캡처해
 build-full 산출물(timestamp 디렉터리)의 절대 경로를 결과로 저장한다.
@@ -74,7 +74,7 @@ def task_execute_modelflow(
     employee_id: str,
     timestamp: str,
     source: str,
-    mesh_size: float = 500.0,
+    mesh_size: float = 300.0,
     ubolt_full_fix: bool = False,
     run_nastran: bool = False,
     nastran_path: str | None = None,

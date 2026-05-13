@@ -585,7 +585,7 @@ async def request_groupmoduleunit_from_path(
 ):
     """
     기존 서버 BDF 경로로 GMU 검증을 요청합니다.
-    HiTess Model Builder 등 다른 프로그램에서 생성된 BDF를 프로그램 간 연계로 바로 넘길 때 사용합니다.
+    HiTESS Model Builder 등 다른 프로그램에서 생성된 BDF를 프로그램 간 연계로 바로 넘길 때 사용합니다.
     """
     _verify_employee_self(employee_id, current_user)
 
@@ -780,7 +780,7 @@ async def request_beam_analysis(
     return {"job_id": job_id}
 
 
-# ==================== HiTess Model Builder (Cmb.Cli build-full) ====================
+# ==================== HiTESS Model Builder (Cmb.Cli build-full) ====================
 
 @router.post("/analysis/modelflow/request")
 async def request_modelflow_analysis(
@@ -790,7 +790,7 @@ async def request_modelflow_analysis(
     employee_id: str = Form(...),
     source: str = Form("Workbench"),
     current_user: str = Depends(require_auth),
-    mesh_size: float = Form(500.0),
+    mesh_size: float = Form(300.0),
     ubolt_full_fix: bool = Form(False),
     run_nastran: bool = Form(False),
     nastran_path: Optional[str] = Form(None),

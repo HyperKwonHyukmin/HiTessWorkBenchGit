@@ -38,8 +38,8 @@ export default function NewAnalysis() {
     } else if (categoryTitle === "Truss Structural Assessment") {
       if (setAssessmentPageState) setAssessmentPageState({});
       setCurrentMenu('Truss Structural Assessment');
-    } else if (categoryTitle === "HiTess Model Builder") {
-      setCurrentMenu('HiTess Model Builder');
+    } else if (categoryTitle === "HiTESS Model Builder") {
+      setCurrentMenu('HiTESS Model Builder');
     } else if (categoryTitle === "Group & Module Unit 권상 구조 해석") {
       setCurrentMenu('Group & Module Unit 권상 구조 해석');
     } else {

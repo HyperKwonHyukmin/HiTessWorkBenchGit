@@ -38,6 +38,15 @@ type: project
 - Framer Motion: `whileHover={{ y: -3 }}` 리프트 효과 표준
 - 상태별 accent: emerald(Active), blue(Developing), amber(Planned), red(Failed)
 
+## AppCard / AppListRow 패턴 (개선 후)
+- 아이콘 박스: solid 색상(`iconBg` 클래스 직접 적용), 흰색 아이콘, 광택 그라데이션 오버레이
+- accentColor는 `item.color`(`bg-cyan-600` 등)에서 `colorToAccent()` 함수로 동적 추출
+- 태그는 accentColor tint 배경 (`bg-cyan-50 text-cyan-600 border-cyan-100` 형태)
+- "시작하기" CTA도 accentColor 적용 (기존에는 brand-blue 고정이었음)
+- 카드 hover 배경도 accent tint (`hover:bg-cyan-50/30` 등) 적용
+- `colorToAccent()` 로직: cyan > violet > emerald > indigo > teal > amber > purple > blue 순서
+- AppListRow에도 동일한 solid 아이콘 박스 + 확장된 accentColor 맵 적용
+
 ## 공통 UI 컴포넌트 (src/components/ui/)
 - `PageHeader`: title, icon, subtitle, actions props — 다른 페이지들에서 표준으로 사용
 - `AppCard`: devStatus 배지, 즐겨찾기 토글, onStart 콜백

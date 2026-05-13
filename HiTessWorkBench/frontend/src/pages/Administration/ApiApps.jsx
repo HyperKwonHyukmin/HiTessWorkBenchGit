@@ -108,7 +108,7 @@ const API_LIST = [
   },
   {
     id: 'hitess-model-builder',
-    name: 'HiTess Model Builder',
+    name: 'HiTESS Model Builder',
     method: 'POST',
     endpoint: '/api/analysis/modelflow/request',
     status: 'Active',
@@ -120,7 +120,7 @@ const API_LIST = [
       { name: 'pipe_file', type: 'file (CSV, form)', required: false, desc: '배관 CSV 파일' },
       { name: 'equip_file', type: 'file (CSV, form)', required: false, desc: '장비 CSV 파일' },
       { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
-      { name: 'mesh_size', type: 'float (form)', required: false, desc: '전체 기본 메시 크기(mm). 기본값: 500.0' },
+      { name: 'mesh_size', type: 'float (form)', required: false, desc: '전체 기본 메시 크기(mm). 기본값: 300.0' },
       { name: 'mesh_size_structure', type: 'float (form)', required: false, desc: '구조 전용 메시 크기(mm)' },
       { name: 'mesh_size_pipe', type: 'float (form)', required: false, desc: '배관 전용 메시 크기(mm)' },
       { name: 'ubolt_full_fix', type: 'boolean (form)', required: false, desc: 'U-bolt 구속을 full fix로 적용. 기본값: false' },
@@ -134,7 +134,7 @@ const API_LIST = [
   -F "pipe_file=@pipe.csv" \\
   -F "equip_file=@equipment.csv" \\
   -F "employee_id=20001234" \\
-  -F "mesh_size=500" \\
+  -F "mesh_size=300" \\
   -F "run_nastran=false" \\
   -F "source=External API"`,
   },
@@ -260,7 +260,7 @@ const API_LIST = [
   },
   {
     id: 'modelflow-edit-status',
-    name: 'HiTess Model Builder Edit Status',
+    name: 'HiTESS Model Builder Edit Status',
     method: 'GET',
     endpoint: '/api/analysis/modelflow/edit-status',
     status: 'Active',
@@ -268,13 +268,13 @@ const API_LIST = [
     description: 'Studio가 생성한 *_edit.json 존재 여부와 edited 산출물 상태를 확인합니다. output_dir은 userConnection 하위 build-full 결과 폴더여야 합니다.',
     cli: null,
     params: [
-      { name: 'output_dir', type: 'string (query)', required: true, desc: 'HiTess Model Builder 결과 폴더 절대경로' },
+      { name: 'output_dir', type: 'string (query)', required: true, desc: 'HiTESS Model Builder 결과 폴더 절대경로' },
     ],
     example: `curl -X GET "${API_BASE_URL}/api/analysis/modelflow/edit-status?output_dir=C%3A%5C...%5CuserConnection%5C20260504_082938_A476854_HiTessModelBuilder"`,
   },
   {
     id: 'modelflow-apply-edit',
-    name: 'HiTess Model Builder Apply Edit',
+    name: 'HiTESS Model Builder Apply Edit',
     method: 'POST',
     endpoint: '/api/analysis/modelflow/apply-edit',
     status: 'Active',
@@ -282,7 +282,7 @@ const API_LIST = [
     description: 'Studio가 작성한 *_edit.json을 base 모델에 적용하여 edited 폴더 산출물을 생성합니다. 옵션으로 Nastran 실행과 F06 파싱을 함께 수행합니다. 비동기 처리입니다.',
     cli: 'Cmb.Cli.exe apply-edit <output_dir> [options]',
     params: [
-      { name: 'output_dir', type: 'string', required: true, desc: 'HiTess Model Builder 결과 폴더 절대경로' },
+      { name: 'output_dir', type: 'string', required: true, desc: 'HiTESS Model Builder 결과 폴더 절대경로' },
       { name: 'strict', type: 'boolean', required: false, desc: '엄격 적용 모드. 기본값: false' },
       { name: 'run_nastran', type: 'boolean', required: false, desc: 'Edit BDF에 Nastran 자동 실행. 기본값: true' },
       { name: 'nastran_path', type: 'string', required: false, desc: 'Nastran 실행 파일 경로' },

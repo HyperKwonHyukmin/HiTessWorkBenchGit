@@ -233,7 +233,7 @@ export default function MastPostAssessment() {
                   ['굽힘 응력', 'σ_b = M / Z', 'MPa'],
                   ['축 응력', 'σ_a = F_V / A', 'MPa'],
                   ['등가 응력', 'σ_eq = σ_b + σ_a', 'MPa'],
-                  ['허용 조건', 'σ_eq ≤ 200 MPa', '—'],
+                  ['허용 조건', 'σ_eq ≤ 188 MPa', '—'],
                 ].map(([name, expr, unit]) => (
                   <div key={name} className="bg-slate-50 rounded-lg px-3 py-2">
                     <p className="text-[10px] text-slate-400 font-bold">{name}</p>
@@ -315,7 +315,7 @@ export default function MastPostAssessment() {
               <div className="px-6 pb-5 border-t border-gray-100 pt-3 space-y-1.5 text-sm">
                 {[
                   ['탄성계수', 'E = 206,000 MPa (강재)'],
-                  ['허용 등가 응력', '200 MPa'],
+                  ['허용 등가 응력', '188 MPa'],
                   ['허용 처짐', 'H₁ / 125'],
                   ['풍속 기준', 'vs = 63 m/s (LR Rule)'],
                   ['횡경사', '30°'],

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronsRight,
-  Cpu, Download, ExternalLink, FileEdit, FileSpreadsheet, History, Loader2,
+  Cpu, Download, FileEdit, FileSpreadsheet, History, Loader2,
   PackageX, RotateCcw, ShieldCheck, UploadCloud, X,
 } from 'lucide-react';
 
@@ -2037,18 +2037,26 @@ function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu }) {
         </p>
       )}
 
-      {/* 연계 프로그램 */}
+      {/* 다음 단계 해석 */}
       {onSendToGmu && (bdfResult.bdfPath || editBdf) && (
-        <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 space-y-2">
-          <p className="text-[10px] font-bold text-violet-500 uppercase tracking-widest">연계 프로그램</p>
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">다음 해석으로 전달</p>
+              <p className="text-xs font-semibold text-slate-700 mt-0.5">현재 BDF 모델로 후속 권상 구조 해석을 시작합니다.</p>
+            </div>
+            <div className="shrink-0 w-8 h-8 rounded-full bg-white border border-blue-200 flex items-center justify-center text-blue-600">
+              <ChevronsRight size={16} />
+            </div>
+          </div>
           <button
             onClick={() => onSendToGmu(editBdf || bdfResult.bdfPath)}
-            className="w-full flex items-center justify-center gap-2 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-lg cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold rounded-lg cursor-pointer shadow-sm"
           >
-            <ExternalLink size={13} />
-            Group Module Unit으로 결과 모델 보내기
+            <ChevronsRight size={14} />
+            Group Module Unit 권상 구조 해석 시작
           </button>
-          <p className="text-[10px] text-violet-400 text-center">
+          <p className="text-[10px] text-blue-500 text-center">
             {editBdf ? 'Edit BDF' : '원본 최종 BDF'}를 GMU 권상 해석으로 바로 전달합니다.
           </p>
         </div>
@@ -2150,8 +2158,8 @@ export default function HiTessModelBuilder() {
   const [pipeError, setPipeError] = useState(null);
   const [equiError, setEquiError] = useState(null);
 
-  // ── 옵션 (기본값: useNastran=true, uboltFullFix=true, meshSize=500) ──
-  const [meshSize,      setMeshSize]      = useState(saved?.meshSize      ?? '500');
+  // ── 옵션 (기본값: useNastran=true, uboltFullFix=true, meshSize=300) ──
+  const [meshSize,      setMeshSize]      = useState(saved?.meshSize      ?? '300');
   const [uboltFullFix,  setUboltFullFix]  = useState(saved?.uboltFullFix  ?? true);
   const [useNastran,    setUseNastran]    = useState(saved?.useNastran    ?? true);
 
@@ -2247,7 +2255,7 @@ export default function HiTessModelBuilder() {
   // ── 최초 마운트: globalJob 동기화 ──
   useEffect(() => {
     const gj = dashboardCtx?.globalJob;
-    if (saved?.jobStatus?.status === 'Running' && gj?.menu === 'HiTess Model Builder') {
+    if (saved?.jobStatus?.status === 'Running' && gj?.menu === 'HiTESS Model Builder') {
       if (gj.status === 'Success' || gj.status === 'Failed') {
         fetch(`${API_BASE_URL}/api/analysis/status/${gj.jobId}`, { headers: getAuthHeaders() })
           .then(r => r.ok ? r.json() : Promise.reject(r.status))
@@ -2444,7 +2452,7 @@ export default function HiTessModelBuilder() {
     if (pipeFile) formData.append('pipe_file',  pipeFile);
     if (equiFile) formData.append('equip_file', equiFile);
     formData.append('employee_id', user.employee_id || 'unknown');
-    formData.append('mesh_size',      String(parseInt(meshSize, 10) || 500));
+    formData.append('mesh_size',      String(parseInt(meshSize, 10) || 300));
     formData.append('ubolt_full_fix', String(!!uboltFullFix));
     formData.append('run_nastran',    String(!!useNastran));
 
@@ -2475,7 +2483,7 @@ export default function HiTessModelBuilder() {
       }
       const data = await res.json();
       startPolling(data.job_id);
-      startGlobalJob(data.job_id, 'HiTess Model Builder');
+      startGlobalJob(data.job_id, 'HiTESS Model Builder');
     } catch (e) {
       setSteps(prev => prev.map((s, i) => i === 0 ? { ...s, status: 'error' } : s));
       setJobStatus({ status: 'Failed', progress: 0, message: `요청 실패: ${e.message}` });
@@ -2889,7 +2897,7 @@ export default function HiTessModelBuilder() {
             </button>
             <div>
               <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <ShieldCheck size={18} /> HiTess Model Builder
+                <ShieldCheck size={18} /> HiTESS Model Builder
               </h1>
               <p className="text-sm text-violet-200/80 mt-0.5">AM 3D 설계 CSV → 1D Beam FEM → Nastran BDF 자동 변환</p>
             </div>
@@ -2898,7 +2906,7 @@ export default function HiTessModelBuilder() {
             <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
               <History size={14} /> 이력
             </button>
-            <GuideButton guideTitle="[파일] HiTess Model Builder — CSV → BDF 변환" variant="dark" />
+            <GuideButton guideTitle="[파일] HiTESS Model Builder — CSV → BDF 변환" variant="dark" />
           </div>
         </div>
       </div>
@@ -3081,7 +3089,7 @@ export default function HiTessModelBuilder() {
                 hasResult={hasResult}
                 editStatus={editStatus}
                 onSendToGmu={(bdfPath) => {
-                  setGmuHandoff({ bdfServerPath: bdfPath, sourceApp: 'HiTess Model Builder' });
+                  setGmuHandoff({ bdfServerPath: bdfPath, sourceApp: 'HiTESS Model Builder' });
                   setCurrentMenu('Group & Module Unit 권상 구조 해석');
                 }}
               />
@@ -3103,7 +3111,7 @@ export default function HiTessModelBuilder() {
 
       <ChangelogModal
         programKey="HiTessModelBuilder"
-        title="HiTess Model Builder 변경 이력"
+        title="HiTESS Model Builder 변경 이력"
         isOpen={changelogOpen}
         onClose={() => setChangelogOpen(false)}
       />

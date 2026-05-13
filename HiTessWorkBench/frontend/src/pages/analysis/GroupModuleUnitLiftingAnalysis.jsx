@@ -731,7 +731,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
           <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             {/* BDF 가 없을 때 진입 — 파이프라인 박스 최상단, 해석 실행 버튼과 시각적으로 분리 */}
             <button
-              onClick={() => setCurrentMenu('HiTess Model Builder')}
+              onClick={() => setCurrentMenu('HiTESS Model Builder')}
               className="w-full relative flex items-center justify-between gap-3 px-5 py-4 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 hover:from-indigo-400 hover:via-indigo-500 hover:to-violet-600 active:scale-[0.995] text-white transition-all duration-200 cursor-pointer overflow-hidden group"
             >
               <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full pointer-events-none" />
@@ -744,7 +744,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
                 <div className="text-left">
                   <p className="text-[11px] font-semibold text-indigo-100 leading-tight tracking-wide">BDF 가 없다면?</p>
                   <p className="text-base font-black text-white leading-tight mt-0.5">CSV 로부터 시작하세요</p>
-                  <p className="text-[10px] text-indigo-200 mt-0.5">HiTess Model Builder 로 이동</p>
+                  <p className="text-[10px] text-indigo-200 mt-0.5">HiTESS Model Builder 로 이동</p>
                 </div>
               </div>
               <div className="relative w-9 h-9 rounded-full bg-white/20 group-hover:bg-white/30 flex items-center justify-center transition-colors shrink-0">
