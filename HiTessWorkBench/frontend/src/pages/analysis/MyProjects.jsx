@@ -111,17 +111,21 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
     }
   };
 
-  const isAssessment = project?.program_name === 'Truss Assessment';
+  const isAssessment   = project?.program_name === 'Truss Assessment';
+  const isModelBuilder = project?.program_name === 'HiTessModelBuilder';
 
-  // result_info 필터링: CSV_Error 제외, bdf key는 "BDF Model"로 표시
+  // result_info 필터링
   const getResultLabel = (key) => {
-    if (key === 'bdf') return 'BDF Model';
+    if (key === 'bdf' || key === 'bdf_path') return 'BDF Model';
     return `${key.replace(/_/g, ' ')} Result`;
   };
   const filteredResultEntries = project?.result_info
-    ? Object.entries(project.result_info).filter(([key]) =>
-        key !== 'CSV_Error' && !key.startsWith('JSON_') && !(isAssessment && key.startsWith('Excel_'))
-      )
+    ? Object.entries(project.result_info).filter(([key]) => {
+        if (key === 'CSV_Error' || key.startsWith('JSON_')) return false;
+        if (isAssessment && key.startsWith('Excel_')) return false;
+        if (isModelBuilder) return key === 'bdf_path';
+        return true;
+      })
     : [];
   const jsonFiles = filteredResultEntries.filter(([key]) => key.startsWith('JSON_'));
 
@@ -223,13 +227,15 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
             </div>
           ) : (
             <div className="space-y-2">
-              {/* input_info: Truss Assessment는 bdf_model 입력 파일 숨김 */}
+              {/* input_info: Truss Assessment / Mast Post Assessment는 숨김 */}
               {project.input_info && !isAssessment && project.program_name !== "Mast Post Assessment" &&
-                Object.entries(project.input_info).map(([key, path]) => (
-                  typeof path === 'string'
-                    ? <FileDownloadRow key={key} label={key.replace(/_/g, ' ')} path={path} icon={Database} onClick={() => handleDownload(path)} />
-                    : null
-                ))
+                Object.entries(project.input_info).map(([key, path]) => {
+                  if (typeof path !== 'string') return null;
+                  const label = isModelBuilder
+                    ? key.replace(/_(csv|path)$/i, '').toUpperCase()
+                    : key.replace(/_/g, ' ');
+                  return <FileDownloadRow key={key} label={label} path={path} icon={Database} onClick={() => handleDownload(path)} />;
+                })
               }
               {/* result_info: CSV_Error 제외, bdf → BDF Model */}
               {filteredResultEntries.map(([key, path]) => (
