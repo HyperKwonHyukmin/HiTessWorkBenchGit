@@ -162,9 +162,38 @@ export default function TrussAnalysis() {
     setActiveTab(type);
   };
 
-  const handleDrop = (e, type) => { 
-    e.preventDefault(); 
-    handleFile(e.dataTransfer.files[0], type); 
+  const detectFileType = (filename) => {
+    const upper = filename.toUpperCase();
+    if (upper.includes('NODE')) return 'node';
+    if (upper.includes('WAY') || upper.includes('MEMBER')) return 'member';
+    return null;
+  };
+
+  const autoAssignFiles = (files) => {
+    let nodeF = null, memberF = null;
+    for (const file of files) {
+      const type = detectFileType(file.name);
+      if (type === 'node' && !nodeF) nodeF = file;
+      else if (type === 'member' && !memberF) memberF = file;
+    }
+    if (!nodeF && !memberF && files.length >= 2) {
+      [nodeF, memberF] = files;
+      showToast('파일명 자동 감지 실패 — 순서대로 Node/Member에 배정했습니다.', 'warning');
+    }
+    if (nodeF) handleFile(nodeF, 'node');
+    if (memberF) handleFile(memberF, 'member');
+    if (nodeF && memberF)
+      showToast(`자동 매핑 완료 ✓  Node → ${nodeF.name}  /  Member → ${memberF.name}`, 'success');
+  };
+
+  const handleDrop = (e, type) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.csv'));
+    if (files.length >= 2) {
+      autoAssignFiles(files);
+    } else {
+      handleFile(files[0], type);
+    }
   };
   
   const addLog = (message, type = 'info') => { 
@@ -325,6 +354,9 @@ export default function TrussAnalysis() {
             <div className="p-5 space-y-4">
               <UploadDropzone type="node" title="Node Data" file={nodeFile} rowCount={numNodes} onDrop={(e) => handleDrop(e, 'node')} onChange={(e) => handleFile(e.target.files[0], 'node')} />
               <UploadDropzone type="member" title="Member Data" file={memberFile} rowCount={numMembers} onDrop={(e) => handleDrop(e, 'member')} onChange={(e) => handleFile(e.target.files[0], 'member')} />
+              <p className="text-[10px] text-slate-400 text-center">
+                💡 두 파일을 동시에 드래그하면 <span className="font-bold text-slate-500">NODE / WAY(MEMBER)</span> 파일명을 인식해 자동 배정합니다.
+              </p>
             </div>
           </div>
 
