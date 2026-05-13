@@ -5,8 +5,20 @@ import Badge from './Badge';
 
 // --- 정적 클래스 맵 (Tailwind JIT 호환을 위해 동적 생성 금지) ---
 
-// 헤더 밴드 배경 (solid accent)
-const ACCENT_HEADER = {
+// 카드 배경 그라데이션 (accent-50 tint → white, 세로)
+const ACCENT_CARD_BG = {
+  blue:    'from-blue-50/70',
+  violet:  'from-violet-50/70',
+  emerald: 'from-emerald-50/70',
+  purple:  'from-purple-50/70',
+  amber:   'from-amber-50/70',
+  indigo:  'from-indigo-50/70',
+  cyan:    'from-cyan-50/70',
+  teal:    'from-teal-50/70',
+};
+
+// 아이콘 박스 배경 (solid)
+const ACCENT_ICON_BG = {
   blue:    'bg-blue-600',
   violet:  'bg-violet-600',
   emerald: 'bg-emerald-600',
@@ -15,30 +27,6 @@ const ACCENT_HEADER = {
   indigo:  'bg-indigo-600',
   cyan:    'bg-cyan-600',
   teal:    'bg-teal-600',
-};
-
-// 헤더 hover 시 약간 더 밝게
-const ACCENT_HEADER_HOVER = {
-  blue:    'group-hover:bg-blue-500',
-  violet:  'group-hover:bg-violet-500',
-  emerald: 'group-hover:bg-emerald-500',
-  purple:  'group-hover:bg-purple-500',
-  amber:   'group-hover:bg-amber-400',
-  indigo:  'group-hover:bg-indigo-500',
-  cyan:    'group-hover:bg-cyan-500',
-  teal:    'group-hover:bg-teal-500',
-};
-
-// 바디 그라데이션 (accent tint → white)
-const ACCENT_GRADIENT = {
-  blue:    'from-blue-50/50',
-  violet:  'from-violet-50/50',
-  emerald: 'from-emerald-50/50',
-  purple:  'from-purple-50/50',
-  amber:   'from-amber-50/50',
-  indigo:  'from-indigo-50/50',
-  cyan:    'from-cyan-50/50',
-  teal:    'from-teal-50/50',
 };
 
 // 테두리 hover
@@ -53,16 +41,28 @@ const ACCENT_BORDER = {
   teal:    'hover:border-teal-300',
 };
 
+// 제목 hover 색상
+const ACCENT_TITLE = {
+  blue:    'group-hover:text-blue-700',
+  violet:  'group-hover:text-violet-700',
+  emerald: 'group-hover:text-emerald-700',
+  purple:  'group-hover:text-purple-700',
+  amber:   'group-hover:text-amber-700',
+  indigo:  'group-hover:text-indigo-700',
+  cyan:    'group-hover:text-cyan-700',
+  teal:    'group-hover:text-teal-700',
+};
+
 // 태그 accent tint
 const ACCENT_TAG = {
-  blue:    'bg-blue-50 text-blue-600 border-blue-100',
-  violet:  'bg-violet-50 text-violet-600 border-violet-100',
-  emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-  purple:  'bg-purple-50 text-purple-600 border-purple-100',
-  amber:   'bg-amber-50 text-amber-600 border-amber-100',
-  indigo:  'bg-indigo-50 text-indigo-600 border-indigo-100',
-  cyan:    'bg-cyan-50 text-cyan-600 border-cyan-100',
-  teal:    'bg-teal-50 text-teal-600 border-teal-100',
+  blue:    'bg-blue-100/80 text-blue-700 border-blue-200',
+  violet:  'bg-violet-100/80 text-violet-700 border-violet-200',
+  emerald: 'bg-emerald-100/80 text-emerald-700 border-emerald-200',
+  purple:  'bg-purple-100/80 text-purple-700 border-purple-200',
+  amber:   'bg-amber-100/80 text-amber-700 border-amber-200',
+  indigo:  'bg-indigo-100/80 text-indigo-700 border-indigo-200',
+  cyan:    'bg-cyan-100/80 text-cyan-700 border-cyan-200',
+  teal:    'bg-teal-100/80 text-teal-700 border-teal-200',
 };
 
 // CTA 색상
@@ -105,12 +105,12 @@ export default function AppCard({
     contributor,
   } = app;
 
-  const accentHeader      = ACCENT_HEADER[accentColor]      ?? ACCENT_HEADER.blue;
-  const accentHeaderHover = ACCENT_HEADER_HOVER[accentColor] ?? ACCENT_HEADER_HOVER.blue;
-  const accentGradient    = ACCENT_GRADIENT[accentColor]    ?? ACCENT_GRADIENT.blue;
-  const accentBorder      = ACCENT_BORDER[accentColor]      ?? ACCENT_BORDER.blue;
-  const accentTag         = ACCENT_TAG[accentColor]         ?? ACCENT_TAG.blue;
-  const accentCta         = ACCENT_CTA[accentColor]         ?? ACCENT_CTA.blue;
+  const accentCardBg = ACCENT_CARD_BG[accentColor] ?? ACCENT_CARD_BG.blue;
+  const accentIconBg = ACCENT_ICON_BG[accentColor] ?? ACCENT_ICON_BG.blue;
+  const accentBorder = ACCENT_BORDER[accentColor]  ?? ACCENT_BORDER.blue;
+  const accentTitle  = ACCENT_TITLE[accentColor]   ?? ACCENT_TITLE.blue;
+  const accentTag    = ACCENT_TAG[accentColor]     ?? ACCENT_TAG.blue;
+  const accentCta    = ACCENT_CTA[accentColor]     ?? ACCENT_CTA.blue;
 
   return (
     <motion.div
@@ -119,60 +119,60 @@ export default function AppCard({
       onClick={onStart}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onStart?.(); }}
       className={[
-        'group relative bg-white rounded-2xl overflow-hidden',
+        'group relative rounded-2xl overflow-hidden',
         'border border-slate-200 shadow-sm',
         'cursor-pointer flex flex-col h-full',
         'outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40',
         'transition-colors duration-200',
+        `bg-gradient-to-b ${accentCardBg} to-white`,
         accentBorder,
       ].join(' ')}
       whileHover={{
         y: -5,
-        boxShadow: '0 16px 36px -8px rgba(0, 37, 84, 0.14)',
+        boxShadow: '0 16px 36px -8px rgba(0, 37, 84, 0.13)',
         transition: { type: 'spring', stiffness: 350, damping: 28 },
       }}
       whileTap={{ scale: 0.98, transition: { duration: 0.1 } }}
     >
+      {/* ── 즐겨찾기 ── */}
+      <motion.button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onFavorite?.(); }}
+        className="absolute top-4 right-4 z-10 text-slate-300 hover:text-yellow-400 outline-none cursor-pointer transition-colors"
+        aria-label={isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+        whileTap={{ scale: 1.35 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+      >
+        <Star
+          size={18}
+          fill={isFavorite ? '#eab308' : 'transparent'}
+          color={isFavorite ? '#eab308' : 'currentColor'}
+        />
+      </motion.button>
 
-      {/* ── 컬러 밴드 헤더 ── */}
-      <div className={`relative px-5 py-5 flex items-center gap-3.5 transition-colors duration-200 ${accentHeader} ${accentHeaderHover}`}>
-        {/* 아이콘 (반투명 흰색 박스) */}
-        <div className="shrink-0 w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white">
+      {/* ── 콘텐츠 ── */}
+      <div className="flex flex-col flex-1 px-6 pt-6 pb-5">
+
+        {/* 아이콘 박스 */}
+        <div
+          className={[
+            'relative w-11 h-11 rounded-xl mb-4 shrink-0 overflow-hidden',
+            'flex items-center justify-center text-white',
+            'group-hover:scale-105 transition-transform duration-200',
+            accentIconBg,
+          ].join(' ')}
+        >
           {icon}
-          <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-white/10 to-transparent pointer-events-none" aria-hidden="true" />
+          <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none" aria-hidden="true" />
         </div>
 
-        {/* 제목 */}
-        <h3 className="flex-1 min-w-0 text-[14px] font-bold text-white leading-snug pr-8 truncate">
-          {title}
-        </h3>
-
-        {/* 즐겨찾기 */}
-        <motion.button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onFavorite?.(); }}
-          className="absolute top-4 right-4 z-10 text-white/50 hover:text-yellow-300 outline-none cursor-pointer transition-colors"
-          aria-label={isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
-          whileTap={{ scale: 1.35 }}
-          transition={{ type: 'spring', stiffness: 500, damping: 20 }}
-        >
-          <Star
-            size={17}
-            fill={isFavorite ? '#fde047' : 'transparent'}
-            color={isFavorite ? '#fde047' : 'currentColor'}
-          />
-        </motion.button>
-      </div>
-
-      {/* ── 바디 (미묘한 그라데이션 + 콘텐츠) ── */}
-      <div className={`flex flex-col flex-1 px-5 pt-4 pb-5 bg-gradient-to-b ${accentGradient} to-white`}>
-
-        {/* devStatus 뱃지 */}
-        {devStatus && devStatus !== 'Active' && devStatus !== 'stable' && (
-          <div className="mb-3">
-            <DevStatusBadge devStatus={devStatus} />
-          </div>
-        )}
+        {/* 제목 + 뱃지 */}
+        <div className="flex items-start gap-2 mb-1.5 flex-wrap pr-6">
+          <h3 className={`text-[15px] font-bold text-slate-800 leading-snug transition-colors ${accentTitle}`}>
+            {title}
+          </h3>
+          <DevStatusBadge devStatus={devStatus} />
+        </div>
 
         {/* 설명 */}
         <p className="text-[13px] text-slate-500 leading-relaxed">
@@ -204,7 +204,7 @@ export default function AppCard({
         )}
 
         {/* CTA */}
-        <div className={`mt-3 pt-3 border-t border-slate-100 flex items-center font-semibold text-[13px] ${
+        <div className={`mt-3 pt-3 border-t border-slate-200/70 flex items-center font-semibold text-[13px] ${
           isRestricted ? 'text-slate-400' : accentCta
         }`}>
           {isRestricted ? (
