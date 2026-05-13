@@ -1,8 +1,3 @@
-/// <summary>
-/// 분석 앱 카드 컴포넌트입니다.
-/// NewAnalysis, InteractiveApps, ParametricApps 등 앱 목록 페이지에서 공통으로 사용합니다.
-/// framer-motion 기반 hover/tap 마이크로인터랙션과 개선된 devStatus 뱃지를 포함합니다.
-/// </summary>
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Star, ArrowRight, User, Lock } from 'lucide-react';
@@ -10,30 +5,8 @@ import Badge from './Badge';
 
 // --- 정적 클래스 맵 (Tailwind JIT 호환을 위해 동적 생성 금지) ---
 
-const ACCENT_BORDER_CLASSES = {
-  blue:    'hover:border-blue-300',
-  violet:  'hover:border-violet-300',
-  emerald: 'hover:border-emerald-300',
-  purple:  'hover:border-purple-300',
-  amber:   'hover:border-amber-300',
-  indigo:  'hover:border-indigo-300',
-  cyan:    'hover:border-cyan-300',
-  teal:    'hover:border-teal-300',
-};
-
-const ACCENT_TITLE_CLASSES = {
-  blue:    'group-hover:text-blue-600',
-  violet:  'group-hover:text-violet-600',
-  emerald: 'group-hover:text-emerald-600',
-  purple:  'group-hover:text-purple-600',
-  amber:   'group-hover:text-amber-600',
-  indigo:  'group-hover:text-indigo-600',
-  cyan:    'group-hover:text-cyan-600',
-  teal:    'group-hover:text-teal-600',
-};
-
-// 아이콘 배경 박스 색상 (solid)
-const ACCENT_ICON_BG = {
+// 헤더 밴드 배경 (solid accent)
+const ACCENT_HEADER = {
   blue:    'bg-blue-600',
   violet:  'bg-violet-600',
   emerald: 'bg-emerald-600',
@@ -44,32 +17,44 @@ const ACCENT_ICON_BG = {
   teal:    'bg-teal-600',
 };
 
-// 카드 배경 subtle tint (hover 시)
-const ACCENT_CARD_HOVER_BG = {
-  blue:    'hover:bg-blue-50/30',
-  violet:  'hover:bg-violet-50/30',
-  emerald: 'hover:bg-emerald-50/30',
-  purple:  'hover:bg-purple-50/30',
-  amber:   'hover:bg-amber-50/30',
-  indigo:  'hover:bg-indigo-50/30',
-  cyan:    'hover:bg-cyan-50/30',
-  teal:    'hover:bg-teal-50/30',
+// 헤더 hover 시 약간 더 밝게
+const ACCENT_HEADER_HOVER = {
+  blue:    'group-hover:bg-blue-500',
+  violet:  'group-hover:bg-violet-500',
+  emerald: 'group-hover:bg-emerald-500',
+  purple:  'group-hover:bg-purple-500',
+  amber:   'group-hover:bg-amber-400',
+  indigo:  'group-hover:bg-indigo-500',
+  cyan:    'group-hover:bg-cyan-500',
+  teal:    'group-hover:bg-teal-500',
 };
 
-// "시작하기" 텍스트 + 화살표 색
-const ACCENT_CTA_CLASSES = {
-  blue:    'text-blue-600',
-  violet:  'text-violet-600',
-  emerald: 'text-emerald-600',
-  purple:  'text-purple-600',
-  amber:   'text-amber-600',
-  indigo:  'text-indigo-600',
-  cyan:    'text-cyan-600',
-  teal:    'text-teal-600',
+// 바디 그라데이션 (accent tint → white)
+const ACCENT_GRADIENT = {
+  blue:    'from-blue-50/50',
+  violet:  'from-violet-50/50',
+  emerald: 'from-emerald-50/50',
+  purple:  'from-purple-50/50',
+  amber:   'from-amber-50/50',
+  indigo:  'from-indigo-50/50',
+  cyan:    'from-cyan-50/50',
+  teal:    'from-teal-50/50',
+};
+
+// 테두리 hover
+const ACCENT_BORDER = {
+  blue:    'hover:border-blue-300',
+  violet:  'hover:border-violet-300',
+  emerald: 'hover:border-emerald-300',
+  purple:  'hover:border-purple-300',
+  amber:   'hover:border-amber-300',
+  indigo:  'hover:border-indigo-300',
+  cyan:    'hover:border-cyan-300',
+  teal:    'hover:border-teal-300',
 };
 
 // 태그 accent tint
-const ACCENT_TAG_CLASSES = {
+const ACCENT_TAG = {
   blue:    'bg-blue-50 text-blue-600 border-blue-100',
   violet:  'bg-violet-50 text-violet-600 border-violet-100',
   emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
@@ -80,12 +65,18 @@ const ACCENT_TAG_CLASSES = {
   teal:    'bg-teal-50 text-teal-600 border-teal-100',
 };
 
-/**
- * devStatus → Badge 매핑
- * - 'Active' / 'stable' : 뱃지 없음
- * - 'Developing' / 'dev': 개발중 (warning)
- * - 'Planned'           : 출시 예정 (info)
- */
+// CTA 색상
+const ACCENT_CTA = {
+  blue:    'text-blue-600',
+  violet:  'text-violet-600',
+  emerald: 'text-emerald-600',
+  purple:  'text-purple-600',
+  amber:   'text-amber-600',
+  indigo:  'text-indigo-600',
+  cyan:    'text-cyan-600',
+  teal:    'text-teal-600',
+};
+
 function DevStatusBadge({ devStatus }) {
   if (!devStatus || devStatus === 'Active' || devStatus === 'stable') return null;
   if (devStatus === 'Developing' || devStatus === 'dev') {
@@ -97,23 +88,6 @@ function DevStatusBadge({ devStatus }) {
   return null;
 }
 
-/**
- * AppCard 컴포넌트
- *
- * @param {object}   props
- * @param {object}   props.app
- * @param {string}   props.app.title
- * @param {string}   [props.app.description]
- * @param {React.ReactNode} [props.app.icon]
- * @param {string}   [props.app.iconBg]        - 아이콘 배경 Tailwind 클래스 (예: 'bg-cyan-600') — accentColor 추출에 활용
- * @param {string[]} [props.app.tags]
- * @param {'Active'|'Developing'|'Planned'|'stable'|'dev'} [props.app.devStatus]
- * @param {'blue'|'violet'|'emerald'|'purple'|'amber'|'indigo'|'cyan'|'teal'} [props.accentColor='blue']
- * @param {boolean}  [props.isFavorite=false]
- * @param {boolean}  [props.isRestricted=false] - 비관리자 접근 제한 여부 (잠금 UI 표시)
- * @param {() => void} [props.onFavorite]
- * @param {() => void} [props.onStart]
- */
 export default function AppCard({
   app = {},
   accentColor = 'blue',
@@ -131,12 +105,12 @@ export default function AppCard({
     contributor,
   } = app;
 
-  const accent = ACCENT_ICON_BG[accentColor]        ?? ACCENT_ICON_BG.blue;
-  const accentBorder  = ACCENT_BORDER_CLASSES[accentColor] ?? ACCENT_BORDER_CLASSES.blue;
-  const accentTitle   = ACCENT_TITLE_CLASSES[accentColor]  ?? ACCENT_TITLE_CLASSES.blue;
-  const accentHoverBg = ACCENT_CARD_HOVER_BG[accentColor]  ?? ACCENT_CARD_HOVER_BG.blue;
-  const accentCta     = ACCENT_CTA_CLASSES[accentColor]    ?? ACCENT_CTA_CLASSES.blue;
-  const accentTag     = ACCENT_TAG_CLASSES[accentColor]    ?? ACCENT_TAG_CLASSES.blue;
+  const accentHeader      = ACCENT_HEADER[accentColor]      ?? ACCENT_HEADER.blue;
+  const accentHeaderHover = ACCENT_HEADER_HOVER[accentColor] ?? ACCENT_HEADER_HOVER.blue;
+  const accentGradient    = ACCENT_GRADIENT[accentColor]    ?? ACCENT_GRADIENT.blue;
+  const accentBorder      = ACCENT_BORDER[accentColor]      ?? ACCENT_BORDER.blue;
+  const accentTag         = ACCENT_TAG[accentColor]         ?? ACCENT_TAG.blue;
+  const accentCta         = ACCENT_CTA[accentColor]         ?? ACCENT_CTA.blue;
 
   return (
     <motion.div
@@ -151,114 +125,103 @@ export default function AppCard({
         'outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40',
         'transition-colors duration-200',
         accentBorder,
-        accentHoverBg,
       ].join(' ')}
       whileHover={{
         y: -5,
-        boxShadow: '0 16px 36px -8px rgba(0, 37, 84, 0.13)',
+        boxShadow: '0 16px 36px -8px rgba(0, 37, 84, 0.14)',
         transition: { type: 'spring', stiffness: 350, damping: 28 },
       }}
       whileTap={{ scale: 0.98, transition: { duration: 0.1 } }}
     >
-      {/* ── 우상단: 즐겨찾기 별표 버튼 ── */}
-      <motion.button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onFavorite?.();
-        }}
-        className="absolute top-4 right-4 z-10 text-slate-300 hover:text-yellow-400 outline-none cursor-pointer"
-        aria-label={isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
-        title={isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
-        whileTap={{ scale: 1.35 }}
-        transition={{ type: 'spring', stiffness: 500, damping: 20 }}
-      >
-        <Star
-          size={18}
-          fill={isFavorite ? '#eab308' : 'transparent'}
-          color={isFavorite ? '#eab308' : 'currentColor'}
-        />
-      </motion.button>
 
-      {/* ── 상단 헤더: 아이콘 + accent 배경 스트립 ── */}
-      <div className="px-6 pt-6 pb-5">
-        {/* 아이콘 박스 */}
-        <div
-          className={[
-            'relative w-11 h-11 rounded-xl mb-5 shrink-0 overflow-hidden',
-            'flex items-center justify-center',
-            'group-hover:scale-105 transition-transform duration-200',
-            accent,
-          ].join(' ')}
+      {/* ── 컬러 밴드 헤더 ── */}
+      <div className={`relative px-5 py-5 flex items-center gap-3.5 transition-colors duration-200 ${accentHeader} ${accentHeaderHover}`}>
+        {/* 아이콘 (반투명 흰색 박스) */}
+        <div className="shrink-0 w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white">
+          {icon}
+          <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-white/10 to-transparent pointer-events-none" aria-hidden="true" />
+        </div>
+
+        {/* 제목 */}
+        <h3 className="flex-1 min-w-0 text-[14px] font-bold text-white leading-snug pr-8 truncate">
+          {title}
+        </h3>
+
+        {/* 즐겨찾기 */}
+        <motion.button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onFavorite?.(); }}
+          className="absolute top-4 right-4 z-10 text-white/50 hover:text-yellow-300 outline-none cursor-pointer transition-colors"
+          aria-label={isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+          whileTap={{ scale: 1.35 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 20 }}
         >
-          {/* 아이콘 — 부모가 solid 컬러이므로 흰색으로 강제 */}
-          <div className="relative flex items-center justify-center w-full h-full text-white">
-            {icon}
-          </div>
-          {/* 광택 레이어 */}
-          <div
-            className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none"
-            aria-hidden="true"
+          <Star
+            size={17}
+            fill={isFavorite ? '#fde047' : 'transparent'}
+            color={isFavorite ? '#fde047' : 'currentColor'}
           />
-        </div>
+        </motion.button>
+      </div>
 
-        {/* 제목 + 개발 상태 뱃지 */}
-        <div className="flex items-start gap-2 mb-2 flex-wrap pr-6">
-          <h3 className={`text-[15px] font-bold text-slate-800 leading-snug ${accentTitle} transition-colors`}>
-            {title}
-          </h3>
-          <DevStatusBadge devStatus={devStatus} />
-        </div>
+      {/* ── 바디 (미묘한 그라데이션 + 콘텐츠) ── */}
+      <div className={`flex flex-col flex-1 px-5 pt-4 pb-5 bg-gradient-to-b ${accentGradient} to-white`}>
+
+        {/* devStatus 뱃지 */}
+        {devStatus && devStatus !== 'Active' && devStatus !== 'stable' && (
+          <div className="mb-3">
+            <DevStatusBadge devStatus={devStatus} />
+          </div>
+        )}
 
         {/* 설명 */}
         <p className="text-[13px] text-slate-500 leading-relaxed">
           {description}
         </p>
-      </div>
 
-      {/* ── 태그 목록 ── */}
-      {tags.length > 0 && (
-        <div className="px-6 flex flex-wrap gap-1.5">
-          {tags.map((tag, idx) => (
-            <span
-              key={idx}
-              className={`text-[10px] font-bold px-2 py-0.5 border rounded-md uppercase tracking-wider ${accentTag}`}
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* ── Spacer ── */}
-      <div className="flex-1" />
-
-      {/* ── Solver 기여자 ── */}
-      {contributor && (
-        <div className="flex items-center justify-end gap-1 px-6 mt-4 text-[11px] text-slate-400">
-          <User size={10} />
-          <span>by <span className="font-medium text-slate-500">{contributor}</span></span>
-        </div>
-      )}
-
-      {/* ── 하단: 시작하기 ── */}
-      <div className={`mx-6 mt-3 mb-5 pt-4 border-t border-slate-100 flex items-center font-semibold text-[13px] ${
-        isRestricted ? 'text-slate-400' : accentCta
-      }`}>
-        {isRestricted ? (
-          <>
-            <Lock size={12} className="mr-1.5 opacity-60" />
-            <span className="opacity-60">관리자 전용</span>
-          </>
-        ) : (
-          <>
-            <span className="group-hover:opacity-80 transition-opacity">시작하기</span>
-            <ArrowRight
-              size={14}
-              className="ml-1.5 group-hover:translate-x-1.5 transition-transform duration-200"
-            />
-          </>
+        {/* 태그 */}
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {tags.map((tag, idx) => (
+              <span
+                key={idx}
+                className={`text-[10px] font-bold px-2 py-0.5 border rounded-md uppercase tracking-wider ${accentTag}`}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
         )}
+
+        <div className="flex-1" />
+
+        {/* contributor */}
+        {contributor && (
+          <div className="flex items-center justify-end gap-1 mt-4 text-[11px] text-slate-400">
+            <User size={10} />
+            <span>by <span className="font-medium text-slate-500">{contributor}</span></span>
+          </div>
+        )}
+
+        {/* CTA */}
+        <div className={`mt-3 pt-3 border-t border-slate-100 flex items-center font-semibold text-[13px] ${
+          isRestricted ? 'text-slate-400' : accentCta
+        }`}>
+          {isRestricted ? (
+            <>
+              <Lock size={12} className="mr-1.5 opacity-60" />
+              <span className="opacity-60">관리자 전용</span>
+            </>
+          ) : (
+            <>
+              <span className="group-hover:opacity-80 transition-opacity">시작하기</span>
+              <ArrowRight
+                size={14}
+                className="ml-1.5 group-hover:translate-x-1.5 transition-transform duration-200"
+              />
+            </>
+          )}
+        </div>
       </div>
     </motion.div>
   );
