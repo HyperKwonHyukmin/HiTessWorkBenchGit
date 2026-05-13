@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronsRight,
-  Cpu, Download, FileEdit, FileSpreadsheet, History, Loader2,
+  Cpu, Download, ExternalLink, FileEdit, FileSpreadsheet, History, Loader2,
   PackageX, RotateCcw, ShieldCheck, UploadCloud, X,
 } from 'lucide-react';
 
