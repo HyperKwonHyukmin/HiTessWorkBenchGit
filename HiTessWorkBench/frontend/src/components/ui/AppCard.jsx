@@ -7,14 +7,14 @@ import Badge from './Badge';
 
 // 카드 배경 그라데이션 (accent-50 tint → white, 세로)
 const ACCENT_CARD_BG = {
-  blue:    'from-blue-50/70',
-  violet:  'from-violet-50/70',
-  emerald: 'from-emerald-50/70',
-  purple:  'from-purple-50/70',
-  amber:   'from-amber-50/70',
-  indigo:  'from-indigo-50/70',
-  cyan:    'from-cyan-50/70',
-  teal:    'from-teal-50/70',
+  blue:    'from-blue-50/80',
+  violet:  'from-violet-50/80',
+  emerald: 'from-emerald-50/80',
+  purple:  'from-purple-50/80',
+  amber:   'from-amber-50/80',
+  indigo:  'from-indigo-50/80',
+  cyan:    'from-cyan-50/80',
+  teal:    'from-teal-50/80',
 };
 
 // 아이콘 박스 배경 (solid)
@@ -204,7 +204,7 @@ export default function AppCard({
         )}
 
         {/* CTA */}
-        <div className={`mt-3 pt-3 border-t border-slate-200/70 flex items-center font-semibold text-[13px] ${
+        <div className={`mt-3 pt-3 border-t border-slate-200/80 flex items-center font-semibold text-[13px] ${
           isRestricted ? 'text-slate-400' : accentCta
         }`}>
           {isRestricted ? (
