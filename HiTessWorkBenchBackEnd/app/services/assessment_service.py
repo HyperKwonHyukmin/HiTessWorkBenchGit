@@ -285,6 +285,7 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
     })
 
     # 3. 결과 파일 스캔 (다중 Case 및 대소문자 확장자 완벽 대응)
+    bdf_stem = os.path.splitext(os.path.basename(bdf_path))[0]
     json_count = 0
     for f in os.listdir(work_dir):
       full_path = os.path.join(work_dir, f)
@@ -306,12 +307,20 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
         result_data.update(csv_files)
 
       elif lower_f.endswith('.f06'):
-        name_without_ext = os.path.splitext(f)[0]
-        result_data[f"F06_{name_without_ext}"] = full_path
+        target_name = f"{bdf_stem}.f06"
+        target_path = os.path.join(work_dir, target_name)
+        if f != target_name:
+          os.rename(full_path, target_path)
+          full_path = target_path
+        result_data[f"F06_{bdf_stem}"] = full_path
 
       elif lower_f.endswith('.op2'):
-        name_without_ext = os.path.splitext(f)[0]
-        result_data[f"OP2_{name_without_ext}"] = full_path
+        target_name = f"{bdf_stem}.op2"
+        target_path = os.path.join(work_dir, target_name)
+        if f != target_name:
+          os.rename(full_path, target_path)
+          full_path = target_path
+        result_data[f"OP2_{bdf_stem}"] = full_path
 
     # BDF 원본도 결과로 함께 반환
     result_data["bdf"] = bdf_path

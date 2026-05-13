@@ -45,7 +45,7 @@ const FileDownloadRow = ({ label, path, icon: Icon, onClick, isResult }) => (
       <div className={`p-2 rounded-lg ${isResult ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}`}><Icon size={18} /></div>
       <div className="text-left">
         <p className="text-sm font-bold text-slate-700 uppercase">{label}</p>
-        <p className="text-[10px] text-slate-400 truncate max-w-[300px]">{path}</p>
+        <p className="text-[10px] text-slate-400 truncate max-w-[300px]">{extractFilename(path)}</p>
       </div>
     </div>
     <Download size={18} className="text-slate-300 group-hover:text-blue-600" />
@@ -120,7 +120,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
   };
   const filteredResultEntries = project?.result_info
     ? Object.entries(project.result_info).filter(([key]) =>
-        key !== 'CSV_Error' && !(isAssessment && key.startsWith('Excel_'))
+        key !== 'CSV_Error' && !key.startsWith('JSON_') && !(isAssessment && key.startsWith('Excel_'))
       )
     : [];
   const jsonFiles = filteredResultEntries.filter(([key]) => key.startsWith('JSON_'));
