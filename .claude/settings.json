@@ -3,5 +3,10 @@
     "allow": [
       "Bash"
     ]
+  },
+  "enabledPlugins": {
+    "claude-mem@thedotmack": true,
+    "agent-skills@addy-agent-skills": true,
+    "superpowers@superpowers-marketplace": true
   }
 }

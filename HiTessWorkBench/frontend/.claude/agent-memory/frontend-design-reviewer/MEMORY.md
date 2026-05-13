@@ -1,0 +1,2 @@
+- [CsvAuditPanel 리디자인](project_audit_panel.md) — v2 Hero-first 리디자인 완료, 사용자 피드백(텍스트 너무 작음·직관성 부족) 반영
+- [StageSummaryPanel 리디자인](project_stage_summary.md) — Hero+StageTrack+접힘토글, table-fixed로 폭 넘침 완전 해결
