@@ -4,22 +4,34 @@ import { Star, ArrowRight, User, Lock } from 'lucide-react';
 import Badge from './Badge';
 
 const ACCENT_HOVER = {
-  blue:    'hover:border-blue-300 hover:bg-blue-50/40',
-  violet:  'hover:border-violet-300 hover:bg-violet-50/40',
-  emerald: 'hover:border-emerald-300 hover:bg-emerald-50/40',
-  amber:   'hover:border-amber-300 hover:bg-amber-50/40',
+  blue:    'hover:border-blue-300 hover:bg-blue-50/30',
+  violet:  'hover:border-violet-300 hover:bg-violet-50/30',
+  emerald: 'hover:border-emerald-300 hover:bg-emerald-50/30',
+  amber:   'hover:border-amber-300 hover:bg-amber-50/30',
+  indigo:  'hover:border-indigo-300 hover:bg-indigo-50/30',
+  cyan:    'hover:border-cyan-300 hover:bg-cyan-50/30',
+  teal:    'hover:border-teal-300 hover:bg-teal-50/30',
+  purple:  'hover:border-purple-300 hover:bg-purple-50/30',
 };
 const ACCENT_TITLE = {
   blue:    'group-hover:text-blue-600',
   violet:  'group-hover:text-violet-600',
   emerald: 'group-hover:text-emerald-600',
   amber:   'group-hover:text-amber-600',
+  indigo:  'group-hover:text-indigo-600',
+  cyan:    'group-hover:text-cyan-600',
+  teal:    'group-hover:text-teal-600',
+  purple:  'group-hover:text-purple-600',
 };
 const ACCENT_ARROW = {
   blue:    'text-blue-500',
   violet:  'text-violet-500',
   emerald: 'text-emerald-500',
   amber:   'text-amber-500',
+  indigo:  'text-indigo-500',
+  cyan:    'text-cyan-500',
+  teal:    'text-teal-500',
+  purple:  'text-purple-500',
 };
 
 function DevStatusBadge({ devStatus }) {
@@ -55,10 +67,10 @@ export default function AppListRow({
       whileHover={{ x: 3, boxShadow: '0 4px 20px -4px rgba(0,37,84,0.10)', transition: { type: 'spring', stiffness: 400, damping: 30 } }}
       whileTap={{ scale: 0.995 }}
     >
-      {/* 아이콘 */}
-      <div className="shrink-0 relative w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center">
-        <div className={`absolute inset-0 ${iconBg} opacity-10 group-hover:opacity-20 transition-opacity`} />
-        <div className="relative">{icon}</div>
+      {/* 아이콘 — solid 색상 박스, 흰색 아이콘 */}
+      <div className={`shrink-0 relative w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center ${iconBg}`}>
+        <div className="relative text-white">{icon}</div>
+        <div className="absolute inset-0 bg-gradient-to-br from-white/15 to-transparent pointer-events-none" aria-hidden="true" />
       </div>
 
       {/* 제목 + 설명 */}

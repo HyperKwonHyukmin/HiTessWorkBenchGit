@@ -51,21 +51,32 @@ export default function ProductivityApps() {
   const activeApps = filtered.filter(item => !item.devStatus || item.devStatus === 'Active');
   const developingApps = filtered.filter(item => item.devStatus && item.devStatus !== 'Active');
 
+  const colorToAccent = (colorClass = '') => {
+    if (colorClass.includes('cyan'))    return 'cyan';
+    if (colorClass.includes('violet'))  return 'violet';
+    if (colorClass.includes('emerald')) return 'emerald';
+    if (colorClass.includes('indigo'))  return 'indigo';
+    if (colorClass.includes('teal'))    return 'teal';
+    if (colorClass.includes('amber'))   return 'amber';
+    if (colorClass.includes('purple'))  return 'purple';
+    return 'blue';
+  };
+
   const makeAppProps = (item) => {
     const IconComponent = item.icon;
-    const iconColorClass = item.color.replace('bg-', 'text-');
-    const isRestricted = (item.devStatus === 'Developing' || item.devStatus === 'Planned') && !getIsAdmin();
+    const accentColor   = colorToAccent(item.color);
+    const isRestricted  = (item.devStatus === 'Developing' || item.devStatus === 'Planned') && !getIsAdmin();
     return {
       app: {
         title: item.title,
         description: item.description,
-        icon: <IconComponent className={iconColorClass} size={viewMode === 'list' ? 22 : 28} />,
+        icon: <IconComponent className="text-white" size={viewMode === 'list' ? 20 : 24} />,
         iconBg: item.color,
         tags: item.tags,
         devStatus: item.devStatus,
         contributor: item.contributor,
       },
-      accentColor: 'amber',
+      accentColor,
       isRestricted,
       isFavorite: favorites.includes(item.title),
       onFavorite: () => toggleFavorite(item.title),
@@ -92,7 +103,7 @@ export default function ProductivityApps() {
       );
     }
     return (
-      <AnimatedGrid className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${dimmed ? 'opacity-60' : ''}`}>
+      <AnimatedGrid className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 ${dimmed ? 'opacity-60' : ''}`}>
         {apps.map(item => (
           <AppCard key={item.title} {...makeAppProps(item)} />
         ))}
