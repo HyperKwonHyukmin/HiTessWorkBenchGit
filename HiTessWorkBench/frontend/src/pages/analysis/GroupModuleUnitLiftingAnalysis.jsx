@@ -322,7 +322,8 @@ function ModuleStudioLauncher({
 // ── 메인 컴포넌트 ────────────────────────────────────────────
 export default function GroupModuleUnitLiftingAnalysis() {
   const { setCurrentMenu } = useNavigation();
-  const { currentUser, gmuHandoff, clearGmuHandoff } = useDashboard();
+  const { currentUser, gmuHandoff, clearGmuHandoff, startGlobalJob, globalJob } = useDashboard();
+  const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
   const { showToast } = useToast();
 
   // ── 파이프라인 상태 ──────────────────────────────────────
@@ -586,6 +587,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
         formData.append('source', 'Workbench');
         const res = await requestGroupModuleUnitFromPath(formData);
         setValidJobId(res.data.job_id);
+        startGlobalJob?.(res.data.job_id, GMU_MENU_NAME);
       } catch (e) {
         setValidating(false);
         setValidJobId(null);
@@ -594,6 +596,20 @@ export default function GroupModuleUnitLiftingAnalysis() {
         showToast(`BDF 검증 요청 실패 — ${detail}`, 'error');
       }
     })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 마운트: 진행 중인 BDF 검증 작업이 globalJob 에 있으면 복원 ──────
+  // 사용자가 다른 페이지로 이동 후 우측 하단 상황판 클릭으로 돌아왔을 때
+  // 빈 화면이 아니라 "검증 중" UI 를 그대로 보여준다.
+  useEffect(() => {
+    if (gmuHandoff?.bdfServerPath) return; // 핸드오프가 우선
+    if (!globalJob || globalJob.menu !== GMU_MENU_NAME) return;
+    if (globalJob.status !== 'Running' && globalJob.status !== 'Pending') return;
+    setValidJobId(globalJob.jobId);
+    setValidating(true);
+    setStepStatus('bdf-validation', 'running');
+    setValidProgress(globalJob.progress ?? 0);
+    setValidStatusMsg(globalJob.message ?? '서버 처리 중...');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── BDF 검증 ─────────────────────────────────────────────
@@ -618,6 +634,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
 
       const res = await requestGroupModuleUnit(formData);
       setValidJobId(res.data.job_id);
+      startGlobalJob?.(res.data.job_id, GMU_MENU_NAME);
     } catch (e) {
       console.error('[BDF 검증] 요청 실패:', e);
       setValidating(false);

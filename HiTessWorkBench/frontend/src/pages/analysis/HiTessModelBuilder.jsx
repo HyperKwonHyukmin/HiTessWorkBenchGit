@@ -2963,7 +2963,8 @@ export default function HiTessModelBuilder() {
               )}
               <button
                 onClick={handleRunModelBuilder}
-                disabled={isRunning}
+                disabled={isRunning || hasRunOnce}
+                title={hasRunOnce && !isRunning ? "다시 실행하려면 '전체 초기화' 후 진행하세요." : undefined}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl shadow-sm cursor-pointer"
               >
                 {isRunning
@@ -2974,7 +2975,9 @@ export default function HiTessModelBuilder() {
                         {elapsedSecs >= 60 ? `${Math.floor(elapsedSecs / 60)}분 ${elapsedSecs % 60}초` : `${elapsedSecs}초`}
                       </span>
                     </>
-                  : <><ChevronsRight size={16} /> Model Builder 실행</>
+                  : hasRunOnce
+                    ? <><CheckCircle2 size={15} /> 실행 완료 — 초기화 후 재실행</>
+                    : <><ChevronsRight size={16} /> Model Builder 실행</>
                 }
               </button>
               <button

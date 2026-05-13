@@ -16,7 +16,7 @@ import { useToast } from '../../contexts/ToastContext';
 import {
   ArrowLeft, Upload, Play, Database, RefreshCw, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Eye,
-  Terminal, FileText, FileOutput, Download, History
+  Terminal, FileText, FileOutput, Download, History, Maximize2, Minimize2
 } from 'lucide-react';
 import ChangelogModal from '../../components/ui/ChangelogModal';
 
@@ -25,6 +25,15 @@ export default function TrussAssessment() {
   const { showToast } = useToast();
   const dashboardCtx = useDashboard();
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [isResultFullscreen, setIsResultFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!isResultFullscreen) return;
+    const onKey = (e) => { if (e.key === 'Escape') setIsResultFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isResultFullscreen]);
+
   const startGlobalJob = dashboardCtx?.startGlobalJob || (() => {});
   const globalJob = dashboardCtx?.globalJob || null;
 
@@ -290,12 +299,25 @@ export default function TrussAssessment() {
         </div>
 
         <div className="flex-1 flex flex-col gap-6 min-h-0">
-          <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden relative">
+          <div className={
+            isResultFullscreen
+              ? 'fixed inset-0 z-[100] bg-white flex flex-col overflow-hidden animate-fade-in'
+              : 'flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden relative'
+          }>
             <div className="flex items-end border-b border-slate-200 bg-gradient-to-r from-emerald-900 to-emerald-700 px-4 pt-3 gap-1 shrink-0 z-10 overflow-x-auto custom-scrollbar">
               <TabButton active={activeTab === '3d'}     onClick={() => updateState({ activeTab: '3d' })}     icon={Eye}      label="3D Preview" />
               <TabButton active={activeTab === 'node'}   onClick={() => updateState({ activeTab: 'node' })}   icon={Database} label="Input Nodes" />
               <TabButton active={activeTab === 'member'} onClick={() => updateState({ activeTab: 'member' })} icon={Layers}   label="Input Elements" />
               {resultJsonData && <TabButton active={activeTab === 'result'} onClick={() => updateState({ activeTab: 'result' })} icon={FileText} label="Assessment Results" color="emerald" />}
+              {((activeTab === 'result' && resultJsonData) || isResultFullscreen) && (
+                <button
+                  onClick={() => setIsResultFullscreen(v => !v)}
+                  title={isResultFullscreen ? '원래 크기로 돌아가기' : '결과 테이블 전체 화면'}
+                  className="ml-auto mb-1.5 px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-bold text-emerald-100 hover:text-white hover:bg-white/15 cursor-pointer transition-colors"
+                >
+                  {isResultFullscreen ? <><Minimize2 size={14} /> 창 복귀</> : <><Maximize2 size={14} /> 전체 화면</>}
+                </button>
+              )}
             </div>
             <div className="flex-1 relative bg-white overflow-hidden">
               {activeTab === '3d'     && (isDataReady ? <AssessmentBdfViewer nodes={nodes} elements={elements} resultData={resultJsonData && activeResultCase ? resultJsonData[activeResultCase] : null} /> : <EmptyState msg="BDF 업로드 시 3D 모델이 렌더링됩니다." Icon={Box}/>)}
