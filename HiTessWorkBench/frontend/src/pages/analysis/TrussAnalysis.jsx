@@ -352,8 +352,14 @@ export default function TrussAnalysis() {
               </div>
             </div>
             <div className="p-5 space-y-4">
-              <UploadDropzone type="node" title="Node Data" file={nodeFile} rowCount={numNodes} onDrop={(e) => handleDrop(e, 'node')} onChange={(e) => handleFile(e.target.files[0], 'node')} />
-              <UploadDropzone type="member" title="Member Data" file={memberFile} rowCount={numMembers} onDrop={(e) => handleDrop(e, 'member')} onChange={(e) => handleFile(e.target.files[0], 'member')} />
+              <UploadDropzone type="node" title="Node Data" file={nodeFile} rowCount={numNodes} onDrop={(e) => handleDrop(e, 'node')} onChange={(e) => {
+                const files = Array.from(e.target.files).filter(f => f.name.endsWith('.csv'));
+                files.length >= 2 ? autoAssignFiles(files) : handleFile(files[0], 'node');
+              }} />
+              <UploadDropzone type="member" title="Member Data" file={memberFile} rowCount={numMembers} onDrop={(e) => handleDrop(e, 'member')} onChange={(e) => {
+                const files = Array.from(e.target.files).filter(f => f.name.endsWith('.csv'));
+                files.length >= 2 ? autoAssignFiles(files) : handleFile(files[0], 'member');
+              }} />
               <p className="text-[10px] text-slate-400 text-center">
                 💡 두 파일을 동시에 드래그하면 <span className="font-bold text-slate-500">NODE / WAY(MEMBER)</span> 파일명을 인식해 자동 배정합니다.
               </p>
@@ -704,7 +710,7 @@ function UploadDropzone({ type, title, file, rowCount, onDrop, onChange }) {
   const isUploaded = !!file;
   return (
     <div onDrop={onDrop} onDragOver={e => e.preventDefault()} onClick={() => inputRef.current?.click()} className={`relative p-4 rounded-xl border-2 border-dashed cursor-pointer transition-all ${isUploaded ? 'border-brand-accent/50 bg-green-50/30' : 'border-slate-300 hover:border-blue-400 hover:bg-blue-50/50'}`}>
-      <input type="file" accept=".csv" className="hidden" ref={inputRef} onChange={onChange} />
+      <input type="file" accept=".csv" multiple className="hidden" ref={inputRef} onChange={onChange} />
       <div className="flex items-center gap-4">
         <div className={`p-3 rounded-lg ${isUploaded ? 'bg-brand-accent/20 text-brand-accent' : 'bg-slate-100 text-slate-400'}`}>{isUploaded ? <FileSpreadsheet size={24} /> : <Upload size={24} />}</div>
         <div className="flex-1"><h4 className="text-sm font-bold text-slate-700">{title}</h4><p className="text-xs text-slate-500 truncate">{isUploaded ? file.name : 'Click to upload'}</p></div>
