@@ -3,7 +3,7 @@ import { API_BASE_URL } from '../config';
 import { getAuthHeaders } from '../utils/auth';
 
 /** 사용자 해석 이력 조회 */
-export const getAnalysisHistory = (employeeId, skip = 0, limit = 200) =>
+export const getAnalysisHistory = (employeeId, skip = 0, limit = 100000) =>
   axios.get(`${API_BASE_URL}/api/analysis/history/${employeeId}`, { params: { skip, limit }, headers: getAuthHeaders() });
 
 /** 전체 해석 이력 조회 (관리자용) — 통계 집계 위해 사실상 전량 로드 */
