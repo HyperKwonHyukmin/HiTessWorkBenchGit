@@ -128,7 +128,13 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
         return true;
       })
     : [];
-  const jsonFiles = filteredResultEntries.filter(([key]) => key.startsWith('JSON_'));
+  // JSON_* 키는 filteredResultEntries 에서 이미 제외되므로,
+  // Excel 변환 대상은 원본 result_info 에서 직접 추출한다 (Truss Assessment 전용).
+  const jsonFiles = isAssessment && project?.result_info
+    ? Object.entries(project.result_info).filter(
+        ([key, path]) => key.startsWith('JSON_') && typeof path === 'string'
+      )
+    : [];
 
   return (
     <Modal
@@ -161,10 +167,14 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
             </button>
           )}
 
-          {/* Truss Assessment 결과 보고서 저장 */}
+          {/* Truss Assessment 결과 보고서 저장 (DRM 우회 — 백엔드가 메모리에서 XLSX 생성) */}
           {isAssessment && project.status === 'Success' && jsonFiles.length > 0 && !filesMissing && (
             <div className="mb-6">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">결과 보고서 저장</h3>
+              <p className="text-xs text-slate-500 mb-3">
+                아래 버튼을 클릭하면 JSON 결과를 기반으로 Excel 파일을 생성하여 다운로드합니다.<br/>
+                <span className="text-slate-400">시트 구성: Load Case별 Summary / Element Assessment / Distribution Panel / Side Support</span>
+              </p>
               <div className="space-y-2">
                 {jsonFiles.map(([key, jsonPath]) => {
                   const label = key.replace(/^JSON_/i, '');
@@ -184,7 +194,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
                         </div>
                         <div className="text-left">
                           <p className="text-sm font-bold text-slate-700">{label}.xlsx</p>
-                          <p className="text-[10px] text-slate-400">{isLoading ? 'Excel 파일 생성 중...' : '클릭하여 Excel 다운로드'}</p>
+                          <p className="text-[10px] text-slate-400">{isLoading ? 'DRM 문제로 XLSX 파일 직접 생성 중..' : '클릭하여 Excel 다운로드'}</p>
                         </div>
                       </div>
                       <Download size={18} className={`transition-colors ${isLoading ? 'text-emerald-400' : 'text-slate-300 group-hover:text-emerald-600'}`}/>
