@@ -15,6 +15,9 @@ app.setName("HiTESS WorkBench");
 
 let mainWindow;
 let viewerWindow = null;
+// 현재 viewerWindow 에 로드된 viewerId — 다른 Studio 로 전환 시 reload 가 아니라 loadFile 을
+// 다시 호출해야 한다 (reload 는 이전 URL 을 유지하므로 잘못된 Studio 가 보이는 버그가 있음).
+let viewerCurrentId = null;
 // viewer:getInitialFolder 가 호출될 때 반환할 절대경로(보통 jsonPath 의 디렉터리)
 let viewerInitialFolder = null;
 // viewer:runUnitStructural 가 백엔드에 전달할 GroupModuleUnit Analysis.id (DB record).
@@ -676,7 +679,14 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
 
   if (viewerWindow && !viewerWindow.isDestroyed()) {
     viewerWindow.focus();
-    viewerWindow.webContents.reload();  // 새 initialFolder 로 갱신
+    if (viewerCurrentId !== viewerId) {
+      // 다른 Studio 로 전환 — 새 index.html 로드 (reload 는 이전 URL 유지하므로 사용 X)
+      viewerWindow.loadFile(indexPath);
+      viewerCurrentId = viewerId;
+    } else {
+      // 같은 Studio 재오픈 — initialFolder 등 갱신을 위해 reload
+      viewerWindow.webContents.reload();
+    }
     return { ok: true, reused: true };
   }
 
@@ -696,6 +706,7 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
   });
 
   viewerWindow.loadFile(indexPath);
+  viewerCurrentId = viewerId;
 
   viewerWindow.once("ready-to-show", () => {
     // 화면 우측 절반에 배치 — WorkBench 본체(좌측)와 Studio(우측)를 동시에 볼 수 있도록.
@@ -728,7 +739,7 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
     }
   });
 
-  viewerWindow.on("closed", () => { viewerWindow = null; });
+  viewerWindow.on("closed", () => { viewerWindow = null; viewerCurrentId = null; });
 
   // 개발 모드에서는 viewer 창 디버깅 도구 자동 오픈
   if (!app.isPackaged) {
@@ -1173,10 +1184,11 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
   }
 });
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   // 외부 회사 네트워크 등 시스템 프록시가 설정된 환경에서도 정상 동작하도록
   // 시스템 프록시 설정을 자동으로 적용
-  await session.defaultSession.setProxy({ mode: 'system' });
+  session.defaultSession.setProxy({ mode: 'system' })
+    .catch((e) => console.warn("[proxy] system proxy setup failed:", e?.message || e));
 
   // CSP 헤더 설정 — XSS 방어
   // connect-src는 사용자가 설정한 내부망 서버 URL을 허용해야 하므로 http:/https:/ws: 전체 허용
