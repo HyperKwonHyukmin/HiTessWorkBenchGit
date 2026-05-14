@@ -1,12 +1,24 @@
-import React, { useState, useEffect, Fragment } from 'react';
-import { Megaphone, Plus, ChevronRight, Pin, X, Edit2, Trash2, Bold, Italic, List, Link, Paperclip } from 'lucide-react';
+import React, { useState, useEffect, Fragment, useMemo } from 'react';
+import { Megaphone, Plus, ChevronRight, Pin, X, Edit2, Trash2, Bold, Italic, List, Link, Paperclip, CalendarDays, Inbox } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { getNotices, createNotice, updateNotice, deleteNotice } from '../../api/admin';
 import GuideButton from '../../components/ui/GuideButton';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
-import NoticeDetailModal from '../../components/modals/NoticeDetailModal';
+import NoticeDetailModal, { NOTICE_TYPE_STYLE } from '../../components/modals/NoticeDetailModal';
 import { useToast } from '../../contexts/ToastContext';
+
+const formatDate = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\.\s?/g, '-').replace(/-$/, '');
+};
+
+const getPreview = (content, max = 90) => {
+  if (!content) return '';
+  const plain = String(content).replace(/\s+/g, ' ').trim();
+  return plain.length > max ? plain.slice(0, max) + '…' : plain;
+};
 
 export default function NoticeBoard() {
   const { showToast } = useToast();
@@ -84,6 +96,9 @@ export default function NoticeBoard() {
     } catch (err) { showToast('저장 실패: 서버 연결을 확인하세요.', 'error'); console.error(err); }
   };
 
+  const pinnedNotices = useMemo(() => notices.filter(n => n.is_pinned), [notices]);
+  const regularNotices = useMemo(() => notices.filter(n => !n.is_pinned), [notices]);
+
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
       <PageHeader
@@ -103,25 +118,120 @@ export default function NoticeBoard() {
         }
       />
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex bg-slate-50 px-6 py-4 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
-          <div className="w-20 text-center">Type</div>
-          <div className="flex-1">Title</div>
-          <div className="w-32 text-center">Date</div>
+      {/* ── Pinned 하이라이트 ── */}
+      {pinnedNotices.length > 0 && (
+        <section className="mb-8">
+          <div className="flex items-center gap-2 mb-3 px-1">
+            <Pin size={14} className="text-red-500 fill-red-100" />
+            <h2 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Pinned</h2>
+            <span className="text-[11px] font-semibold text-slate-400 tabular-nums">({pinnedNotices.length})</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {pinnedNotices.map(notice => {
+              const style = NOTICE_TYPE_STYLE[notice.type] || NOTICE_TYPE_STYLE.Notice;
+              return (
+                <div
+                  key={notice.id}
+                  onClick={() => openViewModal(notice)}
+                  className="group relative bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:-translate-y-0.5 hover:border-slate-300 transition-all cursor-pointer overflow-hidden"
+                >
+                  {/* 좌측 컬러 사이드 바 */}
+                  <div className={`absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b ${style.bar}`} />
+
+                  <div className="pl-6 pr-5 py-5">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${style.chip}`}>
+                        {style.label}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                        <Pin size={9} className="fill-red-500" />
+                        고정
+                      </span>
+                    </div>
+
+                    <h3 className="font-bold text-slate-800 text-[15px] leading-snug group-hover:text-blue-600 transition-colors line-clamp-2 mb-2">
+                      {notice.title}
+                    </h3>
+
+                    {notice.content && (
+                      <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 mb-3">
+                        {getPreview(notice.content, 110)}
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 font-mono tabular-nums">
+                        <CalendarDays size={11} />
+                        {formatDate(notice.created_at)}
+                      </span>
+                      <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ── 전체 공지 리스트 ── */}
+      <section>
+        <div className="flex items-center gap-2 mb-3 px-1">
+          <Megaphone size={14} className="text-slate-400" />
+          <h2 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">All Notices</h2>
+          <span className="text-[11px] font-semibold text-slate-400 tabular-nums">({regularNotices.length})</span>
         </div>
-        <div className="divide-y divide-slate-100">
-          {notices.map(notice => (
-            <div key={notice.id} onClick={() => openViewModal(notice)} className="flex px-6 py-4 items-center hover:bg-slate-50 transition-colors cursor-pointer group">
-              <div className="w-20 flex justify-center">
-                {notice.is_pinned ? <Pin size={16} className="text-red-500 fill-red-100" /> : <span className="px-2.5 py-1 rounded text-[10px] font-bold border bg-slate-100 text-slate-600 border-slate-200">{notice.type}</span>}
-              </div>
-              <div className="flex-1 px-4 font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{notice.title}</div>
-              <div className="w-32 text-center text-sm text-slate-400 font-mono">{new Date(notice.created_at).toLocaleDateString()}</div>
-              <ChevronRight size={18} className="text-slate-300 group-hover:text-blue-500" />
-            </div>
-          ))}
-        </div>
-      </div>
+
+        {regularNotices.length === 0 && pinnedNotices.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-dashed border-slate-300 py-16 flex flex-col items-center justify-center text-slate-400">
+            <Inbox size={36} className="mb-2 opacity-50" />
+            <p className="text-sm font-semibold">등록된 공지사항이 없습니다.</p>
+            <p className="text-xs mt-1">관리자가 새 공지를 작성하면 이곳에 표시됩니다.</p>
+          </div>
+        ) : regularNotices.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 py-10 text-center text-sm text-slate-400">
+            고정 공지 외에 표시할 공지가 없습니다.
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
+            {regularNotices.map(notice => {
+              const style = NOTICE_TYPE_STYLE[notice.type] || NOTICE_TYPE_STYLE.Notice;
+              return (
+                <div
+                  key={notice.id}
+                  onClick={() => openViewModal(notice)}
+                  className="relative flex items-center gap-4 px-6 py-4 hover:bg-slate-50/70 transition-colors cursor-pointer group"
+                >
+                  {/* 좌측 hover 시 표시되는 컬러 바 */}
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${style.bar} opacity-0 group-hover:opacity-100 transition-opacity`} />
+
+                  <span className={`inline-flex items-center justify-center w-20 shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold border ${style.chip}`}>
+                    {style.label}
+                  </span>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-slate-700 group-hover:text-blue-600 transition-colors truncate">
+                      {notice.title}
+                    </div>
+                    {notice.content && (
+                      <p className="text-xs text-slate-400 mt-0.5 truncate">
+                        {getPreview(notice.content, 120)}
+                      </p>
+                    )}
+                  </div>
+
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-400 font-mono tabular-nums shrink-0">
+                    <CalendarDays size={12} className="opacity-70" />
+                    {formatDate(notice.created_at)}
+                  </span>
+                  <ChevronRight size={18} className="text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all shrink-0" />
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <Transition appear show={isWriteModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsWriteModalOpen(false)}>

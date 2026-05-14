@@ -1,51 +1,61 @@
 /// <summary>
 /// React 애플리케이션의 최상위 라우터(Router) 및 상태 관리자입니다.
 /// </summary>
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import axios from 'axios';
 import { version as CLIENT_VERSION } from '../package.json';
 import { checkVersion } from './api/auth';
 import { reportVersionUpdate, callLogout } from './api/activity';
 import SplashScreen from './pages/auth/SplashScreen';
 import LoginScreen from './pages/auth/LoginScreen';
-import Dashboard from './pages/dashboard/Dashboard';
-import MyProjects from './pages/analysis/MyProjects';
-import NewAnalysis from './pages/analysis/NewAnalysis';
 import Layout from './components/layout/Layout';
 import { Wand2 } from 'lucide-react';
-import SimpleBeamAssessmentPage from './pages/analysis/SimpleBeamAssessmentPage';
 import { DashboardProvider } from './contexts/DashboardContext';
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
-import InteractiveApps from './pages/analysis/InteractiveApps';
-import NoticeBoard from './pages/Support/NoticeBoard';
-import UserGuide from './pages/Support/UserGuide';
-import TrussAnalysis from './pages/analysis/TrussAnalysis';
-import TrussAssessment from './pages/analysis/TrussAssessment';
-import UserRequests from './pages/Support/UserRequests';
-import DownloadCenter from './pages/Support/DownloadCenter';
-import UserManagement from './pages/Administration/UserManagement';
-import SystemSettings from './pages/Administration/SystemSettings';
-import AnalysisManagement from './pages/Administration/AnalysisManagement';
-import AiAssistantHub from './pages/AI/AiAssistantHub';
-import AcademicApps from './pages/analysis/AcademicApps';
-import BdfScanner from './pages/analysis/BdfScanner';
-import ParametricApps from './pages/analysis/ParametricApps';
-import ProductivityApps from './pages/analysis/ProductivityApps';
-import MastPostAssessment from './pages/analysis/MastPostAssessment';
-import JibRestAssessment from './pages/analysis/JibRestAssessment';
-import ColumnBucklingCalculator from './pages/analysis/ColumnBucklingCalculator';
-import SectionPropertyCalculator from './pages/analysis/SectionPropertyCalculator';
-import PlateStructureAnalysis from './pages/analysis/PlateStructureAnalysis';
-import ApiApps from './pages/Administration/ApiApps';
-import DeveloperRunbooks from './pages/Administration/DeveloperRunbooks';
-import HiTessModelBuilder from './pages/analysis/HiTessModelBuilder';
-import GroupModuleUnitLiftingAnalysis from './pages/analysis/GroupModuleUnitLiftingAnalysis';
-import F06ParserPage from './pages/analysis/F06ParserPage';
 import UpdateModal from './components/UpdateModal';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8시간 미활동 시 자동 로그아웃
+
+const Dashboard = lazy(() => import('./pages/dashboard/Dashboard'));
+const MyProjects = lazy(() => import('./pages/analysis/MyProjects'));
+const NewAnalysis = lazy(() => import('./pages/analysis/NewAnalysis'));
+const SimpleBeamAssessmentPage = lazy(() => import('./pages/analysis/SimpleBeamAssessmentPage'));
+const InteractiveApps = lazy(() => import('./pages/analysis/InteractiveApps'));
+const NoticeBoard = lazy(() => import('./pages/Support/NoticeBoard'));
+const UserGuide = lazy(() => import('./pages/Support/UserGuide'));
+const TrussAnalysis = lazy(() => import('./pages/analysis/TrussAnalysis'));
+const TrussAssessment = lazy(() => import('./pages/analysis/TrussAssessment'));
+const UserRequests = lazy(() => import('./pages/Support/UserRequests'));
+const DownloadCenter = lazy(() => import('./pages/Support/DownloadCenter'));
+const UserManagement = lazy(() => import('./pages/Administration/UserManagement'));
+const SystemSettings = lazy(() => import('./pages/Administration/SystemSettings'));
+const AnalysisManagement = lazy(() => import('./pages/Administration/AnalysisManagement'));
+const AiAssistantHub = lazy(() => import('./pages/AI/AiAssistantHub'));
+const AcademicApps = lazy(() => import('./pages/analysis/AcademicApps'));
+const BdfScanner = lazy(() => import('./pages/analysis/BdfScanner'));
+const ParametricApps = lazy(() => import('./pages/analysis/ParametricApps'));
+const ProductivityApps = lazy(() => import('./pages/analysis/ProductivityApps'));
+const MastPostAssessment = lazy(() => import('./pages/analysis/MastPostAssessment'));
+const JibRestAssessment = lazy(() => import('./pages/analysis/JibRestAssessment'));
+const ColumnBucklingCalculator = lazy(() => import('./pages/analysis/ColumnBucklingCalculator'));
+const SectionPropertyCalculator = lazy(() => import('./pages/analysis/SectionPropertyCalculator'));
+const PlateStructureAnalysis = lazy(() => import('./pages/analysis/PlateStructureAnalysis'));
+const ApiApps = lazy(() => import('./pages/Administration/ApiApps'));
+const DeveloperRunbooks = lazy(() => import('./pages/Administration/DeveloperRunbooks'));
+const HiTessModelBuilder = lazy(() => import('./pages/analysis/HiTessModelBuilder'));
+const GroupModuleUnitLiftingAnalysis = lazy(() => import('./pages/analysis/GroupModuleUnitLiftingAnalysis'));
+const F06ParserPage = lazy(() => import('./pages/analysis/F06ParserPage'));
+
+const PageFallback = () => (
+  <div className="h-full min-h-[360px] flex items-center justify-center text-slate-400 text-sm">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      <span>화면을 불러오는 중입니다...</span>
+    </div>
+  </div>
+);
 
 function AppInner() {
   const [appState, setAppState]           = useState(APP_STATE.SPLASH);
@@ -307,7 +317,9 @@ function AppInner() {
           canGoBack={canGoBack}
           canGoForward={canGoForward}
         >
-          {renderPage()}
+          <Suspense fallback={<PageFallback />}>
+            {renderPage()}
+          </Suspense>
         </Layout>
       )}
     </DashboardProvider>

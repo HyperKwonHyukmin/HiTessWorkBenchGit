@@ -4,9 +4,9 @@ export default function SplashScreen({ onFinish }) {
   const [loadingText, setLoadingText] = useState('Initializing Core Systems...');
 
   useEffect(() => {
-    const timer1 = setTimeout(() => setLoadingText('Loading Solver Engines...'), 1000);
-    const timer2 = setTimeout(() => setLoadingText('Connecting to Local Database...'), 2000);
-    const timer3 = setTimeout(() => onFinish(), 3000);
+    const timer1 = setTimeout(() => setLoadingText('Loading Interface...'), 250);
+    const timer2 = setTimeout(() => setLoadingText('Checking Session...'), 500);
+    const timer3 = setTimeout(() => onFinish(), 800);
 
     return () => {
       clearTimeout(timer1);
@@ -38,7 +38,7 @@ export default function SplashScreen({ onFinish }) {
 
         {/* Loading Bar (색상도 테마에 맞춤) */}
         <div className="w-64 h-1 bg-slate-700 rounded-full overflow-hidden">
-          <div className="h-full bg-brand-accent animate-[width_3s_ease-in-out_forwards]" style={{ width: '100%' }}></div>
+          <div className="h-full bg-brand-accent animate-[width_800ms_ease-in-out_forwards]" style={{ width: '100%' }}></div>
         </div>
         
         {/* Dynamic Loading Text */}

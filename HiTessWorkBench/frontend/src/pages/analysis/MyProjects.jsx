@@ -5,7 +5,8 @@ import {
   Search, Filter, Download, RefreshCw,
   ChevronRight, ChevronLeft, Box,
   CheckCircle2, XCircle, AlertCircle,
-  FileCode, Database, FileOutput, Eye, FileX
+  FileCode, Database, FileOutput, Eye, FileX,
+  TrendingUp, CalendarClock, Award, BarChart3, Minus
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
@@ -307,6 +308,44 @@ export default function MyProjects() {
     return map;
   }, [projects]);
 
+  // ── 통계 집계 ──
+  const stats = useMemo(() => {
+    const total = projects.length;
+    const success = projects.filter(p => p.status === 'Success').length;
+    const successRate = total > 0 ? Math.round((success / total) * 100) : 0;
+
+    const now = Date.now();
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+    const prevSevenDaysAgo = now - 14 * 24 * 60 * 60 * 1000;
+    const thisWeek = projects.filter(p => new Date(p.created_at).getTime() >= sevenDaysAgo).length;
+    const prevWeek = projects.filter(p => {
+      const t = new Date(p.created_at).getTime();
+      return t >= prevSevenDaysAgo && t < sevenDaysAgo;
+    }).length;
+    const weekDelta = thisWeek - prevWeek;
+
+    // 모듈별 카운트
+    const moduleCount = new Map();
+    for (const p of projects) {
+      const key = p.program_name || 'Unknown';
+      moduleCount.set(key, (moduleCount.get(key) ?? 0) + 1);
+    }
+    const moduleEntries = [...moduleCount.entries()].sort((a, b) => b[1] - a[1]);
+    const topModule = moduleEntries[0]?.[0] ?? null;
+    const topModuleCount = moduleEntries[0]?.[1] ?? 0;
+
+    return { total, success, successRate, thisWeek, weekDelta, topModule, topModuleCount, moduleEntries };
+  }, [projects]);
+
+  const MODULE_BAR_COLORS = [
+    'from-blue-400 to-blue-600',
+    'from-emerald-400 to-emerald-600',
+    'from-violet-400 to-violet-600',
+    'from-amber-400 to-amber-600',
+    'from-rose-400 to-rose-600',
+    'from-cyan-400 to-cyan-600',
+  ];
+
   const filteredProjects = projects.filter(p => {
     const matchesSearch = !searchTerm ||
       (p.project_name && p.project_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -328,6 +367,148 @@ export default function MyProjects() {
         subtitle="구조 해석 수행 이력 및 결과 파일을 관리합니다."
         accentColor="blue"
       />
+
+      {/* ── 통계 요약 (KPI + 모듈 분포) ── */}
+      {!loading && stats.total > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 animate-fade-in-up">
+          {/* KPI 카드 4개 — lg에서는 2x2 그리드, 좌측 2/3 영역 */}
+          <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* 총 해석 */}
+            <div className="relative bg-white rounded-xl border border-slate-200 shadow-sm p-4 overflow-hidden">
+              <div className="absolute -right-3 -top-3 w-16 h-16 bg-blue-50 rounded-full opacity-60" />
+              <div className="relative flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">총 해석</span>
+                <div className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
+                  <Database size={14} />
+                </div>
+              </div>
+              <div className="relative">
+                <span className="text-2xl font-extrabold text-slate-800 tabular-nums">{stats.total}</span>
+                <span className="text-xs font-bold text-slate-400 ml-1">건</span>
+              </div>
+            </div>
+
+            {/* 성공률 */}
+            <div className="relative bg-white rounded-xl border border-slate-200 shadow-sm p-4 overflow-hidden">
+              <div className="absolute -right-3 -top-3 w-16 h-16 bg-emerald-50 rounded-full opacity-60" />
+              <div className="relative flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">성공률</span>
+                <div className="p-1.5 bg-emerald-100 text-emerald-600 rounded-lg">
+                  <CheckCircle2 size={14} />
+                </div>
+              </div>
+              <div className="relative flex items-baseline gap-2">
+                <span className="text-2xl font-extrabold text-slate-800 tabular-nums">{stats.successRate}</span>
+                <span className="text-sm font-bold text-slate-400">%</span>
+              </div>
+              <div className="relative mt-1.5 h-1 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full transition-all"
+                  style={{ width: `${stats.successRate}%` }}
+                />
+              </div>
+            </div>
+
+            {/* 이번 주 */}
+            <div className="relative bg-white rounded-xl border border-slate-200 shadow-sm p-4 overflow-hidden">
+              <div className="absolute -right-3 -top-3 w-16 h-16 bg-violet-50 rounded-full opacity-60" />
+              <div className="relative flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">이번 주</span>
+                <div className="p-1.5 bg-violet-100 text-violet-600 rounded-lg">
+                  <CalendarClock size={14} />
+                </div>
+              </div>
+              <div className="relative flex items-baseline gap-2">
+                <span className="text-2xl font-extrabold text-slate-800 tabular-nums">{stats.thisWeek}</span>
+                <span className="text-xs font-bold text-slate-400">건</span>
+              </div>
+              <div className="relative mt-1.5 inline-flex items-center gap-0.5 text-[10px] font-bold">
+                {stats.weekDelta > 0 ? (
+                  <span className="text-emerald-600 inline-flex items-center gap-0.5">
+                    <TrendingUp size={10} /> +{stats.weekDelta} vs 지난주
+                  </span>
+                ) : stats.weekDelta < 0 ? (
+                  <span className="text-rose-500 inline-flex items-center gap-0.5">
+                    <TrendingUp size={10} className="rotate-180" /> {stats.weekDelta} vs 지난주
+                  </span>
+                ) : (
+                  <span className="text-slate-400 inline-flex items-center gap-0.5">
+                    <Minus size={10} /> 변동 없음
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* 즐겨쓴 모듈 */}
+            <div className="relative bg-white rounded-xl border border-slate-200 shadow-sm p-4 overflow-hidden">
+              <div className="absolute -right-3 -top-3 w-16 h-16 bg-amber-50 rounded-full opacity-60" />
+              <div className="relative flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">즐겨쓴 모듈</span>
+                <div className="p-1.5 bg-amber-100 text-amber-600 rounded-lg">
+                  <Award size={14} />
+                </div>
+              </div>
+              <div className="relative">
+                <p className="text-sm font-bold text-slate-800 truncate" title={stats.topModule || '—'}>
+                  {stats.topModule || '—'}
+                </p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5 tabular-nums">
+                  {stats.topModuleCount}회 사용
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 모듈별 사용 분포 — 우측 1/3 영역 */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <BarChart3 size={14} className="text-slate-400" />
+                <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">모듈별 사용</h3>
+              </div>
+              <span className="text-[10px] font-bold text-slate-400 tabular-nums">
+                Top {Math.min(stats.moduleEntries.length, 5)}
+              </span>
+            </div>
+
+            {stats.moduleEntries.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-4">집계할 데이터가 없습니다.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {stats.moduleEntries.slice(0, 5).map(([name, count], idx) => {
+                  const pct = stats.total > 0 ? Math.round((count / stats.total) * 100) : 0;
+                  const color = MODULE_BAR_COLORS[idx % MODULE_BAR_COLORS.length];
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => setProgramFilter(PROGRAM_FILTERS.includes(name) ? name : 'All')}
+                      className="w-full group text-left cursor-pointer"
+                      title={`${name} — ${count}건 (${pct}%) — 클릭 시 필터`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-bold text-slate-600 truncate group-hover:text-blue-600 transition-colors">
+                          {name}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400 tabular-nums shrink-0 ml-2">
+                          {count}
+                          <span className="text-slate-300 ml-1">({pct}%)</span>
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full bg-gradient-to-r ${color} rounded-full transition-all duration-500 group-hover:opacity-80`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 검색 / 필터 영역 */}
       <div className="flex flex-wrap items-center gap-2 mb-6 animate-fade-in-up">
