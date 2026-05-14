@@ -9,6 +9,95 @@ import {
   Users, BarChart3, Tag, Database, Layers, Power, AlertTriangle,
   ClipboardList, Download, RefreshCw, Filter
 } from 'lucide-react';
+
+// ── sparkline buffer 길이 (3초 polling × 30 = 약 90초 윈도우) ──
+const SPARK_LEN = 30;
+
+// ── 도넛 게이지 (SVG) ──
+const DonutGauge = ({ pct, size = 88, stroke = 9, color = 'blue' }) => {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const safe = Math.max(0, Math.min(100, pct || 0));
+  const dash = (safe / 100) * c;
+  const palette = {
+    blue:    { track: '#e2e8f0', fill: 'url(#g-blue)' },
+    emerald: { track: '#e2e8f0', fill: 'url(#g-emerald)' },
+    amber:   { track: '#e2e8f0', fill: 'url(#g-amber)' },
+    red:     { track: '#fee2e2', fill: 'url(#g-red)' },
+  };
+  const p = palette[color] || palette.blue;
+  return (
+    <svg width={size} height={size} className="shrink-0" aria-hidden="true">
+      <defs>
+        <linearGradient id="g-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#60a5fa" />
+          <stop offset="100%" stopColor="#2563eb" />
+        </linearGradient>
+        <linearGradient id="g-emerald" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#34d399" />
+          <stop offset="100%" stopColor="#059669" />
+        </linearGradient>
+        <linearGradient id="g-amber" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#fbbf24" />
+          <stop offset="100%" stopColor="#d97706" />
+        </linearGradient>
+        <linearGradient id="g-red" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#f87171" />
+          <stop offset="100%" stopColor="#dc2626" />
+        </linearGradient>
+      </defs>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={p.track} strokeWidth={stroke} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke={p.fill}
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeDasharray={`${dash} ${c}`}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        style={{ transition: 'stroke-dasharray 0.6s ease' }}
+      />
+    </svg>
+  );
+};
+
+// ── 미니 sparkline (SVG path, 영역 채움) ──
+const Sparkline = ({ values, height = 36, width = 120, color = '#3b82f6', max = 100 }) => {
+  if (!values || values.length < 2) {
+    return (
+      <div className="flex items-center justify-center text-[10px] font-bold text-slate-300" style={{ width, height }}>
+        수집 중…
+      </div>
+    );
+  }
+  const ceiling = Math.max(max, ...values, 1);
+  const stepX = width / (SPARK_LEN - 1);
+  // 좌측을 빈 공간으로 두고 우측부터 채우기
+  const offset = SPARK_LEN - values.length;
+  const points = values.map((v, i) => {
+    const x = (i + offset) * stepX;
+    const y = height - (v / ceiling) * (height - 2) - 1;
+    return [x, y];
+  });
+  const linePath = points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L${points[points.length - 1][0].toFixed(1)},${height} L${points[0][0].toFixed(1)},${height} Z`;
+  const last = points[points.length - 1];
+  return (
+    <svg width={width} height={height} className="block" aria-hidden="true">
+      <defs>
+        <linearGradient id={`spark-${color.replace('#', '')}`} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={color} stopOpacity="0.32" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={`url(#spark-${color.replace('#', '')})`} />
+      <path d={linePath} fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={last[0]} cy={last[1]} r={2.2} fill={color} />
+    </svg>
+  );
+};
 import { getSystemStatus, getQueueStatus, getUsers, getMaintenanceMode, setMaintenanceMode } from '../../api/admin';
 import PageHeader from '../../components/ui/PageHeader';
 import { getAllAnalysisHistory } from '../../api/analysis';
@@ -30,6 +119,11 @@ export default function SystemSettings() {
     latency_ms: 0
   });
   const [queue, setQueue] = useState({ running: 0, pending: 0, limit: 5 });
+
+  // ── sparkline 시계열 (ring buffer) ──
+  const [cpuHistory, setCpuHistory] = useState([]);
+  const [memHistory, setMemHistory] = useState([]);
+  const [queueHistory, setQueueHistory] = useState([]);
 
   // 유지보수 모드
   const [maintenanceMode, setMaintenanceModeState] = useState(false);
@@ -58,6 +152,16 @@ export default function SystemSettings() {
         ]);
         setSysStats(statusRes.data);
         setQueue(queueRes.data);
+
+        // ── sparkline 버퍼 업데이트 ──
+        const cpu = Number(statusRes.data?.cpu_usage) || 0;
+        const memPctNow = statusRes.data?.memory_total_gb > 0
+          ? (statusRes.data.memory_used_gb / statusRes.data.memory_total_gb) * 100
+          : 0;
+        const running = Number(queueRes.data?.running) || 0;
+        setCpuHistory(h => [...h, cpu].slice(-SPARK_LEN));
+        setMemHistory(h => [...h, memPctNow].slice(-SPARK_LEN));
+        setQueueHistory(h => [...h, running].slice(-SPARK_LEN));
       } catch {
         setSysStats(prev => ({ ...prev, db_status: 'Disconnected', latency_ms: 0 }));
       }
@@ -161,15 +265,6 @@ export default function SystemSettings() {
   const diskPct = sysStats.disk_total_gb   > 0 ? (sysStats.disk_used_gb   / sysStats.disk_total_gb)   * 100 : 0;
   const queuePct = (queue.running / queue.limit) * 100;
 
-  const ResourceBar = ({ pct, warn = 80 }) => (
-    <div className="w-full bg-slate-200 h-1.5 rounded-full mt-3 overflow-hidden">
-      <div
-        className={`h-full transition-all duration-500 rounded-full ${pct > warn ? 'bg-red-500' : 'bg-blue-500'}`}
-        style={{ width: `${Math.min(pct, 100)}%` }}
-      />
-    </div>
-  );
-
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
 
@@ -223,78 +318,189 @@ export default function SystemSettings() {
 
       {/* B. 실시간 리소스 모니터링 */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
-        <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 flex items-center gap-2">
-          <Activity size={18} className="text-blue-500" /> Server Resource Monitoring (Real-Time)
-        </h3>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+            <Activity size={18} className="text-blue-500" /> Server Resource Monitoring
+          </h3>
+          <span className="text-[10px] font-bold text-slate-400 inline-flex items-center gap-1.5">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+            </span>
+            3초마다 자동 갱신 · 최근 {SPARK_LEN * 3}초 추이
+          </span>
+        </div>
 
-        {/* Row 1: CPU / Memory / Disk */}
+        {/* Row 1: CPU / Memory / Disk — 도넛 게이지 + sparkline */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-
           {/* CPU */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-            <div className="flex items-center gap-2 text-slate-500 mb-2 text-sm"><Cpu size={16} /> CPU Usage</div>
-            <div className="text-2xl font-extrabold text-slate-800">
-              {sysStats.cpu_usage}<span className="text-sm font-medium text-slate-500">%</span>
-            </div>
-            <ResourceBar pct={sysStats.cpu_usage} />
-          </div>
+          {(() => {
+            const pct = Number(sysStats.cpu_usage) || 0;
+            const color = pct >= 85 ? 'red' : pct >= 60 ? 'amber' : 'blue';
+            const lineColor = pct >= 85 ? '#dc2626' : pct >= 60 ? '#d97706' : '#3b82f6';
+            return (
+              <div className="relative bg-gradient-to-br from-slate-50 to-white p-4 rounded-xl border border-slate-100 overflow-hidden">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-1.5 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                    <Cpu size={13} /> CPU Usage
+                  </div>
+                  {pct >= 85 && (
+                    <span className="text-[9px] font-bold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full uppercase">
+                      High
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <DonutGauge pct={pct} color={color} />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-xl font-extrabold text-slate-800 tabular-nums leading-none">{Math.round(pct)}</span>
+                      <span className="text-[9px] font-bold text-slate-400 mt-0.5">%</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <Sparkline values={cpuHistory} color={lineColor} max={100} />
+                    <p className="text-[10px] text-slate-400 mt-1 font-mono">
+                      avg {cpuHistory.length > 0 ? Math.round(cpuHistory.reduce((a, b) => a + b, 0) / cpuHistory.length) : 0}%
+                      <span className="mx-1.5 text-slate-300">·</span>
+                      peak {cpuHistory.length > 0 ? Math.round(Math.max(...cpuHistory)) : 0}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Memory */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-            <div className="flex items-center gap-2 text-slate-500 mb-2 text-sm"><HardDrive size={16} /> Memory</div>
-            <div className="text-2xl font-extrabold text-slate-800">
-              {sysStats.memory_used_gb}<span className="text-sm font-medium text-slate-500"> / {sysStats.memory_total_gb} GB</span>
-            </div>
-            <ResourceBar pct={memPct} />
-          </div>
+          {(() => {
+            const pct = memPct;
+            const color = pct >= 85 ? 'red' : pct >= 70 ? 'amber' : 'emerald';
+            const lineColor = pct >= 85 ? '#dc2626' : pct >= 70 ? '#d97706' : '#10b981';
+            return (
+              <div className="relative bg-gradient-to-br from-slate-50 to-white p-4 rounded-xl border border-slate-100 overflow-hidden">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-1.5 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                    <HardDrive size={13} /> Memory
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {sysStats.memory_used_gb}/{sysStats.memory_total_gb}GB
+                  </span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <DonutGauge pct={pct} color={color} />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-xl font-extrabold text-slate-800 tabular-nums leading-none">{Math.round(pct)}</span>
+                      <span className="text-[9px] font-bold text-slate-400 mt-0.5">%</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <Sparkline values={memHistory} color={lineColor} max={100} />
+                    <p className="text-[10px] text-slate-400 mt-1 font-mono">
+                      avg {memHistory.length > 0 ? Math.round(memHistory.reduce((a, b) => a + b, 0) / memHistory.length) : 0}%
+                      <span className="mx-1.5 text-slate-300">·</span>
+                      free {Math.max(0, (sysStats.memory_total_gb - sysStats.memory_used_gb)).toFixed(1)}GB
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Disk */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-            <div className="flex items-center gap-2 text-slate-500 mb-2 text-sm"><Database size={16} /> Disk Usage</div>
-            <div className="text-2xl font-extrabold text-slate-800">
-              {sysStats.disk_used_gb}<span className="text-sm font-medium text-slate-500"> / {sysStats.disk_total_gb} GB</span>
-            </div>
-            <ResourceBar pct={diskPct} warn={85} />
-          </div>
+          {(() => {
+            const pct = diskPct;
+            const color = pct >= 90 ? 'red' : pct >= 75 ? 'amber' : 'blue';
+            return (
+              <div className="relative bg-gradient-to-br from-slate-50 to-white p-4 rounded-xl border border-slate-100 overflow-hidden">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-1.5 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                    <Database size={13} /> Disk
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {sysStats.disk_used_gb}/{sysStats.disk_total_gb}GB
+                  </span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <DonutGauge pct={pct} color={color} />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-xl font-extrabold text-slate-800 tabular-nums leading-none">{Math.round(pct)}</span>
+                      <span className="text-[9px] font-bold text-slate-400 mt-0.5">%</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-slate-500 font-bold">사용 가능 공간</p>
+                    <p className="text-lg font-extrabold text-slate-700 tabular-nums leading-tight mt-0.5">
+                      {Math.max(0, sysStats.disk_total_gb - sysStats.disk_used_gb).toFixed(1)}
+                      <span className="text-xs font-bold text-slate-400 ml-1">GB</span>
+                    </p>
+                    {pct >= 90 && (
+                      <p className="text-[10px] font-bold text-red-600 mt-1 inline-flex items-center gap-0.5">
+                        <AlertTriangle size={10} /> 디스크 정리 권장
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Row 2: DB / Queue */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
           {/* DB Status */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-            <div className="flex items-center gap-2 text-slate-500 mb-2 text-sm"><Server size={16} /> DB Status</div>
+          <div className="relative bg-gradient-to-br from-slate-50 to-white p-4 rounded-xl border border-slate-100">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                <Server size={13} /> DB Status
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${sysStats.db_status === 'Connected' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                {sysStats.db_status === 'Connected' ? 'OK' : 'DOWN'}
+              </span>
+            </div>
             <div className={`text-xl font-bold flex items-center gap-2 mt-1 ${sysStats.db_status === 'Connected' ? 'text-emerald-600' : 'text-red-600'}`}>
               {sysStats.db_status === 'Connected' ? (
-                <span className="relative flex h-3 w-3">
+                <span className="relative flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                 </span>
               ) : (
-                <span className="h-3 w-3 rounded-full bg-red-500 inline-block"></span>
+                <span className="h-2.5 w-2.5 rounded-full bg-red-500 inline-block"></span>
               )}
               {sysStats.db_status}
             </div>
-            <p className="text-xs text-slate-400 mt-2 font-mono">
-              Latency: <span className={sysStats.latency_ms > 100 ? 'text-red-400 font-bold' : 'text-slate-600'}>{sysStats.latency_ms}ms</span>
-            </p>
+            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Latency</span>
+              <span className={`text-sm font-extrabold tabular-nums ${sysStats.latency_ms > 100 ? 'text-red-500' : sysStats.latency_ms > 30 ? 'text-amber-500' : 'text-emerald-600'}`}>
+                {sysStats.latency_ms}<span className="text-[10px] text-slate-400 ml-0.5">ms</span>
+              </span>
+            </div>
           </div>
 
           {/* Job Queue */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-            <div className="flex items-center gap-2 text-slate-500 mb-2 text-sm"><Layers size={16} /> Job Queue</div>
-            <div className="flex items-end gap-4 mt-1">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Running</p>
-                <p className="text-2xl font-extrabold text-blue-600">{queue.running}</p>
+          <div className="relative bg-gradient-to-br from-slate-50 to-white p-4 rounded-xl border border-slate-100">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                <Layers size={13} /> Job Queue
               </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Pending</p>
-                <p className="text-2xl font-extrabold text-amber-500">{queue.pending}</p>
+              <span className="text-[10px] font-mono text-slate-400">
+                {queue.running}/{queue.limit} slots
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-end gap-3">
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Running</p>
+                  <p className="text-2xl font-extrabold text-blue-600 tabular-nums leading-tight">{queue.running}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Pending</p>
+                  <p className="text-2xl font-extrabold text-amber-500 tabular-nums leading-tight">{queue.pending}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Limit</p>
-                <p className="text-2xl font-extrabold text-slate-400">{queue.limit}</p>
+              <div className="flex-1 min-w-0">
+                <Sparkline values={queueHistory} color="#3b82f6" max={queue.limit || 5} />
               </div>
             </div>
             <div className="w-full bg-slate-200 h-1.5 rounded-full mt-3 overflow-hidden">
@@ -303,7 +509,6 @@ export default function SystemSettings() {
                 style={{ width: `${Math.min(queuePct, 100)}%` }}
               />
             </div>
-            <p className="text-[10px] text-slate-400 mt-1 font-mono">{queue.running} / {queue.limit} slots in use</p>
           </div>
         </div>
       </div>

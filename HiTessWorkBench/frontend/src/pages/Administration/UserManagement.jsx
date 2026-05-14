@@ -2,22 +2,41 @@
 /// 시스템 관리자(Admin) 전용 사용자 관리 대시보드.
 /// 사용자의 승인(is_active), 권한(is_admin) 토글 및 전체 메타데이터 수정/삭제를 지원합니다.
 /// </summary>
-import React, { useEffect, useState, Fragment } from 'react';
+import React, { useEffect, useMemo, useState, Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import {
-  Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Calendar,
-  Clock, UserCheck, UserX, Edit2, X, Building, Briefcase, Tag
+  Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Clock, Activity,
+  UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser } from '../../api/admin';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../contexts/ToastContext';
 
+// 상대 시간 포맷 — 활동성 컬럼/Pending 카드용
+const relativeTime = (iso) => {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return '방금 전';
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return '방금 전';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}분 전`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}시간 전`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}일 전`;
+  const mon = Math.floor(day / 30);
+  if (mon < 12) return `${mon}개월 전`;
+  return `${Math.floor(mon / 12)}년 전`;
+};
+
 export default function UserManagement() {
   const { showToast } = useToast();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterMode, setFilterMode] = useState('all'); // 'all' | 'active' | 'admin'
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -54,6 +73,16 @@ export default function UserManagement() {
     }
   };
 
+  const handleApprove = async (userId) => {
+    try {
+      await updateUser(userId, { is_active: true });
+      setUsers(users.map(u => u.id === userId ? { ...u, is_active: true } : u));
+      showToast('사용자가 승인되었습니다.', 'success');
+    } catch (error) {
+      showToast('승인 처리에 실패했습니다.', 'error');
+    }
+  };
+
   const handleDelete = async () => {
     if (!confirmDeleteTarget) return;
     try {
@@ -65,29 +94,34 @@ export default function UserManagement() {
     }
   };
 
-  // 편집 모달 열기
   const openEditModal = (user) => {
     setEditingUser({ ...user });
     setIsEditModalOpen(true);
   };
 
-  // 편집 데이터 저장
   const handleEditSave = async (e) => {
     e.preventDefault();
     try {
       const { id, name, company, department, position } = editingUser;
       await updateUser(id, { name, company, department, position });
       setIsEditModalOpen(false);
-      fetchUsers(); // 갱신
+      fetchUsers();
     } catch (error) {
       showToast('사용자 정보 수정에 실패했습니다.', 'error');
     }
   };
 
-  // 통계 계산
-  const totalUsers = users.length;
-  const pendingUsers = users.filter(u => !u.is_active).length;
-  const adminUsers = users.filter(u => u.is_admin).length;
+  // 통계 — 상단 KPI
+  const totalUsers   = users.length;
+  const pendingList  = useMemo(() => users.filter(u => !u.is_active), [users]);
+  const pendingUsers = pendingList.length;
+  const adminUsers   = users.filter(u => u.is_admin).length;
+
+  // 로그인 막대 정규화 — 가장 활발한 사용자의 로그인 수를 100% 로
+  const maxLogin = useMemo(
+    () => Math.max(1, ...users.map(u => u.login_count || 0)),
+    [users]
+  );
 
   const makeStats = (key) =>
     Object.entries(
@@ -108,16 +142,29 @@ export default function UserManagement() {
     position:   { icon: 'text-emerald-500', bar: 'bg-emerald-400' },
   };
 
-  // 검색 필터링
-  const filteredUsers = users.filter(user => 
-    user.name.includes(searchTerm) || 
-    user.employee_id.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (user.department && user.department.includes(searchTerm))
-  );
+  // 필터 + 검색 — Pending 은 별도 영역에 있으므로 모드에 따라 분기
+  const filteredUsers = users.filter(user => {
+    const term = searchTerm.toLowerCase();
+    const matchesSearch =
+      !term ||
+      user.name.toLowerCase().includes(term) ||
+      user.employee_id.toLowerCase().includes(term) ||
+      (user.department && user.department.toLowerCase().includes(term));
+    if (!matchesSearch) return false;
+    if (filterMode === 'active') return user.is_active;
+    if (filterMode === 'admin')  return user.is_admin;
+    return true; // 'all'
+  });
+
+  const filterChips = [
+    { key: 'all',    label: '전체',  count: totalUsers,  cls: 'bg-slate-800 text-white' },
+    { key: 'active', label: 'Active', count: totalUsers - pendingUsers, cls: 'bg-emerald-600 text-white' },
+    { key: 'admin',  label: 'Admin',  count: adminUsers,  cls: 'bg-red-600 text-white' },
+  ];
 
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
-      
+
       <PageHeader
         title="User Management"
         icon={Users}
@@ -125,33 +172,43 @@ export default function UserManagement() {
         accentColor="blue"
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      {/* 1. KPI — Total / Pending / Admin */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-           <div>
-             <p className="text-xs font-bold text-slate-400 uppercase mb-1">Total Users</p>
-             <h3 className="text-3xl font-extrabold text-slate-800">{totalUsers}</h3>
-           </div>
-           <div className="p-4 bg-blue-50 text-blue-600 rounded-xl"><Users size={28}/></div>
+          <div>
+            <p className="text-xs font-bold text-slate-400 uppercase mb-1">Total Users</p>
+            <h3 className="text-3xl font-extrabold text-slate-800">{totalUsers}</h3>
+            <p className="text-[11px] text-slate-400 mt-1">활성 {totalUsers - pendingUsers}명 · 대기 {pendingUsers}명</p>
+          </div>
+          <div className="p-4 bg-blue-50 text-blue-600 rounded-xl"><Users size={28}/></div>
         </div>
-        <div className="bg-gradient-to-br from-yellow-50 to-orange-50 p-6 rounded-2xl border border-yellow-200 shadow-sm flex items-center justify-between">
-           <div>
-             <p className="text-xs font-bold text-yellow-600 uppercase mb-1">Pending Approval</p>
-             <h3 className="text-3xl font-extrabold text-yellow-700">{pendingUsers}</h3>
-           </div>
-           <div className="p-4 bg-white text-yellow-500 rounded-xl shadow-sm"><Clock size={28}/></div>
+        <div className={`p-6 rounded-2xl border shadow-sm flex items-center justify-between ${
+          pendingUsers > 0
+            ? 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-300 ring-1 ring-amber-200/60'
+            : 'bg-white border-slate-200'
+        }`}>
+          <div>
+            <p className={`text-xs font-bold uppercase mb-1 ${pendingUsers > 0 ? 'text-amber-700' : 'text-slate-400'}`}>Pending Approval</p>
+            <h3 className={`text-3xl font-extrabold ${pendingUsers > 0 ? 'text-amber-800' : 'text-slate-300'}`}>{pendingUsers}</h3>
+            <p className="text-[11px] text-amber-600 mt-1">{pendingUsers > 0 ? '아래 카드에서 즉시 승인 가능' : '대기 중인 가입 요청 없음'}</p>
+          </div>
+          <div className={`p-4 rounded-xl shadow-sm ${pendingUsers > 0 ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
+            <Clock size={28}/>
+          </div>
         </div>
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-           <div>
-             <p className="text-xs font-bold text-slate-400 uppercase mb-1">Active Admins</p>
-             <h3 className="text-3xl font-extrabold text-slate-800">{adminUsers}</h3>
-           </div>
-           <div className="p-4 bg-slate-100 text-brand-blue rounded-xl"><Shield size={28}/></div>
+          <div>
+            <p className="text-xs font-bold text-slate-400 uppercase mb-1">Active Admins</p>
+            <h3 className="text-3xl font-extrabold text-slate-800">{adminUsers}</h3>
+            <p className="text-[11px] text-slate-400 mt-1">시스템 관리 권한 보유자</p>
+          </div>
+          <div className="p-4 bg-slate-100 text-brand-blue rounded-xl"><Shield size={28}/></div>
         </div>
       </div>
 
       {/* 2. 분포 통계 */}
       {users.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           {[
             { label: '회사별 분포',  icon: Building,  data: companyStats,    key: 'company'    },
             { label: '부서별 분포',  icon: Briefcase, data: departmentStats, key: 'department' },
@@ -187,24 +244,114 @@ export default function UserManagement() {
         </div>
       )}
 
-      {/* 3. Controls */}
-      <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-        <div className="relative w-72">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"/>
-            <input 
-              type="text" 
-              placeholder="이름, 사번, 부서로 검색..." 
-              value={searchTerm} 
-              onChange={e => setSearchTerm(e.target.value)} 
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:border-blue-500 outline-none transition-colors"
-            />
+      {/* 3. 승인 대기 — 별도 하이라이트 영역 (Pending 이 있을 때만 표시) */}
+      {pendingList.length > 0 && (
+        <div className="mb-6 bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-md">
+                <Clock size={20}/>
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-amber-900 flex items-center gap-2">
+                  승인 대기
+                  <span className="px-2 py-0.5 bg-amber-200 text-amber-900 text-xs rounded-full font-bold">
+                    {pendingList.length}명
+                  </span>
+                </h3>
+                <p className="text-xs text-amber-700 mt-0.5">신규 가입자가 시스템 접근을 기다리고 있습니다.</p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {pendingList.map(u => (
+              <div
+                key={u.id}
+                className="bg-white border border-amber-200 rounded-xl p-3 flex items-center justify-between gap-2 hover:border-amber-400 hover:shadow-md transition-all"
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="h-11 w-11 rounded-xl bg-amber-100 text-amber-700 border border-amber-200 flex items-center justify-center font-bold text-lg shrink-0">
+                    {u.name?.[0] || '?'}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-800 truncate">
+                      {u.name}
+                      <span className="text-[10px] text-slate-400 font-mono ml-1.5">{u.employee_id}</span>
+                    </p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {u.department || u.company || '소속 미입력'}
+                      {u.created_at && <span className="text-slate-400"> · {relativeTime(u.created_at)} 가입</span>}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleApprove(u.id)}
+                    className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 shadow-sm transition-colors cursor-pointer flex items-center gap-1"
+                    title="가입 승인"
+                  >
+                    <CheckCircle2 size={13}/> 승인
+                  </button>
+                  <button
+                    onClick={() => setConfirmDeleteTarget(u)}
+                    className="px-2.5 py-1.5 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+                    title="가입 거절 (계정 삭제)"
+                  >
+                    거절
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <button onClick={fetchUsers} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-200 transition-colors shadow-sm cursor-pointer">
-          <RefreshCw size={16}/> <span>목록 갱신</span>
-        </button>
+      )}
+
+      {/* 4. Controls — 필터 칩 + 검색 + 갱신 */}
+      <div className="flex flex-wrap items-center gap-3 mb-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg">
+          {filterChips.map(c => (
+            <button
+              key={c.key}
+              onClick={() => setFilterMode(c.key)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                filterMode === c.key
+                  ? `${c.cls} shadow-sm`
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-white/60'
+              }`}
+            >
+              {c.label}
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                filterMode === c.key ? 'bg-white/20' : 'bg-slate-200 text-slate-500'
+              }`}>{c.count}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"/>
+          <input
+            type="text"
+            placeholder="이름, 사번, 부서로 검색..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:border-blue-500 outline-none transition-colors"
+          />
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-slate-400 font-medium">
+            {filteredUsers.length} / {totalUsers} 표시
+          </span>
+          <button
+            onClick={fetchUsers}
+            className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-200 transition-colors shadow-sm cursor-pointer"
+          >
+            <RefreshCw size={14}/> 갱신
+          </button>
+        </div>
       </div>
 
-      {/* 3. Data Table */}
+      {/* 5. Data Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto min-h-[400px]">
           <table className="w-full text-left whitespace-nowrap">
@@ -212,25 +359,30 @@ export default function UserManagement() {
               <tr>
                 <th className="py-4 px-6 font-bold">User / ID</th>
                 <th className="py-4 px-6 font-bold">Affiliation</th>
-                <th className="py-4 px-6 font-bold text-center">Join Date</th>
-                <th className="py-4 px-6 font-bold text-center">Access</th>
+                <th className="py-4 px-6 font-bold w-[240px]">Activity</th>
+                <th className="py-4 px-6 font-bold text-center">Status</th>
                 <th className="py-4 px-6 font-bold text-center">Admin</th>
                 <th className="py-4 px-6 font-bold text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan="6" className="text-center py-20 text-slate-400"><RefreshCw className="animate-spin inline-block mb-2"/><p>데이터를 불러오는 중입니다...</p></td></tr>
+                <tr><td colSpan="6" className="text-center py-20 text-slate-400">
+                  <RefreshCw className="animate-spin inline-block mb-2"/>
+                  <p>데이터를 불러오는 중입니다...</p>
+                </td></tr>
               ) : filteredUsers.length === 0 ? (
-                <tr><td colSpan="6" className="text-center py-20 text-slate-400">검색 결과가 없습니다.</td></tr>
+                <tr><td colSpan="6" className="text-center py-20 text-slate-400">
+                  검색 결과가 없습니다.
+                </td></tr>
               ) : filteredUsers.map((user) => (
-                <tr key={user.id} className={`transition-colors hover:bg-blue-50/50 ${!user.is_active ? 'bg-yellow-50/30' : ''}`}>
-                  
+                <tr key={user.id} className={`transition-colors hover:bg-blue-50/50 ${!user.is_active ? 'bg-amber-50/40' : ''}`}>
+
                   {/* 이름 & 사번 */}
                   <td className="py-3 px-6">
                     <div className="flex items-center gap-3">
-                      <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${user.is_active ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-200 text-slate-500 border-slate-300'}`}>
-                        {user.name[0]}
+                      <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${user.is_active ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                        {user.name?.[0] || '?'}
                       </div>
                       <div>
                         <p className="font-bold text-slate-800">{user.name}</p>
@@ -238,39 +390,67 @@ export default function UserManagement() {
                       </div>
                     </div>
                   </td>
-                  
+
                   {/* 소속 & 직급 */}
                   <td className="py-3 px-6">
                     <p className="text-sm font-bold text-slate-700">{user.department || '-'}</p>
-                    <p className="text-xs text-slate-500">{user.company} / {user.position}</p>
+                    <p className="text-xs text-slate-500">{user.company || '-'} / {user.position || '-'}</p>
                   </td>
-                  
-                  {/* 가입일 */}
-                  <td className="py-3 px-6 text-center">
-                    <div className="flex flex-col items-center">
-                      <span className="text-xs text-slate-600 font-medium">{user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">{user.login_count} Logins</span>
+
+                  {/* 활동성: 로그인 막대 + 해석 수 + 마지막 로그인 */}
+                  <td className="py-3 px-6">
+                    <div className="space-y-1.5 max-w-[220px]">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-mono font-bold text-slate-700 w-7 text-right">{user.login_count ?? 0}</span>
+                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-500"
+                            style={{ width: `${Math.min(100, ((user.login_count ?? 0) / maxLogin) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-[9px] text-slate-400 uppercase tracking-wider">logins</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                        <span className="inline-flex items-center gap-1" title="총 해석 수행 건수">
+                          <Activity size={11} className="text-emerald-500"/>
+                          <span className="font-bold text-slate-700">{user.analysis_count ?? 0}</span>
+                          <span>해석</span>
+                        </span>
+                        <span className="text-slate-300">·</span>
+                        <span className="text-slate-400" title={user.last_login || '미접속'}>
+                          {user.last_login ? relativeTime(user.last_login) : '미접속'}
+                        </span>
+                      </div>
+                      {user.created_at && (
+                        <p className="text-[10px] text-slate-400 font-mono">
+                          가입 {new Date(user.created_at).toLocaleDateString()}
+                        </p>
+                      )}
                     </div>
                   </td>
 
-                  {/* 승인 상태 토글 */}
+                  {/* 승인 상태 — Pending 카드가 있으므로 테이블은 상태 표시 중심 */}
                   <td className="py-3 px-6 text-center">
-                    <button 
-                      onClick={() => handleToggle(user.id, 'is_active', user.is_active)}
-                      className={`flex items-center justify-center gap-1.5 px-3 py-1.5 mx-auto rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        user.is_active 
-                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100'
-                          : 'bg-brand-blue text-white shadow-md hover:bg-brand-blue-dark animate-pulse'
-                      }`}
-                    >
-                      {user.is_active ? <><UserCheck size={14}/> Approved</> : <><UserX size={14}/> Approve?</>}
-                    </button>
+                    {user.is_active ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                        Active
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleApprove(user.id)}
+                        className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors cursor-pointer"
+                        title="클릭하여 승인"
+                      >
+                        <UserCheck size={12}/> Approve
+                      </button>
+                    )}
                   </td>
 
                   {/* 관리자 권한 토글 */}
                   <td className="py-3 px-6 text-center">
-                    <button 
-                      onClick={() => handleToggle(user.id, 'is_admin', user.is_admin)} 
+                    <button
+                      onClick={() => handleToggle(user.id, 'is_admin', user.is_admin)}
                       className={`p-2 rounded-lg transition-colors cursor-pointer ${user.is_admin ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500'}`}
                       title={user.is_admin ? "관리자 권한 해제" : "관리자 권한 부여"}
                     >
@@ -297,7 +477,7 @@ export default function UserManagement() {
         </div>
       </div>
 
-      {/* 4. 정보 수정 모달 */}
+      {/* 6. 정보 수정 모달 */}
       <Transition appear show={isEditModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsEditModalOpen(false)}>
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
@@ -311,7 +491,6 @@ export default function UserManagement() {
               </div>
 
               <form onSubmit={handleEditSave} className="p-6 bg-slate-50 space-y-4">
-                {/* ID는 수정 불가 (읽기 전용) */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">사번 (Employee ID)</label>
                   <input type="text" disabled value={editingUser?.employee_id || ''} className="w-full p-2.5 bg-slate-200 border border-slate-300 rounded-lg text-slate-500 font-mono text-sm cursor-not-allowed" />
