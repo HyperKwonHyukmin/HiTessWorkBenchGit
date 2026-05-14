@@ -58,8 +58,8 @@ def _decode_completed(proc: subprocess.CompletedProcess) -> str:
 #
 # F06 표준 형식 (요약):
 #   `S T R E S S E S   I N   Q U A D R I L A T E R A L   E L E M E N T S   ( Q U A D 4 )`
-#   ELEMENT  FIBRE     STRESSES IN ELEMENT COORD SYSTEM      PRINCIPAL STRESSES (ZERO SHEAR)      MAX
-#     ID    DISTANCE   NORMAL-X   NORMAL-Y   SHEAR-XY   ANGLE   MAJOR     MINOR   SHEAR    VON MISES
+#   ELEMENT  FIBRE     STRESSES IN ELEMENT COORD SYSTEM      PRINCIPAL STRESSES (ZERO SHEAR)
+#     ID    DISTANCE   NORMAL-X   NORMAL-Y   SHEAR-XY   ANGLE   MAJOR     MINOR   VON MISES
 #
 # CQUAD4 는 두 fiber(상/하면)를 각각 한 줄로 출력. centroid only 모드 가정.
 # CTRIA3 도 동일 컬럼 레이아웃. SUBCASE 구분은 'SUBCASE  N' 헤더.
@@ -91,7 +91,7 @@ def _parse_shell_stress(lines: List[str]) -> Dict[str, Any]:
         "subcases": {
           "1": {
             "quad4": [{"id": 1001, "vonMises": 123.4, "majorPrincipal": 80.0,
-                       "minorPrincipal": -10.0, "shearMax": 50.0}, ...],
+                       "minorPrincipal": -10.0}, ...],
             "tria3": [...]
           }, ...
         }
@@ -142,51 +142,173 @@ def _parse_shell_stress(lines: List[str]) -> Dict[str, Any]:
         tokens = raw.split()
         if not tokens:
             continue
+        # Nastran F06 는 element 가 있는 첫 fiber 행 앞에 page marker '0' 을
+        # 붙여 `0 <eid> <fiber distance> ...` 형식으로 출력할 수 있다.
+        if tokens[0] == "0" and len(tokens) >= 10:
+            try:
+                eid = int(tokens[1])
+            except ValueError:
+                continue
+            if eid <= 0:
+                continue
+            rec = pending.setdefault(eid, {})
+            if not _absorb_fiber_row(rec, tokens, value_start=2):
+                pending.pop(eid, None)
+            continue
+
         try:
             eid = int(tokens[0])
         except ValueError:
             # 두 번째 fiber 행 — 가장 최근 pending 의 마지막 element 에 적용
-            try:
-                _ = float(tokens[0])
-            except ValueError:
-                continue
-            if not pending:
+            if _f06_float(tokens[0]) is None or not pending:
                 continue
             last_eid = next(reversed(pending))
-            _absorb_fiber_row(pending[last_eid], tokens, lead_has_id=False)
+            _absorb_fiber_row(pending[last_eid], tokens, value_start=0)
             continue
 
+        if eid <= 0 or len(tokens) < 9 or _f06_float(tokens[1]) is None:
+            continue
         rec = pending.setdefault(eid, {})
-        _absorb_fiber_row(rec, tokens, lead_has_id=True)
+        if not _absorb_fiber_row(rec, tokens, value_start=1):
+            pending.pop(eid, None)
 
     flush_pending()
     return {"subcases": subcases}
 
 
-def _absorb_fiber_row(rec: Dict[str, Any], tokens: List[str], lead_has_id: bool) -> None:
+def _absorb_fiber_row(rec: Dict[str, Any], tokens: List[str], value_start: int) -> bool:
     """한 fiber 행의 stress 값을 누적해 rec 에 반영.
 
     F06 레이아웃 (CQUAD4 centroid only):
-      id  fibDist  nrmX  nrmY  shrXY  angle  major  minor  shrMax  vonMises
-       0       1     2     3      4      5      6      7       8         9   (lead_has_id=True)
-              0     1     2      3      4      5      6       7         8   (lead_has_id=False)
+      page0  id  fibDist  nrmX  nrmY  shrXY  angle  major  minor  vonMises
+         0   1       2     3     4      5      6      7      8         9
+      id  fibDist  nrmX  nrmY  shrXY  angle  major  minor  vonMises
+       0       1     2     3      4      5      6      7         8
+          fibDist  nrmX  nrmY  shrXY  angle  major  minor  vonMises
+              0     1     2      3      4      5      6         7
     두 fiber 중 von Mises 절대값이 큰 쪽을 대표값으로 보존.
     """
-    base = 1 if lead_has_id else 0
     try:
-        major = _f06_float(tokens[base + 5])
-        minor = _f06_float(tokens[base + 6])
-        shear_max = _f06_float(tokens[base + 7])
-        von_mises = _f06_float(tokens[base + 8])
+        fiber_distance = _f06_float(tokens[value_start])
+        normal_x = _f06_float(tokens[value_start + 1])
+        normal_y = _f06_float(tokens[value_start + 2])
+        shear_xy = _f06_float(tokens[value_start + 3])
+        angle = _f06_float(tokens[value_start + 4])
+        major = _f06_float(tokens[value_start + 5])
+        minor = _f06_float(tokens[value_start + 6])
+        von_mises = _f06_float(tokens[value_start + 7])
     except IndexError:
-        return
+        return False
+
+    if von_mises is None:
+        return False
 
     prev_vm = rec.get("vonMises")
     if prev_vm is None or (von_mises is not None and abs(von_mises) > abs(prev_vm)):
         rec["vonMises"] = von_mises
         rec["majorPrincipal"] = major
         rec["minorPrincipal"] = minor
-        rec["shearMax"] = shear_max
+        rec["normalX"] = normal_x
+        rec["normalY"] = normal_y
+        rec["shearXY"] = shear_xy
+        rec["fiberDistance"] = fiber_distance
+        rec["angle"] = angle
+    return True
+
+
+_HDR_CBEAM_STRESS = "S T R E S S E S   I N   B E A M   E L E M E N T S"
+_HDR_CBEAM = "C B E A M"
+
+
+def _parse_cbeam_stress(lines: List[str]) -> Dict[str, Any]:
+    """F06 lines 에서 CBEAM stress 테이블을 직접 파싱한다.
+
+    Nastran CBEAM stress 출력은 element id 행과 그 뒤의 grid/stat-distance 행으로
+    분리된다. 한 element 가 페이지 경계를 넘어갈 수 있으므로 current element 를
+    유지하면서 다음 페이지의 연속 row 까지 흡수한다.
+    """
+    subcases: Dict[str, List[Dict[str, Any]]] = {}
+    current_subcase = "1"
+    in_section = False
+    current_eid: Optional[int] = None
+
+    def append_row(tokens: List[str]) -> None:
+        nonlocal current_eid
+        if current_eid is None or len(tokens) < 8:
+            return
+        try:
+            grid_id = int(tokens[0])
+        except ValueError:
+            return
+        stat_dist = _f06_float(tokens[1])
+        if stat_dist is None:
+            return
+
+        vals = [_f06_float(tok) for tok in tokens[2:10]]
+        while len(vals) < 8:
+            vals.append(None)
+        sxc, sxd, sxe, sxf, smax, smin, ms_t, ms_c = vals[:8]
+        if abs(stat_dist) < 1e-9:
+            end = "A"
+        elif abs(stat_dist - 1.0) < 1e-9:
+            end = "B"
+        else:
+            end = f"{stat_dist:g}"
+
+        subcases.setdefault(current_subcase, []).append({
+            "subcaseId": int(current_subcase),
+            "elementId": current_eid,
+            "gridId": grid_id,
+            "end": end,
+            "sXC": sxc,
+            "sXD": sxd,
+            "sXE": sxe,
+            "sXF": sxf,
+            "sMax": smax,
+            "sMin": smin,
+            "mSTension": ms_t,
+            "mSCompression": ms_c,
+        })
+
+    for raw in lines:
+        m = _SUBCASE_RX.search(raw)
+        if m:
+            current_subcase = m.group(1)
+
+        if _HDR_CBEAM_STRESS in raw and _HDR_CBEAM in raw:
+            was_in_section = in_section
+            in_section = True
+            if not was_in_section:
+                current_eid = None
+            continue
+
+        if in_section and _HDR_STRESS_KEY in raw and _HDR_CBEAM not in raw:
+            in_section = False
+            current_eid = None
+            continue
+        if in_section and "F O R C E S   I N" in raw:
+            in_section = False
+            current_eid = None
+            continue
+
+        if not in_section:
+            continue
+
+        tokens = raw.split()
+        if not tokens:
+            continue
+
+        # Element marker line: "0       361"
+        if tokens[0] == "0" and len(tokens) >= 2:
+            try:
+                current_eid = int(tokens[1])
+            except ValueError:
+                pass
+            continue
+
+        append_row(tokens)
+
+    return {"subcases": subcases}
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -293,6 +415,7 @@ def task_execute_plate_structure(
             with open(f06_path, "r", encoding="utf-8", errors="replace") as f:
                 f06_lines = f.read().splitlines()
             shell_stress = _parse_shell_stress(f06_lines)
+            cbeam_stress = _parse_cbeam_stress(f06_lines)
 
             # 4) Studio 시각화용 통합 JSON 작성
             analysis_results = bridge_payload.get("analysisResults", {})
@@ -302,6 +425,7 @@ def task_execute_plate_structure(
             for sc in subcase_list:
                 sc_id = str(sc.get("id", 1))
                 shell_for_sc = shell_stress["subcases"].get(sc_id, {})
+                cbeam_for_sc = cbeam_stress["subcases"].get(sc_id) or sc.get("cbeamStresses", [])
                 unified_subcases.append({
                     "id":            sc.get("id", 1),
                     "displacements": sc.get("displacements", []),
@@ -310,7 +434,7 @@ def task_execute_plate_structure(
                         "tria3": shell_for_sc.get("tria3", []),
                     },
                     "cbarStresses":  sc.get("cbarStresses", []),
-                    "cbeamStresses": sc.get("cbeamStresses", []),
+                    "cbeamStresses": cbeam_for_sc,
                     "crodStresses":  sc.get("crodStresses", []),
                 })
 
@@ -340,8 +464,10 @@ def task_execute_plate_structure(
                 f"subcases={summary.get('subcaseCount', 0)}, "
                 f"nodes={summary.get('nodeCount', 0)}, "
                 f"shellElements={summary.get('shellElementCount', 0)}, "
+                f"cbeamStressRows={summary.get('cbeamStressRowCount', 0)}, "
                 f"maxDisp={summary.get('maxDisplacementMm', 0):.4g} mm, "
-                f"maxVonMises={summary.get('maxVonMisesMPa', 0):.4g} MPa"
+                f"maxVonMises={summary.get('maxVonMisesMPa', 0):.4g} MPa, "
+                f"maxCbeamStress={summary.get('maxCbeamStressMPa', 0):.4g} MPa"
             )
 
     except subprocess.TimeoutExpired as te:
@@ -396,12 +522,15 @@ def _summarize(unified_subcases: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Studio 헤더 표시용 — 첫 subcase 기준 최대치/카운트."""
     if not unified_subcases:
         return {"subcaseCount": 0, "nodeCount": 0, "shellElementCount": 0,
-                "maxDisplacementMm": 0.0, "maxVonMisesMPa": 0.0}
+                "cbeamStressRowCount": 0, "maxDisplacementMm": 0.0,
+                "maxVonMisesMPa": 0.0, "maxCbeamStressMPa": 0.0,
+                "maxStressMPa": 0.0}
 
     sc0 = unified_subcases[0]
     disps = sc0.get("displacements", [])
     quads = sc0.get("shellStresses", {}).get("quad4", [])
     trias = sc0.get("shellStresses", {}).get("tria3", [])
+    cbeams = sc0.get("cbeamStresses", [])
 
     def disp_mag(d: Dict[str, Any]) -> float:
         tx = d.get("t1", d.get("x", 0.0)) or 0.0
@@ -417,11 +546,22 @@ def _summarize(unified_subcases: List[Dict[str, Any]]) -> Dict[str, Any]:
             continue
         if abs(v) > max_vm:
             max_vm = abs(v)
+    max_cbeam = 0.0
+    for e in cbeams:
+        for key in ("sMax", "sMin", "sXC", "sXD", "sXE", "sXF"):
+            v = e.get(key)
+            if v is None:
+                continue
+            if abs(v) > max_cbeam:
+                max_cbeam = abs(v)
 
     return {
         "subcaseCount":       len(unified_subcases),
         "nodeCount":          len(disps),
         "shellElementCount":  len(quads) + len(trias),
+        "cbeamStressRowCount": len(cbeams),
         "maxDisplacementMm":  max_disp,
         "maxVonMisesMPa":     max_vm,
+        "maxCbeamStressMPa":  max_cbeam,
+        "maxStressMPa":       max(max_vm, max_cbeam),
     }

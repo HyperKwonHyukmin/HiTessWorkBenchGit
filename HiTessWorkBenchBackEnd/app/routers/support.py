@@ -86,7 +86,7 @@ def comment_feature_request(req_id: int, comment_data: schemas.FeatureRequestCom
     raise HTTPException(status_code=404, detail="기능 요청을 찾을 수 없습니다.")
   req.status = comment_data.status
   req.admin_comment = comment_data.admin_comment
-  req.comments_count = (req.comments_count or 0) + 1 if comment_data.admin_comment else (req.comments_count or 0)
+  req.comments_count = 1 if comment_data.admin_comment else 0
   db.commit()
   db.refresh(req)
   return req

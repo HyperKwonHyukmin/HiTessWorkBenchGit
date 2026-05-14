@@ -778,7 +778,11 @@ ipcMain.handle("viewer:getInitialFolder", async () => {
 // 결과를 받아 Studio 에 { ok, error } 로 반환. 성공 시 viewer 창 자동 종료.
 const _pendingFinalizeReqs = new Map();   // requestId → resolve
 
-const DEFAULT_BACKEND_BASE_URL = "http://10.14.42.145:9091";
+// Keep this in sync with frontend/src/config.js DEFAULT_API_BASE_URL.
+// The viewer IPC bridge runs in Electron main process and cannot import the
+// frontend module, so it needs the same fallback here for users who have not
+// saved a custom server_url in localStorage.
+const DEFAULT_BACKEND_BASE_URL = "http://10.133.122.70:9091";
 
 async function getWorkbenchRuntimeConfig() {
   const fallback = { serverUrl: DEFAULT_BACKEND_BASE_URL, token: "", employeeId: "" };
@@ -1220,7 +1224,11 @@ ipcMain.handle("viewer:runPlateStructural", async (_e, payload) => {
     );
     if (!reqRes.ok) {
       const detail = await readBackendError(reqRes);
-      return { ok: false, error: `백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}` };
+      const route = "/api/analysis/plate-structure/request";
+      const hint = reqRes.status === 404
+        ? ` - Plate 구조해석 API가 해당 서버에 없습니다. 서버 주소(${serverUrl})가 최신 WorkBench 백엔드인지 확인하세요.`
+        : "";
+      return { ok: false, error: `백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}${hint} (${serverUrl}${route})` };
     }
     const reqBody = await reqRes.json();
     const jobId = reqBody.jobId || reqBody.job_id;
