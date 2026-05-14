@@ -106,7 +106,8 @@
       "PowerShell($j = Get-Content 'C:\\\\Users\\\\HHI\\\\.claude\\\\plugins\\\\installed_plugins.json' -Raw | ConvertFrom-Json; $j.plugins.PSObject.Properties | ForEach-Object { $name = $_.Name; foreach \\($e in $_.Value\\) { $sc = $e.scope; $p = if \\($e.projectPath\\) { $e.projectPath } else { '-' }; \"$name | scope=$sc | path=$p | ver=$\\($e.version\\)\" } })",
       "PowerShell(dotnet build *)",
       "PowerShell(dotnet test *)",
-      "PowerShell(dotnet publish *)"
+      "PowerShell(dotnet publish *)",
+      "PowerShell(Join-Path *)"
     ]
   },
   "enableAllProjectMcpServers": true,
