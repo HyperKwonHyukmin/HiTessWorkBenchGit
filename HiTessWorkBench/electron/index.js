@@ -23,6 +23,9 @@ let viewerInitialFolder = null;
 // viewer:runUnitStructural 가 백엔드에 전달할 GroupModuleUnit Analysis.id (DB record).
 // viewer:open 에서 등록되며, viewer 창이 닫혀도 다음 viewer:open 이 덮어쓸 때까지 유지된다.
 let viewerParentAnalysisId = null;
+// viewer IPC 가 사용할 WorkBench 백엔드 URL. Studio 오픈 시점의 프론트 API_BASE_URL 을
+// 전달받아 Electron main process 의 별도 fallback 과 drift 되지 않게 한다.
+let viewerServerUrl = null;
 
 function createWindow() {
   // 기준 해상도(1920px) 대비 현재 화면 비율로 zoomFactor 자동 계산
@@ -662,7 +665,7 @@ ipcMain.handle("viewer:readLocalFile", async (_e, payload) => {
 
 // 3) 풀스크린 보조 BrowserWindow 로 viewer 오픈
 ipcMain.handle("viewer:open", async (_e, payload) => {
-  const { viewerId, initialFolder, parentAnalysisId } = payload || {};
+  const { viewerId, initialFolder, parentAnalysisId, serverUrl } = payload || {};
   if (!viewerId) return { ok: false, error: "viewerId 누락" };
 
   const dir = getViewerDir(viewerId);
@@ -676,6 +679,9 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
   // viewer:runUnitStructural 가 사용 — null 이면 그 IPC 가 거부 응답
   const parsedParentId = Number(parentAnalysisId);
   viewerParentAnalysisId = Number.isFinite(parsedParentId) && parsedParentId > 0 ? parsedParentId : null;
+  viewerServerUrl = typeof serverUrl === "string" && serverUrl.trim()
+    ? serverUrl.trim().replace(/\/$/, "")
+    : null;
 
   if (viewerWindow && !viewerWindow.isDestroyed()) {
     viewerWindow.focus();
@@ -782,10 +788,11 @@ const _pendingFinalizeReqs = new Map();   // requestId → resolve
 // The viewer IPC bridge runs in Electron main process and cannot import the
 // frontend module, so it needs the same fallback here for users who have not
 // saved a custom server_url in localStorage.
-const DEFAULT_BACKEND_BASE_URL = "http://10.133.122.70:9091";
+const DEFAULT_BACKEND_BASE_URL = "http://10.14.42.145:9091";
 
 async function getWorkbenchRuntimeConfig() {
-  const fallback = { serverUrl: DEFAULT_BACKEND_BASE_URL, token: "", employeeId: "" };
+  const defaultServerUrl = viewerServerUrl || DEFAULT_BACKEND_BASE_URL;
+  const fallback = { serverUrl: defaultServerUrl, token: "", employeeId: "" };
   if (!mainWindow || mainWindow.isDestroyed()) return fallback;
 
   try {
@@ -805,7 +812,7 @@ async function getWorkbenchRuntimeConfig() {
     `, true);
     const cfg = JSON.parse(raw || "{}");
     return {
-      serverUrl: String(cfg.serverUrl || DEFAULT_BACKEND_BASE_URL).replace(/\/$/, ""),
+      serverUrl: String(cfg.serverUrl || viewerServerUrl || DEFAULT_BACKEND_BASE_URL).replace(/\/$/, ""),
       token: String(cfg.token || ""),
       employeeId: String(cfg.employeeId || ""),
     };

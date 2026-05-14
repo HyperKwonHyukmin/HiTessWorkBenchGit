@@ -145,6 +145,7 @@ export default function PlateStructureAnalysis() {
       setStatus('opening');
       const openRes = await window.electron.invoke('viewer:open', {
         viewerId: VIEWER_ID,
+        serverUrl: API_BASE_URL,
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok) throw new Error(openRes?.error || 'Studio 오픈 실패');
