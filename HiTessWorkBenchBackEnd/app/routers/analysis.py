@@ -138,7 +138,7 @@ def _serialize_analysis(record: models.Analysis) -> dict:
 def get_analysis_history(
     employee_id: str,
     skip: int = Query(0, ge=0, description="건너뛸 항목 수"),
-    limit: int = Query(50, ge=1, le=200, description="반환할 최대 항목 수"),
+    limit: int = Query(50, ge=1, le=100000, description="반환할 최대 항목 수"),
     db: Session = Depends(database.get_db)
 ):
     """
