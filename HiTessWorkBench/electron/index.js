@@ -1173,6 +1173,115 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
   }
 });
 
+// ── Plate Studio: BDF 본문 업로드 → Nastran SOL 101 → 결과 JSON ──
+// Studio 내 'Analysis' 탭 의 "구조해석 수행" 버튼 한 번으로 백엔드 job 시작 + 폴링 + 결과 JSON 다운로드까지 main 이 처리.
+// 진행 상황은 viewer:plate-structural-progress 로 stream.
+//
+// payload = { bdfContent: string, fileName?: string }
+// 반환    = { ok, summary, resultPath, result, job, analysisId } | { ok:false, error, ... }
+ipcMain.handle("viewer:runPlateStructural", async (_e, payload) => {
+  try {
+    const bdfContent = payload?.bdfContent;
+    const fileName   = payload?.fileName || "plate_model.bdf";
+    if (typeof bdfContent !== "string" || !bdfContent.trim()) {
+      return { ok: false, error: "bdfContent 누락" };
+    }
+
+    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const { serverUrl } = runtimeConfig;
+    const employeeId = runtimeConfig.employeeId;
+    if (!employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+
+    const makeForm = () => {
+      const form = new FormData();
+      form.append("bdf_file", new Blob([bdfContent], { type: "text/plain" }), fileName);
+      form.append("employee_id", employeeId);
+      form.append("source", "PlateStudio");
+      return form;
+    };
+
+    const { res: reqRes, token } = await fetchWithSessionRefresh(
+      `${serverUrl}/api/analysis/plate-structure/request`,
+      () => ({ method: "POST", body: makeForm() }),
+      runtimeConfig,
+    );
+    if (!reqRes.ok) {
+      const detail = await readBackendError(reqRes);
+      return { ok: false, error: `백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}` };
+    }
+    const reqBody = await reqRes.json();
+    const jobId = reqBody.jobId || reqBody.job_id;
+    if (!jobId) return { ok: false, error: "백엔드 응답에 jobId 가 없습니다." };
+
+    const sendProgress = (data) => {
+      try {
+        if (viewerWindow && !viewerWindow.isDestroyed()) {
+          viewerWindow.webContents.send("viewer:plate-structural-progress", { jobId, ...data });
+        }
+      } catch {}
+    };
+    sendProgress({ status: "Pending", progress: 0, message: "큐 대기..." });
+
+    // SOL 101 + 모델 크기 고려해 30분 (1.5s × 1200) 폴링
+    for (let i = 0; i < 1200; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const statusRes = await fetch(`${serverUrl}/api/analysis/status/${jobId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!statusRes.ok) continue;
+
+      const job = await statusRes.json();
+      sendProgress({ status: job.status, progress: job.progress, message: job.message });
+
+      if (job.status === "Success") {
+        const resultInfo = job.project?.result_info || {};
+        const resultPath = resultInfo.plateResultJson || null;
+        let resultContent = null;
+        // 서버↔클라이언트 분리 환경에서는 서버 로컬 경로를 fs.existsSync 로 못 읽으므로 HTTP 다운로드.
+        if (resultPath) {
+          try {
+            const dlUrl = `${serverUrl}/api/download?filepath=${encodeURIComponent(resultPath)}`;
+            const { res: dlRes } = await fetchWithSessionRefresh(dlUrl, { method: "GET" });
+            if (!dlRes.ok) {
+              const detail = await readBackendError(dlRes);
+              return {
+                ok: false,
+                error: `결과 JSON 다운로드 실패: ${dlRes.status}${detail ? ` - ${detail}` : ""}`,
+                job,
+              };
+            }
+            resultContent = JSON.parse(await dlRes.text());
+          } catch (e) {
+            return { ok: false, error: `결과 JSON 다운로드/파싱 실패: ${e.message}`, job };
+          }
+        }
+        return {
+          ok: true,
+          analysisId: job.project?.id ?? null,
+          summary:    resultInfo.summary ?? null,
+          resultPath,
+          result:     resultContent,
+          job,
+        };
+      }
+      if (job.status === "Failed") {
+        return {
+          ok: false,
+          error: job.message || "Plate 구조 해석 실패",
+          stderr: job.engine_log || "",
+          job,
+        };
+      }
+    }
+
+    return { ok: false, error: "시간 초과 (30분)" };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 app.whenReady().then(async () => {
   // 외부 회사 네트워크 등 시스템 프록시가 설정된 환경에서도 정상 동작하도록
   // 시스템 프록시 설정을 자동으로 적용

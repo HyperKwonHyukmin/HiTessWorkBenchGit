@@ -34,6 +34,7 @@ from ..services.hitess_modelflow_service import (
     scan_f06_diagnostics,
 )
 from ..services.f06parser_service import task_execute_f06parser
+from ..services.plate_structure_service import task_execute_plate_structure
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -358,6 +359,44 @@ async def request_truss_assessment(
 
 
 # ==================== BDF Scanner ====================
+
+# ==================== Plate Structure Analysis (Plate Studio) ====================
+
+@router.post("/analysis/plate-structure/request")
+async def request_plate_structure(
+        bdf_file: UploadFile = File(...),
+        employee_id: str = Form(...),
+        source: str = Form("PlateStudio"),
+        current_user: str = Depends(require_auth)
+):
+    """Plate Studio 가 내보낸 BDF 를 받아 Nastran SOL 101 해석 + 결과 파싱 작업을 시작한다.
+
+    저장 위치: userConnection/{timestamp}_{employee_id}_PlateStructure/
+    """
+    _verify_employee_self(employee_id, current_user)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    unique_folder = f"{timestamp}_{employee_id}_PlateStructure"
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
+    os.makedirs(work_dir, exist_ok=True)
+
+    bdf_path = os.path.join(work_dir, os.path.basename(bdf_file.filename))
+    try:
+        with open(bdf_path, "wb") as buffer:
+            buffer.write(await bdf_file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
+
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "대기 중..."})
+
+    analysis_executor.submit(
+        task_execute_plate_structure,
+        job_id, bdf_path, work_dir, employee_id, timestamp, source,
+    )
+
+    return {"job_id": job_id}
+
 
 @router.post("/analysis/bdfscanner/request")
 async def request_bdfscanner(

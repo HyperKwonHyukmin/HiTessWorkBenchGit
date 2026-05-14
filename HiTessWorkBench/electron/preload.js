@@ -15,6 +15,8 @@ const VALID_RECEIVE_CHANNELS = [
   'modelflow:finalize-edit-request',
   // main 이 viewer 창에 Unit 구조 해석 진행 상황을 stream
   'viewer:unit-structural-progress',
+  // main 이 viewer 창에 Plate 구조 해석 진행 상황을 stream
+  'viewer:plate-structural-progress',
 ];
 const VALID_INVOKE_CHANNELS  = [
   'list-dir-csvs',
@@ -35,6 +37,7 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:uploadEvaluationArtifact',
   'viewer:runStabilityAnalysis',
   'viewer:runUnitStructural',
+  'viewer:runPlateStructural',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
   'viewer:checkPathAccess',
   'viewer:fetchResultDir',
@@ -92,6 +95,16 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
     const listener = (_, data) => callback(data);
     ipcRenderer.on('viewer:unit-structural-progress', listener);
     return () => ipcRenderer.removeListener('viewer:unit-structural-progress', listener);
+  },
+  // Plate Studio "구조해석 수행" → 백엔드 plate-structure endpoint 호출 + 폴링 + 결과 JSON 다운로드까지
+  // main 이 일괄 처리. 진행 상황은 onPlateStructuralProgress() 로 stream.
+  // payload = { bdfContent: string, fileName?: string }
+  runPlateStructural: (opts) =>
+    ipcRenderer.invoke('viewer:runPlateStructural', opts),
+  onPlateStructuralProgress: (callback) => {
+    const listener = (_, data) => callback(data);
+    ipcRenderer.on('viewer:plate-structural-progress', listener);
+    return () => ipcRenderer.removeListener('viewer:plate-structural-progress', listener);
   },
   // Studio "최종 모델 출력" → 워크벤치 백엔드 apply-edit-intent 자동 수행
   // → mainWindow Edit 탭 표시 → Studio 창 닫기 → { ok, error }
