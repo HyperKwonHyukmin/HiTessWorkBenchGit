@@ -47,6 +47,7 @@ const DeveloperRunbooks = lazy(() => import('./pages/Administration/DeveloperRun
 const HiTessModelBuilder = lazy(() => import('./pages/analysis/HiTessModelBuilder'));
 const GroupModuleUnitLiftingAnalysis = lazy(() => import('./pages/analysis/GroupModuleUnitLiftingAnalysis'));
 const F06ParserPage = lazy(() => import('./pages/analysis/F06ParserPage'));
+const HpScrAssessment = lazy(() => import('./pages/analysis/HpScrAssessment'));
 
 const PageFallback = () => (
   <div className="h-full min-h-[360px] flex items-center justify-center text-slate-400 text-sm">
@@ -281,6 +282,7 @@ function AppInner() {
       case 'Productivity Apps': return <ProductivityApps />;
       case 'HiTESS Model Builder': return <HiTessModelBuilder />;
       case 'Group & Module Unit 권상 구조 해석': return <GroupModuleUnitLiftingAnalysis />;
+      case 'HP-SCR 배관응력 해석': return <HpScrAssessment />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">

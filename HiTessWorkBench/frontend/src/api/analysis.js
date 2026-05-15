@@ -38,6 +38,12 @@ export const requestBdfScanner = (formData) =>
     headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
   });
 
+/** HP-SCR 배관응력 해석 요청 (PSA / POR) */
+export const requestHpscrAssessment = (formData) =>
+  axios.post(`${API_BASE_URL}/api/analysis/hpscr/request`, formData, {
+    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
+  });
+
 /** Group & Module Unit 권상 구조 해석 — BDF 검증 (NastranBridge) */
 export const requestGroupModuleUnit = (formData) =>
   axios.post(`${API_BASE_URL}/api/analysis/groupmoduleunit/request`, formData, {

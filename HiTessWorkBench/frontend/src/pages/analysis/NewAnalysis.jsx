@@ -42,6 +42,8 @@ export default function NewAnalysis() {
       setCurrentMenu('HiTESS Model Builder');
     } else if (categoryTitle === "Group & Module Unit 권상 구조 해석") {
       setCurrentMenu('Group & Module Unit 권상 구조 해석');
+    } else if (categoryTitle === "HP-SCR 배관응력 해석") {
+      setCurrentMenu('HP-SCR 배관응력 해석');
     } else {
       showToast(`${categoryTitle} 기능은 현재 준비 중입니다.`, 'info');
     }

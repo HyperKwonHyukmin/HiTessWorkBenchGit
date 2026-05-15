@@ -23,6 +23,7 @@ from ..services.truss_service import task_execute_truss
 from ..services.assessment_service import task_execute_assessment, _json_to_xlsx_bytes
 from ..services.beam_service import task_execute_beam
 from ..services.bdfscanner_service import task_execute_bdfscanner
+from ..services.hpscr_service import task_execute_hpscr
 from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
 from ..services.unit_structural_service import task_execute_unit_structural
 from ..services.module_stability_service import task_execute_module_stability
@@ -434,6 +435,53 @@ async def request_bdfscanner(
 
     analysis_executor.submit(
         task_execute_bdfscanner, job_id, bdf_path, work_dir, employee_id, timestamp, source, use_nastran
+    )
+
+    return {"job_id": job_id}
+
+
+# ==================== HP-SCR 배관응력 해석 ====================
+
+@router.post("/analysis/hpscr/request")
+async def request_hpscr(
+        bdf_file: UploadFile = File(...),
+        employee_id: str = Form(...),
+        analysis_mode: str = Form(...),
+        source: str = Form("Workbench"),
+        current_user: str = Depends(require_auth)
+):
+    """
+    HP-SCR 배관응력 해석을 요청받아 BDF 파일을 저장하고 백그라운드 작업을 실행합니다.
+
+    analysis_mode : 'PSA' | 'POR'
+      - PSA → InHouseProgram/HPSCR/PSA_Assessment_CLI.exe
+      - POR → InHouseProgram/HPSCR/POR_Assessment_CLI.exe
+    공통 결과: HP-SCR-PSA-REPORT.xlsx
+    """
+    _verify_employee_self(employee_id, current_user)
+
+    mode = (analysis_mode or "").upper()
+    if mode not in ("PSA", "POR"):
+        raise HTTPException(status_code=400, detail="analysis_mode 는 'PSA' 또는 'POR' 만 허용됩니다.")
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    safe_name = f"HpScr{mode}"
+    unique_folder = f"{timestamp}_{employee_id}_{safe_name}"
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
+    os.makedirs(work_dir, exist_ok=True)
+
+    bdf_path = os.path.join(work_dir, os.path.basename(bdf_file.filename))
+    try:
+        with open(bdf_path, "wb") as buffer:
+            buffer.write(await bdf_file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
+
+    job_id = str(uuid.uuid4())
+    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
+
+    analysis_executor.submit(
+        task_execute_hpscr, job_id, bdf_path, work_dir, employee_id, timestamp, source, mode
     )
 
     return {"job_id": job_id}
