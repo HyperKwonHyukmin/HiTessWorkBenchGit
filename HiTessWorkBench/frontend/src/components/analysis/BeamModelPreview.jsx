@@ -12,7 +12,7 @@ import {
   Download, ChevronDown, FileText
 } from 'lucide-react';
 import GuideButton from '../ui/GuideButton';
-import { useBeamModeling } from '../../hooks/useBeamModeling';
+import { useBeamModeling, withYzPolar } from '../../hooks/useBeamModeling';
 import { useAnalysisManager } from '../../hooks/useAnalysisManager';
 import { InputRow, SummaryRow, SectionGuide } from '../../components/analysis/BeamSharedUI';
 import Viewer3D from '../../components/analysis/Viewer3D';
@@ -364,7 +364,7 @@ export default function BeamModelPreview() {
                 <section className="border-t border-slate-800 pt-6 mb-6">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xs font-bold text-brand-accent uppercase tracking-wider flex items-center gap-2"><ArrowDown size={14} /> Static Loads</h3>
-                    {!isReadOnly && <button onClick={() => modelingHook.setLoads([...loads, { pos: (Number(params.length)||0)/2, fx: 0, fy: 0, fz: -5000, unit: 'N' }])} className="text-slate-400 hover:text-red-400 cursor-pointer"><Plus size={16}/></button>}
+                    {!isReadOnly && <button onClick={() => modelingHook.setLoads([...loads, withYzPolar({ pos: (Number(params.length)||0)/2, fx: 0, fy: 5000, fz: 0, unit: 'N' })])} className="text-slate-400 hover:text-red-400 cursor-pointer"><Plus size={16}/></button>}
                   </div>
                   <div className="space-y-3">
                     {loads.map((load, idx) => {
@@ -372,30 +372,65 @@ export default function BeamModelPreview() {
                       return (
                         <div key={idx} className={`flex flex-col gap-1.5 bg-slate-950 p-2 rounded-lg border border-slate-800 ${isReadOnly && 'opacity-60'}`}>
                           <div className="flex gap-2 items-center">
-                             <span className="text-[10px] text-slate-400 font-bold uppercase w-8 tracking-wider">POS</span>
+                             <span className="text-[10px] text-slate-400 font-bold w-20 shrink-0 tracking-tight">하중 입력 위치</span>
                              <div className="relative flex-1">
                                <input type="number" disabled={isReadOnly} value={load.pos} onChange={e => modelingHook.updateLoad(idx, 'pos', e.target.value)} className="w-full bg-slate-900 border border-slate-800 focus:border-red-500 px-2 py-1 text-sm text-white outline-none font-mono text-right pr-6 rounded disabled:cursor-not-allowed" />
                                <span className="absolute right-2 top-1.5 text-[10px] text-slate-500 font-mono">mm</span>
                              </div>
+                             {!isReadOnly && <button onClick={() => modelingHook.setLoads(loads.filter((_, i) => i !== idx))} className="p-1 text-slate-500 hover:text-red-400 cursor-pointer"><Trash2 size={14}/></button>}
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                             <span className="text-[10px] text-slate-500">하중 단위</span>
                              {/* N / ton 단위 토글 — 누르면 fx/fy/fz 가 동등한 힘으로 자동 환산 */}
                              <div className={`flex gap-0.5 bg-slate-800 rounded-md p-0.5 text-[10px] font-bold ${isReadOnly ? 'opacity-50' : ''}`}>
                                <button
                                  type="button"
                                  disabled={isReadOnly}
                                  onClick={() => modelingHook.updateLoadUnit(idx, 'N')}
-                                 className={`px-2 py-0.5 rounded transition cursor-pointer ${u === 'N' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                 className={`px-3 py-0.5 rounded transition cursor-pointer ${u === 'N' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                  title="Newton 단위로 입력"
                                >N</button>
                                <button
                                  type="button"
                                  disabled={isReadOnly}
                                  onClick={() => modelingHook.updateLoadUnit(idx, 'ton')}
-                                 className={`px-2 py-0.5 rounded transition cursor-pointer ${u === 'ton' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                 className={`px-3 py-0.5 rounded transition cursor-pointer ${u === 'ton' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                  title="Metric ton-force (1 ton = 9806.65 N) — 해석 시 N 으로 환산"
                                >ton</button>
                              </div>
-                             {!isReadOnly && <button onClick={() => modelingHook.setLoads(loads.filter((_, i) => i !== idx))} className="p-1 text-slate-500 hover:text-red-400 cursor-pointer"><Trash2 size={14}/></button>}
                           </div>
+                          <div className="flex gap-1.5">
+                             <div className="relative flex-1 flex items-center border border-slate-800 rounded bg-slate-900 overflow-hidden focus-within:border-red-500">
+                                <span className="text-[9px] font-bold text-slate-500 pl-1.5 whitespace-nowrap">입력 하중</span>
+                                <input
+                                  type="number"
+                                  disabled={isReadOnly}
+                                  value={load.yzMagnitude ?? ''}
+                                  onChange={e => modelingHook.updateLoadYzPolar(idx, 'yzMagnitude', e.target.value)}
+                                  className="w-full bg-transparent px-1 py-1 text-xs text-emerald-400 outline-none font-mono text-right disabled:cursor-not-allowed"
+                                  title="Y-Z 평면 합력 크기"
+                                />
+                                <span className="text-[9px] text-slate-600 pr-1.5 font-mono">{u}</span>
+                             </div>
+                             <div className="relative flex-1 flex items-center border border-slate-800 rounded bg-slate-900 overflow-hidden focus-within:border-red-500">
+                                <span className="text-[9px] font-bold text-slate-500 pl-1.5 whitespace-nowrap">각도</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="359.999"
+                                  step="1"
+                                  disabled={isReadOnly}
+                                  value={load.yzAngleDeg ?? ''}
+                                  onChange={e => modelingHook.updateLoadYzPolar(idx, 'yzAngleDeg', e.target.value)}
+                                  className="w-full bg-transparent px-1 py-1 text-xs text-emerald-400 outline-none font-mono text-right disabled:cursor-not-allowed"
+                                  title="Beam 진행 방향(+X)에서 바라본 +Y 기준 시계방향 각도"
+                                />
+                                <span className="text-[9px] text-slate-600 pr-1.5 font-mono">deg</span>
+                             </div>
+                          </div>
+                          <p className="text-[10px] leading-4 text-slate-500">
+                            각도 기본값은 0 deg이며, 입력 범위는 0 이상 360 미만입니다. 각도가 0보다 커지면 입력 하중을 기준으로 FY/FZ가 자동 계산됩니다.
+                          </p>
                           <div className="flex gap-1.5">
                              {['fx', 'fy', 'fz'].map(axis => (
                                <div key={axis} className="relative flex-1 flex items-center border border-slate-800 rounded bg-slate-900 overflow-hidden focus-within:border-red-500">

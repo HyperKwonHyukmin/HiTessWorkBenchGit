@@ -2,7 +2,7 @@
 /// HP-SCR 배관응력 해석 — BDF 업로드 + PSA/POR 양자 선택 + 3D 뷰어 + XLSX 다운로드.
 /// </summary>
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Upload, Play, Terminal, Pipette, Info, Download } from 'lucide-react';
+import { ArrowLeft, Upload, Play, Terminal, Pipette, Info, Download, RotateCcw } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
@@ -19,9 +19,14 @@ import BdfModelViewer from '../../components/analysis/BdfModelViewer';
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
 const ANALYSIS_MODES = [
-  { value: 'PSA', label: 'PSA', desc: '배관응력 해석 (Pipe Stress Analysis)' },
-  { value: 'POR', label: 'POR', desc: '열변형 응력 해석 (Pipe Operating Range)' },
+  { value: 'PSA', label: 'PSA', desc: '배관응력 해석' },
+  { value: 'POR', label: 'POR', desc: '열변형 해석' },
 ];
+
+const MODE_BUTTON_LABEL = {
+  PSA: '배관응력 해석',
+  POR: '열변형 해석',
+};
 
 /**
  * BDF 토큰화 — 콤마/공백을 모두 구분자로, 주석/빈줄 제외.
@@ -297,6 +302,22 @@ export default function HpScrAssessment() {
     }
   };
 
+  const handleReset = () => {
+    if (isRunning) return;
+    setBdfFile(null);
+    setAnalysisMode('PSA');
+    setProgress(0);
+    setStatusMessage('');
+    setLogs([]);
+    setCurrentPollingJobId(null);
+    setModelData(null);
+    setReportPath(null);
+    setIsDragOver(false);
+    setIsDownloading(false);
+    lastMsgRef.current = '';
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleDownloadReport = async () => {
     if (!reportPath || isDownloading) return;
     setIsDownloading(true);
@@ -345,7 +366,7 @@ export default function HpScrAssessment() {
                 <Pipette size={18} className="text-sky-300" />
                 HP-SCR 배관응력 해석
               </h1>
-              <p className="text-sm text-sky-200/80 mt-0.5">배관 BDF 기반 열변형 / 배관 응력 평가 (PSA · POR)</p>
+              <p className="text-sm text-sky-200/80 mt-0.5">배관 BDF 기반 배관응력 · 열변형 해석</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -359,7 +380,7 @@ export default function HpScrAssessment() {
         <Info size={16} className="text-sky-500 shrink-0 mt-0.5" />
         <div className="text-xs text-sky-700 leading-relaxed">
           <span className="font-bold">배관 BDF 모델을 업로드하고 해석 종류를 선택하세요.</span>
-          {' — '}PSA(배관응력 해석) 또는 POR(열변형 응력 해석)을 선택할 수 있으며,
+          {' — '}배관응력 해석(PSA) 또는 열변형 해석(POR)을 선택할 수 있으며,
           공통적으로 <code className="font-mono bg-sky-100 px-1 rounded">HP-SCR-PSA-REPORT.xlsx</code> 결과 리포트가 생성됩니다.
         </div>
       </div>
@@ -442,6 +463,20 @@ export default function HpScrAssessment() {
             </div>
           </div>
 
+          {/* 초기화 버튼 */}
+          <button
+            onClick={handleReset}
+            disabled={isRunning}
+            className={`w-full py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all border ${
+              isRunning
+                ? 'bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed'
+                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50 hover:text-slate-800 cursor-pointer'
+            }`}
+          >
+            <RotateCcw size={15} />
+            초기화
+          </button>
+
           {/* 실행 버튼 */}
           <button
             onClick={runAnalysis}
@@ -453,7 +488,7 @@ export default function HpScrAssessment() {
             }`}
           >
             <Play size={16} />
-            {isRunning ? '해석 실행 중...' : `${analysisMode} 해석 실행`}
+            {isRunning ? '해석 실행 중...' : MODE_BUTTON_LABEL[analysisMode] || '해석 실행'}
           </button>
 
           {/* 진행률 */}

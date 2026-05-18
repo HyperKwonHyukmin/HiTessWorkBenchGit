@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '../contexts/DashboardContext';
 import { requestBeamAnalysis, downloadFileText } from '../api/analysis';
-import { loadToNewton } from './useBeamModeling';
+import { loadToNewton, withYzPolar } from './useBeamModeling';
 
 export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
   const [dispData, setDispData] = useState([]);
@@ -39,7 +39,7 @@ export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
           dim2: json.model.dimensions.dim2 || 200, dim3: json.model.dimensions.dim3 || 0, dim4: json.model.dimensions.dim4 || 0,
         },
         json.model.boundaries?.map(b => ({ pos: b.position, type: b.type, dof: b.dof || '' })),
-        json.model.loads?.map(l => ({ pos: l.position, fx: l.fx || 0, fy: l.fy || 0, fz: l.fz !== undefined ? l.fz : (l.magnitude ? -l.magnitude : 0), unit: l.unit || 'N' }))
+        json.model.loads?.map(l => withYzPolar({ pos: l.position, fx: l.fx || 0, fy: l.fy || 0, fz: l.fz !== undefined ? l.fz : (l.magnitude ? -l.magnitude : 0), unit: l.unit || 'N' }))
       );
     }
 

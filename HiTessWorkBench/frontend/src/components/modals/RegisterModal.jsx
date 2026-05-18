@@ -134,13 +134,13 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4 text-center">
+          <div className="flex min-h-full items-start sm:items-center justify-center p-2 sm:p-4 text-center">
             <Transition.Child
               as={Fragment}
               enter="ease-out duration-300" enterFrom="opacity-0 scale-95 translate-y-4" enterTo="opacity-100 scale-100 translate-y-0"
               leave="ease-in duration-200" leaveFrom="opacity-100 scale-100 translate-y-0" leaveTo="opacity-0 scale-95 translate-y-4"
             >
-              <Dialog.Panel className="w-full max-w-md transform overflow-visible rounded-2xl bg-white text-left align-middle shadow-2xl transition-all border border-slate-100">
+              <Dialog.Panel className="w-full max-w-md transform overflow-visible rounded-2xl bg-white text-left align-middle shadow-2xl transition-all border border-slate-100 my-2">
 
                 {isSuccess ? (
                   <div className="p-8 text-center">
@@ -153,23 +153,23 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
                   </div>
                 ) : (
                   <>
-                    <div className="bg-gradient-to-r from-brand-blue to-brand-blue-dark p-6 flex justify-between items-center text-white rounded-t-2xl">
+                    <div className="bg-gradient-to-r from-brand-blue to-brand-blue-dark px-6 py-4 sm:py-5 flex justify-between items-center text-white rounded-t-2xl">
                       <h3 className="text-lg font-bold">Hi-TESS Join</h3>
                       <button onClick={handleClose}><X size={20}/></button>
                     </div>
 
-                    <div className="p-8 bg-slate-50 rounded-b-2xl">
+                    <div className="p-5 sm:p-8 bg-slate-50 rounded-b-2xl">
                       <form onSubmit={handleSubmit} className="space-y-4">
                         {errorMsg && <div className="text-red-600 text-sm font-bold text-center animate-pulse">{errorMsg}</div>}
 
                         {/* 사번 & 이름 */}
                         <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
                           <div>
-                            <label className="text-xs font-bold text-slate-500">사번</label>
+                            <label className="block text-xs font-bold text-slate-600 uppercase mb-1 ml-1">사번</label>
                             <input type="text" name="employee_id" value={formData.employee_id} onChange={handleChange} required className="w-full p-2 border rounded-lg bg-slate-50 outline-none focus:border-blue-500 transition-colors"/>
                           </div>
                           <div>
-                            <label className="text-xs font-bold text-slate-500">이름</label>
+                            <label className="block text-xs font-bold text-slate-600 uppercase mb-1 ml-1">이름</label>
                             <input type="text" name="name" value={formData.name} onChange={handleChange} required className="w-full p-2 border rounded-lg bg-slate-50 outline-none focus:border-blue-500 transition-colors"/>
                           </div>
                         </div>

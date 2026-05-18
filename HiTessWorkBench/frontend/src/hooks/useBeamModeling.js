@@ -12,10 +12,44 @@ export const loadToNewton = (l) => {
   return { fx: (Number(l?.fx) || 0) * f, fy: (Number(l?.fy) || 0) * f, fz: (Number(l?.fz) || 0) * f };
 };
 
+const roundLoadValue = (value) => parseFloat((Number(value) || 0).toFixed(4));
+
+export const getYzMagnitude = (load) => {
+  const fy = Number(load?.fy) || 0;
+  const fz = Number(load?.fz) || 0;
+  return Math.sqrt((fy * fy) + (fz * fz));
+};
+
+export const getYzAngleDeg = (load) => {
+  const fy = Number(load?.fy) || 0;
+  const fz = Number(load?.fz) || 0;
+  if (Math.abs(fy) < 1e-9 && Math.abs(fz) < 1e-9) return 0;
+  const deg = Math.atan2(-fz, fy) * 180 / Math.PI;
+  return ((deg % 360) + 360) % 360;
+};
+
+export const withYzPolar = (load) => ({
+  ...load,
+  yzMagnitude: load?.yzMagnitude ?? roundLoadValue(getYzMagnitude(load)),
+  yzAngleDeg: load?.yzAngleDeg ?? roundLoadValue(getYzAngleDeg(load))
+});
+
+const applyYzPolar = (load, magnitude, angleDeg) => {
+  const mag = Number(magnitude) || 0;
+  const rad = (Number(angleDeg) || 0) * Math.PI / 180;
+  return {
+    ...load,
+    yzMagnitude: magnitude,
+    yzAngleDeg: angleDeg,
+    fy: roundLoadValue(mag * Math.cos(rad)),
+    fz: roundLoadValue(-mag * Math.sin(rad))
+  };
+};
+
 export function useBeamModeling() {
   const [beamType, setBeamType] = useState('I');
   const [params, setParams] = useState({ length: 1000, dim1: 100, dim2: 200, dim3: 10, dim4: 8 });
-  const [loads, setLoads] = useState([{ pos: 1000, fx: 0, fy: 0, fz: -5000, unit: 'N' }]);
+  const [loads, setLoads] = useState([withYzPolar({ pos: 1000, fx: 0, fy: 5000, fz: 0, unit: 'N' })]);
   const [boundaries, setBoundaries] = useState([{ pos: 0, type: 'Fix', dof: '' }]);
   const [validationErrors, setValidationErrors] = useState([]);
 
@@ -38,7 +72,11 @@ export function useBeamModeling() {
       if (dim4 >= dim1) errors.push(`Web 두께는 전체 폭보다 작아야 합니다.`);
     }
     boundaries.forEach((bc, i) => { if ((Number(bc.pos) || 0) < 0 || (Number(bc.pos) || 0) > length) errors.push(`경계조건 #${i + 1} 위치가 부재 길이를 벗어납니다.`); });
-    loads.forEach((load, i) => { if ((Number(load.pos) || 0) < 0 || (Number(load.pos) || 0) > length) errors.push(`하중 #${i + 1} 위치가 부재 길이를 벗어납니다.`); });
+    loads.forEach((load, i) => {
+      if ((Number(load.pos) || 0) < 0 || (Number(load.pos) || 0) > length) errors.push(`하중 #${i + 1} 위치가 부재 길이를 벗어납니다.`);
+      const angle = Number(load.yzAngleDeg) || 0;
+      if (angle < 0 || angle >= 360) errors.push(`하중 #${i + 1} 각도는 0 이상 360 미만이어야 합니다.`);
+    });
     
     setValidationErrors(errors);
   }, [params, beamType, loads, boundaries]);
@@ -67,7 +105,21 @@ export function useBeamModeling() {
 
   const updateLoad = (idx, field, value) => {
     const newLoads = [...loads];
-    newLoads[idx][field] = value;
+    const next = { ...newLoads[idx], [field]: value };
+    if (field === 'fy' || field === 'fz') {
+      next.yzMagnitude = roundLoadValue(getYzMagnitude(next));
+      next.yzAngleDeg = roundLoadValue(getYzAngleDeg(next));
+    }
+    newLoads[idx] = next;
+    setLoads(newLoads);
+  };
+
+  const updateLoadYzPolar = (idx, field, value) => {
+    const newLoads = [...loads];
+    const cur = withYzPolar(newLoads[idx]);
+    const nextMagnitude = field === 'yzMagnitude' ? value : cur.yzMagnitude;
+    const nextAngle = field === 'yzAngleDeg' ? value : cur.yzAngleDeg;
+    newLoads[idx] = applyYzPolar(cur, nextMagnitude, nextAngle);
     setLoads(newLoads);
   };
 
@@ -84,6 +136,8 @@ export function useBeamModeling() {
       const v = (Number(cur[axis]) || 0) * factor;
       cur[axis] = parseFloat(v.toFixed(4));
     });
+    cur.yzMagnitude = roundLoadValue(getYzMagnitude(cur));
+    cur.yzAngleDeg = roundLoadValue(getYzAngleDeg(cur));
     cur.unit = newUnit;
     newLoads[idx] = cur;
     setLoads(newLoads);
@@ -93,19 +147,19 @@ export function useBeamModeling() {
     setBeamType(type);
     setParams(dimensions);
     if (newBoundaries) setBoundaries(newBoundaries);
-    if (newLoads) setLoads(newLoads);
+    if (newLoads) setLoads(newLoads.map(withYzPolar));
   };
 
   const resetModeling = () => {
     setBeamType('I');
     setParams({ length: 1000, dim1: 100, dim2: 200, dim3: 10, dim4: 8 });
-    setLoads([{ pos: 500, fx: 0, fy: 0, fz: -5000, unit: 'N' }]);
+    setLoads([withYzPolar({ pos: 500, fx: 0, fy: 5000, fz: 0, unit: 'N' })]);
     setBoundaries([{ pos: 0, type: 'Fix', dof: '' }, { pos: 1000, type: 'Hinge', dof: '' }]);
   };
 
   return {
     beamType, params, loads, boundaries, validationErrors,
     setParams, setLoads, setBoundaries,
-    handleBeamTypeChange, updateBc, updateLoad, updateLoadUnit, overrideModelData, resetModeling
+    handleBeamTypeChange, updateBc, updateLoad, updateLoadYzPolar, updateLoadUnit, overrideModelData, resetModeling
   };
 }

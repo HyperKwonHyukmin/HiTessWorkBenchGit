@@ -27,7 +27,7 @@ const MEMBER_GROUPS = [
       '150A PIPE (#40)', '150A PIPE (#60)',
       '200A PIPE (#40)', '200A PIPE (#60)',
       '250A PIPE (#40)', '250A PIPE (#60)',
-      '300A PIPE',
+      '300A PIPE (#40)',
       '400A PIPE (#40)', '400A PIPE (#60)',
     ],
   },
@@ -75,7 +75,7 @@ const PropCell = ({ label, value, unit }) => (
 export default function ColumnBucklingCalculator() {
   const { setCurrentMenu } = useNavigation();
   const [changelogOpen, setChangelogOpen] = useState(false);
-  const [memberName, setMemberName] = useState('300A PIPE');
+  const [memberName, setMemberName] = useState('300A PIPE (#40)');
   const [lengthMm, setLengthMm] = useState('4470');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -170,14 +170,18 @@ export default function ColumnBucklingCalculator() {
               <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">편심량 (e)</p>
               <div className="space-y-2.5">
                 {[
-                  ['설계 고정값', 'e = 20mm', 'mm'],
-                  ['비고', '단면 종류에 무관하게 일정', '—'],
+                  ['H형강·I형강·I.A', 'e = 20', 'mm'],
+                  ['Pipe (호칭 ≤ 300A)', 'e = 20', 'mm'],
+                  ['Pipe (호칭 > 300A)', 'e = 0.25·ry² / c', 'mm'],
                 ].map(([name, expr, unit]) => (
                   <div key={name} className="bg-slate-50 rounded-lg px-3 py-2">
                     <p className="text-[10px] text-slate-400 font-bold">{name}</p>
                     <p className="font-mono text-slate-700 font-bold text-xs mt-0.5">{expr} <span className="text-slate-400 font-normal">[{unit}]</span></p>
                   </div>
                 ))}
+                <p className="text-[10px] text-slate-500 font-medium leading-relaxed pt-1">
+                  ry : 약축 회전반경, c = D/2 (외경 반지름)
+                </p>
               </div>
             </div>
 
@@ -259,18 +263,6 @@ export default function ColumnBucklingCalculator() {
                 min={1}
               />
 
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">편심량</label>
-                <p className="text-[11px] text-slate-400 mb-1.5">Secant Formula 적용 — 단면 무관 고정값</p>
-                <div className="flex items-center justify-between border-2 border-slate-100 rounded-xl px-4 py-3 bg-slate-50">
-                  <span className="text-sm font-extrabold text-slate-700">20</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">고정</span>
-                    <span className="text-sm font-bold text-slate-400">mm</span>
-                  </div>
-                </div>
-              </div>
-
               <button
                 onClick={handleCalculate}
                 disabled={!isValid || isLoading}
@@ -325,7 +317,7 @@ export default function ColumnBucklingCalculator() {
                 <SlidersHorizontal size={40} className="opacity-20" />
               </div>
               <p className="font-bold text-slate-500">입력값을 입력하고 Calculate를 실행하세요.</p>
-              <p className="text-sm mt-1">부재명과 기둥 길이를 입력하면 최대 허용 사용하중을 산출합니다. (편심량 20mm 고정)</p>
+              <p className="text-sm mt-1">부재명과 기둥 길이를 입력하면 최대 허용 사용하중을 산출합니다. (편심량은 부재 종류에 따라 자동 산정)</p>
             </div>
           )}
 
@@ -381,7 +373,7 @@ export default function ColumnBucklingCalculator() {
                 <div className="p-5 grid grid-cols-3 gap-4">
                   <PropCell label="부재명"      value={inp.memberName}                       unit="" />
                   <PropCell label="기둥 길이"   value={inp.columnLengthMm?.toLocaleString()} unit="mm" />
-                  <PropCell label="편심량 (고정)" value="20"                                  unit="mm" />
+                  <PropCell label="편심량 e"    value={inp.eccentricityMm?.toFixed(2)}       unit="mm" />
                 </div>
               </div>
 
