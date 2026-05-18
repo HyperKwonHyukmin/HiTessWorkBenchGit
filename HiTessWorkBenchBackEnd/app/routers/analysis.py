@@ -554,26 +554,12 @@ async def request_groupmoduleunit(
     use_nastran=True 인 경우 추후 단계에서 validate-run 으로 F06 검증까지 확장한다.
     """
     _verify_employee_self(employee_id, current_user)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    unique_folder = f"{timestamp}_{employee_id}_GroupModuleUnit"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
-    os.makedirs(work_dir, exist_ok=True)
-
-    bdf_path = os.path.join(work_dir, os.path.basename(bdf_file.filename))
-    try:
-        with open(bdf_path, "wb") as buffer:
-            buffer.write(await bdf_file.read())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
-
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
-
-    analysis_executor.submit(
+    work_dir, timestamp = make_work_dir(employee_id, "GroupModuleUnit")
+    bdf_path = await save_upload(bdf_file, work_dir, error_prefix="파일 저장 오류")
+    job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
-        job_id, bdf_path, work_dir, employee_id, timestamp, source, use_nastran,
+        bdf_path, work_dir, employee_id, timestamp, source, use_nastran,
     )
-
     return {"job_id": job_id}
 
 
@@ -597,25 +583,17 @@ async def request_groupmoduleunit_from_path(
     if not os.path.isfile(abs_path):
         raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    unique_folder = f"{timestamp}_{employee_id}_GroupModuleUnit"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
-    os.makedirs(work_dir, exist_ok=True)
-
+    work_dir, timestamp = make_work_dir(employee_id, "GroupModuleUnit")
     bdf_path = os.path.join(work_dir, os.path.basename(abs_path))
     try:
         shutil.copy2(abs_path, bdf_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"파일 복사 오류: {str(e)}")
 
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
-
-    analysis_executor.submit(
+    job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
-        job_id, bdf_path, work_dir, employee_id, timestamp, source, use_nastran,
+        bdf_path, work_dir, employee_id, timestamp, source, use_nastran,
     )
-
     return {"job_id": job_id}
 
 
@@ -770,52 +748,28 @@ async def request_modelflow_analysis(
       run_nastran          → --run-nastran (+ --nastran-path / --leg-z-tol)
     """
     _verify_employee_self(employee_id, current_user)
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(os.path.dirname(base_dir))
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-    unique_folder = f"{timestamp}_{employee_id}_HiTessModelBuilder"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
-    os.makedirs(work_dir, exist_ok=True)
-
-    stru_path = os.path.join(work_dir, os.path.basename(stru_file.filename))
-    try:
-        with open(stru_path, "wb") as f:
-            f.write(await stru_file.read())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
+    work_dir, timestamp = make_work_dir(employee_id, "HiTessModelBuilder")
+    stru_path = await save_upload(stru_file, work_dir, error_prefix="파일 저장 오류")
 
     pipe_path = None
     if pipe_file and pipe_file.filename:
-        pipe_path = os.path.join(work_dir, os.path.basename(pipe_file.filename))
-        try:
-            with open(pipe_path, "wb") as f:
-                f.write(await pipe_file.read())
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"배관 파일 저장 오류: {str(e)}")
+        pipe_path = await save_upload(pipe_file, work_dir, error_prefix="배관 파일 저장 오류")
 
     equip_path = None
     if equip_file and equip_file.filename:
-        equip_path = os.path.join(work_dir, os.path.basename(equip_file.filename))
-        try:
-            with open(equip_path, "wb") as f:
-                f.write(await equip_file.read())
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"장비 파일 저장 오류: {str(e)}")
+        equip_path = await save_upload(equip_file, work_dir, error_prefix="장비 파일 저장 오류")
 
     exe_path = os.path.abspath(os.path.join(
         _BACKEND_DIR, "InHouseProgram", "HiTessModeBuilder", "Cmb.Cli.exe"
     ))
 
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "해석 대기 중..."})
-
-    analysis_executor.submit(
+    job_id = submit_analysis_job(
         task_execute_modelflow,
-        job_id, stru_path, pipe_path, equip_path, work_dir, exe_path,
+        stru_path, pipe_path, equip_path, work_dir, exe_path,
         employee_id, timestamp, source,
         mesh_size, ubolt_full_fix, run_nastran, nastran_path, leg_z_tol,
         mesh_size_structure, mesh_size_pipe,
+        queue_message="해석 대기 중...",
     )
 
     return {"job_id": job_id}
@@ -1015,13 +969,11 @@ def request_apply_edit(
     exe_path = os.path.abspath(os.path.join(
         _BACKEND_DIR, "InHouseProgram", "HiTessModeBuilder", "Cmb.Cli.exe"
     ))
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "편집 적용 대기 중..."})
-
-    analysis_executor.submit(
+    job_id = submit_analysis_job(
         task_execute_apply_edit,
-        job_id, abs_dir, exe_path, payload.strict,
+        abs_dir, exe_path, payload.strict,
         payload.run_nastran, payload.nastran_path, payload.parse_f06,
+        queue_message="편집 적용 대기 중...",
     )
     return {"job_id": job_id}
 

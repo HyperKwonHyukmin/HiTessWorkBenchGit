@@ -20,8 +20,13 @@ import re
 import subprocess
 from datetime import datetime
 
-from .. import database, models
-from .job_manager import job_status_store
+from .analysis_runner import (
+    mark_complete,
+    mark_running,
+    record_analysis,
+    update_progress,
+)
+from .job_manager import job_status_store  # task_execute_apply_edit 가 여전히 직접 사용
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +88,7 @@ def task_execute_modelflow(
     mesh_size_pipe: float | None = None,
 ):
     """Cmb.Cli build-full 백그라운드 실행 작업."""
-    job_status_store.update_job(job_id, {
-        "status": "Running", "progress": 10, "message": "Model Builder 실행 준비...",
-    })
+    mark_running(job_id, "Model Builder 실행 준비...", progress=10)
 
     input_data = {"stru_csv": stru_path, "pipe_csv": pipe_path, "equip_csv": equip_path}
     result_data: dict = {}
@@ -96,130 +99,113 @@ def task_execute_modelflow(
     json_path: str | None = None
     audit_path: str | None = None
     summary_path: str | None = None
-    project_data = None
 
-    db = database.SessionLocal()
-    try:
-        if not os.path.exists(exe_path):
-            status_msg = "Failed"
-            engine_output = f"Model Builder 실행 파일을 찾을 수 없습니다: {exe_path}"
-        else:
-            cmd = [exe_path, "build-full", "--stru", stru_path]
-            if pipe_path:
-                cmd += ["--pipe", pipe_path]
-            if equip_path:
-                cmd += ["--equip", equip_path]
-            cmd += ["--mesh-size", str(int(mesh_size))]
-            if mesh_size_structure:
-                cmd += ["--mesh-size-structure", str(int(mesh_size_structure))]
-            if mesh_size_pipe:
-                cmd += ["--mesh-size-pipe", str(int(mesh_size_pipe))]
-            if ubolt_full_fix:
-                cmd += ["--ubolt-full-fix"]
-            if run_nastran:
-                cmd += ["--run-nastran"]
-                if nastran_path:
-                    cmd += ["--nastran-path", nastran_path]
-                if leg_z_tol is not None:
-                    cmd += ["--leg-z-tol", str(int(leg_z_tol))]
+    if not os.path.exists(exe_path):
+        status_msg = "Failed"
+        engine_output = f"Model Builder 실행 파일을 찾을 수 없습니다: {exe_path}"
+    else:
+        cmd = [exe_path, "build-full", "--stru", stru_path]
+        if pipe_path:
+            cmd += ["--pipe", pipe_path]
+        if equip_path:
+            cmd += ["--equip", equip_path]
+        cmd += ["--mesh-size", str(int(mesh_size))]
+        if mesh_size_structure:
+            cmd += ["--mesh-size-structure", str(int(mesh_size_structure))]
+        if mesh_size_pipe:
+            cmd += ["--mesh-size-pipe", str(int(mesh_size_pipe))]
+        if ubolt_full_fix:
+            cmd += ["--ubolt-full-fix"]
+        if run_nastran:
+            cmd += ["--run-nastran"]
+            if nastran_path:
+                cmd += ["--nastran-path", nastran_path]
+            if leg_z_tol is not None:
+                cmd += ["--leg-z-tol", str(int(leg_z_tol))]
 
-            logger.info("[ModelBuilder] cmd: %s", " ".join(cmd))
-            job_status_store.update_job(job_id, {"progress": 30, "message": "Model Builder 실행 중..."})
-
-            try:
-                result = subprocess.run(
-                    cmd,
-                    cwd=work_dir,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=1200,  # 20분
-                )
-                engine_output = result.stdout or ""
-                if result.stderr and result.stderr.strip():
-                    engine_output += f"\n[stderr]\n{result.stderr}"
-
-                logger.info("[ModelBuilder] exit=%d", result.returncode)
-
-                # README §5.5: exit 0/2 = 산출물 작성 OK, 1 = 산출물 없음
-                if result.returncode == 1:
-                    status_msg = "Failed"
-                    engine_output += f"\n[Exit code: {result.returncode}]"
-                else:
-                    job_status_store.update_job(job_id, {"progress": 70, "message": "산출물 수집 중..."})
-                    output_dir = (
-                        _parse_output_dir(result.stdout)
-                        or _scan_latest_timestamp_dir(work_dir)
-                    )
-                    if output_dir and os.path.isdir(output_dir):
-                        result_data["output_dir"] = output_dir
-
-                        audit_cand = os.path.join(output_dir, "00_InputAudit.json")
-                        if os.path.exists(audit_cand):
-                            audit_path = audit_cand
-                            result_data["audit_path"] = audit_path
-
-                        summary_cand = os.path.join(output_dir, "00_StageSummary.json")
-                        if os.path.exists(summary_cand):
-                            summary_path = summary_cand
-                            result_data["summary_path"] = summary_path
-
-                        bdf_path = _pick_final_artifact(output_dir, "bdf")
-                        if bdf_path:
-                            result_data["bdf_path"] = bdf_path
-                        json_path = _pick_final_artifact(output_dir, "json")
-                        if json_path:
-                            result_data["json_path"] = json_path
-                    else:
-                        status_msg = "Failed"
-                        engine_output += "\n[오류] 출력 폴더 라인을 stdout에서 찾을 수 없음."
-
-            except subprocess.TimeoutExpired:
-                status_msg = "Failed"
-                engine_output = "Model Builder 실행 시간 초과 (20분)."
-            except Exception as e:
-                status_msg = "Failed"
-                logger.error("Cmb.Cli error: %s", e, exc_info=True)
-                engine_output = f"실행 오류: {e}"
-
-        job_status_store.update_job(job_id, {"progress": 90, "message": "DB 기록 중..."})
+        logger.info("[ModelBuilder] cmd: %s", " ".join(cmd))
+        update_progress(job_id, 30, "Model Builder 실행 중...")
 
         try:
-            new_analysis = models.Analysis(
-                project_name=f"HiTessModelBuilder_{timestamp}",
-                program_name="HiTessModelBuilder",
-                employee_id=employee_id,
-                status=status_msg,
-                input_info=input_data,
-                result_info=result_data if status_msg == "Success" else None,
-                source=source,
+            result = subprocess.run(
+                cmd,
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=1200,  # 20분
             )
-            db.add(new_analysis)
-            db.commit()
-            db.refresh(new_analysis)
+            engine_output = result.stdout or ""
+            if result.stderr and result.stderr.strip():
+                engine_output += f"\n[stderr]\n{result.stderr}"
 
-            project_data = {
-                "id": new_analysis.id,
-                "project_name": new_analysis.project_name,
-                "program_name": new_analysis.program_name,
-                "employee_id": new_analysis.employee_id,
-                "status": new_analysis.status,
-                "created_at": (
-                    new_analysis.created_at.isoformat()
-                    if new_analysis.created_at
-                    else datetime.now().isoformat()
-                ),
-            }
-        except Exception as db_e:
-            logger.error("DB save error: %s", db_e)
-            engine_output += f"\nDB 기록 오류: {db_e}"
+            logger.info("[ModelBuilder] exit=%d", result.returncode)
 
-        job_status_store.update_job(job_id, {
-            "status":       status_msg,
-            "progress":     100,
-            "message":      "모델 생성 완료" if status_msg == "Success" else "모델 생성 실패",
-            "engine_log":   engine_output,
+            # README §5.5: exit 0/2 = 산출물 작성 OK, 1 = 산출물 없음
+            if result.returncode == 1:
+                status_msg = "Failed"
+                engine_output += f"\n[Exit code: {result.returncode}]"
+            else:
+                update_progress(job_id, 70, "산출물 수집 중...")
+                output_dir = (
+                    _parse_output_dir(result.stdout)
+                    or _scan_latest_timestamp_dir(work_dir)
+                )
+                if output_dir and os.path.isdir(output_dir):
+                    result_data["output_dir"] = output_dir
+
+                    audit_cand = os.path.join(output_dir, "00_InputAudit.json")
+                    if os.path.exists(audit_cand):
+                        audit_path = audit_cand
+                        result_data["audit_path"] = audit_path
+
+                    summary_cand = os.path.join(output_dir, "00_StageSummary.json")
+                    if os.path.exists(summary_cand):
+                        summary_path = summary_cand
+                        result_data["summary_path"] = summary_path
+
+                    bdf_path = _pick_final_artifact(output_dir, "bdf")
+                    if bdf_path:
+                        result_data["bdf_path"] = bdf_path
+                    json_path = _pick_final_artifact(output_dir, "json")
+                    if json_path:
+                        result_data["json_path"] = json_path
+                else:
+                    status_msg = "Failed"
+                    engine_output += "\n[오류] 출력 폴더 라인을 stdout에서 찾을 수 없음."
+
+        except subprocess.TimeoutExpired:
+            status_msg = "Failed"
+            engine_output = "Model Builder 실행 시간 초과 (20분)."
+        except Exception as e:
+            status_msg = "Failed"
+            logger.error("Cmb.Cli error: %s", e, exc_info=True)
+            engine_output = f"실행 오류: {e}"
+
+    update_progress(job_id, 90, "DB 기록 중...")
+
+    # modelflow 는 project 응답에서 input_info/result_info 를 제외하는 기존 동작 보존.
+    project_data, db_err = record_analysis(
+        project_name=f"HiTessModelBuilder_{timestamp}",
+        program_name="HiTessModelBuilder",
+        employee_id=employee_id,
+        status=status_msg,
+        input_info=input_data,
+        result_info=result_data if status_msg == "Success" else None,
+        source=source,
+        include_io_in_project=False,
+    )
+    if db_err is not None:
+        # 기존 동작 보존: DB 실패 시 status 는 변경하지 않고 engine_output 에만 추가.
+        logger.error("DB save error: %s", db_err)
+        engine_output += f"\nDB 기록 오류: {db_err}"
+
+    mark_complete(
+        job_id, status_msg, engine_output, project_data,
+        success_message="모델 생성 완료",
+        failure_message="모델 생성 실패",
+        extra={
             "output_dir":   output_dir,
             "audit_path":   audit_path,
             "summary_path": summary_path,
@@ -229,13 +215,11 @@ def task_execute_modelflow(
             "pipe_path":    pipe_path,
             "equip_path":   equip_path,
             "work_dir":     work_dir,
-            "project":      project_data,
             "ubolt":        ubolt_full_fix,
             "run_nastran":  run_nastran,
             "mesh_size":    mesh_size,
-        })
-    finally:
-        db.close()
+        },
+    )
 
 
 # ────────────────────────────────────────────────────────────────────

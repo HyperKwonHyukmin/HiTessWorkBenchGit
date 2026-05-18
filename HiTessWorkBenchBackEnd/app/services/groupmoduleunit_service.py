@@ -21,8 +21,13 @@ import subprocess
 from datetime import datetime
 from typing import Any, Dict, List
 
-from .. import database, models
-from ..services.job_manager import job_status_store
+from .analysis_runner import (
+    get_backend_dir,
+    mark_complete,
+    mark_running,
+    record_analysis,
+    update_progress,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -667,20 +672,13 @@ def task_execute_groupmoduleunit(
     use_nastran: bool,
 ):
     """nastran_bridge.exe 로 Step1 파싱 검증과 선택적 Step2 Nastran 검증을 수행한다."""
-    job_status_store.update_job(job_id, {
-        "status": "Running", "progress": 10, "message": "NastranBridge 초기화 중...",
-    })
+    mark_running(job_id, "NastranBridge 초기화 중...", progress=10)
 
-    db = database.SessionLocal()
     status_msg = "Success"
     engine_output = ""
     result_data: Dict[str, Any] = {}
-    project_data = None
 
-    base_dir    = os.path.dirname(os.path.abspath(__file__))   # app/services
-    app_dir     = os.path.dirname(base_dir)                    # app
-    backend_dir = os.path.dirname(app_dir)                     # HiTessWorkBenchBackEnd
-    exe_path    = os.path.join(backend_dir, "InHouseProgram", "NastranBridge", "nastran_bridge.exe")
+    exe_path = os.path.join(get_backend_dir(), "InHouseProgram", "NastranBridge", "nastran_bridge.exe")
 
     try:
         if not os.path.exists(exe_path):
@@ -698,9 +696,7 @@ def task_execute_groupmoduleunit(
             except OSError: pass
 
         cmd_args = [exe_path, bdf_filename]
-        job_status_store.update_job(job_id, {
-            "progress": 30, "message": "BDF 모델 파싱 중...",
-        })
+        update_progress(job_id, 30, "BDF 모델 파싱 중...")
         logger.info("[GroupModuleUnit] cmd: %s (cwd=%s)", " ".join(cmd_args), bdf_dir)
 
         result = subprocess.run(
@@ -735,9 +731,7 @@ def task_execute_groupmoduleunit(
         with open(model_json_path, "r", encoding="utf-8") as f:
             model_json = json.load(f)
 
-        job_status_store.update_job(job_id, {
-            "progress": 70, "message": "검증 결과 변환 중...",
-        })
+        update_progress(job_id, 70, "검증 결과 변환 중...")
 
         # Step1 변환 + 저장
         step1 = transform_to_step1(model_json, bdf_path)
@@ -774,9 +768,7 @@ def task_execute_groupmoduleunit(
                     f"          또는 환경변수 NASTRAN_EXE 로 지정하세요."
                 )
             else:
-                job_status_store.update_job(job_id, {
-                    "progress": 75, "message": "Nastran validate-run 실행 중...",
-                })
+                update_progress(job_id, 75, "Nastran validate-run 실행 중...")
                 ok, log, val_json_path = _run_nastran_validate(exe_path, bdf_filename, bdf_dir, nastran_exe)
                 engine_output += "\n" + (log or "")
 
@@ -822,39 +814,24 @@ def task_execute_groupmoduleunit(
         logger.error("GroupModuleUnit BDF 검증 오류: %s", str(e), exc_info=True)
         engine_output += f"\n[Error] {str(e)}"
 
-    job_status_store.update_job(job_id, {"progress": 95, "message": "데이터베이스 저장 중..."})
+    update_progress(job_id, 95, "데이터베이스 저장 중...")
 
-    try:
-        new_analysis = models.Analysis(
-            project_name=f"GroupModuleUnit_{timestamp}",
-            program_name="GroupModuleUnit",
-            employee_id=employee_id,
-            status=status_msg,
-            input_info={"bdf_model": bdf_path, "use_nastran": use_nastran},
-            result_info=result_data if result_data else None,
-            source=source,
-        )
-        db.add(new_analysis); db.commit(); db.refresh(new_analysis)
-        project_data = {
-            "id":           new_analysis.id,
-            "project_name": new_analysis.project_name,
-            "program_name": new_analysis.program_name,
-            "employee_id":  new_analysis.employee_id,
-            "status":       new_analysis.status,
-            "input_info":   new_analysis.input_info,
-            "result_info":  new_analysis.result_info,
-            "created_at":   new_analysis.created_at.isoformat() if new_analysis.created_at else datetime.now().isoformat(),
-        }
-    except Exception as db_e:
+    project_data, db_err = record_analysis(
+        project_name=f"GroupModuleUnit_{timestamp}",
+        program_name="GroupModuleUnit",
+        employee_id=employee_id,
+        status=status_msg,
+        input_info={"bdf_model": bdf_path, "use_nastran": use_nastran},
+        # F06 부분 결과 등을 위해 status 무관 result_data 저장 (기존 동작 보존)
+        result_info=result_data if result_data else None,
+        source=source,
+    )
+    if db_err is not None:
         status_msg = "Failed"
-        engine_output += f"\nDB Error: {str(db_e)}"
-    finally:
-        db.close()
+        engine_output += f"\nDB Error: {db_err}"
 
-    job_status_store.update_job(job_id, {
-        "status":     status_msg,
-        "progress":   100,
-        "message":    "BDF 검증 완료" if status_msg == "Success" else "BDF 검증 실패",
-        "engine_log": engine_output,
-        "project":    project_data,
-    })
+    mark_complete(
+        job_id, status_msg, engine_output, project_data,
+        success_message="BDF 검증 완료",
+        failure_message="BDF 검증 실패",
+    )

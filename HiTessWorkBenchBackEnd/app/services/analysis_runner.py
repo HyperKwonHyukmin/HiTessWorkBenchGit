@@ -102,6 +102,7 @@ def record_analysis(
     input_info: dict,
     result_info: Optional[dict],
     source: str,
+    include_io_in_project: bool = True,
 ) -> tuple[Optional[dict], Optional[str]]:
     """
     Analysis 레코드를 생성·커밋하고 (project_data, raw_db_error_message)를 반환합니다.
@@ -135,11 +136,14 @@ def record_analysis(
             "program_name": new_analysis.program_name,
             "employee_id": new_analysis.employee_id,
             "status": new_analysis.status,
-            "input_info": new_analysis.input_info,
-            "result_info": new_analysis.result_info,
             "created_at": new_analysis.created_at.isoformat()
                           if new_analysis.created_at else datetime.now().isoformat(),
         }
+        # modelflow 등 일부 서비스는 project 응답에서 input_info/result_info 를
+        # 제외하는 기존 동작을 유지해야 한다. include_io_in_project=False 로 호출.
+        if include_io_in_project:
+            project_data["input_info"] = new_analysis.input_info
+            project_data["result_info"] = new_analysis.result_info
         return project_data, None
     except Exception as db_e:
         return None, str(db_e)
