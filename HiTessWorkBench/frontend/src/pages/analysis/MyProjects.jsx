@@ -10,9 +10,11 @@ import {
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
+import AssessmentResultViewerModal from '../../components/modals/AssessmentResultViewerModal';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import PageHeader from '../../components/ui/PageHeader';
+import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
 import { useToast } from '../../contexts/ToastContext';
 
 // ==========================================
@@ -281,6 +283,8 @@ export default function MyProjects() {
 
   // 3D 뷰어 모달 상태
   const [is3DViewerOpen, setIs3DViewerOpen] = useState(false);
+  // Truss Assessment 결과 매핑 뷰어 상태 — 별도 project 보관(상세 모달과 동시 닫힘 방지)
+  const [resultViewerProject, setResultViewerProject] = useState(null);
 
   const fetchHistory = async (signal) => {
     try {
@@ -677,18 +681,33 @@ export default function MyProjects() {
         </div>
       )}
 
-      {/* Detail Modal */}
-      <ProjectDetailModal
-        project={selectedProject} 
-        onClose={() => setSelectedProject(null)} 
-        onOpen3D={() => setIs3DViewerOpen(true)} // ✅ 3D 뷰어 열기 함수 전달
+      {/* Detail Modal — Truss Assessment 은 결과 다운로드 전용 모달(Figure 07 레이아웃) */}
+      {selectedProject?.program_name === 'Truss Assessment' ? (
+        <AssessmentProjectModal
+          project={selectedProject}
+          onClose={() => setSelectedProject(null)}
+          onOpenResultViewer={(p) => setResultViewerProject(p)}
+        />
+      ) : (
+        <ProjectDetailModal
+          project={selectedProject}
+          onClose={() => setSelectedProject(null)}
+          onOpen3D={() => setIs3DViewerOpen(true)}
+        />
+      )}
+
+      {/* 3D BDF Viewer Modal — Truss Assessment 외 프로젝트의 단순 BDF 시각화 */}
+      <BdfViewerModal
+        isOpen={is3DViewerOpen}
+        project={selectedProject}
+        onClose={() => setIs3DViewerOpen(false)}
       />
 
-      {/* 3D BDF Viewer Modal */}
-      <BdfViewerModal 
-        isOpen={is3DViewerOpen} 
-        project={selectedProject} 
-        onClose={() => setIs3DViewerOpen(false)} 
+      {/* Truss Assessment 결과 매핑 3D 뷰어 */}
+      <AssessmentResultViewerModal
+        isOpen={!!resultViewerProject}
+        project={resultViewerProject}
+        onClose={() => setResultViewerProject(null)}
       />
 
     </div>

@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, RefreshCw, FileOutput, Download, FileText, FileCode, FileX } from 'lucide-react';
+import { CheckCircle2, RefreshCw, FileOutput, Download, FileText, FileCode, FileX, Eye } from 'lucide-react';
 import { exportAssessmentXlsx, downloadFileBlob } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import { useToast } from '../../contexts/ToastContext';
 
-export default function AssessmentProjectModal({ project, onClose }) {
+export default function AssessmentProjectModal({ project, onClose, onOpenResultViewer }) {
   const { showToast } = useToast();
   const [downloading, setDownloading] = useState({});
   const [filesMissing, setFilesMissing] = useState(project?.files_available === false);
@@ -97,6 +97,17 @@ export default function AssessmentProjectModal({ project, onClose }) {
           <CheckCircle2 size={14} className="text-emerald-500" />
           Job ID: {project?.id}
         </p>
+
+        {/* 결과 매핑 모델 뷰어 — MyProjects 처럼 onOpenResultViewer 가 주입된 경우에만 노출 */}
+        {onOpenResultViewer && !filesMissing && project?.result_info?.bdf && jsonFiles.length > 0 && (
+          <button
+            onClick={() => onOpenResultViewer(project)}
+            className="w-full mb-5 py-3.5 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-center gap-3 text-indigo-700 font-bold hover:bg-indigo-100 hover:border-indigo-300 transition-all duration-200 shadow-sm cursor-pointer group"
+          >
+            <Eye size={18} className="group-hover:scale-110 transition-transform" />
+            <span className="text-sm">해석 결과 매핑 3D 모델 보기</span>
+          </button>
+        )}
 
         {filesMissing ? (
           <div className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-500">
