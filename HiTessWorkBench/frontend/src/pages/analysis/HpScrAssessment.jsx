@@ -16,6 +16,7 @@ import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import BdfModelViewer from '../../components/analysis/BdfModelViewer';
 import PageBanner from '../../components/ui/PageBanner';
+import { buildFormData } from '../../utils/fileHelper';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -266,12 +267,12 @@ export default function HpScrAssessment() {
     setReportPath(null);
     setLogs([]);
 
-    const formData = new FormData();
-    formData.append('bdf_file', bdfFile);
-    formData.append('employee_id', employeeId);
-    formData.append('analysis_mode', analysisMode);
-    formData.append('source', 'Workbench');
-
+    const formData = buildFormData({
+      bdf_file: bdfFile,
+      employee_id: employeeId,
+      analysis_mode: analysisMode,
+      source: 'Workbench',
+        });
     try {
       const res = await requestHpscrAssessment(formData);
       const jobId = res.data.job_id;

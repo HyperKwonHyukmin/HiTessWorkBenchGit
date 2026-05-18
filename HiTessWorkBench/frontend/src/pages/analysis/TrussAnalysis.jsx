@@ -22,6 +22,7 @@ import { useFileParser, parseCsvText } from '../../hooks/useFileParser';
 import SolverCredit from '../../components/ui/SolverCredit';
 import { useToast } from '../../contexts/ToastContext';
 import PageBanner from '../../components/ui/PageBanner';
+import { buildFormData } from '../../utils/fileHelper';
 
 export default function TrussAnalysis() {
   const { showToast } = useToast();
@@ -212,12 +213,12 @@ export default function TrussAnalysis() {
 
     addLog('System Check OK. Requesting Analysis Job...', 'info');
 
-    const formData = new FormData();
-    formData.append('node_file', nodeFile);
-    formData.append('member_file', memberFile);
-    formData.append('employee_id', employeeId);
-    formData.append('source', 'Workbench');
-
+    const formData = buildFormData({
+      node_file: nodeFile,
+      member_file: memberFile,
+      employee_id: employeeId,
+      source: 'Workbench',
+        });
     try {
       const requestRes = await requestTrussAnalysis(formData);
 

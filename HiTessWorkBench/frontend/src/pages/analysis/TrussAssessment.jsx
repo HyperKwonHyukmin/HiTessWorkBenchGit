@@ -21,6 +21,7 @@ import {
 import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useAuth } from '../../contexts/AuthContext';
 import PageBanner from '../../components/ui/PageBanner';
+import { buildFormData } from '../../utils/fileHelper';
 
 export default function TrussAssessment() {
   const { setCurrentMenu } = useNavigation();
@@ -184,10 +185,11 @@ export default function TrussAssessment() {
     setIsResultModalOpen(false);
     lastMsgRef.current = '';
     const employeeId = authEmployeeId || 'guest';
-    const formData = new FormData();
-    formData.append('bdf_file', bdfFile);
-    formData.append('employee_id', employeeId);
-    formData.append('source', 'Workbench');
+    const formData = buildFormData({
+      bdf_file: bdfFile,
+      employee_id: employeeId,
+      source: 'Workbench',
+        });
     try {
       const res = await requestAssessment(formData);
       const jobId = res.data.job_id;

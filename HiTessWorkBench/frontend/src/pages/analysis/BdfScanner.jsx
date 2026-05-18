@@ -16,6 +16,7 @@ import RelatedAppsWidget from '../../components/ui/RelatedAppsWidget';
 import TransferButton from '../../components/ui/TransferButton';
 import BdfModelViewer from '../../components/analysis/BdfModelViewer';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
+import { buildFormData } from '../../utils/fileHelper';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -147,12 +148,12 @@ export default function BdfScanner() {
     setUnsupportedElements(null);
     setLogs([]);
 
-    const formData = new FormData();
-    formData.append('bdf_file', bdfFile);
-    formData.append('employee_id', employeeId);
-    formData.append('use_nastran', useNastran);
-    formData.append('source', 'Workbench');
-
+    const formData = buildFormData({
+      bdf_file: bdfFile,
+      employee_id: employeeId,
+      use_nastran: useNastran,
+      source: 'Workbench',
+        });
     try {
       const res = await requestBdfScanner(formData);
       const jobId = res.data.job_id;

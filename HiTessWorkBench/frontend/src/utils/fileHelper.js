@@ -34,6 +34,31 @@ export function getFileExtension(filePath) {
  * @param {object} data       직렬화할 객체.
  * @param {string} filename   다운로드 파일명 (확장자 포함).
  */
+/**
+ * 객체에서 FormData 인스턴스를 생성한다.
+ *
+ * 5+ 페이지가 axios multipart 요청 직전 반복하던
+ *     const fd = new FormData();
+ *     fd.append('bdf_file', file);
+ *     fd.append('employee_id', employeeId);
+ *     fd.append('source', 'Workbench');
+ * 패턴을 한 호출로 압축:
+ *     const fd = buildFormData({ bdf_file: file, employee_id, source: 'Workbench' });
+ *
+ * null / undefined 값은 자동 스킵 (선택적 옵션 필드용). boolean 은 문자열로 변환.
+ *
+ * @param {Record<string, any>} fields
+ * @returns {FormData}
+ */
+export function buildFormData(fields) {
+  const fd = new FormData();
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === null || value === undefined) continue;
+    fd.append(key, value);
+  }
+  return fd;
+}
+
 export function downloadJson(data, filename) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
