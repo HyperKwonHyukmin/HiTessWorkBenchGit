@@ -107,7 +107,12 @@
       "PowerShell(dotnet build *)",
       "PowerShell(dotnet test *)",
       "PowerShell(dotnet publish *)",
-      "PowerShell(Join-Path *)"
+      "PowerShell(Join-Path *)",
+      "mcp__plugin_claude-mem_mcp-search__smart_outline",
+      "mcp__claude_ai_Three_js_3D_Viewer__learn_threejs",
+      "PowerShell($proj = \"C:\\\\Coding\\\\WorkBenchSubModule\\\\ColumnBucklingWorkingLoadCalculator\\\\ColumnBucklingWorkingLoadCalculator\\\\ColumnBucklingApp.csproj\"; $out = \"C:\\\\Coding\\\\WorkBenchSubModule\\\\ColumnBucklingWorkingLoadCalculator\\\\publish_single\"; dotnet publish $proj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o $out)",
+      "Skill(superpowers:writing-plans)",
+      "Skill(superpowers:subagent-driven-development)"
     ]
   },
   "enableAllProjectMcpServers": true,
