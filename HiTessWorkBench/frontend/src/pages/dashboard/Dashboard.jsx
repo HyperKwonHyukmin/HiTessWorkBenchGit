@@ -22,7 +22,9 @@ import NoticeDetailModal, { NOTICE_TYPE_STYLE } from '../../components/modals/No
 const MODE_KO = {
   File: "파일 기반",
   Interactive: "대화형 앱",
-  Parametric: "파라메트릭"
+  Parametric: "파라메트릭",
+  Productivity: "생산성 도구",
+  Academic: "AI/연구"
 };
 
 const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick }) => {
@@ -403,114 +405,167 @@ const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
 };
 
 const MODE_BADGE = {
-  File:         { text: '파일 기반',   cls: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
-  Interactive:  { text: '대화형 앱',   cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-  Parametric:   { text: '파라메트릭', cls: 'text-violet-700 bg-violet-50 border-violet-200' },
-  Productivity: { text: '생산성 도구', cls: 'text-orange-700 bg-orange-50 border-orange-200' },
+  File:         { title: 'File-Based Apps', label: '파일 기반',   cls: 'text-blue-700 bg-blue-50 border-blue-200',       ring: 'border-l-blue-500',       iconBg: 'bg-blue-600',       summary: 'CSV, BDF, FEM 결과 파일을 업로드해 해석 모델 생성, 검토, 파이프라인 작업을 수행합니다.' },
+  Interactive:  { title: 'Interactive Apps', label: '대화형 앱',   cls: 'text-violet-700 bg-violet-50 border-violet-200', ring: 'border-l-violet-500',     iconBg: 'bg-violet-600',     summary: '형상과 단면 조건을 화면에서 직접 조작하며 즉시 계산 결과를 확인하는 도구입니다.' },
+  Parametric:   { title: 'Parametric Apps', label: '파라메트릭', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', ring: 'border-l-emerald-500', iconBg: 'bg-emerald-600',    summary: '설계 파라미터를 입력해 규칙 기반 계산, 최적 후보 탐색, 상세 판정을 수행합니다.' },
+  Productivity: { title: 'Productivity Apps', label: '생산성 도구', cls: 'text-amber-700 bg-amber-50 border-amber-200',   ring: 'border-l-amber-500',      iconBg: 'bg-amber-500',      summary: '해석 전후처리, 파일 검증, 결과 추출처럼 반복 업무를 줄이는 보조 도구입니다.' },
+  Academic:     { title: 'Academic Apps', label: 'AI/연구',       cls: 'text-cyan-700 bg-cyan-50 border-cyan-200',       ring: 'border-l-cyan-500',       iconBg: 'bg-cyan-600',       summary: 'AI 기반 해석 및 연구 단계 기능을 실험적으로 통합하는 영역입니다.' },
 };
 
 const STATUS_GROUP_STYLE = {
-  Active:     { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', bar: 'bg-emerald-400', border: 'border-l-emerald-400' },
-  Developing: { bg: 'bg-blue-50 border-blue-200',       text: 'text-blue-700',    bar: 'bg-blue-400',    border: 'border-l-blue-400' },
+  Active:     { label: '서비스 중', bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', dot: 'bg-emerald-500', icon: Rocket },
+  Developing: { label: '개발 중',   bg: 'bg-slate-50 border-slate-200',     text: 'text-slate-500',   dot: 'bg-slate-300',   icon: Wrench },
+  Planned:    { label: '예정',      bg: 'bg-slate-50 border-slate-200',      text: 'text-slate-600',   dot: 'bg-slate-400',   icon: Clock },
 };
 
+const ROADMAP_MODE_ORDER = ['File', 'Interactive', 'Parametric', 'Productivity', 'Academic'];
+
 const RoadmapModal = ({ isOpen, onClose }) => {
+  const totalCount = ANALYSIS_DATA.length;
+  const statusCounts = ANALYSIS_DATA.reduce((acc, app) => {
+    const status = app.devStatus || 'Active';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-[100]" onClose={onClose}>
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" />
         <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Dialog.Panel className="w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" style={{ background: '#F0F3FA' }}>
+          <Dialog.Panel className="w-full max-w-6xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" style={{ background: '#F0F3FA' }}>
             {/* 헤더 */}
             <div className="bg-brand-blue p-5 flex justify-between items-center text-white shrink-0">
               <div>
                 <Dialog.Title className="font-bold text-lg flex items-center gap-2">
                   <Map size={20} className="text-blue-300"/> HiTESS 워크벤치 로드맵
                 </Dialog.Title>
-                <p className="text-xs text-blue-200/70 mt-1">플랫폼 내 도입 예정 및 개발 중인 해석 앱들의 전체 현황입니다.</p>
+                <p className="text-xs text-blue-200/70 mt-1">현재 등록된 해석 앱을 업무 영역별로 나누어 서비스 상태와 개발 현황을 확인합니다.</p>
               </div>
               <button onClick={onClose} className="hover:bg-white/10 p-2 rounded-lg transition-colors cursor-pointer"><X size={20}/></button>
             </div>
 
             {/* 요약 배지 */}
-            <div className="px-6 pt-4 pb-2 flex gap-2 shrink-0">
-              {[
-                { key: 'Active',     label: '서비스 중', icon: Rocket, cls: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
-                { key: 'Developing', label: '개발 중',   icon: Wrench, cls: 'bg-blue-100 text-blue-700 border-blue-300' },
-              ].map(({ key, label, icon: Icon, cls }) => (
-                <span key={key} className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${cls}`}>
-                  <Icon size={11} />
-                  {label}: {ANALYSIS_DATA.filter(a => a.devStatus === key).length}
-                </span>
-              ))}
+            <div className="px-6 pt-4 pb-2 flex flex-wrap gap-2 shrink-0">
+              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border bg-white text-slate-700 border-slate-200">
+                <Map size={11} />
+                전체: {totalCount}개
+              </span>
+              {Object.entries(STATUS_GROUP_STYLE).map(([key, style]) => {
+                const Icon = style.icon;
+                return (
+                  <span key={key} className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${style.bg} ${style.text}`}>
+                    <Icon size={11} />
+                    {style.label}: {statusCounts[key] || 0}개
+                  </span>
+                );
+              })}
+              {ROADMAP_MODE_ORDER.map(mode => {
+                const modeInfo = MODE_BADGE[mode];
+                const count = ANALYSIS_DATA.filter(a => a.mode === mode).length;
+                if (!count) return null;
+                return (
+                  <span key={mode} className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${modeInfo.cls}`}>
+                    {modeInfo.title}: {count}개
+                  </span>
+                );
+              })}
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 pb-6 custom-scrollbar space-y-8">
-              {['Active', 'Developing'].map((statusGroup) => {
-                const apps = ANALYSIS_DATA.filter(a => a.devStatus === statusGroup);
+            <div className="flex-1 overflow-y-auto px-6 pb-6 custom-scrollbar space-y-6">
+              {ROADMAP_MODE_ORDER.map((mode) => {
+                const apps = ANALYSIS_DATA.filter(a => a.mode === mode);
                 if (apps.length === 0) return null;
-                const groupTitle = statusGroup === 'Active' ? '현재 서비스 중' : '개발 진행 중';
-                const sg = STATUS_GROUP_STYLE[statusGroup];
+                const modeInfo = MODE_BADGE[mode] || { title: mode, label: mode, cls: 'text-slate-500 bg-slate-100 border-slate-200', ring: 'border-l-slate-400', iconBg: 'bg-slate-500', summary: '' };
+                const activeCount = apps.filter(a => (a.devStatus || 'Active') === 'Active').length;
+                const developingCount = apps.filter(a => a.devStatus === 'Developing').length;
+                const FirstIcon = apps[0].icon;
+
                 return (
-                  <div key={statusGroup}>
-                    {/* 섹션 헤더 */}
-                    <div className={`flex items-center gap-2.5 px-3.5 py-2 rounded-lg border mb-4 ${sg.bg}`}>
-                      <div className={`w-2 h-5 rounded-full ${sg.bar} shrink-0`} />
-                      {statusGroup === 'Active'     && <Rocket size={15} className="text-emerald-500"/>}
-                      {statusGroup === 'Developing' && <Wrench size={15} className="text-blue-500"/>}
-                      <h3 className={`text-sm font-bold tracking-wide ${sg.text}`}>
-                        {groupTitle}
-                      </h3>
-                      <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${sg.bg} ${sg.text}`}>
-                        {apps.length}개
-                      </span>
+                  <section key={mode} className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="px-5 py-4 bg-slate-50 border-b border-slate-100 flex items-start gap-3">
+                      <div className={`p-2.5 rounded-xl ${modeInfo.iconBg} text-white shadow-sm shrink-0`}>
+                        <FirstIcon size={20} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-extrabold text-slate-800">{modeInfo.title}</h3>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${modeInfo.cls}`}>
+                            {modeInfo.label}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">{modeInfo.summary}</p>
+                      </div>
+                      <div className="flex gap-1.5 shrink-0">
+                        <span className="px-2 py-1 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">서비스 {activeCount}</span>
+                        {developingCount > 0 && (
+                          <span className="px-2 py-1 text-[10px] font-bold rounded-full bg-slate-50 text-slate-500 border border-slate-200">개발 {developingCount}</span>
+                        )}
+                      </div>
                     </div>
 
-                    {/* 앱 카드 그리드 */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {apps.map((app, idx) => {
-                        const modeBadge = MODE_BADGE[app.mode] || { text: app.mode, cls: 'text-slate-500 bg-slate-100 border-slate-200' };
+                    <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {apps.map((app) => {
+                        const status = app.devStatus || 'Active';
+                        const statusStyle = STATUS_GROUP_STYLE[status] || STATUS_GROUP_STYLE.Planned;
+                        const isDeveloping = status === 'Developing';
+                        const StatusIcon = statusStyle.icon;
+                        const AppIcon = app.icon;
                         return (
                           <div
-                            key={idx}
-                            className={`relative bg-white rounded-xl p-4 shadow-sm hover:shadow-lg transition-all border border-slate-100 hover:border-slate-200 border-l-4 ${sg.border} group overflow-hidden`}
+                            key={app.title}
+                            className={`relative rounded-xl p-4 transition-all border border-l-4 group overflow-hidden ${
+                              isDeveloping
+                                ? 'bg-slate-50/70 border-slate-100 border-l-slate-200 shadow-none opacity-80 hover:opacity-95 hover:shadow-sm'
+                                : `bg-white border-slate-100 ${modeInfo.ring} shadow-sm hover:shadow-md`
+                            }`}
                           >
-                            {/* 배경 장식 */}
-                            <div className="absolute -right-4 -bottom-4 opacity-[0.04] pointer-events-none">
-                              <app.icon size={72} />
+                            <div className={`absolute -right-5 -bottom-5 pointer-events-none ${isDeveloping ? 'opacity-[0.025]' : 'opacity-[0.04]'}`}>
+                              <AppIcon size={76} />
                             </div>
 
-                            {/* 상단: 아이콘 + 모드 배지 */}
-                            <div className="flex justify-between items-start mb-3">
-                              <div className={`p-2.5 ${app.color} text-white rounded-lg shadow-md group-hover:scale-105 transition-transform`}>
-                                <app.icon size={20} />
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                              <div className={`p-2.5 text-white rounded-lg transition-transform ${
+                                isDeveloping
+                                  ? 'bg-slate-300 shadow-sm'
+                                  : `${app.color} shadow-md group-hover:scale-105`
+                              }`}>
+                                <AppIcon size={19} />
                               </div>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${modeBadge.cls}`}>
-                                {modeBadge.text}
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusStyle.bg} ${statusStyle.text}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+                                <StatusIcon size={10} />
+                                {statusStyle.label}
                               </span>
                             </div>
 
+                            <p className="text-[10px] font-bold text-slate-400 mb-1">{app.category}</p>
                             <h4 className="font-bold text-slate-800 text-sm mb-1 leading-snug">{app.title}</h4>
                             <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-3">{app.description}</p>
 
-                            {/* 태그 */}
-                            <div className="flex flex-wrap gap-1">
-                              {app.tags.slice(0, 3).map((tag, i) => (
-                                <span key={i} className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-50 text-slate-400 border border-slate-100 rounded">
+                            <div className="flex flex-wrap gap-1 pr-14">
+                              {(app.tags || []).slice(0, 4).map((tag) => (
+                                <span key={tag} className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-50 text-slate-400 border border-slate-100 rounded">
                                   {tag}
                                 </span>
                               ))}
                             </div>
 
-                            {/* 기여자 */}
-                            <div className="absolute bottom-2.5 right-3 text-[9px] text-slate-300 font-medium tracking-wide">
-                              {app.contributor}
+                            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                              <span className="text-[10px] text-slate-400 font-bold truncate">
+                                Solver: {app.contributor || '-'}
+                              </span>
+                              {(app.relatedApps?.length > 0 || app.acceptsTransferFrom?.length > 0) && (
+                                <span className="text-[10px] text-indigo-500 font-bold bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">
+                                  연계 지원
+                                </span>
+                              )}
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                  </div>
+                  </section>
                 );
               })}
             </div>
@@ -520,7 +575,6 @@ const RoadmapModal = ({ isOpen, onClose }) => {
     </Transition>
   );
 };
-
 function IntroModal({ isOpen, onClose, content, onRetry, modalTitle = 'Discover HiTESS', modalSubtitle = '차세대 조선해양 구조 해석 플랫폼 소개' }) {
   const iframeRef = useRef(null);
 

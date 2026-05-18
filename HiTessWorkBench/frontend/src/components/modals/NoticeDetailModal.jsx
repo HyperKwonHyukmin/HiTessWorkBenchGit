@@ -8,7 +8,7 @@
  */
 import React, { Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { Pin, X, CalendarDays } from 'lucide-react';
+import { Pin, X, CalendarDays, Lock } from 'lucide-react';
 
 // 타입별 톤 토큰 — NoticeStrip / NoticeDetailModal 공용. 새 타입 추가 시 이곳만 수정한다.
 export const NOTICE_TYPE_STYLE = {
@@ -24,6 +24,11 @@ const formatDateTime = (iso) => {
     year: 'numeric', month: 'long', day: 'numeric',
     weekday: 'short', hour: '2-digit', minute: '2-digit',
   });
+};
+
+const formatAuthor = (notice) => {
+  if (!notice?.author_id) return null;
+  return notice.author_name ? `${notice.author_name}(${notice.author_id})` : notice.author_id;
 };
 
 export default function NoticeDetailModal({ isOpen, notice, onClose, primaryAction = null, extraActions = null }) {
@@ -71,6 +76,12 @@ export default function NoticeDetailModal({ isOpen, notice, onClose, primaryActi
                         고정
                       </span>
                     )}
+                    {notice?.is_private && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/15 text-white/90 border border-white/25">
+                        <Lock size={9} className="-mt-px" />
+                        비공개
+                      </span>
+                    )}
                   </div>
                   <button
                     onClick={onClose}
@@ -93,11 +104,11 @@ export default function NoticeDetailModal({ isOpen, notice, onClose, primaryActi
                       {formatDateTime(notice.created_at)}
                     </span>
                   )}
-                  {notice?.author_id && (
+                  {formatAuthor(notice) && (
                     <>
                       <span className="text-white/30 select-none">·</span>
                       <span className="inline-flex items-center gap-1 opacity-80">
-                        작성자 {notice.author_id}
+                        작성자 {formatAuthor(notice)}
                       </span>
                     </>
                   )}

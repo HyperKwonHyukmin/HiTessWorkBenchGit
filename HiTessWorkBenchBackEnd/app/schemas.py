@@ -41,7 +41,9 @@ class NoticeCreate(BaseModel):
     title: str
     content: str
     is_pinned: bool
+    is_private: bool = False
     author_id: str
+    author_name: Optional[str] = None
 
 class NoticeResponse(NoticeCreate):
     id: int

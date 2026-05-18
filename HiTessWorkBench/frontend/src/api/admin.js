@@ -38,7 +38,7 @@ export const setMaintenanceMode = (maintenance) =>
 
 /** 공지사항 목록 조회 */
 export const getNotices = () =>
-  axios.get(`${API_BASE_URL}/api/notices`);
+  axios.get(`${API_BASE_URL}/api/notices`, { headers: getAuthHeaders() });
 
 /** 공지사항 생성 */
 export const createNotice = (payload) =>

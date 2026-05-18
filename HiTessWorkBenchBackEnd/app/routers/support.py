@@ -1,11 +1,50 @@
 """공지사항, 기능 요청, 사용자 가이드 CRUD API 라우터."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 from .. import models, schemas, database
 from ..dependencies import require_auth, require_admin
+from ..sessions import session_store
 from ._crud_helpers import create_record, delete_record, get_or_404, update_record
 
 router = APIRouter(prefix="/api", tags=["support"])
+
+
+def _is_admin_request(authorization: str | None, db: Session) -> bool:
+  if not authorization or not authorization.startswith("Bearer "):
+    return False
+  employee_id = session_store.get_employee_id(authorization.removeprefix("Bearer ").strip())
+  if not employee_id:
+    return False
+  user = db.query(models.User).filter(models.User.employee_id == employee_id).first()
+  return bool(user and user.is_admin)
+
+
+def _notice_payload(notice: schemas.NoticeCreate, db: Session) -> dict:
+  payload = notice.model_dump()
+  if not payload.get("author_name") and payload.get("author_id"):
+    user = db.query(models.User).filter(models.User.employee_id == payload["author_id"]).first()
+    if user:
+      payload["author_name"] = user.name
+  return payload
+
+
+def _hydrate_notice_authors(notices: list[models.Notice], db: Session) -> list[models.Notice]:
+  missing_author_ids = {
+    notice.author_id for notice in notices
+    if notice.author_id and not notice.author_name
+  }
+  if not missing_author_ids:
+    return notices
+  users = (
+    db.query(models.User)
+    .filter(models.User.employee_id.in_(missing_author_ids))
+    .all()
+  )
+  name_by_id = {user.employee_id: user.name for user in users}
+  for notice in notices:
+    if notice.author_id and not notice.author_name:
+      notice.author_name = name_by_id.get(notice.author_id)
+  return notices
 
 
 # ==================== Notice (공지사항) ====================
@@ -14,21 +53,28 @@ _NOTICE_NOT_FOUND = "공지사항을 찾을 수 없습니다."
 
 
 @router.get("/notices", response_model=list[schemas.NoticeResponse])
-def get_notices(db: Session = Depends(database.get_db)):
-  return db.query(models.Notice).order_by(models.Notice.is_pinned.desc(), models.Notice.created_at.desc()).all()
+def get_notices(
+  db: Session = Depends(database.get_db),
+  authorization: str | None = Header(default=None),
+):
+  query = db.query(models.Notice)
+  if not _is_admin_request(authorization, db):
+    query = query.filter(models.Notice.is_private == False)  # noqa: E712
+  notices = query.order_by(models.Notice.is_pinned.desc(), models.Notice.created_at.desc()).all()
+  return _hydrate_notice_authors(notices, db)
 
 
 @router.post("/notices", response_model=schemas.NoticeResponse)
 def create_notice(notice: schemas.NoticeCreate, db: Session = Depends(database.get_db),
                   current_admin: str = Depends(require_admin)):
-  return create_record(db, models.Notice(**notice.model_dump()))
+  return create_record(db, models.Notice(**_notice_payload(notice, db)))
 
 
 @router.put("/notices/{notice_id}", response_model=schemas.NoticeResponse)
 def update_notice(notice_id: int, notice: schemas.NoticeCreate, db: Session = Depends(database.get_db),
                   current_admin: str = Depends(require_admin)):
   db_notice = get_or_404(db, models.Notice, notice_id, _NOTICE_NOT_FOUND)
-  return update_record(db, db_notice, notice.model_dump())
+  return update_record(db, db_notice, _notice_payload(notice, db))
 
 
 @router.delete("/notices/{notice_id}")

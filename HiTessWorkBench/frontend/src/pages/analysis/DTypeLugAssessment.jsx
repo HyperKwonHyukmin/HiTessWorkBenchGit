@@ -536,7 +536,7 @@ export default function DTypeLugAssessment() {
         </div>
       </div>
 
-      <SolverCredit contributor="김병훈" />
+      <SolverCredit contributor="김연태" />
       <ChangelogModal programKey="DTypeLugAssessment" title="D Type Lug Assessment" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );

@@ -1,4 +1,5 @@
 """인증 및 회원가입 API 라우터."""
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -13,6 +14,7 @@ from ..services.activity_service import log_activity
 
 router = APIRouter(prefix="/api", tags=["auth"])
 member_router = APIRouter(prefix="/member", tags=["member"])
+EMPLOYEE_ID_PATTERN = re.compile(r"^A\d{6}$")
 
 
 class CheckUserRequest(BaseModel):
@@ -95,6 +97,9 @@ def logout(req: Request, db: Session = Depends(database.get_db), employee_id: st
 @router.post("/register", response_model=schemas.UserResponse)
 def register_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
   employee_id = user.employee_id.upper()
+  if not EMPLOYEE_ID_PATTERN.fullmatch(employee_id):
+    raise HTTPException(status_code=422, detail="invalid_employee_id_format")
+
   existing_user = db.query(models.User).filter(models.User.employee_id == employee_id).first()
   if existing_user:
     raise HTTPException(status_code=400, detail="Employee ID already registered")

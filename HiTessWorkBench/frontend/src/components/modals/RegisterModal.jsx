@@ -27,6 +27,8 @@ const BASE_POSITIONS = ['책임연구원', '책임엔지니어', '선임연구�
 const COMPANY_OPTIONS    = BASE_COMPANIES;
 const DEPARTMENT_OPTIONS = [CUSTOM_LABEL, ...BASE_DEPARTMENTS];
 const POSITION_OPTIONS   = [CUSTOM_LABEL, ...BASE_POSITIONS];
+const EMPLOYEE_ID_PATTERN = /^A\d{6}$/;
+const EMPLOYEE_ID_FORMAT_MESSAGE = '사번 형식이 올바르지 않습니다. A + 숫자 6자리 형식으로 다시 사번을 확인해 주세요.';
 
 export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
   const [formData, setFormData] = useState({
@@ -58,7 +60,8 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const nextValue = name === 'employee_id' ? value.toUpperCase().trim() : value;
+    setFormData(prev => ({ ...prev, [name]: nextValue }));
   };
 
   const handleSelectChange = (name, value) => {
@@ -79,8 +82,15 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsLoading(true);
     setErrorMsg('');
+
+    const employeeId = formData.employee_id.trim().toUpperCase();
+    if (!EMPLOYEE_ID_PATTERN.test(employeeId)) {
+      setErrorMsg(EMPLOYEE_ID_FORMAT_MESSAGE);
+      return;
+    }
+
+    setIsLoading(true);
 
     const finalDepartment = resolveValue('department');
     const finalPosition   = resolveValue('position');
@@ -98,6 +108,7 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
 
     const payload = {
       ...formData,
+      employee_id: employeeId,
       department: finalDepartment,
       position: finalPosition,
     };
@@ -107,7 +118,9 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
       setIsSuccess(true);
     } catch (error) {
       console.error("Register Error:", error);
-      if (error.response && error.response.status === 400) {
+      if (error.response?.status === 422 && error.response?.data?.detail === 'invalid_employee_id_format') {
+        setErrorMsg(EMPLOYEE_ID_FORMAT_MESSAGE);
+      } else if (error.response && error.response.status === 400) {
         setErrorMsg("이미 등록된 사번입니다.");
       } else {
         setErrorMsg("회원가입 중 오류가 발생했습니다.");
@@ -166,7 +179,17 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
                         <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
                           <div>
                             <label className="block text-xs font-bold text-slate-600 uppercase mb-1 ml-1">사번</label>
-                            <input type="text" name="employee_id" value={formData.employee_id} onChange={handleChange} required className="w-full p-2 border rounded-lg bg-slate-50 outline-none focus:border-blue-500 transition-colors"/>
+                            <input
+                              type="text"
+                              name="employee_id"
+                              value={formData.employee_id}
+                              onChange={handleChange}
+                              required
+                              maxLength={7}
+                              placeholder="A123456"
+                              className="w-full p-2 border rounded-lg bg-slate-50 outline-none focus:border-blue-500 transition-colors"
+                            />
+                            <p className="mt-1 text-[11px] text-slate-400 font-medium">형식: A + 숫자 6자리</p>
                           </div>
                           <div>
                             <label className="block text-xs font-bold text-slate-600 uppercase mb-1 ml-1">이름</label>

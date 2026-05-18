@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Fragment, useMemo } from 'react';
-import { Megaphone, Plus, ChevronRight, Pin, X, Edit2, Trash2, Bold, Italic, List, Link, Paperclip, CalendarDays, Inbox } from 'lucide-react';
+import { Megaphone, Plus, ChevronRight, Pin, X, Edit2, Trash2, Bold, Italic, List, Link, Paperclip, CalendarDays, Inbox, Lock } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { getNotices, createNotice, updateNotice, deleteNotice } from '../../api/admin';
 import GuideButton from '../../components/ui/GuideButton';
@@ -21,6 +21,11 @@ const getPreview = (content, max = 90) => {
   return plain.length > max ? plain.slice(0, max) + '…' : plain;
 };
 
+const formatAuthor = (notice) => {
+  if (!notice?.author_id) return '';
+  return notice.author_name ? `${notice.author_name}(${notice.author_id})` : notice.author_id;
+};
+
 export default function NoticeBoard() {
   const { showToast } = useToast();
   const { user: currentUser, isAdmin } = useAuth();
@@ -32,7 +37,7 @@ export default function NoticeBoard() {
   const [editMode, setEditMode] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
-  const [formData, setFormData] = useState({ type: 'Notice', title: '', content: '', is_pinned: false });
+  const [formData, setFormData] = useState({ type: 'Notice', title: '', content: '', is_pinned: false, is_private: false });
 
   useEffect(() => {
     fetchNotices();
@@ -47,7 +52,7 @@ export default function NoticeBoard() {
 
   const openWriteModal = () => {
     setEditMode(false);
-    setFormData({ type: 'Notice', title: '', content: '', is_pinned: false });
+    setFormData({ type: 'Notice', title: '', content: '', is_pinned: false, is_private: false });
     setIsWriteModalOpen(true);
   };
 
@@ -59,7 +64,9 @@ export default function NoticeBoard() {
   const handleEditClick = () => {
     setFormData({ 
       type: selectedNotice.type, title: selectedNotice.title, 
-      content: selectedNotice.content, is_pinned: selectedNotice.is_pinned 
+      content: selectedNotice.content,
+      is_pinned: selectedNotice.is_pinned,
+      is_private: !!selectedNotice.is_private,
     });
     setEditMode(true);
     setIsViewModalOpen(false);
@@ -79,7 +86,7 @@ export default function NoticeBoard() {
     e.preventDefault();
     if (!currentUser) { showToast('로그인 정보가 없습니다.', 'warning'); return; }
     try {
-      const payload = { ...formData, author_id: currentUser.employee_id };
+      const payload = { ...formData, author_id: currentUser.employee_id, author_name: currentUser.name };
       if (editMode) {
         await updateNotice(selectedNotice.id, payload);
       } else {
@@ -138,10 +145,18 @@ export default function NoticeBoard() {
                       <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${style.chip}`}>
                         {style.label}
                       </span>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-                        <Pin size={9} className="fill-red-500" />
-                        고정
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {notice.is_private && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                            <Lock size={9} />
+                            비공개
+                          </span>
+                        )}
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                          <Pin size={9} className="fill-red-500" />
+                          고정
+                        </span>
+                      </div>
                     </div>
 
                     <h3 className="font-bold text-slate-800 text-[15px] leading-snug group-hover:text-blue-600 transition-colors line-clamp-2 mb-2">
@@ -155,10 +170,17 @@ export default function NoticeBoard() {
                     )}
 
                     <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 font-mono tabular-nums">
-                        <CalendarDays size={11} />
-                        {formatDate(notice.created_at)}
-                      </span>
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 font-mono tabular-nums">
+                          <CalendarDays size={11} />
+                          {formatDate(notice.created_at)}
+                        </span>
+                        {formatAuthor(notice) && (
+                          <span className="text-[11px] text-slate-400 font-bold truncate">
+                            작성자 {formatAuthor(notice)}
+                          </span>
+                        )}
+                      </div>
                       <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
                     </div>
                   </div>
@@ -203,6 +225,11 @@ export default function NoticeBoard() {
                   <span className={`inline-flex items-center justify-center w-20 shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold border ${style.chip}`}>
                     {style.label}
                   </span>
+                  {notice.is_private && (
+                    <span className="inline-flex items-center gap-1 shrink-0 px-2 py-1 rounded-full text-[10px] font-bold border bg-slate-100 text-slate-600 border-slate-200">
+                      <Lock size={10} /> 비공개
+                    </span>
+                  )}
 
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-slate-700 group-hover:text-blue-600 transition-colors truncate">
@@ -211,6 +238,11 @@ export default function NoticeBoard() {
                     {notice.content && (
                       <p className="text-xs text-slate-400 mt-0.5 truncate">
                         {getPreview(notice.content, 120)}
+                      </p>
+                    )}
+                    {formatAuthor(notice) && (
+                      <p className="text-[11px] text-slate-400 mt-0.5 font-bold truncate">
+                        작성자 {formatAuthor(notice)}
                       </p>
                     )}
                   </div>
@@ -263,6 +295,16 @@ export default function NoticeBoard() {
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" checked={formData.is_pinned} onChange={e => setFormData({...formData, is_pinned: e.target.checked})} className="sr-only peer" />
                       <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                    <div>
+                      <span className="text-sm font-bold text-slate-700">비공개 공지</span>
+                      <p className="text-[11px] text-slate-400 mt-0.5">관리자에게만 보이고 일반 사용자에게는 표시되지 않습니다.</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={formData.is_private} onChange={e => setFormData({...formData, is_private: e.target.checked})} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-slate-700"></div>
                     </label>
                   </div>
                 </div>

@@ -51,7 +51,9 @@ class Notice(Base):
     title = Column(String(200))
     content = Column(String(2000))
     is_pinned = Column(Boolean, default=False)
+    is_private = Column(Boolean, default=False)
     author_id = Column(String(50))
+    author_name = Column(String(50), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.now)
 
 

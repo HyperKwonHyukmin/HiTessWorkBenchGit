@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import inspect, text
 
 from . import database, models
 from .routers import (
@@ -28,6 +29,27 @@ from .services.cleanup_service import start_cleanup_scheduler
 
 # DB 테이블 자동 생성
 models.Base.metadata.create_all(bind=database.engine)
+
+
+def ensure_notice_columns():
+    """기존 notices 테이블에 새 공개 범위/작성자 이름 컬럼을 보강합니다."""
+    inspector = inspect(database.engine)
+    if not inspector.has_table("notices"):
+        return
+    columns = {col["name"] for col in inspector.get_columns("notices")}
+    statements = []
+    if "is_private" not in columns:
+        statements.append("ALTER TABLE notices ADD COLUMN is_private BOOL DEFAULT FALSE")
+    if "author_name" not in columns:
+        statements.append("ALTER TABLE notices ADD COLUMN author_name VARCHAR(50) NULL")
+    if not statements:
+        return
+    with database.engine.begin() as conn:
+        for statement in statements:
+            conn.execute(text(statement))
+
+
+ensure_notice_columns()
 
 
 @asynccontextmanager
