@@ -6,7 +6,14 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import { useToast } from '../../contexts/ToastContext';
 
-export default function AssessmentProjectModal({ project, onClose, onOpenResultViewer }) {
+/**
+ * @param {object} props
+ * @param {object} props.project
+ * @param {() => void} props.onClose
+ * @param {() => void} [props.onViewResultModel] - 제공 시 상단에 "결과 모델 보기" 버튼 노출
+ *   (MyProjects 등 과거 프로젝트 이력에서만 사용; TrussAssessment 즉시 결과 모달에서는 미전달)
+ */
+export default function AssessmentProjectModal({ project, onClose, onViewResultModel }) {
   const { showToast } = useToast();
   const [downloading, setDownloading] = useState({});
   const [filesMissing, setFilesMissing] = useState(project?.files_available === false);
@@ -98,14 +105,15 @@ export default function AssessmentProjectModal({ project, onClose, onOpenResultV
           Job ID: {project?.id}
         </p>
 
-        {/* 결과 매핑 모델 뷰어 — MyProjects 처럼 onOpenResultViewer 가 주입된 경우에만 노출 */}
-        {onOpenResultViewer && !filesMissing && project?.result_info?.bdf && jsonFiles.length > 0 && (
+        {/* 결과 모델 뷰어 진입 버튼 (MyProjects 등 외부에서 onViewResultModel 핸들러가 전달될 때만 노출) */}
+        {onViewResultModel && !filesMissing && project?.result_info?.bdf && (
           <button
-            onClick={() => onOpenResultViewer(project)}
-            className="w-full mb-5 py-3.5 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-center gap-3 text-indigo-700 font-bold hover:bg-indigo-100 hover:border-indigo-300 transition-all duration-200 shadow-sm cursor-pointer group"
+            onClick={onViewResultModel}
+            className="w-full mb-5 py-4 rounded-xl flex items-center justify-center gap-3 bg-gradient-to-r from-emerald-700 to-emerald-600 hover:from-emerald-600 hover:to-emerald-500 text-white font-bold shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-pointer group"
           >
-            <Eye size={18} className="group-hover:scale-110 transition-transform" />
-            <span className="text-sm">해석 결과 매핑 3D 모델 보기</span>
+            <Eye size={20} className="group-hover:scale-110 transition-transform" />
+            <span>결과 모델 보기 (3D)</span>
+            <span className="text-[10px] font-medium text-emerald-100 hidden sm:inline">— 요소별 Assessment 색상 시각화</span>
           </button>
         )}
 
