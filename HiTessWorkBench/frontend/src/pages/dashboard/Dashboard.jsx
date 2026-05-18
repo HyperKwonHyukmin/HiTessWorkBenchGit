@@ -771,6 +771,12 @@ export default function Dashboard() {
       setCurrentMenu('Jib Rest Assessment');
     } else if (title === "Column Buckling Load Calculator") {
       setCurrentMenu('Column Buckling Load Calculator');
+    } else if (title === "D Type Lug Assessment") {
+      setCurrentMenu('D Type Lug Assessment');
+    } else if (title === "Carling Free Calculator") {
+      setCurrentMenu('Carling Free Calculator');
+    } else if (title === "Carling Design Optimization") {
+      setCurrentMenu('Carling Design Optimization');
     } else if (title === "BDF Scanner") {
       setCurrentMenu('BDF Scanner');
     } else {

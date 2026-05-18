@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from . import database, models
 from .routers import (
@@ -9,7 +10,9 @@ from .routers import (
     ai,
     analysis,
     auth,
+    carling,
     column_buckling,
+    d_type_lug,
     davit,
     dev_runbooks,
     hitessbeam,
@@ -68,11 +71,19 @@ app.include_router(support.router)
 app.include_router(ai.router)
 app.include_router(davit.router)
 app.include_router(column_buckling.router)
+app.include_router(d_type_lug.router)
+app.include_router(carling.router)
 app.include_router(hitessbeam.router)  # [TEMP] HiTessBeam 임시 라우터
 app.include_router(section_property.router)
 app.include_router(activity.router)
 app.include_router(viewers.router)
 app.include_router(dev_runbooks.router)
+
+app.mount(
+    "/static/inhouse/d-type-lug",
+    StaticFiles(directory="InHouseProgram/D_TypeLugCalculation"),
+    name="d-type-lug-static",
+)
 
 
 @app.get("/")

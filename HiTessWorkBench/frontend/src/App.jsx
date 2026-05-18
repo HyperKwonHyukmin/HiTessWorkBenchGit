@@ -40,6 +40,8 @@ const ProductivityApps = lazy(() => import('./pages/analysis/ProductivityApps'))
 const MastPostAssessment = lazy(() => import('./pages/analysis/MastPostAssessment'));
 const JibRestAssessment = lazy(() => import('./pages/analysis/JibRestAssessment'));
 const ColumnBucklingCalculator = lazy(() => import('./pages/analysis/ColumnBucklingCalculator'));
+const DTypeLugAssessment = lazy(() => import('./pages/analysis/DTypeLugAssessment'));
+const CarlingCalculator = lazy(() => import('./pages/analysis/CarlingCalculator'));
 const SectionPropertyCalculator = lazy(() => import('./pages/analysis/SectionPropertyCalculator'));
 const PlateStructureAnalysis = lazy(() => import('./pages/analysis/PlateStructureAnalysis'));
 const ApiApps = lazy(() => import('./pages/Administration/ApiApps'));
@@ -257,6 +259,9 @@ function AppInner() {
       case 'Mast Post Assessment': return <MastPostAssessment />;
       case 'Jib Rest Assessment': return <JibRestAssessment />;
       case 'Column Buckling Load Calculator': return <ColumnBucklingCalculator />;
+      case 'D Type Lug Assessment': return <DTypeLugAssessment />;
+      case 'Carling Free Calculator': return <CarlingCalculator variant="free" />;
+      case 'Carling Design Optimization': return <CarlingCalculator variant="optimization" />;
       case 'Section Property Calculator': return <SectionPropertyCalculator />;
       case 'Plate Structure Analysis': return <PlateStructureAnalysis />;
       case 'API Apps': return <ApiApps />;

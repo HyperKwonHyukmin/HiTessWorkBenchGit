@@ -1011,6 +1011,30 @@ DEFAULT_GUIDES = [
     },
     {
         "category": "Analysis Modules",
+        "title": "[파라메트릭] D Type Lug Assessment",
+        "content": (
+            "D-Type 러그 계산 Excel을 Python 계산 모듈로 내재화한 파라메트릭 앱입니다. "
+            "브라켓 4EA, 2EA Double, 2EA Single 타입에 대해 12개 각도 케이스의 A~E 단면 Usage Factor를 계산합니다.\n\n"
+            "## 진입 경로\n\n"
+            "사이드바 → **Parametric Apps** → `D Type Lug Assessment` 카드 클릭\n\n"
+            "## 입력 항목\n\n"
+            "| 그룹 | 항목 | 단위 |\n"
+            "|------|------|------|\n"
+            "| Load | Force | N |\n"
+            "| Geometry | L1/L2, H1~H5, T1~T3, R1/R2, Pin R, D1~D3, W1/W2, W1'/W2' | mm |\n"
+            "| Material | Base Yield, Weld Yield | MPa |\n\n"
+            "초기 입력값은 `260506_Lug_계산_HiTESS_내재화.xlsx`의 기본 계산값 기준입니다.\n\n"
+            "## 결과 확인\n\n"
+            "- 브라켓 타입별 최대 Usage Factor와 OK/NG를 카드로 표시합니다.\n"
+            "- 선택한 브라켓의 A~E 단면별 최대 Usage Factor와 지배 각도 케이스를 표시합니다.\n"
+            "- 각도 케이스별 표에서 α, β와 A~E 단면 Usage Factor를 확인할 수 있습니다.\n\n"
+            "## JSON 연계\n\n"
+            "입력 JSON과 결과 JSON을 다운로드할 수 있으며, 서버 API `/api/d-type-lug/calculate`와 동일한 구조를 사용합니다."
+        ),
+        "author_id": "SYSTEM",
+    },
+    {
+        "category": "Analysis Modules",
         "title": "[파라메트릭] Column Buckling Load Calculator — AISC 기둥 좌굴 허용 하중",
         "content": (
             "**AISC 기준** 핀-핀 경계 조건에서 강재 기둥의 **최대 허용 사용 하중**을 산출합니다. 동심·편심 하중을 모두 지원합니다.\n\n"

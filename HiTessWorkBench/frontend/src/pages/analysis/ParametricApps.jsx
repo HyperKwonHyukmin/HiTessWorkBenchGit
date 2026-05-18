@@ -39,6 +39,12 @@ export default function ParametricApps() {
       setCurrentMenu('Jib Rest Assessment');
     } else if (appTitle === "Column Buckling Load Calculator") {
       setCurrentMenu('Column Buckling Load Calculator');
+    } else if (appTitle === "D Type Lug Assessment") {
+      setCurrentMenu('D Type Lug Assessment');
+    } else if (appTitle === "Carling Free Calculator") {
+      setCurrentMenu('Carling Free Calculator');
+    } else if (appTitle === "Carling Design Optimization") {
+      setCurrentMenu('Carling Design Optimization');
     } else {
       showToast(`'${appTitle}' 앱은 현재 개발 중입니다.`, 'info');
     }

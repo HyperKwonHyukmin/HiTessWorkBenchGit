@@ -199,6 +199,33 @@ const API_LIST = [
     example: JSON.stringify({ jh: 990, jb: 670, wj: 14500, ww: 1200, wc: 3000, lj: 12074, lw: 4604, lc: 2478, lr: 22100, h1: 9029, h4: 4111, pw: 288, h2: 2454, h3: 1000, d1: 762, t1: 7.9, employee_id: "20001234" }, null, 2),
   },
   {
+    id: 'd-type-lug',
+    name: 'D Type Lug Assessment',
+    method: 'POST',
+    endpoint: '/api/d-type-lug/calculate',
+    status: 'Active',
+    category: '파라메트릭(Parametric)',
+    description: 'D-Type 러그의 3개 브라켓 타입과 12개 각도 케이스에 대해 A~E 단면 Usage Factor를 계산합니다.',
+    cli: 'D_TypeLugCalculation.exe <input_json_path> -o <output_json_path> --pretty',
+    params: [
+      { name: 'load.force_N', type: 'float', required: true, desc: '설계 하중 (N)' },
+      { name: 'geometry', type: 'object', required: true, desc: 'l1/l2, h1~h5, t1~t3, r1/r2, pin_radius, d1~d3, w1/w2, w1_prime/w2_prime' },
+      { name: 'material.yield_base_MPa', type: 'float', required: true, desc: '모재 항복응력 (MPa)' },
+      { name: 'material.yield_weld_MPa', type: 'float', required: true, desc: '용접부 허용 기준 응력 (MPa)' },
+      { name: 'employee_id', type: 'string', required: false, desc: '요청 사번. 기본값: unknown' },
+    ],
+    example: JSON.stringify({
+      load: { force_N: 1000000 },
+      geometry: {
+        l1: 850, l2: 200, h1: 365, h2: 190, h3: 190, h4: 115, h5: 74,
+        t1: 32, t2: 32, t3: 34, r1: 150, r2: 44, pin_radius: 41.5,
+        d1: 66, d2: 151, d3: 105, w1: 6, w2: 8, w1_prime: 12, w2_prime: 0,
+      },
+      material: { yield_base_MPa: 235, yield_weld_MPa: 291.7647058823529 },
+      employee_id: "20001234",
+    }, null, 2),
+  },
+  {
     id: 'column-buckling',
     name: 'Column Buckling Load Calculator',
     method: 'POST',
