@@ -7,7 +7,7 @@ import ChangelogModal from '../../components/ui/ChangelogModal';
 import GuideButton from '../../components/ui/GuideButton';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
-import { usePolling } from '../../hooks/usePolling';
+import { useAnalysisJob } from '../../hooks/useAnalysisJob';
 import { requestBdfScanner, downloadFileText } from '../../api/analysis';
 import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
@@ -26,11 +26,6 @@ export default function BdfScanner() {
 
   const [bdfFile, setBdfFile] = useState(null);
   const [useNastran, setUseNastran] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [logs, setLogs] = useState([]);
-  const [currentPollingJobId, setCurrentPollingJobId] = useState(null);
   const [modelData, setModelData] = useState(null);
   const [step1Data, setStep1Data] = useState(null);
   const [step2Data, setStep2Data] = useState(null);
@@ -47,32 +42,21 @@ export default function BdfScanner() {
 
   const fileInputRef = useRef(null);
   const logEndRef = useRef(null);
-  const lastMsgRef = useRef('');
 
-  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
-
-  const addLog = (message, type = 'info') => {
-    setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message, type }]);
-  };
-
-  usePolling({
-    jobId: currentPollingJobId,
-    maxRetries: 240,
-    onProgress: (data) => {
-      const { progress: p, message } = data;
-      setProgress(p);
-      if (message !== lastMsgRef.current) {
-        lastMsgRef.current = message;
-        setStatusMessage(message);
-        setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: `[${p}%] ${message}`, type: 'warning' }]);
-      }
-    },
+  // 작업 상태(jobId/isRunning/progress/statusMessage/logs) + 사번 + 폴링은 훅이 담당.
+  // 페이지는 onComplete 콜백에서 결과 파일 파싱·UI 상태만 처리한다.
+  const {
+    isRunning, progress, statusMessage, logs,
+    employeeId, addLog, startJob,
+    setLogs, setStatusMessage, setIsRunning, setProgress,
+  } = useAnalysisJob({
+    startGlobalJob,
+    pollingMaxRetries: 240, // 약 6분
+    successLogMessage: 'BDF 스캔 완료.',
+    errorLogMessage: '스캔 실패.',
+    timeoutLogMessage: '시간 초과 (6분). 서버 상태를 확인하세요.',
     onComplete: async (data) => {
-      setCurrentPollingJobId(null);
-      setIsRunning(false);
-      setProgress(100);
       setStatusMessage('스캔 완료');
-      addLog('BDF 스캔 완료.', 'success');
 
       const { engine_log, project } = data;
       if (engine_log) addLog(`[SOLVER] ${engine_log.trim()}`, 'info');
@@ -121,13 +105,9 @@ export default function BdfScanner() {
 
       addLog('결과 렌더링 완료.', 'success');
     },
-    onError: (errData) => {
-      setCurrentPollingJobId(null);
-      setIsRunning(false);
-      const msg = errData?.timeout ? '시간 초과 (6분). 서버 상태를 확인하세요.' : '스캔 실패.';
-      addLog(msg, 'error');
-    },
   });
+
+  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
   const handleFile = (file) => {
     if (!file) return;
@@ -155,6 +135,8 @@ export default function BdfScanner() {
 
   const runAnalysis = async () => {
     if (!bdfFile || isRunning) return;
+    // axios 응답 전에 UI 가 즉시 반응하도록 페이지 결과 상태도 함께 초기화한다.
+    // startJob 도 isRunning/progress/statusMessage 를 세팅하지만 여기서 미리 켜둔다.
     setIsRunning(true);
     setProgress(0);
     setStatusMessage('서버 요청 중...');
@@ -163,10 +145,6 @@ export default function BdfScanner() {
     setStep2Data(null);
     setUnsupportedElements(null);
     setLogs([]);
-    lastMsgRef.current = '';
-
-    const userStr = localStorage.getItem('user');
-    const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
 
     const formData = new FormData();
     formData.append('bdf_file', bdfFile);
@@ -178,8 +156,7 @@ export default function BdfScanner() {
       const res = await requestBdfScanner(formData);
       const jobId = res.data.job_id;
       addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
-      startGlobalJob?.(jobId, 'BDF Scanner');
-      setCurrentPollingJobId(jobId);
+      startJob(jobId, 'BDF Scanner');
     } catch {
       setIsRunning(false);
       addLog('서버 요청 실패.', 'error');

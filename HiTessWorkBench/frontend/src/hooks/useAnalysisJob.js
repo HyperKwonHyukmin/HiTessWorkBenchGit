@@ -21,8 +21,10 @@ import { usePolling } from './usePolling';
  *                                              startJob 호출 시 programLabel 과 함께 전달하면 자동 호출.
  * @param {string}   options.successLogMessage- onComplete 직전 logs 에 추가할 메시지.
  *                                              기본값 '해석 완료.' 빈 문자열 전달 시 추가 안 함.
- * @param {string}   options.errorLogPrefix   - onError 시 logs 에 표시할 메시지 prefix.
- *                                              기본값 '해석 실패.' 타임아웃은 별도 메시지.
+ * @param {string}   options.errorLogMessage  - onError 시 logs 에 추가할 메시지 (일반 실패).
+ *                                              기본값 '해석 실패.' 빈 문자열 전달 시 추가 안 함.
+ * @param {string}   options.timeoutLogMessage- onError + errData.timeout 시 logs 에 추가할 메시지.
+ *                                              페이지별 폴링 시간이 다르므로 커스터마이즈 가능.
  * @param {number}   options.pollingInterval  - 폴링 간격(ms). usePolling 기본값 1500 사용.
  * @param {number}   options.pollingMaxRetries- 최대 폴링 횟수. usePolling 기본값 120 사용.
  *
@@ -40,7 +42,8 @@ export function useAnalysisJob({
   onError,
   startGlobalJob,
   successLogMessage = '해석 완료.',
-  errorLogPrefix = '해석 실패.',
+  errorLogMessage = '해석 실패.',
+  timeoutLogMessage = '해석 시간 초과. 서버 상태를 확인하세요.',
   pollingInterval,
   pollingMaxRetries,
 } = {}) {
@@ -131,14 +134,14 @@ export function useAnalysisJob({
       setIsRunning(false);
       setJobId(null);
       const isTimeout = !!errData?.timeout;
-      const msg = isTimeout
-        ? '해석 시간 초과. 서버 상태를 확인하세요.'
-        : errorLogPrefix;
-      setLogs(prev => [...prev, {
-        time: new Date().toLocaleTimeString(),
-        message: msg,
-        type: 'error',
-      }]);
+      const msg = isTimeout ? timeoutLogMessage : errorLogMessage;
+      if (msg) {
+        setLogs(prev => [...prev, {
+          time: new Date().toLocaleTimeString(),
+          message: msg,
+          type: 'error',
+        }]);
+      }
       if (onErrorRef.current) onErrorRef.current(errData);
     },
   });
