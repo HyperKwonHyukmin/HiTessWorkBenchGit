@@ -285,37 +285,16 @@ async def request_truss_analysis(
     Truss Model Builder 해석을 요청받아 파일을 저장하고 백그라운드 작업을 실행합니다.
     """
     _verify_employee_self(employee_id, current_user)
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(os.path.dirname(base_dir))
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    work_dir, timestamp = make_work_dir(employee_id, "TrussModelBuilder")
+    node_path = await save_upload(node_file, work_dir)
+    member_path = await save_upload(member_file, work_dir)
 
-    # [변경 사항] 기존 사번_시간 포맷에서 시간_사번_모듈명 포맷으로 일관성 확보
-    unique_folder = f"{timestamp}_{employee_id}_TrussModelBuilder"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
-
-    os.makedirs(work_dir, exist_ok=True)
-
-    node_path = os.path.join(work_dir, os.path.basename(node_file.filename))
-    member_path = os.path.join(work_dir, os.path.basename(member_file.filename))
-
-    try:
-        with open(node_path, "wb") as buffer:
-            buffer.write(await node_file.read())
-        with open(member_path, "wb") as buffer:
-            buffer.write(await member_file.read())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
-
-    exe_dir = os.path.abspath(os.path.join(parent_dir, "InHouseProgram", "TrussModelBuilder"))
+    exe_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "InHouseProgram", "TrussModelBuilder"))
     exe_path = os.path.join(exe_dir, "TrussModelBuilder.exe")
 
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
-
-    analysis_executor.submit(
-        task_execute_truss, job_id, node_path, member_path, work_dir, exe_path, exe_dir, employee_id, timestamp, source
+    job_id = submit_analysis_job(
+        task_execute_truss, node_path, member_path, work_dir, exe_path, exe_dir, employee_id, timestamp, source,
     )
-
     return {"job_id": job_id}
 
 
@@ -779,28 +758,11 @@ async def request_f06parser(
     Displacement, SPC Force, CBAR/CBEAM/CROD Force/Stress를 추출합니다.
     """
     _verify_employee_self(employee_id, current_user)
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(os.path.dirname(base_dir))
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-    unique_folder = f"{timestamp}_{employee_id}_F06Parser"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
-    os.makedirs(work_dir, exist_ok=True)
-
-    f06_path = os.path.join(work_dir, os.path.basename(f06_file.filename))
-    try:
-        with open(f06_path, "wb") as buffer:
-            buffer.write(await f06_file.read())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
-
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
-
-    analysis_executor.submit(
-        task_execute_f06parser, job_id, f06_path, work_dir, employee_id, timestamp, source
+    work_dir, timestamp = make_work_dir(employee_id, "F06Parser")
+    f06_path = await save_upload(f06_file, work_dir, error_prefix="파일 저장 오류")
+    job_id = submit_analysis_job(
+        task_execute_f06parser, f06_path, work_dir, employee_id, timestamp, source,
     )
-
     return {"job_id": job_id}
 
 
@@ -817,34 +779,11 @@ async def request_beam_analysis(
     Simple Beam Assessment 해석을 요청받아 JSON 파일을 저장하고 백그라운드 작업을 실행합니다.
     """
     _verify_employee_self(employee_id, current_user)
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(os.path.dirname(base_dir))
-
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-    unique_folder = f"{timestamp}_{employee_id}_SimpleBeam"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
-
-    os.makedirs(work_dir, exist_ok=True)
-
-    input_json_path = os.path.join(work_dir, os.path.basename(beam_file.filename))
-    try:
-        with open(input_json_path, "wb") as buffer:
-            buffer.write(await beam_file.read())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
-
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {
-        "status": "Pending",
-        "progress": 0,
-        "message": "Waiting in Queue..."
-    })
-
-    analysis_executor.submit(
-        task_execute_beam, job_id, input_json_path, work_dir, employee_id, timestamp, source
+    work_dir, timestamp = make_work_dir(employee_id, "SimpleBeam")
+    input_json_path = await save_upload(beam_file, work_dir)
+    job_id = submit_analysis_job(
+        task_execute_beam, input_json_path, work_dir, employee_id, timestamp, source,
     )
-
     return {"job_id": job_id}
 
 

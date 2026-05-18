@@ -330,6 +330,6 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
   )
   if db_err is not None:
     status_msg = "Failed"
-    engine_output += f"\n{db_err}"
+    engine_output += f"\nDB Error: {db_err}"
 
   mark_complete(job_id, status_msg, engine_output, project_data)

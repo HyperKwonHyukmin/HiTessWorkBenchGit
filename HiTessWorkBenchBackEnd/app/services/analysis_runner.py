@@ -57,7 +57,7 @@ def update_progress(job_id: str, progress: int, message: str, **extra) -> None:
 
 def run_engine(
     cmd_args: list,
-    work_dir: str,
+    work_dir: Optional[str] = None,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     engine_label: str = "Analysis engine",
 ) -> tuple[str, str]:
@@ -66,6 +66,9 @@ def run_engine(
 
     - status: "Success" | "Failed"
     - output: 성공 시 stdout, 실패 시 사용자에게 노출되는 한국어 에러 메시지
+
+    work_dir이 None이면 subprocess는 현재 작업 디렉토리에서 실행됩니다
+    (기존 truss_service.py와 동일한 동작).
 
     예외별 처리/메시지는 기존 task_execute_* 함수들과 동일합니다.
     """
@@ -101,10 +104,11 @@ def record_analysis(
     source: str,
 ) -> tuple[Optional[dict], Optional[str]]:
     """
-    Analysis 레코드를 생성·커밋하고 (project_data, db_error_message)를 반환합니다.
+    Analysis 레코드를 생성·커밋하고 (project_data, raw_db_error_message)를 반환합니다.
 
     - 성공: (project_data dict, None)
-    - 실패: (None, "DB Error: ...") — 호출부는 engine_log 등에 합쳐 사용자에게 노출합니다.
+    - 실패: (None, "<예외 메시지>") — 호출부에서 자유롭게 prefix("DB Error:", "DB 기록 오류:" 등)를 결정해
+      engine_log에 합쳐 사용자에게 노출합니다.
 
     status가 "Success"가 아닐 경우 result_info는 None으로 기록됩니다(기존 서비스 동작과 동일).
     """
@@ -136,7 +140,7 @@ def record_analysis(
         }
         return project_data, None
     except Exception as db_e:
-        return None, f"DB Error: {str(db_e)}"
+        return None, str(db_e)
     finally:
         db.close()
 
@@ -147,6 +151,8 @@ def mark_complete(
     engine_log: str,
     project_data: Optional[dict],
     extra: Optional[dict] = None,
+    success_message: str = "Analysis Completed Successfully",
+    failure_message: str = "Analysis Failed",
 ) -> None:
     """
     작업을 최종 상태로 마감합니다.
@@ -154,12 +160,13 @@ def mark_complete(
     - status: "Success" | "Failed"
     - engine_log: 사용자에게 노출될 엔진 출력 또는 에러 메시지
     - project_data: record_analysis가 반환한 dict (또는 None)
-    - extra: 페이로드에 추가로 합칠 키-값 (예: result_path)
+    - extra: 페이로드에 추가로 합칠 키-값 (예: result_path, bdf_path)
+    - success_message/failure_message: 서비스별 한글 메시지 커스터마이즈 ("파싱 완료" 등)
     """
     payload = {
         "status": status,
         "progress": 100,
-        "message": "Analysis Completed Successfully" if status == "Success" else "Analysis Failed",
+        "message": success_message if status == "Success" else failure_message,
         "engine_log": engine_log,
         "project": project_data,
     }

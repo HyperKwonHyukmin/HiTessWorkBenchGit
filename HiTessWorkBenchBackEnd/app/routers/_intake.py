@@ -42,19 +42,23 @@ def make_work_dir(employee_id: str, program_name: str) -> tuple[str, str]:
     return work_dir, timestamp
 
 
-async def save_upload(upload: UploadFile, work_dir: str) -> str:
+async def save_upload(
+    upload: UploadFile,
+    work_dir: str,
+    error_prefix: str = "File save error",
+) -> str:
     """
     단일 UploadFile을 work_dir에 저장하고 절대 경로를 반환합니다.
 
-    실패 시 기존 라우터와 완전히 동일한 메시지로 HTTP 500을 발생시킵니다
-    (detail: "File save error: {원인}").
+    실패 시 기존 라우터와 동일한 메시지로 HTTP 500을 발생시킵니다.
+    error_prefix를 통해 라우터별 한글 메시지("파일 저장 오류" 등)도 유지할 수 있습니다.
     """
     dest_path = os.path.join(work_dir, os.path.basename(upload.filename))
     try:
         with open(dest_path, "wb") as buffer:
             buffer.write(await upload.read())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"{error_prefix}: {str(e)}")
     return dest_path
 
 
