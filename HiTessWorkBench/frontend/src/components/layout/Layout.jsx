@@ -5,6 +5,7 @@ import { API_BASE_URL, setApiBaseUrl } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
 import { useServerStatus } from '../../hooks/useServerStatus';
 import { ANALYSIS_DATA } from '../../contexts/DashboardContext';
+import { useAuth } from '../../contexts/AuthContext';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -15,7 +16,12 @@ export default function Layout({
   goBack, goForward, canGoBack, canGoForward 
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [userInfo, setUserInfo] = useState({ name: 'User', position: 'Engineer', is_admin: false });
+  // AuthContext 의 reactive user 에서 직접 헤더 표시값을 파생한다.
+  // 비로그인 상태일 때만 기본 placeholder 사용.
+  const { user: authUser } = useAuth();
+  const userInfo = authUser
+    ? { name: authUser.name || 'User', position: authUser.position || 'Engineer', is_admin: !!authUser.is_admin }
+    : { name: 'User', position: 'Engineer', is_admin: false };
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
   const [serverUrlInput, setServerUrlInput] = useState(API_BASE_URL);
   const [currentServerUrl, setCurrentServerUrl] = useState(API_BASE_URL);
@@ -63,17 +69,6 @@ export default function Layout({
     const handler = (e) => { if (searchRef.current && !searchRef.current.contains(e.target)) setShowDropdown(false); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) {
-        setUserInfo(JSON.parse(storedUser));
-      }
-    } catch (error) {
-      console.error("Failed to load user info:", error);
-    }
   }, []);
 
   return (

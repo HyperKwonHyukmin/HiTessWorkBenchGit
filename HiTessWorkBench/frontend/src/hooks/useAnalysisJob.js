@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { usePolling } from './usePolling';
+import { useAuth } from '../contexts/AuthContext';
 
 /**
  * 해석 작업의 공통 상태(폴링/로그/진행률/사번)를 한 곳에서 관리하는 훅.
@@ -56,15 +57,9 @@ export function useAnalysisJob({
   // 동일 메시지 중복 로그 방지용 — 메시지가 바뀔 때만 로그를 한 줄 추가한다.
   const lastMessageRef = useRef('');
 
-  // localStorage 기반 사번 — 페이지 마운트 시점 1회만 계산.
-  const [employeeId] = useState(() => {
-    try {
-      const userStr = localStorage.getItem('user');
-      return userStr ? JSON.parse(userStr).employee_id : 'guest';
-    } catch {
-      return 'guest';
-    }
-  });
+  // AuthContext 에서 사번을 받는다. 비로그인 / 게스트 상태 fallback 은 'guest'.
+  const { employeeId: authEmployeeId } = useAuth();
+  const employeeId = authEmployeeId || 'guest';
 
   const addLog = useCallback((message, type = 'info') => {
     setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message, type }]);

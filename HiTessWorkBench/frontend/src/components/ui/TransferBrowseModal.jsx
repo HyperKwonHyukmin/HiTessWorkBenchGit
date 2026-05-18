@@ -3,6 +3,7 @@ import { Dialog, Transition, TransitionChild } from '@headlessui/react';
 import { X, Search, FolderOpen, AlertCircle } from 'lucide-react';
 import { getAnalysisHistory } from '../../api/analysis';
 import { ANALYSIS_DATA } from '../../contexts/DashboardContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 /**
  * 이전 분석 결과 탐색 모달.
@@ -15,6 +16,7 @@ import { ANALYSIS_DATA } from '../../contexts/DashboardContext';
  * @param {function} onSelect   - ({ analysisId, filePath, fileKey, projectName, sourceApp, targetApp }) => void
  */
 export default function TransferBrowseModal({ isOpen, onClose, targetApp, onSelect }) {
+  const { employeeId: authEmployeeId } = useAuth();
   const [records, setRecords] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -34,8 +36,7 @@ export default function TransferBrowseModal({ isOpen, onClose, targetApp, onSele
     if (!isOpen) return;
     setIsLoading(true);
     setSearchQuery('');
-    const userStr = localStorage.getItem('user');
-    const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
+    const employeeId = authEmployeeId || 'guest';
 
     getAnalysisHistory(employeeId, 0, 200)
       .then(res => {

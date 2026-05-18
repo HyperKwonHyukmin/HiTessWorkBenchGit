@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
 import ChangelogModal from '../../components/ui/ChangelogModal';
+import { useAuth } from '../../contexts/AuthContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
@@ -68,11 +69,6 @@ const toNumberPayload = (inputs) => ({
   material: Object.fromEntries(Object.entries(inputs.material).map(([k, v]) => [k, Number(v)])),
 });
 
-const getEmployeeId = () => {
-  try { return JSON.parse(localStorage.getItem('user') || '{}').employee_id || 'unknown'; }
-  catch { return 'unknown'; }
-};
-
 const InputField = ({ label, value, onChange, unit = 'mm', min = 0 }) => (
   <div>
     <label className="block text-[11px] font-bold text-slate-700 mb-1">{label}</label>
@@ -110,6 +106,7 @@ const ResultMetric = ({ label, value, unit, danger }) => (
 );
 
 export default function DTypeLugAssessment() {
+  const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
   const [inputs, setInputs] = useState(DEFAULT_INPUT);
   const [result, setResult] = useState(null);
@@ -145,7 +142,7 @@ export default function DTypeLugAssessment() {
     try {
       const res = await axios.post(`${API_BASE_URL}/api/d-type-lug/calculate`, {
         ...payload,
-        employee_id: getEmployeeId(),
+        employee_id: employeeId || 'unknown',
       });
       setResult(res.data);
     } catch (e) {

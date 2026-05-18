@@ -16,6 +16,7 @@ import {
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import NoticeDetailModal, { NOTICE_TYPE_STYLE } from '../../components/modals/NoticeDetailModal';
 
 const MODE_KO = {
@@ -635,6 +636,7 @@ function IntroModal({ isOpen, onClose, content, onRetry, modalTitle = 'Discover 
 
 export default function Dashboard() {
   const { showToast } = useToast();
+  const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
   const { favorites, setAssessmentPageState } = useDashboard();
   
@@ -721,9 +723,6 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const userStr = localStorage.getItem('user');
-        let employeeId = null;
-        try { employeeId = userStr ? JSON.parse(userStr).employee_id : null; } catch { /* 세션 데이터 손상 시 무시 */ }
         if (!employeeId) return;
 
         const now = new Date();

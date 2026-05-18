@@ -16,6 +16,7 @@ import Button from '../../components/ui/Button';
 import PageHeader from '../../components/ui/PageHeader';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ==========================================
 // 1. 상태 뱃지 헬퍼
@@ -273,6 +274,7 @@ const PAGE_SIZE = 10;
 
 export default function MyProjects() {
   const { showToast } = useToast();
+  const { employeeId } = useAuth();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -289,8 +291,6 @@ export default function MyProjects() {
   const fetchHistory = async (signal) => {
     try {
       setLoading(true);
-      const userStr = localStorage.getItem('user');
-      const employeeId = userStr ? JSON.parse(userStr).employee_id : null;
       if (!employeeId) return;
 
       const response = await getAnalysisHistory(employeeId);

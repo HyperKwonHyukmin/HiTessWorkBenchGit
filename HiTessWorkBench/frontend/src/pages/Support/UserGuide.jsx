@@ -7,6 +7,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { getUserGuides, createUserGuide, updateUserGuide, deleteUserGuide } from '../../api/admin';
 import MarkdownRenderer from '../../components/ui/MarkdownRenderer';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 
 const CATEGORY_CONFIG = {
@@ -52,8 +53,7 @@ const CATEGORIES = Object.keys(CATEGORY_CONFIG);
 
 export default function UserGuide() {
   const { showToast } = useToast();
-  const [isAdmin, setIsAdmin]       = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
+  const { user: currentUser, isAdmin } = useAuth();
   const [guides, setGuides]         = useState([]);
 
   const [isModalOpen, setIsModalOpen]       = useState(false);
@@ -68,12 +68,6 @@ export default function UserGuide() {
   const [formData, setFormData] = useState({ category: 'Getting Started', title: '', content: '' });
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      const parsed = JSON.parse(storedUser);
-      setIsAdmin(parsed.is_admin);
-      setCurrentUser(parsed);
-    }
     fetchGuides();
   }, []);
 

@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { User, ArrowRight, ShieldCheck, AlertCircle, Clock, Wifi, WifiOff, DownloadCloud, AlertTriangle, Construction } from 'lucide-react';
 import RegisterModal from '../../components/modals/RegisterModal';
 import { checkVersion, login } from '../../api/auth';
+import { useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
 const structureBgUrl = "https://images.unsplash.com/photo-1553653841-453082536a9d?q=80&w=1000&auto=format&fit=crop";
 
 export default function LoginScreen({ onLoginSuccess }) {
+  const { login: authLogin } = useAuth();
   const [employeeId, setEmployeeId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -91,12 +93,10 @@ export default function LoginScreen({ onLoginSuccess }) {
     try {
       const response = await login(employeeId);
 
-      if (response.data.token) {
-        localStorage.setItem('session_token', response.data.token);
-      }
-      const { token: _token, ...userObj } = response.data;
-      localStorage.setItem('user', JSON.stringify(userObj));
-      localStorage.setItem('user_login_at', String(Date.now())); // 자동 로그인 만료 기준
+      // AuthContext 가 localStorage 4개 키 (user/session_token/user_login_at/user_last_active)
+      // 일괄 세팅 + state 갱신을 캡슐화한다.
+      const { token, ...userObj } = response.data;
+      authLogin(userObj, token);
       onLoginSuccess();
 
     } catch (error) {

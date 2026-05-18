@@ -7,6 +7,7 @@ import {
 import GuideButton from '../../components/ui/GuideButton';
 import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useNavigation } from '../../contexts/NavigationContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL } from '../../config';
 import SolverCredit from '../../components/ui/SolverCredit';
 
@@ -74,6 +75,7 @@ const PropCell = ({ label, value, unit }) => (
 
 export default function ColumnBucklingCalculator() {
   const { setCurrentMenu } = useNavigation();
+  const { employeeId } = useAuth();
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [memberName, setMemberName] = useState('300A PIPE (#40)');
   const [lengthMm, setLengthMm] = useState('4470');
@@ -88,11 +90,6 @@ export default function ColumnBucklingCalculator() {
     memberName.trim() !== '' &&
     lengthMm !== '' && Number(lengthMm) > 0;
 
-  const getEmployeeId = () => {
-    try { return JSON.parse(localStorage.getItem('user') || '{}').employee_id || 'unknown'; }
-    catch { return 'unknown'; }
-  };
-
   const handleCalculate = async () => {
     if (!isValid) return;
     setIsLoading(true);
@@ -102,7 +99,7 @@ export default function ColumnBucklingCalculator() {
       const res = await axios.post(`${API_BASE_URL}/api/column-buckling/calculate`, {
         member_name: memberName,
         length_mm: parseFloat(lengthMm),
-        employee_id: getEmployeeId(),
+        employee_id: employeeId || 'unknown',
       });
       setResult(res.data);
     } catch (e) {

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
 import SolverCredit from '../../components/ui/SolverCredit';
+import { useAuth } from '../../contexts/AuthContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import { formatFixed as fmt } from '../../utils/formatting';
@@ -57,11 +58,6 @@ const PAGE_META = {
     defaultInput: DEFAULT_OPTIMIZATION,
     referenceImages: [carlingOptiRef, carlingOptiRef2],
   },
-};
-
-const getEmployeeId = () => {
-  try { return JSON.parse(localStorage.getItem('user') || '{}').employee_id || 'unknown'; }
-  catch { return 'unknown'; }
 };
 
 const downloadJson = (data, filename) => {
@@ -255,6 +251,7 @@ const FormulaContent = ({ variant }) => {
 };
 
 export default function CarlingCalculator({ variant = 'free' }) {
+  const { employeeId } = useAuth();
   const meta = PAGE_META[variant] || PAGE_META.free;
   const { setCurrentMenu } = useNavigation();
   const [inputs, setInputs] = useState(meta.defaultInput);
@@ -308,7 +305,7 @@ export default function CarlingCalculator({ variant = 'free' }) {
     try {
       const res = await axios.post(`${API_BASE_URL}${meta.endpoint}`, {
         ...payload,
-        employee_id: getEmployeeId(),
+        employee_id: employeeId || 'unknown',
       });
       setResult(res.data);
     } catch (e) {

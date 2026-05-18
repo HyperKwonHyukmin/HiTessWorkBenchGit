@@ -13,7 +13,7 @@ import { Wand2 } from 'lucide-react';
 import { DashboardProvider } from './contexts/DashboardContext';
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import UpdateModal from './components/UpdateModal';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
@@ -67,6 +67,9 @@ function AppInner() {
   const [latestVersion, setLatestVersion]     = useState('');
   const { currentMenu, setCurrentMenu, goBack, goForward, canGoBack, canGoForward, resetNavigation } = useNavigation();
   const { showToast } = useToast();
+  // AuthContext 가 localStorage 세션 키 4종 정리 + state 갱신을 캡슐화한다.
+  // 본 컴포넌트는 setAppState/resetNavigation 같은 라우팅 부수 효과만 담당한다.
+  const { logout: authLogout } = useAuth();
 
   const handleSplashFinish = async () => {
     // 세션 여부와 무관하게 항상 버전 체크 먼저 수행
@@ -100,10 +103,7 @@ function AppInner() {
         loginDate.getDate() === today.getDate();
 
       if (!isSameDay) {
-        localStorage.removeItem('user');
-        localStorage.removeItem('user_login_at');
-        localStorage.removeItem('user_last_active');
-        localStorage.removeItem('session_token');
+        authLogout();
         setAppState(APP_STATE.LOGIN);
         return;
       }
@@ -112,10 +112,7 @@ function AppInner() {
       const lastActive = parseInt(localStorage.getItem('user_last_active') || loginAt.toString(), 10);
       if (Date.now() - lastActive > INACTIVITY_TIMEOUT_MS) {
         callLogout();
-        localStorage.removeItem('user');
-        localStorage.removeItem('user_login_at');
-        localStorage.removeItem('user_last_active');
-        localStorage.removeItem('session_token');
+        authLogout();
         setAppState(APP_STATE.LOGIN);
         return;
       }
@@ -128,11 +125,7 @@ function AppInner() {
 
   const handleLogout = () => {
     callLogout();
-    localStorage.removeItem('user');
-    localStorage.removeItem('user_login_at');
-    localStorage.removeItem('user_last_active');
-    localStorage.removeItem('session_token');
-    sessionStorage.removeItem('admin_gate_unlocked');
+    authLogout();
     setAppState(APP_STATE.LOGIN);
     resetNavigation('Dashboard');
   };

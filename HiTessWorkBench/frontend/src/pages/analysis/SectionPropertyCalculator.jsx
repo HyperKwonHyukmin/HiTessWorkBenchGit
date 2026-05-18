@@ -6,6 +6,7 @@ import {
 import GuideButton from '../../components/ui/GuideButton';
 import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useNavigation } from '../../contexts/NavigationContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL } from '../../config';
 import SolverCredit from '../../components/ui/SolverCredit';
 
@@ -691,6 +692,7 @@ function ResultCard({ title, accent, stats }) {
 
 // ── 메인 컴포넌트 ──────────────────────────────────────────────
 export default function SectionPropertyCalculator() {
+  const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [shapeKey, setShapeKey] = useState('ishape');
@@ -735,10 +737,6 @@ export default function SectionPropertyCalculator() {
         return v !== '' && Number(v) > 0;
       });
 
-  const getEmployeeId = () => {
-    try { return JSON.parse(localStorage.getItem('user') || '{}').employee_id || 'unknown'; }
-    catch { return 'unknown'; }
-  };
 
   const handleCalculate = async () => {
     if (!isValid) return;
@@ -748,7 +746,7 @@ export default function SectionPropertyCalculator() {
     try {
       let payload;
       if (isPolygon) {
-        payload = { shape: 'polygon', params: {}, vertices: polyVerts, units: 'mm', employee_id: getEmployeeId() };
+        payload = { shape: 'polygon', params: {}, vertices: polyVerts, units: 'mm', employee_id: employeeId || 'unknown' };
       } else {
         const params = {};
         shape.params.forEach(p => {
@@ -756,7 +754,7 @@ export default function SectionPropertyCalculator() {
           if (p.min === 0 && v === 0) return;
           params[p.key] = v;
         });
-        payload = { shape: shapeKey, params, units: 'mm', employee_id: getEmployeeId() };
+        payload = { shape: shapeKey, params, units: 'mm', employee_id: employeeId || 'unknown' };
       }
       const res = await axios.post(`${API_BASE_URL}/api/section-property/calculate`, payload);
       setResult(res.data);

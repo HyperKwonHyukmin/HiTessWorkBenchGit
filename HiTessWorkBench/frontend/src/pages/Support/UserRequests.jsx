@@ -5,11 +5,11 @@ import { getFeatureRequests, createFeatureRequest, upvoteFeatureRequest, comment
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function UserRequests() {
   const { showToast } = useToast();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
+  const { user: currentUser, isAdmin } = useAuth();
   const [requests, setRequests] = useState([]);
   const [viewMode, setViewMode] = useState('card');
 
@@ -27,12 +27,6 @@ export default function UserRequests() {
   const [adminReply, setAdminReply] = useState({ status: 'Under Review', admin_comment: '' });
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      const parsed = JSON.parse(storedUser);
-      setIsAdmin(parsed.is_admin);
-      setCurrentUser(parsed);
-    }
     fetchRequests();
   }, []);
 

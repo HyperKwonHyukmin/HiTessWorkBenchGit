@@ -3,10 +3,12 @@
  */
 import { useState, useEffect } from 'react';
 import { useDashboard } from '../contexts/DashboardContext';
+import { useAuth } from '../contexts/AuthContext';
 import { requestBeamAnalysis, downloadFileText } from '../api/analysis';
 import { loadToNewton, withYzPolar } from './useBeamModeling';
 
 export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
+  const { employeeId: authEmployeeId } = useAuth();
   const [dispData, setDispData] = useState([]);
   const [elForceData, setElForceData] = useState([]);
   const [stressData, setStressData] = useState([]);
@@ -80,8 +82,7 @@ export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
       };
       
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
-      const userStr = localStorage.getItem('user');
-      const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
+      const employeeId = authEmployeeId || 'guest';
       const formData = new FormData();
       formData.append('beam_file', blob, 'beam.json');
       formData.append('employee_id', employeeId);

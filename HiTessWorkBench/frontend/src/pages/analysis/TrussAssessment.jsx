@@ -19,10 +19,12 @@ import {
   Terminal, FileText, FileOutput, Download, History, Maximize2, Minimize2
 } from 'lucide-react';
 import ChangelogModal from '../../components/ui/ChangelogModal';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function TrussAssessment() {
   const { setCurrentMenu } = useNavigation();
   const { showToast } = useToast();
+  const { employeeId: authEmployeeId } = useAuth();
   const dashboardCtx = useDashboard();
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [isResultFullscreen, setIsResultFullscreen] = useState(false);
@@ -180,8 +182,7 @@ export default function TrussAssessment() {
     updateState({ isRunning: true, progress: 0, statusMessage: '서버 요청 중...', logs: [], detailedLogs: [], resultJsonData: null, projectData: null });
     setIsResultModalOpen(false);
     lastMsgRef.current = '';
-    const userStr = localStorage.getItem('user');
-    const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
+    const employeeId = authEmployeeId || 'guest';
     const formData = new FormData();
     formData.append('bdf_file', bdfFile);
     formData.append('employee_id', employeeId);

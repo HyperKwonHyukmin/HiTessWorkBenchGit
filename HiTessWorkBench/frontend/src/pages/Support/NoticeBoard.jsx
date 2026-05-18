@@ -7,6 +7,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import NoticeDetailModal, { NOTICE_TYPE_STYLE } from '../../components/modals/NoticeDetailModal';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 const formatDate = (iso) => {
   if (!iso) return '';
@@ -22,8 +23,7 @@ const getPreview = (content, max = 90) => {
 
 export default function NoticeBoard() {
   const { showToast } = useToast();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
+  const { user: currentUser, isAdmin } = useAuth();
   const [notices, setNotices] = useState([]);
 
   const [isWriteModalOpen, setIsWriteModalOpen] = useState(false);
@@ -35,12 +35,6 @@ export default function NoticeBoard() {
   const [formData, setFormData] = useState({ type: 'Notice', title: '', content: '', is_pinned: false });
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      const parsed = JSON.parse(storedUser);
-      setIsAdmin(parsed.is_admin);
-      setCurrentUser(parsed);
-    }
     fetchNotices();
   }, []);
 

@@ -8,6 +8,7 @@ import {
 import GuideButton from '../../components/ui/GuideButton';
 import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useNavigation } from '../../contexts/NavigationContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL } from '../../config';
 import mastPostRef from '../../assets/images/mast_post_reference.png';
 import { formatFixed as fmt } from '../../utils/formatting';
@@ -94,6 +95,7 @@ const CandidateDetail = ({ c }) => {
 // ─────────────────────────────────────────────
 
 export default function MastPostAssessment() {
+  const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [heightMm, setHeightMm] = useState('');
@@ -108,11 +110,6 @@ export default function MastPostAssessment() {
 
   const isValid = heightMm !== '' && weightKg !== '' && Number(heightMm) > 0 && Number(weightKg) > 0;
 
-  const getEmployeeId = () => {
-    try { return JSON.parse(localStorage.getItem('user') || '{}').employee_id || 'unknown'; }
-    catch { return 'unknown'; }
-  };
-
   const handleCalculate = async () => {
     if (!isValid) return;
     setIsLoading(true);
@@ -123,7 +120,7 @@ export default function MastPostAssessment() {
       const res = await axios.post(`${API_BASE_URL}/api/davit/mast-post`, {
         height_mm: parseFloat(heightMm),
         weight_kg: parseFloat(weightKg),
-        employee_id: getEmployeeId(),
+        employee_id: employeeId || 'unknown',
       });
       setResult(res.data);
     } catch (e) {

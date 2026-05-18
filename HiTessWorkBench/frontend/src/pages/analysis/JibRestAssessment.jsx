@@ -8,6 +8,7 @@ import {
 import GuideButton from '../../components/ui/GuideButton';
 import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useNavigation } from '../../contexts/NavigationContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL } from '../../config';
 import jibRestRef from '../../assets/images/jib_rest_reference.png';
 import jibCraneRef from '../../assets/images/jib_crane_reference.png';
@@ -214,6 +215,7 @@ const EMPTY_1DAN = { jh: '990', jb: '670', wj: '14500', ww: '1200', wc: '3000', 
 const EMPTY_2DAN = { h2: '2454', h3: '1000', d1: '762', t1: '7.9' };
 
 export default function JibRestAssessment() {
+  const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('1dan');
@@ -230,11 +232,6 @@ export default function JibRestAssessment() {
   const [refImgTab, setRefImgTab] = useState('jib_crane');
   const [showFormulas, setShowFormulas] = useState(false);
 
-  const getEmployeeId = () => {
-    try { return JSON.parse(localStorage.getItem('user') || '{}').employee_id || 'unknown'; }
-    catch { return 'unknown'; }
-  };
-
   const setField1 = (key) => (val) => setInputs1dan(prev => ({ ...prev, [key]: val }));
   const setField2 = (key) => (val) => setInputs2dan(prev => ({ ...prev, [key]: val }));
 
@@ -249,7 +246,7 @@ export default function JibRestAssessment() {
     try {
       const payload = {};
       Object.entries(inputs1dan).forEach(([k, v]) => { payload[k] = parseFloat(v); });
-      payload.employee_id = getEmployeeId();
+      payload.employee_id = employeeId || 'unknown';
       const res = await axios.post(`${API_BASE_URL}/api/davit/jib-rest-1dan`, payload);
       setResult1dan(res.data);
     } catch (e) {
@@ -268,7 +265,7 @@ export default function JibRestAssessment() {
       const payload = {};
       Object.entries(inputs1dan).forEach(([k, v]) => { payload[k] = parseFloat(v); });
       Object.entries(inputs2dan).forEach(([k, v]) => { payload[k] = parseFloat(v); });
-      payload.employee_id = getEmployeeId();
+      payload.employee_id = employeeId || 'unknown';
       const res = await axios.post(`${API_BASE_URL}/api/davit/jib-rest-2dan`, payload);
       setResult2dan(res.data);
     } catch (e) {
