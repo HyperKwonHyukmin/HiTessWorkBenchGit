@@ -3,13 +3,16 @@
 ADMINISTRATION → Developer Runbooks 페이지에서 사용.
 모든 엔드포인트는 관리자 권한(`require_admin`)이 필요하다.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from .. import database, models, schemas
 from ..dependencies import require_admin
+from ._crud_helpers import create_record, delete_record, get_or_404, update_record
 
 router = APIRouter(prefix="/api/dev-runbooks", tags=["dev-runbooks"])
+
+_RUNBOOK_NOT_FOUND = "Runbook 을 찾을 수 없습니다."
 
 
 @router.get("", response_model=list[schemas.DevRunbookResponse])
@@ -30,11 +33,7 @@ def create_runbook(
     db: Session = Depends(database.get_db),
     current_admin: str = Depends(require_admin),
 ):
-    runbook = models.DevRunbook(**payload.dict())
-    db.add(runbook)
-    db.commit()
-    db.refresh(runbook)
-    return runbook
+    return create_record(db, models.DevRunbook(**payload.dict()))
 
 
 @router.put("/{runbook_id}", response_model=schemas.DevRunbookResponse)
@@ -44,14 +43,8 @@ def update_runbook(
     db: Session = Depends(database.get_db),
     current_admin: str = Depends(require_admin),
 ):
-    runbook = db.query(models.DevRunbook).filter(models.DevRunbook.id == runbook_id).first()
-    if not runbook:
-        raise HTTPException(status_code=404, detail="Runbook 을 찾을 수 없습니다.")
-    for key, value in payload.dict().items():
-        setattr(runbook, key, value)
-    db.commit()
-    db.refresh(runbook)
-    return runbook
+    runbook = get_or_404(db, models.DevRunbook, runbook_id, _RUNBOOK_NOT_FOUND)
+    return update_record(db, runbook, payload.dict())
 
 
 @router.delete("/{runbook_id}")
@@ -60,9 +53,5 @@ def delete_runbook(
     db: Session = Depends(database.get_db),
     current_admin: str = Depends(require_admin),
 ):
-    runbook = db.query(models.DevRunbook).filter(models.DevRunbook.id == runbook_id).first()
-    if not runbook:
-        raise HTTPException(status_code=404, detail="Runbook 을 찾을 수 없습니다.")
-    db.delete(runbook)
-    db.commit()
-    return {"message": "Deleted"}
+    runbook = get_or_404(db, models.DevRunbook, runbook_id, _RUNBOOK_NOT_FOUND)
+    return delete_record(db, runbook)

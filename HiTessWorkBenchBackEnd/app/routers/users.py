@@ -1,11 +1,14 @@
 """사용자 관리 API 라우터."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from .. import models, database
 from ..dependencies import require_admin
+from ._crud_helpers import delete_record, get_or_404, update_record
 
 router = APIRouter(prefix="/api", tags=["users"])
+
+_USER_NOT_FOUND = "User not found"
 
 
 @router.get("/users")
@@ -62,14 +65,9 @@ def update_user(
     db: Session = Depends(database.get_db),
     current_admin: str = Depends(require_admin),
 ):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    allowed = _USER_ALLOWED_FIELDS | _ADMIN_ALLOWED_FIELDS
-    for key, value in update_data.items():
-        if key in allowed:
-            setattr(user, key, value)
-    db.commit()
+    user = get_or_404(db, models.User, user_id, _USER_NOT_FOUND)
+    # update_data 는 임의 dict 이므로 화이트리스트 외 필드는 무시 (임의 컬럼 주입 차단).
+    update_record(db, user, update_data, allowed_fields=_USER_ALLOWED_FIELDS | _ADMIN_ALLOWED_FIELDS)
     return {"message": "Update successful"}
 
 
@@ -79,9 +77,5 @@ def delete_user(
     db: Session = Depends(database.get_db),
     current_admin: str = Depends(require_admin),
 ):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    db.delete(user)
-    db.commit()
-    return {"message": "User deleted"}
+    user = get_or_404(db, models.User, user_id, _USER_NOT_FOUND)
+    return delete_record(db, user, message="User deleted")
