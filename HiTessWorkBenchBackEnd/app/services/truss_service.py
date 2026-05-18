@@ -67,7 +67,7 @@ def task_execute_truss(job_id: str, node_path: str, member_path: str, work_dir: 
     employee_id=employee_id,
     status=status_msg,
     input_info=input_data,
-    result_info=result_data,
+    result_info=result_data if status_msg == "Success" else None,
     source=source,
   )
   if db_err is not None:

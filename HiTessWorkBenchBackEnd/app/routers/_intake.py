@@ -62,7 +62,11 @@ async def save_upload(
     return dest_path
 
 
-def submit_analysis_job(task_fn, *task_args) -> str:
+def submit_analysis_job(
+    task_fn,
+    *task_args,
+    queue_message: str = "Waiting in Queue...",
+) -> str:
     """
     job_id를 발급하고 Pending 상태로 등록한 뒤 analysis_executor에 작업을 제출합니다.
 
@@ -72,16 +76,19 @@ def submit_analysis_job(task_fn, *task_args) -> str:
             bdf_path, work_dir, employee_id, timestamp, source,
         )
 
+    queue_message: 라우터별 한글/영문 대기 메시지를 보존하기 위한 옵션
+                   (예: plate-structure 는 "대기 중...").
+
     내부 동작 (기존 라우터의 직접 구현과 정확히 동일):
         - job_id = uuid.uuid4()
-        - job_status_store.set(job_id, {"status":"Pending","progress":0,"message":"Waiting in Queue..."})
+        - job_status_store.set(job_id, {"status":"Pending","progress":0,"message":queue_message})
         - analysis_executor.submit(task_fn, job_id, *task_args)
     """
     job_id = str(uuid.uuid4())
     job_status_store.set(job_id, {
         "status": "Pending",
         "progress": 0,
-        "message": "Waiting in Queue...",
+        "message": queue_message,
     })
     analysis_executor.submit(task_fn, job_id, *task_args)
     return job_id

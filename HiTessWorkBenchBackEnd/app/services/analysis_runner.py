@@ -110,7 +110,9 @@ def record_analysis(
     - 실패: (None, "<예외 메시지>") — 호출부에서 자유롭게 prefix("DB Error:", "DB 기록 오류:" 등)를 결정해
       engine_log에 합쳐 사용자에게 노출합니다.
 
-    status가 "Success"가 아닐 경우 result_info는 None으로 기록됩니다(기존 서비스 동작과 동일).
+    result_info는 호출부가 전달한 값 그대로 저장됩니다. 서비스별로
+    "status가 Success일 때만 저장" 또는 "result_data가 있으면 status 무관 저장" 등의
+    정책을 가질 수 있으므로 status 분기는 호출부에서 명시적으로 결정합니다.
     """
     db = database.SessionLocal()
     try:
@@ -120,7 +122,7 @@ def record_analysis(
             employee_id=employee_id,
             status=status,
             input_info=input_info,
-            result_info=result_info if status == "Success" else None,
+            result_info=result_info,
             source=source,
         )
         db.add(new_analysis)

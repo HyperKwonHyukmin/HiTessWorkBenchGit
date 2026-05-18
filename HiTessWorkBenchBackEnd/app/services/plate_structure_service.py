@@ -24,8 +24,13 @@ import subprocess
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from .. import database, models
-from ..services.job_manager import job_status_store
+from .analysis_runner import (
+    get_backend_dir,
+    mark_complete,
+    mark_running,
+    record_analysis,
+    update_progress,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -324,20 +329,13 @@ def task_execute_plate_structure(
     source: str,
 ):
     """Plate Studio BDF → Nastran SOL 101 → displacement + shell stress JSON."""
-    job_status_store.update_job(job_id, {
-        "status": "Running", "progress": 5, "message": "초기화 중...",
-    })
+    mark_running(job_id, "초기화 중...", progress=5)
 
-    db = database.SessionLocal()
     status_msg = "Success"
     engine_output = ""
     result_data: Dict[str, Any] = {}
-    project_data: Optional[Dict[str, Any]] = None
 
-    base_dir    = os.path.dirname(os.path.abspath(__file__))   # app/services
-    app_dir     = os.path.dirname(base_dir)                    # app
-    backend_dir = os.path.dirname(app_dir)                     # HiTessWorkBenchBackEnd
-    bridge_exe  = os.path.join(backend_dir, "InHouseProgram", "NastranBridge", "nastran_bridge.exe")
+    bridge_exe = os.path.join(get_backend_dir(), "InHouseProgram", "NastranBridge", "nastran_bridge.exe")
 
     try:
         if not os.path.exists(bdf_path):
@@ -366,7 +364,7 @@ def task_execute_plate_structure(
                 f"Nastran 실행 파일을 찾을 수 없습니다 — 기본 경로 {_DEFAULT_NASTRAN_EXE} 또는 환경변수 NASTRAN_EXE 를 지정하세요."
             )
 
-        job_status_store.update_job(job_id, {"progress": 30, "message": "Nastran 실행 중..."})
+        update_progress(job_id, 30, "Nastran 실행 중...")
         nastran_args = [nastran_exe, bdf_filename]
         logger.info("[PlateStructure] nastran cmd: %s (cwd=%s)", " ".join(nastran_args), bdf_dir)
         run = subprocess.run(
@@ -384,7 +382,7 @@ def task_execute_plate_structure(
             raise RuntimeError(f"Nastran F06 파일이 생성되지 않았습니다: {f06_path}")
 
         # 2) NastranBridge 로 F06 → displacement / 1D stress JSON
-        job_status_store.update_job(job_id, {"progress": 70, "message": "F06 파싱 (displacement)..."})
+        update_progress(job_id, 70, "F06 파싱 (displacement)...")
         bridge_args = [bridge_exe, os.path.basename(f06_path), "-o", os.path.basename(bridge_result_json)]
         logger.info("[PlateStructure] bridge cmd: %s (cwd=%s)", " ".join(bridge_args), bdf_dir)
         bridge = subprocess.run(
@@ -411,7 +409,7 @@ def task_execute_plate_structure(
             }
         else:
             # 3) Shell(CQUAD4/CTRIA3) stress 직접 파싱
-            job_status_store.update_job(job_id, {"progress": 85, "message": "F06 파싱 (shell stress)..."})
+            update_progress(job_id, 85, "F06 파싱 (shell stress)...")
             with open(f06_path, "r", encoding="utf-8", errors="replace") as f:
                 f06_lines = f.read().splitlines()
             shell_stress = _parse_shell_stress(f06_lines)
@@ -478,44 +476,27 @@ def task_execute_plate_structure(
         logger.error("PlateStructure 오류: %s", str(e), exc_info=True)
         engine_output += f"\n[Error] {str(e)}"
 
-    job_status_store.update_job(job_id, {"progress": 95, "message": "데이터베이스 저장 중..."})
+    update_progress(job_id, 95, "데이터베이스 저장 중...")
 
-    try:
-        new_analysis = models.Analysis(
-            project_name=f"PlateStructure_{timestamp}",
-            program_name="PlateStructureAnalysis",
-            employee_id=employee_id,
-            status=status_msg,
-            input_info={"bdf_path": bdf_path},
-            result_info=result_data if result_data else None,
-            source=source,
-        )
-        db.add(new_analysis); db.commit(); db.refresh(new_analysis)
-        project_data = {
-            "id":           new_analysis.id,
-            "project_name": new_analysis.project_name,
-            "program_name": new_analysis.program_name,
-            "employee_id":  new_analysis.employee_id,
-            "status":       new_analysis.status,
-            "input_info":   new_analysis.input_info,
-            "result_info":  new_analysis.result_info,
-            "created_at":   new_analysis.created_at.isoformat()
-                            if new_analysis.created_at
-                            else datetime.now().isoformat(),
-        }
-    except Exception as db_e:
+    project_data, db_err = record_analysis(
+        project_name=f"PlateStructure_{timestamp}",
+        program_name="PlateStructureAnalysis",
+        employee_id=employee_id,
+        status=status_msg,
+        input_info={"bdf_path": bdf_path},
+        # F06 fatal 케이스에서 status=Failed 라도 result_data 가 채워졌으면 그대로 기록 (기존 동작 보존)
+        result_info=result_data if result_data else None,
+        source=source,
+    )
+    if db_err is not None:
         status_msg = "Failed"
-        engine_output += f"\nDB Error: {str(db_e)}"
-    finally:
-        db.close()
+        engine_output += f"\nDB Error: {db_err}"
 
-    job_status_store.update_job(job_id, {
-        "status":     status_msg,
-        "progress":   100,
-        "message":    "Plate 구조 해석 완료" if status_msg == "Success" else "Plate 구조 해석 실패",
-        "engine_log": engine_output,
-        "project":    project_data,
-    })
+    mark_complete(
+        job_id, status_msg, engine_output, project_data,
+        success_message="Plate 구조 해석 완료",
+        failure_message="Plate 구조 해석 실패",
+    )
 
 
 def _summarize(unified_subcases: List[Dict[str, Any]]) -> Dict[str, Any]:

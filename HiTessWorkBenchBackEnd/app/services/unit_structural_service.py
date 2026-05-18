@@ -19,11 +19,16 @@ import json
 import logging
 import os
 import subprocess
-from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .. import database, models
-from ..services.job_manager import job_status_store
+from .analysis_runner import (
+    get_backend_dir,
+    mark_complete,
+    mark_running,
+    record_analysis,
+    update_progress,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,39 +67,36 @@ def task_execute_unit_structural(
     source: str,
 ):
     """Wire 포함 BDF 빌드 → Nastran SOL 101 → F06 결과 정제까지 실행."""
-    job_status_store.update_job(job_id, {
-        "status": "Running", "progress": 5, "message": "초기화 중...",
-    })
+    mark_running(job_id, "초기화 중...", progress=5)
 
-    db = database.SessionLocal()
     status_msg = "Success"
     engine_output = ""
     result_data: Dict[str, Any] = {}
-    project_data: Optional[Dict[str, Any]] = None
 
-    base_dir    = os.path.dirname(os.path.abspath(__file__))   # app/services
-    app_dir     = os.path.dirname(base_dir)                    # app
-    backend_dir = os.path.dirname(app_dir)                     # HiTessWorkBenchBackEnd
-    exe_path    = os.path.join(backend_dir, "InHouseProgram", "NastranBridge", "nastran_bridge.exe")
+    exe_path = os.path.join(get_backend_dir(), "InHouseProgram", "NastranBridge", "nastran_bridge.exe")
 
     try:
         if not os.path.exists(exe_path):
             raise FileNotFoundError(f"실행 파일을 찾을 수 없습니다: {exe_path}")
 
-        # 1. Parent (GroupModuleUnit) 조회 — BDF 경로 확보
-        parent = db.query(models.Analysis).filter(
-            models.Analysis.id == parent_analysis_id
-        ).first()
-        if parent is None:
-            raise RuntimeError(f"Parent Analysis (id={parent_analysis_id}) 를 찾을 수 없습니다.")
-        if parent.program_name != "GroupModuleUnit":
-            raise RuntimeError(
-                f"Parent program_name 이 'GroupModuleUnit' 이 아닙니다 (got '{parent.program_name}')."
-            )
-        if parent.status != "Success":
-            raise RuntimeError(f"Parent BDF 검증이 성공 상태가 아닙니다 (status={parent.status}).")
+        # 1. Parent (GroupModuleUnit) 조회 — BDF 경로 확보 (조회만 별도 세션 사용)
+        parent_db = database.SessionLocal()
+        try:
+            parent = parent_db.query(models.Analysis).filter(
+                models.Analysis.id == parent_analysis_id
+            ).first()
+            if parent is None:
+                raise RuntimeError(f"Parent Analysis (id={parent_analysis_id}) 를 찾을 수 없습니다.")
+            if parent.program_name != "GroupModuleUnit":
+                raise RuntimeError(
+                    f"Parent program_name 이 'GroupModuleUnit' 이 아닙니다 (got '{parent.program_name}')."
+                )
+            if parent.status != "Success":
+                raise RuntimeError(f"Parent BDF 검증이 성공 상태가 아닙니다 (status={parent.status}).")
+            bdf_path = (parent.input_info or {}).get("bdf_model")
+        finally:
+            parent_db.close()
 
-        bdf_path = (parent.input_info or {}).get("bdf_model")
         if not bdf_path or not os.path.exists(bdf_path):
             raise FileNotFoundError(f"Parent BDF 파일을 찾을 수 없습니다: {bdf_path}")
         if not os.path.exists(stability_json_path):
@@ -125,9 +127,7 @@ def task_execute_unit_structural(
         #      nastran_bridge 는 입력이 plain model JSON 이면 -o 로 지정된 경로에 BDF 를 출력한다.
         lift_input_bdf = bdf_filename
         if os.path.exists(edited_json):
-            job_status_store.update_job(job_id, {
-                "progress": 10, "message": "Studio 편집 적용 BDF 생성 중...",
-            })
+            update_progress(job_id, 10, "Studio 편집 적용 BDF 생성 중...")
             apply_args = [
                 exe_path, os.path.basename(edited_json),
                 "-o", os.path.basename(edited_bdf),
@@ -151,7 +151,7 @@ def task_execute_unit_structural(
             logger.info("[UnitStructural] _edited.json 없음 — 원본 BDF 를 lift-run 입력으로 사용: %s", bdf_filename)
 
         # 2. lift-run --prepare-only — Wire 포함 BDF + meta 빌드
-        job_status_store.update_job(job_id, {"progress": 15, "message": "Wire 포함 BDF 생성 중..."})
+        update_progress(job_id, 15, "Wire 포함 BDF 생성 중...")
         prepare_args = [
             exe_path, "lift-run", lift_input_bdf,
             "--stability", stability_json_path,
@@ -178,7 +178,7 @@ def task_execute_unit_structural(
                 f"Nastran 실행 파일을 찾을 수 없습니다 — 기본 경로 {_DEFAULT_NASTRAN_EXE} 또는 환경변수 NASTRAN_EXE 를 지정하세요."
             )
 
-        job_status_store.update_job(job_id, {"progress": 40, "message": "Nastran 실행 중..."})
+        update_progress(job_id, 40, "Nastran 실행 중...")
         nastran_args = [nastran_exe, lifting_bdf]
         logger.info("[UnitStructural] nastran cmd: %s (cwd=%s)", " ".join(nastran_args), bdf_dir)
         run = subprocess.run(
@@ -200,7 +200,7 @@ def task_execute_unit_structural(
             raise RuntimeError(f"Nastran F06 파일이 생성되지 않았습니다: {lifting_f06}")
 
         # 4. lift-result — F06 → Studio 매핑 JSON
-        job_status_store.update_job(job_id, {"progress": 80, "message": "F06 결과 매핑 중..."})
+        update_progress(job_id, 80, "F06 결과 매핑 중...")
         result_args = [
             exe_path, "lift-result", lifting_meta,
             "--f06", lifting_f06,
@@ -255,45 +255,28 @@ def task_execute_unit_structural(
         logger.error("UnitStructural 오류: %s", str(e), exc_info=True)
         engine_output += f"\n[Error] {str(e)}"
 
-    job_status_store.update_job(job_id, {"progress": 95, "message": "데이터베이스 저장 중..."})
+    update_progress(job_id, 95, "데이터베이스 저장 중...")
 
-    try:
-        new_analysis = models.Analysis(
-            project_name=f"UnitStructural_{timestamp}",
-            program_name="UnitStructuralAnalysis",
-            employee_id=employee_id,
-            status=status_msg,
-            input_info={
-                "parent_analysis_id": parent_analysis_id,
-                "safety_factor": safety_factor,
-                "allowable_mpa": allowable_mpa,
-            },
-            result_info=result_data if result_data else None,
-            source=source,
-        )
-        db.add(new_analysis); db.commit(); db.refresh(new_analysis)
-        project_data = {
-            "id":           new_analysis.id,
-            "project_name": new_analysis.project_name,
-            "program_name": new_analysis.program_name,
-            "employee_id":  new_analysis.employee_id,
-            "status":       new_analysis.status,
-            "input_info":   new_analysis.input_info,
-            "result_info":  new_analysis.result_info,
-            "created_at":   new_analysis.created_at.isoformat()
-                            if new_analysis.created_at
-                            else datetime.now().isoformat(),
-        }
-    except Exception as db_e:
+    project_data, db_err = record_analysis(
+        project_name=f"UnitStructural_{timestamp}",
+        program_name="UnitStructuralAnalysis",
+        employee_id=employee_id,
+        status=status_msg,
+        input_info={
+            "parent_analysis_id": parent_analysis_id,
+            "safety_factor": safety_factor,
+            "allowable_mpa": allowable_mpa,
+        },
+        # F06 fatal 등으로 status=Failed 라도 result_data 가 채워졌으면 그대로 기록 (기존 동작 보존)
+        result_info=result_data if result_data else None,
+        source=source,
+    )
+    if db_err is not None:
         status_msg = "Failed"
-        engine_output += f"\nDB Error: {str(db_e)}"
-    finally:
-        db.close()
+        engine_output += f"\nDB Error: {db_err}"
 
-    job_status_store.update_job(job_id, {
-        "status":     status_msg,
-        "progress":   100,
-        "message":    "Unit 구조 해석 완료" if status_msg == "Success" else "Unit 구조 해석 실패",
-        "engine_log": engine_output,
-        "project":    project_data,
-    })
+    mark_complete(
+        job_id, status_msg, engine_output, project_data,
+        success_message="Unit 구조 해석 완료",
+        failure_message="Unit 구조 해석 실패",
+    )

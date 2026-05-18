@@ -143,7 +143,7 @@ def task_execute_f06parser(
         employee_id=employee_id,
         status=status_msg,
         input_info={"f06_file": f06_path},
-        result_info=result_data,
+        result_info=result_data if status_msg == "Success" else None,
         source=source,
     )
     if db_err is not None:

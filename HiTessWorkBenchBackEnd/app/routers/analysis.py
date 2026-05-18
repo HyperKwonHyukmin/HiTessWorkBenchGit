@@ -335,27 +335,13 @@ async def request_plate_structure(
     저장 위치: userConnection/{timestamp}_{employee_id}_PlateStructure/
     """
     _verify_employee_self(employee_id, current_user)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-    unique_folder = f"{timestamp}_{employee_id}_PlateStructure"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
-    os.makedirs(work_dir, exist_ok=True)
-
-    bdf_path = os.path.join(work_dir, os.path.basename(bdf_file.filename))
-    try:
-        with open(bdf_path, "wb") as buffer:
-            buffer.write(await bdf_file.read())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
-
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "대기 중..."})
-
-    analysis_executor.submit(
+    work_dir, timestamp = make_work_dir(employee_id, "PlateStructure")
+    bdf_path = await save_upload(bdf_file, work_dir, error_prefix="파일 저장 오류")
+    job_id = submit_analysis_job(
         task_execute_plate_structure,
-        job_id, bdf_path, work_dir, employee_id, timestamp, source,
+        bdf_path, work_dir, employee_id, timestamp, source,
+        queue_message="대기 중...",
     )
-
     return {"job_id": job_id}
 
 

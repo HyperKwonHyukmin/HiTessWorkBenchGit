@@ -325,7 +325,7 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
     employee_id=employee_id,
     status=status_msg,
     input_info={"bdf_model": bdf_path},
-    result_info=result_data,
+    result_info=result_data if status_msg == "Success" else None,
     source=source,
   )
   if db_err is not None:

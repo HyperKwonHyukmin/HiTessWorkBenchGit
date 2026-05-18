@@ -57,7 +57,7 @@ def task_execute_beam(job_id: str, input_json_path: str, work_dir: str, employee
     employee_id=employee_id,
     status=status_msg,
     input_info={"input_json": input_json_path},
-    result_info={"result_json": result_json_path},
+    result_info={"result_json": result_json_path} if status_msg == "Success" else None,
     source=source,
   )
   if db_err is not None:
