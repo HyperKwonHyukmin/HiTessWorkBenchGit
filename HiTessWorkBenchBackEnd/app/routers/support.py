@@ -21,14 +21,14 @@ def get_notices(db: Session = Depends(database.get_db)):
 @router.post("/notices", response_model=schemas.NoticeResponse)
 def create_notice(notice: schemas.NoticeCreate, db: Session = Depends(database.get_db),
                   current_admin: str = Depends(require_admin)):
-  return create_record(db, models.Notice(**notice.dict()))
+  return create_record(db, models.Notice(**notice.model_dump()))
 
 
 @router.put("/notices/{notice_id}", response_model=schemas.NoticeResponse)
 def update_notice(notice_id: int, notice: schemas.NoticeCreate, db: Session = Depends(database.get_db),
                   current_admin: str = Depends(require_admin)):
   db_notice = get_or_404(db, models.Notice, notice_id, _NOTICE_NOT_FOUND)
-  return update_record(db, db_notice, notice.dict())
+  return update_record(db, db_notice, notice.model_dump())
 
 
 @router.delete("/notices/{notice_id}")
@@ -52,7 +52,7 @@ def get_feature_requests(db: Session = Depends(database.get_db)):
 @router.post("/feature-requests", response_model=schemas.FeatureRequestResponse)
 def create_feature_request(req: schemas.FeatureRequestCreate, db: Session = Depends(database.get_db),
                             current_user: str = Depends(require_auth)):
-  return create_record(db, models.FeatureRequest(**req.dict()))
+  return create_record(db, models.FeatureRequest(**req.model_dump()))
 
 
 @router.put("/feature-requests/{req_id}/upvote")
@@ -97,14 +97,14 @@ def get_user_guides(db: Session = Depends(database.get_db)):
 @router.post("/user-guides", response_model=schemas.UserGuideResponse)
 def create_user_guide(guide: schemas.UserGuideCreate, db: Session = Depends(database.get_db),
                       current_admin: str = Depends(require_admin)):
-  return create_record(db, models.UserGuide(**guide.dict()))
+  return create_record(db, models.UserGuide(**guide.model_dump()))
 
 
 @router.put("/user-guides/{guide_id}")
 def update_user_guide(guide_id: int, guide: schemas.UserGuideCreate, db: Session = Depends(database.get_db),
                       current_admin: str = Depends(require_admin)):
   db_guide = get_or_404(db, models.UserGuide, guide_id, _GUIDE_NOT_FOUND)
-  return update_record(db, db_guide, guide.dict())
+  return update_record(db, db_guide, guide.model_dump())
 
 
 @router.delete("/user-guides/{guide_id}")

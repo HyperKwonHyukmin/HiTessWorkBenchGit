@@ -37,7 +37,7 @@ def create_record(db: Session, instance):
     """모델 인스턴스를 받아 add → commit → refresh 한 뒤 반환한다.
 
     호출부가 schema 를 모델로 변환해서 전달:
-        new_notice = models.Notice(**notice.dict())
+        new_notice = models.Notice(**notice.model_dump())
         return create_record(db, new_notice)
     """
     db.add(instance)

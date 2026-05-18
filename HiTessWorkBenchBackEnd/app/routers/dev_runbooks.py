@@ -33,7 +33,7 @@ def create_runbook(
     db: Session = Depends(database.get_db),
     current_admin: str = Depends(require_admin),
 ):
-    return create_record(db, models.DevRunbook(**payload.dict()))
+    return create_record(db, models.DevRunbook(**payload.model_dump()))
 
 
 @router.put("/{runbook_id}", response_model=schemas.DevRunbookResponse)
@@ -44,7 +44,7 @@ def update_runbook(
     current_admin: str = Depends(require_admin),
 ):
     runbook = get_or_404(db, models.DevRunbook, runbook_id, _RUNBOOK_NOT_FOUND)
-    return update_record(db, runbook, payload.dict())
+    return update_record(db, runbook, payload.model_dump())
 
 
 @router.delete("/{runbook_id}")

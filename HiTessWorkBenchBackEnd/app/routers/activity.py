@@ -1,15 +1,15 @@
 """사용자 활동 로그 조회 및 버전 업데이트 이벤트 API."""
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from .. import models, database
-from ..dependencies import require_admin, require_auth
-from ..services.activity_service import log_activity
+from .. import database
+from ..dependencies import require_admin
+from ..services.activity_service import build_activity_query, log_activity
 
 router = APIRouter(prefix="/api/activity", tags=["activity"])
 
@@ -47,26 +47,10 @@ def get_activity_logs(
     _: str = Depends(require_admin),
 ):
     """관리자용 활동 로그 조회. 날짜·사번·이벤트 유형 필터 지원."""
-    q = db.query(models.ActivityLog)
-    if employee_id:
-        q = q.filter(models.ActivityLog.employee_id == employee_id)
-    if action_type:
-        q = q.filter(models.ActivityLog.action_type == action_type)
-    if date_from:
-        q = q.filter(models.ActivityLog.created_at >= datetime.fromisoformat(date_from))
-    if date_to:
-        dt_to = datetime.fromisoformat(date_to).replace(hour=23, minute=59, second=59)
-        q = q.filter(models.ActivityLog.created_at <= dt_to)
-
+    q = build_activity_query(db, employee_id, action_type, date_from, date_to)
+    # 필터 적용된 결과의 총 개수 — outerjoin/order 가 들어가도 count() 결과는 동일.
     total = q.count()
-    rows = (
-        q.outerjoin(models.User, models.ActivityLog.employee_id == models.User.employee_id)
-        .add_columns(models.User.name)
-        .order_by(models.ActivityLog.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    rows = q.offset(skip).limit(limit).all()
 
     return {
         "total": total,
@@ -98,23 +82,7 @@ def export_activity_logs_csv(
     _: str = Depends(require_admin),
 ):
     """활동 로그를 CSV로 내보냅니다."""
-    q = db.query(models.ActivityLog)
-    if employee_id:
-        q = q.filter(models.ActivityLog.employee_id == employee_id)
-    if action_type:
-        q = q.filter(models.ActivityLog.action_type == action_type)
-    if date_from:
-        q = q.filter(models.ActivityLog.created_at >= datetime.fromisoformat(date_from))
-    if date_to:
-        dt_to = datetime.fromisoformat(date_to).replace(hour=23, minute=59, second=59)
-        q = q.filter(models.ActivityLog.created_at <= dt_to)
-
-    rows = (
-        q.outerjoin(models.User, models.ActivityLog.employee_id == models.User.employee_id)
-        .add_columns(models.User.name)
-        .order_by(models.ActivityLog.created_at.desc())
-        .all()
-    )
+    rows = build_activity_query(db, employee_id, action_type, date_from, date_to).all()
 
     output = io.StringIO()
     writer = csv.writer(output)
