@@ -374,29 +374,12 @@ async def request_bdfscanner(
     program_name 으로 userConnection 하위 폴더 접미사를 지정합니다 (기본값: BdfScanner).
     """
     _verify_employee_self(employee_id, current_user)
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(os.path.dirname(base_dir))
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
     safe_name = "".join(c for c in program_name if c.isalnum() or c in "_-")[:40] or "BdfScanner"
-    unique_folder = f"{timestamp}_{employee_id}_{safe_name}"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
-    os.makedirs(work_dir, exist_ok=True)
-
-    bdf_path = os.path.join(work_dir, os.path.basename(bdf_file.filename))
-    try:
-        with open(bdf_path, "wb") as buffer:
-            buffer.write(await bdf_file.read())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
-
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
-
-    analysis_executor.submit(
-        task_execute_bdfscanner, job_id, bdf_path, work_dir, employee_id, timestamp, source, use_nastran
+    work_dir, timestamp = make_work_dir(employee_id, safe_name)
+    bdf_path = await save_upload(bdf_file, work_dir, error_prefix="파일 저장 오류")
+    job_id = submit_analysis_job(
+        task_execute_bdfscanner, bdf_path, work_dir, employee_id, timestamp, source, use_nastran,
     )
-
     return {"job_id": job_id}
 
 
@@ -424,24 +407,10 @@ async def request_hpscr(
     if mode not in ("PSA", "POR"):
         raise HTTPException(status_code=400, detail="analysis_mode 는 'PSA' 또는 'POR' 만 허용됩니다.")
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    safe_name = f"HpScr{mode}"
-    unique_folder = f"{timestamp}_{employee_id}_{safe_name}"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
-    os.makedirs(work_dir, exist_ok=True)
-
-    bdf_path = os.path.join(work_dir, os.path.basename(bdf_file.filename))
-    try:
-        with open(bdf_path, "wb") as buffer:
-            buffer.write(await bdf_file.read())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
-
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
-
-    analysis_executor.submit(
-        task_execute_hpscr, job_id, bdf_path, work_dir, employee_id, timestamp, source, mode
+    work_dir, timestamp = make_work_dir(employee_id, f"HpScr{mode}")
+    bdf_path = await save_upload(bdf_file, work_dir, error_prefix="파일 저장 오류")
+    job_id = submit_analysis_job(
+        task_execute_hpscr, bdf_path, work_dir, employee_id, timestamp, source, mode
     )
 
     return {"job_id": job_id}
