@@ -7,6 +7,7 @@ import GuideButton from '../../components/ui/GuideButton';
 import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useAuth } from '../../contexts/AuthContext';
+import PageBanner from '../../components/ui/PageBanner';
 import { API_BASE_URL } from '../../config';
 import SolverCredit from '../../components/ui/SolverCredit';
 
@@ -777,35 +778,28 @@ export default function SectionPropertyCalculator() {
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
-      {/* 헤더 */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-violet-900 to-violet-700 overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full"/>
-          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full"/>
-        </div>
-        <div className="relative flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setCurrentMenu('Interactive Apps')}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer">
-              <ArrowLeft size={18}/>
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <SlidersHorizontal size={18} className="text-violet-300"/>
-                Section Property Calculator
-              </h1>
-              <p className="text-sm text-violet-200/80 mt-0.5">단면 형상과 치수를 입력하여 면적, 관성모멘트, 단면계수 등 구조 특성값을 산출합니다.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setChangelogOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
-              이력
-            </button>
-            <GuideButton guideTitle="[인터랙티브] Section Property Calculator" variant="dark"/>
+      <PageBanner gradient="from-brand-blue via-violet-900 to-violet-700">
+        <div className="flex items-center gap-4">
+          <button onClick={() => setCurrentMenu('Interactive Apps')}
+            className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer">
+            <ArrowLeft size={18}/>
+          </button>
+          <div>
+            <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+              <SlidersHorizontal size={18} className="text-violet-300"/>
+              Section Property Calculator
+            </h1>
+            <p className="text-sm text-violet-200/80 mt-0.5">단면 형상과 치수를 입력하여 면적, 관성모멘트, 단면계수 등 구조 특성값을 산출합니다.</p>
           </div>
         </div>
-      </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setChangelogOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
+            이력
+          </button>
+          <GuideButton guideTitle="[인터랙티브] Section Property Calculator" variant="dark"/>
+        </div>
+      </PageBanner>
 
       {/* 2-컬럼 레이아웃 */}
       <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start">

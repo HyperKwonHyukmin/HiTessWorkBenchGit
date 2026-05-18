@@ -15,6 +15,7 @@ import {
 import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import BdfModelViewer from '../../components/analysis/BdfModelViewer';
+import PageBanner from '../../components/ui/PageBanner';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -326,13 +327,7 @@ export default function HpScrAssessment() {
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-      {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-sky-900 to-sky-700 overflow-hidden shrink-0">
-        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
-          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
-        </div>
-        <div className="relative flex items-center justify-between">
+      <PageBanner gradient="from-brand-blue via-sky-900 to-sky-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('File-Based Apps')}
@@ -351,8 +346,7 @@ export default function HpScrAssessment() {
           <div className="flex items-center gap-2">
             <GuideButton guideTitle="[파일] HP-SCR 배관응력 해석 — 사용 안내" variant="dark" />
           </div>
-        </div>
-      </div>
+      </PageBanner>
 
       {/* ── 안내 배너 ── */}
       <div className="flex items-start gap-3 mb-4 px-4 py-3 bg-sky-50 border border-sky-200 rounded-xl shrink-0">

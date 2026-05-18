@@ -21,6 +21,7 @@ import { useNavigation } from '../../contexts/NavigationContext';
 import { useFileParser, parseCsvText } from '../../hooks/useFileParser';
 import SolverCredit from '../../components/ui/SolverCredit';
 import { useToast } from '../../contexts/ToastContext';
+import PageBanner from '../../components/ui/PageBanner';
 
 export default function TrussAnalysis() {
   const { showToast } = useToast();
@@ -289,13 +290,7 @@ export default function TrussAnalysis() {
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
 
-      {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-brand-blue-dark to-blue-700 overflow-hidden shrink-0">
-        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
-          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
-        </div>
-        <div className="relative flex items-center justify-between">
+      <PageBanner gradient="from-brand-blue via-brand-blue-dark to-blue-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('File-Based Apps')}
@@ -314,8 +309,7 @@ export default function TrussAnalysis() {
             </button>
             <GuideButton guideTitle="[파일] Truss Model Builder — CSV로 트러스 모델 만들기" variant="dark" />
           </div>
-        </div>
-      </div>
+      </PageBanner>
 
       {/* Main Workspace */}
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">

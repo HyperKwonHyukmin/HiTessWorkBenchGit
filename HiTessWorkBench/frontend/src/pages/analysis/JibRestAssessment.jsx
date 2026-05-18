@@ -14,6 +14,7 @@ import jibRestRef from '../../assets/images/jib_rest_reference.png';
 import jibCraneRef from '../../assets/images/jib_crane_reference.png';
 import { formatFixed as fmt } from '../../utils/formatting';
 import SolverCredit from '../../components/ui/SolverCredit';
+import PageBanner from '../../components/ui/PageBanner';
 
 const downloadJson = (data, filename) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -293,13 +294,7 @@ export default function JibRestAssessment() {
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
-      {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-indigo-900 to-indigo-700 overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
-          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
-        </div>
-        <div className="relative flex items-center justify-between">
+      <PageBanner gradient="from-brand-blue via-indigo-900 to-indigo-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('Parametric Apps')}
@@ -321,8 +316,7 @@ export default function JibRestAssessment() {
             </button>
             <GuideButton guideTitle="[파라메트릭] Jib Rest Assessment — 1단/2단 파이프 설계" variant="dark" />
           </div>
-        </div>
-      </div>
+      </PageBanner>
 
       {/* 1단/2단 탭 */}
       <div className="flex gap-2 mb-6 border-b border-gray-200">

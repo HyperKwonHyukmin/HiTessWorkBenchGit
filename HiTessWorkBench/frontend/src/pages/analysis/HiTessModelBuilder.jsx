@@ -13,6 +13,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { API_BASE_URL } from '../../config';
 import { downloadFileBlob } from '../../api/analysis';
 import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
+import PageBanner from '../../components/ui/PageBanner';
 
 /* ──────────────────────────────────────────────────────────────────────────
    상수
@@ -2881,13 +2882,7 @@ export default function HiTessModelBuilder() {
         <EditApplyingOverlay status={editJobStatus} />
       )}
 
-      {/* ── 그라디언트 배너 헤더 (File-Based Apps 표준) ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-indigo-900 to-violet-700 overflow-hidden shrink-0">
-        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
-          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
-        </div>
-        <div className="relative flex items-center justify-between">
+      <PageBanner gradient="from-brand-blue via-indigo-900 to-violet-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('File-Based Apps')}
@@ -2908,8 +2903,7 @@ export default function HiTessModelBuilder() {
             </button>
             <GuideButton guideTitle="[파일] HiTESS Model Builder — CSV → BDF 변환" variant="dark" />
           </div>
-        </div>
-      </div>
+      </PageBanner>
 
       {/* ── Body ── */}
       <div className="flex flex-1 gap-5 min-h-0 px-1">

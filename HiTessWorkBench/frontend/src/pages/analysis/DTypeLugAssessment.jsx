@@ -14,6 +14,7 @@ import { formatFixed as fmt } from '../../utils/formatting';
 import dTypeLugRef1 from '../../assets/images/D_typeLug1.png';
 import dTypeLugRef2 from '../../assets/images/D_typeLug2.png';
 import dTypeLugRef3 from '../../assets/images/D_typeLug3.png';
+import PageBanner from '../../components/ui/PageBanner';
 
 const DEFAULT_INPUT = {
   load: { force_N: '1000000' },
@@ -161,12 +162,7 @@ export default function DTypeLugAssessment() {
 
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-emerald-900 to-emerald-700 overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
-          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
-        </div>
-        <div className="relative flex items-center justify-between">
+      <PageBanner gradient="from-brand-blue via-emerald-900 to-emerald-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('Parametric Apps')}
@@ -188,8 +184,7 @@ export default function DTypeLugAssessment() {
             </button>
             <GuideButton guideTitle="[파라메트릭] D Type Lug Assessment" variant="dark" />
           </div>
-        </div>
-      </div>
+      </PageBanner>
 
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-6">
         <button

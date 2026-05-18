@@ -15,6 +15,7 @@ import SolverCredit from '../../components/ui/SolverCredit';
 import RelatedAppsWidget from '../../components/ui/RelatedAppsWidget';
 import TransferBrowseModal from '../../components/ui/TransferBrowseModal';
 import { useIncomingTransfer } from '../../hooks/useIncomingTransfer';
+import PageBanner from '../../components/ui/PageBanner';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -330,13 +331,7 @@ export default function F06ParserPage() {
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-      {/* 그라디언트 배너 헤더 */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-700 overflow-hidden shrink-0">
-        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
-          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
-        </div>
-        <div className="relative flex items-center justify-between">
+      <PageBanner gradient="from-indigo-900 via-indigo-800 to-indigo-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('Productivity Apps')}
@@ -358,8 +353,7 @@ export default function F06ParserPage() {
             </button>
             <GuideButton guideTitle="[생산성] F06 Parser — F06 결과 추출" variant="dark" />
           </div>
-        </div>
-      </div>
+      </PageBanner>
 
       {/* 적용 범위 안내 배지 */}
       <div className="flex items-center gap-2 -mt-2 mb-3 px-1 shrink-0">

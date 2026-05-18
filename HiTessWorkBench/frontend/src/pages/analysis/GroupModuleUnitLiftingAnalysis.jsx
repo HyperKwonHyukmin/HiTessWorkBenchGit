@@ -14,6 +14,7 @@ import { usePolling } from '../../hooks/usePolling';
 import { requestGroupModuleUnit, requestGroupModuleUnitFromPath, downloadFileText } from '../../api/analysis';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import { API_BASE_URL } from '../../config';
+import PageBanner from '../../components/ui/PageBanner';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
 
@@ -691,13 +692,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
 
-      {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-brand-blue-dark to-blue-700 overflow-hidden shrink-0">
-        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
-          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
-        </div>
-        <div className="relative flex items-center justify-between">
+      <PageBanner gradient="from-brand-blue via-brand-blue-dark to-blue-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('File-Based Apps')}
@@ -718,8 +713,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
           <div className="flex items-center gap-2">
             <GuideButton guideTitle="[파일] Group & Module Unit 권상 구조 해석" variant="dark" />
           </div>
-        </div>
-      </div>
+      </PageBanner>
 
       {/* ── Body ── */}
       <div className="flex flex-1 gap-5 min-h-0">

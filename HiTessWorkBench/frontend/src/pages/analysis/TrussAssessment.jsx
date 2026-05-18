@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useAuth } from '../../contexts/AuthContext';
+import PageBanner from '../../components/ui/PageBanner';
 
 export default function TrussAssessment() {
   const { setCurrentMenu } = useNavigation();
@@ -212,13 +213,7 @@ export default function TrussAssessment() {
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
 
-      {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-emerald-900 to-emerald-700 overflow-hidden shrink-0">
-        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
-          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
-        </div>
-        <div className="relative flex items-center justify-between">
+      <PageBanner gradient="from-brand-blue via-emerald-900 to-emerald-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('File-Based Apps')}
@@ -239,8 +234,7 @@ export default function TrussAssessment() {
             </button>
             <GuideButton guideTitle="[파일] Truss Structural Assessment — 트러스 구조 안정성 평가" variant="dark" />
           </div>
-        </div>
-      </div>
+      </PageBanner>
 
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
         <div className="w-full lg:w-[400px] flex flex-col gap-5 shrink-0 overflow-y-auto pr-1 custom-scrollbar">

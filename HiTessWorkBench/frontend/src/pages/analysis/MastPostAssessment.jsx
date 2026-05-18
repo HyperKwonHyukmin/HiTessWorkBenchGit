@@ -13,6 +13,7 @@ import { API_BASE_URL } from '../../config';
 import mastPostRef from '../../assets/images/mast_post_reference.png';
 import { formatFixed as fmt } from '../../utils/formatting';
 import SolverCredit from '../../components/ui/SolverCredit';
+import PageBanner from '../../components/ui/PageBanner';
 
 const downloadJson = (data, filename) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -135,13 +136,7 @@ export default function MastPostAssessment() {
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
-      {/* ── 그라디언트 배너 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r from-brand-blue via-violet-900 to-violet-700 overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-          <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
-          <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
-        </div>
-        <div className="relative flex items-center justify-between">
+      <PageBanner gradient="from-brand-blue via-violet-900 to-violet-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('Parametric Apps')}
@@ -163,8 +158,7 @@ export default function MastPostAssessment() {
             </button>
             <GuideButton guideTitle="[파라메트릭] Mast Post Assessment — Post 파이프 자동 선정" variant="dark" />
           </div>
-        </div>
-      </div>
+      </PageBanner>
 
 
       {/* 참조 그림 — 전체 너비 */}
