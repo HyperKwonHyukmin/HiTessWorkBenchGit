@@ -4,10 +4,16 @@ import os
 import csv
 import json
 import logging
-import subprocess
 from datetime import datetime
-from .. import models, database
-from .job_manager import job_status_store
+
+from .analysis_runner import (
+    get_backend_dir,
+    mark_complete,
+    mark_running,
+    record_analysis,
+    run_engine,
+    update_progress,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -237,149 +243,93 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
   TrussAssessment.exe 엔진을 호출하고, 결과로 생성된 json 파일을 스캔하여 반환합니다.
   xlsx는 회사 DRM에 의해 즉시 암호화되므로 JSON → CSV 변환 결과를 함께 제공합니다.
   """
-  job_status_store.update_job(job_id, {
-    "status": "Running",
-    "progress": 10,
-    "message": "Initiating Assessment Solver..."
-  })
+  mark_running(job_id, "Initiating Assessment Solver...", progress=10)
 
-  db = database.SessionLocal()
   status_msg = "Success"
   engine_output = ""
   result_data = {}
-  project_data = None
 
-  # 1. 실행 파일 절대 경로 동적 생성
-  base_dir = os.path.dirname(os.path.abspath(__file__))  # app/services
-  app_dir = os.path.dirname(base_dir)  # app
-  backend_dir = os.path.dirname(app_dir)  # HiTessWorkBenchBackEnd
-
-  exe_dir = os.path.join(backend_dir, "InHouseProgram", "TrussAssessment")
+  exe_dir = os.path.join(get_backend_dir(), "InHouseProgram", "TrussAssessment")
   exe_path = os.path.join(exe_dir, "TrussAssessment.exe")
 
   try:
     if not os.path.exists(exe_path):
       raise FileNotFoundError(f"Executable not found: {exe_path}")
 
-    job_status_store.update_job(job_id, {
-      "progress": 40,
-      "message": "Running Nastran Analysis & Evaluation..."
-    })
+    update_progress(job_id, 40, "Running Nastran Analysis & Evaluation...")
 
-    # 2. 실행: 첫 번째 인자로 bdf_path 전달 (작업 폴더 기준)
-    cmd_args = [exe_path, bdf_path]
-
-    result = subprocess.run(
-      cmd_args,
-      cwd=work_dir,
-      capture_output=True,
-      text=True,
-      check=True,
-      timeout=600
+    # 첫 번째 인자로 bdf_path 전달 (작업 폴더 기준 실행)
+    status_msg, engine_output = run_engine(
+      [exe_path, bdf_path], work_dir, timeout=600, engine_label="TrussAssessment",
     )
-    engine_output = result.stdout
 
-    job_status_store.update_job(job_id, {
-      "progress": 80,
-      "message": "Extracting Results & Converting to CSV..."
-    })
+    if status_msg == "Success":
+      update_progress(job_id, 80, "Extracting Results & Converting to CSV...")
 
-    # 3. 결과 파일 스캔 (다중 Case 및 대소문자 확장자 완벽 대응)
-    bdf_stem = os.path.splitext(os.path.basename(bdf_path))[0]
-    json_count = 0
-    for f in os.listdir(work_dir):
-      full_path = os.path.join(work_dir, f)
-      lower_f = f.lower()
+      # 결과 파일 스캔 (다중 Case 및 대소문자 확장자 완벽 대응)
+      bdf_stem = os.path.splitext(os.path.basename(bdf_path))[0]
+      json_count = 0
+      for f in os.listdir(work_dir):
+        full_path = os.path.join(work_dir, f)
+        lower_f = f.lower()
 
-      # xlsx: DRM 정책으로 암호화되므로 경로만 기록 (실제 다운로드는 CSV 사용 권장)
-      if lower_f.endswith('.xlsx') and not f.startswith('~'):
-        name_without_ext = os.path.splitext(f)[0]
-        result_data[f"Excel_{name_without_ext}"] = full_path
+        # xlsx: DRM 정책으로 암호화되므로 경로만 기록 (실제 다운로드는 CSV 사용 권장)
+        if lower_f.endswith('.xlsx') and not f.startswith('~'):
+          name_without_ext = os.path.splitext(f)[0]
+          result_data[f"Excel_{name_without_ext}"] = full_path
 
-      elif lower_f.endswith('.json'):
-        json_count += 1
-        name_without_ext = os.path.splitext(f)[0]
-        result_data[f"JSON_{name_without_ext}"] = full_path
+        elif lower_f.endswith('.json'):
+          json_count += 1
+          name_without_ext = os.path.splitext(f)[0]
+          result_data[f"JSON_{name_without_ext}"] = full_path
 
-        # JSON → CSV 변환 (DRM 우회)
-        job_status_store.update_job(job_id, {"message": f"Converting {f} to CSV..."})
-        csv_files = _json_to_csv(full_path, work_dir, name_without_ext)
-        result_data.update(csv_files)
+          # JSON → CSV 변환 (DRM 우회)
+          update_progress(job_id, 80, f"Converting {f} to CSV...")
+          csv_files = _json_to_csv(full_path, work_dir, name_without_ext)
+          result_data.update(csv_files)
 
-      elif lower_f.endswith('.f06'):
-        target_name = f"{bdf_stem}.f06"
-        target_path = os.path.join(work_dir, target_name)
-        if f != target_name:
-          os.rename(full_path, target_path)
-          full_path = target_path
-        result_data[f"F06_{bdf_stem}"] = full_path
+        elif lower_f.endswith('.f06'):
+          target_name = f"{bdf_stem}.f06"
+          target_path = os.path.join(work_dir, target_name)
+          if f != target_name:
+            os.rename(full_path, target_path)
+            full_path = target_path
+          result_data[f"F06_{bdf_stem}"] = full_path
 
-      elif lower_f.endswith('.op2'):
-        target_name = f"{bdf_stem}.op2"
-        target_path = os.path.join(work_dir, target_name)
-        if f != target_name:
-          os.rename(full_path, target_path)
-          full_path = target_path
-        result_data[f"OP2_{bdf_stem}"] = full_path
+        elif lower_f.endswith('.op2'):
+          target_name = f"{bdf_stem}.op2"
+          target_path = os.path.join(work_dir, target_name)
+          if f != target_name:
+            os.rename(full_path, target_path)
+            full_path = target_path
+          result_data[f"OP2_{bdf_stem}"] = full_path
 
-    # BDF 원본도 결과로 함께 반환
-    result_data["bdf"] = bdf_path
+      # BDF 원본도 결과로 함께 반환
+      result_data["bdf"] = bdf_path
 
-    if json_count == 0:
-      engine_output += "\n[Warning] JSON result files were NOT found in the user's work directory. C# 엔진의 출력 경로를 확인하세요."
-
-  except subprocess.TimeoutExpired:
-    status_msg = "Failed"
-    logger.error("TrussAssessment subprocess timed out after 600s")
-    engine_output = "해석 엔진이 제한 시간(600초)을 초과했습니다. 관리자에게 문의하세요."
-  except subprocess.CalledProcessError as e:
-    status_msg = "Failed"
-    logger.error("TrussAssessment subprocess failed: %s", e.stderr or e.stdout)
-    engine_output = "해석 엔진 실행 중 오류가 발생했습니다. 관리자에게 문의하세요."
+      if json_count == 0:
+        engine_output += "\n[Warning] JSON result files were NOT found in the user's work directory. C# 엔진의 출력 경로를 확인하세요."
   except Exception as e:
+    # exe_path 미존재(FileNotFoundError), 결과 파일 스캔 중 예기치 못한 오류 등을 일괄 처리.
+    # subprocess 자체 오류는 run_engine 내부에서 처리되어 (Failed, 메시지)로 이미 반환됨.
     status_msg = "Failed"
     logger.error("TrussAssessment unexpected error: %s", str(e), exc_info=True)
     engine_output = "예기치 않은 오류가 발생했습니다. 관리자에게 문의하세요."
 
-  job_status_store.update_job(job_id, {"progress": 95, "message": "Saving to Database..."})
+  update_progress(job_id, 95, "Saving to Database...")
 
-  # 4. DB 기록 및 상태 동기화
-  try:
-    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    new_analysis = models.Analysis(
-      project_name=f"Truss Assessment_{date_str}",
-      program_name="Truss Assessment",
-      employee_id=employee_id,
-      status=status_msg,
-      input_info={"bdf_model": bdf_path},
-      result_info=result_data if status_msg == "Success" else None,
-      source=source
-    )
-    db.add(new_analysis)
-    db.commit()
-    db.refresh(new_analysis)
-
-    project_data = {
-      "id": new_analysis.id,
-      "project_name": new_analysis.project_name,
-      "program_name": new_analysis.program_name,
-      "employee_id": new_analysis.employee_id,
-      "status": new_analysis.status,
-      "input_info": new_analysis.input_info,
-      "result_info": new_analysis.result_info,
-      "created_at": new_analysis.created_at.isoformat() if new_analysis.created_at else datetime.now().isoformat()
-    }
-  except Exception as db_e:
+  date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+  project_data, db_err = record_analysis(
+    project_name=f"Truss Assessment_{date_str}",
+    program_name="Truss Assessment",
+    employee_id=employee_id,
+    status=status_msg,
+    input_info={"bdf_model": bdf_path},
+    result_info=result_data,
+    source=source,
+  )
+  if db_err is not None:
     status_msg = "Failed"
-    engine_output += f"\nDB Error: {str(db_e)}"
-  finally:
-    db.close()
+    engine_output += f"\n{db_err}"
 
-  # 최종 클라이언트(UI) 응답용 스토어 업데이트
-  job_status_store.update_job(job_id, {
-    "status": status_msg,
-    "progress": 100,
-    "message": "Analysis Completed Successfully" if status_msg == "Success" else "Analysis Failed",
-    "engine_log": engine_output,
-    "project": project_data
-  })
+  mark_complete(job_id, status_msg, engine_output, project_data)

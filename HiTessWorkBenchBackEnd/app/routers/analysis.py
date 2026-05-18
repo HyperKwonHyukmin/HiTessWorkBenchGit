@@ -36,6 +36,7 @@ from ..services.hitess_modelflow_service import (
 )
 from ..services.f06parser_service import task_execute_f06parser
 from ..services.plate_structure_service import task_execute_plate_structure
+from ._intake import make_work_dir, save_upload, submit_analysis_job
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -331,31 +332,11 @@ async def request_truss_assessment(
     Truss Structural Assessment 해석을 요청받아 BDF 파일을 저장하고 백그라운드 작업을 실행합니다.
     """
     _verify_employee_self(employee_id, current_user)
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(os.path.dirname(base_dir))
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-    # [변경 사항] 일관성을 위해 Assessment 폴더명도 시간_사번_모듈명 구조로 통일
-    unique_folder = f"{timestamp}_{employee_id}_TrussAssessment"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, unique_folder))
-
-    os.makedirs(work_dir, exist_ok=True)
-
-    bdf_path = os.path.join(work_dir, os.path.basename(bdf_file.filename))
-
-    try:
-        with open(bdf_path, "wb") as buffer:
-            buffer.write(await bdf_file.read())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File save error: {str(e)}")
-
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "Waiting in Queue..."})
-
-    analysis_executor.submit(
-        task_execute_assessment, job_id, bdf_path, work_dir, employee_id, timestamp, source
+    work_dir, timestamp = make_work_dir(employee_id, "TrussAssessment")
+    bdf_path = await save_upload(bdf_file, work_dir)
+    job_id = submit_analysis_job(
+        task_execute_assessment, bdf_path, work_dir, employee_id, timestamp, source,
     )
-
     return {"job_id": job_id}
 
 
