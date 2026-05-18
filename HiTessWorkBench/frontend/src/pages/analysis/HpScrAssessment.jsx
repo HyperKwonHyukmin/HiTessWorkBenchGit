@@ -6,7 +6,7 @@ import { ArrowLeft, Upload, Play, Terminal, Pipette, Info, Download, RotateCcw }
 import GuideButton from '../../components/ui/GuideButton';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
-import { usePolling } from '../../hooks/usePolling';
+import { useAnalysisJob } from '../../hooks/useAnalysisJob';
 import {
   requestHpscrAssessment,
   downloadFileText,
@@ -148,11 +148,6 @@ export default function HpScrAssessment() {
 
   const [bdfFile, setBdfFile] = useState(null);
   const [analysisMode, setAnalysisMode] = useState('PSA');
-  const [isRunning, setIsRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [logs, setLogs] = useState([]);
-  const [currentPollingJobId, setCurrentPollingJobId] = useState(null);
   const [modelData, setModelData] = useState(null);
   const [reportPath, setReportPath] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -160,30 +155,20 @@ export default function HpScrAssessment() {
 
   const fileInputRef = useRef(null);
   const logEndRef = useRef(null);
-  const lastMsgRef = useRef('');
 
-  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
-
-  const addLog = (message, type = 'info') => {
-    setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message, type }]);
-  };
-
-  usePolling({
-    jobId: currentPollingJobId,
-    maxRetries: 400,
-    onProgress: (data) => {
-      const { progress: p, message } = data;
-      setProgress(p);
-      if (message !== lastMsgRef.current) {
-        lastMsgRef.current = message;
-        setStatusMessage(message);
-        setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: `[${p}%] ${message}`, type: 'warning' }]);
-      }
-    },
+  // 작업 상태(jobId/isRunning/progress/statusMessage/logs) + 사번 + 폴링은 훅이 담당.
+  // success/error 메시지에 analysisMode 가 들어가므로 콜백에서 직접 addLog 한다.
+  const {
+    isRunning, progress, statusMessage, logs,
+    employeeId, addLog, startJob,
+    setLogs, setStatusMessage, setIsRunning, setProgress, setJobId,
+  } = useAnalysisJob({
+    startGlobalJob,
+    pollingMaxRetries: 400, // 약 10분
+    successLogMessage: '', // 동적 메시지 — onComplete 에서 직접 addLog
+    errorLogMessage: '',   // 동적 메시지 — onError 에서 직접 addLog
+    timeoutLogMessage: '시간 초과. 서버 상태를 확인하세요.',
     onComplete: async (data) => {
-      setCurrentPollingJobId(null);
-      setIsRunning(false);
-      setProgress(100);
       setStatusMessage('해석 완료');
 
       const { engine_log, project } = data;
@@ -242,14 +227,14 @@ export default function HpScrAssessment() {
       }
     },
     onError: (errData) => {
-      setCurrentPollingJobId(null);
-      setIsRunning(false);
       setStatusMessage('해석 실패');
       if (errData?.engine_log) addLog(`[SOLVER] ${errData.engine_log.trim()}`, 'info');
-      const msg = errData?.timeout ? '시간 초과. 서버 상태를 확인하세요.' : `HP-SCR ${analysisMode} 해석 실패.`;
-      addLog(msg, 'error');
+      // 타임아웃은 훅이 자동 로그(timeoutLogMessage). 그 외는 mode 가 들어간 동적 메시지.
+      if (!errData?.timeout) addLog(`HP-SCR ${analysisMode} 해석 실패.`, 'error');
     },
   });
+
+  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
   const handleFile = (file) => {
     if (!file) return;
@@ -279,10 +264,6 @@ export default function HpScrAssessment() {
     setModelData(null);
     setReportPath(null);
     setLogs([]);
-    lastMsgRef.current = '';
-
-    const userStr = localStorage.getItem('user');
-    const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
 
     const formData = new FormData();
     formData.append('bdf_file', bdfFile);
@@ -294,8 +275,7 @@ export default function HpScrAssessment() {
       const res = await requestHpscrAssessment(formData);
       const jobId = res.data.job_id;
       addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
-      startGlobalJob?.(jobId, 'HP-SCR 배관응력 해석');
-      setCurrentPollingJobId(jobId);
+      startJob(jobId, 'HP-SCR 배관응력 해석');
     } catch {
       setIsRunning(false);
       addLog('서버 요청 실패.', 'error');
@@ -309,12 +289,11 @@ export default function HpScrAssessment() {
     setProgress(0);
     setStatusMessage('');
     setLogs([]);
-    setCurrentPollingJobId(null);
+    setJobId(null);
     setModelData(null);
     setReportPath(null);
     setIsDragOver(false);
     setIsDownloading(false);
-    lastMsgRef.current = '';
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 

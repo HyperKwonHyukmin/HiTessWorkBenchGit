@@ -5,7 +5,7 @@
 import React, { useState, useRef, useEffect, Fragment } from 'react';
 import { requestTrussAnalysis, downloadFileBlob } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
-import { usePolling } from '../../hooks/usePolling';
+import { useAnalysisJob } from '../../hooks/useAnalysisJob';
 import { Dialog, Transition } from '@headlessui/react';
 import {
   ArrowLeft, Upload, Play, Download, Trash2, Database,
@@ -30,44 +30,40 @@ export default function TrussAnalysis() {
   const [memberFile, setMemberFile] = useState(null);
   const [nodeData, setNodeData] = useState([]);
   const [memberData, setMemberData] = useState([]);
-  const [logs, setLogs] = useState([]); 
-  const [detailedLogs, setDetailedLogs] = useState([]); 
-  
-  const [isRunning, setIsRunning] = useState(false);
-  const [progress, setProgress] = useState(0); 
-  const [statusMessage, setStatusMessage] = useState(''); 
+  const [detailedLogs, setDetailedLogs] = useState([]);
 
-  const [activeTab, setActiveTab] = useState('node'); 
-  
+  const [activeTab, setActiveTab] = useState('node');
+
   // (추가) 파싱된 JSON 결과 데이터를 담을 State
   const [resultJsonData, setResultJsonData] = useState(null);
-  
+
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [analysisResultData, setAnalysisResultData] = useState(null);
-  const [isResultModalOpen, setIsResultModalOpen] = useState(false);  
-  const [is3DViewerOpen, setIs3DViewerOpen] = useState(false); 
-  
-  const logEndRef = useRef(null);
-  const lastMsgRef = useRef('');
-  const [currentJobId, setCurrentJobId] = useState(null);
+  const [isResultModalOpen, setIsResultModalOpen] = useState(false);
+  const [is3DViewerOpen, setIs3DViewerOpen] = useState(false);
 
-  usePolling({
-    jobId: currentJobId,
-    interval: 1500,
-    maxRetries: 120,
-    onProgress: ({ progress, message }) => {
-      setProgress(progress);
+  const logEndRef = useRef(null);
+
+  const addDetailedLog = (message) => {
+    const time = new Date().toISOString();
+    setDetailedLogs(prev => [...prev, `[${time}] ${message}`]);
+  };
+
+  // 작업 상태 + 폴링은 훅이 담당. success/error 메시지가 동적이므로
+  // successLogMessage/errorLogMessage 는 빈 문자열로 두고 콜백에서 직접 처리.
+  const {
+    isRunning, progress, statusMessage, logs,
+    employeeId, addLog, startJob,
+    setLogs, setStatusMessage, setIsRunning, setProgress,
+  } = useAnalysisJob({
+    pollingInterval: 1500,
+    pollingMaxRetries: 120,
+    successLogMessage: '',
+    errorLogMessage: '',
+    timeoutLogMessage: '해석 시간 초과 (3분). 서버 상태를 확인하세요.',
+    onComplete: async ({ progress: jobProgress, message, engine_log, project }) => {
+      setProgress(jobProgress);
       setStatusMessage(message);
-      if (message !== lastMsgRef.current) {
-        addLog(`[${progress}%] ${message}`, 'warning');
-        lastMsgRef.current = message;
-      }
-    },
-    onComplete: async ({ progress, message, engine_log, project }) => {
-      setProgress(progress);
-      setStatusMessage(message);
-      setIsRunning(false);
-      setCurrentJobId(null);
       addLog('MODEL BUILDING COMPLETED SUCCESSFULLY.', 'success');
       addLog('결과가 DB에 기록되었습니다.', 'info');
       if (engine_log) {
@@ -93,17 +89,15 @@ export default function TrussAnalysis() {
       }
     },
     onError: (err) => {
-      setIsRunning(false);
-      setCurrentJobId(null);
-      if (err?.timeout) {
-        addLog('해석 시간 초과 (3분). 서버 상태를 확인하세요.', 'error');
-      } else if (err?.engine_log) {
+      // 타임아웃은 훅이 자동 로그. 그 외 케이스만 페이지가 분기 처리.
+      if (err?.timeout) return;
+      if (err?.engine_log) {
         addLog('ENGINE EXECUTION FAILED.', 'error');
         addDetailedLog(err.engine_log);
       } else {
         addLog('STATUS CHECK FAILED.', 'error');
       }
-    }
+    },
   });
 
   const numNodes = nodeData.length > 1 ? nodeData.length - 1 : 0;
@@ -196,19 +190,9 @@ export default function TrussAnalysis() {
     }
   };
   
-  const addLog = (message, type = 'info') => { 
-    const time = new Date().toLocaleTimeString(); 
-    setLogs(prev => [...prev, { time, message, type }]); 
-  };
-  
-  const addDetailedLog = (message) => { 
-    const time = new Date().toISOString(); 
-    setDetailedLogs(prev => [...prev, `[${time}] ${message}`]); 
-  };
-  
-  const clearLogs = () => { 
-    setLogs([]); 
-    setDetailedLogs([]); 
+  const clearLogs = () => {
+    setLogs([]);
+    setDetailedLogs([]);
   };
 
   // 해석 서버 요청 로직
@@ -223,12 +207,9 @@ export default function TrussAnalysis() {
     setIsResultModalOpen(false);
     setIs3DViewerOpen(false);
     setLogs([]);
-    setDetailedLogs([]); 
-    
+    setDetailedLogs([]);
+
     addLog('System Check OK. Requesting Analysis Job...', 'info');
-    
-    const userStr = localStorage.getItem('user');
-    const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
 
     const formData = new FormData();
     formData.append('node_file', nodeFile);
@@ -243,9 +224,7 @@ export default function TrussAnalysis() {
       if (!jobId) throw new Error("서버로부터 Job ID를 받지 못했습니다.");
 
       addLog(`Job submitted successfully. [Job ID: ${jobId}]`, 'info');
-      lastMsgRef.current = '';
-      setCurrentJobId(jobId);
-
+      startJob(jobId);
     } catch (error) {
       addLog('SERVER COMMUNICATION FAILED.', 'error');
       addDetailedLog(error.response ? `SERVER ERROR [${error.response.status}]` : `NETWORK ERROR: ${error.message}`);

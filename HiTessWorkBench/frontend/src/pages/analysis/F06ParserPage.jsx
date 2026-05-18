@@ -8,7 +8,7 @@ import ChangelogModal from '../../components/ui/ChangelogModal';
 import GuideButton from '../../components/ui/GuideButton';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
-import { usePolling } from '../../hooks/usePolling';
+import { useAnalysisJob } from '../../hooks/useAnalysisJob';
 import { requestF06Parser, downloadFileText, downloadFileBlob, getAnalysisById } from '../../api/analysis';
 import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
@@ -100,11 +100,6 @@ export default function F06ParserPage() {
   const [isLookingUp, setIsLookingUp] = useState(false);
 
   const [f06File, setF06File] = useState(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [logs, setLogs] = useState([]);
-  const [currentPollingJobId, setCurrentPollingJobId] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
   const [resultData, setResultData] = useState(null);
@@ -116,32 +111,19 @@ export default function F06ParserPage() {
 
   const fileInputRef = useRef(null);
   const logEndRef = useRef(null);
-  const lastMsgRef = useRef('');
 
-  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
-
-  const addLog = (message, type = 'info') => {
-    setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message, type }]);
-  };
-
-  usePolling({
-    jobId: currentPollingJobId,
-    maxRetries: 160,
-    onProgress: (data) => {
-      const { progress: p, message } = data;
-      setProgress(p);
-      if (message !== lastMsgRef.current) {
-        lastMsgRef.current = message;
-        setStatusMessage(message);
-        setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message: `[${p}%] ${message}`, type: 'warning' }]);
-      }
-    },
+  const {
+    isRunning, progress, statusMessage, logs,
+    employeeId, addLog, startJob,
+    setLogs, setStatusMessage, setIsRunning, setProgress,
+  } = useAnalysisJob({
+    startGlobalJob,
+    pollingMaxRetries: 160, // 약 4분
+    successLogMessage: 'F06 파싱 완료.',
+    errorLogMessage: '파싱 실패.',
+    timeoutLogMessage: '시간 초과 (2분). 파일 크기를 확인하세요.',
     onComplete: async (data) => {
-      setCurrentPollingJobId(null);
-      setIsRunning(false);
-      setProgress(100);
       setStatusMessage('파싱 완료');
-      addLog('F06 파싱 완료.', 'success');
 
       const { engine_log, project } = data;
       if (engine_log) addLog(`[SOLVER] ${engine_log.trim()}`, 'info');
@@ -173,13 +155,9 @@ export default function F06ParserPage() {
         }
       }
     },
-    onError: (errData) => {
-      setCurrentPollingJobId(null);
-      setIsRunning(false);
-      const msg = errData?.timeout ? '시간 초과 (2분). 파일 크기를 확인하세요.' : '파싱 실패.';
-      addLog(msg, 'error');
-    },
   });
+
+  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
   // 탭·Subcase 변경 시 정렬 초기화
   useEffect(() => { setSortConfig({ key: null, dir: 'asc' }); }, [activeTab, selectedSubcase]);
@@ -250,10 +228,6 @@ export default function F06ParserPage() {
     setSelectedSubcase(null);
     setActiveTab('displacement');
     setLogs([]);
-    lastMsgRef.current = '';
-
-    const userStr = localStorage.getItem('user');
-    const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
 
     const formData = new FormData();
     formData.append('f06_file', fileToUse);
@@ -264,8 +238,7 @@ export default function F06ParserPage() {
       const res = await requestF06Parser(formData);
       const jobId = res.data.job_id;
       addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
-      startGlobalJob?.(jobId, 'F06 Parser');
-      setCurrentPollingJobId(jobId);
+      startJob(jobId, 'F06 Parser');
     } catch {
       setIsRunning(false);
       addLog('서버 요청 실패.', 'error');
