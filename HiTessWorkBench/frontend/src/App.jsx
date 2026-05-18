@@ -13,6 +13,7 @@ import { Wand2 } from 'lucide-react';
 import { DashboardProvider } from './contexts/DashboardContext';
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
+import { AuthProvider } from './contexts/AuthContext';
 import UpdateModal from './components/UpdateModal';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
@@ -335,10 +336,12 @@ function AppInner() {
 
 export default function App() {
   return (
-    <NavigationProvider>
-      <ToastProvider>
-        <AppInner />
-      </ToastProvider>
-    </NavigationProvider>
+    <AuthProvider>
+      <NavigationProvider>
+        <ToastProvider>
+          <AppInner />
+        </ToastProvider>
+      </NavigationProvider>
+    </AuthProvider>
   );
 }
