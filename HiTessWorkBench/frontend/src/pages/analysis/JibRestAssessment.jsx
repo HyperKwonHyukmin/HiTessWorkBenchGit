@@ -15,16 +15,7 @@ import jibCraneRef from '../../assets/images/jib_crane_reference.png';
 import { formatFixed as fmt } from '../../utils/formatting';
 import SolverCredit from '../../components/ui/SolverCredit';
 import PageBanner from '../../components/ui/PageBanner';
-
-const downloadJson = (data, filename) => {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-};
+import { downloadJson } from '../../utils/fileHelper';
 
 const OkBadge = ({ ok }) =>
   ok

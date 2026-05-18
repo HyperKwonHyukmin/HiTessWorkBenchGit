@@ -35,3 +35,28 @@ export function formatDate(date, options = { year: 'numeric', month: 'short', da
   if (!date) return '';
   return new Date(date).toLocaleDateString(undefined, options);
 }
+
+/**
+ * 날짜 + 시간 포매팅 (ko-KR 기본).
+ * UserRequests / MyProjects 등에서 사용하던 `new Date(x).toLocaleString()` 패턴을 통합.
+ *
+ * @param {string|Date} date
+ * @param {string} [locale='ko-KR']
+ * @returns {string}
+ */
+export function formatDateTime(date, locale = 'ko-KR') {
+  if (!date) return '';
+  return new Date(date).toLocaleString(locale);
+}
+
+/**
+ * 시간만 포매팅 (ko-KR 기본). 로그 시간 표시 등에 사용.
+ * useAnalysisJob 훅의 addLog 내부에서 이미 사용 중이지만 페이지에서도 동일 포맷으로 통일.
+ *
+ * @param {string|Date} [date=new Date()]
+ * @param {string} [locale='ko-KR']
+ * @returns {string}
+ */
+export function formatTime(date = new Date(), locale = 'ko-KR') {
+  return new Date(date).toLocaleTimeString(locale);
+}

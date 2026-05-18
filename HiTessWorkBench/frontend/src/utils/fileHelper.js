@@ -22,3 +22,24 @@ export function getFileExtension(filePath) {
   const idx = name.lastIndexOf('.');
   return idx >= 0 ? name.slice(idx) : '';
 }
+
+/**
+ * 객체를 JSON 파일로 브라우저에서 다운로드한다.
+ *
+ * 4 개 calculator 페이지(Carling/DTypeLug/JibRest/MastPost) 가 module-level 에서
+ * 각자 정의하던 동일 구현을 단일 유틸로 통합.
+ *
+ *     downloadJson(payload, 'mast_post_input.json');
+ *
+ * @param {object} data       직렬화할 객체.
+ * @param {string} filename   다운로드 파일명 (확장자 포함).
+ */
+export function downloadJson(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}

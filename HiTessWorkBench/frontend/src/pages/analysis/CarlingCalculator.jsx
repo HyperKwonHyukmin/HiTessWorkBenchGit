@@ -15,6 +15,7 @@ import carlingFreeRef from '../../assets/images/Carling_Free.png';
 import carlingFreeRef2 from '../../assets/images/Carling_Free2.png';
 import carlingOptiRef from '../../assets/images/Carling_Opti.png';
 import carlingOptiRef2 from '../../assets/images/Carling_Opti2.png';
+import { downloadJson } from '../../utils/fileHelper';
 
 const DEFAULT_FREE = {
   load: { type: 'concentrated', value: '10', position_mm: '500' },
@@ -59,16 +60,6 @@ const PAGE_META = {
     defaultInput: DEFAULT_OPTIMIZATION,
     referenceImages: [carlingOptiRef, carlingOptiRef2],
   },
-};
-
-const downloadJson = (data, filename) => {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 };
 
 const numberize = (value) => {

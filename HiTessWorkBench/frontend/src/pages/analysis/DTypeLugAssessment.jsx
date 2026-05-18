@@ -15,6 +15,7 @@ import dTypeLugRef1 from '../../assets/images/D_typeLug1.png';
 import dTypeLugRef2 from '../../assets/images/D_typeLug2.png';
 import dTypeLugRef3 from '../../assets/images/D_typeLug3.png';
 import PageBanner from '../../components/ui/PageBanner';
+import { downloadJson } from '../../utils/fileHelper';
 
 const DEFAULT_INPUT = {
   load: { force_N: '1000000' },
@@ -53,16 +54,6 @@ const GEOMETRY_GROUPS = [
   { title: 'Plate / Radius', fields: [['t1', 'T1'], ['t2', 'T2'], ['t3', 'T3'], ['r1', 'R1'], ['r2', 'R2'], ['pin_radius', 'Pin R']] },
   { title: 'Diameter / Weld', fields: [['d1', 'D1'], ['d2', 'D2'], ['d3', 'D3'], ['w1', 'W1'], ['w2', 'W2'], ['w1_prime', "W1'"], ['w2_prime', "W2'"]] },
 ];
-
-const downloadJson = (data, filename) => {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-};
 
 const toNumberPayload = (inputs) => ({
   load: Object.fromEntries(Object.entries(inputs.load).map(([k, v]) => [k, Number(v)])),
