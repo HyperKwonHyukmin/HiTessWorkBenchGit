@@ -1,8 +1,12 @@
 """HiTESS WorkBench 서버 관리 GUI."""
+import json
 import subprocess
 import threading
+import time
 import sys
 import os
+import urllib.request
+import urllib.error
 import tkinter as tk
 from tkinter import scrolledtext
 from datetime import datetime
@@ -23,6 +27,8 @@ elif _venv_outer.exists():
 else:
     PYTHON = sys.executable
     PIP    = str(Path(sys.executable).parent / "pip.exe")
+
+LATEST_CLIENT_DIR = Path(os.environ.get("LATEST_CLIENT_DIR", str(BASE_DIR / "LastestVersionProgram")))
 
 SERVER_CMD = [PYTHON, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9091"]
 
@@ -280,29 +286,123 @@ class ServerManagerApp:
         self.root.after(0, self._log, "업데이트를 시작합니다.", "info")
 
         # 1. 서버 중지
-        self.root.after(0, self._log, "[1/3] 서버 중지 중...", "info")
+        self.root.after(0, self._log, "[1/4] 서버 중지 중...", "info")
         self.root.after(0, self._stop_server)
 
-        # 2. git pull
-        self.root.after(0, self._log, "[2/3] git pull origin main", "info")
-        ok = self._run_cmd(["git", "pull", "origin", "main"], cwd=str(BASE_DIR.parent))
+        # 2. git pull (Before/After 해시 기록)
+        self.root.after(0, self._log, "[2/4] git pull origin main", "info")
+        before_hash = self._get_git_hash()
+        if before_hash:
+            self.root.after(0, self._log, f"  Before: {before_hash}", "dim")
+
+        ok, pull_lines = self._run_cmd_capture(["git", "pull", "origin", "main"], cwd=str(BASE_DIR.parent))
         if not ok:
-            self.root.after(0, self._log, "git pull 실패. 업데이트를 중단합니다.", "error")
+            self.root.after(0, self._log, "git pull 실패. Update aborted.", "error")
+            for line in pull_lines[-5:]:
+                self.root.after(0, self._log, f"  {line}", "error")
             self._finish_update()
             return
 
-        # 3. pip install
-        self.root.after(0, self._log, "[3/3] pip install -r requirements.txt", "info")
-        self._run_cmd([PIP, "install", "-r", "requirements.txt"], cwd=str(BASE_DIR))
+        after_hash = self._get_git_hash()
+        if after_hash:
+            self.root.after(0, self._log, f"  After:  {after_hash}", "dim")
 
-        # 4. 서버 재시작
-        self.root.after(0, self._log, "서버를 재시작합니다.", "success")
+        # 3. requirements.txt 변경 시만 pip install
+        self.root.after(0, self._log, "[3/4] 의존성 변경 확인...", "info")
+        if self._requirements_changed():
+            self.root.after(0, self._log, "  requirements.txt 변경 감지 → pip install 실행", "warning")
+            self._run_cmd([PIP, "install", "-r", "requirements.txt"], cwd=str(BASE_DIR), tag="info")
+        else:
+            self.root.after(0, self._log, "  의존성 변경 없음 — pip install 건너뜀", "dim")
+
+        # 4. 서버 재시작 + 헬스 체크
+        self.root.after(0, self._log, "[4/4] 서버를 재시작합니다.", "success")
         self.root.after(0, self._start_server)
+
+        time.sleep(5)
+        self._health_check_after_update()
+        self._show_latest_exe()
+
         self.root.after(0, self._log, "업데이트가 완료되었습니다.", "success")
         self.root.after(0, self._log, "=" * 50, "dim")
         self._finish_update()
 
-    def _run_cmd(self, cmd: list, cwd: str) -> bool:
+    def _get_git_hash(self) -> str:
+        """현재 git HEAD short hash 반환. 실패 시 빈 문자열."""
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=str(BASE_DIR.parent),
+                capture_output=True, text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            return result.stdout.strip() if result.returncode == 0 else ""
+        except Exception:
+            return ""
+
+    def _run_cmd_capture(self, cmd: list, cwd: str) -> tuple:
+        """명령 실행. 출력 로그 표시 + (성공여부, 출력줄 목록) 반환."""
+        lines = []
+        try:
+            proc = subprocess.Popen(
+                cmd, cwd=cwd,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace",
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            for line in proc.stdout:
+                line = line.rstrip()
+                if line:
+                    lines.append(line)
+                    self.root.after(0, self._log, f"  {line}", "dim")
+            proc.wait()
+            return proc.returncode == 0, lines
+        except Exception as e:
+            msg = f"오류: {e}"
+            self.root.after(0, self._log, f"  {msg}", "error")
+            return False, [msg]
+
+    def _requirements_changed(self) -> bool:
+        """git pull 전후로 requirements.txt 변경 여부 확인. 확인 불가 시 True."""
+        try:
+            result = subprocess.run(
+                ["git", "diff", "HEAD@{1}", "HEAD", "--", "requirements.txt"],
+                cwd=str(BASE_DIR.parent),
+                capture_output=True, text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            return bool(result.stdout.strip())
+        except Exception:
+            return True
+
+    def _health_check_after_update(self):
+        """서버 재시작 후 /api/version 응답 확인."""
+        try:
+            req  = urllib.request.urlopen("http://127.0.0.1:9091/api/version", timeout=5)
+            data = json.loads(req.read().decode())
+            ver  = data.get("version", "?")
+            self.root.after(0, self._log, f"  Server: v{ver}", "success")
+        except Exception as e:
+            self.root.after(0, self._log, f"  헬스 체크 실패: {e}", "warning")
+
+    def _show_latest_exe(self):
+        """LastestVersionProgram 의 최신 exe 파일명·수정 시간 표시."""
+        try:
+            exes = sorted(
+                LATEST_CLIENT_DIR.glob("*.exe"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True
+            )
+            if exes:
+                latest = exes[0]
+                mtime  = datetime.fromtimestamp(latest.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                self.root.after(0, self._log, f"  배포 exe: {latest.name}  ({mtime})", "dim")
+            else:
+                self.root.after(0, self._log, f"  배포 exe 없음: {LATEST_CLIENT_DIR}", "warning")
+        except Exception as e:
+            self.root.after(0, self._log, f"  exe 확인 실패: {e}", "warning")
+
+    def _run_cmd(self, cmd: list, cwd: str, tag: str = "dim") -> bool:
         """명령 실행 후 출력을 로그에 표시. 성공 여부 반환."""
         try:
             proc = subprocess.Popen(
@@ -314,7 +414,7 @@ class ServerManagerApp:
             for line in proc.stdout:
                 line = line.rstrip()
                 if line:
-                    self.root.after(0, self._log, f"  {line}", "dim")
+                    self.root.after(0, self._log, f"  {line}", tag)
             proc.wait()
             return proc.returncode == 0
         except Exception as e:
