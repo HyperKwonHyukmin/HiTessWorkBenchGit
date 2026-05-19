@@ -24,6 +24,8 @@ const VALID_INVOKE_CHANNELS  = [
   'get-intro-page-html',
   'download-client',
   'start-self-update',
+  'preferences:get',
+  'preferences:set',
   // viewer 라이프사이클
   'viewer:check-installed',
   'viewer:install',

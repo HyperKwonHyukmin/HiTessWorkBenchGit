@@ -149,6 +149,74 @@ ipcMain.handle("download-client", (event, url) => {
   });
 });
 
+function getPreferencesPath() {
+  return path.join(app.getPath("userData"), "preferences.json");
+}
+
+function readPreferences() {
+  const preferencesPath = getPreferencesPath();
+  try {
+    if (!fs.existsSync(preferencesPath)) return {};
+    const raw = fs.readFileSync(preferencesPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (e) {
+    console.warn("[preferences] read failed:", e?.message || e);
+    return {};
+  }
+}
+
+function writePreferences(nextPreferences) {
+  const preferencesPath = getPreferencesPath();
+  const dir = path.dirname(preferencesPath);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmpPath = `${preferencesPath}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(nextPreferences, null, 2), "utf-8");
+  fs.renameSync(tmpPath, preferencesPath);
+}
+
+function normalizeFavorites(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+ipcMain.handle("preferences:get", () => {
+  const preferences = readPreferences();
+  return {
+    ok: true,
+    preferences,
+    path: getPreferencesPath(),
+  };
+});
+
+ipcMain.handle("preferences:set", (_event, payload) => {
+  try {
+    const current = readPreferences();
+    const next = { ...current };
+
+    if (payload && Object.prototype.hasOwnProperty.call(payload, "favorites")) {
+      next.favorites = normalizeFavorites(payload.favorites);
+      next.updatedAt = new Date().toISOString();
+    }
+
+    writePreferences(next);
+    return {
+      ok: true,
+      preferences: next,
+      path: getPreferencesPath(),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e?.message || String(e),
+      path: getPreferencesPath(),
+    };
+  }
+});
+
 ipcMain.handle("start-self-update", (event, payload) => {
   return new Promise((resolve, reject) => {
     // 호환성: 구버전은 url 문자열 하나만 넘김. 신버전은 { url, headers } 객체.

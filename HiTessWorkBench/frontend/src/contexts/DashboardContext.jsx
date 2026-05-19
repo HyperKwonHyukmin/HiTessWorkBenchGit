@@ -36,17 +36,76 @@ export const ANALYSIS_DATA = [
 ];
 
 const DashboardContext = createContext();
+const FAVORITES_KEY = 'favorites';
+
+function readLocalFavorites() {
+  try {
+    const stored = localStorage.getItem(FAVORITES_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed) ? parsed.filter(item => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalFavorites(next) {
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+  } catch {
+    // localStorage 접근이 막힌 환경에서는 Electron preferences 저장만 사용합니다.
+  }
+}
+
+async function writeElectronFavorites(next) {
+  if (!window.electron?.invoke) return;
+  try {
+    await window.electron.invoke('preferences:set', { favorites: next });
+  } catch (e) {
+    console.warn('[preferences] favorites save failed:', e);
+  }
+}
 
 export function DashboardProvider({ children }) {
   const { setCurrentMenu, currentMenu } = useNavigation();
-  const [favorites, setFavorites] = useState(() => {
-    try {
-      const stored = localStorage.getItem('favorites');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [favorites, setFavorites] = useState(() => readLocalFavorites());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFavorites = async () => {
+      if (!window.electron?.invoke) return;
+
+      try {
+        const result = await window.electron.invoke('preferences:get');
+        if (cancelled || !result?.ok) return;
+
+        const preferences = result.preferences || {};
+        const hasStoredFavorites = Object.prototype.hasOwnProperty.call(preferences, 'favorites');
+        const electronFavorites = Array.isArray(preferences.favorites)
+          ? preferences.favorites.filter(item => typeof item === 'string')
+          : [];
+
+        if (hasStoredFavorites) {
+          setFavorites(electronFavorites);
+          writeLocalFavorites(electronFavorites);
+          return;
+        }
+
+        const localFavorites = readLocalFavorites();
+        if (localFavorites.length > 0) {
+          setFavorites(localFavorites);
+          await writeElectronFavorites(localFavorites);
+        }
+      } catch (e) {
+        console.warn('[preferences] favorites load failed:', e);
+      }
+    };
+
+    loadFavorites();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // =========================================================
   // [핵심 추가] Truss Assessment 페이지의 상태를 전역으로 보존
@@ -124,7 +183,8 @@ export function DashboardProvider({ children }) {
   const toggleFavorite = (title) => {
     setFavorites(prev => {
       const next = prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title];
-      localStorage.setItem('favorites', JSON.stringify(next));
+      writeLocalFavorites(next);
+      writeElectronFavorites(next);
       return next;
     });
   };
