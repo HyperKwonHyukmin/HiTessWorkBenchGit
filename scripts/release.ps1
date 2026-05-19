@@ -126,19 +126,50 @@ if ($Dry) {
 # ── Step 4: Frontend build ─────────────────────────────────────────────────
 Step "4/8" "Frontend build$(if ($SkipBuild) { ' (건너뜀)' })"
 $frontendDir = Join-Path $ROOT "HiTessWorkBench\frontend"
+$configPath  = Join-Path $frontendDir "src\config.js"
+$DEV_URL     = "http://10.133.122.70:9091"
+$SRV_URL     = "http://10.14.42.145:9091"
 if ($SkipBuild) {
     $indexHtml = Join-Path $frontendDir "dist\index.html"
     if (-not (Test-Path $indexHtml)) { ERR "dist/index.html 없음. -SkipBuild 없이 재실행하세요."; exit 1 }
     OK "기존 빌드 사용"
 } elseif ($Dry) {
     DRY "cd HiTessWorkBench\frontend && npm run build"
+    $configContent = Get-Content $configPath -Raw
+    if ($configContent -match "(?m)^const DEFAULT_API_BASE_URL = `"$([regex]::Escape($DEV_URL))`"") {
+        DRY "config.js: 개발 PC URL → 서버 PC URL 전환 후 build → 빌드 완료 후 복원"
+    } else {
+        INFO "config.js: 서버 PC URL 이미 활성 — 변경 없음"
+    }
 } else {
     if (Confirm-Step "npm run build 를 실행할까요?") {
+        # config.js URL 자동 전환 (개발 PC → 서버 PC)
+        $configOriginal = Get-Content $configPath -Raw
+        $configModified = $false
+        if ($configOriginal -match "(?m)^const DEFAULT_API_BASE_URL = `"$([regex]::Escape($DEV_URL))`"") {
+            INFO "config.js: 개발 PC URL 감지 → 서버 PC URL 로 자동 전환"
+            $patched = $configOriginal `
+                -replace "(?m)^const DEFAULT_API_BASE_URL = `"$([regex]::Escape($DEV_URL))`"", "// const DEFAULT_API_BASE_URL = `"$DEV_URL`"" `
+                -replace "(?m)^// const DEFAULT_API_BASE_URL = `"$([regex]::Escape($SRV_URL))`"", "const DEFAULT_API_BASE_URL = `"$SRV_URL`""
+            [System.IO.File]::WriteAllText($configPath, $patched, [System.Text.UTF8Encoding]::new($false))
+            $configModified = $true
+            OK "서버 PC URL 활성화: $SRV_URL"
+        } else {
+            OK "config.js: 서버 PC URL 이미 활성"
+        }
+
         $prevLoc = Get-Location
         Set-Location $frontendDir
         npm run build
         $buildOk = ($LASTEXITCODE -eq 0)
         Set-Location $prevLoc
+
+        # 빌드 성공/실패 무관하게 config.js 원래 상태로 복원
+        if ($configModified) {
+            [System.IO.File]::WriteAllText($configPath, $configOriginal, [System.Text.UTF8Encoding]::new($false))
+            INFO "config.js: 개발 PC URL 복원"
+        }
+
         if (-not $buildOk) { ERR "Frontend build 실패"; exit 1 }
         OK "Frontend build 완료"
     } else {
