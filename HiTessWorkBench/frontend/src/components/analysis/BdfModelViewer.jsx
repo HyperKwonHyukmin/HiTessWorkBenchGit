@@ -405,9 +405,11 @@ export default function BdfModelViewer({ modelData, cogPosition = null, showLege
         const labelScale = (pipeMode ? maxDim * 0.022 : maxDim * 0.018);
         validBcs.forEach(s => {
           const pos = nodesDict[s.nodeId];
-          // 컴팩트 표기: DOF 만 노출 (예: "123456", 강제변위 있으면 "123456 u1=24")
+          // 컴팩트 표기: DOF (HP-SCR pipeMode 에서는 NODE ID 도 함께)
           const enforced = s.valueEntries.length > 0 ? ` ${s.valueEntries[0]}` : '';
-          const text = `${s.dofs}${enforced}`;
+          const text = pipeMode
+            ? `ID = ${s.nodeId}  ${s.dofs}${enforced}`
+            : `${s.dofs}${enforced}`;
           const borderCol = s.isFull ? '#44ff88aa' : '#ffb040aa';
           const sprite = makeTextSprite(text, {
             borderColor: borderCol,

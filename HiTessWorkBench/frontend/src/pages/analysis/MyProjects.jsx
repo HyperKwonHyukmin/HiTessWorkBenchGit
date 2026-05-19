@@ -11,6 +11,7 @@ import {
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
 import AssessmentResultViewerModal from '../../components/modals/AssessmentResultViewerModal';
+import HpScrViewerModal from '../../components/modals/HpScrViewerModal';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import PageHeader from '../../components/ui/PageHeader';
@@ -138,10 +139,13 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
 
   const isAssessment   = project?.program_name === 'Truss Assessment';
   const isModelBuilder = project?.program_name === 'HiTessModelBuilder';
+  // HP-SCR PSA / POR — XLSX 만 노출 (BDF/JSON 다운로드 숨김), 3D 시각화는 배관 전용 뷰어로
+  const isHpScr        = typeof project?.program_name === 'string' && project.program_name.startsWith('HP-SCR');
 
   // result_info 필터링
   const getResultLabel = (key) => {
     if (key === 'bdf' || key === 'bdf_path') return 'BDF Model';
+    if (key === 'XLSX_Report') return 'XLSX Report';
     return `${key.replace(/_/g, ' ')} Result`;
   };
   const filteredResultEntries = project?.result_info
@@ -149,6 +153,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
         if (key === 'CSV_Error' || key.startsWith('JSON_')) return false;
         if (isAssessment && key.startsWith('Excel_')) return false;
         if (isModelBuilder) return key === 'bdf_path';
+        if (isHpScr) return key === 'XLSX_Report';
         return true;
       })
     : [];
@@ -265,8 +270,8 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
             </div>
           ) : (
             <div className="space-y-2">
-              {/* input_info: Truss Assessment / Mast Post Assessment는 숨김 */}
-              {project.input_info && !isAssessment && project.program_name !== "Mast Post Assessment" &&
+              {/* input_info: Truss Assessment / Mast Post Assessment / HP-SCR 은 숨김 */}
+              {project.input_info && !isAssessment && !isHpScr && project.program_name !== "Mast Post Assessment" &&
                 Object.entries(project.input_info).map(([key, path]) => {
                   if (typeof path !== 'string') return null;
                   const label = isModelBuilder
@@ -794,9 +799,16 @@ export default function MyProjects() {
         />
       )}
 
-      {/* 3D BDF Viewer Modal (모델 형상만) — 비-Truss Assessment 프로젝트용 */}
+      {/* 3D BDF Viewer Modal (모델 형상만) — 비-Truss Assessment / 비-HP-SCR 프로젝트용 */}
       <BdfViewerModal
-        isOpen={is3DViewerOpen}
+        isOpen={is3DViewerOpen && !(selectedProject?.program_name?.startsWith('HP-SCR'))}
+        project={selectedProject}
+        onClose={() => setIs3DViewerOpen(false)}
+      />
+
+      {/* HP-SCR 배관해석 전용 3D Viewer (BdfModelViewer + pipeMode + JSON_ModelInfo) */}
+      <HpScrViewerModal
+        isOpen={is3DViewerOpen && !!(selectedProject?.program_name?.startsWith('HP-SCR'))}
         project={selectedProject}
         onClose={() => setIs3DViewerOpen(false)}
       />

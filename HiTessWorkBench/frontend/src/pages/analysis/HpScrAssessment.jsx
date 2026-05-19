@@ -17,12 +17,17 @@ import SolverCredit from '../../components/ui/SolverCredit';
 import BdfModelViewer from '../../components/analysis/BdfModelViewer';
 import PageBanner from '../../components/ui/PageBanner';
 import { buildFormData } from '../../utils/fileHelper';
+import {
+  parseSpcCardsFromBdf,
+  parseCbushFromBdf,
+  parseForcesFromBdf,
+} from '../../utils/bdfPipeParsers';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
 const ANALYSIS_MODES = [
+  { value: 'POR', label: 'POR', desc: '열변형 해석 (Exp.Joint 발주용)' },
   { value: 'PSA', label: 'PSA', desc: '배관응력 해석' },
-  { value: 'POR', label: 'POR', desc: '열변형 해석' },
 ];
 
 const MODE_BUTTON_LABEL = {
@@ -30,126 +35,13 @@ const MODE_BUTTON_LABEL = {
   POR: '열변형 해석',
 };
 
-/**
- * BDF 토큰화 — 콤마/공백을 모두 구분자로, 주석/빈줄 제외.
- */
-function tokenizeBdfLines(bdfText) {
-  if (!bdfText) return [];
-  return bdfText.split(/\r?\n/)
-    .map(l => l.trim())
-    .filter(l => l && !l.startsWith('$'))
-    .map(l => l.split(/[\s,]+/).filter(Boolean));
-}
-
-/**
- * BDF 텍스트에서 SPC / SPC* / SPC1 / SPC1* 카드를 파싱한다.
- * 반환: [{ nodeId, dof, value }, ...]
- */
-function parseSpcCardsFromBdf(bdfText) {
-  const out = [];
-  for (const tokens of tokenizeBdfLines(bdfText)) {
-    const head = tokens[0].toUpperCase();
-    if (head === 'SPC' || head === 'SPC*') {
-      if (tokens.length < 4) continue;
-      const gid = parseInt(tokens[2], 10);
-      const dof = String(tokens[3] ?? '').replace(/[^0-9]/g, '');
-      const val = parseFloat(tokens[4] ?? '0');
-      if (!isFinite(gid) || !dof) continue;
-      out.push({ nodeId: gid, dof, value: isFinite(val) ? val : 0 });
-    } else if (head === 'SPC1' || head === 'SPC1*') {
-      if (tokens.length < 3) continue;
-      const dof = String(tokens[2] ?? '').replace(/[^0-9]/g, '');
-      if (!dof) continue;
-      for (let i = 3; i < tokens.length; i++) {
-        const t = tokens[i].toUpperCase();
-        if (t === 'THRU') break;
-        const gid = parseInt(tokens[i], 10);
-        if (isFinite(gid)) out.push({ nodeId: gid, dof, value: 0 });
-      }
-    }
-  }
-  return out;
-}
-
-/**
- * CBUSH / CBUSH* 카드 파싱.
- * 반환: [{ id, nodeIds:[GA,GB], cardType:'CBUSH' }, ...] — modelData.elements 와 호환
- * 형식: CBUSH EID PID GA GB ...
- */
-function parseCbushFromBdf(bdfText) {
-  const out = [];
-  for (const tokens of tokenizeBdfLines(bdfText)) {
-    const head = tokens[0].toUpperCase();
-    if (head !== 'CBUSH' && head !== 'CBUSH*') continue;
-    if (tokens.length < 5) continue;
-    const eid = parseInt(tokens[1], 10);
-    const ga  = parseInt(tokens[3], 10);
-    const gb  = parseInt(tokens[4], 10);
-    if (!isFinite(ga) || !isFinite(gb)) continue;
-    out.push({ id: isFinite(eid) ? eid : undefined, nodeIds: [ga, gb], cardType: 'CBUSH' });
-  }
-  return out;
-}
-
-/**
- * FORCE 카드 파싱 — 노드별 벡터를 SID 무관하게 누적합산.
- * 형식: FORCE SID G CID F N1 N2 N3 → 결과 = F * (N1, N2, N3)
- * 반환: [{ nodeId, fx, fy, fz, mag }, ...]
- */
-function parseForcesFromBdf(bdfText) {
-  const acc = new Map(); // nodeId -> {fx,fy,fz}
-  for (const tokens of tokenizeBdfLines(bdfText)) {
-    if (tokens[0].toUpperCase() !== 'FORCE') continue;
-    if (tokens.length < 8) continue;
-    const gid = parseInt(tokens[2], 10);
-    const f   = parseFloat(tokens[4]);
-    const n1  = parseFloat(tokens[5]);
-    const n2  = parseFloat(tokens[6]);
-    const n3  = parseFloat(tokens[7]);
-    if (!isFinite(gid) || !isFinite(f)) continue;
-    const fx = f * (isFinite(n1) ? n1 : 0);
-    const fy = f * (isFinite(n2) ? n2 : 0);
-    const fz = f * (isFinite(n3) ? n3 : 0);
-    const cur = acc.get(gid) || { fx: 0, fy: 0, fz: 0 };
-    cur.fx += fx; cur.fy += fy; cur.fz += fz;
-    acc.set(gid, cur);
-  }
-  const out = [];
-  acc.forEach((v, nodeId) => {
-    const mag = Math.sqrt(v.fx * v.fx + v.fy * v.fy + v.fz * v.fz);
-    if (mag > 0) out.push({ nodeId, fx: v.fx, fy: v.fy, fz: v.fz, mag });
-  });
-  return out;
-}
-
-/**
- * TEMP 카드 파싱 — 노드별 온도값. (TEMPD/TEMPRB 등은 미지원)
- * 형식: TEMP SID G T (한 카드에 G,T 쌍 여러 개 가능: G1 T1 G2 T2 G3 T3)
- * 반환: [{ nodeId, T }, ...] (동일 노드 중복 시 마지막 값 우선)
- */
-function parseTempsFromBdf(bdfText) {
-  const map = new Map();
-  for (const tokens of tokenizeBdfLines(bdfText)) {
-    if (tokens[0].toUpperCase() !== 'TEMP') continue;
-    // SID는 토큰[1], 이후 (G, T) 쌍 반복
-    for (let i = 2; i + 1 < tokens.length; i += 2) {
-      const gid = parseInt(tokens[i], 10);
-      const t   = parseFloat(tokens[i + 1]);
-      if (isFinite(gid) && isFinite(t)) map.set(gid, t);
-    }
-  }
-  const out = [];
-  map.forEach((T, nodeId) => out.push({ nodeId, T }));
-  return out;
-}
-
 export default function HpScrAssessment() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
   const { startGlobalJob } = useDashboard();
 
   const [bdfFile, setBdfFile] = useState(null);
-  const [analysisMode, setAnalysisMode] = useState('PSA');
+  const [analysisMode, setAnalysisMode] = useState('POR');
   const [modelData, setModelData] = useState(null);
   const [reportPath, setReportPath] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -287,7 +179,7 @@ export default function HpScrAssessment() {
   const handleReset = () => {
     if (isRunning) return;
     setBdfFile(null);
-    setAnalysisMode('PSA');
+    setAnalysisMode('POR');
     setProgress(0);
     setStatusMessage('');
     setLogs([]);
