@@ -64,7 +64,8 @@ Write-Host "  ╚═════════════════════
 
 # ── Step 1: Git 상태 ─────────────────────────────────────────────────────
 Step "1/8" "Git 상태 점검"
-$gitDirty = git -C $ROOT status --porcelain 2>&1
+# ?? 로 시작하는 untracked 파일은 제외 (.gitignore 대상 포함되므로 무시)
+$gitDirty = git -C $ROOT status --porcelain 2>&1 | Where-Object { $_ -notmatch "^\?\?" }
 if ($gitDirty) {
     WARN "커밋되지 않은 변경사항 있음:"
     $gitDirty | ForEach-Object { INFO $_ }
