@@ -48,15 +48,15 @@ const FileRetentionBadge = ({ project }) => {
   const expired = fileStatusOf(project) === 'expired';
   if (expired) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border bg-slate-100 text-slate-500 border-slate-200">
-        <FileX size={12} />
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border bg-slate-100 text-slate-500 border-slate-200 whitespace-nowrap">
+        <FileX size={12} className="shrink-0" />
         파일 만료
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border bg-blue-50 text-blue-700 border-blue-200">
-      <FileOutput size={12} />
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border bg-blue-50 text-blue-700 border-blue-200 whitespace-nowrap">
+      <FileOutput size={12} className="shrink-0" />
       파일 보관 중
     </span>
   );
@@ -241,10 +241,11 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
               <span className="text-xs text-slate-400 block mb-1">Execution Status</span>
               <StatusBadge status={project.status} />
             </div>
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-400 block mb-1">Module</span>
-              <div className="font-bold text-slate-700 flex items-center gap-2">
-                <Box size={16} className="text-blue-500"/> {project.program_name}
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 min-w-0">
+              <span className="text-xs text-slate-400 block mb-1">App</span>
+              <div className="font-bold text-slate-700 flex items-center gap-2 min-w-0">
+                <Box size={16} className="text-blue-500 shrink-0"/>
+                <span className="truncate" title={project.program_name}>{project.program_name}</span>
               </div>
             </div>
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -623,7 +624,7 @@ export default function MyProjects() {
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
           <input
             type="text"
-            placeholder="Search by Project or Module..."
+            placeholder="Search by Project or App..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-full shadow-sm transition-all"
@@ -634,7 +635,7 @@ export default function MyProjects() {
           onChange={(e) => setProgramFilter(e.target.value)}
           className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
         >
-          {PROGRAM_FILTERS.map(f => <option key={f} value={f}>{f === 'All' ? 'All Modules' : f}</option>)}
+          {PROGRAM_FILTERS.map(f => <option key={f} value={f}>{f === 'All' ? 'All Apps' : f}</option>)}
         </select>
         <select
           value={statusFilter}
@@ -671,7 +672,7 @@ export default function MyProjects() {
               <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
                 <th className="py-4 px-6 font-semibold w-20 text-center">No.</th>
                 <th className="py-4 px-6 font-semibold">Project Name</th>
-                <th className="py-4 px-6 font-semibold">Module</th>
+                <th className="py-4 px-6 font-semibold">App</th>
                 <th className="py-4 px-6 font-semibold">Status</th>
                 <th className="py-4 px-6 font-semibold">Files</th>
                 <th className="py-4 px-6 font-semibold text-right">Date</th>
@@ -700,7 +701,7 @@ export default function MyProjects() {
                         <p className="font-bold text-slate-700 text-sm group-hover:text-blue-700 transition-colors">{project.project_name || 'Unnamed Project'}</p>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-xs font-medium text-slate-600"><span className="bg-slate-100 px-2 py-1 rounded border border-slate-200">{project.program_name}</span></td>
+                    <td className="py-4 px-6 text-xs font-medium text-slate-600"><span className="inline-block bg-slate-100 px-2 py-1 rounded border border-slate-200 whitespace-nowrap max-w-[220px] truncate align-middle" title={project.program_name}>{project.program_name}</span></td>
                     <td className="py-4 px-6">
                       <StatusBadge status={project.status} />
                     </td>
