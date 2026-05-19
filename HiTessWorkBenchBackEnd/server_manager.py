@@ -366,11 +366,13 @@ class ServerManagerApp:
         """git pull 전후로 requirements.txt 변경 여부 확인. 확인 불가 시 True."""
         try:
             result = subprocess.run(
-                ["git", "diff", "HEAD@{1}", "HEAD", "--", "requirements.txt"],
+                ["git", "diff", "HEAD@{1}", "HEAD", "--", "HiTessWorkBenchBackEnd/requirements.txt"],
                 cwd=str(BASE_DIR.parent),
                 capture_output=True, text=True,
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
+            if result.returncode != 0:
+                return True
             return bool(result.stdout.strip())
         except Exception:
             return True

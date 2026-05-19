@@ -211,7 +211,8 @@ if ($Dry) {
 # ── Step 8: Git 태그 ──────────────────────────────────────────────────────
 Step "8/8" "Git 태그"
 $tagName   = "v$version"
-$tagExists = (git -C $ROOT tag -l $tagName 2>$null).Trim() -ne ""
+$tagOutput = git -C $ROOT tag -l $tagName 2>$null
+$tagExists = -not [string]::IsNullOrWhiteSpace(($tagOutput | Out-String))
 if ($tagExists) {
     INFO "태그 $tagName 이미 존재 — 건너뜀"
 } elseif ($Dry) {
@@ -235,8 +236,9 @@ Write-Host "  ╠═════════════════════
 Write-Host "  ║  버전: v$version   소요시간: ${elapsed}s" -ForegroundColor Green
 Write-Host "  ╠═══════════════════════════════════════════════════════════╣" -ForegroundColor Green
 Write-Host "  ║  다음 단계:                                                ║" -ForegroundColor Green
-Write-Host "  ║   1. 서버 PC 에서 server_manager.py 실행                   ║" -ForegroundColor Green
-Write-Host "  ║   2. Update 버튼 클릭 → 서버 자동 재시작                   ║" -ForegroundColor Green
-Write-Host "  ║   3. 클라이언트에서 업데이트 확인 → 새 exe 배포             ║" -ForegroundColor Green
+Write-Host "  ║   1. LastestVersionProgram 의 exe 를 서버 PC 로 수동 복사  ║" -ForegroundColor Green
+Write-Host "  ║   2. 서버 PC 에서 server_manager.py 실행                   ║" -ForegroundColor Green
+Write-Host "  ║   3. Update 버튼 클릭 → 서버 자동 재시작                   ║" -ForegroundColor Green
+Write-Host "  ║   4. 클라이언트에서 업데이트 확인 → 새 exe 배포             ║" -ForegroundColor Green
 Write-Host "  ╚═══════════════════════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""

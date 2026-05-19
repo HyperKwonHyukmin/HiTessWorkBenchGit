@@ -46,38 +46,42 @@ C:\KHM\HiTessWorkbench\HiTessWorkBenchGit\
 
 클라이언트(exe)와 서버의 버전이 일치하지 않으면 로그인 화면에서 "업데이트 필요" 경고가 표시되고 로그인이 차단됩니다.
 
-### 버전이 관리되는 파일 2곳
+### 버전이 관리되는 파일 4곳
 
 | 파일 | 위치 | 역할 |
 |------|------|------|
+| `HiTessWorkBench/package.json` | `"version": "0.0.1"` | Electron 패키징 산출물 버전 |
 | `HiTessWorkBench/frontend/package.json` | `"version": "0.0.1"` | 클라이언트(exe) 버전 |
+| `HiTessWorkBench/electron/package.json` | `"version": "0.0.1"` | Electron 서브패키지 버전 |
 | `HiTessWorkBenchBackEnd/app/routers/system.py` | `SERVER_VERSION = "0.0.1"` | 서버 버전 |
 
-> **반드시 두 값을 동일하게 맞춰야 합니다.**
+> **반드시 네 값을 동일하게 맞춰야 합니다.**
+> 개발 PC에서는 `pwsh scripts/check-versions.ps1 -SetVersion X.Y.Z`로 일괄 갱신할 수 있습니다.
 
 ### 버전 업데이트 전체 순서
 
 ```
 Step 1. [개발 PC] 코드 수정 완료 후:
-        frontend/package.json → "version": "신버전"
-        HiTessWorkBenchBackEnd/app/routers/system.py → SERVER_VERSION = "신버전"
+        pwsh scripts/check-versions.ps1 -SetVersion 신버전
+        pwsh scripts/check-versions.ps1
 
 Step 2. [개발 PC] GitHub에 업로드:
         git add -A
         git commit -m "버전 x.x.x 업데이트"
         git push origin main
 
-Step 3. [서버 PC] server_manager.py GUI에서 "Update" 버튼 클릭
-        (서버 자동 재시작됨)
+Step 3. [개발 PC] 릴리즈 스크립트 실행:
+        pwsh scripts/release.ps1 -Yes
+        → 결과물:
+          HiTessWorkBench\dist_electron\HiTESS-WorkBench-v신버전.exe
+          HiTessWorkBenchBackEnd\LastestVersionProgram\HiTESS-WorkBench-v신버전.exe
 
-Step 4. [개발 PC] Electron exe 재빌드:
-        cd C:\Coding\WorkBench\HiTessWorkBench
-        npm run dist
-        → 결과물: dist_electron\HiTESS-WorkBench-v신버전.exe
-
-Step 5. [서버 PC] 새 exe를 LastestVersionProgram 폴더에 복사:
+Step 4. [서버 PC] 개발 PC에서 생성된 새 exe를 LastestVersionProgram 폴더에 수동 복사:
         C:\KHM\HiTessWorkbench\HiTessWorkBenchGit\HiTessWorkBenchBackEnd\LastestVersionProgram\
         (이전 버전 파일은 삭제하거나 남겨둬도 무방 — 가장 최근 수정된 파일이 자동 선택됨)
+
+Step 5. [서버 PC] server_manager.py GUI에서 "Update" 버튼 클릭
+        (서버 자동 재시작됨)
 
 Step 6. [사용자] 기존 exe 실행 → 버전 불일치 화면 → "최신 버전 다운로드" 클릭
         → 새 exe 다운로드 → 설치 후 사용

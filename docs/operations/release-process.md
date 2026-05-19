@@ -2,9 +2,10 @@
 
 ## 개요
 
-배포는 단일 Windows PC(개발자)에서 `scripts/release.ps1` 한 번으로 진행합니다.
-빌드 결과물(exe)은 자동으로 백엔드 배포 폴더(`LastestVersionProgram/`)에 복사되며,
-이후 서버 PC에서 `server_manager.py`의 Update 버튼을 클릭하면 서버가 갱신됩니다.
+배포는 개발 PC에서 `scripts/release.ps1`로 릴리즈 산출물을 만들고,
+생성된 exe를 개발 PC의 백엔드 배포 폴더(`HiTessWorkBenchBackEnd/LastestVersionProgram/`)에 모으는 방식으로 진행합니다.
+서버 PC의 `LastestVersionProgram/` 반영은 운영자가 수동 복사합니다.
+이후 서버 PC에서 `server_manager.py`의 Update 버튼을 클릭하면 서버 코드가 갱신됩니다.
 
 ---
 
@@ -84,7 +85,18 @@ pwsh scripts/release.ps1 -SkipBuild -Yes
 7. 배포 폴더 복사 (`LastestVersionProgram/`)
 8. Git 태그 생성 및 push
 
-### 3단계: 서버 업데이트
+### 3단계: 클라이언트 exe 서버 반영
+
+`release.ps1`은 개발 PC의 `HiTessWorkBenchBackEnd/LastestVersionProgram/`에 exe를 복사합니다.
+이 폴더는 Git에 포함되지 않으므로, 서버 PC의 아래 폴더로 새 exe를 수동 복사해야 합니다.
+
+```text
+<서버 repo>\HiTessWorkBenchBackEnd\LastestVersionProgram\
+```
+
+이전 exe는 남겨둬도 됩니다. `/api/download/client`는 수정 시간이 가장 최신인 exe를 제공합니다.
+
+### 4단계: 서버 업데이트
 
 서버 PC에서:
 
@@ -93,7 +105,7 @@ pwsh scripts/release.ps1 -SkipBuild -Yes
 3. 로그에서 `Before: <hash>` → `After: <hash>` 확인
 4. `Server: v1.x.x` 헬스 체크 메시지 확인
 
-### 4단계: 클라이언트 배포 확인
+### 5단계: 클라이언트 배포 확인
 
 클라이언트 앱에서 "새 버전 확인" → `LastestVersionProgram/`의 exe가 자동 제공됩니다.
 
@@ -104,7 +116,8 @@ pwsh scripts/release.ps1 -SkipBuild -Yes
 | 산출물 | 경로 |
 |--------|------|
 | Electron exe | `HiTessWorkBench/dist_electron/HiTESS-WorkBench-v{version}.exe` |
-| 배포 폴더 | `HiTessWorkBenchBackEnd/LastestVersionProgram/` |
+| 개발 PC 로컬 배포 폴더 | `HiTessWorkBenchBackEnd/LastestVersionProgram/` |
+| 서버 PC 배포 폴더 | `<서버 repo>/HiTessWorkBenchBackEnd/LastestVersionProgram/` |
 | 환경 변수 오버라이드 | `LATEST_CLIENT_DIR` |
 
 ---

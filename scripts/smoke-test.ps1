@@ -22,6 +22,7 @@ param(
     [switch]$WithServerCheck
 )
 
+$ErrorActionPreference = "Stop"
 $ROOT   = Split-Path $PSScriptRoot -Parent
 $FAIL   = $false
 $Results = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -93,7 +94,9 @@ $indexHtml   = Join-Path $frontendDir "dist\index.html"
 
 if ($SkipBuild) {
     Write-Host "  [3] Frontend dist 확인 (build 건너뜀)..." -ForegroundColor DarkGray
-    Add-Result "Frontend dist 존재" (Test-Path $indexHtml) (if (-not (Test-Path $indexHtml)) { "dist/index.html 없음" } else { "" })
+    $distExists = Test-Path $indexHtml
+    $detail = if (-not $distExists) { "dist/index.html 없음" } else { "" }
+    Add-Result "Frontend dist 존재" $distExists $detail
 } else {
     Write-Host "  [3] Frontend build (npm run build)..." -ForegroundColor DarkGray
     $prevLoc = Get-Location
@@ -102,7 +105,8 @@ if ($SkipBuild) {
     $buildOk  = ($LASTEXITCODE -eq 0)
     Set-Location $prevLoc
     $ok = $buildOk -and (Test-Path $indexHtml)
-    Add-Result "Frontend build" $ok (if (-not $ok) { "빌드 실패 또는 dist/index.html 없음" } else { "" })
+    $detail = if (-not $ok) { "빌드 실패 또는 dist/index.html 없음" } else { "" }
+    Add-Result "Frontend build" $ok $detail
 }
 
 # ── [4] exe 산출물 ───────────────────────────────────────────────────────
@@ -122,7 +126,9 @@ Write-Host "  [5] 버전 동기화..." -ForegroundColor DarkGray
 $checkScript = Join-Path $PSScriptRoot "check-versions.ps1"
 if (Test-Path $checkScript) {
     & pwsh -NonInteractive -File $checkScript 2>&1 | Out-Null
-    Add-Result "버전 4곳 동기화" ($LASTEXITCODE -eq 0) (if ($LASTEXITCODE -ne 0) { "check-versions.ps1 불일치" } else { "" })
+    $versionOk = ($LASTEXITCODE -eq 0)
+    $detail = if (-not $versionOk) { "check-versions.ps1 불일치" } else { "" }
+    Add-Result "버전 4곳 동기화" $versionOk $detail
 } else {
     Add-Result "버전 4곳 동기화" $false "check-versions.ps1 없음"
 }
@@ -156,7 +162,8 @@ if ($WithServerCheck) {
             $body   = $resp.Content | ConvertFrom-Json
             $srvVer = $body.version
             $match  = ($srvVer -eq $version)
-            Add-Result "GET /api/version" $match (if ($match) { "v$srvVer" } else { "서버=$srvVer vs system.py=$version" })
+            $detail = if ($match) { "v$srvVer" } else { "서버=$srvVer vs system.py=$version" }
+            Add-Result "GET /api/version" $match $detail
         } catch {
             Add-Result "GET /api/version" $false $_.Exception.Message
         }
