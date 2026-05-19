@@ -7,12 +7,13 @@ import { Dialog, Transition } from '@headlessui/react';
 import {
   Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Clock, Activity,
   UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
-  Download
+  Download, BarChart3, ChevronRight
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import UserStatisticsModal from '../../components/modals/UserStatisticsModal';
 import { useToast } from '../../contexts/ToastContext';
 
 const LOG_PAGE_SIZE = 100;
@@ -86,6 +87,7 @@ export default function UserManagement() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [confirmDeleteTarget, setConfirmDeleteTarget] = useState(null);
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   const [activityUser, setActivityUser] = useState(null);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityPage, setActivityPage] = useState(0);
@@ -317,7 +319,23 @@ export default function UserManagement() {
 
       {/* 2. 분포 통계 */}
       {users.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <div className="flex items-center gap-2">
+              <BarChart3 size={16} className="text-slate-500" />
+              <h3 className="text-sm font-extrabold text-slate-700 tracking-tight">조직 분포 통계</h3>
+              <span className="text-[11px] text-slate-400 font-medium">회사 · 부서 · 직급 상위 5개</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsStatsModalOpen(true)}
+              className="group inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-brand-blue bg-white border border-brand-blue/20 rounded-lg hover:bg-brand-blue hover:text-white hover:border-brand-blue shadow-sm transition-all"
+            >
+              자세히 보기
+              <ChevronRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+            </button>
+          </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
             { label: '회사별 분포',  icon: Building,  data: companyStats,    key: 'company'    },
             { label: '부서별 분포',  icon: Briefcase, data: departmentStats, key: 'department' },
@@ -350,6 +368,7 @@ export default function UserManagement() {
               </div>
             );
           })}
+        </div>
         </div>
       )}
 
@@ -790,6 +809,12 @@ export default function UserManagement() {
         title="사용자 삭제"
         message={`'${confirmDeleteTarget?.name}' 사용자를 시스템에서 완전히 삭제합니다. 이 작업은 되돌릴 수 없습니다.`}
         confirmLabel="삭제"
+      />
+
+      <UserStatisticsModal
+        isOpen={isStatsModalOpen}
+        onClose={() => setIsStatsModalOpen(false)}
+        users={users}
       />
     </div>
   );
