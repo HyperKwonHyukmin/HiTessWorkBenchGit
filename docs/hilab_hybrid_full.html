@@ -1,0 +1,356 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);font-size:13px}
+
+.shell{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden;background:var(--color-background-secondary)}
+.topbar{background:var(--color-background-primary);border-bottom:0.5px solid var(--color-border-tertiary);padding:9px 14px;display:flex;align-items:center;justify-content:space-between}
+.topbar-left{display:flex;align-items:center;gap:10px}
+.logo{font-weight:500;font-size:14px;color:var(--color-text-primary)}
+.case-name{font-size:11px;color:var(--color-text-tertiary);padding:2px 8px;background:var(--color-background-secondary);border-radius:4px;border:0.5px solid var(--color-border-tertiary)}
+.topbar-right{display:flex;align-items:center;gap:6px}
+
+/* entry selector */
+.entry-row{background:var(--color-background-primary);border-bottom:0.5px solid var(--color-border-tertiary);padding:8px 14px;display:flex;align-items:center;gap:8px}
+.entry-label{font-size:11px;color:var(--color-text-secondary);white-space:nowrap}
+.entry-btn{padding:4px 12px;border-radius:20px;border:0.5px solid var(--color-border-secondary);background:transparent;font-size:11px;color:var(--color-text-secondary);cursor:pointer;transition:all .15s;font-family:var(--font-sans)}
+.entry-btn.active{background:#E6F1FB;color:#185FA5;border-color:#185FA5}
+
+/* main layout */
+.body{display:grid;grid-template-columns:200px 1fr;min-height:400px}
+
+/* left panel */
+.left{background:var(--color-background-primary);border-right:0.5px solid var(--color-border-tertiary);display:flex;flex-direction:column}
+.left-header{padding:8px 12px;border-bottom:0.5px solid var(--color-border-tertiary);font-size:10px;font-weight:500;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center}
+.steps-list{flex:1;overflow-y:auto;padding:6px 0}
+
+.step-item{display:flex;align-items:stretch;padding:0 8px;gap:0;cursor:pointer;transition:background .1s;position:relative}
+.step-item:hover .step-card{border-color:var(--color-border-secondary)}
+.step-item.active .step-card{border-color:#185FA5;background:#F0F6FD}
+.step-item.done .step-dot-wrap .sdot{background:#27500A;border-color:#27500A}
+.step-item.running .step-dot-wrap .sdot{background:#185FA5;border-color:#185FA5}
+.step-item.error .step-dot-wrap .sdot{background:#A32D2D;border-color:#A32D2D}
+.step-item.skipped{opacity:.45}
+.step-item.disabled{opacity:.3;pointer-events:none}
+
+.step-dot-wrap{display:flex;flex-direction:column;align-items:center;width:22px;padding-top:10px;flex-shrink:0}
+.sdot{width:10px;height:10px;border-radius:50%;border:2px solid var(--color-border-secondary);background:var(--color-background-primary);flex-shrink:0;transition:all .3s}
+.sline{flex:1;width:1.5px;background:var(--color-border-tertiary);margin:2px 0}
+
+.step-card{flex:1;margin:4px 0 0;border-radius:6px;border:0.5px solid var(--color-border-tertiary);padding:7px 9px;background:var(--color-background-primary);transition:all .15s}
+.sc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:4px}
+.sc-title{font-size:12px;font-weight:500;color:var(--color-text-primary);line-height:1.3}
+.sc-status{font-size:9px;padding:1px 5px;border-radius:8px;white-space:nowrap;flex-shrink:0}
+.sc-sub{font-size:10px;color:var(--color-text-tertiary);margin-top:2px}
+
+.st-done{background:#EAF3DE;color:#3B6D11}
+.st-run{background:#E6F1FB;color:#185FA5}
+.st-wait{background:#F1EFE8;color:#888780}
+.st-err{background:#FCEBEB;color:#A32D2D}
+.st-skip{background:#F1EFE8;color:#B4B2A9}
+.st-opt{background:#FAEEDA;color:#633806;border:0.5px dashed #EF9F27}
+
+/* nav arrows on active step */
+.step-nav{display:flex;gap:3px;margin-top:5px}
+.snav-btn{background:transparent;border:0.5px solid var(--color-border-secondary);border-radius:4px;padding:1px 6px;font-size:10px;color:var(--color-text-secondary);cursor:pointer;font-family:var(--font-sans)}
+.snav-btn:hover{background:var(--color-background-secondary)}
+
+/* right panel */
+.right{padding:14px;overflow-y:auto}
+.r-title{font-size:14px;font-weight:500;color:var(--color-text-primary);margin-bottom:2px}
+.r-sub{font-size:11px;color:var(--color-text-tertiary);margin-bottom:12px}
+
+.section{margin-bottom:12px}
+.sec-label{font-size:10px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.card-group{display:flex;flex-direction:column;gap:6px}
+.opt-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:10px 12px}
+.opt-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.opt-row:last-child{margin-bottom:0}
+.opt-label{font-size:11px;color:var(--color-text-secondary)}
+.opt-val{font-size:12px;color:var(--color-text-primary);font-weight:500}
+select,input[type=number],input[type=text]{font-size:11px;padding:4px 7px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans)}
+select{min-width:110px}
+input[type=number]{width:70px;text-align:right}
+.chk-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--color-text-secondary);margin-bottom:4px}
+input[type=checkbox]{accent-color:#185FA5;width:12px;height:12px}
+
+/* result area */
+.result-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px}
+.stat-card{background:var(--color-background-secondary);border-radius:6px;padding:8px 10px;text-align:center}
+.stat-num{font-size:18px;font-weight:500;color:var(--color-text-primary)}
+.stat-lbl{font-size:10px;color:var(--color-text-tertiary);margin-top:1px}
+.stat-card.warn .stat-num{color:#854F0B}
+.stat-card.good .stat-num{color:#27500A}
+
+.log-box{background:#1a1a1a;border-radius:6px;padding:8px 10px;font-size:10px;font-family:var(--font-mono);color:#9FE1CB;line-height:1.6;max-height:80px;overflow-y:auto}
+
+/* action bar */
+.action-bar{border-top:0.5px solid var(--color-border-tertiary);padding:10px 14px;background:var(--color-background-primary);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.action-left{display:flex;gap:6px}
+.btn-ghost{background:transparent;border:0.5px solid var(--color-border-secondary);border-radius:6px;padding:5px 11px;font-size:11px;color:var(--color-text-secondary);cursor:pointer;font-family:var(--font-sans);transition:all .15s}
+.btn-ghost:hover{background:var(--color-background-secondary)}
+.btn-primary{background:#185FA5;color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:12px;cursor:pointer;font-family:var(--font-sans);transition:background .15s}
+.btn-primary:hover{background:#0C447C}
+.btn-danger{background:transparent;border:0.5px solid var(--color-border-danger);border-radius:6px;padding:5px 11px;font-size:11px;color:var(--color-text-danger);cursor:pointer;font-family:var(--font-sans)}
+
+.divider{height:0.5px;background:var(--color-border-tertiary);margin:10px 0}
+</style>
+
+<div class="shell">
+
+<!-- topbar -->
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="logo">HiLAB</span>
+    <span class="case-name" id="case-name">MF-2025-083 · Mooring Fitting</span>
+  </div>
+  <div class="topbar-right">
+    <button class="btn-ghost" style="font-size:10px">케이스 변경</button>
+    <button class="btn-ghost" style="font-size:10px">전체 초기화</button>
+  </div>
+</div>
+
+<!-- entry point selector -->
+<div class="entry-row">
+  <span class="entry-label">시작점</span>
+  <button class="entry-btn active" id="btn-csv" onclick="setEntry('csv')">CSV → BDF 변환 포함</button>
+  <button class="entry-btn" id="btn-bdf" onclick="setEntry('bdf')">BDF 직접 로드</button>
+  <span style="font-size:10px;color:var(--color-text-tertiary);margin-left:6px" id="entry-hint">HiTESS CsvToBdf 파이프라인 연동</span>
+</div>
+
+<!-- body -->
+<div class="body">
+
+  <!-- LEFT: step list -->
+  <div class="left">
+    <div class="left-header">
+      <span>파이프라인</span>
+      <span id="progress-label" style="color:var(--color-text-info)">2 / 5</span>
+    </div>
+    <div class="steps-list" id="steps-list"></div>
+  </div>
+
+  <!-- RIGHT: detail panel -->
+  <div class="right" id="right-panel"></div>
+
+</div>
+
+<!-- action bar -->
+<div class="action-bar">
+  <div class="action-left">
+    <button class="btn-ghost" id="btn-this" onclick="runThis()">이 단계만 실행</button>
+    <button class="btn-ghost" id="btn-from" onclick="runFrom()">이 단계부터 실행</button>
+  </div>
+  <button class="btn-primary" onclick="runAll()">전체 실행</button>
+</div>
+
+</div>
+
+<script>
+const STEPS_CSV = [
+  { id:'csv', title:'CSV 입력 검증', sub:'단위계·필수 컬럼·범위', status:'done', detail:'csv' },
+  { id:'convert', title:'BDF 변환', sub:'HiTESS CsvToBdf', status:'done', detail:'convert' },
+  { id:'qc', title:'모델 품질 검사', sub:'비연결·종횡비·ID', status:'active', detail:'qc' },
+  { id:'nastran', title:'Nastran 해석', sub:'SOL 101 · 3 loadcases', status:'wait', detail:'nastran' },
+  { id:'report', title:'결과 보고서', sub:'Excel + HTML 자동 저장', status:'wait', detail:'report' },
+];
+const STEPS_BDF = [
+  { id:'bdfload', title:'BDF 로드', sub:'파일 선택 및 파싱', status:'done', detail:'bdfload' },
+  { id:'qc', title:'모델 품질 검사', sub:'비연결·종횡비·ID', status:'active', detail:'qc' },
+  { id:'nastran', title:'Nastran 해석', sub:'SOL 101 · 3 loadcases', status:'wait', detail:'nastran' },
+  { id:'report', title:'결과 보고서', sub:'Excel + HTML 자동 저장', status:'wait', detail:'report' },
+];
+
+const STATUS_LABEL = { done:'완료', active:'진행 중', wait:'대기', running:'실행 중', error:'오류', skip:'건너뜀' };
+const STATUS_CLASS = { done:'st-done', active:'st-run', wait:'st-wait', running:'st-run', error:'st-err', skip:'st-skip' };
+
+let entryMode = 'csv';
+let steps = JSON.parse(JSON.stringify(STEPS_CSV));
+let activeIdx = 2;
+
+function setEntry(mode) {
+  entryMode = mode;
+  document.getElementById('btn-csv').classList.toggle('active', mode==='csv');
+  document.getElementById('btn-bdf').classList.toggle('active', mode==='bdf');
+  document.getElementById('entry-hint').textContent = mode==='csv' ? 'HiTESS CsvToBdf 파이프라인 연동' : '기존 BDF 파일로 바로 시작';
+  steps = JSON.parse(JSON.stringify(mode==='csv' ? STEPS_CSV : STEPS_BDF));
+  activeIdx = steps.findIndex(s=>s.status==='active');
+  if(activeIdx<0) activeIdx=0;
+  render();
+}
+
+function goStep(idx) {
+  if(idx<0||idx>=steps.length) return;
+  activeIdx=idx; render();
+}
+
+function render() {
+  renderLeft(); renderRight();
+  document.getElementById('progress-label').textContent =
+    steps.filter(s=>s.status==='done').length + ' / ' + steps.length;
+}
+
+function renderLeft() {
+  const el = document.getElementById('steps-list');
+  el.innerHTML = steps.map((s,i)=>{
+    const isActive = i===activeIdx;
+    const isLast = i===steps.length-1;
+    const statusCls = isActive ? 'active' : s.status;
+    const dotCls = s.status==='done'?'done':s.status==='error'?'error':s.status==='running'?'running':'';
+    return `<div class="step-item ${statusCls}" onclick="goStep(${i})">
+      <div class="step-dot-wrap">
+        <div class="sdot ${dotCls}"></div>
+        ${!isLast?'<div class="sline"></div>':''}
+      </div>
+      <div class="step-card">
+        <div class="sc-top">
+          <span class="sc-title">${i+1}. ${s.title}</span>
+          <span class="sc-status ${isActive?'st-run':STATUS_CLASS[s.status]}">${isActive&&s.status==='wait'?'선택됨':STATUS_LABEL[s.status]}</span>
+        </div>
+        <div class="sc-sub">${s.sub}</div>
+        ${isActive ? `<div class="step-nav">
+          <button class="snav-btn" onclick="event.stopPropagation();goStep(${i-1})" ${i===0?'disabled':''}>▲ 이전</button>
+          <button class="snav-btn" onclick="event.stopPropagation();goStep(${i+1})" ${i===steps.length-1?'disabled':''}>▼ 다음</button>
+        </div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderRight() {
+  const s = steps[activeIdx];
+  const panel = document.getElementById('right-panel');
+  if(!s){panel.innerHTML='';return;}
+
+  let html = `<div class="r-title">${activeIdx+1}. ${s.title}</div>
+  <div class="r-sub">${s.sub}</div>`;
+
+  if(s.detail==='csv') html += detailCSV();
+  else if(s.detail==='convert') html += detailConvert();
+  else if(s.detail==='bdfload') html += detailBdfLoad();
+  else if(s.detail==='qc') html += detailQC();
+  else if(s.detail==='nastran') html += detailNastran();
+  else if(s.detail==='report') html += detailReport();
+
+  panel.innerHTML = html;
+}
+
+function detailCSV() {
+  return `<div class="section"><div class="sec-label">완료된 결과</div>
+  <div class="result-row">
+    <div class="stat-card good"><div class="stat-num">42</div><div class="stat-lbl">총 행</div></div>
+    <div class="stat-card good"><div class="stat-num">0</div><div class="stat-lbl">오류</div></div>
+    <div class="stat-card good"><div class="stat-num">mm/N</div><div class="stat-lbl">단위계</div></div>
+  </div>
+  <div class="log-box">✔ 필수 컬럼 확인: NODE_ID, X, Y, Z, SECTION<br>✔ 단위계: mm / N 감지됨<br>✔ 범위 이상치 없음</div>
+  </div>`;
+}
+
+function detailConvert() {
+  return `<div class="section"><div class="sec-label">변환 결과</div>
+  <div class="result-row">
+    <div class="stat-card good"><div class="stat-num">148</div><div class="stat-lbl">GRID</div></div>
+    <div class="stat-card good"><div class="stat-num">112</div><div class="stat-lbl">CBAR</div></div>
+    <div class="stat-card good"><div class="stat-num">8</div><div class="stat-lbl">RBE2</div></div>
+  </div>
+  <div class="opt-card"><div class="opt-row"><span class="opt-label">출력 BDF 경로</span><span class="opt-val" style="font-size:10px;color:var(--color-text-tertiary)">output/MF_083.bdf</span></div>
+  <div class="opt-row"><span class="opt-label">넘버링 오프셋</span><span class="opt-val">GRID +0 / CBAR +100000</span></div></div>
+  </div>`;
+}
+
+function detailBdfLoad() {
+  return `<div class="section"><div class="sec-label">파일 선택</div>
+  <div class="opt-card">
+    <div class="opt-row"><span class="opt-label">BDF 파일</span><button class="btn-ghost" style="font-size:10px">찾아보기</button></div>
+    <div class="opt-row"><span class="opt-label">선택된 파일</span><span class="opt-val" style="font-size:10px;color:var(--color-text-tertiary)">TR_017_v3.bdf</span></div>
+  </div></div>
+  <div class="section"><div class="sec-label">파싱 결과</div>
+  <div class="result-row">
+    <div class="stat-card good"><div class="stat-num">211</div><div class="stat-lbl">GRID</div></div>
+    <div class="stat-card good"><div class="stat-num">198</div><div class="stat-lbl">Elements</div></div>
+    <div class="stat-card warn"><div class="stat-num">2</div><div class="stat-lbl">경고</div></div>
+  </div></div>`;
+}
+
+function detailQC() {
+  return `<div class="section"><div class="sec-label">검사 옵션</div>
+  <div class="opt-card">
+    <div class="opt-row"><span class="opt-label">실행 모드</span>
+      <select><option>strict — 경고 시 중단</option><option>lenient — 경고 무시</option></select></div>
+    <div class="opt-row"><span class="opt-label">종횡비 임계값</span><input type="number" value="5.0" step="0.5"></div>
+  </div></div>
+  <div class="section"><div class="sec-label">검사 항목</div>
+  <div class="opt-card">
+    <label class="chk-row"><input type="checkbox" checked>비연결 요소 탐지 (Union-Find)</label>
+    <label class="chk-row"><input type="checkbox" checked>미참조 PID / MID</label>
+    <label class="chk-row"><input type="checkbox" checked>종횡비 초과 요소</label>
+    <label class="chk-row"><input type="checkbox">ID 범위 충돌 검사</label>
+    <label class="chk-row"><input type="checkbox">단위계 일관성 재확인</label>
+  </div></div>`;
+}
+
+function detailNastran() {
+  return `<div class="section"><div class="sec-label">해석 설정</div>
+  <div class="opt-card">
+    <div class="opt-row"><span class="opt-label">Solution</span>
+      <select><option>SOL 101 — Linear Statics</option><option>SOL 103 — Normal Modes</option><option>SOL 111 — Frequency Response</option></select></div>
+    <div class="opt-row"><span class="opt-label">하중 케이스</span><input type="number" value="3" min="1"></div>
+    <div class="opt-row"><span class="opt-label">Nastran 실행 경로</span><button class="btn-ghost" style="font-size:10px">경로 설정</button></div>
+  </div></div>
+  <div class="section"><div class="sec-label">출력 요청</div>
+  <div class="opt-card">
+    <label class="chk-row"><input type="checkbox" checked>변위 (DISPLACEMENT)</label>
+    <label class="chk-row"><input type="checkbox" checked>응력 (STRESS)</label>
+    <label class="chk-row"><input type="checkbox">반력 (SPCFORCES)</label>
+    <label class="chk-row"><input type="checkbox">고유진동수 (FREQ) — SOL 103 전용</label>
+  </div></div>`;
+}
+
+function detailReport() {
+  return `<div class="section"><div class="sec-label">보고서 형식</div>
+  <div class="opt-card">
+    <label class="chk-row"><input type="checkbox" checked>Excel (.xlsx) — 응력/변위 테이블</label>
+    <label class="chk-row"><input type="checkbox" checked>HTML — 인터랙티브 결과 뷰어</label>
+    <label class="chk-row"><input type="checkbox">Word (.docx) — 공식 보고서 템플릿</label>
+  </div></div>
+  <div class="section"><div class="sec-label">저장 경로</div>
+  <div class="opt-card">
+    <div class="opt-row"><span class="opt-label">출력 폴더</span><button class="btn-ghost" style="font-size:10px">찾아보기</button></div>
+    <div class="opt-row"><span class="opt-label">파일명 규칙</span>
+      <select><option>케이스번호_날짜</option><option>수동 입력</option></select></div>
+  </div></div>`;
+}
+
+function runThis() {
+  const s = steps[activeIdx];
+  if(!s) return;
+  s.status='running';
+  render();
+  setTimeout(()=>{
+    s.status='done';
+    if(activeIdx+1<steps.length && steps[activeIdx+1].status==='wait') {
+      steps[activeIdx+1].status='wait';
+    }
+    render();
+  }, 1200);
+}
+
+function runFrom() {
+  let i = activeIdx;
+  function runNext() {
+    if(i>=steps.length) return;
+    steps[i].status='running'; render();
+    setTimeout(()=>{ steps[i].status='done'; i++; render(); runNext(); }, 900);
+  }
+  runNext();
+}
+
+function runAll() {
+  activeIdx=0;
+  steps.forEach(s=>{ if(s.status!=='done') s.status='wait'; });
+  render();
+  runFrom();
+}
+
+render();
+</script>
