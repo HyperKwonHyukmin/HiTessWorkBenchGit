@@ -25,7 +25,13 @@ export default function AnalysisManagement() {
         const usersData = userRes.data;
         setAnalyses((analysisRes.data.items || analysisRes.data).map(a => {
           const u = usersData.find(user => user.employee_id === a.employee_id);
-          return { ...a, department: u ? u.department || 'Unknown' : 'Unknown', userName: u ? u.name : 'Deleted User' };
+          return {
+            ...a,
+            department: u ? u.department || 'Unknown' : 'Unknown',
+            userName: u ? u.name : 'Deleted User',
+            // 개발자가 한 해석은 통계 집계에서 제외 (테스트 실행이 통계를 왜곡시키기 때문)
+            isDeveloper: u ? !!u.is_developer : false,
+          };
         }));
       } catch (err) {
         setError(err?.response?.data?.detail || err?.message || '데이터를 불러오지 못했습니다.');
@@ -46,11 +52,19 @@ export default function AnalysisManagement() {
     });
   }, [analyses, dateFrom, dateTo]);
 
-  const stats = useMemo(() => {
-    if (!dateFilteredAnalyses.length) return null;
-    const total = dateFilteredAnalyses.length;
+  // 통계 집계에서는 개발자(is_developer) 사용자의 해석을 제외한다.
+  // 테스트 실행이 인기 프로그램·상위 사용자 등 집계를 왜곡시키지 않도록 한다.
+  // 단, 하단 history 테이블(filteredAnalyses) 은 그대로 표시한다.
+  const statsAnalyses = useMemo(
+    () => dateFilteredAnalyses.filter(a => !a.isDeveloper),
+    [dateFilteredAnalyses]
+  );
 
-    const sortedByDate = [...dateFilteredAnalyses].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const stats = useMemo(() => {
+    if (!statsAnalyses.length) return null;
+    const total = statsAnalyses.length;
+
+    const sortedByDate = [...statsAnalyses].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     const firstDate = new Date(sortedByDate[0].created_at);
     const lastDate = new Date(sortedByDate[sortedByDate.length - 1].created_at);
     const coveredDays = Math.max(1, Math.ceil((lastDate - firstDate) / 86400000) + 1);
@@ -62,7 +76,7 @@ export default function AnalysisManagement() {
     const hourBuckets = Array.from({ length: 24 }, () => 0);
     const weekdayBuckets = Array.from({ length: 7 }, () => 0); // 0=일 ~ 6=토
 
-    dateFilteredAnalyses.forEach(a => {
+    statsAnalyses.forEach(a => {
       const programName = a.program_name || 'Unknown';
       const employeeId = a.employee_id || 'unknown';
       const department = a.department || 'Unknown';
@@ -153,7 +167,7 @@ export default function AnalysisManagement() {
       weekdayData,
       deptData: [...deptMap.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 8),
     };
-  }, [dateFilteredAnalyses]);
+  }, [statsAnalyses]);
 
   const downloadCSV = () => {
     const rows = dateFilteredAnalyses.map(a => `${a.id},${a.project_name || ''},${a.program_name},${a.userName}(${a.employee_id}),${a.department},${a.status},${new Date(a.created_at).toLocaleString()}`).join('\n');

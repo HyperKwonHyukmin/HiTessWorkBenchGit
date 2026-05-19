@@ -7,7 +7,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import {
   Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Clock, Activity,
   UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
-  Download, BarChart3, ChevronRight
+  Download, BarChart3, ChevronRight, Code2
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
@@ -490,6 +490,7 @@ export default function UserManagement() {
                 <th className="py-4 px-6 font-bold w-[240px]">Activity</th>
                 <th className="py-4 px-6 font-bold text-center">Status</th>
                 <th className="py-4 px-6 font-bold text-center">Admin</th>
+                <th className="py-4 px-6 font-bold text-center">Dev</th>
                 <th className="py-4 px-6 font-bold text-center">Actions</th>
               </tr>
             </thead>
@@ -588,6 +589,17 @@ export default function UserManagement() {
                       title={user.is_admin ? "관리자 권한 해제" : "관리자 권한 부여"}
                     >
                       {user.is_admin ? <Shield size={20}/> : <ShieldOff size={20}/>}
+                    </button>
+                  </td>
+
+                  {/* 개발자 권한 토글 — 해석 통계에서 자동 제외 */}
+                  <td className="py-3 px-6 text-center">
+                    <button
+                      onClick={() => handleToggle(user.id, 'is_developer', user.is_developer)}
+                      className={`p-2 rounded-lg transition-colors cursor-pointer ${user.is_developer ? 'bg-violet-50 text-violet-600 hover:bg-violet-100' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500'}`}
+                      title={user.is_developer ? "개발자 권한 해제 — 통계 집계 재포함" : "개발자 권한 부여 — 해석 통계에서 자동 제외"}
+                    >
+                      <Code2 size={20}/>
                     </button>
                   </td>
 

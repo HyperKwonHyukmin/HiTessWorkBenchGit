@@ -13,6 +13,8 @@ class User(Base):
   position = Column(String(50))
   is_active = Column(Boolean, default=False)
   is_admin = Column(Boolean, default=False)
+  # 개발자 권한 — 해석 통계에서 자동 제외 (테스트성 실행으로 통계 왜곡 방지)
+  is_developer = Column(Boolean, default=False)
 
   login_count = Column(Integer, default=0)  # 로그인 횟수 (기본값 0)
   last_login = Column(DateTime(timezone=True), nullable=True)  # 마지막 로그인 시간

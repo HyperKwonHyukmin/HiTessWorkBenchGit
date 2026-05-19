@@ -52,6 +52,25 @@ def ensure_notice_columns():
 ensure_notice_columns()
 
 
+def ensure_user_columns():
+    """기존 users 테이블에 is_developer 컬럼을 보강합니다."""
+    inspector = inspect(database.engine)
+    if not inspector.has_table("users"):
+        return
+    columns = {col["name"] for col in inspector.get_columns("users")}
+    statements = []
+    if "is_developer" not in columns:
+        statements.append("ALTER TABLE users ADD COLUMN is_developer BOOL DEFAULT FALSE")
+    if not statements:
+        return
+    with database.engine.begin() as conn:
+        for statement in statements:
+            conn.execute(text(statement))
+
+
+ensure_user_columns()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """서버 시작 시 기본 가이드 시드와 userConnection 정리 스케줄러를 시작합니다."""

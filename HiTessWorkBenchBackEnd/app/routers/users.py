@@ -45,6 +45,7 @@ def get_users(
             "position": u.position,
             "is_active": u.is_active,
             "is_admin": u.is_admin,
+            "is_developer": bool(getattr(u, "is_developer", False)),
             "login_count": u.login_count or 0,
             "last_login": _iso(u.last_login),
             "created_at": _iso(u.created_at),
@@ -54,9 +55,9 @@ def get_users(
     return result
 
 
-# is_admin은 관리자 전용 별도 엔드포인트에서만 변경 가능
+# is_admin / is_developer 는 관리자만 변경 가능 (PUT 시 화이트리스트 분리)
 _USER_ALLOWED_FIELDS = {"name", "company", "department", "position", "is_active"}
-_ADMIN_ALLOWED_FIELDS = {"is_admin"}
+_ADMIN_ALLOWED_FIELDS = {"is_admin", "is_developer"}
 
 @router.put("/users/{user_id}")
 def update_user(
