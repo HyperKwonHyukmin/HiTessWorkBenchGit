@@ -1,6 +1,18 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 import { getAuthHeaders } from '../utils/auth';
+import { logActivity } from './activity';
+
+const postAnalysisRequest = (url, formData, programName) =>
+  axios.post(url, formData, {
+    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
+  }).then((res) => {
+    logActivity('ANALYSIS_REQUEST', {
+      program_name: programName,
+      job_id: res.data?.job_id,
+    });
+    return res;
+  });
 
 /** 사용자 해석 이력 조회 */
 export const getAnalysisHistory = (employeeId, skip = 0, limit = 100000) =>
@@ -16,51 +28,35 @@ export const getJobStatus = (jobId) =>
 
 /** Truss 해석 요청 */
 export const requestTrussAnalysis = (formData) =>
-  axios.post(`${API_BASE_URL}/api/analysis/truss/request`, formData, {
-    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
-  });
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/truss/request`, formData, 'TrussModelBuilder');
 
 /** Truss Assessment 요청 */
 export const requestAssessment = (formData) =>
-  axios.post(`${API_BASE_URL}/api/analysis/assessment/request`, formData, {
-    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
-  });
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/assessment/request`, formData, 'TrussAssessment');
 
 /** Beam 해석 요청 */
 export const requestBeamAnalysis = (formData) =>
-  axios.post(`${API_BASE_URL}/api/analysis/beam/request`, formData, {
-    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
-  });
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/beam/request`, formData, 'SimpleBeam');
 
 /** BDF Scanner 요청 */
 export const requestBdfScanner = (formData) =>
-  axios.post(`${API_BASE_URL}/api/analysis/bdfscanner/request`, formData, {
-    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
-  });
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/bdfscanner/request`, formData, 'BdfScanner');
 
 /** HP-SCR 배관응력 해석 요청 (PSA / POR) */
 export const requestHpscrAssessment = (formData) =>
-  axios.post(`${API_BASE_URL}/api/analysis/hpscr/request`, formData, {
-    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
-  });
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/hpscr/request`, formData, 'HpScr');
 
 /** Group & Module Unit 권상 구조 해석 — BDF 검증 (NastranBridge) */
 export const requestGroupModuleUnit = (formData) =>
-  axios.post(`${API_BASE_URL}/api/analysis/groupmoduleunit/request`, formData, {
-    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
-  });
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/groupmoduleunit/request`, formData, 'GroupModuleUnit');
 
 /** Group & Module Unit — 서버 경로로 BDF 검증 요청 (프로그램 간 연계용) */
 export const requestGroupModuleUnitFromPath = (formData) =>
-  axios.post(`${API_BASE_URL}/api/analysis/groupmoduleunit/request-from-path`, formData, {
-    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
-  });
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/groupmoduleunit/request-from-path`, formData, 'GroupModuleUnit');
 
 /** F06 Parser 요청 */
 export const requestF06Parser = (formData) =>
-  axios.post(`${API_BASE_URL}/api/analysis/f06parser/request`, formData, {
-    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
-  });
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/f06parser/request`, formData, 'F06Parser');
 
 /** 파일 다운로드 (blob) */
 export const downloadFileBlob = (filepath) =>

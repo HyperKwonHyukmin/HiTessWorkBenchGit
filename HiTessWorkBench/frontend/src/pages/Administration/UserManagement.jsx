@@ -6,12 +6,57 @@ import React, { useEffect, useMemo, useState, Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import {
   Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Clock, Activity,
-  UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2
+  UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
+  Download
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser } from '../../api/admin';
+import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../contexts/ToastContext';
+
+const LOG_PAGE_SIZE = 100;
+const todayString = () => new Date().toISOString().slice(0, 10);
+const daysAgoString = (days) => {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+};
+
+const ACTION_TYPE_LABELS = {
+  LOGIN: '로그인',
+  LOGOUT: '로그아웃',
+  PAGE_VIEW: '페이지 조회',
+  ANALYSIS_REQUEST: '해석 요청',
+  ANALYSIS_COMPLETE: '해석 완료',
+  ANALYSIS_FAILED: '해석 실패',
+  FILE_DOWNLOAD: '파일 다운로드',
+  PROGRAM_DOWNLOAD: '프로그램 다운로드',
+  EXPORT_XLSX: 'Excel 내보내기',
+  VERSION_UPDATE: '버전 업데이트',
+};
+
+const ACTION_TYPE_COLORS = {
+  LOGIN: 'bg-emerald-100 text-emerald-700',
+  LOGOUT: 'bg-slate-100 text-slate-600',
+  PAGE_VIEW: 'bg-sky-100 text-sky-700',
+  ANALYSIS_REQUEST: 'bg-violet-100 text-violet-700',
+  ANALYSIS_COMPLETE: 'bg-emerald-100 text-emerald-700',
+  ANALYSIS_FAILED: 'bg-red-100 text-red-700',
+  FILE_DOWNLOAD: 'bg-blue-100 text-blue-700',
+  PROGRAM_DOWNLOAD: 'bg-indigo-100 text-indigo-700',
+  EXPORT_XLSX: 'bg-cyan-100 text-cyan-700',
+  VERSION_UPDATE: 'bg-amber-100 text-amber-700',
+};
+
+const formatDetail = (detail) => {
+  if (!detail) return '—';
+  const priority = ['page', 'program_name', 'project_name', 'analysis_id', 'job_id', 'filename', 'source'];
+  const entries = Object.entries(detail)
+    .filter(([key]) => priority.includes(key))
+    .map(([key, value]) => `${key}: ${value}`);
+  return entries.length > 0 ? entries.join(' | ') : JSON.stringify(detail);
+};
 
 // 상대 시간 포맷 — 활동성 컬럼/Pending 카드용
 const relativeTime = (iso) => {
@@ -41,6 +86,15 @@ export default function UserManagement() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [confirmDeleteTarget, setConfirmDeleteTarget] = useState(null);
+  const [activityUser, setActivityUser] = useState(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityPage, setActivityPage] = useState(0);
+  const [activityData, setActivityData] = useState({ total: 0, items: [] });
+  const [activityFilters, setActivityFilters] = useState({
+    action_type: '',
+    date_from: daysAgoString(30),
+    date_to: todayString(),
+  });
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -97,6 +151,61 @@ export default function UserManagement() {
   const openEditModal = (user) => {
     setEditingUser({ ...user });
     setIsEditModalOpen(true);
+  };
+
+  const fetchUserActivity = async (user, page = 0, filters = activityFilters) => {
+    if (!user) return;
+    setActivityLoading(true);
+    try {
+      const params = {
+        employee_id: user.employee_id,
+        skip: page * LOG_PAGE_SIZE,
+        limit: LOG_PAGE_SIZE,
+        date_from: filters.date_from || daysAgoString(30),
+        date_to: filters.date_to || todayString(),
+      };
+      if (filters.action_type) params.action_type = filters.action_type;
+      const res = await getActivityLogs(params);
+      setActivityData(res.data || { total: 0, items: [] });
+      setActivityPage(page);
+    } catch {
+      setActivityData({ total: 0, items: [] });
+      showToast('사용자 활동 로그 조회에 실패했습니다.', 'error');
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
+  const openActivityModal = (user) => {
+    setActivityUser(user);
+    const filters = { action_type: '', date_from: daysAgoString(30), date_to: todayString() };
+    setActivityFilters(filters);
+    fetchUserActivity(user, 0, filters);
+  };
+
+  const handleActivitySearch = () => {
+    fetchUserActivity(activityUser, 0, activityFilters);
+  };
+
+  const handleActivityExport = () => {
+    if (!activityUser) return;
+    const url = getActivityLogsExportUrl({
+      employee_id: activityUser.employee_id,
+      action_type: activityFilters.action_type,
+      date_from: activityFilters.date_from,
+      date_to: activityFilters.date_to,
+    });
+    const token = localStorage.getItem('session_token') || '';
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${activityUser.employee_id}_activity_${todayString()}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(() => showToast('CSV 내보내기에 실패했습니다.', 'error'));
   };
 
   const handleEditSave = async (e) => {
@@ -380,15 +489,20 @@ export default function UserManagement() {
 
                   {/* 이름 & 사번 */}
                   <td className="py-3 px-6">
-                    <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => openActivityModal(user)}
+                      className="flex items-center gap-3 text-left cursor-pointer group"
+                      title="사용자 활동 로그 보기"
+                    >
                       <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${user.is_active ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
                         {user.name?.[0] || '?'}
                       </div>
                       <div>
-                        <p className="font-bold text-slate-800">{user.name}</p>
+                        <p className="font-bold text-slate-800 group-hover:text-blue-700">{user.name}</p>
                         <p className="text-[11px] text-slate-400 font-mono tracking-wider">{user.employee_id}</p>
                       </div>
-                    </div>
+                    </button>
                   </td>
 
                   {/* 소속 & 직급 */}
@@ -461,6 +575,9 @@ export default function UserManagement() {
                   {/* 수정 및 삭제 버튼 */}
                   <td className="py-3 px-6 text-center">
                     <div className="flex items-center justify-center gap-2">
+                      <button onClick={() => openActivityModal(user)} className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer" title="활동 로그">
+                        <ClipboardList size={18}/>
+                      </button>
                       <button onClick={() => openEditModal(user)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer" title="정보 수정">
                         <Edit2 size={18}/>
                       </button>
@@ -517,6 +634,150 @@ export default function UserManagement() {
                   <button type="submit" className="px-6 py-2 bg-brand-green text-white font-bold rounded-lg hover:opacity-90 shadow-md cursor-pointer">정보 저장</button>
                 </div>
               </form>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
+      </Transition>
+
+      {/* 7. 사용자별 활동 로그 모달 */}
+      <Transition appear show={!!activityUser} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setActivityUser(null)}>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="w-full max-w-5xl max-h-[86vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+              <div className="bg-slate-900 p-5 flex justify-between items-center text-white">
+                <div>
+                  <Dialog.Title className="font-bold text-lg flex items-center gap-2">
+                    <ClipboardList size={19} className="text-teal-300"/> 사용자 활동 로그
+                  </Dialog.Title>
+                  <p className="text-xs text-slate-300 mt-1">
+                    {activityUser?.name} · {activityUser?.employee_id} · 최근 최대 30일
+                  </p>
+                </div>
+                <button onClick={() => setActivityUser(null)} className="hover:bg-white/20 p-1.5 rounded-lg transition-colors cursor-pointer">
+                  <X size={20}/>
+                </button>
+              </div>
+
+              <div className="p-4 border-b border-slate-200 bg-slate-50">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">이벤트</label>
+                    <select
+                      value={activityFilters.action_type}
+                      onChange={e => setActivityFilters(f => ({ ...f, action_type: e.target.value }))}
+                      className="w-full text-xs border border-slate-200 rounded-lg px-2 py-2 focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white"
+                    >
+                      <option value="">전체</option>
+                      {Object.entries(ACTION_TYPE_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">시작일</label>
+                    <input
+                      type="date"
+                      value={activityFilters.date_from}
+                      min={daysAgoString(30)}
+                      max={todayString()}
+                      onChange={e => setActivityFilters(f => ({ ...f, date_from: e.target.value }))}
+                      className="w-full text-xs border border-slate-200 rounded-lg px-2 py-2 focus:outline-none focus:ring-1 focus:ring-teal-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">종료일</label>
+                    <input
+                      type="date"
+                      value={activityFilters.date_to}
+                      min={daysAgoString(30)}
+                      max={todayString()}
+                      onChange={e => setActivityFilters(f => ({ ...f, date_to: e.target.value }))}
+                      className="w-full text-xs border border-slate-200 rounded-lg px-2 py-2 focus:outline-none focus:ring-1 focus:ring-teal-400"
+                    />
+                  </div>
+                  <button
+                    onClick={handleActivitySearch}
+                    className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors cursor-pointer"
+                  >
+                    <Search size={13}/> 조회
+                  </button>
+                  <button
+                    onClick={handleActivityExport}
+                    className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    <Download size={13}/> CSV
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-auto flex-1">
+                <table className="w-full text-xs text-slate-700">
+                  <thead className="sticky top-0 bg-white border-b border-slate-200 text-[10px] font-bold text-slate-400 uppercase">
+                    <tr>
+                      <th className="px-4 py-3 text-left">시간</th>
+                      <th className="px-4 py-3 text-left">이벤트</th>
+                      <th className="px-4 py-3 text-left">상태</th>
+                      <th className="px-4 py-3 text-left">세부정보</th>
+                      <th className="px-4 py-3 text-left">IP</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activityLoading ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-12 text-slate-400">
+                          <RefreshCw size={16} className="inline animate-spin mr-2" />불러오는 중...
+                        </td>
+                      </tr>
+                    ) : activityData.items.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-12 text-slate-400">최근 30일 내 기록된 활동이 없습니다.</td>
+                      </tr>
+                    ) : activityData.items.map(row => (
+                      <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="px-4 py-3 font-mono text-slate-500 whitespace-nowrap">
+                          {row.created_at ? new Date(row.created_at).toLocaleString('ko-KR') : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${ACTION_TYPE_COLORS[row.action_type] || 'bg-slate-100 text-slate-600'}`}>
+                            {ACTION_TYPE_LABELS[row.action_type] || row.action_type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${row.status === 'success' ? 'text-emerald-600' : row.status === 'failure' ? 'text-red-500' : 'text-slate-400'}`}>
+                            {row.status || '—'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 max-w-[420px] truncate" title={JSON.stringify(row.action_detail)}>
+                          {formatDetail(row.action_detail)}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-slate-400">{row.ip_address || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {activityData.total > LOG_PAGE_SIZE && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-white">
+                  <p className="text-xs text-slate-400">총 {activityData.total}건</p>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={activityPage === 0}
+                      onClick={() => fetchUserActivity(activityUser, activityPage - 1)}
+                      className="px-3 py-1 text-xs font-bold rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
+                    >이전</button>
+                    <span className="px-3 py-1 text-xs text-slate-500">
+                      {activityPage + 1} / {Math.ceil(activityData.total / LOG_PAGE_SIZE)}
+                    </span>
+                    <button
+                      disabled={(activityPage + 1) * LOG_PAGE_SIZE >= activityData.total}
+                      onClick={() => fetchUserActivity(activityUser, activityPage + 1)}
+                      className="px-3 py-1 text-xs font-bold rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
+                    >다음</button>
+                  </div>
+                </div>
+              )}
             </Dialog.Panel>
           </div>
         </Dialog>

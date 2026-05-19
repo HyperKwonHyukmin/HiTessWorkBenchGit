@@ -130,6 +130,22 @@ def record_analysis(
         db.commit()
         db.refresh(new_analysis)
 
+        try:
+            db.add(models.ActivityLog(
+                employee_id=employee_id,
+                action_type="ANALYSIS_COMPLETE" if status == "Success" else "ANALYSIS_FAILED",
+                action_detail={
+                    "analysis_id": new_analysis.id,
+                    "program_name": program_name,
+                    "project_name": project_name,
+                    "source": source,
+                },
+                status="success" if status == "Success" else "failure",
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+
         project_data = {
             "id": new_analysis.id,
             "project_name": new_analysis.project_name,

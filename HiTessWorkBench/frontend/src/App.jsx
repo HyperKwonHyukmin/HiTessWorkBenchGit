@@ -5,7 +5,7 @@ import React, { Suspense, lazy, useState, useEffect } from 'react';
 import axios from 'axios';
 import { version as CLIENT_VERSION } from '../package.json';
 import { checkVersion } from './api/auth';
-import { reportVersionUpdate, callLogout } from './api/activity';
+import { reportVersionUpdate, callLogout, logActivity } from './api/activity';
 import SplashScreen from './pages/auth/SplashScreen';
 import LoginScreen from './pages/auth/LoginScreen';
 import Layout from './components/layout/Layout';
@@ -307,7 +307,10 @@ function AppInner() {
         <UpdateModal currentVersion={CLIENT_VERSION} serverVersion={latestVersion} />
       )}
       {appState === APP_STATE.SPLASH && <SplashScreen onFinish={handleSplashFinish} />}
-      {appState === APP_STATE.LOGIN && <LoginScreen onLoginSuccess={() => setAppState(APP_STATE.MAIN)} />}
+      {appState === APP_STATE.LOGIN && <LoginScreen onLoginSuccess={() => {
+        setAppState(APP_STATE.MAIN);
+        logActivity('PAGE_VIEW', { page: currentMenu });
+      }} />}
       {appState === APP_STATE.MAIN && (
         <Layout
           onLogout={handleLogout}

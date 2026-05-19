@@ -14,6 +14,14 @@ export const reportVersionUpdate = (oldVersion, newVersion, employeeId = null) =
 export const getActivityLogs = (params = {}) =>
   axios.get(`${API_BASE_URL}/api/activity/logs`, { params, headers: getAuthHeaders() });
 
+/** 현재 로그인 사용자의 감사 이벤트 기록 */
+export const logActivity = (actionType, detail = {}, status = 'success') =>
+  axios.post(`${API_BASE_URL}/api/activity/log`, {
+    action_type: actionType,
+    action_detail: detail,
+    status,
+  }, { headers: getAuthHeaders() }).catch(() => {});
+
 /** 활동 로그 CSV 내보내기 URL */
 export const getActivityLogsExportUrl = (params = {}) => {
   const qs = new URLSearchParams(

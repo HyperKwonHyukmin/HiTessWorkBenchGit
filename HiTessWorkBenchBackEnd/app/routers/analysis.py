@@ -221,7 +221,12 @@ def download_program(filename: str, req: Request, db: Session = Depends(database
 
 
 @router.get("/analysis/export-xlsx")
-def export_assessment_xlsx(json_path: str):
+def export_assessment_xlsx(
+    json_path: str,
+    req: Request,
+    db: Session = Depends(database.get_db),
+    employee_id: str = Depends(require_auth),
+):
     """
     TrussAssessment JSON 결과를 XLSX로 변환하여 반환합니다.
     openpyxl로 메모리(BytesIO)에서만 생성하므로 디스크에 저장되지 않아
@@ -240,6 +245,14 @@ def export_assessment_xlsx(json_path: str):
         xlsx_bytes = _json_to_xlsx_bytes(decoded_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail="Excel 변환 중 오류가 발생했습니다.")
+
+    log_activity(
+        db,
+        "EXPORT_XLSX",
+        employee_id=employee_id,
+        action_detail={"filename": xlsx_filename, "json_path": json_path},
+        ip_address=req.client.host if req.client else None,
+    )
 
     return StreamingResponse(
         io.BytesIO(xlsx_bytes),

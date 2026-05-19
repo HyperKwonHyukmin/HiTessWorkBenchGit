@@ -3,7 +3,8 @@
  * setCurrentMenu props drilling을 제거하고 useNavigation() 훅으로 접근합니다.
  * useReducer를 사용하여 history와 currentIndex를 원자적으로 업데이트합니다.
  */
-import React, { createContext, useReducer, useContext } from 'react';
+import React, { createContext, useReducer, useContext, useEffect, useRef } from 'react';
+import { logActivity } from '../api/activity';
 
 const NavigationContext = createContext(null);
 
@@ -31,10 +32,20 @@ function navReducer(state, action) {
 
 export function NavigationProvider({ children }) {
   const [{ history, currentIndex }, dispatch] = useReducer(navReducer, initialState);
+  const lastPageLogRef = useRef({ page: null, at: 0 });
 
   const currentMenu = history[currentIndex];
   const canGoBack = currentIndex > 0;
   const canGoForward = currentIndex < history.length - 1;
+
+  useEffect(() => {
+    if (!localStorage.getItem('session_token')) return;
+    const now = Date.now();
+    const last = lastPageLogRef.current;
+    if (last.page === currentMenu && now - last.at < 30_000) return;
+    lastPageLogRef.current = { page: currentMenu, at: now };
+    logActivity('PAGE_VIEW', { page: currentMenu });
+  }, [currentMenu]);
 
   const setCurrentMenu = (menu) => dispatch({ type: 'NAVIGATE', menu });
   const goBack = () => dispatch({ type: 'GO_BACK' });
