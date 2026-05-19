@@ -17,6 +17,10 @@ import PageHeader from '../../components/ui/PageHeader';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
 import { useToast } from '../../contexts/ToastContext';
 
+const FILE_RETENTION_DAYS = 30;
+
+const fileStatusOf = (project) => (project?.files_available === false ? 'expired' : 'available');
+
 // ==========================================
 // 1. 상태 뱃지 헬퍼
 // ==========================================
@@ -35,6 +39,24 @@ const StatusBadge = ({ status }) => {
     <span className={`px-2.5 py-1 rounded-full text-xs font-bold border flex items-center w-fit ${styles[status] || styles.Pending}`}>
       {icons[status] || icons.Pending}
       {status}
+    </span>
+  );
+};
+
+const FileRetentionBadge = ({ project }) => {
+  const expired = fileStatusOf(project) === 'expired';
+  if (expired) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border bg-slate-100 text-slate-500 border-slate-200">
+        <FileX size={12} />
+        파일 만료
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border bg-blue-50 text-blue-700 border-blue-200">
+      <FileOutput size={12} />
+      파일 보관 중
     </span>
   );
 };
@@ -156,6 +178,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
           <div className="flex items-center gap-2 mb-4 text-xs text-slate-400 font-mono">
             <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">ID: {project.id}</span>
             <span>{new Date(project.created_at).toLocaleString()}</span>
+            <FileRetentionBadge project={project} />
           </div>
 
           {/* 3D 시각화 버튼 */}
@@ -234,8 +257,10 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
             <div className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-500">
               <FileX size={18} className="text-slate-400 shrink-0" />
               <div>
-                <p className="text-sm font-bold text-slate-600">파일 없음</p>
-                <p className="text-xs text-slate-400 mt-0.5">해당 해석의 작업 폴더 또는 결과 파일이 서버에서 삭제되었습니다. 해석 이력은 계속 유지됩니다.</p>
+                <p className="text-sm font-bold text-slate-600">파일 만료</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  결과 파일 보관 기간({FILE_RETENTION_DAYS}일)이 지나 서버에서 삭제되었습니다. 해석 이력은 계속 유지됩니다.
+                </p>
               </div>
             </div>
           ) : (
@@ -269,6 +294,11 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
 // ==========================================
 const PROGRAM_FILTERS = ['All', 'TrussModelBuilder', 'Truss Assessment', 'Simple Beam Assessment'];
 const STATUS_FILTERS = ['All', 'Success', 'Failed'];
+const FILE_STATUS_FILTERS = [
+  { value: 'All', label: 'All Files' },
+  { value: 'available', label: 'Files Available' },
+  { value: 'expired', label: 'Files Expired' },
+];
 const PAGE_SIZE = 10;
 
 export default function MyProjects() {
@@ -278,6 +308,7 @@ export default function MyProjects() {
   const [searchTerm, setSearchTerm] = useState('');
   const [programFilter, setProgramFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [fileStatusFilter, setFileStatusFilter] = useState('All');
   const [selectedProject, setSelectedProject] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -311,7 +342,7 @@ export default function MyProjects() {
   }, []);
 
   // 필터 변경 시 첫 페이지로 리셋
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, programFilter, statusFilter]);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, programFilter, statusFilter, fileStatusFilter]);
 
   const userSeqById = useMemo(() => {
     const sortedAsc = [...projects].sort(
@@ -327,6 +358,8 @@ export default function MyProjects() {
     const total = projects.length;
     const success = projects.filter(p => p.status === 'Success').length;
     const successRate = total > 0 ? Math.round((success / total) * 100) : 0;
+    const expiredFiles = projects.filter(p => fileStatusOf(p) === 'expired').length;
+    const availableFiles = total - expiredFiles;
 
     const now = Date.now();
     const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
@@ -348,7 +381,18 @@ export default function MyProjects() {
     const topModule = moduleEntries[0]?.[0] ?? null;
     const topModuleCount = moduleEntries[0]?.[1] ?? 0;
 
-    return { total, success, successRate, thisWeek, weekDelta, topModule, topModuleCount, moduleEntries };
+    return {
+      total,
+      success,
+      successRate,
+      thisWeek,
+      weekDelta,
+      topModule,
+      topModuleCount,
+      moduleEntries,
+      expiredFiles,
+      availableFiles,
+    };
   }, [projects]);
 
   const MODULE_BAR_COLORS = [
@@ -366,7 +410,8 @@ export default function MyProjects() {
       (p.program_name && p.program_name.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesProgram = programFilter === 'All' || p.program_name === programFilter;
     const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
-    return matchesSearch && matchesProgram && matchesStatus;
+    const matchesFileStatus = fileStatusFilter === 'All' || fileStatusOf(p) === fileStatusFilter;
+    return matchesSearch && matchesProgram && matchesStatus && matchesFileStatus;
   });
 
   const totalPages = Math.ceil(filteredProjects.length / PAGE_SIZE);
@@ -381,6 +426,18 @@ export default function MyProjects() {
         subtitle="구조 해석 수행 이력 및 결과 파일을 관리합니다."
         accentColor="blue"
       />
+
+      <div className="mb-4 p-4 rounded-xl border border-blue-200 bg-blue-50 flex items-start gap-3 animate-fade-in-up">
+        <div className="p-2 bg-white text-blue-600 rounded-lg border border-blue-100 shrink-0">
+          <FileOutput size={18} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-blue-900">결과 파일 보관 정책</p>
+          <p className="text-xs text-blue-700/80 mt-0.5 leading-relaxed">
+            해석 이력은 계속 유지되며, 서버의 결과 파일은 생성 후 {FILE_RETENTION_DAYS}일 동안 보관됩니다. 파일이 만료된 항목은 이력 확인만 가능하고 다운로드는 제한됩니다.
+          </p>
+        </div>
+      </div>
 
       {/* ── 통계 요약 (KPI + 모듈 분포) ── */}
       {!loading && stats.total > 0 && (
@@ -524,6 +581,37 @@ export default function MyProjects() {
         </div>
       )}
 
+      {!loading && stats.total > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 animate-fade-in-up">
+          <button
+            type="button"
+            onClick={() => setFileStatusFilter('available')}
+            className={`text-left bg-white rounded-xl border shadow-sm p-4 transition-colors cursor-pointer ${
+              fileStatusFilter === 'available' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200 hover:border-blue-300'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">파일 보관 중</span>
+              <FileOutput size={16} className="text-blue-500" />
+            </div>
+            <p className="mt-2 text-2xl font-extrabold text-slate-800">{stats.availableFiles}<span className="ml-1 text-xs text-slate-400">건</span></p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFileStatusFilter('expired')}
+            className={`text-left bg-white rounded-xl border shadow-sm p-4 transition-colors cursor-pointer ${
+              fileStatusFilter === 'expired' ? 'border-slate-400 ring-2 ring-slate-100' : 'border-slate-200 hover:border-slate-300'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">파일 만료</span>
+              <FileX size={16} className="text-slate-500" />
+            </div>
+            <p className="mt-2 text-2xl font-extrabold text-slate-800">{stats.expiredFiles}<span className="ml-1 text-xs text-slate-400">건</span></p>
+          </button>
+        </div>
+      )}
+
       {/* 검색 / 필터 영역 */}
       <div className="flex flex-wrap items-center gap-2 mb-6 animate-fade-in-up">
         <div className="relative group flex-1 min-w-48 md:w-56">
@@ -550,9 +638,24 @@ export default function MyProjects() {
         >
           {STATUS_FILTERS.map(f => <option key={f} value={f}>{f === 'All' ? 'All Status' : f}</option>)}
         </select>
+        <select
+          value={fileStatusFilter}
+          onChange={(e) => setFileStatusFilter(e.target.value)}
+          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+        >
+          {FILE_STATUS_FILTERS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+        </select>
         <button onClick={() => fetchHistory()} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 text-sm font-bold hover:bg-slate-50 transition-colors shadow-sm cursor-pointer">
           <Filter size={16} /> <span className="hidden sm:inline">Refresh</span>
         </button>
+        {fileStatusFilter !== 'All' && (
+          <button
+            onClick={() => setFileStatusFilter('All')}
+            className="px-3 py-2 bg-slate-100 text-slate-500 text-sm font-bold rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+          >
+            파일 필터 해제
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -565,6 +668,7 @@ export default function MyProjects() {
                 <th className="py-4 px-6 font-semibold">Project Name</th>
                 <th className="py-4 px-6 font-semibold">Module</th>
                 <th className="py-4 px-6 font-semibold">Status</th>
+                <th className="py-4 px-6 font-semibold">Files</th>
                 <th className="py-4 px-6 font-semibold text-right">Date</th>
                 <th className="py-4 px-6 font-semibold text-center w-16">Detail</th>
               </tr>
@@ -572,7 +676,7 @@ export default function MyProjects() {
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="py-20 text-center text-slate-400">
+                  <td colSpan="7" className="py-20 text-center text-slate-400">
                     <div className="animate-spin inline-block w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mb-4"></div>
                     <p className="text-sm font-bold">Loading Data...</p>
                   </td>
@@ -593,22 +697,16 @@ export default function MyProjects() {
                     </td>
                     <td className="py-4 px-6 text-xs font-medium text-slate-600"><span className="bg-slate-100 px-2 py-1 rounded border border-slate-200">{project.program_name}</span></td>
                     <td className="py-4 px-6">
-                      <div className="flex flex-col gap-1">
-                        <StatusBadge status={project.status} />
-                        {project.files_available === false && (
-                          <span className="flex items-center gap-1 text-[10px] text-slate-400 font-bold">
-                            <FileX size={10} /> 파일 없음
-                          </span>
-                        )}
-                      </div>
+                      <StatusBadge status={project.status} />
                     </td>
+                    <td className="py-4 px-6"><FileRetentionBadge project={project} /></td>
                     <td className="py-4 px-6 text-xs text-slate-400 text-right font-mono">{new Date(project.created_at).toLocaleString()}</td>
                     <td className="py-4 px-6 text-center"><button className="p-1.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-blue-600 transition-all"><ChevronRight size={18} /></button></td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="6" className="py-20 text-center text-slate-400">
+                  <td colSpan="7" className="py-20 text-center text-slate-400">
                     <FileCode size={40} className="mx-auto mb-3 opacity-30" />
                     <p className="text-sm">실행된 해석 이력이 없습니다.</p>
                   </td>
