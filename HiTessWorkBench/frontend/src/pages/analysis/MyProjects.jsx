@@ -141,11 +141,15 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
   const isModelBuilder = project?.program_name === 'HiTessModelBuilder';
   // HP-SCR PSA / POR — XLSX 만 노출 (BDF/JSON 다운로드 숨김), 3D 시각화는 배관 전용 뷰어로
   const isHpScr        = typeof project?.program_name === 'string' && project.program_name.startsWith('HP-SCR');
+  // Simplified Hole Fatigue Assessment — input_json / output_json 만 다운로드 노출
+  const isHoleFatigue  = project?.program_name === 'Simplified Hole Fatigue Assessment';
 
   // result_info 필터링
   const getResultLabel = (key) => {
     if (key === 'bdf' || key === 'bdf_path') return 'BDF Model';
     if (key === 'XLSX_Report') return 'XLSX Report';
+    if (key === 'input_json') return '입력 JSON';
+    if (key === 'output_json') return '결과 JSON';
     return `${key.replace(/_/g, ' ')} Result`;
   };
   const filteredResultEntries = project?.result_info
@@ -154,6 +158,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
         if (isAssessment && key.startsWith('Excel_')) return false;
         if (isModelBuilder) return key === 'bdf_path';
         if (isHpScr) return key === 'XLSX_Report';
+        if (isHoleFatigue) return key === 'input_json' || key === 'output_json';
         return true;
       })
     : [];
@@ -271,8 +276,8 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
             </div>
           ) : (
             <div className="space-y-2">
-              {/* input_info: Truss Assessment / Mast Post Assessment / HP-SCR 은 숨김 */}
-              {project.input_info && !isAssessment && !isHpScr && project.program_name !== "Mast Post Assessment" &&
+              {/* input_info: Truss Assessment / Mast Post Assessment / HP-SCR / Hole Fatigue 는 숨김 */}
+              {project.input_info && !isAssessment && !isHpScr && !isHoleFatigue && project.program_name !== "Mast Post Assessment" &&
                 Object.entries(project.input_info).map(([key, path]) => {
                   if (typeof path !== 'string') return null;
                   const label = isModelBuilder
