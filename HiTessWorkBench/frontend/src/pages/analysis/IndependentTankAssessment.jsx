@@ -7,14 +7,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { Line2 }                from 'three/examples/jsm/lines/Line2';
 import { LineSegments2 }        from 'three/examples/jsm/lines/LineSegments2';
-import { LineGeometry }         from 'three/examples/jsm/lines/LineGeometry';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 import { LineMaterial }         from 'three/examples/jsm/lines/LineMaterial';
 import {
-  Box, Ruler, Layers, Wind, ArrowLeft, Play, Plus, Trash2,
-  Settings2, Activity, Eye, Anchor, AlertCircle
+  Box, Ruler, Layers, Wind, ArrowLeft, Play, Trash2,
+  Settings2, Activity, Anchor, AlertCircle
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
 import PageBanner from '../../components/ui/PageBanner';
@@ -71,66 +69,148 @@ const validateStiffener = (state, axisLen) => {
 const defaultStfValue = (countMode) => countMode === 'interval' ? 500 : 2;
 
 // ────────────────────────────────────────────────────────────
+// 보강재 단면 Shape 빌더 (A × B + C × D)
+//   로컬 좌표계 정의:
+//     X = 판 표면 위 가로 방향(보강재 길이축에 직교)
+//     Y = 판 표면 법선(외측 = +Y)
+//   ExtrudeGeometry 의 depth 는 보강재 길이축(local Z) 방향으로 적용된다.
+//
+//   Flat : A = 높이(h), B = 두께(t).         C/D 미사용.
+//   T    : Web A × B + Flange C × D.        Web 가 판에 수직, Flange 가 상단 좌우 대칭.
+//   L    : 수직 leg A × B + 수평 leg C × D. 웹 자유단(y=0) 이 판 접촉, 플랜지 상단 +X 한쪽.
+// ────────────────────────────────────────────────────────────
+const buildSectionShape = (type, A, B, C, D) => {
+  const a = Math.max(1,   Number(A) || 1);
+  const b = Math.max(0.5, Number(B) || 1);
+  const c = Math.max(1,   Number(C) || 1);
+  const d = Math.max(0.5, Number(D) || 1);
+  const s = new THREE.Shape();
+  if (type === 'T') {
+    // Web: 두께 b, 높이 a. Flange: 폭 c, 두께 d. 자유단(웹 하단) y=0 가 판 접촉.
+    const fw = Math.max(c, b);     // 플랜지가 웹보다 좁아지지 않도록 가드
+    const ft = Math.min(d, a);     // 플랜지 두께가 전체 높이를 넘지 않도록 가드
+    s.moveTo(-b/2,  0);
+    s.lineTo( b/2,  0);
+    s.lineTo( b/2,  a - ft);
+    s.lineTo( fw/2, a - ft);
+    s.lineTo( fw/2, a);
+    s.lineTo(-fw/2, a);
+    s.lineTo(-fw/2, a - ft);
+    s.lineTo(-b/2,  a - ft);
+    s.closePath();
+  } else if (type === 'L') {
+    // 수직 leg (웹): 두께 b, 높이 a. 수평 leg (플랜지): 길이 c, 두께 d.
+    // 웹 하단(y=0) 자유단이 판 접촉, 플랜지는 외부 꼭지점에서 +X 로 뻗음.
+    const fw = Math.max(c, b);
+    const ft = Math.min(d, a);
+    s.moveTo(-b/2,        0);                         // 웹 자유단 좌 (외부)
+    s.lineTo( b/2,        0);                         // 웹 자유단 우 (내부)
+    s.lineTo( b/2,        a - ft);                    // 웹 내측 → 내부 코너
+    s.lineTo(-b/2 + fw,   a - ft);                    // 플랜지 하면
+    s.lineTo(-b/2 + fw,   a);                         // 플랜지 자유단
+    s.lineTo(-b/2,        a);                         // 외부 꼭지점 (apex)
+    s.closePath();
+  } else {
+    // Flat bar: 단순 직사각형 (B × A)
+    s.moveTo(-b/2, 0);
+    s.lineTo( b/2, 0);
+    s.lineTo( b/2, a);
+    s.lineTo(-b/2, a);
+    s.closePath();
+  }
+  return s;
+};
+
+// 보강재 위치 계산 (간격/갯수 모드 공용)
+const positionsAlong = (axisLen, conf) => {
+  if (!conf) return [];
+  const v = Number(conf.value) || 0;
+  if (v <= 0) return [];
+  let count = 0;
+  if (conf.countMode === 'count') count = Math.floor(v);
+  else count = Math.max(0, Math.floor(axisLen / v) - 1);
+  if (count <= 0) return [];
+  const step = axisLen / (count + 1);
+  return Array.from({ length: count }, (_, i) => step * (i + 1));
+};
+
+// ────────────────────────────────────────────────────────────
 // 공통 입력 UI (컴팩트 + 검증 표시)
 // ────────────────────────────────────────────────────────────
 const NumInput = ({ value, onChange, unit, placeholder, validation, className = '', disabled = false }) => {
   const isErr = validation && !validation.ok;
+  // 에러/정상/비활성 상태별 보더 색상 분기
   const borderCls = isErr
-    ? 'border-red-300 focus-within:border-red-500'
-    : 'border-slate-200 focus-within:border-violet-500';
+    ? 'border-red-300 focus-within:border-red-400 ring-0 focus-within:ring-1 focus-within:ring-red-200'
+    : 'border-slate-200 focus-within:border-violet-500 focus-within:ring-1 focus-within:ring-violet-200';
   return (
     <div className={className}>
-      <div className={`flex items-center border ${borderCls} rounded-lg overflow-hidden bg-white transition-colors ${disabled ? 'opacity-50' : ''}`}>
+      <div className={`flex items-stretch border ${borderCls} rounded-lg overflow-hidden bg-white transition-all ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
         <input
           type="number"
           value={value}
           onChange={e => onChange(e.target.value)}
           placeholder={placeholder}
           disabled={disabled}
-          className="flex-1 min-w-0 px-2.5 py-1.5 text-sm font-bold text-slate-800 outline-none bg-transparent"
+          className="flex-1 min-w-0 px-2.5 py-2 text-[13px] font-bold text-slate-800 outline-none bg-transparent leading-none"
         />
-        {unit && <span className="px-2 py-1.5 bg-slate-50 text-slate-500 text-[10px] font-bold border-l border-slate-200">{unit}</span>}
+        {unit && (
+          <span className="flex items-center justify-center px-2 bg-slate-50 text-slate-400 text-[10px] font-bold border-l border-slate-200 min-w-[28px] whitespace-nowrap">
+            {unit}
+          </span>
+        )}
       </div>
       {validation && (
-        <p className={`mt-0.5 text-[10px] leading-tight ${isErr ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
-          {isErr ? `⚠ ${validation.msg}` : validation.hint}
+        <p className={`mt-1 text-[10px] leading-tight ${isErr ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
+          {isErr ? `⚠ ${validation.msg}` : (validation.hint || ' ')}
         </p>
       )}
     </div>
   );
 };
 
-const Select = ({ value, onChange, options, className = '' }) => (
+const Select = ({ value, onChange, options, className = '', disabled = false }) => (
   <select
     value={value}
     onChange={e => onChange(e.target.value)}
-    className={`bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold text-slate-700 outline-none focus:border-violet-500 cursor-pointer ${className}`}
+    disabled={disabled}
+    className={`border rounded-lg px-2.5 py-2 text-[13px] font-bold outline-none transition-all focus:ring-1 focus:ring-violet-200 ${
+      disabled
+        ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+        : 'bg-white border-slate-200 text-slate-700 cursor-pointer focus:border-violet-500'
+    } ${className}`}
   >
     {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
   </select>
 );
 
-const SectionCard = ({ title, icon: Icon, children }) => (
-  <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-    <div className="bg-gradient-to-r from-violet-700 to-violet-600 px-4 py-2 flex items-center gap-2">
-      <Icon size={12} className="text-white" />
-      <h2 className="text-[10.5px] font-bold text-white uppercase tracking-wider">{title}</h2>
+// SectionCard: 헤더는 violet-700→violet-600 그라데이션 + 아이콘 사이즈 상향
+const SectionCard = ({ title, icon: Icon, children, className = '' }) => (
+  <div className={`bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden ${className}`}>
+    <div className="bg-gradient-to-r from-violet-700 to-violet-600 px-3.5 py-2 flex items-center gap-2">
+      <Icon size={13} className="text-violet-200 flex-shrink-0" />
+      <h2 className="text-[10.5px] font-extrabold text-white uppercase tracking-wide">{title}</h2>
     </div>
-    <div className="p-4 space-y-3">{children}</div>
+    <div className="p-3.5 space-y-2.5">{children}</div>
   </div>
 );
 
+// FieldLabel: 11px 고정 폰트 + 라벨-인풋 간격 확보
 const FieldLabel = ({ children }) => (
-  <label className="block text-[10.5px] font-bold text-slate-500 mb-1 tracking-tight">{children}</label>
+  <label className="block text-[11px] font-bold text-slate-500 mb-1 tracking-tight">{children}</label>
 );
 
 // ────────────────────────────────────────────────────────────
 // three.js 뷰어
 // ────────────────────────────────────────────────────────────
-function IndependentTankViewer({ L, B, D, topOpen, stiffeners }) {
+function IndependentTankViewer({ L, B, D, topOpen, stiffeners, section, onPickPoint, pickedPositions }) {
   const mountRef = useRef(null);
   const sceneRef = useRef(null);
   const groupRef = useRef(null);
+  const pickedGroupRef = useRef(null);
+  const onPickRef = useRef(onPickPoint);
+
+  useEffect(() => { onPickRef.current = onPickPoint; }, [onPickPoint]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -139,42 +219,118 @@ function IndependentTankViewer({ L, B, D, topOpen, stiffeners }) {
     const h = mount.clientHeight || 500;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a1126);
+    // 부드러운 세로 그라데이션 배경 (top: deep indigo → bottom: near-black)
+    {
+      const bgCv = document.createElement('canvas');
+      bgCv.width = 2; bgCv.height = 512;
+      const bcx = bgCv.getContext('2d');
+      const grad = bcx.createLinearGradient(0, 0, 0, 512);
+      grad.addColorStop(0,    '#1e1b4b');
+      grad.addColorStop(0.55, '#0b1029');
+      grad.addColorStop(1,    '#020617');
+      bcx.fillStyle = grad;
+      bcx.fillRect(0, 0, 2, 512);
+      const bgTex = new THREE.CanvasTexture(bgCv);
+      bgTex.colorSpace = THREE.SRGBColorSpace;
+      bgTex.minFilter = THREE.LinearFilter;
+      bgTex.magFilter = THREE.LinearFilter;
+      scene.background = bgTex;
+    }
 
     const camera = new THREE.PerspectiveCamera(40, w / h, 1, 1_000_000);
     camera.up.set(0, 0, 1);
     camera.position.set(4000, -4500, 2800);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      logarithmicDepthBuffer: true,
+      powerPreference: 'high-performance',
+    });
     renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
+    renderer.toneMappingExposure = 1.05;
     mount.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.06;
+    controls.dampingFactor = 0.07;
     controls.minDistance = 50;
 
-    scene.add(new THREE.AmbientLight(0x4a5670, 1.5));
-    const key  = new THREE.DirectionalLight(0xffffff, 1.6);
-    key.position.set(1500, -2000, 2000); scene.add(key);
-    const fill = new THREE.DirectionalLight(0x6a8cd4, 0.9);
-    fill.position.set(-1500, 1500, 800); scene.add(fill);
-    const rim  = new THREE.DirectionalLight(0xa78bfa, 0.5);
-    rim.position.set(0, 2000, -500); scene.add(rim);
+    // ── 라이팅: Hemisphere(자연스러운 sky/ground 톤) + 3-point (key/fill/rim)
+    const hemi = new THREE.HemisphereLight(0xc5d4f0, 0x1a1f3a, 0.55);
+    scene.add(hemi);
+    scene.add(new THREE.AmbientLight(0x2d3550, 0.9));
+    const key  = new THREE.DirectionalLight(0xffffff, 1.55);
+    key.position.set(1500, -2000, 2200);  scene.add(key);
+    const fill = new THREE.DirectionalLight(0x7ab2ff, 0.7);
+    fill.position.set(-1800, 1500, 1000); scene.add(fill);
+    const rim  = new THREE.DirectionalLight(0xf0abfc, 0.45);  // 후면 보라-핑크 림으로 윤곽 강조
+    rim.position.set(0, 2000, -600);      scene.add(rim);
 
     const group = new THREE.Group();
     scene.add(group);
+    const pickedGroup = new THREE.Group();
+    scene.add(pickedGroup);
 
     sceneRef.current = { scene, camera, renderer, controls };
     groupRef.current = group;
+    pickedGroupRef.current = pickedGroup;
+
+    // ── Pick 포인트용 raycaster (드래그와 클릭 구분)
+    const raycaster = new THREE.Raycaster();
+    raycaster.params.Points = { threshold: 1 };
+    const ndc = new THREE.Vector2();
+    const downPos = { x: 0, y: 0, t: 0 };
+    const onPointerDown = (e) => {
+      downPos.x = e.clientX; downPos.y = e.clientY; downPos.t = performance.now();
+    };
+    const onPointerUp = (e) => {
+      const dx = e.clientX - downPos.x;
+      const dy = e.clientY - downPos.y;
+      const dt = performance.now() - downPos.t;
+      // 드래그(>4px) 또는 길게 누름(>400ms) 은 picking 무시
+      if (Math.hypot(dx, dy) > 4 || dt > 400) return;
+      const rect = mount.getBoundingClientRect();
+      ndc.set(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(ndc, camera);
+      const pickables = [];
+      group.traverse(obj => {
+        if (obj.userData && obj.userData.isPickPoint) pickables.push(obj);
+      });
+      const hits = raycaster.intersectObjects(pickables, false);
+      if (hits.length) {
+        const p = hits[0].object.userData.point;
+        onPickRef.current?.(p);
+      }
+    };
+    mount.addEventListener('pointerdown', onPointerDown);
+    mount.addEventListener('pointerup', onPointerUp);
 
     let rafId = 0;
     const tick = () => {
       controls.update();
+      // pick 포인트는 카메라 거리에 따라 일정한 픽셀 크기(작은 FEA 노드)로 유지
+      group.traverse(obj => {
+        if (obj.userData && obj.userData.isPickPoint) {
+          const d = camera.position.distanceTo(obj.position);
+          const s = d * 0.0045;
+          obj.scale.setScalar(s);
+        }
+      });
+      // 선택된 Node ▲ 마커 — 카메라 거리 보정 + 부드러운 펄스(±6%)
+      const pulse = 1 + Math.sin(performance.now() * 0.004) * 0.06;
+      pickedGroup.children.forEach(obj => {
+        if (obj.userData && obj.userData.isPickedMarker) {
+          const d = camera.position.distanceTo(obj.position);
+          const s = d * 0.028 * pulse;
+          obj.scale.setScalar(s);
+        }
+      });
       renderer.render(scene, camera);
       rafId = requestAnimationFrame(tick);
     };
@@ -199,6 +355,8 @@ function IndependentTankViewer({ L, B, D, topOpen, stiffeners }) {
     return () => {
       cancelAnimationFrame(rafId);
       ro.disconnect();
+      mount.removeEventListener('pointerdown', onPointerDown);
+      mount.removeEventListener('pointerup', onPointerUp);
       controls.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
@@ -224,29 +382,23 @@ function IndependentTankViewer({ L, B, D, topOpen, stiffeners }) {
     const Bn = Math.max(1, Number(B) || 1);
     const Dn = Math.max(1, Number(D) || 1);
 
-    const gridSize = Math.max(Ln, Bn) * 2;
-    const grid = new THREE.GridHelper(gridSize, 20, 0x334155, 0x1e293b);
-    grid.rotation.x = Math.PI / 2;
-    grid.position.set(Ln / 2, Bn / 2, 0);
-    grid.material.transparent = true;
-    grid.material.opacity = 0.35;
-    group.add(grid);
-
     const axes = new THREE.AxesHelper(Math.min(Ln, Bn, Dn) * 0.4);
     group.add(axes);
 
     // 뷰포트 크기 (LineMaterial resolution 용)
     const vp = new THREE.Vector2(ctx.renderer.domElement.width, ctx.renderer.domElement.height);
 
+    // 판: 시원한 블루-틴트 유리감. 약간의 emissive 로 어두운 영역에서도 형상이 인식됨.
     const plateMat = new THREE.MeshStandardMaterial({
-      color: 0x6f9fd8, transparent: true, opacity: 0.28,
-      side: THREE.DoubleSide, metalness: 0.15, roughness: 0.55,
+      color: 0x7aa5dc, transparent: true, opacity: 0.22,
+      side: THREE.DoubleSide, metalness: 0.18, roughness: 0.52,
+      emissive: 0x1e3a5f, emissiveIntensity: 0.2,
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
       depthWrite: false,
     });
-    // plate edge — Line2 (픽셀 두께)
+    // 판 모서리 — 선명한 sky-blue
     const edgeMat = new LineMaterial({
-      color: 0xbfd9ff, linewidth: 1.4, transparent: true, opacity: 0.9,
+      color: 0x93c5fd, linewidth: 1.6, transparent: true, opacity: 0.95,
       resolution: vp.clone(), worldUnits: false, depthTest: true,
     });
 
@@ -277,43 +429,140 @@ function IndependentTankViewer({ L, B, D, topOpen, stiffeners }) {
     addFace(Ln, Dn, [Ln / 2, 0,  Dn / 2], [Math.PI / 2, 0, 0]);
     addFace(Ln, Dn, [Ln / 2, Bn, Dn / 2], [Math.PI / 2, 0, 0]);
 
-    // 보강재 — Line2 (픽셀 두께, plate 위에 항상 또렷이 보이도록 depthTest 끔)
-    const stfMat = new LineMaterial({
-      color: 0xfbbf24, linewidth: 2.4, transparent: true, opacity: 1.0,
-      resolution: vp.clone(), worldUnits: false, depthTest: false,
+    // ── 보강재: 실 단면 형상(Flat / T / L) Extrude 메시
+    const stfType = section?.type ?? 'Flat';
+    const stfA    = Math.max(1,   Number(section?.A) || 75);
+    const stfB    = Math.max(0.5, Number(section?.B) || 9);
+    const stfC    = Math.max(1,   Number(section?.C) || 50);
+    const stfD    = Math.max(0.5, Number(section?.D) || 9);
+    const stfSide = section?.side ?? 'Outside';
+    const sideSign = stfSide === 'Inside' ? -1 : 1;
+    const stfShape = buildSectionShape(stfType, stfA, stfB, stfC, stfD);
+
+    // 보강재: 따뜻한 코랄/오렌지 메탈 — 시원한 블루 판과 보색 대비, 자체 emissive 로 항상 또렷
+    const stfMat = new THREE.MeshStandardMaterial({
+      color: 0xfb923c,                       // tailwind orange-400
+      metalness: 0.4, roughness: 0.32,
+      emissive: 0x7c2d12, emissiveIntensity: 0.25,
+      side: THREE.DoubleSide,
     });
-    const addRect = (corners) => {
-      const flat = [];
-      corners.forEach(([x, y, z]) => flat.push(x, y, z));
-      flat.push(corners[0][0], corners[0][1], corners[0][2]); // 닫힌 사각형
-      const lg = new LineGeometry();
-      lg.setPositions(flat);
-      const line = new Line2(lg, stfMat);
+    const stfEdgeMat = new LineMaterial({
+      color: 0xfed7aa, linewidth: 1.2, transparent: true, opacity: 0.9,
+      resolution: vp.clone(), worldUnits: false, depthTest: true,
+    });
+
+    // 한 segment(직선) 위에 단면을 extrude 하여 배치
+    const addStiffenerSegment = (start, end, plateNormal) => {
+      const startV = new THREE.Vector3(...start);
+      const endV   = new THREE.Vector3(...end);
+      const dirV   = endV.clone().sub(startV);
+      const length = dirV.length();
+      if (length < 1e-3) return;
+      dirV.normalize();
+      // local Y = 판 법선 (외측이 +Y), local Z = 보강재 길이축 (extrude 방향), local X = 가로축
+      const yAxis = new THREE.Vector3(...plateNormal).multiplyScalar(sideSign);
+      const xAxis = new THREE.Vector3().crossVectors(yAxis, dirV).normalize();
+      const zAxis = dirV;
+
+      const geom = new THREE.ExtrudeGeometry(stfShape, { depth: length, bevelEnabled: false, curveSegments: 1, steps: 1 });
+      const mesh = new THREE.Mesh(geom, stfMat);
+      const m = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+      m.setPosition(startV);
+      mesh.applyMatrix4(m);
+      mesh.renderOrder = 1;
+      group.add(mesh);
+
+      // 단면 가장자리 윤곽선 — 가독성용
+      const eg = new THREE.EdgesGeometry(geom, 1);
+      const lsg = new LineSegmentsGeometry();
+      lsg.setPositions(Array.from(eg.attributes.position.array));
+      eg.dispose();
+      const line = new LineSegments2(lsg, stfEdgeMat);
+      line.applyMatrix4(m);
       line.computeLineDistances();
-      line.renderOrder = 3; // edge 위에 그려져 가려지지 않음
+      line.renderOrder = 2;
       group.add(line);
     };
 
-    const positionsAlong = (axisLen, conf) => {
-      if (!conf) return [];
-      const v = Number(conf.value) || 0;
-      if (v <= 0) return [];
-      let count = 0;
-      if (conf.countMode === 'count') count = Math.floor(v);
-      else count = Math.max(0, Math.floor(axisLen / v) - 1);
-      if (count <= 0) return [];
-      const step = axisLen / (count + 1);
-      return Array.from({ length: count }, (_, i) => step * (i + 1));
+    // 한 ring 4개 segment 정의 (start, end, 판 외측 법선)
+    const ringX = (x) => [
+      { s: [x, 0, 0],  e: [x, Bn, 0],  n: [0, 0, -1] }, // bottom plate
+      { s: [x, Bn, 0], e: [x, Bn, Dn], n: [0, 1, 0]  }, // +Y plate
+      { s: [x, Bn, Dn],e: [x, 0, Dn],  n: [0, 0, 1]  }, // top plate
+      { s: [x, 0, Dn], e: [x, 0, 0],   n: [0, -1, 0] }, // -Y plate
+    ];
+    const ringY = (y) => [
+      { s: [0, y, 0],  e: [Ln, y, 0],  n: [0, 0, -1] },
+      { s: [Ln, y, 0], e: [Ln, y, Dn], n: [1, 0, 0]  },
+      { s: [Ln, y, Dn],e: [0, y, Dn],  n: [0, 0, 1]  },
+      { s: [0, y, Dn], e: [0, y, 0],   n: [-1, 0, 0] },
+    ];
+    const ringZ = (z) => [
+      { s: [0, 0, z],  e: [Ln, 0, z],  n: [0, -1, 0] },
+      { s: [Ln, 0, z], e: [Ln, Bn, z], n: [1, 0, 0]  },
+      { s: [Ln, Bn, z],e: [0, Bn, z],  n: [0, 1, 0]  },
+      { s: [0, Bn, z], e: [0, 0, z],   n: [-1, 0, 0] },
+    ];
+
+    const stfX = positionsAlong(Ln, stiffeners?.L);
+    const stfY = positionsAlong(Bn, stiffeners?.B);
+    const stfZ = positionsAlong(Dn, stiffeners?.D);
+
+    const addRing = (segs) => segs.forEach(({ s, e, n }) => {
+      // top open 이면 z=Dn 판이 없으므로 그 segment 도 생략
+      if (topOpen && (s[2] === Dn && e[2] === Dn)) return;
+      addStiffenerSegment(s, e, n);
+    });
+    stfX.forEach(x => addRing(ringX(x)));
+    stfY.forEach(y => addRing(ringY(y)));
+    stfZ.forEach(z => addRing(ringZ(z)));
+
+    // ── Pick 포인트: 박스 꼭지점 + 보강재 ring 교점/모서리 접점
+    //   topOpen 인 경우 상판(z=Dn) 위의 모든 점은 제외 (상판 자체가 없음)
+    const pickPts = [];
+    const pushPt = (pos, kind) => {
+      if (topOpen && pos[2] === Dn) return;
+      pickPts.push({ pos, kind });
     };
 
-    positionsAlong(Ln, stiffeners?.L).forEach(x => {
-      addRect([[x, 0, 0], [x, Bn, 0], [x, Bn, Dn], [x, 0, Dn]]);
+    // 8 corners
+    [[0,0,0],[Ln,0,0],[Ln,Bn,0],[0,Bn,0],
+     [0,0,Dn],[Ln,0,Dn],[Ln,Bn,Dn],[0,Bn,Dn]].forEach(p => pushPt(p, 'corner'));
+
+    // 보강재 ring 이 박스 모서리(edge)와 만나는 4점
+    stfX.forEach(x => [[0,0],[Bn,0],[Bn,Dn],[0,Dn]].forEach(([y,z]) => pushPt([x,y,z], 'ring-edge')));
+    stfY.forEach(y => [[0,0],[Ln,0],[Ln,Dn],[0,Dn]].forEach(([x,z]) => pushPt([x,y,z], 'ring-edge')));
+    stfZ.forEach(z => [[0,0],[Ln,0],[Ln,Bn],[0,Bn]].forEach(([x,y]) => pushPt([x,y,z], 'ring-edge')));
+
+    // 보강재-보강재 교점 (서로 다른 축 ring 이 박스 표면에서 교차하는 2점씩)
+    stfX.forEach(x => stfY.forEach(y => { pushPt([x,y,0],'ring-cross'); pushPt([x,y,Dn],'ring-cross'); }));
+    stfX.forEach(x => stfZ.forEach(z => { pushPt([x,0,z],'ring-cross'); pushPt([x,Bn,z],'ring-cross'); }));
+    stfY.forEach(y => stfZ.forEach(z => { pushPt([0,y,z],'ring-cross'); pushPt([Ln,y,z],'ring-cross'); }));
+
+    // 중복 제거 (서로 다른 룰에서 같은 점이 생성될 수 있음)
+    const seen = new Set();
+    const ptKey = (p) => `${p[0].toFixed(2)}_${p[1].toFixed(2)}_${p[2].toFixed(2)}`;
+    const uniquePts = pickPts.filter(({ pos, kind }) => {
+      const k = ptKey(pos);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    }).map(({ pos, kind }) => {
+      // corner 우선 — 중복 제거 시 라벨이 약한 것이 살아남을 수 있어 보정
+      const isCorner = pos.every((v, i) => v === 0 || v === [Ln, Bn, Dn][i]);
+      return { pos, kind: isCorner ? 'corner' : kind };
     });
-    positionsAlong(Bn, stiffeners?.B).forEach(y => {
-      addRect([[0, y, 0], [Ln, y, 0], [Ln, y, Dn], [0, y, Dn]]);
-    });
-    positionsAlong(Dn, stiffeners?.D).forEach(z => {
-      addRect([[0, 0, z], [Ln, 0, z], [Ln, Bn, z], [0, Bn, z]]);
+
+    // FEA 노드 스타일: 작고 단색 빨강 구 (depthTest on → 가려질 때는 가려져 자연스럽게)
+    const sphereGeom = new THREE.SphereGeometry(1, 12, 8); // scale 은 매 프레임 카메라 거리로 조정
+    const nodeMat = new THREE.MeshBasicMaterial({ color: 0xdc2626 });
+
+    uniquePts.forEach(({ pos, kind }) => {
+      const sp = new THREE.Mesh(sphereGeom, nodeMat);
+      sp.position.set(...pos);
+      sp.renderOrder = 4;
+      sp.userData = { isPickPoint: true, point: [pos[0], pos[1], pos[2]], kind };
+      group.add(sp);
     });
 
     const diag = Math.sqrt(Ln * Ln + Bn * Bn + Dn * Dn);
@@ -326,7 +575,80 @@ function IndependentTankViewer({ L, B, D, topOpen, stiffeners }) {
     cam.far  = diag * 10;
     cam.updateProjectionMatrix();
     ctrls.update();
-  }, [L, B, D, topOpen, stiffeners]);
+  }, [L, B, D, topOpen, stiffeners, section]);
+
+  // ── 선택된 Node 위에 노란 ▲ 스프라이트 렌더 (분리된 group → BC 변경마다 scene 전체를 재구성하지 않음)
+  useEffect(() => {
+    const pgroup = pickedGroupRef.current;
+    if (!pgroup) return;
+
+    while (pgroup.children.length) {
+      const c = pgroup.children.pop();
+      if (c.material) {
+        if (c.material.map) c.material.map.dispose();
+        c.material.dispose();
+      }
+    }
+    if (!pickedPositions || pickedPositions.length === 0) return;
+
+    // ▲ 텍스처 (1회 생성 후 sprite 공유): 라임 그린 + 어두운 외곽 + 소프트 글로우
+    // 색상 선택 근거: 배경(짙은 인디고) + 판(블루) + 보강재(오렌지) 와 모두 보색에 가까워 항상 또렷.
+    const cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 128;
+    const cx = cv.getContext('2d');
+    cx.clearRect(0, 0, 128, 128);
+
+    // 외곽 글로우 (라임 그린 라디얼 그라데이션)
+    const glow = cx.createRadialGradient(64, 62, 28, 64, 62, 62);
+    glow.addColorStop(0,    'rgba(190, 242, 100, 0.55)'); // lime-200
+    glow.addColorStop(0.55, 'rgba(132, 204, 22, 0.18)');  // lime-500
+    glow.addColorStop(1,    'rgba(132, 204, 22, 0)');
+    cx.fillStyle = glow;
+    cx.fillRect(0, 0, 128, 128);
+
+    // 진한 외곽선 (가독성 보강)
+    cx.fillStyle = '#1a2e05'; // 진한 올리브
+    cx.beginPath();
+    cx.moveTo(64, 14);
+    cx.lineTo(114, 106);
+    cx.lineTo(14, 106);
+    cx.closePath();
+    cx.fill();
+
+    // 라임 메인 필
+    cx.fillStyle = '#a3e635'; // lime-400
+    cx.beginPath();
+    cx.moveTo(64, 24);
+    cx.lineTo(106, 100);
+    cx.lineTo(22, 100);
+    cx.closePath();
+    cx.fill();
+
+    // 상단 하이라이트 (작은 흰빛 — 광택감)
+    cx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    cx.beginPath();
+    cx.moveTo(64, 32);
+    cx.lineTo(82, 60);
+    cx.lineTo(46, 60);
+    cx.closePath();
+    cx.fill();
+
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.anisotropy = 4;
+
+    pickedPositions.forEach(p => {
+      // depthTest off → 보강재/판 뒤에 가려져도 또렷이 보임 (선택 결과는 항상 가시화)
+      const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+      const sp = new THREE.Sprite(mat);
+      sp.position.set(p[0], p[1], p[2]);
+      sp.renderOrder = 6;
+      sp.userData = { isPickedMarker: true };
+      pgroup.add(sp);
+    });
+  }, [pickedPositions]);
 
   return <div ref={mountRef} className="w-full h-full" />;
 }
@@ -349,8 +671,13 @@ export default function IndependentTankAssessment() {
   const [stfB, setStfB] = useState({ type: 'uniform', countMode: 'interval', value: 500 });
   const [stfD, setStfD] = useState({ type: 'uniform', countMode: 'count',    value: 2 });
   const [stfType, setStfType] = useState('Flat');
-  const [stfDim1, setStfDim1] = useState(75);
-  const [stfDim2, setStfDim2] = useState(9);
+  // Flat: A(h) × B(t)
+  // T   : Web A(h) × B(t) + Flange C(w) × D(t)
+  // L   : Vertical leg A × B + Horizontal leg C × D
+  const [stfDim1, setStfDim1] = useState(75);  // A
+  const [stfDim2, setStfDim2] = useState(9);   // B
+  const [stfDim3, setStfDim3] = useState(50);  // C  (T/L 전용)
+  const [stfDim4, setStfDim4] = useState(9);   // D  (T/L 전용)
   const [stfSide, setStfSide] = useState('Outside');
 
   // ── Boundary & Load
@@ -358,7 +685,6 @@ export default function IndependentTankAssessment() {
   const [accX, setAccX] = useState(0.3);
   const [accY, setAccY] = useState(0.8);
   const [accZ, setAccZ] = useState(0.6);
-  const [bcMode, setBcMode] = useState('auto');
   const [bcRows, setBcRows] = useState([]);
 
   // ── 검증 결과
@@ -374,6 +700,9 @@ export default function IndependentTankAssessment() {
   }, [tcorr, tp]);
   const vStfH = useMemo(() => validateNumber(stfDim1, RULES.stfH), [stfDim1]);
   const vStfT = useMemo(() => validateNumber(stfDim2, RULES.stfT), [stfDim2]);
+  // T/L 형상에서만 평가하는 추가 치수 — Flat 일 때는 무조건 ok 로 처리
+  const vStfC = useMemo(() => stfType === 'Flat' ? ok() : validateNumber(stfDim3, RULES.stfH), [stfDim3, stfType]);
+  const vStfD = useMemo(() => stfType === 'Flat' ? ok() : validateNumber(stfDim4, RULES.stfT), [stfDim4, stfType]);
   const vAx   = useMemo(() => validateNumber(accX, RULES.acc), [accX]);
   const vAy   = useMemo(() => validateNumber(accY, RULES.acc), [accY]);
   const vAz   = useMemo(() => validateNumber(accZ, RULES.acc), [accZ]);
@@ -389,12 +718,34 @@ export default function IndependentTankAssessment() {
     D: validateStiffener(stfD, Number(dimD) || 0),
   }), [stfL, stfB, stfD, dimL, dimB, dimD]);
 
-  const allValid = [vL, vB, vD, vTp, vTcorr, vStfH, vStfT, vAx, vAy, vAz, vAirV,
+  // 뷰어 props 메모이즈 (참조 안정화로 불필요한 scene 재구성 방지)
+  const viewerStiffeners = useMemo(() => ({ L: stfL, B: stfB, D: stfD }), [stfL, stfB, stfD]);
+  const viewerSection    = useMemo(() => ({
+    type: stfType,
+    A: Number(stfDim1), B: Number(stfDim2),
+    C: Number(stfDim3), D: Number(stfDim4),
+    side: stfSide,
+  }), [stfType, stfDim1, stfDim2, stfDim3, stfDim4, stfSide]);
+  const pickedPositions  = useMemo(
+    () => bcRows.map(r => [Number(r.x) || 0, Number(r.y) || 0, Number(r.z) || 0]),
+    [bcRows]
+  );
+
+  const allValid = [vL, vB, vD, vTp, vTcorr, vStfH, vStfT, vStfC, vStfD, vAx, vAy, vAz, vAirV,
     vStfArr.L, vStfArr.B, vStfArr.D].every(v => v.ok);
 
-  const addBcRow    = () => setBcRows([...bcRows, { x: 0, y: 0 }]);
   const removeBcRow = (idx) => setBcRows(bcRows.filter((_, i) => i !== idx));
-  const updateBcRow = (idx, key, val) => setBcRows(bcRows.map((r, i) => i === idx ? { ...r, [key]: val } : r));
+
+  // 3D 뷰어에서 Node 클릭 → 토글 (이미 선택된 좌표면 해제)
+  const handlePickPoint = (p) => {
+    const key = (r) => `${Number(r.x).toFixed(1)}_${Number(r.y).toFixed(1)}_${Number(r.z).toFixed(1)}`;
+    const newRow = { x: Math.round(p[0]), y: Math.round(p[1]), z: Math.round(p[2]) };
+    setBcRows(prev => {
+      const idx = prev.findIndex(r => key(r) === key(newRow));
+      if (idx >= 0) return prev.filter((_, i) => i !== idx);
+      return [...prev, newRow];
+    });
+  };
 
   // 보강재 모드 전환 시 적정 기본값으로 자동 갱신
   const setStfMode = (state, set) => (mode) => {
@@ -402,43 +753,52 @@ export default function IndependentTankAssessment() {
     set({ ...state, countMode: mode, value: defaultStfValue(mode) });
   };
 
-  const axisRow = (label, state, set, validation) => (
-    <div className="space-y-1">
-      <div className="grid grid-cols-[18px_1fr_1fr_1fr] items-center gap-1.5">
-        <span className="text-[11px] font-extrabold text-slate-500">{label}</span>
-        <Select
-          value={state.type}
-          onChange={v => set({ ...state, type: v })}
-          options={[{ value: 'uniform', label: '등간격' }, { value: 'custom', label: '사용자입력' }]}
-        />
-        <Select
-          value={state.countMode}
-          onChange={setStfMode(state, set)}
-          options={[{ value: 'interval', label: '간격' }, { value: 'count', label: '갯수' }]}
-        />
-        <div>
-          <div className={`flex items-center border rounded-lg overflow-hidden bg-white transition-colors ${
-            validation.ok
-              ? 'border-slate-200 focus-within:border-violet-500'
-              : 'border-red-300 focus-within:border-red-500'
-          }`}>
+  const axisRow = (label, state, set, validation) => {
+    const isErr = !validation.ok;
+    const inputBorder = isErr
+      ? 'border-red-300 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200'
+      : 'border-slate-200 focus-within:border-violet-500 focus-within:ring-1 focus-within:ring-violet-200';
+    return (
+      <div className="border border-slate-200/70 rounded-lg bg-slate-50/60 overflow-hidden">
+        {/* 축 레이블 + 모드 선택 행 */}
+        <div className="flex items-center gap-2 px-2.5 py-2 bg-white border-b border-slate-100">
+          {/* 축 레이블 칩 */}
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-violet-600 text-white text-[11px] font-extrabold flex-shrink-0 shadow-sm">
+            {label}
+          </span>
+          <Select
+            value={state.type}
+            onChange={v => set({ ...state, type: v })}
+            options={[{ value: 'uniform', label: '등간격' }, { value: 'custom', label: '커스텀' }]}
+            className="flex-1 min-w-0 text-[12px]"
+          />
+          <Select
+            value={state.countMode}
+            onChange={setStfMode(state, set)}
+            options={[{ value: 'interval', label: '간격(mm)' }, { value: 'count', label: '갯수(EA)' }]}
+            className="flex-1 min-w-0 text-[12px]"
+          />
+        </div>
+        {/* 값 입력 행 */}
+        <div className="px-2.5 py-2">
+          <div className={`flex items-stretch border ${inputBorder} rounded-lg overflow-hidden bg-white transition-all`}>
             <input
               type="number"
               value={state.value}
               onChange={e => set({ ...state, value: e.target.value })}
-              className="flex-1 min-w-0 px-2.5 py-1.5 text-sm font-bold text-slate-800 outline-none bg-transparent"
+              className="flex-1 min-w-0 px-2.5 py-2 text-[13px] font-bold text-slate-800 outline-none bg-transparent leading-none"
             />
-            <span className="px-2 py-1.5 bg-slate-50 text-slate-500 text-[10px] font-bold border-l border-slate-200">
+            <span className="flex items-center justify-center px-2.5 bg-slate-50 text-slate-400 text-[10px] font-bold border-l border-slate-200 min-w-[32px]">
               {state.countMode === 'interval' ? 'mm' : 'EA'}
             </span>
           </div>
+          <p className={`mt-1 text-[10px] leading-tight ${isErr ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
+            {isErr ? `⚠ ${validation.msg}` : (validation.hint || ' ')}
+          </p>
         </div>
       </div>
-      <p className={`pl-6 text-[10px] leading-tight ${validation.ok ? 'text-slate-400' : 'text-red-500 font-bold'}`}>
-        {validation.ok ? validation.hint : `⚠ ${validation.msg}`}
-      </p>
-    </div>
-  );
+    );
+  };
 
   const handleJobSubmit = () => {
     if (!allValid) {
@@ -452,13 +812,19 @@ export default function IndependentTankAssessment() {
         topOpen,
         stiffeners: {
           L: stfL, B: stfB, D: stfD,
-          section: { type: stfType, dim1: Number(stfDim1), dim2: Number(stfDim2), side: stfSide },
+          section: {
+            type: stfType,
+            A: Number(stfDim1), B: Number(stfDim2),
+            C: stfType === 'Flat' ? null : Number(stfDim3),
+            D: stfType === 'Flat' ? null : Number(stfDim4),
+            side: stfSide,
+          },
         },
       },
       boundaryLoad: {
         airVentHeight: Number(airVentH),
         acceleration: { x: Number(accX), y: Number(accY), z: Number(accZ) },
-        bcMode, bcRows,
+        bcNodes: bcRows,
       },
     };
     // eslint-disable-next-line no-console
@@ -467,57 +833,71 @@ export default function IndependentTankAssessment() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
+    <div className="max-w-[1400px] mx-auto pb-6 animate-fade-in-up">
 
+      {/* ───── PageBanner ───── */}
       <PageBanner gradient="from-brand-blue via-violet-900 to-violet-700">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => setCurrentMenu('Interactive Apps')}
-            className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
+            className="p-2 bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/20 rounded-xl text-white transition-colors cursor-pointer"
+            title="Interactive Apps 로 돌아가기"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={16} />
           </button>
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              <Box size={18} className="text-violet-300" />
+            <h1 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+              <Box size={17} className="text-violet-300 flex-shrink-0" />
               Independent Tank Assessment
             </h1>
-            <p className="text-sm text-violet-200/80 mt-0.5">독립 탱크 치수·판두께·보강재·경계조건을 입력하여 구조 해석 모델을 구축합니다.</p>
+            <p className="text-[11px] text-violet-200/75 mt-0.5 leading-snug">
+              독립 탱크 치수·판두께·보강재·경계조건을 입력하여 구조 해석 모델을 구축합니다.
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {!allValid && (
-            <span className="hidden md:inline-flex items-center gap-1 px-2 py-1 rounded-md bg-red-500/20 border border-red-300/40 text-red-100 text-[10px] font-bold">
-              <AlertCircle size={11}/> 입력값 확인 필요
+        <div className="flex items-center gap-2.5">
+          {/* 검증 상태 배지 — valid/invalid 구분이 명확하도록 크기 확보 */}
+          {allValid ? (
+            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/25 border border-emerald-300/50 text-emerald-100 text-[11px] font-bold">
+              ✓ 입력 완료
+            </span>
+          ) : (
+            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-500/25 border border-red-300/50 text-red-100 text-[11px] font-bold">
+              <AlertCircle size={12} className="flex-shrink-0" /> 입력값 확인 필요
             </span>
           )}
           <button
             onClick={handleJobSubmit}
             disabled={!allValid}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-bold transition-colors shadow ${
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-white text-[12px] font-bold transition-all shadow-md ${
               allValid
-                ? 'bg-violet-500 hover:bg-violet-400 cursor-pointer'
-                : 'bg-slate-500/50 cursor-not-allowed opacity-70'
+                ? 'bg-violet-500 hover:bg-violet-400 active:bg-violet-600 cursor-pointer shadow-violet-900/40'
+                : 'bg-slate-600/40 cursor-not-allowed opacity-50'
             }`}
           >
-            <Play size={14} /> Job Submission
+            <Play size={13} fill={allValid ? 'currentColor' : 'none'} /> Job Submission
           </button>
           <GuideButton guideTitle="[대화형] Independent Tank Assessment — 독립 탱크 모델링" variant="dark" />
         </div>
       </PageBanner>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-5 items-start">
+      {/* ═══════════════════════════════════════════════════════
+          상단 2컬럼: 좌측 입력(Geometry/Stiffener) + 우측 3D 뷰어
+         ═══════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-[440px_1fr] gap-4 items-start">
 
-        {/* ───── 좌측 입력 패널 (한 화면) ───── */}
-        <div className="space-y-3">
+        {/* ───── 좌측 입력 패널: Geometry + Stiffener ───── */}
+        <div className="space-y-2.5">
 
-          <div className="flex items-center gap-2 pt-1">
-            <span className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest">Geometry</span>
-            <div className="flex-1 border-t border-violet-200/60" />
+          {/* 섹션 디바이더 — Geometry */}
+          <div className="flex items-center gap-2.5 pt-2">
+            <span className="text-[10.5px] font-extrabold text-violet-600 uppercase tracking-widest whitespace-nowrap">Geometry</span>
+            <div className="flex-1 border-t border-violet-200/80" />
           </div>
 
+          {/* 탱크 치수 */}
           <SectionCard title="탱크 치수" icon={Ruler}>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <FieldLabel>L (길이)</FieldLabel>
                 <NumInput value={dimL} onChange={setDimL} unit="mm" validation={vL} />
@@ -533,14 +913,16 @@ export default function IndependentTankAssessment() {
             </div>
           </SectionCard>
 
+          {/* 판 두께 / Top Open */}
           <SectionCard title="판 두께 / Top Open" icon={Layers}>
-            <div className="grid grid-cols-3 gap-2">
+            {/* tp, tcorr: 좌 2/3 / Top Open: 우 1/3 — 두 치수가 연관성 높아 묶어서 배치 */}
+            <div className="grid grid-cols-[1fr_1fr_1fr] gap-3">
               <div>
-                <FieldLabel>tp</FieldLabel>
+                <FieldLabel>tp (판 두께)</FieldLabel>
                 <NumInput value={tp} onChange={setTp} unit="mm" validation={vTp} />
               </div>
               <div>
-                <FieldLabel>tcorr</FieldLabel>
+                <FieldLabel>tcorr (부식 여유)</FieldLabel>
                 <NumInput value={tcorr} onChange={setTcorr} unit="mm" validation={vTcorr} />
               </div>
               <div>
@@ -551,11 +933,18 @@ export default function IndependentTankAssessment() {
                   options={[{ value: 'closed', label: '폐쇄형' }, { value: 'open', label: '개방형' }]}
                   className="w-full"
                 />
-                <p className="mt-0.5 text-[10px] leading-tight text-slate-400">상판 유무</p>
+                <p className="mt-1 text-[10px] leading-tight text-slate-400">상판 유무</p>
               </div>
             </div>
           </SectionCard>
 
+          {/* 섹션 디바이더 — Stiffener */}
+          <div className="flex items-center gap-2.5 pt-2">
+            <span className="text-[10.5px] font-extrabold text-violet-600 uppercase tracking-widest whitespace-nowrap">Stiffener</span>
+            <div className="flex-1 border-t border-violet-200/80" />
+          </div>
+
+          {/* 보강재 배치 */}
           <SectionCard title="보강재 배치" icon={Settings2}>
             <div className="space-y-2">
               {axisRow('L', stfL, setStfL, vStfArr.L)}
@@ -564,13 +953,18 @@ export default function IndependentTankAssessment() {
             </div>
           </SectionCard>
 
+          {/* 보강재 치수 */}
           <SectionCard title="보강재 치수" icon={Activity}>
-            {/* 1행: 단면 단독 */}
+            {/* 단면 형상 선택 — 풀폭 */}
             <div>
               <FieldLabel>단면 형상</FieldLabel>
               <Select
                 value={stfType}
-                onChange={setStfType}
+                onChange={(v) => {
+                  setStfType(v);
+                  // Flat 이 아니면 Inside 허용 안 됨 → Outside 로 고정
+                  if (v !== 'Flat') setStfSide('Outside');
+                }}
                 options={[
                   { value: 'Flat', label: 'Flat bar' },
                   { value: 'L',    label: 'L-Angle' },
@@ -579,43 +973,179 @@ export default function IndependentTankAssessment() {
                 className="w-full"
               />
             </div>
-            {/* 2행: h | t | 방향 */}
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <FieldLabel>h (높이)</FieldLabel>
-                <NumInput value={stfDim1} onChange={setStfDim1} unit="mm" validation={vStfH} />
+
+            {/* Flat: A/B + 방향 3-col */}
+            {stfType === 'Flat' ? (
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <FieldLabel>A (높이)</FieldLabel>
+                  <NumInput value={stfDim1} onChange={setStfDim1} unit="mm" validation={vStfH} />
+                </div>
+                <div>
+                  <FieldLabel>B (두께)</FieldLabel>
+                  <NumInput value={stfDim2} onChange={setStfDim2} unit="mm" validation={vStfT} />
+                </div>
+                <div>
+                  <FieldLabel>방향</FieldLabel>
+                  <Select
+                    value={stfSide}
+                    onChange={setStfSide}
+                    options={[{ value: 'Outside', label: 'Outside' }, { value: 'Inside', label: 'Inside' }]}
+                    className="w-full"
+                  />
+                  <p className="mt-1 text-[10px] leading-tight text-slate-400">판 기준</p>
+                </div>
               </div>
-              <div>
-                <FieldLabel>t (두께)</FieldLabel>
-                <NumInput value={stfDim2} onChange={setStfDim2} unit="mm" validation={vStfT} />
+            ) : (
+              <div className="space-y-2">
+                {/* 상단 라벨: A×B + C×D 수식 */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10.5px] font-bold text-slate-500">단면 치수</span>
+                  <span className="font-mono text-[11px] text-violet-600 font-bold">A × B + C × D</span>
+                </div>
+
+                {/* WEB / 수직 leg — 행 라벨을 인풋 위에 한 줄로 */}
+                <div>
+                  <div className="text-[10px] font-extrabold tracking-wider text-violet-700 uppercase mb-1">
+                    {stfType === 'T' ? '웹 (Web)' : '수직 leg (Vertical)'}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <FieldLabel>A ({stfType === 'T' ? '높이' : 'leg'})</FieldLabel>
+                      <NumInput value={stfDim1} onChange={setStfDim1} unit="mm" validation={vStfH} />
+                    </div>
+                    <div>
+                      <FieldLabel>B (두께)</FieldLabel>
+                      <NumInput value={stfDim2} onChange={setStfDim2} unit="mm" validation={vStfT} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* FLG / 수평 leg */}
+                <div>
+                  <div className="text-[10px] font-extrabold tracking-wider text-amber-700 uppercase mb-1">
+                    {stfType === 'T' ? '플랜지 (Flange)' : '수평 leg (Horizontal)'}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <FieldLabel>C ({stfType === 'T' ? '폭' : 'leg'})</FieldLabel>
+                      <NumInput value={stfDim3} onChange={setStfDim3} unit="mm" validation={vStfC} />
+                    </div>
+                    <div>
+                      <FieldLabel>D (두께)</FieldLabel>
+                      <NumInput value={stfDim4} onChange={setStfDim4} unit="mm" validation={vStfD} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 방향 (T/L = Outside 고정) */}
+                <div className="flex items-center gap-2 pt-0.5">
+                  <FieldLabel>방향</FieldLabel>
+                  <Select
+                    value={stfSide}
+                    onChange={setStfSide}
+                    disabled
+                    options={[{ value: 'Outside', label: 'Outside' }]}
+                  />
+                  <span className="text-[10px] text-slate-400">Flat 만 Inside 가능</span>
+                </div>
               </div>
-              <div>
-                <FieldLabel>방향</FieldLabel>
-                <Select
-                  value={stfSide}
-                  onChange={setStfSide}
-                  options={[{ value: 'Outside', label: 'Outside' }, { value: 'Inside', label: 'Inside' }]}
-                  className="w-full"
-                />
-                <p className="mt-0.5 text-[10px] leading-tight text-slate-400">판 기준</p>
-              </div>
-            </div>
+            )}
           </SectionCard>
 
-          <div className="flex items-center gap-2 pt-3">
-            <span className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest">Boundary &amp; Load</span>
-            <div className="flex-1 border-t border-violet-200/60" />
-          </div>
+        </div>{/* end 좌측 컬럼 (Geometry + Stiffener) */}
 
-          <SectionCard title="에어 벤트" icon={Wind}>
-            <div>
-              <FieldLabel>Air vent height</FieldLabel>
-              <NumInput value={airVentH} onChange={setAirVentH} unit="mm" validation={vAirV} />
+        {/* ───── 우측: 3D 뷰어 — 좌측 컬럼 전체 높이를 채움 ───── */}
+        <div className="bg-slate-950 border border-slate-800 rounded-2xl shadow-inner self-stretch min-h-[480px] min-w-0 overflow-hidden relative">
+            <IndependentTankViewer
+              L={Number(dimL)} B={Number(dimB)} D={Number(dimD)}
+              topOpen={topOpen === 'open'}
+              stiffeners={viewerStiffeners}
+              section={viewerSection}
+              onPickPoint={handlePickPoint}
+              pickedPositions={pickedPositions}
+            />
+
+            {/* 뷰어 좌상단: 치수 정보 */}
+            <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-sm border border-slate-700/70 rounded-lg px-3 py-1.5 shadow-lg">
+              <div className="text-[10px] font-mono leading-snug">
+                <span className="text-violet-300 font-bold">L × B × D</span>
+                <span className="text-slate-200"> = </span>
+                <span className="text-white font-bold">{dimL} × {dimB} × {dimD}</span>
+                <span className="text-slate-400"> mm</span>
+                {topOpen === 'open' && (
+                  <span className="ml-1.5 text-amber-300 font-bold">· Top Open</span>
+                )}
+              </div>
             </div>
+
+            {/* 뷰어 우상단: 범례 */}
+            <div className="absolute top-3 right-3 bg-slate-900/80 backdrop-blur-sm border border-slate-700/70 rounded-lg px-2.5 py-2 shadow-lg space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-4 h-[2px] rounded-full bg-[#93c5fd]" />
+                <span className="text-[10px] text-slate-300">Plate edge</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-3 h-3 rounded-sm bg-[#fb923c]" />
+                <span className="text-[10px] text-slate-300">Stiffener <span className="text-slate-400">({stfType})</span></span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[#a3e635] text-[11px] leading-none font-bold">▲</span>
+                <span className="text-[10px] text-slate-300">Selected BC</span>
+              </div>
+            </div>
+
+            {/* 뷰어 좌하단: 보강재 단면 라벨 */}
+            <div className="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur-sm border border-slate-700/70 rounded-lg px-3 py-1.5 shadow-lg">
+              <div className="text-[10px] font-mono leading-snug">
+                <span className="text-violet-300 font-bold">{stfType}</span>
+                <span className="text-slate-200"> · </span>
+                <span className="text-white">
+                  {stfType === 'Flat'
+                    ? `${stfDim1}×${stfDim2}`
+                    : `${stfDim1}×${stfDim2} + ${stfDim3}×${stfDim4}`}
+                </span>
+                <span className="text-slate-400"> mm · </span>
+                <span className="text-slate-300">{stfSide}</span>
+              </div>
+            </div>
+
+            {/* 뷰어 우하단: 조작 안내 */}
+            <div className="absolute bottom-3 right-3 bg-slate-900/75 backdrop-blur-sm border border-slate-700/70 rounded-lg px-2.5 py-1.5 shadow-lg">
+              <div className="text-[9.5px] text-slate-400 font-mono leading-snug space-y-0.5">
+                <div>드래그: 회전 · 휠: 줌 · 우클릭: 패닝</div>
+                <div><span className="text-violet-300 font-bold">노드 클릭</span> → BC 포인트 지정</div>
+              </div>
+            </div>
+        </div>{/* end 우측 뷰어 컬럼 */}
+
+      </div>{/* end 2컬럼 그리드 */}
+
+      {/* ═══════════════════════════════════════════════════════
+          하단 Boundary & Load — 풀폭 1행, 3 카드 하단 정렬
+         ═══════════════════════════════════════════════════════ */}
+      <div className="mt-4">
+        <div className="flex items-center gap-2.5 mb-2.5">
+          <span className="text-[10.5px] font-extrabold text-violet-600 uppercase tracking-widest whitespace-nowrap">Boundary &amp; Load</span>
+          <div className="flex-1 border-t border-violet-200/80" />
+        </div>
+
+        {/* 3카드 1행 — items-stretch 로 모든 카드 하단 정렬 */}
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] gap-3 items-stretch">
+
+          {/* ── Air Vent ── */}
+          <SectionCard title="에어 벤트" icon={Wind} className="h-full flex flex-col">
+            <FieldLabel>Air vent height</FieldLabel>
+            <NumInput value={airVentH} onChange={setAirVentH} unit="mm" validation={vAirV} />
+            {/* 하단 보조 텍스트 — 카드 하단에 고정 */}
+            <p className="text-[10px] text-slate-400 leading-snug mt-auto pt-2">
+              탱크 높이 D = <span className="font-bold text-slate-500">{dimD} mm</span> 이상 권장
+            </p>
           </SectionCard>
 
-          <SectionCard title="가속도" icon={Activity}>
-            <div className="grid grid-cols-3 gap-2">
+          {/* ── 가속도 ── */}
+          <SectionCard title="가속도" icon={Activity} className="h-full flex flex-col">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <FieldLabel>a<sub>x</sub></FieldLabel>
                 <NumInput value={accX} onChange={setAccX} unit="g" validation={vAx} />
@@ -629,105 +1159,86 @@ export default function IndependentTankAssessment() {
                 <NumInput value={accZ} onChange={setAccZ} unit="g" validation={vAz} />
               </div>
             </div>
+            {/* 단위 보조 — 하단 */}
+            <p className="text-[10px] text-slate-400 leading-snug mt-auto pt-2">
+              중력 가속도 기준 · 범위 -3 ~ 3 g
+            </p>
           </SectionCard>
 
-          <SectionCard title="경계조건" icon={Anchor}>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Select
-                value={bcMode}
-                onChange={setBcMode}
-                options={[{ value: 'auto', label: '자동' }, { value: 'manual', label: '수동' }]}
-              />
-              <button
-                type="button"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold transition-colors cursor-pointer"
-              >
-                <Eye size={13}/> BC Show
-              </button>
-              {bcMode === 'manual' && (
-                <button
-                  type="button"
-                  onClick={addBcRow}
-                  className="ml-auto flex items-center gap-1 px-2 py-1.5 rounded-lg bg-violet-50 hover:bg-violet-100 text-violet-700 text-xs font-bold transition-colors cursor-pointer"
-                >
-                  <Plus size={12}/> 행 추가
-                </button>
-              )}
+          {/* ── 경계조건 BC ── */}
+          <SectionCard title="경계조건 (BC Node)" icon={Anchor} className="h-full flex flex-col">
+            {/* 안내 + 선택 수 + 전체 해제 — 한 행 */}
+            <div className="flex items-start justify-between gap-3 pb-1 border-b border-slate-100">
+              <p className="text-[10.5px] text-slate-500 leading-snug flex-1 min-w-0">
+                3D 뷰어의 <span className="text-red-500 font-bold">빨간 Node</span> 클릭 →{' '}
+                <span className="text-lime-600 font-bold">▲</span> 마커로 선택
+                <span className="text-slate-400"> · 재클릭 해제</span>
+              </p>
+              <div className="flex items-center gap-2.5 flex-shrink-0">
+                {/* 선택 수 배지 */}
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                  bcRows.length > 0
+                    ? 'bg-violet-50 border-violet-200 text-violet-600'
+                    : 'bg-slate-50 border-slate-200 text-slate-400'
+                }`}>
+                  {bcRows.length} EA
+                </span>
+                {bcRows.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setBcRows([])}
+                    className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-red-500 font-bold transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    <Trash2 size={10} /> 전체 해제
+                  </button>
+                )}
+              </div>
             </div>
-
-            <div className="border border-slate-200 rounded-lg overflow-hidden max-h-[180px] overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-slate-50">
-                  <tr className="text-slate-500 uppercase tracking-wider">
-                    <th className="px-3 py-1.5 font-bold text-center w-12">No</th>
-                    <th className="px-3 py-1.5 font-bold text-center">x</th>
-                    <th className="px-3 py-1.5 font-bold text-center">y</th>
-                    {bcMode === 'manual' && <th className="px-2 py-1.5 w-8"></th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {bcRows.length === 0 && (
-                    <tr>
-                      <td colSpan={bcMode === 'manual' ? 4 : 3} className="px-3 py-4 text-center text-slate-400 text-[11px]">
-                        {bcMode === 'auto' ? '자동 모드 — BC Show로 결과 확인' : '행을 추가해 좌표를 입력하세요.'}
-                      </td>
+            {/* BC 노드 테이블 — 카드 하단까지 채움 */}
+            <div className="border border-slate-200 rounded-lg overflow-hidden flex-1 flex flex-col min-h-0 mt-0.5">
+              <div className="flex-1 overflow-y-auto max-h-[130px]">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200">
+                    <tr className="text-slate-500 uppercase tracking-wider text-[10px]">
+                      <th className="px-2 py-1.5 font-bold text-center w-8">#</th>
+                      <th className="px-2 py-1.5 font-bold text-right">X</th>
+                      <th className="px-2 py-1.5 font-bold text-right">Y</th>
+                      <th className="px-2 py-1.5 font-bold text-right">Z</th>
+                      <th className="px-1 py-1.5 w-6" />
                     </tr>
-                  )}
-                  {bcRows.map((r, idx) => (
-                    <tr key={idx}>
-                      <td className="px-3 py-1 text-center font-bold text-slate-500">{idx + 1}</td>
-                      <td className="px-2 py-0.5">
-                        <input type="number" value={r.x} onChange={e => updateBcRow(idx, 'x', e.target.value)}
-                          className="w-full px-2 py-1 text-sm font-mono text-right outline-none border border-transparent focus:border-violet-300 rounded" />
-                      </td>
-                      <td className="px-2 py-0.5">
-                        <input type="number" value={r.y} onChange={e => updateBcRow(idx, 'y', e.target.value)}
-                          className="w-full px-2 py-1 text-sm font-mono text-right outline-none border border-transparent focus:border-violet-300 rounded" />
-                      </td>
-                      {bcMode === 'manual' && (
-                        <td className="px-1 text-center">
-                          <button onClick={() => removeBcRow(idx)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><Trash2 size={12}/></button>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {bcRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-4 text-center text-slate-400 text-[11px] leading-snug">
+                          3D 뷰어에서 빨간 Node 를 클릭해<br />BC 위치를 지정하세요.
                         </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </tr>
+                    ) : bcRows.map((r, idx) => (
+                      <tr key={idx} className="hover:bg-violet-50/40 transition-colors">
+                        <td className="px-2 py-1.5 text-center font-bold text-slate-400">{idx + 1}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-700">{r.x}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-700">{r.y}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-700">{r.z ?? 0}</td>
+                        <td className="px-1 text-center">
+                          <button
+                            onClick={() => removeBcRow(idx)}
+                            className="p-0.5 text-slate-300 hover:text-red-500 transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </SectionCard>
 
         </div>
+      </div>{/* end 하단 Boundary & Load 풀폭 행 */}
 
-        {/* ───── 우측 3D 뷰어 (sticky) ───── */}
-        <div className="lg:sticky lg:top-4 self-start">
-          <div className="bg-slate-950 border border-slate-800 rounded-2xl shadow-inner h-[calc(100vh-160px)] min-h-[560px] overflow-hidden relative">
-            <IndependentTankViewer
-              L={Number(dimL)} B={Number(dimB)} D={Number(dimD)}
-              topOpen={topOpen === 'open'}
-              stiffeners={{ L: stfL, B: stfB, D: stfD }}
-            />
-
-            <div className="absolute top-3 left-3 bg-slate-900/75 backdrop-blur-sm border border-slate-700 rounded-lg px-3 py-1.5 text-[11px] text-slate-200 font-mono shadow">
-              <span className="text-violet-300">L × B × D</span> = {dimL} × {dimB} × {dimD} mm
-              {topOpen === 'open' && <span className="ml-2 text-amber-300">· Top Open</span>}
-            </div>
-
-            <div className="absolute top-3 right-3 bg-slate-900/75 backdrop-blur-sm border border-slate-700 rounded-lg px-3 py-1.5 text-[10px] space-y-0.5 shadow">
-              <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-[#bfd9ff]"/><span className="text-slate-300">Plate edge</span></div>
-              <div className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-[#fbbf24]"/><span className="text-slate-300">Stiffener</span></div>
-            </div>
-
-            <div className="absolute bottom-3 right-3 bg-slate-900/75 backdrop-blur-sm border border-slate-700 rounded-lg px-3 py-1.5 text-[10px] text-slate-400 font-mono">
-              마우스: 회전 / 휠: 줌 / 우클릭: 패닝
-            </div>
-
-            <div className="absolute bottom-3 left-3 bg-slate-900/75 backdrop-blur-sm border border-slate-700 rounded-lg px-3 py-1.5 text-[11px] text-slate-200 font-mono shadow">
-              <span className="text-violet-300">{stfType}</span> {stfDim1}×{stfDim2} · {stfSide}
-            </div>
-          </div>
-        </div>
-
-      </div>
     </div>
   );
 }

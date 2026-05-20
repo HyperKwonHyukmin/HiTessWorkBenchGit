@@ -57,6 +57,12 @@ type: project
 ## 레이아웃
 - 페이지 wrapper: `max-w-7xl mx-auto` + `pb-10` or `pb-16`
 - 섹션 간격: `space-y-6` or 섹션별 `mb-8`
+- **Interactive App (파라메트릭 입력 + 3D 뷰어) 레이아웃 패턴 (IndependentTankAssessment 확정)**:
+  - 상단 2컬럼 `grid-cols-[440px_1fr]`: 좌측(Geometry/Stiffener 입력), 우측(3D 뷰어 h-[420px])
+  - 하단 풀폭 `grid-cols-[200px_280px_1fr]`: AirVent / Acceleration / BC Node 3카드
+  - 3D 뷰어 높이는 `calc(100vh-160px)` 대신 **고정값 420px** 사용 — BC 행이 한 화면에 표시되는 게 우선
+  - SectionCard 헤더: `from-violet-600 to-violet-500` (기존 `from-violet-700 to-violet-600` 보다 소프트)
+  - 입력 패널 섹션 구분: Geometry / Stiffener / Boundary & Load 3개 divier `tracking-widest`
 
 ## 기타 컨벤션
 - 인라인 style은 동적 색상(glow rgba, 그라데이션 등)에만 한정
