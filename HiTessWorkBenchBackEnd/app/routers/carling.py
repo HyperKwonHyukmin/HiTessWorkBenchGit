@@ -44,7 +44,7 @@ class CarlingInput(BaseModel):
 class CarlingFreeRequest(BaseModel):
     load: LoadInput
     hull: FreeHullInput
-    safety_factor: float = Field(default=1.2, gt=0)
+    safety_factor: float = Field(default=1.0, gt=0)
     employee_id: str = Field(default="unknown", description="요청 사번")
 
 
@@ -53,7 +53,7 @@ class CarlingOptimizationRequest(BaseModel):
     hull: OptimizationHullInput
     carling: CarlingInput
     effective_breadth_mm: float = Field(default=600.0, gt=0)
-    safety_factor: float = Field(default=1.2, gt=0)
+    safety_factor: float = Field(default=1.0, gt=0)
     employee_id: str = Field(default="unknown", description="요청 사번")
 
 

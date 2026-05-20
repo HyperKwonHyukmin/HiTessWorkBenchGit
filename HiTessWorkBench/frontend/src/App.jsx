@@ -1,7 +1,7 @@
 /// <summary>
 /// React 애플리케이션의 최상위 라우터(Router) 및 상태 관리자입니다.
 /// </summary>
-import React, { Suspense, lazy, useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { version as CLIENT_VERSION } from '../package.json';
 import { checkVersion } from './api/auth';
@@ -67,6 +67,7 @@ function AppInner() {
   const [appState, setAppState]           = useState(APP_STATE.SPLASH);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [latestVersion, setLatestVersion]     = useState('');
+  const isLoggingOutRef = useRef(false);
   const { currentMenu, setCurrentMenu, goBack, goForward, canGoBack, canGoForward, resetNavigation } = useNavigation();
   const { showToast } = useToast();
   // AuthContext 가 localStorage 세션 키 4종 정리 + state 갱신을 캡슐화한다.
@@ -126,6 +127,8 @@ function AppInner() {
   };
 
   const handleLogout = () => {
+    if (isLoggingOutRef.current) return;
+    isLoggingOutRef.current = true;
     callLogout();
     authLogout();
     setAppState(APP_STATE.LOGIN);
@@ -312,6 +315,7 @@ function AppInner() {
       )}
       {appState === APP_STATE.SPLASH && <SplashScreen onFinish={handleSplashFinish} />}
       {appState === APP_STATE.LOGIN && <LoginScreen onLoginSuccess={() => {
+        isLoggingOutRef.current = false;
         setAppState(APP_STATE.MAIN);
         logActivity('PAGE_VIEW', { page: currentMenu });
       }} />}

@@ -17,6 +17,9 @@ import carlingOptiRef from '../../assets/images/Carling_Opti.png';
 import carlingOptiRef2 from '../../assets/images/Carling_Opti2.png';
 import { downloadJson } from '../../utils/fileHelper';
 
+const FIXED_SAFETY_FACTOR = 1.0;
+const FIXED_EFFECTIVE_BREADTH_MM = 600.0;
+
 const DEFAULT_FREE = {
   load: { type: 'concentrated', value: '10', position_mm: '500' },
   hull: {
@@ -25,7 +28,6 @@ const DEFAULT_FREE = {
     material: 'Mild',
     corrosion_mm: '1',
   },
-  safety_factor: '1.2',
 };
 
 const DEFAULT_OPTIMIZATION = {
@@ -41,21 +43,19 @@ const DEFAULT_OPTIMIZATION = {
     height_mm: { min: '80', max: '200', step: '10' },
     thickness_gross_mm: { min: '8', max: '25', step: '1' },
   },
-  effective_breadth_mm: '600',
-  safety_factor: '1.2',
 };
 
 const PAGE_META = {
   free: {
     title: 'Carling Free Calculator',
-    subtitle: '01_Carling Free Calculator 기준으로 카링 설치 필요 여부를 판정합니다.',
+    subtitle: '',
     endpoint: '/api/carling/free',
     defaultInput: DEFAULT_FREE,
     referenceImages: [carlingFreeRef, carlingFreeRef2],
   },
   optimization: {
     title: 'Carling Design Optimization',
-    subtitle: '02_Carling Design Optimization 기준으로 H/T 범위 내 최소 중량 후보를 산출합니다.',
+    subtitle: '',
     endpoint: '/api/carling/optimization',
     defaultInput: DEFAULT_OPTIMIZATION,
     referenceImages: [carlingOptiRef, carlingOptiRef2],
@@ -75,7 +75,7 @@ const toPayload = (inputs, variant) => {
       value: numberize(inputs.load.value),
       position_mm: inputs.load.type === 'concentrated' ? numberize(inputs.load.position_mm) : null,
     },
-    safety_factor: numberize(inputs.safety_factor),
+    safety_factor: FIXED_SAFETY_FACTOR,
   };
 
   if (variant === 'free') {
@@ -111,7 +111,7 @@ const toPayload = (inputs, variant) => {
         step: numberize(inputs.carling.thickness_gross_mm.step),
       },
     },
-    effective_breadth_mm: numberize(inputs.effective_breadth_mm),
+    effective_breadth_mm: FIXED_EFFECTIVE_BREADTH_MM,
   };
 };
 
@@ -214,20 +214,17 @@ const SectionTitle = ({ icon: Icon, children }) => (
 const FormulaContent = ({ variant }) => {
   const formulas = variant === 'free'
     ? [
-      ['Factored Load', 'P_d = P x SF'],
-      ['Moment / Shear', 'M = P_d x a x b / L,   V = P_d x b / L'],
+      ['Bending Moment', 'M = P_d x a x b / L'],
+      ['Shear Force', 'V = P_d x b / L'],
       ['Net Plate', 't_net = t_gross - corrosion'],
       ['Bending Stress', 'sigma_B = M / Z'],
       ['Shear Stress', 'sigma_S = V / A'],
       ['Deflection', 'd = P_d x a^2 x b^2 / (3 E I L)'],
     ]
     : [
-      ['Factored Load', 'P_d = P x SF'],
-      ['Plate Net Thickness', 't_net = t_gross - plate_corrosion'],
-      ['Candidate Search', 'H = H_min..H_max,   T = T_min..T_max'],
       ['Bending Check', 'sigma_B = M / Z_composite <= sigma_B_allow'],
       ['Shear Check', 'sigma_S = V / A_composite <= sigma_S_allow'],
-      ['Weld Check', 'sigma_weld <= sigma_weld_allow, choose minimum weight Total OK'],
+      ['Weld Check', 'sigma_weld <= sigma_weld_allow'],
     ];
 
   return (
@@ -256,7 +253,7 @@ export default function CarlingCalculator({ variant = 'free' }) {
   const payload = useMemo(() => toPayload(inputs, variant), [inputs, variant]);
 
   const isValid = useMemo(() => {
-    if (!isPositive(payload.load.value) || !isPositive(payload.safety_factor)) return false;
+    if (!isPositive(payload.load.value)) return false;
     if (payload.load.type === 'concentrated' && !isNonNegative(payload.load.position_mm)) return false;
 
     if (variant === 'free') {
@@ -273,7 +270,6 @@ export default function CarlingCalculator({ variant = 'free' }) {
       && isNonNegative(payload.hull.plate_corrosion_mm)
       && payload.hull.plate_thickness_gross_mm - payload.hull.plate_corrosion_mm > 0
       && payload.hull.plate_corrosion_mm === (payload.hull.corrosion_type === 'CSR-TANK' ? 4 : 2)
-      && isPositive(payload.effective_breadth_mm)
       && isNonNegative(h.min) && isNonNegative(h.max) && isPositive(h.step) && h.min <= h.max
       && isNonNegative(t.min) && isNonNegative(t.max) && isPositive(t.step) && t.min <= t.max;
   }, [payload, variant]);
@@ -329,7 +325,7 @@ export default function CarlingCalculator({ variant = 'free' }) {
               <TableProperties size={18} className="text-emerald-300" />
               {meta.title}
             </h1>
-            <p className="text-sm text-emerald-200/80 mt-0.5">{meta.subtitle}</p>
+            {meta.subtitle && <p className="text-sm text-emerald-200/80 mt-0.5">{meta.subtitle}</p>}
           </div>
         </div>
         <GuideButton guideTitle={`[파라메트릭] ${meta.title}`} variant="dark" />
@@ -356,7 +352,7 @@ export default function CarlingCalculator({ variant = 'free' }) {
                     className="w-full max-h-60 object-contain"
                   />
                   <p className="mt-2 text-center text-[11px] font-bold text-slate-400">
-                    Reference {index + 1}
+                    {index === 0 ? 'Concentrated Force' : 'Distributed Load'}
                   </p>
                 </div>
               ))}
@@ -390,11 +386,10 @@ export default function CarlingCalculator({ variant = 'free' }) {
                 <SectionTitle icon={Calculator}>Load</SectionTitle>
                 <div className="grid grid-cols-2 gap-2.5">
                   <SelectField label="Load Type" value={inputs.load.type} onChange={setNested(setInputs, ['load', 'type'])} options={['concentrated', 'distributed']} />
-                  <Field label="Load" value={inputs.load.value} onChange={setNested(setInputs, ['load', 'value'])} unit="N" min={0} />
+                  <Field label="Load" value={inputs.load.value} onChange={setNested(setInputs, ['load', 'value'])} unit={inputs.load.type === 'distributed' ? 'N/mm' : 'N'} min={0} />
                   {inputs.load.type === 'concentrated' && (
                     <Field label="Position" value={inputs.load.position_mm} onChange={setNested(setInputs, ['load', 'position_mm'])} unit="mm" min={0} />
                   )}
-                  <Field label="Safety Factor" value={inputs.safety_factor} onChange={setNested(setInputs, ['safety_factor'])} unit="-" min={0} />
                 </div>
               </div>
 
@@ -420,9 +415,8 @@ export default function CarlingCalculator({ variant = 'free' }) {
               {variant === 'optimization' && (
                 <div>
                   <SectionTitle icon={Settings2}>Carling Search Range</SectionTitle>
-                  <div className="grid grid-cols-2 gap-2.5 mb-2.5">
+                  <div className="grid grid-cols-1 gap-2.5 mb-2.5">
                     <SelectField label="Material" value={inputs.carling.material} onChange={setNested(setInputs, ['carling', 'material'])} options={['Mild', 'HT32', 'HT36']} />
-                    <Field label="Effective Breadth" value={inputs.effective_breadth_mm} onChange={setNested(setInputs, ['effective_breadth_mm'])} />
                   </div>
                   <div className="grid grid-cols-3 gap-2.5 mb-2.5">
                     <Field label="H Min" value={inputs.carling.height_mm.min} onChange={setNested(setInputs, ['carling', 'height_mm', 'min'])} />
@@ -525,11 +519,11 @@ function FreeResult({ result }) {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <Metric label="Bending Stress" value={i.sigma_B_calc_MPa} unit="MPa" />
-          <Metric label="Bending Allow" value={i.sigma_B_allow_MPa} unit="MPa" />
           <Metric label="Shear Stress" value={i.sigma_S_calc_MPa} unit="MPa" />
-          <Metric label="Shear Allow" value={i.sigma_S_allow_MPa} unit="MPa" />
           <Metric label="Deflection" value={i.d_calc_mm} unit="mm" />
-          <Metric label="Deflection Allow" value={i.d_allow_mm} unit="mm" />
+          <Metric label="Allowable Bending Stress (=sigmaY/2)" value={i.sigma_B_allow_MPa} unit="MPa" />
+          <Metric label="Allowable Shear Stress (=sigmaY*0.4)" value={i.sigma_S_allow_MPa} unit="MPa" />
+          <Metric label="Allowable Deflection (=L/500)" value={i.d_allow_mm} unit="mm" />
         </div>
       </div>
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">

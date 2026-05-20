@@ -12,7 +12,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/analysis/truss/request',
     status: 'Active',
-    category: '파일 기반(File-Based)',
+    category: 'File-Based',
     description: 'CSV 형식의 노드/부재 파일을 업로드하여 트러스 구조 해석 모델(BDF)을 생성합니다. 비동기 처리이며 job_id로 진행 상태를 폴링합니다.',
     cli: 'TrussModelBuilder.exe <exe_dir> <node_csv_path> <member_csv_path>',
     params: [
@@ -33,7 +33,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/analysis/assessment/request',
     status: 'Active',
-    category: '파일 기반(File-Based)',
+    category: 'File-Based',
     description: 'Nastran BDF 파일을 업로드하여 트러스 구조 안정성 평가를 수행합니다. 결과는 JSON 및 XLSX 형식으로 제공됩니다. 비동기 처리입니다.',
     cli: 'TrussAssessment.exe <bdf_file_path>',
     params: [
@@ -52,7 +52,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/analysis/bdfscanner/request',
     status: 'Active',
-    category: '파일 기반(File-Based)',
+    category: 'File-Based',
     description: 'BDF 파일의 유효성 및 모델 정보를 스캔합니다. 옵션으로 Nastran 실행 후 F06 요약까지 수행할 수 있습니다. 비동기 처리입니다.',
     cli: 'BdfScanner.exe <bdf_file_path> [--nastran]',
     params: [
@@ -74,7 +74,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/analysis/f06parser/request',
     status: 'Active',
-    category: '파일 기반(File-Based)',
+    category: 'File-Based',
     description: 'Nastran F06 파일에서 Displacement, SPC Force, CBAR/CBEAM/CROD Force/Stress 결과를 추출합니다. 비동기 처리입니다.',
     cli: 'F06Parser.Console.exe <f06_file_path> <output_dir>',
     params: [
@@ -93,7 +93,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/analysis/beam/request',
     status: 'Active',
-    category: '파일 기반(File-Based)',
+    category: 'File-Based',
     description: 'JSON 형식의 보 해석 입력 파일을 업로드하여 FEM 기반 1D 보 해석을 수행합니다. 결과 JSON은 Beam Result Viewer에서 시각화됩니다. 비동기 처리입니다.',
     cli: 'HiTESS.FemEngine.Adapter.exe <input_json_path> <work_dir>',
     params: [
@@ -112,7 +112,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/analysis/modelflow/request',
     status: 'Active',
-    category: '파일 기반(File-Based)',
+    category: 'File-Based',
     description: '구조 CSV를 기준으로 선택적 배관/장비 CSV를 함께 받아 phase JSON, BDF, InputAudit, StageSummary를 생성합니다. Nastran 실행 옵션도 포함합니다. 비동기 처리입니다.',
     cli: 'Cmb.Cli.exe build-full --input <csv_dir> --output <work_dir> [options]',
     params: [
@@ -144,7 +144,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/davit/mast-post',
     status: 'Active',
-    category: '다빗(Davit)',
+    category: 'Davit',
     description: 'Post 높이와 플랫폼 하중을 입력하면 구조 기준을 만족하는 최적 파이프 후보(1~5순위)를 산출합니다. 결과는 DB에 저장되며 My Projects에서 확인할 수 있습니다.',
     cli: 'PostDavitCalculation.exe mast-post <work_dir> <height_mm> <weight_kg>',
     params: [
@@ -160,7 +160,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/davit/jib-rest-1dan',
     status: 'Active',
-    category: '다빗(Davit)',
+    category: 'Davit',
     description: 'Jib Rest 1단 구조 설계 계산. Jib 치수·자중·모멘트 팔·높이를 입력하여 기준을 만족하는 단일 파이프 후보를 산출합니다.',
     cli: 'PostDavitCalculation.exe jib-rest-1dan <work_dir> <input_json_path>',
     params: [
@@ -186,7 +186,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/davit/jib-rest-2dan',
     status: 'Active',
-    category: '다빗(Davit)',
+    category: 'Davit',
     description: '1단 계산에서 선택한 하단 파이프(D1, T1)를 기반으로 2단 구조를 검토합니다. 1단의 모든 파라미터에 상단 구간 높이(H2), Reducer 높이(H3), 하단 파이프 치수(D1, T1)를 추가로 입력합니다.',
     cli: 'PostDavitCalculation.exe jib-rest-2dan <work_dir> <input_json_path>',
     params: [
@@ -204,7 +204,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/d-type-lug/calculate',
     status: 'Active',
-    category: '파라메트릭(Parametric)',
+    category: 'Parametric',
     description: 'D-Type 러그의 3개 브라켓 타입과 12개 각도 케이스에 대해 A~E 단면 Usage Factor를 계산합니다.',
     cli: 'D_TypeLugCalculation.exe <input_json_path> -o <output_json_path> --pretty',
     params: [
@@ -231,7 +231,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/column-buckling/calculate',
     status: 'Active',
-    category: '파라메트릭(Parametric)',
+    category: 'Parametric',
     description: 'AISC 기준으로 기둥 좌굴 허용 사용하중을 계산합니다. 편심량은 서버 계산 로직에서 20mm로 고정됩니다.',
     cli: 'ColumnBucklingApp.exe <member_name> <length_mm>',
     params: [
@@ -247,7 +247,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/section-property/calculate',
     status: 'Active',
-    category: '파라메트릭(Parametric)',
+    category: 'Parametric',
     description: '단면 형상과 치수를 입력하여 면적, 도심, 단면 2차 모멘트 등 단면 특성값을 계산합니다. polygon은 꼭짓점 좌표 3개 이상이 필요합니다.',
     cli: 'SectionPropertyCalculator.exe <input_json_path>',
     params: [
@@ -265,7 +265,7 @@ const API_LIST = [
     method: 'GET',
     endpoint: '/api/section-property/shapes',
     status: 'Active',
-    category: '파라메트릭(Parametric)',
+    category: 'Parametric',
     description: 'Section Property Calculator에서 지원하는 단면 종류와 각 형상의 필수 치수 파라미터 목록을 반환합니다.',
     cli: null,
     params: [],
@@ -277,7 +277,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/analysis/groupmodule/cog',
     status: 'Active',
-    category: '생산성(Productivity)',
+    category: 'Productivity',
     description: 'userConnection 하위 BDF 파일 경로를 입력하여 ModuleGroupUnitAnalysis.exe로 무게중심(COG)과 총 질량을 계산합니다.',
     cli: 'ModuleGroupUnitAnalysis.exe cog <bdf_path>',
     params: [
@@ -291,7 +291,7 @@ const API_LIST = [
     method: 'GET',
     endpoint: '/api/analysis/modelflow/edit-status',
     status: 'Active',
-    category: '파일 기반(File-Based)',
+    category: 'File-Based',
     description: 'Studio가 생성한 *_edit.json 존재 여부와 edited 산출물 상태를 확인합니다. output_dir은 userConnection 하위 build-full 결과 폴더여야 합니다.',
     cli: null,
     params: [
@@ -305,7 +305,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/api/analysis/modelflow/apply-edit',
     status: 'Active',
-    category: '파일 기반(File-Based)',
+    category: 'File-Based',
     description: 'Studio가 작성한 *_edit.json을 base 모델에 적용하여 edited 폴더 산출물을 생성합니다. 옵션으로 Nastran 실행과 F06 파싱을 함께 수행합니다. 비동기 처리입니다.',
     cli: 'Cmb.Cli.exe apply-edit <output_dir> [options]',
     params: [
@@ -323,7 +323,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/hitessbeam/csvToBdf',
     status: 'Developing',
-    category: '임시 호환(Temp)',
+    category: 'Temp',
     description: '기존 HiTessBeam 클라이언트 호환용 CSV to BDF 변환 API입니다. 여러 파일을 업로드하며 input.pkl에 stru/pipe/equi 파일 매핑이 포함되어야 합니다.',
     cli: 'CsvToBdf_HiTESS.exe <stru_csv> <pipe_csv|None> <equi_csv|None> <output_bdf>',
     params: [
@@ -343,7 +343,7 @@ const API_LIST = [
     method: 'POST',
     endpoint: '/hitessbeam/moduleUnit',
     status: 'Developing',
-    category: '임시 호환(Temp)',
+    category: 'Temp',
     description: '기존 HiTessBeam 클라이언트 호환용 ModuleUnit/GroupUnit BDF 해석 API입니다. 입력 BDF를 받아 결과 BDF/F06/TXT 파일명을 반환합니다.',
     cli: 'ModuleUnit_HiTESS.exe <input_bdf> <output_bdf> <ModuleUnit|GroupUnit>',
     params: [
