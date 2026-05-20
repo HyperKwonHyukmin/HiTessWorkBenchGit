@@ -1,7 +1,8 @@
 /**
  * Independent Tank Assessment (Interactive App)
- *  - 좌측: 모든 입력 섹션을 한 컬럼에 세로로 배치 (탭 없이 한 화면)
- *  - 우측: three.js 뷰어 (sticky) — Z-up, 직육면체 6면 plate + 보강재 ring 라인
+ *  - 좌측: [Design] / [Boundary/Load] 2-탭 입력 패널
+ *  - 우측: three.js 뷰어 — 두 탭에서 항상 표시 (Z-up, 직육면체 6면 plate + 보강재 ring 라인)
+ *  - 탭 헤더에 검증 에러 배지 표시 → 어느 탭에 입력 오류가 있는지 즉시 파악
  *  - 입력 필드별 유효성 검사 + 가이드 힌트 제공. Job Submission 은 모든 검사 통과 시 활성화.
  */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -800,6 +801,14 @@ export default function IndependentTankAssessment() {
     );
   };
 
+  // ── 탭 상태
+  const [activeTab, setActiveTab] = useState('design'); // 'design' | 'boundary'
+
+  // 탭별 검증 에러 유무 — 배지 표시용
+  const designHasError = ![vL, vB, vD, vTp, vTcorr, vStfH, vStfT, vStfC, vStfD,
+    vStfArr.L, vStfArr.B, vStfArr.D].every(v => v.ok);
+  const boundaryHasError = ![vAx, vAy, vAz, vAirV].every(v => v.ok);
+
   const handleJobSubmit = () => {
     if (!allValid) {
       showToast('입력값을 확인하세요. 빨간색으로 표시된 항목이 있습니다.', 'error');
@@ -856,7 +865,7 @@ export default function IndependentTankAssessment() {
           </div>
         </div>
         <div className="flex items-center gap-2.5">
-          {/* 검증 상태 배지 — valid/invalid 구분이 명확하도록 크기 확보 */}
+          {/* 검증 상태 배지 */}
           {allValid ? (
             <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/25 border border-emerald-300/50 text-emerald-100 text-[11px] font-bold">
               ✓ 입력 완료
@@ -882,181 +891,362 @@ export default function IndependentTankAssessment() {
       </PageBanner>
 
       {/* ═══════════════════════════════════════════════════════
-          상단 2컬럼: 좌측 입력(Geometry/Stiffener) + 우측 3D 뷰어
+          2컬럼: 좌측 탭 패널 + 우측 3D 뷰어 (항상 표시)
          ═══════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-[440px_1fr] gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[440px_1fr] gap-4 items-start mt-0">
 
-        {/* ───── 좌측 입력 패널: Geometry + Stiffener ───── */}
-        <div className="space-y-2.5">
+        {/* ───── 좌측: 탭 헤더 + 탭 콘텐츠 ───── */}
+        <div className="flex flex-col">
 
-          {/* 섹션 디바이더 — Geometry */}
-          <div className="flex items-center gap-2.5 pt-2">
-            <span className="text-[10.5px] font-extrabold text-violet-600 uppercase tracking-widest whitespace-nowrap">Geometry</span>
-            <div className="flex-1 border-t border-violet-200/80" />
+          {/* 탭 헤더 — violet 브랜드 강조, 에러 배지 포함 */}
+          <div className="flex items-end gap-0 pt-3 pb-0">
+            {/* Design 탭 */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('design')}
+              className={`
+                relative flex items-center gap-1.5 px-4 py-2 text-[12px] font-bold rounded-t-xl border-x border-t
+                transition-all duration-150 cursor-pointer select-none
+                ${activeTab === 'design'
+                  ? 'bg-white border-slate-200 text-violet-700 shadow-sm z-10'
+                  : 'bg-slate-100/70 border-slate-200/60 text-slate-500 hover:text-violet-600 hover:bg-slate-50'}
+              `}
+            >
+              <Ruler size={12} className="flex-shrink-0" />
+              Design
+              {/* 에러 배지 */}
+              {designHasError && (
+                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-extrabold leading-none flex-shrink-0">
+                  !
+                </span>
+              )}
+            </button>
+
+            {/* Boundary / Load 탭 */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('boundary')}
+              className={`
+                relative flex items-center gap-1.5 px-4 py-2 text-[12px] font-bold rounded-t-xl border-x border-t ml-1
+                transition-all duration-150 cursor-pointer select-none
+                ${activeTab === 'boundary'
+                  ? 'bg-white border-slate-200 text-violet-700 shadow-sm z-10'
+                  : 'bg-slate-100/70 border-slate-200/60 text-slate-500 hover:text-violet-600 hover:bg-slate-50'}
+              `}
+            >
+              <Anchor size={12} className="flex-shrink-0" />
+              Boundary / Load
+              {/* BC 선택 수 배지 (활성/비활성 공용) */}
+              {bcRows.length > 0 && (
+                <span className="inline-flex items-center justify-center px-1.5 h-4 rounded-full bg-violet-600 text-white text-[9px] font-extrabold leading-none flex-shrink-0 min-w-[16px]">
+                  {bcRows.length}
+                </span>
+              )}
+              {/* 에러 배지 */}
+              {boundaryHasError && (
+                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-extrabold leading-none flex-shrink-0">
+                  !
+                </span>
+              )}
+            </button>
+
+            {/* 탭 하단 구분선 — 활성 탭과 연결감 */}
+            <div className="flex-1 border-b border-slate-200 mb-0 self-end" />
           </div>
 
-          {/* 탱크 치수 */}
-          <SectionCard title="탱크 치수" icon={Ruler}>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <FieldLabel>L (길이)</FieldLabel>
-                <NumInput value={dimL} onChange={setDimL} unit="mm" validation={vL} />
-              </div>
-              <div>
-                <FieldLabel>B (폭)</FieldLabel>
-                <NumInput value={dimB} onChange={setDimB} unit="mm" validation={vB} />
-              </div>
-              <div>
-                <FieldLabel>D (높이)</FieldLabel>
-                <NumInput value={dimD} onChange={setDimD} unit="mm" validation={vD} />
-              </div>
-            </div>
-          </SectionCard>
+          {/* 탭 콘텐츠 컨테이너 — 흰 배경, 탭 헤더와 시각적 연결 */}
+          <div className="border border-slate-200 rounded-b-xl rounded-tr-xl bg-white shadow-sm overflow-hidden">
 
-          {/* 판 두께 / Top Open */}
-          <SectionCard title="판 두께 / Top Open" icon={Layers}>
-            {/* tp, tcorr: 좌 2/3 / Top Open: 우 1/3 — 두 치수가 연관성 높아 묶어서 배치 */}
-            <div className="grid grid-cols-[1fr_1fr_1fr] gap-3">
-              <div>
-                <FieldLabel>tp (판 두께)</FieldLabel>
-                <NumInput value={tp} onChange={setTp} unit="mm" validation={vTp} />
-              </div>
-              <div>
-                <FieldLabel>tcorr (부식 여유)</FieldLabel>
-                <NumInput value={tcorr} onChange={setTcorr} unit="mm" validation={vTcorr} />
-              </div>
-              <div>
-                <FieldLabel>Top Open</FieldLabel>
-                <Select
-                  value={topOpen}
-                  onChange={setTopOpen}
-                  options={[{ value: 'closed', label: '폐쇄형' }, { value: 'open', label: '개방형' }]}
-                  className="w-full"
-                />
-                <p className="mt-1 text-[10px] leading-tight text-slate-400">상판 유무</p>
-              </div>
-            </div>
-          </SectionCard>
+            {/* ══ Design 탭 ══ */}
+            {activeTab === 'design' && (
+              <div className="p-3.5 space-y-3">
 
-          {/* 섹션 디바이더 — Stiffener */}
-          <div className="flex items-center gap-2.5 pt-2">
-            <span className="text-[10.5px] font-extrabold text-violet-600 uppercase tracking-widest whitespace-nowrap">Stiffener</span>
-            <div className="flex-1 border-t border-violet-200/80" />
-          </div>
-
-          {/* 보강재 배치 */}
-          <SectionCard title="보강재 배치" icon={Settings2}>
-            <div className="space-y-2">
-              {axisRow('L', stfL, setStfL, vStfArr.L)}
-              {axisRow('B', stfB, setStfB, vStfArr.B)}
-              {axisRow('D', stfD, setStfD, vStfArr.D)}
-            </div>
-          </SectionCard>
-
-          {/* 보강재 치수 */}
-          <SectionCard title="보강재 치수" icon={Activity}>
-            {/* 단면 형상 선택 — 풀폭 */}
-            <div>
-              <FieldLabel>단면 형상</FieldLabel>
-              <Select
-                value={stfType}
-                onChange={(v) => {
-                  setStfType(v);
-                  // Flat 이 아니면 Inside 허용 안 됨 → Outside 로 고정
-                  if (v !== 'Flat') setStfSide('Outside');
-                }}
-                options={[
-                  { value: 'Flat', label: 'Flat bar' },
-                  { value: 'L',    label: 'L-Angle' },
-                  { value: 'T',    label: 'T-Bar' },
-                ]}
-                className="w-full"
-              />
-            </div>
-
-            {/* Flat: A/B + 방향 3-col */}
-            {stfType === 'Flat' ? (
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <FieldLabel>A (높이)</FieldLabel>
-                  <NumInput value={stfDim1} onChange={setStfDim1} unit="mm" validation={vStfH} />
-                </div>
-                <div>
-                  <FieldLabel>B (두께)</FieldLabel>
-                  <NumInput value={stfDim2} onChange={setStfDim2} unit="mm" validation={vStfT} />
-                </div>
-                <div>
-                  <FieldLabel>방향</FieldLabel>
-                  <Select
-                    value={stfSide}
-                    onChange={setStfSide}
-                    options={[{ value: 'Outside', label: 'Outside' }, { value: 'Inside', label: 'Inside' }]}
-                    className="w-full"
-                  />
-                  <p className="mt-1 text-[10px] leading-tight text-slate-400">판 기준</p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {/* 상단 라벨: A×B + C×D 수식 */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10.5px] font-bold text-slate-500">단면 치수</span>
-                  <span className="font-mono text-[11px] text-violet-600 font-bold">A × B + C × D</span>
+                {/* 섹션 디바이더 — Geometry */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest whitespace-nowrap">Geometry</span>
+                  <div className="flex-1 border-t border-violet-200/80" />
                 </div>
 
-                {/* WEB / 수직 leg — 행 라벨을 인풋 위에 한 줄로 */}
-                <div>
-                  <div className="text-[10px] font-extrabold tracking-wider text-violet-700 uppercase mb-1">
-                    {stfType === 'T' ? '웹 (Web)' : '수직 leg (Vertical)'}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
+                {/* 탱크 치수 */}
+                <SectionCard title="탱크 치수" icon={Ruler}>
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <FieldLabel>A ({stfType === 'T' ? '높이' : 'leg'})</FieldLabel>
-                      <NumInput value={stfDim1} onChange={setStfDim1} unit="mm" validation={vStfH} />
+                      <FieldLabel>L (길이)</FieldLabel>
+                      <NumInput value={dimL} onChange={setDimL} unit="mm" validation={vL} />
                     </div>
                     <div>
-                      <FieldLabel>B (두께)</FieldLabel>
-                      <NumInput value={stfDim2} onChange={setStfDim2} unit="mm" validation={vStfT} />
-                    </div>
-                  </div>
-                </div>
-
-                {/* FLG / 수평 leg */}
-                <div>
-                  <div className="text-[10px] font-extrabold tracking-wider text-amber-700 uppercase mb-1">
-                    {stfType === 'T' ? '플랜지 (Flange)' : '수평 leg (Horizontal)'}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <FieldLabel>C ({stfType === 'T' ? '폭' : 'leg'})</FieldLabel>
-                      <NumInput value={stfDim3} onChange={setStfDim3} unit="mm" validation={vStfC} />
+                      <FieldLabel>B (폭)</FieldLabel>
+                      <NumInput value={dimB} onChange={setDimB} unit="mm" validation={vB} />
                     </div>
                     <div>
-                      <FieldLabel>D (두께)</FieldLabel>
-                      <NumInput value={stfDim4} onChange={setStfDim4} unit="mm" validation={vStfD} />
+                      <FieldLabel>D (높이)</FieldLabel>
+                      <NumInput value={dimD} onChange={setDimD} unit="mm" validation={vD} />
                     </div>
                   </div>
+                </SectionCard>
+
+                {/* 판 두께 / Top Open */}
+                <SectionCard title="판 두께 / Top Open" icon={Layers}>
+                  <div className="grid grid-cols-[1fr_1fr_1fr] gap-3">
+                    <div>
+                      <FieldLabel>tp (판 두께)</FieldLabel>
+                      <NumInput value={tp} onChange={setTp} unit="mm" validation={vTp} />
+                    </div>
+                    <div>
+                      <FieldLabel>tcorr (부식 여유)</FieldLabel>
+                      <NumInput value={tcorr} onChange={setTcorr} unit="mm" validation={vTcorr} />
+                    </div>
+                    <div>
+                      <FieldLabel>Top Open</FieldLabel>
+                      <Select
+                        value={topOpen}
+                        onChange={setTopOpen}
+                        options={[{ value: 'closed', label: '폐쇄형' }, { value: 'open', label: '개방형' }]}
+                        className="w-full"
+                      />
+                      <p className="mt-1 text-[10px] leading-tight text-slate-400">상판 유무</p>
+                    </div>
+                  </div>
+                </SectionCard>
+
+                {/* 섹션 디바이더 — Stiffener */}
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest whitespace-nowrap">Stiffener</span>
+                  <div className="flex-1 border-t border-violet-200/80" />
                 </div>
 
-                {/* 방향 (T/L = Outside 고정) */}
-                <div className="flex items-center gap-2 pt-0.5">
-                  <FieldLabel>방향</FieldLabel>
-                  <Select
-                    value={stfSide}
-                    onChange={setStfSide}
-                    disabled
-                    options={[{ value: 'Outside', label: 'Outside' }]}
-                  />
-                  <span className="text-[10px] text-slate-400">Flat 만 Inside 가능</span>
-                </div>
+                {/* 보강재 배치 */}
+                <SectionCard title="보강재 배치" icon={Settings2}>
+                  <div className="space-y-2">
+                    {axisRow('L', stfL, setStfL, vStfArr.L)}
+                    {axisRow('B', stfB, setStfB, vStfArr.B)}
+                    {axisRow('D', stfD, setStfD, vStfArr.D)}
+                  </div>
+                </SectionCard>
+
+                {/* 보강재 치수 */}
+                <SectionCard title="보강재 치수" icon={Activity}>
+                  <div>
+                    <FieldLabel>단면 형상</FieldLabel>
+                    <Select
+                      value={stfType}
+                      onChange={(v) => {
+                        setStfType(v);
+                        if (v !== 'Flat') setStfSide('Outside');
+                      }}
+                      options={[
+                        { value: 'Flat', label: 'Flat bar' },
+                        { value: 'L',    label: 'L-Angle' },
+                        { value: 'T',    label: 'T-Bar' },
+                      ]}
+                      className="w-full"
+                    />
+                  </div>
+
+                  {/* Flat: A/B + 방향 3-col */}
+                  {stfType === 'Flat' ? (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <FieldLabel>A (높이)</FieldLabel>
+                        <NumInput value={stfDim1} onChange={setStfDim1} unit="mm" validation={vStfH} />
+                      </div>
+                      <div>
+                        <FieldLabel>B (두께)</FieldLabel>
+                        <NumInput value={stfDim2} onChange={setStfDim2} unit="mm" validation={vStfT} />
+                      </div>
+                      <div>
+                        <FieldLabel>방향</FieldLabel>
+                        <Select
+                          value={stfSide}
+                          onChange={setStfSide}
+                          options={[{ value: 'Outside', label: 'Outside' }, { value: 'Inside', label: 'Inside' }]}
+                          className="w-full"
+                        />
+                        <p className="mt-1 text-[10px] leading-tight text-slate-400">판 기준</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10.5px] font-bold text-slate-500">단면 치수</span>
+                        <span className="font-mono text-[11px] text-violet-600 font-bold">A × B + C × D</span>
+                      </div>
+
+                      {/* WEB / 수직 leg */}
+                      <div>
+                        <div className="text-[10px] font-extrabold tracking-wider text-violet-700 uppercase mb-1">
+                          {stfType === 'T' ? '웹 (Web)' : '수직 leg (Vertical)'}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <FieldLabel>A ({stfType === 'T' ? '높이' : 'leg'})</FieldLabel>
+                            <NumInput value={stfDim1} onChange={setStfDim1} unit="mm" validation={vStfH} />
+                          </div>
+                          <div>
+                            <FieldLabel>B (두께)</FieldLabel>
+                            <NumInput value={stfDim2} onChange={setStfDim2} unit="mm" validation={vStfT} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* FLG / 수평 leg */}
+                      <div>
+                        <div className="text-[10px] font-extrabold tracking-wider text-amber-700 uppercase mb-1">
+                          {stfType === 'T' ? '플랜지 (Flange)' : '수평 leg (Horizontal)'}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <FieldLabel>C ({stfType === 'T' ? '폭' : 'leg'})</FieldLabel>
+                            <NumInput value={stfDim3} onChange={setStfDim3} unit="mm" validation={vStfC} />
+                          </div>
+                          <div>
+                            <FieldLabel>D (두께)</FieldLabel>
+                            <NumInput value={stfDim4} onChange={setStfDim4} unit="mm" validation={vStfD} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 방향 (T/L = Outside 고정) */}
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <FieldLabel>방향</FieldLabel>
+                        <Select
+                          value={stfSide}
+                          onChange={setStfSide}
+                          disabled
+                          options={[{ value: 'Outside', label: 'Outside' }]}
+                        />
+                        <span className="text-[10px] text-slate-400">Flat 만 Inside 가능</span>
+                      </div>
+                    </div>
+                  )}
+                </SectionCard>
+
               </div>
             )}
-          </SectionCard>
 
-        </div>{/* end 좌측 컬럼 (Geometry + Stiffener) */}
+            {/* ══ Boundary / Load 탭 ══ */}
+            {activeTab === 'boundary' && (
+              <div className="p-3.5 space-y-3">
 
-        {/* ───── 우측: 3D 뷰어 — 좌측 컬럼 전체 높이를 채움 ───── */}
-        <div className="bg-slate-950 border border-slate-800 rounded-2xl shadow-inner self-stretch min-h-[480px] min-w-0 overflow-hidden relative">
+                {/* 섹션 디바이더 */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest whitespace-nowrap">Boundary &amp; Load</span>
+                  <div className="flex-1 border-t border-violet-200/80" />
+                </div>
+
+                {/* ── Air Vent + 가속도: 2컬럼 나란히 ── */}
+                <div className="grid grid-cols-2 gap-3">
+
+                  {/* Air Vent */}
+                  <SectionCard title="에어 벤트" icon={Wind} className="h-full flex flex-col">
+                    <FieldLabel>Air vent height</FieldLabel>
+                    <NumInput value={airVentH} onChange={setAirVentH} unit="mm" validation={vAirV} />
+                    <p className="text-[10px] text-slate-400 leading-snug mt-auto pt-2">
+                      D = <span className="font-bold text-slate-500">{dimD} mm</span> 이상 권장
+                    </p>
+                  </SectionCard>
+
+                  {/* 가속도 */}
+                  <SectionCard title="가속도" icon={Activity} className="h-full flex flex-col">
+                    <div className="space-y-2">
+                      <div>
+                        <FieldLabel>a<sub>x</sub></FieldLabel>
+                        <NumInput value={accX} onChange={setAccX} unit="g" validation={vAx} />
+                      </div>
+                      <div>
+                        <FieldLabel>a<sub>y</sub></FieldLabel>
+                        <NumInput value={accY} onChange={setAccY} unit="g" validation={vAy} />
+                      </div>
+                      <div>
+                        <FieldLabel>a<sub>z</sub></FieldLabel>
+                        <NumInput value={accZ} onChange={setAccZ} unit="g" validation={vAz} />
+                      </div>
+                    </div>
+                  </SectionCard>
+
+                </div>
+
+                {/* ── 경계조건 BC — 풀폭 ── */}
+                <SectionCard title="경계조건 (BC Node)" icon={Anchor}>
+                  {/* 안내 배너 — BC 탭이므로 뷰어와의 상호작용 안내를 더 명확히 */}
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-200/70">
+                    <span className="text-red-500 font-bold text-[14px] leading-none">●</span>
+                    <p className="text-[11px] text-violet-700 leading-snug flex-1">
+                      우측 3D 뷰어의 <span className="font-extrabold text-red-600">빨간 Node</span>를 클릭하면{' '}
+                      <span className="font-extrabold text-lime-600">▲</span> 마커로 BC가 지정됩니다.
+                      <span className="text-violet-500"> 재클릭 시 해제.</span>
+                    </p>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                        bcRows.length > 0
+                          ? 'bg-violet-100 border-violet-300 text-violet-700'
+                          : 'bg-slate-50 border-slate-200 text-slate-400'
+                      }`}>
+                        {bcRows.length} EA
+                      </span>
+                      {bcRows.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setBcRows([])}
+                          className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-red-500 font-bold transition-colors cursor-pointer whitespace-nowrap"
+                        >
+                          <Trash2 size={10} /> 전체 해제
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* BC 노드 테이블 */}
+                  <div className="border border-slate-200 rounded-lg overflow-hidden">
+                    <div className="overflow-y-auto max-h-[200px]">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200">
+                          <tr className="text-slate-500 uppercase tracking-wider text-[10px]">
+                            <th className="px-2 py-1.5 font-bold text-center w-8">#</th>
+                            <th className="px-2 py-1.5 font-bold text-right">X</th>
+                            <th className="px-2 py-1.5 font-bold text-right">Y</th>
+                            <th className="px-2 py-1.5 font-bold text-right">Z</th>
+                            <th className="px-1 py-1.5 w-6" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {bcRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-3 py-5 text-center text-slate-400 text-[11px] leading-snug">
+                                3D 뷰어에서 빨간 Node 를 클릭해<br />BC 위치를 지정하세요.
+                              </td>
+                            </tr>
+                          ) : bcRows.map((r, idx) => (
+                            <tr key={idx} className="hover:bg-violet-50/40 transition-colors">
+                              <td className="px-2 py-1.5 text-center font-bold text-slate-400">{idx + 1}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-slate-700">{r.x}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-slate-700">{r.y}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-slate-700">{r.z ?? 0}</td>
+                              <td className="px-1 text-center">
+                                <button
+                                  onClick={() => removeBcRow(idx)}
+                                  className="p-0.5 text-slate-300 hover:text-red-500 transition-colors cursor-pointer"
+                                >
+                                  <Trash2 size={11} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </SectionCard>
+
+              </div>
+            )}
+
+          </div>{/* end 탭 콘텐츠 컨테이너 */}
+
+        </div>{/* end 좌측 탭 패널 */}
+
+        {/* ───── 우측: 3D 뷰어 — 두 탭 모두에서 항상 표시 ───── */}
+        <div className="bg-slate-950 border border-slate-800 rounded-2xl shadow-inner self-stretch min-h-[520px] min-w-0 overflow-hidden relative mt-3">
             <IndependentTankViewer
               L={Number(dimL)} B={Number(dimB)} D={Number(dimD)}
               topOpen={topOpen === 'open'}
@@ -1120,124 +1310,6 @@ export default function IndependentTankAssessment() {
         </div>{/* end 우측 뷰어 컬럼 */}
 
       </div>{/* end 2컬럼 그리드 */}
-
-      {/* ═══════════════════════════════════════════════════════
-          하단 Boundary & Load — 풀폭 1행, 3 카드 하단 정렬
-         ═══════════════════════════════════════════════════════ */}
-      <div className="mt-4">
-        <div className="flex items-center gap-2.5 mb-2.5">
-          <span className="text-[10.5px] font-extrabold text-violet-600 uppercase tracking-widest whitespace-nowrap">Boundary &amp; Load</span>
-          <div className="flex-1 border-t border-violet-200/80" />
-        </div>
-
-        {/* 3카드 1행 — items-stretch 로 모든 카드 하단 정렬 */}
-        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] gap-3 items-stretch">
-
-          {/* ── Air Vent ── */}
-          <SectionCard title="에어 벤트" icon={Wind} className="h-full flex flex-col">
-            <FieldLabel>Air vent height</FieldLabel>
-            <NumInput value={airVentH} onChange={setAirVentH} unit="mm" validation={vAirV} />
-            {/* 하단 보조 텍스트 — 카드 하단에 고정 */}
-            <p className="text-[10px] text-slate-400 leading-snug mt-auto pt-2">
-              탱크 높이 D = <span className="font-bold text-slate-500">{dimD} mm</span> 이상 권장
-            </p>
-          </SectionCard>
-
-          {/* ── 가속도 ── */}
-          <SectionCard title="가속도" icon={Activity} className="h-full flex flex-col">
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <FieldLabel>a<sub>x</sub></FieldLabel>
-                <NumInput value={accX} onChange={setAccX} unit="g" validation={vAx} />
-              </div>
-              <div>
-                <FieldLabel>a<sub>y</sub></FieldLabel>
-                <NumInput value={accY} onChange={setAccY} unit="g" validation={vAy} />
-              </div>
-              <div>
-                <FieldLabel>a<sub>z</sub></FieldLabel>
-                <NumInput value={accZ} onChange={setAccZ} unit="g" validation={vAz} />
-              </div>
-            </div>
-            {/* 단위 보조 — 하단 */}
-            <p className="text-[10px] text-slate-400 leading-snug mt-auto pt-2">
-              중력 가속도 기준 · 범위 -3 ~ 3 g
-            </p>
-          </SectionCard>
-
-          {/* ── 경계조건 BC ── */}
-          <SectionCard title="경계조건 (BC Node)" icon={Anchor} className="h-full flex flex-col">
-            {/* 안내 + 선택 수 + 전체 해제 — 한 행 */}
-            <div className="flex items-start justify-between gap-3 pb-1 border-b border-slate-100">
-              <p className="text-[10.5px] text-slate-500 leading-snug flex-1 min-w-0">
-                3D 뷰어의 <span className="text-red-500 font-bold">빨간 Node</span> 클릭 →{' '}
-                <span className="text-lime-600 font-bold">▲</span> 마커로 선택
-                <span className="text-slate-400"> · 재클릭 해제</span>
-              </p>
-              <div className="flex items-center gap-2.5 flex-shrink-0">
-                {/* 선택 수 배지 */}
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${
-                  bcRows.length > 0
-                    ? 'bg-violet-50 border-violet-200 text-violet-600'
-                    : 'bg-slate-50 border-slate-200 text-slate-400'
-                }`}>
-                  {bcRows.length} EA
-                </span>
-                {bcRows.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setBcRows([])}
-                    className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-red-500 font-bold transition-colors cursor-pointer whitespace-nowrap"
-                  >
-                    <Trash2 size={10} /> 전체 해제
-                  </button>
-                )}
-              </div>
-            </div>
-            {/* BC 노드 테이블 — 카드 하단까지 채움 */}
-            <div className="border border-slate-200 rounded-lg overflow-hidden flex-1 flex flex-col min-h-0 mt-0.5">
-              <div className="flex-1 overflow-y-auto max-h-[130px]">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200">
-                    <tr className="text-slate-500 uppercase tracking-wider text-[10px]">
-                      <th className="px-2 py-1.5 font-bold text-center w-8">#</th>
-                      <th className="px-2 py-1.5 font-bold text-right">X</th>
-                      <th className="px-2 py-1.5 font-bold text-right">Y</th>
-                      <th className="px-2 py-1.5 font-bold text-right">Z</th>
-                      <th className="px-1 py-1.5 w-6" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {bcRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-4 text-center text-slate-400 text-[11px] leading-snug">
-                          3D 뷰어에서 빨간 Node 를 클릭해<br />BC 위치를 지정하세요.
-                        </td>
-                      </tr>
-                    ) : bcRows.map((r, idx) => (
-                      <tr key={idx} className="hover:bg-violet-50/40 transition-colors">
-                        <td className="px-2 py-1.5 text-center font-bold text-slate-400">{idx + 1}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-slate-700">{r.x}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-slate-700">{r.y}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-slate-700">{r.z ?? 0}</td>
-                        <td className="px-1 text-center">
-                          <button
-                            onClick={() => removeBcRow(idx)}
-                            className="p-0.5 text-slate-300 hover:text-red-500 transition-colors cursor-pointer"
-                          >
-                            <Trash2 size={11} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </SectionCard>
-
-        </div>
-      </div>{/* end 하단 Boundary & Load 풀폭 행 */}
 
     </div>
   );
