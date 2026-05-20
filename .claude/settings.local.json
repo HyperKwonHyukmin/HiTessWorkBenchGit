@@ -118,5 +118,8 @@
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "shrimp-task-manager"
-  ]
+  ],
+  "enabledPlugins": {
+    "agent-skills@addy-agent-skills": false
+  }
 }
