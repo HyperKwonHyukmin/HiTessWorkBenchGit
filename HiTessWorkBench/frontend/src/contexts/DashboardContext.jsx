@@ -21,6 +21,7 @@ export const ANALYSIS_DATA = [
   { mode: "Interactive", category: "단면(Section)", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Active", contributor: "권혁민" },
   // ── Interactive Apps (signature: violet) ──────── Developing ──
   { mode: "Interactive", category: "판 구조(Plate)", title: "Plate Structure Analysis", description: "Plate 구조 해석용 Studio를 실행하여 판 구조 모델링 및 해석 작업을 진행합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Plate", "Studio", "구조해석"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "Interactive", category: "탱크(Tank)", title: "Independent Tank Assessment", description: "독립 탱크의 치수·판두께·보강재 배치를 입력하여 구조 해석 모델을 구축합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Tank", "Plate", "Stiffener", "3D"], devStatus: "Developing", contributor: "권혁민" },
   // ── Parametric Apps (signature: emerald) ──────── Active ──
   { mode: "Parametric", category: "다빗(Davit)", title: "Jib Rest Assessment", description: "Jib Rest 구조물의 1단/2단 파이프 설계 후보를 산출합니다.", icon: SlidersHorizontal, color: "bg-emerald-600", tags: ["다빗", "Jib Rest", "1단", "2단"], devStatus: "Active", contributor: "박준석" },
   { mode: "Parametric", category: "다빗(Davit)", title: "Mast Post Assessment", description: "Post 높이와 플랫폼 하중을 입력하여 기준을 만족하는 최적 파이프 후보를 산출합니다.", icon: SlidersHorizontal, color: "bg-emerald-600", tags: ["다빗", "Post", "파이프선정"], devStatus: "Active", contributor: "박준석" },

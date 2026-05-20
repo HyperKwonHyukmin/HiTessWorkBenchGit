@@ -44,6 +44,7 @@ const ColumnBucklingCalculator = lazy(() => import('./pages/analysis/ColumnBuckl
 const HoleFatigueAssessment = lazy(() => import('./pages/analysis/HoleFatigueAssessment'));
 const DTypeLugAssessment = lazy(() => import('./pages/analysis/DTypeLugAssessment'));
 const CarlingCalculator = lazy(() => import('./pages/analysis/CarlingCalculator'));
+const IndependentTankAssessment = lazy(() => import('./pages/analysis/IndependentTankAssessment'));
 const SectionPropertyCalculator = lazy(() => import('./pages/analysis/SectionPropertyCalculator'));
 const PlateStructureAnalysis = lazy(() => import('./pages/analysis/PlateStructureAnalysis'));
 const ApiApps = lazy(() => import('./pages/Administration/ApiApps'));
@@ -258,6 +259,7 @@ function AppInner() {
       case 'D Type Lug Assessment': return <DTypeLugAssessment />;
       case 'Carling Free Calculator': return <CarlingCalculator variant="free" />;
       case 'Carling Design Optimization': return <CarlingCalculator variant="optimization" />;
+      case 'Independent Tank Assessment': return <IndependentTankAssessment />;
       case 'Section Property Calculator': return <SectionPropertyCalculator />;
       case 'Plate Structure Analysis': return <PlateStructureAnalysis />;
       case 'API Apps': return <ApiApps />;

@@ -39,6 +39,8 @@ export default function InteractiveApps() {
       setCurrentMenu('Section Property Calculator');
     } else if (appTitle === "Plate Structure Analysis") {
       setCurrentMenu('Plate Structure Analysis');
+    } else if (appTitle === "Independent Tank Assessment") {
+      setCurrentMenu('Independent Tank Assessment');
     } else {
       showToast(`'${appTitle}' 앱은 현재 개발 중입니다.`, 'info');
     }
