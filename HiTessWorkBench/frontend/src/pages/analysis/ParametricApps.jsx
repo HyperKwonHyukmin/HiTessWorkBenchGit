@@ -39,6 +39,8 @@ export default function ParametricApps() {
       setCurrentMenu('Jib Rest Assessment');
     } else if (appTitle === "Column Buckling Load Calculator") {
       setCurrentMenu('Column Buckling Load Calculator');
+    } else if (appTitle === "Simplified Hole Fatigue Assessment") {
+      setCurrentMenu('Simplified Hole Fatigue Assessment');
     } else if (appTitle === "D Type Lug Assessment") {
       setCurrentMenu('D Type Lug Assessment');
     } else if (appTitle === "Carling Free Calculator") {

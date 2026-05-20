@@ -41,6 +41,7 @@ const ProductivityApps = lazy(() => import('./pages/analysis/ProductivityApps'))
 const MastPostAssessment = lazy(() => import('./pages/analysis/MastPostAssessment'));
 const JibRestAssessment = lazy(() => import('./pages/analysis/JibRestAssessment'));
 const ColumnBucklingCalculator = lazy(() => import('./pages/analysis/ColumnBucklingCalculator'));
+const HoleFatigueAssessment = lazy(() => import('./pages/analysis/HoleFatigueAssessment'));
 const DTypeLugAssessment = lazy(() => import('./pages/analysis/DTypeLugAssessment'));
 const CarlingCalculator = lazy(() => import('./pages/analysis/CarlingCalculator'));
 const SectionPropertyCalculator = lazy(() => import('./pages/analysis/SectionPropertyCalculator'));
@@ -253,6 +254,7 @@ function AppInner() {
       case 'Mast Post Assessment': return <MastPostAssessment />;
       case 'Jib Rest Assessment': return <JibRestAssessment />;
       case 'Column Buckling Load Calculator': return <ColumnBucklingCalculator />;
+      case 'Simplified Hole Fatigue Assessment': return <HoleFatigueAssessment />;
       case 'D Type Lug Assessment': return <DTypeLugAssessment />;
       case 'Carling Free Calculator': return <CarlingCalculator variant="free" />;
       case 'Carling Design Optimization': return <CarlingCalculator variant="optimization" />;

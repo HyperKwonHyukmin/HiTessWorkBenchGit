@@ -17,6 +17,7 @@ from .routers import (
     davit,
     dev_runbooks,
     hitessbeam,
+    hole_calculation,
     section_property,
     support,
     system,
@@ -112,6 +113,7 @@ app.include_router(support.router)
 app.include_router(ai.router)
 app.include_router(davit.router)
 app.include_router(column_buckling.router)
+app.include_router(hole_calculation.router)
 app.include_router(d_type_lug.router)
 app.include_router(carling.router)
 app.include_router(hitessbeam.router)  # [TEMP] HiTessBeam 임시 라우터
