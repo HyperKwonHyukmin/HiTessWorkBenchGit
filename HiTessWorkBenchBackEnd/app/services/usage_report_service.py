@@ -97,6 +97,20 @@ from sqlalchemy.orm import Session
 from app import models
 
 
+def _count_new_users(db: Session, start: datetime, end: datetime, user_ids: set) -> int:
+    """user_ids 중, 전체 이력상 첫 실행이 [start, end] 안에 있는 사용자 수."""
+    if not user_ids:
+        return 0
+    from sqlalchemy import func as sqlfunc
+    rows = (
+        db.query(models.Analysis.employee_id, sqlfunc.min(models.Analysis.created_at))
+          .filter(models.Analysis.employee_id.in_(user_ids))
+          .group_by(models.Analysis.employee_id)
+          .all()
+    )
+    return sum(1 for _, first_run in rows if start <= first_run <= end)
+
+
 def aggregate_period(db: Session, period: str, start: datetime, end: datetime) -> dict:
     """기간 [start, end] 범위의 해석 데이터를 집계."""
     rows = (
@@ -199,7 +213,7 @@ def aggregate_period(db: Session, period: str, start: datetime, end: datetime) -
         "maxDay": max(day_counter.values()) if day_counter else 0,
         "busiestProgram": busiest_program,
         "peakHour": peak_hour,
-        "newUsers": 0,  # Task 4에서 채움
+        "newUsers": _count_new_users(db, start, end, set(user_map.keys())),
         "programs": programs,
         "users": users,
         "departments": [{"name": k, "count": v} for k, v in dept_counter.most_common()],
@@ -233,3 +247,19 @@ def _build_time_buckets(period, start, end, hour_counts, weekday_counts, day_cou
             d = (start.date() + timedelta(days=offset))
             data.append({"label": str(d.day), "count": day_counter.get(d.isoformat(), 0)})
     return {"type": _bucket_type(period), "data": data}
+
+
+def compute_deltas(current: dict, previous: dict) -> dict:
+    """current/previous summary 딕셔너리의 주요 필드 차이를 계산."""
+    keys = ("total", "activeUsers", "activePrograms", "avgPerDay")
+    out = {}
+    for k in keys:
+        cur = current.get(k, 0)
+        prev = previous.get(k, 0)
+        abs_delta = round(cur - prev, 1) if isinstance(cur, float) or isinstance(prev, float) else cur - prev
+        if prev == 0:
+            pct = None
+        else:
+            pct = round((cur - prev) * 100 / prev, 1)
+        out[k] = {"abs": abs_delta, "pct": pct}
+    return out

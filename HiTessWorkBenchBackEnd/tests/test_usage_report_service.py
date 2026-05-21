@@ -132,3 +132,38 @@ class TestAggregatePeriod:
         assert result["activeUsers"] == 1
         assert "raw_rows" in result
         assert len(result["raw_rows"]) == 2
+
+
+class TestNewUsersDetection:
+    def test_first_run_in_period_counts_as_new(self, db_session, make_user, make_analysis):
+        make_user("E001"); make_user("E002")
+        # E001은 5/10에 첫 실행(범위 밖)
+        make_analysis("E001", "Truss Assessment", datetime(2026, 5, 10, 9, 0))
+        make_analysis("E001", "Truss Assessment", datetime(2026, 5, 20, 9, 0))
+        # E002는 5/20에 첫 실행(범위 안)
+        make_analysis("E002", "BDF Scanner",      datetime(2026, 5, 20, 10, 0))
+
+        result = aggregate_period(
+            db_session, "daily",
+            start=datetime(2026, 5, 20, 0, 0, 0),
+            end=datetime(2026, 5, 20, 23, 59, 59, 999999),
+        )
+        assert result["newUsers"] == 1  # E002만
+
+
+class TestComputeDeltas:
+    def test_basic_delta(self):
+        from app.services.usage_report_service import compute_deltas
+        current = {"total": 122, "activeUsers": 23, "activePrograms": 8, "avgPerDay": 17.4}
+        previous = {"total": 100, "activeUsers": 20, "activePrograms": 9, "avgPerDay": 14.3}
+        d = compute_deltas(current, previous)
+        assert d["total"]["abs"] == 22
+        assert d["total"]["pct"] == 22.0
+        assert d["activePrograms"]["abs"] == -1
+        assert d["activePrograms"]["pct"] == pytest.approx(-11.1, abs=0.1)
+
+    def test_previous_zero_yields_null_pct(self):
+        from app.services.usage_report_service import compute_deltas
+        d = compute_deltas({"total": 5}, {"total": 0})
+        assert d["total"]["abs"] == 5
+        assert d["total"]["pct"] is None
