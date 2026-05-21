@@ -12,6 +12,7 @@ import {
   GraduationCap,
   Settings,
   BarChart3,
+  LineChart,
   ChevronLeft,
   ChevronRight,
   ShieldAlert,
@@ -67,6 +68,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
         items: [
           { icon: ShieldAlert, label: "User Management" },
           { icon: BarChart3, label: "Analysis Management" },
+          { icon: LineChart, label: "Usage Reports" },
           { icon: Settings, label: "System Management" },
           { icon: Webhook, label: "API Apps" },
           { icon: BookMarked, label: "Developer Runbooks" },

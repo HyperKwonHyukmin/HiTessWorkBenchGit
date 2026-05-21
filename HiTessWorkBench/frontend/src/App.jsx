@@ -33,6 +33,7 @@ const DownloadCenter = lazy(() => import('./pages/Support/DownloadCenter'));
 const UserManagement = lazy(() => import('./pages/Administration/UserManagement'));
 const SystemSettings = lazy(() => import('./pages/Administration/SystemSettings'));
 const AnalysisManagement = lazy(() => import('./pages/Administration/AnalysisManagement'));
+const UsageReports = lazy(() => import('./pages/Administration/UsageReports'));
 const AiAssistantHub = lazy(() => import('./pages/AI/AiAssistantHub'));
 const AcademicApps = lazy(() => import('./pages/analysis/AcademicApps'));
 const BdfScanner = lazy(() => import('./pages/analysis/BdfScanner'));
@@ -277,6 +278,7 @@ function AppInner() {
       case 'Download Center': return <DownloadCenter />;
       case 'User Management': return <UserManagement />;
       case 'Analysis Management': return <AnalysisManagement />;
+      case 'Usage Reports': return <UsageReports />;
       case 'System Settings':
       case 'System Management': return <SystemSettings />;
       case 'AI Lab Assistant':
