@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models, database
 from ..services.job_manager import job_status_store, analysis_executor
-from ..dependencies import require_auth
+from ..dependencies import require_auth, require_admin
 from ..services.activity_service import log_activity
 from ..services.truss_service import task_execute_truss
 from ..services.assessment_service import task_execute_assessment, _json_to_xlsx_bytes
@@ -259,6 +259,54 @@ def export_assessment_xlsx(
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers={'Content-Disposition': f'attachment; filename="{xlsx_filename}"'}
     )
+
+
+# ==================== Usage Report (Daily/Weekly/Monthly) ====================
+
+from ..services import usage_report_service as _urs
+from ..usage_report_schemas import UsageReportResponse
+from datetime import date as _DateType
+
+
+@router.get("/analysis/report", response_model=UsageReportResponse)
+def get_usage_report(
+    period: str = Query(..., description="daily | weekly | monthly"),
+    date: Optional[_DateType] = Query(None, description="기간이 속하는 날짜 (YYYY-MM-DD)"),
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
+):
+    """관리자 전용 D/W/M 사용량 리포트."""
+    try:
+        bounds = _urs.resolve_period(period, date)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    current = _urs.aggregate_period(db, period, bounds.start, bounds.end)
+    previous = _urs.aggregate_period(db, period, bounds.prev_start, bounds.prev_end)
+    deltas = _urs.compute_deltas(current, previous)
+
+    return {
+        "period": {
+            "type": bounds.type,
+            "start": bounds.start,
+            "end": bounds.end,
+            "label": bounds.label,
+        },
+        "previous": {
+            "start": bounds.prev_start,
+            "end": bounds.prev_end,
+            "label": bounds.prev_label,
+        },
+        "summary": {k: current[k] for k in (
+            "total", "activePrograms", "activeUsers", "activeDepartments",
+            "avgPerDay", "maxDay", "busiestProgram", "peakHour", "newUsers",
+        )},
+        "deltas": deltas,
+        "programs": current["programs"],
+        "users": current["users"],
+        "departments": current["departments"],
+        "timeBuckets": current["timeBuckets"],
+    }
 
 
 # ==================== 단건 조회 ====================

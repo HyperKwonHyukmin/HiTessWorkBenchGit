@@ -4,6 +4,7 @@ import pytest
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
 from app import database, models
@@ -16,6 +17,7 @@ def db_session():
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     TestingSession = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     models.Base.metadata.create_all(bind=engine)
