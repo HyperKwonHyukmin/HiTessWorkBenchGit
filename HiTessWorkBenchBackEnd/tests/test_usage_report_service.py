@@ -31,7 +31,7 @@ class TestResolvePeriodWeekly:
 
     def test_weekly_crosses_month(self):
         # 2026-05-31 is Sunday → week is Mon 05-25 to Sun 05-31
-        b = resolve_period("weekly", date(2026, 5, 31))
+        b = resolve_period("weekly", date(2026, 5, 31), today=date(2026, 6, 1))
         assert b.start.date() == date(2026, 5, 25)
         assert b.end.date()   == date(2026, 5, 31)
         assert b.prev_start.date() == date(2026, 5, 18)

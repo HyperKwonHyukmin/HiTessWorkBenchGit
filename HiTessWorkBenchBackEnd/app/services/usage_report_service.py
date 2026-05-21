@@ -36,12 +36,10 @@ def resolve_period(
 
     target이 None이면 '직전의 완료된 기간'을 기본값으로 사용한다.
     today는 테스트용 주입 포인트(없으면 실제 오늘).
-    미래 guard는 today가 명시적으로 주입된 경우에만 적용된다.
     """
     if period not in ("daily", "weekly", "monthly"):
         raise ValueError(f"period는 daily, weekly, monthly 중 하나여야 합니다 (받은 값: {period!r})")
 
-    today_injected = today is not None
     today = today or date.today()
 
     # 기본값 보정
@@ -53,8 +51,7 @@ def resolve_period(
         else:  # monthly
             target = today.replace(day=1) - timedelta(days=1)
 
-    # 미래 guard: today가 명시적으로 주입된 경우에만 검사
-    if today_injected and target > today:
+    if target > today:
         raise ValueError("미래 기간은 조회할 수 없습니다.")
 
     if period == "daily":
