@@ -170,5 +170,6 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 | `'Hi-Lab Insight'` | `AI/HiLabInsight.jsx` | AI 인사이트 페이지 |
 | `'User Management'` | `Administration/UserManagement.jsx` | 관리자: 사용자 승인/관리 |
 | `'Analysis Management'` | `Administration/AnalysisManagement.jsx` | 관리자: 전체 해석 이력 |
+| `'Usage Reports'` | `Administration/UsageReports.jsx` | 관리자: 일/주/월 사용량 정형 리포트, Excel 내보내기 |
 | `'System Settings'` | `Administration/SystemSettings.jsx` | 관리자: 시스템 모니터링 |
 | `'API Apps'` | `Administration/ApiApps.jsx` | 관리자: API 연동 앱 관리 |
