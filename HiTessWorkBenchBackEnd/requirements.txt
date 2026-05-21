@@ -21,3 +21,7 @@ Pillow
 
 # 시스템 모니터링
 psutil
+
+# 테스트
+pytest>=8.0.0
+httpx>=0.27.0
