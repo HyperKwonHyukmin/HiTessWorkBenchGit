@@ -90,3 +90,146 @@ def resolve_period(
         label=label,
         prev_label=prev_label,
     )
+
+
+from collections import Counter
+from sqlalchemy.orm import Session
+from app import models
+
+
+def aggregate_period(db: Session, period: str, start: datetime, end: datetime) -> dict:
+    """기간 [start, end] 범위의 해석 데이터를 집계."""
+    rows = (
+        db.query(models.Analysis, models.User)
+          .outerjoin(models.User, models.Analysis.employee_id == models.User.employee_id)
+          .filter(models.Analysis.created_at >= start)
+          .filter(models.Analysis.created_at <= end)
+          .all()
+    )
+    raw_rows = list(rows)
+    stats_rows = [(a, u) for a, u in rows if not (u and u.is_developer)]
+    total = len(stats_rows)
+
+    if total == 0:
+        return {
+            "total": 0, "activePrograms": 0, "activeUsers": 0, "activeDepartments": 0,
+            "avgPerDay": 0.0, "maxDay": 0,
+            "busiestProgram": None, "peakHour": None, "newUsers": 0,
+            "programs": [], "users": [], "departments": [],
+            "timeBuckets": {"type": _bucket_type(period), "data": _empty_buckets(period, start, end)},
+            "raw_rows": raw_rows,
+        }
+
+    program_map: dict = {}
+    user_map: dict = {}
+    dept_counter: Counter = Counter()
+    day_counter: Counter = Counter()
+    hour_counts = [0] * 24
+    weekday_counts = [0] * 7
+
+    for a, u in stats_rows:
+        pname = a.program_name or "Unknown"
+        eid = a.employee_id or "unknown"
+        dept = (u.department if u and u.department else "Unknown")
+        name = (u.name if u else "Deleted User")
+        ts = a.created_at
+
+        p = program_map.setdefault(pname, {"name": pname, "count": 0, "_users": set(), "lastRun": None})
+        p["count"] += 1
+        p["_users"].add(eid)
+        if not p["lastRun"] or ts > p["lastRun"]:
+            p["lastRun"] = ts
+
+        u_row = user_map.setdefault(eid, {
+            "employeeId": eid, "name": name, "department": dept,
+            "count": 0, "_programs": set(), "lastRun": None,
+        })
+        u_row["count"] += 1
+        u_row["_programs"].add(pname)
+        if not u_row["lastRun"] or ts > u_row["lastRun"]:
+            u_row["lastRun"] = ts
+
+        dept_counter[dept] += 1
+        day_counter[ts.date().isoformat()] += 1
+        hour_counts[ts.hour] += 1
+        weekday_counts[ts.weekday()] += 1
+
+    programs = sorted(
+        [
+            {
+                "name": p["name"],
+                "count": p["count"],
+                "share": round(p["count"] * 100 / total),
+                "userCount": len(p["_users"]),
+                "lastRun": p["lastRun"].isoformat() if p["lastRun"] else None,
+            }
+            for p in program_map.values()
+        ],
+        key=lambda r: r["count"], reverse=True,
+    )
+    users = sorted(
+        [
+            {
+                "employeeId": u["employeeId"],
+                "name": u["name"],
+                "department": u["department"],
+                "count": u["count"],
+                "share": round(u["count"] * 100 / total),
+                "programCount": len(u["_programs"]),
+                "lastRun": u["lastRun"].isoformat() if u["lastRun"] else None,
+            }
+            for u in user_map.values()
+        ],
+        key=lambda r: r["count"], reverse=True,
+    )
+
+    covered_days = max(1, (end.date() - start.date()).days + 1)
+    busiest_program = programs[0]["name"] if programs else None
+    peak_hour_idx = max(range(24), key=lambda i: hour_counts[i]) if any(hour_counts) else None
+    peak_hour = f"{peak_hour_idx:02d}시" if peak_hour_idx is not None else None
+
+    time_buckets = _build_time_buckets(period, start, end, hour_counts, weekday_counts, day_counter)
+
+    return {
+        "total": total,
+        "activePrograms": len(program_map),
+        "activeUsers": len(user_map),
+        "activeDepartments": len(dept_counter),
+        "avgPerDay": round(total / covered_days, 1),
+        "maxDay": max(day_counter.values()) if day_counter else 0,
+        "busiestProgram": busiest_program,
+        "peakHour": peak_hour,
+        "newUsers": 0,  # Task 4에서 채움
+        "programs": programs,
+        "users": users,
+        "departments": [{"name": k, "count": v} for k, v in dept_counter.most_common()],
+        "timeBuckets": time_buckets,
+        "raw_rows": raw_rows,
+    }
+
+
+def _bucket_type(period: str) -> str:
+    return {"daily": "hour", "weekly": "weekday", "monthly": "dayOfMonth"}[period]
+
+
+def _empty_buckets(period: str, start: datetime, end: datetime) -> list:
+    if period == "daily":
+        return [{"label": f"{h:02d}시", "count": 0} for h in range(24)]
+    if period == "weekly":
+        return [{"label": _WEEKDAY_KR[i], "count": 0} for i in range(7)]
+    days = (end.date() - start.date()).days + 1
+    return [{"label": str(d), "count": 0} for d in range(1, days + 1)]
+
+
+def _build_time_buckets(period, start, end, hour_counts, weekday_counts, day_counter) -> dict:
+    if period == "daily":
+        data = [{"label": f"{h:02d}시", "count": hour_counts[h]} for h in range(24)]
+    elif period == "weekly":
+        data = [{"label": _WEEKDAY_KR[i], "count": weekday_counts[i]} for i in range(7)]
+    else:
+        days = (end.date() - start.date()).days + 1
+        data = []
+        for offset in range(days):
+            d = (start.date() + timedelta(days=offset))
+            data.append({"label": str(d.day), "count": day_counter.get(d.isoformat(), 0)})
+    return {"type": _bucket_type(period), "data": data}

@@ -75,3 +75,60 @@ class TestResolvePeriodGuards:
     def test_future_date_raises(self):
         with pytest.raises(ValueError, match="미래"):
             resolve_period("daily", date(2099, 1, 1), today=date(2026, 5, 21))
+
+
+from app.services.usage_report_service import aggregate_period
+
+
+class TestAggregatePeriod:
+    def test_empty_period_returns_zero(self, db_session):
+        result = aggregate_period(
+            db_session, "daily",
+            start=datetime(2026, 5, 20, 0, 0, 0),
+            end=datetime(2026, 5, 20, 23, 59, 59, 999999),
+        )
+        assert result["total"] == 0
+        assert result["programs"] == []
+        assert result["users"] == []
+        assert result["departments"] == []
+
+    def test_basic_counts(self, db_session, make_user, make_analysis):
+        make_user("E001", name="홍길동", department="구조해석팀")
+        make_user("E002", name="김철수", department="설계팀")
+        make_analysis("E001", "Truss Assessment", datetime(2026, 5, 20, 9, 0))
+        make_analysis("E001", "Truss Assessment", datetime(2026, 5, 20, 10, 0))
+        make_analysis("E001", "BDF Scanner",     datetime(2026, 5, 20, 11, 0))
+        make_analysis("E002", "Truss Assessment", datetime(2026, 5, 20, 14, 0))
+
+        result = aggregate_period(
+            db_session, "daily",
+            start=datetime(2026, 5, 20, 0, 0, 0),
+            end=datetime(2026, 5, 20, 23, 59, 59, 999999),
+        )
+        assert result["total"] == 4
+        assert result["activePrograms"] == 2
+        assert result["activeUsers"] == 2
+        assert result["activeDepartments"] == 2
+        assert result["programs"][0]["name"] == "Truss Assessment"
+        assert result["programs"][0]["count"] == 3
+        assert result["programs"][0]["userCount"] == 2
+        assert result["users"][0]["employeeId"] == "E001"
+        assert result["users"][0]["count"] == 3
+        assert result["users"][0]["programCount"] == 2
+        assert result["busiestProgram"] == "Truss Assessment"
+
+    def test_excludes_developers_from_stats(self, db_session, make_user, make_analysis):
+        make_user("E001", department="구조해석팀", is_developer=False)
+        make_user("E002", department="개발팀",   is_developer=True)
+        make_analysis("E001", "Truss Assessment", datetime(2026, 5, 20, 9, 0))
+        make_analysis("E002", "Truss Assessment", datetime(2026, 5, 20, 10, 0))
+
+        result = aggregate_period(
+            db_session, "daily",
+            start=datetime(2026, 5, 20, 0, 0, 0),
+            end=datetime(2026, 5, 20, 23, 59, 59, 999999),
+        )
+        assert result["total"] == 1
+        assert result["activeUsers"] == 1
+        assert "raw_rows" in result
+        assert len(result["raw_rows"]) == 2
