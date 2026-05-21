@@ -17,7 +17,7 @@ const KPI_COLOR_MAP = {
   violet: 'border-l-violet-500 bg-violet-50 text-violet-700',
 };
 
-function KpiCard({ label, value, sub, icon: Icon, color }) {
+export function KpiCard({ label, value, sub, icon: Icon, color }) {
   return (
     <div className={`bg-white border border-slate-200 border-l-4 ${KPI_COLOR_MAP[color]} rounded-lg p-4 shadow-sm`}>
       <div className="flex items-start justify-between gap-3">
