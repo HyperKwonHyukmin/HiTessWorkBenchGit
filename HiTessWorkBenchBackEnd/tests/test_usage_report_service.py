@@ -167,3 +167,43 @@ class TestComputeDeltas:
         d = compute_deltas({"total": 5}, {"total": 0})
         assert d["total"]["abs"] == 5
         assert d["total"]["pct"] is None
+
+
+class TestBuildReportXlsx:
+    def test_xlsx_has_six_sheets(self, db_session, make_user, make_analysis):
+        from app.services.usage_report_service import build_report_xlsx, aggregate_period, resolve_period, compute_deltas
+        from openpyxl import load_workbook
+        import io
+
+        make_user("E001", department="구조해석팀")
+        make_analysis("E001", "Truss Assessment", datetime(2026, 5, 20, 9, 0))
+        make_analysis("E001", "BDF Scanner",      datetime(2026, 5, 20, 10, 0))
+
+        bounds = resolve_period("daily", date(2026, 5, 20))
+        cur = aggregate_period(db_session, "daily", bounds.start, bounds.end)
+        prev = aggregate_period(db_session, "daily", bounds.prev_start, bounds.prev_end)
+        deltas = compute_deltas(cur, prev)
+
+        buf = build_report_xlsx(bounds, cur, prev, deltas)
+        wb = load_workbook(io.BytesIO(buf.getvalue()))
+        assert set(wb.sheetnames) == {"Summary", "Programs", "Users", "Departments", "Time Distribution", "Raw Data"}
+
+    def test_xlsx_summary_total_matches_json(self, db_session, make_user, make_analysis):
+        from app.services.usage_report_service import build_report_xlsx, aggregate_period, resolve_period, compute_deltas
+        from openpyxl import load_workbook
+        import io
+
+        make_user("E001")
+        for h in range(5):
+            make_analysis("E001", "Truss Assessment", datetime(2026, 5, 20, 9 + h, 0))
+
+        bounds = resolve_period("daily", date(2026, 5, 20))
+        cur = aggregate_period(db_session, "daily", bounds.start, bounds.end)
+        prev = aggregate_period(db_session, "daily", bounds.prev_start, bounds.prev_end)
+        deltas = compute_deltas(cur, prev)
+
+        buf = build_report_xlsx(bounds, cur, prev, deltas)
+        wb = load_workbook(io.BytesIO(buf.getvalue()))
+        summary_sheet = wb["Summary"]
+        values = {row[0].value: row[1].value for row in summary_sheet.iter_rows() if row[0].value}
+        assert values.get("총 실행 수") == 5

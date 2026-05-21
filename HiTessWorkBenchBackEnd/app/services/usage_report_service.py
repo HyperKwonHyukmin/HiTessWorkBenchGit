@@ -1,4 +1,5 @@
 """Daily/Weekly/Monthly 사용량 리포트 — 기간 계산·집계·Excel 빌더."""
+import io
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from calendar import monthrange
@@ -263,3 +264,135 @@ def compute_deltas(current: dict, previous: dict) -> dict:
             pct = round((cur - prev) * 100 / prev, 1)
         out[k] = {"abs": abs_delta, "pct": pct}
     return out
+
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill
+
+_HEADER_FONT = Font(bold=True, color="FFFFFFFF")
+_HEADER_FILL = PatternFill("solid", fgColor="FF2563EB")
+
+
+def _apply_header_style(cell):
+    cell.font = _HEADER_FONT
+    cell.fill = _HEADER_FILL
+    cell.alignment = Alignment(horizontal="center")
+
+
+def _fmt_delta(d) -> str:
+    if not d:
+        return ""
+    sign = "+" if d["abs"] >= 0 else ""
+    pct = "" if d["pct"] is None else f" ({sign}{d['pct']}%)"
+    return f"{sign}{d['abs']}{pct}"
+
+
+def build_report_xlsx(bounds: PeriodBounds, current: dict, previous: dict, deltas: dict):
+    """6개 시트의 Excel 리포트를 BytesIO로 반환."""
+    import io as _bio
+    wb = Workbook()
+    _build_summary_sheet(wb, bounds, current, previous, deltas)
+    _build_table_sheet(wb, "Programs", current["programs"],
+                       columns=[("순위", None), ("프로그램", "name"), ("실행수", "count"),
+                                ("점유율(%)", "share"), ("사용자수", "userCount"), ("최근실행", "lastRun")])
+    _build_table_sheet(wb, "Users", current["users"],
+                       columns=[("순위", None), ("사번", "employeeId"), ("이름", "name"),
+                                ("부서", "department"), ("실행수", "count"), ("점유율(%)", "share"),
+                                ("사용프로그램수", "programCount"), ("최근실행", "lastRun")])
+    _build_dept_sheet(wb, current)
+    _build_time_sheet(wb, current["timeBuckets"])
+    _build_raw_sheet(wb, current["raw_rows"])
+
+    buf = _bio.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def _build_summary_sheet(wb, bounds, current, previous, deltas):
+    ws = wb.active
+    ws.title = "Summary"
+    ws.append(["항목", "값", "전 기간 대비"])
+    for c in ws[1]:
+        _apply_header_style(c)
+    rows = [
+        ("기간", bounds.label, ""),
+        ("이전 기간", bounds.prev_label, ""),
+        ("총 실행 수", current["total"], _fmt_delta(deltas.get("total"))),
+        ("활성 프로그램 수", current["activePrograms"], _fmt_delta(deltas.get("activePrograms"))),
+        ("활성 사용자 수", current["activeUsers"], _fmt_delta(deltas.get("activeUsers"))),
+        ("활성 부서 수", current["activeDepartments"], ""),
+        ("일평균 실행 수", current["avgPerDay"], _fmt_delta(deltas.get("avgPerDay"))),
+        ("최대 일일 실행 수", current["maxDay"], ""),
+        ("최다 사용 프로그램", current["busiestProgram"] or "-", ""),
+        ("피크 시간대", current["peakHour"] or "-", ""),
+        ("신규 사용자 수", current["newUsers"], ""),
+    ]
+    for r in rows:
+        ws.append(list(r))
+    for col in (1, 2, 3):
+        ws.column_dimensions[chr(64 + col)].width = 24
+
+
+def _build_table_sheet(wb, title, rows, columns):
+    ws = wb.create_sheet(title)
+    headers = [c[0] for c in columns]
+    ws.append(headers)
+    for c in ws[1]:
+        _apply_header_style(c)
+    for i, r in enumerate(rows, start=1):
+        row_values = []
+        for label, key in columns:
+            if key is None:
+                row_values.append(i)
+            else:
+                row_values.append(r.get(key, ""))
+        ws.append(row_values)
+    for idx in range(1, len(headers) + 1):
+        ws.column_dimensions[chr(64 + idx)].width = 18
+
+
+def _build_dept_sheet(wb, current):
+    ws = wb.create_sheet("Departments")
+    ws.append(["부서", "실행수", "점유율(%)"])
+    for c in ws[1]:
+        _apply_header_style(c)
+    total = current["total"] or 1
+    for d in current["departments"]:
+        ws.append([d["name"], d["count"], round(d["count"] * 100 / total)])
+    for idx in range(1, 4):
+        ws.column_dimensions[chr(64 + idx)].width = 20
+
+
+def _build_time_sheet(wb, time_buckets):
+    ws = wb.create_sheet("Time Distribution")
+    label_header = {"hour": "시간대", "weekday": "요일", "dayOfMonth": "일자"}[time_buckets["type"]]
+    ws.append([label_header, "실행수"])
+    for c in ws[1]:
+        _apply_header_style(c)
+    for b in time_buckets["data"]:
+        ws.append([b["label"], b["count"]])
+    for idx in range(1, 3):
+        ws.column_dimensions[chr(64 + idx)].width = 18
+
+
+def _build_raw_sheet(wb, raw_rows):
+    ws = wb.create_sheet("Raw Data")
+    ws.append(["ID", "프로젝트", "프로그램", "사번", "이름", "부서", "상태", "실행시각", "개발자"])
+    for c in ws[1]:
+        _apply_header_style(c)
+    for a, u in raw_rows:
+        ws.append([
+            a.id,
+            getattr(a, "project_name", "") or "",
+            a.program_name or "",
+            a.employee_id or "",
+            (u.name if u else "Deleted User"),
+            (u.department if u and u.department else "Unknown"),
+            a.status or "",
+            a.created_at.isoformat() if a.created_at else "",
+            "Y" if (u and u.is_developer) else "",
+        ])
+    widths = [8, 24, 28, 12, 14, 18, 12, 22, 8]
+    for idx, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + idx)].width = w
