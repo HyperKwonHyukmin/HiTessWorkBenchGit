@@ -46,3 +46,37 @@ def test_report_endpoint_requires_admin(db_session, make_user):
     r = client.get("/api/analysis/report?period=daily")
     assert r.status_code == 403
     app.dependency_overrides.clear()
+
+
+def test_xlsx_endpoint_returns_xlsx(admin_client, make_user, make_analysis):
+    make_user("E001", department="구조해석팀")
+    make_analysis("E001", "Truss Assessment", datetime(2026, 5, 20, 9, 0))
+    r = admin_client.get("/api/analysis/report/export-xlsx?period=daily&date=2026-05-20")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert "WorkBench_UsageReport" in r.headers.get("content-disposition", "")
+
+    from openpyxl import load_workbook
+    import io
+    wb = load_workbook(io.BytesIO(r.content))
+    assert "Summary" in wb.sheetnames
+
+
+def test_xlsx_endpoint_requires_admin(db_session, make_user):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app import database
+    from app.dependencies import require_auth
+
+    make_user("USER001")
+
+    def _override_db():
+        yield db_session
+    app.dependency_overrides[database.get_db] = _override_db
+    app.dependency_overrides[require_auth] = lambda: "USER001"
+
+    r = TestClient(app).get("/api/analysis/report/export-xlsx?period=daily")
+    assert r.status_code == 403
+    app.dependency_overrides.clear()

@@ -309,6 +309,38 @@ def get_usage_report(
     }
 
 
+@router.get("/analysis/report/export-xlsx")
+def export_usage_report_xlsx(
+    period: str = Query(...),
+    date: Optional[_DateType] = Query(None),
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
+):
+    try:
+        bounds = _urs.resolve_period(period, date)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    current = _urs.aggregate_period(db, period, bounds.start, bounds.end)
+    previous = _urs.aggregate_period(db, period, bounds.prev_start, bounds.prev_end)
+    deltas = _urs.compute_deltas(current, previous)
+
+    try:
+        buf = _urs.build_report_xlsx(bounds, current, previous, deltas)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Excel 생성 중 오류가 발생했습니다.") from e
+
+    fname = (
+        f"WorkBench_UsageReport_{period.capitalize()}_"
+        f"{bounds.start.date().strftime('%Y%m%d')}_{bounds.end.date().strftime('%Y%m%d')}.xlsx"
+    )
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 # ==================== 단건 조회 ====================
 
 @router.get("/analysis/{analysis_id}")
