@@ -176,7 +176,7 @@ export default function BdfScanner() {
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-      <PageBanner gradient="from-brand-blue via-teal-900 to-teal-700">
+      <PageBanner gradient="from-brand-blue via-amber-900 to-amber-700">
         <div className="flex items-center gap-4">
           <button
             onClick={() => setCurrentMenu('File-Based Apps')}
@@ -186,10 +186,10 @@ export default function BdfScanner() {
           </button>
           <div>
             <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              <FileSearch size={18} className="text-teal-300" />
+              <FileSearch size={18} className="text-amber-300" />
               BDF Scanner
             </h1>
-            <p className="text-sm text-teal-200/80 mt-0.5">BDF 모델 유효성 검증 및 Nastran F06 요약</p>
+            <p className="text-sm text-amber-200/80 mt-0.5">BDF 모델 유효성 검증 및 Nastran F06 요약</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -216,7 +216,7 @@ export default function BdfScanner() {
         <div className="w-[360px] shrink-0 flex flex-col gap-4">
           {/* 파일 업로드 */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-r from-teal-700 to-teal-600 px-5 py-3">
+            <div className="bg-gradient-to-r from-amber-700 to-amber-600 px-5 py-3">
               <p className="text-xs font-bold text-white uppercase tracking-widest">BDF 파일 선택</p>
             </div>
             <div className="p-5">
@@ -226,7 +226,7 @@ export default function BdfScanner() {
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleDrop}
                 className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                  isDragOver ? 'border-teal-400 bg-teal-50' : 'border-slate-300 hover:border-teal-400 hover:bg-slate-50'
+                  isDragOver ? 'border-amber-400 bg-amber-50' : 'border-slate-300 hover:border-amber-400 hover:bg-slate-50'
                 }`}
               >
                 <Upload size={28} className="mx-auto mb-2 text-slate-400" />
@@ -254,7 +254,7 @@ export default function BdfScanner() {
 
           {/* 해석 옵션 */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-r from-slate-700 to-slate-600 px-5 py-3">
+            <div className="bg-gradient-to-r from-amber-700 to-amber-600 px-5 py-3">
               <p className="text-xs font-bold text-white uppercase tracking-widest">해석 옵션</p>
             </div>
             <div className="p-5">
@@ -264,16 +264,16 @@ export default function BdfScanner() {
                   checked={useNastran}
                   onChange={(e) => setUseNastran(e.target.checked)}
                   disabled={isRunning}
-                  className="mt-0.5 w-4 h-4 accent-teal-600 cursor-pointer"
+                  className="mt-0.5 w-4 h-4 accent-amber-600 cursor-pointer"
                 />
                 <div>
-                  <p className="text-sm font-medium text-slate-700 group-hover:text-teal-700 transition-colors">
+                  <p className="text-sm font-medium text-slate-700 group-hover:text-amber-700 transition-colors">
                     Nastran 해석 실행
                   </p>
                   <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
                     BDF 검증 후 Nastran을 실행하여 F06 결과에서 오류·경고를 추출합니다.
                     <br />
-                    <span className="text-teal-600 font-medium">Step 1 + Step 2</span> 결과가 모두 표시됩니다.
+                    <span className="text-amber-600 font-medium">Step 1 + Step 2</span> 결과가 모두 표시됩니다.
                   </p>
                 </div>
               </label>
@@ -292,7 +292,7 @@ export default function BdfScanner() {
             className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
               !bdfFile || isRunning
                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                : 'bg-teal-600 text-white hover:bg-teal-700 cursor-pointer shadow-md hover:shadow-lg'
+                : 'bg-amber-600 text-white hover:bg-amber-700 cursor-pointer shadow-md hover:shadow-lg'
             }`}
           >
             <Play size={16} />
@@ -304,11 +304,11 @@ export default function BdfScanner() {
             <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
               <div className="flex justify-between text-xs text-slate-500 mb-1.5">
                 <span>{statusMessage}</span>
-                <span className="font-bold text-teal-600">{progress}%</span>
+                <span className="font-bold text-amber-600">{progress}%</span>
               </div>
               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-teal-500 rounded-full transition-all duration-500"
+                  className="h-full bg-amber-500 rounded-full transition-all duration-500"
                   style={{ width: `${progress}%` }}
                 />
               </div>

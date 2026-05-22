@@ -188,7 +188,7 @@ export default function LoginScreen({ onLoginSuccess }) {
           )}
         </div>
 
-        <div className="w-full max-w-sm space-y-8">
+        <div className="w-full max-w-md space-y-8">
           {isVersionMismatch ? (
             <div className="bg-red-50 border-2 border-red-100 rounded-2xl p-8 text-center shadow-lg animate-pulse-slow">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100 mb-4">
@@ -253,7 +253,7 @@ export default function LoginScreen({ onLoginSuccess }) {
           ) : (
             <>
               <div className="text-center lg:text-left">
-                <h2 className="text-3xl font-bold text-slate-800">Hi-TESS Access</h2>
+                <h2 className="whitespace-nowrap text-2xl sm:text-3xl font-bold text-slate-800">Hi-TESS Workbench Access</h2>
                 <p className="mt-2 text-sm text-slate-500 font-medium">사번을 입력하여 접속하십시오.</p>
               </div>
 
@@ -297,7 +297,7 @@ export default function LoginScreen({ onLoginSuccess }) {
 
                 <div className="space-y-5">
                   <div>
-                    <label className="block text-xs font-bold text-brand-blue uppercase mb-2">Employee ID</label>
+                    <label className="block text-xs font-bold text-brand-blue uppercase mb-2">사번 입력</label>
                     <div className="relative group z-10">
                       <User className="absolute left-3 top-3.5 h-5 w-5 text-slate-400 group-focus-within:text-brand-green transition-colors z-20" />
                       <input

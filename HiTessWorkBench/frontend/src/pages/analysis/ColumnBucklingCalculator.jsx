@@ -51,7 +51,7 @@ const InputField = ({ label, desc, value, onChange, unit, placeholder, min }) =>
   <div>
     <label className="block text-sm font-bold text-slate-700 mb-1">{label}</label>
     {desc && <p className="text-[11px] text-slate-400 mb-1.5">{desc}</p>}
-    <div className="flex items-center border-2 border-slate-200 rounded-xl overflow-hidden focus-within:border-violet-500 transition-colors bg-white">
+    <div className="flex items-center border-2 border-slate-200 rounded-xl overflow-hidden focus-within:border-emerald-500 transition-colors bg-white">
       <input
         type="number"
         value={value}
@@ -83,7 +83,7 @@ export default function ColumnBucklingCalculator() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [showFormulas, setShowFormulas] = useState(false);
+  const [showFormulas, setShowFormulas] = useState(true);
   const [showCriteria, setShowCriteria] = useState(false);
   const [showIntermediate, setShowIntermediate] = useState(false);
 
@@ -119,7 +119,7 @@ export default function ColumnBucklingCalculator() {
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
-      <PageBanner gradient="from-brand-blue via-violet-900 to-violet-700">
+      <PageBanner gradient="from-brand-blue via-emerald-900 to-emerald-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('Parametric Apps')}
@@ -129,10 +129,10 @@ export default function ColumnBucklingCalculator() {
             </button>
             <div>
               <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <SlidersHorizontal size={18} className="text-violet-300" />
+                <SlidersHorizontal size={18} className="text-emerald-300" />
                 Column Buckling Load Calculator
               </h1>
-              <p className="text-sm text-violet-200/80 mt-0.5">AISC 기준 핀-핀 기둥의 최대 허용 사용하중을 산출합니다. (동심·편심 하중 지원)</p>
+              <p className="text-sm text-emerald-200/80 mt-0.5">AISC 기준 핀-핀 기둥의 최대 허용 사용하중을 산출합니다. (동심·편심 하중 지원)</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -143,7 +143,6 @@ export default function ColumnBucklingCalculator() {
           </div>
       </PageBanner>
 
-      {/* 계산 수식 */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-6">
         <button
           onClick={() => setShowFormulas(v => !v)}
@@ -158,7 +157,7 @@ export default function ColumnBucklingCalculator() {
           <div className="border-t border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
 
             <div>
-              <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">편심량 (e)</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">편심량 (e)</p>
               <div className="space-y-2.5">
                 {[
                   ['H형강·I형강·I.A', 'e = 20', 'mm'],
@@ -177,7 +176,7 @@ export default function ColumnBucklingCalculator() {
             </div>
 
             <div>
-              <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">좌굴 임계응력</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">좌굴 임계응력</p>
               <div className="space-y-2.5">
                 {[
                   ['Euler 탄성 좌굴', 'Fe = π²EI / (L²A)', 'MPa'],
@@ -194,7 +193,7 @@ export default function ColumnBucklingCalculator() {
             </div>
 
             <div>
-              <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">허용 사용하중</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">허용 사용하중</p>
               <div className="space-y-2.5">
                 {[
                   ['동심 하중 (e=0)', 'P = Fcr × A / (SF × 9810)', 'ton'],
@@ -219,7 +218,7 @@ export default function ColumnBucklingCalculator() {
         {/* 좌측: 입력 패널 */}
         <div className="space-y-4">
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-r from-violet-700 to-violet-600 px-6 py-3 flex items-center gap-2">
+            <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-6 py-3 flex items-center gap-2">
               <Ruler size={14} className="text-white" />
               <h2 className="text-xs font-bold text-white uppercase tracking-wider">입력 조건</h2>
             </div>
@@ -232,7 +231,7 @@ export default function ColumnBucklingCalculator() {
                 <select
                   value={memberName}
                   onChange={e => setMemberName(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-sm font-bold text-slate-800 bg-white focus:outline-none focus:border-violet-500 transition-colors cursor-pointer"
+                  className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-sm font-bold text-slate-800 bg-white focus:outline-none focus:border-emerald-500 transition-colors cursor-pointer"
                 >
                   {MEMBER_GROUPS.map(group => (
                     <optgroup key={group.label} label={group.label}>
@@ -259,7 +258,7 @@ export default function ColumnBucklingCalculator() {
                 disabled={!isValid || isLoading}
                 className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
                   isValid && !isLoading
-                    ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-md shadow-violet-200 cursor-pointer'
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-200 cursor-pointer'
                     : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                 }`}
               >
@@ -314,7 +313,7 @@ export default function ColumnBucklingCalculator() {
 
           {isLoading && (
             <div className="bg-white border border-gray-200 rounded-2xl p-16 flex flex-col items-center text-slate-400">
-              <Loader2 size={40} className="animate-spin text-violet-500 mb-4" />
+              <Loader2 size={40} className="animate-spin text-emerald-500 mb-4" />
               <p className="font-bold text-slate-600">허용 사용하중을 계산하는 중입니다...</p>
             </div>
           )}
@@ -334,11 +333,11 @@ export default function ColumnBucklingCalculator() {
 
               {/* 메인 결과 카드 */}
               <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-                <div className="bg-gradient-to-r from-violet-700 to-violet-600 px-6 py-3 flex items-center justify-between">
+                <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-6 py-3 flex items-center justify-between">
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider">최종 계산 결과</h3>
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
                     isEccentric
-                      ? 'bg-violet-100 text-violet-700 border-violet-200'
+                      ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
                       : 'bg-emerald-100 text-emerald-700 border-emerald-200'
                   }`}>
                     {isEccentric ? '편심 하중 (Secant Formula)' : '순수 압축 (AISC)'}
@@ -348,7 +347,7 @@ export default function ColumnBucklingCalculator() {
                 <div className="p-10 flex flex-col items-center justify-center">
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">최대 허용 사용하중</p>
                   <div className="flex items-end gap-2">
-                    <span className="text-6xl font-extrabold text-violet-700 tracking-tight">
+                    <span className="text-6xl font-extrabold text-emerald-700 tracking-tight">
                       {res.maxWorkingLoadTon?.toFixed(1)}
                     </span>
                     <span className="text-2xl font-bold text-slate-400 mb-2">ton</span>

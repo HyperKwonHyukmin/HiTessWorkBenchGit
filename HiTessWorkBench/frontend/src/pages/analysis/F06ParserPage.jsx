@@ -332,7 +332,7 @@ export default function F06ParserPage() {
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-      <PageBanner gradient="from-indigo-900 via-indigo-800 to-indigo-700">
+      <PageBanner gradient="from-brand-blue via-amber-900 to-amber-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('Productivity Apps')}
@@ -342,10 +342,10 @@ export default function F06ParserPage() {
             </button>
             <div>
               <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <FileText size={18} className="text-indigo-300" />
+                <FileText size={18} className="text-amber-300" />
                 F06 Parser
               </h1>
-              <p className="text-sm text-indigo-200/80 mt-0.5">Nastran SOL 101 F06 결과 추출 및 조회</p>
+              <p className="text-sm text-amber-200/80 mt-0.5">Nastran SOL 101 F06 결과 추출 및 조회</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -370,25 +370,25 @@ export default function F06ParserPage() {
         <div className="w-[300px] shrink-0 flex flex-col gap-4">
           {/* BDF Scanner 인계 배너 */}
           {incomingTransfer && (
-            <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-3.5">
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5">
               <div className="flex items-center gap-2 mb-1">
-                <ArrowUpRight size={13} className="text-indigo-600 shrink-0" />
-                <p className="text-xs font-bold text-indigo-700">BDF Scanner 결과 감지</p>
+                <ArrowUpRight size={13} className="text-amber-600 shrink-0" />
+                <p className="text-xs font-bold text-amber-700">BDF Scanner 결과 감지</p>
               </div>
-              <p className="text-[10px] text-indigo-500 mb-3 truncate pl-5">{incomingTransfer.projectName}</p>
+              <p className="text-[10px] text-amber-500 mb-3 truncate pl-5">{incomingTransfer.projectName}</p>
               <div className="flex gap-2 pl-5">
                 <button
                   onClick={() => {
                     handleLoadFromTransfer(incomingTransfer.filePath);
                     clearPendingJobTransfer();
                   }}
-                  className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg cursor-pointer transition-colors"
+                  className="flex-1 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg cursor-pointer transition-colors"
                 >
                   불러오기 &amp; 파싱
                 </button>
                 <button
                   onClick={clearPendingJobTransfer}
-                  className="px-3 py-1.5 border border-indigo-200 text-indigo-400 hover:text-indigo-600 hover:border-indigo-300 text-xs rounded-lg cursor-pointer transition-colors"
+                  className="px-3 py-1.5 border border-amber-200 text-amber-400 hover:text-amber-600 hover:border-amber-300 text-xs rounded-lg cursor-pointer transition-colors"
                 >
                   무시
                 </button>
@@ -398,7 +398,7 @@ export default function F06ParserPage() {
 
           {/* 파일 업로드 */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-r from-indigo-700 to-indigo-600 px-5 py-3">
+            <div className="bg-gradient-to-r from-amber-700 to-amber-600 px-5 py-3">
               <p className="text-xs font-bold text-white uppercase tracking-widest">F06 파일 선택</p>
             </div>
             <div className="p-5">
@@ -408,7 +408,7 @@ export default function F06ParserPage() {
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleDrop}
                 className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                  isDragOver ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50'
+                  isDragOver ? 'border-amber-400 bg-amber-50' : 'border-slate-300 hover:border-amber-400 hover:bg-slate-50'
                 }`}
               >
                 <Upload size={28} className="mx-auto mb-2 text-slate-400" />
@@ -439,7 +439,7 @@ export default function F06ParserPage() {
                 className={`mt-4 w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm transition-all ${
                   !f06File || isRunning
                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                    : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm hover:shadow-md cursor-pointer'
+                    : 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm hover:shadow-md cursor-pointer'
                 }`}
               >
                 <Play size={15} />
@@ -464,7 +464,7 @@ export default function F06ParserPage() {
                         onChange={e => setLookupId(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleIdLookup()}
                         placeholder="Analysis ID"
-                        className="flex-1 text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-400 min-w-0"
+                        className="flex-1 text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400 min-w-0"
                       />
                       <button
                         onClick={handleIdLookup}
@@ -476,7 +476,7 @@ export default function F06ParserPage() {
                     </div>
                     <button
                       onClick={() => setBrowseOpen(true)}
-                      className="w-full flex items-center justify-center gap-1.5 py-1.5 border border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 text-xs rounded-lg cursor-pointer transition-colors"
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 border border-slate-200 text-slate-500 hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50 text-xs rounded-lg cursor-pointer transition-colors"
                     >
                       <FolderOpen size={12} />
                       찾아보기
@@ -492,11 +492,11 @@ export default function F06ParserPage() {
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-600">진행률</span>
-                <span className="text-xs font-bold text-indigo-600">{progress}%</span>
+                <span className="text-xs font-bold text-amber-600">{progress}%</span>
               </div>
               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+                  className="h-full bg-amber-500 rounded-full transition-all duration-500"
                   style={{ width: `${progress}%` }}
                 />
               </div>
@@ -552,7 +552,7 @@ export default function F06ParserPage() {
                     <select
                       value={selectedSubcase ?? ''}
                       onChange={(e) => setSelectedSubcase(Number(e.target.value))}
-                      className="appearance-none pl-3 pr-7 py-1.5 text-sm font-medium border border-slate-200 rounded-lg bg-white text-slate-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                      className="appearance-none pl-3 pr-7 py-1.5 text-sm font-medium border border-slate-200 rounded-lg bg-white text-slate-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-300"
                     >
                       {resultData.subcases.map(sc => (
                         <option key={sc.subcaseId} value={sc.subcaseId}>
@@ -573,8 +573,8 @@ export default function F06ParserPage() {
                     onClick={() => setShowCharts(v => !v)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
                       showCharts
-                        ? 'bg-indigo-600 border-indigo-600 text-white'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-indigo-50'
+                        ? 'bg-amber-600 border-amber-600 text-white'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-amber-50'
                     }`}
                   >
                     <BarChart2 size={13} />
@@ -586,7 +586,7 @@ export default function F06ParserPage() {
                     disabled={!hasCsvForCurrentTab}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                       hasCsvForCurrentTab
-                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        ? 'bg-amber-600 hover:bg-amber-700 text-white'
                         : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                     }`}
                   >
@@ -608,9 +608,9 @@ export default function F06ParserPage() {
                       disabled={count === 0}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
                         isActive
-                          ? 'bg-indigo-600 text-white'
+                          ? 'bg-amber-600 text-white'
                           : count > 0
-                            ? 'bg-white text-slate-600 hover:bg-indigo-50 border border-slate-200'
+                            ? 'bg-white text-slate-600 hover:bg-amber-50 border border-slate-200'
                             : 'bg-slate-50 text-slate-300 border border-slate-100 cursor-default'
                       }`}
                     >
@@ -704,8 +704,8 @@ export default function F06ParserPage() {
                                   {col}
                                   {isSorted
                                     ? sortConfig.dir === 'asc'
-                                      ? <ChevronUp size={11} className="text-indigo-500" />
-                                      : <ChevronDown size={11} className="text-indigo-500" />
+                                      ? <ChevronUp size={11} className="text-amber-500" />
+                                      : <ChevronDown size={11} className="text-amber-500" />
                                     : <ChevronsUpDown size={11} className="text-slate-300" />
                                   }
                                 </div>

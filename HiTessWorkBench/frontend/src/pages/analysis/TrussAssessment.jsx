@@ -215,7 +215,7 @@ export default function TrussAssessment() {
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
 
-      <PageBanner gradient="from-brand-blue via-emerald-900 to-emerald-700">
+      <PageBanner gradient="from-brand-blue via-brand-blue-dark to-blue-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('File-Based Apps')}
@@ -227,7 +227,7 @@ export default function TrussAssessment() {
               <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
                 <Layers size={18}/> Truss Structural Assessment
               </h1>
-              <p className="text-sm text-emerald-200/80 mt-0.5">BDF 모델 파일을 업로드하여 구조적 건전성을 즉시 평가합니다.</p>
+              <p className="text-sm text-blue-200/80 mt-0.5">BDF 모델 파일을 업로드하여 구조적 건전성을 즉시 평가합니다.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -241,15 +241,15 @@ export default function TrussAssessment() {
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
         <div className="w-full lg:w-[400px] flex flex-col gap-5 shrink-0 overflow-y-auto pr-1 custom-scrollbar">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-5 py-3">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-3">
               <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2"><Database size={14}/> 1. Model Input (.bdf)</h3>
             </div>
             <div className="p-5">
             <div onClick={() => fileInputRef.current?.click()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }} onDragOver={e => e.preventDefault()}
-              className={`relative p-6 rounded-xl border-2 border-dashed text-center cursor-pointer transition-all ${bdfFile ? 'border-emerald-400 bg-emerald-50/50' : 'border-slate-300 hover:border-blue-400 hover:bg-blue-50/50'}`}>
+              className={`relative p-6 rounded-xl border-2 border-dashed text-center cursor-pointer transition-all ${bdfFile ? 'border-blue-400 bg-blue-50/50' : 'border-slate-300 hover:border-blue-400 hover:bg-blue-50/50'}`}>
               <input type="file" accept=".bdf,.dat" className="hidden" ref={fileInputRef} onChange={(e) => handleFile(e.target.files[0])} />
               <div className="flex flex-col items-center gap-2 relative z-10 pointer-events-none">
-                <div className={`p-3 rounded-full ${bdfFile ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{bdfFile ? <CheckCircle2 size={28} /> : <Upload size={28} />}</div>
+                <div className={`p-3 rounded-full ${bdfFile ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>{bdfFile ? <CheckCircle2 size={28} /> : <Upload size={28} />}</div>
                 <div>
                   <h4 className="text-sm font-bold text-slate-700">{bdfFile ? 'File Uploaded' : 'Drag & Drop BDF'}</h4>
                   <p className="text-xs text-slate-500 mt-1 truncate max-w-[250px]">{bdfFile ? bdfFile.name : 'Click to browse'}</p>
@@ -301,16 +301,16 @@ export default function TrussAssessment() {
               ? 'fixed inset-0 z-[100] bg-white flex flex-col overflow-hidden animate-fade-in'
               : 'flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden relative'
           }>
-            <div className="flex items-end border-b border-slate-200 bg-gradient-to-r from-emerald-900 to-emerald-700 px-4 pt-3 gap-1 shrink-0 z-10 overflow-x-auto custom-scrollbar">
+            <div className="flex items-end border-b border-slate-200 bg-gradient-to-r from-indigo-900 to-blue-800 px-4 pt-3 gap-1 shrink-0 z-10 overflow-x-auto custom-scrollbar">
               <TabButton active={activeTab === '3d'}     onClick={() => updateState({ activeTab: '3d' })}     icon={Eye}      label="3D Preview" />
               <TabButton active={activeTab === 'node'}   onClick={() => updateState({ activeTab: 'node' })}   icon={Database} label="Input Nodes" />
               <TabButton active={activeTab === 'member'} onClick={() => updateState({ activeTab: 'member' })} icon={Layers}   label="Input Elements" />
-              {resultJsonData && <TabButton active={activeTab === 'result'} onClick={() => updateState({ activeTab: 'result' })} icon={FileText} label="Assessment Results" color="emerald" />}
+              {resultJsonData && <TabButton active={activeTab === 'result'} onClick={() => updateState({ activeTab: 'result' })} icon={FileText} label="Assessment Results" />}
               {((activeTab === 'result' && resultJsonData) || isResultFullscreen) && (
                 <button
                   onClick={() => setIsResultFullscreen(v => !v)}
                   title={isResultFullscreen ? '원래 크기로 돌아가기' : '결과 테이블 전체 화면'}
-                  className="ml-auto mb-1.5 px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-bold text-emerald-100 hover:text-white hover:bg-white/15 cursor-pointer transition-colors"
+                  className="ml-auto mb-1.5 px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-bold text-blue-100 hover:text-white hover:bg-white/15 cursor-pointer transition-colors"
                 >
                   {isResultFullscreen ? <><Minimize2 size={14} /> 창 복귀</> : <><Maximize2 size={14} /> 전체 화면</>}
                 </button>
@@ -349,15 +349,14 @@ export default function TrussAssessment() {
   );
 }
 
-function TabButton({ active, onClick, icon: Icon, label, color }) {
-  const activeTextColor = color === 'emerald' ? 'text-emerald-700' : 'text-brand-blue';
+function TabButton({ active, onClick, icon: Icon, label }) {
   return (
     <button
       onClick={onClick}
       className={`px-4 py-2.5 rounded-t-lg font-bold text-sm flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${
         active
-          ? `bg-white ${activeTextColor} shadow-sm`
-          : 'text-emerald-200 hover:text-white hover:bg-white/10'
+          ? 'bg-white text-brand-blue shadow-sm'
+          : 'text-blue-200 hover:text-white hover:bg-white/10'
       }`}
     >
       <Icon size={16} /> {label}

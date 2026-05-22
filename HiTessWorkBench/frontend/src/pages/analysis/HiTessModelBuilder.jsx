@@ -505,7 +505,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
         <div>
           <p className="text-sm font-semibold text-slate-400">검증 결과 대기 중</p>
           <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-            CSV 파일을 업로드하고 <span className="text-violet-400 font-semibold">Model Builder 실행</span>을 누르면<br />
+            CSV 파일을 업로드하고 <span className="text-blue-400 font-semibold">Model Builder 실행</span>을 누르면<br />
             변환 결과가 여기에 표시됩니다.
           </p>
         </div>
@@ -1771,7 +1771,7 @@ function StageSummaryDetail({ summary, audit }) {
               <div className="space-y-1.5 mb-3">
                 <div className="h-2 rounded-full bg-slate-100 overflow-hidden flex">
                   <div className="h-full bg-blue-500 rounded-l-full" style={{ width: `${beamPct}%` }} />
-                  <div className="h-full bg-violet-400 rounded-r-full" style={{ width: `${pmPct}%` }} />
+                  <div className="h-full bg-blue-300 rounded-r-full" style={{ width: `${pmPct}%` }} />
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
                   <span className="flex items-center gap-1.5 text-[11px] text-slate-600">
@@ -1780,7 +1780,7 @@ function StageSummaryDetail({ summary, audit }) {
                     <span className="text-slate-400 font-mono">({beamPct.toFixed(0)}%)</span>
                   </span>
                   <span className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                    <span className="w-2 h-2 rounded-sm bg-violet-400 inline-block" />
+                    <span className="w-2 h-2 rounded-sm bg-blue-300 inline-block" />
                     PointMass {pm.toFixed(2)} ton
                     <span className="text-slate-400 font-mono">({pmPct.toFixed(0)}%)</span>
                   </span>
@@ -2882,7 +2882,7 @@ export default function HiTessModelBuilder() {
         <EditApplyingOverlay status={editJobStatus} />
       )}
 
-      <PageBanner gradient="from-brand-blue via-indigo-900 to-violet-700">
+      <PageBanner gradient="from-brand-blue via-brand-blue-dark to-blue-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('File-Based Apps')}
@@ -2894,7 +2894,7 @@ export default function HiTessModelBuilder() {
               <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
                 <ShieldCheck size={18} /> HiTESS Model Builder
               </h1>
-              <p className="text-sm text-violet-200/80 mt-0.5">AM 3D 설계 CSV → 1D Beam FEM → Nastran BDF 자동 변환</p>
+              <p className="text-sm text-blue-200/80 mt-0.5">AM 3D 설계 CSV → 1D Beam FEM → Nastran BDF 자동 변환</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -2928,7 +2928,7 @@ export default function HiTessModelBuilder() {
                   <div key={step.id} className="flex items-stretch">
                     <div className="flex flex-col items-center w-8 shrink-0 pt-5">
                       <div className={`w-4 h-4 rounded-full shrink-0 ${cfg.dot}`} />
-                      {!isLast && <div className="flex-1 w-0.5 my-1.5 rounded-full bg-violet-300" />}
+                      {!isLast && <div className="flex-1 w-0.5 my-1.5 rounded-full bg-blue-300" />}
                     </div>
                     <div
                       className={`flex-1 mb-3 ml-2 rounded-xl border px-4 py-4 transition-all cursor-pointer
@@ -2957,7 +2957,7 @@ export default function HiTessModelBuilder() {
                 <button
                   onClick={() => setActiveIdx(activeIdx + 1)}
                   disabled={isRunning || !hasRunOnce}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 border border-violet-200 bg-violet-50 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed text-violet-700 text-xs font-semibold rounded-xl cursor-pointer"
+                  className="w-full flex items-center justify-center gap-1.5 py-2 border border-blue-200 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed text-blue-700 text-xs font-semibold rounded-xl cursor-pointer"
                 >
                   <ChevronsRight size={13} />
                   {steps[activeIdx + 1]?.title} 보기
