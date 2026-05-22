@@ -80,7 +80,9 @@ start_server.bat
 # Claude 도구/플러그인 자동 생성 파일
 .agents/
 .claude/skills/
+.claude/settings.local.json
 skills-lock.json
+.antigravitycli/
 # PowerShell 명령이 실수로 파일로 저장된 경우
 Get-Command
 # claude-mem 으로 생성한 분석 보고서 (필요 시 개별 추가)
