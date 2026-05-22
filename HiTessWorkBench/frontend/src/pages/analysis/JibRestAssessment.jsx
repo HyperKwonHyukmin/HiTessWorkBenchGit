@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import {
-  TableProperties, Calculator, ChevronDown, ChevronUp,
+  TableProperties, Calculator,
   CheckCircle2, XCircle, AlertCircle, Loader2,
-  Weight, BarChart3, ChevronRight, ImageIcon, Wind, Download, ArrowLeft, History
+  Weight, ChevronRight, Wind, Download, ArrowLeft, History
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
 import ChangelogModal from '../../components/ui/ChangelogModal';
@@ -16,6 +16,7 @@ import { formatFixed as fmt } from '../../utils/formatting';
 import SolverCredit from '../../components/ui/SolverCredit';
 import PageBanner from '../../components/ui/PageBanner';
 import { downloadJson } from '../../utils/fileHelper';
+import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 
 const OkBadge = ({ ok }) =>
   ok
@@ -27,7 +28,7 @@ const InputField = ({ label, desc, value, onChange, unit, placeholder, readOnly 
     <label className="block text-xs font-bold text-slate-700 mb-1">{label}</label>
     {desc && <p className="text-[10px] text-slate-400 mb-1">{desc}</p>}
     <div className={`flex items-center border-2 rounded-xl overflow-hidden transition-colors ${
-      readOnly ? 'border-slate-100 bg-slate-50' : 'border-slate-200 focus-within:border-indigo-500 bg-white'
+      readOnly ? 'border-slate-100 bg-slate-50' : 'border-slate-200 focus-within:border-emerald-500 bg-white'
     }`}>
       <input
         type="number"
@@ -43,7 +44,7 @@ const InputField = ({ label, desc, value, onChange, unit, placeholder, readOnly 
 );
 
 const GroupLabel = ({ children }) => (
-  <p className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-widest mt-1 mb-2">{children}</p>
+  <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mt-1 mb-2">{children}</p>
 );
 
 // ─────────────────────────────────────────────
@@ -51,10 +52,10 @@ const GroupLabel = ({ children }) => (
 // ─────────────────────────────────────────────
 
 const LoadCard = ({ label, value, unit }) => (
-  <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3">
-    <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-wide">{label}</p>
-    <p className="text-lg font-extrabold text-indigo-700 mt-0.5">
-      {value} <span className="text-xs font-medium text-indigo-400">{unit}</span>
+  <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3">
+    <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wide">{label}</p>
+    <p className="text-lg font-extrabold text-emerald-700 mt-0.5">
+      {value} <span className="text-xs font-medium text-emerald-400">{unit}</span>
     </p>
   </div>
 );
@@ -143,14 +144,14 @@ const CandidateTable = ({ result, selectedRank, setSelectedRank, on2danSelect })
                   <tr
                     onClick={() => setSelectedRank(isSelected ? null : c.rank)}
                     className={`transition-colors cursor-pointer group ${
-                      isSelected ? 'bg-indigo-50'
+                      isSelected ? 'bg-emerald-50'
                       : isPass ? 'hover:bg-emerald-50/40'
                       : 'hover:bg-red-50/30 opacity-60'
                     }`}
                   >
                     <td className="px-4 py-3 text-center">
                       {c.rank === 1 && isPass
-                        ? <span className="inline-flex items-center justify-center w-7 h-7 bg-indigo-600 text-white text-xs font-extrabold rounded-full shadow">1</span>
+                        ? <span className="inline-flex items-center justify-center w-7 h-7 bg-emerald-600 text-white text-xs font-extrabold rounded-full shadow">1</span>
                         : <span className="text-slate-500 font-bold">{c.rank}</span>}
                     </td>
                     <td className="px-4 py-3 text-center font-bold text-slate-700">{c.outerDiameter}</td>
@@ -166,7 +167,7 @@ const CandidateTable = ({ result, selectedRank, setSelectedRank, on2danSelect })
                       <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => on2danSelect(c)}
-                          className="text-xs px-2 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold rounded-lg transition-colors cursor-pointer"
+                          className="text-xs px-2 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 font-bold rounded-lg transition-colors cursor-pointer"
                         >
                           선택
                         </button>
@@ -175,7 +176,7 @@ const CandidateTable = ({ result, selectedRank, setSelectedRank, on2danSelect })
                     <td className="px-4 py-3 text-center">
                       <ChevronRight
                         size={16}
-                        className={`text-slate-300 group-hover:text-indigo-500 transition-all ${isSelected ? 'rotate-90 text-indigo-500' : ''}`}
+                        className={`text-slate-300 group-hover:text-emerald-500 transition-all ${isSelected ? 'rotate-90 text-emerald-500' : ''}`}
                       />
                     </td>
                   </tr>
@@ -220,9 +221,7 @@ export default function JibRestAssessment() {
   const [error, setError] = useState(null);
   const [selectedRank1, setSelectedRank1] = useState(null);
   const [selectedRank2, setSelectedRank2] = useState(null);
-  const [showRefImg, setShowRefImg] = useState(false);
   const [refImgTab, setRefImgTab] = useState('jib_crane');
-  const [showFormulas, setShowFormulas] = useState(false);
 
   const setField1 = (key) => (val) => setInputs1dan(prev => ({ ...prev, [key]: val }));
   const setField2 = (key) => (val) => setInputs2dan(prev => ({ ...prev, [key]: val }));
@@ -285,7 +284,7 @@ export default function JibRestAssessment() {
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
-      <PageBanner gradient="from-brand-blue via-indigo-900 to-indigo-700">
+      <PageBanner gradient="from-brand-blue via-emerald-900 to-emerald-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('Parametric Apps')}
@@ -295,10 +294,10 @@ export default function JibRestAssessment() {
             </button>
             <div>
               <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <TableProperties size={18} className="text-indigo-300" />
+                <TableProperties size={18} className="text-emerald-300" />
                 Jib Rest Assessment
               </h1>
-              <p className="text-sm text-indigo-200/80 mt-0.5">Jib Rest 구조물의 1단/2단 파이프 설계 후보를 LR Rule 기준으로 산출합니다.</p>
+              <p className="text-sm text-emerald-200/80 mt-0.5">Jib Rest 구조물의 1단/2단 파이프 설계 후보를 LR Rule 기준으로 산출합니다.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -320,13 +319,13 @@ export default function JibRestAssessment() {
             onClick={() => { setActiveTab(tab.id); setError(null); }}
             className={`px-6 py-2.5 text-sm font-bold rounded-t-lg border-b-2 -mb-px transition-colors ${
               activeTab === tab.id
-                ? 'border-indigo-600 text-indigo-700 bg-indigo-50'
+                ? 'border-emerald-600 text-emerald-700 bg-emerald-50'
                 : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
           >
             {tab.label}
             {tab.id === '2dan' && selected1danCandidate && (
-              <span className="ml-2 text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-bold">
+              <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-bold">
                 D1={selected1danCandidate.outerDiameter}
               </span>
             )}
@@ -334,18 +333,9 @@ export default function JibRestAssessment() {
         ))}
       </div>
 
-      {/* 참조 그림 */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-6">
-        <button
-          onClick={() => setShowRefImg(v => !v)}
-          className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-        >
-          <span className="flex items-center gap-2"><ImageIcon size={16} className="text-slate-400" /> 참조 그림</span>
-          {showRefImg ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </button>
-        {showRefImg && (
-          <div className="border-t border-gray-100">
-            {/* 내부 탭 */}
+      <ReferenceFormulaTabs accent="emerald">
+        {(activeInfoTab) => activeInfoTab === 'image' ? (
+          <div>
             <div className="flex gap-1 px-6 pt-4">
               {[
                 { id: 'jib_crane', label: 'Jib Crane' },
@@ -356,7 +346,7 @@ export default function JibRestAssessment() {
                   onClick={() => setRefImgTab(t.id)}
                   className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
                     refImgTab === t.id
-                      ? 'bg-indigo-600 text-white'
+                      ? 'bg-emerald-600 text-white'
                       : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                   }`}
                 >
@@ -372,23 +362,11 @@ export default function JibRestAssessment() {
               />
             </div>
           </div>
-        )}
-      </div>
-
-      {/* 계산 수식 */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-6">
-        <button
-          onClick={() => setShowFormulas(v => !v)}
-          className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-        >
-          <span className="flex items-center gap-2"><BarChart3 size={16} className="text-slate-400" /> 계산 수식</span>
-          {showFormulas ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </button>
-        {showFormulas && (
+        ) : (
           <div className="border-t border-gray-100 p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 text-sm">
             {/* 하중 계산 */}
             <div>
-              <p className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-widest mb-3">하중 계산 (Load Tab)</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">하중 계산 (Load Tab)</p>
               <div className="space-y-2.5">
                 {[
                   ['투영 면적', 'JA = JH × 2 × LJ', 'mm²'],
@@ -407,7 +385,7 @@ export default function JibRestAssessment() {
 
             {/* 브래킷 · 유효 높이 */}
             <div>
-              <p className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-widest mb-3">브래킷 · 유효 높이</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">브래킷 · 유효 높이</p>
               <div className="space-y-2.5">
                 {[
                   ['브래킷 높이', 'BH = ⌈H1 / 350⌉ × 50', 'mm'],
@@ -426,7 +404,7 @@ export default function JibRestAssessment() {
 
             {/* 응력 검토 */}
             <div>
-              <p className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-widest mb-3">응력 검토 (Solver)</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">응력 검토 (Solver)</p>
               <div className="space-y-2.5">
                 {[
                   ['수평 하중 (N)', 'Fh = FH·9.8 + PW·9.8·FHF·(H4/H1)', 'N'],
@@ -445,7 +423,7 @@ export default function JibRestAssessment() {
 
             {/* 단면 특성 · 처짐 */}
             <div>
-              <p className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-widest mb-3">단면 특성 · 처짐</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">단면 특성 · 처짐</p>
               <div className="space-y-2.5">
                 {[
                   ['단면적', 'A = π/4 × (D² − d²)', 'mm²'],
@@ -464,7 +442,7 @@ export default function JibRestAssessment() {
             </div>
           </div>
         )}
-      </div>
+      </ReferenceFormulaTabs>
 
       {/* 2열 레이아웃 */}
       <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
@@ -472,7 +450,7 @@ export default function JibRestAssessment() {
         {/* 좌측: 입력 패널 */}
         <div className="space-y-4">
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-r from-indigo-700 to-indigo-600 px-6 py-3">
+            <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-6 py-3">
               <h2 className="text-xs font-bold text-white uppercase tracking-wider">입력 조건</h2>
             </div>
             <div className="p-6 space-y-4">
@@ -508,7 +486,7 @@ export default function JibRestAssessment() {
             {/* 2단 추가 입력 */}
             {activeTab === '2dan' && (
               <>
-                <div className="border-t border-dashed border-indigo-200 pt-4 mt-2">
+                <div className="border-t border-dashed border-emerald-200 pt-4 mt-2">
                   <GroupLabel>2단 추가 입력</GroupLabel>
                   <div className="grid grid-cols-2 gap-3">
                     <InputField label="H2 — 상단 파이프 높이" value={inputs2dan.h2} onChange={setField2('h2')} unit="mm" placeholder="2454" />
@@ -525,7 +503,7 @@ export default function JibRestAssessment() {
                     />
                   </div>
                   {selected1danCandidate && (
-                    <p className="text-[11px] text-indigo-500 mt-2">
+                    <p className="text-[11px] text-emerald-500 mt-2">
                       ✓ 1단 Rank {selected1danCandidate.rank} 선택됨 — D1/T1 자동 입력
                       <button
                         onClick={() => { setSelected1danCandidate(null); setInputs2dan(prev => ({ ...prev, d1: '', t1: '' })); }}
@@ -544,7 +522,7 @@ export default function JibRestAssessment() {
               disabled={!(activeTab === '1dan' ? isValid1dan : isValid2dan) || isLoading}
               className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all mt-2 ${
                 (activeTab === '1dan' ? isValid1dan : isValid2dan) && !isLoading
-                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 cursor-pointer'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-200 cursor-pointer'
                   : 'bg-slate-100 text-slate-400 cursor-not-allowed'
               }`}
             >
@@ -596,7 +574,7 @@ export default function JibRestAssessment() {
 
           {isLoading && (
             <div className="bg-white border border-gray-200 rounded-2xl p-16 flex flex-col items-center text-slate-400">
-              <Loader2 size={40} className="animate-spin text-indigo-500 mb-4" />
+              <Loader2 size={40} className="animate-spin text-emerald-500 mb-4" />
               <p className="font-bold text-slate-600">파이프 후보를 계산하는 중입니다...</p>
             </div>
           )}
@@ -643,7 +621,7 @@ export default function JibRestAssessment() {
               {activeLoads && (
                 <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
                   <h3 className="text-sm font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2 mb-4">
-                    <Wind size={16} className="text-indigo-500" /> 풍하중 계산 결과
+                    <Wind size={16} className="text-emerald-500" /> 풍하중 계산 결과
                   </h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <LoadCard label="형상계수 Cf" value={fmt(activeLoads.cf, 3)} unit="—" />

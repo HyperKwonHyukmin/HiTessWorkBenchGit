@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import {
-  Activity, AlertCircle, ArrowLeft, BarChart3, Calculator, ChevronDown,
-  ChevronUp, Download, History, ImageIcon, Loader2, Ruler, ShieldCheck, TableProperties
+  AlertCircle, ArrowLeft, Calculator, Download, History,
+  Loader2, Ruler, ShieldCheck, TableProperties
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
 import ChangelogModal from '../../components/ui/ChangelogModal';
@@ -16,6 +16,7 @@ import dTypeLugRef2 from '../../assets/images/D_typeLug2.png';
 import dTypeLugRef3 from '../../assets/images/D_typeLug3.png';
 import PageBanner from '../../components/ui/PageBanner';
 import { downloadJson } from '../../utils/fileHelper';
+import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 
 const DEFAULT_INPUT = {
   load: { force_N: '1000000' },
@@ -106,9 +107,6 @@ export default function DTypeLugAssessment() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedBracket, setSelectedBracket] = useState('bracket_4EA');
   const [selectedCaseIndex, setSelectedCaseIndex] = useState(null);
-  const [showFormulas, setShowFormulas] = useState(false);
-  const [showRefImages, setShowRefImages] = useState(false);
-  const [showInputJson, setShowInputJson] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
 
   const setField = (section, key) => (value) => {
@@ -177,15 +175,8 @@ export default function DTypeLugAssessment() {
           </div>
       </PageBanner>
 
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-6">
-        <button
-          onClick={() => setShowRefImages(v => !v)}
-          className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-        >
-          <span className="flex items-center gap-2"><ImageIcon size={16} className="text-slate-400" /> 참조 그림</span>
-          {showRefImages ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </button>
-        {showRefImages && (
+      <ReferenceFormulaTabs accent="emerald">
+        {(activeInfoTab) => activeInfoTab === 'image' ? (
           <div className="border-t border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
             {REFERENCE_IMAGES.map(image => (
               <div key={image.src} className="bg-slate-50 border border-slate-100 rounded-xl p-3">
@@ -194,18 +185,7 @@ export default function DTypeLugAssessment() {
               </div>
             ))}
           </div>
-        )}
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-6">
-        <button
-          onClick={() => setShowFormulas(v => !v)}
-          className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-        >
-          <span className="flex items-center gap-2"><BarChart3 size={16} className="text-slate-400" /> 계산 기준</span>
-          {showFormulas ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </button>
-        {showFormulas && (
+        ) : (
           <div className="border-t border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
             {[
               ['각도 케이스', 'α = 0, 30, 45, 60, 75, 90°\nβ = 0, 15°\n총 12개 케이스'],
@@ -221,7 +201,7 @@ export default function DTypeLugAssessment() {
             ))}
           </div>
         )}
-      </div>
+      </ReferenceFormulaTabs>
 
       <div className="grid grid-cols-1 xl:grid-cols-[520px_1fr] gap-6 items-start">
         <div className="space-y-4">
@@ -272,21 +252,6 @@ export default function DTypeLugAssessment() {
               </button>
             </div>
           </div>
-
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <button
-              onClick={() => setShowInputJson(v => !v)}
-              className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-            >
-              <span className="flex items-center gap-2"><Activity size={16} className="text-slate-400" /> 입력 JSON</span>
-              {showInputJson ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-            </button>
-            {showInputJson && (
-              <pre className="border-t border-gray-100 p-4 bg-slate-950 text-emerald-100 text-[11px] overflow-x-auto max-h-[360px]">
-                {JSON.stringify(payload, null, 2)}
-              </pre>
-            )}
-          </div>
         </div>
 
         <div className="space-y-5">
@@ -321,12 +286,6 @@ export default function DTypeLugAssessment() {
             <>
               <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-5 py-3 flex items-center gap-3">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">다운로드</span>
-                <button
-                  onClick={() => downloadJson(payload, 'd_type_lug_input.json')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg transition-colors cursor-pointer"
-                >
-                  <Download size={13} /> 입력 JSON
-                </button>
                 <button
                   onClick={() => downloadJson(result, 'd_type_lug_result.json')}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg transition-colors cursor-pointer"

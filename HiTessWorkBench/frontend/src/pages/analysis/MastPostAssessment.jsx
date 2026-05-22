@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
   TableProperties, Calculator, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, AlertCircle, Loader2,
-  Ruler, Weight, BarChart3, ChevronRight, ImageIcon, Download, ArrowLeft, History
+  Ruler, Weight, BarChart3, ChevronRight, Download, ArrowLeft, History
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
 import ChangelogModal from '../../components/ui/ChangelogModal';
@@ -15,6 +15,7 @@ import { formatFixed as fmt } from '../../utils/formatting';
 import SolverCredit from '../../components/ui/SolverCredit';
 import PageBanner from '../../components/ui/PageBanner';
 import { downloadJson } from '../../utils/fileHelper';
+import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 
 const OkBadge = ({ ok }) =>
   ok
@@ -25,7 +26,7 @@ const InputField = ({ label, desc, value, onChange, unit, placeholder }) => (
   <div>
     <label className="block text-sm font-bold text-slate-700 mb-1">{label}</label>
     {desc && <p className="text-[11px] text-slate-400 mb-1.5">{desc}</p>}
-    <div className="flex items-center border-2 border-slate-200 rounded-xl overflow-hidden focus-within:border-violet-500 transition-colors bg-white">
+    <div className="flex items-center border-2 border-slate-200 rounded-xl overflow-hidden focus-within:border-emerald-500 transition-colors bg-white">
       <input
         type="number"
         value={value}
@@ -97,8 +98,6 @@ export default function MastPostAssessment() {
   const [error, setError] = useState(null);
   const [selectedRank, setSelectedRank] = useState(null);
   const [showCriteria, setShowCriteria] = useState(false);
-  const [showRefImg, setShowRefImg] = useState(false);
-  const [showFormulas, setShowFormulas] = useState(false);
 
   const isValid = heightMm !== '' && weightKg !== '' && Number(heightMm) > 0 && Number(weightKg) > 0;
 
@@ -127,7 +126,7 @@ export default function MastPostAssessment() {
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
-      <PageBanner gradient="from-brand-blue via-violet-900 to-violet-700">
+      <PageBanner gradient="from-brand-blue via-emerald-900 to-emerald-700">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('Parametric Apps')}
@@ -137,10 +136,10 @@ export default function MastPostAssessment() {
             </button>
             <div>
               <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <TableProperties size={18} className="text-violet-300" />
+                <TableProperties size={18} className="text-emerald-300" />
                 Mast Post Assessment
               </h1>
-              <p className="text-sm text-violet-200/80 mt-0.5">Post 높이와 플랫폼 하중을 입력하여 LR Rule 기준 최적 파이프 후보를 산출합니다.</p>
+              <p className="text-sm text-emerald-200/80 mt-0.5">Post 높이와 플랫폼 하중을 입력하여 LR Rule 기준 최적 파이프 후보를 산출합니다.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -152,45 +151,21 @@ export default function MastPostAssessment() {
       </PageBanner>
 
 
-      {/* 참조 그림 — 전체 너비 */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-6">
-        <button
-          onClick={() => setShowRefImg(v => !v)}
-          className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-        >
-          <span className="flex items-center gap-2">
-            <ImageIcon size={16} className="text-slate-400" /> 참조 그림
-          </span>
-          {showRefImg ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </button>
-        {showRefImg && (
-          <div className="border-t border-gray-100 p-6">
+      <ReferenceFormulaTabs accent="emerald">
+        {(activeInfoTab) => activeInfoTab === 'image' ? (
+          <div className="p-6 bg-slate-50/60">
             <img
               src={mastPostRef}
               alt="Mast Post 참조 도면"
-              className="w-full rounded-lg object-contain"
+              className="w-full rounded-lg object-contain bg-white border border-slate-100"
             />
           </div>
-        )}
-      </div>
-
-      {/* 계산 수식 — 전체 너비 */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-6">
-        <button
-          onClick={() => setShowFormulas(v => !v)}
-          className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-        >
-          <span className="flex items-center gap-2">
-            <BarChart3 size={16} className="text-slate-400" /> 계산 수식
-          </span>
-          {showFormulas ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </button>
-        {showFormulas && (
+        ) : (
           <div className="border-t border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
 
             {/* 브래킷 & 하중 높이 */}
             <div>
-              <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">브래킷 · 유효 높이</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">브래킷 · 유효 높이</p>
               <div className="space-y-2.5">
                 {[
                   ['브래킷 높이', 'BH = ⌈H / 350⌉ × 50', 'mm'],
@@ -208,7 +183,7 @@ export default function MastPostAssessment() {
 
             {/* 응력 검토 */}
             <div>
-              <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">응력 검토</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">응력 검토</p>
               <div className="space-y-2.5">
                 {[
                   ['굽힘 모멘트', 'M = F_H × L', 'N·mm'],
@@ -227,7 +202,7 @@ export default function MastPostAssessment() {
 
             {/* 단면 특성 & 처짐 */}
             <div>
-              <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">단면 특성 · 처짐</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">단면 특성 · 처짐</p>
               <div className="space-y-2.5">
                 {[
                   ['단면적', 'A = π/4 × (D² − d²)', 'mm²'],
@@ -246,14 +221,14 @@ export default function MastPostAssessment() {
 
           </div>
         )}
-      </div>
+      </ReferenceFormulaTabs>
 
       <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6 items-start">
 
         {/* 좌측: 입력 패널 */}
         <div className="space-y-4">
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-r from-violet-700 to-violet-600 px-6 py-3 flex items-center gap-2">
+            <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-6 py-3 flex items-center gap-2">
               <Ruler size={14} className="text-white" />
               <h2 className="text-xs font-bold text-white uppercase tracking-wider">입력 조건</h2>
             </div>
@@ -273,7 +248,7 @@ export default function MastPostAssessment() {
               disabled={!isValid || isLoading}
               className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
                 isValid && !isLoading
-                  ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-md shadow-violet-200 cursor-pointer'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-200 cursor-pointer'
                   : 'bg-slate-100 text-slate-400 cursor-not-allowed'
               }`}
             >
@@ -329,7 +304,7 @@ export default function MastPostAssessment() {
 
           {isLoading && (
             <div className="bg-white border border-gray-200 rounded-2xl p-16 flex flex-col items-center text-slate-400">
-              <Loader2 size={40} className="animate-spin text-violet-500 mb-4" />
+              <Loader2 size={40} className="animate-spin text-emerald-500 mb-4" />
               <p className="font-bold text-slate-600">파이프 후보를 계산하는 중입니다...</p>
             </div>
           )}
@@ -402,14 +377,14 @@ export default function MastPostAssessment() {
                           <tr
                             onClick={() => setSelectedRank(isSelected ? null : c.rank)}
                             className={`transition-colors cursor-pointer group ${
-                              isSelected ? 'bg-violet-50'
+                              isSelected ? 'bg-emerald-50'
                               : isPass ? 'hover:bg-emerald-50/40'
                               : 'hover:bg-red-50/30 opacity-60'
                             }`}
                           >
                             <td className="px-4 py-3 text-center">
                               {c.rank === 1 && isPass
-                                ? <span className="inline-flex items-center justify-center w-7 h-7 bg-violet-600 text-white text-xs font-extrabold rounded-full shadow">1</span>
+                                ? <span className="inline-flex items-center justify-center w-7 h-7 bg-emerald-600 text-white text-xs font-extrabold rounded-full shadow">1</span>
                                 : <span className="text-slate-500 font-bold">{c.rank}</span>}
                             </td>
                             <td className="px-4 py-3 text-center font-bold text-slate-700">{c.outerDiameter}</td>
@@ -424,7 +399,7 @@ export default function MastPostAssessment() {
                             <td className="px-4 py-3 text-center">
                               <ChevronRight
                                 size={16}
-                                className={`text-slate-300 group-hover:text-violet-500 transition-all ${isSelected ? 'rotate-90 text-violet-500' : ''}`}
+                                className={`text-slate-300 group-hover:text-emerald-500 transition-all ${isSelected ? 'rotate-90 text-emerald-500' : ''}`}
                               />
                             </td>
                           </tr>

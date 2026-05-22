@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import axios from 'axios';
 import {
-  TableProperties, Calculator, ChevronDown, ChevronUp,
+  TableProperties, Calculator,
   CheckCircle2, XCircle, AlertCircle, Loader2,
   BarChart3, Download, ArrowLeft, Anchor, Wrench, Activity, FileText,
-  ImageIcon, Waves, Sigma,
+  Waves,
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
 import SolverCredit from '../../components/ui/SolverCredit';
@@ -15,6 +15,7 @@ import { formatFixed as fmt } from '../../utils/formatting';
 import PageBanner from '../../components/ui/PageBanner';
 import { downloadJson } from '../../utils/fileHelper';
 import holeFatigueRef from '../../assets/images/Hole_fatigue.png';
+import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 
 // ─────────────────────────────────────────────
 // 입력 컴포넌트
@@ -23,7 +24,7 @@ import holeFatigueRef from '../../assets/images/Hole_fatigue.png';
 const NumberField = ({ label, value, onChange, unit, placeholder, readOnly, hint }) => (
   <div>
     <label className="block text-[11px] font-bold text-slate-600 mb-1.5 leading-tight">{label}</label>
-    <div className={`flex items-center border rounded-lg overflow-hidden transition-colors ${readOnly ? 'border-slate-100 bg-slate-50' : 'border-slate-200 bg-white focus-within:border-violet-500 focus-within:ring-2 focus-within:ring-violet-100'}`}>
+    <div className={`flex items-center border rounded-lg overflow-hidden transition-colors ${readOnly ? 'border-slate-100 bg-slate-50' : 'border-slate-200 bg-white focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100'}`}>
       <input
         type="number"
         value={value}
@@ -44,7 +45,7 @@ const SelectField = ({ label, value, onChange, options }) => (
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
-      className="w-full px-2.5 py-2 text-sm font-bold text-slate-800 border border-slate-200 rounded-lg bg-white outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 transition-colors cursor-pointer"
+      className="w-full px-2.5 py-2 text-sm font-bold text-slate-800 border border-slate-200 rounded-lg bg-white outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-colors cursor-pointer"
     >
       {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
     </select>
@@ -193,8 +194,6 @@ export default function HoleFatigueAssessment() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [showRefImg, setShowRefImg] = useState(false);
-  const [showFormulas, setShowFormulas] = useState(false);
 
   // 자동 계산 필드
   const reductionFactor = useMemo(() => calcReductionFactor(operatingArea), [operatingArea]);
@@ -261,7 +260,7 @@ export default function HoleFatigueAssessment() {
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
-      <PageBanner gradient="from-brand-blue via-violet-900 to-violet-700">
+      <PageBanner gradient="from-brand-blue via-emerald-900 to-emerald-700">
         <div className="flex items-center gap-4">
           <button
             onClick={() => setCurrentMenu('Parametric Apps')}
@@ -271,10 +270,10 @@ export default function HoleFatigueAssessment() {
           </button>
           <div>
             <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              <TableProperties size={18} className="text-violet-300" />
+              <TableProperties size={18} className="text-emerald-300" />
               Simplified Hole Fatigue Assessment
             </h1>
-            <p className="text-sm text-violet-200/80 mt-0.5">Welded pipe penetration의 SCF 기반 피로 평가 — DNVGL-RP-C203 기준</p>
+            <p className="text-sm text-emerald-200/80 mt-0.5">Welded pipe penetration의 SCF 기반 피로 평가 — DNVGL-RP-C203 기준</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -282,18 +281,11 @@ export default function HoleFatigueAssessment() {
         </div>
       </PageBanner>
 
-      {/* ───────── 참조 그림 (전체 너비, 접이식) ───────── */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-4">
-        <button
-          onClick={() => setShowRefImg(v => !v)}
-          className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-        >
-          <span className="flex items-center gap-2">
-            <ImageIcon size={16} className="text-slate-400" /> 참조 그림 — Welded Pipe Penetration
-          </span>
-          {showRefImg ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </button>
-        {showRefImg && (
+      <ReferenceFormulaTabs
+        accent="emerald"
+        className="mb-4"
+      >
+        {(activeInfoTab) => activeInfoTab === 'image' ? (
           <div className="border-t border-gray-100 p-6 bg-slate-50">
             <img
               src={holeFatigueRef}
@@ -304,26 +296,12 @@ export default function HoleFatigueAssessment() {
               (1) Fillet weld 영역 σ_p — (2) Insert tubular 직각 응력 σ_n, σ_l — (3) Weld root 전단 응력 τ_∥p, σ_n
             </p>
           </div>
-        )}
-      </div>
-
-      {/* ───────── 계산 수식 (전체 너비, 접이식) ───────── */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-4">
-        <button
-          onClick={() => setShowFormulas(v => !v)}
-          className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-        >
-          <span className="flex items-center gap-2">
-            <Sigma size={16} className="text-slate-400" /> 계산 수식 — DNVGL-RP-C203
-          </span>
-          {showFormulas ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </button>
-        {showFormulas && (
+        ) : (
           <div className="border-t border-gray-100 p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 text-sm">
 
             {/* 공칭 응력 범위 */}
             <div>
-              <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">공칭 응력 범위</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">공칭 응력 범위</p>
               <div className="space-y-2.5">
                 {[
                   ['응력 범위', 'σ_range = 2·M_VWBM / Z / 1000', 'MPa'],
@@ -340,7 +318,7 @@ export default function HoleFatigueAssessment() {
 
             {/* SCF 보간 (DNVGL Table) */}
             <div>
-              <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">SCF 보간 (DNVGL Table)</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">SCF 보간 (DNVGL Table)</p>
               <div className="space-y-2.5">
                 {[
                   ['무차원비', 't_r/t_p, R/t_p, h/t_r', '—'],
@@ -358,7 +336,7 @@ export default function HoleFatigueAssessment() {
 
             {/* 계산 응력 */}
             <div>
-              <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">계산 응력 σ_cal</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">계산 응력 σ_cal</p>
               <div className="space-y-2.5">
                 {[
                   ['Transverse', 'σ_cal = σ_range × SCF_plate', 'MPa'],
@@ -377,7 +355,7 @@ export default function HoleFatigueAssessment() {
 
             {/* 허용 응력 / Usage */}
             <div>
-              <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest mb-3">허용 응력 · Usage</p>
+              <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">허용 응력 · Usage</p>
               <div className="space-y-2.5">
                 {[
                   ['Probability factor', 'P_f = (ln(P)/ln(10⁻⁸))^(1/h)', '—'],
@@ -396,24 +374,24 @@ export default function HoleFatigueAssessment() {
 
           </div>
         )}
-      </div>
+      </ReferenceFormulaTabs>
 
       {/* ───────── 입력 패널 (전체 너비, 4컬럼 그리드) ───────── */}
-      <div className="bg-gradient-to-br from-violet-50/40 via-white to-violet-50/40 border border-violet-100 rounded-2xl p-5 mb-4 shadow-sm">
+      <div className="bg-gradient-to-br from-emerald-50/40 via-white to-emerald-50/40 border border-emerald-100 rounded-2xl p-5 mb-4 shadow-sm">
 
         <div className="flex items-center gap-2 mb-4">
-          <div className="p-1.5 bg-violet-600 rounded-lg">
+          <div className="p-1.5 bg-emerald-600 rounded-lg">
             <BarChart3 size={14} className="text-white" />
           </div>
           <h2 className="text-sm font-bold text-slate-700 tracking-tight">Design Parameters</h2>
-          <div className="flex-1 border-t border-violet-100 mx-2" />
+          <div className="flex-1 border-t border-emerald-100 mx-2" />
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">DNVGL-RP-C203</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
 
           {/* (1) Ship information */}
-          <InputCard title="Ship Information" icon={Anchor} accent="from-violet-700 to-violet-600">
+          <InputCard title="Ship Information" icon={Anchor} accent="from-emerald-700 to-emerald-600">
             <SelectField label="Ship type" value={shipType} onChange={setShipType} options={['CNTR', 'GAS', 'TANKER', 'BULK', 'ETC']} />
             <NumberField label="Ship length" value={shipLengthM} onChange={setShipLengthM} unit="m" placeholder="336.78" />
             <NumberField label="Section modulus" value={sectionModulusM3} onChange={setSectionModulusM3} unit="m³" placeholder="69.16" />
@@ -425,7 +403,7 @@ export default function HoleFatigueAssessment() {
           </InputCard>
 
           {/* (2) SCF parameters */}
-          <InputCard title="SCF of Holes with Sleeve" icon={Wrench} accent="from-violet-700 to-violet-600">
+          <InputCard title="SCF of Holes with Sleeve" icon={Wrench} accent="from-emerald-700 to-emerald-600">
             <div className="grid grid-cols-2 gap-2">
               <NumberField label="Plate thickness" value={plateThicknessMm} onChange={setPlateThicknessMm} unit="mm" placeholder="60" />
               <NumberField label="Sleeve OD" value={sleeveOuterDiameterMm} onChange={setSleeveOuterDiameterMm} unit="mm" placeholder="162" />
@@ -440,18 +418,18 @@ export default function HoleFatigueAssessment() {
           </InputCard>
 
           {/* (3) Allowable stress range */}
-          <InputCard title="Allowable Stress Range" icon={BarChart3} accent="from-violet-700 to-violet-600">
+          <InputCard title="Allowable Stress Range" icon={BarChart3} accent="from-emerald-700 to-emerald-600">
             <div>
               <label className="block text-[11px] font-bold text-slate-600 mb-1.5 leading-tight">Probability of exceedance</label>
               <div className="flex items-center gap-1.5 mb-1.5">
-                <button onClick={() => setProbabilityLevel('1e-2')} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-bold border transition-colors cursor-pointer ${probabilityLevel === '1e-2' ? 'bg-violet-100 text-violet-700 border-violet-300' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>1e-2</button>
-                <button onClick={() => setProbabilityLevel('1e-8')} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-bold border transition-colors cursor-pointer ${probabilityLevel === '1e-8' ? 'bg-violet-100 text-violet-700 border-violet-300' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>1e-8</button>
+                <button onClick={() => setProbabilityLevel('1e-2')} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-bold border transition-colors cursor-pointer ${probabilityLevel === '1e-2' ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>1e-2</button>
+                <button onClick={() => setProbabilityLevel('1e-8')} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-bold border transition-colors cursor-pointer ${probabilityLevel === '1e-8' ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>1e-8</button>
               </div>
               <input
                 type="text"
                 value={probabilityLevel}
                 onChange={e => setProbabilityLevel(e.target.value)}
-                className="w-full px-2.5 py-2 text-sm font-bold text-slate-800 border border-slate-200 rounded-lg outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 transition-colors"
+                className="w-full px-2.5 py-2 text-sm font-bold text-slate-800 border border-slate-200 rounded-lg outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-colors"
               />
             </div>
             <NumberField label="Weibull shape parameter h" value={weibullShape ?? ''} unit="" readOnly hint="Ship type / Ship length 기반 자동 산출" />
@@ -459,13 +437,13 @@ export default function HoleFatigueAssessment() {
           </InputCard>
 
           {/* (4) Vertical wave bending moment + 결과 stress range */}
-          <InputCard title="Vertical Wave Bending Moment" icon={Waves} accent="from-violet-700 to-violet-600">
+          <InputCard title="Vertical Wave Bending Moment" icon={Waves} accent="from-emerald-700 to-emerald-600">
             <NumberField label="Max. VWBM" value={maxVwbmKnm} onChange={setMaxVwbmKnm} unit="kNm" placeholder="5,000,000" />
 
             {/* Nominal stress range — 결과 반영 read-only */}
             <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nominal Stress Range</p>
-              <p className="text-2xl font-extrabold text-violet-700 font-mono">
+              <p className="text-2xl font-extrabold text-emerald-700 font-mono">
                 {stressRangeMpa != null ? fmt(stressRangeMpa, 1) : '—'}
                 <span className="text-xs text-slate-400 ml-1.5 font-normal">MPa</span>
               </p>
@@ -478,7 +456,7 @@ export default function HoleFatigueAssessment() {
               disabled={!isValid || isLoading}
               className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
                 isValid && !isLoading
-                  ? 'bg-gradient-to-r from-violet-600 to-violet-700 hover:from-violet-700 hover:to-violet-800 text-white shadow-md shadow-violet-200 cursor-pointer'
+                  ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white shadow-md shadow-emerald-200 cursor-pointer'
                   : 'bg-slate-100 text-slate-400 cursor-not-allowed'
               }`}
             >
@@ -506,7 +484,7 @@ export default function HoleFatigueAssessment() {
 
         {isLoading && (
           <div className="bg-white border border-gray-200 rounded-2xl p-12 flex flex-col items-center text-slate-400">
-            <Loader2 size={36} className="animate-spin text-violet-500 mb-4" />
+            <Loader2 size={36} className="animate-spin text-emerald-500 mb-4" />
             <p className="font-bold text-slate-600">피로 평가를 계산하는 중입니다...</p>
           </div>
         )}
