@@ -50,8 +50,24 @@ const RULES = {
   airVent: { min: 100, max: 100_000, unit: 'mm', hint: 'D 이상 권장' },
 };
 
-// 보강재 배치 검증 (간격/갯수 + 축길이 의존)
+// 보강재 배치 검증 (간격/갯수/커스텀 + 축길이 의존)
 const validateStiffener = (state, axisLen) => {
+  // ── Custom 모드: customDistances 누적 검증 ──
+  if (state.type === 'custom') {
+    const list = state.customDistances || [];
+    if (list.length === 0) return ng('최소 1개');
+    let sum = 0;
+    for (let i = 0; i < list.length; i++) {
+      const d = Number(list[i]);
+      if (!Number.isFinite(d) || list[i] === '' || list[i] === null) return ng(`${i + 1}번 값 필수`);
+      if (d <= 0) return ng(`${i + 1}번 0보다 커야 함`);
+      if (d > axisLen) return ng(`${i + 1}번 축길이(${axisLen}) 초과`);
+      sum += d;
+      if (sum > axisLen) return ng(`누적 ${sum} > 축길이(${axisLen})`);
+    }
+    return ok(`누적 ${sum} / ${axisLen} mm`);
+  }
+  // ── 등간격(uniform) 모드 ──
   const v = Number(state.value);
   if (!Number.isFinite(v) || state.value === '') return ng('필수');
   if (state.countMode === 'interval') {
@@ -122,9 +138,24 @@ const buildSectionShape = (type, A, B, C, D) => {
   return s;
 };
 
-// 보강재 위치 계산 (간격/갯수 모드 공용)
+// 보강재 위치 계산 (등간격: 간격/갯수, 커스텀: 누적 거리)
 const positionsAlong = (axisLen, conf) => {
   if (!conf) return [];
+  // ── Custom 모드: 누적 거리 → 절대 좌표 ──
+  if (conf.type === 'custom') {
+    const list = conf.customDistances || [];
+    const out = [];
+    let cur = 0;
+    for (const d of list) {
+      const v = Number(d);
+      if (!Number.isFinite(v) || v <= 0) continue;
+      cur += v;
+      if (cur > axisLen) break; // 축길이 초과는 시각화에서 잘라냄 (검증은 별도)
+      out.push(cur);
+    }
+    return out;
+  }
+  // ── Uniform 모드 ──
   const v = Number(conf.value) || 0;
   if (v <= 0) return [];
   let count = 0;
@@ -668,9 +699,9 @@ export default function IndependentTankAssessment() {
   const [tp, setTp] = useState(10);
   const [tcorr, setTcorr] = useState(1);
   const [topOpen, setTopOpen] = useState('closed');
-  const [stfL, setStfL] = useState({ type: 'uniform', countMode: 'count',    value: 3 });
-  const [stfB, setStfB] = useState({ type: 'uniform', countMode: 'interval', value: 500 });
-  const [stfD, setStfD] = useState({ type: 'uniform', countMode: 'count',    value: 2 });
+  const [stfL, setStfL] = useState({ type: 'uniform', countMode: 'count',    value: 3, customDistances: [500] });
+  const [stfB, setStfB] = useState({ type: 'uniform', countMode: 'interval', value: 500, customDistances: [500] });
+  const [stfD, setStfD] = useState({ type: 'uniform', countMode: 'count',    value: 2, customDistances: [250] });
   const [stfType, setStfType] = useState('Flat');
   // Flat: A(h) × B(t)
   // T   : Web A(h) × B(t) + Flange C(w) × D(t)
@@ -687,6 +718,21 @@ export default function IndependentTankAssessment() {
   const [accY, setAccY] = useState(0.8);
   const [accZ, setAccZ] = useState(0.6);
   const [bcRows, setBcRows] = useState([]);
+  const [bcMode, setBcMode] = useState('auto'); // 'auto' | 'manual' — 기본: 자동
+
+  // 자동 모드: 탱크 바닥(z=0) 4 꼭짓점을 bcRows로 강제 세팅.
+  // L/B 변경 시에도 좌표 자동 갱신.
+  useEffect(() => {
+    if (bcMode !== 'auto') return;
+    const L = Math.round(Number(dimL) || 0);
+    const B = Math.round(Number(dimB) || 0);
+    setBcRows([
+      { x: 0, y: 0, z: 0 },
+      { x: L, y: 0, z: 0 },
+      { x: L, y: B, z: 0 },
+      { x: 0, y: B, z: 0 },
+    ]);
+  }, [bcMode, dimL, dimB]);
 
   // ── 검증 결과
   const vL = useMemo(() => validateNumber(dimL, RULES.dim), [dimL]);
@@ -738,7 +784,9 @@ export default function IndependentTankAssessment() {
   const removeBcRow = (idx) => setBcRows(bcRows.filter((_, i) => i !== idx));
 
   // 3D 뷰어에서 Node 클릭 → 토글 (이미 선택된 좌표면 해제)
+  // 자동 모드일 때는 클릭 무시.
   const handlePickPoint = (p) => {
+    if (bcMode === 'auto') return;
     const key = (r) => `${Number(r.x).toFixed(1)}_${Number(r.y).toFixed(1)}_${Number(r.z).toFixed(1)}`;
     const newRow = { x: Math.round(p[0]), y: Math.round(p[1]), z: Math.round(p[2]) };
     setBcRows(prev => {
@@ -754,11 +802,29 @@ export default function IndependentTankAssessment() {
     set({ ...state, countMode: mode, value: defaultStfValue(mode) });
   };
 
+  // custom 목록 조작 헬퍼
+  const addCustomDistance = (state, set) => () => {
+    const list = state.customDistances || [];
+    set({ ...state, customDistances: [...list, 500] });
+  };
+  const removeCustomDistance = (state, set) => () => {
+    const list = state.customDistances || [];
+    if (list.length <= 1) return; // 최소 1개 유지
+    set({ ...state, customDistances: list.slice(0, -1) });
+  };
+  const setCustomDistanceAt = (state, set) => (idx, val) => {
+    const list = [...(state.customDistances || [])];
+    list[idx] = val;
+    set({ ...state, customDistances: list });
+  };
+
   const axisRow = (label, state, set, validation) => {
     const isErr = !validation.ok;
+    const isCustom = state.type === 'custom';
     const inputBorder = isErr
       ? 'border-red-300 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200'
       : 'border-slate-200 focus-within:border-violet-500 focus-within:ring-1 focus-within:ring-violet-200';
+    const list = state.customDistances || [];
     return (
       <div className="border border-slate-200/70 rounded-lg bg-slate-50/60 overflow-hidden">
         {/* 축 레이블 + 모드 선택 행 */}
@@ -773,30 +839,94 @@ export default function IndependentTankAssessment() {
             options={[{ value: 'uniform', label: '등간격' }, { value: 'custom', label: '커스텀' }]}
             className="flex-1 min-w-0 text-[12px]"
           />
-          <Select
-            value={state.countMode}
-            onChange={setStfMode(state, set)}
-            options={[{ value: 'interval', label: '간격(mm)' }, { value: 'count', label: '갯수(EA)' }]}
-            className="flex-1 min-w-0 text-[12px]"
-          />
+          {isCustom ? (
+            /* 목록 개수 표시 + +/- 버튼 (검증 실패 시 + 버튼 차단) */
+            <div className="flex-1 min-w-0 flex items-stretch gap-1">
+              <div className={`flex-1 min-w-0 flex items-center justify-center px-2 py-1.5 rounded-md border text-[12px] font-bold ${
+                isErr
+                  ? 'bg-red-50 border-red-200 text-red-600'
+                  : 'bg-violet-50 border-violet-200 text-violet-700'
+              }`}>
+                목록 {list.length}개
+              </div>
+              <button
+                type="button"
+                onClick={removeCustomDistance(state, set)}
+                disabled={list.length <= 1}
+                className={`w-7 flex items-center justify-center rounded-md text-[14px] font-bold border transition ${
+                  list.length <= 1
+                    ? 'bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed'
+                    : 'bg-white text-slate-600 border-slate-300 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-300'
+                }`}
+                title="목록 제거"
+              >−</button>
+              <button
+                type="button"
+                onClick={addCustomDistance(state, set)}
+                disabled={isErr}
+                className={`w-7 flex items-center justify-center rounded-md text-[14px] font-bold border transition ${
+                  isErr
+                    ? 'bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed'
+                    : 'bg-white text-slate-600 border-slate-300 hover:bg-violet-50 hover:text-violet-600 hover:border-violet-300'
+                }`}
+                title={isErr ? '입력값 오류 — 먼저 해결한 후 추가 가능' : '목록 추가'}
+              >+</button>
+            </div>
+          ) : (
+            <Select
+              value={state.countMode}
+              onChange={setStfMode(state, set)}
+              options={[{ value: 'interval', label: '간격(mm)' }, { value: 'count', label: '갯수(EA)' }]}
+              className="flex-1 min-w-0 text-[12px]"
+            />
+          )}
         </div>
         {/* 값 입력 행 */}
-        <div className="px-2.5 py-2">
-          <div className={`flex items-stretch border ${inputBorder} rounded-lg overflow-hidden bg-white transition-all`}>
-            <input
-              type="number"
-              value={state.value}
-              onChange={e => set({ ...state, value: e.target.value })}
-              className="flex-1 min-w-0 px-2.5 py-2 text-[13px] font-bold text-slate-800 outline-none bg-transparent leading-none"
-            />
-            <span className="flex items-center justify-center px-2.5 bg-slate-50 text-slate-400 text-[10px] font-bold border-l border-slate-200 min-w-[32px]">
-              {state.countMode === 'interval' ? 'mm' : 'EA'}
-            </span>
+        {isCustom ? (
+          /* Custom: 목록 개수만큼 누적 거리 입력 행 */
+          <div className="px-2.5 py-2 space-y-1.5">
+            {list.map((d, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-violet-100 text-violet-700 text-[10px] font-extrabold flex-shrink-0">
+                  {idx + 1}
+                </span>
+                <div className={`flex-1 flex items-stretch border border-slate-200 focus-within:border-violet-500 focus-within:ring-1 focus-within:ring-violet-200 rounded-lg overflow-hidden bg-white transition-all`}>
+                  <input
+                    type="number"
+                    min="1"
+                    value={d}
+                    onChange={e => setCustomDistanceAt(state, set)(idx, e.target.value)}
+                    className="flex-1 min-w-0 px-2.5 py-1.5 text-[12px] font-bold text-slate-800 outline-none bg-transparent leading-none"
+                    placeholder="누적 거리"
+                  />
+                  <span className="flex items-center justify-center px-2 bg-slate-50 text-slate-400 text-[10px] font-bold border-l border-slate-200 min-w-[28px]">
+                    mm
+                  </span>
+                </div>
+              </div>
+            ))}
+            <p className={`mt-1 text-[10px] leading-tight ${isErr ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
+              {isErr ? `⚠ ${validation.msg}` : (validation.hint || '끝 변에서 각 거리만큼 누적')}
+            </p>
           </div>
-          <p className={`mt-1 text-[10px] leading-tight ${isErr ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
-            {isErr ? `⚠ ${validation.msg}` : (validation.hint || ' ')}
-          </p>
-        </div>
+        ) : (
+          <div className="px-2.5 py-2">
+            <div className={`flex items-stretch border ${inputBorder} rounded-lg overflow-hidden bg-white transition-all`}>
+              <input
+                type="number"
+                value={state.value}
+                onChange={e => set({ ...state, value: e.target.value })}
+                className="flex-1 min-w-0 px-2.5 py-2 text-[13px] font-bold text-slate-800 outline-none bg-transparent leading-none"
+              />
+              <span className="flex items-center justify-center px-2.5 bg-slate-50 text-slate-400 text-[10px] font-bold border-l border-slate-200 min-w-[32px]">
+                {state.countMode === 'interval' ? 'mm' : 'EA'}
+              </span>
+            </div>
+            <p className={`mt-1 text-[10px] leading-tight ${isErr ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
+              {isErr ? `⚠ ${validation.msg}` : (validation.hint || ' ')}
+            </p>
+          </div>
+        )}
       </div>
     );
   };
@@ -987,24 +1117,25 @@ export default function IndependentTankAssessment() {
 
                 {/* 판 두께 / Top Open */}
                 <SectionCard title="판 두께 / Top Open" icon={Layers}>
-                  <div className="grid grid-cols-[1fr_1fr_1fr] gap-3">
-                    <div>
-                      <FieldLabel>tp (판 두께)</FieldLabel>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="min-w-0">
+                      <FieldLabel>판 두께 (tp)</FieldLabel>
                       <NumInput value={tp} onChange={setTp} unit="mm" validation={vTp} />
                     </div>
-                    <div>
-                      <FieldLabel>tcorr (부식 여유)</FieldLabel>
+                    <div className="min-w-0">
+                      <FieldLabel>부식 여유 (tcorr)</FieldLabel>
                       <NumInput value={tcorr} onChange={setTcorr} unit="mm" validation={vTcorr} />
                     </div>
-                    <div>
-                      <FieldLabel>Top Open</FieldLabel>
-                      <Select
-                        value={topOpen}
-                        onChange={setTopOpen}
-                        options={[{ value: 'closed', label: '폐쇄형' }, { value: 'open', label: '개방형' }]}
-                        className="w-full"
-                      />
-                      <p className="mt-1 text-[10px] leading-tight text-slate-400">상판 유무</p>
+                    <div className="col-span-2 flex items-end gap-3 min-w-0">
+                      <div className="flex-1 min-w-0">
+                        <FieldLabel>Top Open (상판 유무)</FieldLabel>
+                        <Select
+                          value={topOpen}
+                          onChange={setTopOpen}
+                          options={[{ value: 'closed', label: '폐쇄형' }, { value: 'open', label: '개방형' }]}
+                          className="w-full"
+                        />
+                      </div>
                     </div>
                   </div>
                 </SectionCard>
@@ -1168,33 +1299,61 @@ export default function IndependentTankAssessment() {
 
                 {/* ── 경계조건 BC — 풀폭 ── */}
                 <SectionCard title="경계조건 (BC Node)" icon={Anchor}>
-                  {/* 안내 배너 — BC 탭이므로 뷰어와의 상호작용 안내를 더 명확히 */}
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-200/70">
-                    <span className="text-red-500 font-bold text-[14px] leading-none">●</span>
-                    <p className="text-[11px] text-violet-700 leading-snug flex-1">
-                      우측 3D 뷰어의 <span className="font-extrabold text-red-600">빨간 Node</span>를 클릭하면{' '}
-                      <span className="font-extrabold text-lime-600">▲</span> 마커로 BC가 지정됩니다.
-                      <span className="text-violet-500"> 재클릭 시 해제.</span>
-                    </p>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${
-                        bcRows.length > 0
-                          ? 'bg-violet-100 border-violet-300 text-violet-700'
-                          : 'bg-slate-50 border-slate-200 text-slate-400'
-                      }`}>
+                  {/* 모드 선택 행: 자동 / 수동 */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">선택 방식</span>
+                    <Select
+                      value={bcMode}
+                      onChange={setBcMode}
+                      options={[
+                        { value: 'manual', label: '수동 (클릭)' },
+                        { value: 'auto',   label: '자동 (탱크 바닥 4 꼭짓점)' },
+                      ]}
+                      className="flex-1 text-[12px]"
+                    />
+                  </div>
+
+                  {/* 안내 배너 — 모드별 메시지 분기 */}
+                  {bcMode === 'auto' ? (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200/70">
+                      <span className="text-emerald-600 font-bold text-[14px] leading-none">✓</span>
+                      <p className="text-[11px] text-emerald-700 leading-snug flex-1">
+                        <span className="font-extrabold">자동 모드</span> — 탱크 바닥(z=0)의{' '}
+                        <span className="font-extrabold">4개 꼭짓점</span>이 경계조건으로 지정됩니다.
+                        L/B 치수가 바뀌면 좌표도 자동 갱신.
+                      </p>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-100 border-emerald-300 text-emerald-700 whitespace-nowrap">
                         {bcRows.length} EA
                       </span>
-                      {bcRows.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setBcRows([])}
-                          className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-red-500 font-bold transition-colors cursor-pointer whitespace-nowrap"
-                        >
-                          <Trash2 size={10} /> 전체 해제
-                        </button>
-                      )}
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-200/70">
+                      <span className="text-red-500 font-bold text-[14px] leading-none">●</span>
+                      <p className="text-[11px] text-violet-700 leading-snug flex-1">
+                        우측 3D 뷰어의 <span className="font-extrabold text-red-600">빨간 Node</span>를 클릭하면{' '}
+                        <span className="font-extrabold text-lime-600">▲</span> 마커로 BC가 지정됩니다.
+                        <span className="text-violet-500"> 재클릭 시 해제.</span>
+                      </p>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                          bcRows.length > 0
+                            ? 'bg-violet-100 border-violet-300 text-violet-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-400'
+                        }`}>
+                          {bcRows.length} EA
+                        </span>
+                        {bcRows.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setBcRows([])}
+                            className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-red-500 font-bold transition-colors cursor-pointer whitespace-nowrap"
+                          >
+                            <Trash2 size={10} /> 전체 해제
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* BC 노드 테이블 */}
                   <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -1225,7 +1384,13 @@ export default function IndependentTankAssessment() {
                               <td className="px-1 text-center">
                                 <button
                                   onClick={() => removeBcRow(idx)}
-                                  className="p-0.5 text-slate-300 hover:text-red-500 transition-colors cursor-pointer"
+                                  disabled={bcMode === 'auto'}
+                                  className={`p-0.5 transition-colors ${
+                                    bcMode === 'auto'
+                                      ? 'text-slate-200 cursor-not-allowed'
+                                      : 'text-slate-300 hover:text-red-500 cursor-pointer'
+                                  }`}
+                                  title={bcMode === 'auto' ? '자동 모드에서는 삭제 불가' : '삭제'}
                                 >
                                   <Trash2 size={11} />
                                 </button>
