@@ -47,6 +47,13 @@ _USER_CONNECTION_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnectio
 _ALLOWED_DOWNLOAD_BASE = _USER_CONNECTION_DIR
 _PROGRAM_DOWNLOAD_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "DownloadProgram"))
 
+# 외부(네트워크/공유) 위치에 보관하는 배포용 프로그램 화이트리스트.
+# DownloadProgram/ 폴더에 없고 외부 경로에서 받아와야 하는 파일들을 등록.
+# 보안: 화이트리스트 외 파일명은 절대 외부 경로로 매핑되지 않음.
+_EXTERNAL_PROGRAM_PATHS = {
+    "HiTESSBEAM.zip": r"\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44\[Hi-TESS]\6_DownloadProgram\HiTESSBEAM.zip",
+}
+
 
 def _verify_employee_self(form_employee_id: str, current_user: str) -> None:
     """request 핸들러의 Form employee_id 가 인증 사용자(current_user) 와 일치하는지 검증.
@@ -202,13 +209,21 @@ def download_file(filepath: str, req: Request, db: Session = Depends(database.ge
 @router.get("/download/program/{filename}")
 def download_program(filename: str, req: Request, db: Session = Depends(database.get_db), employee_id: str = Depends(require_auth)):
     """
-    DownloadProgram/ 디렉터리의 배포용 프로그램 파일을 다운로드합니다.
-    보안: DownloadProgram/ 디렉터리 내 파일만 허용하며 경로 탈출을 차단합니다.
+    배포용 프로그램 파일을 다운로드합니다.
+    파일 위치 우선순위:
+      1) _EXTERNAL_PROGRAM_PATHS 화이트리스트 (네트워크/공유 폴더 등 외부 경로)
+      2) DownloadProgram/ 로컬 디렉터리 (path traversal 차단)
     """
     safe_name = os.path.basename(filename)
-    file_path = os.path.abspath(os.path.join(_PROGRAM_DOWNLOAD_DIR, safe_name))
-    if not file_path.startswith(_PROGRAM_DOWNLOAD_DIR + os.sep) and file_path != _PROGRAM_DOWNLOAD_DIR:
-        raise HTTPException(status_code=403, detail="접근 권한이 없는 경로입니다.")
+
+    # 1) 외부 화이트리스트 우선 매칭
+    file_path = _EXTERNAL_PROGRAM_PATHS.get(safe_name)
+    if not file_path:
+        # 2) 로컬 DownloadProgram/ fallback
+        file_path = os.path.abspath(os.path.join(_PROGRAM_DOWNLOAD_DIR, safe_name))
+        if not file_path.startswith(_PROGRAM_DOWNLOAD_DIR + os.sep) and file_path != _PROGRAM_DOWNLOAD_DIR:
+            raise HTTPException(status_code=403, detail="접근 권한이 없는 경로입니다.")
+
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다. 관리자에게 문의하세요.")
     log_activity(

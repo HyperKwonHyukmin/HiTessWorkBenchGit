@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
-import { Download, CheckCircle, Clock, Package, BookOpen, Wrench, Cpu, FileText, LayoutGrid } from 'lucide-react';
+import axios from 'axios';
+import { Download, CheckCircle, Clock, Package, BookOpen, Wrench, Cpu, FileText, LayoutGrid, RefreshCw } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
+import { getAuthHeaders } from '../../utils/auth';
+import { useToast } from '../../contexts/ToastContext';
 
 const DOWNLOADS = [
   {
@@ -40,19 +43,58 @@ const CATEGORY_BADGE = {
 export default function DownloadCenter() {
   const [hoveredRow, setHoveredRow]     = useState(null);
   const [activeCategory, setActiveCategory] = useState('all');
+  const [downloading, setDownloading]   = useState(null); // filename | null
+  const [progress, setProgress]         = useState(0);    // 0~100
+  const { showToast } = useToast();
 
   const filtered = activeCategory === 'all'
     ? DOWNLOADS
     : DOWNLOADS.filter(d => d.category === activeCategory);
 
-  const handleDownload = (item) => {
-    const url = `${API_BASE_URL}/api/download/program/${encodeURIComponent(item.filename)}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = item.filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+  const handleDownload = async (item) => {
+    if (downloading) return;
+    setDownloading(item.filename);
+    setProgress(0);
+    try {
+      const res = await axios.get(
+        `${API_BASE_URL}/api/download/program/${encodeURIComponent(item.filename)}`,
+        {
+          headers: getAuthHeaders(),
+          responseType: 'blob',
+          onDownloadProgress: (e) => {
+            if (e.total) {
+              setProgress(Math.round((e.loaded / e.total) * 100));
+            }
+          },
+        }
+      );
+      const blobUrl = URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = item.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      showToast(`다운로드 완료 — ${item.filename}`, 'success');
+    } catch (err) {
+      const status = err?.response?.status;
+      let detailMsg = err?.message || '다운로드 실패';
+      // blob 응답 안의 detail 추출 시도
+      try {
+        if (err?.response?.data instanceof Blob) {
+          const text = await err.response.data.text();
+          const parsed = JSON.parse(text);
+          if (parsed?.detail) detailMsg = parsed.detail;
+        } else if (err?.response?.data?.detail) {
+          detailMsg = err.response.data.detail;
+        }
+      } catch { /* parse 실패 시 기본 메시지 유지 */ }
+      showToast(`[${status || 'ERR'}] ${detailMsg}`, 'error');
+    } finally {
+      setDownloading(null);
+      setProgress(0);
+    }
   };
 
   return (
@@ -198,12 +240,34 @@ export default function DownloadCenter() {
                   {/* 다운로드 버튼 */}
                   <td className="px-4 py-4 text-center align-top">
                     {item.filename ? (
-                      <button
-                        onClick={() => handleDownload(item)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
-                      >
-                        <Download size={12} />다운로드
-                      </button>
+                      (() => {
+                        const isThisDownloading = downloading === item.filename;
+                        const isOtherDownloading = downloading && !isThisDownloading;
+                        return (
+                          <button
+                            onClick={() => handleDownload(item)}
+                            disabled={!!downloading}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                              isThisDownloading
+                                ? 'bg-blue-500 text-white cursor-wait'
+                                : isOtherDownloading
+                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                  : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                            }`}
+                          >
+                            {isThisDownloading ? (
+                              <>
+                                <RefreshCw size={12} className="animate-spin" />
+                                {progress > 0 ? `${progress}%` : '다운로드 중'}
+                              </>
+                            ) : (
+                              <>
+                                <Download size={12} />다운로드
+                              </>
+                            )}
+                          </button>
+                        );
+                      })()
                     ) : (
                       <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-400 text-xs font-medium rounded-lg cursor-not-allowed whitespace-nowrap">
                         <Clock size={12} />
