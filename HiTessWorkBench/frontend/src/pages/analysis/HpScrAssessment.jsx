@@ -17,6 +17,7 @@ import SolverCredit from '../../components/ui/SolverCredit';
 import BdfModelViewer from '../../components/analysis/BdfModelViewer';
 import PageBanner from '../../components/ui/PageBanner';
 import { buildFormData } from '../../utils/fileHelper';
+import SampleRunButton from '../../components/analysis/SampleRunButton';
 import {
   parseSpcCardsFromBdf,
   parseCbushFromBdf,
@@ -173,6 +174,28 @@ export default function HpScrAssessment() {
     } catch {
       setIsRunning(false);
       addLog('서버 요청 실패.', 'error');
+    }
+  };
+
+  // 샘플 실행 콜백 — SampleRunButton 이 호출. analysisMode(PSA/POR)를 그대로 백엔드로 넘김.
+  const sampleHpscrBefore = () => {
+    setIsRunning(true);
+    setProgress(0);
+    setStatusMessage('샘플 파일로 작업 요청 중...');
+    setModelData(null);
+    setReportPath(null);
+    setLogs([{ time: new Date().toLocaleTimeString(), message: `[SAMPLE] 사내 표준 ${analysisMode} BDF로 해석 요청`, type: 'info' }]);
+  };
+  const sampleHpscrSubmitted = (jobId) => {
+    addLog(`[JOB] Sample 작업 등록 완료. (Job ID: ${jobId})`, 'success');
+    startJob(jobId, 'HP-SCR 배관응력 해석');
+  };
+  const sampleHpscrError = (st, detail) => {
+    setIsRunning(false);
+    if (st === 429) {
+      addLog('Sample run rejected — daily limit reached.', 'warning');
+    } else {
+      addLog(`샘플 실행 실패: ${detail}`, 'error');
     }
   };
 
@@ -342,6 +365,17 @@ export default function HpScrAssessment() {
             <RotateCcw size={15} />
             초기화
           </button>
+
+          {/* 샘플 실행 — 입력 BDF 없이도 현재 선택된 모드(PSA/POR)로 학습용 해석 체험 */}
+          <SampleRunButton
+            appKey="hpscr"
+            params={{ mode: analysisMode }}
+            disabled={isRunning}
+            onBeforeRun={sampleHpscrBefore}
+            onJobSubmitted={sampleHpscrSubmitted}
+            onError={sampleHpscrError}
+            label={`샘플 ${analysisMode}로 한 번 돌려보기`}
+          />
 
           {/* 실행 버튼 */}
           <button

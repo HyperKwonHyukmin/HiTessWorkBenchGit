@@ -119,6 +119,7 @@ def aggregate_period(db: Session, period: str, start: datetime, end: datetime) -
           .outerjoin(models.User, models.Analysis.employee_id == models.User.employee_id)
           .filter(models.Analysis.created_at >= start)
           .filter(models.Analysis.created_at <= end)
+          .filter(models.Analysis.source != "WorkbenchSample")  # 샘플 실행은 통계 제외
           .all()
     )
     raw_rows = list(rows)

@@ -4,6 +4,7 @@
 /// </summary>
 import React, { useState, useRef, useEffect, Fragment } from 'react';
 import { requestTrussAnalysis, downloadFileBlob } from '../../api/analysis';
+import SampleRunButton from '../../components/analysis/SampleRunButton';
 import { extractFilename } from '../../utils/fileHelper';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
 import { Dialog, Transition } from '@headlessui/react';
@@ -11,7 +12,7 @@ import {
   ArrowLeft, Upload, Play, Download, Trash2, Database,
   RefreshCw, FileSpreadsheet, Terminal, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Maximize2, X, FileText,
-  FileOutput, XCircle, Clock, Eye, History
+  FileOutput, XCircle, Clock, Eye, History, Sparkles
 } from 'lucide-react';
 import ChangelogModal from '../../components/ui/ChangelogModal';
 
@@ -234,6 +235,34 @@ export default function TrussAnalysis() {
     }
   };
 
+  // 샘플 실행 — 공통 컴포넌트(SampleRunButton)가 호출하는 콜백 묶음.
+  // 사용 기록(activity log) / 통계 / MyProjects 이력에는 남지 않음.
+  const sampleBeforeRun = () => {
+    setIsRunning(true);
+    setProgress(0);
+    setStatusMessage('샘플 파일로 작업 요청 중...');
+    setAnalysisResultData(null);
+    setResultJsonData(null);
+    setIsResultModalOpen(false);
+    setIs3DViewerOpen(false);
+    setLogs([]);
+    setDetailedLogs([]);
+    addLog('Sample run requested — 사내 표준 NODE/WAY CSV 사용', 'info');
+  };
+  const sampleOnJobSubmitted = (jobId) => {
+    addLog(`Sample job submitted. [Job ID: ${jobId}]`, 'info');
+    startJob(jobId);
+  };
+  const sampleOnError = (status, detail) => {
+    if (status === 429) {
+      addLog('Sample run rejected — daily limit reached.', 'warning');
+    } else {
+      addLog('SAMPLE RUN FAILED.', 'error');
+      addDetailedLog(status ? `SERVER ERROR [${status}] ${detail}` : `NETWORK ERROR: ${detail}`);
+    }
+    setIsRunning(false);
+  };
+
   // ==========================================
   // (신규) 다이렉트 엑셀 다운로드 핸들러
   // ==========================================
@@ -364,9 +393,18 @@ export default function TrussAnalysis() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <button 
-              onClick={runAnalysis} 
-              disabled={!canRun} 
+            {/* 샘플 실행 — 입력 파일 없이도 학습용으로 즉시 해석 체험 */}
+            <SampleRunButton
+              appKey="truss"
+              disabled={isRunning}
+              onBeforeRun={sampleBeforeRun}
+              onJobSubmitted={sampleOnJobSubmitted}
+              onError={sampleOnError}
+            />
+
+            <button
+              onClick={runAnalysis}
+              disabled={!canRun}
               className={`relative w-full py-4 rounded-xl text-lg font-bold flex items-center justify-center gap-3 transition-all duration-300 shadow-lg overflow-hidden ${
                 !canRun 
                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' 

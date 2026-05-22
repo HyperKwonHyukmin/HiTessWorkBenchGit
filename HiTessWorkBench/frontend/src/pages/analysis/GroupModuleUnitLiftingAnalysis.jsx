@@ -15,6 +15,7 @@ import { requestGroupModuleUnit, requestGroupModuleUnitFromPath, downloadFileTex
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import { API_BASE_URL } from '../../config';
 import PageBanner from '../../components/ui/PageBanner';
+import SampleRunButton from '../../components/analysis/SampleRunButton';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
 
@@ -646,6 +647,31 @@ export default function GroupModuleUnitLiftingAnalysis() {
     }
   };
 
+  // 샘플 실행 콜백 — SampleRunButton 이 호출. handleValidate 와 동일한 폴링 흐름에 진입.
+  const sampleGmuBefore = () => {
+    setValidating(true);
+    setStepStatus('bdf-validation', 'running');
+    setStep1Data(null);
+    setStep2Data(null);
+    setValidProgress(0);
+    setValidStatusMsg('샘플 파일로 작업 요청 중...');
+  };
+  const sampleGmuSubmitted = (jobId) => {
+    setValidJobId(jobId);
+    startGlobalJob?.(jobId, GMU_MENU_NAME);
+  };
+  const sampleGmuError = (st, detail) => {
+    setValidating(false);
+    setValidJobId(null);
+    if (st === 429) {
+      setStepStatus('bdf-validation', 'wait');
+      setValidStatusMsg('');
+    } else {
+      setStepStatus('bdf-validation', 'error');
+      showToast(`샘플 실행 실패 — ${detail}`, 'error');
+    }
+  };
+
   // ── 해석 실행 ─────────────────────────────────────────────
   // hasRunOnce 는 validation 성공 후에만 true 가 된다(polling.onComplete 의 !hasError 분기).
   // 여기서는 게이트를 풀지 않는다 — 잘못된 BDF 로 다음 단계 진입을 막기 위함.
@@ -824,6 +850,14 @@ export default function GroupModuleUnitLiftingAnalysis() {
                   <ArrowRight size={13} />
                 </button>
               )}
+              {/* 샘플 실행 — 입력 BDF 없이도 학습용으로 즉시 검증 체험 */}
+              <SampleRunButton
+                appKey="groupmoduleunit"
+                disabled={validating || jobStatus?.status === 'Running'}
+                onBeforeRun={sampleGmuBefore}
+                onJobSubmitted={sampleGmuSubmitted}
+                onError={sampleGmuError}
+              />
               <button
                 onClick={handleRun}
                 disabled={validating || jobStatus?.status === 'Running'}

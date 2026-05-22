@@ -8,7 +8,7 @@ import urllib.parse
 import zipfile
 
 logger = logging.getLogger(__name__)
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as _date
 from typing import Optional
 from sqlalchemy import func
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query, Request
@@ -53,6 +53,39 @@ _PROGRAM_DOWNLOAD_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "DownloadProg
 _EXTERNAL_PROGRAM_PATHS = {
     "HiTESSBEAM.zip": r"\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44\[Hi-TESS]\6_DownloadProgram\HiTESSBEAM.zip",
 }
+
+# ──────────────────────────────────────────────────────────
+# 샘플 실행(1-click 데모) 일일 카운터 — 사번별 1회/일.
+# 관리자는 무제한. 자정에 자동 리셋(다음 날짜로 비교).
+# 메모리 dict (서버 재시작 시 리셋). 단일 uvicorn 인스턴스 가정.
+# ──────────────────────────────────────────────────────────
+SAMPLE_DAILY_LIMIT = 1
+SAMPLE_SOURCE_TAG = "WorkbenchSample"  # 일반 사용 기록과 구분하는 source 값
+_SAMPLE_RUN_TRACKER: dict[tuple[str, str], _date] = {}
+
+
+def _check_sample_quota(program_key: str, employee_id: str, db: Session) -> dict:
+    """샘플 실행 한도 체크. 관리자는 무제한 통과.
+
+    Returns: { allowed, remaining, is_admin, reason }
+    """
+    user = db.query(models.User).filter(models.User.employee_id == employee_id).first()
+    is_admin = bool(user and user.is_admin)
+    if is_admin:
+        return {"allowed": True, "remaining": SAMPLE_DAILY_LIMIT, "is_admin": True, "reason": None}
+    today = _date.today()
+    last = _SAMPLE_RUN_TRACKER.get((program_key, employee_id))
+    if last == today:
+        return {
+            "allowed": False, "remaining": 0, "is_admin": False,
+            "reason": "샘플 실행은 일일 1회로 제한됩니다. 자정 이후 다시 시도해주세요.",
+        }
+    return {"allowed": True, "remaining": SAMPLE_DAILY_LIMIT, "is_admin": False, "reason": None}
+
+
+def _consume_sample_quota(program_key: str, employee_id: str) -> None:
+    """샘플 실행 카운트 소비 — 호출 시점을 오늘 날짜로 기록."""
+    _SAMPLE_RUN_TRACKER[(program_key, employee_id)] = _date.today()
 
 
 def _verify_employee_self(form_employee_id: str, current_user: str) -> None:
@@ -154,10 +187,14 @@ def get_analysis_history(
     """
     특정 사용자의 해석 이력을 최신순으로 조회합니다. 페이지네이션 지원.
     """
-    total = db.query(models.Analysis).filter(models.Analysis.employee_id == employee_id).count()
+    # 샘플 실행(WorkbenchSample)은 사용 기록에서 제외 — 신규 사용자 학습용
+    base_q = db.query(models.Analysis).filter(
+        models.Analysis.employee_id == employee_id,
+        models.Analysis.source != SAMPLE_SOURCE_TAG,
+    )
+    total = base_q.count()
     history = (
-        db.query(models.Analysis)
-        .filter(models.Analysis.employee_id == employee_id)
+        base_q
         .order_by(models.Analysis.created_at.desc())
         .offset(skip).limit(limit)
         .all()
@@ -175,9 +212,11 @@ def get_all_analysis_history(
     관리자용 전체 해석 이력을 최신순으로 조회합니다. 페이지네이션 지원.
     상한 le=100000 — 통계 대시보드가 전체 이력을 받아 집계하기 위함.
     """
-    total = db.query(models.Analysis).count()
+    # 샘플 실행(WorkbenchSample)은 통계·전체 이력에서 제외
+    base_q = db.query(models.Analysis).filter(models.Analysis.source != SAMPLE_SOURCE_TAG)
+    total = base_q.count()
     items = (
-        db.query(models.Analysis)
+        base_q
         .order_by(models.Analysis.created_at.desc())
         .offset(skip).limit(limit)
         .all()
@@ -431,6 +470,76 @@ async def request_truss_analysis(
     return {"job_id": job_id}
 
 
+@router.get("/analysis/truss/sample-status")
+def get_truss_sample_status(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    """Truss 샘플 실행 잔여 횟수 조회 — 페이지 진입 시 prefetch 용도."""
+    quota = _check_sample_quota("truss", employee_id, db)
+    return {
+        "remaining": quota["remaining"],
+        "limit": SAMPLE_DAILY_LIMIT,
+        "is_admin": quota["is_admin"],
+    }
+
+
+@router.post("/analysis/truss/run-sample")
+async def run_truss_sample(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    """
+    Truss Model Builder — 사내 표준 샘플 CSV(NODE/WAY)로 즉시 해석 실행.
+    신규 사용자가 실제 입력 파일 없이도 동작과 결과 형식을 확인할 수 있도록 함.
+
+    제한: 사번별 일일 1회 (관리자 무제한). source="WorkbenchSample" 로 기록되어
+    사용 이력 / 통계 / 활동 로그에서 모두 제외됨.
+    """
+    quota = _check_sample_quota("truss", employee_id, db)
+    if not quota["allowed"]:
+        raise HTTPException(status_code=429, detail=quota["reason"])
+
+    sample_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "SampleFile", "TrussModelBuilder"))
+    if not os.path.isdir(sample_dir):
+        raise HTTPException(status_code=404, detail="샘플 폴더가 없습니다.")
+
+    node_src, member_src = None, None
+    for fname in sorted(os.listdir(sample_dir)):
+        if not fname.lower().endswith(".csv"):
+            continue
+        low = fname.lower()
+        if "node" in low and node_src is None:
+            node_src = os.path.join(sample_dir, fname)
+        elif ("way" in low or "member" in low) and member_src is None:
+            member_src = os.path.join(sample_dir, fname)
+    if not node_src or not member_src:
+        raise HTTPException(status_code=404, detail="샘플 CSV(NODE/WAY)를 찾을 수 없습니다.")
+
+    work_dir, timestamp = make_work_dir(employee_id, "TrussModelBuilder")
+    node_path = os.path.join(work_dir, os.path.basename(node_src))
+    member_path = os.path.join(work_dir, os.path.basename(member_src))
+    shutil.copyfile(node_src, node_path)
+    shutil.copyfile(member_src, member_path)
+
+    exe_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "InHouseProgram", "TrussModelBuilder"))
+    exe_path = os.path.join(exe_dir, "TrussModelBuilder.exe")
+
+    job_id = submit_analysis_job(
+        task_execute_truss, node_path, member_path, work_dir, exe_path, exe_dir,
+        employee_id, timestamp, SAMPLE_SOURCE_TAG,
+    )
+    # 관리자가 아니면 카운트 소비 (관리자는 무제한이라 추적하지 않음)
+    if not quota["is_admin"]:
+        _consume_sample_quota("truss", employee_id)
+    return {
+        "job_id": job_id,
+        "source": SAMPLE_SOURCE_TAG,
+        "remaining": SAMPLE_DAILY_LIMIT if quota["is_admin"] else 0,
+        "is_admin": quota["is_admin"],
+    }
+
+
 # ==================== Truss Structural Assessment ====================
 
 @router.post("/analysis/assessment/request")
@@ -450,6 +559,48 @@ async def request_truss_assessment(
         task_execute_assessment, bdf_path, work_dir, employee_id, timestamp, source,
     )
     return {"job_id": job_id}
+
+
+@router.get("/analysis/assessment/sample-status")
+def get_assessment_sample_status(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    quota = _check_sample_quota("assessment", employee_id, db)
+    return {"remaining": quota["remaining"], "limit": SAMPLE_DAILY_LIMIT, "is_admin": quota["is_admin"]}
+
+
+@router.post("/analysis/assessment/run-sample")
+async def run_assessment_sample(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    """Truss Structural Assessment — 사내 표준 샘플 BDF로 즉시 해석 실행."""
+    quota = _check_sample_quota("assessment", employee_id, db)
+    if not quota["allowed"]:
+        raise HTTPException(status_code=429, detail=quota["reason"])
+
+    sample_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "SampleFile", "TrussStructuralAssessment"))
+    if not os.path.isdir(sample_dir):
+        raise HTTPException(status_code=404, detail="샘플 폴더가 없습니다.")
+    bdf_src = next((os.path.join(sample_dir, f) for f in sorted(os.listdir(sample_dir)) if f.lower().endswith(".bdf")), None)
+    if not bdf_src:
+        raise HTTPException(status_code=404, detail="샘플 BDF 파일을 찾을 수 없습니다.")
+
+    work_dir, timestamp = make_work_dir(employee_id, "TrussAssessment")
+    bdf_path = os.path.join(work_dir, os.path.basename(bdf_src))
+    shutil.copyfile(bdf_src, bdf_path)
+
+    job_id = submit_analysis_job(
+        task_execute_assessment, bdf_path, work_dir, employee_id, timestamp, SAMPLE_SOURCE_TAG,
+    )
+    if not quota["is_admin"]:
+        _consume_sample_quota("assessment", employee_id)
+    return {
+        "job_id": job_id, "source": SAMPLE_SOURCE_TAG,
+        "remaining": SAMPLE_DAILY_LIMIT if quota["is_admin"] else 0,
+        "is_admin": quota["is_admin"],
+    }
 
 
 # ==================== BDF Scanner ====================
@@ -533,6 +684,59 @@ async def request_hpscr(
     )
 
     return {"job_id": job_id}
+
+
+@router.get("/analysis/hpscr/sample-status")
+def get_hpscr_sample_status(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    quota = _check_sample_quota("hpscr", employee_id, db)
+    return {"remaining": quota["remaining"], "limit": SAMPLE_DAILY_LIMIT, "is_admin": quota["is_admin"]}
+
+
+@router.post("/analysis/hpscr/run-sample")
+async def run_hpscr_sample(
+        mode: str = Query("PSA", description="PSA | POR — 샘플 실행 모드"),
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    """HP-SCR — 사내 표준 샘플 BDF 로 PSA 또는 POR 즉시 실행.
+    mode 에 따라 SampleFile/HPSCR 내의 *PSA*.bdf / *POR*.bdf 자동 선택.
+    """
+    m = (mode or "").upper()
+    if m not in ("PSA", "POR"):
+        raise HTTPException(status_code=400, detail="mode 는 'PSA' 또는 'POR' 만 허용됩니다.")
+
+    quota = _check_sample_quota("hpscr", employee_id, db)
+    if not quota["allowed"]:
+        raise HTTPException(status_code=429, detail=quota["reason"])
+
+    sample_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "SampleFile", "HPSCR"))
+    if not os.path.isdir(sample_dir):
+        raise HTTPException(status_code=404, detail="샘플 폴더가 없습니다.")
+    bdf_src = next(
+        (os.path.join(sample_dir, f) for f in sorted(os.listdir(sample_dir))
+         if f.lower().endswith(".bdf") and m.lower() in f.lower()),
+        None,
+    )
+    if not bdf_src:
+        raise HTTPException(status_code=404, detail=f"샘플 {m} BDF 파일을 찾을 수 없습니다.")
+
+    work_dir, timestamp = make_work_dir(employee_id, f"HpScr{m}")
+    bdf_path = os.path.join(work_dir, os.path.basename(bdf_src))
+    shutil.copyfile(bdf_src, bdf_path)
+
+    job_id = submit_analysis_job(
+        task_execute_hpscr, bdf_path, work_dir, employee_id, timestamp, SAMPLE_SOURCE_TAG, m,
+    )
+    if not quota["is_admin"]:
+        _consume_sample_quota("hpscr", employee_id)
+    return {
+        "job_id": job_id, "source": SAMPLE_SOURCE_TAG, "mode": m,
+        "remaining": SAMPLE_DAILY_LIMIT if quota["is_admin"] else 0,
+        "is_admin": quota["is_admin"],
+    }
 
 
 # ==================== ModuleUnitStudio 자세안정성 해석 ====================
@@ -694,6 +898,49 @@ async def request_groupmoduleunit(
         bdf_path, work_dir, employee_id, timestamp, source, use_nastran,
     )
     return {"job_id": job_id}
+
+
+@router.get("/analysis/groupmoduleunit/sample-status")
+def get_gmu_sample_status(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    quota = _check_sample_quota("groupmoduleunit", employee_id, db)
+    return {"remaining": quota["remaining"], "limit": SAMPLE_DAILY_LIMIT, "is_admin": quota["is_admin"]}
+
+
+@router.post("/analysis/groupmoduleunit/run-sample")
+async def run_gmu_sample(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    """Group & Module Unit 권상 — 사내 표준 샘플 BDF로 즉시 Step1 검증 실행 (use_nastran=False)."""
+    quota = _check_sample_quota("groupmoduleunit", employee_id, db)
+    if not quota["allowed"]:
+        raise HTTPException(status_code=429, detail=quota["reason"])
+
+    sample_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "SampleFile", "GroupModuleUnit"))
+    if not os.path.isdir(sample_dir):
+        raise HTTPException(status_code=404, detail="샘플 폴더가 없습니다.")
+    bdf_src = next((os.path.join(sample_dir, f) for f in sorted(os.listdir(sample_dir)) if f.lower().endswith(".bdf")), None)
+    if not bdf_src:
+        raise HTTPException(status_code=404, detail="샘플 BDF 파일을 찾을 수 없습니다.")
+
+    work_dir, timestamp = make_work_dir(employee_id, "GroupModuleUnit")
+    bdf_path = os.path.join(work_dir, os.path.basename(bdf_src))
+    shutil.copyfile(bdf_src, bdf_path)
+
+    job_id = submit_analysis_job(
+        task_execute_groupmoduleunit,
+        bdf_path, work_dir, employee_id, timestamp, SAMPLE_SOURCE_TAG, False,  # use_nastran=False
+    )
+    if not quota["is_admin"]:
+        _consume_sample_quota("groupmoduleunit", employee_id)
+    return {
+        "job_id": job_id, "source": SAMPLE_SOURCE_TAG,
+        "remaining": SAMPLE_DAILY_LIMIT if quota["is_admin"] else 0,
+        "is_admin": quota["is_admin"],
+    }
 
 
 @router.post("/analysis/groupmoduleunit/request-from-path")
@@ -906,6 +1153,78 @@ async def request_modelflow_analysis(
     )
 
     return {"job_id": job_id}
+
+
+@router.get("/analysis/modelflow/sample-status")
+def get_modelflow_sample_status(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    quota = _check_sample_quota("modelflow", employee_id, db)
+    return {"remaining": quota["remaining"], "limit": SAMPLE_DAILY_LIMIT, "is_admin": quota["is_admin"]}
+
+
+@router.post("/analysis/modelflow/run-sample")
+async def run_modelflow_sample(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    """HiTESS Model Builder — 사내 표준 샘플 CSV(stru/pipe/equip)로 즉시 build-full 실행.
+    옵션은 기본값(mesh_size=300.0, run_nastran=False)으로 고정 — 빠른 데모 목적.
+    """
+    quota = _check_sample_quota("modelflow", employee_id, db)
+    if not quota["allowed"]:
+        raise HTTPException(status_code=429, detail=quota["reason"])
+
+    sample_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "SampleFile", "ModelBuilder"))
+    if not os.path.isdir(sample_dir):
+        raise HTTPException(status_code=404, detail="샘플 폴더가 없습니다.")
+
+    stru_src, pipe_src, equip_src = None, None, None
+    for fname in sorted(os.listdir(sample_dir)):
+        if not fname.lower().endswith(".csv"):
+            continue
+        low = fname.lower()
+        if "stru" in low and stru_src is None:
+            stru_src = os.path.join(sample_dir, fname)
+        elif "pipe" in low and pipe_src is None:
+            pipe_src = os.path.join(sample_dir, fname)
+        elif ("equip" in low or "equp" in low) and equip_src is None:
+            equip_src = os.path.join(sample_dir, fname)
+    if not stru_src:
+        raise HTTPException(status_code=404, detail="샘플 구조(stru) CSV를 찾을 수 없습니다.")
+
+    work_dir, timestamp = make_work_dir(employee_id, "HiTessModelBuilder")
+    stru_path = os.path.join(work_dir, os.path.basename(stru_src))
+    shutil.copyfile(stru_src, stru_path)
+    pipe_path = None
+    if pipe_src:
+        pipe_path = os.path.join(work_dir, os.path.basename(pipe_src))
+        shutil.copyfile(pipe_src, pipe_path)
+    equip_path = None
+    if equip_src:
+        equip_path = os.path.join(work_dir, os.path.basename(equip_src))
+        shutil.copyfile(equip_src, equip_path)
+
+    exe_path = os.path.abspath(os.path.join(_BACKEND_DIR, "InHouseProgram", "HiTessModeBuilder", "Cmb.Cli.exe"))
+
+    job_id = submit_analysis_job(
+        task_execute_modelflow,
+        stru_path, pipe_path, equip_path, work_dir, exe_path,
+        employee_id, timestamp, SAMPLE_SOURCE_TAG,
+        300.0,   # mesh_size
+        False,   # ubolt_full_fix
+        False,   # run_nastran (빠른 데모)
+        None, None, None, None,
+        queue_message="해석 대기 중...",
+    )
+    if not quota["is_admin"]:
+        _consume_sample_quota("modelflow", employee_id)
+    return {
+        "job_id": job_id, "source": SAMPLE_SOURCE_TAG,
+        "remaining": SAMPLE_DAILY_LIMIT if quota["is_admin"] else 0,
+        "is_admin": quota["is_admin"],
+    }
 
 
 # ==================== apply-edit-intent (Studio 편집 결과 적용) ====================

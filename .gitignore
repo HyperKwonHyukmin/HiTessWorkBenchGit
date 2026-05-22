@@ -3,6 +3,10 @@ TestFiles/
 *.csv
 *.exe
 
+# 사내 샘플 입력 데이터 — 폴더 구조만 git 추적, 실제 파일은 서버에 수동 배치
+HiTessWorkBenchBackEnd/SampleFile/**/*.bdf
+HiTessWorkBenchBackEnd/SampleFile/**/*.dat
+
 # ===== Operating System =====
 .DS_Store
 Thumbs.db

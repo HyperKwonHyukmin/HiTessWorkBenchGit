@@ -13,6 +13,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { API_BASE_URL } from '../../config';
 import { downloadFileBlob } from '../../api/analysis';
 import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
+import SampleRunButton from '../../components/analysis/SampleRunButton';
 import PageBanner from '../../components/ui/PageBanner';
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -2492,6 +2493,39 @@ export default function HiTessModelBuilder() {
     }
   };
 
+  // 샘플 실행 콜백 — SampleRunButton 이 호출. 실제 build-full 흐름과 동일하게 폴링 시스템에 등록.
+  const sampleMfBefore = () => {
+    setHasRunOnce(true);
+    setRunNastranRequested(false);
+    setActiveIdx(0);
+    setBdfResult(null);
+    setElapsedSecs(0);
+    if (elapsedRef.current) clearInterval(elapsedRef.current);
+    elapsedRef.current = setInterval(() => setElapsedSecs(s => s + 1), 1000);
+    setAuditData(null);
+    setSummaryData(null);
+    setEngineLog(null);
+    setSteps(prev => prev.map((s, i) => (i === 0 ? { ...s, status: 'running' } : { ...s, status: 'wait' })));
+    setJobStatus({ status: 'Running', progress: 5, message: '샘플 파일 준비 중...' });
+  };
+  const sampleMfSubmitted = (jobId) => {
+    startPolling(jobId);
+    startGlobalJob(jobId, 'HiTESS Model Builder');
+  };
+  const sampleMfError = (st, detail) => {
+    if (elapsedRef.current) clearInterval(elapsedRef.current);
+    if (st === 429) {
+      // 토스트는 컴포넌트가 표시. 페이지 상태는 idle 로 복귀.
+      setSteps(prev => prev.map((s, i) => (i === 0 ? { ...s, status: 'wait' } : s)));
+      setJobStatus(null);
+      setHasRunOnce(false);
+    } else {
+      setSteps(prev => prev.map((s, i) => (i === 0 ? { ...s, status: 'error' } : s)));
+      setJobStatus({ status: 'Failed', progress: 0, message: `샘플 실행 실패: ${detail}` });
+      setEngineLog(`[샘플 요청 실패]\n오류: ${detail}`);
+    }
+  };
+
   /* ── 폴링 ──────────────────────────────────────────────────────────── */
   const startPolling = (jobId) => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -2963,6 +2997,14 @@ export default function HiTessModelBuilder() {
                   {steps[activeIdx + 1]?.title} 보기
                 </button>
               )}
+              {/* 샘플 실행 — 입력 CSV 없이도 학습용으로 즉시 build-full 체험 */}
+              <SampleRunButton
+                appKey="modelflow"
+                disabled={isRunning || hasRunOnce}
+                onBeforeRun={sampleMfBefore}
+                onJobSubmitted={sampleMfSubmitted}
+                onError={sampleMfError}
+              />
               <button
                 onClick={handleRunModelBuilder}
                 disabled={isRunning || hasRunOnce}

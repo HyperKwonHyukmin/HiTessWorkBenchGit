@@ -22,6 +22,7 @@ import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useAuth } from '../../contexts/AuthContext';
 import PageBanner from '../../components/ui/PageBanner';
 import { buildFormData } from '../../utils/fileHelper';
+import SampleRunButton from '../../components/analysis/SampleRunButton';
 
 export default function TrussAssessment() {
   const { setCurrentMenu } = useNavigation();
@@ -201,6 +202,36 @@ export default function TrussAssessment() {
     }
   };
 
+  // 샘플 실행 콜백 — SampleRunButton 이 호출. 기존 runAnalysis 와 동일한 폴링/결과 흐름.
+  const sampleAssessmentBefore = () => {
+    updateState({
+      isRunning: true, progress: 0,
+      statusMessage: '샘플 파일로 작업 요청 중...',
+      logs: [{ time: new Date().toLocaleTimeString(), message: '[SAMPLE] 사내 표준 BDF로 해석 요청', type: 'info' }],
+      detailedLogs: [], resultJsonData: null, projectData: null,
+    });
+    setIsResultModalOpen(false);
+    lastMsgRef.current = '';
+  };
+  const sampleAssessmentSubmitted = (jobId) => {
+    updateState({
+      currentJobId: jobId,
+      logs: [{ time: new Date().toLocaleTimeString(), message: `[JOB] Sample 작업 등록 완료. (Job ID: ${jobId})`, type: 'success' }],
+    });
+    startGlobalJob(jobId, 'Truss Structural Assessment');
+    setCurrentPollingJobId(jobId);
+  };
+  const sampleAssessmentError = (st, detail) => {
+    if (st === 429) {
+      updateState({ isRunning: false });
+    } else {
+      updateState({
+        isRunning: false,
+        logs: [{ time: new Date().toLocaleTimeString(), message: `샘플 실행 실패: ${detail}`, type: 'error' }],
+      });
+    }
+  };
+
   const downloadDetailedLog = () => {
     if (detailedLogs.length === 0) { showToast('상세 로그가 없습니다.', 'warning'); return; }
     const blob = new Blob([detailedLogs.join('\n')], { type: 'text/plain' });
@@ -284,6 +315,14 @@ export default function TrussAssessment() {
                 <p className="text-[10px] text-slate-300 text-center">해석 완료 후 활성화됩니다.</p>
               </div>
             )}
+            {/* 샘플 실행 — 입력 BDF 없이도 학습용으로 즉시 해석 체험 */}
+            <SampleRunButton
+              appKey="assessment"
+              disabled={isRunning}
+              onBeforeRun={sampleAssessmentBefore}
+              onJobSubmitted={sampleAssessmentSubmitted}
+              onError={sampleAssessmentError}
+            />
             <button onClick={runAnalysis} disabled={!isDataReady || isRunning}
               className={`relative w-full py-4 rounded-xl text-lg font-bold flex items-center justify-center gap-3 transition-all duration-300 shadow-lg overflow-hidden ${!isDataReady ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : isRunning ? 'bg-[#001b3d] text-white cursor-wait' : 'bg-brand-blue hover:bg-brand-blue-dark text-white hover:-translate-y-1 cursor-pointer'}`}>
               {isRunning && <div className="absolute left-0 top-0 bottom-0 bg-blue-600 transition-all duration-500 ease-out opacity-80" style={{ width: `${progress}%` }}></div>}
