@@ -341,6 +341,31 @@ def export_usage_report_xlsx(
     )
 
 
+# ==================== DrawingToAnalysis — PDF 저장 테스트 ====================
+
+@router.post("/analysis/drawing-to-analysis/upload")
+async def drawing_to_analysis_upload(
+    pdf_file: UploadFile = File(...),
+    employee_id: str = Depends(require_auth),
+):
+    """DrawingToAnalysis (개발 중) — PDF 1개를 userConnection 폴더에 저장만 한다.
+
+    변환 로직은 아직 없음. 업로드 동작 검증용 임시 엔드포인트.
+    """
+    fname = pdf_file.filename or ""
+    if not fname.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다.")
+    work_dir, timestamp = make_work_dir(employee_id, "DrawingToAnalysis")
+    saved_path = await save_upload(pdf_file, work_dir, error_prefix="PDF 저장 오류")
+    return {
+        "ok": True,
+        "filename": os.path.basename(saved_path),
+        "saved_path": saved_path,
+        "work_dir": work_dir,
+        "timestamp": timestamp,
+    }
+
+
 # ==================== 단건 조회 ====================
 
 @router.get("/analysis/{analysis_id}")

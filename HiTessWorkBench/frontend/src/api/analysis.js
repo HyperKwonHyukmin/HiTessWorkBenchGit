@@ -42,6 +42,15 @@ export const requestBeamAnalysis = (formData) =>
 export const requestBdfScanner = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/bdfscanner/request`, formData, 'BdfScanner');
 
+/** DrawingToAnalysis — PDF 1개를 userConnection 폴더에 저장 (테스트용, 변환 로직 없음) */
+export const uploadDrawingPdf = (file) => {
+  const fd = new FormData();
+  fd.append('pdf_file', file);
+  return axios.post(`${API_BASE_URL}/api/analysis/drawing-to-analysis/upload`, fd, {
+    headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' },
+  });
+};
+
 /** HP-SCR 배관응력 해석 요청 (PSA / POR) */
 export const requestHpscrAssessment = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/hpscr/request`, formData, 'HpScr');

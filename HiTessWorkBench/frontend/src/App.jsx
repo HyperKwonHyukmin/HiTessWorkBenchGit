@@ -37,6 +37,7 @@ const UsageReports = lazy(() => import('./pages/Administration/UsageReports'));
 const AiAssistantHub = lazy(() => import('./pages/AI/AiAssistantHub'));
 const AcademicApps = lazy(() => import('./pages/analysis/AcademicApps'));
 const BdfScanner = lazy(() => import('./pages/analysis/BdfScanner'));
+const DrawingToAnalysis = lazy(() => import('./pages/analysis/DrawingToAnalysis'));
 const ParametricApps = lazy(() => import('./pages/analysis/ParametricApps'));
 const ProductivityApps = lazy(() => import('./pages/analysis/ProductivityApps'));
 const MastPostAssessment = lazy(() => import('./pages/analysis/MastPostAssessment'));
@@ -291,6 +292,7 @@ function AppInner() {
       case 'HiTESS Model Builder': return <HiTessModelBuilder />;
       case 'Group & Module Unit 권상 구조 해석': return <GroupModuleUnitLiftingAnalysis />;
       case 'HP-SCR 배관응력 해석': return <HpScrAssessment />;
+      case 'DrawingToAnalysis': return <DrawingToAnalysis />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">
