@@ -1,7 +1,7 @@
 import React from 'react';
 import { Layers } from 'lucide-react';
 
-export default function ReportProgramsTable({ programs }) {
+export default function ReportProgramsTable({ programs, footnote }) {
   return (
     <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -38,6 +38,11 @@ export default function ReportProgramsTable({ programs }) {
           </tbody>
         </table>
       </div>
+      {footnote && (
+        <div className="px-5 py-2 text-[11px] text-slate-400 border-t border-slate-100 bg-slate-50/60">
+          {footnote}
+        </div>
+      )}
     </div>
   );
 }

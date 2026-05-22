@@ -1,7 +1,7 @@
 import React from 'react';
 import { Users } from 'lucide-react';
 
-export default function ReportUsersTable({ users }) {
+export default function ReportUsersTable({ users, footnote }) {
   return (
     <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -42,6 +42,11 @@ export default function ReportUsersTable({ users }) {
           </tbody>
         </table>
       </div>
+      {footnote && (
+        <div className="px-5 py-2 text-[11px] text-slate-400 border-t border-slate-100 bg-slate-50/60">
+          {footnote}
+        </div>
+      )}
     </div>
   );
 }

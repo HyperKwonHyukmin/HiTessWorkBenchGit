@@ -9,6 +9,8 @@ import ReportProgramsTable from '../../components/admin/reports/ReportProgramsTa
 import ReportUsersTable from '../../components/admin/reports/ReportUsersTable';
 import ReportDepartmentChart from '../../components/admin/reports/ReportDepartmentChart';
 import ExportXlsxButton from '../../components/admin/reports/ExportXlsxButton';
+import ExportPngButton from '../../components/admin/reports/ExportPngButton';
+import ReportPrintView from '../../components/admin/reports/ReportPrintView';
 
 function defaultDateFor(period) {
   const d = new Date();
@@ -31,6 +33,8 @@ export default function UsageReports() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const abortRef = useRef(null);
+  const reportBodyRef = useRef(null);
+  const printViewRef = useRef(null);
 
   const handlePeriodChange = (p) => {
     setPeriod(p);
@@ -51,7 +55,19 @@ export default function UsageReports() {
       })
       .catch(err => {
         if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') return;
-        setError(err?.response?.data?.detail || err?.message || '리포트를 불러올 수 없습니다.');
+        const detail = err?.response?.data?.detail;
+        let msg;
+        if (typeof detail === 'string') {
+          msg = detail;
+        } else if (Array.isArray(detail)) {
+          msg = detail.map(d => (d && typeof d === 'object' ? (d.msg || JSON.stringify(d)) : String(d))).join(' · ');
+        } else if (detail && typeof detail === 'object') {
+          msg = detail.msg || JSON.stringify(detail);
+        } else {
+          msg = err?.message || '리포트를 불러올 수 없습니다.';
+        }
+        const status = err?.response?.status;
+        setError(status ? `[${status}] ${msg}` : msg);
         setLoading(false);
       });
 
@@ -75,7 +91,16 @@ export default function UsageReports() {
             />
           )}
         </div>
-        <ExportXlsxButton period={period} date={date} disabled={loading || !!error || isEmpty} />
+        <div className="flex items-center gap-2">
+          <ExportPngButton
+            targetRef={printViewRef}
+            period={period}
+            date={date}
+            label={data?.period?.label}
+            disabled={loading || !!error || isEmpty}
+          />
+          <ExportXlsxButton period={period} date={date} disabled={loading || !!error || isEmpty} />
+        </div>
       </div>
 
       {loading ? (
@@ -92,7 +117,7 @@ export default function UsageReports() {
           {data.period.label} 기간에 해석 기록이 없습니다.
         </div>
       ) : data && (
-        <div className="space-y-6">
+        <div ref={reportBodyRef} className="space-y-6">
           <ReportKpiGrid summary={data.summary} deltas={data.deltas} />
           <PeriodTimeChart timeBuckets={data.timeBuckets} />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -100,6 +125,22 @@ export default function UsageReports() {
             <ReportUsersTable users={data.users} />
           </div>
           <ReportDepartmentChart departments={data.departments} />
+        </div>
+      )}
+
+      {/* PNG 캡처 전용 off-screen print view */}
+      {data && !isEmpty && !error && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            left: '-99999px',
+            top: 0,
+            pointerEvents: 'none',
+            zIndex: -1,
+          }}
+        >
+          <ReportPrintView ref={printViewRef} data={data} period={period} />
         </div>
       )}
     </div>
