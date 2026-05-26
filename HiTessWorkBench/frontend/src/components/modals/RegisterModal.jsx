@@ -23,10 +23,10 @@ const BASE_DEPARTMENTS = [
   '운항관제부',
 ].sort();
 
-const BASE_COMPANIES = ['HD 현대중공업', 'HD 현대삼호', 'HD 한국조선해양', 'HD 현대미포'];
+const BASE_COMPANIES = ['HD 현대중공업', 'HD 현대삼호', 'HD 한국조선해양'];
 const BASE_POSITIONS = ['책임연구원', '책임엔지니어', '선임연구원', '선임엔지니어', '연구원', '엔지니어'];
 
-// 직접 입력은 최상단에 고정 — 단, 회사는 HD 계열사 4개로 고정하므로 제외
+// 직접 입력은 최상단에 고정 — 단, 회사는 HD 계열사 3개로 고정하므로 제외
 const COMPANY_OPTIONS    = BASE_COMPANIES;
 const DEPARTMENT_OPTIONS = [CUSTOM_LABEL, ...BASE_DEPARTMENTS];
 const POSITION_OPTIONS   = [CUSTOM_LABEL, ...BASE_POSITIONS];

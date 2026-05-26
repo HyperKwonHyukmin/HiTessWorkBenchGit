@@ -495,7 +495,7 @@ const RoadmapModal = ({ isOpen, onClose }) => {
                             {modeInfo.label}
                           </span>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-white text-slate-500 border-slate-200">
-                            {categoryCount}개 영역
+                            앱 {apps.length}개 · 카테고리 {categoryCount}
                           </span>
                         </div>
                       </div>

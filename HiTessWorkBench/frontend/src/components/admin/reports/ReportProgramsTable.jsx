@@ -3,7 +3,7 @@ import { Layers } from 'lucide-react';
 
 export default function ReportProgramsTable({ programs, footnote }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden min-w-0">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
         <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
           <Layers size={16} className="text-blue-600" /> 프로그램별 사용 통계
