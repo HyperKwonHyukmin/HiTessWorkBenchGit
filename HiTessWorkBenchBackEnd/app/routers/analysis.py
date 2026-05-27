@@ -36,6 +36,7 @@ from ..services.hitess_modelflow_service import (
 )
 from ..services.f06parser_service import task_execute_f06parser
 from ..services.plate_structure_service import task_execute_plate_structure
+from ..services.mooring_fitting_service import task_execute_mooring_fitting
 from ._intake import make_work_dir, save_upload, submit_analysis_job
 
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -1075,6 +1076,47 @@ async def request_f06parser(
     f06_path = await save_upload(f06_file, work_dir, error_prefix="파일 저장 오류")
     job_id = submit_analysis_job(
         task_execute_f06parser, f06_path, work_dir, employee_id, timestamp, source,
+    )
+    return {"job_id": job_id}
+
+
+# ==================== Mooring Fitting Assessment ====================
+
+@router.post("/analysis/mooring-fitting/request")
+async def request_mooring_fitting(
+        structure_file: UploadFile = File(...),
+        load_file: UploadFile = File(...),
+        employee_id: str = Form(...),
+        source: str = Form("Workbench"),
+        current_user: str = Depends(require_auth)
+):
+    """
+    Mooring Fitting Assessment 해석 요청.
+    Structure CSV 와 Load CSV 를 userConnection 작업 폴더에 표준 파일명
+    (MooringFittingData.csv, MooringFittingDataLoad.csv) 으로 저장한 뒤
+    MooringFitting.exe build-full <work_dir> 를 백그라운드로 실행한다.
+    """
+    _verify_employee_self(employee_id, current_user)
+    work_dir, timestamp = make_work_dir(employee_id, "MooringFitting")
+    structure_path = await save_upload(
+        structure_file, work_dir,
+        error_prefix="Structure CSV 저장 오류",
+        dest_name="MooringFittingData.csv",
+    )
+    load_path = await save_upload(
+        load_file, work_dir,
+        error_prefix="Load CSV 저장 오류",
+        dest_name="MooringFittingDataLoad.csv",
+    )
+
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "MooringFitting", "MooringFitting.exe"
+    ))
+
+    job_id = submit_analysis_job(
+        task_execute_mooring_fitting,
+        structure_path, load_path, work_dir, exe_path,
+        employee_id, timestamp, source,
     )
     return {"job_id": job_id}
 
