@@ -37,6 +37,17 @@ export default function MooringFittingAssessment() {
   const { startGlobalJob } = useDashboard();
   const { setCurrentMenu } = useNavigation();
 
+  // 파일명 휴리스틱 — 'Load' 포함 → Load CSV, 그 외 → Structure CSV.
+  // 어느 dropzone에 떨어뜨리든, 한꺼번에 여러 파일을 드롭해도 자동 분류한다.
+  const classifyAndAssign = (file) => {
+    if (!file) return;
+    if (/load/i.test(file.name)) {
+      setLoadFile(file);
+    } else {
+      setStructureFile(file);
+    }
+  };
+
   // 진행 폴링 — 1.5초 간격
   useEffect(() => {
     if (!jobId) return;
@@ -140,17 +151,18 @@ export default function MooringFittingAssessment() {
                 hint="MooringFittingData.csv 형식 (MF/PLATE/BRACKET/ANGLE/FLATBAR/TBAR)"
                 file={structureFile}
                 disabled={isRunning}
-                onChange={setStructureFile}
+                onFiles={(files) => files.forEach(classifyAndAssign)}
               />
               <UploadDropzone
                 title="Load CSV"
                 hint="MooringFittingDataLoad.csv 형식 (LOADCASE 행)"
                 file={loadFile}
                 disabled={isRunning}
-                onChange={setLoadFile}
+                onFiles={(files) => files.forEach(classifyAndAssign)}
               />
-              <p className="text-[10px] text-slate-400 text-center">
-                업로드 파일명은 무관 — 서버에서 표준 파일명으로 자동 저장됩니다.
+              <p className="text-[10px] text-slate-400 text-center leading-relaxed">
+                파일명에 <span className="font-bold text-slate-500">Load</span> 가 포함되면 Load CSV, 나머지는 Structure CSV 로 자동 분류됩니다.
+                <br />업로드 파일명은 무관 — 서버에서 표준명으로 저장됩니다.
               </p>
             </div>
           </div>
@@ -378,15 +390,21 @@ export default function MooringFittingAssessment() {
 // Helper Components
 // ==========================================
 
-function UploadDropzone({ title, hint, file, onChange, disabled }) {
+function UploadDropzone({ title, hint, file, onFiles, disabled }) {
   const inputRef = useRef(null);
   const isUploaded = !!file;
 
   const handleDrop = (e) => {
     e.preventDefault();
     if (disabled) return;
-    const dropped = Array.from(e.dataTransfer.files).find(f => f.name.endsWith('.csv'));
-    if (dropped) onChange(dropped);
+    const csvFiles = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.csv'));
+    if (csvFiles.length > 0) onFiles(csvFiles);
+  };
+
+  const handlePick = (e) => {
+    const picked = Array.from(e.target.files || []);
+    if (picked.length > 0) onFiles(picked);
+    e.target.value = '';
   };
 
   return (
@@ -404,8 +422,9 @@ function UploadDropzone({ title, hint, file, onChange, disabled }) {
         ref={inputRef}
         type="file"
         accept=".csv"
+        multiple
         className="hidden"
-        onChange={(e) => onChange(e.target.files?.[0] || null)}
+        onChange={handlePick}
         disabled={disabled}
       />
       <div className="flex items-center gap-4">
