@@ -46,6 +46,8 @@ export default function NewAnalysis() {
       setCurrentMenu('HP-SCR 배관응력 해석');
     } else if (categoryTitle === "DrawingToAnalysis") {
       setCurrentMenu('DrawingToAnalysis');
+    } else if (categoryTitle === "Mooring Fitting Assessment") {
+      setCurrentMenu('Mooring Fitting Assessment');
     } else {
       showToast(`${categoryTitle} 기능은 현재 준비 중입니다.`, 'info');
     }
