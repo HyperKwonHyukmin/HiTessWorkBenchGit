@@ -30,3 +30,17 @@ def test_save_upload_forces_filename_when_dest_name_given(tmp_path):
     assert os.path.exists(saved)
     # 원본 파일명 파일은 존재하지 않아야 한다
     assert not os.path.exists(os.path.join(str(tmp_path), "Vessel_X.csv"))
+    with open(saved, "rb") as f:
+        assert f.read() == b"a,b,c\n"
+
+
+def test_save_upload_strips_path_components_from_dest_name(tmp_path):
+    """dest_name 에 경로 구분자가 포함돼도 work_dir 바깥으로 빠지지 않아야 한다."""
+    upload = _make_upload("Vessel_X.csv", b"x,y,z\n")
+    saved = asyncio.run(save_upload(upload, str(tmp_path), dest_name="../escape.csv"))
+    # basename 적용으로 work_dir 안 'escape.csv' 로 저장되어야 한다
+    assert os.path.basename(saved) == "escape.csv"
+    assert os.path.exists(saved)
+    # 부모 디렉터리로 탈출하지 않았는지 확인
+    parent = os.path.dirname(str(tmp_path))
+    assert not os.path.exists(os.path.join(parent, "escape.csv"))

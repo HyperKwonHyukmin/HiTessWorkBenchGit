@@ -57,7 +57,7 @@ async def save_upload(
     실패 시 기존 라우터와 동일한 메시지로 HTTP 500을 발생시킵니다.
     error_prefix를 통해 라우터별 한글 메시지("파일 저장 오류" 등)도 유지할 수 있습니다.
     """
-    fname = dest_name if dest_name else os.path.basename(upload.filename)
+    fname = os.path.basename(dest_name) if dest_name is not None else os.path.basename(upload.filename)
     dest_path = os.path.join(work_dir, fname)
     try:
         with open(dest_path, "wb") as buffer:
