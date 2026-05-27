@@ -8,7 +8,6 @@ executor 의 실제 task 실행은 mock 으로 차단하고 다음만 검증:
 """
 import io
 import os
-from unittest.mock import patch
 
 import pytest
 
@@ -37,8 +36,10 @@ def auth_client(db_session):
     db_session.add(user)
     db_session.commit()
 
-    yield TestClient(app)
-    app.dependency_overrides.clear()
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_request_saves_csvs_with_standard_filenames(auth_client, tmp_path, monkeypatch):
@@ -87,6 +88,8 @@ def test_request_rejects_mismatched_employee_id(auth_client, monkeypatch):
     monkeypatch.setattr(
         "app.services.job_manager.analysis_executor.submit", lambda *a, **k: None
     )
+    # File(...) 은 필수 필드 — 파일 없이 보내면 422 가 먼저 발생하므로
+    # 403 검증을 위해 의도적으로 최소 파일을 첨부한다.
     files = {
         "structure_file": ("a.csv", b"x\n", "text/csv"),
         "load_file":      ("b.csv", b"y\n", "text/csv"),
