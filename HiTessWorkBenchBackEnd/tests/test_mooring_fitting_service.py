@@ -59,7 +59,14 @@ def test_collect_artifacts_full_case(tmp_path):
     assert result["report_winch_csv"].endswith("Report_LoadCalculation_Winch.csv")
     # 보조 — stage_jsons 는 8개 STAGE_NN_*.json (verification 제외, raw/initial 별도)
     assert len(result["stage_jsons"]) == 8
-    assert all(p.endswith(".json") and ".verification." not in p for p in result["stage_jsons"])
+    assert all(
+        p.endswith(".json")
+        and ".verification." not in p
+        and not p.endswith(".raw.json")
+        and not p.endswith(".initial.json")
+        and not p.endswith(".validation.json")
+        for p in result["stage_jsons"]
+    )
     assert len(result["stage_bdfs"]) == 8
     assert len(result["stage_verifications"]) == 8
     assert result["raw_json"].endswith("STAGE_00.raw.json")
