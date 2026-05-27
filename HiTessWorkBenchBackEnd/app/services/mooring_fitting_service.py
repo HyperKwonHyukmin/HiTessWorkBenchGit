@@ -4,7 +4,6 @@ import os
 import subprocess
 
 from .analysis_runner import (
-    get_backend_dir,
     mark_complete,
     mark_running,
     record_analysis,
@@ -107,7 +106,7 @@ def task_execute_mooring_fitting(
         if not os.path.exists(exe_path):
             raise FileNotFoundError(f"실행 파일을 찾을 수 없습니다: {exe_path}")
 
-        update_progress(job_id, 30, "BDF 파이프라인 실행 중...")
+        update_progress(job_id, 30, "MooringFitting 파이프라인 실행 중...")
         logger.info("[MooringFitting] exe=%s, work_dir=%s", exe_path, work_dir)
 
         result = subprocess.run(
@@ -137,6 +136,7 @@ def task_execute_mooring_fitting(
         engine_output = f"MooringFitting 실행 시간이 초과되었습니다 ({TIMEOUT_SECONDS // 60}분)."
     except FileNotFoundError as e:
         status_msg = "Failed"
+        logger.error("[MooringFitting] exe not found: %s", str(e))
         engine_output = str(e)
     except Exception as e:
         status_msg = "Failed"
