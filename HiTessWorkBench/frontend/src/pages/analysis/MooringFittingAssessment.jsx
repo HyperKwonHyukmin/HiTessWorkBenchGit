@@ -1,3 +1,5 @@
+// NOTE: 다운로드 링크는 <a download> 방식 사용. 다른 페이지처럼 axios+getAuthHeaders 패턴으로
+// 통합하는 리팩터링은 Phase 2 useAnalysisJob 훅 도입과 함께 처리 예정.
 import React, { useState, useEffect, useRef } from 'react';
 import {
   UploadCloud, FileText, Download, ChevronDown, ChevronUp,
@@ -48,7 +50,12 @@ export default function MooringFittingAssessment() {
       showToast('Structure CSV와 Load CSV를 모두 선택하세요', 'error');
       return;
     }
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    let user = {};
+    try {
+      user = JSON.parse(localStorage.getItem('user') || '{}');
+    } catch {
+      // localStorage 손상 시 빈 객체로 폴백 — 아래 employee_id 체크에서 잡힘
+    }
     if (!user?.employee_id) {
       showToast('로그인 정보가 없습니다.', 'error');
       return;
@@ -75,7 +82,7 @@ export default function MooringFittingAssessment() {
     }
   };
 
-  const isRunning = jobStatus && jobStatus.status !== 'Success' && jobStatus.status !== 'Failed';
+  const isRunning = jobStatus && (jobStatus.status === 'Pending' || jobStatus.status === 'Running');
   const isSuccess = jobStatus?.status === 'Success';
   const isFailed = jobStatus?.status === 'Failed';
   const result = jobStatus?.project?.result_info;
@@ -160,7 +167,7 @@ export default function MooringFittingAssessment() {
             <details className="text-xs text-gray-700">
               <summary className="cursor-pointer">실행 로그</summary>
               <pre className="whitespace-pre-wrap mt-2 p-2 bg-white border rounded max-h-60 overflow-auto">
-                {jobStatus.engine_log}
+                {jobStatus.engine_log || '(로그 없음)'}
               </pre>
             </details>
           </div>
@@ -241,6 +248,7 @@ function ResultPanel({ result, showAll, setShowAll }) {
                   href={`${API_BASE_URL}${DOWNLOAD_ENDPOINT(path)}`}
                   target="_blank"
                   rel="noreferrer"
+                  download={path.split(/[\\/]/).pop()}
                   className="text-blue-600 hover:underline flex items-center gap-1 shrink-0 ml-2"
                 >
                   <Download size={14} />다운로드
@@ -287,6 +295,7 @@ function ArtifactList({ title, paths }) {
               href={`${API_BASE_URL}${DOWNLOAD_ENDPOINT(p)}`}
               target="_blank"
               rel="noreferrer"
+              download={p.split(/[\\/]/).pop()}
               className="text-blue-600 hover:underline flex items-center gap-1 shrink-0 ml-2"
             >
               <Download size={12} />다운로드
