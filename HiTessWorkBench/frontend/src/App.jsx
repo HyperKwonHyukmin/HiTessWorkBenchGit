@@ -55,6 +55,7 @@ const HiTessModelBuilder = lazy(() => import('./pages/analysis/HiTessModelBuilde
 const GroupModuleUnitLiftingAnalysis = lazy(() => import('./pages/analysis/GroupModuleUnitLiftingAnalysis'));
 const F06ParserPage = lazy(() => import('./pages/analysis/F06ParserPage'));
 const HpScrAssessment = lazy(() => import('./pages/analysis/HpScrAssessment'));
+const MooringFittingAssessment = lazy(() => import('./pages/analysis/MooringFittingAssessment'));
 
 const PageFallback = () => (
   <div className="h-full min-h-[360px] flex items-center justify-center text-slate-400 text-sm">
@@ -254,6 +255,7 @@ function AppInner() {
       case 'File-Based Apps': return <NewAnalysis />;
       case 'Truss Analysis': return <TrussAnalysis />;
       case 'Truss Structural Assessment': return <TrussAssessment />;
+      case 'Mooring Fitting Assessment': return <MooringFittingAssessment />;
       case 'Interactive Apps': return <InteractiveApps />;
       case 'Parametric Apps': return <ParametricApps />;
       case 'Academic Apps': return <AcademicApps />;
