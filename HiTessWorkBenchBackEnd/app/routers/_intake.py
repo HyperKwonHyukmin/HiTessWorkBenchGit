@@ -46,14 +46,19 @@ async def save_upload(
     upload: UploadFile,
     work_dir: str,
     error_prefix: str = "File save error",
+    dest_name: str | None = None,
 ) -> str:
     """
     단일 UploadFile을 work_dir에 저장하고 절대 경로를 반환합니다.
 
+    dest_name 이 주어지면 사용자 업로드 파일명을 무시하고 그 이름으로 저장합니다.
+    None(기본) 이면 기존 동작 — 업로드 파일명을 그대로 사용.
+
     실패 시 기존 라우터와 동일한 메시지로 HTTP 500을 발생시킵니다.
     error_prefix를 통해 라우터별 한글 메시지("파일 저장 오류" 등)도 유지할 수 있습니다.
     """
-    dest_path = os.path.join(work_dir, os.path.basename(upload.filename))
+    fname = dest_name if dest_name else os.path.basename(upload.filename)
+    dest_path = os.path.join(work_dir, fname)
     try:
         with open(dest_path, "wb") as buffer:
             buffer.write(await upload.read())
