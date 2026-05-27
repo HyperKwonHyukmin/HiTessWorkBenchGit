@@ -126,7 +126,7 @@ const CandidateTable = ({ result, selectedRank, setSelectedRank, on2danSelect })
               <th className="px-4 py-3 font-bold text-center">OD (mm)</th>
               <th className="px-4 py-3 font-bold text-center">T (mm)</th>
               <th className="px-4 py-3 font-bold text-right">σ_eq (MPa)</th>
-              <th className="px-4 py-3 font-bold text-center text-slate-300">/ 200</th>
+              <th className="px-4 py-3 font-bold text-center text-slate-300">/ 188</th>
               <th className="px-4 py-3 font-bold text-right">δ (mm)</th>
               <th className="px-4 py-3 font-bold text-center">/ 허용</th>
               <th className="px-4 py-3 font-bold text-center">응력</th>
@@ -157,7 +157,7 @@ const CandidateTable = ({ result, selectedRank, setSelectedRank, on2danSelect })
                     <td className="px-4 py-3 text-center font-bold text-slate-700">{c.outerDiameter}</td>
                     <td className="px-4 py-3 text-center text-slate-600">{c.thickness}</td>
                     <td className="px-4 py-3 text-right font-bold text-slate-700">{fmt(c.maxEquivalentStress, 1)}</td>
-                    <td className="px-4 py-3 text-center text-slate-300 text-xs">/ 200</td>
+                    <td className="px-4 py-3 text-center text-slate-300 text-xs">/ 188</td>
                     {/* displacement = 실제 δ, maxDisplacement = 허용 */}
                     <td className="px-4 py-3 text-right font-bold text-slate-700">{fmt(c.displacement, 1)}</td>
                     <td className="px-4 py-3 text-center text-slate-500 text-xs">/ {fmt(c.maxDisplacement, 1)}</td>
@@ -297,7 +297,7 @@ export default function JibRestAssessment() {
                 <TableProperties size={18} className="text-emerald-300" />
                 Jib Rest Assessment
               </h1>
-              <p className="text-sm text-emerald-200/80 mt-0.5">Jib Rest 구조물의 1단/2단 파이프 설계 후보를 LR Rule 기준으로 산출합니다.</p>
+              <p className="text-sm text-emerald-200/80 mt-0.5">Jib Rest 구조물의 1단/2단 파이프 설계 후보를 LR Rule 하중 기반으로 산출합니다.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -430,8 +430,8 @@ export default function JibRestAssessment() {
                   ['단면 2차 모멘트', 'I = π/64 × (D⁴ − d⁴)', 'mm⁴'],
                   ['단면계수', 'Z = I / (D/2)', 'mm³'],
                   ['처짐', 'δ = Fh × L³ / (3EI)', 'mm'],
-                  ['허용 처짐 (1단)', 'δ ≤ H1 / 125', '—'],
-                  ['허용 처짐 (2단)', 'δ ≤ H2 / 125', '—'],
+                  ['허용 처짐 (1단)', 'δ ≤ H1 / 125', 'mm'],
+                  ['허용 처짐 (2단)', 'δ ≤ H2 / 125', 'mm'],
                 ].map(([name, expr, unit]) => (
                   <div key={name} className="bg-slate-50 rounded-lg px-3 py-2">
                     <p className="text-[10px] text-slate-400 font-bold">{name}</p>

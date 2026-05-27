@@ -139,7 +139,7 @@ export default function MastPostAssessment() {
                 <TableProperties size={18} className="text-emerald-300" />
                 Mast Post Assessment
               </h1>
-              <p className="text-sm text-emerald-200/80 mt-0.5">Post 높이와 플랫폼 하중을 입력하여 LR Rule 기준 최적 파이프 후보를 산출합니다.</p>
+              <p className="text-sm text-emerald-200/80 mt-0.5">Post 높이와 플랫폼 하중을 입력하여 Post 직경과 두께를 산출합니다.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -190,11 +190,11 @@ export default function MastPostAssessment() {
                   ['굽힘 응력', 'σ_b = M / Z', 'MPa'],
                   ['축 응력', 'σ_a = F_V / A', 'MPa'],
                   ['등가 응력', 'σ_eq = σ_b + σ_a', 'MPa'],
-                  ['허용 조건', 'σ_eq ≤ 188 MPa', '—'],
+                  ['허용 조건', 'σ_eq ≤ 188 MPa', ''],
                 ].map(([name, expr, unit]) => (
                   <div key={name} className="bg-slate-50 rounded-lg px-3 py-2">
                     <p className="text-[10px] text-slate-400 font-bold">{name}</p>
-                    <p className="font-mono text-slate-700 font-bold text-xs mt-0.5">{expr} <span className="text-slate-400 font-normal">[{unit}]</span></p>
+                    <p className="font-mono text-slate-700 font-bold text-xs mt-0.5">{expr}{unit && <span className="text-slate-400 font-normal"> [{unit}]</span>}</p>
                   </div>
                 ))}
               </div>
@@ -209,7 +209,7 @@ export default function MastPostAssessment() {
                   ['단면 2차 모멘트', 'I = π/64 × (D⁴ − d⁴)', 'mm⁴'],
                   ['단면계수', 'Z = I / (D/2)', 'mm³'],
                   ['처짐', 'δ = F_H × L³ / (3EI)', 'mm'],
-                  ['허용 조건', 'δ ≤ H₁ / 125', '—'],
+                  ['허용 조건', 'δ ≤ H1 / 125', 'mm'],
                 ].map(([name, expr, unit]) => (
                   <div key={name} className="bg-slate-50 rounded-lg px-3 py-2">
                     <p className="text-[10px] text-slate-400 font-bold">{name}</p>
@@ -273,11 +273,7 @@ export default function MastPostAssessment() {
                 {[
                   ['탄성계수', 'E = 206,000 MPa (강재)'],
                   ['허용 등가 응력', '188 MPa'],
-                  ['허용 처짐', 'H₁ / 125'],
-                  ['풍속 기준', 'vs = 63 m/s (LR Rule)'],
-                  ['횡경사', '30°'],
-                  ['브래킷 높이', 'ROUNDUP(H/350, 0) × 50 mm'],
-                  ['유효 하중 높이', 'L = H₁ − BH/5'],
+                  ['허용 처짐', 'H1 / 125'],
                 ].map(([k, v]) => (
                   <div key={k} className="flex justify-between gap-2">
                     <span className="text-slate-400 font-medium shrink-0">{k}</span>
