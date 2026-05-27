@@ -1,0 +1,40 @@
+{
+  "geometry": {
+    "L": 2000,
+    "B": 1000,
+    "D": 500,
+    "plate": {
+      "tp": 10,
+      "tcorr": 1
+    },
+    "topOpen": "closed",
+    "stiffeners": {
+      "L": { "type": "uniform", "countMode": "count",    "value": 3,   "customDistances": [500] },
+      "B": { "type": "uniform", "countMode": "interval", "value": 500, "customDistances": [500] },
+      "D": { "type": "uniform", "countMode": "count",    "value": 2,   "customDistances": [250] },
+      "section": {
+        "type": "Flat",
+        "A": 75,
+        "B": 9,
+        "C": null,
+        "D": null,
+        "side": "Outside"
+      }
+    }
+  },
+  "boundaryLoad": {
+    "airVentHeight": 2500,
+    "acceleration": {
+      "x": 0.3,
+      "y": 0.8,
+      "z": 0.6
+    },
+    "bcMode": "auto",
+    "bcNodes": [
+      { "x": 0,    "y": 0,    "z": 0 },
+      { "x": 2000, "y": 0,    "z": 0 },
+      { "x": 2000, "y": 1000, "z": 0 },
+      { "x": 0,    "y": 1000, "z": 0 }
+    ]
+  }
+}
