@@ -1,3 +1,4 @@
 - [CsvAuditPanel 리디자인](project_audit_panel.md) — v2 Hero-first 리디자인 완료, 사용자 피드백(텍스트 너무 작음·직관성 부족) 반영
 - [StageSummaryPanel 리디자인](project_stage_summary.md) — Hero+StageTrack+접힘토글, table-fixed로 폭 넘침 완전 해결
 - [IndependentTankAssessment 리디자인](project_independent_tank.md) — 3-zone 골조·뷰어 동결 유지, 입력폼·카드·오버레이 전면 개선
+- [MooringFittingAssessment 리디자인](project_mooring_fitting.md) — TrussAnalysis 패턴 통일, 8단계 파이프라인 시각화·핵심산출물 카드 추가
