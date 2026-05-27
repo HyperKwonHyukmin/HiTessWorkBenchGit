@@ -71,10 +71,25 @@ def _candidate_dirs() -> list[str]:
     return out
 
 
-def _find_zip(viewer_id: str) -> str | None:
-    """viewer_id 로 시작하는 zip 파일 중 가장 최신 버전을 반환한다.
+def _is_valid_zip_with_manifest(zip_path: str) -> bool:
+    """zip 이 정상이고 루트에 manifest.json 이 있는지 검사.
 
-    여러 후보 디렉터리를 순서대로 탐색하여 첫 매칭을 사용한다.
+    UNC 업로드 중 DRM/네트워크로 변조되어 EOCD 가 깨진 zip 을 거르기 위해 사용.
+    True 인 zip 만 _find_zip() 의 fallback 후보로 채택한다.
+    """
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            return "manifest.json" in zf.namelist()
+    except (zipfile.BadZipFile, OSError):
+        return False
+
+
+def _find_zip(viewer_id: str) -> str | None:
+    """viewer_id 로 시작하는 zip 파일 중 가장 최신 *정상* 버전을 반환한다.
+
+    여러 후보 디렉터리를 순서대로 탐색하며, 각 디렉터리 내에서는
+    버전 내림차순으로 zip 무결성을 검사해 첫 정상 zip 을 반환한다.
+    최상위 버전이 손상된 경우(EOCD 깨짐 등) 자동으로 다음 버전으로 폴백한다.
     """
     for d in _candidate_dirs():
         if not os.path.isdir(d):
@@ -93,7 +108,13 @@ def _find_zip(viewer_id: str) -> str | None:
         # 버전 숫자 자연 정렬 (lex 정렬 시 0.0.9 > 0.0.11 로 잘못 비교되는 문제 회피).
         # 파일명에서 정수 시퀀스를 모두 추출해 튜플 비교 — semver 0.0.x 부터 1.2.3 까지 일관 동작.
         candidates.sort(key=_version_key, reverse=True)
-        return os.path.join(d, candidates[0])
+        for name in candidates:
+            full = os.path.join(d, name)
+            if _is_valid_zip_with_manifest(full):
+                return full
+            logger.warning(
+                "[viewers] zip 무결성 실패, 다음 버전으로 폴백 — %s", full
+            )
     return None
 
 
@@ -103,7 +124,10 @@ def _version_key(filename: str) -> tuple[int, ...]:
 
 
 def _diagnostic_search(viewer_id: str) -> list[dict]:
-    """404 응답에 포함될 진단 정보 — 어느 후보가 어떻게 실패했는지 기록."""
+    """404 응답에 포함될 진단 정보 — 어느 후보가 어떻게 실패했는지 기록.
+
+    각 matching zip 의 유효성(valid)을 함께 보고해 손상 zip 을 즉시 식별할 수 있게 한다.
+    """
     diags: list[dict] = []
     for d in _candidate_dirs():
         info: dict = {"dir": d, "exists": os.path.isdir(d)}
@@ -111,9 +135,16 @@ def _diagnostic_search(viewer_id: str) -> list[dict]:
             try:
                 files = os.listdir(d)
                 info["fileCount"] = len(files)
-                info["matchingZips"] = [
+                matching = [
                     f for f in files
                     if f.startswith(viewer_id) and f.lower().endswith(".zip")
+                ]
+                info["matchingZips"] = [
+                    {
+                        "name": name,
+                        "valid": _is_valid_zip_with_manifest(os.path.join(d, name)),
+                    }
+                    for name in matching
                 ]
             except OSError as e:
                 info["error"] = str(e)
