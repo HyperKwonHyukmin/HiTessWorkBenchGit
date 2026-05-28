@@ -39,6 +39,8 @@ async def csv_to_bdf(
     files = file
     if not employee_id:
         raise HTTPException(status_code=400, detail="employee_id is required")
+    if employee_id.lower() in ("false", "null", "none"):
+        employee_id = "undefined"
 
     # ── 작업 폴더 생성 ──────────────────────────────────────────
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -218,6 +220,8 @@ async def module_unit(
         employee_id = userID.strip()
         if not employee_id:
             raise HTTPException(status_code=400, detail="userID is required")
+        if employee_id.lower() in ("false", "null", "none"):
+            employee_id = "undefined"
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         user_folder = os.path.abspath(os.path.join(
