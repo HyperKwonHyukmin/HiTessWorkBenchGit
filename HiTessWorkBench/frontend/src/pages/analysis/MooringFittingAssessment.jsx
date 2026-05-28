@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft, Upload, CheckCircle2, AlertCircle, Download,
-  ChevronDown, Loader2, RefreshCw, Database,
+  ChevronDown, Loader2, RefreshCw,
   FileSpreadsheet, AlertTriangle, ChevronsRight, RotateCcw,
+  ExternalLink, HardDrive, PackageX, ShieldCheck,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useDashboard } from '../../contexts/DashboardContext';
@@ -21,9 +22,9 @@ const DOWNLOAD_ENDPOINT = (path) => `/api/download?filepath=${encodeURIComponent
    ──────────────────────────────────────────────────────────────────────── */
 
 const INITIAL_STEPS = [
-  { id: 'csv-validation', title: 'CSV 입력 검증', icon: FileSpreadsheet, status: 'wait' },
-  { id: 'conversion',     title: 'FE 변환 검증',  icon: Database,        status: 'wait' },
-  { id: 'final-check',    title: '최종 검증',     icon: CheckCircle2,    status: 'wait' },
+  { id: 'csv-validation', title: 'CSV 입력 검증',               icon: FileSpreadsheet, status: 'wait' },
+  { id: 'mf-studio',      title: 'Mooring Fitting Studio 실행',  icon: ExternalLink,    status: 'wait' },
+  { id: 'final-check',    title: '최종 검증',                   icon: CheckCircle2,    status: 'wait' },
 ];
 
 const STATUS_CONFIG = {
@@ -670,71 +671,6 @@ function CsvValidationPanel({ rawJson, loading, error }) {
   );
 }
 
-function ConversionValidationPanel({ initialJson, loading, error, onDownload, result }) {
-  if (loading) return <LoadingValidationPanel />;
-  if (error) return <MissingValidationPanel message={error} />;
-  if (!initialJson) return <MissingValidationPanel message="STAGE_00.initial.json 파일이 result_info에 없거나 읽기에 실패했습니다." />;
-
-  const meta = initialJson.meta || {};
-  const counts = meta.counts || {};
-  const integrity = meta.integrity || {};
-  const mismatches = integrity.xyMismatches || [];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-bold text-slate-800">STAGE_00.initial.json</p>
-          <p className="text-xs text-slate-500 mt-0.5">Raw CSV 데이터가 FE ModelContext로 1:1 변환됐는지 확인합니다.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <StatusPill passed={integrity.passed} />
-          {result?.initial_json && (
-            <button
-              type="button"
-              onClick={() => onDownload(result.initial_json)}
-              className="flex items-center gap-1 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-[10px] font-bold text-blue-700 hover:bg-blue-100"
-            >
-              <Download size={11} /> JSON
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        <MetricCard label="Materials" value={counts.materials} />
-        <MetricCard label="Properties" value={counts.properties} />
-        <MetricCard label="Nodes" value={counts.nodes} />
-        <MetricCard label="Elements" value={counts.elements} />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
-        <MetricCard
-          label="Row → Element"
-          value={integrity.rowToElementBijective ? 'OK' : 'Mismatch'}
-          sub={`expected ${integrity.expectedElementsFromRaw ?? '-'} / actual ${integrity.actualElements ?? '-'}`}
-        />
-        <MetricCard label="XY Preserved" value={integrity.xyPreservedAllRows ? 'OK' : 'Mismatch'} />
-        <MetricCard label="Z Normalized" value={integrity.zNormalizedConsistently ? 'OK' : 'Mismatch'} />
-      </div>
-
-      <div className="rounded-xl border border-slate-200 overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-2">
-          <p className="text-xs font-bold text-slate-700">XY Mismatch</p>
-          <span className="text-[10px] text-slate-400">{mismatches.length}건</span>
-        </div>
-        {mismatches.length === 0 ? (
-          <p className="px-3 py-6 text-center text-xs text-slate-400">CSV 좌표와 FE 노드 좌표 간 불일치가 없습니다.</p>
-        ) : (
-          <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-all px-3 py-2 text-[10px] text-slate-600">
-            {JSON.stringify(mismatches.slice(0, 20), null, 2)}
-          </pre>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function FinalValidationPanel({ validationJson, loading, error, onDownload, result }) {
   if (loading) return <LoadingValidationPanel />;
   if (error) return <MissingValidationPanel message={error} />;
@@ -794,6 +730,117 @@ function FinalValidationPanel({ validationJson, loading, error, onDownload, resu
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
+   MooringStudioLauncher
+   ──────────────────────────────────────────────────────────────────────── */
+
+function MooringStudioLauncher({ ready, onLaunch, installed, status, progress, error, installedVersion, latestVersion, installDir }) {
+  const checking   = status === 'checking';
+  const installing = status === 'installing';
+  const opening    = status === 'opening';
+  const versionMismatch = !!(installedVersion && latestVersion && installedVersion !== latestVersion);
+  const disabled   = !ready || checking || installing || opening;
+
+  const versionLine = (() => {
+    if (installedVersion && latestVersion && versionMismatch)
+      return (
+        <p className="text-[10px] font-mono text-amber-700">
+          설치본 v{installedVersion} → 워크벤치 v{latestVersion}
+          <span className="ml-1 px-1.5 py-[1px] rounded bg-amber-100 text-amber-800 font-bold">업데이트 필요</span>
+        </p>
+      );
+    if (installedVersion) return <p className="text-[10px] font-mono text-slate-500">설치본 v{installedVersion}</p>;
+    if (latestVersion)    return <p className="text-[10px] font-mono text-slate-500">워크벤치 v{latestVersion}</p>;
+    return <p className="text-[10px] text-slate-400">버전 확인 대기 중</p>;
+  })();
+
+  const palette = installed === false || versionMismatch
+    ? {
+        card:      'border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50',
+        icon:      'text-amber-700',
+        title:     'text-amber-950',
+        body:      'text-amber-900',
+        badge:     'bg-amber-200 text-amber-800',
+        badgeText: installed === false ? '미설치 — 설치 필요' : '버전 업데이트 필요',
+        button:    'bg-amber-600 hover:bg-amber-700',
+      }
+    : {
+        card:      'border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50',
+        icon:      'text-emerald-700',
+        title:     'text-emerald-950',
+        body:      'text-emerald-900',
+        badge:     checking ? 'bg-slate-200 text-slate-700' : 'bg-emerald-200 text-emerald-800',
+        badgeText: checking ? '설치 확인 중' : installed === true ? '설치됨 — 사용 가능' : '상태 확인 전',
+        button:    'bg-emerald-600 hover:bg-emerald-700',
+      };
+
+  const Icon = installed === false ? PackageX : versionMismatch ? AlertCircle : ShieldCheck;
+  const buttonText = (() => {
+    if (installing) return <><Loader2 size={14} className="animate-spin" /> 설치 중 {progress?.progress ?? 0}%</>;
+    if (checking)   return <><Loader2 size={14} className="animate-spin" /> 확인 중</>;
+    if (opening)    return <><Loader2 size={14} className="animate-spin" /> 실행 중</>;
+    if (installed === false) return <><Download size={14} /> Studio 설치 후 열기</>;
+    if (versionMismatch)     return <><Download size={14} /> 업데이트 후 열기</>;
+    return <><ExternalLink size={14} /> Studio 열기</>;
+  })();
+
+  return (
+    <div className={`rounded-2xl border-2 ${palette.card} px-5 py-5 shadow-sm`}>
+      <div className="flex items-start justify-between gap-5">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <Icon size={18} className={palette.icon} />
+            <h3 className={`text-base font-bold ${palette.title}`}>Mooring Fitting Studio</h3>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${palette.badge}`}>{palette.badgeText}</span>
+          </div>
+          <p className={`text-[13px] font-bold leading-snug mt-2 ${palette.body}`}>
+            {installed === false
+              ? <>Studio가 이 PC에 설치되어 있지 않습니다. <b>&quot;Studio 설치 후 열기&quot;</b>를 눌러 최초 1회 설치를 진행하세요.</>
+              : versionMismatch
+              ? <>설치된 버전이 워크벤치 배포본과 다릅니다. <b>&quot;업데이트 후 열기&quot;</b>를 누르면 자동 갱신됩니다.</>
+              : !ready
+              ? <>먼저 Mooring Fitting 해석을 완료하면 BDF 뷰어가 활성화됩니다.</>
+              : <>해석 결과를 확인한 뒤 Studio를 열어 그룹 삭제 · RBE2 편집 · 최종 BDF 출력을 진행하세요.</>}
+          </p>
+          <p className="text-[11px] text-slate-600 leading-relaxed mt-2">
+            설치 파일은 사내 배포 위치에서 자동으로 내려받고, WorkBench 앱 데이터 폴더에 보관됩니다. 최초 설치 이후에는 재사용합니다.
+          </p>
+          <div className="flex flex-col gap-1 mt-3">
+            {versionLine}
+            {installDir && (
+              <p className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono break-all">
+                <HardDrive size={11} className="shrink-0 text-slate-400" />
+                {installDir}
+              </p>
+            )}
+            {error && <p className="text-[10px] text-red-600 leading-snug">⚠ {error}</p>}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-4">
+            {[
+              ['BDF 시각화',     'CSV 변환 결과 BDF 파일을 3D로 시각화'],
+              ['그룹 · RBE2 편집', '불필요한 그룹 삭제 및 RBE2 추가/삭제'],
+              ['최종 BDF 출력',  '편집 완료된 BDF 파일 생성 및 저장'],
+            ].map(([title, desc]) => (
+              <div key={title} className="rounded-lg border border-white/70 bg-white/65 px-3 py-2">
+                <p className="text-[11px] font-bold text-slate-700">{title}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <button
+          onClick={onLaunch}
+          disabled={disabled}
+          title={!ready ? '먼저 Mooring Fitting 해석을 완료하세요' : ''}
+          className={`shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors cursor-pointer shadow-sm ${palette.button}`}
+        >
+          {buttonText}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    메인 컴포넌트
    ──────────────────────────────────────────────────────────────────────── */
 
@@ -809,17 +856,19 @@ export default function MooringFittingAssessment() {
   const [engineLog,     setEngineLog]     = useState(null);
   const [artifactJson,  setArtifactJson]  = useState({
     raw: null,
-    initial: null,
     validation: null,
     loading: false,
     error: null,
   });
 
   const STUDIO_VIEWER_ID = 'mooring-fitting-studio';
-  const [studioStatus,    setStudioStatus]    = useState('idle');   // idle|checking|installing|opening|error
-  const [studioInstalled, setStudioInstalled] = useState(null);
-  const [studioProgress,  setStudioProgress]  = useState(null);
-  const [studioError,     setStudioError]     = useState(null);
+  const [studioStatus,           setStudioStatus]           = useState('idle');
+  const [studioInstalled,        setStudioInstalled]        = useState(null);
+  const [studioProgress,         setStudioProgress]         = useState(null);
+  const [studioError,            setStudioError]            = useState(null);
+  const [studioInstalledVersion, setStudioInstalledVersion] = useState(null);
+  const [studioLatestVersion,    setStudioLatestVersion]    = useState(null);
+  const [studioInstallDir,       setStudioInstallDir]       = useState(null);
 
   const pollRef    = useRef(null);
   const elapsedRef = useRef(null);
@@ -865,8 +914,8 @@ export default function MooringFittingAssessment() {
           clearInterval(pollRef.current);
           if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
           if (data.status === 'Success') {
-            setSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
-            setActiveIdx(0);
+            setSteps(prev => prev.map(s => s.id !== 'mf-studio' ? { ...s, status: 'done' } : s));
+            setActiveIdx(1); // Studio 단계로 이동
           } else {
             setSteps(prev => prev.map((s, i) => i === 0 ? { ...s, status: 'error' } : s));
             setEngineLog(data.engine_log || data.message || '알 수 없는 오류');
@@ -911,7 +960,7 @@ export default function MooringFittingAssessment() {
     setHasRunOnce(true);
     setElapsedSecs(0);
     setEngineLog(null);
-    setArtifactJson({ raw: null, initial: null, validation: null, loading: false, error: null });
+    setArtifactJson({ raw: null, validation: null, loading: false, error: null });
     if (elapsedRef.current) clearInterval(elapsedRef.current);
     elapsedRef.current = setInterval(() => setElapsedSecs(s => s + 1), 1000);
 
@@ -979,6 +1028,40 @@ export default function MooringFittingAssessment() {
   };
 
   /* ── Studio 뷰어 ────────────────────────────────────────────────────── */
+  const setStepStatus = (id, status) =>
+    setSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+
+  useEffect(() => {
+    let cancelled = false;
+    if (window.electron?.invoke) {
+      setStudioStatus('checking');
+      window.electron.invoke('viewer:check-installed', STUDIO_VIEWER_ID)
+        .then((r) => {
+          if (cancelled) return;
+          setStudioInstalled(r === null ? false : !!r?.installed);
+          setStudioInstalledVersion(r?.manifest?.version ?? null);
+          setStudioInstallDir(r?.dir ?? null);
+          setStudioStatus('idle');
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          setStudioInstalled(false);
+          setStudioError(e?.message || 'Studio 설치 상태 확인 실패');
+          setStudioStatus('idle');
+        });
+    } else {
+      setStudioInstalled(false);
+    }
+    fetch(`${API_BASE_URL}/api/viewers/manifest/${STUDIO_VIEWER_ID}`, { headers: getAuthHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(meta => {
+        if (cancelled) return;
+        setStudioLatestVersion(meta?.manifest?.version ?? null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     if (!window.electron?.onMessage) return undefined;
     const unsub = window.electron.onMessage('viewer:install-progress', (data) => {
@@ -1011,11 +1094,18 @@ export default function MooringFittingAssessment() {
   }, []);
 
   const handleOpenStudio = async () => {
-    if (!isSuccess || !result?.out_dir) return;
+    if (!isSuccess || !result?.out_dir) {
+      showToast('먼저 Mooring Fitting 해석을 완료하세요.', 'warning');
+      return;
+    }
+    if (!window.electron?.invoke) {
+      showToast('Electron 환경에서만 Studio를 사용할 수 있습니다.', 'error');
+      return;
+    }
     setStudioError(null);
     try {
       setStudioStatus('checking');
-      const check = await window.electron?.invoke('viewer:check-installed', STUDIO_VIEWER_ID);
+      const check = await window.electron.invoke('viewer:check-installed', STUDIO_VIEWER_ID);
       if (check === null) throw new Error('IPC viewer:check-installed 미등록');
 
       const manifestRes = await fetch(`${API_BASE_URL}/api/viewers/manifest/${STUDIO_VIEWER_ID}`, { headers: getAuthHeaders() });
@@ -1024,7 +1114,17 @@ export default function MooringFittingAssessment() {
 
       const localVer  = check?.manifest?.version ?? null;
       const serverVer = meta?.manifest?.version ?? null;
-      if (!localVer || localVer !== serverVer) {
+      setStudioInstalled(!!check?.installed);
+      setStudioInstalledVersion(localVer);
+      setStudioLatestVersion(serverVer);
+      setStudioInstallDir(check?.dir ?? null);
+
+      const needInstall = !check?.installed || (serverVer && localVer && serverVer !== localVer);
+      if (needInstall) {
+        const reason = !check?.installed
+          ? 'MooringFittingStudio 미설치 — 다운로드 시작'
+          : `MooringFittingStudio 업데이트 (v${localVer} → v${serverVer})`;
+        showToast(reason, 'info');
         setStudioStatus('installing');
         const installRes = await window.electron.invoke('viewer:install', {
           viewerId: STUDIO_VIEWER_ID,
@@ -1035,6 +1135,8 @@ export default function MooringFittingAssessment() {
         if (installRes === null) throw new Error('IPC viewer:install 미등록');
         if (!installRes?.ok) throw new Error(installRes?.error || 'Studio 설치 실패');
         setStudioInstalled(true);
+        setStudioInstalledVersion(installRes?.manifest?.version ?? serverVer);
+        setStudioInstallDir(installRes?.dir ?? check?.dir ?? null);
       }
 
       setStudioStatus('opening');
@@ -1055,10 +1157,12 @@ export default function MooringFittingAssessment() {
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok) throw new Error(openRes?.error || 'Studio 오픈 실패');
+      setStepStatus('mf-studio', 'done');
       setStudioStatus('idle');
     } catch (e) {
       setStudioStatus('error');
       setStudioError(e?.message ?? 'Studio 오류');
+      showToast(`MooringFittingStudio 실행 실패 — ${e?.message}`, 'error');
     }
   };
 
@@ -1075,7 +1179,7 @@ export default function MooringFittingAssessment() {
     setJobStatus(null);
     setElapsedSecs(0);
     setEngineLog(null);
-    setArtifactJson({ raw: null, initial: null, validation: null, loading: false, error: null });
+    setArtifactJson({ raw: null, validation: null, loading: false, error: null });
   };
 
   /* ── 파생 ──────────────────────────────────────────────────────────── */
@@ -1097,22 +1201,21 @@ export default function MooringFittingAssessment() {
 
     Promise.all([
       fetchArtifactJson(result.raw_json),
-      fetchArtifactJson(result.initial_json),
       fetchArtifactJson(result.validation_json),
     ])
-      .then(([raw, initial, validation]) => {
+      .then(([raw, validation]) => {
         if (!cancelled) {
-          setArtifactJson({ raw, initial, validation, loading: false, error: null });
+          setArtifactJson({ raw, validation, loading: false, error: null });
         }
       })
       .catch((e) => {
         if (!cancelled) {
-          setArtifactJson({ raw: null, initial: null, validation: null, loading: false, error: e.message });
+          setArtifactJson({ raw: null, validation: null, loading: false, error: e.message });
         }
       });
 
     return () => { cancelled = true; };
-  }, [isSuccess, result?.raw_json, result?.initial_json, result?.validation_json, result?._artifacts_missing]);
+  }, [isSuccess, result?.raw_json, result?.validation_json, result?._artifacts_missing]);
 
   /* ── 렌더 ──────────────────────────────────────────────────────────── */
   return (
@@ -1302,29 +1405,10 @@ export default function MooringFittingAssessment() {
               <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-emerald-700">CSV 변환 검증 완료</p>
-                <p className="text-[10px] text-emerald-700/80 mt-0.5">out 폴더의 STAGE_00 raw/initial 검증 정보를 불러왔습니다.</p>
-              </div>
-              <div className="flex flex-col items-end gap-1 shrink-0">
-                {studioProgress && studioStatus === 'installing' && (
-                  <span className="text-[10px] text-blue-500">설치 중... {studioProgress.percent ?? 0}%</span>
-                )}
-                {studioError && (
-                  <span className="text-[10px] text-red-500">{studioError}</span>
-                )}
-                <button
-                  type="button"
-                  onClick={handleOpenStudio}
-                  disabled={studioStatus !== 'idle' && studioStatus !== 'error'}
-                  className="flex items-center gap-1.5 rounded-xl border border-emerald-500 bg-emerald-900/20 px-3 py-1.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {studioStatus === 'installing' ? (
-                    <><Loader2 size={12} className="animate-spin" /> 설치 중...</>
-                  ) : studioStatus === 'opening' || studioStatus === 'checking' ? (
-                    <><Loader2 size={12} className="animate-spin" /> Studio 여는 중...</>
-                  ) : (
-                    <>🔬 Studio 열기</>
-                  )}
-                </button>
+                <p className="text-[10px] text-emerald-700/80 mt-0.5">
+                  out 폴더의 검증 정보를 불러왔습니다.{' '}
+                  <span className="font-semibold">2단계 &quot;Mooring Fitting Studio 실행&quot;</span>에서 Studio를 열어보세요.
+                </p>
               </div>
             </div>
           )}
@@ -1377,28 +1461,19 @@ export default function MooringFittingAssessment() {
               </>
             )}
 
-            {/* 스텝 1: FE 변환 검증 */}
-            {activeStep.id === 'conversion' && (
-              <>
-                {!isSuccess && (
-                  <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-3">
-                    <Database size={36} className="opacity-20" />
-                    <p className="text-sm">해석 완료 후 Raw CSV → FE 모델 1:1 변환 검증이 표시됩니다.</p>
-                  </div>
-                )}
-                {isSuccess && result && !result._artifacts_missing && (
-                  <ConversionValidationPanel
-                    initialJson={artifactJson.initial}
-                    loading={artifactJson.loading}
-                    error={artifactJson.error}
-                    result={result}
-                    onDownload={handleDownload}
-                  />
-                )}
-                {isSuccess && result?._artifacts_missing && (
-                  <MissingValidationPanel message="out 폴더가 생성되지 않아 STAGE_00.initial.json을 찾을 수 없습니다." />
-                )}
-              </>
+            {/* 스텝 1: Mooring Fitting Studio 실행 */}
+            {activeStep.id === 'mf-studio' && (
+              <MooringStudioLauncher
+                ready={isSuccess}
+                onLaunch={handleOpenStudio}
+                installed={studioInstalled}
+                status={studioStatus}
+                progress={studioProgress}
+                error={studioError}
+                installedVersion={studioInstalledVersion}
+                latestVersion={studioLatestVersion}
+                installDir={studioInstallDir}
+              />
             )}
 
             {/* 스텝 2: 최종 검증 */}

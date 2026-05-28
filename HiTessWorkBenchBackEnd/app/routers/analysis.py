@@ -1475,6 +1475,23 @@ def get_mooring_fitting_viewer_zip(
         "stage00.json": "STAGE_00_BuildRaw.bdf",
         "stage07.json": "STAGE_07_FinalValidation.bdf",
     }
+    # Studio 의 readJsonFolderRecursive 는 .json 만 읽으므로
+    # MF/Winch 하중 리포트 CSV 를 백엔드에서 JSON 으로 변환해 zip 에 동봉한다.
+    loads_csv_map = {
+        "loads_mf.json":    "Report_LoadCalculation_MF.csv",
+        "loads_winch.json": "Report_LoadCalculation_Winch.csv",
+    }
+
+    import csv as _csv
+    import json as _json
+
+    def _read_csv_rows(path: str) -> list[dict]:
+        try:
+            with open(path, "r", encoding="utf-8-sig", newline="") as fh:
+                return list(_csv.DictReader(fh))
+        except Exception as exc:
+            logger.warning("[mooring viewer-zip] CSV 읽기 실패: %s — %s", path, exc)
+            return []
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -1485,13 +1502,22 @@ def get_mooring_fitting_viewer_zip(
                 continue
             try:
                 from pathlib import Path as _Path
-                import json as _json
                 data = _nb.convert_bdf(_Path(bdf_path))
                 zf.writestr(json_name, _json.dumps(data, ensure_ascii=False))
                 logger.info("[mooring viewer-zip] 변환 완료: %s → %s", bdf_name, json_name)
             except Exception as e:
                 logger.exception("[mooring viewer-zip] BDF 변환 실패: %s", bdf_path)
                 raise HTTPException(status_code=500, detail=f"BDF 변환 실패 ({bdf_name}): {e}")
+
+        # Loads CSV → JSON 동봉 (없으면 스킵)
+        for out_name, csv_name in loads_csv_map.items():
+            csv_path = os.path.join(abs_dir, csv_name)
+            if not os.path.isfile(csv_path):
+                logger.info("[mooring viewer-zip] CSV 없음, 스킵: %s", csv_path)
+                continue
+            rows = _read_csv_rows(csv_path)
+            zf.writestr(out_name, _json.dumps({"source": csv_name, "rows": rows}, ensure_ascii=False))
+            logger.info("[mooring viewer-zip] CSV 동봉: %s (%d rows)", out_name, len(rows))
 
     body = buf.getvalue()
     if not body:
