@@ -16,7 +16,7 @@ const RAW_ANALYSIS_DATA = [
   { mode: "File", category: "Piping", title: "HP-SCR 배관응력 해석", description: "배관 BDF를 업로드하여 열변형 계산 및 배관응력 해석(PSA · POR)을 수행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["배관", "PSA", "POR", "BDF"], devStatus: "Active", contributor: "김윤환" },
   // ── File-Based Apps (signature: blue) ─────────── Developing ──
   { mode: "File", category: "Lifting", title: "Group & Module Unit 권상 구조 해석", description: "Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["유닛", "블록", "국부강도"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "File", category: "Drawing", title: "DrawingToAnalysis", description: "설계 도면(PDF)을 업로드하여 구조 해석 모델로 변환합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["PDF", "Drawing", "AI"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "Drawing", title: "DrawingToAnalysis", description: "설계 도면(PDF)을 업로드하여 LUG 구조 해석 BDF 모델로 변환합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["PDF", "Drawing", "BDF"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "File", category: "MooringFitting", title: "Mooring Fitting Assessment", description: "Mooring Fitting / Winch 보강 구조의 CSV 2종을 입력받아 8단계 BDF 파이프라인을 자동 생성합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Mooring", "Winch", "BDF", "Pipeline"], devStatus: "Developing", contributor: "권혁민" },
   // ── Interactive Apps (signature: violet) ──────── Active ──
   { mode: "Interactive", category: "1D Beam", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-violet-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active", contributor: "권혁민" },
@@ -76,6 +76,12 @@ const APP_REGISTRY_OVERRIDES = {
     menuName: "Mooring Fitting Assessment",
     programNames: ["MooringFitting", "Mooring Fitting Assessment"],
     apiEndpoint: "/api/analysis/mooring-fitting/request",
+  },
+  "DrawingToAnalysis": {
+    menuName: "DrawingToAnalysis",
+    programNames: ["DrawingToAnalysis"],
+    apiEndpoint: "/api/analysis/drawing-to-analysis/request",
+    transferOutputs: [{ key: "bdf", label: "BDF 모델", targetApp: "BDF Scanner" }],
   },
   "Simple Beam Assessment": {
     menuName: "Simple Beam Assessment",

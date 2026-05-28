@@ -42,7 +42,11 @@ export const requestBeamAnalysis = (formData) =>
 export const requestBdfScanner = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/bdfscanner/request`, formData, 'BdfScanner');
 
-/** DrawingToAnalysis — PDF 1개를 userConnection 폴더에 저장 (테스트용, 변환 로직 없음) */
+/** DrawingToAnalysis 요청 */
+export const requestDrawingToAnalysis = (formData) =>
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/drawing-to-analysis/request`, formData, 'DrawingToAnalysis');
+
+/** DrawingToAnalysis — PDF 1개를 userConnection 폴더에 저장 (레거시 테스트용) */
 export const uploadDrawingPdf = (file) => {
   const fd = new FormData();
   fd.append('pdf_file', file);

@@ -1,13 +1,14 @@
 /// <summary>
-/// DrawingToAnalysis — 설계 도면(PDF) → 구조 해석 모델 변환 (개발 중).
-/// 현 단계는 PDF 파일 1개 업로드 UI만 제공. 변환 로직 및 결과 영역은 추후 구현.
+/// DrawingToAnalysis — 설계 도면(PDF) → 구조 해석 모델 변환.
 /// </summary>
-import React, { useState, useRef } from 'react';
-import { ArrowLeft, Upload, Play, FileText, Info, Construction, CheckCircle2, RefreshCw } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { ArrowLeft, Upload, Play, FileText, Info, Construction, CheckCircle2, RefreshCw, Download, Terminal } from 'lucide-react';
 import PageBanner from '../../components/ui/PageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
+import { useDashboard } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
-import { uploadDrawingPdf } from '../../api/analysis';
+import { useAnalysisJob } from '../../hooks/useAnalysisJob';
+import { requestDrawingToAnalysis, downloadFileBlob } from '../../api/analysis';
 
 const formatBytes = (b) => {
   if (!b) return '0 B';
@@ -18,12 +19,37 @@ const formatBytes = (b) => {
 
 export default function DrawingToAnalysis() {
   const { setCurrentMenu } = useNavigation();
+  const { startGlobalJob } = useDashboard();
   const { showToast } = useToast();
   const [pdfFile, setPdfFile] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState(null);
+  const [resultInfo, setResultInfo] = useState(null);
+  const [analysisDbId, setAnalysisDbId] = useState(null);
   const fileInputRef = useRef(null);
+  const logEndRef = useRef(null);
+
+  const {
+    isRunning, progress, statusMessage, logs,
+    employeeId, addLog, startJob,
+    setLogs, setStatusMessage, setIsRunning, setProgress,
+  } = useAnalysisJob({
+    startGlobalJob,
+    pollingMaxRetries: 400,
+    successLogMessage: 'BDF 변환 완료.',
+    errorLogMessage: 'BDF 변환 실패.',
+    timeoutLogMessage: '시간 초과 (10분). PDF 또는 서버 상태를 확인하세요.',
+    onComplete: async (data) => {
+      setStatusMessage('변환 완료');
+      const { engine_log, project } = data;
+      if (engine_log) addLog(`[SOLVER] ${engine_log.trim()}`, 'info');
+      if (project?.result_info) {
+        setResultInfo(project.result_info);
+        setAnalysisDbId(project.id);
+      }
+    },
+  });
+
+  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
   const handleFile = (file) => {
     if (!file) return;
@@ -32,7 +58,9 @@ export default function DrawingToAnalysis() {
       return;
     }
     setPdfFile(file);
-    setUploadResult(null);
+    setResultInfo(null);
+    setAnalysisDbId(null);
+    setLogs([{ time: new Date().toLocaleTimeString(), message: `[FILE] ${file.name} 선택됨.`, type: 'info' }]);
   };
 
   const handleDrop = (e) => {
@@ -42,21 +70,54 @@ export default function DrawingToAnalysis() {
   };
 
   const handleRun = async () => {
-    if (!pdfFile || uploading) return;
-    setUploading(true);
-    setUploadResult(null);
+    if (!pdfFile || isRunning) return;
+    setIsRunning(true);
+    setProgress(0);
+    setStatusMessage('서버 요청 중...');
+    setResultInfo(null);
+    setAnalysisDbId(null);
+    setLogs([]);
+
+    const formData = new FormData();
+    formData.append('pdf_file', pdfFile);
+    formData.append('employee_id', employeeId);
+    formData.append('mesh_size', '10');
+    formData.append('source', 'Workbench');
+
     try {
-      const res = await uploadDrawingPdf(pdfFile);
-      setUploadResult(res.data);
-      showToast(`업로드 완료 — ${res.data.filename}`, 'success');
+      const res = await requestDrawingToAnalysis(formData);
+      const jobId = res.data.job_id;
+      addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
+      startJob(jobId, 'DrawingToAnalysis');
     } catch (err) {
       const detail = err?.response?.data?.detail;
-      const msg = typeof detail === 'string' ? detail : (err?.message || '업로드 실패');
-      showToast(`업로드 실패: ${msg}`, 'error');
-    } finally {
-      setUploading(false);
+      const msg = typeof detail === 'string' ? detail : (err?.message || '요청 실패');
+      setIsRunning(false);
+      addLog(`서버 요청 실패: ${msg}`, 'error');
+      showToast(`요청 실패: ${msg}`, 'error');
     }
   };
+
+  const downloadResult = async (path) => {
+    if (!path) return;
+    try {
+      const res = await downloadFileBlob(path);
+      const blobUrl = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = path.split(/[\\/]/).pop() || 'drawing-to-analysis-result';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      showToast('파일 다운로드 실패', 'error');
+    }
+  };
+
+  const resultEntries = resultInfo
+    ? Object.entries(resultInfo).filter(([, path]) => typeof path === 'string' && path)
+    : [];
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
@@ -77,18 +138,18 @@ export default function DrawingToAnalysis() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/25 border border-amber-300/50 text-amber-100 text-[11px] font-bold">
-            <Construction size={12} /> 개발 중
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/25 border border-emerald-300/50 text-emerald-100 text-[11px] font-bold">
+            <CheckCircle2 size={12} /> LUG PDF 지원
           </span>
         </div>
       </PageBanner>
 
-      {/* 개발 중 안내 */}
+      {/* 지원 범위 안내 */}
       <div className="flex items-start gap-3 mb-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl shrink-0">
         <Info size={16} className="text-blue-500 shrink-0 mt-0.5" />
         <div className="text-xs text-blue-700 leading-relaxed">
-          <span className="font-bold">개발 진행 중</span>
-          {' — '}현재는 PDF 업로드 인터페이스만 제공됩니다. 변환 알고리즘 및 결과 시각화는 추후 추가될 예정입니다.
+          <span className="font-bold">현재 지원 범위</span>
+          {' — '}LUG 도면 PDF를 rule-based 파이프라인으로 해석하여 업로드된 작업 폴더 안에 `lug_model.bdf`를 생성합니다.
         </div>
       </div>
 
@@ -134,8 +195,8 @@ export default function DrawingToAnalysis() {
               {pdfFile && (
                 <button
                   type="button"
-                  onClick={() => { setPdfFile(null); setUploadResult(null); }}
-                  disabled={uploading}
+                  onClick={() => { setPdfFile(null); setResultInfo(null); setAnalysisDbId(null); }}
+                  disabled={isRunning}
                   className="mt-2 w-full text-[11px] text-slate-400 hover:text-rose-500 font-bold transition-colors disabled:opacity-50"
                 >
                   파일 제거
@@ -144,64 +205,89 @@ export default function DrawingToAnalysis() {
             </div>
           </div>
 
-          {/* 실행 버튼 — PDF 저장 테스트 */}
+          {/* 실행 버튼 */}
           <button
             type="button"
             onClick={handleRun}
-            disabled={!pdfFile || uploading}
-            title={!pdfFile ? 'PDF 파일을 먼저 선택하세요' : 'userConnection 폴더에 PDF 저장 테스트'}
+            disabled={!pdfFile || isRunning}
+            title={!pdfFile ? 'PDF 파일을 먼저 선택하세요' : 'PDF를 BDF로 변환'}
             className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
-              !pdfFile || uploading
+              !pdfFile || isRunning
                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                 : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer shadow-md hover:shadow-lg'
             }`}
           >
-            {uploading ? <RefreshCw size={16} className="animate-spin" /> : <Play size={16} />}
-            {uploading ? '업로드 중...' : 'PDF 업로드 테스트'}
+            {isRunning ? <RefreshCw size={16} className="animate-spin" /> : <Play size={16} />}
+            {isRunning ? '변환 중...' : 'BDF 변환 실행'}
           </button>
+
+          <div className="bg-slate-900 rounded-2xl border border-slate-700 shadow-sm overflow-hidden min-h-[220px] flex flex-col">
+            <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <Terminal size={14} /> 실행 로그
+              </span>
+              <span className="text-[11px] text-slate-400">{progress}%</span>
+            </div>
+            {isRunning && (
+              <div className="h-1 bg-slate-800">
+                <div className="h-full bg-blue-500 transition-all" style={{ width: `${progress}%` }} />
+              </div>
+            )}
+            <div className="p-4 overflow-auto text-xs font-mono space-y-1 flex-1">
+              {statusMessage && <div className="text-sky-300">{statusMessage}</div>}
+              {logs.length === 0 ? (
+                <div className="text-slate-500">대기 중...</div>
+              ) : logs.map((log, idx) => (
+                <div key={idx} className={log.type === 'error' ? 'text-red-300' : log.type === 'success' ? 'text-emerald-300' : 'text-slate-300'}>
+                  <span className="text-slate-500">[{log.time}]</span> {log.message}
+                </div>
+              ))}
+              <div ref={logEndRef} />
+            </div>
+          </div>
         </div>
 
         {/* 오른쪽 본문 영역 */}
         <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center overflow-auto">
-          {uploadResult ? (
+          {resultInfo ? (
             <div className="w-full max-w-2xl px-6 py-10">
               <div className="flex items-center gap-3 mb-5">
                 <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-emerald-50">
                   <CheckCircle2 size={24} className="text-emerald-500" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-800">업로드 완료</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">PDF가 서버 userConnection 폴더에 저장되었습니다.</p>
+                  <h2 className="text-base font-bold text-slate-800">변환 완료</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">BDF와 보조 결과 파일이 작업 폴더에 생성되었습니다.</p>
                 </div>
               </div>
-              <dl className="space-y-2.5 text-xs">
-                <div className="grid grid-cols-[100px_1fr] gap-3 items-start">
-                  <dt className="font-bold text-slate-500 uppercase tracking-wider">파일명</dt>
-                  <dd className="font-mono text-slate-800 break-all">{uploadResult.filename}</dd>
-                </div>
-                <div className="grid grid-cols-[100px_1fr] gap-3 items-start">
-                  <dt className="font-bold text-slate-500 uppercase tracking-wider">타임스탬프</dt>
-                  <dd className="font-mono text-slate-800">{uploadResult.timestamp}</dd>
-                </div>
-                <div className="grid grid-cols-[100px_1fr] gap-3 items-start">
-                  <dt className="font-bold text-slate-500 uppercase tracking-wider">작업 폴더</dt>
-                  <dd className="font-mono text-slate-700 break-all bg-slate-50 px-2 py-1.5 rounded border border-slate-200">{uploadResult.work_dir}</dd>
-                </div>
-                <div className="grid grid-cols-[100px_1fr] gap-3 items-start">
-                  <dt className="font-bold text-slate-500 uppercase tracking-wider">저장 경로</dt>
-                  <dd className="font-mono text-slate-700 break-all bg-slate-50 px-2 py-1.5 rounded border border-slate-200">{uploadResult.saved_path}</dd>
-                </div>
-              </dl>
+              <div className="space-y-2.5 text-xs">
+                {analysisDbId && (
+                  <div className="text-slate-500">Analysis ID: <span className="font-mono text-slate-800">{analysisDbId}</span></div>
+                )}
+                {resultEntries.map(([key, path]) => (
+                  <div key={key} className="grid grid-cols-[120px_1fr_auto] gap-3 items-center">
+                    <span className="font-bold text-slate-500 uppercase tracking-wider">{key}</span>
+                    <span className="font-mono text-slate-700 break-all bg-slate-50 px-2 py-1.5 rounded border border-slate-200">{path}</span>
+                    <button
+                      type="button"
+                      onClick={() => downloadResult(path)}
+                      className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors"
+                      title="다운로드"
+                    >
+                      <Download size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="text-center px-6 py-12 max-w-md">
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-50 mb-4">
                 <Construction size={28} className="text-blue-500" />
               </div>
-              <h2 className="text-base font-bold text-slate-700 mb-1.5">결과 영역 — 추후 업데이트 예정</h2>
+              <h2 className="text-base font-bold text-slate-700 mb-1.5">PDF를 선택하고 변환을 실행하세요</h2>
               <p className="text-xs text-slate-500 leading-relaxed">
-                도면 PDF → BDF 모델 변환 파이프라인이 구현되면 이 영역에 변환 결과와 시각화가 표시됩니다.
-                현재는 <span className="font-bold text-blue-600">PDF 업로드 테스트</span>만 동작합니다 — 좌측 버튼을 누르면 서버 userConnection 폴더에 PDF가 저장됩니다.
+                변환이 완료되면 이 영역에 생성된 BDF, 메시 JSON, 미리보기 PNG 경로가 표시됩니다.
               </p>
             </div>
           )}
