@@ -16,7 +16,7 @@ import { useToast } from '../../contexts/ToastContext';
 import {
   ArrowLeft, Upload, Play, Database, RefreshCw, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Eye,
-  Terminal, FileText, FileOutput, Download, History, Maximize2, Minimize2
+  Terminal, FileText, FileOutput, Download, History, Maximize2, Minimize2, RotateCcw
 } from 'lucide-react';
 import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useAuth } from '../../contexts/AuthContext';
@@ -40,6 +40,7 @@ export default function TrussAssessment() {
   }, [isResultFullscreen]);
 
   const startGlobalJob = dashboardCtx?.startGlobalJob || (() => {});
+  const clearGlobalJob = dashboardCtx?.clearGlobalJob || (() => {});
   const globalJob = dashboardCtx?.globalJob || null;
 
   const assessmentPageState = dashboardCtx?.assessmentPageState || {};
@@ -53,6 +54,35 @@ export default function TrussAssessment() {
   const updateState = (newState) => {
     if (dashboardCtx?.setAssessmentPageState) {
       dashboardCtx.setAssessmentPageState(prev => ({ ...(prev || {}), ...newState }));
+    }
+  };
+
+  const resetAssessmentPage = () => {
+    setCurrentPollingJobId(null);
+    setElapsedSeconds(0);
+    setIsResultModalOpen(false);
+    setIsResultFullscreen(false);
+    lastMsgRef.current = '';
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    clearGlobalJob();
+    if (dashboardCtx?.setAssessmentPageState) {
+      dashboardCtx.setAssessmentPageState({
+        bdfFile: null,
+        nodes: {},
+        elements: [],
+        nodeTableData: [],
+        elemTableData: [],
+        logs: [],
+        detailedLogs: [],
+        isRunning: false,
+        progress: 0,
+        statusMessage: '',
+        activeTab: '3d',
+        currentJobId: null,
+        resultJsonData: null,
+        activeResultCase: null,
+        projectData: null,
+      });
     }
   };
 
@@ -264,6 +294,9 @@ export default function TrussAssessment() {
           <div className="flex items-center gap-2">
             <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
               <History size={14} /> 이력
+            </button>
+            <button onClick={resetAssessmentPage} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
+              <RotateCcw size={14} /> 초기화
             </button>
             <GuideButton guideTitle="[파일] Truss Structural Assessment — 트러스 구조 안정성 평가" variant="dark" />
           </div>
