@@ -982,7 +982,11 @@ ipcMain.handle("viewer:finalizeEditedModel", async (_e, payload) => {
         }
       }, 10 * 60 * 1000);
 
-      mainWindow.webContents.send("modelflow:finalize-edit-request", {
+      const channel = viewerCurrentId === 'mooring-fitting-studio'
+        ? 'mooring:finalize-edit-request'
+        : 'modelflow:finalize-edit-request';
+
+      mainWindow.webContents.send(channel, {
         requestId,
         folderPath: baseAbs,
         editFileName,
@@ -1008,6 +1012,16 @@ ipcMain.on("modelflow:finalize-edit-response", (_e, msg) => {
   if (resolve) {
     _pendingFinalizeReqs.delete(requestId);
     resolve({ ok: !!ok, ...(error ? { error } : {}) });
+  }
+});
+
+// MooringFittingStudio finalize-edit 결과 채널 — modelflow 와 동일 _pendingFinalizeReqs 공유
+ipcMain.on("mooring:finalize-edit-response", (_e, msg) => {
+  const { requestId, ok, error } = msg || {};
+  const resolve = _pendingFinalizeReqs.get(requestId);
+  if (resolve) {
+    _pendingFinalizeReqs.delete(requestId);
+    resolve({ ok: !!ok, error: error || null });
   }
 });
 

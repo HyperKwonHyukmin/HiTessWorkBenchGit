@@ -815,6 +815,12 @@ export default function MooringFittingAssessment() {
     error: null,
   });
 
+  const STUDIO_VIEWER_ID = 'mooring-fitting-studio';
+  const [studioStatus,    setStudioStatus]    = useState('idle');   // idle|checking|installing|opening|error
+  const [studioInstalled, setStudioInstalled] = useState(null);
+  const [studioProgress,  setStudioProgress]  = useState(null);
+  const [studioError,     setStudioError]     = useState(null);
+
   const pollRef    = useRef(null);
   const elapsedRef = useRef(null);
 
@@ -970,6 +976,90 @@ export default function MooringFittingAssessment() {
       throw new Error(err.detail || `검증 JSON 조회 실패 (${res.status})`);
     }
     return res.json();
+  };
+
+  /* ── Studio 뷰어 ────────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!window.electron?.onMessage) return undefined;
+    const unsub = window.electron.onMessage('viewer:install-progress', (data) => {
+      if (!data || data.viewerId !== STUDIO_VIEWER_ID) return;
+      setStudioProgress(data);
+    });
+    return () => { try { unsub?.(); } catch {} };
+  }, []);
+
+  useEffect(() => {
+    if (!window.electron?.onMessage) return undefined;
+    const unsub = window.electron.onMessage('mooring:finalize-edit-request', async (data) => {
+      const { requestId, folderPath, editFileName } = data ?? {};
+      if (!requestId) return;
+      try {
+        const editPath = `${folderPath}/${editFileName}`.replace(/\\/g, '/');
+        const editData = JSON.parse(await window.fs?.readFile(editPath, 'utf-8') ?? '{}');
+        const res = await fetch(`${API_BASE_URL}/api/analysis/mooring-fitting/apply-edit`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folderPath, intents: editData.intents ?? [] }),
+        });
+        const json = await res.json();
+        window.electron.send('mooring:finalize-edit-response', { requestId, ok: !!json?.ok, error: json?.detail });
+      } catch (e) {
+        window.electron.send('mooring:finalize-edit-response', { requestId, ok: false, error: e?.message });
+      }
+    });
+    return () => { try { unsub?.(); } catch {} };
+  }, []);
+
+  const handleOpenStudio = async () => {
+    if (!isSuccess || !result?.out_dir) return;
+    setStudioError(null);
+    try {
+      setStudioStatus('checking');
+      const check = await window.electron?.invoke('viewer:check-installed', STUDIO_VIEWER_ID);
+      if (check === null) throw new Error('IPC viewer:check-installed 미등록');
+
+      const manifestRes = await fetch(`${API_BASE_URL}/api/viewers/manifest/${STUDIO_VIEWER_ID}`, { headers: getAuthHeaders() });
+      if (!manifestRes.ok) throw new Error(`manifest 조회 실패: HTTP ${manifestRes.status}`);
+      const meta = await manifestRes.json();
+
+      const localVer  = check?.manifest?.version ?? null;
+      const serverVer = meta?.manifest?.version ?? null;
+      if (!localVer || localVer !== serverVer) {
+        setStudioStatus('installing');
+        const installRes = await window.electron.invoke('viewer:install', {
+          viewerId: STUDIO_VIEWER_ID,
+          downloadUrl: `${API_BASE_URL}${meta.downloadUrl}`,
+          uncPath: meta.uncPath,
+          expectedSha256: meta.sha256,
+        });
+        if (installRes === null) throw new Error('IPC viewer:install 미등록');
+        if (!installRes?.ok) throw new Error(installRes?.error || 'Studio 설치 실패');
+        setStudioInstalled(true);
+      }
+
+      setStudioStatus('opening');
+      const params = new URLSearchParams({ output_dir: result.out_dir });
+      const fetchRes = await window.electron.invoke('viewer:fetchResultDir', {
+        downloadUrl: `${API_BASE_URL}/api/analysis/mooring-fitting/viewer-zip?${params}`,
+        jobId: result.out_dir.split(/[\\/]/).pop(),
+        headers: getAuthHeaders(),
+      });
+      if (fetchRes === null) throw new Error('IPC viewer:fetchResultDir 미등록');
+      if (!fetchRes?.ok) throw new Error(fetchRes?.error || 'BDF 데이터 다운로드 실패');
+
+      const openRes = await window.electron.invoke('viewer:open', {
+        viewerId: STUDIO_VIEWER_ID,
+        initialFolder: fetchRes.dir,
+        parentAnalysisId: null,
+        serverUrl: API_BASE_URL,
+      });
+      if (openRes === null) throw new Error('IPC viewer:open 미등록');
+      if (!openRes?.ok) throw new Error(openRes?.error || 'Studio 오픈 실패');
+      setStudioStatus('idle');
+    } catch (e) {
+      setStudioStatus('error');
+      setStudioError(e?.message ?? 'Studio 오류');
+    }
   };
 
   /* ── 리셋 ──────────────────────────────────────────────────────────── */
@@ -1213,6 +1303,28 @@ export default function MooringFittingAssessment() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-emerald-700">CSV 변환 검증 완료</p>
                 <p className="text-[10px] text-emerald-700/80 mt-0.5">out 폴더의 STAGE_00 raw/initial 검증 정보를 불러왔습니다.</p>
+              </div>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                {studioProgress && studioStatus === 'installing' && (
+                  <span className="text-[10px] text-blue-500">설치 중... {studioProgress.percent ?? 0}%</span>
+                )}
+                {studioError && (
+                  <span className="text-[10px] text-red-500">{studioError}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={handleOpenStudio}
+                  disabled={studioStatus !== 'idle' && studioStatus !== 'error'}
+                  className="flex items-center gap-1.5 rounded-xl border border-emerald-500 bg-emerald-900/20 px-3 py-1.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {studioStatus === 'installing' ? (
+                    <><Loader2 size={12} className="animate-spin" /> 설치 중...</>
+                  ) : studioStatus === 'opening' || studioStatus === 'checking' ? (
+                    <><Loader2 size={12} className="animate-spin" /> Studio 여는 중...</>
+                  ) : (
+                    <>🔬 Studio 열기</>
+                  )}
+                </button>
               </div>
             </div>
           )}

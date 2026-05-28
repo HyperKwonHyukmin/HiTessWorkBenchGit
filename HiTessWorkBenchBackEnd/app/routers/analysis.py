@@ -37,6 +37,7 @@ from ..services.hitess_modelflow_service import (
 from ..services.f06parser_service import task_execute_f06parser
 from ..services.plate_structure_service import task_execute_plate_structure
 from ..services.mooring_fitting_service import task_execute_mooring_fitting
+from ..services.drawing_to_analysis_service import task_execute_drawing_to_analysis
 from ._intake import make_work_dir, save_upload, submit_analysis_job
 
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -47,6 +48,18 @@ _BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))     # HiTessWorkBen
 _USER_CONNECTION_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
 _ALLOWED_DOWNLOAD_BASE = _USER_CONNECTION_DIR
 _PROGRAM_DOWNLOAD_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "DownloadProgram"))
+
+import sys as _sys
+_NASTRAN_BRIDGE_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "..", "..", "WorkBenchSubModule", "Nastran_bridge"))
+if _NASTRAN_BRIDGE_DIR not in _sys.path:
+    _sys.path.insert(0, _NASTRAN_BRIDGE_DIR)
+try:
+    import nastran_bridge as _nb
+    _NB_AVAILABLE = True
+except ImportError:
+    _nb = None
+    _NB_AVAILABLE = False
+    logger.warning("[mooring-studio] nastran_bridge 임포트 실패 — viewer-zip 미사용 가능")
 
 # 외부(네트워크/공유) 위치에 보관하는 배포용 프로그램 화이트리스트.
 # DownloadProgram/ 폴더에 없고 외부 경로에서 받아와야 하는 파일들을 등록.
@@ -396,7 +409,34 @@ def export_usage_report_xlsx(
     )
 
 
-# ==================== DrawingToAnalysis — PDF 저장 테스트 ====================
+# ==================== DrawingToAnalysis ====================
+
+@router.post("/analysis/drawing-to-analysis/request")
+async def request_drawing_to_analysis(
+    pdf_file: UploadFile = File(...),
+    employee_id: str = Form(...),
+    mesh_size: float = Form(10.0),
+    source: str = Form("Workbench"),
+    current_user: str = Depends(require_auth),
+):
+    """DrawingToAnalysis 작업을 요청받아 PDF를 저장하고 BDF 변환 작업을 실행합니다."""
+    _verify_employee_self(employee_id, current_user)
+    fname = pdf_file.filename or ""
+    if not fname.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다.")
+
+    work_dir, timestamp = make_work_dir(employee_id, "DrawingToAnalysis")
+    pdf_path = await save_upload(pdf_file, work_dir, error_prefix="PDF 저장 오류")
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "DrawingToAnalysis", "DrawingToAnalysis.exe"
+    ))
+
+    job_id = submit_analysis_job(
+        task_execute_drawing_to_analysis,
+        pdf_path, work_dir, exe_path, employee_id, timestamp, source, mesh_size,
+        queue_message="변환 대기 중...",
+    )
+    return {"job_id": job_id}
 
 @router.post("/analysis/drawing-to-analysis/upload")
 async def drawing_to_analysis_upload(
@@ -1119,6 +1159,131 @@ async def request_mooring_fitting(
         employee_id, timestamp, source,
     )
     return {"job_id": job_id}
+
+
+@router.get("/analysis/mooring-fitting/viewer-zip")
+def get_mooring_fitting_viewer_zip(
+    output_dir: str = Query(..., description="MooringFitting out/ 폴더 절대경로 (userConnection 하위)"),
+    current_user: str = Depends(require_auth),
+):
+    """out/ 폴더의 Stage_00/07 BDF 를 nastran_bridge 로 변환 후 zip 반환.
+
+    StreamingResponse + BytesIO 조합은 h11 LocalProtocolError 를 유발하므로
+    bytes 를 일괄 빌드한 뒤 Response 로 반환한다 (modelflow/result-zip 과 동일 패턴).
+    """
+    if not _NB_AVAILABLE:
+        raise HTTPException(status_code=500, detail="nastran_bridge 모듈 없음")
+
+    try:
+        abs_dir = _validate_userconnection_path(output_dir)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"경로 검증 실패: {e}")
+
+    if not os.path.isdir(abs_dir):
+        raise HTTPException(status_code=404, detail=f"output_dir 없음: {abs_dir}")
+
+    bdf_map = {
+        "stage00.json": "STAGE_00_BuildRaw.bdf",
+        "stage07.json": "STAGE_07_FinalValidation.bdf",
+    }
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for json_name, bdf_name in bdf_map.items():
+            bdf_path = os.path.join(abs_dir, bdf_name)
+            if not os.path.isfile(bdf_path):
+                logger.warning("[mooring viewer-zip] BDF 없음, 스킵: %s", bdf_path)
+                continue
+            try:
+                from pathlib import Path as _Path
+                import json as _json
+                data = _nb.convert_bdf(_Path(bdf_path))
+                zf.writestr(json_name, _json.dumps(data, ensure_ascii=False))
+                logger.info("[mooring viewer-zip] 변환 완료: %s → %s", bdf_name, json_name)
+            except Exception as e:
+                logger.exception("[mooring viewer-zip] BDF 변환 실패: %s", bdf_path)
+                raise HTTPException(status_code=500, detail=f"BDF 변환 실패 ({bdf_name}): {e}")
+
+    body = buf.getvalue()
+    if not body:
+        raise HTTPException(status_code=500, detail="zip 이 비어 있음 — BDF 파일을 확인하세요")
+
+    fname = f"mooring-studio-{os.path.basename(os.path.dirname(abs_dir))}.zip"
+    return Response(
+        content=body,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@router.post("/analysis/mooring-fitting/apply-edit")
+async def apply_mooring_fitting_edit(
+    request: Request,
+    current_user: str = Depends(require_auth),
+):
+    """intents 를 stage07.json 에 적용해 수정된 BDF 를 저장한다.
+
+    Body JSON: { folderPath: str, intents: list, stageRef?: str }
+    """
+    if not _NB_AVAILABLE:
+        raise HTTPException(status_code=500, detail="nastran_bridge 모듈 없음")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON body 파싱 실패")
+
+    folder_path = body.get("folderPath")
+    intents = body.get("intents")
+    if not folder_path or not isinstance(intents, list):
+        raise HTTPException(status_code=400, detail="folderPath 와 intents 는 필수")
+
+    try:
+        abs_folder = _validate_userconnection_path(folder_path)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"경로 검증 실패: {e}")
+
+    stage07_path = os.path.join(abs_folder, "stage07.json")
+    if not os.path.isfile(stage07_path):
+        raise HTTPException(status_code=404, detail=f"stage07.json 없음: {stage07_path}")
+
+    import json as _json
+    import copy as _copy
+    from pathlib import Path as _Path
+
+    try:
+        base_data = _json.loads(_Path(stage07_path).read_text(encoding="utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"stage07.json 읽기 실패: {e}")
+
+    edit_data = {
+        "schemaVersion": "1.0",
+        "intents": intents,
+    }
+
+    try:
+        result_data, summary = _nb.apply_edit_json(_copy.deepcopy(base_data), edit_data)
+    except Exception as e:
+        logger.exception("[mooring apply-edit] apply_edit_json 실패")
+        raise HTTPException(status_code=500, detail=f"편집 적용 실패: {e}")
+
+    try:
+        bdf_text = _nb.convert_json_to_bdf(result_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"BDF 변환 실패: {e}")
+
+    output_bdf = os.path.join(abs_folder, "mooring_fitting_edited.bdf")
+    try:
+        _Path(output_bdf).write_text(bdf_text, encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"BDF 저장 실패: {e}")
+
+    logger.info("[mooring apply-edit] 완료: %s (applied=%d)", output_bdf, summary.get("applied", 0))
+    return {"ok": True, "bdfPath": output_bdf, "summary": summary}
 
 
 # ==================== Simple Beam Assessment ====================
