@@ -37,7 +37,10 @@ from ..services.hitess_modelflow_service import (
 from ..services.f06parser_service import task_execute_f06parser
 from ..services.plate_structure_service import task_execute_plate_structure
 from ..services.mooring_fitting_service import task_execute_mooring_fitting
-from ..services.drawing_to_analysis_service import task_execute_drawing_to_analysis
+from ..services.drawing_to_analysis_service import (
+    task_execute_drawing_to_analysis,
+    task_execute_drawing_rebuild,
+)
 from ._intake import make_work_dir, save_upload, submit_analysis_job
 
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -417,13 +420,24 @@ async def request_drawing_to_analysis(
     employee_id: str = Form(...),
     mesh_size: float = Form(10.0),
     source: str = Form("Workbench"),
+    mode: Optional[str] = Form(None),
     current_user: str = Depends(require_auth),
 ):
-    """DrawingToAnalysis 작업을 요청받아 PDF를 저장하고 BDF 변환 작업을 실행합니다."""
+    """DrawingToAnalysis 작업을 요청받아 PDF를 저장하고 BDF 변환 작업을 실행합니다.
+
+    mode 미지정 시 파일명 prefix 로 자동 분기 (Lug_* → 'lug', BlockSupport_* → 'support', ...).
+    """
     _verify_employee_self(employee_id, current_user)
     fname = pdf_file.filename or ""
     if not fname.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다.")
+
+    # mode 자동 결정
+    if mode:
+        resolved_mode = mode.lower()
+    else:
+        category, _ = _categorize_catalogue_filename(fname)
+        resolved_mode = _resolve_drawing_mode(category)
 
     work_dir, timestamp = make_work_dir(employee_id, "DrawingToAnalysis")
     pdf_path = await save_upload(pdf_file, work_dir, error_prefix="PDF 저장 오류")
@@ -433,10 +447,10 @@ async def request_drawing_to_analysis(
 
     job_id = submit_analysis_job(
         task_execute_drawing_to_analysis,
-        pdf_path, work_dir, exe_path, employee_id, timestamp, source, mesh_size,
+        pdf_path, work_dir, exe_path, employee_id, timestamp, source, mesh_size, resolved_mode,
         queue_message="변환 대기 중...",
     )
-    return {"job_id": job_id}
+    return {"job_id": job_id, "mode": resolved_mode}
 
 @router.post("/analysis/drawing-to-analysis/upload")
 async def drawing_to_analysis_upload(
@@ -458,6 +472,279 @@ async def drawing_to_analysis_upload(
         "saved_path": saved_path,
         "work_dir": work_dir,
         "timestamp": timestamp,
+    }
+
+
+# -------------------- 도면 PDF 카탈로그 --------------------
+# 관리자가 HiTessWorkBenchBackEnd/InHouseProgram/DrawingToAnalysis/PdfCatalogue/
+# 폴더에 PDF를 둬두면 사용자가 워크벤치에서 둘러보고 그 PDF로 변환을 실행할 수 있다.
+# (DrawingToAnalysis.exe 가 있는 InHouseProgram 폴더 하위에 함께 둠)
+
+_DRAWING_CATALOGUE_DIR = os.path.abspath(os.path.join(
+    _BACKEND_DIR, "InHouseProgram", "DrawingToAnalysis", "PdfCatalogue"
+))
+
+
+def _resolve_catalogue_pdf(filename: str) -> str:
+    """카탈로그 폴더 내부의 PDF 경로를 안전하게 해석한다. 경로 탈출 방지."""
+    safe = os.path.basename(filename or "")
+    if not safe.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="PDF 파일명이 아닙니다.")
+    target = os.path.abspath(os.path.join(_DRAWING_CATALOGUE_DIR, safe))
+    if not target.startswith(_DRAWING_CATALOGUE_DIR + os.sep):
+        raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
+    if not os.path.isfile(target):
+        raise HTTPException(status_code=404, detail="카탈로그에 해당 PDF가 없습니다.")
+    return target
+
+
+def _categorize_catalogue_filename(filename: str) -> tuple[str, str]:
+    """카탈로그 PDF 파일명을 (category, label) 로 변환한다.
+
+    규칙: stem(확장자 제외)을 '_' 로 분리, 첫 토큰 = 카테고리, 나머지 = '-' 로 연결한 라벨.
+      'Lug_L_25.pdf'      → ('Lug',     'L-25')
+      'Bracket_BR_01.pdf' → ('Bracket', 'BR-01')
+      'Single.pdf'        → ('Other',   'Single')
+    """
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    parts = stem.split('_')
+    if len(parts) >= 2 and parts[0]:
+        return parts[0], '-'.join(parts[1:])
+    return 'Other', stem
+
+
+def _resolve_drawing_mode(category_or_filename: str) -> str:
+    """카테고리 또는 파일명에서 DrawingToAnalysis 엔진 모드를 결정한다.
+
+    'BlockSupport', 'Support', 'BS_*'  → 'support'
+    그 외 (Lug 포함)                   → 'lug'
+    """
+    c = (category_or_filename or "").lower()
+    if "support" in c or c.startswith("bs_") or c.startswith("bs.") or c == "bs":
+        return "support"
+    return "lug"
+
+
+@router.get("/analysis/drawing-to-analysis/catalogue")
+async def list_drawing_catalogue(current_user: str = Depends(require_auth)):
+    """카탈로그 폴더의 PDF 목록 반환.
+
+    응답:
+      {
+        items: [{ filename, category, label, size_bytes, page_count|None }],
+        categories: [{ name, count }],
+        catalogue_dir: str
+      }
+    """
+    os.makedirs(_DRAWING_CATALOGUE_DIR, exist_ok=True)
+    try:
+        names = sorted(os.listdir(_DRAWING_CATALOGUE_DIR))
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"카탈로그 폴더 읽기 실패: {e}")
+
+    items = []
+    counts: dict[str, int] = {}
+    for name in names:
+        if not name.lower().endswith(".pdf"):
+            continue
+        full = os.path.join(_DRAWING_CATALOGUE_DIR, name)
+        if not os.path.isfile(full):
+            continue
+        page_count = None
+        try:
+            import fitz
+            with fitz.open(full) as doc:
+                page_count = doc.page_count
+        except Exception:
+            page_count = None
+        category, label = _categorize_catalogue_filename(name)
+        items.append({
+            "filename":   name,
+            "category":   category,
+            "label":      label,
+            "size_bytes": os.path.getsize(full),
+            "page_count": page_count,
+        })
+        counts[category] = counts.get(category, 0) + 1
+
+    categories = [{"name": c, "count": n} for c, n in sorted(counts.items())]
+    return {
+        "items": items,
+        "categories": categories,
+        "catalogue_dir": _DRAWING_CATALOGUE_DIR,
+    }
+
+
+def _find_catalogue_png(stem: str) -> Optional[str]:
+    """관리자가 미리 만들어 둔 동명 PNG 가 있으면 그 경로를 반환.
+
+    위치: HiTessWorkBenchBackEnd/InHouseProgram/DrawingToAnalysis/PdfCatalogue/PNG/{stem}.png
+    PNG 가 있으면 카탈로그 미리보기에서 그대로 사용한다 (PDF 렌더링보다 깔끔).
+    """
+    png_dir = os.path.join(_DRAWING_CATALOGUE_DIR, "PNG")
+    candidate = os.path.abspath(os.path.join(png_dir, stem + ".png"))
+    if not candidate.startswith(os.path.abspath(png_dir) + os.sep):
+        return None
+    return candidate if os.path.isfile(candidate) else None
+
+
+@router.get("/analysis/drawing-to-analysis/catalogue/{filename}/preview")
+async def preview_drawing_catalogue(
+    filename: str,
+    current_user: str = Depends(require_auth),
+):
+    """카탈로그 미리보기 — 관리자가 만든 PNG 가 있으면 그대로, 없으면 PyMuPDF fallback.
+
+    PNG 우선 정책:
+      1) PdfCatalogue/PNG/{stem}.png 가 존재하면 그 파일을 그대로 반환 (디자인 그대로).
+      2) 없으면 PDF 첫 페이지를 PyMuPDF 로 렌더링해서 반환 (원본 품질, 후처리 없음).
+    """
+    path = _resolve_catalogue_pdf(filename)
+    stem = os.path.splitext(os.path.basename(path))[0]
+
+    # 1) 사용자 정의 PNG 우선
+    png_path = _find_catalogue_png(stem)
+    if png_path:
+        return FileResponse(png_path, media_type="image/png", filename=stem + ".png")
+
+    # 2) Fallback: PyMuPDF 렌더링 (후처리 없이 원본 그대로)
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        raise HTTPException(status_code=500, detail="서버에 PyMuPDF가 설치되어 있지 않습니다.")
+    try:
+        with fitz.open(path) as doc:
+            if doc.page_count == 0:
+                raise HTTPException(status_code=400, detail="빈 PDF입니다.")
+            pix = doc.load_page(0).get_pixmap(
+                matrix=fitz.Matrix(3.5, 3.5),
+                alpha=False,
+                colorspace=fitz.csRGB,
+            )
+            png_bytes = pix.tobytes("png")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"미리보기 생성 실패: {e}")
+    return StreamingResponse(io.BytesIO(png_bytes), media_type="image/png")
+
+
+@router.post("/analysis/drawing-to-analysis/catalogue/{filename}/run")
+async def run_drawing_catalogue(
+    filename: str,
+    employee_id: str = Form(...),
+    mesh_size: float = Form(10.0),
+    source: str = Form("Workbench-Catalogue"),
+    current_user: str = Depends(require_auth),
+):
+    """카탈로그 PDF로 BDF 변환 작업을 큐에 등록한다.
+
+    카테고리(파일명 prefix)에 따라 자동으로 mode를 결정한다:
+      Lug_*           → mode='lug'        (exe all)
+      BlockSupport_*  → mode='support'    (exe support all)
+    """
+    _verify_employee_self(employee_id, current_user)
+    src_path = _resolve_catalogue_pdf(filename)
+    safe_name = os.path.basename(src_path)
+    category, _ = _categorize_catalogue_filename(safe_name)
+    resolved_mode = _resolve_drawing_mode(category)
+
+    work_dir, timestamp = make_work_dir(employee_id, "DrawingToAnalysis")
+    pdf_path = os.path.join(work_dir, safe_name)
+    try:
+        shutil.copy2(src_path, pdf_path)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"PDF 복사 실패: {e}")
+
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "DrawingToAnalysis", "DrawingToAnalysis.exe"
+    ))
+    job_id = submit_analysis_job(
+        task_execute_drawing_to_analysis,
+        pdf_path, work_dir, exe_path, employee_id, timestamp, source, mesh_size, resolved_mode,
+        queue_message="변환 대기 중...",
+    )
+    return {"job_id": job_id, "filename": safe_name, "mode": resolved_mode, "category": category}
+
+
+# -------------------- 도면 → 모델 재구축 (파라미터 편집) --------------------
+
+class DrawingRebuildRequest(BaseModel):
+    """파라미터 편집 후 모델 재구축 요청."""
+    employee_id: str
+    work_dir: str               # 이전 작업 폴더 (절대 경로)
+    mode: str                   # 'lug' | 'support'
+    params: dict                # 편집된 LugParams / SupportParams JSON
+    original_pdf_path: Optional[str] = None  # Support 모드에서 필수
+    source: str = "Workbench-Rebuild"
+
+
+def _find_pdf_in_dir(work_dir: str) -> Optional[str]:
+    """폴더 안에서 카탈로그/업로드 원본 PDF 를 찾는다 (engine 정규화 산출물 제외)."""
+    if not os.path.isdir(work_dir):
+        return None
+    try:
+        for name in sorted(os.listdir(work_dir)):
+            if not name.lower().endswith(".pdf"):
+                continue
+            if name.startswith("input_pdf_for_engine"):
+                continue
+            return os.path.join(work_dir, name)
+    except OSError:
+        pass
+    return None
+
+
+@router.post("/analysis/drawing-to-analysis/rebuild")
+async def rebuild_drawing_model(
+    payload: DrawingRebuildRequest,
+    current_user: str = Depends(require_auth),
+):
+    """편집한 파라미터로 BDF/메시 재구축.
+
+    결과 저장 위치: <이전 작업 폴더>/rebuild_<timestamp>/
+    → 사용자가 동일 변환의 변형들을 한 폴더 안에서 관리할 수 있도록 한다.
+    """
+    _verify_employee_self(payload.employee_id, current_user)
+
+    mode = (payload.mode or "lug").lower()
+    if mode not in ("lug", "support"):
+        raise HTTPException(status_code=400, detail=f"알 수 없는 mode: {payload.mode}")
+
+    # ── 이전 작업 폴더 검증 ──────────────────────────────────────
+    prev_dir = os.path.abspath(payload.work_dir or "")
+    if not prev_dir.startswith(_USER_CONNECTION_DIR + os.sep):
+        raise HTTPException(status_code=400, detail="허용되지 않은 work_dir 입니다.")
+    if not os.path.isdir(prev_dir):
+        raise HTTPException(status_code=404, detail=f"이전 작업 폴더를 찾을 수 없습니다: {prev_dir}")
+
+    # ── 재구축 폴더: 이전 폴더 하위에 rebuild_<timestamp>/ ─────
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    rebuild_dir = os.path.join(prev_dir, f"rebuild_{timestamp}")
+    try:
+        os.makedirs(rebuild_dir, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"재구축 폴더 생성 실패: {e}")
+
+    # ── Support 재구축은 'support from-params' CLI 가 SupportParams JSON 만으로 동작 ──
+    # → 원본 PDF 가 필요 없음 (PDF 재해석 거치지 않음)
+    original_pdf: Optional[str] = None
+
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "DrawingToAnalysis", "DrawingToAnalysis.exe"
+    ))
+    job_id = submit_analysis_job(
+        task_execute_drawing_rebuild,
+        rebuild_dir, exe_path, payload.employee_id, timestamp, payload.source,
+        mode, payload.params, original_pdf,
+        queue_message="모델 재구축 대기 중...",
+    )
+    return {
+        "job_id":      job_id,
+        "work_dir":    rebuild_dir,
+        "parent_dir":  prev_dir,
+        "mode":        mode,
+        "original_pdf": original_pdf,
     }
 
 

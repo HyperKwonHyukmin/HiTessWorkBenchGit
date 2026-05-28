@@ -55,6 +55,44 @@ export const uploadDrawingPdf = (file) => {
   });
 };
 
+/** DrawingToAnalysis — 카탈로그 PDF 목록 조회 */
+export const listDrawingCatalogue = () =>
+  axios.get(`${API_BASE_URL}/api/analysis/drawing-to-analysis/catalogue`, {
+    headers: getAuthHeaders(),
+  });
+
+/** DrawingToAnalysis — 카탈로그 PDF 첫 페이지 미리보기 URL */
+export const drawingCataloguePreviewUrl = (filename) =>
+  `${API_BASE_URL}/api/analysis/drawing-to-analysis/catalogue/${encodeURIComponent(filename)}/preview`;
+
+/** DrawingToAnalysis — 카탈로그 PDF로 변환 작업 시작 */
+export const runDrawingCatalogue = (filename, { employeeId, meshSize = 10.0 }) => {
+  const fd = new FormData();
+  fd.append('employee_id', employeeId);
+  fd.append('mesh_size', String(meshSize));
+  fd.append('source', 'Workbench-Catalogue');
+  return axios.post(
+    `${API_BASE_URL}/api/analysis/drawing-to-analysis/catalogue/${encodeURIComponent(filename)}/run`,
+    fd,
+    { headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' } },
+  );
+};
+
+/** DrawingToAnalysis — 편집한 파라미터로 모델 재구축 */
+export const rebuildDrawingModel = ({ employeeId, workDir, mode, params, originalPdfPath = null }) =>
+  axios.post(
+    `${API_BASE_URL}/api/analysis/drawing-to-analysis/rebuild`,
+    {
+      employee_id: employeeId,
+      work_dir: workDir,
+      mode,
+      params,
+      original_pdf_path: originalPdfPath,
+      source: 'Workbench-Rebuild',
+    },
+    { headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } },
+  );
+
 /** HP-SCR 배관응력 해석 요청 (PSA / POR) */
 export const requestHpscrAssessment = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/hpscr/request`, formData, 'HpScr');
