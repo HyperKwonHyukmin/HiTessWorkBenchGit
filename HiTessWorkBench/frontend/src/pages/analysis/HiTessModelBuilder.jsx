@@ -2642,11 +2642,10 @@ export default function HiTessModelBuilder() {
         showToast('결과 폴더 다운로드 중...', 'info');
         const params = new URLSearchParams({ output_dir: bdfResult.outputDir });
         const downloadUrl = `${API_BASE_URL}/api/analysis/modelflow/result-zip?${params}`;
-        const token = localStorage.getItem('session_token');
         const fetchRes = await window.electron.invoke('viewer:fetchResultDir', {
           downloadUrl,
           jobId: jobStatus?.job_id || bdfResult.outputDir.split(/[\\/]/).pop(),
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: getAuthHeaders(),  // 실제 인증 체계(localStorage 'user') 사용 — 'session_token'은 미저장 키
         });
         if (fetchRes === null) throw new Error('IPC viewer:fetchResultDir 미등록');
         if (!fetchRes?.ok) throw new Error(fetchRes?.error || '결과 폴더 다운로드 실패');
@@ -2889,7 +2888,7 @@ export default function HiTessModelBuilder() {
     if (editPollRef.current) { clearInterval(editPollRef.current); editPollRef.current = null; }
     setStruFile(null); setPipeFile(null); setEquiFile(null);
     setStruError(null); setPipeError(null); setEquiError(null);
-    setMeshSize('500'); setUboltFullFix(true); setUseNastran(true);
+    setMeshSize('300'); setUboltFullFix(true); setUseNastran(true);
     setLocalResultDir(null);
     setSteps(INITIAL_STEPS.map(s => ({ ...s })));
     setActiveIdx(0); setHasRunOnce(false);

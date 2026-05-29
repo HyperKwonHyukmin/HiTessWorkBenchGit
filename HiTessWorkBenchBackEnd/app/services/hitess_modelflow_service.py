@@ -34,9 +34,11 @@ logger = logging.getLogger(__name__)
 # 한글 콜론(`：`) 도 허용. README §1 / §5.4 참고.
 _OUTPUT_LINE_RE = re.compile(r"^(?:출력\s*폴더|폴더)\s*[:：]\s*(.+)$")
 
-# build-full 이 phase/audit 출력에 사용하는 파일명 prefix.
+# build-full 이 phase/audit 출력에 사용하는 파일명 패턴 (예: 00_InputAudit.json, 06_Validation.bdf).
 # 최종 산출물 {designName}.json/.bdf 와 분리하기 위해 사용.
-_PHASE_PREFIXES = ("00_", "01_", "02_", "03_", "04_", "05_", "06_")
+# 단순 prefix("06_") 매칭은 '06_3468-...' 처럼 도면번호로 시작하는 designName 을 오탐 제외하므로,
+# '두자리숫자_영문단어.확장자' 정확 패턴으로 phase 파일만 좁혀 매칭한다.
+_PHASE_FILE_RE = re.compile(r"^\d{2}_[A-Za-z]+\.(?:json|bdf)$", re.IGNORECASE)
 
 
 def _parse_output_dir(stdout: str) -> str | None:
@@ -58,10 +60,10 @@ def _scan_latest_timestamp_dir(parent: str) -> str | None:
 
 
 def _pick_final_artifact(output_dir: str, ext: str) -> str | None:
-    """output_dir 에서 phase 접두사(00_~06_) 가 없는 최신 산출물을 반환한다."""
+    """output_dir 에서 phase 파일(NN_영문.ext)이 아닌 최신 산출물을 반환한다."""
     files = [
         f for f in glob.glob(os.path.join(output_dir, f"*.{ext}"))
-        if not os.path.basename(f).startswith(_PHASE_PREFIXES)
+        if not _PHASE_FILE_RE.match(os.path.basename(f))
     ]
     if not files:
         return None
