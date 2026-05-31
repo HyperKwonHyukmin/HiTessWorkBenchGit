@@ -85,7 +85,11 @@ start_server.bat
 .agents/
 .claude/skills/
 .claude/settings.local.json
+.claude/agent-memory/
 skills-lock.json
+
+# 작업 중 생성한 미리보기 스크린샷
+lug-preview-after.png
 .antigravitycli/
 # PowerShell 명령이 실수로 파일로 저장된 경우
 Get-Command

@@ -59,7 +59,7 @@ export function usePolling({ jobId, interval = 1500, maxRetries = 120, onProgres
           return;
         }
 
-        if (data.status === 'Failed') {
+        if (data.status === 'Failed' || data.status === 'Interrupted') {
           if (onErrorRef.current) onErrorRef.current(data);
           return;
         }

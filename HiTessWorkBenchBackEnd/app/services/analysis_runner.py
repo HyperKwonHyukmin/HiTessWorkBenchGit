@@ -95,6 +95,7 @@ def run_engine(
 
 def record_analysis(
     *,
+    job_id: Optional[str] = None,
     project_name: str,
     program_name: str,
     employee_id: str,
@@ -117,16 +118,39 @@ def record_analysis(
     """
     db = database.SessionLocal()
     try:
-        new_analysis = models.Analysis(
-            project_name=project_name,
-            program_name=program_name,
-            employee_id=employee_id,
-            status=status,
-            input_info=input_info,
-            result_info=result_info,
-            source=source,
-        )
-        db.add(new_analysis)
+        new_analysis = db.query(models.Analysis).filter(models.Analysis.job_id == job_id).first() if job_id else None
+        now = datetime.now()
+        if new_analysis:
+            new_analysis.project_name = project_name
+            new_analysis.program_name = program_name
+            new_analysis.employee_id = employee_id
+            new_analysis.status = status
+            new_analysis.job_status = status
+            new_analysis.progress = 100
+            new_analysis.job_message = "해석 완료" if status == "Success" else "해석 실패"
+            new_analysis.input_info = input_info
+            new_analysis.result_info = result_info
+            new_analysis.source = source
+            new_analysis.updated_at = now
+            if not new_analysis.started_at:
+                new_analysis.started_at = now
+        else:
+            new_analysis = models.Analysis(
+                job_id=job_id,
+                project_name=project_name,
+                program_name=program_name,
+                employee_id=employee_id,
+                status=status,
+                job_status=status,
+                progress=100,
+                job_message="해석 완료" if status == "Success" else "해석 실패",
+                input_info=input_info,
+                result_info=result_info,
+                source=source,
+                started_at=now,
+                updated_at=now,
+            )
+            db.add(new_analysis)
         db.commit()
         db.refresh(new_analysis)
 
@@ -148,6 +172,7 @@ def record_analysis(
 
         project_data = {
             "id": new_analysis.id,
+            "job_id": new_analysis.job_id,
             "project_name": new_analysis.project_name,
             "program_name": new_analysis.program_name,
             "employee_id": new_analysis.employee_id,

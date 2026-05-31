@@ -52,6 +52,7 @@ def task_execute_beam(job_id: str, input_json_path: str, work_dir: str, employee
   update_progress(job_id, 95, "Saving to Database...")
 
   project_data, db_err = record_analysis(
+    job_id=job_id,
     project_name=f"SimpleBeam_{timestamp}",
     program_name="Simple Beam Assessment",
     employee_id=employee_id,

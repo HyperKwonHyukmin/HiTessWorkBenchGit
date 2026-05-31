@@ -145,6 +145,7 @@ def task_execute_mooring_fitting(
 
     update_progress(job_id, 95, "데이터베이스 저장 중...")
     project_data, db_err = record_analysis(
+        job_id=job_id,
         project_name=f"{PROGRAM_NAME}_{timestamp}",
         program_name=PROGRAM_NAME,
         employee_id=employee_id,

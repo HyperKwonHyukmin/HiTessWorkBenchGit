@@ -14,11 +14,13 @@
 - HTTP 예외 메시지/상태 코드는 기존 라우터와 동일하게 유지합니다.
 """
 import os
+import re
 import uuid
 from datetime import datetime
 
 from fastapi import HTTPException, UploadFile
 
+from .. import database, models
 from ..services.job_manager import analysis_executor, job_status_store
 
 # routers/ 디렉토리 기준 백엔드 루트 → userConnection 경로
@@ -26,6 +28,7 @@ from ..services.job_manager import analysis_executor, job_status_store
 _ROUTER_DIR = os.path.dirname(os.path.abspath(__file__))           # app/routers
 _BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))       # HiTessWorkBenchBackEnd
 USER_CONNECTION_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
+_TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")
 
 
 def make_work_dir(employee_id: str, program_name: str) -> tuple[str, str]:
@@ -90,6 +93,8 @@ def submit_analysis_job(
         - analysis_executor.submit(task_fn, job_id, *task_args)
     """
     job_id = str(uuid.uuid4())
+    employee_id, program_name = _infer_job_metadata(task_fn, task_args)
+    _record_pending_analysis(job_id, employee_id, program_name, queue_message)
     job_status_store.set(job_id, {
         "status": "Pending",
         "progress": 0,
@@ -97,3 +102,54 @@ def submit_analysis_job(
     })
     analysis_executor.submit(task_fn, job_id, *task_args)
     return job_id
+
+
+def _infer_job_metadata(task_fn, task_args: tuple) -> tuple[str | None, str]:
+    employee_id = None
+    for idx, arg in enumerate(task_args[:-1]):
+        if isinstance(arg, str) and isinstance(task_args[idx + 1], str) and _TIMESTAMP_RE.match(task_args[idx + 1]):
+            employee_id = arg
+            break
+
+    program_name = getattr(task_fn, "__name__", "Analysis").removeprefix("task_execute_")
+    for arg in task_args:
+        if isinstance(arg, str) and _is_userconnection_path(arg):
+            folder = os.path.basename(os.path.abspath(arg))
+            parts = folder.split("_", 3)
+            if len(parts) == 4:
+                employee_id = employee_id or parts[2]
+                program_name = parts[3]
+                break
+    return employee_id, program_name
+
+
+def _is_userconnection_path(path: str) -> bool:
+    try:
+        return os.path.commonpath([USER_CONNECTION_DIR, os.path.abspath(path)]) == USER_CONNECTION_DIR
+    except ValueError:
+        return False
+
+
+def _record_pending_analysis(job_id: str, employee_id: str | None, program_name: str, queue_message: str) -> None:
+    db = database.SessionLocal()
+    try:
+        now = datetime.now()
+        db.add(models.Analysis(
+            job_id=job_id,
+            project_name=f"{program_name}_{now.strftime('%Y%m%d_%H%M%S')}",
+            program_name=program_name,
+            employee_id=employee_id,
+            status="Pending",
+            job_status="Pending",
+            progress=0,
+            job_message=queue_message,
+            input_info={},
+            result_info={},
+            source="Workbench",
+            updated_at=now,
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()

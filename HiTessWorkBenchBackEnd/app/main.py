@@ -72,13 +72,54 @@ def ensure_user_columns():
 ensure_user_columns()
 
 
+def ensure_analysis_job_columns():
+    """기존 analysis 테이블에 DB 기반 job 상태 컬럼을 보강합니다."""
+    inspector = inspect(database.engine)
+    if not inspector.has_table("analysis"):
+        return
+    columns = {col["name"] for col in inspector.get_columns("analysis")}
+    statements = []
+    if "job_id" not in columns:
+        statements.append("ALTER TABLE analysis ADD COLUMN job_id VARCHAR(50) NULL")
+    if "job_status" not in columns:
+        statements.append("ALTER TABLE analysis ADD COLUMN job_status VARCHAR(20) DEFAULT 'completed'")
+    if "progress" not in columns:
+        statements.append("ALTER TABLE analysis ADD COLUMN progress INT DEFAULT 100")
+    if "job_message" not in columns:
+        statements.append("ALTER TABLE analysis ADD COLUMN job_message TEXT NULL")
+    if "started_at" not in columns:
+        statements.append("ALTER TABLE analysis ADD COLUMN started_at DATETIME NULL")
+    if "updated_at" not in columns:
+        statements.append("ALTER TABLE analysis ADD COLUMN updated_at DATETIME NULL")
+    if not statements:
+        return
+    with database.engine.begin() as conn:
+        for statement in statements:
+            conn.execute(text(statement))
+
+
+ensure_analysis_job_columns()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """서버 시작 시 기본 가이드 시드와 userConnection 정리 스케줄러를 시작합니다."""
     db = database.SessionLocal()
     try:
+        db.query(models.Analysis).filter(
+            models.Analysis.job_status.in_(["Pending", "Running"])
+        ).update({
+            "job_status": "Interrupted",
+            "status": "Failed",
+            "progress": 100,
+            "job_message": "서버 재시작으로 작업 상태가 중단되었습니다.",
+        }, synchronize_session=False)
+        db.commit()
         seed_default_guides(db)
         seed_default_dev_runbooks(db)
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

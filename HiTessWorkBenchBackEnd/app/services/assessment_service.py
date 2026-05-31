@@ -320,6 +320,7 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
 
   date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
   project_data, db_err = record_analysis(
+    job_id=job_id,
     project_name=f"Truss Assessment_{date_str}",
     program_name="Truss Assessment",
     employee_id=employee_id,

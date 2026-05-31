@@ -138,6 +138,7 @@ def task_execute_f06parser(
     update_progress(job_id, 90, "데이터베이스 저장 중...")
 
     project_data, db_err = record_analysis(
+        job_id=job_id,
         project_name=f"F06Parser_{timestamp}",
         program_name="F06 Parser",
         employee_id=employee_id,

@@ -32,10 +32,14 @@ class UserSession(Base):
 class Analysis(Base):
   __tablename__ = "analysis"
   id = Column(Integer, primary_key=True, index=True)
+  job_id = Column(String(50), unique=True, index=True, nullable=True)
   project_name = Column(String(200), nullable=True)
   program_name = Column(String(100))
   employee_id = Column(String(50), index=True)
   status = Column(String(50))
+  job_status = Column(String(20), default="completed")
+  progress = Column(Integer, default=100)
+  job_message = Column(Text, nullable=True)
   input_info = Column(JSON)
   result_info = Column(JSON)
 
@@ -43,6 +47,8 @@ class Analysis(Base):
   source = Column(String(50), default="Workbench")
 
   created_at = Column(DateTime(timezone=True), server_default=func.now())
+  started_at = Column(DateTime(timezone=True), nullable=True)
+  updated_at = Column(DateTime(timezone=True), nullable=True)
 
 # [기존 Analysis 클래스 아래에 다음 코드 추가]
 

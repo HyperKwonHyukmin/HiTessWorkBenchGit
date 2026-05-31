@@ -189,6 +189,7 @@ def task_execute_modelflow(
 
     # modelflow 는 project 응답에서 input_info/result_info 를 제외하는 기존 동작 보존.
     project_data, db_err = record_analysis(
+        job_id=job_id,
         project_name=f"HiTessModelBuilder_{timestamp}",
         program_name="HiTessModelBuilder",
         employee_id=employee_id,

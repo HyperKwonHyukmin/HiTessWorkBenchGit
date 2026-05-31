@@ -8,6 +8,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
+from .. import database, models
+
 MAX_CONCURRENT_JOBS = 5
 analysis_executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_JOBS)
 
@@ -31,12 +33,14 @@ class JobStatusStore:
         """새 작업을 등록합니다."""
         with self._lock:
             self._store[job_id] = {**data, "_created_at": datetime.now()}
+        self._write_through(job_id, data)
 
     def update_job(self, job_id: str, updates: dict):
         """기존 작업 상태를 원자적으로 갱신합니다."""
         with self._lock:
             if job_id in self._store:
                 self._store[job_id].update(updates)
+        self._write_through(job_id, updates)
 
     def get(self, job_id: str) -> dict | None:
         """작업 상태를 복사본으로 반환합니다."""
@@ -56,6 +60,34 @@ class JobStatusStore:
         with self._lock:
             return [{k: v for k, v in entry.items() if not k.startswith("_")}
                     for entry in self._store.values()]
+
+    def _write_through(self, job_id: str, updates: dict) -> None:
+        """Analysis 레코드가 존재하면 메모리 상태를 DB에도 반영합니다."""
+        if not job_id:
+            return
+        db = database.SessionLocal()
+        try:
+            record = db.query(models.Analysis).filter(models.Analysis.job_id == job_id).first()
+            if not record:
+                return
+            status = updates.get("status")
+            now = datetime.now()
+            if status:
+                record.job_status = status
+                if status == "Running" and not record.started_at:
+                    record.started_at = now
+                if status in ("Success", "Failed"):
+                    record.status = status
+            if "progress" in updates:
+                record.progress = updates.get("progress")
+            if "message" in updates:
+                record.job_message = updates.get("message")
+            record.updated_at = now
+            db.commit()
+        except Exception:
+            db.rollback()
+        finally:
+            db.close()
 
     def _cleanup_loop(self):
         """1시간마다 만료된 완료/실패 작업을 삭제합니다."""

@@ -62,6 +62,7 @@ def task_execute_truss(job_id: str, node_path: str, member_path: str, work_dir: 
   update_progress(job_id, 95, "Saving to Database...")
 
   project_data, db_err = record_analysis(
+    job_id=job_id,
     project_name=f"Truss Model Builder_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
     program_name="TrussModelBuilder",
     employee_id=employee_id,

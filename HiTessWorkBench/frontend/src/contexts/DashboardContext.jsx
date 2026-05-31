@@ -271,48 +271,26 @@ export function DashboardProvider({ children }) {
   const setPendingJobTransfer = (payload) => setPendingJobTransferRaw(payload);
   const clearPendingJobTransfer = () => setPendingJobTransferRaw(null);
 
-  const [globalJob, setGlobalJob] = useState(null);
-  const [pendingJobId, setPendingJobId] = useState(null);
+  const [globalJobs, setGlobalJobs] = useState([]);
+  const globalJob = globalJobs[0] || null;
 
-  const clearGlobalJob = () => {
-    setPendingJobId(null);
-    setGlobalJob(null);
+  const clearGlobalJob = (jobId = null) => {
+    setGlobalJobs(prev => jobId ? prev.filter(job => job.jobId !== jobId) : []);
   };
 
   const startGlobalJob = (jobId, menuName) => {
-    setGlobalJob({ jobId, menu: menuName, status: 'Running', progress: 0, message: '서버에 작업을 요청하는 중...' });
-    setPendingJobId(jobId);
+    if (!jobId) return;
+    setGlobalJobs(prev => {
+      const nextJob = { jobId, menu: menuName, status: 'Running', progress: 0, message: '서버에 작업을 요청하는 중...' };
+      return [nextJob, ...prev.filter(job => job.jobId !== jobId)].slice(0, 5);
+    });
   };
 
   useEffect(() => {
-    if (
-      globalJob &&
-      (globalJob.status === 'Success' || globalJob.status === 'Failed') &&
-      globalJob.menu === currentMenu
-    ) {
-      clearGlobalJob();
-    }
-  }, [globalJob, currentMenu]);
-
-  usePolling({
-    jobId: pendingJobId,
-    interval: 1500,
-    maxRetries: 120,
-    onProgress: (data) => {
-      setGlobalJob(prev => {
-        if (!prev || prev.jobId !== pendingJobId) return prev;
-        return { ...prev, ...data };
-      });
-    },
-    onComplete: (data) => {
-      setGlobalJob(prev => prev ? { ...prev, ...data } : prev);
-      setPendingJobId(null);
-    },
-    onError: (err) => {
-      setGlobalJob(prev => prev ? { ...prev, status: 'Failed', message: err?.timeout ? '해석 시간 초과 (3분)' : '서버 통신 오류 발생' } : prev);
-      setPendingJobId(null);
-    }
-  });
+    setGlobalJobs(prev => prev.filter(job =>
+      !((job.status === 'Success' || job.status === 'Failed' || job.status === 'Interrupted') && job.menu === currentMenu)
+    ));
+  }, [currentMenu]);
 
   const toggleFavorite = (title) => {
     setFavorites(prev => {
@@ -327,7 +305,7 @@ export function DashboardProvider({ children }) {
     // [추가] Provider의 value에 assessmentPageState와 setAssessmentPageState를 넘겨줌
     <DashboardContext.Provider value={{
         favorites, toggleFavorite,
-        globalJob, startGlobalJob, clearGlobalJob,
+        globalJob, globalJobs, startGlobalJob, clearGlobalJob,
         assessmentPageState, setAssessmentPageState,
         modelBuilderPageState, setModelBuilderPageState,
         gmuHandoff, setGmuHandoff, clearGmuHandoff,
@@ -335,42 +313,85 @@ export function DashboardProvider({ children }) {
     }}>
       {children}
 
-      {/* 글로벌 해석 추적 위젯 (화면 우측 하단 고정) */}
-      {globalJob && (
-        <div 
-          onClick={() => setCurrentMenu && setCurrentMenu(globalJob.menu)}
-          className="fixed bottom-6 right-6 z-[99999] w-[320px] bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] rounded-2xl p-5 cursor-pointer hover:border-blue-500 hover:-translate-y-1 transition-all duration-300 animate-fade-in-up group"
-          title="클릭하여 해석 페이지로 돌아가기"
-        >
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-[11px] font-bold text-slate-300 flex items-center gap-2 uppercase tracking-wider">
-              {globalJob.status === 'Running' ? <RefreshCw className="animate-spin text-blue-400" size={14}/> :
-               globalJob.status === 'Success' ? <CheckCircle className="text-emerald-400" size={14}/> :
-               <AlertCircle className="text-red-400" size={14}/>}
-              {globalJob.menu}
-            </span>
-            <button 
-              onClick={(e) => { e.stopPropagation(); clearGlobalJob(); }} 
-              className="text-slate-500 hover:text-white transition-colors cursor-pointer"
-            >
-              <X size={16}/>
-            </button>
-          </div>
-          
-          <div className="text-sm font-bold text-white mb-3">
-            {globalJob.status === 'Success' ? '해석 완료! 결과를 확인하세요.' : 
-             globalJob.status === 'Failed' ? '해석 실패' : globalJob.message}
-          </div>
-          
-          {globalJob.status === 'Running' && (
-            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-              <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${globalJob.progress}%` }}></div>
-            </div>
-          )}
-        </div>
-      )}
+      <GlobalJobTray
+        jobs={globalJobs}
+        onNavigate={setCurrentMenu}
+        onDismiss={clearGlobalJob}
+        onPatchJob={(jobId, patch) => setGlobalJobs(prev => prev.map(job => job.jobId === jobId ? { ...job, ...patch } : job))}
+      />
     </DashboardContext.Provider>
   );
 }
 
 export const useDashboard = () => useContext(DashboardContext);
+
+function GlobalJobTray({ jobs, onNavigate, onDismiss, onPatchJob }) {
+  if (!jobs.length) return null;
+
+  return (
+    <div className="fixed bottom-4 right-4 z-[99999] w-[min(360px,calc(100vw-2rem))] space-y-2">
+      {jobs.map(job => (
+        <GlobalJobCard
+          key={job.jobId}
+          job={job}
+          onNavigate={onNavigate}
+          onDismiss={onDismiss}
+          onPatchJob={onPatchJob}
+        />
+      ))}
+    </div>
+  );
+}
+
+function GlobalJobCard({ job, onNavigate, onDismiss, onPatchJob }) {
+  const isTerminal = job.status === 'Success' || job.status === 'Failed' || job.status === 'Interrupted';
+
+  usePolling({
+    jobId: isTerminal ? null : job.jobId,
+    interval: 1500,
+    maxRetries: 120,
+    onProgress: (data) => onPatchJob(job.jobId, data),
+    onComplete: (data) => onPatchJob(job.jobId, data),
+    onError: (err) => onPatchJob(job.jobId, {
+      status: 'Failed',
+      progress: 100,
+      message: err?.timeout ? '해석 시간 초과 (3분)' : '서버 통신 오류 발생',
+    }),
+  });
+
+  return (
+    <div
+      onClick={() => onNavigate && onNavigate(job.menu)}
+      className="bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] rounded-xl p-4 cursor-pointer hover:border-blue-500 transition-all duration-200 animate-fade-in-up"
+      title="클릭하여 해석 페이지로 돌아가기"
+    >
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-[11px] font-bold text-slate-300 flex items-center gap-2 uppercase tracking-wider min-w-0">
+          {job.status === 'Running' ? <RefreshCw className="animate-spin text-blue-400 shrink-0" size={14}/> :
+           job.status === 'Success' ? <CheckCircle className="text-emerald-400 shrink-0" size={14}/> :
+           <AlertCircle className="text-red-400 shrink-0" size={14}/>}
+          <span className="truncate">{job.menu}</span>
+        </span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDismiss(job.jobId); }}
+          className="text-slate-500 hover:text-white transition-colors cursor-pointer shrink-0"
+          title="닫기"
+        >
+          <X size={16}/>
+        </button>
+      </div>
+
+      <div className="text-sm font-bold text-white mb-3 line-clamp-2">
+        {job.status === 'Success' ? '해석 완료! 결과를 확인하세요.' :
+         job.status === 'Interrupted' ? '서버 재시작으로 작업이 중단되었습니다.' :
+         job.status === 'Failed' ? '해석 실패' : job.message}
+      </div>
+
+      {!isTerminal && (
+        <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+          <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${job.progress || 0}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
