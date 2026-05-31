@@ -4,7 +4,7 @@ import { LogOut, User, Search, ChevronLeft, ChevronRight, Server } from 'lucide-
 import { API_BASE_URL, setApiBaseUrl } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
 import { useServerStatus } from '../../hooks/useServerStatus';
-import { ANALYSIS_DATA } from '../../contexts/DashboardContext';
+import { ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -52,16 +52,13 @@ export default function Layout({
     { label: 'User Guide',       menu: 'User Guide' },
   ];
 
-  // mode → 목록 페이지 메뉴명
-  const modeToMenu = { File: 'File-Based Apps', Interactive: 'Interactive Apps', Parametric: 'Parametric Apps' };
-
   const searchResults = searchTerm.trim().length < 1 ? [] : [
     ...MENU_ITEMS.filter(m => m.label.toLowerCase().includes(searchTerm.toLowerCase()))
       .map(m => ({ label: m.label, sub: '메뉴', menu: m.menu })),
     ...ANALYSIS_DATA.filter(a =>
       a.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.description.toLowerCase().includes(searchTerm.toLowerCase())
-    ).map(a => ({ label: a.title, sub: a.category, menu: modeToMenu[a.mode] || 'Dashboard' })),
+    ).map(a => ({ label: a.title, sub: a.category, menu: getAppMenuName(a.title) })),
   ].slice(0, 8);
 
   // 바깥 클릭 시 드롭다운 닫기
@@ -117,7 +114,7 @@ export default function Layout({
               {currentMenu}
             </h2>
             
-            <div ref={searchRef} className="relative hidden lg:block ml-4">
+            <div ref={searchRef} className="relative ml-0 md:ml-4">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
               <input
                 type="text"
@@ -126,7 +123,7 @@ export default function Layout({
                 onChange={e => { setSearchTerm(e.target.value); setShowDropdown(true); }}
                 onFocus={() => setShowDropdown(true)}
                 onKeyDown={e => { if (e.key === 'Escape') { setShowDropdown(false); setSearchTerm(''); } }}
-                className="pl-9 pr-4 py-2 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-64"
+                className="pl-9 pr-4 py-2 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-44 sm:w-56 lg:w-64"
               />
               {showDropdown && searchResults.length > 0 && (
                 <div className="absolute top-full left-0 mt-1 w-72 bg-white rounded-xl shadow-xl border border-slate-200 z-[9999] overflow-hidden">
