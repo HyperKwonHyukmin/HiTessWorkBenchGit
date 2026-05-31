@@ -1,9 +1,10 @@
 """공지사항, 기능 요청, 사용자 가이드 CRUD API 라우터."""
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy.orm import Session
 from .. import models, schemas, database
 from ..dependencies import require_auth, require_admin
 from ..sessions import session_store
+from ..services.activity_service import log_activity
 from ._crud_helpers import create_record, delete_record, get_or_404, update_record
 
 router = APIRouter(prefix="/api", tags=["support"])
@@ -65,23 +66,36 @@ def get_notices(
 
 
 @router.post("/notices", response_model=schemas.NoticeResponse)
-def create_notice(notice: schemas.NoticeCreate, db: Session = Depends(database.get_db),
+def create_notice(notice: schemas.NoticeCreate, request: Request, db: Session = Depends(database.get_db),
                   current_admin: str = Depends(require_admin)):
-  return create_record(db, models.Notice(**_notice_payload(notice, db)))
+  created = create_record(db, models.Notice(**_notice_payload(notice, db)))
+  log_activity(db, "NOTICE_EDIT", employee_id=current_admin,
+               action_detail={"operation": "create", "notice_id": created.id, "title": created.title},
+               status="success", ip_address=request.client.host if request.client else None)
+  return created
 
 
 @router.put("/notices/{notice_id}", response_model=schemas.NoticeResponse)
-def update_notice(notice_id: int, notice: schemas.NoticeCreate, db: Session = Depends(database.get_db),
+def update_notice(notice_id: int, notice: schemas.NoticeCreate, request: Request, db: Session = Depends(database.get_db),
                   current_admin: str = Depends(require_admin)):
   db_notice = get_or_404(db, models.Notice, notice_id, _NOTICE_NOT_FOUND)
-  return update_record(db, db_notice, _notice_payload(notice, db))
+  updated = update_record(db, db_notice, _notice_payload(notice, db))
+  log_activity(db, "NOTICE_EDIT", employee_id=current_admin,
+               action_detail={"operation": "update", "notice_id": notice_id, "title": updated.title},
+               status="success", ip_address=request.client.host if request.client else None)
+  return updated
 
 
 @router.delete("/notices/{notice_id}")
-def delete_notice(notice_id: int, db: Session = Depends(database.get_db),
+def delete_notice(notice_id: int, request: Request, db: Session = Depends(database.get_db),
                   current_admin: str = Depends(require_admin)):
   db_notice = get_or_404(db, models.Notice, notice_id, _NOTICE_NOT_FOUND)
-  return delete_record(db, db_notice)
+  title = db_notice.title
+  result = delete_record(db, db_notice)
+  log_activity(db, "NOTICE_EDIT", employee_id=current_admin,
+               action_detail={"operation": "delete", "notice_id": notice_id, "title": title},
+               status="success", ip_address=request.client.host if request.client else None)
+  return result
 
 
 # ==================== Feature Request (기능 요청) ====================
@@ -112,6 +126,7 @@ def upvote_feature_request(req_id: int, db: Session = Depends(database.get_db),
 
 @router.put("/feature-requests/{req_id}/comment")
 def comment_feature_request(req_id: int, comment_data: schemas.FeatureRequestComment,
+                            request: Request,
                             db: Session = Depends(database.get_db),
                             current_admin: str = Depends(require_admin)):
   req = get_or_404(db, models.FeatureRequest, req_id, _FEATURE_NOT_FOUND)
@@ -120,14 +135,22 @@ def comment_feature_request(req_id: int, comment_data: schemas.FeatureRequestCom
   req.comments_count = 1 if comment_data.admin_comment else 0
   db.commit()
   db.refresh(req)
+  log_activity(db, "REQUEST_STATUS_CHANGE", employee_id=current_admin,
+               action_detail={"request_id": req_id, "status": req.status, "has_admin_comment": bool(req.admin_comment)},
+               status="success", ip_address=request.client.host if request.client else None)
   return req
 
 
 @router.delete("/feature-requests/{req_id}")
-def delete_feature_request(req_id: int, db: Session = Depends(database.get_db),
+def delete_feature_request(req_id: int, request: Request, db: Session = Depends(database.get_db),
                             current_admin: str = Depends(require_admin)):
   req = get_or_404(db, models.FeatureRequest, req_id, _FEATURE_NOT_FOUND)
-  return delete_record(db, req)
+  title = req.title
+  result = delete_record(db, req)
+  log_activity(db, "REQUEST_STATUS_CHANGE", employee_id=current_admin,
+               action_detail={"operation": "delete", "request_id": req_id, "title": title},
+               status="success", ip_address=request.client.host if request.client else None)
+  return result
 
 
 # ==================== User Guide (사용자 가이드) ====================
@@ -141,20 +164,33 @@ def get_user_guides(db: Session = Depends(database.get_db)):
 
 
 @router.post("/user-guides", response_model=schemas.UserGuideResponse)
-def create_user_guide(guide: schemas.UserGuideCreate, db: Session = Depends(database.get_db),
+def create_user_guide(guide: schemas.UserGuideCreate, request: Request, db: Session = Depends(database.get_db),
                       current_admin: str = Depends(require_admin)):
-  return create_record(db, models.UserGuide(**guide.model_dump()))
+  created = create_record(db, models.UserGuide(**guide.model_dump()))
+  log_activity(db, "GUIDE_EDIT", employee_id=current_admin,
+               action_detail={"operation": "create", "guide_id": created.id, "title": created.title},
+               status="success", ip_address=request.client.host if request.client else None)
+  return created
 
 
 @router.put("/user-guides/{guide_id}")
-def update_user_guide(guide_id: int, guide: schemas.UserGuideCreate, db: Session = Depends(database.get_db),
+def update_user_guide(guide_id: int, guide: schemas.UserGuideCreate, request: Request, db: Session = Depends(database.get_db),
                       current_admin: str = Depends(require_admin)):
   db_guide = get_or_404(db, models.UserGuide, guide_id, _GUIDE_NOT_FOUND)
-  return update_record(db, db_guide, guide.model_dump())
+  updated = update_record(db, db_guide, guide.model_dump())
+  log_activity(db, "GUIDE_EDIT", employee_id=current_admin,
+               action_detail={"operation": "update", "guide_id": guide_id, "title": updated.title},
+               status="success", ip_address=request.client.host if request.client else None)
+  return updated
 
 
 @router.delete("/user-guides/{guide_id}")
-def delete_user_guide(guide_id: int, db: Session = Depends(database.get_db),
+def delete_user_guide(guide_id: int, request: Request, db: Session = Depends(database.get_db),
                       current_admin: str = Depends(require_admin)):
   db_guide = get_or_404(db, models.UserGuide, guide_id, _GUIDE_NOT_FOUND)
-  return delete_record(db, db_guide)
+  title = db_guide.title
+  result = delete_record(db, db_guide)
+  log_activity(db, "GUIDE_EDIT", employee_id=current_admin,
+               action_detail={"operation": "delete", "guide_id": guide_id, "title": title},
+               status="success", ip_address=request.client.host if request.client else None)
+  return result

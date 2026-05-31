@@ -1,9 +1,10 @@
 """사용자 관리 API 라우터."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from .. import models, database
 from ..dependencies import require_admin
+from ..services.activity_service import log_activity
 from ._crud_helpers import delete_record, get_or_404, update_record
 
 router = APIRouter(prefix="/api", tags=["users"])
@@ -63,20 +64,44 @@ _ADMIN_ALLOWED_FIELDS = {"is_admin", "is_developer"}
 def update_user(
     user_id: int,
     update_data: dict,
+    req: Request,
     db: Session = Depends(database.get_db),
     current_admin: str = Depends(require_admin),
 ):
     user = get_or_404(db, models.User, user_id, _USER_NOT_FOUND)
+    before_active = bool(user.is_active)
     # update_data 는 임의 dict 이므로 화이트리스트 외 필드는 무시 (임의 컬럼 주입 차단).
     update_record(db, user, update_data, allowed_fields=_USER_ALLOWED_FIELDS | _ADMIN_ALLOWED_FIELDS)
+    action = "USER_APPROVE" if not before_active and bool(user.is_active) else (
+        "USER_DEACTIVATE" if before_active and not bool(user.is_active) else "USER_UPDATE"
+    )
+    log_activity(
+        db,
+        action,
+        employee_id=current_admin,
+        action_detail={"target_employee_id": user.employee_id, "target_user_id": user.id, "fields": sorted(update_data.keys())},
+        status="success",
+        ip_address=req.client.host if req.client else None,
+    )
     return {"message": "Update successful"}
 
 
 @router.delete("/users/{user_id}")
 def delete_user(
     user_id: int,
+    req: Request,
     db: Session = Depends(database.get_db),
     current_admin: str = Depends(require_admin),
 ):
     user = get_or_404(db, models.User, user_id, _USER_NOT_FOUND)
-    return delete_record(db, user, message="User deleted")
+    target_employee_id = user.employee_id
+    result = delete_record(db, user, message="User deleted")
+    log_activity(
+        db,
+        "USER_DELETE",
+        employee_id=current_admin,
+        action_detail={"target_employee_id": target_employee_id, "target_user_id": user_id},
+        status="success",
+        ip_address=req.client.host if req.client else None,
+    )
+    return result
