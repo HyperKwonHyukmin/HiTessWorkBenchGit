@@ -246,7 +246,7 @@ export default function DrawingParamsPanel({
         <div className="p-3 space-y-2">
           {/* 사용 힌트 */}
           <p className="text-[10px] text-slate-400 leading-relaxed">
-            필드에 마우스를 올리면 모델에서 해당 부위가 강조됩니다. 수정 후 재구축하세요.
+            필드 위에 마우스를 올리거나 클릭하면 모델에서 해당 부위가 강조됩니다. 수정 후 재구축하세요.
           </p>
 
           {/* 파라미터 목록 */}

@@ -25,6 +25,35 @@ const COLORS = {
 const NODE_SPHERE_RADIUS_RATIO = 0.0035; // 모델 maxDim 기준
 const DEFAULT_SHELL_THICKNESS  = 5.0;    // mm — PSHELL thickness 미정 시 fallback
 
+const NO_RESULT_GRAY = 0x444b57;         // 결과값 없는 요소 색
+
+/** Jet 컬러맵: t(0..1) → [r,g,b] (0..1). blue→cyan→green→yellow→red. */
+function jetRGB(t) {
+  const x = Math.max(0, Math.min(1, t));
+  const stops = [
+    [0.00, 0, 0, 1], [0.25, 0, 1, 1], [0.50, 0, 1, 0], [0.75, 1, 1, 0], [1.00, 1, 0, 0],
+  ];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [p0, r0, g0, b0] = stops[i];
+    const [p1, r1, g1, b1] = stops[i + 1];
+    if (x <= p1) {
+      const f = (x - p0) / (p1 - p0 || 1);
+      return [r0 + (r1 - r0) * f, g0 + (g1 - g0) * f, b0 + (b1 - b0) * f];
+    }
+  }
+  return [1, 0, 0];
+}
+// 범례 그라디언트 (아래=min=파랑 → 위=max=빨강)
+const LEGEND_GRADIENT = 'linear-gradient(to top, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000)';
+
+/** 결과값 표시 포맷 — 큰/작은 값은 지수, 중간은 소수 2자리. */
+function fmtResultValue(v) {
+  if (v == null || Number.isNaN(v)) return '—';
+  const a = Math.abs(v);
+  if (a !== 0 && (a >= 1e5 || a < 1e-2)) return v.toExponential(2);
+  return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
    모델 파싱 유틸
    ──────────────────────────────────────────────────────────────────────── */
@@ -81,19 +110,74 @@ function extractThickness(prop) {
 
 function makeAxisLabel(text, hexColor) {
   const canvas = document.createElement('canvas');
-  canvas.width = 96;
-  canvas.height = 96;
+  canvas.width = 128;
+  canvas.height = 128;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = hexColor;
-  ctx.font = 'bold 56px ui-monospace, Menlo, Consolas, monospace';
+  // 가독성 향상: 어두운 외곽선 + 굵은 글자
+  ctx.font = 'bold 104px ui-monospace, Menlo, Consolas, monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, 48, 52);
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.strokeText(text, 64, 70);
+  ctx.fillStyle = hexColor;
+  ctx.fillText(text, 64, 70);
   const tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  sprite.scale.set(0.32, 0.32, 1);
+  sprite.scale.set(0.55, 0.55, 1);
   return sprite;
+}
+
+/** 텍스트 pill 스프라이트 (경계조건 자유도 라벨 등). aspect 4:1 캔버스. */
+function makeTextPillSprite(text, fgColor, bgColor) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  const r = 14;
+  ctx.fillStyle = bgColor;
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.arcTo(256, 0, 256, 64, r);
+  ctx.arcTo(256, 64, 0, 64, r);
+  ctx.arcTo(0, 64, 0, 0, r);
+  ctx.arcTo(0, 0, 256, 0, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = fgColor;
+  ctx.font = 'bold 34px ui-monospace, Menlo, Consolas, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 36);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sprite.renderOrder = 1001;
+  return sprite;
+}
+
+/** 입체 화살표(원기둥 shaft + 원뿔 head). dir 방향, 화살촉 끝이 tip 에 오도록 배치. */
+function buildForceArrow(dir, tip, len, color) {
+  const g = new THREE.Group();
+  const headLen = len * 0.34;
+  const shaftLen = Math.max(len - headLen, len * 0.4);
+  const headR = len * 0.13;
+  const shaftR = len * 0.05;
+  const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.97 });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 12), mat);
+  shaft.position.y = shaftLen / 2;
+  const head = new THREE.Mesh(new THREE.ConeGeometry(headR, headLen, 18), mat);
+  head.position.y = shaftLen + headLen / 2;
+  g.add(shaft);
+  g.add(head);
+  // 로컬 +Y 축이 base→tip 방향이 되도록 회전, base 를 tip 에서 dir 반대로 len 만큼.
+  const ndir = dir.clone().normalize();
+  const base = tip.clone().addScaledVector(ndir, -len);
+  g.position.copy(base);
+  g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), ndir);
+  g.traverse((o) => { if (o.isMesh) o.renderOrder = 999; });
+  return g;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -473,7 +557,24 @@ function assembleMesh(name, quadVerts, quadColors, quadIds, triVerts, triColors,
    메인 컴포넌트
    ──────────────────────────────────────────────────────────────────────── */
 
-export default function ShellModelViewer({ modelData, paramsJson, mode, highlightParam }) {
+export default function ShellModelViewer({
+  modelData, paramsJson, mode, highlightParam,
+  // ── 하중/경계조건 노드 선택 (선택적) ──
+  selectionMode = 'none',          // 'none' | 'load' | 'bc' | 'rbe3'
+  selectedNodeIds = null,          // 현재 선택 중인 노드 id 배열 (controlled)
+  onSelectionChange = null,        // (idsArray) => void
+  loadSets = null,                 // [{ nodes:[id], fx, fy, fz }]  글리프 렌더
+  bcSets = null,                   // [{ nodes:[id], dof }]         글리프 렌더
+  holeRbe = null,                  // { center:{x,y,z}, ringNodeIds:[id], fx, fy, fz }  RBE2 시각화
+  rbe3Sets = null,                 // [{ refId, center:{x,y,z}, nodeIds:[id] }]  RBE3 시각화
+  swapYZ = false,                  // 표시 데이터가 Y↔Z 스왑된 프레임인지 (Lug)
+  // ── 결과 컨투어 (선택적) ──
+  resultField = 'none',            // 'none' | 'disp' | 'vm'
+  elementValues = null,            // { [elementId]: number }  활성 필드의 요소별 대표값
+  valueRange = null,               // [min, max]
+  valueLabel = '',                 // 범례 제목 (예: 'von Mises (MPa)')
+  valueUnit = '',                  // 값 단위 (예: 'MPa', 'mm')
+}) {
   const outerRef       = useRef(null);
   const mountRef       = useRef(null);
   const gizmoRef       = useRef(null);
@@ -484,6 +585,14 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
   const elementMetaRef = useRef([]);
   const modelBoundsRef = useRef(null); // { xMin, xMax, yMin, yMax, zMin, zMax }
 
+  // ── 노드 선택용 refs (이벤트 핸들러가 최신값을 stale 없이 읽도록) ──
+  const nodePositionsRef     = useRef([]);   // [{ id, x, y, z }]
+  const selectionModeRef     = useRef(selectionMode);
+  const selectedIdsRef       = useRef(new Set());
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  const resultFieldRef       = useRef(resultField);
+  const elementValuesRef     = useRef(elementValues);
+
   // UI 상태
   const [showElements, setShowElements] = useState(true);
   const [showNodes, setShowNodes]       = useState(false);
@@ -492,6 +601,9 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
   const [selectedInfo, setSelectedInfo]   = useState(null);
   const [hoverInfo, setHoverInfo]         = useState(null);
   const [isFullscreen, setIsFullscreen]   = useState(false);
+  const [dragRect, setDragRect]           = useState(null); // 화면 좌표 고무줄 박스 {x,y,w,h}
+
+  const selecting = selectionMode !== 'none';
 
   /* ── 모델 파싱 ───────────────────────────────────────────────── */
   const { nodeMap, shellElements, propMap, summary } = useMemo(() => {
@@ -537,17 +649,13 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
       fog: false,
       bloomStrength: 0.18,
       bloomThreshold: 0.85,
+      controlsType: 'trackball',   // 극점에서 멈추지 않는 무한 자유 회전
     });
     sceneApiRef.current = api;
     const { scene, camera, controls, startAnimate, cleanup } = api;
 
     scene.background = new THREE.Color(COLORS.background);
     scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-
-    controls.minPolarAngle = 0;
-    controls.maxPolarAngle = Math.PI;
-    controls.enableRotate  = true;
-    controls.screenSpacePanning = true;
 
     // ── 메시: 평면/두께 두 가지를 미리 빌드 ──────────────────
     const meshGroup = new THREE.Group();
@@ -602,15 +710,29 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
     nodeInst.renderOrder = 999;
     const dummy = new THREE.Object3D();
     let i = 0;
+    const nodePositions = [];
     nodeMap.forEach((n) => {
       dummy.position.set(n.x, n.y, n.z);
       dummy.updateMatrix();
       nodeInst.setMatrixAt(i++, dummy.matrix);
+      nodePositions.push({ id: n.id, x: n.x, y: n.y, z: n.z });
     });
     nodeInst.instanceMatrix.needsUpdate = true;
-    nodeInst.visible = false;
+    nodeInst.visible = selectionModeRef.current !== 'none';
     nodeMarkersRef.current = nodeInst;
+    nodePositionsRef.current = nodePositions;
     scene.add(nodeInst);
+
+    // ── 노드 선택/글리프 그룹 ────────────────────────────────
+    const nodeSelGroup = new THREE.Group();
+    nodeSelGroup.name = 'nodeSelection';
+    nodeSelGroup.renderOrder = 1000;
+    scene.add(nodeSelGroup);
+
+    const glyphGroup = new THREE.Group();
+    glyphGroup.name = 'loadBcGlyphs';
+    glyphGroup.renderOrder = 997;
+    scene.add(glyphGroup);
 
     // ── ISO 카메라 초기 위치 ─────────────────────────────────
     camera.position.set(center.x + maxDim * 1.1, center.y - maxDim * 1.2, center.z + maxDim * 0.9);
@@ -631,7 +753,7 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
     if (gizmoRef.current) {
       gizmoScene  = new THREE.Scene();
       gizmoCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 10);
-      gizmoCamera.position.set(0, 0, 4);
+      gizmoCamera.position.set(0, 0, 5);
       gizmoRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
       gizmoRenderer.setSize(112, 112);
       gizmoRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -653,7 +775,7 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
         cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
         axisGroup.add(cone);
         const sprite = makeAxisLabel(label, `#${hex.toString(16).padStart(6, '0')}`);
-        sprite.position.copy(dir.clone().multiplyScalar(1.32));
+        sprite.position.copy(dir.clone().multiplyScalar(1.5));
         axisGroup.add(sprite);
       };
       makeGizmoAxis(new THREE.Vector3(1, 0, 0), COLORS.axisX, 'X');
@@ -692,19 +814,126 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
       return getElementFromIntersection(hits[0]);
     };
 
-    const onPointerDown = (e) => { downPos = { x: e.clientX, y: e.clientY }; };
-    const onPointerUp   = (e) => {
+    // ── 노드 선택 유틸 ──────────────────────────────────────
+    const projVec = new THREE.Vector3();
+    const projectNodeToClient = (n, rect) => {
+      projVec.set(n.x, n.y, n.z).project(camera);
+      if (projVec.z < -1 || projVec.z > 1) return null; // 카메라 뒤/밖
+      return {
+        sx: rect.left + (projVec.x * 0.5 + 0.5) * rect.width,
+        sy: rect.top + (-projVec.y * 0.5 + 0.5) * rect.height,
+      };
+    };
+    const emitSelection = () => {
+      const arr = Array.from(selectedIdsRef.current);
+      onSelectionChangeRef.current?.(arr);
+    };
+    const selectNodesInBox = (minX, minY, maxX, maxY) => {
+      const rect = api.renderer.domElement.getBoundingClientRect();
+      const set = selectedIdsRef.current;
+      let added = 0;
+      for (const n of nodePositionsRef.current) {
+        const p = projectNodeToClient(n, rect);
+        if (!p) continue;
+        if (p.sx >= minX && p.sx <= maxX && p.sy >= minY && p.sy <= maxY) {
+          set.add(n.id);
+          added += 1;
+        }
+      }
+      if (added > 0) emitSelection();
+    };
+    const toggleNearestNode = (clientX, clientY) => {
+      const rect = api.renderer.domElement.getBoundingClientRect();
+      let best = null; let bestD = 14; // px 임계
+      for (const n of nodePositionsRef.current) {
+        const p = projectNodeToClient(n, rect);
+        if (!p) continue;
+        const d = Math.hypot(p.sx - clientX, p.sy - clientY);
+        if (d < bestD) { bestD = d; best = n; }
+      }
+      if (!best) return;
+      const set = selectedIdsRef.current;
+      if (set.has(best.id)) set.delete(best.id); else set.add(best.id);
+      emitSelection();
+    };
+
+    let boxSelecting = false;
+    let boxStart = null;
+
+    const onPointerDown = (e) => {
+      if (e.button === 0 && selectionModeRef.current !== 'none') {
+        if (e.shiftKey) {
+          // Shift + 좌드래그 = 영역(박스) 선택. 그동안 OrbitControls 회전 잠시 끔.
+          boxSelecting = true;
+          boxStart = { x: e.clientX, y: e.clientY };
+          if (api.controls) api.controls.enabled = false;
+          const rect = api.renderer.domElement.getBoundingClientRect();
+          setDragRect({ x: e.clientX - rect.left, y: e.clientY - rect.top, w: 0, h: 0 });
+          return;
+        }
+        // Shift 없는 좌클릭: 회전(OrbitControls)에 맡기되, 이동 없는 클릭이면 노드 토글
+        downPos = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      if (selectionModeRef.current === 'none') {
+        downPos = { x: e.clientX, y: e.clientY }; // element pick (선택 모드 아님)
+      }
+    };
+    const onPointerUp = (e) => {
+      if (boxSelecting) {
+        boxSelecting = false;
+        if (api.controls) api.controls.enabled = true;
+        const moved = Math.hypot(e.clientX - boxStart.x, e.clientY - boxStart.y);
+        if (moved > DRAG_THRESHOLD) {
+          const minX = Math.min(boxStart.x, e.clientX);
+          const maxX = Math.max(boxStart.x, e.clientX);
+          const minY = Math.min(boxStart.y, e.clientY);
+          const maxY = Math.max(boxStart.y, e.clientY);
+          selectNodesInBox(minX, minY, maxX, maxY);
+        }
+        boxStart = null;
+        setDragRect(null);
+        return;
+      }
       if (!downPos) return;
       const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+      const wasSelecting = selectionModeRef.current !== 'none';
       downPos = null;
-      if (moved > DRAG_THRESHOLD) return;
-      const result = pickAt(e.clientX, e.clientY);
-      setSelectedInfo(result ? { ...result.element, nodes: result.nodes } : null);
+      if (moved > DRAG_THRESHOLD) return; // 드래그(회전)였음 → 선택 동작 없음
+      if (wasSelecting) {
+        toggleNearestNode(e.clientX, e.clientY); // 정지 클릭 → 단일 노드 토글
+      } else {
+        const result = pickAt(e.clientX, e.clientY);
+        setSelectedInfo(result ? { ...result.element, nodes: result.nodes } : null);
+      }
     };
     const onPointerMove = (e) => {
+      if (boxSelecting && boxStart) {
+        // 오버레이는 컨테이너(캔버스) 로컬 좌표로 그린다.
+        const rect = api.renderer.domElement.getBoundingClientRect();
+        const sx = boxStart.x - rect.left, sy = boxStart.y - rect.top;
+        const cx = e.clientX - rect.left,  cy = e.clientY - rect.top;
+        setDragRect({
+          x: Math.min(sx, cx),
+          y: Math.min(sy, cy),
+          w: Math.abs(cx - sx),
+          h: Math.abs(cy - sy),
+        });
+        return;
+      }
+      if (selectionModeRef.current !== 'none') {
+        // Shift 누르면 영역 선택 가능 표시(crosshair), 아니면 회전(기본 커서)
+        api.renderer.domElement.style.cursor = e.shiftKey ? 'crosshair' : 'default';
+        return;
+      }
       if (downPos) return;
       const result = pickAt(e.clientX, e.clientY);
-      setHoverInfo(result ? { id: result.element.id, type: result.element.type } : null);
+      if (result && resultFieldRef.current !== 'none') {
+        const val = elementValuesRef.current?.[result.element.id];
+        setHoverInfo({ id: result.element.id, type: result.element.type, value: val });
+      } else {
+        setHoverInfo(result ? { id: result.element.id, type: result.element.type } : null);
+      }
       api.renderer.domElement.style.cursor = result ? 'pointer' : 'default';
     };
 
@@ -744,11 +973,11 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
     if (thick) thick.visible = activeThick;
   }, [showElements, useThickness]);
 
-  /* ── 토글: Node 표시 ───────────────────────────────────────────── */
+  /* ── 토글: Node 표시 (선택 모드에서는 항상 표시) ─────────────────── */
   useEffect(() => {
     const inst = nodeMarkersRef.current;
-    if (inst) inst.visible = showNodes;
-  }, [showNodes]);
+    if (inst) inst.visible = showNodes || selectionMode !== 'none';
+  }, [showNodes, selectionMode]);
 
   /* ── 선택 하이라이트 ──────────────────────────────────────────── */
   useEffect(() => {
@@ -801,8 +1030,20 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
       cc.material?.dispose?.();
     }
     if (!highlightParam || !paramsJson || !modelBoundsRef.current) return;
-    const positions = computeParamHighlight(highlightParam, paramsJson, modelBoundsRef.current, mode);
+    // computeParamHighlight 는 원본(BDF) 프레임 가정으로 작성됨.
+    // 표시 데이터가 스왑된 경우(lug): 표시 bounds → 원본 bounds 로 언스왑해 계산한 뒤
+    // 결과 좌표를 다시 표시 프레임으로 스왑한다.
+    const db = modelBoundsRef.current;
+    const calcBounds = swapYZ
+      ? { xMin: db.xMin, xMax: db.xMax, yMin: db.zMin, yMax: db.zMax, zMin: db.yMin, zMax: db.yMax }
+      : db;
+    const positions = computeParamHighlight(highlightParam, paramsJson, calcBounds, mode);
     if (!positions || positions.length === 0) return;
+    if (swapYZ) {
+      for (let i = 0; i < positions.length; i += 3) {
+        const t = positions[i + 1]; positions[i + 1] = positions[i + 2]; positions[i + 2] = t;
+      }
+    }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -834,7 +1075,215 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
     }
     inst.instanceMatrix.needsUpdate = true;
     group.add(inst);
-  }, [highlightParam, paramsJson, mode]);
+  }, [highlightParam, paramsJson, mode, swapYZ]);
+
+  /* ── 노드 선택: ref 동기화 ───────────────────────────────────── */
+  useEffect(() => { onSelectionChangeRef.current = onSelectionChange; }, [onSelectionChange]);
+
+  useEffect(() => {
+    selectedIdsRef.current = new Set((selectedNodeIds || []).map(Number));
+  }, [selectedNodeIds]);
+
+  /* ── 노드 선택: 모드 ref 동기화 ──────────────────────────────────
+     좌클릭은 항상 회전(OrbitControls 기본 LEFT=ROTATE 유지). 영역 선택은
+     Shift+드래그일 때만 회전을 잠시 끄고 박스 선택을 수행한다(핸들러에서 처리). */
+  useEffect(() => {
+    selectionModeRef.current = selectionMode;
+  }, [selectionMode]);
+
+  useEffect(() => { resultFieldRef.current = resultField; }, [resultField]);
+  useEffect(() => { elementValuesRef.current = elementValues; }, [elementValues]);
+
+  /* ── 결과 컨투어: 요소별 색 재지정 (vertexColors 재작성) ─────────── */
+  useEffect(() => {
+    const mg = meshGroupRef.current;
+    if (!mg) return;
+    const meta = elementMetaRef.current || [];
+    const vals = elementValues || {};
+    const [vmin, vmax] = valueRange || [0, 1];
+    const span = (vmax - vmin) || 1;
+    const tmp = new THREE.Color();
+    mg.traverse((o) => {
+      if (!o.isMesh) return;
+      const geo = o.geometry;
+      const idxAttr = geo?.getAttribute?.('elementIndex');
+      const colAttr = geo?.getAttribute?.('color');
+      if (!idxAttr || !colAttr) return;
+      for (let v = 0; v < idxAttr.count; v++) {
+        const el = meta[Math.round(idxAttr.array[v])]?.element;
+        let r, g, b;
+        if (resultField === 'none' || !el) {
+          tmp.setHex(el && el.nodeIds && el.nodeIds.length === 4 ? COLORS.quad : COLORS.tri);
+          r = tmp.r; g = tmp.g; b = tmp.b;
+        } else {
+          const val = vals[el.id];
+          if (val == null) { tmp.setHex(NO_RESULT_GRAY); r = tmp.r; g = tmp.g; b = tmp.b; }
+          else { [r, g, b] = jetRGB((val - vmin) / span); }
+        }
+        colAttr.array[3 * v] = r; colAttr.array[3 * v + 1] = g; colAttr.array[3 * v + 2] = b;
+      }
+      colAttr.needsUpdate = true;
+    });
+  }, [resultField, elementValues, valueRange, modelData]);
+
+  /* ── 노드 선택: 선택된 노드 하이라이트 ─────────────────────────── */
+  useEffect(() => {
+    const api = sceneApiRef.current;
+    if (!api) return;
+    const group = api.scene.getObjectByName('nodeSelection');
+    if (!group) return;
+    while (group.children.length) {
+      const cc = group.children.pop();
+      cc.geometry?.dispose?.();
+      cc.material?.dispose?.();
+    }
+    const ids = (selectedNodeIds || []).map(Number);
+    if (ids.length === 0) return;
+    const r = (boundsRef.current?.maxDim || 200) * 0.0075;
+    const geo = new THREE.SphereGeometry(r, 10, 8);
+    const mat = new THREE.MeshBasicMaterial({
+      color: selectionMode === 'bc' ? 0x22c55e : selectionMode === 'rbe3' ? 0x0ea5e9 : 0xf97316,
+      depthTest: false, transparent: true, opacity: 0.95,
+    });
+    const idSet = new Set(ids);
+    const pts = nodePositionsRef.current.filter((n) => idSet.has(n.id));
+    const inst = new THREE.InstancedMesh(geo, mat, pts.length);
+    inst.renderOrder = 1001;
+    const dummy = new THREE.Object3D();
+    pts.forEach((n, k) => {
+      dummy.position.set(n.x, n.y, n.z);
+      dummy.updateMatrix();
+      inst.setMatrixAt(k, dummy.matrix);
+    });
+    inst.instanceMatrix.needsUpdate = true;
+    group.add(inst);
+  }, [selectedNodeIds, selectionMode]);
+
+  /* ── 노드 선택: 확정된 하중/경계조건 글리프 ─────────────────────── */
+  useEffect(() => {
+    const api = sceneApiRef.current;
+    if (!api) return;
+    const group = api.scene.getObjectByName('loadBcGlyphs');
+    if (!group) return;
+    while (group.children.length) {
+      const cc = group.children.pop();
+      cc.geometry?.dispose?.();
+      cc.material?.dispose?.();
+    }
+    const posById = new Map(nodePositionsRef.current.map((n) => [n.id, n]));
+    const maxDim = boundsRef.current?.maxDim || 200;
+
+    // 경계조건 글리프 — 초록 삼각형(3면 피라미드) 심볼 + 자유도(dof) 라벨
+    const bcGeo = new THREE.ConeGeometry(maxDim * 0.013, maxDim * 0.022, 3);
+    const bcMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, depthTest: false, transparent: true, opacity: 0.92 });
+    (bcSets || []).forEach((bc) => {
+      const pts = (bc.nodes || []).map((id) => posById.get(Number(id))).filter(Boolean);
+      if (!pts.length) return;
+      const inst = new THREE.InstancedMesh(bcGeo, bcMat, pts.length);
+      inst.renderOrder = 998;
+      const dummy = new THREE.Object3D();
+      let cx = 0, cy = 0, cz = 0;
+      pts.forEach((n, k) => {
+        dummy.position.set(n.x, n.y, n.z); dummy.updateMatrix(); inst.setMatrixAt(k, dummy.matrix);
+        cx += n.x; cy += n.y; cz += n.z;
+      });
+      inst.instanceMatrix.needsUpdate = true;
+      group.add(inst);
+
+      // 자유도 라벨 — 세트 노드 중심에 'dof 123456' pill 표시
+      const dof = String(bc.dof || '123456');
+      const label = makeTextPillSprite(`dof ${dof}`, '#6ee7b7', 'rgba(5,46,22,0.85)');
+      const w = maxDim * 0.16;
+      label.scale.set(w, w * 0.25, 1);            // 256:64 = 4:1
+      label.position.set(cx / pts.length, cy / pts.length, cz / pts.length + maxDim * 0.03);
+      group.add(label);
+    });
+
+    // 하중 글리프 — 입체 주황 화살표(눈에 잘 띄게) + 크기(N) 라벨.
+    const FORCE_COLOR = 0xff7a18;
+    const arrowLen = maxDim * 0.2;
+    (loadSets || []).forEach((ls) => {
+      const fx = Number(ls.fx || 0), fy = Number(ls.fy || 0), fz = Number(ls.fz || 0);
+      const mag = Math.hypot(fx, fy, fz);
+      if (mag === 0) return;
+      const dir = new THREE.Vector3(fx, fy, fz).normalize();
+      let cx = 0, cy = 0, cz = 0, cnt = 0;
+      (ls.nodes || []).forEach((id) => {
+        const n = posById.get(Number(id));
+        if (!n) return;
+        const tip = new THREE.Vector3(n.x, n.y, n.z);
+        group.add(buildForceArrow(dir, tip, arrowLen, FORCE_COLOR));
+        cx += n.x; cy += n.y; cz += n.z; cnt += 1;
+      });
+      if (cnt > 0) {
+        // 크기 라벨 — 화살표 꼬리(노드 반대편) 위쪽에 표시
+        const txt = `${Math.round(mag).toLocaleString()} N`;
+        const label = makeTextPillSprite(txt, '#fff7ed', 'rgba(124,45,18,0.92)');
+        const w = maxDim * 0.18;
+        label.scale.set(w, w * 0.25, 1);
+        const c = new THREE.Vector3(cx / cnt, cy / cnt, cz / cnt).addScaledVector(dir, -arrowLen * 1.22);
+        label.position.copy(c);
+        group.add(label);
+      }
+    });
+
+    // ── Lug Hole RBE2 스파이더 시각화 ──────────────────────────
+    if (holeRbe && holeRbe.center && (holeRbe.ringNodeIds || []).length) {
+      const c = holeRbe.displayCenter || holeRbe.center;   // 표시는 띄운 위치(선택 편의)
+      const ringPts = holeRbe.ringNodeIds.map((id) => posById.get(Number(id))).filter(Boolean);
+
+      // 스포크 — 중심에서 각 ring 노드로
+      const spokePos = [];
+      ringPts.forEach((n) => { spokePos.push(c.x, c.y, c.z, n.x, n.y, n.z); });
+      if (spokePos.length) {
+        const sg = new THREE.BufferGeometry();
+        sg.setAttribute('position', new THREE.Float32BufferAttribute(spokePos, 3));
+        const spokes = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({
+          color: 0xf472b6, depthTest: false, transparent: true, opacity: 0.55,
+        }));
+        spokes.renderOrder = 998;
+        group.add(spokes);
+      }
+
+      // 중심 독립노드 — 마젠타 구 (하중 영역에서 선택 대상)
+      const cs = new THREE.Mesh(
+        new THREE.SphereGeometry(maxDim * 0.014, 14, 12),
+        new THREE.MeshBasicMaterial({ color: 0xec4899, depthTest: false }),
+      );
+      cs.position.set(c.x, c.y, c.z);
+      cs.renderOrder = 1000;
+      group.add(cs);
+    }
+
+    // ── Area RBE3 시각화 (하늘색 스파이더 + 기준노드 구) ───────────
+    (rbe3Sets || []).forEach((r) => {
+      if (!r || !r.center || !(r.nodeIds || []).length) return;
+      const c = r.displayCenter || r.center;   // 표시는 띄운 위치(선택 편의)
+      const pts = r.nodeIds.map((id) => posById.get(Number(id))).filter(Boolean);
+
+      // 스포크 — 기준노드에서 각 영역 노드로 (RBE2 와 구분되는 하늘색)
+      const spokePos = [];
+      pts.forEach((n) => { spokePos.push(c.x, c.y, c.z, n.x, n.y, n.z); });
+      if (spokePos.length) {
+        const sg = new THREE.BufferGeometry();
+        sg.setAttribute('position', new THREE.Float32BufferAttribute(spokePos, 3));
+        const spokes = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({
+          color: 0x38bdf8, depthTest: false, transparent: true, opacity: 0.45,
+        }));
+        spokes.renderOrder = 997;
+        group.add(spokes);
+      }
+
+      // 기준노드(REFGRID) — 하늘색 구 (하중 영역에서 선택 대상)
+      const cs = new THREE.Mesh(
+        new THREE.SphereGeometry(maxDim * 0.014, 14, 12),
+        new THREE.MeshBasicMaterial({ color: 0x0ea5e9, depthTest: false }),
+      );
+      cs.position.set(c.x, c.y, c.z);
+      cs.renderOrder = 1000;
+      group.add(cs);
+    });
+  }, [loadSets, bcSets, holeRbe, rbe3Sets]);
 
   /* ── 카메라 프리셋 ─────────────────────────────────────────────── */
   const setCameraView = useCallback((preset) => {
@@ -850,11 +1299,32 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
       case 'right': pos = [center.x + d, center.y, center.z]; break;
       default:      pos = [center.x + d * 0.7, center.y - d * 0.85, center.z + d * 0.6];
     }
+    // trackball 자유 회전으로 up 축이 틀어진 상태에서도 프리셋 뷰가 깔끔하도록 up 재설정.
+    // top(−Z 시선)은 up=+Y, 그 외는 up=+Z.
+    api.camera.up.set(0, 0, 1);
+    if (preset === 'top') api.camera.up.set(0, 1, 0);
     api.camera.position.set(pos[0], pos[1], pos[2]);
     api.camera.lookAt(center);
-    api.controls.target.copy(center);
+    api.controls.target?.copy(center);
     api.controls.update();
   }, []);
+
+  /* ── 키보드 단축키: F=Fit(ISO), A=Top, S=Front, D=Right ──────────
+     입력 필드에 포커스가 있거나 수식어 키가 눌린 경우는 무시한다. */
+  useEffect(() => {
+    const KEY_MAP = { f: 'iso', a: 'top', s: 'front', d: 'right' };
+    const onKey = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+      const preset = KEY_MAP[e.key.toLowerCase()];
+      if (!preset) return;
+      e.preventDefault();
+      setCameraView(preset);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [setCameraView]);
 
   /* ── 전체화면 토글 ─────────────────────────────────────────────── */
   const toggleFullscreen = useCallback(() => {
@@ -1013,16 +1483,17 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
         <div className="rounded-xl bg-slate-900/85 backdrop-blur border border-slate-700/80 shadow-xl p-1.5 grid grid-cols-4 gap-1">
           {[
             { key: 'iso',   label: 'ISO'   },
-            { key: 'top',   label: 'Top'   },
-            { key: 'front', label: 'Front' },
-            { key: 'right', label: 'Right' },
-          ].map(({ key, label }) => (
+            { key: 'top',   label: 'Top',   hot: 'A' },
+            { key: 'front', label: 'Front', hot: 'S' },
+            { key: 'right', label: 'Right', hot: 'D' },
+          ].map(({ key, label, hot }) => (
             <button
               key={key}
               onClick={() => setCameraView(key)}
+              title={hot ? `${label} (${hot})` : label}
               className="px-2 py-1 rounded-md text-[10px] font-semibold text-slate-300 hover:bg-slate-700/60 hover:text-slate-100 transition-colors"
             >
-              {label}
+              {label}{hot && <span className="ml-0.5 text-[8px] text-slate-500">{hot}</span>}
             </button>
           ))}
         </div>
@@ -1031,9 +1502,9 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
           <button
             onClick={() => setCameraView('iso')}
             className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-blue-600/80 hover:bg-blue-600 text-white flex items-center gap-1.5 shadow-md transition-colors"
-            title="Fit View"
+            title="Fit View (F)"
           >
-            <Maximize2 size={11} /> Fit
+            <Maximize2 size={11} /> Fit <span className="text-[9px] text-blue-200">F</span>
           </button>
           <button
             onClick={toggleFullscreen}
@@ -1051,13 +1522,61 @@ export default function ShellModelViewer({ modelData, paramsJson, mode, highligh
       {hoverInfo && (
         <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-lg bg-slate-900/95 border border-orange-500/40 shadow-lg px-3 py-1 text-[10px] font-mono text-slate-100">
           {hoverInfo.type} <span className="text-orange-300">#{hoverInfo.id}</span>
+          {resultField !== 'none' && 'value' in hoverInfo && (
+            <span className="ml-1.5 text-cyan-300">
+              · {fmtResultValue(hoverInfo.value)} {valueUnit}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── 결과 컨투어 범례 ─────────────────────────────────────── */}
+      {resultField !== 'none' && valueRange && (
+        <div className="absolute left-3 bottom-3 rounded-lg bg-slate-900/85 backdrop-blur border border-slate-700/70 shadow-xl px-2.5 py-2">
+          <div className="text-[10px] font-bold text-slate-200 mb-1.5 text-center">{valueLabel}</div>
+          <div className="flex items-stretch gap-1.5 h-32">
+            <div className="w-3.5 rounded-sm border border-slate-600/60" style={{ background: LEGEND_GRADIENT }} />
+            <div className="flex flex-col justify-between text-[9px] font-mono text-slate-300 py-0.5">
+              <span>{fmtResultValue(valueRange[1])}</span>
+              <span>{fmtResultValue((valueRange[0] + valueRange[1]) / 2)}</span>
+              <span>{fmtResultValue(valueRange[0])}</span>
+            </div>
+          </div>
+          <div className="text-[8px] text-slate-500 text-center mt-1">{valueUnit}</div>
         </div>
       )}
 
       {/* ── 도움말 ─────────────────────────────────────────────── */}
       <div className="absolute right-3 bottom-3 rounded-lg bg-slate-900/70 backdrop-blur border border-slate-700/60 shadow-md px-2.5 py-1.5 text-[9px] text-slate-400 font-mono">
-        <div>LMB: 회전 · RMB: 팬 · 휠: 줌 · Click: 선택</div>
+        {selecting
+          ? <div>LMB: 회전 · <span className="text-cyan-300 font-bold">Shift+드래그: 영역 선택</span> · Click: 노드 토글 · RMB: 팬 · 휠: 줌 · <span className="text-blue-300">F</span>:Fit <span className="text-blue-300">A/S/D</span>:Top/Front/Right</div>
+          : <div>LMB: 회전 · RMB: 팬 · 휠: 줌 · Click: 선택 · <span className="text-blue-300">F</span>:Fit <span className="text-blue-300">A/S/D</span>:Top/Front/Right</div>}
       </div>
+
+      {/* ── 선택 모드 배너 ──────────────────────────────────────── */}
+      {selecting && (
+        <div className={`absolute left-1/2 -translate-x-1/2 top-3 rounded-lg px-3 py-1.5 text-[11px] font-bold shadow-lg border backdrop-blur flex items-center gap-2 ${
+          selectionMode === 'bc'
+            ? 'bg-emerald-900/80 border-emerald-500/50 text-emerald-100'
+            : selectionMode === 'rbe3'
+              ? 'bg-sky-900/80 border-sky-500/50 text-sky-100'
+              : 'bg-cyan-900/80 border-cyan-500/50 text-cyan-100'
+        }`}>
+          <Crosshair size={13} />
+          {selectionMode === 'bc' ? '경계조건' : selectionMode === 'rbe3' ? 'RBE3 영역' : '하중'} 노드 선택 중
+          <span className="ml-1 px-1.5 py-0.5 rounded bg-black/30 font-mono">
+            {(selectedNodeIds || []).length}개 선택
+          </span>
+        </div>
+      )}
+
+      {/* ── 고무줄 박스 (컨테이너 로컬 좌표, absolute) ──────────── */}
+      {dragRect && dragRect.w > 1 && dragRect.h > 1 && (
+        <div
+          className="absolute z-50 pointer-events-none border-2 border-dashed bg-cyan-400/10 border-cyan-300"
+          style={{ left: dragRect.x, top: dragRect.y, width: dragRect.w, height: dragRect.h }}
+        />
+      )}
     </div>
   );
 }

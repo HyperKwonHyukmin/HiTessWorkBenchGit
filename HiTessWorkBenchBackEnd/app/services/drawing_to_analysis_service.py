@@ -535,6 +535,7 @@ def task_execute_drawing_to_analysis(
 
     update_progress(job_id, 95, "데이터베이스 저장 중...")
     project_data, db_err = record_analysis(
+        job_id=job_id,
         project_name=f"DrawingToAnalysis_{timestamp}",
         program_name="DrawingToAnalysis",
         employee_id=employee_id,
@@ -786,6 +787,7 @@ def task_execute_drawing_rebuild(
 
     update_progress(job_id, 95, "데이터베이스 저장 중...")
     project_data, db_err = record_analysis(
+        job_id=job_id,
         project_name=f"DrawingRebuild_{timestamp}",
         program_name="DrawingToAnalysis",
         employee_id=employee_id,
@@ -805,4 +807,736 @@ def task_execute_drawing_rebuild(
         project_data,
         success_message="파라미터 기반 모델 재구축 완료",
         failure_message=user_reason or "모델 재구축 실패",
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# 구조 해석 — 사용자 정의 하중/경계조건을 BDF 에 주입 후 Nastran 실행
+# ──────────────────────────────────────────────────────────────────────────
+
+# Case Control 의 SPC/LOAD set ID — 사용자 하중/경계조건을 모두 이 ID 로 묶는다.
+_SOLVE_SPC_SID = 1
+_SOLVE_LOAD_SID = 1
+
+# BEGIN BULK ~ ENDDATA 사이에서 제거할 카드(첫 필드 기준).
+# 엔진이 자동 생성한 기본 FORCE/SPC 를 걷어내고 사용자 정의 카드로 대체한다.
+_SOLVE_STRIP_CARDS = (
+    "FORCE", "FORCE1", "FORCE2",
+    "MOMENT", "MOMENT1", "MOMENT2",
+    "SPC", "SPC1", "SPCD", "SPCADD",
+    "LOAD",
+)
+_SOLVE_STRIP_RE = re.compile(
+    r"^\s*(" + "|".join(_SOLVE_STRIP_CARDS) + r")\b", re.I
+)
+# 위 카드의 large/free field 연속(continuation) 라인 — 엔진 출력은 단일 라인이라
+# 사실상 등장하지 않지만, 방어적으로 선두가 공백/'+'/'*' 인 라인을 직전 카드에 종속 처리.
+_CONTINUATION_RE = re.compile(r"^(\s|\+|\*)")
+
+
+def _force_lines_for_set(ls: dict, sid: int) -> list:
+    """하중 세트 1개 → 지정 SID 의 FORCE 카드 라인들.
+
+    FORCE,SID,G,CID,F,N1,N2,N3 — F=1.0, (N1,N2,N3)=(fx,fy,fz) 벡터 그대로 적용.
+    """
+    try:
+        fx = float(ls.get("fx", 0) or 0)
+        fy = float(ls.get("fy", 0) or 0)
+        fz = float(ls.get("fz", 0) or 0)
+    except (TypeError, ValueError):
+        return []
+    if fx == 0 and fy == 0 and fz == 0:
+        return []
+    lines: list[str] = []
+    for nid in ls.get("nodes", []) or []:
+        try:
+            g = int(nid)
+        except (TypeError, ValueError):
+            continue
+        lines.append(f"FORCE,{sid},{g},,1.0,{fx:g},{fy:g},{fz:g}")
+    return lines
+
+
+def _spc1_lines_for_set(bc: dict, sid: int, chunk: int = 6) -> list:
+    """경계조건 세트 1개 → 지정 SID 의 SPC1 카드 라인들."""
+    dof = str(bc.get("dof", "123456")).strip() or "123456"
+    nodes: list[int] = []
+    for nid in bc.get("nodes", []) or []:
+        try:
+            nodes.append(int(nid))
+        except (TypeError, ValueError):
+            continue
+    seen = set()
+    nodes = [n for n in nodes if not (n in seen or seen.add(n))]
+    lines: list[str] = []
+    for i in range(0, len(nodes), chunk):
+        grp = nodes[i:i + chunk]
+        lines.append(f"SPC1,{sid},{dof}," + ",".join(str(n) for n in grp))
+    return lines
+
+
+def _freefield_combo(card: str, sid: int, ids: list, per_line: int = 7) -> list:
+    """SPCADD 같은 단순 조합 카드(연속 ID 나열)를 free-field 연속 라인으로.
+
+    예: SPCADD,SID,S1,S2,S3,...  →  길면 끝에 콤마 두고 다음 라인 콤마로 이어감.
+    """
+    ids = [int(x) for x in ids]
+    if not ids:
+        return []
+    lines: list[str] = []
+    first = ids[:per_line]
+    rest = ids[per_line:]
+    head = f"{card},{sid}," + ",".join(str(x) for x in first)
+    if rest:
+        head += ","
+    lines.append(head)
+    i = 0
+    while i < len(rest):
+        chunk = rest[i:i + 8]
+        i += 8
+        ln = "," + ",".join(str(x) for x in chunk)
+        if i < len(rest):
+            ln += ","
+        lines.append(ln)
+    return lines
+
+
+def _load_combo_lines(sid: int, set_ids: list) -> list:
+    """LOAD 조합 카드: LOAD,SID,S,S1,L1,S2,L2,...  (S=1, Si=1 — 단순 합).
+
+    각 (Si,Li) 쌍을 free-field 로, 길면 연속 라인.
+    """
+    set_ids = [int(x) for x in set_ids]
+    if not set_ids:
+        return []
+    pairs: list[str] = []
+    for s in set_ids:
+        pairs.append("1.")
+        pairs.append(str(s))
+    # 첫 라인: LOAD,SID,1.,  + 가능한 만큼의 (S,L) — field 여유 고려해 3쌍
+    lines: list[str] = []
+    head_pairs = pairs[:6]
+    rest_pairs = pairs[6:]
+    head = f"LOAD,{sid},1.," + ",".join(head_pairs)
+    if rest_pairs:
+        head += ","
+    lines.append(head)
+    i = 0
+    while i < len(rest_pairs):
+        chunk = rest_pairs[i:i + 8]
+        i += 8
+        ln = "," + ",".join(chunk)
+        if i < len(rest_pairs):
+            ln += ","
+        lines.append(ln)
+    return lines
+
+
+def _max_ids(bulk_text: str) -> tuple:
+    """Bulk Data 에서 최대 GRID id 와 최대 element id 를 찾는다 (comma free-field 기준)."""
+    max_grid = 0
+    max_eid = 0
+    elem_cards = {
+        "CQUAD4", "CTRIA3", "CQUAD8", "CTRIA6", "CBEAM", "CBAR", "CROD",
+        "RBE2", "RBE3", "CELAS1", "CELAS2", "CONM2", "RBAR",
+    }
+    for ln in bulk_text.splitlines():
+        s = ln.strip()
+        if not s or s.startswith("$"):
+            continue
+        parts = [p.strip() for p in s.split(",")]
+        if len(parts) < 2:
+            continue
+        card = parts[0].upper()
+        try:
+            idv = int(parts[1])
+        except (ValueError, IndexError):
+            continue
+        if card == "GRID":
+            if idv > max_grid:
+                max_grid = idv
+        elif card in elem_cards:
+            if idv > max_eid:
+                max_eid = idv
+    return max_grid, max_eid
+
+
+def _format_rbe2_lines(eid: int, gn: int, ring_ids: list, cm: str = "123456") -> list:
+    """RBE2 카드(free-field) 라인 리스트.
+
+    RBE2,EID,GN,CM,GM1,GM2,...  (GN=독립 grid, GM=종속 grid 들)
+    free-field 연속: 라인 끝에 콤마를 두면 다음 라인이 이어진다.
+    첫 라인에 GM 5개, 이후 라인마다 8개씩.
+    """
+    ids = [int(g) for g in ring_ids]
+    if not ids:
+        return []
+    lines: list[str] = []
+    first, rest = ids[:5], ids[5:]
+    head = f"RBE2,{eid},{gn},{cm}"
+    if first:
+        head += "," + ",".join(str(i) for i in first)
+    if rest:
+        head += ","
+    lines.append(head)
+    i = 0
+    while i < len(rest):
+        chunk = rest[i:i + 8]
+        i += 8
+        ln = "," + ",".join(str(g) for g in chunk)
+        if i < len(rest):
+            ln += ","
+        lines.append(ln)
+    return lines
+
+
+def _format_rbe3_lines(eid: int, refgrid: int, ind_ids: list,
+                       refc: str = "123", wt: float = 1.0, comp: str = "123") -> list:
+    """RBE3 카드(free-field) 라인 리스트 — 하중 분배 요소(강성 추가 없음).
+
+    RBE3,EID,,REFGRID,REFC,WT1,C1,G1,G2
+    ,G3,G4,...
+      - REFGRID : 종속(기준) 노드. 이 노드에 FORCE 를 주면 독립 노드들로 분배된다.
+      - REFC    : 기준 노드 성분. 병진(123)만 사용 — FORCE 분배에 충분하며,
+                  영역 노드가 동일선상(edge)이어도 회전 특이(UFM 2038)를 피한다.
+                  회전 DOF(456)는 RBE3 미연결 → AUTOSPC 가 제거(SOL 101).
+      - WT1/C1  : 독립 노드 가중치 / 성분(보통 1.0 / 123 = 병진만 → 인위적 모멘트 강성 회피)
+      - G*      : 독립(분배 대상) grid 들
+    free-field 연속: 라인 끝 콤마. 첫 라인에 grid 2개, 이후 라인마다 8개씩.
+    """
+    ids = [int(g) for g in ind_ids]
+    if not ids:
+        return []
+    # WT1 은 real 필드 — 정수처럼 보이면 Nastran 이 거부할 수 있어 소수점을 보장한다.
+    wt_str = ("%g" % float(wt))
+    if not any(ch in wt_str for ch in ".eE"):
+        wt_str += ".0"
+    lines: list[str] = []
+    first, rest = ids[:2], ids[2:]
+    head = f"RBE3,{eid},,{refgrid},{refc},{wt_str},{comp}"
+    if first:
+        head += "," + ",".join(str(i) for i in first)
+    if rest:
+        head += ","
+    lines.append(head)
+    i = 0
+    while i < len(rest):
+        chunk = rest[i:i + 8]
+        i += 8
+        ln = "," + ",".join(str(g) for g in chunk)
+        if i < len(rest):
+            ln += ","
+        lines.append(ln)
+    return lines
+
+
+def _split_case_bulk(bdf_text: str) -> tuple:
+    """BDF 를 (case_control_lines[BEGIN BULK 포함], bulk_lines) 로 분리."""
+    lines = bdf_text.splitlines()
+    begin_idx = None
+    for i, ln in enumerate(lines):
+        if ln.strip().upper().startswith("BEGIN BULK"):
+            begin_idx = i
+            break
+    if begin_idx is None:
+        return [], lines
+    return lines[:begin_idx + 1], lines[begin_idx + 1:]
+
+
+def _strip_bulk(bulk_lines: list) -> list:
+    """Bulk Data 에서 기존 FORCE/MOMENT/SPC*/LOAD 카드(+연속라인) 제거."""
+    out: list[str] = []
+    skipping = False
+    for raw in bulk_lines:
+        if _SOLVE_STRIP_RE.match(raw):
+            skipping = True
+            continue
+        if skipping and _CONTINUATION_RE.match(raw) and raw.strip():
+            continue
+        skipping = False
+        out.append(raw)
+    return out
+
+
+# Case Control 에서 재생성 대상이라 제거할 라인(SOL/CEND/TITLE/BEGIN BULK 등은 보존)
+_CASE_DROP_RE = re.compile(
+    r"^\s*(SUBCASE|SUBCOM|SUBSEQ|SPC|SPCADD|LOAD|DLOAD|MPC|ANALYSIS|LABEL|SUBTITLE|"
+    r"DISPLACEMENT|STRESS|STRAIN|SPCFORCES|FORCE\s*=|OLOAD|ELFORCE|GPFORCE)\b",
+    re.I,
+)
+
+
+def _build_case_control(case_lines: list, subcases: list) -> list:
+    """SOL/CEND/TITLE 는 보존하고 SUBCASE 블록을 재구성한다.
+
+    subcases: [{ label:str, spc:int|None, load:int|None }]
+    전역 출력 요청(DISPLACEMENT/STRESS/SPCFORCES = ALL)을 CEND 다음에 추가.
+    """
+    kept = [ln for ln in case_lines
+            if not _CASE_DROP_RE.match(ln) and not ln.strip().upper().startswith("BEGIN BULK")]
+    result: list[str] = []
+    for ln in kept:
+        result.append(ln)
+        if ln.strip().upper() == "CEND":
+            result.append("DISPLACEMENT(PLOT,PRINT) = ALL")
+            result.append("STRESS(PLOT,PRINT) = ALL")
+            result.append("SPCFORCES(PLOT,PRINT) = ALL")
+    for k, sc in enumerate(subcases, start=1):
+        result.append(f"SUBCASE {k}")
+        result.append(f"  SUBTITLE = {sc.get('label') or ('LC%d' % k)}")
+        if sc.get("spc") is not None:
+            result.append(f"  SPC = {sc['spc']}")
+        if sc.get("load") is not None:
+            result.append(f"  LOAD = {sc['load']}")
+    result.append("BEGIN BULK")
+    return result
+
+
+# ── ID 체계 (SPC 와 LOAD 를 별도 ID 공간으로 분리) ──────────────────────
+_SPC_BASE      = 1      # BC 세트 i  → SPC1 SID = _SPC_BASE + i      (1, 2, 3, ...)
+_LOAD_BASE     = 1001   # Load 세트 j → FORCE SID = _LOAD_BASE + j    (1001, 1002, ...)
+_SPCADD_BASE   = 9000   # LC 별 SPCADD 조합 SID (BC 2개 이상일 때)
+_LOADC_BASE    = 9100   # LC 별 LOAD 조합 SID (하중 2개 이상일 때)
+
+
+def _build_solved_bdf(src_text: str, bcs: list, loads: list,
+                      hole_rbe: Optional[dict], load_cases: Optional[list],
+                      rbe3_sets: Optional[list] = None) -> tuple:
+    """하중/경계조건/RBE/LoadCase 를 반영한 해석용 BDF 텍스트를 생성한다.
+
+    구조(참조 BDF 표준):
+      - BC 세트 i      → SPC1 (SID = 1 + i)
+      - Load 세트 j    → FORCE (SID = 1001 + j)
+      - Hole RBE       → GRID(중심) + RBE2 (순수 강체 결합, 하중은 별도 load set)
+      - Area RBE3      → GRID(기준) + RBE3 (하중 분배, 하중은 기준노드 load set)
+      - Load Case k    → SUBCASE k (SPC=단일 또는 SPCADD, LOAD=단일 또는 LOAD조합)
+    반환: (bdf_text, meta)  meta = { subcases:[...], warnings:[...] }
+    """
+    case_lines, bulk_lines = _split_case_bulk(src_text)
+    out_bulk = _strip_bulk(bulk_lines)
+
+    bulk_extra: list[str] = []
+    warnings: list[str] = []
+
+    # ── BC → SPC1 ──────────────────────────────────────────────
+    spc_sid: dict = {}
+    for i, bc in enumerate(bcs or []):
+        sid = _SPC_BASE + i
+        lines = _spc1_lines_for_set(bc, sid)
+        if lines:
+            spc_sid[i] = sid
+            bulk_extra.append(f"$ -- BC set #{i + 1} (SPC SID {sid}) --")
+            bulk_extra.extend(lines)
+
+    # ── Load → FORCE ───────────────────────────────────────────
+    load_sid: dict = {}
+    for j, ls in enumerate(loads or []):
+        sid = _LOAD_BASE + j
+        lines = _force_lines_for_set(ls, sid)
+        if lines:
+            load_sid[j] = sid
+            bulk_extra.append(f"$ -- Load set #{j + 1} (LOAD SID {sid}) --")
+            bulk_extra.extend(lines)
+
+    # ── RBE (Hole RBE2 / Area RBE3) — 모두 결합만, 하중은 기준노드 load set 으로 적용 ──
+    # EID 는 원본 최대값에서 이어 증가, GRID id 는 프론트가 부여(뷰어 선택 가능 + 충돌 방지).
+    max_grid, max_eid = _max_ids(src_text)
+    next_eid = max_eid
+
+    # Hole RBE2 (순수 강체 결합)
+    if hole_rbe and hole_rbe.get("ring_node_ids"):
+        center_id = int(hole_rbe.get("center_id") or (max_grid + 1))
+        next_eid += 1
+        c = hole_rbe.get("center", {}) or {}
+        cx = float(c.get("x", 0) or 0); cy = float(c.get("y", 0) or 0); cz = float(c.get("z", 0) or 0)
+        ring_ids = [int(g) for g in hole_rbe.get("ring_node_ids", [])]
+        bulk_extra.append("$ -- Lug Hole RBE2 (center independent node, no auto load) --")
+        bulk_extra.append(f"GRID,{center_id},,{cx:g},{cy:g},{cz:g}")
+        bulk_extra.extend(_format_rbe2_lines(next_eid, center_id, ring_ids, cm="123456"))
+
+    # Area RBE3 (하중 분배 — 기준노드에 FORCE 를 주면 영역 노드로 가중분배, 강성 추가 없음)
+    for s in (rbe3_sets or []):
+        node_ids = [int(g) for g in (s.get("node_ids") or [])]
+        if len(node_ids) < 1:
+            warnings.append("RBE3 영역에 노드가 없어 건너뜀.")
+            continue
+        ref_id = int(s.get("ref_id") or (max_grid + 1))
+        next_eid += 1
+        c = s.get("center", {}) or {}
+        cx = float(c.get("x", 0) or 0); cy = float(c.get("y", 0) or 0); cz = float(c.get("z", 0) or 0)
+        bulk_extra.append("$ -- Area RBE3 (load distribution, REFGRID independent-motion) --")
+        bulk_extra.append(f"GRID,{ref_id},,{cx:g},{cy:g},{cz:g}")
+        bulk_extra.extend(_format_rbe3_lines(next_eid, ref_id, node_ids, refc="123", wt=1.0, comp="123"))
+
+    # ── Load Case 기본값 (미지정 시 전체 BC + 전체 Load) ──
+    if not load_cases:
+        load_cases = [{
+            "name": "LC1",
+            "bc_ids": list(spc_sid.keys()),
+            "load_ids": list(load_sid.keys()),
+        }]
+
+    # ── LC → SUBCASE (+ SPCADD / LOAD 조합 카드) ────────────────
+    subcases: list[dict] = []
+    for k, lc in enumerate(load_cases):
+        bc_ids = [i for i in (lc.get("bc_ids") or []) if i in spc_sid]
+        load_ids = [j for j in (lc.get("load_ids") or []) if j in load_sid]
+        label = lc.get("name") or f"LC{k + 1}"
+
+        # SPC
+        spc_sids = [spc_sid[i] for i in bc_ids]
+        if len(spc_sids) == 1:
+            spc_ref = spc_sids[0]
+        elif len(spc_sids) > 1:
+            spc_ref = _SPCADD_BASE + k + 1
+            bulk_extra.append(f"$ -- LC '{label}' SPCADD --")
+            bulk_extra.extend(_freefield_combo("SPCADD", spc_ref, spc_sids))
+        else:
+            spc_ref = None
+            warnings.append(f"LC '{label}' 에 경계조건이 없어 SPC 미지정 (특이행렬 위험).")
+
+        # LOAD
+        l_sids = [load_sid[j] for j in load_ids]
+        if len(l_sids) == 1:
+            load_ref = l_sids[0]
+        elif len(l_sids) > 1:
+            load_ref = _LOADC_BASE + k + 1
+            bulk_extra.append(f"$ -- LC '{label}' LOAD combination --")
+            bulk_extra.extend(_load_combo_lines(load_ref, l_sids))
+        else:
+            load_ref = None
+
+        subcases.append({"label": label, "spc": spc_ref, "load": load_ref})
+
+    if not subcases:
+        warnings.append("유효한 Load Case 가 없습니다.")
+
+    # ── 조립 ───────────────────────────────────────────────────
+    new_case = _build_case_control(case_lines, subcases)
+    result: list[str] = list(new_case)  # _build_case_control 이 BEGIN BULK 포함
+    inserted = False
+    for line in out_bulk:
+        if not inserted and line.strip().upper().startswith("ENDDATA"):
+            result.append("$ ===== WorkBench loads / BCs / RBE =====")
+            result.extend(bulk_extra)
+            inserted = True
+        result.append(line)
+    if not inserted:
+        result.append("$ ===== WorkBench loads / BCs / RBE =====")
+        result.extend(bulk_extra)
+        result.append("ENDDATA")
+
+    meta = {
+        "subcases": subcases,
+        "spc_sids": spc_sid,
+        "load_sids": load_sid,
+        "warnings": warnings,
+    }
+    return "\n".join(result) + "\n", meta
+
+
+def _scan_f06(f06_path: str) -> dict:
+    """f06 에서 FATAL/WARNING 및 정상 종료 여부를 간단 스캔."""
+    info = {"exists": False, "fatal": [], "has_results": False, "ended": False}
+    if not os.path.isfile(f06_path):
+        return info
+    info["exists"] = True
+    try:
+        with open(f06_path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                u = line.upper()
+                if "FATAL" in u:
+                    info["fatal"].append(line.strip()[:300])
+                if "D I S P L A C E M E N T" in u or "DISPLACEMENT VECTOR" in u:
+                    info["has_results"] = True
+                if "END OF JOB" in u or "* * * END OF" in u:
+                    info["ended"] = True
+    except Exception as e:
+        logger.warning("f06 스캔 실패: %s — %s", f06_path, e)
+    return info
+
+
+def _extract_f06_results(solve_dir: str, f06_path: str,
+                         engine_output_parts: list, step) -> Optional[str]:
+    """NastranBridge 로 F06 → 결과 JSON(변위 + 쉘 von Mises) 추출.
+
+    실패해도 해석 자체는 성공이므로 경고만 남기고 None 반환(뷰어 결과만 생략).
+    """
+    bridge_exe = os.path.join(
+        get_backend_dir(), "InHouseProgram", "NastranBridge", "nastran_bridge.exe"
+    )
+    if not os.path.isfile(bridge_exe):
+        engine_output_parts.append(f"[Warning] NastranBridge 실행 파일 없음 — 결과 JSON 생략: {bridge_exe}")
+        return None
+    out_path = os.path.join(solve_dir, "solve_results.json")
+    try:
+        r = subprocess.run(
+            [bridge_exe, f06_path, "-o", out_path],
+            cwd=solve_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180,
+        )
+        out = (r.stdout or b"").decode("utf-8", errors="replace").strip()
+        err = (r.stderr or b"").decode("utf-8", errors="replace").strip()
+        step("results_extract", returncode=r.returncode, out=out[:200], err=err[:200])
+        if out:
+            engine_output_parts.append(f"[Results] {out}")
+        if r.returncode == 0 and os.path.isfile(out_path):
+            return out_path
+        engine_output_parts.append(f"[Warning] 결과 JSON 추출 실패 (exit={r.returncode}).")
+    except subprocess.TimeoutExpired:
+        step("results_timeout", timeout_sec=180)
+        engine_output_parts.append("[Warning] 결과 JSON 추출 시간 초과 (3분).")
+    except Exception as e:
+        step("results_error", error=str(e))
+        engine_output_parts.append(f"[Warning] 결과 JSON 추출 오류: {e}")
+    return None
+
+
+def task_execute_drawing_solve(
+    job_id: str,
+    solve_dir: str,
+    source_bdf_path: str,
+    employee_id: str,
+    timestamp: str,
+    source: str,
+    mode: str,
+    loads: list,
+    bcs: list,
+    hole_rbe: Optional[dict] = None,
+    load_cases: Optional[list] = None,
+    rbe3_sets: Optional[list] = None,
+):
+    """사용자 정의 하중/경계조건을 BDF 에 주입한 뒤 Nastran(SOL 101) 해석 실행.
+
+    동작:
+      1. source_bdf_path(변환/재구축 결과 BDF) 읽기
+      2. 기존 FORCE/SPC* 제거 → 사용자 FORCE(SID=1)/SPC1(SID=1) 주입
+      3. solve_dir/solved_model.bdf 저장
+      4. `nastran solved_model.bdf` 실행 (cwd=solve_dir)
+      5. f06/op2/log 수집 + FATAL 스캔
+    """
+    mode = (mode or "lug").lower()
+    mark_running(job_id, "구조 해석 준비 중 (하중/경계조건 적용)...", progress=5)
+
+    status_msg = "Success"
+    engine_output_parts: list[str] = []
+    result_data: dict = {}
+    user_reason: Optional[str] = None
+
+    diagnostic = {
+        "job_id":     job_id,
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "input": {
+            "solve_dir":       solve_dir,
+            "source_bdf_path": source_bdf_path,
+            "mode":            mode,
+            "employee_id":     employee_id,
+            "source":          source,
+            "load_set_count":  len(loads or []),
+            "bc_set_count":    len(bcs or []),
+            "has_hole_rbe":    bool(hole_rbe),
+            "rbe3_set_count":  len(rbe3_sets or []),
+            "load_case_count": len(load_cases or []),
+        },
+        "loads": loads,
+        "bcs":   bcs,
+        "hole_rbe": hole_rbe,
+        "rbe3_sets": rbe3_sets,
+        "load_cases": load_cases,
+        "steps": [],
+    }
+
+    def step(name: str, **info):
+        info["name"] = name
+        info["ts"]   = time.strftime("%H:%M:%S")
+        diagnostic["steps"].append(info)
+        logger.info("[DrawingSolve][%s] %s", job_id, json.dumps(info, ensure_ascii=False, default=str))
+
+    try:
+        # ── Step 1: 원본 BDF 확인 ────────────────────────────────
+        step("resolve_bdf", source_bdf_path=source_bdf_path, exists=os.path.isfile(source_bdf_path))
+        if not source_bdf_path or not os.path.isfile(source_bdf_path):
+            status_msg = "Failed"
+            user_reason = "해석할 BDF 모델을 찾을 수 없습니다. 먼저 PDF → 모델 변환을 완료하세요."
+            engine_output_parts.append(f"[Error] BDF 없음: {source_bdf_path}")
+            raise RuntimeError(user_reason)
+
+        # ── Step 2: BDF 생성 (다중 SUBCASE / SPC·LOAD ID 분리) ────
+        update_progress(job_id, 20, "하중/경계조건/Load Case 반영 중...")
+        with open(source_bdf_path, "r", encoding="utf-8", errors="replace") as fh:
+            src_text = fh.read()
+
+        if not bcs:
+            status_msg = "Failed"
+            user_reason = "경계조건이 하나도 없습니다. 최소 1개 이상의 구속 세트를 지정하세요."
+            engine_output_parts.append("[Error] " + user_reason)
+            raise RuntimeError(user_reason)
+
+        solved_text, build_meta = _build_solved_bdf(src_text, bcs, loads, hole_rbe, load_cases, rbe3_sets)
+        step("build_bdf",
+             subcases=len(build_meta["subcases"]),
+             spc_sids=len(build_meta["spc_sids"]),
+             load_sids=len(build_meta["load_sids"]),
+             warnings=build_meta["warnings"])
+        for w in build_meta["warnings"]:
+            engine_output_parts.append(f"[Warning] {w}")
+
+        # 유효 SUBCASE 가 하나도 없으면 실패 처리
+        valid_subcases = [s for s in build_meta["subcases"] if s.get("spc") is not None]
+        if not valid_subcases:
+            status_msg = "Failed"
+            user_reason = "유효한 Load Case 가 없습니다. 각 LC 에 경계조건을 1개 이상 포함하세요."
+            engine_output_parts.append("[Error] " + user_reason)
+            raise RuntimeError(user_reason)
+
+        # ── Step 3: BDF 저장 ─────────────────────────────────────
+        update_progress(job_id, 35, "해석용 BDF 저장 중...")
+        os.makedirs(solve_dir, exist_ok=True)
+        solved_bdf = os.path.join(solve_dir, "solved_model.bdf")
+        with open(solved_bdf, "w", encoding="utf-8") as fh:
+            fh.write(solved_text)
+        result_data["bdf"] = solved_bdf
+        sc_summary = ", ".join(
+            f"SUBCASE{i+1}[{s['label']}] SPC={s['spc']} LOAD={s['load']}"
+            for i, s in enumerate(build_meta["subcases"])
+        )
+        engine_output_parts.append(f"[BDF] {len(build_meta['subcases'])} Load Case 생성 — {sc_summary}")
+        step("write_solved_bdf", path=solved_bdf, bytes=len(solved_text))
+
+        # ── Step 4: Nastran 실행 ─────────────────────────────────
+        update_progress(job_id, 50, "Nastran 해석 실행 중 (SOL 101)...")
+        # 사용자 지정: cmd `nastran <파일>.bdf` 직접 실행 (PATH 등록됨).
+        # MSC Nastran 은 batch 로 즉시 반환할 수 있어 이후 f06 생성 폴링으로 완료를 대기한다.
+        cmd_args = ["nastran", "solved_model.bdf"]
+        step("nastran_invoke", cmd=cmd_args, cwd=solve_dir)
+        try:
+            result = subprocess.run(
+                cmd_args,
+                cwd=solve_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=900,
+            )
+            nas_stdout = (result.stdout or b"").decode("utf-8", errors="replace")
+            nas_stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+            step("nastran_done", returncode=result.returncode,
+                 stdout_tail=nas_stdout[-1500:], stderr_tail=nas_stderr[-1500:])
+            if nas_stdout.strip():
+                engine_output_parts.append(nas_stdout.strip())
+            if nas_stderr.strip():
+                engine_output_parts.append(f"[stderr] {nas_stderr.strip()}")
+        except FileNotFoundError:
+            status_msg = "Failed"
+            user_reason = "서버에 Nastran 실행 파일이 없습니다(PATH 미등록). 관리자에게 문의하세요."
+            step("nastran_not_found")
+            engine_output_parts.append("[Error] " + user_reason)
+            raise RuntimeError(user_reason)
+        except subprocess.TimeoutExpired:
+            status_msg = "Failed"
+            user_reason = "Nastran 해석 시간이 초과되었습니다(15분). 모델/메시 크기를 확인하세요."
+            step("nastran_timeout", timeout_sec=900)
+            engine_output_parts.append("[Error] " + user_reason)
+            raise RuntimeError(user_reason)
+
+        # ── Step 5: f06 대기 (MSC Nastran 은 백그라운드 spawn 가능) ──
+        update_progress(job_id, 80, "해석 결과(f06) 생성 대기 중...")
+        f06_path = os.path.join(solve_dir, "solved_model.f06")
+        waited = 0.0
+        while not os.path.isfile(f06_path) and waited < 120.0:
+            time.sleep(2.0)
+            waited += 2.0
+        # f06 가 생성됐으면 안정될 때까지 잠깐 더 대기 (크기 변화 멈춤)
+        if os.path.isfile(f06_path):
+            last_size = -1
+            stable = 0
+            while stable < 3 and waited < 180.0:
+                size = os.path.getsize(f06_path)
+                if size == last_size:
+                    stable += 1
+                else:
+                    stable = 0
+                    last_size = size
+                time.sleep(1.5)
+                waited += 1.5
+        step("f06_wait", waited_sec=waited, exists=os.path.isfile(f06_path))
+
+        # ── Step 6: 결과 파일 수집 ───────────────────────────────
+        update_progress(job_id, 90, "해석 결과 파일 수집 중...")
+        for fn, key in (
+            ("solved_model.f06", "f06"),
+            ("solved_model.op2", "op2"),
+            ("solved_model.log", "log"),
+            ("solved_model.f04", "f04"),
+        ):
+            p = os.path.join(solve_dir, fn)
+            if os.path.isfile(p):
+                result_data[key] = p
+
+        f06_info = _scan_f06(f06_path)
+        step("f06_scan", **{k: (v if k != "fatal" else len(v)) for k, v in f06_info.items()})
+        if not f06_info["exists"]:
+            status_msg = "Failed"
+            user_reason = ("Nastran 이 결과(f06)를 생성하지 않았습니다. "
+                           "모델·경계조건을 확인하거나 관리자에게 문의하세요.")
+            engine_output_parts.append("[Error] " + user_reason)
+        elif f06_info["fatal"]:
+            status_msg = "Failed"
+            user_reason = "Nastran 해석 중 FATAL 오류가 발생했습니다. 경계조건/하중을 확인하세요."
+            engine_output_parts.append("[FATAL] " + "\n[FATAL] ".join(f06_info["fatal"][:5]))
+        else:
+            engine_output_parts.append(
+                f"[Nastran] 해석 완료 — 결과 {'있음' if f06_info['has_results'] else '확인 필요'}, "
+                f"정상종료={f06_info['ended']}"
+            )
+            # ── Step 6: NastranBridge 로 F06 → 결과 JSON (변위 + 쉘 von Mises) ──
+            update_progress(job_id, 88, "해석 결과(변위/응력) 추출 중...")
+            results_json_path = _extract_f06_results(solve_dir, f06_path, engine_output_parts, step)
+            if results_json_path:
+                result_data["results_json"] = results_json_path
+
+    except RuntimeError:
+        pass
+    except Exception as e:
+        status_msg = "Failed"
+        user_reason = user_reason or FAIL_UNKNOWN
+        logger.error("DrawingSolve 예기치 않은 오류: %s", str(e), exc_info=True)
+        engine_output_parts.append(f"[Unhandled] {type(e).__name__}: {e}")
+        engine_output_parts.append(traceback.format_exc())
+
+    # 진단 파일
+    diagnostic["status"]      = status_msg
+    diagnostic["user_reason"] = user_reason
+    diagnostic["ended_at"]    = datetime.now().isoformat(timespec="seconds")
+    diag_path = _write_diagnostic(solve_dir, diagnostic)
+    if diag_path:
+        result_data["diagnostic_json"] = diag_path
+
+    if status_msg == "Failed":
+        engine_output = f"🚫 구조 해석 실패 — {user_reason or FAIL_UNKNOWN}\n\n" + "\n".join(engine_output_parts)
+    else:
+        engine_output = "\n".join(engine_output_parts) if engine_output_parts else "구조 해석 완료"
+
+    update_progress(job_id, 95, "데이터베이스 저장 중...")
+    project_data, db_err = record_analysis(
+        job_id=job_id,
+        project_name=f"DrawingSolve_{timestamp}",
+        program_name="DrawingToAnalysis",
+        employee_id=employee_id,
+        status=status_msg,
+        input_info={"solve": True, "mode": mode, "source_bdf": source_bdf_path,
+                    "loads": loads, "bcs": bcs, "hole_rbe": hole_rbe,
+                    "rbe3_sets": rbe3_sets, "load_cases": load_cases},
+        result_info=result_data if result_data else None,
+        source=source,
+    )
+    if db_err is not None:
+        status_msg = "Failed"
+        engine_output += f"\n[DB Error] {db_err}"
+
+    mark_complete(
+        job_id,
+        status_msg,
+        engine_output,
+        project_data,
+        success_message="구조 해석(Nastran) 완료",
+        failure_message=user_reason or "구조 해석 실패",
     )

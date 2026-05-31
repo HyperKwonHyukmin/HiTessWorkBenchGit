@@ -3,7 +3,6 @@ import io
 import logging
 import os
 import shutil
-import uuid
 import urllib.parse
 import zipfile
 
@@ -16,7 +15,7 @@ from pydantic import BaseModel
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models, database
-from ..services.job_manager import job_status_store, analysis_executor
+from ..services.job_manager import job_status_store
 from ..dependencies import require_auth, require_admin
 from ..services.activity_service import log_activity
 from ..services.truss_service import task_execute_truss
@@ -40,6 +39,7 @@ from ..services.mooring_fitting_service import task_execute_mooring_fitting
 from ..services.drawing_to_analysis_service import (
     task_execute_drawing_to_analysis,
     task_execute_drawing_rebuild,
+    task_execute_drawing_solve,
 )
 from ._intake import make_work_dir, save_upload, submit_analysis_job
 
@@ -118,6 +118,23 @@ def _verify_employee_self(form_employee_id: str, current_user: str) -> None:
         )
 
 
+def _is_within_dir(base_dir: str, candidate_path: str) -> bool:
+    """candidate_path가 base_dir 하위인지 commonpath로 검증합니다."""
+    try:
+        base = os.path.abspath(base_dir)
+        candidate = os.path.abspath(candidate_path)
+        return os.path.commonpath([base, candidate]) == base
+    except ValueError:
+        return False
+
+
+def _normalize_userconnection_path(path: str, *, status_code: int = 403) -> str:
+    decoded = os.path.abspath(urllib.parse.unquote(path))
+    if not _is_within_dir(_ALLOWED_DOWNLOAD_BASE, decoded):
+        raise HTTPException(status_code=status_code, detail="접근 권한이 없는 경로입니다.")
+    return decoded
+
+
 # ==================== 통계 ====================
 
 @router.get("/analysis/stats/monthly")
@@ -125,9 +142,11 @@ def get_monthly_analysis_count(
     employee_id: str = Query(..., description="사번"),
     year: int = Query(None),
     month: int = Query(None),
-    db: Session = Depends(database.get_db)
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
 ):
     """특정 사용자의 당월(또는 지정 연월) 해석 수행 건수를 반환합니다."""
+    _verify_employee_self(employee_id, current_user)
     now = datetime.now()
     y = year or now.year
     m = month or now.month
@@ -153,7 +172,8 @@ def get_monthly_analysis_count(
 def get_top_programs(
     days: int = Query(30, ge=0, description="집계 기간(일). 0이면 전체 기간"),
     limit: int = Query(10, ge=1, le=50),
-    db: Session = Depends(database.get_db)
+    db: Session = Depends(database.get_db),
+    _user: str = Depends(require_auth),
 ):
     """프로그램별 사용 건수 집계 (대시보드 Top 5 / 전체 기간 순위 모달용)."""
     query = db.query(
@@ -183,7 +203,7 @@ def _files_available(record: models.Analysis) -> bool:
         for v in info.values():
             if isinstance(v, str) and v:
                 path = os.path.abspath(urllib.parse.unquote(v))
-                if path.startswith(_ALLOWED_DOWNLOAD_BASE):
+                if _is_within_dir(_ALLOWED_DOWNLOAD_BASE, path):
                     return os.path.exists(path)
     return False
 
@@ -199,11 +219,13 @@ def get_analysis_history(
     employee_id: str,
     skip: int = Query(0, ge=0, description="건너뛸 항목 수"),
     limit: int = Query(50, ge=1, le=100000, description="반환할 최대 항목 수"),
-    db: Session = Depends(database.get_db)
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
 ):
     """
     특정 사용자의 해석 이력을 최신순으로 조회합니다. 페이지네이션 지원.
     """
+    _verify_employee_self(employee_id, current_user)
     # 샘플 실행(WorkbenchSample)은 사용 기록에서 제외 — 신규 사용자 학습용
     base_q = db.query(models.Analysis).filter(
         models.Analysis.employee_id == employee_id,
@@ -223,7 +245,8 @@ def get_analysis_history(
 def get_all_analysis_history(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100000),
-    db: Session = Depends(database.get_db)
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
 ):
     """
     관리자용 전체 해석 이력을 최신순으로 조회합니다. 페이지네이션 지원.
@@ -247,9 +270,7 @@ def download_file(filepath: str, req: Request, db: Session = Depends(database.ge
     지정된 경로의 파일을 다운로드합니다.
     보안: userConnection/ 디렉터리 내 파일만 허용합니다.
     """
-    decoded_path = os.path.abspath(urllib.parse.unquote(filepath))
-    if not decoded_path.startswith(_ALLOWED_DOWNLOAD_BASE):
-        raise HTTPException(status_code=403, detail="접근 권한이 없는 경로입니다.")
+    decoded_path = _normalize_userconnection_path(filepath)
     if not os.path.exists(decoded_path):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
     filename = os.path.basename(decoded_path)
@@ -277,7 +298,7 @@ def download_program(filename: str, req: Request, db: Session = Depends(database
     if not file_path:
         # 2) 로컬 DownloadProgram/ fallback
         file_path = os.path.abspath(os.path.join(_PROGRAM_DOWNLOAD_DIR, safe_name))
-        if not file_path.startswith(_PROGRAM_DOWNLOAD_DIR + os.sep) and file_path != _PROGRAM_DOWNLOAD_DIR:
+        if not _is_within_dir(_PROGRAM_DOWNLOAD_DIR, file_path):
             raise HTTPException(status_code=403, detail="접근 권한이 없는 경로입니다.")
 
     if not os.path.exists(file_path):
@@ -303,9 +324,7 @@ def export_assessment_xlsx(
     openpyxl로 메모리(BytesIO)에서만 생성하므로 디스크에 저장되지 않아
     회사 DRM 소프트웨어의 자동 암호화를 피할 수 있습니다.
     """
-    decoded_path = os.path.abspath(urllib.parse.unquote(json_path))
-    if not decoded_path.startswith(_ALLOWED_DOWNLOAD_BASE):
-        raise HTTPException(status_code=403, detail="접근 권한이 없는 경로입니다.")
+    decoded_path = _normalize_userconnection_path(json_path)
     if not os.path.exists(decoded_path):
         raise HTTPException(status_code=404, detail="JSON 파일을 찾을 수 없습니다.")
 
@@ -491,7 +510,7 @@ def _resolve_catalogue_pdf(filename: str) -> str:
     if not safe.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일명이 아닙니다.")
     target = os.path.abspath(os.path.join(_DRAWING_CATALOGUE_DIR, safe))
-    if not target.startswith(_DRAWING_CATALOGUE_DIR + os.sep):
+    if not _is_within_dir(_DRAWING_CATALOGUE_DIR, target):
         raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
     if not os.path.isfile(target):
         raise HTTPException(status_code=404, detail="카탈로그에 해당 PDF가 없습니다.")
@@ -583,7 +602,7 @@ def _find_catalogue_png(stem: str) -> Optional[str]:
     """
     png_dir = os.path.join(_DRAWING_CATALOGUE_DIR, "PNG")
     candidate = os.path.abspath(os.path.join(png_dir, stem + ".png"))
-    if not candidate.startswith(os.path.abspath(png_dir) + os.sep):
+    if not _is_within_dir(os.path.abspath(png_dir), candidate):
         return None
     return candidate if os.path.isfile(candidate) else None
 
@@ -713,7 +732,7 @@ async def rebuild_drawing_model(
 
     # ── 이전 작업 폴더 검증 ──────────────────────────────────────
     prev_dir = os.path.abspath(payload.work_dir or "")
-    if not prev_dir.startswith(_USER_CONNECTION_DIR + os.sep):
+    if not _is_within_dir(_USER_CONNECTION_DIR, prev_dir):
         raise HTTPException(status_code=400, detail="허용되지 않은 work_dir 입니다.")
     if not os.path.isdir(prev_dir):
         raise HTTPException(status_code=404, detail=f"이전 작업 폴더를 찾을 수 없습니다: {prev_dir}")
@@ -748,27 +767,180 @@ async def rebuild_drawing_model(
     }
 
 
+# -------------------- 구조 해석 (하중/경계조건 → Nastran) --------------------
+
+class DrawingLoadSet(BaseModel):
+    """하중 세트 — 선택 노드에 동일한 힘 벡터(N)를 적용."""
+    nodes: list[int]
+    fx: float = 0.0
+    fy: float = 0.0
+    fz: float = 0.0
+
+
+class DrawingBcSet(BaseModel):
+    """경계조건 세트 — 선택 노드를 dof 문자열(예: '123456')로 구속."""
+    nodes: list[int]
+    dof: str = "123456"
+
+
+class DrawingRbeCenter(BaseModel):
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+
+
+class DrawingHoleRbe(BaseModel):
+    """Lug Hole RBE2 — 중심 독립노드 + hole edge ring 종속노드 (순수 강체 결합).
+
+    하중은 자동 적용하지 않는다. 중심 노드(center_id)를 하중 영역에서 선택해
+    일반 load set 으로 Force 를 주면 하중 조합(LC)에 포함된다.
+    """
+    center_id: int = 0          # 중심 독립노드 GRID id (프론트가 max+1 로 부여)
+    center: DrawingRbeCenter = DrawingRbeCenter()
+    ring_node_ids: list[int] = []
+
+
+class DrawingRbe3Set(BaseModel):
+    """Area RBE3 — 넓은 영역에 총합 하중을 분배하기 위한 하중분배 요소.
+
+    기준노드(ref_id)에 일반 load set 으로 총 Force 를 주면 RBE3 가 영역 노드들로
+    가중분배한다. RBE2 와 달리 강성을 추가하지 않아 플레이트가 자유롭게 변형된다.
+    """
+    ref_id: int = 0             # 기준(REFGRID) 노드 GRID id (프론트가 부여, 하중 적용 대상)
+    center: DrawingRbeCenter = DrawingRbeCenter()
+    node_ids: list[int] = []    # 분배 대상(독립) grid 들
+
+
+class DrawingLoadCase(BaseModel):
+    """Load Case — 경계조건 세트(bc_ids)와 하중 세트(load_ids)의 조합 = SUBCASE.
+
+    bc_ids / load_ids 는 bcs / loads 배열의 인덱스(0-base).
+    RBE 중심 하중은 별도 load set(중심 노드 선택)으로 처리되므로 여기서 다루지 않는다.
+    """
+    name: str = ""
+    bc_ids: list[int] = []
+    load_ids: list[int] = []
+
+
+class DrawingSolveRequest(BaseModel):
+    """변환된 BDF 에 하중/경계조건을 반영해 Nastran 해석을 실행하는 요청."""
+    employee_id: str
+    work_dir: str               # 변환/재구축 결과 폴더 (BDF 가 있는 폴더, 절대 경로)
+    bdf_path: str               # 해석 대상 BDF 절대 경로
+    mode: str = "lug"           # 'lug' | 'support'
+    loads: list[DrawingLoadSet] = []
+    bcs: list[DrawingBcSet] = []
+    hole_rbe: Optional[DrawingHoleRbe] = None
+    rbe3_sets: list[DrawingRbe3Set] = []
+    load_cases: list[DrawingLoadCase] = []
+    source: str = "Workbench-Solve"
+
+
+@router.post("/analysis/drawing-to-analysis/solve")
+async def solve_drawing_model(
+    payload: DrawingSolveRequest,
+    current_user: str = Depends(require_auth),
+):
+    """변환된 BDF 에 사용자 하중/경계조건을 주입하고 Nastran(SOL 101)을 실행.
+
+    결과 저장 위치: <work_dir>/solve_<timestamp>/
+    """
+    _verify_employee_self(payload.employee_id, current_user)
+
+    mode = (payload.mode or "lug").lower()
+
+    # ── work_dir / bdf 경로 검증 (userConnection 외부 접근 차단) ──
+    work_dir = os.path.abspath(payload.work_dir or "")
+    if not _is_within_dir(_USER_CONNECTION_DIR, work_dir):
+        raise HTTPException(status_code=400, detail="허용되지 않은 work_dir 입니다.")
+    if not os.path.isdir(work_dir):
+        raise HTTPException(status_code=404, detail=f"작업 폴더를 찾을 수 없습니다: {work_dir}")
+
+    bdf_path = os.path.abspath(payload.bdf_path or "")
+    if not _is_within_dir(_USER_CONNECTION_DIR, bdf_path):
+        raise HTTPException(status_code=400, detail="허용되지 않은 BDF 경로입니다.")
+    if not os.path.isfile(bdf_path):
+        raise HTTPException(status_code=404, detail=f"BDF 파일을 찾을 수 없습니다: {bdf_path}")
+
+    # ── 하중/경계조건 검증 ──────────────────────────────────────
+    # load_cases 가 bcs/loads 를 인덱스로 참조하므로 배열을 필터링하지 않고 그대로 전달한다
+    # (빈 세트는 _build_solved_bdf 가 스킵). 단, 유효 경계조건이 하나도 없으면 거부.
+    if not any(b.nodes for b in payload.bcs):
+        raise HTTPException(status_code=400, detail="경계조건(구속) 세트를 최소 1개 이상 지정하세요.")
+    bcs = [b.model_dump() for b in payload.bcs]
+    loads = [l.model_dump() for l in payload.loads]
+    hole_rbe = (
+        payload.hole_rbe.model_dump()
+        if payload.hole_rbe and payload.hole_rbe.ring_node_ids
+        else None
+    )
+    rbe3_sets = [r.model_dump() for r in payload.rbe3_sets if r.node_ids]
+    load_cases = [lc.model_dump() for lc in payload.load_cases]
+
+    # ── 해석 폴더: <work_dir>/solve_<timestamp>/ ─────────────────
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    solve_dir = os.path.join(work_dir, f"solve_{timestamp}")
+    try:
+        os.makedirs(solve_dir, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"해석 폴더 생성 실패: {e}")
+
+    job_id = submit_analysis_job(
+        task_execute_drawing_solve,
+        solve_dir, bdf_path, payload.employee_id, timestamp, payload.source,
+        mode, loads, bcs, hole_rbe, load_cases, rbe3_sets,
+        queue_message="구조 해석 대기 중...",
+    )
+    return {
+        "job_id":     job_id,
+        "work_dir":   solve_dir,
+        "parent_dir": work_dir,
+        "mode":       mode,
+        "load_sets":  len(loads),
+        "bc_sets":    len(bcs),
+        "rbe3_sets":  len(rbe3_sets),
+        "load_cases": len(load_cases),
+    }
+
+
 # ==================== 단건 조회 ====================
 
 @router.get("/analysis/{analysis_id}")
-def get_analysis_by_id(analysis_id: int, db: Session = Depends(database.get_db)):
+def get_analysis_by_id(analysis_id: int, db: Session = Depends(database.get_db), current_user: str = Depends(require_auth)):
     """DB에 저장된 특정 해석 기록을 ID로 조회합니다."""
     record = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Analysis record not found")
+    if record.employee_id != current_user:
+        user = db.query(models.User).filter(models.User.employee_id == current_user).first()
+        if not user or not user.is_admin:
+            raise HTTPException(status_code=403, detail="접근 권한이 없는 해석 기록입니다.")
     return _serialize_analysis(record)
 
 
 # ==================== 작업 상태 조회 ====================
 
 @router.get("/analysis/status/{job_id}")
-def get_job_status(job_id: str):
+def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_user: str = Depends(require_auth)):
     """
     특정 Job ID의 현재 진행 상태를 반환합니다.
     """
-    if job_id not in job_status_store:
+    status = job_status_store.get(job_id)
+    if status:
+        return status
+    record = db.query(models.Analysis).filter(models.Analysis.job_id == job_id).first()
+    if not record:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job_status_store.get(job_id)
+    if record.employee_id != current_user:
+        user = db.query(models.User).filter(models.User.employee_id == current_user).first()
+        if not user or not user.is_admin:
+            raise HTTPException(status_code=403, detail="접근 권한이 없는 작업입니다.")
+    return {
+        "status": record.job_status or record.status,
+        "progress": record.progress if record.progress is not None else 100,
+        "message": record.job_message or record.status,
+        "project": _serialize_analysis(record),
+    }
 
 
 # ==================== Truss Model Builder ====================
@@ -1124,7 +1296,7 @@ async def upload_module_stability_artifact(
     bdf_abs = os.path.abspath(bdf_path)
     user_root_cmp = os.path.normcase(user_root_abs)
     bdf_cmp = os.path.normcase(bdf_abs)
-    if not bdf_cmp.startswith(user_root_cmp + os.sep):
+    if not _is_within_dir(user_root_cmp, bdf_cmp):
         raise HTTPException(status_code=403, detail="Parent BDF 경로가 userConnection 디렉터리 밖에 있습니다.")
 
     # ModuleAnalysis.Cli 와 unit-structural endpoint 모두 posture/stability 파일이
@@ -1138,7 +1310,7 @@ async def upload_module_stability_artifact(
 
     target_path = os.path.abspath(os.path.join(work_dir, safe_name))
     # 경로 탈출 차단 — work_dir 외부로 못 빠져나가게.
-    if not target_path.startswith(work_dir + os.sep) and target_path != work_dir:
+    if not _is_within_dir(work_dir, target_path):
         raise HTTPException(status_code=400, detail="경로 탈출 시도 차단")
 
     try:
@@ -1170,7 +1342,7 @@ async def request_module_stability(
     # prefix 검사 누락 시 서버 디스크의 임의 JSON 파일을 ModuleAnalysis.Cli.exe 에 spawn 인자로 넘길 수 있다.
     posture_abs = os.path.abspath(req.posturePath or "")
     user_root = _USER_CONNECTION_DIR
-    if not (posture_abs == user_root or posture_abs.startswith(user_root + os.sep)):
+    if not _is_within_dir(user_root, posture_abs):
         raise HTTPException(
             status_code=400,
             detail="posturePath 가 userConnection 디렉터리 밖에 있습니다.",
@@ -1179,27 +1351,26 @@ async def request_module_stability(
         raise HTTPException(status_code=400, detail=f"posturePath 가 파일이 아닙니다: {posture_abs}")
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {"status": "Pending", "progress": 0, "message": "자세안정성 해석 대기 중..."})
-
-    analysis_executor.submit(
+    job_id = submit_analysis_job(
         task_execute_module_stability,
-        job_id,
         posture_abs,
         current_user,
         timestamp,
         req.source or "ModuleUnitStudio",
+        queue_message="자세안정성 해석 대기 중...",
     )
 
     return {"job_id": job_id, "jobId": job_id}
 
 
 @router.get("/analysis/module-stability/{job_id}/status")
-async def get_module_stability_status(job_id: str):
+async def get_module_stability_status(
+    job_id: str,
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
     """ModuleUnitStudio 전용 job status alias."""
-    if job_id not in job_status_store:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return job_status_store.get(job_id)
+    return get_job_status(job_id, db, current_user)
 
 
 # ==================== Group & Module Unit 권상 구조 해석 ====================
@@ -1286,7 +1457,7 @@ async def request_groupmoduleunit_from_path(
     _verify_employee_self(employee_id, current_user)
 
     abs_path = os.path.abspath(bdf_server_path)
-    if not abs_path.startswith(_USER_CONNECTION_DIR):
+    if not _is_within_dir(_USER_CONNECTION_DIR, abs_path):
         raise HTTPException(status_code=400, detail="허용되지 않은 파일 경로입니다.")
     if not os.path.isfile(abs_path):
         raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
@@ -1360,7 +1531,7 @@ async def request_unit_structural(
         raise HTTPException(status_code=400, detail="stability_path 는 절대경로여야 합니다.")
     if not stab_abs.lower().endswith(".json"):
         raise HTTPException(status_code=400, detail="stability_path 는 .json 파일이어야 합니다.")
-    if not stab_abs.startswith(user_root_abs):
+    if not _is_within_dir(user_root_abs, stab_abs):
         raise HTTPException(status_code=400,
                             detail="stability_path 가 userConnection 디렉터리 안에 있지 않습니다.")
     if os.path.dirname(stab_abs) != bdf_dir_abs:
@@ -1370,16 +1541,12 @@ async def request_unit_structural(
         raise HTTPException(status_code=400, detail=f"stability_path 파일을 찾을 수 없습니다: {stab_abs}")
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    job_id = str(uuid.uuid4())
-    job_status_store.set(job_id, {
-        "status": "Pending", "progress": 0, "message": "Waiting in Queue...",
-    })
-
-    analysis_executor.submit(
+    job_id = submit_analysis_job(
         task_execute_unit_structural,
-        job_id, parent_analysis_id, stab_abs,
+        parent_analysis_id, stab_abs,
         safety_factor, allowable_mpa,
         employee_id, timestamp, source,
+        queue_message="Waiting in Queue...",
     )
 
     return {"job_id": job_id}
@@ -1760,7 +1927,7 @@ class ApplyEditPayload(BaseModel):
 def _validate_userconnection_path(p: str) -> str:
     """userConnection/ 외부 경로 차단. 절대경로로 정규화 후 반환."""
     abs_p = os.path.abspath(p)
-    if not abs_p.startswith(_ALLOWED_DOWNLOAD_BASE):
+    if not _is_within_dir(_ALLOWED_DOWNLOAD_BASE, abs_p):
         raise HTTPException(status_code=400, detail="허용되지 않은 경로")
     return abs_p
 
@@ -1851,7 +2018,7 @@ def get_result_zip(
                     full = os.path.join(root, f)
                     full_norm = os.path.normpath(full)
 
-                    if full_norm.startswith(abs_dir_norm):
+                    if _is_within_dir(abs_dir_norm, full_norm):
                         arcname = full_norm[prefix_len:]
                     else:
                         # os.walk 가 abs_dir 외부를 반환하는 일은 거의 없지만 방어적 처리
@@ -1972,7 +2139,7 @@ def compute_cog(
     import subprocess, json as _json
 
     decoded = os.path.abspath(urllib.parse.unquote(payload.bdf_path))
-    if not decoded.startswith(_ALLOWED_DOWNLOAD_BASE):
+    if not _is_within_dir(_ALLOWED_DOWNLOAD_BASE, decoded):
         raise HTTPException(status_code=403, detail="접근 권한이 없는 BDF 경로입니다.")
     if not os.path.isfile(decoded):
         raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")

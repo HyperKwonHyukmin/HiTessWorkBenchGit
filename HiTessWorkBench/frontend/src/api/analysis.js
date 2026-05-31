@@ -93,6 +93,28 @@ export const rebuildDrawingModel = ({ employeeId, workDir, mode, params, origina
     { headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } },
   );
 
+/** DrawingToAnalysis — 하중/경계조건을 BDF 에 반영해 Nastran 해석 실행
+ *  loads: [{ nodes:[id...], fx, fy, fz }]   (N)
+ *  bcs:   [{ nodes:[id...], dof:'123456' }]
+ */
+export const solveDrawingModel = ({ employeeId, workDir, bdfPath, mode, loads, bcs, holeRbe = null, rbe3Sets = [], loadCases = [] }) =>
+  axios.post(
+    `${API_BASE_URL}/api/analysis/drawing-to-analysis/solve`,
+    {
+      employee_id: employeeId,
+      work_dir: workDir,
+      bdf_path: bdfPath,
+      mode,
+      loads,
+      bcs,
+      hole_rbe: holeRbe,   // { center:{x,y,z}, ring_node_ids:[id], fx, fy, fz } | null
+      rbe3_sets: rbe3Sets, // [{ ref_id, center:{x,y,z}, node_ids:[id] }] — Area 하중분배
+      load_cases: loadCases, // [{ name, bc_ids:[idx], load_ids:[idx], include_rbe }]
+      source: 'Workbench-Solve',
+    },
+    { headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } },
+  );
+
 /** HP-SCR 배관응력 해석 요청 (PSA / POR) */
 export const requestHpscrAssessment = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/hpscr/request`, formData, 'HpScr');
@@ -132,7 +154,7 @@ export const exportAssessmentXlsx = (jsonPath) =>
 
 /** 프로그램별 사용 건수 집계 (days=0이면 전체 기간) */
 export const getTopPrograms = (days = 30, limit = 10) =>
-  axios.get(`${API_BASE_URL}/api/analysis/stats/top-programs`, { params: { days, limit } });
+  axios.get(`${API_BASE_URL}/api/analysis/stats/top-programs`, { params: { days, limit }, headers: getAuthHeaders() });
 
 /** 특정 Analysis ID로 단건 조회 */
 export const getAnalysisById = (id) =>

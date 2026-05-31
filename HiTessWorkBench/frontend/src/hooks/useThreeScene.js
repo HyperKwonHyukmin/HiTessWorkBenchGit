@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
@@ -28,6 +29,7 @@ export function createThreeScene(mountEl, options = {}) {
     bloomStrength = 0.5,
     bloomRadius = 0.4,
     bloomThreshold = 0.65,
+    controlsType = 'orbit',   // 'orbit' | 'trackball'(극점 멈춤 없는 자유 회전)
   } = options;
 
   const w = mountEl.clientWidth  || 800;
@@ -53,10 +55,22 @@ export function createThreeScene(mountEl, options = {}) {
   renderer.domElement.style.height = '100%';
   mountEl.appendChild(renderer.domElement);
 
-  // ── OrbitControls ──────────────────────────────────────────────────
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping  = true;
-  controls.dampingFactor  = 0.06;
+  // ── Controls ───────────────────────────────────────────────────────
+  // trackball: 위/아래 극점에서 멈추지 않고 무한 자유 회전(고정 up축 클램프 없음)
+  let controls;
+  if (controlsType === 'trackball') {
+    controls = new TrackballControls(camera, renderer.domElement);
+    controls.rotateSpeed = 3.0;
+    controls.zoomSpeed = 1.2;
+    controls.panSpeed = 0.8;
+    controls.dynamicDampingFactor = 0.12;
+    controls.staticMoving = false;
+    controls.keys = [];   // A/S/D 단축키와 충돌 방지 (기본 키 비활성)
+  } else {
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping  = true;
+    controls.dampingFactor  = 0.06;
+  }
 
   // ── Post-processing: Bloom ─────────────────────────────────────────
   const composer = new EffectComposer(renderer);
@@ -95,6 +109,7 @@ export function createThreeScene(mountEl, options = {}) {
     composer.setSize(rw, rh);
     renderer.domElement.style.width  = '100%';
     renderer.domElement.style.height = '100%';
+    controls.handleResize?.();  // TrackballControls: 화면 좌표 갱신 (없으면 회전 매핑 어긋남)
   });
   resizeObserver.observe(mountEl);
 

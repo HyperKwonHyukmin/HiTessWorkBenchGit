@@ -2,16 +2,18 @@
 /// DrawingToAnalysis — 설계 도면(PDF) → 구조 해석 모델 변환.
 /// </summary>
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { ArrowLeft, Upload, Play, FileText, Info, Construction, CheckCircle2, RefreshCw, Download, RotateCcw, AlertCircle, Lightbulb, FileSearch } from 'lucide-react';
+import { ArrowLeft, Upload, Play, FileText, Info, Construction, CheckCircle2, RefreshCw, Download, RotateCcw, AlertCircle, Lightbulb, FileSearch, Sliders, MousePointerClick, Cpu, FileCheck2, XCircle } from 'lucide-react';
 import PageBanner from '../../components/ui/PageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
-import { requestDrawingToAnalysis, downloadFileBlob, runDrawingCatalogue } from '../../api/analysis';
+import { requestDrawingToAnalysis, downloadFileBlob, downloadFileText, runDrawingCatalogue, solveDrawingModel } from '../../api/analysis';
 import ShellModelViewer from '../../components/analysis/ShellModelViewer';
 import DrawingCatalogueModal from '../../components/analysis/DrawingCatalogueModal';
 import DrawingParamsPanel from '../../components/analysis/DrawingParamsPanel';
+import DrawingLoadBcPanel from '../../components/analysis/DrawingLoadBcPanel';
+import SolveResultsPanel from '../../components/analysis/SolveResultsPanel';
 
 /** 파일명 / 카테고리에서 lug/support 모드 결정 — 백엔드 분류 규칙과 동일 */
 const resolveDrawingMode = (categoryOrFilename) => {
@@ -22,6 +24,120 @@ const resolveDrawingMode = (categoryOrFilename) => {
 
 /** mode 별 기본 mesh size — Support 는 30, Lug 는 10 */
 const defaultMeshSize = (mode) => (mode === 'support' ? 30.0 : 10.0);
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Lug 표시 좌표계: 사용자가 hole 수직방향을 Z 로 보고 싶어함.
+   원본(BDF) 프레임은 평면이 XY(z=0), height 가 Y. → 표시/입력 프레임에서 Y↔Z 스왑.
+   display ↔ BDF 는 동일한 swap 으로 상호 변환(자기역변환). Lug 모드에서만 적용.
+   ──────────────────────────────────────────────────────────────────────── */
+const swapYZpoint = (p) => ({ ...p, y: p.z, z: p.y });
+const swapYZvec   = (fx, fy, fz) => ({ fx, fy: fz, fz: fy });
+// dof 문자열 표시→BDF: TY(2)↔TZ(3), RY(5)↔RZ(6)
+const SWAP_DOF_MAP = { 2: '3', 3: '2', 5: '6', 6: '5' };
+const swapDof = (dof) => String(dof || '').split('').map((d) => SWAP_DOF_MAP[d] || d).join('');
+
+/** Lug Hole RBE 정보 계산 — hole 중심 + edge ring 노드 (표시 프레임 기준).
+ *  표시 프레임에서 lug 평면은 XZ(y≈0), hole 은 (left_to_hole_center, *, 0) 중심의
+ *  X-Z 평면 원. ring = 중심에서 반경 hole_diameter/2 (±tol) 에 놓인 y≈0 노드들.
+ *  중심 독립노드 id 는 max(node id)+1 로 부여한다(뷰어에서 선택 가능 + BDF GRID 신규).
+ *  RBE 는 순수 강체 결합만 — 하중은 일반 하중 영역에서 중심노드를 선택해 적용한다.
+ *  반환: { centerId, center:{x,y,z}, ringNodeIds:[id] } | null  (표시 프레임)
+ */
+const buildHoleRbe = (params, modelData) => {
+  if (!params || !modelData) return null;
+  const R = Number(params.hole_diameter ?? 0) / 2;
+  const cx = Number(params.left_to_hole_center ?? 0);
+  if (!(R > 0)) return null;
+  const nodes = modelData.nodes || modelData.grids || [];
+  const tol = Math.max(1.5, R * 0.06);
+  const ringNodeIds = [];
+  let maxId = 0;
+  for (const n of nodes) {
+    const id = Number(n.id);
+    if (id > maxId) maxId = id;
+    const x = Number(n.x || 0), y = Number(n.y || 0), z = Number(n.z || 0);
+    if (Math.abs(y) > 1e-3) continue;            // 표시 프레임 평면 = y≈0
+    const d = Math.hypot(x - cx, z - 0);         // X-Z 평면 반경
+    if (Math.abs(d - R) < tol) ringNodeIds.push(Number(n.id));
+  }
+  if (ringNodeIds.length < 3) return null;
+  const center = { x: cx, y: 0, z: 0 };
+  // 표시용: 중심노드를 면 밖으로 띄워 선택 쉽게 (해석은 center 사용 — 면 위, 모멘트 없음)
+  const displayCenter = liftedCenter(modelData, center, ringNodeIds);
+  return { centerId: maxId + 1, center, displayCenter, ringNodeIds };
+};
+
+/** 모델 노드 중 최대 id (신규 GRID id 부여용). */
+const maxNodeId = (modelData) => {
+  const nodes = modelData?.nodes || modelData?.grids || [];
+  let m = 0;
+  for (const n of nodes) { const id = Number(n.id); if (id > m) m = id; }
+  return m;
+};
+
+/** 모델 전체 bbox 의 최대 변 길이 (표시 오프셋 스케일용). */
+const modelMaxDim = (modelData) => {
+  const nodes = modelData?.nodes || modelData?.grids || [];
+  if (!nodes.length) return 1;
+  let mnx = Infinity, mny = Infinity, mnz = Infinity, mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
+  for (const n of nodes) {
+    const x = Number(n.x || 0), y = Number(n.y || 0), z = Number(n.z || 0);
+    if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+    if (y < mny) mny = y; if (y > mxy) mxy = y;
+    if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+  }
+  return Math.max(mxx - mnx, mxy - mny, mxz - mnz, 1);
+};
+
+/** 연결 노드 집합이 가장 얇은 축(=면 법선 근사) + 모델 중심 반대 방향 부호.
+ *  축정렬 FE 메쉬(평판)에서 면 밖으로 노드를 띄울 방향을 반환. {x,y,z} 단위벡터. */
+const offsetNormal = (modelData, connectedIds) => {
+  const nodes = modelData?.nodes || [];
+  const byId = new Map(nodes.map((n) => [Number(n.id), n]));
+  const pts = (connectedIds || []).map((id) => byId.get(Number(id))).filter(Boolean);
+  if (pts.length < 1) return { x: 0, y: 0, z: 1 };
+  const rng = (k) => {
+    let mn = Infinity, mx = -Infinity;
+    for (const p of pts) { const v = Number(p[k] || 0); if (v < mn) mn = v; if (v > mx) mx = v; }
+    return { mn, mx, span: mx - mn };
+  };
+  const rx = rng('x'), ry = rng('y'), rz = rng('z');
+  const minSpan = Math.min(rx.span, ry.span, rz.span);
+  let axis = 'z';
+  if (minSpan === rx.span) axis = 'x';
+  else if (minSpan === ry.span) axis = 'y';
+  // 모델 중심 대비 연결 노드 평면이 어느 쪽인지 → 바깥(중심 반대) 방향으로 부호 결정
+  const allMid = (k) => {
+    let mn = Infinity, mx = -Infinity;
+    for (const n of nodes) { const v = Number(n[k] || 0); if (v < mn) mn = v; if (v > mx) mx = v; }
+    return (mn + mx) / 2;
+  };
+  const r = axis === 'x' ? rx : axis === 'y' ? ry : rz;
+  const planeMid = (r.mn + r.mx) / 2;
+  const sign = planeMid >= allMid(axis) ? 1 : -1;
+  return { x: axis === 'x' ? sign : 0, y: axis === 'y' ? sign : 0, z: axis === 'z' ? sign : 0 };
+};
+
+/** 면 위 true 좌표를 면 밖으로 띄운 표시용 좌표 (뷰어 선택 편의). */
+const liftedCenter = (modelData, center, connectedIds, frac = 0.1) => {
+  const n = offsetNormal(modelData, connectedIds);
+  const d = modelMaxDim(modelData) * frac;
+  return { x: center.x + n.x * d, y: center.y + n.y * d, z: center.z + n.z * d };
+};
+
+/** 노드 id 집합의 무게중심 좌표 (표시 프레임). */
+const nodesCentroid = (modelData, nodeIds) => {
+  const nodes = modelData?.nodes || [];
+  const byId = new Map(nodes.map((n) => [Number(n.id), n]));
+  let sx = 0, sy = 0, sz = 0, c = 0;
+  for (const id of nodeIds || []) {
+    const n = byId.get(Number(id));
+    if (!n) continue;
+    sx += Number(n.x || 0); sy += Number(n.y || 0); sz += Number(n.z || 0); c += 1;
+  }
+  if (!c) return null;
+  return { x: sx / c, y: sy / c, z: sz / c };
+};
 
 const formatBytes = (b) => {
   if (!b) return '0 B';
@@ -47,6 +163,37 @@ export default function DrawingToAnalysis() {
   const [highlightedParam, setHighlightedParam] = useState(null);
   const fileInputRef = useRef(null);
 
+  // ── 탭 / 하중·경계조건 / 구조해석 상태 ──────────────────────────
+  const [activeTab, setActiveTab]         = useState('params'); // 'params' | 'loadbc'
+  const [selectionMode, setSelectionMode] = useState('none');   // 'none' | 'load' | 'bc'
+  const [selection, setSelection]         = useState([]);       // 현재 선택 중인 노드 id
+  const [loadSets, setLoadSets]           = useState([]);
+  const [bcSets, setBcSets]               = useState([]);
+  const [holeRbe, setHoleRbe]             = useState(null);      // { center, ringNodeIds, fx, fy, fz }
+  const [rbe3Sets, setRbe3Sets]           = useState([]);        // [{ refId, center, nodeIds }] — Area 하중분배(Block Support)
+  const [loadCases, setLoadCases]         = useState([]);        // [{ name, bcIndices, loadIndices, includeRbe }]
+  const [solveResult, setSolveResult]     = useState(null);     // 해석 결과 result_info
+  const [solveError, setSolveError]       = useState('');
+  const [solveResultsJson, setSolveResultsJson] = useState(null); // 파싱된 F06 결과(변위/응력)
+  const [resultSubcaseIdx, setResultSubcaseIdx] = useState(0);
+  const [resultField, setResultField]     = useState('disp');   // 'disp' | 'vm' 컨투어 필드
+  const currentJobKind = useRef('convert'); // 'convert' | 'rebuild' | 'solve'
+
+  const clearLoadBc = () => {
+    setSelectionMode('none');
+    setSelection([]);
+    setLoadSets([]);
+    setBcSets([]);
+    setHoleRbe(null);
+    setRbe3Sets([]);
+    setLoadCases([]);
+    setSolveResult(null);
+    setSolveError('');
+    setSolveResultsJson(null);
+    setResultSubcaseIdx(0);
+    setActiveTab('params');
+  };
+
   const {
     isRunning, progress, statusMessage, logs,
     employeeId, addLog, startJob,
@@ -58,26 +205,59 @@ export default function DrawingToAnalysis() {
     errorLogMessage: '',          // 단순 한 줄 메시지 비활성 — onError 에서 상세 출력
     timeoutLogMessage: '시간 초과 (10분). PDF 또는 서버 상태를 확인하세요.',
     onComplete: async (data) => {
-      setStatusMessage('변환 완료');
-      setFailureReason('');
       const { engine_log, project } = data;
       if (engine_log) addLog(`[SOLVER] ${engine_log.trim()}`, 'info');
+
+      // ── 구조 해석(solve) 결과: 모델 뷰는 유지하고 결과만 별도 표시 ──
+      if (currentJobKind.current === 'solve') {
+        setStatusMessage('구조 해석 완료');
+        setSolveError('');
+        if (project?.result_info) setSolveResult(project.result_info);
+        showToast('Nastran 구조 해석이 완료되었습니다.', 'success');
+        return;
+      }
+
+      // ── 변환 / 재구축 결과 ──
+      setStatusMessage('변환 완료');
+      setFailureReason('');
       if (project?.result_info) {
         setResultInfo(project.result_info);
         setAnalysisDbId(project.id);
       }
     },
     onError: (errData) => {
-      // 타임아웃은 useAnalysisJob 이 timeoutLogMessage 로 이미 처리
-      if (errData?.timeout) {
-        setFailureReason('처리 시간이 초과되었습니다 (10분). PDF 또는 서버 상태를 확인하세요.');
-        return;
-      }
       const engineLog = errData?.engine_log || '';
       const project   = errData?.project;
+
+      // ── 구조 해석(solve) 실패: 모델 뷰 유지, 토스트 Notice ──
+      if (currentJobKind.current === 'solve') {
+        const first = engineLog.split('\n').find((l) => l.trim()) || 'Nastran 해석에 실패했습니다.';
+        const reason = first.replace(/^🚫\s*구조\s*해석\s*실패\s*—\s*/, '');
+        setSolveError(reason);
+        if (project?.result_info) setSolveResult(project.result_info); // diagnostic 다운로드용
+        if (engineLog) {
+          engineLog.split('\n').forEach((line) => {
+            const t = line.trim(); if (!t) return;
+            addLog(t, /\[error\]|🚫|fatal|failed/i.test(t) ? 'error' : /warning/i.test(t) ? 'warning' : 'info');
+          });
+        }
+        showToast(`구조 해석 실패: ${reason}`, 'error');
+        return;
+      }
+
+      // 타임아웃은 useAnalysisJob 이 timeoutLogMessage 로 이미 처리
+      if (errData?.timeout) {
+        const msg = '처리 시간이 초과되었습니다 (10분). PDF 또는 서버 상태를 확인하세요.';
+        setFailureReason(msg);
+        showToast(msg, 'error');
+        return;
+      }
       // 백엔드가 합성한 '🚫 변환 실패 — ...' 헤더를 그대로 노출
       const firstLine = engineLog.split('\n').find((l) => l.trim()) || 'BDF 변환에 실패했습니다.';
-      setFailureReason(firstLine.replace(/^🚫\s*변환\s*실패\s*—\s*/, ''));
+      const reason = firstLine.replace(/^🚫\s*변환\s*실패\s*—\s*/, '');
+      setFailureReason(reason);
+      // 미지원 도면/PDF 등 변환 실패를 사용자에게 즉시 알림(Notice)
+      showToast(`변환 실패: ${reason}`, 'error');
       // 엔진 로그 본문은 각 줄을 분리해서 차례대로 로그에 출력 (사용자가 원인 파악 가능)
       if (engineLog) {
         engineLog.split('\n').forEach((line) => {
@@ -112,6 +292,7 @@ export default function DrawingToAnalysis() {
     setParamsJson(null);
     setModelMode('lug');
     setHighlightedParam(null);
+    clearLoadBc();
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -130,6 +311,7 @@ export default function DrawingToAnalysis() {
     setFailureReason('');
     setParamsJson(null);
     setModelMode(mode);
+    clearLoadBc();
     setLogs([{
       time: new Date().toLocaleTimeString(),
       message: `[FILE] ${file.name} 선택됨. (mode=${mode})`,
@@ -157,6 +339,7 @@ export default function DrawingToAnalysis() {
     setModelLoadError('');
     setFailureReason('');
     setParamsJson(null);
+    clearLoadBc();
     setLogs([]);
 
     const formData = new FormData();
@@ -167,6 +350,7 @@ export default function DrawingToAnalysis() {
     formData.append('mode', mode);
 
     try {
+      currentJobKind.current = 'convert';
       const res = await requestDrawingToAnalysis(formData);
       const jobId = res.data.job_id;
       addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
@@ -193,6 +377,7 @@ export default function DrawingToAnalysis() {
     setFailureReason('');
     setParamsJson(null);
     setModelMode(mode);
+    clearLoadBc();
     setLogs([{
       time: new Date().toLocaleTimeString(),
       message: `[CATALOGUE] '${filename}' 선택됨. (mode=${mode}, mesh_size=${meshSize})`,
@@ -203,6 +388,7 @@ export default function DrawingToAnalysis() {
     setStatusMessage('서버 요청 중...');
 
     try {
+      currentJobKind.current = 'convert';
       const res = await runDrawingCatalogue(filename, { employeeId, meshSize });
       const jobId = res.data.job_id;
       addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
@@ -248,14 +434,19 @@ export default function DrawingToAnalysis() {
         setModelLoadError('');
         const res = await downloadFileBlob(resultInfo.model_json);
         const text = await res.data.text();
-        setModelData(JSON.parse(text));
+        const parsed = JSON.parse(text);
+        // Lug: 표시 프레임으로 Y↔Z 스왑 (height 를 Z 축 수직으로)
+        if (modelMode === 'lug' && Array.isArray(parsed.nodes)) {
+          parsed.nodes = parsed.nodes.map(swapYZpoint);
+        }
+        setModelData(parsed);
       } catch (error) {
         setModelData(null);
         setModelLoadError(error?.message || '모델 JSON 로드 실패');
       }
     };
     loadModelJson();
-  }, [resultInfo?.model_json]);
+  }, [resultInfo?.model_json, modelMode]);
 
   // 설계 파라미터 JSON 자동 로드 (변환/재구축 완료 시)
   useEffect(() => {
@@ -277,6 +468,7 @@ export default function DrawingToAnalysis() {
 
   /** 모델 재구축 시작 → 동일한 폴링 흐름 재사용 */
   const handleRebuildStarted = (jobId) => {
+    currentJobKind.current = 'rebuild';
     setIsRunning(true);
     setProgress(0);
     setStatusMessage('재구축 작업 요청됨...');
@@ -285,8 +477,257 @@ export default function DrawingToAnalysis() {
     setModelData(null);
     setModelLoadError('');
     setFailureReason('');
+    clearLoadBc();  // 형상이 바뀌면 노드 id 가 달라지므로 하중/경계조건 초기화
     addLog(`[REBUILD] 새 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
     startJob(jobId, 'DrawingRebuild');
+  };
+
+  /* ── 노드 선택 / 하중·경계조건 세트 관리 ──────────────────────── */
+  const startSelection  = (target) => { setActiveTab('loadbc'); setSelectionMode(target); setSelection([]); };
+  const cancelSelection = () => { setSelectionMode('none'); setSelection([]); };
+  const commitLoad = (ls) => { setLoadSets((p) => [...p, ls]); setSelectionMode('none'); setSelection([]); };
+  const commitBc   = (bc) => { setBcSets((p) => [...p, bc]);   setSelectionMode('none'); setSelection([]); };
+  // 인덱스 배열에서 삭제 인덱스를 제거하고 그보다 큰 인덱스는 1 감소 (LC 참조 무결성 유지)
+  const remapAfterRemoval = (indices, removed) =>
+    indices.filter((x) => x !== removed).map((x) => (x > removed ? x - 1 : x));
+
+  const removeLoad = (i) => {
+    setLoadSets((p) => p.filter((_, k) => k !== i));
+    setLoadCases((lcs) => lcs.map((lc) => ({ ...lc, loadIndices: remapAfterRemoval(lc.loadIndices, i) })));
+  };
+  const removeBc = (i) => {
+    setBcSets((p) => p.filter((_, k) => k !== i));
+    setLoadCases((lcs) => lcs.map((lc) => ({ ...lc, bcIndices: remapAfterRemoval(lc.bcIndices, i) })));
+  };
+
+  /* ── Load Case 빌더 ─────────────────────────────────────────── */
+  const addLoadCase = () => {
+    setLoadCases((p) => [
+      ...p,
+      {
+        name: `LC${p.length + 1}`,
+        bcIndices: bcSets.map((_, k) => k),  // 기본: 모든 경계조건 포함(공통 구속)
+        loadIndices: [],
+      },
+    ]);
+  };
+  const removeLoadCase = (i) => setLoadCases((p) => p.filter((_, k) => k !== i));
+  const renameLoadCase = (i, name) =>
+    setLoadCases((p) => p.map((lc, k) => (k === i ? { ...lc, name } : lc)));
+  const toggleInArray = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  const toggleLcBc = (i, bcIdx) =>
+    setLoadCases((p) => p.map((lc, k) => (k === i ? { ...lc, bcIndices: toggleInArray(lc.bcIndices, bcIdx) } : lc)));
+  const toggleLcLoad = (i, loadIdx) =>
+    setLoadCases((p) => p.map((lc, k) => (k === i ? { ...lc, loadIndices: toggleInArray(lc.loadIndices, loadIdx) } : lc)));
+
+  /* ── Lug Hole RBE 생성/시각화 (생성 시엔 뷰어 시각화만, BDF 반영은 solve 시) ── */
+  const createHoleRbe = () => {
+    const rbe = buildHoleRbe(paramsJson, modelData);
+    if (!rbe) {
+      showToast('Hole edge 노드를 찾지 못했습니다. (Lug 도면/파라미터 확인)', 'error');
+      return;
+    }
+    setHoleRbe(rbe);
+    setActiveTab('loadbc');
+    showToast(`Lug Hole RBE 생성 — 중심노드 #${rbe.centerId} (ring ${rbe.ringNodeIds.length}개). 하중 영역에서 중심노드를 선택해 Force 적용`, 'success');
+  };
+  const removeHoleRbe = () => setHoleRbe(null);
+
+  /* ── Area RBE3 생성/삭제 (Block Support — 넓은 영역 총합 하중 분배) ──
+     현재 선택 영역 노드를 독립 grid 로, 무게중심에 기준노드(REFGRID)를 만들어 RBE3 결합.
+     기준노드에 하중을 주면 RBE3 가 영역으로 가중분배(강성 추가 없음). */
+  const commitRbe3 = (nodeIds) => {
+    const ids = [...new Set((nodeIds || []).map(Number).filter(Number.isFinite))];
+    if (ids.length < 1) {
+      showToast('RBE3 로 묶을 영역 노드를 선택하세요.', 'error');
+      return;
+    }
+    const c = nodesCentroid(modelData, ids);
+    if (!c) { showToast('영역 노드를 찾지 못했습니다.', 'error'); return; }
+    // 신규 기준노드 id: 모델 최대 + Hole RBE 중심 + 기존 RBE3 기준노드들 이후로 부여(충돌 방지).
+    let base = maxNodeId(modelData);
+    if (holeRbe?.centerId) base = Math.max(base, holeRbe.centerId);
+    rbe3Sets.forEach((r) => { if (r.refId > base) base = r.refId; });
+    const refId = base + 1;
+    // 표시용: 기준노드를 면 밖으로 띄워 선택 쉽게 (해석은 c 사용 — 면 위, 모멘트 없음)
+    const displayCenter = liftedCenter(modelData, c, ids);
+    setRbe3Sets((p) => [...p, { refId, center: c, displayCenter, nodeIds: ids }]);
+    setSelectionMode('none');
+    setSelection([]);
+    showToast(`하중 분배(RBE3) 생성 — 기준노드 #${refId} (영역 ${ids.length}개). ② 하중에서 기준노드를 선택해 총 Force 적용`, 'success');
+  };
+  const removeRbe3 = (i) => setRbe3Sets((p) => p.filter((_, k) => k !== i));
+
+  /** 뷰어에 넘길 모델 — RBE 기준/중심 독립노드를 노드 목록에 추가해 선택 가능하게 한다. */
+  const viewerModelData = useMemo(() => {
+    if (!modelData) return modelData;
+    const nodes = modelData.nodes || [];
+    const existing = new Set(nodes.map((n) => Number(n.id)));
+    const extra = [];
+    if (holeRbe?.centerId && !existing.has(holeRbe.centerId)) {
+      const dc = holeRbe.displayCenter || holeRbe.center;
+      extra.push({ id: holeRbe.centerId, x: dc.x, y: dc.y, z: dc.z, tags: ['rbe-center'] });
+      existing.add(holeRbe.centerId);
+    }
+    for (const r of rbe3Sets) {
+      if (r.refId && !existing.has(r.refId)) {
+        const dc = r.displayCenter || r.center;
+        extra.push({ id: r.refId, x: dc.x, y: dc.y, z: dc.z, tags: ['rbe3-ref'] });
+        existing.add(r.refId);
+      }
+    }
+    if (!extra.length) return modelData;
+    return { ...modelData, nodes: [...nodes, ...extra] };
+  }, [modelData, holeRbe, rbe3Sets]);
+
+  /* ── 해석 결과(F06 JSON) 로드 — solve 완료 시 results_json 다운로드/파싱 ── */
+  useEffect(() => {
+    const path = solveResult?.results_json;
+    if (!path) { setSolveResultsJson(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await downloadFileText(path);
+        const json = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+        if (!cancelled) { setSolveResultsJson(json); setResultSubcaseIdx(0); }
+      } catch (e) {
+        if (!cancelled) { setSolveResultsJson(null); addLog(`결과 JSON 로드 실패: ${e?.message || e}`, 'error'); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [solveResult?.results_json]);
+
+  /** 현재 SUBCASE 결과 + 뷰어 컨투어용 요소값/범위/테이블 rows 계산. */
+  const resultView = useMemo(() => {
+    const subcases = solveResultsJson?.analysisResults?.subcases || [];
+    if (!subcases.length) return null;
+    const idx = Math.min(resultSubcaseIdx, subcases.length - 1);
+    const sc = subcases[idx];
+
+    // 노드 변위 행 + 노드별 |U|
+    const dispRows = (sc.displacements || []).map((d) => {
+      const t1 = Number(d.t1 || 0), t2 = Number(d.t2 || 0), t3 = Number(d.t3 || 0);
+      return { pointId: d.pointId, t1, t2, t3, mag: Math.hypot(t1, t2, t3) };
+    });
+    const dispByNode = new Map(dispRows.map((r) => [Number(r.pointId), r.mag]));
+
+    // 요소 응력 행 (CQUAD4 + CTRIA3 병합)
+    const stressRows = [...(sc.quadStresses || []), ...(sc.triaStresses || [])]
+      .map((s) => ({
+        elementId: s.elementId, elementType: s.elementType,
+        vonMises: s.vonMises, vmZ1: s.vmZ1, vmZ2: s.vmZ2,
+      }))
+      .sort((a, b) => a.elementId - b.elementId);
+    const vmByElem = new Map(stressRows.map((s) => [Number(s.elementId), s.vonMises]));
+
+    // 요소→노드 매핑 (변위 컨투어: 요소 노드들의 |U| 최대값)
+    const elements = modelData?.elements || [];
+    const elemValuesDisp = {};
+    for (const el of elements) {
+      const ids = (el.nodeIds || []).map(Number);
+      let mx = null;
+      for (const nid of ids) { const v = dispByNode.get(nid); if (v != null && (mx == null || v > mx)) mx = v; }
+      if (mx != null) elemValuesDisp[Number(el.id)] = mx;
+    }
+    const elemValuesVm = {};
+    vmByElem.forEach((v, k) => { if (v != null) elemValuesVm[k] = v; });
+
+    const rangeOf = (obj) => {
+      const vals = Object.values(obj).filter((v) => v != null && !Number.isNaN(v));
+      if (!vals.length) return [0, 1];
+      return [Math.min(...vals, 0), Math.max(...vals)];  // min 은 0 기준(변위·응력 모두 0 이상)
+    };
+
+    const elementValues = resultField === 'vm' ? elemValuesVm : elemValuesDisp;
+    const valueRange = rangeOf(elementValues);
+    const valueLabel = resultField === 'vm' ? '응력' : '변위 |U|';
+    const valueUnit = resultField === 'vm' ? 'MPa' : 'mm';
+
+    return { subcases, idx, dispRows, stressRows, elementValues, valueRange, valueLabel, valueUnit };
+  }, [solveResultsJson, resultSubcaseIdx, resultField, modelData]);
+
+  const hasResults = !!resultView;
+
+  /** 해석 대상 BDF 가 위치한 폴더 (solve 결과는 그 하위 solve_<ts>/ 에 저장) */
+  const solveWorkDir = useMemo(() => {
+    const bdf = resultInfo?.bdf;
+    if (!bdf) return null;
+    return bdf.replace(/[\\/][^\\/]+$/, '');
+  }, [resultInfo?.bdf]);
+
+  /** 구조 해석 실행 — 하중/경계조건을 BDF 에 반영해 Nastran 실행 */
+  const handleSolve = async () => {
+    if (isRunning) return;
+    if (!resultInfo?.bdf || !solveWorkDir) {
+      showToast('먼저 PDF → 모델 변환을 완료하세요.', 'error');
+      return;
+    }
+    if (bcSets.length === 0) {
+      showToast('경계조건(구속)을 최소 1개 이상 추가하세요.', 'error');
+      return;
+    }
+    setSelectionMode('none');
+    setSelection([]);
+    setSolveResult(null);
+    setSolveError('');
+    setSolveResultsJson(null);
+    setResultSubcaseIdx(0);
+    setIsRunning(true);
+    setProgress(0);
+    setStatusMessage('구조 해석 요청 중...');
+    addLog(`[SOLVE] 하중 ${loadSets.length}세트 / 경계조건 ${bcSets.length}세트${holeRbe ? ' / Hole RBE' : ''}${rbe3Sets.length ? ` / RBE3 ${rbe3Sets.length}` : ''} / Load Case ${loadCases.length || '자동 1'}개로 Nastran 해석 요청`, 'info');
+    // Lug 은 표시 프레임(Y↔Z 스왑)에서 입력받으므로 BDF 원본 프레임으로 역변환.
+    const isLug = modelMode === 'lug';
+    const loadsPayload = loadSets.map((s) => {
+      const f = isLug
+        ? swapYZvec(Number(s.fx) || 0, Number(s.fy) || 0, Number(s.fz) || 0)
+        : { fx: Number(s.fx) || 0, fy: Number(s.fy) || 0, fz: Number(s.fz) || 0 };
+      return { nodes: s.nodes, ...f };
+    });
+    const bcsPayload = bcSets.map((b) => (isLug ? { ...b, dof: swapDof(b.dof) } : b));
+    // Hole RBE 는 순수 강체 결합 — 하중 없음. 중심좌표는 BDF 프레임으로 역변환.
+    const holeRbePayload = holeRbe
+      ? {
+          center_id: holeRbe.centerId,
+          center: isLug ? swapYZpoint(holeRbe.center) : holeRbe.center,
+          ring_node_ids: holeRbe.ringNodeIds,
+        }
+      : null;
+    // Area RBE3 — 기준노드 좌표는 BDF 프레임으로 역변환(lug). 결합만, 하중은 별도 load set.
+    const rbe3SetsPayload = rbe3Sets.map((r) => ({
+      ref_id: r.refId,
+      center: isLug ? swapYZpoint(r.center) : r.center,
+      node_ids: r.nodeIds,
+    }));
+    // Load Cases → 백엔드 스키마(snake_case, 인덱스 참조). 비어있으면 백엔드가 기본 LC 자동 생성.
+    const loadCasesPayload = loadCases.map((lc) => ({
+      name: lc.name,
+      bc_ids: lc.bcIndices,
+      load_ids: lc.loadIndices,
+    }));
+    try {
+      currentJobKind.current = 'solve';
+      const res = await solveDrawingModel({
+        employeeId,
+        workDir: solveWorkDir,
+        bdfPath: resultInfo.bdf,
+        mode: modelMode,
+        loads: loadsPayload,
+        bcs: bcsPayload,
+        holeRbe: holeRbePayload,
+        rbe3Sets: rbe3SetsPayload,
+        loadCases: loadCasesPayload,
+      });
+      const jobId = res.data.job_id;
+      addLog(`[SOLVE] 해석 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
+      startJob(jobId, 'DrawingSolve');
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : (err?.message || '해석 요청 실패');
+      setIsRunning(false);
+      addLog(`구조 해석 요청 실패: ${msg}`, 'error');
+      showToast(`구조 해석 요청 실패: ${msg}`, 'error');
+    }
   };
 
   /** Support 재구축에 필요한 원본 PDF 경로
@@ -335,9 +776,19 @@ export default function DrawingToAnalysis() {
           >
             <RotateCcw size={14} /> 초기화
           </button>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/25 border border-emerald-300/50 text-emerald-100 text-[11px] font-bold">
-            <CheckCircle2 size={12} /> LUG / Support
-          </span>
+          {resultInfo ? (
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-bold uppercase ${
+              modelMode === 'support'
+                ? 'bg-indigo-500/25 border-indigo-300/50 text-indigo-100'
+                : 'bg-blue-500/25 border-blue-300/50 text-blue-100'
+            }`}>
+              <CheckCircle2 size={12} /> {modelMode === 'support' ? 'Block Support' : 'LUG'}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white/90 text-[11px] font-medium">
+              LUG · Support 지원
+            </span>
+          )}
         </div>
       </PageBanner>
 
@@ -353,8 +804,9 @@ export default function DrawingToAnalysis() {
 
       {/* 본문: 좌우 분할 */}
       <div className="flex gap-5 flex-1 min-h-0">
-        {/* 왼쪽 사이드바 */}
-        <div className="w-[340px] shrink-0 flex flex-col gap-3 overflow-y-auto custom-scrollbar pr-1">
+        {/* 왼쪽 사이드바 — 자식들이 flex 로 압축돼 overflow-hidden 카드에 잘리지 않도록
+            [&>*]:shrink-0 로 자연 높이를 유지하고, 넘치면 사이드바가 스크롤되게 한다. */}
+        <div className="w-[340px] shrink-0 flex flex-col gap-3 overflow-y-auto custom-scrollbar pr-1 [&>*]:shrink-0">
 
           {/* 카탈로그 + 업로드를 하나의 입력 카드로 통합 */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -458,38 +910,130 @@ export default function DrawingToAnalysis() {
             </button>
           </div>
 
-          {/* 진행률 표시 — 실행 중일 때만 */}
+          {/* 진행률 표시 — 실행 중일 때만 (사이드바 흰 카드와 톤 통일) */}
           {isRunning && (
-            <div className="bg-slate-900 rounded-2xl border border-slate-700 px-4 py-3 shadow-sm">
+            <div className="bg-blue-50 rounded-2xl border border-blue-200 px-4 py-3 shadow-sm">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
-                  <RefreshCw size={10} className="animate-spin text-blue-400" />
+                <span className="text-[11px] font-bold text-blue-700 flex items-center gap-1.5">
+                  <RefreshCw size={10} className="animate-spin text-blue-500" />
                   진행 중...
                 </span>
-                <span className="text-[10px] font-mono text-blue-400 font-bold">{progress}%</span>
+                <span className="text-[11px] font-mono text-blue-600 font-bold">{progress}%</span>
               </div>
-              <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-blue-100 rounded-full overflow-hidden">
                 <div className="h-full bg-blue-500 transition-all rounded-full" style={{ width: `${progress}%` }} />
               </div>
               {statusMessage && (
-                <p className="mt-2 text-[10px] text-sky-300 font-mono truncate">{statusMessage}</p>
+                <p className="mt-2 text-[11px] text-blue-600/80 font-mono truncate">{statusMessage}</p>
               )}
             </div>
           )}
 
-          {/* 설계 파라미터 패널 */}
-          {paramsJson && workDir && (
-            <DrawingParamsPanel
-              params={paramsJson}
-              mode={modelMode}
-              workDir={workDir}
-              originalPdfPath={originalPdfPath}
-              employeeId={employeeId}
-              onRebuildStarted={handleRebuildStarted}
-              onFieldFocus={setHighlightedParam}
-              highlightedKey={highlightedParam}
-              disabled={isRunning}
-            />
+          {/* 설계 파라미터 / 하중·경계조건 탭 — 모델이 있을 때만 노출 */}
+          {modelData && (
+            <>
+              <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('params')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                    activeTab === 'params' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Sliders size={12} /> 설계 파라미터
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('loadbc')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                    activeTab === 'loadbc' ? 'bg-white text-cyan-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <MousePointerClick size={12} /> 하중/경계조건
+                  {(loadSets.length + bcSets.length) > 0 && (
+                    <span className="px-1 rounded bg-cyan-100 text-cyan-700 text-[10px] font-mono">
+                      {loadSets.length + bcSets.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {activeTab === 'params' && paramsJson && workDir && (
+                <DrawingParamsPanel
+                  params={paramsJson}
+                  mode={modelMode}
+                  workDir={workDir}
+                  originalPdfPath={originalPdfPath}
+                  employeeId={employeeId}
+                  onRebuildStarted={handleRebuildStarted}
+                  onFieldFocus={setHighlightedParam}
+                  highlightedKey={highlightedParam}
+                  disabled={isRunning || selectionMode !== 'none'}
+                />
+              )}
+
+              {activeTab === 'loadbc' && (
+                <DrawingLoadBcPanel
+                  mode={modelMode}
+                  selectionMode={selectionMode}
+                  selectedNodeIds={selection}
+                  loadSets={loadSets}
+                  bcSets={bcSets}
+                  holeRbe={holeRbe}
+                  rbe3Sets={rbe3Sets}
+                  loadCases={loadCases}
+                  onStartSelection={startSelection}
+                  onCancelSelection={cancelSelection}
+                  onCommitLoad={commitLoad}
+                  onCommitBc={commitBc}
+                  onCommitRbe3={commitRbe3}
+                  onRemoveLoad={removeLoad}
+                  onRemoveBc={removeBc}
+                  onRemoveRbe3={removeRbe3}
+                  onCreateHoleRbe={createHoleRbe}
+                  onRemoveHoleRbe={removeHoleRbe}
+                  onAddLoadCase={addLoadCase}
+                  onRemoveLoadCase={removeLoadCase}
+                  onRenameLoadCase={renameLoadCase}
+                  onToggleLcBc={toggleLcBc}
+                  onToggleLcLoad={toggleLcLoad}
+                  disabled={isRunning}
+                />
+              )}
+
+              {/* 해석 결과 / 실패 스트립 (스크롤 흐름) */}
+              {(solveResult || solveError) && (
+                <SolveResultStrip
+                  result={solveResult}
+                  error={solveError}
+                  onDownload={downloadResult}
+                />
+              )}
+
+              {/* 구조 해석 실행 — 사이드바 하단 고정(sticky)으로 항상 접근 가능 */}
+              <div className="sticky bottom-0 z-10 -mx-1 px-1 pt-2 pb-1 bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent">
+                <button
+                  type="button"
+                  onClick={handleSolve}
+                  disabled={isRunning || bcSets.length === 0}
+                  title={bcSets.length === 0 ? '경계조건을 최소 1개 이상 추가하세요.' : '하중/경계조건을 BDF에 반영해 Nastran 해석'}
+                  className={`w-full py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+                    isRunning || bcSets.length === 0
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer shadow-md hover:shadow-lg'
+                  }`}
+                >
+                  {isRunning && currentJobKind.current === 'solve'
+                    ? <><RefreshCw size={15} className="animate-spin" /> 해석 중...</>
+                    : <><Cpu size={15} /> 구조 해석 실행 (Nastran)</>}
+                </button>
+                {bcSets.length === 0 && !isRunning && (
+                  <p className="text-[11px] text-amber-600 text-center mt-1">
+                    경계조건을 최소 1개 이상 추가해야 해석할 수 있습니다.
+                  </p>
+                )}
+              </div>
+            </>
           )}
         </div>
 
@@ -558,13 +1102,41 @@ export default function DrawingToAnalysis() {
                   </div>
                 ) : (
                   <ShellModelViewer
-                    modelData={modelData}
+                    modelData={viewerModelData}
                     paramsJson={paramsJson}
                     mode={modelMode}
                     highlightParam={highlightedParam}
+                    selectionMode={selectionMode}
+                    selectedNodeIds={selection}
+                    onSelectionChange={setSelection}
+                    loadSets={loadSets}
+                    bcSets={bcSets}
+                    holeRbe={holeRbe}
+                    rbe3Sets={rbe3Sets}
+                    swapYZ={modelMode === 'lug'}
+                    resultField={hasResults ? resultField : 'none'}
+                    elementValues={resultView?.elementValues || null}
+                    valueRange={resultView?.valueRange || null}
+                    valueLabel={resultView?.valueLabel || ''}
+                    valueUnit={resultView?.valueUnit || ''}
                   />
                 )}
               </div>
+
+              {/* 해석 결과 테이블 (변위 + 쉘 von Mises) — 결과가 있을 때만 하단에 표시 */}
+              {hasResults && (
+                <div className="h-72 shrink-0 border-t border-slate-200">
+                  <SolveResultsPanel
+                    field={resultField}
+                    onField={setResultField}
+                    subcases={resultView.subcases}
+                    subcaseIdx={resultView.idx}
+                    onSubcase={setResultSubcaseIdx}
+                    dispRows={resultView.dispRows}
+                    stressRows={resultView.stressRows}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             /* 빈 상태 */
@@ -604,6 +1176,50 @@ export default function DrawingToAnalysis() {
 /* ──────────────────────────────────────────────────────────────────────────
    변환 실패 패널 — 사용자 친화 메시지 + 해결책 + 진단 파일 다운로드
    ──────────────────────────────────────────────────────────────────────── */
+
+/* ──────────────────────────────────────────────────────────────────────────
+   구조 해석 결과 스트립 — Nastran 실행 결과(성공/실패) + 결과 파일 다운로드
+   ──────────────────────────────────────────────────────────────────────── */
+
+function SolveResultStrip({ result, error, onDownload }) {
+  const entries = result
+    ? Object.entries(result).filter(([, p]) => typeof p === 'string' && p)
+    : [];
+  const fileBtns = entries.filter(([k]) => ['f06', 'op2', 'log', 'diagnostic_json'].includes(k));
+  const ok = !error;
+  return (
+    <div className={`rounded-2xl border shadow-sm overflow-hidden ${ok ? 'border-indigo-200' : 'border-rose-200'}`}>
+      <div className={`px-3 py-2 flex items-center gap-2 ${ok ? 'bg-indigo-50' : 'bg-rose-50'}`}>
+        {ok ? <FileCheck2 size={14} className="text-indigo-600" /> : <XCircle size={14} className="text-rose-600" />}
+        <span className={`text-[11px] font-bold ${ok ? 'text-indigo-700' : 'text-rose-700'}`}>
+          {ok ? 'Nastran 해석 완료' : '구조 해석 실패'}
+        </span>
+      </div>
+      <div className="p-3 space-y-2">
+        {error && <p className="text-[11px] text-rose-600 leading-snug">{error}</p>}
+        {fileBtns.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {fileBtns.map(([key, path]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onDownload(path)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-[10px] font-bold transition-colors"
+              >
+                <Download size={11} /> {key === 'diagnostic_json' ? 'diagnostic' : key.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        )}
+        {ok && (
+          <p className="text-[10px] text-slate-400 leading-snug">
+            결과 해석(응력/변위 시각화)은 다음 단계에서 제공될 예정입니다. 지금은 f06/op2 파일로 확인하세요.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function FailurePanel({ reason, resultEntries, analysisDbId, onDownload, onReset }) {
   const diagnostic = resultEntries.find(([k]) => k === 'diagnostic_json');

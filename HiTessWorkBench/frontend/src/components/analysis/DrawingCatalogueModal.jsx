@@ -507,7 +507,7 @@ function PdfActionFooter({ current, onSelect }) {
         onClick={onSelect}
         className="flex items-center gap-2 px-5 py-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold shadow-md transition-colors cursor-pointer shrink-0"
       >
-        <Play size={14} /> DrawingToFeModel
+        <Play size={14} /> 이 도면으로 변환 시작
       </button>
     </div>
   );
