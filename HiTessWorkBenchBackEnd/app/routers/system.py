@@ -73,7 +73,7 @@ def download_client(
 
 
 @router.get("/system/status")
-def get_system_status(db: Session = Depends(database.get_db)):
+def get_system_status(db: Session = Depends(database.get_db), _admin: str = Depends(require_admin)):
   cpu_usage = psutil.cpu_percent(interval=0.1)
 
   mem = psutil.virtual_memory()
@@ -120,7 +120,7 @@ def set_maintenance_mode(payload: dict, current_admin: str = Depends(require_adm
 
 
 @router.get("/system/storage/preview")
-def preview_cleanup():
+def preview_cleanup(current_admin: str = Depends(require_admin)):
     """삭제 예정 폴더 목록을 dry-run으로 반환합니다 (실제 삭제 없음)."""
     result = run_cleanup(dry_run=True)
     return {
@@ -148,14 +148,16 @@ def manual_cleanup(current_admin: str = Depends(require_admin)):
 def verify_admin_gate(payload: dict):
     """관리자 게이트 비밀번호를 검증합니다. 환경변수 ADMIN_GATE_PASSWORD로 비밀번호 설정.
     세션 의존 없이 비밀번호만 검증합니다 — 실제 관리자 API는 별도로 require_admin이 적용됩니다."""
-    gate_password = os.environ.get("ADMIN_GATE_PASSWORD", "str_2006")
+    gate_password = os.environ.get("ADMIN_GATE_PASSWORD")
+    if not gate_password:
+        raise HTTPException(status_code=503, detail="관리자 게이트 비밀번호가 설정되지 않았습니다.")
     if payload.get("password") != gate_password:
         raise HTTPException(status_code=403, detail="비밀번호가 올바르지 않습니다.")
     return {"ok": True}
 
 
 @router.get("/system/queue-status")
-def get_queue_status():
+def get_queue_status(_admin: str = Depends(require_admin)):
   """현재 실행 중인 해석과 큐에서 대기 중인 해석 건수를 반환합니다."""
   all_jobs = job_status_store.get_all_values()
   running_count = sum(1 for job in all_jobs if job.get("status") == "Running")
