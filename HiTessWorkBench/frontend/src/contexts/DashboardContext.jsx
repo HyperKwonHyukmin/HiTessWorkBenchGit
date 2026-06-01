@@ -161,6 +161,8 @@ export const ANALYSIS_DATA = RAW_ANALYSIS_DATA.map(app => ({
   menuName: app.title,
   programNames: [app.title],
   ...(APP_REGISTRY_OVERRIDES[app.title] ?? {}),
+  // App.jsx renderPage 에 실제 페이지가 등록된 앱만 override 를 가진다 → 진입 가능 여부 판별 플래그
+  hasPage: Object.prototype.hasOwnProperty.call(APP_REGISTRY_OVERRIDES, app.title),
 }));
 
 export const getAppMenuName = (title) =>

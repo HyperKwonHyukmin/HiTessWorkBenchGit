@@ -61,7 +61,9 @@ export default function AppCataloguePage({
       return;
     }
     const menuName = getAppMenuName(appTitle);
-    if (menuName === appTitle && appMeta?.devStatus && appMeta.devStatus !== 'Active') {
+    // 실제 페이지가 등록된 앱(hasPage)은 Developing 상태여도 진입 허용(관리자 게이트는 위에서 처리).
+    // 페이지가 없는 미구현 앱만 '준비 중' 안내. (menuName===title 은 대부분 앱이 충족하므로 판별 기준으로 부적합)
+    if (!appMeta?.hasPage && appMeta?.devStatus && appMeta.devStatus !== 'Active') {
       showToast(`'${appTitle}' 앱은 현재 준비 중입니다.`, 'info');
       return;
     }
