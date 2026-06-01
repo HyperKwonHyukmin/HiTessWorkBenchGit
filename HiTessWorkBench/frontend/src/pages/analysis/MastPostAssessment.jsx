@@ -356,7 +356,7 @@ export default function MastPostAssessment() {
                       <th className="px-4 py-3 font-bold text-center">OD (mm)</th>
                       <th className="px-4 py-3 font-bold text-center">T (mm)</th>
                       <th className="px-4 py-3 font-bold text-right">σ_eq (MPa)</th>
-                      <th className="px-4 py-3 font-bold text-center text-slate-300">/ 200</th>
+                      <th className="px-4 py-3 font-bold text-center text-slate-300">/ 허용</th>
                       <th className="px-4 py-3 font-bold text-right">δ (mm)</th>
                       <th className="px-4 py-3 font-bold text-center">/ 허용</th>
                       <th className="px-4 py-3 font-bold text-center">응력</th>
@@ -386,7 +386,7 @@ export default function MastPostAssessment() {
                             <td className="px-4 py-3 text-center font-bold text-slate-700">{c.outerDiameter}</td>
                             <td className="px-4 py-3 text-center text-slate-600">{c.thickness}</td>
                             <td className="px-4 py-3 text-right font-bold text-slate-700">{fmt(c.maxEquivalentStress, 1)}</td>
-                            <td className="px-4 py-3 text-center text-slate-300 text-xs">/ 200</td>
+                            <td className="px-4 py-3 text-center text-slate-300 text-xs">/ {fmt(c.allowableStress, 1)}</td>
                             {/* maxDisplacement = 실제 처짐 δ, allowableDisplacement = 허용 처짐 */}
                             <td className="px-4 py-3 text-right font-bold text-slate-700">{fmt(c.maxDisplacement, 1)}</td>
                             <td className="px-4 py-3 text-center text-slate-500 text-xs">/ {fmt(c.allowableDisplacement, 1)}</td>
