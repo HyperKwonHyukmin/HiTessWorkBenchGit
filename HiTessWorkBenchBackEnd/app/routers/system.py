@@ -17,7 +17,7 @@ from ..dependencies import require_admin, require_auth
 from ..sessions import session_store
 from ..services.activity_service import log_activity
 
-SERVER_VERSION = "1.2.2"
+SERVER_VERSION = "1.2.3"
 
 # 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
@@ -157,7 +157,7 @@ def verify_admin_gate(payload: dict):
 
 
 @router.get("/system/queue-status")
-def get_queue_status(_admin: str = Depends(require_admin)):
+def get_queue_status(_user: str = Depends(require_auth)):
   """현재 실행 중인 해석과 큐에서 대기 중인 해석 건수를 반환합니다."""
   all_jobs = job_status_store.get_all_values()
   running_count = sum(1 for job in all_jobs if job.get("status") == "Running")
