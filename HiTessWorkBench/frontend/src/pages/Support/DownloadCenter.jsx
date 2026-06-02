@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { Download, CheckCircle, Clock, Package, BookOpen, Wrench, Cpu, FileText, LayoutGrid, RefreshCw } from 'lucide-react';
+import { Download, CheckCircle, Clock, Package, BookOpen, Wrench, Cpu, FileText, LayoutGrid, RefreshCw, FolderInput } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 import { getAuthHeaders } from '../../utils/auth';
 import { useToast } from '../../contexts/ToastContext';
@@ -15,6 +15,17 @@ const DOWNLOADS = [
     filename: 'HiTESSBEAM.zip',
     size: '131 MB',
     updatedAt: '2026-04-20',
+  },
+  {
+    name: 'Server 주소 설정 (ServerIP.txt)',
+    category: 'Utility',
+    description: '외부/레거시 프로그램이 HiTESS 서버 주소를 인식하도록 사용하는 설정 파일입니다. "C:\\temp 적용"을 누르면 사용자 PC의 C:\\temp 폴더에 바로 배치됩니다.',
+    version: '-',
+    status: 'stable',
+    filename: 'ServerIP.txt',
+    size: '-',
+    updatedAt: '2026-06-02',
+    applyToTemp: true, // 이 행은 'C:\temp 적용' 버튼을 추가로 노출 (Electron 전용)
   },
 ];
 
@@ -45,7 +56,11 @@ export default function DownloadCenter() {
   const [activeCategory, setActiveCategory] = useState('all');
   const [downloading, setDownloading]   = useState(null); // filename | null
   const [progress, setProgress]         = useState(0);    // 0~100
+  const [applying, setApplying]         = useState(null); // C:\temp 적용 중인 filename | null
   const { showToast } = useToast();
+
+  // C:\temp 직접 쓰기는 Electron(데스크탑 앱)에서만 가능. 브라우저(dev)에서는 버튼을 숨긴다.
+  const isElectron = !!(typeof window !== 'undefined' && window.electron?.invoke);
 
   const filtered = activeCategory === 'all'
     ? DOWNLOADS
@@ -94,6 +109,48 @@ export default function DownloadCenter() {
     } finally {
       setDownloading(null);
       setProgress(0);
+    }
+  };
+
+  // ServerIP.txt 의 최신 내용을 백엔드에서 받아 사용자 PC 의 C:\temp 에 바로 적용한다.
+  // 레거시/외부 프로그램이 시작 시 C:\temp\ServerIP.txt 를 읽어 서버 주소를 찾는다.
+  const handleApplyToTemp = async (item) => {
+    if (applying || downloading) return;
+    if (!isElectron) {
+      showToast('C:\\temp 적용은 데스크탑 앱에서만 가능합니다. 일반 다운로드를 이용해 주세요.', 'info');
+      return;
+    }
+    setApplying(item.filename);
+    try {
+      // responseType:'text' — 텍스트 파일이므로 내용을 문자열로 받는다.
+      const res = await axios.get(
+        `${API_BASE_URL}/api/download/program/${encodeURIComponent(item.filename)}`,
+        { headers: getAuthHeaders(), responseType: 'text' }
+      );
+      const content = typeof res.data === 'string' ? res.data : String(res.data ?? '');
+      const result = await window.electron.invoke('place-server-ip', { content });
+      if (result?.ok) {
+        showToast(`적용 완료 — ${result.path}`, 'success');
+      } else {
+        showToast(`적용 실패 — ${result?.error || '알 수 없는 오류'}`, 'error');
+      }
+    } catch (err) {
+      const status = err?.response?.status;
+      let detailMsg = err?.message || '적용 실패';
+      try {
+        if (err?.response?.data instanceof Blob) {
+          const text = await err.response.data.text();
+          const parsed = JSON.parse(text);
+          if (parsed?.detail) detailMsg = parsed.detail;
+        } else if (typeof err?.response?.data === 'string' && err.response.data) {
+          detailMsg = err.response.data;
+        } else if (err?.response?.data?.detail) {
+          detailMsg = err.response.data.detail;
+        }
+      } catch { /* 기본 메시지 유지 */ }
+      showToast(`[${status || 'ERR'}] ${detailMsg}`, 'error');
+    } finally {
+      setApplying(null);
     }
   };
 
@@ -242,30 +299,60 @@ export default function DownloadCenter() {
                     {item.filename ? (
                       (() => {
                         const isThisDownloading = downloading === item.filename;
-                        const isOtherDownloading = downloading && !isThisDownloading;
+                        const isThisApplying = applying === item.filename;
+                        const busy = !!downloading || !!applying;
+                        const showApply = item.applyToTemp && isElectron;
                         return (
-                          <button
-                            onClick={() => handleDownload(item)}
-                            disabled={!!downloading}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
-                              isThisDownloading
-                                ? 'bg-blue-500 text-white cursor-wait'
-                                : isOtherDownloading
-                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                  : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
-                            }`}
-                          >
-                            {isThisDownloading ? (
-                              <>
-                                <RefreshCw size={12} className="animate-spin" />
-                                {progress > 0 ? `${progress}%` : '다운로드 중'}
-                              </>
-                            ) : (
-                              <>
-                                <Download size={12} />다운로드
-                              </>
+                          <div className="flex flex-col items-stretch gap-1.5">
+                            {showApply && (
+                              <button
+                                onClick={() => handleApplyToTemp(item)}
+                                disabled={busy}
+                                title="C:\temp 폴더에 ServerIP.txt 를 바로 적용합니다."
+                                className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                                  isThisApplying
+                                    ? 'bg-blue-500 text-white cursor-wait'
+                                    : busy
+                                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                      : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                                }`}
+                              >
+                                {isThisApplying ? (
+                                  <>
+                                    <RefreshCw size={12} className="animate-spin" />적용 중
+                                  </>
+                                ) : (
+                                  <>
+                                    <FolderInput size={12} />C:\temp 적용
+                                  </>
+                                )}
+                              </button>
                             )}
-                          </button>
+                            <button
+                              onClick={() => handleDownload(item)}
+                              disabled={busy}
+                              className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                                isThisDownloading
+                                  ? 'bg-blue-500 text-white cursor-wait'
+                                  : busy
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                    : showApply
+                                      ? 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer'
+                                      : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                              }`}
+                            >
+                              {isThisDownloading ? (
+                                <>
+                                  <RefreshCw size={12} className="animate-spin" />
+                                  {progress > 0 ? `${progress}%` : '다운로드 중'}
+                                </>
+                              ) : (
+                                <>
+                                  <Download size={12} />다운로드
+                                </>
+                              )}
+                            </button>
+                          </div>
                         );
                       })()
                     ) : (
