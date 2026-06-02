@@ -17,6 +17,8 @@ const VALID_RECEIVE_CHANNELS = [
   'viewer:unit-structural-progress',
   // main 이 viewer 창에 Plate 구조 해석 진행 상황을 stream
   'viewer:plate-structural-progress',
+  // main 이 viewer 창에 Mooring 구조 해석 진행 상황을 stream
+  'viewer:mooring-structural-progress',
 ];
 const VALID_INVOKE_CHANNELS  = [
   'list-dir-csvs',
@@ -40,12 +42,15 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:runStabilityAnalysis',
   'viewer:runUnitStructural',
   'viewer:runPlateStructural',
+  'viewer:runMooringStructural',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
   'viewer:checkPathAccess',
   'viewer:fetchResultDir',
   'viewer:readLocalFile',
   // 개발자 런북: 탐색기 열기
   'shell:openPath',
+  // Download Center: ServerIP.txt 를 C:\temp 에 바로 적용 (레거시 프로그램이 읽는 위치)
+  'place-server-ip',
 ];
 
 contextBridge.exposeInMainWorld("electron", {
@@ -112,4 +117,14 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // → mainWindow Edit 탭 표시 → Studio 창 닫기 → { ok, error }
   finalizeEditedModel: (folderPath, request) =>
     ipcRenderer.invoke('viewer:finalizeEditedModel', { folderPath, request }),
+  // MooringFittingStudio "구조 해석 수행" → 백엔드 mooring-fitting/solve(편집 반영 solvable BDF)
+  // 호출 + 폴링 + 결과 JSON 다운로드까지 main 이 처리. 진행 상황은 onMooringStructuralProgress() 로 stream.
+  // payload = { intents: Array }
+  runMooringStructural: (opts) =>
+    ipcRenderer.invoke('viewer:runMooringStructural', opts),
+  onMooringStructuralProgress: (callback) => {
+    const listener = (_, data) => callback(data);
+    ipcRenderer.on('viewer:mooring-structural-progress', listener);
+    return () => ipcRenderer.removeListener('viewer:mooring-structural-progress', listener);
+  },
 });

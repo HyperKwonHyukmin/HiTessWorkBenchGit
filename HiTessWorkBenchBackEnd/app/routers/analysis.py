@@ -35,7 +35,7 @@ from ..services.hitess_modelflow_service import (
 )
 from ..services.f06parser_service import task_execute_f06parser
 from ..services.plate_structure_service import task_execute_plate_structure
-from ..services.mooring_fitting_service import task_execute_mooring_fitting
+from ..services.mooring_fitting_service import task_execute_mooring_fitting, task_solve_mooring_fitting
 from ..services.drawing_to_analysis_service import (
     task_execute_drawing_to_analysis,
     task_execute_drawing_rebuild,
@@ -69,6 +69,9 @@ except ImportError:
 # 보안: 화이트리스트 외 파일명은 절대 외부 경로로 매핑되지 않음.
 _EXTERNAL_PROGRAM_PATHS = {
     "HiTESSBEAM.zip": r"\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44\[Hi-TESS]\6_DownloadProgram\HiTESSBEAM.zip",
+    # 레거시/외부 데스크탑 프로그램이 시작 시 C:\temp\ServerIP.txt 를 읽어 서버 주소를 찾는다.
+    # 사용자가 Download Center 에서 최신 서버 주소 파일을 내려받거나 C:\temp 에 바로 적용할 수 있도록 노출.
+    "ServerIP.txt": os.path.join(_BACKEND_DIR, "InHouseProgram", "DownloadCenter", "ServerIP.txt"),
 }
 
 # ──────────────────────────────────────────────────────────
@@ -1764,6 +1767,218 @@ async def apply_mooring_fitting_edit(
 
     logger.info("[mooring apply-edit] 완료: %s (applied=%d)", output_bdf, summary.get("applied", 0))
     return {"ok": True, "bdfPath": output_bdf, "summary": summary}
+
+
+# ── Mooring 구조해석: 편집 반영 solvable BDF 생성 ──────────────────────────
+# 편집 출력(convert_json_to_bdf)은 하중·구속·SUBCASE 가 없어 solve 불가하므로,
+# 원본 solvable BDF 의 case control/하중/구속은 그대로 두고 element/RBE2 만 편집 반영한다.
+
+# 8-컬럼 fixed small-field 기준 카드 분류용 집합
+_SOLVE_ELEMENT_CARDS = {"CBEAM", "CBAR", "CROD", "CONROD", "CBUSH", "CTUBE", "CBEND",
+                        "CQUAD4", "CTRIA3", "CHEXA", "CPENTA", "CTETRA"}
+_SOLVE_RIGID_CARDS = {"RBE2", "RBE3", "RBAR", "RROD", "RTRPLT", "RSPLINE"}
+# 단일 노드(필드 index 2)를 참조하는 하중/구속 카드 — 삭제 노드를 참조하면 제거
+_SOLVE_SINGLE_NODE_CARDS = {"FORCE", "FORCE1", "FORCE2", "MOMENT", "MOMENT1", "MOMENT2", "SPC", "SPCD"}
+
+
+def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
+    """원본 solvable BDF 에 편집(edited model)을 텍스트 수준으로 반영해 solvable deck 을 만든다.
+
+    solve 가능성 보장 원칙:
+      - executive/case control(SOL 101, CEND, SUBCASE, SPC=, LOAD=) 은 원본 그대로 유지.
+      - GRID/element 카드는 편집 후 생존(surviving) id 만 유지 → deleteGroup 반영.
+      - 하중(FORCE/MOMENT)·구속(SPC) 단일노드 카드는 생존 노드 참조분만 유지 → dangling 방지.
+      - rigid 카드(RBE2 등)는 전부 제거 후 edited.rigids 로부터 재생성 → add/delete/editDependents 반영.
+      - 그 외(PBEAML/MAT1/PARAM 등)는 원본 그대로 유지.
+    """
+    as_int = _nb.as_int
+    surv_nodes = {as_int(n.get("id")) for n in (edited.get("nodes") or []) if as_int(n.get("id")) is not None}
+    surv_elems = {as_int(e.get("id")) for e in (edited.get("elements") or []) if as_int(e.get("id")) is not None}
+
+    lines = original_bdf_text.splitlines()
+    begin_idx = None
+    for i, line in enumerate(lines):
+        if line.strip().upper().startswith("BEGIN BULK"):
+            begin_idx = i
+            break
+    if begin_idx is None:
+        raise ValueError("원본 BDF 에 BEGIN BULK 가 없습니다 — solvable deck 아님")
+    end_idx = len(lines)
+    for i in range(begin_idx + 1, len(lines)):
+        if lines[i].strip().upper().startswith("ENDDATA"):
+            end_idx = i
+            break
+
+    header = lines[:begin_idx + 1]          # SOL/CEND/case control + 'BEGIN BULK'
+    bulk = lines[begin_idx + 1:end_idx]
+
+    def field(line: str, n: int) -> str:
+        return line[n * 8:(n + 1) * 8].strip()
+
+    def is_continuation(line: str) -> bool:
+        head = line[0:8].strip()
+        return head == "" or head.startswith("+") or head.startswith("*")
+
+    out: list[str] = []
+    i = 0
+    while i < len(bulk):
+        line = bulk[i]
+        if not line.strip():
+            i += 1
+            continue
+        if is_continuation(line):
+            i += 1
+            continue
+        name = line[0:8].strip().upper().rstrip("*")
+        block = [line]
+        j = i + 1
+        while j < len(bulk) and is_continuation(bulk[j]):
+            block.append(bulk[j])
+            j += 1
+        i = j
+
+        if name in _SOLVE_RIGID_CARDS:
+            continue                         # 재생성
+        if name in _SOLVE_ELEMENT_CARDS:
+            if as_int(field(line, 1)) in surv_elems:
+                out.extend(block)
+            continue
+        if name == "GRID":
+            if as_int(field(line, 1)) in surv_nodes:
+                out.extend(block)
+            continue
+        if name in _SOLVE_SINGLE_NODE_CARDS:
+            gid = as_int(field(line, 2))
+            if gid is None or gid in surv_nodes:
+                out.extend(block)
+            continue
+        out.extend(block)                    # 그 외 verbatim
+
+    for rigid in sorted(edited.get("rigids") or [], key=lambda r: as_int(r.get("id")) or 0):
+        rid = as_int(rigid.get("id"))
+        if rid is None:
+            continue
+        indep = as_int(rigid.get("independentNode"))
+        cm = rigid.get("cm") or "123456"
+        deps = [n for n in (as_int(v) for v in (rigid.get("dependentNodes") or [])) if n is not None]
+        if not deps:
+            continue
+        chunks = _nb.dependent_chunks(deps)
+        out.append(_nb.bdf_line("RBE2", rid, indep, cm, *chunks[0]))
+        for chunk in chunks[1:]:
+            out.append(_nb.bdf_line("+", *chunk))
+
+    return "\n".join([*header, *out, "ENDDATA"]) + "\n"
+
+
+@router.post("/analysis/mooring-fitting/solve")
+async def solve_mooring_fitting(
+    request: Request,
+    current_user: str = Depends(require_auth),
+):
+    """Studio 편집 모델 구조해석.
+
+    Body JSON: { output_dir: str, intents?: list, yieldStrength?: float, gammaM?: float }
+      output_dir = userConnection 하위 MooringFitting out/ 폴더 (원본 STAGE_07 BDF 보유).
+      yieldStrength = 항복강도 σy [MPa] (기본 315, AH32). gammaM = 재료계수 γM (기본 1.0).
+    동작: 원본 BDF → convert_bdf → apply_edit_json(intents) → 편집 반영 solvable BDF +
+          편집 모델 JSON 저장 → MooringFitting.exe solve-bdf 백그라운드 실행 (von Mises + Usage 판정).
+    반환: { job_id }  → 이후 /analysis/status/{job_id} 폴링, result_info.nastranResultJson 회수.
+    """
+    if not _NB_AVAILABLE:
+        raise HTTPException(status_code=500, detail="nastran_bridge 모듈 없음")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON body 파싱 실패")
+
+    output_dir = body.get("output_dir") or body.get("outputDir")
+    intents = body.get("intents") or []
+    if not output_dir:
+        raise HTTPException(status_code=400, detail="output_dir 는 필수입니다")
+    if not isinstance(intents, list):
+        raise HTTPException(status_code=400, detail="intents 는 list 여야 합니다")
+
+    # 평가 파라미터 — Usage = σeff/(σy/γM). 비정상/누락 값은 기본값으로 폴백.
+    def _pos_float(val, default: float) -> float:
+        try:
+            f = float(val)
+            return f if f > 1e-9 else default
+        except (TypeError, ValueError):
+            return default
+
+    yield_strength = _pos_float(body.get("yieldStrength"), 315.0)
+    gamma_m = _pos_float(body.get("gammaM"), 1.0)
+
+    try:
+        abs_dir = _validate_userconnection_path(output_dir)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"경로 검증 실패: {e}")
+    if not os.path.isdir(abs_dir):
+        raise HTTPException(status_code=404, detail=f"output_dir 없음: {abs_dir}")
+
+    bdf_path = os.path.join(abs_dir, "STAGE_07_FinalValidation.bdf")
+    if not os.path.isfile(bdf_path):
+        raise HTTPException(status_code=404, detail=f"원본 BDF 없음: {bdf_path}")
+
+    import copy as _copy
+    import json as _json
+    import time as _time
+    from pathlib import Path as _Path
+
+    try:
+        base_data = _nb.convert_bdf(_Path(bdf_path))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"BDF 변환 실패: {e}")
+
+    edited = base_data
+    edit_summary = {"applied": 0}
+    if intents:
+        try:
+            edited, edit_summary = _nb.apply_edit_json(
+                _copy.deepcopy(base_data), {"schemaVersion": "1.0", "intents": intents}
+            )
+        except SystemExit as e:
+            raise HTTPException(status_code=400, detail=f"편집 적용 실패: {e}")
+        except Exception as e:
+            logger.exception("[mooring solve] apply_edit_json 실패")
+            raise HTTPException(status_code=500, detail=f"편집 적용 실패: {e}")
+
+    try:
+        original_text = _Path(bdf_path).read_text(encoding="utf-8", errors="replace")
+        solve_bdf_text = _build_solvable_edited_bdf(original_text, edited)
+    except Exception as e:
+        logger.exception("[mooring solve] solvable BDF 생성 실패")
+        raise HTTPException(status_code=500, detail=f"solvable BDF 생성 실패: {e}")
+
+    solve_bdf_path   = os.path.join(abs_dir, "mooring_solve.bdf")
+    solve_model_path = os.path.join(abs_dir, "mooring_solve.model.json")
+    result_json_path = os.path.join(abs_dir, "mooring_solve.result.json")
+    try:
+        _Path(solve_bdf_path).write_text(solve_bdf_text, encoding="utf-8")
+        _Path(solve_model_path).write_text(_json.dumps(edited, ensure_ascii=False), encoding="utf-8")
+        if os.path.isfile(result_json_path):
+            os.remove(result_json_path)   # stale 결과 제거
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"solve 입력 저장 실패: {e}")
+
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "MooringFitting", "MooringFitting.exe"
+    ))
+    timestamp = _time.strftime("%Y%m%d_%H%M%S")
+    job_id = submit_analysis_job(
+        task_solve_mooring_fitting,
+        solve_bdf_path, solve_model_path, result_json_path, exe_path,
+        abs_dir, current_user, timestamp, "Studio",
+        yield_strength, gamma_m,
+    )
+    logger.info("[mooring solve] job 제출: %s (intents=%d, applied=%d, σy=%s, γM=%s)",
+                job_id, len(intents), edit_summary.get("applied", 0), yield_strength, gamma_m)
+    return {"job_id": job_id, "editSummary": edit_summary,
+            "assessment": {"yieldStrength": yield_strength, "gammaM": gamma_m}}
 
 
 # ==================== Simple Beam Assessment ====================

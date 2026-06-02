@@ -24,8 +24,14 @@ const DOWNLOAD_ENDPOINT = (path) => `/api/download?filepath=${encodeURIComponent
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',               icon: FileSpreadsheet, status: 'wait' },
   { id: 'mf-studio',      title: 'Mooring Fitting Studio 실행',  icon: ExternalLink,    status: 'wait' },
-  { id: 'final-check',    title: '최종 검증',                   icon: CheckCircle2,    status: 'wait' },
+  { id: 'final-check',    title: '결과 확인',                   icon: CheckCircle2,    status: 'wait' },
 ];
+
+const makeInitialSteps = () => INITIAL_STEPS.map(s => ({ ...s }));
+const normalizeSteps = (steps) => {
+  if (!Array.isArray(steps) || steps.length !== INITIAL_STEPS.length) return makeInitialSteps();
+  return INITIAL_STEPS.map((base, idx) => ({ ...base, status: steps[idx]?.status ?? base.status }));
+};
 
 const STATUS_CONFIG = {
   wait:    { dot: 'bg-slate-300',                          badge: 'bg-slate-100 text-slate-500',     label: '대기' },
@@ -845,16 +851,22 @@ function MooringStudioLauncher({ ready, onLaunch, installed, status, progress, e
    ──────────────────────────────────────────────────────────────────────── */
 
 export default function MooringFittingAssessment() {
-  const [structureFile, setStructureFile] = useState(null);
-  const [loadFile,      setLoadFile]      = useState(null);
-  const [steps,         setSteps]         = useState(() => INITIAL_STEPS.map(s => ({ ...s })));
-  const [activeIdx,     setActiveIdx]     = useState(0);
-  const [hasRunOnce,    setHasRunOnce]    = useState(false);
-  const [jobId,         setJobId]         = useState(null);
-  const [jobStatus,     setJobStatus]     = useState(null);
-  const [elapsedSecs,   setElapsedSecs]   = useState(0);
-  const [engineLog,     setEngineLog]     = useState(null);
-  const [artifactJson,  setArtifactJson]  = useState({
+  const { showToast }    = useToast();
+  const dashboardCtx     = useDashboard();
+  const { setCurrentMenu } = useNavigation();
+  const PAGE_KEY = 'Mooring Fitting Assessment';
+  const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
+
+  const [structureFile, setStructureFile] = useState(savedPageState.structureFile ?? null);
+  const [loadFile,      setLoadFile]      = useState(savedPageState.loadFile ?? null);
+  const [steps,         setSteps]         = useState(() => normalizeSteps(savedPageState.steps));
+  const [activeIdx,     setActiveIdx]     = useState(savedPageState.activeIdx ?? 0);
+  const [hasRunOnce,    setHasRunOnce]    = useState(savedPageState.hasRunOnce ?? false);
+  const [jobId,         setJobId]         = useState(savedPageState.jobId ?? null);
+  const [jobStatus,     setJobStatus]     = useState(savedPageState.jobStatus ?? null);
+  const [elapsedSecs,   setElapsedSecs]   = useState(savedPageState.elapsedSecs ?? 0);
+  const [engineLog,     setEngineLog]     = useState(savedPageState.engineLog ?? null);
+  const [artifactJson,  setArtifactJson]  = useState(savedPageState.artifactJson ?? {
     raw: null,
     validation: null,
     loading: false,
@@ -873,9 +885,22 @@ export default function MooringFittingAssessment() {
   const pollRef    = useRef(null);
   const elapsedRef = useRef(null);
 
-  const { showToast }    = useToast();
-  const { startGlobalJob } = useDashboard();
-  const { setCurrentMenu } = useNavigation();
+  const startGlobalJob = dashboardCtx?.startGlobalJob;
+
+  useEffect(() => {
+    dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
+      structureFile,
+      loadFile,
+      steps,
+      activeIdx,
+      hasRunOnce,
+      jobId,
+      jobStatus,
+      elapsedSecs,
+      engineLog,
+      artifactJson,
+    });
+  }, [structureFile, loadFile, steps, activeIdx, hasRunOnce, jobId, jobStatus, elapsedSecs, engineLog, artifactJson]);
 
   /* ── 파일명 휴리스틱 분류 ─────────────────────────────────────────── */
   // 파일명에 'Load' 포함 → Load CSV, 그 외 → Structure CSV.
@@ -892,6 +917,9 @@ export default function MooringFittingAssessment() {
   /* ── 폴링 ──────────────────────────────────────────────────────────── */
   useEffect(() => {
     if (!jobId) return;
+    if (!elapsedRef.current) {
+      elapsedRef.current = setInterval(() => setElapsedSecs(s => s + 1), 1000);
+    }
     const tick = async () => {
       try {
         const res = await fetch(`${API_BASE_URL}${STATUS_ENDPOINT(jobId)}`, { headers: getAuthHeaders() });
@@ -914,7 +942,11 @@ export default function MooringFittingAssessment() {
           clearInterval(pollRef.current);
           if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
           if (data.status === 'Success') {
-            setSteps(prev => prev.map(s => s.id !== 'mf-studio' ? { ...s, status: 'done' } : s));
+            setSteps(prev => prev.map(s => {
+              if (s.id === 'csv-validation') return { ...s, status: 'done' };
+              if (s.id === 'final-check') return { ...s, status: 'wait' };
+              return s;
+            }));
             setActiveIdx(1); // Studio 단계로 이동
           } else {
             setSteps(prev => prev.map((s, i) => i === 0 ? { ...s, status: 'error' } : s));
@@ -1030,6 +1062,13 @@ export default function MooringFittingAssessment() {
   /* ── Studio 뷰어 ────────────────────────────────────────────────────── */
   const setStepStatus = (id, status) =>
     setSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+
+  const goToStep = (idx) => {
+    setActiveIdx(idx);
+    if (steps[idx]?.id === 'final-check') {
+      setStepStatus('final-check', 'done');
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1154,6 +1193,7 @@ export default function MooringFittingAssessment() {
         initialFolder: fetchRes.dir,
         parentAnalysisId: null,
         serverUrl: API_BASE_URL,
+        outputDir: result.out_dir,   // 서버측 원본 BDF 폴더 — Studio 구조해석(solve)이 사용
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok) throw new Error(openRes?.error || 'Studio 오픈 실패');
@@ -1172,7 +1212,7 @@ export default function MooringFittingAssessment() {
     if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
     setStructureFile(null);
     setLoadFile(null);
-    setSteps(INITIAL_STEPS.map(s => ({ ...s })));
+    setSteps(makeInitialSteps());
     setActiveIdx(0);
     setHasRunOnce(false);
     setJobId(null);
@@ -1180,6 +1220,7 @@ export default function MooringFittingAssessment() {
     setElapsedSecs(0);
     setEngineLog(null);
     setArtifactJson({ raw: null, validation: null, loading: false, error: null });
+    dashboardCtx?.clearAnalysisPageState?.(PAGE_KEY);
   };
 
   /* ── 파생 ──────────────────────────────────────────────────────────── */
@@ -1274,7 +1315,7 @@ export default function MooringFittingAssessment() {
                         ${isActive
                           ? 'border-blue-500 bg-blue-50 shadow-sm'
                           : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}
-                      onClick={() => setActiveIdx(idx)}
+                      onClick={() => goToStep(idx)}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -1295,17 +1336,25 @@ export default function MooringFittingAssessment() {
 
             {/* 버튼 영역 */}
             <div className="px-3 py-3 border-t border-slate-100 bg-slate-50/60 space-y-2">
-              {activeIdx < steps.length - 1 && (
+              {activeIdx < steps.length - 1 && (() => {
+                const nextStep = steps[activeIdx + 1];
+                const isResultButton = activeStep.id === 'mf-studio' && nextStep?.id === 'final-check';
+                return (
                 <button
                   type="button"
-                  onClick={() => setActiveIdx(activeIdx + 1)}
+                  onClick={() => goToStep(activeIdx + 1)}
                   disabled={isRunning || !hasRunOnce}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 border border-blue-200 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed text-blue-700 text-xs font-semibold rounded-xl cursor-pointer"
+                  className={`w-full flex items-center justify-center gap-1.5 py-2 border disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold rounded-xl cursor-pointer ${
+                    isResultButton
+                      ? 'border-red-200 bg-red-50 hover:bg-red-100 text-red-700'
+                      : 'border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700'
+                  }`}
                 >
                   <ChevronsRight size={13} />
-                  {steps[activeIdx + 1]?.title} 보기
+                  {nextStep?.title} 보기
                 </button>
-              )}
+                );
+              })()}
               <button
                 type="button"
                 onClick={handleRun}
@@ -1476,7 +1525,7 @@ export default function MooringFittingAssessment() {
               />
             )}
 
-            {/* 스텝 2: 최종 검증 */}
+            {/* 스텝 2: 결과 확인 */}
             {activeStep.id === 'final-check' && (
               <>
                 {!isSuccess && (

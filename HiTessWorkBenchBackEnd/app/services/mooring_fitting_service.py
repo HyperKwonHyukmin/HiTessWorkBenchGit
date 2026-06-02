@@ -1,4 +1,5 @@
 """Mooring Fitting Assessment 서비스 — CSV 2종 → MooringFitting.exe build-full 실행 + 산출물 수집."""
+import json
 import logging
 import os
 import subprocess
@@ -14,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 PROGRAM_NAME = "MooringFitting"
 TIMEOUT_SECONDS = 600
+
+# 구조해석(solve-bdf)은 SOL 101 + 다중 SUBCASE 라 build-full 보다 길 수 있어 별도 타임아웃.
+SOLVE_TIMEOUT_SECONDS = 1800
 
 
 def collect_artifacts(out_dir: str, work_dir: str) -> dict:
@@ -162,4 +166,118 @@ def task_execute_mooring_fitting(
         job_id, status_msg, engine_output, project_data,
         success_message="MooringFitting 해석 완료",
         failure_message="MooringFitting 해석 실패",
+    )
+
+
+def task_solve_mooring_fitting(
+    job_id: str,
+    bdf_path: str,
+    model_json_path: str,
+    result_json_path: str,
+    exe_path: str,
+    work_dir: str,
+    employee_id: str,
+    timestamp: str,
+    source: str,
+    yield_strength: float = 315.0,
+    gamma_m: float = 1.0,
+):
+    """
+    Studio 편집 모델의 구조해석: MooringFitting.exe solve-bdf <bdf> <model.json> -o <result.json>
+                                  --yield <σy> --gamma <γM>.
+
+    동작:
+      - bdf_path = 편집 반영 solvable BDF (라우터가 사전 생성), model_json_path = 편집 모델 JSON.
+      - exe 는 cwd=work_dir 로 실행되며 Nastran SOL 101 → F06 파싱 → von Mises σeff + Usage 판정 결과 JSON 생성.
+      - yield_strength(σy)/gamma_m(γM) → Usage=σeff/(σy/γM) 평가. 기본 315 MPa(AH32) / 1.0(DNV).
+      - result_json_path 가 생성되면 result_info.nastranResultJson 으로 노출 → 호스트가 /api/download 로 회수.
+    """
+    mark_running(job_id, "Mooring 구조해석 준비 중...", progress=10)
+
+    status_msg = "Success"
+    engine_output = ""
+    result_data = {}
+
+    try:
+        if not os.path.exists(exe_path):
+            raise FileNotFoundError(f"실행 파일을 찾을 수 없습니다: {exe_path}")
+        if not os.path.isfile(bdf_path):
+            raise FileNotFoundError(f"solve 대상 BDF 가 없습니다: {bdf_path}")
+
+        update_progress(job_id, 30, "Nastran 구조해석 실행 중...")
+        logger.info("[MooringSolve] exe=%s, bdf=%s, yield=%s, gamma=%s",
+                    exe_path, bdf_path, yield_strength, gamma_m)
+
+        result = subprocess.run(
+            [exe_path, "solve-bdf", bdf_path, model_json_path, "-o", result_json_path,
+             "--yield", str(yield_strength), "--gamma", str(gamma_m)],
+            cwd=work_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=SOLVE_TIMEOUT_SECONDS,
+        )
+        engine_output = result.stdout.decode("utf-8", errors="replace")
+        stderr_text = result.stderr.decode("utf-8", errors="replace")
+        if stderr_text.strip():
+            engine_output += f"\n[stderr] {stderr_text.strip()}"
+        if result.returncode != 0:
+            status_msg = "Failed"
+            engine_output += f"\n[Exit code: {result.returncode}]"
+
+        update_progress(job_id, 90, "결과 수집 중...")
+        if os.path.isfile(result_json_path):
+            summary = None
+            try:
+                with open(result_json_path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+                summary = {
+                    "quantity": payload.get("quantity"),
+                    "unit": payload.get("unit"),
+                    "globalMax": payload.get("globalMax"),
+                    "globalMaxUsage": payload.get("globalMaxUsage"),
+                    "yieldStress": payload.get("yieldStress"),
+                    "gammaM": payload.get("gammaM"),
+                    "allowable": payload.get("allowable"),
+                    "ok": payload.get("ok"),
+                    "caseCount": payload.get("caseCount"),
+                }
+            except Exception as exc:
+                logger.warning("[MooringSolve] 결과 요약 파싱 실패: %s", exc)
+            result_data = {"nastranResultJson": result_json_path, "summary": summary}
+        else:
+            status_msg = "Failed"
+            engine_output += "\n[Error] 결과 JSON 이 생성되지 않았습니다 — Nastran FATAL 또는 solve-bdf 오류일 수 있습니다."
+
+    except subprocess.TimeoutExpired:
+        status_msg = "Failed"
+        engine_output = f"Mooring 구조해석 시간이 초과되었습니다 ({SOLVE_TIMEOUT_SECONDS // 60}분)."
+    except FileNotFoundError as e:
+        status_msg = "Failed"
+        logger.error("[MooringSolve] %s", str(e))
+        engine_output = str(e)
+    except Exception as e:
+        status_msg = "Failed"
+        logger.error("MooringSolve unexpected error: %s", str(e), exc_info=True)
+        engine_output = f"예기치 않은 오류가 발생했습니다: {str(e)}"
+
+    update_progress(job_id, 95, "데이터베이스 저장 중...")
+    project_data, db_err = record_analysis(
+        job_id=job_id,
+        project_name=f"{PROGRAM_NAME}Solve_{timestamp}",
+        program_name=f"{PROGRAM_NAME}Solve",
+        employee_id=employee_id,
+        status=status_msg,
+        input_info={"bdf": bdf_path, "model_json": model_json_path,
+                    "yieldStrength": yield_strength, "gammaM": gamma_m},
+        result_info=result_data if result_data else None,
+        source=source,
+    )
+    if db_err is not None:
+        status_msg = "Failed"
+        engine_output += f"\nDB Error: {db_err}"
+
+    mark_complete(
+        job_id, status_msg, engine_output, project_data,
+        success_message="Mooring 구조해석 완료",
+        failure_message="Mooring 구조해석 실패",
     )

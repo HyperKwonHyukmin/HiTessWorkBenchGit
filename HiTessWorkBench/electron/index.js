@@ -26,6 +26,9 @@ let viewerParentAnalysisId = null;
 // viewer IPC 가 사용할 WorkBench 백엔드 URL. Studio 오픈 시점의 프론트 API_BASE_URL 을
 // 전달받아 Electron main process 의 별도 fallback 과 drift 되지 않게 한다.
 let viewerServerUrl = null;
+// viewer:runMooringStructural 가 백엔드에 전달할 서버측 output_dir(원본 BDF 보유 userConnection out 폴더).
+// MooringFittingStudio 는 로컬 추출 폴더만 알기에, solve 는 이 서버 경로 기준으로 수행된다.
+let viewerOutputDir = null;
 
 function createWindow() {
   // 기준 해상도(1920px) 대비 현재 화면 비율로 zoomFactor 자동 계산
@@ -147,6 +150,26 @@ ipcMain.handle("download-client", (event, url) => {
     });
     mainWindow.webContents.downloadURL(url);
   });
+});
+
+// Download Center: ServerIP.txt 를 사용자 PC 의 C:\temp 에 바로 기록한다.
+// 레거시/외부 프로그램이 시작 시 C:\temp\ServerIP.txt 를 읽어 서버 주소를 찾기 때문에,
+// 사용자가 한 번의 클릭으로 최신 서버 주소를 적용할 수 있게 한다.
+// 보안: 대상 폴더(C:\temp)와 파일명(ServerIP.txt)이 모두 고정이라 경로 탈출 여지가 없다.
+ipcMain.handle("place-server-ip", async (_event, payload) => {
+  try {
+    const content = payload?.content;
+    if (typeof content !== "string" || !content.trim()) {
+      return { ok: false, error: "서버 주소 내용이 비어 있습니다." };
+    }
+    const tempDir = "C:\\temp";
+    const targetPath = path.join(tempDir, "ServerIP.txt");
+    fs.mkdirSync(tempDir, { recursive: true });
+    fs.writeFileSync(targetPath, content, "utf-8");
+    return { ok: true, path: targetPath };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
 });
 
 function getPreferencesPath() {
@@ -733,7 +756,7 @@ ipcMain.handle("viewer:readLocalFile", async (_e, payload) => {
 
 // 3) 풀스크린 보조 BrowserWindow 로 viewer 오픈
 ipcMain.handle("viewer:open", async (_e, payload) => {
-  const { viewerId, initialFolder, parentAnalysisId, serverUrl } = payload || {};
+  const { viewerId, initialFolder, parentAnalysisId, serverUrl, outputDir } = payload || {};
   if (!viewerId) return { ok: false, error: "viewerId 누락" };
 
   const dir = getViewerDir(viewerId);
@@ -750,6 +773,8 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
   viewerServerUrl = typeof serverUrl === "string" && serverUrl.trim()
     ? serverUrl.trim().replace(/\/$/, "")
     : null;
+  // MooringFittingStudio 구조해석용 서버측 out 폴더(원본 BDF 위치). 없으면 null → 해당 IPC 거부.
+  viewerOutputDir = typeof outputDir === "string" && outputDir.trim() ? outputDir.trim() : null;
 
   if (viewerWindow && !viewerWindow.isDestroyed()) {
     viewerWindow.focus();
@@ -1378,6 +1403,115 @@ ipcMain.handle("viewer:runPlateStructural", async (_e, payload) => {
         return {
           ok: false,
           error: job.message || "Plate 구조 해석 실패",
+          stderr: job.engine_log || "",
+          job,
+        };
+      }
+    }
+
+    return { ok: false, error: "시간 초과 (30분)" };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
+// ── MooringFittingStudio: 편집 반영 BDF → Nastran SOL 101 → 조합응력 결과 JSON ──
+// Studio 'Solve' 버튼 한 번으로 백엔드 mooring-fitting/solve job 시작 + 폴링 + 결과 JSON 다운로드까지 main 처리.
+// 진행 상황은 viewer:mooring-structural-progress 로 stream.
+//
+// payload = { intents: Array, yieldStrength?: number, gammaM?: number }
+//   yieldStrength = 항복강도 σy[MPa] (기본 315), gammaM = 재료계수 γM (기본 1.0). Usage=σeff/(σy/γM).
+// 반환    = { ok, summary, resultPath, result, job, editSummary } | { ok:false, error, ... }
+ipcMain.handle("viewer:runMooringStructural", async (_e, payload) => {
+  try {
+    const intents = Array.isArray(payload?.intents) ? payload.intents : [];
+    if (!viewerOutputDir) {
+      return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 해석을 완료하고 Studio 를 다시 여세요." };
+    }
+
+    // 평가 파라미터 — 양수만 통과, 아니면 백엔드 기본값에 위임(undefined 전송).
+    const toPos = (v) => (typeof v === "number" && isFinite(v) && v > 0 ? v : undefined);
+    const yieldStrength = toPos(payload?.yieldStrength);
+    const gammaM = toPos(payload?.gammaM);
+
+    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const { serverUrl } = runtimeConfig;
+    const employeeId = runtimeConfig.employeeId;
+    if (!employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+
+    const { res: reqRes, token } = await fetchWithSessionRefresh(
+      `${serverUrl}/api/analysis/mooring-fitting/solve`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ output_dir: viewerOutputDir, intents, yieldStrength, gammaM }),
+      },
+      runtimeConfig,
+    );
+    if (!reqRes.ok) {
+      const detail = await readBackendError(reqRes);
+      const hint = reqRes.status === 404
+        ? ` - Mooring 구조해석 API가 해당 서버에 없습니다. 서버 주소(${serverUrl})가 최신 WorkBench 백엔드인지 확인하세요.`
+        : "";
+      return { ok: false, error: `백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}${hint}` };
+    }
+    const reqBody = await reqRes.json();
+    const jobId = reqBody.jobId || reqBody.job_id;
+    const editSummary = reqBody.editSummary ?? null;
+    if (!jobId) return { ok: false, error: "백엔드 응답에 jobId 가 없습니다." };
+
+    const sendProgress = (data) => {
+      try {
+        if (viewerWindow && !viewerWindow.isDestroyed()) {
+          viewerWindow.webContents.send("viewer:mooring-structural-progress", { jobId, ...data });
+        }
+      } catch {}
+    };
+    sendProgress({ status: "Pending", progress: 0, message: "큐 대기..." });
+
+    // SOL 101 + 다중 SUBCASE 고려해 30분 (1.5s × 1200) 폴링
+    for (let i = 0; i < 1200; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const statusRes = await fetch(`${serverUrl}/api/analysis/status/${jobId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!statusRes.ok) continue;
+
+      const job = await statusRes.json();
+      sendProgress({ status: job.status, progress: job.progress, message: job.message });
+
+      if (job.status === "Success") {
+        const resultInfo = job.project?.result_info || {};
+        const resultPath = resultInfo.nastranResultJson || null;
+        let resultContent = null;
+        if (resultPath) {
+          try {
+            const dlUrl = `${serverUrl}/api/download?filepath=${encodeURIComponent(resultPath)}`;
+            const { res: dlRes } = await fetchWithSessionRefresh(dlUrl, { method: "GET" });
+            if (!dlRes.ok) {
+              const detail = await readBackendError(dlRes);
+              return { ok: false, error: `결과 JSON 다운로드 실패: ${dlRes.status}${detail ? ` - ${detail}` : ""}`, job };
+            }
+            resultContent = JSON.parse(await dlRes.text());
+          } catch (e) {
+            return { ok: false, error: `결과 JSON 다운로드/파싱 실패: ${e.message}`, job };
+          }
+        }
+        return {
+          ok: true,
+          summary:    resultInfo.summary ?? null,
+          resultPath,
+          result:     resultContent,
+          editSummary,
+          job,
+        };
+      }
+      if (job.status === "Failed") {
+        return {
+          ok: false,
+          error: job.message || "Mooring 구조 해석 실패",
           stderr: job.engine_log || "",
           job,
         };
