@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Webhook, ChevronDown, ChevronUp, Terminal, CheckCircle, Clock, ArrowRight, Server } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 import PageHeader from '../../components/ui/PageHeader';
@@ -356,6 +356,315 @@ const API_LIST = [
   -F "programName=ModuleUnit" \\
   -F "file=@module.bdf"`,
   },
+
+  // ── File-Based 해석 앱 (요청 진입점 + 다단계 흐름 보조) ──────────────────────
+  {
+    id: 'plate-structure',
+    name: 'Plate Structure Analysis',
+    method: 'POST',
+    endpoint: '/api/analysis/plate-structure/request',
+    status: 'Developing',
+    category: 'File-Based',
+    description: 'Nastran BDF를 업로드하면 Nastran(SOL 101) 실행 후 nastran_bridge로 결과 JSON을 생성하여 판(Plate) 구조 해석 결과를 제공합니다. Plate Studio 뷰어와 연동됩니다. 비동기 처리입니다.',
+    cli: 'nastran <model>.bdf  →  nastran_bridge.exe <model>.f06 -o result.json',
+    params: [
+      { name: 'bdf_file', type: 'file (BDF, form)', required: true, desc: 'Nastran BDF 입력 파일' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: PlateStudio' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/plate-structure/request \\
+  -F "bdf_file=@plate.bdf" \\
+  -F "employee_id=20001234" \\
+  -F "source=External API"`,
+  },
+  {
+    id: 'hpscr',
+    name: 'HP-SCR 배관응력 해석',
+    method: 'POST',
+    endpoint: '/api/analysis/hpscr/request',
+    status: 'Active',
+    category: 'File-Based',
+    description: 'BDF를 업로드하여 배관 응력 평가를 수행합니다. FemScanner로 3D 모델 JSON을 만든 뒤 analysis_mode에 따라 PSA 또는 POR 평가 CLI를 실행합니다. 비동기 처리입니다.',
+    cli: 'FemScanner.exe <model>.bdf  →  PSA_Assessment_CLI.exe | POR_Assessment_CLI.exe <model>.bdf',
+    params: [
+      { name: 'bdf_file', type: 'file (BDF, form)', required: true, desc: '평가할 BDF 파일' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'analysis_mode', type: 'string (form)', required: true, desc: '평가 모드. "PSA" 또는 "POR"' },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Workbench' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/hpscr/request \\
+  -F "bdf_file=@piping.bdf" \\
+  -F "employee_id=20001234" \\
+  -F "analysis_mode=PSA" \\
+  -F "source=External API"`,
+  },
+  {
+    id: 'groupmoduleunit',
+    name: 'Group & Module Unit 권상 구조 해석',
+    method: 'POST',
+    endpoint: '/api/analysis/groupmoduleunit/request',
+    status: 'Developing',
+    category: 'File-Based',
+    description: 'BDF를 업로드하여 nastran_bridge로 권상(Lifting) 구조 해석을 수행합니다. use_nastran=true이면 Nastran SOL 101 검증을 추가로 실행합니다. 서버에 이미 있는 BDF 경로로 요청하려면 POST /api/analysis/groupmoduleunit/request-from-path (form: bdf_server_path) 를 사용합니다. 비동기 처리입니다.',
+    cli: 'nastran_bridge.exe <model>.bdf   [+ nastran SOL 101]',
+    params: [
+      { name: 'bdf_file', type: 'file (BDF, form)', required: true, desc: '입력 BDF 파일' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'use_nastran', type: 'boolean (form)', required: false, desc: 'Nastran 검증 포함 여부. 기본값: false' },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Workbench' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/groupmoduleunit/request \\
+  -F "bdf_file=@module.bdf" \\
+  -F "employee_id=20001234" \\
+  -F "use_nastran=false" \\
+  -F "source=External API"`,
+  },
+  {
+    id: 'module-stability',
+    name: 'Module Stability (자세 안정성)',
+    method: 'POST',
+    endpoint: '/api/analysis/module-stability/request',
+    status: 'Developing',
+    category: 'File-Based',
+    description: 'ModuleUnit Studio가 생성한 *_posture.json 경로를 받아 ModuleAnalysis.Cli.exe로 자세(Posture) 안정성을 평가하고 *_stability.json을 생성합니다. posture 파일은 사전에 POST /api/analysis/module-stability/upload (form: file, parent_analysis_id) 로 업로드합니다. 비동기 처리입니다.',
+    cli: 'ModuleAnalysis.Cli.exe <model>_posture.json <model>_stability.json',
+    params: [
+      { name: 'posturePath', type: 'string (JSON body)', required: true, desc: '_posture.json 절대경로 (userConnection 하위)' },
+      { name: 'source', type: 'string (JSON body)', required: false, desc: '호출 출처. 기본값: ModuleUnitStudio' },
+    ],
+    example: JSON.stringify({ posturePath: "C:\\...\\userConnection\\..._posture.json", source: "External API" }, null, 2),
+  },
+  {
+    id: 'unit-structural',
+    name: 'Unit Structural (권상 구조 평가)',
+    method: 'POST',
+    endpoint: '/api/analysis/unit-structural/request',
+    status: 'Developing',
+    category: 'File-Based',
+    description: '_stability.json을 기반으로 권상 BDF를 생성하고 Nastran SOL 101을 실행한 뒤 결과를 허용응력 기준으로 매핑합니다. nastran_bridge의 lift-run / lift-result 단계를 거칩니다. 비동기 처리입니다.',
+    cli: 'nastran_bridge lift-run <bdf> --stability <json> ...  →  nastran <lifting>.bdf  →  nastran_bridge lift-result ... --allowable-mpa <v>',
+    params: [
+      { name: 'stability_path', type: 'string (form)', required: true, desc: '_stability.json 절대경로' },
+      { name: 'parent_analysis_id', type: 'int (form)', required: true, desc: 'GroupModuleUnit Analysis.id' },
+      { name: 'safety_factor', type: 'float (form)', required: false, desc: '안전계수. 기본값: 1.2' },
+      { name: 'allowable_mpa', type: 'float (form)', required: false, desc: '허용응력(MPa). 기본값: 220.0' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Studio' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/unit-structural/request \\
+  -F "stability_path=C:\\...\\model_stability.json" \\
+  -F "parent_analysis_id=1234" \\
+  -F "safety_factor=1.2" \\
+  -F "allowable_mpa=220" \\
+  -F "employee_id=20001234"`,
+  },
+  {
+    id: 'mooring-fitting',
+    name: 'Mooring Fitting Assessment',
+    method: 'POST',
+    endpoint: '/api/analysis/mooring-fitting/request',
+    status: 'Developing',
+    category: 'File-Based',
+    description: 'Structure CSV와 Load CSV 2종을 업로드하여 MooringFitting.exe build-full로 무어링 피팅 구조 해석을 수행합니다. 결과는 3D Studio 뷰어와 연동됩니다. 비동기 처리입니다.',
+    cli: 'MooringFitting.exe build-full <work_dir>',
+    params: [
+      { name: 'structure_file', type: 'file (CSV, form)', required: true, desc: 'Structure CSV 파일' },
+      { name: 'load_file', type: 'file (CSV, form)', required: true, desc: 'Load CSV 파일' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Workbench' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/mooring-fitting/request \\
+  -F "structure_file=@structure.csv" \\
+  -F "load_file=@load.csv" \\
+  -F "employee_id=20001234" \\
+  -F "source=External API"`,
+  },
+  {
+    id: 'mooring-fitting-solve',
+    name: 'Mooring Fitting Solve',
+    method: 'POST',
+    endpoint: '/api/analysis/mooring-fitting/solve',
+    status: 'Developing',
+    category: 'File-Based',
+    description: 'Studio에서 편집한 intents를 적용해 해석 가능한 BDF를 만들고 MooringFitting.exe solve-bdf로 구조해석을 수행합니다. intents가 비어 있으면 원본 모델로 해석합니다. 비동기 처리입니다.',
+    cli: 'MooringFitting.exe solve-bdf <model>.bdf <model>.json -o result.json',
+    params: [
+      { name: 'output_dir', type: 'string (JSON body)', required: true, desc: 'MooringFitting out/ 폴더 절대경로 (outputDir 키로도 가능)' },
+      { name: 'intents', type: 'array (JSON body)', required: false, desc: '편집 intent 배열. 기본값: []' },
+    ],
+    example: JSON.stringify({ output_dir: "C:\\...\\userConnection\\..._MooringFitting\\out", intents: [] }, null, 2),
+  },
+  {
+    id: 'mooring-fitting-apply-edit',
+    name: 'Mooring Fitting Apply Edit',
+    method: 'POST',
+    endpoint: '/api/analysis/mooring-fitting/apply-edit',
+    status: 'Developing',
+    category: 'File-Based',
+    description: '3D Studio에서 편집한 intents를 stage07.json에 반영하여 수정된 BDF를 저장합니다. nastran_bridge 모듈을 직접 호출합니다(동기 처리).',
+    cli: null,
+    params: [
+      { name: 'folderPath', type: 'string (JSON body)', required: true, desc: 'MooringFitting out/ 폴더 절대경로' },
+      { name: 'intents', type: 'array (JSON body)', required: true, desc: '편집 intent 배열' },
+      { name: 'stageRef', type: 'string (JSON body)', required: false, desc: '기준 stage (현재 stage07 고정, 미사용)' },
+    ],
+    example: JSON.stringify({ folderPath: "C:\\...\\out", intents: [] }, null, 2),
+  },
+  {
+    id: 'mooring-fitting-viewer-zip',
+    name: 'Mooring Fitting Viewer ZIP',
+    method: 'GET',
+    endpoint: '/api/analysis/mooring-fitting/viewer-zip',
+    status: 'Developing',
+    category: 'File-Based',
+    description: 'MooringFitting 결과(Stage 00/07 BDF)를 nastran_bridge로 변환하여 3D 뷰어용 ZIP(stage00/stage07/loads JSON 포함)을 반환합니다(동기 처리).',
+    cli: null,
+    params: [
+      { name: 'output_dir', type: 'string (query)', required: true, desc: 'MooringFitting out/ 폴더 절대경로' },
+    ],
+    example: `curl -X GET "${API_BASE_URL}/api/analysis/mooring-fitting/viewer-zip?output_dir=C%3A%5C...%5Cout" -o viewer.zip`,
+  },
+  {
+    id: 'drawing-to-analysis',
+    name: 'DrawingToAnalysis (PDF → BDF)',
+    method: 'POST',
+    endpoint: '/api/analysis/drawing-to-analysis/request',
+    status: 'Developing',
+    category: 'File-Based',
+    description: '도면 PDF를 업로드하면 DrawingToAnalysis.exe가 LUG/Support 형상을 인식하여 BDF와 메시를 생성합니다. mode 미지정 시 파일명 prefix로 자동 판별합니다. 관리자가 등록한 카탈로그 PDF는 POST /api/analysis/drawing-to-analysis/catalogue/{filename}/run 으로 실행합니다. 비동기 처리입니다.',
+    cli: 'DrawingToAnalysis.exe all --pdf <pdf> --out-dir <dir> --mesh-size <mm>   (support: support all ... --page <N>)',
+    params: [
+      { name: 'pdf_file', type: 'file (PDF, form)', required: true, desc: '변환할 도면 PDF' },
+      { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
+      { name: 'mesh_size', type: 'float (form)', required: false, desc: '메시 크기(mm). 기본값: 10.0' },
+      { name: 'mode', type: 'string (form)', required: false, desc: "'lug' | 'support'. 미지정 시 파일명으로 자동 판별" },
+      { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Workbench' },
+    ],
+    example: `curl -X POST ${API_BASE_URL}/api/analysis/drawing-to-analysis/request \\
+  -F "pdf_file=@lug_drawing.pdf" \\
+  -F "employee_id=20001234" \\
+  -F "mesh_size=10" \\
+  -F "mode=lug"`,
+  },
+  {
+    id: 'drawing-rebuild',
+    name: 'DrawingToAnalysis Rebuild',
+    method: 'POST',
+    endpoint: '/api/analysis/drawing-to-analysis/rebuild',
+    status: 'Developing',
+    category: 'File-Based',
+    description: '변환 후 편집한 LUG/Support 파라미터로 BDF와 메시를 재생성합니다. DrawingToAnalysis.exe lug-from-params를 호출합니다. 비동기 처리입니다.',
+    cli: 'DrawingToAnalysis.exe lug-from-params --params <json> --out-dir <dir> --mesh-size <mm>',
+    params: [
+      { name: 'employee_id', type: 'string (JSON body)', required: true, desc: '요청 사번' },
+      { name: 'work_dir', type: 'string (JSON body)', required: true, desc: '이전 작업 폴더(절대경로, userConnection 하위)' },
+      { name: 'mode', type: 'string (JSON body)', required: true, desc: "'lug' | 'support'" },
+      { name: 'params', type: 'object (JSON body)', required: true, desc: '편집된 LugParams/SupportParams' },
+      { name: 'source', type: 'string (JSON body)', required: false, desc: '호출 출처. 기본값: Workbench-Rebuild' },
+    ],
+    example: JSON.stringify({ employee_id: "20001234", work_dir: "C:\\...\\out", mode: "lug", params: {} }, null, 2),
+  },
+  {
+    id: 'drawing-solve',
+    name: 'DrawingToAnalysis Solve',
+    method: 'POST',
+    endpoint: '/api/analysis/drawing-to-analysis/solve',
+    status: 'Developing',
+    category: 'File-Based',
+    description: '변환/재구축된 BDF에 사용자 정의 하중·경계조건·RBE를 주입하고 Nastran SOL 101을 실행합니다. 비동기 처리입니다.',
+    cli: 'nastran solved_model.bdf',
+    params: [
+      { name: 'employee_id', type: 'string (JSON body)', required: true, desc: '요청 사번' },
+      { name: 'work_dir', type: 'string (JSON body)', required: true, desc: '변환/재구축 결과 폴더 절대경로' },
+      { name: 'bdf_path', type: 'string (JSON body)', required: true, desc: '해석 대상 BDF 절대경로' },
+      { name: 'mode', type: 'string (JSON body)', required: false, desc: "'lug' | 'support'. 기본값: lug" },
+      { name: 'loads', type: 'array (JSON body)', required: false, desc: '하중 세트 [{nodes, fx, fy, fz}]' },
+      { name: 'bcs', type: 'array (JSON body)', required: false, desc: "경계조건 세트 [{nodes, dof:'123456'}]" },
+      { name: 'hole_rbe', type: 'object (JSON body)', required: false, desc: 'Lug Hole RBE2 {center_id, center, ring_node_ids}' },
+      { name: 'rbe3_sets', type: 'array (JSON body)', required: false, desc: 'Area RBE3 [{ref_id, center, node_ids}]' },
+      { name: 'load_cases', type: 'array (JSON body)', required: false, desc: 'Load Case [{name, bc_ids, load_ids}]' },
+      { name: 'source', type: 'string (JSON body)', required: false, desc: '호출 출처. 기본값: Workbench-Solve' },
+    ],
+    example: JSON.stringify({ employee_id: "20001234", work_dir: "C:\\...\\out", bdf_path: "C:\\...\\out\\model.bdf", mode: "lug", loads: [{ nodes: [101], fx: 0, fy: 0, fz: -10000 }], bcs: [{ nodes: [1, 2], dof: "123456" }], load_cases: [{ name: "LC1", bc_ids: [1], load_ids: [1] }] }, null, 2),
+  },
+
+  // ── Parametric 계산 앱 ────────────────────────────────────────────────────
+  {
+    id: 'carling-free',
+    name: 'Carling Free Calculator',
+    method: 'POST',
+    endpoint: '/api/carling/free',
+    status: 'Active',
+    category: 'Parametric',
+    description: '고정된 선체 사양(판 두께/보강재 간격/재질/부식)에 대해 카링(Carling) 강도를 검증합니다. CarlingCalculator.exe를 동기 호출합니다.',
+    cli: 'CarlingCalculator.exe input.json -o output.json --pretty',
+    params: [
+      { name: 'load.type', type: 'string', required: false, desc: '"concentrated" | "distributed". 기본값: concentrated' },
+      { name: 'load.value', type: 'float', required: true, desc: '하중 크기 (> 0)' },
+      { name: 'load.position_mm', type: 'float | null', required: false, desc: '하중 위치(mm). 기본값: null' },
+      { name: 'hull.plate_thickness_gross_mm', type: 'float', required: true, desc: '판 두께(mm)' },
+      { name: 'hull.stiffener_span_mm', type: 'float', required: true, desc: '보강재 간격(mm)' },
+      { name: 'hull.material', type: 'string', required: false, desc: 'Mild | HT32 | HT36. 기본값: Mild' },
+      { name: 'hull.corrosion_mm', type: 'float', required: true, desc: '부식량(mm)' },
+      { name: 'safety_factor', type: 'float', required: false, desc: '안전계수. 기본값: 1.0' },
+      { name: 'employee_id', type: 'string', required: false, desc: '요청 사번. 기본값: unknown' },
+    ],
+    example: JSON.stringify({ load: { type: "concentrated", value: 50000, position_mm: null }, hull: { plate_thickness_gross_mm: 12, stiffener_span_mm: 800, material: "Mild", corrosion_mm: 1.5 }, safety_factor: 1.0, employee_id: "20001234" }, null, 2),
+  },
+  {
+    id: 'carling-optimization',
+    name: 'Carling Design Optimization',
+    method: 'POST',
+    endpoint: '/api/carling/optimization',
+    status: 'Active',
+    category: 'Parametric',
+    description: '카링 높이/두께 탐색 범위를 받아 기준을 만족하는 최적 단면 후보군을 산출합니다. CarlingCalculator.exe를 동기 호출합니다.',
+    cli: 'CarlingCalculator.exe input.json -o output.json --pretty',
+    params: [
+      { name: 'load', type: 'object', required: true, desc: '{ type, value, position_mm } — Free와 동일' },
+      { name: 'hull.plate_thickness_gross_mm', type: 'float', required: true, desc: '판 두께(mm)' },
+      { name: 'hull.stiffener_span_mm', type: 'float', required: true, desc: '보강재 간격(mm)' },
+      { name: 'hull.corrosion_type', type: 'string', required: false, desc: 'NON-CSR | CSR-TANK. 기본값: NON-CSR' },
+      { name: 'hull.plate_corrosion_mm', type: 'float', required: true, desc: '판 부식량(mm)' },
+      { name: 'carling.material', type: 'string', required: false, desc: 'Mild | HT32 | HT36. 기본값: Mild' },
+      { name: 'carling.height_mm', type: 'object', required: true, desc: '탐색 범위 { min, max, step }' },
+      { name: 'carling.thickness_gross_mm', type: 'object', required: true, desc: '탐색 범위 { min, max, step }' },
+      { name: 'effective_breadth_mm', type: 'float', required: false, desc: '유효 폭(mm). 기본값: 600.0' },
+      { name: 'safety_factor', type: 'float', required: false, desc: '안전계수. 기본값: 1.0' },
+      { name: 'employee_id', type: 'string', required: false, desc: '요청 사번. 기본값: unknown' },
+    ],
+    example: JSON.stringify({ load: { type: "concentrated", value: 50000 }, hull: { plate_thickness_gross_mm: 12, stiffener_span_mm: 800, corrosion_type: "NON-CSR", plate_corrosion_mm: 1.5 }, carling: { material: "Mild", height_mm: { min: 150, max: 350, step: 50 }, thickness_gross_mm: { min: 8, max: 16, step: 2 } }, effective_breadth_mm: 600, safety_factor: 1.0, employee_id: "20001234" }, null, 2),
+  },
+  {
+    id: 'hole-calculation',
+    name: 'Simplified Hole Fatigue Assessment',
+    method: 'POST',
+    endpoint: '/api/hole-calculation/calculate',
+    status: 'Active',
+    category: 'Parametric',
+    description: 'DNVGL-RP-C203 기반으로 선체 관통 홀(슬리브 용접부)의 간이 피로 평가를 수행하여 용접 토우/루트의 Usage Factor를 산출합니다. HoleCalculation.exe를 동기 호출합니다.',
+    cli: 'HoleCalculation.exe input.json -o output.json',
+    params: [
+      { name: 'ship_type', type: 'string', required: false, desc: 'CNTR | GAS | TANKER | BULK | ETC. 기본값: CNTR' },
+      { name: 'ship_length_m', type: 'float', required: true, desc: '선박 길이(m)' },
+      { name: 'section_modulus_m3', type: 'float', required: true, desc: '단면계수(m³)' },
+      { name: 'operating_area', type: 'string', required: false, desc: 'North Atlantic | World Wide. 기본값: North Atlantic' },
+      { name: 'reduction_factor_on_operating_area', type: 'float | null', required: false, desc: '운항해역 감소계수. null이면 자동' },
+      { name: 'fraction_time_factor', type: 'float | null', required: false, desc: '시간점유율. null이면 선종별 자동' },
+      { name: 'plate_thickness_mm', type: 'float', required: true, desc: '플레이트 두께(mm)' },
+      { name: 'sleeve_outer_diameter_mm', type: 'float', required: true, desc: '슬리브 외경(mm)' },
+      { name: 'sleeve_thickness_mm', type: 'float', required: true, desc: '슬리브 두께(mm)' },
+      { name: 'welding_type', type: 'string', required: false, desc: 'Full penetration | Partial or Fillet. 기본값: Full penetration' },
+      { name: 'welding_throat_thickness_mm', type: 'float', required: true, desc: '용접 throat 두께(mm)' },
+      { name: 'welding_toe_grinding', type: 'string', required: false, desc: 'Grinding | No Grinding. 기본값: Grinding' },
+      { name: 'probability_level_of_exceedance', type: 'float', required: true, desc: '초과확률 수준 (예: 1e-8)' },
+      { name: 'weibull_shape_parameter', type: 'float | null', required: false, desc: 'Weibull 형상모수 h. null이면 자동' },
+      { name: 'design_life_cycle', type: 'float', required: true, desc: '설계 수명 사이클' },
+      { name: 'max_vertical_wave_bending_moment_knm', type: 'float', required: true, desc: '최대 수직 파랑 굽힘 모멘트(kNm)' },
+      { name: 'employee_id', type: 'string', required: false, desc: '요청 사번. 기본값: unknown' },
+    ],
+    example: JSON.stringify({ ship_type: "CNTR", ship_length_m: 300, section_modulus_m3: 50, operating_area: "North Atlantic", plate_thickness_mm: 20, sleeve_outer_diameter_mm: 200, sleeve_thickness_mm: 15, welding_type: "Full penetration", welding_throat_thickness_mm: 10, welding_toe_grinding: "Grinding", probability_level_of_exceedance: 1e-8, design_life_cycle: 1e8, max_vertical_wave_bending_moment_knm: 1500000, employee_id: "20001234" }, null, 2),
+  },
 ];
 
 // ─── 서브 컴포넌트 ─────────────────────────────────────────────────────────────
@@ -472,8 +781,29 @@ function ApiCard({ api }) {
 
 // ─── 메인 페이지 ──────────────────────────────────────────────────────────────
 
+const CATEGORY_ORDER = ['File-Based', 'Davit', 'Parametric', 'Productivity', 'Temp'];
+
 export default function ApiApps() {
   const [showArch, setShowArch] = useState(true);
+  const [activeCategory, setActiveCategory] = useState('All');
+
+  // 'All' + 실제로 존재하는 카테고리만 (정의된 순서 유지)
+  const categories = useMemo(
+    () => ['All', ...CATEGORY_ORDER.filter(c => API_LIST.some(a => a.category === c))],
+    []
+  );
+
+  // 카테고리 필터 + 정의된 순서로 그룹 정렬
+  const visibleApis = useMemo(() => {
+    const order = (c) => {
+      const i = CATEGORY_ORDER.indexOf(c);
+      return i === -1 ? 999 : i;
+    };
+    return API_LIST
+      .filter(a => activeCategory === 'All' || a.category === activeCategory)
+      .slice()
+      .sort((a, b) => order(a.category) - order(b.category));
+  }, [activeCategory]);
 
   return (
     <div className="max-w-7xl mx-auto pb-16">
@@ -554,15 +884,42 @@ export default function ApiApps() {
         )}
       </div>
 
-      {/* API 카드 그리드 */}
-      <div className="mb-4 flex items-center justify-between">
+      {/* 카테고리 필터 */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {categories.map(cat => {
+          const count = cat === 'All'
+            ? API_LIST.length
+            : API_LIST.filter(a => a.category === cat).length;
+          const active = activeCategory === cat;
+          return (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-full border transition-colors cursor-pointer ${
+                active
+                  ? 'bg-violet-600 border-violet-600 text-white'
+                  : 'bg-white border-slate-200 text-slate-500 hover:border-violet-300 hover:text-violet-600'
+              }`}
+            >
+              {cat} <span className={active ? 'text-violet-200' : 'text-slate-400'}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 등록 개수 */}
+      <div className="mb-4">
         <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">
-          등록된 API — {API_LIST.length}개
+          {activeCategory === 'All' ? '전체' : activeCategory} API — {visibleApis.length}개
+          {activeCategory !== 'All' && (
+            <span className="text-slate-300"> / 총 {API_LIST.length}개</span>
+          )}
         </p>
       </div>
 
+      {/* API 카드 그리드 */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {API_LIST.map(api => (
+        {visibleApis.map(api => (
           <ApiCard key={api.id} api={api} />
         ))}
       </div>
