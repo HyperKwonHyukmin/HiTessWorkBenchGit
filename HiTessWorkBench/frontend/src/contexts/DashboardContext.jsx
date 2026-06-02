@@ -264,6 +264,23 @@ export function DashboardProvider({ children }) {
   });
 
   const [modelBuilderPageState, setModelBuilderPageState] = useState(null);
+  const [analysisPageStates, setAnalysisPageStates] = useState({});
+  const setAnalysisPageState = (menuName, updater) => {
+    if (!menuName) return;
+    setAnalysisPageStates(prev => {
+      const current = prev[menuName] || {};
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      return { ...prev, [menuName]: { ...current, ...(next || {}) } };
+    });
+  };
+  const clearAnalysisPageState = (menuName) => {
+    if (!menuName) return;
+    setAnalysisPageStates(prev => {
+      const next = { ...prev };
+      delete next[menuName];
+      return next;
+    });
+  };
 
   // 프로그램 간 연계: 다른 앱에서 GMU로 BDF를 바로 전달할 때 사용
   const [gmuHandoff, setGmuHandoff]   = useState(null); // { bdfServerPath, sourceApp }
@@ -310,6 +327,7 @@ export function DashboardProvider({ children }) {
         globalJob, globalJobs, startGlobalJob, clearGlobalJob,
         assessmentPageState, setAssessmentPageState,
         modelBuilderPageState, setModelBuilderPageState,
+        analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
         gmuHandoff, setGmuHandoff, clearGmuHandoff,
         pendingJobTransfer, setPendingJobTransfer, clearPendingJobTransfer
     }}>
@@ -317,6 +335,7 @@ export function DashboardProvider({ children }) {
 
       <GlobalJobTray
         jobs={globalJobs}
+        currentMenu={currentMenu}
         onNavigate={setCurrentMenu}
         onDismiss={clearGlobalJob}
         onPatchJob={(jobId, patch) => setGlobalJobs(prev => prev.map(job => job.jobId === jobId ? { ...job, ...patch } : job))}
@@ -327,12 +346,13 @@ export function DashboardProvider({ children }) {
 
 export const useDashboard = () => useContext(DashboardContext);
 
-function GlobalJobTray({ jobs, onNavigate, onDismiss, onPatchJob }) {
-  if (!jobs.length) return null;
+function GlobalJobTray({ jobs, currentMenu, onNavigate, onDismiss, onPatchJob }) {
+  const visibleJobs = jobs.filter(job => job.menu !== currentMenu);
+  if (!visibleJobs.length) return null;
 
   return (
     <div className="fixed bottom-4 right-4 z-[99999] w-[min(360px,calc(100vw-2rem))] space-y-2">
-      {jobs.map(job => (
+      {visibleJobs.map(job => (
         <GlobalJobCard
           key={job.jobId}
           job={job}

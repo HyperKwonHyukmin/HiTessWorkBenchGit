@@ -39,12 +39,15 @@ const MODE_BUTTON_LABEL = {
 export default function HpScrAssessment() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
-  const { startGlobalJob } = useDashboard();
+  const dashboardCtx = useDashboard();
+  const { startGlobalJob } = dashboardCtx;
+  const PAGE_KEY = 'HP-SCR 배관응력 해석';
+  const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
 
-  const [bdfFile, setBdfFile] = useState(null);
-  const [analysisMode, setAnalysisMode] = useState('POR');
-  const [modelData, setModelData] = useState(null);
-  const [reportPath, setReportPath] = useState(null);
+  const [bdfFile, setBdfFile] = useState(savedPageState.bdfFile ?? null);
+  const [analysisMode, setAnalysisMode] = useState(savedPageState.analysisMode ?? 'POR');
+  const [modelData, setModelData] = useState(savedPageState.modelData ?? null);
+  const [reportPath, setReportPath] = useState(savedPageState.reportPath ?? null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -59,6 +62,8 @@ export default function HpScrAssessment() {
     setLogs, setStatusMessage, setIsRunning, setProgress, setJobId,
   } = useAnalysisJob({
     startGlobalJob,
+    savedState: savedPageState,
+    setSavedState: (patch) => dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, patch),
     pollingMaxRetries: 400, // 약 10분
     successLogMessage: '', // 동적 메시지 — onComplete 에서 직접 addLog
     errorLogMessage: '',   // 동적 메시지 — onError 에서 직접 addLog
@@ -128,6 +133,12 @@ export default function HpScrAssessment() {
       if (!errData?.timeout) addLog(`HP-SCR ${analysisMode} 해석 실패.`, 'error');
     },
   });
+
+  useEffect(() => {
+    dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
+      bdfFile, analysisMode, modelData, reportPath,
+    });
+  }, [bdfFile, analysisMode, modelData, reportPath]);
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
@@ -212,6 +223,7 @@ export default function HpScrAssessment() {
     setIsDragOver(false);
     setIsDownloading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    dashboardCtx?.clearAnalysisPageState?.(PAGE_KEY);
   };
 
   const handleDownloadReport = async () => {

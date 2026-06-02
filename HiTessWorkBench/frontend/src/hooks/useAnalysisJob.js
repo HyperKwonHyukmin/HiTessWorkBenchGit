@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { usePolling } from './usePolling';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -42,17 +42,20 @@ export function useAnalysisJob({
   onComplete,
   onError,
   startGlobalJob,
+  savedState,
+  setSavedState,
   successLogMessage = '해석 완료.',
   errorLogMessage = '해석 실패.',
   timeoutLogMessage = '해석 시간 초과. 서버 상태를 확인하세요.',
   pollingInterval,
   pollingMaxRetries,
 } = {}) {
-  const [jobId, setJobId] = useState(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [logs, setLogs] = useState([]);
+  const savedJob = savedState?.job || {};
+  const [jobId, setJobId] = useState(savedJob.jobId ?? null);
+  const [isRunning, setIsRunning] = useState(savedJob.isRunning ?? false);
+  const [progress, setProgress] = useState(savedJob.progress ?? 0);
+  const [statusMessage, setStatusMessage] = useState(savedJob.statusMessage ?? '');
+  const [logs, setLogs] = useState(savedJob.logs ?? []);
 
   // 동일 메시지 중복 로그 방지용 — 메시지가 바뀔 때만 로그를 한 줄 추가한다.
   const lastMessageRef = useRef('');
@@ -88,6 +91,16 @@ export function useAnalysisJob({
       startGlobalJobRef.current(newJobId, programLabel);
     }
   }, []);
+
+  const setSavedStateRef = useRef(setSavedState);
+  setSavedStateRef.current = setSavedState;
+
+  useEffect(() => {
+    if (!setSavedStateRef.current) return;
+    setSavedStateRef.current({
+      job: { jobId, isRunning, progress, statusMessage, logs },
+    });
+  }, [jobId, isRunning, progress, statusMessage, logs]);
 
   // usePolling 콜백은 항상 최신 클로저를 봐야 하므로 ref 로 보관.
   const onCompleteRef = useRef(onComplete);

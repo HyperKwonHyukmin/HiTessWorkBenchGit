@@ -23,17 +23,20 @@ const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 
 export default function BdfScanner() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
-  const { startGlobalJob } = useDashboard();
+  const dashboardCtx = useDashboard();
+  const { startGlobalJob } = dashboardCtx;
+  const PAGE_KEY = 'BDF Scanner';
+  const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
   const [changelogOpen, setChangelogOpen] = useState(false);
 
-  const [bdfFile, setBdfFile] = useState(null);
-  const [useNastran, setUseNastran] = useState(false);
-  const [modelData, setModelData] = useState(null);
-  const [step1Data, setStep1Data] = useState(null);
-  const [step2Data, setStep2Data] = useState(null);
-  const [unsupportedElements, setUnsupportedElements] = useState(null); // { CQUAD4: 3, ... }
-  const [resultInfo, setResultInfo] = useState(null);
-  const [analysisDbId, setAnalysisDbId] = useState(null);
+  const [bdfFile, setBdfFile] = useState(savedPageState.bdfFile ?? null);
+  const [useNastran, setUseNastran] = useState(savedPageState.useNastran ?? false);
+  const [modelData, setModelData] = useState(savedPageState.modelData ?? null);
+  const [step1Data, setStep1Data] = useState(savedPageState.step1Data ?? null);
+  const [step2Data, setStep2Data] = useState(savedPageState.step2Data ?? null);
+  const [unsupportedElements, setUnsupportedElements] = useState(savedPageState.unsupportedElements ?? null); // { CQUAD4: 3, ... }
+  const [resultInfo, setResultInfo] = useState(savedPageState.resultInfo ?? null);
+  const [analysisDbId, setAnalysisDbId] = useState(savedPageState.analysisDbId ?? null);
   const [isDragOver, setIsDragOver] = useState(false);
 
   // 2D / 3D 요소 카드 타입 목록
@@ -53,6 +56,8 @@ export default function BdfScanner() {
     setLogs, setStatusMessage, setIsRunning, setProgress,
   } = useAnalysisJob({
     startGlobalJob,
+    savedState: savedPageState,
+    setSavedState: (patch) => dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, patch),
     pollingMaxRetries: 240, // 약 6분
     successLogMessage: 'BDF 스캔 완료.',
     errorLogMessage: '스캔 실패.',
@@ -108,6 +113,13 @@ export default function BdfScanner() {
       addLog('결과 렌더링 완료.', 'success');
     },
   });
+
+  useEffect(() => {
+    dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
+      bdfFile, useNastran, modelData, step1Data, step2Data,
+      unsupportedElements, resultInfo, analysisDbId,
+    });
+  }, [bdfFile, useNastran, modelData, step1Data, step2Data, unsupportedElements, resultInfo, analysisDbId]);
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 

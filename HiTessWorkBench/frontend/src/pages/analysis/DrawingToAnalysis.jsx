@@ -148,35 +148,38 @@ const formatBytes = (b) => {
 
 export default function DrawingToAnalysis() {
   const { setCurrentMenu } = useNavigation();
-  const { startGlobalJob, clearGlobalJob } = useDashboard();
+  const dashboardCtx = useDashboard();
+  const { startGlobalJob, clearGlobalJob } = dashboardCtx;
   const { showToast } = useToast();
-  const [pdfFile, setPdfFile] = useState(null);
+  const PAGE_KEY = 'DrawingToAnalysis';
+  const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
+  const [pdfFile, setPdfFile] = useState(savedPageState.pdfFile ?? null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [resultInfo, setResultInfo] = useState(null);
-  const [analysisDbId, setAnalysisDbId] = useState(null);
-  const [modelData, setModelData] = useState(null);
-  const [modelLoadError, setModelLoadError] = useState('');
-  const [failureReason, setFailureReason] = useState('');
+  const [resultInfo, setResultInfo] = useState(savedPageState.resultInfo ?? null);
+  const [analysisDbId, setAnalysisDbId] = useState(savedPageState.analysisDbId ?? null);
+  const [modelData, setModelData] = useState(savedPageState.modelData ?? null);
+  const [modelLoadError, setModelLoadError] = useState(savedPageState.modelLoadError ?? '');
+  const [failureReason, setFailureReason] = useState(savedPageState.failureReason ?? '');
   const [catalogueOpen, setCatalogueOpen] = useState(false);
-  const [paramsJson, setParamsJson] = useState(null);
-  const [modelMode,  setModelMode]  = useState('lug'); // 'lug' | 'support'
-  const [highlightedParam, setHighlightedParam] = useState(null);
+  const [paramsJson, setParamsJson] = useState(savedPageState.paramsJson ?? null);
+  const [modelMode,  setModelMode]  = useState(savedPageState.modelMode ?? 'lug'); // 'lug' | 'support'
+  const [highlightedParam, setHighlightedParam] = useState(savedPageState.highlightedParam ?? null);
   const fileInputRef = useRef(null);
 
   // ── 탭 / 하중·경계조건 / 구조해석 상태 ──────────────────────────
-  const [activeTab, setActiveTab]         = useState('params'); // 'params' | 'loadbc'
-  const [selectionMode, setSelectionMode] = useState('none');   // 'none' | 'load' | 'bc'
-  const [selection, setSelection]         = useState([]);       // 현재 선택 중인 노드 id
-  const [loadSets, setLoadSets]           = useState([]);
-  const [bcSets, setBcSets]               = useState([]);
-  const [holeRbe, setHoleRbe]             = useState(null);      // { center, ringNodeIds, fx, fy, fz }
-  const [rbe3Sets, setRbe3Sets]           = useState([]);        // [{ refId, center, nodeIds }] — Area 하중분배(Block Support)
-  const [loadCases, setLoadCases]         = useState([]);        // [{ name, bcIndices, loadIndices, includeRbe }]
-  const [solveResult, setSolveResult]     = useState(null);     // 해석 결과 result_info
-  const [solveError, setSolveError]       = useState('');
-  const [solveResultsJson, setSolveResultsJson] = useState(null); // 파싱된 F06 결과(변위/응력)
-  const [resultSubcaseIdx, setResultSubcaseIdx] = useState(0);
-  const [resultField, setResultField]     = useState('disp');   // 'disp' | 'vm' 컨투어 필드
+  const [activeTab, setActiveTab]         = useState(savedPageState.activeTab ?? 'params'); // 'params' | 'loadbc'
+  const [selectionMode, setSelectionMode] = useState(savedPageState.selectionMode ?? 'none');   // 'none' | 'load' | 'bc'
+  const [selection, setSelection]         = useState(savedPageState.selection ?? []);       // 현재 선택 중인 노드 id
+  const [loadSets, setLoadSets]           = useState(savedPageState.loadSets ?? []);
+  const [bcSets, setBcSets]               = useState(savedPageState.bcSets ?? []);
+  const [holeRbe, setHoleRbe]             = useState(savedPageState.holeRbe ?? null);      // { center, ringNodeIds, fx, fy, fz }
+  const [rbe3Sets, setRbe3Sets]           = useState(savedPageState.rbe3Sets ?? []);        // [{ refId, center, nodeIds }] — Area 하중분배(Block Support)
+  const [loadCases, setLoadCases]         = useState(savedPageState.loadCases ?? []);        // [{ name, bcIndices, loadIndices, includeRbe }]
+  const [solveResult, setSolveResult]     = useState(savedPageState.solveResult ?? null);     // 해석 결과 result_info
+  const [solveError, setSolveError]       = useState(savedPageState.solveError ?? '');
+  const [solveResultsJson, setSolveResultsJson] = useState(savedPageState.solveResultsJson ?? null); // 파싱된 F06 결과(변위/응력)
+  const [resultSubcaseIdx, setResultSubcaseIdx] = useState(savedPageState.resultSubcaseIdx ?? 0);
+  const [resultField, setResultField]     = useState(savedPageState.resultField ?? 'disp');   // 'disp' | 'vm' 컨투어 필드
   const currentJobKind = useRef('convert'); // 'convert' | 'rebuild' | 'solve'
 
   const clearLoadBc = () => {
@@ -200,6 +203,8 @@ export default function DrawingToAnalysis() {
     reset, setLogs, setStatusMessage, setIsRunning, setProgress,
   } = useAnalysisJob({
     startGlobalJob,
+    savedState: savedPageState,
+    setSavedState: (patch) => dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, patch),
     pollingMaxRetries: 400,
     successLogMessage: 'BDF 변환 완료.',
     errorLogMessage: '',          // 단순 한 줄 메시지 비활성 — onError 에서 상세 출력
@@ -279,9 +284,24 @@ export default function DrawingToAnalysis() {
     },
   });
 
+  useEffect(() => {
+    dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
+      pdfFile, resultInfo, analysisDbId, modelData, modelLoadError, failureReason,
+      paramsJson, modelMode, highlightedParam, activeTab, selectionMode, selection,
+      loadSets, bcSets, holeRbe, rbe3Sets, loadCases, solveResult, solveError,
+      solveResultsJson, resultSubcaseIdx, resultField,
+    });
+  }, [
+    pdfFile, resultInfo, analysisDbId, modelData, modelLoadError, failureReason,
+    paramsJson, modelMode, highlightedParam, activeTab, selectionMode, selection,
+    loadSets, bcSets, holeRbe, rbe3Sets, loadCases, solveResult, solveError,
+    solveResultsJson, resultSubcaseIdx, resultField,
+  ]);
+
   const resetDrawingPage = () => {
     reset();
     clearGlobalJob();
+    dashboardCtx?.clearAnalysisPageState?.(PAGE_KEY);
     setPdfFile(null);
     setIsDragOver(false);
     setResultInfo(null);

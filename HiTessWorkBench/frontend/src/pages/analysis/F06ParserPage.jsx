@@ -93,7 +93,10 @@ function filterSpcZeros(rows) {
 export default function F06ParserPage() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
-  const { startGlobalJob } = useDashboard();
+  const dashboardCtx = useDashboard();
+  const { startGlobalJob } = dashboardCtx;
+  const PAGE_KEY = 'F06 Parser';
+  const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
   const { incomingTransfer, clearPendingJobTransfer } = useIncomingTransfer('F06 Parser');
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
@@ -101,15 +104,15 @@ export default function F06ParserPage() {
   const [lookupId, setLookupId] = useState('');
   const [isLookingUp, setIsLookingUp] = useState(false);
 
-  const [f06File, setF06File] = useState(null);
+  const [f06File, setF06File] = useState(savedPageState.f06File ?? null);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  const [resultData, setResultData] = useState(null);
-  const [resultInfo, setResultInfo] = useState(null);
-  const [selectedSubcase, setSelectedSubcase] = useState(null);
-  const [activeTab, setActiveTab] = useState('displacement');
-  const [sortConfig, setSortConfig] = useState({ key: null, dir: 'asc' });
-  const [showCharts, setShowCharts] = useState(true);
+  const [resultData, setResultData] = useState(savedPageState.resultData ?? null);
+  const [resultInfo, setResultInfo] = useState(savedPageState.resultInfo ?? null);
+  const [selectedSubcase, setSelectedSubcase] = useState(savedPageState.selectedSubcase ?? null);
+  const [activeTab, setActiveTab] = useState(savedPageState.activeTab ?? 'displacement');
+  const [sortConfig, setSortConfig] = useState(savedPageState.sortConfig ?? { key: null, dir: 'asc' });
+  const [showCharts, setShowCharts] = useState(savedPageState.showCharts ?? true);
 
   const fileInputRef = useRef(null);
   const logEndRef = useRef(null);
@@ -120,6 +123,8 @@ export default function F06ParserPage() {
     setLogs, setStatusMessage, setIsRunning, setProgress,
   } = useAnalysisJob({
     startGlobalJob,
+    savedState: savedPageState,
+    setSavedState: (patch) => dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, patch),
     pollingMaxRetries: 160, // 약 4분
     successLogMessage: 'F06 파싱 완료.',
     errorLogMessage: '파싱 실패.',
@@ -158,6 +163,12 @@ export default function F06ParserPage() {
       }
     },
   });
+
+  useEffect(() => {
+    dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
+      f06File, resultData, resultInfo, selectedSubcase, activeTab, sortConfig, showCharts,
+    });
+  }, [f06File, resultData, resultInfo, selectedSubcase, activeTab, sortConfig, showCharts]);
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
