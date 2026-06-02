@@ -13,10 +13,12 @@ import {
   Wrench, Clock, X, ChevronRight, Layers, Cpu, Maximize2, Trophy,
   Megaphone, Pin, Sparkles
 } from 'lucide-react';
-import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
+import { useDashboard, ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { isAdmin as getIsAdmin } from '../../utils/auth';
+import AdminGateModal from '../../components/ui/AdminGateModal';
 import NoticeDetailModal, { NOTICE_TYPE_STYLE } from '../../components/modals/NoticeDetailModal';
 
 const MODE_KO = {
@@ -699,6 +701,7 @@ export default function Dashboard() {
   const [queueStatus, setQueueStatus] = useState({ running: 0, pending: 0, limit: 2 });
   const [isBackendConnected, setIsBackendConnected] = useState(false);
   const [isRoadmapModalOpen, setIsRoadmapModalOpen] = useState(false);
+  const [gateApp, setGateApp] = useState(null); // 개발 중/예정 앱 진입 차단 모달
   const [isIntroModalOpen, setIsIntroModalOpen] = useState(false);
   const [topPrograms30, setTopPrograms30] = useState([]);
   const [topProgramsAll, setTopProgramsAll] = useState([]);
@@ -798,40 +801,33 @@ export default function Dashboard() {
 
   const totalExecutions = totalCount;
 
+  // 즐겨찾기 카드 진입 로직.
+  // AppCataloguePage.handleStart 와 동일한 데이터 기반 규칙을 사용한다.
+  // (기존에는 title 하드코딩 switch 라서 목록에 없던 Active 앱 —
+  //  HiTESS Model Builder, HP-SCR, F06 Parser, Mooring Fitting 등 — 이
+  //  전부 '준비 중' 으로 잘못 막혔다.)
   const handleFavoriteClick = (title) => {
-    const targetApp = ANALYSIS_DATA.find(a => a.title === title);
-    if (targetApp && targetApp.devStatus !== 'Active') {
-      showToast(`'${title}' 앱은 현재 개발 중인 모듈입니다.`, 'info');
+    const appMeta = ANALYSIS_DATA.find(a => a.title === title);
+    if (!appMeta) {
+      showToast(`'${title}' 앱 정보를 찾을 수 없습니다.`, 'info');
       return;
     }
-
-    if (title === "Truss Model Builder") {
-      setCurrentMenu('Truss Analysis');
-    } else if (title === "Truss Structural Assessment") {
-      // [동작] 카드를 누르면 이전 글로벌 상태를 빈 객체로 덮어씌워 완전 초기화합니다.
-      if (setAssessmentPageState) setAssessmentPageState({});
-      setCurrentMenu('Truss Structural Assessment');
-    } else if (title === "Simple Beam Assessment") {
-      setCurrentMenu('Simple Beam Assessment');
-    } else if (title === "Plate Structure Analysis") {
-      setCurrentMenu('Plate Structure Analysis');
-    } else if (title === "Mast Post Assessment") {
-      setCurrentMenu('Mast Post Assessment');
-    } else if (title === "Jib Rest Assessment") {
-      setCurrentMenu('Jib Rest Assessment');
-    } else if (title === "Column Buckling Load Calculator") {
-      setCurrentMenu('Column Buckling Load Calculator');
-    } else if (title === "D Type Lug Assessment") {
-      setCurrentMenu('D Type Lug Assessment');
-    } else if (title === "Carling Free Calculator") {
-      setCurrentMenu('Carling Free Calculator');
-    } else if (title === "Carling Design Optimization") {
-      setCurrentMenu('Carling Design Optimization');
-    } else if (title === "BDF Scanner") {
-      setCurrentMenu('BDF Scanner');
-    } else {
-      showToast(`'${title}' 기능은 현재 준비 중입니다.`, 'info');
+    // 개발 중/예정 앱은 관리자가 아니면 안내 모달로 차단
+    if ((appMeta.devStatus === 'Developing' || appMeta.devStatus === 'Planned') && !getIsAdmin()) {
+      setGateApp({ title: appMeta.title, devStatus: appMeta.devStatus });
+      return;
     }
+    const menuName = getAppMenuName(title);
+    // 실제 페이지가 등록된 앱(hasPage)은 진입 허용. 페이지가 없는 미구현 앱만 '준비 중' 안내.
+    if (!appMeta.hasPage && appMeta.devStatus && appMeta.devStatus !== 'Active') {
+      showToast(`'${title}' 앱은 현재 준비 중입니다.`, 'info');
+      return;
+    }
+    // Truss Structural Assessment 는 진입 시 이전 글로벌 상태를 초기화한다.
+    if (title === 'Truss Structural Assessment' && setAssessmentPageState) {
+      setAssessmentPageState({});
+    }
+    setCurrentMenu(menuName);
   };
 
   return (
@@ -843,6 +839,14 @@ export default function Dashboard() {
       </div>
 
       <RoadmapModal isOpen={isRoadmapModalOpen} onClose={() => setIsRoadmapModalOpen(false)} />
+
+      {/* 즐겨찾기에서 개발 중/예정 앱 진입 시도 시 안내 (관리자는 위 로직에서 통과) */}
+      <AdminGateModal
+        isOpen={!!gateApp}
+        onClose={() => setGateApp(null)}
+        appTitle={gateApp?.title}
+        devStatus={gateApp?.devStatus}
+      />
 
       {/* ── 전체 기간 순위 모달 ── */}
       <Transition appear show={isTopProgramsModalOpen} as={Fragment}>
