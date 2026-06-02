@@ -15,7 +15,6 @@ from .routers import (
     column_buckling,
     d_type_lug,
     davit,
-    dev_runbooks,
     hitessbeam,
     hole_calculation,
     section_property,
@@ -24,7 +23,6 @@ from .routers import (
     users,
     viewers,
 )
-from .seed_dev_runbooks import seed_default_dev_runbooks
 from .seed_guides import seed_default_guides
 from .services.cleanup_service import start_cleanup_scheduler
 
@@ -116,7 +114,6 @@ async def lifespan(app: FastAPI):
         }, synchronize_session=False)
         db.commit()
         seed_default_guides(db)
-        seed_default_dev_runbooks(db)
     except Exception:
         db.rollback()
         raise
@@ -161,7 +158,6 @@ app.include_router(hitessbeam.router)  # [TEMP] HiTessBeam 임시 라우터
 app.include_router(section_property.router)
 app.include_router(activity.router)
 app.include_router(viewers.router)
-app.include_router(dev_runbooks.router)
 
 app.mount(
     "/static/inhouse/d-type-lug",

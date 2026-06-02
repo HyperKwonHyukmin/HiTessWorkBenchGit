@@ -50,7 +50,6 @@ const IndependentTankAssessment = lazy(() => import('./pages/analysis/Independen
 const SectionPropertyCalculator = lazy(() => import('./pages/analysis/SectionPropertyCalculator'));
 const PlateStructureAnalysis = lazy(() => import('./pages/analysis/PlateStructureAnalysis'));
 const ApiApps = lazy(() => import('./pages/Administration/ApiApps'));
-const DeveloperRunbooks = lazy(() => import('./pages/Administration/DeveloperRunbooks'));
 const HiTessModelBuilder = lazy(() => import('./pages/analysis/HiTessModelBuilder'));
 const GroupModuleUnitLiftingAnalysis = lazy(() => import('./pages/analysis/GroupModuleUnitLiftingAnalysis'));
 const F06ParserPage = lazy(() => import('./pages/analysis/F06ParserPage'));
@@ -270,7 +269,6 @@ function AppInner() {
       case 'Section Property Calculator': return <SectionPropertyCalculator />;
       case 'Plate Structure Analysis': return <PlateStructureAnalysis />;
       case 'API Apps': return <ApiApps />;
-      case 'Developer Runbooks': return <DeveloperRunbooks />;
       case 'Component Wizard':
       case 'Simple Beam Assessment':
       case 'Simple Beam Analyzer': return <SimpleBeamAssessmentPage />;
