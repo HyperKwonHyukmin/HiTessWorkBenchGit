@@ -295,9 +295,6 @@ export default function TrussAssessment() {
             <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
               <History size={14} /> 이력
             </button>
-            <button onClick={resetAssessmentPage} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
-              <RotateCcw size={14} /> 초기화
-            </button>
             <GuideButton guideTitle="[파일] Truss Structural Assessment — 트러스 구조 안정성 평가" variant="dark" />
           </div>
       </PageBanner>
@@ -356,6 +353,11 @@ export default function TrussAssessment() {
               onJobSubmitted={sampleAssessmentSubmitted}
               onError={sampleAssessmentError}
             />
+            {/* 초기화 — 페이지를 첫 진입 시점 상태로 되돌림 (구조 해석 시작 버튼 바로 위) */}
+            <button onClick={resetAssessmentPage}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 bg-white border-2 border-slate-300 text-slate-600 hover:bg-slate-50 hover:border-slate-400 hover:-translate-y-0.5 transition-all cursor-pointer shadow-sm">
+              <RotateCcw size={16} /> 초기화
+            </button>
             <button onClick={runAnalysis} disabled={!isDataReady || isRunning}
               className={`relative w-full py-4 rounded-xl text-lg font-bold flex items-center justify-center gap-3 transition-all duration-300 shadow-lg overflow-hidden ${!isDataReady ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : isRunning ? 'bg-[#001b3d] text-white cursor-wait' : 'bg-brand-blue hover:bg-brand-blue-dark text-white hover:-translate-y-1 cursor-pointer'}`}>
               {isRunning && <div className="absolute left-0 top-0 bottom-0 bg-blue-600 transition-all duration-500 ease-out opacity-80" style={{ width: `${progress}%` }}></div>}
