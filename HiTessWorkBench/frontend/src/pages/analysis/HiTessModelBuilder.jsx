@@ -2,17 +2,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronsRight,
   Cpu, Download, ExternalLink, FileEdit, FileSpreadsheet, History, Loader2,
-  PackageX, RotateCcw, ShieldCheck, UploadCloud, X,
+  Lock, PackageX, RotateCcw, ShieldCheck, UploadCloud, X,
 } from 'lucide-react';
 
 import ChangelogModal from '../../components/ui/ChangelogModal';
 import GuideButton from '../../components/ui/GuideButton';
 import { useNavigation } from '../../contexts/NavigationContext';
-import { useDashboard } from '../../contexts/DashboardContext';
+import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
 import { API_BASE_URL } from '../../config';
 import { downloadFileBlob } from '../../api/analysis';
-import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
+import { getAuthHeaders, handleUnauthorized, isAdmin } from '../../utils/auth';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import PageBanner from '../../components/ui/PageBanner';
 
@@ -1980,7 +1980,7 @@ function SummaryMetric({ label, value, variant }) {
    Nastran 패널
    ──────────────────────────────────────────────────────────────────────── */
 
-function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu }) {
+function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, gmuLocked }) {
   // step 3 "해석 모델 저장" — BDF 다운로드 전용 페이지.
   //   • 원본 최종 BDF (build-full) — 항상 표시
   //   • 최종 Edit BDF (apply-edit-intent) — 편집 적용 시에만 표시. 파일명은 *_edit.bdf 로 받음.
@@ -2041,25 +2041,33 @@ function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu }) {
 
       {/* 다음 단계 해석 */}
       {onSendToGmu && (bdfResult.bdfPath || editBdf) && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 space-y-3">
+        <div className={`rounded-xl border px-4 py-3 space-y-3 ${gmuLocked ? 'border-slate-200 bg-slate-50' : 'border-blue-200 bg-blue-50'}`}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">다음 해석으로 전달</p>
+              <p className={`text-[10px] font-bold uppercase tracking-widest ${gmuLocked ? 'text-slate-400' : 'text-blue-500'}`}>다음 해석으로 전달</p>
               <p className="text-xs font-semibold text-slate-700 mt-0.5">현재 BDF 모델로 후속 권상 구조 해석을 시작합니다.</p>
             </div>
-            <div className="shrink-0 w-8 h-8 rounded-full bg-white border border-blue-200 flex items-center justify-center text-blue-600">
-              <ChevronsRight size={16} />
+            <div className={`shrink-0 w-8 h-8 rounded-full bg-white border flex items-center justify-center ${gmuLocked ? 'border-slate-200 text-slate-400' : 'border-blue-200 text-blue-600'}`}>
+              {gmuLocked ? <Lock size={16} /> : <ChevronsRight size={16} />}
             </div>
           </div>
           <button
-            onClick={() => onSendToGmu(editBdf || bdfResult.bdfPath)}
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold rounded-lg cursor-pointer shadow-sm"
+            onClick={() => { if (!gmuLocked) onSendToGmu(editBdf || bdfResult.bdfPath); }}
+            disabled={gmuLocked}
+            title={gmuLocked ? '개발 중인 해석입니다. 관리자만 사용할 수 있습니다.' : undefined}
+            className={`w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-lg shadow-sm ${
+              gmuLocked
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white cursor-pointer'
+            }`}
           >
-            <ChevronsRight size={14} />
-            Group Module Unit 권상 구조 해석 시작
+            {gmuLocked ? <Lock size={14} /> : <ChevronsRight size={14} />}
+            {gmuLocked ? 'Group Module Unit 권상 구조 해석 (개발 중)' : 'Group Module Unit 권상 구조 해석 시작'}
           </button>
-          <p className="text-[10px] text-blue-500 text-center">
-            {editBdf ? 'Edit BDF' : '원본 최종 BDF'}를 GMU 권상 해석으로 바로 전달합니다.
+          <p className={`text-[10px] text-center ${gmuLocked ? 'text-slate-400' : 'text-blue-500'}`}>
+            {gmuLocked
+              ? '개발 중인 해석입니다 — 관리자 계정에서만 전달할 수 있습니다.'
+              : `${editBdf ? 'Edit BDF' : '원본 최종 BDF'}를 GMU 권상 해석으로 바로 전달합니다.`}
           </p>
         </div>
       )}
@@ -2143,6 +2151,17 @@ function OptionsPanel({
    메인 컴포넌트
    ──────────────────────────────────────────────────────────────────────── */
 
+// GMU(Group & Module Unit 권상 구조 해석) 후속 전달 대상 메뉴명. ANALYSIS_DATA 의 title 과 일치해야 한다.
+const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
+
+// GMU 앱이 개발 중(Developing/Planned)이면 일반 사용자에게는 전달을 막고, 관리자에게만 허용한다.
+function isGmuHandoffLocked() {
+  const meta = ANALYSIS_DATA.find(a => a.title === GMU_MENU_NAME);
+  if (!meta) return false;
+  const gated = meta.devStatus === 'Developing' || meta.devStatus === 'Planned';
+  return gated && !isAdmin();
+}
+
 export default function HiTessModelBuilder() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
@@ -2151,6 +2170,7 @@ export default function HiTessModelBuilder() {
   const setPageState   = dashboardCtx?.setModelBuilderPageState || (() => {});
   const setGmuHandoff  = dashboardCtx?.setGmuHandoff  || (() => {});
   const saved          = dashboardCtx?.modelBuilderPageState;
+  const gmuLocked      = isGmuHandoffLocked(); // 개발 중 + 비관리자 → GMU 전달 버튼 비활성화
 
   // ── 입력 상태 ──
   const [struFile,  setStruFile]  = useState(saved?.struFile ?? null);
@@ -3123,9 +3143,11 @@ export default function HiTessModelBuilder() {
                 bdfResult={bdfResult}
                 hasResult={hasResult}
                 editStatus={editStatus}
+                gmuLocked={gmuLocked}
                 onSendToGmu={(bdfPath) => {
+                  if (gmuLocked) return; // 개발 중 + 비관리자는 전달 차단
                   setGmuHandoff({ bdfServerPath: bdfPath, sourceApp: 'HiTESS Model Builder' });
-                  setCurrentMenu('Group & Module Unit 권상 구조 해석');
+                  setCurrentMenu(GMU_MENU_NAME);
                 }}
               />
             )}
