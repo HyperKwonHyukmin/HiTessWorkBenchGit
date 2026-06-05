@@ -1585,15 +1585,25 @@ async def request_mooring_fitting(
         load_file: UploadFile = File(...),
         employee_id: str = Form(...),
         source: str = Form("Workbench"),
+        mf_safety_factor: str = Form("1.25"),
         current_user: str = Depends(require_auth)
 ):
     """
     Mooring Fitting Assessment 해석 요청.
     Structure CSV 와 Load CSV 를 userConnection 작업 폴더에 표준 파일명
     (MooringFittingData.csv, MooringFittingDataLoad.csv) 으로 저장한 뒤
-    MooringFitting.exe build-full <work_dir> 를 백그라운드로 실행한다.
+    MooringFitting.exe build-full <work_dir> --mf-sf=<sf> 를 백그라운드로 실행한다.
+
+    mf_safety_factor: MF(Mooring Fitting) 하중 전용 안전계수(기본 1.25). Winch 하중에는 미적용.
+    엔진이 P = SWL × 1000 × SF 로 곱한다. 비정상/≤0 값은 1.25로 폴백(엔진도 2중 검증).
     """
     _verify_employee_self(employee_id, current_user)
+    try:
+        mf_sf = float(mf_safety_factor)
+        if mf_sf <= 1e-9:
+            mf_sf = 1.25
+    except (TypeError, ValueError):
+        mf_sf = 1.25
     work_dir, timestamp = make_work_dir(employee_id, "MooringFitting")
     structure_path = await save_upload(
         structure_file, work_dir,
@@ -1613,7 +1623,7 @@ async def request_mooring_fitting(
     job_id = submit_analysis_job(
         task_execute_mooring_fitting,
         structure_path, load_path, work_dir, exe_path,
-        employee_id, timestamp, source,
+        employee_id, timestamp, source, mf_sf,
     )
     return {"job_id": job_id}
 
@@ -1686,7 +1696,21 @@ def get_mooring_fitting_viewer_zip(
                 logger.info("[mooring viewer-zip] CSV 없음, 스킵: %s", csv_path)
                 continue
             rows = _read_csv_rows(csv_path)
-            zf.writestr(out_name, _json.dumps({"source": csv_name, "rows": rows}, ensure_ascii=False))
+            payload = {"source": csv_name, "rows": rows}
+            # MF 하중에만 안전계수 노출: 리포트 SF 컬럼의 첫 유효 데이터행 값을 top-level 로 끌어올린다.
+            # (Studio MF Loads 배지가 payload.safetyFactor 를 우선 읽고, 없으면 rows[].SF 로 폴백).
+            if out_name == "loads_mf.json":
+                sf_val = None
+                for _r in rows:
+                    _raw = (_r.get("SF") or "").strip()
+                    if _raw:
+                        try:
+                            sf_val = float(_raw)
+                            break
+                        except ValueError:
+                            continue
+                payload["safetyFactor"] = sf_val if sf_val is not None else 1.0
+            zf.writestr(out_name, _json.dumps(payload, ensure_ascii=False))
             logger.info("[mooring viewer-zip] CSV 동봉: %s (%d rows)", out_name, len(rows))
 
     body = buf.getvalue()
@@ -1706,9 +1730,15 @@ async def apply_mooring_fitting_edit(
     request: Request,
     current_user: str = Depends(require_auth),
 ):
-    """intents 를 stage07.json 에 적용해 수정된 BDF 를 저장한다.
+    """intents 를 원본 STAGE_07 BDF 에 적용해 편집 반영 solvable BDF 를 저장한다.
 
-    Body JSON: { folderPath: str, intents: list, stageRef?: str }
+    Body JSON: { folderPath: str, intents: list }
+      folderPath = userConnection 하위 MooringFitting out/ 폴더 (원본 STAGE_07 BDF 보유).
+    동작(solve 와 동일한 BDF 빌드, Nastran 실행만 생략):
+      STAGE_07_FinalValidation.bdf → convert_bdf → apply_edit_json(intents)
+      → _build_solvable_edited_bdf → mooring_fitting_edited.bdf 저장.
+      stage07.json(디스크 미존재) 의존을 제거하여 mooring out 폴더에서 항상 동작.
+    반환: { ok, bdfPath, summary }  → 호출측이 /api/download 로 회수.
     """
     if not _NB_AVAILABLE:
         raise HTTPException(status_code=500, detail="nastran_bridge 모듈 없음")
@@ -1730,34 +1760,37 @@ async def apply_mooring_fitting_edit(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"경로 검증 실패: {e}")
 
-    stage07_path = os.path.join(abs_folder, "stage07.json")
-    if not os.path.isfile(stage07_path):
-        raise HTTPException(status_code=404, detail=f"stage07.json 없음: {stage07_path}")
+    bdf_path = os.path.join(abs_folder, "STAGE_07_FinalValidation.bdf")
+    if not os.path.isfile(bdf_path):
+        raise HTTPException(status_code=404, detail=f"원본 BDF 없음: {bdf_path}")
 
-    import json as _json
     import copy as _copy
     from pathlib import Path as _Path
 
     try:
-        base_data = _json.loads(_Path(stage07_path).read_text(encoding="utf-8"))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"stage07.json 읽기 실패: {e}")
-
-    edit_data = {
-        "schemaVersion": "1.0",
-        "intents": intents,
-    }
-
-    try:
-        result_data, summary = _nb.apply_edit_json(_copy.deepcopy(base_data), edit_data)
-    except Exception as e:
-        logger.exception("[mooring apply-edit] apply_edit_json 실패")
-        raise HTTPException(status_code=500, detail=f"편집 적용 실패: {e}")
-
-    try:
-        bdf_text = _nb.convert_json_to_bdf(result_data)
+        base_data = _nb.convert_bdf(_Path(bdf_path))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"BDF 변환 실패: {e}")
+
+    edited = base_data
+    summary = {"applied": 0}
+    if intents:
+        try:
+            edited, summary = _nb.apply_edit_json(
+                _copy.deepcopy(base_data), {"schemaVersion": "1.0", "intents": intents}
+            )
+        except SystemExit as e:
+            raise HTTPException(status_code=400, detail=f"편집 적용 실패: {e}")
+        except Exception as e:
+            logger.exception("[mooring apply-edit] apply_edit_json 실패")
+            raise HTTPException(status_code=500, detail=f"편집 적용 실패: {e}")
+
+    try:
+        original_text = _Path(bdf_path).read_text(encoding="utf-8", errors="replace")
+        bdf_text = _build_solvable_edited_bdf(original_text, edited)
+    except Exception as e:
+        logger.exception("[mooring apply-edit] solvable BDF 생성 실패")
+        raise HTTPException(status_code=500, detail=f"BDF 생성 실패: {e}")
 
     output_bdf = os.path.join(abs_folder, "mooring_fitting_edited.bdf")
     try:
@@ -1820,6 +1853,7 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
         return head == "" or head.startswith("+") or head.startswith("*")
 
     out: list[str] = []
+    orig_elem_blocks: dict[int, list[str]] = {}   # 원본 element 블록(EID→블록) — 보강 복제 시 그대로 복사
     i = 0
     while i < len(bulk):
         line = bulk[i]
@@ -1840,7 +1874,10 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
         if name in _SOLVE_RIGID_CARDS:
             continue                         # 재생성
         if name in _SOLVE_ELEMENT_CARDS:
-            if as_int(field(line, 1)) in surv_elems:
+            eid = as_int(field(line, 1))
+            if eid is not None:
+                orig_elem_blocks[eid] = block
+            if eid in surv_elems:
                 out.extend(block)
             continue
         if name == "GRID":
@@ -1853,6 +1890,24 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
                 out.extend(block)
             continue
         out.extend(block)                    # 그 외 verbatim
+
+    # 편집으로 추가된 보강 element(원본 BDF 라인 없음) — reinforceOf 원본 블록을 새 EID 로 복제 출력.
+    # 원본 블록을 통째로 복사하므로 PID/방향/offset/pin 등 모든 필드가 원본과 동일(=참된 이중부재).
+    orig_elem_ids = set(orig_elem_blocks.keys())
+    for elem in (edited.get("elements") or []):
+        eid = as_int(elem.get("id"))
+        if eid is None or eid in orig_elem_ids:
+            continue                         # 원본에 있던 element(생존분은 위 루프에서 처리)
+        ga = as_int(elem.get("startNode"))
+        gb = as_int(elem.get("endNode"))
+        if ga not in surv_nodes or gb not in surv_nodes:
+            continue                         # 끊긴 노드 참조 방지
+        src_block = orig_elem_blocks.get(as_int(elem.get("reinforceOf")))
+        if not src_block:
+            continue                         # 복제 출처 불명(현재 범위는 duplicateElement 만)
+        head = src_block[0]
+        out.append(head[:8] + str(eid).ljust(8)[:8] + head[16:])   # 카드명 유지 + EID 필드만 교체
+        out.extend(src_block[1:])                                   # 연속행(offset/pin 등) 그대로
 
     for rigid in sorted(edited.get("rigids") or [], key=lambda r: as_int(r.get("id")) or 0):
         rid = as_int(rigid.get("id"))

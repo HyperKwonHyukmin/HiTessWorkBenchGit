@@ -859,6 +859,7 @@ export default function MooringFittingAssessment() {
 
   const [structureFile, setStructureFile] = useState(savedPageState.structureFile ?? null);
   const [loadFile,      setLoadFile]      = useState(savedPageState.loadFile ?? null);
+  const [mfSafetyFactor, setMfSafetyFactor] = useState(savedPageState.mfSafetyFactor ?? 1.25);
   const [steps,         setSteps]         = useState(() => normalizeSteps(savedPageState.steps));
   const [activeIdx,     setActiveIdx]     = useState(savedPageState.activeIdx ?? 0);
   const [hasRunOnce,    setHasRunOnce]    = useState(savedPageState.hasRunOnce ?? false);
@@ -891,6 +892,7 @@ export default function MooringFittingAssessment() {
     dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
       structureFile,
       loadFile,
+      mfSafetyFactor,
       steps,
       activeIdx,
       hasRunOnce,
@@ -900,7 +902,7 @@ export default function MooringFittingAssessment() {
       engineLog,
       artifactJson,
     });
-  }, [structureFile, loadFile, steps, activeIdx, hasRunOnce, jobId, jobStatus, elapsedSecs, engineLog, artifactJson]);
+  }, [structureFile, loadFile, mfSafetyFactor, steps, activeIdx, hasRunOnce, jobId, jobStatus, elapsedSecs, engineLog, artifactJson]);
 
   /* ── 파일명 휴리스틱 분류 ─────────────────────────────────────────── */
   // 파일명에 'Load' 포함 → Load CSV, 그 외 → Structure CSV.
@@ -972,6 +974,11 @@ export default function MooringFittingAssessment() {
       showToast('Structure CSV와 Load CSV를 모두 선택하세요', 'error');
       return;
     }
+    const sfNum = Number(mfSafetyFactor);
+    if (!Number.isFinite(sfNum) || sfNum <= 0) {
+      showToast('MF Safety Factor는 0보다 큰 숫자여야 합니다', 'error');
+      return;
+    }
     let user = {};
     try {
       user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -984,10 +991,11 @@ export default function MooringFittingAssessment() {
     }
 
     const fd = new FormData();
-    fd.append('structure_file', structureFile);
-    fd.append('load_file',      loadFile);
-    fd.append('employee_id',    user.employee_id);
-    fd.append('source',         'Workbench');
+    fd.append('structure_file',   structureFile);
+    fd.append('load_file',        loadFile);
+    fd.append('employee_id',      user.employee_id);
+    fd.append('source',           'Workbench');
+    fd.append('mf_safety_factor', String(sfNum));
 
     setHasRunOnce(true);
     setElapsedSecs(0);
@@ -1212,6 +1220,7 @@ export default function MooringFittingAssessment() {
     if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
     setStructureFile(null);
     setLoadFile(null);
+    setMfSafetyFactor(1.25);
     setSteps(makeInitialSteps());
     setActiveIdx(0);
     setHasRunOnce(false);
@@ -1445,6 +1454,57 @@ export default function MooringFittingAssessment() {
                 파일명에 <span className="font-bold text-slate-500">Load</span> 포함 → Load CSV,
                 나머지 → Structure CSV 자동 분류
               </p>
+            </div>
+          )}
+
+          {/* MF Safety Factor (검증 단계 하부) */}
+          {activeStep.id === 'csv-validation' && (
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-5 py-4">
+              <div className="flex items-center gap-2 pb-3 mb-3 border-b border-slate-100">
+                <ShieldCheck size={14} className="text-blue-600" />
+                <h2 className="text-sm font-bold text-slate-700">MF Safety Factor</h2>
+                <span className="text-[10px] text-slate-400">— MF 하중 전용 안전계수</span>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-600 mb-1">안전계수 (SF)</p>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    MF 하중(CHOCK·BOLLARD·Roller 등)에 곱해집니다.{' '}
+                    <span className="font-semibold text-slate-500">Winch 하중에는 미적용.</span><br />
+                    <span className="font-mono">P = SWL × 1000 × SF (N)</span>
+                  </p>
+                </div>
+                <input
+                  type="number"
+                  value={mfSafetyFactor}
+                  min={0.1}
+                  step={0.05}
+                  disabled={isRunning}
+                  onChange={(e) => setMfSafetyFactor(e.target.value)}
+                  className="w-24 shrink-0 px-3 py-2 text-right text-lg font-bold font-mono text-blue-700 border border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none disabled:opacity-50 disabled:bg-slate-50"
+                />
+              </div>
+
+              {(() => {
+                const sf = Number(mfSafetyFactor);
+                const valid = Number.isFinite(sf) && sf > 0;
+                if (!valid) {
+                  return (
+                    <div className="mt-3 flex items-center gap-1.5 px-3 py-2 rounded-lg border bg-red-50 border-red-200 text-red-600 text-xs font-semibold">
+                      <AlertCircle size={13} /> 0보다 큰 숫자를 입력하세요
+                    </div>
+                  );
+                }
+                return (
+                  <div className="mt-3 flex items-center gap-1.5 px-3 py-2 rounded-lg border bg-blue-50 border-blue-200 text-blue-700 text-xs font-semibold">
+                    <ShieldCheck size={13} />
+                    {sf === 1
+                      ? 'SF 1.0 — MF force에 안전 마진 미적용 (SWL 그대로)'
+                      : `SF ${sf} 적용 — MF force가 ${sf}배로 가해집니다 (Winch 제외)`}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

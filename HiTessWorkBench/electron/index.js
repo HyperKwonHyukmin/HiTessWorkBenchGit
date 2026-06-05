@@ -1524,6 +1524,69 @@ ipcMain.handle("viewer:runMooringStructural", async (_e, payload) => {
   }
 });
 
+// MooringFittingStudio "최종 BDF 출력" → 백엔드 apply-edit(편집 반영 BDF 생성) → 사용자 PC 저장(대화상자).
+// runMooringStructural 과 동일하게 viewerOutputDir(서버측 out 폴더) 기준으로 동작한다.
+// MooringFittingStudio 는 zip 추출 데이터만 보유해 로컬 폴더가 없으므로, 서버측 out 폴더에서 BDF 를 만들어 내려받는다.
+// payload = { intents: Array }, 반환 = { ok, savedPath, summary } | { ok:false, canceled?, error }
+ipcMain.handle("viewer:exportMooringBdf", async (_e, payload) => {
+  try {
+    const intents = Array.isArray(payload?.intents) ? payload.intents : [];
+    if (!viewerOutputDir) {
+      return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 해석을 완료하고 Studio 를 다시 여세요." };
+    }
+    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const { serverUrl } = runtimeConfig;
+    if (!runtimeConfig.employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+
+    // 1) 편집 반영 BDF 생성 (apply-edit) — 서버 out 폴더의 stage07.json 에 intents 적용 → mooring_fitting_edited.bdf
+    const { res: reqRes } = await fetchWithSessionRefresh(
+      `${serverUrl}/api/analysis/mooring-fitting/apply-edit`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderPath: viewerOutputDir, intents }),
+      },
+      runtimeConfig,
+    );
+    if (!reqRes.ok) {
+      const detail = await readBackendError(reqRes);
+      const hint = reqRes.status === 404
+        ? ` - apply-edit API가 해당 서버에 없습니다. 서버(${serverUrl})가 최신 WorkBench 백엔드인지 확인하세요.`
+        : "";
+      return { ok: false, error: `편집 반영 BDF 생성 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}${hint}` };
+    }
+    const body = await reqRes.json();
+    const bdfPath = body?.bdfPath;
+    if (!bdfPath) return { ok: false, error: "백엔드 응답에 bdfPath 가 없습니다." };
+
+    // 2) 생성된 BDF 다운로드
+    const dlUrl = `${serverUrl}/api/download?filepath=${encodeURIComponent(bdfPath)}`;
+    const { res: dlRes } = await fetchWithSessionRefresh(dlUrl, { method: "GET" }, runtimeConfig);
+    if (!dlRes.ok) {
+      const detail = await readBackendError(dlRes);
+      return { ok: false, error: `BDF 다운로드 실패: ${dlRes.status}${detail ? ` - ${detail}` : ""}` };
+    }
+    const bdfText = await dlRes.text();
+
+    // 3) 사용자 PC 저장 (저장 대화상자)
+    const target = viewerWindow && !viewerWindow.isDestroyed() ? viewerWindow : mainWindow;
+    const saveRes = await dialog.showSaveDialog(target, {
+      title: "편집 반영 최종 BDF 저장",
+      defaultPath: path.basename(bdfPath) || "mooring_fitting_edited.bdf",
+      filters: [{ name: "Nastran BDF", extensions: ["bdf"] }],
+    });
+    if (saveRes.canceled || !saveRes.filePath) {
+      return { ok: false, canceled: true, error: "저장이 취소되었습니다." };
+    }
+    fs.writeFileSync(saveRes.filePath, bdfText, "utf-8");
+    return { ok: true, savedPath: saveRes.filePath, summary: body?.summary ?? null };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 app.whenReady().then(() => {
   // 외부 회사 네트워크 등 시스템 프록시가 설정된 환경에서도 정상 동작하도록
   // 시스템 프록시 설정을 자동으로 적용

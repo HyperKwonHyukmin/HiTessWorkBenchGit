@@ -90,9 +90,12 @@ def task_execute_mooring_fitting(
     employee_id: str,
     timestamp: str,
     source: str,
+    mf_safety_factor: float = 1.0,
 ):
     """
-    MooringFitting.exe build-full <work_dir> 를 호출한다.
+    MooringFitting.exe build-full <work_dir> --mf-sf=<sf> 를 호출한다.
+
+    mf_safety_factor: MF 하중 전용 안전계수(라우터에서 검증된 양수). Winch 미적용.
 
     동작:
       - work_dir 안에 MooringFittingData.csv / MooringFittingDataLoad.csv 가 표준명으로 이미 저장되어 있다고 가정 (라우터 책임).
@@ -111,10 +114,10 @@ def task_execute_mooring_fitting(
             raise FileNotFoundError(f"실행 파일을 찾을 수 없습니다: {exe_path}")
 
         update_progress(job_id, 30, "MooringFitting 파이프라인 실행 중...")
-        logger.info("[MooringFitting] exe=%s, work_dir=%s", exe_path, work_dir)
+        logger.info("[MooringFitting] exe=%s, work_dir=%s, mf_sf=%s", exe_path, work_dir, mf_safety_factor)
 
         result = subprocess.run(
-            [exe_path, "build-full", work_dir],
+            [exe_path, "build-full", work_dir, f"--mf-sf={mf_safety_factor}"],
             cwd=work_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

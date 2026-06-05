@@ -43,6 +43,7 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:runUnitStructural',
   'viewer:runPlateStructural',
   'viewer:runMooringStructural',
+  'viewer:exportMooringBdf',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
   'viewer:checkPathAccess',
   'viewer:fetchResultDir',
@@ -122,6 +123,10 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // payload = { intents: Array }
   runMooringStructural: (opts) =>
     ipcRenderer.invoke('viewer:runMooringStructural', opts),
+  // MooringFittingStudio "최종 BDF 출력" → 백엔드 apply-edit(편집 반영 BDF 생성) → 사용자 PC 저장
+  // payload = { intents: Array }, 반환 = { ok, savedPath, summary } | { ok:false, canceled?, error }
+  exportMooringBdf: (opts) =>
+    ipcRenderer.invoke('viewer:exportMooringBdf', opts),
   onMooringStructuralProgress: (callback) => {
     const listener = (_, data) => callback(data);
     ipcRenderer.on('viewer:mooring-structural-progress', listener);
