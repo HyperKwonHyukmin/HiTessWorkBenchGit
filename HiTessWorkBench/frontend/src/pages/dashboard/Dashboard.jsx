@@ -10,7 +10,7 @@ import { getAnalysisHistory, getTopPrograms, getMonthlyAnalysisCount } from '../
 import {
   Activity, FileText, Server,
   ArrowUpRight, Star, CalendarDays, Database, Map, Rocket,
-  Wrench, Clock, X, ChevronRight, Layers, Cpu, Maximize2, Trophy,
+  Wrench, Clock, X, ChevronRight, ChevronDown, Layers, Cpu, Maximize2, Trophy,
   Megaphone, Pin, Sparkles
 } from 'lucide-react';
 import { useDashboard, ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
@@ -20,6 +20,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
 import AdminGateModal from '../../components/ui/AdminGateModal';
 import NoticeDetailModal, { NOTICE_TYPE_STYLE } from '../../components/modals/NoticeDetailModal';
+import Badge from '../../components/ui/Badge';
 
 const MODE_KO = {
   File: "File-Based Apps",
@@ -43,7 +44,7 @@ const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      whileHover={isClickable ? { y: -3, transition: { type: 'spring', stiffness: 350, damping: 28 } } : undefined}
+      whileHover={isClickable ? { y: -2, transition: { type: 'spring', stiffness: 350, damping: 28 } } : undefined}
     >
       {isClickable && (
         <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400">
@@ -57,7 +58,7 @@ const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick
         <div className="mt-2 flex items-center space-x-2 mb-1">
           <span className="text-2xl font-extrabold text-slate-800 tracking-tight">{value}</span>
         </div>
-        <p className="text-xs font-medium text-slate-400">{subtext}</p>
+        <p className="text-xs font-medium text-slate-500">{subtext}</p>
       </div>
       <div className={`p-3 rounded-xl ${color} shadow-sm ${isClickable ? 'group-hover:scale-110' : ''} transition-transform`}>
         <Icon size={22} className="text-white" />
@@ -74,43 +75,39 @@ const FavoriteCard = ({ title, icon: Icon, color, desc, onClick }) => (
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.28, ease: 'easeOut' }}
     whileHover={{
-      y: -5,
-      boxShadow: '0 12px 28px -8px rgba(0, 37, 84, 0.18)',
+      y: -2,
+      boxShadow: '0 8px 20px -8px rgba(0, 37, 84, 0.15)',
       borderColor: '#3b82f6',
       transition: { type: 'spring', stiffness: 380, damping: 28 },
     }}
     whileTap={{ scale: 0.97 }}
   >
-    <div className="absolute top-3 right-3 text-yellow-400">
+    <div className="absolute top-3 right-3 text-amber-400">
       <Star size={16} fill="currentColor" />
     </div>
     <div className={`p-4 rounded-full ${color} text-white mb-4 group-hover:scale-110 transition-transform shadow-lg`}>
       <Icon size={28} />
     </div>
     <h3 className="font-bold text-slate-700 text-sm">{title}</h3>
-    <p className="text-xs text-slate-400 mt-1 truncate max-w-full px-2">{desc}</p>
+    <p className="text-xs text-slate-500 mt-1 truncate max-w-full px-2">{desc}</p>
   </motion.button>
 );
 
+// 공유 Badge 컴포넌트에 매핑(자체 구현 제거 — bg-emerald-100 등 드리프트 해소)
+const STATUS_BADGE = {
+  Success: { variant: 'success', label: '해석 완료' },
+  Failed:  { variant: 'error',   label: '해석 실패' },
+  Pending: { variant: 'neutral', label: '대기 중' },
+};
+
 const ProjectRow = ({ id, name, type, status, date }) => {
-  const statusStyles = {
-    Success: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    Failed: 'bg-red-100 text-red-700 border-red-200',
-    Pending: 'bg-gray-100 text-slate-600 border-slate-200',
-  };
-
-  const statusKo = {
-    Success: '해석 완료',
-    Failed: '해석 실패',
-    Pending: '대기 중'
-  };
-
+  const s = STATUS_BADGE[status] || { variant: 'neutral', label: status || '대기 중' };
   return (
     <tr className="border-b border-gray-50 last:border-0 hover:bg-slate-50/60 transition-colors">
       <td className="py-3 px-4 font-mono text-xs text-slate-500 text-center">{id}</td>
       <td className="py-3 px-4">
         <div className="flex items-center">
-          <FileText size={16} className="text-slate-400 mr-2" />
+          <FileText size={16} className="text-slate-500 mr-2" />
           <span className="font-bold text-sm text-slate-700">
             {name || '이름 없는 프로젝트'}
           </span>
@@ -120,60 +117,54 @@ const ProjectRow = ({ id, name, type, status, date }) => {
         <span className="bg-slate-100 px-2 py-1 rounded border border-slate-200">{type}</span>
       </td>
       <td className="py-3 px-4">
-        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusStyles[status] || statusStyles.Pending}`}>
-          {statusKo[status] || status}
-        </span>
+        <Badge variant={s.variant} size="sm" dot>{s.label}</Badge>
       </td>
-      <td className="py-3 px-4 text-xs text-slate-400 text-right">{new Date(date).toLocaleString()}</td>
+      <td className="py-3 px-4 text-xs text-slate-500 text-right">{new Date(date).toLocaleString()}</td>
     </tr>
   );
 };
 
+// 소개 배너 테마. 색 난립을 피하기 위해 둘 다 네이비 기조로 통일하고,
+// platform/workbench 구분은 아이콘·제목으로만 전달한다(Restrained 원칙).
 const BANNER_THEMES = {
   platform: {
-    gradient: 'linear-gradient(135deg, #003520 0%, #002554 55%, #1a1060 100%)',
+    gradient: 'linear-gradient(135deg, #00305c 0%, #002554 60%, #001b3d 100%)',
     DecorIcon: Layers,
-    decorIconClass: 'text-emerald-400/5',
-    bgOverlay: 'bg-gradient-to-r from-emerald-500/8 via-transparent to-indigo-500/8',
-    accentBar: 'bg-gradient-to-b from-emerald-400 to-emerald-600',
-    iconBg: 'bg-emerald-500/15 border-emerald-400/30 group-hover:bg-emerald-500/25 shadow-emerald-900/30',
-    iconColor: 'text-emerald-400',
-    labelColor: 'text-emerald-400',
-    chipText: 'text-emerald-100/75 group-hover:border-emerald-400/25',
-    chipIconColor: 'text-emerald-400/80',
-    ctaColor: 'text-emerald-300 group-hover:text-emerald-200',
-    subtitleColor: 'text-emerald-100/55',
+    decorIconClass: 'text-white/5',
+    bgOverlay: 'bg-gradient-to-r from-white/[0.04] via-transparent to-transparent',
+    iconBg: 'bg-white/10 border-white/15 group-hover:bg-white/20',
+    iconColor: 'text-blue-200',
+    ctaColor: 'text-blue-200 group-hover:text-white',
+    subtitleColor: 'text-slate-300',
   },
   workbench: {
-    gradient: 'linear-gradient(135deg, #0f1729 0%, #162040 55%, #0d1b3e 100%)',
+    gradient: 'linear-gradient(135deg, #14233f 0%, #0f1b34 60%, #0b1428 100%)',
     DecorIcon: Cpu,
-    decorIconClass: 'text-indigo-400/5',
-    bgOverlay: 'bg-gradient-to-r from-indigo-500/8 via-transparent to-violet-500/8',
-    accentBar: 'bg-gradient-to-b from-indigo-400 to-indigo-600',
-    iconBg: 'bg-indigo-500/15 border-indigo-400/30 group-hover:bg-indigo-500/25 shadow-indigo-900/30',
-    iconColor: 'text-indigo-400',
-    labelColor: 'text-indigo-400',
-    chipText: 'text-indigo-100/75 group-hover:border-indigo-400/25',
-    chipIconColor: 'text-indigo-400/80',
-    ctaColor: 'text-indigo-300 group-hover:text-indigo-200',
-    subtitleColor: 'text-indigo-100/55',
+    decorIconClass: 'text-white/5',
+    bgOverlay: 'bg-gradient-to-r from-white/[0.04] via-transparent to-transparent',
+    iconBg: 'bg-white/10 border-white/15 group-hover:bg-white/20',
+    iconColor: 'text-slate-200',
+    ctaColor: 'text-slate-200 group-hover:text-white',
+    subtitleColor: 'text-slate-300',
   },
 };
 
-const DiscoverHiTessBanner = ({ variant = 'platform', badge, title, subtitle, ctaText, MainIcon = Layers, onClick }) => {
+const DiscoverHiTessBanner = ({ variant = 'platform', title, subtitle, ctaText, MainIcon = Layers, onClick }) => {
   const t = BANNER_THEMES[variant];
   return (
     <motion.div
       onClick={onClick}
-      className="relative rounded-xl overflow-hidden cursor-pointer group"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      className="relative rounded-xl overflow-hidden cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
       style={{ background: t.gradient }}
       whileHover={{ y: -2, transition: { type: 'spring', stiffness: 350, damping: 28 } }}
     >
-      {/* 배경 장식 */}
+      {/* 배경 장식 (좌측 컬러 스트라이프 제거 — 절제된 네이비 카드) */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <t.DecorIcon size={120} className={`absolute -right-6 -bottom-6 ${t.decorIconClass} rotate-12`} />
         <div className={`absolute inset-0 ${t.bgOverlay}`} />
-        <div className={`absolute top-0 left-0 w-1 h-full ${t.accentBar} opacity-80`} />
       </div>
 
       <div className="relative z-10 flex flex-row items-center gap-3 px-4 py-2.5">
@@ -182,15 +173,12 @@ const DiscoverHiTessBanner = ({ variant = 'platform', badge, title, subtitle, ct
           <MainIcon size={18} className={t.iconColor} />
         </div>
 
-        {/* 타이틀 */}
+        {/* 타이틀 (eyebrow 라벨 제거 — 제목·부제만으로 충분) */}
         <div className="min-w-0 flex-1">
-          <span className={`${t.labelColor} text-[9px] font-bold tracking-widest uppercase block truncate`}>
-            {badge}
-          </span>
           <h3 className="text-white font-bold text-sm tracking-tight leading-tight truncate">
             {title}
           </h3>
-          <p className={`${t.subtitleColor} text-[10px] truncate`}>
+          <p className={`${t.subtitleColor} text-[11px] truncate`}>
             {subtitle}
           </p>
         </div>
@@ -206,43 +194,67 @@ const DiscoverHiTessBanner = ({ variant = 'platform', badge, title, subtitle, ct
 };
 
 const AppRoadmapBanner = ({ onOpenModal }) => {
-  const activeApps = ANALYSIS_DATA.filter(a => a.devStatus === 'Active');
-  const devCount = ANALYSIS_DATA.filter(a => a.devStatus === 'Developing').length;
-  const activeCount = activeApps.length;
+  const statusCounts = ANALYSIS_DATA.reduce((acc, app) => {
+    const status = app.devStatus || 'Active';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+  const activeCount = statusCounts.Active || 0;
+  const devCount = statusCounts.Developing || 0;
+  const plannedCount = statusCounts.Planned || 0;
   const modeSummary = ROADMAP_MODE_ORDER
     .map(mode => ({
       mode,
       info: MODE_BADGE[mode],
-      count: ANALYSIS_DATA.filter(a => a.mode === mode).length,
+      apps: ANALYSIS_DATA.filter(a => a.mode === mode),
     }))
-    .filter(item => item.count > 0);
+    .filter(item => item.apps.length > 0);
 
   return (
     <div
       onClick={onOpenModal}
-      className="bg-gradient-to-r from-brand-blue to-indigo-900 rounded-xl shadow-lg border border-indigo-500/30 overflow-hidden cursor-pointer hover:shadow-xl transition-all group flex flex-col md:flex-row relative"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenModal(); } }}
+      className="bg-gradient-to-r from-brand-blue to-slate-900 rounded-xl shadow-lg border border-white/10 overflow-hidden cursor-pointer hover:shadow-xl transition-all group flex flex-col lg:flex-row relative focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
     >
       <Map size={120} className="absolute -left-10 -bottom-10 text-white/5 rotate-12 pointer-events-none" />
-      <div className="p-5 md:w-1/3 border-b md:border-b-0 md:border-r border-white/10 relative z-10 flex flex-col justify-center">
-        <h3 className="text-white font-bold text-sm flex items-center gap-2 mb-1">
+      <div className="p-5 lg:w-[330px] border-b lg:border-b-0 lg:border-r border-white/10 relative z-10 flex flex-col justify-center">
+        <h3 className="text-white font-bold text-sm flex items-center gap-2 mb-1.5">
           <Map size={16} className="text-blue-300"/> 시스템 해석 앱 로드맵
         </h3>
-        <p className="text-blue-200/70 text-xs mb-3">플랫폼 내 해석 모듈 통합 개발 현황</p>
-        <div className="flex gap-2 text-[10px] font-bold">
-          <span className="px-2 py-1 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">서비스 중: {activeCount}</span>
-          <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded border border-blue-500/30">개발 중: {devCount}</span>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <span className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-2 py-2">
+            <span className="block text-lg font-black text-white leading-none">{activeCount}</span>
+            <span className="mt-1 block text-[10px] font-bold text-emerald-200">서비스 중</span>
+          </span>
+          <span className="rounded-lg border border-amber-300/25 bg-amber-300/10 px-2 py-2">
+            <span className="block text-lg font-black text-white leading-none">{devCount}</span>
+            <span className="mt-1 block text-[10px] font-bold text-amber-100">개발 중</span>
+          </span>
+          <span className="rounded-lg border border-white/15 bg-white/8 px-2 py-2">
+            <span className="block text-lg font-black text-white leading-none">{plannedCount}</span>
+            <span className="mt-1 block text-[10px] font-bold text-slate-200">예정</span>
+          </span>
         </div>
       </div>
-      <div className="p-4 md:flex-1 relative overflow-hidden">
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 pr-20">
-          {modeSummary.map(({ mode, info, count }) => (
-            <div key={mode} className="rounded-lg border border-white/10 bg-white/8 px-3 py-2 min-w-0">
-              <p className="text-[10px] font-bold text-blue-200/70 truncate">{MODE_KO[mode] || info.label}</p>
-              <p className="text-white text-lg font-black leading-tight">{count}</p>
+      <div className="p-4 lg:flex-1 relative overflow-hidden flex items-stretch">
+        <div className="grid flex-1 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 pr-0 lg:pr-24">
+          {modeSummary.map(({ mode, info, apps }) => {
+            const modeActive = apps.filter(a => (a.devStatus || 'Active') === 'Active').length;
+            const modeDev = apps.filter(a => a.devStatus === 'Developing').length;
+            return (
+            <div key={mode} className="rounded-lg border border-white/10 bg-white/8 px-3 py-3.5 min-w-0 h-full flex flex-col justify-center">
+              <p className="text-[10px] font-bold text-blue-100 truncate">{MODE_KO[mode] || info.label}</p>
+              <div className="mt-1 flex items-end justify-between gap-2">
+                <p className="text-white text-lg font-black leading-tight">{apps.length}</p>
+                <p className="text-[10px] font-semibold text-slate-300 whitespace-nowrap">운영 {modeActive} · 개발 {modeDev}</p>
+              </div>
             </div>
-          ))}
+            );
+          })}
         </div>
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 group-hover:text-white transition-colors flex items-center gap-1 text-xs font-bold">
+        <div className="hidden lg:flex absolute right-4 top-1/2 -translate-y-1/2 text-white/50 group-hover:text-white transition-colors items-center gap-1 text-xs font-bold">
           지도 열기 <ChevronRight size={16}/>
         </div>
       </div>
@@ -316,18 +328,11 @@ const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: 'easeOut' }}
-      whileHover={{ y: -1, boxShadow: `0 10px 24px -10px ${style.glow}` }}
+      whileHover={{ y: -1, boxShadow: '0 8px 20px -12px rgba(15,23,42,0.25)' }}
       className="relative bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors cursor-pointer overflow-hidden group mb-6"
     >
-      {/* 좌측 강조 그라데이션 바 */}
-      <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${style.bar}`} />
-      {/* 미세한 우측 글로우 */}
-      <div
-        className="absolute -right-10 -top-10 w-40 h-40 rounded-full opacity-40 blur-2xl pointer-events-none"
-        style={{ background: style.glow }}
-      />
-
-      <div className="relative flex items-center gap-3 px-4 py-3 pl-5">
+      {/* 좌측 컬러 스트라이프·글로우 제거 — 아이콘·타입 칩으로 구분 */}
+      <div className="relative flex items-center gap-3 px-4 py-3">
         {/* 좌측 라벨 + NEW 배지 */}
         <div className="flex items-center gap-2 shrink-0">
           <div className="relative">
@@ -343,7 +348,7 @@ const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
           </div>
           <div className="flex flex-col leading-none">
             <span className="text-[11px] font-bold text-slate-700 tracking-tight">공지 &amp; 업데이트</span>
-            <span className="text-[9px] text-slate-400 font-medium mt-0.5">최근 알림</span>
+            <span className="text-[9px] text-slate-500 font-medium mt-0.5">최근 알림</span>
           </div>
           {unreadCount > 0 && (
             <motion.span
@@ -377,7 +382,7 @@ const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
             <span className="text-sm font-semibold text-slate-700 truncate group-hover:text-blue-600 transition-colors">
               {current.title || '(제목 없음)'}
             </span>
-            <span className="text-[10px] text-slate-400 shrink-0 hidden sm:inline">
+            <span className="text-[10px] text-slate-500 shrink-0 hidden sm:inline">
               {formatRelative(current.created_at)}
             </span>
           </motion.div>
@@ -410,7 +415,7 @@ const MODE_BADGE = {
 
 const STATUS_GROUP_STYLE = {
   Active:     { label: '서비스 중', bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', dot: 'bg-emerald-500', icon: Rocket },
-  Developing: { label: '개발 중',   bg: 'bg-slate-50 border-slate-200',     text: 'text-slate-500',   dot: 'bg-slate-300',   icon: Wrench },
+  Developing: { label: '개발 중',   bg: 'bg-amber-50 border-amber-200',     text: 'text-amber-700',   dot: 'bg-amber-500',   icon: Wrench },
   Planned:    { label: '예정',      bg: 'bg-slate-50 border-slate-200',      text: 'text-slate-600',   dot: 'bg-slate-400',   icon: Clock },
 };
 
@@ -421,14 +426,38 @@ const ROADMAP_STATUS_DOT = {
 };
 
 const ROADMAP_MODE_ORDER = ['File', 'Interactive', 'Parametric', 'Productivity', 'Academic'];
+const ROADMAP_STATUS_ORDER = ['Active', 'Developing', 'Planned'];
 
-const RoadmapModal = ({ isOpen, onClose }) => {
+const ROADMAP_STATUS_BADGE = {
+  Active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Developing: 'bg-amber-50 text-amber-700 border-amber-200',
+  Planned: 'bg-slate-50 text-slate-600 border-slate-200',
+};
+
+const isRoadmapAppNavigable = (app) =>
+  (app.devStatus || 'Active') === 'Active' && app.hasPage;
+
+const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
   const totalCount = ANALYSIS_DATA.length;
   const statusCounts = ANALYSIS_DATA.reduce((acc, app) => {
     const status = app.devStatus || 'Active';
     acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {});
+  const modeSummaries = ROADMAP_MODE_ORDER
+    .map(mode => {
+      const apps = ANALYSIS_DATA.filter(a => a.mode === mode);
+      const categories = new Set(apps.map(a => a.category));
+      return {
+        mode,
+        apps,
+        categories,
+        info: MODE_BADGE[mode] || MODE_BADGE.File,
+        activeCount: apps.filter(a => (a.devStatus || 'Active') === 'Active').length,
+        developingCount: apps.filter(a => a.devStatus === 'Developing').length,
+      };
+    })
+    .filter(item => item.apps.length > 0);
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -442,51 +471,80 @@ const RoadmapModal = ({ isOpen, onClose }) => {
                 <Dialog.Title className="font-bold text-lg flex items-center gap-2">
                   <Map size={20} className="text-blue-300"/> HiTESS 워크벤치 로드맵
                 </Dialog.Title>
-                <p className="text-xs text-blue-200/70 mt-1">전체 프로그램 구조와 서비스 상태를 한 화면에서 파악합니다.</p>
+                <p className="text-xs text-blue-100 mt-1">업무 유형, 서비스 상태, 앱 목적을 한 번에 훑어볼 수 있는 전체 지도입니다.</p>
               </div>
-              <button onClick={onClose} className="hover:bg-white/10 p-2 rounded-lg transition-colors cursor-pointer"><X size={20}/></button>
+              <button onClick={onClose} className="inline-flex items-center justify-center min-w-10 min-h-10 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"><X size={20}/></button>
             </div>
 
-            {/* 요약 배지 */}
-            <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2 shrink-0">
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border bg-white text-slate-700 border-slate-200">
-                <Map size={11} />
-                전체: {totalCount}개
-              </span>
-              {Object.entries(STATUS_GROUP_STYLE).map(([key, style]) => {
-                const Icon = style.icon;
-                return (
-                  <span key={key} className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${style.bg} ${style.text}`}>
-                    <Icon size={11} />
-                    {style.label}: {statusCounts[key] || 0}개
-                  </span>
-                );
-              })}
-              {ROADMAP_MODE_ORDER.map(mode => {
-                const modeInfo = MODE_BADGE[mode];
-                const count = ANALYSIS_DATA.filter(a => a.mode === mode).length;
-                if (!count) return null;
-                return (
-                  <span key={mode} className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${modeInfo.cls}`}>
-                    {modeInfo.title}: {count}개
-                  </span>
-                );
-              })}
+            {/* 읽는 순서: 전체 요약 → 상태 범례 → 업무 유형 바로가기 */}
+            <div className="px-5 py-4 border-b border-slate-200 bg-white shrink-0">
+              <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-bold text-slate-500 mb-1">전체 구조</p>
+                  <div className="flex items-end gap-2">
+                    <span className="text-3xl font-black text-slate-900 leading-none">{totalCount}</span>
+                    <span className="pb-1 text-sm font-bold text-slate-600">개 앱 · {modeSummaries.length}개 업무 유형</span>
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                    먼저 서비스 중 앱을 확인하고, 필요한 업무 유형을 선택해 세부 앱 설명을 비교하세요.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-3">
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <p className="text-[11px] font-bold text-slate-500 mb-2">상태 범례</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {ROADMAP_STATUS_ORDER.map(key => {
+                        const style = STATUS_GROUP_STYLE[key];
+                        const Icon = style.icon;
+                        return (
+                          <div key={key} className={`rounded-lg border px-3 py-2 ${style.bg}`}>
+                            <div className={`flex items-center gap-1.5 text-[11px] font-bold ${style.text}`}>
+                              <Icon size={12} />
+                              {style.label}
+                            </div>
+                            <p className="mt-1 text-lg font-black text-slate-900">{statusCounts[key] || 0}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <p className="text-[11px] font-bold text-slate-500 mb-2">업무 유형 바로가기</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                      {modeSummaries.map(({ mode, apps, info, activeCount, developingCount }) => (
+                        <a
+                          key={mode}
+                          href={`#roadmap-mode-${mode}`}
+                          className={`rounded-lg border px-3 py-2 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 ${info.cls}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-[11px] truncate">{info.title}</span>
+                            <span className="text-[11px] font-black">{apps.length}</span>
+                          </div>
+                          <p className="mt-1 text-[10px] font-semibold opacity-80">운영 {activeCount} · 개발 {developingCount}</p>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-5 pb-5 custom-scrollbar space-y-3">
-              {ROADMAP_MODE_ORDER.map((mode) => {
-                const apps = ANALYSIS_DATA.filter(a => a.mode === mode);
-                if (apps.length === 0) return null;
-                const modeInfo = MODE_BADGE[mode] || { title: mode, label: mode, cls: 'text-slate-500 bg-slate-100 border-slate-200', ring: 'border-l-slate-400', iconBg: 'bg-slate-500', summary: '' };
-                const activeCount = apps.filter(a => (a.devStatus || 'Active') === 'Active').length;
-                const developingCount = apps.filter(a => a.devStatus === 'Developing').length;
+            <div className="flex-1 overflow-y-auto px-5 py-5 custom-scrollbar space-y-4 scroll-smooth">
+              {modeSummaries.map(({ mode, apps, categories, info: modeInfo, activeCount, developingCount }) => {
                 const FirstIcon = apps[0].icon;
-                const categoryCount = new Set(apps.map(a => a.category)).size;
+                const sortedApps = [...apps].sort((a, b) => {
+                  const statusA = ROADMAP_STATUS_ORDER.indexOf(a.devStatus || 'Active');
+                  const statusB = ROADMAP_STATUS_ORDER.indexOf(b.devStatus || 'Active');
+                  if (statusA !== statusB) return statusA - statusB;
+                  return a.title.localeCompare(b.title);
+                });
 
                 return (
-                  <section key={mode} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-                    <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-3">
+                  <section id={`roadmap-mode-${mode}`} key={mode} className="scroll-mt-4 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center gap-3">
                       <div className={`p-2 rounded-lg ${modeInfo.iconBg} text-white shadow-sm shrink-0`}>
                         <FirstIcon size={17} />
                       </div>
@@ -497,9 +555,10 @@ const RoadmapModal = ({ isOpen, onClose }) => {
                             {modeInfo.label}
                           </span>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-white text-slate-500 border-slate-200">
-                            앱 {apps.length}개 · 카테고리 {categoryCount}
+                            앱 {apps.length}개 · 카테고리 {categories.size}
                           </span>
                         </div>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600">{modeInfo.summary}</p>
                       </div>
                       <div className="flex gap-1.5 shrink-0">
                         <span className="px-2 py-1 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">서비스 {activeCount}</span>
@@ -509,18 +568,26 @@ const RoadmapModal = ({ isOpen, onClose }) => {
                       </div>
                     </div>
 
-                    <div className="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5">
-                      {apps.map((app) => {
+                    <div className="p-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                      {sortedApps.map((app) => {
                         const status = app.devStatus || 'Active';
                         const isDeveloping = status === 'Developing';
+                        const statusStyle = STATUS_GROUP_STYLE[status] || STATUS_GROUP_STYLE.Planned;
+                        const canNavigate = isRoadmapAppNavigable(app);
                         const AppIcon = app.icon;
                         return (
-                          <div
+                          <button
+                            type="button"
                             key={app.title}
-                            className={`relative rounded-lg px-3 py-2.5 transition-all border group overflow-hidden min-h-[92px] ${
-                              isDeveloping
-                                ? 'bg-slate-50/70 border-slate-200 shadow-none opacity-80 hover:opacity-95 hover:shadow-sm'
-                                : 'bg-white border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200'
+                            disabled={!canNavigate}
+                            title={canNavigate ? `${app.title} 열기` : `${app.title}은 현재 바로가기를 지원하지 않습니다.`}
+                            onClick={() => canNavigate && onSelectApp?.(app)}
+                            className={`relative text-left rounded-lg px-3.5 py-3 transition-all border group overflow-hidden min-h-[138px] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 ${
+                              canNavigate
+                                ? 'bg-white border-slate-200 shadow-sm cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-blue-300 hover:bg-blue-50/30'
+                                : isDeveloping
+                                  ? 'bg-slate-50/70 border-slate-200 shadow-none opacity-80 cursor-default hover:border-amber-200 hover:bg-amber-50/30'
+                                  : 'bg-slate-50/70 border-slate-200 shadow-none opacity-80 cursor-default hover:border-slate-300 hover:bg-slate-100/60'
                             }`}
                           >
                             <div className={`absolute -right-4 -bottom-4 pointer-events-none ${isDeveloping ? 'opacity-[0.025]' : 'opacity-[0.035]'}`}>
@@ -538,29 +605,46 @@ const RoadmapModal = ({ isOpen, onClose }) => {
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 mb-1">
                                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ROADMAP_STATUS_DOT[status] || ROADMAP_STATUS_DOT.Planned}`} />
-                                  <span className="text-[10px] font-bold text-slate-400 truncate">{app.category}</span>
+                                  <span className="text-[10px] font-bold text-slate-500 truncate">{app.category}</span>
                                 </div>
-                                <h4 className="font-bold text-slate-800 text-[12px] leading-snug line-clamp-2">{app.title}</h4>
+                                <h4 className="font-bold text-slate-800 text-[13px] leading-snug line-clamp-2">{app.title}</h4>
                               </div>
                             </div>
 
-                            <div className="relative mt-2 flex items-center justify-between gap-2">
-                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                                status === 'Active'
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : status === 'Developing'
-                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                    : 'bg-slate-50 text-slate-500 border-slate-200'
-                              }`}>
-                                {(STATUS_GROUP_STYLE[status] || STATUS_GROUP_STYLE.Planned).label}
+                            <p className="relative mt-2 text-[11px] leading-relaxed text-slate-600 line-clamp-2">
+                              {app.description}
+                            </p>
+
+                            <div className="relative mt-3 flex flex-wrap items-center gap-1.5">
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${ROADMAP_STATUS_BADGE[status] || ROADMAP_STATUS_BADGE.Planned}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+                                {statusStyle.label}
                               </span>
+                              {canNavigate && (
+                                <span className="text-[10px] text-blue-600 font-bold bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                  바로가기
+                                </span>
+                              )}
                               {(app.relatedApps?.length > 0 || app.acceptsTransferFrom?.length > 0) && (
                                 <span className="text-[10px] text-indigo-500 font-bold bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">
                                   연계
                                 </span>
                               )}
                             </div>
-                          </div>
+
+                            <div className="relative mt-2 flex items-center justify-between gap-2">
+                              <div className="flex flex-wrap gap-1 overflow-hidden">
+                                {(app.tags || []).slice(0, 3).map(tag => (
+                                  <span key={tag} className="text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                              {app.contributor && (
+                                <span className="text-[10px] font-bold text-slate-500 shrink-0">{app.contributor}</span>
+                              )}
+                            </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -629,30 +713,30 @@ function IntroModal({ isOpen, onClose, content, onRetry, modalTitle = 'Discover 
             >
               {/* 헤더 */}
               <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 shrink-0"
-                style={{ background: 'linear-gradient(90deg, #003520 0%, #002554 60%)' }}
+                style={{ background: 'linear-gradient(90deg, #00305c 0%, #002554 70%)' }}
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-400/30">
-                    <Layers size={18} className="text-emerald-400" />
+                  <div className="p-2 rounded-lg bg-white/10 border border-white/15">
+                    <Layers size={18} className="text-blue-200" />
                   </div>
                   <div>
                     <Dialog.Title className="text-white font-bold text-sm leading-tight">
                       {modalTitle}
                     </Dialog.Title>
-                    <p className="text-emerald-100/50 text-[11px]">{modalSubtitle}</p>
+                    <p className="text-slate-300 text-[11px]">{modalSubtitle}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={handleFullscreen}
                     title="전체화면 (F)"
-                    className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center min-w-10 min-h-10 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                   >
                     <Maximize2 size={16} />
                   </button>
                   <button
                     onClick={onClose}
-                    className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center min-w-10 min-h-10 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                   >
                     <X size={18} />
                   </button>
@@ -669,10 +753,10 @@ function IntroModal({ isOpen, onClose, content, onRetry, modalTitle = 'Discover 
                   <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4">
                     <Layers size={48} className="text-slate-300" />
                     <p className="text-sm font-bold">소개 페이지를 불러올 수 없습니다.</p>
-                    <p className="text-xs text-slate-400">Electron 앱을 재시작한 후 다시 시도해 주세요.</p>
+                    <p className="text-xs text-slate-500">Electron 앱을 재시작한 후 다시 시도해 주세요.</p>
                     <button
                       onClick={onRetry}
-                      className="mt-1 px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 transition-colors cursor-pointer"
+                      className="mt-1 px-4 py-2 bg-brand-blue text-white text-xs font-bold rounded-lg hover:bg-brand-blue-dark transition-colors cursor-pointer"
                     >
                       다시 시도
                     </button>
@@ -692,7 +776,7 @@ export default function Dashboard() {
   const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
   const { favorites, setAssessmentPageState } = useDashboard();
-  
+
   const [projects, setProjects] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [monthlyUsageCount, setMonthlyUsageCount] = useState(0);
@@ -713,6 +797,15 @@ export default function Dashboard() {
   const [introTarget, setIntroTarget] = useState('platform');
   // target별 로드된 콘텐츠 캐시 (재열람 시 재요청 방지)
   const introCache = useRef({});
+
+  // 플랫폼 소개 배너: 기본적으로 접어둔다(매일 쓰는 사용자 우선). 사용자가 펼치면 그 선호를 저장해 다음 방문에 반영.
+  // (시스템 해석 앱 로드맵은 접힘과 무관하게 항상 표시)
+  const [introOpen, setIntroOpen] = useState(() => localStorage.getItem('dashboard_intro_open') === '1');
+  const toggleIntro = () => setIntroOpen(v => {
+    const next = !v;
+    localStorage.setItem('dashboard_intro_open', next ? '1' : '0');
+    return next;
+  });
 
   const handleDiscoverHiTess = async (target) => {
     setIsIntroModalOpen(true);
@@ -760,6 +853,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     const fetchQueue = async () => {
+      if (document.hidden) return; // 백그라운드 탭에서는 폴링 생략(다중 탭 누적 부하 방지)
       try {
         const res = await getQueueStatus();
         setQueueStatus(res.data);
@@ -771,7 +865,13 @@ export default function Dashboard() {
     };
     fetchQueue();
     const interval = setInterval(fetchQueue, 3000);
-    return () => clearInterval(interval);
+    // 탭이 다시 보이면 즉시 한 번 갱신
+    const onVisible = () => { if (!document.hidden) fetchQueue(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   useEffect(() => {
@@ -830,15 +930,25 @@ export default function Dashboard() {
     setCurrentMenu(menuName);
   };
 
+  const handleRoadmapAppSelect = (app) => {
+    if (!isRoadmapAppNavigable(app)) return;
+    setIsRoadmapModalOpen(false);
+    handleFavoriteClick(app.title);
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-10 animate-fade-in-up">
-      
+
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-brand-blue tracking-tight">WorkBench Overview</h1>
         <p className="text-sm text-slate-500 mt-1">해석 서버 현황, 수행 통계, 즐겨찾기 앱을 한눈에 확인하세요.</p>
       </div>
 
-      <RoadmapModal isOpen={isRoadmapModalOpen} onClose={() => setIsRoadmapModalOpen(false)} />
+      <RoadmapModal
+        isOpen={isRoadmapModalOpen}
+        onClose={() => setIsRoadmapModalOpen(false)}
+        onSelectApp={handleRoadmapAppSelect}
+      />
 
       {/* 즐겨찾기에서 개발 중/예정 앱 진입 시도 시 안내 (관리자는 위 로직에서 통과) */}
       <AdminGateModal
@@ -870,7 +980,7 @@ export default function Dashboard() {
                     <Trophy size={18} className="text-amber-500" />
                     <Dialog.Title className="text-base font-bold text-slate-800">전체 기간 인기 프로그램</Dialog.Title>
                   </div>
-                  <button onClick={() => setIsTopProgramsModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <button onClick={() => setIsTopProgramsModalOpen(false)} className="inline-flex items-center justify-center min-w-9 min-h-9 -mr-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer">
                     <X size={18} />
                   </button>
                 </div>
@@ -881,7 +991,7 @@ export default function Dashboard() {
                     return (
                       <div key={item.program_name} className="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0 px-1">
                         <span className="text-base w-6 shrink-0 text-center">
-                          {i < 3 ? MEDAL[i] : <span className="text-xs font-bold text-slate-400">{i + 1}</span>}
+                          {i < 3 ? MEDAL[i] : <span className="text-xs font-bold text-slate-500">{i + 1}</span>}
                         </span>
                         <span className="flex-1 text-sm font-medium text-slate-700 truncate">{item.program_name}</span>
                         <div className="w-20 bg-slate-100 rounded-full h-1.5 shrink-0">
@@ -895,7 +1005,7 @@ export default function Dashboard() {
                     );
                   })}
                   {topProgramsAll.length === 0 && (
-                    <p className="text-sm text-slate-400 text-center py-8">데이터가 없습니다.</p>
+                    <p className="text-sm text-slate-500 text-center py-8">데이터가 없습니다.</p>
                   )}
                 </div>
               </Dialog.Panel>
@@ -931,35 +1041,49 @@ export default function Dashboard() {
         }}
       />
 
-      {/* 플랫폼 소개 & 로드맵 — 신규/숙련 사용자 모두를 위한 컨텍스트 정보 */}
+      {/* 플랫폼 소개 & 로드맵 — 최상단. 로드맵은 항상 표시(주요 참조 정보), 소개 배너만 접이식(첫 방문만 펼침). */}
       <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-slate-500 flex items-center gap-1.5">
-            <Layers size={15} className="text-slate-400" /> 플랫폼 소개 &amp; 로드맵
+        <button
+          onClick={toggleIntro}
+          aria-expanded={introOpen}
+          className="w-full flex items-center justify-between mb-4 group cursor-pointer"
+        >
+          <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
+            <Layers size={16} className="text-slate-500" /> 플랫폼 소개 &amp; 로드맵
           </h2>
-          <span className="text-xs text-slate-400">처음이신가요? 플랫폼 소개를 살펴보세요</span>
-        </div>
+          {/* 클릭 가능함을 명시하는 버튼형 칩 — 접힘이 기본, 누르면 소개가 펼쳐진다 */}
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+            introOpen
+              ? 'border-slate-200 bg-white text-slate-500 group-hover:border-slate-300 group-hover:text-slate-700'
+              : 'border-blue-200 bg-blue-50 text-blue-600 group-hover:border-blue-300 group-hover:bg-blue-100'
+          }`}>
+            {introOpen ? '소개 접기' : '소개 펼쳐보기'}
+            <ChevronDown size={15} className={`transition-transform ${introOpen ? 'rotate-180' : ''}`} />
+          </span>
+        </button>
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <DiscoverHiTessBanner
-              variant="platform"
-              badge="Platform Introduction"
-              title="Discover HiTESS"
-              subtitle="차세대 조선해양 구조 해석 플랫폼을 살펴보세요"
-              ctaText="살펴보기"
-              MainIcon={Layers}
-              onClick={() => handleDiscoverHiTess('platform')}
-            />
-            <DiscoverHiTessBanner
-              variant="workbench"
-              badge="WorkBench Introduction"
-              title="HiTESS WorkBench"
-              subtitle="해석 도구 모음과 AI 어시스턴트를 경험해보세요"
-              ctaText="살펴보기"
-              MainIcon={Cpu}
-              onClick={() => handleDiscoverHiTess('workbench')}
-            />
-          </div>
+          {/* 소개 배너 — 접이식(첫 방문만 펼침) */}
+          {introOpen && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <DiscoverHiTessBanner
+                variant="platform"
+                title="Discover HiTESS"
+                subtitle="차세대 조선해양 구조 해석 플랫폼을 살펴보세요"
+                ctaText="살펴보기"
+                MainIcon={Layers}
+                onClick={() => handleDiscoverHiTess('platform')}
+              />
+              <DiscoverHiTessBanner
+                variant="workbench"
+                title="HiTESS WorkBench"
+                subtitle="해석 도구 모음과 AI 어시스턴트를 경험해보세요"
+                ctaText="살펴보기"
+                MainIcon={Cpu}
+                onClick={() => handleDiscoverHiTess('workbench')}
+              />
+            </div>
+          )}
+          {/* 시스템 해석 앱 로드맵 — 항상 표시(사용자 주요 참조 정보) */}
           <AppRoadmapBanner onOpenModal={() => setIsRoadmapModalOpen(true)} />
         </div>
       </div>
@@ -967,7 +1091,7 @@ export default function Dashboard() {
       {/* 서비스 현황 */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+          <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
             <Activity size={15} className="text-blue-400" /> 서비스 현황
           </h2>
         </div>
@@ -992,39 +1116,43 @@ export default function Dashboard() {
               </span>
             )}
           </div>
-          <p className="text-[11px] text-slate-400 font-bold mb-2">현재 서버 구동 현황</p>
+          <p className="text-[11px] text-slate-500 font-bold mb-2">현재 서버 구동 현황</p>
           <div className="text-2xl font-extrabold text-slate-800 tracking-tight mb-2">
-            {queueStatus.running} <span className="text-sm text-slate-400 font-medium">/ {queueStatus.limit} 구동 중</span>
+            {queueStatus.running} <span className="text-sm text-slate-500 font-medium">/ {queueStatus.limit} 구동 중</span>
           </div>
           <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-3">
-            <div 
+            <div
               className={`h-full transition-all duration-500 ${queueStatus.running >= queueStatus.limit ? 'bg-red-500' : 'bg-blue-500'}`}
               style={{ width: `${(queueStatus.running / queueStatus.limit) * 100}%` }}
             ></div>
           </div>
           <div className="flex items-center gap-2 text-xs font-bold text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
-            <Activity size={14} className={queueStatus.pending > 0 ? "text-orange-500" : "text-slate-400"} />
+            <Activity size={14} className={queueStatus.pending > 0 ? "text-orange-500" : "text-slate-500"} />
             대기 중인 큐: <span className={queueStatus.pending > 0 ? "text-orange-600" : "text-slate-500"}>{queueStatus.pending} 건</span>
           </div>
         </div>
 
-        <EngineeringStatCard 
-          title="월간 해석 수행 건수" 
-          value={`${monthlyUsageCount} 건`} 
-          subtext="이번 달 실행된 전체 프로젝트" 
-          icon={CalendarDays} 
-          color="bg-indigo-500"
+        <EngineeringStatCard
+          title="월간 해석 수행 건수"
+          value={`${monthlyUsageCount} 건`}
+          subtext="이번 달 실행된 전체 프로젝트"
+          icon={CalendarDays}
+          color="bg-brand-blue"
         />
         <EngineeringStatCard
           title="누적 해석 수행 건수"
           value={`${totalExecutions} 건`}
           subtext="지금까지 실행된 총 프로젝트 내역"
           icon={Database}
-          color="bg-blue-500"
+          color="bg-brand-blue"
         />
         <div
-          className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 relative overflow-hidden group hover:border-amber-300 transition-colors cursor-pointer"
+          className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 relative overflow-hidden group hover:border-amber-300 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
+          role="button"
+          tabIndex={0}
+          aria-label="전체 기간 인기 해석 프로그램 순위 열기"
           onClick={() => setIsTopProgramsModalOpen(true)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsTopProgramsModalOpen(true); } }}
         >
           <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
             <Trophy size={100} />
@@ -1032,16 +1160,16 @@ export default function Dashboard() {
           <h3 className="text-slate-600 text-sm font-bold tracking-tight flex items-center gap-2 mb-3">
             <Trophy size={16} className="text-amber-500" /> 인기 해석 프로그램
           </h3>
-          <p className="text-[11px] text-slate-400 font-bold mb-2">최근 30일 Top 5</p>
+          <p className="text-[11px] text-slate-500 font-bold mb-2">최근 30일 Top 5</p>
           {topPrograms30.length > 0 ? (
             <div className="space-y-1.5">
               {topPrograms30.slice(0, 3).map((item, i) => {
-                const RANK_COLORS = ['text-amber-500', 'text-slate-400', 'text-orange-400'];
+                const RANK_COLORS = ['text-amber-500', 'text-slate-500', 'text-orange-400'];
                 return (
                   <div key={item.program_name} className="flex items-center gap-2">
                     <span className={`text-xs font-extrabold w-4 shrink-0 ${RANK_COLORS[i]}`}>{i + 1}</span>
                     <span className="flex-1 text-xs font-medium text-slate-700 truncate">{item.program_name}</span>
-                    <span className="text-[10px] text-slate-400 font-bold shrink-0">{item.count}건</span>
+                    <span className="text-[10px] text-slate-500 font-bold shrink-0">{item.count}건</span>
                   </div>
                 );
               })}
@@ -1057,18 +1185,18 @@ export default function Dashboard() {
       {/* 즐겨찾기 */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+          <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
             <Star size={15} className="text-amber-400" fill="currentColor" /> 즐겨찾기
           </h2>
         </div>
-        
+
         {favorites.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-sm flex flex-col items-center">
             <div className="p-4 bg-slate-50 rounded-full mb-4">
               <Star size={32} className="text-slate-300" />
             </div>
             <p className="font-bold text-slate-500 mb-1">즐겨찾기 항목이 없습니다.</p>
-            <p className="text-sm text-slate-400 mb-5">자주 사용하는 해석 앱에 별(★)을 눌러 대시보드에 추가해 보세요.</p>
+            <p className="text-sm text-slate-500 mb-5">자주 사용하는 해석 앱에 별(★)을 눌러 대시보드에 추가해 보세요.</p>
             <button
               onClick={() => setCurrentMenu('File-Based Apps')}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-sm hover:shadow"
@@ -1106,14 +1234,14 @@ export default function Dashboard() {
       {/* 프로젝트 이력 */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
-            <Clock size={15} className="text-slate-400" /> 프로젝트 이력
+          <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
+            <Clock size={15} className="text-slate-500" /> 프로젝트 이력
           </h2>
-          <button onClick={() => setCurrentMenu('My Project')} className="text-xs font-bold text-blue-500 hover:text-blue-600 cursor-pointer">
+          <button onClick={() => setCurrentMenu('My Project')} className="inline-flex items-center gap-1 text-xs font-bold text-blue-500 hover:text-blue-600 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer">
             전체 이력 보기 →
           </button>
         </div>
-        
+
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -1126,17 +1254,17 @@ export default function Dashboard() {
                   <th className="py-3 px-4 font-bold text-right">수행 일시</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
+              <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan="5" className="py-10 text-center text-slate-400 text-sm">
-                      <div className="animate-spin inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mb-2"></div>
+                    <td colSpan="5" className="py-10 text-center text-slate-500 text-sm" role="status" aria-live="polite">
+                      <div className="animate-spin inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mb-2" aria-hidden="true"></div>
                       <p>이력 데이터를 불러오는 중입니다...</p>
                     </td>
                   </tr>
                 ) : projects.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="py-10 text-center text-slate-400 text-sm">최근 수행된 프로젝트 내역이 없습니다.</td>
+                    <td colSpan="5" className="py-10 text-center text-slate-500 text-sm">최근 수행된 프로젝트 내역이 없습니다.</td>
                   </tr>
                 ) : (
                   projects.slice(0, 5).map((project) => (
