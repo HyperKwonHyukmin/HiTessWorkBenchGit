@@ -114,3 +114,17 @@
 .custom-scrollbar::-webkit-scrollbar {
   display: none;                /* Chrome / Electron */
 }
+
+/* ── 접근성: 동작 줄이기(prefers-reduced-motion) ──
+   CSS 애니메이션·트랜지션을 사실상 즉시 완료로 만든다.
+   framer-motion 은 main.jsx 의 MotionConfig(reducedMotion="user")가 별도로 처리. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
