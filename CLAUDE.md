@@ -6,6 +6,14 @@
 
 **HiTESS WorkBench**는 사내 구조 해석 플랫폼입니다. 기존의 레거시 구조 해석 실행 파일(`.exe`)들을 현대적인 웹 UI로 감싸고 AI 어시스턴트를 결합한 시스템으로, Electron 데스크톱 앱(포터블 `.exe`)으로 배포되며 팀 공용 서버와 통신합니다.
 
+## 디자인 컨텍스트 (Impeccable)
+
+UI/디자인 작업 시 다음 문서를 우선 참고합니다 (impeccable 디자인 도구로 관리):
+
+- **`PRODUCT.md`** (repo 루트) — register=`product`, 사용자·목적·브랜드 personality(신뢰·정밀·전문 엔지니어링)·anti-reference(낡은 레거시 엔터프라이즈 회피)·디자인 원칙 5가지·접근성 기준
+- **`DESIGN.md`** (생성 시) — 시각 시스템: 브랜드 컬러(Trust Blue `#002554` 등)·타이포(Inter+SUIT)·컴포넌트 토큰
+- 디자인 의사결정은 DESIGN.md(시각) > PRODUCT.md(전략/보이스) 순으로 우선. `/impeccable` 명령으로 critique·polish·live 등 수행
+
 ## 개발 명령어
 
 ### 백엔드 (FastAPI)

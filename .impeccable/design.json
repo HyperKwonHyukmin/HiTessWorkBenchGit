@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-04",
+  "title": "Design System: HiTESS WorkBench",
+  "extensions": {
+    "colorMeta": {
+      "trust-blue": {
+        "role": "primary",
+        "displayName": "Trust Blue",
+        "canonical": "#002554",
+        "tonalRamp": ["#001129", "#002554", "#003366", "#004080", "#1a5599", "#4d7fbb", "#99b8dd", "#d6e3f2"]
+      },
+      "heritage-green-light": {
+        "role": "tertiary",
+        "displayName": "Heritage Green Light (Rare Spark)",
+        "canonical": "#00E600",
+        "tonalRamp": ["#004d00", "#008000", "#00b300", "#00E600", "#33ff33", "#80ff80", "#b3ffb3", "#e0ffe0"]
+      },
+      "action-blue": {
+        "role": "secondary",
+        "displayName": "Action Blue",
+        "canonical": "#2563eb",
+        "tonalRamp": ["#0a1f5c", "#15347f", "#1d4ed8", "#2563eb", "#5b85f0", "#93b4f7", "#c3d6fb", "#e8eefd"]
+      },
+      "heritage-green": {
+        "role": "secondary",
+        "displayName": "Heritage Green",
+        "canonical": "#008233",
+        "tonalRamp": ["#00350f", "#005822", "#008233", "#00a843", "#22c55e", "#6ee7a0", "#abf7c8", "#dcfce7"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Cool Surface",
+        "canonical": "#F8F9FC",
+        "tonalRamp": ["#0f172a", "#1e293b", "#334155", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0", "#F8F9FC"]
+      },
+      "ink-body": {
+        "role": "neutral",
+        "displayName": "Ink Body",
+        "canonical": "#334155",
+        "tonalRamp": ["#0f172a", "#1e293b", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "페이지 제목(h1). 800 무게, Trust Blue 또는 배너 위 흰색." },
+      "body": { "displayName": "Body", "purpose": "기본 본문. Inter+SUIT 400, 긴 산문은 65–75ch." },
+      "eyebrow": { "displayName": "Eyebrow", "purpose": "패널 내부 짧은 카테고리 마커. 모든 섹션 위 반복 금지." },
+      "mono": { "displayName": "Mono", "purpose": "파일 경로·코드·BDF 식별자." }
+    },
+    "shadows": [
+      { "name": "resting-card", "value": "0 1px 2px 0 rgba(0,0,0,0.05)", "purpose": "카드·패널 기본. 거의 평평하되 종이 한 장 들린 느낌." },
+      { "name": "sidebar-frame", "value": "0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)", "purpose": "네이비 사이드바가 작업 영역 위에 단단히 서 있는 구조적 그림자." },
+      { "name": "modal", "value": "0 20px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1)", "purpose": "모달·다이얼로그. 반투명 백드롭과 함께 컨텍스트 차단." }
+    ],
+    "motion": [
+      { "name": "transition-standard", "value": "200ms ease-out", "purpose": "버튼·입력 등 컴포넌트 상태 전환 기본." },
+      { "name": "transition-frame", "value": "300ms ease-out", "purpose": "사이드바 접힘 등 레이아웃 전환." },
+      { "name": "fade-in-up", "value": "fadeInUp 0.4s ease-out forwards", "purpose": "페이지·카드 진입. translateY(12px)→0 + opacity." },
+      { "name": "press", "value": "transform: scale(0.98)", "purpose": "버튼 active 시 눌리는 확신감." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "표준 주요 액션. Trust Blue 배경, rounded-xl, 누르면 살짝 눌림.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">해석 시작</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: Inter, SUIT, sans-serif; font-weight: 600; font-size: 0.875rem; padding: 10px 20px; border-radius: 12px; border: 1px solid transparent; cursor: pointer; transition: all 200ms ease-out; } .ds-btn-primary { background: #002554; color: #fff; } .ds-btn-primary:hover { background: #003366; } .ds-btn-primary:active { transform: scale(0.98); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(0,37,84,0.4); }"
+    },
+    {
+      "name": "Green Confirm Button",
+      "kind": "button",
+      "refersTo": "button-green",
+      "description": "확정·전달·승인 액션.",
+      "html": "<button class=\"ds-btn ds-btn-green\">GMU로 전달</button>",
+      "css": ".ds-btn-green { background: #008233; color: #fff; } .ds-btn-green:hover { opacity: 0.9; } .ds-btn-green:active { transform: scale(0.98); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "보조 액션. 흰 배경 + slate 테두리.",
+      "html": "<button class=\"ds-btn ds-btn-secondary\">취소</button>",
+      "css": ".ds-btn-secondary { background: #fff; color: #334155; border-color: #cbd5e1; } .ds-btn-secondary:hover { background: #f8fafc; border-color: #94a3b8; }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "상태·판정 표시. 색 + 텍스트 + dot 중복 표기. (예: 합격=success)",
+      "html": "<span class=\"ds-badge ds-badge-success\"><span class=\"ds-badge-dot\"></span>합격</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; gap: 6px; font-family: Inter, SUIT, sans-serif; font-weight: 700; font-size: 0.75rem; padding: 4px 10px; border-radius: 9999px; border: 1px solid; } .ds-badge-dot { width: 6px; height: 6px; border-radius: 9999px; flex-shrink: 0; } .ds-badge-success { background: #ecfdf5; color: #047857; border-color: #a7f3d0; } .ds-badge-success .ds-badge-dot { background: #10b981; }"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "공유 입력 필드. rounded-lg, Trust Blue focus ring.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-label\">사번</label><input class=\"ds-input\" placeholder=\"예: 7529\" /></div>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 4px; } .ds-label { font-family: Inter, SUIT, sans-serif; font-size: 0.75rem; font-weight: 600; color: #475569; } .ds-input { width: 100%; font-family: Inter, SUIT, sans-serif; font-size: 0.875rem; padding: 10px 12px; background: #fff; color: #1e293b; border: 1px solid #e2e8f0; border-radius: 8px; outline: none; transition: all 200ms ease-out; } .ds-input::placeholder { color: #94a3b8; } .ds-input:focus { border-color: #002554; box-shadow: 0 0 0 2px rgba(0,37,84,0.2); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "기본 작업 카드. 흰 배경, slate 테두리, 소프트 그림자, rounded-2xl.",
+      "html": "<div class=\"ds-card\"><h3 class=\"ds-card-title\">해석 설정</h3><p class=\"ds-card-body\">현재 BDF 모델로 후속 권상 구조 해석을 시작합니다.</p></div>",
+      "css": ".ds-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); padding: 20px; } .ds-card-title { font-family: Inter, SUIT, sans-serif; font-weight: 700; font-size: 1.05rem; color: #1e293b; margin: 0 0 8px; } .ds-card-body { font-family: Inter, SUIT, sans-serif; font-size: 0.875rem; line-height: 1.6; color: #334155; margin: 0; }"
+    },
+    {
+      "name": "Sidebar Nav Item (Active)",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "시그니처 네비게이션. 네이비 프레임 위 형광 그린 활성 알약 + 좌측 인디케이터 바.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-nav-active\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/><polyline points=\"9 22 9 12 15 12 15 22\"/></svg><span>Dashboard</span></a><a class=\"ds-nav-item\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><polyline points=\"17 8 12 3 7 8\"/><line x1=\"12\" y1=\"3\" x2=\"12\" y2=\"15\"/></svg><span>File-Based Apps</span></a></nav>",
+      "css": ".ds-nav { background: #002554; padding: 12px; border-radius: 12px; display: flex; flex-direction: column; gap: 4px; width: 240px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); } .ds-nav-item { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; font-family: Inter, SUIT, sans-serif; font-size: 0.875rem; color: #cbd5e1; text-decoration: none; cursor: pointer; transition: all 200ms ease-out; } .ds-nav-item:hover { background: #003366; color: #fff; } .ds-nav-active { background: #00E600; color: #002554; font-weight: 700; } .ds-nav-active::before { content: \"\"; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 8px 0 0 8px; background: #00E600; }"
+    },
+    {
+      "name": "PageBanner",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "시그니처 페이지 헤더. Trust Blue 그라디언트 풀블리드 띠 + 은은한 흰 원 장식 + 좌우 flex.",
+      "html": "<header class=\"ds-banner\"><div class=\"ds-banner-deco\" aria-hidden=\"true\"></div><div class=\"ds-banner-row\"><div class=\"ds-banner-left\"><h1 class=\"ds-banner-title\">BDF Scanner</h1></div><div class=\"ds-banner-right\"><button class=\"ds-banner-btn\">이력</button></div></div></header>",
+      "css": ".ds-banner { position: relative; overflow: hidden; padding: 20px 32px; background: linear-gradient(to right, #002554, #134e4a, #0f766e); } .ds-banner-deco { position: absolute; inset: 0; opacity: 0.04; } .ds-banner-deco::before { content: \"\"; position: absolute; right: -24px; top: -24px; width: 192px; height: 192px; border-radius: 9999px; background: #fff; } .ds-banner-deco::after { content: \"\"; position: absolute; right: 96px; bottom: 0; width: 96px; height: 96px; border-radius: 9999px; background: #fff; } .ds-banner-row { position: relative; display: flex; align-items: center; justify-content: space-between; } .ds-banner-title { font-family: Inter, SUIT, sans-serif; font-weight: 800; font-size: 1.5rem; letter-spacing: -0.02em; color: #fff; margin: 0; } .ds-banner-btn { font-family: Inter, SUIT, sans-serif; font-size: 0.75rem; font-weight: 500; color: #fff; padding: 6px 12px; border-radius: 8px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); cursor: pointer; transition: background 200ms ease-out; } .ds-banner-btn:hover { background: rgba(255,255,255,0.2); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Engineering Control Room",
+    "overview": "HiTESS WorkBench는 정밀한 관제실처럼 작동한다. 진한 네이비(Trust Blue, #002554)의 차분한 프레임 위에서 작업 상태·진행률·합격/불합격 판정이 명확히 읽히고, 형광 그린 한 점이 지금 주목해야 할 곳을 정확히 가리킨다. 미감은 정밀하고 차분하다(refined & restrained): 절제된 여백, 정확한 정렬, 과하지 않은 마감. 색은 정보가 있을 때만 등장하고, 깊이는 은은한 그림자로만 암시한다. 레거시 사내 시스템의 칙칙한 회색 폼과 화려한 SaaS 마케팅 톤을 모두 거부한다. 신뢰는 화려함이 아니라 일관성에서 온다.",
+    "keyCharacteristics": [
+      "진한 네이비 프레임(사이드바·배너) + 밝은 중성 작업 영역(#F8F9FC)",
+      "형광 그린 액센트는 극도로 희귀하게(≤5%), 주목 유도 전용",
+      "평평한 면 + 소프트한 그림자(shadow-sm), 연한 테두리로 구획",
+      "상태·판정은 색 + 텍스트 + dot 으로 중복 표기 (색에만 의존 금지)",
+      "Inter(라틴) + SUIT(한글) 가변 폰트, 무게 대비로 위계 형성"
+    ],
+    "rules": [
+      { "name": "The Rare Spark Rule", "body": "Heritage Green Light(#00E600)는 어느 화면에서도 5% 이하로만 등장한다. 로고·활성 네비게이션·핵심 주목 유도가 전부다. 희귀함이 곧 그 색의 힘이다.", "section": "colors" },
+      { "name": "The Two-Blue Rule", "body": "네이비(Trust Blue)는 정체성(프레임·제목), 밝은 블루(Action Blue)는 상호작용(버튼·링크). 둘을 서로의 역할에 섞지 않는다.", "section": "colors" },
+      { "name": "The Weight-Not-Family Rule", "body": "위계는 새 서체가 아니라 무게(400/600/700/800)와 크기로 만든다. 본문에 세 번째 폰트를 도입하지 않는다.", "section": "typography" },
+      { "name": "The No-Shout Rule", "body": "디스플레이 크기 상한은 1.5rem 대(페이지 제목). 작업 도구이므로 clamp로 화면을 키워 외치지 않는다.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "표면은 쉴 때 평평하다. 깊은 그림자·블러는 모달과 떠 있는 메뉴에만. 카드는 테두리와 배경 대비로 먼저 구획한다.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do 페이지 헤더에 PageBanner(Trust Blue 그라디언트)를 써서 일관된 관제실 프레임을 유지한다.",
+      "Do 상태·판정을 색 + 텍스트 + dot 으로 중복 표기한다(합격/불합격, 진행률, 오류).",
+      "Do 본문 대비를 ≥4.5:1(큰 텍스트 ≥3:1)로 유지하고, 보조 텍스트를 slate-500보다 연하게 내리지 않는다.",
+      "Do 표면을 기본 평평하게 두고 shadow-sm + slate-200 테두리로 구획한다.",
+      "Do 버튼은 rounded-xl, 카드는 rounded-2xl, 입력은 rounded-lg로 반경 위계를 지킨다.",
+      "Do 위계를 무게(700/800)와 크기로 만든다. 서체는 Inter+SUIT 한 가족으로.",
+      "Do 모든 애니메이션에 prefers-reduced-motion: reduce 대안을 둔다."
+    ],
+    "donts": [
+      "Don't 낡은 레거시 엔터프라이즈처럼 보이게 한다 — 칙칙한 회색 폼, 빽빽한 무지향 표, 정렬이 무너진 밀집 레이아웃.",
+      "Don't 과한 마케팅 SaaS 톤을 쓴다 — 의미 없는 그라데이션 텍스트, 이모지 남발, hero-metric 템플릿, 버즈워드.",
+      "Don't Heritage Green Light(#00E600)를 한 화면에 5% 넘게 쓴다.",
+      "Don't 네이비(정체성)와 밝은 블루(상호작용)의 역할을 섞는다.",
+      "Don't background-clip: text 그라데이션 텍스트를 쓴다. 강조는 무게·크기·단색으로.",
+      "Don't 카드·콜아웃·알림에 1px 초과 colored border-left 장식 스트라이프를 쓴다(네비게이션 활성 인디케이터는 예외).",
+      "Don't 모든 섹션 위에 작은 대문자 eyebrow를 반복한다. eyebrow는 패널 내부 한정.",
+      "Don't 동일 크기 카드 그리드를 끝없이 반복한다. 밀도·위계로 리듬을 준다."
+    ]
+  }
+}
