@@ -108,4 +108,6 @@ def run_carling(inputs: dict, employee_id: str, mode: str) -> dict:
     finally:
         db.close()
 
+    # 리포트가 이 계산 폴더 하위 Report/ 에 저장될 수 있도록 작업폴더 경로를 동봉
+    result["_work_dir"] = work_dir
     return result

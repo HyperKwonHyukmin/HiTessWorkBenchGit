@@ -25,3 +25,6 @@ psutil
 # 테스트
 pytest>=8.0.0
 httpx>=0.27.0
+
+# Carling Free 리포트 생성용 Excel COM 자동화 (Windows 전용)
+pywin32>=306

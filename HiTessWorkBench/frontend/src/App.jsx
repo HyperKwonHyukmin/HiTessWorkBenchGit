@@ -263,8 +263,10 @@ function AppInner() {
       case 'Column Buckling Load Calculator': return <ColumnBucklingCalculator />;
       case 'Simplified Hole Fatigue Assessment': return <HoleFatigueAssessment />;
       case 'D Type Lug Assessment': return <DTypeLugAssessment />;
-      case 'Carling Free Calculator': return <CarlingCalculator variant="free" />;
-      case 'Carling Design Optimization': return <CarlingCalculator variant="optimization" />;
+      // key 분리: 같은 컴포넌트의 free↔optimization 전환 시 React 가 상태를 재사용하지 않고
+      // 재마운트하도록 강제한다(이전 결과 잔존 방지 + Free→Optimization 입력 이관 초기화 보장).
+      case 'Carling Free Calculator': return <CarlingCalculator key="carling-free" variant="free" />;
+      case 'Carling Design Optimization': return <CarlingCalculator key="carling-optimization" variant="optimization" />;
       case 'Independent Tank Assessment': return <IndependentTankAssessment />;
       case 'Section Property Calculator': return <SectionPropertyCalculator />;
       case 'Plate Structure Analysis': return <PlateStructureAnalysis />;

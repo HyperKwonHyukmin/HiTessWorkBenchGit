@@ -1,10 +1,12 @@
 """Carling 계산 라우터."""
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from ..services.carling_service import run_carling
+from ..services.carling_report_service import generate_report
 
 router = APIRouter(prefix="/api/carling", tags=["carling"])
 
@@ -69,3 +71,34 @@ def calculate_optimization(body: CarlingOptimizationRequest):
     """02_Carling Design Optimization 계산을 수행합니다."""
     inputs = body.model_dump(exclude={"employee_id"})
     return run_carling(inputs, body.employee_id, "optimization")
+
+
+class CarlingReportRequest(BaseModel):
+    result: dict[str, Any] = Field(..., description="계산 결과 전체(solver 출력)")
+    employee_id: str = Field(default="unknown", description="요청 사번")
+
+
+def _report_response(result: dict, employee_id: str) -> Response:
+    """결과를 DRM 템플릿에 채워 .xlsm 리포트(bytes)로 반환한다.
+
+    Excel COM 자동화로 생성하므로 서버에 Excel + DRM 에이전트가 필요합니다.
+    """
+    filename, data = generate_report(result, employee_id)
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(
+        content=data,
+        media_type="application/vnd.ms-excel.sheet.macroEnabled.12",
+        headers=headers,
+    )
+
+
+@router.post("/free/report")
+def download_free_report(body: CarlingReportRequest):
+    """Carling Free 결과를 .xlsm 리포트로 반환합니다."""
+    return _report_response(body.result, body.employee_id)
+
+
+@router.post("/optimization/report")
+def download_optimization_report(body: CarlingReportRequest):
+    """Carling Design Optimization 결과(최적안)를 .xlsm 리포트로 반환합니다."""
+    return _report_response(body.result, body.employee_id)

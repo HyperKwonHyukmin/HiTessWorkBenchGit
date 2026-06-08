@@ -286,6 +286,10 @@ export function DashboardProvider({ children }) {
   const [gmuHandoff, setGmuHandoff]   = useState(null); // { bdfServerPath, sourceApp }
   const clearGmuHandoff = () => setGmuHandoff(null);
 
+  // 프로그램 간 연계: Carling Free Calculator → Design Optimization 입력 이관
+  const [carlingHandoff, setCarlingHandoff] = useState(null); // { load, hull, material }
+  const clearCarlingHandoff = () => setCarlingHandoff(null);
+
   const [pendingJobTransfer, setPendingJobTransferRaw] = useState(null);
   const setPendingJobTransfer = (payload) => setPendingJobTransferRaw(payload);
   const clearPendingJobTransfer = () => setPendingJobTransferRaw(null);
@@ -329,6 +333,7 @@ export function DashboardProvider({ children }) {
         modelBuilderPageState, setModelBuilderPageState,
         analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
         gmuHandoff, setGmuHandoff, clearGmuHandoff,
+        carlingHandoff, setCarlingHandoff, clearCarlingHandoff,
         pendingJobTransfer, setPendingJobTransfer, clearPendingJobTransfer
     }}>
       {children}

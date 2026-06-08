@@ -1,21 +1,23 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import {
-  AlertCircle, ArrowLeft, BarChart3, Calculator, CheckCircle2, ChevronDown,
-  ChevronUp, Download, ImageIcon, Loader2, Ruler, Settings2, TableProperties, XCircle
+  AlertCircle, ArrowLeft, ArrowRight, BarChart3, Calculator, CheckCircle2, ChevronDown,
+  ChevronUp, Download, FileSpreadsheet, ImageIcon, Loader2, Ruler, Settings2,
+  SlidersHorizontal, TableProperties, XCircle
 } from 'lucide-react';
 import GuideButton from '../../components/ui/GuideButton';
 import SolverCredit from '../../components/ui/SolverCredit';
 import { useAuth } from '../../contexts/AuthContext';
 import PageBanner from '../../components/ui/PageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
+import { useDashboard } from '../../contexts/DashboardContext';
 import { API_BASE_URL } from '../../config';
 import { formatFixed as fmt } from '../../utils/formatting';
 import carlingFreeRef from '../../assets/images/Carling_Free.png';
 import carlingFreeRef2 from '../../assets/images/Carling_Free2.png';
 import carlingOptiRef from '../../assets/images/Carling_Opti.png';
 import carlingOptiRef2 from '../../assets/images/Carling_Opti2.png';
-import { downloadJson } from '../../utils/fileHelper';
+import { downloadJson, downloadBlob, filenameFromDisposition } from '../../utils/fileHelper';
 
 const FIXED_SAFETY_FACTOR = 1.0;
 const FIXED_EFFECTIVE_BREADTH_MM = 600.0;
@@ -127,6 +129,27 @@ const setNested = (setter, path) => (value) => {
     cur[path[path.length - 1]] = value;
     return next;
   });
+};
+
+// Free → Optimization 입력 이관: 공통 항목(하중·Hull Plate)과 재질만 옮기고
+// 나머지(부식 타입·H/T 탐색 범위)는 Optimization 기본값을 유지한다.
+const applyOptimizationHandoff = (base, handoff) => {
+  if (!handoff) return base;
+  const next = structuredClone(base);
+  if (handoff.load) {
+    next.load.type = handoff.load.type ?? next.load.type;
+    if (handoff.load.value != null) next.load.value = String(handoff.load.value);
+    if (handoff.load.position_mm != null) next.load.position_mm = String(handoff.load.position_mm);
+  }
+  if (handoff.hull) {
+    if (handoff.hull.plate_thickness_gross_mm != null)
+      next.hull.plate_thickness_gross_mm = String(handoff.hull.plate_thickness_gross_mm);
+    if (handoff.hull.stiffener_span_mm != null)
+      next.hull.stiffener_span_mm = String(handoff.hull.stiffener_span_mm);
+  }
+  // Free 의 Hull 재질을 Carling 탐색 재질로 이관
+  if (handoff.material) next.carling.material = handoff.material;
+  return next;
 };
 
 // ─────────────────────────────────────────────
@@ -384,10 +407,23 @@ export default function CarlingCalculator({ variant = 'free' }) {
   const { employeeId } = useAuth();
   const meta = PAGE_META[variant] || PAGE_META.free;
   const { setCurrentMenu } = useNavigation();
-  const [inputs, setInputs] = useState(meta.defaultInput);
+  const { carlingHandoff, setCarlingHandoff, clearCarlingHandoff } = useDashboard();
+  // Optimization 진입 시 Free 에서 넘어온 입력(carlingHandoff)이 있으면 기본값에 병합해 시작한다.
+  const [inputs, setInputs] = useState(() =>
+    variant === 'optimization' && carlingHandoff
+      ? applyOptimizationHandoff(meta.defaultInput, carlingHandoff)
+      : meta.defaultInput
+  );
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isReportLoading, setIsReportLoading] = useState(false);
+
+  // 이관 입력은 1회만 소비하고 즉시 비운다(뒤로 가기/재진입 시 잔존 방지).
+  useEffect(() => {
+    if (variant === 'optimization' && carlingHandoff) clearCarlingHandoff();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const payload = useMemo(() => toPayload(inputs, variant), [inputs, variant]);
 
@@ -440,6 +476,48 @@ export default function CarlingCalculator({ variant = 'free' }) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Excel 리포트(.xlsm) 다운로드 — 백엔드가 DRM 템플릿을 Excel COM으로 채워 반환
+  const handleDownloadReport = async () => {
+    if (!result) return;
+    setIsReportLoading(true);
+    setError(null);
+    try {
+      const res = await axios.post(
+        `${API_BASE_URL}${meta.endpoint}/report`,
+        { result, employee_id: employeeId || 'unknown' },
+        { responseType: 'blob' },
+      );
+      const filename = filenameFromDisposition(
+        res.headers['content-disposition'],
+        `Carling_Free_Report_${variant}.xlsm`,
+      );
+      downloadBlob(res.data, filename, res.headers['content-type']);
+    } catch (e) {
+      // blob 응답에 담긴 서버 오류 메시지(JSON)를 추출 시도
+      let detail = '리포트 생성에 실패했습니다. 서버에 Excel/DRM 환경이 있는지 확인하세요.';
+      try {
+        const text = await e.response?.data?.text?.();
+        if (text) detail = JSON.parse(text).detail || detail;
+      } catch { /* noop */ }
+      setError(detail);
+    } finally {
+      setIsReportLoading(false);
+    }
+  };
+
+  // Free 결과에서 현재 입력값을 Design Optimization 으로 이관 후 페이지 전환
+  const handleStartOptimization = () => {
+    setCarlingHandoff({
+      load: { ...inputs.load },
+      hull: {
+        plate_thickness_gross_mm: inputs.hull.plate_thickness_gross_mm,
+        stiffener_span_mm: inputs.hull.stiffener_span_mm,
+      },
+      material: inputs.hull.material,
+    });
+    setCurrentMenu('Carling Design Optimization');
   };
 
   const okCandidates = (result?.candidates || []).filter(c => c.assessment === 'Total OK');
@@ -671,10 +749,21 @@ export default function CarlingCalculator({ variant = 'free' }) {
                 >
                   <Download size={12} /> 결과 JSON
                 </button>
+                {(variant === 'free' || result.optimal) && (
+                  <button
+                    onClick={handleDownloadReport}
+                    disabled={isReportLoading}
+                    className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                  >
+                    {isReportLoading
+                      ? <><Loader2 size={12} className="animate-spin" /> 리포트 생성 중...</>
+                      : <><FileSpreadsheet size={12} /> Excel 리포트</>}
+                  </button>
+                )}
               </div>
 
               {variant === 'free'
-                ? <FreeResult result={result} />
+                ? <FreeResult result={result} onStartOptimization={handleStartOptimization} />
                 : <OptimizationResult result={result} okCandidates={okCandidates} candidates={sortedCandidates} />
               }
             </>
@@ -690,7 +779,7 @@ export default function CarlingCalculator({ variant = 'free' }) {
 // ─────────────────────────────────────────────
 // FreeResult
 // ─────────────────────────────────────────────
-function FreeResult({ result }) {
+function FreeResult({ result, onStartOptimization }) {
   const i = result.intermediate || {};
   const checks = result.result?.checks || {};
   const assessment = result.result?.assessment;
@@ -781,6 +870,23 @@ function FreeResult({ result }) {
             <CheckCard key={key} label={key} value={value} />
           ))}
         </div>
+
+        {/* Check Summary 최하단: Design Optimization 연계 */}
+        {onStartOptimization && (
+          <div className="px-5 pb-5 pt-1">
+            <button
+              onClick={onStartOptimization}
+              className="group w-full py-3 rounded-xl font-extrabold text-sm flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-700 to-emerald-600 hover:from-emerald-800 hover:to-emerald-700 active:from-emerald-900 text-white shadow-md shadow-emerald-200 transition-all cursor-pointer"
+            >
+              <SlidersHorizontal size={16} />
+              Carling Design Optimization 시작
+              <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+            </button>
+            <p className="mt-2 text-center text-[11px] font-semibold text-slate-400">
+              현재 입력한 하중·Hull Plate 조건을 그대로 가져가 Carling 단면을 최적 설계합니다.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
