@@ -1812,6 +1812,9 @@ _SOLVE_ELEMENT_CARDS = {"CBEAM", "CBAR", "CROD", "CONROD", "CBUSH", "CTUBE", "CB
 _SOLVE_RIGID_CARDS = {"RBE2", "RBE3", "RBAR", "RROD", "RTRPLT", "RSPLINE"}
 # 단일 노드(필드 index 2)를 참조하는 하중/구속 카드 — 삭제 노드를 참조하면 제거
 _SOLVE_SINGLE_NODE_CARDS = {"FORCE", "FORCE1", "FORCE2", "MOMENT", "MOMENT1", "MOMENT2", "SPC", "SPCD"}
+# PID 가 필드 index 2(cols 16:24)에 오는 beam 계열 카드 — changeElementProperty/보강 PID 패치 대상.
+# CONROD(재료 직접참조)·shell(CQUAD4/CTRIA3 의 field2 는 PID 가 아님 또는 노드)은 제외해 오패치 방지.
+_PID_AT_FIELD2 = {"CBEAM", "CBAR", "CROD", "CTUBE", "CBEND", "CBUSH"}
 
 
 def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
@@ -1827,6 +1830,8 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
     as_int = _nb.as_int
     surv_nodes = {as_int(n.get("id")) for n in (edited.get("nodes") or []) if as_int(n.get("id")) is not None}
     surv_elems = {as_int(e.get("id")) for e in (edited.get("elements") or []) if as_int(e.get("id")) is not None}
+    # 노드 연결(RBE)로 종속노드가 된 노드 — 기존 SPC 제거 대상(m-set+SPC 충돌 FATAL 2101 방지)
+    cleared_spc = {as_int(n) for n in (edited.get("clearedSpcNodes") or []) if as_int(n) is not None}
 
     lines = original_bdf_text.splitlines()
     begin_idx = None
@@ -1854,6 +1859,18 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
 
     out: list[str] = []
     orig_elem_blocks: dict[int, list[str]] = {}   # 원본 element 블록(EID→블록) — 보강 복제 시 그대로 복사
+    orig_node_ids: set[int] = set()               # 원본 GRID id — 편집으로 추가된 신규 노드(중심노드) 판별용
+    # 편집 모델의 element(EID→dict) — 생존 element 의 PID 변경(changeElementProperty)을 deck 에 패치하기 위함.
+    edited_elems_by_id = {
+        as_int(e.get("id")): e
+        for e in (edited.get("elements") or [])
+        if as_int(e.get("id")) is not None
+    }
+
+    def _patch_pid(head: str, new_pid: int) -> str:
+        """8-col 고정필드 head 라인의 PID 필드(index 2, cols 16:24)를 new_pid 로 교체."""
+        return head[:16] + str(new_pid).ljust(8)[:8] + head[24:]
+
     i = 0
     while i < len(bulk):
         line = bulk[i]
@@ -1878,18 +1895,47 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
             if eid is not None:
                 orig_elem_blocks[eid] = block
             if eid in surv_elems:
+                # 생존 element 의 단면(PID) 변경분을 deck 에 반영(changeElementProperty).
+                ej = edited_elems_by_id.get(eid)
+                if name in _PID_AT_FIELD2 and ej is not None:
+                    orig_pid = as_int(field(line, 2))
+                    new_pid = as_int(ej.get("propertyId"))
+                    if orig_pid is not None and new_pid is not None and new_pid != orig_pid:
+                        out.append(_patch_pid(block[0], new_pid))
+                        out.extend(block[1:])
+                        continue
                 out.extend(block)
             continue
         if name == "GRID":
-            if as_int(field(line, 1)) in surv_nodes:
+            nid = as_int(field(line, 1))
+            if nid is not None:
+                orig_node_ids.add(nid)
+            if nid in surv_nodes:
                 out.extend(block)
             continue
         if name in _SOLVE_SINGLE_NODE_CARDS:
             gid = as_int(field(line, 2))
+            # 노드 연결(RBE)된 종속 노드의 SPC/SPCD 카드는 제거(m-set+SPC 충돌 방지).
+            if name in ("SPC", "SPCD") and gid is not None and gid in cleared_spc:
+                continue
             if gid is None or gid in surv_nodes:
                 out.extend(block)
             continue
         out.extend(block)                    # 그 외 verbatim
+
+    # 편집으로 추가된 노드(원본 BDF 에 없던 GRID — 예: 노드 연결 중심노드) 출력. bulk 순서는 무관.
+    # 원본 deck 과 동일한 고정필드(8칸) 양식으로 출력 — HyperMesh 등 프리프로세서가 free-field 카드를
+    # 화면에 그리지 못하는 문제 방지(좌표는 real8 로 소수점 포함 8칸 실수).
+    for node in (edited.get("nodes") or []):
+        nid = as_int(node.get("id"))
+        if nid is None or nid in orig_node_ids:
+            continue
+        out.append(_nb.bdf_line_fixed(
+            "GRID", nid, "",
+            _nb.as_float(node.get("x"), 0.0),
+            _nb.as_float(node.get("y"), 0.0),
+            _nb.as_float(node.get("z"), 0.0),
+        ))
 
     # 편집으로 추가된 보강 element(원본 BDF 라인 없음) — reinforceOf 원본 블록을 새 EID 로 복제 출력.
     # 원본 블록을 통째로 복사하므로 PID/방향/offset/pin 등 모든 필드가 원본과 동일(=참된 이중부재).
@@ -1906,7 +1952,15 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
         if not src_block:
             continue                         # 복제 출처 불명(현재 범위는 duplicateElement 만)
         head = src_block[0]
-        out.append(head[:8] + str(eid).ljust(8)[:8] + head[16:])   # 카드명 유지 + EID 필드만 교체
+        head = head[:8] + str(eid).ljust(8)[:8] + head[16:]        # 카드명 유지 + EID 필드 교체
+        # 참조 단면 복사 등으로 clone 의 PID 가 source 와 다르면 PID 필드도 패치(beam 계열만).
+        name = src_block[0][0:8].strip().upper().rstrip("*")
+        if name in _PID_AT_FIELD2:
+            clone_pid = as_int(elem.get("propertyId"))
+            src_pid = as_int(field(src_block[0], 2))
+            if clone_pid is not None and src_pid is not None and clone_pid != src_pid:
+                head = _patch_pid(head, clone_pid)
+        out.append(head)
         out.extend(src_block[1:])                                   # 연속행(offset/pin 등) 그대로
 
     for rigid in sorted(edited.get("rigids") or [], key=lambda r: as_int(r.get("id")) or 0):
@@ -1918,10 +1972,9 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
         deps = [n for n in (as_int(v) for v in (rigid.get("dependentNodes") or [])) if n is not None]
         if not deps:
             continue
-        chunks = _nb.dependent_chunks(deps)
-        out.append(_nb.bdf_line("RBE2", rid, indep, cm, *chunks[0]))
-        for chunk in chunks[1:]:
-            out.append(_nb.bdf_line("+", *chunk))
+        # 원본 deck 과 동일한 고정필드(8칸) 양식으로 RBE2 출력 — HyperMesh 가 화면에 표시하도록.
+        # (free-field 콤마 양식은 Nastran 은 풀지만 일부 프리프로세서가 렌더링하지 못함)
+        out.extend(_nb.rbe2_fixed_lines(rid, indep, cm, deps))
 
     return "\n".join([*header, *out, "ENDDATA"]) + "\n"
 
