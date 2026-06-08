@@ -135,7 +135,7 @@ const BANNER_THEMES = {
     iconBg: 'bg-white/10 border-white/15 group-hover:bg-white/20',
     iconColor: 'text-blue-200',
     ctaColor: 'text-blue-200 group-hover:text-white',
-    subtitleColor: 'text-slate-300',
+    subtitleColor: 'text-slate-200',
   },
   workbench: {
     gradient: 'linear-gradient(135deg, #14233f 0%, #0f1b34 60%, #0b1428 100%)',
@@ -145,7 +145,7 @@ const BANNER_THEMES = {
     iconBg: 'bg-white/10 border-white/15 group-hover:bg-white/20',
     iconColor: 'text-slate-200',
     ctaColor: 'text-slate-200 group-hover:text-white',
-    subtitleColor: 'text-slate-300',
+    subtitleColor: 'text-slate-200',
   },
 };
 
@@ -239,23 +239,27 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
         </div>
       </div>
       <div className="p-4 lg:flex-1 relative overflow-hidden flex items-stretch">
-        <div className="grid flex-1 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 pr-0 lg:pr-24">
+        <div className="grid flex-1 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 pr-0 lg:pr-28">
           {modeSummary.map(({ mode, info, apps }) => {
             const modeActive = apps.filter(a => (a.devStatus || 'Active') === 'Active').length;
             const modeDev = apps.filter(a => a.devStatus === 'Developing').length;
             return (
-            <div key={mode} className="rounded-lg border border-white/10 bg-white/8 px-3 py-3.5 min-w-0 h-full flex flex-col justify-center">
-              <p className="text-[10px] font-bold text-blue-100 truncate">{MODE_KO[mode] || info.label}</p>
-              <div className="mt-1 flex items-end justify-between gap-2">
-                <p className="text-white text-lg font-black leading-tight">{apps.length}</p>
-                <p className="text-[10px] font-semibold text-slate-300 whitespace-nowrap">운영 {modeActive} · 개발 {modeDev}</p>
+            <div key={mode} className="rounded-lg border border-white/15 bg-white/[0.09] px-3 py-3 min-w-0 h-full flex flex-col justify-center transition-colors group-hover:border-white/25 group-hover:bg-white/[0.13]">
+              <p className="text-[11px] font-bold text-blue-50 truncate">{(MODE_KO[mode] || info.label).replace(/ Apps$/, '')}</p>
+              <div className="mt-1.5 flex items-end justify-between gap-2">
+                <p className="text-white text-lg font-black leading-none">{apps.length}</p>
+                <p className="text-[10px] font-semibold text-slate-200 whitespace-nowrap">
+                  운영 <span className="font-extrabold text-emerald-300">{modeActive}</span>
+                  <span className="mx-0.5 text-slate-500">·</span>
+                  개발 <span className="font-extrabold text-amber-200">{modeDev}</span>
+                </p>
               </div>
             </div>
             );
           })}
         </div>
-        <div className="hidden lg:flex absolute right-4 top-1/2 -translate-y-1/2 text-white/50 group-hover:text-white transition-colors items-center gap-1 text-xs font-bold">
-          지도 열기 <ChevronRight size={16}/>
+        <div className="hidden lg:flex absolute right-3 top-1/2 -translate-y-1/2 items-center gap-1 text-xs font-bold text-blue-100 bg-white/10 border border-white/20 rounded-lg px-2.5 py-1.5 group-hover:bg-white/20 group-hover:text-white transition-colors">
+          지도 열기 <ChevronRight size={15} className="group-hover:translate-x-0.5 transition-transform"/>
         </div>
       </div>
     </div>
