@@ -98,6 +98,75 @@ ipcMain.on("open-external", (_, url) => {
   }
 });
 
+// ──────────────────────────────────────────────────────────────
+// 외부/별도 웹앱을 WorkBench '내부'의 별도 창(BrowserWindow)으로 띄운다.
+// shell.openExternal(시스템 브라우저) 과 달리, WorkBench 에 속한 프로그램처럼
+// 보이도록 자식 창으로 연다. payload = { url, title? }
+// URL 별로 창을 1개만 유지(재호출 시 기존 창 포커스) → 중복 창 방지.
+// 보안: http/https 만 허용. 외부 웹앱이므로 WorkBench preload(IPC)는 주입하지 않는다(격리).
+// ──────────────────────────────────────────────────────────────
+const appWindows = new Map(); // url -> BrowserWindow
+
+ipcMain.handle("open-app-window", async (_e, payload = {}) => {
+  const { url, title } = payload || {};
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, error: "잘못된 URL 입니다." };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { ok: false, error: "http/https 주소만 열 수 있습니다." };
+  }
+
+  // 이미 열린 창이 있으면 재사용(포커스)
+  const existing = appWindows.get(url);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
+    existing.focus();
+    return { ok: true, reused: true };
+  }
+
+  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
+  const win = new BrowserWindow({
+    width: Math.min(1280, screenW - 80),
+    height: Math.min(900, screenH - 80),
+    minWidth: 800,
+    minHeight: 600,
+    title: title || "HiTESS WorkBench",
+    parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+    backgroundColor: "#002554",
+    autoHideMenuBar: true,
+    icon: path.join(__dirname, "icon.ico"),
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  appWindows.set(url, win);
+  win.once("ready-to-show", () => { win.show(); win.focus(); });
+  win.on("closed", () => { appWindows.delete(url); });
+
+  // 창 내부에서 새 창 요청(window.open/target=_blank) 시 → 시스템 브라우저로 위임(무한 자식창 방지)
+  win.webContents.setWindowOpenHandler(({ url: u }) => {
+    try {
+      const p = new URL(u);
+      if (p.protocol === "http:" || p.protocol === "https:") shell.openExternal(u);
+    } catch { /* 무시 */ }
+    return { action: "deny" };
+  });
+
+  try {
+    await win.loadURL(url);
+  } catch {
+    // 외부 서버 미기동 등 로드 실패 시에도 창은 떠 있게 둔다(연결 실패 화면 표시).
+    if (!win.isDestroyed() && !win.isVisible()) win.show();
+  }
+  return { ok: true };
+});
+
 // 개발자 런북에서 "탐색기 열기" 액션용. 파일이면 부모 폴더가 선택된 채 열림,
 // 폴더면 해당 폴더가 열림. UNC/환경변수(%APPDATA% 등) 도 그대로 통과.
 // 보안: 외부 URL 은 open-external 로 분리되어 있고, 여기서는 로컬 파일시스템만 허용.

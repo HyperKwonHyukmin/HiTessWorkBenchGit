@@ -52,6 +52,8 @@ const VALID_INVOKE_CHANNELS  = [
   'shell:openPath',
   // Download Center: ServerIP.txt 를 C:\temp 에 바로 적용 (레거시 프로그램이 읽는 위치)
   'place-server-ip',
+  // 외부/별도 웹앱을 WorkBench 내부의 별도 창(BrowserWindow)으로 오픈
+  'open-app-window',
 ];
 
 contextBridge.exposeInMainWorld("electron", {

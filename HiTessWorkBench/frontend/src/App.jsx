@@ -55,6 +55,7 @@ const GroupModuleUnitLiftingAnalysis = lazy(() => import('./pages/analysis/Group
 const F06ParserPage = lazy(() => import('./pages/analysis/F06ParserPage'));
 const HpScrAssessment = lazy(() => import('./pages/analysis/HpScrAssessment'));
 const MooringFittingAssessment = lazy(() => import('./pages/analysis/MooringFittingAssessment'));
+const BlockWeldAssessment = lazy(() => import('./pages/analysis/BlockWeldAssessment'));
 
 const PageFallback = () => (
   <div className="h-full min-h-[360px] flex items-center justify-center text-slate-400 text-sm">
@@ -256,6 +257,7 @@ function AppInner() {
       case 'Truss Structural Assessment': return <TrussAssessment />;
       case 'Mooring Fitting Assessment': return <MooringFittingAssessment />;
       case 'Interactive Apps': return <InteractiveApps />;
+      case 'Block Weld Assessment': return <BlockWeldAssessment />;
       case 'Parametric Apps': return <ParametricApps />;
       case 'Academic Apps': return <AcademicApps />;
       case 'Mast Post Assessment': return <MastPostAssessment />;
