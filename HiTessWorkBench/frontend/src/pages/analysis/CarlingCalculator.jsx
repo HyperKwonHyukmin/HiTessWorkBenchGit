@@ -837,7 +837,7 @@ function FreeResult({ result, onStartOptimization }) {
       label: 'Bending Stress',
       calc: i.sigma_B_calc_MPa,
       allow: i.sigma_B_allow_MPa,
-      hint: '0.6 × σ_Y',
+      hint: 'σ_Y x 0.6',
       allowPrecision: 1,
     },
     {
