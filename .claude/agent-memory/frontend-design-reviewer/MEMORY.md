@@ -1,3 +1,4 @@
 - [프로젝트 디자인 시스템 기초](project_design_system.md) — tailwind brand 컬러, 공통 컴포넌트 패턴, 모달 구조
 - [NOTICE_TYPE_STYLE 스키마](notice_type_style_schema.md) — 공지 타입별 색상 토큰 및 확장 키 목록
 - [IndependentTankAssessment 탭 구조](project_independent_tank.md) — 탭 헤더/에러배지 패턴, BC 카드 레이아웃, 수정 금지 영역
+- [MooringFittingStudio 디자인 시스템](project_mooring_fitting_studio.md) — 다크+emerald 팔레트, 탭·리본 구조, 레이아웃 컴포넌트 패턴
