@@ -1214,9 +1214,12 @@ ipcMain.handle("viewer:runStabilityAnalysis", async (_e, posturePath) => {
 
     for (let i = 0; i < 120; i++) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      const statusRes = await fetch(`${serverUrl}/api/analysis/module-stability/${jobId}/status`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const statusUrl = `${serverUrl}/api/analysis/status/${jobId}`;
+      const { res: statusRes } = await fetchWithSessionRefresh(
+        statusUrl,
+        { method: "GET" },
+        { ...runtimeConfig, token },
+      );
       if (!statusRes.ok) continue;
 
       const job = await statusRes.json();

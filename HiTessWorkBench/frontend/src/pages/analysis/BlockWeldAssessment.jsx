@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { PenTool, ExternalLink, Hammer, CheckCircle2, XCircle, Loader2, RefreshCw } from 'lucide-react';
+import { PenTool, ExternalLink, CheckCircle2, XCircle, Loader2, RefreshCw } from 'lucide-react';
 import PageHeader from '../../components/ui/PageHeader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -10,7 +10,7 @@ import { useToast } from '../../contexts/ToastContext';
 //   - 변경이 필요하면 아래 상수 한 줄만 수정하면 된다.
 //   - 실행 시 로그인 사번을 경로 뒤에 붙여 호출한다 →  `${BLOCK_WELD_BASE_URL}/{사번}`
 // ───────────────────────────────────────────────────────────────
-const BLOCK_WELD_BASE_URL = 'http://10.14.42.114:5090';
+const BLOCK_WELD_BASE_URL = 'http://10.14.42.114:31880';
 
 // 외부 앱 서버 접속 가능 여부 확인.
 // no-cors: 어떤 응답이든 오면 서버가 살아있는 것으로 간주(resolve), 연결 실패/타임아웃이면 꺼짐(reject).
@@ -120,8 +120,8 @@ export default function BlockWeldAssessment() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5 flex-wrap">
               <h2 className="text-lg font-bold text-slate-800 tracking-tight">Block Weld Assessment</h2>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 text-[11px] font-bold">
-                <Hammer size={12} /> 개발 중
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold">
+                <CheckCircle2 size={12} /> 서비스 중
               </span>
             </div>
           </div>

@@ -546,6 +546,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
         viewerId: MODULE_STUDIO_VIEWER_ID,
         initialFolder,
         parentAnalysisId: bdfAnalysisId,
+        serverUrl: API_BASE_URL,
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok) throw new Error(openRes?.error || 'Studio 오픈 실패');
