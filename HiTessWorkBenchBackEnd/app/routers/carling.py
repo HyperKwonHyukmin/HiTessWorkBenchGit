@@ -33,7 +33,8 @@ class RangeInput(BaseModel):
 class OptimizationHullInput(BaseModel):
     plate_thickness_gross_mm: float = Field(..., gt=0)
     stiffener_span_mm: float = Field(..., gt=0)
-    corrosion_type: Literal["NON-CSR", "CSR-TANK"] = "NON-CSR"
+    # Manual: 사용자가 plate_corrosion_mm 을 직접 지정(예: Free Calculator 결과 이관)
+    corrosion_type: Literal["NON-CSR", "CSR-TANK", "Manual"] = "NON-CSR"
     plate_corrosion_mm: float = Field(..., ge=0)
 
 

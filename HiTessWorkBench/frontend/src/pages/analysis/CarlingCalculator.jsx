@@ -131,8 +131,9 @@ const setNested = (setter, path) => (value) => {
   });
 };
 
-// Free → Optimization 입력 이관: 공통 항목(하중·Hull Plate)과 재질만 옮기고
-// 나머지(부식 타입·H/T 탐색 범위)는 Optimization 기본값을 유지한다.
+// Free → Optimization 입력 이관: 공통 항목(하중·Hull Plate)과 재질을 옮기고,
+// 부식은 Manual 로 지정해 Free 입력값(corrosion_mm)을 그대로 사용한다.
+// H/T 탐색 범위는 Optimization 기본값을 유지한다.
 const applyOptimizationHandoff = (base, handoff) => {
   if (!handoff) return base;
   const next = structuredClone(base);
@@ -146,6 +147,11 @@ const applyOptimizationHandoff = (base, handoff) => {
       next.hull.plate_thickness_gross_mm = String(handoff.hull.plate_thickness_gross_mm);
     if (handoff.hull.stiffener_span_mm != null)
       next.hull.stiffener_span_mm = String(handoff.hull.stiffener_span_mm);
+    // Free 의 부식값을 Manual 로 그대로 이관(1이면 1, 3이면 3) — 고정 매핑(2/4) 무시
+    if (handoff.hull.corrosion_mm != null) {
+      next.hull.corrosion_type = 'Manual';
+      next.hull.plate_corrosion_mm = String(handoff.hull.corrosion_mm);
+    }
   }
   // Free 의 Hull 재질을 Carling 탐색 재질로 이관
   if (handoff.material) next.carling.material = handoff.material;
@@ -418,6 +424,8 @@ export default function CarlingCalculator({ variant = 'free' }) {
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isReportLoading, setIsReportLoading] = useState(false);
+  // 후보별 행 리포트 생성 중인 행 키(`H-T`) — 해당 행 버튼에만 스피너 표시
+  const [reportingKey, setReportingKey] = useState(null);
 
   // 이관 입력은 1회만 소비하고 즉시 비운다(뒤로 가기/재진입 시 잔존 방지).
   useEffect(() => {
@@ -444,7 +452,9 @@ export default function CarlingCalculator({ variant = 'free' }) {
       && isPositive(payload.hull.stiffener_span_mm)
       && isNonNegative(payload.hull.plate_corrosion_mm)
       && payload.hull.plate_thickness_gross_mm - payload.hull.plate_corrosion_mm > 0
-      && payload.hull.plate_corrosion_mm === (payload.hull.corrosion_type === 'CSR-TANK' ? 4 : 2)
+      // Manual 은 사용자 지정값을 그대로 허용, 그 외에는 고정 매핑(NON-CSR=2 / CSR-TANK=4) 강제
+      && (payload.hull.corrosion_type === 'Manual'
+        || payload.hull.plate_corrosion_mm === (payload.hull.corrosion_type === 'CSR-TANK' ? 4 : 2))
       && isNonNegative(h.min) && isNonNegative(h.max) && isPositive(h.step) && h.min <= h.max
       && isNonNegative(t.min) && isNonNegative(t.max) && isPositive(t.step) && t.min <= t.max;
   }, [payload, variant]);
@@ -455,7 +465,11 @@ export default function CarlingCalculator({ variant = 'free' }) {
       hull: {
         ...prev.hull,
         corrosion_type: value,
-        plate_corrosion_mm: value === 'CSR-TANK' ? '4' : '2',
+        // NON-CSR/CSR-TANK 는 고정값(2/4)으로 세팅, Manual 은 현재 입력값 유지(사용자 직접 지정)
+        plate_corrosion_mm:
+          value === 'CSR-TANK' ? '4'
+          : value === 'NON-CSR' ? '2'
+          : prev.hull.plate_corrosion_mm,
       },
     }));
   };
@@ -478,32 +492,56 @@ export default function CarlingCalculator({ variant = 'free' }) {
     }
   };
 
-  // Excel 리포트(.xlsm) 다운로드 — 백엔드가 DRM 템플릿을 Excel COM으로 채워 반환
+  // Excel 리포트(.xlsm) 생성 공통 호출 — 백엔드가 DRM 템플릿을 Excel COM으로 채워 반환
+  const postReport = async (reportResult) => {
+    const res = await axios.post(
+      `${API_BASE_URL}${meta.endpoint}/report`,
+      { result: reportResult, employee_id: employeeId || 'unknown' },
+      { responseType: 'blob' },
+    );
+    const filename = filenameFromDisposition(
+      res.headers['content-disposition'],
+      `Carling_${variant}_Report.xlsm`,
+    );
+    downloadBlob(res.data, filename, res.headers['content-type']);
+  };
+
+  // blob 응답에 담긴 서버 오류 메시지(JSON)를 추출
+  const extractBlobError = async (e) => {
+    let detail = '리포트 생성에 실패했습니다. 서버에 Excel/DRM 환경이 있는지 확인하세요.';
+    try {
+      const text = await e.response?.data?.text?.();
+      if (text) detail = JSON.parse(text).detail || detail;
+    } catch { /* noop */ }
+    return detail;
+  };
+
+  // 다운로드 바: 결과 전체(optimization 은 optimal) 리포트
   const handleDownloadReport = async () => {
     if (!result) return;
     setIsReportLoading(true);
     setError(null);
     try {
-      const res = await axios.post(
-        `${API_BASE_URL}${meta.endpoint}/report`,
-        { result, employee_id: employeeId || 'unknown' },
-        { responseType: 'blob' },
-      );
-      const filename = filenameFromDisposition(
-        res.headers['content-disposition'],
-        `Carling_Free_Report_${variant}.xlsm`,
-      );
-      downloadBlob(res.data, filename, res.headers['content-type']);
+      await postReport(result);
     } catch (e) {
-      // blob 응답에 담긴 서버 오류 메시지(JSON)를 추출 시도
-      let detail = '리포트 생성에 실패했습니다. 서버에 Excel/DRM 환경이 있는지 확인하세요.';
-      try {
-        const text = await e.response?.data?.text?.();
-        if (text) detail = JSON.parse(text).detail || detail;
-      } catch { /* noop */ }
-      setError(detail);
+      setError(await extractBlobError(e));
     } finally {
       setIsReportLoading(false);
+    }
+  };
+
+  // 후보별 행 리포트 — 해당 후보를 optimal 로 덮어쓴 결과로 그 행만 리포트 생성
+  const handleDownloadCandidateReport = async (candidate) => {
+    if (!result || !candidate) return;
+    const key = `${candidate.H_mm}-${candidate.T_gross_mm}`;
+    setReportingKey(key);
+    setError(null);
+    try {
+      await postReport({ ...result, optimal: candidate });
+    } catch (e) {
+      setError(await extractBlobError(e));
+    } finally {
+      setReportingKey(null);
     }
   };
 
@@ -514,6 +552,8 @@ export default function CarlingCalculator({ variant = 'free' }) {
       hull: {
         plate_thickness_gross_mm: inputs.hull.plate_thickness_gross_mm,
         stiffener_span_mm: inputs.hull.stiffener_span_mm,
+        // Free 의 부식값 → Optimization 에서 Manual 로 그대로 사용
+        corrosion_mm: inputs.hull.corrosion_mm,
       },
       material: inputs.hull.material,
     });
@@ -629,7 +669,7 @@ export default function CarlingCalculator({ variant = 'free' }) {
                       label="Corrosion Type"
                       value={inputs.hull.corrosion_type}
                       onChange={handleCorrosionType}
-                      options={['NON-CSR', 'CSR-TANK']}
+                      options={['NON-CSR', 'CSR-TANK', 'Manual']}
                     />
                     <Field
                       label="Plate Corrosion"
@@ -764,7 +804,13 @@ export default function CarlingCalculator({ variant = 'free' }) {
 
               {variant === 'free'
                 ? <FreeResult result={result} onStartOptimization={handleStartOptimization} />
-                : <OptimizationResult result={result} okCandidates={okCandidates} candidates={sortedCandidates} />
+                : <OptimizationResult
+                    result={result}
+                    okCandidates={okCandidates}
+                    candidates={sortedCandidates}
+                    onDownloadRow={handleDownloadCandidateReport}
+                    reportingKey={reportingKey}
+                  />
               }
             </>
           )}
@@ -895,7 +941,7 @@ function FreeResult({ result, onStartOptimization }) {
 // ─────────────────────────────────────────────
 // OptimizationResult
 // ─────────────────────────────────────────────
-function OptimizationResult({ result, okCandidates, candidates }) {
+function OptimizationResult({ result, okCandidates, candidates, onDownloadRow, reportingKey }) {
   const optimal = result.optimal || {};
 
   return (
@@ -958,6 +1004,12 @@ function OptimizationResult({ result, okCandidates, candidates }) {
                 >
                   Leg<span className="font-normal normal-case opacity-60 ml-0.5">mm</span>
                 </th>
+                <th
+                  className="px-3 py-2 text-center text-[10px] font-extrabold text-slate-500 uppercase tracking-wider border-b border-slate-100 border-l border-slate-100"
+                  rowSpan={2}
+                >
+                  리포트
+                </th>
               </tr>
               {/* 세부 컬럼명 행 */}
               <tr className="border-b border-slate-200">
@@ -998,6 +1050,20 @@ function OptimizationResult({ result, okCandidates, candidates }) {
                     <StressCell calcVal={row.stress?.sigma_weld_calc_MPa} allowVal={row.stress?.sigma_weld_allow_MPa} fail={weldFail} />
                     {/* Result: Leg */}
                     <td className="px-3 py-2.5 text-right font-bold text-slate-700 tabular-nums">{fmt(row.min_leg_length_mm, 2)}</td>
+                    {/* 리포트: 해당 후보 결과를 Excel(.xlsm)로 다운로드 */}
+                    <td className="px-3 py-2.5 text-center border-l border-slate-50">
+                      <button
+                        onClick={() => onDownloadRow?.(row)}
+                        disabled={!!reportingKey}
+                        title="이 후보 결과를 Excel(.xlsm) 리포트로 다운로드"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+                      >
+                        {reportingKey === `${row.H_mm}-${row.T_gross_mm}`
+                          ? <Loader2 size={13} className="animate-spin" />
+                          : <FileSpreadsheet size={13} />}
+                        Excel
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
