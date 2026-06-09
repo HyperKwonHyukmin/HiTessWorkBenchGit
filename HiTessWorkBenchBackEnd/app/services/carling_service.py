@@ -23,6 +23,60 @@ _PROGRAM_NAMES = {
     "optimization": "Carling Design Optimization",
 }
 
+_YIELD_STRESS_BY_MATERIAL = {
+    "Mild": 235.0,
+    "HT32": 315.0,
+    "HT36": 355.0,
+}
+
+
+def _material_from_inputs(inputs: dict, mode: str) -> str:
+    if mode == "optimization":
+        return (inputs.get("carling") or {}).get("material") or "Mild"
+    return (inputs.get("hull") or {}).get("material") or "Mild"
+
+
+def _assessment_from_checks(checks: dict) -> str:
+    return "Total OK" if all(value == "OK" for value in checks.values()) else "Not OK"
+
+
+def _apply_bending_allowable(result: dict, inputs: dict, mode: str) -> None:
+    material = _material_from_inputs(inputs, mode)
+    yield_stress = _YIELD_STRESS_BY_MATERIAL.get(material, _YIELD_STRESS_BY_MATERIAL["Mild"])
+    bending_allowable = round(yield_stress * 0.6, 1)
+
+    def update_block(block: dict) -> None:
+        stress = block.get("stress") or block.get("intermediate")
+        if not isinstance(stress, dict) or "sigma_B_allow_MPa" not in stress:
+            return
+
+        stress["sigma_B_allow_MPa"] = bending_allowable
+        sigma_b_calc = stress.get("sigma_B_calc_MPa")
+        checks = block.get("checks")
+        if isinstance(checks, dict) and isinstance(sigma_b_calc, (int, float)):
+            checks["bending"] = "OK" if sigma_b_calc <= bending_allowable else "Not OK"
+            block["assessment"] = _assessment_from_checks(checks)
+
+    result_block = result.get("result")
+    if isinstance(result_block, dict):
+        update_block(result_block)
+        intermediate = result.get("intermediate")
+        checks = result_block.get("checks")
+        if isinstance(intermediate, dict) and "sigma_B_allow_MPa" in intermediate:
+            intermediate["sigma_B_allow_MPa"] = bending_allowable
+            sigma_b_calc = intermediate.get("sigma_B_calc_MPa")
+            if isinstance(checks, dict) and isinstance(sigma_b_calc, (int, float)):
+                checks["bending"] = "OK" if sigma_b_calc <= bending_allowable else "Not OK"
+                result_block["assessment"] = _assessment_from_checks(checks)
+
+    optimal = result.get("optimal")
+    if isinstance(optimal, dict):
+        update_block(optimal)
+
+    for candidate in result.get("candidates") or []:
+        if isinstance(candidate, dict):
+            update_block(candidate)
+
 
 def _make_work_dir(employee_id: str, mode: str) -> tuple[str, str]:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -81,6 +135,10 @@ def run_carling(inputs: dict, employee_id: str, mode: str) -> dict:
 
     with open(output_path, "r", encoding="utf-8") as f:
         result = json.load(f)
+
+    _apply_bending_allowable(result, inputs, mode)
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
 
     result_summary = {
         "input_json": input_path,

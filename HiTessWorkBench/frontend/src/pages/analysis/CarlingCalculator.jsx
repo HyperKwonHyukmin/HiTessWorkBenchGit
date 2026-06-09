@@ -368,13 +368,13 @@ const InfoPanel = ({ variant, meta }) => {
 // ─────────────────────────────────────────────
 // 응력 셀: 계산값 위 / 허용값 아래 2-line 표시
 // ─────────────────────────────────────────────
-const StressCell = ({ calcVal, allowVal, fail }) => (
+const StressCell = ({ calcVal, allowVal, fail, allowPrecision = 2 }) => (
   <td className="px-3 py-2.5 text-right">
     <span className={`block text-[12px] font-bold tabular-nums leading-tight ${fail ? 'text-rose-600' : 'text-slate-700'}`}>
       {fmt(calcVal, 2)}
     </span>
     <span className="block text-[10px] text-slate-400 tabular-nums leading-tight">
-      / {fmt(allowVal, 2)}
+      / {fmt(allowVal, allowPrecision)}
     </span>
   </td>
 );
@@ -837,7 +837,8 @@ function FreeResult({ result, onStartOptimization }) {
       label: 'Bending Stress',
       calc: i.sigma_B_calc_MPa,
       allow: i.sigma_B_allow_MPa,
-      hint: 'σ_Y / 2',
+      hint: '0.6 × σ_Y',
+      allowPrecision: 1,
     },
     {
       label: 'Shear Stress',
@@ -867,7 +868,7 @@ function FreeResult({ result, onStartOptimization }) {
         {/* 응력 비교 3열 */}
         <div className="p-5">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {stressPairs.map(({ label, calc, allow, hint, unit = 'MPa' }) => {
+            {stressPairs.map(({ label, calc, allow, hint, unit = 'MPa', allowPrecision = 2 }) => {
               const fail = Number(calc) > Number(allow);
               return (
                 <div
@@ -896,7 +897,7 @@ function FreeResult({ result, onStartOptimization }) {
                     <span className={`text-xs font-bold tabular-nums ${
                       fail ? 'text-rose-500' : 'text-emerald-600'
                     }`}>
-                      {fmt(allow, 2)} {unit}
+                      {fmt(allow, allowPrecision)} {unit}
                     </span>
                   </div>
                 </div>
@@ -1045,7 +1046,7 @@ function OptimizationResult({ result, okCandidates, candidates, onDownloadRow, r
                     <td className="px-3 py-2.5 text-right font-bold text-slate-700 tabular-nums">{fmt(row.T_gross_mm, 0)}</td>
                     {/* Checks */}
                     <StressCell calcVal={depthRatio} allowVal={DEPTH_PER_THK_ALLOW} fail={depthFail} />
-                    <StressCell calcVal={row.stress?.sigma_B_calc_MPa} allowVal={row.stress?.sigma_B_allow_MPa} fail={bendingFail} />
+                    <StressCell calcVal={row.stress?.sigma_B_calc_MPa} allowVal={row.stress?.sigma_B_allow_MPa} fail={bendingFail} allowPrecision={1} />
                     <StressCell calcVal={row.stress?.sigma_S_calc_MPa} allowVal={row.stress?.sigma_S_allow_MPa} fail={shearFail} />
                     <StressCell calcVal={row.stress?.sigma_weld_calc_MPa} allowVal={row.stress?.sigma_weld_allow_MPa} fail={weldFail} />
                     {/* Result: Leg */}
