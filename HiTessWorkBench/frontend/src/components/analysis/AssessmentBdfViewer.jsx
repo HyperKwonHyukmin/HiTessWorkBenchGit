@@ -137,6 +137,12 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
       let validElemCount = 0;
       elements.forEach(([n1, n2, eid]) => {
         if (nodes[n1] && nodes[n2]) {
+          const sequenceId = validElemCount + 1;
+          const resultKey = hasColorResult && eid != null && assessmentMap[eid]
+            ? eid
+            : hasColorResult && assessmentMap[sequenceId]
+            ? sequenceId
+            : eid;
           const p1 = new THREE.Vector3(...nodes[n1]);
           const p2 = new THREE.Vector3(...nodes[n2]);
           const distance = p1.distanceTo(p2);
@@ -145,10 +151,10 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
           dummyElem.lookAt(p2);
           dummyElem.updateMatrix();
           instancedElements.setMatrixAt(validElemCount, dummyElem.matrix);
-          if (hasColorResult && eid != null && assessmentMap[eid]) {
-            instancedElements.setColorAt(validElemCount, assessmentToColor(assessmentMap[eid].assessment));
+          if (hasColorResult && resultKey != null && assessmentMap[resultKey]) {
+            instancedElements.setColorAt(validElemCount, assessmentToColor(assessmentMap[resultKey].assessment));
           } else { instancedElements.setColorAt(validElemCount, defaultColor); }
-          eidMapping.push(eid);
+          eidMapping.push(resultKey);
           validElemCount++;
         }
       });

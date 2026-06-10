@@ -88,6 +88,31 @@ export default function TrussAssessment() {
 
   const loadResultsFromProject = async (project) => {
     if (!project?.result_info) return;
+    const bdfPath = project.result_info.bdf;
+    if (typeof bdfPath === 'string' && bdfPath) {
+      try {
+        const bdfRes = await downloadFileBlob(bdfPath);
+        const bdfText = await bdfRes.data.text();
+        parseBDF(bdfText, {
+          fileName: bdfPath.split(/[\\/]/).pop() || 'sample.bdf',
+          source: 'server',
+          activateTab: false,
+        });
+      } catch (e) {
+        dashboardCtx?.setAssessmentPageState?.(prev => ({
+          ...(prev || {}),
+          logs: [
+            ...(prev?.logs || []),
+            {
+              time: new Date().toLocaleTimeString(),
+              message: `[WARN] 결과 모델 BDF를 불러오지 못했습니다: ${e?.message || 'unknown error'}`,
+              type: 'warning',
+            },
+          ],
+        }));
+      }
+    }
+
     const jsonFiles = Object.entries(project.result_info)
       .filter(([, path]) => typeof path === 'string' && path.toLowerCase().endsWith('.json'))
       .map(([key, path]) => ({ key: key.replace(/^JSON_/i, ''), path }));
@@ -95,7 +120,7 @@ export default function TrussAssessment() {
     const results = await Promise.allSettled(jsonFiles.map(async (f) => {
       const res = await downloadFileBlob(f.path);
       const text = await res.data.text();
-      return { key: f.key, data: JSON.parse(text) };
+      return { key: f.key, data: JSON.parse(text.replace(/^\uFEFF/, '')) };
     }));
     const parsedResultsMap = {};
     results.forEach((r) => {
@@ -103,7 +128,7 @@ export default function TrussAssessment() {
     });
     const caseNames = Object.keys(parsedResultsMap);
     if (caseNames.length > 0) {
-      updateState({ resultJsonData: parsedResultsMap, activeResultCase: caseNames[0], activeTab: 'result' });
+      updateState({ resultJsonData: parsedResultsMap, activeResultCase: caseNames[0], activeTab: bdfPath ? '3d' : 'result' });
     }
   };
 
@@ -182,7 +207,8 @@ export default function TrussAssessment() {
     return parseFloat(s) || 0;
   };
 
-  const parseBDF = (text) => {
+  const parseBDF = (text, options = {}) => {
+    const { fileName = null, source = 'upload', activateTab = true } = options;
     const parsedNodes = {}; const parsedElements = [];
     text.split('\n').forEach(line => {
       if (line.startsWith('GRID')) {
@@ -197,7 +223,31 @@ export default function TrussAssessment() {
     });
     const nTable = [["Node ID", "X", "Y", "Z"], ...Object.keys(parsedNodes).slice(0, 100).map(k => [k, ...parsedNodes[k].map(v => v.toFixed(2))])];
     const eTable = [["Element", "EID", "Start Node", "End Node"], ...parsedElements.slice(0, 100).map((el, i) => [i + 1, el[2] ?? '-', el[0], el[1]])];
-    updateState({ nodes: parsedNodes, elements: parsedElements, nodeTableData: nTable, elemTableData: eTable, activeTab: '3d', logs: [...logs, { time: new Date().toLocaleTimeString(), message: `[DATA] BDF 파싱 완료. (Nodes: ${Object.keys(parsedNodes).length}, Elements: ${parsedElements.length})`, type: 'success' }] });
+    const nextState = {
+      nodes: parsedNodes,
+      elements: parsedElements,
+      nodeTableData: nTable,
+      elemTableData: eTable,
+    };
+    if (activateTab) nextState.activeTab = '3d';
+    if (fileName) nextState.bdfFile = { name: fileName, sample: source === 'server' };
+
+    if (dashboardCtx?.setAssessmentPageState) {
+      dashboardCtx.setAssessmentPageState(prev => ({
+        ...(prev || {}),
+        ...nextState,
+        logs: [
+          ...(prev?.logs || []),
+          {
+            time: new Date().toLocaleTimeString(),
+            message: `[DATA] BDF 파싱 완료. (Nodes: ${Object.keys(parsedNodes).length}, Elements: ${parsedElements.length})`,
+            type: 'success',
+          },
+        ],
+      }));
+    } else {
+      updateState({ ...nextState, logs: [...logs, { time: new Date().toLocaleTimeString(), message: `[DATA] BDF 파싱 완료. (Nodes: ${Object.keys(parsedNodes).length}, Elements: ${parsedElements.length})`, type: 'success' }] });
+    }
   };
 
   const handleFile = (file) => {
@@ -212,6 +262,10 @@ export default function TrussAssessment() {
 
   const runAnalysis = async () => {
     if (!bdfFile) return;
+    if (bdfFile.sample) {
+      showToast('샘플 모델은 샘플 실행 버튼으로 다시 실행하세요. 새 해석은 BDF 파일을 직접 업로드해야 합니다.', 'warning');
+      return;
+    }
     updateState({ isRunning: true, progress: 0, statusMessage: '서버 요청 중...', logs: [], detailedLogs: [], resultJsonData: null, projectData: null });
     setIsResultModalOpen(false);
     lastMsgRef.current = '';
@@ -238,7 +292,16 @@ export default function TrussAssessment() {
       isRunning: true, progress: 0,
       statusMessage: '샘플 파일로 작업 요청 중...',
       logs: [{ time: new Date().toLocaleTimeString(), message: '[SAMPLE] 사내 표준 BDF로 해석 요청', type: 'info' }],
-      detailedLogs: [], resultJsonData: null, projectData: null,
+      detailedLogs: [],
+      resultJsonData: null,
+      activeResultCase: null,
+      projectData: null,
+      bdfFile: null,
+      nodes: {},
+      elements: [],
+      nodeTableData: [],
+      elemTableData: [],
+      activeTab: '3d',
     });
     setIsResultModalOpen(false);
     lastMsgRef.current = '';
@@ -358,12 +421,12 @@ export default function TrussAssessment() {
               className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 bg-white border-2 border-slate-300 text-slate-600 hover:bg-slate-50 hover:border-slate-400 hover:-translate-y-0.5 transition-all cursor-pointer shadow-sm">
               <RotateCcw size={16} /> 초기화
             </button>
-            <button onClick={runAnalysis} disabled={!isDataReady || isRunning}
-              className={`relative w-full py-4 rounded-xl text-lg font-bold flex items-center justify-center gap-3 transition-all duration-300 shadow-lg overflow-hidden ${!isDataReady ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : isRunning ? 'bg-[#001b3d] text-white cursor-wait' : 'bg-brand-blue hover:bg-brand-blue-dark text-white hover:-translate-y-1 cursor-pointer'}`}>
+            <button onClick={runAnalysis} disabled={!isDataReady || isRunning || bdfFile?.sample}
+              className={`relative w-full py-4 rounded-xl text-lg font-bold flex items-center justify-center gap-3 transition-all duration-300 shadow-lg overflow-hidden ${!isDataReady || bdfFile?.sample ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : isRunning ? 'bg-[#001b3d] text-white cursor-wait' : 'bg-brand-blue hover:bg-brand-blue-dark text-white hover:-translate-y-1 cursor-pointer'}`}>
               {isRunning && <div className="absolute left-0 top-0 bottom-0 bg-blue-600 transition-all duration-500 ease-out opacity-80" style={{ width: `${progress}%` }}></div>}
               <div className="relative z-10 flex items-center gap-3 drop-shadow-md">
                 {isRunning ? <RefreshCw className="animate-spin" size={24} /> : <Play size={24} fill="currentColor" />}
-                {isRunning ? `${progress}% - ${statusMessage} (${elapsedSeconds}s)` : '구조 해석 시작'}
+                {isRunning ? `${progress}% - ${statusMessage} (${elapsedSeconds}s)` : bdfFile?.sample ? '샘플 결과 표시 중' : '구조 해석 시작'}
               </div>
             </button>
           </div>
