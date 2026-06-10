@@ -82,6 +82,12 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+    // 본체(WorkBench) 종료 시, parent 미설정으로 독립 실행되는 외부 앱 창들도 함께 닫는다.
+    //   (포커스는 분리하되 종료는 본체에 종속시킨다.)
+    for (const externalWin of [...appWindows.values()]) {
+      if (externalWin && !externalWin.isDestroyed()) externalWin.close();
+    }
+    appWindows.clear();
   });
 }
 
@@ -106,6 +112,25 @@ ipcMain.on("open-external", (_, url) => {
 // 보안: http/https 만 허용. 외부 웹앱이므로 WorkBench preload(IPC)는 주입하지 않는다(격리).
 // ──────────────────────────────────────────────────────────────
 const appWindows = new Map(); // url -> BrowserWindow
+
+// 다운로드 저장 대화상자('다른 이름으로 저장') 제목에 다운로드 소스 URL(blob:/http...)이
+// 노출되는 것을 막는다. 외부 앱이 파일을 다운로드하면 Electron 기본 저장창의 제목이 URL 로
+// 잡히므로, will-download 를 가로채 깔끔한 제목 + 원본 파일명으로 교체한다.
+// (item.savePath 미설정, 즉 사용자에게 저장창을 띄우는 경우에만 적용됨)
+// 세션당 1회만 설치하여 중복 리스너를 방지한다.
+const _saveDialogTitleHookedSessions = new WeakSet();
+function installCleanSaveDialogTitle(ses) {
+  if (!ses || _saveDialogTitleHookedSessions.has(ses)) return;
+  _saveDialogTitleHookedSessions.add(ses);
+  ses.on("will-download", (_event, item) => {
+    try {
+      item.setSaveDialogOptions({
+        title: "파일 저장",
+        defaultPath: item.getFilename(),
+      });
+    } catch { /* 무시 */ }
+  });
+}
 
 ipcMain.handle("open-app-window", async (_e, payload = {}) => {
   const { url, title } = payload || {};
@@ -134,7 +159,10 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
     minWidth: 800,
     minHeight: 600,
     title: title || "HiTESS WorkBench",
-    parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+    // parent 미설정: 부모-자식 창은 Windows 에서 포커스/z-order 가 묶여, 외부 앱 창을
+    //   선택하면 OS 가 WorkBench 본체까지 함께 앞으로 끌어올린다(멀티모니터에서 본체가
+    //   튀어나옴). 독립 top-level 창으로 두어 포커스/선택을 본체와 분리한다.
+    //   (viewerWindow 와 동일한 이유 — 해당 핸들러 주석 참고)
     backgroundColor: "#002554",
     autoHideMenuBar: true,
     icon: path.join(__dirname, "icon.ico"),
@@ -146,44 +174,18 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
   });
 
   appWindows.set(url, win);
+  // 외부 앱이 파일을 다운로드할 때 저장창 제목에 URL 이 노출되지 않도록 처리.
+  installCleanSaveDialogTitle(win.webContents.session);
   win.once("ready-to-show", () => { win.show(); win.focus(); });
   win.on("closed", () => { appWindows.delete(url); });
 
-  // 창 내부에서 새 창 요청(window.open/target=_blank, 예: '저장' 팝업) 시
-  //   → 시스템 브라우저(주소창에 URL 노출)로 위임하지 않고,
-  //     WorkBench 내부 자식 창(Electron BrowserWindow, 주소창 없음)으로 연다.
-  //   외부 앱이므로 preload(IPC)는 주입하지 않아 격리는 그대로 유지된다.
+  // 창 내부에서 새 창 요청(window.open/target=_blank) 시 → 시스템 브라우저로 위임(무한 자식창 방지)
   win.webContents.setWindowOpenHandler(({ url: u }) => {
     try {
       const p = new URL(u);
-      if (p.protocol === "http:" || p.protocol === "https:") {
-        return {
-          action: "allow",
-          overrideBrowserWindowOptions: {
-            parent: win,
-            autoHideMenuBar: true,
-            backgroundColor: "#ffffff",
-            icon: path.join(__dirname, "icon.ico"),
-            webPreferences: {
-              nodeIntegration: false,
-              contextIsolation: true,
-            },
-          },
-        };
-      }
+      if (p.protocol === "http:" || p.protocol === "https:") shell.openExternal(u);
     } catch { /* 무시 */ }
     return { action: "deny" };
-  });
-
-  // 자식(저장) 창의 타이틀바에 URL 이 노출되지 않도록:
-  //   - 페이지 <title> 자동 반영을 막고(제목 미지정 시 Electron 이 URL 을 제목으로 사용함)
-  //   - 메뉴바를 숨기고 고정 제목을 사용한다.
-  win.webContents.on("did-create-window", (childWindow) => {
-    try {
-      childWindow.setMenuBarVisibility(false);
-      childWindow.on("page-title-updated", (e) => e.preventDefault());
-      childWindow.setTitle(title || "HiTESS WorkBench");
-    } catch { /* 무시 */ }
   });
 
   try {
