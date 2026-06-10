@@ -149,13 +149,41 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
   win.once("ready-to-show", () => { win.show(); win.focus(); });
   win.on("closed", () => { appWindows.delete(url); });
 
-  // 창 내부에서 새 창 요청(window.open/target=_blank) 시 → 시스템 브라우저로 위임(무한 자식창 방지)
+  // 창 내부에서 새 창 요청(window.open/target=_blank, 예: '저장' 팝업) 시
+  //   → 시스템 브라우저(주소창에 URL 노출)로 위임하지 않고,
+  //     WorkBench 내부 자식 창(Electron BrowserWindow, 주소창 없음)으로 연다.
+  //   외부 앱이므로 preload(IPC)는 주입하지 않아 격리는 그대로 유지된다.
   win.webContents.setWindowOpenHandler(({ url: u }) => {
     try {
       const p = new URL(u);
-      if (p.protocol === "http:" || p.protocol === "https:") shell.openExternal(u);
+      if (p.protocol === "http:" || p.protocol === "https:") {
+        return {
+          action: "allow",
+          overrideBrowserWindowOptions: {
+            parent: win,
+            autoHideMenuBar: true,
+            backgroundColor: "#ffffff",
+            icon: path.join(__dirname, "icon.ico"),
+            webPreferences: {
+              nodeIntegration: false,
+              contextIsolation: true,
+            },
+          },
+        };
+      }
     } catch { /* 무시 */ }
     return { action: "deny" };
+  });
+
+  // 자식(저장) 창의 타이틀바에 URL 이 노출되지 않도록:
+  //   - 페이지 <title> 자동 반영을 막고(제목 미지정 시 Electron 이 URL 을 제목으로 사용함)
+  //   - 메뉴바를 숨기고 고정 제목을 사용한다.
+  win.webContents.on("did-create-window", (childWindow) => {
+    try {
+      childWindow.setMenuBarVisibility(false);
+      childWindow.on("page-title-updated", (e) => e.preventDefault());
+      childWindow.setTitle(title || "HiTESS WorkBench");
+    } catch { /* 무시 */ }
   });
 
   try {
