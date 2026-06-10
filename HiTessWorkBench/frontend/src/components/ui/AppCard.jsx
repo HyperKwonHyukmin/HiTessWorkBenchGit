@@ -175,9 +175,11 @@ export default function AppCard({
         </div>
 
         {/* 설명 */}
-        <p className="text-[13px] text-slate-500 leading-relaxed">
-          {description}
-        </p>
+        {description && (
+          <p className="text-[13px] text-slate-500 leading-relaxed">
+            {description}
+          </p>
+        )}
 
         {/* 태그 */}
         {tags.length > 0 && (

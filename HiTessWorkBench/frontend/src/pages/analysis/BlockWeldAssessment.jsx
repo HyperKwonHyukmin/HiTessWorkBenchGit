@@ -10,7 +10,7 @@ import { useToast } from '../../contexts/ToastContext';
 //   - 변경이 필요하면 아래 상수 한 줄만 수정하면 된다.
 //   - 실행 시 로그인 사번을 경로 뒤에 붙여 호출한다 →  `${BLOCK_WELD_BASE_URL}/{사번}`
 // ───────────────────────────────────────────────────────────────
-const BLOCK_WELD_BASE_URL = 'http://10.14.42.114:31880';
+const BLOCK_WELD_BASE_URL = 'http://10.14.42.145:31880';
 
 // 외부 앱 서버 접속 가능 여부 확인.
 // no-cors: 어떤 응답이든 오면 서버가 살아있는 것으로 간주(resolve), 연결 실패/타임아웃이면 꺼짐(reject).

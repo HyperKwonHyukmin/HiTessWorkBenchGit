@@ -81,7 +81,7 @@ export default function AppListRow({
           </span>
           <DevStatusBadge devStatus={devStatus} />
         </div>
-        <p className="text-xs text-slate-400 truncate mt-0.5 leading-relaxed">{description}</p>
+        {description && <p className="text-xs text-slate-400 truncate mt-0.5 leading-relaxed">{description}</p>}
       </div>
 
       {/* 태그 */}
