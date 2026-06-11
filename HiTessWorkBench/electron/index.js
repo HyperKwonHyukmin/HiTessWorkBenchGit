@@ -60,6 +60,10 @@ function createWindow() {
     icon: path.join(__dirname, "icon.ico")
   });
 
+  // 본체에서 파일을 다운로드(예: Excel 리포트)할 때 '다른 이름으로 저장' 대화상자 제목에
+  // blob:/http URL 이 노출되지 않도록 처리(외부 앱 창과 동일한 보호를 본체 세션에도 적용).
+  installCleanSaveDialogTitle(mainWindow.webContents.session);
+
   // [핵심 수정] 개발 모드 vs 배포 모드 구분
   // packager로 빌드된 앱은 app.isPackaged가 true가 됩니다.
   if (app.isPackaged) {
