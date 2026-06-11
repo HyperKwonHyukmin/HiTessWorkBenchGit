@@ -80,26 +80,27 @@ class CarlingReportRequest(BaseModel):
 
 
 def _report_response(result: dict, employee_id: str) -> Response:
-    """결과를 DRM 템플릿에 채워 .xlsm 리포트(bytes)로 반환한다.
+    """결과를 DRM 템플릿에 채워 .xlsx 리포트(bytes)로 반환한다.
 
-    Excel COM 자동화로 생성하므로 서버에 Excel + DRM 에이전트가 필요합니다.
+    Excel COM 자동화로 DRM .xlsm 템플릿을 열어 채운 뒤 평문 .xlsx 로 저장하므로
+    서버에 Excel + DRM 에이전트가 필요합니다(.xlsm 으로 저장하면 DRM 재암호화됨).
     """
     filename, data = generate_report(result, employee_id)
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return Response(
         content=data,
-        media_type="application/vnd.ms-excel.sheet.macroEnabled.12",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers=headers,
     )
 
 
 @router.post("/free/report")
 def download_free_report(body: CarlingReportRequest):
-    """Carling Free 결과를 .xlsm 리포트로 반환합니다."""
+    """Carling Free 결과를 .xlsx 리포트로 반환합니다."""
     return _report_response(body.result, body.employee_id)
 
 
 @router.post("/optimization/report")
 def download_optimization_report(body: CarlingReportRequest):
-    """Carling Design Optimization 결과(최적안)를 .xlsm 리포트로 반환합니다."""
+    """Carling Design Optimization 결과(최적안)를 .xlsx 리포트로 반환합니다."""
     return _report_response(body.result, body.employee_id)

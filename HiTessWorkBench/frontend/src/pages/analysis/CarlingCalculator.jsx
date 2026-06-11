@@ -492,7 +492,7 @@ export default function CarlingCalculator({ variant = 'free' }) {
     }
   };
 
-  // Excel 리포트(.xlsm) 생성 공통 호출 — 백엔드가 DRM 템플릿을 Excel COM으로 채워 반환
+  // Excel 리포트(.xlsx) 생성 공통 호출 — 백엔드가 DRM 템플릿을 Excel COM으로 채워 반환
   const postReport = async (reportResult) => {
     const res = await axios.post(
       `${API_BASE_URL}${meta.endpoint}/report`,
@@ -501,7 +501,7 @@ export default function CarlingCalculator({ variant = 'free' }) {
     );
     const filename = filenameFromDisposition(
       res.headers['content-disposition'],
-      `Carling_${variant}_Report.xlsm`,
+      `Carling_${variant}_Report.xlsx`,
     );
     downloadBlob(res.data, filename, res.headers['content-type']);
   };
@@ -1051,12 +1051,12 @@ function OptimizationResult({ result, okCandidates, candidates, onDownloadRow, r
                     <StressCell calcVal={row.stress?.sigma_weld_calc_MPa} allowVal={row.stress?.sigma_weld_allow_MPa} fail={weldFail} />
                     {/* Result: Leg */}
                     <td className="px-3 py-2.5 text-right font-bold text-slate-700 tabular-nums">{fmt(row.min_leg_length_mm, 2)}</td>
-                    {/* 리포트: 해당 후보 결과를 Excel(.xlsm)로 다운로드 */}
+                    {/* 리포트: 해당 후보 결과를 Excel(.xlsx)로 다운로드 */}
                     <td className="px-3 py-2.5 text-center border-l border-slate-50">
                       <button
                         onClick={() => onDownloadRow?.(row)}
                         disabled={!!reportingKey}
-                        title="이 후보 결과를 Excel(.xlsm) 리포트로 다운로드"
+                        title="이 후보 결과를 Excel(.xlsx) 리포트로 다운로드"
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-wait"
                       >
                         {reportingKey === `${row.H_mm}-${row.T_gross_mm}`

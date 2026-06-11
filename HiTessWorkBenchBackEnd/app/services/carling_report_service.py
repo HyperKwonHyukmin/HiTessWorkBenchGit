@@ -4,7 +4,9 @@ DRM 암호화된 .xlsm 템플릿은 Excel.exe(인가 프로세스)로만 열린�
 Excel COM 은 장수명 FastAPI 워커에서 직접 돌리지 않고 report_filler.py 를
 단기 subprocess 로 격리 실행한다(코드베이스의 EXE 호출 관례와 동일, timeout-kill 가능).
 
-생성된 .xlsm 은 userConnection 작업폴더에 저장되고, bytes 로 읽혀 라우터가 반환한다.
+출력은 .xlsx 로 저장한다(.xlsm 으로 저장하면 HHI DRM 이 자동 재암호화하여 사용자가
+열 수 없는 DRM 블롭이 된다 — report_filler.py 참고). 생성된 .xlsx 는 userConnection
+작업폴더에 저장되고, 평문 bytes 로 읽혀 라우터가 반환한다.
 """
 import json
 import logging
@@ -55,7 +57,7 @@ def _is_within_userconnection(path: str) -> bool:
 
 
 def generate_report(result: dict, employee_id: str) -> tuple[str, bytes]:
-    """solver 전체 결과(dict)로 Carling 리포트 .xlsm 을 생성한다(free/optimization 공통).
+    """solver 전체 결과(dict)로 Carling 리포트 .xlsx 를 생성한다(free/optimization 공통).
 
     Args:
         result: solver 출력 전체. mode 키로 free/optimization 분기.
@@ -100,7 +102,7 @@ def generate_report(result: dict, employee_id: str) -> tuple[str, bytes]:
     os.makedirs(report_dir, exist_ok=True)
 
     input_json = os.path.join(report_dir, "report_input.json")
-    output_name = f"Carling_{mode_label}_Report_{load_type}_{timestamp}.xlsm"
+    output_name = f"Carling_{mode_label}_Report_{load_type}_{timestamp}.xlsx"
     output_path = os.path.join(report_dir, output_name)
 
     # filler 입력에는 내부 키(_work_dir)를 제외한 순수 결과만 기록
@@ -126,7 +128,10 @@ def generate_report(result: dict, employee_id: str) -> tuple[str, bytes]:
             logger.error("Carling report filler timed out")
             raise HTTPException(status_code=500, detail="리포트 생성 시간이 초과되었습니다.") from exc
 
-    if proc.returncode != 0 or not os.path.exists(output_path):
+    # report_filler 는 평문 bytes 를 <output>.bin 으로 흘려준다(HHI DRM 회피).
+    # 디스크의 .xlsx 자체는 프로세스 종료 후 DRM 이 암호화하므로 백엔드가 직접 읽으면 안 된다.
+    clean_path = output_path + ".bin"
+    if proc.returncode != 0 or not os.path.exists(clean_path):
         logger.error(
             "filler failed rc=%s stderr=%s stdout=%s",
             proc.returncode, proc.stderr, proc.stdout,
@@ -136,8 +141,17 @@ def generate_report(result: dict, employee_id: str) -> tuple[str, bytes]:
             detail="리포트 생성 환경(Excel/DRM)을 사용할 수 없습니다. 서버 관리자에게 문의하세요.",
         )
 
-    with open(output_path, "rb") as f:
+    with open(clean_path, "rb") as f:
         data = f.read()
+
+    # 잔여물 정리: 평문 .bin 과 DRM 암호화된 .xlsx 를 모두 제거(디스크 평문 문서 최소화).
+    for leftover in (clean_path, output_path):
+        try:
+            if os.path.exists(leftover):
+                os.remove(leftover)
+        except OSError:
+            pass
+
     return output_name, data
 
 
