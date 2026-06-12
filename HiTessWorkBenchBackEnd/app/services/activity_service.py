@@ -1,8 +1,10 @@
 """사용자 활동 로그 기록 + 조회 헬퍼."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
 from .. import models
+
+ACTIVITY_LOG_RETENTION_DAYS = 30
 
 
 def log_activity(
@@ -26,6 +28,18 @@ def log_activity(
         db.commit()
     except Exception:
         db.rollback()
+
+
+def prune_activity_logs(db: Session, retention_days: int = ACTIVITY_LOG_RETENTION_DAYS) -> int:
+    """보존 기간을 초과한 activity_logs 행을 삭제하고 삭제 건수를 반환합니다."""
+    cutoff = datetime.now() - timedelta(days=retention_days)
+    deleted = (
+        db.query(models.ActivityLog)
+        .filter(models.ActivityLog.created_at < cutoff)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return deleted
 
 
 def build_activity_query(

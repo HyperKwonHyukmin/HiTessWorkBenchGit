@@ -11,6 +11,9 @@ import threading
 import time
 from datetime import datetime, timedelta
 
+from .. import database, models
+from .activity_service import ACTIVITY_LOG_RETENTION_DAYS, prune_activity_logs
+
 logger = logging.getLogger(__name__)
 
 # userConnection/ 기준 경로: app/services/ → app/ → HiTessWorkBenchBackEnd/ → userConnection/
@@ -103,6 +106,45 @@ def run_cleanup(dry_run: bool = False) -> dict:
     return result
 
 
+def run_activity_log_cleanup(dry_run: bool = False) -> dict:
+    """
+    activity_logs 테이블에서 30일 초과 로그를 삭제합니다.
+
+    Parameters
+    ----------
+    dry_run : bool
+        True이면 삭제하지 않고 대상 건수만 반환합니다.
+    """
+    result = {"deleted": 0, "errors": []}
+    db = database.SessionLocal()
+    try:
+        cutoff = datetime.now() - timedelta(days=ACTIVITY_LOG_RETENTION_DAYS)
+        if dry_run:
+            result["deleted"] = (
+                db.query(models.ActivityLog)
+                .filter(models.ActivityLog.created_at < cutoff)
+                .count()
+            )
+        else:
+            result["deleted"] = prune_activity_logs(db)
+        logger.info("[Cleanup] Activity Log 정리 완료 — 삭제: %d건", result["deleted"])
+    except Exception as e:
+        db.rollback()
+        result["errors"].append(str(e))
+        logger.error("[Cleanup] Activity Log 정리 실패: %s", e, exc_info=True)
+    finally:
+        db.close()
+    return result
+
+
+def run_all_cleanup(dry_run: bool = False) -> dict:
+    """파일 작업 폴더와 Activity Log 보존 정책을 함께 적용합니다."""
+    return {
+        "user_connection": run_cleanup(dry_run=dry_run),
+        "activity_logs": run_activity_log_cleanup(dry_run=dry_run),
+    }
+
+
 def _seconds_until_midnight() -> float:
     """다음 자정(00:00:00)까지 남은 초를 반환합니다."""
     now   = datetime.now()
@@ -114,13 +156,13 @@ def _cleanup_loop():
     """서버 시작 직후 1회 실행 → 이후 매일 자정에 반복 실행하는 데몬 루프."""
     # 서버 시작 직후 즉시 실행
     logger.info("[Cleanup] 서버 시작 — 초기 정리 실행")
-    run_cleanup()
+    run_all_cleanup()
 
     while True:
         sleep_secs = _seconds_until_midnight()
         logger.info("[Cleanup] 다음 실행까지 %.0f초 대기 (다음 자정)", sleep_secs)
         time.sleep(sleep_secs)
-        run_cleanup()
+        run_all_cleanup()
 
 
 def start_cleanup_scheduler():
