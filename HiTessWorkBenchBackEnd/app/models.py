@@ -75,6 +75,23 @@ class UserGuide(Base):
   created_at = Column(DateTime(timezone=True), default=datetime.now)
 
 
+class Newsletter(Base):
+  """플랫폼 뉴스레터(PDF) 아카이브.
+
+  PDF 파일 자체는 백엔드 `NewsLetter/` 폴더에만 저장되고, 여기에는 메타데이터만 기록한다.
+  (배포 exe 에는 PDF 가 번들되지 않으므로 발행 호수가 늘어도 클라이언트 용량은 불변.)
+  """
+  __tablename__ = "newsletters"
+  id = Column(Integer, primary_key=True, index=True)
+  title = Column(String(200))                       # 표시 제목
+  issue_date = Column(DateTime(timezone=True), nullable=True)  # 발행일 (정렬/표시용)
+  description = Column(String(500), nullable=True)  # 한 줄 설명 (선택)
+  file_name = Column(String(255))                   # 다운로드 시 보여줄 원본 파일명
+  stored_name = Column(String(255))                 # NewsLetter/ 폴더 내 실제 저장 파일명
+  author_id = Column(String(50), nullable=True)     # 업로드한 관리자 사번 (시드 항목은 'system')
+  created_at = Column(DateTime(timezone=True), default=datetime.now)
+
+
 class FeatureRequest(Base):
   __tablename__ = "feature_requests"
   id = Column(Integer, primary_key=True, index=True)

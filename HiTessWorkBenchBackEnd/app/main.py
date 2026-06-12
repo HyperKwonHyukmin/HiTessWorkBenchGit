@@ -17,6 +17,7 @@ from .routers import (
     davit,
     hitessbeam,
     hole_calculation,
+    newsletters,
     section_property,
     support,
     system,
@@ -114,6 +115,8 @@ async def lifespan(app: FastAPI):
         }, synchronize_session=False)
         db.commit()
         seed_default_guides(db)
+        # NewsLetter/ 폴더에 이미 존재하는 PDF(예: 기존 5월·6월호)를 DB 에 1회 시드.
+        newsletters.seed_existing_newsletters(db)
     except Exception:
         db.rollback()
         raise
@@ -158,11 +161,21 @@ app.include_router(hitessbeam.router)  # [TEMP] HiTessBeam 임시 라우터
 app.include_router(section_property.router)
 app.include_router(activity.router)
 app.include_router(viewers.router)
+app.include_router(newsletters.router)
 
 app.mount(
     "/static/inhouse/d-type-lug",
     StaticFiles(directory="InHouseProgram/D_TypeLugCalculation"),
     name="d-type-lug-static",
+)
+
+# 플랫폼 홍보/소개 영상 등 정적 미디어. StaticFiles 는 HTTP Range 요청(206 Partial Content)을
+# 자동 지원하므로 <video> 탐색(seek)·스트리밍이 정상 동작한다. 영상은 exe 에 번들하지 않고
+# 서버에서만 제공하여 배포 exe 용량 부담을 0 으로 유지한다(클릭 시에만 다운로드/재생).
+app.mount(
+    "/static/videos",
+    StaticFiles(directory="Videos"),
+    name="videos-static",
 )
 
 

@@ -11,8 +11,9 @@ import {
   Activity, FileText, Server,
   ArrowUpRight, Star, CalendarDays, Database, Map, Rocket,
   Wrench, Clock, X, ChevronRight, ChevronDown, Layers, Cpu, Maximize2, Trophy,
-  Megaphone, Pin, Sparkles
+  Megaphone, Pin, Sparkles, Play
 } from 'lucide-react';
+import { API_BASE_URL } from '../../config';
 import { useDashboard, ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -21,6 +22,8 @@ import { isAdmin as getIsAdmin } from '../../utils/auth';
 import AdminGateModal from '../../components/ui/AdminGateModal';
 import NoticeDetailModal, { NOTICE_TYPE_STYLE } from '../../components/modals/NoticeDetailModal';
 import Badge from '../../components/ui/Badge';
+import DashboardFab from '../../components/DashboardFab';
+import NewsletterArchiveModal from '../../components/NewsletterArchiveModal';
 
 const MODE_KO = {
   File: "File-Based Apps",
@@ -263,6 +266,95 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
         </div>
       </div>
     </div>
+  );
+};
+
+// 워크벤치 소개 영상 플레이어 모달
+// — 모달이 열릴 때만 <video>를 DOM에 마운트하여 백그라운드 디코딩/네트워크 낭비를 방지한다.
+// — crossOrigin 속성 미설정: 미디어 스트리밍은 CORS 헤더 없이도 동작하며,
+//   crossOrigin을 켜면 오히려 CORS 헤더를 요구해 재생이 깨진다.
+const VideoPlayerModal = ({ isOpen, onClose }) => {
+  const videoRef = useRef(null);
+
+  // 모달이 닫힐 때 영상을 일시정지하여 백그라운드 재생을 방지한다.
+  useEffect(() => {
+    if (!isOpen) {
+      const video = videoRef.current;
+      if (video) {
+        video.pause();
+        video.currentTime = 0;
+      }
+    }
+  }, [isOpen]);
+
+  // 영상 URL — 공백 포함 파일명이므로 %20 인코딩 사용
+  const videoUrl = `${API_BASE_URL}/static/videos/HiTESS%20Workbench.mp4`;
+
+  return (
+    <Transition appear show={isOpen} as={Fragment}>
+      <Dialog as="div" className="relative z-[100]" onClose={onClose}>
+        {/* 배경 오버레이 */}
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
+          leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
+        </Transition.Child>
+
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-250" enterFrom="opacity-0 scale-95 translate-y-4" enterTo="opacity-100 scale-100 translate-y-0"
+            leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
+          >
+            <Dialog.Panel
+              className="w-full max-w-4xl bg-[#001a3d] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            >
+              {/* 모달 헤더 */}
+              <div
+                className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 shrink-0"
+                style={{ background: 'linear-gradient(90deg, #002554 0%, #00305c 100%)' }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-white/10 border border-white/15">
+                    <Play size={16} className="text-blue-200" fill="currentColor" />
+                  </div>
+                  <div>
+                    <Dialog.Title className="text-white font-bold text-sm leading-tight">
+                      HiTESS WorkBench 소개 영상
+                    </Dialog.Title>
+                    <p className="text-slate-300 text-[11px]">차세대 조선해양 구조 해석 플랫폼</p>
+                  </div>
+                </div>
+                <button
+                  onClick={onClose}
+                  className="inline-flex items-center justify-center min-w-10 min-h-10 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                  aria-label="영상 모달 닫기"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* 16:9 비율 영상 컨테이너 */}
+              {/* isOpen이 true일 때만 <video>를 마운트 — 닫힌 상태에서 네트워크 요청 없음 */}
+              <div className="relative w-full bg-black" style={{ paddingBottom: '56.25%' }}>
+                {isOpen && (
+                  <video
+                    ref={videoRef}
+                    src={videoUrl}
+                    controls
+                    autoPlay
+                    className="absolute inset-0 w-full h-full"
+                    style={{ display: 'block' }}
+                  />
+                )}
+              </div>
+            </Dialog.Panel>
+          </Transition.Child>
+        </div>
+      </Dialog>
+    </Transition>
   );
 };
 
@@ -791,6 +883,10 @@ export default function Dashboard() {
   const [isRoadmapModalOpen, setIsRoadmapModalOpen] = useState(false);
   const [gateApp, setGateApp] = useState(null); // 개발 중/예정 앱 진입 차단 모달
   const [isIntroModalOpen, setIsIntroModalOpen] = useState(false);
+  // 홍보영상 플레이어 모달 — 열릴 때만 <video>가 DOM에 마운트됨
+  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
+  // 뉴스레터 아카이브 모달
+  const [isNewsletterModalOpen, setIsNewsletterModalOpen] = useState(false);
   const [topPrograms30, setTopPrograms30] = useState([]);
   const [topProgramsAll, setTopProgramsAll] = useState([]);
   const [isTopProgramsModalOpen, setIsTopProgramsModalOpen] = useState(false);
@@ -1027,6 +1123,12 @@ export default function Dashboard() {
         }}
         modalTitle={introTarget === 'workbench' ? 'HiTESS WorkBench' : 'Discover HiTESS'}
         modalSubtitle={introTarget === 'workbench' ? 'HiTESS WorkBench 해석 플랫폼 소개' : '차세대 조선해양 구조 해석 플랫폼 소개'}
+      />
+
+      {/* 홍보영상 플레이어 모달 */}
+      <VideoPlayerModal
+        isOpen={isVideoModalOpen}
+        onClose={() => setIsVideoModalOpen(false)}
       />
 
       {/* 공지 & 업데이트 슬림 스트립 */}
@@ -1288,6 +1390,18 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* 대시보드 FAB (speed-dial): 홍보영상 + 뉴스레터 아카이브 진입
+          fixed position 이므로 DOM 위치는 어디에 있어도 렌더 위치에 영향 없음 */}
+      <DashboardFab
+        onOpenVideo={() => setIsVideoModalOpen(true)}
+        onOpenNewsletter={() => setIsNewsletterModalOpen(true)}
+      />
+
+      {/* 뉴스레터 아카이브 모달 */}
+      <NewsletterArchiveModal
+        isOpen={isNewsletterModalOpen}
+        onClose={() => setIsNewsletterModalOpen(false)}
+      />
     </div>
   );
 }

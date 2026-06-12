@@ -94,3 +94,20 @@ class UserGuideResponse(UserGuideCreate):
 
     class Config:
         orm_mode = True
+
+
+# ==========================================
+# 5. Newsletter (뉴스레터 아카이브) 스키마
+# ==========================================
+# 업로드는 multipart(Form + File)로 받으므로 Create 바디 스키마는 두지 않는다.
+class NewsletterResponse(BaseModel):
+    id: int
+    title: str
+    issue_date: Optional[datetime] = None
+    description: Optional[str] = None
+    file_name: str            # 다운로드용 표시 파일명 (실제 저장명 stored_name 은 노출하지 않음)
+    author_id: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
