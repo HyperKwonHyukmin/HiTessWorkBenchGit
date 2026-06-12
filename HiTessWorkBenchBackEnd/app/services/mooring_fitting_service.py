@@ -172,6 +172,81 @@ def task_execute_mooring_fitting(
     )
 
 
+# 전단 허용 = 정응력 허용 × SHEAR_FACTOR (0.6·σy/γM = AISC Fv). σy 315 → 전단 허용 189.
+SHEAR_ALLOW_FACTOR = 0.6
+
+
+def recompute_sigma_ny(payload: dict) -> dict:
+    """
+    exe 가 von Mises 기준으로 내보낸 결과 JSON 을 '정응력 σNy / 전단 분리' 평가로 재계산한다.
+
+    실적 보고서 방식(닫힌 Chock 평가)에 맞춤 — exe 수정 없이 이미 출력된 성분
+    (nx/my/mz=σNx/σMy/σMz, qy/qz/mx=τQy/τQz/τMx)으로 재계산한다:
+      - 정응력 σN = |σNx| + max(|σMy|, |σMz|)   (= σNy, σNz 중 큰 값, 최악 섬유)  ≤ 허용(σy/γM)
+      - 전단  τ  = max(|τQy|, |τQz|, |τMx|)      (최대 전단 성분)                 ≤ 0.6·허용
+      - Usage = max(σN/허용, τ/전단허용),  OK if ≤ 1
+    주의: exe 는 element 당 'von Mises 최악 station' 성분만 출력하므로, σNy 최악 station 이
+          다른 드문 경우 근소한 차이가 있을 수 있다(정밀 일치는 exe solve-bdf 의 station 선정 변경 필요).
+    """
+    ys = payload.get("yieldStress") or 315.0
+    gm = payload.get("gammaM") or 1.0
+    allow_n = payload.get("allowable")
+    if not allow_n or allow_n <= 0:
+        allow_n = ys / gm
+    allow_t = allow_n * SHEAR_ALLOW_FACTOR
+
+    def _abs(v):
+        try:
+            return abs(float(v or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    g_max_n = g_max_t = g_max_u = 0.0
+    overall_ok = True
+    for case in payload.get("cases", []):
+        c_max_n = c_max_t = c_max_u = 0.0
+        for e in case.get("elements", []):
+            nx, my, mz = _abs(e.get("nx")), _abs(e.get("my")), _abs(e.get("mz"))
+            mx, qy, qz = _abs(e.get("mx")), _abs(e.get("qy")), _abs(e.get("qz"))
+            sigma_n = nx + max(my, mz)          # σNy/σNz 중 큰 값
+            tau = max(qy, qz, mx)               # 최대 전단 성분
+            u_n = sigma_n / allow_n if allow_n else 0.0
+            u_t = tau / allow_t if allow_t else 0.0
+            usage = max(u_n, u_t)
+            ok = usage <= 1.0
+            e["sigmaN"] = round(sigma_n, 2)
+            e["tau"] = round(tau, 2)
+            e["usageNormal"] = round(u_n, 4)
+            e["usageShear"] = round(u_t, 4)
+            e["usage"] = round(usage, 4)
+            e["ok"] = ok
+            # 하위호환(3D 색·기존 소비 필드) — 정응력으로 채움
+            e["combined"] = round(sigma_n, 2)
+            e["vonMises"] = round(sigma_n, 2)
+            if not ok:
+                overall_ok = False
+            c_max_n = max(c_max_n, sigma_n)
+            c_max_t = max(c_max_t, tau)
+            c_max_u = max(c_max_u, usage)
+        case["max"] = round(c_max_n, 2)
+        case["maxShear"] = round(c_max_t, 2)
+        case["maxUsage"] = round(c_max_u, 4)
+        g_max_n = max(g_max_n, c_max_n)
+        g_max_t = max(g_max_t, c_max_t)
+        g_max_u = max(g_max_u, c_max_u)
+
+    payload["quantity"] = "sigmaNyNormalShear"
+    payload["schemaVersion"] = "3.0"
+    payload["allowable"] = round(allow_n, 2)
+    payload["allowableShear"] = round(allow_t, 2)
+    payload["shearFactor"] = SHEAR_ALLOW_FACTOR
+    payload["globalMax"] = round(g_max_n, 2)
+    payload["globalMaxShear"] = round(g_max_t, 2)
+    payload["globalMaxUsage"] = round(g_max_u, 4)
+    payload["ok"] = overall_ok and (g_max_u <= 1.0)
+    return payload
+
+
 def task_solve_mooring_fitting(
     job_id: str,
     bdf_path: str,
@@ -233,14 +308,24 @@ def task_solve_mooring_fitting(
             try:
                 with open(result_json_path, "r", encoding="utf-8") as fh:
                     payload = json.load(fh)
+                # exe 의 von Mises 결과를 정응력 σNy/전단 분리 평가로 재계산 후 파일 재기록
+                # (호스트 다운로드본·Studio 표시가 모두 σNy 기준이 되도록).
+                try:
+                    payload = recompute_sigma_ny(payload)
+                    with open(result_json_path, "w", encoding="utf-8") as fh:
+                        json.dump(payload, fh, ensure_ascii=False)
+                except Exception as rexc:
+                    logger.warning("[MooringSolve] σNy 재계산 실패(원본 유지): %s", rexc)
                 summary = {
                     "quantity": payload.get("quantity"),
                     "unit": payload.get("unit"),
                     "globalMax": payload.get("globalMax"),
+                    "globalMaxShear": payload.get("globalMaxShear"),
                     "globalMaxUsage": payload.get("globalMaxUsage"),
                     "yieldStress": payload.get("yieldStress"),
                     "gammaM": payload.get("gammaM"),
                     "allowable": payload.get("allowable"),
+                    "allowableShear": payload.get("allowableShear"),
                     "ok": payload.get("ok"),
                     "caseCount": payload.get("caseCount"),
                 }
