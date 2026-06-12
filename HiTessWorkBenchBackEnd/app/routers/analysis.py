@@ -1628,6 +1628,108 @@ async def request_mooring_fitting(
     return {"job_id": job_id}
 
 
+# 최종 element 끝점이 원본 부재 선분 위에 있다고 볼 허용 수직거리(mm).
+# 파이프라인의 collinearDistTolMm(20) 보다 약간 넉넉히 — 분할/스냅 오차 흡수.
+_ELEM_NAME_MATCH_TOL_MM = 25.0
+
+
+def _build_mooring_element_names(out_dir: str, stage07_data: dict) -> dict:
+    """STAGE_00.initial.json 의 원본 부재(소스 CSV 행)에 최종 element 를 기하 매칭한다.
+
+    초기 FE 모델(STAGE_00.initial.json)의 각 element 는 source.id(=CSV B열 고유명),
+    source.lineNumber(=CSV 행번호), source.kind, feCoords(끝점 선분)를 보유한다.
+    최종 element(stage07)의 양 끝점이 어떤 원본 선분 위에(허용오차 이내) 놓이는지로
+    부재명을 전파한다 → mesh refine / collinear overlap / intersection 으로 쪼개진
+    조각까지 모두 원본 부재명을 회수(LINEAGE derivatives 만으로는 미추적되는 부분 포함).
+    어느 원본 선분과도 떨어진 연결부(ExtendToBBoxIntersect 등)는 매칭에서 제외된다.
+
+    반환: { "<EID>": {"name": str, "line": int|None, "kind": str|None} }
+    """
+    import json as _json
+
+    init_path = os.path.join(out_dir, "STAGE_00.initial.json")
+    if not os.path.isfile(init_path):
+        return {}
+    try:
+        with open(init_path, "r", encoding="utf-8") as fh:
+            init = _json.load(fh)
+    except Exception as exc:
+        logger.warning("[mooring viewer-zip] initial.json 파싱 실패: %s", exc)
+        return {}
+
+    # 원본 named 선분 수집: (name, kind, line, ax, ay, az, bx, by, bz)
+    segs = []
+    for el in (init.get("elements") or []):
+        src = el.get("source") or {}
+        name = src.get("id") or (el.get("extraData") or {}).get("ID")
+        if not name:
+            continue
+        fc = el.get("feCoords") or {}
+        a, b = fc.get("a"), fc.get("b")
+        if not (a and b):
+            oc = src.get("originalCoords") or {}
+            a, b = oc.get("a"), oc.get("b")
+        if not (a and b) or len(a) < 3 or len(b) < 3:
+            continue
+        try:
+            segs.append((str(name), src.get("kind"), src.get("lineNumber"),
+                         float(a[0]), float(a[1]), float(a[2]),
+                         float(b[0]), float(b[1]), float(b[2])))
+        except (TypeError, ValueError):
+            continue
+    if not segs:
+        return {}
+
+    npos = {n.get("id"): n for n in (stage07_data.get("nodes") or [])}
+    tol2 = _ELEM_NAME_MATCH_TOL_MM * _ELEM_NAME_MATCH_TOL_MM
+
+    def _pt_seg_d2(px, py, pz, ax, ay, az, bx, by, bz):
+        """점(p)–선분(a,b) 최단거리². 투영 매개변수 t 는 [0,1] 로 클램프(끝 넘어가면 거리↑)."""
+        dx, dy, dz = bx - ax, by - ay, bz - az
+        lsq = dx * dx + dy * dy + dz * dz
+        if lsq <= 1e-9:
+            ex, ey, ez = px - ax, py - ay, pz - az
+            return ex * ex + ey * ey + ez * ez
+        t = ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / lsq
+        t = 0.0 if t < 0 else (1.0 if t > 1 else t)
+        cx, cy, cz = ax + t * dx, ay + t * dy, az + t * dz
+        ex, ey, ez = px - cx, py - cy, pz - cz
+        return ex * ex + ey * ey + ez * ez
+
+    out = {}
+    for el in (stage07_data.get("elements") or []):
+        sn, en = el.get("startNode"), el.get("endNode")
+        if sn is None or en is None:
+            continue   # 빔(라인) element 만 — 쉘/기타 제외
+        na, nb = npos.get(sn), npos.get(en)
+        if not na or not nb:
+            continue
+        ax, ay, az = na.get("x"), na.get("y"), na.get("z")
+        bx, by, bz = nb.get("x"), nb.get("y"), nb.get("z")
+        if None in (ax, ay, az, bx, by, bz):
+            continue
+        best = None
+        best_d = tol2
+        for s in segs:
+            da = _pt_seg_d2(ax, ay, az, *s[3:])
+            if da > best_d:
+                continue
+            db = _pt_seg_d2(bx, by, bz, *s[3:])
+            d = da if da > db else db   # 두 끝점 모두 선분 위 → 더 먼 쪽 기준
+            if d <= best_d:
+                best_d = d
+                best = s
+        if best is None:
+            continue
+        entry = {"name": best[0]}
+        if best[2] is not None:
+            entry["line"] = best[2]
+        if best[1]:
+            entry["kind"] = best[1]
+        out[str(el.get("id"))] = entry
+    return out
+
+
 @router.get("/analysis/mooring-fitting/viewer-zip")
 def get_mooring_fitting_viewer_zip(
     output_dir: str = Query(..., description="MooringFitting out/ 폴더 절대경로 (userConnection 하위)"),
@@ -1674,6 +1776,7 @@ def get_mooring_fitting_viewer_zip(
             return []
 
     buf = io.BytesIO()
+    stage07_data = None   # 변환된 최종 모델(노드 좌표+element) — element_names 기하 매칭용
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for json_name, bdf_name in bdf_map.items():
             bdf_path = os.path.join(abs_dir, bdf_name)
@@ -1684,6 +1787,8 @@ def get_mooring_fitting_viewer_zip(
                 from pathlib import Path as _Path
                 data = _nb.convert_bdf(_Path(bdf_path))
                 zf.writestr(json_name, _json.dumps(data, ensure_ascii=False))
+                if json_name == "stage07.json":
+                    stage07_data = data
                 logger.info("[mooring viewer-zip] 변환 완료: %s → %s", bdf_name, json_name)
             except Exception as e:
                 logger.exception("[mooring viewer-zip] BDF 변환 실패: %s", bdf_path)
@@ -1712,6 +1817,24 @@ def get_mooring_fitting_viewer_zip(
                 payload["safetyFactor"] = sf_val if sf_val is not None else 1.0
             zf.writestr(out_name, _json.dumps(payload, ensure_ascii=False))
             logger.info("[mooring viewer-zip] CSV 동봉: %s (%d rows)", out_name, len(rows))
+
+        # element_names.json — 최종 EID → 원본 부재(CSV B열 고유명 + CSV 행번호).
+        # STAGE_00.initial.json 의 named 선분에 기하 매칭. 뷰어에서 부재 선택 시 CSV 대조용.
+        # 파일 없거나 실패하면 조용히 스킵(뷰어가 폴백 처리).
+        try:
+            if stage07_data is not None:
+                names = _build_mooring_element_names(abs_dir, stage07_data)
+                if names:
+                    zf.writestr(
+                        "element_names.json",
+                        _json.dumps(
+                            {"source": "STAGE_00.initial.json", "names": names},
+                            ensure_ascii=False,
+                        ),
+                    )
+                    logger.info("[mooring viewer-zip] element_names 동봉: %d개", len(names))
+        except Exception as exc:
+            logger.warning("[mooring viewer-zip] element_names 생성 실패(스킵): %s", exc)
 
     body = buf.getvalue()
     if not body:
