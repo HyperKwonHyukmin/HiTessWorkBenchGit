@@ -136,8 +136,25 @@ function installCleanSaveDialogTitle(ses) {
   });
 }
 
+async function clearExternalAppSessionData(ses, origin) {
+  if (!ses) return;
+  try {
+    await ses.clearCache();
+  } catch (e) {
+    console.warn("[open-app-window] clearCache failed:", e?.message || e);
+  }
+  try {
+    await ses.clearStorageData({
+      origin,
+      storages: ["serviceworkers", "cachestorage"],
+    });
+  } catch (e) {
+    console.warn("[open-app-window] clearStorageData failed:", e?.message || e);
+  }
+}
+
 ipcMain.handle("open-app-window", async (_e, payload = {}) => {
-  const { url, title } = payload || {};
+  const { url, title, windowKey, clearCache = false } = payload || {};
   let parsed;
   try {
     parsed = new URL(url);
@@ -147,13 +164,22 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     return { ok: false, error: "http/https 주소만 열 수 있습니다." };
   }
+  const key = windowKey || url;
 
   // 이미 열린 창이 있으면 재사용(포커스)
-  const existing = appWindows.get(url);
+  const existing = appWindows.get(key);
   if (existing && !existing.isDestroyed()) {
+    if (clearCache) {
+      await clearExternalAppSessionData(existing.webContents.session, parsed.origin);
+    }
+    try {
+      await existing.loadURL(url, {
+        extraHeaders: clearCache ? "Cache-Control: no-cache\r\nPragma: no-cache\r\n" : undefined,
+      });
+    } catch { /* 외부 서버 미기동 등은 기존 창의 Electron 오류 화면에 맡김 */ }
     if (existing.isMinimized()) existing.restore();
     existing.focus();
-    return { ok: true, reused: true };
+    return { ok: true, reused: true, cacheCleared: Boolean(clearCache) };
   }
 
   const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
@@ -177,11 +203,11 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
     },
   });
 
-  appWindows.set(url, win);
+  appWindows.set(key, win);
   // 외부 앱이 파일을 다운로드할 때 저장창 제목에 URL 이 노출되지 않도록 처리.
   installCleanSaveDialogTitle(win.webContents.session);
   win.once("ready-to-show", () => { win.show(); win.focus(); });
-  win.on("closed", () => { appWindows.delete(url); });
+  win.on("closed", () => { appWindows.delete(key); });
 
   // 창 내부에서 새 창 요청(window.open/target=_blank) 시 → 시스템 브라우저로 위임(무한 자식창 방지)
   win.webContents.setWindowOpenHandler(({ url: u }) => {
@@ -193,12 +219,17 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
   });
 
   try {
-    await win.loadURL(url);
+    if (clearCache) {
+      await clearExternalAppSessionData(win.webContents.session, parsed.origin);
+    }
+    await win.loadURL(url, {
+      extraHeaders: clearCache ? "Cache-Control: no-cache\r\nPragma: no-cache\r\n" : undefined,
+    });
   } catch {
     // 외부 서버 미기동 등 로드 실패 시에도 창은 떠 있게 둔다(연결 실패 화면 표시).
     if (!win.isDestroyed() && !win.isVisible()) win.show();
   }
-  return { ok: true };
+  return { ok: true, cacheCleared: Boolean(clearCache) };
 });
 
 // 개발자 런북에서 "탐색기 열기" 액션용. 파일이면 부모 폴더가 선택된 채 열림,

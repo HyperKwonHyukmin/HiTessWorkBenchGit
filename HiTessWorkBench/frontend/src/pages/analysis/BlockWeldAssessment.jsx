@@ -12,6 +12,12 @@ import { useToast } from '../../contexts/ToastContext';
 // ───────────────────────────────────────────────────────────────
 const BLOCK_WELD_BASE_URL = 'http://10.14.42.145:31880';
 
+function buildBlockWeldLaunchUrl(employeeId) {
+  const url = new URL(`${BLOCK_WELD_BASE_URL}/${encodeURIComponent(employeeId)}`);
+  url.searchParams.set('__wb_cache_bust', String(Date.now()));
+  return url.toString();
+}
+
 // 외부 앱 서버 접속 가능 여부 확인.
 // no-cors: 어떤 응답이든 오면 서버가 살아있는 것으로 간주(resolve), 연결 실패/타임아웃이면 꺼짐(reject).
 async function pingUrl(url, timeoutMs = 4000) {
@@ -85,11 +91,16 @@ export default function BlockWeldAssessment() {
       showToast('로그인 사용자 정보를 찾을 수 없습니다. 다시 로그인해주세요.', 'error');
       return;
     }
-    const url = `${BLOCK_WELD_BASE_URL}/${encodeURIComponent(employeeId)}`;
+    const url = buildBlockWeldLaunchUrl(employeeId);
 
     if (window.electron?.invoke) {
-      // WorkBench 내부의 별도 창(Electron BrowserWindow)으로 오픈 — WorkBench 에 속한 프로그램처럼 동작
-      window.electron.invoke('open-app-window', { url, title: 'Block Weld Assessment' });
+      // WorkBench 내부의 별도 창(Electron BrowserWindow)으로 오픈 — 실행할 때마다 외부 앱 캐시를 비운다.
+      window.electron.invoke('open-app-window', {
+        url,
+        title: 'Block Weld Assessment',
+        windowKey: 'Block Weld Assessment',
+        clearCache: true,
+      });
     } else {
       // 개발(브라우저) 환경 fallback — 새 창/탭으로 오픈
       window.open(url, '_blank', 'noopener,noreferrer');
@@ -124,6 +135,9 @@ export default function BlockWeldAssessment() {
                 <CheckCircle2 size={12} /> 서비스 중
               </span>
             </div>
+            <p className="mt-2 text-sm text-slate-500 leading-relaxed">
+              블록 전도 방지 구속 용접양 산출 수행
+            </p>
           </div>
         </div>
 
