@@ -944,9 +944,13 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
   viewerWindow.once("ready-to-show", () => {
     // 화면 우측 절반에 배치 — WorkBench 본체(좌측)와 Studio(우측)를 동시에 볼 수 있도록.
     // 사용자가 이후 최대화/직접 리사이즈하면 OS 표준 동작에 따라 그대로 적용됨.
-    const wa = screen.getPrimaryDisplay().workArea;
+    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const wa = display.workArea;
     const halfW = Math.floor(wa.width / 2);
-    viewerWindow.setBounds({ x: wa.x + halfW, y: wa.y, width: halfW, height: wa.height });
+    const minUsableW = Math.min(960, wa.width);
+    const width = Math.max(halfW, minUsableW);
+    const x = Math.min(wa.x + wa.width - width, wa.x + halfW);
+    viewerWindow.setBounds({ x, y: wa.y, width, height: wa.height });
     viewerWindow.show();
     viewerWindow.focus();
   });
@@ -1114,17 +1118,19 @@ ipcMain.handle("viewer:finalizeEditedModel", async (_e, payload) => {
   try {
     const folderPath   = payload?.folderPath;
     const editFileName = payload?.request?.editFileName;
-    if (!folderPath || !editFileName) {
-      return { ok: false, error: "folderPath / editFileName 누락" };
+    if (!folderPath) {
+      return { ok: false, error: "folderPath 누락" };
     }
     // 경로 탈출 차단 + 파일 실존 확인
     const baseAbs = path.resolve(folderPath);
-    const editAbs = path.resolve(baseAbs, editFileName);
-    if (!editAbs.startsWith(baseAbs)) {
-      return { ok: false, error: "경로 탈출 시도 차단" };
-    }
-    if (!fs.existsSync(editAbs)) {
-      return { ok: false, error: `_edit.json 파일이 없습니다: ${editFileName}` };
+    if (editFileName) {
+      const editAbs = path.resolve(baseAbs, editFileName);
+      if (!editAbs.startsWith(baseAbs)) {
+        return { ok: false, error: "경로 탈출 시도 차단" };
+      }
+      if (!fs.existsSync(editAbs)) {
+        return { ok: false, error: `_edit.json 파일이 없습니다: ${editFileName}` };
+      }
     }
     if (!mainWindow || mainWindow.isDestroyed()) {
       return { ok: false, error: "워크벤치 메인 창이 활성화되지 않았습니다." };

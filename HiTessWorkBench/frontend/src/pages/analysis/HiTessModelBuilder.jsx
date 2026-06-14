@@ -2851,6 +2851,18 @@ export default function HiTessModelBuilder() {
       const backendOutputDir = bdfResult?.outputDir || folderPath;
       let uploadFailed = null;
 
+      if (!editFileName) {
+        setActiveIdx(2);
+        try {
+          window.electron.sendMessage('modelflow:finalize-edit-response', {
+            requestId,
+            ok: true,
+          });
+        } catch {}
+        showToast('모델 수정 없이 원본 BDF 저장 단계로 이동했습니다.', 'success');
+        return;
+      }
+
       if (isLocalExtract && editFileName) {
         try {
           const editPath = `${folderPath}\\${editFileName}`;
