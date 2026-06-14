@@ -10,7 +10,6 @@ export default function ProductivityApps() {
       icon={Wrench}
       subtitle="업무 효율을 높이는 유틸리티 도구 모음입니다."
       accentColor="amber"
-      guideTitle="[생산성] Productivity Apps — 도구 소개"
     />
   );
 }

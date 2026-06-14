@@ -11,7 +11,6 @@ import PageHeader from '../ui/PageHeader';
 import FilterTabs from '../ui/FilterTabs';
 import AnimatedGrid from '../ui/AnimatedGrid';
 import AdminGateModal from '../ui/AdminGateModal';
-import GuideButton from '../ui/GuideButton';
 import { staggerContainer, cardEntrance } from '../../utils/motion';
 
 const colorToAccent = (colorClass = '') => {
@@ -31,7 +30,6 @@ export default function AppCataloguePage({
   subtitle,
   icon: HeaderIcon,
   accentColor = 'blue',
-  guideTitle,
   emptyIcon: EmptyIcon,
   emptyTitle,
   emptySubtitle,
@@ -147,7 +145,6 @@ export default function AppCataloguePage({
         icon={HeaderIcon}
         subtitle={subtitle}
         accentColor={accentColor}
-        actions={guideTitle ? <GuideButton guideTitle={guideTitle} variant="dark" /> : null}
       />
 
       {apps.length === 0 ? (
