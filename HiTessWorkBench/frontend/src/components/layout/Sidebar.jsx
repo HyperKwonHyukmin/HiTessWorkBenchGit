@@ -18,7 +18,6 @@ import {
   ShieldAlert,
   Webhook,
   Download,
-  FileText,
 } from 'lucide-react';
 import AdminPasswordGateModal from '../ui/AdminPasswordGateModal';
 import { verifyAdminGate } from '../../api/admin';
@@ -71,7 +70,6 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
           { icon: Settings, label: "System Management" },
           { icon: LineChart, label: "Usage Reports" },
           { icon: Webhook, label: "API Apps" },
-          { icon: FileText, label: "Newsletter Management" },
         ]
       });
     }

@@ -115,8 +115,6 @@ async def lifespan(app: FastAPI):
         }, synchronize_session=False)
         db.commit()
         seed_default_guides(db)
-        # NewsLetter/ 폴더에 이미 존재하는 PDF(예: 기존 5월·6월호)를 DB 에 1회 시드.
-        newsletters.seed_existing_newsletters(db)
     except Exception:
         db.rollback()
         raise

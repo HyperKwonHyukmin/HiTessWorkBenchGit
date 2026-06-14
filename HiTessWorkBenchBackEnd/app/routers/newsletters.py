@@ -1,52 +1,80 @@
-"""뉴스레터(PDF) 아카이브 CRUD 및 파일 제공 라우터.
+"""뉴스레터(PDF) 아카이브 — 공유 폴더 직접 열람 라우터.
 
-설계 원칙:
-  - PDF 원본은 백엔드 `NewsLetter/` 폴더에만 저장한다. 배포 exe 에는 번들하지 않으므로
-    발행 호수가 매달 늘어도 클라이언트(프론트엔드) 용량은 불변이다.
-  - 메타데이터(제목/발행일/설명)는 DB `newsletters` 테이블에 기록한다.
-  - 신규 발행은 관리자 업로드(POST, multipart)로 등록하고,
-    이미 폴더에 들어있는 PDF 는 서버 시작 시 1회 자동 시드한다(`seed_existing_newsletters`).
+설계 원칙(폴더 = 단일 진실 원천):
+  - HPC 공유 스토리지의 `NewsLetter/` 폴더를 그대로 노출한다. DB·시드·업로드 없이,
+    폴더에 '호(issue) 단위 하위 폴더'를 두면 즉시 목록에 반영된다.
+  - 내 컴퓨터·서버 컴퓨터가 같은 UNC 경로를 참조하므로, 어느 쪽 백엔드를 보든 목록이 동일하다.
+  - 서버 재시작·DB 시드 타이밍에 의존하지 않는다(폴더를 매 요청마다 실시간으로 읽음).
+
+호 폴더 구조(예):
+    NewsLetter/
+      26년_5월/
+        1.png 2.png 3.png                       # 미리보기용 페이지 이미지(우선 사용)
+        HiTESS_Workbench_26년_5월_뉴스레터.pdf   # 원본 PDF(다운로드)
+
+식별자(id)는 '호 폴더명'이다(프론트는 URL 에 encodeURIComponent 로 부착).
 """
 import os
 import re
-import uuid
 from datetime import datetime
 from urllib.parse import quote
 
-import fitz  # PyMuPDF — PDF 페이지를 PNG 로 렌더링(미리보기용)
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
-from sqlalchemy.orm import Session
-
-from .. import database, models, schemas
-from ..dependencies import require_admin
-from ..services.activity_service import log_activity
-from ._crud_helpers import create_record, delete_record, get_or_404
+import fitz  # PyMuPDF — 폴더에 PNG 가 없을 때만 PDF 페이지를 즉석 렌더(폴백)
+from fastapi import APIRouter, HTTPException, Response
 
 router = APIRouter(prefix="/api/newsletters", tags=["newsletters"])
 
-# 서버 실행 디렉토리(HiTessWorkBenchBackEnd/) 기준 상대 경로 — Videos 마운트와 동일한 규칙.
-NEWSLETTER_DIR = "NewsLetter"
+# 공유 폴더 경로 — 환경변수 NEWSLETTER_DIR 로 오버라이드 가능.
+# 기본값은 팀 공유 HPC 스토리지(내 컴퓨터·서버 컴퓨터가 공통으로 참조하는 UNC 경로).
+NEWSLETTER_DIR = os.getenv(
+    "NEWSLETTER_DIR",
+    r"\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\NewsLetter",
+)
 _NOT_FOUND = "뉴스레터를 찾을 수 없습니다."
-_MAX_BYTES = 50 * 1024 * 1024  # PDF 업로드 상한 50MB
+_PAGE_RENDER_ZOOM = 2.0  # 폴백 렌더 선명도(72dpi*2 = 144dpi)
+_PAGE_FILE_RE = re.compile(r"^(\d+)\.png$", re.IGNORECASE)
 
-# 렌더링한 페이지 PNG 인메모리 캐시: (stored_name, mtime, page_no) -> png bytes
+# 폴백 렌더 PNG 인메모리 캐시: (pdf_path, mtime, page_no) -> png bytes
 # (디스크에 캐시하면 DRM 이 재암호화하므로 메모리에만 둔다.)
 _PAGE_CACHE: dict = {}
-_PAGE_RENDER_ZOOM = 2.0  # 72dpi * 2 = 144dpi — 화면 미리보기에 충분한 선명도
 
 
-def _safe_full_path(stored_name: str) -> str:
-    """stored_name 이 NewsLetter/ 폴더를 벗어나지 않는지 검사하고 절대경로를 반환한다."""
+def _safe_issue_dir(issue_id: str) -> str:
+    """issue_id 가 NEWSLETTER_DIR 의 '직속 하위 폴더'인지 검사하고 절대경로를 반환한다.
+
+    상위 탈출('..')·중첩 경로·구분자 주입을 차단한다.
+    """
     base = os.path.abspath(NEWSLETTER_DIR)
-    full = os.path.abspath(os.path.join(NEWSLETTER_DIR, stored_name or ""))
-    if full != base and not full.startswith(base + os.sep):
-        raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
+    full = os.path.abspath(os.path.join(NEWSLETTER_DIR, issue_id or ""))
+    if os.path.dirname(full) != base:
+        raise HTTPException(status_code=400, detail="잘못된 뉴스레터 경로입니다.")
+    if not os.path.isdir(full):
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return full
 
 
-def _parse_issue_date(stem: str, path: str):
-    """파일명에서 'YY년 M월' 패턴으로 발행일을 추정한다. 실패 시 파일 수정시각으로 대체."""
-    m = re.search(r"(\d{2})\s*년[_\s]*(\d{1,2})\s*월", stem)
+def _find_pdf(issue_dir: str):
+    """호 폴더 내 첫 PDF 파일명을 반환(없으면 None)."""
+    for name in sorted(os.listdir(issue_dir)):
+        if name.lower().endswith(".pdf") and os.path.isfile(os.path.join(issue_dir, name)):
+            return name
+    return None
+
+
+def _list_page_pngs(issue_dir: str):
+    """호 폴더 내 'N.png' 파일을 페이지 번호 오름차순으로 [(번호, 파일명)] 반환."""
+    pages = []
+    for name in os.listdir(issue_dir):
+        m = _PAGE_FILE_RE.match(name)
+        if m and os.path.isfile(os.path.join(issue_dir, name)):
+            pages.append((int(m.group(1)), name))
+    pages.sort(key=lambda t: t[0])
+    return pages
+
+
+def _parse_issue_date(text: str, path: str):
+    """'YY년 M월' 패턴으로 발행일을 추정. 실패 시 폴더 수정시각으로 대체."""
+    m = re.search(r"(\d{2})\s*년[_\s]*(\d{1,2})\s*월", text)
     if m:
         yy, mm = int(m.group(1)), int(m.group(2))
         try:
@@ -59,186 +87,83 @@ def _parse_issue_date(stem: str, path: str):
         return None
 
 
-def seed_existing_newsletters(db: Session) -> None:
-    """NewsLetter/ 폴더에 이미 존재하지만 DB 에 없는 PDF 를 1회 시드한다(멱등).
+def _read_bytes(path: str) -> bytes:
+    """파일을 메모리로 읽는다. (회사 DRM 은 '읽기' 시점에 복호화하므로 실제 바이트를 얻는다.)"""
+    with open(path, "rb") as fp:
+        return fp.read()
 
-    제목은 파일명에서, 발행일은 파일명의 'YY년 M월' 패턴(또는 수정시각)에서 추정한다.
-    이후 신규 발행은 관리자 업로드 UI 로 등록한다.
+
+@router.get("")
+def list_newsletters():
+    """공유 폴더의 호(issue) 하위 폴더를 발행일 내림차순으로 나열한다.
+
+    공유 경로에 접근할 수 없거나(권한/미마운트) 폴더가 없으면 빈 목록을 반환한다.
     """
-    if not os.path.isdir(NEWSLETTER_DIR):
-        return
-    existing = {n.stored_name for n in db.query(models.Newsletter).all()}
-    added = False
-    for fname in sorted(os.listdir(NEWSLETTER_DIR)):
-        if not fname.lower().endswith(".pdf") or fname in existing:
+    base = NEWSLETTER_DIR
+    if not os.path.isdir(base):
+        return []
+    items = []
+    for name in os.listdir(base):
+        issue_dir = os.path.join(base, name)
+        if not os.path.isdir(issue_dir):
             continue
-        path = os.path.join(NEWSLETTER_DIR, fname)
-        if not os.path.isfile(path):
+        pdf = _find_pdf(issue_dir)
+        # PDF 도 PNG 도 없는 폴더는 뉴스레터가 아니므로 건너뜀.
+        if not pdf and not _list_page_pngs(issue_dir):
             continue
-        stem = os.path.splitext(fname)[0]
-        db.add(models.Newsletter(
-            title=stem.replace("_", " ").strip(),
-            issue_date=_parse_issue_date(stem, path),
-            description=None,
-            file_name=fname,
-            stored_name=fname,
-            author_id="system",
-        ))
-        added = True
-    if added:
-        db.commit()
+        stem = os.path.splitext(pdf)[0] if pdf else name
+        issue_date = _parse_issue_date(name, issue_dir) or _parse_issue_date(stem, issue_dir)
+        items.append({
+            "id": name,                              # 호 폴더명 = 식별자
+            "title": stem.replace("_", " ").strip(),
+            "issue_date": issue_date.isoformat() if issue_date else None,
+            "description": None,
+            "file_name": pdf or f"{name}.pdf",       # 다운로드 시 표시 파일명
+        })
+    # 발행일 내림차순(ISO 문자열 = 시간순). 없으면 마지막, 동률은 폴더명 역순.
+    items.sort(key=lambda x: (x["issue_date"] or "", x["id"]), reverse=True)
+    return items
 
 
-@router.get("", response_model=list[schemas.NewsletterResponse])
-def list_newsletters(db: Session = Depends(database.get_db)):
-    """발행일(없으면 등록일) 내림차순으로 전체 뉴스레터 목록을 반환한다."""
-    # MySQL 은 DESC 정렬 시 NULL 을 자동으로 마지막에 둔다(별도 NULLS LAST 구문 불필요).
-    return (
-        db.query(models.Newsletter)
-        .order_by(models.Newsletter.issue_date.desc(),
-                  models.Newsletter.created_at.desc())
-        .all()
-    )
-
-
-@router.post("", response_model=schemas.NewsletterResponse)
-async def create_newsletter(
-    request: Request,
-    title: str = Form(...),
-    issue_date: str | None = Form(None),   # ISO 날짜 문자열 (예: 2026-06-01)
-    description: str | None = Form(None),
-    file: UploadFile = File(...),
-    db: Session = Depends(database.get_db),
-    current_admin: str = Depends(require_admin),
-):
-    """관리자: PDF + 메타데이터를 업로드해 뉴스레터를 등록한다."""
-    if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="PDF 파일만 업로드할 수 있습니다.")
-
-    content = await file.read()
-    if len(content) > _MAX_BYTES:
-        raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 50MB).")
-    if content[:5] != b"%PDF-":
-        raise HTTPException(status_code=400, detail="유효한 PDF 파일이 아닙니다.")
-
-    os.makedirs(NEWSLETTER_DIR, exist_ok=True)
-    stored_name = f"{uuid.uuid4().hex}.pdf"
-    with open(_safe_full_path(stored_name), "wb") as fp:
-        fp.write(content)
-
-    parsed_date = None
-    if issue_date:
-        try:
-            parsed_date = datetime.fromisoformat(issue_date)
-        except ValueError:
-            parsed_date = None
-
-    created = create_record(db, models.Newsletter(
-        title=title.strip() or os.path.splitext(file.filename)[0],
-        issue_date=parsed_date,
-        description=(description or None),
-        file_name=file.filename,
-        stored_name=stored_name,
-        author_id=current_admin,
-    ))
-    log_activity(db, "NEWSLETTER_EDIT", employee_id=current_admin,
-                 action_detail={"operation": "create", "newsletter_id": created.id, "title": created.title},
-                 status="success", ip_address=request.client.host if request.client else None)
-    return created
-
-
-@router.delete("/{newsletter_id}")
-def delete_newsletter(newsletter_id: int, request: Request,
-                      db: Session = Depends(database.get_db),
-                      current_admin: str = Depends(require_admin)):
-    """관리자: 뉴스레터 DB 레코드와 PDF 파일을 함께 삭제한다."""
-    nl = get_or_404(db, models.Newsletter, newsletter_id, _NOT_FOUND)
-    title, stored_name = nl.title, nl.stored_name
-    result = delete_record(db, nl)
-    # 시드 항목(폴더 원본)도 사용자가 삭제를 원한 것이므로 파일까지 제거한다.
-    try:
-        full = _safe_full_path(stored_name)
-        if os.path.isfile(full):
-            os.remove(full)
-    except (OSError, HTTPException):
-        pass  # 파일 삭제 실패는 치명적이지 않음(DB 레코드는 이미 삭제됨)
-    log_activity(db, "NEWSLETTER_EDIT", employee_id=current_admin,
-                 action_detail={"operation": "delete", "newsletter_id": newsletter_id, "title": title},
-                 status="success", ip_address=request.client.host if request.client else None)
-    return result
-
-
-@router.get("/{newsletter_id}/file")
-def get_newsletter_file(newsletter_id: int, download: bool = False,
-                        db: Session = Depends(database.get_db)):
-    """뉴스레터 PDF 를 반환한다.
-
-    회사 DRM 이 디스크 파일을 자동 재암호화하므로, 디스크 stat 크기와 읽기 시 복호화된 실제
-    바이트 수가 달라진다. FileResponse 는 stat 크기를 Content-Length 로 보내므로 실제 전송
-    바이트와 어긋나 브라우저가 ERR_CONTENT_LENGTH_MISMATCH 로 거부한다(미리보기 실패).
-    → 파일을 메모리로 읽어(=DRM 복호화된 실제 바이트) 그 길이를 Content-Length 로 직접 지정해
-      반환한다. (CLAUDE.md 의 Excel 내보내기와 동일한 DRM 우회 방식.)
-
-    - download=false(기본): inline → iframe 미리보기.
-    - download=true: attachment → 원본 파일명으로 저장(한글 파일명 RFC 5987 인코딩).
-    """
-    nl = get_or_404(db, models.Newsletter, newsletter_id, _NOT_FOUND)
-    full = _safe_full_path(nl.stored_name)
-    if not os.path.isfile(full):
-        raise HTTPException(status_code=404, detail="PDF 파일이 서버에 존재하지 않습니다.")
-
-    with open(full, "rb") as fp:
-        data = fp.read()  # DRM 에이전트가 읽기 시점에 복호화 → 실제 PDF 바이트
-
-    if download:
-        # 한글 파일명은 RFC 5987(filename*) 로 인코딩
-        disposition = f"attachment; filename*=UTF-8''{quote(nl.file_name)}"
-    else:
-        disposition = "inline"
-    # Response 가 len(data) 를 Content-Length 로 자동 설정 → 실제 전송 바이트와 정확히 일치.
-    return Response(content=data, media_type="application/pdf",
-                    headers={"Content-Disposition": disposition})
-
-
-def _open_pdf(full: str) -> fitz.Document:
-    """디스크의 PDF 를 메모리로 읽어(=DRM 복호화된 바이트) fitz 문서로 연다."""
-    with open(full, "rb") as fp:
-        data = fp.read()
-    return fitz.open(stream=data, filetype="pdf")
-
-
-@router.get("/{newsletter_id}/pages")
-def get_newsletter_page_count(newsletter_id: int, db: Session = Depends(database.get_db)):
-    """뉴스레터 PDF 의 총 페이지 수를 반환한다. (프론트가 페이지별 PNG 를 요청하기 위해 사용)"""
-    nl = get_or_404(db, models.Newsletter, newsletter_id, _NOT_FOUND)
-    full = _safe_full_path(nl.stored_name)
-    if not os.path.isfile(full):
-        raise HTTPException(status_code=404, detail="PDF 파일이 서버에 존재하지 않습니다.")
-    doc = _open_pdf(full)
+@router.get("/{issue_id}/pages")
+def get_newsletter_page_count(issue_id: str):
+    """미리보기 페이지 수. 폴더의 N.png 개수를 우선 사용, 없으면 PDF 페이지 수(폴백)."""
+    issue_dir = _safe_issue_dir(issue_id)
+    pngs = _list_page_pngs(issue_dir)
+    if pngs:
+        return {"pageCount": len(pngs)}
+    pdf = _find_pdf(issue_dir)
+    if not pdf:
+        return {"pageCount": 0}
+    doc = fitz.open(stream=_read_bytes(os.path.join(issue_dir, pdf)), filetype="pdf")
     try:
         return {"pageCount": doc.page_count}
     finally:
         doc.close()
 
 
-@router.get("/{newsletter_id}/page/{page_no}")
-def get_newsletter_page_image(newsletter_id: int, page_no: int,
-                              db: Session = Depends(database.get_db)):
-    """뉴스레터 PDF 의 특정 페이지(1-기반)를 PNG 로 렌더링해 반환한다.
+@router.get("/{issue_id}/page/{page_no}")
+def get_newsletter_page_image(issue_id: str, page_no: int):
+    """특정 페이지(1-기반) PNG. 폴더의 N.png 를 그대로 서빙, 없으면 PDF 에서 즉석 렌더(폴백)."""
+    issue_dir = _safe_issue_dir(issue_id)
+    pngs = dict(_list_page_pngs(issue_dir))  # {번호: 파일명}
+    if pngs:
+        name = pngs.get(page_no)
+        if not name:
+            raise HTTPException(status_code=404, detail="해당 페이지가 없습니다.")
+        # DRM 복호화된 실제 바이트를 메모리로 읽어 Content-Length 정합 보장.
+        data = _read_bytes(os.path.join(issue_dir, name))
+        return Response(content=data, media_type="image/png")
 
-    PDF iframe 은 Electron 내장 PDF 뷰어 의존성 때문에 환경에 따라 빈 화면이 되므로,
-    미리보기는 페이지를 PNG 로 렌더해 <img> 로 표시한다(브라우저·Electron 어디서나 안정 렌더).
-    렌더링은 비용이 있으므로 (stored_name, mtime, page) 키로 인메모리 캐시한다.
-    """
-    nl = get_or_404(db, models.Newsletter, newsletter_id, _NOT_FOUND)
-    full = _safe_full_path(nl.stored_name)
-    if not os.path.isfile(full):
-        raise HTTPException(status_code=404, detail="PDF 파일이 서버에 존재하지 않습니다.")
-
-    key = (nl.stored_name, os.path.getmtime(full), page_no)
+    # 폴백: PNG 가 없으면 PDF 페이지를 즉석 렌더한다.
+    pdf = _find_pdf(issue_dir)
+    if not pdf:
+        raise HTTPException(status_code=404, detail="미리보기 이미지가 없습니다.")
+    pdf_path = os.path.join(issue_dir, pdf)
+    key = (pdf_path, os.path.getmtime(pdf_path), page_no)
     png = _PAGE_CACHE.get(key)
     if png is None:
-        doc = _open_pdf(full)
+        doc = fitz.open(stream=_read_bytes(pdf_path), filetype="pdf")
         try:
             if page_no < 1 or page_no > doc.page_count:
                 raise HTTPException(status_code=404, detail="해당 페이지가 없습니다.")
@@ -251,3 +176,27 @@ def get_newsletter_page_image(newsletter_id: int, page_no: int,
             _PAGE_CACHE.clear()
         _PAGE_CACHE[key] = png
     return Response(content=png, media_type="image/png")
+
+
+@router.get("/{issue_id}/file")
+def get_newsletter_file(issue_id: str, download: bool = False):
+    """호 폴더의 PDF 를 반환한다.
+
+    회사 DRM 이 디스크 파일을 자동 재암호화하므로 stat 크기와 실제 복호화 바이트 수가 어긋난다.
+    FileResponse 는 stat 크기를 Content-Length 로 보내 ERR_CONTENT_LENGTH_MISMATCH 를 유발하므로,
+    파일을 메모리로 읽어(=DRM 복호화된 실제 바이트) 그 길이를 Content-Length 로 직접 지정해 반환한다.
+
+    - download=false(기본): inline.
+    - download=true: attachment(한글 파일명 RFC 5987 인코딩).
+    """
+    issue_dir = _safe_issue_dir(issue_id)
+    pdf = _find_pdf(issue_dir)
+    if not pdf:
+        raise HTTPException(status_code=404, detail="PDF 파일이 폴더에 없습니다.")
+    data = _read_bytes(os.path.join(issue_dir, pdf))
+    if download:
+        disposition = f"attachment; filename*=UTF-8''{quote(pdf)}"
+    else:
+        disposition = "inline"
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": disposition})
