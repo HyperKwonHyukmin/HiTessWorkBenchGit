@@ -81,14 +81,14 @@ export default function AppListRow({
           </span>
           <DevStatusBadge devStatus={devStatus} />
         </div>
-        {description && <p className="text-xs text-slate-400 truncate mt-0.5 leading-relaxed">{description}</p>}
+        {description && <p className="text-xs text-slate-500 truncate mt-0.5 leading-relaxed">{description}</p>}
       </div>
 
       {/* 태그 */}
       {tags.length > 0 && (
         <div className="hidden lg:flex items-center gap-1.5 shrink-0">
           {tags.slice(0, 3).map((tag, i) => (
-            <span key={i} className="text-[10px] font-bold px-2 py-0.5 bg-slate-50 text-slate-400 border border-slate-200 rounded uppercase tracking-wider">
+            <span key={i} className="text-[10px] font-bold px-2 py-0.5 bg-slate-50 text-slate-600 border border-slate-200 rounded uppercase tracking-wider">
               {tag}
             </span>
           ))}
@@ -97,7 +97,7 @@ export default function AppListRow({
 
       {/* contributor */}
       {contributor && (
-        <div className="hidden xl:flex items-center gap-1 text-xs text-slate-400 shrink-0 whitespace-nowrap">
+        <div className="hidden xl:flex items-center gap-1 text-xs text-slate-500 shrink-0 whitespace-nowrap">
           <User size={10} />
           <span>{contributor}</span>
         </div>

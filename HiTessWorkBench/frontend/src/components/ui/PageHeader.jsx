@@ -37,14 +37,14 @@ export default function PageHeader({ title, icon: Icon, subtitle, actions, accen
   const [changelogOpen, setChangelogOpen] = useState(false);
 
   return (
-    <div className={`relative mb-8 -mx-6 -mt-6 px-8 py-7 bg-gradient-to-r ${gradient} overflow-hidden`}>
+    <div className={`relative mb-6 sm:mb-8 -mx-4 sm:-mx-5 lg:-mx-6 -mt-4 sm:-mt-5 lg:-mt-6 px-4 sm:px-6 lg:px-8 py-5 sm:py-7 bg-gradient-to-r ${gradient} overflow-hidden`}>
       <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-        <div className="absolute -right-8 -top-8 w-64 h-64 bg-white rounded-full" />
-        <div className="absolute right-32 bottom-0 w-32 h-32 bg-white rounded-full" />
+        <div className="absolute right-0 top-0 h-full w-64 -skew-x-12 bg-white" />
+        <div className="absolute right-28 bottom-0 h-px w-48 bg-white" />
       </div>
 
-      <div className="relative flex justify-between items-start max-w-7xl mx-auto">
-        <div className="flex items-start gap-4">
+      <div className="relative flex flex-col gap-4 md:flex-row md:justify-between md:items-start max-w-7xl mx-auto min-w-0">
+        <div className="flex items-start gap-3 sm:gap-4 min-w-0">
           {Icon && (
             <div
               className="bg-white/10 backdrop-blur-sm p-3 rounded-xl text-white border border-white/10 shrink-0 mt-0.5"
@@ -53,15 +53,15 @@ export default function PageHeader({ title, icon: Icon, subtitle, actions, accen
               <Icon size={22} />
             </div>
           )}
-          <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">{title}</h1>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight break-words">{title}</h1>
             {subtitle && (
-              <p className={`text-sm mt-1.5 ${subtitleColor}`}>{subtitle}</p>
+              <p className={`text-sm mt-1.5 ${subtitleColor} max-w-4xl`}>{subtitle}</p>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap md:justify-end">
           {actions}
           {programKey && (
             <button

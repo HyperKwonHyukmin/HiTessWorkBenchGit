@@ -134,7 +134,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
         )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto pt-6 pb-2 custom-scrollbar">
+      <nav className="flex-1 overflow-y-auto pt-5 pb-2 sidebar-scrollbar">
         {menuItems.map((section, idx) => (
           <div key={idx} className="mb-4">
             {!isCollapsed && (
@@ -157,6 +157,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
                           ? 'bg-brand-accent text-brand-blue font-bold'
                           : 'text-slate-300 hover:bg-brand-blue-dark hover:text-white'
                       }`}
+                      title={isCollapsed ? item.label : undefined}
                     >
                       {isActive && isCollapsed && (
                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-accent"></div>
@@ -167,7 +168,7 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
                       </div>
 
                       {!isCollapsed && (
-                        <span className="text-sm">{item.label}</span>
+                        <span className="text-sm truncate">{item.label}</span>
                       )}
                     </button>
                   </li>

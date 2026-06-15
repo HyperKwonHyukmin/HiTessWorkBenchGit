@@ -10,11 +10,11 @@ import { getAnalysisHistory, getTopPrograms, getMonthlyAnalysisCount } from '../
 import {
   Activity, FileText, Server,
   ArrowUpRight, Star, CalendarDays, Database, Map, Rocket,
-  Wrench, Clock, X, ChevronRight, ChevronDown, Layers, Cpu, Maximize2, Trophy,
+  Wrench, Clock, X, ChevronRight, ChevronDown, Layers, Cpu, Maximize2, Trophy, SlidersHorizontal,
   Megaphone, Pin, Sparkles, Play
 } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
-import { useDashboard, ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
+import { useDashboard, ANALYSIS_DATA, getAppMenuName, findAppByProgramName } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,6 +22,7 @@ import { isAdmin as getIsAdmin } from '../../utils/auth';
 import AdminGateModal from '../../components/ui/AdminGateModal';
 import NoticeDetailModal, { NOTICE_TYPE_STYLE } from '../../components/modals/NoticeDetailModal';
 import Badge from '../../components/ui/Badge';
+import Button from '../../components/ui/Button';
 import DashboardFab from '../../components/DashboardFab';
 import NewsletterArchiveModal from '../../components/NewsletterArchiveModal';
 
@@ -32,6 +33,49 @@ const MODE_KO = {
   Productivity: "Productivity Apps",
   Academic: "Academic Apps"
 };
+
+const WORKFLOW_GUIDE = [
+  {
+    title: '파일/모델 생성',
+    subtitle: 'CSV, PDF, BDF 기반으로 해석 모델을 만들거나 파이프라인을 실행합니다.',
+    menu: 'File-Based Apps',
+    menuLabel: 'File-Based Apps',
+    examples: ['HiTESS Model Builder', 'Truss Model Builder', 'DrawingToAnalysis'],
+    Icon: Layers,
+    badge: 'bg-blue-50 text-blue-700 border-blue-200',
+    icon: 'bg-blue-600 text-white',
+  },
+  {
+    title: '구조 검토/평가',
+    subtitle: '생성된 모델이나 설계 조건으로 구조 안정성, 배관응력, 피로 등을 확인합니다.',
+    menu: 'File-Based Apps',
+    menuLabel: 'Assessment Apps',
+    examples: ['Truss Structural Assessment', 'HP-SCR 배관응력 해석', 'Mooring Fitting Assessment'],
+    Icon: Activity,
+    badge: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    icon: 'bg-indigo-600 text-white',
+  },
+  {
+    title: '치수 입력 계산',
+    subtitle: '단면, 컬럼, 러그, 다빗, 카링 등 반복 계산을 입력값 기반으로 수행합니다.',
+    menu: 'Parametric Apps',
+    menuLabel: 'Parametric Apps',
+    examples: ['Mast Post', 'Jib Rest', 'Column Buckling', 'Carling'],
+    Icon: SlidersHorizontal,
+    badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    icon: 'bg-emerald-600 text-white',
+  },
+  {
+    title: '검증/후처리/결과',
+    subtitle: 'BDF/F06 검증, 결과 확인, 이전 프로젝트 재사용을 처리합니다.',
+    menu: 'Productivity Apps',
+    menuLabel: 'Productivity Apps',
+    examples: ['BDF Scanner', 'F06 Parser', 'My Projects'],
+    Icon: Wrench,
+    badge: 'bg-amber-50 text-amber-700 border-amber-200',
+    icon: 'bg-amber-500 text-white',
+  },
+];
 
 const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick }) => {
   const isClickable = typeof onClick === 'function';
@@ -196,6 +240,68 @@ const DiscoverHiTessBanner = ({ variant = 'platform', title, subtitle, ctaText, 
   );
 };
 
+const FirstUseGuide = ({ isOpen, onToggle, onNavigate }) => (
+  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={isOpen}
+      className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="h-9 w-9 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+          <Rocket size={17} />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-slate-800">처음 사용하는 경우</h3>
+          <p className="text-xs text-slate-500 truncate">보유한 입력 자료와 작업 목적에 맞는 앱 그룹을 빠르게 찾습니다.</p>
+        </div>
+      </div>
+      <ChevronDown size={16} className={`text-slate-500 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+    </button>
+    {isOpen && (
+      <div className="border-t border-slate-100 p-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+          {WORKFLOW_GUIDE.map((step, idx) => {
+            const Icon = step.Icon;
+            return (
+              <button
+                key={step.title}
+                type="button"
+                onClick={() => onNavigate(step.menu)}
+                className="text-left rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-white hover:border-blue-300 hover:shadow-sm transition-all p-4 cursor-pointer group"
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${step.icon}`}>
+                    <Icon size={17} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[10px] font-black text-slate-400">{String(idx + 1).padStart(2, '0')}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${step.badge}`}>
+                        {step.menuLabel}
+                      </span>
+                    </div>
+                    <p className="text-sm font-bold text-slate-800 group-hover:text-blue-700">{step.title}</p>
+                    <p className="mt-1 text-xs text-slate-500 leading-relaxed">{step.subtitle}</p>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {step.examples.map(example => (
+                    <span key={example} className="text-[10px] font-semibold text-slate-600 bg-white border border-slate-200 rounded px-2 py-0.5">
+                      {example}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    )}
+  </div>
+);
+
 const AppRoadmapBanner = ({ onOpenModal }) => {
   const statusCounts = ANALYSIS_DATA.reduce((acc, app) => {
     const status = app.devStatus || 'Active';
@@ -241,8 +347,8 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
           </span>
         </div>
       </div>
-      <div className="p-4 lg:flex-1 relative overflow-hidden flex items-stretch">
-        <div className="grid flex-1 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 pr-0 lg:pr-28">
+      <div className="p-4 lg:flex-1 relative overflow-hidden flex flex-col gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 pr-0 lg:pr-28">
           {modeSummary.map(({ mode, info, apps }) => {
             const modeActive = apps.filter(a => (a.devStatus || 'Active') === 'Active').length;
             const modeDev = apps.filter(a => a.devStatus === 'Developing').length;
@@ -260,6 +366,15 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
             </div>
             );
           })}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 pr-0 lg:pr-28">
+          {WORKFLOW_GUIDE.map((step, idx) => (
+            <div key={step.title} className="rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2.5 min-w-0">
+              <p className="text-[10px] font-black text-blue-200">STEP {idx + 1}</p>
+              <p className="mt-0.5 text-xs font-bold text-white truncate">{step.title}</p>
+              <p className="mt-0.5 text-[10px] font-medium text-slate-200 truncate">{step.menuLabel}</p>
+            </div>
+          ))}
         </div>
         <div className="hidden lg:flex absolute right-3 top-1/2 -translate-y-1/2 items-center gap-1 text-xs font-bold text-blue-100 bg-white/10 border border-white/20 rounded-lg px-2.5 py-1.5 group-hover:bg-white/20 group-hover:text-white transition-colors">
           지도 열기 <ChevronRight size={15} className="group-hover:translate-x-0.5 transition-transform"/>
@@ -533,7 +648,7 @@ const ROADMAP_STATUS_BADGE = {
 const isRoadmapAppNavigable = (app) =>
   (app.devStatus || 'Active') === 'Active' && app.hasPage;
 
-const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
+const RoadmapModal = ({ isOpen, onClose, onSelectApp, onNavigateWorkflow }) => {
   const totalCount = ANALYSIS_DATA.length;
   const statusCounts = ANALYSIS_DATA.reduce((acc, app) => {
     const status = app.devStatus || 'Active';
@@ -624,6 +739,37 @@ const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
                       ))}
                     </div>
                   </div>
+                </div>
+              </div>
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <p className="text-[11px] font-bold text-slate-500">업무 흐름으로 읽기</p>
+                  <span className="text-[10px] font-semibold text-slate-500">입력 자료 → 검토 → 계산 → 결과</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                  {WORKFLOW_GUIDE.map((step, idx) => {
+                    const Icon = step.Icon;
+                    return (
+                      <button
+                        key={step.title}
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onNavigateWorkflow?.(step.menu);
+                        }}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-left hover:border-blue-300 hover:bg-blue-50/40 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black text-slate-400">{idx + 1}</span>
+                          <span className={`h-7 w-7 rounded-md flex items-center justify-center ${step.icon}`}>
+                            <Icon size={14} />
+                          </span>
+                          <span className="text-xs font-bold text-slate-800 truncate">{step.title}</span>
+                        </div>
+                        <p className="mt-2 text-[11px] text-slate-500 leading-relaxed line-clamp-2">{step.subtitle}</p>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -901,9 +1047,15 @@ export default function Dashboard() {
   // 플랫폼 소개 배너: 기본적으로 접어둔다(매일 쓰는 사용자 우선). 사용자가 펼치면 그 선호를 저장해 다음 방문에 반영.
   // (시스템 해석 앱 로드맵은 접힘과 무관하게 항상 표시)
   const [introOpen, setIntroOpen] = useState(() => localStorage.getItem('dashboard_intro_open') === '1');
+  const [firstUseGuideOpen, setFirstUseGuideOpen] = useState(() => localStorage.getItem('dashboard_first_use_guide_open') !== '0');
   const toggleIntro = () => setIntroOpen(v => {
     const next = !v;
     localStorage.setItem('dashboard_intro_open', next ? '1' : '0');
+    return next;
+  });
+  const toggleFirstUseGuide = () => setFirstUseGuideOpen(v => {
+    const next = !v;
+    localStorage.setItem('dashboard_first_use_guide_open', next ? '1' : '0');
     return next;
   });
 
@@ -1030,6 +1182,19 @@ export default function Dashboard() {
     setCurrentMenu(menuName);
   };
 
+  const handleProgramShortcut = (programName) => {
+    const appMeta =
+      findAppByProgramName(programName) ||
+      ANALYSIS_DATA.find(app => app.title === programName);
+
+    if (!appMeta) {
+      showToast(`'${programName}' 앱 정보를 찾을 수 없습니다.`, 'info');
+      return;
+    }
+
+    handleFavoriteClick(appMeta.title);
+  };
+
   const handleRoadmapAppSelect = (app) => {
     if (!isRoadmapAppNavigable(app)) return;
     setIsRoadmapModalOpen(false);
@@ -1048,6 +1213,7 @@ export default function Dashboard() {
         isOpen={isRoadmapModalOpen}
         onClose={() => setIsRoadmapModalOpen(false)}
         onSelectApp={handleRoadmapAppSelect}
+        onNavigateWorkflow={setCurrentMenu}
       />
 
       {/* 즐겨찾기에서 개발 중/예정 앱 진입 시도 시 안내 (관리자는 위 로직에서 통과) */}
@@ -1087,11 +1253,17 @@ export default function Dashboard() {
                 <div className="space-y-1 max-h-[60vh] overflow-y-auto pr-1">
                   {topProgramsAll.map((item, i) => {
                     const maxCount = topProgramsAll[0]?.count || 1;
-                    const MEDAL = ['🥇', '🥈', '🥉'];
                     return (
-                      <div key={item.program_name} className="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0 px-1">
-                        <span className="text-base w-6 shrink-0 text-center">
-                          {i < 3 ? MEDAL[i] : <span className="text-xs font-bold text-slate-500">{i + 1}</span>}
+                      <button
+                        key={item.program_name}
+                        type="button"
+                        onClick={() => handleProgramShortcut(item.program_name)}
+                        className="w-full flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0 px-1 rounded-lg hover:bg-blue-50/60 transition-colors text-left cursor-pointer"
+                      >
+                        <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
+                          i < 3 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {i + 1}
                         </span>
                         <span className="flex-1 text-sm font-medium text-slate-700 truncate">{item.program_name}</span>
                         <div className="w-20 bg-slate-100 rounded-full h-1.5 shrink-0">
@@ -1101,7 +1273,8 @@ export default function Dashboard() {
                           />
                         </div>
                         <span className="text-xs font-bold text-slate-500 w-12 text-right shrink-0">{item.count}건</span>
-                      </div>
+                        <ChevronRight size={14} className="text-blue-500 shrink-0" />
+                      </button>
                     );
                   })}
                   {topProgramsAll.length === 0 && (
@@ -1189,6 +1362,11 @@ export default function Dashboard() {
               />
             </div>
           )}
+          <FirstUseGuide
+            isOpen={firstUseGuideOpen}
+            onToggle={toggleFirstUseGuide}
+            onNavigate={setCurrentMenu}
+          />
           {/* 시스템 해석 앱 로드맵 — 항상 표시(사용자 주요 참조 정보) */}
           <AppRoadmapBanner onOpenModal={() => setIsRoadmapModalOpen(true)} />
         </div>
@@ -1256,7 +1434,7 @@ export default function Dashboard() {
           className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 relative overflow-hidden group hover:border-amber-300 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
           role="button"
           tabIndex={0}
-          aria-label="전체 기간 인기 해석 프로그램 순위 열기"
+          aria-label="인기 해석 프로그램 바로가기 및 전체 순위 열기"
           onClick={() => setIsTopProgramsModalOpen(true)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsTopProgramsModalOpen(true); } }}
         >
@@ -1272,18 +1450,24 @@ export default function Dashboard() {
               {topPrograms30.slice(0, 3).map((item, i) => {
                 const RANK_COLORS = ['text-amber-500', 'text-slate-500', 'text-orange-400'];
                 return (
-                  <div key={item.program_name} className="flex items-center gap-2">
+                  <button
+                    key={item.program_name}
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleProgramShortcut(item.program_name); }}
+                    className="w-full flex items-center gap-2 rounded-md px-1 py-1 hover:bg-amber-50/80 transition-colors text-left cursor-pointer"
+                  >
                     <span className={`text-xs font-extrabold w-4 shrink-0 ${RANK_COLORS[i]}`}>{i + 1}</span>
                     <span className="flex-1 text-xs font-medium text-slate-700 truncate">{item.program_name}</span>
                     <span className="text-[10px] text-slate-500 font-bold shrink-0">{item.count}건</span>
-                  </div>
+                    <ChevronRight size={12} className="text-amber-500 shrink-0" />
+                  </button>
                 );
               })}
             </div>
           ) : (
-            <p className="text-xs text-slate-300 mt-2">데이터 없음</p>
+            <p className="text-xs text-slate-500 mt-2">데이터 없음</p>
           )}
-          <p className="text-[10px] text-amber-500 font-semibold mt-3 group-hover:text-amber-600 transition-colors">전체 순위 보기 →</p>
+          <p className="text-[10px] text-amber-600 font-semibold mt-3 group-hover:text-amber-700 transition-colors">카드 여백 클릭 시 전체 순위 보기 →</p>
         </div>
       </div>
       </div>
@@ -1297,20 +1481,36 @@ export default function Dashboard() {
         </div>
 
         {favorites.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-sm flex flex-col items-center">
-            <div className="p-4 bg-slate-50 rounded-full mb-4">
+          <div className="bg-white border border-blue-200 rounded-xl p-6 sm:p-8 text-center shadow-sm flex flex-col items-center">
+            <div className="p-4 bg-blue-50 rounded-full mb-4">
               <Star size={32} className="text-slate-300" />
             </div>
-            <p className="font-bold text-slate-500 mb-1">즐겨찾기 항목이 없습니다.</p>
-            <p className="text-sm text-slate-500 mb-5">자주 사용하는 해석 앱에 별(★)을 눌러 대시보드에 추가해 보세요.</p>
-            <button
-              onClick={() => setCurrentMenu('File-Based Apps')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-sm hover:shadow"
-            >
-              <Layers size={14}/>
-              해석 앱 둘러보기
-              <ChevronRight size={14}/>
-            </button>
+            <p className="font-bold text-slate-700 mb-1">자주 쓰는 앱을 바로 꺼내 쓰세요.</p>
+            <p className="text-sm text-slate-500 mb-5">앱 카드의 별을 누르면 이 영역에 고정됩니다. 먼저 업무 유형별 앱 목록으로 이동할 수 있습니다.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full max-w-2xl">
+              {[
+                { label: '파일 기반 앱', menu: 'File-Based Apps', icon: Layers },
+                { label: '계산/설계 앱', menu: 'Parametric Apps', icon: SlidersHorizontal },
+                { label: '후처리 도구', menu: 'Productivity Apps', icon: Wrench },
+              ].map(item => {
+                const Icon = item.icon;
+                return (
+                  <Button
+                    key={item.menu}
+                    type="button"
+                    onClick={() => setCurrentMenu(item.menu)}
+                    variant="primary"
+                    size="sm"
+                    fullWidth
+                    className="rounded-lg"
+                  >
+                    <Icon size={14}/>
+                    {item.label}
+                    <ChevronRight size={14}/>
+                  </Button>
+                );
+              })}
+            </div>
           </div>
         ) : (
           <motion.div

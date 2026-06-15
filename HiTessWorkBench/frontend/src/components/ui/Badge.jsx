@@ -28,7 +28,7 @@ const VARIANT_CLASSES = {
     dot:   'bg-blue-500',
   },
   neutral: {
-    badge: 'bg-slate-100 text-slate-600 border border-slate-200',
+    badge: 'bg-slate-100 text-slate-700 border border-slate-200',
     dot:   'bg-slate-400',
   },
   purple: {

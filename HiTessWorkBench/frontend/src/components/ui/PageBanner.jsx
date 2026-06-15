@@ -23,12 +23,12 @@ import React from 'react';
 
 export default function PageBanner({ gradient, className = '', children }) {
   return (
-    <div className={`relative -mx-6 -mt-6 mb-6 px-8 py-5 bg-gradient-to-r ${gradient} overflow-hidden shrink-0 ${className}`}>
+    <div className={`relative -mx-4 sm:-mx-5 lg:-mx-6 -mt-4 sm:-mt-5 lg:-mt-6 mb-5 sm:mb-6 px-4 sm:px-6 lg:px-8 py-4 sm:py-5 bg-gradient-to-r ${gradient} overflow-hidden shrink-0 ${className}`}>
       <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-        <div className="absolute -right-6 -top-6 w-48 h-48 bg-white rounded-full" />
-        <div className="absolute right-24 bottom-0 w-24 h-24 bg-white rounded-full" />
+        <div className="absolute right-0 top-0 h-full w-48 -skew-x-12 bg-white" />
+        <div className="absolute right-24 bottom-0 h-px w-40 bg-white" />
       </div>
-      <div className="relative flex items-center justify-between">
+      <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between min-w-0">
         {children}
       </div>
     </div>

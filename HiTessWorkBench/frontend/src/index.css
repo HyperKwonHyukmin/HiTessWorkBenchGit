@@ -115,6 +115,24 @@
   display: none;                /* Chrome / Electron */
 }
 
+.sidebar-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.38);
+  border-radius: 999px;
+}
+.sidebar-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(203, 213, 225, 0.55);
+}
+
 /* ── 접근성: 동작 줄이기(prefers-reduced-motion) ──
    CSS 애니메이션·트랜지션을 사실상 즉시 완료로 만든다.
    framer-motion 은 main.jsx 의 MotionConfig(reducedMotion="user")가 별도로 처리. */

@@ -361,12 +361,8 @@ function GlobalJobTray({ jobs, currentMenu, onNavigate, onDismiss, onPatchJob })
   const visibleJobs = jobs.filter(job => job.menu !== currentMenu);
   if (!visibleJobs.length) return null;
 
-  // 대시보드일 때는 우측 하단 바로가기 버튼(홍보영상·뉴스레터, 가로 정렬·bottom-4·높이 약 36px)과
-  // 겹치지 않도록 트레이를 그 위로 올린다.
-  const bottomClass = currentMenu === 'Dashboard' ? 'bottom-16' : 'bottom-4';
-
   return (
-    <div className={`fixed ${bottomClass} right-4 z-[99999] w-[min(360px,calc(100vw-2rem))] space-y-2 transition-all duration-200`}>
+    <div className="fixed bottom-4 right-4 z-[99999] w-[min(360px,calc(100vw-2rem))] space-y-2 transition-all duration-200">
       {visibleJobs.map(job => (
         <GlobalJobCard
           key={job.jobId}
