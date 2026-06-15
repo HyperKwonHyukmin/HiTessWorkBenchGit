@@ -53,16 +53,38 @@ _ALLOWED_DOWNLOAD_BASE = _USER_CONNECTION_DIR
 _PROGRAM_DOWNLOAD_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "DownloadProgram"))
 
 import sys as _sys
-_NASTRAN_BRIDGE_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "..", "..", "WorkBenchSubModule", "Nastran_bridge"))
-if _NASTRAN_BRIDGE_DIR not in _sys.path:
-    _sys.path.insert(0, _NASTRAN_BRIDGE_DIR)
-try:
-    import nastran_bridge as _nb
-    _NB_AVAILABLE = True
-except ImportError:
-    _nb = None
-    _NB_AVAILABLE = False
-    logger.warning("[mooring-studio] nastran_bridge 임포트 실패 — viewer-zip 미사용 가능")
+# nastran_bridge.py(순수 stdlib 모듈) 탐색 후보 — 모두 백엔드 기준 상대경로.
+# 배포본은 <backend>/InHouseProgram/Nastran_bridge 에 동봉되어 git pull/배포와 함께 따라오므로
+# 절대경로(예: WorkBenchSubModule)에 의존하지 않는다. 개발 PC 는 WorkBenchSubModule 라이브 소스를 그대로 사용.
+# 환경변수 NASTRAN_BRIDGE_DIR 로 강제 지정도 가능. 먼저 발견되어 import 성공하는 폴더를 채택.
+_NB_CANDIDATES = [
+    os.environ.get("NASTRAN_BRIDGE_DIR", "").strip(),                               # 명시적 override
+    os.path.join(_BACKEND_DIR, "InHouseProgram", "Nastran_bridge"),                 # 배포 표준(서버)
+    os.path.join(_BACKEND_DIR, "..", "..", "WorkBenchSubModule", "Nastran_bridge"), # 개발 PC 라이브 소스
+    os.path.join(_BACKEND_DIR, "InHouseProgram", "NastranBridge"),                  # 대체 폴더명
+]
+_nb = None
+_NB_AVAILABLE = False
+for _cand in _NB_CANDIDATES:
+    if not _cand:
+        continue
+    _cand = os.path.abspath(_cand)
+    if not os.path.isdir(_cand):
+        continue
+    if _cand not in _sys.path:
+        _sys.path.insert(0, _cand)
+    try:
+        import nastran_bridge as _nb
+        _NB_AVAILABLE = True
+        logger.info("[mooring-studio] nastran_bridge 로드 성공: %s", _cand)
+        break
+    except ImportError:
+        continue
+if not _NB_AVAILABLE:
+    logger.warning(
+        "[mooring-studio] nastran_bridge 임포트 실패 — 후보 경로: %s (viewer-zip/편집/해석 비활성)",
+        [os.path.abspath(c) for c in _NB_CANDIDATES if c],
+    )
 
 # 외부(네트워크/공유) 위치에 보관하는 배포용 프로그램 화이트리스트.
 # DownloadProgram/ 폴더에 없고 외부 경로에서 받아와야 하는 파일들을 등록.
