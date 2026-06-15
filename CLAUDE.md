@@ -65,6 +65,10 @@ npm run dist
 - **백엔드 개발 서버 포트**: `9091` (uvicorn 실행 시 `--port 9091` 사용).
 - **데이터베이스**: MySQL `localhost:3306/hitessworkbench`, 접속 정보는 `HiTessWorkBenchBackEnd/app/database.py`. SQLAlchemy로 서버 시작 시 테이블 자동 생성.
 - **Electron 환경 감지**: `electron/index.js`의 `app.isPackaged` 여부로 개발/프로덕션 로드 경로 분기.
+- ⚠️ **InHouse 프로그램 배포 규칙 (개발 위치 ≠ 실사용 위치)**: 해석 실행 파일·스크립트의 **코드 작업은 `C:\Coding\WorkBenchSubModule\<Program>\`**(예: `Nastran_bridge`, `MooringFitting`)에서 하더라도, **WorkBench 백엔드가 실제로 실행·import 하는 최종본은 반드시 `HiTessWorkBenchBackEnd/InHouseProgram/<Program>/`로 복사**해야 한다.
+  - 이유: 운영 서버(`10.14.42.145`, 경로 `C:\KHM\HiTessWorkbench\HiTessWorkBenchGit\HiTessWorkBenchBackEnd\`)에는 **`WorkBenchSubModule/` 폴더가 존재하지 않는다.** 서버는 `git pull`로 백엔드 레포만 받고 InHouse 프로그램은 `InHouseProgram/`에서만 찾는다. 따라서 `WorkBenchSubModule`만 고치고 `InHouseProgram`에 반영하지 않으면 **dev에서는 되지만 서버에서 깨진다** (실제 사례: `nastran_bridge.py`의 신규 함수 `rbe2_fixed_lines` 누락 → mooring solve가 HTTP 500).
+  - 실천: `WorkBenchSubModule/<Program>` 소스를 수정하면 **대응하는 `InHouseProgram/<Program>` 사본도 항상 같이 갱신**해 버전 드리프트를 막을 것.
+  - 폴더명 주의: `InHouseProgram`은 camelCase(`NastranBridge`, `TrussAssessment`…), `WorkBenchSubModule`은 underscore 혼용(`Nastran_bridge`). 백엔드 `analysis.py`의 nastran_bridge 탐색은 `InHouseProgram/Nastran_bridge` → `WorkBenchSubModule/Nastran_bridge` → `InHouseProgram/NastranBridge` 후보를 모두 보고, `NASTRAN_BRIDGE_DIR` 환경변수 override도 지원한다(commit `146db53`).
 
 ### 프론트엔드 내비게이션 구조
 
