@@ -7,6 +7,7 @@ userConnection/ 디렉터리 자동 정리 서비스.
 import logging
 import os
 import shutil
+import stat
 import threading
 import time
 from datetime import datetime, timedelta
@@ -48,6 +49,65 @@ def _get_folder_age_days(folder_path: str) -> float:
         return (time.time() - oldest_ts) / 86400
     except OSError:
         return 0.0
+
+
+def _extended_path(path: str) -> str:
+    r"""Windows 예약어(nul/con/aux…) 파일이나 260자 초과 긴 경로를 \\?\ 확장 경로로 우회한다.
+
+    주의: os.path.abspath() 는 NUL/CON/PRN/AUX 등 예약명을 '\\.\nul' 디바이스 경로로
+    변환해 버리므로 전체 경로에 적용하면 안 된다(폴더 정보가 사라짐). 디렉터리만
+    정규화하고 basename(예약명일 수 있음)은 문자열로 그대로 결합한다.
+    비Windows에서는 예약어 문제가 없으므로 경로를 그대로 반환한다.
+    """
+    if os.name != "nt" or path.startswith("\\\\?\\"):
+        return path
+    head, tail = os.path.split(path)
+    head = os.path.abspath(head) if head else os.getcwd()
+    return "\\\\?\\" + os.path.join(head, tail)
+
+
+def _force_unlink(path: str) -> bool:
+    """일반 경로 → 확장 경로 순으로 파일 강제 삭제. 읽기전용도 chmod 후 재시도."""
+    for target in (path, _extended_path(path)):
+        try:
+            os.chmod(target, stat.S_IWRITE)
+        except OSError:
+            pass
+        try:
+            os.unlink(target)
+            return True
+        except OSError:
+            continue
+    return False
+
+
+def _force_rmdir(path: str) -> bool:
+    for target in (path, _extended_path(path)):
+        try:
+            os.rmdir(target)
+            return True
+        except OSError:
+            continue
+    return False
+
+
+def _force_rmtree(path: str) -> None:
+    r"""폴더 트리 삭제. 일반 shutil.rmtree 가 실패하면(예: Win32 예약어 'nul' 파일로
+    [WinError 87], 읽기전용 파일로 PermissionError) 하위 항목을 확장 경로(\\?\)로
+    개별 강제 삭제한 뒤 폴더를 제거한다."""
+    try:
+        shutil.rmtree(path)
+        return
+    except OSError:
+        pass
+    # 폴백: 깊은 곳부터 개별 강제 삭제
+    for root, dirs, files in os.walk(path, topdown=False):
+        for name in files:
+            _force_unlink(os.path.join(root, name))
+        for name in dirs:
+            _force_rmdir(os.path.join(root, name))
+    if not _force_rmdir(path) and os.path.exists(_extended_path(path)):
+        raise OSError(f"폴더 제거 실패(잔여 항목 존재): {path}")
 
 
 def run_cleanup(dry_run: bool = False) -> dict:
@@ -92,7 +152,7 @@ def run_cleanup(dry_run: bool = False) -> dict:
             continue
 
         try:
-            shutil.rmtree(folder_path)
+            _force_rmtree(folder_path)
             result["deleted"].append({"folder": entry, "age_days": round(age_days, 1)})
             logger.info("[Cleanup] 삭제 완료: %s (%.1f일 경과)", entry, age_days)
         except OSError as e:
