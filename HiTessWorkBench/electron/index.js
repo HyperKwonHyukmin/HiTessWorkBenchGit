@@ -1199,7 +1199,29 @@ ipcMain.handle("viewer:writeFile", async (_e, folderPath, fileName, content) => 
       return { ok: false, error: "경로 탈출 시도 차단" };
     }
     fs.writeFileSync(safeAbs, content, "utf-8");
-    return { ok: true, location: "folder" };
+    return { ok: true, location: "folder", filePath: safeAbs };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle("viewer:notifyModelSaved", async (_e, payload) => {
+  try {
+    const filePath = payload?.filePath;
+    if (!filePath) return { ok: false, error: "filePath 누락" };
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("viewer:model-saved", {
+        viewerId: viewerCurrentId,
+        filePath,
+        fileName: path.basename(filePath),
+        kind: payload?.kind || "model-bdf",
+        stats: payload?.stats || null,
+      });
+    }
+    setImmediate(() => {
+      if (viewerWindow && !viewerWindow.isDestroyed()) viewerWindow.close();
+    });
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };
   }

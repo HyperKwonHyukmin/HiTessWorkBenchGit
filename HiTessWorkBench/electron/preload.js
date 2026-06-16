@@ -19,6 +19,7 @@ const VALID_RECEIVE_CHANNELS = [
   'viewer:plate-structural-progress',
   // main 이 viewer 창에 Mooring 구조 해석 진행 상황을 stream
   'viewer:mooring-structural-progress',
+  'viewer:model-saved',
 ];
 const VALID_INVOKE_CHANNELS  = [
   'list-dir-csvs',
@@ -37,6 +38,7 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:pickFolder',
   'viewer:getInitialFolder',
   'viewer:writeFile',
+  'viewer:notifyModelSaved',
   'viewer:finalizeEditedModel',
   'viewer:uploadEvaluationArtifact',
   'viewer:runStabilityAnalysis',
@@ -90,6 +92,8 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   getInitialFolder: () => ipcRenderer.invoke('viewer:getInitialFolder'),
   writeFile: (folderPath, fileName, content) =>
     ipcRenderer.invoke('viewer:writeFile', folderPath, fileName, content),
+  notifyModelSaved: (payload) =>
+    ipcRenderer.invoke('viewer:notifyModelSaved', payload),
   // Studio (다른 PC) 가 자기 로컬 폴더에 저장한 _edit_posture.json / _edited.json 을
   // 서버 PC 의 userConnection 폴더로 업로드. 반환된 remotePath 를 그대로 runStabilityAnalysis 에 넘긴다.
   // payload = { fileName, content, artifactKind? }
