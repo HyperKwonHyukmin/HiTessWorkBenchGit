@@ -50,6 +50,8 @@ async def save_upload(
     work_dir: str,
     error_prefix: str = "File save error",
     dest_name: str | None = None,
+    allowed_extensions: set[str] | None = None,
+    max_bytes: int | None = None,
 ) -> str:
     """
     단일 UploadFile을 work_dir에 저장하고 절대 경로를 반환합니다.
@@ -57,14 +59,27 @@ async def save_upload(
     dest_name 이 주어지면 사용자 업로드 파일명을 무시하고 그 이름으로 저장합니다.
     None(기본) 이면 기존 동작 — 업로드 파일명을 그대로 사용.
 
+    allowed_extensions/max_bytes 는 신규 호출부에서만 쓰는 선택 정책입니다.
+    기본값은 None 이므로 기존 저장/호출 방식은 바뀌지 않습니다.
+
     실패 시 기존 라우터와 동일한 메시지로 HTTP 500을 발생시킵니다.
     error_prefix를 통해 라우터별 한글 메시지("파일 저장 오류" 등)도 유지할 수 있습니다.
     """
     fname = os.path.basename(dest_name) if dest_name is not None else os.path.basename(upload.filename)
+    if allowed_extensions is not None:
+        ext = os.path.splitext(fname)[1].lower()
+        normalized = {item.lower() if item.startswith(".") else f".{item.lower()}" for item in allowed_extensions}
+        if ext not in normalized:
+            raise HTTPException(status_code=400, detail=f"허용되지 않은 파일 형식입니다: {ext or '(none)'}")
     dest_path = os.path.join(work_dir, fname)
     try:
+        data = await upload.read()
+        if max_bytes is not None and len(data) > max_bytes:
+            raise HTTPException(status_code=413, detail=f"파일 크기가 제한({max_bytes} bytes)을 초과했습니다.")
         with open(dest_path, "wb") as buffer:
-            buffer.write(await upload.read())
+            buffer.write(data)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{error_prefix}: {str(e)}")
     return dest_path
@@ -114,11 +129,10 @@ def _infer_job_metadata(task_fn, task_args: tuple) -> tuple[str | None, str]:
     program_name = getattr(task_fn, "__name__", "Analysis").removeprefix("task_execute_")
     for arg in task_args:
         if isinstance(arg, str) and _is_userconnection_path(arg):
-            folder = os.path.basename(os.path.abspath(arg))
-            parts = folder.split("_", 3)
-            if len(parts) == 4:
-                employee_id = employee_id or parts[2]
-                program_name = parts[3]
+            owner, program = _infer_work_folder_metadata(arg)
+            if owner:
+                employee_id = employee_id or owner
+                program_name = program or program_name
                 break
     return employee_id, program_name
 
@@ -128,6 +142,21 @@ def _is_userconnection_path(path: str) -> bool:
         return os.path.commonpath([USER_CONNECTION_DIR, os.path.abspath(path)]) == USER_CONNECTION_DIR
     except ValueError:
         return False
+
+
+def _infer_work_folder_metadata(path: str) -> tuple[str | None, str | None]:
+    """userConnection 하위 어느 깊이의 경로든 최상위 작업 폴더에서 사번/프로그램명을 추론합니다."""
+    try:
+        rel = os.path.relpath(os.path.abspath(path), USER_CONNECTION_DIR)
+    except ValueError:
+        return None, None
+    if rel.startswith(".."):
+        return None, None
+    folder = rel.split(os.sep, 1)[0]
+    parts = folder.split("_", 3)
+    if len(parts) == 4 and _TIMESTAMP_RE.match("_".join(parts[:2])):
+        return parts[2], parts[3]
+    return None, None
 
 
 def _record_pending_analysis(job_id: str, employee_id: str | None, program_name: str, queue_message: str) -> None:

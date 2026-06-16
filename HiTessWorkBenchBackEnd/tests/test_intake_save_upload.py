@@ -4,8 +4,9 @@ import io
 import os
 import pytest
 from fastapi import UploadFile
+from fastapi import HTTPException
 
-from app.routers._intake import save_upload
+from app.routers._intake import USER_CONNECTION_DIR, _infer_work_folder_metadata, save_upload
 
 
 def _make_upload(filename: str, content: bytes) -> UploadFile:
@@ -44,3 +45,32 @@ def test_save_upload_strips_path_components_from_dest_name(tmp_path):
     # 부모 디렉터리로 탈출하지 않았는지 확인
     parent = os.path.dirname(str(tmp_path))
     assert not os.path.exists(os.path.join(parent, "escape.csv"))
+
+
+def test_save_upload_rejects_disallowed_extension_when_policy_given(tmp_path):
+    """선택 정책을 지정한 신규 호출부에서만 확장자 제한이 적용되어야 한다."""
+    upload = _make_upload("bad.exe", b"data")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(save_upload(upload, str(tmp_path), allowed_extensions={".csv"}))
+    assert exc.value.status_code == 400
+
+
+def test_save_upload_rejects_large_file_when_policy_given(tmp_path):
+    """선택 정책을 지정한 신규 호출부에서만 크기 제한이 적용되어야 한다."""
+    upload = _make_upload("ok.csv", b"123456")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(save_upload(upload, str(tmp_path), max_bytes=3))
+    assert exc.value.status_code == 413
+
+
+def test_infer_work_folder_metadata_from_nested_output_path():
+    """Studio 하위 산출 폴더 경로에서도 최상위 작업 폴더의 사번/프로그램명을 추론한다."""
+    nested = os.path.join(
+        USER_CONNECTION_DIR,
+        "20260615_101112_A123456_HiTessModelBuilder",
+        "20260615_101215",
+        "edited",
+    )
+    employee_id, program_name = _infer_work_folder_metadata(nested)
+    assert employee_id == "A123456"
+    assert program_name == "HiTessModelBuilder"
