@@ -52,6 +52,7 @@ const PlateStructureAnalysis = lazy(() => import('./pages/analysis/PlateStructur
 const ApiApps = lazy(() => import('./pages/Administration/ApiApps'));
 const HiTessModelBuilder = lazy(() => import('./pages/analysis/HiTessModelBuilder'));
 const GroupModuleUnitLiftingAnalysis = lazy(() => import('./pages/analysis/GroupModuleUnitLiftingAnalysis'));
+const SidePassageAssessment = lazy(() => import('./pages/analysis/SidePassageAssessment'));
 const F06ParserPage = lazy(() => import('./pages/analysis/F06ParserPage'));
 const HpScrAssessment = lazy(() => import('./pages/analysis/HpScrAssessment'));
 const MooringFittingAssessment = lazy(() => import('./pages/analysis/MooringFittingAssessment'));
@@ -295,6 +296,7 @@ function AppInner() {
       case 'Productivity Apps': return <ProductivityApps />;
       case 'HiTESS Model Builder': return <HiTessModelBuilder />;
       case 'Group & Module Unit 권상 구조 해석': return <GroupModuleUnitLiftingAnalysis />;
+      case 'Side Passage Assessment': return <SidePassageAssessment />;
       case 'HP-SCR 배관응력 해석': return <HpScrAssessment />;
       case 'DrawingToAnalysis': return <DrawingToAnalysis />;
       default:

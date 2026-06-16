@@ -123,6 +123,10 @@ export const requestHpscrAssessment = (formData) =>
 export const requestGroupModuleUnit = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/groupmoduleunit/request`, formData, 'GroupModuleUnit');
 
+/** Side Passage Assessment — BDF 검증 */
+export const requestSidePassageAssessment = (formData) =>
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/sidepassage/request`, formData, 'SidePassage');
+
 /** Group & Module Unit — 서버 경로로 BDF 검증 요청 (프로그램 간 연계용) */
 export const requestGroupModuleUnitFromPath = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/groupmoduleunit/request-from-path`, formData, 'GroupModuleUnit');

@@ -670,6 +670,7 @@ def task_execute_groupmoduleunit(
     timestamp: str,
     source: str,
     use_nastran: bool,
+    program_name: str = "GroupModuleUnit",
 ):
     """nastran_bridge.exe 로 Step1 파싱 검증과 선택적 Step2 Nastran 검증을 수행한다."""
     mark_running(job_id, "NastranBridge 초기화 중...", progress=10)
@@ -818,8 +819,8 @@ def task_execute_groupmoduleunit(
 
     project_data, db_err = record_analysis(
         job_id=job_id,
-        project_name=f"GroupModuleUnit_{timestamp}",
-        program_name="GroupModuleUnit",
+        project_name=f"{program_name}_{timestamp}",
+        program_name=program_name,
         employee_id=employee_id,
         status=status_msg,
         input_info={"bdf_model": bdf_path, "use_nastran": use_nastran},

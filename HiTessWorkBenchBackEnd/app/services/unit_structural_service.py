@@ -87,9 +87,9 @@ def task_execute_unit_structural(
             ).first()
             if parent is None:
                 raise RuntimeError(f"Parent Analysis (id={parent_analysis_id}) 를 찾을 수 없습니다.")
-            if parent.program_name != "GroupModuleUnit":
+            if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
                 raise RuntimeError(
-                    f"Parent program_name 이 'GroupModuleUnit' 이 아닙니다 (got '{parent.program_name}')."
+                    f"Parent program_name 이 지원 대상이 아닙니다 (got '{parent.program_name}')."
                 )
             if parent.status != "Success":
                 raise RuntimeError(f"Parent BDF 검증이 성공 상태가 아닙니다 (status={parent.status}).")

@@ -1312,10 +1312,10 @@ async def upload_module_stability_artifact(
             raise HTTPException(status_code=404, detail=f"Parent Analysis (id={parent_analysis_id}) not found")
         if parent.employee_id != current_user:
             raise HTTPException(status_code=403, detail="Parent Analysis 의 사용자와 인증 사용자가 일치하지 않습니다.")
-        if parent.program_name != "GroupModuleUnit":
+        if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
             raise HTTPException(
                 status_code=400,
-                detail=f"Parent program_name '{parent.program_name}' is not 'GroupModuleUnit'",
+                detail=f"Parent program_name '{parent.program_name}' is not supported",
             )
         bdf_path = (parent.input_info or {}).get("bdf_model")
     finally:
@@ -1422,11 +1422,35 @@ async def request_groupmoduleunit(
     use_nastran=True 인 경우 추후 단계에서 validate-run 으로 F06 검증까지 확장한다.
     """
     _verify_employee_self(employee_id, current_user)
-    work_dir, timestamp = make_work_dir(employee_id, "GroupModuleUnit")
+    program_name = "SidePassage" if str(source).lower() == "sidepassage" else "GroupModuleUnit"
+    work_dir, timestamp = make_work_dir(employee_id, program_name)
     bdf_path = await save_upload(bdf_file, work_dir, error_prefix="파일 저장 오류")
     job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
-        bdf_path, work_dir, employee_id, timestamp, source, use_nastran,
+        bdf_path, work_dir, employee_id, timestamp, source, use_nastran, program_name,
+    )
+    return {"job_id": job_id}
+
+
+@router.post("/analysis/sidepassage/request")
+async def request_sidepassage(
+        bdf_file: UploadFile = File(...),
+        employee_id: str = Form(...),
+        use_nastran: bool = Form(False),
+        source: str = Form("Workbench"),
+        current_user: str = Depends(require_auth)
+):
+    """
+    Side Passage Assessment — Step1 BDF 입력 검증.
+    GroupModuleUnit 검증 엔진은 재사용하되 userConnection 폴더명과 DB program_name 은
+    SidePassage 로 기록한다.
+    """
+    _verify_employee_self(employee_id, current_user)
+    work_dir, timestamp = make_work_dir(employee_id, "SidePassage")
+    bdf_path = await save_upload(bdf_file, work_dir, error_prefix="파일 저장 오류")
+    job_id = submit_analysis_job(
+        task_execute_groupmoduleunit,
+        bdf_path, work_dir, employee_id, timestamp, source, use_nastran, "SidePassage",
     )
     return {"job_id": job_id}
 
@@ -1541,9 +1565,9 @@ async def request_unit_structural(
         if parent is None:
             raise HTTPException(status_code=404,
                                 detail=f"Parent Analysis (id={parent_analysis_id}) not found")
-        if parent.program_name != "GroupModuleUnit":
+        if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
             raise HTTPException(status_code=400,
-                                detail=f"Parent program_name '{parent.program_name}' is not 'GroupModuleUnit'")
+                                detail=f"Parent program_name '{parent.program_name}' is not supported")
         if parent.status != "Success":
             raise HTTPException(status_code=400,
                                 detail=f"Parent BDF 검증이 성공 상태가 아닙니다 (status={parent.status})")
