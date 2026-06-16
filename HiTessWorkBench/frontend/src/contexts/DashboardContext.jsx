@@ -310,6 +310,10 @@ export function DashboardProvider({ children }) {
   const [globalJobs, setGlobalJobs] = useState([]);
   const globalJob = globalJobs[0] || null;
 
+  const patchGlobalJob = (jobId, patch) => {
+    setGlobalJobs(prev => prev.map(job => job.jobId === jobId ? { ...job, ...patch } : job));
+  };
+
   const clearGlobalJob = (jobId = null) => {
     setGlobalJobs(prev => jobId ? prev.filter(job => job.jobId !== jobId) : []);
   };
@@ -351,12 +355,19 @@ export function DashboardProvider({ children }) {
     }}>
       {children}
 
+      {globalJobs.map(job => (
+        <GlobalJobPoller
+          key={`poll-${job.jobId}`}
+          job={job}
+          onPatchJob={patchGlobalJob}
+        />
+      ))}
+
       <GlobalJobTray
         jobs={globalJobs}
         currentMenu={currentMenu}
         onNavigate={setCurrentMenu}
         onDismiss={clearGlobalJob}
-        onPatchJob={(jobId, patch) => setGlobalJobs(prev => prev.map(job => job.jobId === jobId ? { ...job, ...patch } : job))}
       />
     </DashboardContext.Provider>
   );
@@ -364,7 +375,7 @@ export function DashboardProvider({ children }) {
 
 export const useDashboard = () => useContext(DashboardContext);
 
-function GlobalJobTray({ jobs, currentMenu, onNavigate, onDismiss, onPatchJob }) {
+function GlobalJobTray({ jobs, currentMenu, onNavigate, onDismiss }) {
   const visibleJobs = jobs.filter(job => job.menu !== currentMenu);
   if (!visibleJobs.length) return null;
 
@@ -376,14 +387,13 @@ function GlobalJobTray({ jobs, currentMenu, onNavigate, onDismiss, onPatchJob })
           job={job}
           onNavigate={onNavigate}
           onDismiss={onDismiss}
-          onPatchJob={onPatchJob}
         />
       ))}
     </div>
   );
 }
 
-function GlobalJobCard({ job, onNavigate, onDismiss, onPatchJob }) {
+function GlobalJobPoller({ job, onPatchJob }) {
   const isTerminal = job.status === 'Success' || job.status === 'Failed' || job.status === 'Interrupted';
 
   usePolling({
@@ -398,6 +408,12 @@ function GlobalJobCard({ job, onNavigate, onDismiss, onPatchJob }) {
       message: err?.timeout ? '해석 시간 초과 (3분)' : '서버 통신 오류 발생',
     }),
   });
+
+  return null;
+}
+
+function GlobalJobCard({ job, onNavigate, onDismiss }) {
+  const isTerminal = job.status === 'Success' || job.status === 'Failed' || job.status === 'Interrupted';
 
   return (
     <div
