@@ -71,6 +71,59 @@ npm run dist
   - 폴더명 주의: `InHouseProgram`은 camelCase(`NastranBridge`, `TrussAssessment`…), `WorkBenchSubModule`은 underscore 혼용(`Nastran_bridge`). 백엔드 `analysis.py`의 nastran_bridge 탐색은 `InHouseProgram/Nastran_bridge` → `WorkBenchSubModule/Nastran_bridge` → `InHouseProgram/NastranBridge` 후보를 모두 보고, `NASTRAN_BRIDGE_DIR` 환경변수 override도 지원한다(commit `146db53`).
   - 🔔 **커밋 시 보고 의무(필수)**: `InHouseProgram/`은 git 미추적(`.gitignore`에 `*.exe` 및 `HiTessWorkBenchBackEnd/InHouseProgram/`)이라 **`git pull`로 서버에 절대 안 따라온다.** 따라서 InHouse 프로그램(exe/py)이 변경되거나 관련된 작업을 커밋할 때마다, 커밋 보고에 **"서버(145)에 수동 교체해야 할 프로그램 파일 목록 + 교체 후 백엔드 재시작 필요"를 항상 함께 명시**할 것. 또 **"`git pull`만으로 끝나는지 / 수동 교체가 추가로 필요한지"를 커밋마다 분명히 구분**해 알릴 것. (실제 사례: `nastran_bridge.py`는 rbe2_fixed_lines 포함본, `MooringFitting.exe`는 solve-bdf 지원본으로 서버 `InHouseProgram/`에 덮어쓰고 재시작해야 mooring 구조해석이 동작.)
 
+### Model Builder Studio — 2개 구성요소(엔진 / 스튜디오)와 배포 흐름 ★작업 전 필독
+
+Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 시 어느 쪽을 건드리는지 먼저 구분할 것.
+
+**① 해석 엔진 (C#)**
+- 소스: `C:\Coding\WorkBenchSubModule\HiTessModelBuilder\` (`Cmb.*` 솔루션, `HiTessModelBuilder.sln`)
+- 빌드 산출물(실사용): `HiTessWorkBenchBackEnd\InHouseProgram\HiTessModeBuilder\Cmb.Cli.exe`
+  - ⚠️ 폴더명은 `HiTessModeBuilder` ('l' 빠진 형태가 정확함, 오타 아님). InHouse 프로그램 규칙(위) 그대로 적용 — **git 미추적, 서버(145) 수동 교체 필요**.
+
+**② 스튜디오 (React UI 뷰어)**
+- 소스: `C:\Coding\WorkBenchSubModule\ModelBuilderStudio\apps\model-studio\` (viewer id=`model-studio`, 연결 메뉴=`HiTess Model Builder`)
+- zip 빌드: 해당 폴더에서 `npm run package` → `release/model-studio-<ver>.zip` (+ `.sha256`). 버전은 `package.json` 한 곳만 올림.
+- **배포 위치 2곳 — 둘 다 복사해야 함:**
+  1. **`HiTessWorkBenchBackEnd\StudioProgram\` (백엔드-로컬)** — ★ WorkBench 앱이 백엔드 `viewers.py`로 **실제 읽는 곳, UNC보다 우선 스캔**. 여기에 안 넣으면 앱은 새 버전을 못 본다(과거 실수 사례).
+  2. **UNC** `\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram` — 운영 표준 아카이브. (한글·대괄호 때문에 PowerShell은 `Copy-Item -LiteralPath ... -Destination '<경로>' -Force`)
+- 사용 흐름: WorkBench가 `GET /api/viewers/manifest|download/model-studio`로 **백엔드에서 최신 버전 zip을 다운로드 → 로컬 PC에 설치**해 띄운다. `viewers.py`의 `_find_zip`은 후보 폴더를 순서대로 보고 **첫 번째 폴더에서 최고 버전**을 내려준다(백엔드-로컬이 1순위 → 거기 최고 버전이 곧 앱이 보는 버전).
+
+**배포 시 체크리스트 / 함정(이번 세션 실측):**
+- 버전 bump 전 **StudioProgram 양쪽의 기존 배포 버전을 먼저 확인**할 것. 로컬 `package.json`이 실제 배포본보다 **뒤처져 있을 수 있다**(ModelBuilderStudio는 `src/`가 git 미추적이라 버전·코드 드리프트 발생). 로컬 버전+1만 하면 배포본보다 낮아질 수 있음.
+- ⚠️ **회사 DRM**이 로컬 C: 디스크에 쓴 zip을 at-rest로 **정확히 +4096 byte 암호화** → PowerShell엔 "EOCD 없음(손상)"으로 보인다(UNC 네트워크 경로엔 안 걸림). 백엔드(DRM 화이트리스트)는 `read()`로 복호화해 정상으로 읽는다.
+- 그래서 `app/routers/viewers.py`는 size/sha256/다운로드 본문을 **모두 `read()`한 바이트 기준**으로 서빙해야 한다. `os.path.getsize`(stat=암호화된 on-disk 크기)나 `FileResponse`(Content-Length를 stat로 잡음)를 쓰면 본문(복호화)과 길이가 어긋나 앱이 **`ERR_CONTENT_LENGTH_MISMATCH`** 로 다운로드 실패한다. (이미 설치된 버전은 재다운로드가 없어 증상이 안 보이고, **신규 버전 다운로드에서만** 터짐.)
+- 서버(145) 반영: `viewers.py` 등 git 추적 백엔드 코드는 `git pull`+백엔드 재시작, 스튜디오 zip은 서버 `HiTessWorkBenchBackEnd\StudioProgram\`에 **수동 복사**.
+
+**런타임 파이프라인 — 엔진↔스튜디오가 실제로 맞물리는 절차 (오케스트레이터: `app/services/hitess_modelflow_service.py`)**
+
+배포 흐름(위)이 "프로그램을 어디 두나"라면, 이건 "사용자가 누르면 무슨 일이 일어나나"다. 두 task 로 구성된다.
+
+1. **빌드** — `POST /api/analysis/modelflow/request` → `task_execute_modelflow`
+   - 업로드: `stru_file`(필수) + `pipe_file`·`equip_file`(선택). UI 옵션 → CLI 플래그: `mesh_size→--mesh-size`, `ubolt_full_fix→--ubolt-full-fix`, `run_nastran→--run-nastran(+--nastran-path,--leg-z-tol)` 등.
+   - 실행: `Cmb.Cli.exe build-full --stru <csv> [--pipe --equip] --mesh-size N [...]` (cwd=work_dir, timeout 20분).
+   - 산출: `userConnection/<ts>_<id>_HiTessModelBuilder/<yyyyMMdd_HHmmss>/` 안에 **phase 파일**(`00_InputAudit.json`, `00_StageSummary.json`, `NN_*.json/.bdf` — 정규식 `^\d{2}_[A-Za-z]+\.(json|bdf)$`) + **최종 산출물** `<designName>.json/.bdf`.
+   - output_dir 확정: 백엔드가 stdout 첫 줄 `출력 폴더: <path>`(또는 `폴더:`)를 파싱, 못 찾으면 work_dir의 최신 `yyyyMMdd_HHmmss` 폴더로 폴백. exit **0/2=산출 OK, 1=실패**.
+   - 뷰: 스튜디오(`model-studio`)가 이 output_dir 을 **initialFolder 로 받아 phase JSON 을 일괄 자동 로드** → 3D 뷰/검증/편집.
+
+2. **편집 적용** — `task_execute_apply_edit` (apply-edit 엔드포인트)
+   - 스튜디오가 편집 결과를 output_dir 에 `*_edit.json`(intents)으로 기록.
+   - 기본 경로: `Cmb.Cli.exe apply-edit-intent <output_dir> [--strict]` → `edited/` 에 `<base>.bdf` + `<base>.json` + `apply-trace.json`. exit **0=성공, 2=intents 빔, 64/65/70=실패**.
+   - ★ **Python fallback**: exit==65 + intents 에 `deleteRigid` 포함 + 로그에 `unsupported intent kind` 면 → `InHouseProgram/NastranBridge/nastran_bridge.py` 의 `write_edited_model_outputs()` 로 edited BDF/JSON 생성(Cmb.Cli 가 모르는 신규 intent 를 Python 이 처리).
+   - 후속 체인: `run_nastran` → `nastran.exe <bdf> scr=yes old=no batch=no` (f06/op2/log) → `parse_f06` → `F06Parser.Console.exe <f06> --output-dir` (`_results.json` + `_SC*_*.csv`). F06 의 `*** USER/SYSTEM FATAL|ERROR` 는 `scan_f06_diagnostics` 가 별도 수집.
+
+**런타임에 필요한 InHouse 프로그램 4종 (Cmb.Cli 1개가 아니다 — 모두 서버(145) 수동 반영 대상)**
+
+| 경로 | 역할 |
+|------|------|
+| `InHouseProgram/HiTessModeBuilder/Cmb.Cli.exe` | 엔진 (build-full + apply-edit-intent **기본** 경로) |
+| `InHouseProgram/NastranBridge/nastran_bridge.py` | deleteRigid 등 **미지원 intent 의 Python fallback** (편집 BDF 포맷 fix 가 사는 곳) |
+| `InHouseProgram/F06Parser/F06Parser.Console.exe` | F06 → 결과 JSON(`_results.json`)/CSV 파서 |
+| 외부 MSC `nastran.exe` (`C:\MSC.Software\MSC_Nastran\20131\bin`, `--nastran-path` override) | 해석기. InHouse 아님 — 서버에 **MSC 설치** 필요 |
+
+**⚠️ 교정/함정 (이번 재검토에서 발견)**
+- **nastran_bridge 폴더명 불일치(잠재 `FileNotFoundError`)**: `hitess_modelflow_service.py` 의 `_load_nastran_bridge_module()` 은 **오직 `InHouseProgram/NastranBridge`(camelCase) 하드코딩, 폴백 없음**. 반면 `analysis.py` 는 `InHouseProgram/Nastran_bridge`(**underscore**)를 1순위로 본다. → nastran_bridge.py 를 **underscore 폴더에만** 두면 modelflow 의 deleteRigid 폴백이 깨진다. **둘 다 만족하려면 `NastranBridge`(camelCase)에 둘 것**(또는 양쪽 복사). [이상적으론 modelflow service 도 analysis.py 처럼 다중 후보 탐색으로 통일 권장.]
+- **편집 BDF 포맷 fix 의 적용 범위**: `nastran_bridge.py` 의 BDF 포맷 수정은 **fallback(deleteRigid) 경로에만** 효력. ModelBuilder 일반 편집의 기본 BDF writer 는 **C# `Cmb.Cli.exe`** 다. 깨진 BDF 가 Cmb.Cli 산출물이면 **C# 엔진 쪽도 같은 수정 필요**. (단 Mooring/SidePassage 스튜디오의 apply-edit 는 `analysis.py` 가 nastran_bridge 를 **기본 경로로** 직접 호출 → 그쪽 BDF 는 이 Python fix 로 완결.)
+
 ### 프론트엔드 내비게이션 구조
 
 React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)를 사용합니다. `useReducer` 기반으로 `history[]` 배열과 `currentIndex`를 원자적으로 관리합니다. 페이지 컴포넌트에서 `useNavigation()` 훅으로 `setCurrentMenu(name)`, `goBack()`, `goForward()` 등에 접근합니다(이전의 props drilling 방식 제거). 전체 라우팅 분기는 `App.jsx:renderPage()`의 switch문에 있습니다.
