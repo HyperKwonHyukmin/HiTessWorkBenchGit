@@ -14,11 +14,15 @@ viewer 는 이 경로를 initialFolder 로 받아 phase JSON 일괄 자동 로�
   leg_z_tol            → --leg-z-tol <MM>
 """
 import glob
+import importlib.util
+import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 from datetime import datetime
+from pathlib import Path
 
 from .analysis_runner import (
     mark_complete,
@@ -290,6 +294,91 @@ def detect_edited_artifacts(output_dir: str) -> dict:
     return result
 
 
+def _edit_json_has_kind(edit_json_path: str | None, kind: str) -> bool:
+    if not edit_json_path or not os.path.isfile(edit_json_path):
+        return False
+    try:
+        with open(edit_json_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return any(
+            isinstance(intent, dict) and intent.get("kind") == kind
+            for intent in data.get("intents", [])
+        )
+    except Exception:
+        return False
+
+
+def _load_nastran_bridge_module():
+    backend_dir = Path(__file__).resolve().parents[2]
+    bridge_path = backend_dir / "InHouseProgram" / "NastranBridge" / "nastran_bridge.py"
+    if not bridge_path.is_file():
+        raise FileNotFoundError(f"nastran_bridge.py 없음: {bridge_path}")
+    spec = importlib.util.spec_from_file_location("hitess_nastran_bridge", bridge_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"nastran_bridge.py 로드 실패: {bridge_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _apply_edit_with_nastran_bridge(output_dir: str, edit_json_path: str) -> tuple[dict, str]:
+    """Cmb.Cli.exe가 모르는 신규 intent(deleteRigid 등)를 Python bridge로 적용한다."""
+    nb = _load_nastran_bridge_module()
+    edit_path = Path(edit_json_path)
+    stem = edit_path.stem[:-5] if edit_path.stem.lower().endswith("_edit") else edit_path.stem + "_final"
+    edited_dir = Path(output_dir) / "edited"
+    if edited_dir.exists():
+        shutil.rmtree(edited_dir)
+    edited_dir.mkdir(parents=True, exist_ok=True)
+
+    output_json_path = edited_dir / f"{stem}.json"
+    output_bdf_path = edited_dir / f"{stem}.bdf"
+    result = nb.write_edited_model_outputs(edit_path, output_json_path, output_bdf_path)
+
+    edit_data = json.loads(edit_path.read_text(encoding="utf-8"))
+    summary = result.get("summary", {})
+    operations = []
+    for rigid_id in summary.get("addedRigids", []) or []:
+        operations.append({
+            "code": "RIGID_ADDED",
+            "level": "info",
+            "kind": "addRigid",
+            "details": f"RBE2 {rigid_id} created",
+        })
+    deleted_rigids = (summary.get("deleted") or {}).get("rigids", 0)
+    if deleted_rigids:
+        operations.append({
+            "code": "RIGID_DELETED",
+            "level": "info",
+            "kind": "deleteRigid",
+            "details": f"{deleted_rigids} RBE2 deleted",
+        })
+    trace = {
+        "schemaVersion": "1.0",
+        "appliedAt": datetime.now().isoformat(),
+        "intentFile": edit_path.name,
+        "baseStage": stem,
+        "intents": edit_data.get("intents", []),
+        "operations": operations,
+        "summary": summary,
+        "fallback": "nastran_bridge",
+    }
+    (edited_dir / "apply-trace.json").write_text(
+        json.dumps(trace, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    edited = detect_edited_artifacts(output_dir)
+    log = (
+        "[nastran_bridge fallback]\n"
+        f"edit={edit_path}\n"
+        f"json={output_json_path}\n"
+        f"bdf={output_bdf_path}\n"
+        f"summary={json.dumps(summary, ensure_ascii=False)}"
+    )
+    return edited, log
+
+
 _DEFAULT_NASTRAN_PATH = r"C:\MSC.Software\MSC_Nastran\20131\bin\nastran.exe"
 
 # Nastran F06 의 표준 진단 마커. *** USER FATAL / *** USER ERROR / *** SYSTEM FATAL ...
@@ -458,8 +547,35 @@ def task_execute_apply_edit(
                     status_msg = "Failed"
                     engine_output += "\n[오류] 적용할 편집 내역이 없습니다 (intents 비어있음)."
                 else:
-                    status_msg = "Failed"
-                    engine_output += f"\n[Exit code: {result.returncode}]"
+                    can_bridge_fallback = (
+                        result.returncode == 65
+                        and _edit_json_has_kind(edit_json_path, "deleteRigid")
+                        and "unsupported intent kind" in engine_output
+                    )
+                    if can_bridge_fallback:
+                        logger.warning(
+                            "[apply-edit] Cmb.Cli.exe가 deleteRigid를 지원하지 않아 nastran_bridge fallback 적용"
+                        )
+                        try:
+                            edited, fallback_log = _apply_edit_with_nastran_bridge(output_dir, edit_json_path)
+                            engine_output += (
+                                f"\n[Exit code: {result.returncode}]"
+                                "\n[호환 처리] Cmb.Cli.exe deleteRigid 미지원 → nastran_bridge로 편집 BDF 생성.\n"
+                                f"{fallback_log}"
+                            )
+                            if not edited.get("edited_bdf_path"):
+                                status_msg = "Failed"
+                                engine_output += "\n[오류] nastran_bridge fallback 후 edited/ 폴더에 BDF 산출물이 없습니다."
+                        except Exception as fallback_error:
+                            status_msg = "Failed"
+                            logger.exception("[apply-edit] nastran_bridge fallback 실패")
+                            engine_output += (
+                                f"\n[Exit code: {result.returncode}]"
+                                f"\n[오류] nastran_bridge fallback 실패: {fallback_error}"
+                            )
+                    else:
+                        status_msg = "Failed"
+                        engine_output += f"\n[Exit code: {result.returncode}]"
 
             except subprocess.TimeoutExpired:
                 status_msg = "Failed"
