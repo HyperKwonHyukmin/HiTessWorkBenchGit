@@ -42,6 +42,10 @@ from ..services.drawing_to_analysis_service import (
     task_execute_drawing_solve,
 )
 from ._intake import make_work_dir, save_upload, submit_analysis_job
+from ._access_control import (
+    assert_current_user_can_access_job,
+    assert_current_user_can_access_path,
+)
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -296,6 +300,7 @@ def download_file(filepath: str, req: Request, db: Session = Depends(database.ge
     보안: userConnection/ 디렉터리 내 파일만 허용합니다.
     """
     decoded_path = _normalize_userconnection_path(filepath)
+    assert_current_user_can_access_path(decoded_path, employee_id, db, _ALLOWED_DOWNLOAD_BASE)
     if not os.path.exists(decoded_path):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
     filename = os.path.basename(decoded_path)
@@ -350,6 +355,7 @@ def export_assessment_xlsx(
     회사 DRM 소프트웨어의 자동 암호화를 피할 수 있습니다.
     """
     decoded_path = _normalize_userconnection_path(json_path)
+    assert_current_user_can_access_path(decoded_path, employee_id, db, _ALLOWED_DOWNLOAD_BASE)
     if not os.path.exists(decoded_path):
         raise HTTPException(status_code=404, detail="JSON 파일을 찾을 수 없습니다.")
 
@@ -952,6 +958,7 @@ def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_
     """
     status = job_status_store.get(job_id)
     if status:
+        assert_current_user_can_access_job(job_id, current_user, db, status)
         return status
     record = db.query(models.Analysis).filter(models.Analysis.job_id == job_id).first()
     if not record:
@@ -1756,6 +1763,7 @@ def _build_mooring_element_names(out_dir: str, stage07_data: dict) -> dict:
 def get_mooring_fitting_viewer_zip(
     output_dir: str = Query(..., description="MooringFitting out/ 폴더 절대경로 (userConnection 하위)"),
     current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
 ):
     """out/ 폴더의 Stage_00/07 BDF 를 nastran_bridge 로 변환 후 zip 반환.
 
@@ -1767,6 +1775,7 @@ def get_mooring_fitting_viewer_zip(
 
     try:
         abs_dir = _validate_userconnection_path(output_dir)
+        assert_current_user_can_access_path(abs_dir, current_user, db, _ALLOWED_DOWNLOAD_BASE)
     except HTTPException:
         raise
     except Exception as e:
@@ -1874,6 +1883,7 @@ def get_mooring_fitting_viewer_zip(
 async def apply_mooring_fitting_edit(
     request: Request,
     current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
 ):
     """intents 를 원본 STAGE_07 BDF 에 적용해 편집 반영 solvable BDF 를 저장한다.
 
@@ -1900,6 +1910,7 @@ async def apply_mooring_fitting_edit(
 
     try:
         abs_folder = _validate_userconnection_path(folder_path)
+        assert_current_user_can_access_path(abs_folder, current_user, db, _ALLOWED_DOWNLOAD_BASE)
     except HTTPException:
         raise
     except Exception as e:
@@ -2128,6 +2139,7 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
 async def solve_mooring_fitting(
     request: Request,
     current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
 ):
     """Studio 편집 모델 구조해석.
 
@@ -2166,6 +2178,7 @@ async def solve_mooring_fitting(
 
     try:
         abs_dir = _validate_userconnection_path(output_dir)
+        assert_current_user_can_access_path(abs_dir, current_user, db, _ALLOWED_DOWNLOAD_BASE)
     except HTTPException:
         raise
     except Exception as e:
@@ -2404,12 +2417,14 @@ def _validate_userconnection_path(p: str) -> str:
 def get_edit_status(
     output_dir: str = Query(..., description="build-full timestamp 폴더의 절대경로"),
     current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
 ):
     """폴더 안 *_edit.json 존재 여부 + edited/ 산출물 존재 여부를 한 번에 반환.
 
     프론트는 Studio 종료 후 이 엔드포인트를 호출해 자동 적용 트리거 여부를 결정.
     """
     abs_dir = _validate_userconnection_path(output_dir)
+    assert_current_user_can_access_path(abs_dir, current_user, db, _ALLOWED_DOWNLOAD_BASE)
     if not os.path.isdir(abs_dir):
         raise HTTPException(status_code=404, detail="output_dir 없음")
 
@@ -2449,6 +2464,7 @@ def get_edit_status(
 def get_result_zip(
     output_dir: str = Query(..., description="userConnection 하위 build-full timestamp 폴더의 절대경로"),
     current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
 ):
     """output_dir 의 모든 파일을 zip 으로 묶어 반환.
 
@@ -2461,6 +2477,7 @@ def get_result_zip(
     """
     try:
         abs_dir = _validate_userconnection_path(output_dir)
+        assert_current_user_can_access_path(abs_dir, current_user, db, _ALLOWED_DOWNLOAD_BASE)
     except HTTPException:
         raise
     except Exception as e:
@@ -2536,6 +2553,7 @@ def upload_edit_file(
     target_dir: str = Form(..., description="userConnection 하위 백엔드 output_dir 절대경로"),
     file: UploadFile = File(..., description="Studio 가 작성한 *_edit.json"),
     current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
 ):
     """사용자 PC 로컬에서 Studio 가 작성한 *_edit.json 을 백엔드 output_dir 로 업로드.
 
@@ -2543,6 +2561,7 @@ def upload_edit_file(
     폴더에 *_edit.json 을 쓴 경우 이 엔드포인트로 백엔드에 먼저 올려야 적용 가능하다.
     """
     abs_dir = _validate_userconnection_path(target_dir)
+    assert_current_user_can_access_path(abs_dir, current_user, db, _ALLOWED_DOWNLOAD_BASE)
     if not os.path.isdir(abs_dir):
         raise HTTPException(status_code=404, detail="target_dir 없음")
 
@@ -2564,9 +2583,11 @@ def upload_edit_file(
 def request_apply_edit(
     payload: ApplyEditPayload,
     current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
 ):
     """Studio 가 작성한 *_edit.json 을 base 모델에 적용하여 edited/ 폴더 생성."""
     abs_dir = _validate_userconnection_path(payload.output_dir)
+    assert_current_user_can_access_path(abs_dir, current_user, db, _ALLOWED_DOWNLOAD_BASE)
     if not os.path.isdir(abs_dir):
         raise HTTPException(status_code=404, detail="output_dir 없음")
 
