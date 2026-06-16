@@ -62,9 +62,7 @@ const buildHoleRbe = (params, modelData) => {
   }
   if (ringNodeIds.length < 3) return null;
   const center = { x: cx, y: 0, z: 0 };
-  // 표시용: 중심노드를 면 밖으로 띄워 선택 쉽게 (해석은 center 사용 — 면 위, 모멘트 없음)
-  const displayCenter = liftedCenter(modelData, center, ringNodeIds);
-  return { centerId: maxId + 1, center, displayCenter, ringNodeIds };
+  return { centerId: maxId + 1, center, ringNodeIds };
 };
 
 /** 모델 노드 중 최대 id (신규 GRID id 부여용). */
@@ -585,7 +583,7 @@ export default function DrawingToAnalysis() {
     const existing = new Set(nodes.map((n) => Number(n.id)));
     const extra = [];
     if (holeRbe?.centerId && !existing.has(holeRbe.centerId)) {
-      const dc = holeRbe.displayCenter || holeRbe.center;
+      const dc = holeRbe.center;
       extra.push({ id: holeRbe.centerId, x: dc.x, y: dc.y, z: dc.z, tags: ['rbe-center'] });
       existing.add(holeRbe.centerId);
     }

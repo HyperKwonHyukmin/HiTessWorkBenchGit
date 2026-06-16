@@ -1229,7 +1229,7 @@ export default function ShellModelViewer({
 
     // ── Lug Hole RBE2 스파이더 시각화 ──────────────────────────
     if (holeRbe && holeRbe.center && (holeRbe.ringNodeIds || []).length) {
-      const c = holeRbe.displayCenter || holeRbe.center;   // 표시는 띄운 위치(선택 편의)
+      const c = holeRbe.center;
       const ringPts = holeRbe.ringNodeIds.map((id) => posById.get(Number(id))).filter(Boolean);
 
       // 스포크 — 중심에서 각 ring 노드로
