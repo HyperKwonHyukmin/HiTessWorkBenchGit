@@ -33,6 +33,7 @@ const INITIAL_STEPS = [
 const REASON_LABELS = {
   csv_row_accepted:               '정상 변환',
   no_geometry_and_zero_mass:      '형상 없음 + 질량 0',
+  pipe_outdia_zero:               '배관 외경(outDia) 0 — 형상 누락',
   zero_length_pipe_without_mass:  '길이 0 + 질량 없는 배관',
   zero_length_structure:          '길이 0 구조 부재',
   zero_mass_attachment:           '질량 0 부착물',
@@ -98,6 +99,44 @@ function makeEditDownloadName(originalPath, ext) {
   return `${stem}_edit.${ext}`;
 }
 
+function buildEditedModelCheckStage(editedSummary) {
+  if (!editedSummary) return null;
+  const e = editedSummary;
+  const connectivity = e.connectivity ?? e.Connectivity ?? null;
+  const issues = e.healthMetrics?.issues ?? e.health?.issues ?? e.issues ?? {};
+  const health = e.health ?? {
+    freeEndCount: issues.freeEndNodes?.length ?? issues.freeEndNodeCount ?? issues.freeEndCount ?? 0,
+    orphanNodeCount: issues.orphanNodes?.length ?? issues.orphanNodeCount ?? issues.orphanCount ?? 0,
+    shortElementCount: issues.shortElements?.length ?? issues.shortElementCount ?? 0,
+    unresolvedUboltCount: issues.unresolvedUbolts?.length ?? issues.unresolvedUboltCount ?? 0,
+    disconnectedGroupCount: issues.disconnectedGroups?.length
+      ?? issues.disconnectedGroupCount
+      ?? Math.max((connectivity?.groupCount ?? 1) - 1, 0),
+  };
+  const diagnostics = e.healthMetrics?.diagnosticCounts ?? e.diagnosticCounts ?? {};
+  if (!connectivity && !e.nodes && !e.elements && !e.rigids) return null;
+
+  return {
+    stageIndex: 'Edit',
+    stageName: 'Edit Validation',
+    processingDurationMs: 0,
+    counts: {
+      nodes: Array.isArray(e.nodes) ? e.nodes.length : e.summary?.finalNodeCount ?? e.meta?.nodeCount ?? 0,
+      elements: Array.isArray(e.elements) ? e.elements.length : e.summary?.finalElementCount ?? e.meta?.elementCount ?? 0,
+      rigids: Array.isArray(e.rigids) ? e.rigids.length : e.summary?.finalRigidCount ?? e.meta?.rigidCount ?? 0,
+      pointMasses: Array.isArray(e.pointMasses) ? e.pointMasses.length : e.summary?.finalPointMassCount ?? e.meta?.pointMassCount ?? 0,
+    },
+    delta: {},
+    connectivity: connectivity ?? {},
+    health,
+    diagnostics: {
+      error: diagnostics.error ?? diagnostics.errors ?? 0,
+      warning: diagnostics.warning ?? diagnostics.warnings ?? 0,
+      info: diagnostics.info ?? diagnostics.infos ?? 0,
+    },
+  };
+}
+
 const fileBaseName = (p) => (p ? p.split(/[\\/]/).pop() : '');
 
 function extractBaseAndKeyword(filename, keywords) {
@@ -157,7 +196,7 @@ function summarizeAuditByKind(audit) {
     if (kindMap[r.kind]) kindMap[r.kind].push(r);
   }
   const tally = (arr) => {
-    const counts = { converted: 0, ignored: 0, parseFailed: 0, blank: 0 };
+    const counts = { converted: 0, ignored: 0, error: 0, parseFailed: 0, blank: 0 };
     for (const r of arr) counts[r.status] = (counts[r.status] ?? 0) + 1;
     return counts;
   };
@@ -370,9 +409,9 @@ function DetailCSV({
    ──────────────────────────────────────────────────────────────────────── */
 
 /* 파일별 변환 막대 */
-function KindBar({ label, icon, converted, total, ignored, failed, fileName }) {
+function KindBar({ label, icon, converted, total, ignored, errored = 0, failed, fileName }) {
   const pct = total > 0 ? Math.round((converted / total) * 100) : 0;
-  const hasIssue = ignored > 0 || failed > 0;
+  const hasIssue = ignored > 0 || failed > 0 || errored > 0;
   return (
     <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm flex flex-col gap-2">
       {/* 헤더 행 */}
@@ -401,6 +440,12 @@ function KindBar({ label, icon, converted, total, ignored, failed, fileName }) {
               className="h-full bg-emerald-500 transition-all duration-700 rounded-l-full"
               style={{ width: `${(converted / total) * 100}%` }}
             />
+            {errored > 0 && (
+              <div
+                className="h-full bg-red-500 transition-all duration-700"
+                style={{ width: `${(errored / total) * 100}%` }}
+              />
+            )}
             {ignored > 0 && (
               <div
                 className="h-full bg-amber-400 transition-all duration-700"
@@ -415,9 +460,14 @@ function KindBar({ label, icon, converted, total, ignored, failed, fileName }) {
             )}
           </div>
 
-          {/* 범례 (제외·실패만 — 변환은 큰 수치로 이미 표시) */}
-          {(ignored > 0 || failed > 0) && (
+          {/* 범례 (오류·제외·실패만 — 변환은 큰 수치로 이미 표시) */}
+          {(ignored > 0 || failed > 0 || errored > 0) && (
             <div className="flex items-center gap-3 flex-wrap">
+              {errored > 0 && (
+                <span className="flex items-center gap-1 text-xs text-red-700 font-semibold">
+                  <span className="w-2 h-2 rounded-sm bg-red-500 inline-block" /> 오류 {errored.toLocaleString()}
+                </span>
+              )}
               {ignored > 0 && (
                 <span className="flex items-center gap-1 text-xs text-amber-700">
                   <span className="w-2 h-2 rounded-sm bg-amber-400 inline-block" /> 제외 {ignored.toLocaleString()}
@@ -548,6 +598,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
   const total     = summary.totalDataRows   || 0;
   const converted = summary.convertedRows   || 0;
   const ignored   = summary.ignoredRows     || 0;
+  const errors    = summary.errorRows       || 0;
   const failed    = summary.parseFailedRows || 0;
   const convRate  = total > 0 ? Math.round((converted / total) * 100) : 0;
 
@@ -577,7 +628,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                 <circle cx="32" cy="32" r="26" fill="none" stroke="#e2e8f0" strokeWidth="7" />
                 <circle
                   cx="32" cy="32" r="26" fill="none"
-                  stroke={isFailed ? '#ef4444' : failed > 0 ? '#f59e0b' : '#10b981'}
+                  stroke={isFailed ? '#ef4444' : (failed > 0 || errors > 0) ? '#f59e0b' : '#10b981'}
                   strokeWidth="7"
                   strokeDasharray={`${2 * Math.PI * 26}`}
                   strokeDashoffset={`${2 * Math.PI * 26 * (1 - convRate / 100)}`}
@@ -618,6 +669,12 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
               </div>
             </div>
 
+            {errors > 0 && (
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-red-700 font-bold">
+                <AlertCircle size={12} /> 데이터 오류 {errors.toLocaleString()}건 — 변환 시 형상 누락 가능 (예: 배관 outDia=0). log 확인
+              </div>
+            )}
+
             {failed > 0 && (
               <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600 font-semibold">
                 <AlertCircle size={12} /> 파싱 실패 {failed.toLocaleString()}건 — 원본 CSV 확인 필요
@@ -637,7 +694,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
             {['Structure', 'Pipe', 'Equipment'].map((k) => {
               const d = byKind[k];
               const c = d.counts;
-              const rowTotal = (d.file?.dataRowCount) ?? ((c.converted ?? 0) + (c.ignored ?? 0) + (c.parseFailed ?? 0));
+              const rowTotal = (d.file?.dataRowCount) ?? ((c.converted ?? 0) + (c.ignored ?? 0) + (c.error ?? 0) + (c.parseFailed ?? 0));
               return (
                 <KindBar
                   key={k}
@@ -646,6 +703,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                   converted={c.converted ?? 0}
                   total={rowTotal}
                   ignored={c.ignored ?? 0}
+                  errored={c.error ?? 0}
                   failed={c.parseFailed ?? 0}
                   fileName={d.file ? fileBaseName(d.file.path) : null}
                 />
@@ -661,7 +719,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
       {ignoredEntries.length > 0 && (
         <div className="bg-white border border-amber-200 rounded-xl px-4 py-4 shadow-sm">
           <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-3">
-            제외 사유 분포 — {ignored.toLocaleString()}건
+            제외·오류 사유 분포 — {ignoredEntries.reduce((a, e) => a + e.count, 0).toLocaleString()}건
           </p>
           <div className="space-y-2.5">
             {ignoredEntries.map(({ code, count, label }) => (
@@ -715,6 +773,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                   options={[
                     { v: 'all',         label: '전체' },
                     { v: 'converted',   label: '변환' },
+                    { v: 'error',       label: '오류' },
                     { v: 'ignored',     label: '제외' },
                     { v: 'parseFailed', label: '실패' },
                     { v: 'blank',       label: '공백' },
@@ -746,15 +805,19 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {filteredRows.slice(0, 1000).map((r, i) => {
-                      const rowBg = r.status === 'parseFailed' ? 'bg-red-50/60'
+                      const rowBg = r.status === 'error'       ? 'bg-red-50'
+                                  : r.status === 'parseFailed' ? 'bg-red-50/60'
                                   : r.status === 'ignored'     ? 'bg-amber-50/40'
                                   : r.status === 'blank'       ? 'bg-slate-50/60' : '';
                       const badge = r.status === 'converted'   ? 'bg-emerald-100 text-emerald-700'
+                                  : r.status === 'error'       ? 'bg-red-100 text-red-700'
                                   : r.status === 'ignored'     ? 'bg-amber-100 text-amber-700'
                                   : r.status === 'parseFailed' ? 'bg-red-100 text-red-700'
                                   : 'bg-slate-100 text-slate-500';
                       const reasonText = r.status === 'converted'
                         ? (REASON_LABELS[r.reasonCode] ?? r.reasonCode)
+                        : r.status === 'error'
+                        ? (REASON_LABELS[r.reasonCode] ?? r.reason ?? r.reasonCode)
                         : (r.reason || REASON_LABELS[r.reasonCode] || r.reasonCode);
                       return (
                         <tr key={i} className={`hover:bg-blue-50/30 transition-colors ${rowBg}`}>
@@ -848,7 +911,7 @@ function StageSummaryPanel({
         <button
           type="button"
           onClick={onRefreshEditStatus}
-          title="Edit 상태 새로고침"
+          title="Edit 상태 새로고침 및 신규 편집 자동 적용"
           className="ml-auto mb-1 p-1.5 rounded-md hover:bg-slate-100 text-slate-400 cursor-pointer"
         >
           <RotateCcw size={12} />
@@ -1354,6 +1417,7 @@ function NastranDiagnosticsCard({ diag, hasF06 }) {
 function EditedMetricsCard({ editedSummary, originalSummary }) {
   // editedSummary 는 edited/{designName}.json 전체. Final 스키마는 단일 모델 스냅샷.
   const e = editedSummary ?? {};
+  const editCheckStage = buildEditedModelCheckStage(editedSummary);
 
   // 다양한 스키마 가능성에 방어적으로 대응 — 가장 흔한 키부터 시도
   const countOf = (...candidates) => {
@@ -1447,6 +1511,18 @@ function EditedMetricsCard({ editedSummary, originalSummary }) {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {editCheckStage && (
+        <div className="pt-3 border-t border-slate-100">
+          <div className="flex items-center gap-2 mb-2">
+            <ShieldCheck size={13} className="text-blue-600" />
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Edit Model Check
+            </p>
+          </div>
+          <PhaseDeltaCard stage={editCheckStage} />
         </div>
       )}
     </div>
@@ -3147,7 +3223,7 @@ export default function HiTessModelBuilder() {
                 editedSummary={editedSummary}
                 editError={editError}
                 onApplyEdit={applyEdit}
-                onRefreshEditStatus={refreshEditStatus}
+                onRefreshEditStatus={refreshEditStatusAndMaybeApply}
               />
             )}
             {activeStep.id === 'nastran' && (
