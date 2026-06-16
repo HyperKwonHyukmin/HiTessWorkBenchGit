@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import inspect, text
 
 from . import database, models
 from .routers import (
@@ -24,80 +23,13 @@ from .routers import (
     users,
     viewers,
 )
+from .schema_bootstrap import run_schema_bootstrap
 from .seed_guides import seed_default_guides
 from .services.cleanup_service import start_cleanup_scheduler
 
 # DB 테이블 자동 생성
 models.Base.metadata.create_all(bind=database.engine)
-
-
-def ensure_notice_columns():
-    """기존 notices 테이블에 새 공개 범위/작성자 이름 컬럼을 보강합니다."""
-    inspector = inspect(database.engine)
-    if not inspector.has_table("notices"):
-        return
-    columns = {col["name"] for col in inspector.get_columns("notices")}
-    statements = []
-    if "is_private" not in columns:
-        statements.append("ALTER TABLE notices ADD COLUMN is_private BOOL DEFAULT FALSE")
-    if "author_name" not in columns:
-        statements.append("ALTER TABLE notices ADD COLUMN author_name VARCHAR(50) NULL")
-    if not statements:
-        return
-    with database.engine.begin() as conn:
-        for statement in statements:
-            conn.execute(text(statement))
-
-
-ensure_notice_columns()
-
-
-def ensure_user_columns():
-    """기존 users 테이블에 is_developer 컬럼을 보강합니다."""
-    inspector = inspect(database.engine)
-    if not inspector.has_table("users"):
-        return
-    columns = {col["name"] for col in inspector.get_columns("users")}
-    statements = []
-    if "is_developer" not in columns:
-        statements.append("ALTER TABLE users ADD COLUMN is_developer BOOL DEFAULT FALSE")
-    if not statements:
-        return
-    with database.engine.begin() as conn:
-        for statement in statements:
-            conn.execute(text(statement))
-
-
-ensure_user_columns()
-
-
-def ensure_analysis_job_columns():
-    """기존 analysis 테이블에 DB 기반 job 상태 컬럼을 보강합니다."""
-    inspector = inspect(database.engine)
-    if not inspector.has_table("analysis"):
-        return
-    columns = {col["name"] for col in inspector.get_columns("analysis")}
-    statements = []
-    if "job_id" not in columns:
-        statements.append("ALTER TABLE analysis ADD COLUMN job_id VARCHAR(50) NULL")
-    if "job_status" not in columns:
-        statements.append("ALTER TABLE analysis ADD COLUMN job_status VARCHAR(20) DEFAULT 'completed'")
-    if "progress" not in columns:
-        statements.append("ALTER TABLE analysis ADD COLUMN progress INT DEFAULT 100")
-    if "job_message" not in columns:
-        statements.append("ALTER TABLE analysis ADD COLUMN job_message TEXT NULL")
-    if "started_at" not in columns:
-        statements.append("ALTER TABLE analysis ADD COLUMN started_at DATETIME NULL")
-    if "updated_at" not in columns:
-        statements.append("ALTER TABLE analysis ADD COLUMN updated_at DATETIME NULL")
-    if not statements:
-        return
-    with database.engine.begin() as conn:
-        for statement in statements:
-            conn.execute(text(statement))
-
-
-ensure_analysis_job_columns()
+run_schema_bootstrap()
 
 
 @asynccontextmanager
