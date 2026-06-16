@@ -49,7 +49,7 @@ const applyYzPolar = (load, magnitude, angleDeg) => {
 export function useBeamModeling() {
   const [beamType, setBeamType] = useState('I');
   const [params, setParams] = useState({ length: 1000, dim1: 100, dim2: 200, dim3: 10, dim4: 8 });
-  const [loads, setLoads] = useState([withYzPolar({ pos: 1000, fx: 0, fy: 5000, fz: 0, unit: 'N' })]);
+  const [loads, setLoads] = useState([withYzPolar({ pos: 1000, fx: 0, fy: 0, fz: -5000, unit: 'N' })]);
   const [boundaries, setBoundaries] = useState([{ pos: 0, type: 'Fix', dof: '' }]);
   const [validationErrors, setValidationErrors] = useState([]);
 
@@ -153,7 +153,7 @@ export function useBeamModeling() {
   const resetModeling = () => {
     setBeamType('I');
     setParams({ length: 1000, dim1: 100, dim2: 200, dim3: 10, dim4: 8 });
-    setLoads([withYzPolar({ pos: 500, fx: 0, fy: 5000, fz: 0, unit: 'N' })]);
+    setLoads([withYzPolar({ pos: 500, fx: 0, fy: 0, fz: -5000, unit: 'N' })]);
     setBoundaries([{ pos: 0, type: 'Fix', dof: '' }, { pos: 1000, type: 'Hinge', dof: '' }]);
   };
 
