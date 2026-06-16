@@ -22,18 +22,19 @@ import re
 import zipfile
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/viewers", tags=["viewers"])
 
 # ── viewer zip 탐색 ──────────────────────────────────────────────────────────
-# 모든 환경(개발/운영) 에서 사내 storage UNC 한 곳만 사용한다.
-# 배경: 사내 컴퓨터에는 DRM 이 걸려 있어 HTTP 로 zip 을 받으면 변조되어 SHA256 가
-# 어긋난다. 사용자 PC 는 UNC 에 직접 접근 가능하므로 백엔드 manifest 응답의
-# uncPath 를 받아 fs.copyFile 로 DRM 을 우회한다.
-# 환경변수(VIEWER_DIR/VIEWER_DIRS) 는 테스트/특수 환경 override 용으로만 유지.
+_BACKEND_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_LOCAL_VIEWER_DIR = os.path.join(_BACKEND_ROOT, "StudioProgram")
+
+# 운영 표준은 사내 storage UNC 이지만, 개발/단독 서버 배포에서는 백엔드 옆
+# StudioProgram 폴더를 같이 스캔한다. 사용자 PC가 UNC에 직접 접근 가능한 경우에는
+# uncPath를 내려 DRM/프록시 변조를 우회하고, 로컬 디스크 zip은 HTTP 다운로드로 폴백한다.
 _DEFAULT_VIEWER_DIR = (
     r"\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44"
     r"\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram"
@@ -46,7 +47,8 @@ def _candidate_dirs() -> list[str]:
     우선순위:
       1) VIEWER_DIRS env (콤마 구분 다중 경로) — 테스트 override
       2) VIEWER_DIR env (단일 경로) — 테스트 override
-      3) 사내 storage UNC — 표준 (개발/운영 모두)
+      3) <백엔드>/StudioProgram — 개발/단독 서버 배포
+      4) 사내 storage UNC — 운영 표준
     """
     cands: list[str] = []
 
@@ -58,6 +60,7 @@ def _candidate_dirs() -> list[str]:
     if single:
         cands.append(single)
 
+    cands.append(_LOCAL_VIEWER_DIR)
     cands.append(_DEFAULT_VIEWER_DIR)
 
     seen: set[str] = set()
@@ -160,6 +163,19 @@ def _sha256(path: str) -> str:
     return h.hexdigest()
 
 
+def _read_zip_bytes(path: str) -> bytes:
+    """zip 본문을 통째로 읽어 반환한다.
+
+    회사 DRM 이 로컬 디스크 파일을 at-rest 로 암호화(+패딩)하는 환경에서는
+    os.path.getsize(=stat) 가 '암호화된 on-disk 크기'를, read() 는 '복호화된 본문'을
+    돌려준다(백엔드는 DRM 화이트리스트). 둘이 다르면 Content-Length 와 실제 전송
+    바이트가 어긋나 클라이언트가 ERR_CONTENT_LENGTH_MISMATCH 로 실패한다.
+    그래서 size/sha256/다운로드 본문을 모두 '실제 read() 한 바이트' 로 통일한다.
+    """
+    with open(path, "rb") as f:
+        return f.read()
+
+
 def _read_manifest_from_zip(zip_path: str) -> dict | None:
     """zip 루트의 manifest.json 을 dict 로 반환한다."""
     try:
@@ -203,12 +219,15 @@ def get_viewer_manifest(viewer_id: str):
     # uncPath 는 사용자 PC 가 직접 접근 가능한 UNC 경로(`\\server\...`)일 때만 의미가 있다.
     # 백엔드 로컬 디스크 경로(예: D:\app\...)는 사용자 PC 에서 접근 불가하므로 제외해야
     # Electron 측이 자동으로 HTTP 다운로드 경로로 폴백한다.
+    # size/sha256 은 실제 read() 한 바이트 기준 — download_viewer 가 보내는 본문과 1:1 일치.
+    # (os.path.getsize 는 DRM at-rest 암호화 환경에서 본문과 어긋날 수 있어 쓰지 않는다.)
+    data = _read_zip_bytes(zip_path)
     is_unc = zip_path.startswith("\\\\") or zip_path.startswith("//")
     response_body = {
         "manifest": manifest,
         "downloadUrl": f"/api/viewers/download/{viewer_id}",
-        "sha256": _sha256(zip_path),
-        "size": os.path.getsize(zip_path),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "size": len(data),
         "fileName": os.path.basename(zip_path),
     }
     if is_unc:
@@ -226,8 +245,15 @@ def download_viewer(viewer_id: str):
         logger.error("[viewers] download 404 — viewer_id=%s", viewer_id)
         raise HTTPException(status_code=404, detail=f"viewer not found: {viewer_id}")
 
-    return FileResponse(
-        zip_path,
+    # FileResponse 는 Content-Length 를 os.stat(=암호화된 on-disk 크기)로 잡아 DRM 환경에서
+    # 실제 전송 본문(복호화)과 어긋난다. read() 한 바이트를 직접 보내 Content-Length 를
+    # 본문 길이와 일치시킨다(ERR_CONTENT_LENGTH_MISMATCH 방지).
+    data = _read_zip_bytes(zip_path)
+    return Response(
+        content=data,
         media_type="application/zip",
-        filename=os.path.basename(zip_path),
+        headers={
+            "Content-Disposition": f'attachment; filename="{os.path.basename(zip_path)}"',
+            "Content-Length": str(len(data)),
+        },
     )

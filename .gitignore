@@ -66,6 +66,7 @@ HiTessWorkBenchBackEnd/InHouseProgram/
 # 배포용 대용량 산출물 (Github 100MB 제한)
 HiTessWorkBenchBackEnd/DownloadProgram/
 HiTessWorkBenchBackEnd/LastestVersionProgram/
+HiTessWorkBenchBackEnd/StudioProgram/
 HiTessWorkBenchBackEnd/app/AnalysisProgram/
 HiTessWorkBench/dist_electron/
 # Claude MCP / 도구 데이터
