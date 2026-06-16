@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from datetime import datetime
 
@@ -16,6 +16,8 @@ class UserCreate(BaseModel):
     position: str
 
 class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     employee_id: str
     name: str
@@ -28,9 +30,6 @@ class UserResponse(BaseModel):
     last_login: Optional[datetime] = None
     created_at: Optional[datetime] = None
     token: Optional[str] = None  # 로그인 성공 시 세션 토큰
-
-    class Config:
-      from_attributes = True
 
 
 # ==========================================
@@ -46,11 +45,10 @@ class NoticeCreate(BaseModel):
     author_name: Optional[str] = None
 
 class NoticeResponse(NoticeCreate):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     created_at: datetime
-
-    class Config:
-        orm_mode = True
 
 
 # ==========================================
@@ -63,15 +61,14 @@ class FeatureRequestCreate(BaseModel):
     author_name: str
 
 class FeatureRequestResponse(FeatureRequestCreate):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     status: str
     upvotes: int
     comments_count: int
     admin_comment: Optional[str] = None  # 관리자 피드백 댓글
     created_at: datetime
-
-    class Config:
-        orm_mode = True
 
 class FeatureRequestComment(BaseModel):
     """관리자가 기능 요청에 답변을 달 때 사용하는 스키마"""
@@ -89,8 +86,7 @@ class UserGuideCreate(BaseModel):
     author_id: str
 
 class UserGuideResponse(UserGuideCreate):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     created_at: datetime
-
-    class Config:
-        orm_mode = True
