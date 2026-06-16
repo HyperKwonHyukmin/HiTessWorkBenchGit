@@ -240,68 +240,6 @@ const DiscoverHiTessBanner = ({ variant = 'platform', title, subtitle, ctaText, 
   );
 };
 
-const FirstUseGuide = ({ isOpen, onToggle, onNavigate }) => (
-  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={isOpen}
-      className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors cursor-pointer"
-    >
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="h-9 w-9 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-          <Rocket size={17} />
-        </div>
-        <div className="min-w-0">
-          <h3 className="text-sm font-bold text-slate-800">처음 사용하는 경우</h3>
-          <p className="text-xs text-slate-500 truncate">보유한 입력 자료와 작업 목적에 맞는 앱 그룹을 빠르게 찾습니다.</p>
-        </div>
-      </div>
-      <ChevronDown size={16} className={`text-slate-500 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-    </button>
-    {isOpen && (
-      <div className="border-t border-slate-100 p-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-          {WORKFLOW_GUIDE.map((step, idx) => {
-            const Icon = step.Icon;
-            return (
-              <button
-                key={step.title}
-                type="button"
-                onClick={() => onNavigate(step.menu)}
-                className="text-left rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-white hover:border-blue-300 hover:shadow-sm transition-all p-4 cursor-pointer group"
-              >
-                <div className="flex items-start gap-3">
-                  <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${step.icon}`}>
-                    <Icon size={17} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-black text-slate-400">{String(idx + 1).padStart(2, '0')}</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${step.badge}`}>
-                        {step.menuLabel}
-                      </span>
-                    </div>
-                    <p className="text-sm font-bold text-slate-800 group-hover:text-blue-700">{step.title}</p>
-                    <p className="mt-1 text-xs text-slate-500 leading-relaxed">{step.subtitle}</p>
-                  </div>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {step.examples.map(example => (
-                    <span key={example} className="text-[10px] font-semibold text-slate-600 bg-white border border-slate-200 rounded px-2 py-0.5">
-                      {example}
-                    </span>
-                  ))}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    )}
-  </div>
-);
-
 const AppRoadmapBanner = ({ onOpenModal }) => {
   const statusCounts = ANALYSIS_DATA.reduce((acc, app) => {
     const status = app.devStatus || 'Active';
@@ -1047,15 +985,9 @@ export default function Dashboard() {
   // 플랫폼 소개 배너: 기본적으로 접어둔다(매일 쓰는 사용자 우선). 사용자가 펼치면 그 선호를 저장해 다음 방문에 반영.
   // (시스템 해석 앱 로드맵은 접힘과 무관하게 항상 표시)
   const [introOpen, setIntroOpen] = useState(() => localStorage.getItem('dashboard_intro_open') === '1');
-  const [firstUseGuideOpen, setFirstUseGuideOpen] = useState(() => localStorage.getItem('dashboard_first_use_guide_open') !== '0');
   const toggleIntro = () => setIntroOpen(v => {
     const next = !v;
     localStorage.setItem('dashboard_intro_open', next ? '1' : '0');
-    return next;
-  });
-  const toggleFirstUseGuide = () => setFirstUseGuideOpen(v => {
-    const next = !v;
-    localStorage.setItem('dashboard_first_use_guide_open', next ? '1' : '0');
     return next;
   });
 
@@ -1362,11 +1294,6 @@ export default function Dashboard() {
               />
             </div>
           )}
-          <FirstUseGuide
-            isOpen={firstUseGuideOpen}
-            onToggle={toggleFirstUseGuide}
-            onNavigate={setCurrentMenu}
-          />
           {/* 시스템 해석 앱 로드맵 — 항상 표시(사용자 주요 참조 정보) */}
           <AppRoadmapBanner onOpenModal={() => setIsRoadmapModalOpen(true)} />
         </div>
