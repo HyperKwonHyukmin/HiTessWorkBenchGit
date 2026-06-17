@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import {
-  AlertCircle, ArrowLeft, Calculator, Download, History,
+  AlertCircle, Calculator, Download,
   Loader2, Ruler, ShieldCheck, TableProperties
 } from 'lucide-react';
-import GuideButton from '../../components/ui/GuideButton';
-import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useAuth } from '../../contexts/AuthContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import { useNavigation } from '../../contexts/NavigationContext';
@@ -14,7 +12,7 @@ import { formatFixed as fmt } from '../../utils/formatting';
 import dTypeLugRef1 from '../../assets/images/D_typeLug1.png';
 import dTypeLugRef2 from '../../assets/images/D_typeLug2.png';
 import dTypeLugRef3 from '../../assets/images/D_typeLug3.png';
-import PageBanner from '../../components/ui/PageBanner';
+import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { downloadJson } from '../../utils/fileHelper';
 import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 
@@ -107,7 +105,6 @@ export default function DTypeLugAssessment() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedBracket, setSelectedBracket] = useState('bracket_4EA');
   const [selectedCaseIndex, setSelectedCaseIndex] = useState(null);
-  const [changelogOpen, setChangelogOpen] = useState(false);
 
   const setField = (section, key) => (value) => {
     setInputs(prev => ({
@@ -151,29 +148,17 @@ export default function DTypeLugAssessment() {
 
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
-      <PageBanner gradient="from-brand-blue via-emerald-900 to-emerald-700">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setCurrentMenu('Parametric Apps')}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <TableProperties size={18} className="text-emerald-300" />
-                D Type Lug Assessment
-              </h1>
-              <p className="text-sm text-emerald-200/80 mt-0.5">Excel 기본값 기준 D-Type 러그의 브라켓 타입별 각도 케이스 사용률을 계산합니다.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
-              <History size={14} /> 이력
-            </button>
-            <GuideButton guideTitle="[파라메트릭] D Type Lug Assessment" variant="dark" />
-          </div>
-      </PageBanner>
+      <AnalysisPageBanner
+        title="D Type Lug Assessment"
+        subtitle="Excel 기본값 기준 D-Type 러그의 브라켓 타입별 각도 케이스 사용률을 계산합니다."
+        icon={TableProperties}
+        guideTitle="[파라메트릭] D Type Lug Assessment"
+        onBack={() => setCurrentMenu('Parametric Apps')}
+        backLabel="Parametric Apps로 돌아가기"
+        gradient="from-brand-blue via-emerald-900 to-emerald-700"
+        iconClassName="text-emerald-300"
+        subtitleClassName="text-emerald-200/80"
+      />
 
       <ReferenceFormulaTabs accent="emerald">
         {(activeInfoTab) => activeInfoTab === 'image' ? (
@@ -496,7 +481,6 @@ export default function DTypeLugAssessment() {
       </div>
 
       <SolverCredit contributor="김연태" />
-      <ChangelogModal programKey="DTypeLugAssessment" title="D Type Lug Assessment" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PenTool, ExternalLink, CheckCircle2, XCircle, Loader2, RefreshCw } from 'lucide-react';
-import PageHeader from '../../components/ui/PageHeader';
+import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 
 // ───────────────────────────────────────────────────────────────
@@ -71,6 +72,7 @@ function StatusPill({ status, onRecheck }) {
 
 export default function BlockWeldAssessment() {
   const { employeeId } = useAuth();
+  const { setCurrentMenu } = useNavigation();
   const { showToast } = useToast();
   const [status, setStatus] = useState('checking'); // 'checking' | 'online' | 'offline'
 
@@ -112,11 +114,15 @@ export default function BlockWeldAssessment() {
 
   return (
     <div className="max-w-3xl mx-auto pb-16">
-      <PageHeader
+      <AnalysisPageBanner
         title="Block Weld Assessment"
         icon={PenTool}
         subtitle="블록 용접부 구조 평가 도구"
-        accentColor="violet"
+        onBack={() => setCurrentMenu('Interactive Apps')}
+        backLabel="Interactive Apps로 돌아가기"
+        gradient="from-brand-blue via-violet-900 to-violet-700"
+        iconClassName="text-violet-300"
+        subtitleClassName="text-violet-200/80"
       />
 
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">

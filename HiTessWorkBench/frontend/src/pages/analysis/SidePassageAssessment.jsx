@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
-  UploadCloud, ArrowLeft, ArrowRight, ChevronsRight,
+  UploadCloud, ArrowRight, ChevronsRight,
   FileCheck2, MapPin, Box, BarChart3,
   X, CheckCircle2, Loader2,
   RotateCcw, AlertOctagon, FileText, Download, Wand2,
@@ -9,12 +9,11 @@ import {
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
-import GuideButton from '../../components/ui/GuideButton';
+import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { usePolling } from '../../hooks/usePolling';
 import { requestSidePassageAssessment, downloadFileText } from '../../api/analysis';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import { API_BASE_URL } from '../../config';
-import PageBanner from '../../components/ui/PageBanner';
 
 const SIDE_PASSAGE_STUDIO_VIEWER_ID = 'side-passage-studio';
 
@@ -705,28 +704,13 @@ export default function SidePassageAssessment() {
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
 
-      <PageBanner gradient="from-brand-blue via-brand-blue-dark to-blue-700">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setCurrentMenu('File-Based Apps')}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <UploadCloud size={20} className="opacity-80" />
-                Side Passage Assessment
-              </h1>
-              <p className="text-sm text-blue-200/80 mt-0.5">
-                Side Passage BDF 모델을 검증하고 Studio에서 권상 조건, Nastran 해석, 결과 판정을 완료합니다.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <GuideButton guideTitle="[파일] Side Passage Assessment" variant="dark" />
-          </div>
-      </PageBanner>
+      <FileBasedPageBanner
+        title="Side Passage Assessment"
+        subtitle="Side Passage BDF 모델을 검증하고 Studio에서 권상 조건, Nastran 해석, 결과 판정을 완료합니다."
+        icon={UploadCloud}
+        guideTitle="[파일] Side Passage Assessment"
+        onBack={() => setCurrentMenu('File-Based Apps')}
+      />
 
       {/* ── Body ── */}
       <div className="flex flex-1 gap-5 min-h-0">

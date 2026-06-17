@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import {
-  AlertCircle, ArrowLeft, ArrowRight, BarChart3, Calculator, CheckCircle2, ChevronDown,
+  AlertCircle, ArrowRight, BarChart3, Calculator, CheckCircle2, ChevronDown,
   ChevronUp, Download, FileSpreadsheet, ImageIcon, Loader2, Ruler, Settings2,
   SlidersHorizontal, TableProperties, XCircle
 } from 'lucide-react';
-import GuideButton from '../../components/ui/GuideButton';
 import SolverCredit from '../../components/ui/SolverCredit';
 import { useAuth } from '../../contexts/AuthContext';
-import PageBanner from '../../components/ui/PageBanner';
+import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { API_BASE_URL } from '../../config';
@@ -569,25 +568,17 @@ export default function CarlingCalculator({ variant = 'free' }) {
 
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
-      {/* ── 헤더 배너 ── */}
-      <PageBanner gradient="from-brand-blue via-emerald-900 to-emerald-700">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setCurrentMenu('Parametric Apps')}
-            className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              <TableProperties size={18} className="text-emerald-300" />
-              {meta.title}
-            </h1>
-            {meta.subtitle && <p className="text-sm text-emerald-200/80 mt-0.5">{meta.subtitle}</p>}
-          </div>
-        </div>
-        <GuideButton guideTitle={`[파라메트릭] ${meta.title}`} variant="dark" />
-      </PageBanner>
+      <AnalysisPageBanner
+        title={meta.title}
+        subtitle={meta.subtitle}
+        icon={TableProperties}
+        guideTitle={`[파라메트릭] ${meta.title}`}
+        onBack={() => setCurrentMenu('Parametric Apps')}
+        backLabel="Parametric Apps로 돌아가기"
+        gradient="from-brand-blue via-emerald-900 to-emerald-700"
+        iconClassName="text-emerald-300"
+        subtitleClassName="text-emerald-200/80"
+      />
 
       {/* ── 참조 그림 + 계산 수식 통합 패널 ── */}
       <InfoPanel variant={variant} meta={meta} />

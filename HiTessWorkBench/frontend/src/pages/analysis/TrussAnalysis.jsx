@@ -9,26 +9,23 @@ import { extractFilename } from '../../utils/fileHelper';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
 import { Dialog, Transition } from '@headlessui/react';
 import {
-  ArrowLeft, Upload, Play, Download, Trash2, Database,
+  Upload, Play, Download, Trash2, Database,
   RefreshCw, FileSpreadsheet, Terminal, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Maximize2, X, FileText,
-  FileOutput, XCircle, Clock, Eye, History, Sparkles
+  FileOutput, XCircle, Clock, Eye, Sparkles
 } from 'lucide-react';
-import ChangelogModal from '../../components/ui/ChangelogModal';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
-import GuideButton from '../../components/ui/GuideButton';
+import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useFileParser, parseCsvText } from '../../hooks/useFileParser';
 import SolverCredit from '../../components/ui/SolverCredit';
 import { useToast } from '../../contexts/ToastContext';
-import PageBanner from '../../components/ui/PageBanner';
 import { buildFormData } from '../../utils/fileHelper';
 
 export default function TrussAnalysis() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
-  const [changelogOpen, setChangelogOpen] = useState(false);
   const [nodeFile, setNodeFile] = useState(null);
   const [memberFile, setMemberFile] = useState(null);
   const [nodeData, setNodeData] = useState([]);
@@ -320,26 +317,13 @@ export default function TrussAnalysis() {
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
 
-      <PageBanner gradient="from-brand-blue via-brand-blue-dark to-blue-700">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setCurrentMenu('File-Based Apps')}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">Truss Model Builder</h1>
-              <p className="text-sm text-blue-200/80 mt-0.5">Node 및 Member CSV 데이터를 기반으로 구조 해석 모델을 구축합니다.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
-              <History size={14} /> 이력
-            </button>
-            <GuideButton guideTitle="[파일] Truss Model Builder — CSV로 트러스 모델 만들기" variant="dark" />
-          </div>
-      </PageBanner>
+      <FileBasedPageBanner
+        title="Truss Model Builder"
+        subtitle="Node 및 Member CSV 데이터를 기반으로 구조 해석 모델을 구축합니다."
+        icon={Layers}
+        guideTitle="[파일] Truss Model Builder — CSV로 트러스 모델 만들기"
+        onBack={() => setCurrentMenu('File-Based Apps')}
+      />
 
       {/* Main Workspace */}
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
@@ -501,8 +485,6 @@ export default function TrussAnalysis() {
       
       {/* 모달 3: 3D BDF 뷰어 */}
       <BdfViewerModal isOpen={is3DViewerOpen} project={analysisResultData} onClose={() => setIs3DViewerOpen(false)} />
-
-      <ChangelogModal programKey="TrussAnalysis" title="Truss Model Builder" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }

@@ -3,17 +3,15 @@ import axios from 'axios';
 import {
   TableProperties, Calculator, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, AlertCircle, Loader2,
-  Ruler, Weight, BarChart3, ChevronRight, Download, ArrowLeft, History
+  Ruler, Weight, BarChart3, ChevronRight, Download
 } from 'lucide-react';
-import GuideButton from '../../components/ui/GuideButton';
-import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL } from '../../config';
 import mastPostRef from '../../assets/images/mast_post_reference.png';
 import { formatFixed as fmt } from '../../utils/formatting';
 import SolverCredit from '../../components/ui/SolverCredit';
-import PageBanner from '../../components/ui/PageBanner';
+import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { downloadJson } from '../../utils/fileHelper';
 import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 
@@ -90,7 +88,6 @@ const CandidateDetail = ({ c }) => {
 export default function MastPostAssessment() {
   const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
-  const [changelogOpen, setChangelogOpen] = useState(false);
   const [heightMm, setHeightMm] = useState('');
   const [weightKg, setWeightKg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -126,29 +123,17 @@ export default function MastPostAssessment() {
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
-      <PageBanner gradient="from-brand-blue via-emerald-900 to-emerald-700">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setCurrentMenu('Parametric Apps')}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <TableProperties size={18} className="text-emerald-300" />
-                Mast Post Assessment
-              </h1>
-              <p className="text-sm text-emerald-200/80 mt-0.5">Post 높이와 플랫폼 하중을 입력하여 Post 직경과 두께를 산출합니다.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
-              <History size={14} /> 이력
-            </button>
-            <GuideButton guideTitle="[파라메트릭] Mast Post Assessment — Post 파이프 자동 선정" variant="dark" />
-          </div>
-      </PageBanner>
+      <AnalysisPageBanner
+        title="Mast Post Assessment"
+        subtitle="Post 높이와 플랫폼 하중을 입력하여 Post 직경과 두께를 산출합니다."
+        icon={TableProperties}
+        guideTitle="[파라메트릭] Mast Post Assessment — Post 파이프 자동 선정"
+        onBack={() => setCurrentMenu('Parametric Apps')}
+        backLabel="Parametric Apps로 돌아가기"
+        gradient="from-brand-blue via-emerald-900 to-emerald-700"
+        iconClassName="text-emerald-300"
+        subtitleClassName="text-emerald-200/80"
+      />
 
 
       <ReferenceFormulaTabs accent="emerald">
@@ -422,7 +407,6 @@ export default function MastPostAssessment() {
         </div>
       </div>
       <SolverCredit contributor="박준석" />
-      <ChangelogModal programKey="MastPostAssessment" title="Mast Post Assessment" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }

@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronsRight,
+  AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronsRight,
   Cpu, Download, ExternalLink, FileEdit, FileSpreadsheet, History, Loader2,
   Lock, PackageX, RotateCcw, ShieldCheck, UploadCloud, X,
 } from 'lucide-react';
 
-import ChangelogModal from '../../components/ui/ChangelogModal';
-import GuideButton from '../../components/ui/GuideButton';
+import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -14,7 +13,6 @@ import { API_BASE_URL } from '../../config';
 import { downloadFileBlob } from '../../api/analysis';
 import { getAuthHeaders, handleUnauthorized, isAdmin } from '../../utils/auth';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
-import PageBanner from '../../components/ui/PageBanner';
 
 /* ──────────────────────────────────────────────────────────────────────────
    상수
@@ -2243,6 +2241,7 @@ export default function HiTessModelBuilder() {
   const { setCurrentMenu } = useNavigation();
   const dashboardCtx = useDashboard();
   const startGlobalJob = dashboardCtx?.startGlobalJob || (() => {});
+  const clearGlobalJob = dashboardCtx?.clearGlobalJob || (() => {});
   const setPageState   = dashboardCtx?.setModelBuilderPageState || (() => {});
   const setGmuHandoff  = dashboardCtx?.setGmuHandoff  || (() => {});
   const saved          = dashboardCtx?.modelBuilderPageState;
@@ -2266,11 +2265,11 @@ export default function HiTessModelBuilder() {
   const [activeIdx,  setActiveIdx]  = useState(saved?.activeIdx ?? 0);
   const [hasRunOnce, setHasRunOnce] = useState(saved?.hasRunOnce ?? false);
   const [jobStatus,  setJobStatus]  = useState(saved?.jobStatus ?? null);
+  const [currentJobId, setCurrentJobId] = useState(saved?.currentJobId ?? null);
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [bdfResult,  setBdfResult]  = useState(saved?.bdfResult ?? null);
   const [engineLog,  setEngineLog]  = useState(saved?.engineLog ?? null);
   const [runNastranRequested, setRunNastranRequested] = useState(saved?.runNastranRequested ?? false);
-  const [changelogOpen, setChangelogOpen] = useState(false);
 
   // ── audit/summary 캐시 ──
   const [auditData,    setAuditData]    = useState(null);
@@ -2355,11 +2354,13 @@ export default function HiTessModelBuilder() {
     const gj = dashboardCtx?.globalJob;
     if (saved?.jobStatus?.status === 'Running' && gj?.menu === 'HiTESS Model Builder') {
       if (gj.status === 'Success' || gj.status === 'Failed') {
+        setCurrentJobId(gj.jobId);
         fetch(`${API_BASE_URL}/api/analysis/status/${gj.jobId}`, { headers: getAuthHeaders() })
           .then(r => r.ok ? r.json() : Promise.reject(r.status))
           .then(applyJobResult)
           .catch(() => setJobStatus({ status: 'Failed', progress: 0, message: '상태 조회 실패' }));
       } else if (gj.status === 'Running') {
+        setCurrentJobId(gj.jobId);
         startPolling(gj.jobId);
       }
     }
@@ -2580,6 +2581,7 @@ export default function HiTessModelBuilder() {
         throw new Error(detail);
       }
       const data = await res.json();
+      setCurrentJobId(data.job_id);
       startPolling(data.job_id);
       startGlobalJob(data.job_id, 'HiTESS Model Builder');
     } catch (e) {
@@ -2605,6 +2607,7 @@ export default function HiTessModelBuilder() {
     setJobStatus({ status: 'Running', progress: 5, message: '샘플 파일 준비 중...' });
   };
   const sampleMfSubmitted = (jobId) => {
+    setCurrentJobId(jobId);
     startPolling(jobId);
     startGlobalJob(jobId, 'HiTESS Model Builder');
   };
@@ -2624,6 +2627,7 @@ export default function HiTessModelBuilder() {
 
   /* ── 폴링 ──────────────────────────────────────────────────────────── */
   const startPolling = (jobId) => {
+    setCurrentJobId(jobId);
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       try {
@@ -2840,6 +2844,9 @@ export default function HiTessModelBuilder() {
           setEditApplying(false);
           if (sd.status === 'Success') {
             await refreshEditStatus();
+            setActiveIdx(2);
+            setSteps(prev => prev.map((s, i) => (i <= 2 ? { ...s, status: 'done' } : s)));
+            if (currentJobId) clearGlobalJob(currentJobId);
             showToast('편집 적용 완료 — Edit 탭에서 확인하세요.', 'success');
           } else {
             const errText = sd.engine_log || sd.message || '편집 적용 실패';
@@ -2854,7 +2861,7 @@ export default function HiTessModelBuilder() {
         setEditError(`폴링 오류: ${err.message}`);
       }
     }, 1500);
-  }, [refreshEditStatus, showToast]);
+  }, [refreshEditStatus, showToast, clearGlobalJob, currentJobId]);
 
   // 수동 버튼 / fallback 자동 트리거가 호출 — POST + 폴링 시작.
   const applyEdit = useCallback(async () => {
@@ -2929,6 +2936,8 @@ export default function HiTessModelBuilder() {
 
       if (!editFileName) {
         setActiveIdx(2);
+        setSteps(prev => prev.map((s, i) => (i <= 2 ? { ...s, status: 'done' } : s)));
+        if (currentJobId) clearGlobalJob(currentJobId);
         try {
           window.electron.sendMessage('modelflow:finalize-edit-response', {
             requestId,
@@ -2988,7 +2997,7 @@ export default function HiTessModelBuilder() {
       }
     });
     return () => { try { unsub?.(); } catch {} };
-  }, [startApplyEditJob, pollEditJobInBackground, refreshEditStatus, showToast, localResultDir, bdfResult?.outputDir]);
+  }, [startApplyEditJob, pollEditJobInBackground, refreshEditStatus, showToast, localResultDir, bdfResult?.outputDir, clearGlobalJob, currentJobId]);
 
   /* ── 리셋 ──────────────────────────────────────────────────────────── */
   const handleReset = () => {
@@ -2999,7 +3008,7 @@ export default function HiTessModelBuilder() {
     setMeshSize('300'); setUboltFullFix(true); setUseNastran(true);
     setLocalResultDir(null);
     setSteps(INITIAL_STEPS.map(s => ({ ...s })));
-    setActiveIdx(0); setHasRunOnce(false);
+    setActiveIdx(0); setHasRunOnce(false); setCurrentJobId(null);
     setJobStatus(null); setBdfResult(null); setEngineLog(null);
     setRunNastranRequested(false);
     setAuditData(null); setSummaryData(null);
@@ -3023,28 +3032,13 @@ export default function HiTessModelBuilder() {
         <EditApplyingOverlay status={editJobStatus} />
       )}
 
-      <PageBanner gradient="from-brand-blue via-brand-blue-dark to-blue-700">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setCurrentMenu('File-Based Apps')}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <ShieldCheck size={18} /> HiTESS Model Builder
-              </h1>
-              <p className="text-sm text-blue-200/80 mt-0.5">AM 3D 설계 CSV → 1D Beam FEM → Nastran BDF 자동 변환</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
-              <History size={14} /> 이력
-            </button>
-            <GuideButton guideTitle="[파일] HiTESS Model Builder — CSV → BDF 변환" variant="dark" />
-          </div>
-      </PageBanner>
+      <FileBasedPageBanner
+        title="HiTESS Model Builder"
+        subtitle="AM 3D 설계 CSV → 1D Beam FEM → Nastran BDF 자동 변환"
+        icon={ShieldCheck}
+        guideTitle="[파일] HiTESS Model Builder — CSV → BDF 변환"
+        onBack={() => setCurrentMenu('File-Based Apps')}
+      />
 
       {/* ── Body ── */}
       <div className="flex flex-1 gap-5 min-h-0 px-1">
@@ -3254,12 +3248,6 @@ export default function HiTessModelBuilder() {
         </div>
       </div>
 
-      <ChangelogModal
-        programKey="HiTessModelBuilder"
-        title="HiTESS Model Builder 변경 이력"
-        isOpen={changelogOpen}
-        onClose={() => setChangelogOpen(false)}
-      />
     </div>
   );
 }

@@ -11,7 +11,7 @@ import {
   SlidersHorizontal, Play, FileJson, Upload, BarChart2, Camera,
   Download, ChevronDown, FileText
 } from 'lucide-react';
-import GuideButton from '../ui/GuideButton';
+import AnalysisPageBanner from './AnalysisPageBanner';
 import { useBeamModeling, withYzPolar } from '../../hooks/useBeamModeling';
 import { useAnalysisManager } from '../../hooks/useAnalysisManager';
 import { InputRow, SummaryRow, SectionGuide } from '../../components/analysis/BeamSharedUI';
@@ -19,6 +19,7 @@ import Viewer3D from '../../components/analysis/Viewer3D';
 import EngineeringCharts from '../../components/analysis/EngineeringCharts';
 import SolverCredit from '../ui/SolverCredit';
 import { formatEngineering as engFormat } from '../../utils/formatting';
+import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 
 const CAPTURE_LABEL = {
@@ -187,6 +188,7 @@ function KpiSection({ mode, summaryData, beamType, params }) {
 
 export default function BeamModelPreview() {
   const { showToast } = useToast();
+  const { setCurrentMenu } = useNavigation();
   const captureRef = useRef(null);
   const captureTimerRef = useRef(null);
   const captureMenuRef = useRef(null);
@@ -279,13 +281,26 @@ export default function BeamModelPreview() {
     captureMode === 'stress' ? 'MAX STRESS REPORT' : '';
 
   return (
-    <>
+    <div className="max-w-[1600px] mx-auto pb-6 animate-fade-in-up">
+    {!isCapturing && (
+      <AnalysisPageBanner
+        title="Simple Beam Assessment"
+        subtitle="단면 형상과 치수를 직접 입력하여 단순 보의 응력 및 변위를 평가합니다."
+        icon={SlidersHorizontal}
+        guideTitle="[대화형] Simple Beam Assessment — 보 해석"
+        onBack={() => setCurrentMenu('Interactive Apps')}
+        backLabel="Interactive Apps로 돌아가기"
+        gradient="from-brand-blue via-violet-900 to-violet-700"
+        iconClassName="text-violet-300"
+        subtitleClassName="text-violet-200/80"
+      />
+    )}
     <div
       ref={captureRef}
       className={
         isCapturing
           ? "w-[1200px] bg-white p-12 flex flex-col gap-6 absolute top-0 left-0 z-[9999]"
-          : "grid grid-cols-[400px_1fr] w-full h-[calc(100vh-100px)] min-h-[600px] bg-slate-950 p-4 gap-4 rounded-2xl shadow-inner overflow-hidden relative"
+          : "grid grid-cols-[400px_1fr] w-full h-[calc(100vh-180px)] min-h-[600px] bg-slate-950 p-4 gap-4 rounded-2xl shadow-inner overflow-hidden relative"
       }
     >
       {/* ───── 캡쳐 모드 헤더 ───── */}
@@ -301,9 +316,6 @@ export default function BeamModelPreview() {
             <button onClick={() => setActiveTab('results')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${activeTab === 'results' ? 'text-brand-accent border-b-2 border-brand-accent bg-slate-800' : 'text-slate-400 hover:text-white'}`}>
               <BarChart2 size={14} className="inline mr-2 mb-0.5"/> Analysis Results
             </button>
-            <div className="px-2">
-              <GuideButton guideTitle="[대화형] Simple Beam Assessment — 보 해석" />
-            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar relative">
@@ -590,6 +602,6 @@ export default function BeamModelPreview() {
       </div>
     </div>
     <SolverCredit contributor="권혁민" />
-    </>
+    </div>
   );
 }

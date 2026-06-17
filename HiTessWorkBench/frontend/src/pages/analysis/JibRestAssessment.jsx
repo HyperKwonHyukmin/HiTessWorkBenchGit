@@ -3,10 +3,8 @@ import axios from 'axios';
 import {
   TableProperties, Calculator,
   CheckCircle2, XCircle, AlertCircle, Loader2,
-  Weight, ChevronRight, Wind, Download, ArrowLeft, History
+  Weight, ChevronRight, Wind, Download
 } from 'lucide-react';
-import GuideButton from '../../components/ui/GuideButton';
-import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL } from '../../config';
@@ -14,7 +12,7 @@ import jibRestRef from '../../assets/images/jib_rest_reference.png';
 import jibCraneRef from '../../assets/images/jib_crane_reference.png';
 import { formatFixed as fmt } from '../../utils/formatting';
 import SolverCredit from '../../components/ui/SolverCredit';
-import PageBanner from '../../components/ui/PageBanner';
+import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { downloadJson } from '../../utils/fileHelper';
 import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 
@@ -210,7 +208,6 @@ const EMPTY_2DAN = { h2: '2454', h3: '1000', d1: '762', t1: '7.9' };
 export default function JibRestAssessment() {
   const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
-  const [changelogOpen, setChangelogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('1dan');
   const [inputs1dan, setInputs1dan] = useState(EMPTY_1DAN);
   const [inputs2dan, setInputs2dan] = useState(EMPTY_2DAN);
@@ -284,29 +281,17 @@ export default function JibRestAssessment() {
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
 
-      <PageBanner gradient="from-brand-blue via-emerald-900 to-emerald-700">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setCurrentMenu('Parametric Apps')}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <TableProperties size={18} className="text-emerald-300" />
-                Jib Rest Assessment
-              </h1>
-              <p className="text-sm text-emerald-200/80 mt-0.5">Jib Rest 구조물의 1단/2단 파이프 설계 후보를 LR Rule 하중 기반으로 산출합니다.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
-              <History size={14} /> 이력
-            </button>
-            <GuideButton guideTitle="[파라메트릭] Jib Rest Assessment — 1단/2단 파이프 설계" variant="dark" />
-          </div>
-      </PageBanner>
+      <AnalysisPageBanner
+        title="Jib Rest Assessment"
+        subtitle="Jib Rest 구조물의 1단/2단 파이프 설계 후보를 LR Rule 하중 기반으로 산출합니다."
+        icon={TableProperties}
+        guideTitle="[파라메트릭] Jib Rest Assessment — 1단/2단 파이프 설계"
+        onBack={() => setCurrentMenu('Parametric Apps')}
+        backLabel="Parametric Apps로 돌아가기"
+        gradient="from-brand-blue via-emerald-900 to-emerald-700"
+        iconClassName="text-emerald-300"
+        subtitleClassName="text-emerald-200/80"
+      />
 
       {/* 1단/2단 탭 */}
       <div className="flex gap-2 mb-6 border-b border-gray-200">
@@ -643,7 +628,6 @@ export default function JibRestAssessment() {
         </div>
       </div>
       <SolverCredit contributor="박준석" />
-      <ChangelogModal programKey="JibRestAssessment" title="Jib Rest Assessment" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }

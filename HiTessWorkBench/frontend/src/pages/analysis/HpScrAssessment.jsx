@@ -2,8 +2,8 @@
 /// HP-SCR 배관응력 해석 — BDF 업로드 + PSA/POR 양자 선택 + 3D 뷰어 + XLSX 다운로드.
 /// </summary>
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Upload, Play, Terminal, Pipette, Info, Download, RotateCcw } from 'lucide-react';
-import GuideButton from '../../components/ui/GuideButton';
+import { Upload, Play, Terminal, Pipette, Info, Download, RotateCcw } from 'lucide-react';
+import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
@@ -15,9 +15,9 @@ import {
 import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import BdfModelViewer from '../../components/analysis/BdfModelViewer';
-import PageBanner from '../../components/ui/PageBanner';
 import { buildFormData } from '../../utils/fileHelper';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
+import JobProgressPanel from '../../components/analysis/JobProgressPanel';
 import {
   parseSpcCardsFromBdf,
   parseCbushFromBdf,
@@ -40,7 +40,7 @@ export default function HpScrAssessment() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
   const dashboardCtx = useDashboard();
-  const { startGlobalJob } = dashboardCtx;
+  const { startGlobalJob, clearGlobalJob } = dashboardCtx;
   const PAGE_KEY = 'HP-SCR 배관응력 해석';
   const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
 
@@ -62,6 +62,7 @@ export default function HpScrAssessment() {
     setLogs, setStatusMessage, setIsRunning, setProgress, setJobId,
   } = useAnalysisJob({
     startGlobalJob,
+    clearGlobalJob,
     savedState: savedPageState,
     setSavedState: (patch) => dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, patch),
     pollingMaxRetries: 400, // 약 10분
@@ -255,26 +256,13 @@ export default function HpScrAssessment() {
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-      <PageBanner gradient="from-brand-blue via-sky-900 to-sky-700">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setCurrentMenu('File-Based Apps')}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <Pipette size={18} className="text-sky-300" />
-                HP-SCR 배관응력 해석
-              </h1>
-              <p className="text-sm text-sky-200/80 mt-0.5">배관 BDF 기반 배관응력 · 열변형 해석</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <GuideButton guideTitle="[파일] HP-SCR 배관응력 해석 — 사용 안내" variant="dark" />
-          </div>
-      </PageBanner>
+      <FileBasedPageBanner
+        title="HP-SCR 배관응력 해석"
+        subtitle="배관 BDF 기반 배관응력 · 열변형 해석"
+        icon={Pipette}
+        guideTitle="[파일] HP-SCR 배관응력 해석 — 사용 안내"
+        onBack={() => setCurrentMenu('File-Based Apps')}
+      />
 
       {/* ── 안내 배너 ── */}
       <div className="flex items-start gap-3 mb-4 px-4 py-3 bg-sky-50 border border-sky-200 rounded-xl shrink-0">
@@ -405,18 +393,7 @@ export default function HpScrAssessment() {
 
           {/* 진행률 */}
           {(isRunning || progress > 0) && (
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-              <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-                <span>{statusMessage}</span>
-                <span className="font-bold text-sky-600">{progress}%</span>
-              </div>
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-sky-500 rounded-full transition-all duration-500"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-            </div>
+            <JobProgressPanel message={statusMessage} progress={progress} tone="sky" />
           )}
 
           {/* 결과 다운로드 */}

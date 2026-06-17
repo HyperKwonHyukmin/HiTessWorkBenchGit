@@ -1,7 +1,7 @@
 // NOTE: 인증이 필요한 analysis/download API를 사용하므로 fetch에 Authorization 헤더를 명시한다.
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  ArrowLeft, Upload, CheckCircle2, AlertCircle, Download,
+  Upload, CheckCircle2, AlertCircle, Download,
   ChevronDown, Loader2, RefreshCw,
   FileSpreadsheet, AlertTriangle, ChevronsRight, RotateCcw,
   ExternalLink, HardDrive, PackageX, ShieldCheck,
@@ -10,7 +10,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
-import PageBanner from '../../components/ui/PageBanner';
+import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
 
 const API_ENDPOINT = '/api/analysis/mooring-fitting/request';
@@ -1271,26 +1271,12 @@ export default function MooringFittingAssessment() {
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
 
-      <PageBanner gradient="from-brand-blue via-brand-blue-dark to-blue-700">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setCurrentMenu('File-Based Apps')}
-            className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-tight">
-              <span className="flex items-center gap-2">
-                <FileSpreadsheet size={18} /> Mooring Fitting Assessment
-              </span>
-            </h1>
-            <p className="text-sm text-blue-200/80 mt-0.5">
-              Structure CSV + Load CSV 입력 정합성 및 FE 변환 검증
-            </p>
-          </div>
-        </div>
-      </PageBanner>
+      <FileBasedPageBanner
+        title="Mooring Fitting Assessment"
+        subtitle="Structure CSV + Load CSV 입력 정합성 및 FE 변환 검증"
+        icon={FileSpreadsheet}
+        onBack={() => setCurrentMenu('File-Based Apps')}
+      />
 
       {/* ── Body ── */}
       <div className="flex flex-1 gap-5 min-h-0 px-1">

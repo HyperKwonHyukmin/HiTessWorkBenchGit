@@ -2,8 +2,8 @@
 /// DrawingToAnalysis — 설계 도면(PDF) → 구조 해석 모델 변환.
 /// </summary>
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { ArrowLeft, Upload, Play, FileText, Info, Construction, CheckCircle2, RefreshCw, Download, RotateCcw, AlertCircle, Lightbulb, FileSearch, Sliders, MousePointerClick, Cpu, FileCheck2, XCircle } from 'lucide-react';
-import PageBanner from '../../components/ui/PageBanner';
+import { Upload, Play, FileText, Info, Construction, CheckCircle2, RefreshCw, Download, RotateCcw, AlertCircle, Lightbulb, FileSearch, Sliders, MousePointerClick, Cpu, FileCheck2, XCircle } from 'lucide-react';
+import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -201,6 +201,7 @@ export default function DrawingToAnalysis() {
     reset, setLogs, setStatusMessage, setIsRunning, setProgress,
   } = useAnalysisJob({
     startGlobalJob,
+    clearGlobalJob,
     savedState: savedPageState,
     setSavedState: (patch) => dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, patch),
     pollingMaxRetries: 400,
@@ -769,23 +770,13 @@ export default function DrawingToAnalysis() {
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-      <PageBanner gradient="from-brand-blue via-blue-900 to-blue-700">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setCurrentMenu('File-Based Apps')}
-            className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              <FileText size={18} className="text-blue-300" />
-              Drawing to Analysis
-            </h1>
-            <p className="text-sm text-blue-200/80 mt-0.5">설계 도면(PDF)을 구조 해석 BDF 모델로 변환</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+      <FileBasedPageBanner
+        title="Drawing to Analysis"
+        subtitle="설계 도면(PDF)을 구조 해석 BDF 모델로 변환"
+        icon={FileText}
+        onBack={() => setCurrentMenu('File-Based Apps')}
+        actions={(
+          <>
           <button
             type="button"
             onClick={resetDrawingPage}
@@ -807,8 +798,9 @@ export default function DrawingToAnalysis() {
               LUG · Support 지원
             </span>
           )}
-        </div>
-      </PageBanner>
+          </>
+        )}
+      />
 
       {/* 지원 범위 안내 */}
       <div className="flex items-start gap-2.5 mb-4 px-3.5 py-2.5 bg-blue-50 border border-blue-200 rounded-xl shrink-0">

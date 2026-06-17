@@ -94,7 +94,7 @@ export default function F06ParserPage() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
   const dashboardCtx = useDashboard();
-  const { startGlobalJob } = dashboardCtx;
+  const { startGlobalJob, clearGlobalJob } = dashboardCtx;
   const PAGE_KEY = 'F06 Parser';
   const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
   const { incomingTransfer, clearPendingJobTransfer } = useIncomingTransfer('F06 Parser');
@@ -123,6 +123,7 @@ export default function F06ParserPage() {
     setLogs, setStatusMessage, setIsRunning, setProgress,
   } = useAnalysisJob({
     startGlobalJob,
+    clearGlobalJob,
     savedState: savedPageState,
     setSavedState: (patch) => dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, patch),
     pollingMaxRetries: 160, // 약 4분

@@ -3,7 +3,7 @@
  *  - 좌측: [Design] / [Boundary/Load] 2-탭 입력 패널
  *  - 우측: three.js 뷰어 — 두 탭에서 항상 표시 (Z-up, 직육면체 6면 plate + 보강재 ring 라인)
  *  - 탭 헤더에 검증 에러 배지 표시 → 어느 탭에 입력 오류가 있는지 즉시 파악
- *  - 입력 필드별 유효성 검사 + 가이드 힌트 제공. Job Submission 은 모든 검사 통과 시 활성화.
+ *  - 입력 필드별 유효성 검사 + 가이드 힌트 제공.
  */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
@@ -12,13 +12,11 @@ import { LineSegments2 }        from 'three/examples/jsm/lines/LineSegments2';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 import { LineMaterial }         from 'three/examples/jsm/lines/LineMaterial';
 import {
-  Box, Ruler, Layers, Wind, ArrowLeft, Play, Trash2,
+  Box, Ruler, Layers, Wind, Trash2,
   Settings2, Activity, Anchor, AlertCircle
 } from 'lucide-react';
-import GuideButton from '../../components/ui/GuideButton';
-import PageBanner from '../../components/ui/PageBanner';
+import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
-import { useToast } from '../../contexts/ToastContext';
 
 // ────────────────────────────────────────────────────────────
 // 유효성 검사 헬퍼
@@ -690,7 +688,6 @@ function IndependentTankViewer({ L, B, D, topOpen, stiffeners, section, onPickPo
 // ────────────────────────────────────────────────────────────
 export default function IndependentTankAssessment() {
   const { setCurrentMenu } = useNavigation();
-  const { showToast } = useToast();
 
   // ── Geometry
   const [dimL, setDimL] = useState(2000);
@@ -777,9 +774,6 @@ export default function IndependentTankAssessment() {
     () => bcRows.map(r => [Number(r.x) || 0, Number(r.y) || 0, Number(r.z) || 0]),
     [bcRows]
   );
-
-  const allValid = [vL, vB, vD, vTp, vTcorr, vStfH, vStfT, vStfC, vStfD, vAx, vAy, vAz, vAirV,
-    vStfArr.L, vStfArr.B, vStfArr.D].every(v => v.ok);
 
   const removeBcRow = (idx) => setBcRows(bcRows.filter((_, i) => i !== idx));
 
@@ -939,86 +933,20 @@ export default function IndependentTankAssessment() {
     vStfArr.L, vStfArr.B, vStfArr.D].every(v => v.ok);
   const boundaryHasError = ![vAx, vAy, vAz, vAirV].every(v => v.ok);
 
-  const handleJobSubmit = () => {
-    if (!allValid) {
-      showToast('입력값을 확인하세요. 빨간색으로 표시된 항목이 있습니다.', 'error');
-      return;
-    }
-    const payload = {
-      geometry: {
-        L: Number(dimL), B: Number(dimB), D: Number(dimD),
-        plate: { tp: Number(tp), tcorr: Number(tcorr) },
-        topOpen,
-        stiffeners: {
-          L: stfL, B: stfB, D: stfD,
-          section: {
-            type: stfType,
-            A: Number(stfDim1), B: Number(stfDim2),
-            C: stfType === 'Flat' ? null : Number(stfDim3),
-            D: stfType === 'Flat' ? null : Number(stfDim4),
-            side: stfSide,
-          },
-        },
-      },
-      boundaryLoad: {
-        airVentHeight: Number(airVentH),
-        acceleration: { x: Number(accX), y: Number(accY), z: Number(accZ) },
-        bcNodes: bcRows,
-      },
-    };
-    // eslint-disable-next-line no-console
-    console.log('[IndependentTankAssessment] Job Submission payload', payload);
-    showToast('Job Submission (placeholder) — 콘솔에서 입력 JSON을 확인하세요.', 'info');
-  };
-
   return (
     <div className="max-w-[1400px] mx-auto pb-6 animate-fade-in-up">
 
-      {/* ───── PageBanner ───── */}
-      <PageBanner gradient="from-brand-blue via-violet-900 to-violet-700">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setCurrentMenu('Interactive Apps')}
-            className="p-2 bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/20 rounded-xl text-white transition-colors cursor-pointer"
-            title="Interactive Apps 로 돌아가기"
-          >
-            <ArrowLeft size={16} />
-          </button>
-          <div>
-            <h1 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-              <Box size={17} className="text-violet-300 flex-shrink-0" />
-              Independent Tank Assessment
-            </h1>
-            <p className="text-[11px] text-violet-200/75 mt-0.5 leading-snug">
-              독립 탱크 치수·판두께·보강재·경계조건을 입력하여 구조 해석 모델을 구축합니다.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5">
-          {/* 검증 상태 배지 */}
-          {allValid ? (
-            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/25 border border-emerald-300/50 text-emerald-100 text-[11px] font-bold">
-              ✓ 입력 완료
-            </span>
-          ) : (
-            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-500/25 border border-red-300/50 text-red-100 text-[11px] font-bold">
-              <AlertCircle size={12} className="flex-shrink-0" /> 입력값 확인 필요
-            </span>
-          )}
-          <button
-            onClick={handleJobSubmit}
-            disabled={!allValid}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-white text-[12px] font-bold transition-all shadow-md ${
-              allValid
-                ? 'bg-violet-500 hover:bg-violet-400 active:bg-violet-600 cursor-pointer shadow-violet-900/40'
-                : 'bg-slate-600/40 cursor-not-allowed opacity-50'
-            }`}
-          >
-            <Play size={13} fill={allValid ? 'currentColor' : 'none'} /> Job Submission
-          </button>
-          <GuideButton guideTitle="[대화형] Independent Tank Assessment — 독립 탱크 모델링" variant="dark" />
-        </div>
-      </PageBanner>
+      <AnalysisPageBanner
+        title="Independent Tank Assessment"
+        subtitle="독립 탱크 치수·판두께·보강재·경계조건을 입력하여 구조 해석 모델을 구축합니다."
+        icon={Box}
+        guideTitle="[대화형] Independent Tank Assessment — 독립 탱크 모델링"
+        onBack={() => setCurrentMenu('Interactive Apps')}
+        backLabel="Interactive Apps로 돌아가기"
+        gradient="from-brand-blue via-violet-900 to-violet-700"
+        iconClassName="text-violet-300"
+        subtitleClassName="text-violet-200/80"
+      />
 
       {/* ═══════════════════════════════════════════════════════
           2컬럼: 좌측 탭 패널 + 우측 3D 뷰어 (항상 표시)

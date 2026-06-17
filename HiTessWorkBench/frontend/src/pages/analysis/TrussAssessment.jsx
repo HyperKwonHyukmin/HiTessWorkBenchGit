@@ -10,17 +10,15 @@ import { usePolling } from '../../hooks/usePolling';
 import AssessmentBdfViewer from '../../components/analysis/AssessmentBdfViewer';
 import MultiJsonViewer from '../../components/analysis/AssessmentResultTable';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
-import GuideButton from '../../components/ui/GuideButton';
+import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import SolverCredit from '../../components/ui/SolverCredit';
 import { useToast } from '../../contexts/ToastContext';
 import {
-  ArrowLeft, Upload, Play, Database, RefreshCw, Layers,
+  Upload, Play, Database, RefreshCw, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Eye,
-  Terminal, FileText, FileOutput, Download, History, Maximize2, Minimize2, RotateCcw
+  Terminal, FileText, FileOutput, Download, Maximize2, Minimize2, RotateCcw
 } from 'lucide-react';
-import ChangelogModal from '../../components/ui/ChangelogModal';
 import { useAuth } from '../../contexts/AuthContext';
-import PageBanner from '../../components/ui/PageBanner';
 import { buildFormData } from '../../utils/fileHelper';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 
@@ -29,7 +27,6 @@ export default function TrussAssessment() {
   const { showToast } = useToast();
   const { employeeId: authEmployeeId } = useAuth();
   const dashboardCtx = useDashboard();
-  const [changelogOpen, setChangelogOpen] = useState(false);
   const [isResultFullscreen, setIsResultFullscreen] = useState(false);
 
   useEffect(() => {
@@ -339,28 +336,13 @@ export default function TrussAssessment() {
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
 
-      <PageBanner gradient="from-brand-blue via-brand-blue-dark to-blue-700">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setCurrentMenu('File-Based Apps')}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <Layers size={18}/> Truss Structural Assessment
-              </h1>
-              <p className="text-sm text-blue-200/80 mt-0.5">BDF 모델 파일을 업로드하여 구조적 건전성을 즉시 평가합니다.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
-              <History size={14} /> 이력
-            </button>
-            <GuideButton guideTitle="[파일] Truss Structural Assessment — 트러스 구조 안정성 평가" variant="dark" />
-          </div>
-      </PageBanner>
+      <FileBasedPageBanner
+        title="Truss Structural Assessment"
+        subtitle="BDF 모델 파일을 업로드하여 구조적 건전성을 즉시 평가합니다."
+        icon={Layers}
+        guideTitle="[파일] Truss Structural Assessment — 트러스 구조 안정성 평가"
+        onBack={() => setCurrentMenu('File-Based Apps')}
+      />
 
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
         <div className="w-full lg:w-[400px] flex flex-col gap-5 shrink-0 overflow-y-auto pr-1 custom-scrollbar">
@@ -481,7 +463,6 @@ export default function TrussAssessment() {
       <SolverCredit contributor="권혁민" />
 
       {isResultModalOpen && <AssessmentProjectModal project={projectData} onClose={() => setIsResultModalOpen(false)} />}
-      <ChangelogModal programKey="TrussAssessment" title="Truss Structural Assessment" isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }

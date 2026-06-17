@@ -24,7 +24,7 @@ export default function BdfScanner() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
   const dashboardCtx = useDashboard();
-  const { startGlobalJob } = dashboardCtx;
+  const { startGlobalJob, clearGlobalJob } = dashboardCtx;
   const PAGE_KEY = 'BDF Scanner';
   const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
   const [changelogOpen, setChangelogOpen] = useState(false);
@@ -56,6 +56,7 @@ export default function BdfScanner() {
     setLogs, setStatusMessage, setIsRunning, setProgress,
   } = useAnalysisJob({
     startGlobalJob,
+    clearGlobalJob,
     savedState: savedPageState,
     setSavedState: (patch) => dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, patch),
     pollingMaxRetries: 240, // 약 6분

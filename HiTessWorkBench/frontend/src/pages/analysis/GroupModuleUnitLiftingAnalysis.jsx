@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
-  UploadCloud, ArrowLeft, ArrowRight, ChevronsRight,
+  UploadCloud, ArrowRight, ChevronsRight,
   FileCheck2, MapPin, Cpu, BarChart3,
   X, CheckCircle2, Loader2,
   RotateCcw, AlertOctagon, FileText, Download, Wand2,
@@ -9,12 +9,11 @@ import {
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
-import GuideButton from '../../components/ui/GuideButton';
+import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { usePolling } from '../../hooks/usePolling';
 import { requestGroupModuleUnit, requestGroupModuleUnitFromPath, downloadFileText } from '../../api/analysis';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import { API_BASE_URL } from '../../config';
-import PageBanner from '../../components/ui/PageBanner';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
@@ -719,28 +718,13 @@ export default function GroupModuleUnitLiftingAnalysis() {
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
 
-      <PageBanner gradient="from-brand-blue via-brand-blue-dark to-blue-700">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setCurrentMenu('File-Based Apps')}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <UploadCloud size={20} className="opacity-80" />
-                Group &amp; Module Unit 권상 구조 해석
-              </h1>
-              <p className="text-sm text-blue-200/80 mt-0.5">
-                Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <GuideButton guideTitle="[파일] Group & Module Unit 권상 구조 해석" variant="dark" />
-          </div>
-      </PageBanner>
+      <FileBasedPageBanner
+        title="Group & Module Unit 권상 구조 해석"
+        subtitle="Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다."
+        icon={UploadCloud}
+        guideTitle="[파일] Group & Module Unit 권상 구조 해석"
+        onBack={() => setCurrentMenu('File-Based Apps')}
+      />
 
       {/* ── Body ── */}
       <div className="flex flex-1 gap-5 min-h-0">

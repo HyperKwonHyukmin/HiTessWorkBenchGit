@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   AlertCircle,
-  ArrowLeft,
   CheckCircle2,
   Cpu,
   Download,
@@ -14,8 +13,7 @@ import {
   Ruler,
   Sparkles,
 } from 'lucide-react';
-import PageHeader from '../../components/ui/PageHeader';
-import GuideButton from '../../components/ui/GuideButton';
+import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { API_BASE_URL } from '../../config';
@@ -165,12 +163,16 @@ export default function PlateStructureAnalysis() {
 
   return (
     <div className="max-w-7xl mx-auto pb-16">
-      <PageHeader
+      <AnalysisPageBanner
         title="Plate Structure Analysis"
         icon={Layers}
         subtitle="Plate 구조 해석용 Studio를 실행하여 판 구조 모델링 및 해석 작업을 진행하세요."
-        accentColor="violet"
-        actions={<GuideButton guideTitle="[대화형] Plate Structure Analysis — Studio" variant="dark" />}
+        guideTitle="[대화형] Plate Structure Analysis — Studio"
+        onBack={() => setCurrentMenu('Interactive Apps')}
+        backLabel="Interactive Apps로 돌아가기"
+        gradient="from-brand-blue via-violet-900 to-violet-700"
+        iconClassName="text-violet-300"
+        subtitleClassName="text-violet-200/80"
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6">
@@ -342,15 +344,6 @@ export default function PlateStructureAnalysis() {
         </aside>
       </div>
 
-      {/* 뒤로가기 */}
-      <button
-        type="button"
-        onClick={() => setCurrentMenu('Interactive Apps')}
-        className="mt-8 inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-violet-700 transition-colors cursor-pointer"
-      >
-        <ArrowLeft size={16} />
-        Interactive Apps로 돌아가기
-      </button>
     </div>
   );
 }
