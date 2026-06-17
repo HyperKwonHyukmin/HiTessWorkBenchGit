@@ -320,10 +320,8 @@ export function DashboardProvider({ children }) {
 
   const startGlobalJob = (jobId, menuName) => {
     if (!jobId) return;
-    setGlobalJobs(prev => {
-      const nextJob = { jobId, menu: menuName, status: 'Running', progress: 0, message: '서버에 작업을 요청하는 중...' };
-      return [nextJob, ...prev.filter(job => job.jobId !== jobId)].slice(0, 5);
-    });
+    const nextJob = { jobId, menu: menuName, status: 'Running', progress: 0, message: '서버에 작업을 요청하는 중...' };
+    setGlobalJobs([nextJob]);
   };
 
   useEffect(() => {
@@ -376,19 +374,17 @@ export function DashboardProvider({ children }) {
 export const useDashboard = () => useContext(DashboardContext);
 
 function GlobalJobTray({ jobs, currentMenu, onNavigate, onDismiss }) {
-  const visibleJobs = jobs.filter(job => job.menu !== currentMenu);
-  if (!visibleJobs.length) return null;
+  const visibleJob = jobs.find(job => job.menu !== currentMenu);
+  if (!visibleJob) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[99999] w-[min(360px,calc(100vw-2rem))] space-y-2 transition-all duration-200">
-      {visibleJobs.map(job => (
-        <GlobalJobCard
-          key={job.jobId}
-          job={job}
-          onNavigate={onNavigate}
-          onDismiss={onDismiss}
-        />
-      ))}
+    <div className="fixed bottom-4 right-4 z-[99999] w-[min(360px,calc(100vw-2rem))] transition-all duration-200">
+      <GlobalJobCard
+        key={visibleJob.jobId}
+        job={visibleJob}
+        onNavigate={onNavigate}
+        onDismiss={onDismiss}
+      />
     </div>
   );
 }

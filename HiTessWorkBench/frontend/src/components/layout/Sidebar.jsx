@@ -126,11 +126,22 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
 
       <div className="h-16 flex items-center justify-center border-b border-brand-blue-dark relative shrink-0">
         {isCollapsed ? (
-          <span className="text-xl font-bold text-brand-accent">H</span>
+          <img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            alt="HiTESS WorkBench"
+            className="h-9 w-9 rounded-md bg-white p-1 object-contain"
+          />
         ) : (
-          <h1 className="text-xl font-bold tracking-wider">
-            HiTESS <span className="text-brand-accent text-sm font-light">Workbench</span>
-          </h1>
+          <div className="flex items-center gap-3">
+            <img
+              src={`${import.meta.env.BASE_URL}logo.png`}
+              alt="HiTESS WorkBench"
+              className="h-8 w-8 rounded-md bg-white p-1 object-contain"
+            />
+            <h1 className="text-xl font-bold tracking-wider">
+              HiTESS <span className="text-brand-accent text-sm font-light">Workbench</span>
+            </h1>
+          </div>
         )}
       </div>
 

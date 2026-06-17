@@ -20,6 +20,8 @@ import { useAuth } from '../contexts/AuthContext';
  * @param {function} options.onError          - 실패/타임아웃 시 호출. (errData) 인자 수신.
  * @param {function} options.startGlobalJob   - DashboardContext.startGlobalJob (선택).
  *                                              startJob 호출 시 programLabel 과 함께 전달하면 자동 호출.
+ * @param {function} options.clearGlobalJob   - DashboardContext.clearGlobalJob (선택).
+ *                                              완료/실패/reset 시 해당 jobId 의 전역 작업 배너를 정리.
  * @param {string}   options.successLogMessage- onComplete 직전 logs 에 추가할 메시지.
  *                                              기본값 '해석 완료.' 빈 문자열 전달 시 추가 안 함.
  * @param {string}   options.errorLogMessage  - onError 시 logs 에 추가할 메시지 (일반 실패).
@@ -42,6 +44,7 @@ export function useAnalysisJob({
   onComplete,
   onError,
   startGlobalJob,
+  clearGlobalJob,
   savedState,
   setSavedState,
   successLogMessage = '해석 완료.',
@@ -68,18 +71,23 @@ export function useAnalysisJob({
     setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message, type }]);
   }, []);
 
+  // 콜백/옵션을 ref 로 보관해서 startJob/reset 의 의존성을 가볍게 유지.
+  const startGlobalJobRef = useRef(startGlobalJob);
+  startGlobalJobRef.current = startGlobalJob;
+  const clearGlobalJobRef = useRef(clearGlobalJob);
+  clearGlobalJobRef.current = clearGlobalJob;
+
   const reset = useCallback(() => {
+    if (jobId && clearGlobalJobRef.current) {
+      clearGlobalJobRef.current(jobId);
+    }
     setJobId(null);
     setIsRunning(false);
     setProgress(0);
     setStatusMessage('');
     setLogs([]);
     lastMessageRef.current = '';
-  }, []);
-
-  // 콜백/옵션을 ref 로 보관해서 startJob 의 의존성을 가볍게 유지.
-  const startGlobalJobRef = useRef(startGlobalJob);
-  startGlobalJobRef.current = startGlobalJob;
+  }, [jobId]);
 
   const startJob = useCallback((newJobId, programLabel) => {
     setJobId(newJobId);
@@ -126,9 +134,13 @@ export function useAnalysisJob({
       }
     },
     onComplete: (data) => {
+      const completedJobId = jobId;
       setIsRunning(false);
       setProgress(100);
       setJobId(null);
+      if (completedJobId && clearGlobalJobRef.current) {
+        clearGlobalJobRef.current(completedJobId);
+      }
       if (successLogMessage) {
         setLogs(prev => [...prev, {
           time: new Date().toLocaleTimeString(),
@@ -139,8 +151,12 @@ export function useAnalysisJob({
       if (onCompleteRef.current) onCompleteRef.current(data);
     },
     onError: (errData) => {
+      const failedJobId = jobId;
       setIsRunning(false);
       setJobId(null);
+      if (failedJobId && clearGlobalJobRef.current) {
+        clearGlobalJobRef.current(failedJobId);
+      }
       const isTimeout = !!errData?.timeout;
       const msg = isTimeout ? timeoutLogMessage : errorLogMessage;
       if (msg) {

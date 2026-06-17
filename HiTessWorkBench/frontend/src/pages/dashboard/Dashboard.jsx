@@ -305,15 +305,6 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
             );
           })}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 pr-0 lg:pr-28">
-          {WORKFLOW_GUIDE.map((step, idx) => (
-            <div key={step.title} className="rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2.5 min-w-0">
-              <p className="text-[10px] font-black text-blue-200">STEP {idx + 1}</p>
-              <p className="mt-0.5 text-xs font-bold text-white truncate">{step.title}</p>
-              <p className="mt-0.5 text-[10px] font-medium text-slate-200 truncate">{step.menuLabel}</p>
-            </div>
-          ))}
-        </div>
         <div className="hidden lg:flex absolute right-3 top-1/2 -translate-y-1/2 items-center gap-1 text-xs font-bold text-blue-100 bg-white/10 border border-white/20 rounded-lg px-2.5 py-1.5 group-hover:bg-white/20 group-hover:text-white transition-colors">
           지도 열기 <ChevronRight size={15} className="group-hover:translate-x-0.5 transition-transform"/>
         </div>
@@ -322,14 +313,33 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
   );
 };
 
-// 워크벤치 소개 영상 플레이어 모달
+const PROMOTION_VIDEOS = [
+  {
+    id: 'workbench',
+    title: 'HiTESS WorkBench',
+    subtitle: '차세대 조선해양 구조 해석 플랫폼',
+    filename: 'HiTESS Workbench.mp4',
+  },
+  {
+    id: 'digital-engineering',
+    title: 'HiTESS 설계와 디지털 엔지니어링의 연결',
+    subtitle: '설계 데이터와 디지털 엔지니어링 업무 흐름 소개',
+    filename: 'HiTESS 설계와 디지털 엔지니어링의 연결.mp4',
+  },
+];
+
+const buildPromotionVideoUrl = (filename) => (
+  `${API_BASE_URL}/static/videos/${encodeURIComponent(filename)}`
+);
+
+// HiTESS Story 선택 및 플레이어 모달
 // — 모달이 열릴 때만 <video>를 DOM에 마운트하여 백그라운드 디코딩/네트워크 낭비를 방지한다.
 // — crossOrigin 속성 미설정: 미디어 스트리밍은 CORS 헤더 없이도 동작하며,
 //   crossOrigin을 켜면 오히려 CORS 헤더를 요구해 재생이 깨진다.
 const VideoPlayerModal = ({ isOpen, onClose }) => {
   const videoRef = useRef(null);
+  const [selectedVideo, setSelectedVideo] = useState(null);
 
-  // 모달이 닫힐 때 영상을 일시정지하여 백그라운드 재생을 방지한다.
   useEffect(() => {
     if (!isOpen) {
       const video = videoRef.current;
@@ -337,11 +347,11 @@ const VideoPlayerModal = ({ isOpen, onClose }) => {
         video.pause();
         video.currentTime = 0;
       }
+      setSelectedVideo(null);
     }
   }, [isOpen]);
 
-  // 영상 URL — 공백 포함 파일명이므로 %20 인코딩 사용
-  const videoUrl = `${API_BASE_URL}/static/videos/HiTESS%20Workbench.mp4`;
+  const videoUrl = selectedVideo ? buildPromotionVideoUrl(selectedVideo.filename) : '';
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -375,9 +385,11 @@ const VideoPlayerModal = ({ isOpen, onClose }) => {
                   </div>
                   <div>
                     <Dialog.Title className="text-white font-bold text-sm leading-tight">
-                      HiTESS WorkBench 소개 영상
+                      {selectedVideo ? selectedVideo.title : 'HiTESS Story'}
                     </Dialog.Title>
-                    <p className="text-slate-300 text-[11px]">차세대 조선해양 구조 해석 플랫폼</p>
+                    <p className="text-slate-300 text-[11px]">
+                      {selectedVideo ? selectedVideo.subtitle : '재생할 영상을 선택하세요'}
+                    </p>
                   </div>
                 </div>
                 <button
@@ -389,20 +401,60 @@ const VideoPlayerModal = ({ isOpen, onClose }) => {
                 </button>
               </div>
 
-              {/* 16:9 비율 영상 컨테이너 */}
-              {/* isOpen이 true일 때만 <video>를 마운트 — 닫힌 상태에서 네트워크 요청 없음 */}
-              <div className="relative w-full bg-black" style={{ paddingBottom: '56.25%' }}>
-                {isOpen && (
-                  <video
-                    ref={videoRef}
-                    src={videoUrl}
-                    controls
-                    autoPlay
-                    className="absolute inset-0 w-full h-full"
-                    style={{ display: 'block' }}
-                  />
-                )}
-              </div>
+              {selectedVideo ? (
+                <>
+                  <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.04] px-5 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedVideo(null)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-blue-100 hover:bg-white/15 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <ChevronRight size={14} className="rotate-180" />
+                      영상 목록
+                    </button>
+                    <span className="truncate text-[11px] font-semibold text-slate-300">{selectedVideo.filename}</span>
+                  </div>
+
+                  {/* 16:9 비율 영상 컨테이너 */}
+                  {/* isOpen이 true일 때만 <video>를 마운트 — 닫힌 상태에서 네트워크 요청 없음 */}
+                  <div className="relative w-full bg-black" style={{ paddingBottom: '56.25%' }}>
+                    {isOpen && (
+                      <video
+                        ref={videoRef}
+                        src={videoUrl}
+                        controls
+                        autoPlay
+                        className="absolute inset-0 w-full h-full"
+                        style={{ display: 'block' }}
+                      />
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="grid gap-3 bg-slate-950/45 p-5 sm:grid-cols-2">
+                  {PROMOTION_VIDEOS.map((video) => (
+                    <button
+                      key={video.id}
+                      type="button"
+                      onClick={() => setSelectedVideo(video)}
+                      className="group flex min-h-32 items-start justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.07] p-4 text-left transition-colors hover:border-blue-300/50 hover:bg-white/[0.11] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 cursor-pointer"
+                    >
+                      <span className="min-w-0">
+                        <span className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-400/15 text-blue-200 ring-1 ring-blue-200/20">
+                          <Play size={16} fill="currentColor" />
+                        </span>
+                        <span className="block text-sm font-extrabold leading-snug text-white">
+                          {video.title}
+                        </span>
+                        <span className="mt-1.5 block text-xs font-medium leading-relaxed text-slate-300">
+                          {video.subtitle}
+                        </span>
+                      </span>
+                      <ChevronRight size={18} className="mt-1 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-200" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </Dialog.Panel>
           </Transition.Child>
         </div>
@@ -1230,7 +1282,7 @@ export default function Dashboard() {
         modalSubtitle={introTarget === 'workbench' ? 'HiTESS WorkBench 해석 플랫폼 소개' : '차세대 조선해양 구조 해석 플랫폼 소개'}
       />
 
-      {/* 홍보영상 플레이어 모달 */}
+      {/* HiTESS Story 플레이어 모달 */}
       <VideoPlayerModal
         isOpen={isVideoModalOpen}
         onClose={() => setIsVideoModalOpen(false)}
@@ -1254,24 +1306,31 @@ export default function Dashboard() {
 
       {/* 플랫폼 소개 & 로드맵 — 최상단. 로드맵은 항상 표시(주요 참조 정보), 소개 배너만 접이식(첫 방문만 펼침). */}
       <div className="mb-8">
-        <button
-          onClick={toggleIntro}
-          aria-expanded={introOpen}
-          className="w-full flex items-center justify-between mb-4 group cursor-pointer"
-        >
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
             <Layers size={16} className="text-slate-500" /> 플랫폼 소개 &amp; 로드맵
           </h2>
-          {/* 클릭 가능함을 명시하는 버튼형 칩 — 접힘이 기본, 누르면 소개가 펼쳐진다 */}
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-            introOpen
-              ? 'border-slate-200 bg-white text-slate-500 group-hover:border-slate-300 group-hover:text-slate-700'
-              : 'border-blue-200 bg-blue-50 text-blue-600 group-hover:border-blue-300 group-hover:bg-blue-100'
-          }`}>
-            {introOpen ? '소개 접기' : '소개 펼쳐보기'}
-            <ChevronDown size={15} className={`transition-transform ${introOpen ? 'rotate-180' : ''}`} />
-          </span>
-        </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <DashboardFab
+              onOpenVideo={() => setIsVideoModalOpen(true)}
+              onOpenNewsletter={() => setIsNewsletterModalOpen(true)}
+            />
+            {/* 클릭 가능함을 명시하는 버튼형 칩 — 접힘이 기본, 누르면 소개가 펼쳐진다 */}
+            <button
+              type="button"
+              onClick={toggleIntro}
+              aria-expanded={introOpen}
+              className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3.5 text-xs font-bold shadow-sm transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 ${
+                introOpen
+                  ? 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+              }`}
+            >
+              {introOpen ? '소개 접기' : '소개 펼쳐보기'}
+              <ChevronDown size={15} className={`transition-transform ${introOpen ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+        </div>
         <div className="flex flex-col gap-3">
           {/* 소개 배너 — 접이식(첫 방문만 펼침) */}
           {introOpen && (
@@ -1516,13 +1575,6 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
-      {/* 대시보드 FAB (speed-dial): 홍보영상 + 뉴스레터 아카이브 진입
-          fixed position 이므로 DOM 위치는 어디에 있어도 렌더 위치에 영향 없음 */}
-      <DashboardFab
-        onOpenVideo={() => setIsVideoModalOpen(true)}
-        onOpenNewsletter={() => setIsNewsletterModalOpen(true)}
-      />
 
       {/* 뉴스레터 아카이브 모달 */}
       <NewsletterArchiveModal
