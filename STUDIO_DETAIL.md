@@ -1,6 +1,6 @@
 # HiTESS Studio Standard
 
-이 문서는 `C:\Coding\WorkBenchSubModule\ModelBuilderStudio`의 디자인 컨셉, 메뉴 구조, 부재 선택, Edit 흐름, 저장/호스트 통합 방식을 WorkBench의 Studio 계열 기능 표준으로 정리한 것이다. 새 Studio를 만들거나 유사 Studio UI를 통일할 때 이 파일을 우선 참조한다.
+이 문서는 `C:\Coding\WorkBenchSubModule\ModelBuilderStudio`의 디자인 컨셉, 메뉴 구조, 부재 선택, **카메라 조작·3D 렌더링**, Edit 흐름, 저장/호스트 통합 방식을 WorkBench의 Studio 계열 기능 표준으로 정리한 것이다. 새 Studio를 만들거나 유사 Studio UI를 통일할 때 이 파일을 우선 참조한다.
 
 ## 1. Studio의 정체성
 
@@ -160,6 +160,48 @@ Stage 선택:
 빈 상태:
 
 - stage가 없으면 중앙에 간단한 안내를 둔다. 장식적인 hero가 아니라 "어떤 파일/폴더를 선택해야 하는지"만 짧게 보여준다.
+
+### 카메라 조작 표준 (공통)
+
+> 적용 대상: 모든 3D Studio viewport. 레퍼런스 구현 = ModelBuilderStudio `src/components/ThreeViewport.jsx` (v0.0.38, 2026-06-17 기준).
+
+3D 작업면 카메라는 **"자유롭고 직관적"** 을 최우선으로 한다. CAD/뷰어 사용자가 기대하는 줌·팬·회전·피벗을 모두 제공하되, **줌이 중간에 막히거나 클리핑으로 잘리는 느낌이 없어야 한다.**
+
+**조작 라이브러리**: `TrackballControls`(three/addons). OrbitControls와 달리 up-vector 고정이 없어 모델을 어느 축으로도 굴릴 수 있다(엔지니어링 모델 자유 관찰에 유리). 마운트 시 `camera.lookAt(target)`을 명시 호출해 내부 `_eye`를 초기화한다.
+
+**버튼/감도 표준**:
+
+| 입력 | 동작 | 기본값 |
+|---|---|---|
+| 좌클릭 드래그 | 회전(rotate) | `rotateSpeed = 1.5` |
+| 우클릭 드래그 | 평행이동(pan) | `panSpeed = 0.72` |
+| 가운데 버튼 드래그 / 핀치 | 줌(dolly) | `zoomSpeed = 1.2` |
+| 휠 | 커서 방향 줌(zoom-to-cursor) | 아래 별도 핸들러 |
+| 더블클릭 | 회전 원점(피벗) 지정 | — |
+| `F` | 마지막 맞춤뷰(fitCamera)로 복귀 | — |
+
+- 마우스 버튼 매핑은 `LEFT=ROTATE / MIDDLE=DOLLY / RIGHT=PAN`. 가운데 버튼을 줌으로 둬 우클릭 팬의 오작동을 줄인다.
+- `staticMoving=false`, `dynamicDampingFactor=0.2`로 약한 관성(inertia)을 유지해 조작감을 부드럽게 한다.
+
+**휠 = 커서 방향 줌(zoom-to-cursor)** — 표준이며 직관성의 핵심:
+
+- TrackballControls 기본 휠 줌은 항상 화면 중앙(target)으로만 당겨져 "보는 곳"이 어긋난다. 그래서 컨테이너의 **capture 단계**에서 휠을 가로채(`{ capture: true }` + `stopPropagation()`) 캔버스의 기본 휠 줌으로 전파되지 않게 하고, 커서가 가리키는 지점을 향해 dolly 한다.
+- 거리에 무관하게 일정 비율로 줌: `deltaMode` 정규화 후 지수 스케일(`scale = exp(deltaY * unit)`). 카메라와 target을 동시에 커서 초점평면(시선 수직, target 통과) 위 점 `p`로 `(1-scale)`만큼 이동 → `|eye|`가 정확히 새 거리, 줌 방향이 커서로 향한다.
+- 오버레이(겹침 노드 팝업 등) 위의 휠은 `e.target !== canvas` 가드로 그대로 통과시켜 내부 스크롤을 보존한다(줌은 캔버스 위에서만).
+
+**더블클릭 = 회전 원점(피벗) 지정** — 좌우로 긴 모델 대응 표준:
+
+- 더블클릭한 부재/노드의 교점을 `controls.target`(회전 중심)으로 삼고 그 점을 화면 중앙으로 가져온다.
+- 카메라와 target을 **같은 델타로 평행이동** → 시선(eye) 불변 → **회전 스냅·줌 변화 없이 피벗만** 이동.
+- 빈 곳 더블클릭은 무시(피벗 변경 없음). 숨겨진(visible=false) 부모/자식은 피킹 대상에서 제외. `F`로 전체 맞춤뷰(피벗=모델 중심) 복귀.
+
+**줌이 막히지 않게 — 적응형 near/far + 넉넉한 거리 한계**:
+
+- 줌 한계는 **모델 크기 기준**으로 `fitCamera()`가 설정: `minDistance = max(size*0.0008, 0.01)`, `maxDistance = size*400`. (고정 한계로 "어느 순간 더 안 들어가는" 느낌을 제거 — 단일 노드 코앞까지 확대, 전체가 점이 될 때까지 축소.)
+- near/far는 **매 프레임 카메라-타깃 거리에 비례**해 재계산(`updateClipPlanes`): `near = max(camDist*0.02, 0.001)`, `far = max(camDist*4, sceneRadius*8, near*2000)`. 고정 near/far면 깊게 확대 시 지오메트리가 near 평면에 잘려 "더 못 들어가는" 착시가 생기므로 **반드시 거리 적응형**으로 둔다.
+- `fitCamera()`는 모델 특성 스케일(scene m)을 반환해 `sceneRadius`로 보관(near/far 하한 계산에 사용).
+
+**카메라 링크(다중 뷰포트)**: 동기화 시 position/quaternion/up/target을 복사하고 `updateClip()`도 함께 호출해 링크된 뷰포트의 near/far가 깊은 줌에서 어긋나지 않게 한다(`hooks/useCameraSync.js`). 피벗(target)도 같이 동기화된다.
 
 ## 6. 선택 UX
 
@@ -408,6 +450,24 @@ Studio semantic token 예:
 - 상태 배지는 색만 쓰지 말고 `OK/WARN/ERR` 같은 텍스트를 포함한다.
 - Edit 관련 yellow는 "편집 중/미리보기/추가 예정"에만 사용한다.
 - Delete red는 "삭제 예정/위험/초기화 hover"에만 사용한다.
+
+### 3D 엔티티 렌더링 표준 — Node sphere
+
+> 적용 대상: 모든 Studio의 노드 표현. 레퍼런스 = `src/three/NodePoints.js`. MooringFittingStudio `src/three/NodeMesh.js`와 **동일 방식**(두 Studio 통일 기준).
+
+노드는 **매끈한 반투명 빨간 구(sphere)** 로 그린다. 과거의 저폴리(10×7)+`flatShading:true` "칼로 깎은 듯 각진" 표현은 금지한다(전문성·가독성 저하).
+
+**표준 형상/재질** (InstancedMesh, 노드당 1 인스턴스):
+
+- 지오메트리: `SphereGeometry(NODE_RADIUS, 16, 12)` — 부드러운 구. (저폴리·flatShading 금지.)
+- 재질: `MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.05, transparent: true, opacity: 0.65, depthWrite: false })`.
+  - `opacity 0.65` = 반투명: 부재(Line/Tube)가 노드를 통과해 비쳐 **"연결 여부" 판단이 쉽고** 시각적으로 더 전문적이다.
+  - `depthWrite: false`로 겹친 노드/부재가 자연스럽게 비치게 한다.
+- **per-instance 색상**: 베이스 재질 색을 흰색(`0xffffff`)으로 두면 `setColorAt`의 인스턴스 색이 그대로 곱해져 보존된다. 따라서 한 메시로 검증 진단색을 표현 가능:
+  - Shared(2+ 연결) = 빨강(`#FF4455`, 도메인 Node 색) · Free(1 연결) = 노랑(`#FFDD00`) · Orphan(0 연결) = 보라(`#CC44FF`).
+- picking은 구 raycast라 반투명/`depthWrite`와 무관하게 동작한다.
+
+> 신규 Studio도 이 노드 재질 프리셋(매끈 구 + opacity 0.65 + depthWrite:false + 흰색 베이스×per-instance 색)을 그대로 따라 통일성을 유지한다.
 
 ## 12. 컴포넌트 형태
 
@@ -726,3 +786,322 @@ src/
 - warning/error/삭제/추가 예정 상태가 색과 텍스트로 모두 표현되는가?
 - WorkBench 임베드와 브라우저 단독 실행을 같은 코드로 처리할 수 있는가?
 - 이 문서만 보고 다른 에이전트가 같은 구조의 Studio를 만들 수 있는가?
+
+---
+
+# 부록 — Model Builder 구현 수치 레퍼런스 (벤치마킹 기준)
+
+> **Model Builder Studio 가 모든 Studio 의 표준**이다. 아래 부록은 1~20장의 개념 표준을 **실제 구현의 정확한 상수·색·치수·기본값**으로 고정해, 신규/유사 Studio 가 그대로 복제·벤치마킹할 수 있게 한다.
+> 모든 값은 `WorkBenchSubModule/ModelBuilderStudio/apps/model-studio/src/` 코드(`파일:라인`) 기준 실측이다. (검증: 2026-06-17, model-studio v0.0.38.)
+> 카메라 조작 표준은 §5(카메라 조작 표준), 노드 구 재질은 §11(3D 엔티티 렌더링 표준)에 개념 설명이 있고, 여기서는 **수치 레퍼런스**를 보강한다.
+
+## 부록 A. 좌표·뷰·렌더 루프 표준 (`components/ThreeViewport.jsx`)
+
+### A.1 좌표·축 규약 (모든 Studio 동일 적용)
+
+- **좌표계**: Z-up 오른손 좌표계. **X = 종방향(longitudinal), Y = 횡방향(lateral), Z = 수직(vertical).**
+- **단위 변환**: 모델 데이터는 mm(CAD), 씬은 m. `getNodePos = (coord - center)/1000` (`StageData.js`). `center = bbox 중점` 으로 **센터링 후 mm→m**. → 씬 원점(0,0,0)이 모델 중심.
+- **카메라(Perspective)**: FOV **45°**, 초기 위치 `(20,15,30)`, near/far 초기 `0.01 / 10000`(이후 매 프레임 적응형). `fitCamera` 가 모델 bbox 로 재프레이밍:
+  - `size = max(dx,dy,dz,1)`(m), `dist = (size/2)/tan(fov/2) * 1.5`.
+  - 카메라 위치 `(dist*0.9, dist*-0.7, dist*0.6)`(정면-우-상), up `(0,0,1)`, target `(0,0,0)`.
+  - 줌 한계 `minDistance = max(size*0.0008, 0.01)`, `maxDistance = size*400`.
+- **적응형 near/far**(`updateClipPlanes`, 매 프레임): `near = max(camDist*0.02, 0.001)`, `far = max(camDist*4, sceneRadius*8, near*2000)`. (깊은 줌에서 클리핑/줌 막힘 방지 — §5 참조.)
+
+### A.2 뷰 단축키 (컨테이너 `:hover` 일 때만 동작)
+
+| 키 | 뷰 | 카메라 위치 | up | 비고 |
+|---|---|---|---|---|
+| `F` | 맞춤뷰 복귀 | `fitStateRef`(마지막 fitCamera) | 저장값 | 피벗=모델 중심 복귀 |
+| `A` | 평면(Top) | `(0, 0, dist)` | `(1,0,0)` | +Z 에서 내려봄 |
+| `S` | 종단면(Front) | `(0, -dist, 0)` | `(0,0,1)` | +Y 에서 봄 |
+| `D` | 횡단면(Side) | `(dist, 0, 0)` | `(0,0,1)` | +X 에서 봄 |
+
+- `dist = fitPos.length()` 없으면 기본 `30`(m). 입력창 포커스 중에는 전역 단축키 미동작(§16).
+
+### A.3 렌더 모드 / X-ray
+
+- **`renderMode`**: `'cylinder'`(기본, 부재=실린더 InstancedMesh) ↔ `'section3d'`(부재=실제 단면 압출). 토글 시 씬 재빌드(useEffect deps 에 포함).
+  - section3d pickables 는 `{ beams, nodes, masses, rigidLines }`, cylinder 는 `{ structure, pipe, nodes, masses, rigidLines }`.
+- **`xray`**(`applyXray`): 구조/배관 재질만 `transparent=true, opacity=0.2, depthWrite=false`. 노드·RBE·질량은 제외. 대구경 배관 내부 노드 확인용.
+
+### A.4 방위 기즈모(Axes gizmo)
+
+- 별도 `axesScene`(`AxesHelper(0.7)` + X/Y/Z 라벨 스프라이트), `axesCam` FOV **50°**, near/far `0.1/10`.
+- 매 프레임 메인 카메라 quaternion 복사 + 원점에서 `2.5` 거리에 배치(회전만 따라감).
+- 우상단 scissor 렌더: 크기 `AXES_PX=108`px, 여백 `AXES_MARGIN=10`px, 배경 light `0xe7edf5` / dark `0x0d0d1a`.
+- 라벨: X `#FF4444`(0.88,0,0) · Y `#44CC44`(0,0.88,0) · Z `#4488FF`(0,0,0.88).
+
+### A.5 렌더 루프·성능 표준 (★ 모든 Studio 권장)
+
+- **On-demand 렌더 + 관성 꼬리**: 평상시엔 변화 있을 때만 `requestRender()`(단일 RAF, `renderScheduled` 중복 방지). 드래그 중/직후엔 `animate()` 루프가 `controls.update()`+`updateClipPlanes`+render 를 돌린다.
+- **상수**: `DRAG_THRESHOLD=3`px(클릭/드래그 구분), `DAMPING_TAIL=800`ms(관성 감쇠 지속), 픽셀비 `min(devicePixelRatio, 2)` cap(멀티 뷰포트 성능).
+- **렌더러**: `antialias:true`, `NoToneMapping`, `SRGBColorSpace`, `autoClear:false`(축 인셋용 수동 scissor). `ResizeObserver` 로 size/aspect/pixelRatio + `controls.handleResize()` 갱신.
+- **stale 클로저 방지**: `doRenderRef`/`editStateRef` 등 ref 로 최신 상태 참조(테마 토글 stale 방지).
+
+### A.6 레이캐스팅/피킹 표준
+
+- Line(=RBE 선) 피킹 임계값을 거리 비례로: `Line.threshold = max(0.05, camDist*0.01)`(초기 `0.3`). 줌 무관 ~6px 체감 픽 영역.
+- `pointerup` 에서 이동량 `> DRAG_THRESHOLD`(3px)면 드래그로 보고 픽 무시. 더블클릭=피벗 지정(§5).
+
+## 부록 B. 3D 엔티티 렌더 사양 (도메인 마커 치수·색·재질)
+
+### B.1 도메인 색상 팔레트 (`utils/colors.js`) — §11 도메인 색의 정확값
+
+| 키 | hex | 용도 |
+|---|---|---|
+| `structure` | `#5BA8E5` | 구조 부재(파랑) |
+| `pipe` | `#FFAA22` | 배관(주황) |
+| `node` | `#FF4455` | 노드/Shared(빨강) |
+| `rigid` | `#FF44FF` | RBE 일반(마젠타) |
+| `uboltRigid` | `#00E5FF` | U-bolt RBE·선택 하이라이트(시안) |
+| `mass` | `#FF99BB` | 점질량(연분홍) |
+| `boundary` | `#22DD66` | 경계조건/SPC(초록) |
+| `weld` | `#FF6677` | 용접 태그(분홍-빨강) |
+
+### B.2 엔티티 지오메트리·재질 표 (씬 단위 = m, 괄호 = mm)
+
+| 엔티티 | 지오메트리 | 크기 | 재질 | 색 | 비고 |
+|---|---|---|---|---|---|
+| 구조 부재 | Cylinder(12 seg) | r `0.025`(25) | MeshStandard metal `0.15` rough `0.55` flat `true` | `#5BA8E5` | InstancedMesh, 단위높이 후 인스턴스 스케일 |
+| 배관 부재 | Cylinder(12 seg) | r `0.020`(20) | 동일 | `#FFAA22` | 별도 mesh(레이어 토글) |
+| 노드 | Sphere `16×12` | r `0.0448`(44.8) | MeshStandard white rough `0.35` metal `0.05` **opacity `0.65` depthWrite `false`** | per-instance | Shared `#FF4455`/Free `#FFDD00`/Orphan `#CC44FF` (§11) |
+| 점질량(CONM2) | Box | 변 `0.09`(90) | MeshStandard metal `0.2` rough `0.55` | `#FF99BB` | InstancedMesh |
+| RBE 선 | LineSegments | 선 | LineBasic | 일반 `#FF44FF` / U-bolt `#00E5FF` | independent↔dependent 쌍별 1선, 2 mesh 분리 |
+| 경계조건 | Octahedron(다이아) | r `0.14`(140) | MeshStandard | `#22DD66` | |
+| U-bolt 마커 | Sphere | r `0.12`(120) | MeshBasic opacity `0.96` depthTest `false` | `#00E5FF` | renderOrder `850`, 항상 보임 |
+| U-bolt DOF 라벨 | Sprite | scale `0.09`(90) | canvas, font `bold 56px monospace`, bg `rgba(10,10,24,.78)` | text `#FFE066` | cm 코드별 텍스처 캐시 |
+| 용접 마커 | Octahedron | r `0.04`(40) | MeshBasic | `#FF6677` | |
+| **무게중심(COG)** | Sphere `24×16` | r `clamp(bbox*0.015, 0.15, 1.2)` | gold opacity `0.85` | `#FFD700` | + halo(×1.7, opacity `0.18`) + 십자선. renderOrder 999/998/1000 |
+
+### B.3 단면3D(`section3d`) 프로파일 압출
+
+- Bar `Box(w,1,h)` · Rod `Cylinder(r,r,1,20)` · Tube `ExtrudeGeometry`(내/외경 path, 20 seg) · L/H `ExtrudeGeometry`(2D Shape). 치수는 dims(mm)/1000.
+
+### B.4 선택·편집 미리보기 렌더 (overlay)
+
+| 용도 | 지오메트리 | 색 | 재질/속성 |
+|---|---|---|---|
+| 선택 하이라이트(연결 강조) | elem Cylinder r `0.042` / node Sphere r `0.090` | `#00E5FF` | MeshBasic opacity `0.80` depthTest `false`(X-ray식 위에 렌더) |
+| 편집 다중선택 노드 | Sphere r `0.055` | `#FFB800`(amber) | + `N{id}` 라벨 |
+| RBE 연결점(편집) | Sphere r `0.070` | `#FF44FF`(마젠타) | opacity `0.55` |
+| addRigid 미리보기 | LineSegments | `#FFD740` | LineDashed dash `0.18`/gap `0.10` opacity `0.95` depthTest/Write `false` renderOrder `998` |
+| 끊기는 RBE 경고 | LineSegments | `#FFB800` | LineBasic linewidth `2` opacity `0.95` depthTest `false` renderOrder `998` |
+| 삭제 미리보기(`applyDeleteMask`) | — | — | **opacity 아님 — 인스턴스를 `scale 0.0001`** 로 축소(원본 matrix 복원, 멱등) |
+| 겹침 노드 아웃라인 | 직교 3링(40 seg) | 멤버별(Pipe `#FFAA22`/Struct `#5BA8E5`/혼합 white/없음 `#FF4455`) | r `NODE_RADIUS*1.45≈0.065` LineBasic opacity `0.95` depthTest `false` renderOrder `19` |
+
+### B.5 조명 표준 (`ThreeViewport.jsx`) — "엔지니어링 리뷰용 균형 조명"
+
+| 광원 | 색 | 세기 | 위치 |
+|---|---|---|---|
+| Hemisphere | sky `0xd8eaff` / ground `0x3d3d48` | `1.25` | — |
+| Ambient | `0xffffff` | `0.28` | — |
+| Directional(Key) | `0xffffff` | `0.55` | `(4,-5,7)` |
+| Directional(Rim) | `0x9fc8ff` | `0.35` | `(-5,4,5)` |
+| Directional(Headlight) | `0xffffff` | `1.0` | 카메라에 부착 `(0.5,1,0.5)` |
+
+### B.6 renderOrder / depth 규약
+
+`기본 0` < coincident 아웃라인 `19` < 노드ID 라벨 `20` < U-bolt 마커 `850` < RBE/addRigid/brokenRbe `998` < COG sphere `999` < COG 십자선 `1000`. `depthTest:false` 마커는 순서와 무관하게 항상 위.
+
+### B.7 Group 팔레트 (`utils/groupPalette.js`)
+
+11색 고정 고대비: `#FFD23F #00C2FF #FF4DB8 #53E36D #FF8A3D #8B5CF6 #00D1B2 #F25F5C #B8F35A #4D96FF #C9CED6`. 그룹 0~9 개별색, 10+ 는 `기타`(마지막 light-neutral).
+
+### B.8 리소스 해제
+
+`disposeScene(root)` 가 **WeakSet 중복제거**로 geometry/material/texture(라벨 canvas 포함)를 1회씩 dispose. 반복 지오메트리는 전부 InstancedMesh, 원본 matrix 는 `userData.originalMatrices`(그룹 토글/삭제 복원용).
+
+## 부록 C. 상태·테마·호스트·테스트·패키징 표준
+
+### C.1 3-스토어 패턴 (Zustand) + 기본값
+
+**ViewerStore**(`store/useViewerStore.js`) — 표시/뷰포트 상태:
+
+| 키 | 기본값 | 키 | 기본값 |
+|---|---|---|---|
+| `activeViewportId` | `1` | `theme` | `'dark'` |
+| `activeMode` | `'model'` | `cameraLinked` | `false` |
+| `inspectorTab` | `'메타'` | `renderMode` | `'cylinder'` |
+| `inspectorCollapsed` | `false` | `xray` | `false` |
+| `isolateSelection` | `false` | `highlightCoincident` | `false` |
+| `pickedEntity` | `null` | `focusSelectionRequest` | `0`(카운터) |
+
+- **`DEFAULT_LAYERS`**: `structure/pipe/nodes/rigids = true`; `masses/boundaries/uboltMarkers/uboltDof/cog = false`. (기본 ON = 모델 형상, 기본 OFF = 보조 마커.)
+- `viewports[]` 기본 1개: `{ id, stageIndex, colorMode:'category', freeNodeFilters:{normal,free,orphan:true}, groupFilters:{} }` (최대 4).
+- 액션: `addViewport/removeViewport/setViewportStage`, `setViewportColorMode/toggleViewportFreeNodeFilter/toggleViewportGroupFilter`, `toggleTheme/toggleLayer/toggleCameraLink/toggleXray/toggleHighlightCoincident`, `setPickedEntity/toggleIsolateSelection/focusPickedEntity/setRenderMode`, `reset()`(theme 유지).
+
+**StageStore**(`useStageStore.js`): `stages[] / inputAudit / stageSummary / loading / error / loadSummary{total,json,loaded,failed,skipped,failedFiles[]} / sourceFolderRef`. 액션 `setSourceFolderRef / loadStages(files) / reset`.
+
+**EditStore**(`useEditStore.js`): `enabled / intents[] / selectedIntentId / hasShownEntryToast / pendingNodeSelection[] / groupPreview / groupPreviewVersion`. 액션 `toggleEnabled / toggleNodeSelection / addIntent → {ok,intent,validation} / connectRigid → {ok,absorbedCount,...} / removeIntent / clearIntents / refreshGroupPreview / buildExportPayload / exportToFile → {ok,fileName,location} / importFromJson / reset`.
+
+### C.2 시맨틱 테마 토큰 전량 (`utils/theme.js` `palette(theme)`) — §11 표의 상위집합
+
+| 토큰 | Light | Dark | 토큰 | Light | Dark |
+|---|---|---|---|---|---|
+| `panelBg` | `#f8fafc` | `#0b0b1e` | `textFaint` | `#94a3b8` | `#4a5470` |
+| `panelBg2` | `#ffffff` | `#0f0f22` | `labelColor` | `#2563eb` | `#7ab2d4` |
+| `panelBg3` | `#eef2f7` | `#101024` | `labelColorAlt` | `#059669` | `#6ee7b7` |
+| `overlayBg` | `rgba(240,245,250,.94)` | `rgba(8,6,22,.92)` | `accent` | `#059669` | `#059669` |
+| `border` | `#e2e8f0` | `#1e1e38` | `accentLight` | `#6ee7b7` | `#6ee7b7` |
+| `borderStrong` | `#cbd5e1` | `#2a2a4a` | `dangerText` | `#dc2626` | `#e07070` |
+| `borderSubtle` | `#f0f4f8` | `#181830` | `warnText` | `#d97706` | `#FFAA55` |
+| `textPrimary` | `#0f172a` | `#e6f1ff` | `inputBg` | `#ffffff` | `#1a1a3a` |
+| `textSecondary` | `#334155` | `#b0c4d8` | `tabIndicator` | `#2563eb` | `#4682B4` |
+| `textMuted` | `#64748b` | `#7a8aaa` | `vpBg`(3D 배경) | `#dde4ef`/`0xf3f6fa` | `#0d0d1a`/`0x1a1a2e` |
+
+(그 외 `btnBg/btnBgHover/btnBorder/btnText`, `cardBg/cardBgHover/cardBorder`, `tabBg/tabBgActive/tabTextActive/tabTextInactive`, `accentBg/accentBgSoft/accentBorder`, `dangerBg/dangerBorder`, `inputText/inputBorder`, `vpHeaderBg` 등 총 30+ 토큰. **색은 컴포넌트에 흩지 말고 `palette()` 한 곳에서.**)
+
+### C.3 HostAdapter (`host/host.js`)
+
+- **환경 감지**: `window.workbenchAPI` 존재 → `ElectronHost`, 없으면 `WebHost`. `detectHost()`(1회) → `getHost()`(lazy 싱글턴), `setHost()`(테스트 override).
+- **인터페이스**: `pickFolder() / getInitialFolder() / writeFile(folderRef,name,content) / finalizeEditedModel(folderRef,req)`.
+- **`folderRef` 는 opaque**: Web=`FileSystemDirectoryHandle`, Electron=절대경로 문자열. 컴포넌트는 저장만 하고 host 에 되돌려줌.
+- **Web**: `showDirectoryPicker({mode:'readwrite'})` 재귀 `.json` 수집, `getInitialFolder()→null`(자동주입 없음), 쓰기=FS Access. `finalizeEditedModel`=미지원.
+- **Electron**: `window.workbenchAPI.*` 래핑, finalize 는 `finalizeEditedModel | finalModelOutput | requestFinalModelOutput` 순 폴백.
+
+### C.4 파일 분류 (`data/fileLoader.js`)
+
+| 종류 | 판정 | 처리 |
+|---|---|---|
+| phase JSON | `Array.isArray(nodes) && Array.isArray(elements)` | → `StageData`, 파일명 선두 정수로 정렬 |
+| InputAudit | `Array.isArray(rowAudit) && summary!=null` | → `InputAuditData`(폴더당 1) |
+| StageSummary | `Array.isArray(stages) && summary.massProperties!=null` | → `StageSummaryData`(폴더당 1) |
+| 기타 | nodes/elements 없음 | skip |
+
+- 정렬: 선두 정수(`parseStageIndex`), 없으면 `Infinity`(끝). UTF-8 BOM(`charCodeAt(0)===0xFEFF`) 제거 후 `JSON.parse`.
+- `applyFinalGroupMapping`: 전 stage 색/그룹번호를 **최종 stage 기준 통일**(`stage.finalGroups`/`finalElementGroupMap`) — 멀티 뷰포트 색 일관성.
+
+### C.5 오버레이 컴포넌트 (위치/트리거)
+
+| 컴포넌트 | 트리거 | 내용/위치 |
+|---|---|---|
+| `PickTooltip` | 픽 직후 | 1줄 라벨(§6 포맷). 마우스 `(clientX+12, clientY-10)`, z 9999, pointer-events none |
+| `MassSummaryOverlay` | `stageSummary` 존재 + `layers.cog` | 총질량/BEAM/MASS, 우하단 `(right14,bottom14)`, gold 보더, z 25 |
+| `EditModeWatermark` | `editStore.enabled` | "EDIT MODE"(대상=gold/비대상=gray) + 인셋 보더 + 5s 진입 토스트, z 49~51 |
+| `CoincidentNodePicker` | 편집 모드 겹친 노드 클릭 | 겹친 노드 ID 목록 팝업(멤버색 dot + 체크박스), `(x+12,y+8)` 클램프, max 248×320, z 50, Esc 닫기 |
+
+### C.6 테스트 표준 (Vitest)
+
+- **13개 파일, 156 케이스 전체 통과**(`npm run test` = `vitest run`). 핵심 분기 우선 커버: data transform·intent validation·store action·scene builder·host IO.
+- 파일: `data/{EditIntent, applyEditIntents, StageData, coincidentNodes, InputAuditData, stageDiff, fileLoader}.test.js`, `store/{useEditStore, useViewerStore}.test.js`, `host/host.test.js`, `three/{EntityBuilders, SceneBuilder, BeamMesh}.test.js`.
+
+### C.7 패키징·버전·빌드 설정
+
+- **`scripts/package-viewer.mjs`**: `package.json` version → `vite build`(manifestPlugin)이 `manifest.json` 으로 주입 → `release/<id>-<version>.zip`(zlib 9, **dist 래퍼 없이 루트 평탄**) + `<...>.zip.sha256`(`"<hash>  <file>"` POSIX 포맷). **버전은 `package.json` 한 곳만 bump.**
+- **manifest 필드**: `id`(`model-studio`) · `name` · `version`(자동 주입) · `entry`(`index.html`) · `linkedMenu`(`HiTess Model Builder`) · `minWorkbenchVersion` · `description` · `hostApi`. (백엔드 `viewers.py` 서빙·DRM `read()` 함정은 `STUDIO_PIPELINE_STANDARD.md §2 S3` 참조.)
+- **vite.config.js**: `base:'./'`(file://+http:// 호환), alias `@→src`, dev `port 5174 strictPort`, `build.target es2022`, `sourcemap false`, `chunkSizeWarningLimit 1500`, plugins `react()/tailwindcss()/workbenchManifestPlugin()`.
+- **eslint.config.js**: ignore `dist`, `js.recommended` + `reactHooks.flat.recommended` + `reactRefresh.vite`, globals `browser`, jsx on. (배포 전 lint 0 errors 유지.)
+
+> **신규 Studio 벤치마킹 순서**: §17 체크리스트로 구조를 잡고 → 부록 A(좌표·카메라·렌더 루프) → 부록 B(엔티티 색·치수·재질·조명) → 부록 C(스토어 기본값·테마 토큰·host·패키징) → 부록 D(앱 셸·모드 전환·부트스트랩·스케일) → 부록 E(씬 가시성·컬러모드·파생 미리보기·diff·audit) 의 값을 **그대로 채택**해 시각·조작·구조·동작 통일성을 확보한다. 도메인이 달라 값이 바뀌면 §18 확장 템플릿으로 "왜 다른지"를 기록한다.
+
+## 부록 D. 앱 셸·모드 전환·부트스트랩·스케일 (`App.jsx`, `TopMenuBar.jsx`, `LeftDock.jsx`)
+
+### D.1 앱 셸 구성 (3단 레이아웃)
+
+- **최외곽**: flex column, 뷰포트 채움, 테마 배경 light `#eef2f7` / dark `#0d0d1a`(텍스트 `#0f172a` / `#e0e0e0`).
+- **스케일 레이어**: `width/height = 100/uiScale %`, `transform: scale(uiScale)`, `transformOrigin: 'top left'`(소형 창 대응, D.4).
+- **본문**: `TopMenuBar`(높이 42px) → row{ `LeftDock`(300px, flex-shrink 0, 모드별 패널) + 뷰포트 컬럼(flex1){ `ViewportContainer`(1~4 grid) + `BottomReviewDock`(데이터 있을 때만) } }.
+
+### D.2 마운트 부트스트랩 (Electron 자동 로드)
+
+```
+useEffect(once):
+  getHost().getInitialFolder()              // Electron=폴더, Web=null
+  → guard: cancelled | !initial | files.length===0 → no-op
+  → setSourceFolderRef(folderRef)
+  → loadStages(files)                       // loading=true → loadFiles → stages/inputAudit/stageSummary
+  → resetViewportStages(stages.length - 1)  // ★ 모든 뷰포트를 최종(보통 Validation) stage 로
+```
+
+- 로딩 "로딩 중…" / 에러(빨강) 는 좌측 패널, 빈 상태는 뷰포트 중앙("🏗️ 파이프라인 JSON 파일을 선택하세요"). Web 단독은 `getInitialFolder()→null` 이라 수동 열기.
+
+### D.3 모드 전환 (4 탭) + 부작용 (★ 통일 핵심)
+
+탭 `model · modelCheck · edit · save`. 클릭 = `setActiveMode(key)`; **`edit` 진입 시 `useEditStore.setEnabled(true)`**. 앱 전역 effect: **`activeMode !== 'edit'` 면 `setEnabled(false)`(단, intents 는 보존, pendingNodeSelection 만 비움)**.
+
+| 모드 | 좌측 패널 | colorMode | stageIndex | editStore | 비고 |
+|---|---|---|---|---|---|
+| `model` | `ModelPanel` | `'category'` | 유지 | 무변경 | 레이어/렌더/뷰포트 |
+| `modelCheck` | `ModelCheckPanel` | `'freeNode'`(Node Check) / `'group'`(Group) | 유지 | 무변경 | 서브탭이 colorMode 구동 |
+| `edit` | `EditPanelDock` | **`'group'` 강제** | **최종 stage 강제** | **enabled=true** | 진입 시 6.5s 안내 토스트(최초 1회) |
+| `save` | `SavePanel` | 상속 | 상속 | 무변경 | export/finalize 만 |
+
+- **Model Check 노드 타입 범례**(통일): normal `#FF4455`(여러 요소 연결 정상) · free `#FFDD00`(한쪽만, 자유단 후보) · orphan `#CC44FF`(요소 미연결 고립). 필터는 뷰포트별 `freeNodeFilters[key]` 토글.
+
+### D.4 소형 창 UI 스케일 (통일 공식)
+
+```js
+const scale = Math.min(width / 960, height / 820, 1)
+uiScale = Math.max(0.68, Number(scale.toFixed(3)))   // 기준 960×820, 하한 0.68
+```
+
+- 적용: 스케일 레이어 `width/height=100/uiScale%` + `scale(uiScale)`. 재계산 트리거: `resize` · `visualViewport.resize` · `screen.orientation.change`.
+
+### D.5 테마 전파
+
+- 스토어 `theme:'dark'`(기본) `toggleTheme`. 앱 배경은 테마로 직접, 컴포넌트 색은 **전부 `palette(theme)` 인라인**(CSS class 없음, 부록 C.2 토큰). reset 시 theme 만 유지.
+
+### D.6 초기화 게이팅 · confirm · 토스트
+
+- **`guardLoad()`**: `stages.length>0` 면 `alert("…초기화 버튼으로 먼저 비운 뒤 재시도")` 후 차단 — 파일/폴더 열기 진입점마다 적용(데이터 혼입 방지).
+- **`handleReset` = 3-스토어 동시 초기화**: `resetStages()`+`resetViewer()`(★ `isolateSelection=false` 로 되돌려 새 모델 전체은폐 버그 방지, theme 보존)+`resetEdit()`.
+- **confirm**: 파괴/큰 전환은 네이티브 `window.confirm`(예: finalize "Model을 저장하고 Studio를 종료하시겠습니까?").
+- **토스트**: 전역 ToastContext 없음 — 컴포넌트별 인라인 `status:{color,text}`. 편집 진입 안내 토스트는 최초 1회 6500ms(`hasShownEntryToast`).
+
+### D.7 Inspector 마운트/접힘
+
+- `inspectorCollapsed:false`(기본). **`setInspectorTab('편집')` 은 한 mutation 으로 `collapsed:false` 동반**(편집 탭 클릭=자동 펼침). 접힘=20px 스트립. 탭 `메타/모델지표/연결성/진단/추적/편집`, 폭 MIN 200·MAX 600·DEFAULT 300. 앱 전역 키 핸들러 없음(단축키는 뷰포트 스코프, §A.2/§6).
+
+## 부록 E. 씬 가시성·컬러모드·파생 미리보기·diff·audit 알고리즘
+
+### E.1 컬러모드 5종 (`SceneBuilder`/`BeamMesh`/`NodePoints`)
+
+| colorMode | 대상 | 규칙 |
+|---|---|---|
+| `category`(기본) | 부재 | 구조 `#5BA8E5` / 배관 `#FFAA22` 고정. 노드는 흰색(override 없음) |
+| `freeNode` | 노드 | 연결수 기반: orphan(0) `#CC44FF` / free(1) `#FFDD00` / shared(2+) `#FF4455`. **RBE 멤버는 강제 normal** |
+| `group` | 부재 | connectivity group 별 `GROUP_COLORS`. top `min(len,10)` 개별색, 10+ 는 `기타` `#C9CED6` |
+| `propertyId` | 부재 | 단면 property 별 고유 hue: `setHSL(idx/max(total,1), 0.7, 0.55)` |
+| `shapeType` | 부재 | 단면종류 고정: Bar `#61b861` · Rod `#e06060` · Tube `#d4a843` · H `#7b7be8` · L `#45b8c4` · 미상 `#888888` |
+
+per-instance 색은 `setColorAt`, 형상 변화 없는 색만 갱신은 인스턴스 색 버퍼만 업데이트.
+
+### E.2 레이어 가시성
+
+- 그룹 `.visible = layerState[key] ?? true` (structure/pipe/nodes/rigids/masses/boundaries/uboltMarkers/uboltDof/cog).
+- **노드는 카테고리-레이어 비트필드로 추가 제어**(`STRUCTURE_BIT=1`, `PIPE_BIT=2`): 요소 참조 없음(orphan/RBE-only)=항상 표시; 있으면 `(inStru && showStru) || (inPipe && showPipe)`. 숨김 = 인스턴스 `scale 0.0001`.
+
+### E.3 그룹 필터(뷰포트별) · isolate
+
+- `groupFilters[key]`(키 `0..9` + `'others'`), `visible = groupFilters[key] !== false`. 숨김은 **`originalMatrices` 에서 복원 후 `scale 0.0001`**(멱등). `setAllViewportGroupFilters`: `maxIndividual = len<=5 ? len : 10`, 나머지 `'others'`.
+- **isolate**: `isolateSelection && selectedElementIds.size>0` → 비선택 구조/배관 인스턴스 `scale 0.0001`, `object.visible = hasSelected`. 적용 순서: groupFilters → isolate → deleteMask.
+- **freeNode 필터**: `visible = filters[cat] && visibleByCat`(E.2 카테고리 규칙 결합).
+
+### E.4 파생 편집 미리보기 (`data/applyEditIntents.js` `computeDeleteMask`)
+
+- **출력 집합**: `deletedNodeIds / deletedElementIds / deletedMassIds / deletedGroupIds / brokenRbeIds / fullyRemovedRbeIds / addedRigids[]` + **파생 카운트** `derivedNode/Element/Rigid/PointMass/GroupCount`.
+- **적용**: `deleteGroup` → 그룹의 nodeIds/elementIds 삭제 집합 추가(groupId=`builderId ?? id`). `deleteRigid` → 해당 RBE fully-removed(**deleteGroup 과 충돌 시 deleteRigid 우선**).
+- **RBE 분류**: `ind && allDeps 삭제` → fullyRemoved; `ind && !allDeps` → broken; `!ind && 일부 dep 삭제` → broken.
+- **파생 RBE 수** = `원본 - fullyRemoved.size + addedRigids.length`. `addedRigids[]` 는 미리보기 오버레이(노란 dashed)용으로 별도 노출.
+- **편집 후 그룹 재계산**(`computeEditedGroups`): 유효 BEAM + 비제거 RBE + 신규 addRigid 연결에 **Union-Find**(RBE 는 `union(independentNode, dep)`), `StageData` 그룹 계산과 동일 fallback.
+
+### E.5 단계 비교 (`data/stageDiff.js`)
+
+- 13행: 노드/요소(전체·구조·배관)/RBE/질량/총길이(m=mm/1000, 1자리)/그룹/Orphan/자유단/단락요소/미연결그룹.
+- 행 `{label, a, b, delta=b-a, deltaPercent}`, `deltaPercent = a!==0 ? delta/a*100 : (b!==0 ? 100 : 0)`.
+
+### E.6 겹침 노드 탐지 (`data/coincidentNodes.js`)
+
+- **거리 임계값** `tol = NODE_MARKER_RADIUS_MM(44.8) × 2.4 ≈ 107.52 mm`. 공간 해시(cell=`tol`) + **27-이웃 셀** 검색, `ex²+ey²+ez² ≤ tol²`. 출력 `Map<nodeId, number[]>`(이웃 ≥1 인 노드만).
+- **멤버 분류**(`classifyNodesByMember`, 비트필드 1=Struct·2=Pipe): `3→mixed` `2→pipe` `1→structure` `0→none`(아웃라인 색은 B.4와 동일 — pipe 주황/struct 파랑/mixed 흰/none 빨강).
+
+### E.7 입력 감사 (`data/InputAuditData.js`, `00_InputAudit.json`)
+
+- 구조: `meta / inputFiles[] / summary{totalDataRows, convertedRows, ignoredRows, parseFailedRows, blankRows, …} / rowAudit[]{kind,file,name,status,reasonCode,mappingConfidence,rawLine,…}`.
+- `_byName: Map<sourceName, rowAudit[]>` 인덱스 → `rowsByName(name)`. 좌표 파싱 `parsePosition`: 정규식 `/X\s*(-?[\d.]+)mm.*?Y\s*(-?[\d.]+)mm.*?Z\s*(-?[\d.]+)mm/i` → `{x,y,z}|null`(음수·소수·공백 허용).
+- status `converted`(매칭)/`ignored`(제외, 좌표만 있으면 ghost 마커)/`blank`/`parseFailed`. 식별: `Array.isArray(rowAudit) && summary != null`.
+
+### E.8 그룹·연결성 기준 (`data/StageData.js`)
+
+- 그룹: **`connectivity.groups`(빌더 산출) 우선**, 없으면 클라이언트 **Union-Find**(BEAM+RBE 간선) 폴백. 요소 수 내림차순 정렬 후 0..N-1 재라벨. RBE 는 `union(ind, dep)` 로 한 그룹에 병합.
+- 좌표 `getNodePos = (mm - bboxCenter)/1000`. **단락 요소 임계값 `< 1 mm`**. free/orphan 카운트는 **RBE 멤버 제외**(항상 shared).

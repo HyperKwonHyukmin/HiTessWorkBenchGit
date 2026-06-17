@@ -123,6 +123,14 @@
   `pointMasses`, `connectivity`, `healthMetrics`, `diagnostics`, `groups`, `propertyMap`, `materialMap`.
   좌표는 `getNodePos` 에서 `(coord - center)/1000` 으로 **mm→m + 센터링** 변환.
 
+> 🎨 **뷰어 UX/디자인(카메라 조작·3D 렌더·선택·색상)은 이 파이프라인 문서의 범위 밖** — **`STUDIO_DETAIL.md` 가 단일 기준**이다.
+> 특히 **카메라 조작**(zoom-to-cursor 휠 · 더블클릭 회전 원점(피벗) · 적응형 near/far · TrackballControls 감도)과
+> **노드 반투명 구 렌더**(매끈 구 + opacity 0.65 + depthWrite:false + 흰색 베이스×per-instance 색)는
+> `STUDIO_DETAIL.md §5(카메라 조작 표준)·§11(3D 엔티티 렌더링 표준 — Node sphere)` 을 참조해 **모든 Studio 가 동일하게** 적용한다.
+> 좌표·축 규약 · 뷰 단축키 · 렌더 모드/X-ray · 조명 · 엔티티 마커 치수/색/재질 · 스토어 기본값 · 테마 토큰 · host · 테스트 · 패키징의
+> **정확한 상수값(벤치마킹 기준)** 은 `STUDIO_DETAIL.md 부록 A~C(Model Builder 구현 수치 레퍼런스)` 에 정리돼 있다.
+> (2026-06-17, model-studio v0.0.38 기준 실측.)
+
 ### S5. 편집 (edit intents)
 > Studio 측 파일: `model-studio/src/{data/EditIntent.js, store/useEditStore.js, data/applyEditIntents.js}`
 - **유효 intent 종류**(`VALID_KINDS`): **`addRigid` · `deleteGroup` · `deleteRigid`**.
@@ -171,6 +179,84 @@
 2. **`_run_f06parser`**: **`InHouseProgram/F06Parser/F06Parser.Console.exe <f06> --output-dir <dir>`** (timeout 300s)
    → `<stem>_results.json` + `<stem>_SC*_*.csv`.
 3. **`scan_f06_diagnostics`**: F06 의 `*** USER/SYSTEM FATAL|ERROR` 마커를 별도 수집(edit-status 응답에 포함).
+
+---
+
+## 2-MU. Module Unit (GroupModuleUnit) Studio — 단계별 상세 (ModelBuilder 레퍼런스와의 차이 중심)
+
+> 진입 페이지: **`HiTessWorkBench/frontend/src/pages/analysis/GroupModuleUnitLiftingAnalysis.jsx`**
+> (메뉴 'Group & Module Unit 권상 구조 해석', `MODULE_STUDIO_VIEWER_ID='module-unit-studio'` @ line 20)
+> 백엔드 서비스: **`app/services/groupmoduleunit_service.py`**(BDF 검증/파싱) · **`module_stability_service.py`**(자세안정성) · **`unit_structural_service.py`**(lifting Nastran)
+> 라우터: **`app/routers/analysis.py`** ("ModuleUnitStudio 자세안정성" line 1274~, "Group & Module Unit 권상" line 1408~, COG line 2633~)
+> Studio 소스: `WorkBenchSubModule/ModuleUnitStudio/apps/module-unit-studio` (v0.0.44)
+> *(검증: 2026-06-16, 42-에이전트 워크플로우 코드 매핑 기준.)*
+>
+> ⚠️ **핵심 차이 요약**: Module Unit 은 *기존 BDF 를 빌드*하는 게 아니라 *검증/파싱*한다. 빌드 엔진이 `Cmb.Cli.exe`(C#) 가 아니라 **`nastran_bridge.exe`** 이고, 자세안정성은 별도 **`ModuleAnalysis.Cli.exe`(C#)** 가 담당한다. ModelBuilder 의 핵심 계약 다수가 **부재**한다: S2 `출력 폴더:` stdout 라인 · `apply-edit-intent` 엔드포인트 · `F06Parser.Console.exe` · `apply-trace.json` · `edit-status(needs_apply)`. 편집은 intent envelope(`*_edit.json`) 대신 **전체 편집 모델(`<stem>_edited.json`) + 자세 입력(`<stem>_posture.json`)** 으로 백엔드에 전달된다.
+>
+> 🔴 **함정**: `ModuleUnit_HiTESS.exe`(Python, `ModuleUnitForHiTessBeam/run_module_unit.py`) 은 이름이 비슷하지만 **이 Studio 파이프라인과 무관**하다 — 레거시 `POST /moduleUnit`(`routers/hitessbeam.py`, [TEMP] 블록) 전용. Studio 는 `nastran_bridge.exe` + `ModuleAnalysis.Cli.exe` 만 구동한다.
+
+### S0. 입력 업로드 + 작업 폴더 생성
+- **트리거**: `POST /api/analysis/groupmoduleunit/request` (multipart). alias: `/sidepassage/request`, `/groupmoduleunit/run-sample`(사내 샘플 BDF), `/groupmoduleunit/request-from-path`(프로그램 간 연계, `bdf_server_path`). (`analysis.py:1410, 1435, 1467, 1501`)
+- **업로드**: `bdf_file`(BDF 1개) + `employee_id` + `use_nastran`(백엔드 기본 `False`, **UI 기본 `True`**) + `source`. ★ ModelBuilder 의 CSV 3종(stru/pipe/equip)+mesh_size 가 **아니다** — BDF 1개뿐.
+- **작업 폴더**: `make_work_dir(employee_id, program_name)` → `userConnection/{ts}_{employee_id}_{GroupModuleUnit|SidePassage}/`. `program_name` 은 `source=='sidepassage'` 면 `SidePassage`, 아니면 `GroupModuleUnit` (`analysis.py:1425`) — **두 Studio 가 동일 엔진을 공유**.
+- **응답**: `{ job_id }` → 프론트 `usePolling(GET /api/analysis/status/{job_id}, maxRetries 240)`.
+
+### S1. 입력 검증/파싱 (엔진 exe)
+- **서비스**: `task_execute_groupmoduleunit()` (`groupmoduleunit_service.py:665`).
+- **프로그램**: **`InHouseProgram/NastranBridge/nastran_bridge.exe <bdf_filename>`** (서브커맨드 없음, `cwd=bdf_dir`, timeout 180s). (`:682`)
+- 업로드 BDF 를 파싱해 **모델 JSON** 산출. ★ CSV→FEM build-full 이 아니라 **기존 BDF 검증/파싱**.
+- **exit 코드 계약**: `0=OK, !=0=실패(RuntimeError)`. (ModelBuilder 의 `0,2=OK/1=실패` 와 다름.)
+- `use_nastran=True` 면 S9(B) validation 체인 추가.
+
+### S2. 산출물 수집 + output_dir
+- ★ **가장 큰 차이**: stdout `출력 폴더:` 라인 파싱이 **없다**(`_parse_output_dir`·`_scan_latest_timestamp_dir`·phase 정규식·`_pick_final_artifact` 전부 없음). **`output_dir = 입력 BDF 폴더(bdf_dir)` 그 자체**.
+- 산출물은 BDF 옆에 **고정 파일명 평탄 배치**(타임스탬프 하위폴더 없음): `<stem>.json`(원본 모델 JSON, 3D 뷰어용) + `<stem>_validation_step1.json`(ValidationStepLog step1). `use_nastran` 시 `<stem>_validation_step2.json/_validation.bdf/.f06/.json`. 모델 JSON 미발견 시 stdout `Wrote <path>` 라인 폴백(`:722-728`).
+- **DB**: `record_analysis(program_name="GroupModuleUnit"|"SidePassage")`, `result_info` 에 `bdf/JSON_ModelInfo/JSON_Validation` 경로 기록(`:743`).
+
+### S3. Studio 설치/실행 + 폴더 전달
+- **뷰어 id**: `module-unit-studio`. 매니페스트/다운로드는 **공통 `viewers.py`** (`GET /api/viewers/manifest|download/{id}`) — 전용 코드 없음(파일명 패턴 자동 탐색). DRM `read()`-바이트 서빙 함정 공통 적용.
+- **Electron IPC 순서**(`GroupModuleUnitLiftingAnalysis.jsx:480-560`): `viewer:check-installed` → (불일치 시) `viewer:install{downloadUrl,uncPath,expectedSha256}` → `viewer:checkPathAccess{path:bdfFolderPath}` → 접근 불가 시 `viewer:fetchResultDir`(★ **ModelBuilder 의 `GET /api/analysis/modelflow/result-zip` 엔드포인트 재사용**) → `viewer:open{viewerId, initialFolder, parentAnalysisId:bdfAnalysisId, serverUrl}`.
+- ★ `viewer:open` 에 **`parentAnalysisId`(BDF 검증 Analysis.id) + `serverUrl`** 을 추가 전달 → Studio 가 후속 `module-stability`/`unit-structural` 를 **직접 호출**(ModelBuilder 의 `finalizeEditedModel` 신호 방식과 다름).
+
+### S4. Studio 로드
+- Studio 가 `initialFolder` 의 **단일 `<stem>.json`** (모델 JSON: `nodes/elements/rigids/properties/materials/pointMasses/connectivity/healthMetrics/diagnostics`) 을 로드해 3D 뷰/편집. ★ phase JSON 다발·`InputAudit`/`StageSummary` 없음.
+
+### S5. 편집 (Studio 내부 intent → 전체 모델 산출)
+- ★ **백엔드에 edit-intent envelope 계약이 없다**(`VALID_KINDS`/`validateIntent`/`*_edit.json` 백엔드 소비 없음).
+- 단, **Studio 프론트는 내부적으로 intent 를 쌓는다**: `addRigid · deleteGroup · deleteElement(BEAM 한정) · deleteCategory · deleteOrphanNodes` (★ `deleteRigid`/RBE 병합-흡수 흐름은 **미구현**). 이 intent 들은 백엔드로 envelope 가 가는 대신 **전체 편집 모델 `<stem>_edited.json`** 으로 materialize 된다.
+- 추가로 **권상 자세 입력**: 권상 방식(hydro=Hook/goliat=Trolley/ceiling=Crane)·그룹·노드·와이어 길이 → `<stem>_posture.json`(schema `posture-stability/1.0`).
+
+### S6. 편집 저장 + (머신 분리 시) 업로드
+- Studio 로컬 산출: `<stem>_edit.json`(intents, `exportToFile`) · `<stem>_edited.json`(전체 모델) · `<stem>_posture.json`(자세). ★ **`*_edit.json` 명명 규칙이 유일 계약이 아니다.**
+- **업로드 엔드포인트**: ★ `POST /api/analysis/module-stability/upload` (`file, employee_id, parent_analysis_id, artifact_kind='posture'|'edited'`) — **ModelBuilder 의 `modelflow/upload-edit` 가 아니다**. 보안: `parent.program_name ∈ {GroupModuleUnit, SidePassage}`, `userConnection` 내부, basename-only, `_is_within_dir`. 응답 `remotePath` 가 다음 단계 입력. (`analysis.py:1281`)
+
+### S7. 편집 적용 (apply)
+- ★ **`apply-edit-intent` 엔드포인트 없음.** 적용이 두 갈래로 분산, **둘 다 직접 호출(엔진 vs nastran_bridge vs fallback 3분기 없음)**:
+  - **(a) 자세안정성**: `POST /api/analysis/module-stability/request{posturePath}` → `task_execute_module_stability` → **`InHouseProgram/GroupModuleAnalysis/ModuleAnalysis.Cli.exe <posture.json> <stability.json>`** (exit `0=OK / 2=인자·입력오류 / 1=실행오류`). (`module_stability_service.py:35-40,57,73-78`)
+  - **(b) 편집모델→BDF 변환**: `<stem>_edited.json` 존재 시 `nastran_bridge.exe <edited.json> -o <edited.bdf>`. 이것이 사실상의 apply-edit. (`unit_structural_service.py:129-149`)
+- **BDF writer 권위 = `nastran_bridge.py` 단일** (편집모델 변환·lift-run·lift-result 전부). **C# `Cmb.Io BdfWriter` 완전 미사용** → PBEAML `CHAN` 매핑 등 BDF 포맷 수정은 `nastran_bridge.py` **한 곳만** 고치면 된다(ModelBuilder 처럼 writer 별 이중 수정 불필요).
+
+### S8. 최종 BDF/JSON 출력
+- ★ `edited/<base>.bdf+<base>.json+apply-trace.json` 트리오가 **아니다.** parent BDF 폴더에 `<stem>_` 접두 평탄 배치: `<stem>_edited.bdf`(편집모델 변환) · `<stem>_lifting.bdf`(wire 포함, `lift-run --prepare-only`) · `<stem>_lifting_meta.json`(ID충돌/wire 매핑 추적) · `<stem>_lifting_nastranResult.json`(Studio 색맵/호버용 정제 결과).
+- ★ `apply-trace.json` · `edit-status(needs_apply)` 엔드포인트 **없음**. DB `program_name='UnitStructuralAnalysis'`, `input_info.parent_analysis_id` 로 원본 GroupModuleUnit 참조(`unit_structural_service.py:260-273`).
+
+### S9. (선택) Nastran 해석 + F06
+- ★ **`F06Parser.Console.exe` 미사용**(따라서 `_results.json`/`_SC*_*.csv`/`scan_f06_diagnostics` 산출 없음). 두 경로 모두 자체 파서:
+  - **(A) lifting 본해석**(unit_structural): `nastran.exe <lifting.bdf>`(timeout 1800s) → `<lifting.f06>` → `nastran_bridge.exe lift-result <meta.json> --f06 <f06> -o <result.json> --allowable-mpa N`. `meta.hasFatal` 시 Failed. (`unit_structural_service.py:182-227`)
+  - **(B) 입력 검증**(`use_nastran=True`): `nastran_bridge.exe validate-run <bdf> --prepare-only --support-range 500`(SPC1 RBE-dependent 제거 + AUTOSPC/BAILOUT 주입) → `nastran.exe <validation.bdf>` → **인라인 Python `_parse_f06_fatals`** 로 `*** USER FATAL MESSAGE` 추출. (`groupmoduleunit_service.py:463-499,570-660`)
+- **부가 동기 엔드포인트**: `POST /api/analysis/groupmodule/cog` → **`ModuleGroupUnitAnalysis.exe cog <bdf>`** stdout JSON(총질량/COG). ModelBuilder 엔 없는 GroupModuleUnit 고유 단계. (`analysis.py:2635-2677`)
+
+### 런타임에 필요한 InHouse 프로그램 (Module Unit) — 모두 서버(145) 수동 반영 대상
+
+| 경로 | 역할 |
+|------|------|
+| `InHouseProgram/NastranBridge/nastran_bridge.exe` | S1 BDF 검증/파싱, S7 편집모델→BDF, S8 lift-run, S9 lift-result/validate-run **전부** (BDF writer 단일 권위) |
+| `InHouseProgram/GroupModuleAnalysis/ModuleAnalysis.Cli.exe` | S7(a) 자세안정성(posture→stability). ⚠️ 폴더명 **`GroupModuleAnalysis`** (소스는 `ModuleUnitAnalysis/`, exe 명은 `ModuleAnalysis.Cli.exe` — 3중 불일치 주의) |
+| `InHouseProgram/GroupModuleAnalysis/ModuleGroupUnitAnalysis.exe` | COG/총질량(`groupmodule/cog`) |
+| 외부 MSC `nastran.exe` | S9 해석기 (`NASTRAN_EXE` env override). InHouse 아님 — 서버에 MSC 설치 필요 |
+| `module-unit-studio-*.zip` | `<backend>/StudioProgram/`(로컬) + UNC 양쪽 수동 복사 |
+
+- 위 exe/zip 은 모두 **git 미추적** → `git pull` 로 서버(145)에 **안 따라옴**. 변경 시 **수동 복사 + 백엔드 재시작 필수**. (라우터/서비스 `.py` 는 git 추적 → `git pull`+재시작.)
 
 ---
 
@@ -255,22 +341,22 @@
 
 > ✅ = 코드 검증 완료, ⬜ = 미확인(해당 studio 작업 시 채울 것). **divergence 가 한눈에 보이도록 모든 칸을 채운다.**
 
-| 단계 / 항목 | **ModelBuilder** (레퍼런스) | MooringFitting | SidePassage | ModuleUnit |
+| 단계 / 항목 | **ModelBuilder** (레퍼런스) | MooringFitting | SidePassage | **ModuleUnit** |
 |------|------|------|------|------|
-| 진입 페이지 | ✅ `HiTessModelBuilder.jsx` | ⬜ | ⬜ | ⬜ |
-| viewer id | ✅ `model-studio` | ⬜ | ⬜ | ⬜ |
-| S1 빌드 exe | ✅ `Cmb.Cli.exe build-full` @ `InHouseProgram/HiTessModeBuilder` | ⬜ `MooringFitting.exe` | ⬜ | ⬜ |
-| S0 request 엔드포인트 | ✅ `POST /api/analysis/modelflow/request` | ⬜ | ⬜ | ⬜ |
-| S2 output_dir 계약 | ✅ stdout `출력 폴더:` + phase 정규식 | ⬜ | ⬜ | ⬜ |
-| S3 viewer 매니페스트 | ✅ `GET /api/viewers/manifest/{id}`(공통) | 공통 | 공통 | 공통 |
-| S5 intent 종류 | ✅ `addRigid/deleteGroup/deleteRigid` | ⬜ | ⬜ | ⬜ |
-| S6 *_edit.json 저장 | ✅ `host.writeFile` + finalizeEditedModel | ⬜ | ⬜ | ⬜ |
-| S6 업로드 | ✅ `POST .../upload-edit` | ⬜ | ⬜ | ⬜ |
-| S7 apply-edit 기본 | ✅ `Cmb.Cli apply-edit-intent` | ⬜ `nastran_bridge.apply_edit_json`(직접) | ⬜ `nastran_bridge`(직접) | ⬜ |
-| S7 fallback writer | ✅ `nastran_bridge.write_edited_model_outputs` (exit65+deleteRigid) | ⬜ | ⬜ | ⬜ |
-| S8 BDF writer 권위 | ✅ C# `Cmb.Io BdfWriter`(일반) / `nastran_bridge.py`(fallback) | ⬜ | ⬜ `nastran_bridge.py` | ⬜ |
-| S9 해석기 | ✅ MSC `nastran.exe` | ⬜ | ⬜ | ⬜ |
-| S9 결과 파서 | ✅ `F06Parser.Console.exe` | ⬜ | ⬜ | ⬜ |
+| 진입 페이지 | ✅ `HiTessModelBuilder.jsx` | ⬜ | ⬜ | ✅ `GroupModuleUnitLiftingAnalysis.jsx` |
+| viewer id | ✅ `model-studio` | ⬜ | ⬜ | ✅ `module-unit-studio` |
+| S1 빌드 exe | ✅ `Cmb.Cli.exe build-full` @ `InHouseProgram/HiTessModeBuilder` | ⬜ `MooringFitting.exe` | ⬜ | ✅ ★빌드 아님 — `nastran_bridge.exe <bdf>`(검증/파싱) @ `InHouseProgram/NastranBridge` |
+| S0 request 엔드포인트 | ✅ `POST /api/analysis/modelflow/request` | ⬜ | ⬜ | ✅ `POST /api/analysis/groupmoduleunit/request` (+alias /sidepassage, /run-sample, /request-from-path) |
+| S2 output_dir 계약 | ✅ stdout `출력 폴더:` + phase 정규식 | ⬜ | ⬜ | ✅ ★없음 — `output_dir = BDF 폴더`, `<stem>.json` 고정명 평탄(타임스탬프 폴더 없음) |
+| S3 viewer 매니페스트 | ✅ `GET /api/viewers/manifest/{id}`(공통) | 공통 | 공통 | ✅ 공통 (+`viewer:open` 에 `parentAnalysisId`/`serverUrl` 추가) |
+| S5 intent 종류 | ✅ `addRigid/deleteGroup/deleteRigid` | ⬜ | ⬜ | ✅ Studio 내부 `addRigid/deleteGroup/deleteElement/deleteCategory/deleteOrphanNodes` (★`deleteRigid` 없음, 백엔드 envelope 미사용) |
+| S6 *_edit.json 저장 | ✅ `host.writeFile` + finalizeEditedModel | ⬜ | ⬜ | ✅ `<stem>_edit.json`(intents) + ★`<stem>_edited.json`(전체모델) + `<stem>_posture.json`(자세) |
+| S6 업로드 | ✅ `POST .../upload-edit` | ⬜ | ⬜ | ✅ ★`POST /api/analysis/module-stability/upload` (`artifact_kind=posture\|edited`) |
+| S7 apply-edit 기본 | ✅ `Cmb.Cli apply-edit-intent` | ⬜ `nastran_bridge.apply_edit_json`(직접) | ⬜ `nastran_bridge`(직접) | ✅ ★`apply-edit-intent` 없음 — (a) `ModuleAnalysis.Cli.exe <posture> <stability>` (b) `nastran_bridge.exe <edited.json> -o <bdf>` 직접 |
+| S7 fallback writer | ✅ `nastran_bridge.write_edited_model_outputs` (exit65+deleteRigid) | ⬜ | ⬜ | ✅ N/A (intent 경로 자체가 없음 — 3분기 없음) |
+| S8 BDF writer 권위 | ✅ C# `Cmb.Io BdfWriter`(일반) / `nastran_bridge.py`(fallback) | ⬜ | ⬜ `nastran_bridge.py` | ✅ `nastran_bridge.py` **단일** (C# `Cmb.Io` 미사용, 평탄 `<stem>_*` 산출, apply-trace.json 없음) |
+| S9 해석기 | ✅ MSC `nastran.exe` | ⬜ | ⬜ | ✅ MSC `nastran.exe` (`NASTRAN_EXE` override) |
+| S9 결과 파서 | ✅ `F06Parser.Console.exe` | ⬜ | ⬜ | ✅ ★`F06Parser` 미사용 — `nastran_bridge.exe lift-result` / 인라인 Python `_parse_f06_fatals` |
 
 > ⚠️ **이 매트릭스가 이 문서의 핵심 산출물**이다. MooringFitting/SidePassage/ModuleUnit 작업 시
 > §2 와 같은 단계별 상세를 **각각 추가**하고 이 표의 ⬜ 를 채워, 단계별로 **어떤 프로그램·경로·엔드포인트가 다른지**를 명확히 한다.
@@ -285,6 +371,10 @@
 4. **PBEAML 단면 타입 `CHANNEL`(무효) → `CHAN`**(2026-06-16 수정): nastran_bridge.py `property_kind_to_bdf` 가 `Channel` 을 `CHANNEL` 로 내보내 HyperMesh import 실패. C# `Cmb.Io BdfWriter.SectionTypeName`(권위 매핑: `Channel→CHAN`)과 일치시킴. **fallback BDF 와 엔진 BDF 의 포맷 수정 위치가 다름**에 유의.
 5. **고정필드 실수 포맷**: 8칸 꽉 채움(`real8`) 보다 최단표기(`fixed_real`)가 안전(HyperMesh 호환). 옛 산출물엔 `124.4000` 류가 남아 있을 수 있음(컬럼상 유효하나 비표준).
 6. **진입 페이지 명**: Model Builder 는 `HiTessModelBuilder.jsx`(=`HiTessModelFlow.jsx` 아님).
+7. **(ModuleUnit) 이름 혼동 — `ModuleUnit_HiTESS.exe` 는 Studio 와 무관**: Python `ModuleUnit_HiTESS.exe`(`ModuleUnitForHiTessBeam/`)는 레거시 `POST /moduleUnit`(`hitessbeam.py` [TEMP]) 전용이고 **ModuleUnitStudio 파이프라인은 호출하지 않는다.** Studio 는 `nastran_bridge.exe`(BDF/모델) + `ModuleAnalysis.Cli.exe`(자세안정성) 를 구동한다. 디버깅 시 엉뚱한 엔진을 보지 말 것.
+8. **(ModuleUnit) 폴더/exe 명 3중 불일치**: 자세안정성 엔진의 소스는 `ModuleUnitAnalysis/`, 배포 폴더는 `InHouseProgram/GroupModuleAnalysis/`, exe 명은 `ModuleAnalysis.Cli.exe`. COG 엔진은 같은 폴더의 `ModuleGroupUnitAnalysis.exe`. 경로 하드코딩/복사 시 혼동 주의.
+9. **(ModuleUnit) ModelBuilder 계약을 가정하지 말 것**: `출력 폴더:` stdout 라인·`apply-edit-intent`·`F06Parser.Console.exe`·`apply-trace.json`·`edit-status` 가 **모두 없다.** output_dir 은 입력 BDF 폴더 자체이고, 산출물은 `<stem>_*` 평탄 파일이며, 결과 파싱은 `nastran_bridge.exe lift-result`/인라인 Python 이다. (S2/S7/S8/S9 §2-MU 참조.)
+10. **(ModuleUnit) Studio intent ↔ 백엔드 계약 분리**: Studio 프론트는 intent(`addRigid/deleteGroup/deleteElement/deleteCategory/deleteOrphanNodes`)를 내부적으로 쌓지만, 백엔드로는 **envelope(`*_edit.json`) 가 아니라 전체 편집 모델(`<stem>_edited.json`) + 자세(`<stem>_posture.json`)** 로 materialize 된다. `deleteRigid`/RBE 병합-흡수는 **미구현**(표준 §8 과 다름 — 도메인 차이).
 
 ---
 
@@ -294,7 +384,7 @@
 - [ ] **S1** 빌드 exe 경로 확정(`InHouseProgram/<camelCase>/`), CLI 플래그 매핑, exit 코드 계약.
 - [ ] **S2** output_dir 확정 방법(stdout 라인) + phase/최종 산출물 식별 규칙.
 - [ ] **S3** viewer id 등록 + `StudioProgram/`(로컬) **및** UNC 양쪽 zip 배포 + 매니페스트 read() 서빙.
-- [ ] **S4** `host.js`(Electron/Web) + phase JSON 파싱(stage model 필드 계약).
+- [ ] **S4** `host.js`(Electron/Web) + phase JSON 파싱(stage model 필드 계약). **뷰어 UX(카메라 조작·노드 렌더·선택·색상)는 `STUDIO_DETAIL.md` 표준 준수** — 신규 Studio도 zoom-to-cursor·더블클릭 피벗·적응형 near/far·반투명 노드 구를 동일 적용.
 - [ ] **S5** intent 종류/스키마 정의 + 검증 규칙.
 - [ ] **S6** `*_edit.json` 파일명 규칙 + `finalizeEditedModel` 신호 + (머신 분리 시) upload-edit.
 - [ ] **S7** apply-edit 경로(엔진 직접 vs nastran_bridge 직접 vs fallback) 결정 + BDF writer 권위 위치 명시.
