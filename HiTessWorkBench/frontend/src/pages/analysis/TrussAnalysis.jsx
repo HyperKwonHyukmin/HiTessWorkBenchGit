@@ -9,36 +9,43 @@ import { extractFilename } from '../../utils/fileHelper';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
 import { Dialog, Transition } from '@headlessui/react';
 import {
-  Upload, Play, Download, Trash2, Database,
+  Play, Download, Trash2, Database,
   RefreshCw, FileSpreadsheet, Terminal, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Maximize2, X, FileText,
-  FileOutput, XCircle, Clock, Eye, Sparkles
+  FileOutput, Eye
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
+import { useDashboard } from '../../contexts/DashboardContext';
 import { useFileParser, parseCsvText } from '../../hooks/useFileParser';
 import SolverCredit from '../../components/ui/SolverCredit';
 import { useToast } from '../../contexts/ToastContext';
 import { buildFormData } from '../../utils/fileHelper';
+import FileDropzone from '../../components/ui/FileDropzone';
+import FeedbackState from '../../components/ui/FeedbackState';
+import StatusBadge from '../../components/ui/StatusBadge';
 
 export default function TrussAnalysis() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
-  const [nodeFile, setNodeFile] = useState(null);
-  const [memberFile, setMemberFile] = useState(null);
-  const [nodeData, setNodeData] = useState([]);
-  const [memberData, setMemberData] = useState([]);
-  const [detailedLogs, setDetailedLogs] = useState([]);
+  const dashboardCtx = useDashboard();
+  const PAGE_KEY = 'Truss Model Builder';
+  const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
+  const [nodeFile, setNodeFile] = useState(savedPageState.nodeFile ?? null);
+  const [memberFile, setMemberFile] = useState(savedPageState.memberFile ?? null);
+  const [nodeData, setNodeData] = useState(savedPageState.nodeData ?? []);
+  const [memberData, setMemberData] = useState(savedPageState.memberData ?? []);
+  const [detailedLogs, setDetailedLogs] = useState(savedPageState.detailedLogs ?? []);
 
-  const [activeTab, setActiveTab] = useState('node');
+  const [activeTab, setActiveTab] = useState(savedPageState.activeTab ?? 'node');
 
   // (추가) 파싱된 JSON 결과 데이터를 담을 State
-  const [resultJsonData, setResultJsonData] = useState(null);
+  const [resultJsonData, setResultJsonData] = useState(savedPageState.resultJsonData ?? null);
 
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
-  const [analysisResultData, setAnalysisResultData] = useState(null);
+  const [analysisResultData, setAnalysisResultData] = useState(savedPageState.analysisResultData ?? null);
   const [isResultModalOpen, setIsResultModalOpen] = useState(false);
   const [is3DViewerOpen, setIs3DViewerOpen] = useState(false);
 
@@ -56,6 +63,8 @@ export default function TrussAnalysis() {
     employeeId, addLog, startJob,
     setLogs, setStatusMessage, setIsRunning, setProgress,
   } = useAnalysisJob({
+    savedState: savedPageState,
+    setSavedState: (patch) => dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, patch),
     pollingInterval: 1500,
     pollingMaxRetries: 120,
     successLogMessage: '',
@@ -103,6 +112,19 @@ export default function TrussAnalysis() {
   const numNodes = nodeData.length > 1 ? nodeData.length - 1 : 0;
   const numMembers = memberData.length > 1 ? memberData.length - 1 : 0;
   const isDataReady = numNodes > 0 && numMembers > 0;
+
+  useEffect(() => {
+    dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
+      nodeFile,
+      memberFile,
+      nodeData,
+      memberData,
+      detailedLogs,
+      activeTab,
+      resultJsonData,
+      analysisResultData,
+    });
+  }, [nodeFile, memberFile, nodeData, memberData, detailedLogs, activeTab, resultJsonData, analysisResultData]);
 
   useEffect(() => { 
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
@@ -180,16 +202,6 @@ export default function TrussAnalysis() {
       showToast(`자동 매핑 완료 ✓  Node → ${nodeF.name}  /  Member → ${memberF.name}`, 'success');
   };
 
-  const handleDrop = (e, type) => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.csv'));
-    if (files.length >= 2) {
-      autoAssignFiles(files);
-    } else {
-      handleFile(files[0], type);
-    }
-  };
-  
   const clearLogs = () => {
     setLogs([]);
     setDetailedLogs([]);
@@ -339,12 +351,12 @@ export default function TrussAnalysis() {
               </div>
             </div>
             <div className="p-5 space-y-4">
-              <UploadDropzone type="node" title="Node Data" file={nodeFile} rowCount={numNodes} onDrop={(e) => handleDrop(e, 'node')} onChange={(e) => {
-                const files = Array.from(e.target.files).filter(f => f.name.endsWith('.csv'));
+              <UploadDropzone title="Node Data" file={nodeFile} rowCount={numNodes} onFiles={(incomingFiles) => {
+                const files = incomingFiles.filter(f => f.name.endsWith('.csv'));
                 files.length >= 2 ? autoAssignFiles(files) : handleFile(files[0], 'node');
               }} />
-              <UploadDropzone type="member" title="Member Data" file={memberFile} rowCount={numMembers} onDrop={(e) => handleDrop(e, 'member')} onChange={(e) => {
-                const files = Array.from(e.target.files).filter(f => f.name.endsWith('.csv'));
+              <UploadDropzone title="Member Data" file={memberFile} rowCount={numMembers} onFiles={(incomingFiles) => {
+                const files = incomingFiles.filter(f => f.name.endsWith('.csv'));
                 files.length >= 2 ? autoAssignFiles(files) : handleFile(files[0], 'member');
               }} />
               <p className="text-[10px] text-slate-400 text-center">
@@ -495,7 +507,7 @@ export default function TrussAnalysis() {
 
 // (신규) JSON 기반 동적 테이블 렌더러
 function JsonDataTable({ data, emptyMsg }) {
-  if (!data) return <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400"><Database size={48} className="mb-4 opacity-20" /><p className="text-sm">{emptyMsg}</p></div>;
+  if (!data) return <FeedbackState className="absolute inset-0" icon={Database} title={emptyMsg} />;
   
   let tableData = [];
   // 1. JSON 최상위가 배열인 경우 (일반적인 행/열 구조)
@@ -540,28 +552,8 @@ function JsonDataTable({ data, emptyMsg }) {
 }
 
 
-const StatusBadge = ({ status }) => {
-  const styles = {
-    Success: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    Solving: "bg-blue-100 text-blue-700 border-blue-200 animate-pulse",
-    Failed: "bg-red-100 text-red-700 border-red-200",
-    Pending: "bg-slate-100 text-slate-600 border-slate-200",
-  };
-  const icons = {
-    Success: <CheckCircle2 size={12} className="mr-1" />,
-    Solving: <Clock size={12} className="mr-1" />,
-    Failed: <XCircle size={12} className="mr-1" />,
-    Pending: <AlertCircle size={12} className="mr-1" />,
-  };
-  return (
-    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border flex items-center w-fit ${styles[status] || styles.Pending}`}>
-      {icons[status] || icons.Pending}
-      {status}
-    </span>
-  );
-};
-
 const ProjectDetailModal = ({ project, onClose }) => {
+  const { showToast } = useToast();
   if (!project) return null;
 
   const handleDownload = async (filePath) => {
@@ -699,17 +691,16 @@ const ProjectDetailModal = ({ project, onClose }) => {
   );
 };
 
-function UploadDropzone({ type, title, file, rowCount, onDrop, onChange }) {
-  const inputRef = useRef(null);
-  const isUploaded = !!file;
+function UploadDropzone({ title, file, rowCount, onFiles }) {
   return (
-    <div onDrop={onDrop} onDragOver={e => e.preventDefault()} onClick={() => inputRef.current?.click()} className={`relative p-4 rounded-xl border-2 border-dashed cursor-pointer transition-all ${isUploaded ? 'border-brand-accent/50 bg-green-50/30' : 'border-slate-300 hover:border-blue-400 hover:bg-blue-50/50'}`}>
-      <input type="file" accept=".csv" multiple className="hidden" ref={inputRef} onChange={onChange} />
-      <div className="flex items-center gap-4">
-        <div className={`p-3 rounded-lg ${isUploaded ? 'bg-brand-accent/20 text-brand-accent' : 'bg-slate-100 text-slate-400'}`}>{isUploaded ? <FileSpreadsheet size={24} /> : <Upload size={24} />}</div>
-        <div className="flex-1"><h4 className="text-sm font-bold text-slate-700">{title}</h4><p className="text-xs text-slate-500 truncate">{isUploaded ? file.name : 'Click to upload'}</p></div>
-      </div>
-    </div>
+    <FileDropzone
+      title={title}
+      file={file}
+      accept=".csv"
+      multiple
+      helperText={rowCount > 0 ? `${rowCount.toLocaleString()} rows loaded` : '.csv'}
+      onFiles={onFiles}
+    />
   );
 }
 
@@ -734,7 +725,7 @@ function TabButton({ active, onClick, icon: Icon, label, count }) {
 }
 
 function DataTable({ data, emptyMsg }) {
-  if (!data || data.length === 0) return <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400"><Database size={48} className="mb-4 opacity-20" /><p className="text-sm">{emptyMsg}</p></div>;
+  if (!data || data.length === 0) return <FeedbackState className="absolute inset-0" icon={Database} title={emptyMsg} />;
   return (
     <table className="w-full text-left text-sm font-mono whitespace-nowrap">
       <thead className="sticky top-0 bg-white shadow-sm z-10"><tr>{data[0].map((h, i) => <th key={i} className="px-6 py-3 text-slate-500 font-bold uppercase tracking-wider text-xs border-b">{h}</th>)}</tr></thead>

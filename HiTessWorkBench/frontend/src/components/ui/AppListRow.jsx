@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Star, ArrowRight, User, Lock } from 'lucide-react';
-import Badge from './Badge';
+import StatusBadge from './StatusBadge';
 
 const ACCENT_HOVER = {
   blue:    'hover:border-blue-300 hover:bg-blue-50/30',
@@ -36,9 +36,7 @@ const ACCENT_ARROW = {
 
 function DevStatusBadge({ devStatus }) {
   if (!devStatus || devStatus === 'Active') return null;
-  if (devStatus === 'Developing') return <Badge variant="warning" size="sm" dot>개발중</Badge>;
-  if (devStatus === 'Planned')    return <Badge variant="info"    size="sm" dot>출시 예정</Badge>;
-  return null;
+  return <StatusBadge status={devStatus} size="sm" dot />;
 }
 
 export default function AppListRow({

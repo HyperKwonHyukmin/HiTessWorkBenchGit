@@ -19,6 +19,7 @@ export default function HiLabInsight() {
 
   const messagesEndRef = useRef(null);
   const refreshTimerRef = useRef(null);
+  const abortRef = useRef(null);
 
   const [isDocsModalOpen, setIsDocsModalOpen] = useState(false);
   const [ingestedDocs, setIngestedDocs] = useState({});
@@ -28,6 +29,7 @@ export default function HiLabInsight() {
   useEffect(() => {
     return () => {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      abortRef.current?.abort();
     };
   }, []);
 
@@ -42,7 +44,12 @@ export default function HiLabInsight() {
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;   // 진행 중이면 중복 전송 차단(Enter submit 포함)
+
+    // 이전 진행 중 요청이 있으면 취소 — 느린 LLM 응답이 늦게 도착해 stale 메시지로 누적되는 것 방지
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     const userMessage = { role: 'user', text: input };
 
@@ -58,12 +65,14 @@ export default function HiLabInsight() {
     setIsLoading(true);
 
     try {
-      const res = await chatWithAI(userMessage.text, chatHistory, targetDoc);
+      const res = await chatWithAI(userMessage.text, chatHistory, targetDoc, controller.signal);
       setMessages(prev => [...prev, { role: 'ai', text: res.data.answer, sources: res.data.sources }]);
     } catch (error) {
+      if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return; // 취소는 무시
       setMessages(prev => [...prev, { role: 'ai', text: '죄송합니다. 서버 응답 중 오류가 발생했습니다.' }]);
     } finally {
-      setIsLoading(false);
+      // 이 요청이 여전히 최신 요청일 때만 로딩 해제(취소된 옛 요청이 새 로딩을 끄지 않도록)
+      if (abortRef.current === controller) setIsLoading(false);
     }
   };
 

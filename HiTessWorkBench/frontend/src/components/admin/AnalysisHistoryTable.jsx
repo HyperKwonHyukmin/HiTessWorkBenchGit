@@ -1,7 +1,19 @@
 import React from 'react';
-import { Search, CheckCircle2, XCircle, FileX } from 'lucide-react';
+import { Search, CheckCircle2, ChevronLeft, ChevronRight, XCircle, FileX } from 'lucide-react';
 
-export default function AnalysisHistoryTable({ filteredAnalyses, searchTerm, onSearchChange }) {
+export default function AnalysisHistoryTable({
+  filteredAnalyses,
+  searchTerm,
+  onSearchChange,
+  currentPage = 1,
+  totalPages = 1,
+  totalCount = filteredAnalyses.length,
+  pageSize = filteredAnalyses.length || 1,
+  onPageChange,
+}) {
+  const first = totalCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const last = Math.min(currentPage * pageSize, totalCount);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -59,6 +71,31 @@ export default function AnalysisHistoryTable({ filteredAnalyses, searchTerm, onS
           </tbody>
         </table>
       </div>
+      {onPageChange && totalPages > 1 && (
+        <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50">
+          <p className="text-xs text-slate-500">
+            전체 <span className="font-bold text-slate-700">{totalCount}</span>건 중{' '}
+            <span className="font-bold text-slate-700">{first}-{last}</span>건 표시
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:text-slate-300 disabled:cursor-not-allowed hover:bg-white"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="px-3 text-xs font-bold text-slate-600">{currentPage} / {totalPages}</span>
+            <button
+              onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:text-slate-300 disabled:cursor-not-allowed hover:bg-white"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -14,7 +14,7 @@ import {
   Megaphone, Pin, Sparkles, Play
 } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
-import { useDashboard, ANALYSIS_DATA, getAppMenuName, findAppByProgramName } from '../../contexts/DashboardContext';
+import { ANALYSIS_DATA, findAppByProgramName, getAppMenuName, useAnalysisPageState, useFavorites } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -34,6 +34,8 @@ const MODE_KO = {
   Academic: "Academic Apps"
 };
 
+const DASHBOARD_CARD_BASE = "relative bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-colors group";
+
 const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick }) => {
   const isClickable = typeof onClick === 'function';
   return (
@@ -42,17 +44,17 @@ const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick
       role={isClickable ? 'button' : undefined}
       tabIndex={isClickable ? 0 : undefined}
       onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
-      className={`relative bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-start justify-between transition-all duration-200 group ${
-        isClickable ? 'hover:shadow-lg hover:border-blue-300 cursor-pointer' : ''
+      className={`${DASHBOARD_CARD_BASE} min-h-[150px] p-5 flex items-start justify-between ${
+        isClickable ? 'hover:border-blue-300 cursor-pointer' : ''
       }`}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      whileHover={isClickable ? { y: -2, transition: { type: 'spring', stiffness: 350, damping: 28 } } : undefined}
+      whileHover={isClickable ? { y: -1, transition: { type: 'spring', stiffness: 350, damping: 28 } } : undefined}
     >
       {isClickable && (
-        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400">
-          <ArrowUpRight size={18} />
+        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500">
+          <ArrowUpRight size={16} />
         </div>
       )}
       <div>
@@ -64,8 +66,8 @@ const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick
         </div>
         <p className="text-xs font-medium text-slate-500">{subtext}</p>
       </div>
-      <div className={`p-3 rounded-xl ${color} shadow-sm ${isClickable ? 'group-hover:scale-110' : ''} transition-transform`}>
-        <Icon size={22} className="text-white" />
+      <div className={`p-2.5 rounded-lg ${color} shadow-sm transition-transform`}>
+        <Icon size={20} className="text-white" />
       </div>
     </motion.div>
   );
@@ -74,28 +76,100 @@ const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick
 const FavoriteCard = ({ title, icon: Icon, color, desc, onClick }) => (
   <motion.button
     onClick={onClick}
-    className="flex flex-col items-center justify-center p-6 bg-white rounded-xl border border-slate-200 shadow-sm group w-full text-center h-full relative overflow-hidden cursor-pointer"
+    className="flex min-h-[148px] w-full flex-col items-start p-5 bg-white rounded-xl border border-slate-200 shadow-sm group text-left h-full relative overflow-hidden cursor-pointer transition-colors hover:border-blue-300"
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.28, ease: 'easeOut' }}
     whileHover={{
-      y: -2,
-      boxShadow: '0 8px 20px -8px rgba(0, 37, 84, 0.15)',
-      borderColor: '#3b82f6',
+      y: -1,
+      boxShadow: '0 6px 16px -12px rgba(0, 37, 84, 0.18)',
       transition: { type: 'spring', stiffness: 380, damping: 28 },
     }}
     whileTap={{ scale: 0.97 }}
   >
-    <div className="absolute top-3 right-3 text-amber-400">
-      <Star size={16} fill="currentColor" />
+    <div className={`absolute inset-x-0 top-0 h-1 ${color}`} />
+    <div className="absolute top-3 right-3 text-amber-400 opacity-70 group-hover:opacity-100 transition-opacity">
+      <Star size={15} fill="currentColor" />
     </div>
-    <div className={`p-4 rounded-full ${color} text-white mb-4 group-hover:scale-110 transition-transform shadow-lg`}>
-      <Icon size={28} />
+    <div className={`mb-4 inline-flex h-10 w-10 items-center justify-center rounded-lg ${color} text-white shadow-sm`}>
+      <Icon size={20} />
     </div>
-    <h3 className="font-bold text-slate-700 text-sm">{title}</h3>
-    <p className="text-xs text-slate-500 mt-1 truncate max-w-full px-2">{desc}</p>
+    <h3 className="font-bold text-slate-800 text-sm leading-snug pr-6">{title}</h3>
+    <p
+      className="text-xs text-slate-500 mt-1.5 max-w-full leading-relaxed overflow-hidden"
+      style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
+    >
+      {desc}
+    </p>
   </motion.button>
 );
+
+const QueueStatusCard = React.memo(function QueueStatusCard() {
+  const [queueStatus, setQueueStatus] = useState({ running: 0, pending: 0, limit: 2 });
+  const [isBackendConnected, setIsBackendConnected] = useState(false);
+
+  useEffect(() => {
+    const fetchQueue = async () => {
+      if (document.hidden) return;
+      try {
+        const res = await getQueueStatus();
+        setQueueStatus(res.data);
+        setIsBackendConnected(true);
+      } catch (error) {
+        console.error("Queue Status fetch error", error);
+        setIsBackendConnected(false);
+      }
+    };
+    fetchQueue();
+    const interval = setInterval(fetchQueue, 3000);
+    const onVisible = () => { if (!document.hidden) fetchQueue(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
+
+  const usageRatio = queueStatus.limit > 0 ? (queueStatus.running / queueStatus.limit) * 100 : 0;
+
+  return (
+    <div className={`${DASHBOARD_CARD_BASE} min-h-[150px] p-5 hover:border-blue-300`}>
+      <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+        <Server size={100} />
+      </div>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-slate-600 text-sm font-bold tracking-tight flex items-center gap-2">
+          <Activity size={16} className="text-blue-500" /> 해석 서버 부하 현황
+        </h3>
+        {isBackendConnected ? (
+          <span className="inline-flex items-center text-[10px] font-bold text-emerald-700" title="백엔드 서버와 정상적으로 연결되어 있습니다.">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1 animate-pulse"></span>
+            온라인
+          </span>
+        ) : (
+          <span className="inline-flex items-center text-[10px] font-bold text-red-700" title="백엔드 서버 연결이 끊겼습니다.">
+            <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-1"></span>
+            오프라인
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] text-slate-500 font-bold mb-2">현재 서버 구동 현황</p>
+      <div className="text-2xl font-extrabold text-slate-800 tracking-tight mb-2">
+        {queueStatus.running} <span className="text-sm text-slate-500 font-medium">/ {queueStatus.limit} 구동 중</span>
+      </div>
+      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-3">
+        <div
+          className={`h-full transition-all duration-500 ${queueStatus.running >= queueStatus.limit ? 'bg-red-500' : 'bg-blue-500'}`}
+          style={{ width: `${usageRatio}%` }}
+        ></div>
+      </div>
+      <div className="flex items-center gap-2 text-xs font-bold text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
+        <Activity size={14} className={queueStatus.pending > 0 ? "text-orange-500" : "text-slate-500"} />
+        대기 중인 큐: <span className={queueStatus.pending > 0 ? "text-orange-600" : "text-slate-500"}>{queueStatus.pending} 건</span>
+      </div>
+    </div>
+  );
+});
 
 // 공유 Badge 컴포넌트에 매핑(자체 구현 제거 — bg-emerald-100 등 드리프트 해소)
 const STATUS_BADGE = {
@@ -220,38 +294,38 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenModal(); } }}
-      className="bg-gradient-to-r from-brand-blue to-slate-900 rounded-xl shadow-lg border border-white/10 overflow-hidden cursor-pointer hover:shadow-xl transition-all group flex flex-col lg:flex-row lg:min-h-[104px] relative focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+      className="bg-gradient-to-r from-brand-blue to-slate-900 rounded-xl shadow-sm border border-white/10 overflow-hidden cursor-pointer hover:shadow-md transition-all group flex flex-col lg:flex-row lg:min-h-[88px] relative focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
     >
-      <Map size={120} className="absolute -left-10 -bottom-10 text-white/5 rotate-12 pointer-events-none" />
-      <div className="px-5 py-4 lg:w-[330px] border-b lg:border-b-0 lg:border-r border-white/10 relative z-10 flex flex-col justify-center">
-        <h3 className="text-white font-bold text-sm flex items-center gap-2 mb-1.5">
-          <Map size={16} className="text-blue-300"/> 시스템 해석 앱 로드맵
+      <Map size={96} className="absolute -left-8 -bottom-9 text-white/5 rotate-12 pointer-events-none" />
+      <div className="px-4 py-3 lg:w-[310px] border-b lg:border-b-0 lg:border-r border-white/10 relative z-10 flex flex-col justify-center">
+        <h3 className="text-white font-bold text-sm flex items-center gap-2 mb-2">
+          <Map size={15} className="text-blue-300"/> 시스템 해석 앱 로드맵
         </h3>
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <span className="flex min-h-14 flex-col justify-center rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-2 py-1.5">
-            <span className="block text-lg font-black text-white leading-none">{activeCount}</span>
-            <span className="mt-1 block text-[10px] font-bold text-emerald-200">서비스 중</span>
+        <div className="grid grid-cols-3 gap-1.5 text-center">
+          <span className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-2 py-1.5">
+            <span className="text-sm font-black text-white leading-none">{activeCount}</span>
+            <span className="text-[10px] font-bold text-emerald-200">서비스</span>
           </span>
-          <span className="flex min-h-14 flex-col justify-center rounded-lg border border-amber-300/25 bg-amber-300/10 px-2 py-1.5">
-            <span className="block text-lg font-black text-white leading-none">{devCount}</span>
-            <span className="mt-1 block text-[10px] font-bold text-amber-100">개발 중</span>
+          <span className="flex items-center justify-center gap-1.5 rounded-lg border border-amber-300/20 bg-amber-300/10 px-2 py-1.5">
+            <span className="text-sm font-black text-white leading-none">{devCount}</span>
+            <span className="text-[10px] font-bold text-amber-100">개발</span>
           </span>
-          <span className="flex min-h-14 flex-col justify-center rounded-lg border border-white/15 bg-white/8 px-2 py-1.5">
-            <span className="block text-lg font-black text-white leading-none">{plannedCount}</span>
-            <span className="mt-1 block text-[10px] font-bold text-slate-200">예정</span>
+          <span className="flex items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.08] px-2 py-1.5">
+            <span className="text-sm font-black text-white leading-none">{plannedCount}</span>
+            <span className="text-[10px] font-bold text-slate-200">예정</span>
           </span>
         </div>
       </div>
-      <div className="px-4 py-4 lg:flex-1 relative overflow-hidden flex flex-col justify-center gap-3">
+      <div className="px-3.5 py-3 lg:flex-1 relative overflow-hidden flex flex-col justify-center gap-2">
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 items-stretch gap-2 pr-0 lg:pr-28">
           {modeSummary.map(({ mode, info, apps }) => {
             const modeActive = apps.filter(a => (a.devStatus || 'Active') === 'Active').length;
             const modeDev = apps.filter(a => a.devStatus === 'Developing').length;
             return (
-            <div key={mode} className="rounded-lg border border-white/15 bg-white/[0.09] px-3.5 py-3 min-h-[72px] min-w-0 h-full flex flex-col justify-center transition-colors group-hover:border-white/25 group-hover:bg-white/[0.13]">
+            <div key={mode} className="rounded-lg border border-white/15 bg-white/[0.075] px-3 py-2 min-h-[54px] min-w-0 h-full flex flex-col justify-center transition-colors group-hover:border-white/20 group-hover:bg-white/[0.11]">
               <p className="text-[11px] font-bold text-blue-50 truncate">{(MODE_KO[mode] || info.label).replace(/ Apps$/, '')}</p>
-              <div className="mt-1.5 flex items-end justify-between gap-2">
-                <p className="text-white text-lg font-black leading-none">{apps.length}</p>
+              <div className="mt-1 flex items-end justify-between gap-2">
+                <p className="text-white text-base font-black leading-none">{apps.length}</p>
                 <p className="text-[10px] font-semibold text-slate-200 whitespace-nowrap">
                   운영 <span className="font-extrabold text-emerald-300">{modeActive}</span>
                   <span className="mx-0.5 text-slate-500">·</span>
@@ -262,8 +336,8 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
             );
           })}
         </div>
-        <div className="hidden lg:flex absolute right-3 top-1/2 -translate-y-1/2 items-center gap-1 text-xs font-bold text-blue-100 bg-white/10 border border-white/20 rounded-lg px-2.5 py-1.5 group-hover:bg-white/20 group-hover:text-white transition-colors">
-          지도 열기 <ChevronRight size={15} className="group-hover:translate-x-0.5 transition-transform"/>
+        <div className="hidden lg:flex absolute right-3 top-1/2 -translate-y-1/2 items-center gap-1 text-[11px] font-bold text-blue-100 bg-white/10 border border-white/15 rounded-lg px-2.5 py-1.5 group-hover:bg-white/[0.16] group-hover:text-white transition-colors">
+          지도 열기 <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform"/>
         </div>
       </div>
     </div>
@@ -483,19 +557,19 @@ const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpenCurrent(); }
       }}
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: 'easeOut' }}
-      whileHover={{ y: -1, boxShadow: '0 8px 20px -12px rgba(15,23,42,0.25)' }}
-      className="relative bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors cursor-pointer overflow-hidden group mb-6"
+      whileHover={{ y: -1 }}
+      className="relative bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors cursor-pointer overflow-hidden group mb-5"
     >
       {/* 좌측 컬러 스트라이프·글로우 제거 — 아이콘·타입 칩으로 구분 */}
-      <div className="relative flex items-center gap-3 px-4 py-3">
+      <div className="relative flex items-center gap-2.5 px-3.5 py-2">
         {/* 좌측 라벨 + NEW 배지 */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <div className="relative">
-            <div className="p-1.5 rounded-lg bg-slate-50 border border-slate-100 group-hover:bg-blue-50 group-hover:border-blue-100 transition-colors">
-              <Megaphone size={14} className="text-slate-600 group-hover:text-blue-600 transition-colors" />
+            <div className="p-1.5 rounded-md bg-slate-50 border border-slate-100 group-hover:bg-blue-50 group-hover:border-blue-100 transition-colors">
+              <Megaphone size={13} className="text-slate-600 group-hover:text-blue-600 transition-colors" />
             </div>
             {unreadCount > 0 && (
               <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
@@ -504,15 +578,12 @@ const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
               </span>
             )}
           </div>
-          <div className="flex flex-col leading-none">
-            <span className="text-[11px] font-bold text-slate-700 tracking-tight">공지 &amp; 업데이트</span>
-            <span className="text-[9px] text-slate-500 font-medium mt-0.5">최근 알림</span>
-          </div>
+          <span className="text-[11px] font-bold text-slate-700 tracking-tight whitespace-nowrap">공지 &amp; 업데이트</span>
           {unreadCount > 0 && (
             <motion.span
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              className="inline-flex items-center gap-1 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-gradient-to-r from-red-500 to-rose-500 text-white shadow-sm"
+              className="inline-flex items-center gap-1 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-100"
             >
               <Sparkles size={9} />
               NEW {unreadCount}
@@ -521,7 +592,7 @@ const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
         </div>
 
         {/* 구분선 */}
-        <div className="h-6 w-px bg-slate-200 shrink-0" />
+        <div className="h-5 w-px bg-slate-200 shrink-0" />
 
         {/* 본문 (회전) */}
         <div className="flex-1 min-w-0 flex items-center gap-2 overflow-hidden">
@@ -537,7 +608,7 @@ const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
             transition={{ duration: 0.35, ease: 'easeOut' }}
             className="flex-1 min-w-0 flex items-center gap-2"
           >
-            <span className="text-sm font-semibold text-slate-700 truncate group-hover:text-blue-600 transition-colors">
+            <span className="text-xs font-semibold text-slate-700 truncate group-hover:text-blue-600 transition-colors">
               {current.title || '(제목 없음)'}
             </span>
             <span className="text-[10px] text-slate-500 shrink-0 hidden sm:inline">
@@ -547,12 +618,12 @@ const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
         </div>
 
         {/* 우측 CTA */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={handleOpenAll}
             title="전체 공지 목록으로 이동"
-            className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-blue-600 px-2 py-1 rounded-md hover:bg-blue-50 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-blue-600 px-2 py-1 rounded-md hover:bg-blue-50 transition-colors cursor-pointer"
           >
             <span className="hidden md:inline">전체보기</span>
             <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
@@ -933,15 +1004,14 @@ export default function Dashboard() {
   const { showToast } = useToast();
   const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
-  const { favorites, setAssessmentPageState } = useDashboard();
+  const { favorites } = useFavorites();
+  const { setAssessmentPageState } = useAnalysisPageState();
 
   const [projects, setProjects] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [monthlyUsageCount, setMonthlyUsageCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const [queueStatus, setQueueStatus] = useState({ running: 0, pending: 0, limit: 2 });
-  const [isBackendConnected, setIsBackendConnected] = useState(false);
   const [isRoadmapModalOpen, setIsRoadmapModalOpen] = useState(false);
   const [gateApp, setGateApp] = useState(null); // 개발 중/예정 앱 진입 차단 모달
   const [isIntroModalOpen, setIsIntroModalOpen] = useState(false);
@@ -1014,43 +1084,19 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const fetchQueue = async () => {
-      if (document.hidden) return; // 백그라운드 탭에서는 폴링 생략(다중 탭 누적 부하 방지)
-      try {
-        const res = await getQueueStatus();
-        setQueueStatus(res.data);
-        setIsBackendConnected(true);
-      } catch (error) {
-        console.error("Queue Status fetch error", error);
-        setIsBackendConnected(false);
-      }
-    };
-    fetchQueue();
-    const interval = setInterval(fetchQueue, 3000);
-    // 탭이 다시 보이면 즉시 한 번 갱신
-    const onVisible = () => { if (!document.hidden) fetchQueue(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, []);
-
-  useEffect(() => {
     const fetchHistory = async () => {
       try {
         if (!employeeId) return;
 
         const now = new Date();
         const [historyRes, monthlyRes] = await Promise.all([
-          getAnalysisHistory(employeeId),
+          getAnalysisHistory(employeeId, 0, 5),
           getMonthlyAnalysisCount(employeeId, now.getFullYear(), now.getMonth() + 1),
         ]);
 
         const rawData = historyRes.data?.items ?? historyRes.data;
-        const sortedData = [...rawData].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        setProjects(sortedData);
-        setTotalCount(historyRes.data?.total ?? sortedData.length);
+        setProjects(rawData);
+        setTotalCount(historyRes.data?.total ?? rawData.length);
         setMonthlyUsageCount(monthlyRes.data?.count ?? 0);
       } catch (error) {
         console.error("이력 불러오기 실패:", error);
@@ -1059,7 +1105,7 @@ export default function Dashboard() {
       }
     };
     fetchHistory();
-  }, []);
+  }, [employeeId]);
 
   const totalExecutions = totalCount;
 
@@ -1290,42 +1336,8 @@ export default function Dashboard() {
             <Activity size={15} className="text-blue-400" /> 서비스 현황
           </h2>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 relative overflow-hidden group hover:border-blue-300 transition-colors">
-          <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-            <Server size={100} />
-          </div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-slate-600 text-sm font-bold tracking-tight flex items-center gap-2">
-              <Activity size={16} className="text-blue-500" /> 해석 서버 부하 현황
-            </h3>
-            {isBackendConnected ? (
-              <span className="inline-flex items-center text-[10px] font-bold text-emerald-700" title="백엔드 서버와 정상적으로 연결되어 있습니다.">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1 animate-pulse"></span>
-                온라인
-              </span>
-            ) : (
-              <span className="inline-flex items-center text-[10px] font-bold text-red-700" title="백엔드 서버 연결이 끊겼습니다.">
-                <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-1"></span>
-                오프라인
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-slate-500 font-bold mb-2">현재 서버 구동 현황</p>
-          <div className="text-2xl font-extrabold text-slate-800 tracking-tight mb-2">
-            {queueStatus.running} <span className="text-sm text-slate-500 font-medium">/ {queueStatus.limit} 구동 중</span>
-          </div>
-          <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-3">
-            <div
-              className={`h-full transition-all duration-500 ${queueStatus.running >= queueStatus.limit ? 'bg-red-500' : 'bg-blue-500'}`}
-              style={{ width: `${(queueStatus.running / queueStatus.limit) * 100}%` }}
-            ></div>
-          </div>
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
-            <Activity size={14} className={queueStatus.pending > 0 ? "text-orange-500" : "text-slate-500"} />
-            대기 중인 큐: <span className={queueStatus.pending > 0 ? "text-orange-600" : "text-slate-500"}>{queueStatus.pending} 건</span>
-          </div>
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <QueueStatusCard />
 
         <EngineeringStatCard
           title="월간 해석 수행 건수"
@@ -1342,7 +1354,7 @@ export default function Dashboard() {
           color="bg-brand-blue"
         />
         <div
-          className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 relative overflow-hidden group hover:border-amber-300 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
+          className={`${DASHBOARD_CARD_BASE} min-h-[150px] p-5 hover:border-amber-300 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50`}
           role="button"
           tabIndex={0}
           aria-label="인기 해석 프로그램 바로가기 및 전체 순위 열기"
@@ -1454,7 +1466,7 @@ export default function Dashboard() {
           <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
             <Clock size={15} className="text-slate-500" /> 프로젝트 이력
           </h2>
-          <button onClick={() => setCurrentMenu('My Project')} className="inline-flex items-center gap-1 text-xs font-bold text-blue-500 hover:text-blue-600 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer">
+          <button onClick={() => setCurrentMenu('My Projects')} className="inline-flex items-center gap-1 text-xs font-bold text-blue-500 hover:text-blue-600 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer">
             전체 이력 보기 →
           </button>
         </div>

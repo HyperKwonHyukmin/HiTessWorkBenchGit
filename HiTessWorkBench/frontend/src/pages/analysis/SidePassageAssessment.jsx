@@ -4,7 +4,7 @@ import {
   FileCheck2, MapPin, Box, BarChart3,
   X, CheckCircle2, Loader2,
   RotateCcw, AlertOctagon, FileText, Download, Wand2,
-  PackageX, AlertCircle, ExternalLink, HardDrive, ShieldCheck,
+  PackageX, AlertCircle, ExternalLink, ShieldCheck,
 } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
@@ -206,7 +206,6 @@ function ModuleStudioLauncher({
   error,
   installedVersion,
   latestVersion,
-  installDir,
 }) {
   const checking = status === 'checking';
   const installing = status === 'installing';
@@ -290,17 +289,10 @@ function ModuleStudioLauncher({
               : <>BDF 검증 결과를 확인한 뒤 Studio를 열어 Side Passage 권상 작업을 진행하세요.</>}
           </p>
           <p className="text-[11px] text-slate-600 leading-relaxed mt-2">
-            설치 파일은 사내 배포 위치에서 자동으로 내려받고, 사용자 PC의 WorkBench 앱 데이터 폴더에 보관됩니다.
-            최초 설치 이후에는 같은 위치의 설치본을 재사용합니다.
+            설치 파일은 필요 시 자동으로 내려받고, 최초 설치 이후에는 설치본을 재사용합니다.
           </p>
           <div className="flex flex-col gap-1 mt-3">
             {versionLine}
-            {installDir && (
-              <p className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono break-all">
-                <HardDrive size={11} className="shrink-0 text-slate-400" />
-                {installDir}
-              </p>
-            )}
             {error && <p className="text-[10px] text-red-600 leading-snug">⚠ {error}</p>}
           </div>
           {featureBullets}
@@ -418,7 +410,8 @@ export default function SidePassageAssessment() {
   });
 
   // ── Step 0: 해석 설정 ───────────────────────────────────
-  const [useNastran, setUseNastran] = useState(true);
+  // 입력검증 시 Nastran 해석 토글 — 기본값 OFF(사용자 요청). 필요 시 사용자가 켠다.
+  const [useNastran, setUseNastran] = useState(false);
 
   // ── Step 2: 해석 모델 확인 ───────────────────────────────
   const [savingFinalBdf, setSavingFinalBdf] = useState(false);
@@ -987,7 +980,6 @@ export default function SidePassageAssessment() {
                   error={studioError}
                   installedVersion={studioInstalledVersion}
                   latestVersion={studioLatestVersion}
-                  installDir={studioInstallDir}
                 />
               </div>
             </div>

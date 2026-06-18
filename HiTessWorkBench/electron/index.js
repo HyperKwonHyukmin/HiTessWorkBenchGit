@@ -1767,6 +1767,8 @@ ipcMain.handle("viewer:exportMooringBdf", async (_e, payload) => {
 ipcMain.handle("viewer:exportSidePassageBdf", async (_e, payload) => {
   try {
     const checkPlates = Array.isArray(payload?.checkPlates) ? payload.checkPlates : [];
+    // Studio 편집 의도(RBE2 추가/삭제 등) — 백엔드가 apply_edit_json 으로 BDF 에 반영.
+    const editIntents = payload?.editIntents ?? null;
     if (!viewerOutputDir) {
       return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 BDF 검증을 완료하고 Studio 를 다시 여세요." };
     }
@@ -1776,13 +1778,15 @@ ipcMain.handle("viewer:exportSidePassageBdf", async (_e, payload) => {
       return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
     }
 
-    // 1) 원본 BDF + check plate 스펙 → 양식 보존 최종 BDF 생성
+    // 1) 원본 BDF + 편집의도(RBE 등) + check plate 스펙 → 양식 보존 최종 BDF 를 서버 폴더에 생성.
+    //    Studio 는 여기서 저장만 한다(자체 저장 대화상자 없음). 실제 다운로드는 WorkBench 3단계
+    //    '해석 모델 확인'에서 수행한다(ModelBuilder 와 동일한 흐름).
     const { res: reqRes } = await fetchWithSessionRefresh(
       `${serverUrl}/api/analysis/sidepassage/checkplate-export`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderPath: viewerOutputDir, checkPlates, bdfName: viewerSidePassageBdfName }),
+        body: JSON.stringify({ folderPath: viewerOutputDir, checkPlates, bdfName: viewerSidePassageBdfName, editIntents }),
       },
       runtimeConfig,
     );
@@ -1797,41 +1801,22 @@ ipcMain.handle("viewer:exportSidePassageBdf", async (_e, payload) => {
     const bdfPath = body?.bdfPath;
     if (!bdfPath) return { ok: false, error: "백엔드 응답에 bdfPath 가 없습니다." };
 
-    // 2) 생성된 BDF 다운로드
-    const dlUrl = `${serverUrl}/api/download?filepath=${encodeURIComponent(bdfPath)}`;
-    const { res: dlRes } = await fetchWithSessionRefresh(dlUrl, { method: "GET" }, runtimeConfig);
-    if (!dlRes.ok) {
-      const detail = await readBackendError(dlRes);
-      return { ok: false, error: `BDF 다운로드 실패: ${dlRes.status}${detail ? ` - ${detail}` : ""}` };
-    }
-    const bdfText = await dlRes.text();
-
-    // 3) 사용자 PC 저장 (저장 대화상자)
-    const target = viewerWindow && !viewerWindow.isDestroyed() ? viewerWindow : mainWindow;
-    const saveRes = await dialog.showSaveDialog(target, {
-      title: "Check Plate 반영 최종 BDF 저장",
-      defaultPath: path.basename(bdfPath) || "side_passage_checkplate.bdf",
-      filters: [{ name: "Nastran BDF", extensions: ["bdf"] }],
-    });
-    if (saveRes.canceled || !saveRes.filePath) {
-      return { ok: false, canceled: true, error: "저장이 취소되었습니다." };
-    }
-    fs.writeFileSync(saveRes.filePath, bdfText, "utf-8");
-
-    // 4) WorkBench 본체에 저장 알림(3단계 '해석 모델 확인' 갱신) + Studio 닫기
+    // 2) WorkBench 본체에 저장 알림 → 3단계 '해석 모델 확인'에서 서버 BDF 를 다운로드하게 한다.
+    //    filePath 는 서버측 경로(out_path) — 페이지의 다운로드 핸들러가 /api/download 로 회수한다.
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("viewer:model-saved", {
         viewerId: viewerCurrentId,
-        filePath: saveRes.filePath,
-        fileName: path.basename(saveRes.filePath),
+        filePath: bdfPath,
+        fileName: path.basename(bdfPath),
         kind: "side-passage-checkplate-bdf",
         stats: body?.stats || null,
       });
     }
+    // 3) Studio 닫기(저장 완료) — 사용자는 워크벤치 3단계로 돌아가 다운로드한다.
     setImmediate(() => {
       if (viewerWindow && !viewerWindow.isDestroyed()) viewerWindow.close();
     });
-    return { ok: true, savedPath: saveRes.filePath, stats: body?.stats ?? null };
+    return { ok: true, savedPath: bdfPath, stats: body?.stats ?? null };
   } catch (e) {
     return { ok: false, error: e?.message || "예외 발생" };
   }

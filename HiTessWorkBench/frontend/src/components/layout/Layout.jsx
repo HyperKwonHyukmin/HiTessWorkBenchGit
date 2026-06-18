@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import Sidebar from './Sidebar';
 import { LogOut, User, Search, ChevronLeft, ChevronRight, Server } from 'lucide-react';
 import { API_BASE_URL, setApiBaseUrl } from '../../config';
@@ -6,9 +6,14 @@ import { version as CLIENT_VERSION } from '../../../package.json';
 import { useServerStatus } from '../../hooks/useServerStatus';
 import { ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { verifyAdminGate } from '../../api/admin';
+import AdminPasswordGateModal from '../ui/AdminPasswordGateModal';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+
+const ADMIN_MENUS = new Set(['User Management', 'Analysis Management', 'System Management', 'Usage Reports', 'API Apps']);
+const ADMIN_GATE_SESSION_KEY = 'admin_gate_unlocked';
 
 // ✅ 파라미터에 goBack 등 히스토리 관련 props 추가
 export default function Layout({ 
@@ -26,6 +31,10 @@ export default function Layout({
   const [serverUrlInput, setServerUrlInput] = useState(API_BASE_URL);
   const [currentServerUrl, setCurrentServerUrl] = useState(API_BASE_URL);
   const isServerOnline = useServerStatus();
+  const [isGateOpen, setIsGateOpen] = useState(false);
+  const [pendingMenu, setPendingMenu] = useState(null);
+  const [gateLoading, setGateLoading] = useState(false);
+  const [gateError, setGateError] = useState('');
 
   const getServerHost = (url) => {
     try {
@@ -41,25 +50,80 @@ export default function Layout({
   const searchRef = useRef(null);
 
   // 검색 가능한 전체 항목: 사이드바 메뉴 + ANALYSIS_DATA 앱
-  const MENU_ITEMS = [
-    { label: 'Dashboard',        menu: 'Dashboard' },
-    { label: 'File-Based Apps',  menu: 'File-Based Apps' },
+  const menuItems = useMemo(() => [
+    { label: 'Dashboard', menu: 'Dashboard' },
+    { label: 'File-Based Apps', menu: 'File-Based Apps' },
     { label: 'Interactive Apps', menu: 'Interactive Apps' },
-    { label: 'Parametric Apps',  menu: 'Parametric Apps' },
-    { label: 'API Apps',         menu: 'API Apps' },
-    { label: 'My Projects',      menu: 'My Projects' },
+    { label: 'Parametric Apps', menu: 'Parametric Apps' },
+    { label: 'Academic Apps', menu: 'Academic Apps' },
+    { label: 'Productivity Apps', menu: 'Productivity Apps' },
+    { label: 'My Projects', menu: 'My Projects' },
     { label: 'Notice & Updates', menu: 'Notice & Updates' },
-    { label: 'User Guide',       menu: 'User Guide' },
-  ];
+    { label: 'User Requests', menu: 'User Requests' },
+    { label: 'User Guide', menu: 'User Guide' },
+    { label: 'Download Center', menu: 'Download Center' },
+    ...(userInfo.is_admin ? [
+      { label: 'User Management', menu: 'User Management' },
+      { label: 'Analysis Management', menu: 'Analysis Management' },
+      { label: 'System Management', menu: 'System Management' },
+      { label: 'Usage Reports', menu: 'Usage Reports' },
+      { label: 'API Apps', menu: 'API Apps' },
+    ] : []),
+  ], [userInfo.is_admin]);
 
-  const searchResults = searchTerm.trim().length < 1 ? [] : [
-    ...MENU_ITEMS.filter(m => m.label.toLowerCase().includes(searchTerm.toLowerCase()))
-      .map(m => ({ label: m.label, sub: '메뉴', menu: m.menu })),
-    ...ANALYSIS_DATA.filter(a =>
-      a.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      a.description.toLowerCase().includes(searchTerm.toLowerCase())
-    ).map(a => ({ label: a.title, sub: a.category, menu: getAppMenuName(a.title) })),
-  ].slice(0, 8);
+  const searchResults = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (query.length < 1) return [];
+    return [
+      ...menuItems.filter(m => m.label.toLowerCase().includes(query))
+        .map(m => ({ label: m.label, sub: '메뉴', menu: m.menu })),
+      ...ANALYSIS_DATA.filter(a =>
+        a.title.toLowerCase().includes(query) ||
+        a.description.toLowerCase().includes(query)
+      ).map(a => ({ label: a.title, sub: a.category, menu: getAppMenuName(a.title) })),
+    ].slice(0, 8);
+  }, [menuItems, searchTerm]);
+
+  const toggleSidebar = useCallback(() => {
+    setIsCollapsed(prev => !prev);
+  }, []);
+
+  const handleNavigate = useCallback((menu) => {
+    if (ADMIN_MENUS.has(menu)) {
+      if (!userInfo.is_admin) return;
+      if (sessionStorage.getItem(ADMIN_GATE_SESSION_KEY)) {
+        setCurrentMenu(menu);
+        return;
+      }
+      setPendingMenu(menu);
+      setGateError('');
+      setIsGateOpen(true);
+      return;
+    }
+    setCurrentMenu(menu);
+  }, [setCurrentMenu, userInfo.is_admin]);
+
+  const handleGateClose = useCallback(() => {
+    setIsGateOpen(false);
+    setPendingMenu(null);
+    setGateError('');
+  }, []);
+
+  const handleGateConfirm = useCallback(async (password) => {
+    setGateLoading(true);
+    setGateError('');
+    try {
+      await verifyAdminGate(password);
+      sessionStorage.setItem(ADMIN_GATE_SESSION_KEY, String(Date.now()));
+      setIsGateOpen(false);
+      if (pendingMenu) setCurrentMenu(pendingMenu);
+      setPendingMenu(null);
+    } catch (err) {
+      setGateError(err?.response?.data?.detail || '비밀번호 확인 중 오류가 발생했습니다.');
+    } finally {
+      setGateLoading(false);
+    }
+  }, [pendingMenu, setCurrentMenu]);
 
   // 바깥 클릭 시 드롭다운 닫기
   useEffect(() => {
@@ -72,10 +136,10 @@ export default function Layout({
     <div className="flex h-screen min-w-[320px] bg-slate-50 overflow-hidden">
       <Sidebar 
         isCollapsed={isCollapsed} 
-        toggleSidebar={() => setIsCollapsed(!isCollapsed)} 
+        toggleSidebar={toggleSidebar} 
         isAdmin={userInfo.is_admin} 
         currentMenu={currentMenu}
-        setCurrentMenu={setCurrentMenu}
+        onNavigate={handleNavigate}
       />
 
       <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
@@ -130,7 +194,7 @@ export default function Layout({
                   {searchResults.map((item, i) => (
                     <button
                       key={i}
-                      onMouseDown={() => { setCurrentMenu(item.menu); setSearchTerm(''); setShowDropdown(false); }}
+                      onMouseDown={() => { handleNavigate(item.menu); setSearchTerm(''); setShowDropdown(false); }}
                       className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center justify-between gap-3 cursor-pointer border-b border-slate-50 last:border-0"
                     >
                       <span className="text-sm font-medium text-slate-800 truncate">{item.label}</span>
@@ -222,6 +286,13 @@ export default function Layout({
           />
         </div>
       </Modal>
+      <AdminPasswordGateModal
+        isOpen={isGateOpen}
+        onClose={handleGateClose}
+        onConfirm={handleGateConfirm}
+        isLoading={gateLoading}
+        error={gateError}
+      />
     </div>
   );
 }

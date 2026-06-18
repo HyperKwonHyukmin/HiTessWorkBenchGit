@@ -84,7 +84,7 @@ const UsageBadge = ({ uf, size = 'sm', label }) => {
 
   if (size === 'lg') {
     return (
-      <div className={`inline-flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-xl bg-white border ${tone.ring} shadow-sm`}>
+      <div className={`inline-flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-xl bg-white border ${tone.ring} shadow-sm`} aria-label={`${label || '사용률'} ${fmt(uf, 2)}, ${ok ? '합격' : '불합격'}`}>
         <div className={`flex items-center justify-center w-7 h-7 rounded-lg ${tone.iconBg}`}>
           {ok ? <CheckCircle2 size={15} className={tone.icon} /> : <XCircle size={15} className={tone.icon} />}
         </div>
@@ -105,7 +105,7 @@ const UsageBadge = ({ uf, size = 'sm', label }) => {
 
   // sm
   return (
-    <div className={`inline-flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-lg bg-white border ${tone.ring} shadow-sm`}>
+    <div className={`inline-flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-lg bg-white border ${tone.ring} shadow-sm`} aria-label={`사용률 ${fmt(uf, 2)}, ${ok ? '합격' : '불합격'}`}>
       <div className={`flex items-center justify-center w-5 h-5 rounded-md ${tone.iconBg}`}>
         {ok ? <CheckCircle2 size={11} className={tone.icon} /> : <XCircle size={11} className={tone.icon} />}
       </div>
@@ -202,11 +202,15 @@ export default function HoleFatigueAssessment() {
 
   const stressRangeMpa = result?.derived?.stress_range_mpa;
 
-  const isValid =
-    shipLengthM !== '' && sectionModulusM3 !== '' && plateThicknessMm !== '' &&
-    sleeveOuterDiameterMm !== '' && sleeveThicknessMm !== '' && weldingThroatThicknessMm !== '' &&
-    probabilityLevel !== '' && designLifeCycle !== '' && maxVwbmKnm !== '' &&
-    Number(shipLengthM) > 0 && Number(sectionModulusM3) > 0;
+  // 모든 숫자 입력은 NaN 가드 후 양수만 허용 — 'abc'/'.' 등이 parseFloat로 NaN이 되어
+  // 백엔드(Pydantic float)에서 422를 내거나 결과가 NaN으로 전파되는 것을 방지한다.
+  const isValid = [
+    shipLengthM, sectionModulusM3, plateThicknessMm, sleeveOuterDiameterMm,
+    sleeveThicknessMm, weldingThroatThicknessMm, probabilityLevel, designLifeCycle, maxVwbmKnm,
+  ].every((v) => {
+    const n = Number(v);
+    return v !== '' && Number.isFinite(n) && n > 0;
+  });
 
   const buildPayload = () => ({
     ship_type: shipType,

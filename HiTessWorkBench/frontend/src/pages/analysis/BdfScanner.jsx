@@ -2,10 +2,11 @@
 /// BDF Scanner — BDF 파일 유효성 검증 및 Nastran F06 요약 페이지.
 /// </summary>
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Upload, Play, Terminal, FileSearch, AlertOctagon, Info, History } from 'lucide-react';
+import { Play, Terminal, FileSearch, AlertOctagon, Info, History } from 'lucide-react';
 import ChangelogModal from '../../components/ui/ChangelogModal';
-import GuideButton from '../../components/ui/GuideButton';
-import PageBanner from '../../components/ui/PageBanner';
+import FileDropzone from '../../components/ui/FileDropzone';
+import FeedbackState from '../../components/ui/FeedbackState';
+import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
@@ -37,7 +38,6 @@ export default function BdfScanner() {
   const [unsupportedElements, setUnsupportedElements] = useState(savedPageState.unsupportedElements ?? null); // { CQUAD4: 3, ... }
   const [resultInfo, setResultInfo] = useState(savedPageState.resultInfo ?? null);
   const [analysisDbId, setAnalysisDbId] = useState(savedPageState.analysisDbId ?? null);
-  const [isDragOver, setIsDragOver] = useState(false);
 
   // 2D / 3D 요소 카드 타입 목록
   const UNSUPPORTED_TYPES = new Set([
@@ -45,7 +45,6 @@ export default function BdfScanner() {
     'CHEXA','CTETRA','CPENTA','CPYRAM','CHEXA20','CTETRA10', // 3D Solid
   ]);
 
-  const fileInputRef = useRef(null);
   const logEndRef = useRef(null);
 
   // 작업 상태(jobId/isRunning/progress/statusMessage/logs) + 사번 + 폴링은 훅이 담당.
@@ -141,13 +140,6 @@ export default function BdfScanner() {
     setLogs([{ time: new Date().toLocaleTimeString(), message: `[FILE] ${file.name} 선택됨.`, type: 'info' }]);
   };
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
-  };
-
   const runAnalysis = async () => {
     if (!bdfFile || isRunning) return;
     // axios 응답 전에 UI 가 즉시 반응하도록 페이지 결과 상태도 함께 초기화한다.
@@ -178,40 +170,24 @@ export default function BdfScanner() {
     }
   };
 
-  const formatBytes = (bytes) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
   const hasResult = !!(modelData || step1Data || step2Data);
   const hasUnsupported = !!(unsupportedElements && Object.keys(unsupportedElements).length > 0);
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-      <PageBanner gradient="from-brand-blue via-amber-900 to-amber-700">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setCurrentMenu('File-Based Apps')}
-            className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-white transition-colors cursor-pointer"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              <FileSearch size={18} className="text-amber-300" />
-              BDF Scanner
-            </h1>
-            <p className="text-sm text-amber-200/80 mt-0.5">BDF 모델 유효성 검증 및 Nastran F06 요약</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+      <FileBasedPageBanner
+        title="BDF Scanner"
+        subtitle="BDF 모델 유효성 검증 및 Nastran F06 요약"
+        icon={FileSearch}
+        guideTitle="[생산성] BDF Scanner — BDF 파일 유효성 검증"
+        onBack={() => setCurrentMenu('File-Based Apps')}
+        gradient="from-brand-blue via-amber-900 to-amber-700"
+        actions={(
           <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
             <History size={14} /> 이력
           </button>
-          <GuideButton guideTitle="[생산성] BDF Scanner — BDF 파일 유효성 검증" variant="dark" />
-        </div>
-      </PageBanner>
+        )}
+      />
 
       {/* ── 1D 전용 안내 배너 ── */}
       <div className="flex items-start gap-3 mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl shrink-0">
@@ -233,34 +209,13 @@ export default function BdfScanner() {
               <p className="text-xs font-bold text-white uppercase tracking-widest">BDF 파일 선택</p>
             </div>
             <div className="p-5">
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                onDragLeave={() => setIsDragOver(false)}
-                onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                  isDragOver ? 'border-amber-400 bg-amber-50' : 'border-slate-300 hover:border-amber-400 hover:bg-slate-50'
-                }`}
-              >
-                <Upload size={28} className="mx-auto mb-2 text-slate-400" />
-                {bdfFile ? (
-                  <div>
-                    <p className="text-sm font-semibold text-slate-700 truncate">{bdfFile.name}</p>
-                    <p className="text-xs text-slate-400 mt-1">{formatBytes(bdfFile.size)}</p>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-sm text-slate-500">클릭하거나 파일을 드래그하세요</p>
-                    <p className="text-xs text-slate-400 mt-1">.bdf / .dat</p>
-                  </div>
-                )}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
+              <FileDropzone
+                file={bdfFile}
                 accept=".bdf,.dat"
-                className="hidden"
-                onChange={(e) => handleFile(e.target.files?.[0])}
+                title="BDF / DAT 모델"
+                accent="amber"
+                disabled={isRunning}
+                onFile={handleFile}
               />
             </div>
           </div>
@@ -392,10 +347,11 @@ export default function BdfScanner() {
               </div>
             ) : (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center h-full">
-                <div className="text-center text-slate-400">
-                  <FileSearch size={32} className="mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">BDF 파일을 업로드하고 스캔을 실행하세요.</p>
-                </div>
+                <FeedbackState
+                  compact
+                  icon={FileSearch}
+                  title="BDF 파일을 업로드하고 스캔을 실행하세요."
+                />
               </div>
             )}
           </div>

@@ -4,7 +4,7 @@ import {
   Upload, CheckCircle2, AlertCircle, Download,
   ChevronDown, Loader2, RefreshCw,
   FileSpreadsheet, AlertTriangle, ChevronsRight, RotateCcw,
-  ExternalLink, HardDrive, PackageX, ShieldCheck,
+  ExternalLink, PackageX, ShieldCheck,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useDashboard } from '../../contexts/DashboardContext';
@@ -12,6 +12,7 @@ import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
+import { useAuth } from '../../contexts/AuthContext';
 
 const API_ENDPOINT = '/api/analysis/mooring-fitting/request';
 const STATUS_ENDPOINT = (jobId) => `/api/analysis/status/${jobId}`;
@@ -739,7 +740,7 @@ function FinalValidationPanel({ validationJson, loading, error, onDownload, resu
    MooringStudioLauncher
    ──────────────────────────────────────────────────────────────────────── */
 
-function MooringStudioLauncher({ ready, onLaunch, installed, status, progress, error, installedVersion, latestVersion, installDir }) {
+function MooringStudioLauncher({ ready, onLaunch, installed, status, progress, error, installedVersion, latestVersion }) {
   const checking   = status === 'checking';
   const installing = status === 'installing';
   const opening    = status === 'opening';
@@ -808,16 +809,10 @@ function MooringStudioLauncher({ ready, onLaunch, installed, status, progress, e
               : <>해석 결과를 확인한 뒤 Studio를 열어 그룹 삭제 · RBE2 편집 · 최종 BDF 출력을 진행하세요.</>}
           </p>
           <p className="text-[11px] text-slate-600 leading-relaxed mt-2">
-            설치 파일은 사내 배포 위치에서 자동으로 내려받고, WorkBench 앱 데이터 폴더에 보관됩니다. 최초 설치 이후에는 재사용합니다.
+            설치 파일은 필요 시 자동으로 내려받고, 최초 설치 이후에는 설치본을 재사용합니다.
           </p>
           <div className="flex flex-col gap-1 mt-3">
             {versionLine}
-            {installDir && (
-              <p className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono break-all">
-                <HardDrive size={11} className="shrink-0 text-slate-400" />
-                {installDir}
-              </p>
-            )}
             {error && <p className="text-[10px] text-red-600 leading-snug">⚠ {error}</p>}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-4">
@@ -852,6 +847,7 @@ function MooringStudioLauncher({ ready, onLaunch, installed, status, progress, e
 
 export default function MooringFittingAssessment() {
   const { showToast }    = useToast();
+  const { employeeId }   = useAuth();
   const dashboardCtx     = useDashboard();
   const { setCurrentMenu } = useNavigation();
   const PAGE_KEY = 'Mooring Fitting Assessment';
@@ -979,13 +975,7 @@ export default function MooringFittingAssessment() {
       showToast('MF Safety Factor는 0보다 큰 숫자여야 합니다', 'error');
       return;
     }
-    let user = {};
-    try {
-      user = JSON.parse(localStorage.getItem('user') || '{}');
-    } catch {
-      // localStorage 손상 시 빈 객체로 폴백
-    }
-    if (!user?.employee_id) {
+    if (!employeeId) {
       showToast('로그인 정보가 없습니다.', 'error');
       return;
     }
@@ -993,7 +983,7 @@ export default function MooringFittingAssessment() {
     const fd = new FormData();
     fd.append('structure_file',   structureFile);
     fd.append('load_file',        loadFile);
-    fd.append('employee_id',      user.employee_id);
+    fd.append('employee_id',      employeeId);
     fd.append('source',           'Workbench');
     fd.append('mf_safety_factor', String(sfNum));
 
@@ -1567,7 +1557,6 @@ export default function MooringFittingAssessment() {
                 error={studioError}
                 installedVersion={studioInstalledVersion}
                 latestVersion={studioLatestVersion}
-                installDir={studioInstallDir}
               />
             )}
 

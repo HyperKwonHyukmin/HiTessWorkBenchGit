@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { memo, useMemo } from 'react';
 import {
   Home,
   UploadCloud,
@@ -19,18 +19,18 @@ import {
   Webhook,
   Download,
 } from 'lucide-react';
-import AdminPasswordGateModal from '../ui/AdminPasswordGateModal';
-import { verifyAdminGate } from '../../api/admin';
+import { ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
 
-const ADMIN_CATEGORIES = ['ADMINISTRATION'];
-const SESSION_KEY = 'admin_gate_unlocked';
+const GROUP_MENU_BY_MODE = {
+  File: 'File-Based Apps',
+  Interactive: 'Interactive Apps',
+  Parametric: 'Parametric Apps',
+  Academic: 'Academic Apps',
+  Productivity: 'Productivity Apps',
+  AI: 'AI Based Apps',
+};
 
-export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, setCurrentMenu }) {
-
-  const [isGateOpen, setIsGateOpen] = useState(false);
-  const [pendingMenu, setPendingMenu] = useState(null);
-  const [gateLoading, setGateLoading] = useState(false);
-  const [gateError, setGateError] = useState('');
+function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate }) {
 
   const menuItems = useMemo(() => {
     const items = [
@@ -77,50 +77,13 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
     return items;
   }, [isAdmin]);
 
-  const isAdminMenu = (sectionCategory) => ADMIN_CATEGORIES.includes(sectionCategory);
-
-  const handleMenuClick = (label, sectionCategory) => {
-    if (isAdminMenu(sectionCategory)) {
-      // 이미 이번 세션에서 인증된 경우 바로 이동
-      if (sessionStorage.getItem(SESSION_KEY)) {
-        setCurrentMenu(label);
-        return;
-      }
-      // 미인증 → 게이트 모달 표시
-      setPendingMenu(label);
-      setGateError('');
-      setIsGateOpen(true);
-      return;
-    }
-    setCurrentMenu(label);
-  };
-
-  const handleGateClose = () => {
-    setIsGateOpen(false);
-    setPendingMenu(null);
-    setGateError('');
-  };
-
-  const handleGateConfirm = async (password) => {
-    setGateLoading(true);
-    setGateError('');
-    try {
-      await verifyAdminGate(password);
-      sessionStorage.setItem(SESSION_KEY, String(Date.now()));
-      setIsGateOpen(false);
-      setGateError('');
-      if (pendingMenu) setCurrentMenu(pendingMenu);
-      setPendingMenu(null);
-    } catch (err) {
-      const msg = err?.response?.data?.detail || '비밀번호 확인 중 오류가 발생했습니다.';
-      setGateError(msg);
-    } finally {
-      setGateLoading(false);
-    }
-  };
+  const activeGroupMenu = useMemo(() => {
+    const app = ANALYSIS_DATA.find(item => getAppMenuName(item.title) === currentMenu || item.title === currentMenu);
+    return app ? GROUP_MENU_BY_MODE[app.mode] : currentMenu;
+  }, [currentMenu]);
 
   return (
-    <aside className={`h-full bg-brand-blue text-white flex flex-col transition-all duration-300 shadow-xl z-40 relative ${
+    <aside className={`h-full bg-brand-blue text-white flex flex-col transition-all duration-300 shadow-lg z-40 relative ${
         isCollapsed ? 'w-20' : 'w-64'
       }`}>
 
@@ -145,36 +108,37 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
         )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto pt-5 pb-2 sidebar-scrollbar">
+      <nav className="flex-1 overflow-y-auto pt-5 pb-2 sidebar-scrollbar" aria-label="Primary navigation">
         {menuItems.map((section, idx) => (
-          <div key={idx} className="mb-4">
+          <div key={section.category} className="mb-4">
             {!isCollapsed && (
-              <div className={`px-6 mb-2 text-xs font-bold uppercase tracking-wider ${
-                section.category === "ADMINISTRATION" ? "text-red-400" : "text-slate-400"
+              <div className={`px-6 mb-2 text-[10px] font-black uppercase tracking-wider ${
+                section.category === "ADMINISTRATION" ? "text-red-300/90" : "text-slate-400/90"
               }`}>
                 {section.category}
               </div>
             )}
             <ul>
-              {section.items.map((item, i) => {
-                const isActive = currentMenu === item.label;
+              {section.items.map((item) => {
+                const isActive = currentMenu === item.label || activeGroupMenu === item.label;
 
                 return (
-                  <li key={i}>
+                  <li key={item.label}>
                     <button
-                      onClick={() => handleMenuClick(item.label, section.category)}
-                      className={`w-full flex items-center px-4 py-2 transition-colors relative group cursor-pointer ${
+                      onClick={() => onNavigate(item.label)}
+                      aria-current={isActive ? 'page' : undefined}
+                      className={`w-full flex items-center px-4 py-2.5 transition-colors relative group cursor-pointer ${
                         isActive
-                          ? 'bg-brand-accent text-brand-blue font-bold'
-                          : 'text-slate-300 hover:bg-brand-blue-dark hover:text-white'
+                          ? 'bg-white/10 text-white font-bold'
+                          : 'text-slate-300 hover:bg-white/5 hover:text-white'
                       }`}
                       title={isCollapsed ? item.label : undefined}
                     >
-                      {isActive && isCollapsed && (
-                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-accent"></div>
+                      {isActive && (
+                        <div className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-brand-accent"></div>
                       )}
 
-                      <div className={`${isCollapsed ? 'mx-auto' : 'mr-3'}`}>
+                      <div className={`${isCollapsed ? 'mx-auto' : 'mr-3'} ${isActive ? 'text-brand-accent' : ''}`}>
                          <item.icon size={20} className={section.category === "ADMINISTRATION" && !isActive ? "text-red-400/70 group-hover:text-red-400" : ""} />
                       </div>
 
@@ -196,18 +160,12 @@ export default function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMe
             © 2026 Kwon Hyuk Min<br/>All rights reserved.
           </p>
         )}
-        <button onClick={toggleSidebar} className="w-full flex items-center justify-center p-2 rounded bg-brand-blue-dark hover:bg-brand-blue-dark/80 text-white transition-colors cursor-pointer">
+        <button onClick={toggleSidebar} className="w-full flex items-center justify-center p-2 rounded bg-white/5 hover:bg-white/10 text-white transition-colors cursor-pointer" aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
           {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
       </div>
-
-      <AdminPasswordGateModal
-        isOpen={isGateOpen}
-        onClose={handleGateClose}
-        onConfirm={handleGateConfirm}
-        isLoading={gateLoading}
-        error={gateError}
-      />
     </aside>
   );
 }
+
+export default memo(Sidebar);

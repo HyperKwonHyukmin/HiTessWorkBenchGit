@@ -3,7 +3,7 @@
 /// (신규) 백그라운드 해석 작업을 추적하고 플로팅 위젯을 제공합니다.
 /// (신규) Truss Assessment 페이지 이탈 시에도 상태를 유지하기 위한 글로벌 State를 추가했습니다.
 /// </summary>
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { UploadCloud, PenTool, SlidersHorizontal, Wrench, RefreshCw, CheckCircle, AlertCircle, X, Bot } from 'lucide-react';
 import { useNavigation } from './NavigationContext';
 import { usePolling } from '../hooks/usePolling';
@@ -190,6 +190,9 @@ export const findAppByProgramName = (programName) =>
   ANALYSIS_DATA.find(app => app.programNames?.includes(programName));
 
 const DashboardContext = createContext();
+const FavoritesContext = createContext();
+const GlobalJobContext = createContext();
+const AnalysisPageStateContext = createContext();
 const FAVORITES_KEY = 'favorites';
 
 function readLocalFavorites() {
@@ -283,53 +286,53 @@ export function DashboardProvider({ children }) {
 
   const [modelBuilderPageState, setModelBuilderPageState] = useState(null);
   const [analysisPageStates, setAnalysisPageStates] = useState({});
-  const setAnalysisPageState = (menuName, updater) => {
+  const setAnalysisPageState = useCallback((menuName, updater) => {
     if (!menuName) return;
     setAnalysisPageStates(prev => {
       const current = prev[menuName] || {};
       const next = typeof updater === 'function' ? updater(current) : updater;
       return { ...prev, [menuName]: { ...current, ...(next || {}) } };
     });
-  };
-  const clearAnalysisPageState = (menuName) => {
+  }, []);
+  const clearAnalysisPageState = useCallback((menuName) => {
     if (!menuName) return;
     setAnalysisPageStates(prev => {
       const next = { ...prev };
       delete next[menuName];
       return next;
     });
-  };
+  }, []);
 
   // 프로그램 간 연계: 다른 앱에서 GMU/Side Passage로 BDF를 전달할 때 사용
   const [gmuHandoff, setGmuHandoff]   = useState(null); // { bdfServerPath, sourceApp }
-  const clearGmuHandoff = () => setGmuHandoff(null);
+  const clearGmuHandoff = useCallback(() => setGmuHandoff(null), []);
   const [sidePassageHandoff, setSidePassageHandoff] = useState(null); // { bdfServerPath, sourceApp }
-  const clearSidePassageHandoff = () => setSidePassageHandoff(null);
+  const clearSidePassageHandoff = useCallback(() => setSidePassageHandoff(null), []);
 
   // 프로그램 간 연계: Carling Free Calculator → Design Optimization 입력 이관
   const [carlingHandoff, setCarlingHandoff] = useState(null); // { load, hull, material }
-  const clearCarlingHandoff = () => setCarlingHandoff(null);
+  const clearCarlingHandoff = useCallback(() => setCarlingHandoff(null), []);
 
   const [pendingJobTransfer, setPendingJobTransferRaw] = useState(null);
-  const setPendingJobTransfer = (payload) => setPendingJobTransferRaw(payload);
-  const clearPendingJobTransfer = () => setPendingJobTransferRaw(null);
+  const setPendingJobTransfer = useCallback((payload) => setPendingJobTransferRaw(payload), []);
+  const clearPendingJobTransfer = useCallback(() => setPendingJobTransferRaw(null), []);
 
   const [globalJobs, setGlobalJobs] = useState([]);
   const globalJob = globalJobs[0] || null;
 
-  const patchGlobalJob = (jobId, patch) => {
+  const patchGlobalJob = useCallback((jobId, patch) => {
     setGlobalJobs(prev => prev.map(job => job.jobId === jobId ? { ...job, ...patch } : job));
-  };
+  }, []);
 
-  const clearGlobalJob = (jobId = null) => {
+  const clearGlobalJob = useCallback((jobId = null) => {
     setGlobalJobs(prev => jobId ? prev.filter(job => job.jobId !== jobId) : []);
-  };
+  }, []);
 
-  const startGlobalJob = (jobId, menuName) => {
+  const startGlobalJob = useCallback((jobId, menuName) => {
     if (!jobId) return;
     const nextJob = { jobId, menu: menuName, status: 'Running', progress: 0, message: '서버에 작업을 요청하는 중...' };
     setGlobalJobs([nextJob]);
-  };
+  }, []);
 
   useEffect(() => {
     setGlobalJobs(prev => prev.filter(job =>
@@ -337,29 +340,96 @@ export function DashboardProvider({ children }) {
     ));
   }, [currentMenu]);
 
-  const toggleFavorite = (title) => {
+  const toggleFavorite = useCallback((title) => {
     setFavorites(prev => {
       const next = prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title];
       writeLocalFavorites(next);
       writeElectronFavorites(next);
       return next;
     });
-  };
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    favorites, toggleFavorite,
+    globalJob, globalJobs, startGlobalJob, clearGlobalJob,
+    assessmentPageState, setAssessmentPageState,
+    modelBuilderPageState, setModelBuilderPageState,
+    analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
+    gmuHandoff, setGmuHandoff, clearGmuHandoff,
+    sidePassageHandoff, setSidePassageHandoff, clearSidePassageHandoff,
+    carlingHandoff, setCarlingHandoff, clearCarlingHandoff,
+    pendingJobTransfer, setPendingJobTransfer, clearPendingJobTransfer
+  }), [
+    favorites, toggleFavorite,
+    globalJob, globalJobs, startGlobalJob, clearGlobalJob,
+    assessmentPageState,
+    modelBuilderPageState,
+    analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
+    gmuHandoff, clearGmuHandoff,
+    sidePassageHandoff, clearSidePassageHandoff,
+    carlingHandoff, clearCarlingHandoff,
+    pendingJobTransfer, setPendingJobTransfer, clearPendingJobTransfer
+  ]);
+
+  const favoritesValue = useMemo(() => ({
+    favorites,
+    toggleFavorite,
+  }), [favorites, toggleFavorite]);
+
+  const globalJobValue = useMemo(() => ({
+    globalJob,
+    globalJobs,
+    startGlobalJob,
+    clearGlobalJob,
+  }), [clearGlobalJob, globalJob, globalJobs, startGlobalJob]);
+
+  const analysisPageStateValue = useMemo(() => ({
+    assessmentPageState,
+    setAssessmentPageState,
+    modelBuilderPageState,
+    setModelBuilderPageState,
+    analysisPageStates,
+    setAnalysisPageState,
+    clearAnalysisPageState,
+    gmuHandoff,
+    setGmuHandoff,
+    clearGmuHandoff,
+    sidePassageHandoff,
+    setSidePassageHandoff,
+    clearSidePassageHandoff,
+    carlingHandoff,
+    setCarlingHandoff,
+    clearCarlingHandoff,
+    pendingJobTransfer,
+    setPendingJobTransfer,
+    clearPendingJobTransfer,
+  }), [
+    assessmentPageState,
+    modelBuilderPageState,
+    analysisPageStates,
+    setAnalysisPageState,
+    clearAnalysisPageState,
+    gmuHandoff,
+    clearGmuHandoff,
+    sidePassageHandoff,
+    clearSidePassageHandoff,
+    carlingHandoff,
+    clearCarlingHandoff,
+    pendingJobTransfer,
+    setPendingJobTransfer,
+    clearPendingJobTransfer,
+  ]);
 
   return (
     // [추가] Provider의 value에 assessmentPageState와 setAssessmentPageState를 넘겨줌
-    <DashboardContext.Provider value={{
-        favorites, toggleFavorite,
-        globalJob, globalJobs, startGlobalJob, clearGlobalJob,
-        assessmentPageState, setAssessmentPageState,
-        modelBuilderPageState, setModelBuilderPageState,
-        analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
-        gmuHandoff, setGmuHandoff, clearGmuHandoff,
-        sidePassageHandoff, setSidePassageHandoff, clearSidePassageHandoff,
-        carlingHandoff, setCarlingHandoff, clearCarlingHandoff,
-        pendingJobTransfer, setPendingJobTransfer, clearPendingJobTransfer
-    }}>
-      {children}
+    <DashboardContext.Provider value={contextValue}>
+      <FavoritesContext.Provider value={favoritesValue}>
+        <GlobalJobContext.Provider value={globalJobValue}>
+          <AnalysisPageStateContext.Provider value={analysisPageStateValue}>
+            {children}
+          </AnalysisPageStateContext.Provider>
+        </GlobalJobContext.Provider>
+      </FavoritesContext.Provider>
 
       {globalJobs.map(job => (
         <GlobalJobPoller
@@ -380,6 +450,9 @@ export function DashboardProvider({ children }) {
 }
 
 export const useDashboard = () => useContext(DashboardContext);
+export const useFavorites = () => useContext(FavoritesContext);
+export const useGlobalJobs = () => useContext(GlobalJobContext);
+export const useAnalysisPageState = () => useContext(AnalysisPageStateContext);
 
 function GlobalJobTray({ jobs, currentMenu, onNavigate, onDismiss }) {
   const visibleJob = jobs.find(job => job.menu !== currentMenu);

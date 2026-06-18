@@ -18,6 +18,7 @@ import UpdateModal from './components/UpdateModal';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8시간 미활동 시 자동 로그아웃
+const ADMIN_MENUS = new Set(['User Management', 'Analysis Management', 'System Management', 'System Settings', 'Usage Reports', 'API Apps']);
 
 const Dashboard = lazy(() => import('./pages/dashboard/Dashboard'));
 const MyProjects = lazy(() => import('./pages/analysis/MyProjects'));
@@ -77,7 +78,8 @@ function AppInner() {
   const { showToast } = useToast();
   // AuthContext 가 localStorage 세션 키 4종 정리 + state 갱신을 캡슐화한다.
   // 본 컴포넌트는 setAppState/resetNavigation 같은 라우팅 부수 효과만 담당한다.
-  const { logout: authLogout } = useAuth();
+  const { logout: authLogout, user: authUser } = useAuth();
+  const isAdmin = !!authUser?.is_admin;
 
   const handleSplashFinish = async () => {
     // 세션 여부와 무관하게 항상 버전 체크 먼저 수행
@@ -249,6 +251,24 @@ function AppInner() {
   }, [goBack, goForward]);
 
   const renderPage = () => {
+    if (ADMIN_MENUS.has(currentMenu) && !isAdmin) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-slate-400">
+          <div className="p-6 bg-red-50 rounded-full mb-4">
+            <Wand2 size={48} className="opacity-20 text-red-500" />
+          </div>
+          <p className="text-lg font-bold text-slate-700">관리자 권한이 필요합니다.</p>
+          <p className="text-sm">이 페이지는 관리자 승인 사용자만 접근할 수 있습니다.</p>
+          <button
+            onClick={() => setCurrentMenu('Dashboard')}
+            className="mt-6 px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
+          >
+            대시보드로 돌아가기
+          </button>
+        </div>
+      );
+    }
+
     switch (currentMenu) {
       case 'Dashboard': return <Dashboard />;
       case 'My Project':

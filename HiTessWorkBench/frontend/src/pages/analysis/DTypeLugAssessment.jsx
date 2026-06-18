@@ -15,6 +15,7 @@ import dTypeLugRef3 from '../../assets/images/D_typeLug3.png';
 import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { downloadJson } from '../../utils/fileHelper';
 import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
+import VerdictBadge from '../../components/ui/VerdictBadge';
 
 const DEFAULT_INPUT = {
   load: { force_N: '1000000' },
@@ -76,16 +77,8 @@ const InputField = ({ label, value, onChange, unit = 'mm', min = 0 }) => (
   </div>
 );
 
-const StatusBadge = ({ value }) => {
-  const ok = Number(value) <= 1;
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-      ok ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200'
-    }`}>
-      <ShieldCheck size={11} /> {ok ? 'OK' : 'NG'}
-    </span>
-  );
-};
+// 판정 배지는 공용 VerdictBadge 사용 — 기존 StatusBadge 는 OK/NG 모두 ShieldCheck 단일 아이콘이라
+// 색맹 사용자에게 색 외 구분이 없었다(아이콘이 CheckCircle2/XCircle 로 바뀌도록 교정).
 
 const ResultMetric = ({ label, value, unit, danger }) => (
   <div className={`border rounded-xl px-4 py-3 ${danger ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}>
@@ -295,7 +288,7 @@ export default function DTypeLugAssessment() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-extrabold text-slate-700">{BRACKET_LABELS[name] || name}</p>
-                        <StatusBadge value={max.overall} />
+                        <VerdictBadge ok={Number(max.overall) <= 1} />
                       </div>
                       <p className={`text-3xl font-extrabold mt-3 ${danger ? 'text-red-600' : 'text-emerald-700'}`}>
                         {fmt(max.overall, 2)}
@@ -376,7 +369,7 @@ export default function DTypeLugAssessment() {
                                     {fmt(uf[section], 2)}
                                   </td>
                                 ))}
-                                <td className="px-4 py-3 text-center"><StatusBadge value={maxUf} /></td>
+                                <td className="px-4 py-3 text-center"><VerdictBadge ok={Number(maxUf) <= 1} /></td>
                               </tr>
                             );
                           })}

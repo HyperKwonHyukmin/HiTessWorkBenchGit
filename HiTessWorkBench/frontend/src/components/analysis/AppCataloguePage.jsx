@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { LayoutGrid, List } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useDashboard, ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
+import { ANALYSIS_DATA, getAppMenuName, useAnalysisPageState, useFavorites } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
 import { useToast } from '../../contexts/ToastContext';
@@ -11,6 +11,7 @@ import PageHeader from '../ui/PageHeader';
 import FilterTabs from '../ui/FilterTabs';
 import AnimatedGrid from '../ui/AnimatedGrid';
 import AdminGateModal from '../ui/AdminGateModal';
+import FeedbackState from '../ui/FeedbackState';
 import { staggerContainer, cardEntrance } from '../../utils/motion';
 
 const colorToAccent = (colorClass = '') => {
@@ -38,30 +39,42 @@ export default function AppCataloguePage({
 }) {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
-  const { favorites, toggleFavorite, setAssessmentPageState } = useDashboard();
+  const { favorites, toggleFavorite } = useFavorites();
+  const { setAssessmentPageState } = useAnalysisPageState();
   const [activeCategory, setActiveCategory] = useState('All');
   const [gateApp, setGateApp] = useState(null);
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('hitess_app_view_mode') ?? 'grid');
 
-  const apps = ANALYSIS_DATA.filter(item => item.mode === mode);
-  const categorySet = new Set(apps.map(item => item.category));
-  const orderedCategories = mode === 'File'
-    ? [
-        ...FILE_CATEGORY_ORDER.filter(category => categorySet.has(category)),
-        ...[...categorySet].filter(category => !FILE_CATEGORY_ORDER.includes(category)),
-      ]
-    : [...categorySet];
-  const categories = ['All', ...orderedCategories];
-  const filtered = activeCategory === 'All' ? apps : apps.filter(item => item.category === activeCategory);
-  const activeApps = filtered.filter(item => !item.devStatus || item.devStatus === 'Active');
-  const developingApps = filtered.filter(item => item.devStatus && item.devStatus !== 'Active');
+  const apps = useMemo(() => ANALYSIS_DATA.filter(item => item.mode === mode), [mode]);
+  const categories = useMemo(() => {
+    const categorySet = new Set(apps.map(item => item.category));
+    const orderedCategories = mode === 'File'
+      ? [
+          ...FILE_CATEGORY_ORDER.filter(category => categorySet.has(category)),
+          ...[...categorySet].filter(category => !FILE_CATEGORY_ORDER.includes(category)),
+        ]
+      : [...categorySet];
+    return ['All', ...orderedCategories];
+  }, [apps, mode]);
+  const filtered = useMemo(
+    () => activeCategory === 'All' ? apps : apps.filter(item => item.category === activeCategory),
+    [activeCategory, apps],
+  );
+  const activeApps = useMemo(
+    () => filtered.filter(item => !item.devStatus || item.devStatus === 'Active'),
+    [filtered],
+  );
+  const developingApps = useMemo(
+    () => filtered.filter(item => item.devStatus && item.devStatus !== 'Active'),
+    [filtered],
+  );
 
-  const handleViewMode = (nextMode) => {
+  const handleViewMode = useCallback((nextMode) => {
     setViewMode(nextMode);
     localStorage.setItem('hitess_app_view_mode', nextMode);
-  };
+  }, []);
 
-  const handleStart = (appTitle) => {
+  const handleStart = useCallback((appTitle) => {
     const appMeta = ANALYSIS_DATA.find(a => a.title === appTitle);
     if (appMeta && (appMeta.devStatus === 'Developing' || appMeta.devStatus === 'Planned') && !getIsAdmin()) {
       setGateApp({ title: appMeta.title, devStatus: appMeta.devStatus });
@@ -78,9 +91,9 @@ export default function AppCataloguePage({
       setAssessmentPageState({});
     }
     setCurrentMenu(menuName);
-  };
+  }, [setAssessmentPageState, setCurrentMenu, showToast]);
 
-  const makeAppProps = (item) => {
+  const makeAppProps = useCallback((item) => {
     const IconComponent = item.icon;
     const isRestricted = (item.devStatus === 'Developing' || item.devStatus === 'Planned') && !getIsAdmin();
     return {
@@ -94,12 +107,14 @@ export default function AppCataloguePage({
         contributor: item.contributor,
       },
       accentColor: colorToAccent(item.color),
+      visualTone: 'restrained',
+      cardDetailTone: 'refined',
       isRestricted,
       isFavorite: favorites.includes(item.title),
       onFavorite: () => toggleFavorite(item.title),
       onStart: () => handleStart(item.title),
     };
-  };
+  }, [favorites, handleStart, toggleFavorite, viewMode]);
 
   const renderSection = (sectionApps, dimmed = false) => {
     if (sectionApps.length === 0) return null;
@@ -157,11 +172,11 @@ export default function AppCataloguePage({
       />
 
       {apps.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-          <EmptyStateIcon size={48} className="text-slate-200 mb-4" />
-          <p className="font-bold text-slate-500 text-sm">{emptyTitle || '준비 중인 앱이 곧 추가될 예정입니다.'}</p>
-          {emptySubtitle && <p className="text-xs mt-1">{emptySubtitle}</p>}
-        </div>
+        <FeedbackState
+          icon={EmptyStateIcon}
+          title={emptyTitle || '준비 중인 앱이 곧 추가될 예정입니다.'}
+          message={emptySubtitle}
+        />
       ) : (
         <>
           <FilterTabs categories={categories} active={activeCategory} onChange={setActiveCategory} rightSlot={viewToggle} />

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import {
   TableProperties, Calculator,
-  CheckCircle2, XCircle, AlertCircle, Loader2,
+  AlertCircle, Loader2,
   Weight, ChevronRight, Wind, Download
 } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
@@ -16,10 +16,7 @@ import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { downloadJson } from '../../utils/fileHelper';
 import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 
-const OkBadge = ({ ok }) =>
-  ok
-    ? <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full text-[10px] font-bold"><CheckCircle2 size={11} /> OK</span>
-    : <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 border border-red-200 rounded-full text-[10px] font-bold"><XCircle size={11} /> NG</span>;
+import VerdictBadge from '../../components/ui/VerdictBadge';
 
 const InputField = ({ label, desc, value, onChange, unit, placeholder, readOnly }) => (
   <div>
@@ -159,8 +156,8 @@ const CandidateTable = ({ result, selectedRank, setSelectedRank, on2danSelect })
                     {/* displacement = 실제 δ, maxDisplacement = 허용 */}
                     <td className="px-4 py-3 text-right font-bold text-slate-700">{fmt(c.displacement, 1)}</td>
                     <td className="px-4 py-3 text-center text-slate-500 text-xs">/ {fmt(c.maxDisplacement, 1)}</td>
-                    <td className="px-4 py-3 text-center"><OkBadge ok={c.stressOk} /></td>
-                    <td className="px-4 py-3 text-center"><OkBadge ok={c.displacementOk} /></td>
+                    <td className="px-4 py-3 text-center"><VerdictBadge ok={c.stressOk} /></td>
+                    <td className="px-4 py-3 text-center"><VerdictBadge ok={c.displacementOk} /></td>
                     {on2danSelect && (
                       <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                         <button

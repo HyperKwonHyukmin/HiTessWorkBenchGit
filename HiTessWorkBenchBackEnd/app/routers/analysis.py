@@ -9,7 +9,7 @@ import zipfile
 logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta, date as _date
 from typing import Optional
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query, Request
 from pydantic import BaseModel
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -243,11 +243,185 @@ def _serialize_analysis(record: models.Analysis) -> dict:
     return d
 
 
+def _apply_analysis_filters(
+    query,
+    *,
+    search: Optional[str] = None,
+    program_name: Optional[str] = None,
+    status: Optional[str] = None,
+    date_from: Optional[_date] = None,
+    date_to: Optional[_date] = None,
+):
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.filter(or_(
+            models.Analysis.project_name.ilike(term),
+            models.Analysis.program_name.ilike(term),
+            models.Analysis.employee_id.ilike(term),
+        ))
+    if program_name and program_name != "All":
+        query = query.filter(models.Analysis.program_name == program_name)
+    if status and status != "All":
+        query = query.filter(models.Analysis.status == status)
+    if date_from:
+        query = query.filter(models.Analysis.created_at >= datetime.combine(date_from, datetime.min.time()))
+    if date_to:
+        query = query.filter(models.Analysis.created_at <= datetime.combine(date_to, datetime.max.time()))
+    return query
+
+
+def _analysis_summary(query) -> dict:
+    rows = query.all()
+    total = len(rows)
+    success = sum(1 for r in rows if r.status == "Success")
+    module_count = {}
+    expired_files = 0
+    now = datetime.now()
+    seven_days_ago = now - timedelta(days=7)
+    prev_seven_days_ago = now - timedelta(days=14)
+    this_week = 0
+    prev_week = 0
+
+    for r in rows:
+        module_count[r.program_name or "Unknown"] = module_count.get(r.program_name or "Unknown", 0) + 1
+        if not _files_available(r):
+            expired_files += 1
+        if r.created_at:
+            created = r.created_at.replace(tzinfo=None) if getattr(r.created_at, "tzinfo", None) else r.created_at
+            if created >= seven_days_ago:
+                this_week += 1
+            elif prev_seven_days_ago <= created < seven_days_ago:
+                prev_week += 1
+
+    module_entries = sorted(module_count.items(), key=lambda item: item[1], reverse=True)
+    return {
+        "total": total,
+        "success": success,
+        "successRate": round((success / total) * 100) if total else 0,
+        "thisWeek": this_week,
+        "weekDelta": this_week - prev_week,
+        "topModule": module_entries[0][0] if module_entries else None,
+        "topModuleCount": module_entries[0][1] if module_entries else 0,
+        "moduleEntries": module_entries,
+        "expiredFiles": expired_files,
+        "availableFiles": total - expired_files,
+    }
+
+
+def _analysis_management_summary(query, users_by_employee_id: dict) -> Optional[dict]:
+    rows = [r for r in query.all() if not getattr(users_by_employee_id.get(r.employee_id), "is_developer", False)]
+    if not rows:
+        return None
+
+    rows.sort(key=lambda r: r.created_at or datetime.min)
+    total = len(rows)
+    first_date = rows[0].created_at.replace(tzinfo=None) if getattr(rows[0].created_at, "tzinfo", None) else rows[0].created_at
+    last_date = rows[-1].created_at.replace(tzinfo=None) if getattr(rows[-1].created_at, "tzinfo", None) else rows[-1].created_at
+    covered_days = max(1, (last_date.date() - first_date.date()).days + 1)
+
+    program_map = {}
+    user_map = {}
+    dept_map = {}
+    day_count_map = {}
+    hour_buckets = [0] * 24
+    weekday_buckets = [0] * 7
+
+    for row in rows:
+        created_at = row.created_at.replace(tzinfo=None) if getattr(row.created_at, "tzinfo", None) else row.created_at
+        program_name = row.program_name or "Unknown"
+        employee_id = row.employee_id or "unknown"
+        user = users_by_employee_id.get(employee_id)
+        department = user.department if user and user.department else "Unknown"
+        user_name = user.name if user else "Deleted User"
+        day_key = created_at.date().isoformat()
+
+        program = program_map.setdefault(program_name, {"name": program_name, "count": 0, "users": set(), "lastRun": None})
+        program["count"] += 1
+        program["users"].add(employee_id)
+        if not program["lastRun"] or created_at > program["lastRun"]:
+            program["lastRun"] = created_at
+
+        user_row = user_map.setdefault(employee_id, {
+            "employee_id": employee_id,
+            "name": user_name,
+            "dept": department,
+            "count": 0,
+            "programs": set(),
+            "firstRun": None,
+            "lastRun": None,
+        })
+        user_row["count"] += 1
+        user_row["programs"].add(program_name)
+        if not user_row["firstRun"] or created_at < user_row["firstRun"]:
+            user_row["firstRun"] = created_at
+        if not user_row["lastRun"] or created_at > user_row["lastRun"]:
+            user_row["lastRun"] = created_at
+
+        dept_map[department] = dept_map.get(department, 0) + 1
+        day_count_map[day_key] = day_count_map.get(day_key, 0) + 1
+        hour_buckets[created_at.hour] += 1
+        weekday_buckets[created_at.weekday()] += 1
+
+    program_rows = sorted([
+        {
+            **{k: v for k, v in p.items() if k not in ("users", "lastRun")},
+            "share": round((p["count"] / total) * 100),
+            "userCount": len(p["users"]),
+            "lastRunLabel": p["lastRun"].strftime("%Y-%m-%d %H:%M:%S") if p["lastRun"] else "-",
+        }
+        for p in program_map.values()
+    ], key=lambda p: p["count"], reverse=True)
+
+    user_rows = sorted([
+        {
+            **{k: v for k, v in u.items() if k not in ("programs", "firstRun", "lastRun")},
+            "share": round((u["count"] / total) * 100),
+            "programCount": len(u["programs"]),
+            "lastRunLabel": u["lastRun"].strftime("%Y-%m-%d %H:%M:%S") if u["lastRun"] else "-",
+            "firstRunIso": u["firstRun"].isoformat() if u["firstRun"] else None,
+        }
+        for u in user_map.values()
+    ], key=lambda u: u["count"], reverse=True)
+
+    trend_items = sorted(day_count_map.items(), key=lambda item: item[0])[-14:]
+    max_day = max(day_count_map.values()) if day_count_map else 0
+    peak_hour_index = max(range(24), key=lambda idx: hour_buckets[idx])
+    cutoff = first_date + (last_date - first_date) * 0.7
+    new_users = sum(1 for u in user_map.values() if u["firstRun"] and u["firstRun"] >= cutoff)
+    weekday_labels = ["월", "화", "수", "목", "금", "토", "일"]
+
+    return {
+        "total": total,
+        "activePrograms": len(program_map),
+        "activeUsers": len(user_map),
+        "activeDepartments": len(dept_map),
+        "newUsers": new_users,
+        "avgPerDay": f"{total / covered_days:.1f}",
+        "maxDay": max_day,
+        "coveredDays": covered_days,
+        "busiestProgram": program_rows[0] if program_rows else None,
+        "peakHour": f"{peak_hour_index:02d}시" if hour_buckets[peak_hour_index] else "-",
+        "programRows": program_rows,
+        "userRows": user_rows,
+        "topPrograms": program_rows[:8],
+        "topUsers": user_rows[:8],
+        "trendData": [{"date": datetime.fromisoformat(day).strftime("%b %d"), "count": count} for day, count in trend_items],
+        "hourData": [{"hour": f"{hour:02d}시", "count": count} for hour, count in enumerate(hour_buckets)],
+        "weekdayData": [{"name": name, "count": weekday_buckets[index]} for index, name in enumerate(weekday_labels)],
+        "deptData": sorted([{"name": name, "count": count} for name, count in dept_map.items()], key=lambda d: d["count"], reverse=True)[:8],
+    }
+
+
 @router.get("/analysis/history/{employee_id}")
 def get_analysis_history(
     employee_id: str,
     skip: int = Query(0, ge=0, description="건너뛸 항목 수"),
     limit: int = Query(50, ge=1, le=100000, description="반환할 최대 항목 수"),
+    search: Optional[str] = Query(None),
+    program_name: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    file_status: Optional[str] = Query(None),
+    include_summary: bool = Query(False),
     db: Session = Depends(database.get_db),
     current_user: str = Depends(require_auth),
 ):
@@ -260,20 +434,35 @@ def get_analysis_history(
         models.Analysis.employee_id == employee_id,
         models.Analysis.source != SAMPLE_SOURCE_TAG,
     )
-    total = base_q.count()
-    history = (
-        base_q
-        .order_by(models.Analysis.created_at.desc())
-        .offset(skip).limit(limit)
-        .all()
-    )
-    return {"total": total, "skip": skip, "limit": limit, "items": [_serialize_analysis(r) for r in history]}
+    base_q = _apply_analysis_filters(base_q, search=search, program_name=program_name, status=status)
+    summary = _analysis_summary(base_q) if include_summary else None
+
+    if file_status and file_status != "All":
+        filtered = [
+            r for r in base_q.order_by(models.Analysis.created_at.desc()).all()
+            if ("expired" if not _files_available(r) else "available") == file_status
+        ]
+        total = len(filtered)
+        history = filtered[skip:skip + limit]
+    else:
+        total = base_q.count()
+        history = (
+            base_q
+            .order_by(models.Analysis.created_at.desc())
+            .offset(skip).limit(limit)
+            .all()
+        )
+    return {"total": total, "skip": skip, "limit": limit, "items": [_serialize_analysis(r) for r in history], "summary": summary}
 
 
 @router.get("/analysis/all")
 def get_all_analysis_history(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100000),
+    search: Optional[str] = Query(None),
+    date_from: Optional[_date] = Query(None),
+    date_to: Optional[_date] = Query(None),
+    include_summary: bool = Query(False),
     db: Session = Depends(database.get_db),
     _admin: str = Depends(require_admin),
 ):
@@ -283,6 +472,10 @@ def get_all_analysis_history(
     """
     # 샘플 실행(WorkbenchSample)은 통계·전체 이력에서 제외
     base_q = db.query(models.Analysis).filter(models.Analysis.source != SAMPLE_SOURCE_TAG)
+    base_q = _apply_analysis_filters(base_q, search=search, date_from=date_from, date_to=date_to)
+    users = db.query(models.User).all()
+    users_by_employee_id = {u.employee_id: u for u in users}
+    summary = _analysis_management_summary(base_q, users_by_employee_id) if include_summary else None
     total = base_q.count()
     items = (
         base_q
@@ -290,7 +483,17 @@ def get_all_analysis_history(
         .offset(skip).limit(limit)
         .all()
     )
-    return {"total": total, "skip": skip, "limit": limit, "items": [_serialize_analysis(r) for r in items]}
+    serialized = []
+    for item in items:
+        payload = _serialize_analysis(item)
+        user = users_by_employee_id.get(item.employee_id)
+        payload.update({
+            "department": user.department if user and user.department else "Unknown",
+            "userName": user.name if user else "Deleted User",
+            "isDeveloper": bool(user.is_developer) if user else False,
+        })
+        serialized.append(payload)
+    return {"total": total, "skip": skip, "limit": limit, "items": serialized, "summary": summary}
 
 
 @router.get("/download")
@@ -2039,6 +2242,7 @@ async def export_sidepassage_checkplate(
     folder_path = body.get("folderPath")
     check_plates = body.get("checkPlates")
     bdf_name = body.get("bdfName")
+    edit_intents = body.get("editIntents")  # Studio 편집 의도(RBE2 추가/삭제 등) — 선택
     if not folder_path or not isinstance(check_plates, list):
         raise HTTPException(status_code=400, detail="folderPath 와 checkPlates 는 필수")
 
@@ -2061,6 +2265,29 @@ async def export_sidepassage_checkplate(
         data = _nb.convert_bdf(_Path(bdf_path))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"BDF 변환 실패: {e}")
+
+    # Studio 편집 의도(RBE2 추가/삭제·그룹 삭제 등)를 check plate 보다 먼저 반영한다.
+    # ModelBuilder/Mooring 의 apply-edit-intent 와 동일한 apply_edit_json 을 사용 →
+    # 사용자가 Studio 에서 만든 RBE 가 data["rigids"] 에 들어가 최종 BDF 에 RBE2 로 출력된다.
+    # (편집 의도가 없으면 빈 intents 로 no-op. apply_edit_json 은 오류 시 SystemExit 을 던지므로 변환.)
+    if isinstance(edit_intents, dict) and _nb.is_edit_json(edit_intents):
+        try:
+            data, _edit_summary = _nb.apply_edit_json(data, edit_intents)
+        except SystemExit as e:
+            raise HTTPException(status_code=400, detail=f"편집 적용 실패: {e}")
+        except Exception as e:
+            logger.exception("[sidepassage checkplate] 편집 적용 실패")
+            raise HTTPException(status_code=500, detail=f"편집 적용 실패: {e}")
+
+    # 절점 공유 RBE 정규화 — 서로 다른 RBE2 가 한 Node 에서 만나면 안 된다(사용자 규칙).
+    # 편집으로 추가된 충돌은 add_rigid_from_params 가 막지만, 입력 BDF 에 이미 들어있던
+    # 공유(이전 저장본 재사용 등)까지 강제 해소한다. check plate RBE2 추가 '전' 에 수행해 셸 스티치는 보존.
+    try:
+        merged_rbe = _nb.normalize_rigid_node_sharing(data)
+        if merged_rbe:
+            logger.info("[sidepassage checkplate] 절점 공유 RBE %d개 병합(절점 공유 강제 해소)", merged_rbe)
+    except Exception:
+        logger.exception("[sidepassage checkplate] RBE 절점공유 정규화 실패(무시)")
 
     # check plate 스펙 부착 → convert_json_to_bdf 내부 materialize_check_plates 가 셸/빔분할/RBE2 반영.
     specs = [s for s in check_plates if isinstance(s, dict)]

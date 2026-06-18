@@ -15,12 +15,18 @@ const postAnalysisRequest = (url, formData, programName) =>
   });
 
 /** 사용자 해석 이력 조회 */
-export const getAnalysisHistory = (employeeId, skip = 0, limit = 100000) =>
-  axios.get(`${API_BASE_URL}/api/analysis/history/${employeeId}`, { params: { skip, limit }, headers: getAuthHeaders() });
+export const getAnalysisHistory = (employeeId, skip = 0, limit = 50, filters = {}) =>
+  axios.get(`${API_BASE_URL}/api/analysis/history/${employeeId}`, {
+    params: { skip, limit, ...filters },
+    headers: getAuthHeaders()
+  });
 
-/** 전체 해석 이력 조회 (관리자용) — 통계 집계 위해 사실상 전량 로드 */
-export const getAllAnalysisHistory = (limit = 100000) =>
-  axios.get(`${API_BASE_URL}/api/analysis/all`, { params: { limit }, headers: getAuthHeaders() });
+/** 전체 해석 이력 조회 (관리자용) */
+export const getAllAnalysisHistory = (limit = 50, skip = 0, filters = {}) =>
+  axios.get(`${API_BASE_URL}/api/analysis/all`, {
+    params: { skip, limit, ...filters },
+    headers: getAuthHeaders()
+  });
 
 /** 해석 작업 상태 조회 (폴링용) */
 export const getJobStatus = (jobId) =>

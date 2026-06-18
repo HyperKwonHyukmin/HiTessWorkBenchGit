@@ -9,6 +9,7 @@ import {
   Users, BarChart3, Tag, Database, Layers, Power, AlertTriangle,
   ClipboardList, Download, RefreshCw, Filter
 } from 'lucide-react';
+import { ACTION_TYPE_LABELS, ACTION_TYPE_COLORS } from '../../constants/activityLog';
 
 // ── sparkline buffer 길이 (3초 polling × 30 = 약 90초 윈도우) ──
 const SPARK_LEN = 30;
@@ -145,6 +146,7 @@ export default function SystemSettings() {
   // 3초 폴링: 리소스 + 큐
   useEffect(() => {
     const poll = async () => {
+      if (document.hidden) return;
       try {
         const [statusRes, queueRes] = await Promise.all([
           getSystemStatus(),
@@ -168,7 +170,12 @@ export default function SystemSettings() {
     };
     poll();
     const id = setInterval(poll, 3000);
-    return () => clearInterval(id);
+    const onVisible = () => { if (!document.hidden) poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   // 1회성: 버전, 사용자 수, 해석 수, 유지보수 모드 초기값
@@ -227,37 +234,15 @@ export default function SystemSettings() {
       .then(r => r.blob())
       .then(blob => {
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
+        const url = URL.createObjectURL(blob);
+        a.href = url;
         a.download = `activity_logs_${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
+        URL.revokeObjectURL(url);
       });
   };
 
-  const ACTION_TYPE_LABELS = {
-    LOGIN: '로그인',
-    LOGOUT: '로그아웃',
-    PAGE_VIEW: '페이지 조회',
-    ANALYSIS_REQUEST: '해석 요청',
-    ANALYSIS_COMPLETE: '해석 완료',
-    ANALYSIS_FAILED: '해석 실패',
-    FILE_DOWNLOAD: '파일 다운로드',
-    PROGRAM_DOWNLOAD: '프로그램 다운로드',
-    EXPORT_XLSX: 'Excel 내보내기',
-    VERSION_UPDATE: '버전 업데이트',
-  };
-
-  const ACTION_TYPE_COLORS = {
-    LOGIN: 'bg-emerald-100 text-emerald-700',
-    LOGOUT: 'bg-slate-100 text-slate-600',
-    PAGE_VIEW: 'bg-sky-100 text-sky-700',
-    ANALYSIS_REQUEST: 'bg-violet-100 text-violet-700',
-    ANALYSIS_COMPLETE: 'bg-emerald-100 text-emerald-700',
-    ANALYSIS_FAILED: 'bg-red-100 text-red-700',
-    FILE_DOWNLOAD: 'bg-blue-100 text-blue-700',
-    PROGRAM_DOWNLOAD: 'bg-indigo-100 text-indigo-700',
-    EXPORT_XLSX: 'bg-cyan-100 text-cyan-700',
-    VERSION_UPDATE: 'bg-amber-100 text-amber-700',
-  };
+  // 활동 로그 라벨/색상은 constants/activityLog.js 공용 상수 사용 (중복 제거).
 
   const handleToggleMaintenance = async () => {
     setMaintenanceLoading(true);

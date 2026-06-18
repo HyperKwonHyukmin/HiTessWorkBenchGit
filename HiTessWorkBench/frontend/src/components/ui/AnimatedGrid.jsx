@@ -26,7 +26,7 @@ export default function AnimatedGrid({ children, className }) {
         if (!child) return null;
         // 각 child를 cardEntrance variants를 가진 motion.div로 감쌉니다
         return (
-          <motion.div variants={cardEntrance} className="h-full">
+          <motion.div key={child.key ?? undefined} variants={cardEntrance} className="h-full">
             {child}
           </motion.div>
         );

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { getAnalysisHistory, downloadFileBlob, exportAssessmentXlsx } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import {
   Search, Filter, Download, RefreshCw,
   ChevronRight, ChevronLeft, Box,
-  CheckCircle2, XCircle, AlertCircle,
+  CheckCircle2,
   FileCode, Database, FileOutput, Eye, FileX,
   TrendingUp, CalendarClock, Award, BarChart3, Minus
 } from 'lucide-react';
@@ -15,51 +15,19 @@ import HpScrViewerModal from '../../components/modals/HpScrViewerModal';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import PageHeader from '../../components/ui/PageHeader';
+import StatusBadge from '../../components/ui/StatusBadge';
+import FeedbackState from '../../components/ui/FeedbackState';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 const FILE_RETENTION_DAYS = 30;
 
 const fileStatusOf = (project) => (project?.files_available === false ? 'expired' : 'available');
 
-// ==========================================
-// 1. 상태 뱃지 헬퍼
-// ==========================================
-const StatusBadge = ({ status }) => {
-  const styles = {
-    Success: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    Failed: "bg-red-100 text-red-700 border-red-200",
-    Pending: "bg-slate-100 text-slate-600 border-slate-200",
-  };
-  const icons = {
-    Success: <CheckCircle2 size={12} className="mr-1" />,
-    Failed: <XCircle size={12} className="mr-1" />,
-    Pending: <AlertCircle size={12} className="mr-1" />,
-  };
-  return (
-    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border flex items-center w-fit ${styles[status] || styles.Pending}`}>
-      {icons[status] || icons.Pending}
-      {status}
-    </span>
-  );
-};
-
 const FileRetentionBadge = ({ project }) => {
   const expired = fileStatusOf(project) === 'expired';
-  if (expired) {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border bg-slate-100 text-slate-500 border-slate-200 whitespace-nowrap">
-        <FileX size={12} className="shrink-0" />
-        파일 만료
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border bg-blue-50 text-blue-700 border-blue-200 whitespace-nowrap">
-      <FileOutput size={12} className="shrink-0" />
-      파일 보관 중
-    </span>
-  );
+  return <StatusBadge status={expired ? 'expired' : 'available'} size="md" className="whitespace-nowrap" />;
 };
 
 // ==========================================
@@ -314,6 +282,7 @@ const PAGE_SIZE = 10;
 
 export default function MyProjects() {
   const { showToast } = useToast();
+  const { employeeId } = useAuth();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -322,50 +291,58 @@ export default function MyProjects() {
   const [fileStatusFilter, setFileStatusFilter] = useState('All');
   const [selectedProject, setSelectedProject] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [summary, setSummary] = useState(null);
 
   // 3D 뷰어 모달 상태
   const [is3DViewerOpen, setIs3DViewerOpen] = useState(false);
   // Truss Assessment 결과 모델 뷰어(결과 색상 시각화) 상태
   const [isResultViewerOpen, setIsResultViewerOpen] = useState(false);
 
-  const fetchHistory = async (signal) => {
+  const fetchHistory = useCallback(async (signal) => {
     try {
       setLoading(true);
-      const userStr = localStorage.getItem('user');
-      const employeeId = userStr ? JSON.parse(userStr).employee_id : null;
       if (!employeeId) return;
 
-      const response = await getAnalysisHistory(employeeId);
+      const response = await getAnalysisHistory(
+        employeeId,
+        (currentPage - 1) * PAGE_SIZE,
+        PAGE_SIZE,
+        {
+          search: searchTerm || undefined,
+          program_name: programFilter === 'All' ? undefined : programFilter,
+          status: statusFilter === 'All' ? undefined : statusFilter,
+          file_status: fileStatusFilter === 'All' ? undefined : fileStatusFilter,
+          include_summary: true,
+        },
+      );
       if (signal?.aborted) return;
-      setProjects(response.data?.items ?? response.data);
+      setProjects(response.data?.items ?? response.data ?? []);
+      setTotalCount(response.data?.total ?? 0);
+      setSummary(response.data?.summary ?? null);
     } catch (error) {
       if (error.name === 'AbortError' || error.name === 'CanceledError') return;
       console.error("이력 불러오기 실패:", error);
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  };
+  }, [currentPage, fileStatusFilter, programFilter, searchTerm, statusFilter, employeeId]);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchHistory(controller.signal);
-    return () => controller.abort();
-  }, []);
+    const timer = setTimeout(() => fetchHistory(controller.signal), searchTerm ? 250 : 0);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [fetchHistory, searchTerm]);
 
   // 필터 변경 시 첫 페이지로 리셋
   useEffect(() => { setCurrentPage(1); }, [searchTerm, programFilter, statusFilter, fileStatusFilter]);
 
-  const userSeqById = useMemo(() => {
-    const sortedAsc = [...projects].sort(
-      (a, b) => new Date(a.created_at) - new Date(b.created_at)
-    );
-    const map = new Map();
-    sortedAsc.forEach((p, idx) => map.set(p.id, idx + 1));
-    return map;
-  }, [projects]);
-
   // ── 통계 집계 ──
   const stats = useMemo(() => {
+    if (summary) return summary;
     const total = projects.length;
     const success = projects.filter(p => p.status === 'Success').length;
     const successRate = total > 0 ? Math.round((success / total) * 100) : 0;
@@ -404,7 +381,7 @@ export default function MyProjects() {
       expiredFiles,
       availableFiles,
     };
-  }, [projects]);
+  }, [projects, summary]);
 
   const MODULE_BAR_COLORS = [
     'from-blue-400 to-blue-600',
@@ -415,18 +392,8 @@ export default function MyProjects() {
     'from-cyan-400 to-cyan-600',
   ];
 
-  const filteredProjects = projects.filter(p => {
-    const matchesSearch = !searchTerm ||
-      (p.project_name && p.project_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (p.program_name && p.program_name.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesProgram = programFilter === 'All' || p.program_name === programFilter;
-    const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
-    const matchesFileStatus = fileStatusFilter === 'All' || fileStatusOf(p) === fileStatusFilter;
-    return matchesSearch && matchesProgram && matchesStatus && matchesFileStatus;
-  });
-
-  const totalPages = Math.ceil(filteredProjects.length / PAGE_SIZE);
-  const paginatedProjects = filteredProjects.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const paginatedProjects = projects;
 
   return (
     <div className="max-w-7xl mx-auto pb-10">
@@ -687,19 +654,22 @@ export default function MyProjects() {
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="py-20 text-center text-slate-400">
-                    <div className="animate-spin inline-block w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mb-4"></div>
-                    <p className="text-sm font-bold">Loading Data...</p>
+                  <td colSpan="7">
+                    <FeedbackState
+                      variant="loading"
+                      title="Loading Data..."
+                      message="해석 이력을 불러오는 중입니다."
+                    />
                   </td>
                 </tr>
               ) : paginatedProjects.length > 0 ? (
-                paginatedProjects.map((project) => (
+                paginatedProjects.map((project, index) => (
                   <tr 
                     key={project.id}
                     onClick={() => setSelectedProject(project)}
                     className="hover:bg-blue-50/50 transition-colors cursor-pointer group"
                   >
-                    <td className="py-4 px-6 font-mono text-xs text-slate-500 font-bold text-center">{userSeqById.get(project.id) ?? '-'}</td>
+                    <td className="py-4 px-6 font-mono text-xs text-slate-500 font-bold text-center">{(currentPage - 1) * PAGE_SIZE + index + 1}</td>
                     <td className="py-4 px-6">
                       <div className="flex items-center">
                         <div className="p-2 bg-slate-100 rounded text-slate-400 mr-3 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors"><Box size={18} /></div>
@@ -717,9 +687,12 @@ export default function MyProjects() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="py-20 text-center text-slate-400">
-                    <FileCode size={40} className="mx-auto mb-3 opacity-30" />
-                    <p className="text-sm">실행된 해석 이력이 없습니다.</p>
+                  <td colSpan="7">
+                    <FeedbackState
+                      icon={FileCode}
+                      title="실행된 해석 이력이 없습니다."
+                      message="필터 조건을 조정하거나 새 해석을 실행하면 이곳에 표시됩니다."
+                    />
                   </td>
                 </tr>
               )}
@@ -732,9 +705,9 @@ export default function MyProjects() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4 px-2">
           <p className="text-xs text-slate-500">
-            전체 <span className="font-bold text-slate-700">{filteredProjects.length}</span>건 중{' '}
+            전체 <span className="font-bold text-slate-700">{totalCount}</span>건 중{' '}
             <span className="font-bold text-slate-700">
-              {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredProjects.length)}
+              {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, totalCount)}
             </span>건 표시
           </p>
           <div className="flex items-center gap-1">
