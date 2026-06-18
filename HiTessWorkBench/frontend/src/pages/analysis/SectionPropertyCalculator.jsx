@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import axios from 'axios';
 import {
-  SlidersHorizontal, Calculator, AlertCircle, Loader2, Plus, Trash2,
+  PenTool, Calculator, AlertCircle, Loader2, Plus, Trash2,
 } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -778,7 +778,7 @@ export default function SectionPropertyCalculator() {
       <AnalysisPageBanner
         title="Section Property Calculator"
         subtitle="단면 형상과 치수를 입력하여 면적, 관성모멘트, 단면계수 등 구조 특성값을 산출합니다."
-        icon={SlidersHorizontal}
+        icon={PenTool}
         guideTitle="[인터랙티브] Section Property Calculator"
         onBack={() => setCurrentMenu('Interactive Apps')}
         backLabel="Interactive Apps로 돌아가기"

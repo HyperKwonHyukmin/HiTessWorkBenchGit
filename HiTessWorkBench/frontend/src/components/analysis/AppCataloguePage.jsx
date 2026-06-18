@@ -24,6 +24,8 @@ const colorToAccent = (colorClass = '') => {
   return 'blue';
 };
 
+const FILE_CATEGORY_ORDER = ['Truss', 'Pipe', 'Lifting', 'Mooring Fitting', 'Passage', 'PDF'];
+
 export default function AppCataloguePage({
   mode,
   title,
@@ -42,7 +44,14 @@ export default function AppCataloguePage({
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('hitess_app_view_mode') ?? 'grid');
 
   const apps = ANALYSIS_DATA.filter(item => item.mode === mode);
-  const categories = ['All', ...new Set(apps.map(item => item.category))];
+  const categorySet = new Set(apps.map(item => item.category));
+  const orderedCategories = mode === 'File'
+    ? [
+        ...FILE_CATEGORY_ORDER.filter(category => categorySet.has(category)),
+        ...[...categorySet].filter(category => !FILE_CATEGORY_ORDER.includes(category)),
+      ]
+    : [...categorySet];
+  const categories = ['All', ...orderedCategories];
   const filtered = activeCategory === 'All' ? apps : apps.filter(item => item.category === activeCategory);
   const activeApps = filtered.filter(item => !item.devStatus || item.devStatus === 'Active');
   const developingApps = filtered.filter(item => item.devStatus && item.devStatus !== 'Active');

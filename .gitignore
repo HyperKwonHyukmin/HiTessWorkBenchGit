@@ -96,3 +96,6 @@ lug-preview-after.png
 Get-Command
 # claude-mem 으로 생성한 분석 보고서 (필요 시 개별 추가)
 journey-into-*.md
+
+# 소개/마케팅 영상 — 큰 바이너리는 git 미추적(로컬·배포물로만 보관)
+HiTessWorkBenchBackEnd/Videos/

@@ -46,6 +46,7 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:runPlateStructural',
   'viewer:runMooringStructural',
   'viewer:exportMooringBdf',
+  'viewer:exportSidePassageBdf',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
   'viewer:checkPathAccess',
   'viewer:fetchResultDir',
@@ -133,6 +134,11 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // payload = { intents: Array }, 반환 = { ok, savedPath, summary } | { ok:false, canceled?, error }
   exportMooringBdf: (opts) =>
     ipcRenderer.invoke('viewer:exportMooringBdf', opts),
+  // SidePassageStudio "Model 저장(Check Plate)" → 백엔드 checkplate-export(원본 BDF 양식 보존
+  // + 셸/RBE2 추가) → 사용자 PC 저장. payload = { checkPlates: Array },
+  // 반환 = { ok, savedPath, stats } | { ok:false, canceled?, error }
+  exportSidePassageBdf: (opts) =>
+    ipcRenderer.invoke('viewer:exportSidePassageBdf', opts),
   onMooringStructuralProgress: (callback) => {
     const listener = (_, data) => callback(data);
     ipcRenderer.on('viewer:mooring-structural-progress', listener);

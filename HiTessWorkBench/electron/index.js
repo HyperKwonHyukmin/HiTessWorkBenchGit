@@ -29,6 +29,9 @@ let viewerServerUrl = null;
 // viewer:runMooringStructural 가 백엔드에 전달할 서버측 output_dir(원본 BDF 보유 userConnection out 폴더).
 // MooringFittingStudio 는 로컬 추출 폴더만 알기에, solve 는 이 서버 경로 기준으로 수행된다.
 let viewerOutputDir = null;
+// viewer:exportSidePassageBdf 가 백엔드에 넘길 원본 SidePassage BDF 파일명(폴더 내 원본 식별용).
+// viewer:open 에서 등록된다. 없으면 백엔드가 폴더에서 파생본 제외 후 추정한다.
+let viewerSidePassageBdfName = null;
 
 function createWindow() {
   // 기준 해상도(1920px) 대비 현재 화면 비율로 zoomFactor 자동 계산
@@ -890,7 +893,7 @@ ipcMain.handle("viewer:readLocalFile", async (_e, payload) => {
 
 // 3) 풀스크린 보조 BrowserWindow 로 viewer 오픈
 ipcMain.handle("viewer:open", async (_e, payload) => {
-  const { viewerId, initialFolder, parentAnalysisId, serverUrl, outputDir } = payload || {};
+  const { viewerId, initialFolder, parentAnalysisId, serverUrl, outputDir, sidePassageBdfName } = payload || {};
   if (!viewerId) return { ok: false, error: "viewerId 누락" };
 
   const dir = getViewerDir(viewerId);
@@ -908,7 +911,12 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
     ? serverUrl.trim().replace(/\/$/, "")
     : null;
   // MooringFittingStudio 구조해석용 서버측 out 폴더(원본 BDF 위치). 없으면 null → 해당 IPC 거부.
+  // SidePassageStudio Check Plate export 도 같은 서버 폴더(원본 BDF 보유)를 기준으로 동작한다.
   viewerOutputDir = typeof outputDir === "string" && outputDir.trim() ? outputDir.trim() : null;
+  // SidePassage 원본 BDF 파일명(폴더 내 원본 식별용). 없으면 백엔드가 파생본 제외 후 추정.
+  viewerSidePassageBdfName = typeof sidePassageBdfName === "string" && sidePassageBdfName.trim()
+    ? sidePassageBdfName.trim()
+    : null;
 
   if (viewerWindow && !viewerWindow.isDestroyed()) {
     viewerWindow.focus();
@@ -1747,6 +1755,83 @@ ipcMain.handle("viewer:exportMooringBdf", async (_e, payload) => {
     }
     fs.writeFileSync(saveRes.filePath, bdfText, "utf-8");
     return { ok: true, savedPath: saveRes.filePath, summary: body?.summary ?? null };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
+// SidePassageStudio "Model 저장(Check Plate)" → 백엔드 checkplate-export 로 원본 BDF 양식을 보존한
+// 최종 BDF(셸/RBE2 추가)를 만들고 사용자 PC 에 저장(대화상자). 손실 JS 라이터(bdfExport.js) 대신
+// 백엔드 라이터(convert_json_to_bdf)로 일원화해 Nastran 양식이 다시 깨지지 않게 한다.
+// payload = { checkPlates: Array }, 반환 = { ok, savedPath, stats } | { ok:false, canceled?, error }
+ipcMain.handle("viewer:exportSidePassageBdf", async (_e, payload) => {
+  try {
+    const checkPlates = Array.isArray(payload?.checkPlates) ? payload.checkPlates : [];
+    if (!viewerOutputDir) {
+      return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 BDF 검증을 완료하고 Studio 를 다시 여세요." };
+    }
+    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const { serverUrl } = runtimeConfig;
+    if (!runtimeConfig.employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+
+    // 1) 원본 BDF + check plate 스펙 → 양식 보존 최종 BDF 생성
+    const { res: reqRes } = await fetchWithSessionRefresh(
+      `${serverUrl}/api/analysis/sidepassage/checkplate-export`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderPath: viewerOutputDir, checkPlates, bdfName: viewerSidePassageBdfName }),
+      },
+      runtimeConfig,
+    );
+    if (!reqRes.ok) {
+      const detail = await readBackendError(reqRes);
+      const hint = reqRes.status === 404
+        ? ` - checkplate-export API가 해당 서버에 없습니다. 서버(${serverUrl})가 최신 WorkBench 백엔드인지 확인하세요.`
+        : "";
+      return { ok: false, error: `Check Plate BDF 생성 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}${hint}` };
+    }
+    const body = await reqRes.json();
+    const bdfPath = body?.bdfPath;
+    if (!bdfPath) return { ok: false, error: "백엔드 응답에 bdfPath 가 없습니다." };
+
+    // 2) 생성된 BDF 다운로드
+    const dlUrl = `${serverUrl}/api/download?filepath=${encodeURIComponent(bdfPath)}`;
+    const { res: dlRes } = await fetchWithSessionRefresh(dlUrl, { method: "GET" }, runtimeConfig);
+    if (!dlRes.ok) {
+      const detail = await readBackendError(dlRes);
+      return { ok: false, error: `BDF 다운로드 실패: ${dlRes.status}${detail ? ` - ${detail}` : ""}` };
+    }
+    const bdfText = await dlRes.text();
+
+    // 3) 사용자 PC 저장 (저장 대화상자)
+    const target = viewerWindow && !viewerWindow.isDestroyed() ? viewerWindow : mainWindow;
+    const saveRes = await dialog.showSaveDialog(target, {
+      title: "Check Plate 반영 최종 BDF 저장",
+      defaultPath: path.basename(bdfPath) || "side_passage_checkplate.bdf",
+      filters: [{ name: "Nastran BDF", extensions: ["bdf"] }],
+    });
+    if (saveRes.canceled || !saveRes.filePath) {
+      return { ok: false, canceled: true, error: "저장이 취소되었습니다." };
+    }
+    fs.writeFileSync(saveRes.filePath, bdfText, "utf-8");
+
+    // 4) WorkBench 본체에 저장 알림(3단계 '해석 모델 확인' 갱신) + Studio 닫기
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("viewer:model-saved", {
+        viewerId: viewerCurrentId,
+        filePath: saveRes.filePath,
+        fileName: path.basename(saveRes.filePath),
+        kind: "side-passage-checkplate-bdf",
+        stats: body?.stats || null,
+      });
+    }
+    setImmediate(() => {
+      if (viewerWindow && !viewerWindow.isDestroyed()) viewerWindow.close();
+    });
+    return { ok: true, savedPath: saveRes.filePath, stats: body?.stats ?? null };
   } catch (e) {
     return { ok: false, error: e?.message || "예외 발생" };
   }

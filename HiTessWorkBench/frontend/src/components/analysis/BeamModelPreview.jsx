@@ -8,7 +8,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { toPng } from 'html-to-image';
 import {
   Box, Activity, Plus, Trash2, ShieldCheck, ArrowDown, RefreshCw,
-  SlidersHorizontal, Play, FileJson, Upload, BarChart2, Camera,
+  SlidersHorizontal, PenTool, Play, FileJson, Upload, BarChart2, Camera,
   Download, ChevronDown, FileText
 } from 'lucide-react';
 import AnalysisPageBanner from './AnalysisPageBanner';
@@ -286,7 +286,7 @@ export default function BeamModelPreview() {
       <AnalysisPageBanner
         title="Simple Beam Assessment"
         subtitle="단면 형상과 치수를 직접 입력하여 단순 보의 응력 및 변위를 평가합니다."
-        icon={SlidersHorizontal}
+        icon={PenTool}
         guideTitle="[대화형] Simple Beam Assessment — 보 해석"
         onBack={() => setCurrentMenu('Interactive Apps')}
         backLabel="Interactive Apps로 돌아가기"

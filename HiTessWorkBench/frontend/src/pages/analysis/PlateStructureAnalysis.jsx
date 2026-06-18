@@ -10,6 +10,7 @@ import {
   Loader2,
   MousePointerClick,
   PackageCheck,
+  PenTool,
   Ruler,
   Sparkles,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { API_BASE_URL } from '../../config';
+import SolverCredit from '../../components/ui/SolverCredit';
 
 // 2026-05-14: PlateAnalysisStudio 의 dist/manifest.json id 와 일치해야 한다.
 // 사내 스토리지 zip: plate-studio-<version>.zip — 백엔드 _find_zip 이 prefix 매칭.
@@ -165,7 +167,7 @@ export default function PlateStructureAnalysis() {
     <div className="max-w-7xl mx-auto pb-16">
       <AnalysisPageBanner
         title="Plate Structure Analysis"
-        icon={Layers}
+        icon={PenTool}
         subtitle="Plate 구조 해석용 Studio를 실행하여 판 구조 모델링 및 해석 작업을 진행하세요."
         guideTitle="[대화형] Plate Structure Analysis — Studio"
         onBack={() => setCurrentMenu('Interactive Apps')}
@@ -344,6 +346,7 @@ export default function PlateStructureAnalysis() {
         </aside>
       </div>
 
+      <SolverCredit contributor="권혁민" />
     </div>
   );
 }

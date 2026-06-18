@@ -1982,6 +1982,116 @@ async def apply_mooring_fitting_edit(
     return {"ok": True, "bdfPath": output_bdf, "summary": summary}
 
 
+# ── Side Passage Studio: Check Plate → 원본 양식 보존 최종 BDF ──────────────
+# 스튜디오의 손실 JS 라이터(bdfExport.js: free-field CBAR/PBAR, CONM2/하중/deck 누락) 대신
+# 원본 업로드 BDF 를 convert_bdf → convert_json_to_bdf 로 재생성해 양식을 보존한다(라이터 일원화).
+# check plate 는 좌표 기반 스펙(cornerCoords)이라 원본 BDF 의 노드 id 체계와 무관하게 반영된다.
+_SP_DERIVED_BDF_SUFFIXES = (
+    "_lifting.bdf", "_checkplate.bdf", "_edited.bdf", "_edit.bdf", "_solve.bdf",
+)
+
+
+def _find_original_sidepassage_bdf(abs_folder: str, bdf_name: str | None) -> str | None:
+    """SidePassage 폴더에서 '원본' 업로드 BDF 경로를 고른다.
+
+    bdf_name(파일명) 이 주어지고 실제 존재하면 그걸 신뢰한다. 없으면 폴더의 .bdf 중
+    파생본(_lifting/_checkplate/_edited…)을 제외한 것을 우선 후보로 삼고 사전순 첫 항목을 쓴다.
+    """
+    if isinstance(bdf_name, str) and bdf_name.strip():
+        cand = os.path.join(abs_folder, os.path.basename(bdf_name.strip()))
+        if os.path.isfile(cand):
+            return cand
+    try:
+        bdfs = [f for f in os.listdir(abs_folder) if f.lower().endswith(".bdf")]
+    except OSError:
+        return None
+    originals = [f for f in bdfs
+                 if not any(f.lower().endswith(s) for s in _SP_DERIVED_BDF_SUFFIXES)]
+    pick = sorted(originals or bdfs)
+    return os.path.join(abs_folder, pick[0]) if pick else None
+
+
+@router.post("/analysis/sidepassage/checkplate-export")
+async def export_sidepassage_checkplate(
+    request: Request,
+    current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """Side Passage Studio Check Plate → 원본 BDF 양식을 보존한 최종 BDF 생성.
+
+    Body JSON: { folderPath: str, checkPlates: list, bdfName?: str }
+      folderPath = userConnection 하위 SidePassage 폴더(원본 업로드 BDF 보유).
+      checkPlates = 스튜디오가 만든 check plate 스펙 목록(cornerCoords/gridLines/thickness…).
+      bdfName(선택) = 원본 BDF 파일명. 없으면 파생본 제외 후 추정.
+    동작: 원본 BDF → convert_bdf(deck/CONM2/PBEAML 보존) → data["checkPlates"]=specs →
+          convert_json_to_bdf(8칸 고정필드 재생성 + CQUAD4/PSHELL/RBE2 추가).
+    반환: { ok, bdfPath, stats }  → 호출측이 /api/download 로 회수.
+    """
+    if not _NB_AVAILABLE:
+        raise HTTPException(status_code=500, detail="nastran_bridge 모듈 없음")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON body 파싱 실패")
+
+    folder_path = body.get("folderPath")
+    check_plates = body.get("checkPlates")
+    bdf_name = body.get("bdfName")
+    if not folder_path or not isinstance(check_plates, list):
+        raise HTTPException(status_code=400, detail="folderPath 와 checkPlates 는 필수")
+
+    try:
+        abs_folder = _validate_userconnection_path(folder_path)
+        assert_current_user_can_access_path(abs_folder, current_user, db, _ALLOWED_DOWNLOAD_BASE)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"경로 검증 실패: {e}")
+    if not os.path.isdir(abs_folder):
+        raise HTTPException(status_code=404, detail=f"폴더 없음: {abs_folder}")
+
+    bdf_path = _find_original_sidepassage_bdf(abs_folder, bdf_name)
+    if not bdf_path or not os.path.isfile(bdf_path):
+        raise HTTPException(status_code=404, detail="원본 BDF 를 찾을 수 없습니다.")
+
+    from pathlib import Path as _Path
+    try:
+        data = _nb.convert_bdf(_Path(bdf_path))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"BDF 변환 실패: {e}")
+
+    # check plate 스펙 부착 → convert_json_to_bdf 내부 materialize_check_plates 가 셸/빔분할/RBE2 반영.
+    specs = [s for s in check_plates if isinstance(s, dict)]
+    data["checkPlates"] = specs
+    try:
+        bdf_text = _nb.convert_json_to_bdf(data)
+    except Exception as e:
+        logger.exception("[sidepassage checkplate] BDF 생성 실패")
+        raise HTTPException(status_code=500, detail=f"BDF 생성 실패: {e}")
+
+    base = os.path.splitext(os.path.basename(bdf_path))[0]
+    out_path = os.path.join(abs_folder, f"{base}_checkplate.bdf")
+    try:
+        _Path(out_path).write_text(bdf_text, encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"BDF 저장 실패: {e}")
+
+    def _count(card: str) -> int:
+        return sum(1 for ln in bdf_text.splitlines()
+                   if ln[:8].strip().upper().rstrip("*") == card)
+    stats = {
+        "quadCount": _count("CQUAD4"),
+        "triCount": _count("CTRIA3"),
+        "beamCount": _count("CBEAM") + _count("CBAR"),
+        "rbe2Count": _count("RBE2"),
+        "checkPlates": len(specs),
+    }
+    logger.info("[sidepassage checkplate] 완료: %s (quad=%d, rbe2=%d)",
+                out_path, stats["quadCount"], stats["rbe2Count"])
+    return {"ok": True, "bdfPath": out_path, "stats": stats}
+
+
 # ── Mooring 구조해석: 편집 반영 solvable BDF 생성 ──────────────────────────
 # 편집 출력(convert_json_to_bdf)은 하중·구속·SUBCASE 가 없어 solve 불가하므로,
 # 원본 solvable BDF 의 case control/하중/구속은 그대로 두고 element/RBE2 만 편집 반영한다.

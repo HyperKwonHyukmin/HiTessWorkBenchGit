@@ -12,11 +12,12 @@ import { LineSegments2 }        from 'three/examples/jsm/lines/LineSegments2';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 import { LineMaterial }         from 'three/examples/jsm/lines/LineMaterial';
 import {
-  Box, Ruler, Layers, Wind, Trash2,
+  PenTool, Ruler, Layers, Wind, Trash2,
   Settings2, Activity, Anchor, AlertCircle
 } from 'lucide-react';
 import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
+import SolverCredit from '../../components/ui/SolverCredit';
 
 // ────────────────────────────────────────────────────────────
 // 유효성 검사 헬퍼
@@ -939,7 +940,7 @@ export default function IndependentTankAssessment() {
       <AnalysisPageBanner
         title="Independent Tank Assessment"
         subtitle="독립 탱크 치수·판두께·보강재·경계조건을 입력하여 구조 해석 모델을 구축합니다."
-        icon={Box}
+        icon={PenTool}
         guideTitle="[대화형] Independent Tank Assessment — 독립 탱크 모델링"
         onBack={() => setCurrentMenu('Interactive Apps')}
         backLabel="Interactive Apps로 돌아가기"
@@ -1404,6 +1405,7 @@ export default function IndependentTankAssessment() {
 
       </div>{/* end 2컬럼 그리드 */}
 
+      <SolverCredit contributor="김한별" />
     </div>
   );
 }

@@ -549,11 +549,16 @@ export default function SidePassageAssessment() {
       }
 
       setStudioStatus('opening');
+      // outputDir 는 항상 서버측 원본 폴더(bdfFolderPath) — initialFolder 가 로컬 추출본으로
+      // 바뀌어도 백엔드 checkplate-export 는 서버의 원본 BDF 를 읽어 양식을 재생성한다.
+      const sidePassageBdfName = bdfPath ? bdfPath.split(/[\\/]/).pop() : null;
       const openRes = await window.electron.invoke('viewer:open', {
         viewerId: SIDE_PASSAGE_STUDIO_VIEWER_ID,
         initialFolder,
         parentAnalysisId: bdfAnalysisId,
         serverUrl: API_BASE_URL,
+        outputDir: bdfFolderPath,
+        sidePassageBdfName,
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok) throw new Error(openRes?.error || 'Studio 오픈 실패');
@@ -565,7 +570,7 @@ export default function SidePassageAssessment() {
       setStudioStatus('error');
       showToast(`Side Passage Studio 실행 실패 — ${e.message}`, 'error');
     }
-  }, [bdfFolderPath, bdfAnalysisId, showToast]);
+  }, [bdfFolderPath, bdfPath, bdfAnalysisId, showToast]);
 
   const activeStep = steps[activeIdx];
   const isBdfStep      = activeStep?.id === 'bdf-validation';

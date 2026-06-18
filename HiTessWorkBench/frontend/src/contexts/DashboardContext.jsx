@@ -12,20 +12,21 @@ const RAW_ANALYSIS_DATA = [
   // ── File-Based Apps (signature: blue) ──────────── Active ──
   { mode: "File", category: "Truss", title: "Truss Model Builder", description: "Truss 설계 정보를 활용하여 구조 해석 모델을 구축합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "모델생성", "CSV"], devStatus: "Active", contributor: "권혁민" },
   { mode: "File", category: "Truss", title: "Truss Structural Assessment", description: "Truss BDF 모델을 업로드하여 구조적 안정성을 평가합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "구조평가", "BDF"], devStatus: "Active", contributor: "권혁민" },
-  { mode: "File", category: "Pipeline", title: "HiTESS Model Builder", description: "CSV부터 Nastran 해석까지 FEM 파이프라인 전 과정을 단일 UI에서 관리합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["CSV", "BDF", "Nastran", "Pipeline"], devStatus: "Active", contributor: "권혁민" },
-  { mode: "File", category: "Piping", title: "HP-SCR 배관응력 해석", description: "배관 BDF를 업로드하여 열변형 계산 및 배관응력 해석(PSA · POR)을 수행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["배관", "PSA", "POR", "BDF"], devStatus: "Active", contributor: "김윤환" },
+  { mode: "File", category: "Truss", title: "HiTESS Model Builder", description: "CSV부터 Nastran 해석까지 FEM 파이프라인 전 과정을 단일 UI에서 관리합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["CSV", "BDF", "Nastran", "Pipeline"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "File", category: "Pipe", title: "HP-SCR 배관응력 해석", description: "배관 BDF를 업로드하여 열변형 계산 및 배관응력 해석(PSA · POR)을 수행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["배관", "PSA", "POR", "BDF"], devStatus: "Active", contributor: "김윤환" },
   // ── File-Based Apps (signature: blue) ─────────── Developing ──
   { mode: "File", category: "Lifting", title: "Group & Module Unit 권상 구조 해석", description: "Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["유닛", "블록", "국부강도"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "File", category: "Access", title: "Side Passage Assessment", description: "Side Passage BDF 모델을 검증하고 Studio 기반 권상 조건·Nastran 해석·결과 판정을 진행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Side Passage", "BDF", "Studio", "권상"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "File", category: "Drawing", title: "DrawingToAnalysis", description: "설계 도면(PDF)을 업로드하여 LUG 구조 해석 BDF 모델로 변환합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["PDF", "Drawing", "BDF"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "File", category: "MooringFitting", title: "Mooring Fitting Assessment", description: "Mooring Fitting / Winch 보강 구조의 CSV 2종을 입력받아 8단계 BDF 파이프라인을 자동 생성합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Mooring", "Winch", "BDF", "Pipeline"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "Passage", title: "Side Passage Assessment", description: "Side Passage BDF 모델을 검증하고 Studio 기반 권상 조건·Nastran 해석·결과 판정을 진행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Side Passage", "BDF", "Studio", "권상"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "PDF", title: "DrawingToAnalysis", description: "설계 도면(PDF)을 업로드하여 LUG 구조 해석 BDF 모델로 변환합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["PDF", "Drawing", "BDF"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "Mooring Fitting", title: "Mooring Fitting Assessment", description: "Mooring Fitting / Winch 보강 구조의 CSV 2종을 입력받아 8단계 BDF 파이프라인을 자동 생성합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Mooring", "Winch", "BDF", "Pipeline"], devStatus: "Developing", contributor: "권혁민" },
   // ── Interactive Apps (signature: violet) ──────── Active ──
   { mode: "Interactive", category: "1D Beam", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-violet-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active", contributor: "권혁민" },
   { mode: "Interactive", category: "Section", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Active", contributor: "권혁민" },
   // ── Interactive Apps (signature: violet) ──────── Developing ──
   { mode: "Interactive", category: "Plate", title: "Plate Structure Analysis", description: "Plate 구조 해석용 Studio를 실행하여 판 구조 모델링 및 해석 작업을 진행합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Plate", "Studio", "구조해석"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "Interactive", category: "Tank", title: "Independent Tank Assessment", description: "독립 탱크의 치수·판두께·보강재 배치를 입력하여 구조 해석 모델을 구축합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Tank", "Plate", "Stiffener", "3D"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "Interactive", category: "Weld", title: "Block Weld Assessment", description: "블록 전도 방지 구속 용접양 산출 수행", icon: PenTool, color: "bg-violet-600", tags: ["Weld", "Block", "용접"], devStatus: "Active", contributor: "김한별" },
+  { mode: "Interactive", category: "Tank", title: "Independent Tank Assessment", description: "독립 탱크의 치수·판두께·보강재 배치를 입력하여 구조 해석 모델을 구축합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Tank", "Plate", "Stiffener", "3D"], devStatus: "Developing", contributor: "김한별" },
+  { mode: "Interactive", category: "Weld", title: "Block Weld Assessment", description: "블록 전도 방지 구속 용접양을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Weld", "Block", "용접"], devStatus: "Active", contributor: "김한별" },
+  { mode: "Interactive", category: "Lifting", title: "Heavy Block Lifting Simulation", description: "중량물 블록의 권상 과정에서 자세 안정성을 사전에 예측·검증 합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Lifting", "Block", "권상", "자세안정성"], devStatus: "Developing", contributor: "김한별" },
   // ── Parametric Apps (signature: emerald) ──────── Active ──
   { mode: "Parametric", category: "Davit", title: "Jib Rest Assessment", description: "Jib Rest 구조물의 1단/2단 파이프 설계 후보를 산출합니다.", icon: SlidersHorizontal, color: "bg-emerald-600", tags: ["Jib Rest", "1단", "2단"], devStatus: "Active", contributor: "박준석" },
   { mode: "Parametric", category: "Davit", title: "Mast Post Assessment", description: "Post 높이와 플랫폼 하중을 입력하여 기준을 만족하는 최적 파이프 후보를 산출합니다.", icon: SlidersHorizontal, color: "bg-emerald-600", tags: ["Post", "파이프선정"], devStatus: "Active", contributor: "박준석" },
@@ -114,6 +115,10 @@ const APP_REGISTRY_OVERRIDES = {
   "Block Weld Assessment": {
     menuName: "Block Weld Assessment",
     programNames: ["Block Weld Assessment"],
+  },
+  "Heavy Block Lifting Simulation": {
+    menuName: "Heavy Block Lifting Simulation",
+    programNames: ["Heavy Block Lifting Simulation"],
   },
   "Jib Rest Assessment": {
     menuName: "Jib Rest Assessment",

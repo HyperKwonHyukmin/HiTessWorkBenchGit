@@ -34,49 +34,6 @@ const MODE_KO = {
   Academic: "Academic Apps"
 };
 
-const WORKFLOW_GUIDE = [
-  {
-    title: '파일/모델 생성',
-    subtitle: 'CSV, PDF, BDF 기반으로 해석 모델을 만들거나 파이프라인을 실행합니다.',
-    menu: 'File-Based Apps',
-    menuLabel: 'File-Based Apps',
-    examples: ['HiTESS Model Builder', 'Truss Model Builder', 'DrawingToAnalysis'],
-    Icon: Layers,
-    badge: 'bg-blue-50 text-blue-700 border-blue-200',
-    icon: 'bg-blue-600 text-white',
-  },
-  {
-    title: '구조 검토/평가',
-    subtitle: '생성된 모델이나 설계 조건으로 구조 안정성, 배관응력, 피로 등을 확인합니다.',
-    menu: 'File-Based Apps',
-    menuLabel: 'Assessment Apps',
-    examples: ['Truss Structural Assessment', 'HP-SCR 배관응력 해석', 'Mooring Fitting Assessment'],
-    Icon: Activity,
-    badge: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-    icon: 'bg-indigo-600 text-white',
-  },
-  {
-    title: '치수 입력 계산',
-    subtitle: '단면, 컬럼, 러그, 다빗, 카링 등 반복 계산을 입력값 기반으로 수행합니다.',
-    menu: 'Parametric Apps',
-    menuLabel: 'Parametric Apps',
-    examples: ['Mast Post', 'Jib Rest', 'Column Buckling', 'Carling'],
-    Icon: SlidersHorizontal,
-    badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    icon: 'bg-emerald-600 text-white',
-  },
-  {
-    title: '검증/후처리/결과',
-    subtitle: 'BDF/F06 검증, 결과 확인, 이전 프로젝트 재사용을 처리합니다.',
-    menu: 'Productivity Apps',
-    menuLabel: 'Productivity Apps',
-    examples: ['BDF Scanner', 'F06 Parser', 'My Projects'],
-    Icon: Wrench,
-    badge: 'bg-amber-50 text-amber-700 border-amber-200',
-    icon: 'bg-amber-500 text-white',
-  },
-];
-
 const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick }) => {
   const isClickable = typeof onClick === 'function';
   return (
@@ -263,35 +220,35 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenModal(); } }}
-      className="bg-gradient-to-r from-brand-blue to-slate-900 rounded-xl shadow-lg border border-white/10 overflow-hidden cursor-pointer hover:shadow-xl transition-all group flex flex-col lg:flex-row relative focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+      className="bg-gradient-to-r from-brand-blue to-slate-900 rounded-xl shadow-lg border border-white/10 overflow-hidden cursor-pointer hover:shadow-xl transition-all group flex flex-col lg:flex-row lg:min-h-[104px] relative focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
     >
       <Map size={120} className="absolute -left-10 -bottom-10 text-white/5 rotate-12 pointer-events-none" />
-      <div className="p-5 lg:w-[330px] border-b lg:border-b-0 lg:border-r border-white/10 relative z-10 flex flex-col justify-center">
+      <div className="px-5 py-4 lg:w-[330px] border-b lg:border-b-0 lg:border-r border-white/10 relative z-10 flex flex-col justify-center">
         <h3 className="text-white font-bold text-sm flex items-center gap-2 mb-1.5">
           <Map size={16} className="text-blue-300"/> 시스템 해석 앱 로드맵
         </h3>
         <div className="grid grid-cols-3 gap-2 text-center">
-          <span className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-2 py-2">
+          <span className="flex min-h-14 flex-col justify-center rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-2 py-1.5">
             <span className="block text-lg font-black text-white leading-none">{activeCount}</span>
             <span className="mt-1 block text-[10px] font-bold text-emerald-200">서비스 중</span>
           </span>
-          <span className="rounded-lg border border-amber-300/25 bg-amber-300/10 px-2 py-2">
+          <span className="flex min-h-14 flex-col justify-center rounded-lg border border-amber-300/25 bg-amber-300/10 px-2 py-1.5">
             <span className="block text-lg font-black text-white leading-none">{devCount}</span>
             <span className="mt-1 block text-[10px] font-bold text-amber-100">개발 중</span>
           </span>
-          <span className="rounded-lg border border-white/15 bg-white/8 px-2 py-2">
+          <span className="flex min-h-14 flex-col justify-center rounded-lg border border-white/15 bg-white/8 px-2 py-1.5">
             <span className="block text-lg font-black text-white leading-none">{plannedCount}</span>
             <span className="mt-1 block text-[10px] font-bold text-slate-200">예정</span>
           </span>
         </div>
       </div>
-      <div className="p-4 lg:flex-1 relative overflow-hidden flex flex-col gap-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 pr-0 lg:pr-28">
+      <div className="px-4 py-4 lg:flex-1 relative overflow-hidden flex flex-col justify-center gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 items-stretch gap-2 pr-0 lg:pr-28">
           {modeSummary.map(({ mode, info, apps }) => {
             const modeActive = apps.filter(a => (a.devStatus || 'Active') === 'Active').length;
             const modeDev = apps.filter(a => a.devStatus === 'Developing').length;
             return (
-            <div key={mode} className="rounded-lg border border-white/15 bg-white/[0.09] px-3 py-3 min-w-0 h-full flex flex-col justify-center transition-colors group-hover:border-white/25 group-hover:bg-white/[0.13]">
+            <div key={mode} className="rounded-lg border border-white/15 bg-white/[0.09] px-3.5 py-3 min-h-[72px] min-w-0 h-full flex flex-col justify-center transition-colors group-hover:border-white/25 group-hover:bg-white/[0.13]">
               <p className="text-[11px] font-bold text-blue-50 truncate">{(MODE_KO[mode] || info.label).replace(/ Apps$/, '')}</p>
               <div className="mt-1.5 flex items-end justify-between gap-2">
                 <p className="text-white text-lg font-black leading-none">{apps.length}</p>
@@ -638,7 +595,7 @@ const ROADMAP_STATUS_BADGE = {
 const isRoadmapAppNavigable = (app) =>
   (app.devStatus || 'Active') === 'Active' && app.hasPage;
 
-const RoadmapModal = ({ isOpen, onClose, onSelectApp, onNavigateWorkflow }) => {
+const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
   const totalCount = ANALYSIS_DATA.length;
   const statusCounts = ANALYSIS_DATA.reduce((acc, app) => {
     const status = app.devStatus || 'Active';
@@ -729,37 +686,6 @@ const RoadmapModal = ({ isOpen, onClose, onSelectApp, onNavigateWorkflow }) => {
                       ))}
                     </div>
                   </div>
-                </div>
-              </div>
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <p className="text-[11px] font-bold text-slate-500">업무 흐름으로 읽기</p>
-                  <span className="text-[10px] font-semibold text-slate-500">입력 자료 → 검토 → 계산 → 결과</span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                  {WORKFLOW_GUIDE.map((step, idx) => {
-                    const Icon = step.Icon;
-                    return (
-                      <button
-                        key={step.title}
-                        type="button"
-                        onClick={() => {
-                          onClose();
-                          onNavigateWorkflow?.(step.menu);
-                        }}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-left hover:border-blue-300 hover:bg-blue-50/40 transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black text-slate-400">{idx + 1}</span>
-                          <span className={`h-7 w-7 rounded-md flex items-center justify-center ${step.icon}`}>
-                            <Icon size={14} />
-                          </span>
-                          <span className="text-xs font-bold text-slate-800 truncate">{step.title}</span>
-                        </div>
-                        <p className="mt-2 text-[11px] text-slate-500 leading-relaxed line-clamp-2">{step.subtitle}</p>
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
             </div>
@@ -1197,7 +1123,6 @@ export default function Dashboard() {
         isOpen={isRoadmapModalOpen}
         onClose={() => setIsRoadmapModalOpen(false)}
         onSelectApp={handleRoadmapAppSelect}
-        onNavigateWorkflow={setCurrentMenu}
       />
 
       {/* 즐겨찾기에서 개발 중/예정 앱 진입 시도 시 안내 (관리자는 위 로직에서 통과) */}
