@@ -16,6 +16,7 @@
 import logging
 import os
 import subprocess
+import sys
 from datetime import datetime
 from typing import Optional
 
@@ -32,6 +33,16 @@ def get_backend_dir() -> str:
     base_dir = os.path.dirname(os.path.abspath(__file__))  # app/services
     app_dir = os.path.dirname(base_dir)                    # app
     return os.path.dirname(app_dir)                        # HiTessWorkBenchBackEnd
+
+
+def get_nastran_bridge_script_path() -> str:
+    """vendored nastran_bridge.py 경로를 반환합니다."""
+    return os.path.join(get_backend_dir(), "InHouseProgram", "NastranBridge", "nastran_bridge.py")
+
+
+def build_nastran_bridge_command(*args) -> list[str]:
+    """현재 백엔드 Python으로 nastran_bridge.py를 실행하는 subprocess 명령을 만듭니다."""
+    return [sys.executable, get_nastran_bridge_script_path(), *(str(arg) for arg in args)]
 
 
 def mark_running(

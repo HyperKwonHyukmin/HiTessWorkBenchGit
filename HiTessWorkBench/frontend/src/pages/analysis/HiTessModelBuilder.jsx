@@ -49,6 +49,8 @@ const STATUS_CONFIG = {
   disabled: { dot: 'bg-slate-200',                          badge: 'bg-slate-100 text-slate-400',     label: '비활성' },
 };
 
+const DEFAULT_MESH_SIZE_MM = '200';
+
 // 1단계: 파일명으로 유형 추측
 const CSV_TYPE_KEYWORDS = {
   stru:  ['stru', 'struct', 'str', 'structural', 'structure', 'support', 'supt', '구조'],
@@ -2054,7 +2056,7 @@ function SummaryMetric({ label, value, variant }) {
    Nastran 패널
    ──────────────────────────────────────────────────────────────────────── */
 
-function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, gmuLocked }) {
+function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToSidePassage, gmuLocked }) {
   // step 3 "해석 모델 저장" — BDF 다운로드 전용 페이지.
   //   • 원본 최종 BDF (build-full) — 항상 표시
   //   • 최종 Edit BDF (apply-edit-intent) — 편집 적용 시에만 표시. 파일명은 *_edit.bdf 로 받음.
@@ -2114,34 +2116,47 @@ function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, gmuLocked
       )}
 
       {/* 다음 단계 해석 */}
-      {onSendToGmu && (bdfResult.bdfPath || editBdf) && (
+      {(onSendToGmu || onSendToSidePassage) && (bdfResult.bdfPath || editBdf) && (
         <div className={`rounded-xl border px-4 py-3 space-y-3 ${gmuLocked ? 'border-slate-200 bg-slate-50' : 'border-blue-200 bg-blue-50'}`}>
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className={`text-[10px] font-bold uppercase tracking-widest ${gmuLocked ? 'text-slate-400' : 'text-blue-500'}`}>다음 해석으로 전달</p>
-              <p className="text-xs font-semibold text-slate-700 mt-0.5">현재 BDF 모델로 후속 권상 구조 해석을 시작합니다.</p>
+              <p className="text-xs font-semibold text-slate-700 mt-0.5">현재 BDF 모델을 후속 해석의 입력값으로 전달합니다.</p>
             </div>
             <div className={`shrink-0 w-8 h-8 rounded-full bg-white border flex items-center justify-center ${gmuLocked ? 'border-slate-200 text-slate-400' : 'border-blue-200 text-blue-600'}`}>
               {gmuLocked ? <Lock size={16} /> : <ChevronsRight size={16} />}
             </div>
           </div>
-          <button
-            onClick={() => { if (!gmuLocked) onSendToGmu(editBdf || bdfResult.bdfPath); }}
-            disabled={gmuLocked}
-            title={gmuLocked ? '개발 중인 해석입니다. 관리자만 사용할 수 있습니다.' : undefined}
-            className={`w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-lg shadow-sm ${
-              gmuLocked
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white cursor-pointer'
-            }`}
-          >
-            {gmuLocked ? <Lock size={14} /> : <ChevronsRight size={14} />}
-            {gmuLocked ? 'Group Module Unit 권상 구조 해석 (개발 중)' : 'Group Module Unit 권상 구조 해석 시작'}
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {onSendToGmu && (
+              <button
+                onClick={() => { if (!gmuLocked) onSendToGmu(editBdf || bdfResult.bdfPath); }}
+                disabled={gmuLocked}
+                title={gmuLocked ? '개발 중인 해석입니다. 관리자만 사용할 수 있습니다.' : undefined}
+                className={`w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-lg shadow-sm ${
+                  gmuLocked
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white cursor-pointer'
+                }`}
+              >
+                {gmuLocked ? <Lock size={14} /> : <ChevronsRight size={14} />}
+                {gmuLocked ? 'Group Module Unit (개발 중)' : 'Group Module Unit'}
+              </button>
+            )}
+            {onSendToSidePassage && (
+              <button
+                onClick={() => onSendToSidePassage(editBdf || bdfResult.bdfPath)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-lg shadow-sm bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white cursor-pointer"
+              >
+                <ChevronsRight size={14} />
+                Side Passage Assessment
+              </button>
+            )}
+          </div>
           <p className={`text-[10px] text-center ${gmuLocked ? 'text-slate-400' : 'text-blue-500'}`}>
             {gmuLocked
               ? '개발 중인 해석입니다 — 관리자 계정에서만 전달할 수 있습니다.'
-              : `${editBdf ? 'Edit BDF' : '원본 최종 BDF'}를 GMU 권상 해석으로 바로 전달합니다.`}
+              : `${editBdf ? 'Edit BDF' : '원본 최종 BDF'}를 선택한 후속 해석의 입력 대기 상태로 전달합니다.`}
           </p>
         </div>
       )}
@@ -2227,6 +2242,7 @@ function OptionsPanel({
 
 // GMU(Group & Module Unit 권상 구조 해석) 후속 전달 대상 메뉴명. ANALYSIS_DATA 의 title 과 일치해야 한다.
 const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
+const SIDE_PASSAGE_MENU_NAME = 'Side Passage Assessment';
 
 // GMU 앱이 개발 중(Developing/Planned)이면 일반 사용자에게는 전달을 막고, 관리자에게만 허용한다.
 function isGmuHandoffLocked() {
@@ -2244,6 +2260,7 @@ export default function HiTessModelBuilder() {
   const clearGlobalJob = dashboardCtx?.clearGlobalJob || (() => {});
   const setPageState   = dashboardCtx?.setModelBuilderPageState || (() => {});
   const setGmuHandoff  = dashboardCtx?.setGmuHandoff  || (() => {});
+  const setSidePassageHandoff = dashboardCtx?.setSidePassageHandoff || (() => {});
   const saved          = dashboardCtx?.modelBuilderPageState;
   const gmuLocked      = isGmuHandoffLocked(); // 개발 중 + 비관리자 → GMU 전달 버튼 비활성화
 
@@ -2255,8 +2272,8 @@ export default function HiTessModelBuilder() {
   const [pipeError, setPipeError] = useState(null);
   const [equiError, setEquiError] = useState(null);
 
-  // ── 옵션 (기본값: useNastran=true, uboltFullFix=true, meshSize=300) ──
-  const [meshSize,      setMeshSize]      = useState(saved?.meshSize      ?? '300');
+  // ── 옵션 (기본값: useNastran=true, uboltFullFix=true, meshSize=200) ──
+  const [meshSize,      setMeshSize]      = useState(saved?.meshSize      ?? DEFAULT_MESH_SIZE_MM);
   const [uboltFullFix,  setUboltFullFix]  = useState(saved?.uboltFullFix  ?? true);
   const [useNastran,    setUseNastran]    = useState(saved?.useNastran    ?? true);
 
@@ -2551,7 +2568,7 @@ export default function HiTessModelBuilder() {
     if (pipeFile) formData.append('pipe_file',  pipeFile);
     if (equiFile) formData.append('equip_file', equiFile);
     formData.append('employee_id', user.employee_id || 'unknown');
-    formData.append('mesh_size',      String(parseInt(meshSize, 10) || 300));
+    formData.append('mesh_size',      String(parseInt(meshSize, 10) || Number(DEFAULT_MESH_SIZE_MM)));
     formData.append('ubolt_full_fix', String(!!uboltFullFix));
     formData.append('run_nastran',    String(!!useNastran));
 
@@ -3005,7 +3022,7 @@ export default function HiTessModelBuilder() {
     if (editPollRef.current) { clearInterval(editPollRef.current); editPollRef.current = null; }
     setStruFile(null); setPipeFile(null); setEquiFile(null);
     setStruError(null); setPipeError(null); setEquiError(null);
-    setMeshSize('300'); setUboltFullFix(true); setUseNastran(true);
+    setMeshSize(DEFAULT_MESH_SIZE_MM); setUboltFullFix(true); setUseNastran(true);
     setLocalResultDir(null);
     setSteps(INITIAL_STEPS.map(s => ({ ...s })));
     setActiveIdx(0); setHasRunOnce(false); setCurrentJobId(null);
@@ -3230,6 +3247,10 @@ export default function HiTessModelBuilder() {
                   if (gmuLocked) return; // 개발 중 + 비관리자는 전달 차단
                   setGmuHandoff({ bdfServerPath: bdfPath, sourceApp: 'HiTESS Model Builder' });
                   setCurrentMenu(GMU_MENU_NAME);
+                }}
+                onSendToSidePassage={(bdfPath) => {
+                  setSidePassageHandoff({ bdfServerPath: bdfPath, sourceApp: 'HiTESS Model Builder' });
+                  setCurrentMenu(SIDE_PASSAGE_MENU_NAME);
                 }}
               />
             )}

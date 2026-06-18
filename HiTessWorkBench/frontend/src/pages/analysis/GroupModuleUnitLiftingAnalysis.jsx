@@ -420,6 +420,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const [jobStatus, setJobStatus]   = useState(null); // null | { status, progress, message }
   const [engineLog, setEngineLog]   = useState([]);
   const [handoffSource, setHandoffSource] = useState(null); // 프로그램 간 연계로 진입한 경우 출처 앱 이름
+  const [handoffBdfPath, setHandoffBdfPath] = useState(null);
   const pollRef = useRef(null);
 
   // ── Step 3: 결과 ─────────────────────────────────────────
@@ -569,35 +570,15 @@ export default function GroupModuleUnitLiftingAnalysis() {
     if (!gmuHandoff?.bdfServerPath) return;
     const { bdfServerPath, sourceApp } = gmuHandoff;
     setHandoffSource(sourceApp || '외부 프로그램');
+    setHandoffBdfPath(bdfServerPath);
+    setBdfFile(null);
+    setStep1Data(null);
+    setStep2Data(null);
+    setStepStatus('bdf-validation', 'wait');
+    setValidProgress(0);
+    setValidStatusMsg('');
     clearGmuHandoff();
-    showToast(`${sourceApp || '외부 프로그램'}에서 BDF를 전달받았습니다. 자동으로 검증을 시작합니다.`, 'info');
-
-    (async () => {
-      setValidating(true);
-      setStepStatus('bdf-validation', 'running');
-      setStep1Data(null);
-      setStep2Data(null);
-      setValidProgress(0);
-      setValidStatusMsg('서버 요청 중...');
-      try {
-        const userStr = localStorage.getItem('user');
-        const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
-        const formData = new FormData();
-        formData.append('bdf_server_path', bdfServerPath);
-        formData.append('employee_id', employeeId);
-        formData.append('use_nastran', String(true));
-        formData.append('source', 'Workbench');
-        const res = await requestGroupModuleUnitFromPath(formData);
-        setValidJobId(res.data.job_id);
-        startGlobalJob?.(res.data.job_id, GMU_MENU_NAME);
-      } catch (e) {
-        setValidating(false);
-        setValidJobId(null);
-        setStepStatus('bdf-validation', 'error');
-        const detail = e?.response?.data?.detail || e?.message || '알 수 없는 오류';
-        showToast(`BDF 검증 요청 실패 — ${detail}`, 'error');
-      }
-    })();
+    showToast(`${sourceApp || '외부 프로그램'}에서 BDF를 전달받았습니다. 실행 버튼을 눌러 검증을 시작하세요.`, 'info');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 마운트: 진행 중인 BDF 검증 작업이 globalJob 에 있으면 복원 ──────
@@ -616,7 +597,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
 
   // ── BDF 검증 ─────────────────────────────────────────────
   const handleValidate = async () => {
-    if (!bdfFile) return;
+    if (!bdfFile && !handoffBdfPath) return;
     setValidating(true);
     setStepStatus('bdf-validation', 'running');
     setStep1Data(null);
@@ -629,12 +610,18 @@ export default function GroupModuleUnitLiftingAnalysis() {
       const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
 
       const formData = new FormData();
-      formData.append('bdf_file', bdfFile);
       formData.append('employee_id', employeeId);
       formData.append('use_nastran', String(useNastran));
       formData.append('source', 'Workbench');
 
-      const res = await requestGroupModuleUnit(formData);
+      let res;
+      if (handoffBdfPath) {
+        formData.append('bdf_server_path', handoffBdfPath);
+        res = await requestGroupModuleUnitFromPath(formData);
+      } else {
+        formData.append('bdf_file', bdfFile);
+        res = await requestGroupModuleUnit(formData);
+      }
       setValidJobId(res.data.job_id);
       startGlobalJob?.(res.data.job_id, GMU_MENU_NAME);
     } catch (e) {
@@ -678,7 +665,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const handleRun = () => {
     const bdfDone = steps.find(s => s.id === 'bdf-validation')?.status === 'done';
     if (!bdfDone) {
-      if (!bdfFile) {
+      if (!bdfFile && !handoffBdfPath) {
         showToast('BDF 파일을 업로드해주세요.', 'warning');
         setActiveIdx(0);
         return;
@@ -695,6 +682,8 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const handleReset = () => {
     if (pollRef.current) clearInterval(pollRef.current);
     setBdfFile(null);
+    setHandoffSource(null);
+    setHandoffBdfPath(null);
     setValidating(false);
     setValidJobId(null);
     setStep1Data(null);
@@ -884,9 +873,14 @@ export default function GroupModuleUnitLiftingAnalysis() {
                   {handoffSource && (
                     <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-200">
                       <ExternalLink size={13} className="text-violet-500 shrink-0" />
-                      <p className="text-xs text-violet-700 font-medium">
-                        <span className="font-bold">{handoffSource}</span>에서 전달된 BDF — 자동 검증 진행 중
-                      </p>
+                      <div className="min-w-0">
+                        <p className="text-xs text-violet-700 font-medium">
+                          <span className="font-bold">{handoffSource}</span>에서 전달된 BDF — 실행 버튼 대기 중
+                        </p>
+                        <p className="text-[10px] text-violet-500 font-mono truncate" title={handoffBdfPath || ''}>
+                          {handoffBdfPath}
+                        </p>
+                      </div>
                     </div>
                   )}
                   {!handoffSource && (

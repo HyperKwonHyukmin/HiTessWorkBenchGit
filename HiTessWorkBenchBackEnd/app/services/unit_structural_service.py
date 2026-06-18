@@ -23,7 +23,8 @@ from typing import Any, Dict
 
 from .. import database, models
 from .analysis_runner import (
-    get_backend_dir,
+    build_nastran_bridge_command,
+    get_nastran_bridge_script_path,
     mark_complete,
     mark_running,
     record_analysis,
@@ -73,11 +74,11 @@ def task_execute_unit_structural(
     engine_output = ""
     result_data: Dict[str, Any] = {}
 
-    exe_path = os.path.join(get_backend_dir(), "InHouseProgram", "NastranBridge", "nastran_bridge.exe")
+    bridge_script = get_nastran_bridge_script_path()
 
     try:
-        if not os.path.exists(exe_path):
-            raise FileNotFoundError(f"실행 파일을 찾을 수 없습니다: {exe_path}")
+        if not os.path.exists(bridge_script):
+            raise FileNotFoundError(f"nastran_bridge.py 파일을 찾을 수 없습니다: {bridge_script}")
 
         # 1. Parent (GroupModuleUnit) 조회 — BDF 경로 확보 (조회만 별도 세션 사용)
         parent_db = database.SessionLocal()
@@ -128,10 +129,10 @@ def task_execute_unit_structural(
         lift_input_bdf = bdf_filename
         if os.path.exists(edited_json):
             update_progress(job_id, 10, "Studio 편집 적용 BDF 생성 중...")
-            apply_args = [
-                exe_path, os.path.basename(edited_json),
+            apply_args = build_nastran_bridge_command(
+                os.path.basename(edited_json),
                 "-o", os.path.basename(edited_bdf),
-            ]
+            )
             logger.info("[UnitStructural] apply-edit cmd: %s (cwd=%s)", " ".join(apply_args), bdf_dir)
             apply_proc = subprocess.run(
                 apply_args, cwd=bdf_dir,
@@ -152,14 +153,14 @@ def task_execute_unit_structural(
 
         # 2. lift-run --prepare-only — Wire 포함 BDF + meta 빌드
         update_progress(job_id, 15, "Wire 포함 BDF 생성 중...")
-        prepare_args = [
-            exe_path, "lift-run", lift_input_bdf,
+        prepare_args = build_nastran_bridge_command(
+            "lift-run", lift_input_bdf,
             "--stability", stability_json_path,
             "-o", lifting_bdf,
             "--meta", lifting_meta,
             "--safety-factor", str(safety_factor),
             "--prepare-only",
-        ]
+        )
         logger.info("[UnitStructural] prepare cmd: %s (cwd=%s)", " ".join(prepare_args), bdf_dir)
         prepare = subprocess.run(
             prepare_args, cwd=bdf_dir,
@@ -201,12 +202,12 @@ def task_execute_unit_structural(
 
         # 4. lift-result — F06 → Studio 매핑 JSON
         update_progress(job_id, 80, "F06 결과 매핑 중...")
-        result_args = [
-            exe_path, "lift-result", lifting_meta,
+        result_args = build_nastran_bridge_command(
+            "lift-result", lifting_meta,
             "--f06", lifting_f06,
             "-o", result_json,
             "--allowable-mpa", str(allowable_mpa),
-        ]
+        )
         logger.info("[UnitStructural] result cmd: %s (cwd=%s)", " ".join(result_args), bdf_dir)
         rmap = subprocess.run(
             result_args, cwd=bdf_dir,

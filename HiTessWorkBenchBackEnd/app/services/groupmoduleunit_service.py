@@ -1,6 +1,6 @@
 """Group & Module Unit 권상 구조 해석 서비스.
 
-`InHouseProgram/NastranBridge/nastran_bridge.exe` 를 호출해 BDF 모델 JSON 을 산출하고,
+`InHouseProgram/NastranBridge/nastran_bridge.py` 를 호출해 BDF 모델 JSON 을 산출하고,
 프론트엔드 ValidationStepLog 가 기대하는 step1/step2 검증 JSON 형식으로 변환한다.
 
 산출 파일 (work_dir 안):
@@ -22,7 +22,8 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from .analysis_runner import (
-    get_backend_dir,
+    build_nastran_bridge_command,
+    get_nastran_bridge_script_path,
     mark_complete,
     mark_running,
     record_analysis,
@@ -568,21 +569,19 @@ def transform_to_step2(validation_json: Dict[str, Any], bdf_path: str) -> Dict[s
 
 
 def _run_nastran_validate(
-    exe_path: str,
     bdf_filename: str,
     bdf_dir: str,
     nastran_exe: str,
     support_range: float = _DEFAULT_SUPPORT_RANGE_MM,
 ) -> tuple[bool, str, str | None]:
     """validate-run --nastran 실행. (성공 여부, 로그, 결과 JSON 경로)."""
-    prepare_args = [
-        exe_path,
+    prepare_args = build_nastran_bridge_command(
         "validate-run",
         bdf_filename,
         "--prepare-only",
         "--support-range",
         str(support_range),
-    ]
+    )
     logger.info("[GroupModuleUnit] validate-run prepare cmd: %s (cwd=%s)", " ".join(prepare_args), bdf_dir)
     try:
         prepare = subprocess.run(
@@ -672,18 +671,18 @@ def task_execute_groupmoduleunit(
     use_nastran: bool,
     program_name: str = "GroupModuleUnit",
 ):
-    """nastran_bridge.exe 로 Step1 파싱 검증과 선택적 Step2 Nastran 검증을 수행한다."""
+    """nastran_bridge.py 로 Step1 파싱 검증과 선택적 Step2 Nastran 검증을 수행한다."""
     mark_running(job_id, "NastranBridge 초기화 중...", progress=10)
 
     status_msg = "Success"
     engine_output = ""
     result_data: Dict[str, Any] = {}
 
-    exe_path = os.path.join(get_backend_dir(), "InHouseProgram", "NastranBridge", "nastran_bridge.exe")
+    bridge_script = get_nastran_bridge_script_path()
 
     try:
-        if not os.path.exists(exe_path):
-            raise FileNotFoundError(f"실행 파일을 찾을 수 없습니다: {exe_path}")
+        if not os.path.exists(bridge_script):
+            raise FileNotFoundError(f"nastran_bridge.py 파일을 찾을 수 없습니다: {bridge_script}")
 
         bdf_dir      = os.path.dirname(os.path.abspath(bdf_path))
         bdf_filename = os.path.basename(bdf_path)
@@ -696,7 +695,7 @@ def task_execute_groupmoduleunit(
             try: os.remove(model_json_path)
             except OSError: pass
 
-        cmd_args = [exe_path, bdf_filename]
+        cmd_args = build_nastran_bridge_command(bdf_filename)
         update_progress(job_id, 30, "BDF 모델 파싱 중...")
         logger.info("[GroupModuleUnit] cmd: %s (cwd=%s)", " ".join(cmd_args), bdf_dir)
 
@@ -770,7 +769,7 @@ def task_execute_groupmoduleunit(
                 )
             else:
                 update_progress(job_id, 75, "Nastran validate-run 실행 중...")
-                ok, log, val_json_path = _run_nastran_validate(exe_path, bdf_filename, bdf_dir, nastran_exe)
+                ok, log, val_json_path = _run_nastran_validate(bdf_filename, bdf_dir, nastran_exe)
                 engine_output += "\n" + (log or "")
 
                 if ok and val_json_path:

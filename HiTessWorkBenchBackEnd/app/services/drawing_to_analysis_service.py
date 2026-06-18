@@ -19,7 +19,9 @@ from datetime import datetime
 from typing import Optional
 
 from .analysis_runner import (
+    build_nastran_bridge_command,
     get_backend_dir,
+    get_nastran_bridge_script_path,
     mark_complete,
     mark_running,
     record_analysis,
@@ -457,13 +459,11 @@ def task_execute_drawing_to_analysis(
         # ── Step 6: NastranBridge (선택) ─────────────────────
         if status_msg == "Success" and result_data.get("bdf"):
             update_progress(job_id, 90, "BDF 모델 정보를 JSON으로 추출 중...")
-            bridge_exe = os.path.join(
-                get_backend_dir(), "InHouseProgram", "NastranBridge", "nastran_bridge.exe"
-            )
-            if not os.path.isfile(bridge_exe):
-                step("bridge_missing", path=bridge_exe)
+            bridge_script = get_nastran_bridge_script_path()
+            if not os.path.isfile(bridge_script):
+                step("bridge_missing", path=bridge_script)
                 engine_output_parts.append(
-                    f"[Warning] NastranBridge 실행 파일을 찾을 수 없어 모델 뷰어 JSON 생성을 건너뜁니다: {bridge_exe}"
+                    f"[Warning] nastran_bridge.py 파일을 찾을 수 없어 모델 뷰어 JSON 생성을 건너뜁니다: {bridge_script}"
                 )
             else:
                 bdf_p = result_data["bdf"]
@@ -471,7 +471,7 @@ def task_execute_drawing_to_analysis(
                 bridge_json_path = os.path.join(work_dir, f"{bridge_stem}_bridge.json")
                 try:
                     bridge_result = subprocess.run(
-                        [bridge_exe, bdf_p, "-o", bridge_json_path],
+                        build_nastran_bridge_command(bdf_p, "-o", bridge_json_path),
                         cwd=work_dir,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
@@ -744,16 +744,14 @@ def task_execute_drawing_rebuild(
         # ── NastranBridge ────────────────────────────────────
         if status_msg == "Success" and result_data.get("bdf"):
             update_progress(job_id, 88, "BDF 모델 정보를 JSON으로 추출 중...")
-            bridge_exe = os.path.join(
-                get_backend_dir(), "InHouseProgram", "NastranBridge", "nastran_bridge.exe"
-            )
-            if os.path.isfile(bridge_exe):
+            bridge_script = get_nastran_bridge_script_path()
+            if os.path.isfile(bridge_script):
                 bdf_p = result_data["bdf"]
                 bridge_stem = "support_model" if mode == "support" else "lug_model"
                 bridge_json_path = os.path.join(work_dir, f"{bridge_stem}_bridge.json")
                 try:
                     bridge_result = subprocess.run(
-                        [bridge_exe, bdf_p, "-o", bridge_json_path],
+                        build_nastran_bridge_command(bdf_p, "-o", bridge_json_path),
                         cwd=work_dir,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180,
                     )
@@ -1262,16 +1260,14 @@ def _extract_f06_results(solve_dir: str, f06_path: str,
 
     실패해도 해석 자체는 성공이므로 경고만 남기고 None 반환(뷰어 결과만 생략).
     """
-    bridge_exe = os.path.join(
-        get_backend_dir(), "InHouseProgram", "NastranBridge", "nastran_bridge.exe"
-    )
-    if not os.path.isfile(bridge_exe):
-        engine_output_parts.append(f"[Warning] NastranBridge 실행 파일 없음 — 결과 JSON 생략: {bridge_exe}")
+    bridge_script = get_nastran_bridge_script_path()
+    if not os.path.isfile(bridge_script):
+        engine_output_parts.append(f"[Warning] nastran_bridge.py 파일 없음 — 결과 JSON 생략: {bridge_script}")
         return None
     out_path = os.path.join(solve_dir, "solve_results.json")
     try:
         r = subprocess.run(
-            [bridge_exe, f06_path, "-o", out_path],
+            build_nastran_bridge_command(f06_path, "-o", out_path),
             cwd=solve_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180,
         )
         out = (r.stdout or b"").decode("utf-8", errors="replace").strip()

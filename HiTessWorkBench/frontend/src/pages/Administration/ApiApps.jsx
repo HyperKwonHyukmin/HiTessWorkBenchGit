@@ -120,7 +120,7 @@ const API_LIST = [
       { name: 'pipe_file', type: 'file (CSV, form)', required: false, desc: '배관 CSV 파일' },
       { name: 'equip_file', type: 'file (CSV, form)', required: false, desc: '장비 CSV 파일' },
       { name: 'employee_id', type: 'string (form)', required: true, desc: '요청 사번' },
-      { name: 'mesh_size', type: 'float (form)', required: false, desc: '전체 기본 메시 크기(mm). 기본값: 300.0' },
+      { name: 'mesh_size', type: 'float (form)', required: false, desc: '전체 기본 메시 크기(mm). 기본값: 200.0' },
       { name: 'mesh_size_structure', type: 'float (form)', required: false, desc: '구조 전용 메시 크기(mm)' },
       { name: 'mesh_size_pipe', type: 'float (form)', required: false, desc: '배관 전용 메시 크기(mm)' },
       { name: 'ubolt_full_fix', type: 'boolean (form)', required: false, desc: 'U-bolt 구속을 full fix로 적용. 기본값: false' },
@@ -134,7 +134,7 @@ const API_LIST = [
   -F "pipe_file=@pipe.csv" \\
   -F "equip_file=@equipment.csv" \\
   -F "employee_id=20001234" \\
-  -F "mesh_size=300" \\
+  -F "mesh_size=200" \\
   -F "run_nastran=false" \\
   -F "source=External API"`,
   },

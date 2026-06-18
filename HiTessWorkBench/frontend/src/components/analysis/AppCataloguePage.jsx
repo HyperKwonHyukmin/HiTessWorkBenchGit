@@ -148,7 +148,7 @@ export default function AppCataloguePage({
   const EmptyStateIcon = EmptyIcon || HeaderIcon;
 
   return (
-    <div className="max-w-7xl mx-auto pb-16">
+    <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
       <PageHeader
         title={title}
         icon={HeaderIcon}

@@ -3,7 +3,7 @@
 흐름:
   1) 사용자 PC 의 Plate Studio 가 BDF 본문을 업로드 (router 가 work_dir 에 저장)
   2) 본 서비스가 Nastran 을 실행해 F06 생성
-  3) NastranBridge (nastran_bridge.exe) 로 F06 → displacement / member stress JSON 변환
+  3) NastranBridge (nastran_bridge.py) 로 F06 → displacement / member stress JSON 변환
   4) Plate 의 shell(CQUAD4/CTRIA3) stress 는 NastranBridge 가 지원하지 않으므로
      본 서비스 내부 F06 shell stress 파서로 추출
   5) Studio 가 시각화에 바로 쓸 수 있는 plate_result.json 으로 통합 저장
@@ -25,7 +25,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from .analysis_runner import (
-    get_backend_dir,
+    build_nastran_bridge_command,
+    get_nastran_bridge_script_path,
     mark_complete,
     mark_running,
     record_analysis,
@@ -335,13 +336,13 @@ def task_execute_plate_structure(
     engine_output = ""
     result_data: Dict[str, Any] = {}
 
-    bridge_exe = os.path.join(get_backend_dir(), "InHouseProgram", "NastranBridge", "nastran_bridge.exe")
+    bridge_script = get_nastran_bridge_script_path()
 
     try:
         if not os.path.exists(bdf_path):
             raise FileNotFoundError(f"BDF 가 존재하지 않습니다: {bdf_path}")
-        if not os.path.exists(bridge_exe):
-            raise FileNotFoundError(f"NastranBridge 실행 파일을 찾을 수 없습니다: {bridge_exe}")
+        if not os.path.exists(bridge_script):
+            raise FileNotFoundError(f"nastran_bridge.py 파일을 찾을 수 없습니다: {bridge_script}")
 
         bdf_dir      = os.path.dirname(os.path.abspath(bdf_path))
         bdf_filename = os.path.basename(bdf_path)
@@ -383,7 +384,9 @@ def task_execute_plate_structure(
 
         # 2) NastranBridge 로 F06 → displacement / 1D stress JSON
         update_progress(job_id, 70, "F06 파싱 (displacement)...")
-        bridge_args = [bridge_exe, os.path.basename(f06_path), "-o", os.path.basename(bridge_result_json)]
+        bridge_args = build_nastran_bridge_command(
+            os.path.basename(f06_path), "-o", os.path.basename(bridge_result_json)
+        )
         logger.info("[PlateStructure] bridge cmd: %s (cwd=%s)", " ".join(bridge_args), bdf_dir)
         bridge = subprocess.run(
             bridge_args, cwd=bdf_dir,

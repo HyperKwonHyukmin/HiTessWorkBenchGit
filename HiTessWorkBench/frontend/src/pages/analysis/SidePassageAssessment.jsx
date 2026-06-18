@@ -11,7 +11,7 @@ import { useDashboard } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { usePolling } from '../../hooks/usePolling';
-import { requestSidePassageAssessment, downloadFileText } from '../../api/analysis';
+import { requestSidePassageAssessment, requestGroupModuleUnitFromPath, downloadFileText } from '../../api/analysis';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import { API_BASE_URL } from '../../config';
 
@@ -321,7 +321,7 @@ function ModuleStudioLauncher({
 // ── 메인 컴포넌트 ────────────────────────────────────────────
 export default function SidePassageAssessment() {
   const { setCurrentMenu } = useNavigation();
-  const { startGlobalJob, globalJob } = useDashboard();
+  const { startGlobalJob, globalJob, sidePassageHandoff, clearSidePassageHandoff } = useDashboard();
   const SIDE_PASSAGE_MENU_NAME = 'Side Passage Assessment';
   const { showToast } = useToast();
 
@@ -340,6 +340,8 @@ export default function SidePassageAssessment() {
   const [validStatusMsg, setValidStatusMsg] = useState('');
   const [step1Data, setStep1Data]       = useState(null);
   const [step2Data, setStep2Data]       = useState(null);
+  const [handoffSource, setHandoffSource] = useState(null);
+  const [handoffBdfPath, setHandoffBdfPath] = useState(null);
 
   // ── Step 1: Studio 실행 ─────────────────────────────────
   const [bdfPath, setBdfPath]           = useState(null);
@@ -425,6 +427,21 @@ export default function SidePassageAssessment() {
 
   const setStepStatus = (id, status) =>
     setSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+
+  useEffect(() => {
+    if (!sidePassageHandoff?.bdfServerPath) return;
+    const { bdfServerPath, sourceApp } = sidePassageHandoff;
+    setHandoffSource(sourceApp || '외부 프로그램');
+    setHandoffBdfPath(bdfServerPath);
+    setBdfFile(null);
+    setStep1Data(null);
+    setStep2Data(null);
+    setStepStatus('bdf-validation', 'wait');
+    setValidProgress(0);
+    setValidStatusMsg('');
+    clearSidePassageHandoff?.();
+    showToast(`${sourceApp || '외부 프로그램'}에서 BDF를 전달받았습니다. 실행 버튼을 눌러 검증을 시작하세요.`, 'info');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let cancelled = false;
@@ -581,6 +598,7 @@ export default function SidePassageAssessment() {
   // 사용자가 다른 페이지로 이동 후 우측 하단 상황판 클릭으로 돌아왔을 때
   // 빈 화면이 아니라 "검증 중" UI 를 그대로 보여준다.
   useEffect(() => {
+    if (sidePassageHandoff?.bdfServerPath) return; // 핸드오프가 우선
     if (!globalJob || globalJob.menu !== SIDE_PASSAGE_MENU_NAME) return;
     if (globalJob.status !== 'Running' && globalJob.status !== 'Pending') return;
     setValidJobId(globalJob.jobId);
@@ -592,7 +610,7 @@ export default function SidePassageAssessment() {
 
   // ── BDF 검증 ─────────────────────────────────────────────
   const handleValidate = async () => {
-    if (!bdfFile) return;
+    if (!bdfFile && !handoffBdfPath) return;
     setValidating(true);
     setStepStatus('bdf-validation', 'running');
     setStep1Data(null);
@@ -605,12 +623,18 @@ export default function SidePassageAssessment() {
       const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
 
       const formData = new FormData();
-      formData.append('bdf_file', bdfFile);
       formData.append('employee_id', employeeId);
       formData.append('use_nastran', String(useNastran));
       formData.append('source', 'SidePassage');
 
-      const res = await requestSidePassageAssessment(formData);
+      let res;
+      if (handoffBdfPath) {
+        formData.append('bdf_server_path', handoffBdfPath);
+        res = await requestGroupModuleUnitFromPath(formData);
+      } else {
+        formData.append('bdf_file', bdfFile);
+        res = await requestSidePassageAssessment(formData);
+      }
       setValidJobId(res.data.job_id);
       startGlobalJob?.(res.data.job_id, SIDE_PASSAGE_MENU_NAME);
     } catch (e) {
@@ -629,7 +653,7 @@ export default function SidePassageAssessment() {
   const handleRun = () => {
     const bdfDone = steps.find(s => s.id === 'bdf-validation')?.status === 'done';
     if (!bdfDone) {
-      if (!bdfFile) {
+      if (!bdfFile && !handoffBdfPath) {
         showToast('BDF 파일을 업로드해주세요.', 'warning');
         setActiveIdx(0);
         return;
@@ -687,6 +711,8 @@ export default function SidePassageAssessment() {
   // ── 전체 초기화 ──────────────────────────────────────────
   const handleReset = () => {
     setBdfFile(null);
+    setHandoffSource(null);
+    setHandoffBdfPath(null);
     setValidating(false);
     setValidJobId(null);
     setStep1Data(null);
@@ -864,12 +890,27 @@ export default function SidePassageAssessment() {
                   <span className="text-[10px] text-slate-400">— BDF 파일 업로드 및 유효성 검증</span>
                 </div>
                 <div className="p-4 space-y-3">
-                  <BdfDropZone
-                    file={bdfFile}
-                    onFile={f => { setBdfFile(f); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait'); }}
-                    onClear={() => { setBdfFile(null); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait'); }}
-                    disabled={validating}
-                  />
+                  {handoffSource && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-200">
+                      <ExternalLink size={13} className="text-violet-500 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-violet-700 font-medium">
+                          <span className="font-bold">{handoffSource}</span>에서 전달된 BDF — 실행 버튼 대기 중
+                        </p>
+                        <p className="text-[10px] text-violet-500 font-mono truncate" title={handoffBdfPath || ''}>
+                          {handoffBdfPath}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {!handoffSource && (
+                    <BdfDropZone
+                      file={bdfFile}
+                      onFile={f => { setBdfFile(f); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait'); }}
+                      onClear={() => { setBdfFile(null); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait'); }}
+                      disabled={validating}
+                    />
+                  )}
                 </div>
               </div>
 

@@ -85,7 +85,7 @@ def task_execute_modelflow(
     employee_id: str,
     timestamp: str,
     source: str,
-    mesh_size: float = 300.0,
+    mesh_size: float = 200.0,
     ubolt_full_fix: bool = False,
     run_nastran: bool = False,
     nastran_path: str | None = None,

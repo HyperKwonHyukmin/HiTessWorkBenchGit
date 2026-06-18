@@ -300,9 +300,11 @@ export function DashboardProvider({ children }) {
     });
   };
 
-  // 프로그램 간 연계: 다른 앱에서 GMU로 BDF를 바로 전달할 때 사용
+  // 프로그램 간 연계: 다른 앱에서 GMU/Side Passage로 BDF를 전달할 때 사용
   const [gmuHandoff, setGmuHandoff]   = useState(null); // { bdfServerPath, sourceApp }
   const clearGmuHandoff = () => setGmuHandoff(null);
+  const [sidePassageHandoff, setSidePassageHandoff] = useState(null); // { bdfServerPath, sourceApp }
+  const clearSidePassageHandoff = () => setSidePassageHandoff(null);
 
   // 프로그램 간 연계: Carling Free Calculator → Design Optimization 입력 이관
   const [carlingHandoff, setCarlingHandoff] = useState(null); // { load, hull, material }
@@ -353,6 +355,7 @@ export function DashboardProvider({ children }) {
         modelBuilderPageState, setModelBuilderPageState,
         analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
         gmuHandoff, setGmuHandoff, clearGmuHandoff,
+        sidePassageHandoff, setSidePassageHandoff, clearSidePassageHandoff,
         carlingHandoff, setCarlingHandoff, clearCarlingHandoff,
         pendingJobTransfer, setPendingJobTransfer, clearPendingJobTransfer
     }}>

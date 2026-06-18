@@ -1417,7 +1417,7 @@ async def request_groupmoduleunit(
 ):
     """
     Group & Module Unit 권상 구조 해석 — Step1 BDF 입력 검증.
-    NastranBridge (`nastran_bridge.exe`) 로 BDF 모델 JSON 을 산출하고
+    NastranBridge (`nastran_bridge.py`) 로 BDF 모델 JSON 을 산출하고
     프론트 ValidationStepLog 가 기대하는 step1 schema 로 변환한다.
     use_nastran=True 인 경우 추후 단계에서 validate-run 으로 F06 검증까지 확장한다.
     """
@@ -1518,7 +1518,8 @@ async def request_groupmoduleunit_from_path(
     if not os.path.isfile(abs_path):
         raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
 
-    work_dir, timestamp = make_work_dir(employee_id, "GroupModuleUnit")
+    program_name = "SidePassage" if str(source).lower() == "sidepassage" else "GroupModuleUnit"
+    work_dir, timestamp = make_work_dir(employee_id, program_name)
     bdf_path = os.path.join(work_dir, os.path.basename(abs_path))
     try:
         shutil.copy2(abs_path, bdf_path)
@@ -1527,7 +1528,7 @@ async def request_groupmoduleunit_from_path(
 
     job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
-        bdf_path, work_dir, employee_id, timestamp, source, use_nastran,
+        bdf_path, work_dir, employee_id, timestamp, source, use_nastran, program_name,
     )
     return {"job_id": job_id}
 
@@ -2412,7 +2413,7 @@ async def request_modelflow_analysis(
     employee_id: str = Form(...),
     source: str = Form("Workbench"),
     current_user: str = Depends(require_auth),
-    mesh_size: float = Form(300.0),
+    mesh_size: float = Form(200.0),
     ubolt_full_fix: bool = Form(False),
     run_nastran: bool = Form(False),
     nastran_path: Optional[str] = Form(None),
@@ -2472,7 +2473,7 @@ async def run_modelflow_sample(
         db: Session = Depends(database.get_db),
 ):
     """HiTESS Model Builder — 사내 표준 샘플 CSV(stru/pipe/equip)로 즉시 build-full 실행.
-    옵션은 기본값(mesh_size=300.0, run_nastran=False)으로 고정 — 빠른 데모 목적.
+    옵션은 기본값(mesh_size=200.0, run_nastran=False)으로 고정 — 빠른 데모 목적.
     """
     quota = _check_sample_quota("modelflow", employee_id, db)
     if not quota["allowed"]:
@@ -2514,7 +2515,7 @@ async def run_modelflow_sample(
         task_execute_modelflow,
         stru_path, pipe_path, equip_path, work_dir, exe_path,
         employee_id, timestamp, SAMPLE_SOURCE_TAG,
-        300.0,   # mesh_size
+        200.0,   # mesh_size
         False,   # ubolt_full_fix
         False,   # run_nastran (빠른 데모)
         None, None, None, None,
