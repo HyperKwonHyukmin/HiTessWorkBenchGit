@@ -146,7 +146,7 @@ export default function HiLabInsight() {
           <div className="flex gap-3 max-w-[80%]">
             <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center shrink-0"><Bot size={16}/></div>
             <div className="p-4 bg-white border border-slate-200 rounded-2xl rounded-tl-sm shadow-sm flex gap-2 items-center">
-              <RefreshCw className="animate-spin text-slate-400" size={16} /> <span className="text-slate-500 text-sm font-bold bg-gradient-to-r from-purple-600 to-blue-500 text-transparent bg-clip-text">검색 및 답변 생성 중...</span>
+              <RefreshCw className="animate-spin text-slate-400" size={16} /> <span className="text-slate-500 text-sm font-bold">검색 및 답변 생성 중...</span>
             </div>
           </div>
         )}
@@ -163,9 +163,9 @@ export default function HiLabInsight() {
             className="bg-slate-50 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl px-3 py-3 outline-none focus:border-purple-400 focus:bg-white transition-colors cursor-pointer max-w-[200px] truncate shadow-sm shrink-0"
             disabled={isLoading}
           >
-            <option value="all">📂 전체 문서 검색</option>
+            <option value="all">전체 문서 검색</option>
             {Object.keys(ingestedDocs).map((doc, idx) => (
-              <option key={idx} value={doc}>📄 {doc}</option>
+              <option key={idx} value={doc}>{doc}</option>
             ))}
           </select>
 

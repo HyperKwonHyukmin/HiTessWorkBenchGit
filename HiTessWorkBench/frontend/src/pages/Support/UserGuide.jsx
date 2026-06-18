@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import {
   BookOpen, Edit3, X, Terminal, Eye, Trash2, Edit2,
-  Rocket, BarChart2, FileSearch, Wrench, ChevronDown, HelpCircle,
+  Rocket, BarChart2, FileSearch, Wrench, ChevronDown, HelpCircle, Lightbulb,
 } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { getUserGuides, createUserGuide, updateUserGuide, deleteUserGuide } from '../../api/admin';
@@ -273,7 +273,7 @@ export default function UserGuide() {
                     <input type="text" placeholder="ex) v0.0.6 이상" className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-indigo-500 text-sm font-mono" />
                   </div>
                   <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
-                    <p className="text-xs text-indigo-800 font-bold mb-1">💡 작성 팁</p>
+                    <p className="text-xs text-indigo-800 font-bold mb-1 flex items-center gap-1"><Lightbulb size={13} /> 작성 팁</p>
                     <p className="text-[11px] text-indigo-600 leading-relaxed">
                       마크다운(Markdown) 문법을 사용할 수 있습니다.<br /><br />
                       <code className="bg-indigo-100 px-1 rounded">## 제목</code><br />
