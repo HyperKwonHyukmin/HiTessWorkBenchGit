@@ -16,6 +16,7 @@ import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { downloadJson } from '../../utils/fileHelper';
 import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 import VerdictBadge from '../../components/ui/VerdictBadge';
+import CalcInputField from '../../components/ui/CalcInputField';
 
 const DEFAULT_INPUT = {
   load: { force_N: '1000000' },
@@ -61,21 +62,8 @@ const toNumberPayload = (inputs) => ({
   material: Object.fromEntries(Object.entries(inputs.material).map(([k, v]) => [k, Number(v)])),
 });
 
-const InputField = ({ label, value, onChange, unit = 'mm', min = 0 }) => (
-  <div>
-    <label className="block text-[11px] font-bold text-slate-700 mb-1">{label}</label>
-    <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden focus-within:border-emerald-500 transition-colors bg-white">
-      <input
-        type="number"
-        value={value}
-        min={min}
-        onChange={e => onChange(e.target.value)}
-        className="min-w-0 flex-1 px-2.5 py-2 text-sm font-bold text-slate-800 outline-none bg-transparent"
-      />
-      <span className="px-2.5 py-2 bg-slate-50 text-slate-500 text-[11px] font-bold border-l border-slate-200">{unit}</span>
-    </div>
-  </div>
-);
+// 공용 CalcInputField 위임 (size=sm, DTypeLug 기본값 unit='mm'/min=0 보존).
+const InputField = (props) => <CalcInputField size="sm" unit="mm" min={0} {...props} />;
 
 // 판정 배지는 공용 VerdictBadge 사용 — 기존 StatusBadge 는 OK/NG 모두 ShieldCheck 단일 아이콘이라
 // 색맹 사용자에게 색 외 구분이 없었다(아이콘이 CheckCircle2/XCircle 로 바뀌도록 교정).

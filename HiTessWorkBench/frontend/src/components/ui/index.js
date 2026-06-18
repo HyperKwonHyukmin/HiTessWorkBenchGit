@@ -6,6 +6,7 @@ export { default as Modal } from './Modal';
 export { default as Badge } from './Badge';
 export { default as StatusBadge } from './StatusBadge';
 export { default as VerdictBadge } from './VerdictBadge';
+export { default as CalcInputField } from './CalcInputField';
 export { default as FeedbackState } from './FeedbackState';
 export { default as FileDropzone } from './FileDropzone';
 export { default as PageHeader } from './PageHeader';

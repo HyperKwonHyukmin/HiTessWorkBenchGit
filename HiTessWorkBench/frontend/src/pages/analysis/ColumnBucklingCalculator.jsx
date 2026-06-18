@@ -9,6 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL } from '../../config';
 import SolverCredit from '../../components/ui/SolverCredit';
 import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
+import CalcInputField from '../../components/ui/CalcInputField';
 
 const MEMBER_GROUPS = [
   {
@@ -45,23 +46,8 @@ const MEMBER_GROUPS = [
   },
 ];
 
-const InputField = ({ label, desc, value, onChange, unit, placeholder, min }) => (
-  <div>
-    <label className="block text-sm font-bold text-slate-700 mb-1">{label}</label>
-    {desc && <p className="text-[11px] text-slate-400 mb-1.5">{desc}</p>}
-    <div className="flex items-center border-2 border-slate-200 rounded-xl overflow-hidden focus-within:border-emerald-500 transition-colors bg-white">
-      <input
-        type="number"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        min={min}
-        className="flex-1 px-4 py-3 text-sm font-bold text-slate-800 outline-none bg-transparent"
-      />
-      <span className="px-4 py-3 bg-slate-50 text-slate-500 text-sm font-bold border-l border-slate-200">{unit}</span>
-    </div>
-  </div>
-);
+// 공용 CalcInputField 위임 (size=lg). 호출부는 그대로 <InputField .../> 사용.
+const InputField = (props) => <CalcInputField size="lg" {...props} />;
 
 const PropCell = ({ label, value, unit }) => (
   <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">

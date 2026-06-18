@@ -16,23 +16,10 @@ import { downloadJson } from '../../utils/fileHelper';
 import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 
 import VerdictBadge from '../../components/ui/VerdictBadge';
+import CalcInputField from '../../components/ui/CalcInputField';
 
-const InputField = ({ label, desc, value, onChange, unit, placeholder }) => (
-  <div>
-    <label className="block text-sm font-bold text-slate-700 mb-1">{label}</label>
-    {desc && <p className="text-[11px] text-slate-400 mb-1.5">{desc}</p>}
-    <div className="flex items-center border-2 border-slate-200 rounded-xl overflow-hidden focus-within:border-emerald-500 transition-colors bg-white">
-      <input
-        type="number"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="flex-1 px-4 py-3 text-sm font-bold text-slate-800 outline-none bg-transparent"
-      />
-      <span className="px-4 py-3 bg-slate-50 text-slate-500 text-sm font-bold border-l border-slate-200">{unit}</span>
-    </div>
-  </div>
-);
+// 공용 CalcInputField 위임 (size=lg). 호출부는 그대로 <InputField .../> 사용.
+const InputField = (props) => <CalcInputField size="lg" {...props} />;
 
 // ─────────────────────────────────────────────
 // 후보 상세 패널 (행 클릭 시 인라인 확장)

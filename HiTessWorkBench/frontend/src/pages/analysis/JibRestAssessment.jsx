@@ -17,26 +17,10 @@ import { downloadJson } from '../../utils/fileHelper';
 import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 
 import VerdictBadge from '../../components/ui/VerdictBadge';
+import CalcInputField from '../../components/ui/CalcInputField';
 
-const InputField = ({ label, desc, value, onChange, unit, placeholder, readOnly }) => (
-  <div>
-    <label className="block text-xs font-bold text-slate-700 mb-1">{label}</label>
-    {desc && <p className="text-[10px] text-slate-400 mb-1">{desc}</p>}
-    <div className={`flex items-center border-2 rounded-xl overflow-hidden transition-colors ${
-      readOnly ? 'border-slate-100 bg-slate-50' : 'border-slate-200 focus-within:border-emerald-500 bg-white'
-    }`}>
-      <input
-        type="number"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        readOnly={readOnly}
-        className="flex-1 px-3 py-2.5 text-sm font-bold text-slate-800 outline-none bg-transparent"
-      />
-      <span className="px-3 py-2.5 bg-slate-50 text-slate-500 text-xs font-bold border-l border-slate-200">{unit}</span>
-    </div>
-  </div>
-);
+// 공용 CalcInputField 위임 (size=md). 호출부는 그대로 <InputField .../> 사용.
+const InputField = (props) => <CalcInputField size="md" {...props} />;
 
 const GroupLabel = ({ children }) => (
   <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mt-1 mb-2">{children}</p>
