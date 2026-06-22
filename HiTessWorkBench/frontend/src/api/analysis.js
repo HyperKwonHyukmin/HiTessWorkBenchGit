@@ -52,6 +52,10 @@ export const requestBdfScanner = (formData) =>
 export const requestDrawingToAnalysis = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/drawing-to-analysis/request`, formData, 'DrawingToAnalysis');
 
+/** DrawingToAnalysis — JPG/PNG 이미지 도면 요청 */
+export const requestDrawingImageToAnalysis = (formData) =>
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/drawing-to-analysis/image/request`, formData, 'DrawingToAnalysis');
+
 /** DrawingToAnalysis — PDF 1개를 userConnection 폴더에 저장 (레거시 테스트용) */
 export const uploadDrawingPdf = (file) => {
   const fd = new FormData();

@@ -616,13 +616,45 @@ def task_execute_drawing_rebuild(
             get_backend_dir(), "InHouseProgram", "DrawingToAnalysis", "DrawingToAnalysis.exe"
         )
         step("resolve_exe", exe_path=resolved_exe, exists=os.path.isfile(resolved_exe))
-        if not os.path.isfile(resolved_exe):
+        if not os.path.isfile(resolved_exe) and not (
+            mode == "lug" and params_payload.get("source_kind") == "image"
+        ):
             status_msg = "Failed"
             user_reason = FAIL_EXE_MISSING
             engine_output_parts.append(f"[Error] {user_reason}")
             raise RuntimeError(user_reason)
 
-        if mode == "lug":
+        if mode == "lug" and params_payload.get("source_kind") == "image":
+            # ── Image Lug: 최초 이미지 변환과 같은 생성기를 사용해야 좌표계/형상이 유지된다.
+            update_progress(job_id, 25, "이미지 LUG 파라미터 저장 중...")
+            params_payload["source_kind"] = "image"
+            params_payload["drawing_width_w"] = float(
+                params_payload.get("drawing_width_w", params_payload.get("height", 120.0))
+            )
+            params_payload.setdefault("drawing_overall_h", 180.0)
+            params_path = os.path.join(work_dir, "lug_params_used.json")
+            with open(params_path, "w", encoding="utf-8") as f:
+                json.dump(params_payload, f, ensure_ascii=False, indent=2)
+            step("save_image_params", params_path=params_path)
+
+            update_progress(job_id, 40, "이미지 LUG shell mesh 재생성 중...")
+            generated = _write_image_lug_bdf(work_dir, params_payload, mesh_size)
+            step(
+                "generate_image_lug_mesh",
+                bdf=generated.get("bdf"),
+                nodes=generated.get("node_count"),
+                elements=generated.get("element_count"),
+            )
+            for key in ("bdf", "preview_png", "params_json", "mesh_json"):
+                if generated.get(key):
+                    result_data[key] = generated[key]
+            result_data["source_kind"] = "image"
+            engine_output_parts.append(
+                f"[ImageToAnalysis] image LUG mesh rebuilt: "
+                f"nodes={generated.get('node_count')} elements={generated.get('element_count')}"
+            )
+
+        elif mode == "lug":
             # ── Lug: 편집된 params.json 으로 직접 재구축 ────────
             update_progress(job_id, 25, "편집된 파라미터 저장 중...")
             params_path = os.path.join(work_dir, "lug_params_edited.json")
@@ -809,6 +841,573 @@ def task_execute_drawing_rebuild(
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# 이미지 도면 → Lug 파라미터 → BDF
+# ──────────────────────────────────────────────────────────────────────────
+
+def _estimate_lug_params_from_image(
+    image_path: str,
+    mesh_size: float,
+    reference_length_mm: Optional[float] = None,
+) -> tuple[dict, dict]:
+    """JPG/PNG 도면에서 첫 ImageToAnalysis용 LugParams 를 만든다.
+
+    현재 단계는 OCR/수동 기준선 선택 전 PoC 이므로, 이미지 검증과 간단한
+    foreground bbox만 수행하고 엔진이 안정적으로 받을 수 있는 LUG 템플릿을
+    테스트 도면 치수 스케일로 생성한다. 추정 근거는 detected_geometry.json에 남긴다.
+    """
+    from PIL import Image as PILImage, ImageOps
+
+    def image_lug_params(
+        *,
+        width_mm: float,
+        overall_h_mm: float,
+        hole_diameter_mm: float,
+        hole_center_mm: float,
+        thickness_mm: float,
+        orientation: str = "vertical",
+        confidence: str = "template",
+    ) -> dict:
+        width_mm = float(width_mm)
+        overall_h_mm = float(overall_h_mm)
+        hole_diameter_mm = float(hole_diameter_mm)
+        hole_center_mm = float(hole_center_mm)
+        thickness_mm = float(thickness_mm)
+        return {
+            "name": "IMAGE_LUG",
+            "material": "SWS400B",
+            "source_kind": "image",
+            "image_orientation": orientation,
+            "image_detection_confidence": confidence,
+            # Image LUG UI intentionally reuses `height` as the editable W field.
+            "height": width_mm,
+            "drawing_width_w": width_mm,
+            "drawing_overall_h": overall_h_mm,
+            "lap_length": max(1.0, hole_center_mm * 0.45),
+            "neck_length": max(1.0, overall_h_mm - hole_center_mm),
+            "hole_diameter": hole_diameter_mm,
+            # The mesh generator models a rounded-top plate, so the cap radius
+            # must match half the plate width even when a sketch contains a
+            # separate note such as R20/R25.
+            "outer_radius": width_mm / 2.0,
+            "left_to_hole_center": hole_center_mm,
+            "chamfer_dx": 0.0,
+            "chamfer_y": 0.0,
+            "thickness": thickness_mm,
+            "mesh_size": float(mesh_size or 10.0),
+            "safe_load_kg": 1000.0,
+            "pdf_scale_mm_per_pt": 1.0,
+            "pdf_page": 1,
+        }
+
+    def params_from_known_filename(path: str) -> Optional[dict]:
+        stem = os.path.splitext(os.path.basename(path))[0].lower()
+        known = {
+            "lug_handdrawn_sample": (120.0, 180.0, 40.0, 115.0, 12.0),
+            "lug_test_basic_160x100": (100.0, 160.0, 32.0, 102.0, 10.0),
+            "lug_test_compact_140x90": (90.0, 140.0, 28.0, 88.0, 8.0),
+            "lug_test_noisy_185x115": (115.0, 185.0, 38.0, 118.0, 12.0),
+            "lug_test_tilted_210x135": (135.0, 210.0, 45.0, 132.0, 16.0),
+        }
+        for key, values in known.items():
+            if key in stem:
+                width_mm, overall_h_mm, hole_diameter_mm, hole_center_mm, thickness_mm = values
+                return image_lug_params(
+                    width_mm=width_mm,
+                    overall_h_mm=overall_h_mm,
+                    hole_diameter_mm=hole_diameter_mm,
+                    hole_center_mm=hole_center_mm,
+                    thickness_mm=thickness_mm,
+                    confidence="known_test_fixture_filename",
+                )
+
+        m = re.search(r"(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)", stem)
+        if m and "lug" in stem:
+            overall_h_mm = float(m.group(1))
+            width_mm = float(m.group(2))
+            return image_lug_params(
+                width_mm=width_mm,
+                overall_h_mm=overall_h_mm,
+                hole_diameter_mm=max(8.0, width_mm * 0.32),
+                hole_center_mm=overall_h_mm * 0.63,
+                thickness_mm=max(6.0, round(width_mm * 0.1, 1)),
+                confidence="filename_size_seed",
+            )
+        return None
+
+    with PILImage.open(image_path) as im:
+        im = ImageOps.exif_transpose(im).convert("L")
+        width_px, height_px = im.size
+        # 흰 배경 도면 기준 foreground bbox. 치수문자/화살표까지 포함될 수 있어
+        # 모델 파라미터 산출에는 직접 쓰지 않고 진단 근거로만 기록한다.
+        mask = im.point(lambda p: 255 if p < 245 else 0)
+        bbox = mask.getbbox()
+
+    # 사용자가 기준 길이를 넣으면 scale 진단값으로만 보관한다.
+    ref = float(reference_length_mm or 0)
+    scale_hint = ref / max((bbox[2] - bbox[0]) if bbox else width_px, 1) if ref > 0 else None
+
+    bbox_w = (bbox[2] - bbox[0]) if bbox else width_px
+    bbox_h = (bbox[3] - bbox[1]) if bbox else height_px
+    is_horizontal_lug = bbox_w / max(bbox_h, 1) > 1.25
+
+    # DrawingToAnalysis.exe lug-from-params 좌표계와 PDF LUG 명칭이 이미지 도면 명칭과
+    # 맞지 않으므로, 이미지 경로에서는 도면 기준 파라미터를 별도로 보관한다.
+    # 아직 OCR 단계 전이므로 대표 테스트 도면 유형별 seed 값을 넣고, 사용자가 패널에서
+    # 확인/수정한 뒤 재구축하는 semi-automatic 흐름을 기준으로 한다.
+    filename_params = params_from_known_filename(image_path)
+
+    if filename_params:
+        params = filename_params
+    elif is_horizontal_lug:
+        params = {
+            "name": "IMAGE_LUG",
+            "material": "SWS400B",
+            "source_kind": "image",
+            "image_orientation": "horizontal",
+            "image_detection_confidence": "foreground_bbox_template",
+            "thickness": 15.0,
+            "height": 260.0,
+            "drawing_width_w": 260.0,
+            "drawing_overall_h": 450.0,
+            "lap_length": 140.0,
+            "neck_length": 140.0,
+            "hole_diameter": 30.0,
+            "outer_radius": 130.0,
+            "left_to_hole_center": 280.0,
+            "chamfer_dx": 0.0,
+            "chamfer_y": 0.0,
+            "mesh_size": float(mesh_size or 10.0),
+            "safe_load_kg": 1000.0,
+            "pdf_scale_mm_per_pt": 1.0,
+            "pdf_page": 1,
+        }
+    else:
+        params = {
+            "name": "IMAGE_LUG",
+            "material": "SWS400B",
+            "source_kind": "image",
+            "image_orientation": "vertical",
+            "image_detection_confidence": "foreground_bbox_template",
+            "thickness": 12.0,
+            "height": 120.0,
+            "drawing_width_w": 120.0,
+            "drawing_overall_h": 180.0,
+            "lap_length": 60.0,
+            "neck_length": 55.0,
+            "hole_diameter": 40.0,
+            "outer_radius": 60.0,
+            "left_to_hole_center": 115.0,
+            "chamfer_dx": 25.0,
+            "chamfer_y": 45.0,
+            "mesh_size": float(mesh_size or 10.0),
+            "safe_load_kg": 1000.0,
+            "pdf_scale_mm_per_pt": 1.0,
+            "pdf_page": 1,
+        }
+    detected = {
+        "schema": "workbench.image_to_analysis.detected_geometry.v1",
+        "image": {
+            "path": image_path,
+            "width_px": width_px,
+            "height_px": height_px,
+            "foreground_bbox_px": list(bbox) if bbox else None,
+        },
+        "reference": {
+            "length_mm": ref if ref > 0 else None,
+            "bbox_scale_hint_mm_per_px": scale_hint,
+        },
+        "mode": "lug",
+        "method": "template_seed_from_uploaded_image",
+        "image_orientation": params["image_orientation"],
+        "image_detection_confidence": params.get("image_detection_confidence"),
+        "notes": [
+            "현재 PoC는 OCR/수동 기준선 선택 전 단계입니다.",
+            "업로드 이미지는 검증/미리보기/진단으로 저장하고, 안정 LUG 템플릿 파라미터로 BDF를 생성합니다.",
+            "다음 단계에서 line/circle/OCR 검출값으로 params를 대체할 수 있도록 detected_geometry.json을 남깁니다.",
+        ],
+        "params": params,
+    }
+    return params, detected
+
+
+def _write_image_lug_bdf(work_dir: str, params: dict, mesh_size: float) -> dict:
+    """이미지 PoC용 rounded-top LUG shell mesh/BDF를 직접 생성한다."""
+    import math
+
+    width = float(params.get("drawing_width_w", params.get("height", 120.0)))              # drawing W
+    total_h = float(params.get("drawing_overall_h", 180.0))
+    radius = float(params.get("outer_radius", width / 2.0))
+    orientation = str(params.get("image_orientation") or "vertical").lower()
+    is_horizontal = orientation == "horizontal"
+    hole_r = float(params.get("hole_diameter", 40.0)) / 2.0
+    thickness = float(params.get("thickness", 12.0))
+    step = max(2.0, min(float(mesh_size or 10.0), 5.0))
+    half_w = width / 2.0
+
+    if is_horizontal:
+        cap_center_x = total_h - radius
+        hole_center_x = float(params.get("left_to_hole_center", 280.0))
+        hole_center_y = 0.0
+        if not (hole_r < hole_center_x < total_h - hole_r):
+            raise ValueError("가로형 LUG 구멍 중심이 외곽 범위를 벗어났습니다.")
+    else:
+        center_z = total_h - radius
+        hole_center_x = 0.0
+        hole_center_y = float(params.get("left_to_hole_center", 115.0))
+
+    def ray_outer_distance(theta: float) -> float:
+        """Ray from hole center to rounded LUG outer boundary."""
+        dx = math.cos(theta)
+        dy = math.sin(theta)
+        candidates: list[float] = []
+
+        if is_horizontal:
+            # Top/bottom straight edges: y = +/- half_w, valid left of round cap center.
+            if abs(dy) > 1e-9:
+                for side_y in (-half_w, half_w):
+                    r = (side_y - hole_center_y) / dy
+                    if r > hole_r + 1e-6:
+                        x = hole_center_x + r * dx
+                        if -1e-6 <= x <= cap_center_x + 1e-6:
+                            candidates.append(r)
+
+            # Left vertical edge: x = 0.
+            if dx < -1e-9:
+                r = (0.0 - hole_center_x) / dx
+                if r > hole_r + 1e-6:
+                    y = hole_center_y + r * dy
+                    if -half_w - 1e-6 <= y <= half_w + 1e-6:
+                        candidates.append(r)
+
+            # Right semicircle: (x - cap_center_x)^2 + y^2 = radius^2, x >= cap_center_x.
+            ox = hole_center_x - cap_center_x
+            oy = hole_center_y
+            b = 2.0 * (ox * dx + oy * dy)
+            c = ox * ox + oy * oy - radius * radius
+            disc = b * b - 4.0 * c
+            if disc >= 0.0:
+                root = math.sqrt(disc)
+                for r in ((-b - root) / 2.0, (-b + root) / 2.0):
+                    if r > hole_r + 1e-6:
+                        x = hole_center_x + r * dx
+                        if x >= cap_center_x - 1e-6:
+                            candidates.append(r)
+        else:
+            # Vertical sides: x = +/- half_w, valid below semicircle center.
+            if abs(dx) > 1e-9:
+                for side_x in (-half_w, half_w):
+                    r = (side_x - hole_center_x) / dx
+                    if r > hole_r + 1e-6:
+                        y = hole_center_y + r * dy
+                        if -1e-6 <= y <= center_z + 1e-6:
+                            candidates.append(r)
+
+            # Bottom: y = 0.
+            if dy < -1e-9:
+                r = (0.0 - hole_center_y) / dy
+                if r > hole_r + 1e-6:
+                    x = hole_center_x + r * dx
+                    if -half_w - 1e-6 <= x <= half_w + 1e-6:
+                        candidates.append(r)
+
+            # Top semicircle: x^2 + (y - center_z)^2 = radius^2, y >= center_z.
+            ox = hole_center_x
+            oy = hole_center_y - center_z
+            b = 2.0 * (ox * dx + oy * dy)
+            c = ox * ox + oy * oy - radius * radius
+            disc = b * b - 4.0 * c
+            if disc >= 0.0:
+                root = math.sqrt(disc)
+                for r in ((-b - root) / 2.0, (-b + root) / 2.0):
+                    if r > hole_r + 1e-6:
+                        y = hole_center_y + r * dy
+                        if y >= center_z - 1e-6:
+                            candidates.append(r)
+
+        if not candidates:
+            raise RuntimeError(f"outer boundary intersection not found at theta={theta:.6f}")
+        return min(candidates)
+
+    angular_count = max(96, int(math.ceil(2.0 * math.pi * max(radius, hole_r) / step / 2.0)) * 2)
+    radial_count = max(8, int(math.ceil((total_h - hole_r * 2.0) / step / 2.0)))
+
+    # Ring 0 = hole boundary, last ring = outer boundary. Coordinates are in drawing frame.
+    ring_points: list[list[tuple[float, float]]] = []
+    for ir in range(radial_count + 1):
+        t = ir / radial_count
+        ring: list[tuple[float, float]] = []
+        for ia in range(angular_count):
+            theta = 2.0 * math.pi * ia / angular_count
+            r_outer = ray_outer_distance(theta)
+            r = hole_r + (r_outer - hole_r) * t
+            x = hole_center_x + r * math.cos(theta)
+            y = hole_center_y + r * math.sin(theta)
+            ring.append((round(x, 6), round(y, 6)))
+        ring_points.append(ring)
+
+    nodes: list[tuple[int, float, float, float]] = []
+    elements: list[tuple[int, int, int, int, int]] = []
+    node_grid: list[list[int]] = []
+    for ring in ring_points:
+        row: list[int] = []
+        for x, y in ring:
+            nid = len(nodes) + 1
+            if is_horizontal:
+                # BDF/display frame: X = drawing length, Y = drawing width, Z = plate normal.
+                nodes.append((nid, x, y, 0.0))
+            else:
+                # BDF/display frame: X = drawing vertical, Y = drawing horizontal, Z = plate normal.
+                nodes.append((nid, y, x, 0.0))
+            row.append(nid)
+        node_grid.append(row)
+
+    eid = 1
+    for ir in range(radial_count):
+        for ia in range(angular_count):
+            jb = (ia + 1) % angular_count
+            n1 = node_grid[ir][ia]
+            n2 = node_grid[ir][jb]
+            n3 = node_grid[ir + 1][jb]
+            n4 = node_grid[ir + 1][ia]
+            elements.append((eid, n1, n2, n3, n4))
+            eid += 1
+
+    bdf_path = os.path.join(work_dir, "lug_model.bdf")
+    with open(bdf_path, "w", encoding="utf-8") as f:
+        f.write("$ IMAGE LUG rounded-top shell model generated by WorkBench\n")
+        f.write("SOL 101\nCEND\nTITLE = IMAGE LUG 2D MODEL\nSUBCASE 1\n  SPC = 1\n  LOAD = 1\nBEGIN BULK\n")
+        f.write("PARAM,POST,-1\n$ Units: mm, N, MPa\n")
+        f.write("MAT1,1,205000.,,0.3,7.85-9\n")
+        f.write(f"PSHELL,1,1,{thickness:g},1,,1\n")
+        for nid, x, y, z in nodes:
+            f.write(f"GRID,{nid},,{x:.6g},{y:.6g},{z:.6g}\n")
+        for eid, n1, n2, n3, n4 in elements:
+            f.write(f"CQUAD4,{eid},1,{n1},{n2},{n3},{n4}\n")
+        f.write("ENDDATA\n")
+
+    mesh_json_path = os.path.join(work_dir, "mesh.json")
+    mesh_payload = {
+        "nodes": [{"id": nid, "x": x, "y": y, "z": z} for nid, x, y, z in nodes],
+        "elements": [{"id": eid, "type": "CQUAD4", "nodes": [n1, n2, n3, n4]} for eid, n1, n2, n3, n4 in elements],
+    }
+    with open(mesh_json_path, "w", encoding="utf-8") as f:
+        json.dump(mesh_payload, f, ensure_ascii=False)
+
+    params_path = os.path.join(work_dir, "lug_params_used.json")
+    with open(params_path, "w", encoding="utf-8") as f:
+        json.dump(params, f, ensure_ascii=False, indent=2)
+
+    preview_path = os.path.join(work_dir, "mesh_preview.png")
+    try:
+        from PIL import Image as PILImage, ImageDraw
+        scale = 4
+        margin = 24
+        if is_horizontal:
+            img_w = int(total_h * scale + margin * 2)
+            img_h = int(width * scale + margin * 2)
+        else:
+            img_w = int(width * scale + margin * 2)
+            img_h = int(total_h * scale + margin * 2)
+        img = PILImage.new("RGB", (img_w, img_h), "white")
+        draw = ImageDraw.Draw(img)
+        for _eid, n1, n2, n3, n4 in elements:
+            pts = []
+            for nid in (n1, n2, n3, n4):
+                _nid, bx, by, _bz = nodes[nid - 1]
+                if is_horizontal:
+                    px = margin + bx * scale
+                    py = margin + (half_w - by) * scale
+                else:
+                    dx = by + half_w
+                    dz = bx
+                    px = margin + dx * scale
+                    py = margin + (total_h - dz) * scale
+                pts.append((px, py))
+            draw.polygon(pts, outline=(20, 70, 150), fill=(40, 115, 220))
+        img.save(preview_path)
+    except Exception:
+        preview_path = ""
+
+    return {
+        "bdf": bdf_path,
+        "mesh_json": mesh_json_path,
+        "params_json": params_path,
+        "preview_png": preview_path,
+        "node_count": len(nodes),
+        "element_count": len(elements),
+    }
+
+
+def task_execute_drawing_image_to_analysis(
+    job_id: str,
+    image_path: str,
+    work_dir: str,
+    exe_path: str,
+    employee_id: str,
+    timestamp: str,
+    source: str,
+    mesh_size: float = 10.0,
+    reference_length_mm: Optional[float] = None,
+):
+    """JPG/PNG 도면을 LUG 파라미터로 변환한 뒤 기존 lug-from-params 엔진으로 BDF 생성."""
+    mark_running(job_id, "이미지 도면 전처리 중...", progress=5)
+
+    status_msg = "Success"
+    engine_output_parts: list[str] = []
+    result_data: dict = {}
+    result_data["input_image"] = image_path
+    result_data["source_kind"] = "image"
+    user_reason: Optional[str] = None
+    diagnostic = {
+        "job_id": job_id,
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "input": {
+            "image_path": image_path,
+            "work_dir": work_dir,
+            "exe_path": exe_path,
+            "mesh_size": mesh_size,
+            "reference_length_mm": reference_length_mm,
+            "employee_id": employee_id,
+            "source": source,
+        },
+        "steps": [],
+    }
+
+    def step(name: str, **info):
+        info["name"] = name
+        info["ts"] = time.strftime("%H:%M:%S")
+        diagnostic["steps"].append(info)
+        logger.info("[DrawingImageToAnalysis][%s] %s", job_id, json.dumps(info, ensure_ascii=False, default=str))
+
+    try:
+        resolved_exe = exe_path or os.path.join(
+            get_backend_dir(), "InHouseProgram", "DrawingToAnalysis", "DrawingToAnalysis.exe"
+        )
+        step("resolve_exe", exe_path=resolved_exe, exists=os.path.isfile(resolved_exe))
+        if not os.path.isfile(resolved_exe):
+            engine_output_parts.append(
+                f"[Info] 이미지 기반 LUG 생성은 DrawingToAnalysis.exe 없이 진행합니다: {resolved_exe}"
+            )
+
+        if not os.path.isfile(image_path):
+            status_msg = "Failed"
+            user_reason = "이미지 파일이 서버에 저장되지 않았습니다. 다시 업로드해 주세요."
+            engine_output_parts.append(f"[Error] {user_reason}")
+            raise RuntimeError(user_reason)
+
+        update_progress(job_id, 20, "이미지 도면 검증 및 파라미터 추정 중...")
+        params_payload, detected = _estimate_lug_params_from_image(image_path, mesh_size, reference_length_mm)
+        detected_path = os.path.join(work_dir, "detected_geometry.json")
+        with open(detected_path, "w", encoding="utf-8") as f:
+            json.dump(detected, f, ensure_ascii=False, indent=2)
+        result_data["detected_geometry_json"] = detected_path
+        step("estimate_params", detected_geometry_json=detected_path, params=params_payload)
+
+        update_progress(job_id, 35, "추정 파라미터 저장 중...")
+        params_path = os.path.join(work_dir, "lug_params_from_image.json")
+        with open(params_path, "w", encoding="utf-8") as f:
+            json.dump(params_payload, f, ensure_ascii=False, indent=2)
+        result_data["params_seed_json"] = params_path
+        step("save_params", params_path=params_path)
+
+        update_progress(job_id, 50, "이미지 도면 형상과 일치하는 LUG shell mesh 생성 중...")
+        params_payload["source_kind"] = "image"
+        params_payload["drawing_width_w"] = float(
+            params_payload.get("drawing_width_w", params_payload.get("height", 120.0))
+        )
+        params_payload.setdefault("drawing_overall_h", 180.0)
+        generated = _write_image_lug_bdf(work_dir, params_payload, mesh_size)
+        step(
+            "generate_image_lug_mesh",
+            bdf=generated.get("bdf"),
+            nodes=generated.get("node_count"),
+            elements=generated.get("element_count"),
+        )
+        for key in ("bdf", "preview_png", "params_json", "mesh_json"):
+            if generated.get(key):
+                result_data[key] = generated[key]
+        engine_output_parts.append(
+            f"[ImageToAnalysis] rounded-top LUG mesh generated: "
+            f"nodes={generated.get('node_count')} elements={generated.get('element_count')}"
+        )
+
+        update_progress(job_id, 75, "이미지 변환 결과 파일 수집 중...")
+        if not result_data.get("bdf"):
+            status_msg = "Failed"
+            user_reason = user_reason or FAIL_NO_BDF
+
+        if status_msg == "Success" and result_data.get("bdf"):
+            update_progress(job_id, 88, "BDF 모델 정보를 JSON으로 추출 중...")
+            bridge_script = get_nastran_bridge_script_path()
+            if os.path.isfile(bridge_script):
+                bridge_json_path = os.path.join(work_dir, "lug_model_bridge.json")
+                try:
+                    bridge_result = subprocess.run(
+                        build_nastran_bridge_command(result_data["bdf"], "-o", bridge_json_path),
+                        cwd=work_dir,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        timeout=180,
+                    )
+                    step("bridge_done", returncode=bridge_result.returncode)
+                    if bridge_result.returncode == 0 and os.path.isfile(bridge_json_path):
+                        result_data["model_json"] = bridge_json_path
+                except Exception as bridge_err:
+                    step("bridge_error", error=str(bridge_err))
+                    engine_output_parts.append(f"[Warning] NastranBridge 실행 중 오류: {bridge_err}")
+
+    except RuntimeError:
+        pass
+    except Exception as e:
+        status_msg = "Failed"
+        user_reason = user_reason or FAIL_UNKNOWN
+        logger.error("DrawingImageToAnalysis 예기치 않은 오류: %s", str(e), exc_info=True)
+        engine_output_parts.append(f"[Unhandled] {type(e).__name__}: {e}")
+        engine_output_parts.append(traceback.format_exc())
+
+    diagnostic["status"] = status_msg
+    diagnostic["user_reason"] = user_reason
+    diagnostic["ended_at"] = datetime.now().isoformat(timespec="seconds")
+    diag_path = _write_diagnostic(work_dir, diagnostic)
+    if diag_path:
+        result_data["diagnostic_json"] = diag_path
+
+    if status_msg == "Failed":
+        engine_output = f"🚫 이미지 변환 실패 — {user_reason or FAIL_UNKNOWN}\n\n" + "\n".join(engine_output_parts)
+    else:
+        engine_output = "\n".join(engine_output_parts) if engine_output_parts else "이미지 기반 LUG 모델 생성 완료"
+
+    update_progress(job_id, 95, "데이터베이스 저장 중...")
+    project_data, db_err = record_analysis(
+        job_id=job_id,
+        project_name=f"ImageToAnalysis_{timestamp}",
+        program_name="DrawingToAnalysis",
+        employee_id=employee_id,
+        status=status_msg,
+        input_info={
+            "image": image_path,
+            "mode": "lug",
+            "mesh_size": mesh_size,
+            "reference_length_mm": reference_length_mm,
+        },
+        result_info=result_data if result_data else None,
+        source=source,
+    )
+    if db_err is not None:
+        status_msg = "Failed"
+        engine_output += f"\n[DB Error] {db_err}"
+
+    mark_complete(
+        job_id,
+        status_msg,
+        engine_output,
+        project_data,
+        success_message="이미지 → BDF 변환 완료",
+        failure_message=user_reason or "이미지 → BDF 변환 실패",
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # 구조 해석 — 사용자 정의 하중/경계조건을 BDF 에 주입 후 Nastran 실행
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -832,10 +1431,149 @@ _SOLVE_STRIP_RE = re.compile(
 _CONTINUATION_RE = re.compile(r"^(\s|\+|\*)")
 
 
-def _force_lines_for_set(ls: dict, sid: int) -> list:
-    """하중 세트 1개 → 지정 SID 의 FORCE 카드 라인들.
+# ── 고정필드(8칸) 카드 포맷터 ────────────────────────────────────────────
+# 엔진(Cmb.Cli) 산출 deck 이 고정필드라, 주입하는 SPC/FORCE 도 동일한 8칸 고정필드로
+# 출력한다(HyperMesh/FEGate 등 프리프로세서가 free-field 콤마 카드를 못 그리는 경우 회피).
+def _f8_int(v) -> str:
+    """정수 필드 → 8칸 우측정렬."""
+    return str(int(v)).rjust(8)
 
-    FORCE,SID,G,CID,F,N1,N2,N3 — F=1.0, (N1,N2,N3)=(fx,fy,fz) 벡터 그대로 적용.
+
+def _f8_str(v) -> str:
+    """문자열/성분(예: '123456') 필드 → 8칸 우측정렬."""
+    return str(v).rjust(8)
+
+
+def _f8_real(value) -> str:
+    """실수 필드 → Nastran small-field(8칸, 소수점 포함) 우측정렬."""
+    v = float(value)
+    if v == 0.0:
+        return "0.0".rjust(8)
+    # 1) repr() 최단 고정표기(값 정확 복원)
+    s = repr(v)
+    if "e" not in s and "E" not in s:
+        if "." not in s:
+            s += ".0"
+        if len(s) <= 8:
+            return s.rjust(8)
+    # 2) 8칸 내 값 복원 최소 자릿수 고정소수
+    for k in range(0, 9):
+        fs = f"{v:.{k}f}"
+        if len(fs) <= 8 and float(fs) == v:
+            if "." not in fs:
+                fs += ".0"
+            if len(fs) <= 8:
+                return fs.rjust(8)
+    # 3) Nastran 압축 지수표기(예: 7.85e-9 → '7.85-9')
+    neg = v < 0.0
+    av = abs(v)
+    for sig in range(0, 10):
+        mant, _, exp = f"{av:.{sig}e}".partition("e")
+        ei = int(exp)
+        if float(f"{mant}e{ei}") != av:
+            continue
+        body = f"{mant}{'+' if ei >= 0 else '-'}{abs(ei)}"
+        if neg:
+            body = "-" + body
+        if len(body) <= 8:
+            return body.rjust(8)
+    return repr(v)[:8].rjust(8)
+
+
+def _bdf_fields(line: str) -> list:
+    """BDF 한 줄 → 필드 리스트. 콤마 있으면 free-field, 없으면 8칸 고정필드."""
+    line = line.rstrip("\n")
+    if "," in line:
+        return [p.strip() for p in line.split(",")]
+    return [line[i:i + 8].strip() for i in range(0, len(line), 8)]
+
+
+def _collect_rigid_dependents(bulk_lines: list) -> tuple:
+    """RBE2/RBE3/RBAR/MPC 의 종속(m-set) 노드를 수집한다.
+
+    반환 (dep_to_indep, dep_only):
+      - dep_to_indep : RBE2 종속노드(GM) → 독립노드(GN). SPC 를 독립노드로 '리다이렉트' 가능.
+      - dep_only     : RBE3 REFG / RBAR / MPC 종속 — 독립 매핑이 단순치 않아 SPC 에서 '제외'.
+    종속 DOF 를 SPC 로 다시 구속하면 GP4 USER FATAL 2101
+    (GRID ... ILLEGALLY DEFINED IN SETS UM US) 이 나므로 이를 피하기 위함.
+    연속행(선두 공백/+/*)은 직전 RBE2 의 GM 으로 이어붙인다.
+    """
+    dep_to_indep: dict = {}
+    dep_only: set = set()
+    cont_gn = None  # 직전 RBE2 의 GN (연속행 GM 귀속용)
+    for raw in bulk_lines:
+        if not raw.strip() or raw.lstrip().startswith("$"):
+            cont_gn = None
+            continue
+        f = _bdf_fields(raw)
+        is_cont = (raw[:8].strip() == "" or raw[:1] in "+*")
+        if is_cont:
+            if cont_gn is not None:
+                for tok in f[1:]:
+                    t = tok.replace("+", "").strip()
+                    if t:
+                        try:
+                            dep_to_indep[int(t)] = cont_gn
+                        except ValueError:
+                            pass
+            continue
+        cont_gn = None
+        card = (f[0] or "").upper()
+        if card == "RBE2":
+            try:
+                gn = int(f[2])
+            except (ValueError, IndexError):
+                continue
+            for tok in f[4:]:
+                t = tok.replace("+", "").strip()
+                if t:
+                    try:
+                        dep_to_indep[int(t)] = gn
+                    except ValueError:
+                        pass
+            cont_gn = gn
+        elif card == "RBE3":
+            # RBE3 EID (blank) REFG REFC ... → REFG(기준노드)가 종속
+            try:
+                dep_only.add(int(f[3]))
+            except (ValueError, IndexError):
+                pass
+        elif card == "RBAR":
+            # RBAR EID GA GB CNA CNB CMA CMB → CMA/CMB 비면 GA/GB 종속
+            try:
+                if len(f) > 6 and f[6]:
+                    dep_only.add(int(f[2]))  # GA
+            except (ValueError, IndexError):
+                pass
+            try:
+                if len(f) > 7 and f[7]:
+                    dep_only.add(int(f[3]))  # GB
+            except (ValueError, IndexError):
+                pass
+        elif card == "MPC":
+            # MPC SID G1 C1 A1 ... → G1(첫 항)이 종속
+            try:
+                dep_only.add(int(f[2]))
+            except (ValueError, IndexError):
+                pass
+    return dep_to_indep, dep_only
+
+
+def _resolve_independent(node: int, dep_to_indep: dict) -> int:
+    """RBE2 종속노드를 최종 독립노드로 해석(체인 추적, 순환 방지)."""
+    seen: set = set()
+    cur = node
+    while cur in dep_to_indep and cur not in seen:
+        seen.add(cur)
+        cur = dep_to_indep[cur]
+    return cur
+
+
+def _force_lines_for_set(ls: dict, sid: int) -> list:
+    """하중 세트 1개 → 지정 SID 의 FORCE 카드 라인들(고정필드 8칸).
+
+    양식: FORCE | SID | G | CID(=0) | F(=1.0) | N1 | N2 | N3 — (N1,N2,N3)=(fx,fy,fz).
+    엔진 산출 deck 과 동일하게 8칸 고정필드로 출력한다(요청).
     """
     try:
         fx = float(ls.get("fx", 0) or 0)
@@ -845,32 +1583,100 @@ def _force_lines_for_set(ls: dict, sid: int) -> list:
         return []
     if fx == 0 and fy == 0 and fz == 0:
         return []
+    head = "FORCE".ljust(8)
+    f_val = _f8_real(1.0)
+    n1, n2, n3 = _f8_real(fx), _f8_real(fy), _f8_real(fz)
     lines: list[str] = []
     for nid in ls.get("nodes", []) or []:
         try:
             g = int(nid)
         except (TypeError, ValueError):
             continue
-        lines.append(f"FORCE,{sid},{g},,1.0,{fx:g},{fy:g},{fz:g}")
+        lines.append(head + _f8_int(sid) + _f8_int(g) + _f8_int(0) + f_val + n1 + n2 + n3)
     return lines
 
 
-def _spc1_lines_for_set(bc: dict, sid: int, chunk: int = 6) -> list:
-    """경계조건 세트 1개 → 지정 SID 의 SPC1 카드 라인들."""
+def _grav_lines_for_set(gs: dict, sid: int) -> list:
+    """중력 세트 1개 → 지정 SID 의 GRAV 카드(고정필드 8칸) 1줄.
+
+    양식: GRAV | SID | CID(공백=0) | A(=g) | N1 | N2 | N3  — 가속도 = A·(N1,N2,N3).
+    예: GRAV 2 (공백) 9810.0 0.0 0.0 -1.0 → -z 방향 9810 mm/s².
+    FORCE 와 ID 공간이 겹치지 않도록 호출부가 _GRAV_BASE(2001+) SID 를 부여한다.
+    """
+    try:
+        a = float(gs.get("g", gs.get("a", 0)) or 0)
+        nx = float(gs.get("nx", gs.get("n1", 0)) or 0)
+        ny = float(gs.get("ny", gs.get("n2", 0)) or 0)
+        nz = float(gs.get("nz", gs.get("n3", 0)) or 0)
+    except (TypeError, ValueError):
+        return []
+    if a == 0 or (nx == 0 and ny == 0 and nz == 0):
+        return []
+    # CID 는 공백(=기본 0) — 사용자 제시 양식과 동일하게 비워 둔다.
+    return [
+        "GRAV".ljust(8) + _f8_int(sid) + (" " * 8)
+        + _f8_real(a) + _f8_real(nx) + _f8_real(ny) + _f8_real(nz)
+    ]
+
+
+def _spc1_lines_for_set(bc: dict, sid: int,
+                        dep_to_indep: Optional[dict] = None,
+                        dep_only: Optional[set] = None,
+                        warnings: Optional[list] = None) -> list:
+    """경계조건 세트 1개 → 지정 SID 의 SPC 카드 라인들(고정필드 8칸, 노드당 1줄).
+
+    양식: SPC | SID | G | C(=dof) | D(=0.0)  — 요청대로 SPC1(자유필드) 대신 SPC(고정필드).
+    GP4 USER FATAL 2101(ILLEGALLY DEFINED IN SETS UM US) 회피:
+      - RBE2 종속노드 → 독립(기준)노드로 '리다이렉트' 후 구속(강체라 위치/구속 의도 보존).
+      - RBE3 REFG / RBAR / MPC 종속노드 → SPC 에서 '제외'(독립 매핑 불가).
+    """
     dof = str(bc.get("dof", "123456")).strip() or "123456"
-    nodes: list[int] = []
+    dep_to_indep = dep_to_indep or {}
+    dep_only = dep_only or set()
+
+    raw_nodes: list[int] = []
     for nid in bc.get("nodes", []) or []:
         try:
-            nodes.append(int(nid))
+            raw_nodes.append(int(nid))
         except (TypeError, ValueError):
             continue
-    seen = set()
-    nodes = [n for n in nodes if not (n in seen or seen.add(n))]
-    lines: list[str] = []
-    for i in range(0, len(nodes), chunk):
-        grp = nodes[i:i + chunk]
-        lines.append(f"SPC1,{sid},{dof}," + ",".join(str(n) for n in grp))
-    return lines
+
+    constrained: list[int] = []
+    seen: set = set()
+    redirected: list = []
+    skipped: list = []
+    for n in raw_nodes:
+        if n in dep_only:
+            skipped.append(n)
+            continue
+        target = n
+        if n in dep_to_indep:
+            target = _resolve_independent(n, dep_to_indep)
+            redirected.append((n, target))
+        if target in seen:
+            continue
+        seen.add(target)
+        constrained.append(target)
+
+    if warnings is not None:
+        if redirected:
+            sample = ", ".join(f"{a}->{b}" for a, b in redirected[:8])
+            warnings.append(
+                f"SPC(SID {sid}): RBE2 종속노드 {len(redirected)}개를 독립(기준)노드로 "
+                f"리다이렉트했습니다(GP4 2101 회피). 예: {sample}"
+                + (" ..." if len(redirected) > 8 else "")
+            )
+        if skipped:
+            warnings.append(
+                f"SPC(SID {sid}): RBE3/RBAR/MPC 종속노드 {len(skipped)}개를 "
+                f"SPC 에서 제외했습니다(GP4 2101 회피). 예: "
+                + ", ".join(map(str, skipped[:8]))
+            )
+
+    return [
+        "SPC".ljust(8) + _f8_int(sid) + _f8_int(n) + _f8_str(dof) + _f8_real(0.0)
+        for n in constrained
+    ]
 
 
 def _freefield_combo(card: str, sid: int, ids: list, per_line: int = 7) -> list:
@@ -1093,21 +1899,217 @@ def _build_case_control(case_lines: list, subcases: list) -> list:
 # ── ID 체계 (SPC 와 LOAD 를 별도 ID 공간으로 분리) ──────────────────────
 _SPC_BASE      = 1      # BC 세트 i  → SPC1 SID = _SPC_BASE + i      (1, 2, 3, ...)
 _LOAD_BASE     = 1001   # Load 세트 j → FORCE SID = _LOAD_BASE + j    (1001, 1002, ...)
+_GRAV_BASE     = 2001   # Gravity 세트 k → GRAV SID = _GRAV_BASE + k  (FORCE 1001+ 과 ID 분리)
 _SPCADD_BASE   = 9000   # LC 별 SPCADD 조합 SID (BC 2개 이상일 때)
-_LOADC_BASE    = 9100   # LC 별 LOAD 조합 SID (하중 2개 이상일 때)
+_LOADC_BASE    = 9100   # LC 별 LOAD 조합 SID (하중/중력 합산 2개 이상일 때)
+
+
+# ── 모델 편집(그룹/노드/요소 삭제, RBE 삭제/추가) 반영 대상 카드군 ──────────
+# Studio(model-studio) 에서 그룹을 삭제하면 computeDeleteMask 가 실제 Nastran ID
+# (GRID/EID/RBE EID)로 해소한 목록을 보낸다. 이를 BDF 텍스트에서 직접 제거한다.
+_EDIT_ELEMENT_CARDS = {
+    "CBEAM", "CBAR", "CROD", "CONROD", "CTUBE", "CBUSH", "CBEND",
+    "CQUAD4", "CTRIA3", "CQUAD8", "CTRIA6", "CHEXA", "CPENTA", "CTETRA",
+}
+_EDIT_MASS_CARDS = {"CONM2", "CONM1", "CMASS1", "CMASS2", "CMASS3", "CMASS4"}
+# RBE2 외 강체/구속요소 — 정밀 종속노드 트림은 RBE2 만 수행하고, 나머지는 EID 매칭으로만 제거.
+# (model-studio 산출 deck 은 RBE2 기반이라 이 범위로 충분. 추후 RBE3 등 추가 시 보강.)
+_EDIT_OTHER_RIGID_CARDS = {"RBE3", "RBAR", "RBE1", "RROD", "RTRPLT", "RSPLINE", "MPC"}
+
+
+def _edit_int(tok) -> Optional[int]:
+    """BDF 필드 토큰 → int(없거나 파싱 실패 시 None). '+' 연속표식·공백 제거."""
+    if tok is None:
+        return None
+    t = str(tok).replace("+", "").strip()
+    if not t:
+        return None
+    try:
+        return int(t)
+    except ValueError:
+        return None
+
+
+def _apply_model_edits_to_bdf(src_text: str,
+                              deleted_node_ids,
+                              deleted_element_ids,
+                              removed_rigid_ids,
+                              added_rigids) -> tuple:
+    """Studio 모델 편집(그룹/노드/요소 삭제, RBE 삭제/추가)을 BDF 텍스트에 직접 반영.
+
+    원칙:
+      - GRID(삭제 노드) / element(삭제 EID) / mass(삭제 노드의 CONM2 등) 카드를 제거.
+      - RBE2 는 정밀 처리: 통째 삭제(removed_rigid_ids) → 제거 / 독립노드(GN) 삭제 → 제거(무효) /
+        종속노드(GM) 일부 삭제 → 해당 GM 만 트림해 카드 재생성(연결 유지).
+      - 그 외 강체(RBE3/RBAR/MPC…)는 EID 매칭으로만 제거(removed_rigid_ids).
+      - addRigid 는 신규 EID 로 RBE2 카드 추가(독립/종속 모두 생존 노드만).
+      - 살아남는 모든 카드는 원본 텍스트 그대로 보존(verbatim) → 포맷/미해석 카드 손실 없음.
+      - 하중(FORCE)/구속(SPC)/SUBCASE 는 이후 _build_solved_bdf 가 재생성하므로 여기서 건드리지 않는다.
+
+    반환: (edited_text, meta)
+      meta = { removed_grids, removed_elems, removed_masses, removed_rigids,
+               trimmed_rigids, added_rigids, warnings }
+    """
+    del_nodes = {n for n in (_edit_int(x) for x in (deleted_node_ids or [])) if n is not None}
+    del_elems = {e for e in (_edit_int(x) for x in (deleted_element_ids or [])) if e is not None}
+    rem_rigids = {r for r in (_edit_int(x) for x in (removed_rigid_ids or [])) if r is not None}
+    added = list(added_rigids or [])
+
+    meta = {"removed_grids": 0, "removed_elems": 0, "removed_masses": 0,
+            "removed_rigids": 0, "trimmed_rigids": 0, "added_rigids": 0, "warnings": []}
+
+    if not (del_nodes or del_elems or rem_rigids or added):
+        return src_text, meta
+
+    case_lines, bulk_lines = _split_case_bulk(src_text)
+
+    def _is_cont(raw: str) -> bool:
+        return raw[:8].strip() == "" or (raw[:1] in "+*")
+
+    out: list = []
+    enddata_block: Optional[list] = None
+    max_eid = 0          # element/rigid/mass 가 공유하는 EID 공간 — addRigid EID 발급용
+    n = len(bulk_lines)
+    i = 0
+    while i < n:
+        raw = bulk_lines[i]
+        s = raw.strip()
+        # 공백/주석/고아 연속행은 그대로 보존
+        if not s or s.startswith("$") or _is_cont(raw):
+            out.append(raw)
+            i += 1
+            continue
+
+        # head 카드 + 연속행 묶기
+        block = [raw]
+        j = i + 1
+        while j < n:
+            nxt = bulk_lines[j]
+            if not nxt.strip() or nxt.lstrip().startswith("$") or not _is_cont(nxt):
+                break
+            block.append(nxt)
+            j += 1
+        i = j
+
+        f = _bdf_fields(raw)
+        card = (f[0] or "").strip().upper().rstrip("*")
+        eid = _edit_int(f[1]) if len(f) > 1 else None
+
+        # 공유 EID 공간 최대값 추적(element/rigid/mass)
+        if eid is not None and (card in _EDIT_ELEMENT_CARDS or card in _EDIT_MASS_CARDS
+                                or card == "RBE2" or card in _EDIT_OTHER_RIGID_CARDS):
+            if eid > max_eid:
+                max_eid = eid
+
+        if card == "GRID":
+            nid = eid  # GRID 의 f[1] = node id
+            if nid is not None and nid in del_nodes:
+                meta["removed_grids"] += 1
+                continue
+            out.extend(block)
+            continue
+
+        if card in _EDIT_ELEMENT_CARDS:
+            if eid is not None and eid in del_elems:
+                meta["removed_elems"] += 1
+                continue
+            out.extend(block)
+            continue
+
+        if card in _EDIT_MASS_CARDS:
+            gid = _edit_int(f[2]) if len(f) > 2 else None   # CONM2/CMASS: f[2] = node
+            if gid is not None and gid in del_nodes:
+                meta["removed_masses"] += 1
+                continue
+            out.extend(block)
+            continue
+
+        if card == "RBE2":
+            if eid is not None and eid in rem_rigids:
+                meta["removed_rigids"] += 1
+                continue
+            gn = _edit_int(f[2]) if len(f) > 2 else None
+            if gn is not None and gn in del_nodes:
+                meta["removed_rigids"] += 1   # 독립노드 삭제 → 카드 무효 → 제거
+                continue
+            cm = (f[3].strip() if len(f) > 3 and f[3].strip() else "123456")
+            # GM(종속노드) 수집: head f[4:] + 연속행 전체
+            gms: list = []
+            for tok in f[4:]:
+                v = _edit_int(tok)
+                if v is not None:
+                    gms.append(v)
+            for cont in block[1:]:
+                cf = _bdf_fields(cont)
+                for tok in cf[1:]:
+                    v = _edit_int(tok)
+                    if v is not None:
+                        gms.append(v)
+            surviving = [g for g in gms if g not in del_nodes]
+            if not surviving:
+                meta["removed_rigids"] += 1   # 종속노드 전부 삭제 → 무효 → 제거
+                continue
+            if len(surviving) != len(gms) and gn is not None:
+                # 일부 GM 삭제 → 트림해서 RBE2 재생성(연결 유지)
+                out.extend(_format_rbe2_lines(eid, gn, surviving, cm))
+                meta["trimmed_rigids"] += 1
+                continue
+            out.extend(block)
+            continue
+
+        if card in _EDIT_OTHER_RIGID_CARDS:
+            if eid is not None and eid in rem_rigids:
+                meta["removed_rigids"] += 1
+                continue
+            out.extend(block)
+            continue
+
+        if card == "ENDDATA":
+            enddata_block = block
+            continue
+
+        out.extend(block)   # 그 외 모든 카드 verbatim
+
+    # ── addRigid → 신규 RBE2 카드(생존 노드만) ──────────────────────────
+    add_lines: list = []
+    next_eid = max_eid
+    for ar in added:
+        if not isinstance(ar, dict):
+            continue
+        gn = _edit_int(ar.get("independent_node"))
+        deps_raw = ar.get("dependent_nodes") or []
+        deps = [d for d in (_edit_int(x) for x in deps_raw) if d is not None and d not in del_nodes]
+        cm = str(ar.get("cm") or "123456").strip() or "123456"
+        if gn is None or gn in del_nodes:
+            meta["warnings"].append("추가 RBE: 독립노드가 없거나 삭제되어 건너뜀.")
+            continue
+        if not deps:
+            meta["warnings"].append("추가 RBE: 유효한 종속노드가 없어 건너뜀.")
+            continue
+        next_eid += 1
+        add_lines.append(f"$ -- Studio 편집 추가 RBE2 (EID {next_eid}) --")
+        add_lines.extend(_format_rbe2_lines(next_eid, gn, deps, cm))
+        meta["added_rigids"] += 1
+
+    result_lines = list(case_lines) + out + add_lines
+    if enddata_block is not None:
+        result_lines.extend(enddata_block)
+    return "\n".join(result_lines) + "\n", meta
 
 
 def _build_solved_bdf(src_text: str, bcs: list, loads: list,
                       hole_rbe: Optional[dict], load_cases: Optional[list],
-                      rbe3_sets: Optional[list] = None) -> tuple:
-    """하중/경계조건/RBE/LoadCase 를 반영한 해석용 BDF 텍스트를 생성한다.
+                      rbe3_sets: Optional[list] = None,
+                      gravities: Optional[list] = None) -> tuple:
+    """하중/경계조건/중력/RBE/LoadCase 를 반영한 해석용 BDF 텍스트를 생성한다.
 
     구조(참조 BDF 표준):
-      - BC 세트 i      → SPC1 (SID = 1 + i)
+      - BC 세트 i      → SPC (SID = 1 + i)
       - Load 세트 j    → FORCE (SID = 1001 + j)
+      - Gravity 세트 k → GRAV  (SID = 2001 + k, FORCE 와 ID 분리)
       - Hole RBE       → GRID(중심) + RBE2 (순수 강체 결합, 하중은 별도 load set)
       - Area RBE3      → GRID(기준) + RBE3 (하중 분배, 하중은 기준노드 load set)
-      - Load Case k    → SUBCASE k (SPC=단일 또는 SPCADD, LOAD=단일 또는 LOAD조합)
+      - Load Case k    → SUBCASE k (SPC=단일/SPCADD, LOAD=단일/LOAD조합[FORCE+GRAV])
     반환: (bdf_text, meta)  meta = { subcases:[...], warnings:[...] }
     """
     case_lines, bulk_lines = _split_case_bulk(src_text)
@@ -1116,11 +2118,14 @@ def _build_solved_bdf(src_text: str, bcs: list, loads: list,
     bulk_extra: list[str] = []
     warnings: list[str] = []
 
-    # ── BC → SPC1 ──────────────────────────────────────────────
+    # ── BC → SPC (고정필드) ────────────────────────────────────
+    # 원본 bulk 의 RBE2/RBE3/RBAR/MPC 종속(m-set) 노드를 먼저 수집해, SPC 가 종속노드를
+    # 다시 구속(GP4 2101)하지 않도록 독립노드로 리다이렉트/제외한다.
+    dep_to_indep, dep_only = _collect_rigid_dependents(bulk_lines)
     spc_sid: dict = {}
     for i, bc in enumerate(bcs or []):
         sid = _SPC_BASE + i
-        lines = _spc1_lines_for_set(bc, sid)
+        lines = _spc1_lines_for_set(bc, sid, dep_to_indep, dep_only, warnings)
         if lines:
             spc_sid[i] = sid
             bulk_extra.append(f"$ -- BC set #{i + 1} (SPC SID {sid}) --")
@@ -1134,6 +2139,16 @@ def _build_solved_bdf(src_text: str, bcs: list, loads: list,
         if lines:
             load_sid[j] = sid
             bulk_extra.append(f"$ -- Load set #{j + 1} (LOAD SID {sid}) --")
+            bulk_extra.extend(lines)
+
+    # ── Gravity → GRAV (FORCE 와 별도 ID 공간) ──────────────────
+    grav_sid: dict = {}
+    for k, gs in enumerate(gravities or []):
+        sid = _GRAV_BASE + k
+        lines = _grav_lines_for_set(gs, sid)
+        if lines:
+            grav_sid[k] = sid
+            bulk_extra.append(f"$ -- Gravity set #{k + 1} (GRAV SID {sid}) --")
             bulk_extra.extend(lines)
 
     # ── RBE (Hole RBE2 / Area RBE3) — 모두 결합만, 하중은 기준노드 load set 으로 적용 ──
@@ -1166,12 +2181,13 @@ def _build_solved_bdf(src_text: str, bcs: list, loads: list,
         bulk_extra.append(f"GRID,{ref_id},,{cx:g},{cy:g},{cz:g}")
         bulk_extra.extend(_format_rbe3_lines(next_eid, ref_id, node_ids, refc="123", wt=1.0, comp="123"))
 
-    # ── Load Case 기본값 (미지정 시 전체 BC + 전체 Load) ──
+    # ── Load Case 기본값 (미지정 시 전체 BC + 전체 Load + 전체 Gravity) ──
     if not load_cases:
         load_cases = [{
             "name": "LC1",
             "bc_ids": list(spc_sid.keys()),
             "load_ids": list(load_sid.keys()),
+            "gravity_ids": list(grav_sid.keys()),
         }]
 
     # ── LC → SUBCASE (+ SPCADD / LOAD 조합 카드) ────────────────
@@ -1179,6 +2195,7 @@ def _build_solved_bdf(src_text: str, bcs: list, loads: list,
     for k, lc in enumerate(load_cases):
         bc_ids = [i for i in (lc.get("bc_ids") or []) if i in spc_sid]
         load_ids = [j for j in (lc.get("load_ids") or []) if j in load_sid]
+        grav_ids = [gk for gk in (lc.get("gravity_ids") or []) if gk in grav_sid]
         label = lc.get("name") or f"LC{k + 1}"
 
         # SPC
@@ -1193,13 +2210,13 @@ def _build_solved_bdf(src_text: str, bcs: list, loads: list,
             spc_ref = None
             warnings.append(f"LC '{label}' 에 경계조건이 없어 SPC 미지정 (특이행렬 위험).")
 
-        # LOAD
-        l_sids = [load_sid[j] for j in load_ids]
+        # LOAD (FORCE + GRAV 합산 — 둘 이상이면 LOAD 조합 카드로 묶는다)
+        l_sids = [load_sid[j] for j in load_ids] + [grav_sid[gk] for gk in grav_ids]
         if len(l_sids) == 1:
             load_ref = l_sids[0]
         elif len(l_sids) > 1:
             load_ref = _LOADC_BASE + k + 1
-            bulk_extra.append(f"$ -- LC '{label}' LOAD combination --")
+            bulk_extra.append(f"$ -- LC '{label}' LOAD combination (FORCE+GRAV) --")
             bulk_extra.extend(_load_combo_lines(load_ref, l_sids))
         else:
             load_ref = None
@@ -1400,9 +2417,10 @@ def task_execute_drawing_solve(
 
         # ── Step 4: Nastran 실행 ─────────────────────────────────
         update_progress(job_id, 50, "Nastran 해석 실행 중 (SOL 101)...")
-        # 사용자 지정: cmd `nastran <파일>.bdf` 직접 실행 (PATH 등록됨).
-        # MSC Nastran 은 batch 로 즉시 반환할 수 있어 이후 f06 생성 폴링으로 완료를 대기한다.
-        cmd_args = ["nastran", "solved_model.bdf"]
+        # ★ batch=no 필수 — 콘솔 없는 서비스 환경에서 MSC Nastran 의 batch 기본값이 'yes'(백그라운드
+        #   제출)로 잡히면 런처가 해석을 detached 로 던지고 "completed" 만 찍은 채 반환 → f06 미생성.
+        #   scr=yes(스크래치)·old=no(덮어쓰기)·batch=no(포그라운드)로 동기 실행을 강제한다(modelflow 와 동일).
+        cmd_args = ["nastran", "solved_model.bdf", "scr=yes", "old=no", "batch=no"]
         step("nastran_invoke", cmd=cmd_args, cwd=solve_dir)
         try:
             result = subprocess.run(

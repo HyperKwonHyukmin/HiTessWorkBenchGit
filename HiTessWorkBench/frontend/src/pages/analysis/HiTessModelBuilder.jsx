@@ -2272,10 +2272,10 @@ export default function HiTessModelBuilder() {
   const [pipeError, setPipeError] = useState(null);
   const [equiError, setEquiError] = useState(null);
 
-  // ── 옵션 (기본값: useNastran=true, uboltFullFix=true, meshSize=200) ──
+  // ── 옵션 (기본값: useNastran=false, uboltFullFix=true, meshSize=200) ──
   const [meshSize,      setMeshSize]      = useState(saved?.meshSize      ?? DEFAULT_MESH_SIZE_MM);
   const [uboltFullFix,  setUboltFullFix]  = useState(saved?.uboltFullFix  ?? true);
-  const [useNastran,    setUseNastran]    = useState(saved?.useNastran    ?? true);
+  const [useNastran,    setUseNastran]    = useState(saved?.useNastran    ?? false);
 
   // ── 작업/결과 상태 ──
   const [steps,      setSteps]      = useState(() => saved?.steps ?? INITIAL_STEPS.map(s => ({ ...s })));
@@ -2775,6 +2775,15 @@ export default function HiTessModelBuilder() {
       const openRes = await window.electron.invoke('viewer:open', {
         viewerId:      VIEWER_ID,
         initialFolder,
+        // ★ Studio 구조해석(solve)이 호출할 백엔드 주소. 형제 스튜디오(Mooring/SidePassage/
+        //   ModuleUnit/Plate)와 동일하게 반드시 넘긴다. 누락하면 electron main 이
+        //   viewerServerUrl 을 못 잡아 하드코딩 기본값(DEFAULT_BACKEND_BASE_URL=145)으로
+        //   폴백 → config.js 가 70 이어도 solve 가 145 로 가 404 가 난다.
+        serverUrl:     API_BASE_URL,
+        // 서버측 ModelFlow 빌드 산출 폴더(userConnection 하위) — Studio 의 구조해석(Analysis)
+        // 이 백엔드 work_dir 로 쓴다. initialFolder(로컬 로드 폴더)와 달리 prod 에선 서버 경로라
+        // 반드시 별도로 등록해야 viewer:runModelBuilderSolve 가 output_dir 을 찾는다.
+        outputDir:     bdfResult.outputDir,
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok)     throw new Error(openRes?.error || '오픈 실패');
@@ -3022,7 +3031,7 @@ export default function HiTessModelBuilder() {
     if (editPollRef.current) { clearInterval(editPollRef.current); editPollRef.current = null; }
     setStruFile(null); setPipeFile(null); setEquiFile(null);
     setStruError(null); setPipeError(null); setEquiError(null);
-    setMeshSize(DEFAULT_MESH_SIZE_MM); setUboltFullFix(true); setUseNastran(true);
+    setMeshSize(DEFAULT_MESH_SIZE_MM); setUboltFullFix(true); setUseNastran(false);
     setLocalResultDir(null);
     setSteps(INITIAL_STEPS.map(s => ({ ...s })));
     setActiveIdx(0); setHasRunOnce(false); setCurrentJobId(null);

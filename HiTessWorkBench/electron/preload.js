@@ -19,6 +19,8 @@ const VALID_RECEIVE_CHANNELS = [
   'viewer:plate-structural-progress',
   // main 이 viewer 창에 Mooring 구조 해석 진행 상황을 stream
   'viewer:mooring-structural-progress',
+  // main 이 viewer 창에 ModelBuilder 구조 해석 진행 상황을 stream
+  'viewer:modelbuilder-structural-progress',
   'viewer:model-saved',
 ];
 const VALID_INVOKE_CHANNELS  = [
@@ -45,6 +47,7 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:runUnitStructural',
   'viewer:runPlateStructural',
   'viewer:runMooringStructural',
+  'viewer:runModelBuilderSolve',
   'viewer:exportMooringBdf',
   'viewer:exportSidePassageBdf',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
@@ -143,5 +146,15 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
     const listener = (_, data) => callback(data);
     ipcRenderer.on('viewer:mooring-structural-progress', listener);
     return () => ipcRenderer.removeListener('viewer:mooring-structural-progress', listener);
+  },
+  // ModelBuilder Studio "해석 실행" → 백엔드 modelbuilder/solve(SPC1+FORCE+SUBCASE)
+  // 호출 + 폴링 + 결과 JSON 다운로드까지 main 이 처리. 진행 상황은 onModelBuilderAnalysisProgress() 로 stream.
+  // opts = { bcs:[{nodes,dof}], loads:[{nodes,fx,fy,fz}], loadCases:[{name,bc_ids,load_ids}] }
+  runModelBuilderAnalysis: (opts) =>
+    ipcRenderer.invoke('viewer:runModelBuilderSolve', opts),
+  onModelBuilderAnalysisProgress: (callback) => {
+    const listener = (_, data) => callback(data);
+    ipcRenderer.on('viewer:modelbuilder-structural-progress', listener);
+    return () => ipcRenderer.removeListener('viewer:modelbuilder-structural-progress', listener);
   },
 });

@@ -1697,6 +1697,142 @@ ipcMain.handle("viewer:runMooringStructural", async (_e, payload) => {
   }
 });
 
+// ── ModelBuilder Studio: BC/Force/LoadCase 양식 → 백엔드 modelbuilder/solve(SPC1+FORCE+SUBCASE) → 결과 JSON ──
+// Studio 'Analysis' 탭의 "해석 실행" 버튼 한 번으로 백엔드 modelbuilder/solve job 시작 + 폴링 + 결과 JSON 다운로드까지
+// main 이 처리. 진행 상황은 viewer:modelbuilder-structural-progress 로 stream. (SPC+FORCE+GRAV+SUBCASE)
+//
+// opts(Studio) = { bcs:[{nodes,dof}], loads:[{nodes,fx,fy,fz}], gravities:[{g,nx,ny,nz}],
+//                  loadCases:[{name,bc_ids,load_ids,gravity_ids}] }
+//   employee_id / work_dir / bdf_path 는 Studio 가 모르므로 viewer:open 시점에 등록된 컨텍스트
+//   (viewerOutputDir = 서버측 ModelFlow 빌드 산출 폴더, 로그인 사용자)에서 main 이 해소한다.
+// 반환 = { ok, analysisId, resultPath, result, summary, job } | { ok:false, error, stderr, job }
+ipcMain.handle("viewer:runModelBuilderSolve", async (_e, payload) => {
+  try {
+    const bcs       = Array.isArray(payload?.bcs)       ? payload.bcs       : [];
+    const loads     = Array.isArray(payload?.loads)     ? payload.loads     : [];
+    const gravities = Array.isArray(payload?.gravities) ? payload.gravities : [];
+    const loadCases = Array.isArray(payload?.loadCases) ? payload.loadCases : [];
+    // Studio 모델 편집(그룹/요소 삭제, RBE 삭제/추가) — 실제 Nastran ID 로 해소된 삭제/추가 목록.
+    // 있으면 그대로 백엔드로 전달해 "편집된 모델 상태" 의 BDF 로 해석되게 한다.
+    const edits = (payload && typeof payload.edits === "object" && payload.edits) ? payload.edits : null;
+
+    // viewer:open 에서 등록된 서버측 output_dir(ModelFlow 빌드 산출 폴더, userConnection 하위).
+    // MooringStudio 와 동일하게 Studio 는 로컬 추출본만 알기에, solve 는 이 서버 경로 기준으로 수행된다.
+    if (!viewerOutputDir) {
+      return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 ModelFlow 빌드를 완료하고 Studio 를 다시 여세요." };
+    }
+
+    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const { serverUrl } = runtimeConfig;
+    const employeeId = runtimeConfig.employeeId;
+    if (!employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+
+    // work_dir = 서버측 ModelFlow 빌드 산출 폴더(userConnection 하위). 백엔드가 userConnection 프리픽스 검증.
+    const workDir = viewerOutputDir;
+    // bdf_path = work_dir 안의 "최종 모델 BDF"(phase 파일 NN_*.bdf 가 아닌 <designName>.bdf).
+    //   Studio/클라이언트는 서버 폴더를 enumerate 할 수 없으므로 명시 경로가 있으면 사용하고,
+    //   없으면 빈 문자열을 보내 백엔드가 work_dir 에서 비-phase(.bdf, ^\d{2}_ 미매치) 파일을 고르게 위임한다.
+    // TODO(Stage1): payload.bdfPath 미제공 시 백엔드 modelbuilder/solve 가 work_dir 의 non-phase .bdf 를
+    //   단일 최종 산출물로 가정해 해소한다(ModelFlow build 산출물이 <designName>.bdf 하나라는 전제).
+    const bdfPath = (typeof payload?.bdfPath === "string" && payload.bdfPath.trim())
+      ? payload.bdfPath.trim()
+      : "";
+
+    const { res: reqRes, token } = await fetchWithSessionRefresh(
+      `${serverUrl}/api/analysis/modelbuilder/solve`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employee_id: employeeId,
+          work_dir: workDir,
+          bdf_path: bdfPath,
+          bcs,
+          loads,
+          gravities,
+          load_cases: loadCases,
+          edits,
+          source: "ModelBuilder-Solve",
+        }),
+      },
+      runtimeConfig,
+    );
+    if (!reqRes.ok) {
+      const detail = await readBackendError(reqRes);
+      const hint = reqRes.status === 404
+        ? ` - ModelBuilder 구조해석 API가 해당 서버에 없습니다. 서버 주소(${serverUrl})가 최신 WorkBench 백엔드인지 확인하세요.`
+        : "";
+      return { ok: false, error: `백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}${hint}` };
+    }
+    const reqBody = await reqRes.json();
+    const jobId = reqBody.jobId || reqBody.job_id;
+    if (!jobId) return { ok: false, error: "백엔드 응답에 jobId 가 없습니다." };
+
+    const sendProgress = (data) => {
+      try {
+        if (viewerWindow && !viewerWindow.isDestroyed()) {
+          viewerWindow.webContents.send("viewer:modelbuilder-structural-progress", { jobId, ...data });
+        }
+      } catch {}
+    };
+    sendProgress({ status: "Pending", progress: 0, message: "큐 대기..." });
+
+    // SOL 101 + 다중 SUBCASE 고려해 30분 (1.5s × 1200) 폴링
+    for (let i = 0; i < 1200; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const statusRes = await fetch(`${serverUrl}/api/analysis/status/${jobId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!statusRes.ok) continue;
+
+      const job = await statusRes.json();
+      sendProgress({ status: job.status, progress: job.progress, message: job.message });
+
+      if (job.status === "Success") {
+        const resultInfo = job.project?.result_info || {};
+        const resultPath = resultInfo.nastranResultJson || null;
+        let resultContent = null;
+        // 서버↔클라이언트 분리 환경에서는 서버 로컬 경로를 fs.existsSync 로 못 읽으므로 HTTP 다운로드.
+        if (resultPath) {
+          try {
+            const dlUrl = `${serverUrl}/api/download?filepath=${encodeURIComponent(resultPath)}`;
+            const { res: dlRes } = await fetchWithSessionRefresh(dlUrl, { method: "GET" });
+            if (!dlRes.ok) {
+              const detail = await readBackendError(dlRes);
+              return { ok: false, error: `결과 JSON 다운로드 실패: ${dlRes.status}${detail ? ` - ${detail}` : ""}`, job };
+            }
+            resultContent = JSON.parse(await dlRes.text());
+          } catch (e) {
+            return { ok: false, error: `결과 JSON 다운로드/파싱 실패: ${e.message}`, job };
+          }
+        }
+        return {
+          ok: true,
+          analysisId: job.project?.id ?? null,
+          summary:    resultInfo.summary ?? null,
+          resultPath,
+          result:     resultContent,
+          job,
+        };
+      }
+      if (job.status === "Failed") {
+        return {
+          ok: false,
+          error: job.message || "ModelBuilder 구조 해석 실패",
+          stderr: job.engine_log || "",
+          job,
+        };
+      }
+    }
+
+    return { ok: false, error: "시간 초과 (30분)" };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 // MooringFittingStudio "최종 BDF 출력" → 백엔드 apply-edit(편집 반영 BDF 생성) → 사용자 PC 저장(대화상자).
 // runMooringStructural 과 동일하게 viewerOutputDir(서버측 out 폴더) 기준으로 동작한다.
 // MooringFittingStudio 는 zip 추출 데이터만 보유해 로컬 폴더가 없으므로, 서버측 out 폴더에서 BDF 를 만들어 내려받는다.

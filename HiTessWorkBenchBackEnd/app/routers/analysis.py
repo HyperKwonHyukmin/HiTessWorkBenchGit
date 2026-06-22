@@ -38,9 +38,11 @@ from ..services.plate_structure_service import task_execute_plate_structure
 from ..services.mooring_fitting_service import task_execute_mooring_fitting, task_solve_mooring_fitting
 from ..services.drawing_to_analysis_service import (
     task_execute_drawing_to_analysis,
+    task_execute_drawing_image_to_analysis,
     task_execute_drawing_rebuild,
     task_execute_drawing_solve,
 )
+from ..services.modelbuilder_solve_service import task_execute_modelbuilder_solve
 from ._intake import make_work_dir, save_upload, submit_analysis_job
 from ._access_control import (
     assert_current_user_can_access_job,
@@ -108,6 +110,12 @@ _EXTERNAL_PROGRAM_PATHS = {
 SAMPLE_DAILY_LIMIT = 1
 SAMPLE_SOURCE_TAG = "WorkbenchSample"  # 일반 사용 기록과 구분하는 source 값
 _SAMPLE_RUN_TRACKER: dict[tuple[str, str], _date] = {}
+
+# SidePassage·ModuleUnitStudio 의 내부 하위 단계(권상 자세안정성 평가·Unit 구조 해석)는
+# 부모 프로젝트(SidePassage/GroupModuleUnit) 안에서 수행되는 작업이므로, 사용자의 MyProjects
+# 목록에는 별도 프로젝트로 노출하지 않는다. DB 레코드 자체는 감사/디버깅을 위해 유지하며,
+# 관리자 전체 이력(/analysis/all)에는 그대로 보인다.
+INTERNAL_SUBSTEP_PROGRAMS = ("ModuleStability", "UnitStructuralAnalysis")
 
 
 def _check_sample_quota(program_key: str, employee_id: str, db: Session) -> dict:
@@ -430,9 +438,12 @@ def get_analysis_history(
     """
     _verify_employee_self(employee_id, current_user)
     # 샘플 실행(WorkbenchSample)은 사용 기록에서 제외 — 신규 사용자 학습용
+    # 내부 하위 단계(ModuleStability·UnitStructuralAnalysis)는 부모 SidePassage/GroupModuleUnit
+    # 프로젝트에 포함된 작업이므로 별도 프로젝트로 노출하지 않는다(items·summary 모두 제외).
     base_q = db.query(models.Analysis).filter(
         models.Analysis.employee_id == employee_id,
         models.Analysis.source != SAMPLE_SOURCE_TAG,
+        models.Analysis.program_name.notin_(INTERNAL_SUBSTEP_PROGRAMS),
     )
     base_q = _apply_analysis_filters(base_q, search=search, program_name=program_name, status=status)
     summary = _analysis_summary(base_q) if include_summary else None
@@ -704,6 +715,43 @@ async def request_drawing_to_analysis(
         queue_message="변환 대기 중...",
     )
     return {"job_id": job_id, "mode": resolved_mode}
+
+
+@router.post("/analysis/drawing-to-analysis/image/request")
+async def request_drawing_image_to_analysis(
+    image_file: UploadFile = File(...),
+    employee_id: str = Form(...),
+    mesh_size: float = Form(10.0),
+    reference_length_mm: Optional[float] = Form(None),
+    source: str = Form("Workbench-Image"),
+    current_user: str = Depends(require_auth),
+):
+    """JPG/PNG 도면 이미지를 업로드하여 반자동 ImageToAnalysis 작업을 실행합니다."""
+    _verify_employee_self(employee_id, current_user)
+    fname = image_file.filename or ""
+    ext = os.path.splitext(fname)[1].lower()
+    if ext not in {".png", ".jpg", ".jpeg"}:
+        raise HTTPException(status_code=400, detail="PNG 또는 JPG 파일만 업로드 가능합니다.")
+
+    work_dir, timestamp = make_work_dir(employee_id, "DrawingToAnalysis")
+    image_path = await save_upload(
+        image_file,
+        work_dir,
+        error_prefix="이미지 저장 오류",
+        allowed_extensions={".png", ".jpg", ".jpeg"},
+        max_bytes=50 * 1024 * 1024,
+    )
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "DrawingToAnalysis", "DrawingToAnalysis.exe"
+    ))
+
+    job_id = submit_analysis_job(
+        task_execute_drawing_image_to_analysis,
+        image_path, work_dir, exe_path, employee_id, timestamp, source, mesh_size, reference_length_mm,
+        queue_message="이미지 변환 대기 중...",
+    )
+    return {"job_id": job_id, "mode": "lug", "image": os.path.basename(image_path)}
+
 
 @router.post("/analysis/drawing-to-analysis/upload")
 async def drawing_to_analysis_upload(
@@ -1134,6 +1182,188 @@ async def solve_drawing_model(
         "bc_sets":    len(bcs),
         "rbe3_sets":  len(rbe3_sets),
         "load_cases": len(load_cases),
+    }
+
+
+# -------------------- ModelBuilder Analysis 구조 해석 (Stage 1: SPC1 + FORCE + SUBCASE) --------------------
+
+class ModelBuilderBcSet(BaseModel):
+    """경계조건 세트 — 선택 노드를 dof 문자열(예: '123456')로 구속 → SPC1."""
+    nodes: list[int]
+    dof: str = "123456"
+
+
+class ModelBuilderLoadSet(BaseModel):
+    """하중 세트 — 선택 노드에 동일한 힘 벡터(N)를 적용 → FORCE."""
+    nodes: list[int]
+    fx: float = 0.0
+    fy: float = 0.0
+    fz: float = 0.0
+
+
+class ModelBuilderGravitySet(BaseModel):
+    """중력 세트 — 가속도 크기 g(mm/s²)와 방향 (nx,ny,nz) → GRAV.
+
+    GRAV SID 는 FORCE 와 ID 공간이 겹치지 않게 백엔드가 별도(2001+)로 부여한다.
+    """
+    g: float = 9810.0
+    nx: float = 0.0
+    ny: float = 0.0
+    nz: float = -1.0
+
+
+class ModelBuilderLoadCase(BaseModel):
+    """Load Case — 경계조건(bc_ids)·하중(load_ids)·중력(gravity_ids) 세트의 조합 = SUBCASE.
+
+    bc_ids / load_ids / gravity_ids 는 각각 bcs / loads / gravities 배열의 인덱스(0-base).
+    """
+    name: str = ""
+    bc_ids: list[int] = []
+    load_ids: list[int] = []
+    gravity_ids: list[int] = []
+
+
+class ModelBuilderAddedRigid(BaseModel):
+    """Studio 편집으로 추가된 강체(RBE2) — 독립노드 1 + 종속노드 N + 성분(cm)."""
+    independent_node: int
+    dependent_nodes: list[int] = []
+    cm: str = "123456"
+
+
+class ModelBuilderEdits(BaseModel):
+    """Studio(model-studio) 모델 편집 결과 — 실제 Nastran ID 로 해소된 삭제/추가 목록.
+
+    그룹 삭제 등 편집을 해석용 BDF 에 그대로 반영하기 위한 입력.
+    (deleteGroup → computeDeleteMask 가 노드/요소/RBE 실제 ID 로 변환해 전달)
+    """
+    deleted_node_ids: list[int] = []
+    deleted_element_ids: list[int] = []
+    removed_rigid_ids: list[int] = []
+    added_rigids: list[ModelBuilderAddedRigid] = []
+
+
+class ModelBuilderSolveRequest(BaseModel):
+    """ModelFlow 빌드 BDF 에 하중/경계조건/중력을 반영해 Nastran 해석을 실행하는 요청.
+
+    SPC + FORCE + GRAV(중력) + 모델 편집(삭제/추가) + 다중 SUBCASE 지원.
+    """
+    employee_id: str
+    work_dir: str               # ModelFlow 빌드 결과 폴더 (BDF 가 있는 폴더, 절대 경로)
+    bdf_path: str               # 해석 대상 BDF 절대 경로 (ModelFlow 최종 산출)
+    bcs: list[ModelBuilderBcSet] = []
+    loads: list[ModelBuilderLoadSet] = []
+    gravities: list[ModelBuilderGravitySet] = []
+    load_cases: list[ModelBuilderLoadCase] = []
+    edits: Optional[ModelBuilderEdits] = None   # Studio 모델 편집(그룹/요소 삭제 등) 반영
+    source: str = "ModelBuilder-Solve"
+
+
+def _resolve_final_bdf(work_dir: str) -> Optional[str]:
+    """work_dir 에서 ModelFlow 최종 산출 BDF(<designName>.bdf)를 자동으로 찾는다.
+
+    제외 대상:
+      - phase 파일: 이름이 두 자리 숫자 + '_' 로 시작(예: 00_InputAudit, 03_Mesh.bdf)
+      - 과거 solve 산출물: solved_model.bdf
+    여러 후보가 있으면 가장 최근 수정본을 고른다. 후보가 없으면 None.
+    (재귀 탐색하지 않으므로 solve_<ts>/ 하위의 solved_model.bdf 는 자연히 제외된다.)
+    """
+    try:
+        names = os.listdir(work_dir)
+    except OSError:
+        return None
+    candidates: list[str] = []
+    for fn in names:
+        low = fn.lower()
+        if not low.endswith(".bdf"):
+            continue
+        if low == "solved_model.bdf":
+            continue
+        if len(fn) >= 3 and fn[0:2].isdigit() and fn[2] == "_":
+            continue  # phase 파일
+        full = os.path.join(work_dir, fn)
+        if os.path.isfile(full):
+            candidates.append(full)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda pth: os.path.getmtime(pth), reverse=True)
+    return candidates[0]
+
+
+@router.post("/analysis/modelbuilder/solve")
+async def solve_modelbuilder_model(
+    payload: ModelBuilderSolveRequest,
+    current_user: str = Depends(require_auth),
+):
+    """ModelFlow 빌드 BDF 에 사용자 SPC1/FORCE/SUBCASE 를 주입하고 Nastran(SOL 101)을 실행.
+
+    결과 저장 위치: <work_dir>/solve_<timestamp>/
+    """
+    _verify_employee_self(payload.employee_id, current_user)
+
+    # ── work_dir / bdf 경로 검증 (userConnection 외부 접근 차단) ──
+    work_dir = os.path.abspath(payload.work_dir or "")
+    if not _is_within_dir(_USER_CONNECTION_DIR, work_dir):
+        raise HTTPException(status_code=400, detail="허용되지 않은 work_dir 입니다.")
+    if not os.path.isdir(work_dir):
+        raise HTTPException(status_code=404, detail=f"작업 폴더를 찾을 수 없습니다: {work_dir}")
+
+    bdf_path_raw = (payload.bdf_path or "").strip()
+    if bdf_path_raw:
+        bdf_path = os.path.abspath(bdf_path_raw)
+        if not _is_within_dir(_USER_CONNECTION_DIR, bdf_path):
+            raise HTTPException(status_code=400, detail="허용되지 않은 BDF 경로입니다.")
+        if not os.path.isfile(bdf_path):
+            raise HTTPException(status_code=404, detail=f"BDF 파일을 찾을 수 없습니다: {bdf_path}")
+    else:
+        # Studio 는 서버측 최종 BDF 경로를 모르므로 bdf_path 를 비워 보낸다.
+        # → work_dir(ModelFlow 빌드 산출 폴더)에서 phase 파일(NN_*.bdf)·과거 solve 산출물을 제외한
+        #   "최종 산출 BDF"(<designName>.bdf)를 자동 해소한다(빌드 최종 산출물이 하나라는 전제).
+        bdf_path = _resolve_final_bdf(work_dir)
+        if not bdf_path:
+            raise HTTPException(
+                status_code=404,
+                detail="work_dir 에서 최종 BDF 를 찾을 수 없습니다. ModelFlow 빌드를 먼저 완료하세요.",
+            )
+
+    # ── 하중/경계조건 검증 ──────────────────────────────────────
+    # load_cases 가 bcs/loads 를 인덱스로 참조하므로 배열을 필터링하지 않고 그대로 전달한다
+    # (빈 세트는 _build_solved_bdf 가 스킵). 단, 유효 경계조건이 하나도 없으면 거부.
+    if not any(b.nodes for b in payload.bcs):
+        raise HTTPException(status_code=400, detail="경계조건(구속) 세트를 최소 1개 이상 지정하세요.")
+    bcs = [b.model_dump() for b in payload.bcs]
+    loads = [l.model_dump() for l in payload.loads]
+    gravities = [g.model_dump() for g in payload.gravities]
+    load_cases = [lc.model_dump() for lc in payload.load_cases]
+    edits = payload.edits.model_dump() if payload.edits else None
+
+    # ── 해석 폴더: <work_dir>/solve_<timestamp>/ ─────────────────
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    solve_dir = os.path.join(work_dir, f"solve_{timestamp}")
+    try:
+        os.makedirs(solve_dir, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"해석 폴더 생성 실패: {e}")
+
+    job_id = submit_analysis_job(
+        task_execute_modelbuilder_solve,
+        solve_dir, bdf_path, payload.employee_id, timestamp, payload.source,
+        loads, bcs, load_cases, gravities, edits,
+        queue_message="ModelBuilder 구조 해석 대기 중...",
+    )
+    return {
+        "job_id":     job_id,
+        "work_dir":   solve_dir,
+        "parent_dir": work_dir,
+        "load_sets":  len(loads),
+        "bc_sets":    len(bcs),
+        "grav_sets":  len(gravities),
+        "load_cases": len(load_cases),
+        "edits": {
+            "deleted_nodes":    len((edits or {}).get("deleted_node_ids") or []),
+            "deleted_elements": len((edits or {}).get("deleted_element_ids") or []),
+            "removed_rigids":   len((edits or {}).get("removed_rigid_ids") or []),
+            "added_rigids":     len((edits or {}).get("added_rigids") or []),
+        } if edits else None,
     }
 
 

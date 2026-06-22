@@ -2,13 +2,13 @@
 /// DrawingToAnalysis — 설계 도면(PDF) → 구조 해석 모델 변환.
 /// </summary>
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Upload, Play, FileText, Info, Construction, CheckCircle2, RefreshCw, Download, RotateCcw, AlertCircle, Lightbulb, FileSearch, Sliders, MousePointerClick, Cpu, FileCheck2, XCircle } from 'lucide-react';
+import { Upload, Play, FileText, Info, Construction, CheckCircle2, RefreshCw, Download, RotateCcw, AlertCircle, Lightbulb, FileSearch, Sliders, MousePointerClick, Cpu, FileCheck2, XCircle, Image, Ruler, ScanLine } from 'lucide-react';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
-import { requestDrawingToAnalysis, downloadFileBlob, downloadFileText, runDrawingCatalogue, solveDrawingModel } from '../../api/analysis';
+import { requestDrawingToAnalysis, requestDrawingImageToAnalysis, downloadFileBlob, downloadFileText, runDrawingCatalogue, solveDrawingModel } from '../../api/analysis';
 import ShellModelViewer from '../../components/analysis/ShellModelViewer';
 import DrawingCatalogueModal from '../../components/analysis/DrawingCatalogueModal';
 import DrawingParamsPanel from '../../components/analysis/DrawingParamsPanel';
@@ -151,7 +151,12 @@ export default function DrawingToAnalysis() {
   const { showToast } = useToast();
   const PAGE_KEY = 'DrawingToAnalysis';
   const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
+  const [inputMode, setInputMode] = useState(savedPageState.inputMode ?? 'pdf'); // 'pdf' | 'image'
   const [pdfFile, setPdfFile] = useState(savedPageState.pdfFile ?? null);
+  const [imageFile, setImageFile] = useState(savedPageState.imageFile ?? null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState('');
+  const [resultImageUrl, setResultImageUrl] = useState('');
+  const [imageReferenceLength, setImageReferenceLength] = useState(savedPageState.imageReferenceLength ?? '');
   const [isDragOver, setIsDragOver] = useState(false);
   const [resultInfo, setResultInfo] = useState(savedPageState.resultInfo ?? null);
   const [analysisDbId, setAnalysisDbId] = useState(savedPageState.analysisDbId ?? null);
@@ -163,6 +168,7 @@ export default function DrawingToAnalysis() {
   const [modelMode,  setModelMode]  = useState(savedPageState.modelMode ?? 'lug'); // 'lug' | 'support'
   const [highlightedParam, setHighlightedParam] = useState(savedPageState.highlightedParam ?? null);
   const fileInputRef = useRef(null);
+  const imageInputRef = useRef(null);
 
   // ── 탭 / 하중·경계조건 / 구조해석 상태 ──────────────────────────
   const [activeTab, setActiveTab]         = useState(savedPageState.activeTab ?? 'params'); // 'params' | 'loadbc'
@@ -285,23 +291,60 @@ export default function DrawingToAnalysis() {
 
   useEffect(() => {
     dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
-      pdfFile, resultInfo, analysisDbId, modelData, modelLoadError, failureReason,
+      inputMode, pdfFile, imageFile, imageReferenceLength,
+      resultInfo, analysisDbId, modelData, modelLoadError, failureReason,
       paramsJson, modelMode, highlightedParam, activeTab, selectionMode, selection,
       loadSets, bcSets, holeRbe, rbe3Sets, loadCases, solveResult, solveError,
       solveResultsJson, resultSubcaseIdx, resultField,
     });
   }, [
-    pdfFile, resultInfo, analysisDbId, modelData, modelLoadError, failureReason,
+    inputMode, pdfFile, imageFile, imageReferenceLength,
+    resultInfo, analysisDbId, modelData, modelLoadError, failureReason,
     paramsJson, modelMode, highlightedParam, activeTab, selectionMode, selection,
     loadSets, bcSets, holeRbe, rbe3Sets, loadCases, solveResult, solveError,
     solveResultsJson, resultSubcaseIdx, resultField,
   ]);
 
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreviewUrl('');
+      return undefined;
+    }
+    const url = URL.createObjectURL(imageFile);
+    setImagePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
+
+  useEffect(() => {
+    if (!resultInfo?.input_image) {
+      setResultImageUrl('');
+      return undefined;
+    }
+    let objectUrl = '';
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await downloadFileBlob(resultInfo.input_image);
+        objectUrl = URL.createObjectURL(res.data);
+        if (!cancelled) setResultImageUrl(objectUrl);
+      } catch {
+        if (!cancelled) setResultImageUrl('');
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [resultInfo?.input_image]);
+
   const resetDrawingPage = () => {
     reset();
     clearGlobalJob();
     dashboardCtx?.clearAnalysisPageState?.(PAGE_KEY);
+    setInputMode('pdf');
     setPdfFile(null);
+    setImageFile(null);
+    setImageReferenceLength('');
     setIsDragOver(false);
     setResultInfo(null);
     setAnalysisDbId(null);
@@ -313,6 +356,7 @@ export default function DrawingToAnalysis() {
     setHighlightedParam(null);
     clearLoadBc();
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
   const handleFile = (file) => {
@@ -338,14 +382,77 @@ export default function DrawingToAnalysis() {
     }]);
   };
 
+  const handleImageFile = (file) => {
+    if (!file) return;
+    const isSupportedImage = /\.(png|jpe?g)$/i.test(file.name) || ['image/png', 'image/jpeg'].includes(file.type);
+    if (!isSupportedImage) {
+      showToast('PNG 또는 JPG 파일만 업로드 가능합니다.', 'error');
+      return;
+    }
+    setImageFile(file);
+    setResultInfo(null);
+    setAnalysisDbId(null);
+    setModelData(null);
+    setModelLoadError('');
+    setFailureReason('');
+    setParamsJson(null);
+    clearLoadBc();
+    setLogs([{
+      time: new Date().toLocaleTimeString(),
+      message: `[IMAGE] ${file.name} 선택됨. 기준선 두 점과 실제 길이를 확인한 뒤 인식 단계로 진행합니다.`,
+      type: 'info',
+    }]);
+  };
+
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragOver(false);
-    handleFile(e.dataTransfer.files?.[0]);
+    if (inputMode === 'image') handleImageFile(e.dataTransfer.files?.[0]);
+    else handleFile(e.dataTransfer.files?.[0]);
   };
 
   const handleRun = async () => {
-    if (!pdfFile || isRunning) return;
+    if (isRunning) return;
+    if (inputMode === 'image') {
+      if (!imageFile) return;
+      const meshSize = defaultMeshSize('lug');
+      setModelMode('lug');
+      setIsRunning(true);
+      setProgress(0);
+      setStatusMessage('이미지 변환 요청 중...');
+      setResultInfo(null);
+      setAnalysisDbId(null);
+      setModelData(null);
+      setModelLoadError('');
+      setFailureReason('');
+      setParamsJson(null);
+      clearLoadBc();
+      setLogs([]);
+
+      const formData = new FormData();
+      formData.append('image_file', imageFile);
+      formData.append('employee_id', employeeId);
+      formData.append('mesh_size', String(meshSize));
+      formData.append('source', 'Workbench-Image');
+      if (imageReferenceLength) formData.append('reference_length_mm', String(imageReferenceLength));
+
+      try {
+        currentJobKind.current = 'convert';
+        const res = await requestDrawingImageToAnalysis(formData);
+        const jobId = res.data.job_id;
+        addLog(`[IMAGE] 이미지 변환 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
+        startJob(jobId, 'DrawingToAnalysis');
+      } catch (err) {
+        const detail = err?.response?.data?.detail;
+        const msg = typeof detail === 'string' ? detail : (err?.message || '이미지 변환 요청 실패');
+        setIsRunning(false);
+        addLog(`이미지 변환 요청 실패: ${msg}`, 'error');
+        showToast(`이미지 변환 요청 실패: ${msg}`, 'error');
+      }
+      return;
+    }
+
+    if (!pdfFile) return;
     const mode = resolveDrawingMode(pdfFile.name);
     const meshSize = defaultMeshSize(mode);
     setModelMode(mode);
@@ -454,9 +561,12 @@ export default function DrawingToAnalysis() {
         const res = await downloadFileBlob(resultInfo.model_json);
         const text = await res.data.text();
         const parsed = JSON.parse(text);
-        // Lug: 표시 프레임으로 Y↔Z 스왑 (height 를 Z 축 수직으로)
+        // Lug: PDF LUG는 기존 엔진 프레임 때문에 Y↔Z만 스왑한다.
+        // 이미지 LUG는 BDF 자체가 X=전체 높이(H), Y=폭(W), Z=0 프레임으로 생성되므로
+        // 여기서 추가 회전하면 설계 파라미터/하이라이트 좌표와 어긋난다.
         if (modelMode === 'lug' && Array.isArray(parsed.nodes)) {
-          parsed.nodes = parsed.nodes.map(swapYZpoint);
+          const isImageResult = Boolean(resultInfo?.input_image || resultInfo?.detected_geometry_json || resultInfo?.source_kind === 'image');
+          if (!isImageResult) parsed.nodes = parsed.nodes.map(swapYZpoint);
         }
         setModelData(parsed);
       } catch (error) {
@@ -465,7 +575,7 @@ export default function DrawingToAnalysis() {
       }
     };
     loadModelJson();
-  }, [resultInfo?.model_json, modelMode]);
+  }, [resultInfo?.model_json, resultInfo?.input_image, resultInfo?.detected_geometry_json, modelMode]);
 
   // 설계 파라미터 JSON 자동 로드 (변환/재구축 완료 시)
   useEffect(() => {
@@ -768,6 +878,9 @@ export default function DrawingToAnalysis() {
     return dir;
   }, [resultInfo?.bdf, resultInfo?.params_json, resultInfo?.diagnostic_json]);
 
+  const isImageResult = Boolean(resultInfo?.input_image || resultInfo?.detected_geometry_json || resultInfo?.source_kind === 'image');
+  const referenceImageUrl = imagePreviewUrl || resultImageUrl;
+
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
       <FileBasedPageBanner
@@ -807,8 +920,8 @@ export default function DrawingToAnalysis() {
         <Info size={14} className="text-blue-500 shrink-0 mt-0.5" />
         <p className="text-[11px] text-blue-700 leading-relaxed">
           <span className="font-bold">지원 범위</span>
-          {' — '}LUG 및 Block Support 도면(벡터 PDF)을 rule-based 파이프라인으로 파싱하여 shell BDF를 생성합니다.
-          DRM 적용 또는 스캔 이미지 PDF는 지원하지 않습니다.
+          {' — '}LUG 및 Block Support 벡터 PDF를 rule-based 파이프라인으로 파싱하고, JPG/PNG LUG 이미지는 반자동 seed 파라미터로 shell BDF를 생성합니다.
+          DRM 적용 PDF는 지원하지 않습니다.
         </p>
       </div>
 
@@ -818,79 +931,191 @@ export default function DrawingToAnalysis() {
             [&>*]:shrink-0 로 자연 높이를 유지하고, 넘치면 사이드바가 스크롤되게 한다. */}
         <div className="w-[340px] shrink-0 flex flex-col gap-3 overflow-y-auto custom-scrollbar pr-1 [&>*]:shrink-0">
 
-          {/* 카탈로그 + 업로드를 하나의 입력 카드로 통합 */}
+          {/* 입력 소스 선택 + 업로드 */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            {/* 섹션 1: 카탈로그 */}
-            <div className="px-4 pt-4 pb-3">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
-                <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">샘플 카탈로그</span>
-              </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed mb-2.5 pl-3.5">
-                서버에 등록된 표준 도면 PDF를 선택해 바로 변환합니다.
-              </p>
+            <div className="p-1 bg-slate-100 border-b border-slate-200 flex gap-1">
               <button
                 type="button"
-                onClick={() => setCatalogueOpen(true)}
+                onClick={() => setInputMode('pdf')}
                 disabled={isRunning}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-violet-200 bg-violet-50 hover:bg-violet-100 disabled:opacity-50 disabled:cursor-not-allowed text-violet-700 text-xs font-bold transition-colors cursor-pointer"
+                className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors ${
+                  inputMode === 'pdf' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
               >
-                <FileSearch size={13} /> 카탈로그 열기
+                <FileText size={12} /> PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => setInputMode('image')}
+                disabled={isRunning}
+                className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors ${
+                  inputMode === 'image' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Image size={12} /> JPG/PNG
               </button>
             </div>
 
-            <div className="mx-4 border-t border-slate-100" />
+            {inputMode === 'pdf' ? (
+              <>
+                <div className="px-4 pt-4 pb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+                    <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">샘플 카탈로그</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed mb-2.5 pl-3.5">
+                    서버에 등록된 표준 도면 PDF를 선택해 바로 변환합니다.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setCatalogueOpen(true)}
+                    disabled={isRunning}
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-violet-200 bg-violet-50 hover:bg-violet-100 disabled:opacity-50 disabled:cursor-not-allowed text-violet-700 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    <FileSearch size={13} /> 카탈로그 열기
+                  </button>
+                </div>
 
-            {/* 섹션 2: 직접 업로드 */}
-            <div className="px-4 pt-3 pb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-                <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">도면 PDF 직접 업로드</span>
-              </div>
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                onDragLeave={() => setIsDragOver(false)}
-                onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-xl py-5 px-4 text-center cursor-pointer transition-colors ${
-                  isDragOver
-                    ? 'border-blue-400 bg-blue-50'
-                    : pdfFile
-                    ? 'border-blue-300 bg-blue-50/50'
-                    : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
-                }`}
-              >
-                <Upload size={22} className={`mx-auto mb-1.5 ${pdfFile ? 'text-blue-400' : 'text-slate-300'}`} />
-                {pdfFile ? (
-                  <div>
-                    <p className="text-xs font-semibold text-blue-700 truncate px-2">{pdfFile.name}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">{formatBytes(pdfFile.size)}</p>
+                <div className="mx-4 border-t border-slate-100" />
+
+                <div className="px-4 pt-3 pb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                    <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">도면 PDF 직접 업로드</span>
                   </div>
-                ) : (
-                  <div>
-                    <p className="text-xs text-slate-500">클릭하거나 PDF를 드래그하세요</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">.pdf 파일</p>
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                    onDragLeave={() => setIsDragOver(false)}
+                    onDrop={handleDrop}
+                    className={`border-2 border-dashed rounded-xl py-5 px-4 text-center cursor-pointer transition-colors ${
+                      isDragOver
+                        ? 'border-blue-400 bg-blue-50'
+                        : pdfFile
+                        ? 'border-blue-300 bg-blue-50/50'
+                        : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Upload size={22} className={`mx-auto mb-1.5 ${pdfFile ? 'text-blue-400' : 'text-slate-300'}`} />
+                    {pdfFile ? (
+                      <div>
+                        <p className="text-xs font-semibold text-blue-700 truncate px-2">{pdfFile.name}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{formatBytes(pdfFile.size)}</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-xs text-slate-500">클릭하거나 PDF를 드래그하세요</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">.pdf 파일</p>
+                      </div>
+                    )}
                   </div>
-                )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    className="hidden"
+                    onChange={(e) => handleFile(e.target.files?.[0])}
+                  />
+                  {pdfFile && (
+                    <button
+                      type="button"
+                      onClick={() => { setPdfFile(null); setResultInfo(null); setAnalysisDbId(null); }}
+                      disabled={isRunning}
+                      className="mt-1.5 w-full text-[11px] text-slate-400 hover:text-rose-500 font-semibold transition-colors disabled:opacity-50"
+                    >
+                      파일 제거
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="px-4 pt-4 pb-4 space-y-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">그림파일 직접 업로드</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed mb-2.5 pl-3.5">
+                    JPG/PNG 도면 이미지를 올리고 기준선 두 점의 실제 길이를 지정합니다.
+                  </p>
+                  <div
+                    onClick={() => imageInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                    onDragLeave={() => setIsDragOver(false)}
+                    onDrop={handleDrop}
+                    className={`border-2 border-dashed rounded-xl py-5 px-4 text-center cursor-pointer transition-colors ${
+                      isDragOver
+                        ? 'border-emerald-400 bg-emerald-50'
+                        : imageFile
+                        ? 'border-emerald-300 bg-emerald-50/50'
+                        : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Image size={22} className={`mx-auto mb-1.5 ${imageFile ? 'text-emerald-500' : 'text-slate-300'}`} />
+                    {imageFile ? (
+                      <div>
+                        <p className="text-xs font-semibold text-emerald-700 truncate px-2">{imageFile.name}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{formatBytes(imageFile.size)}</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-xs text-slate-500">클릭하거나 이미지를 드래그하세요</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">.jpg, .jpeg, .png 파일</p>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                    className="hidden"
+                    onChange={(e) => handleImageFile(e.target.files?.[0])}
+                  />
+                  {imageFile && (
+                    <button
+                      type="button"
+                      onClick={() => { setImageFile(null); setResultInfo(null); setAnalysisDbId(null); }}
+                      disabled={isRunning}
+                      className="mt-1.5 w-full text-[11px] text-slate-400 hover:text-rose-500 font-semibold transition-colors disabled:opacity-50"
+                    >
+                      파일 제거
+                    </button>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 space-y-2">
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
+                    <Ruler size={12} /> 기준 치수
+                  </div>
+                  <label className="block">
+                    <span className="text-[10px] font-semibold text-slate-500">기준선 실제 길이 (mm)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={imageReferenceLength}
+                      onChange={(e) => setImageReferenceLength(e.target.value)}
+                      placeholder="예: 120"
+                      className="mt-1 w-full rounded-lg border border-emerald-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                    />
+                  </label>
+                  <p className="text-[10px] text-emerald-700/80 leading-snug">
+                    다음 단계에서 이미지 위 기준선 두 점을 클릭해 픽셀-mm 스케일을 확정합니다.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 mb-2">
+                    <ScanLine size={12} /> 반자동 워크플로우
+                  </div>
+                  <ol className="space-y-1.5 text-[10px] text-slate-500">
+                    <li>1. 라인/홀/치수 후보 자동 추출</li>
+                    <li>2. 사용자가 기준선과 치수값 확인</li>
+                    <li>3. 파라미터 수정 후 BDF 모델 생성</li>
+                  </ol>
+                </div>
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,application/pdf"
-                className="hidden"
-                onChange={(e) => handleFile(e.target.files?.[0])}
-              />
-              {pdfFile && (
-                <button
-                  type="button"
-                  onClick={() => { setPdfFile(null); setResultInfo(null); setAnalysisDbId(null); }}
-                  disabled={isRunning}
-                  className="mt-1.5 w-full text-[11px] text-slate-400 hover:text-rose-500 font-semibold transition-colors disabled:opacity-50"
-                >
-                  파일 제거
-                </button>
-              )}
-            </div>
+            )}
           </div>
 
           {/* 초기화 + 실행 — 사이드바 내 고정 접근 */}
@@ -907,16 +1132,24 @@ export default function DrawingToAnalysis() {
             <button
               type="button"
               onClick={handleRun}
-              disabled={!pdfFile || isRunning}
-              title={!pdfFile ? 'PDF 파일을 먼저 선택하거나 카탈로그에서 선택하세요' : 'PDF를 해석 모델로 변환'}
+              disabled={(inputMode === 'pdf' ? !pdfFile : !imageFile) || isRunning}
+              title={
+                inputMode === 'image'
+                  ? (!imageFile ? 'JPG/PNG 파일을 먼저 선택하세요' : '이미지에서 LUG 모델 파라미터를 생성합니다')
+                  : !pdfFile
+                  ? 'PDF 파일을 먼저 선택하거나 카탈로그에서 선택하세요'
+                  : 'PDF를 해석 모델로 변환'
+              }
               className={`flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
-                !pdfFile || isRunning
+                (inputMode === 'pdf' ? !pdfFile : !imageFile) || isRunning
                   ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  : inputMode === 'image'
+                  ? 'bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer shadow-md hover:shadow-lg'
                   : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer shadow-md hover:shadow-lg'
               }`}
             >
-              {isRunning ? <RefreshCw size={15} className="animate-spin" /> : <Play size={15} />}
-              {isRunning ? '변환 중...' : '해석 모델 변환'}
+              {isRunning ? <RefreshCw size={15} className="animate-spin" /> : inputMode === 'image' ? <ScanLine size={15} /> : <Play size={15} />}
+              {isRunning ? '변환 중...' : inputMode === 'image' ? '이미지 모델 변환' : '해석 모델 변환'}
             </button>
           </div>
 
@@ -1104,7 +1337,7 @@ export default function DrawingToAnalysis() {
                   ))}
                 </div>
               </div>
-              <div className="flex-1 min-h-0">
+              <div className="flex-1 min-h-0 relative">
                 {modelLoadError ? (
                   <div className="h-full flex items-center justify-center text-sm text-rose-500 gap-2">
                     <AlertCircle size={16} />
@@ -1123,13 +1356,30 @@ export default function DrawingToAnalysis() {
                     bcSets={bcSets}
                     holeRbe={holeRbe}
                     rbe3Sets={rbe3Sets}
-                    swapYZ={modelMode === 'lug'}
+                    swapYZ={modelMode === 'lug' && !isImageResult}
                     resultField={hasResults ? resultField : 'none'}
                     elementValues={resultView?.elementValues || null}
                     valueRange={resultView?.valueRange || null}
                     valueLabel={resultView?.valueLabel || ''}
                     valueUnit={resultView?.valueUnit || ''}
                   />
+                )}
+                {isImageResult && referenceImageUrl && (
+                  <div className="absolute right-3 bottom-3 z-20 w-52 rounded-xl border border-slate-700/70 bg-slate-950/90 shadow-2xl overflow-hidden">
+                    <div className="px-2.5 py-1.5 flex items-center justify-between border-b border-slate-700/70">
+                      <span className="text-[10px] font-bold text-slate-200 flex items-center gap-1.5">
+                        <Image size={11} /> 원본 이미지
+                      </span>
+                      <span className="text-[9px] text-slate-400">참조</span>
+                    </div>
+                    <div className="bg-white p-1.5">
+                      <img
+                        src={referenceImageUrl}
+                        alt="Original drawing reference"
+                        className="w-full max-h-40 object-contain"
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -1148,25 +1398,39 @@ export default function DrawingToAnalysis() {
                 </div>
               )}
             </div>
+          ) : inputMode === 'image' && imageFile ? (
+            <ImageInputPreview
+              file={imageFile}
+              previewUrl={imagePreviewUrl}
+              referenceLength={imageReferenceLength}
+            />
           ) : (
             /* 빈 상태 */
             <div className="text-center px-8 py-12 max-w-sm">
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 mb-5">
                 <Construction size={26} className="text-blue-500" />
               </div>
-              <h2 className="text-base font-bold text-slate-700 mb-2">PDF를 선택하고 변환을 실행하세요</h2>
+              <h2 className="text-base font-bold text-slate-700 mb-2">
+                {inputMode === 'image' ? 'JPG/PNG 도면을 선택하세요' : 'PDF를 선택하고 변환을 실행하세요'}
+              </h2>
               <p className="text-xs text-slate-500 leading-relaxed mb-5">
-                좌측 <span className="font-semibold text-violet-600">카탈로그</span>에서 표준 도면을 둘러보거나,
-                직접 PDF를 업로드한 뒤 변환을 시작하세요.
+                {inputMode === 'image'
+                  ? '좌측 JPG/PNG 탭에서 그림파일을 올리고 기준선 실제 길이를 입력하세요.'
+                  : (
+                    <>
+                      좌측 <span className="font-semibold text-violet-600">카탈로그</span>에서 표준 도면을 둘러보거나,
+                      직접 PDF를 업로드한 뒤 변환을 시작하세요.
+                    </>
+                  )}
               </p>
               <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400">
                 <div className="flex items-start gap-1.5 bg-slate-50 rounded-lg p-2.5 text-left">
-                  <FileSearch size={12} className="text-violet-400 shrink-0 mt-0.5" />
-                  <span>카탈로그에서<br />표준 도면 선택</span>
+                  {inputMode === 'image' ? <Image size={12} className="text-emerald-500 shrink-0 mt-0.5" /> : <FileSearch size={12} className="text-violet-400 shrink-0 mt-0.5" />}
+                  <span>{inputMode === 'image' ? <>이미지 파일<br />직접 업로드</> : <>카탈로그에서<br />표준 도면 선택</>}</span>
                 </div>
                 <div className="flex items-start gap-1.5 bg-slate-50 rounded-lg p-2.5 text-left">
-                  <Upload size={12} className="text-blue-400 shrink-0 mt-0.5" />
-                  <span>로컬 PDF<br />직접 업로드</span>
+                  {inputMode === 'image' ? <Ruler size={12} className="text-emerald-500 shrink-0 mt-0.5" /> : <Upload size={12} className="text-blue-400 shrink-0 mt-0.5" />}
+                  <span>{inputMode === 'image' ? <>기준 길이<br />mm 단위 입력</> : <>로컬 PDF<br />직접 업로드</>}</span>
                 </div>
               </div>
             </div>
@@ -1190,6 +1454,82 @@ export default function DrawingToAnalysis() {
 /* ──────────────────────────────────────────────────────────────────────────
    구조 해석 결과 스트립 — Nastran 실행 결과(성공/실패) + 결과 파일 다운로드
    ──────────────────────────────────────────────────────────────────────── */
+
+function ImageInputPreview({ file, previewUrl, referenceLength }) {
+  return (
+    <div className="w-full h-full flex flex-col min-h-0">
+      <div className="px-5 py-3 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-white flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100">
+            <Image size={16} className="text-emerald-600" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-slate-800">이미지 도면 입력</h2>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                SEMI-AUTO
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              기준선 두 점 지정과 치수 확인 후 구조해석 파라미터로 변환하는 워크플로우입니다.
+            </p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-[11px] font-bold text-slate-600 max-w-[240px] truncate">{file?.name}</p>
+          <p className="text-[10px] text-slate-400">{formatBytes(file?.size)}</p>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 grid grid-cols-[1fr_260px]">
+        <div className="min-w-0 bg-slate-950 flex items-center justify-center p-5">
+          {previewUrl ? (
+            <img
+              src={previewUrl}
+              alt="Uploaded drawing preview"
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            />
+          ) : (
+            <div className="text-xs text-slate-400">이미지 미리보기를 준비 중입니다.</div>
+          )}
+        </div>
+        <aside className="border-l border-slate-200 bg-slate-50 p-4 space-y-3 overflow-y-auto">
+          <div className="rounded-xl border border-emerald-200 bg-white p-3">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 mb-2">
+              <Ruler size={12} /> 스케일 기준
+            </div>
+            <div className="text-2xl font-bold text-slate-800 tracking-normal">
+              {referenceLength ? `${referenceLength} mm` : '-'}
+            </div>
+            <p className="text-[10px] text-slate-500 leading-snug mt-1.5">
+              이미지 위 기준선 두 점을 선택하면 이 값으로 픽셀-mm 변환계수가 계산됩니다.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 mb-2">
+              <ScanLine size={12} /> 처리 예정 단계
+            </div>
+            <div className="space-y-2 text-[11px] text-slate-500">
+              <div className="flex gap-2">
+                <span className="font-mono text-emerald-600">01</span>
+                <span>라인, 원, 홀 후보 추출</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-mono text-emerald-600">02</span>
+                <span>치수 OCR 및 사용자 보정</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-mono text-emerald-600">03</span>
+                <span>params JSON 생성 후 BDF 재구축</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
 
 function SolveResultStrip({ result, error, onDownload }) {
   const entries = result

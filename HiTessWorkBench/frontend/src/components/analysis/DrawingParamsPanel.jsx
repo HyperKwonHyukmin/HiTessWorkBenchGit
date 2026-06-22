@@ -28,6 +28,15 @@ const LUG_FIELDS = [
   { key: 'chamfer_y',            label: '좌측 모서리 chamfer 세로 (y)',    unit: 'mm', hint: '상/하 모서리 → 깎임 시작점' },
 ];
 
+const IMAGE_LUG_FIELDS = [
+  { key: 'thickness',            label: '두께',                 unit: 'mm' },
+  { key: 'height',               label: '폭/높이 W',            unit: 'mm', hint: '이미지 도면의 폭 방향 치수입니다. 내부 필드명은 height 입니다.' },
+  { key: 'drawing_overall_h',    label: '전체 길이/높이 L',     unit: 'mm', hint: '가로형 도면에서는 전체 길이, 세로형 도면에서는 전체 높이입니다.' },
+  { key: 'hole_diameter',        label: '구멍 직경',            unit: 'mm' },
+  { key: 'outer_radius',         label: '외곽 반경 R',          unit: 'mm' },
+  { key: 'left_to_hole_center',  label: '기준선 → 구멍 중심',   unit: 'mm', hint: '이미지 도면의 center 치수입니다.' },
+];
+
 const SUPPORT_FIELDS = [
   { key: 'pipe_outer_diameter',   label: '파이프 외경',           unit: 'mm' },
   { key: 'pipe_length',           label: '파이프 길이',           unit: 'mm' },
@@ -57,6 +66,8 @@ function validateLugParams(p) {
   const lhc = num('left_to_hole_center');
   const cdx = num('chamfer_dx');
   const cy  = num('chamfer_y');
+  const isImageLug = p?.source_kind === 'image';
+  const overallH = Number(p.drawing_overall_h ?? 0);
 
   // 0 이하 차단
   if (t   <= 0) e.thickness            = '0 보다 커야 합니다.';
@@ -68,6 +79,8 @@ function validateLugParams(p) {
   if (lhc <= 0) e.left_to_hole_center  = '0 보다 커야 합니다.';
   if (cdx <  0) e.chamfer_dx           = '음수일 수 없습니다.';
   if (cy  <  0) e.chamfer_y            = '음수일 수 없습니다.';
+  if (isImageLug && overallH <= 0)
+    e.drawing_overall_h = '0 보다 커야 합니다.';
 
   // 기하 일관성
   if (hd >= oR * 2)
@@ -82,6 +95,8 @@ function validateLugParams(p) {
     e.chamfer_dx = `Chamfer dx 는 Lap 길이의 절반(${(lap/2).toFixed(1)}) 이하여야 합니다.`;
   if (cy > h / 2)
     e.chamfer_y = `Chamfer y 는 높이의 절반(${(h/2).toFixed(1)}) 이하여야 합니다.`;
+  if (isImageLug && overallH > 0 && overallH < Math.max(h, lhc + hd / 2))
+    e.drawing_overall_h = `전체 높이 H는 폭 W와 구멍 위치를 포함해야 합니다.`;
 
   return e;
 }
@@ -134,7 +149,12 @@ export default function DrawingParamsPanel({
   params, mode, workDir, originalPdfPath, employeeId,
   onRebuildStarted, onFieldFocus, disabled, highlightedKey,
 }) {
-  const fields = mode === 'support' ? SUPPORT_FIELDS : LUG_FIELDS;
+  const isImageLug = mode !== 'support' && params?.source_kind === 'image';
+  const fields = useMemo(() => {
+    if (mode === 'support') return SUPPORT_FIELDS;
+    if (isImageLug) return IMAGE_LUG_FIELDS;
+    return LUG_FIELDS;
+  }, [mode, isImageLug]);
   const [values, setValues] = useState({});
   const [collapsed, setCollapsed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -146,7 +166,7 @@ export default function DrawingParamsPanel({
     const next = {};
     fields.forEach(({ key }) => { if (key in params) next[key] = params[key]; });
     setValues(next);
-  }, [params, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [params, fields]);
 
   const setField = (key, raw) => {
     // 문자열 그대로 저장 — 사용자가 "1500." 또는 "1500.05" 같은 임시 입력을 유지할 수 있도록
