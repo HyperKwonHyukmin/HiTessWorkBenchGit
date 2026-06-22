@@ -5,3 +5,6 @@
 - [IndependentTankAssessment 탭 구조](project_independent_tank.md) — 탭 헤더/에러배지 패턴, BC 카드 레이아웃, 수정 금지 영역
 - [MooringFittingStudio 디자인 시스템](project_mooring_fitting_studio.md) — 다크+emerald 팔레트, 탭·리본 구조, 레이아웃 컴포넌트 패턴
 - [ModuleUnitStudio Studio shell IA](moduleunitstudio_studio_shell.md) — 상단 모드탭+좌측도크 분기 패턴, 권상(hoist) floating 분리 구조, emerald 강조
+- [Cluster B File-Based Pages 디자인 패턴](cluster_b_file_based_pages.md) — Banner 계층 구조, 진행률 UI 분열, 공유 컴포넌트 현황, 주요 비일관성 항목 (2026-06-18)
+- [Cluster A Shell/Landing/Hub 디자인 리뷰](cluster_a_shell_landing_hubs.md) — Sidebar 활성 스타일, FilterTabs Two-Blue, AppCard 팔레트 난립, 애니메이션 motion 접근성, eyebrow 남발 패턴 (2026-06-18)
+- [ModelBuilderStudio AnalysisPanel FEA 패턴](project_model_studio_analysis_panel.md) — FEA 단계 순서, Section/PickToggle/TabButton 패턴, 의미색 맵, summarizeResult 집계 방식 (v0.0.54)

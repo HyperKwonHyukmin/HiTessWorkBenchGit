@@ -124,7 +124,7 @@
   좌표는 `getNodePos` 에서 `(coord - center)/1000` 으로 **mm→m + 센터링** 변환.
 
 > 🎨 **뷰어 UX/디자인(카메라 조작·3D 렌더·선택·색상)은 이 파이프라인 문서의 범위 밖** — **`STUDIO_DETAIL.md` 가 단일 기준**이다.
-> 특히 **카메라 조작**(zoom-to-cursor 휠 · 더블클릭 회전 원점(피벗) · 적응형 near/far · TrackballControls 감도)과
+> 특히 **카메라 조작**(zoom-to-cursor 휠 — ★초점=실제 지오메트리 레이캐스트로 좌우로 긴 모델 먼쪽 확대 막힘 방지 · 더블클릭 회전 원점(피벗) · 적응형 near/far · TrackballControls 감도 · 온스크린 뷰 프리셋/맞춤 버튼·조작 힌트·isolate 토글)과 **선택 가시성**(hover 미리강조 · 외곽선 강조로 대상 안 가림 · 강조 색 충돌 회피)과
 > **노드 반투명 구 렌더**(매끈 구 + opacity 0.65 + depthWrite:false + 흰색 베이스×per-instance 색)는
 > `STUDIO_DETAIL.md §5(카메라 조작 표준)·§11(3D 엔티티 렌더링 표준 — Node sphere)` 을 참조해 **모든 Studio 가 동일하게** 적용한다.
 > 좌표·축 규약 · 뷰 단축키 · 렌더 모드/X-ray · 조명 · 엔티티 마커 치수/색/재질 · 스토어 기본값 · 테마 토큰 · host · 테스트 · 패키징의

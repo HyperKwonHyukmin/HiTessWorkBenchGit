@@ -186,8 +186,13 @@ Stage 선택:
 **휠 = 커서 방향 줌(zoom-to-cursor)** — 표준이며 직관성의 핵심:
 
 - TrackballControls 기본 휠 줌은 항상 화면 중앙(target)으로만 당겨져 "보는 곳"이 어긋난다. 그래서 컨테이너의 **capture 단계**에서 휠을 가로채(`{ capture: true }` + `stopPropagation()`) 캔버스의 기본 휠 줌으로 전파되지 않게 하고, 커서가 가리키는 지점을 향해 dolly 한다.
-- 거리에 무관하게 일정 비율로 줌: `deltaMode` 정규화 후 지수 스케일(`scale = exp(deltaY * unit)`). 카메라와 target을 동시에 커서 초점평면(시선 수직, target 통과) 위 점 `p`로 `(1-scale)`만큼 이동 → `|eye|`가 정확히 새 거리, 줌 방향이 커서로 향한다.
+- 거리에 무관하게 일정 비율로 줌: `deltaMode` 정규화 후 지수 스케일(`scale = exp(deltaY * unit)`). 카메라와 target을 **동시에 초점 `p` 쪽으로 `(1-scale)` 이동** → `|eye|`가 정확히 `dist*scale`(새 거리)가 되고 줌 방향이 커서로 향한다(이 평행이동은 `p`가 어디든 `|eye|`를 `scale`배로만 바꾼다).
+- ⚠️ **초점 `p` 는 반드시 "커서 광선이 만나는 실제 모델 지오메트리 표면 점"** 으로 잡는다(노드/부재/질량/RBE 레이캐스트 — 더블클릭 피벗과 동일 타깃). **빈 곳일 때만** target 통과·시선 수직 **초점평면과의 교점**으로 폴백한다.
+  - **이유(좌우로 긴 모델 확대 막힘 버그)**: `p`를 항상 초점평면(=현재 피벗의 깊이)으로 잡으면, 가까운 노드를 보던 중 먼쪽 모델에 커서를 둬도 피벗이 **깊이 방향으로 전진하지 못해** 카메라가 가까운 깊이의 빈 공간으로 수렴 → 먼 모델이 더 커지지 않고 "일정 거리 이상 확대가 갑자기 막히는" 증상이 난다. (minDistance·클리핑 문제가 **아니라** 초점 계산 문제.) 지오메트리 표면을 초점으로 삼으면 **그 먼 부재로 날아 들어가고**, 이후 회전 피벗도 그 지점이 된다(HyperMesh식 "본 곳 중심").
+  - **연속 스크롤(한 제스처) 매끄럽게**: 직전 휠 초점을 짧은 시간(약 140ms) 동안 재사용해 매 노치 재픽으로 인한 흔들림을 없앤다. 제스처가 끊기면 다시 레이캐스트.
 - 오버레이(겹침 노드 팝업 등) 위의 휠은 `e.target !== canvas` 가드로 그대로 통과시켜 내부 스크롤을 보존한다(줌은 캔버스 위에서만).
+
+> 정립: SidePassage v0.0.76(2026-06-19). **모든 Studio 공통.** (ModelBuilder model-studio v0.0.41 에서 동일 수정 적용 완료 — 초점평면 단독 버그 해소.)
 
 **더블클릭 = 회전 원점(피벗) 지정** — 좌우로 긴 모델 대응 표준:
 
@@ -202,6 +207,14 @@ Stage 선택:
 - `fitCamera()`는 모델 특성 스케일(scene m)을 반환해 `sceneRadius`로 보관(near/far 하한 계산에 사용).
 
 **카메라 링크(다중 뷰포트)**: 동기화 시 position/quaternion/up/target을 복사하고 `updateClip()`도 함께 호출해 링크된 뷰포트의 near/far가 깊은 줌에서 어긋나지 않게 한다(`hooks/useCameraSync.js`). 피벗(target)도 같이 동기화된다.
+
+**화면 내 조작 보조(초심자 발견성) — 권장 표준**: 키보드 단축키(§A.2 `A/S/D/F`)만으로는 초심자가 기능을 발견하지 못한다. 뷰포트에 **온스크린 버튼**을 함께 노출한다.
+
+- **뷰 프리셋 바**(좌상단): 평면(Top)·정면(Front)·측면(Side)·등각(Iso) + **전체 맞춤(fit all)**·**선택 맞춤(fit selection)**. 단축키와 동일 동작을 클릭으로도 제공.
+- **조작 힌트 오버레이**(좌하단, × 로 닫기 가능): "좌드래그=회전 · 우드래그=이동 · 휠=커서 확대 · 더블클릭=회전중심 · F=전체" 한 줄. 닫음 상태는 `localStorage`(스튜디오별 키)로 유지.
+- **선택만 보기(isolate) 토글**(우하단, 선택 객체가 있을 때만 노출): 비선택 부재 숨김 ↔ 전체 복원. 스토어 `isolateSelection`/`toggleIsolateSelection`(부록 C.1)과 연동.
+
+> 정립: SidePassage v0.0.74(2026-06-19). 모든 Studio 공통(ModelBuilder 역적용 대상).
 
 ## 6. 선택 UX
 
@@ -253,6 +266,21 @@ Tooltip 표준:
 - 삭제 예정: red dim.
 - 추가될 RBE preview: yellow dashed line.
 - 끊기는 RBE: yellow warning line.
+- Hover 미리강조(preselect): white (`#FFFFFF`, 저투명/와이어프레임).
+
+### Hover 미리강조(preselect) — 공통 표준
+
+마우스를 올린 대상(클릭 전)을 **옅은 흰색 외곽**으로 즉시 표시해 "지금 클릭하면 무엇이 잡히는지"를 보여준다(HyperMesh식 preselect). 클릭 선택(cyan)·편집 다중(amber)과 색이 겹치지 않게 **중립 흰색**을 쓴다.
+
+- 트리거: hover 피킹(RAF throttle, §A.6)과 동일 raycast. **대상이 바뀔 때만** 오버레이 재빌드(키 비교). 클릭 직후·뷰포트 이탈 시 즉시 해제, 언마운트 시 dispose.
+- 렌더: 실제 노드/부재를 **가리지 않게** — 노드/질량/RBE = 와이어프레임 구(반경 ×1.25~1.4), 부재 = 약간 굵은 실린더, `transparent` 저opacity(약 0.3~0.5), `depthTest/Write:false`, `renderOrder` 낮게(예: 18).
+
+> 정립: SidePassage v0.0.75(2026-06-19). 모든 Studio 공통.
+
+**하이라이트 가시성·색 충돌 원칙(공통)**:
+
+- **대상을 가리지 말 것**: 선택/hover/레벨 강조는 솔리드 불투명 구로 노드를 덮지 말고 **외곽선/와이어프레임 + 저투명**으로, 사용자가 "알아볼 정도"로만. (예: 권상 노드 레벨 강조를 솔리드 구 → 와이어프레임으로 교체.)
+- **한 색 = 한 의미**: 서로 다른 강조에 같은 색을 재사용하지 말 것. 의미가 충돌하면 한쪽 색을 바꾼다. (예: cyan 권상 포인트 강조와 겹치던 RBE 중심점 마커를 분홍으로 분리.)
 
 ## 7. EditIntent 원칙
 
@@ -842,6 +870,7 @@ src/
 
 - Line(=RBE 선) 피킹 임계값을 거리 비례로: `Line.threshold = max(0.05, camDist*0.01)`(초기 `0.3`). 줌 무관 ~6px 체감 픽 영역.
 - `pointerup` 에서 이동량 `> DRAG_THRESHOLD`(3px)면 드래그로 보고 픽 무시. 더블클릭=피벗 지정(§5).
+- **휠 줌 초점 레이캐스트**(§5): 휠 줌-투-커서의 초점 `p`는 hover/더블클릭과 **동일 타깃**(`structure/pipe/nodes/masses/rigidLines`, section3d 면 `beams`, 숨김 부모 제외)에 레이캐스트한 **최근접 표면 점**. miss 면 초점평면 폴백. 연속 스크롤은 직전 초점을 ~140ms 재사용(흔들림 방지). `Line.threshold`는 위와 동일 거리비례.
 
 ## 부록 B. 3D 엔티티 렌더 사양 (도메인 마커 치수·색·재질)
 
@@ -882,6 +911,7 @@ src/
 | 용도 | 지오메트리 | 색 | 재질/속성 |
 |---|---|---|---|
 | 선택 하이라이트(연결 강조) | elem Cylinder r `0.042` / node Sphere r `0.090` | `#00E5FF` | MeshBasic opacity `0.80` depthTest `false`(X-ray식 위에 렌더) |
+| Hover 미리강조(preselect) | node/mass Sphere(와이어) r `NODE_HL×1.4` · RBE Sphere(와이어) r `NODE_HL×1.25` · elem Cylinder r `ELEM_HL×1.15` | `#FFFFFF` | MeshBasic 와이어=opacity `0.5`/솔리드 elem=`0.32` depthTest/Write `false` renderOrder `18` |
 | 편집 다중선택 노드 | Sphere r `0.055` | `#FFB800`(amber) | + `N{id}` 라벨 |
 | RBE 연결점(편집) | Sphere r `0.070` | `#FF44FF`(마젠타) | opacity `0.55` |
 | addRigid 미리보기 | LineSegments | `#FFD740` | LineDashed dash `0.18`/gap `0.10` opacity `0.95` depthTest/Write `false` renderOrder `998` |
