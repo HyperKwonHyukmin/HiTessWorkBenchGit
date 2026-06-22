@@ -55,7 +55,6 @@ export default function Layout({
     { label: 'File-Based Apps', menu: 'File-Based Apps' },
     { label: 'Interactive Apps', menu: 'Interactive Apps' },
     { label: 'Parametric Apps', menu: 'Parametric Apps' },
-    { label: 'Academic Apps', menu: 'Academic Apps' },
     { label: 'Productivity Apps', menu: 'Productivity Apps' },
     { label: 'My Projects', menu: 'My Projects' },
     { label: 'Notice & Updates', menu: 'Notice & Updates' },

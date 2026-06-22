@@ -7,16 +7,7 @@ cryptography==46.0.4
 openpyxl==3.1.5
 python-dotenv==1.2.1
 
-# AI
-langchain-ollama==1.0.1
-langchain-community==0.4.1
-langchain-core==1.2.20
-langchain-text-splitters==1.1.1
-faiss-cpu==1.13.2
-rank-bm25==0.2.2
-PyMuPDF==1.27.2
-pdfplumber==0.11.9
-pytesseract
+# 도면 이미지 처리 (Drawing-to-Analysis 이미지 모드)
 Pillow==12.1.1
 
 # 시스템 모니터링

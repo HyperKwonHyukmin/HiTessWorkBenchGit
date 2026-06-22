@@ -35,8 +35,6 @@ const UserManagement = lazy(() => import('./pages/Administration/UserManagement'
 const SystemSettings = lazy(() => import('./pages/Administration/SystemSettings'));
 const AnalysisManagement = lazy(() => import('./pages/Administration/AnalysisManagement'));
 const UsageReports = lazy(() => import('./pages/Administration/UsageReports'));
-const AiAssistantHub = lazy(() => import('./pages/AI/AiAssistantHub'));
-const AcademicApps = lazy(() => import('./pages/analysis/AcademicApps'));
 const BdfScanner = lazy(() => import('./pages/analysis/BdfScanner'));
 const DrawingToAnalysis = lazy(() => import('./pages/analysis/DrawingToAnalysis'));
 const ParametricApps = lazy(() => import('./pages/analysis/ParametricApps'));
@@ -282,7 +280,6 @@ function AppInner() {
       case 'Block Weld Assessment': return <BlockWeldAssessment />;
       case 'Heavy Block Lifting Simulation': return <HeavyBlockLiftingSimulation />;
       case 'Parametric Apps': return <ParametricApps />;
-      case 'Academic Apps': return <AcademicApps />;
       case 'Mast Post Assessment': return <MastPostAssessment />;
       case 'Jib Rest Assessment': return <JibRestAssessment />;
       case 'Column Buckling Load Calculator': return <ColumnBucklingCalculator />;
@@ -309,10 +306,6 @@ function AppInner() {
       case 'Usage Reports': return <UsageReports />;
       case 'System Settings':
       case 'System Management': return <SystemSettings />;
-      case 'AI Lab Assistant':
-      case 'AI Assistant':
-      case 'AI Based Apps': return <AiAssistantHub />;
-
       case 'BDF Scanner': return <BdfScanner />;
       case 'F06 Parser': return <F06ParserPage />;
       case 'Productivity Apps': return <ProductivityApps />;

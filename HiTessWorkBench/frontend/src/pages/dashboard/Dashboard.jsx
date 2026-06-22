@@ -30,8 +30,7 @@ const MODE_KO = {
   File: "File-Based Apps",
   Interactive: "Interactive Apps",
   Parametric: "Parametric Apps",
-  Productivity: "Productivity Apps",
-  Academic: "Academic Apps"
+  Productivity: "Productivity Apps"
 };
 
 const DASHBOARD_CARD_BASE = "relative bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-colors group";
@@ -639,7 +638,6 @@ const MODE_BADGE = {
   Interactive:  { title: 'Interactive Apps', label: 'Interactive',   cls: 'text-violet-700 bg-violet-50 border-violet-200', ring: 'border-l-violet-500',     iconBg: 'bg-violet-600',     summary: '형상과 단면 조건을 화면에서 직접 조작하며 즉시 계산 결과를 확인하는 도구입니다.' },
   Parametric:   { title: 'Parametric Apps', label: 'Parametric', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', ring: 'border-l-emerald-500', iconBg: 'bg-emerald-600',    summary: '설계 파라미터를 입력해 규칙 기반 계산, 최적 후보 탐색, 상세 판정을 수행합니다.' },
   Productivity: { title: 'Productivity Apps', label: 'Productivity', cls: 'text-amber-700 bg-amber-50 border-amber-200',   ring: 'border-l-amber-500',      iconBg: 'bg-amber-500',      summary: '해석 전후처리, 파일 검증, 결과 추출처럼 반복 업무를 줄이는 보조 도구입니다.' },
-  Academic:     { title: 'Academic Apps', label: 'Academic',       cls: 'text-cyan-700 bg-cyan-50 border-cyan-200',       ring: 'border-l-cyan-500',       iconBg: 'bg-cyan-600',       summary: 'AI 기반 해석 및 연구 단계 기능을 실험적으로 통합하는 영역입니다.' },
 };
 
 const STATUS_GROUP_STYLE = {
@@ -654,7 +652,7 @@ const ROADMAP_STATUS_DOT = {
   Planned: 'bg-slate-400',
 };
 
-const ROADMAP_MODE_ORDER = ['File', 'Interactive', 'Parametric', 'Productivity', 'Academic'];
+const ROADMAP_MODE_ORDER = ['File', 'Interactive', 'Parametric', 'Productivity'];
 const ROADMAP_STATUS_ORDER = ['Active', 'Developing', 'Planned'];
 
 const ROADMAP_STATUS_BADGE = {
@@ -1317,7 +1315,7 @@ export default function Dashboard() {
               <DiscoverHiTessBanner
                 variant="workbench"
                 title="HiTESS WorkBench"
-                subtitle="해석 도구 모음과 AI 어시스턴트를 경험해보세요"
+                subtitle="해석 도구 모음과 생산성 도구를 경험해보세요"
                 ctaText="살펴보기"
                 MainIcon={Cpu}
                 onClick={() => handleDiscoverHiTess('workbench')}

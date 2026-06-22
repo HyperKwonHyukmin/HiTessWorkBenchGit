@@ -81,7 +81,6 @@ DEFAULT_GUIDES = [
             "- **Truss Model Builder**: CSV → BDF 자동 변환 및 3D 모델 미리보기\n"
             "- **Truss Structural Assessment**: 전 부재 응력비 평가 및 Excel 내보내기\n"
             "- **Simple Beam Assessment**: 보 단면/하중 입력 → 즉시 해석, 결과 차트\n"
-            "- **AI Lab Assistant**: RAG 기반 구조 해석 Q&A\n"
             "- **My Projects**: 전체 해석 이력 자동 저장 및 다운로드\n"
             "- 사용자 관리, 공지사항, 기능 요청 게시판\n\n"
             "---\n\n"
@@ -89,7 +88,6 @@ DEFAULT_GUIDES = [
             "| 기능 | 설명 | 예정 시기 |\n"
             "|------|------|----------|\n"
             "| Group & Module Unit 권상 구조 해석 | 권상 작업 전 구조 안전성 검토 | 2026 Q2 |\n"
-            "| GNN 기반 Beam 구조 안정성 검토 | AI 기반 보 구조 평가 | 2026 Q3 |\n"
             "| 2D Plate Analyzer | 평판 좌굴 평가 | 2026 Q3 |\n"
             "| Pipe 구조 해석 | 배관 구조 FEM 해석 | 미정 |\n"
             "| Whole Ship Analysis | 전선 구조 해석 파이프라인 | 미정 |\n\n"
@@ -902,34 +900,6 @@ DEFAULT_GUIDES = [
         ),
         "author_id": "SYSTEM",
     },
-    {
-        "category": "Analysis Modules",
-        "title": "[학술] GNN 기반 Beam 구조 안정성 검토 — AI 기반 평가",
-        "content": (
-            "**Graph Neural Network(GNN)** 기반 모델을 활용하여 보(Beam) 구조물의 응력 분포와 구조적 안정성을 AI가 평가하는 학술용 모듈입니다.\n\n"
-            "> ⚠ 본 모듈은 **개발 중 (Developing)** 상태이며, 사내 검증 결과 신뢰도 수준 공유 후 일반 배포가 예정되어 있습니다.\n\n"
-            "## 진입 경로\n\n"
-            "사이드바 → **Academic Apps** → `GNN 기반 Beam 구조 안정성 검토` 카드 클릭\n\n"
-            "## 동작 원리\n\n"
-            "1. 보를 **노드(Node) 와 부재(Edge)** 의 그래프 구조로 변환\n"
-            "2. 단면 특성, 하중, 경계 조건을 노드/에지의 feature로 입력\n"
-            "3. 사전 학습된 GNN이 응력비·변위·취약 부재를 예측\n"
-            "4. 동일 모델을 전통 FEM 해석(SOL 101)과 병렬로 비교 → 오차율 표시\n\n"
-            "## 사용 시나리오\n\n"
-            "- **빠른 사전 검토** — 본 해석 전 후보 설계의 적정 여부를 수초 내 확인\n"
-            "- **응력 핫스팟 탐지** — 모델 전체에서 임계 부재를 우선 표시\n"
-            "- **FEM 결과와 비교** — AI 추론값 vs 기존 FEM 값을 한 화면에서 대조\n\n"
-            "## 사용 시 유의사항\n\n"
-            "- 학습 데이터 외 형상(예: 매우 비대칭, 비정형 단면)에 대한 예측 정확도는 보장되지 않습니다.\n"
-            "- 본 결과는 **참고용**이며, 실제 설계 승인은 전통 FEM 해석 결과로 검증해야 합니다.\n"
-            "- 산출되는 신뢰도(confidence) 값을 함께 확인하세요. 0.85 미만이면 재검토를 권장합니다.\n\n"
-            "## 향후 로드맵\n\n"
-            "- 다양한 단면/하중 조건 학습 데이터 확장\n"
-            "- Plate / Shell 구조로 모델 확장\n"
-            "- 실 구조물 계측 데이터와의 cross-validation"
-        ),
-        "author_id": "SYSTEM",
-    },
 ]
 
 
@@ -938,7 +908,6 @@ DEPRECATED_GUIDE_TITLES = {
     "[대화형] Interactive Apps — 도구 소개",
     "[파라메트릭] Parametric Apps — 도구 소개",
     "[생산성] Productivity Apps — 도구 소개",
-    "[학술] Academic Apps — AI 기반 해석 앱",
 }
 
 

@@ -9,7 +9,6 @@ import {
   Megaphone,
   Lightbulb,
   BookOpen,
-  GraduationCap,
   Settings,
   BarChart3,
   LineChart,
@@ -25,9 +24,7 @@ const GROUP_MENU_BY_MODE = {
   File: 'File-Based Apps',
   Interactive: 'Interactive Apps',
   Parametric: 'Parametric Apps',
-  Academic: 'Academic Apps',
   Productivity: 'Productivity Apps',
-  AI: 'AI Based Apps',
 };
 
 function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate }) {
@@ -44,7 +41,6 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
           { icon: UploadCloud, label: "File-Based Apps" },
           { icon: PenTool, label: "Interactive Apps" },
           { icon: SlidersHorizontal, label: "Parametric Apps" },
-          { icon: GraduationCap, label: "Academic Apps" },
           { icon: Wrench, label: "Productivity Apps" },
           { icon: FolderOpen, label: "My Projects" },
         ]

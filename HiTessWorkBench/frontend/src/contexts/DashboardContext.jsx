@@ -4,7 +4,7 @@
 /// (신규) Truss Assessment 페이지 이탈 시에도 상태를 유지하기 위한 글로벌 State를 추가했습니다.
 /// </summary>
 import React, { createContext, useState, useEffect, useContext, useCallback, useMemo } from 'react';
-import { UploadCloud, PenTool, SlidersHorizontal, Wrench, RefreshCw, CheckCircle, AlertCircle, X, Bot } from 'lucide-react';
+import { UploadCloud, PenTool, SlidersHorizontal, Wrench, RefreshCw, CheckCircle, AlertCircle, X } from 'lucide-react';
 import { useNavigation } from './NavigationContext';
 import { usePolling } from '../hooks/usePolling';
 
@@ -38,8 +38,6 @@ const RAW_ANALYSIS_DATA = [
   // ── Productivity Apps (signature: amber) ──────── Active ──
   { mode: "Productivity", category: "BDF Tools", title: "BDF Scanner", description: "BDF 모델 파일의 유효성을 검증하고, 선택적으로 Nastran 해석 후 F06 결과를 요약합니다.", icon: Wrench, color: "bg-amber-500", tags: ["BDF", "유효성검증", "Nastran"], devStatus: "Active", contributor: "권혁민", relatedApps: ["F06 Parser", "HiTESS Model Builder"], transferOutputs: [{ key: 'f06', label: 'F06 파일', targetApp: 'F06 Parser' }] },
   { mode: "Productivity", category: "F06 Tools", title: "F06 Parser", description: "Nastran SOL 101 F06 파일에서 Displacement, SPC Force, CBAR/CBEAM/CROD 내력·응력을 추출하고 Subcase별 테이블로 조회합니다.", icon: Wrench, color: "bg-amber-500", tags: ["F06", "Nastran", "결과추출", "1D"], devStatus: "Active", contributor: "권혁민", relatedApps: ["BDF Scanner"], acceptsTransferFrom: ['BDF Scanner'] },
-  // ── Academic Apps (signature: cyan) ───────────── Developing ──
-  { mode: "Academic", category: "AI-based Analysis", title: "GNN 기반 Beam 구조 안정성 검토", description: "Graph Neural Network(GNN)를 활용하여 보(Beam) 구조물의 응력 분포 및 구조적 안정성을 AI 기반으로 평가합니다.", icon: Bot, color: "bg-cyan-600", tags: ["GNN", "AI", "Beam", "구조안정성"], devStatus: "Developing", contributor: "권혁민" },
 ];
 
 const APP_REGISTRY_OVERRIDES = {
@@ -167,10 +165,6 @@ const APP_REGISTRY_OVERRIDES = {
     relatedApps: ["BDF Scanner", "HiTESS Model Builder"],
     acceptsTransferFrom: ["BDF Scanner"],
     sampleFiles: [{ label: "F06 결과 예제", guideTitle: "[생산성] F06 Parser — 입력 포맷" }],
-  },
-  "GNN 기반 Beam 구조 안정성 검토": {
-    menuName: "Academic Apps",
-    programNames: ["GNN 기반 Beam 구조 안정성 검토"],
   },
 };
 

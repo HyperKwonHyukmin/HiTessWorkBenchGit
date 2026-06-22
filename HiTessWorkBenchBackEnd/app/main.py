@@ -7,7 +7,6 @@ from fastapi.staticfiles import StaticFiles
 from . import database, models
 from .routers import (
     activity,
-    ai,
     analysis,
     auth,
     carling,
@@ -81,7 +80,6 @@ app.include_router(users.router)
 app.include_router(analysis.router)
 app.include_router(system.router)
 app.include_router(support.router)
-app.include_router(ai.router)
 app.include_router(davit.router)
 app.include_router(column_buckling.router)
 app.include_router(hole_calculation.router)
