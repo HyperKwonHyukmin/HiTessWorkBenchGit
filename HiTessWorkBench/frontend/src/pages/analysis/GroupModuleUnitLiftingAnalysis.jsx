@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   UploadCloud, ArrowRight, ChevronsRight,
-  FileCheck2, MapPin, Cpu, BarChart3,
+  FileCheck2, MapPin, BarChart3,
   X, CheckCircle2, Loader2,
   RotateCcw, AlertOctagon, FileText, Download, Wand2,
   PackageX, AlertCircle, ExternalLink, HardDrive, ShieldCheck,
@@ -31,8 +31,7 @@ const STATUS_CONFIG = {
 const INITIAL_STEPS = [
   { id: 'bdf-validation', title: 'BDF 입력 검증',  sub: 'BDF 파일 업로드 및 유효성 검증', icon: FileCheck2, status: 'wait' },
   { id: 'lifting-points', title: 'Group Module Unit Studio', sub: 'Studio 실행', icon: MapPin, status: 'wait' },
-  { id: 'nastran',        title: 'Nastran 해석',   sub: 'SOL 101 정적 해석 실행',         icon: Cpu,        status: 'wait' },
-  { id: 'results',        title: '해석 결과 확인', sub: '응력·변위 결과 및 판정',          icon: BarChart3,  status: 'wait' },
+  { id: 'results',        title: '해석 결과 확인', sub: 'Studio 권상 구조 해석 결과 및 판정', icon: BarChart3,  status: 'wait' },
 ];
 
 // ── Toggle (HiTessModelBuilder와 동일) ────────────────────────
@@ -106,30 +105,6 @@ function BdfDropZone({ file, onFile, onClear, disabled }) {
   );
 }
 
-
-// ── 진행 로그 패널 ────────────────────────────────────────────
-function ProgressLogPanel({ log }) {
-  const bottomRef = useRef(null);
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [log]);
-  return (
-    <div className="h-full flex flex-col bg-slate-950 font-mono text-[10px] leading-relaxed overflow-y-auto custom-scrollbar p-3">
-      {log.length === 0
-        ? <p className="text-slate-600 italic">실행 로그가 여기에 표시됩니다.</p>
-        : log.map((line, i) => (
-            <p key={i} className={
-              line.includes('[ERROR]') ? 'text-red-400' :
-              line.includes('[WARN]')  ? 'text-amber-400' :
-              line.includes('[OK]')    ? 'text-green-400' :
-              'text-slate-400'
-            }>{line}</p>
-          ))
-      }
-      <div ref={bottomRef} />
-    </div>
-  );
-}
 
 // ── 결과 테이블 패널 ──────────────────────────────────────────
 function ResultsPanel({ result }) {
@@ -414,11 +389,11 @@ export default function GroupModuleUnitLiftingAnalysis() {
   });
 
   // ── Step 0: 해석 설정 ───────────────────────────────────
-  const [useNastran, setUseNastran] = useState(true);
+  // Nastran 을 통한 BDF 입력 검증은 기본 OFF — 필요 시 사용자가 토글로 켠다.
+  const [useNastran, setUseNastran] = useState(false);
 
-  // ── Step 2: Nastran 해석 ─────────────────────────────────
+  // ── 작업 상태 추적 ───────────────────────────────────────
   const [jobStatus, setJobStatus]   = useState(null); // null | { status, progress, message }
-  const [engineLog, setEngineLog]   = useState([]);
   const [handoffSource, setHandoffSource] = useState(null); // 프로그램 간 연계로 진입한 경우 출처 앱 이름
   const [handoffBdfPath, setHandoffBdfPath] = useState(null);
   const pollRef = useRef(null);
@@ -562,7 +537,6 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const activeStep = steps[activeIdx];
   const isBdfStep      = activeStep?.id === 'bdf-validation';
   const isLiftingStep  = activeStep?.id === 'lifting-points';
-  const isNastranStep  = activeStep?.id === 'nastran';
   const isResultsStep  = activeStep?.id === 'results';
 
   // ── 마운트: 프로그램 간 연계 핸드오프 처리 ───────────────────
@@ -695,11 +669,10 @@ export default function GroupModuleUnitLiftingAnalysis() {
     setStudioProgress(null);
     setStudioError(null);
     setJobStatus(null);
-    setEngineLog([]);
     setAnalysisResult(null);
     setSteps(INITIAL_STEPS);
     setActiveIdx(0);
-    setUseNastran(true);
+    setUseNastran(false);
     setHasRunOnce(false);
   };
 
@@ -973,34 +946,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
             </div>
           )}
 
-          {/* ─ Step 2: Nastran 해석 ─ */}
-          {isNastranStep && (
-            <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nastran 해석</span>
-                  {jobStatus?.status === 'Success' && <><div className="w-1.5 h-1.5 rounded-full bg-green-400" /><span className="text-[10px] text-slate-400">완료</span></>}
-                  {jobStatus?.status === 'Running' && <><Loader2 size={11} className="animate-spin text-blue-500" /><span className="text-[10px] text-blue-600">실행 중</span></>}
-                </div>
-                {jobStatus?.status === 'Running' && (
-                  <div className="flex items-center gap-2">
-                    <div className="w-32 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                        style={{ width: `${jobStatus.progress ?? 0}%` }}
-                      />
-                    </div>
-                    <span className="text-[10px] font-mono text-slate-500">{jobStatus.progress ?? 0}%</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 min-h-0">
-                <ProgressLogPanel log={engineLog} />
-              </div>
-            </div>
-          )}
-
-          {/* ─ Step 3: 해석 결과 ─ */}
+          {/* ─ Step 2: 해석 결과 ─ */}
           {isResultsStep && (
             <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
               <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 shrink-0">
