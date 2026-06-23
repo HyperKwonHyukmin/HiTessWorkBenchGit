@@ -145,6 +145,10 @@ export const requestGroupModuleUnitFromPath = (formData) =>
 export const requestF06Parser = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/f06parser/request`, formData, 'F06Parser');
 
+/** 선급 Rule 기반 선체 가속도 Calculation 요청 (PDF → Summary of Loading Conditions 추출) */
+export const requestHullAcceleration = (formData) =>
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/hullacceleration/request`, formData, 'HullAcceleration');
+
 /** 파일 다운로드 (blob) */
 export const downloadFileBlob = (filepath) =>
   axios.get(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(filepath)}`, {

@@ -38,6 +38,7 @@ const RAW_ANALYSIS_DATA = [
   // ── Productivity Apps (signature: amber) ──────── Active ──
   { mode: "Productivity", category: "BDF Tools", title: "BDF Scanner", description: "BDF 모델 파일의 유효성을 검증하고, 선택적으로 Nastran 해석 후 F06 결과를 요약합니다.", icon: Wrench, color: "bg-amber-500", tags: ["BDF", "유효성검증", "Nastran"], devStatus: "Active", contributor: "권혁민", relatedApps: ["F06 Parser", "HiTESS Model Builder"], transferOutputs: [{ key: 'f06', label: 'F06 파일', targetApp: 'F06 Parser' }] },
   { mode: "Productivity", category: "F06 Tools", title: "F06 Parser", description: "Nastran SOL 101 F06 파일에서 Displacement, SPC Force, CBAR/CBEAM/CROD 내력·응력을 추출하고 Subcase별 테이블로 조회합니다.", icon: Wrench, color: "bg-amber-500", tags: ["F06", "Nastran", "결과추출", "1D"], devStatus: "Active", contributor: "권혁민", relatedApps: ["BDF Scanner"], acceptsTransferFrom: ['BDF Scanner'] },
+  { mode: "Productivity", category: "Hull Accel", title: "선급 Rule 기반 선체 가속도 Calculation", description: "Trim & Stability Booklet PDF를 업로드하여 선체 가속도 계산 입력값인 'Summary of Loading Conditions' 표를 추출·정리합니다. (초안)", icon: Wrench, color: "bg-amber-500", tags: ["선급", "가속도", "PDF", "Loading Conditions"], devStatus: "Developing", contributor: "권혁민" },
 ];
 
 const APP_REGISTRY_OVERRIDES = {
@@ -165,6 +166,11 @@ const APP_REGISTRY_OVERRIDES = {
     relatedApps: ["BDF Scanner", "HiTESS Model Builder"],
     acceptsTransferFrom: ["BDF Scanner"],
     sampleFiles: [{ label: "F06 결과 예제", guideTitle: "[생산성] F06 Parser — 입력 포맷" }],
+  },
+  "선급 Rule 기반 선체 가속도 Calculation": {
+    menuName: "선급 Rule 기반 선체 가속도 Calculation",
+    programNames: ["HullAcceleration", "선급 Rule 기반 선체 가속도 Calculation"],
+    apiEndpoint: "/api/analysis/hullacceleration/request",
   },
 };
 

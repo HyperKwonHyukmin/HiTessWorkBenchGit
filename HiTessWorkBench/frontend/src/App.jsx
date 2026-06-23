@@ -53,6 +53,7 @@ const HiTessModelBuilder = lazy(() => import('./pages/analysis/HiTessModelBuilde
 const GroupModuleUnitLiftingAnalysis = lazy(() => import('./pages/analysis/GroupModuleUnitLiftingAnalysis'));
 const SidePassageAssessment = lazy(() => import('./pages/analysis/SidePassageAssessment'));
 const F06ParserPage = lazy(() => import('./pages/analysis/F06ParserPage'));
+const HullAccelerationPage = lazy(() => import('./pages/analysis/HullAccelerationPage'));
 const HpScrAssessment = lazy(() => import('./pages/analysis/HpScrAssessment'));
 const MooringFittingAssessment = lazy(() => import('./pages/analysis/MooringFittingAssessment'));
 const BlockWeldAssessment = lazy(() => import('./pages/analysis/BlockWeldAssessment'));
@@ -308,6 +309,7 @@ function AppInner() {
       case 'System Management': return <SystemSettings />;
       case 'BDF Scanner': return <BdfScanner />;
       case 'F06 Parser': return <F06ParserPage />;
+      case '선급 Rule 기반 선체 가속도 Calculation': return <HullAccelerationPage />;
       case 'Productivity Apps': return <ProductivityApps />;
       case 'HiTESS Model Builder': return <HiTessModelBuilder />;
       case 'Group & Module Unit 권상 구조 해석': return <GroupModuleUnitLiftingAnalysis />;

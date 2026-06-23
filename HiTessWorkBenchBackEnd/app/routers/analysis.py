@@ -1,5 +1,6 @@
 """해석 요청, 상태 조회, 이력 관리 API 라우터."""
 import io
+import json
 import logging
 import os
 import shutil
@@ -34,6 +35,7 @@ from ..services.hitess_modelflow_service import (
     scan_f06_diagnostics,
 )
 from ..services.f06parser_service import task_execute_f06parser
+from ..services.hull_acceleration_service import task_execute_hull_acceleration
 from ..services.plate_structure_service import task_execute_plate_structure
 from ..services.mooring_fitting_service import task_execute_mooring_fitting, task_solve_mooring_fitting
 from ..services.drawing_to_analysis_service import (
@@ -2060,6 +2062,43 @@ async def request_f06parser(
     f06_path = await save_upload(f06_file, work_dir, error_prefix="파일 저장 오류")
     job_id = submit_analysis_job(
         task_execute_f06parser, f06_path, work_dir, employee_id, timestamp, source,
+    )
+    return {"job_id": job_id}
+
+
+# ==================== 선급 Rule 기반 선체 가속도 Calculation ====================
+
+@router.post("/analysis/hullacceleration/request")
+async def request_hull_acceleration(
+        pdf_file: UploadFile = File(...),
+        employee_id: str = Form(...),
+        source: str = Form("Workbench"),
+        constants: Optional[str] = Form(None),
+        condition_overrides: Optional[str] = Form(None),
+        current_user: str = Depends(require_auth)
+):
+    """
+    선급 Rule 기반 선체 가속도 Calculation (초안) 요청.
+    Trim & Stability Booklet 류 PDF 를 저장하고 백그라운드로 엔진을 실행하여
+    'Summary of Loading Conditions' 표를 JSON/CSV/TXT 로 추출합니다.
+    """
+    _verify_employee_self(employee_id, current_user)
+    work_dir, timestamp = make_work_dir(employee_id, "HullAcceleration")
+    pdf_path = await save_upload(pdf_file, work_dir, error_prefix="파일 저장 오류")
+    constants_path = os.path.join(work_dir, "constants.json")
+    overrides_path = os.path.join(work_dir, "condition_overrides.json")
+    try:
+        with open(constants_path, "w", encoding="utf-8") as f:
+            json.dump(json.loads(constants) if constants else {}, f, ensure_ascii=False, indent=2)
+        if condition_overrides:
+            with open(overrides_path, "w", encoding="utf-8") as f:
+                json.dump(json.loads(condition_overrides), f, ensure_ascii=False, indent=2)
+        else:
+            overrides_path = None
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"constants JSON 형식이 올바르지 않습니다: {exc}") from exc
+    job_id = submit_analysis_job(
+        task_execute_hull_acceleration, pdf_path, work_dir, employee_id, timestamp, source, constants_path, overrides_path,
     )
     return {"job_id": job_id}
 
