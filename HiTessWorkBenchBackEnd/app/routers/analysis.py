@@ -2864,7 +2864,7 @@ async def request_beam_analysis(
 
 @router.post("/analysis/modelflow/request")
 async def request_modelflow_analysis(
-    stru_file: UploadFile = File(...),
+    stru_file: Optional[UploadFile] = File(None),
     pipe_file: Optional[UploadFile] = File(None),
     equip_file: Optional[UploadFile] = File(None),
     employee_id: str = Form(...),
@@ -2888,11 +2888,24 @@ async def request_modelflow_analysis(
       run_nastran          → --run-nastran (+ --nastran-path / --leg-z-tol)
     """
     _verify_employee_self(employee_id, current_user)
+
+    # Structural / Piping 중 하나만 있어도 실행 가능(둘 다 없으면 거절).
+    has_stru = bool(stru_file and stru_file.filename)
+    has_pipe = bool(pipe_file and pipe_file.filename)
+    if not has_stru and not has_pipe:
+        raise HTTPException(
+            status_code=400,
+            detail="Structural 또는 Piping CSV 파일 중 하나 이상이 필요합니다.",
+        )
+
     work_dir, timestamp = make_work_dir(employee_id, "HiTessModelBuilder")
-    stru_path = await save_upload(stru_file, work_dir, error_prefix="파일 저장 오류")
+
+    stru_path = None
+    if has_stru:
+        stru_path = await save_upload(stru_file, work_dir, error_prefix="파일 저장 오류")
 
     pipe_path = None
-    if pipe_file and pipe_file.filename:
+    if has_pipe:
         pipe_path = await save_upload(pipe_file, work_dir, error_prefix="배관 파일 저장 오류")
 
     equip_path = None

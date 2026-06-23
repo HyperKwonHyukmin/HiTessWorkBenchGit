@@ -77,7 +77,7 @@ def _pick_final_artifact(output_dir: str, ext: str) -> str | None:
 
 def task_execute_modelflow(
     job_id: str,
-    stru_path: str,
+    stru_path: str | None,
     pipe_path: str | None,
     equip_path: str | None,
     work_dir: str,
@@ -109,8 +109,14 @@ def task_execute_modelflow(
     if not os.path.exists(exe_path):
         status_msg = "Failed"
         engine_output = f"Model Builder 실행 파일을 찾을 수 없습니다: {exe_path}"
+    elif not stru_path and not pipe_path:
+        # 엔진은 --stru/--pipe/--equip 중 하나 이상이면 동작. Structure·Pipe 둘 다 없으면 거절.
+        status_msg = "Failed"
+        engine_output = "Structural 또는 Piping CSV 파일 중 하나 이상이 필요합니다."
     else:
-        cmd = [exe_path, "build-full", "--stru", stru_path]
+        cmd = [exe_path, "build-full"]
+        if stru_path:
+            cmd += ["--stru", stru_path]
         if pipe_path:
             cmd += ["--pipe", pipe_path]
         if equip_path:

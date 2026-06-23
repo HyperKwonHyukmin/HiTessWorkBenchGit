@@ -354,7 +354,8 @@ function DetailCSV({
   setStruError, setPipeError, setEquiError,
   onAutoAssign, onMultipleFiles, onWarnNotCsv,
 }) {
-  const isReady = !!struFile && !struError && !pipeError && !equiError;
+  // Structural 또는 Piping 중 하나만 있어도 준비 완료(둘 중 하나 필수).
+  const isReady = (!!struFile || !!pipeFile) && !struError && !pipeError && !equiError;
   const hasError = (struError && !struError.startsWith('__warn__'))
                 || (pipeError && !pipeError.startsWith('__warn__'))
                 || (equiError && !equiError.startsWith('__warn__'));
@@ -362,7 +363,7 @@ function DetailCSV({
     <div className="space-y-2">
       <div className="grid grid-cols-3 gap-2">
         <CsvDropZone
-          label="Structural" required
+          label="Structural" required={!struFile && !pipeFile}
           file={struFile} fileError={struError}
           onFile={(f) => onAutoAssign(f, 'stru')}
           onClear={() => { setStruFile(null); setStruError(null); }}
@@ -371,7 +372,7 @@ function DetailCSV({
           onWarnNotCsv={onWarnNotCsv}
         />
         <CsvDropZone
-          label="Piping"
+          label="Piping" required={!struFile && !pipeFile}
           file={pipeFile} fileError={pipeError}
           onFile={(f) => onAutoAssign(f, 'pipe')}
           onClear={() => { setPipeFile(null); setPipeError(null); }}
@@ -397,7 +398,7 @@ function DetailCSV({
           ? <><AlertCircle size={13} /> 파일 형식 오류를 확인하세요</>
           : isReady
           ? <><CheckCircle2 size={13} /> 필수 파일 준비 완료 — 실행 가능</>
-          : <><AlertCircle size={13} /> Structural CSV 파일이 필요합니다 (드래그 한 번에 3개 자동 분류)</>
+          : <><AlertCircle size={13} /> Structural 또는 Piping CSV 파일이 필요합니다 (드래그 한 번에 3개 자동 분류)</>
         }
       </div>
     </div>
@@ -2556,7 +2557,8 @@ export default function HiTessModelBuilder() {
 
   /* ── 실행 ──────────────────────────────────────────────────────────── */
   const handleRunModelBuilder = async () => {
-    if (!struFile) { showToast('Structural CSV 파일이 필요합니다.', 'warning'); return; }
+    // Structural 또는 Piping CSV 중 하나만 있어도 실행 가능(횡방향/배관 단독 모델 지원).
+    if (!struFile && !pipeFile) { showToast('Structural 또는 Piping CSV 파일이 필요합니다.', 'warning'); return; }
     const isHardError = (e) => e && !e.startsWith('__warn__');
     if (isHardError(struError) || isHardError(pipeError) || isHardError(equiError)) {
       showToast('파일 형식 오류를 먼저 해결하세요.', 'warning'); return;
@@ -2564,7 +2566,7 @@ export default function HiTessModelBuilder() {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
 
     const formData = new FormData();
-    formData.append('stru_file', struFile);
+    if (struFile) formData.append('stru_file', struFile);
     if (pipeFile) formData.append('pipe_file',  pipeFile);
     if (equiFile) formData.append('equip_file', equiFile);
     formData.append('employee_id', user.employee_id || 'unknown');
