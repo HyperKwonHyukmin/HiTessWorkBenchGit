@@ -1,5 +1,5 @@
 /// <summary>
-/// 선급 Rule 기반 선체 가속도 Calculation (초안).
+/// 선급 Rule 기반 선체 가속도 Calculation.
 /// Trim & Stability Booklet PDF 를 업로드하여 'Summary of Loading Conditions' 표를
 /// 추출하고, 페이지별 '파라미터 × 조건' 정형화 테이블로 표시한다.
 /// </summary>

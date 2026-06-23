@@ -2078,7 +2078,7 @@ async def request_hull_acceleration(
         current_user: str = Depends(require_auth)
 ):
     """
-    선급 Rule 기반 선체 가속도 Calculation (초안) 요청.
+    선급 Rule 기반 선체 가속도 Calculation 요청.
     Trim & Stability Booklet 류 PDF 를 저장하고 백그라운드로 엔진을 실행하여
     'Summary of Loading Conditions' 표를 JSON/CSV/TXT 로 추출합니다.
     """
