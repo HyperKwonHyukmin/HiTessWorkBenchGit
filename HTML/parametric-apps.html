@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parametric Apps Flow</title>
+  <link rel="stylesheet" href="flow-map.css">
+</head>
+<body>
+  <header class="shell-header">
+    <div class="wrap header-row">
+      <div>
+        <p class="eyebrow">Studio Flow</p>
+        <h1>Parametric Apps</h1>
+        <p class="subtitle">치수, 하중, 재료값 같은 파라미터 입력을 기반으로 구조 검토 결과를 산출하는 솔루션들의 공통 흐름입니다.</p>
+      </div>
+      <div class="header-actions">
+        <a class="button-link" href="index.html">Home</a>
+        <a class="button-link" href="workbench.html">Workbench</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <nav class="side-nav" aria-label="Parametric Apps menu">
+      <p class="nav-title">Document Menu</p>
+      <ul class="menu">
+        <li><a href="workbench.html">Workbench</a></li>
+        <li><a href="file-based-apps.html">File-Based Apps</a></li>
+        <li><a href="interactive-apps.html">Interactive Apps</a></li>
+        <li><a href="parametric-apps.html">Parametric Apps</a></li>
+        <li><a href="productivity-apps.html">Productivity Apps</a></li>
+        <li><a href="support-admin.html">Support / Admin</a></li>
+      </ul>
+      <p class="nav-title nav-section">Solution Menu</p>
+      <ul class="menu">
+        <li><a href="#solutions">상세 솔루션 추가 예정</a></li>
+      </ul>
+    </nav>
+
+    <div class="content">
+      <section class="panel">
+        <h2>역할</h2>
+        <p class="lead">이 페이지는 파라메트릭 앱의 공통 역할만 다룹니다. 각 계산 기준, 허용치, 결과 판정 로직은 솔루션별 문서에서 관리합니다.</p>
+        <div class="flow">
+          <div class="step"><span class="step-index">1</span><div><strong>파라미터 입력</strong>치수, 하중, 재료, 조건값을 화면에서 수집합니다.</div></div>
+          <div class="step"><span class="step-index">2</span><div><strong>입력 검증</strong>단위, 범위, 필수값, 조합 조건을 검토합니다.</div></div>
+          <div class="step"><span class="step-index">3</span><div><strong>계산 API</strong>짧은 계산은 전용 FastAPI 라우터로 요청하고 즉시 결과를 받습니다.</div></div>
+          <div class="step"><span class="step-index">4</span><div><strong>판정/후보 표시</strong>PASS/FAIL, 허용 하중, 후보 단면 같은 결과를 표와 요약으로 표시합니다.</div></div>
+        </div>
+      </section>
+
+      <section id="solutions" class="panel">
+        <h2>상세 솔루션 메뉴</h2>
+        <div class="quick-grid">
+          <a class="quick-card" href="#"><strong>Mast Post Assessment</strong><span>다빗 Mast Post 검토 흐름을 별도 문서로 확장합니다.</span></a>
+          <a class="quick-card" href="#"><strong>Jib Rest Assessment</strong><span>Jib Rest 설계 후보 산출 흐름을 별도 문서로 확장합니다.</span></a>
+          <a class="quick-card" href="#"><strong>Column Buckling Calculator</strong><span>AISC 좌굴 하중 계산 흐름을 별도 문서로 확장합니다.</span></a>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
