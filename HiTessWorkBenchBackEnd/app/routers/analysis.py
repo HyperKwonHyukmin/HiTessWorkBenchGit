@@ -46,6 +46,7 @@ from ..services.drawing_to_analysis_service import (
 )
 from ..services.modelbuilder_solve_service import task_execute_modelbuilder_solve
 from ._intake import make_work_dir, save_upload, submit_analysis_job
+from ..services.analysis_runner import get_backend_dir
 from ._access_control import (
     assert_current_user_can_access_job,
     assert_current_user_can_access_path,
@@ -2101,6 +2102,64 @@ async def request_hull_acceleration(
         task_execute_hull_acceleration, pdf_path, work_dir, employee_id, timestamp, source, constants_path, overrides_path,
     )
     return {"job_id": job_id}
+
+
+@router.post("/analysis/hullacceleration/sample-request")
+async def request_hull_acceleration_sample(
+        employee_id: str = Form(...),
+        source: str = Form("Workbench"),
+        constants: Optional[str] = Form(None),
+        condition_overrides: Optional[str] = Form(None),
+        current_user: str = Depends(require_auth)
+):
+    """선급 Rule 기반 선체 가속도 — 내장 샘플 PDF 로 즉시 실행.
+
+    업로드 없이 백엔드 `SampleFile/TS/` 의 샘플 PDF 를 work_dir 로 복사한 뒤
+    일반 업로드와 동일한 task_execute_hull_acceleration 파이프라인을 실행한다.
+    (샘플 PDF 가 수십 MB 라 클라이언트 왕복 전송을 피해 서버 로컬에서 바로 처리한다.)
+    """
+    _verify_employee_self(employee_id, current_user)
+
+    sample_dir = os.path.join(get_backend_dir(), "SampleFile", "TS")
+    sample_pdf = None
+    if os.path.isdir(sample_dir):
+        for name in sorted(os.listdir(sample_dir)):
+            if name.lower().endswith(".pdf"):
+                sample_pdf = os.path.join(sample_dir, name)
+                break
+    if not sample_pdf or not os.path.isfile(sample_pdf):
+        raise HTTPException(
+            status_code=404,
+            detail="샘플 PDF 를 찾을 수 없습니다. 서버 SampleFile/TS/ 에 PDF 를 배치하세요.",
+        )
+
+    work_dir, timestamp = make_work_dir(employee_id, "HullAcceleration")
+    sample_name = os.path.basename(sample_pdf)
+    pdf_path = os.path.join(work_dir, sample_name)
+    # 회사 DRM 은 '읽기' 시점에 복호화하므로 read()->write()(copyfileobj) 로 복호화본을 work_dir 에 둔다.
+    try:
+        with open(sample_pdf, "rb") as src, open(pdf_path, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"샘플 PDF 복사 실패: {exc}") from exc
+
+    constants_path = os.path.join(work_dir, "constants.json")
+    overrides_path = os.path.join(work_dir, "condition_overrides.json")
+    try:
+        with open(constants_path, "w", encoding="utf-8") as f:
+            json.dump(json.loads(constants) if constants else {}, f, ensure_ascii=False, indent=2)
+        if condition_overrides:
+            with open(overrides_path, "w", encoding="utf-8") as f:
+                json.dump(json.loads(condition_overrides), f, ensure_ascii=False, indent=2)
+        else:
+            overrides_path = None
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"constants JSON 형식이 올바르지 않습니다: {exc}") from exc
+
+    job_id = submit_analysis_job(
+        task_execute_hull_acceleration, pdf_path, work_dir, employee_id, timestamp, source, constants_path, overrides_path,
+    )
+    return {"job_id": job_id, "sample_name": sample_name}
 
 
 # ==================== Mooring Fitting Assessment ====================

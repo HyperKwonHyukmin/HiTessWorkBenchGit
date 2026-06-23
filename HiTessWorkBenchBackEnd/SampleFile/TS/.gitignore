@@ -1,0 +1,5 @@
+# 43MB+ 샘플 Trim & Stability Booklet PDF 는 git 에 포함하지 않는다 (저장소 비대화 방지).
+# 서버(145) 의 SampleFile/TS/ 에 PDF 를 수동 배치해야 '샘플 즉시 실행' 이 동작한다.
+*
+!.gitkeep
+!.gitignore

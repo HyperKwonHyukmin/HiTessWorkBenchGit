@@ -8,7 +8,7 @@ import { ArrowLeft, Upload, Play, Terminal, FileText, Download, Table, Ship, Rot
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
-import { requestHullAcceleration, downloadFileText, downloadFileBlob } from '../../api/analysis';
+import { requestHullAcceleration, requestHullAccelerationSample, downloadFileText, downloadFileBlob } from '../../api/analysis';
 import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import PageBanner from '../../components/ui/PageBanner';
@@ -259,6 +259,35 @@ export default function HullAccelerationPage() {
     }
   };
 
+  // 업로드 없이 서버 내장 샘플 PDF 로 바로 실행한다. 현재 입력된 상수/위치(X·Y·Z)를 그대로 사용.
+  const runSample = async () => {
+    if (isRunning) return;
+    setIsRunning(true);
+    setProgress(0);
+    setStatusMessage('샘플 파일 준비 중...');
+    setPdfFile(null);
+    setResultData(null);
+    setResultInfo(null);
+    setActiveLoadingTableIndex(0);
+    setLogs([{ time: new Date().toLocaleTimeString(), message: '[SAMPLE] 내장 샘플 PDF로 실행합니다.', type: 'info' }]);
+
+    const formData = buildFormData({
+      employee_id: employeeId,
+      source: 'Workbench',
+      constants: JSON.stringify(toPayloadConstants(constants)),
+    });
+    try {
+      const res = await requestHullAccelerationSample(formData);
+      const jobId = res.data.job_id;
+      if (res.data.sample_name) addLog(`[SAMPLE] ${res.data.sample_name}`, 'success');
+      addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
+      startJob(jobId, '선급 Rule 기반 선체 가속도 Calculation');
+    } catch {
+      setIsRunning(false);
+      addLog('샘플 실행 요청 실패. (서버에 샘플 PDF가 없을 수 있습니다)', 'error');
+    }
+  };
+
   // 페이지 상태를 모두 비운다. 로컬 state 뿐 아니라 DashboardContext 에 보존된
   // 페이지 상태(pdf/결과/로그/진행률)까지 정리해야 나갔다 와도 빈 상태가 유지된다.
   const handleReset = () => {
@@ -300,7 +329,9 @@ export default function HullAccelerationPage() {
   const activeTable = tables[activeTableIndex];
   const envelope = resultData?.envelope;
   const rules = resultData?.rules ?? {};
-  const ruleRows = Object.values(rules);
+  // LR(Lloyd's Register)은 현재 계산값이 부정확하여 결과에서 제외한다.
+  // (서버 백엔드 미반영분이나 캐시된 과거 결과에 LR 이 남아있어도 표에 노출되지 않도록 방어)
+  const ruleRows = Object.values(rules).filter((rule) => rule.key !== 'lr');
 
   // 단계 인디케이터 상태 계산
   const step1Done = !!pdfFile;
@@ -331,11 +362,13 @@ export default function HullAccelerationPage() {
       {/* 본문: 좌우 분할 */}
       <div className="flex gap-5 flex-1 min-h-0">
 
-        {/* 왼쪽 사이드바 */}
-        <div className="w-[320px] shrink-0 flex flex-col gap-3">
+        {/* 왼쪽 사이드바 — 낮은 해상도/배율에서도 X·Y·Z 등 모든 입력이 잘리지 않도록 세로 스크롤 허용 */}
+        <div className="w-[320px] shrink-0 flex flex-col gap-3 overflow-y-auto pr-0.5 pb-1">
 
           {/* ── 단계 1: PDF 파일 선택 ── */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* shrink-0 필수: overflow-hidden 박스는 flex 자동 최소높이가 0이 되어, 없으면 사이드바가
+              스크롤되는 대신 박스가 찌그러져 내부 콘텐츠가 잘린다(낮은 해상도/배율에서). */}
+          <div className="shrink-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             {/* 단계 헤더 */}
             <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-amber-700 to-amber-600">
               <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center shrink-0">
@@ -380,11 +413,31 @@ export default function HullAccelerationPage() {
                 className="hidden"
                 onChange={(e) => handleFile(e.target.files?.[0])}
               />
+
+              {/* 업로드 대신 내장 샘플 PDF 로 바로 실행 */}
+              <div className="mt-3 flex items-center gap-2">
+                <div className="flex-1 h-px bg-slate-100" />
+                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">또는</span>
+                <div className="flex-1 h-px bg-slate-100" />
+              </div>
+              <button
+                type="button"
+                onClick={runSample}
+                disabled={isRunning}
+                className={`mt-3 w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm border transition-all ${
+                  isRunning
+                    ? 'border-slate-200 text-slate-300 cursor-not-allowed'
+                    : 'border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 cursor-pointer'
+                }`}
+              >
+                <Play size={14} />
+                샘플 파일로 바로 실행
+              </button>
             </div>
           </div>
 
           {/* ── 단계 2: PDF 자동 추출 + 계산 위치 ── */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="shrink-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-amber-700 to-amber-600">
               <div className="w-6 h-6 rounded-full bg-white/15 flex items-center justify-center shrink-0">
                 <span className="text-[11px] font-bold text-white">2</span>
@@ -484,7 +537,7 @@ export default function HullAccelerationPage() {
           </div>
 
           {/* ── 단계 3: 실행 / 진행률 ── */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="shrink-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="flex items-center gap-3 px-4 py-3 bg-slate-100 border-b border-slate-200">
               <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${step3Done ? 'bg-amber-500' : 'bg-slate-300'}`}>
                 <span className="text-[11px] font-bold text-white">3</span>

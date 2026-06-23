@@ -149,6 +149,10 @@ export const requestF06Parser = (formData) =>
 export const requestHullAcceleration = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/hullacceleration/request`, formData, 'HullAcceleration');
 
+/** 선급 Rule 기반 선체 가속도 — 내장 샘플 PDF 로 즉시 실행 (업로드 없이 서버 로컬 샘플 사용) */
+export const requestHullAccelerationSample = (formData) =>
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/hullacceleration/sample-request`, formData, 'HullAccelerationSample');
+
 /** 파일 다운로드 (blob) */
 export const downloadFileBlob = (filepath) =>
   axios.get(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(filepath)}`, {
