@@ -6,6 +6,7 @@ const https   = require("https");
 const os      = require("os");
 const crypto  = require("crypto");
 const { spawn } = require("child_process");
+const { buildUpdateHelperVbs } = require("./update-helper");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
 // 다이얼로그 제목으로 사용됨. 미설정 시 개발 모드 기본값 'electron-app' 이 노출되므로,
@@ -436,25 +437,7 @@ ipcMain.handle("start-self-update", (event, payload) => {
           // electron-builder가 설정한 PORTABLE_EXECUTABLE_FILE이 실제 원본 EXE 경로.
           const currentExe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
           const vbsPath = path.join(os.tmpdir(), "hitess_update_helper.vbs");
-          const vbs = [
-            "WScript.Sleep 2000",
-            "Dim oldPath, tmpPath, destPath",
-            "oldPath = WScript.Arguments(0)",
-            "tmpPath = WScript.Arguments(1)",
-            "Set fso = CreateObject(\"Scripting.FileSystemObject\")",
-            "destPath = fso.BuildPath(fso.GetParentFolderName(oldPath), fso.GetFileName(tmpPath))",
-            "fso.CopyFile tmpPath, destPath, True",
-            "If fso.FileExists(oldPath) Then",
-            "  On Error Resume Next",
-            "  fso.DeleteFile oldPath, True",
-            "  On Error GoTo 0",
-            "End If",
-            "Set shell = CreateObject(\"WScript.Shell\")",
-            "shell.Run Chr(34) & destPath & Chr(34)",
-            "On Error Resume Next",
-            "fso.DeleteFile tmpPath, True",
-            "WScript.Quit",
-          ].join("\r\n");
+          const vbs = buildUpdateHelperVbs();
           fs.writeFileSync(vbsPath, vbs, "utf8");
 
           const child = spawn("wscript.exe", [vbsPath, currentExe, tmpPath], {
