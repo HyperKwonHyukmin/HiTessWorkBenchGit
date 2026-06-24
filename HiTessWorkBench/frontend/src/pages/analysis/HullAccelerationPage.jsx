@@ -13,6 +13,7 @@ import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import PageBanner from '../../components/ui/PageBanner';
 import { buildFormData } from '../../utils/fileHelper';
+import { getRuleAxisMaxima } from '../../utils/hullAcceleration';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -973,7 +974,7 @@ export default function HullAccelerationPage() {
                       </div>
                     )}
 
-                    {/* 선급 탭 — 최대값을 갖는 조건(LC) 행 그대로 + 조건별 조회 표 */}
+                    {/* 선급 탭 — X/Y/Z 축별 독립 최대값 + 조건별 조회 표 */}
                     {activeRuleTab !== 'envelope' && (() => {
                       const rule = rules[activeRuleTab];
                       if (!rule) return null;
@@ -986,20 +987,25 @@ export default function HullAccelerationPage() {
                         });
                       });
                       const condRows = Object.values(byCond).sort((a, b) => a.condition_no - b.condition_no);
-                      // 지배 축 = max 가 가장 큰 축 → 그 축의 max_lc 가 X·Y·Z 중 최대값을 갖는 행(LC)
-                      const axisMax = { x: rule.x?.max ?? -Infinity, y: rule.y?.max ?? -Infinity, z: rule.z?.max ?? -Infinity };
-                      const govAxis = ['x', 'y', 'z'].reduce((a, b) => (axisMax[b] > axisMax[a] ? b : a));
-                      const govLc = rule[govAxis]?.max_lc;
-                      const govRow = condRows.find((r) => r.condition_no === govLc) ?? {};
+                      const axisMaxima = getRuleAxisMaxima(rule);
+                      const maxConditionNos = new Set(
+                        Object.values(axisMaxima)
+                          .map(({ conditionNo }) => conditionNo)
+                          .filter((conditionNo) => conditionNo != null),
+                      );
                       const gravity = Number(resultData?.ship_constants?.gravity) || 9.81;
                       return (
                         <div className="space-y-3">
-                          {/* 최대 가속도 발생 조건(LC) 안내 */}
+                          {/* 축별 최대 가속도 발생 조건(LC) 안내 */}
                           <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-2">
                             <MapPin size={13} className="text-amber-600 shrink-0" />
                             <span className="text-[11px] font-semibold text-amber-800">
-                              {rule.label} 최대 가속도 발생 조건 — <span className="font-black">LC {govLc ?? '-'}</span>
-                              <span className="ml-1.5 font-normal text-amber-700/80">({govAxis.toUpperCase()}축 {fmt(axisMax[govAxis], 2)} m/s² 최대)</span>
+                              {rule.label} 축별 최대 가속도 발생 조건 —
+                              {['x', 'y', 'z'].map((axis) => (
+                                <span key={axis} className="ml-2 whitespace-nowrap">
+                                  <span className="font-black">{axis.toUpperCase()}</span> LC {axisMaxima[axis].conditionNo ?? '-'}
+                                </span>
+                              ))}
                             </span>
                           </div>
 
@@ -1014,24 +1020,23 @@ export default function HullAccelerationPage() {
                             </div>
                           )}
 
-                          {/* 최대값을 갖는 행(LC govLc)의 X·Y·Z 값 카드 */}
+                          {/* X/Y/Z 각각의 최대값과 해당 Loading Condition */}
                           <div className="grid grid-cols-3 gap-3">
                             {['x', 'y', 'z'].map((axis) => {
                               const ac = AXIS_CONFIG[axis];
-                              const value = govRow[axis];
+                              const { value, conditionNo } = axisMaxima[axis];
                               const gVal = Number.isFinite(value) ? value / gravity : undefined;
-                              const isGov = axis === govAxis;
                               return (
                                 <div
                                   key={axis}
-                                  className={`rounded-2xl border-2 ${ac.border} ${ac.bg} p-5 relative overflow-hidden ${isGov ? 'ring-2 ring-amber-400 ring-offset-1' : ''}`}
+                                  className={`rounded-2xl border-2 ${ac.border} ${ac.bg} p-5 relative overflow-hidden`}
                                 >
                                   {/* 축 레이블 배지 */}
                                   <div className={`absolute top-3 right-3 w-7 h-7 rounded-lg ${ac.accent} flex items-center justify-center`}>
                                     <span className="text-[11px] font-black text-white uppercase">{axis}</span>
                                   </div>
                                   {/* 대표 수치 */}
-                                  <p className={`text-[11px] font-semibold mb-1 ${ac.color} uppercase tracking-wide`}>{ac.label}{isGov && ' · 최대'}</p>
+                                  <p className={`text-[11px] font-semibold mb-1 ${ac.color} uppercase tracking-wide`}>{ac.label} · 최대</p>
                                   <div className="flex items-end gap-1.5 mb-3">
                                     <span className={`text-3xl font-black ${ac.color} leading-none`}>{fmt(value, 2)}</span>
                                     <span className="text-xs text-slate-500 mb-0.5 font-mono">m/s²</span>
@@ -1043,7 +1048,7 @@ export default function HullAccelerationPage() {
                                   {/* 메타 정보 */}
                                   <div className="pt-3 border-t border-white/60 space-y-0.5">
                                     <p className="text-[11px] font-semibold text-slate-700 truncate">{rule.label}</p>
-                                    <p className="text-[10px] text-slate-500 font-mono">LC {govLc ?? '-'}</p>
+                                    <p className="text-[10px] text-slate-500 font-mono">LC {conditionNo ?? '-'}</p>
                                   </div>
                                 </div>
                               );
@@ -1075,19 +1080,19 @@ export default function HullAccelerationPage() {
                                   </thead>
                                   <tbody>
                                     {condRows.map((row, ri) => {
-                                      const isGovRow = row.condition_no === govLc;
+                                      const isMaxRow = maxConditionNos.has(row.condition_no);
                                       return (
                                         <tr
                                           key={row.condition_no}
                                           className={`border-b border-slate-100 last:border-b-0 transition-colors ${
-                                            isGovRow
+                                            isMaxRow
                                               ? 'bg-amber-50 hover:bg-amber-100/70'
                                               : `${ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-amber-50/40`
                                           }`}
                                         >
                                           <td className="px-5 py-2 font-semibold text-slate-700 whitespace-nowrap">
                                             {row.condition_no}
-                                            {isGovRow && <span className="ml-1.5 text-[9px] font-bold text-amber-600 align-middle">◀ 최대</span>}
+                                            {isMaxRow && <span className="ml-1.5 text-[9px] font-bold text-amber-600 align-middle">◀ 축 최대</span>}
                                           </td>
                                           {['x', 'y', 'z'].map((axis) => {
                                             const ac = AXIS_CONFIG[axis];
