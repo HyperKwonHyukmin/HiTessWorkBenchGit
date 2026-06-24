@@ -42,6 +42,8 @@ const DEFAULT_CONSTANTS = {
   z_from_bl: 38.4585,
 };
 
+const KNOT_TO_MPS = 1852 / 3600;
+
 const POSITION_FIELDS = [
   ['x_from_ap', 'X from AP', 'm'],
   ['y_from_cl', 'Y from CL', 'm'],
@@ -91,6 +93,16 @@ const toPayloadConstants = (constants) => Object.fromEntries(
   ]),
 );
 
+const convertSpeedValue = (value, fromUnit, toUnit) => {
+  if (value === '' || fromUnit === toUnit) return value;
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return value;
+  const converted = fromUnit === 'knot'
+    ? numericValue * KNOT_TO_MPS
+    : numericValue / KNOT_TO_MPS;
+  return converted.toFixed(2);
+};
+
 const fmt = (value, digits = 3) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '-';
 
 const getConditionHeaders = (table) => (table?.headers ?? [])
@@ -126,6 +138,7 @@ export default function HullAccelerationPage() {
   const [resultData, setResultData] = useState(savedPageState.resultData ?? null);
   const [resultInfo, setResultInfo] = useState(savedPageState.resultInfo ?? null);
   const [constants, setConstants] = useState(savedPageState.constants ?? DEFAULT_CONSTANTS);
+  const [speedUnit, setSpeedUnit] = useState(savedPageState.speedUnit ?? 'knot');
   const [particularsImageUrl, setParticularsImageUrl] = useState(null);
   const [isLogOpen, setIsLogOpen] = useState(savedPageState.isLogOpen ?? false);
   const [activeLoadingTableIndex, setActiveLoadingTableIndex] = useState(savedPageState.activeLoadingTableIndex ?? 0);
@@ -202,10 +215,11 @@ export default function HullAccelerationPage() {
       resultData,
       resultInfo,
       constants,
+      speedUnit,
       isLogOpen,
       activeLoadingTableIndex,
     });
-  }, [pdfFile, resultData, resultInfo, constants, isLogOpen, activeLoadingTableIndex]);
+  }, [pdfFile, resultData, resultInfo, constants, speedUnit, isLogOpen, activeLoadingTableIndex]);
 
   // 이 페이지는 재진입 시 항상 초기 상태로 시작해야 한다(PDF/결과/입력/로그를 유지하지 않음).
   // 페이지를 떠날 때(언마운트) DashboardContext 에 보존된 상태를 통째로 비운다.
@@ -269,6 +283,7 @@ export default function HullAccelerationPage() {
   // 보내 백엔드의 'PDF 우선, 없으면 수동' Cb 결정 로직을 태운다(미입력이면 키 자체를 보내지 않음).
   const buildConstantsPayload = () => {
     const payload = toPayloadConstants(constants);
+    if (speedUnit === 'knot') payload.speed = Number(constants.speed) * KNOT_TO_MPS;
     const n = Number(manualCb);
     if (manualCb !== '' && Number.isFinite(n)) payload.manual_scantling_cb = n;
     return payload;
@@ -370,6 +385,7 @@ export default function HullAccelerationPage() {
     setIsLogOpen(false);
     setActiveLoadingTableIndex(0);
     setConstants(DEFAULT_CONSTANTS);
+    setSpeedUnit('knot');
     setManualCb('');
     setIsDragOver(false);
     if (fileInputRef.current) fileInputRef.current.value = ''; // 같은 파일 재선택 허용
@@ -513,20 +529,56 @@ export default function HullAccelerationPage() {
                 <div className="p-3 grid grid-cols-2 gap-2">
                   {USER_CONSTANT_FIELDS.map(([key]) => {
                     const { label, unit } = USER_CONSTANT_FIELD_MAP[key];
+                    const inputUnit = key === 'speed' && speedUnit === 'knot' ? 'Knot' : unit;
                     return (
-                      <label key={key} className="block">
+                      <div key={key} className="block">
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-[11px] font-semibold text-slate-600">{label}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">{unit}</span>
+                          {key === 'speed' ? (
+                            <span className="inline-flex rounded-md border border-slate-200 bg-white p-0.5" aria-label="속도 단위">
+                              {[
+                                ['knot', 'Knot'],
+                                ['mps', 'm/s'],
+                              ].map(([value, text]) => (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  onClick={() => {
+                                    setConstants((prev) => ({
+                                      ...prev,
+                                      speed: convertSpeedValue(prev.speed, speedUnit, value),
+                                    }));
+                                    setSpeedUnit(value);
+                                  }}
+                                  className={`rounded px-1.5 py-0.5 text-[9px] font-bold transition-colors ${
+                                    speedUnit === value
+                                      ? 'bg-amber-500 text-white'
+                                      : 'text-slate-400 hover:text-slate-600'
+                                  }`}
+                                  aria-pressed={speedUnit === value}
+                                >
+                                  {text}
+                                </button>
+                              ))}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-mono">{unit}</span>
+                          )}
                         </div>
                         <input
                           type="number"
-                          step="any"
+                          step={key === 'speed' ? '0.01' : 'any'}
                           value={constants[key]}
                           onChange={(e) => setConstants((prev) => ({ ...prev, [key]: e.target.value }))}
+                          aria-label={`${label} (${inputUnit})`}
                           className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 focus:bg-white transition-colors"
                         />
-                      </label>
+                        {key === 'speed' && speedUnit === 'knot' && (
+                          <span className="mt-1 block text-[9px] text-slate-400">
+                            계산 시 m/s로 자동 변환
+                          </span>
+                        )}
+                      </div>
                     );
                   })}
                   <label className="block">
