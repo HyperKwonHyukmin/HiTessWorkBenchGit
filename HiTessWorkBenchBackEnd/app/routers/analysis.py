@@ -113,6 +113,8 @@ _EXTERNAL_PROGRAM_PATHS = {
 SAMPLE_DAILY_LIMIT = 1
 SAMPLE_SOURCE_TAG = "WorkbenchSample"  # 일반 사용 기록과 구분하는 source 값
 _SAMPLE_RUN_TRACKER: dict[tuple[str, str], _date] = {}
+# 샘플 TS PDF 미리보기 렌더 결과 캐시 (key=(pdf_path, mtime)). 반복 열람 시 즉시 응답.
+_SAMPLE_PREVIEW_CACHE: dict = {}
 
 # SidePassage·ModuleUnitStudio 의 내부 하위 단계(권상 자세안정성 평가·Unit 구조 해석)는
 # 부모 프로젝트(SidePassage/GroupModuleUnit) 안에서 수행되는 작업이므로, 사용자의 MyProjects
@@ -2160,6 +2162,126 @@ async def request_hull_acceleration_sample(
         task_execute_hull_acceleration, pdf_path, work_dir, employee_id, timestamp, source, constants_path, overrides_path,
     )
     return {"job_id": job_id, "sample_name": sample_name}
+
+
+@router.get("/analysis/hullacceleration/sample-preview")
+def preview_hull_acceleration_sample(current_user: str = Depends(require_auth)):
+    """샘플 TS PDF 핵심 페이지 미리보기.
+
+    업로드/실행 없이 샘플 Trim & Stability Booklet 의 대표 페이지
+    (표지 + Principal dimensions + Summary of Loading Conditions)만
+    PyMuPDF 로 렌더링해 base64 PNG 리스트로 반환한다. 43MB 원본을
+    통째로 내려보내지 않으므로 가볍고, FileResponse 의 DRM Content-Length
+    함정(stat 암호화 크기 ≠ 복호화 본문)도 없다.
+    """
+    import base64
+
+    sample_dir = os.path.join(get_backend_dir(), "SampleFile", "TS")
+    sample_pdf = None
+    if os.path.isdir(sample_dir):
+        for name in sorted(os.listdir(sample_dir)):
+            if name.lower().endswith(".pdf"):
+                sample_pdf = os.path.join(sample_dir, name)
+                break
+    if not sample_pdf or not os.path.isfile(sample_pdf):
+        raise HTTPException(
+            status_code=404,
+            detail="샘플 PDF 를 찾을 수 없습니다. 서버 SampleFile/TS/ 에 PDF 를 배치하세요.",
+        )
+
+    # mtime 기반 메모리 캐시 (반복 열람 시 재렌더 없이 즉시 응답)
+    try:
+        mtime = os.path.getmtime(sample_pdf)
+    except OSError:
+        mtime = 0
+    cache_key = (sample_pdf, mtime)
+    cached = _SAMPLE_PREVIEW_CACHE.get(cache_key)
+    if cached:
+        return cached
+
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        raise HTTPException(status_code=500, detail="서버에 PyMuPDF가 설치되어 있지 않습니다.")
+
+    import re
+
+    # PDF 텍스트는 줄바꿈/이중공백이 불규칙하므로 반드시 " ".join(...split()) 로
+    # 정규화한 뒤 키워드를 비교한다(extract_ship_particulars.py 와 동일 규약 — 정규화
+    # 없이 lower() 만 하면 "PRINCIPAL\nDIMENSIONS" 등에서 매칭 실패).
+    # ⚠️ 목차(TOC) 함정: 앞부분 목차에도 "Summary of Loading Conditions",
+    #    "Principal Dimensions" 제목이 점선 리더(......290)와 함께 나온다. 점선 리더가
+    #    있는 페이지는 본문 표가 아니라 목차이므로 제외해야 실제 표 페이지(예: p.290+)를 잡는다.
+    SUMMARY_KW = "summary of loading condition"
+    DOT_LEADER = re.compile(r"\.{4,}")
+    SCAN_LIMIT = 350  # Summary 표가 booklet 중반(실측 p.290~)에 있어 넉넉히 스캔
+
+    try:
+        with fitz.open(sample_pdf) as doc:
+            page_count = doc.page_count
+            if page_count == 0:
+                raise HTTPException(status_code=400, detail="빈 PDF입니다.")
+
+            summary_pages: list[int] = []
+            particulars_page: int | None = None
+            # 키워드 스캔 — 필요한 페이지를 다 찾으면 조기 종료(전체 806p 스캔 방지)
+            for i in range(min(page_count, SCAN_LIMIT)):
+                norm = " ".join(doc.load_page(i).get_text().lower().split())
+                if not norm:
+                    continue
+                is_toc = bool(DOT_LEADER.search(norm)) or "table of contents" in norm
+                # Summary: 목차에도 제목이 있으므로 점선 리더(TOC) 페이지는 제외하고 본문 표만 선택.
+                if SUMMARY_KW in norm and not is_toc and len(summary_pages) < 2:
+                    summary_pages.append(i)
+                # 제원: "principal dimensions"+"lightship weight"+"deadweight" 가 모두 있는 본문 표 페이지.
+                #   "deadweight" 까지 요구하면 목차(제목만 나열)와 확실히 구분되고, 제원 표 자체에
+                #   점선 리더가 있어도(예: "L.B.P. ...... 281.3") is_toc 로 막지 않아 놓치지 않는다.
+                if (
+                    particulars_page is None
+                    and "principal dimensions" in norm
+                    and "lightship weight" in norm
+                    and "deadweight" in norm
+                ):
+                    particulars_page = i
+                if len(summary_pages) >= 2 and particulars_page is not None:
+                    break
+
+            # 표시 페이지 구성: 표지 + 제원 + Summary (중복 제거 후 페이지 순)
+            targets: list[tuple[int, str]] = [(0, "표지")]
+            if particulars_page is not None:
+                targets.append((particulars_page, "Principal Dimensions / Lightship"))
+            for idx, p in enumerate(summary_pages):
+                suffix = f" ({idx + 1})" if len(summary_pages) > 1 else ""
+                targets.append((p, "Summary of Loading Conditions" + suffix))
+
+            seen: set[int] = set()
+            pages_out = []
+            for page_idx, label in sorted(targets, key=lambda t: t[0]):
+                if page_idx in seen or page_idx >= page_count:
+                    continue
+                seen.add(page_idx)
+                pix = doc.load_page(page_idx).get_pixmap(
+                    matrix=fitz.Matrix(2.0, 2.0), alpha=False, colorspace=fitz.csRGB,
+                )
+                b64 = base64.b64encode(pix.tobytes("png")).decode("ascii")
+                pages_out.append({
+                    "label": label,
+                    "page_number": page_idx + 1,
+                    "image": f"data:image/png;base64,{b64}",
+                })
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"미리보기 생성 실패: {e}")
+
+    result = {
+        "sample_name": os.path.basename(sample_pdf),
+        "total_pages": page_count,
+        "pages": pages_out,
+    }
+    _SAMPLE_PREVIEW_CACHE.clear()  # 샘플은 1개만 유지 — 오래된 mtime 항목 제거
+    _SAMPLE_PREVIEW_CACHE[cache_key] = result
+    return result
 
 
 # ==================== Mooring Fitting Assessment ====================

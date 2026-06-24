@@ -8,3 +8,4 @@
 - [Cluster B File-Based Pages 디자인 패턴](cluster_b_file_based_pages.md) — Banner 계층 구조, 진행률 UI 분열, 공유 컴포넌트 현황, 주요 비일관성 항목 (2026-06-18)
 - [Cluster A Shell/Landing/Hub 디자인 리뷰](cluster_a_shell_landing_hubs.md) — Sidebar 활성 스타일, FilterTabs Two-Blue, AppCard 팔레트 난립, 애니메이션 motion 접근성, eyebrow 남발 패턴 (2026-06-18)
 - [ModelBuilderStudio AnalysisPanel FEA 패턴](project_model_studio_analysis_panel.md) — FEA 단계 순서, Section/PickToggle/TabButton 패턴, 의미색 맵, summarizeResult 집계 방식 (v0.0.54)
+- [HullAccelerationPage 디자인 패턴](project_hull_acceleration.md) — 사이드바 단계 헤더 색상, 제원 FIELD_GROUPS 구조, AXIS_CONFIG(X=blue/Y=emerald/Z=violet) Envelope 카드 설계 (2026-06-23)

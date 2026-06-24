@@ -11,7 +11,7 @@ import {
   Activity, FileText, Server,
   ArrowUpRight, Star, CalendarDays, Database, Map, Rocket,
   Wrench, Clock, X, ChevronRight, ChevronDown, Layers, Cpu, Maximize2, Trophy, SlidersHorizontal,
-  Megaphone, Pin, Sparkles, Play
+  Megaphone, Pin, Sparkles, Play, GripVertical, ArrowLeft, ArrowRight, Check
 } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 import { ANALYSIS_DATA, findAppByProgramName, getAppMenuName, useAnalysisPageState, useFavorites } from '../../contexts/DashboardContext';
@@ -72,24 +72,81 @@ const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick
   );
 };
 
-const FavoriteCard = ({ title, icon: Icon, color, desc, onClick }) => (
-  <motion.button
-    onClick={onClick}
-    className="flex min-h-[148px] w-full flex-col items-start p-5 bg-white rounded-xl border border-slate-200 shadow-sm group text-left h-full relative overflow-hidden cursor-pointer transition-colors hover:border-blue-300"
+const FavoriteCard = ({
+  title,
+  icon: Icon,
+  color,
+  desc,
+  onClick,
+  onFavoriteRemove,
+  isEditing,
+  position,
+  total,
+  onMoveLeft,
+  onMoveRight,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  isDragging,
+}) => (
+  <motion.div
+    draggable={isEditing}
+    onDragStart={onDragStart}
+    onDragEnd={onDragEnd}
+    onDragOver={onDragOver}
+    onDrop={onDrop}
+    className={`flex min-h-[148px] w-full flex-col items-start p-5 bg-white rounded-xl border shadow-sm group text-left h-full relative overflow-hidden transition-colors ${
+      isEditing
+        ? 'border-blue-300 ring-1 ring-blue-100 cursor-grab active:cursor-grabbing'
+        : 'border-slate-200 hover:border-blue-300'
+    } ${isDragging ? 'opacity-45' : 'opacity-100'}`}
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.28, ease: 'easeOut' }}
-    whileHover={{
+    whileHover={!isEditing ? {
       y: -1,
       boxShadow: '0 6px 16px -12px rgba(0, 37, 84, 0.18)',
       transition: { type: 'spring', stiffness: 380, damping: 28 },
-    }}
-    whileTap={{ scale: 0.97 }}
+    } : undefined}
   >
     <div className={`absolute inset-x-0 top-0 h-1 ${color}`} />
-    <div className="absolute top-3 right-3 text-amber-400 opacity-70 group-hover:opacity-100 transition-opacity">
-      <Star size={15} fill="currentColor" />
-    </div>
+    {isEditing ? (
+      <div className="absolute top-3 right-3 flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onMoveLeft}
+          disabled={position === 0}
+          aria-label={`${title} 왼쪽으로 이동`}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <ArrowLeft size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={onMoveRight}
+          disabled={position === total - 1}
+          aria-label={`${title} 오른쪽으로 이동`}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <ArrowRight size={14} />
+        </button>
+        <GripVertical size={16} className="ml-1 text-slate-400" aria-hidden="true" />
+      </div>
+    ) : (
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onFavoriteRemove?.();
+        }}
+        aria-label={`${title} 즐겨찾기 해제`}
+        title="즐겨찾기 해제"
+        className="group/star absolute top-2.5 right-2.5 z-20 inline-flex h-8 w-8 items-center justify-center rounded-lg text-amber-400 opacity-75 transition-all hover:bg-amber-50 hover:text-amber-500 hover:opacity-100 hover:ring-1 hover:ring-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-1"
+      >
+        <Star size={16} fill="currentColor" className="transition-transform group-hover/star:scale-110" />
+      </button>
+    )}
     <div className={`mb-4 inline-flex h-10 w-10 items-center justify-center rounded-lg ${color} text-white shadow-sm`}>
       <Icon size={20} />
     </div>
@@ -100,7 +157,19 @@ const FavoriteCard = ({ title, icon: Icon, color, desc, onClick }) => (
     >
       {desc}
     </p>
-  </motion.button>
+    {isEditing ? (
+      <span className="mt-auto pt-3 text-[11px] font-semibold text-blue-700">
+        {position + 1} / {total} · 드래그하여 이동
+      </span>
+    ) : (
+      <button
+        type="button"
+        onClick={onClick}
+        className="absolute inset-0 z-10 cursor-pointer rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
+        aria-label={`${title} 열기`}
+      />
+    )}
+  </motion.div>
 );
 
 const QueueStatusCard = React.memo(function QueueStatusCard() {
@@ -1002,7 +1071,7 @@ export default function Dashboard() {
   const { showToast } = useToast();
   const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
-  const { favorites } = useFavorites();
+  const { favorites, toggleFavorite, reorderFavorite } = useFavorites();
   const { setAssessmentPageState } = useAnalysisPageState();
 
   const [projects, setProjects] = useState([]);
@@ -1022,6 +1091,8 @@ export default function Dashboard() {
   const [isTopProgramsModalOpen, setIsTopProgramsModalOpen] = useState(false);
   const [selectedNotice, setSelectedNotice] = useState(null);
   const [isNoticeDetailOpen, setIsNoticeDetailOpen] = useState(false);
+  const [isEditingFavorites, setIsEditingFavorites] = useState(false);
+  const [draggedFavorite, setDraggedFavorite] = useState(null);
   // { mode: 'srcdoc', value: htmlString } | { mode: 'src', value: url } | null
   const [introContent, setIntroContent] = useState(null);
   const [introTarget, setIntroTarget] = useState('platform');
@@ -1396,9 +1467,29 @@ export default function Dashboard() {
       {/* 즐겨찾기 */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
-            <Star size={15} className="text-amber-400" fill="currentColor" /> 즐겨찾기
-          </h2>
+          <div>
+            <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
+              <Star size={15} className="text-amber-400" fill="currentColor" /> 즐겨찾기
+            </h2>
+            {isEditingFavorites && (
+              <p className="mt-1 text-xs text-slate-500">카드를 드래그하거나 화살표 버튼으로 순서를 변경하세요.</p>
+            )}
+          </div>
+          {favorites.length > 1 && (
+            <Button
+              type="button"
+              variant={isEditingFavorites ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => {
+                setIsEditingFavorites(value => !value);
+                setDraggedFavorite(null);
+              }}
+              className="rounded-lg"
+            >
+              {isEditingFavorites ? <Check size={14} /> : <GripVertical size={14} />}
+              {isEditingFavorites ? '편집 완료' : '순서 편집'}
+            </Button>
+          )}
         </div>
 
         {favorites.length === 0 ? (
@@ -1440,7 +1531,7 @@ export default function Dashboard() {
             animate="show"
             variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }}
           >
-            {favorites.map(favTitle => {
+            {favorites.map((favTitle, index) => {
               const analysisInfo = ANALYSIS_DATA.find(a => a.title === favTitle);
               if (!analysisInfo) return null;
               return (
@@ -1451,6 +1542,30 @@ export default function Dashboard() {
                   icon={analysisInfo.icon}
                   color={analysisInfo.color}
                   onClick={() => handleFavoriteClick(analysisInfo.title)}
+                  onFavoriteRemove={() => toggleFavorite(analysisInfo.title)}
+                  isEditing={isEditingFavorites}
+                  position={index}
+                  total={favorites.length}
+                  onMoveLeft={() => reorderFavorite(favTitle, favorites[index - 1])}
+                  onMoveRight={() => reorderFavorite(favTitle, favorites[index + 1])}
+                  onDragStart={(event) => {
+                    setDraggedFavorite(favTitle);
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', favTitle);
+                  }}
+                  onDragEnd={() => setDraggedFavorite(null)}
+                  onDragOver={(event) => {
+                    if (!isEditingFavorites) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const activeTitle = draggedFavorite || event.dataTransfer.getData('text/plain');
+                    reorderFavorite(activeTitle, favTitle);
+                    setDraggedFavorite(null);
+                  }}
+                  isDragging={draggedFavorite === favTitle}
                 />
               );
             })}

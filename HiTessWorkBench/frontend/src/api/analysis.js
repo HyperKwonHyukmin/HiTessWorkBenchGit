@@ -153,6 +153,12 @@ export const requestHullAcceleration = (formData) =>
 export const requestHullAccelerationSample = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/hullacceleration/sample-request`, formData, 'HullAccelerationSample');
 
+/** 샘플 TS PDF 핵심 페이지 미리보기 (표지 + 제원 + Summary 페이지를 base64 PNG 리스트로 반환) */
+export const getHullAccelerationSamplePreview = () =>
+  axios.get(`${API_BASE_URL}/api/analysis/hullacceleration/sample-preview`, {
+    headers: getAuthHeaders(),
+  });
+
 /** 파일 다운로드 (blob) */
 export const downloadFileBlob = (filepath) =>
   axios.get(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(filepath)}`, {

@@ -4,11 +4,11 @@
 /// 추출하고, 페이지별 '파라미터 × 조건' 정형화 테이블로 표시한다.
 /// </summary>
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Upload, Play, Terminal, FileText, Download, Table, Ship, RotateCcw, SlidersHorizontal, Activity, ChevronRight, MapPin, Wrench, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Upload, Play, Terminal, FileText, Download, Table, Ship, RotateCcw, SlidersHorizontal, Activity, ChevronRight, MapPin, Wrench, ChevronDown, Eye, X, Loader2, AlertTriangle } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
-import { requestHullAcceleration, requestHullAccelerationSample, downloadFileText, downloadFileBlob } from '../../api/analysis';
+import { requestHullAcceleration, requestHullAccelerationSample, getHullAccelerationSamplePreview, downloadFileText, downloadFileBlob } from '../../api/analysis';
 import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import PageBanner from '../../components/ui/PageBanner';
@@ -129,6 +129,16 @@ export default function HullAccelerationPage() {
   const [particularsImageUrl, setParticularsImageUrl] = useState(null);
   const [isLogOpen, setIsLogOpen] = useState(savedPageState.isLogOpen ?? false);
   const [activeLoadingTableIndex, setActiveLoadingTableIndex] = useState(savedPageState.activeLoadingTableIndex ?? 0);
+  // 가속도 최대값 탭: 'envelope'(방향별 최대값) | 선급 key('dnvgl' | 'csr' | 'igc' | 'bv')
+  const [activeRuleTab, setActiveRuleTab] = useState('envelope');
+  // PDF 에서 Cb 미검출 시 사용자가 직접 입력하는 Scantling Cb (빈 문자열 = 미입력 → 미검출 분기).
+  const [manualCb, setManualCb] = useState('');
+
+  // 샘플 TS PDF 미리보기 모달 (서버 렌더 base64 PNG 리스트). 페이지 상태로는 보존하지 않는다.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
 
   const fileInputRef = useRef(null);
   const logEndRef = useRef(null);
@@ -167,10 +177,18 @@ export default function HullAccelerationPage() {
         const parsed = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
         setResultData(parsed);
         setActiveLoadingTableIndex(0);
-        if (!parsed.tables || parsed.tables.length === 0) {
+        setActiveRuleTab('envelope');
+        if (parsed.cb_missing) {
+          // PDF 에 Cb 가 없어 계산이 보류됨 → 결과창의 수동 입력 프롬프트로 재계산 유도.
+          setManualCb((prev) => (prev !== '' ? prev : String(DEFAULT_CONSTANTS.scantling_cb)));
+          addLog('[주의] PDF에서 Cb(Scantling)를 찾지 못했습니다. Cb를 입력하고 재계산하세요.', 'warning');
+        } else if (!parsed.tables || parsed.tables.length === 0) {
           addLog('[안내] PDF에서 Summary of Loading Conditions 표를 찾지 못했습니다.', 'warning');
         } else {
           addLog(`[OK] ${parsed.table_count}개 표 / 페이지 ${parsed.matched_pages.join(', ')} 추출됨.`, 'success');
+          if (parsed.cb_source === 'manual') {
+            addLog(`[Cb] PDF 미검출 → 수동 입력값 Cb=${fmt(parsed.ship_constants?.scantling_cb, 4)} 사용.`, 'info');
+          }
         }
       } catch {
         addLog('[오류] 결과 JSON 로드 실패.', 'error');
@@ -189,7 +207,21 @@ export default function HullAccelerationPage() {
     });
   }, [pdfFile, resultData, resultInfo, constants, isLogOpen, activeLoadingTableIndex]);
 
+  // 이 페이지는 재진입 시 항상 초기 상태로 시작해야 한다(PDF/결과/입력/로그를 유지하지 않음).
+  // 페이지를 떠날 때(언마운트) DashboardContext 에 보존된 상태를 통째로 비운다.
+  // → 다시 들어오면 savedPageState 가 비어 모든 useState 가 기본값으로 초기화된다.
+  // (clearAnalysisPageState 는 useCallback([]) 으로 안정적이라 빈 deps 로 안전)
+  useEffect(() => () => clearAnalysisPageState?.(PAGE_KEY), []);
+
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
+
+  // 미리보기 모달 열림 중 Esc 로 닫기
+  useEffect(() => {
+    if (!previewOpen) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setPreviewOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [previewOpen]);
 
   useEffect(() => {
     const imagePath = resultData?.files?.ship_particulars_image || resultInfo?.ship_particulars_image;
@@ -222,6 +254,7 @@ export default function HullAccelerationPage() {
     setResultData(null);
     setResultInfo(null);
     setActiveLoadingTableIndex(0);
+    setManualCb(''); // 새 PDF 는 Cb 자동 검출부터 다시 시도
     setLogs([{ time: new Date().toLocaleTimeString(), message: `[FILE] ${file.name} 선택됨.`, type: 'info' }]);
   };
 
@@ -230,6 +263,15 @@ export default function HullAccelerationPage() {
     setIsDragOver(false);
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
+  };
+
+  // 전송용 상수 페이로드. 사용자가 Cb 를 직접 입력한 경우에만 manual_scantling_cb 를 실어
+  // 보내 백엔드의 'PDF 우선, 없으면 수동' Cb 결정 로직을 태운다(미입력이면 키 자체를 보내지 않음).
+  const buildConstantsPayload = () => {
+    const payload = toPayloadConstants(constants);
+    const n = Number(manualCb);
+    if (manualCb !== '' && Number.isFinite(n)) payload.manual_scantling_cb = n;
+    return payload;
   };
 
   const runExtraction = async () => {
@@ -246,7 +288,7 @@ export default function HullAccelerationPage() {
       pdf_file: pdfFile,
       employee_id: employeeId,
       source: 'Workbench',
-      constants: JSON.stringify(toPayloadConstants(constants)),
+      constants: JSON.stringify(buildConstantsPayload()),
     });
     try {
       const res = await requestHullAcceleration(formData);
@@ -274,7 +316,7 @@ export default function HullAccelerationPage() {
     const formData = buildFormData({
       employee_id: employeeId,
       source: 'Workbench',
-      constants: JSON.stringify(toPayloadConstants(constants)),
+      constants: JSON.stringify(buildConstantsPayload()),
     });
     try {
       const res = await requestHullAccelerationSample(formData);
@@ -285,6 +327,35 @@ export default function HullAccelerationPage() {
     } catch {
       setIsRunning(false);
       addLog('샘플 실행 요청 실패. (서버에 샘플 PDF가 없을 수 있습니다)', 'error');
+    }
+  };
+
+  // Cb 미검출 결과창에서 사용자가 입력한 Cb 로 동일 PDF 를 재계산한다.
+  const recalcWithManualCb = () => {
+    const n = Number(manualCb);
+    if (!Number.isFinite(n) || n <= 0) {
+      showToast('유효한 Cb 값을 입력하세요. (예: 0.74)', 'warning');
+      return;
+    }
+    addLog(`[재계산] 수동 입력 Cb=${n} 로 다시 계산합니다.`, 'info');
+    if (pdfFile) runExtraction();
+    else runSample();
+  };
+
+  // 업로드/실행 없이 샘플 TS PDF 의 핵심 페이지(표지·제원·Summary)를 모달로 미리 본다.
+  // 한 번 받은 결과는 previewData 에 캐시해 재요청하지 않는다.
+  const openSamplePreview = async () => {
+    setPreviewOpen(true);
+    if (previewData || previewLoading) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const res = await getHullAccelerationSamplePreview();
+      setPreviewData(res.data);
+    } catch {
+      setPreviewError('샘플 PDF 미리보기를 불러오지 못했습니다. (서버에 샘플 PDF가 없을 수 있습니다)');
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -299,6 +370,7 @@ export default function HullAccelerationPage() {
     setIsLogOpen(false);
     setActiveLoadingTableIndex(0);
     setConstants(DEFAULT_CONSTANTS);
+    setManualCb('');
     setIsDragOver(false);
     if (fileInputRef.current) fileInputRef.current.value = ''; // 같은 파일 재선택 허용
     clearAnalysisPageState?.(PAGE_KEY);
@@ -413,26 +485,6 @@ export default function HullAccelerationPage() {
                 className="hidden"
                 onChange={(e) => handleFile(e.target.files?.[0])}
               />
-
-              {/* 업로드 대신 내장 샘플 PDF 로 바로 실행 */}
-              <div className="mt-3 flex items-center gap-2">
-                <div className="flex-1 h-px bg-slate-100" />
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">또는</span>
-                <div className="flex-1 h-px bg-slate-100" />
-              </div>
-              <button
-                type="button"
-                onClick={runSample}
-                disabled={isRunning}
-                className={`mt-3 w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm border transition-all ${
-                  isRunning
-                    ? 'border-slate-200 text-slate-300 cursor-not-allowed'
-                    : 'border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 cursor-pointer'
-                }`}
-              >
-                <Play size={14} />
-                샘플 파일로 바로 실행
-              </button>
             </div>
           </div>
 
@@ -603,7 +655,7 @@ export default function HullAccelerationPage() {
             </div>
           </div>
 
-          <SolverCredit contributor="권혁민" />
+          <SolverCredit contributor="정병훈" />
         </div>
 
         {/* 오른쪽 결과 영역 */}
@@ -628,6 +680,36 @@ export default function HullAccelerationPage() {
                   <ChevronRight size={12} />
                   <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-slate-300 inline-block" />가속도 계산</span>
                 </div>
+
+                {/* 업로드 없이 내장 샘플 PDF 로 바로 체험 — 사이드바의 업로드/실행 버튼과
+                    분리해 "실행 버튼"으로 오인하지 않도록 결과 대기 화면에 둔다. */}
+                <div className="mt-7 flex items-center gap-3 max-w-[320px] mx-auto">
+                  <div className="flex-1 h-px bg-slate-100" />
+                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">또는</span>
+                  <div className="flex-1 h-px bg-slate-100" />
+                </div>
+                <button
+                  type="button"
+                  onClick={runSample}
+                  disabled={isRunning}
+                  className={`mt-4 inline-flex items-center justify-center gap-2 py-2.5 px-5 rounded-xl font-semibold text-sm border transition-all ${
+                    isRunning
+                      ? 'border-slate-200 text-slate-300 cursor-not-allowed'
+                      : 'border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 cursor-pointer'
+                  }`}
+                >
+                  <Play size={14} />
+                  샘플 TS PDF로 바로 체험
+                </button>
+                <p className="text-[11px] text-slate-400 mt-2">업로드 없이 내장 예시 PDF로 결과를 미리 봅니다.</p>
+                <button
+                  type="button"
+                  onClick={openSamplePreview}
+                  className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-amber-700 underline-offset-2 hover:underline cursor-pointer transition-colors"
+                >
+                  <Eye size={13} />
+                  샘플 TS PDF 내용 미리보기
+                </button>
               </div>
             </div>
           ) : tables.length === 0 ? (
@@ -668,6 +750,61 @@ export default function HullAccelerationPage() {
 
               {/* 스크롤 가능한 결과 본문 */}
               <div className="flex-1 overflow-auto space-y-5 min-h-0 pr-0.5">
+
+                {/* ── Cb 미검출 → 수동 입력 후 재계산 프롬프트 ── */}
+                {resultData.cb_missing && (
+                  <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 shadow-sm overflow-hidden">
+                    <div className="flex items-center gap-2 px-5 py-3 bg-amber-100/70 border-b border-amber-200">
+                      <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                      <span className="text-sm font-bold text-amber-800">이 PDF에서 Cb(Scantling)를 자동 추출하지 못했습니다</span>
+                    </div>
+                    <div className="p-5 space-y-3">
+                      <p className="text-xs text-amber-800/90 leading-5">
+                        선급 가속도 계산에는 Scantling Cb 값이 필요합니다. 아래에 Cb를 직접 입력한 뒤
+                        <span className="font-semibold"> 이 Cb로 재계산</span>을 누르면 동일 PDF로 다시 계산합니다.
+                        (Summary of Loading Conditions 표는 아래에서 확인할 수 있습니다.)
+                      </p>
+                      <div className="flex flex-wrap items-end gap-3">
+                        <label className="block">
+                          <span className="block text-[11px] font-semibold text-amber-700 mb-1">Summer / Scantling Cb</span>
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            value={manualCb}
+                            onChange={(e) => setManualCb(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') recalcWithManualCb(); }}
+                            placeholder="예: 0.74"
+                            className="w-40 h-9 px-3 rounded-lg border border-amber-300 bg-white text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={recalcWithManualCb}
+                          disabled={isRunning}
+                          className={`inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-sm font-bold transition-colors ${
+                            isRunning
+                              ? 'bg-amber-200 text-amber-400 cursor-not-allowed'
+                              : 'bg-amber-600 text-white hover:bg-amber-700 cursor-pointer'
+                          }`}
+                        >
+                          <Play size={14} />
+                          이 Cb로 재계산
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Cb 수동 입력값 사용 안내 (PDF 미검출 → 수동 계산 성공) ── */}
+                {!resultData.cb_missing && resultData.cb_source === 'manual' && (
+                  <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-2">
+                    <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                    <span className="text-[11px] font-semibold text-amber-800">
+                      PDF에서 Cb를 찾지 못해 <span className="font-black">수동 입력값 Cb = {fmt(resultData.ship_constants?.scantling_cb, 4)}</span>로 계산했습니다. 값이 올바른지 확인하세요.
+                    </span>
+                  </div>
+                )}
 
                 {/* ── PDF에서 자동 추출한 선박 제원 ── */}
                 {resultData.ship_particulars && (
@@ -717,45 +854,213 @@ export default function HullAccelerationPage() {
                   </div>
                 )}
 
-                {/* ── X·Y·Z Envelope 카드 (핵심 결론) ── */}
+                {/* ── 선체 가속도 최대값 — 방향별(Envelope) / 선급별 탭 ── */}
                 {envelope && (
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <Activity size={14} className="text-amber-600" />
-                      <span className="text-xs font-bold text-slate-700 uppercase tracking-widest">가속도 Envelope — 최대값</span>
+                      <span className="text-xs font-bold text-slate-700 uppercase tracking-widest">선체 가속도 최대값</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      {['x', 'y', 'z'].map((axis) => {
-                        const item = envelope[axis] ?? {};
-                        const ac = AXIS_CONFIG[axis];
-                        return (
-                          <div
-                            key={axis}
-                            className={`rounded-2xl border-2 ${ac.border} ${ac.bg} p-5 relative overflow-hidden`}
-                          >
-                            {/* 축 레이블 배지 */}
-                            <div className={`absolute top-3 right-3 w-7 h-7 rounded-lg ${ac.accent} flex items-center justify-center`}>
-                              <span className="text-[11px] font-black text-white uppercase">{axis}</span>
+
+                    {/* 탭 바: 방향별 최대값(Envelope) + 선급별(DNVGL/CSR/IGC/BV) */}
+                    <div className="overflow-x-auto mb-3">
+                      <div className="inline-flex min-w-full gap-1 rounded-lg bg-slate-200/70 p-1">
+                        {[{ key: 'envelope', label: '방향별 최대값' }, ...ruleRows.map((r) => ({ key: r.key, label: r.key.toUpperCase() }))].map((tab) => {
+                          const isActive = tab.key === activeRuleTab;
+                          return (
+                            <button
+                              key={tab.key}
+                              type="button"
+                              onClick={() => setActiveRuleTab(tab.key)}
+                              className={`px-3 py-1.5 rounded-md text-[11px] font-bold whitespace-nowrap transition-colors ${
+                                isActive
+                                  ? 'bg-white text-amber-700 shadow-sm'
+                                  : 'text-slate-500 hover:text-slate-700 hover:bg-white/60'
+                              }`}
+                            >
+                              {tab.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 방향별 최대값(Envelope) 탭 — 축별 독립 최대값 카드 */}
+                    {activeRuleTab === 'envelope' && (
+                      <div className="grid grid-cols-3 gap-3">
+                        {['x', 'y', 'z'].map((axis) => {
+                          const ac = AXIS_CONFIG[axis];
+                          const item = envelope[axis] ?? {};
+                          return (
+                            <div
+                              key={axis}
+                              className={`rounded-2xl border-2 ${ac.border} ${ac.bg} p-5 relative overflow-hidden`}
+                            >
+                              {/* 축 레이블 배지 */}
+                              <div className={`absolute top-3 right-3 w-7 h-7 rounded-lg ${ac.accent} flex items-center justify-center`}>
+                                <span className="text-[11px] font-black text-white uppercase">{axis}</span>
+                              </div>
+                              {/* 대표 수치 */}
+                              <p className={`text-[11px] font-semibold mb-1 ${ac.color} uppercase tracking-wide`}>{ac.label} Envelope</p>
+                              <div className="flex items-end gap-1.5 mb-3">
+                                <span className={`text-3xl font-black ${ac.color} leading-none`}>{fmt(item.value, 2)}</span>
+                                <span className="text-xs text-slate-500 mb-0.5 font-mono">m/s²</span>
+                              </div>
+                              {/* g 환산 */}
+                              <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold mb-3 ${ac.badge}`}>
+                                {fmt(item.g, 2)} g
+                              </div>
+                              {/* 메타 정보 */}
+                              <div className="pt-3 border-t border-white/60 space-y-0.5">
+                                <p className="text-[11px] font-semibold text-slate-700 truncate">{item.label ?? item.rule}</p>
+                                <p className="text-[10px] text-slate-500 font-mono">LC {item.lc}</p>
+                              </div>
                             </div>
-                            {/* 대표 수치 */}
-                            <p className={`text-[11px] font-semibold mb-1 ${ac.color} uppercase tracking-wide`}>{ac.label} Envelope</p>
-                            <div className="flex items-end gap-1.5 mb-3">
-                              <span className={`text-3xl font-black ${ac.color} leading-none`}>{fmt(item.value, 2)}</span>
-                              <span className="text-xs text-slate-500 mb-0.5 font-mono">m/s²</span>
-                            </div>
-                            {/* g 환산 */}
-                            <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold mb-3 ${ac.badge}`}>
-                              {fmt(item.g, 2)} g
-                            </div>
-                            {/* 메타 정보 */}
-                            <div className="pt-3 border-t border-white/60 space-y-0.5">
-                              <p className="text-[11px] font-semibold text-slate-700 truncate">{item.label ?? item.rule}</p>
-                              <p className="text-[10px] text-slate-500 font-mono">LC {item.lc}</p>
-                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* 선급 탭 — 최대값을 갖는 조건(LC) 행 그대로 + 조건별 조회 표 */}
+                    {activeRuleTab !== 'envelope' && (() => {
+                      const rule = rules[activeRuleTab];
+                      if (!rule) return null;
+                      // 조건(LC)별 x/y/z 값을 한 행으로 병합
+                      const byCond = {};
+                      ['x', 'y', 'z'].forEach((axis) => {
+                        (rule[axis]?.per_condition ?? []).forEach(({ condition_no, value }) => {
+                          if (byCond[condition_no] == null) byCond[condition_no] = { condition_no };
+                          byCond[condition_no][axis] = value;
+                        });
+                      });
+                      const condRows = Object.values(byCond).sort((a, b) => a.condition_no - b.condition_no);
+                      // 지배 축 = max 가 가장 큰 축 → 그 축의 max_lc 가 X·Y·Z 중 최대값을 갖는 행(LC)
+                      const axisMax = { x: rule.x?.max ?? -Infinity, y: rule.y?.max ?? -Infinity, z: rule.z?.max ?? -Infinity };
+                      const govAxis = ['x', 'y', 'z'].reduce((a, b) => (axisMax[b] > axisMax[a] ? b : a));
+                      const govLc = rule[govAxis]?.max_lc;
+                      const govRow = condRows.find((r) => r.condition_no === govLc) ?? {};
+                      const gravity = Number(resultData?.ship_constants?.gravity) || 9.81;
+                      return (
+                        <div className="space-y-3">
+                          {/* 최대 가속도 발생 조건(LC) 안내 */}
+                          <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-2">
+                            <MapPin size={13} className="text-amber-600 shrink-0" />
+                            <span className="text-[11px] font-semibold text-amber-800">
+                              {rule.label} 최대 가속도 발생 조건 — <span className="font-black">LC {govLc ?? '-'}</span>
+                              <span className="ml-1.5 font-normal text-amber-700/80">({govAxis.toUpperCase()}축 {fmt(axisMax[govAxis], 2)} m/s² 최대)</span>
+                            </span>
                           </div>
-                        );
-                      })}
-                    </div>
+
+                          {/* CSR 간이 GM(≤0) → 실제 GoM 대체된 조건 안내 (투명성) */}
+                          {Array.isArray(rule.extra?.gm_fallback_conditions) && rule.extra.gm_fallback_conditions.length > 0 && (
+                            <div className="flex items-start gap-2 rounded-xl bg-orange-50 border border-orange-200 px-4 py-2">
+                              <AlertTriangle size={13} className="text-orange-500 shrink-0 mt-0.5" />
+                              <span className="text-[11px] font-medium text-orange-800 leading-4">
+                                LC {rule.extra.gm_fallback_conditions.join(', ')} 는 CSR 간이 GM 공식이 비물리적(≤0)이 되어
+                                booklet의 <span className="font-bold">실제 GoM</span>으로 대체해 계산했습니다(DNVGL과 동일 방식). 해당 조건 값은 참고용으로 확인하세요.
+                              </span>
+                            </div>
+                          )}
+
+                          {/* 최대값을 갖는 행(LC govLc)의 X·Y·Z 값 카드 */}
+                          <div className="grid grid-cols-3 gap-3">
+                            {['x', 'y', 'z'].map((axis) => {
+                              const ac = AXIS_CONFIG[axis];
+                              const value = govRow[axis];
+                              const gVal = Number.isFinite(value) ? value / gravity : undefined;
+                              const isGov = axis === govAxis;
+                              return (
+                                <div
+                                  key={axis}
+                                  className={`rounded-2xl border-2 ${ac.border} ${ac.bg} p-5 relative overflow-hidden ${isGov ? 'ring-2 ring-amber-400 ring-offset-1' : ''}`}
+                                >
+                                  {/* 축 레이블 배지 */}
+                                  <div className={`absolute top-3 right-3 w-7 h-7 rounded-lg ${ac.accent} flex items-center justify-center`}>
+                                    <span className="text-[11px] font-black text-white uppercase">{axis}</span>
+                                  </div>
+                                  {/* 대표 수치 */}
+                                  <p className={`text-[11px] font-semibold mb-1 ${ac.color} uppercase tracking-wide`}>{ac.label}{isGov && ' · 최대'}</p>
+                                  <div className="flex items-end gap-1.5 mb-3">
+                                    <span className={`text-3xl font-black ${ac.color} leading-none`}>{fmt(value, 2)}</span>
+                                    <span className="text-xs text-slate-500 mb-0.5 font-mono">m/s²</span>
+                                  </div>
+                                  {/* g 환산 */}
+                                  <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold mb-3 ${ac.badge}`}>
+                                    {fmt(gVal, 2)} g
+                                  </div>
+                                  {/* 메타 정보 */}
+                                  <div className="pt-3 border-t border-white/60 space-y-0.5">
+                                    <p className="text-[11px] font-semibold text-slate-700 truncate">{rule.label}</p>
+                                    <p className="text-[10px] text-slate-500 font-mono">LC {govLc ?? '-'}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* 조건(LC)별 가속도 조회 표 (최대 발생 행 강조) */}
+                          {condRows.length > 0 && (
+                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                              <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-100 bg-slate-50">
+                                <Table size={13} className="text-slate-500" />
+                                <span className="text-xs font-bold text-slate-600 uppercase tracking-wide">{rule.label} · 조건(LC)별 가속도</span>
+                                <span className="ml-auto text-[10px] text-slate-400 font-mono">{condRows.length} conditions · m/s²</span>
+                              </div>
+                              <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+                                <table className="w-full text-xs">
+                                  <thead className="sticky top-0 z-10">
+                                    <tr className="border-b border-slate-200 bg-slate-50">
+                                      <th className="px-5 py-2.5 text-left font-semibold text-slate-500">LC</th>
+                                      {['x', 'y', 'z'].map((axis) => {
+                                        const ac = AXIS_CONFIG[axis];
+                                        return (
+                                          <th key={axis} className="px-4 py-2.5 text-right font-semibold text-slate-500">
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded ${ac.badge} font-bold`}>{axis.toUpperCase()}</span>
+                                          </th>
+                                        );
+                                      })}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {condRows.map((row, ri) => {
+                                      const isGovRow = row.condition_no === govLc;
+                                      return (
+                                        <tr
+                                          key={row.condition_no}
+                                          className={`border-b border-slate-100 last:border-b-0 transition-colors ${
+                                            isGovRow
+                                              ? 'bg-amber-50 hover:bg-amber-100/70'
+                                              : `${ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-amber-50/40`
+                                          }`}
+                                        >
+                                          <td className="px-5 py-2 font-semibold text-slate-700 whitespace-nowrap">
+                                            {row.condition_no}
+                                            {isGovRow && <span className="ml-1.5 text-[9px] font-bold text-amber-600 align-middle">◀ 최대</span>}
+                                          </td>
+                                          {['x', 'y', 'z'].map((axis) => {
+                                            const ac = AXIS_CONFIG[axis];
+                                            const isAxisMax = row.condition_no === rule[axis]?.max_lc;
+                                            return (
+                                              <td
+                                                key={axis}
+                                                className={`px-4 py-2 text-right font-mono whitespace-nowrap ${isAxisMax ? `font-bold ${ac.color}` : 'text-slate-600'}`}
+                                              >
+                                                {fmt(row[axis], 3)}
+                                                {isAxisMax && <span className="ml-1 text-[9px] align-top">max</span>}
+                                              </td>
+                                            );
+                                          })}
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -924,6 +1229,68 @@ export default function HullAccelerationPage() {
           )}
         </div>
       </div>
+
+      {/* ── 샘플 TS PDF 미리보기 모달 ── */}
+      {previewOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setPreviewOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-200 bg-slate-50 shrink-0">
+              <FileText size={16} className="text-amber-600 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-slate-700 truncate">샘플 TS PDF 미리보기</p>
+                {previewData?.sample_name && (
+                  <p className="text-[11px] text-slate-400 truncate">
+                    {previewData.sample_name}
+                    {previewData.total_pages ? ` · 총 ${previewData.total_pages}p 중 핵심 ${previewData.pages?.length ?? 0}p` : ''}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(false)}
+                className="ml-auto p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 cursor-pointer transition-colors shrink-0"
+                aria-label="닫기"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* 본문 */}
+            <div className="overflow-y-auto p-5 space-y-5 bg-slate-100">
+              {previewLoading && (
+                <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                  <Loader2 size={28} className="animate-spin mb-3" />
+                  <p className="text-sm">핵심 페이지 렌더링 중…</p>
+                </div>
+              )}
+              {previewError && !previewLoading && (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <p className="text-sm font-semibold text-red-500">{previewError}</p>
+                </div>
+              )}
+              {!previewLoading && !previewError && (previewData?.pages ?? []).map((pg) => (
+                <figure key={pg.page_number} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <figcaption className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-100">
+                    <span className="text-xs font-bold text-slate-600">{pg.label}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">PDF p.{pg.page_number}</span>
+                  </figcaption>
+                  <img src={pg.image} alt={pg.label} className="w-full h-auto block" />
+                </figure>
+              ))}
+              {!previewLoading && !previewError && (previewData?.pages?.length ?? 0) === 0 && (
+                <div className="py-16 text-center text-sm text-slate-400">표시할 핵심 페이지를 찾지 못했습니다.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
