@@ -540,6 +540,19 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const isLiftingStep  = activeStep?.id === 'lifting-points';
   const isResultsStep  = activeStep?.id === 'results';
 
+  // ── 3단계(결과) 진입 시 파이프라인 1·2·3 을 모두 '완료'로 표시 ───────────
+  // 결과/다운로드 페이지를 보면 전체 파이프라인을 "다 본 것"으로 간주한다.
+  // 검증 성공(hasRunOnce) 이후에만 — 검증 전 단계만 클릭한 경우엔 활성화하지 않는다.
+  // (error 단계는 보존: 검증 오류 상태를 done 으로 덮지 않는다.)
+  useEffect(() => {
+    if (!isResultsStep || !hasRunOnce) return;
+    setSteps(prev =>
+      prev.every(s => s.status === 'done')
+        ? prev
+        : prev.map(s => (s.status === 'error' ? s : { ...s, status: 'done' })),
+    );
+  }, [isResultsStep, hasRunOnce]);
+
   // ── 마운트: 프로그램 간 연계 핸드오프 처리 ───────────────────
   useEffect(() => {
     if (!gmuHandoff?.bdfServerPath) return;

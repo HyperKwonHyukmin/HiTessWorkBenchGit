@@ -14,7 +14,7 @@ from typing import Optional
 # (kind, 파일명 패턴, 라벨) — unit_structural_service.py 의 산출 파일명과 반드시 일치.
 #   <stem> = 업로드된 원본 BDF 파일명의 stem.
 ARTIFACT_SPECS = [
-    ("liftingBdf", "{stem}_lifting.bdf", "해석 덱 BDF"),
+    ("liftingBdf", "{stem}_lifting.bdf", "최종 모델 BDF (Wire 포함)"),
     ("editedBdf",  "{stem}_edited.bdf",  "편집 구조 모델 BDF"),
     ("f06",        "{stem}_lifting.f06", "Nastran F06"),
     ("op2",        "{stem}_lifting.op2", "Nastran OP2"),
