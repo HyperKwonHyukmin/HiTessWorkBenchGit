@@ -21,6 +21,9 @@ import SampleRunButton from '../../components/analysis/SampleRunButton';
 // 2026-04-30: ModelBuilderStudio 재구성에 따라 manifest.id 가 'model-studio' 로 변경됨.
 // 사내 스토리지 zip: model-studio-<version>.zip — 백엔드 _find_zip 이 prefix 매칭.
 const VIEWER_ID = 'model-studio';
+// 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
+// Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.58';
 
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',  icon: FileSpreadsheet, status: 'wait' },
@@ -2304,7 +2307,7 @@ export default function HiTessModelBuilder() {
   const [viewerError,     setViewerError]     = useState(null);
   // 버전 동기화: 워크벤치(서버 측 최신 zip 의 manifest.version) ↔ 로컬 설치본 manifest.version
   const [installedVersion, setInstalledVersion] = useState(null); // 로컬 설치본
-  const [latestVersion,    setLatestVersion]    = useState(null); // 서버 zip 의 최신
+  const [latestVersion,    setLatestVersion]    = useState(MODEL_BUILDER_STUDIO_VERSION); // Workbench 기준 Studio 버전
   // 백엔드가 다른 머신일 때 result-zip 을 받아 사용자 PC 로컬에 풀어 둔 경로.
   // null 이면 backend.outputDir 을 직접 사용 (dev: 같은 PC).
   const [localResultDir,   setLocalResultDir]   = useState(null);
@@ -2348,7 +2351,7 @@ export default function HiTessModelBuilder() {
       .then(r => r.ok ? r.json() : null)
       .then(meta => {
         if (cancelled) return;
-        setLatestVersion(meta?.manifest?.version ?? null);
+        setLatestVersion(meta?.manifest?.version ?? MODEL_BUILDER_STUDIO_VERSION);
       })
       .catch(() => { /* 서버 미접속 — 무시 */ });
     return () => { cancelled = true; };
