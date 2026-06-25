@@ -197,6 +197,7 @@ export default function BeamModelPreview() {
   const [lightMode, setLightMode] = useState(true);
   const [captureMode, setCaptureMode] = useState(null); // null | 'full' | 'displacement' | 'stress'
   const [showCaptureMenu, setShowCaptureMenu] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false); // 3D 뷰어 전체화면 상태
   // 하중별 '직접 성분(Fx/Fy/Fz)' 고급 패널 펼침 상태 (key = 하중 index)
   const [advancedLoads, setAdvancedLoads] = useState({});
   const toggleAdvanced = (idx) => setAdvancedLoads((prev) => ({ ...prev, [idx]: !prev[idx] }));
@@ -273,7 +274,7 @@ export default function BeamModelPreview() {
 
   // 캡쳐 모드별 표시 결정
   const showHeader = isCapturing;
-  const showLeft = !isCapturing;
+  const showLeft = !isCapturing && !isMaximized;
   const showCaptureKpi = isCapturing;
   const show3D = !isCapturing || captureMode !== 'stress';
   const showModelAnalysis = isCapturing && captureMode === 'full';
@@ -286,7 +287,15 @@ export default function BeamModelPreview() {
     captureMode === 'stress' ? 'MAX STRESS REPORT' : '';
 
   return (
-    <div className="max-w-[1600px] mx-auto pb-6 animate-fade-in-up">
+    <div className="max-w-[1600px] mx-auto pb-6 animate-fade-in-up relative">
+    {/* 캡처 고해상도 생성 시 화면 차단용 오버레이 */}
+    {isCapturing && (
+      <div className="fixed inset-0 z-[10000] bg-slate-950/70 backdrop-blur-md flex flex-col items-center justify-center text-white">
+        <Loader2 className="animate-spin text-emerald-400 mb-4" size={48} />
+        <p className="font-mono text-sm font-bold tracking-widest uppercase">Generating High-Res Report...</p>
+        <p className="text-xs text-slate-400 mt-2">Three.js 3D 씬 및 그래프 레이아웃을 고해상도로 렌더링하는 중입니다.</p>
+      </div>
+    )}
     {!isCapturing && (
       <AnalysisPageBanner
         title="Simple Beam Assessment"
@@ -316,7 +325,7 @@ export default function BeamModelPreview() {
       className={
         isCapturing
           ? "w-[1200px] bg-white p-12 flex flex-col gap-6 absolute top-0 left-0 z-[9999]"
-          : `grid grid-cols-[400px_1fr] w-full h-[calc(100vh-180px)] min-h-[600px] p-4 gap-4 rounded-2xl overflow-hidden relative ${lightMode ? 'bg-slate-100 border border-slate-200 shadow-sm' : 'bg-slate-950 shadow-inner'}`
+          : `grid ${isMaximized ? 'grid-cols-1' : 'grid-cols-[400px_1fr]'} w-full h-[calc(100vh-180px)] min-h-[600px] p-4 gap-4 rounded-2xl overflow-hidden relative ${lightMode ? 'bg-slate-100 border border-slate-200 shadow-sm' : 'bg-slate-950 shadow-inner'}`
       }
     >
       {/* ───── 캡쳐 모드 헤더 ───── */}
@@ -358,7 +367,7 @@ export default function BeamModelPreview() {
                 <section>
                   <div className="flex justify-between items-end mb-4">
                     <h3 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-2 ${lightMode ? 'text-brand-blue' : 'text-slate-300'}`}><Box size={14} /> Cross Section</h3>
-                    <div className={`w-16 h-16 border rounded-lg p-1 flex items-center justify-center ${lightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'}`}><SectionGuide type={beamType} lightMode={lightMode} /></div>
+                    <div className={`w-16 h-16 border rounded-lg p-1 flex items-center justify-center ${lightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'}`}><SectionGuide type={beamType} params={params} lightMode={lightMode} /></div>
                   </div>
                   <select disabled={isReadOnly} value={beamType} onChange={(e) => modelingHook.handleBeamTypeChange(e.target.value)} className={`w-full border rounded-lg px-3 py-2 text-sm font-bold mb-4 outline-none ${lightMode ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-950 border-slate-700 text-white'} ${isReadOnly ? 'opacity-50 cursor-not-allowed' : 'focus:border-blue-500 cursor-pointer'}`}>
                     <option value="I">I-Beam</option><option value="H">H-Beam</option><option value="BAR">BAR (Solid Box)</option><option value="L">L-Beam (Angle)</option><option value="T">T-Beam</option><option value="CHAN">Channel (C-Shape)</option><option value="ROD">ROD (Solid Cylinder)</option><option value="TUBE">TUBE (Hollow Pipe)</option>
@@ -631,14 +640,14 @@ export default function BeamModelPreview() {
             ? (isCapturing ? 'w-full rounded-xl overflow-hidden border border-slate-200 shadow-sm' : 'contents')
             : 'hidden'
         }>
-          <Viewer3D beamType={beamType} params={params} loads={loads} boundaries={boundaries} dispData={dispData} hasCharts={hasCharts} isCapturing={isCapturing} lightMode={lightMode} />
+          <Viewer3D beamType={beamType} params={params} loads={loads} boundaries={boundaries} dispData={dispData} hasCharts={hasCharts} isCapturing={isCapturing} lightMode={lightMode} isMaximized={isMaximized} onMaximizeToggle={() => setIsMaximized(!isMaximized)} />
         </div>
 
         {/* 모델/해석 요약 (full 캡쳐 전용) */}
         {showModelAnalysis && <ModelAnalysisGrid beamType={beamType} params={params} boundaries={boundaries} loads={loads} summaryData={summaryData} />}
 
         {/* 차트 영역 */}
-        {hasCharts && <EngineeringCharts dispData={dispData} elForceData={elForceData} stressData={stressData} isCapturing={isCapturing} captureMode={captureMode} lightMode={lightMode} />}
+        {hasCharts && !isMaximized && <EngineeringCharts dispData={dispData} elForceData={elForceData} stressData={stressData} isCapturing={isCapturing} captureMode={captureMode} lightMode={lightMode} />}
 
         {/* 캡쳐 푸터 */}
         {showFooter && (

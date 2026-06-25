@@ -38,19 +38,165 @@ export function SummaryRow({ label, value, unit, sub, lightMode = false }) {
   );
 }
 
-export function SectionGuide({ type, lightMode = false }) {
+export function SectionGuide({ type, params, lightMode = false }) {
   const s = { stroke: lightMode ? '#334155' : '#475569', strokeWidth: 2, fill: 'none' };
-  const t = { fill: lightMode ? '#0369a1' : '#00E600', fontSize: '20px', fontFamily: 'monospace', fontWeight: 'bold' };
+  const t = { fill: lightMode ? '#0369a1' : '#00E600', fontSize: '11px', fontFamily: 'monospace', fontWeight: 'bold' };
+  
+  const dim1 = Number(params?.dim1) || 100;
+  const dim2 = Number(params?.dim2) || 100;
+  const dim3 = Number(params?.dim3) || 10;
+  const dim4 = Number(params?.dim4) || 10;
+
   const getSvgContent = () => {
     switch (type) {
-      case 'I': return (<><path d="M 20,20 L 80,20 M 20,80 L 80,80 M 50,20 L 50,80" {...s} strokeWidth={6} /><text x="45" y="15" {...t}>W</text><text x="5" y="55" {...t}>H</text><text x="55" y="55" {...t}>tw</text><text x="85" y="25" {...t}>tf</text></>);
-      case 'H': return (<><path d="M 20,20 L 20,80 M 80,20 L 80,80 M 20,50 L 80,50" {...s} strokeWidth={6} /><text x="45" y="15" {...t}>W</text><text x="5" y="55" {...t}>H</text><text x="45" y="45" {...t}>tw</text><text x="85" y="25" {...t}>tf</text></>);
-      case 'BAR': return (<><rect x="20" y="25" width="60" height="50" {...s} fill={lightMode ? '#e2e8f0' : '#1e293b'} /><text x="45" y="15" {...t}>W</text><text x="5" y="55" {...t}>H</text></>);
-      case 'L': return (<><path d="M 20,20 L 20,80 L 80,80" {...s} strokeWidth={8} /><text x="45" y="95" {...t}>W</text><text x="5" y="55" {...t}>H</text><text x="25" y="45" {...t}>tw</text><text x="65" y="70" {...t}>tf</text></>);
-      case 'T': return (<><path d="M 20,20 L 80,20 M 50,20 L 50,80" {...s} strokeWidth={8} /><text x="45" y="15" {...t}>W</text><text x="30" y="55" {...t}>H</text><text x="55" y="55" {...t}>tw</text><text x="85" y="25" {...t}>tf</text></>);
-      case 'CHAN': return (<><path d="M 80,20 L 20,20 L 20,80 L 80,80" {...s} strokeWidth={8} /><text x="45" y="15" {...t}>W</text><text x="5" y="55" {...t}>H</text><text x="25" y="55" {...t}>tw</text><text x="85" y="25" {...t}>tf</text></>);
-      case 'TUBE': return (<><circle cx="50" cy="50" r="35" {...s} /><circle cx="50" cy="50" r="25" {...s} /><text x="45" y="55" {...t}>D</text><text x="80" y="55" {...t}>t</text></>);
-      case 'ROD': return (<><circle cx="50" cy="50" r="35" {...s} fill={lightMode ? '#e2e8f0' : '#1e293b'} /><text x="45" y="55" {...t}>D</text></>);
+      case 'I': {
+        const maxVal = Math.max(dim1, dim2);
+        const w = maxVal > 0 ? (dim1 / maxVal) * 50 + 20 : 60;
+        const h = maxVal > 0 ? (dim2 / maxVal) * 50 + 20 : 60;
+        const tfRatio = Math.max(0.08, Math.min(0.3, dim3 / (dim2 || 1)));
+        const twRatio = Math.max(0.08, Math.min(0.3, dim4 / (dim1 || 1)));
+        const tf = h * tfRatio;
+        const tw = w * twRatio;
+        const xStart = 50 - w/2;
+        const yStart = 50 - h/2;
+        const xEnd = 50 + w/2;
+        const yEnd = 50 + h/2;
+        const pathData = `M ${xStart},${yStart} L ${xEnd},${yStart} L ${xEnd},${yStart + tf} L ${50 + tw/2},${yStart + tf} L ${50 + tw/2},${yEnd - tf} L ${xEnd},${yEnd - tf} L ${xEnd},${yEnd} L ${xStart},${yEnd} L ${xStart},${yEnd - tf} L ${50 - tw/2},${yEnd - tf} L ${50 - tw/2},${yStart + tf} L ${xStart},${yStart + tf} Z`;
+        return (
+          <>
+            <path d={pathData} {...s} fill={lightMode ? '#e2e8f0' : '#1e293b'} />
+            <text x="50" y={Math.max(10, yStart - 4)} textAnchor="middle" {...t}>W</text>
+            <text x={Math.max(6, xStart - 8)} y="54" textAnchor="middle" {...t}>H</text>
+            <text x={50 + tw/2 + 3} y="54" textAnchor="start" {...t} fontSize="9px">tw</text>
+            <text x={xEnd + 3} y={yStart + tf/2 + 3} textAnchor="start" {...t} fontSize="9px">tf</text>
+          </>
+        );
+      }
+      case 'H': {
+        const maxVal = Math.max(dim1, dim2);
+        const w = maxVal > 0 ? (dim1 / maxVal) * 50 + 20 : 60;
+        const h = maxVal > 0 ? (dim2 / maxVal) * 50 + 20 : 60;
+        const tfRatio = Math.max(0.08, Math.min(0.3, dim3 / (dim1 || 1)));
+        const twRatio = Math.max(0.08, Math.min(0.3, dim4 / (dim2 || 1)));
+        const tf = w * tfRatio;
+        const tw = h * twRatio;
+        const xStart = 50 - w/2;
+        const yStart = 50 - h/2;
+        const xEnd = 50 + w/2;
+        const yEnd = 50 + h/2;
+        const pathData = `M ${xStart},${yStart} L ${xStart + tf},${yStart} L ${xStart + tf},${50 - tw/2} L ${xEnd - tf},${50 - tw/2} L ${xEnd - tf},${yStart} L ${xEnd},${yStart} L ${xEnd},${yEnd} L ${xEnd - tf},${yEnd} L ${xEnd - tf},${50 + tw/2} L ${xStart + tf},${50 + tw/2} L ${xStart + tf},${yEnd} L ${xStart},${yEnd} Z`;
+        return (
+          <>
+            <path d={pathData} {...s} fill={lightMode ? '#e2e8f0' : '#1e293b'} />
+            <text x="50" y={Math.max(10, yStart - 4)} textAnchor="middle" {...t}>W</text>
+            <text x={Math.max(6, xStart - 8)} y="54" textAnchor="middle" {...t}>H</text>
+            <text x="50" y={50 - tw/2 - 2} textAnchor="middle" {...t} fontSize="9px">tw</text>
+            <text x={xStart + tf/2} y={yEnd + 10} textAnchor="middle" {...t} fontSize="9px">tf</text>
+          </>
+        );
+      }
+      case 'BAR': {
+        const maxVal = Math.max(dim1, dim2);
+        const w = maxVal > 0 ? (dim1 / maxVal) * 50 + 20 : 60;
+        const h = maxVal > 0 ? (dim2 / maxVal) * 50 + 20 : 50;
+        const x = 50 - w / 2;
+        const y = 50 - h / 2;
+        return (
+          <>
+            <rect x={x} y={y} width={w} height={h} {...s} fill={lightMode ? '#e2e8f0' : '#1e293b'} />
+            <text x="50" y={Math.max(10, y - 4)} textAnchor="middle" {...t}>W</text>
+            <text x={Math.max(6, x - 8)} y="54" textAnchor="middle" {...t}>H</text>
+          </>
+        );
+      }
+      case 'L': {
+        const maxVal = Math.max(dim1, dim2);
+        const w = maxVal > 0 ? (dim1 / maxVal) * 50 + 20 : 60;
+        const h = maxVal > 0 ? (dim2 / maxVal) * 50 + 20 : 60;
+        const twRatio = Math.max(0.08, Math.min(0.4, dim4 / (dim1 || 1)));
+        const tfRatio = Math.max(0.08, Math.min(0.4, dim3 / (dim2 || 1)));
+        const tw = w * twRatio;
+        const tf = h * tfRatio;
+        const xStart = 50 - w/2;
+        const yStart = 50 - h/2;
+        const xEnd = 50 + w/2;
+        const yEnd = 50 + h/2;
+        const pathData = `M ${xStart},${yStart} L ${xStart + tw},${yStart} L ${xStart + tw},${yEnd - tf} L ${xEnd},${yEnd - tf} L ${xEnd},${yEnd} L ${xStart},${yEnd} Z`;
+        return (
+          <>
+            <path d={pathData} {...s} fill={lightMode ? '#e2e8f0' : '#1e293b'} />
+            <text x="50" y={yEnd + 10} textAnchor="middle" {...t}>W</text>
+            <text x={Math.max(6, xStart - 8)} y="54" textAnchor="middle" {...t}>H</text>
+            <text x={xStart + tw + 3} y={yStart + 12} textAnchor="start" {...t} fontSize="9px">tw</text>
+            <text x={xEnd - 10} y={yEnd - tf - 3} textAnchor="middle" {...t} fontSize="9px">tf</text>
+          </>
+        );
+      }
+      case 'T': {
+        const maxVal = Math.max(dim1, dim2);
+        const w = maxVal > 0 ? (dim1 / maxVal) * 50 + 20 : 60;
+        const h = maxVal > 0 ? (dim2 / maxVal) * 50 + 20 : 60;
+        const tfRatio = Math.max(0.08, Math.min(0.4, dim3 / (dim2 || 1)));
+        const twRatio = Math.max(0.08, Math.min(0.4, dim4 / (dim1 || 1)));
+        const tf = h * tfRatio;
+        const tw = w * twRatio;
+        const xStart = 50 - w/2;
+        const yStart = 50 - h/2;
+        const xEnd = 50 + w/2;
+        const yEnd = 50 + h/2;
+        const pathData = `M ${xStart},${yStart} L ${xEnd},${yStart} L ${xEnd},${yStart + tf} L ${50 + tw/2},${yStart + tf} L ${50 + tw/2},${yEnd} L ${50 - tw/2},${yEnd} L ${50 - tw/2},${yStart + tf} L ${xStart},${yStart + tf} Z`;
+        return (
+          <>
+            <path d={pathData} {...s} fill={lightMode ? '#e2e8f0' : '#1e293b'} />
+            <text x="50" y={Math.max(10, yStart - 4)} textAnchor="middle" {...t}>W</text>
+            <text x={Math.max(6, xStart - 8)} y="54" textAnchor="middle" {...t}>H</text>
+            <text x={50 + tw/2 + 3} y={yEnd - 6} textAnchor="start" {...t} fontSize="9px">tw</text>
+            <text x={xEnd + 3} y={yStart + tf/2 + 3} textAnchor="start" {...t} fontSize="9px">tf</text>
+          </>
+        );
+      }
+      case 'CHAN': {
+        const maxVal = Math.max(dim1, dim2);
+        const w = maxVal > 0 ? (dim1 / maxVal) * 50 + 20 : 60;
+        const h = maxVal > 0 ? (dim2 / maxVal) * 50 + 20 : 60;
+        const tfRatio = Math.max(0.08, Math.min(0.4, dim3 / (dim2 || 1)));
+        const twRatio = Math.max(0.08, Math.min(0.4, dim4 / (dim1 || 1)));
+        const tf = h * tfRatio;
+        const tw = w * twRatio;
+        const xStart = 50 - w/2;
+        const yStart = 50 - h/2;
+        const xEnd = 50 + w/2;
+        const yEnd = 50 + h/2;
+        const pathData = `M ${xEnd},${yStart} L ${xStart},${yStart} L ${xStart},${yEnd} L ${xEnd},${yEnd} L ${xEnd},${yEnd - tf} L ${xStart + tw},${yEnd - tf} L ${xStart + tw},${yStart + tf} L ${xEnd},${yStart + tf} Z`;
+        return (
+          <>
+            <path d={pathData} {...s} fill={lightMode ? '#e2e8f0' : '#1e293b'} />
+            <text x="50" y={Math.max(10, yStart - 4)} textAnchor="middle" {...t}>W</text>
+            <text x={Math.max(6, xStart - 8)} y="54" textAnchor="middle" {...t}>H</text>
+            <text x={xStart + tw + 3} y="54" textAnchor="start" {...t} fontSize="9px">tw</text>
+            <text x={xEnd - 3} y={yStart + tf + 6} textAnchor="end" {...t} fontSize="9px">tf</text>
+          </>
+        );
+      }
+      case 'TUBE': {
+        const rIn = Math.max(5, Math.min(30, 35 - (dim2 / (dim1 || 1)) * 35));
+        return (
+          <>
+            <circle cx="50" cy="50" r="35" {...s} />
+            <circle cx="50" cy="50" r={rIn} {...s} />
+            <text x="50" y="54" textAnchor="middle" {...t}>D</text>
+            <text x="78" y="54" textAnchor="middle" {...t} fontSize="9px">t</text>
+          </>
+        );
+      }
+      case 'ROD': {
+        return (
+          <>
+            <circle cx="50" cy="50" r="35" {...s} fill={lightMode ? '#e2e8f0' : '#1e293b'} />
+            <text x="50" y="54" textAnchor="middle" {...t}>D</text>
+          </>
+        );
+      }
       default: return null;
     }
   };
