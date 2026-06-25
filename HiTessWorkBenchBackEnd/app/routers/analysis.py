@@ -27,6 +27,7 @@ from ..services.hpscr_service import task_execute_hpscr
 from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
 from ..services.unit_structural_service import task_execute_unit_structural
 from ..services.module_stability_service import task_execute_module_stability
+from ..services.lifting_artifacts import scan_lifting_artifacts
 from ..services.hitess_modelflow_service import (
     task_execute_modelflow,
     task_execute_apply_edit,
@@ -1969,6 +1970,46 @@ async def request_groupmoduleunit_from_path(
         bdf_path, work_dir, employee_id, timestamp, source, use_nastran, program_name,
     )
     return {"job_id": job_id}
+
+
+@router.get("/analysis/groupmoduleunit/{parent_id}/artifacts")
+def get_groupmoduleunit_artifacts(
+        parent_id: int,
+        current_user: str = Depends(require_auth),
+):
+    """GroupModuleUnit/SidePassage parent BDF 폴더의 다운로드 가능한 lifting 산출물 목록.
+
+    Studio 가 권상 구조 해석을 수행하면 parent BDF 와 같은 폴더에
+    <stem>_lifting.bdf/.f06/.op2, <stem>_edited.bdf 가 생성된다. 프론트 Step3
+    (해석 결과 확인)가 이 목록으로 다운로드 버튼을 만든다. 존재하는 파일만 반환한다.
+    """
+    db = database.SessionLocal()
+    try:
+        parent = db.query(models.Analysis).filter(
+            models.Analysis.id == parent_id
+        ).first()
+        if parent is None:
+            raise HTTPException(status_code=404, detail=f"Parent Analysis (id={parent_id}) not found")
+        if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Parent program_name '{parent.program_name}' is not supported",
+            )
+        if parent.employee_id != current_user:
+            raise HTTPException(status_code=403, detail="본인 해석만 조회할 수 있습니다.")
+        bdf_model = (parent.input_info or {}).get("bdf_model")
+    finally:
+        db.close()
+
+    if not bdf_model:
+        raise HTTPException(status_code=404, detail="부모 BDF 경로를 찾을 수 없습니다.")
+    folder = os.path.dirname(os.path.abspath(bdf_model))
+    # 방어: 산출물 폴더는 반드시 userConnection 하위여야 한다.
+    if not _is_within_dir(_USER_CONNECTION_DIR, folder):
+        raise HTTPException(status_code=403, detail="허용되지 않은 경로입니다.")
+    stem = os.path.splitext(os.path.basename(bdf_model))[0]
+    artifacts = scan_lifting_artifacts(folder, stem)
+    return {"folder": folder, "artifacts": artifacts}
 
 
 # ==================== Unit Structural Analysis (Lifting + Nastran) ===========

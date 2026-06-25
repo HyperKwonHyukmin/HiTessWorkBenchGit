@@ -15,6 +15,7 @@ import { requestGroupModuleUnit, requestGroupModuleUnitFromPath, downloadFileTex
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import { API_BASE_URL } from '../../config';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
+import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
 
@@ -948,6 +949,9 @@ export default function GroupModuleUnitLiftingAnalysis() {
 
           {/* ─ Step 2: 해석 결과 ─ */}
           {isResultsStep && (
+            <>
+            {/* 산출물 다운로드 — 최종 모델 BDF(해석 덱/편집) + Nastran F06/OP2 */}
+            <ResultArtifactsCard parentAnalysisId={bdfAnalysisId} />
             <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
               <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 shrink-0">
                 <div className="flex items-center gap-2">
@@ -973,6 +977,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
                 <ResultsPanel result={analysisResult} />
               </div>
             </div>
+            </>
           )}
 
         </div>{/* end Right Panel */}

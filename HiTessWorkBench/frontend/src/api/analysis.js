@@ -173,6 +173,12 @@ export const downloadFileText = (filepath) =>
     headers: getAuthHeaders()
   });
 
+/** Group/Module Unit 권상 구조해석 산출물 목록 (parent BDF 폴더에서 존재하는 lifting 산출물만) */
+export const getGroupModuleUnitArtifacts = (parentId) =>
+  axios.get(`${API_BASE_URL}/api/analysis/groupmoduleunit/${parentId}/artifacts`, {
+    headers: getAuthHeaders()
+  });
+
 /** Assessment JSON → XLSX 변환 다운로드 (DRM 우회: 서버 메모리에서 생성) */
 export const exportAssessmentXlsx = (jsonPath) =>
   axios.get(`${API_BASE_URL}/api/analysis/export-xlsx?json_path=${encodeURIComponent(jsonPath)}`, {
