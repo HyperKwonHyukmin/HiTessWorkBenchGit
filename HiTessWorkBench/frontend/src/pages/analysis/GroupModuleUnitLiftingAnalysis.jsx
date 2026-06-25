@@ -18,6 +18,7 @@ import SampleRunButton from '../../components/analysis/SampleRunButton';
 import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
+const MODULE_STUDIO_VERSION = '0.0.62';
 
 // ── 상태 설정 (HiTessModelBuilder와 동일) ─────────────────────
 const STATUS_CONFIG = {
@@ -330,7 +331,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const [studioProgress, setStudioProgress] = useState(null);
   const [studioError, setStudioError]   = useState(null);
   const [studioInstalledVersion, setStudioInstalledVersion] = useState(null);
-  const [studioLatestVersion, setStudioLatestVersion] = useState(null);
+  const [studioLatestVersion, setStudioLatestVersion] = useState(MODULE_STUDIO_VERSION);
   const [studioInstallDir, setStudioInstallDir] = useState(null);
 
   const bdfFolderPath = useMemo(
@@ -435,7 +436,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
       .then(r => r.ok ? r.json() : null)
       .then(meta => {
         if (cancelled) return;
-        setStudioLatestVersion(meta?.manifest?.version ?? null);
+        setStudioLatestVersion(meta?.manifest?.version ?? MODULE_STUDIO_VERSION);
       })
       .catch(() => {});
 
@@ -473,7 +474,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
       const manifestRes = await fetch(`${API_BASE_URL}/api/viewers/manifest/${MODULE_STUDIO_VIEWER_ID}`);
       if (!manifestRes.ok) throw new Error(`manifest 조회 실패: HTTP ${manifestRes.status}`);
       const meta = await manifestRes.json();
-      const serverVer = meta?.manifest?.version ?? null;
+      const serverVer = meta?.manifest?.version ?? MODULE_STUDIO_VERSION;
       const localVer = check?.manifest?.version ?? null;
       setStudioInstalled(!!check?.installed);
       setStudioInstalledVersion(localVer);
@@ -942,7 +943,9 @@ export default function GroupModuleUnitLiftingAnalysis() {
           {isLiftingStep && (
             <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-100 shrink-0">
-                <h2 className="text-xs font-bold text-slate-700">2. Group Module Unit Studio</h2>
+                <h2 className="text-xs font-bold text-slate-700">
+                  2. Group Module Unit Studio <span className="font-mono text-slate-400">v{MODULE_STUDIO_VERSION}</span>
+                </h2>
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-5 bg-slate-50/60">
                 <ModuleStudioLauncher

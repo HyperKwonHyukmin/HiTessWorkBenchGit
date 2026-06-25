@@ -62,6 +62,15 @@ def _eid(ln):
     return ln[8:16].strip()
 
 
+def test_fixed_real_normalizes_rotation_roundoff_to_zero():
+    """모델 회전에서 생긴 1e-16급 잔차는 CBEAM orientation에 지수 표기로 남기지 않는다."""
+    assert _nb.fixed_real(-7.03e-17) == "     0.0"
+    line = _nb.bdf_line_fixed(
+        "CBEAM", 2513, 7, 1699, 1700, -0.81862, -7.03e-17, 0.57434, "BGG",
+    )
+    assert line == "CBEAM       2513       7    1699    1700-0.81862     0.0 0.57434     BGG"
+
+
 def test_change_property_and_duplicate_with_new_pid(tmp_path):
     bdf_path = tmp_path / "STAGE_07_FinalValidation.bdf"
     _write_minimal_bdf(bdf_path)
