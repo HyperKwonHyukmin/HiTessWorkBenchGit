@@ -18,7 +18,9 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
  * @param {number}      [options.bloomStrength=0.5]
  * @param {number}      [options.bloomRadius=0.4]
  * @param {number}      [options.bloomThreshold=0.65]
- * @returns {{ scene, camera, renderer, controls, composer, startAnimate, cleanup }}
+ * @param {number|string} [options.backgroundColor=0x060b14]
+ * @param {'dark'|'light'} [options.theme='dark']
+ * @returns {{ scene, camera, renderer, controls, composer, bloomPass, startAnimate, cleanup }}
  */
 export function createThreeScene(mountEl, options = {}) {
   const {
@@ -30,6 +32,8 @@ export function createThreeScene(mountEl, options = {}) {
     bloomRadius = 0.4,
     bloomThreshold = 0.65,
     controlsType = 'orbit',   // 'orbit' | 'trackball'(극점 멈춤 없는 자유 회전)
+    backgroundColor = 0x060b14,
+    theme = 'dark',
   } = options;
 
   const w = mountEl.clientWidth  || 800;
@@ -37,8 +41,8 @@ export function createThreeScene(mountEl, options = {}) {
 
   // ── Scene ──────────────────────────────────────────────────────────
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x060b14);
-  if (fog) scene.fog = new THREE.FogExp2(0x060b14, 0.0004);
+  scene.background = new THREE.Color(backgroundColor);
+  if (fog) scene.fog = new THREE.FogExp2(backgroundColor, 0.0004);
 
   // ── Camera ─────────────────────────────────────────────────────────
   const camera = new THREE.PerspectiveCamera(fov, w / h, 0.1, 10_000_000);
@@ -84,17 +88,18 @@ export function createThreeScene(mountEl, options = {}) {
   composer.addPass(bloomPass);
 
   // ── 3-point Lighting ───────────────────────────────────────────────
-  scene.add(new THREE.AmbientLight(0x1a2840, 2.0));
+  const isLight = theme === 'light';
+  scene.add(new THREE.AmbientLight(isLight ? 0xffffff : 0x1a2840, isLight ? 1.8 : 2.0));
 
-  const keyLight = new THREE.DirectionalLight(0xffffff, 2.5);
+  const keyLight = new THREE.DirectionalLight(0xffffff, isLight ? 2.0 : 2.5);
   keyLight.position.set(500, 800, 600);
   scene.add(keyLight);
 
-  const fillLight = new THREE.DirectionalLight(0x4466aa, 1.2);
+  const fillLight = new THREE.DirectionalLight(isLight ? 0xdbeafe : 0x4466aa, isLight ? 1.0 : 1.2);
   fillLight.position.set(-400, 200, -300);
   scene.add(fillLight);
 
-  const rimLight = new THREE.DirectionalLight(0x00aaff, 0.8);
+  const rimLight = new THREE.DirectionalLight(isLight ? 0x60a5fa : 0x00aaff, isLight ? 0.45 : 0.8);
   rimLight.position.set(0, -600, -500);
   scene.add(rimLight);
 
@@ -164,5 +169,5 @@ export function createThreeScene(mountEl, options = {}) {
     try { mountEl.removeChild(renderer.domElement); } catch (_) {}
   }
 
-  return { scene, camera, renderer, controls, composer, startAnimate, cleanup };
+  return { scene, camera, renderer, controls, composer, bloomPass, startAnimate, cleanup };
 }

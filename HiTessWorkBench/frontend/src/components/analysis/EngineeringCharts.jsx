@@ -45,8 +45,8 @@ const palette = (light) => light ? {
   sMinStroke: '#34d399',
 };
 
-export default function EngineeringCharts({ dispData, elForceData, stressData, isCapturing, captureMode = null }) {
-  const light = isCapturing; // 캡쳐 시 항상 화이트 테마
+export default function EngineeringCharts({ dispData, elForceData, stressData, isCapturing, captureMode = null, lightMode = false }) {
+  const light = isCapturing || lightMode; // 캡쳐 시에는 사용자 테마와 무관하게 항상 화이트
   const c = palette(light);
 
   const showDisp   = !captureMode || captureMode === 'full' || captureMode === 'displacement';
@@ -54,15 +54,15 @@ export default function EngineeringCharts({ dispData, elForceData, stressData, i
   const showStress = !captureMode || captureMode === 'full' || captureMode === 'stress';
 
   return (
-    <div className={`${light ? 'bg-transparent' : 'bg-slate-900'} ${isCapturing ? 'flex flex-col gap-6 w-full h-max p-0 overflow-visible' : 'h-[55%] overflow-y-auto custom-scrollbar p-6 space-y-6'}`}>
+    <div className={`${light ? (isCapturing ? 'bg-transparent' : 'bg-slate-50') : 'bg-slate-900'} ${isCapturing ? 'flex flex-col gap-6 w-full h-max p-0 overflow-visible' : 'h-[55%] overflow-y-auto custom-scrollbar p-6 space-y-6'}`}>
       {showDisp && dispData.length > 0 && (
-        <div className={`${c.cardBg} p-5 rounded-xl border ${c.cardBorder} shrink-0 ${isCapturing ? 'h-[360px]' : 'h-64'}`}>
+        <div className={`${c.cardBg} p-5 rounded-xl border ${c.cardBorder} shrink-0 ${isCapturing ? 'h-[360px]' : 'h-72'}`}>
           <h3 className={`text-sm font-bold ${c.title} mb-4 tracking-wider`}>DEFLECTION (DispZ)</h3>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={dispData} margin={{ top: 10, right: 20, left: 30, bottom: 20 }}>
+            <LineChart data={dispData} margin={{ top: 10, right: 20, left: 40, bottom: 30 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={c.grid} vertical={false} />
-              <XAxis dataKey="X[mm]" stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} type="number" domain={['dataMin', 'dataMax']} />
-              <YAxis stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} tickFormatter={engFormat} domain={['auto','auto']} />
+              <XAxis dataKey="X[mm]" stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} type="number" domain={['dataMin', 'dataMax']} label={{ value: 'X [mm]', position: 'insideBottom', offset: -8, fontSize: 10, fill: c.axis }} />
+              <YAxis stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} tickFormatter={engFormat} domain={['auto','auto']} label={{ value: 'DispZ [mm]', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: c.axis }} />
               <Tooltip contentStyle={{ backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, fontSize: '12px' }} itemStyle={{ color: c.tooltipText }} formatter={(val) => engFormat(val)} />
               <ReferenceLine y={0} stroke={c.ref} strokeWidth={1} />
               <Line isAnimationActive={!isCapturing} type="monotone" dataKey="DispZ[mm]" stroke={c.deflectionStroke} strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
@@ -72,14 +72,14 @@ export default function EngineeringCharts({ dispData, elForceData, stressData, i
       )}
 
       {showForce && elForceData.length > 0 && (
-        <div className={isCapturing ? "grid grid-cols-2 gap-6 w-full" : "grid grid-cols-2 gap-6 h-64 shrink-0"}>
+        <div className={isCapturing ? "grid grid-cols-2 gap-6 w-full" : "grid grid-cols-2 gap-6 h-72 shrink-0"}>
           <div className={`${c.cardBg} p-5 rounded-xl border ${c.cardBorder} ${isCapturing ? 'h-[320px]' : ''}`}>
             <h3 className={`text-sm font-bold ${c.title} mb-4 tracking-wider`}>BENDING MOMENT DIAGRAM (BMD)</h3>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={elForceData} margin={{ top: 10, right: 10, left: 30, bottom: 20 }}>
+              <AreaChart data={elForceData} margin={{ top: 10, right: 10, left: 40, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={c.grid} vertical={false} />
-                <XAxis dataKey="X[mm]" stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} type="number" domain={['dataMin', 'dataMax']} />
-                <YAxis stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} tickFormatter={engFormat} />
+                <XAxis dataKey="X[mm]" stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} type="number" domain={['dataMin', 'dataMax']} label={{ value: 'X [mm]', position: 'insideBottom', offset: -8, fontSize: 10, fill: c.axis }} />
+                <YAxis stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} tickFormatter={engFormat} domain={['auto','auto']} label={{ value: 'Moment [N·mm]', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: c.axis }} />
                 <Tooltip contentStyle={{ backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, fontSize: '12px' }} itemStyle={{ color: c.tooltipText }} formatter={(val) => engFormat(val)} />
                 <ReferenceLine y={0} stroke={c.ref} strokeWidth={1} />
                 <Area isAnimationActive={!isCapturing} type="linear" dataKey="BendingMoment1" stroke={c.bmdStroke} fill={c.bmdFill} fillOpacity={light ? 0.5 : 0.6} strokeWidth={2} />
@@ -89,10 +89,10 @@ export default function EngineeringCharts({ dispData, elForceData, stressData, i
           <div className={`${c.cardBg} p-5 rounded-xl border ${c.cardBorder} ${isCapturing ? 'h-[320px]' : ''}`}>
             <h3 className={`text-sm font-bold ${c.title} mb-4 tracking-wider`}>SHEAR FORCE DIAGRAM (SFD)</h3>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={elForceData} margin={{ top: 10, right: 10, left: 30, bottom: 20 }}>
+              <AreaChart data={elForceData} margin={{ top: 10, right: 10, left: 40, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={c.grid} vertical={false} />
-                <XAxis dataKey="X[mm]" stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} type="number" domain={['dataMin', 'dataMax']} />
-                <YAxis stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} tickFormatter={engFormat} />
+                <XAxis dataKey="X[mm]" stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} type="number" domain={['dataMin', 'dataMax']} label={{ value: 'X [mm]', position: 'insideBottom', offset: -8, fontSize: 10, fill: c.axis }} />
+                <YAxis stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} tickFormatter={engFormat} domain={['auto','auto']} label={{ value: 'Shear [N]', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: c.axis }} />
                 <Tooltip contentStyle={{ backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, fontSize: '12px' }} itemStyle={{ color: c.tooltipText }} formatter={(val) => engFormat(val)} />
                 <ReferenceLine y={0} stroke={c.ref} strokeWidth={1} />
                 <Area isAnimationActive={!isCapturing} type="linear" dataKey="ShearForce1" stroke={c.sfdStroke} fill={c.sfdFill} fillOpacity={light ? 0.5 : 0.6} strokeWidth={2} />
@@ -103,13 +103,13 @@ export default function EngineeringCharts({ dispData, elForceData, stressData, i
       )}
 
       {showStress && stressData.length > 0 && (
-        <div className={`${c.cardBg} p-5 rounded-xl border ${c.cardBorder} shrink-0 ${isCapturing ? 'h-[360px]' : 'h-64'}`}>
+        <div className={`${c.cardBg} p-5 rounded-xl border ${c.cardBorder} shrink-0 ${isCapturing ? 'h-[360px]' : 'h-72'}`}>
           <h3 className={`text-sm font-bold ${c.title} mb-4 tracking-wider`}>STRESS ENVELOPE (Max/Min)</h3>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stressData} margin={{ top: 10, right: 20, left: 30, bottom: 20 }}>
+            <LineChart data={stressData} margin={{ top: 10, right: 20, left: 40, bottom: 30 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={c.grid} vertical={false} />
-              <XAxis dataKey="X[mm]" stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} type="number" domain={['dataMin', 'dataMax']} />
-              <YAxis stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} tickFormatter={engFormat} />
+              <XAxis dataKey="X[mm]" stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} type="number" domain={['dataMin', 'dataMax']} label={{ value: 'X [mm]', position: 'insideBottom', offset: -8, fontSize: 10, fill: c.axis }} />
+              <YAxis stroke={c.axis} tick={{fontSize: 11, fill: c.axis}} tickFormatter={engFormat} domain={['auto','auto']} label={{ value: 'Stress [MPa]', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: c.axis }} />
               <Tooltip contentStyle={{ backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, fontSize: '12px' }} itemStyle={{ color: c.tooltipText }} formatter={(val) => engFormat(val)} />
               <Legend wrapperStyle={{ color: c.legend, fontSize: '12px' }} />
               <ReferenceLine y={0} stroke={c.ref} strokeWidth={1} />

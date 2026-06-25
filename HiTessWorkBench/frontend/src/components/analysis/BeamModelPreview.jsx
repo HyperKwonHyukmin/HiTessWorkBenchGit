@@ -7,14 +7,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { toPng } from 'html-to-image';
 import {
-  Box, Activity, Plus, Trash2, ShieldCheck, ArrowDown, RefreshCw,
+  Box, Activity, Plus, Trash2, ShieldCheck, ArrowDown,
   SlidersHorizontal, PenTool, Play, FileJson, Upload, BarChart2, Camera,
-  Download, ChevronDown, FileText
+  ChevronDown, ChevronRight, FileText, Sun, Moon, Loader2, Lock, HelpCircle
 } from 'lucide-react';
 import AnalysisPageBanner from './AnalysisPageBanner';
 import { useBeamModeling, withYzPolar } from '../../hooks/useBeamModeling';
 import { useAnalysisManager } from '../../hooks/useAnalysisManager';
-import { InputRow, SummaryRow, SectionGuide } from '../../components/analysis/BeamSharedUI';
+import { InputRow, SummaryRow, SectionGuide, BC_TYPE_COLOR } from '../../components/analysis/BeamSharedUI';
 import Viewer3D from '../../components/analysis/Viewer3D';
 import EngineeringCharts from '../../components/analysis/EngineeringCharts';
 import SolverCredit from '../ui/SolverCredit';
@@ -193,8 +193,13 @@ export default function BeamModelPreview() {
   const captureTimerRef = useRef(null);
   const captureMenuRef = useRef(null);
   const [activeTab, setActiveTab] = useState('modeling');
+  // 밝은 사무실 환경 + 앱 전체 라이트 테마와 일관성을 위해 Light 모드로 시작한다.
+  const [lightMode, setLightMode] = useState(true);
   const [captureMode, setCaptureMode] = useState(null); // null | 'full' | 'displacement' | 'stress'
   const [showCaptureMenu, setShowCaptureMenu] = useState(false);
+  // 하중별 '직접 성분(Fx/Fy/Fz)' 고급 패널 펼침 상태 (key = 하중 index)
+  const [advancedLoads, setAdvancedLoads] = useState({});
+  const toggleAdvanced = (idx) => setAdvancedLoads((prev) => ({ ...prev, [idx]: !prev[idx] }));
   const isCapturing = !!captureMode;
 
   useEffect(() => {
@@ -293,6 +298,17 @@ export default function BeamModelPreview() {
         gradient="from-brand-blue via-violet-900 to-violet-700"
         iconClassName="text-violet-300"
         subtitleClassName="text-violet-200/80"
+        actions={
+          <button
+            type="button"
+            onClick={() => setLightMode(value => !value)}
+            className="flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-white/20"
+            title={lightMode ? 'Dark 모드로 전환' : 'Light 모드로 전환'}
+          >
+            {lightMode ? <Moon size={15} /> : <Sun size={15} />}
+            {lightMode ? 'Dark' : 'Light'}
+          </button>
+        }
       />
     )}
     <div
@@ -300,7 +316,7 @@ export default function BeamModelPreview() {
       className={
         isCapturing
           ? "w-[1200px] bg-white p-12 flex flex-col gap-6 absolute top-0 left-0 z-[9999]"
-          : "grid grid-cols-[400px_1fr] w-full h-[calc(100vh-180px)] min-h-[600px] bg-slate-950 p-4 gap-4 rounded-2xl shadow-inner overflow-hidden relative"
+          : `grid grid-cols-[400px_1fr] w-full h-[calc(100vh-180px)] min-h-[600px] p-4 gap-4 rounded-2xl overflow-hidden relative ${lightMode ? 'bg-slate-100 border border-slate-200 shadow-sm' : 'bg-slate-950 shadow-inner'}`
       }
     >
       {/* ───── 캡쳐 모드 헤더 ───── */}
@@ -308,29 +324,31 @@ export default function BeamModelPreview() {
 
       {/* ───── 좌측 모델링 패널 (캡쳐 시 숨김) ───── */}
       {showLeft && (
-        <div className="flex flex-col h-full overflow-hidden bg-slate-900 rounded-xl border border-slate-800 shadow-2xl relative z-10">
-          <div className="flex items-center border-b border-slate-800 bg-slate-800/80 sticky top-0 z-20 backdrop-blur-md">
-            <button onClick={() => setActiveTab('modeling')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${activeTab === 'modeling' ? 'text-brand-accent border-b-2 border-brand-accent bg-slate-800' : 'text-slate-400 hover:text-white'}`}>
+        <div className={`flex flex-col h-full overflow-hidden rounded-xl border relative z-10 ${lightMode ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-900 border-slate-800 shadow-2xl'}`}>
+          <div className={`flex items-center border-b sticky top-0 z-20 backdrop-blur-md ${lightMode ? 'border-slate-200 bg-white/90' : 'border-slate-800 bg-slate-800/80'}`}>
+            <button onClick={() => setActiveTab('modeling')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${activeTab === 'modeling' ? (lightMode ? 'text-blue-700 border-b-2 border-blue-600 bg-blue-50' : 'text-brand-accent border-b-2 border-brand-accent bg-slate-800') : (lightMode ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-50' : 'text-slate-400 hover:text-white')}`}>
               <SlidersHorizontal size={14} className="inline mr-2 mb-0.5"/> Modeling
             </button>
-            <button onClick={() => setActiveTab('results')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${activeTab === 'results' ? 'text-brand-accent border-b-2 border-brand-accent bg-slate-800' : 'text-slate-400 hover:text-white'}`}>
+            <button onClick={() => setActiveTab('results')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${activeTab === 'results' ? (lightMode ? 'text-blue-700 border-b-2 border-blue-600 bg-blue-50' : 'text-brand-accent border-b-2 border-brand-accent bg-slate-800') : (lightMode ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-50' : 'text-slate-400 hover:text-white')}`}>
               <BarChart2 size={14} className="inline mr-2 mb-0.5"/> Analysis Results
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar relative">
             {isReadOnly && activeTab === 'modeling' && (
-              <div className="absolute inset-0 bg-slate-900/60 z-10 pointer-events-none rounded-xl backdrop-blur-[1px] flex flex-col items-center pt-20">
-                 <div className="bg-slate-800 border border-slate-700 px-4 py-2 rounded-lg text-emerald-400 text-xs font-bold shadow-xl">
-                   {isAnalyzing ? "⏳ 서버에서 해석을 수행 중입니다..." : "🔒 해석 결과 적용 중 (입력 수정 불가)"}
+              <div className={`absolute inset-0 z-10 pointer-events-none rounded-xl backdrop-blur-[1px] flex flex-col items-center pt-20 ${lightMode ? 'bg-white/70' : 'bg-slate-900/60'}`}>
+                 <div className={`border px-4 py-2 rounded-lg text-xs font-bold shadow-xl flex items-center gap-2 ${lightMode ? 'bg-white border-slate-200 text-emerald-700' : 'bg-slate-800 border-slate-700 text-emerald-400'}`}>
+                   {isAnalyzing
+                     ? <><Loader2 size={14} className="animate-spin" /> 서버에서 해석을 수행 중입니다...</>
+                     : <><Lock size={14} /> 해석 결과 적용 중 (입력 수정 불가)</>}
                  </div>
               </div>
             )}
 
             {activeTab === 'modeling' && (
               <div className="p-5 space-y-6">
-                <div className="flex justify-between items-center bg-indigo-900/20 p-3 rounded-lg border border-indigo-500/30">
-                  <span className="text-[11px] font-medium text-indigo-300">Import Model or result.json</span>
+                <div className={`flex justify-between items-center p-3 rounded-lg border ${lightMode ? 'bg-indigo-50 border-indigo-200' : 'bg-indigo-900/20 border-indigo-500/30'}`}>
+                  <span className={`text-[11px] font-medium ${lightMode ? 'text-indigo-700' : 'text-indigo-300'}`}>Import Model or result.json</span>
                   <label className={`cursor-pointer bg-indigo-600 text-white text-xs px-3 py-1.5 rounded flex items-center gap-1 font-bold shadow-md transition-colors ${isReadOnly ? 'opacity-50 cursor-not-allowed' : 'hover:bg-indigo-500'}`}>
                     <FileJson size={14}/> Load JSON
                     <input type="file" accept=".json" className="hidden" disabled={isReadOnly} onChange={handleJsonUpload} />
@@ -339,93 +357,81 @@ export default function BeamModelPreview() {
 
                 <section>
                   <div className="flex justify-between items-end mb-4">
-                    <h3 className="text-xs font-bold text-brand-accent uppercase tracking-wider flex items-center gap-2"><Box size={14} /> Cross Section</h3>
-                    <div className="w-16 h-16 bg-slate-800 border border-slate-700 rounded-lg p-1 flex items-center justify-center"><SectionGuide type={beamType} /></div>
+                    <h3 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-2 ${lightMode ? 'text-brand-blue' : 'text-slate-300'}`}><Box size={14} /> Cross Section</h3>
+                    <div className={`w-16 h-16 border rounded-lg p-1 flex items-center justify-center ${lightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'}`}><SectionGuide type={beamType} lightMode={lightMode} /></div>
                   </div>
-                  <select disabled={isReadOnly} value={beamType} onChange={(e) => modelingHook.handleBeamTypeChange(e.target.value)} className={`w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-bold mb-4 outline-none ${isReadOnly ? 'opacity-50 cursor-not-allowed' : 'focus:border-brand-accent cursor-pointer'}`}>
+                  <select disabled={isReadOnly} value={beamType} onChange={(e) => modelingHook.handleBeamTypeChange(e.target.value)} className={`w-full border rounded-lg px-3 py-2 text-sm font-bold mb-4 outline-none ${lightMode ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-950 border-slate-700 text-white'} ${isReadOnly ? 'opacity-50 cursor-not-allowed' : 'focus:border-blue-500 cursor-pointer'}`}>
                     <option value="I">I-Beam</option><option value="H">H-Beam</option><option value="BAR">BAR (Solid Box)</option><option value="L">L-Beam (Angle)</option><option value="T">T-Beam</option><option value="CHAN">Channel (C-Shape)</option><option value="ROD">ROD (Solid Cylinder)</option><option value="TUBE">TUBE (Hollow Pipe)</option>
                   </select>
                   <div className="space-y-1">
-                    <InputRow label="Length (L)" value={params.length} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, length: e.target.value})} />
-                    {beamType === 'ROD' && <InputRow label="Diameter (D)" value={params.dim1} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim1: e.target.value})} />}
-                    {beamType === 'TUBE' && (<><InputRow label="Outer Dia (D)" value={params.dim1} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim1: e.target.value})} /><InputRow label="Thickness (t)" value={params.dim2} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim2: e.target.value})} /></>)}
-                    {['BAR', 'I', 'H', 'L', 'T', 'CHAN'].includes(beamType) && (<><InputRow label="Width (W)" value={params.dim1} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim1: e.target.value})} /><InputRow label="Height (H)" value={params.dim2} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim2: e.target.value})} /></>)}
-                    {['I', 'H', 'L', 'T', 'CHAN'].includes(beamType) && (<><InputRow label="Flange Thk (tf)" value={params.dim3} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim3: e.target.value})} /><InputRow label="Web Thk (tw)" value={params.dim4} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim4: e.target.value})} /></>)}
+                    <InputRow lightMode={lightMode} label="Length (L)" value={params.length} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, length: e.target.value})} />
+                    {beamType === 'ROD' && <InputRow lightMode={lightMode} label="Diameter (D)" value={params.dim1} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim1: e.target.value})} />}
+                    {beamType === 'TUBE' && (<><InputRow lightMode={lightMode} label="Outer Dia (D)" value={params.dim1} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim1: e.target.value})} /><InputRow lightMode={lightMode} label="Thickness (t)" value={params.dim2} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim2: e.target.value})} /></>)}
+                    {['BAR', 'I', 'H', 'L', 'T', 'CHAN'].includes(beamType) && (<><InputRow lightMode={lightMode} label="Width (W)" value={params.dim1} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim1: e.target.value})} /><InputRow lightMode={lightMode} label="Height (H)" value={params.dim2} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim2: e.target.value})} /></>)}
+                    {['I', 'H', 'L', 'T', 'CHAN'].includes(beamType) && (<><InputRow lightMode={lightMode} label="Flange Thk (tf)" value={params.dim3} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim3: e.target.value})} /><InputRow lightMode={lightMode} label="Web Thk (tw)" value={params.dim4} unit="mm" disabled={isReadOnly} onChange={(e) => modelingHook.setParams({...params, dim4: e.target.value})} /></>)}
                   </div>
                 </section>
 
-                <section className="border-t border-slate-800 pt-6">
+                <section className={`border-t pt-6 ${lightMode ? 'border-slate-200' : 'border-slate-800'}`}>
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xs font-bold text-brand-accent uppercase tracking-wider flex items-center gap-2"><ShieldCheck size={14} /> Boundaries</h3>
+                    <h3 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-2 ${lightMode ? 'text-brand-blue' : 'text-slate-300'}`}><ShieldCheck size={14} /> Boundaries</h3>
                     {!isReadOnly && <button onClick={() => modelingHook.setBoundaries([...boundaries, { pos: (Number(params.length)||0)/2, type: 'Hinge', dof: '' }])} className="text-slate-400 hover:text-blue-400 cursor-pointer"><Plus size={16}/></button>}
                   </div>
                   <div className="space-y-2">
                     {boundaries.map((bc, idx) => (
-                      <div key={idx} className={`flex gap-1 items-center bg-slate-950 p-1.5 rounded-lg border border-slate-800 ${isReadOnly && 'opacity-60'}`}>
-                        <div className="relative flex-1"><input type="number" disabled={isReadOnly} value={bc.pos} onChange={e => modelingHook.updateBc(idx, 'pos', e.target.value)} className="w-full bg-transparent px-2 py-1 text-sm text-white outline-none font-mono text-right pr-8 disabled:cursor-not-allowed" /><span className="absolute right-2 top-1.5 text-[10px] text-slate-500 font-mono">mm</span></div>
-                        <select disabled={isReadOnly} value={bc.type} onChange={e => modelingHook.updateBc(idx, 'type', e.target.value)} className="w-[72px] bg-slate-800 rounded px-1 py-1 text-[11px] text-white outline-none disabled:cursor-not-allowed">
+                      <div key={idx} className={`flex gap-1 items-center p-1.5 rounded-lg border ${lightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'} ${isReadOnly && 'opacity-60'}`}>
+                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ml-1 ${BC_TYPE_COLOR[bc.type] || 'bg-slate-400'}`} title={`${bc.type} — 3D 뷰어 색상과 동일`} />
+                        <div className="relative flex-1"><input type="number" disabled={isReadOnly} value={bc.pos} onChange={e => modelingHook.updateBc(idx, 'pos', e.target.value)} className={`w-full bg-transparent border border-transparent rounded focus:border-blue-500 px-2 py-1 text-sm outline-none font-mono text-right pr-8 disabled:cursor-not-allowed ${lightMode ? 'text-slate-800' : 'text-white'}`} /><span className="absolute right-2 top-1.5 text-[10px] text-slate-500 font-mono">mm</span></div>
+                        <select disabled={isReadOnly} value={bc.type} onChange={e => modelingHook.updateBc(idx, 'type', e.target.value)} className={`w-[72px] rounded px-1 py-1 text-[11px] outline-none disabled:cursor-not-allowed ${lightMode ? 'bg-white border border-slate-300 text-slate-800' : 'bg-slate-800 text-white'}`}>
                           <option value="Fix">Fix</option><option value="Hinge">Hinge</option><option value="Roller">Roller</option><option value="Custom">Custom</option>
                         </select>
-                        {bc.type === 'Custom' && <input type="text" disabled={isReadOnly} placeholder="DOF" value={bc.dof || ''} onChange={e => modelingHook.updateBc(idx, 'dof', e.target.value)} className="w-12 bg-slate-900 border border-slate-700 text-white text-[10px] px-1 rounded outline-none text-center font-mono" />}
+                        {bc.type === 'Custom' && <input type="text" disabled={isReadOnly} placeholder="DOF" value={bc.dof || ''} onChange={e => modelingHook.updateBc(idx, 'dof', e.target.value)} className={`w-12 border text-[10px] px-1 rounded outline-none text-center font-mono ${lightMode ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-900 border-slate-700 text-white'}`} />}
                         {!isReadOnly && <button onClick={() => modelingHook.setBoundaries(boundaries.filter((_, i) => i !== idx))} className="p-1 text-slate-500 hover:text-red-400 cursor-pointer"><Trash2 size={14}/></button>}
                       </div>
                     ))}
                   </div>
                 </section>
 
-                <section className="border-t border-slate-800 pt-6 mb-6">
+                <section className={`border-t pt-6 mb-6 ${lightMode ? 'border-slate-200' : 'border-slate-800'}`}>
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xs font-bold text-brand-accent uppercase tracking-wider flex items-center gap-2"><ArrowDown size={14} /> Static Loads</h3>
+                    <h3 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-2 ${lightMode ? 'text-brand-blue' : 'text-slate-300'}`}><ArrowDown size={14} /> Static Loads</h3>
                     {!isReadOnly && <button onClick={() => modelingHook.setLoads([...loads, withYzPolar({ pos: (Number(params.length)||0)/2, fx: 0, fy: 5000, fz: 0, unit: 'N' })])} className="text-slate-400 hover:text-red-400 cursor-pointer"><Plus size={16}/></button>}
                   </div>
                   <div className="space-y-3">
                     {loads.map((load, idx) => {
                       const u = load.unit || 'N';
+                      const advOpen = !!advancedLoads[idx];
                       return (
-                        <div key={idx} className={`flex flex-col gap-1.5 bg-slate-950 p-2 rounded-lg border border-slate-800 ${isReadOnly && 'opacity-60'}`}>
+                        <div key={idx} className={`flex flex-col gap-2 p-2.5 rounded-lg border ${lightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'} ${isReadOnly && 'opacity-60'}`}>
+                          {/* 위치 + 삭제 */}
                           <div className="flex gap-2 items-center">
-                             <span className="text-[10px] text-slate-400 font-bold w-20 shrink-0 tracking-tight">하중 입력 위치</span>
+                             <span className={`inline-flex items-center justify-center w-5 h-5 shrink-0 rounded-md text-[10px] font-black ${lightMode ? 'bg-red-100 text-red-700' : 'bg-red-900/40 text-red-300'}`}>{idx + 1}</span>
+                             <span className={`text-[10px] font-bold shrink-0 ${lightMode ? 'text-slate-600' : 'text-slate-400'}`}>위치 X</span>
                              <div className="relative flex-1">
-                               <input type="number" disabled={isReadOnly} value={load.pos} onChange={e => modelingHook.updateLoad(idx, 'pos', e.target.value)} className="w-full bg-slate-900 border border-slate-800 focus:border-red-500 px-2 py-1 text-sm text-white outline-none font-mono text-right pr-6 rounded disabled:cursor-not-allowed" />
+                               <input type="number" disabled={isReadOnly} value={load.pos} onChange={e => modelingHook.updateLoad(idx, 'pos', e.target.value)} className={`w-full border focus:border-blue-500 px-2 py-1 text-sm outline-none font-mono text-right pr-6 rounded disabled:cursor-not-allowed ${lightMode ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'}`} />
                                <span className="absolute right-2 top-1.5 text-[10px] text-slate-500 font-mono">mm</span>
                              </div>
-                             {!isReadOnly && <button onClick={() => modelingHook.setLoads(loads.filter((_, i) => i !== idx))} className="p-1 text-slate-500 hover:text-red-400 cursor-pointer"><Trash2 size={14}/></button>}
+                             {!isReadOnly && <button onClick={() => modelingHook.setLoads(loads.filter((_, i) => i !== idx))} className="p-1 text-slate-500 hover:text-red-400 cursor-pointer" title="하중 삭제"><Trash2 size={14}/></button>}
                           </div>
-                          <div className="flex items-center justify-between gap-2">
-                             <span className="text-[10px] text-slate-500">하중 단위</span>
-                             {/* N / ton 단위 토글 — 누르면 fx/fy/fz 가 동등한 힘으로 자동 환산 */}
-                             <div className={`flex gap-0.5 bg-slate-800 rounded-md p-0.5 text-[10px] font-bold ${isReadOnly ? 'opacity-50' : ''}`}>
-                               <button
-                                 type="button"
-                                 disabled={isReadOnly}
-                                 onClick={() => modelingHook.updateLoadUnit(idx, 'N')}
-                                 className={`px-3 py-0.5 rounded transition cursor-pointer ${u === 'N' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                                 title="Newton 단위로 입력"
-                               >N</button>
-                               <button
-                                 type="button"
-                                 disabled={isReadOnly}
-                                 onClick={() => modelingHook.updateLoadUnit(idx, 'ton')}
-                                 className={`px-3 py-0.5 rounded transition cursor-pointer ${u === 'ton' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                                 title="Metric ton-force (1 ton = 9806.65 N) — 해석 시 N 으로 환산"
-                               >ton</button>
-                             </div>
-                          </div>
+                          {/* 합력 크기 + 각도 */}
                           <div className="flex gap-1.5">
-                             <div className="relative flex-1 flex items-center border border-slate-800 rounded bg-slate-900 overflow-hidden focus-within:border-red-500">
-                                <span className="text-[9px] font-bold text-slate-500 pl-1.5 whitespace-nowrap">입력 하중</span>
+                             <div className={`relative flex-1 flex items-center border rounded overflow-hidden focus-within:border-blue-500 ${lightMode ? 'border-slate-300 bg-white' : 'border-slate-800 bg-slate-900'}`}>
+                                <span className="text-[10px] font-bold text-slate-500 pl-1.5 whitespace-nowrap">합력</span>
                                 <input
                                   type="number"
                                   disabled={isReadOnly}
                                   value={load.yzMagnitude ?? ''}
                                   onChange={e => modelingHook.updateLoadYzPolar(idx, 'yzMagnitude', e.target.value)}
-                                  className="w-full bg-transparent px-1 py-1 text-xs text-emerald-400 outline-none font-mono text-right disabled:cursor-not-allowed"
+                                  className={`w-full bg-transparent px-1 py-1 text-xs outline-none font-mono text-right disabled:cursor-not-allowed ${lightMode ? 'text-emerald-700' : 'text-emerald-400'}`}
                                   title="Y-Z 평면 합력 크기"
                                 />
                                 <span className="text-[9px] text-slate-600 pr-1.5 font-mono">{u}</span>
                              </div>
-                             <div className="relative flex-1 flex items-center border border-slate-800 rounded bg-slate-900 overflow-hidden focus-within:border-red-500">
-                                <span className="text-[9px] font-bold text-slate-500 pl-1.5 whitespace-nowrap">각도</span>
+                             <div className={`relative flex-1 flex items-center border rounded overflow-hidden focus-within:border-blue-500 ${lightMode ? 'border-slate-300 bg-white' : 'border-slate-800 bg-slate-900'}`}>
+                                <span className="text-[10px] font-bold text-slate-500 pl-1.5 whitespace-nowrap inline-flex items-center gap-0.5">
+                                  각도
+                                  <span title="Beam 진행 방향(+X)에서 바라본 +Y 기준 시계방향 각도입니다. 0 이상 360 미만이며, 0보다 커지면 합력을 기준으로 FY/FZ가 자동 계산됩니다." className="cursor-help text-slate-400"><HelpCircle size={11} /></span>
+                                </span>
                                 <input
                                   type="number"
                                   min="0"
@@ -434,23 +440,46 @@ export default function BeamModelPreview() {
                                   disabled={isReadOnly}
                                   value={load.yzAngleDeg ?? ''}
                                   onChange={e => modelingHook.updateLoadYzPolar(idx, 'yzAngleDeg', e.target.value)}
-                                  className="w-full bg-transparent px-1 py-1 text-xs text-emerald-400 outline-none font-mono text-right disabled:cursor-not-allowed"
+                                  className={`w-full bg-transparent px-1 py-1 text-xs outline-none font-mono text-right disabled:cursor-not-allowed ${lightMode ? 'text-emerald-700' : 'text-emerald-400'}`}
                                   title="Beam 진행 방향(+X)에서 바라본 +Y 기준 시계방향 각도"
                                 />
                                 <span className="text-[9px] text-slate-600 pr-1.5 font-mono">deg</span>
                              </div>
                           </div>
-                          <p className="text-[10px] leading-4 text-slate-500">
-                            각도 기본값은 0 deg이며, 입력 범위는 0 이상 360 미만입니다. 각도가 0보다 커지면 입력 하중을 기준으로 FY/FZ가 자동 계산됩니다.
-                          </p>
-                          <div className="flex gap-1.5">
-                             {['fx', 'fy', 'fz'].map(axis => (
-                               <div key={axis} className="relative flex-1 flex items-center border border-slate-800 rounded bg-slate-900 overflow-hidden focus-within:border-red-500">
-                                  <span className="text-[9px] font-bold text-slate-500 pl-1.5 uppercase">{axis}</span>
-                                  <input type="number" disabled={isReadOnly} value={load[axis]} onChange={e => modelingHook.updateLoad(idx, axis, e.target.value)} className="w-full bg-transparent px-1 py-1 text-xs text-red-400 outline-none font-mono text-right disabled:cursor-not-allowed" />
-                                  <span className="text-[9px] text-slate-600 pr-1.5 font-mono">{u}</span>
-                               </div>
-                             ))}
+                          {/* 단위 토글 — 누르면 fx/fy/fz 가 동등한 힘으로 자동 환산 */}
+                          <div className="flex items-center justify-end gap-2">
+                             <span className="text-[10px] text-slate-500">단위</span>
+                             <div className={`flex gap-0.5 rounded-md p-0.5 text-[10px] font-bold ${lightMode ? 'bg-slate-200' : 'bg-slate-800'} ${isReadOnly ? 'opacity-50' : ''}`}>
+                               <button type="button" disabled={isReadOnly} onClick={() => modelingHook.updateLoadUnit(idx, 'N')} className={`px-3 py-0.5 rounded transition cursor-pointer ${u === 'N' ? 'bg-emerald-600 text-white shadow' : (lightMode ? 'text-slate-600 hover:text-slate-900 hover:bg-white' : 'text-slate-400 hover:text-white')}`} title="Newton 단위로 입력">N</button>
+                               <button type="button" disabled={isReadOnly} onClick={() => modelingHook.updateLoadUnit(idx, 'ton')} className={`px-3 py-0.5 rounded transition cursor-pointer ${u === 'ton' ? 'bg-emerald-600 text-white shadow' : (lightMode ? 'text-slate-600 hover:text-slate-900 hover:bg-white' : 'text-slate-400 hover:text-white')}`} title="Metric ton-force (1 ton = 9806.65 N) — 해석 시 N 으로 환산">ton</button>
+                             </div>
+                          </div>
+                          {/* 고급: 직접 성분 (Fx/Fy/Fz) — 접이식 (합력·각도와 연동) */}
+                          <div className={`rounded border ${lightMode ? 'border-slate-200 bg-white' : 'border-slate-800 bg-slate-900/40'}`}>
+                            <button
+                              type="button"
+                              onClick={() => toggleAdvanced(idx)}
+                              className={`w-full flex items-center justify-between px-2 py-1.5 text-[10px] font-bold cursor-pointer transition-colors ${lightMode ? 'text-slate-600 hover:bg-slate-50' : 'text-slate-400 hover:bg-slate-800'}`}
+                              title="Fx / Fy / Fz 직접 성분 입력 (합력·각도와 자동 연동)"
+                            >
+                              <span className="flex items-center gap-1">
+                                {advOpen ? <ChevronDown size={12}/> : <ChevronRight size={12}/>} 직접 성분 (Fx / Fy / Fz)
+                              </span>
+                              {!advOpen && (
+                                <span className="font-mono text-[9px] text-slate-400 truncate ml-2">{load.fx}, {load.fy}, {load.fz} {u}</span>
+                              )}
+                            </button>
+                            {advOpen && (
+                              <div className="flex gap-1.5 px-2 pb-2">
+                                {['fx', 'fy', 'fz'].map(axis => (
+                                  <div key={axis} className={`relative flex-1 flex items-center border rounded overflow-hidden focus-within:border-blue-500 ${lightMode ? 'border-slate-300 bg-white' : 'border-slate-800 bg-slate-900'}`}>
+                                     <span className="text-[10px] font-bold text-slate-500 pl-1.5 uppercase">{axis}</span>
+                                     <input type="number" disabled={isReadOnly} value={load[axis]} onChange={e => modelingHook.updateLoad(idx, axis, e.target.value)} className={`w-full bg-transparent px-1 py-1 text-xs outline-none font-mono text-right disabled:cursor-not-allowed ${lightMode ? 'text-rose-600' : 'text-red-400'}`} />
+                                     <span className="text-[9px] text-slate-600 pr-1.5 font-mono">{u}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -462,29 +491,42 @@ export default function BeamModelPreview() {
 
             {activeTab === 'results' && (
               <div className="p-5 space-y-6 h-full flex flex-col">
-                <div className="mb-2 text-slate-300 text-sm"><p>해석이 완료된 <strong>result.json</strong> 파일을 업로드하시면 모델 조건과 해석 결과가 한 번에 적용됩니다.</p></div>
+                <div className={`mb-2 text-sm ${lightMode ? 'text-slate-700' : 'text-slate-300'}`}><p>해석이 완료된 <strong>result.json</strong> 파일을 업로드하시면 모델 조건과 해석 결과가 한 번에 적용됩니다.</p></div>
                 {!hasCharts ? (
-                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-600 rounded-xl cursor-pointer hover:bg-slate-800 transition-colors">
+                  <>
+                  <div className={`flex flex-col items-center justify-center py-10 gap-3 ${lightMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <BarChart2 size={40} className="opacity-40" />
+                    <p className={`text-sm font-medium ${lightMode ? 'text-slate-500' : 'text-slate-400'}`}>아직 해석 결과가 없습니다</p>
+                    <p className="text-xs text-slate-400">Modeling 탭에서 모델을 설정하고 Run을 실행하세요</p>
+                    <button
+                      onClick={() => setActiveTab('modeling')}
+                      className={`mt-2 text-xs font-bold px-4 py-2 rounded-lg border transition-colors cursor-pointer ${lightMode ? 'border-blue-300 text-blue-600 hover:bg-blue-50' : 'border-slate-600 text-slate-300 hover:bg-slate-800'}`}
+                    >
+                      Modeling 탭으로 이동
+                    </button>
+                  </div>
+                  <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${lightMode ? 'border-slate-300 hover:bg-slate-50' : 'border-slate-600 hover:bg-slate-800'}`}>
                     <Upload size={28} className="text-slate-400 mb-3"/>
-                    <span className="text-sm font-bold text-emerald-400 mb-1">Upload result.json</span>
+                    <span className={`text-sm font-bold mb-1 ${lightMode ? 'text-emerald-700' : 'text-emerald-400'}`}>Upload result.json</span>
                     <span className="text-[11px] text-slate-500">클릭하여 파일 선택</span>
                     <input type="file" accept=".json" className="hidden" onChange={handleJsonUpload} />
                   </label>
+                  </>
                 ) : (
                   <div className="space-y-4">
-                    <div className="bg-emerald-900/20 border border-emerald-500/30 p-4 rounded-xl">
-                      <h4 className="text-sm font-bold text-emerald-400 mb-1 flex items-center gap-2"><Activity size={16}/> 해석 데이터 적용 완료</h4>
-                      <p className="text-xs text-emerald-300/70">우측 뷰어에서 3D 변형 형상 및 하단의 응력/단면력 차트를 확인하세요.</p>
+                    <div className={`border p-4 rounded-xl ${lightMode ? 'bg-emerald-50 border-emerald-200' : 'bg-emerald-900/20 border-emerald-500/30'}`}>
+                      <h4 className={`text-sm font-bold mb-1 flex items-center gap-2 ${lightMode ? 'text-emerald-700' : 'text-emerald-400'}`}><Activity size={16}/> 해석 데이터 적용 완료</h4>
+                      <p className={`text-xs ${lightMode ? 'text-emerald-700/80' : 'text-emerald-300/70'}`}>우측 뷰어에서 3D 변형 형상 및 하단의 응력/단면력 차트를 확인하세요.</p>
                     </div>
                     {summaryData && (
-                      <div className="bg-slate-950 rounded-xl border border-slate-800 p-4 mt-2 shadow-lg">
-                        <h4 className="text-xs font-bold text-white uppercase tracking-wider border-b border-slate-800 pb-2 mb-3">Analysis Summary</h4>
+                      <div className={`rounded-xl border p-4 mt-2 ${lightMode ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-950 border-slate-800 shadow-lg'}`}>
+                        <h4 className={`text-xs font-bold uppercase tracking-wider border-b pb-2 mb-3 ${lightMode ? 'text-slate-900 border-slate-200' : 'text-white border-slate-800'}`}>Analysis Summary</h4>
                         <div className="flex flex-col gap-2.5 text-xs">
-                          <SummaryRow label="Total Weight" value={summaryData.totalWeight?.toFixed(2)} unit="kg" />
-                          <SummaryRow label="Max Displacement (Z)" value={summaryData.maxDispNode?.dispZ?.toFixed(2)} unit="mm" sub={`@ Node ${summaryData.maxDispNode?.nodeId} (X: ${summaryData.maxDispNode?.x}mm)`} />
-                          <SummaryRow label="Max Stress" value={engFormat(summaryData.maxStressElement?.sMax || summaryData.maxStressElement?.maxStress)} unit="MPa" sub={`@ Element ${summaryData.maxStressElement?.elementId}`} />
-                          <SummaryRow label="Max Shear Force" value={engFormat(summaryData.maxShearForceElement?.shearForce1)} unit="N" sub={`@ Element ${summaryData.maxShearForceElement?.elementId}`} />
-                          <SummaryRow label="Max Bending Moment" value={engFormat(summaryData.maxBendingMomentElement?.bendingMoment1)} unit="N·mm" sub={`@ Element ${summaryData.maxBendingMomentElement?.elementId}`} />
+                          <SummaryRow lightMode={lightMode} label="Total Weight" value={summaryData.totalWeight?.toFixed(2)} unit="kg" />
+                          <SummaryRow lightMode={lightMode} label="Max Displacement (Z)" value={summaryData.maxDispNode?.dispZ?.toFixed(2)} unit="mm" sub={`@ Node ${summaryData.maxDispNode?.nodeId} (X: ${summaryData.maxDispNode?.x}mm)`} />
+                          <SummaryRow lightMode={lightMode} label="Max Stress" value={engFormat(summaryData.maxStressElement?.sMax || summaryData.maxStressElement?.maxStress)} unit="MPa" sub={`@ Element ${summaryData.maxStressElement?.elementId}`} />
+                          <SummaryRow lightMode={lightMode} label="Max Shear Force" value={engFormat(summaryData.maxShearForceElement?.shearForce1)} unit="N" sub={`@ Element ${summaryData.maxShearForceElement?.elementId}`} />
+                          <SummaryRow lightMode={lightMode} label="Max Bending Moment" value={engFormat(summaryData.maxBendingMomentElement?.bendingMoment1)} unit="N·mm" sub={`@ Element ${summaryData.maxBendingMomentElement?.elementId}`} />
                         </div>
                       </div>
                     )}
@@ -494,28 +536,30 @@ export default function BeamModelPreview() {
             )}
           </div>
 
-          <div className="p-4 border-t border-slate-800 bg-slate-900 shrink-0 z-20">
+          <div className={`p-4 border-t shrink-0 z-20 ${lightMode ? 'border-slate-200 bg-white' : 'border-slate-800 bg-slate-900'}`}>
              {validationErrors.length > 0 && !isReadOnly && (
-                <div className="mb-3 p-2 bg-red-950/50 border border-red-800 rounded text-[11px] text-red-300">
+                <div className={`mb-3 p-2 border rounded text-[11px] ${lightMode ? 'bg-red-50 border-red-200 text-red-700' : 'bg-red-950/50 border-red-800 text-red-300'}`}>
                   <strong className="block mb-1">입력 오류:</strong>{validationErrors.map((err, idx) => <div key={idx}>- {err}</div>)}
                 </div>
              )}
             {hasCharts ? (
-              <button onClick={handleReset} className="w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer bg-red-900/30 text-red-400 hover:bg-red-900/50 border border-red-800/50 shadow-lg">
+              <button onClick={handleReset} className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border ${lightMode ? 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200 shadow-sm' : 'bg-red-900/30 text-red-400 hover:bg-red-900/50 border-red-800/50 shadow-lg'}`}>
                 <Trash2 size={18} /> 데이터 초기화 (Clear Results)
               </button>
             ) : isAnalyzing ? (
-              <div className="w-full flex flex-col items-center bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-inner">
-                <div className="flex justify-between w-full text-[11px] text-emerald-400 font-bold mb-2">
-                  <span className="flex items-center gap-2"><RefreshCw className="animate-spin" size={14}/> {globalJob?.message || "서버 대기 중..."}</span>
+              // 진행률은 우측 하단 GlobalJob 위젯과 일부 중복되나, 좌측 패널에서도
+              // 현재 작업 상태를 즉시 확인할 수 있도록 간소화된 형태로 유지한다.
+              <div className={`w-full flex flex-col items-center p-3 rounded-xl border shadow-inner ${lightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'}`}>
+                <div className={`flex justify-between w-full text-[11px] font-bold mb-2 ${lightMode ? 'text-emerald-700' : 'text-emerald-400'}`}>
+                  <span className="flex items-center gap-2"><Loader2 className="animate-spin" size={14}/> {globalJob?.message || "서버 대기 중..."}</span>
                   <span>{globalJob?.progress || 0}%</span>
                 </div>
-                <div className="w-full bg-slate-900 rounded-full h-2.5 overflow-hidden">
+                <div className={`w-full rounded-full h-2.5 overflow-hidden ${lightMode ? 'bg-slate-200' : 'bg-slate-900'}`}>
                   <div className="bg-emerald-500 h-2.5 rounded-full transition-all duration-300" style={{ width: `${globalJob?.progress || 0}%` }}></div>
                 </div>
               </div>
             ) : (
-              <button onClick={analysisManager.handleRunAnalysis} disabled={validationErrors.length > 0} className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg ${validationErrors.length > 0 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-brand-accent text-brand-blue hover:shadow-[0_0_20px_rgba(0,230,0,0.4)]'}`}>
+              <button onClick={analysisManager.handleRunAnalysis} disabled={validationErrors.length > 0} className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg ${validationErrors.length > 0 ? (lightMode ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-slate-700 text-slate-500 cursor-not-allowed') : (lightMode ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-brand-accent text-brand-blue hover:shadow-[0_0_20px_rgba(0,230,0,0.4)]')}`}>
                 <Play size={18} className="fill-current" /> 서버에서 해석 실행 (Run)
               </button>
             )}
@@ -528,44 +572,47 @@ export default function BeamModelPreview() {
         className={
           isCapturing
             ? "flex flex-col w-full h-max gap-6 overflow-visible"
-            : "flex flex-col rounded-xl shadow-2xl border border-slate-800 z-0 relative bg-slate-950 transition-all h-full overflow-hidden"
+            : `flex flex-col rounded-xl border z-0 relative transition-all h-full overflow-hidden ${lightMode ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-950 border-slate-800 shadow-2xl'}`
         }
       >
         {/* 캡쳐 버튼 — 일반 모드에서만 표시 */}
         {!isCapturing && hasCharts && (
           <div className="absolute top-4 right-4 z-50 flex items-center gap-2" ref={captureMenuRef}>
-            <button
-              onClick={() => handleCapture('full')}
-              className="bg-indigo-600/90 hover:bg-indigo-500 px-3 py-2 rounded-lg border border-indigo-400 text-white transition-colors flex items-center gap-2 shadow-[0_4px_15px_rgba(79,70,229,0.5)] cursor-pointer"
-              title="3D 뷰 + 4개 차트 + 모델/해석 요약 — 화이트 테마 보고서 1장"
-            >
-              <Camera size={18}/> <span className="text-xs font-bold tracking-wider">FULL REPORT</span>
-            </button>
-            <div className="relative">
+            <div className="flex items-stretch rounded-xl overflow-hidden shadow-[0_4px_15px_rgba(79,70,229,0.4)] border border-indigo-400">
               <button
-                onClick={() => setShowCaptureMenu(v => !v)}
-                className="bg-slate-800/90 hover:bg-slate-700 px-3 py-2 rounded-lg border border-slate-600 text-white transition-colors flex items-center gap-1.5 shadow-lg cursor-pointer"
-                title="개별 차트 다운로드"
+                onClick={() => handleCapture('full')}
+                className="bg-indigo-600/90 hover:bg-indigo-500 px-3 py-2 text-white transition-colors flex items-center gap-2 cursor-pointer"
+                title="3D 뷰 + 4개 차트 + 모델/해석 요약 — 화이트 테마 보고서 1장"
               >
-                <Download size={16}/>
-                <ChevronDown size={14}/>
+                <Camera size={16}/> <span className="text-xs font-bold tracking-wider">FULL REPORT</span>
               </button>
-              {showCaptureMenu && (
-                <div className="absolute right-0 top-full mt-2 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden min-w-[220px] z-50">
-                  <button
-                    onClick={() => handleCapture('displacement')}
-                    className="w-full px-4 py-3 text-left text-xs font-bold text-sky-400 hover:bg-slate-800 flex items-center gap-2 cursor-pointer border-b border-slate-800"
-                  >
-                    <FileText size={14}/> Max Displacement 보고서
-                  </button>
-                  <button
-                    onClick={() => handleCapture('stress')}
-                    className="w-full px-4 py-3 text-left text-xs font-bold text-violet-400 hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
-                  >
-                    <FileText size={14}/> Max Stress 보고서
-                  </button>
-                </div>
-              )}
+              <div className="w-px bg-indigo-400/60" />
+              <div className="relative">
+                <button
+                  onClick={() => setShowCaptureMenu(v => !v)}
+                  className="bg-indigo-600/90 hover:bg-indigo-500 px-2.5 py-2 text-white transition-colors flex items-center gap-1 cursor-pointer h-full"
+                  title="개별 보고서 다운로드"
+                >
+                  <ChevronDown size={14}/>
+                </button>
+                {showCaptureMenu && (
+                  <div className={`absolute right-0 top-full mt-2 border rounded-xl shadow-2xl overflow-hidden min-w-[220px] z-50 ${lightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-700'}`}>
+                    <div className={`px-4 py-2 text-[10px] font-bold uppercase tracking-wider border-b ${lightMode ? 'text-slate-400 border-slate-200' : 'text-slate-500 border-slate-700'}`}>개별 보고서</div>
+                    <button
+                      onClick={() => handleCapture('displacement')}
+                      className={`w-full px-4 py-3 text-left text-xs font-bold flex items-center gap-2 cursor-pointer border-b ${lightMode ? 'text-sky-700 hover:bg-slate-50 border-slate-200' : 'text-sky-400 hover:bg-slate-800 border-slate-800'}`}
+                    >
+                      <FileText size={14}/> Max Displacement 보고서
+                    </button>
+                    <button
+                      onClick={() => handleCapture('stress')}
+                      className={`w-full px-4 py-3 text-left text-xs font-bold flex items-center gap-2 cursor-pointer ${lightMode ? 'text-violet-700 hover:bg-slate-50' : 'text-violet-400 hover:bg-slate-800'}`}
+                    >
+                      <FileText size={14}/> Max Stress 보고서
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -584,14 +631,14 @@ export default function BeamModelPreview() {
             ? (isCapturing ? 'w-full rounded-xl overflow-hidden border border-slate-200 shadow-sm' : 'contents')
             : 'hidden'
         }>
-          <Viewer3D beamType={beamType} params={params} loads={loads} boundaries={boundaries} dispData={dispData} hasCharts={hasCharts} isCapturing={isCapturing} />
+          <Viewer3D beamType={beamType} params={params} loads={loads} boundaries={boundaries} dispData={dispData} hasCharts={hasCharts} isCapturing={isCapturing} lightMode={lightMode} />
         </div>
 
         {/* 모델/해석 요약 (full 캡쳐 전용) */}
         {showModelAnalysis && <ModelAnalysisGrid beamType={beamType} params={params} boundaries={boundaries} loads={loads} summaryData={summaryData} />}
 
         {/* 차트 영역 */}
-        {hasCharts && <EngineeringCharts dispData={dispData} elForceData={elForceData} stressData={stressData} isCapturing={isCapturing} captureMode={captureMode} />}
+        {hasCharts && <EngineeringCharts dispData={dispData} elForceData={elForceData} stressData={stressData} isCapturing={isCapturing} captureMode={captureMode} lightMode={lightMode} />}
 
         {/* 캡쳐 푸터 */}
         {showFooter && (
