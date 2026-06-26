@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import axios from 'axios';
 import {
-  PenTool, Calculator, AlertCircle, Loader2, Plus, Trash2,
+  PenTool, Calculator, AlertCircle, Loader2, Plus, Trash2, Ruler, Layers, CheckCircle2,
 } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -141,6 +141,38 @@ const DEFAULT_POLY = [
   { x: -50, y: -75 }, { x: 50, y: -75 },
   { x: 50, y: 75 },  { x: -50, y: 75 },
 ];
+
+const DEFAULT_ATTACHED_PLATE = {
+  bp: '800',
+  tp: '10',
+};
+
+const RESULT_UNITS = {
+  cm: {
+    label: 'cm',
+    length: 0.1,
+    area: 0.01,
+    volume: 0.001,
+    inertia: 0.0001,
+    warping: 0.000001,
+  },
+  mm: {
+    label: 'mm',
+    length: 1,
+    area: 1,
+    volume: 1,
+    inertia: 1,
+    warping: 1,
+  },
+};
+
+const UNIT_LABELS = {
+  length: { cm: 'cm', mm: 'mm' },
+  area: { cm: 'cm²', mm: 'mm²' },
+  volume: { cm: 'cm³', mm: 'mm³' },
+  inertia: { cm: 'cm⁴', mm: 'mm⁴' },
+  warping: { cm: 'cm⁶', mm: 'mm⁶' },
+};
 
 const MAX_POLY_VERTICES = 20;
 const MIN_COORD = -5000;
@@ -348,6 +380,119 @@ function toCentroidalCoords(verts) {
   return verts.map(v => ({ x: v.x - cx, y: v.y - cy }));
 }
 
+function getBounds(points) {
+  if (!points || points.length === 0) return null;
+  const xs = points.map(p => p.x);
+  const ys = points.map(p => p.y);
+  return {
+    xmin: Math.min(...xs),
+    xmax: Math.max(...xs),
+    ymin: Math.min(...ys),
+    ymax: Math.max(...ys),
+  };
+}
+
+function makePlatePolygon(bp, tp, yBottom, cyShift = 0) {
+  const left = -bp / 2;
+  const right = bp / 2;
+  const bottom = yBottom - cyShift;
+  const top = yBottom + tp - cyShift;
+  return [
+    { x: left, y: bottom },
+    { x: right, y: bottom },
+    { x: right, y: top },
+    { x: left, y: top },
+  ];
+}
+
+function composeWithAttachedPlate(base, plate, fallbackPolygon) {
+  const bp = Number(plate.bp);
+  const tp = Number(plate.tp);
+  if (!base || !(bp > 0) || !(tp > 0)) return base;
+
+  const sourceBounds = base.bbox ?? getBounds(base.polygon ?? fallbackPolygon);
+  if (!sourceBounds) return base;
+
+  const baseArea = Number(base.area);
+  const baseIx = Number(base.Ix);
+  const baseIy = Number(base.Iy);
+  const baseIxy = Number(base.Ixy ?? 0);
+  if (!(baseArea > 0) || !Number.isFinite(baseIx) || !Number.isFinite(baseIy)) return base;
+
+  const plateArea = bp * tp;
+  const plateCx = 0;
+  const plateCy = sourceBounds.ymax + tp / 2;
+  const totalArea = baseArea + plateArea;
+  const cx = (baseArea * 0 + plateArea * plateCx) / totalArea;
+  const cy = (baseArea * 0 + plateArea * plateCy) / totalArea;
+
+  const plateIx = (bp * Math.pow(tp, 3)) / 12;
+  const plateIy = (tp * Math.pow(bp, 3)) / 12;
+  const ix = baseIx + baseArea * Math.pow(0 - cy, 2) + plateIx + plateArea * Math.pow(plateCy - cy, 2);
+  const iy = baseIy + baseArea * Math.pow(0 - cx, 2) + plateIy + plateArea * Math.pow(plateCx - cx, 2);
+  const ixy = baseIxy + baseArea * (0 - cx) * (0 - cy) + plateArea * (plateCx - cx) * (plateCy - cy);
+
+  const combinedBounds = {
+    xmin: Math.min(sourceBounds.xmin, -bp / 2) - cx,
+    xmax: Math.max(sourceBounds.xmax, bp / 2) - cx,
+    ymin: sourceBounds.ymin - cy,
+    ymax: sourceBounds.ymax + tp - cy,
+  };
+
+  const sxTopDenom = Math.abs(combinedBounds.ymax) || null;
+  const sxBotDenom = Math.abs(combinedBounds.ymin) || null;
+  const syLeftDenom = Math.abs(combinedBounds.xmin) || null;
+  const syRightDenom = Math.abs(combinedBounds.xmax) || null;
+  const radiusSafe = v => v > 0 ? Math.sqrt(v / totalArea) : null;
+  const avg = (ix + iy) / 2;
+  const root = Math.sqrt(Math.pow((ix - iy) / 2, 2) + Math.pow(ixy, 2));
+  const iMax = avg + root;
+  const iMin = avg - root;
+  const angle = Math.abs(ixy) < 1e-9 && Math.abs(ix - iy) < 1e-9
+    ? 0
+    : 0.5 * Math.atan2(-2 * ixy, iy - ix);
+  const shiftedBasePolygon = (base.polygon ?? fallbackPolygon)?.map(p => ({ x: p.x - cx, y: p.y - cy })) ?? null;
+
+  return {
+    ...base,
+    area: totalArea,
+    perimeter: null,
+    centroid: { x: cx, y: cy },
+    Ix: ix,
+    Iy: iy,
+    Ixy: ixy,
+    Sx_top: sxTopDenom ? ix / sxTopDenom : null,
+    Sx_bot: sxBotDenom ? ix / sxBotDenom : null,
+    Sy_left: syLeftDenom ? iy / syLeftDenom : null,
+    Sy_right: syRightDenom ? iy / syRightDenom : null,
+    rx: radiusSafe(ix),
+    ry: radiusSafe(iy),
+    principal: {
+      angle,
+      Imax: iMax,
+      Imin: iMin,
+      rmax: radiusSafe(iMax),
+      rmin: radiusSafe(iMin),
+    },
+    Zx: null,
+    Zy: null,
+    shapeFactorX: null,
+    shapeFactorY: null,
+    J: null,
+    Cw: null,
+    shearCenter: null,
+    bbox: combinedBounds,
+    polygon: shiftedBasePolygon,
+    attachedPlate: {
+      bp,
+      tp,
+      area: plateArea,
+      polygon: makePlatePolygon(bp, tp, sourceBounds.ymax, cy),
+    },
+    isCompositeSection: true,
+  };
+}
+
 // ── 클라이언트 측 shapeToPolygon (section-engine 로직 복제) ──────
 const _PI = Math.PI;
 function clientShapeToPolygon(key, p) {
@@ -547,20 +692,26 @@ function DimAnnotations({ shapeKey, params: p, toSvg, scale }) {
 }
 
 // ── SVG 단면 캔버스 ─────────────────────────────────────────────
-function SectionCanvas({ polygon, properties, shapeKey, params }) {
+function SectionCanvas({ polygon, platePolygon, properties, shapeKey, params }) {
   const VW = 800, VH = 400, PAD = 60;
 
   const computed = useMemo(() => {
-    if (!polygon || polygon.length < 3) return null;
-    const xs = polygon.map(p => p.x);
-    const ys = polygon.map(p => p.y);
+    const allPoints = [...(polygon ?? []), ...(platePolygon ?? [])];
+    if (allPoints.length < 3) return null;
+    const xs = allPoints.map(p => p.x);
+    const ys = allPoints.map(p => p.y);
     // 도심 기준 최대 반경으로 스케일 결정 → 비대칭 단면도 항상 캔버스 내에 위치
     const maxExtX = Math.max(Math.abs(Math.min(...xs)), Math.abs(Math.max(...xs))) || 1;
     const maxExtY = Math.max(Math.abs(Math.min(...ys)), Math.abs(Math.max(...ys))) || 1;
     const scale = Math.min((VW / 2 - PAD) / maxExtX, (VH / 2 - PAD) / maxExtY);
     const toSvg = p => ({ x: VW / 2 + p.x * scale, y: VH / 2 - p.y * scale });
-    return { svgPts: polygon.map(toSvg), scale, toSvg };
-  }, [polygon]);
+    return {
+      svgPts: polygon?.map(toSvg) ?? [],
+      plateSvgPts: platePolygon?.map(toSvg) ?? [],
+      scale,
+      toSvg,
+    };
+  }, [polygon, platePolygon]);
 
   const principalAngle = properties?.principal?.angle;
   const isAsymmetric = principalAngle != null && Math.abs(principalAngle) > 0.001;
@@ -611,12 +762,23 @@ function SectionCanvas({ polygon, properties, shapeKey, params }) {
 
         {/* 단면 외곽선 */}
         {computed ? (
-          <polygon
-            points={computed.svgPts.map(p => `${p.x},${p.y}`).join(' ')}
-            fill="#53d8fb" fillOpacity="0.22"
-            stroke="#53d8fb" strokeWidth="2"
-            fillRule="evenodd"
-          />
+          <>
+            {computed.svgPts.length >= 3 && (
+              <polygon
+                points={computed.svgPts.map(p => `${p.x},${p.y}`).join(' ')}
+                fill="#53d8fb" fillOpacity="0.22"
+                stroke="#53d8fb" strokeWidth="2"
+                fillRule="evenodd"
+              />
+            )}
+            {computed.plateSvgPts.length >= 3 && (
+              <polygon
+                points={computed.plateSvgPts.map(p => `${p.x},${p.y}`).join(' ')}
+                fill="#fbbf24" fillOpacity="0.24"
+                stroke="#fbbf24" strokeWidth="2"
+              />
+            )}
+          </>
         ) : (
           <text x={VW/2} y={VH/2 + 6} textAnchor="middle"
                 fill="#3a5f8a" fontSize="15" fontFamily="sans-serif">
@@ -654,6 +816,14 @@ const fmt = (v, digits = 4) => {
   if (abs >= 1)   return parseFloat(v.toFixed(digits)).toLocaleString();
   return v.toExponential(3);
 };
+
+const formatByUnit = (value, dimension, resultUnit, digits = 4) => {
+  if (value == null) return null;
+  const factor = RESULT_UNITS[resultUnit]?.[dimension] ?? 1;
+  return fmt(value * factor, digits);
+};
+
+const unitByDimension = (dimension, resultUnit) => UNIT_LABELS[dimension]?.[resultUnit] ?? '';
 
 // ── Stat Block ─────────────────────────────────────────────────
 function StatBlock({ label, value, unit, desc }) {
@@ -696,6 +866,9 @@ export default function SectionPropertyCalculator() {
   const [shapeKey, setShapeKey] = useState('ishape');
   const [paramValues, setParamValues] = useState({});
   const [polyVerts, setPolyVerts] = useState([...DEFAULT_POLY]);
+  const [includeAttachedPlate, setIncludeAttachedPlate] = useState(false);
+  const [attachedPlate, setAttachedPlate] = useState(DEFAULT_ATTACHED_PLATE);
+  const [resultUnit, setResultUnit] = useState('cm');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -720,20 +893,42 @@ export default function SectionPropertyCalculator() {
     return null;
   }, [result, isPolygon, polyVerts, shapeKey, currentParams]);
 
+  const displayPlatePolygon = useMemo(() => {
+    if (!includeAttachedPlate || isPolygon) return null;
+    if (result?.attachedPlate?.polygon) return result.attachedPlate.polygon;
+    const bp = Number(attachedPlate.bp);
+    const tp = Number(attachedPlate.tp);
+    const bounds = getBounds(displayPolygon);
+    if (!(bp > 0) || !(tp > 0) || !bounds) return null;
+    return makePlatePolygon(bp, tp, bounds.ymax, 0);
+  }, [includeAttachedPlate, isPolygon, result, attachedPlate, displayPolygon]);
+
   const getValue = (key, defaultValue) =>
     paramValues[`${shapeKey}_${key}`] ?? String(defaultValue);
-  const setValue = (key, val) =>
+  const setValue = (key, val) => {
     setParamValues(prev => ({ ...prev, [`${shapeKey}_${key}`]: val }));
+    setResult(null);
+    setError(null);
+  };
+  const setPlateValue = (key, val) => {
+    setAttachedPlate(prev => ({ ...prev, [key]: val }));
+    setResult(null);
+    setError(null);
+  };
 
   const polyErrors = useMemo(() => isPolygon ? validatePolygon(polyVerts) : [], [isPolygon, polyVerts]);
 
-  const isValid = isPolygon
+  const baseInputValid = isPolygon
     ? polyVerts.length >= 3 && polyErrors.length === 0
     : shape.params.every(p => {
         const v = getValue(p.key, p.defaultValue);
         if (p.min === 0) return v !== '' && Number(v) >= 0;
         return v !== '' && Number(v) > 0;
       });
+  const attachedPlateValid = !includeAttachedPlate || isPolygon
+    ? true
+    : Number(attachedPlate.bp) > 0 && Number(attachedPlate.tp) > 0;
+  const isValid = baseInputValid && attachedPlateValid;
 
 
   const handleCalculate = async () => {
@@ -755,7 +950,12 @@ export default function SectionPropertyCalculator() {
         payload = { shape: shapeKey, params, units: 'mm', employee_id: employeeId || 'unknown' };
       }
       const res = await axios.post(`${API_BASE_URL}/api/section-property/calculate`, payload);
-      setResult(res.data);
+      const baseResult = res.data;
+      setResult(
+        includeAttachedPlate && !isPolygon
+          ? composeWithAttachedPlate(baseResult, attachedPlate, displayPolygon)
+          : baseResult
+      );
     } catch (e) {
       setError(e.response?.data?.detail ?? '계산 중 오류가 발생했습니다.');
     } finally {
@@ -767,6 +967,7 @@ export default function SectionPropertyCalculator() {
     setShapeKey(newKey);
     setResult(null);
     setError(null);
+    if (newKey === 'polygon') setIncludeAttachedPlate(false);
   };
 
   const r = result ?? {};
@@ -793,34 +994,44 @@ export default function SectionPropertyCalculator() {
         {/* ── LEFT SIDEBAR ── */}
         <div className="space-y-4">
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-r from-violet-700 to-violet-600 px-5 py-3">
-              <h2 className="text-[11px] font-bold text-white uppercase tracking-wider">단면 종류</h2>
+            <div className="bg-slate-50 border-b border-gray-100 px-5 py-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700">1</span>
+                <div>
+                  <h2 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">단면 선택</h2>
+                  <p className="text-[10px] text-slate-400">계산할 기본 부재 형상을 선택</p>
+                </div>
+              </div>
             </div>
-            {/* 단면 버튼 그리드 (4×3) */}
-            <div className="p-4 grid grid-cols-4 gap-2">
+            <div className="p-4 grid grid-cols-3 gap-2">
               {SHAPES.map(s => (
                 <button
                   key={s.key}
                   onClick={() => handleShapeChange(s.key)}
-                  className={`flex flex-col items-center gap-1 py-2 px-1 rounded-lg border transition-all cursor-pointer text-center ${
+                  className={`min-h-[70px] flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-all cursor-pointer text-center ${
                     shapeKey === s.key
-                      ? 'border-violet-500 bg-violet-50 text-violet-700'
+                      ? 'border-violet-500 bg-violet-50 text-violet-700 shadow-sm'
                       : 'border-slate-200 hover:border-violet-300 hover:bg-slate-50 text-slate-500'
                   }`}
                 >
                   <span className="leading-none">{s.icon}</span>
-                  <span className="text-[9px] font-bold leading-tight">{s.label}</span>
+                  <span className="text-[10px] font-bold leading-tight">{s.label}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* 파라미터 폼 or 꼭짓점 편집기 */}
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
             <div className="bg-slate-50 border-b border-gray-100 px-5 py-3">
-              <h2 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                {isPolygon ? '꼭짓점 (Vertices)' : '파라미터'}
-              </h2>
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700">2</span>
+                <div>
+                  <h2 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                    {isPolygon ? '꼭짓점 입력' : '단면 치수 입력'}
+                  </h2>
+                  <p className="text-[10px] text-slate-400">입력 단위는 mm 기준</p>
+                </div>
+              </div>
             </div>
             <div className="p-4 space-y-3">
               {isPolygon ? (
@@ -828,48 +1039,192 @@ export default function SectionPropertyCalculator() {
               ) : (
                 shape.params.map(p => (
                   <div key={`${shapeKey}_${p.key}`}>
-                    <label className="block text-[11px] font-bold text-slate-500 mb-1">{p.label}</label>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">{p.label}</label>
                     <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden focus-within:border-violet-400 transition-colors bg-white">
                       <input
                         type="number"
                         value={getValue(p.key, p.defaultValue)}
                         onChange={e => setValue(p.key, e.target.value)}
                         min={p.min}
-                        className="flex-1 px-3 py-2 text-sm font-bold text-slate-800 outline-none bg-transparent"
+                        className="min-w-0 flex-1 px-3 py-2 text-sm font-bold text-slate-800 outline-none bg-transparent"
                       />
-                      <span className="px-3 py-2 bg-slate-50 text-slate-400 text-[11px] font-bold border-l border-slate-200">{p.unit}</span>
+                      <span className="px-3 py-2 bg-slate-50 text-slate-500 text-[11px] font-bold border-l border-slate-200">{p.unit}</span>
                     </div>
                   </div>
                 ))
               )}
-
-              <button
-                onClick={handleCalculate}
-                disabled={!isValid || isLoading}
-                className={`w-full mt-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
-                  isValid && !isLoading
-                    ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-md shadow-violet-200 cursor-pointer'
-                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                }`}
-              >
-                {isLoading
-                  ? <><Loader2 size={16} className="animate-spin"/> 계산 중...</>
-                  : <><Calculator size={16}/> Calculate</>}
-              </button>
             </div>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-slate-50 border-b border-gray-100 px-5 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700">3</span>
+                  <div>
+                    <h2 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">유효폭 선체 포함</h2>
+                    <p className="text-[10px] text-slate-400">부재 상단에 선체판을 합성</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isPolygon) return;
+                    setIncludeAttachedPlate(prev => !prev);
+                    setResult(null);
+                    setError(null);
+                  }}
+                  disabled={isPolygon}
+                  className={`relative h-6 w-11 rounded-full transition-colors ${
+                    includeAttachedPlate && !isPolygon ? 'bg-violet-600' : 'bg-slate-300'
+                  } ${isPolygon ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  aria-pressed={includeAttachedPlate && !isPolygon}
+                  aria-label="유효폭 선체 포함"
+                  title={isPolygon ? '임의 형상은 꼭짓점에 선체를 직접 포함하세요.' : '유효폭 선체 포함'}
+                >
+                  <span
+                    className={`absolute left-0 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                      includeAttachedPlate && !isPolygon ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className={`rounded-xl border p-3 ${includeAttachedPlate && !isPolygon ? 'border-violet-200 bg-violet-50' : 'border-slate-200 bg-slate-50'}`}>
+                <div className="flex items-start gap-2">
+                  {includeAttachedPlate && !isPolygon ? (
+                    <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-violet-600"/>
+                  ) : (
+                    <Layers size={15} className="mt-0.5 shrink-0 text-slate-400"/>
+                  )}
+                  <p className={`text-[11px] leading-relaxed ${includeAttachedPlate && !isPolygon ? 'text-violet-800' : 'text-slate-500'}`}>
+                    {isPolygon
+                      ? '임의 형상은 꼭짓점 좌표에 선체판을 직접 포함해서 입력하세요.'
+                      : includeAttachedPlate
+                        ? '결과는 선택한 단면과 상부 선체판의 합성 단면 기준으로 계산됩니다.'
+                        : '선체에 용접 또는 부착된 부재를 검토할 때 켜세요.'}
+                  </p>
+                </div>
+              </div>
+
+              {includeAttachedPlate && !isPolygon && (
+                <div className="grid grid-cols-1 gap-3">
+                  {[
+                    ['bp', '선체 폭 (bp)', '유효폭으로 고려할 선체판 폭'],
+                    ['tp', '선체 두께 (tp)', '유효폭으로 고려할 선체판 두께'],
+                  ].map(([key, label, title]) => (
+                    <div key={key}>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1" title={title}>{label}</label>
+                      <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden focus-within:border-violet-400 transition-colors bg-white">
+                        <input
+                          type="number"
+                          min="0"
+                          value={attachedPlate[key]}
+                          onChange={e => setPlateValue(key, e.target.value)}
+                          className="min-w-0 flex-1 px-3 py-2 text-sm font-bold text-slate-800 outline-none bg-transparent"
+                        />
+                        <span className="px-3 py-2 bg-slate-50 text-slate-500 text-[11px] font-bold border-l border-slate-200">mm</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {includeAttachedPlate && !isPolygon && !attachedPlateValid && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle size={13} className="mt-0.5 shrink-0 text-red-600"/>
+                    <p className="text-[11px] leading-relaxed text-red-700">
+                      선체 폭과 선체 두께는 모두 0보다 큰 값이어야 합니다.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+            <button
+              onClick={handleCalculate}
+              disabled={!isValid || isLoading}
+              className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+                isValid && !isLoading
+                  ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-md shadow-violet-200 cursor-pointer'
+                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              }`}
+            >
+              {isLoading
+                ? <><Loader2 size={16} className="animate-spin"/> 계산 중...</>
+                : <><Calculator size={16}/> Calculate</>}
+            </button>
+            <p className="mt-2 text-center text-[10px] text-slate-400">
+              결과 단위는 우측 탭에서 cm/mm로 전환할 수 있습니다.
+            </p>
           </div>
         </div>
 
         {/* ── RIGHT MAIN ── */}
         <div className="space-y-4">
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-4 py-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700">
+                  <Ruler size={18}/>
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-800">단면 미리보기 및 결과</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    입력은 mm 기준, 결과 표시는 선택한 단위 기준입니다.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-slate-500">결과 단위</span>
+                <div className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                  {['cm', 'mm'].map(unit => (
+                    <button
+                      key={unit}
+                      type="button"
+                      onClick={() => setResultUnit(unit)}
+                      className={`min-w-[54px] rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                        resultUnit === unit
+                          ? 'bg-white text-violet-700 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      {unit}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
 
           {/* SVG 캔버스 */}
           <SectionCanvas
             polygon={displayPolygon}
+            platePolygon={displayPlatePolygon}
             properties={result}
             shapeKey={shapeKey}
             params={isPolygon ? null : currentParams}
           />
+
+          {!result && !error && (
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                  <Calculator size={16}/>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-800">입력값을 확인한 뒤 Calculate를 실행하세요.</p>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    좌측에서 단면 형상과 치수를 입력하면 미리보기는 즉시 갱신됩니다. 선체에 연결된 부재는 유효폭 선체 포함 옵션을 켠 뒤 선체 폭과 두께를 입력하세요.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 에러 */}
           {error && (
@@ -882,6 +1237,16 @@ export default function SectionPropertyCalculator() {
             </div>
           )}
 
+          {result?.isCompositeSection && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-3">
+              <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={16}/>
+              <p className="text-xs leading-relaxed text-amber-800">
+                유효폭 선체 포함 결과입니다. 면적, 도심, Ix/Iy/Ixy, 단면계수, 회전반경은 합성 단면 기준으로 갱신되며
+                소성 단면계수와 비틀림 상수는 합성 모드에서 표시하지 않습니다.
+              </p>
+            </div>
+          )}
+
           {/* 결과 카드 그리드 */}
           {result && (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -889,37 +1254,48 @@ export default function SectionPropertyCalculator() {
                 title="일반 특성 (General)"
                 accent
                 stats={[
-                  ['A (단면적)', fmt(r.area),           'mm²', '단면의 총 면적'],
-                  ['P (둘레)',   fmt(r.perimeter),       'mm',  '외곽선의 총 길이'],
-                  ['cx (도심)', fmt(r.centroid?.x, 3),  'mm',  '수평 도심 위치 (기준 원점 기준)'],
-                  ['cy (도심)', fmt(r.centroid?.y, 3),  'mm',  '수직 도심 위치 (기준 원점 기준)'],
+                  ['A (단면적)', formatByUnit(r.area, 'area', resultUnit), unitByDimension('area', resultUnit), '단면의 총 면적'],
+                  ['P (둘레)', formatByUnit(r.perimeter, 'length', resultUnit), unitByDimension('length', resultUnit), '외곽선의 총 길이'],
+                  ['cx (도심)', formatByUnit(r.centroid?.x, 'length', resultUnit, 3), unitByDimension('length', resultUnit), '수평 도심 위치 (기준 원점 기준)'],
+                  ['cy (도심)', formatByUnit(r.centroid?.y, 'length', resultUnit, 3), unitByDimension('length', resultUnit), '수직 도심 위치 (기준 원점 기준)'],
                 ]}
               />
+
+              {r.attachedPlate && (
+                <ResultCard
+                  title="유효폭 선체"
+                  stats={[
+                    ['선체 폭 (bp)', formatByUnit(r.attachedPlate.bp, 'length', resultUnit, 3), unitByDimension('length', resultUnit), '유효폭으로 고려한 선체 폭'],
+                    ['선체 두께 (tp)', formatByUnit(r.attachedPlate.tp, 'length', resultUnit, 3), unitByDimension('length', resultUnit), '유효폭으로 고려한 선체 두께'],
+                    ['A선체', formatByUnit(r.attachedPlate.area, 'area', resultUnit), unitByDimension('area', resultUnit), '유효폭 선체 면적'],
+                  ]}
+                />
+              )}
 
               <ResultCard
                 title="단면 2차 모멘트"
                 stats={[
-                  ['Ix', fmt(r.Ix),  'mm⁴', 'x축 굽힘 강성의 척도 — 클수록 x축 굽힘에 강함'],
-                  ['Iy', fmt(r.Iy),  'mm⁴', 'y축 굽힘 강성의 척도 — 클수록 y축 굽힘에 강함'],
-                  ['Ixy', fmt(r.Ixy), 'mm⁴', '원심 모멘트 — 비대칭 굽힘 해석 시 사용'],
+                  ['Ix', formatByUnit(r.Ix, 'inertia', resultUnit), unitByDimension('inertia', resultUnit), 'x축 굽힘 강성의 척도'],
+                  ['Iy', formatByUnit(r.Iy, 'inertia', resultUnit), unitByDimension('inertia', resultUnit), 'y축 굽힘 강성의 척도'],
+                  ['Ixy', formatByUnit(r.Ixy, 'inertia', resultUnit), unitByDimension('inertia', resultUnit), '비대칭 굽힘 해석 시 사용'],
                 ]}
               />
 
               <ResultCard
                 title="탄성 단면계수"
                 stats={[
-                  ['Sx (상)', fmt(r.Sx_top),   'mm³', '상단 섬유 응력: σ = M / Sx_top'],
-                  ['Sx (하)', fmt(r.Sx_bot),   'mm³', '하단 섬유 응력: σ = M / Sx_bot'],
-                  ['Sy (좌)', fmt(r.Sy_left),  'mm³', '좌측 섬유 응력: σ = M / Sy_left'],
-                  ['Sy (우)', fmt(r.Sy_right), 'mm³', '우측 섬유 응력: σ = M / Sy_right'],
+                  ['Sx (상)', formatByUnit(r.Sx_top, 'volume', resultUnit), unitByDimension('volume', resultUnit), '상단 섬유 응력: σ = M / Sx_top'],
+                  ['Sx (하)', formatByUnit(r.Sx_bot, 'volume', resultUnit), unitByDimension('volume', resultUnit), '하단 섬유 응력: σ = M / Sx_bot'],
+                  ['Sy (좌)', formatByUnit(r.Sy_left, 'volume', resultUnit), unitByDimension('volume', resultUnit), '좌측 섬유 응력: σ = M / Sy_left'],
+                  ['Sy (우)', formatByUnit(r.Sy_right, 'volume', resultUnit), unitByDimension('volume', resultUnit), '우측 섬유 응력: σ = M / Sy_right'],
                 ]}
               />
 
               <ResultCard
                 title="회전반경 (Radius of Gyration)"
                 stats={[
-                  ['rx', fmt(r.rx, 3), 'mm', 'x축 기준 — 좌굴 계산: λ = L / rx'],
-                  ['ry', fmt(r.ry, 3), 'mm', 'y축 기준 — 좌굴 계산: λ = L / ry'],
+                  ['rx', formatByUnit(r.rx, 'length', resultUnit, 3), unitByDimension('length', resultUnit), 'x축 기준 좌굴 계산: λ = L / rx'],
+                  ['ry', formatByUnit(r.ry, 'length', resultUnit, 3), unitByDimension('length', resultUnit), 'y축 기준 좌굴 계산: λ = L / ry'],
                 ]}
               />
 
@@ -927,22 +1303,22 @@ export default function SectionPropertyCalculator() {
                 title="주축 (Principal Axes)"
                 stats={[
                   ['θ',    principal.angle != null ? `${(principal.angle * 180 / Math.PI).toFixed(3)}°` : null, '', '주축이 x축과 이루는 각도 (비대칭 단면)'],
-                  ['Imax', fmt(principal.Imax), 'mm⁴', '최대 굽힘 저항 방향의 관성모멘트'],
-                  ['Imin', fmt(principal.Imin), 'mm⁴', '최소 굽힘 저항 방향의 관성모멘트'],
-                  ['rmax', fmt(principal.rmax, 3), 'mm', '주축 최대 회전반경'],
-                  ['rmin', fmt(principal.rmin, 3), 'mm', '주축 최소 회전반경'],
+                  ['Imax', formatByUnit(principal.Imax, 'inertia', resultUnit), unitByDimension('inertia', resultUnit), '최대 굽힘 저항 방향의 관성모멘트'],
+                  ['Imin', formatByUnit(principal.Imin, 'inertia', resultUnit), unitByDimension('inertia', resultUnit), '최소 굽힘 저항 방향의 관성모멘트'],
+                  ['rmax', formatByUnit(principal.rmax, 'length', resultUnit, 3), unitByDimension('length', resultUnit), '주축 최대 회전반경'],
+                  ['rmin', formatByUnit(principal.rmin, 'length', resultUnit, 3), unitByDimension('length', resultUnit), '주축 최소 회전반경'],
                 ]}
               />
 
               <ResultCard
                 title="소성 단면계수 · 비틀림"
                 stats={[
-                  ['Zx',   fmt(r.Zx),  'mm³', '완전 소성 시 x축 모멘트 저항: Mp = Zx × Fy'],
-                  ['Zy',   fmt(r.Zy),  'mm³', '완전 소성 시 y축 모멘트 저항'],
+                  ['Zx', formatByUnit(r.Zx, 'volume', resultUnit), unitByDimension('volume', resultUnit), '완전 소성 시 x축 모멘트 저항: Mp = Zx × Fy'],
+                  ['Zy', formatByUnit(r.Zy, 'volume', resultUnit), unitByDimension('volume', resultUnit), '완전 소성 시 y축 모멘트 저항'],
                   ['SF_x', r.shapeFactorX != null ? r.shapeFactorX.toFixed(4) : null, '—', '형상계수 Zx/Sx — 소성 여유 (1.0 초과)'],
                   ['SF_y', r.shapeFactorY != null ? r.shapeFactorY.toFixed(4) : null, '—', '형상계수 Zy/Sy — 소성 여유 (1.0 초과)'],
-                  ['J',    r.J  != null ? fmt(r.J)  : null, 'mm⁴', '생비낭 비틀림 상수 — 순수 비틀림 저항'],
-                  ['Cw',   r.Cw != null ? fmt(r.Cw) : null, 'mm⁶', '뒤틀림 상수 — 플랜지 비틀림 저항'],
+                  ['J', r.J != null ? formatByUnit(r.J, 'inertia', resultUnit) : null, unitByDimension('inertia', resultUnit), '생비낭 비틀림 상수'],
+                  ['Cw', r.Cw != null ? formatByUnit(r.Cw, 'warping', resultUnit) : null, unitByDimension('warping', resultUnit), '뒤틀림 상수'],
                 ]}
               />
             </div>
