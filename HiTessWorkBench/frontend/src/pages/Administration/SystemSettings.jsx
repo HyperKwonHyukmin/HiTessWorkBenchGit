@@ -3,7 +3,7 @@
 /// CPU, Memory, Disk, DB, 작업 큐를 3초 주기로 폴링합니다.
 /// 서버 버전, 총 사용자/해석 건수 요약 카드를 제공합니다.
 /// </summary>
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Settings, Server, HardDrive, Cpu, Activity,
   Users, BarChart3, Tag, Database, Layers, Power, AlertTriangle,
@@ -259,6 +259,45 @@ export default function SystemSettings() {
   const memPct  = sysStats.memory_total_gb > 0 ? (sysStats.memory_used_gb / sysStats.memory_total_gb) * 100 : 0;
   const diskPct = sysStats.disk_total_gb   > 0 ? (sysStats.disk_used_gb   / sysStats.disk_total_gb)   * 100 : 0;
   const queuePct = (queue.running / queue.limit) * 100;
+  const operationalHealth = useMemo(() => {
+    const flags = [];
+    let score = 100;
+
+    if (sysStats.db_status !== 'Connected') {
+      score -= 35;
+      flags.push({ level: 'critical', label: 'DB disconnected', detail: 'DB 연결 상태를 즉시 확인하세요.' });
+    }
+    if (Number(sysStats.cpu_usage) >= 85) {
+      score -= 15;
+      flags.push({ level: 'warning', label: 'High CPU', detail: `CPU ${Math.round(sysStats.cpu_usage)}%` });
+    }
+    if (memPct >= 85) {
+      score -= 15;
+      flags.push({ level: 'warning', label: 'High Memory', detail: `Memory ${Math.round(memPct)}%` });
+    }
+    if (diskPct >= 90) {
+      score -= 20;
+      flags.push({ level: 'critical', label: 'Disk pressure', detail: `Disk ${Math.round(diskPct)}%` });
+    }
+    if (queue.pending > 0 || queue.running >= queue.limit) {
+      score -= queue.running >= queue.limit ? 12 : 6;
+      flags.push({ level: 'warning', label: 'Queue pressure', detail: `${queue.running}/${queue.limit} running · ${queue.pending} pending` });
+    }
+
+    const failureCount = (logData.items || []).filter(row => row.status === 'failure').length;
+    if (failureCount >= 5) {
+      score -= 10;
+      flags.push({ level: 'warning', label: 'Recent failures', detail: `현재 로그 페이지 실패 ${failureCount}건` });
+    }
+    if (maintenanceMode) {
+      score -= 10;
+      flags.push({ level: 'warning', label: 'Maintenance active', detail: '일반 사용자 로그인 차단 중' });
+    }
+
+    const safeScore = Math.max(0, Math.min(100, Math.round(score)));
+    const level = safeScore >= 85 ? 'healthy' : safeScore >= 65 ? 'watch' : 'risk';
+    return { score: safeScore, level, flags };
+  }, [diskPct, logData.items, maintenanceMode, memPct, queue, sysStats.cpu_usage, sysStats.db_status]);
 
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
@@ -308,6 +347,58 @@ export default function SystemSettings() {
             <h3 className="text-2xl font-black text-slate-800">{version}</h3>
           </div>
           <Tag className="text-violet-200" size={32} />
+        </div>
+      </div>
+
+      {/* 운영 상태 요약 */}
+      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 mb-6">
+        <div className={`rounded-2xl border p-5 shadow-sm ${
+          operationalHealth.level === 'healthy'
+            ? 'bg-emerald-50 border-emerald-200'
+            : operationalHealth.level === 'watch'
+            ? 'bg-amber-50 border-amber-200'
+            : 'bg-red-50 border-red-200'
+        }`}>
+          <p className={`text-[10px] font-black uppercase tracking-wider ${
+            operationalHealth.level === 'healthy' ? 'text-emerald-600' : operationalHealth.level === 'watch' ? 'text-amber-700' : 'text-red-700'
+          }`}>
+            Operational Health
+          </p>
+          <div className="mt-2 flex items-end gap-2">
+            <span className="text-4xl font-black tabular-nums text-slate-800">{operationalHealth.score}</span>
+            <span className="mb-1 text-sm font-bold text-slate-500">/ 100</span>
+          </div>
+          <p className="mt-2 text-xs font-medium text-slate-600">
+            {operationalHealth.level === 'healthy'
+              ? '주요 운영 지표가 안정적입니다.'
+              : operationalHealth.level === 'watch'
+              ? '주의가 필요한 지표가 있습니다.'
+              : '운영 리스크가 높습니다. 즉시 확인이 필요합니다.'}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-700">운영 액션 플래그</h3>
+            <span className="text-[10px] font-bold text-slate-400">CPU · MEM · DISK · DB · QUEUE · LOG</span>
+          </div>
+          {operationalHealth.flags.length === 0 ? (
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+              현재 조치가 필요한 운영 플래그가 없습니다.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+              {operationalHealth.flags.map(flag => (
+                <div key={`${flag.label}-${flag.detail}`} className={`rounded-xl border px-3 py-2 ${
+                  flag.level === 'critical' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'
+                }`}>
+                  <p className={`text-xs font-black ${flag.level === 'critical' ? 'text-red-700' : 'text-amber-700'}`}>
+                    {flag.label}
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-medium text-slate-600">{flag.detail}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

@@ -14,6 +14,8 @@ import { DashboardProvider } from './contexts/DashboardContext';
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { NetworkProvider } from './contexts/NetworkContext';
+import { RecentActivityProvider } from './contexts/RecentActivityContext';
 import UpdateModal from './components/UpdateModal';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
@@ -370,7 +372,11 @@ export default function App() {
     <AuthProvider>
       <NavigationProvider>
         <ToastProvider>
-          <AppInner />
+          <NetworkProvider>
+            <RecentActivityProvider>
+              <AppInner />
+            </RecentActivityProvider>
+          </NetworkProvider>
         </ToastProvider>
       </NavigationProvider>
     </AuthProvider>

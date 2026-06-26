@@ -1,16 +1,20 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import Sidebar from './Sidebar';
-import { LogOut, User, Search, ChevronLeft, ChevronRight, Server } from 'lucide-react';
+import { AlertTriangle, Command, LogOut, User, Search, ChevronLeft, ChevronRight, Server } from 'lucide-react';
 import { API_BASE_URL, setApiBaseUrl } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
-import { useServerStatus } from '../../hooks/useServerStatus';
+import { useServerHealth } from '../../hooks/useServerStatus';
 import { ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNetwork } from '../../contexts/NetworkContext';
+import { useRecentActivity } from '../../contexts/RecentActivityContext';
 import { verifyAdminGate } from '../../api/admin';
 import AdminPasswordGateModal from '../ui/AdminPasswordGateModal';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import EnvironmentDiagnosticsModal from '../platform/EnvironmentDiagnosticsModal';
+import CommandPalette from '../platform/CommandPalette';
 
 const ADMIN_MENUS = new Set(['User Management', 'Analysis Management', 'System Management', 'Usage Reports', 'API Apps']);
 const ADMIN_GATE_SESSION_KEY = 'admin_gate_unlocked';
@@ -28,9 +32,14 @@ export default function Layout({
     ? { name: authUser.name || 'User', position: authUser.position || 'Engineer', is_admin: !!authUser.is_admin }
     : { name: 'User', position: 'Engineer', is_admin: false };
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [serverUrlInput, setServerUrlInput] = useState(API_BASE_URL);
   const [currentServerUrl, setCurrentServerUrl] = useState(API_BASE_URL);
-  const isServerOnline = useServerStatus();
+  const serverHealth = useServerHealth();
+  const isServerOnline = serverHealth.isOnline;
+  const { events: networkEvents, clearEvents: clearNetworkEvents } = useNetwork();
+  const { recentApps, recordAppVisit } = useRecentActivity();
   const [isGateOpen, setIsGateOpen] = useState(false);
   const [pendingMenu, setPendingMenu] = useState(null);
   const [gateLoading, setGateLoading] = useState(false);
@@ -43,6 +52,14 @@ export default function Layout({
       return url.replace(/^https?:\/\//, '');
     }
   };
+
+  const serverStatusClasses = {
+    online: 'bg-emerald-500 text-emerald-600',
+    degraded: 'bg-amber-400 text-amber-600',
+    unreliable: 'bg-orange-500 text-orange-600',
+    offline: 'bg-red-500 text-red-500',
+  };
+  const statusClass = serverStatusClasses[serverHealth.level] || serverStatusClasses.offline;
 
   // 검색
   const [searchTerm, setSearchTerm] = useState('');
@@ -102,6 +119,13 @@ export default function Layout({
     setCurrentMenu(menu);
   }, [setCurrentMenu, userInfo.is_admin]);
 
+  useEffect(() => {
+    const app = ANALYSIS_DATA.find(item => getAppMenuName(item.title) === currentMenu || item.title === currentMenu);
+    if (app) {
+      recordAppVisit(currentMenu, app.title, { mode: app.mode, category: app.category });
+    }
+  }, [currentMenu, recordAppVisit]);
+
   const handleGateClose = useCallback(() => {
     setIsGateOpen(false);
     setPendingMenu(null);
@@ -129,6 +153,17 @@ export default function Layout({
     const handler = (e) => { if (searchRef.current && !searchRef.current.contains(e.target)) setShowDropdown(false); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setIsCommandPaletteOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   return (
@@ -203,18 +238,44 @@ export default function Layout({
                 </div>
               )}
             </div>
+            <button
+              type="button"
+              onClick={() => setIsCommandPaletteOpen(true)}
+              className="hidden xl:inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-500 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+              title="Command Palette (Ctrl+K)"
+            >
+              <Command size={14} />
+              <span>Ctrl K</span>
+            </button>
+            {recentApps.length > 0 && (
+              <div className="hidden 2xl:flex max-w-[420px] items-center gap-1.5 overflow-hidden">
+                <span className="shrink-0 text-[10px] font-black text-slate-400">최근 사용 앱</span>
+                {recentApps.slice(0, 3).map(app => (
+                  <button
+                    key={app.menu}
+                    type="button"
+                    onClick={() => handleNavigate(app.menu)}
+                    className="max-w-[108px] truncate rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-500 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                    title={`최근 사용: ${app.label}`}
+                  >
+                    {app.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 lg:gap-4 shrink-0 min-w-0">
             <button
-              onClick={() => { setServerUrlInput(currentServerUrl); setIsServerModalOpen(true); }}
+              onClick={() => setIsDiagnosticsOpen(true)}
               className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors shrink-0"
-              title={`서버 주소 설정 (${currentServerUrl})`}
+              title={`서버 상태 진단 (${currentServerUrl})`}
             >
-              <span className={`h-2 w-2 rounded-full shrink-0 ${isServerOnline ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} />
+              <span className={`h-2 w-2 rounded-full shrink-0 ${statusClass.split(' ')[0]} ${!isServerOnline ? 'animate-pulse' : ''}`} />
               <div className="hidden lg:flex flex-col items-start leading-none gap-0.5">
-                <span className={`text-[10px] font-bold ${isServerOnline ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {isServerOnline ? 'Online' : 'Offline'}
+                <span className={`text-[10px] font-bold ${statusClass.split(' ')[1]}`}>
+                  {serverHealth.label}
+                  {serverHealth.latencyMs != null ? ` · ${serverHealth.latencyMs}ms` : ''}
                 </span>
                 <span className="hidden xl:block text-[10px] text-slate-500 font-mono max-w-[9rem] truncate">
                   {getServerHost(currentServerUrl)}
@@ -225,6 +286,18 @@ export default function Layout({
               </div>
               <Server size={16} className="text-slate-400" />
             </button>
+            {networkEvents.length > 0 && (
+              <button
+                onClick={() => setIsDiagnosticsOpen(true)}
+                className="relative rounded-lg p-2 text-amber-500 hover:bg-amber-50"
+                title={`최근 API 오류 ${networkEvents.length}건`}
+              >
+                <AlertTriangle size={17} />
+                <span className="absolute -right-0.5 -top-0.5 min-w-[16px] rounded-full bg-amber-500 px-1 text-[10px] font-bold leading-4 text-white">
+                  {Math.min(networkEvents.length, 9)}
+                </span>
+              </button>
+            )}
             <div className="h-6 w-px bg-gray-200 mx-0.5 lg:mx-1"></div>
             <div className="flex items-center gap-3">
               <div className="text-right hidden xl:block">
@@ -285,6 +358,30 @@ export default function Layout({
           />
         </div>
       </Modal>
+      <EnvironmentDiagnosticsModal
+        isOpen={isDiagnosticsOpen}
+        onClose={() => setIsDiagnosticsOpen(false)}
+        health={serverHealth}
+        networkEvents={networkEvents}
+        onRecheck={serverHealth.checkNow}
+        onClearNetworkEvents={clearNetworkEvents}
+        onOpenServerSettings={() => {
+          setServerUrlInput(currentServerUrl);
+          setIsDiagnosticsOpen(false);
+          setIsServerModalOpen(true);
+        }}
+      />
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        menuItems={menuItems}
+        onNavigate={handleNavigate}
+        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+        onOpenServerSettings={() => {
+          setServerUrlInput(currentServerUrl);
+          setIsServerModalOpen(true);
+        }}
+      />
       <AdminPasswordGateModal
         isOpen={isGateOpen}
         onClose={handleGateClose}

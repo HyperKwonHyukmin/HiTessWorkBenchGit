@@ -18,6 +18,7 @@ import { ANALYSIS_DATA, findAppByProgramName, getAppMenuName, useAnalysisPageSta
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useRecentActivity } from '../../contexts/RecentActivityContext';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
 import AdminGateModal from '../../components/ui/AdminGateModal';
 import NoticeDetailModal, { NOTICE_TYPE_STYLE } from '../../components/modals/NoticeDetailModal';
@@ -1072,6 +1073,7 @@ export default function Dashboard() {
   const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
   const { favorites, toggleFavorite, reorderFavorite } = useFavorites();
+  const { recentApps, clearRecentApps } = useRecentActivity();
   const { setAssessmentPageState } = useAnalysisPageState();
 
   const [projects, setProjects] = useState([]);
@@ -1463,6 +1465,34 @@ export default function Dashboard() {
         </div>
       </div>
       </div>
+
+      {recentApps.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="mr-1 inline-flex items-center gap-1 text-[11px] font-black tracking-wide text-slate-400">
+              <Clock size={12} /> 최근 사용 앱
+            </span>
+            {recentApps.slice(0, 6).map(app => (
+              <button
+                key={app.menu}
+                type="button"
+                onClick={() => setCurrentMenu(app.menu)}
+                className="max-w-[160px] truncate rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                title={app.label}
+              >
+                {app.label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={clearRecentApps}
+            className="shrink-0 text-[10px] font-bold text-slate-400 hover:text-red-500"
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       {/* 즐겨찾기 */}
       <div className="mb-8">

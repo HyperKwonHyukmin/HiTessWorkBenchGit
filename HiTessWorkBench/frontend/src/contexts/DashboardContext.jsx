@@ -7,6 +7,7 @@ import React, { createContext, useState, useEffect, useContext, useCallback, use
 import { UploadCloud, PenTool, SlidersHorizontal, Wrench, RefreshCw, CheckCircle, AlertCircle, X } from 'lucide-react';
 import { useNavigation } from './NavigationContext';
 import { usePolling } from '../hooks/usePolling';
+import AnalysisResultPanel from '../components/platform/AnalysisResultPanel';
 
 const RAW_ANALYSIS_DATA = [
   // ── File-Based Apps (signature: blue) ──────────── Active ──
@@ -194,6 +195,7 @@ const FavoritesContext = createContext();
 const GlobalJobContext = createContext();
 const AnalysisPageStateContext = createContext();
 const FAVORITES_KEY = 'favorites';
+const GLOBAL_JOBS_KEY = 'hitess_global_jobs';
 
 function readLocalFavorites() {
   try {
@@ -210,6 +212,28 @@ function writeLocalFavorites(next) {
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
   } catch {
     // localStorage 접근이 막힌 환경에서는 Electron preferences 저장만 사용합니다.
+  }
+}
+
+function readPersistedGlobalJobs() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(GLOBAL_JOBS_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    const maxAgeMs = 24 * 60 * 60 * 1000;
+    return parsed
+      .filter(job => job?.jobId && job?.menu)
+      .filter(job => !job.updatedAt || Date.now() - job.updatedAt < maxAgeMs)
+      .slice(0, 5);
+  } catch {
+    return [];
+  }
+}
+
+function writePersistedGlobalJobs(jobs) {
+  try {
+    localStorage.setItem(GLOBAL_JOBS_KEY, JSON.stringify(jobs.slice(0, 5)));
+  } catch {
+    // ignore storage failures
   }
 }
 
@@ -317,11 +341,35 @@ export function DashboardProvider({ children }) {
   const setPendingJobTransfer = useCallback((payload) => setPendingJobTransferRaw(payload), []);
   const clearPendingJobTransfer = useCallback(() => setPendingJobTransferRaw(null), []);
 
-  const [globalJobs, setGlobalJobs] = useState([]);
+  const [globalJobs, setGlobalJobs] = useState(() => readPersistedGlobalJobs());
   const globalJob = globalJobs[0] || null;
 
   const patchGlobalJob = useCallback((jobId, patch) => {
-    setGlobalJobs(prev => prev.map(job => job.jobId === jobId ? { ...job, ...patch } : job));
+    setGlobalJobs(prev => prev.map(job => {
+      if (job.jobId !== jobId) return job;
+      const nextJob = { ...job, ...patch, updatedAt: Date.now() };
+      if (nextJob.menu) {
+        setAnalysisPageStates(pagePrev => {
+          const current = pagePrev[nextJob.menu] || {};
+          return {
+            ...pagePrev,
+            [nextJob.menu]: {
+              ...current,
+              job: {
+                ...(current.job || {}),
+                jobId: nextJob.jobId,
+                isRunning: nextJob.status !== 'Success' && nextJob.status !== 'Failed' && nextJob.status !== 'Interrupted',
+                progress: nextJob.progress ?? current.job?.progress ?? 0,
+                statusMessage: nextJob.message ?? current.job?.statusMessage ?? '',
+                logs: current.job?.logs || [],
+              },
+              recoveredFromGlobalJob: true,
+            },
+          };
+        });
+      }
+      return nextJob;
+    }));
   }, []);
 
   const clearGlobalJob = useCallback((jobId = null) => {
@@ -330,9 +378,33 @@ export function DashboardProvider({ children }) {
 
   const startGlobalJob = useCallback((jobId, menuName) => {
     if (!jobId) return;
-    const nextJob = { jobId, menu: menuName, status: 'Running', progress: 0, message: '서버에 작업을 요청하는 중...' };
+    const nextJob = {
+      jobId,
+      menu: menuName,
+      status: 'Running',
+      progress: 0,
+      message: '서버에 작업을 요청하는 중...',
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+    };
     setGlobalJobs([nextJob]);
-  }, []);
+    setAnalysisPageState(menuName, current => ({
+      ...current,
+      job: {
+        ...(current.job || {}),
+        jobId,
+        isRunning: true,
+        progress: 0,
+        statusMessage: '서버에 작업을 요청하는 중...',
+        logs: current.job?.logs || [],
+      },
+      recoveredFromGlobalJob: true,
+    }));
+  }, [setAnalysisPageState]);
+
+  useEffect(() => {
+    writePersistedGlobalJobs(globalJobs);
+  }, [globalJobs]);
 
   useEffect(() => {
     setGlobalJobs(prev => prev.filter(job =>
@@ -508,8 +580,6 @@ function GlobalJobPoller({ job, onPatchJob }) {
 }
 
 function GlobalJobCard({ job, onNavigate, onDismiss }) {
-  const isTerminal = job.status === 'Success' || job.status === 'Failed' || job.status === 'Interrupted';
-
   return (
     <div
       onClick={() => onNavigate && onNavigate(job.menu)}
@@ -532,17 +602,7 @@ function GlobalJobCard({ job, onNavigate, onDismiss }) {
         </button>
       </div>
 
-      <div className="text-sm font-bold text-white mb-3 line-clamp-2">
-        {job.status === 'Success' ? '해석 완료! 결과를 확인하세요.' :
-         job.status === 'Interrupted' ? '서버 재시작으로 작업이 중단되었습니다.' :
-         job.status === 'Failed' ? '해석 실패' : job.message}
-      </div>
-
-      {!isTerminal && (
-        <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-          <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${job.progress || 0}%` }} />
-        </div>
-      )}
+      <AnalysisResultPanel job={job} compact />
     </div>
   );
 }

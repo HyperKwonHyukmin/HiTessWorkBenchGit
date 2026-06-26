@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import axios from 'axios';
 import {
   TableProperties, Calculator, ChevronDown, ChevronUp,
@@ -14,6 +14,8 @@ import SolverCredit from '../../components/ui/SolverCredit';
 import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { downloadJson } from '../../utils/fileHelper';
 import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
+import { useDraftAutosave } from '../../hooks/useDraftAutosave';
+import DraftAutosavePill from '../../components/platform/DraftAutosavePill';
 
 import VerdictBadge from '../../components/ui/VerdictBadge';
 import CalcInputField from '../../components/ui/CalcInputField';
@@ -79,6 +81,15 @@ export default function MastPostAssessment() {
   const [error, setError] = useState(null);
   const [selectedRank, setSelectedRank] = useState(null);
   const [showCriteria, setShowCriteria] = useState(false);
+  const draftValue = useMemo(() => ({ heightMm, weightKg }), [heightMm, weightKg]);
+  const autosave = useDraftAutosave('mast-post-assessment', draftValue);
+
+  const restoreDraft = () => autosave.restoreDraft((draft) => {
+    setHeightMm(draft.heightMm ?? '');
+    setWeightKg(draft.weightKg ?? '');
+    setResult(null);
+    setError(null);
+  });
 
   const isValid = heightMm !== '' && weightKg !== '' && Number(heightMm) > 0 && Number(weightKg) > 0;
 
@@ -118,6 +129,10 @@ export default function MastPostAssessment() {
         iconClassName="text-emerald-300"
         subtitleClassName="text-emerald-200/80"
       />
+
+      <div className="mb-3 flex justify-end">
+        <DraftAutosavePill autosave={autosave} onRestore={restoreDraft} />
+      </div>
 
 
       <ReferenceFormulaTabs accent="emerald">

@@ -103,8 +103,14 @@ export default function LoginScreen({ onLoginSuccess }) {
       console.error('Login Error:', error);
       
       if (!error.response) {
-         setIsServerLive(false);
-         setErrorMsg("서버 응답이 없습니다.");
+        try {
+          await checkVersion();
+          setIsServerLive(true);
+          setErrorMsg("로그인 요청이 일시적으로 실패했습니다. 다시 시도해주세요.");
+        } catch {
+          setIsServerLive(false);
+          setErrorMsg("서버 응답이 없습니다.");
+        }
       } else {
         if (error.response.status === 404) {
           setErrorMsg("등록되지 않은 사번입니다.");

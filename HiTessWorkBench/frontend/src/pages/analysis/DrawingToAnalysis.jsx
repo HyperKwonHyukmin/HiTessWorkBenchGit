@@ -608,7 +608,7 @@ export default function DrawingToAnalysis() {
     setFailureReason('');
     clearLoadBc();  // 형상이 바뀌면 노드 id 가 달라지므로 하중/경계조건 초기화
     addLog(`[REBUILD] 새 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
-    startJob(jobId, 'DrawingRebuild');
+    startJob(jobId, PAGE_KEY);
   };
 
   /* ── 노드 선택 / 하중·경계조건 세트 관리 ──────────────────────── */
@@ -849,7 +849,7 @@ export default function DrawingToAnalysis() {
       });
       const jobId = res.data.job_id;
       addLog(`[SOLVE] 해석 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
-      startJob(jobId, 'DrawingSolve');
+      startJob(jobId, PAGE_KEY);
     } catch (err) {
       const detail = err?.response?.data?.detail;
       const msg = typeof detail === 'string' ? detail : (err?.message || '해석 요청 실패');

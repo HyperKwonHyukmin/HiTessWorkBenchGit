@@ -222,11 +222,8 @@ export default function HullAccelerationPage() {
     });
   }, [pdfFile, resultData, resultInfo, constants, speedUnit, isLogOpen, activeLoadingTableIndex]);
 
-  // 이 페이지는 재진입 시 항상 초기 상태로 시작해야 한다(PDF/결과/입력/로그를 유지하지 않음).
-  // 페이지를 떠날 때(언마운트) DashboardContext 에 보존된 상태를 통째로 비운다.
-  // → 다시 들어오면 savedPageState 가 비어 모든 useState 가 기본값으로 초기화된다.
-  // (clearAnalysisPageState 는 useCallback([]) 으로 안정적이라 빈 deps 로 안전)
-  useEffect(() => () => clearAnalysisPageState?.(PAGE_KEY), []);
+  // 입력/결과/작업 상태는 대시보드 이탈 후 글로벌 작업 카드로 복귀할 때 필요하므로
+  // 언마운트 시 자동 삭제하지 않는다. 사용자가 Reset을 누를 때만 clearAnalysisPageState를 호출한다.
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 

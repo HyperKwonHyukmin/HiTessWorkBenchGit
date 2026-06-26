@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import axios from 'axios';
 import {
   SlidersHorizontal, Calculator, ChevronDown, ChevronUp,
@@ -10,6 +10,8 @@ import { API_BASE_URL } from '../../config';
 import SolverCredit from '../../components/ui/SolverCredit';
 import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import CalcInputField from '../../components/ui/CalcInputField';
+import { useDraftAutosave } from '../../hooks/useDraftAutosave';
+import DraftAutosavePill from '../../components/platform/DraftAutosavePill';
 
 const MEMBER_GROUPS = [
   {
@@ -69,6 +71,15 @@ export default function ColumnBucklingCalculator() {
   const [showFormulas, setShowFormulas] = useState(true);
   const [showCriteria, setShowCriteria] = useState(false);
   const [showIntermediate, setShowIntermediate] = useState(false);
+  const draftValue = useMemo(() => ({ memberName, lengthMm }), [memberName, lengthMm]);
+  const autosave = useDraftAutosave('column-buckling-calculator', draftValue);
+
+  const restoreDraft = () => autosave.restoreDraft((draft) => {
+    setMemberName(draft.memberName ?? '300A PIPE (#40)');
+    setLengthMm(draft.lengthMm ?? '4470');
+    setResult(null);
+    setError(null);
+  });
 
   const isValid =
     memberName.trim() !== '' &&
@@ -113,6 +124,10 @@ export default function ColumnBucklingCalculator() {
         iconClassName="text-emerald-300"
         subtitleClassName="text-emerald-200/80"
       />
+
+      <div className="mb-3 flex justify-end">
+        <DraftAutosavePill autosave={autosave} onRestore={restoreDraft} />
+      </div>
 
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-6">
         <button

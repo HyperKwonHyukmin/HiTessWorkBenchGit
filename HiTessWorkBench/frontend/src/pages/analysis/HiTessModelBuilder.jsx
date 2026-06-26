@@ -2367,8 +2367,8 @@ export default function HiTessModelBuilder() {
     return () => { try { unsub?.(); } catch {} };
   }, []);
 
-  // ── 언마운트 시 상태 초기화: 다른 앱으로 나가면 모두 리셋 ──
-  useEffect(() => () => { setPageState(null); }, [setPageState]);
+  // 페이지 이탈 후 글로벌 작업 카드로 복귀할 때 입력/작업 상태를 보존해야 하므로
+  // 언마운트 시 setPageState(null)를 호출하지 않는다.
 
   // ── 최초 마운트: globalJob 동기화 ──
   useEffect(() => {

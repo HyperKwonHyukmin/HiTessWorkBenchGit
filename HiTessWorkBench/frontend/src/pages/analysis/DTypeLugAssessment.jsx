@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import axios from 'axios';
 import {
   AlertCircle, Calculator, Download,
@@ -17,6 +17,8 @@ import { downloadJson } from '../../utils/fileHelper';
 import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 import VerdictBadge from '../../components/ui/VerdictBadge';
 import CalcInputField from '../../components/ui/CalcInputField';
+import { useDraftAutosave } from '../../hooks/useDraftAutosave';
+import DraftAutosavePill from '../../components/platform/DraftAutosavePill';
 
 const DEFAULT_INPUT = {
   load: { force_N: '1000000' },
@@ -86,6 +88,16 @@ export default function DTypeLugAssessment() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedBracket, setSelectedBracket] = useState('bracket_4EA');
   const [selectedCaseIndex, setSelectedCaseIndex] = useState(null);
+  const draftValue = useMemo(() => ({ inputs, selectedBracket }), [inputs, selectedBracket]);
+  const autosave = useDraftAutosave('d-type-lug-assessment', draftValue);
+
+  const restoreDraft = () => autosave.restoreDraft((draft) => {
+    setInputs(draft.inputs ?? DEFAULT_INPUT);
+    setSelectedBracket(draft.selectedBracket ?? 'bracket_4EA');
+    setResult(null);
+    setError(null);
+    setSelectedCaseIndex(null);
+  });
 
   const setField = (section, key) => (value) => {
     setInputs(prev => ({
@@ -140,6 +152,10 @@ export default function DTypeLugAssessment() {
         iconClassName="text-emerald-300"
         subtitleClassName="text-emerald-200/80"
       />
+
+      <div className="mb-3 flex justify-end">
+        <DraftAutosavePill autosave={autosave} onRestore={restoreDraft} />
+      </div>
 
       <ReferenceFormulaTabs accent="emerald">
         {(activeInfoTab) => activeInfoTab === 'image' ? (

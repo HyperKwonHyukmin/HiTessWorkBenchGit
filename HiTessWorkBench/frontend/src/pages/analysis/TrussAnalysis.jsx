@@ -31,6 +31,7 @@ export default function TrussAnalysis() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
   const dashboardCtx = useDashboard();
+  const { startGlobalJob, clearGlobalJob } = dashboardCtx;
   const PAGE_KEY = 'Truss Model Builder';
   const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
   const [nodeFile, setNodeFile] = useState(savedPageState.nodeFile ?? null);
@@ -63,6 +64,8 @@ export default function TrussAnalysis() {
     employeeId, addLog, startJob,
     setLogs, setStatusMessage, setIsRunning, setProgress,
   } = useAnalysisJob({
+    startGlobalJob,
+    clearGlobalJob,
     savedState: savedPageState,
     setSavedState: (patch) => dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, patch),
     pollingInterval: 1500,
@@ -236,7 +239,7 @@ export default function TrussAnalysis() {
       if (!jobId) throw new Error("서버로부터 Job ID를 받지 못했습니다.");
 
       addLog(`Job submitted successfully. [Job ID: ${jobId}]`, 'info');
-      startJob(jobId);
+      startJob(jobId, PAGE_KEY);
     } catch (error) {
       addLog('SERVER COMMUNICATION FAILED.', 'error');
       addDetailedLog(error.response ? `SERVER ERROR [${error.response.status}]` : `NETWORK ERROR: ${error.message}`);
@@ -260,7 +263,7 @@ export default function TrussAnalysis() {
   };
   const sampleOnJobSubmitted = (jobId) => {
     addLog(`Sample job submitted. [Job ID: ${jobId}]`, 'info');
-    startJob(jobId);
+    startJob(jobId, PAGE_KEY);
   };
   const sampleOnError = (status, detail) => {
     if (status === 429) {
