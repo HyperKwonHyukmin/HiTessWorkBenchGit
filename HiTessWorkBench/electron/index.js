@@ -1332,6 +1332,66 @@ ipcMain.handle("viewer:runStabilityAnalysis", async (_e, posturePath) => {
   }
 });
 
+ipcMain.handle("viewer:optimizeHoistPositions", async (_e, posturePath) => {
+  try {
+    if (!posturePath) return { ok: false, error: "posturePath 누락" };
+    if (!path.isAbsolute(posturePath)) {
+      return { ok: false, error: `_posture.json 절대경로가 아닙니다: ${posturePath}` };
+    }
+
+    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const { serverUrl } = runtimeConfig;
+
+    const { res: reqRes, token } = await fetchWithSessionRefresh(`${serverUrl}/api/analysis/module-stability/optimize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ posturePath, source: "ModuleUnitStudio" }),
+    }, runtimeConfig);
+    if (!reqRes.ok) {
+      const detail = await readBackendError(reqRes);
+      return { ok: false, error: `백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}` };
+    }
+
+    const reqBody = await reqRes.json();
+    const jobId = reqBody.jobId || reqBody.job_id;
+    if (!jobId) return { ok: false, error: "백엔드 응답에 jobId가 없습니다." };
+
+    for (let i = 0; i < 180; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const statusUrl = `${serverUrl}/api/analysis/status/${jobId}`;
+      const { res: statusRes } = await fetchWithSessionRefresh(
+        statusUrl,
+        { method: "GET" },
+        { ...runtimeConfig, token },
+      );
+      if (!statusRes.ok) continue;
+
+      const job = await statusRes.json();
+      if (job.status === "Success") {
+        const resultInfo = job.project?.result_info || {};
+        return {
+          ok: true,
+          report: resultInfo.optimizationReport,
+          optimizationPath: resultInfo.optimizationPath,
+          job,
+        };
+      }
+      if (job.status === "Failed") {
+        return {
+          ok: false,
+          error: job.message || "권상 위치 최적화 실패",
+          stderr: job.engine_log || "",
+          job,
+        };
+      }
+    }
+
+    return { ok: false, error: "시간 초과 (3분)" };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 // ── Unit 구조 해석 (자세 안정성 PASS 후 wire 포함 BDF + Nastran SOL 101 + F06 매핑) ──
 // Studio 측에서 IPC 한 번으로 호출 → main 이 백엔드 unit-structural endpoint 에 양식
 // 데이터를 보내 job 시작 → 1.5초 간격으로 30분 폴링 → 완료 시 nastranResult JSON 의

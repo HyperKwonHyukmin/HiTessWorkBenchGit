@@ -26,7 +26,7 @@ from ..services.bdfscanner_service import task_execute_bdfscanner
 from ..services.hpscr_service import task_execute_hpscr
 from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
 from ..services.unit_structural_service import task_execute_unit_structural
-from ..services.module_stability_service import task_execute_module_stability
+from ..services.module_stability_service import task_execute_module_stability, task_optimize_module_hoist_positions
 from ..services.lifting_artifacts import scan_lifting_artifacts
 from ..services.hitess_modelflow_service import (
     task_execute_modelflow,
@@ -121,7 +121,7 @@ _SAMPLE_PREVIEW_CACHE: dict = {}
 # 부모 프로젝트(SidePassage/GroupModuleUnit) 안에서 수행되는 작업이므로, 사용자의 MyProjects
 # 목록에는 별도 프로젝트로 노출하지 않는다. DB 레코드 자체는 감사/디버깅을 위해 유지하며,
 # 관리자 전체 이력(/analysis/all)에는 그대로 보인다.
-INTERNAL_SUBSTEP_PROGRAMS = ("ModuleStability", "UnitStructuralAnalysis")
+INTERNAL_SUBSTEP_PROGRAMS = ("ModuleStability", "ModuleHoistOptimize", "UnitStructuralAnalysis")
 
 
 def _check_sample_quota(program_key: str, employee_id: str, db: Session) -> dict:
@@ -222,6 +222,10 @@ def get_top_programs(
     query = db.query(
         models.Analysis.program_name,
         func.count(models.Analysis.id).label("count")
+    ).filter(
+        models.Analysis.source != SAMPLE_SOURCE_TAG,
+        models.Analysis.program_name.isnot(None),
+        models.Analysis.program_name.notin_(INTERNAL_SUBSTEP_PROGRAMS),
     )
     if days > 0:
         since = datetime.now() - timedelta(days=days)
@@ -1829,6 +1833,39 @@ async def request_module_stability(
         timestamp,
         req.source or "ModuleUnitStudio",
         queue_message="자세안정성 해석 대기 중...",
+    )
+
+    return {"job_id": job_id, "jobId": job_id}
+
+
+@router.post("/analysis/module-stability/optimize")
+async def optimize_module_hoist_positions(
+        req: ModuleStabilityRequest,
+        current_user: str = Depends(require_auth)
+):
+    """
+    ModuleUnitStudio 권상 위치 자동 선정 요청.
+    저장된 _posture.json 을 seed 로 받아 ModuleAnalysis.Cli --optimize 가 자세안정성
+    평가 절차로 후보 권상 그룹을 비교하고 best 그룹을 반환한다.
+    """
+    posture_abs = os.path.abspath(req.posturePath or "")
+    user_root = _USER_CONNECTION_DIR
+    if not _is_within_dir(user_root, posture_abs):
+        raise HTTPException(
+            status_code=400,
+            detail="posturePath 가 userConnection 디렉터리 밖에 있습니다.",
+        )
+    if not os.path.isfile(posture_abs):
+        raise HTTPException(status_code=400, detail=f"posturePath 가 파일이 아닙니다: {posture_abs}")
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    job_id = submit_analysis_job(
+        task_optimize_module_hoist_positions,
+        posture_abs,
+        current_user,
+        timestamp,
+        req.source or "ModuleUnitStudio",
+        queue_message="권상 위치 최적화 대기 중...",
     )
 
     return {"job_id": job_id, "jobId": job_id}

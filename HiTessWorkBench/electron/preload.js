@@ -44,6 +44,7 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:finalizeEditedModel',
   'viewer:uploadEvaluationArtifact',
   'viewer:runStabilityAnalysis',
+  'viewer:optimizeHoistPositions',
   'viewer:runUnitStructural',
   'viewer:runPlateStructural',
   'viewer:runMooringStructural',
@@ -106,6 +107,8 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
     ipcRenderer.invoke('viewer:uploadEvaluationArtifact', { fileName, content, artifactKind }),
   runStabilityAnalysis: (posturePath) =>
     ipcRenderer.invoke('viewer:runStabilityAnalysis', posturePath),
+  optimizeHoistPositions: (posturePath) =>
+    ipcRenderer.invoke('viewer:optimizeHoistPositions', posturePath),
   // Studio "Unit 구조 해석 실행" → 백엔드 unit-structural endpoint 호출 + 폴링까지
   // main 이 처리. 진행 상황은 onUnitStructuralProgress() 로 stream.
   runUnitStructural: (opts) =>
