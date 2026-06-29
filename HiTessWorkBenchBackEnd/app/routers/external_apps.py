@@ -1,3 +1,5 @@
+import json
+import re
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -29,6 +31,53 @@ def _filter_headers(headers):
     }
 
 
+def _build_subpath_shim(proxy_path: str) -> str:
+    """루트(/) 기준으로 작성된 외부 앱을 서브패스 프록시(예: /external-apps/block-weld)
+    아래에서 동작시키기 위한 런타임 보정 스크립트를 생성한다.
+
+    이 앱(Block Weld)은 직접 접속(IP:31880/<사번>) 시엔 정상이지만, 서브패스로 감싸면
+    HTML 속성 치환(_rewrite_html_links)만으로는 다음 세 가지가 깨진다. 이를 클라이언트
+    런타임에서 보정한다.
+      1) location.pathname 첫 세그먼트로 사번을 추출(app.js: split('/')[0]) → 프록시에선
+         'external-apps'를 사번으로 오인. history.replaceState 로 프리픽스를 제거해 앱이
+         보는 pathname 을 '/<사번>' 으로 되돌린다.
+      2) 런타임 fetch / XMLHttpRequest 가 루트 절대경로(/api, /vendor ...)를 사용 → 창
+         origin(WorkBench 9091)으로 새어 WorkBench API 와 충돌. 절대경로에 프리픽스를 자동
+         부착한다. (앱은 절대경로만 사용 — 상대경로는 건드리지 않는다.)
+    importmap 의 절대경로 모듈 URL 은 HTML 단계(_rewrite_html_links)에서 별도 치환한다.
+    """
+    prefix = json.dumps(proxy_path)  # 안전한 JS 문자열 리터럴
+    return (
+        "<script>(function(){"
+        f"var P={prefix};"
+        "function fix(u){try{"
+        "if(typeof u!=='string'||!u)return u;"
+        "if(u===P||u.indexOf(P+'/')===0)return u;"  # 이미 프리픽스됨
+        "if(u.charAt(0)==='/'&&u.charAt(1)!=='/')return P+u;"  # 루트 절대경로
+        "var o=location.origin+'/';"
+        "if(u.indexOf(o)===0){var pth=u.slice(location.origin.length);"
+        "if(pth!==P&&pth.indexOf(P+'/')!==0)return location.origin+P+pth;}"  # 동일 origin 절대 URL
+        "}catch(e){}return u;}"
+        # 1) pathname 프리픽스 제거 → 앱의 사번 파싱 정상화
+        "try{var p=location.pathname;"
+        "if(p===P)history.replaceState(history.state,'','/'+location.search+location.hash);"
+        "else if(p.indexOf(P+'/')===0)"
+        "history.replaceState(history.state,'',p.slice(P.length)+location.search+location.hash);"
+        "}catch(e){}"
+        # 2) fetch 가로채기
+        "var F=window.fetch;if(F){window.fetch=function(i,init){try{"
+        "if(typeof i==='string')i=fix(i);"
+        "else if(i&&i.url){var nu=fix(i.url);if(nu!==i.url)i=new Request(nu,i);}"
+        "}catch(e){}return F.call(this,i,init);};}"
+        # 3) XMLHttpRequest 가로채기(THREE 로더 등 내부 XHR 포함 대비)
+        "var XO=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(){"
+        "var a=Array.prototype.slice.call(arguments);"
+        "try{if(typeof a[1]==='string')a[1]=fix(a[1]);}catch(e){}"
+        "return XO.apply(this,a);};"
+        "})();</script>"
+    )
+
+
 def _rewrite_html_links(content: bytes, content_type: str, proxy_path: str) -> bytes:
     if "text/html" not in content_type.lower():
         return content
@@ -38,6 +87,7 @@ def _rewrite_html_links(content: bytes, content_type: str, proxy_path: str) -> b
     except UnicodeDecodeError:
         return content
 
+    # 1) HTML 속성의 루트 절대경로 치환 (정적 자산: css/js/img/meta/form)
     replacements = {
         'href="/': f'href="{proxy_path}/',
         'src="/': f'src="{proxy_path}/',
@@ -46,6 +96,31 @@ def _rewrite_html_links(content: bytes, content_type: str, proxy_path: str) -> b
     }
     for old, new in replacements.items():
         html = html.replace(old, new)
+
+    # 2) importmap(JSON) 내부의 루트 절대경로 모듈 URL 치환.
+    #    HTML 속성이 아니라 JSON 값(": "/vendor/...")이라 위 속성 치환이 못 잡는다.
+    #    importmap 블록 안에서 값 시작 패턴 '"/' 만 치환 → 키('"three/addons/")는 영향 없음.
+    def _fix_importmap(match):
+        block = match.group(2).replace('"/', f'"{proxy_path}/')
+        return match.group(1) + block + match.group(3)
+
+    html = re.sub(
+        r'(<script[^>]*type=["\']importmap["\'][^>]*>)(.*?)(</script>)',
+        _fix_importmap,
+        html,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    # 3) 런타임 fetch/XHR 절대경로 + pathname 기반 사번 파싱 보정 shim 주입.
+    #    app.js(모듈, 문서 하단)보다 먼저 실행되도록 head 끝에 삽입한다.
+    shim = _build_subpath_shim(proxy_path)
+    if "</head>" in html:
+        html = html.replace("</head>", shim + "</head>", 1)
+    elif "<head>" in html:
+        html = html.replace("<head>", "<head>" + shim, 1)
+    else:
+        html = shim + html
+
     return html.encode("utf-8")
 
 
