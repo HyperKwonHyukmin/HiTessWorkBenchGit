@@ -50,6 +50,7 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:runModelBuilderSolve',
   'viewer:exportMooringBdf',
   'viewer:exportSidePassageBdf',
+  'viewer:exportUnitBdf',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
   'viewer:checkPathAccess',
   'viewer:fetchResultDir',
@@ -142,6 +143,11 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // 반환 = { ok, savedPath, stats } | { ok:false, canceled?, error }
   exportSidePassageBdf: (opts) =>
     ipcRenderer.invoke('viewer:exportSidePassageBdf', opts),
+  // ModuleUnitStudio "Save" → 편집 반영 최종 모델 JSON 업로드 → 백엔드 convert_json_to_bdf
+  // → BDF 다운로드 → 사용자 PC 저장(대화상자). payload = { fileName, content }
+  // 반환 = { ok, savedPath, stats } | { ok:false, canceled?, error }
+  exportUnitBdf: (opts) =>
+    ipcRenderer.invoke('viewer:exportUnitBdf', opts),
   onMooringStructuralProgress: (callback) => {
     const listener = (_, data) => callback(data);
     ipcRenderer.on('viewer:mooring-structural-progress', listener);

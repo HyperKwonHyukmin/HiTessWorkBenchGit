@@ -1941,6 +1941,95 @@ ipcMain.handle("viewer:exportSidePassageBdf", async (_e, payload) => {
   }
 });
 
+// ModuleUnitStudio "Save" → 편집 반영 최종 모델 JSON 을 서버에 업로드 →
+// 백엔드 module-unit/export-bdf(convert_json_to_bdf)로 BDF 생성 → 다운로드 → 사용자 PC 저장.
+// payload = { fileName, content }, 반환 = { ok, savedPath, stats } | { ok:false, canceled?, error }
+ipcMain.handle("viewer:exportUnitBdf", async (_e, payload) => {
+  try {
+    const fileName = payload?.fileName;
+    const content  = payload?.content;
+    if (!fileName || typeof content !== "string") {
+      return { ok: false, error: "fileName / content 누락" };
+    }
+    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const { serverUrl } = runtimeConfig;
+    const employeeId = runtimeConfig.employeeId;
+    if (!employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+    if (!viewerParentAnalysisId) {
+      return { ok: false, error: "parentAnalysisId 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 BDF 검증을 먼저 마치고 Studio 를 여세요." };
+    }
+
+    // 1) 편집 모델 JSON 업로드 (uploadEvaluationArtifact 와 동일 엔드포인트, artifact_kind='edited')
+    const makeForm = () => {
+      const form = new FormData();
+      form.append("file", new Blob([content], { type: "application/json" }), fileName);
+      form.append("employee_id", employeeId);
+      form.append("parent_analysis_id", String(viewerParentAnalysisId));
+      form.append("artifact_kind", "edited");
+      return form;
+    };
+    const { res: upRes } = await fetchWithSessionRefresh(
+      `${serverUrl}/api/analysis/module-stability/upload`,
+      () => ({ method: "POST", body: makeForm() }),
+      runtimeConfig,
+    );
+    if (!upRes.ok) {
+      const detail = await readBackendError(upRes);
+      return { ok: false, error: `편집 모델 업로드 실패: ${upRes.status}${detail ? ` - ${detail}` : ""}` };
+    }
+    const upBody = await upRes.json();
+    const jsonPath = upBody.remotePath;
+    if (!jsonPath) return { ok: false, error: "업로드 응답에 remotePath 가 없습니다." };
+
+    // 2) 백엔드에서 BDF 생성
+    const { res: reqRes } = await fetchWithSessionRefresh(
+      `${serverUrl}/api/analysis/module-unit/export-bdf`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonPath }),
+      },
+      runtimeConfig,
+    );
+    if (!reqRes.ok) {
+      const detail = await readBackendError(reqRes);
+      const hint = reqRes.status === 404
+        ? ` - export-bdf API가 해당 서버에 없습니다. 서버(${serverUrl})가 최신 WorkBench 백엔드인지 확인하세요.`
+        : "";
+      return { ok: false, error: `BDF 생성 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}${hint}` };
+    }
+    const body = await reqRes.json();
+    const bdfPath = body?.bdfPath;
+    if (!bdfPath) return { ok: false, error: "백엔드 응답에 bdfPath 가 없습니다." };
+
+    // 3) 생성된 BDF 다운로드
+    const dlUrl = `${serverUrl}/api/download?filepath=${encodeURIComponent(bdfPath)}`;
+    const { res: dlRes } = await fetchWithSessionRefresh(dlUrl, { method: "GET" }, runtimeConfig);
+    if (!dlRes.ok) {
+      const detail = await readBackendError(dlRes);
+      return { ok: false, error: `BDF 다운로드 실패: ${dlRes.status}${detail ? ` - ${detail}` : ""}` };
+    }
+    const bdfText = await dlRes.text();
+
+    // 4) 사용자 PC 저장 (저장 대화상자)
+    const target = viewerWindow && !viewerWindow.isDestroyed() ? viewerWindow : mainWindow;
+    const saveRes = await dialog.showSaveDialog(target, {
+      title: "편집 반영 최종 BDF 저장",
+      defaultPath: path.basename(bdfPath) || "module_unit_edited.bdf",
+      filters: [{ name: "Nastran BDF", extensions: ["bdf"] }],
+    });
+    if (saveRes.canceled || !saveRes.filePath) {
+      return { ok: false, canceled: true, error: "저장이 취소되었습니다." };
+    }
+    fs.writeFileSync(saveRes.filePath, bdfText, "utf-8");
+    return { ok: true, savedPath: saveRes.filePath, stats: body?.stats ?? null };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 app.whenReady().then(() => {
   // 외부 회사 네트워크 등 시스템 프록시가 설정된 환경에서도 정상 동작하도록
   // 시스템 프록시 설정을 자동으로 적용

@@ -2811,6 +2811,76 @@ async def export_sidepassage_checkplate(
     return {"ok": True, "bdfPath": out_path, "stats": stats}
 
 
+@router.post("/analysis/module-unit/export-bdf")
+async def export_module_unit_bdf(
+    request: Request,
+    current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """Module Unit Studio "Save" → 편집 반영 최종 모델 JSON → convert_json_to_bdf → BDF 파일.
+
+    Body JSON: { jsonPath: str }
+      jsonPath = userConnection 하위 편집 모델(_edited.json) 절대경로
+                 (= module-stability/upload 가 돌려준 remotePath).
+    동작: json.load(jsonPath) → _nb.convert_json_to_bdf(data) → "<base>.bdf" 작성.
+    반환: { ok, bdfPath, stats }  → 호출측이 /api/download 로 회수.
+    """
+    if not _NB_AVAILABLE:
+        raise HTTPException(status_code=500, detail="nastran_bridge 모듈 없음")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON body 파싱 실패")
+
+    json_path = body.get("jsonPath")
+    if not json_path or not isinstance(json_path, str):
+        raise HTTPException(status_code=400, detail="jsonPath 는 필수")
+
+    try:
+        abs_path = _validate_userconnection_path(json_path)
+        assert_current_user_can_access_path(abs_path, current_user, db, _ALLOWED_DOWNLOAD_BASE)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"경로 검증 실패: {e}")
+    if not os.path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail=f"편집 모델 JSON 없음: {abs_path}")
+
+    try:
+        with open(abs_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"JSON 로드 실패: {e}")
+
+    try:
+        bdf_text = _nb.convert_json_to_bdf(data)
+    except Exception as e:
+        logger.exception("[module-unit export-bdf] BDF 생성 실패")
+        raise HTTPException(status_code=500, detail=f"BDF 생성 실패: {e}")
+
+    from pathlib import Path as _Path
+    base = os.path.splitext(os.path.basename(abs_path))[0]
+    out_path = os.path.join(os.path.dirname(abs_path), f"{base}.bdf")
+    try:
+        _Path(out_path).write_text(bdf_text, encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"BDF 저장 실패: {e}")
+
+    def _count(card: str) -> int:
+        return sum(1 for ln in bdf_text.splitlines()
+                   if ln[:8].strip().upper().rstrip("*") == card)
+    stats = {
+        "gridCount": _count("GRID"),
+        "beamCount": _count("CBEAM") + _count("CBAR"),
+        "rbe2Count": _count("RBE2"),
+        "conm2Count": _count("CONM2"),
+    }
+    logger.info("[module-unit export-bdf] 완료: %s (grid=%d, beam=%d, rbe2=%d)",
+                out_path, stats["gridCount"], stats["beamCount"], stats["rbe2Count"])
+    return {"ok": True, "bdfPath": out_path, "stats": stats}
+
+
 # ── Mooring 구조해석: 편집 반영 solvable BDF 생성 ──────────────────────────
 # 편집 출력(convert_json_to_bdf)은 하중·구속·SUBCASE 가 없어 solve 불가하므로,
 # 원본 solvable BDF 의 case control/하중/구속은 그대로 두고 element/RBE2 만 편집 반영한다.
