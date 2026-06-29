@@ -181,15 +181,25 @@ Expected: **FAIL** — `test_per_condition[lr...]` 의 ay/az 와 `test_summary_m
 - Modify: `$TS/ts_rules/lr.py:25`
 - Modify: `$TS/ts_rules/__init__.py:67-70`
 
-- [ ] **Step 1: lcg_rule 의 LCG 소스 교정**
+- [ ] **Step 1: lr.py 의 두 필드 소스 교정 (LCG + GM)**
 
-`$TS/ts_rules/lr.py` line 25:
+> 실행 중 발견: lcg_rule 외에 GM 소스(`c.gom`→`c.gm`)도 교정해야 AddLR 시트와 1e-6 일치. 둘 다 ay/az 지배항에만 영향(ax 무관).
+
+`$TS/ts_rules/lr.py` — lcg_rule:
 ```python
     lcg_rule = c.mtc + k.lbp / 2 - (k.lbp - L)
 ```
 →
 ```python
-    lcg_rule = c.lcg + k.lbp / 2 - (k.lbp - L)
+    lcg_rule = c.lcg + k.lbp / 2 - (k.lbp - L)   # LCG(General col15) 사용 (mtc 아님)
+```
+`$TS/ts_rules/lr.py` — kappa 의 GM 소스:
+```python
+    GM = c.gom
+```
+→
+```python
+    GM = c.gm   # LR 은 자유표면 보정 전 고체 GM(General col16) 사용 (gom 아님)
 ```
 
 - [ ] **Step 2: GREEN 확인 — LR 테스트 통과**

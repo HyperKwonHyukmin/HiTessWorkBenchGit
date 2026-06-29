@@ -17,15 +17,19 @@
 
 ## 2. 근본 원인 (정량 확정)
 
-`ts_rules/lr.py` 의 조건별 수식 체인은 AddLR `LR` 시트와 **한 줄을 제외하고 1:1 일치**한다.
+`ts_rules/lr.py` 의 조건별 수식 체인은 AddLR `LR` 시트와 **두 군데 필드 소스를 제외하고 1:1 일치**한다.
+(구현·검증 단계에서 LCG 외에 GM 소스 오용도 함께 발견됨 — 둘 다 "잘못된 필드 참조" 동일 부류.)
 
 | 항목 | AddLR LR 시트 | 현재 `lr.py` | 판정 |
 |------|---------------|--------------|------|
+| GM (row 28 / kappa) | `HLOOKUP(General,16)[=고체 GM]` | `c.gom`(자유표면 보정 GoM) | ❌ `gom` 오용 |
 | LCG rule (row 31 / line 25) | `HLOOKUP(General,15)[=LCG] + LBP/2 - (LBP-L)` | `c.mtc + lbp/2 - (lbp-L)` | ❌ `mtc` 오용 |
 | 그 외 a0/aheave/apitch/asway/ayaw/arollz/arolly/A/ax/ay/az | — | — | ✅ 동일 |
 
-근거(조건 3 기준): Excel `G31 = 137.6`. 역산 `137.6 - LBP/2(140.65) = -3.05`.
+근거(LCG, 조건 3 기준): Excel `G31 = 137.6`. 역산 `137.6 - LBP/2(140.65) = -3.05`.
 fixture 의 condition 3 은 `lcg = -3.05`, `mtc = 1715.41` → **`-3.05` 는 `lcg` 와 정확히 일치**, mtc 아님.
+근거(GM): LR 시트 `row28 = HLOOKUP(General,16)` 은 조건 3 에서 `12.53`, 조건 4 에서 `13.52`.
+fixture 의 해당 값은 `gm`(12.53/13.52)이고 `gom`(10.45/11.48)이 아님 → `kappa=13·GM/B` 를 통해 ay·az 지배항(arollz/arolly)에 전파. **GM=`c.gm`**.
 
 버그의 지문은 기존 fixture `rule_expected_summary["lr"]` 에 그대로 남아 있다:
 
@@ -35,7 +39,7 @@ fixture 의 condition 3 은 `lcg = -3.05`, `mtc = 1715.41` → **`-3.05` 는 `lc
 | y (ay) | 17.399 / LC37 | **7.4715 / LC4** (ayaw 가 lcg 사용 → 폭발) |
 | z (az) | 47.344 / LC37 | **2.1058 / LC4** (apitch 가 lcg 사용 → 폭발) |
 
-→ 수정의 핵심은 `lr.py:25` 의 **`c.mtc` → `c.lcg`** 한 글자. ax 만 정상이고 ay/az 만 틀린 패턴이 이 진단을 그대로 뒷받침한다.
+→ 수정의 핵심은 `lr.py` 의 **`c.mtc` → `c.lcg`** + **`c.gom` → `c.gm`** 두 필드 소스. 둘 다 ay/az 지배항(lcg→ayaw, gm→kappa→arollz/arolly)에만 영향을 주고 ax(GM·lcg 무관)는 멀쩡 → ax 만 정상이고 ay/az 만 틀린 패턴이 이 진단을 그대로 뒷받침한다. (검증 게이트는 "AddLR LR 시트 캐시값과 1e-6 일치"이며, 이를 충족하려면 두 교정이 모두 필요하다.)
 
 ## 3. 결정 사항
 
@@ -64,9 +68,10 @@ summary (LR 시트 `I15:N18`):
 ## 5. 변경 범위 (파일별)
 
 ### A. 계산 엔진 — `C:\Coding\WorkBenchSubModule\TS`
-1. `ts_rules/lr.py`
-   - `lcg_rule = c.mtc + k.lbp / 2 - (k.lbp - L)` → `c.lcg` 로 교정.
-   - LABEL = `"LR"` 유지. 그 외 식 변경 없음.
+1. `ts_rules/lr.py` (두 필드 소스 교정)
+   - `lcg_rule = c.mtc + k.lbp / 2 - (k.lbp - L)` → `c.lcg` (LCG = General col15)
+   - `GM = c.gom` → `c.gm` (고체 GM = General col16, kappa 소스)
+   - LABEL = `"LR"` 유지. 그 외 식 변경 없음. 두 줄 모두 필드 선택 근거 주석 부기(회귀 방지).
 2. `ts_rules/__init__.py`
    - `RULE_KEYS = ["dnvgl", "csr", "igc", "bv", "lr"]` (lr 추가).
    - 라인 68~69 의 "lr 제외" 주석 제거/갱신.
