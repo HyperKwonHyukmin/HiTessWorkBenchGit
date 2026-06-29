@@ -4,12 +4,14 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from starlette.background import BackgroundTask
+from starlette.responses import JSONResponse, Response, StreamingResponse
 
 
 router = APIRouter(prefix="/external-apps", tags=["external-apps"])
 
 BLOCK_WELD_UPSTREAM = "http://10.14.42.145:31880/"
+BLOCK_WELD_PROXY_PATH = "/external-apps/block-weld"
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -20,6 +22,25 @@ HOP_BY_HOP_HEADERS = {
     "transfer-encoding",
     "upgrade",
 }
+_block_weld_client: httpx.AsyncClient | None = None
+
+
+def get_block_weld_client() -> httpx.AsyncClient:
+    global _block_weld_client
+    if _block_weld_client is None or _block_weld_client.is_closed:
+        _block_weld_client = httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=httpx.Timeout(30.0, connect=5.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        )
+    return _block_weld_client
+
+
+async def close_block_weld_client() -> None:
+    global _block_weld_client
+    if _block_weld_client is not None and not _block_weld_client.is_closed:
+        await _block_weld_client.aclose()
+    _block_weld_client = None
 
 
 def _filter_headers(headers):
@@ -29,6 +50,17 @@ def _filter_headers(headers):
         if key.lower() not in HOP_BY_HOP_HEADERS
         and key.lower() not in {"host", "content-length"}
     }
+
+
+def _proxy_response_headers(headers, upstream_origin: str, proxy_base: str):
+    response_headers = _filter_headers(headers)
+    location = response_headers.get("location")
+    if location:
+        if location.startswith(upstream_origin):
+            response_headers["location"] = location.replace(upstream_origin, proxy_base, 1)
+        elif location.startswith("/"):
+            response_headers["location"] = f"{proxy_base}{location}"
+    return response_headers
 
 
 def _build_subpath_shim(proxy_path: str) -> str:
@@ -127,50 +159,78 @@ def _rewrite_html_links(content: bytes, content_type: str, proxy_path: str) -> b
 async def _proxy_block_weld(request: Request, path: str = ""):
     upstream_origin = BLOCK_WELD_UPSTREAM.rstrip("/")
     proxy_origin = str(request.base_url).rstrip("/")
-    proxy_base = f"{proxy_origin}/external-apps/block-weld"
+    proxy_base = f"{proxy_origin}{BLOCK_WELD_PROXY_PATH}"
     target_url = urljoin(BLOCK_WELD_UPSTREAM, path)
     if request.url.query:
         target_url = f"{target_url}?{request.url.query}"
 
     headers = _filter_headers(request.headers)
     headers["host"] = urlparse(BLOCK_WELD_UPSTREAM).netloc
+    client = get_block_weld_client()
 
     try:
-        async with httpx.AsyncClient(follow_redirects=False, timeout=30.0) as client:
-            upstream = await client.request(
+        upstream = await client.send(
+            client.build_request(
                 request.method,
                 target_url,
                 content=await request.body(),
                 headers=headers,
-            )
+            ),
+            stream=True,
+        )
     except httpx.RequestError as exc:
         raise HTTPException(
             status_code=502,
             detail=f"Block Weld upstream server is unavailable: {exc}",
         ) from exc
 
-    response_headers = _filter_headers(upstream.headers)
-    location = response_headers.get("location")
-    if location:
-        if location.startswith(upstream_origin):
-            response_headers["location"] = location.replace(upstream_origin, proxy_base, 1)
-        elif location.startswith("/"):
-            response_headers["location"] = f"{proxy_base}{location}"
-
+    response_headers = _proxy_response_headers(upstream.headers, upstream_origin, proxy_base)
     content_type = upstream.headers.get("content-type", "")
-    content = _rewrite_html_links(upstream.content, content_type, "/external-apps/block-weld")
+    if "text/html" not in content_type.lower():
+        return StreamingResponse(
+            upstream.aiter_bytes(),
+            status_code=upstream.status_code,
+            headers=response_headers,
+            media_type=content_type,
+            background=BackgroundTask(upstream.aclose),
+        )
 
-    return Response(
-        content=content,
-        status_code=upstream.status_code,
-        headers=response_headers,
-        media_type=content_type,
-    )
+    try:
+        content = _rewrite_html_links(await upstream.aread(), content_type, BLOCK_WELD_PROXY_PATH)
+        return Response(
+            content=content,
+            status_code=upstream.status_code,
+            headers=response_headers,
+            media_type=content_type,
+        )
+    finally:
+        await upstream.aclose()
 
 
 @router.api_route("/block-weld", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
 async def proxy_block_weld_root(request: Request):
     return await _proxy_block_weld(request)
+
+
+@router.get("/block-weld/__wb_proxy_health")
+async def proxy_block_weld_health():
+    target_url = urljoin(BLOCK_WELD_UPSTREAM, "")
+    client = get_block_weld_client()
+    try:
+        upstream = await client.send(client.build_request("GET", target_url), stream=True)
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Block Weld upstream server is unavailable: {exc}",
+        ) from exc
+
+    try:
+        return JSONResponse(
+            {"ok": upstream.status_code < 500, "upstreamStatus": upstream.status_code},
+            status_code=200 if upstream.status_code < 500 else 502,
+        )
+    finally:
+        await upstream.aclose()
 
 
 @router.api_route("/block-weld/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])

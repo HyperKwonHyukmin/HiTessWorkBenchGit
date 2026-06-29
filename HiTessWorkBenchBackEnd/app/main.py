@@ -55,7 +55,10 @@ async def lifespan(app: FastAPI):
 
     # userConnection/ 30일 초과 폴더 자동 정리 (서버 시작 즉시 1회 + 매일 자정 반복)
     start_cleanup_scheduler()
-    yield
+    try:
+        yield
+    finally:
+        await external_apps.close_block_weld_client()
 
 
 app = FastAPI(lifespan=lifespan)

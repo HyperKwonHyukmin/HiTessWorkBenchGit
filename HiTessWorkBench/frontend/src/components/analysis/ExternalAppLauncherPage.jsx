@@ -19,18 +19,24 @@ async function pingUrl(url, timeoutMs = 4000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+    const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+    if (response.type !== 'opaque' && !response.ok) return false;
     return true;
   } catch {
-    return false;
+    try {
+      await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+      return true;
+    } catch {
+      return false;
+    }
   } finally {
     clearTimeout(timer);
   }
 }
 
-function buildLaunchUrl(baseUrl, employeeId) {
+function buildLaunchUrl(baseUrl, employeeId, cacheBust = true) {
   const url = new URL(`${baseUrl}/${encodeURIComponent(employeeId)}`);
-  url.searchParams.set('__wb_cache_bust', String(Date.now()));
+  if (cacheBust) url.searchParams.set('__wb_cache_bust', String(Date.now()));
   return url.toString();
 }
 
@@ -79,6 +85,9 @@ export default function ExternalAppLauncherPage({
   icon: Icon,
   toastName = title,
   windowKey = title,
+  healthUrl,
+  clearCacheOnLaunch = true,
+  cacheBustOnLaunch = true,
 }) {
   const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
@@ -87,9 +96,9 @@ export default function ExternalAppLauncherPage({
 
   const checkStatus = useCallback(async (showSpinner = true) => {
     if (showSpinner) setServerStatus('checking');
-    const ok = await pingUrl(baseUrl);
+    const ok = await pingUrl(healthUrl || baseUrl);
     setServerStatus(ok ? 'online' : 'offline');
-  }, [baseUrl]);
+  }, [baseUrl, healthUrl]);
 
   useEffect(() => {
     checkStatus(true);
@@ -103,13 +112,13 @@ export default function ExternalAppLauncherPage({
       return;
     }
 
-    const url = buildLaunchUrl(baseUrl, employeeId);
+    const url = buildLaunchUrl(baseUrl, employeeId, cacheBustOnLaunch);
     if (window.electron?.invoke) {
       window.electron.invoke('open-app-window', {
         url,
         title,
         windowKey,
-        clearCache: true,
+        clearCache: clearCacheOnLaunch,
       });
     } else {
       window.open(url, '_blank', 'noopener,noreferrer');
