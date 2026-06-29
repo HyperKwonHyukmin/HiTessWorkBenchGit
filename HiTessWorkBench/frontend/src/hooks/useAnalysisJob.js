@@ -54,8 +54,9 @@ export function useAnalysisJob({
   pollingMaxRetries,
 } = {}) {
   const savedJob = savedState?.job || {};
-  const [jobId, setJobId] = useState(savedJob.jobId ?? null);
-  const [isRunning, setIsRunning] = useState(savedJob.isRunning ?? false);
+  const savedJobIsTerminal = savedJob.status === 'Success' || savedJob.status === 'Failed' || savedJob.status === 'Interrupted';
+  const [jobId, setJobId] = useState(savedJobIsTerminal ? null : savedJob.jobId ?? null);
+  const [isRunning, setIsRunning] = useState(savedJobIsTerminal ? false : savedJob.isRunning ?? false);
   const [progress, setProgress] = useState(savedJob.progress ?? 0);
   const [statusMessage, setStatusMessage] = useState(savedJob.statusMessage ?? '');
   const [logs, setLogs] = useState(savedJob.logs ?? []);
@@ -76,6 +77,8 @@ export function useAnalysisJob({
   startGlobalJobRef.current = startGlobalJob;
   const clearGlobalJobRef = useRef(clearGlobalJob);
   clearGlobalJobRef.current = clearGlobalJob;
+  const setSavedStateRef = useRef(setSavedState);
+  setSavedStateRef.current = setSavedState;
 
   const reset = useCallback(() => {
     if (jobId && clearGlobalJobRef.current) {
@@ -87,6 +90,19 @@ export function useAnalysisJob({
     setStatusMessage('');
     setLogs([]);
     lastMessageRef.current = '';
+    setSavedStateRef.current?.({
+      job: {
+        jobId: null,
+        status: null,
+        isRunning: false,
+        progress: 0,
+        statusMessage: '',
+        logs: [],
+        completeData: null,
+        errorData: null,
+        resultRestored: false,
+      },
+    });
   }, [jobId]);
 
   const startJob = useCallback((newJobId, programLabel) => {
@@ -95,26 +111,93 @@ export function useAnalysisJob({
     setProgress(0);
     setStatusMessage('서버 요청 중...');
     lastMessageRef.current = '';
+    setSavedStateRef.current?.({
+      job: {
+        jobId: newJobId,
+        status: 'Running',
+        isRunning: true,
+        progress: 0,
+        statusMessage: '서버 요청 중...',
+        logs: [],
+        completeData: null,
+        errorData: null,
+        resultRestored: false,
+      },
+    });
     if (programLabel && startGlobalJobRef.current) {
       startGlobalJobRef.current(newJobId, programLabel);
     }
   }, []);
 
-  const setSavedStateRef = useRef(setSavedState);
-  setSavedStateRef.current = setSavedState;
-
   useEffect(() => {
     if (!setSavedStateRef.current) return;
+    const hasUnrestoredTerminalPayload =
+      savedJob?.jobId &&
+      !savedJob.resultRestored &&
+      (
+        (savedJob.status === 'Success' && savedJob.completeData) ||
+        ((savedJob.status === 'Failed' || savedJob.status === 'Interrupted') && savedJob.errorData)
+      );
+    if (hasUnrestoredTerminalPayload) return;
+
     setSavedStateRef.current({
-      job: { jobId, isRunning, progress, statusMessage, logs },
+      job: {
+        ...(savedJob || {}),
+        jobId,
+        status: isRunning ? 'Running' : savedJob?.status,
+        isRunning,
+        progress,
+        statusMessage,
+        logs,
+      },
     });
-  }, [jobId, isRunning, progress, statusMessage, logs]);
+  }, [jobId, isRunning, progress, statusMessage, logs, savedJob?.jobId, savedJob?.status, savedJob?.resultRestored]);
 
   // usePolling 콜백은 항상 최신 클로저를 봐야 하므로 ref 로 보관.
   const onCompleteRef = useRef(onComplete);
   const onErrorRef = useRef(onError);
   onCompleteRef.current = onComplete;
   onErrorRef.current = onError;
+
+  const restoredTerminalJobRef = useRef(null);
+
+  useEffect(() => {
+    if (!savedJob?.jobId || savedJob.resultRestored) return;
+    if (restoredTerminalJobRef.current === savedJob.jobId) return;
+
+    if (savedJob.status === 'Success' && savedJob.completeData) {
+      restoredTerminalJobRef.current = savedJob.jobId;
+      setJobId(null);
+      setIsRunning(false);
+      setProgress(savedJob.progress ?? 100);
+      setStatusMessage(savedJob.statusMessage || savedJob.message || '해석 완료');
+      setSavedStateRef.current?.({
+        job: {
+          ...savedJob,
+          isRunning: false,
+          progress: savedJob.progress ?? 100,
+          resultRestored: true,
+        },
+      });
+      onCompleteRef.current?.(savedJob.completeData);
+      return;
+    }
+
+    if ((savedJob.status === 'Failed' || savedJob.status === 'Interrupted') && savedJob.errorData) {
+      restoredTerminalJobRef.current = savedJob.jobId;
+      setJobId(null);
+      setIsRunning(false);
+      setStatusMessage(savedJob.statusMessage || savedJob.message || '해석 실패');
+      setSavedStateRef.current?.({
+        job: {
+          ...savedJob,
+          isRunning: false,
+          resultRestored: true,
+        },
+      });
+      onErrorRef.current?.(savedJob.errorData);
+    }
+  }, [savedJob?.jobId, savedJob?.status, savedJob?.resultRestored, savedJob?.completeData, savedJob?.errorData]);
 
   usePolling({
     jobId,

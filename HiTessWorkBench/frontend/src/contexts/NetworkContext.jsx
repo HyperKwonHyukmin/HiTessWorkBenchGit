@@ -47,6 +47,11 @@ export function NetworkProvider({ children }) {
     const interceptor = axios.interceptors.response.use(
       (response) => response,
       (error) => {
+        // 401(세션 만료/인증 실패)은 App.jsx 의 자동 로그아웃 인터셉터가 별도로 처리한다.
+        // 진단 이벤트로 또 기록하면 상단 경고 배지·'환경 진단' 모달에 중복/과다 노출되므로 제외한다.
+        if (error?.response?.status === 401) {
+          return Promise.reject(error);
+        }
         const { severity, title } = classifyAxiosError(error);
         const config = error?.config || {};
         recordIssue({

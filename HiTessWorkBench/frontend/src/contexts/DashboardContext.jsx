@@ -351,6 +351,9 @@ export function DashboardProvider({ children }) {
       if (nextJob.menu) {
         setAnalysisPageStates(pagePrev => {
           const current = pagePrev[nextJob.menu] || {};
+          const isRunning = nextJob.status !== 'Success' && nextJob.status !== 'Failed' && nextJob.status !== 'Interrupted';
+          const isSuccess = nextJob.status === 'Success';
+          const isFailure = nextJob.status === 'Failed' || nextJob.status === 'Interrupted';
           return {
             ...pagePrev,
             [nextJob.menu]: {
@@ -358,10 +361,14 @@ export function DashboardProvider({ children }) {
               job: {
                 ...(current.job || {}),
                 jobId: nextJob.jobId,
-                isRunning: nextJob.status !== 'Success' && nextJob.status !== 'Failed' && nextJob.status !== 'Interrupted',
+                status: nextJob.status ?? current.job?.status,
+                isRunning,
                 progress: nextJob.progress ?? current.job?.progress ?? 0,
                 statusMessage: nextJob.message ?? current.job?.statusMessage ?? '',
                 logs: current.job?.logs || [],
+                completeData: isSuccess ? nextJob : current.job?.completeData,
+                errorData: isFailure ? nextJob : current.job?.errorData,
+                resultRestored: isRunning ? false : current.job?.resultRestored ?? false,
               },
               recoveredFromGlobalJob: true,
             },
@@ -391,12 +398,15 @@ export function DashboardProvider({ children }) {
     setAnalysisPageState(menuName, current => ({
       ...current,
       job: {
-        ...(current.job || {}),
         jobId,
+        status: 'Running',
         isRunning: true,
         progress: 0,
         statusMessage: '서버에 작업을 요청하는 중...',
         logs: current.job?.logs || [],
+        completeData: null,
+        errorData: null,
+        resultRestored: false,
       },
       recoveredFromGlobalJob: true,
     }));
