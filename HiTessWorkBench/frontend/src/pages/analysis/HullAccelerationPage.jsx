@@ -143,7 +143,7 @@ export default function HullAccelerationPage() {
   const [particularsImageUrl, setParticularsImageUrl] = useState(null);
   const [isLogOpen, setIsLogOpen] = useState(savedPageState.isLogOpen ?? false);
   const [activeLoadingTableIndex, setActiveLoadingTableIndex] = useState(savedPageState.activeLoadingTableIndex ?? 0);
-  // 가속도 최대값 탭: 'envelope'(방향별 최대값) | 선급 key('dnvgl' | 'csr' | 'igc' | 'bv')
+  // 가속도 최대값 탭: 'envelope'(방향별 최대값) | 선급 key('dnvgl' | 'csr' | 'igc' | 'bv' | 'lr')
   const [activeRuleTab, setActiveRuleTab] = useState('envelope');
   // PDF 에서 Cb 미검출 시 사용자가 직접 입력하는 Scantling Cb (빈 문자열 = 미입력 → 미검출 분기).
   const [manualCb, setManualCb] = useState('');
@@ -415,9 +415,8 @@ export default function HullAccelerationPage() {
   const activeTable = tables[activeTableIndex];
   const envelope = resultData?.envelope;
   const rules = resultData?.rules ?? {};
-  // LR(Lloyd's Register)은 현재 계산값이 부정확하여 결과에서 제외한다.
-  // (서버 백엔드 미반영분이나 캐시된 과거 결과에 LR 이 남아있어도 표에 노출되지 않도록 방어)
-  const ruleRows = Object.values(rules).filter((rule) => rule.key !== 'lr');
+  // 5개 선급 Rule(DNVGL/CSR/IGC/BV/LR) 결과를 모두 표시한다.
+  const ruleRows = Object.values(rules);
 
   // 단계 인디케이터 상태 계산
   const step1Done = !!pdfFile;
@@ -912,7 +911,7 @@ export default function HullAccelerationPage() {
                       <span className="text-xs font-bold text-slate-700 uppercase tracking-widest">선체 가속도 최대값</span>
                     </div>
 
-                    {/* 탭 바: 방향별 최대값(Envelope) + 선급별(DNVGL/CSR/IGC/BV) */}
+                    {/* 탭 바: 방향별 최대값(Envelope) + 선급별(DNVGL/CSR/IGC/BV/LR) */}
                     <div className="overflow-x-auto mb-3">
                       <div className="inline-flex min-w-full gap-1 rounded-lg bg-slate-200/70 p-1">
                         {[{ key: 'envelope', label: '방향별 최대값' }, ...ruleRows.map((r) => ({ key: r.key, label: r.key.toUpperCase() }))].map((tab) => {
