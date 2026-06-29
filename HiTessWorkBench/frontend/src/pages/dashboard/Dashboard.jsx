@@ -44,7 +44,7 @@ const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick
       role={isClickable ? 'button' : undefined}
       tabIndex={isClickable ? 0 : undefined}
       onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
-      className={`${DASHBOARD_CARD_BASE} min-h-[150px] p-5 flex items-start justify-between ${
+      className={`${DASHBOARD_CARD_BASE} min-h-[112px] p-4 xl:p-5 flex items-start justify-between ${
         isClickable ? 'hover:border-blue-300 cursor-pointer' : ''
       }`}
       initial={{ opacity: 0, y: 12 }}
@@ -97,7 +97,7 @@ const FavoriteCard = ({
     onDragEnd={onDragEnd}
     onDragOver={onDragOver}
     onDrop={onDrop}
-    className={`flex min-h-[148px] w-full flex-col items-start p-5 bg-white rounded-xl border shadow-sm group text-left h-full relative overflow-hidden transition-colors ${
+    className={`flex min-h-[104px] w-full flex-col items-start p-3.5 bg-white rounded-xl border shadow-sm group text-left h-full relative overflow-hidden transition-colors ${
       isEditing
         ? 'border-blue-300 ring-1 ring-blue-100 cursor-grab active:cursor-grabbing'
         : 'border-slate-200 hover:border-blue-300'
@@ -111,7 +111,7 @@ const FavoriteCard = ({
       transition: { type: 'spring', stiffness: 380, damping: 28 },
     } : undefined}
   >
-    <div className={`absolute inset-x-0 top-0 h-1 ${color}`} />
+    <div className={`absolute inset-y-0 left-0 w-1 ${color}`} />
     {isEditing ? (
       <div className="absolute top-3 right-3 flex items-center gap-1">
         <button
@@ -148,13 +148,13 @@ const FavoriteCard = ({
         <Star size={16} fill="currentColor" className="transition-transform group-hover/star:scale-110" />
       </button>
     )}
-    <div className={`mb-4 inline-flex h-10 w-10 items-center justify-center rounded-lg ${color} text-white shadow-sm`}>
-      <Icon size={20} />
+    <div className={`mb-2.5 inline-flex h-8 w-8 items-center justify-center rounded-lg ${color} text-white shadow-sm`}>
+      <Icon size={17} />
     </div>
-    <h3 className="font-bold text-slate-800 text-sm leading-snug pr-6">{title}</h3>
+    <h3 className="font-bold text-slate-800 text-sm leading-snug pr-6 line-clamp-1">{title}</h3>
     <p
-      className="text-xs text-slate-500 mt-1.5 max-w-full leading-relaxed overflow-hidden"
-      style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
+      className="text-xs text-slate-500 mt-1 max-w-full leading-relaxed overflow-hidden"
+      style={{ display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}
     >
       {desc}
     </p>
@@ -202,7 +202,7 @@ const QueueStatusCard = React.memo(function QueueStatusCard() {
   const usageRatio = queueStatus.limit > 0 ? (queueStatus.running / queueStatus.limit) * 100 : 0;
 
   return (
-    <div className={`${DASHBOARD_CARD_BASE} min-h-[150px] p-5 hover:border-blue-300`}>
+    <div className={`${DASHBOARD_CARD_BASE} min-h-[112px] p-4 xl:p-5 border-blue-200 bg-blue-50/45 hover:border-blue-300`}>
       <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
         <Server size={100} />
       </div>
@@ -247,12 +247,12 @@ const STATUS_BADGE = {
   Pending: { variant: 'neutral', label: '대기 중' },
 };
 
-const ProjectRow = ({ id, name, type, status, date }) => {
+const ProjectRow = ({ id, name, type, status, date, className = '' }) => {
   const s = STATUS_BADGE[status] || { variant: 'neutral', label: status || '대기 중' };
   return (
-    <tr className="border-b border-gray-50 last:border-0 hover:bg-slate-50/60 transition-colors">
-      <td className="py-3 px-4 font-mono text-xs text-slate-500 text-center">{id}</td>
-      <td className="py-3 px-4">
+    <tr className={`border-b border-gray-50 last:border-0 hover:bg-slate-50/60 transition-colors ${className}`}>
+      <td className="py-2 px-3 font-mono text-xs text-slate-500 text-center">{id}</td>
+      <td className="py-2 px-3">
         <div className="flex items-center">
           <FileText size={16} className="text-slate-500 mr-2" />
           <span className="font-bold text-sm text-slate-700">
@@ -260,13 +260,13 @@ const ProjectRow = ({ id, name, type, status, date }) => {
           </span>
         </div>
       </td>
-      <td className="py-3 px-4 text-xs text-slate-500 font-mono">
+      <td className="py-2 px-3 text-xs text-slate-500 font-mono">
         <span className="bg-slate-100 px-2 py-1 rounded border border-slate-200">{type}</span>
       </td>
-      <td className="py-3 px-4">
+      <td className="py-2 px-3">
         <Badge variant={s.variant} size="sm" dot>{s.label}</Badge>
       </td>
-      <td className="py-3 px-4 text-xs text-slate-500 text-right">{new Date(date).toLocaleString()}</td>
+      <td className="py-2 px-3 text-xs text-slate-500 text-right">{new Date(date).toLocaleString()}</td>
     </tr>
   );
 };
@@ -363,7 +363,7 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenModal(); } }}
-      className="bg-gradient-to-r from-brand-blue to-slate-900 rounded-xl shadow-sm border border-white/10 overflow-hidden cursor-pointer hover:shadow-md transition-all group flex flex-col lg:flex-row lg:min-h-[88px] relative focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+      className="bg-gradient-to-r from-brand-blue to-slate-900 rounded-xl shadow-sm border border-white/10 overflow-hidden cursor-pointer hover:shadow-md transition-all group flex flex-col lg:flex-row lg:min-h-[78px] relative focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
     >
       <Map size={96} className="absolute -left-8 -bottom-9 text-white/5 rotate-12 pointer-events-none" />
       <div className="px-4 py-3 lg:w-[310px] border-b lg:border-b-0 lg:border-r border-white/10 relative z-10 flex flex-col justify-center">
@@ -630,7 +630,7 @@ const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: 'easeOut' }}
       whileHover={{ y: -1 }}
-      className="relative bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors cursor-pointer overflow-hidden group mb-5"
+      className="relative bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors cursor-pointer overflow-hidden group"
     >
       {/* 좌측 컬러 스트라이프·글로우 제거 — 아이콘·타입 칩으로 구분 */}
       <div className="relative flex items-center gap-2.5 px-3.5 py-2">
@@ -1229,9 +1229,9 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-10 animate-fade-in-up">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-3 overflow-hidden animate-fade-in-up xl:gap-4">
 
-      <div className="mb-4">
+      <div className="shrink-0">
         <h1 className="text-2xl font-bold text-brand-blue tracking-tight">WorkBench Overview</h1>
         <p className="text-sm text-slate-500 mt-1">해석 서버 현황, 수행 통계, 즐겨찾기 앱을 한눈에 확인하세요.</p>
       </div>
@@ -1347,12 +1347,8 @@ export default function Dashboard() {
       />
 
       {/* 플랫폼 소개 & 로드맵 — 최상단. 로드맵은 항상 표시(주요 참조 정보), 소개 배너만 접이식(첫 방문만 펼침). */}
-      <div className="mb-8">
-        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
-            <Layers size={16} className="text-slate-500" /> 플랫폼 소개 &amp; 로드맵
-          </h2>
-          <div className="flex flex-wrap items-center gap-2.5">
+      <div className="shrink-0">
+        <div className="mb-1.5 flex flex-wrap items-center justify-end gap-2">
             <DashboardFab
               onOpenVideo={() => setIsVideoModalOpen(true)}
               onOpenNewsletter={() => setIsNewsletterModalOpen(true)}
@@ -1371,9 +1367,8 @@ export default function Dashboard() {
               {introOpen ? '소개 접기' : '소개 펼쳐보기'}
               <ChevronDown size={15} className={`transition-transform ${introOpen ? 'rotate-180' : ''}`} />
             </button>
-          </div>
         </div>
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
           {/* 소개 배너 — 접이식(첫 방문만 펼침) */}
           {introOpen && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1401,13 +1396,13 @@ export default function Dashboard() {
       </div>
 
       {/* 서비스 현황 */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
+      <div className="shrink-0">
+        <div className="flex items-center justify-between mb-2">
           <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
             <Activity size={15} className="text-blue-400" /> 서비스 현황
           </h2>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 xl:gap-4">
         <QueueStatusCard />
 
         <EngineeringStatCard
@@ -1425,7 +1420,7 @@ export default function Dashboard() {
           color="bg-brand-blue"
         />
         <div
-          className={`${DASHBOARD_CARD_BASE} min-h-[150px] p-5 hover:border-amber-300 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50`}
+          className={`${DASHBOARD_CARD_BASE} min-h-[112px] p-4 xl:p-5 hover:border-amber-300 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50`}
           role="button"
           tabIndex={0}
           aria-label="인기 해석 프로그램 바로가기 및 전체 순위 열기"
@@ -1467,7 +1462,7 @@ export default function Dashboard() {
       </div>
 
       {recentApps.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <span className="mr-1 inline-flex items-center gap-1 text-[11px] font-black tracking-wide text-slate-400">
               <Clock size={12} /> 최근 사용 앱
@@ -1495,8 +1490,8 @@ export default function Dashboard() {
       )}
 
       {/* 즐겨찾기 */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
+      <div className="shrink-0">
+        <div className="flex items-center justify-between mb-2">
           <div>
             <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
               <Star size={15} className="text-amber-400" fill="currentColor" /> 즐겨찾기
@@ -1523,7 +1518,7 @@ export default function Dashboard() {
         </div>
 
         {favorites.length === 0 ? (
-          <div className="bg-white border border-blue-200 rounded-xl p-6 sm:p-8 text-center shadow-sm flex flex-col items-center">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-blue-200 bg-white p-5 text-center shadow-sm">
             <div className="p-4 bg-blue-50 rounded-full mb-4">
               <Star size={32} className="text-slate-300" />
             </div>
@@ -1556,7 +1551,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <motion.div
-            className="grid grid-cols-2 md:grid-cols-4 gap-4"
+            className="grid grid-cols-2 md:grid-cols-4 gap-3"
             initial="hidden"
             animate="show"
             variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }}
@@ -1604,14 +1599,25 @@ export default function Dashboard() {
       </div>
 
       {/* 프로젝트 이력 */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="flex items-center justify-between mb-2">
           <h2 className="text-base font-bold text-slate-700 flex items-center gap-2">
             <Clock size={15} className="text-slate-500" /> 프로젝트 이력
           </h2>
-          <button onClick={() => setCurrentMenu('My Projects')} className="inline-flex items-center gap-1 text-xs font-bold text-blue-500 hover:text-blue-600 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer">
-            전체 이력 보기 →
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="hidden text-[11px] font-bold text-slate-400 [@media(max-height:900px)]:inline">
+              화면 높이에 맞춰 일부 축약
+            </span>
+            <span className="hidden rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-500 [@media(max-height:900px)]:inline-flex [@media(max-height:780px)]:hidden">
+              +1건
+            </span>
+            <span className="hidden rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-500 [@media(max-height:780px)]:inline-flex">
+              +2건
+            </span>
+            <button onClick={() => setCurrentMenu('My Projects')} className="inline-flex items-center gap-1 text-xs font-bold text-blue-500 hover:text-blue-600 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer">
+              전체 이력 보기 →
+            </button>
+          </div>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1629,17 +1635,17 @@ export default function Dashboard() {
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan="5" className="py-10 text-center text-slate-500 text-sm" role="status" aria-live="polite">
+                    <td colSpan="5" className="py-8 text-center text-slate-500 text-sm" role="status" aria-live="polite">
                       <div className="animate-spin inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mb-2" aria-hidden="true"></div>
                       <p>이력 데이터를 불러오는 중입니다...</p>
                     </td>
                   </tr>
                 ) : projects.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="py-10 text-center text-slate-500 text-sm">최근 수행된 프로젝트 내역이 없습니다.</td>
+                    <td colSpan="5" className="py-8 text-center text-slate-500 text-sm">최근 수행된 프로젝트 내역이 없습니다.</td>
                   </tr>
                 ) : (
-                  projects.slice(0, 5).map((project) => (
+                  projects.slice(0, 5).map((project, index) => (
                     <ProjectRow
                       key={project.id}
                       id={project.id}
@@ -1647,6 +1653,13 @@ export default function Dashboard() {
                       type={project.program_name}
                       status={project.status}
                       date={project.created_at}
+                      className={
+                        index >= 4
+                          ? '[@media(max-height:900px)]:hidden'
+                          : index >= 3
+                            ? '[@media(max-height:780px)]:hidden'
+                            : ''
+                      }
                     />
                   ))
                 )}

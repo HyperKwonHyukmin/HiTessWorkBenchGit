@@ -1,7 +1,7 @@
 /**
  * @fileoverview 결과 데이터(변위, 단면력, 응력) 상태 관리 및 서버 통신(API/JSON) 로직
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useDashboard } from '../contexts/DashboardContext';
 import { useAuth } from '../contexts/AuthContext';
 import { requestBeamAnalysis, downloadFileText } from '../api/analysis';
@@ -9,16 +9,27 @@ import { loadToNewton, withYzPolar } from './useBeamModeling';
 
 export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
   const { employeeId: authEmployeeId } = useAuth();
-  const [dispData, setDispData] = useState([]);
-  const [elForceData, setElForceData] = useState([]);
-  const [stressData, setStressData] = useState([]);
-  const [summaryData, setSummaryData] = useState(null);
+  const PAGE_KEY = 'Simple Beam Assessment';
+  const dashboardCtx = useDashboard();
+  const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
+  const savedResults = savedPageState.results || {};
+  const [dispData, setDispData] = useState(savedResults.dispData ?? []);
+  const [elForceData, setElForceData] = useState(savedResults.elForceData ?? []);
+  const [stressData, setStressData] = useState(savedResults.stressData ?? []);
+  const [summaryData, setSummaryData] = useState(savedResults.summaryData ?? null);
 
-  const { globalJob, startGlobalJob, clearGlobalJob } = useDashboard();
+  const { globalJob, startGlobalJob, clearGlobalJob } = dashboardCtx;
+  const restoredJobRef = useRef(null);
   
   const hasCharts = dispData.length > 0 || elForceData.length > 0 || stressData.length > 0;
   const isAnalyzing = globalJob?.menu === 'Simple Beam Assessment' && globalJob?.status === 'Running';
   const isReadOnly = hasCharts || isAnalyzing;
+
+  useEffect(() => {
+    dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
+      results: { dispData, elForceData, stressData, summaryData },
+    });
+  }, [dispData, elForceData, stressData, summaryData]);
 
   const mapElementDataWithX = (arr, totalLength) => {
     const uniqueIds = [...new Set(arr.map(a => a.elementId))].sort((a, b) => a - b);
@@ -95,20 +106,24 @@ export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
     }
   };
 
+  const restoreCompletedJob = async (jobData) => {
+    if (!jobData?.jobId || restoredJobRef.current === jobData.jobId || hasCharts) return;
+    if (!jobData.result_path) return;
+    restoredJobRef.current = jobData.jobId;
+    try {
+      const downloadRes = await downloadFileText(jobData.result_path);
+      const json = JSON.parse(downloadRes.data);
+      processResultJson(json);
+      showToast("서버 해석이 성공적으로 완료되었습니다.", "success");
+    } catch {
+      showToast("결과 파일을 불러오는 중 오류가 발생했습니다.", "error");
+    }
+  };
+
   useEffect(() => {
-    if (globalJob && globalJob.menu === 'Simple Beam Assessment') {
+    if (globalJob && globalJob.menu === PAGE_KEY) {
       if (globalJob.status === 'Success' && !hasCharts) {
-        const fetchResult = async () => {
-          try {
-            const downloadRes = await downloadFileText(globalJob.result_path);
-            const json = JSON.parse(downloadRes.data);
-            processResultJson(json);
-            showToast("서버 해석이 성공적으로 완료되었습니다.", "success");
-          } catch (e) {
-            showToast("결과 파일을 불러오는 중 오류가 발생했습니다.", "error");
-          }
-        };
-        fetchResult();
+        restoreCompletedJob(globalJob);
       } else if (globalJob.status === 'Failed' && !hasCharts) {
         showToast(`해석이 실패했습니다.\n${globalJob.engine_log}`, "error");
         clearGlobalJob();
@@ -116,9 +131,22 @@ export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
     }
   }, [globalJob, hasCharts]);
 
+  useEffect(() => {
+    const savedJob = savedPageState.job;
+    if (savedJob?.status === 'Success' && savedJob.completeData && !savedJob.resultRestored) {
+      restoreCompletedJob(savedJob.completeData);
+      dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
+        job: { ...savedJob, resultRestored: true },
+      });
+    }
+  }, [savedPageState.job?.jobId, savedPageState.job?.status, savedPageState.job?.resultRestored, hasCharts]);
+
   const resetResults = () => {
     setDispData([]); setElForceData([]); setStressData([]); setSummaryData(null);
     clearGlobalJob();
+    dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
+      results: { dispData: [], elForceData: [], stressData: [], summaryData: null },
+    });
   };
 
   return {

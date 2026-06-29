@@ -57,7 +57,7 @@ const APP_REGISTRY_OVERRIDES = {
   },
   "HiTESS Model Builder": {
     menuName: "HiTESS Model Builder",
-    programNames: ["HiTessModelBuilder", "HiTESS Model Builder"],
+    programNames: ["HiTessModelBuilder", "ModelBuilderAnalysis", "HiTESS Model Builder"],
     apiEndpoint: "/api/analysis/modelflow/request",
     relatedApps: ["BDF Scanner", "F06 Parser"],
     transferOutputs: [{ key: "bdf_path", label: "BDF 모델", targetApp: "BDF Scanner" }],
@@ -83,7 +83,7 @@ const APP_REGISTRY_OVERRIDES = {
   },
   "Mooring Fitting Assessment": {
     menuName: "Mooring Fitting Assessment",
-    programNames: ["MooringFitting", "Mooring Fitting Assessment"],
+    programNames: ["MooringFitting", "MooringFittingSolve", "Mooring Fitting Assessment"],
     apiEndpoint: "/api/analysis/mooring-fitting/request",
   },
   "DrawingToAnalysis": {
@@ -114,7 +114,7 @@ const APP_REGISTRY_OVERRIDES = {
   // 외부 앱(iframe/별도 창) — 실행 시 외부 서버 URL 을 새 창으로 띄운다. (BlockWeldAssessment.jsx)
   "Block Weld Assessment": {
     menuName: "Block Weld Assessment",
-    programNames: ["Block Weld Assessment"],
+    programNames: ["BlockWeld", "BlockWeldAssessment", "Block Weld", "Block Weld Assessment"],
   },
   "Heavy Block Lifting Simulation": {
     menuName: "Heavy Block Lifting Simulation",
@@ -187,8 +187,16 @@ export const ANALYSIS_DATA = RAW_ANALYSIS_DATA.map(app => ({
 export const getAppMenuName = (title) =>
   ANALYSIS_DATA.find(app => app.title === title)?.menuName ?? title;
 
-export const findAppByProgramName = (programName) =>
-  ANALYSIS_DATA.find(app => app.programNames?.includes(programName));
+const normalizeProgramName = (value) =>
+  String(value ?? '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+
+export const findAppByProgramName = (programName) => {
+  const normalizedProgramName = normalizeProgramName(programName);
+  return ANALYSIS_DATA.find(app =>
+    app.programNames?.includes(programName) ||
+    app.programNames?.some(name => normalizeProgramName(name) === normalizedProgramName)
+  );
+};
 
 const DashboardContext = createContext();
 const FavoritesContext = createContext();
@@ -223,6 +231,12 @@ function readPersistedGlobalJobs() {
     return parsed
       .filter(job => job?.jobId && job?.menu)
       .filter(job => !job.updatedAt || Date.now() - job.updatedAt < maxAgeMs)
+      .map(job => ({
+        ...job,
+        displayName: job.displayName || job.menu,
+        stateKey: job.stateKey || job.menu,
+        menu: job.routeMenu || getAppMenuName(job.menu),
+      }))
       .slice(0, 5);
   } catch {
     return [];
@@ -348,15 +362,16 @@ export function DashboardProvider({ children }) {
     setGlobalJobs(prev => prev.map(job => {
       if (job.jobId !== jobId) return job;
       const nextJob = { ...job, ...patch, updatedAt: Date.now() };
-      if (nextJob.menu) {
+      const pageStateKey = nextJob.stateKey || nextJob.menu;
+      if (pageStateKey) {
         setAnalysisPageStates(pagePrev => {
-          const current = pagePrev[nextJob.menu] || {};
+          const current = pagePrev[pageStateKey] || {};
           const isRunning = nextJob.status !== 'Success' && nextJob.status !== 'Failed' && nextJob.status !== 'Interrupted';
           const isSuccess = nextJob.status === 'Success';
           const isFailure = nextJob.status === 'Failed' || nextJob.status === 'Interrupted';
           return {
             ...pagePrev,
-            [nextJob.menu]: {
+            [pageStateKey]: {
               ...current,
               job: {
                 ...(current.job || {}),
@@ -385,9 +400,12 @@ export function DashboardProvider({ children }) {
 
   const startGlobalJob = useCallback((jobId, menuName) => {
     if (!jobId) return;
+    const routeMenu = getAppMenuName(menuName);
     const nextJob = {
       jobId,
-      menu: menuName,
+      menu: routeMenu,
+      stateKey: menuName,
+      displayName: menuName,
       status: 'Running',
       progress: 0,
       message: '서버에 작업을 요청하는 중...',
@@ -601,7 +619,7 @@ function GlobalJobCard({ job, onNavigate, onDismiss }) {
           {job.status === 'Running' ? <RefreshCw className="animate-spin text-blue-400 shrink-0" size={14}/> :
            job.status === 'Success' ? <CheckCircle className="text-emerald-400 shrink-0" size={14}/> :
            <AlertCircle className="text-red-400 shrink-0" size={14}/>}
-          <span className="truncate">{job.menu}</span>
+          <span className="truncate">{job.displayName || job.menu}</span>
         </span>
         <button
           onClick={(e) => { e.stopPropagation(); onDismiss(job.jobId); }}

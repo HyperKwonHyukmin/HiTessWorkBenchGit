@@ -21,6 +21,7 @@ import SolverCredit from '../ui/SolverCredit';
 import { formatEngineering as engFormat } from '../../utils/formatting';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useDashboard } from '../../contexts/DashboardContext';
 
 const CAPTURE_LABEL = {
   full: 'Full Report',
@@ -189,10 +190,13 @@ function KpiSection({ mode, summaryData, beamType, params }) {
 export default function BeamModelPreview() {
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
+  const dashboardCtx = useDashboard();
+  const PAGE_KEY = 'Simple Beam Assessment';
+  const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
   const captureRef = useRef(null);
   const captureTimerRef = useRef(null);
   const captureMenuRef = useRef(null);
-  const [activeTab, setActiveTab] = useState('modeling');
+  const [activeTab, setActiveTab] = useState(savedPageState.activeTab ?? 'modeling');
   // 밝은 사무실 환경 + 앱 전체 라이트 테마와 일관성을 위해 Light 모드로 시작한다.
   const [lightMode, setLightMode] = useState(true);
   const [captureMode, setCaptureMode] = useState(null); // null | 'full' | 'displacement' | 'stress'
@@ -221,11 +225,18 @@ export default function BeamModelPreview() {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [showCaptureMenu]);
 
-  const modelingHook = useBeamModeling();
+  const modelingHook = useBeamModeling(savedPageState.modeling);
   const analysisManager = useAnalysisManager(modelingHook, showToast, setActiveTab);
 
   const { beamType, params, loads, boundaries, validationErrors } = modelingHook;
   const { dispData, elForceData, stressData, summaryData, hasCharts, isAnalyzing, isReadOnly, globalJob } = analysisManager;
+
+  useEffect(() => {
+    dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
+      activeTab,
+      modeling: { beamType, params, loads, boundaries },
+    });
+  }, [activeTab, beamType, params, loads, boundaries]);
 
   const handleJsonUpload = (e) => {
     const file = e.target.files[0];

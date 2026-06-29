@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import axios from 'axios';
 import {
   PenTool, Calculator, AlertCircle, Loader2, Plus, Trash2, Ruler, Layers, CheckCircle2,
+  BarChart3,
 } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -719,9 +720,20 @@ function SectionCanvas({ polygon, platePolygon, properties, shapeKey, params }) 
 
   return (
     <div
-      className="rounded-xl overflow-hidden border border-slate-700 w-full"
+      className="relative rounded-xl overflow-hidden border border-slate-700 w-full shadow-sm"
       style={{ background: '#1a1a2e', aspectRatio: `${VW}/${VH}` }}
     >
+      <div className="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-2 text-[10px] font-bold text-slate-300">
+        <span className="rounded-full bg-slate-900/70 px-2 py-1 ring-1 ring-white/10">Centroid view</span>
+        <span className="flex items-center gap-1 rounded-full bg-slate-900/70 px-2 py-1 ring-1 ring-white/10">
+          <span className="h-2 w-2 rounded-full bg-cyan-300" /> Section
+        </span>
+        {platePolygon && (
+          <span className="flex items-center gap-1 rounded-full bg-slate-900/70 px-2 py-1 ring-1 ring-white/10">
+            <span className="h-2 w-2 rounded-full bg-amber-300" /> Attached plate
+          </span>
+        )}
+      </div>
       <svg width="100%" height="100%" viewBox={`0 0 ${VW} ${VH}`} style={{ display: 'block' }}>
         {/* 격자 */}
         <defs>
@@ -837,6 +849,40 @@ function StatBlock({ label, value, unit, desc }) {
         {value}
       </span>
       {desc && <span className="text-[9px] text-slate-400 leading-tight mt-0.5">{desc}</span>}
+    </div>
+  );
+}
+
+function StepHeader({ step, title, desc, icon: Icon }) {
+  return (
+    <div className="bg-slate-50 border-b border-gray-100 px-5 py-3">
+      <div className="flex items-center gap-3">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-[11px] font-extrabold text-violet-700">
+          {step}
+        </span>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            {Icon && <Icon size={13} className="shrink-0 text-violet-600" />}
+            <h2 className="text-xs font-extrabold text-slate-700 uppercase tracking-wide">{title}</h2>
+          </div>
+          {desc && <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{desc}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultMetric({ label, value, unit, desc, emphasis = false }) {
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${emphasis ? 'border-violet-200 bg-violet-50' : 'border-slate-200 bg-white'}`}>
+      <p className={`text-[10px] font-extrabold uppercase tracking-wide ${emphasis ? 'text-violet-600' : 'text-slate-400'}`}>{label}</p>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        <span className={`text-xl font-extrabold tabular-nums ${emphasis ? 'text-violet-800' : 'text-slate-800'}`}>
+          {value ?? '-'}
+        </span>
+        {unit && <span className="text-xs font-bold text-slate-400">{unit}</span>}
+      </div>
+      {desc && <p className="mt-1 text-[11px] leading-tight text-slate-500">{desc}</p>}
     </div>
   );
 }
@@ -988,67 +1034,71 @@ export default function SectionPropertyCalculator() {
         subtitleClassName="text-violet-200/80"
       />
 
+      <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+        {[
+          ['1', 'Select shape', 'Rod, Tube, I-Shape, 임의 Polygon 중 계산 대상 선택'],
+          ['2', 'Enter dimensions', '모든 치수는 mm 기준이며 미리보기는 즉시 갱신'],
+          ['3', 'Calculate & review', '면적, Ix/Iy, Sx/Sy, 회전반경을 단위별로 확인'],
+        ].map(([step, title, desc]) => (
+          <div key={step} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-xs font-extrabold text-violet-700">{step}</span>
+            <div>
+              <p className="text-xs font-extrabold text-slate-700">{title}</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* 2-컬럼 레이아웃 */}
-      <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6 items-start">
 
         {/* ── LEFT SIDEBAR ── */}
         <div className="space-y-4">
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="bg-slate-50 border-b border-gray-100 px-5 py-3">
-              <div className="flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700">1</span>
-                <div>
-                  <h2 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">단면 선택</h2>
-                  <p className="text-[10px] text-slate-400">계산할 기본 부재 형상을 선택</p>
-                </div>
-              </div>
-            </div>
+            <StepHeader step="1" title="단면 선택" desc="계산할 기본 부재 형상을 선택합니다." icon={Layers} />
             <div className="p-4 grid grid-cols-3 gap-2">
               {SHAPES.map(s => (
                 <button
                   key={s.key}
                   onClick={() => handleShapeChange(s.key)}
-                  className={`min-h-[70px] flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-all cursor-pointer text-center ${
+                  className={`min-h-[78px] flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-all cursor-pointer text-center ${
                     shapeKey === s.key
-                      ? 'border-violet-500 bg-violet-50 text-violet-700 shadow-sm'
+                      ? 'border-violet-500 bg-violet-50 text-violet-700 shadow-sm ring-2 ring-violet-100'
                       : 'border-slate-200 hover:border-violet-300 hover:bg-slate-50 text-slate-500'
                   }`}
+                  aria-pressed={shapeKey === s.key}
                 >
                   <span className="leading-none">{s.icon}</span>
-                  <span className="text-[10px] font-bold leading-tight">{s.label}</span>
+                  <span className="text-[11px] font-extrabold leading-tight">{s.label}</span>
                 </button>
               ))}
             </div>
           </div>
 
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="bg-slate-50 border-b border-gray-100 px-5 py-3">
-              <div className="flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700">2</span>
-                <div>
-                  <h2 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                    {isPolygon ? '꼭짓점 입력' : '단면 치수 입력'}
-                  </h2>
-                  <p className="text-[10px] text-slate-400">입력 단위는 mm 기준</p>
-                </div>
-              </div>
-            </div>
+            <StepHeader
+              step="2"
+              title={isPolygon ? '꼭짓점 입력' : '단면 치수 입력'}
+              desc={isPolygon ? '좌표를 순서대로 입력합니다. 자기교차가 있으면 계산할 수 없습니다.' : `${shape.label} 계산에 필요한 치수를 mm 기준으로 입력합니다.`}
+              icon={Ruler}
+            />
             <div className="p-4 space-y-3">
               {isPolygon ? (
                 <PolygonEditor vertices={polyVerts} onChange={setPolyVerts}/>
               ) : (
                 shape.params.map(p => (
                   <div key={`${shapeKey}_${p.key}`}>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">{p.label}</label>
-                    <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden focus-within:border-violet-400 transition-colors bg-white">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">{p.label}</label>
+                    <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-100 transition-colors bg-white">
                       <input
                         type="number"
                         value={getValue(p.key, p.defaultValue)}
                         onChange={e => setValue(p.key, e.target.value)}
                         min={p.min}
-                        className="min-w-0 flex-1 px-3 py-2 text-sm font-bold text-slate-800 outline-none bg-transparent"
+                        className="min-w-0 flex-1 px-3 py-2.5 text-sm font-bold text-slate-800 outline-none bg-transparent"
                       />
-                      <span className="px-3 py-2 bg-slate-50 text-slate-500 text-[11px] font-bold border-l border-slate-200">{p.unit}</span>
+                      <span className="px-3 py-2.5 bg-slate-50 text-slate-500 text-[11px] font-bold border-l border-slate-200">{p.unit}</span>
                     </div>
                   </div>
                 ))
@@ -1059,11 +1109,14 @@ export default function SectionPropertyCalculator() {
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
             <div className="bg-slate-50 border-b border-gray-100 px-5 py-3">
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700">3</span>
+                <div className="flex items-center gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-[11px] font-extrabold text-violet-700">3</span>
                   <div>
-                    <h2 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">유효폭 선체 포함</h2>
-                    <p className="text-[10px] text-slate-400">부재 상단에 선체판을 합성</p>
+                    <div className="flex items-center gap-1.5">
+                      <Layers size={13} className="text-violet-600" />
+                      <h2 className="text-xs font-extrabold text-slate-700 uppercase tracking-wide">유효폭 선체 포함</h2>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-slate-500">부재 상단에 선체판을 합성합니다.</p>
                   </div>
                 </div>
                 <button
@@ -1144,11 +1197,11 @@ export default function SectionPropertyCalculator() {
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+          <div className="sticky top-4 bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
             <button
               onClick={handleCalculate}
               disabled={!isValid || isLoading}
-              className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+              className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
                 isValid && !isLoading
                   ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-md shadow-violet-200 cursor-pointer'
                   : 'bg-slate-100 text-slate-400 cursor-not-allowed'
@@ -1158,8 +1211,10 @@ export default function SectionPropertyCalculator() {
                 ? <><Loader2 size={16} className="animate-spin"/> 계산 중...</>
                 : <><Calculator size={16}/> Calculate</>}
             </button>
-            <p className="mt-2 text-center text-[10px] text-slate-400">
-              결과 단위는 우측 탭에서 cm/mm로 전환할 수 있습니다.
+            <p className={`mt-2 text-center text-[11px] leading-relaxed ${isValid ? 'text-slate-500' : 'text-red-600'}`}>
+              {isValid
+                ? '계산 후 우측에서 핵심 결과와 상세 특성값을 확인합니다.'
+                : '계산하려면 모든 필수 치수를 0보다 큰 값으로 입력해야 합니다.'}
             </p>
           </div>
         </div>
@@ -1173,7 +1228,12 @@ export default function SectionPropertyCalculator() {
                   <Ruler size={18}/>
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-slate-800">단면 미리보기 및 결과</h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-800">단면 미리보기 및 결과</h2>
+                    <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-extrabold text-violet-700">
+                      {shape.label}
+                    </span>
+                  </div>
                   <p className="text-xs text-slate-500 mt-0.5">
                     입력은 mm 기준, 결과 표시는 선택한 단위 기준입니다.
                   </p>
@@ -1201,6 +1261,36 @@ export default function SectionPropertyCalculator() {
             </div>
           </div>
 
+          {result && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <ResultMetric
+                label="Area A"
+                value={formatByUnit(r.area, 'area', resultUnit)}
+                unit={unitByDimension('area', resultUnit)}
+                desc="단면 전체 면적"
+                emphasis
+              />
+              <ResultMetric
+                label="Ix"
+                value={formatByUnit(r.Ix, 'inertia', resultUnit)}
+                unit={unitByDimension('inertia', resultUnit)}
+                desc="x축 굽힘 강성"
+              />
+              <ResultMetric
+                label="Iy"
+                value={formatByUnit(r.Iy, 'inertia', resultUnit)}
+                unit={unitByDimension('inertia', resultUnit)}
+                desc="y축 굽힘 강성"
+              />
+              <ResultMetric
+                label="rx / ry"
+                value={`${formatByUnit(r.rx, 'length', resultUnit, 3) ?? '-'} / ${formatByUnit(r.ry, 'length', resultUnit, 3) ?? '-'}`}
+                unit={unitByDimension('length', resultUnit)}
+                desc="좌굴 검토용 회전반경"
+              />
+            </div>
+          )}
+
           {/* SVG 캔버스 */}
           <SectionCanvas
             polygon={displayPolygon}
@@ -1210,7 +1300,23 @@ export default function SectionPropertyCalculator() {
             params={isPolygon ? null : currentParams}
           />
 
-          {!result && !error && (
+          {isLoading && (
+            <div className="bg-white border border-violet-200 rounded-2xl shadow-sm p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+                  <Loader2 size={18} className="animate-spin"/>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-800">단면 특성값을 계산하는 중입니다.</p>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    입력 형상은 그대로 유지됩니다. 계산이 끝나면 핵심 결과와 상세 표가 아래에 표시됩니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!result && !error && !isLoading && (
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
@@ -1221,6 +1327,18 @@ export default function SectionPropertyCalculator() {
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                     좌측에서 단면 형상과 치수를 입력하면 미리보기는 즉시 갱신됩니다. 선체에 연결된 부재는 유효폭 선체 포함 옵션을 켠 뒤 선체 폭과 두께를 입력하세요.
                   </p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {[
+                      ['C', '빨간 마커는 도심입니다.'],
+                      ['x/y', '파란 점선은 도심축입니다.'],
+                      ['I1/I2', '비대칭 단면은 주축이 함께 표시됩니다.'],
+                    ].map(([label, text]) => (
+                      <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-extrabold text-slate-500">{label}</p>
+                        <p className="text-[11px] leading-tight text-slate-500">{text}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1249,19 +1367,29 @@ export default function SectionPropertyCalculator() {
 
           {/* 결과 카드 그리드 */}
           {result && (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              <ResultCard
-                title="일반 특성 (General)"
-                accent
-                stats={[
-                  ['A (단면적)', formatByUnit(r.area, 'area', resultUnit), unitByDimension('area', resultUnit), '단면의 총 면적'],
-                  ['P (둘레)', formatByUnit(r.perimeter, 'length', resultUnit), unitByDimension('length', resultUnit), '외곽선의 총 길이'],
-                  ['cx (도심)', formatByUnit(r.centroid?.x, 'length', resultUnit, 3), unitByDimension('length', resultUnit), '수평 도심 위치 (기준 원점 기준)'],
-                  ['cy (도심)', formatByUnit(r.centroid?.y, 'length', resultUnit, 3), unitByDimension('length', resultUnit), '수직 도심 위치 (기준 원점 기준)'],
-                ]}
-              />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <BarChart3 size={16} className="text-violet-600" />
+                  <h3 className="text-sm font-extrabold text-slate-800">상세 단면 특성값</h3>
+                </div>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">
+                  Result unit: {resultUnit}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <ResultCard
+                  title="일반 특성 (General)"
+                  accent
+                  stats={[
+                    ['A (단면적)', formatByUnit(r.area, 'area', resultUnit), unitByDimension('area', resultUnit), '단면의 총 면적'],
+                    ['P (둘레)', formatByUnit(r.perimeter, 'length', resultUnit), unitByDimension('length', resultUnit), '외곽선의 총 길이'],
+                    ['cx (도심)', formatByUnit(r.centroid?.x, 'length', resultUnit, 3), unitByDimension('length', resultUnit), '수평 도심 위치 (기준 원점 기준)'],
+                    ['cy (도심)', formatByUnit(r.centroid?.y, 'length', resultUnit, 3), unitByDimension('length', resultUnit), '수직 도심 위치 (기준 원점 기준)'],
+                  ]}
+                />
 
-              {r.attachedPlate && (
+                {r.attachedPlate && (
                 <ResultCard
                   title="유효폭 선체"
                   stats={[
@@ -1270,16 +1398,16 @@ export default function SectionPropertyCalculator() {
                     ['A선체', formatByUnit(r.attachedPlate.area, 'area', resultUnit), unitByDimension('area', resultUnit), '유효폭 선체 면적'],
                   ]}
                 />
-              )}
+                )}
 
-              <ResultCard
-                title="단면 2차 모멘트"
-                stats={[
-                  ['Ix', formatByUnit(r.Ix, 'inertia', resultUnit), unitByDimension('inertia', resultUnit), 'x축 굽힘 강성의 척도'],
-                  ['Iy', formatByUnit(r.Iy, 'inertia', resultUnit), unitByDimension('inertia', resultUnit), 'y축 굽힘 강성의 척도'],
-                  ['Ixy', formatByUnit(r.Ixy, 'inertia', resultUnit), unitByDimension('inertia', resultUnit), '비대칭 굽힘 해석 시 사용'],
-                ]}
-              />
+                <ResultCard
+                  title="단면 2차 모멘트"
+                  stats={[
+                    ['Ix', formatByUnit(r.Ix, 'inertia', resultUnit), unitByDimension('inertia', resultUnit), 'x축 굽힘 강성의 척도'],
+                    ['Iy', formatByUnit(r.Iy, 'inertia', resultUnit), unitByDimension('inertia', resultUnit), 'y축 굽힘 강성의 척도'],
+                    ['Ixy', formatByUnit(r.Ixy, 'inertia', resultUnit), unitByDimension('inertia', resultUnit), '비대칭 굽힘 해석 시 사용'],
+                  ]}
+                />
 
               <ResultCard
                 title="탄성 단면계수"
@@ -1310,17 +1438,18 @@ export default function SectionPropertyCalculator() {
                 ]}
               />
 
-              <ResultCard
-                title="소성 단면계수 · 비틀림"
-                stats={[
-                  ['Zx', formatByUnit(r.Zx, 'volume', resultUnit), unitByDimension('volume', resultUnit), '완전 소성 시 x축 모멘트 저항: Mp = Zx × Fy'],
-                  ['Zy', formatByUnit(r.Zy, 'volume', resultUnit), unitByDimension('volume', resultUnit), '완전 소성 시 y축 모멘트 저항'],
-                  ['SF_x', r.shapeFactorX != null ? r.shapeFactorX.toFixed(4) : null, '—', '형상계수 Zx/Sx — 소성 여유 (1.0 초과)'],
-                  ['SF_y', r.shapeFactorY != null ? r.shapeFactorY.toFixed(4) : null, '—', '형상계수 Zy/Sy — 소성 여유 (1.0 초과)'],
-                  ['J', r.J != null ? formatByUnit(r.J, 'inertia', resultUnit) : null, unitByDimension('inertia', resultUnit), '생비낭 비틀림 상수'],
-                  ['Cw', r.Cw != null ? formatByUnit(r.Cw, 'warping', resultUnit) : null, unitByDimension('warping', resultUnit), '뒤틀림 상수'],
-                ]}
-              />
+                <ResultCard
+                  title="소성 단면계수 · 비틀림"
+                  stats={[
+                    ['Zx', formatByUnit(r.Zx, 'volume', resultUnit), unitByDimension('volume', resultUnit), '완전 소성 시 x축 모멘트 저항: Mp = Zx × Fy'],
+                    ['Zy', formatByUnit(r.Zy, 'volume', resultUnit), unitByDimension('volume', resultUnit), '완전 소성 시 y축 모멘트 저항'],
+                    ['SF_x', r.shapeFactorX != null ? r.shapeFactorX.toFixed(4) : null, '—', '형상계수 Zx/Sx — 소성 여유 (1.0 초과)'],
+                    ['SF_y', r.shapeFactorY != null ? r.shapeFactorY.toFixed(4) : null, '—', '형상계수 Zy/Sy — 소성 여유 (1.0 초과)'],
+                    ['J', r.J != null ? formatByUnit(r.J, 'inertia', resultUnit) : null, unitByDimension('inertia', resultUnit), '생 브낭 비틀림 상수'],
+                    ['Cw', r.Cw != null ? formatByUnit(r.Cw, 'warping', resultUnit) : null, unitByDimension('warping', resultUnit), '뒤틀림 상수'],
+                  ]}
+                />
+              </div>
             </div>
           )}
         </div>
