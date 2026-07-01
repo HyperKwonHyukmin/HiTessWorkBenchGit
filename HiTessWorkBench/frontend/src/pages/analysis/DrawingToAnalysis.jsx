@@ -1376,6 +1376,8 @@ export default function DrawingToAnalysis() {
                       <img
                         src={referenceImageUrl}
                         alt="Original drawing reference"
+                        loading="lazy"
+                        decoding="async"
                         className="w-full max-h-40 object-contain"
                       />
                     </div>
@@ -1487,6 +1489,8 @@ function ImageInputPreview({ file, previewUrl, referenceLength }) {
             <img
               src={previewUrl}
               alt="Uploaded drawing preview"
+              loading="lazy"
+              decoding="async"
               className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
             />
           ) : (

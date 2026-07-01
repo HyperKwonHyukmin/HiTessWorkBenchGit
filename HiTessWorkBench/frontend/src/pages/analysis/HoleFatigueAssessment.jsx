@@ -284,6 +284,8 @@ export default function HoleFatigueAssessment() {
             <img
               src={holeFatigueRef}
               alt="Hole Fatigue 참조 도면"
+              loading="lazy"
+              decoding="async"
               className="w-full max-w-3xl mx-auto rounded-lg object-contain bg-white p-4 border border-gray-200"
             />
             <p className="text-center text-xs text-slate-500 mt-3">

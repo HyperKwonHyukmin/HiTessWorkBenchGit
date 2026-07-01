@@ -448,6 +448,8 @@ function PdfBrowserView({
             <img
               src={previewUrl}
               alt={current.filename}
+              loading="lazy"
+              decoding="async"
               className="max-w-full max-h-[72vh] object-contain"
             />
           </div>

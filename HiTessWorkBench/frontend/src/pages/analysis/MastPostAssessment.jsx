@@ -141,6 +141,8 @@ export default function MastPostAssessment() {
             <img
               src={mastPostRef}
               alt="Mast Post 참조 도면"
+              loading="lazy"
+              decoding="async"
               className="w-full rounded-lg object-contain bg-white border border-slate-100"
             />
           </div>

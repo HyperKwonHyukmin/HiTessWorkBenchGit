@@ -289,6 +289,8 @@ export default function NewsletterArchiveModal({ isOpen, onClose }) {
                                 key={i}
                                 src={url}
                                 alt={`${selected.title} ${i + 1}페이지`}
+                                loading="lazy"
+                                decoding="async"
                                 className="w-full max-w-3xl bg-white shadow-lg rounded ring-1 ring-slate-900/10"
                                 draggable={false}
                               />

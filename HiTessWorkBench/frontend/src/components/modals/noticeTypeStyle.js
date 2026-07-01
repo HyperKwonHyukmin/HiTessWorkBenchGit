@@ -1,0 +1,7 @@
+// NoticeStrip / NoticeDetailModal 공용 타입 톤 토큰.
+export const NOTICE_TYPE_STYLE = {
+  Notice:      { label: '공지',     bar: 'from-blue-400 to-blue-600',       chip: 'bg-blue-50 text-blue-700 border-blue-200',         glow: 'rgba(59,130,246,0.18)',  headerBg: 'from-blue-600 to-blue-700',       headerBorder: 'border-blue-500',    chipStrong: 'bg-blue-600 text-white',    ctaBtn: 'from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800'         },
+  Update:      { label: '업데이트', bar: 'from-emerald-400 to-emerald-600', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200', glow: 'rgba(16,185,129,0.18)', headerBg: 'from-emerald-600 to-emerald-700', headerBorder: 'border-emerald-500', chipStrong: 'bg-emerald-600 text-white', ctaBtn: 'from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800' },
+  Maintenance: { label: '점검',     bar: 'from-amber-400 to-amber-600',     chip: 'bg-amber-50 text-amber-700 border-amber-200',      glow: 'rgba(245,158,11,0.18)', headerBg: 'from-amber-500 to-amber-600',     headerBorder: 'border-amber-400',   chipStrong: 'bg-amber-500 text-white',   ctaBtn: 'from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700'     },
+  Event:       { label: '이벤트',   bar: 'from-violet-400 to-violet-600',   chip: 'bg-violet-50 text-violet-700 border-violet-200',   glow: 'rgba(139,92,246,0.18)', headerBg: 'from-violet-600 to-violet-700',   headerBorder: 'border-violet-500',  chipStrong: 'bg-violet-600 text-white',  ctaBtn: 'from-violet-600 to-violet-700 hover:from-violet-700 hover:to-violet-800' },
+};

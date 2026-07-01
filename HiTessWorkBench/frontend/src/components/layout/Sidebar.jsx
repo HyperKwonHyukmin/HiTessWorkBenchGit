@@ -88,6 +88,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
           <img
             src={`${import.meta.env.BASE_URL}logo.png`}
             alt="HiTESS WorkBench"
+            decoding="async"
             className="h-9 w-9 rounded-md bg-white p-1 object-contain"
           />
         ) : (
@@ -95,6 +96,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
             <img
               src={`${import.meta.env.BASE_URL}logo.png`}
               alt="HiTESS WorkBench"
+              decoding="async"
               className="h-8 w-8 rounded-md bg-white p-1 object-contain"
             />
             <h1 className="text-xl font-bold tracking-wider">

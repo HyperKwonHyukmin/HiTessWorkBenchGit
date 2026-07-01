@@ -1,17 +1,17 @@
 /// <summary>
 /// 관리자 전용 해석 관리 및 통계 대시보드.
 /// </summary>
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { getAllAnalysisHistory } from '../../api/analysis';
 import { useToast } from '../../contexts/ToastContext';
 import { downloadBlob } from '../../utils/fileHelper';
 import { formatDateTime } from '../../utils/formatting';
 import AnalysisFilterBar from '../../components/admin/AnalysisFilterBar';
-import AnalysisStatsDashboard from '../../components/admin/AnalysisStatsDashboard';
 import AnalysisHistoryTable from '../../components/admin/AnalysisHistoryTable';
 
 const PAGE_SIZE = 25;
+const AnalysisStatsDashboard = lazy(() => import('../../components/admin/AnalysisStatsDashboard'));
 
 export default function AnalysisManagement() {
   const { showToast } = useToast();
@@ -87,7 +87,9 @@ export default function AnalysisManagement() {
         <div className="text-center py-20 text-slate-400">{(dateFrom || dateTo) ? '선택한 기간에 해당하는 데이터가 없습니다.' : '데이터가 없습니다.'}</div>
       ) : (
         <>
-          <AnalysisStatsDashboard stats={stats} />
+          <Suspense fallback={<div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">통계 차트를 불러오는 중입니다...</div>}>
+            <AnalysisStatsDashboard stats={stats} />
+          </Suspense>
           <AnalysisHistoryTable
             filteredAnalyses={analyses}
             searchTerm={searchTerm}

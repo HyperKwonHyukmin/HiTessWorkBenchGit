@@ -10,6 +10,7 @@ import {
   ClipboardList, Download, RefreshCw, Filter
 } from 'lucide-react';
 import { ACTION_TYPE_LABELS, ACTION_TYPE_COLORS } from '../../constants/activityLog';
+import { POLLING_POLICY } from '../../hooks/pollingPolicy';
 
 // ── sparkline buffer 길이 (3초 polling × 30 = 약 90초 윈도우) ──
 const SPARK_LEN = 30;
@@ -169,7 +170,7 @@ export default function SystemSettings() {
       }
     };
     poll();
-    const id = setInterval(poll, 3000);
+    const id = setInterval(poll, POLLING_POLICY.systemIntervalMs);
     const onVisible = () => { if (!document.hidden) poll(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => {

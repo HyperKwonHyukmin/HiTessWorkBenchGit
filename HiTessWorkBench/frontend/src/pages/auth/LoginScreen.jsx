@@ -136,13 +136,13 @@ export default function LoginScreen({ onLoginSuccess }) {
       {/* 1. 좌측 브랜딩 패널 */}
       <div className="hidden lg:flex w-1/3 relative flex-col p-12 text-white overflow-hidden bg-brand-blue">
         <div className="absolute inset-0 z-0 pointer-events-none">
-          <img src={structureBgUrl} alt="Structure" className="w-full h-full object-cover opacity-50 mix-blend-overlay grayscale contrast-125 transform scale-105" />
+          <img src={structureBgUrl} alt="Structure" decoding="async" className="w-full h-full object-cover opacity-50 mix-blend-overlay grayscale contrast-125 transform scale-105" />
           <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/90 via-brand-blue/40 to-brand-blue/90"></div>
         </div>
 
         <div className="relative z-10 flex-1 flex flex-col justify-center pointer-events-none">
           <div className="mb-8">
-            <img src={`${import.meta.env.BASE_URL}icon.ico`} alt="HiTESS WorkBench" className="h-12 w-auto object-contain" />
+            <img src={`${import.meta.env.BASE_URL}icon.ico`} alt="HiTESS WorkBench" decoding="async" className="h-12 w-auto object-contain" />
           </div>
            <h1 className="text-4xl font-extrabold leading-tight text-white drop-shadow-md">
             HiTESS <br/> <span className="text-brand-accent">WorkBench</span>

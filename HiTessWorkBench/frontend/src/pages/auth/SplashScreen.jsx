@@ -24,6 +24,7 @@ export default function SplashScreen({ onFinish }) {
           <img
             src={`${import.meta.env.BASE_URL}logo.png`}
             alt="HiTESS WorkBench"
+            decoding="async"
             className="h-20 w-auto object-contain"
           />
         </div>

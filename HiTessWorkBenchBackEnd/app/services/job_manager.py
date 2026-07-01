@@ -14,6 +14,7 @@ MAX_CONCURRENT_JOBS = 5
 analysis_executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_JOBS)
 
 JOB_RETENTION_SECONDS = 86400  # 24시간
+PERSISTED_STATUS_FIELDS = {"status", "progress", "message"}
 
 
 class JobStatusStore:
@@ -64,6 +65,8 @@ class JobStatusStore:
     def _write_through(self, job_id: str, updates: dict) -> None:
         """Analysis 레코드가 존재하면 메모리 상태를 DB에도 반영합니다."""
         if not job_id:
+            return
+        if not PERSISTED_STATUS_FIELDS.intersection(updates):
             return
         db = database.SessionLocal()
         try:

@@ -324,6 +324,8 @@ export default function JibRestAssessment() {
               <img
                 src={refImgTab === 'jib_rest' ? jibRestRef : jibCraneRef}
                 alt={refImgTab === 'jib_rest' ? 'Jib Rest 참조 도면' : 'Jib Crane 참조 도면'}
+                loading="lazy"
+                decoding="async"
                 className="w-full rounded-lg object-contain"
               />
             </div>

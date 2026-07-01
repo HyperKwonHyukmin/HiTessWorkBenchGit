@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { getJobStatus } from '../api/analysis';
+import { POLLING_POLICY } from './pollingPolicy';
 
 /**
  * 작업 상태 폴링 전용 커스텀 훅.
@@ -16,15 +17,26 @@ import { getJobStatus } from '../api/analysis';
  * @param {function}    options.onComplete    - 완료(Success) 콜백. (data) 수신.
  * @param {function}    options.onError       - 실패/타임아웃 콜백. (data | { timeout: true }) 수신.
  */
-export function usePolling({ jobId, interval = 1500, maxRetries = 120, onProgress, onComplete, onError }) {
+export function usePolling({
+  jobId,
+  interval = POLLING_POLICY.analysisIntervalMs,
+  maxRetries = POLLING_POLICY.analysisMaxRetries,
+  onProgress,
+  onComplete,
+  onError,
+}) {
   const onProgressRef = useRef(onProgress);
   const onCompleteRef = useRef(onComplete);
   const onErrorRef = useRef(onError);
+  const intervalRef = useRef(interval);
+  const maxRetriesRef = useRef(maxRetries);
 
   // 매 렌더마다 최신 콜백으로 ref 갱신
   onProgressRef.current = onProgress;
   onCompleteRef.current = onComplete;
   onErrorRef.current = onError;
+  intervalRef.current = interval;
+  maxRetriesRef.current = maxRetries;
 
   const retryCountRef = useRef(0);
   const timerRef = useRef(null);
@@ -43,7 +55,7 @@ export function usePolling({ jobId, interval = 1500, maxRetries = 120, onProgres
 
       retryCountRef.current += 1;
 
-      if (retryCountRef.current > maxRetries) {
+      if (retryCountRef.current > maxRetriesRef.current) {
         if (onErrorRef.current) onErrorRef.current({ timeout: true });
         return;
       }
@@ -65,14 +77,14 @@ export function usePolling({ jobId, interval = 1500, maxRetries = 120, onProgres
         }
 
         if (onProgressRef.current) onProgressRef.current(data);
-        timerRef.current = setTimeout(poll, interval);
+        timerRef.current = setTimeout(poll, intervalRef.current);
       } catch (err) {
         if (activeJobRef.current !== jobId) return;
         if (onErrorRef.current) onErrorRef.current({ error: err });
       }
     };
 
-    timerRef.current = setTimeout(poll, interval);
+    timerRef.current = setTimeout(poll, intervalRef.current);
 
     return () => {
       activeJobRef.current = null;

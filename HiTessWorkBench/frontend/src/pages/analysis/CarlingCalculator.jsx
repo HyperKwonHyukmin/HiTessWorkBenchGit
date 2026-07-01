@@ -348,6 +348,8 @@ const InfoPanel = ({ variant, meta }) => {
                     <img
                       src={src}
                       alt={`${meta.title} reference ${index + 1}`}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full max-h-56 object-contain"
                     />
                     <p className="mt-2 text-center text-[11px] font-bold text-slate-400">

@@ -162,7 +162,7 @@ export default function DTypeLugAssessment() {
           <div className="border-t border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
             {REFERENCE_IMAGES.map(image => (
               <div key={image.src} className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-                <img src={image.src} alt={image.label} className="w-full h-52 object-contain rounded-lg bg-white" />
+                <img src={image.src} alt={image.label} loading="lazy" decoding="async" className="w-full h-52 object-contain rounded-lg bg-white" />
                 <p className="text-[11px] text-slate-400 font-bold mt-2 text-center">{image.label}</p>
               </div>
             ))}

@@ -29,6 +29,7 @@ _ROUTER_DIR = os.path.dirname(os.path.abspath(__file__))           # app/routers
 _BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))       # HiTessWorkBenchBackEnd
 USER_CONNECTION_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
 _TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")
+_UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 def make_work_dir(employee_id: str, program_name: str) -> tuple[str, str]:
@@ -73,11 +74,21 @@ async def save_upload(
             raise HTTPException(status_code=400, detail=f"허용되지 않은 파일 형식입니다: {ext or '(none)'}")
     dest_path = os.path.join(work_dir, fname)
     try:
-        data = await upload.read()
-        if max_bytes is not None and len(data) > max_bytes:
-            raise HTTPException(status_code=413, detail=f"파일 크기가 제한({max_bytes} bytes)을 초과했습니다.")
+        written = 0
         with open(dest_path, "wb") as buffer:
-            buffer.write(data)
+            while True:
+                chunk = await upload.read(_UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if max_bytes is not None and written > max_bytes:
+                    buffer.close()
+                    try:
+                        os.remove(dest_path)
+                    except OSError:
+                        pass
+                    raise HTTPException(status_code=413, detail=f"파일 크기가 제한({max_bytes} bytes)을 초과했습니다.")
+                buffer.write(chunk)
     except HTTPException:
         raise
     except Exception as e:
