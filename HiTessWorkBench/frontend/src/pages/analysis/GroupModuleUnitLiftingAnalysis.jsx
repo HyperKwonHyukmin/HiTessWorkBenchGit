@@ -18,7 +18,7 @@ import SampleRunButton from '../../components/analysis/SampleRunButton';
 import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.76';
+const MODULE_STUDIO_VERSION = '0.0.81';
 
 // ── 상태 설정 (HiTessModelBuilder와 동일) ─────────────────────
 const STATUS_CONFIG = {
@@ -300,32 +300,44 @@ function ModuleStudioLauncher({
 // ── 메인 컴포넌트 ────────────────────────────────────────────
 export default function GroupModuleUnitLiftingAnalysis() {
   const { setCurrentMenu } = useNavigation();
-  const { currentUser, gmuHandoff, clearGmuHandoff, startGlobalJob, globalJob } = useDashboard();
   const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
+  const dashboardCtx = useDashboard();
+  const {
+    currentUser,
+    gmuHandoff,
+    clearGmuHandoff,
+    startGlobalJob,
+    clearGlobalJob,
+    globalJob,
+    analysisPageStates,
+    setAnalysisPageState,
+    clearAnalysisPageState,
+  } = dashboardCtx;
+  const savedPageState = analysisPageStates?.[GMU_MENU_NAME] || {};
   const { showToast } = useToast();
 
   // ── 파이프라인 상태 ──────────────────────────────────────
-  const [steps, setSteps]     = useState(INITIAL_STEPS);
-  const [activeIdx, setActiveIdx] = useState(0);
+  const [steps, setSteps]     = useState(savedPageState.steps ?? INITIAL_STEPS);
+  const [activeIdx, setActiveIdx] = useState(savedPageState.activeIdx ?? 0);
   // 해석 실행이 한 번이라도 트리거됐는지 여부 (다음 단계 이동 버튼 활성화 조건)
-  const [hasRunOnce, setHasRunOnce] = useState(false);
+  const [hasRunOnce, setHasRunOnce] = useState(savedPageState.hasRunOnce ?? false);
 
 
   // ── Step 0: BDF 입력 ─────────────────────────────────────
-  const [bdfFile, setBdfFile]           = useState(null);
-  const [validating, setValidating]     = useState(false);
-  const [validJobId, setValidJobId]     = useState(null);
-  const [validProgress, setValidProgress] = useState(0);
-  const [validStatusMsg, setValidStatusMsg] = useState('');
-  const [step1Data, setStep1Data]       = useState(null);
-  const [step2Data, setStep2Data]       = useState(null);
-  const [validOpen, setValidOpen]       = useState(true);
+  const [bdfFile, setBdfFile]           = useState(savedPageState.bdfFile ?? null);
+  const [validating, setValidating]     = useState(savedPageState.validating ?? false);
+  const [validJobId, setValidJobId]     = useState(savedPageState.validJobId ?? null);
+  const [validProgress, setValidProgress] = useState(savedPageState.validProgress ?? 0);
+  const [validStatusMsg, setValidStatusMsg] = useState(savedPageState.validStatusMsg ?? '');
+  const [step1Data, setStep1Data]       = useState(savedPageState.step1Data ?? null);
+  const [step2Data, setStep2Data]       = useState(savedPageState.step2Data ?? null);
+  const [validOpen, setValidOpen]       = useState(savedPageState.validOpen ?? true);
 
   // ── Step 1: Studio 실행 ─────────────────────────────────
-  const [bdfPath, setBdfPath]           = useState(null);
+  const [bdfPath, setBdfPath]           = useState(savedPageState.bdfPath ?? null);
   // BDF 검증 시 생성된 GroupModuleUnit Analysis.id (DB record).
   // viewer:open 시 main 으로 전달 → main 이 viewer:runUnitStructural 호출 시 백엔드 parent_analysis_id 로 사용.
-  const [bdfAnalysisId, setBdfAnalysisId] = useState(null);
+  const [bdfAnalysisId, setBdfAnalysisId] = useState(savedPageState.bdfAnalysisId ?? null);
   const [studioStatus, setStudioStatus] = useState('idle'); // idle | checking | installing | opening | error
   const [studioInstalled, setStudioInstalled] = useState(null); // null=확인 전, true/false=결과
   const [studioProgress, setStudioProgress] = useState(null);
@@ -392,21 +404,74 @@ export default function GroupModuleUnitLiftingAnalysis() {
 
   // ── Step 0: 해석 설정 ───────────────────────────────────
   // Nastran 을 통한 BDF 입력 검증은 기본 OFF — 필요 시 사용자가 토글로 켠다.
-  const [useNastran, setUseNastran] = useState(false);
+  const [useNastran, setUseNastran] = useState(savedPageState.useNastran ?? false);
 
   // ── 작업 상태 추적 ───────────────────────────────────────
-  const [jobStatus, setJobStatus]   = useState(null); // null | { status, progress, message }
-  const [handoffSource, setHandoffSource] = useState(null); // 프로그램 간 연계로 진입한 경우 출처 앱 이름
-  const [handoffBdfPath, setHandoffBdfPath] = useState(null);
+  const [jobStatus, setJobStatus]   = useState(savedPageState.jobStatus ?? null); // null | { status, progress, message }
+  const [handoffSource, setHandoffSource] = useState(savedPageState.handoffSource ?? null); // 프로그램 간 연계로 진입한 경우 출처 앱 이름
+  const [handoffBdfPath, setHandoffBdfPath] = useState(savedPageState.handoffBdfPath ?? null);
   const pollRef = useRef(null);
 
   // ── Step 3: 결과 ─────────────────────────────────────────
-  const [analysisResult, setAnalysisResult] = useState(null);
+  const [analysisResult, setAnalysisResult] = useState(savedPageState.analysisResult ?? null);
 
   const doneCount = steps.filter(s => s.status === 'done').length;
 
   const setStepStatus = (id, status) =>
     setSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+
+  useEffect(() => {
+    setAnalysisPageState?.(GMU_MENU_NAME, {
+      steps,
+      activeIdx,
+      hasRunOnce,
+      bdfFile,
+      validating,
+      validJobId,
+      validProgress,
+      validStatusMsg,
+      step1Data,
+      step2Data,
+      validOpen,
+      bdfPath,
+      bdfAnalysisId,
+      useNastran,
+      jobStatus,
+      handoffSource,
+      handoffBdfPath,
+      analysisResult,
+    });
+  }, [
+    setAnalysisPageState,
+    steps,
+    activeIdx,
+    hasRunOnce,
+    bdfFile,
+    validating,
+    validJobId,
+    validProgress,
+    validStatusMsg,
+    step1Data,
+    step2Data,
+    validOpen,
+    bdfPath,
+    bdfAnalysisId,
+    useNastran,
+    jobStatus,
+    handoffSource,
+    handoffBdfPath,
+    analysisResult,
+  ]);
+
+  useEffect(() => {
+    if (!globalJob || globalJob.menu !== GMU_MENU_NAME) return;
+    if (globalJob.status !== 'Running' && globalJob.status !== 'Pending') return;
+    setValidJobId(prev => prev || globalJob.jobId);
+    setValidating(true);
+    setStepStatus('bdf-validation', 'running');
+    setValidProgress(globalJob.progress ?? 0);
+    setValidStatusMsg(globalJob.message ?? '서버 처리 중...');
+  }, [globalJob?.jobId, globalJob?.status, globalJob?.progress, globalJob?.message, globalJob?.menu]);
 
   useEffect(() => {
     let cancelled = false;
@@ -570,20 +635,6 @@ export default function GroupModuleUnitLiftingAnalysis() {
     showToast(`${sourceApp || '외부 프로그램'}에서 BDF를 전달받았습니다. 실행 버튼을 눌러 검증을 시작하세요.`, 'info');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── 마운트: 진행 중인 BDF 검증 작업이 globalJob 에 있으면 복원 ──────
-  // 사용자가 다른 페이지로 이동 후 우측 하단 상황판 클릭으로 돌아왔을 때
-  // 빈 화면이 아니라 "검증 중" UI 를 그대로 보여준다.
-  useEffect(() => {
-    if (gmuHandoff?.bdfServerPath) return; // 핸드오프가 우선
-    if (!globalJob || globalJob.menu !== GMU_MENU_NAME) return;
-    if (globalJob.status !== 'Running' && globalJob.status !== 'Pending') return;
-    setValidJobId(globalJob.jobId);
-    setValidating(true);
-    setStepStatus('bdf-validation', 'running');
-    setValidProgress(globalJob.progress ?? 0);
-    setValidStatusMsg(globalJob.message ?? '서버 처리 중...');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── BDF 검증 ─────────────────────────────────────────────
   const handleValidate = async () => {
     if (!bdfFile && !handoffBdfPath) return;
@@ -670,6 +721,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
   // ── 전체 초기화 ──────────────────────────────────────────
   const handleReset = () => {
     if (pollRef.current) clearInterval(pollRef.current);
+    if (validJobId) clearGlobalJob?.(validJobId);
     setBdfFile(null);
     setHandoffSource(null);
     setHandoffBdfPath(null);
@@ -689,6 +741,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
     setActiveIdx(0);
     setUseNastran(false);
     setHasRunOnce(false);
+    clearAnalysisPageState?.(GMU_MENU_NAME);
   };
 
   // ── 렌더 ─────────────────────────────────────────────────

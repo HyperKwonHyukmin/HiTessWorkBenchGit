@@ -10,7 +10,7 @@ import SplashScreen from './pages/auth/SplashScreen';
 import LoginScreen from './pages/auth/LoginScreen';
 import Layout from './components/layout/Layout';
 import { Wand2 } from 'lucide-react';
-import { DashboardProvider } from './contexts/DashboardContext';
+import { ANALYSIS_DATA, DashboardProvider, getAppMenuName } from './contexts/DashboardContext';
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -61,6 +61,12 @@ const MooringFittingAssessment = lazy(() => import('./pages/analysis/MooringFitt
 const BlockWeldAssessment = lazy(() => import('./pages/analysis/BlockWeldAssessment'));
 const HeavyBlockLiftingSimulation = lazy(() => import('./pages/analysis/HeavyBlockLiftingSimulation'));
 
+const KEEP_ALIVE_MENUS = new Set(
+  ANALYSIS_DATA
+    .filter(app => app.hasPage)
+    .map(app => getAppMenuName(app.title))
+);
+
 const PageFallback = () => (
   <div className="h-full min-h-[360px] flex items-center justify-center text-slate-400 text-sm">
     <div className="flex flex-col items-center gap-3">
@@ -74,6 +80,7 @@ function AppInner() {
   const [appState, setAppState]           = useState(APP_STATE.SPLASH);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [latestVersion, setLatestVersion]     = useState('');
+  const [cachedAppMenus, setCachedAppMenus] = useState([]);
   const isLoggingOutRef = useRef(false);
   const { currentMenu, setCurrentMenu, goBack, goForward, canGoBack, canGoForward, resetNavigation } = useNavigation();
   const { showToast } = useToast();
@@ -137,11 +144,19 @@ function AppInner() {
   const handleLogout = () => {
     if (isLoggingOutRef.current) return;
     isLoggingOutRef.current = true;
+    setCachedAppMenus([]);
     callLogout();
     authLogout();
     setAppState(APP_STATE.LOGIN);
     resetNavigation('Dashboard');
   };
+
+  useEffect(() => {
+    if (appState !== APP_STATE.MAIN || !KEEP_ALIVE_MENUS.has(currentMenu)) return;
+    setCachedAppMenus(prev => (
+      prev.includes(currentMenu) ? prev : [...prev, currentMenu]
+    ));
+  }, [appState, currentMenu]);
 
   // 세션 만료(401) 자동 로그아웃 인터셉터 — axios 요청용
   useEffect(() => {
@@ -251,8 +266,8 @@ function AppInner() {
     };
   }, [goBack, goForward]);
 
-  const renderPage = () => {
-    if (ADMIN_MENUS.has(currentMenu) && !isAdmin) {
+  const renderPage = (menu = currentMenu) => {
+    if (ADMIN_MENUS.has(menu) && !isAdmin) {
       return (
         <div className="flex flex-col items-center justify-center h-full text-slate-400">
           <div className="p-6 bg-red-50 rounded-full mb-4">
@@ -270,7 +285,7 @@ function AppInner() {
       );
     }
 
-    switch (currentMenu) {
+    switch (menu) {
       case 'Dashboard': return <Dashboard />;
       case 'My Project':
       case 'My Projects': return <MyProjects />;
@@ -324,7 +339,7 @@ function AppInner() {
             <div className="p-6 bg-slate-100 rounded-full mb-4">
               <Wand2 size={48} className="opacity-20" />
             </div>
-            <p className="text-lg font-bold text-slate-600">"{currentMenu}"</p>
+            <p className="text-lg font-bold text-slate-600">"{menu}"</p>
             <p className="text-sm">해당 페이지는 현재 시스템 최적화 및 개발 진행 중입니다.</p>
             <button
               onClick={() => setCurrentMenu('Dashboard')}
@@ -359,7 +374,27 @@ function AppInner() {
           canGoForward={canGoForward}
         >
           <Suspense fallback={<PageFallback />}>
-            {renderPage()}
+            {(() => {
+              const currentIsKeepAlive = KEEP_ALIVE_MENUS.has(currentMenu);
+              const keepAliveMenus = currentIsKeepAlive && !cachedAppMenus.includes(currentMenu)
+                ? [...cachedAppMenus, currentMenu]
+                : cachedAppMenus;
+
+              return (
+                <>
+                  {!currentIsKeepAlive && renderPage(currentMenu)}
+                  {keepAliveMenus.map(menu => (
+                    <div
+                      key={menu}
+                      className={menu === currentMenu ? 'h-full' : 'hidden'}
+                      aria-hidden={menu === currentMenu ? undefined : true}
+                    >
+                      {renderPage(menu)}
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
           </Suspense>
         </Layout>
       )}

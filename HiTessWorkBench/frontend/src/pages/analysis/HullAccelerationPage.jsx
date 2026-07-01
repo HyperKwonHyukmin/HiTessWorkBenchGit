@@ -74,7 +74,6 @@ const RESULT_INPUT_FIELDS = [
   ['bilge_keel', 'Bilge keel', '-'],
   ['gravity', 'grav', 'm/s²'],
   ['rho', 'rho', 'ton/m³'],
-  ['roll_gyration_option', 'Roll Gyration', '-'],
 ];
 
 const POSITION_FIELD_MAP = Object.fromEntries(POSITION_FIELDS.map(([key, label, unit]) => [key, { label, unit }]));
@@ -591,19 +590,6 @@ export default function HullAccelerationPage() {
                       <option value={0}>0: 없음</option>
                     </select>
                   </label>
-                  <label className="block">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] font-semibold text-slate-600">Roll Gyration</span>
-                    </div>
-                    <select
-                      value={constants.roll_gyration_option}
-                      onChange={(e) => setConstants((prev) => ({ ...prev, roll_gyration_option: e.target.value }))}
-                      className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400"
-                    >
-                      <option value={0}>0: General in TS</option>
-                      <option value={1}>1: FE model</option>
-                    </select>
-                  </label>
                 </div>
               </div>
 
@@ -893,6 +879,8 @@ export default function HullAccelerationPage() {
                           <img
                             src={particularsImageUrl}
                             alt="Principal dimensions and Lightship weight source"
+                            loading="lazy"
+                            decoding="async"
                             className="w-full h-full object-contain bg-white"
                           />
                         ) : (
@@ -1334,7 +1322,7 @@ export default function HullAccelerationPage() {
                     <span className="text-xs font-bold text-slate-600">{pg.label}</span>
                     <span className="text-[10px] text-slate-400 font-mono">PDF p.{pg.page_number}</span>
                   </figcaption>
-                  <img src={pg.image} alt={pg.label} className="w-full h-auto block" />
+                  <img src={pg.image} alt={pg.label} loading="lazy" decoding="async" className="w-full h-auto block" />
                 </figure>
               ))}
               {!previewLoading && !previewError && (previewData?.pages?.length ?? 0) === 0 && (

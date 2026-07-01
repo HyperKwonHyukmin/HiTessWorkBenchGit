@@ -2942,6 +2942,23 @@ export default function HiTessModelBuilder() {
     if (editPollRef.current) clearInterval(editPollRef.current);
   }, []);
 
+  // ── 3단계(해석 모델 저장) 진입 시: '진행' 활성화 → 표시 직후 '완료'(종료) 자동 전이 ──
+  // 결과(outputDir)가 있는 상태에서 사용자가 step3(nastran) 탭을 보면, 그 단계를 '진행'으로
+  // 켰다가 렌더 직후 '완료'로 마감해 파이프라인을 3/3 완료(종료)로 인식시킨다.
+  // 이미 'done' 이면 재전이하지 않아 재진입 시 깜빡임을 방지한다.
+  useEffect(() => {
+    if (activeIdx !== 2 || !bdfResult?.outputDir) return;
+    if (steps[2]?.status === 'done') return;
+    // 진입 즉시 '진행'으로 활성화
+    setSteps(prev => prev.map((s, i) => (i === 2 ? { ...s, status: 'running' } : s)));
+    // 페이지 표시 직후 '완료'(종료)로 전환 → doneCount 3/3
+    const t = setTimeout(() => {
+      setSteps(prev => prev.map((s, i) => (i === 2 ? { ...s, status: 'done' } : s)));
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIdx, bdfResult?.outputDir]);
+
   // ── Studio finalizeEditedModel IPC 리스너 ─────────────────────────
   // 핵심 설계: Studio 는 POST 성공(작업 시작) 까지만 await 한다.
   // 전체 체인(apply-edit + Nastran + F06 파싱, 수 분) 을 await 하면 Studio 가 그 시간 동안

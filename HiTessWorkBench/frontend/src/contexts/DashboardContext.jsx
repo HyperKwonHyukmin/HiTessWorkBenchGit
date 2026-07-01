@@ -6,7 +6,9 @@
 import React, { createContext, useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { UploadCloud, PenTool, SlidersHorizontal, Wrench, RefreshCw, CheckCircle, AlertCircle, X } from 'lucide-react';
 import { useNavigation } from './NavigationContext';
+import { useAuth } from './AuthContext';
 import { usePolling } from '../hooks/usePolling';
+import { POLLING_POLICY } from '../hooks/pollingPolicy';
 import AnalysisResultPanel from '../components/platform/AnalysisResultPanel';
 
 const RAW_ANALYSIS_DATA = [
@@ -175,20 +177,39 @@ const APP_REGISTRY_OVERRIDES = {
   },
 };
 
-export const ANALYSIS_DATA = RAW_ANALYSIS_DATA.map(app => ({
+export const ANALYSIS_DATA = Object.freeze(RAW_ANALYSIS_DATA.map(app => Object.freeze({
   ...app,
   menuName: app.title,
   programNames: [app.title],
   ...(APP_REGISTRY_OVERRIDES[app.title] ?? {}),
   // App.jsx renderPage 에 실제 페이지가 등록된 앱만 override 를 가진다 → 진입 가능 여부 판별 플래그
   hasPage: Object.prototype.hasOwnProperty.call(APP_REGISTRY_OVERRIDES, app.title),
-}));
-
-export const getAppMenuName = (title) =>
-  ANALYSIS_DATA.find(app => app.title === title)?.menuName ?? title;
+})));
 
 const normalizeProgramName = (value) =>
   String(value ?? '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+
+const findAppByAnyName = (value) => {
+  const normalizedValue = normalizeProgramName(value);
+  return ANALYSIS_DATA.find(item =>
+    item.title === value ||
+    item.menuName === value ||
+    item.programNames?.includes(value) ||
+    normalizeProgramName(item.title) === normalizedValue ||
+    normalizeProgramName(item.menuName) === normalizedValue ||
+    item.programNames?.some(name => normalizeProgramName(name) === normalizedValue)
+  );
+};
+
+export const getAppMenuName = (value) => {
+  const app = findAppByAnyName(value);
+  return app?.menuName ?? value;
+};
+
+const getAppStateKey = (value) => {
+  const app = findAppByAnyName(value);
+  return app?.title ?? value;
+};
 
 export const findAppByProgramName = (programName) => {
   const normalizedProgramName = normalizeProgramName(programName);
@@ -204,6 +225,8 @@ const GlobalJobContext = createContext();
 const AnalysisPageStateContext = createContext();
 const FAVORITES_KEY = 'favorites';
 const GLOBAL_JOBS_KEY = 'hitess_global_jobs';
+const GLOBAL_JOB_VISIBLE_MS = 30 * 60 * 1000;
+const GLOBAL_JOB_COLLAPSE_MS = 30 * 1000;
 
 function readLocalFavorites() {
   try {
@@ -227,16 +250,22 @@ function readPersistedGlobalJobs() {
   try {
     const parsed = JSON.parse(localStorage.getItem(GLOBAL_JOBS_KEY) || '[]');
     if (!Array.isArray(parsed)) return [];
-    const maxAgeMs = 24 * 60 * 60 * 1000;
+    const now = Date.now();
     return parsed
       .filter(job => job?.jobId && job?.menu)
-      .filter(job => !job.updatedAt || Date.now() - job.updatedAt < maxAgeMs)
-      .map(job => ({
-        ...job,
-        displayName: job.displayName || job.menu,
-        stateKey: job.stateKey || job.menu,
-        menu: job.routeMenu || getAppMenuName(job.menu),
-      }))
+      .map(job => {
+        const firstShownAt = Number(job.firstShownAt || 0);
+        return {
+          ...job,
+          firstShownAt,
+          collapseAt: firstShownAt ? Number(job.collapseAt || firstShownAt + GLOBAL_JOB_COLLAPSE_MS) : null,
+          expiresAt: firstShownAt ? Number(job.expiresAt || firstShownAt + GLOBAL_JOB_VISIBLE_MS) : null,
+          displayName: job.displayName || job.menu,
+          stateKey: getAppStateKey(job.stateKey || job.menu),
+          menu: job.routeMenu || getAppMenuName(job.menu),
+        };
+      })
+      .filter(job => !job.expiresAt || now < job.expiresAt)
       .slice(0, 5);
   } catch {
     return [];
@@ -262,6 +291,7 @@ async function writeElectronFavorites(next) {
 
 export function DashboardProvider({ children }) {
   const { setCurrentMenu, currentMenu } = useNavigation();
+  const { isAuthenticated } = useAuth();
   const [favorites, setFavorites] = useState(() => readLocalFavorites());
 
   useEffect(() => {
@@ -355,14 +385,16 @@ export function DashboardProvider({ children }) {
   const setPendingJobTransfer = useCallback((payload) => setPendingJobTransferRaw(payload), []);
   const clearPendingJobTransfer = useCallback(() => setPendingJobTransferRaw(null), []);
 
-  const [globalJobs, setGlobalJobs] = useState(() => readPersistedGlobalJobs());
+  const [globalJobs, setGlobalJobs] = useState(() => (
+    isAuthenticated ? readPersistedGlobalJobs() : []
+  ));
   const globalJob = globalJobs[0] || null;
 
   const patchGlobalJob = useCallback((jobId, patch) => {
     setGlobalJobs(prev => prev.map(job => {
       if (job.jobId !== jobId) return job;
       const nextJob = { ...job, ...patch, updatedAt: Date.now() };
-      const pageStateKey = nextJob.stateKey || nextJob.menu;
+      const pageStateKey = getAppStateKey(nextJob.stateKey || nextJob.menu);
       if (pageStateKey) {
         setAnalysisPageStates(pagePrev => {
           const current = pagePrev[pageStateKey] || {};
@@ -398,22 +430,42 @@ export function DashboardProvider({ children }) {
     setGlobalJobs(prev => jobId ? prev.filter(job => job.jobId !== jobId) : []);
   }, []);
 
+  const markGlobalJobShown = useCallback((jobId) => {
+    if (!jobId) return;
+    setGlobalJobs(prev => prev.map(job => {
+      if (job.jobId !== jobId || job.firstShownAt) return job;
+      const now = Date.now();
+      return {
+        ...job,
+        firstShownAt: now,
+        collapseAt: now + GLOBAL_JOB_COLLAPSE_MS,
+        expiresAt: now + GLOBAL_JOB_VISIBLE_MS,
+        updatedAt: now,
+      };
+    }));
+  }, []);
+
   const startGlobalJob = useCallback((jobId, menuName) => {
     if (!jobId) return;
     const routeMenu = getAppMenuName(menuName);
+    const stateKey = getAppStateKey(menuName);
+    const now = Date.now();
     const nextJob = {
       jobId,
       menu: routeMenu,
-      stateKey: menuName,
+      stateKey,
       displayName: menuName,
       status: 'Running',
       progress: 0,
       message: '서버에 작업을 요청하는 중...',
-      startedAt: Date.now(),
-      updatedAt: Date.now(),
+      startedAt: now,
+      updatedAt: now,
+      firstShownAt: null,
+      collapseAt: null,
+      expiresAt: null,
     };
     setGlobalJobs([nextJob]);
-    setAnalysisPageState(menuName, current => ({
+    setAnalysisPageState(stateKey, current => ({
       ...current,
       job: {
         jobId,
@@ -431,14 +483,45 @@ export function DashboardProvider({ children }) {
   }, [setAnalysisPageState]);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setGlobalJobs(prev => prev.length > 0 ? [] : prev);
+      writePersistedGlobalJobs([]);
+      return;
+    }
     writePersistedGlobalJobs(globalJobs);
-  }, [globalJobs]);
+  }, [globalJobs, isAuthenticated]);
 
   useEffect(() => {
-    setGlobalJobs(prev => prev.filter(job =>
-      !((job.status === 'Success' || job.status === 'Failed' || job.status === 'Interrupted') && job.menu === currentMenu)
-    ));
+    setGlobalJobs(prev => {
+      const next = prev.filter(job =>
+        !((job.status === 'Success' || job.status === 'Failed' || job.status === 'Interrupted') && job.menu === currentMenu)
+      );
+      return next.length === prev.length ? prev : next;
+    });
   }, [currentMenu]);
+
+  useEffect(() => {
+    if (!isAuthenticated || globalJobs.length === 0) return;
+
+    const clearExpiredJobs = () => {
+      const now = Date.now();
+      setGlobalJobs(prev => {
+        const next = prev.filter(job => now < (job.expiresAt || Infinity));
+        return next.length === prev.length ? prev : next;
+      });
+    };
+
+    clearExpiredJobs();
+    const expiringAt = globalJobs
+      .map(job => job.expiresAt)
+      .filter(Boolean)
+      .sort((a, b) => a - b)[0];
+
+    if (!expiringAt) return undefined;
+
+    const timer = setTimeout(clearExpiredJobs, Math.max(0, expiringAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [globalJobs, isAuthenticated]);
 
   const toggleFavorite = useCallback((title) => {
     setFavorites(prev => {
@@ -549,7 +632,7 @@ export function DashboardProvider({ children }) {
         </GlobalJobContext.Provider>
       </FavoritesContext.Provider>
 
-      {globalJobs.map(job => (
+      {isAuthenticated && globalJobs.map(job => (
         <GlobalJobPoller
           key={`poll-${job.jobId}`}
           job={job}
@@ -557,12 +640,15 @@ export function DashboardProvider({ children }) {
         />
       ))}
 
-      <GlobalJobTray
-        jobs={globalJobs}
-        currentMenu={currentMenu}
-        onNavigate={setCurrentMenu}
-        onDismiss={clearGlobalJob}
-      />
+      {isAuthenticated && (
+        <GlobalJobTray
+          jobs={globalJobs}
+          currentMenu={currentMenu}
+          onNavigate={setCurrentMenu}
+          onDismiss={clearGlobalJob}
+          onFirstShow={markGlobalJobShown}
+        />
+      )}
     </DashboardContext.Provider>
   );
 }
@@ -572,15 +658,40 @@ export const useFavorites = () => useContext(FavoritesContext);
 export const useGlobalJobs = () => useContext(GlobalJobContext);
 export const useAnalysisPageState = () => useContext(AnalysisPageStateContext);
 
-function GlobalJobTray({ jobs, currentMenu, onNavigate, onDismiss }) {
+function GlobalJobTray({ jobs, currentMenu, onNavigate, onDismiss, onFirstShow }) {
+  const [, setNowTick] = useState(Date.now());
   const visibleJob = jobs.find(job => job.menu !== currentMenu);
+
+  useEffect(() => {
+    if (!visibleJob) return undefined;
+    if (!visibleJob.firstShownAt) {
+      onFirstShow?.(visibleJob.jobId);
+      return undefined;
+    }
+
+    const collapseAt = visibleJob.collapseAt || visibleJob.firstShownAt + GLOBAL_JOB_COLLAPSE_MS;
+    const delay = Math.max(0, collapseAt - Date.now());
+    if (delay === 0) {
+      setNowTick(Date.now());
+      return undefined;
+    }
+    const timer = setTimeout(() => setNowTick(Date.now()), delay);
+    return () => clearTimeout(timer);
+  }, [onFirstShow, visibleJob?.jobId, visibleJob?.collapseAt, visibleJob?.firstShownAt]);
+
   if (!visibleJob) return null;
 
+  const firstShownAt = visibleJob.firstShownAt || Date.now();
+  const isCollapsed = Date.now() >= (visibleJob.collapseAt || firstShownAt + GLOBAL_JOB_COLLAPSE_MS);
+
   return (
-    <div className="fixed bottom-4 right-4 z-[99999] w-[min(360px,calc(100vw-2rem))] transition-all duration-200">
+    <div className={`fixed bottom-4 right-4 z-[99999] transition-all duration-300 ${
+      isCollapsed ? 'w-[min(320px,calc(100vw-2rem))]' : 'w-[min(360px,calc(100vw-2rem))]'
+    }`}>
       <GlobalJobCard
         key={visibleJob.jobId}
         job={visibleJob}
+        isCollapsed={isCollapsed}
         onNavigate={onNavigate}
         onDismiss={onDismiss}
       />
@@ -593,8 +704,8 @@ function GlobalJobPoller({ job, onPatchJob }) {
 
   usePolling({
     jobId: isTerminal ? null : job.jobId,
-    interval: 1500,
-    maxRetries: 120,
+    interval: POLLING_POLICY.analysisIntervalMs,
+    maxRetries: POLLING_POLICY.analysisMaxRetries,
     onProgress: (data) => onPatchJob(job.jobId, data),
     onComplete: (data) => onPatchJob(job.jobId, data),
     onError: (err) => onPatchJob(job.jobId, {
@@ -607,18 +718,24 @@ function GlobalJobPoller({ job, onPatchJob }) {
   return null;
 }
 
-function GlobalJobCard({ job, onNavigate, onDismiss }) {
+function GlobalJobCard({ job, isCollapsed, onNavigate, onDismiss }) {
+  const statusIcon = job.status === 'Running'
+    ? <RefreshCw className="animate-spin text-blue-400 shrink-0" size={14}/>
+    : job.status === 'Success'
+      ? <CheckCircle className="text-emerald-400 shrink-0" size={14}/>
+      : <AlertCircle className="text-red-400 shrink-0" size={14}/>;
+
   return (
     <div
       onClick={() => onNavigate && onNavigate(job.menu)}
-      className="bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] rounded-xl p-4 cursor-pointer hover:border-blue-500 transition-all duration-200 animate-fade-in-up"
+      className={`bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] rounded-xl cursor-pointer hover:border-blue-500 transition-all duration-300 animate-fade-in-up ${
+        isCollapsed ? 'p-3' : 'p-4'
+      }`}
       title="클릭하여 해석 페이지로 돌아가기"
     >
-      <div className="flex justify-between items-center mb-2">
+      <div className={`flex justify-between items-center ${isCollapsed ? 'mb-0' : 'mb-2'}`}>
         <span className="text-[11px] font-bold text-slate-300 flex items-center gap-2 uppercase tracking-wider min-w-0">
-          {job.status === 'Running' ? <RefreshCw className="animate-spin text-blue-400 shrink-0" size={14}/> :
-           job.status === 'Success' ? <CheckCircle className="text-emerald-400 shrink-0" size={14}/> :
-           <AlertCircle className="text-red-400 shrink-0" size={14}/>}
+          {statusIcon}
           <span className="truncate">{job.displayName || job.menu}</span>
         </span>
         <button
@@ -630,7 +747,25 @@ function GlobalJobCard({ job, onNavigate, onDismiss }) {
         </button>
       </div>
 
-      <AnalysisResultPanel job={job} compact />
+      {isCollapsed ? (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${
+                job.status === 'Failed' || job.status === 'Interrupted' ? 'bg-red-400' :
+                job.status === 'Success' ? 'bg-emerald-400' :
+                'bg-blue-400'
+              }`}
+              style={{ width: `${Math.min(100, Math.max(0, Number(job.progress) || 0))}%` }}
+            />
+          </div>
+          <span className="w-9 text-right text-[10px] font-black text-slate-400">
+            {Math.round(Number(job.progress) || 0)}%
+          </span>
+        </div>
+      ) : (
+        <AnalysisResultPanel job={job} compact />
+      )}
     </div>
   );
 }
