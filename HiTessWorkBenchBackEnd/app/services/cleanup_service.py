@@ -13,6 +13,7 @@ import time
 from datetime import datetime, timedelta
 
 from .. import database, models
+from ..sessions import session_store
 from .activity_service import ACTIVITY_LOG_RETENTION_DAYS, prune_activity_logs
 
 logger = logging.getLogger(__name__)
@@ -197,11 +198,42 @@ def run_activity_log_cleanup(dry_run: bool = False) -> dict:
     return result
 
 
+def run_session_cleanup(dry_run: bool = False) -> dict:
+    """
+    user_sessions 테이블에서 만료된 세션을 삭제합니다.
+
+    Parameters
+    ----------
+    dry_run : bool
+        True이면 삭제하지 않고 대상 건수만 반환합니다.
+    """
+    result = {"deleted": 0, "errors": []}
+    try:
+        if dry_run:
+            db = database.SessionLocal()
+            try:
+                result["deleted"] = (
+                    db.query(models.UserSession)
+                    .filter(models.UserSession.expires_at < datetime.now())
+                    .count()
+                )
+            finally:
+                db.close()
+        else:
+            result["deleted"] = session_store.cleanup_expired()
+        logger.info("[Cleanup] Session 정리 완료 — 삭제: %d건", result["deleted"])
+    except Exception as e:
+        result["errors"].append(str(e))
+        logger.error("[Cleanup] Session 정리 실패: %s", e, exc_info=True)
+    return result
+
+
 def run_all_cleanup(dry_run: bool = False) -> dict:
-    """파일 작업 폴더와 Activity Log 보존 정책을 함께 적용합니다."""
+    """파일 작업 폴더, Activity Log, 만료 세션 보존 정책을 함께 적용합니다."""
     return {
         "user_connection": run_cleanup(dry_run=dry_run),
         "activity_logs": run_activity_log_cleanup(dry_run=dry_run),
+        "sessions": run_session_cleanup(dry_run=dry_run),
     }
 
 
