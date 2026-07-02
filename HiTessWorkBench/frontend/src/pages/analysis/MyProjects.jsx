@@ -20,6 +20,7 @@ import FeedbackState from '../../components/ui/FeedbackState';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { getDisplayProgramName } from '../../contexts/DashboardContext';
 
 const FILE_RETENTION_DAYS = 30;
 
@@ -218,7 +219,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
               <span className="text-xs text-slate-400 block mb-1">App</span>
               <div className="font-bold text-slate-700 flex items-center gap-2 min-w-0">
                 <Box size={16} className="text-blue-500 shrink-0"/>
-                <span className="truncate" title={project.program_name}>{project.program_name}</span>
+                <span className="truncate" title={project.program_name}>{getDisplayProgramName(project.program_name)}</span>
               </div>
             </div>
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -298,6 +299,21 @@ export default function MyProjects() {
   const [is3DViewerOpen, setIs3DViewerOpen] = useState(false);
   // Truss Assessment 결과 모델 뷰어(결과 색상 시각화) 상태
   const [isResultViewerOpen, setIsResultViewerOpen] = useState(false);
+
+  // 대시보드 "프로젝트 이력" 행에서 넘어온 경우, 해당 프로젝트 상세 모달을 자동으로 연다.
+  // (Dashboard.jsx 의 OPEN_PROJECT_DETAIL_KEY 와 동일 키)
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('workbench:open-project-detail');
+      if (raw) {
+        sessionStorage.removeItem('workbench:open-project-detail');
+        const project = JSON.parse(raw);
+        if (project && typeof project === 'object') setSelectedProject(project);
+      }
+    } catch {
+      // 잘못된 값이면 자동 오픈하지 않는다
+    }
+  }, []);
 
   const fetchHistory = useCallback(async (signal) => {
     try {
@@ -499,7 +515,7 @@ export default function MyProjects() {
               </div>
               <div className="relative">
                 <p className="text-sm font-bold text-slate-800 truncate" title={stats.topModule || '—'}>
-                  {stats.topModule || '—'}
+                  {stats.topModule ? getDisplayProgramName(stats.topModule) : '—'}
                 </p>
                 <p className="text-[10px] font-bold text-slate-400 mt-0.5 tabular-nums">
                   {stats.topModuleCount}회 사용
@@ -533,11 +549,11 @@ export default function MyProjects() {
                       type="button"
                       onClick={() => setProgramFilter(PROGRAM_FILTERS.includes(name) ? name : 'All')}
                       className="w-full group text-left cursor-pointer"
-                      title={`${name} — ${count}건 (${pct}%) — 클릭 시 필터`}
+                      title={`${getDisplayProgramName(name)} — ${count}건 (${pct}%) — 클릭 시 필터`}
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-[11px] font-bold text-slate-600 truncate group-hover:text-blue-600 transition-colors">
-                          {name}
+                          {getDisplayProgramName(name)}
                         </span>
                         <span className="text-[10px] font-bold text-slate-400 tabular-nums shrink-0 ml-2">
                           {count}
@@ -607,7 +623,7 @@ export default function MyProjects() {
           onChange={(e) => setProgramFilter(e.target.value)}
           className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
         >
-          {PROGRAM_FILTERS.map(f => <option key={f} value={f}>{f === 'All' ? 'All Apps' : f}</option>)}
+          {PROGRAM_FILTERS.map(f => <option key={f} value={f}>{f === 'All' ? 'All Apps' : getDisplayProgramName(f)}</option>)}
         </select>
         <select
           value={statusFilter}
@@ -676,7 +692,7 @@ export default function MyProjects() {
                         <p className="font-bold text-slate-700 text-sm group-hover:text-blue-700 transition-colors">{project.project_name || 'Unnamed Project'}</p>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-xs font-medium text-slate-600"><span className="inline-block bg-slate-100 px-2 py-1 rounded border border-slate-200 whitespace-nowrap max-w-[220px] truncate align-middle" title={project.program_name}>{project.program_name}</span></td>
+                    <td className="py-4 px-6 text-xs font-medium text-slate-600"><span className="inline-block bg-slate-100 px-2 py-1 rounded border border-slate-200 whitespace-nowrap max-w-[220px] truncate align-middle" title={project.program_name}>{getDisplayProgramName(project.program_name)}</span></td>
                     <td className="py-4 px-6">
                       <StatusBadge status={project.status} />
                     </td>

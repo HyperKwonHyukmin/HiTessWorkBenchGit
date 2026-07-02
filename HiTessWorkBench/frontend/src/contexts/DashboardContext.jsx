@@ -15,7 +15,7 @@ const RAW_ANALYSIS_DATA = [
   // ── File-Based Apps (signature: blue) ──────────── Active ──
   { mode: "File", category: "Truss", title: "Truss Model Builder", description: "Truss 설계 정보를 활용하여 구조 해석 모델을 구축합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "모델생성", "CSV"], devStatus: "Active", contributor: "권혁민" },
   { mode: "File", category: "Truss", title: "Truss Structural Assessment", description: "Truss BDF 모델을 업로드하여 구조적 안정성을 평가합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "구조평가", "BDF"], devStatus: "Active", contributor: "권혁민" },
-  { mode: "File", category: "Truss", title: "HiTESS Model Builder", description: "CSV부터 Nastran 해석까지 FEM 파이프라인 전 과정을 단일 UI에서 관리합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["CSV", "BDF", "Nastran", "Pipeline"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "File", category: "FEM Pipeline", title: "HiTESS Model Builder", description: "CSV부터 Nastran 해석까지 FEM 파이프라인 전 과정을 단일 UI에서 관리합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["CSV", "BDF", "Nastran", "Pipeline"], devStatus: "Active", contributor: "권혁민" },
   { mode: "File", category: "Pipe", title: "HP-SCR 배관응력 해석", description: "배관 BDF를 업로드하여 열변형 계산 및 배관응력 해석(PSA · POR)을 수행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["배관", "PSA", "POR", "BDF"], devStatus: "Active", contributor: "김윤환" },
   // ── File-Based Apps (signature: blue) ─────────── Developing ──
   { mode: "File", category: "Lifting", title: "Group & Module Unit 권상 구조 해석", description: "Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["유닛", "블록", "국부강도"], devStatus: "Developing", contributor: "권혁민" },
@@ -219,6 +219,12 @@ export const findAppByProgramName = (programName) => {
   );
 };
 
+// program_name(내부 코드키, 예: "GroupModuleUnit")을 사용자가 읽는 앱 타이틀
+// (예: "Group & Module Unit 권상 구조 해석")로 변환한다. 매칭 실패 시 원본 유지.
+// ⚠ 표시(display) 전용 — program_name 기반 로직/분기에는 사용하지 말 것.
+export const getDisplayProgramName = (programName) =>
+  findAppByProgramName(programName)?.title || programName;
+
 const DashboardContext = createContext();
 const FavoritesContext = createContext();
 const GlobalJobContext = createContext();
@@ -227,6 +233,7 @@ const FAVORITES_KEY = 'favorites';
 const GLOBAL_JOBS_KEY = 'hitess_global_jobs';
 const GLOBAL_JOB_VISIBLE_MS = 30 * 60 * 1000;
 const GLOBAL_JOB_COLLAPSE_MS = 30 * 1000;
+const ANALYSIS_MENU_RESUME_ENTRY_KEY = 'workbench:analysis-menu-resume-entry';
 
 function readLocalFavorites() {
   try {
@@ -727,7 +734,10 @@ function GlobalJobCard({ job, isCollapsed, onNavigate, onDismiss }) {
 
   return (
     <div
-      onClick={() => onNavigate && onNavigate(job.menu)}
+      onClick={() => {
+        sessionStorage.setItem(ANALYSIS_MENU_RESUME_ENTRY_KEY, JSON.stringify({ menu: job.menu, jobId: job.jobId, at: Date.now() }));
+        onNavigate?.(job.menu);
+      }}
       className={`bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] rounded-xl cursor-pointer hover:border-blue-500 transition-all duration-300 animate-fade-in-up ${
         isCollapsed ? 'p-3' : 'p-4'
       }`}
