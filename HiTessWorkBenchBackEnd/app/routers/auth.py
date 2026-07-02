@@ -94,6 +94,18 @@ def logout(req: Request, db: Session = Depends(database.get_db), employee_id: st
   return {"ok": True}
 
 
+@router.get("/session/context")
+def get_session_context(req: Request, employee_id: str = Depends(require_auth)):
+  """현재 요청 기준의 접속 컨텍스트를 반환합니다. DB 조회 없이 헤더와 요청 정보만 사용합니다."""
+  forwarded_for = req.headers.get("x-forwarded-for", "")
+  client_ip = forwarded_for.split(",", 1)[0].strip() if forwarded_for else None
+  return {
+      "employee_id": employee_id,
+      "client_ip": client_ip or (req.client.host if req.client else None),
+      "client_host": req.client.host if req.client else None,
+  }
+
+
 @router.post("/register", response_model=schemas.UserResponse)
 def register_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
   employee_id = user.employee_id.upper()
