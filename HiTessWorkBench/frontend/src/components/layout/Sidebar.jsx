@@ -83,26 +83,23 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
         isCollapsed ? 'w-20' : 'w-64'
       }`}>
 
-      <div className="h-16 flex items-center justify-center border-b border-brand-blue-dark relative shrink-0">
+      <div className={`h-16 flex items-center border-b border-brand-blue-dark relative shrink-0 ${
+        isCollapsed ? 'justify-center px-4' : 'justify-start pl-3 pr-2'
+      }`}>
         {isCollapsed ? (
           <img
             src={`${import.meta.env.BASE_URL}logo.png`}
             alt="HiTESS WorkBench"
             decoding="async"
-            className="h-9 w-9 rounded-md bg-white p-1 object-contain"
+            className="h-9 w-9 object-contain drop-shadow-sm"
           />
         ) : (
-          <div className="flex items-center gap-3">
-            <img
-              src={`${import.meta.env.BASE_URL}logo.png`}
-              alt="HiTESS WorkBench"
-              decoding="async"
-              className="h-8 w-8 rounded-md bg-white p-1 object-contain"
-            />
-            <h1 className="text-xl font-bold tracking-wider">
-              HiTESS <span className="text-brand-accent text-sm font-light">Workbench</span>
-            </h1>
-          </div>
+          <img
+            src={`${import.meta.env.BASE_URL}hitess_logo_lockup_transparent.png`}
+            alt="HiTESS WorkBench"
+            decoding="async"
+            className="h-[2.375rem] w-auto max-w-[13.75rem] object-contain"
+          />
         )}
       </div>
 

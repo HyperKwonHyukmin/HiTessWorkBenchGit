@@ -11,7 +11,7 @@ import React from 'react';
 import { Play, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const ACTION_COLOR_CLASS = 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:bg-blue-100';
+const ACTION_COLOR_CLASS = 'border-slate-200 bg-white text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:bg-blue-100';
 
 const ITEMS = [
   {
@@ -40,7 +40,7 @@ export default function DashboardFab({ onOpenVideo, onOpenNewsletter, className 
 
   return (
     <div
-      className={`flex flex-row items-center justify-end gap-2.5 ${className}`}
+      className={`flex flex-row items-center justify-end gap-1 ${className}`}
       aria-label="바로가기"
     >
       {ITEMS.map((item) => {
@@ -51,7 +51,7 @@ export default function DashboardFab({ onOpenVideo, onOpenNewsletter, className 
             onClick={() => handleClick(item.key)}
             title={item.title}
             aria-label={item.title}
-            className={`inline-flex h-9 items-center gap-2 rounded-lg border pl-3 pr-3.5 text-xs font-bold shadow-sm cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 ${item.colorClass}`}
+            className={`inline-flex h-8 items-center gap-2 rounded-lg border pl-3 pr-3.5 text-xs font-bold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 ${item.colorClass}`}
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.96 }}
           >
