@@ -22,8 +22,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { buildFormData } from '../../utils/fileHelper';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 
+const MENU_NAME = 'Truss Structural Assessment';
+const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
+const ANALYSIS_MENU_RESUME_ENTRY_KEY = 'workbench:analysis-menu-resume-entry';
+const MENU_ENTRY_MAX_AGE_MS = 5000;
+
 export default function TrussAssessment() {
-  const { setCurrentMenu } = useNavigation();
+  const { currentMenu, setCurrentMenu } = useNavigation();
   const { showToast } = useToast();
   const { employeeId: authEmployeeId } = useAuth();
   const dashboardCtx = useDashboard();
@@ -128,6 +133,33 @@ export default function TrussAssessment() {
       updateState({ resultJsonData: parsedResultsMap, activeResultCase: caseNames[0], activeTab: bdfPath ? '3d' : 'result' });
     }
   };
+
+  useEffect(() => {
+    if (currentMenu !== MENU_NAME) return;
+
+    const now = Date.now();
+    const readEntry = (key) => {
+      try {
+        const parsed = JSON.parse(sessionStorage.getItem(key) || 'null');
+        if (!parsed || parsed.menu !== MENU_NAME || now - Number(parsed.at || 0) > MENU_ENTRY_MAX_AGE_MS) return null;
+        return parsed;
+      } catch {
+        return null;
+      }
+    };
+
+    const resumeEntry = readEntry(ANALYSIS_MENU_RESUME_ENTRY_KEY);
+    if (resumeEntry) {
+      sessionStorage.removeItem(ANALYSIS_MENU_RESUME_ENTRY_KEY);
+      return;
+    }
+
+    const freshEntry = readEntry(ANALYSIS_MENU_FRESH_ENTRY_KEY);
+    if (!freshEntry) return;
+
+    sessionStorage.removeItem(ANALYSIS_MENU_FRESH_ENTRY_KEY);
+    resetAssessmentPage();
+  }, [currentMenu]);
 
   const [isResultModalOpen, setIsResultModalOpen] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);

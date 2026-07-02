@@ -18,6 +18,7 @@ import CommandPalette from '../platform/CommandPalette';
 
 const ADMIN_MENUS = new Set(['User Management', 'Analysis Management', 'System Management', 'Usage Reports', 'API Apps']);
 const ADMIN_GATE_SESSION_KEY = 'admin_gate_unlocked';
+const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
 
 // ✅ 파라미터에 goBack 등 히스토리 관련 props 추가
 export default function Layout({ 
@@ -105,6 +106,13 @@ export default function Layout({
   }, []);
 
   const handleNavigate = useCallback((menu) => {
+    const app = ANALYSIS_DATA.find(item => getAppMenuName(item.title) === menu || item.title === menu);
+    if (app) {
+      const routeMenu = getAppMenuName(app.title);
+      sessionStorage.setItem(ANALYSIS_MENU_FRESH_ENTRY_KEY, JSON.stringify({ menu: routeMenu, at: Date.now() }));
+      window.dispatchEvent(new CustomEvent('workbench:analysis-fresh-entry', { detail: { menu: routeMenu } }));
+    }
+
     if (ADMIN_MENUS.has(menu)) {
       if (!userInfo.is_admin) return;
       if (sessionStorage.getItem(ADMIN_GATE_SESSION_KEY)) {

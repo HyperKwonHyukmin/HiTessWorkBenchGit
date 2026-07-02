@@ -21,6 +21,8 @@ import UpdateModal from './components/UpdateModal';
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8시간 미활동 시 자동 로그아웃
 const ADMIN_MENUS = new Set(['User Management', 'Analysis Management', 'System Management', 'System Settings', 'Usage Reports', 'API Apps']);
+const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
+const MENU_ENTRY_MAX_AGE_MS = 5000;
 
 const Dashboard = lazy(() => import('./pages/dashboard/Dashboard'));
 const MyProjects = lazy(() => import('./pages/analysis/MyProjects'));
@@ -81,6 +83,7 @@ function AppInner() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [latestVersion, setLatestVersion]     = useState('');
   const [cachedAppMenus, setCachedAppMenus] = useState([]);
+  const [analysisPageInstanceKeys, setAnalysisPageInstanceKeys] = useState({});
   const isLoggingOutRef = useRef(false);
   const { currentMenu, setCurrentMenu, goBack, goForward, canGoBack, canGoForward, resetNavigation } = useNavigation();
   const { showToast } = useToast();
@@ -153,10 +156,34 @@ function AppInner() {
 
   useEffect(() => {
     if (appState !== APP_STATE.MAIN || !KEEP_ALIVE_MENUS.has(currentMenu)) return;
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem(ANALYSIS_MENU_FRESH_ENTRY_KEY) || 'null');
+      if (parsed?.menu === currentMenu && Date.now() - Number(parsed.at || 0) <= MENU_ENTRY_MAX_AGE_MS) {
+        setCachedAppMenus(prev => prev.filter(menu => menu !== currentMenu));
+        return;
+      }
+    } catch {
+      // ignore malformed navigation hints
+    }
     setCachedAppMenus(prev => (
       prev.includes(currentMenu) ? prev : [...prev, currentMenu]
     ));
   }, [appState, currentMenu]);
+
+  useEffect(() => {
+    const handleFreshEntry = (event) => {
+      const menu = event.detail?.menu;
+      if (!KEEP_ALIVE_MENUS.has(menu)) return;
+      setCachedAppMenus(prev => prev.filter(item => item !== menu));
+      setAnalysisPageInstanceKeys(prev => ({
+        ...prev,
+        [menu]: (prev[menu] || 0) + 1,
+      }));
+    };
+
+    window.addEventListener('workbench:analysis-fresh-entry', handleFreshEntry);
+    return () => window.removeEventListener('workbench:analysis-fresh-entry', handleFreshEntry);
+  }, []);
 
   // 세션 만료(401) 자동 로그아웃 인터셉터 — axios 요청용
   useEffect(() => {
@@ -385,7 +412,7 @@ function AppInner() {
                   {!currentIsKeepAlive && renderPage(currentMenu)}
                   {keepAliveMenus.map(menu => (
                     <div
-                      key={menu}
+                      key={`${menu}:${analysisPageInstanceKeys[menu] || 0}`}
                       className={menu === currentMenu ? 'h-full' : 'hidden'}
                       aria-hidden={menu === currentMenu ? undefined : true}
                     >
