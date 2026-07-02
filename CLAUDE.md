@@ -124,6 +124,25 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
 - **nastran_bridge 폴더명 불일치(잠재 `FileNotFoundError`)**: `hitess_modelflow_service.py` 의 `_load_nastran_bridge_module()` 은 **오직 `InHouseProgram/NastranBridge`(camelCase) 하드코딩, 폴백 없음**. 반면 `analysis.py` 는 `InHouseProgram/Nastran_bridge`(**underscore**)를 1순위로 본다. → nastran_bridge.py 를 **underscore 폴더에만** 두면 modelflow 의 deleteRigid 폴백이 깨진다. **둘 다 만족하려면 `NastranBridge`(camelCase)에 둘 것**(또는 양쪽 복사). [이상적으론 modelflow service 도 analysis.py 처럼 다중 후보 탐색으로 통일 권장.]
 - **편집 BDF 포맷 fix 의 적용 범위**: `nastran_bridge.py` 의 BDF 포맷 수정은 **fallback(deleteRigid) 경로에만** 효력. ModelBuilder 일반 편집의 기본 BDF writer 는 **C# `Cmb.Cli.exe`** 다. 깨진 BDF 가 Cmb.Cli 산출물이면 **C# 엔진 쪽도 같은 수정 필요**. (단 Mooring/SidePassage 스튜디오의 apply-edit 는 `analysis.py` 가 nastran_bridge 를 **기본 경로로** 직접 호출 → 그쪽 BDF 는 이 Python fix 로 완결.)
 
+### Module Unit Studio — 배포 시 버전 핀 동기화 (★필수, 안 하면 스튜디오 안 뜸)
+
+ModuleUnitStudio(viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구조 해석")를 배포할 때는 **zip 배포 + WorkBench 버전 핀 수정을 항상 세트로** 해야 한다. zip만 올리면 버전 불일치로 새 스튜디오가 뜨지 않는다.
+
+- ⭐ **버전 정책 (사용자 지시, 무조건):** Module Unit 관련 코드를 수정하면 — **스튜디오(React) 뿐 아니라 엔진(`ModuleUnitAnalysis` → `InHouseProgram/GroupModuleAnalysis`) 등 어느 쪽을 고쳤든** — **항상 `module-unit-studio` 버전을 bump 해서 zip을 재배포하고, WorkBench의 `MODULE_STUDIO_VERSION`도 같은 버전으로 올린다.** 엔진에는 사용자 눈에 보이는 버전 표면이 없으므로, 스튜디오 버전을 이 기능 전체의 단일 릴리스 번호로 삼는다(엔진-only 수정이라 zip 내용이 동일해도 버전만 올려 재배포·재다운로드를 강제). 즉 "코드 수정 → 버전 bump → 배포 → WorkBench 핀 동기화"는 예외 없는 세트다.
+
+- **버전 핀 위치:** `HiTessWorkBench/frontend/src/pages/analysis/GroupModuleUnitLiftingAnalysis.jsx` 상단 상수 `const MODULE_STUDIO_VERSION = '<버전>'` (약 line 21). 이 값이 이 페이지가 기대·설치하는 워크벤치 버전이자, 백엔드 manifest 미가용 시 fallback, UI 표시 버전(약 line 1000)이다.
+- **배포 절차 (2스텝 세트):**
+  1. `apps/module-unit-studio/package.json` 버전 bump → `npm run package` → `release/module-unit-studio-<ver>.zip`(+`.sha256`)을 **StudioProgram 2곳**(백엔드-로컬 `HiTessWorkBenchBackEnd/StudioProgram/` + UNC `\\storage.hpc.hd.com\...\StudioProgram`)에 복사.
+  2. `GroupModuleUnitLiftingAnalysis.jsx`의 `MODULE_STUDIO_VERSION`을 **같은 버전**으로 수정.
+- 버전 bump 전 StudioProgram 양쪽의 기존 최고 버전을 먼저 확인(충돌 시 앱이 재다운로드 안 함).
+- 서버(145) 반영: StudioProgram zip 수동 복사 + (프론트 변경이므로) WorkBench 프론트 재배포 대상.
+
+#### 권상 위치 자동 선정 — 핵심 동작·함정 (2026-07-01 세션, ★ 넓은 면적/PASS 관련)
+
+- **Z 밴드(tolMm) 이중 용도 분리**: `hoistToleranceMm`(UI "가상판 ±값")는 **수동 선택 강조용**일 뿐인데, 과거엔 이 좁은 값(모델높이×0.004 ≈ 10mm)이 **엔진 자동 최적화의 Z 클러스터링 tol** 로도 재사용돼 같은 데크의 근소 Z편차 노드가 서로 다른 레벨로 쪼개져 **좁고 작은 그룹만** 나왔다. → `useEditStore.js zoneSelectHoistPositions`는 이제 auto 시 **`tolMm: null`** 을 보내고(사용자가 명시하면 그 값 존중), 엔진(`HoistPositionOptimizer.RunRegionsSearch`)이 **Z 밴드 스윕**(`BuildZBandSweep` = {60,120,200,300}mm)을 돌려 **축적된 후보 중 랭킹으로 '가장 넓은 PASS'** 를 고른다. (payload 직렬화 시 `Number(null)===0` 함정 주의 — `opt.tolMm != null` 가드 필수.)
+- **면적 vs 상태(비단조)**: 밴드를 넓힐수록 면적↑ 이지만 **너무 넓으면 `wireConflictCount`(와이어 간섭)↑ → warn**(stage6 안정성 margin 은 오히려 동일). 실측(3496-35210-A508372): tol 10mm→3.07㎡ pass, 100→12.78 pass, 200→**16.84㎡ pass**, 350→2.38(붕괴), 500→23.72㎡ **warn(간섭29)**. 단일 고정 밴드는 keep-K/greedy 클러스터 경계 때문에 **비단조**라 스윕으로 회피. 스윕은 **조기 종료 없음**(모든 밴드 시도 후 랭킹) — 백엔드 `--optimize` 타임아웃 **300s** 이내(실측 ~15s).
+- **2D 방향 = 앱 3D '평면도(A키)' 와 동일**: 앱 평면도는 `camera.up=+X`·−Z 내려봄 → 화면 **↑X(종)·←Y(횡)**. 썸네일(`HoistCandidateThumbnail` + `planViewProjector`)과 구역 미니맵(`buildZonePartitionView`) 모두 이 방향으로 통일(과거 ↑Y·→X 라 3D와 90° 어긋나 "대칭"처럼 보였음). 형상 지표(면적/정사각형도/축편차)는 화면방향과 무관한 모델좌표 계산이라 불변.
+
 ### 프론트엔드 내비게이션 구조
 
 React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)를 사용합니다. `useReducer` 기반으로 `history[]` 배열과 `currentIndex`를 원자적으로 관리합니다. 페이지 컴포넌트에서 `useNavigation()` 훅으로 `setCurrentMenu(name)`, `goBack()`, `goForward()` 등에 접근합니다(이전의 props drilling 방식 제거). 전체 라우팅 분기는 `App.jsx:renderPage()`의 switch문에 있습니다.
