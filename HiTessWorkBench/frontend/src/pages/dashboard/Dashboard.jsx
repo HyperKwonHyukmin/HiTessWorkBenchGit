@@ -48,6 +48,60 @@ const DEV_STATUS_BADGE = {
   Planned: { variant: 'neutral', label: '예정' },
 };
 
+const SECTION_ACCENTS = {
+  service: {
+    iconWrap: 'bg-blue-50 text-blue-600 ring-blue-100',
+    rule: 'from-blue-500 via-blue-300 to-transparent',
+  },
+  favorite: {
+    iconWrap: 'bg-amber-50 text-amber-500 ring-amber-100',
+    rule: 'from-amber-400 via-amber-200 to-transparent',
+  },
+  history: {
+    iconWrap: 'bg-slate-100 text-slate-600 ring-slate-200',
+    rule: 'from-slate-500 via-slate-300 to-transparent',
+  },
+};
+
+const FAVORITE_MODE_STYLE = {
+  File: {
+    shell: 'hover:border-blue-300 hover:bg-blue-50/[0.18]',
+    accent: 'from-blue-500/70 via-blue-300/40 to-transparent',
+    chip: 'border-blue-200 bg-blue-50 text-blue-700',
+  },
+  Interactive: {
+    shell: 'hover:border-violet-300 hover:bg-violet-50/[0.16]',
+    accent: 'from-violet-500/70 via-violet-300/40 to-transparent',
+    chip: 'border-violet-200 bg-violet-50 text-violet-700',
+  },
+  Parametric: {
+    shell: 'hover:border-emerald-300 hover:bg-emerald-50/[0.16]',
+    accent: 'from-emerald-500/70 via-emerald-300/40 to-transparent',
+    chip: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+  Productivity: {
+    shell: 'hover:border-amber-300 hover:bg-amber-50/[0.16]',
+    accent: 'from-amber-500/70 via-amber-300/40 to-transparent',
+    chip: 'border-amber-200 bg-amber-50 text-amber-700',
+  },
+};
+
+const DashboardSectionTitle = ({ icon: Icon, title, accent = 'service', children }) => {
+  const tone = SECTION_ACCENTS[accent] || SECTION_ACCENTS.service;
+  return (
+    <div className="min-w-0">
+      <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-800">
+        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ring-1 ${tone.iconWrap}`}>
+          <Icon size={15} />
+        </span>
+        <span>{title}</span>
+      </h2>
+      <div className={`mt-1 h-0.5 w-24 rounded-full bg-gradient-to-r ${tone.rule}`} aria-hidden="true" />
+      {children}
+    </div>
+  );
+};
+
 const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick, compact = false, className = '' }) => {
   const isClickable = typeof onClick === 'function';
   return (
@@ -64,6 +118,7 @@ const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick
       transition={{ duration: 0.3, ease: 'easeOut' }}
       whileHover={isClickable ? { y: -1, transition: { type: 'spring', stiffness: 350, damping: 28 } } : undefined}
     >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand-blue/70 via-blue-400/40 to-transparent" aria-hidden="true" />
       {isClickable && (
         <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500">
           <ArrowUpRight size={16} />
@@ -104,7 +159,10 @@ const FavoriteCard = ({
   onDragOver,
   onDrop,
   isDragging,
-}) => (
+}) => {
+  const modeStyle = FAVORITE_MODE_STYLE[mode] || FAVORITE_MODE_STYLE.File;
+
+  return (
   <motion.div
     draggable={isEditing}
     onDragStart={onDragStart}
@@ -114,7 +172,7 @@ const FavoriteCard = ({
     className={`flex min-h-[118px] w-full flex-col items-start p-3.5 bg-white rounded-2xl border shadow-sm group text-left h-full relative overflow-hidden transition-all duration-200 ${
       isEditing
         ? 'border-blue-300 ring-1 ring-blue-100 cursor-grab active:cursor-grabbing'
-        : 'border-slate-200 hover:border-blue-300 hover:shadow-md'
+        : `border-slate-200 hover:shadow-md ${modeStyle.shell}`
     } ${isDragging ? 'opacity-45' : 'opacity-100'}`}
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
@@ -125,6 +183,7 @@ const FavoriteCard = ({
       transition: { type: 'spring', stiffness: 380, damping: 28 },
     } : undefined}
   >
+    <div className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${modeStyle.accent}`} aria-hidden="true" />
     {isEditing ? (
       <div className="absolute top-3 right-3 flex items-center gap-1">
         <button
@@ -167,7 +226,7 @@ const FavoriteCard = ({
       </div>
       <div className="flex min-w-0 flex-wrap justify-end gap-1">
         {mode && (
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-500">
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${modeStyle.chip}`}>
             {(MODE_KO[mode] || mode).replace(/ Apps$/, '')}
           </span>
         )}
@@ -198,7 +257,8 @@ const FavoriteCard = ({
       />
     )}
   </motion.div>
-);
+  );
+};
 
 const QueueStatusCard = React.memo(function QueueStatusCard({ className = '' }) {
   const [queueStatus, setQueueStatus] = useState({ running: 0, pending: 0, limit: 2 });
@@ -1614,9 +1674,7 @@ export default function Dashboard() {
       {/* 서비스 현황 */}
       <div className="shrink-0">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
-            <Activity size={15} className="text-blue-500" /> 서비스 현황
-          </h2>
+          <DashboardSectionTitle icon={Activity} title="서비스 현황" accent="service" />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3 xl:gap-4">
         <QueueStatusCard className="md:col-span-2" />
@@ -1705,14 +1763,11 @@ export default function Dashboard() {
       {/* 즐겨찾기 */}
       <div className="shrink-0">
         <div className="flex items-center justify-between mb-2">
-          <div>
-            <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
-              <Star size={15} className="text-amber-400" fill="currentColor" /> 즐겨찾기
-            </h2>
+          <DashboardSectionTitle icon={Star} title="즐겨찾기" accent="favorite">
             {isEditingFavorites && (
               <p className="mt-1 text-xs text-slate-500">카드를 드래그하거나 화살표 버튼으로 순서를 변경하세요.</p>
             )}
-          </div>
+          </DashboardSectionTitle>
           {favorites.length > 1 && (
             <Button
               type="button"
@@ -1816,9 +1871,7 @@ export default function Dashboard() {
       {/* 프로젝트 이력 */}
       <div className="min-h-0 flex-1 overflow-hidden">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
-            <Clock size={15} className="text-slate-500" /> 프로젝트 이력
-          </h2>
+          <DashboardSectionTitle icon={Clock} title="프로젝트 이력" accent="history" />
           <div className="flex items-center gap-2">
             <span className="hidden text-[11px] font-bold text-slate-500 [@media(max-height:900px)]:inline">
               최근 5건 중 화면 높이에 맞춰 표시
@@ -1830,10 +1883,11 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="h-1 bg-gradient-to-r from-slate-500/70 via-blue-300/40 to-transparent" aria-hidden="true" />
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
+                <tr className="bg-gradient-to-r from-slate-50 via-blue-50/35 to-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
                   <th className="py-3 px-4 font-bold w-24 text-center">ID</th>
                   <th className="py-3 px-4 font-bold">프로젝트명</th>
                   <th className="py-3 px-4 font-bold">모듈 (유형)</th>
