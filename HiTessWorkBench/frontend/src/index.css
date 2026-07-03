@@ -133,6 +133,32 @@
   background: rgba(203, 213, 225, 0.55);
 }
 
+.hitess-sidebar-logo-lockup {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 13.75rem;
+}
+
+.hitess-sidebar-logo-lockup img,
+.hitess-sidebar-logo-compact img {
+  display: block;
+}
+
+.hitess-sidebar-logo-lockup img {
+  position: relative;
+  z-index: 2;
+  max-width: 100%;
+}
+
+.hitess-sidebar-logo-compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
 /* ── 접근성: 동작 줄이기(prefers-reduced-motion) ──
    CSS 애니메이션·트랜지션을 사실상 즉시 완료로 만든다.
    framer-motion 은 main.jsx 의 MotionConfig(reducedMotion="user")가 별도로 처리. */

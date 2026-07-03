@@ -1,4 +1,5 @@
 import React, { memo, useMemo } from 'react';
+import { motion } from 'framer-motion';
 import {
   Home,
   UploadCloud,
@@ -25,6 +26,11 @@ const GROUP_MENU_BY_MODE = {
   Interactive: 'Interactive Apps',
   Parametric: 'Parametric Apps',
   Productivity: 'Productivity Apps',
+};
+
+const logoIntro = {
+  hidden: { opacity: 0, y: -4 },
+  visible: { opacity: 1, y: 0 },
 };
 
 function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate }) {
@@ -87,19 +93,35 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
         isCollapsed ? 'justify-center px-4' : 'justify-start pl-3 pr-2'
       }`}>
         {isCollapsed ? (
-          <img
-            src={`${import.meta.env.BASE_URL}logo.png`}
-            alt="HiTESS WorkBench"
-            decoding="async"
-            className="h-9 w-9 object-contain drop-shadow-sm"
-          />
+          <motion.div
+            className="hitess-sidebar-logo-compact"
+            initial="hidden"
+            animate="visible"
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+            variants={logoIntro}
+          >
+            <img
+              src={`${import.meta.env.BASE_URL}logo.png`}
+              alt="HiTESS WorkBench"
+              decoding="async"
+              className="h-9 w-9 object-contain drop-shadow-sm"
+            />
+          </motion.div>
         ) : (
-          <img
-            src={`${import.meta.env.BASE_URL}hitess_logo_lockup_transparent.png`}
-            alt="HiTESS WorkBench"
-            decoding="async"
-            className="h-[2.375rem] w-auto max-w-[13.75rem] object-contain"
-          />
+          <motion.div
+            className="hitess-sidebar-logo-lockup"
+            initial="hidden"
+            animate="visible"
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+            variants={logoIntro}
+          >
+            <img
+              src={`${import.meta.env.BASE_URL}hitess_logo_lockup_transparent.png`}
+              alt="HiTESS WorkBench"
+              decoding="async"
+              className="h-[2.375rem] w-auto max-w-[13.75rem] object-contain"
+            />
+          </motion.div>
         )}
       </div>
 
