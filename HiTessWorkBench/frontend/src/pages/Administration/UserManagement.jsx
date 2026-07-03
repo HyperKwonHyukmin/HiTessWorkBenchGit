@@ -7,7 +7,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import {
   Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Clock, Activity,
   UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
-  Download, BarChart3, ChevronRight, Code2
+  Download, BarChart3, ChevronRight, Code2, ArrowUpDown
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
@@ -24,6 +24,19 @@ const daysAgoString = (days) => {
   d.setDate(d.getDate() - days);
   return d.toISOString().slice(0, 10);
 };
+
+const SORT_OPTIONS = [
+  { key: 'created_desc', label: '가입일 최신순' },
+  { key: 'created_asc', label: '가입일 오래된순' },
+  { key: 'last_analysis_desc', label: '최근 해석 수행순' },
+  { key: 'last_login_desc', label: '최근 접속순' },
+  { key: 'analysis_count_desc', label: '해석 수 많은순' },
+  { key: 'analysis_count_asc', label: '해석 수 적은순' },
+  { key: 'name_asc', label: '이름 오름차순' },
+  { key: 'name_desc', label: '이름 내림차순' },
+  { key: 'department_asc', label: '부서 오름차순' },
+  { key: 'department_desc', label: '부서 내림차순' },
+];
 
 // 활동 로그 라벨/색상은 constants/activityLog.js 공용 상수 사용 (중복 제거).
 
@@ -54,12 +67,80 @@ const relativeTime = (iso) => {
   return `${Math.floor(mon / 12)}년 전`;
 };
 
+const textValue = (value) => String(value || '').trim();
+const dateValue = (value, emptyValue = -Infinity) => {
+  if (!value) return emptyValue;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? emptyValue : time;
+};
+
+const compareText = (a, b, direction = 'asc') => {
+  const result = textValue(a).localeCompare(textValue(b), 'ko-KR', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+  return direction === 'asc' ? result : -result;
+};
+
+const compareNumber = (a, b, direction = 'desc') => {
+  const result = (a || 0) - (b || 0);
+  return direction === 'asc' ? result : -result;
+};
+
+const compareDate = (a, b, direction = 'desc') => {
+  const emptyValue = direction === 'asc' ? Infinity : -Infinity;
+  const left = dateValue(a, emptyValue);
+  const right = dateValue(b, emptyValue);
+  if (left === right) return 0;
+  const result = left - right;
+  return direction === 'asc' ? result : -result;
+};
+
+const compareUsers = (a, b, sortMode) => {
+  let result = 0;
+  switch (sortMode) {
+    case 'created_asc':
+      result = compareDate(a.created_at, b.created_at, 'asc');
+      break;
+    case 'last_analysis_desc':
+      result = compareDate(a.last_analysis_at, b.last_analysis_at, 'desc');
+      break;
+    case 'last_login_desc':
+      result = compareDate(a.last_login, b.last_login, 'desc');
+      break;
+    case 'analysis_count_desc':
+      result = compareNumber(a.analysis_count, b.analysis_count, 'desc');
+      break;
+    case 'analysis_count_asc':
+      result = compareNumber(a.analysis_count, b.analysis_count, 'asc');
+      break;
+    case 'name_asc':
+      result = compareText(a.name, b.name, 'asc');
+      break;
+    case 'name_desc':
+      result = compareText(a.name, b.name, 'desc');
+      break;
+    case 'department_asc':
+      result = compareText(a.department || a.company, b.department || b.company, 'asc');
+      break;
+    case 'department_desc':
+      result = compareText(a.department || a.company, b.department || b.company, 'desc');
+      break;
+    case 'created_desc':
+    default:
+      result = compareDate(a.created_at, b.created_at, 'desc');
+      break;
+  }
+  return result || compareText(a.name, b.name, 'asc') || compareText(a.employee_id, b.employee_id, 'asc');
+};
+
 export default function UserManagement() {
   const { showToast } = useToast();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'active' | 'admin'
+  const [sortMode, setSortMode] = useState('created_desc');
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -79,12 +160,7 @@ export default function UserManagement() {
     setLoading(true);
     try {
       const response = await getUsers();
-      // 승인 대기자(Pending)가 위로 오도록 정렬, 그다음 생성일 역순
-      const sorted = response.data.sort((a, b) => {
-        if (a.is_active === b.is_active) return new Date(b.created_at) - new Date(a.created_at);
-        return a.is_active ? 1 : -1;
-      });
-      setUsers(sorted);
+      setUsers(response.data || []);
     } catch (error) {
       console.error("Failed to fetch users:", error);
     } finally {
@@ -230,19 +306,26 @@ export default function UserManagement() {
     position:   { icon: 'text-emerald-500', bar: 'bg-emerald-400' },
   };
 
-  // 필터 + 검색 — Pending 은 별도 영역에 있으므로 모드에 따라 분기
-  const filteredUsers = users.filter(user => {
+  // 필터 + 검색 + 정렬 — Pending 은 별도 영역에 있으므로 모드에 따라 분기
+  const filteredUsers = useMemo(() => users.filter(user => {
     const term = searchTerm.toLowerCase();
     const matchesSearch =
       !term ||
-      user.name.toLowerCase().includes(term) ||
-      user.employee_id.toLowerCase().includes(term) ||
-      (user.department && user.department.toLowerCase().includes(term));
+      textValue(user.name).toLowerCase().includes(term) ||
+      textValue(user.employee_id).toLowerCase().includes(term) ||
+      textValue(user.department).toLowerCase().includes(term);
     if (!matchesSearch) return false;
     if (filterMode === 'active') return user.is_active;
     if (filterMode === 'admin')  return user.is_admin;
     return true; // 'all'
-  });
+  }), [users, searchTerm, filterMode]);
+
+  const sortedUsers = useMemo(
+    () => [...filteredUsers].sort((a, b) => compareUsers(a, b, sortMode)),
+    [filteredUsers, sortMode]
+  );
+
+  const currentSortLabel = SORT_OPTIONS.find(option => option.key === sortMode)?.label || '정렬';
 
   const filterChips = [
     { key: 'all',    label: '전체',  count: totalUsers,  cls: 'bg-slate-800 text-white' },
@@ -443,9 +526,26 @@ export default function UserManagement() {
           />
         </div>
 
+        <div className="flex items-center gap-2">
+          <label className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 whitespace-nowrap">
+            <ArrowUpDown size={14} />
+            정렬
+          </label>
+          <select
+            value={sortMode}
+            onChange={e => setSortMode(e.target.value)}
+            className="h-9 min-w-[160px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700 outline-none transition-colors focus:border-blue-500 focus:bg-white"
+            title={`현재 정렬: ${currentSortLabel}`}
+          >
+            {SORT_OPTIONS.map(option => (
+              <option key={option.key} value={option.key}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-slate-400 font-medium">
-            {filteredUsers.length} / {totalUsers} 표시
+            {sortedUsers.length} / {totalUsers} 표시 · {currentSortLabel}
           </span>
           <button
             onClick={fetchUsers}
@@ -473,15 +573,15 @@ export default function UserManagement() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan="6" className="text-center py-20 text-slate-400">
+                <tr><td colSpan="7" className="text-center py-20 text-slate-400">
                   <RefreshCw className="animate-spin inline-block mb-2"/>
                   <p>데이터를 불러오는 중입니다...</p>
                 </td></tr>
-              ) : filteredUsers.length === 0 ? (
-                <tr><td colSpan="6" className="text-center py-20 text-slate-400">
+              ) : sortedUsers.length === 0 ? (
+                <tr><td colSpan="7" className="text-center py-20 text-slate-400">
                   검색 결과가 없습니다.
                 </td></tr>
-              ) : filteredUsers.map((user) => (
+              ) : sortedUsers.map((user) => (
                 <tr key={user.id} className={`transition-colors hover:bg-blue-50/50 ${!user.is_active ? 'bg-amber-50/40' : ''}`}>
 
                   {/* 이름 & 사번 */}
@@ -528,9 +628,15 @@ export default function UserManagement() {
                           <span>해석</span>
                         </span>
                         <span className="text-slate-300">·</span>
+                        <span className="text-slate-400" title={user.last_analysis_at || '해석 없음'}>
+                          {user.last_analysis_at ? `해석 ${relativeTime(user.last_analysis_at)}` : '해석 없음'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-slate-500">
                         <span className="text-slate-400" title={user.last_login || '미접속'}>
                           {user.last_login ? relativeTime(user.last_login) : '미접속'}
                         </span>
+                        <span className="text-[9px] text-slate-400 uppercase tracking-wider">last login</span>
                       </div>
                       {user.created_at && (
                         <p className="text-[10px] text-slate-400 font-mono">
