@@ -18,7 +18,7 @@ import SampleRunButton from '../../components/analysis/SampleRunButton';
 import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.114';
+const MODULE_STUDIO_VERSION = '0.0.115';
 
 // ── 상태 설정 (HiTessModelBuilder와 동일) ─────────────────────
 const STATUS_CONFIG = {
@@ -351,7 +351,14 @@ export default function GroupModuleUnitLiftingAnalysis() {
   // 버전 재확인 run 토큰 — 페이지를 빠르게 여러 번 열어 중첩 실행돼도 '가장 최신' 결과만 반영한다.
   const studioCheckRunRef = useRef(0);
   const studioMountedRef = useRef(true);
-  useEffect(() => () => { studioMountedRef.current = false; }, []);
+  // ⚠️ StrictMode(dev) 는 mount 시 effect 를 setup→cleanup→setup 으로 이중 실행한다.
+  //    setup 에서 반드시 true 로 복구해야, cleanup 이 false 로 만든 뒤에도 최종 상태가 true 로 남는다.
+  //    (setup 이 복구하지 않으면 mount 직후 current=false 로 고정 → stale() 항상 true → 버전 확인이
+  //     'checking' 에서 영구 정지한다.)
+  useEffect(() => {
+    studioMountedRef.current = true;
+    return () => { studioMountedRef.current = false; };
+  }, []);
 
   const bdfFolderPath = useMemo(
     () => bdfPath ? bdfPath.replace(/[/\\][^/\\]+$/, '') : null,
