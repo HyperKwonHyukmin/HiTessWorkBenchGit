@@ -18,7 +18,7 @@ import SampleRunButton from '../../components/analysis/SampleRunButton';
 import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.104';
+const MODULE_STUDIO_VERSION = '0.0.114';
 
 // ── 상태 설정 (HiTessModelBuilder와 동일) ─────────────────────
 const STATUS_CONFIG = {
@@ -299,7 +299,7 @@ function ModuleStudioLauncher({
 
 // ── 메인 컴포넌트 ────────────────────────────────────────────
 export default function GroupModuleUnitLiftingAnalysis() {
-  const { setCurrentMenu } = useNavigation();
+  const { setCurrentMenu, currentMenu } = useNavigation();
   const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
   const dashboardCtx = useDashboard();
   const {
@@ -345,6 +345,13 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const [studioInstalledVersion, setStudioInstalledVersion] = useState(null);
   const [studioLatestVersion, setStudioLatestVersion] = useState(MODULE_STUDIO_VERSION);
   const [studioInstallDir, setStudioInstallDir] = useState(null);
+  // 최신 studioStatus 를 async 콜백에서 stale 없이 읽기 위한 ref (설치/열기 중 재확인 차단용)
+  const studioStatusRef = useRef('idle');
+  useEffect(() => { studioStatusRef.current = studioStatus; }, [studioStatus]);
+  // 버전 재확인 run 토큰 — 페이지를 빠르게 여러 번 열어 중첩 실행돼도 '가장 최신' 결과만 반영한다.
+  const studioCheckRunRef = useRef(0);
+  const studioMountedRef = useRef(true);
+  useEffect(() => () => { studioMountedRef.current = false; }, []);
 
   const bdfFolderPath = useMemo(
     () => bdfPath ? bdfPath.replace(/[/\\][^/\\]+$/, '') : null,
@@ -473,40 +480,62 @@ export default function GroupModuleUnitLiftingAnalysis() {
     setValidStatusMsg(globalJob.message ?? '서버 처리 중...');
   }, [globalJob?.jobId, globalJob?.status, globalJob?.progress, globalJob?.message, globalJob?.menu]);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (window.electron?.invoke) {
-      setStudioStatus('checking');
-      window.electron.invoke('viewer:check-installed', MODULE_STUDIO_VIEWER_ID)
-        .then((r) => {
-          if (cancelled) return;
-          setStudioInstalled(r === null ? false : !!r?.installed);
-          setStudioInstalledVersion(r?.manifest?.version ?? null);
-          setStudioInstallDir(r?.dir ?? null);
-          setStudioStatus('idle');
-        })
-        .catch((e) => {
-          if (cancelled) return;
+  // ── Studio 설치본/서버 최신 버전 재확인 ──────────────────────────
+  // 로컬 설치본 버전(viewer:check-installed) + 서버 최신 배포 버전(manifest)을 동시에 조회한다.
+  // 서버 manifest 는 HTTP 캐시를 우회(cache:'no-store')해 매번 최신을 읽는다 — 새 Studio 배포가
+  // 즉시 반영되도록. 설치/열기 진행 중에는 상태를 덮어쓰지 않도록 재확인을 건너뛴다.
+  const refreshStudioVersion = useCallback(async () => {
+    if (studioStatusRef.current === 'installing' || studioStatusRef.current === 'opening') return;
+
+    const runId = ++studioCheckRunRef.current;
+    // 중첩 실행/언마운트 시 오래된 결과가 최신 상태를 덮어쓰지 않도록 가드.
+    const stale = () => runId !== studioCheckRunRef.current || !studioMountedRef.current;
+
+    const checkInstalled = (async () => {
+      if (!window.electron?.invoke) {
+        if (!stale()) {
           setStudioInstalled(false);
-          setStudioInstalledVersion(null);
-          setStudioError(e?.message || 'Studio 설치 상태 확인 실패');
+          setStudioError('Electron 환경에서만 Studio 설치/실행을 확인할 수 있습니다.');
+        }
+        return;
+      }
+      setStudioStatus('checking');
+      try {
+        const r = await window.electron.invoke('viewer:check-installed', MODULE_STUDIO_VIEWER_ID);
+        if (stale()) return;
+        setStudioInstalled(r === null ? false : !!r?.installed);
+        setStudioInstalledVersion(r?.manifest?.version ?? null);
+        setStudioInstallDir(r?.dir ?? null);
+      } catch (e) {
+        if (stale()) return;
+        setStudioInstalled(false);
+        setStudioInstalledVersion(null);
+        setStudioError(e?.message || 'Studio 설치 상태 확인 실패');
+      } finally {
+        if (!stale() && studioStatusRef.current !== 'installing' && studioStatusRef.current !== 'opening') {
           setStudioStatus('idle');
-        });
-    } else {
-      setStudioInstalled(false);
-      setStudioError('Electron 환경에서만 Studio 설치/실행을 확인할 수 있습니다.');
-    }
+        }
+      }
+    })();
 
-    fetch(`${API_BASE_URL}/api/viewers/manifest/${MODULE_STUDIO_VIEWER_ID}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(meta => {
-        if (cancelled) return;
+    const checkLatest = (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/viewers/manifest/${MODULE_STUDIO_VIEWER_ID}`, { cache: 'no-store' });
+        const meta = res.ok ? await res.json() : null;
+        if (stale()) return;
         setStudioLatestVersion(meta?.manifest?.version ?? MODULE_STUDIO_VERSION);
-      })
-      .catch(() => {});
+      } catch { /* 서버 미접속 — 기존 값 유지 */ }
+    })();
 
-    return () => { cancelled = true; };
+    await Promise.allSettled([checkInstalled, checkLatest]);
   }, []);
+
+  // 이 페이지는 keep-alive(네비게이션 시 unmount 되지 않음)라 mount effect 는 앱 세션당 1회만 돈다.
+  // → currentMenu 가 이 페이지로 올 때마다(=페이지를 열 때마다) 버전을 재확인해, 새 Studio 배포가
+  //    Electron 재시작 없이 곧바로 '업데이트' 배지에 반영되게 한다.
+  useEffect(() => {
+    if (currentMenu === GMU_MENU_NAME) refreshStudioVersion();
+  }, [currentMenu, GMU_MENU_NAME, refreshStudioVersion]);
 
   useEffect(() => {
     if (!window.electron?.onMessage) return undefined;
@@ -536,7 +565,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
       const check = await window.electron.invoke('viewer:check-installed', MODULE_STUDIO_VIEWER_ID);
       if (check === null) throw new Error('IPC viewer:check-installed 미등록');
 
-      const manifestRes = await fetch(`${API_BASE_URL}/api/viewers/manifest/${MODULE_STUDIO_VIEWER_ID}`);
+      const manifestRes = await fetch(`${API_BASE_URL}/api/viewers/manifest/${MODULE_STUDIO_VIEWER_ID}`, { cache: 'no-store' });
       if (!manifestRes.ok) throw new Error(`manifest 조회 실패: HTTP ${manifestRes.status}`);
       const meta = await manifestRes.json();
       const serverVer = meta?.manifest?.version ?? MODULE_STUDIO_VERSION;
