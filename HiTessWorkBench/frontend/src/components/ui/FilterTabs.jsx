@@ -9,14 +9,16 @@ import { motion } from 'framer-motion';
  * @param {string[]} categories   - 탭 레이블 배열
  * @param {string}  active        - 현재 활성 탭
  * @param {(c:string)=>void} onChange - 탭 변경 핸들러
+ * @param {Record<string, number>} [counts] - 탭별 항목 수
  */
-export default function FilterTabs({ categories = [], active, onChange, rightSlot }) {
+export default function FilterTabs({ categories = [], active, onChange, rightSlot, counts }) {
   const layoutId = useId();
 
   return (
     <div className="flex flex-wrap items-center gap-2 mb-8 border-b border-slate-200 pb-5">
       {categories.map(category => {
         const isActive = active === category;
+        const count = counts?.[category];
         return (
           <button
             key={category}
@@ -38,7 +40,19 @@ export default function FilterTabs({ categories = [], active, onChange, rightSlo
                 transition={{ type: 'spring', stiffness: 380, damping: 35 }}
               />
             )}
-            <span className="relative z-10">{category}</span>
+            <span className="relative z-10 inline-flex items-center gap-2">
+              <span>{category}</span>
+              {typeof count === 'number' && (
+                <span
+                  className={[
+                    'inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums',
+                    isActive ? 'bg-white/18 text-white' : 'bg-slate-100 text-slate-500',
+                  ].join(' ')}
+                >
+                  {count}
+                </span>
+              )}
+            </span>
           </button>
         );
       })}

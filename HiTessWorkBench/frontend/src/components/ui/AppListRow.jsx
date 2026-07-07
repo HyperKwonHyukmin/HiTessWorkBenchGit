@@ -47,7 +47,17 @@ export default function AppListRow({
   onFavorite,
   onStart,
 }) {
-  const { title = '', description = '', icon, iconBg = 'bg-blue-100', tags = [], devStatus, contributor } = app;
+  const {
+    title = '',
+    description = '',
+    icon,
+    iconBg = 'bg-blue-100',
+    tags = [],
+    inputFormats = [],
+    inputLabel = 'Input',
+    devStatus,
+    contributor,
+  } = app;
 
   return (
     <motion.div
@@ -83,8 +93,18 @@ export default function AppListRow({
       </div>
 
       {/* 태그 */}
-      {tags.length > 0 && (
+      {(inputFormats.length > 0 || tags.length > 0) && (
         <div className="hidden lg:flex items-center gap-1.5 shrink-0">
+          {inputFormats.length > 0 && (
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              {inputLabel}
+            </span>
+          )}
+          {inputFormats.map(format => (
+            <span key={format} className="text-[10px] font-black px-2 py-0.5 bg-white text-slate-700 border border-slate-200 rounded uppercase tracking-wider shadow-sm">
+              {format}
+            </span>
+          ))}
           {tags.slice(0, 3).map((tag, i) => (
             <span key={i} className="text-[10px] font-bold px-2 py-0.5 bg-slate-50 text-slate-600 border border-slate-200 rounded uppercase tracking-wider">
               {tag}

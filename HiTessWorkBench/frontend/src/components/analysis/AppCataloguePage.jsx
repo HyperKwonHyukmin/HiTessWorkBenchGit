@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { LayoutGrid, List } from 'lucide-react';
+import { LayoutGrid, List, Search, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { ANALYSIS_DATA, getAppMenuName, useAnalysisPageState, useFavorites } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
@@ -12,6 +12,7 @@ import FilterTabs from '../ui/FilterTabs';
 import AnimatedGrid from '../ui/AnimatedGrid';
 import AdminGateModal from '../ui/AdminGateModal';
 import FeedbackState from '../ui/FeedbackState';
+import Input from '../ui/Input';
 import { staggerContainer, cardEntrance } from '../../utils/motion';
 
 const colorToAccent = (colorClass = '') => {
@@ -26,6 +27,37 @@ const colorToAccent = (colorClass = '') => {
 };
 
 const FILE_CATEGORY_ORDER = ['Truss', 'Pipe', 'Lifting', 'Mooring Fitting', 'Passage', 'PDF'];
+const INPUT_FORMAT_CANDIDATES = ['CSV', 'BDF', 'PDF', 'F06', 'JSON', 'XLSX', 'XLS', 'DAT'];
+
+const extractInputBadges = (item) => {
+  const source = [
+    item.title,
+    item.description,
+    item.category,
+    ...(item.tags || []),
+    ...(item.sampleFiles || []).flatMap(sample => [sample.label, sample.guideTitle]),
+  ].filter(Boolean).join(' ').toUpperCase();
+
+  const fileFormats = INPUT_FORMAT_CANDIDATES.filter(format => source.includes(format));
+  if (fileFormats.length > 0) return fileFormats;
+
+  return [];
+};
+
+const matchesSearch = (item, query) => {
+  if (!query) return true;
+  const source = [
+    item.title,
+    item.description,
+    item.category,
+    item.contributor,
+    ...(item.tags || []),
+    ...(item.sampleFiles || []).flatMap(sample => [sample.label, sample.guideTitle]),
+    ...(item.relatedApps || []),
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  return source.includes(query);
+};
 
 export default function AppCataloguePage({
   mode,
@@ -44,8 +76,14 @@ export default function AppCataloguePage({
   const [activeCategory, setActiveCategory] = useState('All');
   const [gateApp, setGateApp] = useState(null);
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('hitess_app_view_mode') ?? 'grid');
+  const [searchTerm, setSearchTerm] = useState('');
 
   const apps = useMemo(() => ANALYSIS_DATA.filter(item => item.mode === mode), [mode]);
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const searchedApps = useMemo(
+    () => apps.filter(item => matchesSearch(item, normalizedSearch)),
+    [apps, normalizedSearch],
+  );
   const categories = useMemo(() => {
     const categorySet = new Set(apps.map(item => item.category));
     const orderedCategories = mode === 'File'
@@ -56,9 +94,17 @@ export default function AppCataloguePage({
       : [...categorySet];
     return ['All', ...orderedCategories];
   }, [apps, mode]);
+  const categoryCounts = useMemo(() => {
+    const counts = { All: searchedApps.length };
+    categories.forEach(category => {
+      if (category === 'All') return;
+      counts[category] = searchedApps.filter(item => item.category === category).length;
+    });
+    return counts;
+  }, [categories, searchedApps]);
   const filtered = useMemo(
-    () => activeCategory === 'All' ? apps : apps.filter(item => item.category === activeCategory),
-    [activeCategory, apps],
+    () => activeCategory === 'All' ? searchedApps : searchedApps.filter(item => item.category === activeCategory),
+    [activeCategory, searchedApps],
   );
   const activeApps = useMemo(
     () => filtered.filter(item => !item.devStatus || item.devStatus === 'Active'),
@@ -103,6 +149,7 @@ export default function AppCataloguePage({
         icon: <IconComponent className="text-white" size={viewMode === 'list' ? 20 : 24} />,
         iconBg: item.color,
         tags: item.tags,
+        inputFormats: extractInputBadges(item),
         devStatus: item.devStatus,
         contributor: item.contributor,
       },
@@ -161,6 +208,7 @@ export default function AppCataloguePage({
   );
 
   const EmptyStateIcon = EmptyIcon || HeaderIcon;
+  const hasFilteredResults = activeApps.length > 0 || developingApps.length > 0;
 
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
@@ -179,18 +227,62 @@ export default function AppCataloguePage({
         />
       ) : (
         <>
-          <FilterTabs categories={categories} active={activeCategory} onChange={setActiveCategory} rightSlot={viewToggle} />
-          {renderSection(activeApps)}
-          {developingApps.length > 0 && (
-            <>
-              {activeApps.length > 0 && (
-                <div className="flex items-center gap-3 my-8">
-                  <div className="flex-1 border-t border-slate-200" />
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">개발 중</span>
-                  <div className="flex-1 border-t border-slate-200" />
-                </div>
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="w-full lg:max-w-md">
+              <Input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="앱, 파일 형식, 태그, 담당자로 검색"
+                leftIcon={Search}
+                aria-label="앱 검색"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 lg:justify-end">
+              <span className="text-xs font-bold text-slate-500">
+                {filtered.length} / {apps.length} apps
+              </span>
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 cursor-pointer"
+                >
+                  <X size={14} />
+                  검색 초기화
+                </button>
               )}
-              {renderSection(developingApps, activeApps.length > 0)}
+            </div>
+          </div>
+
+          <FilterTabs
+            categories={categories}
+            active={activeCategory}
+            onChange={setActiveCategory}
+            counts={categoryCounts}
+            rightSlot={viewToggle}
+          />
+
+          {!hasFilteredResults ? (
+            <FeedbackState
+              icon={Search}
+              title="검색 결과가 없습니다."
+              message="검색어를 줄이거나 다른 카테고리를 선택해 보세요."
+            />
+          ) : (
+            <>
+              {renderSection(activeApps)}
+              {developingApps.length > 0 && (
+                <>
+                  {activeApps.length > 0 && (
+                    <div className="flex items-center gap-3 my-8">
+                      <div className="flex-1 border-t border-slate-200" />
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">개발 중</span>
+                      <div className="flex-1 border-t border-slate-200" />
+                    </div>
+                  )}
+                  {renderSection(developingApps, activeApps.length > 0)}
+                </>
+              )}
             </>
           )}
         </>
@@ -205,3 +297,4 @@ export default function AppCataloguePage({
     </div>
   );
 }
+

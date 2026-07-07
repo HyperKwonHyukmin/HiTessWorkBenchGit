@@ -130,6 +130,8 @@ export default function AppCard({
     description = '',
     icon,
     tags        = [],
+    inputFormats = [],
+    inputLabel = 'Input',
     devStatus,
     contributor,
   } = app;
@@ -235,9 +237,24 @@ export default function AppCard({
           </p>
         )}
 
+        {/* 입력 파일 형식 */}
+        {inputFormats.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{inputLabel}</span>
+            {inputFormats.map(format => (
+              <span
+                key={format}
+                className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-slate-700 shadow-sm"
+              >
+                {format}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* 태그 */}
         {tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-3">
+          <div className="flex flex-wrap gap-1.5 mt-2">
             {tags.map((tag, idx) => (
               <span
                 key={idx}
