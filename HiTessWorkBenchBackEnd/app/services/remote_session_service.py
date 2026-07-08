@@ -16,10 +16,11 @@ _BACKEND_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_IP_OWNER_LIST_PATH = _BACKEND_DIR / "config" / "remote_ip_owners.txt"
 IP_OWNER_LIST_PATH = Path(os.environ.get("REMOTE_IP_OWNER_LIST", str(DEFAULT_IP_OWNER_LIST_PATH)))
 
-# 원격 세션 조회는 powershell 서브프로세스를 여러 번 띄워 비싸므로 짧게 캐싱한다.
-_RESULT_CACHE_TTL = 20.0
-_result_cache_lock = threading.Lock()
-_result_cache = {}  # include_ip(bool) -> (monotonic_ts, result)
+# 세션 감지(query user)는 매 호출 최신으로 하고, 비싼 IP 조회(powershell 3종)만 짧게 캐싱한다.
+# → 배지 on/off·활성 상태는 실시간에 가깝게, 서버 부하는 낮게 유지.
+_IP_LOOKUP_TTL = 45.0
+_ip_lookup_lock = threading.Lock()
+_ip_lookup_cache = {"ts": 0.0, "data": None}
 
 
 def parse_query_user_output(output: str):
@@ -259,14 +260,55 @@ def _query_active_rdp_client_ips():
     return parse_rdp_client_ip_rows(output)
 
 
-def get_remote_session_status(include_ip=True):
-    """Return current Windows RDP session status for the WorkBench host."""
-    now = time.monotonic()
-    with _result_cache_lock:
-        cached = _result_cache.get(include_ip)
-        if cached and (now - cached[0]) < _RESULT_CACHE_TTL:
-            return cached[1]
+def _gather_ip_lookups(force=False):
+    """4624/1149/3389 IP 조회를 병렬 실행하고 짧게 캐싱한다(비싼 powershell 호출 절약).
 
+    반환: (ips_by_username_4624, ips_by_username_1149, active_rdp_client_ips, errors)
+    force=True 면 캐시를 무시하고 즉시 재조회한다(수동 '원격 확인' 버튼용).
+    """
+    now = time.monotonic()
+    with _ip_lookup_lock:
+        cached = _ip_lookup_cache["data"]
+        if cached is not None and not force and (now - _ip_lookup_cache["ts"]) < _IP_LOOKUP_TTL:
+            return cached
+
+    errors = []
+
+    def _safe_lookup(key, fn):
+        try:
+            return key, fn(), None
+        except Exception as exc:
+            return key, None, f"{key}: {exc}"
+
+    # IP 조회 3종(4624/1149/3389)은 서로 독립적이라 병렬로 실행한다(합산 → 최댓값).
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [
+            executor.submit(_safe_lookup, "security_4624", _query_recent_rdp_ips),
+            executor.submit(_safe_lookup, "terminalservices_1149", _query_terminal_services_rdp_ips),
+            executor.submit(_safe_lookup, "tcp_3389", _query_active_rdp_client_ips),
+        ]
+        for future in concurrent.futures.as_completed(futures):
+            key, value, err = future.result()
+            if err:
+                errors.append(err)
+            else:
+                results[key] = value
+
+    data = (
+        results.get("security_4624") or {},
+        results.get("terminalservices_1149") or {},
+        results.get("tcp_3389") or [],
+        errors,
+    )
+    with _ip_lookup_lock:
+        _ip_lookup_cache["ts"] = time.monotonic()
+        _ip_lookup_cache["data"] = data
+    return data
+
+
+def get_remote_session_status(include_ip=True, force_refresh=False):
+    """Return current Windows RDP session status for the WorkBench host."""
     if platform.system().lower() != "windows":
         return {
             "supported": False,
@@ -297,46 +339,22 @@ def get_remote_session_status(include_ip=True):
     ip_owner_map = load_ip_owner_map()
 
     if include_ip:
-        lookup_errors = []
-
-        def _safe_lookup(key, fn):
-            try:
-                return key, fn(), None
-            except Exception as exc:
-                return key, None, f"{key}: {exc}"
-
-        # IP 조회 3종(4624/1149/3389)은 서로 독립적이라 병렬로 실행한다.
-        # 순차 합산(≈10s+) → 최댓값(≈수초)으로 단축해 프론트 타임아웃을 피한다.
-        results = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [
-                executor.submit(_safe_lookup, "security_4624", _query_recent_rdp_ips),
-                executor.submit(_safe_lookup, "terminalservices_1149", _query_terminal_services_rdp_ips),
-                executor.submit(_safe_lookup, "tcp_3389", _query_active_rdp_client_ips),
-            ]
-            for future in concurrent.futures.as_completed(futures):
-                key, value, err = future.result()
-                if err:
-                    lookup_errors.append(err)
-                else:
-                    results[key] = value
+        # 세션은 매번 최신(query user), 비싼 IP 조회는 캐시(수동 새로고침 시 force로 무시).
+        ips_by_username, terminal_ips_by_username, active_rdp_client_ips, lookup_errors = \
+            _gather_ip_lookups(force=force_refresh)
 
         # 4624(우선) → 1149(보완) 순서로 IP를 채운다(기존 우선순위 유지).
-        ips_by_username = results.get("security_4624") or {}
         for session in sessions:
             event = ips_by_username.get(session["username"].lower())
             if event:
                 session.update(event)
 
-        terminal_ips_by_username = results.get("terminalservices_1149") or {}
         for session in sessions:
             if session.get("ip_address"):
                 continue
             event = terminal_ips_by_username.get(session["username"].lower())
             if event:
                 session.update(event)
-
-        active_rdp_client_ips = results.get("tcp_3389") or []
 
         remote_session_candidates = [session for session in sessions if session["is_remote"]]
         sessions_missing_ip = [
@@ -360,7 +378,7 @@ def get_remote_session_status(include_ip=True):
         {"ip_address": ip_address, "ip_owner": ip_owner_map.get(ip_address)}
         for ip_address in active_rdp_client_ips
     ]
-    result = {
+    return {
         "supported": True,
         "has_remote_user": len(remote_sessions) > 0,
         "has_active_remote_user": len(active_remote_sessions) > 0,
@@ -371,6 +389,3 @@ def get_remote_session_status(include_ip=True):
         "ip_lookup_status": ip_lookup_status,
         "checked_at": datetime.now().isoformat(timespec="seconds"),
     }
-    with _result_cache_lock:
-        _result_cache[include_ip] = (time.monotonic(), result)
-    return result

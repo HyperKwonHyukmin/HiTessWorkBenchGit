@@ -18,7 +18,7 @@ from ..dependencies import require_admin, require_auth
 from ..sessions import session_store
 from ..services.activity_service import log_activity
 
-SERVER_VERSION = "1.3.14"
+SERVER_VERSION = "1.3.15"
 
 # 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
@@ -172,6 +172,8 @@ def get_queue_status(_user: str = Depends(require_auth)):
 
 
 @router.get("/system/remote-sessions")
-def get_remote_sessions(_admin: str = Depends(require_admin)):
-  """Workbench 서버 컴퓨터의 현재 Windows 원격 접속 세션을 반환합니다."""
-  return get_remote_session_status(include_ip=True)
+def get_remote_sessions(fresh: bool = False, _admin: str = Depends(require_admin)):
+  """Workbench 서버 컴퓨터의 현재 Windows 원격 접속 세션을 반환합니다.
+
+  fresh=1 이면 IP 조회 캐시를 무시하고 즉시 재조회한다(수동 '원격 확인' 버튼용)."""
+  return get_remote_session_status(include_ip=True, force_refresh=fresh)

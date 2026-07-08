@@ -136,6 +136,14 @@ const formatResultInputValue = (key, value, ruleLengthMode) => {
   return fmt(value, key === 'rho' ? 3 : 2);
 };
 
+const getResultInputValue = (key, resultData, constants, ruleLengthMode) => {
+  if (key === 'length' && ruleLengthMode === RULE_LENGTH_MODES.MANUAL) {
+    const manualRuleLength = Number(constants.length);
+    if (Number.isFinite(manualRuleLength) && manualRuleLength > 0) return manualRuleLength;
+  }
+  return resultData.ship_constants?.[key];
+};
+
 const getRuleKey = (rule) => {
   const rawKey = typeof rule === 'string'
     ? rule
@@ -1035,7 +1043,7 @@ export default function HullAccelerationPage() {
                               <span className="text-[10px] text-amber-300 font-mono">{unit}</span>
                             </div>
                             <p className="text-sm font-bold font-mono text-slate-700">
-                              {formatResultInputValue(key, resultData.ship_constants?.[key], ruleLengthMode)}
+                              {formatResultInputValue(key, getResultInputValue(key, resultData, constants, ruleLengthMode), ruleLengthMode)}
                             </p>
                           </div>
                         ))}

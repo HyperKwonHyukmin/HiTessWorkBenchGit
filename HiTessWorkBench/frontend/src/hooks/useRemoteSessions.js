@@ -21,10 +21,11 @@ export function useRemoteSessions(intervalMs = 30000, options = {}) {
   const timerRef = useRef(null);
   const disposedRef = useRef(false);
 
-  const checkNow = useCallback(async () => {
+  const checkNow = useCallback(async (force = false) => {
     if (!enabled) return;
     try {
-      const res = await axios.get(`${API_BASE_URL}/api/system/remote-sessions`, {
+      const url = `${API_BASE_URL}/api/system/remote-sessions${force ? '?fresh=1' : ''}`;
+      const res = await axios.get(url, {
         headers: getAuthHeaders(),
         timeout: 20000,
       });
@@ -44,9 +45,16 @@ export function useRemoteSessions(intervalMs = 30000, options = {}) {
       });
     } catch (err) {
       if (disposedRef.current) return;
+      // 조회 실패(서버 다운 등) 시 이전 '사용중' 상태를 그대로 두면 stale 배지가 남는다 → 초기화.
       setState(prev => ({
         ...prev,
         isLoading: false,
+        hasRemoteUser: false,
+        hasActiveRemoteUser: false,
+        remoteSessions: [],
+        allSessions: [],
+        activeRdpClientIps: [],
+        activeRdpClients: [],
         error: err?.response?.data?.detail || '원격 접속 상태 확인 실패',
       }));
     }
@@ -70,8 +78,9 @@ export function useRemoteSessions(intervalMs = 30000, options = {}) {
         disposedRef.current = true;
       };
     }
-    checkNow();
-    timerRef.current = setInterval(checkNow, intervalMs);
+    checkNow(false);
+    // 주기 폴링은 캐시 활용(force=false). setInterval 콜백 인자가 force로 새지 않도록 래핑.
+    timerRef.current = setInterval(() => checkNow(false), intervalMs);
     return () => {
       disposedRef.current = true;
       clearInterval(timerRef.current);
