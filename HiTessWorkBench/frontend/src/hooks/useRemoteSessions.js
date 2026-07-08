@@ -26,7 +26,7 @@ export function useRemoteSessions(intervalMs = 30000, options = {}) {
     try {
       const res = await axios.get(`${API_BASE_URL}/api/system/remote-sessions`, {
         headers: getAuthHeaders(),
-        timeout: 10000,
+        timeout: 20000,
       });
       if (disposedRef.current) return;
       setState({
