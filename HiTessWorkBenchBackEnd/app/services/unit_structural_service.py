@@ -15,6 +15,7 @@ input_info.parent_analysis_id 로 GroupModuleUnit 원본을 참조한다.
 """
 from __future__ import annotations
 
+import glob
 import json
 import logging
 import os
@@ -117,8 +118,12 @@ def task_execute_unit_structural(
         edited_json = os.path.join(bdf_dir, f"{bdf_stem}_edited.json")
         edited_bdf  = os.path.join(bdf_dir, f"{bdf_stem}_edited.bdf")
 
-        # 기존 산출물 정리 (덮어쓰기 보장)
-        for stale in (lifting_bdf, lifting_meta, lifting_f06, result_json, edited_bdf):
+        # 기존 산출물 정리 (덮어쓰기 보장 + Nastran 재실행 시 이전 DB/스크래치 잔존 방지).
+        # {stem}_lifting.* 로 이전 실행의 .bdf/.f06/.op2/.log/.f04/.DBALL/.MASTER/.plt 등을 모두 지운다
+        # (반복 해석 시 남은 op2/DB 가 stale 결과로 서빙되거나 solver 가 기존 DB 로 실패하는 것 방지).
+        # glob 이 못 잡는 _lifting_meta.json / _lifting_nastranResult.json / _edited.bdf 는 명시 삭제.
+        stale_paths = list(glob.glob(os.path.join(bdf_dir, f"{bdf_stem}_lifting.*")))
+        for stale in (*stale_paths, lifting_meta, result_json, edited_bdf):
             if os.path.exists(stale):
                 try: os.remove(stale)
                 except OSError: pass
@@ -180,7 +185,10 @@ def task_execute_unit_structural(
             )
 
         update_progress(job_id, 40, "Nastran 실행 중...")
-        nastran_args = [nastran_exe, lifting_bdf]
+        # scr=yes(스크래치 DB 사용 후 정리)·old=no(기존 DB 버전범프/거부 방지)·batch=no —
+        # ModelFlow 경로(_run_nastran_on_bdf)와 동일한 표준 호출. 같은 폴더 반복 실행 시
+        # 이전 .DBALL/.MASTER 로 인한 실패·버전범프를 막는다(F7, 2026-07-07).
+        nastran_args = [nastran_exe, lifting_bdf, "scr=yes", "old=no", "batch=no"]
         logger.info("[UnitStructural] nastran cmd: %s (cwd=%s)", " ".join(nastran_args), bdf_dir)
         run = subprocess.run(
             nastran_args, cwd=bdf_dir,

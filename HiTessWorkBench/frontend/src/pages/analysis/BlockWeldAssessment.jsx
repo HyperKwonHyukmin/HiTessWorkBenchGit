@@ -16,8 +16,11 @@ export default function BlockWeldAssessment() {
       description="블록 전도 방지 구속 용접양을 산출합니다."
       baseUrl={blockWeldBaseUrl}
       healthUrl={blockWeldHealthUrl}
-      clearCacheOnLaunch={false}
-      cacheBustOnLaunch={false}
+      // 실행할 때마다 외부 앱 창의 캐시(HTTP 캐시·서비스워커·Cache Storage)를 비우고
+      // 캐시버스트 파라미터를 붙인다. 이렇게 하지 않으면 상류(upstream) Block Weld
+      // 프론트가 갱신돼도 이전에 캐시된 구버전이 새 창에 그대로 떠버린다.
+      clearCacheOnLaunch={true}
+      cacheBustOnLaunch={true}
       status="Active"
       contributor="김한별"
       icon={PenTool}
