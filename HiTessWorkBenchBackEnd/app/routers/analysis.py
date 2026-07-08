@@ -430,6 +430,120 @@ def _analysis_management_summary(query, users_by_employee_id: dict) -> Optional[
     }
 
 
+def _program_usage_detail(program_name: str, rows: list, users_by_employee_id: dict) -> dict:
+    """
+    단일 프로그램(App)의 상세 사용 통계를 집계한다.
+    _analysis_management_summary와 동일한 버킷 로직을 프로그램 하나로 한정한 형태로,
+    반환 차트 데이터(trend/hour/weekday/dept)는 대시보드와 같은 shape라 동일 컴포넌트로 렌더된다.
+    """
+    weekday_labels = ["월", "화", "수", "목", "금", "토", "일"]
+
+    def _naive(dt):
+        return dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
+
+    total = len(rows)
+    success = sum(1 for r in rows if r.status == "Success")
+    fail = total - success
+
+    user_map = {}
+    dept_map = {}
+    day_count_map = {}
+    hour_buckets = [0] * 24
+    weekday_buckets = [0] * 7
+    first_dt = None
+    last_dt = None
+    records = []
+
+    for row in rows:
+        created_at = _naive(row.created_at) if row.created_at else None
+        employee_id = row.employee_id or "unknown"
+        user = users_by_employee_id.get(employee_id)
+        department = user.department if user and user.department else "Unknown"
+        user_name = user.name if user else "Deleted User"
+        is_success = row.status == "Success"
+
+        u = user_map.setdefault(employee_id, {
+            "employee_id": employee_id, "name": user_name, "dept": department,
+            "count": 0, "success": 0, "firstRun": None, "lastRun": None,
+        })
+        u["count"] += 1
+        if is_success:
+            u["success"] += 1
+
+        dept_map[department] = dept_map.get(department, 0) + 1
+
+        if created_at:
+            if not u["firstRun"] or created_at < u["firstRun"]:
+                u["firstRun"] = created_at
+            if not u["lastRun"] or created_at > u["lastRun"]:
+                u["lastRun"] = created_at
+            day_key = created_at.date().isoformat()
+            day_count_map[day_key] = day_count_map.get(day_key, 0) + 1
+            hour_buckets[created_at.hour] += 1
+            weekday_buckets[created_at.weekday()] += 1
+            if not first_dt or created_at < first_dt:
+                first_dt = created_at
+            if not last_dt or created_at > last_dt:
+                last_dt = created_at
+
+        records.append({
+            "id": row.id,
+            "project_name": row.project_name or "",
+            "employee_id": employee_id,
+            "userName": user_name,
+            "dept": department,
+            "status": row.status or "Unknown",
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        })
+
+    records.sort(key=lambda r: r["created_at"] or "", reverse=True)
+
+    user_ranking = sorted([
+        {
+            "employee_id": u["employee_id"],
+            "name": u["name"],
+            "dept": u["dept"],
+            "count": u["count"],
+            "successRate": round((u["success"] / u["count"]) * 100) if u["count"] else 0,
+            "share": round((u["count"] / total) * 100) if total else 0,
+            "firstRunLabel": u["firstRun"].strftime("%Y-%m-%d") if u["firstRun"] else "-",
+            "lastRunLabel": u["lastRun"].strftime("%Y-%m-%d %H:%M") if u["lastRun"] else "-",
+        }
+        for u in user_map.values()
+    ], key=lambda u: (u["count"], u["employee_id"]), reverse=True)
+
+    covered_days = 1
+    if first_dt and last_dt:
+        covered_days = max(1, (last_dt.date() - first_dt.date()).days + 1)
+    peak_hour_index = max(range(24), key=lambda idx: hour_buckets[idx]) if total else 0
+    trend_items = sorted(day_count_map.items(), key=lambda item: item[0])[-30:]
+
+    summary = {
+        "total": total,
+        "success": success,
+        "fail": fail,
+        "successRate": round((success / total) * 100) if total else 0,
+        "userCount": len(user_map),
+        "deptCount": len(dept_map),
+        "coveredDays": covered_days,
+        "avgPerDay": f"{total / covered_days:.1f}" if total else "0.0",
+        "firstRunLabel": first_dt.strftime("%Y-%m-%d") if first_dt else "-",
+        "lastRunLabel": last_dt.strftime("%Y-%m-%d %H:%M") if last_dt else "-",
+        "peakHour": f"{peak_hour_index:02d}시" if total and hour_buckets[peak_hour_index] else "-",
+    }
+
+    return {
+        "programName": program_name,
+        "summary": summary,
+        "userRanking": user_ranking,
+        "records": records,
+        "trendData": [{"date": datetime.fromisoformat(day).strftime("%b %d"), "count": count} for day, count in trend_items],
+        "hourData": [{"hour": f"{hour:02d}시", "count": count} for hour, count in enumerate(hour_buckets)],
+        "weekdayData": [{"name": name, "count": weekday_buckets[index]} for index, name in enumerate(weekday_labels)],
+        "deptData": sorted([{"name": name, "count": count} for name, count in dept_map.items()], key=lambda d: d["count"], reverse=True)[:8],
+    }
+
+
 @router.get("/analysis/history/{employee_id}")
 def get_analysis_history(
     employee_id: str,
@@ -515,6 +629,38 @@ def get_all_analysis_history(
         })
         serialized.append(payload)
     return {"total": total, "skip": skip, "limit": limit, "items": serialized, "summary": summary}
+
+
+@router.get("/analysis/stats/program/{program_name}")
+def get_program_usage_detail(
+    program_name: str,
+    date_from: Optional[_date] = Query(None),
+    date_to: Optional[_date] = Query(None),
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
+):
+    """
+    관리자용: 특정 프로그램(App)의 상세 사용 통계.
+    Analysis Management 대시보드의 '프로그램별 사용 통계' 행 클릭 시 모달에 표시한다.
+
+    필터 기준은 대시보드 요약(_analysis_management_summary)과 동일하게
+    샘플(WorkbenchSample) 제외 + 개발자(is_developer) 제외를 적용하므로,
+    클릭한 행의 '실행' 수와 모달 총계가 정확히 일치한다.
+    """
+    base_q = db.query(models.Analysis).filter(
+        models.Analysis.source != SAMPLE_SOURCE_TAG,
+        models.Analysis.program_name == program_name,
+    )
+    base_q = _apply_analysis_filters(base_q, date_from=date_from, date_to=date_to)
+
+    users = db.query(models.User).all()
+    users_by_employee_id = {u.employee_id: u for u in users}
+
+    rows = [
+        r for r in base_q.all()
+        if not getattr(users_by_employee_id.get(r.employee_id), "is_developer", False)
+    ]
+    return _program_usage_detail(program_name, rows, users_by_employee_id)
 
 
 @router.get("/download")
