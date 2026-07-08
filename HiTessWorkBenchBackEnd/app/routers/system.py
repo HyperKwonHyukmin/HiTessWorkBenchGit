@@ -12,12 +12,13 @@ from sqlalchemy import text
 from .. import database
 from ..services.job_manager import job_status_store, MAX_CONCURRENT_JOBS
 from ..services.cleanup_service import run_cleanup, _USER_CONN_DIR, RETENTION_DAYS
+from ..services.remote_session_service import get_remote_session_status
 from ..state import server_state
 from ..dependencies import require_admin, require_auth
 from ..sessions import session_store
 from ..services.activity_service import log_activity
 
-SERVER_VERSION = "1.3.6"
+SERVER_VERSION = "1.3.7"
 
 # 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
@@ -168,3 +169,9 @@ def get_queue_status(_user: str = Depends(require_auth)):
     "pending": pending_count,
     "limit": MAX_CONCURRENT_JOBS
   }
+
+
+@router.get("/system/remote-sessions")
+def get_remote_sessions(_user: str = Depends(require_auth)):
+  """Workbench 서버 컴퓨터의 현재 Windows 원격 접속 세션을 반환합니다."""
+  return get_remote_session_status(include_ip=True)

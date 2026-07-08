@@ -1,9 +1,10 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import Sidebar from './Sidebar';
-import { AlertTriangle, Command, LogOut, User, Search, ChevronLeft, ChevronRight, Server } from 'lucide-react';
+import { AlertTriangle, Command, LogOut, User, Search, ChevronLeft, ChevronRight, Server, Monitor } from 'lucide-react';
 import { API_BASE_URL, setApiBaseUrl } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
 import { useServerHealth } from '../../hooks/useServerStatus';
+import { useRemoteSessions } from '../../hooks/useRemoteSessions';
 import { ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNetwork } from '../../contexts/NetworkContext';
@@ -38,6 +39,7 @@ export default function Layout({
   const [serverUrlInput, setServerUrlInput] = useState(API_BASE_URL);
   const [currentServerUrl, setCurrentServerUrl] = useState(API_BASE_URL);
   const serverHealth = useServerHealth();
+  const remoteSessions = useRemoteSessions();
   const isServerOnline = serverHealth.isOnline;
   const { events: networkEvents, clearEvents: clearNetworkEvents } = useNetwork();
   const { recentApps, recordAppVisit } = useRecentActivity();
@@ -61,6 +63,13 @@ export default function Layout({
     offline: 'bg-red-500 text-red-500',
   };
   const statusClass = serverStatusClasses[serverHealth.level] || serverStatusClasses.offline;
+  const remoteSessionCount = remoteSessions.remoteSessions.length;
+  const remoteSessionSummary = remoteSessions.remoteSessions
+    .map(session => {
+      const ip = session.ip_address ? ` / ${session.ip_address}` : '';
+      return `${session.username}${ip} (${session.state})`;
+    })
+    .join('\n');
 
   // 검색
   const [searchTerm, setSearchTerm] = useState('');
@@ -274,6 +283,28 @@ export default function Layout({
           </div>
 
           <div className="flex items-center gap-2 lg:gap-4 shrink-0 min-w-0">
+            {remoteSessions.hasRemoteUser && (
+              <button
+                type="button"
+                onClick={remoteSessions.checkNow}
+                className={`inline-flex max-w-[190px] items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-bold ${
+                  remoteSessions.hasActiveRemoteUser
+                    ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                }`}
+                title={`서버 원격 접속 중\n${remoteSessionSummary || '세션 정보를 확인 중입니다.'}\nIP 조회: ${remoteSessions.ipLookupStatus || 'unknown'}`}
+              >
+                <Monitor size={15} className="shrink-0" />
+                <span className="hidden sm:inline truncate">
+                  {remoteSessions.hasActiveRemoteUser ? '원격 접속 중' : '원격 세션 있음'}
+                </span>
+                <span className={`rounded-full px-1.5 text-[10px] leading-4 text-white ${
+                  remoteSessions.hasActiveRemoteUser ? 'bg-amber-600' : 'bg-slate-500'
+                }`}>
+                  {remoteSessionCount}
+                </span>
+              </button>
+            )}
             <button
               onClick={() => setIsDiagnosticsOpen(true)}
               className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors shrink-0"
