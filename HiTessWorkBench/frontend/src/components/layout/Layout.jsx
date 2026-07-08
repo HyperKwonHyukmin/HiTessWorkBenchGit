@@ -66,8 +66,8 @@ export default function Layout({
   const remoteSessionCount = remoteSessions.remoteSessions.length;
   const primaryRemoteSession = remoteSessions.remoteSessions[0] || null;
   const primaryRemoteLabel = primaryRemoteSession?.display_name
-    ? `${primaryRemoteSession.display_name} 사용중`
-    : (remoteSessions.hasActiveRemoteUser ? '원격 사용중' : '원격 세션 있음');
+    ? `${primaryRemoteSession.display_name} 서버 원격 사용중`
+    : (remoteSessions.hasActiveRemoteUser ? '서버 원격 사용중' : '원격 세션 있음');
   const remoteSessionSummary = remoteSessions.remoteSessions
     .map(session => {
       const ip = session.ip_address ? ` / ${session.ip_address}` : '';
