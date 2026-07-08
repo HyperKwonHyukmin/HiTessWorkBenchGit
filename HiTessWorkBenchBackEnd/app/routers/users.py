@@ -19,7 +19,8 @@ def get_users(
 ):
     users = db.query(models.User).all()
 
-    # 사용자별 해석 통계 — N+1 회피 위해 단일 GROUP BY 쿼리로 일괄 조회
+    # 사용자별 해석 통계 — N+1 회피 위해 단일 GROUP BY 쿼리로 일괄 조회.
+    # 사번 대소문자(a477273 ↔ A477273)는 동일인으로 병합한다.
     stats_rows = (
         db.query(
             models.Analysis.employee_id.label("employee_id"),
@@ -29,17 +30,30 @@ def get_users(
         .group_by(models.Analysis.employee_id)
         .all()
     )
-    stats_map = {row.employee_id: row for row in stats_rows}
+
+    def _norm(v):
+        return (v or "").strip().upper()
+
+    stats_map = {}
+    for row in stats_rows:
+        key = _norm(row.employee_id)
+        prev = stats_map.get(key)
+        if prev:
+            prev["count"] += int(row.count or 0)
+            if row.last_at and (prev["last_at"] is None or row.last_at > prev["last_at"]):
+                prev["last_at"] = row.last_at
+        else:
+            stats_map[key] = {"count": int(row.count or 0), "last_at": row.last_at}
 
     def _iso(dt):
         return dt.isoformat() if dt else None
 
     result = []
     for u in users:
-        s = stats_map.get(u.employee_id)
+        s = stats_map.get(_norm(u.employee_id))
         result.append({
             "id": u.id,
-            "employee_id": u.employee_id,
+            "employee_id": _norm(u.employee_id),
             "name": u.name,
             "company": u.company,
             "department": u.department,
@@ -50,8 +64,8 @@ def get_users(
             "login_count": u.login_count or 0,
             "last_login": _iso(u.last_login),
             "created_at": _iso(u.created_at),
-            "analysis_count": int(s.count) if s else 0,
-            "last_analysis_at": _iso(s.last_at) if s else None,
+            "analysis_count": s["count"] if s else 0,
+            "last_analysis_at": _iso(s["last_at"]) if s else None,
         })
     return result
 

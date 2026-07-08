@@ -98,6 +98,11 @@ from sqlalchemy.orm import Session
 from app import models
 
 
+def _norm_eid(value) -> str:
+    """사번 대문자 정규화 — 대소문자만 다른 사번(a477273 ↔ A477273)을 동일인으로 병합."""
+    return (value or "").strip().upper()
+
+
 def _count_new_users(db: Session, start: datetime, end: datetime, user_ids: set) -> int:
     """user_ids 중, 전체 이력상 첫 실행이 [start, end] 안에 있는 사용자 수."""
     if not user_ids:
@@ -109,7 +114,13 @@ def _count_new_users(db: Session, start: datetime, end: datetime, user_ids: set)
           .group_by(models.Analysis.employee_id)
           .all()
     )
-    return sum(1 for _, first_run in rows if start <= first_run <= end)
+    # 대소문자만 다른 사번은 동일인 → 정규화 후 최초 실행시각을 병합해 중복 집계 방지
+    first_by_user: dict = {}
+    for eid, first_run in rows:
+        key = _norm_eid(eid)
+        if key not in first_by_user or (first_run and first_run < first_by_user[key]):
+            first_by_user[key] = first_run
+    return sum(1 for first_run in first_by_user.values() if first_run and start <= first_run <= end)
 
 
 def aggregate_period(db: Session, period: str, start: datetime, end: datetime) -> dict:
@@ -145,7 +156,7 @@ def aggregate_period(db: Session, period: str, start: datetime, end: datetime) -
 
     for a, u in stats_rows:
         pname = a.program_name or "Unknown"
-        eid = a.employee_id or "unknown"
+        eid = _norm_eid(a.employee_id) or "UNKNOWN"
         dept = (u.department if u and u.department else "Unknown")
         name = (u.name if u else "Deleted User")
         ts = a.created_at
@@ -387,7 +398,7 @@ def _build_raw_sheet(wb, raw_rows):
             a.id,
             getattr(a, "project_name", "") or "",
             a.program_name or "",
-            a.employee_id or "",
+            _norm_eid(a.employee_id),
             (u.name if u else "Deleted User"),
             (u.department if u and u.department else "Unknown"),
             a.status or "",

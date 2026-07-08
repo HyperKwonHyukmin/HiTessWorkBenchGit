@@ -61,9 +61,24 @@ def login(request: schemas.LoginRequest, req: Request, db: Session = Depends(dat
     log_activity(db, "LOGIN", employee_id=employee_id, action_detail={"reason": "maintenance"}, status="failure", ip_address=ip)
     raise HTTPException(status_code=503, detail="Maintenance Mode")
 
+  # 사번 대문자 self-heal: 과거 소문자로 저장된 레코드를 대문자로 승격한다.
+  # (MySQL 콜레이션이 대소문자 무시라 로그인 매칭은 되지만, 저장값이 소문자면
+  #  세션·Analysis 레코드로 소문자가 전파돼 통계가 쪼개진다. 여기서 표준화.)
+  if user.employee_id != employee_id:
+    user.employee_id = employee_id
+
   user.login_count += 1
   user.last_login = datetime.now()
-  db.commit()
+  try:
+    db.commit()
+  except Exception:
+    # 극히 드문 케이스: 대소문자만 다른 사번 행이 별도로 존재해 대문자 승격이 unique 충돌.
+    # self-heal은 포기하되 로그인 자체는 정상 진행한다.
+    db.rollback()
+    user = db.query(models.User).filter(models.User.employee_id == employee_id).first()
+    user.login_count += 1
+    user.last_login = datetime.now()
+    db.commit()
   db.refresh(user)
 
   log_activity(db, "LOGIN", employee_id=employee_id, status="success", ip_address=ip)

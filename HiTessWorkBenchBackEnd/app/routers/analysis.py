@@ -255,8 +255,15 @@ def _files_available(record: models.Analysis) -> bool:
     return False
 
 
+def _norm_eid(value) -> str:
+    """사번을 대문자로 정규화한다.
+    대소문자만 다른 사번(a477273 ↔ A477273)을 동일인으로 병합하기 위한 표준 키."""
+    return (value or "").strip().upper()
+
+
 def _serialize_analysis(record: models.Analysis) -> dict:
     d = {c.name: getattr(record, c.name) for c in record.__table__.columns}
+    d['employee_id'] = _norm_eid(d.get('employee_id'))
     d['files_available'] = _files_available(record)
     return d
 
@@ -327,7 +334,7 @@ def _analysis_summary(query) -> dict:
 
 
 def _analysis_management_summary(query, users_by_employee_id: dict) -> Optional[dict]:
-    rows = [r for r in query.all() if not getattr(users_by_employee_id.get(r.employee_id), "is_developer", False)]
+    rows = [r for r in query.all() if not getattr(users_by_employee_id.get(_norm_eid(r.employee_id)), "is_developer", False)]
     if not rows:
         return None
 
@@ -347,7 +354,7 @@ def _analysis_management_summary(query, users_by_employee_id: dict) -> Optional[
     for row in rows:
         created_at = row.created_at.replace(tzinfo=None) if getattr(row.created_at, "tzinfo", None) else row.created_at
         program_name = row.program_name or "Unknown"
-        employee_id = row.employee_id or "unknown"
+        employee_id = _norm_eid(row.employee_id) or "UNKNOWN"
         user = users_by_employee_id.get(employee_id)
         department = user.department if user and user.department else "Unknown"
         user_name = user.name if user else "Deleted User"
@@ -456,7 +463,7 @@ def _program_usage_detail(program_name: str, rows: list, users_by_employee_id: d
 
     for row in rows:
         created_at = _naive(row.created_at) if row.created_at else None
-        employee_id = row.employee_id or "unknown"
+        employee_id = _norm_eid(row.employee_id) or "UNKNOWN"
         user = users_by_employee_id.get(employee_id)
         department = user.department if user and user.department else "Unknown"
         user_name = user.name if user else "Deleted User"
@@ -609,7 +616,7 @@ def get_all_analysis_history(
     base_q = db.query(models.Analysis).filter(models.Analysis.source != SAMPLE_SOURCE_TAG)
     base_q = _apply_analysis_filters(base_q, search=search, date_from=date_from, date_to=date_to)
     users = db.query(models.User).all()
-    users_by_employee_id = {u.employee_id: u for u in users}
+    users_by_employee_id = {_norm_eid(u.employee_id): u for u in users}
     summary = _analysis_management_summary(base_q, users_by_employee_id) if include_summary else None
     total = base_q.count()
     items = (
@@ -621,7 +628,7 @@ def get_all_analysis_history(
     serialized = []
     for item in items:
         payload = _serialize_analysis(item)
-        user = users_by_employee_id.get(item.employee_id)
+        user = users_by_employee_id.get(_norm_eid(item.employee_id))
         payload.update({
             "department": user.department if user and user.department else "Unknown",
             "userName": user.name if user else "Deleted User",
@@ -654,11 +661,11 @@ def get_program_usage_detail(
     base_q = _apply_analysis_filters(base_q, date_from=date_from, date_to=date_to)
 
     users = db.query(models.User).all()
-    users_by_employee_id = {u.employee_id: u for u in users}
+    users_by_employee_id = {_norm_eid(u.employee_id): u for u in users}
 
     rows = [
         r for r in base_q.all()
-        if not getattr(users_by_employee_id.get(r.employee_id), "is_developer", False)
+        if not getattr(users_by_employee_id.get(_norm_eid(r.employee_id)), "is_developer", False)
     ]
     return _program_usage_detail(program_name, rows, users_by_employee_id)
 
