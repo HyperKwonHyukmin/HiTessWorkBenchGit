@@ -3,7 +3,7 @@
 /// (신규) 백그라운드 해석 작업을 추적하고 플로팅 위젯을 제공합니다.
 /// (신규) Truss Assessment 페이지 이탈 시에도 상태를 유지하기 위한 글로벌 State를 추가했습니다.
 /// </summary>
-import React, { createContext, useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { UploadCloud, PenTool, SlidersHorizontal, Wrench, RefreshCw, CheckCircle, AlertCircle, X } from 'lucide-react';
 import { useNavigation } from './NavigationContext';
 import { useAuth } from './AuthContext';
@@ -233,7 +233,31 @@ const FAVORITES_KEY = 'favorites';
 const GLOBAL_JOBS_KEY = 'hitess_global_jobs';
 const GLOBAL_JOB_VISIBLE_MS = 30 * 60 * 1000;
 const GLOBAL_JOB_COLLAPSE_MS = 30 * 1000;
+const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
 const ANALYSIS_MENU_RESUME_ENTRY_KEY = 'workbench:analysis-menu-resume-entry';
+const MENU_ENTRY_MAX_AGE_MS = 5000;
+const ANALYSIS_ROUTE_MENUS = new Set(
+  ANALYSIS_DATA
+    .filter(app => app.hasPage)
+    .map(app => getAppMenuName(app.title))
+);
+const INITIAL_ASSESSMENT_PAGE_STATE = {
+  bdfFile: null,
+  nodes: {},
+  elements: [],
+  nodeTableData: [],
+  elemTableData: [],
+  logs: [],
+  detailedLogs: [],
+  isRunning: false,
+  progress: 0,
+  statusMessage: '',
+  activeTab: '3d',
+  currentJobId: null,
+  resultJsonData: null,
+  activeResultCase: null,
+  projectData: null,
+};
 
 function readLocalFavorites() {
   try {
@@ -342,22 +366,7 @@ export function DashboardProvider({ children }) {
   // =========================================================
   // [핵심 추가] Truss Assessment 페이지의 상태를 전역으로 보존
   // =========================================================
-  const [assessmentPageState, setAssessmentPageState] = useState({
-    bdfFile: null,
-    nodes: {},
-    elements: [],
-    nodeTableData: [],
-    elemTableData: [],
-    logs: [],
-    detailedLogs: [],
-    isRunning: false,
-    progress: 0,
-    statusMessage: '',
-    activeTab: '3d',
-    currentJobId: null,
-    resultJsonData: null,
-    activeResultCase: null
-  });
+  const [assessmentPageState, setAssessmentPageState] = useState(INITIAL_ASSESSMENT_PAGE_STATE);
 
   const [modelBuilderPageState, setModelBuilderPageState] = useState(null);
   const [analysisPageStates, setAnalysisPageStates] = useState({});
@@ -396,6 +405,63 @@ export function DashboardProvider({ children }) {
     isAuthenticated ? readPersistedGlobalJobs() : []
   ));
   const globalJob = globalJobs[0] || null;
+  const handledFreshEntryRef = useRef({ menu: null, at: 0 });
+
+  const resetAnalysisEntryState = useCallback((menuName) => {
+    if (!ANALYSIS_ROUTE_MENUS.has(menuName)) return;
+    const stateKey = getAppStateKey(menuName);
+    setAnalysisPageStates(prev => {
+      if (!Object.prototype.hasOwnProperty.call(prev, stateKey)) return prev;
+      const next = { ...prev };
+      delete next[stateKey];
+      return next;
+    });
+    if (menuName === 'Truss Structural Assessment') {
+      setAssessmentPageState(INITIAL_ASSESSMENT_PAGE_STATE);
+    }
+    if (menuName === 'HiTESS Model Builder') {
+      setModelBuilderPageState(null);
+    }
+    setGlobalJobs(prev => prev.filter(job => job.menu !== menuName));
+  }, []);
+
+  const isFreshNavigationResume = useCallback((menuName) => {
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem(ANALYSIS_MENU_RESUME_ENTRY_KEY) || 'null');
+      return parsed?.menu === menuName && Date.now() - Number(parsed.at || 0) <= MENU_ENTRY_MAX_AGE_MS;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleFreshEntry = (event) => {
+      const menu = event.detail?.menu;
+      if (!ANALYSIS_ROUTE_MENUS.has(menu)) return;
+      resetAnalysisEntryState(menu);
+    };
+
+    window.addEventListener('workbench:analysis-fresh-entry', handleFreshEntry);
+    return () => window.removeEventListener('workbench:analysis-fresh-entry', handleFreshEntry);
+  }, [resetAnalysisEntryState]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !ANALYSIS_ROUTE_MENUS.has(currentMenu)) return;
+    if (isFreshNavigationResume(currentMenu)) return;
+
+    const now = Date.now();
+    if (
+      handledFreshEntryRef.current.menu === currentMenu &&
+      now - handledFreshEntryRef.current.at < 250
+    ) {
+      return;
+    }
+    handledFreshEntryRef.current = { menu: currentMenu, at: now };
+
+    sessionStorage.setItem(ANALYSIS_MENU_FRESH_ENTRY_KEY, JSON.stringify({ menu: currentMenu, at: now }));
+    resetAnalysisEntryState(currentMenu);
+    window.dispatchEvent(new CustomEvent('workbench:analysis-fresh-entry', { detail: { menu: currentMenu } }));
+  }, [currentMenu, isAuthenticated, isFreshNavigationResume, resetAnalysisEntryState]);
 
   const patchGlobalJob = useCallback((jobId, patch) => {
     setGlobalJobs(prev => prev.map(job => {

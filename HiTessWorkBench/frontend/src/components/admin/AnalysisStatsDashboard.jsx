@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
-  Activity, BarChart3, Building2, CalendarDays,
+  Activity, BarChart3, Building2, CalendarDays, ChevronRight,
   Clock3, Layers, Sun, TrendingUp, Trophy, Users
 } from 'lucide-react';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell,
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
+import ProgramDetailModal from './ProgramDetailModal';
 
 const COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be123c', '#4f46e5'];
 
@@ -32,12 +33,12 @@ export function KpiCard({ label, value, sub, icon: Icon, color }) {
   );
 }
 
-function ProgramTable({ rows }) {
+function ProgramTable({ rows, onSelect }) {
   return (
     <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
         <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Layers size={16} className="text-blue-600" /> 프로그램별 사용 통계</h3>
-        <span className="text-xs text-slate-400">사용량순</span>
+        <span className="text-xs text-slate-400">행 클릭 시 상세 통계</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm whitespace-nowrap">
@@ -48,21 +49,28 @@ function ProgramTable({ rows }) {
               <th className="px-4 py-3 text-right font-bold">점유율</th>
               <th className="px-4 py-3 text-right font-bold">사용자</th>
               <th className="px-5 py-3 text-right font-bold">최근 실행</th>
+              <th className="px-3 py-3 w-8" aria-hidden="true"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((row, index) => (
-              <tr key={row.name} className="hover:bg-slate-50">
+              <tr
+                key={row.name}
+                onClick={() => onSelect(row.name)}
+                className="group cursor-pointer hover:bg-blue-50/60 transition-colors"
+                title={`${row.name} 상세 통계 보기`}
+              >
                 <td className="px-5 py-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                    <span className="font-bold text-slate-800 truncate" title={row.name}>{row.name}</span>
+                    <span className="font-bold text-slate-800 truncate group-hover:text-blue-700" title={row.name}>{row.name}</span>
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right font-black text-slate-800">{row.count}</td>
                 <td className="px-4 py-3 text-right text-slate-600">{row.share}%</td>
                 <td className="px-4 py-3 text-right text-slate-600">{row.userCount}</td>
                 <td className="px-5 py-3 text-right text-xs text-slate-500 font-mono">{row.lastRunLabel}</td>
+                <td className="px-3 py-3 text-slate-300 group-hover:text-blue-500"><ChevronRight size={16} /></td>
               </tr>
             ))}
           </tbody>
@@ -115,7 +123,8 @@ function UserTable({ rows }) {
   );
 }
 
-export default function AnalysisStatsDashboard({ stats }) {
+export default function AnalysisStatsDashboard({ stats, dateFrom, dateTo }) {
+  const [selectedProgram, setSelectedProgram] = useState(null);
   return (
     <div className="space-y-6 mb-8">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -236,8 +245,17 @@ export default function AnalysisStatsDashboard({ stats }) {
         </div>
       </div>
 
-      <ProgramTable rows={stats.programRows} />
+      <ProgramTable rows={stats.programRows} onSelect={setSelectedProgram} />
       <UserTable rows={stats.userRows} />
+
+      {selectedProgram && (
+        <ProgramDetailModal
+          programName={selectedProgram}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onClose={() => setSelectedProgram(null)}
+        />
+      )}
     </div>
   );
 }

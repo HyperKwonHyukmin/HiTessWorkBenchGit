@@ -15,6 +15,8 @@ import FeedbackState from '../ui/FeedbackState';
 import Input from '../ui/Input';
 import { staggerContainer, cardEntrance } from '../../utils/motion';
 
+const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
+
 const colorToAccent = (colorClass = '') => {
   if (colorClass.includes('cyan')) return 'cyan';
   if (colorClass.includes('violet')) return 'violet';
@@ -72,7 +74,7 @@ export default function AppCataloguePage({
   const { showToast } = useToast();
   const { setCurrentMenu } = useNavigation();
   const { favorites, toggleFavorite } = useFavorites();
-  const { setAssessmentPageState } = useAnalysisPageState();
+  const { setAssessmentPageState, clearAnalysisPageState } = useAnalysisPageState();
   const [activeCategory, setActiveCategory] = useState('All');
   const [gateApp, setGateApp] = useState(null);
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('hitess_app_view_mode') ?? 'grid');
@@ -133,11 +135,16 @@ export default function AppCataloguePage({
       showToast(`'${appTitle}' 앱은 현재 준비 중입니다.`, 'info');
       return;
     }
+    if (appMeta?.hasPage) {
+      sessionStorage.setItem(ANALYSIS_MENU_FRESH_ENTRY_KEY, JSON.stringify({ menu: menuName, at: Date.now() }));
+      window.dispatchEvent(new CustomEvent('workbench:analysis-fresh-entry', { detail: { menu: menuName } }));
+      clearAnalysisPageState?.(appMeta.title);
+    }
     if (appTitle === 'Truss Structural Assessment' && setAssessmentPageState) {
       setAssessmentPageState({});
     }
     setCurrentMenu(menuName);
-  }, [setAssessmentPageState, setCurrentMenu, showToast]);
+  }, [clearAnalysisPageState, setAssessmentPageState, setCurrentMenu, showToast]);
 
   const makeAppProps = useCallback((item) => {
     const IconComponent = item.icon;
