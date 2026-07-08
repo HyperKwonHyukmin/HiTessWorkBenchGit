@@ -62,6 +62,19 @@ const RULE_LENGTH_MODES = {
   MANUAL: 'manual',
 };
 
+const RULE_DISPLAY_LABELS = {
+  dnvgl: 'DNV',
+};
+
+const RULE_SOURCES = {
+  dnvgl: 'DNV-RU-SHIP, Ship motions and accelerations (Pt 3, Ch4, Sec3), 2023',
+  dnv: 'DNV-RU-SHIP, Ship motions and accelerations (Pt 3, Ch4, Sec3), 2023',
+  csr: 'CSR-H, Acceleration at any position (Pt 1, Ch 4, Sec 3), 2017',
+  igc: 'Guidance formula for acceleration components (4.28.2), 2014',
+  bv: 'Rules for the classification of steel ship[NR 467], Ship motion and acceleration (Pt B, Ch5, Sec3), 2017',
+  lr: 'Rules and regulations for the classification of ship, Strengthening for machinery on deck (Pt 3, Ch9, Sec9), 2020',
+};
+
 const PARTICULAR_FIELDS = [
   ['length_overall', 'LOA', 'm'],
   ['lbp', 'LBP', 'm'],
@@ -122,6 +135,22 @@ const formatResultInputValue = (key, value, ruleLengthMode) => {
   if (key === 'length' && ruleLengthMode === RULE_LENGTH_MODES.LBP) return 'LBP와 동일';
   return fmt(value, key === 'rho' ? 3 : 2);
 };
+
+const getRuleKey = (rule) => {
+  const rawKey = typeof rule === 'string'
+    ? rule
+    : rule?.key ?? rule?.rule ?? rule?.label ?? '';
+  return String(rawKey).toLowerCase();
+};
+
+const getRuleDisplayLabel = (rule) => {
+  const key = getRuleKey(rule);
+  if (RULE_DISPLAY_LABELS[key]) return RULE_DISPLAY_LABELS[key];
+  const label = typeof rule === 'string' ? rule : rule?.label;
+  return label === 'DNVGL' ? 'DNV' : label ?? key.toUpperCase();
+};
+
+const getRuleSource = (rule) => RULE_SOURCES[getRuleKey(rule)];
 
 const getRuleAdjustedXFromAp = (constants, resultData, ruleLengthMode) => {
   const lbp = Number(resultData?.ship_particulars?.values?.lbp ?? resultData?.ship_constants?.lbp ?? constants.lbp);
@@ -471,7 +500,7 @@ export default function HullAccelerationPage() {
   const activeTableIndex = tables.length > 0 ? Math.min(activeLoadingTableIndex, tables.length - 1) : 0;
   const activeTable = tables[activeTableIndex];
   const rules = resultData?.rules ?? {};
-  // 5개 선급 Rule(DNVGL/CSR/IGC/BV/LR) 결과를 모두 표시한다.
+  // 5개 선급 Rule(DNV/CSR/IGC/BV/LR) 결과를 모두 표시한다.
   const ruleRows = Object.values(rules);
   const allConditionNumbers = getConditionNumbersFromRules(rules);
   const effectiveSelectedLcNumbers = selectedLcNumbers == null ? allConditionNumbers : selectedLcNumbers;
@@ -1105,10 +1134,10 @@ export default function HullAccelerationPage() {
                       </div>
                     )}
 
-                    {/* 탭 바: 방향별 최대값(Envelope) + 선급별(DNVGL/CSR/IGC/BV/LR) */}
+                    {/* 탭 바: 방향별 최대값(Envelope) + 선급별(DNV/CSR/IGC/BV/LR) */}
                     <div className="overflow-x-auto mb-3">
                       <div className="inline-flex min-w-full gap-1 rounded-lg bg-slate-200/70 p-1">
-                        {[{ key: 'envelope', label: '방향별 최대값' }, ...ruleRows.map((r) => ({ key: r.key, label: r.key.toUpperCase() }))].map((tab) => {
+                        {[{ key: 'envelope', label: '방향별 최대값' }, ...ruleRows.map((r) => ({ key: r.key, label: getRuleDisplayLabel(r) }))].map((tab) => {
                           const isActive = tab.key === activeRuleTab;
                           return (
                             <button
@@ -1155,7 +1184,7 @@ export default function HullAccelerationPage() {
                               </div>
                               {/* 메타 정보 */}
                               <div className="pt-3 border-t border-white/60 space-y-0.5">
-                                <p className="text-[11px] font-semibold text-slate-700 truncate">{item.label ?? item.rule}</p>
+                                <p className="text-[11px] font-semibold text-slate-700 truncate">{getRuleDisplayLabel(item)}</p>
                                 <p className="text-[10px] text-slate-500 font-mono">LC {item.lc}</p>
                               </div>
                             </div>
@@ -1190,7 +1219,7 @@ export default function HullAccelerationPage() {
                           <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-2">
                             <MapPin size={13} className="text-amber-600 shrink-0" />
                             <span className="text-[11px] font-semibold text-amber-800">
-                              {rule.label} 축별 최대 가속도 발생 조건 —
+                              {getRuleDisplayLabel(rule)} 축별 최대 가속도 발생 조건 —
                               {['x', 'y', 'z'].map((axis) => (
                                 <span key={axis} className="ml-2 whitespace-nowrap">
                                   <span className="font-black">{axis.toUpperCase()}</span> LC {axisMaxima[axis].conditionNo ?? '-'}
@@ -1205,7 +1234,7 @@ export default function HullAccelerationPage() {
                               <AlertTriangle size={13} className="text-orange-500 shrink-0 mt-0.5" />
                               <span className="text-[11px] font-medium text-orange-800 leading-4">
                                 LC {rule.extra.gm_fallback_conditions.join(', ')} 는 CSR 간이 GM 공식이 비물리적(≤0)이 되어
-                                booklet의 <span className="font-bold">실제 GoM</span>으로 대체해 계산했습니다(DNVGL과 동일 방식). 해당 조건 값은 참고용으로 확인하세요.
+                                booklet의 <span className="font-bold">실제 GoM</span>으로 대체해 계산했습니다(DNV와 동일 방식). 해당 조건 값은 참고용으로 확인하세요.
                               </span>
                             </div>
                           )}
@@ -1237,7 +1266,7 @@ export default function HullAccelerationPage() {
                                   </div>
                                   {/* 메타 정보 */}
                                   <div className="pt-3 border-t border-white/60 space-y-0.5">
-                                    <p className="text-[11px] font-semibold text-slate-700 truncate">{rule.label}</p>
+                                    <p className="text-[11px] font-semibold text-slate-700 truncate">{getRuleDisplayLabel(rule)}</p>
                                     <p className="text-[10px] text-slate-500 font-mono">LC {conditionNo ?? '-'}</p>
                                   </div>
                                 </div>
@@ -1250,7 +1279,14 @@ export default function HullAccelerationPage() {
                             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                               <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-100 bg-slate-50">
                                 <Table size={13} className="text-slate-500" />
-                                <span className="text-xs font-bold text-slate-600 uppercase tracking-wide">{rule.label} · 조건(LC)별 가속도</span>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">{getRuleDisplayLabel(rule)} · 조건(LC)별 가속도</p>
+                                  {getRuleSource(rule) && (
+                                    <p className="mt-0.5 text-[10px] font-medium text-slate-500 leading-4">
+                                      {getRuleSource(rule)}
+                                    </p>
+                                  )}
+                                </div>
                                 <span className="ml-auto text-[10px] text-slate-400 font-mono">
                                   {selectedLcSet.size}/{condRows.length} conditions · m/s²
                                 </span>
@@ -1350,7 +1386,7 @@ export default function HullAccelerationPage() {
                             const maxima = getRuleAxisMaxima(rule, selectedLcSet);
                             return (
                               <tr key={rule.key} className={`border-b border-slate-100 last:border-b-0 ${ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-amber-50/40 transition-colors`}>
-                                <td className="px-5 py-2.5 font-semibold text-slate-700 whitespace-nowrap">{rule.label}</td>
+                                <td className="px-5 py-2.5 font-semibold text-slate-700 whitespace-nowrap">{getRuleDisplayLabel(rule)}</td>
                                 {['x', 'y', 'z'].map((axis) => (
                                   <td key={axis} className="px-4 py-2.5 text-right font-mono text-slate-700 whitespace-nowrap">
                                     <span className="font-semibold">{fmt(maxima[axis]?.value, 2)}</span>
