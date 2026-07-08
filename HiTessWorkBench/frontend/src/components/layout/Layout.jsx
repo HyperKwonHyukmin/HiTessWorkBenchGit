@@ -39,7 +39,7 @@ export default function Layout({
   const [serverUrlInput, setServerUrlInput] = useState(API_BASE_URL);
   const [currentServerUrl, setCurrentServerUrl] = useState(API_BASE_URL);
   const serverHealth = useServerHealth();
-  const remoteSessions = useRemoteSessions();
+  const remoteSessions = useRemoteSessions(30000, { enabled: userInfo.is_admin });
   const isServerOnline = serverHealth.isOnline;
   const { events: networkEvents, clearEvents: clearNetworkEvents } = useNetwork();
   const { recentApps, recordAppVisit } = useRecentActivity();
@@ -283,7 +283,7 @@ export default function Layout({
           </div>
 
           <div className="flex items-center gap-2 lg:gap-4 shrink-0 min-w-0">
-            {remoteSessions.hasRemoteUser && (
+            {userInfo.is_admin && remoteSessions.hasRemoteUser && (
               <button
                 type="button"
                 onClick={remoteSessions.checkNow}

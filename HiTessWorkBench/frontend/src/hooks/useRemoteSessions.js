@@ -3,7 +3,8 @@ import axios from 'axios';
 import { API_BASE_URL } from '../config';
 import { getAuthHeaders } from '../utils/auth';
 
-export function useRemoteSessions(intervalMs = 30000) {
+export function useRemoteSessions(intervalMs = 30000, options = {}) {
+  const enabled = options.enabled ?? true;
   const [state, setState] = useState({
     isLoading: true,
     hasRemoteUser: false,
@@ -19,6 +20,7 @@ export function useRemoteSessions(intervalMs = 30000) {
   const disposedRef = useRef(false);
 
   const checkNow = useCallback(async () => {
+    if (!enabled) return;
     try {
       const res = await axios.get(`${API_BASE_URL}/api/system/remote-sessions`, {
         headers: getAuthHeaders(),
@@ -44,17 +46,31 @@ export function useRemoteSessions(intervalMs = 30000) {
         error: err?.response?.data?.detail || '원격 접속 상태 확인 실패',
       }));
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     disposedRef.current = false;
+    if (!enabled) {
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        hasRemoteUser: false,
+        hasActiveRemoteUser: false,
+        remoteSessions: [],
+        allSessions: [],
+        error: '',
+      }));
+      return () => {
+        disposedRef.current = true;
+      };
+    }
     checkNow();
     timerRef.current = setInterval(checkNow, intervalMs);
     return () => {
       disposedRef.current = true;
       clearInterval(timerRef.current);
     };
-  }, [checkNow, intervalMs]);
+  }, [checkNow, enabled, intervalMs]);
 
   return { ...state, checkNow };
 }
