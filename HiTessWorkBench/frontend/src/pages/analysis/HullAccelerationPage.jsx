@@ -13,7 +13,7 @@ import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import PageBanner from '../../components/ui/PageBanner';
 import { buildFormData } from '../../utils/fileHelper';
-import { getRuleAxisMaxima } from '../../utils/hullAcceleration';
+import { buildFilteredEnvelope, getConditionNumbersFromRules, getRuleAxisMaxima } from '../../utils/hullAcceleration';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -57,6 +57,11 @@ const USER_CONSTANT_FIELDS = [
   ['rho', 'rho', 'ton/m³'],
 ];
 
+const RULE_LENGTH_MODES = {
+  LBP: 'lbp',
+  MANUAL: 'manual',
+};
+
 const PARTICULAR_FIELDS = [
   ['length_overall', 'LOA', 'm'],
   ['lbp', 'LBP', 'm'],
@@ -72,8 +77,16 @@ const PARTICULAR_FIELDS = [
 const RESULT_INPUT_FIELDS = [
   ['speed', 'Vs', 'm/s'],
   ['bilge_keel', 'Bilge keel', '-'],
+  ['length', 'Rule Length', 'm'],
   ['gravity', 'grav', 'm/s²'],
   ['rho', 'rho', 'ton/m³'],
+];
+
+const RESULT_POSITION_FIELDS = [
+  ['x_from_ap', 'X from AP', 'm'],
+  ['x_from_ap_rule', 'X from AP (Rule)', 'm'],
+  ['y_from_cl', 'Y from CL', 'm'],
+  ['z_from_bl', 'Z from BL', 'm'],
 ];
 
 const POSITION_FIELD_MAP = Object.fromEntries(POSITION_FIELDS.map(([key, label, unit]) => [key, { label, unit }]));
@@ -104,6 +117,16 @@ const convertSpeedValue = (value, fromUnit, toUnit) => {
 };
 
 const fmt = (value, digits = 3) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '-';
+
+const getRuleAdjustedXFromAp = (constants, resultData, ruleLengthMode) => {
+  const lbp = Number(resultData?.ship_particulars?.values?.lbp ?? resultData?.ship_constants?.lbp ?? constants.lbp);
+  const length = ruleLengthMode === RULE_LENGTH_MODES.LBP
+    ? lbp
+    : Number(constants.length);
+  const xFromAp = Number(constants.x_from_ap);
+  if (!Number.isFinite(xFromAp) || !Number.isFinite(lbp) || !Number.isFinite(length)) return undefined;
+  return xFromAp - (lbp - length);
+};
 
 const getConditionHeaders = (table) => (table?.headers ?? [])
   .slice(1)
@@ -139,6 +162,8 @@ export default function HullAccelerationPage() {
   const [resultInfo, setResultInfo] = useState(savedPageState.resultInfo ?? null);
   const [constants, setConstants] = useState(savedPageState.constants ?? DEFAULT_CONSTANTS);
   const [speedUnit, setSpeedUnit] = useState(savedPageState.speedUnit ?? 'knot');
+  const [ruleLengthMode, setRuleLengthMode] = useState(savedPageState.ruleLengthMode ?? RULE_LENGTH_MODES.LBP);
+  const [selectedLcNumbers, setSelectedLcNumbers] = useState(savedPageState.selectedLcNumbers ?? null);
   const [particularsImageUrl, setParticularsImageUrl] = useState(null);
   const [isLogOpen, setIsLogOpen] = useState(savedPageState.isLogOpen ?? false);
   const [activeLoadingTableIndex, setActiveLoadingTableIndex] = useState(savedPageState.activeLoadingTableIndex ?? 0);
@@ -191,6 +216,7 @@ export default function HullAccelerationPage() {
         setResultData(parsed);
         setActiveLoadingTableIndex(0);
         setActiveRuleTab('envelope');
+        setSelectedLcNumbers(getConditionNumbersFromRules(parsed.rules));
         if (parsed.cb_missing) {
           // PDF 에 Cb 가 없어 계산이 보류됨 → 결과창의 수동 입력 프롬프트로 재계산 유도.
           setManualCb((prev) => (prev !== '' ? prev : String(DEFAULT_CONSTANTS.scantling_cb)));
@@ -216,10 +242,12 @@ export default function HullAccelerationPage() {
       resultInfo,
       constants,
       speedUnit,
+      ruleLengthMode,
+      selectedLcNumbers,
       isLogOpen,
       activeLoadingTableIndex,
     });
-  }, [pdfFile, resultData, resultInfo, constants, speedUnit, isLogOpen, activeLoadingTableIndex]);
+  }, [pdfFile, resultData, resultInfo, constants, speedUnit, ruleLengthMode, selectedLcNumbers, isLogOpen, activeLoadingTableIndex]);
 
   // 입력/결과/작업 상태는 대시보드 이탈 후 글로벌 작업 카드로 복귀할 때 필요하므로
   // 언마운트 시 자동 삭제하지 않는다. 사용자가 Reset을 누를 때만 clearAnalysisPageState를 호출한다.
@@ -265,6 +293,7 @@ export default function HullAccelerationPage() {
     setResultData(null);
     setResultInfo(null);
     setActiveLoadingTableIndex(0);
+    setSelectedLcNumbers(null);
     setManualCb(''); // 새 PDF 는 Cb 자동 검출부터 다시 시도
     setLogs([{ time: new Date().toLocaleTimeString(), message: `[FILE] ${file.name} 선택됨.`, type: 'info' }]);
   };
@@ -281,19 +310,39 @@ export default function HullAccelerationPage() {
   const buildConstantsPayload = () => {
     const payload = toPayloadConstants(constants);
     if (speedUnit === 'knot') payload.speed = Number(constants.speed) * KNOT_TO_MPS;
+    payload.rule_length_mode = ruleLengthMode;
+    if (ruleLengthMode === RULE_LENGTH_MODES.MANUAL) {
+      const manualRuleLength = Number(constants.length);
+      if (Number.isFinite(manualRuleLength) && manualRuleLength > 0) {
+        payload.manual_rule_length = manualRuleLength;
+      }
+    }
     const n = Number(manualCb);
     if (manualCb !== '' && Number.isFinite(n)) payload.manual_scantling_cb = n;
     return payload;
   };
 
+  const validateCalculationInputs = () => {
+    if (ruleLengthMode === RULE_LENGTH_MODES.MANUAL) {
+      const manualRuleLength = Number(constants.length);
+      if (!Number.isFinite(manualRuleLength) || manualRuleLength <= 0) {
+        showToast('Rule Length 직접 입력값을 0보다 큰 실수로 입력하세요.', 'warning');
+        return false;
+      }
+    }
+    return true;
+  };
+
   const runExtraction = async () => {
     if (!pdfFile || isRunning) return;
+    if (!validateCalculationInputs()) return;
     setIsRunning(true);
     setProgress(0);
     setStatusMessage('서버 요청 중...');
     setResultData(null);
     setResultInfo(null);
     setActiveLoadingTableIndex(0);
+    setSelectedLcNumbers(null);
     setLogs([]);
 
     const formData = buildFormData({
@@ -316,6 +365,7 @@ export default function HullAccelerationPage() {
   // 업로드 없이 서버 내장 샘플 PDF 로 바로 실행한다. 현재 입력된 상수/위치(X·Y·Z)를 그대로 사용.
   const runSample = async () => {
     if (isRunning) return;
+    if (!validateCalculationInputs()) return;
     setIsRunning(true);
     setProgress(0);
     setStatusMessage('샘플 파일 준비 중...');
@@ -323,6 +373,7 @@ export default function HullAccelerationPage() {
     setResultData(null);
     setResultInfo(null);
     setActiveLoadingTableIndex(0);
+    setSelectedLcNumbers(null);
     setLogs([{ time: new Date().toLocaleTimeString(), message: '[SAMPLE] 내장 샘플 PDF로 실행합니다.', type: 'info' }]);
 
     const formData = buildFormData({
@@ -383,6 +434,8 @@ export default function HullAccelerationPage() {
     setActiveLoadingTableIndex(0);
     setConstants(DEFAULT_CONSTANTS);
     setSpeedUnit('knot');
+    setRuleLengthMode(RULE_LENGTH_MODES.LBP);
+    setSelectedLcNumbers(null);
     setManualCb('');
     setIsDragOver(false);
     if (fileInputRef.current) fileInputRef.current.value = ''; // 같은 파일 재선택 허용
@@ -412,10 +465,31 @@ export default function HullAccelerationPage() {
   const tables = (resultData?.tables ?? []).filter((table) => !hasBweText(table));
   const activeTableIndex = tables.length > 0 ? Math.min(activeLoadingTableIndex, tables.length - 1) : 0;
   const activeTable = tables[activeTableIndex];
-  const envelope = resultData?.envelope;
   const rules = resultData?.rules ?? {};
   // 5개 선급 Rule(DNVGL/CSR/IGC/BV/LR) 결과를 모두 표시한다.
   const ruleRows = Object.values(rules);
+  const allConditionNumbers = getConditionNumbersFromRules(rules);
+  const effectiveSelectedLcNumbers = selectedLcNumbers == null ? allConditionNumbers : selectedLcNumbers;
+  const selectedLcSet = new Set(effectiveSelectedLcNumbers.map(Number));
+  const gravityValue = Number(resultData?.ship_constants?.gravity) || 9.81;
+  const liveRuleAdjustedXFromAp = getRuleAdjustedXFromAp(constants, resultData, ruleLengthMode);
+  const envelope = ruleRows.length > 0
+    ? buildFilteredEnvelope(rules, selectedLcSet, gravityValue)
+    : resultData?.envelope;
+
+  const toggleLcSelection = (conditionNo) => {
+    const current = new Set(effectiveSelectedLcNumbers.map(Number));
+    if (current.has(conditionNo)) {
+      current.delete(conditionNo);
+    } else {
+      current.add(conditionNo);
+    }
+    setSelectedLcNumbers(Array.from(current).sort((a, b) => a - b));
+  };
+
+  const setAllLcSelection = (checked) => {
+    setSelectedLcNumbers(checked ? allConditionNumbers : []);
+  };
 
   // 단계 인디케이터 상태 계산
   const step1Done = !!pdfFile;
@@ -590,6 +664,41 @@ export default function HullAccelerationPage() {
                       <option value={0}>0: 없음</option>
                     </select>
                   </label>
+                  <div className="col-span-2 grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-semibold text-slate-600">Rule Length</span>
+                      </div>
+                      <select
+                        value={ruleLengthMode}
+                        onChange={(e) => {
+                          const nextMode = e.target.value;
+                          setRuleLengthMode(nextMode);
+                          if (nextMode === RULE_LENGTH_MODES.LBP) {
+                            setConstants((prev) => ({ ...prev, length: prev.lbp }));
+                          }
+                        }}
+                        className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400"
+                      >
+                        <option value={RULE_LENGTH_MODES.LBP}>LBP와 동일</option>
+                        <option value={RULE_LENGTH_MODES.MANUAL}>직접 입력</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-semibold text-slate-600">L</span>
+                        <span className="text-[10px] text-slate-400 font-mono">m</span>
+                      </div>
+                      <input
+                        type="number"
+                        step="any"
+                        value={constants.length}
+                        disabled={ruleLengthMode !== RULE_LENGTH_MODES.MANUAL}
+                        onChange={(e) => setConstants((prev) => ({ ...prev, length: e.target.value }))}
+                        className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 focus:bg-white transition-colors disabled:bg-slate-100 disabled:text-slate-400"
+                      />
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -602,19 +711,37 @@ export default function HullAccelerationPage() {
                   {POSITION_FIELDS.map(([key]) => {
                     const { label, unit } = POSITION_FIELD_MAP[key];
                     return (
-                      <label key={key} className="block">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[11px] font-semibold text-slate-600">{label}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">{unit}</span>
-                        </div>
-                        <input
-                          type="number"
-                          step="any"
-                          value={constants[key]}
-                          onChange={(e) => setConstants((prev) => ({ ...prev, [key]: e.target.value }))}
-                          className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 focus:bg-white transition-colors"
-                        />
-                      </label>
+                      <React.Fragment key={key}>
+                        <label className="block">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-semibold text-slate-600">{label}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">{unit}</span>
+                          </div>
+                          <input
+                            type="number"
+                            step="any"
+                            value={constants[key]}
+                            onChange={(e) => setConstants((prev) => ({ ...prev, [key]: e.target.value }))}
+                            className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 focus:bg-white transition-colors"
+                          />
+                        </label>
+                        {key === 'x_from_ap' && (
+                          <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[11px] font-semibold text-blue-700">X from AP (Rule)</span>
+                              <span className="text-[10px] text-blue-400 font-mono">m</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-mono font-bold text-slate-800">
+                                {fmt(liveRuleAdjustedXFromAp, 3)}
+                              </span>
+                              <span className="text-[9px] text-blue-500 font-mono truncate">
+                                X - (LBP - L)
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </div>
@@ -873,6 +1000,22 @@ export default function HullAccelerationPage() {
                             </p>
                           </div>
                         ))}
+                        {RESULT_POSITION_FIELDS.map(([key, label, unit]) => {
+                          const value = key === 'x_from_ap_rule'
+                            ? liveRuleAdjustedXFromAp
+                            : resultData.position?.[key] ?? resultData.ship_constants?.[key];
+                          return (
+                            <div key={key} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wide truncate">{label}</span>
+                                <span className="text-[10px] text-blue-300 font-mono">{unit}</span>
+                              </div>
+                              <p className="text-sm font-bold font-mono text-slate-700">
+                                {fmt(value, 3)}
+                              </p>
+                            </div>
+                          );
+                        })}
                       </div>
                       <div className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden min-h-[180px] flex items-center justify-center">
                         {particularsImageUrl ? (
@@ -897,7 +1040,60 @@ export default function HullAccelerationPage() {
                     <div className="flex items-center gap-2 mb-3">
                       <Activity size={14} className="text-amber-600" />
                       <span className="text-xs font-bold text-slate-700 uppercase tracking-widest">선체 가속도 최대값</span>
+                      <span className="ml-auto text-[10px] font-mono text-slate-400">
+                        {selectedLcSet.size}/{allConditionNumbers.length} LC selected
+                      </span>
                     </div>
+
+                    {allConditionNumbers.length > 0 && (
+                      <div className="mb-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                        <div className="flex items-center gap-2 overflow-x-auto">
+                          <label className="inline-flex items-center gap-1.5 pr-2 border-r border-slate-200 shrink-0">
+                            <input
+                              type="checkbox"
+                              checked={selectedLcSet.size === allConditionNumbers.length}
+                              onChange={(e) => setAllLcSelection(e.target.checked)}
+                              className="h-3.5 w-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-400"
+                            />
+                            <span className="text-[11px] font-bold text-slate-600 whitespace-nowrap">전체 LC</span>
+                          </label>
+                          <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setAllLcSelection(true)}
+                              className="rounded px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-white hover:text-amber-700 transition-colors"
+                            >
+                              모두 선택
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAllLcSelection(false)}
+                              className="rounded px-2 py-0.5 text-[10px] font-bold text-slate-500 hover:bg-white hover:text-red-600 transition-colors"
+                            >
+                              모두 해제
+                            </button>
+                          </div>
+                          {allConditionNumbers.map((conditionNo) => (
+                            <label
+                              key={conditionNo}
+                              className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 shrink-0 transition-colors ${
+                                selectedLcSet.has(conditionNo)
+                                  ? 'border-amber-200 bg-amber-50 text-amber-800'
+                                  : 'border-slate-200 bg-slate-50 text-slate-400'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedLcSet.has(conditionNo)}
+                                onChange={() => toggleLcSelection(conditionNo)}
+                                className="h-3 w-3 rounded border-slate-300 text-amber-600 focus:ring-amber-400"
+                              />
+                              <span className="text-[10px] font-bold font-mono whitespace-nowrap">LC {conditionNo}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* 탭 바: 방향별 최대값(Envelope) + 선급별(DNVGL/CSR/IGC/BV/LR) */}
                     <div className="overflow-x-auto mb-3">
@@ -971,7 +1167,7 @@ export default function HullAccelerationPage() {
                         });
                       });
                       const condRows = Object.values(byCond).sort((a, b) => a.condition_no - b.condition_no);
-                      const axisMaxima = getRuleAxisMaxima(rule);
+                      const axisMaxima = getRuleAxisMaxima(rule, selectedLcSet);
                       const maxConditionNos = new Set(
                         Object.values(axisMaxima)
                           .map(({ conditionNo }) => conditionNo)
@@ -1045,7 +1241,9 @@ export default function HullAccelerationPage() {
                               <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-100 bg-slate-50">
                                 <Table size={13} className="text-slate-500" />
                                 <span className="text-xs font-bold text-slate-600 uppercase tracking-wide">{rule.label} · 조건(LC)별 가속도</span>
-                                <span className="ml-auto text-[10px] text-slate-400 font-mono">{condRows.length} conditions · m/s²</span>
+                                <span className="ml-auto text-[10px] text-slate-400 font-mono">
+                                  {selectedLcSet.size}/{condRows.length} conditions · m/s²
+                                </span>
                               </div>
                               <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
                                 <table className="w-full text-xs">
@@ -1075,12 +1273,20 @@ export default function HullAccelerationPage() {
                                           }`}
                                         >
                                           <td className="px-5 py-2 font-semibold text-slate-700 whitespace-nowrap">
-                                            {row.condition_no}
+                                            <label className="inline-flex items-center gap-2">
+                                              <input
+                                                type="checkbox"
+                                                checked={selectedLcSet.has(Number(row.condition_no))}
+                                                onChange={() => toggleLcSelection(Number(row.condition_no))}
+                                                className="h-3.5 w-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-400"
+                                              />
+                                              <span>{row.condition_no}</span>
+                                            </label>
                                             {isMaxRow && <span className="ml-1.5 text-[9px] font-bold text-amber-600 align-middle">◀ 축 최대</span>}
                                           </td>
                                           {['x', 'y', 'z'].map((axis) => {
                                             const ac = AXIS_CONFIG[axis];
-                                            const isAxisMax = row.condition_no === rule[axis]?.max_lc;
+                                            const isAxisMax = Number(row.condition_no) === Number(axisMaxima[axis]?.conditionNo);
                                             return (
                                               <td
                                                 key={axis}
@@ -1130,18 +1336,21 @@ export default function HullAccelerationPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {ruleRows.map((rule, ri) => (
-                            <tr key={rule.key} className={`border-b border-slate-100 last:border-b-0 ${ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-amber-50/40 transition-colors`}>
-                              <td className="px-5 py-2.5 font-semibold text-slate-700 whitespace-nowrap">{rule.label}</td>
-                              {['x', 'y', 'z'].map((axis) => (
-                                <td key={axis} className="px-4 py-2.5 text-right font-mono text-slate-700 whitespace-nowrap">
-                                  <span className="font-semibold">{fmt(rule[axis]?.max, 2)}</span>
-                                  <span className="text-slate-300 mx-1.5">/</span>
-                                  <span className="text-slate-400 text-[11px]">{rule[axis]?.max_lc}</span>
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
+                          {ruleRows.map((rule, ri) => {
+                            const maxima = getRuleAxisMaxima(rule, selectedLcSet);
+                            return (
+                              <tr key={rule.key} className={`border-b border-slate-100 last:border-b-0 ${ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-amber-50/40 transition-colors`}>
+                                <td className="px-5 py-2.5 font-semibold text-slate-700 whitespace-nowrap">{rule.label}</td>
+                                {['x', 'y', 'z'].map((axis) => (
+                                  <td key={axis} className="px-4 py-2.5 text-right font-mono text-slate-700 whitespace-nowrap">
+                                    <span className="font-semibold">{fmt(maxima[axis]?.value, 2)}</span>
+                                    <span className="text-slate-300 mx-1.5">/</span>
+                                    <span className="text-slate-400 text-[11px]">{maxima[axis]?.conditionNo}</span>
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
