@@ -118,6 +118,11 @@ const convertSpeedValue = (value, fromUnit, toUnit) => {
 
 const fmt = (value, digits = 3) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '-';
 
+const formatResultInputValue = (key, value, ruleLengthMode) => {
+  if (key === 'length' && ruleLengthMode === RULE_LENGTH_MODES.LBP) return 'LBP와 동일';
+  return fmt(value, key === 'rho' ? 3 : 2);
+};
+
 const getRuleAdjustedXFromAp = (constants, resultData, ruleLengthMode) => {
   const lbp = Number(resultData?.ship_particulars?.values?.lbp ?? resultData?.ship_constants?.lbp ?? constants.lbp);
   const length = ruleLengthMode === RULE_LENGTH_MODES.LBP
@@ -689,14 +694,19 @@ export default function HullAccelerationPage() {
                         <span className="text-[11px] font-semibold text-slate-600">L</span>
                         <span className="text-[10px] text-slate-400 font-mono">m</span>
                       </div>
-                      <input
-                        type="number"
-                        step="any"
-                        value={constants.length}
-                        disabled={ruleLengthMode !== RULE_LENGTH_MODES.MANUAL}
-                        onChange={(e) => setConstants((prev) => ({ ...prev, length: e.target.value }))}
-                        className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 focus:bg-white transition-colors disabled:bg-slate-100 disabled:text-slate-400"
-                      />
+                      {ruleLengthMode === RULE_LENGTH_MODES.LBP ? (
+                        <div className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-600 flex items-center">
+                          LBP와 동일
+                        </div>
+                      ) : (
+                        <input
+                          type="number"
+                          step="any"
+                          value={constants.length}
+                          onChange={(e) => setConstants((prev) => ({ ...prev, length: e.target.value }))}
+                          className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 focus:bg-white transition-colors"
+                        />
+                      )}
                     </label>
                   </div>
                 </div>
@@ -996,7 +1006,7 @@ export default function HullAccelerationPage() {
                               <span className="text-[10px] text-amber-300 font-mono">{unit}</span>
                             </div>
                             <p className="text-sm font-bold font-mono text-slate-700">
-                              {fmt(resultData.ship_constants?.[key], key === 'rho' ? 3 : 2)}
+                              {formatResultInputValue(key, resultData.ship_constants?.[key], ruleLengthMode)}
                             </p>
                           </div>
                         ))}
