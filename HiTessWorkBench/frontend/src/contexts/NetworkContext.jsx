@@ -52,8 +52,14 @@ export function NetworkProvider({ children }) {
         if (error?.response?.status === 401) {
           return Promise.reject(error);
         }
-        const { severity, title } = classifyAxiosError(error);
         const config = error?.config || {};
+        // 원격 세션 폴링(/api/system/remote-sessions)은 무거운 Windows 조회라 느리거나
+        // 순간 실패가 잦다. 이 실패를 '네트워크 연결 실패/요청 시간 초과' 진단 이벤트로
+        // 기록하면 서버는 멀쩡한데 네트워크가 끊긴 것처럼 오탐이 뜬다(배지는 훅이 자체 처리) → 제외.
+        if (String(config.url || '').includes('/api/system/remote-sessions')) {
+          return Promise.reject(error);
+        }
+        const { severity, title } = classifyAxiosError(error);
         recordIssue({
           severity,
           title,

@@ -22,6 +22,16 @@ _IP_LOOKUP_TTL = 45.0
 _ip_lookup_lock = threading.Lock()
 _ip_lookup_cache = {"ts": 0.0, "data": None}
 
+# 보안 로그(4624) IP 조회는 서버에서 매우 무겁고 관리자 권한이 필요하다.
+# 필요 시 환경변수로 끌 수 있게 옵션화한다(기본 ON — 1149/TCP 3389 조회는 항상 수행).
+_SECURITY_LOG_LOOKUP_ENABLED = (
+    os.environ.get("REMOTE_DISABLE_SECURITY_LOG_LOOKUP", "").strip().lower()
+    not in {"1", "true", "yes", "on"}
+)
+
+# CREATE_NO_WINDOW: 백그라운드 subprocess 실행 시 콘솔 창이 깜빡이지 않게 한다(비-Windows 는 0).
+_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 
 def parse_query_user_output(output: str):
     """Parse `query user` / `quser` output into session dictionaries."""
@@ -173,25 +183,76 @@ def load_ip_owner_map(path=IP_OWNER_LIST_PATH):
         return {}
 
 
-def _run_command(command, timeout=5):
-    result = subprocess.run(
-        command,
-        capture_output=True,
+def _kill_process_tree(proc):
+    """자식(손자) 프로세스까지 포함해 프로세스 트리 전체를 강제 종료한다.
+
+    Windows 에서는 taskkill /T 로 손자 powershell 까지 죽여야 stdout 파이프가 닫혀
+    communicate() 가 매달리지 않는다. proc.kill()(TerminateProcess) 은 직계 자식만 죽인다.
+    """
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True,
+                timeout=5,
+                creationflags=_CREATE_NO_WINDOW,
+            )
+            return
+        except Exception:
+            pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+
+
+def _run_command(args, timeout=5):
+    """명령을 실행하고 stdout 을 반환한다. (Windows subprocess timeout 매달림 방지)
+
+    subprocess.run(shell=True, timeout=...) 은 Windows 에서 timeout 시 래퍼 cmd.exe 만
+    죽이고 자식 powershell 이 stdout 파이프를 물고 살아남아, per-call timeout 이 실제
+    벽시계 시간을 못 끊고 호출이 20초+ 매달린다(→ 프론트 axios 20s timeout 초과).
+    여기서는 shell 없이 Popen 으로 직접 띄우고, timeout 시 taskkill /T 로 프로세스 트리
+    전체를 확실히 종료해 per-call timeout 을 실효화한다. args 는 리스트로 전달한다.
+    """
+    proc = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=timeout,
-        shell=True,
         errors="replace",
+        creationflags=_CREATE_NO_WINDOW,
     )
-    if result.returncode != 0:
-        raise RuntimeError((result.stderr or result.stdout or "command failed").strip())
-    return result.stdout
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_tree(proc)
+        # 트리 종료 후 파이프를 짧게 회수(닫힌 파이프라 즉시 반환). 그래도 안 끝나면 마지막 kill.
+        try:
+            proc.communicate(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        raise
+    if proc.returncode != 0:
+        raise RuntimeError((stderr or stdout or "command failed").strip())
+    return stdout
+
+
+def _run_powershell(script, timeout):
+    """PowerShell 스크립트를 shell 없이 직접 실행한다(cmd.exe 래퍼 제거 → timeout 실효화)."""
+    return _run_command(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        timeout=timeout,
+    )
 
 
 def _query_windows_sessions():
     try:
-        output = _run_command("query user", timeout=5)
+        output = _run_command(["query", "user"], timeout=5)
     except Exception:
-        output = _run_command("quser", timeout=5)
+        output = _run_command(["quser"], timeout=5)
     return parse_query_user_output(output)
 
 
@@ -212,10 +273,7 @@ def _query_recent_rdp_ips(days=1):
         "TimeCreated=$event.TimeCreated.ToString('s')} } }; "
         "$rows | ConvertTo-Json -Compress"
     )
-    output = _run_command(
-        f'powershell -NoProfile -ExecutionPolicy Bypass -Command "{script}"',
-        timeout=8,
-    )
+    output = _run_powershell(script, timeout=8)
     return parse_rdp_logon_events(output)
 
 
@@ -238,10 +296,7 @@ def _query_terminal_services_rdp_ips(days=3):
         "TimeCreated=$event.TimeCreated.ToString('s')} } }; "
         "$rows | ConvertTo-Json -Compress"
     )
-    output = _run_command(
-        f'powershell -NoProfile -ExecutionPolicy Bypass -Command "{script}"',
-        timeout=8,
-    )
+    output = _run_powershell(script, timeout=8)
     return parse_terminal_services_events(output)
 
 
@@ -253,10 +308,7 @@ def _query_active_rdp_client_ips():
         "Select-Object RemoteAddress; "
         "$rows | ConvertTo-Json -Compress"
     )
-    output = _run_command(
-        f'powershell -NoProfile -ExecutionPolicy Bypass -Command "{script}"',
-        timeout=5,
-    )
+    output = _run_powershell(script, timeout=5)
     return parse_rdp_client_ip_rows(output)
 
 
@@ -280,14 +332,16 @@ def _gather_ip_lookups(force=False):
         except Exception as exc:
             return key, None, f"{key}: {exc}"
 
-    # IP 조회 3종(4624/1149/3389)은 서로 독립적이라 병렬로 실행한다(합산 → 최댓값).
+    # IP 조회(4624/1149/3389)는 서로 독립적이라 병렬로 실행한다(합산 → 최댓값).
+    # 4624(보안 로그)는 무거워 옵션(_SECURITY_LOG_LOOKUP_ENABLED)으로 켜고 끈다.
     results = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = [
-            executor.submit(_safe_lookup, "security_4624", _query_recent_rdp_ips),
             executor.submit(_safe_lookup, "terminalservices_1149", _query_terminal_services_rdp_ips),
             executor.submit(_safe_lookup, "tcp_3389", _query_active_rdp_client_ips),
         ]
+        if _SECURITY_LOG_LOOKUP_ENABLED:
+            futures.append(executor.submit(_safe_lookup, "security_4624", _query_recent_rdp_ips))
         for future in concurrent.futures.as_completed(futures):
             key, value, err = future.result()
             if err:
