@@ -64,12 +64,20 @@ export default function Layout({
   };
   const statusClass = serverStatusClasses[serverHealth.level] || serverStatusClasses.offline;
   const remoteSessionCount = remoteSessions.remoteSessions.length;
+  const primaryRemoteSession = remoteSessions.remoteSessions[0] || null;
+  const primaryRemoteLabel = primaryRemoteSession?.display_name
+    ? `${primaryRemoteSession.display_name} 사용중`
+    : (remoteSessions.hasActiveRemoteUser ? '원격 사용중' : '원격 세션 있음');
   const remoteSessionSummary = remoteSessions.remoteSessions
     .map(session => {
       const ip = session.ip_address ? ` / ${session.ip_address}` : '';
-      return `${session.username}${ip} (${session.state})`;
+      const owner = session.ip_owner ? `${session.ip_owner} ` : '';
+      return `${owner}${session.username}${ip} (${session.state})`;
     })
     .join('\n');
+  const activeRdpIpSummary = remoteSessions.activeRdpClientIps?.length
+    ? `\n현재 RDP IP: ${remoteSessions.activeRdpClientIps.join(', ')}`
+    : '';
 
   // 검색
   const [searchTerm, setSearchTerm] = useState('');
@@ -292,17 +300,17 @@ export default function Layout({
                     ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
                     : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
                 }`}
-                title={`서버 원격 접속 중\n${remoteSessionSummary || '세션 정보를 확인 중입니다.'}\nIP 조회: ${remoteSessions.ipLookupStatus || 'unknown'}`}
+                title={`서버 원격 접속 중\n${remoteSessionSummary || '세션 정보를 확인 중입니다.'}${activeRdpIpSummary}\nIP 조회: ${remoteSessions.ipLookupStatus || 'unknown'}`}
               >
                 <Monitor size={15} className="shrink-0" />
-                <span className="hidden sm:inline truncate">
-                  {remoteSessions.hasActiveRemoteUser ? '원격 접속 중' : '원격 세션 있음'}
-                </span>
-                <span className={`rounded-full px-1.5 text-[10px] leading-4 text-white ${
-                  remoteSessions.hasActiveRemoteUser ? 'bg-amber-600' : 'bg-slate-500'
-                }`}>
-                  {remoteSessionCount}
-                </span>
+                <span className="hidden sm:inline truncate">{primaryRemoteLabel}</span>
+                {remoteSessionCount > 1 && (
+                  <span className={`rounded-full px-1.5 text-[10px] leading-4 text-white ${
+                    remoteSessions.hasActiveRemoteUser ? 'bg-amber-600' : 'bg-slate-500'
+                  }`}>
+                    {remoteSessionCount}
+                  </span>
+                )}
               </button>
             )}
             <button

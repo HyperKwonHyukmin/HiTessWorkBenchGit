@@ -11,6 +11,8 @@ export function useRemoteSessions(intervalMs = 30000, options = {}) {
     hasActiveRemoteUser: false,
     remoteSessions: [],
     allSessions: [],
+    activeRdpClientIps: [],
+    activeRdpClients: [],
     supported: true,
     checkedAt: null,
     ipLookupStatus: '',
@@ -33,6 +35,8 @@ export function useRemoteSessions(intervalMs = 30000, options = {}) {
         hasActiveRemoteUser: !!res.data?.has_active_remote_user,
         remoteSessions: res.data?.remote_sessions || [],
         allSessions: res.data?.all_sessions || [],
+        activeRdpClientIps: res.data?.active_rdp_client_ips || [],
+        activeRdpClients: res.data?.active_rdp_clients || [],
         supported: res.data?.supported !== false,
         checkedAt: res.data?.checked_at || null,
         ipLookupStatus: res.data?.ip_lookup_status || '',
@@ -58,6 +62,8 @@ export function useRemoteSessions(intervalMs = 30000, options = {}) {
         hasActiveRemoteUser: false,
         remoteSessions: [],
         allSessions: [],
+        activeRdpClientIps: [],
+        activeRdpClients: [],
         error: '',
       }));
       return () => {

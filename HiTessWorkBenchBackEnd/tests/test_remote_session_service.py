@@ -1,4 +1,10 @@
-from app.services.remote_session_service import parse_query_user_output, parse_rdp_logon_events
+from app.services.remote_session_service import (
+    parse_ip_owner_list,
+    parse_query_user_output,
+    parse_rdp_client_ip_rows,
+    parse_rdp_logon_events,
+    parse_terminal_services_events,
+)
 
 
 def test_parse_query_user_output_with_remote_and_console_sessions():
@@ -34,4 +40,36 @@ def test_parse_rdp_logon_events_uses_latest_event_per_user():
             "ip_address": "10.0.0.15",
             "ip_logon_time": "2026-07-08T09:12:00",
         }
+    }
+
+
+def test_parse_terminal_services_events_maps_user_to_ip():
+    output = '{"Username":"kim","IpAddress":"10.0.0.16","TimeCreated":"2026-07-08T09:13:00"}'
+
+    events = parse_terminal_services_events(output)
+
+    assert events["kim"]["ip_address"] == "10.0.0.16"
+
+
+def test_parse_rdp_client_ip_rows_deduplicates_active_connections():
+    output = """
+[
+  {"RemoteAddress":"10.0.0.17"},
+  {"RemoteAddress":"10.0.0.17"},
+  {"RemoteAddress":"127.0.0.1"}
+]
+"""
+
+    assert parse_rdp_client_ip_rows(output) == ["10.0.0.17"]
+
+
+def test_parse_ip_owner_list_supports_colon_format():
+    text = """
+10.133.122.70 : 권혁민 책임
+10.133.122.71 : 김윤환 책임
+"""
+
+    assert parse_ip_owner_list(text) == {
+        "10.133.122.70": "권혁민 책임",
+        "10.133.122.71": "김윤환 책임",
     }

@@ -1,12 +1,17 @@
 """Windows Remote Desktop session discovery helpers."""
 import json
+import os
 import platform
 import re
 import subprocess
 from datetime import datetime, timedelta
+from pathlib import Path
 
 
 REMOTE_SESSION_PREFIXES = ("rdp-tcp",)
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_IP_OWNER_LIST_PATH = _BACKEND_DIR / "config" / "remote_ip_owners.txt"
+IP_OWNER_LIST_PATH = Path(os.environ.get("REMOTE_IP_OWNER_LIST", str(DEFAULT_IP_OWNER_LIST_PATH)))
 
 
 def parse_query_user_output(output: str):
@@ -82,6 +87,83 @@ def parse_rdp_logon_events(output: str):
     return by_username
 
 
+def parse_rdp_client_ip_rows(output: str):
+    """Parse JSON rows that contain RemoteAddress/IpAddress fields."""
+    if not output.strip():
+        return []
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError:
+        return []
+
+    rows = payload if isinstance(payload, list) else [payload]
+    addresses = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        ip_address = (row.get("RemoteAddress") or row.get("IpAddress") or "").strip()
+        if not ip_address or ip_address in {"-", "::1", "127.0.0.1", "0.0.0.0", "::"}:
+            continue
+        if ip_address not in addresses:
+            addresses.append(ip_address)
+    return addresses
+
+
+def parse_terminal_services_events(output: str):
+    """Parse JSON emitted from the TerminalServices 1149 lookup."""
+    if not output.strip():
+        return {}
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError:
+        return {}
+
+    rows = payload if isinstance(payload, list) else [payload]
+    by_username = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        username = (row.get("Username") or "").strip()
+        ip_address = (row.get("IpAddress") or "").strip()
+        if not username or not ip_address or ip_address in {"-", "::1", "127.0.0.1"}:
+            continue
+        by_username.setdefault(username.lower(), {
+            "ip_address": ip_address,
+            "ip_logon_time": row.get("TimeCreated"),
+        })
+    return by_username
+
+
+def parse_ip_owner_list(text: str):
+    """Parse `IP : owner` lines into an IP-to-owner dictionary."""
+    owners = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" in line:
+            ip_address, owner = line.split(":", 1)
+        else:
+            parts = re.split(r"\s+", line, maxsplit=1)
+            if len(parts) != 2:
+                continue
+            ip_address, owner = parts
+        ip_address = ip_address.strip()
+        owner = owner.strip()
+        if ip_address and owner:
+            owners[ip_address] = owner
+    return owners
+
+
+def load_ip_owner_map(path=IP_OWNER_LIST_PATH):
+    try:
+        return parse_ip_owner_list(Path(path).read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError:
+        return parse_ip_owner_list(Path(path).read_text(encoding="cp949", errors="replace"))
+    except FileNotFoundError:
+        return {}
+
+
 def _run_command(command, timeout=5):
     result = subprocess.run(
         command,
@@ -126,6 +208,47 @@ def _query_recent_rdp_ips(days=3):
     return parse_rdp_logon_events(output)
 
 
+def _query_terminal_services_rdp_ips(days=3):
+    start_time = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    script = (
+        "$events = Get-WinEvent -FilterHashtable "
+        "@{LogName='Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational'; "
+        f"Id=1149; StartTime=[datetime]'{start_time}'}} "
+        "-MaxEvents 300 -ErrorAction SilentlyContinue; "
+        "$rows = foreach ($event in $events) { "
+        "$xml = [xml]$event.ToXml(); "
+        "$node = $xml.Event.UserData.EventXML; "
+        "$user = $node.Param1; $ip = $node.Param3; "
+        "if (-not $user -or -not $ip) { "
+        "$data = @($xml.Event.EventData.Data | ForEach-Object { $_.'#text' }); "
+        "$user = $data[0]; $ip = $data[2] }; "
+        "if ($user -and $ip -and $ip -ne '-') { "
+        "[PSCustomObject]@{Username=$user; IpAddress=$ip; "
+        "TimeCreated=$event.TimeCreated.ToString('s')} } }; "
+        "$rows | ConvertTo-Json -Compress"
+    )
+    output = _run_command(
+        f'powershell -NoProfile -ExecutionPolicy Bypass -Command "{script}"',
+        timeout=8,
+    )
+    return parse_terminal_services_events(output)
+
+
+def _query_active_rdp_client_ips():
+    script = (
+        "$rows = Get-NetTCPConnection -LocalPort 3389 -State Established "
+        "-ErrorAction SilentlyContinue | Where-Object { $_.RemoteAddress -and "
+        "$_.RemoteAddress -notin @('127.0.0.1','::1','0.0.0.0','::') } | "
+        "Select-Object RemoteAddress; "
+        "$rows | ConvertTo-Json -Compress"
+    )
+    output = _run_command(
+        f'powershell -NoProfile -ExecutionPolicy Bypass -Command "{script}"',
+        timeout=5,
+    )
+    return parse_rdp_client_ip_rows(output)
+
+
 def get_remote_session_status(include_ip=True):
     """Return current Windows RDP session status for the WorkBench host."""
     if platform.system().lower() != "windows":
@@ -147,32 +270,73 @@ def get_remote_session_status(include_ip=True):
             "has_active_remote_user": False,
             "remote_sessions": [],
             "all_sessions": [],
+            "active_rdp_client_ips": [],
             "ip_lookup_status": "not_attempted",
             "error": f"Remote session lookup failed: {exc}",
             "checked_at": datetime.now().isoformat(timespec="seconds"),
         }
 
     ip_lookup_status = "not_requested"
+    active_rdp_client_ips = []
+    ip_owner_map = load_ip_owner_map()
 
     if include_ip:
+        lookup_errors = []
         try:
             ips_by_username = _query_recent_rdp_ips()
             for session in sessions:
                 event = ips_by_username.get(session["username"].lower())
                 if event:
                     session.update(event)
-            ip_lookup_status = "ok"
         except Exception as exc:
-            ip_lookup_status = f"unavailable: {exc}"
+            lookup_errors.append(f"security_4624: {exc}")
+
+        try:
+            terminal_ips_by_username = _query_terminal_services_rdp_ips()
+            for session in sessions:
+                if session.get("ip_address"):
+                    continue
+                event = terminal_ips_by_username.get(session["username"].lower())
+                if event:
+                    session.update(event)
+        except Exception as exc:
+            lookup_errors.append(f"terminalservices_1149: {exc}")
+
+        try:
+            active_rdp_client_ips = _query_active_rdp_client_ips()
+        except Exception as exc:
+            lookup_errors.append(f"tcp_3389: {exc}")
+
+        remote_session_candidates = [session for session in sessions if session["is_remote"]]
+        sessions_missing_ip = [
+            session for session in remote_session_candidates if not session.get("ip_address")
+        ]
+        if len(sessions_missing_ip) == 1 and len(active_rdp_client_ips) == 1:
+            sessions_missing_ip[0]["ip_address"] = active_rdp_client_ips[0]
+            sessions_missing_ip[0]["ip_logon_time"] = "current_tcp_connection"
+
+        ip_lookup_status = "ok" if not lookup_errors else f"partial: {'; '.join(lookup_errors)}"
 
     remote_sessions = [session for session in sessions if session["is_remote"]]
+    for session in remote_sessions:
+        ip_address = session.get("ip_address")
+        ip_owner = ip_owner_map.get(ip_address) if ip_address else None
+        session["ip_owner"] = ip_owner
+        session["display_name"] = ip_owner or session.get("username") or "원격 사용자"
+
     active_remote_sessions = [session for session in remote_sessions if session["is_active"]]
+    active_rdp_clients = [
+        {"ip_address": ip_address, "ip_owner": ip_owner_map.get(ip_address)}
+        for ip_address in active_rdp_client_ips
+    ]
     return {
         "supported": True,
         "has_remote_user": len(remote_sessions) > 0,
         "has_active_remote_user": len(active_remote_sessions) > 0,
         "remote_sessions": remote_sessions,
         "all_sessions": sessions,
+        "active_rdp_client_ips": active_rdp_client_ips,
+        "active_rdp_clients": active_rdp_clients,
         "ip_lookup_status": ip_lookup_status,
         "checked_at": datetime.now().isoformat(timespec="seconds"),
     }
