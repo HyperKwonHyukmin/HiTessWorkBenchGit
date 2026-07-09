@@ -7,6 +7,10 @@ cryptography==46.0.4
 openpyxl==3.1.5
 python-dotenv==1.2.1
 
+# 이중관 구조 연료배관 해석 — 내관 자동 생성(inner_pipe_transform.py) 필수
+pandas==2.3.3
+numpy==2.4.3
+
 # 도면 이미지 처리 (Drawing-to-Analysis 이미지 모드)
 Pillow==12.1.1
 
