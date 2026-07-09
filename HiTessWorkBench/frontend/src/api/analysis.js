@@ -36,6 +36,12 @@ export const getJobStatus = (jobId) =>
 export const requestTrussAnalysis = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/truss/request`, formData, 'TrussModelBuilder');
 
+/** Truss Model Builder — 서버 내장 샘플 NODE/WAY CSV 미리보기 */
+export const getTrussSamplePreview = () =>
+  axios.get(`${API_BASE_URL}/api/analysis/truss/sample-preview`, {
+    headers: getAuthHeaders(),
+  });
+
 /** Truss Assessment 요청 */
 export const requestAssessment = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/assessment/request`, formData, 'TrussAssessment');

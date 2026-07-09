@@ -228,6 +228,12 @@ function computeParamHighlight(paramKey, params, modelBounds, mode) {
       case 'height':
         return [xMin, yMin, 0, xMin, yMax, 0,    // 좌측 수직
                 xMin - 30, yMin, 0, xMin - 30, yMax, 0]; // 외부 보조선 (선택)
+      case 'drawing_overall_h':
+        return [
+          xMin, yMin, 0, xMax, yMin, 0,
+          xMin, yMax, 0, xMax, yMax, 0,
+          xMin, yMin - 30, 0, xMax, yMin - 30, 0,
+        ];
       case 'lap_length':
         return [
           xMin, yMin, 0, xMin + lap, yMin, 0,    // 하단 가장자리

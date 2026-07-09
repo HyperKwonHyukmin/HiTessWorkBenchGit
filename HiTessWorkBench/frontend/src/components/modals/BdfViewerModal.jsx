@@ -12,14 +12,14 @@ import {
 } from 'lucide-react';
 import { downloadFileText } from '../../api/analysis';
 
-export default function BdfViewerModal({ isOpen, project, onClose }) {
+export default function BdfViewerModal({ isOpen, project, onClose, initialShowNodes = true }) {
   const mountRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [nodeCount, setNodeCount] = useState(0);
   const [elementCount, setElementCount] = useState(0);
 
-  const [showNodes, setShowNodes] = useState(true);
+  const [showNodes, setShowNodes] = useState(initialShowNodes);
   const [isWireframe, setIsWireframe] = useState(false);
   const [autoRotate, setAutoRotate] = useState(false);
 
@@ -212,6 +212,7 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
           });
 
           instancedNodes.instanceMatrix.needsUpdate = true;
+          instancedNodes.visible = initialShowNodes;
           modelGroup.add(instancedNodes);
           nodesMeshRef.current = instancedNodes;
         }
@@ -286,7 +287,7 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
       }
     };
 
-    setShowNodes(true);
+    setShowNodes(initialShowNodes);
     setIsWireframe(false);
     setAutoRotate(false);
     initViewer();
@@ -298,7 +299,7 @@ export default function BdfViewerModal({ isOpen, project, onClose }) {
       nodesMeshRef.current     = null;
       elementsGroupRef.current = null;
     };
-  }, [isOpen, project]);
+  }, [isOpen, project, initialShowNodes]);
   
   useEffect(() => {
     if (nodesMeshRef.current) {

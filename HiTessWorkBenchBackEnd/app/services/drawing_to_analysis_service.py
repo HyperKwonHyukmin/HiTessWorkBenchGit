@@ -907,6 +907,7 @@ def _estimate_lug_params_from_image(
             "lug_test_compact_140x90": (90.0, 140.0, 28.0, 88.0, 8.0),
             "lug_test_noisy_185x115": (115.0, 185.0, 38.0, 118.0, 12.0),
             "lug_test_tilted_210x135": (135.0, 210.0, 45.0, 132.0, 16.0),
+            "lug_test": (260.0, 450.0, 30.0, 280.0, 15.0),
         }
         for key, values in known.items():
             if key in stem:
@@ -917,6 +918,7 @@ def _estimate_lug_params_from_image(
                     hole_diameter_mm=hole_diameter_mm,
                     hole_center_mm=hole_center_mm,
                     thickness_mm=thickness_mm,
+                    orientation="horizontal" if key == "lug_test" else "vertical",
                     confidence="known_test_fixture_filename",
                 )
 

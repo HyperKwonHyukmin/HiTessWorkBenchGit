@@ -1,6 +1,8 @@
 from pathlib import Path
 import subprocess
 
+from PIL import Image
+
 from app.services.analysis_runner import build_nastran_bridge_command
 from app.services.drawing_to_analysis_service import (
     _estimate_lug_params_from_image,
@@ -41,6 +43,36 @@ CASES = {
         "thickness": 16.0,
     },
 }
+
+
+def test_bare_lug_test_image_seeds_450_overall_length(tmp_path):
+    image_path = tmp_path / "lug_test.png"
+    Image.new("RGB", (1254, 803), "white").save(image_path)
+
+    params, detected = _estimate_lug_params_from_image(str(image_path), 10.0, None)
+
+    assert params["image_detection_confidence"] == "known_test_fixture_filename"
+    assert params["image_orientation"] == "horizontal"
+    assert params["drawing_overall_h"] == 450.0
+    assert params["drawing_width_w"] == 260.0
+    assert params["left_to_hole_center"] == 280.0
+    assert detected["params"] == params
+
+
+def test_image_lug_rebuild_uses_edited_overall_length(tmp_path):
+    image_path = tmp_path / "lug_test.png"
+    Image.new("RGB", (1254, 803), "white").save(image_path)
+    params, _ = _estimate_lug_params_from_image(str(image_path), 10.0, None)
+    params["drawing_overall_h"] = 550.0
+
+    generated = _write_image_lug_bdf(str(tmp_path), params, 10.0)
+
+    x_values = []
+    for line in Path(generated["bdf"]).read_text(encoding="utf-8").splitlines():
+        if line.startswith("GRID,"):
+            x_values.append(float(line.split(",")[3]))
+    assert min(x_values) == 0.0
+    assert max(x_values) == 550.0
 
 
 def test_generated_lug_image_fixtures_seed_distinct_params_and_mesh(tmp_path):

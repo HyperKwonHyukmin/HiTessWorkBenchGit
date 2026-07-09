@@ -1,5 +1,6 @@
 """해석 요청, 상태 조회, 이력 관리 API 라우터."""
 import io
+import csv
 import json
 import logging
 import os
@@ -1618,6 +1619,50 @@ def get_truss_sample_status(
     }
 
 
+def _find_truss_sample_csvs():
+    sample_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "SampleFile", "TrussModelBuilder"))
+    if not os.path.isdir(sample_dir):
+        raise HTTPException(status_code=404, detail="샘플 폴더가 없습니다.")
+
+    node_src, member_src = None, None
+    for fname in sorted(os.listdir(sample_dir)):
+        if not fname.lower().endswith(".csv"):
+            continue
+        low = fname.lower()
+        if "node" in low and node_src is None:
+            node_src = os.path.join(sample_dir, fname)
+        elif ("way" in low or "member" in low) and member_src is None:
+            member_src = os.path.join(sample_dir, fname)
+    if not node_src or not member_src:
+        raise HTTPException(status_code=404, detail="샘플 CSV(NODE/WAY)를 찾을 수 없습니다.")
+    return node_src, member_src
+
+
+def _read_csv_preview_rows(path: str):
+    try:
+        with open(path, "r", encoding="utf-8-sig", newline="") as handle:
+            return [row for row in csv.reader(handle)]
+    except UnicodeDecodeError:
+        with open(path, "r", encoding="cp949", newline="") as handle:
+            return [row for row in csv.reader(handle)]
+
+
+@router.get("/analysis/truss/sample-preview")
+def preview_truss_sample(current_user: str = Depends(require_auth)):
+    """Truss Model Builder 샘플 NODE/WAY CSV 미리보기."""
+    node_src, member_src = _find_truss_sample_csvs()
+    return {
+        "node": {
+            "filename": os.path.basename(node_src),
+            "rows": _read_csv_preview_rows(node_src),
+        },
+        "member": {
+            "filename": os.path.basename(member_src),
+            "rows": _read_csv_preview_rows(member_src),
+        },
+    }
+
+
 @router.post("/analysis/truss/run-sample")
 async def run_truss_sample(
         employee_id: str = Depends(require_auth),
@@ -1634,21 +1679,7 @@ async def run_truss_sample(
     if not quota["allowed"]:
         raise HTTPException(status_code=429, detail=quota["reason"])
 
-    sample_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "SampleFile", "TrussModelBuilder"))
-    if not os.path.isdir(sample_dir):
-        raise HTTPException(status_code=404, detail="샘플 폴더가 없습니다.")
-
-    node_src, member_src = None, None
-    for fname in sorted(os.listdir(sample_dir)):
-        if not fname.lower().endswith(".csv"):
-            continue
-        low = fname.lower()
-        if "node" in low and node_src is None:
-            node_src = os.path.join(sample_dir, fname)
-        elif ("way" in low or "member" in low) and member_src is None:
-            member_src = os.path.join(sample_dir, fname)
-    if not node_src or not member_src:
-        raise HTTPException(status_code=404, detail="샘플 CSV(NODE/WAY)를 찾을 수 없습니다.")
+    node_src, member_src = _find_truss_sample_csvs()
 
     work_dir, timestamp = make_work_dir(employee_id, "TrussModelBuilder")
     node_path = os.path.join(work_dir, os.path.basename(node_src))

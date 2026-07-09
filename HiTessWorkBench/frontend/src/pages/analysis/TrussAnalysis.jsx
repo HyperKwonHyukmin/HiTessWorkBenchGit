@@ -3,7 +3,7 @@
 /// (수정) 해석 완료 시 XLSX 파일의 다이렉트 다운로드 및 JSON 데이터의 테이블 렌더링 기능을 추가했습니다.
 /// </summary>
 import React, { useState, useRef, useEffect, Fragment } from 'react';
-import { requestTrussAnalysis, downloadFileBlob } from '../../api/analysis';
+import { requestTrussAnalysis, getTrussSamplePreview, downloadFileBlob } from '../../api/analysis';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import { extractFilename } from '../../utils/fileHelper';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
@@ -12,7 +12,7 @@ import {
   Play, Download, Trash2, Database,
   RefreshCw, FileSpreadsheet, Terminal, Layers,
   Box, GitMerge, CheckCircle2, AlertCircle, Maximize2, X, FileText,
-  FileOutput, Eye
+  FileOutput, Eye, RotateCcw
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
@@ -49,6 +49,7 @@ export default function TrussAnalysis() {
   const [analysisResultData, setAnalysisResultData] = useState(savedPageState.analysisResultData ?? null);
   const [isResultModalOpen, setIsResultModalOpen] = useState(false);
   const [is3DViewerOpen, setIs3DViewerOpen] = useState(false);
+  const [isSamplePreviewLoading, setIsSamplePreviewLoading] = useState(false);
 
   const logEndRef = useRef(null);
 
@@ -62,6 +63,7 @@ export default function TrussAnalysis() {
   const {
     isRunning, progress, statusMessage, logs,
     employeeId, addLog, startJob,
+    reset: resetJob,
     setLogs, setStatusMessage, setIsRunning, setProgress,
   } = useAnalysisJob({
     startGlobalJob,
@@ -133,26 +135,6 @@ export default function TrussAnalysis() {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
   }, [logs]);
 
-  const downloadTemplate = (type) => {
-    let content = "";
-    let filename = "";
-    if (type === 'node') {
-      content = "Node_ID,X_Coord,Y_Coord,Z_Coord\n1,0,0,0\n2,1000,0,0\n3,0,1000,0";
-      filename = "Template_Node.csv";
-    } else {
-      content = "Member_ID,Start_Node,End_Node,Area,Material_ID\n1,1,2,15.5,1\n2,2,3,15.5,1";
-      filename = "Template_Member.csv";
-    }
-    const blob = new Blob(["\uFEFF" + content], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   const handleCsvParsed = (rows, file, setter, type) => {
     setter(rows);
     addLog(`[DATA] ${type.toUpperCase()} 데이터 로드 완료 (${rows.length - 1}행)`, 'info');
@@ -208,6 +190,26 @@ export default function TrussAnalysis() {
   const clearLogs = () => {
     setLogs([]);
     setDetailedLogs([]);
+  };
+
+  const resetPage = () => {
+    resetJob();
+    setNodeFile(null);
+    setMemberFile(null);
+    setNodeData([]);
+    setMemberData([]);
+    setDetailedLogs([]);
+    setActiveTab('node');
+    setResultJsonData(null);
+    setAnalysisResultData(null);
+    setIsLogModalOpen(false);
+    setIsResultModalOpen(false);
+    setIs3DViewerOpen(false);
+    setIsSamplePreviewLoading(false);
+    setStatusMessage('');
+    setProgress(0);
+    dashboardCtx?.clearAnalysisPageState?.(PAGE_KEY);
+    showToast('Truss Model Builder가 초기 상태로 되돌아갔습니다.', 'success');
   };
 
   // 해석 서버 요청 로직
@@ -275,6 +277,27 @@ export default function TrussAnalysis() {
     setIsRunning(false);
   };
 
+  const openSamplePreview = async () => {
+    setIsSamplePreviewLoading(true);
+    try {
+      const res = await getTrussSamplePreview();
+      const nextNodeData = res.data?.node?.rows || [];
+      const nextMemberData = res.data?.member?.rows || [];
+      setNodeData(nextNodeData);
+      setMemberData(nextMemberData);
+      setNodeFile({ name: res.data?.node?.filename || 'Sample NODE.csv', sample: true });
+      setMemberFile({ name: res.data?.member?.filename || 'Sample WAY.csv', sample: true });
+      setActiveTab('node');
+      addLog(`[SAMPLE] 미리보기 로드 완료 — Node ${Math.max(nextNodeData.length - 1, 0)}행 / Member ${Math.max(nextMemberData.length - 1, 0)}행`, 'success');
+    } catch (error) {
+      const detail = error?.response?.data?.detail || error.message;
+      addLog(`[SAMPLE] 미리보기 로드 실패: ${detail}`, 'error');
+      showToast('샘플 CSV 미리보기를 불러오지 못했습니다.', 'error');
+    } finally {
+      setIsSamplePreviewLoading(false);
+    }
+  };
+
   // ==========================================
   // (신규) 다이렉트 엑셀 다운로드 핸들러
   // ==========================================
@@ -305,7 +328,7 @@ export default function TrussAnalysis() {
     }
   };
 
-  const canRun = nodeFile && memberFile && !isRunning;
+  const canRun = nodeFile && memberFile && !nodeFile.sample && !memberFile.sample && !isRunning;
   
   const downloadSummaryLog = () => {
     if (logs.length === 0) { showToast('다운로드할 로그가 없습니다.', 'warning'); return; }
@@ -348,10 +371,6 @@ export default function TrussAnalysis() {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-3 flex justify-between items-center">
               <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2"><Database size={14}/> 1. Data Input</h3>
-              <div className="flex gap-2">
-                <button onClick={() => downloadTemplate('node')} className="text-[10px] bg-white/20 text-white px-2 py-1 rounded border border-white/10 hover:bg-white/30 transition-colors cursor-pointer flex items-center gap-1"><Download size={10}/> Node 양식</button>
-                <button onClick={() => downloadTemplate('member')} className="text-[10px] bg-white/20 text-white px-2 py-1 rounded border border-white/10 hover:bg-white/30 transition-colors cursor-pointer flex items-center gap-1"><Download size={10}/> Member 양식</button>
-              </div>
             </div>
             <div className="p-5 space-y-4">
               <UploadDropzone title="Node Data" file={nodeFile} rowCount={numNodes} onFiles={(incomingFiles) => {
@@ -392,7 +411,31 @@ export default function TrussAnalysis() {
           </div>
 
           <div className="flex flex-col gap-2">
+            <button
+              onClick={resetPage}
+              disabled={isRunning || isSamplePreviewLoading}
+              className={`w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 border transition-colors shadow-sm ${
+                isRunning || isSamplePreviewLoading
+                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 cursor-pointer'
+              }`}
+            >
+              <RotateCcw size={17} />
+              초기화
+            </button>
             {/* 샘플 실행 — 입력 파일 없이도 학습용으로 즉시 해석 체험 */}
+            <button
+              onClick={openSamplePreview}
+              disabled={isSamplePreviewLoading}
+              className={`w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 border transition-colors shadow-sm ${
+                isSamplePreviewLoading
+                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-wait'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50 hover:border-blue-300 hover:text-brand-blue cursor-pointer'
+              }`}
+            >
+              {isSamplePreviewLoading ? <RefreshCw size={17} className="animate-spin" /> : <Eye size={17} />}
+              샘플 CSV 미리보기
+            </button>
             <SampleRunButton
               appKey="truss"
               disabled={isRunning}
@@ -499,7 +542,12 @@ export default function TrussAnalysis() {
       <ProjectDetailModal project={isResultModalOpen ? analysisResultData : null} onClose={() => setIsResultModalOpen(false)} />
       
       {/* 모달 3: 3D BDF 뷰어 */}
-      <BdfViewerModal isOpen={is3DViewerOpen} project={analysisResultData} onClose={() => setIs3DViewerOpen(false)} />
+      <BdfViewerModal
+        isOpen={is3DViewerOpen}
+        project={analysisResultData}
+        onClose={() => setIs3DViewerOpen(false)}
+        initialShowNodes={false}
+      />
     </div>
   );
 }
