@@ -18,6 +18,7 @@ const RAW_ANALYSIS_DATA = [
   { mode: "File", category: "FEM Pipeline", title: "HiTESS Model Builder", description: "CSV부터 Nastran 해석까지 FEM 파이프라인 전 과정을 단일 UI에서 관리합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["CSV", "BDF", "Nastran", "Pipeline"], devStatus: "Active", contributor: "권혁민" },
   { mode: "File", category: "Pipe", title: "HP-SCR 배관응력 해석", description: "배관 BDF를 업로드하여 열변형 계산 및 배관응력 해석(PSA · POR)을 수행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["배관", "PSA", "POR", "BDF"], devStatus: "Active", contributor: "김윤환" },
   // ── File-Based Apps (signature: blue) ─────────── Developing ──
+  { mode: "File", category: "Pipe", title: "이중관 구조 연료배관 해석", description: "이중관 연료배관의 Inner Support 설계와 전체/선택 Load Case 배관응력 해석을 준비합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["이중관", "연료배관", "PSA", "CSV"], devStatus: "Developing", contributor: "김윤환" },
   { mode: "File", category: "Lifting", title: "Group & Module Unit 권상 구조 해석", description: "Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["유닛", "블록", "국부강도"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "File", category: "Passage", title: "Side Passage Assessment", description: "Side Passage BDF 모델을 검증하고 Studio 기반 권상 조건·Nastran 해석·결과 판정을 진행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Side Passage", "BDF", "Studio", "권상"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "File", category: "PDF", title: "DrawingToAnalysis", description: "설계 도면(PDF)을 업로드하여 LUG 구조 해석 BDF 모델로 변환합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["PDF", "Drawing", "BDF"], devStatus: "Developing", contributor: "권혁민" },
@@ -70,6 +71,11 @@ const APP_REGISTRY_OVERRIDES = {
     programNames: ["HP-SCR", "HP-SCR PSA", "HP-SCR POR"],
     apiEndpoint: "/api/analysis/hpscr/request",
     sampleFiles: [{ label: "배관 BDF 입력 포맷", guideTitle: "[파일] HP-SCR 배관응력 해석 — BDF 입력 포맷" }],
+  },
+  "이중관 구조 연료배관 해석": {
+    menuName: "이중관 구조 연료배관 해석",
+    programNames: ["DoublePipeFuelLine", "이중관 구조 연료배관 해석"],
+    sampleFiles: [{ label: "Inner Pipe Config JSON", guideTitle: "[파일] 이중관 구조 연료배관 해석 — 입력 포맷" }],
   },
   "Group & Module Unit 권상 구조 해석": {
     menuName: "Group & Module Unit 권상 구조 해석",

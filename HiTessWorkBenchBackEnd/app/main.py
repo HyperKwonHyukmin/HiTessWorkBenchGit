@@ -13,6 +13,7 @@ from .routers import (
     column_buckling,
     d_type_lug,
     davit,
+    doublepipe,
     external_apps,
     hitessbeam,
     hole_calculation,
@@ -85,6 +86,7 @@ app.include_router(analysis.router)
 app.include_router(system.router)
 app.include_router(support.router)
 app.include_router(davit.router)
+app.include_router(doublepipe.router)
 app.include_router(column_buckling.router)
 app.include_router(hole_calculation.router)
 app.include_router(d_type_lug.router)

@@ -59,6 +59,7 @@ const SidePassageAssessment = lazy(() => import('./pages/analysis/SidePassageAss
 const F06ParserPage = lazy(() => import('./pages/analysis/F06ParserPage'));
 const HullAccelerationPage = lazy(() => import('./pages/analysis/HullAccelerationPage'));
 const HpScrAssessment = lazy(() => import('./pages/analysis/HpScrAssessment'));
+const DoublePipeFuelLineAssessment = lazy(() => import('./pages/analysis/DoublePipeFuelLineAssessment'));
 const MooringFittingAssessment = lazy(() => import('./pages/analysis/MooringFittingAssessment'));
 const BlockWeldAssessment = lazy(() => import('./pages/analysis/BlockWeldAssessment'));
 const HeavyBlockLiftingSimulation = lazy(() => import('./pages/analysis/HeavyBlockLiftingSimulation'));
@@ -359,6 +360,7 @@ function AppInner() {
       case 'Group & Module Unit 권상 구조 해석': return <GroupModuleUnitLiftingAnalysis />;
       case 'Side Passage Assessment': return <SidePassageAssessment />;
       case 'HP-SCR 배관응력 해석': return <HpScrAssessment />;
+      case '이중관 구조 연료배관 해석': return <DoublePipeFuelLineAssessment />;
       case 'DrawingToAnalysis': return <DrawingToAnalysis />;
       default:
         return (
