@@ -19,6 +19,7 @@ import { formatDateTime } from '../../utils/formatting';
 
 const COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be123c', '#4f46e5'];
 const RECORDS_PER_PAGE = 12;
+const EMPTY_PROGRAM_NAMES = [];
 
 function StatTile({ label, value, sub, icon: Icon, accent = 'text-slate-400' }) {
   return (
@@ -61,7 +62,7 @@ function SectionCard({ title, icon: Icon, iconColor, action, children }) {
   );
 }
 
-export default function ProgramDetailModal({ programName, dateFrom, dateTo, onClose }) {
+export default function ProgramDetailModal({ programName, programNames = EMPTY_PROGRAM_NAMES, dateFrom, dateTo, onClose }) {
   const { showToast } = useToast();
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -85,14 +86,14 @@ export default function ProgramDetailModal({ programName, dateFrom, dateTo, onCl
     setLoading(true);
     setError(null);
     setRecordPage(1);
-    getProgramUsageDetail(programName, { date_from: dateFrom, date_to: dateTo })
+    getProgramUsageDetail(programName, { date_from: dateFrom, date_to: dateTo, aliases: programNames })
       .then((res) => { if (!cancelled) setDetail(res.data); })
       .catch((err) => {
         if (!cancelled) setError(err?.response?.data?.detail || err?.message || '상세 통계를 불러오지 못했습니다.');
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [programName, dateFrom, dateTo]);
+  }, [programName, programNames, dateFrom, dateTo]);
 
   const summary = detail?.summary;
   const userRanking = detail?.userRanking || [];

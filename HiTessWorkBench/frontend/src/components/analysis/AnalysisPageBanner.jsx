@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import PageBanner from '../ui/PageBanner';
 import GuideButton from '../ui/GuideButton';
+import AppUsageStatsButton from './AppUsageStatsButton';
 
 const DEFAULT_GRADIENT = 'from-brand-blue via-brand-blue-dark to-blue-700';
 
@@ -16,6 +17,7 @@ export default function AnalysisPageBanner({
   iconClassName = 'text-blue-200',
   subtitleClassName = 'text-blue-200/80',
   actions,
+  statsProgramName,
 }) {
   return (
     <PageBanner gradient={gradient}>
@@ -41,6 +43,7 @@ export default function AnalysisPageBanner({
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
+        <AppUsageStatsButton appName={statsProgramName || title} />
         {actions}
         {guideTitle && <GuideButton guideTitle={guideTitle} variant="dark" />}
       </div>

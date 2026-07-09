@@ -12,6 +12,7 @@ import { requestHullAcceleration, requestHullAccelerationSample, getHullAccelera
 import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import PageBanner from '../../components/ui/PageBanner';
+import AppUsageStatsButton from '../../components/analysis/AppUsageStatsButton';
 import { buildFormData } from '../../utils/fileHelper';
 import { buildFilteredEnvelope, getConditionNumbersFromRules, getRuleAxisMaxima } from '../../utils/hullAcceleration';
 
@@ -556,6 +557,9 @@ export default function HullAccelerationPage() {
             </h1>
             <p className="text-sm text-amber-200/80 mt-0.5">Trim &amp; Stability Booklet PDF → Summary of Loading Conditions 추출</p>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <AppUsageStatsButton appName="선급 Rule 기반 선체 가속도 Calculation" />
         </div>
       </PageBanner>
 

@@ -643,6 +643,7 @@ def get_program_usage_detail(
     program_name: str,
     date_from: Optional[_date] = Query(None),
     date_to: Optional[_date] = Query(None),
+    aliases: Optional[str] = Query(None),
     db: Session = Depends(database.get_db),
     _admin: str = Depends(require_admin),
 ):
@@ -654,9 +655,14 @@ def get_program_usage_detail(
     샘플(WorkbenchSample) 제외 + 개발자(is_developer) 제외를 적용하므로,
     클릭한 행의 '실행' 수와 모달 총계가 정확히 일치한다.
     """
+    program_names = [program_name]
+    if aliases:
+        program_names.extend(name.strip() for name in aliases.split("|") if name.strip())
+    program_names = list(dict.fromkeys(program_names))
+
     base_q = db.query(models.Analysis).filter(
         models.Analysis.source != SAMPLE_SOURCE_TAG,
-        models.Analysis.program_name == program_name,
+        models.Analysis.program_name.in_(program_names),
     )
     base_q = _apply_analysis_filters(base_q, date_from=date_from, date_to=date_to)
 

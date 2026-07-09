@@ -195,7 +195,7 @@ export const ANALYSIS_DATA = Object.freeze(RAW_ANALYSIS_DATA.map(app => Object.f
 const normalizeProgramName = (value) =>
   String(value ?? '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
 
-const findAppByAnyName = (value) => {
+export const findAppByAnyName = (value) => {
   const normalizedValue = normalizeProgramName(value);
   return ANALYSIS_DATA.find(item =>
     item.title === value ||

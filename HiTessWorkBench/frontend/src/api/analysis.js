@@ -191,9 +191,13 @@ export const getTopPrograms = (days = 30, limit = 10) =>
   axios.get(`${API_BASE_URL}/api/analysis/stats/top-programs`, { params: { days, limit }, headers: getAuthHeaders() });
 
 /** 특정 프로그램(App)의 상세 사용 통계 (관리자 — 대시보드 프로그램 행 클릭 시 모달용) */
-export const getProgramUsageDetail = (programName, { date_from, date_to } = {}) =>
+export const getProgramUsageDetail = (programName, { date_from, date_to, aliases } = {}) =>
   axios.get(`${API_BASE_URL}/api/analysis/stats/program/${encodeURIComponent(programName)}`, {
-    params: { date_from: date_from || undefined, date_to: date_to || undefined },
+    params: {
+      date_from: date_from || undefined,
+      date_to: date_to || undefined,
+      aliases: Array.isArray(aliases) && aliases.length > 0 ? aliases.join('|') : undefined,
+    },
     headers: getAuthHeaders(),
   });
 

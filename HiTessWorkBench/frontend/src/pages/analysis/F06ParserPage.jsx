@@ -16,6 +16,7 @@ import RelatedAppsWidget from '../../components/ui/RelatedAppsWidget';
 import TransferBrowseModal from '../../components/ui/TransferBrowseModal';
 import { useIncomingTransfer } from '../../hooks/useIncomingTransfer';
 import PageBanner from '../../components/ui/PageBanner';
+import AppUsageStatsButton from '../../components/analysis/AppUsageStatsButton';
 import { buildFormData } from '../../utils/fileHelper';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
@@ -361,6 +362,7 @@ export default function F06ParserPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <AppUsageStatsButton appName="F06 Parser" />
             <button onClick={() => setChangelogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-medium transition-colors cursor-pointer">
               <History size={14} /> 이력
             </button>
