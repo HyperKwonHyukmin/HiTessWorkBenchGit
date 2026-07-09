@@ -62,11 +62,18 @@ def start_psa_job(work_dir: str, result_csv: str, employee_id: str) -> dict:
     if not os.path.isfile(csv_path):
         raise HTTPException(status_code=404, detail=f"Tab1 결과 CSV 를 찾을 수 없습니다: {safe_dir}/{safe_csv}")
 
-    if not os.path.isdir(_PSA_DIR) or not os.path.isfile(os.path.join(_PSA_DIR, "Main.py")):
+    main_py_path = os.path.join(_PSA_DIR, "Main.py")
+    if not os.path.isdir(_PSA_DIR) or not os.path.isfile(main_py_path):
         raise HTTPException(status_code=503, detail="PSA 해석 프로그램(Main.py)을 찾을 수 없습니다. 서버 관리자에게 문의하세요.")
 
-    # 전체 Load Case 프로젝트: 위치 인자로 CSV 경로 하나만 넘긴다(선택 케이스 없음).
-    command = [_PSA_PYTHON, "Main.py", csv_path]
+    # ⚠️ cwd 는 반드시 CSV 가 있는 폴더(job_dir)여야 한다 — Main.py 내부의 write_LC()/
+    # make_report()/F06Format 이 "Report for PSA.xlsx", "Inforget_f06.txt", "L*_stress.txt" 등을
+    # 전부 cwd 상대경로로 읽고 쓰기 때문(원본 이식 문서 §6-5·§9-3). Main.py 자체는 절대경로로
+    # 지정해 cwd 와 무관하게 실행되게 하고(스크립트 자기 폴더는 Python 이 sys.path 에 자동 추가),
+    # 하위 산출물만 job_dir 에 모이도록 한다. _PSA_DIR 를 cwd 로 쓰면 동시 작업 간 산출물이
+    # 서로 덮어써지고 make_report() 가 파일을 못 찾아 빈 보고서가 나온다.
+    job_dir = os.path.dirname(csv_path)
+    command = [_PSA_PYTHON, main_py_path, csv_path]
 
     job_id = uuid.uuid4().hex[:12]
     now = datetime.now().isoformat(timespec="seconds")
@@ -77,7 +84,7 @@ def start_psa_job(work_dir: str, result_csv: str, employee_id: str) -> dict:
         "csvPath": csv_path,
         "command": " ".join(f'"{c}"' if " " in c else c for c in command),
         "logs": [],
-        "reportPath": os.path.join(_PSA_DIR, _REPORT_NAME),
+        "reportPath": os.path.join(job_dir, _REPORT_NAME),
         "reportReady": False,
         "startedAt": now,
         "finishedAt": None,
@@ -86,7 +93,7 @@ def start_psa_job(work_dir: str, result_csv: str, employee_id: str) -> dict:
     with _jobs_lock:
         _jobs[job_id] = job
 
-    thread = threading.Thread(target=_run_pipeline, args=(job_id, command), daemon=True)
+    thread = threading.Thread(target=_run_pipeline, args=(job_id, command, job_dir), daemon=True)
     thread.start()
     return {"jobId": job_id, "command": job["command"], "python": _PSA_PYTHON}
 
@@ -102,12 +109,12 @@ def _append_log(job_id: str, line: str):
             del logs[: len(logs) - _MAX_LOG_LINES]
 
 
-def _run_pipeline(job_id: str, command: list):
+def _run_pipeline(job_id: str, command: list, cwd: str):
     """subprocess 로 Main.py 를 실행하며 stdout 을 라인 단위로 누적한다."""
     try:
         proc = subprocess.Popen(
             command,
-            cwd=_PSA_DIR,
+            cwd=cwd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -137,7 +144,7 @@ def _run_pipeline(job_id: str, command: list):
         return
 
     rc = proc.returncode
-    report_ready = os.path.isfile(os.path.join(_PSA_DIR, _REPORT_NAME))
+    report_ready = os.path.isfile(os.path.join(cwd, _REPORT_NAME))
     _finish(job_id, status="done" if rc == 0 else "failed", returncode=rc, report_ready=report_ready)
 
 
