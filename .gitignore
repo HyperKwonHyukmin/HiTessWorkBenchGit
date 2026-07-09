@@ -7,6 +7,9 @@ TestFiles/
 HiTessWorkBenchBackEnd/SampleFile/**/*.bdf
 HiTessWorkBenchBackEnd/SampleFile/**/*.dat
 
+# 원격 세션 IP 소유자 매핑 — 환경별로 다르므로 각자 로컬/서버에서 직접 관리
+HiTessWorkBenchBackEnd/config/remote_ip_owners.txt
+
 # ===== Operating System =====
 .DS_Store
 Thumbs.db
