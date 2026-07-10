@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { BarChart3 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { findAppByAnyName } from '../../contexts/DashboardContext';
@@ -25,14 +26,15 @@ export default function AppUsageStatsButton({ appName }) {
         <BarChart3 size={15} />
         App 통계
       </button>
-      {isOpen && (
+      {isOpen && createPortal(
         <Suspense fallback={null}>
           <ProgramDetailModal
             programName={app.title}
             programNames={programNames}
             onClose={() => setIsOpen(false)}
           />
-        </Suspense>
+        </Suspense>,
+        document.body,
       )}
     </>
   );

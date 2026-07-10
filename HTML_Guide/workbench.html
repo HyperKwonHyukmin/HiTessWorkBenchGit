@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workbench Flow</title>
+  <link rel="stylesheet" href="flow-map.css">
+</head>
+<body>
+  <header class="shell-header">
+    <div class="wrap header-row">
+      <div>
+        <p class="eyebrow">Workbench Architecture</p>
+        <h1>Workbench</h1>
+        <p class="subtitle">HiTESS WorkBench의 공통 프론트엔드, 백엔드, DB 흐름을 코드 파악용으로 정리한 기준 문서입니다.</p>
+      </div>
+      <div class="header-actions">
+        <a class="button-link" href="index.html">Home</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <nav class="side-nav" aria-label="Workbench detail menu">
+      <p class="nav-title">Workbench Menu</p>
+      <ul class="menu">
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#frontend">FrontEnd</a></li>
+        <li><a href="#backend">BackEnd</a></li>
+        <li><a href="#db">DB</a></li>
+        <li><a href="#maintenance">관리 포인트</a></li>
+      </ul>
+      <p class="nav-title nav-section">Studio Docs</p>
+      <ul class="menu">
+        <li><a href="file-based-apps.html">File-Based Apps</a></li>
+        <li><a href="module-unit.html">Module Unit</a></li>
+        <li><a href="interactive-apps.html">Interactive Apps</a></li>
+        <li><a href="parametric-apps.html">Parametric Apps</a></li>
+        <li><a href="productivity-apps.html">Productivity Apps</a></li>
+        <li><a href="support-admin.html">Support / Admin</a></li>
+      </ul>
+    </nav>
+
+    <div class="content">
+      <section id="overview" class="panel">
+        <h2>Overview</h2>
+        <p class="lead">이 페이지는 개별 솔루션의 상세 계산 로직이 아니라 WorkBench 앱 자체의 골격, 공통 역할, 코드 진입점을 추적하기 위한 문서입니다.</p>
+
+        <div class="status-row">
+          <div class="metric">
+            <span>Shell</span>
+            <strong>Electron</strong>
+          </div>
+          <div class="metric">
+            <span>Client</span>
+            <strong>React SPA</strong>
+          </div>
+          <div class="metric">
+            <span>Server</span>
+            <strong>FastAPI</strong>
+          </div>
+        </div>
+
+        <div class="flow">
+          <div class="step">
+            <span class="step-index">1</span>
+            <div>
+              <strong>Electron Shell</strong>
+              개발 모드에서는 <code>http://localhost:5173</code>, 배포 모드에서는 <code>frontend/dist/index.html</code>을 로드합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">2</span>
+            <div>
+              <strong>React SPA</strong>
+              <code>App.jsx</code>가 Splash, Login, Main 상태를 관리하고 <code>NavigationContext</code>의 <code>currentMenu</code> 값으로 화면을 선택합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">3</span>
+            <div>
+              <strong>API Layer</strong>
+              프론트엔드 <code>src/api/*.js</code>와 각 페이지가 FastAPI 서버의 <code>/api/*</code> 엔드포인트를 호출합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">4</span>
+            <div>
+              <strong>FastAPI Backend</strong>
+              <code>app/main.py</code>가 라우터를 등록하고, 각 라우터가 서비스 함수와 DB 세션을 사용합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">5</span>
+            <div>
+              <strong>DB / File System</strong>
+              MySQL은 사용자, 세션, 해석 이력, 공지/가이드/요청 기록을 저장하고, 해석 입출력 파일은 <code>userConnection/</code> 아래에 저장됩니다.
+            </div>
+          </div>
+        </div>
+
+        <h3>문서 범위</h3>
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>이 페이지에 기록</th>
+              <th>개별 페이지로 분리</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>공통 구조</td>
+              <td>Electron, React SPA, FastAPI, DB 연결 방식</td>
+              <td>해당 없음</td>
+            </tr>
+            <tr>
+              <td>화면 흐름</td>
+              <td>메뉴 선택, Context, 공통 레이아웃, 페이지 선택 방식</td>
+              <td>개별 솔루션 화면의 입력 폼, 결과 뷰어, 특수 상태</td>
+            </tr>
+            <tr>
+              <td>처리 흐름</td>
+              <td>API 호출, 작업 제출, 상태 조회, 다운로드의 공통 패턴</td>
+              <td>각 솔루션의 계산식, 외부 실행 파일, 결과 파일 구조</td>
+            </tr>
+            <tr>
+              <td>데이터 흐름</td>
+              <td>공통 테이블과 JSON 컬럼의 역할</td>
+              <td>솔루션별 <code>input_info</code>, <code>result_info</code> 세부 스키마</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="frontend" class="panel">
+        <h2>FrontEnd</h2>
+        <p class="lead">프론트엔드는 React + Vite 기반이며 React Router 대신 자체 <code>NavigationContext</code>를 사용합니다.</p>
+
+        <h3>진입 흐름</h3>
+        <div class="flow">
+          <div class="step">
+            <span class="step-index">1</span>
+            <div>
+              <strong><code>frontend/src/main.jsx</code></strong>
+              React 앱의 최초 mount 지점입니다. 이후 <code>App.jsx</code>로 앱 제어가 넘어갑니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">2</span>
+            <div>
+              <strong><code>frontend/src/App.jsx</code></strong>
+              앱 상태를 <code>splash</code>, <code>login</code>, <code>main</code>으로 나누고, 버전 체크와 세션 체크 후 실제 WorkBench 레이아웃을 표시합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">3</span>
+            <div>
+              <strong><code>frontend/src/components/layout/Layout</code></strong>
+              좌측 메뉴, 상단/본문 프레임, 공통 레이아웃을 담당합니다. 메뉴 클릭은 최종적으로 <code>setCurrentMenu()</code>로 이어집니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">4</span>
+            <div>
+              <strong><code>App.jsx:renderPage()</code></strong>
+              <code>currentMenu</code> 문자열을 기준으로 Dashboard, Studio 진입 페이지, 관리자/지원 페이지, 개별 솔루션 페이지를 선택합니다.
+            </div>
+          </div>
+        </div>
+
+        <h3>상태와 Context</h3>
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th>파일</th>
+              <th>역할</th>
+              <th>코드 파악 포인트</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>contexts/NavigationContext.jsx</code></td>
+              <td>페이지 히스토리와 현재 메뉴 관리</td>
+              <td><span class="badge">history</span> <span class="badge">currentIndex</span> <span class="badge">NAVIGATE</span></td>
+            </tr>
+            <tr>
+              <td><code>contexts/DashboardContext.jsx</code></td>
+              <td>해석 앱 메타데이터, 즐겨찾기, 글로벌 작업 상태</td>
+              <td><code>ANALYSIS_DATA</code>, <code>APP_REGISTRY_OVERRIDES</code>, 앱 제목과 실제 menuName/API 매핑</td>
+            </tr>
+            <tr>
+              <td><code>contexts/AuthContext.jsx</code></td>
+              <td>사용자 세션 상태와 로그아웃 처리</td>
+              <td><code>localStorage</code>의 사용자/토큰 정리, 인증 상태 전파</td>
+            </tr>
+            <tr>
+              <td><code>contexts/ToastContext.jsx</code></td>
+              <td>전역 토스트 알림</td>
+              <td>API 성공/실패, 작업 완료/오류 알림 표시 경로</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>프론트엔드 역할 지도</h3>
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th>영역</th>
+              <th>주요 파일</th>
+              <th>역할</th>
+              <th>상세 분리 기준</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>앱 생명주기</td>
+              <td><code>App.jsx</code></td>
+              <td>Splash, Login, Main 상태 전환과 세션 만료, 버전 체크, 관리자 메뉴 보호를 담당합니다.</td>
+              <td>공통 유지. 특정 페이지 동작은 솔루션 문서로 분리합니다.</td>
+            </tr>
+            <tr>
+              <td>메뉴/라우팅</td>
+              <td><code>NavigationContext.jsx</code>, <code>Layout.jsx</code>, <code>Sidebar.jsx</code></td>
+              <td>React Router 없이 메뉴 문자열과 히스토리 스택으로 화면 이동을 제어합니다.</td>
+              <td>새 메뉴 추가 시 Workbench에는 연결 위치만 기록합니다.</td>
+            </tr>
+            <tr>
+              <td>앱 카탈로그</td>
+              <td><code>DashboardContext.jsx</code></td>
+              <td>솔루션 목록, 상태, 즐겨찾기, 글로벌 작업 상태의 기준 데이터를 제공합니다.</td>
+              <td>개별 솔루션의 업무 의미와 계산 흐름은 별도 페이지에서 기록합니다.</td>
+            </tr>
+            <tr>
+              <td>인증/세션</td>
+              <td><code>AuthContext.jsx</code>, <code>LoginScreen.jsx</code></td>
+              <td>사번 기반 로그인 결과를 localStorage와 Context에 저장하고 앱 전체에 전달합니다.</td>
+              <td>공통 유지. 관리자 페이지 권한 예외만 Admin 문서에서 확장합니다.</td>
+            </tr>
+            <tr>
+              <td>서버 통신</td>
+              <td><code>config.js</code>, <code>src/api/*.js</code></td>
+              <td>API base URL, 서버 주소 변경, 기능별 REST 호출을 담당합니다.</td>
+              <td>솔루션별 request/response는 개별 페이지에 정리합니다.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>메뉴와 화면 매핑</h3>
+        <ul>
+          <li>앱 카탈로그 정보는 <code>DashboardContext.jsx</code>의 <code>RAW_ANALYSIS_DATA</code>와 <code>APP_REGISTRY_OVERRIDES</code>에서 시작됩니다.</li>
+          <li>사용자가 메뉴를 누르면 <code>setCurrentMenu(menuName)</code>이 호출되고 <code>NavigationContext</code>가 현재 메뉴를 갱신합니다.</li>
+          <li><code>App.jsx:renderPage()</code>가 <code>currentMenu</code>를 읽어 실제 페이지 컴포넌트를 반환합니다.</li>
+          <li>개별 솔루션 상세 흐름은 여기서 다루지 않고, 이후 솔루션별 HTML 메뉴에서 별도로 기록합니다.</li>
+        </ul>
+
+        <h3>API 설정</h3>
+        <ul>
+          <li><code>frontend/src/config.js</code>의 <code>DEFAULT_API_BASE_URL</code>이 기본 서버 주소입니다.</li>
+          <li>사용자가 앱 안에서 서버 주소를 바꾸면 <code>localStorage</code>의 <code>server_url</code> 값이 우선 사용됩니다.</li>
+          <li>API 호출 파일은 <code>frontend/src/api/</code> 아래에 기능별로 분리되어 있습니다.</li>
+        </ul>
+
+        <div class="checklist">
+          <p>프론트엔드 수정 시 우선 확인</p>
+          <ul>
+            <li>메뉴명이 <code>DashboardContext.jsx</code>와 <code>App.jsx:renderPage()</code>에 모두 맞는가?</li>
+            <li>새 API 호출이 <code>config.js</code>의 base URL 정책을 따르는가?</li>
+            <li>페이지 이탈 후 유지되어야 하는 상태가 Context 또는 상위 state에 있는가?</li>
+            <li>관리자 전용 메뉴라면 <code>ADMIN_MENUS</code>와 권한 체크 흐름에 포함되어 있는가?</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="backend" class="panel">
+        <h2>BackEnd</h2>
+        <p class="lead">백엔드는 FastAPI 기반입니다. 공통 흐름은 <code>main.py</code>에서 앱과 라우터를 구성하고, 각 라우터가 서비스 함수 및 DB 세션을 호출하는 구조입니다.</p>
+
+        <h3>서버 시작 흐름</h3>
+        <div class="flow">
+          <div class="step">
+            <span class="step-index">1</span>
+            <div>
+              <strong><code>app/main.py</code></strong>
+              FastAPI 앱을 생성하고 CORS, 라우터, 정적 파일 경로를 등록합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">2</span>
+            <div>
+              <strong>DB 초기화</strong>
+              <code>models.Base.metadata.create_all(bind=database.engine)</code>로 모델 기반 테이블 생성을 시도하고 <code>run_schema_bootstrap()</code>을 실행합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">3</span>
+            <div>
+              <strong>lifespan</strong>
+              서버 시작 시 진행 중이던 작업을 <code>Interrupted</code>로 변경하고, 기본 가이드를 seed하며, <code>userConnection/</code> 정리 스케줄러를 시작합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">4</span>
+            <div>
+              <strong>Router Include</strong>
+              인증, 사용자, 해석, 시스템, 지원, 활동 로그, 계산기/솔루션 라우터를 <code>app.include_router(...)</code>로 등록합니다.
+            </div>
+          </div>
+        </div>
+
+        <h3>주요 라우터</h3>
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th>라우터</th>
+              <th>역할</th>
+              <th>확인할 흐름</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>routers/auth.py</code></td>
+              <td>로그인, 회원가입, 사용자 확인</td>
+              <td><code>/api</code>, <code>/member</code>, 세션 토큰 발급/검증</td>
+            </tr>
+            <tr>
+              <td><code>routers/analysis.py</code></td>
+              <td>해석 요청, 상태 조회, 이력, 다운로드</td>
+              <td>업로드 저장, 작업 제출, <code>job_id</code> 조회, 결과 다운로드 권한 검사</td>
+            </tr>
+            <tr>
+              <td><code>routers/users.py</code></td>
+              <td>사용자 승인 및 관리</td>
+              <td>관리자 권한, 사용자 활성/비활성 상태</td>
+            </tr>
+            <tr>
+              <td><code>routers/support.py</code></td>
+              <td>공지사항, 사용자 가이드, 기능 요청</td>
+              <td>지원 페이지의 CRUD와 DB 모델 연결</td>
+            </tr>
+            <tr>
+              <td><code>routers/system.py</code></td>
+              <td>서버/DB/큐 상태 확인</td>
+              <td>관리자 System Settings 화면과 연결</td>
+            </tr>
+            <tr>
+              <td><code>routers/activity.py</code></td>
+              <td>활동 로그와 사용 기록</td>
+              <td>버전 업데이트, 페이지 조회, 다운로드, 사용 리포트의 근거 데이터</td>
+            </tr>
+            <tr>
+              <td><code>routers/viewers.py</code>, <code>routers/newsletters.py</code></td>
+              <td>보조 기능 라우터</td>
+              <td>공통 앱 외의 뷰어/알림성 기능 연결 지점</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>백엔드 역할 지도</h3>
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th>영역</th>
+              <th>주요 파일</th>
+              <th>역할</th>
+              <th>상세 분리 기준</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>앱 구성</td>
+              <td><code>main.py</code></td>
+              <td>FastAPI 앱 생성, CORS, 라우터 등록, 시작 시 복구/seed/cleanup을 담당합니다.</td>
+              <td>공통 유지. 신규 라우터 추가 여부만 여기에 기록합니다.</td>
+            </tr>
+            <tr>
+              <td>요청 접수</td>
+              <td><code>routers/analysis.py</code>, <code>routers/_intake.py</code></td>
+              <td>업로드 파일 저장, 작업 폴더 생성, 작업 제출, 기본 DB 레코드 생성을 담당합니다.</td>
+              <td>솔루션별 입력 검증과 request payload는 개별 문서로 분리합니다.</td>
+            </tr>
+            <tr>
+              <td>권한/보안</td>
+              <td><code>dependencies.py</code>, <code>routers/_access_control.py</code></td>
+              <td>인증 토큰 검증, 소유자 확인, 작업/파일 접근 권한을 검사합니다.</td>
+              <td>공통 유지. 예외 정책이 생기면 해당 기능 문서에 사유를 기록합니다.</td>
+            </tr>
+            <tr>
+              <td>작업 상태</td>
+              <td><code>services/job_manager.py</code></td>
+              <td>ThreadPoolExecutor, 인메모리 job 상태, DB write-through를 관리합니다.</td>
+              <td>개별 task 함수 내부 단계는 솔루션 문서에서 설명합니다.</td>
+            </tr>
+            <tr>
+              <td>계산 서비스</td>
+              <td><code>services/*_service.py</code></td>
+              <td>외부 실행 파일 호출, 계산 함수, 결과 파일 수집 등 실제 처리 로직을 담습니다.</td>
+              <td>이 페이지에서는 공통 역할만 설명하고, 세부 로직은 솔루션별 페이지로 분리합니다.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>해석 작업 공통 흐름</h3>
+        <ol>
+          <li>프론트엔드가 파일 또는 입력값을 <code>/api/analysis/.../request</code> 계열 엔드포인트로 전송합니다.</li>
+          <li><code>routers/analysis.py</code>가 인증 사용자와 form의 <code>employee_id</code> 일치 여부를 확인합니다.</li>
+          <li><code>routers/_intake.py</code>의 helper가 작업 폴더를 만들고 업로드 파일을 저장합니다.</li>
+          <li><code>services/job_manager.py</code>와 서비스 함수가 실제 계산 또는 외부 실행 파일 호출을 담당합니다.</li>
+          <li>진행률은 메모리 상태와 DB의 <code>Analysis</code> 레코드에 반영됩니다.</li>
+          <li>완료 후 결과 경로와 메타데이터가 <code>result_info</code>에 저장되고, 다운로드는 <code>/api/download</code> 경로를 통해 이뤄집니다.</li>
+        </ol>
+
+        <p class="warning">작업 진행 상태 일부는 메모리 기반입니다. 서버 재시작 시 진행 중이던 작업은 시작 시점에 <code>Interrupted</code> / <code>Failed</code>로 정리되는 흐름이 있습니다.</p>
+
+        <div class="checklist">
+          <p>백엔드 수정 시 우선 확인</p>
+          <ul>
+            <li>새 라우터를 만들면 <code>app/main.py</code>에 include 되었는가?</li>
+            <li>사용자 입력의 <code>employee_id</code>가 인증 토큰 사용자와 대조되는가?</li>
+            <li>다운로드/파일 접근이 <code>userConnection/</code> 하위로 제한되는가?</li>
+            <li>긴 작업은 동기 응답이 아니라 job 기반 상태 조회 흐름을 따르는가?</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="db" class="panel">
+        <h2>DB</h2>
+        <p class="lead">DB는 MySQL이며 SQLAlchemy 모델을 통해 접근합니다. 연결 설정과 세션 생성은 <code>app/database.py</code>, 테이블 정의는 <code>app/models.py</code>에 있습니다.</p>
+
+        <h3>연결 흐름</h3>
+        <div class="flow">
+          <div class="step">
+            <span class="step-index">1</span>
+            <div>
+              <strong><code>app/database.py</code></strong>
+              <code>.env</code> 값을 읽어 <code>mysql+pymysql://...</code> 형식의 DB URL을 구성합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">2</span>
+            <div>
+              <strong><code>engine</code></strong>
+              <code>pool_recycle=3600</code>, <code>pool_pre_ping=True</code>로 MySQL 연결 안정성을 보강합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">3</span>
+            <div>
+              <strong><code>SessionLocal</code></strong>
+              요청별 DB 세션을 만들고 <code>get_db()</code> dependency가 요청 종료 시 close합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">4</span>
+            <div>
+              <strong><code>models.Base</code></strong>
+              모든 SQLAlchemy 모델의 기반이며 <code>main.py</code>에서 테이블 자동 생성을 호출합니다.
+            </div>
+          </div>
+        </div>
+
+        <h3>주요 테이블</h3>
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th>모델</th>
+              <th>테이블</th>
+              <th>역할</th>
+              <th>주요 컬럼</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>User</code></td>
+              <td><code>users</code></td>
+              <td>사용자 계정과 권한</td>
+              <td><code>employee_id</code>, <code>is_active</code>, <code>is_admin</code>, <code>is_developer</code></td>
+            </tr>
+            <tr>
+              <td><code>UserSession</code></td>
+              <td><code>user_sessions</code></td>
+              <td>서버측 세션 토큰</td>
+              <td><code>token</code>, <code>employee_id</code>, <code>expires_at</code></td>
+            </tr>
+            <tr>
+              <td><code>Analysis</code></td>
+              <td><code>analysis</code></td>
+              <td>해석 작업 이력과 상태</td>
+              <td><code>job_id</code>, <code>program_name</code>, <code>job_status</code>, <code>progress</code>, <code>input_info</code>, <code>result_info</code></td>
+            </tr>
+            <tr>
+              <td><code>Notice</code></td>
+              <td><code>notices</code></td>
+              <td>공지사항</td>
+              <td><code>type</code>, <code>title</code>, <code>is_pinned</code>, <code>author_id</code></td>
+            </tr>
+            <tr>
+              <td><code>UserGuide</code></td>
+              <td><code>user_guides</code></td>
+              <td>사용자 가이드</td>
+              <td><code>category</code>, <code>title</code>, <code>content</code></td>
+            </tr>
+            <tr>
+              <td><code>FeatureRequest</code></td>
+              <td><code>feature_requests</code></td>
+              <td>기능 요청</td>
+              <td><code>status</code>, <code>upvotes</code>, <code>admin_comment</code></td>
+            </tr>
+            <tr>
+              <td><code>ActivityLog</code></td>
+              <td><code>activity_logs</code></td>
+              <td>로그인, 페이지 조회, 다운로드 등 활동 기록</td>
+              <td><code>employee_id</code>, <code>action_type</code>, <code>action_detail</code>, <code>status</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>DB와 화면 연결</h3>
+        <ul>
+          <li>로그인/회원가입 화면은 <code>User</code>, <code>UserSession</code> 흐름과 연결됩니다.</li>
+          <li>My Projects, Analysis Management, Dashboard 통계는 주로 <code>Analysis</code> 테이블을 조회합니다.</li>
+          <li>Notice, User Guide, Feature Requests 페이지는 각각 <code>Notice</code>, <code>UserGuide</code>, <code>FeatureRequest</code>를 사용합니다.</li>
+          <li>Usage Reports 및 활동 추적은 <code>ActivityLog</code>에 의존합니다.</li>
+        </ul>
+
+        <h3>DB 역할 지도</h3>
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th>흐름</th>
+              <th>읽기/쓰기 대상</th>
+              <th>관리 포인트</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>로그인/세션</td>
+              <td><code>User</code>, <code>UserSession</code>, <code>ActivityLog</code></td>
+              <td>사용자 활성 상태, 관리자 권한, 세션 만료, 로그인 이력을 함께 확인합니다.</td>
+            </tr>
+            <tr>
+              <td>해석 실행</td>
+              <td><code>Analysis</code></td>
+              <td>공통 상태 컬럼은 Workbench에서 관리하고, JSON 내부 구조는 솔루션별 문서에 둡니다.</td>
+            </tr>
+            <tr>
+              <td>지원/운영</td>
+              <td><code>Notice</code>, <code>UserGuide</code>, <code>FeatureRequest</code></td>
+              <td>지원 페이지 CRUD와 관리자 권한 체크가 함께 움직입니다.</td>
+            </tr>
+            <tr>
+              <td>사용량 리포트</td>
+              <td><code>Analysis</code>, <code>ActivityLog</code>, <code>User</code></td>
+              <td>통계 기준 변경 시 화면, API, XLSX export 결과를 같이 확인합니다.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="checklist">
+          <p>DB 수정 시 우선 확인</p>
+          <ul>
+            <li>모델 컬럼 추가 후 기존 DB 스키마 보정 로직이 필요한가?</li>
+            <li>JSON 컬럼 구조 변경 시 프론트엔드 파싱 코드가 같이 바뀌는가?</li>
+            <li>관리자 통계에서 개발자 또는 샘플 실행 데이터 제외 정책이 유지되는가?</li>
+            <li>세션/인증 관련 변경은 <code>AuthContext</code>, <code>auth.py</code>, <code>dependencies.py</code>를 함께 확인했는가?</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="maintenance" class="panel">
+        <h2>관리 포인트</h2>
+        <p class="lead">이 HTML 문서는 코드 변경 시 같이 갱신하기 위한 체크리스트 역할을 합니다.</p>
+
+        <h3>문서 갱신 기준</h3>
+        <ul>
+          <li>새 Studio 또는 솔루션 메뉴가 추가되면 WorkBench 문서에는 공통 연결 위치와 역할만 기록하고, 상세 흐름은 별도 HTML로 분리합니다.</li>
+          <li>공통 Context, 인증, API base URL, 작업 상태 관리 방식이 바뀌면 이 페이지의 FrontEnd/BackEnd/DB 섹션을 갱신합니다.</li>
+          <li>DB 모델 또는 JSON 컬럼 구조가 바뀌면 DB 섹션에 영향 범위를 기록합니다.</li>
+          <li>해석 작업 공통 처리 방식이 바뀌면 BackEnd의 작업 공통 흐름을 먼저 수정합니다.</li>
+        </ul>
+
+        <h3>다음에 분리할 상세 메뉴 후보</h3>
+        <div class="quick-grid">
+          <a class="quick-card" href="#frontend">
+            <strong>File-Based Studio</strong>
+            <span>파일 업로드, 작업 요청, 결과 다운로드의 공통 Studio 흐름을 분리합니다.</span>
+          </a>
+          <a class="quick-card" href="#frontend">
+            <strong>Interactive / Parametric</strong>
+            <span>사용자 입력 기반 계산, API 계산기, 즉시 결과 표시 흐름을 구분합니다.</span>
+          </a>
+          <a class="quick-card" href="#backend">
+            <strong>Support / Admin</strong>
+            <span>운영 관리, 활동 로그, 공지/가이드/기능 요청 흐름을 별도 영역으로 정리합니다.</span>
+          </a>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="shell-footer">
+    <div class="wrap">
+      Local document: <code>C:\Coding\WorkBench\HTML\workbench.html</code>
+    </div>
+  </footer>
+</body>
+</html>

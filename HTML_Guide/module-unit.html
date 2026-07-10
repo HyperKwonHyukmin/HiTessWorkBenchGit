@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Module Unit Flow</title>
+  <link rel="stylesheet" href="flow-map.css">
+</head>
+<body>
+  <header class="shell-header">
+    <div class="wrap header-row">
+      <div>
+        <p class="eyebrow">Solution Detail</p>
+        <h1>Group & Module Unit 권상 구조 해석</h1>
+        <p class="subtitle">ModuleUnitStudio와 ModuleUnitAnalysis를 WorkBench에서 참조할 때 필요한 화면 절차, 코드 진입점, 안정성 평가 단계, 결과 JSON 구조를 정리합니다.</p>
+      </div>
+      <div class="header-actions">
+        <a class="button-link" href="index.html">Home</a>
+        <a class="button-link" href="file-based-apps.html">File-Based Apps</a>
+        <a class="button-link" href="workbench.html">Workbench</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <nav class="side-nav" aria-label="Module Unit menu">
+      <p class="nav-title">Module Unit Menu</p>
+      <ul class="menu">
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#workflow">사용 절차</a></li>
+        <li><a href="#studio">Studio 코드</a></li>
+        <li><a href="#analysis">Analysis 코드</a></li>
+        <li><a href="#pipeline">평가 Pipeline</a></li>
+        <li><a href="#result">평가 결과</a></li>
+        <li><a href="#structural">구조해석(Nastran)</a></li>
+        <li><a href="#integration">Workbench 연동</a></li>
+        <li><a href="#maintenance">관리 포인트</a></li>
+      </ul>
+      <p class="nav-title nav-section">Document Menu</p>
+      <ul class="menu">
+        <li><a href="workbench.html">Workbench</a></li>
+        <li><a href="file-based-apps.html">File-Based Apps</a></li>
+        <li><a href="interactive-apps.html">Interactive Apps</a></li>
+        <li><a href="parametric-apps.html">Parametric Apps</a></li>
+        <li><a href="productivity-apps.html">Productivity Apps</a></li>
+        <li><a href="support-admin.html">Support / Admin</a></li>
+      </ul>
+    </nav>
+
+    <div class="content">
+      <section id="overview" class="panel">
+        <h2>Overview</h2>
+        <p class="lead">Module Unit 앱은 BDF 기반 모듈 모델을 3D로 확인하고, 권상 노드/그룹을 지정한 뒤 자세 안정성 평가와 권상 위치 추천 결과를 JSON으로 산출하는 WorkBench용 해석 앱입니다.</p>
+        <div class="status-row">
+          <div class="metric"><span>Viewer</span><strong>React + Three.js</strong></div>
+          <div class="metric"><span>Engine</span><strong>.NET 8 CLI</strong></div>
+          <div class="metric"><span>Result</span><strong>Stability JSON</strong></div>
+        </div>
+        <div class="flow">
+          <div class="step"><span class="step-index">1</span><div><strong>모델 JSON 폴더 로드</strong><code>ModuleUnitStudio</code>가 JSON 파일들을 읽어 stage, node, element, mass, COG 정보를 화면에 표시합니다.</div></div>
+          <div class="step"><span class="step-index">2</span><div><strong>권상 조건 설정</strong>Hydro(Hook), Goliat(Trolley), Ceiling(Crane) 방식과 wire length, 권상 그룹/노드를 지정합니다.</div></div>
+          <div class="step"><span class="step-index">3</span><div><strong>편집/저장</strong>필요하면 모델 편집 intent를 적용하고 <code>_edited.json</code>, <code>_posture.json</code> 입력 세트를 준비합니다.</div></div>
+          <div class="step"><span class="step-index">4</span><div><strong>안정성 평가</strong><code>ModuleAnalysis.Cli.exe</code>가 <code>_posture.json</code>을 받아 Stage 0~6 평가를 실행합니다.</div></div>
+          <div class="step"><span class="step-index">5</span><div><strong>결과 표시</strong><code>_stability.json</code> 또는 <code>_hoist_optimization.json</code>을 Studio가 읽어 와이어, 정점, 이슈, PASS/WARN/FAIL을 시각화합니다.</div></div>
+          <div class="step"><span class="step-index">6</span><div><strong>구조해석(선택)</strong>자세안정성이 PASS/WARN 이면 <code>Analyze</code> 탭에서 Wire 포함 BDF + Nastran SOL 101 구조해석을 실행해 부재 허용응력 초과 여부를 확인합니다. FAIL(허용응력 초과) 이면 가서포트(보강 부재)를 추가하거나 권상점을 다시 잡아 재해석합니다. 자세한 내용은 <a href="#structural">구조해석(Nastran)</a> 참고.</div></div>
+        </div>
+        <p class="note">참조 소스는 <code>C:\Coding\WorkBenchSubModule\ModuleUnitStudio</code>와 <code>C:\Coding\WorkBenchSubModule\ModuleUnitAnalysis</code>입니다. WorkBench 본체에는 임베드/실행 연결부만 두고, 도메인 로직은 두 하위 프로젝트를 기준으로 추적합니다. 단, 구조해석(Nastran SOL 101) 파이프라인 자체는 C# 엔진이 아니라 <strong>WorkBench 백엔드(Python)</strong>의 <code>unit_structural_service.py</code>가 <code>nastran_bridge.py</code>(InHouseProgram/NastranBridge)와 외부 MSC Nastran을 직접 호출해 수행합니다 — Stage 0~6 자세안정성 평가(C# CLI)와는 별개 엔진입니다.</p>
+      </section>
+
+      <section id="workflow" class="panel">
+        <h2>사용 절차</h2>
+        <p class="lead">사용자 관점의 흐름은 모델 확인, 권상점 선택, 평가 실행, 결과 조치입니다.</p>
+        <ol>
+          <li>WorkBench 카드 메뉴에서 <code>ModuleUnitStudio</code> 또는 해당 권상 구조 해석 앱으로 진입합니다.</li>
+          <li>자동 주입 폴더가 있으면 즉시 모델을 로드하고, 없으면 "폴더 열기"로 JSON 폴더를 선택합니다.</li>
+          <li>3D 뷰어에서 beam, rigid, weld, U-bolt, mass, COG, node 위치를 확인합니다.</li>
+          <li>권상 모드와 wire length를 정하고, 그룹별 lug node를 선택합니다.</li>
+          <li>자동 권상 위치 추천이 필요하면 최적화 실행을 먼저 돌려 후보 그룹/노드를 비교합니다.</li>
+          <li>최종 권상 조건을 저장해 <code>_posture.json</code>과 연결된 <code>_edited.json</code> 입력을 확정합니다.</li>
+          <li>안정성 평가 실행 후 결과 패널에서 치명 이슈, 경고, 통과 항목, 와이어 시각화를 확인합니다.</li>
+        </ol>
+        <h3>입출력 파일</h3>
+        <table class="file-table">
+          <thead><tr><th>파일</th><th>생성/사용 주체</th><th>역할</th></tr></thead>
+          <tbody>
+            <tr><td><code>*_edited.json</code></td><td>Studio / 편집 적용 결과</td><td>nodes, elements, properties, mass, COG 등 평가 대상 모델 데이터입니다. <code>meta.edited === true</code>가 요구됩니다.</td></tr>
+            <tr><td><code>*_posture.json</code></td><td>Studio / 권상 조건 저장</td><td>권상 모드, wire length, 그룹별 권상 노드, 참조 edited 파일명을 담는 엔진 입력 파일입니다.</td></tr>
+            <tr><td><code>*_stability.json</code></td><td>Analysis CLI</td><td>Stage 0~6 평가 결과, visualization, overall 요약을 담는 기본 안정성 평가 결과입니다.</td></tr>
+            <tr><td><code>*_hoist_optimization.json</code></td><td>Analysis CLI <code>--optimize</code></td><td>권상 위치 자동 추천 후보, 점수, best candidate를 담는 최적화 결과입니다.</td></tr>
+            <tr><td><code>*_lifting.bdf</code></td><td>백엔드 <code>unit_structural_service.py</code> (<code>nastran_bridge.py lift-run --prepare-only</code>)</td><td>편집/가서포트 반영 모델 + Wire 를 포함한 Nastran SOL 101 입력 BDF 입니다.</td></tr>
+            <tr><td><code>*_lifting_meta.json</code></td><td>동일(<code>lift-run</code>)</td><td>ID 충돌 회피 매핑 + wire 추적용 메타 — <code>lift-result</code> 단계 입력으로 재사용됩니다.</td></tr>
+            <tr><td><code>*_lifting.f06</code></td><td>MSC Nastran (SOL 101 실행)</td><td>구조해석 원시 출력(F06). <code>lift-result</code>가 이를 파싱해 Studio 결과 JSON으로 매핑합니다.</td></tr>
+            <tr><td><code>*_lifting_nastranResult.json</code></td><td>백엔드 (<code>nastran_bridge.py lift-result</code>)</td><td>부재별 응력/허용응력 초과 여부, summary 를 담는 구조해석 최종 결과 — <code>UnitStructuralPanel</code>·색맵핑 viewer가 사용합니다.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="studio" class="panel">
+        <h2>Studio 코드</h2>
+        <p class="lead"><code>ModuleUnitStudio</code>는 WorkBench에 임베드 가능한 React + Three.js 뷰어입니다. 단독 브라우저 실행과 Electron 임베드 실행을 모두 지원합니다.</p>
+        <table class="file-table">
+          <thead><tr><th>영역</th><th>파일</th><th>역할</th></tr></thead>
+          <tbody>
+            <tr><td>앱 진입</td><td><code>apps/module-unit-studio/src/App.jsx</code></td><td>초기 폴더 자동 로드, 패널 배치, 3D viewport와 분석/저장 UI 흐름을 제어합니다.</td></tr>
+            <tr><td>Host Adapter</td><td><code>src/host/host.js</code></td><td><code>window.workbenchAPI</code> 존재 여부로 WebHost/ElectronHost를 결정하고 폴더 읽기/쓰기 API를 추상화합니다.</td></tr>
+            <tr><td>데이터 로드</td><td><code>src/data/fileLoader.js</code></td><td>선택된 JSON 파일들을 <code>StageData[]</code>로 변환해 store에 넣습니다.</td></tr>
+            <tr><td>상태 저장소</td><td><code>useStageStore.js</code>, <code>useEditStore.js</code>, <code>useStabilityStore.js</code></td><td>로드된 stage, 편집 intent, stability result, source folder reference를 관리합니다.</td></tr>
+            <tr><td>권상 UI</td><td><code>HoistPositionPanel.jsx</code>, <code>GroupManager.jsx</code>, <code>StabilityReportPanel.jsx</code></td><td>권상 그룹 선택, 자동 후보 표시, 평가 결과 카드와 조치 메시지를 제공합니다. 가상판(<code>showHoistPlate</code>) 표시 토글, Circle Guide(원 기반 후보 강조) 토글, 구역 기반 권상 위치 선정(<code>zoneSelectHoistPositions</code>)도 이 패널이 담당합니다.</td></tr>
+            <tr><td>3D 시각화</td><td><code>StabilityWireOverlay.js</code>, <code>SlingAngleOverlay.js</code>, <code>StabilityIssueOverlay.js</code></td><td>정점, 와이어, 슬링각, 전도 이슈, COG 등을 viewport 위에 렌더링합니다.</td></tr>
+            <tr><td>권상 후보 보조</td><td><code>hoistStabilityAdapter.js</code>, <code>hoistCandidateRank.js</code>, <code>hoistZonePartition.js</code></td><td>엔진 결과를 UI 후보 카드와 설명 문구로 변환하고 후보 순위를 계산합니다.</td></tr>
+            <tr><td>구조해석 UI/상태</td><td><code>AnalyzePanel.jsx</code>, <code>useUnitStructuralRunner.js</code>, <code>useUnitStructuralStore.js</code></td><td>안전율/허용응력 입력, Nastran 구조해석 실행·진행률(polling)·결과(부재 초과 summary) 상태를 관리합니다. 실행 전 fresh store 상태로 이중 제출을 차단합니다.</td></tr>
+            <tr><td>가서포트(보강)</td><td><code>useEditStore.js</code>(<code>pickSupportNode</code>/<code>addSupportBeam</code>/<code>removeSupportBeam</code>), <code>SupportBeamPreview.js</code></td><td>Shift+Node 2개 선택 → <code>addSupportBeam</code> intent 생성 + 3D 프리뷰. 추가/제거 시 구조해석 결과를 자동 무효화(reset)해 재해석을 허용합니다.</td></tr>
+          </tbody>
+        </table>
+        <h3>단독 개발 명령</h3>
+        <ul>
+          <li><code>cd C:\Coding\WorkBenchSubModule\ModuleUnitStudio\apps\module-unit-studio</code></li>
+          <li><code>npm run dev</code> - 기본 개발 서버는 <code>http://localhost:5175</code>입니다.</li>
+          <li><code>npm test -- --run</code> - store, data adapter, Three.js helper 단위 테스트를 실행합니다.</li>
+          <li><code>npm run package</code> - WorkBench 마켓플레이스/임베드용 zip을 생성합니다.</li>
+        </ul>
+      </section>
+
+      <section id="analysis" class="panel">
+        <h2>Analysis 코드</h2>
+        <p class="lead"><code>ModuleUnitAnalysis</code>는 .NET 8 기반 계산 엔진입니다. CLI가 입력 posture 파일을 받아 stability 평가 또는 hoist optimization을 실행합니다.</p>
+        <table class="file-table">
+          <thead><tr><th>파일</th><th>역할</th><th>확인 포인트</th></tr></thead>
+          <tbody>
+            <tr><td><code>src/ModuleAnalysis.Cli/Program.cs</code></td><td>CLI 엔트리포인트</td><td><code>ModuleAnalysis.Cli &lt;_posture.json&gt;</code>, <code>ModuleAnalysis.Cli --optimize &lt;_posture.json&gt;</code> 두 모드를 분기합니다.</td></tr>
+            <tr><td><code>StabilityPipeline.cs</code></td><td>Stage 0~6 실행 조립</td><td><code>Run()</code>, <code>RunContext()</code>, <code>BuildReport()</code>, <code>BuildVisualization()</code>가 결과 JSON을 만듭니다.</td></tr>
+            <tr><td><code>Stages/*.cs</code></td><td>단계별 평가</td><td>형상 분류, 유효성 검증, 정점 산출, 슬링각, 간섭, 전도 평가가 단계별로 분리되어 있습니다.</td></tr>
+            <tr><td><code>Optimizer/HoistPositionOptimizer.cs</code></td><td>권상 위치 자동 추천</td><td>후보 그룹 배치를 만들고 <code>StabilityPipeline.RunContext()</code>로 반복 평가합니다.</td></tr>
+            <tr><td><code>AnalysisConstants.cs</code></td><td>평가 상수</td><td>Stage별 threshold의 single source of truth입니다. 값 변경 시 문서와 골든 테스트도 함께 확인합니다.</td></tr>
+            <tr><td><code>tests/ModuleAnalysis.Tests</code></td><td>회귀 테스트</td><td>골든 케이스, 형상 검증, 권상 추천, 전도 threshold 정합성을 검증합니다.</td></tr>
+          </tbody>
+        </table>
+        <div class="flow">
+          <div class="step"><span class="step-index">1</span><div><strong>기본 안정성 평가</strong><code>ModuleAnalysis.Cli.exe C:\path\model_posture.json</code> 실행 시 같은 폴더에 <code>model_stability.json</code>을 씁니다.</div></div>
+          <div class="step"><span class="step-index">2</span><div><strong>출력 경로 지정</strong>두 번째 인자를 넘기면 지정 경로에 결과 JSON을 저장합니다.</div></div>
+          <div class="step"><span class="step-index">3</span><div><strong>권상 최적화</strong><code>--optimize</code> 모드는 <code>HoistPositionOptimizer.Optimize()</code>를 실행하고 <code>_hoist_optimization.json</code>을 생성합니다.</div></div>
+          <div class="step"><span class="step-index">4</span><div><strong>오류 처리</strong>입력 파일 없음은 exit code 2, 실행 중 예외는 exit code 1로 반환합니다.</div></div>
+        </div>
+      </section>
+
+      <section id="pipeline" class="panel">
+        <h2>평가 Pipeline</h2>
+        <p class="lead">Stability 평가는 <code>_posture.json</code>과 <code>_edited.json</code>으로부터 7개 Stage를 순차 실행합니다. Stage 4·5는 경고만 만들고, 전체 FAIL은 Stage 1·2·3·6에서 결정됩니다.</p>
+        <table class="file-table">
+          <thead><tr><th>Stage</th><th>클래스</th><th>주요 처리</th><th>판정</th></tr></thead>
+          <tbody>
+            <tr><td>0</td><td><code>Stage0_InputParser</code></td><td>schema, edited 파일 존재, node 좌표, mass source, mode, group/node 수, wire length를 검증합니다.</td><td>내부 검증</td></tr>
+            <tr><td>1</td><td><code>Stage1_LiftingShapeClassifier</code></td><td>Hook/Trolley/Crane 방식과 노드 개수 조합을 확인하고 2점/3점/4점 형상을 분류합니다.</td><td>FAIL 가능</td></tr>
+            <tr><td>2</td><td><code>Stage2_LiftingShapeVerifier</code></td><td>4점 사각형 Z단차, 평면도, convex, Trolley 단변, 3점 삼각형 최대 내각을 검증합니다.</td><td>FAIL 가능</td></tr>
+            <tr><td>3</td><td><code>Stage3_LiftingApexCalculator</code></td><td>정점을 <code>centroid + (0, 0, wireLengthMm)</code>로 계산하고 Trolley 4점은 ±450mm로 분할합니다.</td><td>wireLength 오류 시 FAIL</td></tr>
+            <tr><td>4</td><td><code>Stage4_SlingAngleInspector</code></td><td>각 와이어가 수평면과 이루는 각도를 계산하고 60도 이상인지 확인합니다.</td><td>WARN만</td></tr>
+            <tr><td>5</td><td><code>Stage5_WireInterferenceInspector</code></td><td>와이어 선분과 구조 element 선분 사이 최단거리를 계산해 단면 최대치보다 가까운 간섭을 찾습니다.</td><td>WARN만</td></tr>
+            <tr><td>6</td><td><code>Stage6_PostureStabilityInspector</code></td><td>정점의 XY 지지 영역과 COG 투영점을 비교해 전도 위험을 평가합니다.</td><td>FAIL 가능</td></tr>
+          </tbody>
+        </table>
+        <h3>주요 기준값</h3>
+        <table class="file-table">
+          <thead><tr><th>상수</th><th>값</th><th>의미</th></tr></thead>
+          <tbody>
+            <tr><td><code>LineAlignmentCosThreshold</code></td><td>0.9</td><td>4점 일직선 판정. 약 26도 이내를 허용합니다.</td></tr>
+            <tr><td><code>ColinearAreaToleranceMm2</code></td><td>1000.0</td><td>4점 중 3점 일직선 면적 임계값입니다.</td></tr>
+            <tr><td><code>MaxZDiffMm</code></td><td>500.0 mm</td><td>4점 사각형 권상점 Z단차 한계입니다.</td></tr>
+            <tr><td><code>QuadPlanarityMaxMm</code></td><td>300.0 mm</td><td>4점 사각형 평면도 한계입니다.</td></tr>
+            <tr><td><code>TrolleyQuadMinSideMm</code></td><td>900.0 mm</td><td>Trolley 4점 분할을 위한 최소 단변입니다.</td></tr>
+            <tr><td><code>TriangleAngleMaxDeg</code></td><td>120.0 deg</td><td>3점 삼각형 최대 내각 한계입니다.</td></tr>
+            <tr><td><code>TrolleyHalfSpanMm</code></td><td>450.0 mm</td><td>Trolley 정점 분할 폭입니다.</td></tr>
+            <tr><td><code>MinSafeSlingAngleDeg</code></td><td>60.0 deg</td><td>슬링각 경고 기준입니다.</td></tr>
+            <tr><td><code>LugIgnoreMarginMm</code></td><td>150.0 mm</td><td>러그 인접 간섭 무시 거리입니다.</td></tr>
+            <tr><td><code>OverturnBboxRatio</code></td><td>0.01</td><td>전도 허용치 = 모델 BBox 대각선의 1%입니다.</td></tr>
+          </tbody>
+        </table>
+        <p class="warning">Hook 그룹 수 한계는 현재 코드 기준 <code>AnalysisConstants.GroupCountLimit(Hook) = 8</code>입니다. 일부 구 명세에는 4로 남아 있을 수 있으므로 실제 판정은 코드 상수를 우선합니다.</p>
+      </section>
+
+      <section id="result" class="panel">
+        <h2>평가 결과</h2>
+        <p class="lead">결과 JSON은 화면 카드와 3D overlay가 그대로 읽을 수 있도록 stage별 상세, 사용자 요약, visualization 데이터를 함께 포함합니다.</p>
+        <table class="file-table">
+          <thead><tr><th>필드</th><th>내용</th><th>화면 사용처</th></tr></thead>
+          <tbody>
+            <tr><td><code>meta</code></td><td>schema, phase, sourceFiles, unit, engineVersion, generatedAt</td><td>결과 파일 식별, 버전 추적</td></tr>
+            <tr><td><code>input</code></td><td>liftingMode, wireLength, totalMass, COG, BBox, groups</td><td>결과 패널의 입력 조건 요약</td></tr>
+            <tr><td><code>stages</code></td><td>Stage 0~6의 status, summary, results, geometry, conflicts</td><td>상세 카드, 단계별 진단, 근거 metrics</td></tr>
+            <tr><td><code>visualization</code></td><td>apexes, wires, wire angle, safe/warn 상태</td><td>3D 와이어 overlay와 안정성 시각화</td></tr>
+            <tr><td><code>overall</code></td><td>종합 status, highestSeverity, stageStatuses, userSummary, issueSummary</td><td>최상단 PASS/WARN/FAIL, 핵심 조치 메시지</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li><code>overall.status = pass</code>: 치명 이슈와 경고가 없는 상태입니다.</li>
+          <li><code>overall.status = warn</code>: Stage 4 슬링각 또는 Stage 5 와이어 간섭 등 검토 항목이 있지만 형상/전도 FAIL은 없습니다.</li>
+          <li><code>overall.status = fail</code>: Stage 1·2·3·6 중 하나가 실패했으며 현재 권상 조건으로 진행하기 어렵습니다.</li>
+          <li><code>overall.userSummary.criticalIssues</code>는 사용자가 먼저 수정해야 하는 문제를 headline, message, impact, action으로 제공합니다.</li>
+          <li><code>visualization.wires[].angleDeg</code>와 <code>safe</code>는 viewport 와이어 색상/상태 표시의 기준입니다.</li>
+        </ul>
+      </section>
+
+      <section id="structural" class="panel">
+        <h2>구조해석(Nastran)</h2>
+        <p class="lead">자세안정성이 PASS/WARN 이면 <code>Analyze</code> 탭에서 Wire 포함 BDF 를 생성해 Nastran SOL 101 로 부재 응력을 계산하고, 허용응력(안전율 반영) 초과 여부를 평가합니다. Stage 0~6 파이프라인과 달리 <strong>C# CLI 가 아니라 WorkBench 백엔드(Python)</strong>가 직접 수행합니다.</p>
+        <table class="file-table">
+          <thead><tr><th>단계</th><th>구현</th><th>내용</th></tr></thead>
+          <tbody>
+            <tr><td>0. 편집 모델 동기화</td><td><code>useUnitStructuralRunner.js</code> <code>syncEditedModel()</code></td><td>가서포트 등 편집 intent 가 있으면 실행 직전 <code>_edited.json</code>을 백엔드에 재업로드합니다(<code>host.uploadEvaluationArtifact</code>).</td></tr>
+            <tr><td>1. Wire 포함 BDF 생성</td><td><code>unit_structural_service.py</code> → <code>nastran_bridge.py lift-run --prepare-only</code></td><td><code>_edited.json</code>(있으면) 또는 원본 BDF 로부터 <code>_lifting.bdf</code> + <code>_lifting_meta.json</code> 생성.</td></tr>
+            <tr><td>2. Nastran SOL 101 실행</td><td><code>subprocess.run([nastran_exe, lifting_bdf, "scr=yes", "old=no", "batch=no"])</code></td><td>외부 MSC Nastran(<code>NASTRAN_EXE</code> 환경변수로 override 가능)이 <code>_lifting.f06</code>을 생성합니다. 타임아웃 30분.</td></tr>
+            <tr><td>3. 결과 매핑</td><td><code>nastran_bridge.py lift-result --allowable-mpa</code></td><td>F06 → <code>_lifting_nastranResult.json</code>(부재별 응력, <code>memberExceedCount</code> 등 summary).</td></tr>
+          </tbody>
+        </table>
+        <h3>가서포트(임시 보강 부재)</h3>
+        <p>허용응력을 초과하면 권상점을 다시 잡거나, 노드 2개를 Shift+Click 으로 선택해 보강 부재(가서포트, <code>addSupportBeam</code> intent)를 추가한 뒤 재해석할 수 있습니다. 추가/제거 모두 <code>useUnitStructuralStore.reset()</code>을 호출해 이전 구조해석 결과를 자동 무효화하므로, 이 반복(추가→재해석)은 별도 초기화 없이 여러 번 수행할 수 있습니다.</p>
+        <h3>재해석 반복 시 주의(2026-07-07 수정 반영)</h3>
+        <p class="warning">구조해석이 한 번 완료(Success)되면 <code>useUnitStructuralRunner.js</code>의 <code>isFinished</code> 가드가 Run 버튼을 잠급니다("해석 완료 — 초기화 후 재실행"). 과거엔 <strong>권상점을 다시 잡아 재평가</strong>하는 경로에서 이 잠금이 풀리지 않아 사이드바 전체 초기화(가서포트·편집 소실)를 강요했습니다. 지금은 <code>useEditStore.js</code>의 <code>resetHoistPoints()</code>와 <code>exportPostureStabilityToFile()</code>(자세안정성 재평가) 가 <code>useUnitStructuralStore</code>를 함께 무효화하도록 수정되어, 권상점 재선정 → 재평가 → 재해석 루프도 가서포트 루프처럼 초기화 없이 반복할 수 있습니다. 백엔드도 재실행 시 <code>{stem}_lifting.*</code> 전체(이전 <code>.op2</code>/DB 포함)를 정리하고 <code>scr=yes old=no</code>로 Nastran 을 호출해 반복 실행 중 stale DB 로 인한 실패를 방지합니다.</p>
+      </section>
+
+      <section id="integration" class="panel">
+        <h2>Workbench 연동</h2>
+        <p class="lead">Studio는 WorkBench Electron 내부에서 임베드될 수 있도록 host adapter 계약을 사용합니다.</p>
+        <table class="file-table">
+          <thead><tr><th>API</th><th>호출 방향</th><th>역할</th></tr></thead>
+          <tbody>
+            <tr><td><code>pickFolder()</code></td><td>Studio -> WorkBench</td><td>사용자가 폴더를 직접 선택하면 WorkBench main process가 모든 JSON 파일을 읽어 반환합니다.</td></tr>
+            <tr><td><code>getInitialFolder()</code></td><td>Studio -> WorkBench</td><td>이전 단계가 만든 작업 폴더를 WorkBench가 주입하면 Studio가 시작 시 자동 로드합니다.</td></tr>
+            <tr><td><code>writeFile(folderRef, fileName, content)</code></td><td>Studio -> WorkBench</td><td><code>_edit.json</code>, posture, 결과 보조 파일 등을 같은 폴더에 UTF-8로 씁니다.</td></tr>
+            <tr><td><code>uploadEvaluationArtifact(name, content)</code></td><td>Studio -> WorkBench 백엔드</td><td><code>_edited.json</code>/<code>_posture.json</code>을 GroupModuleUnit BDF 폴더로 업로드(backend 분리 운영 환경 지원). 반환된 <code>remotePath</code>가 이후 CLI/구조해석 입력 절대경로입니다.</td></tr>
+            <tr><td><code>runStabilityAnalysis(posturePath)</code></td><td>Studio -> WorkBench 백엔드</td><td><code>/analysis/module-stability/request</code>를 호출해 <code>ModuleAnalysis.Cli.exe</code> 자세안정성 평가를 실행하고 <code>report</code>/<code>stabilityPath</code>를 반환합니다.</td></tr>
+            <tr><td><code>optimizeHoistPositions(posturePath)</code></td><td>Studio -> WorkBench 백엔드</td><td><code>/analysis/module-stability/optimize</code>를 호출해 <code>--optimize</code> 권상 위치 자동 추천을 실행합니다.</td></tr>
+            <tr><td><code>runUnitStructural({stabilityPath, safetyFactor, allowableMpa})</code></td><td>Studio -> WorkBench 백엔드</td><td><code>/analysis/unit-structural/request</code>를 호출해 Nastran SOL 101 구조해석을 실행하고 부재 응력 <code>summary</code>를 반환합니다.</td></tr>
+            <tr><td><code>onUnitStructuralProgress(callback)</code></td><td>WorkBench -> Studio</td><td>구조해석 진행률 polling 스트림 구독 — <code>useUnitStructuralStore.setProgress</code>로 반영됩니다.</td></tr>
+            <tr><td><code>exportUnitBdf({fileName, content})</code></td><td>Studio -> WorkBench</td><td>편집(가서포트 포함) 반영 최종 모델을 Nastran BDF 로 저장(Save-As).</td></tr>
+          </tbody>
+        </table>
+        <h3>백엔드 REST 엔드포인트 (<code>routers/analysis.py</code>)</h3>
+        <table class="file-table">
+          <thead><tr><th>엔드포인트</th><th>서비스</th><th>역할</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST /analysis/module-stability/upload</code></td><td>—</td><td>Studio 자세안정성 평가 입력을 GroupModuleUnit BDF 폴더로 업로드, <code>remotePath</code> 반환.</td></tr>
+            <tr><td><code>POST /analysis/module-stability/request</code></td><td><code>module_stability_service.task_execute_module_stability</code></td><td><code>ModuleAnalysis.Cli.exe</code> 실행 → <code>*_stability.json</code>.</td></tr>
+            <tr><td><code>POST /analysis/module-stability/optimize</code></td><td><code>module_stability_service.task_optimize_module_hoist_positions</code></td><td><code>ModuleAnalysis.Cli.exe --optimize</code> 실행 → <code>*_hoist_optimization.json</code>.</td></tr>
+            <tr><td><code>GET /analysis/module-stability/{job_id}/status</code></td><td>—</td><td>안정성/최적화 job 진행 상태 조회.</td></tr>
+            <tr><td><code>POST /analysis/unit-structural/request</code></td><td><code>unit_structural_service.task_execute_unit_structural</code></td><td>Wire 포함 BDF 생성 → Nastran SOL 101 실행 → F06 결과 매핑(허용응력 평가).</td></tr>
+            <tr><td><code>POST /analysis/groupmoduleunit/request</code> (+ sample/from-path)</td><td><code>groupmoduleunit_service.task_execute_groupmoduleunit</code></td><td>부모 BDF 검증(GroupModuleUnit/SidePassage) — 이후 module-stability/unit-structural 이 참조하는 부모 폴더를 만듭니다.</td></tr>
+            <tr><td><code>GET /analysis/groupmoduleunit/{parent_id}/artifacts</code></td><td>—</td><td>부모 BDF 폴더의 다운로드 가능한 lifting 산출물 목록.</td></tr>
+          </tbody>
+        </table>
+        <div class="checklist">
+          <p>연동 검증</p>
+          <ul>
+            <li>Workbench에서 Studio 화면이 열리고 빈 화면/콘솔 에러가 없는가?</li>
+            <li>자동 폴더 주입으로 JSON stage가 로드되는가?</li>
+            <li>"폴더 열기" 수동 경로가 Electron dialog로 정상 동작하는가?</li>
+            <li>권상 조건 저장 후 <code>_posture.json</code>과 <code>_edited.json</code>이 같은 작업 폴더에서 서로 참조되는가?</li>
+            <li>CLI 실행 후 <code>_stability.json</code> 결과가 Studio 결과 패널과 3D overlay에 표시되는가?</li>
+            <li>자세안정성 PASS/WARN 후 구조해석을 실행하면 <code>_lifting_nastranResult.json</code>이 생성되고 부재 초과 summary 가 결과 패널에 표시되는가?</li>
+            <li>가서포트 추가/제거 후 구조 Run 버튼 잠금이 자동으로 풀리는가(초기화 불필요)?</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="maintenance" class="panel">
+        <h2>관리 포인트</h2>
+        <p class="lead">Module Unit은 화면, JSON 계약, 계산 엔진, WorkBench 임베드 계약이 함께 움직입니다. 한 영역을 바꿀 때 영향 범위를 같이 확인해야 합니다.</p>
+        <table class="file-table">
+          <thead><tr><th>상황</th><th>확인 파일</th><th>같이 갱신할 것</th></tr></thead>
+          <tbody>
+            <tr><td>평가 threshold 변경</td><td><code>AnalysisConstants.cs</code></td><td><code>stability-pipeline-spec.md</code>, <code>fail-tolerance-reference.md</code>, 골든 테스트 expected JSON</td></tr>
+            <tr><td>Stage 결과 필드 변경</td><td><code>StageResults.cs</code>, <code>StabilityPipeline.cs</code></td><td>Studio의 <code>useStabilityStore</code>, <code>StabilityReportPanel</code>, overlay adapter</td></tr>
+            <tr><td>Host API 변경</td><td><code>src/host/host.js</code></td><td>Workbench preload/main IPC, <code>docs/build-and-embed.md</code></td></tr>
+            <tr><td>권상 추천 로직 변경</td><td><code>HoistPositionOptimizer.cs</code>, <code>GroupShapeValidator.cs</code></td><td>후보 카드 ranking/explain 테스트, Stage 1·2와 validator 정합성</td></tr>
+            <tr><td>입력 JSON 스키마 변경</td><td><code>Stage0_InputParser.cs</code>, Studio posture 저장 코드</td><td>posture spec, 샘플/골든 데이터, CLI 사용 문서</td></tr>
+            <tr><td>권상 재선정/재평가 → 구조해석 재실행 반복 워크플로 변경</td><td><code>useEditStore.js</code>(<code>resetHoistPoints</code>, <code>exportPostureStabilityToFile</code>)</td><td>권상 그룹을 바꾸는 모든 액션은 <code>useUnitStructuralStore</code>(있으면)를 함께 무효화해야 Run 버튼 잠금이 안 남는다 — 새 경로 추가 시 이 패턴을 그대로 따를 것(2026-07-07 F1 수정).</td></tr>
+            <tr><td>Nastran 반복 실행 안정성</td><td><code>unit_structural_service.py</code></td><td>재실행 전 <code>{stem}_lifting.*</code> 전체 삭제(op2/DB 포함) + <code>scr=yes old=no batch=no</code> 호출 유지 — ModelFlow 경로(<code>hitess_modelflow_service.py</code>)와 동일 패턴(2026-07-07 F7 수정).</td></tr>
+            <tr><td>C# 엔진(<code>ModuleAnalysis.Cli</code>) 코드 변경</td><td><code>C:\Coding\WorkBenchSubModule\ModuleUnitAnalysis\src\...</code></td><td>빌드 산출물을 <code>HiTessWorkBenchBackEnd\InHouseProgram\GroupModuleAnalysis\</code>로 수동 복사해야 서버(운영)에 반영된다(폴더는 git 미추적). 같은 폴더에 COG 전용 <code>ModuleGroupUnitAnalysis.exe</code>(<code>/analysis/groupmodule/cog</code> 전용)도 함께 있으니 혼동하지 말 것.</td></tr>
+            <tr><td>Studio(React) 코드 변경 — 배포</td><td><code>GroupModuleUnitLiftingAnalysis.jsx</code> 의 <code>MODULE_STUDIO_VERSION</code></td><td>Studio 코드를 무엇을 고쳤든(엔진 only 변경 포함) 버전 bump + <code>npm run package</code> + StudioProgram 2곳(백엔드-로컬 + UNC) 복사 + 이 상수 동기화가 예외 없는 세트. 안 하면 새 zip이 안 뜨거나 버전 불일치로 스튜디오가 아예 안 열린다.</td></tr>
+          </tbody>
+        </table>
+        <h3>회귀 테스트</h3>
+        <ul>
+          <li>Analysis 엔진: <code>cd C:\Coding\WorkBenchSubModule\ModuleUnitAnalysis</code> 후 <code>dotnet test</code></li>
+          <li>Studio: <code>cd C:\Coding\WorkBenchSubModule\ModuleUnitStudio\apps\module-unit-studio</code> 후 <code>npm test -- --run</code></li>
+          <li>골든 데이터: <code>tests/golden/A505080</code>의 input/expected를 기준으로 stability JSON 수치와 status를 비교합니다.</li>
+          <li>실측 검증: 실제 <code>_posture.json</code>에 CLI를 직접 실행해 <code>overall.status</code>, Stage 5 conflicts, Stage 6 threshold/deviation/margin을 확인합니다.</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+
+  <footer class="shell-footer">
+    <div class="wrap">Local document: <code>C:\Coding\WorkBench\HTML_Guide\module-unit.html</code></div>
+  </footer>
+</body>
+</html>

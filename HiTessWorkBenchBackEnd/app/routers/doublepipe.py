@@ -45,9 +45,10 @@ class RunPsaRequest(BaseModel):
 @router.post("/run-psa")
 def run_psa(req: RunPsaRequest):
     """
-    Tab1 결과 CSV 를 'Piping Stress Analysis for all load cases' 파이프라인(Main.py)의
+    Tab1 결과 CSV 를 'Piping Stress Analysis for all load cases' 파이프라인
+    (PSA_AllLoadCases.exe — scipy·pyNastran·numpy·openpyxl 번들된 단일 실행파일)의
     입력으로 넘겨 전체 29개 Load Case 배관응력 해석을 백그라운드로 시작합니다.
-    (⚠️ Abaqus·scipy·pyNastran 이 설치된 환경 필요 — DOUBLEPIPE_PSA_PYTHON 로 실행 파이썬 지정)
+    (⚠️ Abaqus(외부 CAE 솔버)만은 실행 컴퓨터에 별도 설치되어 PATH 에 등록돼 있어야 합니다)
     """
     return start_psa_job(req.workDir, req.resultCsv, req.employee_id)
 

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>File-Based Apps Flow</title>
+  <link rel="stylesheet" href="flow-map.css">
+</head>
+<body>
+  <header class="shell-header">
+    <div class="wrap header-row">
+      <div>
+        <p class="eyebrow">Studio Flow</p>
+        <h1>File-Based Apps</h1>
+        <p class="subtitle">파일 업로드, 백그라운드 작업, 상태 조회, 결과 다운로드를 사용하는 솔루션들의 공통 흐름을 기록합니다.</p>
+      </div>
+      <div class="header-actions">
+        <a class="button-link" href="index.html">Home</a>
+        <a class="button-link" href="workbench.html">Workbench</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <nav class="side-nav" aria-label="File-Based Apps menu">
+      <p class="nav-title">Document Menu</p>
+      <ul class="menu">
+        <li><a href="workbench.html">Workbench</a></li>
+        <li><a href="file-based-apps.html">File-Based Apps</a></li>
+        <li><a href="module-unit.html">Module Unit</a></li>
+        <li><a href="interactive-apps.html">Interactive Apps</a></li>
+        <li><a href="parametric-apps.html">Parametric Apps</a></li>
+        <li><a href="productivity-apps.html">Productivity Apps</a></li>
+        <li><a href="support-admin.html">Support / Admin</a></li>
+      </ul>
+      <p class="nav-title nav-section">Solution Menu</p>
+      <ul class="menu">
+        <li><a href="module-unit.html">Module Unit</a></li>
+        <li><a href="#solutions">기타 상세 솔루션</a></li>
+      </ul>
+    </nav>
+
+    <div class="content">
+      <section class="panel">
+        <h2>역할</h2>
+        <p class="lead">이 페이지는 파일 기반 해석 앱의 공통 처리 패턴만 기록합니다. Truss, Assessment, Scanner, ModelFlow 같은 개별 솔루션의 입력 파일 형식과 계산 상세는 별도 페이지에서 확장합니다.</p>
+
+        <div class="flow">
+          <div class="step"><span class="step-index">1</span><div><strong>파일 선택</strong>프론트엔드 페이지가 사용자의 입력 파일과 옵션을 수집합니다.</div></div>
+          <div class="step"><span class="step-index">2</span><div><strong>작업 요청</strong><code>/api/analysis/.../request</code> 계열 API로 업로드하고 <code>job_id</code>를 받습니다.</div></div>
+          <div class="step"><span class="step-index">3</span><div><strong>백그라운드 실행</strong>백엔드가 작업 폴더를 만들고 서비스 함수 또는 외부 실행 파일을 실행합니다.</div></div>
+          <div class="step"><span class="step-index">4</span><div><strong>상태 조회</strong>프론트엔드가 상태 API를 폴링하고 진행률, 로그, 실패 메시지를 표시합니다.</div></div>
+          <div class="step"><span class="step-index">5</span><div><strong>결과 확인</strong>완료 후 결과 파일 경로와 요약 데이터가 DB에 저장되고 다운로드 또는 뷰어로 연결됩니다.</div></div>
+        </div>
+      </section>
+
+      <section id="solutions" class="panel">
+        <h2>상세 솔루션 메뉴</h2>
+        <p class="lead">아래 항목은 이후 개별 HTML 페이지로 연결할 자리입니다. 이 페이지에는 공통 역할만 유지합니다.</p>
+        <div class="quick-grid">
+          <a class="quick-card" href="module-unit.html"><strong>Group & Module Unit</strong><span>권상 조건 지정, 3D 모델 확인, Stability Stage 0~6 평가 흐름을 기록합니다.</span></a>
+          <a class="quick-card" href="#"><strong>Truss Analysis</strong><span>CSV 업로드 기반 트러스 해석 흐름을 별도 문서로 확장합니다.</span></a>
+          <a class="quick-card" href="#"><strong>Truss Structural Assessment</strong><span>BDF 기반 구조 평가 흐름을 별도 문서로 확장합니다.</span></a>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

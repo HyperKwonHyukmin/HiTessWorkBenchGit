@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Support Admin Flow</title>
+  <link rel="stylesheet" href="flow-map.css">
+</head>
+<body>
+  <header class="shell-header">
+    <div class="wrap header-row">
+      <div>
+        <p class="eyebrow">Operation Flow</p>
+        <h1>Support / Admin</h1>
+        <p class="subtitle">공지, 사용자 가이드, 기능 요청, 사용자 관리, 시스템 상태 같은 운영 기능의 공통 흐름을 기록합니다.</p>
+      </div>
+      <div class="header-actions">
+        <a class="button-link" href="index.html">Home</a>
+        <a class="button-link" href="workbench.html">Workbench</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <nav class="side-nav" aria-label="Support Admin menu">
+      <p class="nav-title">Document Menu</p>
+      <ul class="menu">
+        <li><a href="workbench.html">Workbench</a></li>
+        <li><a href="file-based-apps.html">File-Based Apps</a></li>
+        <li><a href="interactive-apps.html">Interactive Apps</a></li>
+        <li><a href="parametric-apps.html">Parametric Apps</a></li>
+        <li><a href="productivity-apps.html">Productivity Apps</a></li>
+        <li><a href="support-admin.html">Support / Admin</a></li>
+      </ul>
+      <p class="nav-title nav-section">Detail Menu</p>
+      <ul class="menu">
+        <li><a href="#details">상세 기능 추가 예정</a></li>
+      </ul>
+    </nav>
+
+    <div class="content">
+      <section class="panel">
+        <h2>역할</h2>
+        <p class="lead">이 페이지는 운영 기능의 공통 흐름만 기록합니다. 각 관리 화면의 필드, 권한 예외, 통계 산식은 필요할 때 상세 페이지로 분리합니다.</p>
+        <div class="flow">
+          <div class="step"><span class="step-index">1</span><div><strong>권한 확인</strong>관리자 기능은 <code>is_admin</code>과 보호 메뉴 목록을 기준으로 접근을 제어합니다.</div></div>
+          <div class="step"><span class="step-index">2</span><div><strong>운영 데이터 조회</strong>공지, 가이드, 요청, 사용자, 사용량 데이터를 API로 조회합니다.</div></div>
+          <div class="step"><span class="step-index">3</span><div><strong>CRUD / 승인</strong>관리자가 데이터 생성, 수정, 삭제, 승인, 코멘트 처리를 수행합니다.</div></div>
+          <div class="step"><span class="step-index">4</span><div><strong>활동 기록</strong>중요 작업은 활동 로그나 사용량 리포트의 기준 데이터가 됩니다.</div></div>
+        </div>
+      </section>
+
+      <section id="details" class="panel">
+        <h2>상세 기능 메뉴</h2>
+        <div class="quick-grid">
+          <a class="quick-card" href="#"><strong>Notice / User Guide</strong><span>지원 콘텐츠 CRUD 흐름을 별도 문서로 확장합니다.</span></a>
+          <a class="quick-card" href="#"><strong>User Management</strong><span>사용자 승인과 권한 관리 흐름을 별도 문서로 확장합니다.</span></a>
+          <a class="quick-card" href="#"><strong>System / Usage Reports</strong><span>시스템 상태와 사용량 리포트 흐름을 별도 문서로 확장합니다.</span></a>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

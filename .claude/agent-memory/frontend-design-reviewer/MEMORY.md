@@ -10,3 +10,4 @@
 - [ModelBuilderStudio AnalysisPanel FEA 패턴](project_model_studio_analysis_panel.md) — FEA 단계 순서, Section/PickToggle/TabButton 패턴, 의미색 맵, summarizeResult 집계 방식 (v0.0.54)
 - [HullAccelerationPage 디자인 패턴](project_hull_acceleration.md) — 사이드바 단계 헤더 색상, 제원 FIELD_GROUPS 구조, AXIS_CONFIG(X=blue/Y=emerald/Z=violet) Envelope 카드 설계 (2026-06-23)
 - [Simple Beam Assessment UX 진단](project_simple_beam_assessment.md) — H4개(lightMode기본값/하중카드밀도/뷰버튼하드코딩/컬러맵범례)/M6개/L5개, Top5 우선순위 (2026-06-25)
+- [DoublePipeFuelLineAssessment/DoublePipeViewer 디자인 패턴](project_doublepipe_fuel_line.md) — 3단계 스텝퍼 구조, Load Case 카테고리색, 그라디언트 eyebrow 카드헤더 재발(DESIGN.md 위반), 3D뷰어 다크/라이트 탭바 이음매 이슈 (2026-07-09)

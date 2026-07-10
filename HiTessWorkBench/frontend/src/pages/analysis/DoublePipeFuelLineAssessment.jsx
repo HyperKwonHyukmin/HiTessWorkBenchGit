@@ -762,8 +762,14 @@ export default function DoublePipeFuelLineAssessment() {
               addLog('완료: Report for PSA.xlsx 가 생성되었습니다.', 'success');
               showToast('전체 Load Case 해석이 완료되었습니다.', 'success');
             } else if (s.data.diagnostic === 'solver_env_missing') {
-              addLog('해석 실패 — 이 컴퓨터에 솔버 환경(scipy·pyNastran·Abaqus)이 없습니다.', 'error');
-              showToast('솔버 환경이 없어 해석을 완주할 수 없습니다. (콘솔 안내 참조)', 'error');
+              addLog('해석 실패 — 해석 프로그램 내부 모듈이 손상되었습니다.', 'error');
+              showToast('해석 프로그램이 손상되었습니다. 서버 관리자에게 문의하세요. (콘솔 안내 참조)', 'error');
+            } else if (s.data.diagnostic === 'abaqus_not_found') {
+              addLog('해석 실패 — 이 컴퓨터에 Abaqus 솔버가 없습니다.', 'error');
+              showToast('Abaqus가 설치되어 있지 않아 해석을 완주할 수 없습니다. (콘솔 안내 참조)', 'error');
+            } else if (s.data.diagnostic === 'abaqus_solve_failed') {
+              addLog('해석 실패 — Abaqus 해석이 오류로 종료되었습니다.', 'error');
+              showToast('Abaqus 해석 중 오류가 발생했습니다. 콘솔 로그를 확인하세요.', 'error');
             } else {
               addLog(`해석 실패 (returncode ${s.data.returncode}). 로그를 확인하세요.`, 'error');
               showToast('해석에 실패했습니다. 콘솔 로그를 확인하세요.', 'error');

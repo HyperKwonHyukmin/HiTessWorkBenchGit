@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Productivity Apps Flow</title>
+  <link rel="stylesheet" href="flow-map.css">
+</head>
+<body>
+  <header class="shell-header">
+    <div class="wrap header-row">
+      <div>
+        <p class="eyebrow">Studio Flow</p>
+        <h1>Productivity Apps</h1>
+        <p class="subtitle">해석 결과 확인, 파일 변환, 보조 계산처럼 작업 효율을 높이는 도구들의 공통 흐름을 기록합니다.</p>
+      </div>
+      <div class="header-actions">
+        <a class="button-link" href="index.html">Home</a>
+        <a class="button-link" href="workbench.html">Workbench</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <nav class="side-nav" aria-label="Productivity Apps menu">
+      <p class="nav-title">Document Menu</p>
+      <ul class="menu">
+        <li><a href="workbench.html">Workbench</a></li>
+        <li><a href="file-based-apps.html">File-Based Apps</a></li>
+        <li><a href="interactive-apps.html">Interactive Apps</a></li>
+        <li><a href="parametric-apps.html">Parametric Apps</a></li>
+        <li><a href="productivity-apps.html">Productivity Apps</a></li>
+        <li><a href="support-admin.html">Support / Admin</a></li>
+      </ul>
+      <p class="nav-title nav-section">Solution Menu</p>
+      <ul class="menu">
+        <li><a href="#solutions">상세 솔루션 추가 예정</a></li>
+      </ul>
+    </nav>
+
+    <div class="content">
+      <section class="panel">
+        <h2>역할</h2>
+        <p class="lead">이 페이지는 생산성 도구의 공통 역할만 정리합니다. 파일 포맷, 파서, 뷰어별 세부 동작은 개별 페이지로 분리합니다.</p>
+        <div class="flow">
+          <div class="step"><span class="step-index">1</span><div><strong>자료 입력</strong>사용자가 결과 파일, 모델 파일, 보조 입력값을 제공합니다.</div></div>
+          <div class="step"><span class="step-index">2</span><div><strong>변환/파싱</strong>프론트엔드 또는 백엔드가 파일 내용을 구조화된 데이터로 변환합니다.</div></div>
+          <div class="step"><span class="step-index">3</span><div><strong>검토 화면</strong>테이블, 차트, 뷰어를 통해 결과를 빠르게 확인합니다.</div></div>
+          <div class="step"><span class="step-index">4</span><div><strong>내보내기</strong>필요 시 CSV, XLSX, JSON, 다운로드 링크로 작업 결과를 전달합니다.</div></div>
+        </div>
+      </section>
+
+      <section id="solutions" class="panel">
+        <h2>상세 솔루션 메뉴</h2>
+        <div class="quick-grid">
+          <a class="quick-card" href="#"><strong>Beam Result Viewer</strong><span>해석 결과 시각화 흐름을 별도 문서로 확장합니다.</span></a>
+          <a class="quick-card" href="#"><strong>F06 Parser</strong><span>F06 결과 파싱과 표시 흐름을 별도 문서로 확장합니다.</span></a>
+          <a class="quick-card" href="#"><strong>Download Center</strong><span>파일 제공과 버전 관리 흐름을 별도 문서로 확장합니다.</span></a>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

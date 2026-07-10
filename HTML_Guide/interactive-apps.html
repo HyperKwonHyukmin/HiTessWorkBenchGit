@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interactive Apps Flow</title>
+  <link rel="stylesheet" href="flow-map.css">
+</head>
+<body>
+  <header class="shell-header">
+    <div class="wrap header-row">
+      <div>
+        <p class="eyebrow">Studio Flow</p>
+        <h1>Interactive Apps</h1>
+        <p class="subtitle">화면 입력, 즉시 검토, 단계형 조작을 중심으로 동작하는 대화형 솔루션들의 공통 흐름을 기록합니다.</p>
+      </div>
+      <div class="header-actions">
+        <a class="button-link" href="index.html">Home</a>
+        <a class="button-link" href="workbench.html">Workbench</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <nav class="side-nav" aria-label="Interactive Apps menu">
+      <p class="nav-title">Document Menu</p>
+      <ul class="menu">
+        <li><a href="workbench.html">Workbench</a></li>
+        <li><a href="file-based-apps.html">File-Based Apps</a></li>
+        <li><a href="interactive-apps.html">Interactive Apps</a></li>
+        <li><a href="parametric-apps.html">Parametric Apps</a></li>
+        <li><a href="productivity-apps.html">Productivity Apps</a></li>
+        <li><a href="support-admin.html">Support / Admin</a></li>
+      </ul>
+      <p class="nav-title nav-section">Solution Menu</p>
+      <ul class="menu">
+        <li><a href="#solutions">상세 솔루션 추가 예정</a></li>
+      </ul>
+    </nav>
+
+    <div class="content">
+      <section class="panel">
+        <h2>역할</h2>
+        <p class="lead">이 페이지는 대화형 앱의 공통 화면 구조와 상태 흐름만 기록합니다. 개별 계산식, 입력 검증, 결과 해석은 솔루션별 문서로 분리합니다.</p>
+        <div class="flow">
+          <div class="step"><span class="step-index">1</span><div><strong>입력 상태</strong>폼, 선택값, 뷰어 상태를 페이지 state 또는 Context에서 관리합니다.</div></div>
+          <div class="step"><span class="step-index">2</span><div><strong>검증</strong>입력 범위와 필수값을 화면에서 먼저 검토하고 계산 가능 상태를 만듭니다.</div></div>
+          <div class="step"><span class="step-index">3</span><div><strong>계산/미리보기</strong>프론트엔드 계산 또는 짧은 API 호출로 결과를 즉시 갱신합니다.</div></div>
+          <div class="step"><span class="step-index">4</span><div><strong>결과 표시</strong>표, 요약 카드, 뷰어, 판정 상태를 같은 화면에서 확인합니다.</div></div>
+        </div>
+      </section>
+
+      <section id="solutions" class="panel">
+        <h2>상세 솔루션 메뉴</h2>
+        <div class="quick-grid">
+          <a class="quick-card" href="#"><strong>Simple Beam Assessment</strong><span>보 입력과 응력/변위 평가 흐름을 별도 문서로 확장합니다.</span></a>
+          <a class="quick-card" href="#"><strong>Interactive Viewer</strong><span>3D/2D 뷰어 조작 상태를 별도 문서로 확장합니다.</span></a>
+          <a class="quick-card" href="#"><strong>Component Wizard</strong><span>단계형 입력과 결과 흐름을 별도 문서로 확장합니다.</span></a>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

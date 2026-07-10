@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HiTESS WorkBench Flow Map</title>
+  <link rel="stylesheet" href="flow-map.css">
+</head>
+<body>
+  <header class="shell-header">
+    <div class="wrap header-row">
+      <div>
+        <p class="eyebrow">Internal Flow Documentation</p>
+        <h1>HiTESS WorkBench Flow Map</h1>
+        <p class="subtitle">에이전트 코딩으로 누적되는 WorkBench 구조를 화면, API, DB 흐름 단위로 추적하기 위한 로컬 문서 홈입니다.</p>
+      </div>
+      <div class="header-actions">
+        <a class="button-link" href="workbench.html">Workbench 열기</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <nav class="side-nav" aria-label="Flow map menu">
+      <p class="nav-title">Document Menu</p>
+      <ul class="menu">
+        <li><a href="workbench.html">Workbench</a></li>
+        <li><a href="file-based-apps.html">File-Based Apps</a></li>
+        <li><a href="module-unit.html">Module Unit</a></li>
+        <li><a href="interactive-apps.html">Interactive Apps</a></li>
+        <li><a href="parametric-apps.html">Parametric Apps</a></li>
+        <li><a href="productivity-apps.html">Productivity Apps</a></li>
+        <li><a href="support-admin.html">Support / Admin</a></li>
+      </ul>
+    </nav>
+
+    <div class="content">
+      <section class="panel">
+        <h2>Home</h2>
+        <p class="lead">이 문서는 외부 발표용 페이지가 아니라 코드 파악과 유지보수 판단을 빠르게 하기 위한 내부용 지도입니다.</p>
+
+        <div class="status-row">
+          <div class="metric">
+            <span>Root</span>
+            <strong>HTML</strong>
+          </div>
+          <div class="metric">
+            <span>Current Scope</span>
+            <strong>Workbench</strong>
+          </div>
+          <div class="metric">
+            <span>Detail Policy</span>
+            <strong>분리 기록</strong>
+          </div>
+        </div>
+
+        <p class="note">Workbench 페이지에는 공통 구조만 기록합니다. 각 Studio와 상세 솔루션의 입력, 계산, 결과 흐름은 이후 별도 문서로 나눠 관리합니다.</p>
+      </section>
+
+      <section class="panel">
+        <h2>문서화 목적</h2>
+        <div class="quick-grid">
+          <a class="quick-card" href="workbench.html#frontend">
+            <strong>화면 흐름 추적</strong>
+            <span>NavigationContext, App.jsx 라우팅, 공통 Context를 기준으로 화면 진입 경로를 파악합니다.</span>
+          </a>
+          <a class="quick-card" href="file-based-apps.html">
+            <strong>Studio 흐름 분리</strong>
+            <span>대분류 페이지에서 공통 패턴을 보고, 상세 솔루션 페이지로 확장합니다.</span>
+          </a>
+          <a class="quick-card" href="module-unit.html">
+            <strong>Module Unit</strong>
+            <span>권상 구조 해석 Studio와 안정성 평가 엔진의 절차, 코드, 결과 흐름을 추적합니다.</span>
+          </a>
+          <a class="quick-card" href="workbench.html#db">
+            <strong>데이터 흐름 추적</strong>
+            <span>SQLAlchemy 모델, 주요 테이블, 화면과 DB의 연결 관계를 정리합니다.</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>작성 단위</h2>
+        <div class="flow">
+          <div class="step">
+            <span class="step-index">1</span>
+            <div>
+              <strong>Home</strong>
+              전체 문서 인덱스와 메뉴를 관리합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">2</span>
+            <div>
+              <strong>Workbench</strong>
+              Electron, React, FastAPI, DB의 공통 골격과 변경 시 확인할 기준을 기록합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">3</span>
+            <div>
+              <strong>Studio</strong>
+              File-Based, Interactive, Parametric, Productivity, Support, Administration 영역별 흐름을 분리합니다.
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-index">4</span>
+            <div>
+              <strong>Solution Detail</strong>
+              개별 솔루션의 입력, API 요청, 서비스 처리, 결과 표시, 파일 입출력을 기록합니다.
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="shell-footer">
+    <div class="wrap">
+      Local document root: <code>C:\Coding\WorkBench\HTML</code>
+    </div>
+  </footer>
+</body>
+</html>
