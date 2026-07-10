@@ -28,6 +28,7 @@ from .routers import (
     hitessbeam,
     hole_calculation,
     newsletters,
+    presence,
     section_property,
     support,
     system,
@@ -107,6 +108,7 @@ app.include_router(section_property.router)
 app.include_router(activity.router)
 app.include_router(viewers.router)
 app.include_router(newsletters.router)
+app.include_router(presence.router)
 
 app.mount(
     "/static/inhouse/d-type-lug",

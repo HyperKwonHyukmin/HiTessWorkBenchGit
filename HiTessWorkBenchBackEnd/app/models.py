@@ -29,6 +29,18 @@ class UserSession(Base):
   expires_at  = Column(DateTime, nullable=False)
 
 
+class UserPresence(Base):
+  """실시간 접속 상태 — 클라이언트 하트비트로 갱신. 사용자당 1행(사번 PK).
+
+  세션(user_sessions) 인증과 분리한 별도 테이블이라 create_all 로 자동 생성된다.
+  last_seen 이 임계시간 이내면 '접속 중'으로 판정한다(app/routers/presence.py)."""
+  __tablename__ = "user_presence"
+  employee_id = Column(String(50), primary_key=True)   # 대문자 정규화된 사번
+  last_seen   = Column(DateTime, default=datetime.now, index=True)
+  last_ip     = Column(String(50), nullable=True)       # 서버가 관측한 client IP
+  last_page   = Column(String(200), nullable=True)      # 하트비트 시점의 현재 페이지
+
+
 class Analysis(Base):
   __tablename__ = "analysis"
   id = Column(Integer, primary_key=True, index=True)

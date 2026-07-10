@@ -6,6 +6,7 @@ import axios from 'axios';
 import { version as CLIENT_VERSION } from '../package.json';
 import { checkVersion } from './api/auth';
 import { reportVersionUpdate, callLogout, logActivity } from './api/activity';
+import { sendHeartbeat } from './api/presence';
 import SplashScreen from './pages/auth/SplashScreen';
 import LoginScreen from './pages/auth/LoginScreen';
 import Layout from './components/layout/Layout';
@@ -260,6 +261,16 @@ function AppInner() {
       window.removeEventListener('keydown', updateLastActive);
     };
   }, [appState]);
+
+  // 실시간 접속 하트비트 — MAIN 상태에서 45초 주기 + 페이지 이동 시 즉시 전송.
+  // currentMenu 를 deps 에 넣어 페이지가 바뀔 때마다 effect 가 재실행되며,
+  // 즉시 하트비트를 보내 관리자 화면에 '무엇을 사용 중인지'가 실시간 반영된다.
+  useEffect(() => {
+    if (appState !== APP_STATE.MAIN) return;
+    sendHeartbeat(currentMenu);
+    const heartbeat = setInterval(() => sendHeartbeat(currentMenu), 45 * 1000);
+    return () => clearInterval(heartbeat);
+  }, [appState, currentMenu]);
 
   // 전역 키보드 단축키 + 마우스 뒤로/앞으로 버튼
   useEffect(() => {

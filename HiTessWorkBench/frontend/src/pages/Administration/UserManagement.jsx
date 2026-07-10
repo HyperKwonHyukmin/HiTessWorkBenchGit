@@ -7,10 +7,11 @@ import { Dialog, Transition } from '@headlessui/react';
 import {
   Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Clock, Activity,
   UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
-  Download, BarChart3, ChevronRight, Code2, ArrowUpDown
+  Download, BarChart3, ChevronRight, Code2, ArrowUpDown, Radio, MapPin, Globe
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
+import { getOnlineUsers } from '../../api/presence';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import UserStatisticsModal from '../../components/modals/UserStatisticsModal';
@@ -156,6 +157,9 @@ export default function UserManagement() {
     date_to: todayString(),
   });
 
+  // 실시간 접속 현황 — 15초 주기 폴링
+  const [onlineData, setOnlineData] = useState({ count: 0, items: [] });
+
   const fetchUsers = async () => {
     setLoading(true);
     try {
@@ -168,9 +172,31 @@ export default function UserManagement() {
     }
   };
 
+  const fetchOnline = async () => {
+    try {
+      const res = await getOnlineUsers();
+      setOnlineData(res.data || { count: 0, items: [] });
+    } catch {
+      // 조용히 무시 — 실시간 위젯이라 실패해도 다음 폴링에서 복구
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  // 접속 현황 자동 갱신 (15초)
+  useEffect(() => {
+    fetchOnline();
+    const timer = setInterval(fetchOnline, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 온라인 판정용 사번 집합 — 테이블 행 도트 표시에 사용 (대문자 정규화 일치)
+  const onlineSet = useMemo(
+    () => new Set((onlineData.items || []).map(u => (u.employee_id || '').toUpperCase())),
+    [onlineData]
+  );
 
   // 상태 즉각 토글 (승인/권한)
   const handleToggle = async (userId, field, currentValue) => {
@@ -342,6 +368,74 @@ export default function UserManagement() {
         subtitle="시스템 접근 권한 부여 및 사용자 메타데이터를 관리합니다."
         accentColor="blue"
       />
+
+      {/* 0. 실시간 접속 현황 — 지금 앱을 사용 중인 사용자 */}
+      <div className="mb-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-white">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <h3 className="text-sm font-extrabold text-slate-700 tracking-tight">현재 접속 중</h3>
+            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-bold">{onlineData.count}명</span>
+            <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">실시간 · 15초마다 자동 갱신</span>
+          </div>
+          <button
+            onClick={fetchOnline}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition-colors shadow-sm cursor-pointer shrink-0"
+          >
+            <RefreshCw size={13}/> 새로고침
+          </button>
+        </div>
+        <div className="p-4">
+          {onlineData.count === 0 ? (
+            <div className="text-center py-6 text-sm text-slate-400">
+              <Radio size={22} className="mx-auto mb-2 opacity-30"/>
+              현재 접속 중인 사용자가 없습니다.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {onlineData.items.map(u => (
+                <div key={u.employee_id} className="border border-slate-200 rounded-xl p-3 hover:border-emerald-300 hover:shadow-md transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className="relative shrink-0">
+                      <div className="h-10 w-10 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center justify-center font-bold text-lg">
+                        {u.name?.[0] || u.employee_id?.[0] || '?'}
+                      </div>
+                      <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-white"></span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-slate-800 text-sm truncate">
+                        {u.name || u.employee_id}
+                        {u.is_admin && <Shield size={11} className="inline-block ml-1 text-red-500 align-[-1px]"/>}
+                        <span className="text-[10px] text-slate-400 font-mono ml-1.5">{u.employee_id}</span>
+                      </p>
+                      <p className="text-[11px] text-slate-500 truncate">{u.department || u.company || '소속 미입력'}</p>
+                    </div>
+                  </div>
+                  <div className="mt-2.5 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-[11px] min-w-0">
+                      <MapPin size={12} className="text-blue-500 shrink-0"/>
+                      <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded font-bold truncate max-w-full" title={u.last_page || ''}>
+                        {u.last_page || '—'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                      <span className="inline-flex items-center gap-1 shrink-0">
+                        <Clock size={11}/> {relativeTime(u.last_seen) || '방금 전'} 활동
+                      </span>
+                      <span className="inline-flex items-center gap-1 font-mono truncate" title={u.last_ip || ''}>
+                        <Globe size={11}/> {u.last_ip || '—'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* 1. KPI — Total / Pending / Admin */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -592,8 +686,16 @@ export default function UserManagement() {
                       className="flex items-center gap-3 text-left cursor-pointer group"
                       title="사용자 활동 로그 보기"
                     >
-                      <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${user.is_active ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
-                        {user.name?.[0] || '?'}
+                      <div className="relative">
+                        <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${user.is_active ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                          {user.name?.[0] || '?'}
+                        </div>
+                        {onlineSet.has((user.employee_id || '').toUpperCase()) && (
+                          <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3" title="현재 접속 중">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border-2 border-white"></span>
+                          </span>
+                        )}
                       </div>
                       <div>
                         <p className="font-bold text-slate-800 group-hover:text-blue-700">{user.name}</p>
