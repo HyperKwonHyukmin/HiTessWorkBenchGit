@@ -32,6 +32,13 @@ LATEST_CLIENT_DIR = Path(os.environ.get("LATEST_CLIENT_DIR", str(BASE_DIR / "Las
 
 SERVER_CMD = [PYTHON, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9091"]
 
+# ── 자동 재시작(크래시 루프 방어) 파라미터 ──
+# 사용자가 Stop 을 누르지 않았는데 서버가 죽으면(=크래시) 자동으로 다시 띄운다.
+# 단, 시작하자마자 계속 죽는 경우 무한 재시작을 막기 위해 창(window) 안의 횟수를 제한한다.
+RESTART_DELAY_MS       = 3000  # 종료 감지 후 재시작까지 대기(포트 정리·안정화 시간)
+RESTART_WINDOW_SEC     = 60    # 이 시간(초) 창 안에서 자동 재시작 횟수를 센다
+MAX_RESTARTS_IN_WINDOW = 5     # 창 안에서 이 횟수를 넘기면 자동 재시작 중단(무한 루프 방지)
+
 # ── 색상 팔레트 ──
 BG        = "#1e2130"
 PANEL     = "#252a3a"
@@ -50,6 +57,11 @@ class ServerManagerApp:
         self.root = root
         self.server_proc: subprocess.Popen | None = None
         self.is_updating = False
+        # 자동 재시작 상태.
+        #  intentional_stop: 사용자가 Stop/앱 종료로 '의도적으로' 내렸는지 표시(그 경우 재시작 안 함).
+        #  restart_history : 최근 자동 재시작 시각 목록(크래시 루프 차단 판단용).
+        self.intentional_stop = False
+        self.restart_history: list[float] = []
 
         self._setup_window()
         self._build_ui()
@@ -208,6 +220,8 @@ class ServerManagerApp:
     def _start_server(self):
         if self.server_proc and self.server_proc.poll() is None:
             return
+        # 새로 띄우는 순간 '의도적 종료' 표식을 해제한다(이후 죽으면 크래시로 간주).
+        self.intentional_stop = False
         self._log("서버를 시작하는 중...", "info")
         self._kill_port(9091)
         self._kill_port(8000)
@@ -249,12 +263,57 @@ class ServerManagerApp:
         self.root.after(0, self._on_server_exit)
 
     def _on_server_exit(self):
-        if not self.is_updating:
-            self._set_running(False)
-            self._log("서버 프로세스가 종료되었습니다.", "warning")
+        self._set_running(False)
+        # 업데이트 중 재시작은 _update_worker 가 직접 처리하므로 감시하지 않는다.
+        if self.is_updating:
+            return
+        # 사용자가 Stop 을 눌렀거나 앱 종료로 '의도적으로' 내린 경우 → 재시작하지 않는다.
+        if self.intentional_stop:
+            self.intentional_stop = False
+            return
+        # 여기까지 왔으면 의도치 않은 종료(크래시) → 자동 재시작을 시도한다.
+        self._log("서버 프로세스가 예기치 않게 종료되었습니다.", "error")
+        self._schedule_auto_restart()
+
+    # ── 자동 재시작(의도치 않은 종료 시) ─────────────────────────────────
+    def _schedule_auto_restart(self):
+        """크래시 감지 시 재시작을 예약한다. 짧은 시간에 반복 실패하면 중단한다."""
+        now = time.time()
+        # 창(window) 밖의 오래된 재시작 기록은 버린다.
+        self.restart_history = [t for t in self.restart_history if now - t < RESTART_WINDOW_SEC]
+
+        if len(self.restart_history) >= MAX_RESTARTS_IN_WINDOW:
+            self._log(
+                f"{RESTART_WINDOW_SEC}초 내 {MAX_RESTARTS_IN_WINDOW}회 연속 재시작에 실패했습니다. "
+                "자동 재시작을 멈춥니다 — 원인을 확인한 뒤 Start 를 눌러 수동으로 재개하세요.",
+                "error",
+            )
+            # 기록은 비우지 않는다 — 이후 크래시도 계속 이 상한에 걸려 재시작이 차단된다.
+            # (예산 초기화는 사용자가 직접 Start 를 누를 때만 이뤄진다.)
+            return
+
+        self.restart_history.append(now)
+        attempt = len(self.restart_history)
+        self._log(
+            f"{RESTART_DELAY_MS // 1000}초 후 자동으로 재시작합니다 "
+            f"(최근 {RESTART_WINDOW_SEC}초 내 {attempt}/{MAX_RESTARTS_IN_WINDOW}회).",
+            "warning",
+        )
+        self.root.after(RESTART_DELAY_MS, self._auto_restart_fire)
+
+    def _auto_restart_fire(self):
+        # 대기 사이에 사용자가 Update/Stop 했거나 이미 살아났으면 재시작하지 않는다.
+        if self.is_updating:
+            return
+        if self.server_proc and self.server_proc.poll() is None:
+            return
+        self._log("자동 재시작을 실행합니다.", "info")
+        self._start_server()
 
     # ── 서버 중지 ────────────────────────────────────────────────────────
     def _stop_server(self):
+        # 이 종료는 코드가 '의도적으로' 내리는 것(Stop/Update/앱 종료) → 자동 재시작 대상이 아니다.
+        self.intentional_stop = True
         if self.server_proc and self.server_proc.poll() is None:
             self._log("서버를 중지하는 중...", "warning")
             self.server_proc.terminate()
@@ -271,6 +330,8 @@ class ServerManagerApp:
             self._stop_server()
             self._log("서버가 중지되었습니다.", "warning")
         else:
+            # 사용자가 직접 Start → 자동 재시작 카운터를 초기화(수동 재개는 깨끗한 예산으로).
+            self.restart_history = []
             self._start_server()
 
     # ── Update ───────────────────────────────────────────────────────────

@@ -1,3 +1,7 @@
+import threading
+import time
+
+import app.services.remote_session_service as rss
 from app.services.remote_session_service import (
     parse_ip_owner_list,
     parse_query_user_output,
@@ -73,3 +77,50 @@ def test_parse_ip_owner_list_supports_colon_format():
         "10.133.122.70": "권혁민 책임",
         "10.133.122.71": "김윤환 책임",
     }
+
+
+def test_run_command_serializes_process_spawn(monkeypatch):
+    """동시 CreateProcess access violation 방어 회귀 테스트.
+
+    여러 스레드가 _run_command 를 동시에 호출해도 subprocess.Popen '생성 구간'에는
+    한 번에 하나만 진입해야 한다. (Windows 에서 동시 CreateProcess 는 native access
+    violation 을 일으켜 uvicorn 이 무-로그로 급사한다 — 2026-07-10 실측 크래시.)
+    _SPAWN_LOCK 이 제거되면 이 테스트가 실패한다.
+    """
+    state = {"cur": 0, "max": 0}
+    lock = threading.Lock()
+
+    class _FakePopen:
+        def __init__(self, args, **kwargs):
+            with lock:
+                state["cur"] += 1
+                state["max"] = max(state["max"], state["cur"])
+            time.sleep(0.01)  # CreateProcess 구간 모사(겹치면 max>1 로 잡힘)
+            with lock:
+                state["cur"] -= 1
+            self.returncode = 0
+
+        def communicate(self, timeout=None):
+            time.sleep(0.02)  # 실제 실행은 락 밖 → 병렬로 진행돼야 한다
+            return ("out", "")
+
+        def poll(self):
+            return 0
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(rss.subprocess, "Popen", _FakePopen)
+
+    def worker():
+        rss._run_command(["dummy"], timeout=5)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert state["max"] == 1, (
+        f"동시 spawn 발생(max={state['max']}) — _SPAWN_LOCK 직렬화가 깨졌다"
+    )

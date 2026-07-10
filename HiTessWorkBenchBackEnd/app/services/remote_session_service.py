@@ -32,6 +32,14 @@ _SECURITY_LOG_LOOKUP_ENABLED = (
 # CREATE_NO_WINDOW: 백그라운드 subprocess 실행 시 콘솔 창이 깜빡이지 않게 한다(비-Windows 는 0).
 _CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
+# ⚠️ 무-로그 급사 방어(2026-07-10 실측): _gather_ip_lookups 가 ThreadPoolExecutor 로
+# powershell 을 2~3개 '동시에' spawn 하면 Windows 의 CreateProcess(핸들 상속·STARTUPINFO
+# 설정)가 스레드 간 경합해 native access violation 이 터지고, uvicorn 프로세스 전체가
+# 파이썬 트레이스백 없이 즉사한다(크래시 로그: 3개 워커 스레드가 동시에
+# subprocess._execute_child 에서 access violation). 프로세스 '생성 순간'만 직렬화하면
+# (통신/대기는 락 밖에서 계속 병렬) 경합이 사라지면서 벽시계 지연은 거의 없다.
+_SPAWN_LOCK = threading.Lock()
+
 
 def parse_query_user_output(output: str):
     """Parse `query user` / `quser` output into session dictionaries."""
@@ -193,12 +201,14 @@ def _kill_process_tree(proc):
         return
     if os.name == "nt":
         try:
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                capture_output=True,
-                timeout=5,
-                creationflags=_CREATE_NO_WINDOW,
-            )
+            # taskkill 도 CreateProcess 이므로 동시 spawn 경합을 피해 직렬화한다.
+            with _SPAWN_LOCK:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                    capture_output=True,
+                    timeout=5,
+                    creationflags=_CREATE_NO_WINDOW,
+                )
             return
         except Exception:
             pass
@@ -217,14 +227,17 @@ def _run_command(args, timeout=5):
     여기서는 shell 없이 Popen 으로 직접 띄우고, timeout 시 taskkill /T 로 프로세스 트리
     전체를 확실히 종료해 per-call timeout 을 실효화한다. args 는 리스트로 전달한다.
     """
-    proc = subprocess.Popen(
-        args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        errors="replace",
-        creationflags=_CREATE_NO_WINDOW,
-    )
+    # CreateProcess 순간만 직렬화 — 동시 spawn access violation 방지(_SPAWN_LOCK 주석 참조).
+    # communicate()(실제 대기)는 락 밖에서 수행하므로 powershell 3종은 여전히 병렬로 돈다.
+    with _SPAWN_LOCK:
+        proc = subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            errors="replace",
+            creationflags=_CREATE_NO_WINDOW,
+        )
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
