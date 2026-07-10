@@ -335,6 +335,50 @@ function toCsv(columns, rows) {
   return `${header}\n${body}\n`;
 }
 
+// CSV 문자열 → { columns, rows } (Tab2 직접 업로드 시 클라이언트 파싱). RFC 4180 따옴표/이스케이프 처리.
+// 좌표 문자열("X 34866mm Y -3600mm Z 19384mm")처럼 필드 안에 공백은 있어도 콤마는 보통 없지만,
+// 따옴표로 감싼 필드(콤마 포함)도 안전하게 파싱한다. 결과 rows 는 열 이름을 키로 한 객체 배열이다.
+function parseCsv(text) {
+  const s = String(text ?? '').replace(/^﻿/, ''); // UTF-8 BOM 제거
+  const records = [];
+  let field = '';
+  let record = [];
+  let inQuotes = false;
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (s[i + 1] === '"') { field += '"'; i += 1; } // 이스케이프된 따옴표
+        else inQuotes = false;
+      } else field += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ',') {
+      record.push(field); field = '';
+    } else if (c === '\r') {
+      // CRLF 의 CR 은 무시 (LF 에서 레코드 종료)
+    } else if (c === '\n') {
+      record.push(field); records.push(record); record = []; field = '';
+    } else {
+      field += c;
+    }
+  }
+  // 마지막 줄(개행 없이 끝난 경우) 반영
+  if (field.length > 0 || record.length > 0) { record.push(field); records.push(record); }
+  if (records.length === 0) return { columns: [], rows: [] };
+
+  const columns = records[0].map(h => String(h).trim());
+  const rows = records
+    .slice(1)
+    .filter(r => r.some(v => v != null && String(v).trim() !== ''))
+    .map((r) => {
+      const obj = {};
+      columns.forEach((col, idx) => { obj[col] = r[idx] ?? ''; });
+      return obj;
+    });
+  return { columns, rows };
+}
+
 // 뷰어 렌더 중 예외가 앱 전체를 멈추지 않도록 감싸는 에러 경계.
 class ViewerErrorBoundary extends React.Component {
   constructor(props) {
@@ -676,6 +720,7 @@ export default function DoublePipeFuelLineAssessment() {
     if (on) {
       if (!previewResult) return;
       setTab2Input({
+        source: 'tab1',                 // Tab1 결과 CSV (이미 userConnection 폴더에 저장됨)
         sourceCsv: previewResult.sourceCsv,
         resultCsv: previewResult.resultCsv,
         workDir: previewResult.workDir,
@@ -691,6 +736,41 @@ export default function DoublePipeFuelLineAssessment() {
       setTab2Input(null);
       addLog('전달을 해제했습니다.', 'info');
     }
+  };
+
+  // Tab2 에서 직접 업로드한 배관 CSV — 클라이언트에서 파싱해 뷰어에 띄우고 해석 입력으로 지정한다.
+  // (Tab1 을 거치지 않고 준비된 이중관 CSV 로 곧바로 진행하는 경로)
+  const handleTab2Csv = async (file) => {
+    addLog(`[FILE] ${file.name} 선택됨 (${formatBytes(file.size)}).`, 'info');
+    try {
+      const text = await file.text();
+      const { columns, rows } = parseCsv(text);
+      if (!columns.length || !rows.length) {
+        addLog('CSV 파싱 실패 — 유효한 배관 데이터를 찾지 못했습니다.', 'error');
+        showToast('CSV에서 배관 데이터를 읽지 못했습니다.', 'error');
+        return;
+      }
+      setTab2Input({
+        source: 'upload',               // Tab2 직접 업로드 (해석 실행 시 파일을 백엔드로 전송)
+        resultCsv: file.name,
+        rowCount: rows.length,
+        columns,
+        rows,
+        file,
+      });
+      setTab2View('3d');
+      addLog(`업로드한 CSV로 이중관 배관 모델을 생성했습니다 (${rows.length}개 부재).`, 'success');
+      showToast('배관 모델을 3D 뷰어에 표시했습니다.', 'success');
+    } catch {
+      addLog('CSV 파일을 읽는 중 오류가 발생했습니다.', 'error');
+      showToast('CSV 파일을 읽을 수 없습니다.', 'error');
+    }
+  };
+
+  // Tab2 입력(전달/업로드) 해제.
+  const handleClearTab2Input = () => {
+    setTab2Input(null);
+    addLog('배관 CSV 입력을 해제했습니다.', 'info');
   };
 
   // 업로드한 외관 CSV + Tab1 입력값을 백엔드로 보내 append_offset.py 포팅본(inner_pipe_transform.py)을
@@ -732,17 +812,31 @@ export default function DoublePipeFuelLineAssessment() {
   // 전체 Load Case 배관응력 해석(Main.py) 실행 — 백그라운드 작업 시작 후 status 폴링으로 로그 스트리밍.
   const handleRunPsa = async () => {
     if (!tab2Input) {
-      showToast('먼저 Tab1에서 결과 CSV를 전달하세요.', 'warning');
+      showToast('먼저 배관 CSV를 전달하거나 업로드하세요.', 'warning');
       return;
     }
     setPsaRunning(true);
     addLog(`전체 ${LOAD_CASES.length}개 Load Case 배관응력 해석을 요청했습니다.`, 'info');
     try {
-      const res = await axios.post(`${API_BASE_URL}/api/doublepipe/run-psa`, {
-        workDir: tab2Input.workDir,
-        resultCsv: tab2Input.resultCsv,
-        employee_id: employeeId || 'unknown',
-      });
+      let res;
+      if (tab2Input.source === 'upload' && tab2Input.file) {
+        // 직접 업로드 경로 — 파일을 백엔드로 올려 새 작업 폴더에 저장 후 해석 시작.
+        const formData = new FormData();
+        formData.append('csv_file', tab2Input.file);
+        formData.append('employee_id', employeeId || 'unknown');
+        res = await axios.post(`${API_BASE_URL}/api/doublepipe/run-psa-upload`, formData);
+        // 이후 단계(Tab3 리포트)를 위해 백엔드가 만든 작업 폴더를 기록해 둔다.
+        if (res.data.workDir) {
+          setTab2Input(prev => (prev ? { ...prev, workDir: res.data.workDir } : prev));
+        }
+      } else {
+        // Tab1 결과 CSV(이미 userConnection 폴더에 저장됨)로 해석 시작.
+        res = await axios.post(`${API_BASE_URL}/api/doublepipe/run-psa`, {
+          workDir: tab2Input.workDir,
+          resultCsv: tab2Input.resultCsv,
+          employee_id: employeeId || 'unknown',
+        });
+      }
       const jobId = res.data.jobId;
       addLog('배관응력 해석을 시작했습니다.', 'info');
       let lastIdx = 0;
@@ -807,31 +901,59 @@ export default function DoublePipeFuelLineAssessment() {
     if (activeTab === 'all-load-cases') {
       const pipeCount = tab2Summary?.pipe ?? 0;
       const uboltCount = tab2Summary?.ubolt ?? 0;
-      const tab2Meta = TABS.find(t => t.key === 'all-load-cases');
       return (
         <>
-          {tab2Input ? (
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <CardHeader icon={CheckCircle2} title="Piping Stress Analysis 입력" tone="sky" />
-              <div className="space-y-2 p-4">
-                <StatRow label="입력 CSV" value={tab2Input.resultCsv} />
-                <StatRow label="배관 부재" value={pipeCount} unit="EA" />
-                <StatRow label="U-Bolt 지지" value={uboltCount} unit="EA" />
-                <StatRow label="작업 폴더" value={tab2Input.workDir} />
-              </div>
+          {/* 입력 — Tab1 전달 또는 Tab2 직접 업로드(둘 다 지원) */}
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <CardHeader
+              icon={tab2Input ? CheckCircle2 : Upload}
+              title="배관 CSV 입력"
+              tone="sky"
+              right={tab2Input && (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                  tab2Input.source === 'upload' ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'
+                }`}>
+                  {tab2Input.source === 'upload' ? '직접 업로드' : 'Tab1 전달'}
+                </span>
+              )}
+            />
+            <div className="space-y-3 p-4">
+              {tab2Input && (
+                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                  <div className="flex items-center gap-2">
+                    <Table2 size={14} className="shrink-0 text-slate-400" />
+                    <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-700" title={tab2Input.resultCsv}>
+                      {tab2Input.resultCsv}
+                    </span>
+                    <button
+                      type="button"
+                      title="입력 해제"
+                      onClick={handleClearTab2Input}
+                      className="shrink-0 rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-2 gap-2">
+                    <MiniStat label="배관 부재" value={pipeCount} />
+                    <MiniStat label="U-Bolt 지지" value={uboltCount} />
+                  </div>
+                </div>
+              )}
+
+              <Tab2Dropzone onFile={handleTab2Csv} hasInput={!!tab2Input} />
+
+              {!tab2Input && (
+                <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-500">
+                  <Info size={12} className="mt-0.5 shrink-0 text-slate-400" />
+                  <span>
+                    1단계에서 <span className="font-semibold text-sky-600">Piping Stress Analysis로 전달</span>하거나,
+                    내관·U-Bolt가 포함된 이중관 배관 CSV를 직접 업로드하세요.
+                  </span>
+                </p>
+              )}
             </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200">
-                <ArrowRight size={20} className="text-sky-500" />
-              </div>
-              <p className="text-sm font-bold text-slate-600">입력이 필요합니다</p>
-              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                1단계에서 <span className="font-semibold text-sky-600">Piping Stress Analysis로 전달</span>을 누르면
-                생성된 이중관 배관 CSV가 이 단계의 입력으로 지정됩니다.
-              </p>
-            </div>
-          )}
+          </div>
 
           {/* 전체 Load Case (전체 자동 해석) */}
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -841,45 +963,35 @@ export default function DoublePipeFuelLineAssessment() {
               right={<span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">전체 {LOAD_CASES.length}개</span>}
             />
             <div className="p-4">
-              <p className="mb-3 flex items-start gap-2 rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2 text-[11px] leading-relaxed text-sky-800">
-                <Info size={13} className="mt-0.5 shrink-0 text-sky-500" />
-                <span>{tab2Meta?.description}</span>
-              </p>
-              <div className="space-y-2.5">
+              <div className="divide-y divide-slate-100">
                 {CASE_CATS.map(({ cat, name, dot }) => {
                   const cases = LOAD_CASES.filter(c => c.cat === cat);
+                  if (!cases.length) return null;
+                  const first = cases[0].id;
+                  const last = cases[cases.length - 1].id;
+                  const range = first === last ? first : `${first}–${last}`;
+                  const mandatory = cases.some(c => c.mandatory);
                   return (
-                    <div key={cat}>
-                      <div className="mb-1.5 flex items-center gap-1.5">
-                        <span className={`h-2 w-2 rounded-full ${dot}`} />
-                        <span className="text-[11px] font-bold text-slate-600">{name}</span>
-                        <span className="text-[10px] font-semibold text-slate-500">{cases.length}개</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {cases.map(c => (
-                          <span
-                            key={c.id}
-                            title={`${c.id} · ${c.cat} · ${c.label}${c.mandatory ? ' — SUS 선행조건' : ''}`}
-                            className={`flex items-center gap-0.5 rounded-md border px-2 py-1 text-[11px] font-bold ${
-                              c.mandatory
-                                ? 'border-amber-300 bg-amber-100 text-amber-700'
-                                : 'border-slate-200 bg-slate-50 text-slate-600'
-                            }`}
-                          >
-                            {c.id.replace('L', '')}
-                            {c.mandatory && <Lock size={8} />}
-                          </span>
-                        ))}
-                      </div>
+                    <div key={cat} className="flex items-center gap-2 py-2">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+                      <span className="text-xs font-bold text-slate-700">{name}</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{cat}</span>
+                      {mandatory && (
+                        <span className="flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+                          <Lock size={8} />선행
+                        </span>
+                      )}
+                      <span className="ml-auto font-mono text-[11px] text-slate-500">{range}</span>
+                      <span className="w-8 text-right text-[11px] font-bold text-slate-700">{cases.length}개</span>
                     </div>
                   );
                 })}
               </div>
-              <p className="mt-3 flex items-start gap-1.5 rounded-lg border border-amber-100 bg-amber-50/70 px-2.5 py-2 text-[10px] leading-relaxed text-amber-700">
-                <Info size={12} className="mt-0.5 shrink-0" />
+              <p className="mt-3 flex items-start gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 text-[10px] leading-relaxed text-slate-500">
+                <Info size={12} className="mt-0.5 shrink-0 text-slate-400" />
                 <span>
-                  이 단계는 <span className="font-bold">전체 {LOAD_CASES.length}개 Load Case</span>를 자동 해석합니다
-                  (L17 SUS 선행 포함). 실제 해석 완주에는 Abaqus 솔버 환경이 필요합니다.
+                  전체 <span className="font-bold text-slate-700">{LOAD_CASES.length}개</span> Load Case를 자동 해석합니다
+                  (L17 SUS 선행 포함). 실제 완주에는 Abaqus 솔버 환경이 필요합니다.
                 </span>
               </p>
             </div>
@@ -940,7 +1052,7 @@ export default function DoublePipeFuelLineAssessment() {
             전체 Load Case 해석 실행 ({LOAD_CASES.length})
           </Button>
           {!tab2Input && (
-            <p className="mt-2 text-center text-[11px] text-slate-500">Tab1 결과를 전달하면 실행할 수 있습니다.</p>
+            <p className="mt-2 text-center text-[11px] text-slate-500">CSV를 전달하거나 업로드하면 실행할 수 있습니다.</p>
           )}
         </>
       );
@@ -1048,7 +1160,6 @@ export default function DoublePipeFuelLineAssessment() {
             <div className={`flex shrink-0 items-center gap-1.5 border-b px-3 py-2 ${dark ? 'border-slate-800 bg-slate-800/70' : 'border-slate-100 bg-slate-50'}`}>
               <ViewTab active={tab2View === '3d'} onClick={() => setTab2View('3d')} icon={Box} label="3D 배관 모델" dark={dark} />
               <ViewTab active={tab2View === 'table'} onClick={() => setTab2View('table')} icon={Table2} label={`입력 CSV (${tab2Input.rowCount})`} dark={dark} />
-              <span className="ml-auto truncate text-[11px] text-slate-400">{tab2Input.resultCsv}</span>
             </div>
           )}
           <div className="min-h-0 flex-1">
@@ -1057,7 +1168,7 @@ export default function DoublePipeFuelLineAssessment() {
                 <div className="text-center text-slate-500">
                   <Box size={44} className="mx-auto mb-3 opacity-40" />
                   <p className="text-sm font-semibold text-slate-400">3D 배관 모델</p>
-                  <p className="mt-1 text-xs">Tab1에서 결과 CSV를 전달하면 생성된 이중관 배관 모델이 3D로 표시됩니다.</p>
+                  <p className="mt-1 text-xs">Tab1에서 결과 CSV를 전달하거나, 왼쪽에서 배관 CSV를 업로드하면 이중관 배관 모델이 3D로 표시됩니다.</p>
                 </div>
               </div>
             ) : tab2View === '3d' ? (
@@ -1191,6 +1302,60 @@ function ViewTab({ active, onClick, icon: Icon, label, disabled, dark }) {
       <Icon size={11} />
       {label}
     </button>
+  );
+}
+
+// Tab2 입력 요약 미니 통계 — 파일명 아래 배관 부재/U-Bolt 개수를 한 눈에 보여준다.
+function MiniStat({ label, value }) {
+  return (
+    <div className="rounded-lg border border-slate-100 bg-white px-2.5 py-1.5 text-center">
+      <div className="text-sm font-bold text-slate-800">
+        {value}
+        <span className="ml-0.5 text-[9px] font-semibold text-slate-400">EA</span>
+      </div>
+      <div className="text-[10px] font-semibold text-slate-500">{label}</div>
+    </div>
+  );
+}
+
+// Tab2 배관 CSV 업로드 드롭존 — 입력 카드 안에 들어가는 슬림형(클릭/드래그).
+function Tab2Dropzone({ onFile, hasInput }) {
+  const inputRef = useRef(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const pick = (picked) => {
+    if (!picked) return;
+    if (!picked.name.toLowerCase().endsWith('.csv')) return;
+    onFile(picked);
+  };
+
+  return (
+    <div>
+      <div
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(event) => { event.preventDefault(); setIsDragOver(true); }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setIsDragOver(false);
+          pick(event.dataTransfer.files?.[0]);
+        }}
+        className={`cursor-pointer rounded-xl border-2 border-dashed p-4 text-center transition-colors ${
+          isDragOver ? 'border-sky-400 bg-sky-50' : 'border-slate-300 hover:border-sky-400 hover:bg-slate-50'
+        }`}
+      >
+        <Upload size={20} className="mx-auto mb-1.5 text-slate-400" />
+        <p className="text-xs font-semibold text-slate-600">{hasInput ? '다른 배관 CSV로 교체' : '배관 CSV 직접 업로드'}</p>
+        <p className="mt-0.5 text-[10px] text-slate-400">내관·U-Bolt 포함 이중관 배관 .csv</p>
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(event) => pick(event.target.files?.[0])}
+      />
+    </div>
   );
 }
 

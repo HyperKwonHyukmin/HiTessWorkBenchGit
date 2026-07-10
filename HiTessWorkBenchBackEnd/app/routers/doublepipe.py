@@ -5,7 +5,11 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from ..services.doublepipe_service import run_inner_pipe_preview
-from ..services.doublepipe_psa_service import get_psa_job, start_psa_job
+from ..services.doublepipe_psa_service import (
+    get_psa_job,
+    start_psa_job,
+    start_psa_job_from_upload,
+)
 
 router = APIRouter(prefix="/api/doublepipe", tags=["doublepipe"])
 
@@ -51,6 +55,21 @@ def run_psa(req: RunPsaRequest):
     (⚠️ Abaqus(외부 CAE 솔버)만은 실행 컴퓨터에 별도 설치되어 PATH 에 등록돼 있어야 합니다)
     """
     return start_psa_job(req.workDir, req.resultCsv, req.employee_id)
+
+
+@router.post("/run-psa-upload")
+async def run_psa_upload(
+    csv_file: UploadFile = File(...),
+    employee_id: str = Form("unknown"),
+):
+    """
+    Tab2 에서 직접 업로드한 내관 포함 배관 CSV 를 userConnection 작업 폴더에 저장하고
+    전체 29개 Load Case 배관응력 해석(PSA_AllLoadCases.exe)을 백그라운드로 시작합니다.
+    Tab1(Design Inner Support)을 거치지 않고 준비된 CSV 로 곧바로 해석을 돌리는 독립 경로입니다.
+    (⚠️ Abaqus(외부 CAE 솔버)만은 실행 컴퓨터에 별도 설치되어 PATH 에 등록돼 있어야 합니다)
+    """
+    csv_bytes = await csv_file.read()
+    return start_psa_job_from_upload(csv_bytes, csv_file.filename or "psa_input.csv", employee_id)
 
 
 @router.get("/run-psa/status/{job_id}")

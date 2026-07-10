@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { createThreeScene } from '../../hooks/useThreeScene';
 import {
-  Layers, Circle, Anchor, PlayCircle, PauseCircle, RotateCcw,
-  Maximize2, Minimize2, Eye, EyeOff,
+  Layers, PlayCircle, PauseCircle, RotateCcw,
+  Maximize2, Minimize2, Grid3x3,
 } from 'lucide-react';
 
 /* ── 배관 뷰어 전용 세로 그라디언트 배경 ── */
@@ -171,6 +171,30 @@ function buildPipeModel(columns, rows) {
 const UP = new THREE.Vector3(0, 1, 0);
 const ZAXIS = new THREE.Vector3(0, 0, 1);
 
+// 표준 뷰 방향(Z-up). Top 은 up 축과 시선이 겹치는 특이점이라 미세 Y 오프셋으로 회피.
+const VIEW_DIRS = {
+  iso: [1, -1, 0.7],
+  top: [0, 0.0001, 1],
+  front: [0, -1, 0],
+  side: [1, 0, 0],
+};
+
+// FOV 기반 fit-to-view — 바운딩 스피어 반경과 카메라 화각으로 거리를 계산해 모델을 화면에 꽉 채운다.
+// controls.update() 가 방향(특이점 포함)을 안전하게 정렬하므로 수동 lookAt 은 쓰지 않는다.
+function frameCameraTo(camera, controls, center, boundRadius, dirArr, padding = 1.3) {
+  const dir = new THREE.Vector3(dirArr[0], dirArr[1], dirArr[2]);
+  if (dir.lengthSq() < 1e-9) dir.set(1, -1, 0.7);
+  dir.normalize();
+  const fov = (camera.fov * Math.PI) / 180;
+  const dist = (boundRadius / Math.max(0.09, Math.sin(fov / 2))) * padding;
+  camera.position.copy(center).add(dir.multiplyScalar(dist));
+  controls.target.copy(center);
+  camera.near = Math.max(dist / 2000, 0.05);
+  camera.far = dist * 2000;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
 const TOOL_TONE_ON = {
   sky: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
   amber: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
@@ -199,6 +223,20 @@ function ToolBtn({ active, onClick, disabled, icon: Icon, label, tone = 'sky' })
   );
 }
 
+// 표준 뷰 프리셋용 텍스트 버튼 — 카메라를 해당 방향으로 스냅한다.
+function ViewBtn({ onClick, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`${label} 뷰로 이동`}
+      className="flex h-11 min-w-[40px] cursor-pointer items-center justify-center rounded-xl border border-transparent bg-slate-700 px-2 text-[10px] font-bold uppercase tracking-wide text-slate-300 transition-colors hover:bg-slate-600 hover:text-white"
+    >
+      {label}
+    </button>
+  );
+}
+
 export default function DoublePipeViewer({ columns, rows }) {
   const mountRef = useRef(null);
   const containerRef = useRef(null);
@@ -207,6 +245,7 @@ export default function DoublePipeViewer({ columns, rows }) {
   const outerGroupRef = useRef(null);
   const innerGroupRef = useRef(null);
   const supportGroupRef = useRef(null);
+  const gridRef = useRef(null);
 
   const gizmoCanvasRef = useRef(null);
   const gizmoRendererRef = useRef(null);
@@ -216,6 +255,7 @@ export default function DoublePipeViewer({ columns, rows }) {
   const [showOuter, setShowOuter] = useState(true);
   const [showInner, setShowInner] = useState(true);
   const [showSupports, setShowSupports] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
   const [autoRotate, setAutoRotate] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   // WebGL 초기화 실패/컨텍스트 손실 시 앱이 멈추지 않도록 폴백 상태로 전환.
@@ -332,12 +372,24 @@ export default function DoublePipeViewer({ columns, rows }) {
     supportGroupRef.current = supportGroup;
     scene.add(supportGroup);
 
-    // 카메라 초기화
+    // ── 참조 그리드(바닥면) — 공중에 뜬 배관에 방향·규모 기준을 준다.
+    // GridHelper 는 기본 XZ 평면이라 X축 90° 회전으로 XY 평면(Z-up)에 눕히고, 모델 최저 Z(바닥)에 배치.
     const center = new THREE.Vector3(...model.center);
     const md = model.maxDim;
-    camera.position.set(center.x + md, center.y - md, center.z + md * 0.8);
-    controls.target.copy(center);
-    camera.lookAt(center);
+    const grid = new THREE.GridHelper(md * 1.8, 18, 0x415472, 0x28344a);
+    grid.rotation.x = Math.PI / 2;
+    grid.position.set(center.x, center.y, center.z - model.bbox.dz / 2);
+    grid.material.transparent = true;
+    grid.material.opacity = 0.5;
+    grid.visible = showGrid;
+    gridRef.current = grid;
+    scene.add(grid);
+
+    // 카메라 초기화 — FOV 기반 fit 프레이밍(ISO)으로 모델을 화면에 꽉 채운다.
+    const initBoundR = 0.5 * Math.sqrt(
+      model.bbox.dx ** 2 + model.bbox.dy ** 2 + model.bbox.dz ** 2,
+    ) || md;
+    frameCameraTo(camera, controls, center, initBoundR, VIEW_DIRS.iso);
     controls.saveState();
 
     const onFrame = () => {
@@ -371,6 +423,7 @@ export default function DoublePipeViewer({ columns, rows }) {
       outerGroupRef.current = null;
       innerGroupRef.current = null;
       supportGroupRef.current = null;
+      gridRef.current = null;
       cameraRef.current = null;
       cleanup();
     };
@@ -436,6 +489,7 @@ export default function DoublePipeViewer({ columns, rows }) {
   useEffect(() => { if (outerGroupRef.current) outerGroupRef.current.visible = showOuter; }, [showOuter]);
   useEffect(() => { if (innerGroupRef.current) innerGroupRef.current.visible = showInner; }, [showInner]);
   useEffect(() => { if (supportGroupRef.current) supportGroupRef.current.visible = showSupports; }, [showSupports]);
+  useEffect(() => { if (gridRef.current) gridRef.current.visible = showGrid; }, [showGrid]);
   useEffect(() => {
     if (controlsRef.current) {
       controlsRef.current.autoRotate = autoRotate;
@@ -444,6 +498,29 @@ export default function DoublePipeViewer({ columns, rows }) {
   }, [autoRotate]);
 
   const fmt = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString() : '–');
+
+  // 바운딩 스피어 반경(뷰 프리셋/Fit 프레이밍용)
+  const boundRadius = useMemo(() => {
+    if (!model) return 1000;
+    const { dx, dy, dz } = model.bbox;
+    return 0.5 * Math.sqrt(dx * dx + dy * dy + dz * dz) || model.maxDim;
+  }, [model]);
+
+  // 표준 뷰로 카메라 스냅
+  const applyView = (dir) => {
+    const cam = cameraRef.current;
+    const ctrl = controlsRef.current;
+    if (!cam || !ctrl || !model) return;
+    frameCameraTo(cam, ctrl, new THREE.Vector3(...model.center), boundRadius, dir);
+  };
+  // 현재 시선 방향을 유지한 채 모델을 화면에 다시 꽉 채움
+  const fitView = () => {
+    const cam = cameraRef.current;
+    const ctrl = controlsRef.current;
+    if (!cam || !ctrl || !model) return;
+    const d = cam.position.clone().sub(ctrl.target);
+    applyView(d.lengthSq() > 1e-9 ? [d.x, d.y, d.z] : VIEW_DIRS.iso);
+  };
 
   if (!model) {
     return (
@@ -530,12 +607,15 @@ export default function DoublePipeViewer({ columns, rows }) {
         <canvas ref={gizmoCanvasRef} width={84} height={84} className="block h-full w-full" />
       </div>
 
-      {/* 컨트롤 툴바 */}
-      <div className="absolute bottom-4 left-1/2 z-10 flex max-w-[calc(100%-24px)] -translate-x-1/2 flex-wrap justify-center gap-1.5 rounded-2xl border border-slate-700 bg-slate-800/80 p-1.5 shadow-2xl backdrop-blur-md">
-        <ToolBtn active={showOuter} onClick={() => setShowOuter(v => !v)} icon={showOuter ? Eye : EyeOff} label="Outer" tone="sky" />
-        {model.twoGroup && <ToolBtn active={showInner} onClick={() => setShowInner(v => !v)} icon={Circle} label="Inner" tone="amber" />}
-        <ToolBtn active={showSupports} onClick={() => setShowSupports(v => !v)} icon={Anchor} label="U-Bolt" tone="emerald" />
+      {/* 컨트롤 툴바 — 뷰 프리셋(어떻게 볼지). 요소 표시/숨김은 좌측 상단 레전드에서. */}
+      <div className="absolute bottom-4 left-1/2 z-10 flex max-w-[calc(100%-24px)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-2xl border border-slate-700 bg-slate-800/80 p-1.5 shadow-2xl backdrop-blur-md">
+        <ViewBtn label="ISO" onClick={() => applyView(VIEW_DIRS.iso)} />
+        <ViewBtn label="Top" onClick={() => applyView(VIEW_DIRS.top)} />
+        <ViewBtn label="Front" onClick={() => applyView(VIEW_DIRS.front)} />
+        <ViewBtn label="Side" onClick={() => applyView(VIEW_DIRS.side)} />
+        <ViewBtn label="Fit" onClick={fitView} />
         <div className="mx-0.5 w-px self-stretch bg-slate-700/70" />
+        <ToolBtn active={showGrid} onClick={() => setShowGrid(v => !v)} icon={Grid3x3} label="Grid" tone="sky" />
         <ToolBtn active={autoRotate} onClick={() => setAutoRotate(v => !v)} icon={autoRotate ? PauseCircle : PlayCircle} label="Rotate" tone="emerald" />
         <ToolBtn active={false} onClick={() => controlsRef.current?.reset()} icon={RotateCcw} label="Reset" />
       </div>

@@ -16,6 +16,7 @@ PSA_AllLoadCases.exe 는 원본 Main.py(+scipy·pyNastran·numpy·openpyxl)를 P
      프론트가 status 폴링으로 로그를 받아볼 수 있게 한다(작업 상태는 인메모리).
 """
 import os
+import re
 import subprocess
 import threading
 import uuid
@@ -35,6 +36,10 @@ _PSA_EXE_NAME = "PSA_AllLoadCases.exe"
 _USER_CONNECTION_DIR = os.path.join(_BACKEND_DIR, "userConnection")
 _REPORT_NAME = "Report for PSA.xlsx"
 
+# userConnection 폴더 명명에 쓰는 프로그램 이름 (doublepipe_service.py 와 동일 규칙:
+# {timestamp}_{employee_id}_{ProgramName}). Tab2 직접 업로드 경로가 새 작업 폴더를 만들 때 사용.
+_PROGRAM_NAME = "DoublePipeFuelLine"
+
 # 최대 실행 시간(초) — Abaqus 반복 해석까지 고려. 필요 시 env 로 override.
 _PSA_TIMEOUT = int(os.environ.get("DOUBLEPIPE_PSA_TIMEOUT", "7200"))
 
@@ -44,9 +49,19 @@ _jobs_lock = threading.Lock()
 
 _MAX_LOG_LINES = 3000  # 로그 폭주 방지 상한
 
+# ⚠️ 서버 안정성: PSA exe 는 내부에서 Abaqus(외부 solver)를 shell 로 호출한다. Abaqus 가
+# 종료되며 CTRL_BREAK 콘솔 신호를 던지면, 콘솔을 공유하는 부모 uvicorn 까지 함께 죽는다
+# (무-로그 급사). CREATE_NO_WINDOW 로 자식에게 독립 콘솔을 주고 CREATE_NEW_PROCESS_GROUP
+# 로 프로세스 그룹을 분리해, 자식 트리의 콘솔 신호가 서버로 전파되지 않게 한다.
+_SUBPROC_FLAGS = 0
+if os.name == "nt":
+    _SUBPROC_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
+        subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+    )
+
 
 def start_psa_job(work_dir: str, result_csv: str, employee_id: str) -> dict:
-    """전체 Load Case PSA 해석을 백그라운드로 시작하고 jobId 를 반환한다."""
+    """Tab1 작업 폴더에 이미 저장된 결과 CSV 로 전체 Load Case PSA 해석을 백그라운드로 시작한다."""
     # ── 입력 검증 ──
     safe_dir = os.path.basename(work_dir or "")
     safe_csv = os.path.basename(result_csv or "")
@@ -60,6 +75,46 @@ def start_psa_job(work_dir: str, result_csv: str, employee_id: str) -> dict:
     if not os.path.isfile(csv_path):
         raise HTTPException(status_code=404, detail=f"Tab1 결과 CSV 를 찾을 수 없습니다: {safe_dir}/{safe_csv}")
 
+    return _launch_job(csv_path)
+
+
+def start_psa_job_from_upload(csv_bytes: bytes, csv_name: str, employee_id: str) -> dict:
+    """Tab2 에서 직접 업로드한 내관 포함 배관 CSV 로 전체 Load Case PSA 해석을 시작한다.
+
+    Tab1(inner-pipe-preview)을 거치지 않는 독립 실행 경로다. Tab1 과 동일하게
+    {timestamp}_{employee_id}_DoublePipeFuelLine 작업 폴더를 새로 만들어 업로드 CSV 를 저장하고,
+    그 폴더를 cwd 로 삼아 exe 를 돌린다(산출물 Report/txt 등이 이 폴더에 모임). 반환에는 jobId 와
+    함께 이후 단계(Tab3 리포트)가 참조할 workDir/resultCsv 를 포함한다.
+    """
+    if not csv_bytes:
+        raise HTTPException(status_code=400, detail="업로드된 CSV 파일이 비어 있습니다.")
+
+    # 폴더명에 들어가는 사번은 경로 조작 문자를 제거해 userConnection 밖으로 새지 않게 한다.
+    safe_employee = re.sub(r"[^A-Za-z0-9_-]", "", employee_id or "") or "unknown"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    folder_name = f"{timestamp}_{safe_employee}_{_PROGRAM_NAME}"
+    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, folder_name))
+    os.makedirs(work_dir, exist_ok=True)
+
+    safe_name = os.path.basename(csv_name or "") or "psa_input.csv"
+    if not safe_name.lower().endswith(".csv"):
+        safe_name += ".csv"
+    csv_path = os.path.join(work_dir, safe_name)
+    with open(csv_path, "wb") as f:
+        f.write(csv_bytes)
+
+    result = _launch_job(csv_path)
+    result["workDir"] = folder_name
+    result["resultCsv"] = safe_name
+    return result
+
+
+def _launch_job(csv_path: str) -> dict:
+    """userConnection 하위 절대경로 csv_path 를 입력으로 PSA exe 를 백그라운드 스레드로 실행한다.
+
+    Tab1 결과 CSV(start_psa_job)와 Tab2 직접 업로드(start_psa_job_from_upload)가 공유하는
+    실행 로직 — exe 존재 확인 → job 등록 → 스레드 기동.
+    """
     psa_exe_path = os.path.join(_PSA_DIR, _PSA_EXE_NAME)
     if not os.path.isdir(_PSA_DIR) or not os.path.isfile(psa_exe_path):
         raise HTTPException(status_code=503, detail=f"PSA 해석 프로그램({_PSA_EXE_NAME})을 찾을 수 없습니다. 서버 관리자에게 문의하세요.")
@@ -118,6 +173,7 @@ def _run_pipeline(job_id: str, command: list, cwd: str):
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            creationflags=_SUBPROC_FLAGS,
         )
     except Exception as exc:  # noqa: BLE001
         _append_log(job_id, f"[치명] 해석 프로세스 실행 실패: {exc}")
