@@ -14,6 +14,10 @@ numpy==2.4.3
 # 도면 이미지 처리 (Drawing-to-Analysis 이미지 모드)
 Pillow==12.1.1
 
+# 뉴스레터 PDF → PNG 폴백 렌더링 (newsletters.py: `import fitz`)
+# ⚠️ 미설치 시 라우터 import 단계에서 백엔드 전체가 기동 실패한다(ModuleNotFoundError: fitz).
+PyMuPDF==1.27.2
+
 # 시스템 모니터링
 psutil==7.2.2
 
