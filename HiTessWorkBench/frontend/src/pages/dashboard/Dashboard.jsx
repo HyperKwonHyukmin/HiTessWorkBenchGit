@@ -10,7 +10,7 @@ import { getAnalysisHistory, getTopPrograms, getMonthlyAnalysisCount } from '../
 import { getSessionContext } from '../../api/auth';
 import {
   Activity, FileText, Server,
-  ArrowUpRight, Star, CalendarDays, Database, Map, Rocket,
+  Star, CalendarDays, Database, Map, Rocket,
   Wrench, Clock, X, ChevronRight, ChevronDown, Layers, Cpu, Maximize2, Trophy, SlidersHorizontal,
   Megaphone, Pin, Sparkles, Play, GripVertical, ArrowLeft, ArrowRight, Check
 } from 'lucide-react';
@@ -99,44 +99,6 @@ const DashboardSectionTitle = ({ icon: Icon, title, accent = 'service', children
       <div className={`mt-1 h-0.5 w-24 rounded-full bg-gradient-to-r ${tone.rule}`} aria-hidden="true" />
       {children}
     </div>
-  );
-};
-
-const EngineeringStatCard = ({ title, value, subtext, icon: Icon, color, onClick, compact = false, className = '' }) => {
-  const isClickable = typeof onClick === 'function';
-  return (
-    <motion.div
-      onClick={onClick}
-      role={isClickable ? 'button' : undefined}
-      tabIndex={isClickable ? 0 : undefined}
-      onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
-      className={`${DASHBOARD_CARD_BASE} ${compact ? 'min-h-[96px] p-3 xl:p-4' : 'min-h-[116px] p-4 xl:p-5'} flex items-start justify-between ${
-        isClickable ? 'hover:border-blue-300 hover:shadow-md cursor-pointer' : ''
-      } ${className}`}
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
-      whileHover={isClickable ? { y: -1, transition: { type: 'spring', stiffness: 350, damping: 28 } } : undefined}
-    >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand-blue/70 via-blue-400/40 to-transparent" aria-hidden="true" />
-      {isClickable && (
-        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500">
-          <ArrowUpRight size={16} />
-        </div>
-      )}
-      <div>
-        <h3 className={`text-slate-600 ${compact ? 'text-xs' : 'text-sm'} font-bold tracking-tight transition-colors ${isClickable ? 'group-hover:text-blue-600' : ''}`}>
-          {title}
-        </h3>
-        <div className={`${compact ? 'mt-1.5' : 'mt-2'} flex items-center space-x-2 mb-1`}>
-          <span className={`${compact ? 'text-xl' : 'text-2xl'} font-extrabold text-slate-800 tracking-tight`}>{value}</span>
-        </div>
-        <p className={`${compact ? 'text-[11px]' : 'text-xs'} font-medium text-slate-500`}>{subtext}</p>
-      </div>
-      <div className={`${compact ? 'p-2' : 'p-2.5'} rounded-xl ${color} shadow-sm ring-1 ring-black/5 transition-transform`}>
-        <Icon size={compact ? 17 : 20} className="text-white" />
-      </div>
-    </motion.div>
   );
 };
 
@@ -1317,6 +1279,10 @@ export default function Dashboard() {
   }, [employeeId, historyRefreshToken]);
 
   const totalExecutions = totalCount;
+  // 누적 대비 이번 달 비중 — 병합된 '해석 수행 건수' 카드 하단 맥락 지표
+  const monthlyShare = totalExecutions > 0
+    ? Math.round((monthlyUsageCount / totalExecutions) * 100)
+    : 0;
 
   // 즐겨찾기 카드 진입 로직.
   // AppCataloguePage.handleStart 와 동일한 데이터 기반 규칙을 사용한다.
@@ -1679,24 +1645,37 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3 xl:gap-4">
         <QueueStatusCard className="md:col-span-2" />
 
-        <EngineeringStatCard
-          title="월간 해석 수행 건수"
-          value={`${monthlyUsageCount} 건`}
-          subtext="이번 달 실행된 전체 프로젝트"
-          icon={CalendarDays}
-          color="bg-brand-blue"
-          compact
-          className="md:col-span-1"
-        />
-        <EngineeringStatCard
-          title="누적 해석 수행 건수"
-          value={`${totalExecutions} 건`}
-          subtext="지금까지 실행된 총 프로젝트 내역"
-          icon={Database}
-          color="bg-brand-blue"
-          compact
-          className="md:col-span-1"
-        />
+        {/* 월간·누적 해석 수행 건수 — 좌우 2분할 한 카드로 병합.
+            (과거: min-h-96 compact 카드 2개가 grid stretch로 늘어나 각 ~46% 빈 카드였음) */}
+        <div className={`${DASHBOARD_CARD_BASE} min-h-[116px] p-4 xl:p-5 flex flex-col hover:border-blue-300 hover:shadow-md md:col-span-2`}>
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand-blue/70 via-blue-400/40 to-transparent" aria-hidden="true" />
+          <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <Database size={100} />
+          </div>
+          <h3 className="text-slate-600 text-sm font-bold tracking-tight flex items-center gap-2">
+            <CalendarDays size={16} className="text-brand-blue" /> 해석 수행 건수
+          </h3>
+          <div className="my-auto grid grid-cols-2 divide-x divide-slate-200">
+            <div className="pr-4">
+              <p className="text-[11px] font-bold text-slate-500">월간</p>
+              <p className="mt-1 text-2xl font-extrabold text-slate-800 tracking-tight leading-none">
+                {monthlyUsageCount} <span className="text-sm font-medium text-slate-500">건</span>
+              </p>
+              <p className="mt-1.5 text-[11px] font-medium text-slate-500">이번 달 실행</p>
+            </div>
+            <div className="pl-4">
+              <p className="text-[11px] font-bold text-slate-500">누적</p>
+              <p className="mt-1 text-2xl font-extrabold text-slate-800 tracking-tight leading-none">
+                {totalExecutions} <span className="text-sm font-medium text-slate-500">건</span>
+              </p>
+              <p className="mt-1.5 text-[11px] font-medium text-slate-500">전체 프로젝트</p>
+            </div>
+          </div>
+          <div className="relative flex items-center gap-1.5 border-t border-slate-100 pt-2 text-[11px] font-semibold text-slate-500">
+            <Activity size={13} className="text-slate-400" />
+            누적 중 이번 달 <span className="font-extrabold text-brand-blue">{monthlyShare}%</span>
+          </div>
+        </div>
         <div
           className={`${DASHBOARD_CARD_BASE} min-h-[116px] p-4 xl:p-5 hover:border-amber-300 hover:shadow-md md:col-span-2`}
         >
