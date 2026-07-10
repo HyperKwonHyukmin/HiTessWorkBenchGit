@@ -4,6 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+# ⚠️ 최우선 실행: 비정상 종료(무-로그 급사) 진단·방어 계측 설치.
+# - faulthandler: 네이티브 크래시 스택을 logs/backend_crash.log 에 덤프
+# - 파일 로깅: uvicorn 로그를 logs/backend.log 에 보존(종료 직전 마지막 줄 확보)
+# - 콘솔 가드: 자식 solver(Abaqus/Nastran)의 CTRL_C/CTRL_BREAK 로부터 서버 보호
+# - 메모리 워치독: OOM 추세 기록
+# routers import(numpy 등 네이티브 로드)보다 먼저 호출해 import 단계 크래시까지 잡는다.
+from .diagnostics import install_crash_diagnostics
+
+install_crash_diagnostics()
+
 from . import database, models
 from .routers import (
     activity,

@@ -58,6 +58,8 @@ release/
 # ===== Logs & Databases =====
 *.log
 *.sqlite
+# 백엔드 비정상 종료 진단 로그(faulthandler 크래시 덤프 + 회전 로그 backend.log.N)
+HiTessWorkBenchBackEnd/logs/
 
 # ===== Custom =====
 # 사용자 해석 작업 파일
