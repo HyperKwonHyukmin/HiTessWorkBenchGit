@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import {
-  ArrowRight, Ban, Box, CheckCircle2, Clock, Download, Filter, Info, Loader2, Lock, ListChecks,
+  ArrowRight, Ban, Box, Check, CheckCircle2, Clock, Download, Filter, Info, Loader2, Lock, ListChecks,
   Pipette, Play, RotateCcw, Send, ShieldAlert, Sliders, Table2, Terminal, Upload, X, Zap,
 } from 'lucide-react';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
@@ -99,6 +99,9 @@ const CASE_CATS = [
   { cat: 'OCC', name: 'Occasional', dot: 'bg-violet-500' },
   { cat: 'EXP', name: 'Expansion', dot: 'bg-emerald-500' },
 ];
+
+// L17(SUS)은 Allowable Stress 선행조건이라 선택 해석 시 항상 자동 포함(백엔드/엔진과 동일 규칙).
+const MANDATORY_LC = 'L17';
 
 // outDia/thick 은 실행 시 백엔드(append_offset.py 포팅본)가 Pipe_Dim 표준 규격으로 내부에서
 // 스냅한다 — 스냅된 값은 결과 테이블에서 확인하며, 입력 단계에서는 자유 입력을 그대로 유지한다.
@@ -666,6 +669,9 @@ export default function DoublePipeFuelLineAssessment() {
   const [psaAnchor, setPsaAnchor] = useState(null);         // 내 해석 경과 앵커(클라 epoch 초)
   const [lockState, setLockState] = useState(null);         // 남의 해석 점유 중 { anchor } — 페이지 잠금
   const [cancelling, setCancelling] = useState(false);
+  // Load Case 선택: 'all'=전체 29개(기본), 'select'=개별 선택. select 모드에서 L17(SUS)은 항상 포함(잠금).
+  const [lcMode, setLcMode] = useState('all');
+  const [selectedLcs, setSelectedLcs] = useState(() => new Set([MANDATORY_LC]));
   const [pdfLoading, setPdfLoading] = useState(false);
   const [, setElapsedTick] = useState(0);                   // 1초 틱(오버레이/락 타이머 리렌더)
   const psaPollRef = useRef(null);
@@ -1020,13 +1026,57 @@ export default function DoublePipeFuelLineAssessment() {
   };
 
   // 전체 Load Case 배관응력 해석(Main.py) 실행 — 백그라운드 작업 시작 후 status 폴링으로 로그 스트리밍.
+  // 개별 LC 체크 토글(L17 선행은 잠금이라 무시). select 모드에서만 사용.
+  const toggleLc = (id) => {
+    if (id === MANDATORY_LC) return;
+    setSelectedLcs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // 카테고리 단위 전체 선택/해제(L17 은 항상 유지). on=true 면 그 그룹 전체 체크.
+  const setCategoryLcs = (cat, on) => {
+    setSelectedLcs((prev) => {
+      const next = new Set(prev);
+      for (const c of LOAD_CASES) {
+        if (c.cat !== cat || c.id === MANDATORY_LC) continue;
+        if (on) next.add(c.id);
+        else next.delete(c.id);
+      }
+      return next;
+    });
+  };
+
+  // select 모드에서 L17 을 제외하고 사용자가 실제 고른 개수(실행 가능 판정용).
+  const nonMandatorySelected = useMemo(
+    () => [...selectedLcs].filter((id) => id !== MANDATORY_LC).length,
+    [selectedLcs],
+  );
+  // 실행에 넘길 LC 배열(L17 포함). all 모드면 null(전체).
+  const runLoadCases = lcMode === 'select'
+    ? LOAD_CASES.filter((c) => selectedLcs.has(c.id)).map((c) => c.id)
+    : null;
+  const canRunLc = lcMode === 'all' || nonMandatorySelected >= 1;
+
   const handleRunPsa = async () => {
     if (!tab2Input) {
       showToast('먼저 배관 CSV를 전달하거나 업로드하세요.', 'warning');
       return;
     }
+    if (lcMode === 'select' && nonMandatorySelected < 1) {
+      showToast('선택 모드에서는 Load Case를 1개 이상 선택하세요.', 'warning');
+      return;
+    }
     setPsaRunning(true);
-    addLog(`전체 ${LOAD_CASES.length}개 Load Case 배관응력 해석을 요청했습니다.`, 'info');
+    addLog(
+      runLoadCases
+        ? `선택 ${runLoadCases.length}개 Load Case(L17 선행 포함) 배관응력 해석을 요청했습니다: ${runLoadCases.join(', ')}`
+        : `전체 ${LOAD_CASES.length}개 Load Case 배관응력 해석을 요청했습니다.`,
+      'info',
+    );
     try {
       let res;
       if (tab2Input.source === 'upload' && tab2Input.file) {
@@ -1034,6 +1084,8 @@ export default function DoublePipeFuelLineAssessment() {
         const formData = new FormData();
         formData.append('csv_file', tab2Input.file);
         formData.append('employee_id', employeeId || 'unknown');
+        // 선택 모드면 콤마 문자열로 전달(멀티파트). all 모드면 빈 값=전체.
+        formData.append('load_cases', runLoadCases ? runLoadCases.join(',') : '');
         res = await axios.post(`${API_BASE_URL}/api/doublepipe/run-psa-upload`, formData);
         // 이후 단계(Tab3 리포트)를 위해 백엔드가 만든 작업 폴더를 기록해 둔다.
         if (res.data.workDir) {
@@ -1045,6 +1097,7 @@ export default function DoublePipeFuelLineAssessment() {
           workDir: tab2Input.workDir,
           resultCsv: tab2Input.resultCsv,
           employee_id: employeeId || 'unknown',
+          load_cases: runLoadCases,   // null=전체 / ['L17','L18',...]=선택
         });
       }
       const jobId = res.data.jobId;
@@ -1144,45 +1197,135 @@ export default function DoublePipeFuelLineAssessment() {
             </div>
           </div>
 
-          {/* 전체 Load Case (전체 자동 해석) */}
+          {/* 해석 Load Case — All(전체 자동) / 선택 */}
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <CardHeader
               icon={ListChecks}
               title="해석 Load Case"
-              right={<span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">전체 {LOAD_CASES.length}개</span>}
+              right={(
+                <div className="flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setLcMode('all')}
+                    className={`rounded-md px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                      lcMode === 'all' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >전체 {LOAD_CASES.length}</button>
+                  <button
+                    type="button"
+                    onClick={() => setLcMode('select')}
+                    className={`rounded-md px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                      lcMode === 'select' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >선택{lcMode === 'select' ? ` ${selectedLcs.size}` : ''}</button>
+                </div>
+              )}
             />
             <div className="p-4">
-              <div className="divide-y divide-slate-100">
-                {CASE_CATS.map(({ cat, name, dot }) => {
-                  const cases = LOAD_CASES.filter(c => c.cat === cat);
-                  if (!cases.length) return null;
-                  const first = cases[0].id;
-                  const last = cases[cases.length - 1].id;
-                  const range = first === last ? first : `${first}–${last}`;
-                  const mandatory = cases.some(c => c.mandatory);
-                  return (
-                    <div key={cat} className="flex items-center gap-2 py-2">
-                      <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
-                      <span className="text-xs font-bold text-slate-700">{name}</span>
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{cat}</span>
-                      {mandatory && (
-                        <span className="flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
-                          <Lock size={8} />선행
-                        </span>
-                      )}
-                      <span className="ml-auto font-mono text-[11px] text-slate-500">{range}</span>
-                      <span className="w-8 text-right text-[11px] font-bold text-slate-700">{cases.length}개</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="mt-3 flex items-start gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 text-[10px] leading-relaxed text-slate-500">
-                <Info size={12} className="mt-0.5 shrink-0 text-slate-400" />
-                <span>
-                  전체 <span className="font-bold text-slate-700">{LOAD_CASES.length}개</span> Load Case를 자동 해석합니다
-                  (L17 SUS 선행 포함). 실제 완주에는 Abaqus 솔버 환경이 필요합니다.
-                </span>
-              </p>
+              {lcMode === 'all' ? (
+                <>
+                  <div className="divide-y divide-slate-100">
+                    {CASE_CATS.map(({ cat, name, dot }) => {
+                      const cases = LOAD_CASES.filter(c => c.cat === cat);
+                      if (!cases.length) return null;
+                      const first = cases[0].id;
+                      const last = cases[cases.length - 1].id;
+                      const range = first === last ? first : `${first}–${last}`;
+                      const mandatory = cases.some(c => c.mandatory);
+                      return (
+                        <div key={cat} className="flex items-center gap-2 py-2">
+                          <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+                          <span className="text-xs font-bold text-slate-700">{name}</span>
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{cat}</span>
+                          {mandatory && (
+                            <span className="flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+                              <Lock size={8} />선행
+                            </span>
+                          )}
+                          <span className="ml-auto font-mono text-[11px] text-slate-500">{range}</span>
+                          <span className="w-8 text-right text-[11px] font-bold text-slate-700">{cases.length}개</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-3 flex items-start gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 text-[10px] leading-relaxed text-slate-500">
+                    <Info size={12} className="mt-0.5 shrink-0 text-slate-400" />
+                    <span>
+                      전체 <span className="font-bold text-slate-700">{LOAD_CASES.length}개</span> Load Case를 자동 해석합니다
+                      (L17 SUS 선행 포함). 실제 완주에는 Abaqus 솔버 환경이 필요합니다.
+                    </span>
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2.5">
+                    {CASE_CATS.map(({ cat, name, dot }) => {
+                      const cases = LOAD_CASES.filter(c => c.cat === cat);
+                      if (!cases.length) return null;
+                      const selectable = cases.filter(c => c.id !== MANDATORY_LC);
+                      const allOn = selectable.length > 0 && selectable.every(c => selectedLcs.has(c.id));
+                      return (
+                        <div key={cat} className="overflow-hidden rounded-xl border border-slate-100">
+                          <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-2.5 py-1.5">
+                            <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+                            <span className="text-[11px] font-bold text-slate-700">{name}</span>
+                            <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">{cat}</span>
+                            {selectable.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setCategoryLcs(cat, !allOn)}
+                                className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-bold text-sky-600 transition-colors hover:bg-sky-50"
+                              >{allOn ? '해제' : '전체'}</button>
+                            )}
+                          </div>
+                          <div className="space-y-0.5 p-1.5">
+                            {cases.map((c) => {
+                              const locked = c.id === MANDATORY_LC;
+                              const checked = locked || selectedLcs.has(c.id);
+                              return (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  disabled={locked}
+                                  onClick={() => toggleLc(c.id)}
+                                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors ${
+                                    locked ? 'cursor-default bg-amber-50'
+                                      : checked ? 'bg-sky-50 hover:bg-sky-100'
+                                        : 'hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                                    checked ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 bg-white'
+                                  }`}>
+                                    {checked && <Check size={11} strokeWidth={3} />}
+                                  </span>
+                                  <span className="w-8 shrink-0 font-mono text-[11px] font-bold text-slate-700">{c.id}</span>
+                                  <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500" title={c.label}>{c.label}</span>
+                                  {locked && (
+                                    <span className="flex shrink-0 items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+                                      <Lock size={8} />선행
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className={`mt-3 flex items-start gap-1.5 rounded-lg border px-2.5 py-2 text-[10px] leading-relaxed ${
+                    nonMandatorySelected < 1 ? 'border-rose-100 bg-rose-50 text-rose-600' : 'border-slate-100 bg-slate-50 text-slate-500'
+                  }`}>
+                    <Info size={12} className="mt-0.5 shrink-0" />
+                    <span>
+                      선택 <span className="font-bold text-slate-700">{nonMandatorySelected}개</span> + <span className="font-bold text-amber-700">L17(선행)</span>
+                      {' = 총 '}<span className="font-bold text-slate-700">{selectedLcs.size}개</span> 해석.
+                      {nonMandatorySelected < 1 && ' Load Case를 1개 이상 선택하세요.'}
+                    </span>
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </>
@@ -1234,15 +1377,19 @@ export default function DoublePipeFuelLineAssessment() {
             variant="primary"
             fullWidth
             isLoading={psaRunning}
-            disabled={!tab2Input || psaRunning}
+            disabled={!tab2Input || psaRunning || !canRunLc}
             onClick={handleRunPsa}
           >
             <Zap size={15} />
-            전체 Load Case 해석 실행 ({LOAD_CASES.length})
+            {lcMode === 'select'
+              ? `선택 Load Case 해석 실행 (${selectedLcs.size})`
+              : `전체 Load Case 해석 실행 (${LOAD_CASES.length})`}
           </Button>
-          {!tab2Input && (
+          {!tab2Input ? (
             <p className="mt-2 text-center text-[11px] text-slate-500">CSV를 전달하거나 업로드하면 실행할 수 있습니다.</p>
-          )}
+          ) : lcMode === 'select' && !canRunLc ? (
+            <p className="mt-2 text-center text-[11px] text-rose-500">Load Case를 1개 이상 선택하세요.</p>
+          ) : null}
         </>
       );
     }

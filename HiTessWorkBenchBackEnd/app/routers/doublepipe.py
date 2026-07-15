@@ -66,6 +66,7 @@ class RunPsaRequest(BaseModel):
     workDir: str            # userConnection 기준 Tab1 작업 폴더명
     resultCsv: str          # 그 폴더 안의 내관 포함 결과 CSV 파일명
     employee_id: str = "unknown"
+    load_cases: "list[str] | None" = None   # None/빈 값=전체 29개 / ['L18','L20']=선택(+L17 자동)
 
 
 @router.post("/run-psa")
@@ -73,25 +74,28 @@ def run_psa(req: RunPsaRequest):
     """
     Tab1 결과 CSV 를 'Piping Stress Analysis for all load cases' 파이프라인
     (PSA_AllLoadCases.exe — scipy·pyNastran·numpy·openpyxl 번들된 단일 실행파일)의
-    입력으로 넘겨 전체 29개 Load Case 배관응력 해석을 백그라운드로 시작합니다.
+    입력으로 넘겨 배관응력 해석을 백그라운드로 시작합니다. load_cases 를 지정하지 않으면
+    전체 29개 Load Case, 지정하면 그 Load Case(+L17 SUS 자동)만 해석합니다.
     (⚠️ Abaqus(외부 CAE 솔버)만은 실행 컴퓨터에 별도 설치되어 PATH 에 등록돼 있어야 합니다)
     """
-    return start_psa_job(req.workDir, req.resultCsv, req.employee_id)
+    return start_psa_job(req.workDir, req.resultCsv, req.employee_id, req.load_cases)
 
 
 @router.post("/run-psa-upload")
 async def run_psa_upload(
     csv_file: UploadFile = File(...),
     employee_id: str = Form("unknown"),
+    load_cases: str = Form(""),   # 콤마/공백 구분 문자열(예: "L18,L20"). 빈 값=전체.
 ):
     """
     Tab2 에서 직접 업로드한 내관 포함 배관 CSV 를 userConnection 작업 폴더에 저장하고
-    전체 29개 Load Case 배관응력 해석(PSA_AllLoadCases.exe)을 백그라운드로 시작합니다.
+    배관응력 해석(PSA_AllLoadCases.exe)을 백그라운드로 시작합니다. load_cases 가 비어 있으면
+    전체 29개 Load Case, 지정되면 그 Load Case(+L17 자동)만 해석합니다.
     Tab1(Design Inner Support)을 거치지 않고 준비된 CSV 로 곧바로 해석을 돌리는 독립 경로입니다.
     (⚠️ Abaqus(외부 CAE 솔버)만은 실행 컴퓨터에 별도 설치되어 PATH 에 등록돼 있어야 합니다)
     """
     csv_bytes = await csv_file.read()
-    return start_psa_job_from_upload(csv_bytes, csv_file.filename or "psa_input.csv", employee_id)
+    return start_psa_job_from_upload(csv_bytes, csv_file.filename or "psa_input.csv", employee_id, load_cases)
 
 
 @router.get("/run-psa/status/{job_id}")

@@ -127,9 +127,46 @@ def _ensure_license_available():
             _raise_license_busy(active)
 
 
-def start_psa_job(work_dir: str, result_csv: str, employee_id: str) -> dict:
-    """Tab1 작업 폴더에 이미 저장된 결과 CSV 로 전체 Load Case PSA 해석을 백그라운드로 시작한다."""
+def _normalize_load_cases(raw) -> "list[str] | None":
+    """요청의 load_cases(리스트 또는 콤마/공백 문자열)를 'L<n>'(1~29) 태그 리스트로 정규화한다.
+
+    None/빈 값이면 None(전체 해석)을 돌려준다. 잘못된 토큰은 400 으로 거른다(엔진도 재검증하지만
+    서버 진입에서 fail-fast). 중복은 제거하되 입력 순서를 보존한다(엔진이 어차피 L번호로 정렬).
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        items = [raw]
+    else:
+        items = list(raw)
+
+    tokens = []
+    for item in items:
+        tokens += [t for t in re.split(r"[\s,]+", str(item)) if t]
+
+    normalized: list[str] = []
+    seen = set()
+    for tok in tokens:
+        m = re.fullmatch(r"[Ll]?(\d{1,2})", tok.strip())
+        if not m:
+            raise HTTPException(status_code=400, detail=f"올바르지 않은 Load Case 입력: '{tok}' (예: L18)")
+        n = int(m.group(1))
+        if not (1 <= n <= 29):
+            raise HTTPException(status_code=400, detail=f"Load Case 범위 초과: 'L{n}' (허용: L1~L29)")
+        tag = f"L{n}"
+        if tag not in seen:
+            seen.add(tag)
+            normalized.append(tag)
+    return normalized or None
+
+
+def start_psa_job(work_dir: str, result_csv: str, employee_id: str, load_cases=None) -> dict:
+    """Tab1 작업 폴더에 이미 저장된 결과 CSV 로 PSA 해석을 백그라운드로 시작한다.
+
+    load_cases 가 None/빈 값이면 전체 29개, 지정되면 그 Load Case(+엔진이 L17 자동 포함)만 해석한다.
+    """
     _ensure_license_available()  # 라이센스 점유 중이면 조기 409
+    lcs = _normalize_load_cases(load_cases)  # 잘못된 LC 면 파일 확인 전 400
 
     # ── 입력 검증 ──
     safe_dir = os.path.basename(work_dir or "")
@@ -144,21 +181,23 @@ def start_psa_job(work_dir: str, result_csv: str, employee_id: str) -> dict:
     if not os.path.isfile(csv_path):
         raise HTTPException(status_code=404, detail=f"Tab1 결과 CSV 를 찾을 수 없습니다: {safe_dir}/{safe_csv}")
 
-    return _launch_job(csv_path, employee_id)
+    return _launch_job(csv_path, employee_id, lcs)
 
 
-def start_psa_job_from_upload(csv_bytes: bytes, csv_name: str, employee_id: str) -> dict:
-    """Tab2 에서 직접 업로드한 내관 포함 배관 CSV 로 전체 Load Case PSA 해석을 시작한다.
+def start_psa_job_from_upload(csv_bytes: bytes, csv_name: str, employee_id: str, load_cases=None) -> dict:
+    """Tab2 에서 직접 업로드한 내관 포함 배관 CSV 로 PSA 해석을 시작한다.
 
     Tab1(inner-pipe-preview)을 거치지 않는 독립 실행 경로다. Tab1 과 동일하게
     {timestamp}_{employee_id}_DoublePipeFuelLine 작업 폴더를 새로 만들어 업로드 CSV 를 저장하고,
     그 폴더를 cwd 로 삼아 exe 를 돌린다(산출물 Report/txt 등이 이 폴더에 모임). 반환에는 jobId 와
     함께 이후 단계(Tab3 리포트)가 참조할 workDir/resultCsv 를 포함한다.
+    load_cases 가 None/빈 값이면 전체 29개, 지정되면 그 Load Case(+L17 자동)만 해석한다.
     """
     if not csv_bytes:
         raise HTTPException(status_code=400, detail="업로드된 CSV 파일이 비어 있습니다.")
 
     _ensure_license_available()  # 업로드 파일 저장/폴더 생성 전 fail-fast
+    lcs = _normalize_load_cases(load_cases)  # 잘못된 LC 면 파일 저장 전 400
 
     # 폴더명에 들어가는 사번은 경로 조작 문자를 제거해 userConnection 밖으로 새지 않게 한다.
     safe_employee = re.sub(r"[^A-Za-z0-9_-]", "", employee_id or "") or "unknown"
@@ -174,17 +213,18 @@ def start_psa_job_from_upload(csv_bytes: bytes, csv_name: str, employee_id: str)
     with open(csv_path, "wb") as f:
         f.write(csv_bytes)
 
-    result = _launch_job(csv_path, employee_id)
+    result = _launch_job(csv_path, employee_id, lcs)
     result["workDir"] = folder_name
     result["resultCsv"] = safe_name
     return result
 
 
-def _launch_job(csv_path: str, employee_id: str) -> dict:
+def _launch_job(csv_path: str, employee_id: str, load_cases=None) -> dict:
     """userConnection 하위 절대경로 csv_path 를 입력으로 PSA exe 를 백그라운드 스레드로 실행한다.
 
     Tab1 결과 CSV(start_psa_job)와 Tab2 직접 업로드(start_psa_job_from_upload)가 공유하는
     실행 로직 — exe 존재 확인 → (라이센스 원자적 점유) job 등록 → 스레드 기동.
+    load_cases 가 지정되면 `--load-cases L18,L20,...` 인자를 붙여 선택 해석, 없으면 전체 29개.
     """
     psa_exe_path = os.path.join(_PSA_DIR, _PSA_EXE_NAME)
     if not os.path.isdir(_PSA_DIR) or not os.path.isfile(psa_exe_path):
@@ -198,6 +238,9 @@ def _launch_job(csv_path: str, employee_id: str) -> dict:
     # 빈 보고서가 나온다.
     job_dir = os.path.dirname(csv_path)
     command = [psa_exe_path, csv_path]
+    # 선택 Load Case 지정 시에만 --load-cases 를 붙인다(미지정=엔진 기본 전체 29개).
+    if load_cases:
+        command += ["--load-cases", ",".join(load_cases)]
 
     job_id = uuid.uuid4().hex[:12]
     now_epoch = _now_epoch()
@@ -212,6 +255,7 @@ def _launch_job(csv_path: str, employee_id: str) -> dict:
         "reportPath": os.path.join(job_dir, _REPORT_NAME),
         "reportReady": False,
         "employeeId": employee_id or "unknown",
+        "loadCases": list(load_cases) if load_cases else None,  # None=전체 / 리스트=선택(로그·표시용)
         "startedAt": now,
         "startedAtEpoch": now_epoch,
         "finishedAt": None,
