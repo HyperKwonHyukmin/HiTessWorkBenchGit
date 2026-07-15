@@ -12,11 +12,16 @@ PSA_AllLoadCases.exe 는 원본 Main.py(+scipy·pyNastran·numpy·openpyxl)를 P
    환경을 준비할 필요가 없다(DOUBLEPIPE_PSA_PYTHON 등 환경변수 불필요, 2026-07 exe 전환 이전
    방식). 다만 Abaqus(외부 CAE 솔버)만은 여전히 그 컴퓨터에 설치되어 PATH 의 `abaqus` 명령으로
    실행 가능해야 한다 — exe 는 파이썬 의존성만 해결하며 Abaqus 자체를 대체하지 않는다.
+   - Abaqus 가 백엔드 프로세스 PATH 에 없으면(서비스로 기동/PATH 등록 이전에 뜬 셸 등)
+     _build_subprocess_env 가 흔한 설치 경로나 환경변수 ABAQUS_COMMANDS_DIR 로 런처 폴더를
+     찾아 자식 env 의 PATH 앞에 주입한다 — exe 가 내부에서 부르는 `abaqus` 가 이를 상속한다.
    - 실행은 백그라운드 스레드에서 subprocess 로 수행하고, stdout 을 라인 단위로 누적해
      프론트가 status 폴링으로 로그를 받아볼 수 있게 한다(작업 상태는 인메모리).
 """
+import glob
 import os
 import re
+import shutil
 import subprocess
 import threading
 import uuid
@@ -58,6 +63,23 @@ if os.name == "nt":
     _SUBPROC_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
         subprocess, "CREATE_NEW_PROCESS_GROUP", 0
     )
+
+# ── Abaqus 런처(PATH) 해석 ───────────────────────────────────────────────
+# PSA exe 는 내부에서 `abaqus job=...` 를 shell 로 호출하는데, 이는 자식이 상속한 PATH 로만
+# 해석된다. 백엔드(uvicorn)가 abaqus 미등록 PATH 로 떠 있으면 "'abaqus'은(는) … 아닙니다"
+# (abaqus_not_found)로 전체 해석이 실패한다. → 실행 직전 abaqus 가 PATH 로 안 잡히면 런처
+# 폴더를 찾아 자식 env 의 PATH 앞에 주입한다. 우선순위: 현재 PATH → ABAQUS_COMMANDS_DIR
+# 환경변수 → 흔한 설치 경로 자동 탐지.
+_ABAQUS_ENV_VAR = "ABAQUS_COMMANDS_DIR"
+_ABAQUS_LAUNCHER_NAMES = ("abaqus.bat", "abaqus.exe", "abaqus")
+# 버전 폴더는 glob 로 매칭 후 최신(역순 정렬) 우선.
+_ABAQUS_CANDIDATE_GLOBS = (
+    r"C:\SIMULIA\Commands",
+    r"C:\SIMULIA\Abaqus\Commands",
+    r"C:\SIMULIA\CAE\*\win_b64\code\bin",
+    r"C:\Program Files\SIMULIA\*\win_b64\code\bin",
+    r"C:\Program Files\Dassault Systemes\SIMULIA\*\win_b64\code\bin",
+)
 
 
 def start_psa_job(work_dir: str, result_csv: str, employee_id: str) -> dict:
@@ -161,12 +183,57 @@ def _append_log(job_id: str, line: str):
             del logs[: len(logs) - _MAX_LOG_LINES]
 
 
+def _dir_has_abaqus_launcher(d: str) -> bool:
+    """디렉터리 d 안에 abaqus 런처(abaqus.bat/.exe)가 있으면 True."""
+    if not d or not os.path.isdir(d):
+        return False
+    return any(os.path.isfile(os.path.join(d, name)) for name in _ABAQUS_LAUNCHER_NAMES)
+
+
+def _resolve_abaqus_commands_dir() -> "str | None":
+    """abaqus 런처가 있는 폴더를 찾는다: ABAQUS_COMMANDS_DIR → 흔한 설치 경로 자동 탐지."""
+    override = os.environ.get(_ABAQUS_ENV_VAR, "").strip().strip('"')
+    if override and _dir_has_abaqus_launcher(override):
+        return override
+    for pattern in _ABAQUS_CANDIDATE_GLOBS:
+        for d in sorted(glob.glob(pattern), reverse=True):
+            if _dir_has_abaqus_launcher(d):
+                return d
+    return None
+
+
+def _build_subprocess_env(job_id: str) -> dict:
+    """자식(exe → abaqus)이 상속할 환경을 만든다.
+
+    abaqus 가 현재 PATH 로 이미 잡히면 그대로 두고, 안 잡히면 런처 폴더를 찾아 PATH 앞에
+    주입한다(찾으면 알림 로그, 못 찾으면 경고 로그). 이 env 를 exe 에 넘기면 exe 가 내부에서
+    부르는 `abaqus` 도 같은 PATH 를 상속하므로 abaqus_not_found 를 방지한다.
+    """
+    env = os.environ.copy()
+    if shutil.which("abaqus"):
+        return env  # 이미 PATH 로 해석됨 — 주입 불필요
+    abaqus_dir = _resolve_abaqus_commands_dir()
+    if abaqus_dir:
+        env["PATH"] = abaqus_dir + os.pathsep + env.get("PATH", "")
+        _append_log(job_id, f"[환경] abaqus 가 PATH 에 없어 '{abaqus_dir}' 를 PATH 앞에 주입했습니다.")
+    else:
+        _append_log(
+            job_id,
+            "[환경경고] abaqus 런처를 PATH 에서도 흔한 설치 경로에서도 찾지 못했습니다. "
+            f"환경변수 {_ABAQUS_ENV_VAR} 에 런처 폴더(예: C:\\SIMULIA\\Commands)를 지정하거나 "
+            "Abaqus 설치 후 시스템 PATH 에 등록하고 백엔드를 재시작하세요.",
+        )
+    return env
+
+
 def _run_pipeline(job_id: str, command: list, cwd: str):
     """subprocess 로 Main.py 를 실행하며 stdout 을 라인 단위로 누적한다."""
+    env = _build_subprocess_env(job_id)
     try:
         proc = subprocess.Popen(
             command,
             cwd=cwd,
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
