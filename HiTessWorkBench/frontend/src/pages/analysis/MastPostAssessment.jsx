@@ -120,6 +120,7 @@ export default function MastPostAssessment() {
   };
 
   const passCount = result?.candidates?.filter(c => c.stressOk && c.displacementOk).length ?? 0;
+  const isIdle = !result && !error && !isLoading;
 
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
@@ -144,18 +145,13 @@ export default function MastPostAssessment() {
       <ReferenceFormulaTabs accent="emerald">
         {(activeInfoTab) => activeInfoTab === 'image' ? (
           <div className="p-6 bg-slate-50/60">
-            <div className="relative overflow-hidden rounded-lg border border-slate-100 bg-white">
-              <img
-                src={mastPostRef}
-                alt="Mast Post 참조 도면"
-                loading="lazy"
-                decoding="async"
-                className="w-full object-contain"
-              />
-              <div className="pointer-events-none absolute left-[27.5%] top-[8.2%] flex h-[8.5%] w-[43%] items-center bg-white px-[0.8%] text-[clamp(7px,0.85vw,16px)] font-extrabold text-slate-900">
-                [하중] Horizontal / Vertical Acceleration : {vesselSize === 'large' ? '1.2g' : '1.8g'} / 1.6g
-              </div>
-            </div>
+            <img
+              src={mastPostRef}
+              alt="Mast Post 참조 도면"
+              loading="lazy"
+              decoding="async"
+              className="w-full rounded-lg border border-slate-100 bg-white object-contain"
+            />
           </div>
         ) : (
           <div className="border-t border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
@@ -220,11 +216,11 @@ export default function MastPostAssessment() {
         )}
       </ReferenceFormulaTabs>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6 items-start">
+      <div className="grid grid-cols-1 gap-6 items-start lg:grid-cols-[360px_1fr] lg:gap-x-6 lg:gap-y-4">
 
         {/* 좌측: 입력 패널 */}
-        <div className="space-y-4">
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className={`space-y-4 ${isIdle ? 'lg:contents lg:space-y-0' : ''}`}>
+          <div className={`bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden ${isIdle ? 'lg:col-start-1 lg:row-start-1' : ''}`}>
             <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-6 py-3 flex items-center gap-2">
               <Ruler size={14} className="text-white" />
               <h2 className="text-xs font-bold text-white uppercase tracking-wider">입력 조건</h2>
@@ -298,7 +294,7 @@ export default function MastPostAssessment() {
           </div>
 
           {/* 계산 기준 */}
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+          <div className={`bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden ${isIdle ? 'lg:col-start-1 lg:row-start-2' : ''}`}>
             <button
               onClick={() => setShowCriteria(v => !v)}
               className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
@@ -326,10 +322,10 @@ export default function MastPostAssessment() {
         </div>
 
         {/* 우측: 결과 패널 */}
-        <div className="space-y-5">
+        <div className={`space-y-5 ${isIdle ? 'lg:col-start-2 lg:row-start-1 lg:self-stretch' : ''}`}>
 
-          {!result && !error && !isLoading && (
-            <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-16 flex flex-col items-center text-slate-400 text-center">
+          {isIdle && (
+            <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-16 flex h-full flex-col items-center justify-center text-slate-400 text-center">
               <div className="p-5 bg-slate-50 rounded-full mb-4">
                 <TableProperties size={40} className="opacity-20" />
               </div>
