@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   Webhook,
   Download,
+  MessagesSquare,
 } from 'lucide-react';
 import { ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
 
@@ -71,6 +72,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
           { icon: BarChart3, label: "Analysis Management" },
           { icon: Settings, label: "System Management" },
           { icon: LineChart, label: "Usage Reports" },
+          { icon: MessagesSquare, label: "App Community" },
           { icon: Webhook, label: "API Apps" },
         ]
       });

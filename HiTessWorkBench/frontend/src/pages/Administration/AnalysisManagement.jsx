@@ -66,8 +66,22 @@ export default function AnalysisManagement() {
       });
       const items = response.data.items || [];
       if (items.length === 0) { showToast('\uB0B4\uBCF4\uB0BC \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.', 'warning'); return; }
-      const rows = items.map(a => `${a.id},${a.project_name || ''},${a.program_name},${a.userName}(${a.employee_id}),${a.department},${a.status},${formatDateTime(a.created_at)}`).join('\n');
-      const blob = new Blob(['\uFEFF' + 'ID,Project,Module,Requester,Department,Status,Date\n' + rows], { type: 'text/csv;charset=utf-8;' });
+      // CSV \uC140 \uC774\uC2A4\uCF00\uC774\uD504: \uCF64\uB9C8/\uB530\uC634\uD45C/\uAC1C\uD589\uC774 \uC788\uC73C\uBA74 \uD070\uB530\uC634\uD45C\uB85C \uAC10\uC2F8\uACE0 \uB0B4\uBD80 \uB530\uC634\uD45C\uB294 2\uBC30\uB85C.
+      const csvCell = (v) => {
+        const s = v == null ? '' : String(v);
+        return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const header = ['ID', 'Project', 'Module', 'Requester', 'Department', 'Status', 'Date'];
+      const rows = items.map(a => [
+        a.id,
+        a.project_name || '',
+        a.program_name,
+        `${a.userName}(${a.employee_id})`,
+        a.department,
+        a.status,
+        formatDateTime(a.created_at),
+      ].map(csvCell).join(',')).join('\n');
+      const blob = new Blob(['\uFEFF' + header.join(',') + '\n' + rows], { type: 'text/csv;charset=utf-8;' });
       downloadBlob(blob, `Analysis_Report_${Date.now()}.csv`);
     } catch (err) {
       showToast(err?.response?.data?.detail || 'CSV \uB0B4\uBCF4\uB0B4\uAE30\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.', 'error');

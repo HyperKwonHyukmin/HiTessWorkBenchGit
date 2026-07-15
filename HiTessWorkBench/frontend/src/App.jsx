@@ -40,6 +40,7 @@ const UserManagement = lazy(() => import('./pages/Administration/UserManagement'
 const SystemSettings = lazy(() => import('./pages/Administration/SystemSettings'));
 const AnalysisManagement = lazy(() => import('./pages/Administration/AnalysisManagement'));
 const UsageReports = lazy(() => import('./pages/Administration/UsageReports'));
+const AppCommunityManagement = lazy(() => import('./pages/Administration/AppCommunityManagement'));
 const BdfScanner = lazy(() => import('./pages/analysis/BdfScanner'));
 const DrawingToAnalysis = lazy(() => import('./pages/analysis/DrawingToAnalysis'));
 const ParametricApps = lazy(() => import('./pages/analysis/ParametricApps'));
@@ -377,6 +378,7 @@ function AppInner() {
       case 'User Management': return <UserManagement />;
       case 'Analysis Management': return <AnalysisManagement />;
       case 'Usage Reports': return <UsageReports />;
+      case 'App Community': return <AppCommunityManagement />;
       case 'System Settings':
       case 'System Management': return <SystemSettings />;
       case 'BDF Scanner': return <BdfScanner />;

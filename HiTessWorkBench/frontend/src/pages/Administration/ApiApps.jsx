@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Webhook, ChevronDown, ChevronUp, Terminal, CheckCircle, Clock, ArrowRight, Server } from 'lucide-react';
+import { Webhook, ChevronDown, ChevronUp, Terminal, CheckCircle, Clock, ArrowRight, Server, Search, X } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 import PageHeader from '../../components/ui/PageHeader';
 
@@ -786,6 +786,7 @@ const CATEGORY_ORDER = ['File-Based', 'Davit', 'Parametric', 'Productivity', 'Te
 export default function ApiApps() {
   const [showArch, setShowArch] = useState(true);
   const [activeCategory, setActiveCategory] = useState('All');
+  const [search, setSearch] = useState('');
 
   // 'All' + 실제로 존재하는 카테고리만 (정의된 순서 유지)
   const categories = useMemo(
@@ -793,17 +794,21 @@ export default function ApiApps() {
     []
   );
 
-  // 카테고리 필터 + 정의된 순서로 그룹 정렬
+  // 카테고리 + 검색어 필터 후, 정의된 순서로 그룹 정렬
   const visibleApis = useMemo(() => {
     const order = (c) => {
       const i = CATEGORY_ORDER.indexOf(c);
       return i === -1 ? 999 : i;
     };
+    const term = search.trim().toLowerCase();
+    const matchesSearch = (a) => !term || [a.name, a.endpoint, a.description, a.cli, a.category]
+      .some(field => (field || '').toLowerCase().includes(term));
     return API_LIST
       .filter(a => activeCategory === 'All' || a.category === activeCategory)
+      .filter(matchesSearch)
       .slice()
       .sort((a, b) => order(a.category) - order(b.category));
-  }, [activeCategory]);
+  }, [activeCategory, search]);
 
   return (
     <div className="max-w-7xl mx-auto pb-16">
@@ -884,6 +889,27 @@ export default function ApiApps() {
         )}
       </div>
 
+      {/* 검색 */}
+      <div className="mb-4 relative max-w-md">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="API 이름 · 엔드포인트 · 설명 · CLI 검색"
+          className="w-full pl-9 pr-9 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-violet-400"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 cursor-pointer"
+            aria-label="검색어 지우기"
+          >
+            <X size={15} />
+          </button>
+        )}
+      </div>
+
       {/* 카테고리 필터 */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {categories.map(cat => {
@@ -918,11 +944,18 @@ export default function ApiApps() {
       </div>
 
       {/* API 카드 그리드 */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {visibleApis.map(api => (
-          <ApiCard key={api.id} api={api} />
-        ))}
-      </div>
+      {visibleApis.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-200">
+          <Search size={28} className="mb-2 text-slate-300" />
+          <p className="text-sm font-bold">검색 결과가 없습니다.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {visibleApis.map(api => (
+            <ApiCard key={api.id} api={api} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

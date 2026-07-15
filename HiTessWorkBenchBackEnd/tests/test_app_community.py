@@ -262,3 +262,119 @@ def test_non_author_cannot_edit_or_delete_others_post(admin_client, db_session):
 
     delete = admin_client.delete(f"/api/feature-requests/{req_id}")
     assert delete.status_code == 403
+
+
+# ==================== 관리자 App 커뮤니티(AppSpace) 관리 ====================
+
+
+def test_admin_lists_app_spaces_with_counts(admin_client, db_session):
+    """관리자 목록은 App별 공지/게시글 건수를 함께 반환한다."""
+    _seed_app_space(db_session)
+    db_session.add_all([
+        models.Notice(app_key=APP_KEY, type="Notice", title="공지1",
+                      content="c", publish_status="published", author_id="ADMIN001"),
+        models.FeatureRequest(app_key=APP_KEY, title="글1", content="c",
+                              author_id="USER001", author_name="작성자"),
+        models.FeatureRequest(app_key=APP_KEY, title="글2", content="c",
+                              author_id="USER001", author_name="작성자"),
+    ])
+    db_session.commit()
+
+    resp = admin_client.get("/api/admin/app-spaces")
+    assert resp.status_code == 200
+    spaces = resp.json()
+    assert len(spaces) == 1
+    assert spaces[0]["app_key"] == APP_KEY
+    assert spaces[0]["notice_count"] == 1
+    assert spaces[0]["request_count"] == 2
+
+
+def test_admin_creates_and_toggles_app_space(admin_client, db_session):
+    """관리자는 App 공간을 생성하고 공지/게시판/활성 상태를 부분 갱신할 수 있다."""
+    created = admin_client.post("/api/admin/app-spaces", json={
+        "app_key": "new-studio",
+        "display_name": "새 스튜디오",
+    })
+    assert created.status_code == 200
+    assert created.json()["board_enabled"] is True
+
+    # 중복 생성은 400
+    dup = admin_client.post("/api/admin/app-spaces", json={
+        "app_key": "new-studio", "display_name": "중복",
+    })
+    assert dup.status_code == 400
+
+    # 부분 갱신: board_enabled 만 끄고 나머지는 유지
+    updated = admin_client.put("/api/admin/app-spaces/new-studio", json={
+        "board_enabled": False,
+    })
+    assert updated.status_code == 200
+    assert updated.json()["board_enabled"] is False
+    assert updated.json()["notice_enabled"] is True
+
+
+def test_admin_deletes_app_space_reports_orphans(admin_client, db_session):
+    _seed_app_space(db_session)
+    db_session.add(models.Notice(
+        app_key=APP_KEY, type="Notice", title="남는 공지", content="c",
+        publish_status="published", author_id="ADMIN001",
+    ))
+    db_session.commit()
+
+    resp = admin_client.delete(f"/api/admin/app-spaces/{APP_KEY}")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    assert resp.json()["orphaned_notices"] == 1
+    assert db_session.query(models.AppSpace).count() == 0
+
+
+def test_admin_app_notices_include_read_count_and_private(admin_client, db_session):
+    """관리자 공지 목록은 비공개 공지도 포함하고 현재 revision 확인 수를 집계한다."""
+    _seed_app_space(db_session)
+    notice = models.Notice(
+        app_key=APP_KEY, type="Notice", title="진입 공지", content="c",
+        show_on_entry=True, is_private=True, publish_status="published",
+        revision=1, author_id="ADMIN001", author_name="관리자",
+    )
+    db_session.add(notice)
+    db_session.commit()
+    notice_id = notice.id
+    db_session.add_all([
+        models.AppNoticeRead(notice_id=notice_id, employee_id="USER001", notice_revision=1),
+        models.AppNoticeRead(notice_id=notice_id, employee_id="USER002", notice_revision=1),
+        # 예전 revision 확인 — 현재 집계에서 제외되어야 함
+        models.AppNoticeRead(notice_id=notice_id, employee_id="USER003", notice_revision=0),
+    ])
+    db_session.commit()
+
+    resp = admin_client.get(f"/api/admin/app-spaces/{APP_KEY}/notices")
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 1
+    assert items[0]["is_private"] is True
+    assert items[0]["read_count"] == 2
+
+
+def test_notice_read_report_lists_readers(admin_client, db_session):
+    _seed_app_space(db_session)
+    db_session.add(models.User(employee_id="USER001", name="확인자", company="HHI",
+                               department="구조팀", is_active=True))
+    notice = models.Notice(
+        app_key=APP_KEY, type="Notice", title="공지", content="c",
+        show_on_entry=True, publish_status="published", revision=2,
+        author_id="ADMIN001",
+    )
+    db_session.add(notice)
+    db_session.commit()
+    notice_id = notice.id
+    db_session.add(models.AppNoticeRead(
+        notice_id=notice_id, employee_id="USER001", notice_revision=2))
+    db_session.commit()
+
+    resp = admin_client.get(f"/api/admin/notices/{notice_id}/reads")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["current_revision_reads"] == 1
+    assert data["readers"][0]["employee_id"] == "USER001"
+    assert data["readers"][0]["name"] == "확인자"
+    assert data["readers"][0]["is_current"] is True

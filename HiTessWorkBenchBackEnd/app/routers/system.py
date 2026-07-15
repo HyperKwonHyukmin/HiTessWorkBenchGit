@@ -3,13 +3,14 @@ import os
 import time
 import glob
 import psutil
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from .. import database
+from .. import database, models
 from ..services.job_manager import job_status_store, MAX_CONCURRENT_JOBS
 from ..services.cleanup_service import run_cleanup, _USER_CONN_DIR, RETENTION_DAYS
 from ..services.remote_session_service import get_remote_session_status
@@ -168,6 +169,60 @@ def get_queue_status(_user: str = Depends(require_auth)):
     "running": running_count,
     "pending": pending_count,
     "limit": MAX_CONCURRENT_JOBS
+  }
+
+
+@router.get("/system/jobs/active")
+def get_active_jobs(db: Session = Depends(database.get_db), _admin: str = Depends(require_admin)):
+  """현재 실행 중(Running)이거나 큐 대기 중(Pending)인 해석 작업 상세 목록을 반환합니다(관리자 전용).
+
+  메타데이터(사번/프로그램/시작시각)는 Analysis 레코드에서, 실시간 상태/진행률은 인메모리
+  job_status_store 에서 결합한다. DB 는 Running/Pending 인데 인메모리 store 에 없으면
+  (서버 재시작 등으로) 실제로는 끝났거나 유실된 유령 작업이므로 stale=True 로 표시한다.
+  """
+  now = datetime.now()
+  rows = (
+      db.query(models.Analysis, models.User)
+      .outerjoin(models.User, models.Analysis.employee_id == models.User.employee_id)
+      .filter(models.Analysis.job_status.in_(["Running", "Pending"]))
+      # 'Running' > 'Pending' (알파벳) → desc 로 실행 중을 먼저, 그다음 오래된 대기 순.
+      .order_by(models.Analysis.job_status.desc(), models.Analysis.created_at.asc())
+      .all()
+  )
+
+  jobs = []
+  for analysis, user in rows:
+    live = job_status_store.get(analysis.job_id) if analysis.job_id else None
+    status = (live or {}).get("status") or analysis.job_status
+    progress = (live or {}).get("progress")
+    if progress is None:
+      progress = analysis.progress
+    message = (live or {}).get("message") or analysis.job_message
+    ref = analysis.started_at or analysis.created_at
+    elapsed = int((now - ref).total_seconds()) if ref else None
+    jobs.append({
+        "job_id": analysis.job_id,
+        "employee_id": analysis.employee_id,
+        "name": user.name if user else None,
+        "department": user.department if user else None,
+        "program_name": analysis.program_name,
+        "project_name": analysis.project_name,
+        "job_status": status,
+        "progress": progress,
+        "message": message,
+        "started_at": analysis.started_at.isoformat() if analysis.started_at else None,
+        "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
+        "elapsed_seconds": elapsed,
+        "stale": bool(analysis.job_id) and live is None,
+    })
+
+  running = sum(1 for job in jobs if job["job_status"] == "Running")
+  pending = sum(1 for job in jobs if job["job_status"] == "Pending")
+  return {
+      "running": running,
+      "pending": pending,
+      "limit": MAX_CONCURRENT_JOBS,
+      "jobs": jobs,
   }
 
 

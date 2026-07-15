@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from sqlalchemy import or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Query, Session
 
 from .. import database, models, schemas
@@ -486,3 +486,253 @@ def delete_user_guide(
       ip_address=request.client.host if request.client else None,
   )
   return result
+
+
+# ==================== 관리자: App 커뮤니티(AppSpace) 관리 ====================
+#
+# 사용자용 커뮤니티 엔드포인트(_get_app_space)는 is_active=True 인 App만 노출하지만,
+# 관리자 관리 화면은 비활성 App까지 보여줘야 하므로 여기서는 is_active 필터 없이 조회한다.
+
+_APP_SPACE_NOT_FOUND = "등록되지 않은 App입니다."
+
+
+def _app_space_admin_or_404(app_key: str, db: Session) -> models.AppSpace:
+  app_space = (
+      db.query(models.AppSpace).filter(models.AppSpace.app_key == app_key).first()
+  )
+  if not app_space:
+    raise HTTPException(status_code=404, detail=_APP_SPACE_NOT_FOUND)
+  return app_space
+
+
+def _app_space_counts(db: Session) -> tuple[dict, dict]:
+  """App별 공지/게시글 건수를 한 번에 집계한다."""
+  notice_rows = (
+      db.query(models.Notice.app_key, func.count(models.Notice.id))
+      .filter(models.Notice.app_key.isnot(None))
+      .group_by(models.Notice.app_key)
+      .all()
+  )
+  request_rows = (
+      db.query(models.FeatureRequest.app_key, func.count(models.FeatureRequest.id))
+      .filter(models.FeatureRequest.app_key.isnot(None))
+      .group_by(models.FeatureRequest.app_key)
+      .all()
+  )
+  return dict(notice_rows), dict(request_rows)
+
+
+def _to_app_space_admin(
+    app_space: models.AppSpace,
+    notice_counts: dict,
+    request_counts: dict,
+) -> schemas.AppSpaceAdminResponse:
+  data = schemas.AppSpaceAdminResponse.model_validate(app_space)
+  data.notice_count = int(notice_counts.get(app_space.app_key, 0))
+  data.request_count = int(request_counts.get(app_space.app_key, 0))
+  return data
+
+
+@router.get("/admin/app-spaces", response_model=list[schemas.AppSpaceAdminResponse])
+def list_app_spaces(
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
+):
+  """등록된 모든 App 커뮤니티 공간(비활성 포함)을 공지/게시글 집계와 함께 반환한다."""
+  spaces = db.query(models.AppSpace).order_by(models.AppSpace.created_at.asc()).all()
+  notice_counts, request_counts = _app_space_counts(db)
+  return [_to_app_space_admin(s, notice_counts, request_counts) for s in spaces]
+
+
+@router.post("/admin/app-spaces", response_model=schemas.AppSpaceAdminResponse)
+def create_app_space(
+    payload: schemas.AppSpaceCreate,
+    request: Request,
+    db: Session = Depends(database.get_db),
+    current_admin: str = Depends(require_admin),
+):
+  app_key = payload.app_key.strip()
+  if not app_key:
+    raise HTTPException(status_code=422, detail="App key는 비워둘 수 없습니다.")
+  if db.query(models.AppSpace).filter(models.AppSpace.app_key == app_key).first():
+    raise HTTPException(status_code=400, detail="이미 등록된 App key입니다.")
+
+  app_space = models.AppSpace(
+      app_key=app_key,
+      display_name=payload.display_name.strip() or app_key,
+      notice_enabled=payload.notice_enabled,
+      board_enabled=payload.board_enabled,
+      is_active=payload.is_active,
+  )
+  db.add(app_space)
+  db.commit()
+  db.refresh(app_space)
+  log_activity(
+      db,
+      "APPSPACE_EDIT",
+      employee_id=current_admin,
+      action_detail={"operation": "create", "app_key": app_key},
+      status="success",
+      ip_address=request.client.host if request.client else None,
+  )
+  return _to_app_space_admin(app_space, {}, {})
+
+
+@router.put("/admin/app-spaces/{app_key}", response_model=schemas.AppSpaceAdminResponse)
+def update_app_space(
+    app_key: str,
+    payload: schemas.AppSpaceUpdate,
+    request: Request,
+    db: Session = Depends(database.get_db),
+    current_admin: str = Depends(require_admin),
+):
+  app_space = _app_space_admin_or_404(app_key, db)
+  changes = payload.model_dump(exclude_unset=True)
+  if "display_name" in changes and changes["display_name"] is not None:
+    changes["display_name"] = changes["display_name"].strip() or app_space.display_name
+  for field, value in changes.items():
+    if value is not None:
+      setattr(app_space, field, value)
+  db.commit()
+  db.refresh(app_space)
+  notice_counts, request_counts = _app_space_counts(db)
+  log_activity(
+      db,
+      "APPSPACE_EDIT",
+      employee_id=current_admin,
+      action_detail={"operation": "update", "app_key": app_key, "changes": list(changes.keys())},
+      status="success",
+      ip_address=request.client.host if request.client else None,
+  )
+  return _to_app_space_admin(app_space, notice_counts, request_counts)
+
+
+@router.delete("/admin/app-spaces/{app_key}")
+def delete_app_space(
+    app_key: str,
+    request: Request,
+    db: Session = Depends(database.get_db),
+    current_admin: str = Depends(require_admin),
+):
+  """App 공간을 삭제한다. 공지/게시글은 남으므로(app_key 참조만), 실수 방지용으로 남은 콘텐츠 수를 함께 반환한다."""
+  app_space = _app_space_admin_or_404(app_key, db)
+  notice_counts, request_counts = _app_space_counts(db)
+  db.delete(app_space)
+  db.commit()
+  log_activity(
+      db,
+      "APPSPACE_EDIT",
+      employee_id=current_admin,
+      action_detail={"operation": "delete", "app_key": app_key},
+      status="success",
+      ip_address=request.client.host if request.client else None,
+  )
+  return {
+      "ok": True,
+      "orphaned_notices": int(notice_counts.get(app_key, 0)),
+      "orphaned_requests": int(request_counts.get(app_key, 0)),
+  }
+
+
+@router.get("/admin/app-spaces/{app_key}/notices")
+def admin_app_notices(
+    app_key: str,
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
+):
+  """관리자 관리용 — 해당 App의 모든 공지(비공개/예약 포함)를 현재 revision 확인 건수와 함께 반환한다."""
+  _app_space_admin_or_404(app_key, db)
+  notices = (
+      db.query(models.Notice)
+      .filter(models.Notice.app_key == app_key)
+      .order_by(models.Notice.is_pinned.desc(), models.Notice.created_at.desc())
+      .all()
+  )
+  notices = _hydrate_notice_authors(notices, db)
+
+  # 현재 revision 기준 진입공지 확인(ack) 건수 집계.
+  read_rows = (
+      db.query(models.AppNoticeRead.notice_id, func.count(models.AppNoticeRead.id))
+      .join(
+          models.Notice,
+          and_(
+              models.AppNoticeRead.notice_id == models.Notice.id,
+              models.AppNoticeRead.notice_revision == models.Notice.revision,
+          ),
+      )
+      .filter(models.Notice.app_key == app_key)
+      .group_by(models.AppNoticeRead.notice_id)
+      .all()
+  )
+  read_counts = dict(read_rows)
+
+  return [
+      {
+          "id": n.id,
+          "title": n.title,
+          "type": n.type,
+          "is_pinned": n.is_pinned,
+          "is_private": n.is_private,
+          "show_on_entry": n.show_on_entry,
+          "publish_status": n.publish_status,
+          "revision": n.revision,
+          "author_name": n.author_name,
+          "starts_at": n.starts_at.isoformat() if n.starts_at else None,
+          "ends_at": n.ends_at.isoformat() if n.ends_at else None,
+          "created_at": n.created_at.isoformat() if n.created_at else None,
+          "read_count": int(read_counts.get(n.id, 0)),
+      }
+      for n in notices
+  ]
+
+
+@router.get("/admin/app-spaces/{app_key}/requests", response_model=list[schemas.FeatureRequestResponse])
+def admin_app_requests(
+    app_key: str,
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
+):
+  """관리자 관리용 — 해당 App의 모든 요청 게시글(활성/비활성 무관)을 반환한다."""
+  _app_space_admin_or_404(app_key, db)
+  return (
+      db.query(models.FeatureRequest)
+      .filter(models.FeatureRequest.app_key == app_key)
+      .order_by(models.FeatureRequest.upvotes.desc(), models.FeatureRequest.created_at.desc())
+      .all()
+  )
+
+
+@router.get("/admin/notices/{notice_id}/reads")
+def notice_read_report(
+    notice_id: int,
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
+):
+  """진입 공지를 확인(ack)한 사용자 명단과 현재 revision 확인 수를 반환한다."""
+  notice = get_or_404(db, models.Notice, notice_id, _NOTICE_NOT_FOUND)
+  reads = (
+      db.query(models.AppNoticeRead, models.User)
+      .outerjoin(models.User, models.AppNoticeRead.employee_id == models.User.employee_id)
+      .filter(models.AppNoticeRead.notice_id == notice_id)
+      .order_by(models.AppNoticeRead.acknowledged_at.desc())
+      .all()
+  )
+  current_reads = sum(1 for r, _ in reads if r.notice_revision == notice.revision)
+  return {
+      "notice_id": notice_id,
+      "title": notice.title,
+      "revision": notice.revision,
+      "current_revision_reads": current_reads,
+      "total_reads": len(reads),
+      "readers": [
+          {
+              "employee_id": r.employee_id,
+              "name": u.name if u else None,
+              "department": u.department if u else None,
+              "notice_revision": r.notice_revision,
+              "is_current": r.notice_revision == notice.revision,
+              "acknowledged_at": r.acknowledged_at.isoformat() if r.acknowledged_at else None,
+          }
+          for r, u in reads
+      ],
+  }

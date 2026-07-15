@@ -12,6 +12,14 @@ export const ACTION_TYPE_LABELS = {
   PROGRAM_DOWNLOAD: '프로그램 다운로드',
   EXPORT_XLSX: 'Excel 내보내기',
   VERSION_UPDATE: '버전 업데이트',
+  USER_APPROVE: '사용자 승인',
+  USER_DEACTIVATE: '사용자 비활성화',
+  USER_UPDATE: '사용자 정보수정',
+  USER_DELETE: '사용자 삭제',
+  NOTICE_EDIT: '공지 편집',
+  REQUEST_STATUS_CHANGE: '요청 상태변경',
+  GUIDE_EDIT: '가이드 편집',
+  APPSPACE_EDIT: 'App 커뮤니티 관리',
 };
 
 export const ACTION_TYPE_COLORS = {
@@ -25,4 +33,12 @@ export const ACTION_TYPE_COLORS = {
   PROGRAM_DOWNLOAD: 'bg-indigo-100 text-indigo-700',
   EXPORT_XLSX: 'bg-cyan-100 text-cyan-700',
   VERSION_UPDATE: 'bg-amber-100 text-amber-700',
+  USER_APPROVE: 'bg-emerald-100 text-emerald-700',
+  USER_DEACTIVATE: 'bg-orange-100 text-orange-700',
+  USER_UPDATE: 'bg-blue-100 text-blue-700',
+  USER_DELETE: 'bg-red-100 text-red-700',
+  NOTICE_EDIT: 'bg-indigo-100 text-indigo-700',
+  REQUEST_STATUS_CHANGE: 'bg-violet-100 text-violet-700',
+  GUIDE_EDIT: 'bg-teal-100 text-teal-700',
+  APPSPACE_EDIT: 'bg-teal-100 text-teal-700',
 };

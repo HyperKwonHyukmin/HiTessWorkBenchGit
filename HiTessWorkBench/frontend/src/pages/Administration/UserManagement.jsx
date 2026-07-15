@@ -21,6 +21,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { ACTION_TYPE_LABELS, ACTION_TYPE_COLORS } from '../../constants/activityLog';
 
 const LOG_PAGE_SIZE = 100;
+const USER_PAGE_SIZE = 20;
 const todayString = () => new Date().toISOString().slice(0, 10);
 const daysAgoString = (days) => {
   const d = new Date();
@@ -186,6 +187,8 @@ export default function UserManagement() {
   const [presenceFilter, setPresenceFilter] = useState('all'); // all | active | idle
   const [presenceSort, setPresenceSort] = useState('recent');  // recent | session | name
   const [forceLogoutCandidate, setForceLogoutCandidate] = useState(null);
+  const [roleToggleTarget, setRoleToggleTarget] = useState(null); // { user, field } — 권한 토글 확인
+  const [userPage, setUserPage] = useState(0);
   const myEmployeeId = (getEmployeeId() || '').toUpperCase();
 
   const fetchUsers = async () => {
@@ -275,6 +278,38 @@ export default function UserManagement() {
     } catch (error) {
       showToast('상태 업데이트에 실패했습니다.', 'error');
     }
+  };
+
+  // 권한 토글(관리자/개발자)은 파급이 크므로 확인을 받는다. 본인 관리자 권한 해제는 차단.
+  const requestRoleToggle = (user, field) => {
+    if (field === 'is_admin' && user.is_admin
+        && (user.employee_id || '').toUpperCase() === myEmployeeId) {
+      showToast('본인의 관리자 권한은 해제할 수 없습니다.', 'warning');
+      return;
+    }
+    setRoleToggleTarget({ user, field });
+  };
+
+  const confirmRoleToggle = async () => {
+    const target = roleToggleTarget;
+    setRoleToggleTarget(null);
+    if (!target) return;
+    await handleToggle(target.user.id, target.field, target.user[target.field]);
+  };
+
+  const roleToggleMessage = () => {
+    if (!roleToggleTarget) return '';
+    const { user, field } = roleToggleTarget;
+    const name = user.name || user.employee_id;
+    const next = !user[field];
+    if (field === 'is_admin') {
+      return next
+        ? `${name} 님에게 관리자 권한을 부여합니다. 관리자는 모든 사용자·시스템 설정에 접근할 수 있습니다.`
+        : `${name} 님의 관리자 권한을 해제합니다.`;
+    }
+    return next
+      ? `${name} 님을 개발자로 지정합니다. 이후 해석 통계 집계에서 자동 제외됩니다.`
+      : `${name} 님의 개발자 지정을 해제합니다. 통계 집계에 다시 포함됩니다.`;
   };
 
   const handleApprove = async (userId) => {
@@ -418,6 +453,15 @@ export default function UserManagement() {
   const sortedUsers = useMemo(
     () => [...filteredUsers].sort((a, b) => compareUsers(a, b, sortMode)),
     [filteredUsers, sortMode]
+  );
+
+  // 검색/필터/정렬이 바뀌면 첫 페이지로 되돌린다.
+  useEffect(() => { setUserPage(0); }, [searchTerm, filterMode, sortMode]);
+
+  const userPageCount = Math.max(1, Math.ceil(sortedUsers.length / USER_PAGE_SIZE));
+  const pagedUsers = useMemo(
+    () => sortedUsers.slice(userPage * USER_PAGE_SIZE, userPage * USER_PAGE_SIZE + USER_PAGE_SIZE),
+    [sortedUsers, userPage]
   );
 
   const currentSortLabel = SORT_OPTIONS.find(option => option.key === sortMode)?.label || '정렬';
@@ -841,7 +885,7 @@ export default function UserManagement() {
                 <tr><td colSpan="7" className="text-center py-20 text-slate-400">
                   검색 결과가 없습니다.
                 </td></tr>
-              ) : sortedUsers.map((user) => (
+              ) : pagedUsers.map((user) => (
                 <tr key={user.id} className={`transition-colors hover:bg-blue-50/50 ${!user.is_active ? 'bg-amber-50/40' : ''}`}>
 
                   {/* 이름 & 사번 */}
@@ -935,7 +979,7 @@ export default function UserManagement() {
                   {/* 관리자 권한 토글 */}
                   <td className="py-3 px-6 text-center">
                     <button
-                      onClick={() => handleToggle(user.id, 'is_admin', user.is_admin)}
+                      onClick={() => requestRoleToggle(user, 'is_admin')}
                       className={`p-2 rounded-lg transition-colors cursor-pointer ${user.is_admin ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500'}`}
                       title={user.is_admin ? "관리자 권한 해제" : "관리자 권한 부여"}
                     >
@@ -946,7 +990,7 @@ export default function UserManagement() {
                   {/* 개발자 권한 토글 — 해석 통계에서 자동 제외 */}
                   <td className="py-3 px-6 text-center">
                     <button
-                      onClick={() => handleToggle(user.id, 'is_developer', user.is_developer)}
+                      onClick={() => requestRoleToggle(user, 'is_developer')}
                       className={`p-2 rounded-lg transition-colors cursor-pointer ${user.is_developer ? 'bg-violet-50 text-violet-600 hover:bg-violet-100' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500'}`}
                       title={user.is_developer ? "개발자 권한 해제 — 통계 집계 재포함" : "개발자 권한 부여 — 해석 통계에서 자동 제외"}
                     >
@@ -974,7 +1018,41 @@ export default function UserManagement() {
             </tbody>
           </table>
         </div>
+
+        {/* 테이블 페이지네이션 */}
+        {!loading && sortedUsers.length > USER_PAGE_SIZE && (
+          <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50">
+            <p className="text-xs text-slate-400">
+              전체 {sortedUsers.length}명 중 {userPage * USER_PAGE_SIZE + 1}–{Math.min((userPage + 1) * USER_PAGE_SIZE, sortedUsers.length)}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={userPage === 0}
+                onClick={() => setUserPage(p => Math.max(0, p - 1))}
+                className="px-3 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
+              >이전</button>
+              <span className="px-2 text-xs text-slate-500">{userPage + 1} / {userPageCount}</span>
+              <button
+                disabled={userPage + 1 >= userPageCount}
+                onClick={() => setUserPage(p => Math.min(userPageCount - 1, p + 1))}
+                className="px-3 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
+              >다음</button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* 권한 토글 확인 (관리자/개발자) */}
+      <ConfirmDialog
+        isOpen={!!roleToggleTarget}
+        onCancel={() => setRoleToggleTarget(null)}
+        onConfirm={confirmRoleToggle}
+        title={roleToggleTarget?.field === 'is_admin' ? '관리자 권한 변경' : '개발자 지정 변경'}
+        message={roleToggleMessage()}
+        confirmLabel="변경"
+        cancelLabel="취소"
+        variant="warning"
+      />
 
       {/* 6. 정보 수정 모달 */}
       <Transition appear show={isEditModalOpen} as={Fragment}>

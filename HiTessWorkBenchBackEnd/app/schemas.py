@@ -97,6 +97,37 @@ class AppSpaceResponse(BaseModel):
     is_active: bool
 
 
+class AppSpaceCreate(BaseModel):
+    app_key: str
+    display_name: str
+    notice_enabled: bool = True
+    board_enabled: bool = True
+    is_active: bool = True
+
+
+class AppSpaceUpdate(BaseModel):
+    # 부분 갱신(PATCH 성) — 전달된 필드만 반영한다.
+    display_name: Optional[str] = None
+    notice_enabled: Optional[bool] = None
+    board_enabled: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+class AppSpaceAdminResponse(BaseModel):
+    """관리자 App 커뮤니티 관리용 — 공지/게시글 집계를 함께 제공한다."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    app_key: str
+    display_name: str
+    notice_enabled: bool
+    board_enabled: bool
+    is_active: bool
+    created_at: Optional[datetime] = None
+    notice_count: int = 0
+    request_count: int = 0
+
+
 class UserGuideCreate(BaseModel):
     category: str
     title: str

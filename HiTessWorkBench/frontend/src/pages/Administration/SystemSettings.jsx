@@ -7,7 +7,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Settings, Server, HardDrive, Cpu, Activity,
   Users, BarChart3, Tag, Database, Layers, Power, AlertTriangle,
-  ClipboardList, Download, RefreshCw, Filter
+  ClipboardList, Download, RefreshCw, Filter,
+  Trash2, Clock, User, FolderMinus, PlayCircle, Inbox
 } from 'lucide-react';
 import { ACTION_TYPE_LABELS, ACTION_TYPE_COLORS } from '../../constants/activityLog';
 import { POLLING_POLICY } from '../../hooks/pollingPolicy';
@@ -100,15 +101,33 @@ const Sparkline = ({ values, height = 36, width = 120, color = '#3b82f6', max = 
     </svg>
   );
 };
-import { getSystemStatus, getQueueStatus, getUsers, getMaintenanceMode, setMaintenanceMode } from '../../api/admin';
+import {
+  getSystemStatus, getUsers, getMaintenanceMode, setMaintenanceMode,
+  getActiveJobs, getStoragePreview, runStorageCleanup,
+} from '../../api/admin';
 import PageHeader from '../../components/ui/PageHeader';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../contexts/ToastContext';
 import { getAllAnalysisHistory } from '../../api/analysis';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
-import { getAuthHeaders } from '../../utils/auth';
 import { API_BASE_URL } from '../../config';
 import axios from 'axios';
 
+// 초 → "2시간 5분" / "3분 12초" 형태 표기.
+const formatElapsed = (seconds) => {
+  if (seconds == null) return '—';
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}시간 ${m}분`;
+  if (m > 0) return `${m}분 ${sec}초`;
+  return `${sec}초`;
+};
+
 export default function SystemSettings() {
+
+  const { showToast } = useToast();
 
   // 실시간 폴링 상태
   const [sysStats, setSysStats] = useState({
@@ -121,6 +140,8 @@ export default function SystemSettings() {
     latency_ms: 0
   });
   const [queue, setQueue] = useState({ running: 0, pending: 0, limit: 5 });
+  // 실행 중/대기 중 작업 상세 목록 (B5)
+  const [activeJobs, setActiveJobs] = useState([]);
 
   // ── sparkline 시계열 (ring buffer) ──
   const [cpuHistory, setCpuHistory] = useState([]);
@@ -130,6 +151,13 @@ export default function SystemSettings() {
   // 유지보수 모드
   const [maintenanceMode, setMaintenanceModeState] = useState(false);
   const [maintenanceLoading, setMaintenanceLoading] = useState(false);
+  const [confirmMaintenance, setConfirmMaintenance] = useState(false);
+
+  // 스토리지 정리 (A1)
+  const [storage, setStorage] = useState(null);          // preview 결과
+  const [storageLoading, setStorageLoading] = useState(false);
+  const [cleanupRunning, setCleanupRunning] = useState(false);
+  const [confirmCleanup, setConfirmCleanup] = useState(false);
 
   // Activity Log
   const [logFilters, setLogFilters] = useState({ employee_id: '', action_type: '', date_from: '', date_to: '' });
@@ -148,25 +176,35 @@ export default function SystemSettings() {
   useEffect(() => {
     const poll = async () => {
       if (document.hidden) return;
-      try {
-        const [statusRes, queueRes] = await Promise.all([
-          getSystemStatus(),
-          getQueueStatus()
-        ]);
-        setSysStats(statusRes.data);
-        setQueue(queueRes.data);
 
-        // ── sparkline 버퍼 업데이트 ──
+      // 리소스/DB 상태 — 이 호출만 db_status 를 결정한다.
+      try {
+        const statusRes = await getSystemStatus();
+        setSysStats(statusRes.data);
         const cpu = Number(statusRes.data?.cpu_usage) || 0;
         const memPctNow = statusRes.data?.memory_total_gb > 0
           ? (statusRes.data.memory_used_gb / statusRes.data.memory_total_gb) * 100
           : 0;
-        const running = Number(queueRes.data?.running) || 0;
         setCpuHistory(h => [...h, cpu].slice(-SPARK_LEN));
         setMemHistory(h => [...h, memPctNow].slice(-SPARK_LEN));
-        setQueueHistory(h => [...h, running].slice(-SPARK_LEN));
       } catch {
         setSysStats(prev => ({ ...prev, db_status: 'Disconnected', latency_ms: 0 }));
+      }
+
+      // 작업 모니터 — 별도 호출로 분리해, 이 엔드포인트 실패(예: 구버전 백엔드 404)가
+      // DB 상태 표시에 영향 주지 않게 한다.
+      try {
+        const jobsRes = await getActiveJobs();
+        setQueue({
+          running: jobsRes.data?.running ?? 0,
+          pending: jobsRes.data?.pending ?? 0,
+          limit: jobsRes.data?.limit ?? 5,
+        });
+        setActiveJobs(jobsRes.data?.jobs || []);
+        const running = Number(jobsRes.data?.running) || 0;
+        setQueueHistory(h => [...h, running].slice(-SPARK_LEN));
+      } catch {
+        // 작업 목록 조회 실패는 조용히 무시(다음 폴링에서 복구). DB 상태와 무관.
       }
     };
     poll();
@@ -245,15 +283,62 @@ export default function SystemSettings() {
 
   // 활동 로그 라벨/색상은 constants/activityLog.js 공용 상수 사용 (중복 제거).
 
-  const handleToggleMaintenance = async () => {
+  const performMaintenanceToggle = async () => {
+    setConfirmMaintenance(false);
     setMaintenanceLoading(true);
     try {
       const res = await setMaintenanceMode(!maintenanceMode);
       setMaintenanceModeState(res.data.maintenance);
+      showToast(
+        res.data.maintenance ? '점검 모드가 활성화되었습니다.' : '점검 모드가 해제되었습니다.',
+        res.data.maintenance ? 'info' : 'success',
+      );
     } catch {
-      // 실패 시 상태 유지
+      showToast('점검 모드 변경에 실패했습니다.', 'error');
     } finally {
       setMaintenanceLoading(false);
+    }
+  };
+
+  // 켜기(사용자 로그인 차단)는 파괴적이므로 확인을 받고, 해제는 즉시 수행한다.
+  const handleToggleMaintenance = () => {
+    if (maintenanceMode) performMaintenanceToggle();
+    else setConfirmMaintenance(true);
+  };
+
+  // ── 스토리지 정리 (A1) ──
+  const fetchStoragePreview = useCallback(async () => {
+    setStorageLoading(true);
+    try {
+      const res = await getStoragePreview();
+      setStorage(res.data);
+    } catch {
+      showToast('스토리지 미리보기에 실패했습니다.', 'error');
+    } finally {
+      setStorageLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => { fetchStoragePreview(); }, [fetchStoragePreview]);
+
+  const performCleanup = async () => {
+    setConfirmCleanup(false);
+    setCleanupRunning(true);
+    try {
+      const res = await runStorageCleanup();
+      const deleted = res.data?.deleted_count ?? 0;
+      const errors = res.data?.error_count ?? 0;
+      showToast(
+        errors > 0
+          ? `${deleted}개 폴더를 정리했습니다. (실패 ${errors}개)`
+          : `${deleted}개 폴더를 정리했습니다.`,
+        errors > 0 ? 'error' : 'success',
+      );
+      await fetchStoragePreview();
+    } catch {
+      showToast('스토리지 정리에 실패했습니다.', 'error');
+    } finally {
+      setCleanupRunning(false);
     }
   };
 
@@ -600,6 +685,142 @@ export default function SystemSettings() {
         </div>
       </div>
 
+      {/* 실행 중 작업 모니터 (B5) */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+            <PlayCircle size={18} className="text-blue-500" /> 실행 중 작업 (Active Jobs)
+          </h3>
+          <div className="flex items-center gap-3 text-[11px] font-bold">
+            <span className="text-blue-600">실행 {queue.running}</span>
+            <span className="text-amber-500">대기 {queue.pending}</span>
+            <span className="text-slate-400">동시 실행 한도 {queue.limit}</span>
+          </div>
+        </div>
+
+        {activeJobs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+            <Inbox size={28} className="mb-2 text-slate-300" />
+            <p className="text-sm font-bold">현재 실행 중이거나 대기 중인 작업이 없습니다.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {activeJobs.map(job => {
+              const isRunning = job.job_status === 'Running';
+              return (
+                <div
+                  key={job.job_id}
+                  className={`flex items-center gap-4 p-3 rounded-xl border ${
+                    job.stale ? 'border-red-200 bg-red-50'
+                      : isRunning ? 'border-blue-100 bg-blue-50/40'
+                      : 'border-slate-100 bg-slate-50'
+                  }`}
+                >
+                  <span className={`shrink-0 px-2 py-1 rounded-full text-[10px] font-black uppercase ${
+                    job.stale ? 'bg-red-100 text-red-700'
+                      : isRunning ? 'bg-blue-100 text-blue-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {job.stale ? 'Stale' : isRunning ? 'Running' : 'Pending'}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-800 truncate">{job.program_name || '—'}</span>
+                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 shrink-0">
+                        <User size={11} /> {job.name || job.employee_id || '알 수 없음'}
+                      </span>
+                    </div>
+                    {isRunning && (
+                      <div className="mt-1.5 w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                          style={{ width: `${Math.min(job.progress || 0, 100)}%` }}
+                        />
+                      </div>
+                    )}
+                    {job.message && (
+                      <p className="mt-1 text-[11px] text-slate-400 truncate" title={job.message}>{job.message}</p>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    {isRunning && (
+                      <p className="text-sm font-extrabold text-blue-600 tabular-nums">{job.progress ?? 0}%</p>
+                    )}
+                    <p className="text-[11px] text-slate-400 inline-flex items-center gap-1">
+                      <Clock size={11} /> {formatElapsed(job.elapsed_seconds)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+            {activeJobs.some(j => j.stale) && (
+              <p className="text-[11px] text-red-500 mt-1">
+                * Stale: 서버 재시작 등으로 상태가 유실된 항목(실제로는 종료되었을 수 있음).
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 스토리지 정리 (A1) */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+            <FolderMinus size={18} className="text-orange-500" /> 스토리지 정리 (userConnection)
+          </h3>
+          <div className="flex gap-2">
+            <button
+              onClick={fetchStoragePreview}
+              disabled={storageLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw size={13} className={storageLoading ? 'animate-spin' : ''} /> 미리보기 갱신
+            </button>
+            <button
+              onClick={() => setConfirmCleanup(true)}
+              disabled={cleanupRunning || storageLoading || !storage || (storage.to_delete?.length ?? 0) === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors cursor-pointer disabled:opacity-40"
+            >
+              <Trash2 size={13} /> {cleanupRunning ? '정리 중...' : '지금 정리'}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="p-3 rounded-xl bg-orange-50 border border-orange-100 text-center">
+            <p className="text-[10px] font-bold text-orange-500 uppercase">삭제 대상</p>
+            <p className="text-2xl font-black text-orange-600 tabular-nums">{storage?.to_delete?.length ?? '—'}</p>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-center">
+            <p className="text-[10px] font-bold text-slate-400 uppercase">유지</p>
+            <p className="text-2xl font-black text-slate-700 tabular-nums">{storage?.to_keep ?? '—'}</p>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-center">
+            <p className="text-[10px] font-bold text-slate-400 uppercase">보존 기간</p>
+            <p className="text-2xl font-black text-slate-700 tabular-nums">{storage?.retention_days ?? 30}<span className="text-xs">일</span></p>
+          </div>
+        </div>
+
+        <p className="text-[11px] text-slate-400 mb-2 truncate" title={storage?.user_connection_dir}>
+          경로: <span className="font-mono">{storage?.user_connection_dir || '—'}</span>
+        </p>
+
+        {storageLoading ? (
+          <div className="text-center py-6 text-slate-400"><RefreshCw size={16} className="inline animate-spin mr-2" />조회 중...</div>
+        ) : (storage?.to_delete?.length ?? 0) === 0 ? (
+          <div className="text-center py-6 text-sm font-bold text-emerald-600">정리할 폴더가 없습니다. (30일 초과 폴더 없음)</div>
+        ) : (
+          <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-100 divide-y divide-slate-50">
+            {storage.to_delete.map(item => (
+              <div key={item.folder} className="flex items-center justify-between px-3 py-2 text-xs hover:bg-slate-50">
+                <span className="font-mono text-slate-600 truncate mr-2">{item.folder}</span>
+                <span className="shrink-0 text-slate-400">{item.age_days}일 경과</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Danger Zone: 유지보수 모드 */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
         <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 flex items-center gap-2">
@@ -786,6 +1007,27 @@ export default function SystemSettings() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmMaintenance}
+        onCancel={() => setConfirmMaintenance(false)}
+        onConfirm={performMaintenanceToggle}
+        title="점검 모드 활성화"
+        message="점검 모드를 켜면 관리자를 제외한 모든 사용자의 로그인이 즉시 차단됩니다. 계속하시겠습니까?"
+        confirmLabel="점검 모드 켜기"
+        cancelLabel="취소"
+        variant="warning"
+      />
+      <ConfirmDialog
+        isOpen={confirmCleanup}
+        onCancel={() => setConfirmCleanup(false)}
+        onConfirm={performCleanup}
+        title="스토리지 정리"
+        message={`30일이 지난 작업 폴더 ${storage?.to_delete?.length ?? 0}개를 영구 삭제합니다. 되돌릴 수 없습니다. 계속하시겠습니까?`}
+        confirmLabel="삭제 실행"
+        cancelLabel="취소"
+        variant="danger"
+      />
 
     </div>
   );
