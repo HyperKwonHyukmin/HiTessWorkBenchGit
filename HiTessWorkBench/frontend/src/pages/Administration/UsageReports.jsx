@@ -22,7 +22,11 @@ function defaultDateFor(period) {
     d.setDate(1);
     d.setDate(0);
   }
-  return d.toISOString().slice(0, 10);
+  // 로컬(KST) 캘린더 날짜로 포맷 — toISOString(UTC)은 새벽 시간대에 하루 어긋난다.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 export default function UsageReports() {
