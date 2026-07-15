@@ -13,6 +13,7 @@ import { API_BASE_URL } from '../../config';
 import { downloadFileBlob } from '../../api/analysis';
 import { getAuthHeaders, handleUnauthorized, isAdmin } from '../../utils/auth';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
+import AppCommunityHub from '../../components/analysis/AppCommunityHub';
 
 /* ──────────────────────────────────────────────────────────────────────────
    상수
@@ -2247,6 +2248,9 @@ function OptionsPanel({
 // GMU(Group & Module Unit 권상 구조 해석) 후속 전달 대상 메뉴명. ANALYSIS_DATA 의 title 과 일치해야 한다.
 const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
 const SIDE_PASSAGE_MENU_NAME = 'Side Passage Assessment';
+const MODEL_BUILDER_COMMUNITY_KEY = ANALYSIS_DATA.find(
+  app => app.title === 'HiTESS Model Builder',
+)?.communityKey;
 
 // GMU 앱이 개발 중(Developing/Planned)이면 일반 사용자에게는 전달을 막고, 관리자에게만 허용한다.
 function isGmuHandoffLocked() {
@@ -3073,7 +3077,7 @@ export default function HiTessModelBuilder() {
 
   /* ── 렌더 ──────────────────────────────────────────────────────────── */
   return (
-    <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
+    <div className="min-h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
 
       {/* ── Edit Nastran 진행 중 페이지 잠금 오버레이 ── */}
       {editApplying && (
@@ -3088,11 +3092,20 @@ export default function HiTessModelBuilder() {
         onBack={() => setCurrentMenu('File-Based Apps')}
       />
 
+      {MODEL_BUILDER_COMMUNITY_KEY && (
+        <AppCommunityHub
+          appKey={MODEL_BUILDER_COMMUNITY_KEY}
+          appName="HiTESS Model Builder"
+        />
+      )}
+
       {/* ── Body ── */}
-      <div className="flex flex-1 gap-5 min-h-0 px-1">
+      {/* 콘텐츠 높이 기준(items-stretch 기본)으로 좌우 컬럼 높이를 맞춘다. 긴 결과는
+          페이지(main)의 overflow-y-auto가 스크롤을 담당 → 좌우 하단 정렬 유지. */}
+      <div className="flex items-stretch gap-5 px-1">
 
         {/* ── Left ── */}
-        <div className="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto custom-scrollbar pr-1">
+        <div className="w-80 shrink-0 flex flex-col gap-3 pr-1">
 
           {/* 파이프라인 스텝퍼 + 실행 */}
           <div className="flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
@@ -3193,7 +3206,7 @@ export default function HiTessModelBuilder() {
         </div>
 
         {/* ── Right ── */}
-        <div className="flex-1 flex flex-col gap-3 min-w-0 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 flex flex-col gap-3 min-w-0">
           {/* 진행률 (실행 중) */}
           {isRunning && (
             <ProgressBar
@@ -3227,12 +3240,13 @@ export default function HiTessModelBuilder() {
           {/* 활성 스텝 컨텐츠 — 카드는 콘텐츠 크기에 따라 자연스럽게 자라며,
               우측 컬럼의 overflow-y-auto가 스크롤을 담당. flex-1/min-h-0 제거하여
               부모 박스 밖으로 콘텐츠가 비집고 나오는 현상 해결. */}
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-5 py-4 min-w-0">
-            <div className="flex items-center gap-2 pb-3 mb-3 border-b border-slate-100">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-5 py-4 min-w-0 flex-1 flex flex-col">
+            <div className="flex items-center gap-2 pb-3 mb-3 border-b border-slate-100 shrink-0">
               <activeStep.icon size={14} className="text-blue-600" />
               <h2 className="text-sm font-bold text-slate-700">{activeIdx + 1}. {activeStep.title}</h2>
             </div>
 
+            <div className="flex-1 min-h-0">
             {activeStep.id === 'csv-validation' && (
               <CsvAuditPanel
                 audit={auditData}
@@ -3285,6 +3299,7 @@ export default function HiTessModelBuilder() {
                 }}
               />
             )}
+            </div>
           </div>
 
           {/* 엔진 로그 (오류 시) */}

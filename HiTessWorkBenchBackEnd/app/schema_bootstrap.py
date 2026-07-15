@@ -1,9 +1,5 @@
-"""서버 시작 시 기존 운영 DB 스키마를 보강하는 부트스트랩 Module.
+"""서버 시작 시 기존 운영 DB 스키마를 보수적으로 보강합니다."""
 
-운영 중인 사내 DB 호출/저장 방식은 유지하면서, 기존 테이블에 필요한 컬럼만
-보수적으로 추가한다. 장기적으로는 Alembic 같은 명시적 마이그레이션 도입이
-바람직하지만, 현재 배포 방식에서는 이 Module이 시작 시 호환성 보강을 담당한다.
-"""
 from sqlalchemy import inspect, text
 
 from . import database
@@ -14,7 +10,7 @@ def _add_missing_columns(table_name: str, statements_by_column: dict[str, str]) 
     if not inspector.has_table(table_name):
         return
 
-    columns = {col["name"] for col in inspector.get_columns(table_name)}
+    columns = {column["name"] for column in inspector.get_columns(table_name)}
     statements = [
         statement
         for column_name, statement in statements_by_column.items()
@@ -23,13 +19,31 @@ def _add_missing_columns(table_name: str, statements_by_column: dict[str, str]) 
     if not statements:
         return
 
-    with database.engine.begin() as conn:
+    with database.engine.begin() as connection:
         for statement in statements:
-            conn.execute(text(statement))
+            connection.execute(text(statement))
+
+
+def _add_missing_indexes(table_name: str, statements_by_index: dict[str, str]) -> None:
+    inspector = inspect(database.engine)
+    if not inspector.has_table(table_name):
+        return
+
+    indexes = {index["name"] for index in inspector.get_indexes(table_name)}
+    statements = [
+        statement
+        for index_name, statement in statements_by_index.items()
+        if index_name not in indexes
+    ]
+    if not statements:
+        return
+
+    with database.engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
 
 
 def ensure_notice_columns() -> None:
-    """기존 notices 테이블에 공개 범위/작성자 이름 컬럼을 보강합니다."""
     _add_missing_columns("notices", {
         "is_private": "ALTER TABLE notices ADD COLUMN is_private BOOL DEFAULT FALSE",
         "author_name": "ALTER TABLE notices ADD COLUMN author_name VARCHAR(50) NULL",
@@ -37,14 +51,20 @@ def ensure_notice_columns() -> None:
 
 
 def ensure_user_columns() -> None:
-    """기존 users 테이블에 개발자 권한 컬럼을 보강합니다."""
     _add_missing_columns("users", {
         "is_developer": "ALTER TABLE users ADD COLUMN is_developer BOOL DEFAULT FALSE",
     })
 
 
+def ensure_user_presence_columns() -> None:
+    _add_missing_columns("user_presence", {
+        "session_started": "ALTER TABLE user_presence ADD COLUMN session_started DATETIME NULL",
+        "last_active_at": "ALTER TABLE user_presence ADD COLUMN last_active_at DATETIME NULL",
+        "app_version": "ALTER TABLE user_presence ADD COLUMN app_version VARCHAR(30) NULL",
+    })
+
+
 def ensure_analysis_job_columns() -> None:
-    """기존 analysis 테이블에 DB 기반 job 상태 컬럼을 보강합니다."""
     _add_missing_columns("analysis", {
         "job_id": "ALTER TABLE analysis ADD COLUMN job_id VARCHAR(50) NULL",
         "job_status": "ALTER TABLE analysis ADD COLUMN job_status VARCHAR(20) DEFAULT 'completed'",
@@ -55,8 +75,63 @@ def ensure_analysis_job_columns() -> None:
     })
 
 
+def ensure_app_community_columns() -> None:
+    """기존 공지·요청 테이블을 App별 커뮤니티 구조로 확장합니다."""
+
+    _add_missing_columns("notices", {
+        "app_key": "ALTER TABLE notices ADD COLUMN app_key VARCHAR(100) NULL",
+        "show_on_entry": "ALTER TABLE notices ADD COLUMN show_on_entry BOOL DEFAULT FALSE",
+        "publish_status": (
+            "ALTER TABLE notices ADD COLUMN publish_status VARCHAR(20) DEFAULT 'published'"
+        ),
+        "starts_at": "ALTER TABLE notices ADD COLUMN starts_at DATETIME NULL",
+        "ends_at": "ALTER TABLE notices ADD COLUMN ends_at DATETIME NULL",
+        "revision": "ALTER TABLE notices ADD COLUMN revision INT NOT NULL DEFAULT 1",
+    })
+    _add_missing_columns("feature_requests", {
+        "app_key": "ALTER TABLE feature_requests ADD COLUMN app_key VARCHAR(100) NULL",
+    })
+    _add_missing_indexes("notices", {
+        "ix_notices_app_key": "CREATE INDEX ix_notices_app_key ON notices (app_key)",
+    })
+    _add_missing_indexes("feature_requests", {
+        "ix_feature_requests_app_key": (
+            "CREATE INDEX ix_feature_requests_app_key ON feature_requests (app_key)"
+        ),
+    })
+
+
+def ensure_app_spaces() -> None:
+    """요청된 App만 커뮤니티 기능을 활성화합니다."""
+
+    inspector = inspect(database.engine)
+    if not inspector.has_table("app_spaces"):
+        return
+
+    app_key = "hitess-model-builder"
+    with database.engine.begin() as connection:
+        exists = connection.execute(
+            text("SELECT app_key FROM app_spaces WHERE app_key = :app_key"),
+            {"app_key": app_key},
+        ).first()
+        if not exists:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO app_spaces
+                        (app_key, display_name, notice_enabled, board_enabled, is_active, created_at)
+                    VALUES
+                        (:app_key, :display_name, TRUE, TRUE, TRUE, CURRENT_TIMESTAMP)
+                    """
+                ),
+                {"app_key": app_key, "display_name": "HiTESS Model Builder"},
+            )
+
+
 def run_schema_bootstrap() -> None:
-    """앱 시작 시 필요한 운영 DB 스키마 보강을 한 번에 수행합니다."""
     ensure_notice_columns()
     ensure_user_columns()
+    ensure_user_presence_columns()
     ensure_analysis_job_columns()
+    ensure_app_community_columns()
+    ensure_app_spaces()

@@ -61,6 +61,7 @@ const APP_REGISTRY_OVERRIDES = {
   "HiTESS Model Builder": {
     menuName: "HiTESS Model Builder",
     programNames: ["HiTessModelBuilder", "ModelBuilderAnalysis", "HiTESS Model Builder"],
+    communityKey: "hitess-model-builder",
     apiEndpoint: "/api/analysis/modelflow/request",
     relatedApps: ["BDF Scanner", "F06 Parser"],
     transferOutputs: [{ key: "bdf_path", label: "BDF 모델", targetApp: "BDF Scanner" }],
