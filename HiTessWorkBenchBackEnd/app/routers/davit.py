@@ -1,4 +1,6 @@
 """다빗(Davit) 구조 설계 계산 라우터."""
+from typing import Literal
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from ..services.davit_service import run_mast_post, run_jib_rest_1dan, run_jib_rest_2dan
@@ -7,6 +9,10 @@ router = APIRouter(prefix="/api/davit", tags=["davit"])
 
 
 class MastPostRequest(BaseModel):
+    vessel_size: Literal["large", "medium"] = Field(
+        default="large",
+        description="선박 구분 (large: 대형선, medium: 중형선)",
+    )
     height_mm: float = Field(..., gt=0, description="Post 전체 높이 (mm)")
     weight_kg: float = Field(..., gt=0, description="플랫폼 하중 (kg)")
     employee_id: str = Field(default="unknown", description="요청 사번")
@@ -56,4 +62,9 @@ def mast_post(body: MastPostRequest):
     기준을 만족하는 파이프 후보(1~5순위)를 반환합니다.
     결과는 userConnection/{timestamp}_{employee_id}_PostDavitCalculation/result.json 에 저장됩니다.
     """
-    return run_mast_post(body.height_mm, body.weight_kg, body.employee_id)
+    return run_mast_post(
+        body.height_mm,
+        body.weight_kg,
+        body.employee_id,
+        vessel_size=body.vessel_size,
+    )

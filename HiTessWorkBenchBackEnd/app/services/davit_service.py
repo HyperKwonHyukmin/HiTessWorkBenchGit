@@ -25,10 +25,15 @@ def _make_work_dir(employee_id: str, program_name: str) -> tuple[str, str]:
     return work_dir, timestamp
 
 
-def run_mast_post(height_mm: float, weight_kg: float, employee_id: str) -> dict:
+def run_mast_post(
+    height_mm: float,
+    weight_kg: float,
+    employee_id: str,
+    vessel_size: str = "large",
+) -> dict:
     """
     Mast/Post 구조 설계 계산 후 DB에 이력을 저장합니다.
-    CLI: PostDavitCalculation.exe mast-post <work_dir> <height_mm> <weight_kg>
+    CLI: PostDavitCalculation.exe mast-post <work_dir> <height_mm> <weight_kg> <vessel_size>
     CLI가 work_dir/result.json 을 생성합니다.
     """
     if not os.path.exists(_EXE_PATH):
@@ -41,7 +46,14 @@ def run_mast_post(height_mm: float, weight_kg: float, employee_id: str) -> dict:
     work_dir, timestamp = _make_work_dir(employee_id, "PostDavitCalculation")
     output_json_path = os.path.join(work_dir, "result.json")
 
-    cmd = [_EXE_PATH, "mast-post", work_dir, str(int(height_mm)), str(weight_kg)]
+    cmd = [
+        _EXE_PATH,
+        "mast-post",
+        work_dir,
+        str(int(height_mm)),
+        str(weight_kg),
+        vessel_size,
+    ]
     logger.info("Running: %s", " ".join(cmd))
 
     status_msg = "Success"
@@ -72,7 +84,11 @@ def run_mast_post(height_mm: float, weight_kg: float, employee_id: str) -> dict:
             program_name="Mast Post Assessment",
             employee_id=employee_id,
             status=status_msg,
-            input_info={"height_mm": height_mm, "weight_kg": weight_kg},
+            input_info={
+                "vessel_size": vessel_size,
+                "height_mm": height_mm,
+                "weight_kg": weight_kg,
+            },
             result_info={"result_json": output_json_path} if status_msg == "Success" else None,
             source="Workbench"
         )

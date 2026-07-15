@@ -74,6 +74,7 @@ const CandidateDetail = ({ c }) => {
 export default function MastPostAssessment() {
   const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
+  const [vesselSize, setVesselSize] = useState('large');
   const [heightMm, setHeightMm] = useState('');
   const [weightKg, setWeightKg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -81,10 +82,14 @@ export default function MastPostAssessment() {
   const [error, setError] = useState(null);
   const [selectedRank, setSelectedRank] = useState(null);
   const [showCriteria, setShowCriteria] = useState(false);
-  const draftValue = useMemo(() => ({ heightMm, weightKg }), [heightMm, weightKg]);
+  const draftValue = useMemo(
+    () => ({ vesselSize, heightMm, weightKg }),
+    [vesselSize, heightMm, weightKg],
+  );
   const autosave = useDraftAutosave('mast-post-assessment', draftValue);
 
   const restoreDraft = () => autosave.restoreDraft((draft) => {
+    setVesselSize(draft.vesselSize === 'medium' ? 'medium' : 'large');
     setHeightMm(draft.heightMm ?? '');
     setWeightKg(draft.weightKg ?? '');
     setResult(null);
@@ -101,6 +106,7 @@ export default function MastPostAssessment() {
     setSelectedRank(null);
     try {
       const res = await axios.post(`${API_BASE_URL}/api/davit/mast-post`, {
+        vessel_size: vesselSize,
         height_mm: parseFloat(heightMm),
         weight_kg: parseFloat(weightKg),
         employee_id: employeeId || 'unknown',
@@ -138,13 +144,18 @@ export default function MastPostAssessment() {
       <ReferenceFormulaTabs accent="emerald">
         {(activeInfoTab) => activeInfoTab === 'image' ? (
           <div className="p-6 bg-slate-50/60">
-            <img
-              src={mastPostRef}
-              alt="Mast Post 참조 도면"
-              loading="lazy"
-              decoding="async"
-              className="w-full rounded-lg object-contain bg-white border border-slate-100"
-            />
+            <div className="relative overflow-hidden rounded-lg border border-slate-100 bg-white">
+              <img
+                src={mastPostRef}
+                alt="Mast Post 참조 도면"
+                loading="lazy"
+                decoding="async"
+                className="w-full object-contain"
+              />
+              <div className="pointer-events-none absolute left-[27.5%] top-[8.2%] flex h-[8.5%] w-[43%] items-center bg-white px-[0.8%] text-[clamp(7px,0.85vw,16px)] font-extrabold text-slate-900">
+                [하중] Horizontal / Vertical Acceleration : {vesselSize === 'large' ? '1.2g' : '1.8g'} / 1.6g
+              </div>
+            </div>
           </div>
         ) : (
           <div className="border-t border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
@@ -219,29 +230,70 @@ export default function MastPostAssessment() {
               <h2 className="text-xs font-bold text-white uppercase tracking-wider">입력 조건</h2>
             </div>
             <div className="p-6 space-y-5">
-            <InputField
-              label="Post 전체 높이"
-              desc="플랫폼 하단부터 Post 상단까지의 전체 높이"
-              value={heightMm} onChange={setHeightMm} unit="mm" placeholder="예: 5000"
-            />
-            <InputField
-              label="플랫폼 하중"
-              desc="플랫폼에 작용하는 총 중량 (자중 포함)"
-              value={weightKg} onChange={setWeightKg} unit="kg" placeholder="예: 200"
-            />
-            <button
-              onClick={handleCalculate}
-              disabled={!isValid || isLoading}
-              className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
-                isValid && !isLoading
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-200 cursor-pointer'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-              }`}
-            >
-              {isLoading
-                ? <><Loader2 size={18} className="animate-spin" /> 계산 중...</>
-                : <><Calculator size={18} /> Calculate</>}
-            </button>
+              <fieldset>
+                <legend className="text-sm font-bold text-slate-700">선박 구분</legend>
+                <p className="mt-1 text-xs text-slate-500">설계 가속도 기준을 선택하세요.</p>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {[
+                    { value: 'large', label: '대형선', acceleration: '수평 1.2g · 수직 1.6g' },
+                    { value: 'medium', label: '중형선', acceleration: '수평 1.8g · 수직 1.6g' },
+                  ].map((option) => {
+                    const isSelected = vesselSize === option.value;
+                    return (
+                      <label
+                        key={option.value}
+                        className={`cursor-pointer rounded-xl border px-3 py-3 transition-colors ${
+                          isSelected
+                            ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600'
+                            : 'border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/40'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="vessel-size"
+                            value={option.value}
+                            checked={isSelected}
+                            onChange={(event) => {
+                              setVesselSize(event.target.value);
+                              setResult(null);
+                              setError(null);
+                            }}
+                            className="h-4 w-4 accent-emerald-600"
+                          />
+                          <span className="text-sm font-bold text-slate-700">{option.label}</span>
+                        </span>
+                        <span className="mt-1.5 block pl-6 text-[11px] font-medium text-slate-500">
+                          {option.acceleration}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <InputField
+                label="Post 전체 높이"
+                desc="플랫폼 하단부터 Post 상단까지의 전체 높이"
+                value={heightMm} onChange={setHeightMm} unit="mm" placeholder="예: 5000"
+              />
+              <InputField
+                label="플랫폼 하중"
+                desc="플랫폼에 작용하는 총 중량 (자중 포함)"
+                value={weightKg} onChange={setWeightKg} unit="kg" placeholder="예: 200"
+              />
+              <button
+                onClick={handleCalculate}
+                disabled={!isValid || isLoading}
+                className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+                  isValid && !isLoading
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-200 cursor-pointer'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                {isLoading
+                  ? <><Loader2 size={18} className="animate-spin" /> 계산 중...</>
+                  : <><Calculator size={18} /> Calculate</>}
+              </button>
             </div>
           </div>
 
@@ -257,6 +309,8 @@ export default function MastPostAssessment() {
             {showCriteria && (
               <div className="px-6 pb-5 border-t border-gray-100 pt-3 space-y-1.5 text-sm">
                 {[
+                  ['선박 구분', vesselSize === 'large' ? '대형선' : '중형선'],
+                  ['설계 가속도', vesselSize === 'large' ? 'Horizontal 1.2g / Vertical 1.6g' : 'Horizontal 1.8g / Vertical 1.6g'],
                   ['탄성계수', 'E = 206,000 MPa (강재)'],
                   ['허용 등가 응력', '188 MPa'],
                   ['허용 처짐', 'H1 / 125'],
@@ -307,7 +361,7 @@ export default function MastPostAssessment() {
               <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-5 py-3 flex items-center gap-3">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">다운로드</span>
                 <button
-                  onClick={() => downloadJson({ height_mm: parseFloat(heightMm), weight_kg: parseFloat(weightKg) }, 'mast_post_input.json')}
+                  onClick={() => downloadJson({ vessel_size: vesselSize, height_mm: parseFloat(heightMm), weight_kg: parseFloat(weightKg) }, 'mast_post_input.json')}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg transition-colors cursor-pointer"
                 >
                   <Download size={13} /> 입력 JSON
