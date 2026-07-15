@@ -11,6 +11,11 @@ python-dotenv==1.2.1
 pandas==2.3.3
 numpy==2.4.3
 
+# 이중관 배치 도면 PDF 생성용 matplotlib 은 requirements 에서 제외한다(설치 불필요).
+# PDF 는 InHouseProgram/DoublePipe/Converting CSV/InnerPipeTransform.exe(matplotlib 번들)로
+# 온디맨드 생성하므로 서버 venv 에 matplotlib 이 없어도 된다. exe 없는 개발 환경에서 in-process
+# 폴백으로 PDF 를 보려면 그 PC 에서만 `pip install matplotlib==3.10.7` 하면 된다(선택).
+
 # 도면 이미지 처리 (Drawing-to-Analysis 이미지 모드)
 Pillow==12.1.1
 

@@ -10,6 +10,7 @@ import { useAuth } from './AuthContext';
 import { usePolling } from '../hooks/usePolling';
 import { POLLING_POLICY } from '../hooks/pollingPolicy';
 import AnalysisResultPanel from '../components/platform/AnalysisResultPanel';
+import DoublePipePsaTray from '../components/analysis/DoublePipePsaTray';
 
 const RAW_ANALYSIS_DATA = [
   // ── File-Based Apps (signature: blue) ──────────── Active ──
@@ -728,6 +729,12 @@ export function DashboardProvider({ children }) {
           onDismiss={clearGlobalJob}
           onFirstShow={markGlobalJobShown}
         />
+      )}
+
+      {/* 이중관 배관응력 해석(Abaqus, 최대 1시간) 전용 진행 위젯 — 페이지 이탈 시 우측 하단에
+          경과시간을 띄우고 클릭 시 복귀. 기존 GlobalJob 시스템과 독립(상태 체계가 다름). */}
+      {isAuthenticated && (
+        <DoublePipePsaTray currentMenu={currentMenu} onNavigate={setCurrentMenu} />
       )}
     </DashboardContext.Provider>
   );

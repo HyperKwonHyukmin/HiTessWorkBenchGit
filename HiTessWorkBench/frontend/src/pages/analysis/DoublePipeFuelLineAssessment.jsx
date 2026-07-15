@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import {
-  ArrowRight, Box, CheckCircle2, Download, Filter, Info, Lock, ListChecks, Pipette, Play,
-  RotateCcw, Send, Sliders, Table2, Terminal, Upload, X, Zap,
+  ArrowRight, Ban, Box, CheckCircle2, Clock, Download, Filter, Info, Loader2, Lock, ListChecks,
+  Pipette, Play, RotateCcw, Send, ShieldAlert, Sliders, Table2, Terminal, Upload, X, Zap,
 } from 'lucide-react';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import DoublePipeViewer from '../../components/analysis/DoublePipeViewer';
@@ -14,6 +14,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
+import { readPsaHint, writePsaHint, clearPsaHint, formatElapsed } from '../../utils/doublePipePsa';
 
 const PAGE_KEY = '이중관 구조 연료배관 해석';
 
@@ -660,8 +661,17 @@ export default function DoublePipeFuelLineAssessment() {
   const [tab2Input, setTab2Input] = useState(null);
   const [tab2View, setTab2View] = useState('3d'); // '3d' | 'table'
   // Tab2 전체 Load Case 배관응력 해석
-  const [psaRunning, setPsaRunning] = useState(false);
+  const [psaRunning, setPsaRunning] = useState(false);      // 내 해석이 진행 중(오버레이 표시)
+  const [psaJobId, setPsaJobId] = useState(null);
+  const [psaAnchor, setPsaAnchor] = useState(null);         // 내 해석 경과 앵커(클라 epoch 초)
+  const [lockState, setLockState] = useState(null);         // 남의 해석 점유 중 { anchor } — 페이지 잠금
+  const [cancelling, setCancelling] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [, setElapsedTick] = useState(0);                   // 1초 틱(오버레이/락 타이머 리렌더)
   const psaPollRef = useRef(null);
+  const lockPollRef = useRef(null);
+  const psaLastIdxRef = useRef(0);                          // status 로그 스트리밍 인덱스
+  const didInitRef = useRef(false);                         // 마운트 시 /active 재연결 1회 가드
 
   useEffect(() => {
     dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, { activeTab, form, logs });
@@ -671,14 +681,180 @@ export default function DoublePipeFuelLineAssessment() {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  // 폴링 인터벌 정리(언마운트 시).
+  // 폴링 인터벌 정리(언마운트 시). ※ 실행 중인 해석은 중단하지 않는다 — 전역 위젯이 이어받는다.
   useEffect(() => () => {
     if (psaPollRef.current) clearInterval(psaPollRef.current);
+    if (lockPollRef.current) clearInterval(lockPollRef.current);
   }, []);
+
+  // 오버레이/락 타이머용 1초 틱 — 진행 중이거나 잠김 상태일 때만 리렌더한다.
+  useEffect(() => {
+    if (!psaRunning && !lockState) return undefined;
+    const t = setInterval(() => setElapsedTick(x => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [psaRunning, lockState]);
 
   const addLog = (message, type = 'info') => {
     setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), message, type }]);
   };
+
+  // status 폴링 시작(신규 실행/재연결 공용). psaLastIdxRef 부터 새 로그만 콘솔에 스트리밍한다.
+  const startPsaPolling = (jobId) => {
+    if (psaPollRef.current) clearInterval(psaPollRef.current);
+    psaPollRef.current = setInterval(async () => {
+      try {
+        const s = await axios.get(`${API_BASE_URL}/api/doublepipe/run-psa/status/${jobId}`);
+        const jobLogs = s.data.logs || [];
+        for (; psaLastIdxRef.current < jobLogs.length; psaLastIdxRef.current += 1) {
+          const ln = jobLogs[psaLastIdxRef.current];
+          addLog(sanitizeLog(ln), classifyLog(ln));
+        }
+        if (s.data.status !== 'running') {
+          clearInterval(psaPollRef.current);
+          psaPollRef.current = null;
+          setPsaRunning(false);
+          setPsaJobId(null);
+          setPsaAnchor(null);
+          clearPsaHint();
+          if (s.data.status === 'done') {
+            addLog('완료: Report for PSA.xlsx 가 생성되었습니다.', 'success');
+            showToast('전체 Load Case 해석이 완료되었습니다.', 'success');
+          } else if (s.data.diagnostic === 'cancelled') {
+            addLog('해석이 중단되었습니다.', 'warning');
+          } else if (s.data.diagnostic === 'solver_env_missing') {
+            addLog('해석 실패 — 해석 프로그램 내부 모듈이 손상되었습니다.', 'error');
+            showToast('해석 프로그램이 손상되었습니다. 서버 관리자에게 문의하세요. (콘솔 안내 참조)', 'error');
+          } else if (s.data.diagnostic === 'abaqus_not_found') {
+            addLog('해석 실패 — 이 컴퓨터에 Abaqus 솔버가 없습니다.', 'error');
+            showToast('Abaqus가 설치되어 있지 않아 해석을 완주할 수 없습니다. (콘솔 안내 참조)', 'error');
+          } else if (s.data.diagnostic === 'abaqus_solve_failed') {
+            addLog('해석 실패 — Abaqus 해석이 오류로 종료되었습니다.', 'error');
+            showToast('Abaqus 해석 중 오류가 발생했습니다. 콘솔 로그를 확인하세요.', 'error');
+          } else {
+            addLog(`해석 실패 (returncode ${s.data.returncode}). 로그를 확인하세요.`, 'error');
+            showToast('해석에 실패했습니다. 콘솔 로그를 확인하세요.', 'error');
+          }
+        }
+      } catch {
+        // 일시적 폴링 실패는 다음 주기에서 재시도.
+      }
+    }, 1500);
+  };
+
+  // 남의 해석이 라이센스를 점유 중 — 페이지를 잠그고 /active 로 해제를 감시한다.
+  const startLockPolling = () => {
+    if (lockPollRef.current) clearInterval(lockPollRef.current);
+    lockPollRef.current = setInterval(async () => {
+      try {
+        const { data } = await axios.get(`${API_BASE_URL}/api/doublepipe/active`);
+        if (!data.active) {
+          clearInterval(lockPollRef.current);
+          lockPollRef.current = null;
+          setLockState(null);
+          addLog('라이센스가 해제되었습니다. 이제 해석을 실행할 수 있습니다.', 'success');
+          showToast('라이센스가 해제되었습니다.', 'success');
+        } else {
+          // 매 주기 재앵커해 드리프트 방지.
+          setLockState({ anchor: Date.now() / 1000 - (data.elapsedSec || 0) });
+        }
+      } catch {
+        // 일시 오류 — 다음 주기 재시도(잠금 유지).
+      }
+    }, 3000);
+  };
+
+  const enterLockState = (elapsedSec) => {
+    setLockState({ anchor: Date.now() / 1000 - (elapsedSec || 0) });
+    startLockPolling();
+  };
+
+  // 진행 중인 내 해석에 다시 연결(마운트 재연결/전역 위젯 복귀). 콘솔은 재연결 헤더로 초기화 후
+  // 백엔드가 보관한 로그를 처음부터 다시 스트리밍한다(중복 방지 + 완전한 콘솔).
+  const reconnectToRunning = (jobId, elapsedSec) => {
+    setActiveTab('all-load-cases');
+    setPsaRunning(true);
+    setPsaJobId(jobId);
+    setPsaAnchor(Date.now() / 1000 - (elapsedSec || 0));
+    setLogs([{ time: new Date().toLocaleTimeString(), message: '진행 중인 배관응력 해석에 다시 연결했습니다.', type: 'info' }]);
+    psaLastIdxRef.current = 0;
+    writePsaHint({ jobId, employeeId: employeeId || 'unknown' });
+    startPsaPolling(jobId);
+  };
+
+  // 이탈 중 종료된 내 해석 결과를 페이지 복귀 시 복원 표시.
+  const replayCompletion = (data) => {
+    setActiveTab('all-load-cases');
+    if (data.status === 'done') {
+      addLog('이전에 실행한 배관응력 해석이 완료되었습니다. (Report for PSA.xlsx 생성됨)', 'success');
+      showToast('배관응력 해석이 완료되었습니다.', 'success');
+    } else if (data.diagnostic === 'cancelled') {
+      addLog('이전 배관응력 해석은 중단되었습니다.', 'warning');
+    } else {
+      addLog('이전에 실행한 배관응력 해석이 실패로 종료되었습니다. 콘솔/서버 로그를 확인하세요.', 'error');
+      showToast('이전 배관응력 해석이 실패했습니다.', 'error');
+    }
+  };
+
+  // 소유자 해석 중단 — 프로세스 트리 종료 + 라이센스 즉시 해제.
+  const handleCancelPsa = async () => {
+    if (!psaJobId || cancelling) return;
+    setCancelling(true);
+    addLog('해석 중단을 요청했습니다...', 'warning');
+    try {
+      await axios.post(`${API_BASE_URL}/api/doublepipe/run-psa/cancel`, {
+        jobId: psaJobId,
+        employee_id: employeeId || 'unknown',
+      });
+      if (psaPollRef.current) { clearInterval(psaPollRef.current); psaPollRef.current = null; }
+      setPsaRunning(false);
+      setPsaJobId(null);
+      setPsaAnchor(null);
+      clearPsaHint();
+      addLog('해석을 중단했습니다. 라이센스가 해제되었습니다.', 'warning');
+      showToast('해석을 중단했습니다.', 'info');
+    } catch (e) {
+      const detail = e.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : '해석 중단에 실패했습니다.';
+      addLog(msg, 'error');
+      showToast(msg, 'error');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  // 마운트 시 백엔드 /active 로 3분기: (a)남의 작업=락, (b)내 작업=재연결, (c)없으면 힌트로 완료 복원.
+  useEffect(() => {
+    if (didInitRef.current || !employeeId) return;
+    didInitRef.current = true;
+    let cancelledEffect = false;
+    (async () => {
+      try {
+        const { data } = await axios.get(`${API_BASE_URL}/api/doublepipe/active`);
+        if (cancelledEffect) return;
+        if (data.active) {
+          const mine = String(data.employeeId || '') === String(employeeId || '');
+          if (mine) reconnectToRunning(data.jobId, data.elapsedSec || 0);
+          else enterLockState(data.elapsedSec || 0);
+          return;
+        }
+        // 전역적으로 실행 중 없음 → 이탈 중 완료된 내 작업이 있는지 힌트로 확인.
+        const hint = readPsaHint();
+        if (hint?.jobId) {
+          try {
+            const s = await axios.get(`${API_BASE_URL}/api/doublepipe/run-psa/status/${hint.jobId}`);
+            if (cancelledEffect) return;
+            if (s.data.status === 'running') reconnectToRunning(hint.jobId, 0);
+            else { replayCompletion(s.data); clearPsaHint(); }
+          } catch {
+            clearPsaHint(); // 404 등 → 힌트 정리
+          }
+        }
+      } catch {
+        // 백엔드 미가용 — 정상 페이지로 진행.
+      }
+    })();
+    return () => { cancelledEffect = true; };
+  }, [employeeId]);
 
   const handleFieldChange = (path, value) => {
     setForm(prev => setValue(prev, path, value));
@@ -713,6 +889,40 @@ export default function DoublePipeFuelLineAssessment() {
     link.remove();
     URL.revokeObjectURL(url);
     addLog(`결과 CSV(${link.download})를 다운로드했습니다.`, 'success');
+  };
+
+  // 제작도면 PDF 를 온디맨드로 생성해 내려받는다. 무거운 matplotlib 렌더는 백엔드 exe 가
+  // 처리(번들 — 서버 venv 에 matplotlib 불필요)하며 대략 10초가량 걸린다.
+  const handleGeneratePdf = async () => {
+    if (!previewResult?.workDir || !previewResult?.sourceCsv || pdfLoading) return;
+    setPdfLoading(true);
+    addLog('제작도면 PDF 생성 중… (배치·치수 도면, 약 10초 소요)', 'info');
+    try {
+      const res = await axios.post(
+        `${API_BASE_URL}/api/doublepipe/inner-pipe-pdf`,
+        {
+          workDir: previewResult.workDir,
+          sourceCsv: previewResult.sourceCsv,
+          employee_id: employeeId || 'unknown',
+        },
+        { responseType: 'blob' },
+      );
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      const stem = (previewResult.sourceCsv || 'inner_pipe').replace(/\.csv$/i, '');
+      link.download = `${stem}_Y-15000.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      addLog(`제작도면 PDF(${link.download})를 다운로드했습니다.`, 'success');
+    } catch {
+      addLog('제작도면 PDF 생성에 실패했습니다.', 'error');
+      showToast('제작도면 PDF 생성에 실패했습니다.', 'error');
+    } finally {
+      setPdfLoading(false);
+    }
   };
 
   // 결과 CSV를 Tab2 입력값으로 지정하고 Tab2로 이동. (해제 시 on=false)
@@ -839,43 +1049,22 @@ export default function DoublePipeFuelLineAssessment() {
       }
       const jobId = res.data.jobId;
       addLog('배관응력 해석을 시작했습니다.', 'info');
-      let lastIdx = 0;
-      psaPollRef.current = setInterval(async () => {
-        try {
-          const s = await axios.get(`${API_BASE_URL}/api/doublepipe/run-psa/status/${jobId}`);
-          const jobLogs = s.data.logs || [];
-          for (; lastIdx < jobLogs.length; lastIdx += 1) {
-            const ln = jobLogs[lastIdx];
-            addLog(sanitizeLog(ln), classifyLog(ln));
-          }
-          if (s.data.status !== 'running') {
-            clearInterval(psaPollRef.current);
-            psaPollRef.current = null;
-            setPsaRunning(false);
-            if (s.data.status === 'done') {
-              addLog('완료: Report for PSA.xlsx 가 생성되었습니다.', 'success');
-              showToast('전체 Load Case 해석이 완료되었습니다.', 'success');
-            } else if (s.data.diagnostic === 'solver_env_missing') {
-              addLog('해석 실패 — 해석 프로그램 내부 모듈이 손상되었습니다.', 'error');
-              showToast('해석 프로그램이 손상되었습니다. 서버 관리자에게 문의하세요. (콘솔 안내 참조)', 'error');
-            } else if (s.data.diagnostic === 'abaqus_not_found') {
-              addLog('해석 실패 — 이 컴퓨터에 Abaqus 솔버가 없습니다.', 'error');
-              showToast('Abaqus가 설치되어 있지 않아 해석을 완주할 수 없습니다. (콘솔 안내 참조)', 'error');
-            } else if (s.data.diagnostic === 'abaqus_solve_failed') {
-              addLog('해석 실패 — Abaqus 해석이 오류로 종료되었습니다.', 'error');
-              showToast('Abaqus 해석 중 오류가 발생했습니다. 콘솔 로그를 확인하세요.', 'error');
-            } else {
-              addLog(`해석 실패 (returncode ${s.data.returncode}). 로그를 확인하세요.`, 'error');
-              showToast('해석에 실패했습니다. 콘솔 로그를 확인하세요.', 'error');
-            }
-          }
-        } catch {
-          // 일시적 폴링 실패는 다음 주기에서 재시도.
-        }
-      }, 1500);
+      setPsaJobId(jobId);
+      setPsaAnchor(Date.now() / 1000);       // 방금 시작 → 경과 0 부터
+      psaLastIdxRef.current = 0;
+      writePsaHint({ jobId, employeeId: employeeId || 'unknown' });
+      startPsaPolling(jobId);
     } catch (e) {
       setPsaRunning(false);
-      const message = e.response?.data?.detail ?? 'PSA 해석 요청에 실패했습니다.';
+      const detail = e.response?.data?.detail;
+      // 라이센스 점유 중(레이스) — 버튼을 미리 막아도 서버 최종 관문이 409 를 줄 수 있다.
+      if (e.response?.status === 409 && detail?.code === 'license_busy') {
+        enterLockState(detail.elapsedSec || 0);
+        addLog('다른 사용자가 해석 중이라 실행할 수 없습니다.', 'warning');
+        showToast('All licenses are currently occupied. Please try again later', 'warning');
+        return;
+      }
+      const message = typeof detail === 'string' ? detail : 'PSA 해석 요청에 실패했습니다.';
       addLog(message, 'error');
       showToast(message, 'error');
     }
@@ -1086,6 +1275,13 @@ export default function DoublePipeFuelLineAssessment() {
               결과 CSV 다운로드 ({previewResult.rowCount}행)
             </Button>
 
+            {previewResult.pdfSupported && (
+              <Button variant="secondary" fullWidth size="sm" onClick={handleGeneratePdf} disabled={pdfLoading}>
+                <Download size={14} />
+                {pdfLoading ? '제작도면 PDF 생성 중…' : '제작도면 PDF 생성·다운로드 (배치·치수)'}
+              </Button>
+            )}
+
             {/* Tab2 전달 — 토글이 아닌 명확한 액션 버튼 */}
             {tab2Input ? (
               <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
@@ -1280,6 +1476,79 @@ export default function DoublePipeFuelLineAssessment() {
           </div>
         </main>
       </div>
+
+      {/* 실행 중 오버레이(요구1) — 페이지 콘텐츠를 덮되 앱 사이드바는 살아 있어 이탈 가능(전역 위젯이 이어받음).
+          jobId 확정 후에만 표시해 요청~409(라이센스 점유) 사이 깜빡임을 막는다. */}
+      {psaRunning && psaJobId && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center rounded-2xl bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900/95 p-6 text-center shadow-2xl">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-sky-500/15">
+              <Loader2 size={28} className="animate-spin text-sky-400" />
+            </div>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">배관응력 해석 진행 중</h3>
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <Clock size={18} className="text-sky-400" />
+              <span className="font-mono text-3xl font-black tabular-nums text-white">
+                {formatElapsed(Date.now() / 1000 - (psaAnchor ?? Date.now() / 1000))}
+              </span>
+            </div>
+            <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
+              <div className="h-full w-full animate-pulse rounded-full bg-sky-400/70" />
+            </div>
+            <p className="mt-4 text-xs leading-relaxed text-slate-400">
+              Abaqus 해석은 <span className="font-bold text-slate-200">최대 1시간</span>까지 소요될 수 있습니다.
+              완료되면 결과가 자동으로 표시됩니다.
+            </p>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+              다른 화면으로 이동해도 우측 하단 위젯에서 진행 시간을 확인하고 돌아올 수 있습니다.
+            </p>
+            {logs.length > 0 && (
+              <p
+                className="mt-3 truncate rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 font-mono text-[10px] text-slate-400"
+                title={logs[logs.length - 1].message}
+              >
+                {logs[logs.length - 1].message}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={handleCancelPsa}
+              disabled={cancelling}
+              className="mt-5 inline-flex items-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2 text-xs font-bold text-red-300 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Ban size={14} />
+              {cancelling ? '중단 중…' : '해석 중단'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 라이센스 락 오버레이(요구3) — 남의 해석 점유 중. 전체 페이지 잠금 + 경과시간만 표시. */}
+      {lockState && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center rounded-2xl bg-slate-950/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-slate-900/95 p-6 text-center shadow-2xl">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/15">
+              <ShieldAlert size={28} className="text-amber-400" />
+            </div>
+            <h3 className="text-sm font-bold text-white">All licenses are currently occupied</h3>
+            <p className="mt-1.5 text-xs text-slate-400">Please try again later</p>
+            <div className="mt-4 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">다른 사용자가 해석 중</p>
+              <div className="mt-1.5 flex items-center justify-center gap-2">
+                <Clock size={16} className="text-amber-400" />
+                <span className="font-mono text-2xl font-black tabular-nums text-white">
+                  {formatElapsed(Date.now() / 1000 - lockState.anchor)}
+                </span>
+                <span className="text-[10px] font-semibold text-slate-400">경과 · 최대 1시간</span>
+              </div>
+            </div>
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
+              <Loader2 size={12} className="animate-spin" />
+              라이센스가 해제되면 자동으로 사용할 수 있습니다.
+            </p>
+          </div>
+        </div>
+      )}
 
       <SolverCredit contributor="김윤환" />
     </div>

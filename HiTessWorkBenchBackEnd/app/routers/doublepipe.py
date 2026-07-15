@@ -1,11 +1,14 @@
 """이중관 구조 연료배관 해석 라우터."""
 import json
+from urllib.parse import quote
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
-from ..services.doublepipe_service import run_inner_pipe_preview
+from ..services.doublepipe_service import generate_inner_pipe_pdf, run_inner_pipe_preview
 from ..services.doublepipe_psa_service import (
+    cancel_psa_job,
+    get_active_status,
     get_psa_job,
     start_psa_job,
     start_psa_job_from_upload,
@@ -38,6 +41,25 @@ async def inner_pipe_preview(
         raise HTTPException(status_code=400, detail="업로드된 CSV 파일이 비어 있습니다.")
 
     return run_inner_pipe_preview(config_dict, csv_bytes, csv_file.filename or "input.csv", employee_id)
+
+
+class InnerPipePdfRequest(BaseModel):
+    workDir: str            # userConnection 기준 Tab1 작업 폴더명
+    sourceCsv: str          # 그 폴더 안의 입력(외관) CSV 파일명
+    employee_id: str = "unknown"
+
+
+@router.post("/inner-pipe-pdf")
+def inner_pipe_pdf(req: InnerPipePdfRequest):
+    """
+    Tab1 작업 폴더의 입력 CSV + 설정으로 배치/치수 도면 PDF 를 온디맨드 생성해 반환합니다.
+    무거운 matplotlib 렌더는 InnerPipeTransform.exe(pandas/numpy/matplotlib 번들)로 처리하므로
+    실행 컴퓨터의 venv 에 matplotlib 설치가 필요 없습니다(exe 미존재 시 in-process 폴백).
+    PDF 바이트를 직접 반환하며(디스크 미경유 서빙), 프론트는 blob 으로 받아 저장합니다.
+    """
+    pdf_bytes, pdf_name = generate_inner_pipe_pdf(req.workDir, req.sourceCsv, req.employee_id)
+    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(pdf_name)}"}
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
 
 
 class RunPsaRequest(BaseModel):
@@ -76,3 +98,25 @@ async def run_psa_upload(
 def run_psa_status(job_id: str):
     """선택 Load Case 해석 작업의 진행 상태·로그를 반환합니다(1.5초 폴링용)."""
     return get_psa_job(job_id)
+
+
+@router.get("/active")
+def active_psa():
+    """현재 Abaqus 라이센스를 점유(running)한 PSA 해석 상태를 반환합니다.
+
+    페이지 진입 락 판정·재연결·전역 위젯이 공유하는 단일 진실원입니다.
+    active=false 면 라이센스가 비어 있습니다. active=true 면 jobId·employeeId(내 작업 분기용)와
+    함께 startedAtEpoch/serverNowEpoch/elapsedSec 를 주어 클라이언트가 경과 타이머를 그립니다.
+    """
+    return get_active_status()
+
+
+class CancelPsaRequest(BaseModel):
+    jobId: str
+    employee_id: str = "unknown"
+
+
+@router.post("/run-psa/cancel")
+def cancel_psa(req: CancelPsaRequest):
+    """실행 중인 PSA 해석을 소유자가 중단합니다 — 프로세스 트리 종료 후 라이센스를 즉시 해제합니다."""
+    return cancel_psa_job(req.jobId, req.employee_id)
