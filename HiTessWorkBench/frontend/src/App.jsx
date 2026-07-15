@@ -6,7 +6,7 @@ import axios from 'axios';
 import { version as CLIENT_VERSION } from '../package.json';
 import { checkVersion } from './api/auth';
 import { reportVersionUpdate, callLogout, logActivity } from './api/activity';
-import { sendHeartbeat } from './api/presence';
+import { sendHeartbeat, beaconOffline } from './api/presence';
 import SplashScreen from './pages/auth/SplashScreen';
 import LoginScreen from './pages/auth/LoginScreen';
 import Layout from './components/layout/Layout';
@@ -265,12 +265,28 @@ function AppInner() {
   // 실시간 접속 하트비트 — MAIN 상태에서 45초 주기 + 페이지 이동 시 즉시 전송.
   // currentMenu 를 deps 에 넣어 페이지가 바뀔 때마다 effect 가 재실행되며,
   // 즉시 하트비트를 보내 관리자 화면에 '무엇을 사용 중인지'가 실시간 반영된다.
+  // user_last_active(클릭/키입력 시각) 기준 유휴 경과초를 함께 보내 유휴/활성을 구분한다.
   useEffect(() => {
     if (appState !== APP_STATE.MAIN) return;
-    sendHeartbeat(currentMenu);
-    const heartbeat = setInterval(() => sendHeartbeat(currentMenu), 45 * 1000);
+    const beat = () => {
+      const loginAt = parseInt(localStorage.getItem('user_login_at') || '0', 10);
+      const lastActive = parseInt(localStorage.getItem('user_last_active') || (loginAt ? String(loginAt) : '0'), 10);
+      const idleSeconds = lastActive > 0 ? Math.max(0, Math.floor((Date.now() - lastActive) / 1000)) : 0;
+      sendHeartbeat(currentMenu, idleSeconds, CLIENT_VERSION);
+    };
+    beat();
+    const heartbeat = setInterval(beat, 45 * 1000);
     return () => clearInterval(heartbeat);
   }, [appState, currentMenu]);
+
+  // 앱 종료(창 닫기) 시 sendBeacon 으로 즉시 오프라인 처리 — '유령 온라인'(하트비트 정지
+  // 후 임계시간까지 접속 중으로 남는 문제)을 방지한다. appState 기준이라 재실행이 잦지 않다.
+  useEffect(() => {
+    if (appState !== APP_STATE.MAIN) return;
+    const handlePageHide = () => beaconOffline();
+    window.addEventListener('pagehide', handlePageHide);
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, [appState]);
 
   // 전역 키보드 단축키 + 마우스 뒤로/앞으로 버튼
   useEffect(() => {

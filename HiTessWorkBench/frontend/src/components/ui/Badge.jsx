@@ -27,6 +27,11 @@ const VARIANT_CLASSES = {
     badge: 'bg-blue-50 text-blue-700 border border-blue-200',
     dot:   'bg-blue-500',
   },
+  // 새 소식/신규 글 등 '주의 환기용' 알림 카운터. 오류(error)와 구분되는 강조 채움 스타일.
+  notify: {
+    badge: 'bg-blue-600 text-white border border-blue-600',
+    dot:   'bg-white',
+  },
   neutral: {
     badge: 'bg-slate-100 text-slate-700 border border-slate-200',
     dot:   'bg-slate-400',
@@ -47,7 +52,7 @@ const SIZE_CLASSES = {
  * Badge 컴포넌트
  *
  * @param {object}  props
- * @param {'success'|'error'|'warning'|'info'|'neutral'|'purple'} [props.variant='neutral'] - 색상 종류
+ * @param {'success'|'error'|'warning'|'info'|'notify'|'neutral'|'purple'} [props.variant='neutral'] - 색상 종류
  * @param {'sm'|'md'} [props.size='md'] - 뱃지 크기
  * @param {boolean} [props.dot=false]   - 좌측 색상 원형 dot 표시 여부
  * @param {React.ReactNode} props.children - 뱃지 내부 텍스트

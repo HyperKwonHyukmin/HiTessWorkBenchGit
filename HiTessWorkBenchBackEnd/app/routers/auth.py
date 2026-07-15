@@ -83,6 +83,13 @@ def login(request: schemas.LoginRequest, req: Request, db: Session = Depends(dat
 
   log_activity(db, "LOGIN", employee_id=employee_id, status="success", ip_address=ip)
 
+  # 로그인은 '최근 접속'의 기준점이다. 이전 presence 행을 제거해, 로그인 후 첫 하트비트가
+  # 새 행(session_started=지금)을 만들어 접속 지속 시간이 로그인 시점부터 다시 시작되게 한다.
+  db.query(models.UserPresence).filter(
+      models.UserPresence.employee_id == user.employee_id
+  ).delete(synchronize_session=False)
+  db.commit()
+
   token = session_store.create(user.employee_id)
   return schemas.UserResponse(
       id=user.id,

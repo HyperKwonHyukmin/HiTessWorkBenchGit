@@ -7,11 +7,13 @@ import { Dialog, Transition } from '@headlessui/react';
 import {
   Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Clock, Activity,
   UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
-  Download, BarChart3, ChevronRight, Code2, ArrowUpDown, Radio, MapPin, Globe
+  Download, BarChart3, ChevronRight, Code2, ArrowUpDown, Radio, MapPin, Globe, Timer,
+  LogOut, Layers
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
-import { getOnlineUsers } from '../../api/presence';
+import { getOnlineUsers, forceLogoutUser } from '../../api/presence';
+import { getEmployeeId } from '../../utils/auth';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import UserStatisticsModal from '../../components/modals/UserStatisticsModal';
@@ -66,6 +68,28 @@ const relativeTime = (iso) => {
   const mon = Math.floor(day / 30);
   if (mon < 12) return `${mon}개월 전`;
   return `${Math.floor(mon / 12)}년 전`;
+};
+
+// 접속 지속 시간 포맷 — 접속 카드용 (session_seconds → "N분째 접속")
+const formatDuration = (sec) => {
+  if (sec == null || sec < 0) return null;
+  const min = Math.floor(sec / 60);
+  if (min < 1) return '방금 접속';
+  if (min < 60) return `${min}분째 접속`;
+  const hr = Math.floor(min / 60);
+  const rm = min % 60;
+  return rm ? `${hr}시간 ${rm}분째 접속` : `${hr}시간째 접속`;
+};
+
+// 유휴 지속 시간 포맷 — 자리비움 카드용 (idle_seconds → "N분째 자리비움")
+const formatIdle = (sec) => {
+  if (sec == null || sec < 0) return '';
+  const min = Math.floor(sec / 60);
+  if (min < 1) return '방금까지 활동';
+  if (min < 60) return `${min}분째 자리비움`;
+  const hr = Math.floor(min / 60);
+  const rm = min % 60;
+  return rm ? `${hr}시간 ${rm}분째 자리비움` : `${hr}시간째 자리비움`;
 };
 
 const textValue = (value) => String(value || '').trim();
@@ -159,6 +183,10 @@ export default function UserManagement() {
 
   // 실시간 접속 현황 — 15초 주기 폴링
   const [onlineData, setOnlineData] = useState({ count: 0, items: [] });
+  const [presenceFilter, setPresenceFilter] = useState('all'); // all | active | idle
+  const [presenceSort, setPresenceSort] = useState('recent');  // recent | session | name
+  const [forceLogoutCandidate, setForceLogoutCandidate] = useState(null);
+  const myEmployeeId = (getEmployeeId() || '').toUpperCase();
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -197,6 +225,47 @@ export default function UserManagement() {
     () => new Set((onlineData.items || []).map(u => (u.employee_id || '').toUpperCase())),
     [onlineData]
   );
+
+  // 사용 화면 분포 — last_page 집계(상위 6개)
+  const pageDistribution = useMemo(() => {
+    const map = new Map();
+    (onlineData.items || []).forEach(u => {
+      const page = u.last_page || '—';
+      map.set(page, (map.get(page) || 0) + 1);
+    });
+    return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+  }, [onlineData]);
+
+  // 상태 필터 + 정렬이 적용된 접속자 목록
+  const visibleOnline = useMemo(() => {
+    const list = (onlineData.items || []).filter(u => {
+      if (presenceFilter === 'active') return !u.is_idle;
+      if (presenceFilter === 'idle') return u.is_idle;
+      return true;
+    });
+    list.sort((a, b) => {
+      if (presenceSort === 'session') return (b.session_seconds || 0) - (a.session_seconds || 0);
+      if (presenceSort === 'name') return (a.name || a.employee_id || '').localeCompare(b.name || b.employee_id || '', 'ko');
+      return (a.seconds_ago || 0) - (b.seconds_ago || 0); // 최근 활동순
+    });
+    return list;
+  }, [onlineData, presenceFilter, presenceSort]);
+
+  const activeCount = onlineData.active_count ?? (onlineData.items || []).filter(u => !u.is_idle).length;
+  const idleCount = onlineData.idle_count ?? (onlineData.items || []).filter(u => u.is_idle).length;
+
+  const handleForceLogout = async () => {
+    if (!forceLogoutCandidate) return;
+    try {
+      await forceLogoutUser(forceLogoutCandidate.employee_id);
+      showToast(`${forceLogoutCandidate.name || forceLogoutCandidate.employee_id} 님을 로그아웃 처리했습니다.`, 'success');
+      setForceLogoutCandidate(null);
+      fetchOnline();
+    } catch {
+      showToast('강제 로그아웃에 실패했습니다.', 'error');
+      setForceLogoutCandidate(null);
+    }
+  };
 
   // 상태 즉각 토글 (승인/권한)
   const handleToggle = async (userId, field, currentValue) => {
@@ -379,7 +448,14 @@ export default function UserManagement() {
             </span>
             <h3 className="text-sm font-extrabold text-slate-700 tracking-tight">현재 접속 중</h3>
             <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-bold">{onlineData.count}명</span>
-            <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">실시간 · 15초마다 자동 갱신</span>
+            {onlineData.count > 0 && (
+              <span className="text-[11px] font-semibold text-slate-500">
+                활성 <span className="font-bold text-emerald-600">{activeCount}</span>
+                <span className="mx-1 text-slate-300">·</span>
+                자리비움 <span className="font-bold text-amber-600">{idleCount}</span>
+              </span>
+            )}
+            <span className="text-[11px] text-slate-400 font-medium hidden lg:inline">실시간 · 15초마다 자동 갱신</span>
           </div>
           <button
             onClick={fetchOnline}
@@ -395,47 +471,137 @@ export default function UserManagement() {
               현재 접속 중인 사용자가 없습니다.
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {onlineData.items.map(u => (
-                <div key={u.employee_id} className="border border-slate-200 rounded-xl p-3 hover:border-emerald-300 hover:shadow-md transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="relative shrink-0">
-                      <div className="h-10 w-10 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center justify-center font-bold text-lg">
-                        {u.name?.[0] || u.employee_id?.[0] || '?'}
-                      </div>
-                      <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-white"></span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-bold text-slate-800 text-sm truncate">
-                        {u.name || u.employee_id}
-                        {u.is_admin && <Shield size={11} className="inline-block ml-1 text-red-500 align-[-1px]"/>}
-                        <span className="text-[10px] text-slate-400 font-mono ml-1.5">{u.employee_id}</span>
-                      </p>
-                      <p className="text-[11px] text-slate-500 truncate">{u.department || u.company || '소속 미입력'}</p>
-                    </div>
-                  </div>
-                  <div className="mt-2.5 space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-[11px] min-w-0">
-                      <MapPin size={12} className="text-blue-500 shrink-0"/>
-                      <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded font-bold truncate max-w-full" title={u.last_page || ''}>
-                        {u.last_page || '—'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
-                      <span className="inline-flex items-center gap-1 shrink-0">
-                        <Clock size={11}/> {relativeTime(u.last_seen) || '방금 전'} 활동
-                      </span>
-                      <span className="inline-flex items-center gap-1 font-mono truncate" title={u.last_ip || ''}>
-                        <Globe size={11}/> {u.last_ip || '—'}
-                      </span>
-                    </div>
-                  </div>
+            <>
+              {/* 사용 화면 분포 + 상태 필터/정렬 */}
+              <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <Layers size={13} className="shrink-0 text-slate-400"/>
+                  <span className="shrink-0 text-[11px] font-bold text-slate-400">사용 화면</span>
+                  {pageDistribution.map(([page, cnt]) => (
+                    <span key={page} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                      <span className="max-w-[120px] truncate">{page}</span>
+                      <span className="text-blue-600">{cnt}</span>
+                    </span>
+                  ))}
                 </div>
-              ))}
-            </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="inline-flex items-center gap-0.5 rounded-lg border border-slate-200 p-0.5">
+                    {[['all', '전체'], ['active', '활성'], ['idle', '자리비움']].map(([key, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setPresenceFilter(key)}
+                        className={`rounded-md px-2 py-1 text-[11px] font-bold transition-colors cursor-pointer ${presenceFilter === key ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <select
+                    value={presenceSort}
+                    onChange={(e) => setPresenceSort(e.target.value)}
+                    className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-bold text-slate-600 focus:outline-none"
+                  >
+                    <option value="recent">최근 활동순</option>
+                    <option value="session">접속 오래된순</option>
+                    <option value="name">이름순</option>
+                  </select>
+                </div>
+              </div>
+
+              {visibleOnline.length === 0 ? (
+                <div className="py-6 text-center text-sm text-slate-400">해당 상태의 접속자가 없습니다.</div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {visibleOnline.map(u => {
+                    const fullUser = users.find(x => (x.employee_id || '').toUpperCase() === (u.employee_id || '').toUpperCase());
+                    const isSelf = (u.employee_id || '').toUpperCase() === myEmployeeId;
+                    return (
+                    <div
+                      key={u.employee_id}
+                      className={`relative rounded-xl border p-3 transition-all group ${isSelf ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200 hover:border-emerald-300 hover:shadow-md'}`}
+                    >
+                      {!isSelf && (
+                        <button
+                          type="button"
+                          onClick={() => setForceLogoutCandidate(u)}
+                          className="absolute top-2 right-2 z-10 rounded-lg p-1.5 text-slate-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 cursor-pointer"
+                          title="강제 로그아웃"
+                          aria-label={`${u.name || u.employee_id} 강제 로그아웃`}
+                        >
+                          <LogOut size={14}/>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => openActivityModal(fullUser || { employee_id: u.employee_id, name: u.name })}
+                        className="w-full text-left cursor-pointer"
+                        title="클릭하여 활동 로그 보기"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="relative shrink-0">
+                            <div className="h-10 w-10 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center justify-center font-bold text-lg">
+                              {u.name?.[0] || u.employee_id?.[0] || '?'}
+                            </div>
+                            <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white ${u.is_idle ? 'bg-amber-400' : 'bg-emerald-500'}`}></span>
+                          </div>
+                          <div className="min-w-0 flex-1 pr-5">
+                            <p className="font-bold text-slate-800 text-sm truncate group-hover:text-emerald-700">
+                              {u.name || u.employee_id}
+                              {u.is_admin && <Shield size={11} className="inline-block ml-1 text-red-500 align-[-1px]"/>}
+                              {isSelf && <span className="ml-1.5 text-[10px] font-bold text-emerald-600">나</span>}
+                              <span className="text-[10px] text-slate-400 font-mono ml-1.5">{u.employee_id}</span>
+                            </p>
+                            <p className="text-[11px] text-slate-500 truncate">{u.department || u.company || '소속 미입력'}</p>
+                          </div>
+                        </div>
+                        <div className="mt-2.5 space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {u.is_idle ? (
+                              <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full">자리비움</span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full">활성</span>
+                            )}
+                            {u.is_idle && u.idle_seconds != null && (
+                              <span className="text-[10px] font-medium text-amber-600">{formatIdle(u.idle_seconds)}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[11px] min-w-0">
+                            <MapPin size={12} className="text-blue-500 shrink-0"/>
+                            <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded font-bold truncate max-w-full" title={u.last_page || ''}>
+                              {u.last_page || '—'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                            <span className="inline-flex items-center gap-1 shrink-0" title={u.session_started ? new Date(u.session_started).toLocaleString('ko-KR') : ''}>
+                              <Timer size={11}/> {formatDuration(u.session_seconds) || '방금 접속'}
+                            </span>
+                            <span className="inline-flex items-center gap-1 font-mono truncate" title={u.last_ip || ''}>
+                              <Globe size={11}/> {u.last_ip || '—'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                            <Clock size={11} className="shrink-0"/> {relativeTime(u.last_seen) || '방금 전'} 마지막 활동
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!forceLogoutCandidate}
+        onCancel={() => setForceLogoutCandidate(null)}
+        onConfirm={handleForceLogout}
+        title="강제 로그아웃"
+        message={`${forceLogoutCandidate?.name || forceLogoutCandidate?.employee_id || ''} 님의 모든 세션을 종료하고 로그아웃 처리합니다. 진행 중인 작업이 있으면 중단될 수 있습니다.`}
+      />
 
       {/* 1. KPI — Total / Pending / Admin */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
