@@ -41,6 +41,9 @@ _PSA_DIR = os.path.join(
 _PSA_EXE_NAME = "PSA_AllLoadCases.exe"
 _USER_CONNECTION_DIR = os.path.join(_BACKEND_DIR, "userConnection")
 _REPORT_NAME = "Report for PSA.xlsx"
+# 서식 템플릿 원본(프로그램 폴더). make_report() 가 cwd(job_dir) 상대경로로 이 이름을 읽으므로,
+# 실행 직전 job_dir 로 복사해 둬야 이미지·서식이 살아있는 보고서가 나온다(복사 안 하면 빈 워크북).
+_REPORT_TEMPLATE_SRC = os.path.join(_PSA_DIR, _REPORT_NAME)
 
 # userConnection 폴더 명명에 쓰는 프로그램 이름 (doublepipe_service.py 와 동일 규칙:
 # {timestamp}_{employee_id}_{ProgramName}). Tab2 직접 업로드 경로가 새 작업 폴더를 만들 때 사용.
@@ -330,8 +333,42 @@ def _build_subprocess_env(job_id: str) -> dict:
     return env
 
 
+def _stage_report_template(cwd: str, job_id: str):
+    """서식 템플릿(Report for PSA.xlsx)을 job 폴더(cwd)로 복사한다.
+
+    make_report() 는 이 파일을 cwd 상대경로("Report for PSA.xlsx")로 열어 결과 셀만 채우고
+    나머지 서식·이미지(LC 시트당 도형/그림 31개)를 보존한다. job 폴더에 템플릿이 없으면
+    openpyxl.Workbook() 빈 워크북으로 폴백해 서식·이미지가 전부 사라진 보고서가 나온다
+    (cwd 를 _PSA_DIR→job_dir 로 옮긴 뒤 이 복사가 빠져 발생한 회귀). 항상 원본을 새로 덮어써
+    이전 실행의 채워진 보고서가 아니라 깨끗한 템플릿에서 시작하게 한다.
+
+    회사 DRM 은 '읽기' 시점에 복호화하므로 read()->write()(copyfileobj) 로 복호화본을 job 폴더에
+    둔다(analysis.py 의 DRM 입력 복사와 동일 패턴). 복사에 실패해도 해석 자체는 진행하되,
+    보고서가 빈 서식으로 나올 수 있음을 로그로 남긴다.
+    """
+    dst = os.path.join(cwd, _REPORT_NAME)
+    try:
+        with open(_REPORT_TEMPLATE_SRC, "rb") as src, open(dst, "wb") as out:
+            shutil.copyfileobj(src, out)
+    except FileNotFoundError:
+        _append_log(
+            job_id,
+            f"[서식경고] 보고서 서식 템플릿을 찾지 못했습니다({_REPORT_TEMPLATE_SRC}). "
+            "보고서가 서식 없이(빈 워크북) 생성될 수 있습니다 — 서버 관리자에게 문의하세요.",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _append_log(
+            job_id,
+            f"[서식경고] 보고서 서식 템플릿 복사에 실패했습니다: {exc}. "
+            "보고서가 서식 없이 생성될 수 있습니다.",
+        )
+
+
 def _run_pipeline(job_id: str, command: list, cwd: str):
     """subprocess 로 Main.py 를 실행하며 stdout 을 라인 단위로 누적한다."""
+    # ⚠️ exe 가 파이프라인 끝에서 make_report() 로 이 템플릿을 cwd 상대경로로 읽으므로,
+    # Abaqus 해석 시작 전에 미리 job 폴더로 복사해 둔다.
+    _stage_report_template(cwd, job_id)
     env = _build_subprocess_env(job_id)
     try:
         proc = subprocess.Popen(
