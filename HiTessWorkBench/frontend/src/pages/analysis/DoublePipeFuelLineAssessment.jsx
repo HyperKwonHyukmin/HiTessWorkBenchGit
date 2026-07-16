@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import {
-  ArrowRight, Ban, Box, Check, CheckCircle2, Clock, Download, Filter, Info, Loader2, Lock, ListChecks,
-  Pipette, Play, RotateCcw, Send, ShieldAlert, Sliders, Table2, Terminal, Upload, X, Zap,
+  ArrowRight, Ban, Box, Check, CheckCircle2, ChevronRight, Clock, Download, Filter, Info, Loader2, Lock, ListChecks,
+  Pipette, Play, RotateCcw, Ruler, Send, ShieldAlert, Sliders, Table2, Terminal, Upload, X, Zap,
 } from 'lucide-react';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import DoublePipeViewer from '../../components/analysis/DoublePipeViewer';
@@ -44,7 +44,7 @@ const DEFAULT_FORM = {
   },
 };
 
-// 3단계 워크플로 — 순서 자체가 정보(설계 → 전체 Load Case 해석 → 선택 Load Case 재해석)이므로 번호를 부여한다.
+// 2단계 워크플로 — 순서 자체가 정보(Inner Support 설계 → 배관응력 해석)이므로 번호를 부여한다.
 const TABS = [
   {
     key: 'inner-support',
@@ -62,15 +62,6 @@ const TABS = [
     description: '1단계에서 생성한 내관 포함 배관 CSV를 배관응력 해석(Main.py) 파이프라인의 입력으로 넘겨 '
       + 'Abaqus 비마찰·마찰 반복 해석과 ASME B31.3 적합성 검토를 실행합니다. 3D 뷰어로 생성된 배관 모델과 '
       + 'UBOLT 지지점을 확인하고, 전체 29개 Load Case를 자동 해석합니다.',
-  },
-  {
-    key: 'selected-load-cases',
-    label: 'Report & Results',
-    shortLabel: 'Report',
-    icon: Filter,
-    statusLabel: '개발 중',
-    description: '선택 Load Case 해석 결과 중 특정 Load Case만 재검토하거나, '
-      + 'Report for PSA.xlsx와 F06 결과 파일을 내려받는 화면으로 연결할 예정입니다.',
   },
 ];
 
@@ -106,27 +97,28 @@ const MANDATORY_LC = 'L17';
 // outDia/thick 은 실행 시 백엔드(append_offset.py 포팅본)가 Pipe_Dim 표준 규격으로 내부에서
 // 스냅한다 — 스냅된 값은 결과 테이블에서 확인하며, 입력 단계에서는 자유 입력을 그대로 유지한다.
 // UBOLT 질량(ubolt.mass)도 동일하게 내부 기본값(0.2485kg)만 사용하고 입력 필드로는 노출하지 않는다.
+// group: 카드 내부 소제목(연속된 항목끼리만 묶임) — 정보 위계를 위한 표시 전용 메타데이터이며 계산/전송 로직과는 무관하다.
 const INNER_PIPE_FIELDS = [
-  { path: ['inner_pipe', 'outDia'], label: 'Out. Diameter', unit: 'mm' },
-  { path: ['inner_pipe', 'thick'], label: 'Thickness', unit: 'mm' },
-  { path: ['inner_pipe', 'bendR'], label: 'Bend Radius', unit: 'mm' },
+  { path: ['inner_pipe', 'outDia'], label: 'Out. Diameter', unit: 'mm', group: '형상' },
+  { path: ['inner_pipe', 'thick'], label: 'Thickness', unit: 'mm', group: '형상' },
+  { path: ['inner_pipe', 'bendR'], label: 'Bend Radius', unit: 'mm', group: '형상' },
   // 1.75e12 처럼 자릿수가 큰 값이라 일반 숫자 입력 대신 계수×10^지수 방식으로 받는다.
-  { path: ['load_conditions', 'Stiff'], label: 'Support Stiffness', unit: 'N/mm', scientific: true },
+  { path: ['load_conditions', 'Stiff'], label: 'Support Stiffness', unit: 'N/mm', scientific: true, group: '지지 강성', fullWidth: true },
 ];
 
 const PSA_LOAD_FIELDS = [
-  { path: ['load_conditions', 'Pref'], label: 'Design Pressure', unit: 'barG' },
-  { path: ['load_conditions', 'DesignTemperature'], label: 'Design Temperature', unit: 'degC' },
-  { path: ['load_conditions', 'InitialTemperature'], label: 'Initial Temperature', unit: 'degC' },
-  { path: ['load_conditions', 'FluidDensity'], label: 'Fluid Density', unit: 'kg/mm3' },
-  { path: ['load_conditions', 'AccUX'], label: 'Acceleration Ux', unit: 'g' },
-  { path: ['load_conditions', 'AccUY'], label: 'Acceleration Uy', unit: 'g' },
-  { path: ['load_conditions', 'AccUZ'], label: 'Acceleration Uz', unit: 'g' },
-  { path: ['load_conditions', 'Hogg'], label: 'Hull Deflection (Hogg)', unit: 'mm' },
-  { path: ['load_conditions', 'Sagg'], label: 'Hull Deflection (Sagg)', unit: 'mm' },
-  { path: ['load_conditions', 'Summer'], label: 'Summer', unit: 'degC' },
-  { path: ['load_conditions', 'Winter'], label: 'Winter', unit: 'degC' },
-  { path: ['load_conditions', 'FrictionFactor'], label: 'Friction Factor', unit: '' },
+  { path: ['load_conditions', 'Pref'], label: 'Design Pressure', unit: 'barG', group: '설계 조건' },
+  { path: ['load_conditions', 'DesignTemperature'], label: 'Design Temperature', unit: 'degC', group: '설계 조건' },
+  { path: ['load_conditions', 'InitialTemperature'], label: 'Initial Temperature', unit: 'degC', group: '설계 조건' },
+  { path: ['load_conditions', 'FluidDensity'], label: 'Fluid Density', unit: 'kg/mm3', group: '설계 조건' },
+  { path: ['load_conditions', 'AccUX'], label: 'Acceleration Ux', unit: 'g', group: '가속도 (g)' },
+  { path: ['load_conditions', 'AccUY'], label: 'Acceleration Uy', unit: 'g', group: '가속도 (g)' },
+  { path: ['load_conditions', 'AccUZ'], label: 'Acceleration Uz', unit: 'g', group: '가속도 (g)' },
+  { path: ['load_conditions', 'Hogg'], label: 'Hull Deflection (Hogg)', unit: 'mm', group: '선체 처짐 · 계절 온도' },
+  { path: ['load_conditions', 'Sagg'], label: 'Hull Deflection (Sagg)', unit: 'mm', group: '선체 처짐 · 계절 온도' },
+  { path: ['load_conditions', 'Summer'], label: 'Summer', unit: 'degC', group: '선체 처짐 · 계절 온도' },
+  { path: ['load_conditions', 'Winter'], label: 'Winter', unit: 'degC', group: '선체 처짐 · 계절 온도' },
+  { path: ['load_conditions', 'FrictionFactor'], label: 'Friction Factor', unit: '', group: '마찰' },
 ];
 
 const LOG_COLORS = {
@@ -185,57 +177,86 @@ function parseNumericInput(value) {
 
 // 섹션 카드 공통 헤더 — DESIGN.md 규칙에 따라 그라디언트 컬러 배너·대문자 eyebrow 대신
 // 플레인 흰 헤더 + 하단 보더를 쓴다(색은 페이지 상단 배너 한 곳에만).
-function CardHeader({ icon: Icon, title, right, tone = 'slate' }) {
-  const iconColor = tone === 'sky' ? 'text-sky-600' : 'text-slate-500';
+// tone='success'는 입력/연결이 완료된 카드임을 알리는 상태 피드백용(초록 아이콘)이며, 헤더 자체 배경은 바꾸지 않는다.
+function CardHeader({ icon: Icon, title, subtitle, right, tone = 'slate' }) {
+  const iconColor = tone === 'success' ? 'text-emerald-600' : tone === 'sky' ? 'text-sky-600' : 'text-slate-500';
   return (
-    <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-      {Icon && <Icon size={15} className={iconColor} />}
-      <h3 className="text-sm font-bold text-slate-800">{title}</h3>
-      {right && <div className="ml-auto">{right}</div>}
+    <div className="border-b border-slate-100 px-4 py-3">
+      <div className="flex items-center gap-2">
+        {Icon && <Icon size={15} className={iconColor} />}
+        <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+        {right && <div className="ml-auto">{right}</div>}
+      </div>
+      {subtitle && <p className="mt-1 pl-6 text-[11px] leading-relaxed text-slate-500">{subtitle}</p>}
     </div>
   );
 }
 
+// fields의 group(연속 항목 한정)으로 소섹션을 나눠 렌더링 — 정보 위계를 위한 표시 전용 분리이며
+// getValue/onFieldChange 배선은 그대로라 계산·상태 로직에는 영향이 없다.
 function FieldGroup({ title, icon: Icon, fields, form, onFieldChange, resetToken = 0 }) {
+  const sections = useMemo(() => {
+    const out = [];
+    fields.forEach((field) => {
+      const label = field.group ?? null;
+      const last = out[out.length - 1];
+      if (last && last.label === label) last.fields.push(field);
+      else out.push({ label, fields: [field] });
+    });
+    return out;
+  }, [fields]);
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <CardHeader icon={Icon} title={title} />
-      <div className="grid grid-cols-2 gap-3 p-4">
-        {fields.map(field => {
-          const inputId = `dpfl-${field.path.join('-')}`;
-          const fieldKey = field.path.join('.');
+      <div className="space-y-3.5 p-4">
+        {sections.map((section, sIdx) => (
+          <div key={section.label ?? `section-${sIdx}`}>
+            {section.label && (
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">{section.label}</p>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              {section.fields.map(field => {
+                const inputId = `dpfl-${field.path.join('-')}`;
+                const fieldKey = field.path.join('.');
+                const spanCls = field.fullWidth ? 'col-span-2' : '';
 
-          if (field.scientific) {
-            return (
-              <ScientificField
-                // 리셋 시 내부 계수/지수 로컬 상태를 새 기본값으로 되돌리기 위한 강제 리마운트
-                key={`${fieldKey}-${resetToken}`}
-                id={inputId}
-                label={field.label}
-                unit={field.unit}
-                value={getValue(form, field.path)}
-                onChange={(value) => onFieldChange(field.path, value)}
-              />
-            );
-          }
+                if (field.scientific) {
+                  return (
+                    <div key={fieldKey} className={spanCls}>
+                      <ScientificField
+                        // 리셋 시 내부 계수/지수 로컬 상태를 새 기본값으로 되돌리기 위한 강제 리마운트
+                        key={`${fieldKey}-${resetToken}`}
+                        id={inputId}
+                        label={field.label}
+                        unit={field.unit}
+                        value={getValue(form, field.path)}
+                        onChange={(value) => onFieldChange(field.path, value)}
+                      />
+                    </div>
+                  );
+                }
 
-          return (
-            <div key={fieldKey}>
-              <label htmlFor={inputId} className="mb-1 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold leading-tight text-slate-600">{field.label}</span>
-                {field.unit && <span className="shrink-0 text-[10px] font-bold text-slate-400">{field.unit}</span>}
-              </label>
-              <input
-                id={inputId}
-                type="number"
-                step="any"
-                value={getValue(form, field.path)}
-                onChange={(event) => onFieldChange(field.path, parseNumericInput(event.target.value))}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm font-semibold text-slate-800 outline-none transition-all focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-500/20"
-              />
+                return (
+                  <div key={fieldKey} className={spanCls}>
+                    <label htmlFor={inputId} className="mb-1 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold leading-tight text-slate-600">{field.label}</span>
+                      {field.unit && <span className="shrink-0 text-[10px] font-bold text-slate-400">{field.unit}</span>}
+                    </label>
+                    <input
+                      id={inputId}
+                      type="number"
+                      step="any"
+                      value={getValue(form, field.path)}
+                      onChange={(event) => onFieldChange(field.path, parseNumericInput(event.target.value))}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm font-semibold text-slate-800 outline-none transition-all focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-500/20"
+                    />
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -452,88 +473,158 @@ function ScientificValue({ value }) {
   );
 }
 
-// 1단계는 형상 파라미터 입력이라 실제 3D 모델이 없다 — 대신 입력값을 즉시 반영하는
-// 단면 개략도로 "3D Viewer" 자리의 빈 공간을 실제 확인 가능한 정보로 채운다.
+// 배관 단면 물성 표기용 포맷터 — 큰 값(A/I/Z)은 천단위 구분, 작은 값(d/Sh/Sa)은 소수 2자리.
+function fmtSection(v) {
+  if (!Number.isFinite(v)) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e5) return v.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (a >= 100) return v.toLocaleString('en-US', { maximumFractionDigits: 1 });
+  return v.toFixed(2);
+}
+
+// 배관 정보 미리보기 상단 "입력 형상 요약" 칩 — 사이드바에서 입력 중인 값을 우측 미리보기에서도 바로 되짚어보게 한다.
+function SpecChip({ label, value, unit, accent }) {
+  return (
+    <div className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 ${
+      accent ? 'border-sky-200 bg-sky-50' : 'border-slate-200 bg-slate-50'
+    }`}>
+      <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className={`font-mono text-xs font-black tabular-nums ${accent ? 'text-sky-700' : 'text-slate-700'}`}>{value}</span>
+      {unit && <span className="text-[9px] font-semibold text-slate-400">{unit}</span>}
+    </div>
+  );
+}
+
+// 단면 물성/응력 카드 1개 — InnerSupportPreview의 metrics 배열 항목을 그대로 렌더링한다(값·수식 불변, 마크업만 재사용 가능하게 추출).
+function MetricTile({ m }) {
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${m.stress ? 'border-sky-100 bg-sky-50/50' : 'border-slate-100 bg-slate-50/60'}`}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="truncate text-[11px] font-bold text-slate-600">{m.label}</span>
+        <span className={`font-mono text-[10px] font-bold ${m.stress ? 'text-sky-500' : 'text-slate-400'}`}>{m.sym}</span>
+      </div>
+      <div className="mt-0.5 flex items-baseline gap-1">
+        <span className="font-mono text-sm font-black tabular-nums text-slate-800">{fmtSection(m.value)}</span>
+        <span className="text-[10px] font-semibold text-slate-400">{m.unit}</span>
+      </div>
+      <div className="mt-0.5 truncate font-mono text-[9px] leading-tight text-slate-400" title={m.formula}>{m.formula}</div>
+    </div>
+  );
+}
+
+// 1단계는 형상 파라미터 입력이라 실제 3D 모델이 없다 — 대신 입력값(외경 D·두께 t·설계압력 P)으로
+// 중공 원형 단면의 물성(d·A·I·Z)과 응력(Sh·Sa)을 실시간 계산해 "배관 정보 미리보기"로 채운다.
+// 수식: d=D−2t, A=π/4(D²−d²), I=π/64(D⁴−d⁴), Z=I/(D/2), Sh=P·D/(2t), Sa=P·d²/(D²−d²).
 function InnerSupportPreview({ form }) {
-  const outDia = Number(form.inner_pipe.outDia);
-  const thick = Number(form.inner_pipe.thick);
-  const bendR = Number(form.inner_pipe.bendR);
-  const stiff = Number(form.load_conditions.Stiff);
-  const isValid = Number.isFinite(outDia) && outDia > 0 && Number.isFinite(thick) && thick > 0 && thick < outDia / 2;
+  const D = Number(form.inner_pipe.outDia);
+  const t = Number(form.inner_pipe.thick);
+  const Pbar = Number(form.load_conditions?.Pref);   // Design Pressure [barG]
+  const isValid = Number.isFinite(D) && D > 0 && Number.isFinite(t) && t > 0 && t < D / 2;
 
   if (!isValid) {
     return (
       <div className="flex h-full items-center justify-center text-center text-slate-400">
         <div>
           <Sliders size={40} className="mx-auto mb-3 opacity-30" />
-          <p className="text-sm">Out. Diameter / Thickness 값을 입력하면 단면 미리보기가 표시됩니다.</p>
+          <p className="text-sm">Out. Diameter / Thickness 값을 입력하면 배관 정보 미리보기가 표시됩니다.</p>
         </div>
       </div>
     );
   }
 
-  const rOuter = 76;
-  const scale = rOuter / (outDia / 2);
-  const rInner = Math.max(rOuter - thick * scale, 3);
-  const cx = 110;
-  const cy = 100;
-  const innerDia = outDia - 2 * thick;
-  const wallRatio = (thick / outDia) * 100;
+  // ── 중공 원형 단면 물성 (참조: Pipe Section Calculator, Figure/1.png) ──
+  const d = D - 2 * t;                              // Inner Diameter [mm]
+  const A = (Math.PI / 4) * (D * D - d * d);        // Area [mm²]
+  const I = (Math.PI / 64) * (D ** 4 - d ** 4);     // Moment of Inertia [mm⁴]
+  const Z = I / (D / 2);                            // Section Modulus [mm³]
+  const Pmpa = Number.isFinite(Pbar) ? Pbar * 0.1 : NaN;      // barG → MPa (1 bar = 0.1 MPa)
+  const Sh = Number.isFinite(Pmpa) ? (Pmpa * D) / (2 * t) : NaN;           // Hoop Stress [MPa]
+  const Sa = Number.isFinite(Pmpa) ? (Pmpa * d * d) / (D * D - d * d) : NaN; // Axial Stress [MPa]
+
+  const rOuter = 72;
+  const scale = rOuter / (D / 2);
+  const rInner = Math.max(rOuter - t * scale, 3);
+  const cx = 88;
+  const cy = 92;
+  const wallRatio = (t / D) * 100;
+
+  const metrics = [
+    { label: 'Inner Diameter', sym: 'd', value: d, unit: 'mm', formula: 'd = D − 2t' },
+    { label: 'Area', sym: 'A', value: A, unit: 'mm²', formula: 'A = π/4 · (D² − d²)' },
+    { label: 'Moment of Inertia', sym: 'I', value: I, unit: 'mm⁴', formula: 'I = π/64 · (D⁴ − d⁴)' },
+    { label: 'Section Modulus', sym: 'Z', value: Z, unit: 'mm³', formula: 'Z = I / (D/2)' },
+    { label: 'Hoop Stress', sym: 'Sh', value: Sh, unit: 'MPa', formula: 'Sh = P · D / (2t)', stress: true },
+    { label: 'Axial Stress', sym: 'Sa', value: Sa, unit: 'MPa', formula: 'Sa = P · d² / (D² − d²)', stress: true },
+  ];
+
+  const geometryMetrics = metrics.filter((m) => !m.stress);
+  const stressMetrics = metrics.filter((m) => m.stress);
 
   return (
     <div className="flex h-full flex-col p-5">
       <div className="mb-4 flex shrink-0 items-center justify-between">
-        <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">Inner Pipe 단면 미리보기</h3>
+        <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">배관 정보 미리보기</h3>
         <Badge variant="info" size="sm" dot>Live</Badge>
       </div>
-      <div className="flex min-h-0 flex-1 items-center gap-6">
-        <svg viewBox="0 0 220 200" className="h-full max-h-[240px] w-auto shrink-0" role="img" aria-label="Inner pipe 단면 개략도">
-          <circle cx={cx} cy={cy} r={rOuter} fill="#eff6ff" stroke="#0369a1" strokeWidth="2" />
-          <circle cx={cx} cy={cy} r={rInner} fill="white" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="3 2" />
-          <line x1={cx - rOuter} y1={cy} x2={cx + rOuter} y2={cy} stroke="#0369a1" strokeWidth="1" strokeDasharray="4 3" />
-          <text x={cx} y={cy - rOuter - 10} textAnchor="middle" fontSize="12" fontWeight="700" className="fill-slate-600">
-            {`Ø${outDia} mm`}
-          </text>
-          <text x={cx + rInner + 6} y={cy + 4} fontSize="10" className="fill-slate-500">
-            {`t=${thick} mm`}
-          </text>
-          <text x={cx} y={cy + rOuter + 18} textAnchor="middle" fontSize="9" className="fill-slate-400">
-            {`t/D ${wallRatio.toFixed(1)}%`}
-          </text>
-        </svg>
 
-        <svg viewBox="0 0 150 170" className="h-full max-h-[240px] w-auto shrink-0" role="img" aria-label="Bend radius 개략도">
-          <polyline points="28,150 28,65 122,65" fill="none" stroke="#e0f2fe" strokeWidth="15" strokeLinecap="round" strokeLinejoin="round" />
-          <polyline points="28,150 28,65 122,65" fill="none" stroke="#0369a1" strokeWidth="1.5" strokeDasharray="4 3" strokeLinejoin="round" />
-          <text x="34" y="52" fontSize="12" fontWeight="700" className="fill-slate-600">
-            {`R${bendR}`}
-          </text>
-          <text x="34" y="66" fontSize="9" className="fill-slate-400">
-            mm bend
-          </text>
-        </svg>
+      {/* 입력 형상 요약 — 좌측 사이드바에서 지금 입력 중인 값을 우측에서도 바로 되짚어본다 */}
+      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
+        <SpecChip label="Out. Dia" value={`Ø${D}`} unit="mm" />
+        <SpecChip label="Thickness" value={t} unit="mm" />
+        <SpecChip label="Bend R" value={form.inner_pipe.bendR} unit="mm" />
+        {Number.isFinite(Pbar) && <SpecChip label="Design P" value={Pbar} unit="barG" accent />}
+      </div>
 
-        <div className="flex flex-1 flex-col gap-2">
-          <StatRow label="Out. Diameter" value={outDia} unit="mm" />
-          <StatRow label="Inner Diameter" value={innerDia} unit="mm" />
-          <StatRow label="Thickness" value={thick} unit="mm" />
-          <StatRow label="Bend Radius" value={bendR} unit="mm" />
-          <StatRow label="Support Stiffness" value={<ScientificValue value={stiff} />} unit="N/mm" />
+      <div className="grid min-h-0 flex-1 grid-cols-[196px_1fr] items-start gap-5">
+        {/* 중공 원형 단면 개략도 — 도면 패널로 감싸 우측 물성 패널과 대구를 이루게 한다 */}
+        <div className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-100 bg-slate-50/60">
+          <div className="flex shrink-0 items-center gap-1.5 border-b border-slate-100 px-3 py-2">
+            <Ruler size={12} className="text-slate-400" />
+            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">단면 개략도</span>
+          </div>
+          <div className="flex min-h-0 flex-1 items-center justify-center p-3">
+            <svg viewBox="0 0 176 184" className="h-full max-h-[220px] w-auto" role="img" aria-label="배관 단면 개략도">
+              <circle cx={cx} cy={cy} r={rOuter} fill="#eff6ff" stroke="#0369a1" strokeWidth="2" />
+              <circle cx={cx} cy={cy} r={rInner} fill="white" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="3 2" />
+              <line x1={cx - rOuter} y1={cy} x2={cx + rOuter} y2={cy} stroke="#0369a1" strokeWidth="1" strokeDasharray="4 3" />
+              <text x={cx} y={cy - rOuter - 8} textAnchor="middle" fontSize="12" fontWeight="700" className="fill-slate-600">
+                {`D Ø${D} mm`}
+              </text>
+              <text x={cx} y={cy + rOuter + 16} textAnchor="middle" fontSize="10" className="fill-slate-500">
+                {`d Ø${fmtSection(d)} mm`}
+              </text>
+              <text x={cx} y={cy + rOuter + 30} textAnchor="middle" fontSize="9" className="fill-slate-400">
+                {`t ${t} mm · t/D ${wallRatio.toFixed(1)}%`}
+              </text>
+            </svg>
+          </div>
+        </div>
+
+        {/* 실시간 단면 물성·응력 — 형상값과 응력값을 별도 그룹으로 나눠 스캔하기 쉽게 구성 */}
+        <div className="flex min-w-0 flex-col gap-3.5">
+          <div>
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">단면 물성</p>
+            <div className="grid grid-cols-2 gap-2">
+              {geometryMetrics.map((m) => <MetricTile key={m.sym} m={m} />)}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">응력 (Design Pressure 기준)</p>
+            <div className="grid grid-cols-2 gap-2">
+              {stressMetrics.map((m) => <MetricTile key={m.sym} m={m} />)}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="mt-3 flex shrink-0 items-start gap-2 rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2">
-        <Info size={12} className="mt-0.5 shrink-0 text-sky-500" />
+      <div className="mt-4 flex shrink-0 items-center gap-2 rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2">
+        <Info size={12} className="shrink-0 text-sky-500" />
         <p className="text-[10px] leading-relaxed text-sky-700">
-          {Number.isFinite(stiff) && stiff >= 1e10
-            ? 'Support Stiffness ≥ 1×10¹⁰ N/mm — UBOLT 자동 배치 간격이 확장됩니다 (ELBO 인접 300mm, 패턴 간격 1500/1600mm 교번).'
-            : 'Support Stiffness < 1×10¹⁰ N/mm — UBOLT 자동 배치는 기본 간격을 사용합니다 (ELBO 인접 150mm, 패턴 간격 900/1100mm 교번).'}
+          {Number.isFinite(Pmpa)
+            ? <>Hoop/Axial 응력은 <span className="font-bold">P = {Pmpa.toFixed(2)} MPa</span> (Design Pressure {Pbar} barG) 기준. 외경 D·두께 t·설계압력을 바꾸면 즉시 재계산됩니다.</>
+            : <>d·A·I·Z 는 형상만으로 계산됩니다. Hoop/Axial 응력은 <span className="font-bold">Design Pressure</span> 입력 시 표시됩니다.</>}
         </p>
       </div>
-
-      <p className="mt-3 shrink-0 text-[10px] leading-relaxed text-slate-400">
-        입력값을 즉시 반영하는 개략도입니다. 실행 후 <span className="font-semibold text-slate-500">3D 모델</span> 탭에서 생성된 배관 형상을 확인할 수 있습니다.
-      </p>
     </div>
   );
 }
@@ -645,7 +736,11 @@ export default function DoublePipeFuelLineAssessment() {
   const { employeeId } = useAuth();
   const logEndRef = useRef(null);
   const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
-  const [activeTab, setActiveTab] = useState(savedPageState.activeTab ?? 'inner-support');
+  // Report 탭 제거로 저장된 activeTab 이 유효하지 않을 수 있어(예: 'selected-load-cases') 방어한다.
+  const VALID_TABS = ['inner-support', 'all-load-cases'];
+  const [activeTab, setActiveTab] = useState(
+    VALID_TABS.includes(savedPageState.activeTab) ? savedPageState.activeTab : 'inner-support',
+  );
   // 저장된 상태가 이전 스키마(ubolt 그룹 없음)일 수 있어 기본값과 얕게 병합해 필드 누락을 막는다.
   const [form, setForm] = useState(() => {
     const saved = savedPageState.form;
@@ -671,6 +766,8 @@ export default function DoublePipeFuelLineAssessment() {
   const [psaRunning, setPsaRunning] = useState(false);      // 내 해석이 진행 중(오버레이 표시)
   const [psaJobId, setPsaJobId] = useState(null);
   const [psaAnchor, setPsaAnchor] = useState(null);         // 내 해석 경과 앵커(클라 epoch 초)
+  const [psaReportPath, setPsaReportPath] = useState(null); // 완료된 해석의 Report for PSA.xlsx 서버 경로(다운로드용)
+  const [reportDownloading, setReportDownloading] = useState(false);
   const [lockState, setLockState] = useState(null);         // 남의 해석 점유 중 { anchor } — 페이지 잠금
   const [cancelling, setCancelling] = useState(false);
   // Load Case 선택: 'all'=전체 29개(기본), 'select'=개별 선택. select 모드에서 L17(SUS)은 항상 포함(잠금).
@@ -728,6 +825,8 @@ export default function DoublePipeFuelLineAssessment() {
           setPsaAnchor(null);
           clearPsaHint();
           if (s.data.status === 'done') {
+            // 완료 → 보고서 다운로드 경로 확보(reportReady 이고 reportPath 있을 때만).
+            if (s.data.reportReady && s.data.reportPath) setPsaReportPath(s.data.reportPath);
             addLog('완료: Report for PSA.xlsx 가 생성되었습니다.', 'success');
             showToast('전체 Load Case 해석이 완료되었습니다.', 'success');
           } else if (s.data.diagnostic === 'cancelled') {
@@ -885,7 +984,37 @@ export default function DoublePipeFuelLineAssessment() {
     setLcMode('all');
     setSelectedLcs(new Set([MANDATORY_LC]));
     setPdfLoading(false);
+    setPsaReportPath(null);
     setLogs(createInitialLogs());
+  };
+
+  // 완료된 배관응력 해석의 Report for PSA.xlsx 를 서버(userConnection)에서 내려받는다.
+  // 서식 템플릿이 반영된 최종 보고서(이미지·시트 포함)로, 백엔드 /api/download 가 스트리밍한다.
+  const handleDownloadReport = async () => {
+    if (!psaReportPath || reportDownloading) return;
+    setReportDownloading(true);
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/download`, {
+        params: { filepath: psaReportPath },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'Report for PSA.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      addLog('Report for PSA.xlsx 를 다운로드했습니다.', 'success');
+    } catch {
+      addLog('보고서(xlsx) 다운로드에 실패했습니다.', 'error');
+      showToast('보고서 다운로드에 실패했습니다. 서버 연결을 확인하세요.', 'error');
+    } finally {
+      setReportDownloading(false);
+    }
   };
 
   const handleCsvFile = (file) => {
@@ -1096,6 +1225,7 @@ export default function DoublePipeFuelLineAssessment() {
       return;
     }
     setPsaRunning(true);
+    setPsaReportPath(null);   // 새 해석 시작 — 이전 보고서 다운로드 버튼 숨김
     addLog(
       runLoadCases
         ? `선택 ${runLoadCases.length}개 Load Case(L17 선행 포함) 배관응력 해석을 요청했습니다: ${runLoadCases.join(', ')}`
@@ -1175,7 +1305,7 @@ export default function DoublePipeFuelLineAssessment() {
             <CardHeader
               icon={tab2Input ? CheckCircle2 : Upload}
               title="배관 CSV 입력"
-              tone="sky"
+              tone={tab2Input ? 'success' : 'sky'}
               right={tab2Input && (
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                   tab2Input.source === 'upload' ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'
@@ -1227,26 +1357,51 @@ export default function DoublePipeFuelLineAssessment() {
             <CardHeader
               icon={ListChecks}
               title="해석 Load Case"
-              right={(
-                <div className="flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setLcMode('all')}
-                    className={`rounded-md px-2 py-0.5 text-[10px] font-bold transition-colors ${
-                      lcMode === 'all' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >전체 {LOAD_CASES.length}</button>
-                  <button
-                    type="button"
-                    onClick={() => setLcMode('select')}
-                    className={`rounded-md px-2 py-0.5 text-[10px] font-bold transition-colors ${
-                      lcMode === 'select' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >선택{lcMode === 'select' ? ` ${selectedLcs.size}` : ''}</button>
-                </div>
-              )}
+              // TABS[1].description(Abaqus/ASME B31.3 방법론 설명)을 짧게 옮겨 카드 안에서 실제로 보이게 한다.
+              subtitle="Abaqus 비마찰·마찰 반복 해석 + ASME B31.3 적합성 검토를 실행합니다."
             />
             <div className="p-4">
+              {/* 전체 / 선택 — 눈에 띄는 세그먼트 컨트롤 */}
+              <div className="mb-4 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLcMode('all')}
+                  aria-pressed={lcMode === 'all'}
+                  className={`flex flex-col items-start gap-1 rounded-xl border-2 px-3 py-2.5 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 ${
+                    lcMode === 'all'
+                      ? 'border-sky-500 bg-sky-50 shadow-sm ring-1 ring-sky-500/20'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="flex w-full items-center gap-1.5">
+                    <ListChecks size={15} className={lcMode === 'all' ? 'text-sky-600' : 'text-slate-400'} />
+                    <span className={`text-sm font-black ${lcMode === 'all' ? 'text-sky-700' : 'text-slate-600'}`}>전체</span>
+                    {lcMode === 'all' && <Check size={14} strokeWidth={3} className="ml-auto text-sky-600" />}
+                  </span>
+                  <span className={`text-[10px] font-semibold ${lcMode === 'all' ? 'text-sky-600' : 'text-slate-400'}`}>
+                    {LOAD_CASES.length}개 전체 자동 해석
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLcMode('select')}
+                  aria-pressed={lcMode === 'select'}
+                  className={`flex flex-col items-start gap-1 rounded-xl border-2 px-3 py-2.5 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 ${
+                    lcMode === 'select'
+                      ? 'border-sky-500 bg-sky-50 shadow-sm ring-1 ring-sky-500/20'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="flex w-full items-center gap-1.5">
+                    <Filter size={15} className={lcMode === 'select' ? 'text-sky-600' : 'text-slate-400'} />
+                    <span className={`text-sm font-black ${lcMode === 'select' ? 'text-sky-700' : 'text-slate-600'}`}>선택</span>
+                    {lcMode === 'select' && <Check size={14} strokeWidth={3} className="ml-auto text-sky-600" />}
+                  </span>
+                  <span className={`text-[10px] font-semibold ${lcMode === 'select' ? 'text-sky-600' : 'text-slate-400'}`}>
+                    {lcMode === 'select' ? `${selectedLcs.size}개 선택됨 (L17 포함)` : '개별 Load Case 지정'}
+                  </span>
+                </button>
+              </div>
               {lcMode === 'all' ? (
                 <>
                   <div className="divide-y divide-slate-100">
@@ -1258,17 +1413,22 @@ export default function DoublePipeFuelLineAssessment() {
                       const range = first === last ? first : `${first}–${last}`;
                       const mandatory = cases.some(c => c.mandatory);
                       return (
-                        <div key={cat} className="flex items-center gap-2 py-2">
-                          <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
-                          <span className="text-xs font-bold text-slate-700">{name}</span>
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{cat}</span>
-                          {mandatory && (
-                            <span className="flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
-                              <Lock size={8} />선행
-                            </span>
-                          )}
-                          <span className="ml-auto font-mono text-[11px] text-slate-500">{range}</span>
-                          <span className="w-8 text-right text-[11px] font-bold text-slate-700">{cases.length}개</span>
+                        // grid 고정 컬럼(라벨 / 선행배지 / 범위 / 개수)으로 행마다 값이 있거나 없어도 세로 정렬이 어긋나지 않게 한다.
+                        <div key={cat} className="grid grid-cols-[auto_1fr_auto_2.5rem] items-center gap-2 py-2">
+                          <span className="flex items-center gap-2">
+                            <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+                            <span className="text-xs font-bold text-slate-700">{name}</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{cat}</span>
+                          </span>
+                          <span className="flex justify-end">
+                            {mandatory && (
+                              <span className="flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+                                <Lock size={8} />선행
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-right font-mono text-[11px] text-slate-500">{range}</span>
+                          <span className="text-right text-[11px] font-bold text-slate-700">{cases.length}개</span>
                         </div>
                       );
                     })}
@@ -1299,7 +1459,7 @@ export default function DoublePipeFuelLineAssessment() {
                               <button
                                 type="button"
                                 onClick={() => setCategoryLcs(cat, !allOn)}
-                                className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-bold text-sky-600 transition-colors hover:bg-sky-50"
+                                className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-bold text-sky-600 transition-colors hover:bg-sky-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40"
                               >{allOn ? '해제' : '전체'}</button>
                             )}
                           </div>
@@ -1313,7 +1473,7 @@ export default function DoublePipeFuelLineAssessment() {
                                   type="button"
                                   disabled={locked}
                                   onClick={() => toggleLc(c.id)}
-                                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors ${
+                                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 ${
                                     locked ? 'cursor-default bg-amber-50'
                                       : checked ? 'bg-sky-50 hover:bg-sky-100'
                                         : 'hover:bg-slate-50'
@@ -1354,19 +1514,6 @@ export default function DoublePipeFuelLineAssessment() {
             </div>
           </div>
         </>
-      );
-    }
-
-    if (activeTab === 'selected-load-cases') {
-      const tab = TABS.find(item => item.key === activeTab);
-      const TabIcon = tab?.icon ?? Info;
-      return (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <CardHeader icon={TabIcon} title={tab?.shortLabel} right={<Badge variant="warning" size="sm" dot>개발 중</Badge>} />
-          <div className="p-5">
-            <p className="text-xs leading-relaxed text-slate-500">{tab?.description}</p>
-          </div>
-        </div>
       );
     }
 
@@ -1415,13 +1562,25 @@ export default function DoublePipeFuelLineAssessment() {
           ) : lcMode === 'select' && !canRunLc ? (
             <p className="mt-2 text-center text-[11px] text-rose-500">Load Case를 1개 이상 선택하세요.</p>
           ) : null}
+
+          {/* 해석 완료 후 결과 보고서(xlsx) 다운로드 */}
+          {psaReportPath && !psaRunning && (
+            <div className="mt-3 overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50">
+              <div className="flex items-center gap-2 px-3 pt-2.5">
+                <CheckCircle2 size={15} className="shrink-0 text-emerald-600" />
+                <span className="text-xs font-bold text-emerald-800">해석 완료 · 보고서 준비됨</span>
+              </div>
+              <div className="p-2.5">
+                <Button variant="primary" fullWidth size="sm" isLoading={reportDownloading} onClick={handleDownloadReport}>
+                  <Download size={14} />
+                  Report for PSA.xlsx 다운로드
+                </Button>
+                <p className="mt-1.5 text-center text-[10px] text-emerald-600/80">ASME B31.3 적합성·응력 결과 · 서식/이미지 포함</p>
+              </div>
+            </div>
+          )}
         </>
       );
-    }
-
-    if (activeTab === 'selected-load-cases') {
-      const tab = TABS.find(item => item.key === activeTab);
-      return <DevLockedButton label={`${tab?.shortLabel} 준비 중`} onClick={() => { addLog('결과/리포트 화면은 준비 중입니다.', 'warning'); showToast('준비 중인 기능입니다.', 'info'); }} />;
     }
 
     return (
@@ -1573,51 +1732,59 @@ export default function DoublePipeFuelLineAssessment() {
         onBack={() => setCurrentMenu('File-Based Apps')}
       />
 
-      {/* 3단계 워크플로 스텝퍼 (컴팩트) */}
-      <div className="mb-3 grid shrink-0 grid-cols-1 gap-2 sm:grid-cols-3">
-        {TABS.map((tab, index) => {
-          const isActive = activeTab === tab.key;
-          const Icon = tab.icon;
-          const isDone = (tab.key === 'inner-support' && !!previewResult)
-            || (tab.key === 'all-load-cases' && !!tab2Input);
-          const statusText = tab.key === 'all-load-cases' && tab2Input ? '입력 연결됨' : (isDone ? '완료' : tab.statusLabel);
-          const statusColor = tab.key === 'selected-load-cases' ? 'text-amber-600' : (isDone || (tab.key === 'all-load-cases' && tab2Input) ? 'text-emerald-600' : (tab.key === 'inner-support' ? 'text-emerald-600' : 'text-slate-400'));
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              title={tab.label}
-              aria-current={isActive ? 'step' : undefined}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
-                isActive
-                  ? 'border-sky-500 bg-sky-50 shadow-sm'
-                  : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-              }`}
-            >
-              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-                isActive ? 'bg-sky-600 text-white' : isDone ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'
-              }`}>
-                {isDone ? <CheckCircle2 size={13} /> : index + 1}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className={`flex items-center gap-1.5 text-xs font-bold leading-tight ${isActive ? 'text-sky-800' : 'text-slate-700'}`}>
-                  <Icon size={12} className={isActive ? 'text-sky-600' : 'text-slate-400'} />
-                  <span className="truncate">{tab.shortLabel}</span>
+      {/* 2단계 워크플로 스텝퍼 (컴팩트) — 두 카드 사이에 연결 화살표를 둬 순서가 있는 흐름임을 분명히 한다 */}
+      <div className="relative mb-3 shrink-0">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {TABS.map((tab, index) => {
+            const isActive = activeTab === tab.key;
+            const Icon = tab.icon;
+            const isDone = (tab.key === 'inner-support' && !!previewResult)
+              || (tab.key === 'all-load-cases' && !!tab2Input);
+            const statusText = tab.key === 'all-load-cases' && tab2Input ? '입력 연결됨' : (isDone ? '완료' : tab.statusLabel);
+            const statusColor = (isDone || (tab.key === 'all-load-cases' && tab2Input) || tab.key === 'inner-support') ? 'text-emerald-600' : 'text-slate-400';
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                title={tab.label}
+                aria-current={isActive ? 'step' : undefined}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 ${
+                  isActive
+                    ? 'border-sky-500 bg-sky-50 shadow-sm'
+                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                  isActive ? 'bg-sky-600 text-white' : isDone ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {isDone ? <CheckCircle2 size={13} /> : index + 1}
                 </span>
-                <span className={`mt-0.5 block text-[10px] font-semibold ${statusColor}`}>
-                  {statusText}
+                <span className="min-w-0 flex-1">
+                  <span className={`flex items-center gap-1.5 text-xs font-bold leading-tight ${isActive ? 'text-sky-800' : 'text-slate-700'}`}>
+                    <Icon size={12} className={isActive ? 'text-sky-600' : 'text-slate-400'} />
+                    <span className="truncate">{tab.shortLabel}</span>
+                  </span>
+                  <span className={`mt-0.5 block text-[10px] font-semibold ${statusColor}`}>
+                    {statusText}
+                  </span>
                 </span>
-              </span>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })}
+        </div>
+        {/* 순서 흐름 표시용 장식 화살표 — 클릭 불가, 2열 그리드에서만 표시 */}
+        <div className="pointer-events-none absolute inset-y-0 left-1/2 z-10 hidden -translate-x-1/2 items-center sm:flex">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-300 shadow-sm">
+            <ChevronRight size={14} />
+          </span>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 gap-5">
         {/* 좌측: 스크롤 입력 영역 + 하단 고정 액션 (스크롤과 무관하게 실행 버튼 항상 노출) */}
         <aside className="flex min-h-0 w-[380px] shrink-0 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1.5 [&>*]:shrink-0">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1.5 [&>*]:shrink-0">
             {renderSidebarContent()}
           </div>
           <div className="mt-3 shrink-0 border-t border-slate-200 pt-3">
@@ -1816,7 +1983,7 @@ function CsvUpload({ file, onFile }) {
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <CardHeader icon={Upload} title="외관 배관 CSV" tone="sky" />
+      <CardHeader icon={file ? CheckCircle2 : Upload} title="외관 배관 CSV" tone={file ? 'success' : 'sky'} />
       <div className="p-4">
         <div
           onClick={() => inputRef.current?.click()}
@@ -1828,17 +1995,22 @@ function CsvUpload({ file, onFile }) {
             pickFile(event.dataTransfer.files?.[0]);
           }}
           className={`cursor-pointer rounded-xl border-2 border-dashed p-5 text-center transition-colors ${
-            isDragOver ? 'border-sky-400 bg-sky-50' : 'border-slate-300 hover:border-sky-400 hover:bg-slate-50'
+            isDragOver
+              ? 'border-sky-400 bg-sky-50'
+              : file
+                ? 'border-emerald-200 bg-emerald-50/50 hover:border-emerald-300'
+                : 'border-slate-300 hover:border-sky-400 hover:bg-slate-50'
           }`}
         >
-          <Upload size={24} className="mx-auto mb-2 text-slate-400" />
           {file ? (
             <div>
+              <CheckCircle2 size={22} className="mx-auto mb-2 text-emerald-500" />
               <p className="truncate text-sm font-semibold text-slate-700">{file.name}</p>
-              <p className="mt-0.5 text-xs text-slate-400">{formatBytes(file.size)}</p>
+              <p className="mt-0.5 text-xs text-slate-400">{formatBytes(file.size)} · 클릭 시 다른 파일로 교체</p>
             </div>
           ) : (
             <div>
+              <Upload size={24} className="mx-auto mb-2 text-slate-400" />
               <p className="text-sm text-slate-500">클릭하거나 CSV를 드래그하세요</p>
               <p className="mt-0.5 text-xs text-slate-400">외관(Outer) 배관 형상 .csv</p>
             </div>
