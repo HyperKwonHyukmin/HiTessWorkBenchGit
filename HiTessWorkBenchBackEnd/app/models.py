@@ -56,6 +56,22 @@ class UserPresence(Base):
   app_version = Column(String(30), nullable=True)
 
 
+class ChatMessage(Base):
+  """관리자↔사용자 1:1 DM 메시지. 양측 중 최소 1명은 관리자다(peer-to-peer 금지).
+
+  - sender_id / recipient_id : 사번(대문자 정규화)
+  - read_at                  : 수신자가 대화를 열람한 시각(미읽음 판정용, null=미읽음)
+  """
+
+  __tablename__ = "chat_messages"
+  id = Column(Integer, primary_key=True, index=True)
+  sender_id = Column(String(50), nullable=False, index=True)
+  recipient_id = Column(String(50), nullable=False, index=True)
+  body = Column(Text, nullable=False)
+  created_at = Column(DateTime, default=datetime.now, index=True)
+  read_at = Column(DateTime, nullable=True)
+
+
 class Analysis(Base):
   __tablename__ = "analysis"
   id = Column(Integer, primary_key=True, index=True)

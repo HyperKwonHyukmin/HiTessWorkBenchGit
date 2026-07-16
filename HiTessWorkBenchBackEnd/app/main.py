@@ -20,6 +20,7 @@ from .routers import (
     analysis,
     auth,
     carling,
+    chat,
     column_buckling,
     d_type_lug,
     davit,
@@ -109,6 +110,7 @@ app.include_router(activity.router)
 app.include_router(viewers.router)
 app.include_router(newsletters.router)
 app.include_router(presence.router)
+app.include_router(chat.router)
 
 app.mount(
     "/static/inhouse/d-type-lug",

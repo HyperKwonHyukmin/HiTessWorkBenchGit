@@ -18,6 +18,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { NetworkProvider } from './contexts/NetworkContext';
 import { RecentActivityProvider } from './contexts/RecentActivityContext';
 import UpdateModal from './components/UpdateModal';
+import ChatDock from './components/chat/ChatDock';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8시간 미활동 시 자동 로그아웃
@@ -455,6 +456,9 @@ function AppInner() {
             })()}
           </Suspense>
         </Layout>
+      )}
+      {appState === APP_STATE.MAIN && (
+        <ChatDock currentUserId={authUser?.employee_id} isAdmin={isAdmin} />
       )}
     </DashboardProvider>
   );

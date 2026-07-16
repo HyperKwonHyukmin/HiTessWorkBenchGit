@@ -8,7 +8,7 @@ import {
   Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Clock, Activity,
   UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
   Download, BarChart3, ChevronRight, Code2, ArrowUpDown, Radio, MapPin, Globe, Timer,
-  LogOut, Layers
+  LogOut, Layers, MessageCircle
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
@@ -566,15 +566,26 @@ export default function UserManagement() {
                       className={`relative rounded-xl border p-3 transition-all group ${isSelf ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200 hover:border-emerald-300 hover:shadow-md'}`}
                     >
                       {!isSelf && (
-                        <button
-                          type="button"
-                          onClick={() => setForceLogoutCandidate(u)}
-                          className="absolute top-2 right-2 z-10 rounded-lg p-1.5 text-slate-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 cursor-pointer"
-                          title="강제 로그아웃"
-                          aria-label={`${u.name || u.employee_id} 강제 로그아웃`}
-                        >
-                          <LogOut size={14}/>
-                        </button>
+                        <div className="absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 transition-all group-hover:opacity-100">
+                          <button
+                            type="button"
+                            onClick={() => window.dispatchEvent(new CustomEvent('workbench:open-chat', { detail: { employeeId: u.employee_id, name: u.name } }))}
+                            className="rounded-lg p-1.5 text-slate-300 hover:bg-blue-50 hover:text-blue-600 cursor-pointer"
+                            title="대화"
+                            aria-label={`${u.name || u.employee_id} 에게 메시지 보내기`}
+                          >
+                            <MessageCircle size={14}/>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setForceLogoutCandidate(u)}
+                            className="rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600 cursor-pointer"
+                            title="강제 로그아웃"
+                            aria-label={`${u.name || u.employee_id} 강제 로그아웃`}
+                          >
+                            <LogOut size={14}/>
+                          </button>
+                        </div>
                       )}
                       <button
                         type="button"
@@ -589,7 +600,7 @@ export default function UserManagement() {
                             </div>
                             <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white ${u.is_idle ? 'bg-amber-400' : 'bg-emerald-500'}`}></span>
                           </div>
-                          <div className="min-w-0 flex-1 pr-5">
+                          <div className="min-w-0 flex-1 pr-14">
                             <p className="font-bold text-slate-800 text-sm truncate group-hover:text-emerald-700">
                               {u.name || u.employee_id}
                               {u.is_admin && <Shield size={11} className="inline-block ml-1 text-red-500 align-[-1px]"/>}
