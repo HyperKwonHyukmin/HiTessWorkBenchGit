@@ -15,6 +15,7 @@ import { useDashboard } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { readPsaHint, writePsaHint, clearPsaHint, formatElapsed } from '../../utils/doublePipePsa';
+import { getAuthHeaders } from '../../utils/auth';
 
 const PAGE_KEY = '이중관 구조 연료배관 해석';
 
@@ -997,6 +998,7 @@ export default function DoublePipeFuelLineAssessment() {
       const res = await axios.get(`${API_BASE_URL}/api/download`, {
         params: { filepath: psaReportPath },
         responseType: 'blob',
+        headers: getAuthHeaders(),   // /api/download 는 require_auth — 헤더 누락 시 401→자동 로그아웃
       });
       const url = URL.createObjectURL(new Blob([res.data], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

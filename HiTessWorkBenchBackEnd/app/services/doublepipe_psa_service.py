@@ -19,6 +19,7 @@ PSA_AllLoadCases.exe 는 원본 Main.py(+scipy·pyNastran·numpy·openpyxl)를 P
      프론트가 status 폴링으로 로그를 받아볼 수 있게 한다(작업 상태는 인메모리).
 """
 import glob
+import logging
 import os
 import re
 import shutil
@@ -29,6 +30,13 @@ import uuid
 from datetime import datetime
 
 from fastapi import HTTPException
+
+# 다른 해석 앱(truss_service 등)과 동일하게 완료 시 Analysis DB 레코드를 남겨 MyProjects·이력에
+# 노출되게 한다. 이 서비스는 job_manager 를 거치지 않고 자체 _jobs 스토어로 동작하므로,
+# 완료·중단 시점에 직접 record_analysis 를 호출해야 DB 에 저장된다.
+from .analysis_runner import record_analysis
+
+logger = logging.getLogger(__name__)
 
 # ── 경로: 이 파일(__file__) 기준 상대 유도 (dev·서버 145 공통) ──
 _SERVICES_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -477,8 +485,47 @@ def _run_pipeline(job_id: str, command: list, cwd: str):
     _finish(job_id, status="done" if rc == 0 else "failed", returncode=rc, report_ready=report_ready)
 
 
+def _record_psa_analysis(job: dict):
+    """완료/중단된 PSA 작업을 Analysis DB 에 기록한다 — 다른 해석 앱과 동일하게 MyProjects·이력에 노출.
+
+    반드시 _jobs_lock 을 놓은 뒤 호출한다(DB I/O 로 상태 폴링을 막지 않도록). 실패해도 해석 결과에는
+    영향이 없어야 하므로 모든 예외를 삼키고 로그만 남긴다. status='done' → Success, 그 외 → Failed.
+    """
+    try:
+        status_msg = "Success" if job.get("status") == "done" else "Failed"
+        csv_path = job.get("csvPath") or ""
+        work_dir = os.path.dirname(csv_path) if csv_path else None
+        load_cases = job.get("loadCases")
+        input_info = {
+            "input_csv": csv_path,
+            "load_cases": load_cases if load_cases else "ALL(29)",
+        }
+        result_info = None
+        if status_msg == "Success":
+            result_info = {"work_dir": work_dir}
+            report_path = job.get("reportPath")
+            if job.get("reportReady") and report_path and os.path.isfile(report_path):
+                result_info["report"] = report_path
+        project_name = f"이중관 연료배관 해석_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        _project, db_err = record_analysis(
+            job_id=job.get("jobId"),
+            project_name=project_name,
+            program_name=_PROGRAM_NAME,       # "DoublePipeFuelLine" — 프론트가 한글 타이틀로 매핑
+            employee_id=job.get("employeeId") or "unknown",
+            status=status_msg,
+            input_info=input_info,
+            result_info=result_info,
+            source="Workbench",
+        )
+        if db_err:
+            _append_log(job.get("jobId"), f"[DB경고] 해석 이력 저장에 실패했습니다: {db_err}")
+    except Exception as exc:  # noqa: BLE001
+        logger.error("PSA analysis DB record failed: %s", exc, exc_info=True)
+
+
 def _finish(job_id: str, status: str, returncode: int, report_ready: bool = False):
     global _active_job_id
+    job_to_record = None
     with _jobs_lock:
         job = _jobs.get(job_id)
         if not job:
@@ -518,6 +565,10 @@ def _finish(job_id: str, status: str, returncode: int, report_ready: bool = Fals
         job["returncode"] = returncode
         job["reportReady"] = report_ready
         job["finishedAt"] = datetime.now().isoformat(timespec="seconds")
+        job_to_record = job
+    # DB 기록은 lock 밖에서 — 완료 시점에 Analysis 레코드를 남겨 MyProjects 에 노출한다.
+    if job_to_record is not None:
+        _record_psa_analysis(job_to_record)
 
 
 def get_psa_job(job_id: str) -> dict:
@@ -588,6 +639,7 @@ def cancel_psa_job(job_id: str, employee_id: str) -> dict:
 
     # 상태를 직접 failed(cancelled)로 전이 → 라이센스 해제. 이후 _run_pipeline 의 _finish 는
     # status!='running' 가드로 이 상태를 덮어쓰지 않는다.
+    job_to_record = None
     with _jobs_lock:
         job = _jobs.get(job_id)
         if job and job.get("status") == "running":
@@ -598,4 +650,8 @@ def cancel_psa_job(job_id: str, employee_id: str) -> dict:
             job["logs"].append("[중단] 사용자 요청으로 해석을 중단했습니다. (라이센스가 해제되었습니다)")
             if _active_job_id == job_id:
                 _active_job_id = None
+            job_to_record = job
+    # 중단된 해석도 다른 앱과 동일하게 Failed 이력으로 DB 에 남긴다(lock 밖에서 기록).
+    if job_to_record is not None:
+        _record_psa_analysis(job_to_record)
     return {"cancelled": True}
