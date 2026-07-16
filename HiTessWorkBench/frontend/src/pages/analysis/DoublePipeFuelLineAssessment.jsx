@@ -156,6 +156,12 @@ function cloneDefaults() {
   };
 }
 
+function createInitialLogs() {
+  return [
+    { time: new Date().toLocaleTimeString(), message: 'Inner Support 입력 기본값이 로드되었습니다.', type: 'info' },
+  ];
+}
+
 function getValue(form, path) {
   return path.reduce((target, key) => target?.[key], form);
 }
@@ -650,9 +656,7 @@ export default function DoublePipeFuelLineAssessment() {
       load_conditions: { ...DEFAULT_FORM.load_conditions, ...saved.load_conditions },
     };
   });
-  const [logs, setLogs] = useState(savedPageState.logs ?? [
-    { time: new Date().toLocaleTimeString(), message: 'Inner Support 입력 기본값이 로드되었습니다.', type: 'info' },
-  ]);
+  const [logs, setLogs] = useState(() => savedPageState.logs ?? createInitialLogs());
   // 초기화 시 ScientificField(Support Stiffness)의 로컬 계수/지수 상태를 강제 리마운트하기 위한 카운터.
   const [resetToken, setResetToken] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
@@ -678,6 +682,7 @@ export default function DoublePipeFuelLineAssessment() {
   const lockPollRef = useRef(null);
   const psaLastIdxRef = useRef(0);                          // status 로그 스트리밍 인덱스
   const didInitRef = useRef(false);                         // 마운트 시 /active 재연결 1회 가드
+  const resetGenerationRef = useRef(0);                     // 초기화 이전 비동기 응답의 상태 재유입 방지
 
   useEffect(() => {
     dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, { activeTab, form, logs });
@@ -867,9 +872,20 @@ export default function DoublePipeFuelLineAssessment() {
   };
 
   const handleReset = () => {
+    resetGenerationRef.current += 1;
+    setActiveTab('inner-support');
     setForm(cloneDefaults());
     setResetToken(token => token + 1);
-    setLogs([{ time: new Date().toLocaleTimeString(), message: '입력값을 기본 JSON 값으로 복원했습니다.', type: 'success' }]);
+    setIsRunning(false);
+    setCsvFile(null);
+    setPreviewResult(null);
+    setTab1View('preview');
+    setTab2Input(null);
+    setTab2View('3d');
+    setLcMode('all');
+    setSelectedLcs(new Set([MANDATORY_LC]));
+    setPdfLoading(false);
+    setLogs(createInitialLogs());
   };
 
   const handleCsvFile = (file) => {
@@ -901,6 +917,7 @@ export default function DoublePipeFuelLineAssessment() {
   // 처리(번들 — 서버 venv 에 matplotlib 불필요)하며 대략 10초가량 걸린다.
   const handleGeneratePdf = async () => {
     if (!previewResult?.workDir || !previewResult?.sourceCsv || pdfLoading) return;
+    const resetGeneration = resetGenerationRef.current;
     setPdfLoading(true);
     addLog('제작도면 PDF 생성 중… (배치·치수 도면, 약 10초 소요)', 'info');
     try {
@@ -913,6 +930,7 @@ export default function DoublePipeFuelLineAssessment() {
         },
         { responseType: 'blob' },
       );
+      if (resetGenerationRef.current !== resetGeneration) return;
       const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
@@ -924,10 +942,11 @@ export default function DoublePipeFuelLineAssessment() {
       URL.revokeObjectURL(url);
       addLog(`제작도면 PDF(${link.download})를 다운로드했습니다.`, 'success');
     } catch {
+      if (resetGenerationRef.current !== resetGeneration) return;
       addLog('제작도면 PDF 생성에 실패했습니다.', 'error');
       showToast('제작도면 PDF 생성에 실패했습니다.', 'error');
     } finally {
-      setPdfLoading(false);
+      if (resetGenerationRef.current === resetGeneration) setPdfLoading(false);
     }
   };
 
@@ -957,9 +976,11 @@ export default function DoublePipeFuelLineAssessment() {
   // Tab2 에서 직접 업로드한 배관 CSV — 클라이언트에서 파싱해 뷰어에 띄우고 해석 입력으로 지정한다.
   // (Tab1 을 거치지 않고 준비된 이중관 CSV 로 곧바로 진행하는 경로)
   const handleTab2Csv = async (file) => {
+    const resetGeneration = resetGenerationRef.current;
     addLog(`[FILE] ${file.name} 선택됨 (${formatBytes(file.size)}).`, 'info');
     try {
       const text = await file.text();
+      if (resetGenerationRef.current !== resetGeneration) return;
       const { columns, rows } = parseCsv(text);
       if (!columns.length || !rows.length) {
         addLog('CSV 파싱 실패 — 유효한 배관 데이터를 찾지 못했습니다.', 'error');
@@ -978,6 +999,7 @@ export default function DoublePipeFuelLineAssessment() {
       addLog(`업로드한 CSV로 이중관 배관 모델을 생성했습니다 (${rows.length}개 부재).`, 'success');
       showToast('배관 모델을 3D 뷰어에 표시했습니다.', 'success');
     } catch {
+      if (resetGenerationRef.current !== resetGeneration) return;
       addLog('CSV 파일을 읽는 중 오류가 발생했습니다.', 'error');
       showToast('CSV 파일을 읽을 수 없습니다.', 'error');
     }
@@ -996,6 +1018,7 @@ export default function DoublePipeFuelLineAssessment() {
       showToast('먼저 외관 배관 CSV를 업로드하세요.', 'warning');
       return;
     }
+    const resetGeneration = resetGenerationRef.current;
     setIsRunning(true);
     setTab2Input(null);
     addLog(`내관 자동 생성(append_offset.py) 실행을 요청했습니다... (입력: ${csvFile.name})`, 'info');
@@ -1010,6 +1033,7 @@ export default function DoublePipeFuelLineAssessment() {
       formData.append('employee_id', employeeId || 'unknown');
 
       const res = await axios.post(`${API_BASE_URL}/api/doublepipe/inner-pipe-preview`, formData);
+      if (resetGenerationRef.current !== resetGeneration) return;
       setPreviewResult(res.data);
       // Tab1 은 이전 요구대로 결과 테이블을 기본으로 보여준다(3D 모델은 상단 탭에서 전환).
       setTab1View('table');
@@ -1017,11 +1041,12 @@ export default function DoublePipeFuelLineAssessment() {
       addLog(`완료: 내관 포함 ${res.data.rowCount}개 부재가 생성되었습니다.`, 'success');
       showToast('내관 자동 생성이 완료되었습니다.', 'success');
     } catch (e) {
+      if (resetGenerationRef.current !== resetGeneration) return;
       const message = e.response?.data?.detail ?? '실행 중 오류가 발생했습니다. 서버 연결 상태를 확인하세요.';
       addLog(message, 'error');
       showToast(message, 'error');
     } finally {
-      setIsRunning(false);
+      if (resetGenerationRef.current === resetGeneration) setIsRunning(false);
     }
   };
 
@@ -1591,8 +1616,8 @@ export default function DoublePipeFuelLineAssessment() {
 
       <div className="flex min-h-0 flex-1 gap-5">
         {/* 좌측: 스크롤 입력 영역 + 하단 고정 액션 (스크롤과 무관하게 실행 버튼 항상 노출) */}
-        <aside className="flex w-[380px] shrink-0 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1.5">
+        <aside className="flex min-h-0 w-[380px] shrink-0 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1.5 [&>*]:shrink-0">
             {renderSidebarContent()}
           </div>
           <div className="mt-3 shrink-0 border-t border-slate-200 pt-3">
@@ -1601,7 +1626,7 @@ export default function DoublePipeFuelLineAssessment() {
         </aside>
 
         {/* 우측: 뷰어(3D/테이블/미리보기) + 콘솔 */}
-        <main className="flex min-w-0 flex-1 flex-col gap-3">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           {renderViewer()}
 
           {/* 콘솔 */}
@@ -1769,7 +1794,10 @@ function Tab2Dropzone({ onFile, hasInput }) {
         type="file"
         accept=".csv"
         className="hidden"
-        onChange={(event) => pick(event.target.files?.[0])}
+        onChange={(event) => {
+          pick(event.target.files?.[0]);
+          event.target.value = '';
+        }}
       />
     </div>
   );
@@ -1821,7 +1849,10 @@ function CsvUpload({ file, onFile }) {
           type="file"
           accept=".csv"
           className="hidden"
-          onChange={(event) => pickFile(event.target.files?.[0])}
+          onChange={(event) => {
+            pickFile(event.target.files?.[0]);
+            event.target.value = '';
+          }}
         />
       </div>
     </div>
