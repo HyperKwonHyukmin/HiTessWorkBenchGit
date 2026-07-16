@@ -43,7 +43,15 @@ _USER_CONNECTION_DIR = os.path.join(_BACKEND_DIR, "userConnection")
 _REPORT_NAME = "Report for PSA.xlsx"
 # 서식 템플릿 원본(프로그램 폴더). make_report() 가 cwd(job_dir) 상대경로로 이 이름을 읽으므로,
 # 실행 직전 job_dir 로 복사해 둬야 이미지·서식이 살아있는 보고서가 나온다(복사 안 하면 빈 워크북).
+#
+# ⚠️ DRM 함정: 회사 DRM 은 .xlsx 를 at-rest 로 암호화(HHIDRMC, +4096B)하고 로컬 프로세스는 복호화
+# 못 한다. 소스가 .xlsx 면 145 에서 이 원본이 암호화돼 있을 때 백엔드가 '암호화된 쓰레기'를 job 폴더로
+# 복사 → exe preload 가 BadZipFile → 빈 워크북(≈288KB) 보고서가 된다. 그래서 DRM 이 건드리지 않는
+# 비-Office 확장자 .bin 으로 템플릿을 보관하고(항상 PK 로 읽힘) 이걸 1순위 소스로 쓴다.
+# _REPORT_TEMPLATE_BIN 이 없거나 PK 가 아니면 기존 .xlsx 로 폴백한다.
+_REPORT_TEMPLATE_BIN = os.path.join(_PSA_DIR, "report_template.bin")
 _REPORT_TEMPLATE_SRC = os.path.join(_PSA_DIR, _REPORT_NAME)
+_ZIP_MAGIC = b"PK\x03\x04"
 
 # userConnection 폴더 명명에 쓰는 프로그램 이름 (doublepipe_service.py 와 동일 규칙:
 # {timestamp}_{employee_id}_{ProgramName}). Tab2 직접 업로드 경로가 새 작업 폴더를 만들 때 사용.
@@ -333,34 +341,88 @@ def _build_subprocess_env(job_id: str) -> dict:
     return env
 
 
-def _stage_report_template(cwd: str, job_id: str):
-    """서식 템플릿(Report for PSA.xlsx)을 job 폴더(cwd)로 복사한다.
+def _read_template_bytes(job_id: str):
+    """서식 템플릿을 PK(zip) 바이트로 읽어 반환한다. 실패 시 None.
 
-    make_report() 는 이 파일을 cwd 상대경로("Report for PSA.xlsx")로 열어 결과 셀만 채우고
-    나머지 서식·이미지(LC 시트당 도형/그림 31개)를 보존한다. job 폴더에 템플릿이 없으면
-    openpyxl.Workbook() 빈 워크북으로 폴백해 서식·이미지가 전부 사라진 보고서가 나온다
-    (cwd 를 _PSA_DIR→job_dir 로 옮긴 뒤 이 복사가 빠져 발생한 회귀). 항상 원본을 새로 덮어써
-    이전 실행의 채워진 보고서가 아니라 깨끗한 템플릿에서 시작하게 한다.
-
-    회사 DRM 은 '읽기' 시점에 복호화하므로 read()->write()(copyfileobj) 로 복호화본을 job 폴더에
-    둔다(analysis.py 의 DRM 입력 복사와 동일 패턴). 복사에 실패해도 해석 자체는 진행하되,
-    보고서가 빈 서식으로 나올 수 있음을 로그로 남긴다.
+    1순위: report_template.bin (DRM 비-대상 확장자 → 항상 PK 로 읽힘, 145 에서도 안 깨짐)
+    2순위: Report for PSA.xlsx (폴백 — 단 DRM 암호화 시 HHIDRMC 라 PK 검사에서 걸러짐)
+    각 후보를 read() 한 뒤 첫 4바이트가 PK 매직인지 확인해 '암호화된 소스'를 조기에 잡아낸다.
     """
-    dst = os.path.join(cwd, _REPORT_NAME)
-    try:
-        with open(_REPORT_TEMPLATE_SRC, "rb") as src, open(dst, "wb") as out:
-            shutil.copyfileobj(src, out)
-    except FileNotFoundError:
+    candidates = [
+        (_REPORT_TEMPLATE_BIN, "report_template.bin"),
+        (_REPORT_TEMPLATE_SRC, _REPORT_NAME),
+    ]
+    for path, label in candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except Exception as exc:  # noqa: BLE001
+            _append_log(job_id, f"[서식경고] 템플릿 소스 읽기 실패({label}): {exc}")
+            continue
+        if data[:4] == _ZIP_MAGIC:
+            _append_log(
+                job_id,
+                f"[서식] 템플릿 소스 확보: {label} (PK 정상, {len(data):,} bytes)",
+            )
+            return data
+        head = data[:7]
+        drm = " — DRM 암호화(HHIDRMC)로 추정" if head == b"HHIDRMC" else ""
         _append_log(
             job_id,
-            f"[서식경고] 보고서 서식 템플릿을 찾지 못했습니다({_REPORT_TEMPLATE_SRC}). "
-            "보고서가 서식 없이(빈 워크북) 생성될 수 있습니다 — 서버 관리자에게 문의하세요.",
+            f"[서식경고] 템플릿 소스 {label} 가 PK(zip) 가 아님(첫바이트 {head.hex()}){drm}. 다음 후보로.",
         )
+    return None
+
+
+def _stage_report_template(cwd: str, job_id: str):
+    """서식 템플릿을 PK 바이트로 job 폴더(cwd)에 'Report for PSA.xlsx' 로 새로 쓴다.
+
+    make_report() 는 이 파일을 cwd 상대경로("Report for PSA.xlsx")로 열어 결과 셀만 채우고
+    나머지 서식·이미지(LC 시트당 도형/그림 31개)를 보존한다. job 폴더에 유효한 PK 템플릿이 없으면
+    exe 의 preload 가 실패해 openpyxl.Workbook() 빈 워크북으로 폴백 → 서식·이미지가 전부 사라진
+    ≈288KB 보고서가 나온다. 항상 깨끗한 템플릿을 새로 덮어써 이전 실행 결과가 섞이지 않게 한다.
+
+    ★ DRM 대응: 소스를 .bin(비-Office 확장자)로 두면 회사 DRM 이 암호화하지 않아 로컬 프로세스가
+    항상 PK 로 읽는다. 여기서 PK 를 확인한 바이트만 job 폴더에 쓰므로, exe 가 파이프라인 시작 시
+    (DRM 이 갓 쓴 사본을 암호화하기 전, 수초 내) preload 로 이 PK 파일을 메모리에 올릴 수 있다.
+    복사가 실패해도 해석 자체는 진행하되, 보고서가 빈 서식일 수 있음을 로그로 분명히 남긴다.
+    """
+    dst = os.path.join(cwd, _REPORT_NAME)
+    data = _read_template_bytes(job_id)
+    if data is None:
+        _append_log(
+            job_id,
+            "[서식경고] 유효한(PK) 서식 템플릿 소스를 찾지 못했습니다 "
+            f"(.bin={_REPORT_TEMPLATE_BIN}, .xlsx={_REPORT_TEMPLATE_SRC}). "
+            "보고서가 서식·이미지 없이(빈 워크북, ≈288KB) 생성될 수 있습니다 — "
+            "서버 관리자: report_template.bin 을 프로그램 폴더에 두세요.",
+        )
+        return
+    try:
+        with open(dst, "wb") as out:
+            out.write(data)
     except Exception as exc:  # noqa: BLE001
         _append_log(
             job_id,
-            f"[서식경고] 보고서 서식 템플릿 복사에 실패했습니다: {exc}. "
+            f"[서식경고] 서식 템플릿을 job 폴더에 쓰지 못했습니다: {exc}. "
             "보고서가 서식 없이 생성될 수 있습니다.",
+        )
+        return
+    # 방금 쓴 job 폴더 사본이 PK 인지 즉시 재확인(쓰기 직후엔 아직 DRM 암호화 전이어야 정상).
+    try:
+        with open(dst, "rb") as f:
+            head = f.read(4)
+    except Exception:  # noqa: BLE001
+        head = b""
+    if head == _ZIP_MAGIC:
+        _append_log(job_id, f"[서식] 템플릿을 job 폴더로 스테이징 완료(PK 확인): {dst}")
+    else:
+        _append_log(
+            job_id,
+            f"[서식경고] 스테이징 직후 job 폴더 사본이 PK 가 아닙니다(첫바이트 {head.hex()}). "
+            "DRM 이 즉시 암호화했을 수 있어 보고서 서식이 비어 나올 수 있습니다.",
         )
 
 
