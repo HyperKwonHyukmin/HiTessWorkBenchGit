@@ -34,7 +34,7 @@ const logoIntro = {
   visible: { opacity: 1, y: 0 },
 };
 
-function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate }) {
+function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate, pendingCount = 0 }) {
 
   const menuItems = useMemo(() => {
     const items = [
@@ -68,7 +68,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
       items.push({
         category: "ADMINISTRATION",
         items: [
-          { icon: ShieldAlert, label: "User Management" },
+          { icon: ShieldAlert, label: "User Management", badge: pendingCount },
           { icon: BarChart3, label: "Analysis Management" },
           { icon: Settings, label: "System Management" },
           { icon: LineChart, label: "Usage Reports" },
@@ -79,7 +79,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
     }
 
     return items;
-  }, [isAdmin]);
+  }, [isAdmin, pendingCount]);
 
   const activeGroupMenu = useMemo(() => {
     const app = ANALYSIS_DATA.find(item => getAppMenuName(item.title) === currentMenu || item.title === currentMenu);
@@ -157,12 +157,24 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
                         <div className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-brand-accent"></div>
                       )}
 
-                      <div className={`${isCollapsed ? 'mx-auto' : 'mr-3'} ${isActive ? 'text-brand-accent' : ''}`}>
+                      <div className={`relative ${isCollapsed ? 'mx-auto' : 'mr-3'} ${isActive ? 'text-brand-accent' : ''}`}>
                          <item.icon size={20} />
+                         {/* 접힌 상태: 아이콘 우상단 점 배지 */}
+                         {isCollapsed && item.badge > 0 && (
+                           <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold leading-none ring-2 ring-brand-blue">
+                             {item.badge > 9 ? '9+' : item.badge}
+                           </span>
+                         )}
                       </div>
 
                       {!isCollapsed && (
                         <span className="text-sm truncate">{item.label}</span>
+                      )}
+                      {/* 펼친 상태: 라벨 우측 카운트 배지 */}
+                      {!isCollapsed && item.badge > 0 && (
+                        <span className="ml-auto shrink-0 min-w-[18px] h-[18px] px-1.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-black leading-none animate-pulse">
+                          {item.badge > 99 ? '99+' : item.badge}
+                        </span>
                       )}
                     </button>
                   </li>

@@ -38,12 +38,19 @@ export function ToastProvider({ children }) {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  const showToast = useCallback((message, type = 'info', duration = 4000) => {
+  /**
+   * @param {string} message 표시할 메시지
+   * @param {'success'|'error'|'warning'|'info'} type 종류
+   * @param {number} duration 자동 닫힘(ms). 0이면 수동 닫기 전까지 유지
+   * @param {{onClick?: Function, actionLabel?: string}} [options] 클릭 액션(선택)
+   */
+  const showToast = useCallback((message, type = 'info', duration = 4000, options = {}) => {
     const id = ++idCounter;
-    setToasts(prev => [...prev, { id, message, type }]);
+    setToasts(prev => [...prev, { id, message, type, onClick: options.onClick, actionLabel: options.actionLabel }]);
     if (duration > 0) {
       timersRef.current[id] = setTimeout(() => dismiss(id), duration);
     }
+    return id;
   }, [dismiss]);
 
   return (
@@ -52,13 +59,29 @@ export function ToastProvider({ children }) {
 
       {/* Toast 컨테이너 — 우측 상단 고정 */}
       <div className="fixed top-4 right-4 z-[99998] flex flex-col gap-2 pointer-events-none">
-        {toasts.map(toast => (
+        {toasts.map(toast => {
+          const clickable = typeof toast.onClick === 'function';
+          const handleClick = () => { toast.onClick(); dismiss(toast.id); };
+          return (
           <div
             key={toast.id}
             className={`flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg max-w-sm w-full pointer-events-auto animate-fade-in-up ${BG[toast.type]}`}
           >
             {ICONS[toast.type]}
-            <p className="text-sm text-slate-700 font-medium flex-1 break-words">{toast.message}</p>
+            <div className="flex-1 min-w-0">
+              {clickable ? (
+                <button onClick={handleClick} className="w-full text-left cursor-pointer group">
+                  <p className="text-sm text-slate-700 font-medium break-words">{toast.message}</p>
+                  {toast.actionLabel && (
+                    <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-bold text-blue-600 group-hover:underline">
+                      {toast.actionLabel} →
+                    </span>
+                  )}
+                </button>
+              ) : (
+                <p className="text-sm text-slate-700 font-medium break-words">{toast.message}</p>
+              )}
+            </div>
             <button
               onClick={() => dismiss(toast.id)}
               className="text-slate-400 hover:text-slate-600 transition-colors shrink-0 cursor-pointer"
@@ -66,7 +89,8 @@ export function ToastProvider({ children }) {
               <X size={16} />
             </button>
           </div>
-        ))}
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );

@@ -23,9 +23,9 @@ const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
 const GROUP_MENU_BY_MODE = { File: 'File-Based Apps', Interactive: 'Interactive Apps', Parametric: 'Parametric Apps', Productivity: 'Productivity Apps' };
 
 // ✅ 파라미터에 goBack 등 히스토리 관련 props 추가
-export default function Layout({ 
-  children, onLogout, currentMenu, setCurrentMenu, 
-  goBack, goForward, canGoBack, canGoForward 
+export default function Layout({
+  children, onLogout, currentMenu, setCurrentMenu,
+  goBack, goForward, canGoBack, canGoForward, pendingCount = 0
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   // AuthContext 의 reactive user 에서 직접 헤더 표시값을 파생한다.
@@ -170,6 +170,16 @@ export default function Layout({
     }
   }, [currentMenu, recordAppVisit]);
 
+  // 토스트/외부 트리거의 프로그램적 네비게이션 — 관리자 게이트를 그대로 거치도록 handleNavigate 재사용.
+  useEffect(() => {
+    const onNavigate = (e) => {
+      const menu = e?.detail?.menu;
+      if (menu) handleNavigate(menu);
+    };
+    window.addEventListener('workbench:navigate', onNavigate);
+    return () => window.removeEventListener('workbench:navigate', onNavigate);
+  }, [handleNavigate]);
+
   const handleGateClose = useCallback(() => {
     setIsGateOpen(false);
     setPendingMenu(null);
@@ -212,12 +222,13 @@ export default function Layout({
 
   return (
     <div className="flex h-screen min-w-[320px] bg-slate-50 overflow-hidden">
-      <Sidebar 
-        isCollapsed={isCollapsed} 
-        toggleSidebar={toggleSidebar} 
-        isAdmin={userInfo.is_admin} 
+      <Sidebar
+        isCollapsed={isCollapsed}
+        toggleSidebar={toggleSidebar}
+        isAdmin={userInfo.is_admin}
         currentMenu={currentMenu}
         onNavigate={handleNavigate}
+        pendingCount={pendingCount}
       />
 
       <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">

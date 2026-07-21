@@ -1,12 +1,13 @@
 /// <summary>
 /// React 애플리케이션의 최상위 라우터(Router) 및 상태 관리자입니다.
 /// </summary>
-import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { version as CLIENT_VERSION } from '../package.json';
 import { checkVersion } from './api/auth';
 import { reportVersionUpdate, callLogout, logActivity } from './api/activity';
 import { sendHeartbeat, beaconOffline } from './api/presence';
+import { getUsers } from './api/admin';
 import SplashScreen from './pages/auth/SplashScreen';
 import LoginScreen from './pages/auth/LoginScreen';
 import Layout from './components/layout/Layout';
@@ -95,6 +96,57 @@ function AppInner() {
   // 본 컴포넌트는 setAppState/resetNavigation 같은 라우팅 부수 효과만 담당한다.
   const { logout: authLogout, user: authUser } = useAuth();
   const isAdmin = !!authUser?.is_admin;
+
+  // 승인 대기 사용자 수 — 사이드바 뱃지 + 로그인 시 토스트 알림.
+  const [pendingUserCount, setPendingUserCount] = useState(0);
+  const pendingToastShownForRef = useRef(null); // user_login_at 기준 중복 토스트 방지
+
+  const refreshPendingUserCount = useCallback(async () => {
+    if (!isAdmin) { setPendingUserCount(0); return 0; }
+    try {
+      const res = await getUsers();
+      const count = (res.data || []).filter(u => !u.is_active).length;
+      setPendingUserCount(count);
+      return count;
+    } catch {
+      return null; // 조용히 무시 — 다음 폴링/이벤트에서 복구
+    }
+  }, [isAdmin]);
+
+  // 관리자 진입(로그인/세션 복원) 시 1회 토스트 + 주기 폴링 + 목록 변경 이벤트 반영.
+  useEffect(() => {
+    if (appState !== APP_STATE.MAIN || !isAdmin) {
+      setPendingUserCount(0);
+      return;
+    }
+    let cancelled = false;
+    const initialLoad = async () => {
+      const count = await refreshPendingUserCount();
+      if (cancelled || count == null) return;
+      const loginAt = localStorage.getItem('user_login_at') || '';
+      if (count > 0 && pendingToastShownForRef.current !== loginAt) {
+        pendingToastShownForRef.current = loginAt;
+        showToast(
+          `신규 가입 요청 ${count}명이 승인을 기다리고 있습니다.`,
+          'warning',
+          8000,
+          {
+            onClick: () => window.dispatchEvent(new CustomEvent('workbench:navigate', { detail: { menu: 'User Management' } })),
+            actionLabel: '승인하러 가기',
+          }
+        );
+      }
+    };
+    initialLoad();
+    const timer = setInterval(refreshPendingUserCount, 60000);
+    const onChanged = () => refreshPendingUserCount();
+    window.addEventListener('workbench:pending-users-changed', onChanged);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener('workbench:pending-users-changed', onChanged);
+    };
+  }, [appState, isAdmin, refreshPendingUserCount, showToast]);
 
   const handleSplashFinish = async () => {
     // 세션 여부와 무관하게 항상 버전 체크 먼저 수행
@@ -431,6 +483,7 @@ function AppInner() {
           goForward={goForward}
           canGoBack={canGoBack}
           canGoForward={canGoForward}
+          pendingCount={pendingUserCount}
         >
           <Suspense fallback={<PageFallback />}>
             {(() => {
