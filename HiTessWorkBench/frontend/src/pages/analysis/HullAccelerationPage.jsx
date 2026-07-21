@@ -89,7 +89,7 @@ const PARTICULAR_FIELDS = [
 ];
 
 const RESULT_INPUT_FIELDS = [
-  ['speed', 'Vs', 'm/s'],
+  ['speed', 'Vs', 'knot'],
   ['bilge_keel', 'Bilge keel', '-'],
   ['length', 'Rule Length', 'm'],
   ['gravity', 'grav', 'm/s²'],
@@ -352,7 +352,9 @@ export default function HullAccelerationPage() {
   // 보내 백엔드의 'PDF 우선, 없으면 수동' Cb 결정 로직을 태운다(미입력이면 키 자체를 보내지 않음).
   const buildConstantsPayload = () => {
     const payload = toPayloadConstants(constants);
-    if (speedUnit === 'knot') payload.speed = Number(constants.speed) * KNOT_TO_MPS;
+    // 엔진(BV/IGC/LR 공식)은 속도를 Knot 단위로 받는다. Knot 입력은 그대로 전달하고,
+    // m/s 로 입력한 경우에만 Knot 으로 환산해 보낸다.
+    if (speedUnit === 'mps') payload.speed = Number(constants.speed) / KNOT_TO_MPS;
     payload.rule_length_mode = ruleLengthMode;
     if (ruleLengthMode === RULE_LENGTH_MODES.MANUAL) {
       const manualRuleLength = Number(constants.length);
@@ -689,9 +691,9 @@ export default function HullAccelerationPage() {
                           aria-label={`${label} (${inputUnit})`}
                           className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 focus:bg-white transition-colors"
                         />
-                        {key === 'speed' && speedUnit === 'knot' && (
+                        {key === 'speed' && speedUnit === 'mps' && (
                           <span className="mt-1 block text-[9px] text-slate-400">
-                            계산 시 m/s로 자동 변환
+                            계산 시 Knot으로 자동 변환
                           </span>
                         )}
                       </div>
