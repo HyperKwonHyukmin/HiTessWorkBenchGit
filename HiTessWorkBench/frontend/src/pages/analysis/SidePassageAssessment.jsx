@@ -313,33 +313,39 @@ function ModuleStudioLauncher({
 // ── 메인 컴포넌트 ────────────────────────────────────────────
 export default function SidePassageAssessment() {
   const { setCurrentMenu } = useNavigation();
-  const { startGlobalJob, globalJob, sidePassageHandoff, clearSidePassageHandoff } = useDashboard();
+  const {
+    startGlobalJob, globalJob, sidePassageHandoff, clearSidePassageHandoff,
+    analysisPageStates, setAnalysisPageState,
+  } = useDashboard();
   const SIDE_PASSAGE_MENU_NAME = 'Side Passage Assessment';
+  // 다른 화면 이탈 → 우측 하단 글로벌 작업 카드로 복귀 시 입력·진행·결과를 그대로 복원하기 위한
+  // 전역 저장소(GMU/Truss 와 동일 패턴). 아래 useState 들이 이 값을 초기값으로 읽는다.
+  const savedPageState = analysisPageStates?.[SIDE_PASSAGE_MENU_NAME] || {};
   const { showToast } = useToast();
 
   // ── 파이프라인 상태 ──────────────────────────────────────
-  const [steps, setSteps]     = useState(INITIAL_STEPS);
-  const [activeIdx, setActiveIdx] = useState(0);
+  const [steps, setSteps]     = useState(savedPageState.steps ?? INITIAL_STEPS);
+  const [activeIdx, setActiveIdx] = useState(savedPageState.activeIdx ?? 0);
   // 해석 실행이 한 번이라도 트리거됐는지 여부 (다음 단계 이동 버튼 활성화 조건)
-  const [hasRunOnce, setHasRunOnce] = useState(false);
+  const [hasRunOnce, setHasRunOnce] = useState(savedPageState.hasRunOnce ?? false);
 
 
   // ── Step 0: BDF 입력 ─────────────────────────────────────
-  const [bdfFile, setBdfFile]           = useState(null);
-  const [validating, setValidating]     = useState(false);
-  const [validJobId, setValidJobId]     = useState(null);
-  const [validProgress, setValidProgress] = useState(0);
-  const [validStatusMsg, setValidStatusMsg] = useState('');
-  const [step1Data, setStep1Data]       = useState(null);
-  const [step2Data, setStep2Data]       = useState(null);
-  const [handoffSource, setHandoffSource] = useState(null);
-  const [handoffBdfPath, setHandoffBdfPath] = useState(null);
+  const [bdfFile, setBdfFile]           = useState(savedPageState.bdfFile ?? null);
+  const [validating, setValidating]     = useState(savedPageState.validating ?? false);
+  const [validJobId, setValidJobId]     = useState(savedPageState.validJobId ?? null);
+  const [validProgress, setValidProgress] = useState(savedPageState.validProgress ?? 0);
+  const [validStatusMsg, setValidStatusMsg] = useState(savedPageState.validStatusMsg ?? '');
+  const [step1Data, setStep1Data]       = useState(savedPageState.step1Data ?? null);
+  const [step2Data, setStep2Data]       = useState(savedPageState.step2Data ?? null);
+  const [handoffSource, setHandoffSource] = useState(savedPageState.handoffSource ?? null);
+  const [handoffBdfPath, setHandoffBdfPath] = useState(savedPageState.handoffBdfPath ?? null);
 
   // ── Step 1: Studio 실행 ─────────────────────────────────
-  const [bdfPath, setBdfPath]           = useState(null);
+  const [bdfPath, setBdfPath]           = useState(savedPageState.bdfPath ?? null);
   // BDF 검증 시 생성된 Analysis.id (DB record).
   // viewer:open 시 main 으로 전달 → Studio 가 후속 해석을 요청할 때 parent_analysis_id 로 사용.
-  const [bdfAnalysisId, setBdfAnalysisId] = useState(null);
+  const [bdfAnalysisId, setBdfAnalysisId] = useState(savedPageState.bdfAnalysisId ?? null);
   const [studioStatus, setStudioStatus] = useState('idle'); // idle | checking | installing | opening | error
   const [studioInstalled, setStudioInstalled] = useState(null); // null=확인 전, true/false=결과
   const [studioProgress, setStudioProgress] = useState(null);
@@ -347,7 +353,7 @@ export default function SidePassageAssessment() {
   const [studioInstalledVersion, setStudioInstalledVersion] = useState(null);
   const [studioLatestVersion, setStudioLatestVersion] = useState(null);
   const [studioInstallDir, setStudioInstallDir] = useState(null);
-  const [editedBdfPath, setEditedBdfPath] = useState(null);
+  const [editedBdfPath, setEditedBdfPath] = useState(savedPageState.editedBdfPath ?? null);
 
   const bdfFolderPath = useMemo(
     () => bdfPath ? bdfPath.replace(/[/\\][^/\\]+$/, '') : null,
@@ -411,7 +417,7 @@ export default function SidePassageAssessment() {
 
   // ── Step 0: 해석 설정 ───────────────────────────────────
   // 입력검증 시 Nastran 해석 토글 — 기본값 OFF(사용자 요청). 필요 시 사용자가 켠다.
-  const [useNastran, setUseNastran] = useState(false);
+  const [useNastran, setUseNastran] = useState(savedPageState.useNastran ?? false);
 
   // ── Step 2: 해석 모델 확인 ───────────────────────────────
   const [savingFinalBdf, setSavingFinalBdf] = useState(false);
@@ -420,6 +426,39 @@ export default function SidePassageAssessment() {
 
   const setStepStatus = (id, status) =>
     setSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+
+  // ── 페이지 상태 지속 저장 (전역 analysisPageStates) ──
+  // 관련 상태가 바뀔 때마다 전역에 저장 → 페이지 이탈 후 트레이 카드로 복귀(remount)했을 때
+  // 입력·진행·결과를 그대로 복원한다. (저장이 없어서 복귀 시 초기 화면으로 리셋되던 문제 수정)
+  //  • fresh-entry(메뉴 재클릭) : DashboardContext 가 이 값을 비워 새 진입은 정상 초기화된다.
+  //  • resume(트레이 클릭)     : 리셋을 건너뛰므로 저장값이 그대로 복원된다.
+  // 검증 폴링은 validJobId 복원 시 usePolling 이 자동 재구독하여 진행률이 이어진다.
+  useEffect(() => {
+    setAnalysisPageState?.(SIDE_PASSAGE_MENU_NAME, {
+      steps,
+      activeIdx,
+      hasRunOnce,
+      bdfFile,
+      validating,
+      validJobId,
+      validProgress,
+      validStatusMsg,
+      step1Data,
+      step2Data,
+      handoffSource,
+      handoffBdfPath,
+      bdfPath,
+      bdfAnalysisId,
+      editedBdfPath,
+      useNastran,
+    });
+  }, [
+    setAnalysisPageState,
+    steps, activeIdx, hasRunOnce,
+    bdfFile, validating, validJobId, validProgress, validStatusMsg,
+    step1Data, step2Data, handoffSource, handoffBdfPath,
+    bdfPath, bdfAnalysisId, editedBdfPath, useNastran,
+  ]);
 
   useEffect(() => {
     if (!sidePassageHandoff?.bdfServerPath) return;

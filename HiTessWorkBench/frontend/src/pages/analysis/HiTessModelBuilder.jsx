@@ -2373,8 +2373,30 @@ export default function HiTessModelBuilder() {
     return () => { try { unsub?.(); } catch {} };
   }, []);
 
-  // 페이지 이탈 후 글로벌 작업 카드로 복귀할 때 입력/작업 상태를 보존해야 하므로
-  // 언마운트 시 setPageState(null)를 호출하지 않는다.
+  // ── 페이지 상태 지속 저장 (전역 modelBuilderPageState) ──
+  // 페이지 이탈 후 우측 하단 글로벌 작업 카드로 복귀(remount)했을 때 입력값·진행 상태를 그대로
+  // 복원하기 위해, 복원 대상 상태가 바뀔 때마다 전역에 저장한다. (이 저장부가 없어서 복귀 시
+  // saved=null → 항상 '초기 화면'으로 리셋되던 버그를 수정: 위 useState 들이 읽는 saved 를 채워준다.)
+  //  • fresh-entry(메뉴 재클릭)  : DashboardContext.resetAnalysisEntryState 가 이 값을 null 로 비워
+  //                                새 진입은 정상적으로 초기화된다.
+  //  • resume(트레이 카드 클릭)  : 리셋을 건너뛰므로 여기 저장된 값이 그대로 복원된다.
+  // struFile 등 File 객체는 localStorage 가 아닌 인메모리 컨텍스트 상태에 담기므로 안전하게 보존된다.
+  useEffect(() => {
+    setPageState({
+      struFile, pipeFile, equiFile,
+      meshSize, uboltFullFix, useNastran,
+      steps, activeIdx, hasRunOnce,
+      jobStatus, currentJobId, bdfResult,
+      engineLog, runNastranRequested,
+    });
+  }, [
+    struFile, pipeFile, equiFile,
+    meshSize, uboltFullFix, useNastran,
+    steps, activeIdx, hasRunOnce,
+    jobStatus, currentJobId, bdfResult,
+    engineLog, runNastranRequested,
+    setPageState,
+  ]);
 
   // ── 최초 마운트: globalJob 동기화 ──
   useEffect(() => {
