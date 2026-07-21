@@ -189,6 +189,7 @@ export default function UserManagement() {
   const [forceLogoutCandidate, setForceLogoutCandidate] = useState(null);
   const [roleToggleTarget, setRoleToggleTarget] = useState(null); // { user, field } — 권한 토글 확인
   const [userPage, setUserPage] = useState(0);
+  const [selectedPendingIds, setSelectedPendingIds] = useState(new Set()); // 승인 대기 일괄 승인 선택
   const myEmployeeId = (getEmployeeId() || '').toUpperCase();
 
   const fetchUsers = async () => {
@@ -322,6 +323,35 @@ export default function UserManagement() {
     }
   };
 
+  // 승인 대기 일괄 선택/승인
+  const togglePendingSelection = (userId) => {
+    setSelectedPendingIds(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId); else next.add(userId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPending = () => {
+    setSelectedPendingIds(prev =>
+      prev.size === pendingList.length ? new Set() : new Set(pendingList.map(u => u.id))
+    );
+  };
+
+  const handleBulkApprove = async () => {
+    const ids = Array.from(selectedPendingIds);
+    if (ids.length === 0) return;
+    try {
+      await Promise.all(ids.map(id => updateUser(id, { is_active: true })));
+      setUsers(prev => prev.map(u => (ids.includes(u.id) ? { ...u, is_active: true } : u)));
+      setSelectedPendingIds(new Set());
+      showToast(`${ids.length}명을 일괄 승인했습니다.`, 'success');
+    } catch (error) {
+      showToast('일괄 승인 중 일부 항목이 실패했습니다. 목록을 다시 확인해주세요.', 'error');
+      fetchUsers();
+    }
+  };
+
   const handleDelete = async () => {
     if (!confirmDeleteTarget) return;
     try {
@@ -411,6 +441,15 @@ export default function UserManagement() {
   const pendingUsers = pendingList.length;
   const adminUsers   = users.filter(u => u.is_admin).length;
 
+  // 개별 승인 등으로 대기 목록에서 빠진 사용자는 선택 집합에서도 제거한다.
+  useEffect(() => {
+    setSelectedPendingIds(prev => {
+      const validIds = new Set(pendingList.map(u => u.id));
+      const next = new Set([...prev].filter(id => validIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [pendingList]);
+
   // 로그인 막대 정규화 — 가장 활발한 사용자의 로그인 수를 100% 로
   const maxLogin = useMemo(
     () => Math.max(1, ...users.map(u => u.login_count || 0)),
@@ -479,7 +518,7 @@ export default function UserManagement() {
         title="User Management"
         icon={Users}
         subtitle="시스템 접근 권한 부여 및 사용자 메타데이터를 관리합니다."
-        accentColor="blue"
+        accentColor="violet"
       />
 
       {/* 0. 실시간 접속 현황 — 지금 앱을 사용 중인 사용자 */}
@@ -570,7 +609,7 @@ export default function UserManagement() {
                           <button
                             type="button"
                             onClick={() => window.dispatchEvent(new CustomEvent('workbench:open-chat', { detail: { employeeId: u.employee_id, name: u.name } }))}
-                            className="rounded-lg p-1.5 text-slate-300 hover:bg-blue-50 hover:text-blue-600 cursor-pointer"
+                            className="rounded-lg p-1.5 text-slate-300 hover:bg-blue-50 hover:text-blue-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                             title="대화"
                             aria-label={`${u.name || u.employee_id} 에게 메시지 보내기`}
                           >
@@ -579,7 +618,7 @@ export default function UserManagement() {
                           <button
                             type="button"
                             onClick={() => setForceLogoutCandidate(u)}
-                            className="rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600 cursor-pointer"
+                            className="rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                             title="강제 로그아웃"
                             aria-label={`${u.name || u.employee_id} 강제 로그아웃`}
                           >
@@ -750,7 +789,7 @@ export default function UserManagement() {
       {/* 3. 승인 대기 — 별도 하이라이트 영역 (Pending 이 있을 때만 표시) */}
       {pendingList.length > 0 && (
         <div className="mb-6 bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-md">
                 <Clock size={20}/>
@@ -765,14 +804,41 @@ export default function UserManagement() {
                 <p className="text-xs text-amber-700 mt-0.5">신규 가입자가 시스템 접근을 기다리고 있습니다.</p>
               </div>
             </div>
+            <div className="flex items-center gap-3">
+              <label className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={pendingList.length > 0 && selectedPendingIds.size === pendingList.length}
+                  onChange={toggleSelectAllPending}
+                  className="h-3.5 w-3.5 rounded border-amber-300 text-amber-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                />
+                전체 선택
+              </label>
+              <button
+                onClick={handleBulkApprove}
+                disabled={selectedPendingIds.size === 0}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 shadow-sm transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1"
+              >
+                <CheckCircle2 size={13}/> 선택 승인({selectedPendingIds.size})
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {pendingList.map(u => (
               <div
                 key={u.id}
-                className="bg-white border border-amber-200 rounded-xl p-3 flex items-center justify-between gap-2 hover:border-amber-400 hover:shadow-md transition-all"
+                className={`bg-white border rounded-xl p-3 flex items-center justify-between gap-2 transition-all ${
+                  selectedPendingIds.has(u.id) ? 'border-amber-400 ring-1 ring-amber-300 shadow-md' : 'border-amber-200 hover:border-amber-400 hover:shadow-md'
+                }`}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedPendingIds.has(u.id)}
+                    onChange={() => togglePendingSelection(u.id)}
+                    aria-label={`${u.name || u.employee_id} 선택`}
+                    className="h-4 w-4 shrink-0 rounded border-amber-300 text-amber-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                  />
                   <div className="h-11 w-11 rounded-xl bg-amber-100 text-amber-700 border border-amber-200 flex items-center justify-center font-bold text-lg shrink-0">
                     {u.name?.[0] || '?'}
                   </div>
@@ -790,14 +856,14 @@ export default function UserManagement() {
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => handleApprove(u.id)}
-                    className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 shadow-sm transition-colors cursor-pointer flex items-center gap-1"
+                    className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 shadow-sm transition-colors cursor-pointer flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1"
                     title="가입 승인"
                   >
                     <CheckCircle2 size={13}/> 승인
                   </button>
                   <button
                     onClick={() => setConfirmDeleteTarget(u)}
-                    className="px-2.5 py-1.5 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+                    className="px-2.5 py-1.5 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1"
                     title="가입 거절 (계정 삭제)"
                   >
                     거절
@@ -864,9 +930,9 @@ export default function UserManagement() {
           </span>
           <button
             onClick={fetchUsers}
-            className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-200 transition-colors shadow-sm cursor-pointer"
+            className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-200 transition-colors shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1"
           >
-            <RefreshCw size={14}/> 갱신
+            <RefreshCw size={14}/> 새로고침
           </button>
         </div>
       </div>
@@ -987,14 +1053,15 @@ export default function UserManagement() {
                     )}
                   </td>
 
-                  {/* 관리자 권한 토글 */}
+                  {/* 관리자 권한 토글 — 아이콘만으로는 상태가 안 드러나 작은 텍스트 라벨을 함께 표시 */}
                   <td className="py-3 px-6 text-center">
                     <button
                       onClick={() => requestRoleToggle(user, 'is_admin')}
-                      className={`p-2 rounded-lg transition-colors cursor-pointer ${user.is_admin ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500'}`}
+                      className={`inline-flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${user.is_admin ? 'bg-red-50 text-red-600 hover:bg-red-100 focus-visible:ring-red-400' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500 focus-visible:ring-slate-400'}`}
                       title={user.is_admin ? "관리자 권한 해제" : "관리자 권한 부여"}
                     >
-                      {user.is_admin ? <Shield size={20}/> : <ShieldOff size={20}/>}
+                      {user.is_admin ? <Shield size={18}/> : <ShieldOff size={18}/>}
+                      <span className="text-[9px] font-bold leading-none">{user.is_admin ? '관리자' : '일반'}</span>
                     </button>
                   </td>
 
@@ -1002,23 +1069,24 @@ export default function UserManagement() {
                   <td className="py-3 px-6 text-center">
                     <button
                       onClick={() => requestRoleToggle(user, 'is_developer')}
-                      className={`p-2 rounded-lg transition-colors cursor-pointer ${user.is_developer ? 'bg-violet-50 text-violet-600 hover:bg-violet-100' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500'}`}
+                      className={`inline-flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${user.is_developer ? 'bg-violet-50 text-violet-600 hover:bg-violet-100 focus-visible:ring-violet-400' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500 focus-visible:ring-slate-400'}`}
                       title={user.is_developer ? "개발자 권한 해제 — 통계 집계 재포함" : "개발자 권한 부여 — 해석 통계에서 자동 제외"}
                     >
-                      <Code2 size={20}/>
+                      <Code2 size={18}/>
+                      <span className="text-[9px] font-bold leading-none">{user.is_developer ? '개발자' : '일반'}</span>
                     </button>
                   </td>
 
                   {/* 수정 및 삭제 버튼 */}
                   <td className="py-3 px-6 text-center">
                     <div className="flex items-center justify-center gap-2">
-                      <button onClick={() => openActivityModal(user)} className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer" title="활동 로그">
+                      <button onClick={() => openActivityModal(user)} className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400" title="활동 로그">
                         <ClipboardList size={18}/>
                       </button>
-                      <button onClick={() => openEditModal(user)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer" title="정보 수정">
+                      <button onClick={() => openEditModal(user)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" title="정보 수정">
                         <Edit2 size={18}/>
                       </button>
-                      <button onClick={() => setConfirmDeleteTarget(user)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer" title="계정 삭제">
+                      <button onClick={() => setConfirmDeleteTarget(user)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400" title="계정 삭제">
                         <Trash2 size={18}/>
                       </button>
                     </div>
@@ -1075,7 +1143,7 @@ export default function UserManagement() {
                 <Dialog.Title className="font-bold text-lg flex items-center gap-2">
                   <Edit2 size={18} className="text-blue-400"/> 사용자 정보 수정
                 </Dialog.Title>
-                <button onClick={() => setIsEditModalOpen(false)} className="hover:bg-white/20 p-1.5 rounded-lg transition-colors cursor-pointer"><X size={20}/></button>
+                <button onClick={() => setIsEditModalOpen(false)} className="hover:bg-white/20 p-1.5 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60" aria-label="닫기"><X size={20}/></button>
               </div>
 
               <form onSubmit={handleEditSave} className="p-6 bg-slate-50 space-y-4">
@@ -1125,7 +1193,7 @@ export default function UserManagement() {
                     {activityUser?.name} · {activityUser?.employee_id} · 최근 최대 30일
                   </p>
                 </div>
-                <button onClick={() => setActivityUser(null)} className="hover:bg-white/20 p-1.5 rounded-lg transition-colors cursor-pointer">
+                <button onClick={() => setActivityUser(null)} className="hover:bg-white/20 p-1.5 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60" aria-label="닫기">
                   <X size={20}/>
                 </button>
               </div>

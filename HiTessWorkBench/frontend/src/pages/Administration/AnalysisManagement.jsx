@@ -2,13 +2,14 @@
 /// 관리자 전용 해석 관리 및 통계 대시보드.
 /// </summary>
 import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, BarChart3 } from 'lucide-react';
 import { getAllAnalysisHistory } from '../../api/analysis';
 import { useToast } from '../../contexts/ToastContext';
 import { downloadBlob } from '../../utils/fileHelper';
 import { formatDateTime } from '../../utils/formatting';
 import AnalysisFilterBar from '../../components/admin/AnalysisFilterBar';
 import AnalysisHistoryTable from '../../components/admin/AnalysisHistoryTable';
+import PageHeader from '../../components/ui/PageHeader';
 
 const PAGE_SIZE = 25;
 const AnalysisStatsDashboard = lazy(() => import('../../components/admin/AnalysisStatsDashboard'));
@@ -24,6 +25,7 @@ export default function AnalysisManagement() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState('All');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -89,9 +91,23 @@ export default function AnalysisManagement() {
   };
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
+  // 상태 필터 — 서버 페이지네이션 위에서 동작하므로 현재 로드된 페이지(analyses)에만 적용된다.
+  const displayedAnalyses = statusFilter === 'All' ? analyses : analyses.filter(a => a.status === statusFilter);
+
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
-      <AnalysisFilterBar dateFrom={dateFrom} dateTo={dateTo} onDateFromChange={handleDateFromChange} onDateToChange={handleDateToChange} onDownloadCSV={downloadCSV} />
+      <PageHeader
+        title="Analysis Management"
+        icon={BarChart3}
+        subtitle="해석 프로그램 사용량, 성공률, 사용자별 활용 현황을 확인하는 관리자 대시보드"
+        accentColor="violet"
+      />
+
+      <AnalysisFilterBar
+        dateFrom={dateFrom} dateTo={dateTo} onDateFromChange={handleDateFromChange} onDateToChange={handleDateToChange}
+        onDownloadCSV={downloadCSV}
+        statusFilter={statusFilter} onStatusFilterChange={setStatusFilter}
+      />
 
       {loading ? (
         <div className="flex justify-center py-20"><RefreshCw className="animate-spin text-blue-500" size={40}/></div>
@@ -105,7 +121,7 @@ export default function AnalysisManagement() {
             <AnalysisStatsDashboard stats={stats} dateFrom={dateFrom} dateTo={dateTo} />
           </Suspense>
           <AnalysisHistoryTable
-            filteredAnalyses={analyses}
+            filteredAnalyses={displayedAnalyses}
             searchTerm={searchTerm}
             onSearchChange={handleSearchChange}
             currentPage={currentPage}

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, Fragment } from 'react';
-import { Archive, CheckCircle2, LayoutGrid, Lightbulb, List, MessageCircle, Plus, Send, Tag, ThumbsUp, Trash2, X, Flag } from 'lucide-react';
+import React, { useState, useEffect, Fragment, useMemo } from 'react';
+import { Archive, CheckCircle2, LayoutGrid, Lightbulb, List, MessageCircle, Plus, Search, Send, Tag, ThumbsUp, Trash2, X, Flag } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { getFeatureRequests, createFeatureRequest, upvoteFeatureRequest, commentFeatureRequest, deleteFeatureRequest } from '../../api/admin';
 import PageHeader from '../../components/ui/PageHeader';
@@ -7,11 +7,19 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 
+// 카드/리스트 미리보기 전용 — 본문 앞에 자동 삽입된 "[관련 모듈: ...]" 같은
+// 메타데이터 라인을 걷어내고 실제 설명만 보여준다. 저장 데이터·상세보기는 원본 그대로 유지.
+const stripMetaPreview = (content) => {
+  if (!content) return '';
+  return String(content).replace(/^\s*(\[[^\]]*\]\s*\n?)+/, '').trim();
+};
+
 export default function UserRequests() {
   const { showToast } = useToast();
   const { user: currentUser, isAdmin } = useAuth();
   const [requests, setRequests] = useState([]);
   const [viewMode, setViewMode] = useState('card');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [isWriteModalOpen, setIsWriteModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -102,15 +110,26 @@ export default function UserRequests() {
   };
 
   const resolvedStatuses = new Set(['Resolved', 'Completed', 'Done', '해결 완료']);
-  const activeRequests = requests.filter(req => !resolvedStatuses.has(req.status));
-  const resolvedRequests = requests.filter(req => resolvedStatuses.has(req.status));
+
+  // 제목/내용 기준 클라이언트 검색 (백엔드 변경 없음)
+  const filteredRequests = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return requests;
+    return requests.filter(req =>
+      (req.title || '').toLowerCase().includes(q) || (req.content || '').toLowerCase().includes(q)
+    );
+  }, [requests, searchQuery]);
+
+  const activeRequests = filteredRequests.filter(req => !resolvedStatuses.has(req.status));
+  const resolvedRequests = filteredRequests.filter(req => resolvedStatuses.has(req.status));
 
   const ViewToggle = () => (
     <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
       <button
         type="button"
         onClick={() => setViewMode('card')}
-        className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors cursor-pointer ${viewMode === 'card' ? 'bg-brand-blue text-white' : 'text-slate-500 hover:bg-slate-100'}`}
+        aria-label="카드 보기"
+        className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${viewMode === 'card' ? 'bg-brand-blue text-white' : 'text-slate-500 hover:bg-slate-100'}`}
         title="카드 보기"
       >
         <LayoutGrid size={16} />
@@ -118,7 +137,8 @@ export default function UserRequests() {
       <button
         type="button"
         onClick={() => setViewMode('list')}
-        className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors cursor-pointer ${viewMode === 'list' ? 'bg-brand-blue text-white' : 'text-slate-500 hover:bg-slate-100'}`}
+        aria-label="리스트 보기"
+        className={`h-8 w-8 rounded-md flex items-center justify-center transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${viewMode === 'list' ? 'bg-brand-blue text-white' : 'text-slate-500 hover:bg-slate-100'}`}
         title="리스트 보기"
       >
         <List size={16} />
@@ -152,7 +172,7 @@ export default function UserRequests() {
         <span className="text-xs text-slate-400 font-bold">{req.author_name}</span>
       </div>
       <h3 className="text-lg font-bold text-slate-800 mb-2">{req.title}</h3>
-      <p className="text-sm text-slate-500 mb-2 flex-1 line-clamp-3 whitespace-pre-wrap">{req.content}</p>
+      <p className="text-sm text-slate-500 mb-2 flex-1 line-clamp-3 whitespace-pre-wrap">{stripMetaPreview(req.content)}</p>
       <AdminCommentPreview req={req} muted={resolved} />
       <div className="flex items-center justify-between border-t border-slate-100 pt-4 mt-4">
         <div className="flex gap-4">
@@ -185,7 +205,7 @@ export default function UserRequests() {
                 <span className="text-xs text-slate-300">{new Date(req.created_at).toLocaleDateString()}</span>
               </div>
               <h3 className="font-bold text-slate-800 truncate">{req.title}</h3>
-              <p className="text-sm text-slate-500 line-clamp-2 whitespace-pre-wrap mt-1">{req.content}</p>
+              <p className="text-sm text-slate-500 line-clamp-2 whitespace-pre-wrap mt-1">{stripMetaPreview(req.content)}</p>
               <AdminCommentPreview req={req} muted={resolved} />
             </div>
             <div className="flex items-center gap-4 text-slate-400 lg:pt-7">
@@ -231,13 +251,25 @@ export default function UserRequests() {
         title="User Requests"
         icon={Lightbulb}
         subtitle="필요한 기능이나 개선사항을 제안해 주세요. 모든 사용자가 작성할 수 있습니다."
-        accentColor="amber"
+        accentColor="teal"
         actions={
           <button onClick={openWriteModal} className="flex items-center gap-2 px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg text-sm font-bold hover:bg-white/20 transition-colors cursor-pointer">
             <Plus size={18} /> 새 요청 작성
           </button>
         }
       />
+
+      {/* ── 검색 ── */}
+      <div className="relative max-w-sm mb-6">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="제목 또는 내용으로 검색"
+          className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition-colors"
+        />
+      </div>
 
       <RequestSection
         title="진행 중인 요청"
@@ -263,7 +295,11 @@ export default function UserRequests() {
                   <Dialog.Title className="font-extrabold text-lg flex items-center gap-2 text-brand-blue"><Lightbulb size={20} /> 시스템 기능 개선 제안</Dialog.Title>
                   <p className="text-xs font-bold text-brand-blue/70 mt-1">여러분의 아이디어가 더 나은 워크벤치를 만듭니다.</p>
                 </div>
-                <button onClick={() => setIsWriteModalOpen(false)} className="hover:bg-white/20 p-1.5 rounded-lg transition-colors cursor-pointer"><X size={24}/></button>
+                <button
+                  onClick={() => setIsWriteModalOpen(false)}
+                  aria-label="작성 창 닫기"
+                  className="hover:bg-white/20 p-1.5 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue"
+                ><X size={24}/></button>
               </div>
               <form onSubmit={handleSubmit} className="p-6 bg-slate-50 space-y-6">
                 <div className="flex gap-4">
@@ -313,7 +349,11 @@ export default function UserRequests() {
                   <Dialog.Title className="text-2xl font-bold text-slate-800">{selectedReq?.title}</Dialog.Title>
                   <p className="text-xs text-slate-400 mt-2">작성자: {selectedReq?.author_name} | {selectedReq && new Date(selectedReq.created_at).toLocaleString()}</p>
                 </div>
-                <button onClick={() => setIsViewModalOpen(false)}><X size={24} className="text-slate-400 hover:text-slate-800 cursor-pointer"/></button>
+                <button
+                  onClick={() => setIsViewModalOpen(false)}
+                  aria-label="상세 보기 닫기"
+                  className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                ><X size={24} className="text-slate-400 hover:text-slate-800 cursor-pointer"/></button>
               </div>
               
               <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
@@ -360,7 +400,8 @@ export default function UserRequests() {
                                 <button
                                   onClick={() => setConfirmDeleteOpen(true)}
                                   title="게시글 삭제"
-                                  className="text-slate-300 hover:text-red-500 transition-colors cursor-pointer p-1 rounded-md hover:bg-red-50"
+                                  aria-label="게시글 삭제"
+                                  className="text-slate-300 hover:text-red-500 transition-colors cursor-pointer p-1 rounded-md hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                                 >
                                   <Trash2 size={14} />
                                 </button>

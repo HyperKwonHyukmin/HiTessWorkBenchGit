@@ -106,6 +106,7 @@ import {
   getActiveJobs, getStoragePreview, runStorageCleanup,
 } from '../../api/admin';
 import PageHeader from '../../components/ui/PageHeader';
+import { KpiCard } from '../../components/ui/KpiCard';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../contexts/ToastContext';
 import { getAllAnalysisHistory } from '../../api/analysis';
@@ -392,7 +393,7 @@ export default function SystemSettings() {
         title="System Management"
         icon={Settings}
         subtitle="시스템 리소스, 작업 큐, 서비스 현황을 실시간으로 모니터링합니다."
-        accentColor="teal"
+        accentColor="violet"
         actions={
           <div className="flex items-center gap-2 px-3 py-1 bg-white/10 border border-white/20 text-emerald-300 rounded-full text-xs font-bold">
             <span className="relative flex h-2 w-2">
@@ -404,36 +405,12 @@ export default function SystemSettings() {
         }
       />
 
-      {/* D. 요약 KPI 카드 */}
+      {/* D. 요약 KPI 카드 — 공통 KpiCard(components/ui/KpiCard) 사용, border-l-4 스트라이프 제거 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center border-l-4 border-l-blue-500">
-          <div>
-            <p className="text-xs font-bold text-slate-400 mb-1">Total Users</p>
-            <h3 className="text-2xl font-black text-slate-800">{totalUsers}</h3>
-          </div>
-          <Users className="text-blue-200" size={32} />
-        </div>
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center border-l-4 border-l-emerald-500">
-          <div>
-            <p className="text-xs font-bold text-slate-400 mb-1">Active Users</p>
-            <h3 className="text-2xl font-black text-slate-800">{activeUsers}</h3>
-          </div>
-          <Users className="text-emerald-200" size={32} />
-        </div>
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center border-l-4 border-l-indigo-500">
-          <div>
-            <p className="text-xs font-bold text-slate-400 mb-1">Total Analyses</p>
-            <h3 className="text-2xl font-black text-slate-800">{totalAnalyses}</h3>
-          </div>
-          <BarChart3 className="text-indigo-200" size={32} />
-        </div>
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center border-l-4 border-l-violet-500">
-          <div>
-            <p className="text-xs font-bold text-slate-400 mb-1">Server Version</p>
-            <h3 className="text-2xl font-black text-slate-800">{version}</h3>
-          </div>
-          <Tag className="text-violet-200" size={32} />
-        </div>
+        <KpiCard label="Total Users" value={totalUsers} icon={Users} color="blue" />
+        <KpiCard label="Active Users" value={activeUsers} icon={Users} color="emerald" />
+        <KpiCard label="Total Analyses" value={totalAnalyses} icon={BarChart3} color="cyan" />
+        <KpiCard label="Server Version" value={version} icon={Tag} color="violet" />
       </div>
 
       {/* 운영 상태 요약 */}

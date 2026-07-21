@@ -19,10 +19,10 @@ import { NetworkProvider } from './contexts/NetworkContext';
 import { RecentActivityProvider } from './contexts/RecentActivityContext';
 import UpdateModal from './components/UpdateModal';
 import ChatDock from './components/chat/ChatDock';
+import { ADMIN_MENUS } from './constants/adminMenus';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8시간 미활동 시 자동 로그아웃
-const ADMIN_MENUS = new Set(['User Management', 'Analysis Management', 'System Management', 'System Settings', 'Usage Reports', 'API Apps']);
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
 const MENU_ENTRY_MAX_AGE_MS = 5000;
 

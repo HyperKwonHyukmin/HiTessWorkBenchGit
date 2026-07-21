@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, LineChart } from 'lucide-react';
 import { getUsageReport } from '../../api/reports';
 import PeriodTabs from '../../components/admin/reports/PeriodTabs';
 import PeriodNavigator from '../../components/admin/reports/PeriodNavigator';
@@ -11,6 +11,7 @@ import ReportDepartmentChart from '../../components/admin/reports/ReportDepartme
 import ExportXlsxButton from '../../components/admin/reports/ExportXlsxButton';
 import ExportPngButton from '../../components/admin/reports/ExportPngButton';
 import ReportPrintView from '../../components/admin/reports/ReportPrintView';
+import PageHeader from '../../components/ui/PageHeader';
 
 function defaultDateFor(period) {
   const d = new Date();
@@ -83,6 +84,13 @@ export default function UsageReports() {
 
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
+      <PageHeader
+        title="Usage Reports"
+        icon={LineChart}
+        subtitle="일간·주간·월간 사용량을 집계하여 프로그램·부서·사용자별 활용 현황을 확인합니다."
+        accentColor="violet"
+      />
+
       <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
         <div className="flex items-center gap-4">
           <PeriodTabs value={period} onChange={handlePeriodChange} />

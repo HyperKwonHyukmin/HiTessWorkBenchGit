@@ -8,30 +8,13 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
 import ProgramDetailModal from './ProgramDetailModal';
+import { KpiCard } from '../ui/KpiCard';
 
 const COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be123c', '#4f46e5'];
 
-const KPI_COLOR_MAP = {
-  blue: 'border-l-blue-500 bg-blue-50 text-blue-700',
-  emerald: 'border-l-emerald-500 bg-emerald-50 text-emerald-700',
-  amber: 'border-l-amber-500 bg-amber-50 text-amber-700',
-  violet: 'border-l-violet-500 bg-violet-50 text-violet-700',
-};
-
-export function KpiCard({ label, value, sub, icon: Icon, color }) {
-  return (
-    <div className={`bg-white border border-slate-200 border-l-4 ${KPI_COLOR_MAP[color]} rounded-lg p-4 shadow-sm`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">{label}</p>
-          <p className="mt-1 text-2xl font-black text-slate-900">{value}</p>
-          {sub && <p className="mt-1 text-xs text-slate-500 truncate">{sub}</p>}
-        </div>
-        <Icon size={26} className="shrink-0 opacity-70" />
-      </div>
-    </div>
-  );
-}
+// KpiCard는 표준 컴포넌트(components/ui/KpiCard)로 이전되어 border-l-4 스트라이프를 제거했다.
+// 기존 import 경로(ReportKpiGrid 등) 호환을 위해 재노출한다.
+export { KpiCard };
 
 function ProgramTable({ rows, onSelect }) {
   return (

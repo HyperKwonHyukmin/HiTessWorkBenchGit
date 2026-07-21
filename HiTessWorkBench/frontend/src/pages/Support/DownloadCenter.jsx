@@ -4,6 +4,7 @@ import { Download, CheckCircle, Clock, Package, BookOpen, Wrench, Cpu, FileText,
 import { API_BASE_URL } from '../../config';
 import { getAuthHeaders } from '../../utils/auth';
 import { useToast } from '../../contexts/ToastContext';
+import PageHeader from '../../components/ui/PageHeader';
 
 const DOWNLOADS = [
   {
@@ -65,6 +66,11 @@ export default function DownloadCenter() {
   const filtered = activeCategory === 'all'
     ? DOWNLOADS
     : DOWNLOADS.filter(d => d.category === activeCategory);
+
+  // 등록된 항목이 하나도 없는 분류(탭)는 노출하지 않는다 ('전체'는 항상 유지)
+  const visibleCategories = CATEGORIES.filter(
+    c => c.key === 'all' || DOWNLOADS.some(d => d.category === c.key)
+  );
 
   const handleDownload = async (item) => {
     if (downloading) return;
@@ -156,16 +162,12 @@ export default function DownloadCenter() {
 
   return (
     <div className="w-full min-w-0 pb-10 animate-fade-in-up">
-      {/* 페이지 헤더 */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-brand-blue tracking-tight flex items-center gap-3">
-          <Download className="text-blue-500 shrink-0" size={28} />
-          Download Center
-        </h1>
-        <p className="text-slate-500 mt-2 text-sm">
-          HiTess 관련 프로그램 및 도구를 다운로드하세요. 최신 버전 사용을 권장합니다.
-        </p>
-      </div>
+      <PageHeader
+        title="Download Center"
+        icon={Download}
+        subtitle="HiTess 관련 프로그램 및 도구를 다운로드하세요. 최신 버전 사용을 권장합니다."
+        accentColor="teal"
+      />
 
       {/* 통계 뱃지 */}
       <div className="flex flex-wrap gap-3 mb-5">
@@ -179,17 +181,11 @@ export default function DownloadCenter() {
             Stable {DOWNLOADS.filter(d => d.status === 'stable').length}개
           </span>
         </div>
-        <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 shadow-sm">
-          <Clock size={15} className="text-amber-500 shrink-0" />
-          <span className="text-xs font-medium text-slate-600 whitespace-nowrap">
-            준비중 {DOWNLOADS.filter(d => !d.filename).length}개
-          </span>
-        </div>
       </div>
 
       {/* 카테고리 필터 탭 */}
       <div className="flex flex-wrap gap-2 mb-5">
-        {CATEGORIES.map(({ key, label, icon: Icon, color, activeColor }) => {
+        {visibleCategories.map(({ key, label, icon: Icon, color, activeColor }) => {
           const isActive = activeCategory === key;
           const count = key === 'all' ? DOWNLOADS.length : DOWNLOADS.filter(d => d.category === key).length;
           return (

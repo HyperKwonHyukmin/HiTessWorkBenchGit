@@ -16,10 +16,11 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import EnvironmentDiagnosticsModal from '../platform/EnvironmentDiagnosticsModal';
 import CommandPalette from '../platform/CommandPalette';
+import { ADMIN_MENUS } from '../../constants/adminMenus';
 
-const ADMIN_MENUS = new Set(['User Management', 'Analysis Management', 'System Management', 'Usage Reports', 'API Apps']);
 const ADMIN_GATE_SESSION_KEY = 'admin_gate_unlocked';
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
+const GROUP_MENU_BY_MODE = { File: 'File-Based Apps', Interactive: 'Interactive Apps', Parametric: 'Parametric Apps', Productivity: 'Productivity Apps' };
 
 // ✅ 파라미터에 goBack 등 히스토리 관련 props 추가
 export default function Layout({ 
@@ -130,6 +131,12 @@ export default function Layout({
     ].slice(0, 8);
   }, [menuItems, searchTerm]);
 
+  // 브레드크럼용 그룹 — 현재 메뉴가 특정 앱이면 상위 그룹 메뉴를 계산한다(Sidebar와 동일 규칙).
+  const breadcrumbGroup = useMemo(() => {
+    const app = ANALYSIS_DATA.find(item => getAppMenuName(item.title) === currentMenu || item.title === currentMenu);
+    return app ? GROUP_MENU_BY_MODE[app.mode] : null;
+  }, [currentMenu]);
+
   const toggleSidebar = useCallback(() => {
     setIsCollapsed(prev => !prev);
   }, []);
@@ -222,7 +229,7 @@ export default function Layout({
               <button 
                 onClick={goBack} 
                 disabled={!canGoBack}
-                className={`p-1 rounded-md transition-all ${
+                className={`p-1 rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                   canGoBack 
                     ? 'text-slate-600 hover:bg-white hover:shadow-sm cursor-pointer' 
                     : 'text-slate-300 cursor-not-allowed opacity-50'
@@ -234,7 +241,7 @@ export default function Layout({
               <button 
                 onClick={goForward} 
                 disabled={!canGoForward}
-                className={`p-1 rounded-md transition-all ${
+                className={`p-1 rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                   canGoForward 
                     ? 'text-slate-600 hover:bg-white hover:shadow-sm cursor-pointer' 
                     : 'text-slate-300 cursor-not-allowed opacity-50'
@@ -245,9 +252,23 @@ export default function Layout({
               </button>
             </div>
 
-            <h2 className="text-base lg:text-lg font-bold text-slate-700 hidden md:block truncate min-w-0 max-w-[16rem] xl:max-w-[24rem]" title={currentMenu}>
-              {currentMenu}
-            </h2>
+            <div className="hidden md:flex items-center gap-1.5 min-w-0 max-w-[16rem] xl:max-w-[26rem]">
+              {breadcrumbGroup && breadcrumbGroup !== currentMenu && (
+                <>
+                  <button
+                    onClick={() => handleNavigate(breadcrumbGroup)}
+                    className="text-sm font-semibold text-slate-400 hover:text-blue-600 truncate shrink-0 rounded cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    title={`${breadcrumbGroup}로 이동`}
+                  >
+                    {breadcrumbGroup}
+                  </button>
+                  <ChevronRight size={14} className="text-slate-300 shrink-0" aria-hidden="true" />
+                </>
+              )}
+              <h2 className="text-base lg:text-lg font-bold text-slate-700 truncate min-w-0" title={currentMenu}>
+                {currentMenu}
+              </h2>
+            </div>
             
             <div ref={searchRef} className="relative ml-0 md:ml-2 lg:ml-4 min-w-0 shrink">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />

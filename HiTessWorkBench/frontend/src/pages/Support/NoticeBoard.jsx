@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Fragment, useMemo } from 'react';
-import { Megaphone, Plus, ChevronRight, Pin, X, Edit2, Trash2, Bold, Italic, List, Link, Paperclip, CalendarDays, Inbox, Lock } from 'lucide-react';
+import { Megaphone, Plus, ChevronRight, Pin, X, Edit2, Trash2, CalendarDays, Inbox, Lock, Search } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { getNotices, createNotice, updateNotice, deleteNotice } from '../../api/admin';
 import GuideButton from '../../components/ui/GuideButton';
@@ -38,6 +38,7 @@ export default function NoticeBoard() {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const [formData, setFormData] = useState({ type: 'Notice', title: '', content: '', is_pinned: false, is_private: false });
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     fetchNotices();
@@ -97,8 +98,18 @@ export default function NoticeBoard() {
     } catch (err) { showToast('저장 실패: 서버 연결을 확인하세요.', 'error'); console.error(err); }
   };
 
-  const pinnedNotices = useMemo(() => notices.filter(n => n.is_pinned), [notices]);
-  const regularNotices = useMemo(() => notices.filter(n => !n.is_pinned), [notices]);
+  // 제목/내용 기준 클라이언트 검색 (백엔드 변경 없음)
+  const filteredNotices = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return notices;
+    return notices.filter(n =>
+      (n.title || '').toLowerCase().includes(q) || (n.content || '').toLowerCase().includes(q)
+    );
+  }, [notices, searchQuery]);
+
+  const pinnedNotices = useMemo(() => filteredNotices.filter(n => n.is_pinned), [filteredNotices]);
+  const regularNotices = useMemo(() => filteredNotices.filter(n => !n.is_pinned), [filteredNotices]);
+  const isSearching = searchQuery.trim().length > 0;
 
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-fade-in-up">
@@ -106,10 +117,10 @@ export default function NoticeBoard() {
         title="Notice & Updates"
         icon={Megaphone}
         subtitle="시스템 업데이트 내역 및 중요 공지사항을 확인하세요."
-        accentColor="blue"
+        accentColor="teal"
         actions={
           <>
-            <GuideButton guideTitle="Notice & Updates — HiTess WorkBench 개발 현황 및 로드맵" />
+            <GuideButton guideTitle="Notice & Updates — HiTess WorkBench 개발 현황 및 로드맵" variant="dark" />
             {isAdmin && (
               <button onClick={openWriteModal} className="flex items-center gap-2 px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg text-sm font-bold hover:bg-white/20 transition-colors cursor-pointer">
                 <Plus size={18} /> 새 공지 작성
@@ -118,6 +129,18 @@ export default function NoticeBoard() {
           </>
         }
       />
+
+      {/* ── 검색 ── */}
+      <div className="relative max-w-sm mb-6">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="제목 또는 내용으로 검색"
+          className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition-colors"
+        />
+      </div>
 
       {/* ── Pinned 하이라이트 ── */}
       {pinnedNotices.length > 0 && (
@@ -137,10 +160,10 @@ export default function NoticeBoard() {
                   onClick={() => openViewModal(notice)}
                   className="group relative bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:-translate-y-0.5 hover:border-slate-300 transition-all cursor-pointer overflow-hidden"
                 >
-                  {/* 좌측 컬러 사이드 바 */}
-                  <div className={`absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b ${style.bar}`} />
+                  {/* 상단 컬러 바 (타입 색상) */}
+                  <div className={`absolute left-0 right-0 top-0 h-1 bg-gradient-to-r ${style.bar}`} />
 
-                  <div className="pl-6 pr-5 py-5">
+                  <div className="px-5 py-5">
                     <div className="flex items-center justify-between mb-2.5">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${style.chip}`}>
                         {style.label}
@@ -202,8 +225,8 @@ export default function NoticeBoard() {
         {regularNotices.length === 0 && pinnedNotices.length === 0 ? (
           <div className="bg-white rounded-2xl border border-dashed border-slate-300 py-16 flex flex-col items-center justify-center text-slate-400">
             <Inbox size={36} className="mb-2 opacity-50" />
-            <p className="text-sm font-semibold">등록된 공지사항이 없습니다.</p>
-            <p className="text-xs mt-1">관리자가 새 공지를 작성하면 이곳에 표시됩니다.</p>
+            <p className="text-sm font-semibold">{isSearching ? '검색 결과가 없습니다.' : '등록된 공지사항이 없습니다.'}</p>
+            <p className="text-xs mt-1">{isSearching ? '다른 검색어로 다시 시도해 보세요.' : '관리자가 새 공지를 작성하면 이곳에 표시됩니다.'}</p>
           </div>
         ) : regularNotices.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 py-10 text-center text-sm text-slate-400">
@@ -219,8 +242,8 @@ export default function NoticeBoard() {
                   onClick={() => openViewModal(notice)}
                   className="relative flex items-center gap-4 px-6 py-4 hover:bg-slate-50/70 transition-colors cursor-pointer group"
                 >
-                  {/* 좌측 hover 시 표시되는 컬러 바 */}
-                  <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${style.bar} opacity-0 group-hover:opacity-100 transition-opacity`} />
+                  {/* 상단 hover 시 표시되는 컬러 바 */}
+                  <div className={`absolute left-0 right-0 top-0 h-0.5 bg-gradient-to-r ${style.bar} opacity-0 group-hover:opacity-100 transition-opacity`} />
 
                   <span className={`inline-flex items-center justify-center w-20 shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold border ${style.chip}`}>
                     {style.label}
@@ -271,7 +294,11 @@ export default function NoticeBoard() {
                   </Dialog.Title>
                   <p className="text-xs text-blue-200 mt-1">시스템의 중요 변경사항을 전사에 공유합니다.</p>
                 </div>
-                <button onClick={() => setIsWriteModalOpen(false)} className="hover:bg-white/10 p-1.5 rounded-lg transition-colors cursor-pointer"><X size={24}/></button>
+                <button
+                  onClick={() => setIsWriteModalOpen(false)}
+                  aria-label="작성 창 닫기"
+                  className="hover:bg-white/10 p-1.5 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+                ><X size={24}/></button>
               </div>
 
               <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 bg-slate-50 space-y-6 custom-scrollbar">
@@ -310,20 +337,7 @@ export default function NoticeBoard() {
                 </div>
 
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="flex items-center gap-2 bg-slate-100 border-b border-slate-200 p-2 text-slate-500">
-                    <button type="button" className="p-1.5 hover:bg-white rounded"><Bold size={16}/></button>
-                    <button type="button" className="p-1.5 hover:bg-white rounded"><Italic size={16}/></button>
-                    <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                    <button type="button" className="p-1.5 hover:bg-white rounded"><List size={16}/></button>
-                    <button type="button" className="p-1.5 hover:bg-white rounded"><Link size={16}/></button>
-                  </div>
                   <textarea required placeholder="상세 내용을 작성해 주세요." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} className="w-full h-64 p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500/20 resize-none text-sm leading-relaxed text-slate-700" />
-                </div>
-
-                <div className="border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center justify-center text-slate-500 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer">
-                  <Paperclip size={24} className="mb-2 text-slate-400" />
-                  <span className="text-sm font-bold">참고 자료 첨부 (PDF, 이미지 등)</span>
-                  <span className="text-xs mt-1">클릭하거나 파일을 이곳으로 드래그 하세요</span>
                 </div>
 
                 <div className="flex justify-end gap-3 pt-4 shrink-0">

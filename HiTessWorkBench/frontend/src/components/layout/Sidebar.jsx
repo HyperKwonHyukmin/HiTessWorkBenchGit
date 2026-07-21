@@ -132,7 +132,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
           <div key={section.category} className="mb-4">
             {!isCollapsed && (
               <div className={`px-6 mb-2 text-[10px] font-black uppercase tracking-wider ${
-                section.category === "ADMINISTRATION" ? "text-red-300/90" : "text-slate-400/90"
+                section.category === "ADMINISTRATION" ? "text-slate-300/90" : "text-slate-400/90"
               }`}>
                 {section.category}
               </div>
@@ -146,7 +146,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
                     <button
                       onClick={() => onNavigate(item.label)}
                       aria-current={isActive ? 'page' : undefined}
-                      className={`w-full flex items-center px-4 py-2.5 transition-colors relative group cursor-pointer ${
+                      className={`w-full flex items-center px-4 py-2.5 transition-colors relative group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/70 focus-visible:ring-inset ${
                         isActive
                           ? 'bg-white/10 text-white font-bold'
                           : 'text-slate-300 hover:bg-white/5 hover:text-white'
@@ -158,7 +158,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
                       )}
 
                       <div className={`${isCollapsed ? 'mx-auto' : 'mr-3'} ${isActive ? 'text-brand-accent' : ''}`}>
-                         <item.icon size={20} className={section.category === "ADMINISTRATION" && !isActive ? "text-red-400/70 group-hover:text-red-400" : ""} />
+                         <item.icon size={20} />
                       </div>
 
                       {!isCollapsed && (
@@ -179,7 +179,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate 
             © 2026 Kwon Hyuk Min<br/>All rights reserved.
           </p>
         )}
-        <button onClick={toggleSidebar} className="w-full flex items-center justify-center p-2 rounded bg-white/5 hover:bg-white/10 text-white transition-colors cursor-pointer" aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+        <button onClick={toggleSidebar} className="w-full flex items-center justify-center p-2 rounded bg-white/5 hover:bg-white/10 text-white transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/70" aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
           {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
       </div>

@@ -1,11 +1,12 @@
-import React, { useState, useEffect, Fragment } from 'react';
+import React, { useState, useEffect, Fragment, useMemo } from 'react';
 import {
   BookOpen, Edit3, X, Terminal, Eye, Trash2, Edit2,
-  Rocket, BarChart2, FileSearch, Wrench, ChevronDown, HelpCircle, Lightbulb,
+  Rocket, BarChart2, FileSearch, Wrench, ChevronDown, HelpCircle, Lightbulb, Search,
 } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { getUserGuides, createUserGuide, updateUserGuide, deleteUserGuide } from '../../api/admin';
 import MarkdownRenderer from '../../components/ui/MarkdownRenderer';
+import PageHeader from '../../components/ui/PageHeader';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -64,6 +65,7 @@ export default function UserGuide() {
   const [activeCategory, setActiveCategory] = useState("Getting Started");
   const [expandedId, setExpandedId]         = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [searchQuery, setSearchQuery]       = useState('');
 
   const [formData, setFormData] = useState({ category: 'Getting Started', title: '', content: '' });
 
@@ -115,28 +117,30 @@ export default function UserGuide() {
   };
 
   const currentGuides = guides.filter(g => g.category === activeCategory);
+
+  // 제목/내용 기준 클라이언트 검색 (백엔드 변경 없음) — 현재 선택된 카테고리 내에서만 필터링
+  const isSearching = searchQuery.trim().length > 0;
+  const visibleGuides = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return currentGuides;
+    return currentGuides.filter(g =>
+      (g.title || '').toLowerCase().includes(q) || (g.content || '').toLowerCase().includes(q)
+    );
+  }, [currentGuides, searchQuery]);
+
   const cfg = CATEGORY_CONFIG[activeCategory] ?? CATEGORY_CONFIG['Getting Started'];
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] animate-fade-in-up">
 
-      {/* ── 그라디언트 헤더 ── */}
-      <div className="relative -mx-6 -mt-6 mb-6 px-8 py-6 bg-gradient-to-r from-brand-blue via-indigo-900 to-indigo-700 overflow-hidden shrink-0">
-        <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
-          <div className="absolute -right-8 -top-8 w-64 h-64 bg-white rounded-full" />
-          <div className="absolute right-32 bottom-0 w-32 h-32 bg-white rounded-full" />
-        </div>
-        <div className="relative flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="bg-white/10 backdrop-blur-sm p-3 rounded-xl text-white border border-white/10">
-              <BookOpen size={22} />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">User Guide</h1>
-              <p className="text-sm text-indigo-200/80 mt-1">시스템 매뉴얼 및 해석 기준 가이드라인을 확인하세요.</p>
-            </div>
-          </div>
-          {isAdmin && (
+      {/* ── 헤더 (공용 PageHeader) ── */}
+      <div className="shrink-0">
+        <PageHeader
+          title="User Guide"
+          icon={BookOpen}
+          subtitle="시스템 매뉴얼 및 해석 기준 가이드라인을 확인하세요."
+          accentColor="teal"
+          actions={isAdmin && (
             <button
               onClick={openWriteModal}
               className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-lg text-sm font-bold transition-colors cursor-pointer"
@@ -144,7 +148,19 @@ export default function UserGuide() {
               <Edit3 size={16} /> 새 가이드 작성
             </button>
           )}
-        </div>
+        />
+      </div>
+
+      {/* ── 검색 ── */}
+      <div className="relative max-w-sm mb-5 shrink-0">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="제목 또는 내용으로 검색"
+          className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition-colors"
+        />
       </div>
 
       {/* ── 본문: 2-column ── */}
@@ -178,12 +194,12 @@ export default function UserGuide() {
 
         {/* 우측 아코디언 가이드 목록 */}
         <div className="flex-1 min-h-0 overflow-y-auto space-y-2.5 pr-1">
-          {currentGuides.length === 0 ? (
+          {visibleGuides.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-slate-400">
               <HelpCircle size={36} className="mb-2 opacity-30" />
-              <p className="text-sm">등록된 가이드라인이 없습니다.</p>
+              <p className="text-sm">{isSearching ? '검색 결과가 없습니다.' : '등록된 가이드라인이 없습니다.'}</p>
             </div>
-          ) : currentGuides.map((guide) => {
+          ) : visibleGuides.map((guide) => {
             const isExpanded = expandedId === guide.id;
             return (
               <div
@@ -212,11 +228,13 @@ export default function UserGuide() {
                       <>
                         <button
                           onClick={(e) => { e.stopPropagation(); openEditModal(guide); }}
-                          className="p-1.5 rounded-lg text-slate-300 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          aria-label="가이드 수정"
+                          className="p-1.5 rounded-lg text-slate-300 hover:text-blue-600 hover:bg-blue-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
                         ><Edit2 size={13} /></button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(guide.id); }}
-                          className="p-1.5 rounded-lg text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          aria-label="가이드 삭제"
+                          className="p-1.5 rounded-lg text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                         ><Trash2 size={13} /></button>
                       </>
                     )}
@@ -252,7 +270,11 @@ export default function UserGuide() {
                 <Dialog.Title className="font-extrabold text-lg flex items-center gap-2">
                   <BookOpen size={20} /> {editMode ? '가이드라인 수정' : '시스템 가이드라인 제정'}
                 </Dialog.Title>
-                <button onClick={() => setIsModalOpen(false)} className="hover:bg-white/20 p-1.5 rounded-lg cursor-pointer">
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  aria-label="편집 창 닫기"
+                  className="hover:bg-white/20 p-1.5 rounded-lg cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                >
                   <X size={24} />
                 </button>
               </div>
@@ -269,8 +291,6 @@ export default function UserGuide() {
                     >
                       {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
-                    <label className="block text-xs font-bold text-indigo-600 uppercase mt-4 mb-2">대상 버전</label>
-                    <input type="text" placeholder="ex) v0.0.6 이상" className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-indigo-500 text-sm font-mono" />
                   </div>
                   <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
                     <p className="text-xs text-indigo-800 font-bold mb-1 flex items-center gap-1"><Lightbulb size={13} /> 작성 팁</p>

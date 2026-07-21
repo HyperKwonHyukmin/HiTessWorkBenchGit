@@ -7,9 +7,10 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   MessagesSquare, Plus, Trash2, Megaphone, MessageSquare, Users2,
   RefreshCw, Bell, BellOff, ClipboardCheck, Pin, EyeOff, CalendarClock,
-  CheckCircle2, XCircle, Power, PowerOff, X, Inbox,
+  CheckCircle2, XCircle, Power, PowerOff, X, Inbox, Search,
 } from 'lucide-react';
 import PageHeader from '../../components/ui/PageHeader';
+import { KpiCard } from '../../components/ui/KpiCard';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../contexts/ToastContext';
 import {
@@ -42,6 +43,7 @@ export default function AppCommunityManagement() {
   const [loading, setLoading] = useState(true);
   const [selectedKey, setSelectedKey] = useState(null);
   const [togglingKey, setTogglingKey] = useState(null);
+  const [appSearch, setAppSearch] = useState('');
 
   // 선택된 App 상세
   const [notices, setNotices] = useState([]);
@@ -102,6 +104,16 @@ export default function AppCommunityManagement() {
     () => spaces.find(s => s.app_key === selectedKey) || null,
     [spaces, selectedKey],
   );
+
+  // 좌측 App 목록 검색 — 표시 이름 또는 app key 부분일치
+  const filteredSpaces = useMemo(() => {
+    const term = appSearch.trim().toLowerCase();
+    if (!term) return spaces;
+    return spaces.filter(s =>
+      (s.display_name || '').toLowerCase().includes(term) ||
+      (s.app_key || '').toLowerCase().includes(term)
+    );
+  }, [spaces, appSearch]);
 
   const totals = useMemo(() => ({
     apps: spaces.length,
@@ -199,10 +211,10 @@ export default function AppCommunityManagement() {
   };
 
   const kpis = [
-    { label: '총 App', value: totals.apps, icon: MessagesSquare, color: 'text-blue-200', border: 'border-l-blue-500' },
-    { label: '활성 App', value: totals.active, icon: Power, color: 'text-emerald-200', border: 'border-l-emerald-500' },
-    { label: '총 공지', value: totals.notices, icon: Megaphone, color: 'text-indigo-200', border: 'border-l-indigo-500' },
-    { label: '총 게시글', value: totals.requests, icon: MessageSquare, color: 'text-violet-200', border: 'border-l-violet-500' },
+    { label: '총 App', value: totals.apps, icon: MessagesSquare, color: 'blue' },
+    { label: '활성 App', value: totals.active, icon: Power, color: 'emerald' },
+    { label: '총 공지', value: totals.notices, icon: Megaphone, color: 'cyan' },
+    { label: '총 게시글', value: totals.requests, icon: MessageSquare, color: 'violet' },
   ];
 
   return (
@@ -211,7 +223,7 @@ export default function AppCommunityManagement() {
         title="App Community 관리"
         icon={MessagesSquare}
         subtitle="앱별 공지·게시판 기능을 켜고 끄고, 공지/게시글 현황과 진입공지 확인 현황을 관리합니다."
-        accentColor="teal"
+        accentColor="violet"
         actions={
           <button
             onClick={fetchSpaces}
@@ -222,16 +234,10 @@ export default function AppCommunityManagement() {
         }
       />
 
-      {/* KPI */}
+      {/* KPI — 공통 KpiCard(components/ui/KpiCard) 사용, border-l-4 스트라이프 제거 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {kpis.map(k => (
-          <div key={k.label} className={`bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center border-l-4 ${k.border}`}>
-            <div>
-              <p className="text-xs font-bold text-slate-400 mb-1">{k.label}</p>
-              <h3 className="text-2xl font-black text-slate-800 tabular-nums">{k.value}</h3>
-            </div>
-            <k.icon className={k.color} size={32} />
-          </div>
+          <KpiCard key={k.label} label={k.label} value={k.value} icon={k.icon} color={k.color} />
         ))}
       </div>
 
@@ -279,6 +285,20 @@ export default function AppCommunityManagement() {
             )}
           </div>
 
+          {/* 검색 */}
+          {spaces.length > 0 && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="App 이름 또는 key 검색..."
+                value={appSearch}
+                onChange={e => setAppSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-1 focus:ring-teal-400 shadow-sm"
+              />
+            </div>
+          )}
+
           {/* 목록 */}
           {loading ? (
             <div className="text-center py-16 text-slate-400"><RefreshCw size={20} className="inline animate-spin mr-2" />불러오는 중...</div>
@@ -287,8 +307,13 @@ export default function AppCommunityManagement() {
               <Inbox size={28} className="mb-2 text-slate-300" />
               <p className="text-sm font-bold">등록된 App 커뮤니티가 없습니다.</p>
             </div>
+          ) : filteredSpaces.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-200">
+              <Search size={28} className="mb-2 text-slate-300" />
+              <p className="text-sm font-bold">검색 결과가 없습니다.</p>
+            </div>
           ) : (
-            spaces.map(space => {
+            filteredSpaces.map(space => {
               const selected = space.app_key === selectedKey;
               const busy = togglingKey === space.app_key;
               return (

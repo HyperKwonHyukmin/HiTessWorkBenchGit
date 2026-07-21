@@ -271,7 +271,7 @@ const QueueStatusCard = React.memo(function QueueStatusCard({ className = '' }) 
           </span>
         )}
       </div>
-      <p className="text-[11px] text-slate-500 font-bold mb-2">현재 서버 구동 현황</p>
+      <p className="text-[11px] text-slate-600 font-bold mb-2">현재 서버 구동 현황</p>
       <div className="text-2xl font-extrabold text-slate-800 tracking-tight mb-2">
         {queueStatus.running} <span className="text-sm text-slate-500 font-medium">/ {queueStatus.limit} 구동 중</span>
       </div>
@@ -1633,7 +1633,10 @@ export default function Dashboard() {
               />
             </div>
           )}
-          <AppRoadmapBanner onOpenModal={() => setIsRoadmapModalOpen(true)} />
+          {/* 로드맵 배너 — 소개 토글과 함께 접이식(기본 접힘). 매일 쓰는 사용자 화면 압박 완화. */}
+          {introOpen && (
+            <AppRoadmapBanner onOpenModal={() => setIsRoadmapModalOpen(true)} />
+          )}
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Webhook, ChevronDown, ChevronUp, Terminal, CheckCircle, Clock, ArrowRight, Server, Search, X } from 'lucide-react';
+import { Webhook, ChevronDown, ChevronUp, Terminal, CheckCircle, Clock, ArrowRight, Server, Search, X, Copy, Check } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 import PageHeader from '../../components/ui/PageHeader';
 
@@ -690,6 +690,34 @@ const StatusBadge = ({ status }) => (
   </span>
 );
 
+// 원클릭 복사 버튼 — CLI/curl/JSON 코드 블록 위에 겹쳐서 사용.
+function CopyButton({ text, className = '' }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // 클립보드 접근 권한이 없는 환경 등 — 조용히 무시
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 ${
+        copied ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-slate-300 hover:bg-white/20 hover:text-white'
+      } ${className}`}
+    >
+      {copied ? <Check size={11} /> : <Copy size={11} />}
+      {copied ? '복사됨' : '복사'}
+    </button>
+  );
+}
+
 function ApiCard({ api }) {
   const [showExample, setShowExample] = useState(false);
   const isCurl = typeof api.example === 'string' && api.example.startsWith('curl');
@@ -722,9 +750,12 @@ function ApiCard({ api }) {
       {api.cli && (
         <div className="px-5 pb-4">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">CLI Command</p>
-          <code className="block bg-slate-900 text-amber-300 text-xs rounded-xl p-3 font-mono break-all">
-            $ {api.cli}
-          </code>
+          <div className="relative">
+            <code className="block bg-slate-900 text-amber-300 text-xs rounded-xl p-3 pr-16 font-mono break-all">
+              $ {api.cli}
+            </code>
+            <CopyButton text={api.cli} className="absolute top-2 right-2" />
+          </div>
         </div>
       )}
 
@@ -735,10 +766,10 @@ function ApiCard({ api }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold">
-                <td className="px-3 py-2">이름</td>
-                <td className="px-3 py-2">타입</td>
-                <td className="px-3 py-2">필수</td>
-                <td className="px-3 py-2">설명</td>
+                <th scope="col" className="px-3 py-2 text-left">이름</th>
+                <th scope="col" className="px-3 py-2 text-left">타입</th>
+                <th scope="col" className="px-3 py-2 text-left">필수</th>
+                <th scope="col" className="px-3 py-2 text-left">설명</th>
               </tr>
             </thead>
             <tbody>
@@ -770,9 +801,12 @@ function ApiCard({ api }) {
           {showExample ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
         </button>
         {showExample && (
-          <pre className="mt-2 bg-slate-900 text-emerald-300 text-xs rounded-xl p-4 overflow-x-auto font-mono leading-relaxed">
-            {api.example}
-          </pre>
+          <div className="relative mt-2">
+            <pre className="bg-slate-900 text-emerald-300 text-xs rounded-xl p-4 pr-16 overflow-x-auto font-mono leading-relaxed">
+              {api.example}
+            </pre>
+            <CopyButton text={api.example} className="absolute top-2 right-2" />
+          </div>
         )}
       </div>
     </div>
