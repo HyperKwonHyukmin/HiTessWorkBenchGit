@@ -8,7 +8,7 @@ import {
   Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Clock, Activity,
   UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
   Download, BarChart3, ChevronRight, Code2, ArrowUpDown, Radio, MapPin, Globe, Timer,
-  LogOut, Layers, MessageCircle
+  LogOut, Layers, MessageCircle, ChevronDown, UserX, FileDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
@@ -190,7 +190,13 @@ export default function UserManagement() {
   const [roleToggleTarget, setRoleToggleTarget] = useState(null); // { user, field } — 권한 토글 확인
   const [userPage, setUserPage] = useState(0);
   const [selectedPendingIds, setSelectedPendingIds] = useState(new Set()); // 승인 대기 일괄 승인 선택
+  const [selectedUserIds, setSelectedUserIds] = useState(new Set());       // 메인 테이블 일괄 선택
+  const [confirmDeactivateTarget, setConfirmDeactivateTarget] = useState(null); // 단건 비활성화 확인
+  const [bulkAction, setBulkAction] = useState(null); // { type: 'deactivate'|'delete', ids: [] } — 일괄 확인
   const myEmployeeId = (getEmployeeId() || '').toUpperCase();
+
+  // 사이드바 뱃지/로그인 토스트가 참조하는 대기자 수를 갱신하도록 App 에 신호.
+  const notifyPendingChanged = () => window.dispatchEvent(new CustomEvent('workbench:pending-users-changed'));
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -271,11 +277,13 @@ export default function UserManagement() {
     }
   };
 
-  // 상태 즉각 토글 (승인/권한)
+  // 상태 즉각 토글 (권한/개발자) — 함수형 업데이트로 연속 조작 시 stale state 방지.
   const handleToggle = async (userId, field, currentValue) => {
+    const FIELD_LABELS = { is_admin: '관리자 권한', is_developer: '개발자 지정', is_active: '승인 상태' };
     try {
       await updateUser(userId, { [field]: !currentValue });
-      setUsers(users.map(u => u.id === userId ? { ...u, [field]: !currentValue } : u));
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, [field]: !currentValue } : u));
+      showToast(`${FIELD_LABELS[field] || '상태'}을(를) ${!currentValue ? '설정' : '해제'}했습니다.`, 'success');
     } catch (error) {
       showToast('상태 업데이트에 실패했습니다.', 'error');
     }
@@ -316,10 +324,34 @@ export default function UserManagement() {
   const handleApprove = async (userId) => {
     try {
       await updateUser(userId, { is_active: true });
-      setUsers(users.map(u => u.id === userId ? { ...u, is_active: true } : u));
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_active: true } : u));
       showToast('사용자가 승인되었습니다.', 'success');
+      notifyPendingChanged();
     } catch (error) {
       showToast('승인 처리에 실패했습니다.', 'error');
+    }
+  };
+
+  // 승인 사용자 비활성화 — 본인 계정은 자가 잠금 방지를 위해 차단.
+  const requestDeactivate = (user) => {
+    if ((user.employee_id || '').toUpperCase() === myEmployeeId) {
+      showToast('본인 계정은 비활성화할 수 없습니다.', 'warning');
+      return;
+    }
+    setConfirmDeactivateTarget(user);
+  };
+
+  const handleDeactivate = async () => {
+    const target = confirmDeactivateTarget;
+    setConfirmDeactivateTarget(null);
+    if (!target) return;
+    try {
+      await updateUser(target.id, { is_active: false });
+      setUsers(prev => prev.map(u => u.id === target.id ? { ...u, is_active: false } : u));
+      showToast(`${target.name || target.employee_id} 님을 비활성화했습니다.`, 'success');
+      notifyPendingChanged();
+    } catch (error) {
+      showToast('비활성화 처리에 실패했습니다.', 'error');
     }
   };
 
@@ -346,6 +378,7 @@ export default function UserManagement() {
       setUsers(prev => prev.map(u => (ids.includes(u.id) ? { ...u, is_active: true } : u)));
       setSelectedPendingIds(new Set());
       showToast(`${ids.length}명을 일괄 승인했습니다.`, 'success');
+      notifyPendingChanged();
     } catch (error) {
       showToast('일괄 승인 중 일부 항목이 실패했습니다. 목록을 다시 확인해주세요.', 'error');
       fetchUsers();
@@ -354,12 +387,87 @@ export default function UserManagement() {
 
   const handleDelete = async () => {
     if (!confirmDeleteTarget) return;
+    const target = confirmDeleteTarget;
     try {
-      await deleteUser(confirmDeleteTarget.id);
-      setUsers(users.filter(u => u.id !== confirmDeleteTarget.id));
+      await deleteUser(target.id);
+      setUsers(prev => prev.filter(u => u.id !== target.id));
       setConfirmDeleteTarget(null);
+      showToast(`${target.name || target.employee_id} 사용자를 삭제했습니다.`, 'success');
+      notifyPendingChanged();
     } catch (error) {
       showToast('사용자 삭제에 실패했습니다.', 'error');
+    }
+  };
+
+  // ── 메인 테이블 일괄 선택/액션 ─────────────────────────────────────────
+  const toggleUserSelection = (id) => {
+    setSelectedUserIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  // 현재 페이지 전체 선택/해제 (보이는 행 기준)
+  const togglePageSelection = () => {
+    setSelectedUserIds(prev => {
+      const pageIds = pagedUsers.map(u => u.id);
+      const allOnPage = pageIds.length > 0 && pageIds.every(id => prev.has(id));
+      const next = new Set(prev);
+      if (allOnPage) pageIds.forEach(id => next.delete(id));
+      else pageIds.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
+  // 일괄 대상에서 본인(자가 잠금 방지) 제외
+  const excludeSelf = (ids) =>
+    ids.filter(id => (users.find(u => u.id === id)?.employee_id || '').toUpperCase() !== myEmployeeId);
+
+  const handleBulkApproveSelected = async () => {
+    const ids = Array.from(selectedUserIds);
+    if (ids.length === 0) return;
+    try {
+      await Promise.all(ids.map(id => updateUser(id, { is_active: true })));
+      setUsers(prev => prev.map(u => (ids.includes(u.id) ? { ...u, is_active: true } : u)));
+      setSelectedUserIds(new Set());
+      showToast(`${ids.length}명을 승인했습니다.`, 'success');
+      notifyPendingChanged();
+    } catch (error) {
+      showToast('일괄 승인 중 일부 항목이 실패했습니다. 목록을 새로고침합니다.', 'error');
+      fetchUsers();
+    }
+  };
+
+  const openBulkConfirm = (type) => {
+    const ids = excludeSelf(Array.from(selectedUserIds));
+    if (ids.length === 0) {
+      showToast('본인 계정만 선택되어 처리할 대상이 없습니다.', 'warning');
+      return;
+    }
+    setBulkAction({ type, ids });
+  };
+
+  const confirmBulkAction = async () => {
+    const action = bulkAction;
+    setBulkAction(null);
+    if (!action) return;
+    const { type, ids } = action;
+    try {
+      if (type === 'delete') {
+        await Promise.all(ids.map(id => deleteUser(id)));
+        setUsers(prev => prev.filter(u => !ids.includes(u.id)));
+        showToast(`${ids.length}명을 삭제했습니다.`, 'success');
+      } else {
+        await Promise.all(ids.map(id => updateUser(id, { is_active: false })));
+        setUsers(prev => prev.map(u => (ids.includes(u.id) ? { ...u, is_active: false } : u)));
+        showToast(`${ids.length}명을 비활성화했습니다.`, 'success');
+      }
+      setSelectedUserIds(new Set());
+      notifyPendingChanged();
+    } catch (error) {
+      showToast('일괄 처리 중 일부 항목이 실패했습니다. 목록을 새로고침합니다.', 'error');
+      fetchUsers();
     }
   };
 
@@ -482,7 +590,9 @@ export default function UserManagement() {
       !term ||
       textValue(user.name).toLowerCase().includes(term) ||
       textValue(user.employee_id).toLowerCase().includes(term) ||
-      textValue(user.department).toLowerCase().includes(term);
+      textValue(user.department).toLowerCase().includes(term) ||
+      textValue(user.company).toLowerCase().includes(term) ||
+      textValue(user.position).toLowerCase().includes(term);
     if (!matchesSearch) return false;
     if (filterMode === 'active') return user.is_active;
     if (filterMode === 'admin')  return user.is_admin;
@@ -494,8 +604,26 @@ export default function UserManagement() {
     [filteredUsers, sortMode]
   );
 
-  // 검색/필터/정렬이 바뀌면 첫 페이지로 되돌린다.
-  useEffect(() => { setUserPage(0); }, [searchTerm, filterMode, sortMode]);
+  // 검색/필터/정렬이 바뀌면 첫 페이지로 되돌리고, 화면 밖 대상 혼동을 막도록 선택을 해제한다.
+  useEffect(() => { setUserPage(0); setSelectedUserIds(new Set()); }, [searchTerm, filterMode, sortMode]);
+
+  // 삭제 등으로 사라진 사용자는 테이블 선택 집합에서도 제거한다.
+  useEffect(() => {
+    setSelectedUserIds(prev => {
+      const validIds = new Set(users.map(u => u.id));
+      const next = new Set([...prev].filter(id => validIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [users]);
+
+  // 목록 자동 갱신(45초) — 신규 가입/타 관리자 변경을 반영. 편집·활동 모달이 열려 있으면 방해하지 않도록 건너뛴다.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (isEditModalOpen || activityUser) return;
+      getUsers().then(res => setUsers(res.data || [])).catch(() => {});
+    }, 45000);
+    return () => clearInterval(timer);
+  }, [isEditModalOpen, activityUser]);
 
   const userPageCount = Math.max(1, Math.ceil(sortedUsers.length / USER_PAGE_SIZE));
   const pagedUsers = useMemo(
@@ -504,6 +632,49 @@ export default function UserManagement() {
   );
 
   const currentSortLabel = SORT_OPTIONS.find(option => option.key === sortMode)?.label || '정렬';
+
+  // 헤더 클릭 정렬 — 같은 컬럼 재클릭 시 방향 토글. 정렬 드롭다운과 sortMode 를 공유한다.
+  const toggleColumnSort = (ascKey, descKey) => {
+    setSortMode(prev => (prev === descKey ? ascKey : descKey));
+  };
+  // 현재 정렬이 이 컬럼이면 방향 아이콘, 아니면 중립 아이콘.
+  const sortIcon = (ascKey, descKey) => {
+    if (sortMode === ascKey) return <ArrowUp size={12} className="text-blue-600" />;
+    if (sortMode === descKey) return <ArrowDown size={12} className="text-blue-600" />;
+    return <ArrowUpDown size={12} className="text-slate-300 group-hover:text-slate-400" />;
+  };
+
+  // 사용자 명부 CSV 내보내기 — 현재 검색/필터/정렬이 반영된 목록을 그대로. 디스크 미경유(DRM 회피), Excel 한글용 BOM.
+  const handleExportRoster = () => {
+    const rows = sortedUsers;
+    if (rows.length === 0) { showToast('내보낼 사용자가 없습니다.', 'warning'); return; }
+    const header = ['사번', '이름', '회사', '부서', '직급', '상태', '권한', '개발자', '로그인수', '해석수', '마지막 로그인', '가입일'];
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [header.map(esc).join(',')];
+    rows.forEach(u => {
+      lines.push([
+        u.employee_id, u.name, u.company, u.department, u.position,
+        u.is_active ? '활성' : '대기',
+        u.is_admin ? '관리자' : '일반',
+        u.is_developer ? 'Y' : 'N',
+        u.login_count ?? 0,
+        u.analysis_count ?? 0,
+        u.last_login ? new Date(u.last_login).toLocaleString('ko-KR') : '',
+        u.created_at ? new Date(u.created_at).toLocaleDateString('ko-KR') : '',
+      ].map(esc).join(','));
+    });
+    const BOM = String.fromCharCode(0xFEFF); // Excel 한글 인코딩 인식용
+    const blob = new Blob([BOM + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `사용자명부_${todayString()}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast(`${rows.length}명의 명부를 CSV로 내보냈습니다.`, 'success');
+  };
+
+  // 현재 페이지 전체 선택 여부 — 헤더 체크박스 상태.
+  const pageAllSelected = pagedUsers.length > 0 && pagedUsers.every(u => selectedUserIds.has(u.id));
 
   const filterChips = [
     { key: 'all',    label: '전체',  count: totalUsers,  cls: 'bg-slate-800 text-white' },
@@ -731,62 +902,7 @@ export default function UserManagement() {
         </div>
       </div>
 
-      {/* 2. 분포 통계 */}
-      {users.length > 0 && (
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-3 px-1">
-            <div className="flex items-center gap-2">
-              <BarChart3 size={16} className="text-slate-500" />
-              <h3 className="text-sm font-extrabold text-slate-700 tracking-tight">조직 분포 통계</h3>
-              <span className="text-[11px] text-slate-400 font-medium">회사 · 부서 · 직급 상위 5개</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsStatsModalOpen(true)}
-              className="group inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-brand-blue bg-white border border-brand-blue/20 rounded-lg hover:bg-brand-blue hover:text-white hover:border-brand-blue shadow-sm transition-all"
-            >
-              자세히 보기
-              <ChevronRight size={14} className="transition-transform group-hover:translate-x-0.5" />
-            </button>
-          </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            { label: '회사별 분포',  icon: Building,  data: companyStats,    key: 'company'    },
-            { label: '부서별 분포',  icon: Briefcase, data: departmentStats, key: 'department' },
-            { label: '직급별 분포',  icon: Tag,       data: positionStats,   key: 'position'   },
-          ].map(({ label, icon: Icon, data, key }) => {
-            const { icon: iconCls, bar: barCls } = DIST_COLORS[key];
-            return (
-              <div key={label} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="flex items-center gap-2 mb-4">
-                  <Icon size={15} className={iconCls} />
-                  <p className="text-xs font-bold text-slate-500 uppercase">{label}</p>
-                </div>
-                <ul className="space-y-2.5">
-                  {data.slice(0, 5).map(([name, count]) => (
-                    <li key={name}>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-700 font-medium truncate max-w-[140px]">{name}</span>
-                        <span className="text-slate-400 font-bold ml-2">{count}명</span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-1.5">
-                        <div className={`${barCls} h-1.5 rounded-full transition-all duration-500`}
-                             style={{ width: `${(count / totalUsers) * 100}%` }} />
-                      </div>
-                    </li>
-                  ))}
-                  {data.length > 5 && (
-                    <p className="text-[10px] text-slate-400 text-right mt-1">+{data.length - 5}개 더</p>
-                  )}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
-        </div>
-      )}
-
-      {/* 3. 승인 대기 — 별도 하이라이트 영역 (Pending 이 있을 때만 표시) */}
+      {/* 2. 승인 대기 — 별도 하이라이트 영역 (Pending 이 있을 때만 표시). 행동 우선순위상 KPI 바로 아래 배치. */}
       {pendingList.length > 0 && (
         <div className="mb-6 bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
@@ -875,7 +991,62 @@ export default function UserManagement() {
         </div>
       )}
 
-      {/* 4. Controls — 필터 칩 + 검색 + 갱신 */}
+      {/* 3. 조직 분포 통계 */}
+      {users.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <div className="flex items-center gap-2">
+              <BarChart3 size={16} className="text-slate-500" />
+              <h3 className="text-sm font-extrabold text-slate-700 tracking-tight">조직 분포 통계</h3>
+              <span className="text-[11px] text-slate-400 font-medium">회사 · 부서 · 직급 상위 5개</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsStatsModalOpen(true)}
+              className="group inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-brand-blue bg-white border border-brand-blue/20 rounded-lg hover:bg-brand-blue hover:text-white hover:border-brand-blue shadow-sm transition-all"
+            >
+              자세히 보기
+              <ChevronRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+            </button>
+          </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[
+            { label: '회사별 분포',  icon: Building,  data: companyStats,    key: 'company'    },
+            { label: '부서별 분포',  icon: Briefcase, data: departmentStats, key: 'department' },
+            { label: '직급별 분포',  icon: Tag,       data: positionStats,   key: 'position'   },
+          ].map(({ label, icon: Icon, data, key }) => {
+            const { icon: iconCls, bar: barCls } = DIST_COLORS[key];
+            return (
+              <div key={label} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                  <Icon size={15} className={iconCls} />
+                  <p className="text-xs font-bold text-slate-500 uppercase">{label}</p>
+                </div>
+                <ul className="space-y-2.5">
+                  {data.slice(0, 5).map(([name, count]) => (
+                    <li key={name}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-slate-700 font-medium truncate max-w-[140px]">{name}</span>
+                        <span className="text-slate-400 font-bold ml-2">{count}명</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5">
+                        <div className={`${barCls} h-1.5 rounded-full transition-all duration-500`}
+                             style={{ width: `${(count / totalUsers) * 100}%` }} />
+                      </div>
+                    </li>
+                  ))}
+                  {data.length > 5 && (
+                    <p className="text-[10px] text-slate-400 text-right mt-1">+{data.length - 5}개 더</p>
+                  )}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+        </div>
+      )}
+
+      {/* 4. Controls — 필터 칩 + 검색 + 정렬 + 명부 내보내기 + 갱신 */}
       <div className="flex flex-wrap items-center gap-3 mb-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg">
           {filterChips.map(c => (
@@ -900,7 +1071,7 @@ export default function UserManagement() {
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"/>
           <input
             type="text"
-            placeholder="이름, 사번, 부서로 검색..."
+            placeholder="이름·사번·부서·회사·직급 검색..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:border-blue-500 outline-none transition-colors"
@@ -929,6 +1100,13 @@ export default function UserManagement() {
             {sortedUsers.length} / {totalUsers} 표시 · {currentSortLabel}
           </span>
           <button
+            onClick={handleExportRoster}
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-50 transition-colors shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1"
+            title="현재 목록(검색·필터·정렬 반영)을 CSV로 내보내기"
+          >
+            <FileDown size={14}/> 명부 CSV
+          </button>
+          <button
             onClick={fetchUsers}
             className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-200 transition-colors shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1"
           >
@@ -939,13 +1117,70 @@ export default function UserManagement() {
 
       {/* 5. Data Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* 일괄 액션 바 — 행 선택 시 노출 */}
+        {selectedUserIds.size > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 bg-blue-50 border-b border-blue-100">
+            <span className="inline-flex items-center gap-2 text-sm font-bold text-blue-800">
+              <CheckCircle2 size={16} className="text-blue-600"/>
+              {selectedUserIds.size}명 선택됨
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleBulkApproveSelected}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 shadow-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1"
+              >
+                <CheckCircle2 size={13}/> 승인
+              </button>
+              <button
+                onClick={() => openBulkConfirm('deactivate')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-amber-300 text-amber-700 text-xs font-bold rounded-lg hover:bg-amber-50 shadow-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-1"
+              >
+                <UserX size={13}/> 비활성화
+              </button>
+              <button
+                onClick={() => openBulkConfirm('delete')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-300 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 shadow-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1"
+              >
+                <Trash2 size={13}/> 삭제
+              </button>
+              <button
+                onClick={() => setSelectedUserIds(new Set())}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X size={13}/> 선택 해제
+              </button>
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto min-h-[400px]">
           <table className="w-full text-left whitespace-nowrap">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
               <tr>
-                <th className="py-4 px-6 font-bold">User / ID</th>
-                <th className="py-4 px-6 font-bold">Affiliation</th>
-                <th className="py-4 px-6 font-bold w-[240px]">Activity</th>
+                <th className="py-4 pl-6 pr-2 w-10">
+                  <input
+                    type="checkbox"
+                    checked={pageAllSelected}
+                    onChange={togglePageSelection}
+                    aria-label="현재 페이지 전체 선택"
+                    title="현재 페이지 전체 선택/해제"
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                  />
+                </th>
+                <th className="py-4 px-6 font-bold">
+                  <button type="button" onClick={() => toggleColumnSort('name_asc', 'name_desc')} className="group inline-flex items-center gap-1 uppercase tracking-wider cursor-pointer hover:text-slate-700" title="이름순 정렬">
+                    User / ID {sortIcon('name_asc', 'name_desc')}
+                  </button>
+                </th>
+                <th className="py-4 px-6 font-bold">
+                  <button type="button" onClick={() => toggleColumnSort('department_asc', 'department_desc')} className="group inline-flex items-center gap-1 uppercase tracking-wider cursor-pointer hover:text-slate-700" title="부서순 정렬">
+                    Affiliation {sortIcon('department_asc', 'department_desc')}
+                  </button>
+                </th>
+                <th className="py-4 px-6 font-bold w-[240px]">
+                  <button type="button" onClick={() => toggleColumnSort('analysis_count_asc', 'analysis_count_desc')} className="group inline-flex items-center gap-1 uppercase tracking-wider cursor-pointer hover:text-slate-700" title="해석 수행 수 정렬">
+                    Activity {sortIcon('analysis_count_asc', 'analysis_count_desc')}
+                  </button>
+                </th>
                 <th className="py-4 px-6 font-bold text-center">Status</th>
                 <th className="py-4 px-6 font-bold text-center">Admin</th>
                 <th className="py-4 px-6 font-bold text-center">Dev</th>
@@ -954,16 +1189,27 @@ export default function UserManagement() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan="7" className="text-center py-20 text-slate-400">
+                <tr><td colSpan="8" className="text-center py-20 text-slate-400">
                   <RefreshCw className="animate-spin inline-block mb-2"/>
                   <p>데이터를 불러오는 중입니다...</p>
                 </td></tr>
               ) : sortedUsers.length === 0 ? (
-                <tr><td colSpan="7" className="text-center py-20 text-slate-400">
+                <tr><td colSpan="8" className="text-center py-20 text-slate-400">
                   검색 결과가 없습니다.
                 </td></tr>
               ) : pagedUsers.map((user) => (
-                <tr key={user.id} className={`transition-colors hover:bg-blue-50/50 ${!user.is_active ? 'bg-amber-50/40' : ''}`}>
+                <tr key={user.id} className={`transition-colors hover:bg-blue-50/50 ${selectedUserIds.has(user.id) ? 'bg-blue-50/70' : !user.is_active ? 'bg-amber-50/40' : ''}`}>
+
+                  {/* 일괄 선택 체크박스 */}
+                  <td className="py-3 pl-6 pr-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedUserIds.has(user.id)}
+                      onChange={() => toggleUserSelection(user.id)}
+                      aria-label={`${user.name || user.employee_id} 선택`}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                    />
+                  </td>
 
                   {/* 이름 & 사번 */}
                   <td className="py-3 px-6">
@@ -1035,17 +1281,22 @@ export default function UserManagement() {
                     </div>
                   </td>
 
-                  {/* 승인 상태 — Pending 카드가 있으므로 테이블은 상태 표시 중심 */}
+                  {/* 승인 상태 — 활성이면 클릭하여 비활성화, 대기면 클릭하여 승인 */}
                   <td className="py-3 px-6 text-center">
                     {user.is_active ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                      <button
+                        onClick={() => requestDeactivate(user)}
+                        className="group inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1"
+                        title="클릭하여 비활성화"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 group-hover:bg-red-500"></span>
                         Active
-                      </span>
+                        <ChevronDown size={11} className="opacity-40 group-hover:opacity-100"/>
+                      </button>
                     ) : (
                       <button
                         onClick={() => handleApprove(user.id)}
-                        className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors cursor-pointer"
+                        className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-1"
                         title="클릭하여 승인"
                       >
                         <UserCheck size={12}/> Approve
@@ -1129,6 +1380,34 @@ export default function UserManagement() {
         title={roleToggleTarget?.field === 'is_admin' ? '관리자 권한 변경' : '개발자 지정 변경'}
         message={roleToggleMessage()}
         confirmLabel="변경"
+        cancelLabel="취소"
+        variant="warning"
+      />
+
+      {/* 단건 비활성화 확인 */}
+      <ConfirmDialog
+        isOpen={!!confirmDeactivateTarget}
+        onCancel={() => setConfirmDeactivateTarget(null)}
+        onConfirm={handleDeactivate}
+        title="사용자 비활성화"
+        message={`${confirmDeactivateTarget?.name || confirmDeactivateTarget?.employee_id || ''} 님의 시스템 접근을 차단합니다. 계정과 이력은 보존되며, 다시 승인하면 복구됩니다.`}
+        confirmLabel="비활성화"
+        cancelLabel="취소"
+        variant="warning"
+      />
+
+      {/* 일괄 액션 확인 (비활성화 / 삭제) */}
+      <ConfirmDialog
+        isOpen={!!bulkAction}
+        onCancel={() => setBulkAction(null)}
+        onConfirm={confirmBulkAction}
+        title={bulkAction?.type === 'delete' ? '선택 사용자 삭제' : '선택 사용자 비활성화'}
+        message={
+          bulkAction?.type === 'delete'
+            ? `선택한 ${bulkAction?.ids.length}명을 시스템에서 완전히 삭제합니다. 이 작업은 되돌릴 수 없습니다.`
+            : `선택한 ${bulkAction?.ids.length}명의 시스템 접근을 차단합니다. 계정과 이력은 보존되며, 다시 승인하면 복구됩니다.`
+        }
+        confirmLabel={bulkAction?.type === 'delete' ? '삭제' : '비활성화'}
         cancelLabel="취소"
         variant="warning"
       />
