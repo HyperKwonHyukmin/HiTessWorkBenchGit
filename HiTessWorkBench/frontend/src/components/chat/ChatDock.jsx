@@ -89,25 +89,22 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
         setTotalUnread(unread);
 
         if (prevUnreadRef.current === null) {
-          // 로그인 후 첫 폴링 — 오프라인 중 받은 미읽음이 있으면 즉시 알린다.
-          // 특정 대화를 열지 않고 목록만 펼쳐 자동 읽음 처리를 피한다.
+          // 로그인 후 첫 폴링 — 오프라인 중 받은 미읽음이 있으면 토스트로 알린다.
+          // 도크는 접힌 채로 두어 우하단 버튼에 미읽음 숫자가 남게 한다(자동으로 열지 않음).
           if (unread > 0) {
             showToast(`읽지 않은 메시지 ${unread}개가 있습니다.`, 'info');
-            setOpen(true);
           }
         } else if (unread > prevUnreadRef.current) {
-          // 세션 중 새 메시지 도착.
+          // 세션 중 새 메시지 도착 — 토스트로만 알리고 도크는 접힌 채로 둔다.
+          // 대화를 자동으로 열면 즉시 읽음 처리되어 우하단 버튼의 미읽음 뱃지가
+          // 곧바로 사라진다. 뱃지가 유지되도록, 관리자가 직접 버튼을 눌러
+          // 대화를 열 때만 읽음 처리한다.
           const newest = list.find((t) => t.unread > 0); // list 는 최신순
           if (newest) {
             showToast(
               `💬 ${newest.other_name || newest.other_id}: ${newest.last_message || ''}`,
               'info',
             );
-            setOpen(true);
-            // 현재 열려 있는 대화가 없을 때만 새 메시지의 대화를 자동으로 연다.
-            if (!activeIdRef.current) {
-              openConversation({ id: newest.other_id, name: newest.other_name });
-            }
           }
         }
         prevUnreadRef.current = unread;
