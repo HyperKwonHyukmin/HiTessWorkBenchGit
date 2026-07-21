@@ -10,6 +10,7 @@
 - [ModelBuilderStudio AnalysisPanel FEA 패턴](project_model_studio_analysis_panel.md) — FEA 단계 순서, Section/PickToggle/TabButton 패턴, 의미색 맵, summarizeResult 집계 방식 (v0.0.54)
 - [HullAccelerationPage 디자인 패턴](project_hull_acceleration.md) — 사이드바 단계 헤더 색상, 제원 FIELD_GROUPS 구조, AXIS_CONFIG(X=blue/Y=emerald/Z=violet) Envelope 카드 설계 (2026-06-23)
 - [Simple Beam Assessment UX 진단](project_simple_beam_assessment.md) — H4개(lightMode기본값/하중카드밀도/뷰버튼하드코딩/컬러맵범례)/M6개/L5개, Top5 우선순위 (2026-06-25)
-- [DoublePipeFuelLineAssessment/DoublePipeViewer 디자인 패턴](project_doublepipe_fuel_line.md) — 3단계 스텝퍼 구조, Load Case 카테고리색, 그라디언트 eyebrow 카드헤더 재발(DESIGN.md 위반), 3D뷰어 다크/라이트 탭바 이음매 이슈 (2026-07-09)
+- [DoublePipeFuelLineAssessment/DoublePipeViewer 디자인 패턴](project_doublepipe_fuel_line.md) — 2단계 스텝퍼, LC 카테고리색, CardHeader tone/subtitle·FieldGroup group 서브섹션 패턴 (2026-07-09 1차 + 2026-07-16 2차)
 - [App 소식 기능 롤아웃 현황](project_app_community_rollout.md) — AppCommunityHub는 2026-07-15 기준 HiTessModelBuilder 1개 페이지에만 적용된 파일럿
 - [게시판 UI 중복 구현](project_duplicate_feature_request_ui.md) — 레거시 UserRequests.jsx(전역) vs 신규 AppCommunityHub.jsx(App별) 두 곳에 게시판 UI 존재, 패턴 참고용
+- [Administration 페이지군 디자인 패턴](project_administration_pages.md) — PageHeader violet 통일, KpiCard 표준화, 상태필터 백엔드 한계, UserManagement 일괄승인/포커스링, ApiApps 복사버튼 (2026-07-20)
