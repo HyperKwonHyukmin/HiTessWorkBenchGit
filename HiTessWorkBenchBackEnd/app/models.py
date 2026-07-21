@@ -70,6 +70,9 @@ class ChatMessage(Base):
   body = Column(Text, nullable=False)
   created_at = Column(DateTime, default=datetime.now, index=True)
   read_at = Column(DateTime, nullable=True)
+  # '내게서만 삭제' — 각 당사자가 자기 화면에서만 대화를 숨긴 여부(상대 기록은 보존).
+  hidden_by_sender = Column(Boolean, default=False, nullable=False)
+  hidden_by_recipient = Column(Boolean, default=False, nullable=False)
 
 
 class Analysis(Base):

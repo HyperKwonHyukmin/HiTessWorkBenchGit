@@ -101,6 +101,14 @@ def ensure_app_community_columns() -> None:
     })
 
 
+def ensure_chat_message_columns() -> None:
+    """기존 chat_messages 테이블에 '내게서만 삭제' 숨김 플래그를 보강합니다."""
+    _add_missing_columns("chat_messages", {
+        "hidden_by_sender": "ALTER TABLE chat_messages ADD COLUMN hidden_by_sender BOOL NOT NULL DEFAULT FALSE",
+        "hidden_by_recipient": "ALTER TABLE chat_messages ADD COLUMN hidden_by_recipient BOOL NOT NULL DEFAULT FALSE",
+    })
+
+
 def ensure_app_spaces() -> None:
     """요청된 App만 커뮤니티 기능을 활성화합니다."""
 
@@ -134,4 +142,5 @@ def run_schema_bootstrap() -> None:
     ensure_user_presence_columns()
     ensure_analysis_job_columns()
     ensure_app_community_columns()
+    ensure_chat_message_columns()
     ensure_app_spaces()

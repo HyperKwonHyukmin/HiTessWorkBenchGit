@@ -35,6 +35,15 @@ def _user(db: Session, employee_id: str):
     )
 
 
+def _visible_to(m: "models.ChatMessage", me: str) -> bool:
+    """'내게서만 삭제'를 반영해 이 메시지가 me 의 화면에 보여야 하는지 판정한다."""
+    if m.sender_id == me and m.hidden_by_sender:
+        return False
+    if m.recipient_id == me and m.hidden_by_recipient:
+        return False
+    return True
+
+
 @router.post("/send")
 def send_message(
     payload: SendRequest,
@@ -107,6 +116,9 @@ def get_conversation(
         .all()
     )
 
+    # '내게서만 삭제'로 내가 숨긴 메시지는 제외.
+    msgs = [m for m in msgs if _visible_to(m, me)]
+
     # 상대가 나에게 보낸 미읽음 메시지를 읽음 처리(내가 보낸 것은 건드리지 않음).
     now = datetime.now()
     changed = False
@@ -146,6 +158,8 @@ def get_threads(
 
     threads: dict = {}
     for m in msgs:
+        if not _visible_to(m, me):
+            continue  # 내가 숨긴 메시지는 목록/미읽음 집계에서 제외.
         other_id = m.recipient_id if m.sender_id == me else m.sender_id
         t = threads.get(other_id)
         if t is None:
@@ -169,3 +183,44 @@ def get_threads(
     # 최신 대화 순(마지막 메시지 시각 내림차순).
     result.sort(key=lambda x: x["last_at"] or "", reverse=True)
     return {"total_unread": total_unread, "threads": result}
+
+
+@router.delete("/conversation/{other_id}")
+def delete_conversation(
+    other_id: str,
+    db: Session = Depends(database.get_db),
+    me: str = Depends(require_auth),
+):
+    """나 ↔ other_id 대화를 '내 화면에서만' 숨긴다(상대 기록은 보존).
+
+    삭제자가 보낸 메시지는 hidden_by_sender, 받은 메시지는 hidden_by_recipient 를 세운다.
+    삭제 이후 도착하는 새 메시지는 플래그가 없어 자연히 다시 보인다.
+    """
+    msgs = (
+        db.query(models.ChatMessage)
+        .filter(
+            or_(
+                and_(
+                    models.ChatMessage.sender_id == me,
+                    models.ChatMessage.recipient_id == other_id,
+                ),
+                and_(
+                    models.ChatMessage.sender_id == other_id,
+                    models.ChatMessage.recipient_id == me,
+                ),
+            )
+        )
+        .all()
+    )
+
+    hidden = 0
+    for m in msgs:
+        if m.sender_id == me and not m.hidden_by_sender:
+            m.hidden_by_sender = True
+            hidden += 1
+        elif m.recipient_id == me and not m.hidden_by_recipient:
+            m.hidden_by_recipient = True
+            hidden += 1
+    if hidden:
+        db.commit()
+    return {"ok": True, "hidden": hidden}

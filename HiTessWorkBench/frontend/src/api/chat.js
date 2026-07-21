@@ -20,3 +20,10 @@ export const sendChatMessage = (recipientId, body) =>
     { recipient_id: recipientId, body },
     { headers: getAuthHeaders() },
   );
+
+/** 대화 '내게서만' 삭제 — 내 화면에서만 숨기고 상대 기록은 보존 */
+export const deleteChatConversation = (otherId) =>
+  axios.delete(
+    `${API_BASE_URL}/api/chat/conversation/${encodeURIComponent(otherId)}`,
+    { headers: getAuthHeaders() },
+  );

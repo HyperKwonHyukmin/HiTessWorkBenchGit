@@ -11,8 +11,13 @@
  * (User Management 접속자 카드의 '대화' 버튼이 이 방식으로 도크를 연다.)
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { MessageCircle, X, Send, ChevronLeft, Minus } from 'lucide-react';
-import { getChatThreads, getChatConversation, sendChatMessage } from '../../api/chat';
+import { MessageCircle, Send, ChevronLeft, Minus, Trash2 } from 'lucide-react';
+import {
+  getChatThreads,
+  getChatConversation,
+  sendChatMessage,
+  deleteChatConversation,
+} from '../../api/chat';
 import { useToast } from '../../contexts/ToastContext';
 
 const THREADS_POLL_MS = 5000;
@@ -48,6 +53,7 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null); // 삭제 확인 대기 중인 상대 { id, name }
 
   const prevUnreadRef = useRef(null); // null = 최초 폴링(무음 baseline)
   const activeIdRef = useRef(null);
@@ -82,8 +88,15 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
         setThreads(list);
         setTotalUnread(unread);
 
-        // 최초 폴링은 baseline 만 잡고 알리지 않는다(로그인 시 과거 미읽음으로 인한 놀람 방지).
-        if (prevUnreadRef.current !== null && unread > prevUnreadRef.current) {
+        if (prevUnreadRef.current === null) {
+          // 로그인 후 첫 폴링 — 오프라인 중 받은 미읽음이 있으면 즉시 알린다.
+          // 특정 대화를 열지 않고 목록만 펼쳐 자동 읽음 처리를 피한다.
+          if (unread > 0) {
+            showToast(`읽지 않은 메시지 ${unread}개가 있습니다.`, 'info');
+            setOpen(true);
+          }
+        } else if (unread > prevUnreadRef.current) {
+          // 세션 중 새 메시지 도착.
           const newest = list.find((t) => t.unread > 0); // list 는 최신순
           if (newest) {
             showToast(
@@ -174,6 +187,28 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
     }
   };
 
+  const handleConfirmDelete = async () => {
+    const target = confirmDelete;
+    if (!target) return;
+    try {
+      await deleteChatConversation(target.id);
+      // 삭제한 대화가 열려 있으면 목록으로 되돌아간다.
+      if (activeIdRef.current === target.id) {
+        setActiveOther(null);
+        setMessages([]);
+      }
+      const res = await getChatThreads();
+      setThreads(res.data.threads || []);
+      setTotalUnread(res.data.total_unread || 0);
+      prevUnreadRef.current = res.data.total_unread || 0;
+      showToast('대화를 삭제했습니다. 상대방에게는 그대로 남습니다.', 'success');
+    } catch {
+      showToast('대화 삭제에 실패했습니다.', 'error');
+    } finally {
+      setConfirmDelete(null);
+    }
+  };
+
   // 도크 자체를 노출할지: 관리자는 항상, 일반 사용자는 대화가 있을 때만.
   const shouldShow = isAdmin || threads.length > 0 || totalUnread > 0;
   if (!currentUserId || !shouldShow) return null;
@@ -216,6 +251,15 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
             <span className="font-bold text-sm flex-1 truncate">
               {activeOther.name || activeOther.id}
             </span>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete({ id: activeOther.id, name: activeOther.name })}
+              className="text-white/80 hover:text-white cursor-pointer"
+              title="대화 삭제"
+              aria-label="대화 삭제"
+            >
+              <Trash2 size={17} />
+            </button>
           </>
         ) : (
           <>
@@ -302,32 +346,80 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
             </div>
           ) : (
             threads.map((t) => (
-              <button
+              <div
                 key={t.other_id}
-                type="button"
-                onClick={() => openConversation({ id: t.other_id, name: t.other_name })}
-                className="w-full flex items-center gap-3 px-3 py-3 hover:bg-slate-50 border-b border-slate-100 text-left cursor-pointer"
+                className="group/row flex items-center gap-2 px-3 py-3 hover:bg-slate-50 border-b border-slate-100"
               >
-                <Avatar name={t.other_name} id={t.other_id} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm text-slate-700 truncate">
-                      {t.other_name || t.other_id}
-                    </span>
-                    <span className="text-[10px] text-slate-400 ml-auto shrink-0">
-                      {formatTime(t.last_at)}
-                    </span>
+                <button
+                  type="button"
+                  onClick={() => openConversation({ id: t.other_id, name: t.other_name })}
+                  className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer"
+                >
+                  <Avatar name={t.other_name} id={t.other_id} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-slate-700 truncate">
+                        {t.other_name || t.other_id}
+                      </span>
+                      <span className="text-[10px] text-slate-400 ml-auto shrink-0">
+                        {formatTime(t.last_at)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-500 truncate">{t.last_message}</div>
                   </div>
-                  <div className="text-xs text-slate-500 truncate">{t.last_message}</div>
-                </div>
+                </button>
                 {t.unread > 0 && (
-                  <span className="ml-1 min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                  <span className="min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shrink-0">
                     {t.unread}
                   </span>
                 )}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete({ id: t.other_id, name: t.other_name })}
+                  className="shrink-0 rounded-lg p-1.5 text-slate-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover/row:opacity-100 cursor-pointer"
+                  title="대화 삭제"
+                  aria-label={`${t.other_name || t.other_id} 대화 삭제`}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* 삭제 확인 오버레이 */}
+      {confirmDelete && (
+        <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center gap-4 px-8 text-center">
+          <div className="h-12 w-12 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
+            <Trash2 size={22} />
+          </div>
+          <p className="text-sm text-slate-600">
+            <span className="font-bold text-slate-800">
+              {confirmDelete.name || confirmDelete.id}
+            </span>
+            {' 님과의 대화를 삭제할까요?'}
+            <br />
+            <span className="text-xs text-slate-400">
+              내 화면에서만 지워지고 상대방에게는 그대로 남습니다.
+            </span>
+          </p>
+          <div className="flex gap-2 w-full">
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(null)}
+              className="flex-1 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDelete}
+              className="flex-1 py-2 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 cursor-pointer"
+            >
+              삭제
+            </button>
+          </div>
         </div>
       )}
     </div>

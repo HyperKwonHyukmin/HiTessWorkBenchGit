@@ -119,3 +119,49 @@ def test_send_rejects_unknown_recipient(admin_client):
     """존재하지 않는 수신자에게는 보낼 수 없다."""
     r = admin_client.post("/api/chat/send", json={"recipient_id": "NOPE", "body": "hi"})
     assert r.status_code == 404
+
+
+def test_delete_conversation_hides_for_deleter_only(admin_client, make_user):
+    """대화 삭제는 삭제한 사람 화면에서만 대화를 숨기고 상대는 그대로 본다(내게서만 삭제)."""
+    make_user("USER001", name="홍길동")
+    admin_client.post("/api/chat/send", json={"recipient_id": "USER001", "body": "hi"})
+    admin_client.post("/api/chat/send", json={"recipient_id": "USER001", "body": "there"})
+
+    # USER001 이 대화를 삭제.
+    _act_as("USER001")
+    r = admin_client.delete("/api/chat/conversation/ADMIN001")
+    assert r.status_code == 200
+
+    # USER001 시점: 대화·목록 모두 비었다.
+    assert admin_client.get("/api/chat/conversation/ADMIN001").json()["messages"] == []
+    threads = admin_client.get("/api/chat/threads").json()
+    assert threads["total_unread"] == 0
+    assert threads["threads"] == []
+
+    # 관리자 시점: 대화가 그대로 남아 있다.
+    _act_as("ADMIN001")
+    assert len(admin_client.get("/api/chat/conversation/USER001").json()["messages"]) == 2
+    assert len(admin_client.get("/api/chat/threads").json()["threads"]) == 1
+
+
+def test_new_message_after_delete_reappears_for_deleter(admin_client, make_user):
+    """삭제 후 상대가 새 메시지를 보내면 그 대화가 다시 나타나고 과거 메시지는 계속 숨겨진다."""
+    make_user("USER001")
+    admin_client.post("/api/chat/send", json={"recipient_id": "USER001", "body": "old-1"})
+    admin_client.post("/api/chat/send", json={"recipient_id": "USER001", "body": "old-2"})
+
+    _act_as("USER001")
+    admin_client.delete("/api/chat/conversation/ADMIN001")
+
+    # 관리자가 삭제 이후 새 메시지 전송.
+    _act_as("ADMIN001")
+    admin_client.post("/api/chat/send", json={"recipient_id": "USER001", "body": "new-3"})
+
+    # USER001 시점: 대화 재등장, 새 메시지 1개만 보이고 미읽음 1.
+    _act_as("USER001")
+    threads = admin_client.get("/api/chat/threads").json()
+    assert len(threads["threads"]) == 1
+    assert threads["threads"][0]["unread"] == 1
+    assert threads["threads"][0]["last_message"] == "new-3"
+    msgs = admin_client.get("/api/chat/conversation/ADMIN001").json()["messages"]
+    assert [m["body"] for m in msgs] == ["new-3"]
