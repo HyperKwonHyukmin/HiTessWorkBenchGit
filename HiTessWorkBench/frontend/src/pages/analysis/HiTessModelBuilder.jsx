@@ -36,12 +36,16 @@ const REASON_LABELS = {
   csv_row_accepted:               '정상 변환',
   no_geometry_and_zero_mass:      '형상 없음 + 질량 0',
   pipe_outdia_zero:               '배관 외경(outDia) 0 — 형상 누락',
+  zero_length_pipe:               '길이 0 배관(형상 없음)',
   zero_length_pipe_without_mass:  '길이 0 + 질량 없는 배관',
   zero_length_structure:          '길이 0 구조 부재',
+  unsupported_structure_section:  '미지원 구조 단면',
   zero_mass_attachment:           '질량 0 부착물',
   zero_mass_equipment:            '질량 0 장비',
   ambiguousDuplicateSourceName:   '동일 sourceName 중복',
+  parse_failed:                   '파싱 실패',
   parseFailed:                    '파싱 실패',
+  blank_line:                     '공백 행',
   blank:                          '공백 행',
 };
 
@@ -819,11 +823,9 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                                   : r.status === 'ignored'     ? 'bg-amber-100 text-amber-700'
                                   : r.status === 'parseFailed' ? 'bg-red-100 text-red-700'
                                   : 'bg-slate-100 text-slate-500';
-                      const reasonText = r.status === 'converted'
-                        ? (REASON_LABELS[r.reasonCode] ?? r.reasonCode)
-                        : r.status === 'error'
-                        ? (REASON_LABELS[r.reasonCode] ?? r.reason ?? r.reasonCode)
-                        : (r.reason || REASON_LABELS[r.reasonCode] || r.reasonCode);
+                      // 한국어 라벨 우선 → 원문(reason) → 코드 순. 모든 상태(제외/실패/공백 포함)
+                      // 에서 짧은 한국어 라벨을 먼저 노출해 칸 넘침을 막는다.
+                      const reasonText = REASON_LABELS[r.reasonCode] ?? r.reason ?? r.reasonCode ?? '—';
                       return (
                         <tr key={i} className={`hover:bg-blue-50/30 transition-colors ${rowBg}`}>
                           <td className="px-3 py-1.5 text-slate-600 truncate" title={r.kind}>{r.kind}</td>
@@ -833,7 +835,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                           </td>
                           <td className="px-3 py-1.5 font-mono text-[11px] truncate" title={r.name}>{r.name}</td>
                           <td
-                            className={`px-3 py-1.5 truncate ${r.status === 'converted' ? 'text-slate-400' : 'text-slate-600'}`}
+                            className={`px-3 py-1.5 whitespace-normal break-keep leading-snug ${r.status === 'converted' ? 'text-slate-400' : 'text-slate-600'}`}
                             title={reasonText}
                           >
                             {reasonText}
