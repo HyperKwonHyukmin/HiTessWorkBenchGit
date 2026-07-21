@@ -72,6 +72,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await external_apps.close_block_weld_client()
+        await external_apps.close_independent_tank_client()
 
 
 app = FastAPI(lifespan=lifespan)

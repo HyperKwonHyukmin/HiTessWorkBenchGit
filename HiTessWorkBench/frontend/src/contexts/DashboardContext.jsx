@@ -27,10 +27,10 @@ const RAW_ANALYSIS_DATA = [
   // ── Interactive Apps (signature: violet) ──────── Active ──
   { mode: "Interactive", category: "1D Beam", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-violet-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active", contributor: "권혁민" },
   { mode: "Interactive", category: "Section", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "Interactive", category: "Weld", title: "Block Weld Assessment", description: "블록 전도 방지 구속 용접양을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Weld", "Block", "용접"], devStatus: "Active", contributor: "김한별" },
   // ── Interactive Apps (signature: violet) ──────── Developing ──
   { mode: "Interactive", category: "Plate", title: "Plate Structure Analysis", description: "Plate 구조 해석용 Studio를 실행하여 판 구조 모델링 및 해석 작업을 진행합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Plate", "Studio", "구조해석"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "Interactive", category: "Tank", title: "Independent Tank Assessment", description: "독립 탱크의 치수·판두께·보강재 배치를 입력하여 구조 해석 모델을 구축합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Tank", "Plate", "Stiffener", "3D"], devStatus: "Developing", contributor: "김한별" },
-  { mode: "Interactive", category: "Weld", title: "Block Weld Assessment", description: "블록 전도 방지 구속 용접양을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Weld", "Block", "용접"], devStatus: "Active", contributor: "김한별" },
+  { mode: "Interactive", category: "Tank", title: "Independent Tank Assessment", description: "독립 탱크 구조 평가를 위한 외부 앱을 실행합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Tank", "구조평가", "외부 앱"], devStatus: "Developing", contributor: "김한별" },
   { mode: "Interactive", category: "Lifting", title: "Heavy Block Lifting Simulation", description: "중량물 블록의 권상 과정에서 자세 안정성을 사전에 예측·검증 합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Lifting", "Block", "권상", "자세안정성"], devStatus: "Developing", contributor: "김한별" },
   // ── Parametric Apps (signature: emerald) ──────── Active ──
   { mode: "Parametric", category: "Davit", title: "Jib Rest Assessment", description: "Jib Rest 구조물의 1단/2단 파이프 설계 후보를 산출합니다.", icon: SlidersHorizontal, color: "bg-emerald-600", tags: ["Jib Rest", "1단", "2단"], devStatus: "Active", contributor: "박준석" },
@@ -119,9 +119,9 @@ const APP_REGISTRY_OVERRIDES = {
   },
   "Independent Tank Assessment": {
     menuName: "Independent Tank Assessment",
-    programNames: ["Independent Tank Assessment"],
+    programNames: ["IndependentTank", "IndependentTankAssessment", "Independent Tank", "Independent Tank Assessment"],
   },
-  // 외부 앱(iframe/별도 창) — 실행 시 외부 서버 URL 을 새 창으로 띄운다. (BlockWeldAssessment.jsx)
+  // 외부 앱(별도 창) — 실행 시 WorkBench 프록시를 통해 외부 서버 앱을 띄운다.
   "Block Weld Assessment": {
     menuName: "Block Weld Assessment",
     programNames: ["BlockWeld", "BlockWeldAssessment", "Block Weld", "Block Weld Assessment"],

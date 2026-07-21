@@ -12,6 +12,8 @@ router = APIRouter(prefix="/external-apps", tags=["external-apps"])
 
 BLOCK_WELD_UPSTREAM = "http://10.14.42.145:31880/"
 BLOCK_WELD_PROXY_PATH = "/external-apps/block-weld"
+INDEPENDENT_TANK_UPSTREAM = "http://10.14.42.114:31870/"
+INDEPENDENT_TANK_PROXY_PATH = "/external-apps/independent-tank"
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -23,6 +25,7 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 _block_weld_client: httpx.AsyncClient | None = None
+_independent_tank_client: httpx.AsyncClient | None = None
 
 
 def get_block_weld_client() -> httpx.AsyncClient:
@@ -41,6 +44,24 @@ async def close_block_weld_client() -> None:
     if _block_weld_client is not None and not _block_weld_client.is_closed:
         await _block_weld_client.aclose()
     _block_weld_client = None
+
+
+def get_independent_tank_client() -> httpx.AsyncClient:
+    global _independent_tank_client
+    if _independent_tank_client is None or _independent_tank_client.is_closed:
+        _independent_tank_client = httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=httpx.Timeout(30.0, connect=5.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        )
+    return _independent_tank_client
+
+
+async def close_independent_tank_client() -> None:
+    global _independent_tank_client
+    if _independent_tank_client is not None and not _independent_tank_client.is_closed:
+        await _independent_tank_client.aclose()
+    _independent_tank_client = None
 
 
 def _filter_headers(headers):
@@ -236,3 +257,95 @@ async def proxy_block_weld_health():
 @router.api_route("/block-weld/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
 async def proxy_block_weld_path(request: Request, path: str):
     return await _proxy_block_weld(request, path)
+
+
+async def _proxy_independent_tank(request: Request, path: str = ""):
+    upstream_origin = INDEPENDENT_TANK_UPSTREAM.rstrip("/")
+    proxy_origin = str(request.base_url).rstrip("/")
+    proxy_base = f"{proxy_origin}{INDEPENDENT_TANK_PROXY_PATH}"
+    target_url = urljoin(INDEPENDENT_TANK_UPSTREAM, path)
+    if request.url.query:
+        target_url = f"{target_url}?{request.url.query}"
+
+    headers = _filter_headers(request.headers)
+    headers["host"] = urlparse(INDEPENDENT_TANK_UPSTREAM).netloc
+    client = get_independent_tank_client()
+
+    try:
+        upstream = await client.send(
+            client.build_request(
+                request.method,
+                target_url,
+                content=await request.body(),
+                headers=headers,
+            ),
+            stream=True,
+        )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Independent Tank upstream server is unavailable: {exc}",
+        ) from exc
+
+    response_headers = _proxy_response_headers(upstream.headers, upstream_origin, proxy_base)
+    content_type = upstream.headers.get("content-type", "")
+    if "text/html" not in content_type.lower():
+        return StreamingResponse(
+            upstream.aiter_bytes(),
+            status_code=upstream.status_code,
+            headers=response_headers,
+            media_type=content_type,
+            background=BackgroundTask(upstream.aclose),
+        )
+
+    try:
+        content = _rewrite_html_links(
+            await upstream.aread(),
+            content_type,
+            INDEPENDENT_TANK_PROXY_PATH,
+        )
+        return Response(
+            content=content,
+            status_code=upstream.status_code,
+            headers=response_headers,
+            media_type=content_type,
+        )
+    finally:
+        await upstream.aclose()
+
+
+@router.api_route(
+    "/independent-tank",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
+async def proxy_independent_tank_root(request: Request):
+    return await _proxy_independent_tank(request)
+
+
+@router.get("/independent-tank/__wb_proxy_health")
+async def proxy_independent_tank_health():
+    target_url = urljoin(INDEPENDENT_TANK_UPSTREAM, "")
+    client = get_independent_tank_client()
+    try:
+        upstream = await client.send(client.build_request("GET", target_url), stream=True)
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Independent Tank upstream server is unavailable: {exc}",
+        ) from exc
+
+    try:
+        return JSONResponse(
+            {"ok": upstream.status_code < 500, "upstreamStatus": upstream.status_code},
+            status_code=200 if upstream.status_code < 500 else 502,
+        )
+    finally:
+        await upstream.aclose()
+
+
+@router.api_route(
+    "/independent-tank/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
+async def proxy_independent_tank_path(request: Request, path: str):
+    return await _proxy_independent_tank(request, path)
