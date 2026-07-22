@@ -29,6 +29,7 @@ from .analysis_runner import (
     mark_complete,
     mark_running,
     record_analysis,
+    run_subprocess_killtree,
     update_progress,
 )
 
@@ -122,7 +123,9 @@ def task_execute_unit_structural(
         # {stem}_lifting.* 로 이전 실행의 .bdf/.f06/.op2/.log/.f04/.DBALL/.MASTER/.plt 등을 모두 지운다
         # (반복 해석 시 남은 op2/DB 가 stale 결과로 서빙되거나 solver 가 기존 DB 로 실패하는 것 방지).
         # glob 이 못 잡는 _lifting_meta.json / _lifting_nastranResult.json / _edited.bdf 는 명시 삭제.
-        stale_paths = list(glob.glob(os.path.join(bdf_dir, f"{bdf_stem}_lifting.*")))
+        stale_paths = list(glob.glob(
+            os.path.join(glob.escape(bdf_dir), f"{glob.escape(bdf_stem)}_lifting.*")
+        ))
         for stale in (*stale_paths, lifting_meta, result_json, edited_bdf):
             if os.path.exists(stale):
                 try: os.remove(stale)
@@ -171,9 +174,12 @@ def task_execute_unit_structural(
             prepare_args, cwd=bdf_dir,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300,
         )
-        engine_output += _decode_completed(prepare)
+        prepare_log = _decode_completed(prepare)
+        engine_output += prepare_log
         if prepare.returncode != 0:
-            raise RuntimeError(f"lift-run prepare exit code {prepare.returncode}")
+            raise RuntimeError(
+                f"lift-run prepare exit code {prepare.returncode}. 로그:\n{prepare_log.strip()[-4000:]}"
+            )
         if not os.path.exists(lifting_bdf) or not os.path.exists(lifting_meta):
             raise RuntimeError("lifting BDF/meta 가 생성되지 않았습니다.")
 
@@ -190,9 +196,9 @@ def task_execute_unit_structural(
         # 이전 .DBALL/.MASTER 로 인한 실패·버전범프를 막는다(F7, 2026-07-07).
         nastran_args = [nastran_exe, lifting_bdf, "scr=yes", "old=no", "batch=no"]
         logger.info("[UnitStructural] nastran cmd: %s (cwd=%s)", " ".join(nastran_args), bdf_dir)
-        run = subprocess.run(
+        # nastran.exe 는 solver 를 손자 프로세스로 띄우므로 timeout 시 트리 kill 이 필요하다.
+        run = run_subprocess_killtree(
             nastran_args, cwd=bdf_dir,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             timeout=1800,  # SOL 101 + 모델 크기 고려해 30분 여유
         )
         engine_output += "\n" + _decode_completed(run)
@@ -221,9 +227,12 @@ def task_execute_unit_structural(
             result_args, cwd=bdf_dir,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300,
         )
-        engine_output += "\n" + _decode_completed(rmap)
+        rmap_log = _decode_completed(rmap)
+        engine_output += "\n" + rmap_log
         if rmap.returncode != 0:
-            raise RuntimeError(f"lift-result exit code {rmap.returncode}")
+            raise RuntimeError(
+                f"lift-result exit code {rmap.returncode}. 로그:\n{rmap_log.strip()[-4000:]}"
+            )
         if not os.path.exists(result_json):
             raise RuntimeError(f"nastranResult JSON 이 생성되지 않았습니다: {result_json}")
 
@@ -248,13 +257,18 @@ def task_execute_unit_structural(
             "summary":           result_summary,
             "warnings":          result_payload.get("warnings", []),
         }
-        engine_output += (
-            f"\n[OK] Unit 구조 해석 완료 — "
+        # F06 fatal 등으로 이미 status=Failed 인 경우 "[OK] 완료" 요약을 찍지 않는다(모순 방지).
+        # 실패여도 디버깅용 수치는 남기되, 성공을 뜻하는 [OK] 문구는 붙이지 않는다.
+        _summary_line = (
             f"Members {result_summary.get('memberElementCount', 0)} "
             f"(exceeds {result_summary.get('memberExceedCount', 0)}) / "
             f"Wires {result_summary.get('wireCount', 0)} "
             f"(compression {result_summary.get('wireCompressionCount', 0)})"
         )
+        if status_msg == "Failed":
+            engine_output += f"\n[결과 요약] {_summary_line} (F06 fatal — 결과 신뢰도 낮음)"
+        else:
+            engine_output += f"\n[OK] Unit 구조 해석 완료 — {_summary_line}"
 
     except subprocess.TimeoutExpired as te:
         status_msg = "Failed"
@@ -263,6 +277,10 @@ def task_execute_unit_structural(
         status_msg = "Failed"
         logger.error("UnitStructural 오류: %s", str(e), exc_info=True)
         engine_output += f"\n[Error] {str(e)}"
+
+    # 실패 원인(엔진 stdout/stderr)을 DB result_info 에 영속화한다(서버 재시작 후에도 추적 가능).
+    if status_msg == "Failed":
+        result_data["engineLog"] = engine_output[-8000:]
 
     update_progress(job_id, 95, "데이터베이스 저장 중...")
 

@@ -27,6 +27,7 @@ from .analysis_runner import (
     mark_complete,
     mark_running,
     record_analysis,
+    run_subprocess_killtree,
     update_progress,
 )
 
@@ -470,16 +471,18 @@ def _parse_f06_fatals(f06_path: str) -> Dict[str, Any] | None:
 
     fatal_messages: List[Dict[str, Any]] = []
     for idx, line in enumerate(lines):
-        if "*** USER FATAL MESSAGE" not in line:
+        # USER FATAL 뿐 아니라 SYSTEM FATAL 도 탐지한다. return_code==0 이어도 SYSTEM FATAL 만
+        # 있는 F06 이 pass 로 오판되는 것을 막는다.
+        if "*** USER FATAL MESSAGE" not in line and "*** SYSTEM FATAL MESSAGE" not in line:
             continue
         code_match = re.search(r"MESSAGE\s+(\d+)", line)
         context = [line.strip()]
         cursor = idx + 1
         while cursor < len(lines):
             nxt = lines[cursor].strip()
-            if nxt.startswith("*** USER ") and "FATAL MESSAGE" in nxt:
+            if nxt.startswith("*** ") and "FATAL MESSAGE" in nxt:
                 break
-            if nxt.startswith("*** USER INFORMATION MESSAGE"):
+            if nxt.startswith("*** ") and "INFORMATION MESSAGE" in nxt:
                 break
             if nxt:
                 context.append(nxt)
@@ -626,11 +629,10 @@ def _run_nastran_validate(
 
         run_args = [nastran_exe, validation_bdf]
         logger.info("[GroupModuleUnit] nastran cmd: %s (cwd=%s)", " ".join(run_args), bdf_dir)
-        run_result = subprocess.run(
+        # nastran.exe 는 solver 를 손자 프로세스로 띄우므로 timeout 시 트리 kill 이 필요하다.
+        run_result = run_subprocess_killtree(
             run_args,
             cwd=bdf_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
             timeout=600,
         )
         run_out = safe_decode(run_result.stdout)
@@ -714,7 +716,9 @@ def task_execute_groupmoduleunit(
             engine_output += f"\n[stderr] {stderr_text.strip()}"
         if result.returncode != 0:
             engine_output += f"\n[Exit code: {result.returncode}]"
-            raise RuntimeError(f"nastran_bridge exit code {result.returncode}")
+            raise RuntimeError(
+                f"nastran_bridge exit code {result.returncode}. stderr:\n{stderr_text.strip()[-4000:]}"
+            )
 
         # 모델 JSON 로드
         if not os.path.exists(model_json_path):
@@ -813,6 +817,11 @@ def task_execute_groupmoduleunit(
         status_msg = "Failed"
         logger.error("GroupModuleUnit BDF 검증 오류: %s", str(e), exc_info=True)
         engine_output += f"\n[Error] {str(e)}"
+
+    # 실패 원인(엔진 stdout/stderr)을 DB result_info 에 영속화한다. 인메모리 job_status_store 는
+    # 서버 재시작 시 사라지므로, 재시작/시간경과 후에도 원인 추적이 가능하도록 마지막 8KB 를 남긴다.
+    if status_msg == "Failed":
+        result_data["engineLog"] = engine_output[-8000:]
 
     update_progress(job_id, 95, "데이터베이스 저장 중...")
 

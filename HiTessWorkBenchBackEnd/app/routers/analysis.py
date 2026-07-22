@@ -163,10 +163,16 @@ def _verify_employee_self(form_employee_id: str, current_user: str) -> None:
 
 
 def _is_within_dir(base_dir: str, candidate_path: str) -> bool:
-    """candidate_path가 base_dir 하위인지 commonpath로 검증합니다."""
+    """candidate_path가 base_dir 하위인지 commonpath로 검증합니다.
+
+    Windows 에서 commonpath 는 대소문자를 구별하므로 드라이브레터 대소문자만 달라도
+    (예: 'C:\\' vs 'c:\\') ValueError(다른 드라이브)로 legit 경로를 오탐 거부할 수 있다.
+    upload_module_stability_artifact 경로처럼 normcase 로 통일해 이를 막는다.
+    (경계를 더 관대하게가 아니라 정확하게 — 여전히 base_dir 밖 경로는 거부한다.)
+    """
     try:
-        base = os.path.abspath(base_dir)
-        candidate = os.path.abspath(candidate_path)
+        base = os.path.normcase(os.path.abspath(base_dir))
+        candidate = os.path.normcase(os.path.abspath(candidate_path))
         return os.path.commonpath([base, candidate]) == base
     except ValueError:
         return False

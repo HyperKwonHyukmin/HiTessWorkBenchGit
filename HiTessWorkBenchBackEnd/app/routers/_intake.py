@@ -13,6 +13,7 @@
 - 이 모듈을 import 하지 않는 한 기존 라우터에는 어떤 영향도 없습니다.
 - HTTP 예외 메시지/상태 코드는 기존 라우터와 동일하게 유지합니다.
 """
+import logging
 import os
 import re
 import uuid
@@ -22,6 +23,8 @@ from fastapi import HTTPException, UploadFile
 
 from .. import database, models
 from ..services.job_manager import analysis_executor, job_status_store
+
+logger = logging.getLogger(__name__)
 
 # routers/ 디렉토리 기준 백엔드 루트 → userConnection 경로
 # 기존 analysis.py의 _USER_CONNECTION_DIR 정의와 동일한 경로를 가리킵니다.
@@ -126,8 +129,35 @@ def submit_analysis_job(
         "progress": 0,
         "message": queue_message,
     })
-    analysis_executor.submit(task_fn, job_id, *task_args)
+    future = analysis_executor.submit(task_fn, job_id, *task_args)
+    # task_fn 내부 try 밖(예: mark_running)에서 예외가 나면 Future 에만 갇혀 삼켜지고
+    # job 이 Running 으로 고착된다. done 콜백으로 그런 예외를 회수해 로깅 + Failed 마킹한다.
+    # (테스트가 submit 을 stub 으로 대체해 None 을 돌려줄 수 있으므로 Future 일 때만 부착.)
+    if future is not None and hasattr(future, "add_done_callback"):
+        future.add_done_callback(lambda f, jid=job_id: _handle_future_result(jid, f))
     return job_id
+
+
+def _handle_future_result(job_id: str, future) -> None:
+    """제출된 task Future 의 완료를 회수한다.
+
+    task_execute_* 함수들은 보통 내부에서 예외를 처리하고 정상 반환하므로 여기서는 아무 일도
+    하지 않는다. 그러나 task 내부 try 로 감싸지지 않은 지점(초기화 등)에서 예외가 escape 하면
+    ThreadPoolExecutor 는 그것을 Future 에 저장하고 조용히 삼킨다 → job 이 영원히 Running.
+    그 케이스를 잡아 로깅하고 job 을 Failed 로 마킹(메모리+DB write-through)한다.
+    """
+    try:
+        future.result()
+    except BaseException as exc:  # noqa: BLE001 — task 밖에서 새어 나온 모든 예외를 회수
+        logger.error("작업 %s 이(가) task 외부 예외로 중단되었습니다: %s", job_id, exc, exc_info=True)
+        try:
+            job_status_store.update_job(job_id, {
+                "status": "Failed",
+                "progress": 100,
+                "message": f"작업 실행 중 오류로 중단되었습니다: {exc}",
+            })
+        except Exception:
+            logger.exception("작업 %s Failed 마킹 실패", job_id)
 
 
 def _infer_job_metadata(task_fn, task_args: tuple) -> tuple[str | None, str]:

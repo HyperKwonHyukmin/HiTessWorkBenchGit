@@ -99,6 +99,10 @@ def task_execute_module_stability(
         logger.error("ModuleStability 실행 오류: %s", str(e), exc_info=True)
         engine_output += f"\n[Error] {str(e)}"
 
+    # 실패 원인(엔진 stdout/stderr)을 DB result_info 에 영속화한다(서버 재시작 후에도 추적 가능).
+    if status_msg == "Failed":
+        result_data["engineLog"] = engine_output[-8000:]
+
     update_progress(job_id, 95, "데이터베이스 저장 중...")
 
     project_data, db_err = record_analysis(
@@ -206,6 +210,10 @@ def task_optimize_module_hoist_positions(
         status_msg = "Failed"
         logger.error("ModuleHoistOptimize 실행 오류: %s", str(e), exc_info=True)
         engine_output += f"\n[Error] {str(e)}"
+
+    # 실패 원인(엔진 stdout/stderr)을 DB result_info 에 영속화한다(서버 재시작 후에도 추적 가능).
+    if status_msg == "Failed":
+        result_data["engineLog"] = engine_output[-8000:]
 
     update_progress(job_id, 95, "데이터베이스 저장 중...")
 

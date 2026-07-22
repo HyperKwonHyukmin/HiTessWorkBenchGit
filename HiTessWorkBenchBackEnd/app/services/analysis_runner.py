@@ -104,6 +104,66 @@ def run_engine(
         return "Failed", "예기치 않은 오류가 발생했습니다. 관리자에게 문의하세요."
 
 
+def run_subprocess_killtree(
+    cmd_args: list,
+    *,
+    cwd: Optional[str] = None,
+    timeout: Optional[float] = None,
+) -> subprocess.CompletedProcess:
+    """subprocess.run(stdout=PIPE, stderr=PIPE) 의 부분 대체.
+
+    Nastran launcher(nastran.exe) 는 실제 solver 를 손자 프로세스로 띄우므로, timeout 시
+    subprocess.run 은 직계 자식만 죽이고 손자 solver 는 좀비로 남을 수 있다. 이 헬퍼는 timeout
+    초과 시 psutil 로 자식 프로세스 트리 전체(손자 포함)를 종료한 뒤 subprocess.TimeoutExpired
+    를 재-raise 한다 → 기존 호출부의 except subprocess.TimeoutExpired 처리를 그대로 재사용한다.
+
+    반환/예외 계약은 subprocess.run(bytes 출력) 과 동일: CompletedProcess(returncode, stdout,
+    stderr:bytes) 를 반환하고, 초과 시 TimeoutExpired 를 던진다. psutil 미가용 시에는 트리 kill
+    없이 표준 subprocess.run 으로 폴백한다(동작 후퇴 없이 안전).
+    """
+    try:
+        import psutil  # optional dependency
+    except Exception:
+        psutil = None
+
+    if psutil is None:
+        return subprocess.run(
+            cmd_args, cwd=cwd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=timeout,
+        )
+
+    proc = subprocess.Popen(
+        cmd_args, cwd=cwd,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    try:
+        out, err = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(cmd_args, proc.returncode, out, err)
+    except subprocess.TimeoutExpired:
+        # 자식 트리 전체 종료 — 손자 solver 좀비 방지.
+        try:
+            parent = psutil.Process(proc.pid)
+            victims = parent.children(recursive=True)
+            victims.append(parent)
+            for p in victims:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+            psutil.wait_procs(victims, timeout=5)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        try:
+            out, err = proc.communicate(timeout=5)
+        except Exception:
+            out, err = b"", b""
+        raise subprocess.TimeoutExpired(cmd_args, timeout, output=out, stderr=err)
+
+
 def record_analysis(
     *,
     job_id: Optional[str] = None,
