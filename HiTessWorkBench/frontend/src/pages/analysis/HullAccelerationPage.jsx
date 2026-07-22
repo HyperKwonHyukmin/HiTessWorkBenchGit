@@ -72,7 +72,7 @@ const RULE_SOURCES = {
   dnv: 'DNV-RU-SHIP, Ship motions and accelerations (Pt 3, Ch4, Sec3), 2023',
   csr: 'CSR-H, Acceleration at any position (Pt 1, Ch 4, Sec 3), 2017',
   igc: 'Guidance formula for acceleration components (4.28.2), 2014',
-  bv: 'Rules for the classification of steel ship[NR 467], Ship motion and acceleration (Pt B, Ch5, Sec3), 2017',
+  bv: 'Rules for the classification of steel ship[NR 467], Ship motions and accelerations (Pt B, Ch5, Sec3), 2026',
   lr: 'Rules and regulations for the classification of ship, Strengthening for machinery on deck (Pt 3, Ch9, Sec9), 2020',
 };
 
