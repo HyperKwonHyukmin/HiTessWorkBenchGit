@@ -439,8 +439,9 @@ class ServerManagerApp:
         # None 검사여야 한다: `if last_ok` 로 쓰면 epoch 0.0 이 falsy 라 "한 번도
         # 응답하지 않았다"로 뒤집혀 사실의 정반대를 기록한다.
         # UTC 를 거쳐 변환하는 이유는 naive datetime 의 astimezone() 이 Windows
-        # 에서 UTC 기준 epoch 이전 시각에 OSError 를 던지기 때문이다(실측: KST
-        # 에서 t < 32400). 진단 한 줄 때문에 강제 재시작이 중단되면 안 된다.
+        # 에서 epoch 직후 하루 구간에 OSError(EINVAL) 를 던지기 때문이다
+        # (실측/KST: t < 86400 은 전부 실패, t == 86400 부터 성공). tz 를 주면
+        # 그 경로를 타지 않는다. 진단 한 줄 때문에 강제 재시작이 중단되면 안 된다.
         last_ok = self.health_tracker.last_ok_at
         snapshot["last_ok"] = (
             datetime.fromtimestamp(last_ok, tz=timezone.utc)

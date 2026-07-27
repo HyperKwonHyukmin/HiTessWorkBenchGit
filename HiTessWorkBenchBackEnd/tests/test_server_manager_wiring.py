@@ -351,7 +351,8 @@ def test_zombie_snapshot_keeps_epoch_zero_last_ok(harness):
     harness.app._force_restart_zombie()
 
     # None 이 아닌 것에 더해, 변환 자체가 터지지 않아야 한다 — naive datetime 의
-    # astimezone() 은 Windows 에서 UTC 기준 epoch 이전 시각에 OSError 를 던진다.
+    # astimezone() 은 Windows 에서 epoch 직후 하루 구간에 OSError 를 던진다
+    # (실측/KST: t < 86400 전부 실패). tz 를 주는 경로여야만 통과한다.
     last_ok = harness.events.detail("zombie_detected")["last_ok"]
     assert last_ok is not None
     assert last_ok.startswith("1970-01-01")
