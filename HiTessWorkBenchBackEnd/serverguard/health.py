@@ -67,6 +67,12 @@ class HealthTracker:
         return new_state, changed
 
     def reset(self):
-        """재시작 직후처럼 판정을 처음부터 다시 시작해야 할 때 호출한다."""
+        """재시작 직후처럼 판정을 처음부터 다시 시작해야 할 때 호출한다.
+
+        fail_streak·state 뿐 아니라 last_ok_at 도 함께 지운다 — 남겨두면
+        재시작 전(죽은) 프로세스의 마지막 정상 시각이 새 프로세스의 기록인
+        것처럼 남아 사후 진단 로그에 거짓 타임스탬프가 찍힌다.
+        """
         self.fail_streak = 0
         self.state = HEALTHY
+        self.last_ok_at = None
