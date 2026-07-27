@@ -284,9 +284,12 @@ class ServerManagerApp:
 
     # ── 서버 출력 스트리밍 ───────────────────────────────────────────────
     def _stream_output(self):
-        if not self.server_proc:
+        # 이 스레드가 담당하는 프로세스를 지역 변수로 붙잡는다 — self.server_proc 는
+        # 이 스레드가 도는 동안 좀비 강제 재시작 등으로 다른 프로세스로 바뀔 수 있다.
+        proc = self.server_proc
+        if proc is None:
             return
-        for line in self.server_proc.stdout:
+        for line in proc.stdout:
             line = line.rstrip()
             if not line:
                 continue
@@ -299,10 +302,19 @@ class ServerManagerApp:
             elif "started" in line or "running" in line.lower() or "Application startup" in line:
                 tag = "success"
             self.root.after(0, self._log, line, tag)
-        # 프로세스 종료됨
-        self.root.after(0, self._on_server_exit)
+        # 프로세스 종료됨 — 어느 프로세스의 종료인지 함께 알린다(스테일 콜백 가드용).
+        self.root.after(0, self._on_server_exit, proc)
 
-    def _on_server_exit(self):
+    def _on_server_exit(self, proc=None):
+        # 디스크 지연(로그 flush 등)으로 이 스레드의 EOF 감지가 늦어지면, 좀비
+        # 강제 재시작이 이미 새 프로세스를 띄운 뒤에 '지난' 프로세스의 종료
+        # 통지가 도착할 수 있다. proc identity 로 그 스테일 통지를 걸러낸다 —
+        # 걸러내지 않으면 방금 띄운 정상 프로세스를 크래시로 오판해 허위
+        # crash_detected 기록을 남기고 재시작 예산을 잘못 소진한다.
+        # proc=None 기본값은 인자 없이 호출하는 경로가 남아 있어도 기존 동작으로
+        # 안전하게 떨어지도록 하기 위함이다.
+        if proc is not None and proc is not self.server_proc:
+            return
         self._set_running(False)
         # 업데이트 중 재시작은 _update_worker 가 직접 처리하므로 감시하지 않는다.
         if self.is_updating:
@@ -371,7 +383,14 @@ class ServerManagerApp:
         snapshot = diagnostics.collect(uvicorn_pid=pid)
         children = proctree.snapshot_tree(pid) if pid else []
         snapshot["fail_streak"] = self.health_tracker.fail_streak
-        snapshot["last_ok"] = self.health_tracker.last_ok_at
+        # last_ok_at 은 epoch float(HealthTracker 의 계약) — events.py 의 다른
+        # 필드(ts)와 마찬가지로 ISO8601 로 남겨야 사후 분석 시 바로 읽을 수 있다.
+        # None 이면 그대로 None 을 남긴다 — "한 번도 응답하지 않았다"는 사실이다.
+        last_ok = self.health_tracker.last_ok_at
+        snapshot["last_ok"] = (
+            datetime.fromtimestamp(last_ok).astimezone().isoformat(timespec="seconds")
+            if last_ok else None
+        )
         snapshot["children"] = children
         events.append_event(LOG_DIR, "L1", "zombie_detected", snapshot)
 
