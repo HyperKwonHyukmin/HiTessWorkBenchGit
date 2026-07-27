@@ -63,6 +63,32 @@ def test_prune_events_drops_records_older_than_retention(tmp_path):
     assert [r["event"] for r in events.read_events(tmp_path)] == ["recent"]
 
 
+def test_prune_events_keeps_unparseable_ts_records(tmp_path):
+    events.append_event(tmp_path, "L1", "good")
+    with open(tmp_path / events.EVENTS_FILENAME, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": "not-a-timestamp", "src": "L1", "event": "broken", "detail": {}}) + "\n")
+
+    removed = events.prune_events(tmp_path, retention_days=30)
+
+    assert removed == 0
+    assert [r["event"] for r in events.read_events(tmp_path)] == ["good", "broken"]
+
+
+def test_read_events_returns_empty_list_when_file_missing(tmp_path):
+    assert events.read_events(tmp_path) == []
+
+
+def test_prune_events_never_raises_when_file_is_unreadable(tmp_path):
+    # events 파일 자리에 디렉토리를 두면 read/write open 이 모두 실패한다
+    # (Windows 에서 PermissionError). L1 기동 경로에서 호출되므로 이 실패가
+    # 서버 기동을 막아서는 안 된다 — 0 을 반환해야 한다.
+    (tmp_path / events.EVENTS_FILENAME).mkdir()
+
+    removed = events.prune_events(tmp_path, retention_days=30)
+
+    assert removed == 0
+
+
 def test_daily_log_writer_creates_file_named_by_date(tmp_path):
     writer = events.DailyLogWriter(tmp_path)
     stamp = datetime(2026, 7, 27, 14, 3, 11)
