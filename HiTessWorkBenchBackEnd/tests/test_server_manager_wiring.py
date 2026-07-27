@@ -43,17 +43,21 @@ class FakeRoot:
 class FakeProc:
     """subprocess.Popen 대역."""
 
-    def __init__(self, pid=4242, alive=True, stdout_lines=()):
+    def __init__(self, pid=4242, alive=True, stdout_lines=(), terminate_raises=None):
         self.pid = pid
         self._alive = alive
         self.terminated = False
         self.killed = False
         self.stdout = iter(stdout_lines)
+        # Windows TerminateProcess 가 드물게 PermissionError 를 내는 상황을 흉내낸다.
+        self._terminate_raises = terminate_raises
 
     def poll(self):
         return None if self._alive else 0
 
     def terminate(self):
+        if self._terminate_raises is not None:
+            raise self._terminate_raises
         self.terminated = True
         self._alive = False
 
@@ -511,6 +515,37 @@ def test_cleanup_orphans_records_unconfirmed_survivors(harness):
     assert detail["attempted"] == 2
     assert detail["terminated"] == 1
     assert [entry["pid"] for entry in detail["unconfirmed"]] == [2]
+
+
+def test_force_restart_zombie_survives_terminate_failure(harness):
+    """종료 실패가 좀비 복구를 '영구 정지' 시키면 안 된다.
+
+    restart_begin 과 재시작 예약 사이에서 예외가 새어 나가면 :475 의 reset() 이
+    실행되지 않아 state 가 ZOMBIE 로 남는다. HealthTracker.record 는 전이 시에만
+    changed=True 를 주므로, 이후 모든 실패가 changed=False → _force_restart_zombie
+    가 다시는 발화하지 않는다. 덤으로 restart_begin 이 짝 없이 남아 I5 가
+    없애려던 모호성이 그대로 재현된다. 확률은 낮지만 결과가 '무인 복구 영구
+    정지' 라 이 기능의 존재 이유와 정면 충돌한다.
+
+    종료에 실패했어도 고아 정리·포트 해제·리셋·재시작 예약은 전부 실행되어야
+    한다 — 그게 이 함수가 하려던 일이다(catch-and-continue).
+    """
+    proc = FakeProc(pid=303, terminate_raises=PermissionError("액세스가 거부되었습니다"))
+    harness.app.server_proc = proc
+    harness.proctree.children = [{"pid": 1, "name": "nastran.exe", "create_time": 1.0}]
+    fail_n(harness.app.health_tracker, health.ZOMBIE_THRESHOLD)
+
+    harness.app._force_restart_zombie()
+
+    assert "terminate_failed" in harness.events.names()
+    assert "PermissionError" in harness.events.detail("terminate_failed")["error"]
+    # 영구 정지 방지 — 다음 좀비도 반드시 다시 감지되어야 한다.
+    assert harness.app.health_tracker.fail_streak == 0
+    assert harness.app.health_tracker.state == health.HEALTHY
+    # 나머지 복구 시퀀스가 전부 실행됐는가.
+    assert harness.proctree.kill_calls, "고아 정리가 실행되어야 한다"
+    assert harness.killed_ports == [9091]
+    assert harness.root.scheduled(harness.app._zombie_restart_fire)
 
 
 def test_force_restart_zombie_continues_when_cleanup_fails(harness):

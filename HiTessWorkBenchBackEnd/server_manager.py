@@ -460,18 +460,39 @@ class ServerManagerApp:
         # 그 플래그를 읽는 순간(Task 9 의 백오프 재시도) 영구 정지가 된다.
         # 플래그를 지우는 곳이 _start_server 뿐인데 거부당하는 대상이 바로
         # 그 _start_server 이기 때문이다.
+        # poll() 은 OS 를 다시 조회한다 — 위 진단 수집(cpu_percent 100ms 블로킹)과
+        # 자손 열거·이벤트 기록 사이에 대상이 스스로 죽었을 수 있으므로 살아있는
+        # 검사다.
         if self.server_proc and self.server_proc.poll() is None:
-            self.server_proc.terminate()
+            # 종료 실패를 밖으로 흘리면 아래 reset()·재시작 예약이 실행되지 않아
+            # state 가 ZOMBIE 로 굳는다. HealthTracker 는 전이 시에만 알리므로
+            # 이후 어떤 실패도 재감지로 이어지지 않는다 — 무인 복구 영구 정지다.
+            # 종료에 실패했어도 고아 정리·포트 해제·리셋·재시작은 전부 진행해야
+            # 한다(finally 가 아니라 catch-and-continue 인 이유).
             try:
-                self.server_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.server_proc.kill()
+                self.server_proc.terminate()
+                try:
+                    self.server_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.server_proc.kill()
+            except Exception as exc:
+                self._log(f"  서버 프로세스 종료 실패: {exc}", "error")
+                self._log("  포트 정리로 이어서 진행합니다.", "warning")
+                events.append_event(LOG_DIR, "L1", "terminate_failed",
+                                    {"pid": pid,
+                                     "error": f"{type(exc).__name__}: {exc}"[:300]})
         self.server_proc = None
         self._set_running(False)
 
         self._cleanup_orphans(children)
 
         self._kill_port(9091)
+        # 이 reset 은 실제로 중복이다 — _health_tick 은 server_proc 이 None 인 것을
+        # 보고 스스로 reset 하고, _start_server 도 새 프로세스마다 reset 한다.
+        # 그래도 남긴다: 재시작을 촉발한 streak 이 그 결정보다 오래 살지 않게 해
+        # 이 함수를 자기완결로 만든다(스냅샷은 위에서 이미 기록했으므로 증거
+        # 손실도 없다). 위 종료 실패 경로에서도 반드시 도달해야 하는 위치다 —
+        # 건너뛰면 state 가 ZOMBIE 로 굳어 좀비 재감지가 영구히 멈춘다.
         self.health_tracker.reset()
         self.root.after(RESTART_DELAY_MS, self._zombie_restart_fire)
 
