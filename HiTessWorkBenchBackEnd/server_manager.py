@@ -12,7 +12,10 @@ from tkinter import scrolledtext
 from datetime import datetime
 from pathlib import Path
 
+from serverguard import diagnostics, events, pidfile
+
 BASE_DIR = Path(__file__).resolve().parent
+LOG_DIR = BASE_DIR / "logs"
 
 # WorkBenchEnv가 HiTessWorkBenchBackEnd 안에 있으면 BASE_DIR/WorkBenchEnv,
 # 상위 폴더(HiTessWorkBenchGit)에 있으면 BASE_DIR.parent/WorkBenchEnv 를 사용
@@ -62,11 +65,34 @@ class ServerManagerApp:
         #  restart_history : 최근 자동 재시작 시각 목록(크래시 루프 차단 판단용).
         self.intentional_stop = False
         self.restart_history: list[float] = []
+        # uvicorn stdout 을 날짜별 파일로 보존한다(앱을 닫아도 traceback 이 남는다).
+        self.uvicorn_log = events.DailyLogWriter(LOG_DIR)
 
         self._setup_window()
         self._build_ui()
+        self._write_pidfile()
+        events.append_event(LOG_DIR, "L1", "manager_start", {"pid": os.getpid()})
+        events.prune_events(LOG_DIR)
+        events.prune_uvicorn_logs(LOG_DIR)
+
         self._start_server()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ── PID 파일 기록 ────────────────────────────────────────────────────
+    def _write_pidfile(self):
+        """L2 워치독이 읽을 PID 파일을 남긴다.
+
+        실패해도 기동을 막지 않는다 — 다만 조용히 넘어가서는 안 된다.
+        이 파일이 없으면 L2 는 L1 이 죽었다고 오판해 5분마다 중복 기동을
+        시도하므로, 실패 사실 자체가 반드시 기록으로 남아야 한다.
+        """
+        try:
+            pidfile.write(LOG_DIR, os.getpid())
+        except Exception as exc:
+            self._log(f"PID 파일을 쓰지 못했습니다: {exc}", "error")
+            self._log("  워치독이 이 프로세스를 인식하지 못할 수 있습니다.", "warning")
+            events.append_event(LOG_DIR, "L1", "pidfile_write_failed",
+                                {"error": f"{type(exc).__name__}: {exc}"[:300]})
 
     # ── 창 설정 ──────────────────────────────────────────────────────────
     def _setup_window(self):
@@ -238,6 +264,7 @@ class ServerManagerApp:
             )
             self._set_running(True)
             self._log("uvicorn 서버 시작됨 (port 9091)", "success")
+            events.append_event(LOG_DIR, "L1", "server_start", {"pid": self.server_proc.pid})
             threading.Thread(target=self._stream_output, daemon=True).start()
         except FileNotFoundError:
             self._log(f"Python 실행 파일을 찾을 수 없습니다:\n  {PYTHON}", "error")
@@ -251,6 +278,7 @@ class ServerManagerApp:
             line = line.rstrip()
             if not line:
                 continue
+            self.uvicorn_log.write(line)
             tag = "info"
             if "ERROR" in line or "error" in line.lower():
                 tag = "error"
@@ -273,6 +301,13 @@ class ServerManagerApp:
             return
         # 여기까지 왔으면 의도치 않은 종료(크래시) → 자동 재시작을 시도한다.
         self._log("서버 프로세스가 예기치 않게 종료되었습니다.", "error")
+        detail = diagnostics.collect()          # 호스트 지표만 — 죽은 PID 는 조회하지 않는다
+        if self.server_proc is not None:
+            # 죽은 PID 를 '사실'로만 남긴다. 이 PID 를 psutil 로 조회하면
+            # 그사이 재사용된 무관한 프로세스의 지표를 uvicorn 것처럼 기록할 수 있다.
+            detail["crashed_pid"] = self.server_proc.pid
+            detail["exit_code"] = self.server_proc.poll()
+        events.append_event(LOG_DIR, "L1", "crash_detected", detail)
         self._schedule_auto_restart()
 
     # ── 자동 재시작(의도치 않은 종료 시) ─────────────────────────────────
@@ -491,6 +526,10 @@ class ServerManagerApp:
     # ── 종료 ─────────────────────────────────────────────────────────────
     def _on_close(self):
         self._stop_server()
+        events.append_event(LOG_DIR, "L1", "manager_stop")
+        # PID 파일을 지워야 L2 가 '정상 종료' 와 '급사' 를 구분할 수 있다.
+        pidfile.clear(LOG_DIR)
+        self.uvicorn_log.close()
         self.root.destroy()
 
 
