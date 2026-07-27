@@ -18,12 +18,16 @@ BACKOFF_STEPS_SEC = (600, 1200, 2400, 3600)      # 10 / 20 / 40 / 60분
 class RestartPolicy:
     """지금 재시작해도 되는지 판단한다. 시계는 호출자가 주입한다(테스트 가능).
 
-    사용 계약: `decide()` 는 질의이자 전이다 — 예산을 넘기는 순간을 스스로
-    포착해 백오프에 진입하므로, 크래시 1건당 정확히 한 번만 호출하는 것을
-    전제로 한다(server_manager.py 의 _schedule_auto_restart 가 이렇게 쓴다).
-    실제로 재시작을 시도했을 때만 `record_attempt()` 를 호출할 책임은
-    호출자에게 있다 — 그러지 않으면 history 가 영원히 비어 있어 예산 판정이
-    무력화된다("go" 만 계속 반환).
+    사용 계약: `on_crash()` 는 크래시 1건당 정확히 한 번만 호출한다
+    (server_manager.py 의 _schedule_auto_restart 가 이렇게 쓴다). `"go"` 를
+    반환할 때는 그 자리에서 스스로 `record_attempt()` 를 호출해 시도를
+    기록한다 — 실제 호출부에서도 "go" 직후 조건 없이 항상 기록이 뒤따르므로,
+    그 관계를 호출자에게 맡겨두면 잊었을 때 history 가 영원히 비어 있어
+    예산 판정이 조용히 무력화된다("go" 만 계속 반환) — 이 모듈이 없애려던
+    무한 재시작을 그대로 되살리는 실패 모드다. `"wait"` 를 반환할 때는
+    아무것도 기록하지 않는다(대기 중에는 재시작을 시도하지 않았으므로).
+    `record_attempt()` 자체는 여전히 공개 메서드로 남아 있다 — 테스트가
+    시나리오를 미리 세팅하는 독립된 원시 연산으로 쓴다.
     """
 
     def __init__(self, window_sec=RESTART_WINDOW_SEC,
@@ -36,10 +40,13 @@ class RestartPolicy:
         self.backoff_level = 0
         self.wait_until = 0.0
 
-    def decide(self, now):
-        """("go", 0) 또는 ("wait", 남은초) 를 반환한다.
+    def on_crash(self, now):
+        """크래시 발생 시 호출한다. ("go", 0) 또는 ("wait", 남은초) 를 반환한다.
 
         예산 소진을 판정하는 순간 백오프 단계를 올리고 대기 종료 시각을 확정한다.
+        "go" 를 반환하기 직전에는 이 시도를 스스로 기록한다 — 분리해뒀을 때의
+        실패 모드(호출자가 기록을 잊으면 예산 판정이 조용히 무력화된다)를
+        원천적으로 없앤다.
         """
         if now < self.wait_until:
             return ("wait", self.wait_until - now)
@@ -54,6 +61,7 @@ class RestartPolicy:
             self.history = []            # 대기 후에는 깨끗한 예산으로 재개한다.
             return ("wait", delay)
 
+        self.record_attempt(now)
         return ("go", 0)
 
     def record_attempt(self, now):
