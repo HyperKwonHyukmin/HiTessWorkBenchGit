@@ -1346,6 +1346,33 @@ PID 파일은 L2 가 L1 생존을 판정하는 유일한 근거다."
 
 ## Task 8: `server_manager.py` — 헬스체크 + 좀비 강제 재시작
 
+> ⚠ **완료 후 개정** — 커밋 `afdb9ca`·`6580b26` 로 구현했고, 품질 리뷰에서 Important 5건이
+> 나와 `5779b12` 로 재작업했다. 아래 코드 예제는 **개정 전 원안**이다. 실제 코드와 다르니
+> 후속 Task 는 계획서가 아니라 **현재 소스**를 기준으로 삼을 것. 개정 내용:
+>
+> - **I1** `_start_server` 성공 경로에 `health_tracker.reset()` 추가 — `_health_tick` 은 죽은
+>   프로세스를 *직접 관측*할 때만 리셋하는데, `RESTART_DELAY_MS`(3초)가 헬스 주기(15초)보다
+>   짧아 사망·재기동이 두 tick 사이에 통째로 들어가는 게 통례다. streak 이 이월되면 다음 tick 이
+>   *아직 부팅 중인* 새 서버를 프로브해 임계값에 도달, **정상 서버를 사살**했다.
+> - **I2** 헬스 콜백에도 identity 가드 — `_health_tick` 이 대상을 캡처해
+>   `_probe_health(proc)`→`_on_health_result(ok, proc)` 까지 전달하고 현재 프로세스가 아니면
+>   폐기. `_force_restart_zombie` 첫 줄에 대상 생존 확인(`zombie_abort`). 스테일 프로브 결과가
+>   **죽은 PID** 로 `snapshot_tree`/`kill_survivors` 를 돌리면 Windows PID 재사용 때문에
+>   무관한 프로세스의 자식을 죽인다 — 크래시 경로가 이미 거부한 바로 그 위험이다.
+> - **I3** `_force_restart_zombie` 의 `intentional_stop = True` **삭제**(identity 가드가 이미
+>   막는다). 잔류하면 "사용자가 멈췄다"고 거짓말해 재시작 게이팅이 영구 정지가 된다.
+> - **I4/I5** `_start_server` 가 `bool` 반환 + `except OSError`(GUI 앱에선 `PermissionError` 가
+>   아무 데도 안 남았다) + `server_start_failed`. `restart_done` 은 성공 시에만,
+>   두 early return 에 `restart_skipped{reason}`.
+> - **M1·M2·M3·M5** `last_ok` 를 `is not None` 으로(epoch 0.0 이 null 로 뭉개졌다) +
+>   `datetime.fromtimestamp(t, tz=utc)` 경유(naive `astimezone()` 이 Windows 에서 epoch 직후
+>   하루 구간에 `OSError` — 실측/KST `t < 86400`), `_on_server_exit(proc)` 필수 인자화,
+>   `_stream_output(proc)` 인자 전달, `entry["terminated"]` 를 `try` 안으로.
+> - **신규** `tests/test_server_manager_wiring.py` (19개). `serverguard/` 순수 모듈엔 테스트
+>   689줄이 있었지만 **그것들을 조합하는 배선에는 0줄**이었고, Important 2건이 전부 배선에
+>   있었다 — *상태가 언제 리셋되는가* 와 *이 결과가 어느 프로세스의 것인가* 는 순수 모듈
+>   테스트로 볼 수 없다. `server_manager.py` 는 창 없이 import 되므로 헤드리스로 검증 가능하다.
+
 **Files:**
 - Modify: `HiTessWorkBenchBackEnd/server_manager.py`
 
@@ -1485,6 +1512,33 @@ git commit -m "✨ feat: 좀비 상태(프로세스 생존·HTTP 무응답) 감�
 ---
 
 ## Task 9: `server_manager.py` — 백오프 전환
+
+> ⚠ **개정 (Task 8 품질 리뷰 이후)** — 아래 코드 예제는 그대로 쓰되, 다음 4가지를 반영할 것.
+>
+> **① 줄번호가 전부 밀렸다.** Tasks 7·8 이 ~250줄을 추가했다. 실제 위치:
+> `:38-40`→**`:49-51`**(상수) / `:60-62`→**`:71-73`**(주석) / `restart_history` 선언 →**`:75`** /
+> `_schedule_auto_restart` →**`:456`** / `_auto_restart_fire` →**`:481`** / `_toggle_server` 의 `restart_history = []` →**`:511`**.
+> ※ Task 8 재작업이 다시 밀 수 있으니 **착수 시점에 직접 grep 해 확인할 것.**
+>
+> **② Step 5 의 `self.health_tracker.reset()` 은 이제 불필요하다.** Task 8 재작업(I1)이
+> `_start_server` 성공 경로에 `health_tracker.reset()` 을 넣었으므로 모든 기동이 이미 덮인다.
+> Step 5 에서는 **`self.restart_policy.reset()` 만** 남겨라(수동 Start = 깨끗한 예산).
+>
+> **③ Step 4 의 `restart_done` 은 조건부여야 한다.** Task 8 재작업(I4)이 `_start_server` 를
+> `bool` 반환으로 바꿨다. `_auto_restart_fire` 도 **`_start_server()` 가 `True` 일 때만**
+> `restart_done` 을 남겨라 — 안 그러면 뜨지도 않은 서버를 성공으로 단언한다.
+> 두 early return 에도 `restart_skipped{reason:...}` 을 남겨 `restart_begin` 의 짝을 맞춰라.
+>
+> **④ ★ 백오프 대기 콜백에 `intentional_stop` 을 읽지 마라.** Task 8 재작업(I3)이
+> `_force_restart_zombie` 의 플래그 오염을 제거했지만, 10~60분 대기 콜백에서 그 플래그를
+> 게이트로 쓰면 **영구 정지가 부활**한다(플래그를 지우는 곳이 `_start_server` 뿐인데
+> 거부당하는 대상이 바로 그 `_start_server` 다). 대기 중 사용자 Stop 을 존중해야 한다면
+> `intentional_stop` 이 아니라 **`_toggle_server` 가 예약을 취소**하는 방식으로 풀어라.
+>
+> **미결 설계 질문(Task 9 에서 결정할 것):** 좀비 강제 재시작은 현재 `RestartPolicy` 예산을
+> **우회**한다(`_force_restart_zombie` 가 `root.after(RESTART_DELAY_MS, ...)` 를 직접 호출).
+> 부팅→행→강제종료가 반복되는 좀비 루프는 백오프 없이 영원히 3분마다 재시작을 반복하게 된다.
+> 예산에 태울지, 태운다면 ④의 함정을 어떻게 피할지 Task 9 에서 명시적으로 결정하고 기록하라.
 
 **Files:**
 - Modify: `HiTessWorkBenchBackEnd/server_manager.py`
