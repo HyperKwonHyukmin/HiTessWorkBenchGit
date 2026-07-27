@@ -9,7 +9,7 @@ import urllib.request
 import urllib.error
 import tkinter as tk
 from tkinter import scrolledtext
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from serverguard import diagnostics, events, health, pidfile, proctree
@@ -255,9 +255,15 @@ class ServerManagerApp:
             self._log(f"  포트 정리 중 오류: {e}", "error")
 
     # ── 서버 시작 ────────────────────────────────────────────────────────
-    def _start_server(self):
+    def _start_server(self) -> bool:
+        """서버를 띄운다. 호출이 끝난 시점에 서버가 떠 있으면 True.
+
+        반환값이 필요한 이유는 재시작 경로가 'restart_done' 같은 사실을 단언하기
+        때문이다. 시작이 실패했는데 완료를 기록하면 사후 분석 로그가 거짓을
+        말한다 — 침묵하는 로그보다 나쁘다.
+        """
         if self.server_proc and self.server_proc.poll() is None:
-            return
+            return True
         # 새로 띄우는 순간 '의도적 종료' 표식을 해제한다(이후 죽으면 크래시로 간주).
         self.intentional_stop = False
         self._log("서버를 시작하는 중...", "info")
@@ -274,21 +280,40 @@ class ServerManagerApp:
                 errors="replace",
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
+            # 새 프로세스의 판정은 처음부터 다시 시작한다. RESTART_DELAY_MS(3초)는
+            # HEALTH_INTERVAL_MS(15초)보다 짧아 사망·재기동이 두 tick 사이에
+            # 통째로 들어가는 것이 통례다 — 이월된 fail_streak 을 지우지 않으면
+            # 다음 한 번의 실패로 임계(12)를 넘어, 아직 부팅 중(FastAPI import·
+            # MySQL 테이블 생성)인 정상 서버를 좀비로 오판해 사살한다.
+            # 모든 재시작(크래시·좀비·수동·업데이트)이 이 길목을 지난다.
+            self.health_tracker.reset()
             self._set_running(True)
             self._log("uvicorn 서버 시작됨 (port 9091)", "success")
             events.append_event(LOG_DIR, "L1", "server_start", {"pid": self.server_proc.pid})
-            threading.Thread(target=self._stream_output, daemon=True).start()
-        except FileNotFoundError:
-            self._log(f"Python 실행 파일을 찾을 수 없습니다:\n  {PYTHON}", "error")
-            self._log("WorkBenchEnv 가상환경이 생성되어 있는지 확인하세요.", "warning")
+            # 스트리밍 스레드에 담당 프로세스를 인자로 넘긴다 — 스레드 안에서
+            # self.server_proc 를 읽으면 시작과 첫 읽기 사이에 좀비 강제 재시작이
+            # 끼어들 창이 남는다.
+            threading.Thread(target=self._stream_output,
+                             args=(self.server_proc,), daemon=True).start()
+            return True
+        except OSError as exc:
+            # FileNotFoundError 뿐 아니라 OSError 전체를 잡는다. PermissionError
+            # (백신 격리 등)는 여기서 안 잡으면 root.after 콜백 밖으로 나가
+            # tkinter 핸들러로 가고, 콘솔 없는 GUI 앱에선 아무 데도 남지 않은 채
+            # 재시작 체인이 기록 없이 끊긴다.
+            if isinstance(exc, FileNotFoundError):
+                self._log(f"Python 실행 파일을 찾을 수 없습니다:\n  {PYTHON}", "error")
+                self._log("WorkBenchEnv 가상환경이 생성되어 있는지 확인하세요.", "warning")
+            else:
+                self._log(f"서버를 시작하지 못했습니다: {type(exc).__name__}: {exc}", "error")
+            events.append_event(LOG_DIR, "L1", "server_start_failed",
+                                {"error": f"{type(exc).__name__}: {exc}"[:300]})
+            return False
 
     # ── 서버 출력 스트리밍 ───────────────────────────────────────────────
-    def _stream_output(self):
-        # 이 스레드가 담당하는 프로세스를 지역 변수로 붙잡는다 — self.server_proc 는
-        # 이 스레드가 도는 동안 좀비 강제 재시작 등으로 다른 프로세스로 바뀔 수 있다.
-        proc = self.server_proc
-        if proc is None:
-            return
+    def _stream_output(self, proc):
+        # 담당 프로세스는 호출부가 인자로 넘긴다 — self.server_proc 는 이 스레드가
+        # 도는 동안 좀비 강제 재시작 등으로 다른 프로세스로 바뀔 수 있다.
         for line in proc.stdout:
             line = line.rstrip()
             if not line:
@@ -305,15 +330,16 @@ class ServerManagerApp:
         # 프로세스 종료됨 — 어느 프로세스의 종료인지 함께 알린다(스테일 콜백 가드용).
         self.root.after(0, self._on_server_exit, proc)
 
-    def _on_server_exit(self, proc=None):
+    def _on_server_exit(self, proc):
         # 디스크 지연(로그 flush 등)으로 이 스레드의 EOF 감지가 늦어지면, 좀비
         # 강제 재시작이 이미 새 프로세스를 띄운 뒤에 '지난' 프로세스의 종료
         # 통지가 도착할 수 있다. proc identity 로 그 스테일 통지를 걸러낸다 —
         # 걸러내지 않으면 방금 띄운 정상 프로세스를 크래시로 오판해 허위
         # crash_detected 기록을 남기고 재시작 예산을 잘못 소진한다.
-        # proc=None 기본값은 인자 없이 호출하는 경로가 남아 있어도 기존 동작으로
-        # 안전하게 떨어지도록 하기 위함이다.
-        if proc is not None and proc is not self.server_proc:
+        # proc 에 기본값을 두지 않는다 — 기본값은 이 가드를 조용히 끄고,
+        # 인자를 빠뜨린 호출자는 '조용하지만 틀린 크래시 진단' 이 아니라
+        # TypeError 로 시끄럽게 터져야 한다.
+        if proc is not self.server_proc:
             return
         self._set_running(False)
         # 업데이트 중 재시작은 _update_worker 가 직접 처리하므로 감시하지 않는다.
@@ -340,22 +366,33 @@ class ServerManagerApp:
         self.root.after(HEALTH_INTERVAL_MS, self._health_tick)
 
         # 프로세스가 이미 죽었거나 업데이트 중이면 크래시 경로가 담당한다.
-        if self.is_updating or not (self.server_proc and self.server_proc.poll() is None):
+        proc = self.server_proc
+        if self.is_updating or not (proc and proc.poll() is None):
             self.health_tracker.reset()
             return
 
-        threading.Thread(target=self._probe_health, daemon=True).start()
+        # 관측 대상을 캡처해 프로브와 콜백까지 끌고 간다 — 프로브가 도는 동안
+        # (타임아웃 5초) 대상이 바뀔 수 있고, 그때 결과를 그대로 반영하면
+        # 지난 프로세스의 실패가 새 프로세스의 streak 으로 쌓인다.
+        threading.Thread(target=self._probe_health, args=(proc,), daemon=True).start()
 
-    def _probe_health(self):
+    def _probe_health(self, proc):
         ok = health.probe()
-        self.root.after(0, self._on_health_result, ok)
+        self.root.after(0, self._on_health_result, ok, proc)
 
-    def _on_health_result(self, ok):
+    def _on_health_result(self, ok, proc):
         """관측 결과를 상태로 환산하고, 전이가 일어난 순간에만 행동한다.
 
         이 메서드는 root.after(0, ...) 를 거쳐 항상 메인 스레드에서 실행된다 —
         HealthTracker 는 락이 없으므로 이 속성이 반드시 지켜져야 한다.
         """
+        # 프로브가 도는 사이 대상이 바뀌었다면(급사 후 재기동 등) 이 결과는
+        # '지난' 프로세스의 것이다. 흔한 레이스지 이상 징후가 아니므로 조용히
+        # 버린다 — 반영하면 유령 좀비 재시작(이미 죽은 PID 를 대상으로 한
+        # kill_survivors/_kill_port)까지 이어진다.
+        if proc is not self.server_proc:
+            return
+
         state, changed = self.health_tracker.record(ok, now=time.time())
         if not changed:
             return
@@ -377,27 +414,51 @@ class ServerManagerApp:
         순서가 중요하다. 진단 스냅샷과 자손 목록을 '죽이기 전에' 확보해야 하며,
         고아 해석 exe 를 정리하지 않으면 MSC 라이선스가 물린 채 남는다.
         """
-        pid = self.server_proc.pid if self.server_proc else None
+        # 되돌릴 수 없는 부작용(kill_survivors, _kill_port)을 실행하기 직전이므로
+        # 대상 검증이 첫 줄에 있어야 한다. 죽은 PID 로 진행하면 Windows 의 PID
+        # 재사용 때문에 무관한 프로세스의 자식을 열거해 죽일 수 있다 —
+        # 크래시 경로가 아래에서 의도적으로 거부한 바로 그 위험이다.
+        if self.server_proc is None or self.server_proc.poll() is not None:
+            self.health_tracker.reset()
+            self._log("강제 재시작 대상이 이미 종료되었습니다 — 크래시 경로가 처리합니다.", "warning")
+            events.append_event(LOG_DIR, "L1", "zombie_abort",
+                                {"reason": "process_already_dead"})
+            return
+
+        pid = self.server_proc.pid
         self._log("3분간 응답이 없습니다 — 강제 재시작합니다.", "error")
 
         snapshot = diagnostics.collect(uvicorn_pid=pid)
-        children = proctree.snapshot_tree(pid) if pid else []
+        # children 의 create_time 은 epoch float 그대로 남긴다. 이 dict 들은 기록
+        # 후 kill_survivors 로 그대로 넘어가 PID 재사용 방어 대조에 쓰이므로,
+        # 읽기 좋으라고 ISO8601 문자열로 바꾸면 그 방어가 깨진다.
+        children = proctree.snapshot_tree(pid)
         snapshot["fail_streak"] = self.health_tracker.fail_streak
         # last_ok_at 은 epoch float(HealthTracker 의 계약) — events.py 의 다른
         # 필드(ts)와 마찬가지로 ISO8601 로 남겨야 사후 분석 시 바로 읽을 수 있다.
-        # None 이면 그대로 None 을 남긴다 — "한 번도 응답하지 않았다"는 사실이다.
+        # None 검사여야 한다: `if last_ok` 로 쓰면 epoch 0.0 이 falsy 라 "한 번도
+        # 응답하지 않았다"로 뒤집혀 사실의 정반대를 기록한다.
+        # UTC 를 거쳐 변환하는 이유는 naive datetime 의 astimezone() 이 Windows
+        # 에서 UTC 기준 epoch 이전 시각에 OSError 를 던지기 때문이다(실측: KST
+        # 에서 t < 32400). 진단 한 줄 때문에 강제 재시작이 중단되면 안 된다.
         last_ok = self.health_tracker.last_ok_at
         snapshot["last_ok"] = (
-            datetime.fromtimestamp(last_ok).astimezone().isoformat(timespec="seconds")
-            if last_ok else None
+            datetime.fromtimestamp(last_ok, tz=timezone.utc)
+            .astimezone().isoformat(timespec="seconds")
+            if last_ok is not None else None
         )
         snapshot["children"] = children
         events.append_event(LOG_DIR, "L1", "zombie_detected", snapshot)
 
         events.append_event(LOG_DIR, "L1", "restart_begin", {"reason": "zombie"})
 
-        # 이 종료는 코드가 의도한 것이므로 크래시 자동 재시작 경로를 타면 안 된다.
-        self.intentional_stop = True
+        # 여기서 intentional_stop 을 세우지 않는다. 이 종료의 크래시 오판은
+        # 아래에서 server_proc 을 None 으로 만들기 때문에 _on_server_exit 의
+        # identity 가드가 이미 막는다. 그 플래그를 빌려 쓰면 '사용자가 멈췄다'는
+        # 의미가 오염되고, 좀비 재시작 후 True 로 잔류한다 — 재시작 게이팅이
+        # 그 플래그를 읽는 순간(Task 9 의 백오프 재시도) 영구 정지가 된다.
+        # 플래그를 지우는 곳이 _start_server 뿐인데 거부당하는 대상이 바로
+        # 그 _start_server 이기 때문이다.
         if self.server_proc and self.server_proc.poll() is None:
             self.server_proc.terminate()
             try:
@@ -423,6 +484,12 @@ class ServerManagerApp:
             return
         try:
             attempted = proctree.kill_survivors(children)
+            # unconfirmed 계산도 try 안에 둔다. kill_survivors 는 항목에 필수 키가
+            # 없으면 KeyError 를 의도적으로 전파하는데, entry.get("terminated") 로
+            # 받으면 그 계약 위반이 '종료 확인 실패' 로 위장돼 조용히 묻힌다.
+            # 반대로 try 밖에 두면 KeyError 가 이 래퍼를 뚫고 나가 재시작을
+            # 중단시킨다 — 시끄럽게 기록하되 재시작은 계속되어야 한다.
+            unconfirmed = [entry for entry in attempted if not entry["terminated"]]
         except Exception as exc:
             self._log(f"  고아 프로세스 정리 실패: {exc}", "error")
             events.append_event(LOG_DIR, "L1", "orphan_cleanup_failed",
@@ -431,7 +498,6 @@ class ServerManagerApp:
 
         if not attempted:
             return
-        unconfirmed = [entry for entry in attempted if not entry.get("terminated")]
         self._log(f"  고아 해석 프로세스 {len(attempted)}개 정리 시도 "
                   f"(종료 확인 {len(attempted) - len(unconfirmed)}개)", "warning")
         if unconfirmed:
@@ -445,12 +511,19 @@ class ServerManagerApp:
         })
 
     def _zombie_restart_fire(self):
+        # restart_begin 의 짝을 반드시 남긴다. 침묵하면 사후 분석자가 "업데이트
+        # 중이라 건너뜀" 과 "매니저 자신이 재시작 도중 죽음" 을 구분할 수 없다 —
+        # 결론이 완전히 다른 두 상황이다.
         if self.is_updating:
+            events.append_event(LOG_DIR, "L1", "restart_skipped", {"reason": "updating"})
             return
         if self.server_proc and self.server_proc.poll() is None:
+            events.append_event(LOG_DIR, "L1", "restart_skipped", {"reason": "already_running"})
             return
-        self._start_server()
-        events.append_event(LOG_DIR, "L1", "restart_done", {"reason": "zombie"})
+        # 시작에 성공했을 때만 완료를 단언한다. 실패는 _start_server 가
+        # server_start_failed 로 남기므로 restart_begin 의 짝은 그쪽이 맡는다.
+        if self._start_server():
+            events.append_event(LOG_DIR, "L1", "restart_done", {"reason": "zombie"})
 
     # ── 자동 재시작(의도치 않은 종료 시) ─────────────────────────────────
     def _schedule_auto_restart(self):
