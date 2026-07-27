@@ -568,6 +568,19 @@ git commit -m "✨ feat: uvicorn 헬스 프로브·좀비 판정 상태 머신 �
 
 ## Task 3: 재시작 예산 + 지수 백오프
 
+> ⚠ **구현 중 API 가 바뀌었다 (커밋 `60333ce`). 아래 코드 블록은 최초 설계안이다.**
+>
+> 코드 리뷰에서 "호출자가 `record_attempt()` 를 잊으면 `history` 가 영원히 비어 백오프가 **조용히 무력화**되고, 이 모듈이 없애려던 무한 재시작이 그대로 되살아난다"는 실패 모드가 지적됐다. 크래시도 테스트 실패도 없어 발견이 매우 늦는 종류다. 실제 통합 코드(Task 9)에서 `"go"` 직후 무조건 `record_attempt` 가 뒤따르므로 분리해둘 이유도 없었다.
+>
+> **최종 API:**
+> - `decide(now)` → **`on_crash(now)`** 로 개명. 자동 기록이 생기면 조회형 이름이 오히려 위험하다(대기 시간을 화면에 표시하려다 예산을 소모하는 식).
+> - `on_crash()` 는 `"go"` 를 반환하기 직전에 **스스로 `record_attempt(now)` 를 호출**한다. `"wait"` 분기는 그 줄에 도달하지 못하므로 대기 중에는 기록되지 않는다.
+> - `record_attempt()` 는 공개 유지(테스트 세팅용 원시 연산).
+>
+> **Task 9 는 `record_attempt()` 를 직접 부르면 안 된다** — 이중 카운트로 예산이 절반이 된다. 아래 Task 9 절은 이미 반영돼 있다.
+>
+> 실제 구현은 `HiTessWorkBenchBackEnd/serverguard/backoff.py` 를 볼 것.
+
 **Files:**
 - Create: `HiTessWorkBenchBackEnd/serverguard/backoff.py`
 - Test: `HiTessWorkBenchBackEnd/tests/test_serverguard_backoff.py`
@@ -1517,8 +1530,12 @@ Task 7 에서 남겨둔 아래 줄을 **삭제한다** (`RestartPolicy` 는 Task
 ```python
     def _schedule_auto_restart(self):
         """크래시 감지 시 재시작을 예약한다. 반복 실패하면 간격을 늘려가며 계속 시도한다."""
-        now = time.time()
-        action, delay = self.restart_policy.decide(now)
+        # 단조 시계를 쓴다 — 예산·백오프는 절대 시각이 아니라 경과시간만 보므로,
+        # NTP 보정이나 수동 시계 변경으로 재시작 판단이 흔들려서는 안 된다.
+        # ⚠ events.py 의 타임스탬프와 HealthTracker.last_ok_at 은 사람이 읽는
+        #   기록이라 벽시계(time.time)를 그대로 쓴다. 두 시계를 섞지 말 것.
+        now = time.monotonic()
+        action, delay = self.restart_policy.on_crash(now)
 
         if action == "wait":
             minutes = round(delay / 60, 1)
@@ -1532,7 +1549,8 @@ Task 7 에서 남겨둔 아래 줄을 **삭제한다** (`RestartPolicy` 는 Task
             self.root.after(int(delay * 1000), self._auto_restart_fire)
             return
 
-        self.restart_policy.record_attempt(now)
+        # on_crash 가 "go" 를 낼 때 시도를 스스로 기록한다.
+        # 여기서 record_attempt 를 또 부르면 이중 카운트로 예산이 절반이 된다.
         self._log(f"{RESTART_DELAY_MS // 1000}초 후 자동으로 재시작합니다.", "warning")
         self.root.after(RESTART_DELAY_MS, self._auto_restart_fire)
 ```
