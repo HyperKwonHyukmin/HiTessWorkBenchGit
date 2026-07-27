@@ -7,6 +7,13 @@ MooringFitting.exe 등)는 살아남는다. 실제로 MooringFitting 손자 프�
 
 수집은 죽이기 전에, 정리는 죽인 후에 해야 한다 — 부모가 사라진 뒤에는
 자손 관계를 더 이상 조회할 수 없기 때문이다.
+
+알려진 한계: `snapshot_tree` 호출과 `kill_survivors` 호출 사이(또는 uvicorn
+재시작 이후)에 새로 생긴 손자 프로세스는 이 스냅샷에 없어 정리되지 않는다.
+그 프로세스는 새 uvicorn 프로세스 트리에 속하지 않으므로 다음 크래시 때도
+영원히 안 잡힐 수 있다. 실무 발생 확률이 낮고 완전한 해결(예: Windows Job
+Object 로 트리 전체를 원자적으로 묶는 것)은 이 모듈의 범위를 넘으므로 고치지
+않았다 — 라이선스 누수를 나중에 디버깅할 사람을 위한 기록으로 남긴다.
 """
 import os
 import time
@@ -70,6 +77,15 @@ def kill_survivors(snapshot, *, proc_factory=psutil.Process, timeout=KILL_CONFIR
     kill() 은 전부 먼저 보내고, 종료 확인은 하나의 공유 데드라인으로 처리한다.
     프로세스마다 timeout 을 통째로 기다리면 총 대기시간이 프로세스 수에 비례해
     늘어나 호출부(GUI 메인 스레드)를 오래 얼릴 수 있다.
+
+    예외 처리는 snapshot_tree 와 같은 원칙을 따른다 — psutil 의 정상적인
+    프로세스 생명주기 예외만 잡고, 그 외(예: entry 에 "pid" 가 없는 KeyError)는
+    코딩 버그이므로 그대로 전파한다. 조용히 삼키면 "고아가 정리되지 않은 채
+    자원을 물고 있는데 아무도 모르는" 상태가 되어, 이 모듈이 막으려는 실패를
+    그대로 재현한다. kill 단계는 psutil.Error(NoSuchProcess/AccessDenied 등),
+    wait 단계는 psutil.TimeoutExpired 만 잡는다 — psutil 7.2.2 기준 이미 종료된
+    프로세스의 wait() 는 예외 없이 즉시 종료코드를 반환하므로(NoSuchProcess 를
+    던지지 않음), 실무에서 wait() 가 던지는 건 TimeoutExpired 뿐이다.
     """
     own_pid = os.getpid()
     attempted = []
@@ -81,7 +97,7 @@ def kill_survivors(snapshot, *, proc_factory=psutil.Process, timeout=KILL_CONFIR
             if proc.create_time() != entry["create_time"]:
                 continue
             proc.kill()
-        except Exception:
+        except psutil.Error:
             continue          # 이미 종료됨·권한 없음 — 나머지 정리를 계속한다.
         attempted.append((entry, proc))
 
@@ -92,7 +108,7 @@ def kill_survivors(snapshot, *, proc_factory=psutil.Process, timeout=KILL_CONFIR
         try:
             proc.wait(timeout=remaining)
             terminated = True
-        except Exception:
+        except psutil.TimeoutExpired:
             terminated = False
         results.append({**entry, "terminated": terminated})
     return results

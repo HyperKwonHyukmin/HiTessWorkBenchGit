@@ -35,6 +35,23 @@ class FakeProcess:
         return 0
 
 
+class SlowWaitFakeProcess(FakeProcess):
+    """wait() 호출 시 실제로 잠깐 멈춰서 '앞선 대상이 시간을 소모한다'는
+    상황을 흉내낸다. 전달받은 timeout 인자를 기록해, 공유 데드라인이 실제로
+    다음 대상에게 줄어들어 전달되는지 검증하는 데 쓴다."""
+
+    def __init__(self, pid, create_time, *, sleep_sec=0.0):
+        super().__init__(pid, create_time)
+        self.sleep_sec = sleep_sec
+        self.wait_timeouts = []
+
+    def wait(self, timeout=None):
+        self.wait_timeouts.append(timeout)
+        if self.sleep_sec:
+            time.sleep(self.sleep_sec)
+        return 0
+
+
 def test_snapshot_tree_returns_empty_for_missing_pid():
     # psutil.Process(-1) 는 존재할 수 없는 pid 라 psutil.NoSuchProcess 가 아니라
     # ValueError("pid must be a positive integer") 를 던진다(실측 확인) — 이를
@@ -116,6 +133,30 @@ def test_kill_survivors_continues_after_access_denied():
     # 하나가 실패해도 나머지 정리는 계속되어야 한다.
     assert allowed.killed is True
     assert [entry["pid"] for entry in killed] == [2]
+
+
+def test_kill_survivors_shares_one_deadline_across_multiple_survivors():
+    # kill-all-then-wait-all 로 설계한 유일한 이유는 "공유 데드라인" 이다 — 대상마다
+    # timeout 을 통째로 기다리면 총 대기시간이 대상 수에 비례해 늘어나 호출부(GUI
+    # 메인 스레드)를 오래 얼린다. 앞선 대상의 wait() 가 시간을 소모했다면, 다음
+    # 대상에게 전달되는 remaining timeout 은 그만큼 줄어야 한다 — 그대로거나
+    # 늘어나면 공유 데드라인이 깨진 것이다(예: 데드라인을 루프 안에서 매번
+    # 다시 계산하는 버그로 되돌아간 경우).
+    slow = SlowWaitFakeProcess(pid=1, create_time=1.0, sleep_sec=0.2)
+    fast = SlowWaitFakeProcess(pid=2, create_time=2.0, sleep_sec=0.0)
+    snapshot = [
+        {"pid": 1, "name": "nastran.exe", "create_time": 1.0},
+        {"pid": 2, "name": "Cmb.Cli.exe", "create_time": 2.0},
+    ]
+    lookup = {1: slow, 2: fast}
+
+    proctree.kill_survivors(snapshot, proc_factory=lambda pid: lookup[pid], timeout=1.0)
+
+    assert slow.wait_timeouts == [pytest.approx(1.0, abs=0.05)]
+    [second_timeout] = fast.wait_timeouts
+    # 첫 대상이 약 0.2초를 썼으니 두 번째는 남은 예산(~0.8초)만 받아야 한다.
+    assert second_timeout == pytest.approx(0.8, abs=0.1)
+    assert second_timeout < slow.wait_timeouts[0]
 
 
 def test_kill_survivors_never_touches_own_pid():
