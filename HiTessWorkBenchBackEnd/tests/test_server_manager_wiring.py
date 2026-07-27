@@ -244,6 +244,52 @@ def test_health_tick_binds_probe_to_the_process_it_observed(harness):
     assert thread.args == (proc,)
 
 
+# ── 양성 대조: 프로브 실패가 실제로 감지·재시작까지 이어진다 ───────────
+# 아래 두 테스트가 없으면 _on_health_result 를 첫 줄 return 으로 통째로 무력화해도
+# 스위트가 초록이다 — 다른 테스트는 전부 '거부당하는' 음성 방향이거나
+# _force_restart_zombie 를 직접 호출하기 때문이다.
+def test_repeated_probe_failures_escalate_to_zombie_detection(harness):
+    proc = FakeProc(pid=200)
+    harness.app.server_proc = proc
+
+    for _ in range(health.ZOMBIE_THRESHOLD - 1):
+        harness.app._on_health_result(False, proc)
+
+    # 임계 직전: 관찰 중이라고 알리되 아직 아무것도 죽이지 않는다.
+    assert "health_degraded" in harness.events.names()
+    assert "zombie_detected" not in harness.events.names()
+    assert harness.killed_ports == []
+
+    harness.app._on_health_result(False, proc)          # 임계 도달
+
+    # 재시작을 촉발한 streak 은 '기록' 에 남아야 하고, 트래커 자신은 그 결정보다
+    # 오래 살면 안 된다(:475 의 reset — 아래 zombie_abort 테스트와 같은 불변식).
+    assert harness.events.detail("zombie_detected")["fail_streak"] == health.ZOMBIE_THRESHOLD
+    assert harness.app.health_tracker.fail_streak == 0
+    assert "zombie_detected" in harness.events.names()
+    assert "restart_begin" in harness.events.names()
+    assert proc.terminated is True
+    assert harness.killed_ports == [9091]
+    assert harness.root.scheduled(harness.app._zombie_restart_fire)
+
+
+def test_recovery_records_health_recovered_and_resets_restart_policy(harness):
+    proc = FakeProc(pid=201)
+    harness.app.server_proc = proc
+    # 이전 크래시로 예산을 쓰고 백오프가 올라간 상태를 만든다.
+    harness.app.restart_policy.record_attempt(1.0)
+    harness.app.restart_policy.backoff_level = 2
+
+    harness.app._on_health_result(False, proc)          # HEALTHY → SUSPECT
+    harness.app._on_health_result(True, proc)           # SUSPECT → HEALTHY
+
+    assert "health_recovered" in harness.events.names()
+    # record_success() 가 실제로 반영되어야 한다 — 안 그러면 일시적 장애 이후에도
+    # 백오프가 계속 누적돼 다음 크래시의 재시도가 불필요하게 밀린다.
+    assert harness.app.restart_policy.history == []
+    assert harness.app.restart_policy.backoff_level == 0
+
+
 # ── I2-b. 이미 죽은 대상에게 강제 재시작을 실행하지 않는다 ──────────────
 def test_force_restart_zombie_aborts_when_target_already_dead(harness):
     """되돌릴 수 없는 부작용(kill_survivors, _kill_port)을 실행하기 직전이므로
@@ -375,6 +421,47 @@ def test_on_server_exit_requires_proc_argument(harness):
         harness.app._on_server_exit()
 
 
+def test_stale_exit_notification_after_zombie_restart_is_ignored(harness):
+    """_on_server_exit 의 identity 가드 자체를 고정한다.
+
+    I3(intentional_stop 삭제)의 안전성 논거 전체가 이 가드 위에 서 있다 —
+    "이 종료의 크래시 오판은 identity 가드가 막는다" 는 주석이 참이어야만
+    플래그를 지운 것이 안전하다. 다른 테스트들은 '플래그가 False 로 남는다'는
+    *결과* 만 고정하고, '스테일 종료 통지가 실제로 걸러진다'는 *전제* 는
+    고정하지 않는다. 여기서 전제를 직접 관측한다.
+    """
+    old_proc = FakeProc(pid=100)
+    harness.app.server_proc = old_proc
+    fail_n(harness.app.health_tracker, 12)
+
+    harness.app._force_restart_zombie()      # old_proc 를 내리고 server_proc=None
+    harness.app._zombie_restart_fire()       # 새 프로세스 기동
+    new_proc = harness.spawned[-1]
+    assert harness.app.server_proc is new_proc
+
+    running_before = len(harness.running_states)
+    # 스트리밍 스레드의 EOF 감지가 늦어 '지난' 프로세스의 종료 통지가 이제 도착.
+    harness.app._on_server_exit(old_proc)
+
+    # 허위 크래시 기록도, 재시작 예산 소모도, UI 흔들림도 없어야 한다.
+    assert "crash_detected" not in harness.events.names()
+    assert harness.root.scheduled(harness.app._auto_restart_fire) == []
+    assert len(harness.running_states) == running_before
+
+
+def test_exit_notification_from_the_live_process_is_treated_as_crash(harness):
+    """가드의 반대 방향 — 현재 프로세스의 종료는 반드시 크래시로 처리해야 한다.
+    (가드를 `return` 하나로 바꾸면 위 테스트만으로는 안 잡힌다.)"""
+    proc = FakeProc(pid=101)
+    harness.app.server_proc = proc
+
+    harness.app._on_server_exit(proc)
+
+    assert "crash_detected" in harness.events.names()
+    assert harness.root.scheduled(harness.app._auto_restart_fire)
+    assert harness.running_states[-1] is False
+
+
 def test_start_server_hands_the_new_process_to_stream_output(harness):
     """캡처가 스레드 시작 '이후' 면 레이스 창이 열린다 — 인자로 넘기면
     불변식이 논증 대상이 아니라 지역 사실이 된다."""
@@ -385,8 +472,11 @@ def test_start_server_hands_the_new_process_to_stream_output(harness):
 
 
 def test_stream_output_notifies_exit_with_its_own_process(harness):
+    """스레드는 self.server_proc 가 아니라 '인자로 받은 자기 프로세스' 를 알려야
+    한다. server_proc 에 같은 객체를 넣어두면 그 불변식이 관측 불가능해지므로
+    (스레드가 도는 사이 좀비 재시작이 일어난 상황 그대로) 다른 객체를 둔다."""
     proc = FakeProc(pid=888, stdout_lines=["INFO: Application startup complete"])
-    harness.app.server_proc = proc
+    harness.app.server_proc = FakeProc(pid=999)
 
     harness.app._stream_output(proc)
 
