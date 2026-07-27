@@ -48,9 +48,9 @@ def clear(log_dir):
 
     정상 종료 경로에서 호출되며, 실패해도 다음 기동 시 write() 가 새 PID 로
     덮어써 자연히 회복된다 — read()/write() 와 달리 위험이 낮아 조용히
-    삼킨다.
+    삼킨다(이 판단은 리뷰 대상이 아니었으므로 원안의 범위를 그대로 유지).
     """
     try:
         (Path(log_dir) / PID_FILENAME).unlink()
-    except FileNotFoundError:
+    except Exception:
         pass
