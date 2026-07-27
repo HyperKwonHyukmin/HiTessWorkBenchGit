@@ -12,10 +12,18 @@ from tkinter import scrolledtext
 from datetime import datetime
 from pathlib import Path
 
-from serverguard import diagnostics, events, pidfile
+from serverguard import diagnostics, events, health, pidfile, proctree
+from serverguard.backoff import RestartPolicy
 
 BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = BASE_DIR / "logs"
+
+# ── 헬스 체크(좀비 감지) 파라미터 ──
+# poll() 은 '프로세스가 살아있는가' 만 본다. 프로세스는 살아있는데 HTTP 응답만
+# 없는 상태(DB 커넥션 고갈, ThreadPool 데드락, 디스크 풀)를 잡으려면 별도 관측이
+# 필요하다. 재시작은 되돌릴 수 없으므로 임계값을 3분으로 넉넉히 잡는다 —
+# 해석 exe 는 별도 프로세스라 CPU 가 포화돼도 uvicorn 이벤트 루프는 막히지 않는다.
+HEALTH_INTERVAL_MS = health.CHECK_INTERVAL_SEC * 1000
 
 # WorkBenchEnv가 HiTessWorkBenchBackEnd 안에 있으면 BASE_DIR/WorkBenchEnv,
 # 상위 폴더(HiTessWorkBenchGit)에 있으면 BASE_DIR.parent/WorkBenchEnv 를 사용
@@ -67,6 +75,9 @@ class ServerManagerApp:
         self.restart_history: list[float] = []
         # uvicorn stdout 을 날짜별 파일로 보존한다(앱을 닫아도 traceback 이 남는다).
         self.uvicorn_log = events.DailyLogWriter(LOG_DIR)
+        self.health_tracker = health.HealthTracker()
+        # 재시작 예산·백오프 판단. 기존 restart_history 는 Task 9 에서 제거한다.
+        self.restart_policy = RestartPolicy()
 
         self._setup_window()
         self._build_ui()
@@ -76,6 +87,7 @@ class ServerManagerApp:
         events.prune_uvicorn_logs(LOG_DIR)
 
         self._start_server()
+        self.root.after(HEALTH_INTERVAL_MS, self._health_tick)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ── PID 파일 기록 ────────────────────────────────────────────────────
@@ -309,6 +321,117 @@ class ServerManagerApp:
             detail["exit_code"] = self.server_proc.poll()
         events.append_event(LOG_DIR, "L1", "crash_detected", detail)
         self._schedule_auto_restart()
+
+    # ── 헬스 체크(좀비 감지) ─────────────────────────────────────────────
+    def _health_tick(self):
+        """15초마다 HTTP 응답을 관측한다. 프로브는 GUI 를 막지 않도록 스레드에서."""
+        self.root.after(HEALTH_INTERVAL_MS, self._health_tick)
+
+        # 프로세스가 이미 죽었거나 업데이트 중이면 크래시 경로가 담당한다.
+        if self.is_updating or not (self.server_proc and self.server_proc.poll() is None):
+            self.health_tracker.reset()
+            return
+
+        threading.Thread(target=self._probe_health, daemon=True).start()
+
+    def _probe_health(self):
+        ok = health.probe()
+        self.root.after(0, self._on_health_result, ok)
+
+    def _on_health_result(self, ok):
+        """관측 결과를 상태로 환산하고, 전이가 일어난 순간에만 행동한다.
+
+        이 메서드는 root.after(0, ...) 를 거쳐 항상 메인 스레드에서 실행된다 —
+        HealthTracker 는 락이 없으므로 이 속성이 반드시 지켜져야 한다.
+        """
+        state, changed = self.health_tracker.record(ok, now=time.time())
+        if not changed:
+            return
+
+        if state == health.HEALTHY:
+            self._log("서버 응답이 회복되었습니다.", "success")
+            events.append_event(LOG_DIR, "L1", "health_recovered")
+            self.restart_policy.record_success()
+        elif state == health.SUSPECT:
+            self._log("서버 응답이 없습니다 — 관찰 중.", "warning")
+            events.append_event(LOG_DIR, "L1", "health_degraded",
+                                {"fail_streak": self.health_tracker.fail_streak})
+        elif state == health.ZOMBIE:
+            self._force_restart_zombie()
+
+    def _force_restart_zombie(self):
+        """프로세스는 살아있으나 3분간 HTTP 무응답 — 강제로 내리고 다시 띄운다.
+
+        순서가 중요하다. 진단 스냅샷과 자손 목록을 '죽이기 전에' 확보해야 하며,
+        고아 해석 exe 를 정리하지 않으면 MSC 라이선스가 물린 채 남는다.
+        """
+        pid = self.server_proc.pid if self.server_proc else None
+        self._log("3분간 응답이 없습니다 — 강제 재시작합니다.", "error")
+
+        snapshot = diagnostics.collect(uvicorn_pid=pid)
+        children = proctree.snapshot_tree(pid) if pid else []
+        snapshot["fail_streak"] = self.health_tracker.fail_streak
+        snapshot["last_ok"] = self.health_tracker.last_ok_at
+        snapshot["children"] = children
+        events.append_event(LOG_DIR, "L1", "zombie_detected", snapshot)
+
+        events.append_event(LOG_DIR, "L1", "restart_begin", {"reason": "zombie"})
+
+        # 이 종료는 코드가 의도한 것이므로 크래시 자동 재시작 경로를 타면 안 된다.
+        self.intentional_stop = True
+        if self.server_proc and self.server_proc.poll() is None:
+            self.server_proc.terminate()
+            try:
+                self.server_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.server_proc.kill()
+        self.server_proc = None
+        self._set_running(False)
+
+        self._cleanup_orphans(children)
+
+        self._kill_port(9091)
+        self.health_tracker.reset()
+        self.root.after(RESTART_DELAY_MS, self._zombie_restart_fire)
+
+    def _cleanup_orphans(self, children):
+        """uvicorn 이 남긴 해석 exe 를 정리한다.
+
+        정리에 실패하더라도 재시작 자체를 막아서는 안 된다 — 서버가 안 뜨는 것이
+        라이선스가 물린 것보다 나쁘다. 다만 실패 사실은 반드시 기록으로 남긴다.
+        """
+        if not children:
+            return
+        try:
+            attempted = proctree.kill_survivors(children)
+        except Exception as exc:
+            self._log(f"  고아 프로세스 정리 실패: {exc}", "error")
+            events.append_event(LOG_DIR, "L1", "orphan_cleanup_failed",
+                                {"error": f"{type(exc).__name__}: {exc}"[:300]})
+            return
+
+        if not attempted:
+            return
+        unconfirmed = [entry for entry in attempted if not entry.get("terminated")]
+        self._log(f"  고아 해석 프로세스 {len(attempted)}개 정리 시도 "
+                  f"(종료 확인 {len(attempted) - len(unconfirmed)}개)", "warning")
+        if unconfirmed:
+            self._log(f"  {len(unconfirmed)}개는 종료를 확인하지 못했습니다 "
+                      "— 라이선스가 물려 있을 수 있습니다.", "error")
+        events.append_event(LOG_DIR, "L1", "orphan_killed", {
+            "attempted": len(attempted),
+            "terminated": len(attempted) - len(unconfirmed),
+            "unconfirmed": unconfirmed,
+            "entries": attempted,
+        })
+
+    def _zombie_restart_fire(self):
+        if self.is_updating:
+            return
+        if self.server_proc and self.server_proc.poll() is None:
+            return
+        self._start_server()
+        events.append_event(LOG_DIR, "L1", "restart_done", {"reason": "zombie"})
 
     # ── 자동 재시작(의도치 않은 종료 시) ─────────────────────────────────
     def _schedule_auto_restart(self):
