@@ -112,3 +112,16 @@ def test_reset_restores_initial_state():
     # 뒤섞여 이 검증이 무의미해진다.
     assert policy.history == []
     assert policy.on_crash(now=1000.0) == ("go", 0)
+
+
+def test_reset_clears_pending_history_that_has_not_hit_budget():
+    # max_in_window 를 넉넉하게 잡아 on_crash 의 "go" 분기가 history 를
+    # 비우지 않고 그대로 남겨두는 상황을 만든다 — wait 분기가 미리 비워버리면
+    # reset() 자신의 초기화 줄은 있어도 없어도 테스트가 똑같이 통과한다.
+    policy = RestartPolicy(window_sec=60, max_in_window=5)
+    policy.on_crash(now=1000.0)
+    assert policy.history == [1000.0]     # 사전 조건: reset 전에 실제로 채워져 있어야 함
+
+    policy.reset()
+
+    assert policy.history == []
