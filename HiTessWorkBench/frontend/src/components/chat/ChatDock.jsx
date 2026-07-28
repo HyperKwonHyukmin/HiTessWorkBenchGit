@@ -88,6 +88,14 @@ export default function ChatDock({
     }
   }, [setDockOpen]);
 
+  // 폴링 effect 안에서 최신 openConversation/setDockOpen 을 쓰기 위한 ref.
+  // deps 에 직접 넣으면 부모가 넘기는 인라인 onOpenChange 때문에 매 렌더마다
+  // 폴링 interval 이 재생성된다.
+  const openConversationRef = useRef(openConversation);
+  openConversationRef.current = openConversation;
+  const setDockOpenRef = useRef(setDockOpen);
+  setDockOpenRef.current = setDockOpen;
+
   // 대화 목록 폴링 + 새 메시지 감지 → 토스트/자동 펼침.
   useEffect(() => {
     if (!currentUserId) return undefined;
@@ -110,16 +118,25 @@ export default function ChatDock({
             showToast(`읽지 않은 메시지 ${unread}개가 있습니다.`, 'info');
           }
         } else if (unread > prevUnreadRef.current) {
-          // 세션 중 새 메시지 도착 — 토스트로만 알리고 도크는 접힌 채로 둔다.
-          // 대화를 자동으로 열면 즉시 읽음 처리되어 우하단 버튼의 미읽음 뱃지가
-          // 곧바로 사라진다. 뱃지가 유지되도록, 관리자가 직접 버튼을 눌러
-          // 대화를 열 때만 읽음 처리한다.
+          // 세션 중 새 메시지 도착 — 토스트로 알리고 대화창을 즉시 띄운다.
+          // (자동으로 열면 곧바로 읽음 처리되어 미읽음 뱃지는 사라지지만,
+          //  대화창이 화면에 떠 있으므로 놓칠 일이 없다는 판단.)
           const newest = list.find((t) => t.unread > 0); // list 는 최신순
           if (newest) {
             showToast(
               `💬 ${newest.other_name || newest.other_id}: ${newest.last_message || ''}`,
               'info',
             );
+            if (activeIdRef.current === newest.other_id) {
+              // 이미 그 대화를 열어 둔 상태 — 다시 로드하면 스크롤이 초기화되므로
+              // 접혀 있던 도크만 펼친다(대화 폴링이 새 메시지를 곧 채운다).
+              setDockOpenRef.current(true);
+            } else {
+              openConversationRef.current({
+                id: newest.other_id,
+                name: newest.other_name,
+              });
+            }
           }
         }
         prevUnreadRef.current = unread;
