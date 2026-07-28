@@ -54,6 +54,7 @@ export default function AppListRow({
     iconBg = 'bg-blue-100',
     tags = [],
     inputFormats = [],
+    outputFormats = [],
     inputLabel = 'Input',
     devStatus,
     contributor,
@@ -93,7 +94,7 @@ export default function AppListRow({
       </div>
 
       {/* 태그 */}
-      {(inputFormats.length > 0 || tags.length > 0) && (
+      {(inputFormats.length > 0 || outputFormats.length > 0 || tags.length > 0) && (
         <div className="hidden lg:flex items-center gap-1.5 shrink-0">
           {inputFormats.length > 0 && (
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
@@ -102,6 +103,16 @@ export default function AppListRow({
           )}
           {inputFormats.map(format => (
             <span key={format} className="text-[10px] font-black px-2 py-0.5 bg-white text-slate-700 border border-slate-200 rounded uppercase tracking-wider shadow-sm">
+              {format}
+            </span>
+          ))}
+          {outputFormats.length > 0 && (
+            <span className="ml-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
+              Output
+            </span>
+          )}
+          {outputFormats.slice(0, 2).map(format => (
+            <span key={`output-${format}`} className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600">
               {format}
             </span>
           ))}

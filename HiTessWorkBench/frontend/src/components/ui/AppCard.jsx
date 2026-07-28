@@ -131,6 +131,7 @@ export default function AppCard({
     icon,
     tags        = [],
     inputFormats = [],
+    outputFormats = [],
     inputLabel = 'Input',
     devStatus,
     contributor,
@@ -245,6 +246,19 @@ export default function AppCard({
               <span
                 key={format}
                 className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-slate-700 shadow-sm"
+              >
+                {format}
+              </span>
+            ))}
+          </div>
+        )}
+        {outputFormats.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Output</span>
+            {outputFormats.map(format => (
+              <span
+                key={format}
+                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600"
               >
                 {format}
               </span>

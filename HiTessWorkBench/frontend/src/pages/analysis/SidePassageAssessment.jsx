@@ -765,7 +765,7 @@ export default function SidePassageAssessment() {
 
   // ── 렌더 ─────────────────────────────────────────────────
   return (
-    <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
+    <div className="min-h-full xl:h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
 
       <FileBasedPageBanner
         title="Side Passage Assessment"
@@ -776,10 +776,10 @@ export default function SidePassageAssessment() {
       />
 
       {/* ── Body ── */}
-      <div className="flex flex-1 gap-5 min-h-0">
+      <div className="flex flex-1 flex-col gap-5 min-h-0 xl:flex-row">
 
         {/* ── Left Panel ── */}
-        <div className="w-96 shrink-0 flex flex-col gap-3">
+        <div className="w-full flex flex-col gap-3 xl:w-96 xl:shrink-0">
 
           {/* 스텝퍼 */}
           <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">

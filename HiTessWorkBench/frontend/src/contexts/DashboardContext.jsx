@@ -4,13 +4,11 @@
 /// (신규) Truss Assessment 페이지 이탈 시에도 상태를 유지하기 위한 글로벌 State를 추가했습니다.
 /// </summary>
 import React, { createContext, useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
-import { UploadCloud, PenTool, SlidersHorizontal, Wrench, RefreshCw, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { UploadCloud, PenTool, SlidersHorizontal, Wrench } from 'lucide-react';
 import { useNavigation } from './NavigationContext';
 import { useAuth } from './AuthContext';
 import { usePolling } from '../hooks/usePolling';
 import { POLLING_POLICY } from '../hooks/pollingPolicy';
-import AnalysisResultPanel from '../components/platform/AnalysisResultPanel';
-import DoublePipePsaTray from '../components/analysis/DoublePipePsaTray';
 
 const RAW_ANALYSIS_DATA = [
   // ── File-Based Apps (signature: blue) ──────────── Active ──
@@ -51,12 +49,14 @@ const APP_REGISTRY_OVERRIDES = {
     menuName: "Truss Analysis",
     programNames: ["TrussModelBuilder", "Truss Model Builder"],
     apiEndpoint: "/api/analysis/truss/request",
+    supportsRerun: true,
     sampleFiles: [{ label: "Node/Member CSV 입력 포맷", guideTitle: "[파일] Truss Model Builder — CSV 입력 포맷" }],
   },
   "Truss Structural Assessment": {
     menuName: "Truss Structural Assessment",
     programNames: ["Truss Assessment", "Truss Structural Assessment"],
     apiEndpoint: "/api/analysis/assessment/request",
+    supportsRerun: true,
     sampleFiles: [{ label: "BDF 입력 포맷", guideTitle: "[파일] Truss Structural Assessment — BDF 입력 포맷" }],
   },
   "HiTESS Model Builder": {
@@ -64,6 +64,7 @@ const APP_REGISTRY_OVERRIDES = {
     programNames: ["HiTessModelBuilder", "ModelBuilderAnalysis", "HiTESS Model Builder"],
     communityKey: "hitess-model-builder",
     apiEndpoint: "/api/analysis/modelflow/request",
+    supportsRerun: true,
     relatedApps: ["BDF Scanner", "F06 Parser"],
     transferOutputs: [{ key: "bdf_path", label: "BDF 모델", targetApp: "BDF Scanner" }],
     sampleFiles: [{ label: "CSV 패키지 입력 포맷", guideTitle: "[파일] HiTESS Model Builder — CSV 입력 포맷" }],
@@ -72,6 +73,7 @@ const APP_REGISTRY_OVERRIDES = {
     menuName: "HP-SCR 배관응력 해석",
     programNames: ["HP-SCR", "HP-SCR PSA", "HP-SCR POR"],
     apiEndpoint: "/api/analysis/hpscr/request",
+    supportsRerun: true,
     sampleFiles: [{ label: "배관 BDF 입력 포맷", guideTitle: "[파일] HP-SCR 배관응력 해석 — BDF 입력 포맷" }],
   },
   "이중관 구조 연료배관 해석": {
@@ -83,18 +85,21 @@ const APP_REGISTRY_OVERRIDES = {
     menuName: "Group & Module Unit 권상 구조 해석",
     programNames: ["GroupModuleUnit", "Group & Module Unit 권상 구조 해석"],
     apiEndpoint: "/api/analysis/groupmodule/request",
+    supportsRerun: true,
     relatedApps: ["HiTESS Model Builder", "BDF Scanner"],
   },
   "Side Passage Assessment": {
     menuName: "Side Passage Assessment",
     programNames: ["SidePassage", "Side Passage Assessment"],
     apiEndpoint: "/api/analysis/groupmoduleunit/request",
+    supportsRerun: true,
     relatedApps: ["BDF Scanner", "HiTESS Model Builder"],
   },
   "Mooring Fitting Assessment": {
     menuName: "Mooring Fitting Assessment",
     programNames: ["MooringFitting", "MooringFittingSolve", "Mooring Fitting Assessment"],
     apiEndpoint: "/api/analysis/mooring-fitting/request",
+    supportsRerun: true,
   },
   "DrawingToAnalysis": {
     menuName: "DrawingToAnalysis",
@@ -106,6 +111,7 @@ const APP_REGISTRY_OVERRIDES = {
     menuName: "Simple Beam Assessment",
     programNames: ["Simple Beam Assessment", "Beam Analysis"],
     apiEndpoint: "/api/analysis/beam/request",
+    supportsRerun: true,
     sampleFiles: [{ label: "Beam JSON 입력 포맷", guideTitle: "[대화형] Simple Beam Assessment — 입력 포맷" }],
   },
   "Section Property Calculator": {
@@ -166,6 +172,7 @@ const APP_REGISTRY_OVERRIDES = {
     menuName: "BDF Scanner",
     programNames: ["BDF Scanner"],
     apiEndpoint: "/api/analysis/bdfscanner/request",
+    supportsRerun: true,
     relatedApps: ["HiTESS Model Builder", "F06 Parser"],
     transferOutputs: [{ key: "f06", label: "F06 파일", targetApp: "F06 Parser" }],
     sampleFiles: [{ label: "BDF 검증 예제", guideTitle: "[생산성] BDF Scanner — 입력 포맷" }],
@@ -174,6 +181,7 @@ const APP_REGISTRY_OVERRIDES = {
     menuName: "F06 Parser",
     programNames: ["F06 Parser"],
     apiEndpoint: "/api/analysis/f06parser/request",
+    supportsRerun: true,
     relatedApps: ["BDF Scanner", "HiTESS Model Builder"],
     acceptsTransferFrom: ["BDF Scanner"],
     sampleFiles: [{ label: "F06 결과 예제", guideTitle: "[생산성] F06 Parser — 입력 포맷" }],
@@ -182,13 +190,45 @@ const APP_REGISTRY_OVERRIDES = {
     menuName: "선급 Rule 기반 선체 가속도 Calculation",
     programNames: ["HullAcceleration", "선급 Rule 기반 선체 가속도 Calculation"],
     apiEndpoint: "/api/analysis/hullacceleration/request",
+    supportsRerun: true,
   },
+};
+
+// 카탈로그/검색/재실행 UI가 설명 문구를 추측하지 않고 사용하는 명시적 I/O 계약.
+// 실제 앱 계약이 바뀌면 이 레지스트리만 함께 갱신한다.
+const APP_CAPABILITY_METADATA = {
+  "Truss Model Builder": { inputFormats: ["CSV ×2"], outputFormats: ["BDF"], workflow: "File" },
+  "Truss Structural Assessment": { inputFormats: ["BDF"], outputFormats: ["JSON", "XLSX", "3D"], workflow: "File" },
+  "HiTESS Model Builder": { inputFormats: ["CSV ×1–3"], outputFormats: ["BDF", "JSON", "F06"], workflow: "Pipeline" },
+  "HP-SCR 배관응력 해석": { inputFormats: ["BDF"], outputFormats: ["XLSX", "3D"], workflow: "File" },
+  "이중관 구조 연료배관 해석": { inputFormats: ["CSV", "JSON"], outputFormats: ["BDF", "XLSX"], workflow: "Pipeline" },
+  "Group & Module Unit 권상 구조 해석": { inputFormats: ["BDF"], outputFormats: ["BDF", "F06", "JSON"], workflow: "Pipeline" },
+  "Side Passage Assessment": { inputFormats: ["BDF"], outputFormats: ["BDF", "F06", "JSON"], workflow: "Pipeline" },
+  "DrawingToAnalysis": { inputFormats: ["PDF", "Image"], outputFormats: ["BDF", "JSON"], workflow: "Pipeline" },
+  "Mooring Fitting Assessment": { inputFormats: ["CSV ×2"], outputFormats: ["BDF", "JSON", "XLSX"], workflow: "Pipeline" },
+  "Simple Beam Assessment": { inputFormats: ["Direct input", "JSON"], outputFormats: ["Chart", "JSON"], workflow: "Interactive" },
+  "Section Property Calculator": { inputFormats: ["Direct input"], outputFormats: ["Table", "JSON"], workflow: "Interactive" },
+  "Block Weld Assessment": { inputFormats: ["Direct input"], outputFormats: ["Assessment"], workflow: "External" },
+  "Plate Structure Analysis": { inputFormats: ["Direct input"], outputFormats: ["BDF", "Result"], workflow: "Studio" },
+  "Independent Tank Assessment": { inputFormats: ["Direct input"], outputFormats: ["Assessment"], workflow: "External" },
+  "Heavy Block Lifting Simulation": { inputFormats: ["Direct input"], outputFormats: ["Simulation"], workflow: "Interactive" },
+  "Jib Rest Assessment": { inputFormats: ["Direct input"], outputFormats: ["Candidate table", "JSON"], workflow: "Parametric" },
+  "Mast Post Assessment": { inputFormats: ["Direct input"], outputFormats: ["Candidate table", "JSON"], workflow: "Parametric" },
+  "Column Buckling Load Calculator": { inputFormats: ["Direct input"], outputFormats: ["Assessment", "JSON"], workflow: "Parametric" },
+  "Simplified Hole Fatigue Assessment": { inputFormats: ["Direct input"], outputFormats: ["Assessment", "JSON"], workflow: "Parametric" },
+  "D Type Lug Assessment": { inputFormats: ["Direct input"], outputFormats: ["Assessment", "JSON"], workflow: "Parametric" },
+  "Carling Free Calculator": { inputFormats: ["Direct input"], outputFormats: ["Assessment"], workflow: "Parametric" },
+  "Carling Design Optimization": { inputFormats: ["Direct input"], outputFormats: ["Candidate table"], workflow: "Parametric" },
+  "BDF Scanner": { inputFormats: ["BDF"], outputFormats: ["Validation", "F06"], workflow: "File" },
+  "F06 Parser": { inputFormats: ["F06"], outputFormats: ["Table", "CSV"], workflow: "File" },
+  "선급 Rule 기반 선체 가속도 Calculation": { inputFormats: ["PDF"], outputFormats: ["JSON", "CSV", "TXT"], workflow: "Pipeline" },
 };
 
 export const ANALYSIS_DATA = Object.freeze(RAW_ANALYSIS_DATA.map(app => Object.freeze({
   ...app,
   menuName: app.title,
   programNames: [app.title],
+  ...(APP_CAPABILITY_METADATA[app.title] ?? { inputFormats: [], outputFormats: [], workflow: app.mode }),
   ...(APP_REGISTRY_OVERRIDES[app.title] ?? {}),
   // App.jsx renderPage 에 실제 페이지가 등록된 앱만 override 를 가진다 → 진입 가능 여부 판별 플래그
   hasPage: Object.prototype.hasOwnProperty.call(APP_REGISTRY_OVERRIDES, app.title),
@@ -239,6 +279,7 @@ const GlobalJobContext = createContext();
 const AnalysisPageStateContext = createContext();
 const FAVORITES_KEY = 'favorites';
 const GLOBAL_JOBS_KEY = 'hitess_global_jobs';
+const GLOBAL_JOB_HISTORY_LIMIT = 10;
 const GLOBAL_JOB_VISIBLE_MS = 30 * 60 * 1000;
 const GLOBAL_JOB_COLLAPSE_MS = 30 * 1000;
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
@@ -305,7 +346,7 @@ function readPersistedGlobalJobs() {
         };
       })
       .filter(job => !job.expiresAt || now < job.expiresAt)
-      .slice(0, 5);
+      .slice(0, GLOBAL_JOB_HISTORY_LIMIT);
   } catch {
     return [];
   }
@@ -313,7 +354,7 @@ function readPersistedGlobalJobs() {
 
 function writePersistedGlobalJobs(jobs) {
   try {
-    localStorage.setItem(GLOBAL_JOBS_KEY, JSON.stringify(jobs.slice(0, 5)));
+    localStorage.setItem(GLOBAL_JOBS_KEY, JSON.stringify(jobs.slice(0, GLOBAL_JOB_HISTORY_LIMIT)));
   } catch {
     // ignore storage failures
   }
@@ -329,7 +370,7 @@ async function writeElectronFavorites(next) {
 }
 
 export function DashboardProvider({ children }) {
-  const { setCurrentMenu, currentMenu } = useNavigation();
+  const { currentMenu } = useNavigation();
   const { isAuthenticated } = useAuth();
   const [favorites, setFavorites] = useState(() => readLocalFavorites());
 
@@ -474,7 +515,19 @@ export function DashboardProvider({ children }) {
   const patchGlobalJob = useCallback((jobId, patch) => {
     setGlobalJobs(prev => prev.map(job => {
       if (job.jobId !== jobId) return job;
-      const nextJob = { ...job, ...patch, updatedAt: Date.now() };
+      const now = Date.now();
+      const patchedStatus = patch?.status ?? job.status;
+      const isTerminal = patchedStatus === 'Success' || patchedStatus === 'Failed' || patchedStatus === 'Interrupted';
+      const nextJob = {
+        ...job,
+        ...patch,
+        updatedAt: now,
+        ...(isTerminal && !job.completedAt ? {
+          completedAt: now,
+          firstShownAt: job.firstShownAt || now,
+          expiresAt: now + GLOBAL_JOB_VISIBLE_MS,
+        } : {}),
+      };
       const pageStateKey = getAppStateKey(nextJob.stateKey || nextJob.menu);
       if (pageStateKey) {
         setAnalysisPageStates(pagePrev => {
@@ -511,21 +564,6 @@ export function DashboardProvider({ children }) {
     setGlobalJobs(prev => jobId ? prev.filter(job => job.jobId !== jobId) : []);
   }, []);
 
-  const markGlobalJobShown = useCallback((jobId) => {
-    if (!jobId) return;
-    setGlobalJobs(prev => prev.map(job => {
-      if (job.jobId !== jobId || job.firstShownAt) return job;
-      const now = Date.now();
-      return {
-        ...job,
-        firstShownAt: now,
-        collapseAt: now + GLOBAL_JOB_COLLAPSE_MS,
-        expiresAt: now + GLOBAL_JOB_VISIBLE_MS,
-        updatedAt: now,
-      };
-    }));
-  }, []);
-
   const startGlobalJob = useCallback((jobId, menuName) => {
     if (!jobId) return;
     const routeMenu = getAppMenuName(menuName);
@@ -545,7 +583,10 @@ export function DashboardProvider({ children }) {
       collapseAt: null,
       expiresAt: null,
     };
-    setGlobalJobs([nextJob]);
+    setGlobalJobs(prev => [
+      nextJob,
+      ...prev.filter(job => job.jobId !== jobId),
+    ].slice(0, GLOBAL_JOB_HISTORY_LIMIT));
     setAnalysisPageState(stateKey, current => ({
       ...current,
       job: {
@@ -721,21 +762,6 @@ export function DashboardProvider({ children }) {
         />
       ))}
 
-      {isAuthenticated && (
-        <GlobalJobTray
-          jobs={globalJobs}
-          currentMenu={currentMenu}
-          onNavigate={setCurrentMenu}
-          onDismiss={clearGlobalJob}
-          onFirstShow={markGlobalJobShown}
-        />
-      )}
-
-      {/* 이중관 배관응력 해석(Abaqus, 최대 1시간) 전용 진행 위젯 — 페이지 이탈 시 우측 하단에
-          경과시간을 띄우고 클릭 시 복귀. 기존 GlobalJob 시스템과 독립(상태 체계가 다름). */}
-      {isAuthenticated && (
-        <DoublePipePsaTray currentMenu={currentMenu} onNavigate={setCurrentMenu} />
-      )}
     </DashboardContext.Provider>
   );
 }
@@ -744,47 +770,6 @@ export const useDashboard = () => useContext(DashboardContext);
 export const useFavorites = () => useContext(FavoritesContext);
 export const useGlobalJobs = () => useContext(GlobalJobContext);
 export const useAnalysisPageState = () => useContext(AnalysisPageStateContext);
-
-function GlobalJobTray({ jobs, currentMenu, onNavigate, onDismiss, onFirstShow }) {
-  const [, setNowTick] = useState(Date.now());
-  const visibleJob = jobs.find(job => job.menu !== currentMenu);
-
-  useEffect(() => {
-    if (!visibleJob) return undefined;
-    if (!visibleJob.firstShownAt) {
-      onFirstShow?.(visibleJob.jobId);
-      return undefined;
-    }
-
-    const collapseAt = visibleJob.collapseAt || visibleJob.firstShownAt + GLOBAL_JOB_COLLAPSE_MS;
-    const delay = Math.max(0, collapseAt - Date.now());
-    if (delay === 0) {
-      setNowTick(Date.now());
-      return undefined;
-    }
-    const timer = setTimeout(() => setNowTick(Date.now()), delay);
-    return () => clearTimeout(timer);
-  }, [onFirstShow, visibleJob?.jobId, visibleJob?.collapseAt, visibleJob?.firstShownAt]);
-
-  if (!visibleJob) return null;
-
-  const firstShownAt = visibleJob.firstShownAt || Date.now();
-  const isCollapsed = Date.now() >= (visibleJob.collapseAt || firstShownAt + GLOBAL_JOB_COLLAPSE_MS);
-
-  return (
-    <div className={`fixed bottom-4 right-4 z-[99999] transition-all duration-300 ${
-      isCollapsed ? 'w-[min(320px,calc(100vw-2rem))]' : 'w-[min(360px,calc(100vw-2rem))]'
-    }`}>
-      <GlobalJobCard
-        key={visibleJob.jobId}
-        job={visibleJob}
-        isCollapsed={isCollapsed}
-        onNavigate={onNavigate}
-        onDismiss={onDismiss}
-      />
-    </div>
-  );
-}
 
 function GlobalJobPoller({ job, onPatchJob }) {
   const isTerminal = job.status === 'Success' || job.status === 'Failed' || job.status === 'Interrupted';
@@ -803,59 +788,4 @@ function GlobalJobPoller({ job, onPatchJob }) {
   });
 
   return null;
-}
-
-function GlobalJobCard({ job, isCollapsed, onNavigate, onDismiss }) {
-  const statusIcon = job.status === 'Running'
-    ? <RefreshCw className="animate-spin text-blue-400 shrink-0" size={14}/>
-    : job.status === 'Success'
-      ? <CheckCircle className="text-emerald-400 shrink-0" size={14}/>
-      : <AlertCircle className="text-red-400 shrink-0" size={14}/>;
-
-  return (
-    <div
-      onClick={() => {
-        sessionStorage.setItem(ANALYSIS_MENU_RESUME_ENTRY_KEY, JSON.stringify({ menu: job.menu, jobId: job.jobId, at: Date.now() }));
-        onNavigate?.(job.menu);
-      }}
-      className={`bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] rounded-xl cursor-pointer hover:border-blue-500 transition-all duration-300 animate-fade-in-up ${
-        isCollapsed ? 'p-3' : 'p-4'
-      }`}
-      title="클릭하여 해석 페이지로 돌아가기"
-    >
-      <div className={`flex justify-between items-center ${isCollapsed ? 'mb-0' : 'mb-2'}`}>
-        <span className="text-[11px] font-bold text-slate-300 flex items-center gap-2 uppercase tracking-wider min-w-0">
-          {statusIcon}
-          <span className="truncate">{job.displayName || job.menu}</span>
-        </span>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDismiss(job.jobId); }}
-          className="text-slate-500 hover:text-white transition-colors cursor-pointer shrink-0"
-          title="닫기"
-        >
-          <X size={16}/>
-        </button>
-      </div>
-
-      {isCollapsed ? (
-        <div className="mt-2 flex items-center gap-2">
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700">
-            <div
-              className={`h-full rounded-full transition-all duration-300 ${
-                job.status === 'Failed' || job.status === 'Interrupted' ? 'bg-red-400' :
-                job.status === 'Success' ? 'bg-emerald-400' :
-                'bg-blue-400'
-              }`}
-              style={{ width: `${Math.min(100, Math.max(0, Number(job.progress) || 0))}%` }}
-            />
-          </div>
-          <span className="w-9 text-right text-[10px] font-black text-slate-400">
-            {Math.round(Number(job.progress) || 0)}%
-          </span>
-        </div>
-      ) : (
-        <AnalysisResultPanel job={job} compact />
-      )}
-    </div>
-  );
 }

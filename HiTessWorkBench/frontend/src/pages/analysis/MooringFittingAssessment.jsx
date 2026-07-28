@@ -1259,7 +1259,7 @@ export default function MooringFittingAssessment() {
 
   /* ── 렌더 ──────────────────────────────────────────────────────────── */
   return (
-    <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
+    <div className="min-h-full xl:h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
 
       <FileBasedPageBanner
         title="Mooring Fitting Assessment"
@@ -1269,10 +1269,10 @@ export default function MooringFittingAssessment() {
       />
 
       {/* ── Body ── */}
-      <div className="flex flex-1 gap-5 min-h-0 px-1">
+      <div className="flex flex-1 flex-col gap-5 min-h-0 px-1 xl:flex-row">
 
         {/* ── Left Sidebar ── */}
-        <div className="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto custom-scrollbar pr-1">
+        <div className="w-full flex flex-col gap-3 pr-1 xl:w-80 xl:shrink-0 xl:overflow-y-auto custom-scrollbar">
 
           {/* 검증 스텝퍼 + 실행 */}
           <div className="flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">

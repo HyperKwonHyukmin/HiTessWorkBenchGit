@@ -14,6 +14,7 @@ import { downloadFileBlob } from '../../api/analysis';
 import { getAuthHeaders, handleUnauthorized, isAdmin } from '../../utils/auth';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import AppCommunityHub from '../../components/analysis/AppCommunityHub';
+import PreflightIssueCenter from '../../components/analysis/PreflightIssueCenter';
 
 /* ──────────────────────────────────────────────────────────────────────────
    상수
@@ -24,7 +25,7 @@ import AppCommunityHub from '../../components/analysis/AppCommunityHub';
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.0.70';
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.72';
 
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',  icon: FileSpreadsheet, status: 'wait' },
@@ -3098,6 +3099,45 @@ export default function HiTessModelBuilder() {
   const doneCount  = steps.filter(s => s.status === 'done').length;
   const isRunning  = jobStatus?.status === 'Running' || jobStatus?.status === 'Pending';
   const hasResult  = !!bdfResult?.outputDir;
+  const preflightIssues = useMemo(() => {
+    const issues = [];
+    if (!struFile && !pipeFile) {
+      issues.push({
+        id: 'source-required',
+        severity: 'error',
+        title: 'Structural 또는 Piping CSV가 필요합니다.',
+        detail: '둘 중 하나 이상의 입력 파일을 지정해야 Model Builder를 실행할 수 있습니다.',
+        field: 'source-files',
+      });
+    }
+    [
+      ['structural-file', 'Structural CSV', struError],
+      ['piping-file', 'Piping CSV', pipeError],
+      ['equipment-file', 'Equipment CSV', equiError],
+    ].forEach(([id, title, detail]) => {
+      if (detail) issues.push({ id, severity: 'error', title: `${title} 형식을 확인하세요.`, detail, field: id });
+    });
+    const mesh = Number(meshSize);
+    if (!Number.isFinite(mesh) || mesh <= 0) {
+      issues.push({
+        id: 'mesh-size',
+        severity: 'error',
+        title: 'Mesh size가 올바르지 않습니다.',
+        detail: '0보다 큰 mm 단위 숫자를 입력하세요.',
+        field: 'mesh-size',
+      });
+    } else if (mesh > 1000) {
+      issues.push({
+        id: 'mesh-size-large',
+        severity: 'warning',
+        title: 'Mesh size가 매우 큽니다.',
+        detail: '국부 형상이 누락될 수 있으므로 모델 목적에 맞는지 확인하세요.',
+        field: 'mesh-size',
+      });
+    }
+    return issues;
+  }, [equiError, meshSize, pipeError, pipeFile, struError, struFile]);
+  const hasPreflightErrors = preflightIssues.some(issue => issue.severity === 'error');
 
   /* ── 렌더 ──────────────────────────────────────────────────────────── */
   return (
@@ -3126,10 +3166,10 @@ export default function HiTessModelBuilder() {
       {/* ── Body ── */}
       {/* 콘텐츠 높이 기준(items-stretch 기본)으로 좌우 컬럼 높이를 맞춘다. 긴 결과는
           페이지(main)의 overflow-y-auto가 스크롤을 담당 → 좌우 하단 정렬 유지. */}
-      <div className="flex items-stretch gap-5 px-1">
+      <div className="flex flex-col items-stretch gap-5 px-1 xl:flex-row">
 
         {/* ── Left ── */}
-        <div className="w-80 shrink-0 flex flex-col gap-3 pr-1">
+        <div className="flex w-full flex-col gap-3 pr-1 xl:w-80 xl:shrink-0">
 
           {/* 파이프라인 스텝퍼 + 실행 */}
           <div className="flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
@@ -3193,8 +3233,14 @@ export default function HiTessModelBuilder() {
               />
               <button
                 onClick={handleRunModelBuilder}
-                disabled={isRunning || hasRunOnce}
-                title={hasRunOnce && !isRunning ? "다시 실행하려면 '전체 초기화' 후 진행하세요." : undefined}
+                disabled={isRunning || hasRunOnce || hasPreflightErrors}
+                title={
+                  hasRunOnce && !isRunning
+                    ? "다시 실행하려면 '전체 초기화' 후 진행하세요."
+                    : hasPreflightErrors
+                      ? 'Preflight 오류를 먼저 해결하세요.'
+                      : undefined
+                }
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl shadow-sm cursor-pointer"
               >
                 {isRunning
@@ -3258,6 +3304,9 @@ export default function HiTessModelBuilder() {
                 onMultipleFiles={handleMultipleFiles}
                 onWarnNotCsv={() => showToast('CSV 파일(.csv)만 업로드 가능합니다.', 'warning')}
               />
+              <div className="mt-4">
+                <PreflightIssueCenter issues={preflightIssues} compact />
+              </div>
             </div>
           )}
 

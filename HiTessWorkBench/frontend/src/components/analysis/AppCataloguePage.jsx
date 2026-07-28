@@ -29,23 +29,6 @@ const colorToAccent = (colorClass = '') => {
 };
 
 const FILE_CATEGORY_ORDER = ['Truss', 'Pipe', 'Lifting', 'Mooring Fitting', 'Passage', 'PDF'];
-const INPUT_FORMAT_CANDIDATES = ['CSV', 'BDF', 'PDF', 'F06', 'JSON', 'XLSX', 'XLS', 'DAT'];
-
-const extractInputBadges = (item) => {
-  const source = [
-    item.title,
-    item.description,
-    item.category,
-    ...(item.tags || []),
-    ...(item.sampleFiles || []).flatMap(sample => [sample.label, sample.guideTitle]),
-  ].filter(Boolean).join(' ').toUpperCase();
-
-  const fileFormats = INPUT_FORMAT_CANDIDATES.filter(format => source.includes(format));
-  if (fileFormats.length > 0) return fileFormats;
-
-  return [];
-};
-
 const matchesSearch = (item, query) => {
   if (!query) return true;
   const source = [
@@ -56,6 +39,9 @@ const matchesSearch = (item, query) => {
     ...(item.tags || []),
     ...(item.sampleFiles || []).flatMap(sample => [sample.label, sample.guideTitle]),
     ...(item.relatedApps || []),
+    ...(item.inputFormats || []),
+    ...(item.outputFormats || []),
+    item.workflow,
   ].filter(Boolean).join(' ').toLowerCase();
 
   return source.includes(query);
@@ -156,7 +142,8 @@ export default function AppCataloguePage({
         icon: <IconComponent className="text-white" size={viewMode === 'list' ? 20 : 24} />,
         iconBg: item.color,
         tags: item.tags,
-        inputFormats: extractInputBadges(item),
+        inputFormats: item.inputFormats || [],
+        outputFormats: item.outputFormats || [],
         devStatus: item.devStatus,
         contributor: item.contributor,
       },

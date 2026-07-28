@@ -19,8 +19,11 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { NetworkProvider } from './contexts/NetworkContext';
 import { RecentActivityProvider } from './contexts/RecentActivityContext';
 import UpdateModal from './components/UpdateModal';
-import ChatDock from './components/chat/ChatDock';
+import UtilityDock from './components/platform/UtilityDock';
 import { ADMIN_MENUS } from './constants/adminMenus';
+import { API_BASE_URL } from './config';
+import { getSessionToken } from './utils/auth';
+import { isWorkbenchAxiosRequest } from './utils/workbenchRequest';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8시간 미활동 시 자동 로그아웃
@@ -243,16 +246,34 @@ function AppInner() {
 
   // 세션 만료(401) 자동 로그아웃 인터셉터 — axios 요청용
   useEffect(() => {
-    const interceptor = axios.interceptors.response.use(
+    // 해석 페이지별로 인증 헤더를 빠뜨리지 않도록 WorkBench 백엔드 요청에
+    // 세션 토큰을 중앙에서 부착한다. 외부 origin에는 토큰을 보내지 않는다.
+    const requestInterceptor = axios.interceptors.request.use((config) => {
+      const token = getSessionToken();
+      if (token && isWorkbenchAxiosRequest(config, API_BASE_URL)) {
+        config.headers = config.headers || {};
+        if (!config.headers.Authorization) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+      }
+      return config;
+    });
+    const responseInterceptor = axios.interceptors.response.use(
       (res) => res,
       (error) => {
-        if (error.response?.status === 401 && appState === APP_STATE.MAIN) {
+        const isWorkbenchUnauthorized =
+          error.response?.status === 401 &&
+          isWorkbenchAxiosRequest(error.config, API_BASE_URL);
+        if (isWorkbenchUnauthorized && appState === APP_STATE.MAIN) {
           handleLogout();
         }
         return Promise.reject(error);
       }
     );
-    return () => axios.interceptors.response.eject(interceptor);
+    return () => {
+      axios.interceptors.request.eject(requestInterceptor);
+      axios.interceptors.response.eject(responseInterceptor);
+    };
   }, [appState]);
 
   // 세션 만료(401) 자동 로그아웃 — fetch 요청용 (session-expired 커스텀 이벤트)
@@ -511,7 +532,7 @@ function AppInner() {
         </Layout>
       )}
       {appState === APP_STATE.MAIN && (
-        <ChatDock currentUserId={authUser?.employee_id} isAdmin={isAdmin} />
+        <UtilityDock currentUserId={authUser?.employee_id} isAdmin={isAdmin} />
       )}
     </DashboardProvider>
   );
