@@ -15,7 +15,7 @@ import types
 import pytest
 
 import server_manager
-from serverguard import health
+from serverguard import backoff, health
 from serverguard.backoff import RestartPolicy
 
 
@@ -137,6 +137,27 @@ class ProctreeRecorder:
         return [{**entry, "terminated": True} for entry in snapshot]
 
 
+class FakeClock:
+    """server_manager.time 대역 — 백오프 판정을 결정적으로 만든다.
+
+    백오프는 '지금'과 wait_until 의 대소로 갈리므로 실제 시계로는 10~60분짜리
+    대기 구간을 넘어갈 수 없다. monotonic 과 time 을 같은 값으로 준다 —
+    server_manager 는 예산에 monotonic, 사람이 읽는 기록에 time 을 쓴다.
+    """
+
+    def __init__(self, start=1000.0):
+        self.now = start
+
+    def monotonic(self):
+        return self.now
+
+    def time(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
 class ManagerHarness:
     """대역을 물린 ServerManagerApp 인스턴스와 관측 결과 묶음."""
 
@@ -174,7 +195,6 @@ def harness(monkeypatch):
     app.server_proc = None
     app.is_updating = False
     app.intentional_stop = False
-    app.restart_history = []
     app.health_tracker = health.HealthTracker()
     app.restart_policy = RestartPolicy()
     app.uvicorn_log = types.SimpleNamespace(write=lambda line: None, close=lambda: None)
@@ -202,6 +222,23 @@ def fail_n(tracker, count, *, start=100.0):
     """연속 실패를 count 회 기록한다."""
     for i in range(count):
         tracker.record(False, now=start + i)
+
+
+def install_clock(monkeypatch, start=1000.0):
+    """server_manager 의 시계를 대역으로 바꾼다."""
+    clock = FakeClock(start)
+    monkeypatch.setattr(server_manager, "time", clock)
+    return clock
+
+
+def exhaust_budget(policy, clock):
+    """창 안의 재시작 예산을 소진시킨다 — 다음 크래시가 "wait" 가 되도록.
+
+    on_crash 가 아니라 record_attempt 로 세팅한다. on_crash 로 채우면 이
+    헬퍼 자신이 검증 대상(예약·이벤트)을 오염시킨다.
+    """
+    for _ in range(backoff.MAX_RESTARTS_IN_WINDOW):
+        policy.record_attempt(clock.monotonic())
 
 
 # ── I1. 헬스 상태가 재시작을 넘어 이월되면 안 된다 ──────────────────────
@@ -561,3 +598,162 @@ def test_force_restart_zombie_continues_when_cleanup_fails(harness):
     assert "orphan_cleanup_failed" in harness.events.names()
     assert harness.killed_ports == [9091]
     assert harness.root.scheduled(harness.app._zombie_restart_fire)
+
+
+# ── Task 9. 예산 소진은 '영구 정지' 가 아니라 '더 긴 대기' 다 ────────────
+def test_crash_within_budget_restarts_promptly(harness, monkeypatch):
+    """예산이 남아 있는 동안은 예전과 똑같이 즉시(3초 후) 재시작해야 한다 —
+    백오프는 반복 실패에만 걸리는 벌칙이지 상시 지연이 아니다."""
+    install_clock(monkeypatch)
+
+    harness.app._schedule_auto_restart()
+
+    [(delay_ms, _, _)] = harness.root.scheduled(harness.app._auto_restart_fire)
+    assert delay_ms == server_manager.RESTART_DELAY_MS
+    assert "backoff_wait" not in harness.events.names()
+
+
+def test_exhausted_budget_backs_off_instead_of_giving_up(harness, monkeypatch):
+    """예산을 소진해도 재시작을 포기하면 안 된다.
+
+    영구 포기 상태에서도 이 GUI 프로세스(L1)는 살아 있어서 L2 워치독이 개입하지
+    않는다 — 서버가 죽은 채 아무도 살리지 않는 상태가 사람이 Start 를 누를
+    때까지 무한정 이어진다. '완전 무인 복구' 라는 이 기능의 존재 이유와 정면
+    충돌한다.
+    """
+    clock = install_clock(monkeypatch)
+    exhaust_budget(harness.app.restart_policy, clock)
+
+    harness.app._schedule_auto_restart()
+
+    detail = harness.events.detail("backoff_wait")
+    assert detail["delay_sec"] == backoff.BACKOFF_STEPS_SEC[0]
+    assert detail["level"] == 1
+    assert detail["reason"] == "crash"
+    [(delay_ms, _, _)] = harness.root.scheduled(harness.app._auto_restart_fire)
+    assert delay_ms == backoff.BACKOFF_STEPS_SEC[0] * 1000
+
+
+def test_backoff_escalates_then_stays_at_the_cap_forever(harness, monkeypatch):
+    """단계는 올라가되 마지막에서 상한에 머문다 — 예약은 매번 반드시 남는다.
+
+    '예약이 하나도 없는 크래시' 가 곧 영구 정지다. 상한 이후에도 계속 예약이
+    나온다는 사실이 이 Task 의 핵심 단언이다.
+    """
+    clock = install_clock(monkeypatch)
+    rounds = len(backoff.BACKOFF_STEPS_SEC) + 2      # 상한 도달 후 2회 더
+
+    delays_ms = []
+    for _ in range(rounds):
+        exhaust_budget(harness.app.restart_policy, clock)
+        harness.root.after_calls.clear()
+
+        harness.app._schedule_auto_restart()
+
+        scheduled = harness.root.scheduled(harness.app._auto_restart_fire)
+        assert scheduled, "예약이 사라진 순간이 곧 영구 정지다"
+        delays_ms.append(scheduled[-1][0])
+        clock.advance(delays_ms[-1] / 1000)          # 대기가 끝난 시점으로 이동
+
+    cap_ms = backoff.BACKOFF_STEPS_SEC[-1] * 1000
+    assert delays_ms == [step * 1000 for step in backoff.BACKOFF_STEPS_SEC] + [cap_ms, cap_ms]
+    assert len([r for r in harness.events.records if r["event"] == "backoff_wait"]) == rounds
+
+
+def test_crash_budget_is_counted_once_per_crash(harness, monkeypatch):
+    """on_crash 가 "go" 직전에 스스로 record_attempt 를 부른다 — 호출부에서 또
+    부르면 이중 카운트로 예산이 절반이 된다(Task 3 에서 실제로 났던 버그)."""
+    install_clock(monkeypatch)
+
+    for _ in range(backoff.MAX_RESTARTS_IN_WINDOW):
+        harness.app._schedule_auto_restart()
+
+    assert "backoff_wait" not in harness.events.names()
+    scheduled = harness.root.scheduled(harness.app._auto_restart_fire)
+    assert len(scheduled) == backoff.MAX_RESTARTS_IN_WINDOW
+    assert {call[0] for call in scheduled} == {server_manager.RESTART_DELAY_MS}
+
+    # 반대 방향 — 예산이 실제로 세어지긴 해야 한다(한 칸 더 쓰면 백오프).
+    harness.app._schedule_auto_restart()
+    assert "backoff_wait" in harness.events.names()
+
+
+def test_auto_restart_fire_records_restart_done_on_success(harness):
+    harness.app._auto_restart_fire()
+
+    assert harness.events.detail("restart_done")["reason"] == "crash"
+    assert len(harness.spawned) == 1
+
+
+def test_auto_restart_fire_does_not_claim_restart_done_on_start_failure(harness):
+    """좀비 경로(I4/I5)와 같은 불변식 — 뜨지도 않은 서버를 성공으로 기록하면
+    사후 분석 로그가 거짓을 말한다."""
+    harness.popen_error = FileNotFoundError("python.exe 없음")
+
+    harness.app._auto_restart_fire()
+
+    assert "restart_done" not in harness.events.names()
+    assert "server_start_failed" in harness.events.names()
+
+
+def test_manual_start_resets_budget_and_backoff(harness):
+    """사용자가 직접 Start → 깨끗한 예산으로 재개한다. backoff_level·wait_until 을
+    남겨두면 사람이 원인을 고치고 눌러도 다음 크래시가 60분 대기로 직행한다."""
+    harness.app.restart_policy.record_attempt(1.0)
+    harness.app.restart_policy.backoff_level = 3
+    harness.app.restart_policy.wait_until = 10_000.0
+
+    harness.app._toggle_server()
+
+    assert harness.app.restart_policy.history == []
+    assert harness.app.restart_policy.backoff_level == 0
+    assert harness.app.restart_policy.wait_until == 0.0
+    assert len(harness.spawned) == 1, "수동 Start 는 실제로 서버를 띄워야 한다"
+
+
+# ── Task 9 / Step 6. 좀비 재시작도 같은 예산을 쓴다 ──────────────────────
+def test_repeated_zombie_restarts_consume_budget_and_back_off(harness, monkeypatch):
+    """좀비 루프가 예산을 우회하면 부팅→행→강제종료가 영원히 3분마다 반복되고,
+    사후 분석 기록이 동일 사이클로 뒤덮여 원래 증거가 묻힌다."""
+    install_clock(monkeypatch)
+
+    for i in range(backoff.MAX_RESTARTS_IN_WINDOW):
+        harness.app.server_proc = FakeProc(pid=800 + i)
+        harness.app._force_restart_zombie()
+
+    assert "backoff_wait" not in harness.events.names()
+
+    harness.app.server_proc = FakeProc(pid=899)
+    harness.app._force_restart_zombie()
+
+    detail = harness.events.detail("backoff_wait")
+    assert detail["reason"] == "zombie", "어느 경로가 대기 중인지 구분할 수 있어야 한다"
+    assert detail["delay_sec"] == backoff.BACKOFF_STEPS_SEC[0]
+    # 대기 후에도 좀비 경로로 돌아와야 한다 — restart_begin 의 짝(restart_done
+    # {reason: zombie})을 남기는 쪽은 _zombie_restart_fire 뿐이다.
+    assert harness.root.scheduled(harness.app._zombie_restart_fire)[-1][0] == \
+        backoff.BACKOFF_STEPS_SEC[0] * 1000
+    assert harness.root.scheduled(harness.app._auto_restart_fire) == []
+
+
+def test_zombie_and_crash_share_one_restart_budget(harness, monkeypatch):
+    """예산이 답해야 할 질문은 "최근 얼마나 자주 재시작했나" 이지 "왜 재시작했나"
+    가 아니다. 경로별로 카운터를 나누면 서로의 소모를 못 봐 예산이 사실상 2배가
+    된다 — 3번 크래시하고 2번 좀비가 된 서버는 실제로 나쁜 상태다."""
+    install_clock(monkeypatch)
+
+    for _ in range(backoff.MAX_RESTARTS_IN_WINDOW - 1):
+        harness.app._schedule_auto_restart()
+    assert "backoff_wait" not in harness.events.names()
+
+    # 예산의 마지막 한 칸을 좀비가 쓴다.
+    harness.app.server_proc = FakeProc(pid=910)
+    harness.app._force_restart_zombie()
+    assert "backoff_wait" not in harness.events.names()
+    assert harness.root.scheduled(harness.app._zombie_restart_fire)[-1][0] == \
+        server_manager.RESTART_DELAY_MS
+
+    # 크래시가 쓴 4칸을 좀비도 본다 → 여기서 바로 백오프여야 한다.
+    harness.app.server_proc = FakeProc(pid=911)
+    harness.app._force_restart_zombie()
+    assert harness.events.detail("backoff_wait")["reason"] == "zombie"

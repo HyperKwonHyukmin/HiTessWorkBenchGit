@@ -45,10 +45,12 @@ SERVER_CMD = [PYTHON, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--p
 
 # ── 자동 재시작(크래시 루프 방어) 파라미터 ──
 # 사용자가 Stop 을 누르지 않았는데 서버가 죽으면(=크래시) 자동으로 다시 띄운다.
-# 단, 시작하자마자 계속 죽는 경우 무한 재시작을 막기 위해 창(window) 안의 횟수를 제한한다.
-RESTART_DELAY_MS       = 3000  # 종료 감지 후 재시작까지 대기(포트 정리·안정화 시간)
-RESTART_WINDOW_SEC     = 60    # 이 시간(초) 창 안에서 자동 재시작 횟수를 센다
-MAX_RESTARTS_IN_WINDOW = 5     # 창 안에서 이 횟수를 넘기면 자동 재시작 중단(무한 루프 방지)
+# 단, 시작하자마자 계속 죽는 경우 재시작 간격을 벌려 크래시 루프를 눌러 준다.
+RESTART_DELAY_MS = 3000  # 종료 감지 후 재시작까지 대기(포트 정리·안정화 시간)
+# 창 안의 재시작 예산과 소진 시 백오프 간격은 serverguard.backoff 가 관리한다.
+# 과거에는 예산을 소진하면 자동 재시작을 영구 포기했는데, 그 상태에서도 이 GUI
+# 프로세스는 살아 있어서 L2 워치독이 개입하지 않는다 — 서버가 죽은 채 아무도
+# 살리지 않는 상태가 됐다. 이제는 10/20/40/60분 백오프로 계속 재시도한다.
 
 # ── 색상 팔레트 ──
 BG        = "#1e2130"
@@ -70,13 +72,11 @@ class ServerManagerApp:
         self.is_updating = False
         # 자동 재시작 상태.
         #  intentional_stop: 사용자가 Stop/앱 종료로 '의도적으로' 내렸는지 표시(그 경우 재시작 안 함).
-        #  restart_history : 최근 자동 재시작 시각 목록(크래시 루프 차단 판단용).
+        #  restart_policy  : 재시작 예산과 백오프 판단(serverguard.backoff).
         self.intentional_stop = False
-        self.restart_history: list[float] = []
         # uvicorn stdout 을 날짜별 파일로 보존한다(앱을 닫아도 traceback 이 남는다).
         self.uvicorn_log = events.DailyLogWriter(LOG_DIR)
         self.health_tracker = health.HealthTracker()
-        # 재시작 예산·백오프 판단. 기존 restart_history 는 Task 9 에서 제거한다.
         self.restart_policy = RestartPolicy()
 
         self._setup_window()
@@ -494,7 +494,14 @@ class ServerManagerApp:
         # 손실도 없다). 위 종료 실패 경로에서도 반드시 도달해야 하는 위치다 —
         # 건너뛰면 state 가 ZOMBIE 로 굳어 좀비 재감지가 영구히 멈춘다.
         self.health_tracker.reset()
-        self.root.after(RESTART_DELAY_MS, self._zombie_restart_fire)
+        # 좀비 재시작도 크래시와 같은 예산을 쓴다(_schedule_restart 주석 참고).
+        # 예산을 우회하면 부팅→행→강제종료 루프가 백오프 없이 영원히 3분마다
+        # 반복돼, 사후 분석 기록이 동일 사이클로 뒤덮여 원래 증거가 묻힌다.
+        # 예약 대상은 _auto_restart_fire 가 아니라 _zombie_restart_fire 다 —
+        # 위에서 남긴 restart_begin 의 짝(restart_done{reason: zombie})을
+        # 남기는 쪽이 그쪽이다.
+        self._schedule_restart(self._zombie_restart_fire, "zombie",
+                               "강제 재시작이 반복되고 있습니다.")
 
     def _cleanup_orphans(self, children):
         """uvicorn 이 남긴 해석 exe 를 정리한다.
@@ -548,39 +555,59 @@ class ServerManagerApp:
             events.append_event(LOG_DIR, "L1", "restart_done", {"reason": "zombie"})
 
     # ── 자동 재시작(의도치 않은 종료 시) ─────────────────────────────────
-    def _schedule_auto_restart(self):
-        """크래시 감지 시 재시작을 예약한다. 짧은 시간에 반복 실패하면 중단한다."""
-        now = time.time()
-        # 창(window) 밖의 오래된 재시작 기록은 버린다.
-        self.restart_history = [t for t in self.restart_history if now - t < RESTART_WINDOW_SEC]
+    def _schedule_restart(self, fire, reason, exhausted_message):
+        """재시작 예산을 물어 콜백을 예약한다. 예약은 어떤 경우에도 반드시 남는다.
 
-        if len(self.restart_history) >= MAX_RESTARTS_IN_WINDOW:
-            self._log(
-                f"{RESTART_WINDOW_SEC}초 내 {MAX_RESTARTS_IN_WINDOW}회 연속 재시작에 실패했습니다. "
-                "자동 재시작을 멈춥니다 — 원인을 확인한 뒤 Start 를 눌러 수동으로 재개하세요.",
-                "error",
-            )
-            # 기록은 비우지 않는다 — 이후 크래시도 계속 이 상한에 걸려 재시작이 차단된다.
-            # (예산 초기화는 사용자가 직접 Start 를 누를 때만 이뤄진다.)
+        크래시와 좀비가 같은 예산을 공유한다. 예산이 답해야 할 질문은 "최근 얼마나
+        자주 재시작했나" 이지 "왜 재시작했나" 가 아니다 — 3번 크래시하고 2번
+        좀비가 된 서버는 실제로 나쁜 상태이고 6번째 재시작이 즉시 일어나서는 안
+        된다. 경로마다 카운터를 두면 서로의 소모를 못 봐 예산이 사실상 2배가 된다.
+
+        단조 시계를 쓴다 — 예산·백오프는 절대 시각이 아니라 경과시간만 보므로,
+        NTP 보정이나 수동 시계 변경으로 재시작 판단이 흔들려서는 안 된다.
+        ⚠ events.py 의 타임스탬프와 HealthTracker.last_ok_at 은 사람이 읽는
+          기록이라 벽시계(time.time)를 그대로 쓴다. 두 시계를 섞지 말 것.
+        """
+        now = time.monotonic()
+        action, delay = self.restart_policy.on_crash(now)
+
+        if action == "wait":
+            minutes = round(delay / 60, 1)
+            self._log(f"{exhausted_message} {minutes}분 후 다시 시도합니다.", "error")
+            events.append_event(LOG_DIR, "L1", "backoff_wait",
+                                {"reason": reason,
+                                 "delay_sec": round(delay),
+                                 "level": self.restart_policy.backoff_level})
+            # ⚠ 이 대기 콜백에서 intentional_stop 을 읽으면 안 된다. 그 플래그를
+            #   지우는 곳이 _start_server 뿐인데 거부당하는 대상이 바로 그
+            #   _start_server 라, 없앤 영구 정지가 그대로 부활한다.
+            self.root.after(int(delay * 1000), fire)
             return
 
-        self.restart_history.append(now)
-        attempt = len(self.restart_history)
-        self._log(
-            f"{RESTART_DELAY_MS // 1000}초 후 자동으로 재시작합니다 "
-            f"(최근 {RESTART_WINDOW_SEC}초 내 {attempt}/{MAX_RESTARTS_IN_WINDOW}회).",
-            "warning",
-        )
-        self.root.after(RESTART_DELAY_MS, self._auto_restart_fire)
+        # on_crash 가 "go" 를 낼 때 시도를 스스로 기록한다.
+        # 여기서 record_attempt 를 또 부르면 이중 카운트로 예산이 절반이 된다.
+        self._log(f"{RESTART_DELAY_MS // 1000}초 후 자동으로 재시작합니다.", "warning")
+        self.root.after(RESTART_DELAY_MS, fire)
+
+    def _schedule_auto_restart(self):
+        """크래시 감지 시 재시작을 예약한다. 반복 실패하면 간격을 늘려가며 계속 시도한다."""
+        self._schedule_restart(self._auto_restart_fire, "crash",
+                               "연속 기동 실패가 이어집니다.")
 
     def _auto_restart_fire(self):
         # 대기 사이에 사용자가 Update/Stop 했거나 이미 살아났으면 재시작하지 않는다.
+        # 좀비 경로와 달리 여기서는 restart_skipped 를 남기지 않는다 — 크래시
+        # 경로엔 restart_begin 이 없어 짝 맞출 대상이 없기 때문이다.
         if self.is_updating:
             return
         if self.server_proc and self.server_proc.poll() is None:
             return
         self._log("자동 재시작을 실행합니다.", "info")
-        self._start_server()
+        # 시작에 성공했을 때만 완료를 단언한다 — 실패는 _start_server 가
+        # server_start_failed 로 남긴다. 뜨지도 않은 서버를 성공으로 기록하면
+        # 사후 분석 로그가 거짓을 말한다.
+        if self._start_server():
+            events.append_event(LOG_DIR, "L1", "restart_done", {"reason": "crash"})
 
     # ── 서버 중지 ────────────────────────────────────────────────────────
     def _stop_server(self):
@@ -602,8 +629,8 @@ class ServerManagerApp:
             self._stop_server()
             self._log("서버가 중지되었습니다.", "warning")
         else:
-            # 사용자가 직접 Start → 자동 재시작 카운터를 초기화(수동 재개는 깨끗한 예산으로).
-            self.restart_history = []
+            # 사용자가 직접 Start → 예산과 백오프 단계를 초기화한다.
+            self.restart_policy.reset()
             self._start_server()
 
     # ── Update ───────────────────────────────────────────────────────────
