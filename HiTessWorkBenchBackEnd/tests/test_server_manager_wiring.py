@@ -963,3 +963,95 @@ def test_post_update_start_is_silent_when_start_succeeds(harness):
     assert "server_start_failed" not in harness.events.names()
     assert harness.root.scheduled(harness.app._auto_restart_fire) == []
     assert harness.app.restart_policy.history == []
+
+
+# ── 중복 실행 차단 — L1 이 둘이 되면 서로의 서버를 죽인다 ────────────────
+class _FakePsProc:
+    def __init__(self, cmdline, running=True, raises=None):
+        self._cmdline = cmdline
+        self._running = running
+        self._raises = raises
+
+    def is_running(self):
+        return self._running
+
+    def cmdline(self):
+        if self._raises is not None:
+            raise self._raises
+        return self._cmdline
+
+
+def _install_pid_lookup(monkeypatch, *, pid, proc=None, read_raises=None):
+    def fake_read(log_dir):
+        if read_raises is not None:
+            raise read_raises
+        return pid
+    monkeypatch.setattr(server_manager.pidfile, "read", fake_read)
+
+    def fake_process(target_pid):
+        if proc is None:
+            raise server_manager.psutil.NoSuchProcess(target_pid)
+        return proc
+    monkeypatch.setattr(server_manager.psutil, "Process", fake_process)
+
+
+def test_duplicate_manager_is_detected(harness, monkeypatch):
+    """확인된 중복만 막는다 — 프로세스 생존과 커맨드라인이 둘 다 맞는 경우."""
+    _install_pid_lookup(monkeypatch, pid=4242,
+                        proc=_FakePsProc(["python.exe", "server_manager.py"]))
+
+    assert harness.app._find_running_manager() == 4242
+
+
+def test_unreadable_cmdline_does_not_block_startup(harness, monkeypatch):
+    """판정 방향이 L2 와 정반대다. L2 는 '확신 없으면 살아있음' 으로 기울여
+    중복 기동을 막지만, 여기서 잘못 막으면 서버가 아예 안 뜬다 — 그건 중복보다
+    나쁘다. AccessDenied 는 실측으로 존재가 확인된 경로다."""
+    _install_pid_lookup(monkeypatch, pid=4242,
+                        proc=_FakePsProc(None, raises=server_manager.psutil.AccessDenied(4242)))
+
+    assert harness.app._find_running_manager() is None
+
+
+def test_recycled_pid_does_not_block_startup(harness, monkeypatch):
+    """PID 재사용 — 무관한 프로세스를 L1 으로 오인해 기동을 막으면 안 된다."""
+    _install_pid_lookup(monkeypatch, pid=4242, proc=_FakePsProc(["notepad.exe"]))
+
+    assert harness.app._find_running_manager() is None
+
+
+def test_dead_pid_does_not_block_startup(harness, monkeypatch):
+    _install_pid_lookup(monkeypatch, pid=4242, proc=None)     # NoSuchProcess
+
+    assert harness.app._find_running_manager() is None
+
+
+def test_unreadable_pidfile_does_not_block_startup(harness, monkeypatch):
+    _install_pid_lookup(monkeypatch, pid=None, read_raises=PermissionError("denied"))
+
+    assert harness.app._find_running_manager() is None
+
+
+def test_missing_pidfile_does_not_block_startup(harness, monkeypatch):
+    _install_pid_lookup(monkeypatch, pid=None)
+
+    assert harness.app._find_running_manager() is None
+
+
+def test_own_pid_does_not_block_startup(harness, monkeypatch):
+    """재기동 직후 자기 PID 가 그대로 남아 있어도 스스로를 막으면 안 된다."""
+    import os as _os
+    _install_pid_lookup(monkeypatch, pid=_os.getpid(),
+                        proc=_FakePsProc(["python.exe", "server_manager.py"]))
+
+    assert harness.app._find_running_manager() is None
+
+
+def test_abort_records_event_and_reports_true(harness, monkeypatch):
+    monkeypatch.setattr(harness.app, "_find_running_manager", lambda: 999)
+    monkeypatch.setattr(server_manager.messagebox, "showwarning",
+                        lambda *a, **k: None)
+    harness.app.root = types.SimpleNamespace(withdraw=lambda: None)
+
+    assert harness.app._abort_if_already_running() is True
+    assert harness.events.detail("duplicate_launch_blocked")["running_pid"] == 999

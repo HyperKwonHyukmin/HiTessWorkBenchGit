@@ -8,9 +8,11 @@ import os
 import urllib.request
 import urllib.error
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import messagebox, scrolledtext
 from datetime import datetime, timezone
 from pathlib import Path
+
+import psutil
 
 from serverguard import diagnostics, events, health, pidfile, proctree
 from serverguard.backoff import RestartPolicy
@@ -92,6 +94,14 @@ class ServerManagerApp:
         # 아니라 '멎은' 상태에서 스레드가 1분마다 하나씩 쌓이는 것을 막는다.
         self.db_probe_running = False
 
+        # PID 파일을 덮어쓰기 전에, 그리고 uvicorn 을 띄우기 전에 확인한다 —
+        # 순서가 뒤바뀌면 기존 인스턴스의 PID 기록을 지우거나 포트를 뺏는다.
+        if self._abort_if_already_running():
+            self.aborted = True
+            self.root.destroy()
+            return
+        self.aborted = False
+
         self._setup_window()
         self._build_ui()
         self._write_pidfile()
@@ -103,6 +113,56 @@ class ServerManagerApp:
         self.root.after(HEALTH_INTERVAL_MS, self._health_tick)
         self.root.after(DB_CHECK_INTERVAL_MS, self._db_tick)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ── 중복 실행 차단 ───────────────────────────────────────────────────
+    def _find_running_manager(self):
+        """이미 떠 있는 다른 Server Manager 의 PID. 없거나 불확실하면 None.
+
+        두 개가 뜨면 서로의 uvicorn 을 _kill_port(9091) 로 죽이고 상대를
+        크래시로 오판해 재기동하는 상호 kill 루프가 된다. 해석 exe 는 고아로
+        남아 MSC 라이선스를 문다. 이 시스템에서 가장 나쁜 실패다.
+
+        평범하게 일어난다 — 설치 스크립트가 로그온 트리거를 걸어두므로 RDP
+        로그인 시 L2 가 L1 을 띄우는데, 사용자가 습관대로 런처를 더블클릭하면
+        그대로 두 개가 된다.
+
+        ★ 판정 방향이 L2 와 정반대다. L2 는 '확신이 없으면 살아있는 것으로'
+        기울여 중복 기동을 막지만, 여기서는 '확신이 없으면 띄운다'. 잘못 막으면
+        서버가 아예 안 뜨는데 그건 중복보다 나쁘고, 사람이 런처를 눌렀다면
+        화면 앞에 있어 메시지를 본다. 그래서 프로세스 생존과 커맨드라인이
+        **둘 다 확인된 경우에만** 차단한다.
+        """
+        try:
+            pid = pidfile.read(LOG_DIR)
+        except Exception:
+            return None                      # 판독 불가 → 막지 않는다
+        if not pid or pid == os.getpid():
+            return None
+        try:
+            proc = psutil.Process(pid)
+            if not proc.is_running():
+                return None
+            if "server_manager.py" in " ".join(proc.cmdline()).lower():
+                return pid
+        except Exception:
+            return None                      # 사망·권한 부족 등 → 막지 않는다
+        return None
+
+    def _abort_if_already_running(self):
+        """다른 Server Manager 가 확인되면 알리고 종료한다. 종료했으면 True."""
+        other = self._find_running_manager()
+        if other is None:
+            return False
+        events.append_event(LOG_DIR, "L1", "duplicate_launch_blocked", {"running_pid": other})
+        # 아직 _setup_window 전이라 빈 기본 창이 떠 있다 — 경고 뒤에 그게 보이면 안 된다.
+        self.root.withdraw()
+        messagebox.showwarning(
+            "HiTESS WorkBench — Server Manager",
+            f"이미 실행 중입니다 (PID {other}).\n\n"
+            "두 개를 동시에 띄우면 서로의 서버를 종료시킵니다.\n"
+            "작업 표시줄에서 기존 창을 찾아 주세요.",
+        )
+        return True
 
     # ── PID 파일 기록 ────────────────────────────────────────────────────
     def _write_pidfile(self):
@@ -913,4 +973,6 @@ class ServerManagerApp:
 if __name__ == "__main__":
     root = tk.Tk()
     app = ServerManagerApp(root)
-    root.mainloop()
+    # 중복 실행으로 막혔으면 root 는 이미 파괴됐다 — mainloop 에 들어가지 않는다.
+    if not app.aborted:
+        root.mainloop()
