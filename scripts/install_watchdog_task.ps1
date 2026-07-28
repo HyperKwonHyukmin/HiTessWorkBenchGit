@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   HiTESS WorkBench L2 워치독을 Windows 작업 스케줄러에 등록한다.
 
