@@ -246,8 +246,27 @@ f. 3초 대기 후 재시작
 | 2 | **145 PC 자체의 전원·네트워크 장애** | 없음 — 로컬 감시자는 무력 | 외부 PC 원격 감시 (단, 알림 수단이 없어 현재는 실효 제한적) |
 | 3 | **진행 중 job 상태 유실** — 재시작 시 `job_status_store`가 비워짐 | L3에 유실 건수 기록 | Redis 등 외부 저장소 도입 |
 | 4 | **알림 없음** — 사고를 사후에 로그로만 확인 | 없음 (이번 목표에서 제외) | L3 이벤트에 전송 계층을 얹으면 됨 |
+| 5 | **순수 좀비 루프가 3분마다 무한 반복** — 예산 창(60초)보다 좀비 주기(≥180초)가 길어 백오프에 안 걸린다 | 의도적 수용 — 복구 속도 우선 | 경로별 별도 창(그러면 '예산 2배' 문제가 다시 온다) |
+| 6 | **고아 uvicorn** — L1 만 죽고 자식 uvicorn 이 살아남으면 서비스는 응답하나 감시(헬스체크·좀비 감지·백오프)가 전부 사라진다 | `watchdog_orphan_uvicorn` 기록만. **재기동으로 승격하지 않는다** — 동작 중인 해석(nastran 수 분~수십 분)을 끊는 손해가 감시 공백보다 크다 | uvicorn 을 L1 과 같은 job object 에 묶어 동반 종료 |
+| 7 | **작업 스케줄러 job object** — 되살린 L1 이 태스크 job 에 남으면 5분 만료 시 함께 죽거나 이후 트리거가 스킵될 수 있다 | `CREATE_BREAKAWAY_FROM_JOB` + 폴백(§5). **서버 실측 미완** | — |
+| 8 | **`__init__` 배선 무테스트** — L1 중복 차단 로직 자체는 헤드리스로 검증되나, `__init__` 이 `_write_pidfile` 앞에서 그것을 부른다는 배선은 Tk 창이 필요해 자동 테스트가 없다 | 눈으로 확인 | GUI 통합 테스트 |
 
 4번은 설계상 확장이 쉽다. L3에 이벤트가 이미 구조화되어 쌓이므로, 나중에 알림이 필요해지면 `zombie_detected`·`watchdog_giveup` 같은 이벤트를 훅으로 잡아 전송만 붙이면 된다.
+
+### 7-1. 구현 중 추가된 방어 — "L1 이 둘" 이 최악의 실패다
+
+두 개의 Server Manager 가 동시에 뜨면 서로의 uvicorn 을 `_kill_port(9091)` 로 죽이고 상대를 크래시로 오판해 재기동하는 **상호 kill 루프**가 된다. 해석 exe 는 고아로 남아 MSC 라이선스를 문다. 설계 단계에서 놓쳤고 구현 리뷰에서 드러났다.
+
+두 방향으로 막는다. **판정 방향이 서로 반대라는 점이 핵심이다.**
+
+| 계층 | 불확실할 때의 기울기 | 이유 |
+|---|---|---|
+| **L2** (`is_manager_alive` → `classify_manager`) | **"살아있다"** — `NoSuchProcess` 만 확정 사망으로 보고, `AccessDenied`/`OSError` 는 `watchdog_manager_unreadable` 기록 후 개입하지 않는다. pid 부재·마커 불일치면 `process_iter` 로 마커 프로세스를 한 번 훑는다 | 재기동을 5분 미루는 손해 < L1 이 둘이 되는 손해 |
+| **L1** (`_find_running_manager`) | **"띄운다"** — 프로세스 생존과 커맨드라인이 **둘 다** 확인된 경우에만 차단. `AccessDenied`·PID 재사용·pid 판독 불가·pid 부재는 전부 통과 | 잘못 막으면 서버가 아예 안 뜨는데 그건 중복보다 나쁘다. 사람이 런처를 눌렀다면 화면 앞에 있어 메시지를 본다 |
+
+L2 의 오판이 특히 위험한 이유는 **오판 조건과 위험 구간이 독립 사건이 아니라 설계상 겹치기** 때문이다. L1 이 백오프 대기(10~60분)에 들어가면 그 구간엔 uvicorn 이 확실히 다운이라 `health.probe()` 가 반드시 `False` 다 — 즉 `is_manager_alive` 오판만 더해지면 곧바로 중복 기동으로 이어지는 **최대 60분짜리 위험창이 주기적으로 열린다.**
+
+L1 중복은 이례적 상황이 아니다. 설치 스크립트가 로그온 트리거를 걸어두므로 RDP 로그인 시 L2 가 L1 을 띄우는데, 사용자가 습관대로 런처를 더블클릭하면 그대로 두 개가 된다.
 
 ## 8. 검증 계획
 
@@ -262,8 +281,32 @@ f. 3초 대기 후 재시작
 | 5 | 정상 상태에서 워치독 수동 실행 | 아무 행동 없이 종료 (L1 침범 금지 확인) |
 | 6 | MySQL 서비스 중지 | `db_unreachable` 기록, **재시작은 발생하지 않음** |
 | 7 | 5회 연속 기동 실패 유도 (포트 강제 점유 등) | `backoff_wait` 기록 후 10분 뒤 재시도 — 영구 정지하지 않음 |
+| 8 | Server Manager 가 떠 있는 상태에서 런처를 한 번 더 실행 | 경고창 후 즉시 종료, `duplicate_launch_blocked` 기록. **기존 인스턴스의 서버가 죽지 않아야 한다** |
+| 9 | **(서버에서만)** 워치독이 L1 을 되살린 직후 태스크 상태 확인 | `Get-ScheduledTaskInfo` 가 `Ready` 로 떨어지고, **5분 뒤에도 L1·uvicorn 이 살아있어야** 한다 (job object 이탈 확인) |
 
 **(2)의 `psutil.suspend()`가 핵심이다.** 프로세스는 살아있고 HTTP만 무응답인 상태를 정확히 재현하는 유일한 방법이므로, 이것으로 검증해야 3분 임계값이 실제로 동작하는지 확인된다.
+
+**(9)는 태스크로 실행해야만 재현된다.** job object 는 작업 스케줄러가 붙이는 것이라 수동 실행으로는 확인되지 않는다. 실패하면 워치독이 1회용이 되거나(트리거 스킵) 되살린 L1 을 5분 뒤 스스로 죽인다.
+
+### 8-1. 실측 결과 (2026-07-28, 개발 PC)
+
+| # | 결과 | 근거 |
+|---|---|---|
+| 1 크래시 재시작 | **PASS** | uvicorn `taskkill /F` → `crash_detected`(exit_code 1, cpu·디스크 진단 포함) → **3초 후** `server_start` → `restart_done{crash}` |
+| 2 좀비 감지 | **PASS** | 워커 `suspend()` → `health_degraded`(streak 1) → **3분 5초 후** `zombie_detected`(streak 12, `last_ok` ISO8601, threads·RSS·자손 목록) → `restart_begin` → `restart_done{zombie}` |
+| 3 고아 정리 | **PARTIAL** | 실제 자손 2개(`conhost.exe` + **정지 상태** `python.exe`)를 `attempted=2 / terminated=2 / unconfirmed=0` 으로 정리. 재시작 후 잔여 0. ⚠ **실제 해석 job(`nastran.exe`/`Cmb.Cli.exe`)은 미실행** — 기구(자손 탐색·종료·확인 플래그)는 실증됐으나 MSC 라이선스 해제까지는 확인 못 함 |
+| 4 L1 급사 복구 | **PASS** | 수동 실행·스케줄러 양쪽. `watchdog_revive` → 3초 후 `manager_start` → `watchdog_revive_result{recovered:true}`. **복구 확인 6초**(고정 30초 sleep 을 폴링으로 바꾼 효과) |
+| 5 워치독 무개입 | **PASS** | L1 생존 시 수동 실행·5분 반복 트리거 **양쪽에서 이벤트 0건**, exit 0, 새 창 없음 |
+| 6 DB 관측 | **PARTIAL** | 실제 `.env` 자격증명으로 프로브 **성공**(거짓 `db_unreachable` 을 내지 않음을 확인) + 잘못된 포트에서 `OperationalError` 포맷 확인. ⚠ **MySQL 서비스 실제 중지는 미수행** — 공유 개발 PC 라 다른 작업에 영향을 줄 수 있어 보류 |
+| 7 백오프 | **PASS** | `app/main.py` 강제 실패 → 재시작 5회(약 4초 간격) 후 6번째 크래시에서 `backoff_wait{reason:crash, delay_sec:600, level:1}`. **"자동 재시작을 멈춥니다" 없음** = 영구 정지 소멸 확인 |
+| 8 중복 실행 차단 | **PASS** | L1 가동 중 런처 재실행 → `duplicate_launch_blocked{running_pid}` 기록 후 즉시 종료. **원본 L1 과 포트 9091 무사**(= `_kill_port` 미호출) |
+| 9 job object 이탈 | **PASS** | 태스크 실행 후 상태 `Ready`·`LastTaskResult 0`, 되살린 L1 이 **5분 ExecutionTimeLimit 을 넘겨 생존**(13:00:59 실행 → 13:07:53 생존 확인) |
+
+**검증 중 발견해 고친 결함 1건** — `scripts/install_watchdog_task.ps1` 이 `-RepetitionDuration ([TimeSpan]::MaxValue)` 로 **등록에 실패**하고 있었다. `New-ScheduledTaskTrigger` 는 조용히 통과하지만 `Register-ScheduledTask` 가 XML 스키마 위반(`Duration:P99999999DT23H59M59S`)으로 거부한다. `-RepetitionDuration` 을 생략하는 것이 '무기한' 이다.
+
+이 실패를 잡은 것은 **등록 후 되읽기 검증**이다. `Register-ScheduledTask` 가 예외를 던지지 않으므로, 되읽기가 없었다면 "등록 완료" 를 출력하고 끝났을 것이다 — **서버에 감시기가 없는데 있다고 믿는 상태**가 된다. 무인 복구 시스템에서 가장 위험한 종류의 거짓말이다.
+
+**검증 후 원상 복구 확인**: 작업 스케줄러 태스크 해제됨(시험용 태스크 포함 잔재 0), `app/main.py` 는 `git checkout` 이 아니라 **바이트 단위 백업으로 복원**(다른 작업의 미커밋 변경이 있어 checkout 은 파괴적이었다 — sha256 일치 확인), 잔여 프로세스 0.
 
 ## 9. 백엔드 영향 분석
 

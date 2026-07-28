@@ -568,6 +568,19 @@ git commit -m "✨ feat: uvicorn 헬스 프로브·좀비 판정 상태 머신 �
 
 ## Task 3: 재시작 예산 + 지수 백오프
 
+> ⚠ **구현 중 API 가 바뀌었다 (커밋 `60333ce`). 아래 코드 블록은 최초 설계안이다.**
+>
+> 코드 리뷰에서 "호출자가 `record_attempt()` 를 잊으면 `history` 가 영원히 비어 백오프가 **조용히 무력화**되고, 이 모듈이 없애려던 무한 재시작이 그대로 되살아난다"는 실패 모드가 지적됐다. 크래시도 테스트 실패도 없어 발견이 매우 늦는 종류다. 실제 통합 코드(Task 9)에서 `"go"` 직후 무조건 `record_attempt` 가 뒤따르므로 분리해둘 이유도 없었다.
+>
+> **최종 API:**
+> - `decide(now)` → **`on_crash(now)`** 로 개명. 자동 기록이 생기면 조회형 이름이 오히려 위험하다(대기 시간을 화면에 표시하려다 예산을 소모하는 식).
+> - `on_crash()` 는 `"go"` 를 반환하기 직전에 **스스로 `record_attempt(now)` 를 호출**한다. `"wait"` 분기는 그 줄에 도달하지 못하므로 대기 중에는 기록되지 않는다.
+> - `record_attempt()` 는 공개 유지(테스트 세팅용 원시 연산).
+>
+> **Task 9 는 `record_attempt()` 를 직접 부르면 안 된다** — 이중 카운트로 예산이 절반이 된다. 아래 Task 9 절은 이미 반영돼 있다.
+>
+> 실제 구현은 `HiTessWorkBenchBackEnd/serverguard/backoff.py` 를 볼 것.
+
 **Files:**
 - Create: `HiTessWorkBenchBackEnd/serverguard/backoff.py`
 - Test: `HiTessWorkBenchBackEnd/tests/test_serverguard_backoff.py`
@@ -1333,6 +1346,33 @@ PID 파일은 L2 가 L1 생존을 판정하는 유일한 근거다."
 
 ## Task 8: `server_manager.py` — 헬스체크 + 좀비 강제 재시작
 
+> ⚠ **완료 후 개정** — 커밋 `afdb9ca`·`6580b26` 로 구현했고, 품질 리뷰에서 Important 5건이
+> 나와 `5779b12` 로 재작업했다. 아래 코드 예제는 **개정 전 원안**이다. 실제 코드와 다르니
+> 후속 Task 는 계획서가 아니라 **현재 소스**를 기준으로 삼을 것. 개정 내용:
+>
+> - **I1** `_start_server` 성공 경로에 `health_tracker.reset()` 추가 — `_health_tick` 은 죽은
+>   프로세스를 *직접 관측*할 때만 리셋하는데, `RESTART_DELAY_MS`(3초)가 헬스 주기(15초)보다
+>   짧아 사망·재기동이 두 tick 사이에 통째로 들어가는 게 통례다. streak 이 이월되면 다음 tick 이
+>   *아직 부팅 중인* 새 서버를 프로브해 임계값에 도달, **정상 서버를 사살**했다.
+> - **I2** 헬스 콜백에도 identity 가드 — `_health_tick` 이 대상을 캡처해
+>   `_probe_health(proc)`→`_on_health_result(ok, proc)` 까지 전달하고 현재 프로세스가 아니면
+>   폐기. `_force_restart_zombie` 첫 줄에 대상 생존 확인(`zombie_abort`). 스테일 프로브 결과가
+>   **죽은 PID** 로 `snapshot_tree`/`kill_survivors` 를 돌리면 Windows PID 재사용 때문에
+>   무관한 프로세스의 자식을 죽인다 — 크래시 경로가 이미 거부한 바로 그 위험이다.
+> - **I3** `_force_restart_zombie` 의 `intentional_stop = True` **삭제**(identity 가드가 이미
+>   막는다). 잔류하면 "사용자가 멈췄다"고 거짓말해 재시작 게이팅이 영구 정지가 된다.
+> - **I4/I5** `_start_server` 가 `bool` 반환 + `except OSError`(GUI 앱에선 `PermissionError` 가
+>   아무 데도 안 남았다) + `server_start_failed`. `restart_done` 은 성공 시에만,
+>   두 early return 에 `restart_skipped{reason}`.
+> - **M1·M2·M3·M5** `last_ok` 를 `is not None` 으로(epoch 0.0 이 null 로 뭉개졌다) +
+>   `datetime.fromtimestamp(t, tz=utc)` 경유(naive `astimezone()` 이 Windows 에서 epoch 직후
+>   하루 구간에 `OSError` — 실측/KST `t < 86400`), `_on_server_exit(proc)` 필수 인자화,
+>   `_stream_output(proc)` 인자 전달, `entry["terminated"]` 를 `try` 안으로.
+> - **신규** `tests/test_server_manager_wiring.py` (19개). `serverguard/` 순수 모듈엔 테스트
+>   689줄이 있었지만 **그것들을 조합하는 배선에는 0줄**이었고, Important 2건이 전부 배선에
+>   있었다 — *상태가 언제 리셋되는가* 와 *이 결과가 어느 프로세스의 것인가* 는 순수 모듈
+>   테스트로 볼 수 없다. `server_manager.py` 는 창 없이 import 되므로 헤드리스로 검증 가능하다.
+
 **Files:**
 - Modify: `HiTessWorkBenchBackEnd/server_manager.py`
 
@@ -1473,6 +1513,70 @@ git commit -m "✨ feat: 좀비 상태(프로세스 생존·HTTP 무응답) 감�
 
 ## Task 9: `server_manager.py` — 백오프 전환
 
+> ⚠ **개정 (Task 8 품질 리뷰 이후)** — 아래 코드 예제는 그대로 쓰되, 다음 4가지를 반영할 것.
+>
+> **① 줄번호가 전부 밀렸다.** Tasks 7·8 이 ~250줄을 추가했다. 실제 위치:
+> `:38-40`→**`:49-51`**(상수) / `:60-62`→**`:71-73`**(주석) / `restart_history` 선언 →**`:75`** /
+> `_schedule_auto_restart` →**`:456`** / `_auto_restart_fire` →**`:481`** / `_toggle_server` 의 `restart_history = []` →**`:511`**.
+> ※ Task 8 재작업이 다시 밀 수 있으니 **착수 시점에 직접 grep 해 확인할 것.**
+>
+> **② Step 5 의 `self.health_tracker.reset()` 은 이제 불필요하다.** Task 8 재작업(I1)이
+> `_start_server` 성공 경로에 `health_tracker.reset()` 을 넣었으므로 모든 기동이 이미 덮인다.
+> Step 5 에서는 **`self.restart_policy.reset()` 만** 남겨라(수동 Start = 깨끗한 예산).
+>
+> **③ Step 4 의 `restart_done` 은 조건부여야 한다.** Task 8 재작업(I4)이 `_start_server` 를
+> `bool` 반환으로 바꿨다. `_auto_restart_fire` 도 **`_start_server()` 가 `True` 일 때만**
+> `restart_done` 을 남겨라 — 안 그러면 뜨지도 않은 서버를 성공으로 단언한다.
+> 두 early return 에도 `restart_skipped{reason:...}` 을 남겨 `restart_begin` 의 짝을 맞춰라.
+>
+> **④ ★ 백오프 대기 콜백에 `intentional_stop` 을 읽지 마라.** Task 8 재작업(I3)이
+> `_force_restart_zombie` 의 플래그 오염을 제거했지만, 10~60분 대기 콜백에서 그 플래그를
+> 게이트로 쓰면 **영구 정지가 부활**한다(플래그를 지우는 곳이 `_start_server` 뿐인데
+> 거부당하는 대상이 바로 그 `_start_server` 다). 대기 중 사용자 Stop 을 존중해야 한다면
+> `intentional_stop` 이 아니라 **`_toggle_server` 가 예약을 취소**하는 방식으로 풀어라.
+>
+> **⑤ 결정: 좀비 재시작도 크래시와 같은 `RestartPolicy` 예산을 쓴다(공유).**
+> 현재 `_force_restart_zombie` 는 예산을 우회해 `root.after(RESTART_DELAY_MS, ...)` 를 직접
+> 부른다. 부팅→행→강제종료가 반복되는 좀비 루프는 백오프 없이 **영원히 3분마다** 재시작한다.
+>
+> *왜 공유인가* — 예산이 답해야 할 질문은 "최근 얼마나 자주 재시작했나"이지 "왜 재시작했나"가
+> 아니다. 3번 크래시하고 2번 좀비가 된 서버는 **실제로 나쁜 상태**이고 6번째 재시작이 즉시
+> 일어나서는 안 된다. 별도 카운터를 두면 두 경로가 서로의 소모를 못 보므로 예산이 사실상 2배가
+> 된다.
+>
+> ⚠ **근거 교정(2026-07-28, 팀리드).** 최초 결정문에는 "무한 3분 반복을 없앤다"를 근거로
+> 적었는데 **틀렸다.** `backoff.py:54` 가 `history` 를 `now - t < window_sec`(**60초**)로 거르는데
+> 좀비 한 사이클은 12프로브×15초 = **최소 3분**이라, 연속 좀비 재시작은 **60초 창에 둘 이상
+> 들어갈 수 없다.** 즉 **예산 공유는 순수 좀비 루프를 전혀 억제하지 못한다.**
+> (`test_repeated_zombie_restarts_consume_budget_and_back_off` 가 통과하는 것은 시계를 고정해
+> 6회를 한 창에 몰아넣은 **인위적 배치**이기 때문이다 — 실제로는 일어날 수 없다.)
+>
+> *그래서 공유가 실제로 사주는 것* — **혼합 장애 회계.** 크래시 4회 뒤 좀비가 나면 그게
+> 5번째로 잡혀 백오프한다. 좀비 재시작이 예산에 **보이지 않는 채로** 남지 않는다.
+> 위 "예산 2배" 논거는 그대로 유효하다.
+>
+> *순수 좀비 루프(3분 주기 무한 반복)는 수용한다.* 사용자가 정한 우선순위가 **무인 복구 속도**
+> 이고, 3분 재시도는 원인이 해소되는 즉시 복귀하지만 60분 백오프는 그렇지 않다. 로그 증가도
+> 시간당 ~40줄로 30일 보존(`prune_events`) 안에서 감당된다. 좀비 전용 스로틀을 따로 두는 것은
+> 정책 객체가 둘로 갈리는 복잡도에 비해 이득이 없다.
+>
+> *수용하는 비용* — `"wait"` 가 나오면 서버가 10~60분 내려간 채로 대기한다. **단 이는 크래시와
+> 섞였을 때만 발생한다**(위 창 계산). 그동안 L2 는 L1 이 살아 있으니 개입하지 않는다. 영구
+> 정지가 아니라 **반드시 복귀하는** 지연이므로 설계서 §5 의 백오프 취지에 부합한다(영구 포기만이
+> 금지 대상이다).
+>
+> **⑥ 남은 영구 정지 경로를 함께 닫아라.** `_start_server()` 가 `OSError` 로 실패하면 Popen 이
+> 없어 `_stream_output`·`_on_server_exit` 이 영영 오지 않고 **아무도 재예약하지 않는다.** L1 은
+> 살아 있으니 L2 도 개입하지 않는다 — Task 9 가 없애겠다고 선언한 바로 그 상태다. 기존 결함이나
+> 다른 영구 정지가 사라진 순간 **L1 에 남은 유일한 영구 정지 경로**가 됐다. `_auto_restart_fire`·
+> `_zombie_restart_fire` 에서 `_start_server()` 가 `False` 면 각자의 `fire`·`reason` 으로
+> **다시 예약**하라. ⛔ `_toggle_server`(수동 Start)는 제외 — 사용자가 화면에서 실패를 본다.
+>
+> *구현* — `_force_restart_zombie` 말미에서 `on_crash(time.monotonic())` 을 부르고 `"go"` 면
+> `RESTART_DELAY_MS`, `"wait"` 면 그 지연으로 `_zombie_restart_fire` 를 예약한다. ⚠ `on_crash`
+> 가 시도를 자동 기록하므로 `record_attempt()` 를 **또 부르면 안 된다**(이중 카운트).
+> ⚠ ④ 와 함께 지킬 것 — 대기 콜백에서 `intentional_stop` 을 읽지 마라.
+
 **Files:**
 - Modify: `HiTessWorkBenchBackEnd/server_manager.py`
 
@@ -1517,8 +1621,12 @@ Task 7 에서 남겨둔 아래 줄을 **삭제한다** (`RestartPolicy` 는 Task
 ```python
     def _schedule_auto_restart(self):
         """크래시 감지 시 재시작을 예약한다. 반복 실패하면 간격을 늘려가며 계속 시도한다."""
-        now = time.time()
-        action, delay = self.restart_policy.decide(now)
+        # 단조 시계를 쓴다 — 예산·백오프는 절대 시각이 아니라 경과시간만 보므로,
+        # NTP 보정이나 수동 시계 변경으로 재시작 판단이 흔들려서는 안 된다.
+        # ⚠ events.py 의 타임스탬프와 HealthTracker.last_ok_at 은 사람이 읽는
+        #   기록이라 벽시계(time.time)를 그대로 쓴다. 두 시계를 섞지 말 것.
+        now = time.monotonic()
+        action, delay = self.restart_policy.on_crash(now)
 
         if action == "wait":
             minutes = round(delay / 60, 1)
@@ -1532,7 +1640,8 @@ Task 7 에서 남겨둔 아래 줄을 **삭제한다** (`RestartPolicy` 는 Task
             self.root.after(int(delay * 1000), self._auto_restart_fire)
             return
 
-        self.restart_policy.record_attempt(now)
+        # on_crash 가 "go" 를 낼 때 시도를 스스로 기록한다.
+        # 여기서 record_attempt 를 또 부르면 이중 카운트로 예산이 절반이 된다.
         self._log(f"{RESTART_DELAY_MS // 1000}초 후 자동으로 재시작합니다.", "warning")
         self.root.after(RESTART_DELAY_MS, self._auto_restart_fire)
 ```
@@ -1597,6 +1706,30 @@ git commit -m "✨ feat: 크래시 루프 영구 정지를 지수 백오프로 �
 ---
 
 ## Task 10: `server_manager.py` — DB 관측 (기록 전용)
+
+> ⚠ **착수 전 개정** — 전제는 실측으로 확인했고(아래), 코드 예제에 결함이 하나 있다.
+>
+> **확인된 전제(수정 불필요):** `HiTessWorkBenchBackEnd/.env` 가 실재하고 키가
+> `DB_USER`/`DB_PASSWORD`/`DB_HOST`/`DB_PORT`/`DB_NAME` 로 계획서와 정확히 일치한다.
+> `app/database.py` 도 같은 이름·같은 기본값을 쓴다. `os` 는 `server_manager.py:7` 에 이미
+> import 돼 있고, venv 에 `pymysql 1.4.6`·`python-dotenv` 가 있다. `load_dotenv(BASE_DIR/".env")`
+> 로 **경로를 명시하는 것이 맞다** — `app/database.py` 의 인자 없는 `load_dotenv()` 는 CWD 에
+> 의존하는데 Server Manager 의 CWD 는 다를 수 있다.
+>
+> **★ 결함: `connect_timeout` 만으로는 부족하다.** 지금 예제는 접속 타임아웃만 5초로 걸고
+> **쿼리 타임아웃이 없다.** 접속은 되는데 서버가 응답하지 않는 상태(= 커넥션 고갈·락 대기,
+> 바로 이 감시기가 겨냥하는 고장 모드)에서는 `SELECT 1` 이 **영원히 블록**된다. 프로브는
+> 데몬 스레드라 앱 종료를 막지는 않지만 **1분마다 하나씩 영구 누적**된다. 반드시 추가할 것:
+> ```python
+>                 connect_timeout=5,
+>                 read_timeout=5,      # 접속 후 무응답(커넥션 고갈·락 대기)에서 영구 블록 방지
+>                 write_timeout=5,
+> ```
+> 가능하면 **직전 프로브가 아직 안 끝났으면 새로 띄우지 않는** 가드도 함께 둬라(누적 방지).
+>
+> **참고:** `_on_db_result` 의 "전이 시에만 기록" 은 `HealthTracker` 와 달리 단순 bool 비교다.
+> 최초 1회는 `db_reachable=True` 로 시작하므로 **처음부터 DB 가 죽어 있으면 첫 관측에서
+> `db_unreachable` 이 정상적으로 남는다**(초기값이 낙관적이라 전이가 잡힌다). 의도된 동작이다.
 
 **Files:**
 - Modify: `HiTessWorkBenchBackEnd/server_manager.py`

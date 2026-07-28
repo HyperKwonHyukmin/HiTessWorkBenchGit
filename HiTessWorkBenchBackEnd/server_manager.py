@@ -8,11 +8,31 @@ import os
 import urllib.request
 import urllib.error
 import tkinter as tk
-from tkinter import scrolledtext
-from datetime import datetime
+from tkinter import messagebox, scrolledtext
+from datetime import datetime, timezone
 from pathlib import Path
 
+import psutil
+
+from serverguard import diagnostics, events, health, pidfile, proctree
+from serverguard.backoff import RestartPolicy
+
 BASE_DIR = Path(__file__).resolve().parent
+LOG_DIR = BASE_DIR / "logs"
+
+# ── 헬스 체크(좀비 감지) 파라미터 ──
+# poll() 은 '프로세스가 살아있는가' 만 본다. 프로세스는 살아있는데 HTTP 응답만
+# 없는 상태(DB 커넥션 고갈, ThreadPool 데드락, 디스크 풀)를 잡으려면 별도 관측이
+# 필요하다. 재시작은 되돌릴 수 없으므로 임계값을 3분으로 넉넉히 잡는다 —
+# 해석 exe 는 별도 프로세스라 CPU 가 포화돼도 uvicorn 이벤트 루프는 막히지 않는다.
+HEALTH_INTERVAL_MS = health.CHECK_INTERVAL_SEC * 1000
+
+# ── DB 관측(기록 전용) ──
+# /api/version 은 DB 를 타지 않으므로 MySQL 이 죽어도 헬스체크는 통과한다.
+# 이것은 의도된 동작이다 — DB 가 죽었을 때 백엔드를 재시작해도 DB 는 살아나지
+# 않고 진행 중 작업만 추가로 파괴한다. 그래서 관측해서 기록만 하고 복구는 하지 않는다.
+DB_CHECK_INTERVAL_MS = 60_000
+DB_PROBE_TIMEOUT_SEC = 5
 
 # WorkBenchEnv가 HiTessWorkBenchBackEnd 안에 있으면 BASE_DIR/WorkBenchEnv,
 # 상위 폴더(HiTessWorkBenchGit)에 있으면 BASE_DIR.parent/WorkBenchEnv 를 사용
@@ -34,10 +54,12 @@ SERVER_CMD = [PYTHON, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--p
 
 # ── 자동 재시작(크래시 루프 방어) 파라미터 ──
 # 사용자가 Stop 을 누르지 않았는데 서버가 죽으면(=크래시) 자동으로 다시 띄운다.
-# 단, 시작하자마자 계속 죽는 경우 무한 재시작을 막기 위해 창(window) 안의 횟수를 제한한다.
-RESTART_DELAY_MS       = 3000  # 종료 감지 후 재시작까지 대기(포트 정리·안정화 시간)
-RESTART_WINDOW_SEC     = 60    # 이 시간(초) 창 안에서 자동 재시작 횟수를 센다
-MAX_RESTARTS_IN_WINDOW = 5     # 창 안에서 이 횟수를 넘기면 자동 재시작 중단(무한 루프 방지)
+# 단, 시작하자마자 계속 죽는 경우 재시작 간격을 벌려 크래시 루프를 눌러 준다.
+RESTART_DELAY_MS = 3000  # 종료 감지 후 재시작까지 대기(포트 정리·안정화 시간)
+# 창 안의 재시작 예산과 소진 시 백오프 간격은 serverguard.backoff 가 관리한다.
+# 과거에는 예산을 소진하면 자동 재시작을 영구 포기했는데, 그 상태에서도 이 GUI
+# 프로세스는 살아 있어서 L2 워치독이 개입하지 않는다 — 서버가 죽은 채 아무도
+# 살리지 않는 상태가 됐다. 이제는 10/20/40/60분 백오프로 계속 재시도한다.
 
 # ── 색상 팔레트 ──
 BG        = "#1e2130"
@@ -59,14 +81,104 @@ class ServerManagerApp:
         self.is_updating = False
         # 자동 재시작 상태.
         #  intentional_stop: 사용자가 Stop/앱 종료로 '의도적으로' 내렸는지 표시(그 경우 재시작 안 함).
-        #  restart_history : 최근 자동 재시작 시각 목록(크래시 루프 차단 판단용).
+        #  restart_policy  : 재시작 예산과 백오프 판단(serverguard.backoff).
         self.intentional_stop = False
-        self.restart_history: list[float] = []
+        # uvicorn stdout 을 날짜별 파일로 보존한다(앱을 닫아도 traceback 이 남는다).
+        self.uvicorn_log = events.DailyLogWriter(LOG_DIR)
+        self.health_tracker = health.HealthTracker()
+        self.restart_policy = RestartPolicy()
+        # DB 도달성. 전이 시에만 기록하려고 직전 상태를 들고 있는다. 초기값이
+        # 낙관적(True)이라 처음부터 DB 가 죽어 있어도 첫 관측에서 전이가 잡힌다.
+        self.db_reachable = True
+        # 직전 프로브가 아직 안 끝났으면 새로 띄우지 않는다 — DB 가 '죽은' 게
+        # 아니라 '멎은' 상태에서 스레드가 1분마다 하나씩 쌓이는 것을 막는다.
+        self.db_probe_running = False
+
+        # PID 파일을 덮어쓰기 전에, 그리고 uvicorn 을 띄우기 전에 확인한다 —
+        # 순서가 뒤바뀌면 기존 인스턴스의 PID 기록을 지우거나 포트를 뺏는다.
+        if self._abort_if_already_running():
+            self.aborted = True
+            self.root.destroy()
+            return
+        self.aborted = False
 
         self._setup_window()
         self._build_ui()
+        self._write_pidfile()
+        events.append_event(LOG_DIR, "L1", "manager_start", {"pid": os.getpid()})
+        events.prune_events(LOG_DIR)
+        events.prune_uvicorn_logs(LOG_DIR)
+
         self._start_server()
+        self.root.after(HEALTH_INTERVAL_MS, self._health_tick)
+        self.root.after(DB_CHECK_INTERVAL_MS, self._db_tick)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ── 중복 실행 차단 ───────────────────────────────────────────────────
+    def _find_running_manager(self):
+        """이미 떠 있는 다른 Server Manager 의 PID. 없거나 불확실하면 None.
+
+        두 개가 뜨면 서로의 uvicorn 을 _kill_port(9091) 로 죽이고 상대를
+        크래시로 오판해 재기동하는 상호 kill 루프가 된다. 해석 exe 는 고아로
+        남아 MSC 라이선스를 문다. 이 시스템에서 가장 나쁜 실패다.
+
+        평범하게 일어난다 — 설치 스크립트가 로그온 트리거를 걸어두므로 RDP
+        로그인 시 L2 가 L1 을 띄우는데, 사용자가 습관대로 런처를 더블클릭하면
+        그대로 두 개가 된다.
+
+        ★ 판정 방향이 L2 와 정반대다. L2 는 '확신이 없으면 살아있는 것으로'
+        기울여 중복 기동을 막지만, 여기서는 '확신이 없으면 띄운다'. 잘못 막으면
+        서버가 아예 안 뜨는데 그건 중복보다 나쁘고, 사람이 런처를 눌렀다면
+        화면 앞에 있어 메시지를 본다. 그래서 프로세스 생존과 커맨드라인이
+        **둘 다 확인된 경우에만** 차단한다.
+        """
+        try:
+            pid = pidfile.read(LOG_DIR)
+        except Exception:
+            return None                      # 판독 불가 → 막지 않는다
+        if not pid or pid == os.getpid():
+            return None
+        try:
+            proc = psutil.Process(pid)
+            if not proc.is_running():
+                return None
+            if "server_manager.py" in " ".join(proc.cmdline()).lower():
+                return pid
+        except Exception:
+            return None                      # 사망·권한 부족 등 → 막지 않는다
+        return None
+
+    def _abort_if_already_running(self):
+        """다른 Server Manager 가 확인되면 알리고 종료한다. 종료했으면 True."""
+        other = self._find_running_manager()
+        if other is None:
+            return False
+        events.append_event(LOG_DIR, "L1", "duplicate_launch_blocked", {"running_pid": other})
+        # 아직 _setup_window 전이라 빈 기본 창이 떠 있다 — 경고 뒤에 그게 보이면 안 된다.
+        self.root.withdraw()
+        messagebox.showwarning(
+            "HiTESS WorkBench — Server Manager",
+            f"이미 실행 중입니다 (PID {other}).\n\n"
+            "두 개를 동시에 띄우면 서로의 서버를 종료시킵니다.\n"
+            "작업 표시줄에서 기존 창을 찾아 주세요.",
+        )
+        return True
+
+    # ── PID 파일 기록 ────────────────────────────────────────────────────
+    def _write_pidfile(self):
+        """L2 워치독이 읽을 PID 파일을 남긴다.
+
+        실패해도 기동을 막지 않는다 — 다만 조용히 넘어가서는 안 된다.
+        이 파일이 없으면 L2 는 L1 이 죽었다고 오판해 5분마다 중복 기동을
+        시도하므로, 실패 사실 자체가 반드시 기록으로 남아야 한다.
+        """
+        try:
+            pidfile.write(LOG_DIR, os.getpid())
+        except Exception as exc:
+            self._log(f"PID 파일을 쓰지 못했습니다: {exc}", "error")
+            self._log("  워치독이 이 프로세스를 인식하지 못할 수 있습니다.", "warning")
+            events.append_event(LOG_DIR, "L1", "pidfile_write_failed",
+                                {"error": f"{type(exc).__name__}: {exc}"[:300]})
 
     # ── 창 설정 ──────────────────────────────────────────────────────────
     def _setup_window(self):
@@ -217,9 +329,15 @@ class ServerManagerApp:
             self._log(f"  포트 정리 중 오류: {e}", "error")
 
     # ── 서버 시작 ────────────────────────────────────────────────────────
-    def _start_server(self):
+    def _start_server(self) -> bool:
+        """서버를 띄운다. 호출이 끝난 시점에 서버가 떠 있으면 True.
+
+        반환값이 필요한 이유는 재시작 경로가 'restart_done' 같은 사실을 단언하기
+        때문이다. 시작이 실패했는데 완료를 기록하면 사후 분석 로그가 거짓을
+        말한다 — 침묵하는 로그보다 나쁘다.
+        """
         if self.server_proc and self.server_proc.poll() is None:
-            return
+            return True
         # 새로 띄우는 순간 '의도적 종료' 표식을 해제한다(이후 죽으면 크래시로 간주).
         self.intentional_stop = False
         self._log("서버를 시작하는 중...", "info")
@@ -236,21 +354,45 @@ class ServerManagerApp:
                 errors="replace",
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
+            # 새 프로세스의 판정은 처음부터 다시 시작한다. RESTART_DELAY_MS(3초)는
+            # HEALTH_INTERVAL_MS(15초)보다 짧아 사망·재기동이 두 tick 사이에
+            # 통째로 들어가는 것이 통례다 — 이월된 fail_streak 을 지우지 않으면
+            # 다음 한 번의 실패로 임계(12)를 넘어, 아직 부팅 중(FastAPI import·
+            # MySQL 테이블 생성)인 정상 서버를 좀비로 오판해 사살한다.
+            # 모든 재시작(크래시·좀비·수동·업데이트)이 이 길목을 지난다.
+            self.health_tracker.reset()
             self._set_running(True)
             self._log("uvicorn 서버 시작됨 (port 9091)", "success")
-            threading.Thread(target=self._stream_output, daemon=True).start()
-        except FileNotFoundError:
-            self._log(f"Python 실행 파일을 찾을 수 없습니다:\n  {PYTHON}", "error")
-            self._log("WorkBenchEnv 가상환경이 생성되어 있는지 확인하세요.", "warning")
+            events.append_event(LOG_DIR, "L1", "server_start", {"pid": self.server_proc.pid})
+            # 스트리밍 스레드에 담당 프로세스를 인자로 넘긴다 — 스레드 안에서
+            # self.server_proc 를 읽으면 시작과 첫 읽기 사이에 좀비 강제 재시작이
+            # 끼어들 창이 남는다.
+            threading.Thread(target=self._stream_output,
+                             args=(self.server_proc,), daemon=True).start()
+            return True
+        except OSError as exc:
+            # FileNotFoundError 뿐 아니라 OSError 전체를 잡는다. PermissionError
+            # (백신 격리 등)는 여기서 안 잡으면 root.after 콜백 밖으로 나가
+            # tkinter 핸들러로 가고, 콘솔 없는 GUI 앱에선 아무 데도 남지 않은 채
+            # 재시작 체인이 기록 없이 끊긴다.
+            if isinstance(exc, FileNotFoundError):
+                self._log(f"Python 실행 파일을 찾을 수 없습니다:\n  {PYTHON}", "error")
+                self._log("WorkBenchEnv 가상환경이 생성되어 있는지 확인하세요.", "warning")
+            else:
+                self._log(f"서버를 시작하지 못했습니다: {type(exc).__name__}: {exc}", "error")
+            events.append_event(LOG_DIR, "L1", "server_start_failed",
+                                {"error": f"{type(exc).__name__}: {exc}"[:300]})
+            return False
 
     # ── 서버 출력 스트리밍 ───────────────────────────────────────────────
-    def _stream_output(self):
-        if not self.server_proc:
-            return
-        for line in self.server_proc.stdout:
+    def _stream_output(self, proc):
+        # 담당 프로세스는 호출부가 인자로 넘긴다 — self.server_proc 는 이 스레드가
+        # 도는 동안 좀비 강제 재시작 등으로 다른 프로세스로 바뀔 수 있다.
+        for line in proc.stdout:
             line = line.rstrip()
             if not line:
                 continue
+            self.uvicorn_log.write(line)
             tag = "info"
             if "ERROR" in line or "error" in line.lower():
                 tag = "error"
@@ -259,10 +401,20 @@ class ServerManagerApp:
             elif "started" in line or "running" in line.lower() or "Application startup" in line:
                 tag = "success"
             self.root.after(0, self._log, line, tag)
-        # 프로세스 종료됨
-        self.root.after(0, self._on_server_exit)
+        # 프로세스 종료됨 — 어느 프로세스의 종료인지 함께 알린다(스테일 콜백 가드용).
+        self.root.after(0, self._on_server_exit, proc)
 
-    def _on_server_exit(self):
+    def _on_server_exit(self, proc):
+        # 디스크 지연(로그 flush 등)으로 이 스레드의 EOF 감지가 늦어지면, 좀비
+        # 강제 재시작이 이미 새 프로세스를 띄운 뒤에 '지난' 프로세스의 종료
+        # 통지가 도착할 수 있다. proc identity 로 그 스테일 통지를 걸러낸다 —
+        # 걸러내지 않으면 방금 띄운 정상 프로세스를 크래시로 오판해 허위
+        # crash_detected 기록을 남기고 재시작 예산을 잘못 소진한다.
+        # proc 에 기본값을 두지 않는다 — 기본값은 이 가드를 조용히 끄고,
+        # 인자를 빠뜨린 호출자는 '조용하지만 틀린 크래시 진단' 이 아니라
+        # TypeError 로 시끄럽게 터져야 한다.
+        if proc is not self.server_proc:
+            return
         self._set_running(False)
         # 업데이트 중 재시작은 _update_worker 가 직접 처리하므로 감시하지 않는다.
         if self.is_updating:
@@ -273,42 +425,362 @@ class ServerManagerApp:
             return
         # 여기까지 왔으면 의도치 않은 종료(크래시) → 자동 재시작을 시도한다.
         self._log("서버 프로세스가 예기치 않게 종료되었습니다.", "error")
+        detail = diagnostics.collect()          # 호스트 지표만 — 죽은 PID 는 조회하지 않는다
+        if self.server_proc is not None:
+            # 죽은 PID 를 '사실'로만 남긴다. 이 PID 를 psutil 로 조회하면
+            # 그사이 재사용된 무관한 프로세스의 지표를 uvicorn 것처럼 기록할 수 있다.
+            detail["crashed_pid"] = self.server_proc.pid
+            detail["exit_code"] = self.server_proc.poll()
+        events.append_event(LOG_DIR, "L1", "crash_detected", detail)
         self._schedule_auto_restart()
 
-    # ── 자동 재시작(의도치 않은 종료 시) ─────────────────────────────────
-    def _schedule_auto_restart(self):
-        """크래시 감지 시 재시작을 예약한다. 짧은 시간에 반복 실패하면 중단한다."""
-        now = time.time()
-        # 창(window) 밖의 오래된 재시작 기록은 버린다.
-        self.restart_history = [t for t in self.restart_history if now - t < RESTART_WINDOW_SEC]
+    # ── 헬스 체크(좀비 감지) ─────────────────────────────────────────────
+    def _health_tick(self):
+        """15초마다 HTTP 응답을 관측한다. 프로브는 GUI 를 막지 않도록 스레드에서."""
+        self.root.after(HEALTH_INTERVAL_MS, self._health_tick)
 
-        if len(self.restart_history) >= MAX_RESTARTS_IN_WINDOW:
-            self._log(
-                f"{RESTART_WINDOW_SEC}초 내 {MAX_RESTARTS_IN_WINDOW}회 연속 재시작에 실패했습니다. "
-                "자동 재시작을 멈춥니다 — 원인을 확인한 뒤 Start 를 눌러 수동으로 재개하세요.",
-                "error",
-            )
-            # 기록은 비우지 않는다 — 이후 크래시도 계속 이 상한에 걸려 재시작이 차단된다.
-            # (예산 초기화는 사용자가 직접 Start 를 누를 때만 이뤄진다.)
+        # 프로세스가 이미 죽었거나 업데이트 중이면 크래시 경로가 담당한다.
+        proc = self.server_proc
+        if self.is_updating or not (proc and proc.poll() is None):
+            self.health_tracker.reset()
             return
 
-        self.restart_history.append(now)
-        attempt = len(self.restart_history)
-        self._log(
-            f"{RESTART_DELAY_MS // 1000}초 후 자동으로 재시작합니다 "
-            f"(최근 {RESTART_WINDOW_SEC}초 내 {attempt}/{MAX_RESTARTS_IN_WINDOW}회).",
-            "warning",
+        # 관측 대상을 캡처해 프로브와 콜백까지 끌고 간다 — 프로브가 도는 동안
+        # (타임아웃 5초) 대상이 바뀔 수 있고, 그때 결과를 그대로 반영하면
+        # 지난 프로세스의 실패가 새 프로세스의 streak 으로 쌓인다.
+        threading.Thread(target=self._probe_health, args=(proc,), daemon=True).start()
+
+    def _probe_health(self, proc):
+        ok = health.probe()
+        self.root.after(0, self._on_health_result, ok, proc)
+
+    def _on_health_result(self, ok, proc):
+        """관측 결과를 상태로 환산하고, 전이가 일어난 순간에만 행동한다.
+
+        이 메서드는 root.after(0, ...) 를 거쳐 항상 메인 스레드에서 실행된다 —
+        HealthTracker 는 락이 없으므로 이 속성이 반드시 지켜져야 한다.
+        """
+        # 프로브가 도는 사이 대상이 바뀌었다면(급사 후 재기동 등) 이 결과는
+        # '지난' 프로세스의 것이다. 흔한 레이스지 이상 징후가 아니므로 조용히
+        # 버린다 — 반영하면 유령 좀비 재시작(이미 죽은 PID 를 대상으로 한
+        # kill_survivors/_kill_port)까지 이어진다.
+        if proc is not self.server_proc:
+            return
+
+        state, changed = self.health_tracker.record(ok, now=time.time())
+        if not changed:
+            return
+
+        if state == health.HEALTHY:
+            self._log("서버 응답이 회복되었습니다.", "success")
+            events.append_event(LOG_DIR, "L1", "health_recovered")
+            self.restart_policy.record_success()
+        elif state == health.SUSPECT:
+            self._log("서버 응답이 없습니다 — 관찰 중.", "warning")
+            events.append_event(LOG_DIR, "L1", "health_degraded",
+                                {"fail_streak": self.health_tracker.fail_streak})
+        elif state == health.ZOMBIE:
+            self._force_restart_zombie()
+
+    def _force_restart_zombie(self):
+        """프로세스는 살아있으나 3분간 HTTP 무응답 — 강제로 내리고 다시 띄운다.
+
+        순서가 중요하다. 진단 스냅샷과 자손 목록을 '죽이기 전에' 확보해야 하며,
+        고아 해석 exe 를 정리하지 않으면 MSC 라이선스가 물린 채 남는다.
+        """
+        # 되돌릴 수 없는 부작용(kill_survivors, _kill_port)을 실행하기 직전이므로
+        # 대상 검증이 첫 줄에 있어야 한다. 죽은 PID 로 진행하면 Windows 의 PID
+        # 재사용 때문에 무관한 프로세스의 자식을 열거해 죽일 수 있다 —
+        # 크래시 경로가 아래에서 의도적으로 거부한 바로 그 위험이다.
+        if self.server_proc is None or self.server_proc.poll() is not None:
+            self.health_tracker.reset()
+            self._log("강제 재시작 대상이 이미 종료되었습니다 — 크래시 경로가 처리합니다.", "warning")
+            events.append_event(LOG_DIR, "L1", "zombie_abort",
+                                {"reason": "process_already_dead"})
+            return
+
+        pid = self.server_proc.pid
+        self._log("3분간 응답이 없습니다 — 강제 재시작합니다.", "error")
+
+        snapshot = diagnostics.collect(uvicorn_pid=pid)
+        # children 의 create_time 은 epoch float 그대로 남긴다. 이 dict 들은 기록
+        # 후 kill_survivors 로 그대로 넘어가 PID 재사용 방어 대조에 쓰이므로,
+        # 읽기 좋으라고 ISO8601 문자열로 바꾸면 그 방어가 깨진다.
+        children = proctree.snapshot_tree(pid)
+        snapshot["fail_streak"] = self.health_tracker.fail_streak
+        # last_ok_at 은 epoch float(HealthTracker 의 계약) — events.py 의 다른
+        # 필드(ts)와 마찬가지로 ISO8601 로 남겨야 사후 분석 시 바로 읽을 수 있다.
+        # None 검사여야 한다: `if last_ok` 로 쓰면 epoch 0.0 이 falsy 라 "한 번도
+        # 응답하지 않았다"로 뒤집혀 사실의 정반대를 기록한다.
+        # UTC 를 거쳐 변환하는 이유는 naive datetime 의 astimezone() 이 Windows
+        # 에서 epoch 직후 하루 구간에 OSError(EINVAL) 를 던지기 때문이다
+        # (실측/KST: t < 86400 은 전부 실패, t == 86400 부터 성공). tz 를 주면
+        # 그 경로를 타지 않는다. 진단 한 줄 때문에 강제 재시작이 중단되면 안 된다.
+        last_ok = self.health_tracker.last_ok_at
+        snapshot["last_ok"] = (
+            datetime.fromtimestamp(last_ok, tz=timezone.utc)
+            .astimezone().isoformat(timespec="seconds")
+            if last_ok is not None else None
         )
-        self.root.after(RESTART_DELAY_MS, self._auto_restart_fire)
+        snapshot["children"] = children
+        events.append_event(LOG_DIR, "L1", "zombie_detected", snapshot)
+
+        events.append_event(LOG_DIR, "L1", "restart_begin", {"reason": "zombie"})
+
+        # 여기서 intentional_stop 을 세우지 않는다. 이 종료의 크래시 오판은
+        # 아래에서 server_proc 을 None 으로 만들기 때문에 _on_server_exit 의
+        # identity 가드가 이미 막는다. 그 플래그를 빌려 쓰면 '사용자가 멈췄다'는
+        # 의미가 오염되고, 좀비 재시작 후 True 로 잔류한다 — 재시작 게이팅이
+        # 그 플래그를 읽는 순간(Task 9 의 백오프 재시도) 영구 정지가 된다.
+        # 플래그를 지우는 곳이 _start_server 뿐인데 거부당하는 대상이 바로
+        # 그 _start_server 이기 때문이다.
+        # poll() 은 OS 를 다시 조회한다 — 위 진단 수집(cpu_percent 100ms 블로킹)과
+        # 자손 열거·이벤트 기록 사이에 대상이 스스로 죽었을 수 있으므로 살아있는
+        # 검사다.
+        if self.server_proc and self.server_proc.poll() is None:
+            # 종료 실패를 밖으로 흘리면 아래 reset()·재시작 예약이 실행되지 않아
+            # state 가 ZOMBIE 로 굳는다. HealthTracker 는 전이 시에만 알리므로
+            # 이후 어떤 실패도 재감지로 이어지지 않는다 — 무인 복구 영구 정지다.
+            # 종료에 실패했어도 고아 정리·포트 해제·리셋·재시작은 전부 진행해야
+            # 한다(finally 가 아니라 catch-and-continue 인 이유).
+            try:
+                self.server_proc.terminate()
+                try:
+                    self.server_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.server_proc.kill()
+            except Exception as exc:
+                self._log(f"  서버 프로세스 종료 실패: {exc}", "error")
+                self._log("  포트 정리로 이어서 진행합니다.", "warning")
+                events.append_event(LOG_DIR, "L1", "terminate_failed",
+                                    {"pid": pid,
+                                     "error": f"{type(exc).__name__}: {exc}"[:300]})
+        self.server_proc = None
+        self._set_running(False)
+
+        self._cleanup_orphans(children)
+
+        self._kill_port(9091)
+        # 이 reset 은 실제로 중복이다 — _health_tick 은 server_proc 이 None 인 것을
+        # 보고 스스로 reset 하고, _start_server 도 새 프로세스마다 reset 한다.
+        # 그래도 남긴다: 재시작을 촉발한 streak 이 그 결정보다 오래 살지 않게 해
+        # 이 함수를 자기완결로 만든다(스냅샷은 위에서 이미 기록했으므로 증거
+        # 손실도 없다). 위 종료 실패 경로에서도 반드시 도달해야 하는 위치다 —
+        # 건너뛰면 state 가 ZOMBIE 로 굳어 좀비 재감지가 영구히 멈춘다.
+        self.health_tracker.reset()
+        self._schedule_zombie_restart()
+
+    def _cleanup_orphans(self, children):
+        """uvicorn 이 남긴 해석 exe 를 정리한다.
+
+        정리에 실패하더라도 재시작 자체를 막아서는 안 된다 — 서버가 안 뜨는 것이
+        라이선스가 물린 것보다 나쁘다. 다만 실패 사실은 반드시 기록으로 남긴다.
+        """
+        if not children:
+            return
+        try:
+            attempted = proctree.kill_survivors(children)
+            # unconfirmed 계산도 try 안에 둔다. kill_survivors 는 항목에 필수 키가
+            # 없으면 KeyError 를 의도적으로 전파하는데, entry.get("terminated") 로
+            # 받으면 그 계약 위반이 '종료 확인 실패' 로 위장돼 조용히 묻힌다.
+            # 반대로 try 밖에 두면 KeyError 가 이 래퍼를 뚫고 나가 재시작을
+            # 중단시킨다 — 시끄럽게 기록하되 재시작은 계속되어야 한다.
+            unconfirmed = [entry for entry in attempted if not entry["terminated"]]
+        except Exception as exc:
+            self._log(f"  고아 프로세스 정리 실패: {exc}", "error")
+            events.append_event(LOG_DIR, "L1", "orphan_cleanup_failed",
+                                {"error": f"{type(exc).__name__}: {exc}"[:300]})
+            return
+
+        if not attempted:
+            return
+        self._log(f"  고아 해석 프로세스 {len(attempted)}개 정리 시도 "
+                  f"(종료 확인 {len(attempted) - len(unconfirmed)}개)", "warning")
+        if unconfirmed:
+            self._log(f"  {len(unconfirmed)}개는 종료를 확인하지 못했습니다 "
+                      "— 라이선스가 물려 있을 수 있습니다.", "error")
+        events.append_event(LOG_DIR, "L1", "orphan_killed", {
+            "attempted": len(attempted),
+            "terminated": len(attempted) - len(unconfirmed),
+            "unconfirmed": unconfirmed,
+            "entries": attempted,
+        })
+
+    def _zombie_restart_fire(self):
+        # restart_begin 의 짝을 반드시 남긴다. 침묵하면 사후 분석자가 "업데이트
+        # 중이라 건너뜀" 과 "매니저 자신이 재시작 도중 죽음" 을 구분할 수 없다 —
+        # 결론이 완전히 다른 두 상황이다.
+        if self.is_updating:
+            events.append_event(LOG_DIR, "L1", "restart_skipped", {"reason": "updating"})
+            return
+        # 백오프 대기(10~60분) 중에 사용자가 직접 Start 를 누르면 예약은 취소되지
+        # 않고 살아남아 나중에 여기로 온다 — 정상이다. 서버가 이미 떠 있으므로
+        # 건너뛰고 이 한 줄만 남는다(예약 취소는 타이머 id 관리 표면이 커서 Task 13
+        # 에서 실제로 거슬리는지 보고 판단한다).
+        if self.server_proc and self.server_proc.poll() is None:
+            events.append_event(LOG_DIR, "L1", "restart_skipped", {"reason": "already_running"})
+            return
+        # 시작에 성공했을 때만 완료를 단언한다. 실패하면 _start_server 가
+        # server_start_failed 를 남기고, 여기서 다시 예약한다 — 재예약하지 않으면
+        # Popen 이 없어 _stream_output·_on_server_exit 이 영영 오지 않아 아무도
+        # 재시작하지 않는다(L1 은 살아 있으니 L2 도 개입하지 않는다). 그것이
+        # 이 Task 가 없애려던 영구 정지 그 자체다.
+        if self._start_server():
+            events.append_event(LOG_DIR, "L1", "restart_done", {"reason": "zombie"})
+        else:
+            self._schedule_zombie_restart()
+
+    def _post_update_start(self):
+        """업데이트 직후의 기동. 실패하면 크래시와 똑같이 재시도한다.
+
+        _update_worker 는 root.after(0, ...) 로 부르므로 반환값을 받을 수 없어
+        이 래퍼가 필요하다. 업데이트는 사용자 클릭으로만 시작되지만, RDP 로
+        누르고 자리를 뜨면 아무도 보지 않는다 — 그때 기동이 실패하면 _stop_server
+        가 이미 server_proc 을 None 으로 만든 뒤라 크래시 감지도 좀비 감지도
+        걸리지 않고(둘 다 살아있는 프로세스를 전제한다), L1 은 살아 있으니 L2 도
+        개입하지 않는다. 재예약하지 않으면 그대로 영구 정지다.
+        """
+        if not self._start_server():
+            self._schedule_auto_restart()
+
+    # ── DB 관측(기록 전용, 복구 없음) ────────────────────────────────────
+    def _db_tick(self):
+        self.root.after(DB_CHECK_INTERVAL_MS, self._db_tick)
+        if self.db_probe_running:
+            return
+        self.db_probe_running = True
+        threading.Thread(target=self._probe_db, daemon=True).start()
+
+    def _probe_db(self):
+        """app/database.py 와 같은 .env 를 읽어 직접 접속한다.
+
+        백엔드를 경유하지 않으므로 백엔드 커넥션 풀에 영향이 없고, 자격증명을
+        별도로 중복 정의하지도 않는다. load_dotenv 에 경로를 명시하는 이유는
+        app/database.py 의 인자 없는 호출과 달리 이 프로세스의 cwd 가 다를 수
+        있기 때문이다.
+
+        read/write 타임아웃을 반드시 건다 — 접속은 되는데 서버가 응답하지 않는
+        상태(커넥션 고갈·락 대기)가 바로 이 관측이 겨냥하는 고장 모드이고,
+        connect_timeout 만으로는 SELECT 1 이 영원히 블록된다.
+        """
+        ok, detail = True, {}
+        try:
+            import pymysql
+            from dotenv import load_dotenv
+
+            load_dotenv(BASE_DIR / ".env")
+            conn = pymysql.connect(
+                host=os.getenv("DB_HOST", "localhost"),
+                port=int(os.getenv("DB_PORT", "3306")),
+                user=os.getenv("DB_USER", "admin"),
+                password=os.getenv("DB_PASSWORD", ""),
+                database=os.getenv("DB_NAME", "hitessworkbench"),
+                connect_timeout=DB_PROBE_TIMEOUT_SEC,
+                read_timeout=DB_PROBE_TIMEOUT_SEC,
+                write_timeout=DB_PROBE_TIMEOUT_SEC,
+            )
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                    cursor.fetchone()
+            finally:
+                conn.close()
+        except Exception as exc:
+            ok = False
+            detail = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+
+        self.root.after(0, self._on_db_result, ok, detail)
+
+    def _on_db_result(self, ok, detail):
+        self.db_probe_running = False
+        if ok == self.db_reachable:
+            return                       # 전이가 없으면 기록하지 않는다.
+        self.db_reachable = ok
+        if ok:
+            self._log("DB 연결이 회복되었습니다.", "success")
+            events.append_event(LOG_DIR, "L1", "db_recovered")
+        else:
+            self._log("DB 에 연결할 수 없습니다 (기록만 — 재시작하지 않음).", "warning")
+            events.append_event(LOG_DIR, "L1", "db_unreachable", detail)
+
+    # ── 자동 재시작(의도치 않은 종료 시) ─────────────────────────────────
+    def _schedule_restart(self, fire, reason, exhausted_message):
+        """재시작 예산을 물어 콜백을 예약한다. 예약은 어떤 경우에도 반드시 남는다.
+
+        크래시와 좀비가 같은 예산을 공유한다. 예산이 답해야 할 질문은 "최근 얼마나
+        자주 재시작했나" 이지 "왜 재시작했나" 가 아니다 — 3번 크래시하고 2번
+        좀비가 된 서버는 실제로 나쁜 상태이고 6번째 재시작이 즉시 일어나서는 안
+        된다. 경로마다 카운터를 두면 서로의 소모를 못 봐 예산이 사실상 2배가 된다.
+
+        단조 시계를 쓴다 — 예산·백오프는 절대 시각이 아니라 경과시간만 보므로,
+        NTP 보정이나 수동 시계 변경으로 재시작 판단이 흔들려서는 안 된다.
+        ⚠ events.py 의 타임스탬프와 HealthTracker.last_ok_at 은 사람이 읽는
+          기록이라 벽시계(time.time)를 그대로 쓴다. 두 시계를 섞지 말 것.
+        """
+        now = time.monotonic()
+        action, delay = self.restart_policy.on_crash(now)
+
+        if action == "wait":
+            minutes = round(delay / 60, 1)
+            self._log(f"{exhausted_message} {minutes}분 후 다시 시도합니다.", "error")
+            events.append_event(LOG_DIR, "L1", "backoff_wait",
+                                {"reason": reason,
+                                 "delay_sec": round(delay),
+                                 "level": self.restart_policy.backoff_level})
+            # ⚠ 이 대기 콜백에서 intentional_stop 을 읽으면 안 된다. 그 플래그를
+            #   지우는 곳이 _start_server 뿐인데 거부당하는 대상이 바로 그
+            #   _start_server 라, 없앤 영구 정지가 그대로 부활한다.
+            self.root.after(int(delay * 1000), fire)
+            return
+
+        # on_crash 가 "go" 를 낼 때 시도를 스스로 기록한다.
+        # 여기서 record_attempt 를 또 부르면 이중 카운트로 예산이 절반이 된다.
+        self._log(f"{RESTART_DELAY_MS // 1000}초 후 자동으로 재시작합니다.", "warning")
+        self.root.after(RESTART_DELAY_MS, fire)
+
+    def _schedule_auto_restart(self):
+        """크래시 감지 시 재시작을 예약한다. 반복 실패하면 간격을 늘려가며 계속 시도한다."""
+        self._schedule_restart(self._auto_restart_fire, "crash",
+                               "연속 기동 실패가 이어집니다.")
+
+    def _schedule_zombie_restart(self):
+        """좀비 강제 재시작 뒤의 재기동을 예약한다 — 크래시와 같은 예산을 쓴다.
+
+        ⚠ 이 공유가 순수 좀비 루프를 억제하지는 못한다. 좀비 한 사이클은
+        12프로브×15초 = 최소 3분이라 backoff 의 60초 창에 둘 이상 들어갈 수 없다.
+        3분 주기 반복은 의도적으로 수용한다 — 무인 복구 속도가 우선이고, 3분
+        재시도는 원인이 해소되는 즉시 복귀하지만 60분 대기는 그렇지 않다.
+        공유가 실제로 사주는 것은 혼합 장애 회계다: 좀비 재시작이 쓴 한 칸이
+        뒤이은 크래시 연발에 그대로 보여 예산 벽에 한 번 일찍 닿는다.
+
+        예약 대상이 _auto_restart_fire 가 아닌 이유 — _force_restart_zombie 가
+        남긴 restart_begin 의 짝(restart_done{reason: zombie})을 남기는 쪽은
+        _zombie_restart_fire 뿐이다. 백오프로 60분 뒤에 깨어나도 마찬가지다.
+        """
+        self._schedule_restart(self._zombie_restart_fire, "zombie",
+                               "강제 재시작이 반복되고 있습니다.")
 
     def _auto_restart_fire(self):
         # 대기 사이에 사용자가 Update/Stop 했거나 이미 살아났으면 재시작하지 않는다.
+        # 좀비 경로와 달리 여기서는 restart_skipped 를 남기지 않는다 — 크래시
+        # 경로엔 restart_begin 이 없어 짝 맞출 대상이 없기 때문이다.
         if self.is_updating:
             return
         if self.server_proc and self.server_proc.poll() is None:
             return
         self._log("자동 재시작을 실행합니다.", "info")
-        self._start_server()
+        # 시작에 성공했을 때만 완료를 단언한다 — 뜨지도 않은 서버를 성공으로
+        # 기록하면 사후 분석 로그가 거짓을 말한다.
+        # 실패하면 반드시 다시 예약한다. Popen 이 실패하면 프로세스가 없어
+        # _stream_output·_on_server_exit 이 영영 오지 않으므로, 여기서 재예약하지
+        # 않으면 크래시 체인이 server_start_failed 한 줄만 남기고 끊긴다 —
+        # 그 상태에서도 L1 은 살아 있어 L2 가 개입하지 않는다(영구 정지).
+        # Popen 실패는 즉시 반환되므로 3초 간격 5회로 예산이 소진되고 그 뒤는
+        # 백오프가 받는다 — 바운드돼 있고 절대 포기하지 않는다.
+        if self._start_server():
+            events.append_event(LOG_DIR, "L1", "restart_done", {"reason": "crash"})
+        else:
+            self._schedule_auto_restart()
 
     # ── 서버 중지 ────────────────────────────────────────────────────────
     def _stop_server(self):
@@ -330,8 +802,8 @@ class ServerManagerApp:
             self._stop_server()
             self._log("서버가 중지되었습니다.", "warning")
         else:
-            # 사용자가 직접 Start → 자동 재시작 카운터를 초기화(수동 재개는 깨끗한 예산으로).
-            self.restart_history = []
+            # 사용자가 직접 Start → 예산과 백오프 단계를 초기화한다.
+            self.restart_policy.reset()
             self._start_server()
 
     # ── Update ───────────────────────────────────────────────────────────
@@ -378,7 +850,7 @@ class ServerManagerApp:
 
         # 4. 서버 재시작 + 헬스 체크
         self.root.after(0, self._log, "[4/4] 서버를 재시작합니다.", "success")
-        self.root.after(0, self._start_server)
+        self.root.after(0, self._post_update_start)
 
         time.sleep(5)
         self._health_check_after_update()
@@ -491,10 +963,16 @@ class ServerManagerApp:
     # ── 종료 ─────────────────────────────────────────────────────────────
     def _on_close(self):
         self._stop_server()
+        events.append_event(LOG_DIR, "L1", "manager_stop")
+        # PID 파일을 지워야 L2 가 '정상 종료' 와 '급사' 를 구분할 수 있다.
+        pidfile.clear(LOG_DIR)
+        self.uvicorn_log.close()
         self.root.destroy()
 
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = ServerManagerApp(root)
-    root.mainloop()
+    # 중복 실행으로 막혔으면 root 는 이미 파괴됐다 — mainloop 에 들어가지 않는다.
+    if not app.aborted:
+        root.mainloop()
