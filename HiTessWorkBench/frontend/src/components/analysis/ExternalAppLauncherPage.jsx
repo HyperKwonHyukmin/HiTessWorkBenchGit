@@ -14,30 +14,30 @@ import SolverCredit from '../ui/SolverCredit';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
+import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
+import { API_BASE_URL } from '../../config';
+import {
+  pingExternalApp,
+  requestExternalAppLaunch,
+  resolveExternalAppMode,
+} from '../../utils/externalAppLaunch';
 
-async function pingUrl(url, timeoutMs = 4000) {
+async function pingUrl(url, launchMode, timeoutMs = 4000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
-    if (response.type !== 'opaque' && !response.ok) return false;
-    return true;
+    return await pingExternalApp({
+      url,
+      mode: launchMode,
+      authHeaders: getAuthHeaders(),
+      onUnauthorized: handleUnauthorized,
+      signal: controller.signal,
+    });
   } catch {
-    try {
-      await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   } finally {
     clearTimeout(timer);
   }
-}
-
-function buildLaunchUrl(baseUrl, employeeId, cacheBust = true) {
-  const url = new URL(`${baseUrl}/${encodeURIComponent(employeeId)}`);
-  if (cacheBust) url.searchParams.set('__wb_cache_bust', String(Date.now()));
-  return url.toString();
 }
 
 const STATUS_META = {
@@ -86,6 +86,7 @@ export default function ExternalAppLauncherPage({
   toastName = title,
   windowKey = title,
   healthUrl,
+  launchMode,
   clearCacheOnLaunch = true,
   cacheBustOnLaunch = true,
 }) {
@@ -93,12 +94,16 @@ export default function ExternalAppLauncherPage({
   const { setCurrentMenu } = useNavigation();
   const { showToast } = useToast();
   const [serverStatus, setServerStatus] = useState('checking');
+  const [isLaunching, setIsLaunching] = useState(false);
+  const resolvedLaunchMode = resolveExternalAppMode(baseUrl, launchMode, API_BASE_URL);
+  const resolvedHealthUrl = healthUrl || baseUrl;
+  resolveExternalAppMode(resolvedHealthUrl, resolvedLaunchMode, API_BASE_URL);
 
   const checkStatus = useCallback(async (showSpinner = true) => {
     if (showSpinner) setServerStatus('checking');
-    const ok = await pingUrl(healthUrl || baseUrl);
+    const ok = await pingUrl(resolvedHealthUrl, resolvedLaunchMode);
     setServerStatus(ok ? 'online' : 'offline');
-  }, [baseUrl, healthUrl]);
+  }, [resolvedHealthUrl, resolvedLaunchMode]);
 
   useEffect(() => {
     checkStatus(true);
@@ -106,24 +111,54 @@ export default function ExternalAppLauncherPage({
     return () => clearInterval(id);
   }, [checkStatus]);
 
-  const handleLaunch = () => {
+  const handleLaunch = async () => {
     if (!employeeId) {
       showToast('로그인 사용자 정보를 찾을 수 없습니다. 다시 로그인해주세요.', 'error');
       return;
     }
 
-    const url = buildLaunchUrl(baseUrl, employeeId, cacheBustOnLaunch);
-    if (window.electron?.invoke) {
-      window.electron.invoke('open-app-window', {
-        url,
-        title,
-        windowKey,
-        clearCache: clearCacheOnLaunch,
+    // Browsers only allow window.open synchronously from the user gesture.  Open
+    // a blank fallback window first, then navigate it after the authenticated
+    // WorkBench request returns. Electron does not need this placeholder.
+    const fallbackWindow = window.electron?.invoke
+      ? null
+      : window.open('about:blank', '_blank');
+    if (fallbackWindow) fallbackWindow.opener = null;
+
+    setIsLaunching(true);
+    try {
+      // Proxy mode exchanges the bearer token for a one-time grant. Raw mode
+      // only builds the legacy employee path and performs no network request.
+      const url = await requestExternalAppLaunch({
+        baseUrl,
+        mode: resolvedLaunchMode,
+        employeeId,
+        cacheBust: cacheBustOnLaunch,
+        authHeaders: getAuthHeaders(),
+        onUnauthorized: handleUnauthorized,
       });
-    } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      if (window.electron?.invoke) {
+        const result = await window.electron.invoke('open-app-window', {
+          url,
+          title,
+          windowKey,
+          clearCache: clearCacheOnLaunch,
+        });
+        if (result?.ok === false) {
+          throw new Error(result.error || '외부 앱 창을 열지 못했습니다.');
+        }
+      } else if (fallbackWindow) {
+        fallbackWindow.location.replace(url);
+      } else {
+        throw new Error('브라우저가 새 창 열기를 차단했습니다.');
+      }
+      showToast(`${toastName} 을 WorkBench 내부 창에서 실행합니다.`, 'success');
+    } catch (error) {
+      if (fallbackWindow && !fallbackWindow.closed) fallbackWindow.close();
+      showToast(error?.message || '외부 앱을 실행하지 못했습니다.', 'error');
+    } finally {
+      setIsLaunching(false);
     }
-    showToast(`${toastName} 을 WorkBench 내부 창에서 실행합니다.`, 'success');
   };
 
   const isOffline = serverStatus === 'offline';
@@ -179,12 +214,14 @@ export default function ExternalAppLauncherPage({
             <Button
               type="button"
               onClick={handleLaunch}
-              disabled={isOffline}
+              disabled={isOffline || isLaunching}
               size="lg"
               className="w-full sm:w-auto bg-violet-600 hover:bg-violet-700 focus:ring-violet-500/40"
             >
-              <ExternalLink size={18} />
-              실행
+              {isLaunching
+                ? <Loader2 size={18} className="animate-spin motion-reduce:animate-none" />
+                : <ExternalLink size={18} />}
+              {isLaunching ? '실행 준비 중' : '실행'}
             </Button>
           </div>
 

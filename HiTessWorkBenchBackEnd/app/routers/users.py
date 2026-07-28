@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from .. import models, database
 from ..dependencies import require_admin
 from ..services.activity_service import log_activity
-from ._crud_helpers import delete_record, get_or_404, update_record
+from ..services.external_app_access import external_app_access_store
+from ._crud_helpers import get_or_404
 
 router = APIRouter(prefix="/api", tags=["users"])
 
@@ -85,7 +86,19 @@ def update_user(
     user = get_or_404(db, models.User, user_id, _USER_NOT_FOUND)
     before_active = bool(user.is_active)
     # update_data 는 임의 dict 이므로 화이트리스트 외 필드는 무시 (임의 컬럼 주입 차단).
-    update_record(db, user, update_data, allowed_fields=_USER_ALLOWED_FIELDS | _ADMIN_ALLOWED_FIELDS)
+    for key, value in update_data.items():
+        if key in _USER_ALLOWED_FIELDS | _ADMIN_ALLOWED_FIELDS:
+            setattr(user, key, value)
+    if before_active and not bool(user.is_active):
+        db.query(models.UserSession).filter(
+            models.UserSession.employee_id == user.employee_id
+        ).delete(synchronize_session=False)
+    # 사용자 상태 변경과 세션 폐기를 한 transaction에서 확정하여, 비활성화만
+    # 반영되고 기존 세션이 남는 부분 성공 상태를 만들지 않는다.
+    db.commit()
+    db.refresh(user)
+    if before_active and not bool(user.is_active):
+        external_app_access_store.revoke_employee(user.employee_id)
     action = "USER_APPROVE" if not before_active and bool(user.is_active) else (
         "USER_DEACTIVATE" if before_active and not bool(user.is_active) else "USER_UPDATE"
     )
@@ -109,7 +122,14 @@ def delete_user(
 ):
     user = get_or_404(db, models.User, user_id, _USER_NOT_FOUND)
     target_employee_id = user.employee_id
-    result = delete_record(db, user, message="User deleted")
+    # 세션과 계정 삭제도 한 transaction에서 확정한다.
+    db.query(models.UserSession).filter(
+        models.UserSession.employee_id == target_employee_id
+    ).delete(synchronize_session=False)
+    db.delete(user)
+    db.commit()
+    external_app_access_store.revoke_employee(target_employee_id)
+    result = {"message": "User deleted"}
     log_activity(
         db,
         "USER_DELETE",

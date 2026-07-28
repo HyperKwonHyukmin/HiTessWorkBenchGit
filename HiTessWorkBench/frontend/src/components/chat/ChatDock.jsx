@@ -43,10 +43,19 @@ function Avatar({ name, id }) {
   );
 }
 
-export default function ChatDock({ currentUserId, isAdmin = false }) {
+export default function ChatDock({
+  currentUserId,
+  isAdmin = false,
+  embedded = false,
+  isOpen,
+  onOpenChange,
+  hideLauncher = false,
+  onUnreadChange,
+  onAvailabilityChange,
+}) {
   const { showToast } = useToast();
 
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [threads, setThreads] = useState([]);
   const [totalUnread, setTotalUnread] = useState(0);
   const [activeOther, setActiveOther] = useState(null); // { id, name }
@@ -60,10 +69,16 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
   const scrollRef = useRef(null);
 
   activeIdRef.current = activeOther?.id || null;
+  const isControlled = typeof isOpen === 'boolean';
+  const open = isControlled ? isOpen : internalOpen;
+  const setDockOpen = useCallback((nextOpen) => {
+    if (!isControlled) setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }, [isControlled, onOpenChange]);
 
   const openConversation = useCallback(async (other) => {
     setActiveOther({ id: other.id, name: other.name });
-    setOpen(true);
+    setDockOpen(true);
     setMessages([]);
     try {
       const res = await getChatConversation(other.id);
@@ -71,7 +86,7 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
     } catch {
       // 조회 실패는 조용히 무시(다음 폴링에서 재시도).
     }
-  }, []);
+  }, [setDockOpen]);
 
   // 대화 목록 폴링 + 새 메시지 감지 → 토스트/자동 펼침.
   useEffect(() => {
@@ -119,7 +134,7 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [currentUserId, showToast, openConversation]);
+  }, [currentUserId, showToast]);
 
   // 열린 대화 폴링(상대 답장 수신 + 읽음 처리).
   useEffect(() => {
@@ -208,14 +223,24 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
 
   // 도크 자체를 노출할지: 관리자는 항상, 일반 사용자는 대화가 있을 때만.
   const shouldShow = isAdmin || threads.length > 0 || totalUnread > 0;
+
+  useEffect(() => {
+    onUnreadChange?.(totalUnread);
+  }, [onUnreadChange, totalUnread]);
+
+  useEffect(() => {
+    onAvailabilityChange?.(!!currentUserId && shouldShow);
+  }, [currentUserId, onAvailabilityChange, shouldShow]);
+
   if (!currentUserId || !shouldShow) return null;
 
   // 접힌 상태 — 플로팅 버튼 + 미읽음 뱃지.
   if (!open) {
+    if (hideLauncher) return null;
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => setDockOpen(true)}
         className="fixed bottom-6 right-6 z-[99990] h-14 w-14 rounded-full bg-[#002554] text-white shadow-xl flex items-center justify-center hover:bg-[#00366f] transition-colors cursor-pointer"
         title="메시지"
         aria-label="메시지 열기"
@@ -232,7 +257,9 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
 
   // 펼친 상태 — 대화 목록 또는 대화창.
   return (
-    <div className="fixed bottom-6 right-6 z-[99990] w-[min(360px,calc(100vw-2rem))] h-[min(480px,calc(100vh-6rem))] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+    <div className={`w-[min(360px,calc(100vw-2rem))] h-[min(480px,calc(100vh-7rem))] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden ${
+      embedded ? 'relative' : 'fixed bottom-6 right-6 z-[99990]'
+    }`}>
       {/* 헤더 */}
       <div className="flex items-center gap-2 px-4 py-3 bg-[#002554] text-white shrink-0">
         {activeOther ? (
@@ -271,7 +298,7 @@ export default function ChatDock({ currentUserId, isAdmin = false }) {
         )}
         <button
           type="button"
-          onClick={() => setOpen(false)}
+          onClick={() => setDockOpen(false)}
           className="text-white/80 hover:text-white cursor-pointer"
           aria-label="접기"
         >

@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { getAnalysisHistory, downloadFileBlob, exportAssessmentXlsx } from '../../api/analysis';
+import { getAnalysisHistory, downloadFileBlob, exportAssessmentXlsx, rerunAnalysisProject } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import {
   Search, Filter, Download, RefreshCw,
   ChevronRight, ChevronLeft, Box,
   CheckCircle2,
   FileCode, Database, FileOutput, Eye, FileX,
-  TrendingUp, CalendarClock, Award, BarChart3, Minus
+  TrendingUp, CalendarClock, Award, BarChart3, Minus,
+  GitCompare, Play, Square, CheckSquare, Fingerprint
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
@@ -20,11 +21,14 @@ import FeedbackState from '../../components/ui/FeedbackState';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { getDisplayProgramName } from '../../contexts/DashboardContext';
+import { findAppByProgramName, getDisplayProgramName, useGlobalJobs } from '../../contexts/DashboardContext';
 
 const FILE_RETENTION_DAYS = 30;
 
 const fileStatusOf = (project) => (project?.files_available === false ? 'expired' : 'available');
+const supportsProjectRerun = (project) => (
+  findAppByProgramName(project?.program_name)?.supportsRerun === true
+);
 
 const FileRetentionBadge = ({ project }) => {
   const expired = fileStatusOf(project) === 'expired';
@@ -160,6 +164,31 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
             <FileRetentionBadge project={project} />
           </div>
 
+          <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50/70">
+            <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-2.5">
+              <Fingerprint size={15} className="text-brand-blue" />
+              <h3 className="text-xs font-bold text-slate-700">Analysis Passport</h3>
+              <span className="ml-auto text-[10px] font-semibold text-slate-500">추적 가능한 실행 근거</span>
+            </div>
+            <dl className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
+              {[
+                ['Job ID', project.job_id || 'Legacy record'],
+                ['Source', project.source || 'Workbench'],
+                ['Requester', project.employee_id || '—'],
+                ['Created', project.created_at ? new Date(project.created_at).toLocaleString() : '—'],
+                ['Input contract', `${Object.keys(project.input_info || {}).length} fields`],
+                ['Result contract', `${Object.keys(project.result_info || {}).length} fields`],
+              ].map(([term, detail]) => (
+                <div key={term} className="min-w-0 bg-white px-4 py-2.5">
+                  <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{term}</dt>
+                  <dd className="mt-0.5 truncate font-mono text-xs font-semibold text-slate-700" title={String(detail)}>
+                    {detail}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
           {/* 3D 시각화 버튼 */}
           {project.status === 'Success' && project.result_info?.bdf && !filesMissing && (
             <button
@@ -269,6 +298,101 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
   );
 };
 
+const flattenComparisonData = (project) => {
+  const flattened = {
+    'Passport.Project ID': project?.id,
+    'Passport.Program': getDisplayProgramName(project?.program_name),
+    'Passport.Status': project?.status,
+    'Passport.Job ID': project?.job_id || 'Legacy record',
+    'Passport.Source': project?.source || 'Workbench',
+    'Passport.Requester': project?.employee_id,
+    'Passport.Created': project?.created_at ? new Date(project.created_at).toLocaleString() : '—',
+    'Passport.Files': project?.files_available === false ? 'Expired' : 'Available',
+  };
+
+  const visit = (value, prefix, depth = 0) => {
+    if (depth > 3) {
+      flattened[prefix] = JSON.stringify(value);
+      return;
+    }
+    if (value == null || typeof value !== 'object') {
+      flattened[prefix] = typeof value === 'string' && /[\\/]/.test(value)
+        ? extractFilename(value)
+        : value;
+      return;
+    }
+    if (Array.isArray(value)) {
+      flattened[prefix] = value.length > 5
+        ? `${JSON.stringify(value.slice(0, 5))} … (${value.length})`
+        : JSON.stringify(value);
+      return;
+    }
+    Object.entries(value).forEach(([key, nested]) => visit(nested, `${prefix}.${key}`, depth + 1));
+  };
+
+  visit(project?.input_info || {}, 'Input');
+  Object.entries(project?.result_info || {}).forEach(([key, value]) => {
+    flattened[`Result.${key}`] = typeof value === 'string' && /[\\/]/.test(value)
+      ? extractFilename(value)
+      : typeof value === 'object'
+        ? JSON.stringify(value)
+        : value;
+  });
+  return flattened;
+};
+
+const ProjectCompareModal = ({ projects, onClose }) => {
+  const left = projects[0];
+  const right = projects[1];
+  const leftData = useMemo(() => flattenComparisonData(left), [left]);
+  const rightData = useMemo(() => flattenComparisonData(right), [right]);
+  const keys = useMemo(
+    () => [...new Set([...Object.keys(leftData), ...Object.keys(rightData)])],
+    [leftData, rightData],
+  );
+
+  return (
+    <Modal
+      isOpen={projects.length === 2}
+      onClose={onClose}
+      title="Run Compare"
+      size="xl"
+      footer={<Button variant="secondary" onClick={onClose}>닫기</Button>}
+    >
+      <div className="p-6">
+        <div className="mb-4 grid grid-cols-[minmax(150px,0.7fr)_minmax(220px,1fr)_minmax(220px,1fr)] gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 text-xs">
+          <div className="bg-slate-50 px-4 py-3 font-bold text-slate-500">Field</div>
+          {[left, right].map(project => (
+            <div key={project.id} className="min-w-0 bg-slate-50 px-4 py-3">
+              <p className="truncate font-bold text-slate-800" title={project.project_name}>{project.project_name}</p>
+              <p className="mt-0.5 font-mono text-[10px] text-slate-500">ID {project.id}</p>
+            </div>
+          ))}
+          {keys.map(key => {
+            const leftValue = leftData[key] ?? '—';
+            const rightValue = rightData[key] ?? '—';
+            const differs = String(leftValue) !== String(rightValue);
+            return (
+              <React.Fragment key={key}>
+                <div className="bg-white px-4 py-2.5 font-semibold text-slate-600">{key}</div>
+                <div className={`min-w-0 break-all px-4 py-2.5 font-mono ${differs ? 'bg-amber-50 text-amber-900' : 'bg-white text-slate-600'}`}>
+                  {String(leftValue)}
+                </div>
+                <div className={`min-w-0 break-all px-4 py-2.5 font-mono ${differs ? 'bg-amber-50 text-amber-900' : 'bg-white text-slate-600'}`}>
+                  {String(rightValue)}
+                </div>
+              </React.Fragment>
+            );
+          })}
+        </div>
+        <p className="text-xs text-slate-500">
+          노란 행은 값이 다른 항목입니다. 파일 경로는 보안을 위해 파일명만 비교합니다.
+        </p>
+      </div>
+    </Modal>
+  );
+};
+
 // ==========================================
 // 4. 메인 MyProjects 페이지 컴포넌트
 // ==========================================
@@ -284,6 +408,7 @@ const PAGE_SIZE = 10;
 export default function MyProjects() {
   const { showToast } = useToast();
   const { employeeId } = useAuth();
+  const { startGlobalJob } = useGlobalJobs();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -294,6 +419,9 @@ export default function MyProjects() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [summary, setSummary] = useState(null);
+  const [compareProjects, setCompareProjects] = useState([]);
+  const [isCompareOpen, setIsCompareOpen] = useState(false);
+  const [rerunningIds, setRerunningIds] = useState(() => new Set());
 
   // 3D 뷰어 모달 상태
   const [is3DViewerOpen, setIs3DViewerOpen] = useState(false);
@@ -355,6 +483,42 @@ export default function MyProjects() {
 
   // 필터 변경 시 첫 페이지로 리셋
   useEffect(() => { setCurrentPage(1); }, [searchTerm, programFilter, statusFilter, fileStatusFilter]);
+
+  const toggleCompareProject = useCallback((project) => {
+    setCompareProjects(current => {
+      if (current.some(item => item.id === project.id)) {
+        return current.filter(item => item.id !== project.id);
+      }
+      if (current.length >= 2) {
+        showToast('실행 비교는 두 프로젝트까지 선택할 수 있습니다.', 'warning');
+        return current;
+      }
+      return [...current, project];
+    });
+  }, [showToast]);
+
+  const handleRerun = useCallback(async (project) => {
+    if (!project?.id || rerunningIds.has(project.id)) return;
+    setRerunningIds(current => new Set(current).add(project.id));
+    try {
+      const response = await rerunAnalysisProject(project.id);
+      const jobId = response.data?.job_id;
+      if (!jobId) throw new Error('job_id missing');
+      const app = findAppByProgramName(project.program_name);
+      startGlobalJob(jobId, app?.title || getDisplayProgramName(project.program_name));
+      showToast('동일 입력으로 새 해석 작업을 제출했습니다.', 'success');
+      window.dispatchEvent(new CustomEvent('workbench:open-job-center'));
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      showToast(detail || '프로젝트 재실행 요청에 실패했습니다.', 'error', 7000);
+    } finally {
+      setRerunningIds(current => {
+        const next = new Set(current);
+        next.delete(project.id);
+        return next;
+      });
+    }
+  }, [rerunningIds, showToast, startGlobalJob]);
 
   // ── 통계 집계 ──
   const stats = useMemo(() => {
@@ -642,6 +806,19 @@ export default function MyProjects() {
         <button onClick={() => fetchHistory()} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 text-sm font-bold hover:bg-slate-50 transition-colors shadow-sm cursor-pointer">
           <Filter size={16} /> <span className="hidden sm:inline">Refresh</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setIsCompareOpen(true)}
+          disabled={compareProjects.length !== 2}
+          className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
+          title={compareProjects.length === 2 ? '선택한 실행 비교' : '비교할 프로젝트 2개를 선택하세요'}
+        >
+          <GitCompare size={16} />
+          Run Compare
+          {compareProjects.length > 0 && (
+            <span className="rounded-full bg-blue-100 px-1.5 text-[10px] text-blue-700">{compareProjects.length}/2</span>
+          )}
+        </button>
         {fileStatusFilter !== 'All' && (
           <button
             onClick={() => setFileStatusFilter('All')}
@@ -658,19 +835,20 @@ export default function MyProjects() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
-                <th className="py-4 px-6 font-semibold w-20 text-center">No.</th>
+                <th className="py-4 pl-4 pr-2 font-semibold w-14 text-center">Compare</th>
+                <th className="py-4 px-4 font-semibold w-16 text-center">No.</th>
                 <th className="py-4 px-6 font-semibold">Project Name</th>
                 <th className="py-4 px-6 font-semibold">App</th>
                 <th className="py-4 px-6 font-semibold">Status</th>
                 <th className="py-4 px-6 font-semibold">Files</th>
                 <th className="py-4 px-6 font-semibold text-right">Date</th>
-                <th className="py-4 px-6 font-semibold text-center w-16">Detail</th>
+                <th className="py-4 px-4 font-semibold text-center w-24">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr>
-                  <td colSpan="7">
+                    <td colSpan="8">
                     <FeedbackState
                       variant="loading"
                       title="Loading Data..."
@@ -685,7 +863,22 @@ export default function MyProjects() {
                     onClick={() => setSelectedProject(project)}
                     className="hover:bg-blue-50/50 transition-colors cursor-pointer group"
                   >
-                    <td className="py-4 px-6 font-mono text-xs text-slate-500 font-bold text-center">{(currentPage - 1) * PAGE_SIZE + index + 1}</td>
+                    <td className="py-4 pl-4 pr-2 text-center">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleCompareProject(project);
+                        }}
+                        className="rounded-md p-1 text-slate-400 hover:bg-blue-100 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        aria-label={`${project.project_name} 비교 ${compareProjects.some(item => item.id === project.id) ? '선택 해제' : '선택'}`}
+                      >
+                        {compareProjects.some(item => item.id === project.id)
+                          ? <CheckSquare size={17} className="text-blue-600" />
+                          : <Square size={17} />}
+                      </button>
+                    </td>
+                    <td className="py-4 px-4 font-mono text-xs text-slate-500 font-bold text-center">{(currentPage - 1) * PAGE_SIZE + index + 1}</td>
                     <td className="py-4 px-6">
                       <div className="flex items-center">
                         <div className="p-2 bg-slate-100 rounded text-slate-400 mr-3 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors"><Box size={18} /></div>
@@ -698,12 +891,48 @@ export default function MyProjects() {
                     </td>
                     <td className="py-4 px-6"><FileRetentionBadge project={project} /></td>
                     <td className="py-4 px-6 text-xs text-slate-400 text-right font-mono">{new Date(project.created_at).toLocaleString()}</td>
-                    <td className="py-4 px-6 text-center"><button className="p-1.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-blue-600 transition-all"><ChevronRight size={18} /></button></td>
+                    <td className="py-4 px-4 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleRerun(project);
+                          }}
+                          disabled={
+                            rerunningIds.has(project.id)
+                            || project.files_available === false
+                            || !supportsProjectRerun(project)
+                          }
+                          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-35"
+                          title={
+                            project.files_available === false
+                              ? '입력 파일 보관 기간이 만료되었습니다.'
+                              : supportsProjectRerun(project)
+                                ? '동일 입력으로 다시 실행'
+                                : '이 앱은 저장 파일 기반 재실행을 지원하지 않습니다.'
+                          }
+                          aria-label={`${project.project_name} 동일 입력 재실행`}
+                        >
+                          {rerunningIds.has(project.id)
+                            ? <RefreshCw size={16} className="animate-spin" />
+                            : <Play size={16} />}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-blue-600"
+                          title="프로젝트 상세"
+                          aria-label={`${project.project_name} 상세 열기`}
+                        >
+                          <ChevronRight size={18} />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7">
+                    <td colSpan="8">
                     <FeedbackState
                       icon={FileCode}
                       title="실행된 해석 이력이 없습니다."
@@ -813,6 +1042,11 @@ export default function MyProjects() {
         isOpen={isResultViewerOpen}
         project={selectedProject}
         onClose={() => setIsResultViewerOpen(false)}
+      />
+
+      <ProjectCompareModal
+        projects={isCompareOpen ? compareProjects : []}
+        onClose={() => setIsCompareOpen(false)}
       />
 
     </div>

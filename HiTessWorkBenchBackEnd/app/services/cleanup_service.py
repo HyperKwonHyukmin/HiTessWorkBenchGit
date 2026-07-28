@@ -26,6 +26,12 @@ _USER_CONN_DIR  = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
 
 RETENTION_DAYS  = 30
 
+_scheduler_lock = threading.Lock()
+_scheduler_stop = threading.Event()
+_scheduler_thread: threading.Thread | None = None
+_scheduler_generation = 0
+_scheduler_desired_running = False
+
 
 def _get_folder_age_days(folder_path: str) -> float:
     """
@@ -133,8 +139,11 @@ def run_cleanup(dry_run: bool = False) -> dict:
 
     try:
         entries = os.listdir(_USER_CONN_DIR)
-    except OSError as e:
-        logger.error("[Cleanup] 디렉터리 목록 조회 실패: %s", e)
+    except OSError as exc:
+        logger.error(
+            "[Cleanup] 디렉터리 목록 조회 실패 (%s)",
+            type(exc).__name__,
+        )
         return result
 
     for entry in entries:
@@ -156,9 +165,18 @@ def run_cleanup(dry_run: bool = False) -> dict:
             _force_rmtree(folder_path)
             result["deleted"].append({"folder": entry, "age_days": round(age_days, 1)})
             logger.info("[Cleanup] 삭제 완료: %s (%.1f일 경과)", entry, age_days)
-        except OSError as e:
-            result["errors"].append({"folder": entry, "error": str(e)})
-            logger.error("[Cleanup] 삭제 실패: %s — %s", entry, e)
+        except OSError as exc:
+            error_type = type(exc).__name__
+            result["errors"].append({
+                "folder": entry,
+                "error": "filesystem_cleanup_failed",
+                "error_type": error_type,
+            })
+            logger.error(
+                "[Cleanup] 삭제 실패: %s (%s)",
+                entry,
+                error_type,
+            )
 
     logger.info(
         "[Cleanup] 완료 — 삭제: %d개, 오류: %d개, 유지: %d개",
@@ -177,8 +195,9 @@ def run_activity_log_cleanup(dry_run: bool = False) -> dict:
         True이면 삭제하지 않고 대상 건수만 반환합니다.
     """
     result = {"deleted": 0, "errors": []}
-    db = database.SessionLocal()
+    db = None
     try:
+        db = database.SessionLocal()
         cutoff = datetime.now() - timedelta(days=ACTIVITY_LOG_RETENTION_DAYS)
         if dry_run:
             result["deleted"] = (
@@ -189,12 +208,22 @@ def run_activity_log_cleanup(dry_run: bool = False) -> dict:
         else:
             result["deleted"] = prune_activity_logs(db)
         logger.info("[Cleanup] Activity Log 정리 완료 — 삭제: %d건", result["deleted"])
-    except Exception as e:
-        db.rollback()
-        result["errors"].append(str(e))
-        logger.error("[Cleanup] Activity Log 정리 실패: %s", e, exc_info=True)
+    except Exception as exc:
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        # DB driver 오류 원문에는 접속 정보가 포함될 수 있어 type만 기록한다.
+        error_type = type(exc).__name__
+        result["errors"].append(error_type)
+        logger.error("[Cleanup] Activity Log 정리 실패 (%s)", error_type)
     finally:
-        db.close()
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                logger.warning("[Cleanup] Activity Log DB session close failed")
     return result
 
 
@@ -207,7 +236,13 @@ def run_session_cleanup(dry_run: bool = False) -> dict:
     dry_run : bool
         True이면 삭제하지 않고 대상 건수만 반환합니다.
     """
-    result = {"deleted": 0, "errors": []}
+    result = {
+        "deleted": 0,
+        "errors": [],
+        "success": True,
+        "error": None,
+        "error_type": None,
+    }
     try:
         if dry_run:
             db = database.SessionLocal()
@@ -222,9 +257,15 @@ def run_session_cleanup(dry_run: bool = False) -> dict:
         else:
             result["deleted"] = session_store.cleanup_expired()
         logger.info("[Cleanup] Session 정리 완료 — 삭제: %d건", result["deleted"])
-    except Exception as e:
-        result["errors"].append(str(e))
-        logger.error("[Cleanup] Session 정리 실패: %s", e, exc_info=True)
+    except Exception as exc:
+        error_type = type(exc).__name__
+        result.update({
+            "success": False,
+            "error": "session_cleanup_failed",
+            "error_type": error_type,
+        })
+        result["errors"].append("session_cleanup_failed")
+        logger.error("[Cleanup] Session 정리 실패 (%s)", error_type)
     return result
 
 
@@ -244,21 +285,117 @@ def _seconds_until_midnight() -> float:
     return (nxt - now).total_seconds()
 
 
-def _cleanup_loop():
+def _cleanup_loop(stop_event: threading.Event):
     """서버 시작 직후 1회 실행 → 이후 매일 자정에 반복 실행하는 데몬 루프."""
+    if stop_event.is_set():
+        return
     # 서버 시작 직후 즉시 실행
     logger.info("[Cleanup] 서버 시작 — 초기 정리 실행")
     run_all_cleanup()
 
-    while True:
+    while not stop_event.is_set():
         sleep_secs = _seconds_until_midnight()
         logger.info("[Cleanup] 다음 실행까지 %.0f초 대기 (다음 자정)", sleep_secs)
-        time.sleep(sleep_secs)
+        if stop_event.wait(sleep_secs):
+            break
         run_all_cleanup()
 
 
-def start_cleanup_scheduler():
-    """cleanup 데몬 스레드를 시작합니다. main.py의 startup 이벤트에서 호출하세요."""
-    t = threading.Thread(target=_cleanup_loop, daemon=True, name="UserConnCleanup")
-    t.start()
-    logger.info("[Cleanup] 스케줄러 시작 (보존 기간: %d일)", RETENTION_DAYS)
+def _scheduler_entry(stop_event: threading.Event, generation: int) -> None:
+    """한 scheduler generation을 실행하고 pending restart를 정확히 한 번 handoff합니다."""
+    global _scheduler_desired_running, _scheduler_generation, _scheduler_thread
+    unexpected_exit = False
+    try:
+        _cleanup_loop(stop_event)
+        # 실제 loop는 stop 요청 외에는 반환하지 않는다. 조기 반환도 crash와 동일하게
+        # 처리해 desired-running auto-respawn의 tight loop를 막는다.
+        unexpected_exit = not stop_event.is_set()
+    except Exception as exc:
+        unexpected_exit = True
+        # 오류 원문에는 DB URL/파일 경로가 포함될 수 있어 type만 기록한다.
+        logger.error(
+            "[Cleanup] 스케줄러가 예기치 않게 중단되었습니다 (%s)",
+            type(exc).__name__,
+        )
+    finally:
+        current = threading.current_thread()
+        with _scheduler_lock:
+            # 이미 더 최신 thread가 current로 등록됐다면 오래된 generation은 건드리지 않는다.
+            if _scheduler_thread is current:
+                _scheduler_thread = None
+                if unexpected_exit:
+                    # 안전 우선: crash generation의 pending restart를 폐기하고 정지한다.
+                    # 다음 명시적 lifespan start만 새 generation을 만들 수 있다.
+                    _scheduler_desired_running = False
+                    _scheduler_generation += 1
+                elif _scheduler_desired_running:
+                    _spawn_scheduler_locked(_scheduler_generation)
+
+
+def _spawn_scheduler_locked(generation: int) -> None:
+    """_scheduler_lock 보유 상태에서 새 generation thread를 등록·시작합니다."""
+    global _scheduler_stop, _scheduler_thread
+    _scheduler_stop = threading.Event()
+    _scheduler_thread = threading.Thread(
+        target=_scheduler_entry,
+        args=(_scheduler_stop, generation),
+        daemon=True,
+        name="UserConnCleanup",
+    )
+    _scheduler_thread.start()
+
+
+def start_cleanup_scheduler() -> bool:
+    """scheduler의 desired-running 전환을 요청합니다.
+
+    True는 새 실행이 즉시 시작됐거나, 종료 중인 old generation 뒤의 handoff 요청이
+    새로 접수됐음을 뜻합니다. 이미 desired-running이면 False입니다.
+    """
+    global _scheduler_desired_running, _scheduler_generation
+    with _scheduler_lock:
+        if _scheduler_desired_running:
+            return False
+        _scheduler_desired_running = True
+        _scheduler_generation += 1
+        generation = _scheduler_generation
+        thread = _scheduler_thread
+        if thread is None or not thread.is_alive():
+            _spawn_scheduler_locked(generation)
+            message = "시작"
+        else:
+            # old thread의 stop_event가 이미 set된 종료 중 상태다. finally handoff가
+            # 현재 generation/desired state를 보고 정확히 하나를 이어서 시작한다.
+            message = "재시작 예약"
+    logger.info(
+        "[Cleanup] 스케줄러 %s (generation=%d, 보존 기간=%d일)",
+        message,
+        generation,
+        RETENTION_DAYS,
+    )
+    return True
+
+
+def shutdown_cleanup_scheduler(timeout: float = 2.0) -> bool:
+    """cleanup daemon 중지를 요청합니다.
+
+    timeout 안에 종료되지 않으면 False를 반환하고 thread 참조를 유지합니다. 그 동안
+    start는 중복 daemon을 만들지 않으며, 기존 thread가 끝난 뒤에는 다시 시작할 수 있습니다.
+    """
+    global _scheduler_desired_running, _scheduler_generation, _scheduler_thread
+    with _scheduler_lock:
+        _scheduler_desired_running = False
+        _scheduler_generation += 1
+        thread = _scheduler_thread
+        if thread is None:
+            return False
+        _scheduler_stop.set()
+    if thread is not threading.current_thread():
+        thread.join(timeout=timeout)
+    with _scheduler_lock:
+        if thread.is_alive():
+            logger.warning("[Cleanup] 스케줄러가 %.1f초 안에 종료되지 않았습니다.", timeout)
+            return False
+        if _scheduler_thread is thread:
+            _scheduler_thread = None
+    logger.info("[Cleanup] 스케줄러 중지 요청 완료")
+    return True

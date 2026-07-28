@@ -27,7 +27,12 @@ const RESUME_ENTRY_KEY = 'workbench:analysis-menu-resume-entry';
 const ACTIVE_POLL_MS = 2500;  // 힌트 있을 때 /active 폴링 주기
 const IDLE_POLL_MS = 3000;    // 힌트 없을 때 힌트 등장 감시(네트워크 없음)
 
-export default function DoublePipePsaTray({ currentMenu, onNavigate }) {
+export default function DoublePipePsaTray({
+  currentMenu,
+  onNavigate,
+  embedded = false,
+  onActiveChange,
+}) {
   const { employeeId } = useAuth();
   // job: { jobId, anchor } — anchor 는 클라 epoch(초). 경과 = now - anchor (서버 시계오차 보정됨).
   const [job, setJob] = useState(null);
@@ -86,7 +91,11 @@ export default function DoublePipePsaTray({ currentMenu, onNavigate }) {
     };
   }, [employeeId]);
 
-  const showCard = !!job && currentMenu !== PSA_PAGE_MENU;
+  const showCard = !!job && (embedded || currentMenu !== PSA_PAGE_MENU);
+
+  useEffect(() => {
+    onActiveChange?.(!!job);
+  }, [job, onActiveChange]);
 
   // 카드가 보일 때만 1초 틱으로 경과시간 갱신.
   useEffect(() => {
@@ -112,7 +121,7 @@ export default function DoublePipePsaTray({ currentMenu, onNavigate }) {
   };
 
   return (
-    <div className="fixed bottom-4 right-4 z-[99998] w-[min(320px,calc(100vw-2rem))]">
+    <div className={embedded ? 'w-full' : 'fixed bottom-4 right-4 z-[99998] w-[min(320px,calc(100vw-2rem))]'}>
       <div
         onClick={handleReturn}
         title="클릭하여 배관응력 해석 화면으로 돌아가기"

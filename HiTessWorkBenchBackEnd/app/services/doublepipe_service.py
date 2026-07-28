@@ -14,9 +14,10 @@ import json
 import logging
 import os
 import subprocess
-from datetime import datetime
 
 from fastapi import HTTPException
+
+from .workspace import create_analysis_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +74,12 @@ def run_inner_pipe_preview(config: dict, csv_bytes: bytes, csv_name: str, employ
     module = _load_transform_module()
 
     # ── 작업 폴더 생성 (다른 앱과 동일 명명 규칙) ──
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    folder_name = f"{timestamp}_{employee_id}_{_PROGRAM_NAME}"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, folder_name))
-    os.makedirs(work_dir, exist_ok=True)
+    work_dir, _timestamp = create_analysis_workspace(
+        _USER_CONNECTION_DIR,
+        employee_id,
+        _PROGRAM_NAME,
+    )
+    folder_name = os.path.basename(work_dir)
 
     # ── 입력 CSV 저장 ──
     safe_name = os.path.basename(csv_name) or "outer_input.csv"

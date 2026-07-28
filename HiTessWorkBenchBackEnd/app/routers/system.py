@@ -1,13 +1,14 @@
 """시스템 모니터링 및 서버 상태 API 라우터."""
+import logging
 import os
 import time
 import glob
 import psutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from .. import database, models
@@ -19,11 +20,18 @@ from ..dependencies import require_admin, require_auth
 from ..sessions import session_store
 from ..services.activity_service import log_activity
 
-SERVER_VERSION = "1.3.37"
+logger = logging.getLogger(__name__)
+
+SERVER_VERSION = "1.3.38"
 
 # 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 LATEST_CLIENT_DIR = Path(os.environ.get("LATEST_CLIENT_DIR", str(_BACKEND_DIR / "LastestVersionProgram")))
+_DISK_ANCHOR = (
+  Path(_USER_CONN_DIR).resolve().anchor
+  or _BACKEND_DIR.resolve().anchor
+  or os.path.abspath(os.sep)
+)
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -31,6 +39,129 @@ router = APIRouter(prefix="/api", tags=["system"])
 @router.get("/version")
 def check_version():
   return {"version": SERVER_VERSION}
+
+
+@router.get("/health/live")
+def get_liveness():
+  """DB나 solver에 의존하지 않는 process liveness."""
+  return {
+    "status": "ok",
+    "service": "HiTessWorkBench",
+    "version": SERVER_VERSION,
+  }
+
+
+@router.get("/health/ready")
+def get_readiness(request: Request):
+  """Startup/schema 완료와 현재 DB SELECT 1 성공 여부를 분리해 반환합니다."""
+  startup_ok = bool(getattr(request.app.state, "startup_complete", False))
+  schema_ok = bool(getattr(request.app.state, "schema_ready", False))
+  database_status = "not_checked"
+  latency_ms = 0
+
+  if startup_ok and schema_ok:
+    db = None
+    try:
+      db = request.app.state.session_factory()
+      started = time.perf_counter()
+      db.execute(text("SELECT 1"))
+      latency_ms = round((time.perf_counter() - started) * 1000)
+      database_status = "ok"
+    except Exception:
+      database_status = "error"
+      latency_ms = 0
+    finally:
+      if db is not None:
+        try:
+          db.close()
+        except Exception:
+          # readiness가 예외 응답으로 무너지는 것보다 보수적으로 503을 반환합니다.
+          # 연결 문자열이나 driver 오류 원문은 credential을 포함할 수 있어 기록하지 않습니다.
+          logger.warning("Readiness DB session close failed")
+          database_status = "error"
+          latency_ms = 0
+
+  ready = startup_ok and schema_ok and database_status == "ok"
+  payload = {
+    "status": "ready" if ready else "not_ready",
+    "checks": {
+      "startup": "ok" if startup_ok else "not_ready",
+      "schema": "ok" if schema_ok else "not_ready",
+      "database": {
+        "status": database_status,
+        "latency_ms": latency_ms,
+      },
+    },
+  }
+  return JSONResponse(status_code=200 if ready else 503, content=payload)
+
+
+def _configured_executable(env_name: str, default_path: str) -> bool:
+  configured = os.environ.get(env_name, "").strip().strip('"')
+  candidate = configured or default_path
+  return bool(candidate and os.path.isfile(candidate))
+
+
+@router.get("/system/capabilities")
+def get_runtime_capabilities(
+  request: Request,
+  _user: str = Depends(require_auth),
+):
+  """외부 연결 없이 현재 process가 제공할 수 있는 기능을 안전하게 요약합니다."""
+  startup_ok = bool(getattr(request.app.state, "startup_complete", False))
+  schema_ok = bool(getattr(request.app.state, "schema_ready", False))
+  storage_ok = os.path.isdir(_USER_CONN_DIR) and os.access(_USER_CONN_DIR, os.W_OK)
+  nastran_ok = _configured_executable(
+    "NASTRAN_EXE",
+    r"C:\MSC.Software\MSC_Nastran\20131\bin\nastran.exe",
+  )
+  ollama_configured = bool(
+    os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").strip()
+  )
+
+  return {
+    "schema_version": "1.0",
+    "server_version": SERVER_VERSION,
+    "generated_at": datetime.now(timezone.utc).isoformat(),
+    "runtime": {
+      "database": {
+        "available": startup_ok and schema_ok,
+        "reason_code": None if startup_ok and schema_ok else "startup_not_ready",
+      },
+      "storage": {
+        "available": storage_ok,
+        "reason_code": None if storage_ok else "storage_not_writable",
+      },
+      "analysis_queue": {
+        "available": startup_ok,
+        "reason_code": None if startup_ok else "startup_not_ready",
+        "max_concurrent_jobs": MAX_CONCURRENT_JOBS,
+      },
+    },
+    "programs": {
+      "file-based-analysis": {
+        "available": startup_ok and storage_ok,
+        "reason_code": None if startup_ok and storage_ok else "runtime_not_ready",
+        "resource_class": "generic",
+      },
+      "nastran-analysis": {
+        "available": startup_ok and storage_ok and nastran_ok,
+        "reason_code": (
+          None
+          if startup_ok and storage_ok and nastran_ok
+          else "solver_not_configured"
+        ),
+        "resource_class": "nastran",
+      },
+      "ai-assistant": {
+        # 네트워크 live probe는 하지 않으며 설정 존재 여부만 보고합니다.
+        "available": ollama_configured,
+        "reason_code": None if ollama_configured else "service_not_configured",
+        "resource_class": "ollama",
+        "availability_basis": "configuration_only",
+      },
+    },
+  }
 
 
 @router.get("/download/client")
@@ -82,7 +213,7 @@ def get_system_status(db: Session = Depends(database.get_db), _admin: str = Depe
   mem_used_gb = round(mem.used / (1024 ** 3), 1)
   mem_total_gb = round(mem.total / (1024 ** 3), 1)
 
-  disk = psutil.disk_usage('/')
+  disk = psutil.disk_usage(_DISK_ANCHOR)
   disk_used_gb = round(disk.used / (1024 ** 3), 1)
   disk_total_gb = round(disk.total / (1024 ** 3), 1)
 

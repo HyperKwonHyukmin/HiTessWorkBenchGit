@@ -1,10 +1,13 @@
 """해석 요청, 상태 조회, 이력 관리 API 라우터."""
 import io
 import csv
+import hashlib
 import json
 import logging
 import os
 import shutil
+import stat
+import tempfile
 import urllib.parse
 import zipfile
 
@@ -17,7 +20,7 @@ from pydantic import BaseModel
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models, database
-from ..services.job_manager import job_status_store
+from ..services.job_manager import JobMetadata, job_status_store
 from ..dependencies import require_auth, require_admin
 from ..services.activity_service import log_activity
 from ..services.truss_service import task_execute_truss
@@ -47,10 +50,21 @@ from ..services.drawing_to_analysis_service import (
     task_execute_drawing_solve,
 )
 from ..services.modelbuilder_solve_service import task_execute_modelbuilder_solve
-from ._intake import make_work_dir, save_upload, submit_analysis_job
+from ._intake import (
+    _cleanup_owned_workspace,
+    make_work_dir,
+    save_upload,
+    submit_analysis_job,
+)
 from ..services.analysis_runner import get_backend_dir
+from ..services.analysis_passport import build_analysis_passport
+from ..services.program_registry import (
+    internal_substep_programs,
+    resolve_program,
+)
 from ._access_control import (
     assert_current_user_can_access_job,
+    assert_current_user_can_access_owner,
     assert_current_user_can_access_path,
 )
 
@@ -62,6 +76,7 @@ _BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))     # HiTessWorkBen
 _USER_CONNECTION_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
 _ALLOWED_DOWNLOAD_BASE = _USER_CONNECTION_DIR
 _PROGRAM_DOWNLOAD_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "DownloadProgram"))
+MODULE_STABILITY_UPLOAD_MAX_BYTES = 25 * 1024 * 1024
 
 import sys as _sys
 # nastran_bridge.py(순수 stdlib 모듈) 탐색 후보 — 모두 백엔드 기준 상대경로.
@@ -122,7 +137,7 @@ _SAMPLE_PREVIEW_CACHE: dict = {}
 # 부모 프로젝트(SidePassage/GroupModuleUnit) 안에서 수행되는 작업이므로, 사용자의 MyProjects
 # 목록에는 별도 프로젝트로 노출하지 않는다. DB 레코드 자체는 감사/디버깅을 위해 유지하며,
 # 관리자 전체 이력(/analysis/all)에는 그대로 보인다.
-INTERNAL_SUBSTEP_PROGRAMS = ("ModuleStability", "ModuleHoistOptimize", "UnitStructuralAnalysis")
+INTERNAL_SUBSTEP_PROGRAMS = internal_substep_programs()
 
 
 def _check_sample_quota(program_key: str, employee_id: str, db: Session) -> dict:
@@ -662,6 +677,9 @@ def get_program_usage_detail(
     샘플(WorkbenchSample) 제외 + 개발자(is_developer) 제외를 적용하므로,
     클릭한 행의 '실행' 수와 모달 총계가 정확히 일치한다.
     """
+    # A dashboard summary row is keyed by the exact persisted program_name, so its
+    # detail view must start with that exact value. Callers that intentionally
+    # represent one app with historical aliases may still request them explicitly.
     program_names = [program_name]
     if aliases:
         program_names.extend(name.strip() for name in aliases.split("|") if name.strip())
@@ -889,6 +907,7 @@ async def request_drawing_to_analysis(
         task_execute_drawing_to_analysis,
         pdf_path, work_dir, exe_path, employee_id, timestamp, source, mesh_size, resolved_mode,
         queue_message="변환 대기 중...",
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id, "mode": resolved_mode}
 
@@ -925,6 +944,7 @@ async def request_drawing_image_to_analysis(
         task_execute_drawing_image_to_analysis,
         image_path, work_dir, exe_path, employee_id, timestamp, source, mesh_size, reference_length_mm,
         queue_message="이미지 변환 대기 중...",
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id, "mode": "lug", "image": os.path.basename(image_path)}
 
@@ -1140,6 +1160,7 @@ async def run_drawing_catalogue(
         task_execute_drawing_to_analysis,
         pdf_path, work_dir, exe_path, employee_id, timestamp, source, mesh_size, resolved_mode,
         queue_message="변환 대기 중...",
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id, "filename": safe_name, "mode": resolved_mode, "category": category}
 
@@ -1175,6 +1196,7 @@ def _find_pdf_in_dir(work_dir: str) -> Optional[str]:
 @router.post("/analysis/drawing-to-analysis/rebuild")
 async def rebuild_drawing_model(
     payload: DrawingRebuildRequest,
+    db: Session = Depends(database.get_db),
     current_user: str = Depends(require_auth),
 ):
     """편집한 파라미터로 BDF/메시 재구축.
@@ -1192,6 +1214,7 @@ async def rebuild_drawing_model(
     prev_dir = os.path.abspath(payload.work_dir or "")
     if not _is_within_dir(_USER_CONNECTION_DIR, prev_dir):
         raise HTTPException(status_code=400, detail="허용되지 않은 work_dir 입니다.")
+    assert_current_user_can_access_path(prev_dir, current_user, db, _USER_CONNECTION_DIR)
     if not os.path.isdir(prev_dir):
         raise HTTPException(status_code=404, detail=f"이전 작업 폴더를 찾을 수 없습니다: {prev_dir}")
 
@@ -1297,6 +1320,7 @@ class DrawingSolveRequest(BaseModel):
 @router.post("/analysis/drawing-to-analysis/solve")
 async def solve_drawing_model(
     payload: DrawingSolveRequest,
+    db: Session = Depends(database.get_db),
     current_user: str = Depends(require_auth),
 ):
     """변환된 BDF 에 사용자 하중/경계조건을 주입하고 Nastran(SOL 101)을 실행.
@@ -1311,12 +1335,14 @@ async def solve_drawing_model(
     work_dir = os.path.abspath(payload.work_dir or "")
     if not _is_within_dir(_USER_CONNECTION_DIR, work_dir):
         raise HTTPException(status_code=400, detail="허용되지 않은 work_dir 입니다.")
+    assert_current_user_can_access_path(work_dir, current_user, db, _USER_CONNECTION_DIR)
     if not os.path.isdir(work_dir):
         raise HTTPException(status_code=404, detail=f"작업 폴더를 찾을 수 없습니다: {work_dir}")
 
     bdf_path = os.path.abspath(payload.bdf_path or "")
     if not _is_within_dir(_USER_CONNECTION_DIR, bdf_path):
         raise HTTPException(status_code=400, detail="허용되지 않은 BDF 경로입니다.")
+    assert_current_user_can_access_path(bdf_path, current_user, db, _USER_CONNECTION_DIR)
     if not os.path.isfile(bdf_path):
         raise HTTPException(status_code=404, detail=f"BDF 파일을 찾을 수 없습니다: {bdf_path}")
 
@@ -1468,6 +1494,7 @@ def _resolve_final_bdf(work_dir: str) -> Optional[str]:
 @router.post("/analysis/modelbuilder/solve")
 async def solve_modelbuilder_model(
     payload: ModelBuilderSolveRequest,
+    db: Session = Depends(database.get_db),
     current_user: str = Depends(require_auth),
 ):
     """ModelFlow 빌드 BDF 에 사용자 SPC1/FORCE/SUBCASE 를 주입하고 Nastran(SOL 101)을 실행.
@@ -1480,6 +1507,7 @@ async def solve_modelbuilder_model(
     work_dir = os.path.abspath(payload.work_dir or "")
     if not _is_within_dir(_USER_CONNECTION_DIR, work_dir):
         raise HTTPException(status_code=400, detail="허용되지 않은 work_dir 입니다.")
+    assert_current_user_can_access_path(work_dir, current_user, db, _USER_CONNECTION_DIR)
     if not os.path.isdir(work_dir):
         raise HTTPException(status_code=404, detail=f"작업 폴더를 찾을 수 없습니다: {work_dir}")
 
@@ -1488,6 +1516,7 @@ async def solve_modelbuilder_model(
         bdf_path = os.path.abspath(bdf_path_raw)
         if not _is_within_dir(_USER_CONNECTION_DIR, bdf_path):
             raise HTTPException(status_code=400, detail="허용되지 않은 BDF 경로입니다.")
+        assert_current_user_can_access_path(bdf_path, current_user, db, _USER_CONNECTION_DIR)
         if not os.path.isfile(bdf_path):
             raise HTTPException(status_code=404, detail=f"BDF 파일을 찾을 수 없습니다: {bdf_path}")
     else:
@@ -1558,6 +1587,493 @@ def get_analysis_by_id(analysis_id: int, db: Session = Depends(database.get_db),
     return _serialize_analysis(record)
 
 
+@router.get("/analysis/{analysis_id}/passport")
+def get_analysis_passport(
+    analysis_id: int,
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
+    """Return bounded artifact provenance for an owned analysis record."""
+    record = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Analysis record not found")
+    assert_current_user_can_access_owner(record.employee_id, current_user, db)
+    return build_analysis_passport(record, user_connection_base=_USER_CONNECTION_DIR)
+
+
+def _open_rerun_source(path: str) -> int:
+    """Open a rerun input without following a final link.
+
+    Windows needs an explicit share mode: ``os.open`` permits a concurrent writer,
+    which can otherwise create a mixed source snapshot while the copy is running.
+    The returned descriptor owns the Windows handle and must be closed by the caller.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    if os.name != "nt":
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        return os.open(path, flags)
+
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    generic_read = 0x80000000
+    file_share_read = 0x00000001
+    open_existing = 3
+    file_attribute_normal = 0x00000080
+    file_flag_open_reparse_point = 0x00200000
+    invalid_handle_value = ctypes.c_void_p(-1).value
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = (wintypes.HANDLE,)
+    close_handle.restype = wintypes.BOOL
+
+    handle = create_file(
+        path,
+        generic_read,
+        file_share_read,
+        None,
+        open_existing,
+        file_attribute_normal | file_flag_open_reparse_point,
+        None,
+    )
+    if handle == invalid_handle_value:
+        error_code = ctypes.get_last_error()
+        raise OSError(error_code, ctypes.FormatError(error_code), path)
+    try:
+        return msvcrt.open_osfhandle(
+            int(handle),
+            flags | getattr(os, "O_NOINHERIT", 0),
+        )
+    except Exception:
+        close_handle(handle)
+        raise
+
+
+class _BoundedRerunReader:
+    """Expose at most the source size observed before copying."""
+
+    def __init__(self, stream, limit: int):
+        self._stream = stream
+        self._remaining = max(0, limit)
+
+    def read(self, size: int = -1):
+        if self._remaining <= 0:
+            return b""
+        if size is None or size < 0:
+            size = self._remaining
+        chunk = self._stream.read(min(size, self._remaining))
+        self._remaining -= len(chunk)
+        return chunk
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+class _HashingRerunWriter:
+    """Hash exactly the bytes written to the temporary destination."""
+
+    def __init__(self, stream):
+        self._stream = stream
+        self.digest = hashlib.sha256()
+        self.bytes_written = 0
+
+    def write(self, data):
+        written = self._stream.write(data)
+        if written is None:
+            written = len(data)
+        self.digest.update(data[:written])
+        self.bytes_written += written
+        return written
+
+
+def _rehash_rerun_source(path: str, expected_size: int) -> tuple[bytes, int, os.stat_result]:
+    """Reopen and hash a bounded source for cross-platform copy verification."""
+    fd = _open_rerun_source(path)
+    try:
+        opened = os.fstat(fd)
+        digest = hashlib.sha256()
+        bytes_read = 0
+        while bytes_read < expected_size:
+            chunk = os.read(fd, min(1024 * 1024, expected_size - bytes_read))
+            if not chunk:
+                break
+            digest.update(chunk)
+            bytes_read += len(chunk)
+        if os.read(fd, 1):
+            bytes_read += 1
+        return digest.digest(), bytes_read, opened
+    finally:
+        os.close(fd)
+
+
+def _copy_rerun_input(
+    value,
+    work_dir: str,
+    *,
+    current_user: str,
+    db: Session,
+    dest_name: Optional[str] = None,
+    required: bool = True,
+) -> Optional[str]:
+    """이력의 input_info 파일을 새 작업 폴더로 복사한다.
+
+    DB에 저장된 경로라도 userConnection 밖은 신뢰하지 않으며, 만료/삭제된 파일은
+    409로 명확히 반환한다. 원본 작업 폴더를 직접 재사용하지 않아 결과 덮어쓰기도 막는다.
+    """
+    if value in (None, ""):
+        if required:
+            raise HTTPException(status_code=409, detail="재실행에 필요한 입력 파일 정보가 없습니다.")
+        return None
+    if not isinstance(value, str):
+        if required:
+            raise HTTPException(status_code=409, detail="재실행 입력 파일 경로 형식이 올바르지 않습니다.")
+        return None
+
+    source_path = os.path.abspath(urllib.parse.unquote(value))
+    base_path = os.path.abspath(_USER_CONNECTION_DIR)
+    base_real = os.path.realpath(base_path)
+    source_real = os.path.realpath(source_path)
+    if (
+        not _is_within_dir(base_path, source_path)
+        or not _is_within_dir(base_real, source_real)
+    ):
+        raise HTTPException(status_code=403, detail="허용되지 않은 재실행 입력 경로입니다.")
+    assert_current_user_can_access_path(
+        source_real,
+        current_user,
+        db,
+        base_real,
+    )
+    try:
+        path_before = os.stat(source_real, follow_symlinks=False)
+    except OSError:
+        raise HTTPException(
+            status_code=409,
+            detail=f"원본 입력 파일이 보관 기간 만료 또는 이동으로 없어 재실행할 수 없습니다: {os.path.basename(source_path)}",
+        )
+    if not stat.S_ISREG(path_before.st_mode):
+        raise HTTPException(status_code=409, detail="재실행 입력은 일반 파일이어야 합니다.")
+
+    filename = dest_name or os.path.basename(source_path)
+    destination = os.path.abspath(os.path.join(work_dir, filename))
+    if not _is_within_dir(os.path.abspath(work_dir), destination):
+        raise HTTPException(status_code=409, detail="재실행 입력 파일명이 올바르지 않습니다.")
+
+    temp_path = None
+    fd = None
+    try:
+        fd = _open_rerun_source(source_real)
+        opened_before = os.fstat(fd)
+        identity_before = (
+            path_before.st_dev,
+            path_before.st_ino,
+            path_before.st_size,
+            path_before.st_mtime_ns,
+        )
+        opened_identity = (
+            opened_before.st_dev,
+            opened_before.st_ino,
+            opened_before.st_size,
+            opened_before.st_mtime_ns,
+        )
+        if not stat.S_ISREG(opened_before.st_mode) or opened_identity != identity_before:
+            raise HTTPException(status_code=409, detail="재실행 입력 파일이 복사 직전에 변경되었습니다.")
+
+        latest_real = os.path.realpath(source_path)
+        if (
+            os.path.normcase(latest_real) != os.path.normcase(source_real)
+            or not _is_within_dir(base_real, latest_real)
+        ):
+            raise HTTPException(status_code=403, detail="허용되지 않은 재실행 입력 경로입니다.")
+        assert_current_user_can_access_path(latest_real, current_user, db, base_real)
+
+        copy_digest = None
+        copied_bytes = 0
+        with os.fdopen(fd, "rb", closefd=True) as source_stream:
+            fd = None
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=work_dir,
+                prefix=".rerun-copy-",
+                delete=False,
+            ) as destination_stream:
+                temp_path = destination_stream.name
+                bounded_source = _BoundedRerunReader(
+                    source_stream,
+                    opened_before.st_size,
+                )
+                hashing_destination = _HashingRerunWriter(destination_stream)
+                shutil.copyfileobj(
+                    bounded_source,
+                    hashing_destination,
+                    length=1024 * 1024,
+                )
+                destination_stream.flush()
+                copy_digest = hashing_destination.digest.digest()
+                copied_bytes = hashing_destination.bytes_written
+            source_grew = bool(source_stream.read(1))
+            opened_after = os.fstat(source_stream.fileno())
+
+        path_after = os.stat(source_real, follow_symlinks=False)
+        latest_real = os.path.realpath(source_path)
+        final_identity = (
+            path_after.st_dev,
+            path_after.st_ino,
+            path_after.st_size,
+            path_after.st_mtime_ns,
+        )
+        opened_final_identity = (
+            opened_after.st_dev,
+            opened_after.st_ino,
+            opened_after.st_size,
+            opened_after.st_mtime_ns,
+        )
+        rehash_digest, rehash_bytes, reopened = _rehash_rerun_source(
+            source_real,
+            opened_before.st_size,
+        )
+        reopened_identity = (
+            reopened.st_dev,
+            reopened.st_ino,
+            reopened.st_size,
+            reopened.st_mtime_ns,
+        )
+        if (
+            opened_final_identity != identity_before
+            or final_identity != identity_before
+            or reopened_identity != identity_before
+            or os.path.normcase(latest_real) != os.path.normcase(source_real)
+            or source_grew
+            or copied_bytes != opened_before.st_size
+            or rehash_bytes != opened_before.st_size
+            or copy_digest != rehash_digest
+        ):
+            raise HTTPException(status_code=409, detail="재실행 입력 파일이 복사 중 변경되었습니다.")
+
+        os.chmod(temp_path, stat.S_IMODE(opened_before.st_mode))
+        os.utime(temp_path, ns=(opened_before.st_atime_ns, opened_before.st_mtime_ns))
+        os.replace(temp_path, destination)
+        temp_path = None
+    except HTTPException:
+        raise
+    except OSError as exc:
+        raise HTTPException(status_code=409, detail="재실행 입력 파일을 안전하게 복사할 수 없습니다.") from exc
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+    return destination
+
+
+def _rerun_bool(value, default: bool = False) -> bool:
+    """JSON 이력의 boolean/legacy 문자열 값을 안전하게 해석한다."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", ""}:
+            return False
+    return default
+
+
+@router.post("/analysis/{analysis_id}/rerun")
+def rerun_analysis(
+    analysis_id: int,
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
+    """보존된 입력 파일/옵션을 새 작업 폴더로 복제해 동일 해석을 다시 제출한다.
+
+    파일 기반 비동기 앱부터 지원한다. 원본 레코드와 결과는 변경하지 않으며 새 job_id와
+    새 Analysis 레코드가 생성된다.
+    """
+    record = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Analysis record not found")
+    assert_current_user_can_access_owner(record.employee_id, current_user, db)
+
+    info = record.input_info if isinstance(record.input_info, dict) else {}
+    def copy_input(value, work_dir, **kwargs):
+        try:
+            return _copy_rerun_input(
+                value,
+                work_dir,
+                current_user=current_user,
+                db=db,
+                **kwargs,
+            )
+        except Exception:
+            _cleanup_owned_workspace(work_dir, current_user)
+            raise
+
+    program = record.program_name or ""
+    program_spec = resolve_program(program)
+    rerun_adapter = program_spec.rerun_adapter if program_spec else None
+    source = "WorkbenchRerun"
+
+    if rerun_adapter == "truss":
+        work_dir, timestamp = make_work_dir(current_user, "TrussModelBuilder")
+        node_path = copy_input(info.get("node_csv"), work_dir)
+        member_path = copy_input(info.get("member_csv"), work_dir)
+        exe_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "InHouseProgram", "TrussModelBuilder"))
+        exe_path = os.path.join(exe_dir, "TrussModelBuilder.exe")
+        job_id = submit_analysis_job(
+            task_execute_truss, node_path, member_path, work_dir, exe_path, exe_dir,
+            current_user, timestamp, source,
+            owned_work_dir=work_dir,
+        )
+
+    elif rerun_adapter == "truss-assessment":
+        work_dir, timestamp = make_work_dir(current_user, "TrussAssessment")
+        bdf_path = copy_input(info.get("bdf_model"), work_dir)
+        job_id = submit_analysis_job(
+            task_execute_assessment, bdf_path, work_dir, current_user, timestamp, source,
+            owned_work_dir=work_dir,
+        )
+
+    elif rerun_adapter == "bdf-scanner":
+        work_dir, timestamp = make_work_dir(current_user, "BdfScanner")
+        bdf_path = copy_input(info.get("bdf_model"), work_dir)
+        job_id = submit_analysis_job(
+            task_execute_bdfscanner, bdf_path, work_dir, current_user, timestamp, source,
+            _rerun_bool(info.get("use_nastran"), False),
+            owned_work_dir=work_dir,
+        )
+
+    elif rerun_adapter == "hp-scr":
+        mode = str(info.get("analysis_mode") or ("POR" if "POR" in program.upper() else "PSA")).upper()
+        work_dir, timestamp = make_work_dir(current_user, f"HpScr{mode}")
+        bdf_path = copy_input(info.get("bdf_model"), work_dir)
+        job_id = submit_analysis_job(
+            task_execute_hpscr, bdf_path, work_dir, current_user, timestamp, source, mode,
+            owned_work_dir=work_dir,
+        )
+
+    elif rerun_adapter == "f06-parser":
+        work_dir, timestamp = make_work_dir(current_user, "F06Parser")
+        f06_path = copy_input(info.get("f06_file"), work_dir)
+        job_id = submit_analysis_job(
+            task_execute_f06parser, f06_path, work_dir, current_user, timestamp, source,
+            owned_work_dir=work_dir,
+        )
+
+    elif rerun_adapter == "mooring-fitting":
+        work_dir, timestamp = make_work_dir(current_user, "MooringFitting")
+        structure_path = copy_input(
+            info.get("structure_csv"), work_dir, dest_name="MooringFittingData.csv",
+        )
+        load_path = copy_input(
+            info.get("load_csv"), work_dir, dest_name="MooringFittingDataLoad.csv",
+        )
+        exe_path = os.path.abspath(os.path.join(
+            _BACKEND_DIR, "InHouseProgram", "MooringFitting", "MooringFitting.exe",
+        ))
+        job_id = submit_analysis_job(
+            task_execute_mooring_fitting,
+            structure_path, load_path, work_dir, exe_path,
+            current_user, timestamp, source, float(info.get("mf_safety_factor") or 1.25),
+            owned_work_dir=work_dir,
+        )
+
+    elif rerun_adapter == "model-builder":
+        work_dir, timestamp = make_work_dir(current_user, "HiTessModelBuilder")
+        stru_path = copy_input(info.get("stru_csv"), work_dir, required=False)
+        pipe_path = copy_input(info.get("pipe_csv"), work_dir, required=False)
+        equip_path = copy_input(info.get("equip_csv"), work_dir, required=False)
+        if not stru_path and not pipe_path:
+            _cleanup_owned_workspace(work_dir, current_user)
+            raise HTTPException(status_code=409, detail="Structural 또는 Piping 원본 CSV가 없어 재실행할 수 없습니다.")
+        exe_path = os.path.abspath(os.path.join(
+            _BACKEND_DIR, "InHouseProgram", "HiTessModeBuilder", "Cmb.Cli.exe",
+        ))
+        job_id = submit_analysis_job(
+            task_execute_modelflow,
+            stru_path, pipe_path, equip_path, work_dir, exe_path,
+            current_user, timestamp, source,
+            float(info.get("mesh_size") or 200.0),
+            _rerun_bool(info.get("ubolt_full_fix"), False),
+            _rerun_bool(info.get("run_nastran"), False),
+            info.get("nastran_path"),
+            info.get("leg_z_tol"),
+            info.get("mesh_size_structure"),
+            info.get("mesh_size_pipe"),
+            queue_message="재실행 대기 중...",
+            owned_work_dir=work_dir,
+        )
+
+    elif rerun_adapter == "simple-beam":
+        work_dir, timestamp = make_work_dir(current_user, "SimpleBeam")
+        input_json_path = copy_input(info.get("input_json"), work_dir)
+        job_id = submit_analysis_job(
+            task_execute_beam, input_json_path, work_dir, current_user, timestamp, source,
+            owned_work_dir=work_dir,
+        )
+
+    elif rerun_adapter in ("group-module-unit", "side-passage"):
+        program_name = "SidePassage" if rerun_adapter == "side-passage" else "GroupModuleUnit"
+        work_dir, timestamp = make_work_dir(current_user, program_name)
+        bdf_path = copy_input(info.get("bdf_model"), work_dir)
+        job_id = submit_analysis_job(
+            task_execute_groupmoduleunit,
+            bdf_path, work_dir, current_user, timestamp, source,
+            _rerun_bool(info.get("use_nastran"), False), program_name,
+            queue_message="재실행 대기 중...",
+            owned_work_dir=work_dir,
+        )
+
+    elif rerun_adapter == "hull-acceleration":
+        work_dir, timestamp = make_work_dir(current_user, "HullAcceleration")
+        pdf_path = copy_input(info.get("pdf_file"), work_dir)
+        constants_path = copy_input(
+            info.get("constants"), work_dir, dest_name="constants.json", required=False,
+        )
+        overrides_path = copy_input(
+            info.get("condition_overrides"), work_dir, dest_name="condition_overrides.json", required=False,
+        )
+        job_id = submit_analysis_job(
+            task_execute_hull_acceleration,
+            pdf_path, work_dir, current_user, timestamp, source, constants_path, overrides_path,
+            owned_work_dir=work_dir,
+        )
+
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="이 앱은 저장 파일 기반 재실행을 지원하지 않습니다. 앱에서 입력값을 불러와 새 해석을 시작하세요.",
+        )
+
+    return {
+        "job_id": job_id,
+        "source_analysis_id": analysis_id,
+        "program_name": program,
+        "message": "동일 입력으로 새 해석 작업을 제출했습니다.",
+    }
+
+
 # ==================== 작업 상태 조회 ====================
 
 @router.get("/analysis/status/{job_id}")
@@ -1568,6 +2084,9 @@ def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_
     status = job_status_store.get(job_id)
     if status:
         assert_current_user_can_access_job(job_id, current_user, db, status)
+        # 큐 가시성: 현재 실행 중(runningJobs)/대기 중(queuedJobs) 작업 수와,
+        # 이 job 이 Pending 이면 대기열 순번(queuePosition)을 함께 노출한다.
+        status.update(job_status_store.get_queue_stats(job_id))
         return status
     record = db.query(models.Analysis).filter(models.Analysis.job_id == job_id).first()
     if not record:
@@ -1607,6 +2126,7 @@ async def request_truss_analysis(
 
     job_id = submit_analysis_job(
         task_execute_truss, node_path, member_path, work_dir, exe_path, exe_dir, employee_id, timestamp, source,
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
 
@@ -1699,6 +2219,7 @@ async def run_truss_sample(
     job_id = submit_analysis_job(
         task_execute_truss, node_path, member_path, work_dir, exe_path, exe_dir,
         employee_id, timestamp, SAMPLE_SOURCE_TAG,
+        owned_work_dir=work_dir,
     )
     # 관리자가 아니면 카운트 소비 (관리자는 무제한이라 추적하지 않음)
     if not quota["is_admin"]:
@@ -1728,6 +2249,7 @@ async def request_truss_assessment(
     bdf_path = await save_upload(bdf_file, work_dir)
     job_id = submit_analysis_job(
         task_execute_assessment, bdf_path, work_dir, employee_id, timestamp, source,
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
 
@@ -1764,6 +2286,7 @@ async def run_assessment_sample(
 
     job_id = submit_analysis_job(
         task_execute_assessment, bdf_path, work_dir, employee_id, timestamp, SAMPLE_SOURCE_TAG,
+        owned_work_dir=work_dir,
     )
     if not quota["is_admin"]:
         _consume_sample_quota("assessment", employee_id)
@@ -1796,6 +2319,7 @@ async def request_plate_structure(
         task_execute_plate_structure,
         bdf_path, work_dir, employee_id, timestamp, source,
         queue_message="대기 중...",
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
 
@@ -1820,6 +2344,7 @@ async def request_bdfscanner(
     bdf_path = await save_upload(bdf_file, work_dir, error_prefix="파일 저장 오류")
     job_id = submit_analysis_job(
         task_execute_bdfscanner, bdf_path, work_dir, employee_id, timestamp, source, use_nastran,
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
 
@@ -1851,7 +2376,8 @@ async def request_hpscr(
     work_dir, timestamp = make_work_dir(employee_id, f"HpScr{mode}")
     bdf_path = await save_upload(bdf_file, work_dir, error_prefix="파일 저장 오류")
     job_id = submit_analysis_job(
-        task_execute_hpscr, bdf_path, work_dir, employee_id, timestamp, source, mode
+        task_execute_hpscr, bdf_path, work_dir, employee_id, timestamp, source, mode,
+        owned_work_dir=work_dir,
     )
 
     return {"job_id": job_id}
@@ -1900,6 +2426,7 @@ async def run_hpscr_sample(
 
     job_id = submit_analysis_job(
         task_execute_hpscr, bdf_path, work_dir, employee_id, timestamp, SAMPLE_SOURCE_TAG, m,
+        owned_work_dir=work_dir,
     )
     if not quota["is_admin"]:
         _consume_sample_quota("hpscr", employee_id)
@@ -1923,6 +2450,7 @@ async def upload_module_stability_artifact(
         employee_id: str = Form(...),
         parent_analysis_id: int = Form(...),
         artifact_kind: str = Form("posture"),
+        db: Session = Depends(database.get_db),
         current_user: str = Depends(require_auth)
 ):
     """
@@ -1942,23 +2470,18 @@ async def upload_module_stability_artifact(
     if employee_id != current_user:
         raise HTTPException(status_code=403, detail="employee_id 가 인증 사용자와 일치하지 않습니다.")
 
-    db = database.SessionLocal()
-    try:
-        parent = db.query(models.Analysis).filter(
-            models.Analysis.id == parent_analysis_id
-        ).first()
-        if parent is None:
-            raise HTTPException(status_code=404, detail=f"Parent Analysis (id={parent_analysis_id}) not found")
-        if parent.employee_id != current_user:
-            raise HTTPException(status_code=403, detail="Parent Analysis 의 사용자와 인증 사용자가 일치하지 않습니다.")
-        if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Parent program_name '{parent.program_name}' is not supported",
-            )
-        bdf_path = (parent.input_info or {}).get("bdf_model")
-    finally:
-        db.close()
+    parent = db.query(models.Analysis).filter(
+        models.Analysis.id == parent_analysis_id
+    ).first()
+    if parent is None:
+        raise HTTPException(status_code=404, detail=f"Parent Analysis (id={parent_analysis_id}) not found")
+    assert_current_user_can_access_owner(parent.employee_id, current_user, db)
+    if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Parent program_name '{parent.program_name}' is not supported",
+        )
+    bdf_path = (parent.input_info or {}).get("bdf_model")
 
     if not bdf_path or not os.path.exists(bdf_path):
         raise HTTPException(status_code=400, detail=f"Parent BDF 파일을 찾을 수 없습니다: {bdf_path}")
@@ -1969,6 +2492,7 @@ async def upload_module_stability_artifact(
     bdf_cmp = os.path.normcase(bdf_abs)
     if not _is_within_dir(user_root_cmp, bdf_cmp):
         raise HTTPException(status_code=403, detail="Parent BDF 경로가 userConnection 디렉터리 밖에 있습니다.")
+    assert_current_user_can_access_path(bdf_abs, current_user, db, _USER_CONNECTION_DIR)
 
     # ModuleAnalysis.Cli 와 unit-structural endpoint 모두 posture/stability 파일이
     # parent BDF 와 같은 폴더에 있다고 가정한다.
@@ -1984,11 +2508,13 @@ async def upload_module_stability_artifact(
     if not _is_within_dir(work_dir, target_path):
         raise HTTPException(status_code=400, detail="경로 탈출 시도 차단")
 
-    try:
-        with open(target_path, "wb") as buffer:
-            buffer.write(await file.read())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
+    target_path = await save_upload(
+        file,
+        work_dir,
+        error_prefix="파일 저장 오류",
+        dest_name=safe_name,
+        max_bytes=MODULE_STABILITY_UPLOAD_MAX_BYTES,
+    )
 
     return {
         "ok": True,
@@ -2002,6 +2528,7 @@ async def upload_module_stability_artifact(
 @router.post("/analysis/module-stability/request")
 async def request_module_stability(
         req: ModuleStabilityRequest,
+        db: Session = Depends(database.get_db),
         current_user: str = Depends(require_auth)
 ):
     """
@@ -2018,6 +2545,7 @@ async def request_module_stability(
             status_code=400,
             detail="posturePath 가 userConnection 디렉터리 밖에 있습니다.",
         )
+    assert_current_user_can_access_path(posture_abs, current_user, db, _USER_CONNECTION_DIR)
     if not os.path.isfile(posture_abs):
         raise HTTPException(status_code=400, detail=f"posturePath 가 파일이 아닙니다: {posture_abs}")
 
@@ -2029,6 +2557,10 @@ async def request_module_stability(
         timestamp,
         req.source or "ModuleUnitStudio",
         queue_message="자세안정성 해석 대기 중...",
+        metadata=JobMetadata(
+            employee_id=current_user,
+            program_name="ModuleStability",
+        ),
     )
 
     return {"job_id": job_id, "jobId": job_id}
@@ -2037,6 +2569,7 @@ async def request_module_stability(
 @router.post("/analysis/module-stability/optimize")
 async def optimize_module_hoist_positions(
         req: ModuleStabilityRequest,
+        db: Session = Depends(database.get_db),
         current_user: str = Depends(require_auth)
 ):
     """
@@ -2051,6 +2584,7 @@ async def optimize_module_hoist_positions(
             status_code=400,
             detail="posturePath 가 userConnection 디렉터리 밖에 있습니다.",
         )
+    assert_current_user_can_access_path(posture_abs, current_user, db, _USER_CONNECTION_DIR)
     if not os.path.isfile(posture_abs):
         raise HTTPException(status_code=400, detail=f"posturePath 가 파일이 아닙니다: {posture_abs}")
 
@@ -2062,6 +2596,10 @@ async def optimize_module_hoist_positions(
         timestamp,
         req.source or "ModuleUnitStudio",
         queue_message="권상 위치 최적화 대기 중...",
+        metadata=JobMetadata(
+            employee_id=current_user,
+            program_name="ModuleHoistOptimize",
+        ),
     )
 
     return {"job_id": job_id, "jobId": job_id}
@@ -2100,6 +2638,7 @@ async def request_groupmoduleunit(
     job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
         bdf_path, work_dir, employee_id, timestamp, source, use_nastran, program_name,
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
 
@@ -2123,6 +2662,7 @@ async def request_sidepassage(
     job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
         bdf_path, work_dir, employee_id, timestamp, source, use_nastran, "SidePassage",
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
 
@@ -2160,6 +2700,7 @@ async def run_gmu_sample(
     job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
         bdf_path, work_dir, employee_id, timestamp, SAMPLE_SOURCE_TAG, False,  # use_nastran=False
+        owned_work_dir=work_dir,
     )
     if not quota["is_admin"]:
         _consume_sample_quota("groupmoduleunit", employee_id)
@@ -2176,6 +2717,7 @@ async def request_groupmoduleunit_from_path(
         employee_id: str = Form(...),
         use_nastran: bool = Form(False),
         source: str = Form("Workbench"),
+        db: Session = Depends(database.get_db),
         current_user: str = Depends(require_auth)
 ):
     """
@@ -2187,6 +2729,7 @@ async def request_groupmoduleunit_from_path(
     abs_path = os.path.abspath(bdf_server_path)
     if not _is_within_dir(_USER_CONNECTION_DIR, abs_path):
         raise HTTPException(status_code=400, detail="허용되지 않은 파일 경로입니다.")
+    assert_current_user_can_access_path(abs_path, current_user, db, _USER_CONNECTION_DIR)
     if not os.path.isfile(abs_path):
         raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
 
@@ -2201,6 +2744,7 @@ async def request_groupmoduleunit_from_path(
     job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
         bdf_path, work_dir, employee_id, timestamp, source, use_nastran, program_name,
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
 
@@ -2208,6 +2752,7 @@ async def request_groupmoduleunit_from_path(
 @router.get("/analysis/groupmoduleunit/{parent_id}/artifacts")
 def get_groupmoduleunit_artifacts(
         parent_id: int,
+        db: Session = Depends(database.get_db),
         current_user: str = Depends(require_auth),
 ):
     """GroupModuleUnit/SidePassage parent BDF 폴더의 다운로드 가능한 lifting 산출물 목록.
@@ -2216,23 +2761,18 @@ def get_groupmoduleunit_artifacts(
     <stem>_lifting.bdf/.f06/.op2, <stem>_edited.bdf 가 생성된다. 프론트 Step3
     (해석 결과 확인)가 이 목록으로 다운로드 버튼을 만든다. 존재하는 파일만 반환한다.
     """
-    db = database.SessionLocal()
-    try:
-        parent = db.query(models.Analysis).filter(
-            models.Analysis.id == parent_id
-        ).first()
-        if parent is None:
-            raise HTTPException(status_code=404, detail=f"Parent Analysis (id={parent_id}) not found")
-        if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Parent program_name '{parent.program_name}' is not supported",
-            )
-        if parent.employee_id != current_user:
-            raise HTTPException(status_code=403, detail="본인 해석만 조회할 수 있습니다.")
-        bdf_model = (parent.input_info or {}).get("bdf_model")
-    finally:
-        db.close()
+    parent = db.query(models.Analysis).filter(
+        models.Analysis.id == parent_id
+    ).first()
+    if parent is None:
+        raise HTTPException(status_code=404, detail=f"Parent Analysis (id={parent_id}) not found")
+    if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Parent program_name '{parent.program_name}' is not supported",
+        )
+    assert_current_user_can_access_owner(parent.employee_id, current_user, db)
+    bdf_model = (parent.input_info or {}).get("bdf_model")
 
     if not bdf_model:
         raise HTTPException(status_code=404, detail="부모 BDF 경로를 찾을 수 없습니다.")
@@ -2240,6 +2780,7 @@ def get_groupmoduleunit_artifacts(
     # 방어: 산출물 폴더는 반드시 userConnection 하위여야 한다.
     if not _is_within_dir(_USER_CONNECTION_DIR, folder):
         raise HTTPException(status_code=403, detail="허용되지 않은 경로입니다.")
+    assert_current_user_can_access_path(folder, current_user, db, _USER_CONNECTION_DIR)
     stem = os.path.splitext(os.path.basename(bdf_model))[0]
     artifacts = scan_lifting_artifacts(folder, stem)
     return {"folder": folder, "artifacts": artifacts}
@@ -2255,6 +2796,7 @@ async def request_unit_structural(
         allowable_mpa: float = Form(220.0),
         employee_id: str = Form(...),
         source: str = Form("Studio"),
+        db: Session = Depends(database.get_db),
         current_user: str = Depends(require_auth)
 ):
     """
@@ -2270,26 +2812,24 @@ async def request_unit_structural(
     if allowable_mpa <= 0:
         raise HTTPException(status_code=400, detail="allowable_mpa must be > 0")
 
-    db = database.SessionLocal()
-    try:
-        parent = db.query(models.Analysis).filter(
-            models.Analysis.id == parent_analysis_id
-        ).first()
-        if parent is None:
-            raise HTTPException(status_code=404,
-                                detail=f"Parent Analysis (id={parent_analysis_id}) not found")
-        if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
-            raise HTTPException(status_code=400,
-                                detail=f"Parent program_name '{parent.program_name}' is not supported")
-        if parent.status != "Success":
-            raise HTTPException(status_code=400,
-                                detail=f"Parent BDF 검증이 성공 상태가 아닙니다 (status={parent.status})")
-        bdf_path = (parent.input_info or {}).get("bdf_model")
-        if not bdf_path or not os.path.exists(bdf_path):
-            raise HTTPException(status_code=400,
-                                detail=f"Parent BDF 파일을 찾을 수 없습니다: {bdf_path}")
-    finally:
-        db.close()
+    parent = db.query(models.Analysis).filter(
+        models.Analysis.id == parent_analysis_id
+    ).first()
+    if parent is None:
+        raise HTTPException(status_code=404,
+                            detail=f"Parent Analysis (id={parent_analysis_id}) not found")
+    assert_current_user_can_access_owner(parent.employee_id, current_user, db)
+    if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
+        raise HTTPException(status_code=400,
+                            detail=f"Parent program_name '{parent.program_name}' is not supported")
+    if parent.status != "Success":
+        raise HTTPException(status_code=400,
+                            detail=f"Parent BDF 검증이 성공 상태가 아닙니다 (status={parent.status})")
+    bdf_path = (parent.input_info or {}).get("bdf_model")
+    if not bdf_path or not os.path.exists(bdf_path):
+        raise HTTPException(status_code=400,
+                            detail=f"Parent BDF 파일을 찾을 수 없습니다: {bdf_path}")
+    assert_current_user_can_access_path(bdf_path, current_user, db, _USER_CONNECTION_DIR)
 
     # 보안 — stability_path 는 (1) 절대경로, (2) parent BDF 와 같은 폴더 안,
     # (3) userConnection 디렉터리 하위, (4) .json 확장자, (5) 실제 존재 — 모두 만족해야 함.
@@ -2339,6 +2879,7 @@ async def request_f06parser(
     f06_path = await save_upload(f06_file, work_dir, error_prefix="파일 저장 오류")
     job_id = submit_analysis_job(
         task_execute_f06parser, f06_path, work_dir, employee_id, timestamp, source,
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
 
@@ -2376,6 +2917,7 @@ async def request_hull_acceleration(
         raise HTTPException(status_code=400, detail=f"constants JSON 형식이 올바르지 않습니다: {exc}") from exc
     job_id = submit_analysis_job(
         task_execute_hull_acceleration, pdf_path, work_dir, employee_id, timestamp, source, constants_path, overrides_path,
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
 
@@ -2434,6 +2976,7 @@ async def request_hull_acceleration_sample(
 
     job_id = submit_analysis_job(
         task_execute_hull_acceleration, pdf_path, work_dir, employee_id, timestamp, source, constants_path, overrides_path,
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id, "sample_name": sample_name}
 
@@ -2605,6 +3148,7 @@ async def request_mooring_fitting(
         task_execute_mooring_fitting,
         structure_path, load_path, work_dir, exe_path,
         employee_id, timestamp, source, mf_sf,
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
 
@@ -3420,6 +3964,7 @@ async def request_beam_analysis(
     input_json_path = await save_upload(beam_file, work_dir)
     job_id = submit_analysis_job(
         task_execute_beam, input_json_path, work_dir, employee_id, timestamp, source,
+        owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
 
@@ -3487,6 +4032,7 @@ async def request_modelflow_analysis(
         mesh_size, ubolt_full_fix, run_nastran, nastran_path, leg_z_tol,
         mesh_size_structure, mesh_size_pipe,
         queue_message="해석 대기 중...",
+        owned_work_dir=work_dir,
     )
 
     return {"job_id": job_id}
@@ -3554,6 +4100,7 @@ async def run_modelflow_sample(
         False,   # run_nastran (빠른 데모)
         None, None, None, None,
         queue_message="해석 대기 중...",
+        owned_work_dir=work_dir,
     )
     if not quota["is_admin"]:
         _consume_sample_quota("modelflow", employee_id)
@@ -3771,6 +4318,10 @@ def request_apply_edit(
         abs_dir, exe_path, payload.strict,
         payload.run_nastran, payload.nastran_path, payload.parse_f06,
         queue_message="편집 적용 대기 중...",
+        metadata=JobMetadata(
+            employee_id=current_user,
+            program_name="HiTessModelBuilder",
+        ),
     )
     return {"job_id": job_id}
 
@@ -3789,6 +4340,7 @@ class CogRequest(BaseModel):
 @router.post("/analysis/groupmodule/cog")
 def compute_cog(
     payload: CogRequest,
+    db: Session = Depends(database.get_db),
     current_user: str = Depends(require_auth),
 ):
     """BDF 파일에서 무게중심(COG)과 총 질량을 계산합니다.
@@ -3799,6 +4351,12 @@ def compute_cog(
     decoded = os.path.abspath(urllib.parse.unquote(payload.bdf_path))
     if not _is_within_dir(_ALLOWED_DOWNLOAD_BASE, decoded):
         raise HTTPException(status_code=403, detail="접근 권한이 없는 BDF 경로입니다.")
+    assert_current_user_can_access_path(
+        decoded,
+        current_user,
+        db,
+        _ALLOWED_DOWNLOAD_BASE,
+    )
     if not os.path.isfile(decoded):
         raise HTTPException(status_code=404, detail="BDF 파일을 찾을 수 없습니다.")
     if not os.path.isfile(_GROUPMODULE_EXE):

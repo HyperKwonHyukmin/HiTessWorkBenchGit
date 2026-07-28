@@ -5,8 +5,14 @@ from sqlalchemy import inspect, text
 from . import database
 
 
-def _add_missing_columns(table_name: str, statements_by_column: dict[str, str]) -> None:
-    inspector = inspect(database.engine)
+def _add_missing_columns(
+    table_name: str,
+    statements_by_column: dict[str, str],
+    *,
+    engine=None,
+) -> None:
+    target_engine = engine or database.engine
+    inspector = inspect(target_engine)
     if not inspector.has_table(table_name):
         return
 
@@ -19,13 +25,19 @@ def _add_missing_columns(table_name: str, statements_by_column: dict[str, str]) 
     if not statements:
         return
 
-    with database.engine.begin() as connection:
+    with target_engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
 
 
-def _add_missing_indexes(table_name: str, statements_by_index: dict[str, str]) -> None:
-    inspector = inspect(database.engine)
+def _add_missing_indexes(
+    table_name: str,
+    statements_by_index: dict[str, str],
+    *,
+    engine=None,
+) -> None:
+    target_engine = engine or database.engine
+    inspector = inspect(target_engine)
     if not inspector.has_table(table_name):
         return
 
@@ -38,33 +50,33 @@ def _add_missing_indexes(table_name: str, statements_by_index: dict[str, str]) -
     if not statements:
         return
 
-    with database.engine.begin() as connection:
+    with target_engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
 
 
-def ensure_notice_columns() -> None:
+def ensure_notice_columns(*, engine=None) -> None:
     _add_missing_columns("notices", {
         "is_private": "ALTER TABLE notices ADD COLUMN is_private BOOL DEFAULT FALSE",
         "author_name": "ALTER TABLE notices ADD COLUMN author_name VARCHAR(50) NULL",
-    })
+    }, engine=engine)
 
 
-def ensure_user_columns() -> None:
+def ensure_user_columns(*, engine=None) -> None:
     _add_missing_columns("users", {
         "is_developer": "ALTER TABLE users ADD COLUMN is_developer BOOL DEFAULT FALSE",
-    })
+    }, engine=engine)
 
 
-def ensure_user_presence_columns() -> None:
+def ensure_user_presence_columns(*, engine=None) -> None:
     _add_missing_columns("user_presence", {
         "session_started": "ALTER TABLE user_presence ADD COLUMN session_started DATETIME NULL",
         "last_active_at": "ALTER TABLE user_presence ADD COLUMN last_active_at DATETIME NULL",
         "app_version": "ALTER TABLE user_presence ADD COLUMN app_version VARCHAR(30) NULL",
-    })
+    }, engine=engine)
 
 
-def ensure_analysis_job_columns() -> None:
+def ensure_analysis_job_columns(*, engine=None) -> None:
     _add_missing_columns("analysis", {
         "job_id": "ALTER TABLE analysis ADD COLUMN job_id VARCHAR(50) NULL",
         "job_status": "ALTER TABLE analysis ADD COLUMN job_status VARCHAR(20) DEFAULT 'completed'",
@@ -72,10 +84,10 @@ def ensure_analysis_job_columns() -> None:
         "job_message": "ALTER TABLE analysis ADD COLUMN job_message TEXT NULL",
         "started_at": "ALTER TABLE analysis ADD COLUMN started_at DATETIME NULL",
         "updated_at": "ALTER TABLE analysis ADD COLUMN updated_at DATETIME NULL",
-    })
+    }, engine=engine)
 
 
-def ensure_app_community_columns() -> None:
+def ensure_app_community_columns(*, engine=None) -> None:
     """기존 공지·요청 테이블을 App별 커뮤니티 구조로 확장합니다."""
 
     _add_missing_columns("notices", {
@@ -87,37 +99,38 @@ def ensure_app_community_columns() -> None:
         "starts_at": "ALTER TABLE notices ADD COLUMN starts_at DATETIME NULL",
         "ends_at": "ALTER TABLE notices ADD COLUMN ends_at DATETIME NULL",
         "revision": "ALTER TABLE notices ADD COLUMN revision INT NOT NULL DEFAULT 1",
-    })
+    }, engine=engine)
     _add_missing_columns("feature_requests", {
         "app_key": "ALTER TABLE feature_requests ADD COLUMN app_key VARCHAR(100) NULL",
-    })
+    }, engine=engine)
     _add_missing_indexes("notices", {
         "ix_notices_app_key": "CREATE INDEX ix_notices_app_key ON notices (app_key)",
-    })
+    }, engine=engine)
     _add_missing_indexes("feature_requests", {
         "ix_feature_requests_app_key": (
             "CREATE INDEX ix_feature_requests_app_key ON feature_requests (app_key)"
         ),
-    })
+    }, engine=engine)
 
 
-def ensure_chat_message_columns() -> None:
+def ensure_chat_message_columns(*, engine=None) -> None:
     """기존 chat_messages 테이블에 '내게서만 삭제' 숨김 플래그를 보강합니다."""
     _add_missing_columns("chat_messages", {
         "hidden_by_sender": "ALTER TABLE chat_messages ADD COLUMN hidden_by_sender BOOL NOT NULL DEFAULT FALSE",
         "hidden_by_recipient": "ALTER TABLE chat_messages ADD COLUMN hidden_by_recipient BOOL NOT NULL DEFAULT FALSE",
-    })
+    }, engine=engine)
 
 
-def ensure_app_spaces() -> None:
+def ensure_app_spaces(*, engine=None) -> None:
     """요청된 App만 커뮤니티 기능을 활성화합니다."""
 
-    inspector = inspect(database.engine)
+    target_engine = engine or database.engine
+    inspector = inspect(target_engine)
     if not inspector.has_table("app_spaces"):
         return
 
     app_key = "hitess-model-builder"
-    with database.engine.begin() as connection:
+    with target_engine.begin() as connection:
         exists = connection.execute(
             text("SELECT app_key FROM app_spaces WHERE app_key = :app_key"),
             {"app_key": app_key},
@@ -136,11 +149,12 @@ def ensure_app_spaces() -> None:
             )
 
 
-def run_schema_bootstrap() -> None:
-    ensure_notice_columns()
-    ensure_user_columns()
-    ensure_user_presence_columns()
-    ensure_analysis_job_columns()
-    ensure_app_community_columns()
-    ensure_chat_message_columns()
-    ensure_app_spaces()
+def run_schema_bootstrap(*, engine=None) -> None:
+    """기존 호출은 production engine을, 테스트는 주입된 engine을 사용합니다."""
+    ensure_notice_columns(engine=engine)
+    ensure_user_columns(engine=engine)
+    ensure_user_presence_columns(engine=engine)
+    ensure_analysis_job_columns(engine=engine)
+    ensure_app_community_columns(engine=engine)
+    ensure_chat_message_columns(engine=engine)
+    ensure_app_spaces(engine=engine)

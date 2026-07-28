@@ -23,7 +23,6 @@ import logging
 import os
 import re
 import shutil
-import signal
 import subprocess
 import threading
 import uuid
@@ -35,6 +34,7 @@ from fastapi import HTTPException
 # 노출되게 한다. 이 서비스는 job_manager 를 거치지 않고 자체 _jobs 스토어로 동작하므로,
 # 완료·중단 시점에 직접 record_analysis 를 호출해야 DB 에 저장된다.
 from .analysis_runner import record_analysis
+from .workspace import create_analysis_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,9 @@ _jobs_lock = threading.Lock()
 _active_job_id: "str | None" = None
 
 _MAX_LOG_LINES = 3000  # 로그 폭주 방지 상한
+_OUTPUT_READER_JOIN_TIMEOUT = 5.0
+_PROCESS_REAP_TIMEOUT = 5.0
+_PROCESS_PUBLISH_TIMEOUT = 35.0
 
 # ⚠️ 서버 안정성: PSA exe 는 내부에서 Abaqus(외부 solver)를 shell 로 호출한다. Abaqus 가
 # 종료되며 CTRL_BREAK 콘솔 신호를 던지면, 콘솔을 공유하는 부모 uvicorn 까지 함께 죽는다
@@ -220,10 +223,12 @@ def start_psa_job_from_upload(csv_bytes: bytes, csv_name: str, employee_id: str,
 
     # 폴더명에 들어가는 사번은 경로 조작 문자를 제거해 userConnection 밖으로 새지 않게 한다.
     safe_employee = re.sub(r"[^A-Za-z0-9_-]", "", employee_id or "") or "unknown"
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    folder_name = f"{timestamp}_{safe_employee}_{_PROGRAM_NAME}"
-    work_dir = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, folder_name))
-    os.makedirs(work_dir, exist_ok=True)
+    work_dir, _timestamp = create_analysis_workspace(
+        _USER_CONNECTION_DIR,
+        safe_employee,
+        _PROGRAM_NAME,
+    )
+    folder_name = os.path.basename(work_dir)
 
     safe_name = os.path.basename(csv_name or "") or "psa_input.csv"
     if not safe_name.lower().endswith(".csv"):
@@ -279,6 +284,9 @@ def _launch_job(csv_path: str, employee_id: str, load_cases=None) -> dict:
         "startedAtEpoch": now_epoch,
         "finishedAt": None,
         "pid": None,                   # Popen 성공 후 채워짐(해석 중단 시 트리 종료용)
+        "_process": None,
+        "_processReady": threading.Event(),
+        "_terminationLock": threading.Lock(),
     }
     # 라이센스 원자적 점유: 여기서 running 작업이 이미 있으면 등록하지 않고 409.
     # (진입점의 _ensure_license_available 는 fail-fast 이고, 이 블록이 레이스 최종 관문이다.)
@@ -291,7 +299,28 @@ def _launch_job(csv_path: str, employee_id: str, load_cases=None) -> dict:
         _active_job_id = job_id
 
     thread = threading.Thread(target=_run_pipeline, args=(job_id, command, job_dir), daemon=True)
-    thread.start()
+    try:
+        thread.start()
+    except Exception as exc:
+        # 등록/라이센스 점유 뒤 스레드 기동이 실패하면 영구 busy가 되지 않도록 즉시 terminal
+        # 상태로 전이한다. 프로세스는 아직 생성되지 않았으므로 슬롯 해제가 안전하다.
+        with _jobs_lock:
+            failed_job = _jobs.get(job_id)
+            if failed_job is not None:
+                failed_job["status"] = "failed"
+                failed_job["returncode"] = -1
+                failed_job["diagnostic"] = "thread_start_failed"
+                failed_job["finishedAt"] = datetime.now().isoformat(timespec="seconds")
+                failed_job["logs"].append(f"[치명] 해석 작업 스레드 시작 실패: {exc}")
+                failed_job["_processReady"].set()
+                if _active_job_id == job_id:
+                    _active_job_id = None
+        logger.exception("PSA job thread start failed (job_id=%s)", job_id)
+        _record_psa_analysis(job)
+        raise HTTPException(
+            status_code=503,
+            detail="PSA 해석 작업을 시작하지 못했습니다. 잠시 후 다시 시도하세요.",
+        ) from exc
     return {"jobId": job_id, "command": job["command"]}
 
 
@@ -434,12 +463,140 @@ def _stage_report_template(cwd: str, job_id: str):
         )
 
 
+def _read_process_output(job_id: str, stream):
+    """프로세스 stdout 을 별도 스레드에서 끝까지 읽어 작업 로그에 누적한다.
+
+    stdout 읽기는 자식이 EOF 를 닫을 때까지 블로킹될 수 있으므로 메인 파이프라인 스레드에서
+    수행하면 ``proc.wait(timeout=...)`` 에 도달하지 못한다. 이 함수는 daemon reader 전용이며,
+    종료/취소 시 다른 스레드가 pipe 를 닫아 발생하는 예외는 정상 정리 과정으로 간주한다.
+    """
+    if stream is None:
+        return
+    try:
+        for line in stream:
+            line = line.rstrip("\r\n")
+            if line:
+                _append_log(job_id, line)
+    except (OSError, ValueError):
+        # timeout/cancel 정리 중 pipe close 로 reader 가 풀리는 정상 경로.
+        return
+    except Exception as exc:  # noqa: BLE001
+        _append_log(job_id, f"[로그경고] 해석 프로세스 출력 읽기 실패: {exc}")
+
+
+def _close_process_output(proc, reader: threading.Thread):
+    """reader 를 회수하고 stdout pipe 를 닫아 핸들/스레드 누수를 방지한다."""
+    stream = getattr(proc, "stdout", None)
+    reader.join(timeout=_OUTPUT_READER_JOIN_TIMEOUT)
+    if reader.is_alive() and stream is not None:
+        # 자식이 비정상적으로 pipe 를 열어둔 경우 close 로 blocking read 를 깨운다.
+        try:
+            stream.close()
+        except Exception:  # noqa: BLE001
+            pass
+        reader.join(timeout=1.0)
+    elif stream is not None:
+        try:
+            stream.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _reap_after_tree_kill(proc) -> bool:
+    """트리 종료 뒤 직계 자식을 회수한다.
+
+    전체 트리 소멸이 먼저 검증된 뒤에만 호출된다. 직계 Popen이 아직 회수되지 않으면
+    ``kill``로 폴백하고, 실제 ``wait`` 성공 여부를 반환한다.
+    """
+    try:
+        proc.wait(timeout=_PROCESS_REAP_TIMEOUT)
+        return True
+    except subprocess.TimeoutExpired:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        proc.kill()
+    except Exception:  # noqa: BLE001
+        return False
+    try:
+        proc.wait(timeout=_PROCESS_REAP_TIMEOUT)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _terminate_process_tree(proc, job_id: str) -> bool:
+    """OS 프로세스 트리 종료와 Popen 회수를 모두 확인한 경우에만 True."""
+    tree_stopped = _kill_process_tree(getattr(proc, "pid", None), job_id)
+    if tree_stopped:
+        parent_reaped = _reap_after_tree_kill(proc)
+    else:
+        # 트리 소멸을 확인하지 못한 상태에서 직계 parent만 kill하면 descendant를 남긴 채
+        # pipeline 완료처럼 보일 수 있다. 이미 끝난 parent의 비차단 reap만 허용한다.
+        try:
+            parent_reaped = proc.poll() is not None
+        except Exception:  # noqa: BLE001
+            parent_reaped = False
+    if not tree_stopped:
+        _append_log(job_id, "[중단경고] 자식 프로세스 트리 소멸을 확인하지 못했습니다.")
+    if not parent_reaped:
+        _append_log(job_id, "[중단경고] 해석 프로세스 회수를 확인하지 못했습니다.")
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is not None:
+            if parent_reaped:
+                job.pop("_terminationReapPending", None)
+            else:
+                job["_terminationReapPending"] = True
+            if tree_stopped and parent_reaped:
+                job.pop("_terminationVerificationPending", None)
+                job.pop("_terminationProcesses", None)
+                if job.get("diagnostic") == "termination_pending":
+                    job.pop("diagnostic", None)
+            else:
+                job["_terminationVerificationPending"] = True
+    return bool(tree_stopped and parent_reaped)
+
+
+def _mark_termination_pending(job_id: str, terminal_status: str, returncode: int) -> None:
+    """종료 확인 실패를 기존 status 계약(running) 안에서 보존하고 슬롯을 유지한다."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None or job.get("status") != "running":
+            return
+        job["diagnostic"] = "termination_pending"
+        job["_pendingTerminal"] = {
+            "status": terminal_status,
+            "returncode": returncode,
+        }
+        job["logs"].append(
+            "[중단경고] 프로세스 종료 확인 전에는 라이센스 슬롯을 해제하지 않습니다. "
+            "중단을 다시 요청해 정리를 재시도하세요."
+        )
+
+
 def _run_pipeline(job_id: str, command: list, cwd: str):
-    """subprocess 로 Main.py 를 실행하며 stdout 을 라인 단위로 누적한다."""
+    """subprocess 로 PSA 를 실행하고 stdout 스트리밍과 실행 제한 시간을 함께 보장한다."""
     # ⚠️ exe 가 파이프라인 끝에서 make_report() 로 이 템플릿을 cwd 상대경로로 읽으므로,
     # Abaqus 해석 시작 전에 미리 job 폴더로 복사해 둔다.
     _stage_report_template(cwd, job_id)
     env = _build_subprocess_env(job_id)
+    # 취소가 thread.start 직후, Popen 직전에 도착한 경우 프로세스를 만들지 않는다.
+    with _jobs_lock:
+        starting = _jobs.get(job_id)
+        if starting is None:
+            return
+        process_ready = starting.setdefault("_processReady", threading.Event())
+        starting.setdefault("_terminationLock", threading.Lock())
+        cancel_before_popen = bool(starting.get("_cancelRequested"))
+        if cancel_before_popen:
+            process_ready.set()
+    if cancel_before_popen:
+        _cancel_running_process(job_id)
+        return
+
     try:
         proc = subprocess.Popen(
             command,
@@ -454,33 +611,86 @@ def _run_pipeline(job_id: str, command: list, cwd: str):
             creationflags=_SUBPROC_FLAGS,
         )
     except Exception as exc:  # noqa: BLE001
+        with _jobs_lock:
+            starting = _jobs.get(job_id)
+            if starting is not None:
+                starting.setdefault("_processReady", threading.Event()).set()
+                cancel_requested = bool(starting.get("_cancelRequested"))
+            else:
+                cancel_requested = False
+        if cancel_requested:
+            _cancel_running_process(job_id)
+            return
         _append_log(job_id, f"[치명] 해석 프로세스 실행 실패: {exc}")
         _finish(job_id, status="failed", returncode=-1)
         return
 
-    # pid 저장 — 해석 중단(cancel) 시 exe→abaqus 프로세스 트리를 종료하는 데 쓴다.
+    # process object + pid 를 한 lock 구간에서 publish한 뒤 ready를 set한다. cancel은 이
+    # handshake를 기다리므로 PID publish 이전 취소가 프로세스를 놓치고 슬롯을 먼저 푸는 일이 없다.
     with _jobs_lock:
         running = _jobs.get(job_id)
         if running is not None:
+            running["_process"] = proc
             running["pid"] = proc.pid
+            cancel_after_popen = bool(running.get("_cancelRequested"))
+            running.setdefault("_processReady", threading.Event()).set()
+        else:
+            cancel_after_popen = False
 
+    if cancel_after_popen:
+        _cancel_running_process(job_id)
+        stream = getattr(proc, "stdout", None)
+        if stream is not None:
+            try:
+                stream.close()
+            except Exception:  # noqa: BLE001
+                pass
+        return
+
+    # stdout 은 EOF 가 올 때까지 블로킹될 수 있다. 별도 daemon reader 에서 스트리밍하고,
+    # 현재 파이프라인 스레드는 즉시 wait(timeout) 으로 진입해야 제한 시간이 실제로 동작한다.
+    output_reader = threading.Thread(
+        target=_read_process_output,
+        args=(job_id, proc.stdout),
+        name=f"doublepipe-psa-output-{job_id}",
+        daemon=True,
+    )
+    output_reader.start()
+
+    outcome = "completed"
+    returncode = None
     try:
-        for line in proc.stdout:  # type: ignore[union-attr]
-            line = line.rstrip("\n")
-            if line:
-                _append_log(job_id, line)
-        proc.wait(timeout=_PSA_TIMEOUT)
+        returncode = proc.wait(timeout=_PSA_TIMEOUT)
     except subprocess.TimeoutExpired:
-        proc.kill()
-        _append_log(job_id, f"[치명] 해석 시간 초과({_PSA_TIMEOUT}s) — 프로세스를 종료했습니다.")
+        outcome = "timeout"
+        terminated = _terminate_process_tree(proc, job_id)
+        if terminated:
+            _append_log(job_id, f"[치명] 해석 시간 초과({_PSA_TIMEOUT}s) — 프로세스를 종료했습니다.")
+        else:
+            _append_log(job_id, f"[치명] 해석 시간 초과({_PSA_TIMEOUT}s) — 프로세스 종료 확인 대기 중입니다.")
+    except Exception as exc:  # noqa: BLE001
+        outcome = "error"
+        terminated = _terminate_process_tree(proc, job_id)
+        _append_log(job_id, f"[치명] 해석 중 예외: {exc}")
+    finally:
+        _close_process_output(proc, output_reader)
+
+    if outcome == "timeout":
+        if not terminated:
+            _mark_termination_pending(job_id, "failed", -2)
+            return
         _finish(job_id, status="failed", returncode=-2)
         return
-    except Exception as exc:  # noqa: BLE001
-        _append_log(job_id, f"[치명] 해석 중 예외: {exc}")
+    if outcome == "error":
+        if not terminated:
+            _mark_termination_pending(job_id, "failed", -1)
+            return
         _finish(job_id, status="failed", returncode=-1)
         return
 
-    rc = proc.returncode
+    # Popen.wait() 의 반환값을 우선 사용하되, 일부 테스트/래퍼 구현과의 호환을 위해
+    # None 인 경우 기존처럼 proc.returncode 를 읽는다.
+    rc = returncode if returncode is not None else proc.returncode
     report_ready = os.path.isfile(os.path.join(cwd, _REPORT_NAME))
     _finish(job_id, status="done" if rc == 0 else "failed", returncode=rc, report_ready=report_ready)
 
@@ -534,9 +744,33 @@ def _finish(job_id: str, status: str, returncode: int, report_ready: bool = Fals
         # kill 이후 _run_pipeline 이 다시 _finish 를 부르더라도 'cancelled' 진단과 상태를 보존한다.
         if job.get("status") != "running":
             return
+        # cancel 은 느릴 수 있는 process-tree kill 을 lock 밖에서 수행한다. 그 사이 wait() 가
+        # 풀려 파이프라인이 먼저 완료 상태를 쓰지 않도록, 취소 요청 표식을 최종 상태보다 우선한다.
+        # cancel_psa_job 이 이어서 failed/-3 상태와 라이센스 해제를 원자적으로 기록한다.
+        termination_pending = bool(
+            job.get("_terminationProcesses")
+            or job.get("_terminationTrackedProcesses")
+            or job.get("_terminationSnapshotVerified")
+            or job.get("_terminationReapPending")
+            or job.get("_terminationVerificationPending")
+            or job.get("diagnostic") == "termination_pending"
+        )
+        if job.get("_cancelRequested") or termination_pending:
+            job["_deferredFinish"] = {
+                "status": status,
+                "returncode": returncode,
+                "report_ready": report_ready,
+            }
+            if termination_pending:
+                job["diagnostic"] = "termination_pending"
+            return
         # 라이센스 해제 — 이 작업이 점유 중이던 running 작업이면 슬롯을 비운다.
         if _active_job_id == job_id:
             _active_job_id = None
+        if job.get("diagnostic") == "termination_pending":
+            job.pop("diagnostic", None)
+        job.pop("_pendingTerminal", None)
+        job.pop("_terminationReapPending", None)
         # 실패 원인별 사용자용 친절한 진단을 덧붙인다.
         if status == "failed":
             joined = "\n".join(job["logs"])
@@ -576,7 +810,11 @@ def get_psa_job(job_id: str) -> dict:
         job = _jobs.get(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="해당 해석 작업을 찾을 수 없습니다(서버 재시작으로 소실되었을 수 있음).")
-        return {k: v for k, v in job.items() if k != "pid"}  # 내부 pid 는 노출하지 않는다
+        # 내부 pid/process/synchronization 표식은 API 응답에 노출하지 않는다.
+        return {
+            k: v for k, v in job.items()
+            if k != "pid" and not k.startswith("_")
+        }
 
 
 def get_active_status() -> dict:
@@ -603,20 +841,371 @@ def get_active_status() -> dict:
         }
 
 
-def _kill_process_tree(pid: int, job_id: str):
-    """exe→abaqus 자식까지 프로세스 트리를 종료한다(Windows taskkill /T)."""
+def _capture_process_identity(process) -> dict:
+    """재시도 중 PID 재사용을 구분할 수 있는 psutil Process identity를 보존한다."""
+    create_time = None
+    get_create_time = getattr(process, "create_time", None)
+    if callable(get_create_time):
+        try:
+            create_time = get_create_time()
+        except Exception:  # noqa: BLE001
+            # psutil.Process 자체도 생성 시각을 포함한 identity를 내부에 보존한다. 생성 시각을
+            # 직접 읽지 못한 경우에는 동일 Process 객체만 재사용하는 보수적 폴백을 쓴다.
+            create_time = None
+    return {
+        "process": process,
+        "pid": process.pid,
+        "createTime": create_time,
+    }
+
+
+def _same_tracked_identity(left: dict, right: dict) -> bool:
+    if left["process"] is right["process"]:
+        return True
+    if left["pid"] != right["pid"]:
+        return False
+    left_created = left.get("createTime")
+    right_created = right.get("createTime")
+    return (
+        left_created is not None
+        and right_created is not None
+        and left_created == right_created
+    )
+
+
+def _tracked_process_state(tracked: dict, psutil) -> str:
+    """tracked identity 상태를 gone/alive/unknown/mismatch 중 하나로 판정한다."""
+    process = tracked["process"]
+    expected_created = tracked.get("createTime")
+    if expected_created is not None:
+        get_create_time = getattr(process, "create_time", None)
+        if not callable(get_create_time):
+            return "unknown"
+        try:
+            if get_create_time() != expected_created:
+                return "mismatch"
+        except psutil.NoSuchProcess:
+            return "gone"
+        except (psutil.AccessDenied, OSError):
+            return "unknown"
+
+    try:
+        if not process.is_running():
+            return "gone"
+        if process.status() == psutil.STATUS_ZOMBIE:
+            return "gone"
+        return "alive"
+    except psutil.NoSuchProcess:
+        return "gone"
+    except (psutil.AccessDenied, OSError):
+        return "unknown"
+
+
+def _kill_process_tree(pid: int, job_id: str) -> bool:
+    """exe→abaqus 전체 트리의 terminate/kill 및 소멸을 psutil로 확인한다."""
     if not pid:
-        return
+        with _jobs_lock:
+            job = _jobs.get(job_id)
+            if job is not None:
+                job["_terminationVerificationPending"] = True
+        return False
+    try:
+        import psutil
+    except ImportError:
+        psutil = None
+
+    with _jobs_lock:
+        job = _jobs.get(job_id) or {}
+        snapshot_verified_before = bool(job.get("_terminationSnapshotVerified"))
+        tracked_processes = list(job.get("_terminationTrackedProcesses") or ())
+        # 이 변경 전 형식으로 만들어진 in-memory 작업도 안전하게 이어서 정리한다.
+        if not tracked_processes:
+            tracked_processes = [
+                _capture_process_identity(process)
+                for process in (job.get("_terminationProcesses") or ())
+            ]
+
+    snapshot_verified = False
+    victims = []
+    if psutil is None:
+        _append_log(job_id, "[중단경고] psutil이 없어 프로세스 트리 스냅샷을 만들 수 없습니다.")
+    else:
+        try:
+            parent = psutil.Process(pid)
+            victims = parent.children(recursive=True) + [parent]
+            snapshot_verified = True
+        except psutil.NoSuchProcess:
+            # Windows taskkill /T 성공만 전체 트리 종료를 독립적으로 확인할 수 있다.
+            _append_log(job_id, f"[중단경고] PID {pid} 프로세스 트리 스냅샷을 만들지 못했습니다.")
+        except (psutil.AccessDenied, OSError) as exc:
+            _append_log(job_id, f"[중단경고] 프로세스 트리 조회 실패: {exc}")
+
+    # 최초 완전한 snapshot의 모든 identity를 보존한다. survivor만 남기면 parent가 먼저
+    # 사라진 재시도에서 "무엇을 확인했는지" 증명할 수 없고, PID만 남기면 재사용 PID를
+    # 잘못 종료할 수 있다.
+    for process in victims:
+        captured = _capture_process_identity(process)
+        if not any(
+            _same_tracked_identity(captured, known)
+            for known in tracked_processes
+        ):
+            tracked_processes.append(captured)
+    snapshot_ever_verified = snapshot_verified_before or snapshot_verified
+    if snapshot_verified:
+        with _jobs_lock:
+            job = _jobs.get(job_id)
+            if job is not None:
+                job["_terminationSnapshotVerified"] = True
+                job["_terminationTrackedProcesses"] = list(tracked_processes)
+
+    os_tree_kill_verified = False
     try:
         if os.name == "nt":
-            subprocess.run(
+            result = subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(pid)],
                 capture_output=True, timeout=30, creationflags=_SUBPROC_FLAGS,
             )
+            os_tree_kill_verified = result.returncode == 0
+            if not os_tree_kill_verified:
+                _append_log(
+                    job_id,
+                    f"[중단경고] taskkill 비정상 반환({result.returncode}); "
+                    "psutil로 전체 프로세스 트리 종료를 재시도합니다.",
+                )
         else:
-            os.kill(pid, signal.SIGKILL)
+            # POSIX에서도 아래 psutil 경로가 descendants부터 종료하고 소멸을 검증한다.
+            pass
     except Exception as exc:  # noqa: BLE001
-        _append_log(job_id, f"[중단경고] 프로세스 종료 중 문제가 있었습니다: {exc}")
+        _append_log(job_id, f"[중단경고] OS 프로세스 트리 종료 요청 실패: {exc}")
+
+    # taskkill 성공 여부와 무관하게 snapshot한 descendants+parent를 다시 확인한다.
+    # descendants 먼저 정리하여 부모 종료 중 새 고아 프로세스가 남을 가능성을 줄인다.
+    alive = []
+    unresolved = []
+    for tracked in tracked_processes:
+        process = tracked["process"]
+        if psutil is None:
+            unresolved.append(tracked)
+            continue
+        state = _tracked_process_state(tracked, psutil)
+        if state == "gone":
+            continue
+        if state != "alive":
+            unresolved.append(tracked)
+            continue
+        try:
+            process.terminate()
+            alive.append(tracked)
+        except psutil.NoSuchProcess:
+            continue
+        except (psutil.AccessDenied, OSError) as exc:
+            _append_log(job_id, f"[중단경고] PID {process.pid} terminate 실패: {exc}")
+            unresolved.append(tracked)
+
+    if alive and psutil is not None:
+        try:
+            gone, still_alive = psutil.wait_procs(
+                [tracked["process"] for tracked in alive],
+                timeout=_PROCESS_REAP_TIMEOUT,
+            )
+            gone_ids = {id(process) for process in gone}
+            alive = [
+                tracked for tracked in alive
+                if id(tracked["process"]) not in gone_ids
+                and tracked["process"] in still_alive
+            ]
+        except (psutil.AccessDenied, OSError):
+            pass
+    for tracked in alive:
+        process = tracked["process"]
+        try:
+            process.kill()
+        except psutil.NoSuchProcess:
+            continue
+        except (psutil.AccessDenied, OSError) as exc:
+            _append_log(job_id, f"[중단경고] PID {process.pid} kill 실패: {exc}")
+    if alive and psutil is not None:
+        try:
+            gone, still_alive = psutil.wait_procs(
+                [tracked["process"] for tracked in alive],
+                timeout=_PROCESS_REAP_TIMEOUT,
+            )
+            gone_ids = {id(process) for process in gone}
+            alive = [
+                tracked for tracked in alive
+                if id(tracked["process"]) not in gone_ids
+                and tracked["process"] in still_alive
+            ]
+        except (psutil.AccessDenied, OSError):
+            pass
+
+    unresolved.extend(alive)
+    # wait_procs의 결과와 별개로 identity를 한 번 더 확인한다. PID 재사용/AccessDenied는
+    # "종료됨"으로 추정하지 않고 슬롯을 계속 잠근다.
+    final_unresolved = []
+    for tracked in unresolved:
+        if psutil is None or _tracked_process_state(tracked, psutil) != "gone":
+            final_unresolved.append(tracked)
+
+    if final_unresolved:
+        with _jobs_lock:
+            job = _jobs.get(job_id)
+            if job is not None:
+                job["_terminationTrackedProcesses"] = list(tracked_processes)
+                job["_terminationProcesses"] = [
+                    tracked["process"] for tracked in final_unresolved
+                ]
+                job["_terminationVerificationPending"] = True
+        _append_log(
+            job_id,
+            f"[중단경고] 종료를 확인하지 못한 프로세스 PID: "
+            f"{[tracked['pid'] for tracked in final_unresolved]}",
+        )
+        return False
+
+    # 초기 psutil 스냅샷을 만들 수 없었다면 "확인할 대상이 없었다"는 사실만으로 성공할 수
+    # 없다. Windows에서는 taskkill /T 성공만이 그 경우 전체 트리 종료를 확인하는 독립 증거다.
+    # 특히 parent NoSuchProcess/AccessDenied + taskkill 128/5를 success로 오인하면 살아 있는
+    # Abaqus descendant가 있는데도 라이센스 슬롯을 풀 수 있다.
+    tree_verified = snapshot_ever_verified or os_tree_kill_verified
+    if not tree_verified:
+        with _jobs_lock:
+            job = _jobs.get(job_id)
+            if job is not None:
+                job["_terminationVerificationPending"] = True
+        _append_log(job_id, "[중단경고] 전체 프로세스 트리 종료를 검증할 수 없습니다.")
+        return False
+
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is not None:
+            job.pop("_terminationProcesses", None)
+            job.pop("_terminationTrackedProcesses", None)
+            job.pop("_terminationSnapshotVerified", None)
+            job.pop("_terminationVerificationPending", None)
+    return True
+
+
+def _clear_cancel_request_after_failure(job_id: str) -> None:
+    """kill 실패 뒤 취소 표식만 제거하고 terminal 결과는 검증된 cleanup까지 보류한다."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None or job.get("status") != "running":
+            return
+        job.pop("_cancelRequested", None)
+        job["diagnostic"] = "termination_pending"
+        job["_terminationVerificationPending"] = True
+
+
+def _replay_deferred_finish_after_verified_cleanup(job_id: str) -> bool:
+    """종료 검증 성공 뒤 보류된 pipeline terminal 결과를 재생한다.
+
+    반환값은 deferred terminal이 실제로 존재해 재생을 시도했는지 여부다. cancel 요청과
+    termination 표식은 먼저 같은 lock 구간에서 제거하여 ``_finish``가 다시 보류되지 않게 한다.
+    """
+    deferred_finish = None
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None or job.get("status") != "running":
+            return False
+        job.pop("_cancelRequested", None)
+        job.pop("_terminationProcesses", None)
+        job.pop("_terminationTrackedProcesses", None)
+        job.pop("_terminationSnapshotVerified", None)
+        job.pop("_terminationReapPending", None)
+        job.pop("_terminationVerificationPending", None)
+        if job.get("diagnostic") == "termination_pending":
+            job.pop("diagnostic", None)
+        deferred_finish = job.pop("_deferredFinish", None)
+        if deferred_finish is None:
+            pending = job.pop("_pendingTerminal", None)
+            if pending is not None:
+                deferred_finish = {
+                    "status": pending["status"],
+                    "returncode": pending["returncode"],
+                    "report_ready": False,
+                }
+        else:
+            job.pop("_pendingTerminal", None)
+    if deferred_finish is None:
+        return False
+    _finish(job_id, **deferred_finish)
+    return True
+
+
+def _cancel_running_process(job_id: str) -> bool:
+    """Popen publish를 기다린 뒤 프로세스를 회수하고 cancelled terminal 상태로 전이한다."""
+    global _active_job_id
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None:
+            return False
+        process_ready = job.setdefault("_processReady", threading.Event())
+        termination_lock = job.setdefault("_terminationLock", threading.Lock())
+
+    if not process_ready.wait(timeout=_PROCESS_PUBLISH_TIMEOUT):
+        _append_log(
+            job_id,
+            "[중단경고] 해석 프로세스 시작 확인이 지연되어 라이센스 슬롯을 유지합니다. 잠시 후 다시 중단하세요.",
+        )
+        _clear_cancel_request_after_failure(job_id)
+        return False
+
+    # cancel API와 pipeline의 publish 직후 경로가 동시에 들어와도 kill/reap/상태 전이는 한 번만 한다.
+    with termination_lock:
+        with _jobs_lock:
+            job = _jobs.get(job_id)
+            if job is None:
+                return False
+            if job.get("status") != "running":
+                return job.get("diagnostic") == "cancelled"
+            proc = job.get("_process")
+            cleanup_retry = bool(
+                job.get("_terminationProcesses")
+                or job.get("_terminationTrackedProcesses")
+                or job.get("_terminationSnapshotVerified")
+                or job.get("_terminationReapPending")
+                or job.get("_terminationVerificationPending")
+                or job.get("diagnostic") == "termination_pending"
+            )
+
+        if proc is not None:
+            if not _terminate_process_tree(proc, job_id):
+                _append_log(
+                    job_id,
+                    "[중단경고] 프로세스 종료를 확인하지 못해 라이센스 슬롯을 유지합니다.",
+                )
+                _clear_cancel_request_after_failure(job_id)
+                return False
+
+            # kill 실패와 pipeline 완료가 경합해 terminal 결과가 보류됐었다면, 실제 트리
+            # 종료+reap 검증이 끝난 지금 그 결과를 먼저 재생한다. 이 경우 cancel 자체가
+            # terminal을 만든 것은 아니므로 caller는 cancelled=False/status=<deferred>를 돌려준다.
+            if cleanup_retry and _replay_deferred_finish_after_verified_cleanup(job_id):
+                return False
+
+        job_to_record = None
+        with _jobs_lock:
+            job = _jobs.get(job_id)
+            if job is not None and job.get("status") == "running":
+                job.pop("_cancelRequested", None)
+                job.pop("_deferredFinish", None)
+                job.pop("_pendingTerminal", None)
+                job.pop("_terminationProcesses", None)
+                job.pop("_terminationTrackedProcesses", None)
+                job.pop("_terminationSnapshotVerified", None)
+                job.pop("_terminationReapPending", None)
+                job["status"] = "failed"
+                job["returncode"] = -3
+                job["diagnostic"] = "cancelled"
+                job["finishedAt"] = datetime.now().isoformat(timespec="seconds")
+                job["logs"].append("[중단] 사용자 요청으로 해석을 중단했습니다. (라이센스가 해제되었습니다)")
+                if _active_job_id == job_id:
+                    _active_job_id = None
+                job_to_record = job
+        if job_to_record is not None:
+            _record_psa_analysis(job_to_record)
+        return True
 
 
 def cancel_psa_job(job_id: str, employee_id: str) -> dict:
@@ -632,26 +1221,26 @@ def cancel_psa_job(job_id: str, employee_id: str) -> dict:
         # 본인이 시작한 해석만 중단 가능(사번 일치). owner 가 unknown 이면 소유자 확인을 생략한다.
         if owner and owner != "unknown" and employee_id and employee_id != owner:
             raise HTTPException(status_code=403, detail="본인이 시작한 해석만 중단할 수 있습니다.")
-        pid = job.get("pid")
+        # kill 은 lock 밖에서 수행되므로 파이프라인 완료와 경합할 수 있다. 먼저 취소 의사를
+        # 기록해 _finish 가 done/timeout 으로 덮어쓰지 못하게 한다.
+        job["_cancelRequested"] = True
+        job.setdefault("_processReady", threading.Event())
+        job.setdefault("_terminationLock", threading.Lock())
 
-    # kill 은 lock 밖에서(타임아웃 동안 다른 요청 차단 방지).
-    _kill_process_tree(pid, job_id)
-
-    # 상태를 직접 failed(cancelled)로 전이 → 라이센스 해제. 이후 _run_pipeline 의 _finish 는
-    # status!='running' 가드로 이 상태를 덮어쓰지 않는다.
-    job_to_record = None
+    # Popen 성공/미실행 결정과 process object publish를 기다린 뒤 실제 종료+reap 확인 시에만
+    # terminal 상태와 라이센스 슬롯을 해제한다.
+    if _cancel_running_process(job_id):
+        return {"cancelled": True}
     with _jobs_lock:
-        job = _jobs.get(job_id)
-        if job and job.get("status") == "running":
-            job["status"] = "failed"
-            job["returncode"] = -3
-            job["diagnostic"] = "cancelled"
-            job["finishedAt"] = datetime.now().isoformat(timespec="seconds")
-            job["logs"].append("[중단] 사용자 요청으로 해석을 중단했습니다. (라이센스가 해제되었습니다)")
-            if _active_job_id == job_id:
-                _active_job_id = None
-            job_to_record = job
-    # 중단된 해석도 다른 앱과 동일하게 Failed 이력으로 DB 에 남긴다(lock 밖에서 기록).
-    if job_to_record is not None:
-        _record_psa_analysis(job_to_record)
-    return {"cancelled": True}
+        final_status = (_jobs.get(job_id) or {}).get("status")
+    if final_status and final_status != "running":
+        return {
+            "cancelled": False,
+            "status": final_status,
+            "message": "중단 처리 중 해석 프로세스가 먼저 종료되었습니다.",
+        }
+    return {
+        "cancelled": False,
+        "status": "running",
+        "message": "프로세스 종료를 아직 확인하지 못해 라이센스 슬롯을 유지합니다. 잠시 후 다시 시도하세요.",
+    }

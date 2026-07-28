@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from .. import database, models
 from ..dependencies import require_admin, require_auth
+from ..services.external_app_access import external_app_access_store
 
 router = APIRouter(prefix="/api/presence", tags=["presence"])
 
@@ -222,4 +223,5 @@ def force_logout(
         models.UserPresence.employee_id == employee_id
     ).delete(synchronize_session=False)
     db.commit()
+    external_app_access_store.revoke_employee(employee_id)
     return {"ok": True, "revoked_sessions": int(revoked)}

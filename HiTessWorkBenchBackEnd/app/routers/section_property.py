@@ -1,8 +1,9 @@
 """단면 특성값 계산 라우터."""
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from ..services.section_property_service import run_section_property
+from ..dependencies import authenticated_employee_id, require_auth
 
 router = APIRouter(prefix="/api/section-property", tags=["section-property"])
 
@@ -28,7 +29,10 @@ class SectionPropertyRequest(BaseModel):
 
 
 @router.post("/calculate")
-def calculate(body: SectionPropertyRequest):
+def calculate(
+    body: SectionPropertyRequest,
+    current_user: str = Depends(require_auth),
+):
     """단면 형상과 치수를 입력하여 단면 특성값을 계산합니다."""
     if body.shape == "polygon":
         if not body.vertices or len(body.vertices) < 3:
@@ -38,10 +42,16 @@ def calculate(body: SectionPropertyRequest):
             status_code=400,
             detail=f"지원하지 않는 단면 종류입니다: {body.shape}. 지원 종류: {list(SUPPORTED_SHAPES.keys())}",
         )
-    return run_section_property(body.shape, body.params, body.units, body.employee_id, body.vertices)
+    return run_section_property(
+        body.shape,
+        body.params,
+        body.units,
+        authenticated_employee_id(body.employee_id, current_user),
+        body.vertices,
+    )
 
 
 @router.get("/shapes")
-def list_shapes():
+def list_shapes(_current_user: str = Depends(require_auth)):
     """지원하는 단면 종류 목록을 반환합니다."""
     return SUPPORTED_SHAPES

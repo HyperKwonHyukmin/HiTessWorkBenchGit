@@ -70,6 +70,9 @@ def task_execute_module_stability(
         if stderr_text.strip():
             engine_output += f"\n[stderr] {stderr_text.strip()}"
 
+        # ── ModuleAnalysis.Cli exit code 계약: 0=성공 / 1=예외 / 2=인자·입력오류(실패) ──
+        # ⚠️ 여기서 exit 2 는 "입력오류=실패"다(산출물 없음). 팀 관례의 "0/2=산출 OK" 는
+        #    다른 엔진(Cmb.Cli, ModelBuilder)의 계약이며 이 CLI 에는 적용되지 않는다. 혼동 금지.
         if result.returncode == 2:
             raise RuntimeError("인자/입력 오류 (exit 2). _posture.json 절대경로를 확인하세요.")
         if result.returncode == 1:
@@ -178,6 +181,9 @@ def task_optimize_module_hoist_positions(
         if stderr_text.strip():
             engine_output += f"\n[stderr] {stderr_text.strip()}"
 
+        # ── ModuleAnalysis.Cli exit code 계약: 0=성공 / 1=예외 / 2=인자·입력오류(실패) ──
+        # ⚠️ 여기서 exit 2 는 "입력오류=실패"다(산출물 없음). 팀 관례의 "0/2=산출 OK" 는
+        #    다른 엔진(Cmb.Cli, ModelBuilder)의 계약이며 이 CLI 에는 적용되지 않는다. 혼동 금지.
         if result.returncode == 2:
             raise RuntimeError("인자/입력 오류 (exit 2). _posture.json 절대경로를 확인하세요.")
         if result.returncode == 1:

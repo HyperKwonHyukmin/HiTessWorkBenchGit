@@ -7,14 +7,22 @@
   3. main.py의 hitessbeam import/include_router 두 줄 제거
 """
 import os
+import io
 import pickle
 import subprocess
 import traceback
+import uuid
 from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
+
+from .. import database
+from ..dependencies import require_auth
+from ._access_control import assert_current_user_can_access_path
 
 router = APIRouter(prefix="/hitessbeam", tags=["hitessbeam-temp"])
 
@@ -23,59 +31,132 @@ _BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))      # HiTessWorkBe
 _EXE_PATH = os.path.abspath(
     os.path.join(_BACKEND_DIR, "InHouseProgram", "HiTessBeam", "CsvToBdf_HiTESS.exe")
 )
+_MAX_CSV_BYTES = 25 * 1024 * 1024
+_MAX_BDF_BYTES = 100 * 1024 * 1024
+_MAX_PICKLE_BYTES = 16 * 1024
+_CSV_TO_BDF_MAX_FILES = 4
+
+
+class _PrimitiveListUnpickler(pickle.Unpickler):
+    """Unpickler that cannot import/call globals.
+
+    The legacy client contract is retained, but only pickle's primitive
+    list/string opcodes are accepted.  Any class/function reconstruction is
+    rejected before execution.
+    """
+
+    def find_class(self, module, name):
+        raise pickle.UnpicklingError("global objects are not allowed")
+
+
+def _load_role_list(content: bytes) -> list[str]:
+    if not content or len(content) > _MAX_PICKLE_BYTES:
+        raise ValueError("input.pkl 크기가 허용 범위를 벗어났습니다.")
+    stream = io.BytesIO(content)
+    value = _PrimitiveListUnpickler(stream).load()
+    if stream.read(1):
+        raise ValueError("input.pkl 뒤에 불필요한 데이터가 있습니다.")
+    if (
+        not isinstance(value, list)
+        or len(value) != 3
+        or any(not isinstance(item, str) for item in value)
+    ):
+        raise ValueError("input.pkl은 파일명 문자열 3개의 목록이어야 합니다.")
+    for item in value:
+        if len(item) > 255 or (item.lower() != "none" and os.path.basename(item) != item):
+            raise ValueError("input.pkl에는 경로가 아닌 파일명만 사용할 수 있습니다.")
+    return value
+
+
+async def _read_limited(upload: UploadFile, max_bytes: int) -> bytes:
+    content = await upload.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"{upload.filename or '업로드 파일'} 크기가 너무 큽니다.")
+    return content
+
+
+def _verify_user_id(user_id: str, current_user: str) -> str:
+    employee_id = (user_id or "").strip()
+    if employee_id != current_user:
+        raise HTTPException(status_code=403, detail="userID가 인증 사용자와 일치하지 않습니다.")
+    return current_user
+
+
+def _write_bytes(file_path: str, content: bytes) -> None:
+    with open(file_path, "wb") as output:
+        output.write(content)
 
 
 @router.post("/csvToBdf")
 async def csv_to_bdf(
     userID: str = Form(...),
     file: List[UploadFile] = File(...),
+    current_user: str = Depends(require_auth),
 ):
     """
     CSV → BDF 변환 엔드포인트.
     multipart/form-data로 file(여러 파일)와 userID를 받습니다.
     input.pkl 파일이 반드시 포함되어야 합니다.
     """
-    employee_id = userID.strip()
+    employee_id = _verify_user_id(userID, current_user)
     files = file
-    if not employee_id:
-        raise HTTPException(status_code=400, detail="employee_id is required")
-    if employee_id.lower() in ("false", "null", "none"):
-        employee_id = "undefined"
+    if len(files) > _CSV_TO_BDF_MAX_FILES:
+        raise HTTPException(status_code=400, detail="input.pkl과 CSV 파일은 최대 4개까지 업로드할 수 있습니다.")
+
+    # Validate and bound every upload before creating a persistent work folder.
+    uploads: list[tuple[str, bytes]] = []
+    seen_names: set[str] = set()
+    pickle_content = None
+    for upload in files:
+        filename = os.path.basename(upload.filename or "")
+        if not filename or filename != (upload.filename or ""):
+            raise HTTPException(status_code=400, detail="유효하지 않은 업로드 파일명입니다.")
+        normalized_name = filename.casefold()
+        if normalized_name in seen_names:
+            raise HTTPException(status_code=400, detail=f"중복 파일명은 사용할 수 없습니다: {filename}")
+        seen_names.add(normalized_name)
+        extension = os.path.splitext(filename)[1].lower()
+        if extension not in {".csv", ".pkl"}:
+            raise HTTPException(status_code=400, detail="CSV와 input.pkl 파일만 업로드할 수 있습니다.")
+        if extension == ".pkl" and filename.casefold() != "input.pkl":
+            raise HTTPException(status_code=400, detail="pickle 매핑 파일명은 input.pkl이어야 합니다.")
+        content = await _read_limited(
+            upload,
+            _MAX_PICKLE_BYTES if extension == ".pkl" else _MAX_CSV_BYTES,
+        )
+        if extension == ".pkl":
+            if pickle_content is not None:
+                raise HTTPException(status_code=400, detail="input.pkl은 하나만 업로드할 수 있습니다.")
+            pickle_content = content
+        uploads.append((filename, content))
+
+    if pickle_content is None:
+        raise HTTPException(status_code=400, detail="input.pkl 파일이 포함되어야 합니다.")
+    try:
+        original_list = _load_role_list(pickle_content)
+    except (pickle.UnpicklingError, EOFError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=f"input.pkl 형식이 올바르지 않습니다: {exc}") from exc
 
     # ── 작업 폴더 생성 ──────────────────────────────────────────
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     work_dir = os.path.abspath(
-        os.path.join(_BACKEND_DIR, "userConnection", f"{timestamp}_{employee_id}_CsvToBdf")
+        os.path.join(
+            _BACKEND_DIR,
+            "userConnection",
+            f"{timestamp}_{employee_id}_CsvToBdf_{uuid.uuid4().hex[:8]}",
+        )
     )
-    os.makedirs(work_dir, exist_ok=True)
+    await run_in_threadpool(os.makedirs, work_dir, exist_ok=True)
 
     # ── 파일 저장 ────────────────────────────────────────────────
     saved_files = []
-    pickle_path = None
-
-    for f in files:
-        filename = os.path.basename(f.filename or "")
-        if not filename:
-            continue
+    for filename, content in uploads:
         save_path = os.path.join(work_dir, filename)
         try:
-            with open(save_path, "wb") as buf:
-                buf.write(await f.read())
+            await run_in_threadpool(_write_bytes, save_path, content)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"파일 저장 오류: {str(e)}")
         saved_files.append(save_path)
-        if filename.endswith(".pkl"):
-            pickle_path = save_path
-
-    if not pickle_path:
-        raise HTTPException(status_code=400, detail="input.pkl 파일이 포함되어야 합니다.")
-
-    # ── pickle로 역할(stru/pipe/equi) 파악 ──────────────────────
-    try:
-        with open(pickle_path, "rb") as pf:
-            original_list = pickle.load(pf)  # ['stru.csv', 'None', 'equi.csv']
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"pickle 파일 읽기 실패: {str(e)}")
 
     role_keys = ["stru", "pipe", "equi"]
     role_files = {k: None for k in role_keys}
@@ -108,12 +189,18 @@ async def csv_to_bdf(
     # ── exe 실행 ─────────────────────────────────────────────────
     cmd_args = [_EXE_PATH, stru, pipe, equi, bdf_file]
     try:
-        subprocess.run(cmd_args, shell=False, check=False, timeout=600)
+        await run_in_threadpool(
+            subprocess.run,
+            cmd_args,
+            shell=False,
+            check=False,
+            timeout=600,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"exe 실행 오류: {str(e)}")
 
     # ── GRAV 카드 정리 ────────────────────────────────────────────
-    _clean_grav_card(bdf_file)
+    await run_in_threadpool(_clean_grav_card, bdf_file)
 
     if not os.path.exists(bdf_file):
         raise HTTPException(status_code=500, detail="BDF 파일 생성에 실패했습니다.")
@@ -129,7 +216,12 @@ _USER_CONN_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
 
 
 @router.get("/csvToBdf/download/{user_folder}/{filename}")
-def download_bdf(user_folder: str, filename: str):
+def download_bdf(
+    user_folder: str,
+    filename: str,
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
     """
     BDF 파일 다운로드 엔드포인트.
     userConnection/{user_folder}/{filename} 경로의 파일을 반환합니다.
@@ -139,6 +231,7 @@ def download_bdf(user_folder: str, filename: str):
     # 경로 탈출 방지 (userConnection/ 외부 접근 차단)
     if not file_path.startswith(_USER_CONN_DIR + os.sep):
         raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
+    assert_current_user_can_access_path(file_path, current_user, db, _USER_CONN_DIR)
 
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
@@ -202,6 +295,7 @@ async def module_unit(
     userID: str = Form(...),
     programName: str = Form(...),
     file: UploadFile = File(...),
+    current_user: str = Depends(require_auth),
 ):
     """
     ModuleUnit / GroupUnit BDF 해석 엔드포인트.
@@ -217,22 +311,18 @@ async def module_unit(
             raise HTTPException(status_code=400, detail="유효한 .bdf 파일이 필요합니다.")
 
         # ── 2. 작업 폴더 생성 + 파일 저장 ────────────────────────────
-        employee_id = userID.strip()
-        if not employee_id:
-            raise HTTPException(status_code=400, detail="userID is required")
-        if employee_id.lower() in ("false", "null", "none"):
-            employee_id = "undefined"
+        employee_id = _verify_user_id(userID, current_user)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         user_folder = os.path.abspath(os.path.join(
             _BACKEND_DIR, "userConnection",
-            f"{timestamp}_{employee_id}_ModuleUnit"
+            f"{timestamp}_{employee_id}_ModuleUnit_{uuid.uuid4().hex[:8]}"
         ))
-        os.makedirs(user_folder, exist_ok=True)
+        await run_in_threadpool(os.makedirs, user_folder, exist_ok=True)
         input_bdf = os.path.join(user_folder, filename)
         output_bdf = os.path.join(user_folder, filename.replace(".bdf", "_r.bdf"))
-        with open(input_bdf, "wb") as buf:
-            buf.write(await file.read())
+        input_content = await _read_limited(file, _MAX_BDF_BYTES)
+        await run_in_threadpool(_write_bytes, input_bdf, input_content)
 
         # ── 3. programName 검증 ───────────────────────────────────────
         prog = programName.strip()
@@ -248,7 +338,14 @@ async def module_unit(
 
         # ── 5. subprocess 실행 (csvToBdf 패턴과 동일) ─────────────────
         cmd_args = [_MODULE_UNIT_EXE, input_bdf, output_bdf, prog]
-        proc = subprocess.run(cmd_args, shell=False, capture_output=True, text=True, timeout=600)
+        proc = await run_in_threadpool(
+            subprocess.run,
+            cmd_args,
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
         if proc.returncode != 0:
             raise RuntimeError(
                 f"ModuleUnit_HiTESS.exe 실패 (rc={proc.returncode}):\n{proc.stderr}"
@@ -272,18 +369,24 @@ async def module_unit(
         raise
     except Exception as e:
         if user_folder and filename:
-            return _write_error_fallback(user_folder, filename, e)
+            return await run_in_threadpool(_write_error_fallback, user_folder, filename, e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/moduleUnit/download/{user_folder}/{filename}")
-def download_module_unit(user_folder: str, filename: str):
+def download_module_unit(
+    user_folder: str,
+    filename: str,
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
     """ModuleUnit 결과 파일 다운로드.
     경로 탈출 방지 로직은 csvToBdf/download와 동일합니다.
     """
     file_path = os.path.abspath(os.path.join(_USER_CONN_DIR, user_folder, filename))
     if not file_path.startswith(_USER_CONN_DIR + os.sep):
         raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
+    assert_current_user_can_access_path(file_path, current_user, db, _USER_CONN_DIR)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
     return FileResponse(

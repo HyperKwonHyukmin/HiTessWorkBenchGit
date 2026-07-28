@@ -40,6 +40,8 @@ _SERVER_LOG = os.path.join(_LOG_DIR, "backend.log")
 _crash_fp = None
 # SetConsoleCtrlHandler 콜백이 GC 되지 않도록 전역 참조 유지.
 _ctrl_handler_ref = None
+_install_lock = threading.Lock()
+_installed_pid = None
 
 _MEM_WATCH_INTERVAL_SEC = 300  # 5분마다 RSS 기록
 
@@ -182,10 +184,22 @@ def _start_memory_watchdog() -> None:
 
 
 def install_crash_diagnostics() -> None:
-    """비정상 종료 진단·방어 일체를 설치한다. main 모듈 최상단에서 1회 호출."""
-    if not _ensure_log_dir():
+    """비정상 종료 진단·방어 일체를 현재 프로세스에 한 번만 설치합니다."""
+    disabled = os.environ.get("WORKBENCH_DISABLE_CRASH_DIAGNOSTICS", "").strip().lower()
+    if disabled in {"1", "true", "yes", "on"}:
         return
-    _install_faulthandler()
-    _install_file_logging()
-    _install_console_ctrl_guard()
-    _start_memory_watchdog()
+
+    global _installed_pid
+    current_pid = os.getpid()
+    with _install_lock:
+        if _installed_pid == current_pid:
+            return
+        # 설치 도중 재진입하거나 일부 optional 단계가 실패하더라도 handler/watchdog를
+        # 중복으로 추가하지 않도록 먼저 표시한다. 각 설치 함수는 자체적으로 실패를 기록한다.
+        _installed_pid = current_pid
+        if not _ensure_log_dir():
+            return
+        _install_faulthandler()
+        _install_file_logging()
+        _install_console_ctrl_guard()
+        _start_memory_watchdog()

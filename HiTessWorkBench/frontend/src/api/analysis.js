@@ -21,6 +21,14 @@ export const getAnalysisHistory = (employeeId, skip = 0, limit = 50, filters = {
     headers: getAuthHeaders()
   });
 
+/** 보존된 입력 파일/옵션으로 과거 해석을 새 작업으로 재제출 */
+export const rerunAnalysisProject = (analysisId) =>
+  axios.post(
+    `${API_BASE_URL}/api/analysis/${analysisId}/rerun`,
+    {},
+    { headers: getAuthHeaders() },
+  );
+
 /** 전체 해석 이력 조회 (관리자용) */
 export const getAllAnalysisHistory = (limit = 50, skip = 0, filters = {}) =>
   axios.get(`${API_BASE_URL}/api/analysis/all`, {

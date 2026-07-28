@@ -1,6 +1,6 @@
-import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
-import { AlertTriangle, Command, LogOut, User, Search, ChevronLeft, ChevronRight, Server, Monitor } from 'lucide-react';
+import { AlertTriangle, LogOut, User, Search, ChevronLeft, ChevronRight, Server, Monitor } from 'lucide-react';
 import { API_BASE_URL, setApiBaseUrl } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
 import { useServerHealth } from '../../hooks/useServerStatus';
@@ -44,7 +44,7 @@ export default function Layout({
   const [remoteChecking, setRemoteChecking] = useState(false);
   const isServerOnline = serverHealth.isOnline;
   const { events: networkEvents, clearEvents: clearNetworkEvents } = useNetwork();
-  const { recentApps, recordAppVisit } = useRecentActivity();
+  const { recordAppVisit } = useRecentActivity();
   const [isGateOpen, setIsGateOpen] = useState(false);
   const [pendingMenu, setPendingMenu] = useState(null);
   const [gateLoading, setGateLoading] = useState(false);
@@ -92,11 +92,6 @@ export default function Layout({
     ? `\n현재 RDP IP: ${remoteSessions.activeRdpClientIps.join(', ')}`
     : '';
 
-  // 검색
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
-  const searchRef = useRef(null);
-
   // 검색 가능한 전체 항목: 사이드바 메뉴 + ANALYSIS_DATA 앱
   const menuItems = useMemo(() => [
     { label: 'Dashboard', menu: 'Dashboard' },
@@ -117,19 +112,6 @@ export default function Layout({
       { label: 'API Apps', menu: 'API Apps' },
     ] : []),
   ], [userInfo.is_admin]);
-
-  const searchResults = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-    if (query.length < 1) return [];
-    return [
-      ...menuItems.filter(m => m.label.toLowerCase().includes(query))
-        .map(m => ({ label: m.label, sub: '메뉴', menu: m.menu })),
-      ...ANALYSIS_DATA.filter(a =>
-        a.title.toLowerCase().includes(query) ||
-        a.description.toLowerCase().includes(query)
-      ).map(a => ({ label: a.title, sub: a.category, menu: getAppMenuName(a.title) })),
-    ].slice(0, 8);
-  }, [menuItems, searchTerm]);
 
   // 브레드크럼용 그룹 — 현재 메뉴가 특정 앱이면 상위 그룹 메뉴를 계산한다(Sidebar와 동일 규칙).
   const breadcrumbGroup = useMemo(() => {
@@ -201,13 +183,6 @@ export default function Layout({
       setGateLoading(false);
     }
   }, [pendingMenu, setCurrentMenu]);
-
-  // 바깥 클릭 시 드롭다운 닫기
-  useEffect(() => {
-    const handler = (e) => { if (searchRef.current && !searchRef.current.contains(e.target)) setShowDropdown(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -281,57 +256,19 @@ export default function Layout({
               </h2>
             </div>
             
-            <div ref={searchRef} className="relative ml-0 md:ml-2 lg:ml-4 min-w-0 shrink">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Search menus & apps..."
-                value={searchTerm}
-                onChange={e => { setSearchTerm(e.target.value); setShowDropdown(true); }}
-                onFocus={() => setShowDropdown(true)}
-                onKeyDown={e => { if (e.key === 'Escape') { setShowDropdown(false); setSearchTerm(''); } }}
-                className="pl-9 pr-3 py-2 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-36 sm:w-48 lg:w-64 max-w-[34vw] min-w-0"
-              />
-              {showDropdown && searchResults.length > 0 && (
-                <div className="absolute top-full left-0 mt-1 w-72 bg-white rounded-xl shadow-xl border border-slate-200 z-[9999] overflow-hidden">
-                  {searchResults.map((item, i) => (
-                    <button
-                      key={i}
-                      onMouseDown={() => { handleNavigate(item.menu); setSearchTerm(''); setShowDropdown(false); }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center justify-between gap-3 cursor-pointer border-b border-slate-50 last:border-0"
-                    >
-                      <span className="text-sm font-medium text-slate-800 truncate">{item.label}</span>
-                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap shrink-0">{item.sub}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
             <button
               type="button"
               onClick={() => setIsCommandPaletteOpen(true)}
-              className="hidden xl:inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-500 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-              title="Command Palette (Ctrl+K)"
+              className="ml-0 inline-flex h-9 min-w-0 w-10 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-semibold text-slate-500 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 md:ml-2 md:w-48 lg:ml-4 lg:w-64"
+              title="앱·메뉴·명령 검색 (Ctrl+K)"
+              aria-label="앱·메뉴·명령 검색"
             >
-              <Command size={14} />
-              <span>Ctrl K</span>
+              <Search size={15} className="shrink-0" />
+              <span className="hidden min-w-0 flex-1 truncate text-left md:block">앱·메뉴·명령 검색</span>
+              <kbd className="hidden shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[9px] font-bold text-slate-400 lg:inline">
+                Ctrl K
+              </kbd>
             </button>
-            {recentApps.length > 0 && (
-              <div className="hidden 2xl:flex max-w-[420px] items-center gap-1.5 overflow-hidden">
-                <span className="shrink-0 text-[10px] font-black text-slate-400">최근 사용 앱</span>
-                {recentApps.slice(0, 3).map(app => (
-                  <button
-                    key={app.menu}
-                    type="button"
-                    onClick={() => handleNavigate(app.menu)}
-                    className="max-w-[108px] truncate rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-500 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                    title={`최근 사용: ${app.label}`}
-                  >
-                    {app.label}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           <div className="flex items-center gap-2 lg:gap-4 shrink-0 min-w-0">

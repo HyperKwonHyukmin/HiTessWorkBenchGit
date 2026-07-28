@@ -20,6 +20,45 @@ TIMEOUT_SECONDS = 600
 SOLVE_TIMEOUT_SECONDS = 1800
 
 
+def _kill_process_tree(pid: int) -> None:
+    """자식 프로세스 트리 전체를 강제 종료(Windows taskkill /T /F)."""
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+        )
+    except Exception:  # noqa: BLE001 — 정리 실패가 상위 흐름을 막지 않게 흡수
+        logger.warning("[MooringFitting] taskkill 실패 (pid=%s)", pid, exc_info=True)
+
+
+def _run_capture(cmd: list[str], cwd: str, timeout: int):
+    """
+    subprocess.run(timeout=...) 대체 — 타임아웃 시 자식 프로세스 '트리 전체'를 종료한다.
+
+    문제: subprocess.run(timeout)은 Windows에서 직계 자식(MooringFitting.exe)만 kill하여
+    cmd.exe → nastran.exe → analysis.exe 손자 프로세스가 고아(zombie)로 남고 MSC 라이선스
+    seat 를 계속 점유한다(다음 job 라이선스 체크아웃 실패로 전이).
+    해결: Popen + 타임아웃 시 taskkill /T /F 로 트리 전체를 정리한 뒤 TimeoutExpired 를 재전파.
+
+    반환: (returncode, stdout_bytes, stderr_bytes)
+    """
+    proc = subprocess.Popen(
+        cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    try:
+        stdout_b, stderr_b = proc.communicate(timeout=timeout)
+        return proc.returncode, stdout_b, stderr_b
+    except subprocess.TimeoutExpired:
+        _kill_process_tree(proc.pid)          # 손자까지 전부 종료(좀비/라이선스 누수 방지)
+        try:
+            proc.communicate(timeout=10)      # 파이프 drain (deadlock 방지)
+        except Exception:  # noqa: BLE001
+            pass
+        raise                                  # 원래 TimeoutExpired 를 상위 핸들러로 재전파
+
+
 def collect_artifacts(out_dir: str, work_dir: str) -> dict:
     """
     MooringFitting.exe 가 생성한 out/ 폴더 산출물을 분류·수집한다.
@@ -116,20 +155,18 @@ def task_execute_mooring_fitting(
         update_progress(job_id, 30, "MooringFitting 파이프라인 실행 중...")
         logger.info("[MooringFitting] exe=%s, work_dir=%s, mf_sf=%s", exe_path, work_dir, mf_safety_factor)
 
-        result = subprocess.run(
+        returncode, stdout_b, stderr_b = _run_capture(
             [exe_path, "build-full", work_dir, f"--mf-sf={mf_safety_factor}"],
             cwd=work_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
             timeout=TIMEOUT_SECONDS,
         )
-        engine_output = result.stdout.decode("utf-8", errors="replace")
-        stderr_text = result.stderr.decode("utf-8", errors="replace")
+        engine_output = stdout_b.decode("utf-8", errors="replace")
+        stderr_text = stderr_b.decode("utf-8", errors="replace")
         if stderr_text.strip():
             engine_output += f"\n[stderr] {stderr_text.strip()}"
-        if result.returncode != 0:
+        if returncode != 0:
             status_msg = "Failed"
-            engine_output += f"\n[Exit code: {result.returncode}]"
+            engine_output += f"\n[Exit code: {returncode}]"
 
         update_progress(job_id, 80, "결과 파일 수집 중...")
         out_dir = os.path.join(work_dir, "out")
@@ -157,7 +194,11 @@ def task_execute_mooring_fitting(
         program_name=PROGRAM_NAME,
         employee_id=employee_id,
         status=status_msg,
-        input_info={"structure_csv": structure_path, "load_csv": load_path},
+        input_info={
+            "structure_csv": structure_path,
+            "load_csv": load_path,
+            "mf_safety_factor": mf_safety_factor,
+        },
         result_info=result_data if result_data else None,
         source=source,
     )
@@ -286,21 +327,19 @@ def task_solve_mooring_fitting(
         logger.info("[MooringSolve] exe=%s, bdf=%s, yield=%s, gamma=%s",
                     exe_path, bdf_path, yield_strength, gamma_m)
 
-        result = subprocess.run(
+        returncode, stdout_b, stderr_b = _run_capture(
             [exe_path, "solve-bdf", bdf_path, model_json_path, "-o", result_json_path,
              "--yield", str(yield_strength), "--gamma", str(gamma_m)],
             cwd=work_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
             timeout=SOLVE_TIMEOUT_SECONDS,
         )
-        engine_output = result.stdout.decode("utf-8", errors="replace")
-        stderr_text = result.stderr.decode("utf-8", errors="replace")
+        engine_output = stdout_b.decode("utf-8", errors="replace")
+        stderr_text = stderr_b.decode("utf-8", errors="replace")
         if stderr_text.strip():
             engine_output += f"\n[stderr] {stderr_text.strip()}"
-        if result.returncode != 0:
+        if returncode != 0:
             status_msg = "Failed"
-            engine_output += f"\n[Exit code: {result.returncode}]"
+            engine_output += f"\n[Exit code: {returncode}]"
 
         update_progress(job_id, 90, "결과 수집 중...")
         if os.path.isfile(result_json_path):

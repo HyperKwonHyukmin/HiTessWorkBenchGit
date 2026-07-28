@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { User, ArrowRight, ShieldCheck, AlertCircle, Clock, Wifi, WifiOff, DownloadCloud, AlertTriangle, Construction } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { User, ArrowRight, ShieldCheck, AlertCircle, Clock, WifiOff, DownloadCloud, AlertTriangle, Construction, RefreshCw, Settings, Server } from 'lucide-react';
 import RegisterModal from '../../components/modals/RegisterModal';
+import Modal from '../../components/ui/Modal';
+import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
 import { checkVersion, login } from '../../api/auth';
 import { useAuth } from '../../contexts/AuthContext';
-import { API_BASE_URL } from '../../config';
+import { API_BASE_URL, DEFAULT_API_BASE_URL, setApiBaseUrl } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
 const structureBgUrl = "https://images.unsplash.com/photo-1553653841-453082536a9d?q=80&w=1000&auto=format&fit=crop";
 
@@ -21,45 +24,68 @@ export default function LoginScreen({ onLoginSuccess }) {
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [downloadState, setDownloadState] = useState(null); // null | 'downloading' | 'done' | 'error'
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [currentServerUrl, setCurrentServerUrl] = useState(API_BASE_URL);
+  const [serverUrlInput, setServerUrlInput] = useState(API_BASE_URL);
+  const [isServerSettingsOpen, setIsServerSettingsOpen] = useState(false);
+  const [isCheckingServer, setIsCheckingServer] = useState(false);
+  const [serverSettingsError, setServerSettingsError] = useState('');
 
   const serverHost = (() => {
-    try { return new URL(API_BASE_URL).host; } catch { return API_BASE_URL; }
+    try { return new URL(currentServerUrl).host; } catch { return currentServerUrl; }
   })();
+
+  const checkServerConnection = useCallback(async () => {
+    setIsCheckingServer(true);
+    setServerErrorReason('');
+    try {
+      const response = await checkVersion({ retries: 1, timeout: 5000 });
+      const fetchedServerVersion = response.data.version;
+      setServerVersion(fetchedServerVersion);
+      setIsServerLive(true);
+      setIsVersionMismatch(fetchedServerVersion !== CLIENT_VERSION);
+      if (fetchedServerVersion !== CLIENT_VERSION) {
+        console.warn(`Version Mismatch! Client: ${CLIENT_VERSION}, Server: ${fetchedServerVersion}`);
+      }
+      return true;
+    } catch (error) {
+      console.error("Server Check Failed:", error);
+      setIsServerLive(false);
+      setIsVersionMismatch(false);
+      if (error.code === 'ECONNABORTED') {
+        setServerErrorReason('연결 시간 초과');
+      } else if (error.code === 'ERR_NETWORK' || !error.response) {
+        setServerErrorReason('서버에 연결할 수 없음');
+      } else if (error.response?.status === 503) {
+        setServerErrorReason('서버 점검 중');
+      } else {
+        setServerErrorReason(`HTTP ${error.response?.status ?? '오류'}`);
+      }
+      return false;
+    } finally {
+      setIsCheckingServer(false);
+    }
+  }, []);
+
+  const applyServerUrl = async () => {
+    const candidate = serverUrlInput.trim().replace(/\/$/, '');
+    try {
+      const parsed = new URL(candidate);
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('invalid protocol');
+    } catch {
+      setServerSettingsError('http:// 또는 https://로 시작하는 올바른 서버 URL을 입력하세요.');
+      return;
+    }
+    setServerSettingsError('');
+    setApiBaseUrl(candidate);
+    setCurrentServerUrl(candidate);
+    setIsServerSettingsOpen(false);
+    setIsServerLive(null);
+    await checkServerConnection();
+  };
 
   // [초기화] 서버 상태 및 버전 체크
   useEffect(() => {
-    const initCheck = async () => {
-      try {
-        // [수정 포인트 1] 작은따옴표(') 대신 백틱(`) 사용
-        const response = await checkVersion();
-        
-        const fetchedServerVersion = response.data.version;
-        setServerVersion(fetchedServerVersion);
-        setIsServerLive(true);
-
-        if (fetchedServerVersion !== CLIENT_VERSION) {
-          console.warn(`Version Mismatch! Client: ${CLIENT_VERSION}, Server: ${fetchedServerVersion}`);
-          setIsVersionMismatch(true); 
-        } else {
-          setIsVersionMismatch(false);
-        }
-
-      } catch (error) {
-        console.error("Server Check Failed:", error);
-        setIsServerLive(false);
-        if (error.code === 'ECONNABORTED') {
-          setServerErrorReason('연결 시간 초과');
-        } else if (error.code === 'ERR_NETWORK' || !error.response) {
-          setServerErrorReason('서버에 연결할 수 없음');
-        } else if (error.response?.status === 503) {
-          setServerErrorReason('서버 점검 중');
-        } else {
-          setServerErrorReason(`HTTP ${error.response?.status ?? '오류'}`);
-        }
-      }
-    };
-
-    initCheck();
+    checkServerConnection();
 
     const savedId = localStorage.getItem('savedEmployeeId');
     if (savedId) setEmployeeId(savedId);
@@ -75,7 +101,7 @@ export default function LoginScreen({ onLoginSuccess }) {
     });
     return () => { if (removeListener) removeListener(); };
 
-  }, []);
+  }, [checkServerConnection]);
 
   const handleInputChange = (e) => {
     setEmployeeId(e.target.value);
@@ -184,6 +210,17 @@ export default function LoginScreen({ onLoginSuccess }) {
               {serverErrorReason && (
                 <span className="text-[10px] text-red-400 font-medium pr-1">{serverErrorReason}</span>
               )}
+              <button
+                type="button"
+                onClick={() => {
+                  setServerUrlInput(currentServerUrl);
+                  setIsServerSettingsOpen(true);
+                }}
+                className="mt-1 inline-flex items-center gap-1 rounded-md text-[10px] font-bold text-slate-500 hover:text-brand-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+              >
+                <Settings size={11} />
+                연결 설정
+              </button>
             </div>
           )}
           {isServerLive === null && (
@@ -264,6 +301,44 @@ export default function LoginScreen({ onLoginSuccess }) {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
+                {isServerLive === false && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                    <div className="flex items-start gap-3">
+                      <Server size={19} className="mt-0.5 shrink-0 text-red-600" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-red-800">서버 연결을 복구해야 로그인할 수 있습니다.</p>
+                        <p className="mt-1 text-xs leading-relaxed text-red-700">
+                          주소와 사내망 연결 상태를 확인한 뒤 재시도하세요. 현재 주소는{' '}
+                          <span className="break-all font-mono font-semibold">{currentServerUrl}</span> 입니다.
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="primary"
+                            size="sm"
+                            isLoading={isCheckingServer}
+                            onClick={checkServerConnection}
+                          >
+                            <RefreshCw size={14} />
+                            다시 연결
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => {
+                              setServerUrlInput(currentServerUrl);
+                              setIsServerSettingsOpen(true);
+                            }}
+                          >
+                            <Settings size={14} />
+                            서버 주소 변경
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {errorMsg && (
                   <div className={`p-4 rounded-lg border flex items-start animate-pulse ${
                     errorMsg === "PENDING_APPROVAL"
@@ -321,9 +396,9 @@ export default function LoginScreen({ onLoginSuccess }) {
 
                 <button
                   type="submit"
-                  disabled={isLoading || isServerLive === false}
+                  disabled={isLoading || isServerLive !== true}
                   className={`w-full flex justify-center items-center py-4 px-4 text-sm font-bold rounded-lg text-white shadow-md transition-all transform hover:-translate-y-1 mt-4 cursor-pointer relative z-10 ${
-                    isLoading || isServerLive === false ? 'bg-gray-400 cursor-not-allowed hover:transform-none' : 'bg-brand-green hover:shadow-lg'
+                    isLoading || isServerLive !== true ? 'bg-gray-400 cursor-not-allowed hover:transform-none' : 'bg-brand-green hover:shadow-lg'
                   }`}
                 >
                   {isLoading ? (
@@ -351,6 +426,53 @@ export default function LoginScreen({ onLoginSuccess }) {
         </div>
         
         <RegisterModal isOpen={isRegisterOpen} onClose={() => setIsRegisterOpen(false)} initialEmployeeId={employeeId} />
+        <Modal
+          isOpen={isServerSettingsOpen}
+          onClose={() => setIsServerSettingsOpen(false)}
+          title="로그인 서버 연결 설정"
+          size="md"
+          footer={
+            <div className="flex w-full items-center justify-between gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setServerUrlInput(DEFAULT_API_BASE_URL);
+                  setServerSettingsError('');
+                }}
+              >
+                기본 주소 복원
+              </Button>
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" size="md" onClick={() => setIsServerSettingsOpen(false)}>
+                  취소
+                </Button>
+                <Button type="button" variant="primary" size="md" onClick={applyServerUrl}>
+                  저장 후 연결 확인
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          <div className="space-y-4 p-6">
+            <p className="text-sm leading-relaxed text-slate-600">
+              팀 공용 FastAPI 서버 주소를 입력하세요. 연결 확인이 성공하면 로그인 버튼이 활성화됩니다.
+            </p>
+            <Input
+              label="서버 URL"
+              value={serverUrlInput}
+              onChange={(event) => {
+                setServerUrlInput(event.target.value);
+                setServerSettingsError('');
+              }}
+              placeholder="http://10.14.42.145:9091"
+              error={serverSettingsError}
+              className="font-mono"
+              autoFocus
+            />
+          </div>
+        </Modal>
       </div>
     </div>
   );

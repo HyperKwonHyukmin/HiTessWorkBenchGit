@@ -12,6 +12,18 @@ import os
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolated_user_connection(tmp_path, monkeypatch):
+    """Mooring Fitting 요청 작업 폴더를 테스트별 임시 루트로 격리한다."""
+    from app.routers import _intake, analysis
+
+    root = tmp_path / "userConnection"
+    root.mkdir()
+    monkeypatch.setattr(_intake, "USER_CONNECTION_DIR", str(root))
+    monkeypatch.setattr(analysis, "_USER_CONNECTION_DIR", str(root))
+    return root
+
+
 @pytest.fixture
 def auth_client(db_session):
     """일반 사용자(HHI123)로 인증되는 TestClient."""
@@ -42,7 +54,11 @@ def auth_client(db_session):
         app.dependency_overrides.clear()
 
 
-def test_request_saves_csvs_with_standard_filenames(auth_client, tmp_path, monkeypatch):
+def test_request_saves_csvs_with_standard_filenames(
+    auth_client,
+    isolated_user_connection,
+    monkeypatch,
+):
     """업로드된 임의 파일명이 표준명으로 강제 저장되어야 한다."""
     captured = {}
 
@@ -72,7 +88,9 @@ def test_request_saves_csvs_with_standard_filenames(auth_client, tmp_path, monke
     load_path = captured["args"][2]
     work_dir = captured["args"][3]
 
-    assert "userConnection" in work_dir
+    assert os.path.commonpath([work_dir, str(isolated_user_connection)]) == str(
+        isolated_user_connection
+    )
     assert "_HHI123_MooringFitting" in os.path.basename(work_dir)
     assert os.path.basename(structure_path) == "MooringFittingData.csv"
     assert os.path.basename(load_path) == "MooringFittingDataLoad.csv"

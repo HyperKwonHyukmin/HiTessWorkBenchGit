@@ -1,5 +1,12 @@
 """공통 pytest fixture — 인메모리 SQLite + dependency override."""
 import os
+
+# app.main import 전에 운영 DB DDL·background daemon·crash log side effect를 차단한다.
+# lifecycle 자체는 test_database_lifecycle.py에서 주입된 SQLite engine으로 별도 검증한다.
+os.environ.setdefault("WORKBENCH_ENV", "test")
+os.environ.setdefault("WORKBENCH_DISABLE_CRASH_DIAGNOSTICS", "1")
+os.environ.setdefault("WORKBENCH_DISABLE_RUNTIME_SERVICES", "1")
+
 import pytest
 from datetime import datetime
 from sqlalchemy import create_engine

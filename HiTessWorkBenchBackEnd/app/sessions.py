@@ -36,6 +36,17 @@ class SessionStore:
                 db.delete(s)
                 db.commit()
                 return None
+            # A session is only valid while its owning account still exists and
+            # remains active.  This deliberately runs on every authenticated
+            # request so an administrator deactivation takes effect immediately,
+            # including for sessions issued before the change.
+            user = db.query(models.User).filter(
+                models.User.employee_id == s.employee_id
+            ).first()
+            if not user or not user.is_active:
+                db.delete(s)
+                db.commit()
+                return None
             return s.employee_id
         finally:
             db.close()
@@ -49,6 +60,18 @@ class SessionStore:
             if s:
                 db.delete(s)
                 db.commit()
+        finally:
+            db.close()
+
+    def revoke_all(self, employee_id: str) -> int:
+        """Revoke every session for an account and return the deleted row count."""
+        db = SessionLocal()
+        try:
+            deleted = db.query(models.UserSession).filter(
+                models.UserSession.employee_id == employee_id
+            ).delete(synchronize_session=False)
+            db.commit()
+            return deleted
         finally:
             db.close()
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { PenTool } from 'lucide-react';
 import ExternalAppLauncherPage from '../../components/analysis/ExternalAppLauncherPage';
 import { API_BASE_URL } from '../../config';
+import { EXTERNAL_APP_MODE } from '../../utils/externalAppLaunch';
 
 const INDEPENDENT_TANK_PROXY_PATH = '/external-apps/independent-tank';
 
@@ -16,6 +17,7 @@ export default function IndependentTankAssessment() {
       description="독립 탱크 구조 평가를 위한 외부 앱을 실행합니다."
       baseUrl={independentTankBaseUrl}
       healthUrl={independentTankHealthUrl}
+      launchMode={EXTERNAL_APP_MODE.PROXY}
       clearCacheOnLaunch={true}
       cacheBustOnLaunch={true}
       status="Developing"

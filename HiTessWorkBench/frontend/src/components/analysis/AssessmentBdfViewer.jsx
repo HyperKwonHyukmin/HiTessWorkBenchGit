@@ -6,7 +6,14 @@ import {
   PlayCircle, PauseCircle, RotateCcw, Maximize2, Minimize2
 } from 'lucide-react';
 
-export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
+export default function AssessmentBdfViewer({
+  nodes,
+  elements,
+  resultData,
+  selectedElementId = null,
+  onElementSelect,
+  onViewStateChange,
+}) {
   const mountRef = useRef(null);
 
   const [showNodes, setShowNodes] = useState(false);
@@ -16,6 +23,8 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
   const [activeLcIdx, setActiveLcIdx] = useState(-1);
   const [hoverInfo, setHoverInfo] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const onElementSelectRef = useRef(onElementSelect);
+  const onViewStateChangeRef = useRef(onViewStateChange);
 
   const containerRef = useRef(null);
   const controlsRef = useRef(null);
@@ -25,6 +34,8 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
   const mouseRef = useRef(new THREE.Vector2());
   const cameraRef = useRef(null);
   const instanceToEidRef = useRef([]);
+  onElementSelectRef.current = onElementSelect;
+  onViewStateChangeRef.current = onViewStateChange;
 
   const lcList = useMemo(() => {
     if (!resultData?.loadCases) return [];
@@ -63,6 +74,14 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
   }, [resultData, activeLcIdx]);
 
   useEffect(() => {
+    onViewStateChangeRef.current?.({
+      activeLoadCaseIndex: activeLcIdx,
+      activeLoadCaseLabel: activeLcIdx === -1 ? 'Envelope' : lcList[activeLcIdx]?.label || 'Assessment',
+      assessmentMap: assessmentMap || {},
+    });
+  }, [activeLcIdx, assessmentMap, lcList]);
+
+  useEffect(() => {
     if (!mountRef.current) return;
     const el = mountRef.current;
     const onMouseMove = (e) => {
@@ -83,9 +102,22 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
       } else { setHoverInfo(null); }
     };
     const onMouseLeave = () => setHoverInfo(null);
+    const onClick = () => {
+      if (!cameraRef.current || !elementsGroupRef.current) return;
+      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+      const hit = raycasterRef.current.intersectObject(elementsGroupRef.current)[0];
+      if (!hit) return;
+      const eid = instanceToEidRef.current[hit.instanceId];
+      if (eid != null) onElementSelectRef.current?.(eid);
+    };
     el.addEventListener('mousemove', onMouseMove);
     el.addEventListener('mouseleave', onMouseLeave);
-    return () => { el.removeEventListener('mousemove', onMouseMove); el.removeEventListener('mouseleave', onMouseLeave); };
+    el.addEventListener('click', onClick);
+    return () => {
+      el.removeEventListener('mousemove', onMouseMove);
+      el.removeEventListener('mouseleave', onMouseLeave);
+      el.removeEventListener('click', onClick);
+    };
   }, [assessmentMap]);
 
   const toggleFullscreen = () => {
@@ -182,6 +214,22 @@ export default function AssessmentBdfViewer({ nodes, elements, resultData }) {
   useEffect(() => { if (nodesMeshRef.current) nodesMeshRef.current.visible = showNodes; }, [showNodes]);
   useEffect(() => { if (elementsGroupRef.current?.material) elementsGroupRef.current.material.wireframe = isWireframe; }, [isWireframe]);
   useEffect(() => { if (controlsRef.current) { controlsRef.current.autoRotate = autoRotate; controlsRef.current.autoRotateSpeed = 2.0; } }, [autoRotate]);
+  useEffect(() => {
+    const mesh = elementsGroupRef.current;
+    if (!mesh?.instanceColor) return;
+    instanceToEidRef.current.forEach((eid, index) => {
+      let color;
+      if (selectedElementId != null && String(eid) === String(selectedElementId)) {
+        color = new THREE.Color(0xffffff);
+      } else if (showResult && assessmentMap?.[eid]) {
+        color = assessmentToColor(assessmentMap[eid].assessment);
+      } else {
+        color = new THREE.Color(showResult ? 0x94a3b8 : 0x66ccff);
+      }
+      mesh.setColorAt(index, color);
+    });
+    mesh.instanceColor.needsUpdate = true;
+  }, [assessmentMap, selectedElementId, showResult]);
 
   const hasResult = assessmentMap && Object.keys(assessmentMap).length > 0;
 
