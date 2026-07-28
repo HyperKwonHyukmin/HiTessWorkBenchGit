@@ -20,6 +20,7 @@ from . import database, models
 from .routers import (
     activity,
     analysis,
+    app_settings,
     auth,
     carling,
     chat,
@@ -44,6 +45,7 @@ from .services.cleanup_service import (
     shutdown_cleanup_scheduler,
     start_cleanup_scheduler,
 )
+from .services.app_settings_gate import install_app_availability_guard
 from .services.job_manager import shutdown_job_manager, start_job_manager
 
 logger = logging.getLogger(__name__)
@@ -157,6 +159,11 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.state.schema_ready = False
     application.state.session_factory = database.SessionLocal
 
+    # ⚠ 순서 주의: Starlette 은 나중에 추가한 미들웨어가 바깥쪽이다.
+    # 게이트를 먼저 추가해야 CORSMiddleware 가 이를 감싸고, 게이트가 돌려주는
+    # 403 응답에도 CORS 헤더가 붙어 앱이 본문(차단 사유)을 읽을 수 있다.
+    install_app_availability_guard(application)
+
     application.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -190,6 +197,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(newsletters.router)
     application.include_router(presence.router)
     application.include_router(chat.router)
+    application.include_router(app_settings.router)
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     application.mount(

@@ -1,10 +1,12 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { LayoutGrid, List, Search, X } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { ANALYSIS_DATA, getAppMenuName, useAnalysisPageState, useFavorites } from '../../contexts/DashboardContext';
+import { getAppMenuName, useAnalysisPageState, useAppCatalogue, useFavorites } from '../../contexts/DashboardContext';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
 import { useToast } from '../../contexts/ToastContext';
+import AppSettingsModal from '../admin/AppSettingsModal';
 import AppCard from '../ui/AppCard';
 import AppListRow from '../ui/AppListRow';
 import PageHeader from '../ui/PageHeader';
@@ -66,7 +68,17 @@ export default function AppCataloguePage({
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('hitess_app_view_mode') ?? 'grid');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const apps = useMemo(() => ANALYSIS_DATA.filter(item => item.mode === mode), [mode]);
+  // 관리자 오버라이드가 반영된 실효 카탈로그를 쓴다(ANALYSIS_DATA 직접 참조 금지 —
+  // 그러면 App Settings 에서 바꾼 상태가 목록에 반영되지 않는다).
+  const { apps: catalogue, getBlock } = useAppCatalogue();
+  const overrides = useAppSettings();
+  const isAdmin = getIsAdmin();
+  const [settingsTitle, setSettingsTitle] = useState(null);
+
+  const apps = useMemo(
+    () => catalogue.filter(item => item.mode === mode),
+    [catalogue, mode],
+  );
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const searchedApps = useMemo(
     () => apps.filter(item => matchesSearch(item, normalizedSearch)),
@@ -109,9 +121,15 @@ export default function AppCataloguePage({
   }, []);
 
   const handleStart = useCallback((appTitle) => {
-    const appMeta = ANALYSIS_DATA.find(a => a.title === appTitle);
-    if (appMeta && (appMeta.devStatus === 'Developing' || appMeta.devStatus === 'Planned') && !getIsAdmin()) {
-      setGateApp({ title: appMeta.title, devStatus: appMeta.devStatus });
+    const appMeta = catalogue.find(a => a.title === appTitle);
+    const block = appMeta && !getIsAdmin() ? getBlock(appMeta) : null;
+    if (block) {
+      setGateApp({
+        title: appMeta.title,
+        devStatus: appMeta.devStatus,
+        reason: block.reason,
+        message: block.message,
+      });
       return;
     }
     const menuName = getAppMenuName(appTitle);
@@ -130,11 +148,11 @@ export default function AppCataloguePage({
       setAssessmentPageState({});
     }
     setCurrentMenu(menuName);
-  }, [clearAnalysisPageState, setAssessmentPageState, setCurrentMenu, showToast]);
+  }, [catalogue, clearAnalysisPageState, getBlock, setAssessmentPageState, setCurrentMenu, showToast]);
 
   const makeAppProps = useCallback((item) => {
     const IconComponent = item.icon;
-    const isRestricted = (item.devStatus === 'Developing' || item.devStatus === 'Planned') && !getIsAdmin();
+    const isRestricted = !isAdmin && Boolean(getBlock(item));
     return {
       app: {
         title: item.title,
@@ -154,8 +172,10 @@ export default function AppCataloguePage({
       isFavorite: favorites.includes(item.title),
       onFavorite: () => toggleFavorite(item.title),
       onStart: () => handleStart(item.title),
+      // 관리자에게만 톱니바퀴가 붙는다.
+      onSettings: isAdmin ? () => setSettingsTitle(item.title) : undefined,
     };
-  }, [favorites, handleStart, toggleFavorite, viewMode]);
+  }, [favorites, getBlock, handleStart, isAdmin, toggleFavorite, viewMode]);
 
   const renderSection = (sectionApps, dimmed = false) => {
     if (sectionApps.length === 0) return null;
@@ -287,7 +307,18 @@ export default function AppCataloguePage({
         onClose={() => setGateApp(null)}
         appTitle={gateApp?.title}
         devStatus={gateApp?.devStatus}
+        reason={gateApp?.reason}
+        message={gateApp?.message}
       />
+
+      {isAdmin && (
+        <AppSettingsModal
+          isOpen={Boolean(settingsTitle)}
+          onClose={() => setSettingsTitle(null)}
+          app={settingsTitle ? catalogue.find(a => a.title === settingsTitle) : null}
+          setting={settingsTitle ? overrides[settingsTitle] : undefined}
+        />
+      )}
     </div>
   );
 }

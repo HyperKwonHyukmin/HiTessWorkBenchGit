@@ -9,6 +9,14 @@ import { useNavigation } from './NavigationContext';
 import { useAuth } from './AuthContext';
 import { usePolling } from '../hooks/usePolling';
 import { POLLING_POLICY } from '../hooks/pollingPolicy';
+import {
+  clearAppSettings,
+  getAppBlock,
+  isAppBlockedFor,
+  mergeAppSetting,
+  refreshAppSettings,
+  useAppSettings,
+} from '../hooks/useAppSettings';
 
 const RAW_ANALYSIS_DATA = [
   // ── File-Based Apps (signature: blue) ──────────── Active ──
@@ -285,6 +293,8 @@ const GLOBAL_JOB_COLLAPSE_MS = 30 * 1000;
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
 const ANALYSIS_MENU_RESUME_ENTRY_KEY = 'workbench:analysis-menu-resume-entry';
 const MENU_ENTRY_MAX_AGE_MS = 5000;
+// 관리자가 App 상태를 바꾼 것을 다른 사용자 화면이 따라잡는 주기.
+const APP_SETTINGS_POLL_MS = 60 * 1000;
 const ANALYSIS_ROUTE_MENUS = new Set(
   ANALYSIS_DATA
     .filter(app => app.hasPage)
@@ -373,6 +383,25 @@ export function DashboardProvider({ children }) {
   const { currentMenu } = useNavigation();
   const { isAuthenticated } = useAuth();
   const [favorites, setFavorites] = useState(() => readLocalFavorites());
+
+  // 관리자가 지정한 App 오버라이드(서비스 상태·점검 안내·설명 등)를 받아 둔다.
+  // 로그아웃하면 비워 코드 기본값으로 되돌린다.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      clearAppSettings();
+      return undefined;
+    }
+    let cancelled = false;
+    refreshAppSettings().then(() => {
+      if (cancelled) return;
+    });
+    // 다른 관리자가 상태를 바꿨을 수 있으므로 주기적으로 다시 확인한다.
+    const timer = setInterval(refreshAppSettings, APP_SETTINGS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     let cancelled = false;
@@ -765,6 +794,40 @@ export function DashboardProvider({ children }) {
     </DashboardContext.Provider>
   );
 }
+
+/**
+ * 관리자 오버라이드가 반영된 '실효' 앱 카탈로그.
+ *
+ * ANALYSIS_DATA(코드 기본값) 위에 App Settings 값을 덮은 목록을 돌려준다.
+ * 서비스 상태·차단 여부·설명/태그/담당자는 반드시 이 훅으로 읽어야 관리자가
+ * 바꾼 내용이 화면에 반영된다(ANALYSIS_DATA 를 직접 읽으면 코드 기본값 고정).
+ *
+ * @returns {{apps: Array, getApp: (title: string) => object|undefined,
+ *            getBlock: (app: object) => object|null,
+ *            isBlockedFor: (app: object, isAdmin: boolean) => boolean,
+ *            refresh: () => Promise<boolean>}}
+ */
+export const useAppCatalogue = () => {
+  const overrides = useAppSettings();
+  const apps = useMemo(
+    () => ANALYSIS_DATA.map(app => mergeAppSetting(app, overrides[app.title])),
+    [overrides],
+  );
+  const getApp = useCallback(
+    (title) => apps.find(app => app.title === title),
+    [apps],
+  );
+  return useMemo(
+    () => ({
+      apps,
+      getApp,
+      getBlock: getAppBlock,
+      isBlockedFor: isAppBlockedFor,
+      refresh: refreshAppSettings,
+    }),
+    [apps, getApp],
+  );
+};
 
 export const useDashboard = () => useContext(DashboardContext);
 export const useFavorites = () => useContext(FavoritesContext);

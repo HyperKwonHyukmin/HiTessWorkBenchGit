@@ -128,6 +128,37 @@ class AppSpaceAdminResponse(BaseModel):
     request_count: int = 0
 
 
+class AppSettingResponse(BaseModel):
+    """App별 관리자 오버라이드. None 필드는 '오버라이드 없음'(코드 기본값 사용)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    app_key: str
+    dev_status: Optional[str] = None
+    maintenance: bool = False
+    maintenance_message: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[list[str]] = None
+    contributor: Optional[str] = None
+    updated_by: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
+class AppSettingUpdate(BaseModel):
+    """부분 갱신 — 요청에 담긴 필드만 반영한다(model_dump(exclude_unset=True)).
+
+    필드를 명시적으로 null 로 보내면 해당 오버라이드를 해제해 코드 기본값으로
+    되돌린다. 아예 보내지 않으면 기존 값을 유지한다.
+    """
+
+    dev_status: Optional[str] = None
+    maintenance: Optional[bool] = None
+    maintenance_message: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[list[str]] = None
+    contributor: Optional[str] = None
+
+
 class UserGuideCreate(BaseModel):
     category: str
     title: str

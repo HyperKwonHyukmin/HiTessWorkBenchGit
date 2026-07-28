@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Star, ArrowRight, User, Lock } from 'lucide-react';
+import { Star, ArrowRight, User, Lock, Settings2 } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 
 // --- 정적 클래스 맵 (Tailwind JIT 호환을 위해 동적 생성 금지) ---
@@ -124,6 +124,8 @@ export default function AppCard({
   isRestricted = false,
   onFavorite,
   onStart,
+  // 관리자에게만 전달된다 — 넘어오면 카드에 App 설정(톱니바퀴) 버튼이 붙는다.
+  onSettings,
 }) {
   const {
     title       = '',
@@ -176,6 +178,19 @@ export default function AppCard({
     >
       {isRestrained && (
         <div className={`absolute inset-x-0 top-0 h-1 ${accentTopBand}`} aria-hidden="true" />
+      )}
+
+      {/* ── App 설정 (관리자 전용) ── */}
+      {onSettings && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onSettings(); }}
+          className="absolute top-4 right-11 z-10 rounded-lg p-0.5 text-slate-300 opacity-35 outline-none transition-all hover:bg-slate-100 hover:text-slate-600 group-hover:opacity-100 cursor-pointer"
+          title="App 설정 (관리자)"
+          aria-label={`${title} App 설정`}
+        >
+          <Settings2 size={17} />
+        </button>
       )}
 
       {/* ── 즐겨찾기 ── */}

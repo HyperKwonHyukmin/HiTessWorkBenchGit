@@ -198,6 +198,33 @@ class FeatureRequestUpvote(Base):
   created_at = Column(DateTime(timezone=True), default=datetime.now)
 
 
+class AppSetting(Base):
+  """관리자가 App별로 관리하는 서비스 상태·점검 안내·표시 메타데이터.
+
+  앱 카탈로그의 원본은 여전히 프론트엔드 코드(ANALYSIS_DATA)이고, 이 테이블은
+  그 위에 덮는 '오버라이드'만 담는다. 행이 없으면 코드 기본값이 그대로 쓰이며,
+  행을 지우면 코드 기본값으로 되돌아간다(= 초기화). 덕분에 코드에 앱을 새로
+  추가해도 DB 행을 미리 만들 필요가 없다.
+
+  NULL 컬럼은 '오버라이드 없음'을 뜻한다(빈 문자열과 구분).
+  """
+
+  __tablename__ = "app_settings"
+  app_key = Column(String(200), primary_key=True)  # ANALYSIS_DATA 의 title
+  dev_status = Column(String(20), nullable=True)  # Active/Developing/Planned
+  maintenance = Column(Boolean, default=False, nullable=False)
+  maintenance_message = Column(String(500), nullable=True)
+  description = Column(String(1000), nullable=True)
+  tags = Column(JSON, nullable=True)
+  contributor = Column(String(100), nullable=True)
+  updated_by = Column(String(50), nullable=True)
+  updated_at = Column(
+      DateTime(timezone=True),
+      default=datetime.now,
+      onupdate=datetime.now,
+  )
+
+
 class ActivityLog(Base):
   __tablename__ = "activity_logs"
   id = Column(Integer, primary_key=True, index=True)

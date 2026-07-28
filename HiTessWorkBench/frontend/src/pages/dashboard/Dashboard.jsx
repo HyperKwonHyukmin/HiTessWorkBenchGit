@@ -15,7 +15,7 @@ import {
   Megaphone, Pin, Sparkles, Play, GripVertical, ArrowLeft, ArrowRight, Check
 } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
-import { ANALYSIS_DATA, findAppByProgramName, getAppMenuName, getDisplayProgramName, useAnalysisPageState, useFavorites } from '../../contexts/DashboardContext';
+import { findAppByProgramName, getAppMenuName, getDisplayProgramName, useAnalysisPageState, useAppCatalogue, useFavorites } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -400,7 +400,9 @@ const DiscoverHiTessBanner = ({ variant = 'platform', title, subtitle, ctaText, 
 };
 
 const AppRoadmapBanner = ({ onOpenModal }) => {
-  const statusCounts = ANALYSIS_DATA.reduce((acc, app) => {
+  // 관리자가 App Settings 에서 바꾼 상태가 로드맵 집계에도 반영되도록 실효 카탈로그를 쓴다.
+  const { apps: catalogue } = useAppCatalogue();
+  const statusCounts = catalogue.reduce((acc, app) => {
     const status = app.devStatus || 'Active';
     acc[status] = (acc[status] || 0) + 1;
     return acc;
@@ -412,7 +414,7 @@ const AppRoadmapBanner = ({ onOpenModal }) => {
     .map(mode => ({
       mode,
       info: MODE_BADGE[mode],
-      apps: ANALYSIS_DATA.filter(a => a.mode === mode),
+      apps: catalogue.filter(a => a.mode === mode),
     }))
     .filter(item => item.apps.length > 0);
 
@@ -794,15 +796,16 @@ const isRoadmapAppNavigable = (app) =>
   (app.devStatus || 'Active') === 'Active' && app.hasPage;
 
 const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
-  const totalCount = ANALYSIS_DATA.length;
-  const statusCounts = ANALYSIS_DATA.reduce((acc, app) => {
+  const { apps: catalogue } = useAppCatalogue();
+  const totalCount = catalogue.length;
+  const statusCounts = catalogue.reduce((acc, app) => {
     const status = app.devStatus || 'Active';
     acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {});
   const modeSummaries = ROADMAP_MODE_ORDER
     .map(mode => {
-      const apps = ANALYSIS_DATA.filter(a => a.mode === mode);
+      const apps = catalogue.filter(a => a.mode === mode);
       const categories = new Set(apps.map(a => a.category));
       return {
         mode,
@@ -1133,6 +1136,8 @@ export default function Dashboard() {
   const { setCurrentMenu } = useNavigation();
   const { favorites, toggleFavorite, reorderFavorite } = useFavorites();
   const { setAssessmentPageState } = useAnalysisPageState();
+  // 관리자 오버라이드가 반영된 실효 카탈로그 — 즐겨찾기 카드 표시·진입 판정에 쓴다.
+  const { apps: catalogue, getBlock } = useAppCatalogue();
 
   const [projects, setProjects] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -1290,14 +1295,20 @@ export default function Dashboard() {
   //  HiTESS Model Builder, HP-SCR, F06 Parser, Mooring Fitting 등 — 이
   //  전부 '준비 중' 으로 잘못 막혔다.)
   const handleFavoriteClick = (title) => {
-    const appMeta = ANALYSIS_DATA.find(a => a.title === title);
+    const appMeta = catalogue.find(a => a.title === title);
     if (!appMeta) {
       showToast(`'${title}' 앱 정보를 찾을 수 없습니다.`, 'info');
       return;
     }
-    // 개발 중/예정 앱은 관리자가 아니면 안내 모달로 차단
-    if ((appMeta.devStatus === 'Developing' || appMeta.devStatus === 'Planned') && !getIsAdmin()) {
-      setGateApp({ title: appMeta.title, devStatus: appMeta.devStatus });
+    // 개발 중/예정·점검 중 앱은 관리자가 아니면 안내 모달로 차단
+    const block = getIsAdmin() ? null : getBlock(appMeta);
+    if (block) {
+      setGateApp({
+        title: appMeta.title,
+        devStatus: appMeta.devStatus,
+        reason: block.reason,
+        message: block.message,
+      });
       return;
     }
     const menuName = getAppMenuName(title);
@@ -1316,7 +1327,7 @@ export default function Dashboard() {
   const handleProgramShortcut = (programName) => {
     const appMeta =
       findAppByProgramName(programName) ||
-      ANALYSIS_DATA.find(app => app.title === programName);
+      catalogue.find(app => app.title === programName);
 
     if (!appMeta) {
       showToast(`'${programName}' 앱 정보를 찾을 수 없습니다.`, 'info');
@@ -1427,6 +1438,8 @@ export default function Dashboard() {
           onClose={() => setGateApp(null)}
           appTitle={gateApp?.title}
           devStatus={gateApp?.devStatus}
+          reason={gateApp?.reason}
+          message={gateApp?.message}
         />
       </Suspense>
 
@@ -1807,7 +1820,7 @@ export default function Dashboard() {
             variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }}
           >
             {favorites.map((favTitle, index) => {
-              const analysisInfo = ANALYSIS_DATA.find(a => a.title === favTitle);
+              const analysisInfo = catalogue.find(a => a.title === favTitle);
               if (!analysisInfo) return null;
               return (
                 <FavoriteCard

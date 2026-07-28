@@ -12,7 +12,7 @@ import SplashScreen from './pages/auth/SplashScreen';
 import LoginScreen from './pages/auth/LoginScreen';
 import Layout from './components/layout/Layout';
 import { Wand2 } from 'lucide-react';
-import { ANALYSIS_DATA, DashboardProvider, getAppMenuName } from './contexts/DashboardContext';
+import { ANALYSIS_DATA, DashboardProvider, getAppMenuName, useAppCatalogue } from './contexts/DashboardContext';
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -46,6 +46,7 @@ const SystemSettings = lazy(() => import('./pages/Administration/SystemSettings'
 const AnalysisManagement = lazy(() => import('./pages/Administration/AnalysisManagement'));
 const UsageReports = lazy(() => import('./pages/Administration/UsageReports'));
 const AppCommunityManagement = lazy(() => import('./pages/Administration/AppCommunityManagement'));
+const AppSettings = lazy(() => import('./pages/Administration/AppSettings'));
 const BdfScanner = lazy(() => import('./pages/analysis/BdfScanner'));
 const DrawingToAnalysis = lazy(() => import('./pages/analysis/DrawingToAnalysis'));
 const ParametricApps = lazy(() => import('./pages/analysis/ParametricApps'));
@@ -86,6 +87,30 @@ const PageFallback = () => (
   </div>
 );
 
+/** 관리자가 사용 중지한 App 에 들어왔을 때의 안내 화면. */
+const BlockedAppNotice = ({ app, block, onBack }) => {
+  const isMaintenance = block?.reason === 'maintenance';
+  return (
+    <div className="flex h-full flex-col items-center justify-center text-center text-slate-400">
+      <div className={`mb-4 rounded-full p-6 ${isMaintenance ? 'bg-amber-50' : 'bg-blue-50'}`}>
+        <Wand2 size={48} className={`opacity-20 ${isMaintenance ? 'text-amber-500' : 'text-blue-500'}`} />
+      </div>
+      <p className="text-lg font-bold text-slate-700">{app.title}</p>
+      <p className="mt-1 max-w-md whitespace-pre-wrap text-sm">
+        {isMaintenance
+          ? block.message
+          : '이 앱은 현재 준비 중으로 관리자만 사용할 수 있습니다.'}
+      </p>
+      <button
+        onClick={onBack}
+        className="mt-6 cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-700"
+      >
+        대시보드로 돌아가기
+      </button>
+    </div>
+  );
+};
+
 function AppInner() {
   const [appState, setAppState]           = useState(APP_STATE.SPLASH);
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -99,6 +124,12 @@ function AppInner() {
   // 본 컴포넌트는 setAppState/resetNavigation 같은 라우팅 부수 효과만 담당한다.
   const { logout: authLogout, user: authUser } = useAuth();
   const isAdmin = !!authUser?.is_admin;
+  // 관리자가 App Settings 에서 내린 사용 중지 판정 — renderPage 의 단일 게이트에 쓴다.
+  const {
+    apps: appCatalogue,
+    getBlock: appBlockOf,
+    isBlockedFor: isAppBlocked,
+  } = useAppCatalogue();
 
   // 승인 대기 사용자 수 — 사이드바 뱃지 + 로그인 시 토스트 알림.
   const [pendingUserCount, setPendingUserCount] = useState(0);
@@ -397,6 +428,23 @@ function AppInner() {
   }, [goBack, goForward]);
 
   const renderPage = (menu = currentMenu) => {
+    // 차단된 App(개발 중·출시 예정·점검 중)의 단일 렌더 게이트.
+    // 카드 클릭에는 각 목록 화면이 안내 모달을 띄우지만, 최근 앱·명령 팔레트·
+    // 토스트 링크 등 다른 진입 경로는 setCurrentMenu 로 곧장 들어온다. 화면을
+    // 그리는 이 지점에서 한 번 더 막아 모든 경로를 한 곳에서 통제한다.
+    const gatedApp = appCatalogue.find(
+      app => getAppMenuName(app.title) === menu || app.title === menu,
+    );
+    if (gatedApp && isAppBlocked(gatedApp, isAdmin)) {
+      return (
+        <BlockedAppNotice
+          app={gatedApp}
+          block={appBlockOf(gatedApp)}
+          onBack={() => setCurrentMenu('Dashboard')}
+        />
+      );
+    }
+
     if (ADMIN_MENUS.has(menu) && !isAdmin) {
       return (
         <div className="flex flex-col items-center justify-center h-full text-slate-400">
@@ -453,6 +501,7 @@ function AppInner() {
       case 'Analysis Management': return <AnalysisManagement />;
       case 'Usage Reports': return <UsageReports />;
       case 'App Community': return <AppCommunityManagement />;
+      case 'App Settings': return <AppSettings />;
       case 'System Settings':
       case 'System Management': return <SystemSettings />;
       case 'BDF Scanner': return <BdfScanner />;

@@ -8,6 +8,7 @@ import {
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
+import { isAppBlockedFor, mergeAppSetting, useAppSettings } from '../../hooks/useAppSettings';
 import { useToast } from '../../contexts/ToastContext';
 import { API_BASE_URL } from '../../config';
 import { downloadFileBlob } from '../../api/analysis';
@@ -2255,12 +2256,12 @@ const MODEL_BUILDER_COMMUNITY_KEY = ANALYSIS_DATA.find(
   app => app.title === 'HiTESS Model Builder',
 )?.communityKey;
 
-// GMU 앱이 개발 중(Developing/Planned)이면 일반 사용자에게는 전달을 막고, 관리자에게만 허용한다.
-function isGmuHandoffLocked() {
+// GMU 앱이 개발 중(Developing/Planned)이거나 점검 중이면 일반 사용자에게는 전달을
+// 막고, 관리자에게만 허용한다. 관리자가 App Settings 에서 내린 판정까지 반영한다.
+function isGmuHandoffLocked(overrides) {
   const meta = ANALYSIS_DATA.find(a => a.title === GMU_MENU_NAME);
   if (!meta) return false;
-  const gated = meta.devStatus === 'Developing' || meta.devStatus === 'Planned';
-  return gated && !isAdmin();
+  return isAppBlockedFor(mergeAppSetting(meta, overrides?.[GMU_MENU_NAME]), isAdmin());
 }
 
 export default function HiTessModelBuilder() {
@@ -2273,7 +2274,9 @@ export default function HiTessModelBuilder() {
   const setGmuHandoff  = dashboardCtx?.setGmuHandoff  || (() => {});
   const setSidePassageHandoff = dashboardCtx?.setSidePassageHandoff || (() => {});
   const saved          = dashboardCtx?.modelBuilderPageState;
-  const gmuLocked      = isGmuHandoffLocked(); // 개발 중 + 비관리자 → GMU 전달 버튼 비활성화
+  const appOverrides   = useAppSettings();
+  // 개발 중/점검 중 + 비관리자 → GMU 전달 버튼 비활성화
+  const gmuLocked      = isGmuHandoffLocked(appOverrides);
 
   // ── 입력 상태 ──
   const [struFile,  setStruFile]  = useState(saved?.struFile ?? null);

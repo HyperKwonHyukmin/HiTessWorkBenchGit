@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from '@headlessui/react';
 import { Activity, ArrowRight, Clock, Search, Server, Settings, Star, X } from 'lucide-react';
-import { ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
+import { getAppMenuName, useAppCatalogue } from '../../contexts/DashboardContext';
 import { useRecentActivity } from '../../contexts/RecentActivityContext';
+import { isAdmin as getIsAdmin } from '../../utils/auth';
 
 function scoreCommand(command, query) {
   const q = query.trim().toLowerCase();
@@ -34,6 +35,7 @@ export default function CommandPalette({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
   const { recentApps } = useRecentActivity();
+  const { apps: catalogue, isBlockedFor } = useAppCatalogue();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -59,14 +61,19 @@ export default function CommandPalette({
       action: () => onNavigate(item.menu),
     }));
 
-    const apps = ANALYSIS_DATA.map(app => ({
-      id: `app:${app.title}`,
-      type: 'app',
-      label: app.title,
-      subtitle: `${app.mode} · ${app.category}`,
-      keywords: `${app.description} ${(app.tags || []).join(' ')}`,
-      action: () => onNavigate(getAppMenuName(app.title)),
-    }));
+    // 개발 중·점검 중 앱은 일반 사용자에게 아예 노출하지 않는다.
+    // (팔레트는 handleNavigate 로 바로 이동하므로 진입 모달 게이트를 거치지 않는다.)
+    const isUserAdmin = getIsAdmin();
+    const apps = catalogue
+      .filter(app => !isBlockedFor(app, isUserAdmin))
+      .map(app => ({
+        id: `app:${app.title}`,
+        type: 'app',
+        label: app.title,
+        subtitle: `${app.mode} · ${app.category}`,
+        keywords: `${app.description} ${(app.tags || []).join(' ')}`,
+        action: () => onNavigate(getAppMenuName(app.title)),
+      }));
 
     const system = [
       {
@@ -93,7 +100,7 @@ export default function CommandPalette({
     ];
 
     return [...recent, ...system, ...menus, ...apps];
-  }, [menuItems, onNavigate, onOpenDiagnostics, onOpenServerSettings, recentApps]);
+  }, [catalogue, isBlockedFor, menuItems, onNavigate, onOpenDiagnostics, onOpenServerSettings, recentApps]);
 
   const filtered = useMemo(() => {
     return commands

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Star, ArrowRight, User, Lock } from 'lucide-react';
+import { Star, ArrowRight, User, Lock, Settings2 } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 
 const ACCENT_HOVER = {
@@ -46,6 +46,8 @@ export default function AppListRow({
   isRestricted = false,
   onFavorite,
   onStart,
+  // 관리자에게만 전달된다 — 넘어오면 행에 App 설정(톱니바퀴) 버튼이 붙는다.
+  onSettings,
 }) {
   const {
     title = '',
@@ -130,6 +132,19 @@ export default function AppListRow({
           <User size={10} />
           <span>{contributor}</span>
         </div>
+      )}
+
+      {/* App 설정 (관리자 전용) */}
+      {onSettings && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onSettings(); }}
+          className="shrink-0 rounded-lg p-0.5 text-slate-300 outline-none transition-colors hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+          title="App 설정 (관리자)"
+          aria-label={`${title} App 설정`}
+        >
+          <Settings2 size={16} />
+        </button>
       )}
 
       {/* 즐겨찾기 */}

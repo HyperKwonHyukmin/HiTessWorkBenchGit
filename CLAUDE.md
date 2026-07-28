@@ -231,6 +231,23 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 - 세션은 `localStorage`의 `'user'` 키에 저장되고 props/context로 전달. JWT 없음.
 - `User` 모델의 `is_admin` 플래그로 관리자 페이지 접근 제어.
 
+### App Settings — App별 서비스 상태·접근 통제 ★API가 403이면 여기부터 확인
+
+관리자가 App을 **개발 중 / 출시 예정 / 점검 중**으로 내리면 해당 App의 화면 진입과 **해석 요청 API가 서버에서 403으로 거부**된다. 원인 불명의 403을 만나면 `app_settings` 테이블부터 볼 것.
+
+- **카탈로그의 원본은 여전히 코드**: `DashboardContext.jsx`의 `ANALYSIS_DATA`. DB(`app_settings`)에는 **오버라이드만** 저장한다. 행이 없으면 코드 기본값, 행을 지우면 초기화. 그래서 코드에 앱을 추가해도 DB를 미리 손댈 필요가 없다.
+- **프론트에서 실효값을 읽는 법**: 반드시 `useAppCatalogue()`(DashboardContext) 사용. `ANALYSIS_DATA`를 직접 import 하면 **코드 기본값이 고정**돼 관리자 변경이 화면에 반영되지 않는다. 오버라이드 map 자체는 `useAppSettings()`(`hooks/useAppSettings.js`).
+- **차단 판정 우선순위**: `maintenance` > `dev_status ∈ {Developing, Planned}`. 관리자는 항상 통과(개발·점검 중인 앱을 확인해야 하므로).
+- **차단 지점 3곳**:
+  1. 목록 카드 클릭 → `AdminGateModal` (Dashboard / AppCataloguePage)
+  2. `App.jsx:renderPage()`의 단일 게이트 — 최근 앱·명령 팔레트·토스트 링크 등 `setCurrentMenu`로 곧장 들어오는 모든 경로를 여기서 막는다
+  3. 백엔드 미들웨어 `services/app_settings_gate.py`
+- ⚠ **백엔드 게이트에 새 App을 걸려면 `services/app_settings.py`의 `GUARDED_ROUTES`에 경로 접두사를 등록해야 한다.** 미등록 경로는 **fail-open**(통과)이다. 상태만 바꾸고 여기를 빠뜨리면 화면은 막히는데 API는 열려 있다.
+- 게이트는 **POST/PUT/PATCH/DELETE 만** 검사한다. 진행 중 작업의 상태 폴링(GET)까지 막으면 관리자가 스위치를 내리는 순간 남의 작업이 끊긴다.
+- ⚠ **미들웨어 등록 순서**: `main.py`에서 `install_app_availability_guard()`를 **CORSMiddleware보다 먼저** 호출해야 한다. Starlette은 나중에 추가한 미들웨어가 바깥쪽이라, 순서가 바뀌면 게이트의 403에 CORS 헤더가 안 붙어 앱이 차단 사유를 못 읽는다.
+- 관리 UI: `Administration > App Settings`(전체 표) + 앱 카드/행의 톱니바퀴(관리자에게만 노출) → `components/admin/AppSettingsModal.jsx`.
+- 설정 캐시 TTL 5초(쓰기 시 즉시 invalidate) + 프론트 60초 폴링 → 다른 관리자의 변경이 최대 1분 내 반영.
+
 ### DB 모델 (`app/models.py`)
 
 | 모델 | 테이블 | 주요 컬럼 |
@@ -240,6 +257,7 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 | `Notice` | `notices` | type, is_pinned |
 | `UserGuide` | `user_guides` | category, content |
 | `FeatureRequest` | `feature_requests` | status, upvotes, admin_comment |
+| `AppSetting` | `app_settings` | app_key(=ANALYSIS_DATA title), dev_status, maintenance, maintenance_message, description, tags(JSON), contributor |
 
 ### 백엔드 라우터 구조
 
@@ -253,6 +271,8 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 | `routers/ai.py` | `/api/ai` | 채팅, 인덱싱, 문서 목록 |
 | `routers/davit.py` | `/api/davit` | Mast Post / Jib Rest 다빗 구조 계산 |
 | `routers/column_buckling.py` | (별도 프리픽스) | AISC 기둥 좌굴 하중 계산 |
+| `routers/chat.py` | `/api/chat` | 관리자↔사용자 1:1 DM (폴링 기반, WebSocket 없음) |
+| `routers/app_settings.py` | `/api/app-settings`, `/api/admin/app-settings` | App별 서비스 상태·점검·표시 메타 오버라이드 |
 
 **`/member/check_user`**: 사번(`userID`) + 회사(`company`) 기반으로 사용자 등록·승인 여부 확인. `/api/check_user`로도 동일하게 접근 가능. Electron 앱 초기 로그인에 사용.
 
@@ -298,4 +318,5 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 | `'Analysis Management'` | `Administration/AnalysisManagement.jsx` | 관리자: 전체 해석 이력 |
 | `'Usage Reports'` | `Administration/UsageReports.jsx` | 관리자: 일/주/월 사용량 정형 리포트, Excel 내보내기 |
 | `'System Settings'` | `Administration/SystemSettings.jsx` | 관리자: 시스템 모니터링 |
+| `'App Settings'` | `Administration/AppSettings.jsx` | 관리자: App별 서비스 상태·점검 모드·표시 정보 |
 | `'API Apps'` | `Administration/ApiApps.jsx` | 관리자: API 연동 앱 관리 |

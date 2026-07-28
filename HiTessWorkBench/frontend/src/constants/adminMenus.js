@@ -12,6 +12,7 @@ export const ADMIN_MENUS = new Set([
   'System Settings',
   'Usage Reports',
   'App Community',
+  'App Settings',
   'API Apps',
 ]);
 

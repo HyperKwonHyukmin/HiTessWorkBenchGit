@@ -73,6 +73,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate,
           { icon: Settings, label: "System Management" },
           { icon: LineChart, label: "Usage Reports" },
           { icon: MessagesSquare, label: "App Community" },
+          { icon: SlidersHorizontal, label: "App Settings" },
           { icon: Webhook, label: "API Apps" },
         ]
       });
