@@ -143,6 +143,46 @@ ModuleUnitStudio(viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module
 - **면적 vs 상태(비단조)**: 밴드를 넓힐수록 면적↑ 이지만 **너무 넓으면 `wireConflictCount`(와이어 간섭)↑ → warn**(stage6 안정성 margin 은 오히려 동일). 실측(3496-35210-A508372): tol 10mm→3.07㎡ pass, 100→12.78 pass, 200→**16.84㎡ pass**, 350→2.38(붕괴), 500→23.72㎡ **warn(간섭29)**. 단일 고정 밴드는 keep-K/greedy 클러스터 경계 때문에 **비단조**라 스윕으로 회피. 스윕은 **조기 종료 없음**(모든 밴드 시도 후 랭킹) — 백엔드 `--optimize` 타임아웃 **300s** 이내(실측 ~15s).
 - **2D 방향 = 앱 3D '평면도(A키)' 와 동일**: 앱 평면도는 `camera.up=+X`·−Z 내려봄 → 화면 **↑X(종)·←Y(횡)**. 썸네일(`HoistCandidateThumbnail` + `planViewProjector`)과 구역 미니맵(`buildZonePartitionView`) 모두 이 방향으로 통일(과거 ↑Y·→X 라 3D와 90° 어긋나 "대칭"처럼 보였음). 형상 지표(면적/정사각형도/축편차)는 화면방향과 무관한 모델좌표 계산이라 불변.
 
+#### 'Strict 평가' 토글 — 형상 FAIL 완화 (2026-07-27 세션, 0.0.121)
+
+Hoist 좌측 도크 패널 상단의 토글. **기본 OFF(= 완화)** 이며 `localStorage('mu.hoist.strictEvaluation.v1')` 로 세션 간 유지된다.
+
+- **완화 O — Stage 1(형상 분류) · Stage 2(Z단차·convex·평면도·Trolley 단변·삼각형 내각) → `fail` 대신 `warn`.**
+- **완화 X — Stage 3(`wireLengthMm ≤ 0`) · Stage 6(전도) 는 항상 `fail`.** 전자는 정점 자체를 못 만들고, 후자는 모듈이 실제로 넘어지는 위험이라 성격이 다르다(사용자 결정).
+- 전달 경로: 스튜디오 `buildPostureStabilityPayload` → `_posture.json` 최상위 `strictEvaluation` → `Stage0_InputParser` → `StabilityContext.RelaxShapeGate` → Stage 1·2 판정 + `GroupShapeValidator.IsComboAcceptable(relaxShape)`. `WithGroups` 전파 필수(빠지면 후보를 strict 로 재평가해 전부 fail).
+- ⚠️ **옵티마이저 게이트도 반드시 같이 열어야 한다.** `GroupShapeValidator` 는 평가 *이전에* 조합을 버리므로, 여기를 안 열면 스튜디오에서 완화해도 **고를 후보 자체가 생성되지 않는다.** 단 4점 왜곡 게이트(`ExtremeMinInteriorDeg`/squareness/`ExceedsQuadDistortionLimits`)는 형상 판정이 아니라 추천 품질 필터라 **완화하지 않는다**(열면 후보 폭증).
+- ⚠️ **완화 표식을 Stage 0 `warningNotes` 에 넣지 말 것.** Stage 0 이 warn 이 되면 형상이 멀쩡한 후보까지 `overall=warn` 이 되어 옵티마이저의 **PASS/WARN 랭킹 계층이 무너진다.** 대신 상태를 바꾸지 않는 `summary` 에만 기록한다 — Stage 0 `strictEvaluation`, Stage 1·2 `shapeGateRelaxed`(실제 강등이 일어났을 때만 true).
+- **단위 구조해석 게이트는 손대지 않았다.** `useUnitStructuralRunner.js` 의 `stabilityOk = pass || warn` 이 그대로라, Stage 1·2 가 warn 으로 내려오면 자동으로 열리고 전도 fail 은 계속 막힌다.
+- 실측 검증(A505080 골든 모델, 배포 exe): 정점편차 1mm·Z단차 6868mm 4점 조합 → **Strict ON** stage2=fail·overall=fail(진행 불가) / **Strict OFF** stage2=warn·stage6=pass·overall=warn(**진행 가능**, apex/wire 산출). 전도가 실패하는 조합은 OFF 여도 overall=fail 로 막힘.
+- 추적성: 화면 상시 경고 배너(`StrictEvaluationControl`) + `_posture.json` 플래그 + 단위 구조해석 준비 문구(`isShapeGateRelaxed(report)`). 토글을 바꾸면 이전 엄격도로 평가된 결과를 `useStabilityStore.reset()` 으로 무효화한다.
+
+### Mooring Fitting Assessment — 3개 구성요소(엔진 / exe배포본 / 스튜디오)와 배포 흐름 ★작업 전 필독
+
+Mooring Fitting Assessment(연결 메뉴 = "Mooring Fitting Assessment", viewer id=`mooring-fitting-studio`)는 **별개의 세 위치**로 구성된다. 어느 쪽을 건드리는지 먼저 구분할 것.
+
+**① 해석 엔진 (C# .NET)**
+- 소스: `C:\Coding\WorkBenchSubModule\MooringFitting\` (`MooringFitting.sln`, `src/`, `publish/`, `CONTEXT.md`, `README.md`).
+- 빌드 산출물(실사용): `HiTessWorkBenchBackEnd\InHouseProgram\MooringFitting\MooringFitting.exe` — 엔진 개발이 끝나면 여기로 복사. InHouse 규칙 그대로 적용 — **git 미추적 → 운영 서버(145)에 수동 교체 + 백엔드 재시작 필요**. (폴더에 기능단계별 `.bak_*` 백업 존재)
+- CLI 태스크 2종 (`app/services/mooring_fitting_service.py`가 호출):
+  - `build-full` — 모델/BDF 생성. 안전계수 `--mf-sf`(기본 1.25), Angle_H/Angle_V force 역산 기록.
+  - `solve-bdf <bdf> <model.json> -o <result.json> --yield <σy기본315 AH32> --gamma <γM기본1.0>` — Nastran SOL 101 해석, von Mises Usage=σeff/(σy/γM). `SOLVE_TIMEOUT=1800s`.
+
+**② 스튜디오 (React 뷰어)**
+- 소스: `C:\Coding\WorkBenchSubModule\MooringFittingStudio\` (viewer id=`mooring-fitting-studio`). 버전은 `package.json` 한 곳만 올림. 빌드 시 `mooring-fitting-studio-<ver>.zip`(+`.sha256`).
+- **배포 위치:**
+  1. **UNC(사용자 지정 표준 아카이브)**: `\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram` — 버전 올려 zip+sha256 저장. (한글·대괄호 → PowerShell `Copy-Item -LiteralPath ... -Destination '<경로>' -Force`)
+  2. **★ 권장 + 서버 필수**: 백엔드-로컬 `HiTessWorkBenchBackEnd\StudioProgram\` 에도 복사. 백엔드 `viewers.py` `_candidate_dirs` 우선순위 = (env override) → **백엔드-로컬 StudioProgram → UNC**. '첫 후보가 존재하는 폴더'에서 멈춰 최고 버전을 서빙한다. 운영 서버(145)는 UNC 접근 불가 가정이므로 **서버 `StudioProgram\` 수동 복사가 실제 배포 통로**다.
+
+**③ WorkBench 버전 동기화 — ★ ModuleUnit/ModelBuilder와 다름 (수동 핀 없음)**
+- `HiTessWorkBench/frontend/src/pages/analysis/MooringFittingAssessment.jsx` 에는 **하드코딩 버전 상수(예 `MOORING_STUDIO_VERSION`)가 없다.** `latestVersion`을 백엔드 manifest(`GET /api/viewers/manifest/mooring-fitting-studio`)에서 **동적으로** 읽는다(`studioLatestVersion`). 설치본은 `studioInstalledVersion`. 불일치 시 "업데이트 후 열기" 버튼 노출.
+- 즉 **버전 맞춤 = zip을 StudioProgram(UNC/백엔드-로컬)에 올리면 백엔드 `_find_zip`이 최고 버전을 manifest로 서빙 → 프론트가 자동으로 그 버전을 latest로 인식.** 프론트 수동 핀 수정 불필요(ModuleUnit처럼 세트로 상수 bump 하는 절차가 여기엔 없음).
+
+**런타임 InHouse 의존 (서버 145 수동 반영 대상):** `InHouseProgram/MooringFitting/MooringFitting.exe` + `InHouseProgram/NastranBridge/nastran_bridge.py`(rbe2_fixed_lines 등 편집 BDF fix, `analysis.py` apply-edit 기본 경로) + `InHouseProgram/F06Parser/` + 외부 MSC `nastran.exe`.
+
+**배포 세트 요약:** 엔진 수정 → publish → `InHouseProgram/MooringFitting/` 복사(+서버145 수동·재시작) / 스튜디오 수정 → `package.json` bump → `npm` 빌드 zip → **UNC + 백엔드-로컬** 복사 → WorkBench는 manifest로 **자동 버전 인식**(프론트 수동 핀 없음).
+
+**현재 상태(2026-07-23 확인):** 엔진 git 최신 `0494258`(CSV parse skip grouping). 스튜디오 `package.json`=`0.1.59`, UNC StudioProgram에 `0.1.58/0.1.59` 배포됨. ⚠ 백엔드-로컬 `HiTessWorkBenchBackEnd\StudioProgram\` 에는 mooring zip이 없어 현재 **UNC로 폴백 서빙 중** — 다음 배포 때 백엔드-로컬에도 복사할 것. 기능 이력: 최초 API(`52bc2ad`) → Studio Phase1 BDF뷰어(`37a50c6`) → solve-bdf 연동(`2d62be2`) → Safety Factor·v1.2.5(`79d9611`) → 편집 BDF solve PID패치·SPC충돌해소(`728b66e`).
+
 ### 프론트엔드 내비게이션 구조
 
 React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)를 사용합니다. `useReducer` 기반으로 `history[]` 배열과 `currentIndex`를 원자적으로 관리합니다. 페이지 컴포넌트에서 `useNavigation()` 훅으로 `setCurrentMenu(name)`, `goBack()`, `goForward()` 등에 접근합니다(이전의 props drilling 방식 제거). 전체 라우팅 분기는 `App.jsx:renderPage()`의 switch문에 있습니다.
