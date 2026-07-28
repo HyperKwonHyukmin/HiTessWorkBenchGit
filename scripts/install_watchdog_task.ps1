@@ -64,10 +64,13 @@ if (-not (Test-Path -LiteralPath $launcher)) {
 # logs/server_events.jsonl 로만 남는다(server_watchdog.py 가 그렇게 만들어져 있다).
 $action = New-ScheduledTaskAction -Execute $python -Argument "`"$script`"" -WorkingDirectory $backendDir
 
-# RepetitionDuration 의 MaxValue 는 '무기한' 을 뜻한다(P99999999D 로 정규화됨).
+# ⚠ -RepetitionDuration 을 주지 않는다. 이것이 '무기한' 이다(Duration 이 빈 값).
+# [TimeSpan]::MaxValue 를 넘기면 New-ScheduledTaskTrigger 는 조용히 통과하지만
+# Register-ScheduledTask 가 XML 스키마 위반으로 거부한다(실측):
+#   "작업 XML에 형식이 잘못되었거나 범위를 벗어난 값이 있습니다. Duration:P99999999DT23H59M59S"
+# 트리거 객체가 만들어지는 것과 등록이 받아들여지는 것은 별개다.
 $repeat = New-ScheduledTaskTrigger -Once -At (Get-Date) `
-    -RepetitionInterval (New-TimeSpan -Minutes 5) `
-    -RepetitionDuration ([TimeSpan]::MaxValue)
+    -RepetitionInterval (New-TimeSpan -Minutes 5)
 
 # 도메인 계정이면 USERNAME 만으로는 해석되지 않는다 — 정규화된 이름을 쓴다.
 $account = "$env:USERDOMAIN\$env:USERNAME"
