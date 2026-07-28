@@ -25,6 +25,13 @@ LOG_DIR = BASE_DIR / "logs"
 # 해석 exe 는 별도 프로세스라 CPU 가 포화돼도 uvicorn 이벤트 루프는 막히지 않는다.
 HEALTH_INTERVAL_MS = health.CHECK_INTERVAL_SEC * 1000
 
+# ── DB 관측(기록 전용) ──
+# /api/version 은 DB 를 타지 않으므로 MySQL 이 죽어도 헬스체크는 통과한다.
+# 이것은 의도된 동작이다 — DB 가 죽었을 때 백엔드를 재시작해도 DB 는 살아나지
+# 않고 진행 중 작업만 추가로 파괴한다. 그래서 관측해서 기록만 하고 복구는 하지 않는다.
+DB_CHECK_INTERVAL_MS = 60_000
+DB_PROBE_TIMEOUT_SEC = 5
+
 # WorkBenchEnv가 HiTessWorkBenchBackEnd 안에 있으면 BASE_DIR/WorkBenchEnv,
 # 상위 폴더(HiTessWorkBenchGit)에 있으면 BASE_DIR.parent/WorkBenchEnv 를 사용
 _venv_inner = BASE_DIR / "WorkBenchEnv" / "Scripts" / "python.exe"
@@ -78,6 +85,12 @@ class ServerManagerApp:
         self.uvicorn_log = events.DailyLogWriter(LOG_DIR)
         self.health_tracker = health.HealthTracker()
         self.restart_policy = RestartPolicy()
+        # DB 도달성. 전이 시에만 기록하려고 직전 상태를 들고 있는다. 초기값이
+        # 낙관적(True)이라 처음부터 DB 가 죽어 있어도 첫 관측에서 전이가 잡힌다.
+        self.db_reachable = True
+        # 직전 프로브가 아직 안 끝났으면 새로 띄우지 않는다 — DB 가 '죽은' 게
+        # 아니라 '멎은' 상태에서 스레드가 1분마다 하나씩 쌓이는 것을 막는다.
+        self.db_probe_running = False
 
         self._setup_window()
         self._build_ui()
@@ -88,6 +101,7 @@ class ServerManagerApp:
 
         self._start_server()
         self.root.after(HEALTH_INTERVAL_MS, self._health_tick)
+        self.root.after(DB_CHECK_INTERVAL_MS, self._db_tick)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ── PID 파일 기록 ────────────────────────────────────────────────────
@@ -556,6 +570,79 @@ class ServerManagerApp:
         else:
             self._schedule_zombie_restart()
 
+    def _post_update_start(self):
+        """업데이트 직후의 기동. 실패하면 크래시와 똑같이 재시도한다.
+
+        _update_worker 는 root.after(0, ...) 로 부르므로 반환값을 받을 수 없어
+        이 래퍼가 필요하다. 업데이트는 사용자 클릭으로만 시작되지만, RDP 로
+        누르고 자리를 뜨면 아무도 보지 않는다 — 그때 기동이 실패하면 _stop_server
+        가 이미 server_proc 을 None 으로 만든 뒤라 크래시 감지도 좀비 감지도
+        걸리지 않고(둘 다 살아있는 프로세스를 전제한다), L1 은 살아 있으니 L2 도
+        개입하지 않는다. 재예약하지 않으면 그대로 영구 정지다.
+        """
+        if not self._start_server():
+            self._schedule_auto_restart()
+
+    # ── DB 관측(기록 전용, 복구 없음) ────────────────────────────────────
+    def _db_tick(self):
+        self.root.after(DB_CHECK_INTERVAL_MS, self._db_tick)
+        if self.db_probe_running:
+            return
+        self.db_probe_running = True
+        threading.Thread(target=self._probe_db, daemon=True).start()
+
+    def _probe_db(self):
+        """app/database.py 와 같은 .env 를 읽어 직접 접속한다.
+
+        백엔드를 경유하지 않으므로 백엔드 커넥션 풀에 영향이 없고, 자격증명을
+        별도로 중복 정의하지도 않는다. load_dotenv 에 경로를 명시하는 이유는
+        app/database.py 의 인자 없는 호출과 달리 이 프로세스의 cwd 가 다를 수
+        있기 때문이다.
+
+        read/write 타임아웃을 반드시 건다 — 접속은 되는데 서버가 응답하지 않는
+        상태(커넥션 고갈·락 대기)가 바로 이 관측이 겨냥하는 고장 모드이고,
+        connect_timeout 만으로는 SELECT 1 이 영원히 블록된다.
+        """
+        ok, detail = True, {}
+        try:
+            import pymysql
+            from dotenv import load_dotenv
+
+            load_dotenv(BASE_DIR / ".env")
+            conn = pymysql.connect(
+                host=os.getenv("DB_HOST", "localhost"),
+                port=int(os.getenv("DB_PORT", "3306")),
+                user=os.getenv("DB_USER", "admin"),
+                password=os.getenv("DB_PASSWORD", ""),
+                database=os.getenv("DB_NAME", "hitessworkbench"),
+                connect_timeout=DB_PROBE_TIMEOUT_SEC,
+                read_timeout=DB_PROBE_TIMEOUT_SEC,
+                write_timeout=DB_PROBE_TIMEOUT_SEC,
+            )
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                    cursor.fetchone()
+            finally:
+                conn.close()
+        except Exception as exc:
+            ok = False
+            detail = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+
+        self.root.after(0, self._on_db_result, ok, detail)
+
+    def _on_db_result(self, ok, detail):
+        self.db_probe_running = False
+        if ok == self.db_reachable:
+            return                       # 전이가 없으면 기록하지 않는다.
+        self.db_reachable = ok
+        if ok:
+            self._log("DB 연결이 회복되었습니다.", "success")
+            events.append_event(LOG_DIR, "L1", "db_recovered")
+        else:
+            self._log("DB 에 연결할 수 없습니다 (기록만 — 재시작하지 않음).", "warning")
+            events.append_event(LOG_DIR, "L1", "db_unreachable", detail)
+
     # ── 자동 재시작(의도치 않은 종료 시) ─────────────────────────────────
     def _schedule_restart(self, fire, reason, exhausted_message):
         """재시작 예산을 물어 콜백을 예약한다. 예약은 어떤 경우에도 반드시 남는다.
@@ -703,7 +790,7 @@ class ServerManagerApp:
 
         # 4. 서버 재시작 + 헬스 체크
         self.root.after(0, self._log, "[4/4] 서버를 재시작합니다.", "success")
-        self.root.after(0, self._start_server)
+        self.root.after(0, self._post_update_start)
 
         time.sleep(5)
         self._health_check_after_update()

@@ -197,6 +197,8 @@ def harness(monkeypatch):
     app.intentional_stop = False
     app.health_tracker = health.HealthTracker()
     app.restart_policy = RestartPolicy()
+    app.db_reachable = True
+    app.db_probe_running = False
     app.uvicorn_log = types.SimpleNamespace(write=lambda line: None, close=lambda: None)
 
     # GUI 대역 — 위젯이 없으므로 인스턴스 속성으로 가린다.
@@ -880,3 +882,84 @@ def test_zombie_restart_makes_the_next_crash_burst_hit_the_wall_sooner(harness, 
 
     # 좀비가 쓴 칸이 없었다면 이 크래시는 아직 "go" 였다.
     assert harness.events.detail("backoff_wait")["reason"] == "crash"
+
+
+# ── Task 10. DB 관측은 기록만 하고 절대 복구하지 않는다 ─────────────────
+def test_db_unreachable_is_recorded_but_nothing_is_restarted(harness):
+    """/api/version 은 DB 를 타지 않아 MySQL 이 죽어도 헬스체크는 통과한다.
+    DB 장애에 재시작으로 대응하면 DB 는 살아나지 않고 진행 중 작업만 파괴된다."""
+    proc = FakeProc(pid=700)
+    harness.app.server_proc = proc
+
+    harness.app._on_db_result(False, {"error": "OperationalError: 2003"})
+
+    assert harness.events.detail("db_unreachable")["error"].startswith("OperationalError")
+    # 복구 동작이 하나도 일어나선 안 된다.
+    assert harness.killed_ports == []
+    assert proc.terminated is False
+    assert harness.app.server_proc is proc
+    assert harness.root.scheduled(harness.app._zombie_restart_fire) == []
+    assert harness.root.scheduled(harness.app._auto_restart_fire) == []
+
+
+def test_db_result_records_only_on_transition(harness):
+    """전이가 없으면 기록하지 않는다 — 정상인 날에는 한 줄도 쌓이면 안 된다."""
+    harness.app._on_db_result(True, {})            # True → True, 전이 없음
+    assert harness.events.names() == []
+
+    harness.app._on_db_result(False, {"error": "x"})
+    harness.app._on_db_result(False, {"error": "x"})   # 계속 죽어 있음 — 재기록 금지
+    assert harness.events.names() == ["db_unreachable"]
+
+    harness.app._on_db_result(True, {})
+    assert harness.events.names() == ["db_unreachable", "db_recovered"]
+
+
+def test_db_tick_does_not_pile_up_probes_while_one_is_in_flight(harness):
+    """접속은 되는데 서버가 멎은 상태(커넥션 고갈·락 대기)가 이 관측이 겨냥하는
+    고장 모드다. 가드가 없으면 그 상황에서 스레드가 1분마다 하나씩 쌓인다."""
+    harness.app._db_tick()
+    assert len(harness.threads.threads) == 1
+    assert harness.app.db_probe_running is True
+
+    harness.app._db_tick()                          # 직전 프로브가 아직 진행 중
+    assert len(harness.threads.threads) == 1, "인플라이트 중에 새 프로브를 띄웠다"
+
+    harness.app._on_db_result(True, {})             # 결과 도착 → 가드 해제
+    assert harness.app.db_probe_running is False
+    harness.app._db_tick()
+    assert len(harness.threads.threads) == 2
+
+
+def test_db_tick_always_rearms_even_when_skipping(harness):
+    """가드에 걸려 건너뛰어도 다음 tick 예약은 반드시 남아야 한다."""
+    harness.app.db_probe_running = True
+
+    harness.app._db_tick()
+
+    assert harness.root.scheduled(harness.app._db_tick)
+    assert harness.threads.threads == []
+
+
+# ── 업데이트 직후 기동 실패도 영구 정지가 되면 안 된다 ──────────────────
+def test_post_update_start_reschedules_when_start_fails(harness):
+    """_update_worker 는 root.after(0, ...) 라 반환값을 못 받는다. 그 경로에서
+    기동이 실패하면 server_proc 이 None 이라 크래시·좀비 감지 어느 쪽도 걸리지
+    않고(둘 다 살아있는 프로세스를 전제한다) L1 은 살아 있어 L2 도 개입하지
+    않는다 — 재예약하지 않으면 그대로 영구 정지다."""
+    harness.popen_error = PermissionError("액세스가 거부되었습니다")
+
+    harness.app._post_update_start()
+
+    assert "server_start_failed" in harness.events.names()
+    assert harness.root.scheduled(harness.app._auto_restart_fire)
+
+
+def test_post_update_start_is_silent_when_start_succeeds(harness):
+    """성공 경로에서는 재시작 예약을 남기지 않는다(정상 업데이트를 크래시로
+    오인해 예산을 소모하면 안 된다)."""
+    harness.app._post_update_start()
+
+    assert "server_start_failed" not in harness.events.names()
+    assert harness.root.scheduled(harness.app._auto_restart_fire) == []
+    assert harness.app.restart_policy.history == []
