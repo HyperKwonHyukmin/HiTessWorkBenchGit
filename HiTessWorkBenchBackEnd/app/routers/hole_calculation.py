@@ -1,10 +1,11 @@
 """Hole fatigue assessment 계산 라우터 — DNVGL-RP-C203 기준."""
 from typing import Literal, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from ..services.hole_calculation_service import run_hole_calculation
+from ..dependencies import authenticated_employee_id, require_auth
 
 router = APIRouter(prefix="/api/hole-calculation", tags=["hole-calculation"])
 
@@ -58,7 +59,13 @@ class HoleCalculationRequest(BaseModel):
 
 
 @router.post("/calculate")
-def calculate(body: HoleCalculationRequest):
+def calculate(
+    body: HoleCalculationRequest,
+    current_user: str = Depends(require_auth),
+):
     """Hole fatigue assessment (DNVGL-RP-C203) 계산 실행."""
     payload = body.model_dump(exclude_none=True, exclude={"employee_id"})
-    return run_hole_calculation(payload, body.employee_id)
+    return run_hole_calculation(
+        payload,
+        authenticated_employee_id(body.employee_id, current_user),
+    )

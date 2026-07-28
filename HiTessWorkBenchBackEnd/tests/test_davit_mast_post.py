@@ -41,7 +41,7 @@ def test_mast_post_route_passes_vessel_size_to_service(monkeypatch):
         employee_id="E123",
     )
 
-    assert davit.mast_post(body) == {"candidates": []}
+    assert davit.mast_post(body, current_user="E123") == {"candidates": []}
     assert captured == {
         "height_mm": 5000,
         "weight_kg": 200,

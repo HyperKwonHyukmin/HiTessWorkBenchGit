@@ -1,7 +1,8 @@
 """기둥 좌굴 허용 사용하중 계산 라우터."""
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from ..services.column_buckling_service import run_column_buckling
+from ..dependencies import authenticated_employee_id, require_auth
 
 router = APIRouter(prefix="/api/column-buckling", tags=["column-buckling"])
 
@@ -13,10 +14,13 @@ class ColumnBucklingRequest(BaseModel):
 
 
 @router.post("/calculate")
-def calculate(body: ColumnBucklingRequest):
+def calculate(
+    body: ColumnBucklingRequest,
+    current_user: str = Depends(require_auth),
+):
     """AISC 기준 기둥 좌굴 허용 사용하중 계산. 편심량 20mm 고정."""
     return run_column_buckling(
         body.member_name,
         body.length_mm,
-        body.employee_id,
+        authenticated_employee_id(body.employee_id, current_user),
     )

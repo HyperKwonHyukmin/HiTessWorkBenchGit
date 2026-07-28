@@ -11,6 +11,7 @@ from ..state import server_state
 from ..sessions import session_store
 from ..dependencies import require_auth
 from ..services.activity_service import log_activity
+from ..services.external_app_access import external_app_access_store
 
 router = APIRouter(prefix="/api", tags=["auth"])
 member_router = APIRouter(prefix="/member", tags=["member"])
@@ -112,6 +113,7 @@ def logout(req: Request, db: Session = Depends(database.get_db), employee_id: st
   """세션 토큰을 무효화하고 로그아웃 이벤트를 기록합니다."""
   token = req.headers.get("Authorization", "").removeprefix("Bearer ").strip()
   session_store.revoke(token)
+  external_app_access_store.revoke_employee(employee_id)
   # 접속 상태(presence) 행 삭제 — 로그아웃 즉시 오프라인으로 표시.
   db.query(models.UserPresence).filter(models.UserPresence.employee_id == employee_id).delete()
   db.commit()

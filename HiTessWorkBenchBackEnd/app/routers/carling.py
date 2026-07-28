@@ -1,12 +1,13 @@
 """Carling 계산 라우터."""
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from ..services.carling_service import run_carling
 from ..services.carling_report_service import generate_report
+from ..dependencies import authenticated_employee_id, require_auth
 
 router = APIRouter(prefix="/api/carling", tags=["carling"])
 
@@ -61,17 +62,31 @@ class CarlingOptimizationRequest(BaseModel):
 
 
 @router.post("/free")
-def calculate_free(body: CarlingFreeRequest):
+def calculate_free(
+    body: CarlingFreeRequest,
+    current_user: str = Depends(require_auth),
+):
     """01_Carling Free Calculator 계산을 수행합니다."""
     inputs = body.model_dump(exclude={"employee_id"})
-    return run_carling(inputs, body.employee_id, "free")
+    return run_carling(
+        inputs,
+        authenticated_employee_id(body.employee_id, current_user),
+        "free",
+    )
 
 
 @router.post("/optimization")
-def calculate_optimization(body: CarlingOptimizationRequest):
+def calculate_optimization(
+    body: CarlingOptimizationRequest,
+    current_user: str = Depends(require_auth),
+):
     """02_Carling Design Optimization 계산을 수행합니다."""
     inputs = body.model_dump(exclude={"employee_id"})
-    return run_carling(inputs, body.employee_id, "optimization")
+    return run_carling(
+        inputs,
+        authenticated_employee_id(body.employee_id, current_user),
+        "optimization",
+    )
 
 
 class CarlingReportRequest(BaseModel):
@@ -95,12 +110,24 @@ def _report_response(result: dict, employee_id: str) -> Response:
 
 
 @router.post("/free/report")
-def download_free_report(body: CarlingReportRequest):
+def download_free_report(
+    body: CarlingReportRequest,
+    current_user: str = Depends(require_auth),
+):
     """Carling Free 결과를 .xlsx 리포트로 반환합니다."""
-    return _report_response(body.result, body.employee_id)
+    return _report_response(
+        body.result,
+        authenticated_employee_id(body.employee_id, current_user),
+    )
 
 
 @router.post("/optimization/report")
-def download_optimization_report(body: CarlingReportRequest):
+def download_optimization_report(
+    body: CarlingReportRequest,
+    current_user: str = Depends(require_auth),
+):
     """Carling Design Optimization 결과(최적안)를 .xlsx 리포트로 반환합니다."""
-    return _report_response(body.result, body.employee_id)
+    return _report_response(
+        body.result,
+        authenticated_employee_id(body.employee_id, current_user),
+    )

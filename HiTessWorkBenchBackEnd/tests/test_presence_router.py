@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 
 from app import models
+from app.services.external_app_access import external_app_access_store
 
 
 def test_heartbeat_then_online_lists_user(admin_client):
@@ -132,6 +133,10 @@ def test_force_logout_revokes_sessions_and_presence(admin_client, db_session):
         ),
     ])
     db_session.commit()
+    browser_token = external_app_access_store.issue_session(
+        "block-weld",
+        "USER001",
+    )
 
     r = admin_client.post("/api/presence/force-logout/USER001")
     assert r.status_code == 200
@@ -140,6 +145,7 @@ def test_force_logout_revokes_sessions_and_presence(admin_client, db_session):
     db_session.expire_all()
     assert db_session.query(models.UserSession).filter_by(employee_id="USER001").count() == 0
     assert db_session.query(models.UserPresence).filter_by(employee_id="USER001").count() == 0
+    assert external_app_access_store.get_session(browser_token, "block-weld") is None
 
 
 def test_force_logout_refuses_self(admin_client):

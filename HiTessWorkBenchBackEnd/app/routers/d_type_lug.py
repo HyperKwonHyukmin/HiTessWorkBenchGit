@@ -1,8 +1,9 @@
 """D-Type Lug 강도 계산 라우터."""
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from ..services.d_type_lug_service import run_d_type_lug
+from ..dependencies import authenticated_employee_id, require_auth
 
 router = APIRouter(prefix="/api/d-type-lug", tags=["d-type-lug"])
 
@@ -47,7 +48,13 @@ class DTypeLugRequest(BaseModel):
 
 
 @router.post("/calculate")
-def calculate(body: DTypeLugRequest):
+def calculate(
+    body: DTypeLugRequest,
+    current_user: str = Depends(require_auth),
+):
     """D-Type Lug 3개 브라켓 타입의 각도별 Usage Factor를 계산합니다."""
     inputs = body.model_dump(exclude={"employee_id"})
-    return run_d_type_lug(inputs, body.employee_id)
+    return run_d_type_lug(
+        inputs,
+        authenticated_employee_id(body.employee_id, current_user),
+    )

@@ -96,7 +96,18 @@ def task_execute_modelflow(
     """Cmb.Cli build-full 백그라운드 실행 작업."""
     mark_running(job_id, "Model Builder 실행 준비...", progress=10)
 
-    input_data = {"stru_csv": stru_path, "pipe_csv": pipe_path, "equip_csv": equip_path}
+    input_data = {
+        "stru_csv": stru_path,
+        "pipe_csv": pipe_path,
+        "equip_csv": equip_path,
+        "mesh_size": mesh_size,
+        "ubolt_full_fix": ubolt_full_fix,
+        "run_nastran": run_nastran,
+        "nastran_path": nastran_path,
+        "leg_z_tol": leg_z_tol,
+        "mesh_size_structure": mesh_size_structure,
+        "mesh_size_pipe": mesh_size_pipe,
+    }
     result_data: dict = {}
     status_msg = "Success"
     engine_output = ""

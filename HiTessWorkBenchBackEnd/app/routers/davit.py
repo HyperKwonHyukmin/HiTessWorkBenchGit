@@ -1,9 +1,10 @@
 """다빗(Davit) 구조 설계 계산 라우터."""
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from ..services.davit_service import run_mast_post, run_jib_rest_1dan, run_jib_rest_2dan
+from ..dependencies import authenticated_employee_id, require_auth
 
 router = APIRouter(prefix="/api/davit", tags=["davit"])
 
@@ -42,21 +43,36 @@ class JibRest2DanRequest(JibRest1DanRequest):
 
 
 @router.post("/jib-rest-1dan")
-def jib_rest_1dan(body: JibRest1DanRequest):
+def jib_rest_1dan(
+    body: JibRest1DanRequest,
+    current_user: str = Depends(require_auth),
+):
     """Jib Rest 1단 구조 설계 계산."""
     inputs = body.model_dump(exclude={"employee_id"})
-    return run_jib_rest_1dan(inputs, body.employee_id)
+    return run_jib_rest_1dan(
+        inputs,
+        authenticated_employee_id(body.employee_id, current_user),
+    )
 
 
 @router.post("/jib-rest-2dan")
-def jib_rest_2dan(body: JibRest2DanRequest):
+def jib_rest_2dan(
+    body: JibRest2DanRequest,
+    current_user: str = Depends(require_auth),
+):
     """Jib Rest 2단 구조 설계 계산."""
     inputs = body.model_dump(exclude={"employee_id"})
-    return run_jib_rest_2dan(inputs, body.employee_id)
+    return run_jib_rest_2dan(
+        inputs,
+        authenticated_employee_id(body.employee_id, current_user),
+    )
 
 
 @router.post("/mast-post")
-def mast_post(body: MastPostRequest):
+def mast_post(
+    body: MastPostRequest,
+    current_user: str = Depends(require_auth),
+):
     """
     Mast/Post 구조 설계 계산.
     기준을 만족하는 파이프 후보(1~5순위)를 반환합니다.
@@ -65,6 +81,6 @@ def mast_post(body: MastPostRequest):
     return run_mast_post(
         body.height_mm,
         body.weight_kg,
-        body.employee_id,
+        authenticated_employee_id(body.employee_id, current_user),
         vessel_size=body.vessel_size,
     )

@@ -16,13 +16,15 @@
 import logging
 import os
 import re
+import shutil
 import uuid
 from datetime import datetime
 
 from fastapi import HTTPException, UploadFile
 
 from .. import database, models
-from ..services.job_manager import analysis_executor, job_status_store
+from ..services.job_manager import JobMetadata, analysis_executor, job_status_store
+from ..services.workspace import create_analysis_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,21 @@ _TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")
 _UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
+class _OwnedWorkDir(str):
+    """현재 요청이 생성한 작업 폴더임을 나타내는 일회성 정리 capability.
+
+    전역 경로 registry를 사용하면 같은 폴더를 후속 rebuild/solve 요청이 참조하는 동안
+    다른 strict 접수 실패가 그 폴더를 오인해 삭제할 수 있다. 대신 ``make_work_dir``가
+    반환한 이 값 자체를 해당 요청이 ``owned_work_dir``로 명시 전달할 때만 정리한다.
+    """
+
+    def __new__(cls, value: str, *, root: str, employee_id: str):
+        instance = super().__new__(cls, value)
+        instance.root = os.path.realpath(root)
+        instance.employee_id = employee_id
+        return instance
+
+
 def make_work_dir(employee_id: str, program_name: str) -> tuple[str, str]:
     """
     `userConnection/{timestamp}_{employee_id}_{program_name}` 작업 디렉토리를 생성합니다.
@@ -42,11 +59,14 @@ def make_work_dir(employee_id: str, program_name: str) -> tuple[str, str]:
     반환값: (work_dir_absolute_path, timestamp_string)
     timestamp는 후속 task_execute_*에 전달되어 결과 파일명/DB 레코드명에 사용됩니다.
     """
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    unique_folder = f"{timestamp}_{employee_id}_{program_name}"
-    work_dir = os.path.abspath(os.path.join(USER_CONNECTION_DIR, unique_folder))
-    os.makedirs(work_dir, exist_ok=True)
-    return work_dir, timestamp
+    work_dir, timestamp = create_analysis_workspace(
+        USER_CONNECTION_DIR, employee_id, program_name,
+    )
+    return _OwnedWorkDir(
+        work_dir,
+        root=USER_CONNECTION_DIR,
+        employee_id=employee_id,
+    ), timestamp
 
 
 async def save_upload(
@@ -103,6 +123,8 @@ def submit_analysis_job(
     task_fn,
     *task_args,
     queue_message: str = "Waiting in Queue...",
+    metadata: JobMetadata | None = None,
+    owned_work_dir: str | None = None,
 ) -> str:
     """
     job_id를 발급하고 Pending 상태로 등록한 뒤 analysis_executor에 작업을 제출합니다.
@@ -122,14 +144,43 @@ def submit_analysis_job(
         - analysis_executor.submit(task_fn, job_id, *task_args)
     """
     job_id = str(uuid.uuid4())
-    employee_id, program_name = _infer_job_metadata(task_fn, task_args)
-    _record_pending_analysis(job_id, employee_id, program_name, queue_message)
+    if metadata is None:
+        employee_id, program_name = _infer_job_metadata(task_fn, task_args)
+        metadata = JobMetadata(employee_id=employee_id, program_name=program_name)
+    else:
+        employee_id = metadata.employee_id
+        program_name = metadata.program_name
+
+    pending_persisted = _record_pending_analysis(job_id, employee_id, program_name, queue_message)
+    if _require_pending_persistence() and not pending_persisted:
+        _cleanup_owned_workspace(owned_work_dir, employee_id)
+        raise HTTPException(
+            status_code=503,
+            detail="작업 접수 상태를 데이터베이스에 저장하지 못했습니다. 잠시 후 다시 시도하세요.",
+        )
     job_status_store.set(job_id, {
         "status": "Pending",
         "progress": 0,
         "message": queue_message,
+        # DB Pending 레코드 생성이 일시적으로 실패해도 status endpoint가
+        # 메모리 상태의 소유자를 검증할 수 있도록 반드시 함께 보존한다.
+        "employee_id": employee_id,
+        "_metadata": metadata,
     })
-    future = analysis_executor.submit(task_fn, job_id, *task_args)
+    try:
+        future = analysis_executor.submit(task_fn, job_id, *task_args)
+    except Exception as exc:
+        logger.exception("작업 %s executor 제출 실패", job_id)
+        job_status_store.update_job(job_id, {
+            "status": "Failed",
+            "progress": 100,
+            "message": "작업 실행 대기열에 제출하지 못했습니다.",
+        })
+        _cleanup_owned_workspace(owned_work_dir, employee_id)
+        raise HTTPException(
+            status_code=503,
+            detail="작업 실행 대기열에 제출하지 못했습니다. 잠시 후 다시 시도하세요.",
+        ) from exc
     # task_fn 내부 try 밖(예: mark_running)에서 예외가 나면 Future 에만 갇혀 삼켜지고
     # job 이 Running 으로 고착된다. done 콜백으로 그런 예외를 회수해 로깅 + Failed 마킹한다.
     # (테스트가 submit 을 stub 으로 대체해 None 을 돌려줄 수 있으므로 Future 일 때만 부착.)
@@ -178,6 +229,35 @@ def _infer_job_metadata(task_fn, task_args: tuple) -> tuple[str | None, str]:
     return employee_id, program_name
 
 
+def _cleanup_owned_workspace(owned_work_dir: str | None, employee_id: str | None) -> None:
+    """strict 접수 실패 시 호출부가 명시한 *현재 요청 소유* 폴더만 제거한다."""
+    if not isinstance(owned_work_dir, _OwnedWorkDir):
+        return
+    workspace = os.path.realpath(str(owned_work_dir))
+    owner, _program = _infer_work_folder_metadata(workspace)
+    root = os.path.realpath(USER_CONNECTION_DIR)
+    try:
+        is_direct_child = os.path.dirname(workspace) == root
+        is_under_root = os.path.commonpath([root, workspace]) == root
+    except ValueError:
+        is_direct_child = is_under_root = False
+    # capability가 발급된 루트/소유자와 현재 요청 메타데이터가 모두 일치해야 한다.
+    if (
+        owned_work_dir.root != root
+        or owned_work_dir.employee_id != employee_id
+        or not is_under_root
+        or not is_direct_child
+        or not owner
+        or owner != employee_id
+    ):
+        logger.error("strict 접수 실패 작업 폴더 안전 정리 거부: %s", workspace)
+        return
+    try:
+        shutil.rmtree(workspace)
+    except OSError:
+        logger.exception("strict 접수 실패 작업 폴더 정리 실패: %s", workspace)
+
+
 def _is_userconnection_path(path: str) -> bool:
     try:
         return os.path.commonpath([USER_CONNECTION_DIR, os.path.abspath(path)]) == USER_CONNECTION_DIR
@@ -200,9 +280,26 @@ def _infer_work_folder_metadata(path: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _record_pending_analysis(job_id: str, employee_id: str | None, program_name: str, queue_message: str) -> None:
-    db = database.SessionLocal()
+def _require_pending_persistence() -> bool:
+    return os.environ.get("WORKBENCH_REQUIRE_PENDING_PERSISTENCE", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _record_pending_analysis(
+    job_id: str,
+    employee_id: str | None,
+    program_name: str,
+    queue_message: str,
+) -> bool:
+    """Pending 레코드 저장 성공 여부를 반환한다.
+
+    기본 모드에서는 기존처럼 DB 일시 장애가 있어도 인메모리 큐 실행을 계속한다.
+    운영자가 fail-closed 환경변수를 켠 경우 호출부가 이 결과로 503을 반환한다.
+    """
+    db = None
     try:
+        db = database.SessionLocal()
         now = datetime.now()
         db.add(models.Analysis(
             job_id=job_id,
@@ -219,7 +316,12 @@ def _record_pending_analysis(job_id: str, employee_id: str | None, program_name:
             updated_at=now,
         ))
         db.commit()
+        return True
     except Exception:
-        db.rollback()
+        if db is not None:
+            db.rollback()
+        logger.exception("작업 %s Pending DB 저장 실패", job_id)
+        return False
     finally:
-        db.close()
+        if db is not None:
+            db.close()
