@@ -286,7 +286,27 @@ L1 중복은 이례적 상황이 아니다. 설치 스크립트가 로그온 트
 
 **(2)의 `psutil.suspend()`가 핵심이다.** 프로세스는 살아있고 HTTP만 무응답인 상태를 정확히 재현하는 유일한 방법이므로, 이것으로 검증해야 3분 임계값이 실제로 동작하는지 확인된다.
 
-**(9)는 개발 PC 에서 대체할 수 없다.** job object 는 작업 스케줄러가 붙이는 것이라 태스크로 실행하지 않으면 재현되지 않는다. 서버 등록 직후 1회 확인해야 하며, 실패하면 워치독이 1회용이 되거나(트리거 스킵) 되살린 L1 을 5분 뒤 스스로 죽인다.
+**(9)는 태스크로 실행해야만 재현된다.** job object 는 작업 스케줄러가 붙이는 것이라 수동 실행으로는 확인되지 않는다. 실패하면 워치독이 1회용이 되거나(트리거 스킵) 되살린 L1 을 5분 뒤 스스로 죽인다.
+
+### 8-1. 실측 결과 (2026-07-28, 개발 PC)
+
+| # | 결과 | 근거 |
+|---|---|---|
+| 1 크래시 재시작 | **PASS** | uvicorn `taskkill /F` → `crash_detected`(exit_code 1, cpu·디스크 진단 포함) → **3초 후** `server_start` → `restart_done{crash}` |
+| 2 좀비 감지 | **PASS** | 워커 `suspend()` → `health_degraded`(streak 1) → **3분 5초 후** `zombie_detected`(streak 12, `last_ok` ISO8601, threads·RSS·자손 목록) → `restart_begin` → `restart_done{zombie}` |
+| 3 고아 정리 | **PARTIAL** | 실제 자손 2개(`conhost.exe` + **정지 상태** `python.exe`)를 `attempted=2 / terminated=2 / unconfirmed=0` 으로 정리. 재시작 후 잔여 0. ⚠ **실제 해석 job(`nastran.exe`/`Cmb.Cli.exe`)은 미실행** — 기구(자손 탐색·종료·확인 플래그)는 실증됐으나 MSC 라이선스 해제까지는 확인 못 함 |
+| 4 L1 급사 복구 | **PASS** | 수동 실행·스케줄러 양쪽. `watchdog_revive` → 3초 후 `manager_start` → `watchdog_revive_result{recovered:true}`. **복구 확인 6초**(고정 30초 sleep 을 폴링으로 바꾼 효과) |
+| 5 워치독 무개입 | **PASS** | L1 생존 시 수동 실행·5분 반복 트리거 **양쪽에서 이벤트 0건**, exit 0, 새 창 없음 |
+| 6 DB 관측 | **PARTIAL** | 실제 `.env` 자격증명으로 프로브 **성공**(거짓 `db_unreachable` 을 내지 않음을 확인) + 잘못된 포트에서 `OperationalError` 포맷 확인. ⚠ **MySQL 서비스 실제 중지는 미수행** — 공유 개발 PC 라 다른 작업에 영향을 줄 수 있어 보류 |
+| 7 백오프 | **PASS** | `app/main.py` 강제 실패 → 재시작 5회(약 4초 간격) 후 6번째 크래시에서 `backoff_wait{reason:crash, delay_sec:600, level:1}`. **"자동 재시작을 멈춥니다" 없음** = 영구 정지 소멸 확인 |
+| 8 중복 실행 차단 | **PASS** | L1 가동 중 런처 재실행 → `duplicate_launch_blocked{running_pid}` 기록 후 즉시 종료. **원본 L1 과 포트 9091 무사**(= `_kill_port` 미호출) |
+| 9 job object 이탈 | **PASS** | 태스크 실행 후 상태 `Ready`·`LastTaskResult 0`, 되살린 L1 이 **5분 ExecutionTimeLimit 을 넘겨 생존**(13:00:59 실행 → 13:07:53 생존 확인) |
+
+**검증 중 발견해 고친 결함 1건** — `scripts/install_watchdog_task.ps1` 이 `-RepetitionDuration ([TimeSpan]::MaxValue)` 로 **등록에 실패**하고 있었다. `New-ScheduledTaskTrigger` 는 조용히 통과하지만 `Register-ScheduledTask` 가 XML 스키마 위반(`Duration:P99999999DT23H59M59S`)으로 거부한다. `-RepetitionDuration` 을 생략하는 것이 '무기한' 이다.
+
+이 실패를 잡은 것은 **등록 후 되읽기 검증**이다. `Register-ScheduledTask` 가 예외를 던지지 않으므로, 되읽기가 없었다면 "등록 완료" 를 출력하고 끝났을 것이다 — **서버에 감시기가 없는데 있다고 믿는 상태**가 된다. 무인 복구 시스템에서 가장 위험한 종류의 거짓말이다.
+
+**검증 후 원상 복구 확인**: 작업 스케줄러 태스크 해제됨(시험용 태스크 포함 잔재 0), `app/main.py` 는 `git checkout` 이 아니라 **바이트 단위 백업으로 복원**(다른 작업의 미커밋 변경이 있어 checkout 은 파괴적이었다 — sha256 일치 확인), 잔여 프로세스 0.
 
 ## 9. 백엔드 영향 분석
 
