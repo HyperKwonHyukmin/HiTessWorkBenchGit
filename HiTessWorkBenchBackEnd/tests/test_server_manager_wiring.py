@@ -696,6 +696,59 @@ def test_auto_restart_fire_does_not_claim_restart_done_on_start_failure(harness)
     assert "server_start_failed" in harness.events.names()
 
 
+# ── Task 9 후속. 시작 실패도 재예약해야 한다 (마지막 영구 정지 경로) ────
+# _start_server 가 OSError 로 실패하면 Popen 이 없어 _stream_output·_on_server_exit
+# 이 영영 오지 않는다 — 아무도 재예약하지 않는데 L1 GUI 는 살아 있으니 L2 도
+# 개입하지 않는다. Task 9 가 없애겠다고 선언한 바로 그 상태다.
+def test_auto_restart_fire_reschedules_when_start_fails(harness, monkeypatch):
+    """venv 이동·백신 격리로 Popen 이 실패하면 크래시 체인이 기록만 남기고 끊긴다."""
+    install_clock(monkeypatch)
+    harness.popen_error = FileNotFoundError("python.exe 없음")
+
+    harness.app._auto_restart_fire()
+
+    assert "server_start_failed" in harness.events.names()
+    assert "restart_done" not in harness.events.names()
+    [(delay_ms, _, _)] = harness.root.scheduled(harness.app._auto_restart_fire)
+    assert delay_ms == server_manager.RESTART_DELAY_MS
+
+
+def test_zombie_restart_fire_reschedules_when_start_fails(harness, monkeypatch):
+    """좀비 경로도 같다. 단 재예약 대상은 반드시 좀비 경로여야 한다 —
+    크래시 경로로 갈아타면 restart_begin 의 짝(restart_done{zombie})을 잃는다."""
+    install_clock(monkeypatch)
+    harness.popen_error = PermissionError("접근 거부")
+
+    harness.app._zombie_restart_fire()
+
+    assert "server_start_failed" in harness.events.names()
+    assert "restart_done" not in harness.events.names()
+    [(delay_ms, _, _)] = harness.root.scheduled(harness.app._zombie_restart_fire)
+    assert delay_ms == server_manager.RESTART_DELAY_MS
+    assert harness.root.scheduled(harness.app._auto_restart_fire) == []
+
+
+def test_repeated_start_failures_end_in_backoff_not_silence(harness, monkeypatch):
+    """재예약이 3초마다 영원히 도는 것도 답이 아니다. Popen 실패는 즉시 반환되므로
+    예산이 60초 창 안에서 소진되고 그 뒤로는 백오프가 받는다 — 바운드돼 있고
+    절대 포기하지 않는다."""
+    install_clock(monkeypatch)
+    harness.popen_error = FileNotFoundError("python.exe 없음")
+
+    harness.app._schedule_auto_restart()           # 크래시 감지 → 1회차 예약
+    fires = backoff.MAX_RESTARTS_IN_WINDOW         # 발화할 때마다 Popen 즉시 실패
+    for _ in range(fires):
+        harness.app._auto_restart_fire()
+
+    # 어느 시점에도 '침묵' 이 없다 — 매 실패가 반드시 다음 예약을 낳았다.
+    assert len(harness.root.scheduled(harness.app._auto_restart_fire)) == fires + 1
+    detail = harness.events.detail("backoff_wait")
+    assert detail["reason"] == "crash"
+    assert detail["delay_sec"] == backoff.BACKOFF_STEPS_SEC[0]
+    assert harness.root.scheduled(harness.app._auto_restart_fire)[-1][0] == \
+        backoff.BACKOFF_STEPS_SEC[0] * 1000
+
+
 def test_manual_start_resets_budget_and_backoff(harness):
     """사용자가 직접 Start → 깨끗한 예산으로 재개한다. backoff_level·wait_until 을
     남겨두면 사람이 원인을 고치고 눌러도 다음 크래시가 60분 대기로 직행한다."""
@@ -713,8 +766,20 @@ def test_manual_start_resets_budget_and_backoff(harness):
 
 # ── Task 9 / Step 6. 좀비 재시작도 같은 예산을 쓴다 ──────────────────────
 def test_repeated_zombie_restarts_consume_budget_and_back_off(harness, monkeypatch):
-    """좀비 루프가 예산을 우회하면 부팅→행→강제종료가 영원히 3분마다 반복되고,
-    사후 분석 기록이 동일 사이클로 뒤덮여 원래 증거가 묻힌다."""
+    """좀비 재시작도 같은 예산을 **소모한다**는 것을 고정한다.
+
+    ⚠ 이 테스트가 고정하는 것은 "좀비 재시작이 예산을 쓴다" 이지 "좀비 루프가
+    억제된다" 가 아니다. 시계를 고정해 6회를 한 창에 몰아넣은 것은 **인위적
+    배치**다 — 실제 좀비 한 사이클은 12프로브×15초 = 최소 3분이라
+    RESTART_WINDOW_SEC(60초) 창에 둘 이상 들어갈 수 없다. 순수 좀비 루프는
+    백오프에 걸리지 않고 3분 주기를 유지하며, 그건 의도된 수용이다(무인 복구
+    속도 우선 — 3분 재시도는 원인이 해소되는 즉시 복귀하지만 60분 대기는
+    그렇지 않다). 그 사실 자체는 아래
+    test_realistic_zombie_cadence_never_reaches_backoff 가 고정한다.
+
+    이 예산이 실제로 발동하는 건 크래시와 섞였을 때다 —
+    test_zombie_restart_makes_the_next_crash_burst_hit_the_wall_sooner 참조.
+    """
     install_clock(monkeypatch)
 
     for i in range(backoff.MAX_RESTARTS_IN_WINDOW):
@@ -737,9 +802,18 @@ def test_repeated_zombie_restarts_consume_budget_and_back_off(harness, monkeypat
 
 
 def test_zombie_and_crash_share_one_restart_budget(harness, monkeypatch):
-    """예산이 답해야 할 질문은 "최근 얼마나 자주 재시작했나" 이지 "왜 재시작했나"
-    가 아니다. 경로별로 카운터를 나누면 서로의 소모를 못 봐 예산이 사실상 2배가
-    된다 — 3번 크래시하고 2번 좀비가 된 서버는 실제로 나쁜 상태다."""
+    """두 경로가 **하나의** 예산을 본다 — 경로별 카운터는 서로의 소모를 못 봐
+    예산을 사실상 2배로 만든다. 그 불변식 자체를 고정한다.
+
+    ⚠ 단, 여기 쓴 순서(크래시 4회 → 좀비)는 **실제로는 일어날 수 없다.** 좀비
+    판정은 새 프로세스가 뜬 뒤 12프로브×15초 = 최소 3분이 지나야 나오는데,
+    그 프로세스보다 앞선 크래시 기록은 그 시점에 이미 60초 창 밖이라 전부
+    걷힌다. 시계를 고정했기 때문에 성립하는 배치다.
+
+    실제로 도달 가능한 혼합 방향은 그 반대다(좀비 → 뒤이은 크래시 연발) —
+    test_zombie_restart_makes_the_next_crash_burst_hit_the_wall_sooner 가
+    그쪽을 고정한다. 이 테스트는 "예산이 하나"라는 배선만 본다.
+    """
     install_clock(monkeypatch)
 
     for _ in range(backoff.MAX_RESTARTS_IN_WINDOW - 1):
@@ -757,3 +831,52 @@ def test_zombie_and_crash_share_one_restart_budget(harness, monkeypatch):
     harness.app.server_proc = FakeProc(pid=911)
     harness.app._force_restart_zombie()
     assert harness.events.detail("backoff_wait")["reason"] == "zombie"
+
+
+def test_realistic_zombie_cadence_never_reaches_backoff(harness, monkeypatch):
+    """순수 좀비 루프는 백오프에 걸리지 않는다 — 의도된 수용을 고정한다.
+
+    좀비 한 사이클(≥3분)이 예산 창(60초)보다 길어서 기록이 매번 걷힌다. 이걸
+    '고쳐야 할 결함' 으로 오해하지 않도록, 그리고 나중에 누가 창을 늘렸을 때
+    조용히 뒤집히지 않도록 여기서 사실로 못 박는다. 3분 재시도는 원인이
+    해소되는 즉시 복귀하므로 무인 복구 목표에는 오히려 부합한다.
+    """
+    clock = install_clock(monkeypatch)
+    cycle_sec = health.ZOMBIE_THRESHOLD * health.CHECK_INTERVAL_SEC   # 12 × 15 = 180초
+    # 이 전제가 깨지면 아래 결론도 뒤집힌다 — 결론보다 전제가 먼저 터져야 한다.
+    assert cycle_sec > backoff.RESTART_WINDOW_SEC
+
+    for i in range(backoff.MAX_RESTARTS_IN_WINDOW * 3):
+        harness.app.server_proc = FakeProc(pid=700 + i)
+        harness.app._force_restart_zombie()
+        clock.advance(cycle_sec)
+
+    assert "backoff_wait" not in harness.events.names()
+    assert harness.app.restart_policy.backoff_level == 0
+    # 그럼에도 매번 재시작 예약은 나온다 — 3분마다 계속 살리려 시도한다.
+    assert len(harness.root.scheduled(harness.app._zombie_restart_fire)) == \
+        backoff.MAX_RESTARTS_IN_WINDOW * 3
+
+
+def test_zombie_restart_makes_the_next_crash_burst_hit_the_wall_sooner(harness, monkeypatch):
+    """예산 공유가 실제로 값을 하는 유일한 방향 — 좀비가 쓴 칸을 뒤이은 크래시가 본다.
+
+    좀비 재시작으로 띄운 프로세스가 곧바로 연속 크래시하는 상황은 3초 간격이라
+    전부 한 창에 들어간다. 좀비가 이미 한 칸을 썼으므로 크래시는 5회가 아니라
+    4회 만에 벽에 닿는다 — 이것이 '나쁜 상태의 서버를 통합해서 본다' 의 실체다.
+    """
+    clock = install_clock(monkeypatch)
+    harness.app.server_proc = FakeProc(pid=920)
+    harness.app._force_restart_zombie()          # 예산 1칸 소모
+
+    # 좀비 재시작으로 뜬 프로세스가 3초 간격으로 연속 크래시한다.
+    for _ in range(backoff.MAX_RESTARTS_IN_WINDOW - 1):
+        clock.advance(server_manager.RESTART_DELAY_MS / 1000)
+        harness.app._schedule_auto_restart()
+    assert "backoff_wait" not in harness.events.names()
+
+    clock.advance(server_manager.RESTART_DELAY_MS / 1000)
+    harness.app._schedule_auto_restart()
+
+    # 좀비가 쓴 칸이 없었다면 이 크래시는 아직 "go" 였다.
+    assert harness.events.detail("backoff_wait")["reason"] == "crash"

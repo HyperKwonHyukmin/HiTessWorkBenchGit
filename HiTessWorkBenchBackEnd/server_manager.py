@@ -494,14 +494,7 @@ class ServerManagerApp:
         # 손실도 없다). 위 종료 실패 경로에서도 반드시 도달해야 하는 위치다 —
         # 건너뛰면 state 가 ZOMBIE 로 굳어 좀비 재감지가 영구히 멈춘다.
         self.health_tracker.reset()
-        # 좀비 재시작도 크래시와 같은 예산을 쓴다(_schedule_restart 주석 참고).
-        # 예산을 우회하면 부팅→행→강제종료 루프가 백오프 없이 영원히 3분마다
-        # 반복돼, 사후 분석 기록이 동일 사이클로 뒤덮여 원래 증거가 묻힌다.
-        # 예약 대상은 _auto_restart_fire 가 아니라 _zombie_restart_fire 다 —
-        # 위에서 남긴 restart_begin 의 짝(restart_done{reason: zombie})을
-        # 남기는 쪽이 그쪽이다.
-        self._schedule_restart(self._zombie_restart_fire, "zombie",
-                               "강제 재시작이 반복되고 있습니다.")
+        self._schedule_zombie_restart()
 
     def _cleanup_orphans(self, children):
         """uvicorn 이 남긴 해석 exe 를 정리한다.
@@ -546,13 +539,22 @@ class ServerManagerApp:
         if self.is_updating:
             events.append_event(LOG_DIR, "L1", "restart_skipped", {"reason": "updating"})
             return
+        # 백오프 대기(10~60분) 중에 사용자가 직접 Start 를 누르면 예약은 취소되지
+        # 않고 살아남아 나중에 여기로 온다 — 정상이다. 서버가 이미 떠 있으므로
+        # 건너뛰고 이 한 줄만 남는다(예약 취소는 타이머 id 관리 표면이 커서 Task 13
+        # 에서 실제로 거슬리는지 보고 판단한다).
         if self.server_proc and self.server_proc.poll() is None:
             events.append_event(LOG_DIR, "L1", "restart_skipped", {"reason": "already_running"})
             return
-        # 시작에 성공했을 때만 완료를 단언한다. 실패는 _start_server 가
-        # server_start_failed 로 남기므로 restart_begin 의 짝은 그쪽이 맡는다.
+        # 시작에 성공했을 때만 완료를 단언한다. 실패하면 _start_server 가
+        # server_start_failed 를 남기고, 여기서 다시 예약한다 — 재예약하지 않으면
+        # Popen 이 없어 _stream_output·_on_server_exit 이 영영 오지 않아 아무도
+        # 재시작하지 않는다(L1 은 살아 있으니 L2 도 개입하지 않는다). 그것이
+        # 이 Task 가 없애려던 영구 정지 그 자체다.
         if self._start_server():
             events.append_event(LOG_DIR, "L1", "restart_done", {"reason": "zombie"})
+        else:
+            self._schedule_zombie_restart()
 
     # ── 자동 재시작(의도치 않은 종료 시) ─────────────────────────────────
     def _schedule_restart(self, fire, reason, exhausted_message):
@@ -594,6 +596,23 @@ class ServerManagerApp:
         self._schedule_restart(self._auto_restart_fire, "crash",
                                "연속 기동 실패가 이어집니다.")
 
+    def _schedule_zombie_restart(self):
+        """좀비 강제 재시작 뒤의 재기동을 예약한다 — 크래시와 같은 예산을 쓴다.
+
+        ⚠ 이 공유가 순수 좀비 루프를 억제하지는 못한다. 좀비 한 사이클은
+        12프로브×15초 = 최소 3분이라 backoff 의 60초 창에 둘 이상 들어갈 수 없다.
+        3분 주기 반복은 의도적으로 수용한다 — 무인 복구 속도가 우선이고, 3분
+        재시도는 원인이 해소되는 즉시 복귀하지만 60분 대기는 그렇지 않다.
+        공유가 실제로 사주는 것은 혼합 장애 회계다: 좀비 재시작이 쓴 한 칸이
+        뒤이은 크래시 연발에 그대로 보여 예산 벽에 한 번 일찍 닿는다.
+
+        예약 대상이 _auto_restart_fire 가 아닌 이유 — _force_restart_zombie 가
+        남긴 restart_begin 의 짝(restart_done{reason: zombie})을 남기는 쪽은
+        _zombie_restart_fire 뿐이다. 백오프로 60분 뒤에 깨어나도 마찬가지다.
+        """
+        self._schedule_restart(self._zombie_restart_fire, "zombie",
+                               "강제 재시작이 반복되고 있습니다.")
+
     def _auto_restart_fire(self):
         # 대기 사이에 사용자가 Update/Stop 했거나 이미 살아났으면 재시작하지 않는다.
         # 좀비 경로와 달리 여기서는 restart_skipped 를 남기지 않는다 — 크래시
@@ -603,11 +622,18 @@ class ServerManagerApp:
         if self.server_proc and self.server_proc.poll() is None:
             return
         self._log("자동 재시작을 실행합니다.", "info")
-        # 시작에 성공했을 때만 완료를 단언한다 — 실패는 _start_server 가
-        # server_start_failed 로 남긴다. 뜨지도 않은 서버를 성공으로 기록하면
-        # 사후 분석 로그가 거짓을 말한다.
+        # 시작에 성공했을 때만 완료를 단언한다 — 뜨지도 않은 서버를 성공으로
+        # 기록하면 사후 분석 로그가 거짓을 말한다.
+        # 실패하면 반드시 다시 예약한다. Popen 이 실패하면 프로세스가 없어
+        # _stream_output·_on_server_exit 이 영영 오지 않으므로, 여기서 재예약하지
+        # 않으면 크래시 체인이 server_start_failed 한 줄만 남기고 끊긴다 —
+        # 그 상태에서도 L1 은 살아 있어 L2 가 개입하지 않는다(영구 정지).
+        # Popen 실패는 즉시 반환되므로 3초 간격 5회로 예산이 소진되고 그 뒤는
+        # 백오프가 받는다 — 바운드돼 있고 절대 포기하지 않는다.
         if self._start_server():
             events.append_event(LOG_DIR, "L1", "restart_done", {"reason": "crash"})
+        else:
+            self._schedule_auto_restart()
 
     # ── 서버 중지 ────────────────────────────────────────────────────────
     def _stop_server(self):
