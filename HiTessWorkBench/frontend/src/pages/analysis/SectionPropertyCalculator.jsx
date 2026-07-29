@@ -9,6 +9,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { API_BASE_URL } from '../../config';
 import SolverCredit from '../../components/ui/SolverCredit';
+import {
+  createTeePolygon,
+  orientSectionResultForApp,
+} from '../../utils/sectionPropertyGeometry';
 
 // ── 단면 정의 ───────────────────────────────────────────────────
 const SHAPES = [
@@ -113,8 +117,8 @@ const SHAPES = [
     key: 'tee', label: 'Tee',
     icon: (
       <svg viewBox="-12 -12 24 24" width="28" height="28">
-        <rect x="-10" y="-10" width="20" height="3" fill="#53d8fb" fillOpacity="0.8"/>
-        <rect x="-2"  y="-7"  width="4"  height="17" fill="#53d8fb" fillOpacity="0.8"/>
+        <rect x="-2"  y="-10" width="4"  height="17" fill="#53d8fb" fillOpacity="0.8"/>
+        <rect x="-10" y="7"   width="20" height="3" fill="#53d8fb" fillOpacity="0.8"/>
       </svg>
     ),
     params: [
@@ -566,16 +570,7 @@ function clientShapeToPolygon(key, p) {
       ];
     }
     case 'tee': {
-      const { h, bf, tf, tw } = p;
-      const hw = h-tf, A_fl = bf*tf, A_st = tw*hw, A = A_fl+A_st;
-      const yc = (A_fl*(h-tf/2) + A_st*hw/2) / A;
-      const s = -yc;
-      return [
-        { x:-tw/2, y:0+s }, { x:tw/2, y:0+s },
-        { x:tw/2, y:hw+s }, { x:bf/2, y:hw+s },
-        { x:bf/2, y:h+s }, { x:-bf/2, y:h+s },
-        { x:-bf/2, y:hw+s }, { x:-tw/2, y:hw+s },
-      ];
+      return createTeePolygon(p);
     }
     default: return null;
   }
@@ -678,14 +673,15 @@ function DimAnnotations({ shapeKey, params: p, toSvg, scale }) {
       const { h, bf, tf, tw } = p;
       const hw = h-tf, A_fl = bf*tf, A_st = tw*hw, A = A_fl+A_st;
       const yc = (A_fl*(h-tf/2) + A_st*hw/2) / A;
-      const ybot = -yc, ytop = h - yc;
+      const ybot = yc - h, ytop = yc;
+      const yFlangeTop = yc - hw;
       return <>
         <Seg x1={bf/2 + off} y1={ybot} x2={bf/2 + off} y2={ytop}/>
         <Lbl x={bf/2 + off*1.9} y={(ybot+ytop)/2} text={`h = ${h}`} anchor="start"/>
-        <Seg x1={-bf/2} y1={ytop + off} x2={bf/2} y2={ytop + off}/>
-        <Lbl x={0} y={ytop + off*1.8} text={`bf = ${bf}`}/>
-        <Lbl x={bf/2 + off} y={ytop - tf/2} text={`tf = ${tf}`} anchor="start"/>
-        <Lbl x={tw/2 + off*0.5} y={(ybot + hw - yc)/2} text={`tw = ${tw}`} anchor="start"/>
+        <Seg x1={-bf/2} y1={ybot - off} x2={bf/2} y2={ybot - off}/>
+        <Lbl x={0} y={ybot - off*1.8} text={`bf = ${bf}`}/>
+        <Lbl x={bf/2 + off} y={ybot + tf/2} text={`tf = ${tf}`} anchor="start"/>
+        <Lbl x={tw/2 + off*0.5} y={(yFlangeTop + ytop)/2} text={`tw = ${tw}`} anchor="start"/>
       </>;
     }
     default: return null;
@@ -996,7 +992,7 @@ export default function SectionPropertyCalculator() {
         payload = { shape: shapeKey, params, units: 'mm', employee_id: employeeId || 'unknown' };
       }
       const res = await axios.post(`${API_BASE_URL}/api/section-property/calculate`, payload);
-      const baseResult = res.data;
+      const baseResult = orientSectionResultForApp(shapeKey, res.data);
       setResult(
         includeAttachedPlate && !isPolygon
           ? composeWithAttachedPlate(baseResult, attachedPlate, displayPolygon)

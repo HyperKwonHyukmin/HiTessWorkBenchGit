@@ -1,0 +1,46 @@
+{
+  "name": "rdp-access-desk-client",
+  "version": "0.1.11",
+  "private": true,
+  "description": "사내 공유 RDP 호스트 접속 현황 조율 및 메시지 도구",
+  "author": "HiTESS WorkBench",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently \"npm:dev:ui\" \"npm:dev:electron\"",
+    "dev:ui": "vite --host 127.0.0.1",
+    "dev:electron": "wait-on http://127.0.0.1:5188 && electron .",
+    "build": "vite build",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "electron-updater": "^6.3.9",
+    "lucide-react": "^0.284.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "vite": "^8.0.1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "electron": "^36.3.2",
+    "electron-builder": "^24.6.4",
+    "wait-on": "^7.0.1"
+  },
+  "build": {
+    "appId": "com.hitess.rdp-access-desk",
+    "productName": "RDP Access Desk",
+    "directories": { "output": "../dist/electron-client" },
+    "files": ["electron/**/*", "frontend/dist/**/*"],
+    "publish": [{ "provider": "generic", "url": "http://10.14.42.145:8765/updates/" }],
+    "win": { "target": "nsis", "icon": "build/icon.ico" },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RDP Access Desk",
+      "artifactName": "RDP-Access-Desk-Setup-${version}.exe"
+    }
+  }
+}

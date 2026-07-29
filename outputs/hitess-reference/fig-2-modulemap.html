@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>Hi-TESS WorkBench — 해석 모듈 맵</title>
+<style>
+  @font-face{
+    font-family:'Inter';
+    src:url('assets/Inter-Variable.woff2') format('woff2-variations');
+    font-weight:100 900; font-display:block;
+  }
+  @font-face{
+    font-family:'SUIT';
+    src:url('assets/SUIT-Variable.woff2') format('woff2-variations');
+    font-weight:100 900; font-display:block;
+  }
+
+  :root{
+    --trust-blue:#002554;
+    --line:#e2e8f0;
+    --line-soft:#edf1f6;
+    --ink-strong:#1e293b;
+    --ink-body:#334155;
+    --ink-muted:#64748b;
+    --ink-label:#475569;
+    --surface:#F8F9FC;
+    --spark:#00E600;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:#ffffff; }
+  body{
+    font-family:'Inter','SUIT',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .stage{
+    width:1920px;
+    height:1080px;
+    position:relative;
+    overflow:hidden;
+    background:#ffffff;
+    word-break:keep-all;
+  }
+
+  /* ===== Header ===== */
+  .header{
+    height:104px;
+    background:var(--trust-blue);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 56px;
+  }
+  .header-left{
+    display:flex;
+    align-items:center;
+    gap:24px;
+    min-width:0;
+  }
+  .logo{ width:250px; height:auto; display:block; }
+  .header-divider{ width:1px; height:40px; background:rgba(255,255,255,.25); flex:0 0 auto; }
+  .title-block h1{
+    margin:0;
+    font-size:26px;
+    font-weight:800;
+    color:#ffffff;
+    letter-spacing:-0.01em;
+    line-height:1.2;
+  }
+  .title-block p{
+    margin:5px 0 0;
+    font-size:13px;
+    font-weight:500;
+    color:rgba(255,255,255,.65);
+    line-height:1.3;
+  }
+  .header-right{
+    display:flex;
+    align-items:center;
+    flex:0 0 auto;
+  }
+  .stat-block{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:3px;
+  }
+  .stat-line{
+    font-size:15px;
+    font-weight:700;
+    color:rgba(255,255,255,.94);
+    white-space:nowrap;
+  }
+  .stat-line .stat-sub{
+    font-weight:600;
+    color:rgba(255,255,255,.62);
+  }
+  .stat-subline{
+    font-size:11px;
+    font-weight:500;
+    color:rgba(255,255,255,.5);
+    white-space:nowrap;
+  }
+
+  /* ===== Content shell ===== */
+  .content{
+    height:976px;
+    padding:36px 56px 24px;
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+  }
+
+  .main-row{
+    flex:1 1 auto;
+    min-height:0;
+    display:flex;
+    gap:40px;
+  }
+
+  /* ===== Hero column: File-Based Apps ===== */
+  .col-hero{
+    width:1120px;
+    flex:0 0 1120px;
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  .hero-head{
+    flex:0 0 auto;
+    display:flex;
+    align-items:baseline;
+    gap:18px;
+    padding-bottom:8px;
+    margin-bottom:10px;
+    border-bottom:2px solid var(--trust-blue);
+  }
+  .hero-num{
+    font-size:40px;
+    font-weight:800;
+    color:var(--trust-blue);
+    line-height:1;
+    flex:0 0 auto;
+  }
+  .hero-title-stack h2{
+    margin:0;
+    font-size:23px;
+    font-weight:800;
+    color:var(--ink-strong);
+    letter-spacing:-0.01em;
+  }
+  .hero-title-stack p{
+    margin:4px 0 0;
+    font-size:13px;
+    font-weight:500;
+    color:var(--ink-muted);
+  }
+
+  /* Tight 2-column index grid — name + description stacked, no leader lines */
+  .hero-list{
+    flex:0 0 260px;
+    height:260px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:repeat(4,1fr);
+    grid-auto-flow:column;
+    column-gap:44px;
+    row-gap:6px;
+    margin-bottom:16px;
+  }
+  .app-cell{
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    min-width:0;
+    padding:2px 0;
+  }
+  .app-name{
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    font-size:16.5px;
+    font-weight:700;
+    color:var(--ink-strong);
+  }
+  .app-desc{
+    margin-top:3px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    font-size:13px;
+    font-weight:500;
+    color:var(--ink-muted);
+  }
+
+  /* Evidence: real studio screenshot backing the app list */
+  .hero-evidence{
+    flex:1 1 auto;
+    min-height:0;
+    display:flex;
+    align-items:center;
+    gap:32px;
+  }
+  .evidence-img{
+    height:100%;
+    max-height:100%;
+    width:auto;
+    max-width:879px;
+    display:block;
+    border:1px solid var(--line);
+    border-radius:8px;
+    box-shadow:0 6px 16px rgba(15,23,42,.10);
+    flex:0 0 auto;
+  }
+  .evidence-text{
+    flex:0 0 auto;
+    max-width:400px;
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .evidence-tag{
+    font-size:11px;
+    font-weight:700;
+    color:var(--trust-blue);
+    letter-spacing:0.04em;
+  }
+  .evidence-title{
+    font-size:16px;
+    font-weight:700;
+    color:var(--ink-strong);
+    line-height:1.35;
+  }
+  .evidence-desc{
+    font-size:13px;
+    font-weight:500;
+    color:var(--ink-muted);
+    line-height:1.5;
+  }
+  .evidence-facts{
+    margin-top:6px;
+    padding-top:12px;
+    border-top:1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .fact-line{
+    font-size:12.5px;
+    font-weight:500;
+    color:var(--ink-muted);
+    line-height:1.5;
+  }
+
+  /* ===== Secondary column ===== */
+  .col-secondary{
+    flex:1 1 auto;
+    min-height:0;
+    display:flex;
+  }
+  .secondary-panel{
+    flex:1 1 auto;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:20px;
+    box-shadow:0 1px 2px rgba(0,0,0,.04);
+    padding:26px 28px;
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  .subcat{
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+    padding:14px 0;
+    border-top:1px solid var(--line);
+  }
+  .subcat:first-child{ padding-top:0; border-top:none; }
+  .subcat-head{
+    flex:0 0 auto;
+    display:flex;
+    align-items:baseline;
+    gap:9px;
+    margin-bottom:8px;
+  }
+  .subcat-num{
+    font-size:18px;
+    font-weight:800;
+    color:var(--trust-blue);
+    line-height:1;
+  }
+  .subcat-title{
+    font-size:15px;
+    font-weight:700;
+    color:var(--ink-strong);
+  }
+  .subcat-gloss{
+    font-size:11.5px;
+    font-weight:500;
+    color:var(--ink-muted);
+  }
+  .subcat-items{
+    flex:1 1 auto;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+  }
+  /* Name + description stacked (no leader lines) — same fix as the hero list */
+  .item-row{
+    flex:1 1 0;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    gap:2px;
+  }
+  .item-main{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .item-dot{
+    flex:0 0 auto;
+    width:6px; height:6px;
+    border-radius:50%;
+    background:var(--line);
+  }
+  .item-dot.spark{ background:var(--spark); }
+  .item-name{
+    flex:0 1 auto;
+    min-width:0;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    font-size:14px;
+    font-weight:700;
+    color:var(--ink-strong);
+  }
+  .item-desc{
+    margin-left:14px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    font-size:12px;
+    font-weight:500;
+    color:var(--ink-muted);
+  }
+
+  /* flex-grow weighting reflects item count per category (rhythm, not uniform grid) */
+  .subcat.n1{ flex:1 1 0; }
+  .subcat.n2{ flex:2 1 0; }
+  .subcat.n3{ flex:3 1 0; }
+
+  /* ===== Administration strip (deliberately low hierarchy — operational tools, not analysis apps) ===== */
+  .admin-strip{
+    flex:0 0 64px;
+    height:64px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:12px;
+    display:flex;
+    align-items:center;
+    padding:0 24px;
+    gap:16px;
+  }
+  .admin-label{
+    flex:0 0 auto;
+    font-size:13px;
+    font-weight:700;
+    color:var(--ink-label);
+    white-space:nowrap;
+  }
+  .admin-sep{ flex:0 0 auto; width:1px; height:16px; background:var(--line); }
+  .admin-items{
+    flex:1 1 auto;
+    min-width:0;
+    font-size:12.5px;
+    font-weight:500;
+    color:var(--ink-muted);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <div class="header">
+    <div class="header-left">
+      <img class="logo" src="assets/logo-lockup-white.png" alt="Hi-TESS WorkBench" />
+      <div class="header-divider"></div>
+      <div class="title-block">
+        <h1>해석 모듈 맵</h1>
+        <p>Hi-TESS WorkBench가 지원하는 해석 앱 구성</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="stat-block">
+        <div class="stat-line">해석 앱 14 <span class="stat-sub">· 운영 도구 5</span></div>
+        <div class="stat-subline">해석 카테고리 5 · 관리 카테고리 1</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="main-row">
+
+      <!-- Hero: File-Based Apps -->
+      <div class="col-hero">
+        <div class="hero-head">
+          <div class="hero-num">7</div>
+          <div class="hero-title-stack">
+            <h2>File-Based Apps</h2>
+            <p>파일 업로드 기반 해석</p>
+          </div>
+        </div>
+
+        <div class="hero-list">
+          <div class="app-cell">
+            <div class="app-name">Truss Analysis</div>
+            <div class="app-desc">CSV 업로드 + 3D 모델 뷰어</div>
+          </div>
+          <div class="app-cell">
+            <div class="app-name">Truss Structural Assessment</div>
+            <div class="app-desc">BDF 업로드 + 구조 안정성 평가</div>
+          </div>
+          <div class="app-cell">
+            <div class="app-name">BDF Scanner</div>
+            <div class="app-desc">BDF 유효성 검증 + 선택적 Nastran 해석</div>
+          </div>
+          <div class="app-cell">
+            <div class="app-name">HiTESS Model Builder</div>
+            <div class="app-desc">CSV → BDF → Nastran 전체 FEM 파이프라인</div>
+          </div>
+          <div class="app-cell">
+            <div class="app-name">Mooring Fitting Assessment</div>
+            <div class="app-desc">계류 피팅 구조 평가</div>
+          </div>
+          <div class="app-cell">
+            <div class="app-name">Group &amp; Module Unit Lifting</div>
+            <div class="app-desc">권상 구조 해석</div>
+          </div>
+          <div class="app-cell">
+            <div class="app-name">Side Passage Assessment</div>
+            <div class="app-desc">사이드 패시지 평가</div>
+          </div>
+        </div>
+
+        <div class="hero-evidence">
+          <img class="evidence-img" src="assets/shot-moduleunit-studio.png" alt="Group & Module Unit Lifting Studio 실제 화면" />
+          <div class="evidence-text">
+            <div class="evidence-tag">실제 화면</div>
+            <div class="evidence-title">Group &amp; Module Unit Lifting Studio</div>
+            <div class="evidence-desc">권상 위치 자동 선정 화면</div>
+            <div class="evidence-facts">
+              <div class="fact-line">– 구역 지정 · 완전 자동 두 가지 선정 모드</div>
+              <div class="fact-line">– PASS / WARN 판정과 후보별 면적 · 권상폭 비교</div>
+              <div class="fact-line">– 3D 뷰 · 평면도 전환으로 위치 검증</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Secondary: Interactive / Parametric / Productivity / AI -->
+      <div class="col-secondary">
+        <div class="secondary-panel">
+
+          <div class="subcat n1">
+            <div class="subcat-head">
+              <div class="subcat-num">1</div>
+              <div class="subcat-title">Interactive Apps</div>
+              <div class="subcat-gloss">· 대화형 즉시 계산</div>
+            </div>
+            <div class="subcat-items">
+              <div class="item-row">
+                <div class="item-main">
+                  <div class="item-dot"></div>
+                  <div class="item-name">Simple Beam Assessment</div>
+                </div>
+                <div class="item-desc">단면 입력 기반 보 응력·변위 평가</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="subcat n3">
+            <div class="subcat-head">
+              <div class="subcat-num">3</div>
+              <div class="subcat-title">Parametric Apps</div>
+              <div class="subcat-gloss">· 입력 → 후보 산출</div>
+            </div>
+            <div class="subcat-items">
+              <div class="item-row">
+                <div class="item-main">
+                  <div class="item-dot"></div>
+                  <div class="item-name">Mast Post Assessment</div>
+                </div>
+                <div class="item-desc">최적 파이프 후보 산출</div>
+              </div>
+              <div class="item-row">
+                <div class="item-main">
+                  <div class="item-dot"></div>
+                  <div class="item-name">Jib Rest Assessment</div>
+                </div>
+                <div class="item-desc">1단/2단 파이프 설계 후보</div>
+              </div>
+              <div class="item-row">
+                <div class="item-main">
+                  <div class="item-dot"></div>
+                  <div class="item-name">Column Buckling Load Calculator</div>
+                </div>
+                <div class="item-desc">AISC 기준 좌굴 허용 하중</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="subcat n1">
+            <div class="subcat-head">
+              <div class="subcat-num">1</div>
+              <div class="subcat-title">Productivity Apps</div>
+              <div class="subcat-gloss">· 결과 시각화</div>
+            </div>
+            <div class="subcat-items">
+              <div class="item-row">
+                <div class="item-main">
+                  <div class="item-dot"></div>
+                  <div class="item-name">Beam Result Viewer</div>
+                </div>
+                <div class="item-desc">JSON/CSV 결과 시각화</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="subcat n2">
+            <div class="subcat-head">
+              <div class="subcat-num">2</div>
+              <div class="subcat-title">AI</div>
+              <div class="subcat-gloss">· 문서 질의 · 인사이트</div>
+            </div>
+            <div class="subcat-items">
+              <div class="item-row">
+                <div class="item-main">
+                  <div class="item-dot spark"></div>
+                  <div class="item-name">AI Lab Assistant</div>
+                </div>
+                <div class="item-desc">RAG 기반 사내 문서 질의</div>
+              </div>
+              <div class="item-row">
+                <div class="item-main">
+                  <div class="item-dot"></div>
+                  <div class="item-name">Hi-Lab Insight</div>
+                </div>
+                <div class="item-desc">AI 인사이트</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Administration: deliberately low hierarchy, excluded from the "해석 앱" count -->
+    <div class="admin-strip">
+      <div class="admin-label">Administration</div>
+      <div class="admin-sep"></div>
+      <div class="admin-items">User Management · Analysis Management · Usage Reports · System Settings · API Apps</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -17,6 +17,9 @@ const SIZE_CLASSES = {
   lg:   'max-w-lg',
   xl:   'max-w-2xl',
   full: 'max-w-5xl',
+  // 밀도 높은 작업용 모달(등록 폼처럼 좌우로 펼쳐야 읽히는 것) 전용.
+  // 좁은 폭에 긴 폼을 욱여넣으면 스크롤만 길어지고 내용이 잘려 보인다.
+  screen: 'max-w-[1600px]',
 };
 
 /**
@@ -74,15 +77,22 @@ export default function Modal({
             leaveFrom="opacity-100 scale-100 translate-y-0"
             leaveTo="opacity-0 scale-95 translate-y-2"
           >
+            {/*
+              패널을 flex 컬럼으로 두고 높이를 뷰포트에 묶는다.
+              예전에는 본문에만 max-h-[75vh]를 걸고 패널엔 상한이 없어서,
+              헤더(≈56px)+본문+푸터 합이 화면보다 커지면 푸터(=등록 버튼)가 잘려 나갔다.
+              이제 본문만 남는 공간을 먹고 스크롤하므로 헤더·푸터는 항상 보인다.
+            */}
             <Dialog.Panel
               className={[
-                'relative w-full',
+                'relative flex w-full flex-col',
                 maxWidthClass,
+                'max-h-[calc(100vh-2rem)]',
                 'bg-white rounded-2xl shadow-2xl overflow-hidden',
               ].join(' ')}
             >
               {/* ── 헤더 ── */}
-              <div className={`flex items-center justify-between px-6 py-4 ${headerBg}`}>
+              <div className={`flex shrink-0 items-center justify-between px-6 py-4 ${headerBg}`}>
                 <Dialog.Title className="text-base font-bold text-white tracking-tight">
                   {title}
                 </Dialog.Title>
@@ -97,14 +107,14 @@ export default function Modal({
                 </button>
               </div>
 
-              {/* ── 본문 콘텐츠 ── */}
-              <div className="overflow-y-auto max-h-[75vh]">
+              {/* ── 본문 콘텐츠 (min-h-0 이 있어야 flex 자식이 실제로 줄어든다) ── */}
+              <div className="min-h-0 flex-1 overflow-y-auto">
                 {children}
               </div>
 
               {/* ── 푸터 (선택적) ── */}
               {footer && (
-                <div className="border-t border-slate-100 px-6 py-4 bg-slate-50">
+                <div className="shrink-0 border-t border-slate-100 px-6 py-4 bg-slate-50">
                   {footer}
                 </div>
               )}

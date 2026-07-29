@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Download, Loader2, RefreshCw, FileText, FileCog,
-  FileBarChart2, AlertCircle, PackageOpen,
+  FileBarChart2, AlertCircle, PackageOpen, DatabaseZap,
 } from 'lucide-react';
 import { getGroupModuleUnitArtifacts, downloadFileBlob } from '../../api/analysis';
 import { downloadBlob } from '../../utils/fileHelper';
+import { isAdmin } from '../../utils/auth';
 import { useToast } from '../../contexts/ToastContext';
+import ModelRegistrationModal from '../modelRegistry/ModelRegistrationModal';
+import { SOURCE_ARTIFACT_KINDS } from '../../utils/modelRegistryUtils';
 
 // 파일 용량 표시 (best-effort — DRM at-rest 시 약간의 오차 가능)
 function formatSize(bytes) {
@@ -28,6 +31,14 @@ const KIND_ICON = {
   op2:        FileBarChart2,
 };
 
+// Model Library 등록이 가능한 산출물 → 백엔드 artifact_kind 매핑.
+// _edited.bdf 와 _lifting.bdf 는 의미가 다르므로(편집 구조 모델 vs 와이어·하중 반영 해석 모델)
+// 한 버튼이 둘을 암묵적으로 고르게 하지 않고 각각 별도 kind 로 등록한다.
+const REGISTRABLE_KINDS = {
+  liftingBdf: SOURCE_ARTIFACT_KINDS.MODULE_UNIT_LIFTING,
+  editedBdf:  SOURCE_ARTIFACT_KINDS.MODULE_UNIT_EDITED,
+};
+
 /**
  * Group & Module Unit 권상 구조해석 Step3 상단 카드.
  * parent BDF 폴더에서 존재하는 lifting 산출물(_lifting.bdf/_edited.bdf/_lifting.f06/_lifting.op2)을
@@ -39,6 +50,9 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
   const [artifacts, setArtifacts] = useState([]);
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(null); // 다운로드 중인 kind
+  // 등록 모달은 사용자가 명시적으로 열 때만 뜬다. 여는 것만으로는 아무것도 등록되지 않는다.
+  const [registerTarget, setRegisterTarget] = useState(null); // { artifactKind } | null
+  const canRegister = isAdmin();
 
   const fetchArtifacts = useCallback(async () => {
     if (!parentAnalysisId) { setState('idle'); return; }
@@ -136,24 +150,38 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
                     {items.map(art => {
                       const Icon = KIND_ICON[art.kind] ?? FileText;
                       const busy = downloading === art.kind;
+                      const registerKind = REGISTRABLE_KINDS[art.kind];
                       return (
-                        <button
+                        <div
                           key={art.kind}
-                          onClick={() => handleDownload(art)}
-                          disabled={busy}
-                          className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/50 transition-colors cursor-pointer text-left disabled:opacity-50 disabled:cursor-wait"
+                          className="flex items-stretch gap-1.5 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/50 transition-colors overflow-hidden"
                         >
-                          <Icon size={18} className="text-blue-600 shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold text-slate-700 truncate">{art.label}</p>
-                            <p className="text-[10px] text-slate-400 font-mono truncate" title={art.fileName}>
-                              {art.fileName}{art.sizeBytes != null ? ` · ${formatSize(art.sizeBytes)}` : ''}
-                            </p>
-                          </div>
-                          {busy
-                            ? <Loader2 size={14} className="animate-spin text-blue-500 shrink-0" />
-                            : <Download size={14} className="text-slate-400 shrink-0" />}
-                        </button>
+                          <button
+                            onClick={() => handleDownload(art)}
+                            disabled={busy}
+                            className="flex items-center gap-2.5 px-3 py-2.5 flex-1 min-w-0 cursor-pointer text-left disabled:opacity-50 disabled:cursor-wait"
+                          >
+                            <Icon size={18} className="text-blue-600 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold text-slate-700 truncate">{art.label}</p>
+                              <p className="text-[10px] text-slate-400 font-mono truncate" title={art.fileName}>
+                                {art.fileName}{art.sizeBytes != null ? ` · ${formatSize(art.sizeBytes)}` : ''}
+                              </p>
+                            </div>
+                            {busy
+                              ? <Loader2 size={14} className="animate-spin text-blue-500 shrink-0" />
+                              : <Download size={14} className="text-slate-400 shrink-0" />}
+                          </button>
+                          {canRegister && registerKind && parentAnalysisId && (
+                            <button
+                              onClick={() => setRegisterTarget({ artifactKind: registerKind })}
+                              title="Model Library 에 등록"
+                              className="px-2.5 border-l border-slate-200 text-slate-400 hover:text-brand-blue hover:bg-blue-50 transition-colors cursor-pointer shrink-0"
+                            >
+                              <DatabaseZap size={15} />
+                            </button>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -163,6 +191,21 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
           </div>
         )}
       </div>
+
+      <ModelRegistrationModal
+        isOpen={Boolean(registerTarget)}
+        onClose={() => setRegisterTarget(null)}
+        source={{
+          analysisId: parentAnalysisId,
+          artifactKind: registerTarget?.artifactKind,
+        }}
+        onRegistered={(r) => showToast(
+          r?.restored
+            ? '삭제되었던 모델을 Model Library 에 복원했습니다.'
+            : 'Model Library 에 등록되었습니다.',
+          'success',
+        )}
+      />
     </div>
   );
 }

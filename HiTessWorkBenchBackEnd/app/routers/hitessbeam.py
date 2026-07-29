@@ -9,6 +9,7 @@
 import os
 import io
 import pickle
+import re
 import subprocess
 import traceback
 import uuid
@@ -21,10 +22,22 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from .. import database
-from ..dependencies import require_auth
+from ..dependencies import optional_auth
 from ._access_control import assert_current_user_can_access_path
 
 router = APIRouter(prefix="/hitessbeam", tags=["hitessbeam-temp"])
+
+# ⚠️ 이 라우터만 require_auth 가 아니라 optional_auth 를 쓴다 — 의도적 예외다.
+#
+# 여기 붙는 클라이언트는 WorkBench 앱이 아니라 **사내에 이미 배포된 실행 파일**이다
+# (HiTESS Beam 이 띄우는 ModuleUnitAnalysis.exe = MU_Client.py 빌드본, CSV→BDF 클라이언트).
+# 사용자 PC 에 깔린 exe 라 Authorization 헤더를 붙이도록 고칠 수 없다. 2026-07-28 에
+# 이 창구를 require_auth 로 닫았다가 배포본이 전부 `401 인증이 필요합니다.` 로 죽었다.
+#
+# 대신 '토큰이 오면 끝까지 검증한다' — 잘못된 토큰은 401, 신원과 다른 userID 는 403,
+# 남의 작업 폴더 다운로드는 403. 익명 요청도 경로 탈출·pickle 실행·크기 제한 방어는
+# 그대로 받는다. 보안 점검으로 이 파일을 다시 잠그기 전에
+# tests/test_hitessbeam_legacy_client.py 를 먼저 읽을 것.
 
 _ROUTER_DIR = os.path.dirname(os.path.abspath(__file__))          # app/routers
 _BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))      # HiTessWorkBenchBackEnd
@@ -75,11 +88,36 @@ async def _read_limited(upload: UploadFile, max_bytes: int) -> bytes:
     return content
 
 
-def _verify_user_id(user_id: str, current_user: str) -> str:
+# 익명(레거시) 요청의 userID 는 작업 폴더 이름에 그대로 들어간다. 경로 구분자·상위 참조가
+# 섞이면 userConnection 밖으로 나갈 수 있으므로 형식을 좁힌다. '_' 는 제외 — 폴더명에서
+# 소유자 사번을 되읽는 _access_control.WORK_FOLDER_RE 가 '_' 를 구분자로 쓴다.
+_LEGACY_EMPLOYEE_ID_RE = re.compile(r"^[A-Za-z0-9.-]{1,32}$")
+
+
+def _resolve_employee_id(user_id: str, current_user: str | None) -> str:
+    """폼 userID 와 (있다면) 인증 신원을 대조해 작업 폴더에 쓸 사번을 정한다.
+
+    토큰이 있으면 신원이 우선이고 다른 사번을 주장하면 거부한다. 로그인이 사번을
+    대문자로 정규화하므로 비교는 대소문자를 무시한다(소문자 사번으로 실행해도 통과).
+
+    토큰이 없으면 레거시 클라이언트다. 인증 이전과 같이 userID 를 그대로 쓰되,
+    폴더명으로 안전한 형태만 통과시키고 나머지는 'undefined' 로 떨어뜨린다
+    (예전 클라이언트가 보내던 'false'/'null' 문자열 처리와 같은 취급).
+    """
     employee_id = (user_id or "").strip()
-    if employee_id != current_user:
-        raise HTTPException(status_code=403, detail="userID가 인증 사용자와 일치하지 않습니다.")
-    return current_user
+
+    if current_user is not None:
+        if employee_id.casefold() != current_user.strip().casefold():
+            raise HTTPException(status_code=403, detail="userID가 인증 사용자와 일치하지 않습니다.")
+        return current_user
+
+    if not employee_id:
+        raise HTTPException(status_code=400, detail="userID is required")
+    if employee_id.lower() in ("false", "null", "none"):
+        return "undefined"
+    if not _LEGACY_EMPLOYEE_ID_RE.fullmatch(employee_id):
+        return "undefined"
+    return employee_id
 
 
 def _write_bytes(file_path: str, content: bytes) -> None:
@@ -91,14 +129,14 @@ def _write_bytes(file_path: str, content: bytes) -> None:
 async def csv_to_bdf(
     userID: str = Form(...),
     file: List[UploadFile] = File(...),
-    current_user: str = Depends(require_auth),
+    current_user: str | None = Depends(optional_auth),
 ):
     """
     CSV → BDF 변환 엔드포인트.
     multipart/form-data로 file(여러 파일)와 userID를 받습니다.
     input.pkl 파일이 반드시 포함되어야 합니다.
     """
-    employee_id = _verify_user_id(userID, current_user)
+    employee_id = _resolve_employee_id(userID, current_user)
     files = file
     if len(files) > _CSV_TO_BDF_MAX_FILES:
         raise HTTPException(status_code=400, detail="input.pkl과 CSV 파일은 최대 4개까지 업로드할 수 있습니다.")
@@ -220,7 +258,7 @@ def download_bdf(
     user_folder: str,
     filename: str,
     db: Session = Depends(database.get_db),
-    current_user: str = Depends(require_auth),
+    current_user: str | None = Depends(optional_auth),
 ):
     """
     BDF 파일 다운로드 엔드포인트.
@@ -231,7 +269,10 @@ def download_bdf(
     # 경로 탈출 방지 (userConnection/ 외부 접근 차단)
     if not file_path.startswith(_USER_CONN_DIR + os.sep):
         raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
-    assert_current_user_can_access_path(file_path, current_user, db, _USER_CONN_DIR)
+    # 레거시 클라이언트(토큰 없음)는 업로드 응답으로 받은 자기 폴더명을 그대로 되돌려주는
+    # 흐름이라 소유자 검사를 걸 신원 자체가 없다. 토큰을 보낸 요청에는 그대로 강제한다.
+    if current_user is not None:
+        assert_current_user_can_access_path(file_path, current_user, db, _USER_CONN_DIR)
 
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
@@ -295,7 +336,7 @@ async def module_unit(
     userID: str = Form(...),
     programName: str = Form(...),
     file: UploadFile = File(...),
-    current_user: str = Depends(require_auth),
+    current_user: str | None = Depends(optional_auth),
 ):
     """
     ModuleUnit / GroupUnit BDF 해석 엔드포인트.
@@ -311,7 +352,7 @@ async def module_unit(
             raise HTTPException(status_code=400, detail="유효한 .bdf 파일이 필요합니다.")
 
         # ── 2. 작업 폴더 생성 + 파일 저장 ────────────────────────────
-        employee_id = _verify_user_id(userID, current_user)
+        employee_id = _resolve_employee_id(userID, current_user)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         user_folder = os.path.abspath(os.path.join(
@@ -378,7 +419,7 @@ def download_module_unit(
     user_folder: str,
     filename: str,
     db: Session = Depends(database.get_db),
-    current_user: str = Depends(require_auth),
+    current_user: str | None = Depends(optional_auth),
 ):
     """ModuleUnit 결과 파일 다운로드.
     경로 탈출 방지 로직은 csvToBdf/download와 동일합니다.
@@ -386,7 +427,10 @@ def download_module_unit(
     file_path = os.path.abspath(os.path.join(_USER_CONN_DIR, user_folder, filename))
     if not file_path.startswith(_USER_CONN_DIR + os.sep):
         raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
-    assert_current_user_can_access_path(file_path, current_user, db, _USER_CONN_DIR)
+    # 레거시 클라이언트(토큰 없음)는 업로드 응답으로 받은 자기 폴더명을 그대로 되돌려주는
+    # 흐름이라 소유자 검사를 걸 신원 자체가 없다. 토큰을 보낸 요청에는 그대로 강제한다.
+    if current_user is not None:
+        assert_current_user_can_access_path(file_path, current_user, db, _USER_CONN_DIR)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
     return FileResponse(

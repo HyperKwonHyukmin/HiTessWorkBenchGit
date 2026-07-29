@@ -35,19 +35,9 @@ let viewerOutputDir = null;
 let viewerSidePassageBdfName = null;
 
 function createWindow() {
-  // 기준 해상도(1920px) 대비 현재 화면 비율로 zoomFactor 자동 계산
-  // 예) 1280px 화면 → 0.80, 1600px → 0.90, 1920px 이상 → 1.00
-  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
-  const REFERENCE_WIDTH = 1920;
-  const zoomFactor = Math.min(Math.max(screenW / REFERENCE_WIDTH, 0.70), 1.0);
-
-  // 창 크기도 화면을 벗어나지 않도록 상한 설정 (여백 40px)
-  const winWidth  = Math.min(1280, screenW - 40);
-  const winHeight = Math.min(1050, screenH - 40);
-
   mainWindow = new BrowserWindow({
-    width: winWidth,
-    height: winHeight,
+    width: 1280,
+    height: 980,
     minWidth: 1024,
     minHeight: 760,
     title: "HiTESS WorkBench",
@@ -57,7 +47,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      zoomFactor: zoomFactor,  // 해상도 비례 자동 축소
+      zoomFactor: 1.0,
     },
     show: false, // 준비될 때까지 숨김
     autoHideMenuBar: true,
@@ -78,6 +68,12 @@ function createWindow() {
     // 개발 모드: localhost 서버 로드
     mainWindow.loadURL("http://localhost:5173");
   }
+
+  // Electron은 origin별 페이지 배율을 userData/Preferences에 저장한다.
+  // 과거 자동 축소 값(예: localhost 70%)이 남아 있어도 본체는 항상 100%로 복원한다.
+  mainWindow.webContents.on("did-finish-load", () => {
+    mainWindow.webContents.setZoomFactor(1.0);
+  });
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();

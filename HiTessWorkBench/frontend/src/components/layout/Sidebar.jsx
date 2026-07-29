@@ -19,6 +19,7 @@ import {
   Webhook,
   Download,
   MessagesSquare,
+  Database,
 } from 'lucide-react';
 import { ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
 
@@ -50,6 +51,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate,
           { icon: SlidersHorizontal, label: "Parametric Apps" },
           { icon: Wrench, label: "Productivity Apps" },
           { icon: FolderOpen, label: "My Projects" },
+          { icon: Database, label: "Model Library" },
         ]
       }
     ];

@@ -1,0 +1,2663 @@
+﻿{
+    "workbook":  "C:\\Coding\\WorkBench\\outputs\\drawing_to_analysis_2027\\치공구 디지털 구조해석 자동화 플랫폼_2027.xlsx",
+    "title":  "",
+    "subject":  "",
+    "sheetCount":  2,
+    "sheets":  [
+                   {
+                       "index":  1,
+                       "name":  "서식2",
+                       "visible":  0,
+                       "usedRange":  "A1:AU46",
+                       "rowCount":  46,
+                       "columnCount":  47,
+                       "printArea":  "$A$1:$AP$46",
+                       "mergedAreas":  [
+                                           "AK2:AM3",
+                                           "A4:C5",
+                                           "D4:F5",
+                                           "G4:I5",
+                                           "J4:K4",
+                                           "U4:Z4",
+                                           "AH4:AK4",
+                                           "J5:K5",
+                                           "U5:Z5",
+                                           "AH5:AK5",
+                                           "A6:C17",
+                                           "U6:Z6",
+                                           "AF6:AM6",
+                                           "U7:Z7",
+                                           "AH7:AK7",
+                                           "U8:W20",
+                                           "X8:Z8",
+                                           "AA8:AD8",
+                                           "AE8:AH8",
+                                           "AI8:AL8",
+                                           "AM8:AP8",
+                                           "X9:Z9",
+                                           "X10:Z10",
+                                           "X11:Z11",
+                                           "X12:Z14",
+                                           "AA12:AP14",
+                                           "X15:Z20",
+                                           "AA15:AK15",
+                                           "AL15:AN15",
+                                           "AO15:AP15",
+                                           "AL16:AN16",
+                                           "AL17:AN17",
+                                           "A18:C23",
+                                           "M18:N23",
+                                           "AL18:AN18",
+                                           "U21:W33",
+                                           "X21:Z30",
+                                           "AA21:AD24",
+                                           "AE21:AJ21",
+                                           "AK21:AP21",
+                                           "AA25:AD27",
+                                           "AA28:AD30",
+                                           "X31:Z33",
+                                           "U34:W41",
+                                           "A36:C38",
+                                           "A39:C41"
+                                       ],
+                       "cells":  [
+                                     {
+                                         "address":  "AK2",
+                                         "text":  "[과제번호]",
+                                         "value":  "[과제번호]",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  20,
+                                                       "bold":  true,
+                                                       "fontColor":  "#C00000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  29,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "A4",
+                                         "text":  "구분",
+                                         "value":  "구분",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "D4",
+                                         "text":  "신규",
+                                         "value":  "신규",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "G4",
+                                         "text":  "TRL 단계",
+                                         "value":  "TRL 단계",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "J4",
+                                         "text":  "현재",
+                                         "value":  "현재",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U4",
+                                         "text":  "수행부서",
+                                         "value":  "수행부서",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AH4",
+                                         "text":  "책임자",
+                                         "value":  "책임자",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "J5",
+                                         "text":  "완료",
+                                         "value":  "완료",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U5",
+                                         "text":  "의뢰(수요)부서",
+                                         "value":  "의뢰(수요)부서",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AH5",
+                                         "text":  "의뢰자",
+                                         "value":  "의뢰자",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "A6",
+                                         "text":  "개발 목적 \n및 \n내용",
+                                         "value":  "개발 목적 \n및 \n내용",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U6",
+                                         "text":  "의뢰자 협의여부",
+                                         "value":  "의뢰자 협의여부",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AF6",
+                                         "text":  "의뢰자와 목표(기대) 효과 협의여부",
+                                         "value":  "의뢰자와 목표(기대) 효과 협의여부",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U7",
+                                         "text":  "개발 기간",
+                                         "value":  "개발 기간",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AH7",
+                                         "text":  "적용 사업부",
+                                         "value":  "적용 사업부",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U8",
+                                         "text":  "개발비\n투자 규모",
+                                         "value":  "개발비\n투자 규모",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X8",
+                                         "text":  "항목",
+                                         "value":  "항목",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA8",
+                                         "text":  "전년",
+                                         "value":  "전년",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AE8",
+                                         "text":  "당해",
+                                         "value":  "당해",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AI8",
+                                         "text":  "당해이후",
+                                         "value":  "당해이후",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AM8",
+                                         "text":  "전체(총)",
+                                         "value":  "전체(총)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X9",
+                                         "text":  "직접비(억원)",
+                                         "value":  "직접비(억원)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X10",
+                                         "text":  "공수(M/H)",
+                                         "value":  "공수(M/H)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X11",
+                                         "text":  "개발비(억원)",
+                                         "value":  "개발비(억원)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X12",
+                                         "text":  "직접비용 \n소요 내역",
+                                         "value":  "직접비용 \n소요 내역",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA12",
+                                         "text":  "#NAME?",
+                                         "value":  -2146826259,
+                                         "formula":  "=- 없음",
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X15",
+                                         "text":  "주요 추진 \n항목\n일정 및 MH",
+                                         "value":  "주요 추진 \n항목\n일정 및 MH",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA15",
+                                         "text":  "내 용",
+                                         "value":  "내 용",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AL15",
+                                         "text":  "일정",
+                                         "value":  "일정",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AO15",
+                                         "text":  "M/H",
+                                         "value":  "M/H",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AL16",
+                                         "text":  "25.01~25.03",
+                                         "value":  "25.01~25.03",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AL17",
+                                         "text":  "25.04~25.07",
+                                         "value":  "25.04~25.07",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "A18",
+                                         "text":  "경쟁사 \n개발 현황",
+                                         "value":  "경쟁사 \n개발 현황",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "M18",
+                                         "text":  "당사\n차별화 \n포인트",
+                                         "value":  "당사\n차별화 \n포인트",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AL18",
+                                         "text":  "25.08~25.12",
+                                         "value":  "25.08~25.12",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U21",
+                                         "text":  "목표\n(기대)\n효과",
+                                         "value":  "목표\n(기대)\n효과",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X21",
+                                         "text":  "재무적 효과",
+                                         "value":  "재무적 효과",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA21",
+                                         "text":  "재료비, \n제반소요비용\n(개발비 포함)",
+                                         "value":  "재료비, \n제반소요비용\n(개발비 포함)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  16,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AE21",
+                                         "text":  "재무적 절감",
+                                         "value":  "재무적 절감",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AK21",
+                                         "text":  "재무적 증가",
+                                         "value":  "재무적 증가",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA25",
+                                         "text":  "공수",
+                                         "value":  "공수",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA28",
+                                         "text":  "기타\n(품질실패\n비용 등)",
+                                         "value":  "기타\n(품질실패\n비용 등)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X31",
+                                         "text":  "기술적 효과",
+                                         "value":  "기술적 효과",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U34",
+                                         "text":  "재무적 \n효과\n산정 기준",
+                                         "value":  "재무적 \n효과\n산정 기준",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "A36",
+                                         "text":  "유관 \n부서와의\n 업무 분장",
+                                         "value":  "유관 \n부서와의\n 업무 분장",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "A39",
+                                         "text":  "관련 과제",
+                                         "value":  "관련 과제",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     }
+                                 ],
+                       "shapes":  [
+
+                                  ],
+                       "preview":  "C:\\Coding\\WorkBench\\outputs\\drawing_to_analysis_2027\\inspection\\sheet_01_서식2.png",
+                       "previewError":  null,
+                       "pdf":  "C:\\Coding\\WorkBench\\outputs\\drawing_to_analysis_2027\\inspection\\sheet_01_서식2.pdf",
+                       "pdfError":  "Value does not fall within the expected range."
+                   },
+                   {
+                       "index":  2,
+                       "name":  "C2025074",
+                       "visible":  -1,
+                       "usedRange":  "A1:AU46",
+                       "rowCount":  46,
+                       "columnCount":  47,
+                       "printArea":  "$A$1:$AP$45",
+                       "mergedAreas":  [
+                                           "A1:AJ3",
+                                           "AK2:AM3",
+                                           "A4:C5",
+                                           "D4:F5",
+                                           "G4:I5",
+                                           "J4:M4",
+                                           "N4:T4",
+                                           "U4:Z4",
+                                           "AA4:AG4",
+                                           "AH4:AK4",
+                                           "AL4:AP4",
+                                           "J5:M5",
+                                           "N5:T5",
+                                           "U5:Z5",
+                                           "AA5:AG5",
+                                           "AH5:AK5",
+                                           "A6:C7",
+                                           "D6:F6",
+                                           "G6:T6",
+                                           "U6:Z6",
+                                           "AA6:AE6",
+                                           "AF6:AM6",
+                                           "AN6:AP6",
+                                           "D7:F7",
+                                           "G7:T7",
+                                           "U7:Z7",
+                                           "AA7:AG7",
+                                           "AH7:AK7",
+                                           "AL7:AP7",
+                                           "A8:C17",
+                                           "D8:T17",
+                                           "U8:W20",
+                                           "X8:Z8",
+                                           "AA8:AD8",
+                                           "AE8:AH8",
+                                           "AI8:AL8",
+                                           "AM8:AP8",
+                                           "X9:Z9",
+                                           "X10:Z10",
+                                           "X11:Z11",
+                                           "X12:Z14",
+                                           "AA12:AP14",
+                                           "X15:Z20",
+                                           "AA15:AK15",
+                                           "AL15:AN15",
+                                           "AO15:AP15",
+                                           "AA16:AK16",
+                                           "AL16:AN16",
+                                           "AO16:AP16",
+                                           "AA17:AK17",
+                                           "AL17:AN17",
+                                           "AO17:AP17",
+                                           "A18:C23",
+                                           "D18:L23",
+                                           "M18:N23",
+                                           "O18:T23",
+                                           "AA18:AK18",
+                                           "AL18:AN18",
+                                           "AO18:AP18",
+                                           "AA19:AK19",
+                                           "AL19:AN19",
+                                           "AO19:AP19",
+                                           "U21:W33",
+                                           "X21:Z30",
+                                           "AA21:AD24",
+                                           "AE21:AJ21",
+                                           "AK21:AP21",
+                                           "AE22:AJ24",
+                                           "AK22:AP24",
+                                           "AA25:AD27",
+                                           "AE25:AJ27",
+                                           "AK25:AP27",
+                                           "AA28:AD30",
+                                           "AE28:AJ30",
+                                           "AK28:AP30",
+                                           "X31:Z33",
+                                           "AA31:AP33",
+                                           "U34:W41",
+                                           "X34:AP41",
+                                           "A36:C38",
+                                           "D36:T38",
+                                           "A39:C41",
+                                           "D40:T40"
+                                       ],
+                       "cells":  [
+                                     {
+                                         "address":  "A1",
+                                         "text":  "치공구 디지털 구조해석 자동화 플랫폼",
+                                         "value":  "치공구 디지털 구조해석 자동화 플랫폼",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  26,
+                                                       "bold":  true,
+                                                       "fontColor":  "#FF0000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  29,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AK2",
+                                         "text":  "[과제번호]",
+                                         "value":  "[과제번호]",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  20,
+                                                       "bold":  true,
+                                                       "fontColor":  "#C00000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  29,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "A4",
+                                         "text":  "구분",
+                                         "value":  "구분",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "D4",
+                                         "text":  "신규",
+                                         "value":  "신규",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "G4",
+                                         "text":  "전략 연계\n(TRM)",
+                                         "value":  "전략 연계\n(TRM)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "J4",
+                                         "text":  "기술분류",
+                                         "value":  "기술분류",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "N4",
+                                         "text":  "E.지능형 설계",
+                                         "value":  "E.지능형 설계",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U4",
+                                         "text":  "수행부서",
+                                         "value":  "수행부서",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA4",
+                                         "text":  "구조시스템연구실",
+                                         "value":  "구조시스템연구실",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AH4",
+                                         "text":  "책임자",
+                                         "value":  "책임자",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AL4",
+                                         "text":  "권혁민 책임연구원",
+                                         "value":  "권혁민 책임연구원",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "J5",
+                                         "text":  "핵심기술",
+                                         "value":  "핵심기술",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "N5",
+                                         "text":  "E01. AI/DT 기술 설계 적용_설계/해석 자동화 및 최적화",
+                                         "value":  "E01. AI/DT 기술 설계 적용_설계/해석 자동화 및 최적화",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U5",
+                                         "text":  "의뢰(수요)부서",
+                                         "value":  "의뢰(수요)부서",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA5",
+                                         "text":  "건조기술기획부",
+                                         "value":  "건조기술기획부",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AH5",
+                                         "text":  "의뢰자",
+                                         "value":  "의뢰자",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "A6",
+                                         "text":  "TRL 단계",
+                                         "value":  "TRL 단계",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "D6",
+                                         "text":  "시작",
+                                         "value":  "시작",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "G6",
+                                         "text":  "TRL4: 실험실 규모의 핵심성능 및 경제성 평가",
+                                         "value":  "TRL4: 실험실 규모의 핵심성능 및 경제성 평가",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U6",
+                                         "text":  "의뢰자 협의여부",
+                                         "value":  "의뢰자 협의여부",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA6",
+                                         "text":  "협의",
+                                         "value":  "협의",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AF6",
+                                         "text":  "의뢰자와 목표(기대) 효과 협의여부",
+                                         "value":  "의뢰자와 목표(기대) 효과 협의여부",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AN6",
+                                         "text":  "협의",
+                                         "value":  "협의",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "D7",
+                                         "text":  "완료",
+                                         "value":  "완료",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "G7",
+                                         "text":  "TRL7: 실제 환경 성능 검증 및 최종 경제성 평가",
+                                         "value":  "TRL7: 실제 환경 성능 검증 및 최종 경제성 평가",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U7",
+                                         "text":  "개발 기간",
+                                         "value":  "개발 기간",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA7",
+                                         "text":  "2026.01 ~ 2026.12 (12개월)",
+                                         "value":  "2026.01 ~ 2026.12 (12개월)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AH7",
+                                         "text":  "적용 사업부",
+                                         "value":  "적용 사업부",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AL7",
+                                         "text":  "조선",
+                                         "value":  "조선",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "A8",
+                                         "text":  "개발 목적 \n및 \n내용",
+                                         "value":  "개발 목적 \n및 \n내용",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "D8",
+                                         "text":  "- 군산 공장에 제작된 M-Unit은 해상 운송 과정에서 파랑에 의한 가속도 영향을 받게 되며, 이에 따라 바지선 상에서의 고정 및 구조 안전성을 확보하기 위한 검토가 필요.\n- 해상 운송 시 M-Unit 또는 정반 하부는 생산 공정의 편의를 위하여 가용접 상태로 바지선에 취부되는 경우가 있으며, 이에 따라 해당 용접부에 대한 강도 평가가 필요함.\n- M-Unit의 해상 운송 조건에 대한 M-Unit의 구조 강도 평가와 정반 하부 용접부 설계•강도 평가 자동화 시스템 개발을 하여 권상, 해상 운송, 운항 전 단계까지의 생산 전 과정 통합 구조 평가 시스템 개발",
+                                         "value":  "- 군산 공장에 제작된 M-Unit은 해상 운송 과정에서 파랑에 의한 가속도 영향을 받게 되며, 이에 따라 바지선 상에서의 고정 및 구조 안전성을 확보하기 위한 검토가 필요.\n- 해상 운송 시 M-Unit 또는 정반 하부는 생산 공정의 편의를 위하여 가용접 상태로 바지선에 취부되는 경우가 있으며, 이에 따라 해당 용접부에 대한 강도 평가가 필요함.\n- M-Unit의 해상 운송 조건에 대한 M-Unit의 구조 강도 평가와 정반 하부 용접부 설계•강도 평가 자동화 시스템 개발을 하여 권상, 해상 운송, 운항 전 단계까지의 생산 전 과정 통합 구조 평가 시스템 개발",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4160,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U8",
+                                         "text":  "개발비\n투자 규모",
+                                         "value":  "개발비\n투자 규모",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X8",
+                                         "text":  "항목",
+                                         "value":  "항목",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA8",
+                                         "text":  "~2026년",
+                                         "value":  "~2026년",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AE8",
+                                         "text":  "당해(2027년)",
+                                         "value":  "당해(2027년)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AI8",
+                                         "text":  "(2028년~)",
+                                         "value":  "(2028년~)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AM8",
+                                         "text":  "전체(총)",
+                                         "value":  "전체(총)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X9",
+                                         "text":  "직접비(억원)",
+                                         "value":  "직접비(억원)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X10",
+                                         "text":  "공수(M/H)",
+                                         "value":  "공수(M/H)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X11",
+                                         "text":  "개발비(억원)",
+                                         "value":  "개발비(억원)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X12",
+                                         "text":  "직접비용 \n소요 내역",
+                                         "value":  "직접비용 \n소요 내역",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA12",
+                                         "text":  "- 없음",
+                                         "value":  "- 없음",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X15",
+                                         "text":  "주요 추진 \n항목\n일정 및 MH",
+                                         "value":  "주요 추진 \n항목\n일정 및 MH",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA15",
+                                         "text":  "내 용",
+                                         "value":  "내 용",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AL15",
+                                         "text":  "일정",
+                                         "value":  "일정",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AO15",
+                                         "text":  "M/H",
+                                         "value":  "M/H",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA16",
+                                         "text":  "해상 운송 조건을 반영한 구조 해석 자동화 프로그램 개발",
+                                         "value":  "해상 운송 조건을 반영한 구조 해석 자동화 프로그램 개발",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AL16",
+                                         "text":  "26.01~26.03",
+                                         "value":  "26.01~26.03",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AO16",
+                                         "text":  "600 ",
+                                         "value":  600,
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "#,##0_ ",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA17",
+                                         "text":  "AM 설계 정보를 기반으로 한 용접 접합부 구조 평가 절차 수립",
+                                         "value":  "AM 설계 정보를 기반으로 한 용접 접합부 구조 평가 절차 수립",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  96,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AL17",
+                                         "text":  "26.04~26.07",
+                                         "value":  "26.04~26.07",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  96,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AO17",
+                                         "text":  "600 ",
+                                         "value":  600,
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "#,##0_ ",
+                                                       "rowHeight":  96,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "A18",
+                                         "text":  "경쟁사 \n개발 현황",
+                                         "value":  "경쟁사 \n개발 현황",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "D18",
+                                         "text":  "- 유사 해상운송 구조물에 대한 해석 체계 개발 사례는 제한적\n",
+                                         "value":  "- 유사 해상운송 구조물에 대한 해석 체계 개발 사례는 제한적\n",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "M18",
+                                         "text":  "당사\n차별화 \n포인트",
+                                         "value":  "당사\n차별화 \n포인트",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "O18",
+                                         "text":  "- 설계 오류 예방 및 현장 설계 대응력 강화\n- AM 설계 연계로 실시간 평가 기반 마련",
+                                         "value":  "- 설계 오류 예방 및 현장 설계 대응력 강화\n- AM 설계 연계로 실시간 평가 기반 마련",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA18",
+                                         "text":  "M-Unit 권상 및 운송 단계별 구조 해석 기반 설계 검토 체계 마련",
+                                         "value":  "M-Unit 권상 및 운송 단계별 구조 해석 기반 설계 검토 체계 마련",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  16,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AL18",
+                                         "text":  "26.08~26.10",
+                                         "value":  "26.08~26.10",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AO18",
+                                         "text":  "200 ",
+                                         "value":  200,
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "#,##0_ ",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA19",
+                                         "text":  "시스템 통합 테스트 및 성능 검증",
+                                         "value":  "시스템 통합 테스트 및 성능 검증",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  16,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AL19",
+                                         "text":  "26.11~26.12",
+                                         "value":  "26.11~26.12",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AO19",
+                                         "text":  "100 ",
+                                         "value":  100,
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "#,##0_ ",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U21",
+                                         "text":  "목표\n(기대)\n효과",
+                                         "value":  "목표\n(기대)\n효과",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X21",
+                                         "text":  "재무적 효과",
+                                         "value":  "재무적 효과",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA21",
+                                         "text":  "재료비, \n제반소요비용\n(개발비 포함)",
+                                         "value":  "재료비, \n제반소요비용\n(개발비 포함)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  16,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AE21",
+                                         "text":  "재무적 절감",
+                                         "value":  "재무적 절감",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AK21",
+                                         "text":  "재무적 증가",
+                                         "value":  "재무적 증가",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AE22",
+                                         "text":  "재료비 : 0.2억원/척",
+                                         "value":  "재료비 : 0.2억원/척",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AK22",
+                                         "text":  "- 총 개발비용 : 1.6 억",
+                                         "value":  "- 총 개발비용 : 1.6 억",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA25",
+                                         "text":  "공수",
+                                         "value":  "공수",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AE25",
+                                         "text":  "설계공수 : 0.5억원/척",
+                                         "value":  "설계공수 : 0.5억원/척",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AK25",
+                                         "text":  "- 해당 사항 없음",
+                                         "value":  "- 해당 사항 없음",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA28",
+                                         "text":  "기타\n(품질실패\n비용 등)",
+                                         "value":  "기타\n(품질실패\n비용 등)",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AE28",
+                                         "text":  "품질 실패비용 : 0.3억/척",
+                                         "value":  "품질 실패비용 : 0.3억/척",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AK28",
+                                         "text":  "- 해당 사항 없음",
+                                         "value":  "- 해당 사항 없음",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X31",
+                                         "text":  "기술적 효과",
+                                         "value":  "기술적 효과",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#F0F8FA",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "AA31",
+                                         "text":  "- 설계 및 해석 MH 절감, 부재 절감\n- M-Unit 정반의 하부 용접부 강도 평가 자동화 시스템 개발",
+                                         "value":  "- 설계 및 해석 MH 절감, 부재 절감\n- M-Unit 정반의 하부 용접부 강도 평가 자동화 시스템 개발",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "U34",
+                                         "text":  "재무적 \n효과\n산정 기준",
+                                         "value":  "재무적 \n효과\n산정 기준",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "X34",
+                                         "text":  "재무적 절감 : 1.0억원/척\n  - 척당 의장품 재료비(4억원) x 0.5(기존 대비 5% 절감) = 0.2억원/척\n  - 설계공수 절감 : 700MH x 71,807원 = 0.5억원/척\n  - 품질 실패비용 : 0.3억/척",
+                                         "value":  "재무적 절감 : 1.0억원/척\n  - 척당 의장품 재료비(4억원) x 0.5(기존 대비 5% 절감) = 0.2억원/척\n  - 설계공수 절감 : 700MH x 71,807원 = 0.5억원/척\n  - 품질 실패비용 : 0.3억/척",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "A36",
+                                         "text":  "유관 \n부서와의\n 업무 분장",
+                                         "value":  "유관 \n부서와의\n 업무 분장",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "D36",
+                                         "text":  "- 선박의장연구실 : 설계 및 해석 프로그램 개발\n- 선장설계부 : 개발 프로그램 적용 타탕성 검토",
+                                         "value":  "- 선박의장연구실 : 설계 및 해석 프로그램 개발\n- 선장설계부 : 개발 프로그램 적용 타탕성 검토",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "A39",
+                                         "text":  "관련 과제",
+                                         "value":  "관련 과제",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  true,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#DAEEF3",
+                                                       "horizontalAlignment":  -4108,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  true,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     },
+                                     {
+                                         "address":  "D40",
+                                         "text":  "[C2024011]선박 의장품 설계 및 해석 자동화 시스템 기술 개발",
+                                         "value":  "[C2024011]선박 의장품 설계 및 해석 자동화 시스템 기술 개발",
+                                         "formula":  null,
+                                         "style":  {
+                                                       "fontName":  "맑은 고딕",
+                                                       "fontSize":  19,
+                                                       "bold":  false,
+                                                       "fontColor":  "#000000",
+                                                       "fillColor":  "#FFFFFF",
+                                                       "horizontalAlignment":  -4131,
+                                                       "verticalAlignment":  -4108,
+                                                       "wrapText":  false,
+                                                       "numberFormat":  "G/표준",
+                                                       "rowHeight":  27.75,
+                                                       "columnWidth":  6.25
+                                                   }
+                                     }
+                                 ],
+                       "shapes":  [
+                                      {
+                                          "name":  "TextBox 14",
+                                          "type":  17,
+                                          "left":  6.8181891441345215,
+                                          "top":  947.1136474609375,
+                                          "width":  372.61361694335938,
+                                          "height":  25.004487991333008,
+                                          "alternativeText":  ""
+                                      },
+                                      {
+                                          "name":  "TextBox 14",
+                                          "type":  17,
+                                          "left":  438.4090576171875,
+                                          "top":  941.6590576171875,
+                                          "width":  372.61361694335938,
+                                          "height":  32.194015502929688,
+                                          "alternativeText":  ""
+                                      },
+                                      {
+                                          "name":  "Picture 3",
+                                          "type":  13,
+                                          "left":  402.26559448242188,
+                                          "top":  784.70465087890625,
+                                          "width":  418.7120361328125,
+                                          "height":  151.86543273925781,
+                                          "alternativeText":  ""
+                                      },
+                                      {
+                                          "name":  "Picture 4",
+                                          "type":  13,
+                                          "left":  42.613700866699219,
+                                          "top":  760.09307861328125,
+                                          "width":  321.4771728515625,
+                                          "height":  184.52740478515625,
+                                          "alternativeText":  ""
+                                      }
+                                  ],
+                       "preview":  "C:\\Coding\\WorkBench\\outputs\\drawing_to_analysis_2027\\inspection\\sheet_02_C2025074.png",
+                       "previewError":  null,
+                       "pdf":  "C:\\Coding\\WorkBench\\outputs\\drawing_to_analysis_2027\\inspection\\sheet_02_C2025074.pdf",
+                       "pdfError":  null
+                   }
+               ]
+}

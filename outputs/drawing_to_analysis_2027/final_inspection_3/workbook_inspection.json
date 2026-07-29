@@ -1,0 +1,3030 @@
+{
+  "workbook": "C:\\Coding\\WorkBench\\outputs\\drawing_to_analysis_2027\\치공구 디지털 구조해석 자동화 플랫폼_2027.xlsx",
+  "title": "",
+  "subject": "",
+  "sheetCount": 2,
+  "sheets": [
+    {
+      "index": 1,
+      "name": "서식2",
+      "visible": 0,
+      "usedRange": "A1:AU46",
+      "rowCount": 46,
+      "columnCount": 47,
+      "printArea": "$A$1:$AP$46",
+      "mergedAreas": [
+        "A1:AJ3",
+        "AK1:AP1",
+        "AK2:AM3",
+        "AN2:AP3",
+        "A4:C5",
+        "D4:F5",
+        "G4:I5",
+        "J4:K4",
+        "L4:T4",
+        "U4:Z4",
+        "AA4:AG4",
+        "AH4:AK4",
+        "AL4:AP4",
+        "J5:K5",
+        "L5:T5",
+        "U5:Z5",
+        "AA5:AG5",
+        "AH5:AK5",
+        "AL5:AP5",
+        "A6:C17",
+        "D6:T17",
+        "U6:Z6",
+        "AA6:AE6",
+        "AF6:AM6",
+        "AN6:AP6",
+        "U7:Z7",
+        "AA7:AG7",
+        "AH7:AK7",
+        "AL7:AP7",
+        "U8:W20",
+        "X8:Z8",
+        "AA8:AD8",
+        "AE8:AH8",
+        "AI8:AL8",
+        "AM8:AP8",
+        "X9:Z9",
+        "AA9:AD9",
+        "AE9:AH9",
+        "AI9:AL9",
+        "AM9:AP9",
+        "X10:Z10",
+        "AA10:AD10",
+        "AE10:AH10",
+        "AI10:AL10",
+        "AM10:AP10",
+        "X11:Z11",
+        "AA11:AD11",
+        "AE11:AH11",
+        "AI11:AL11",
+        "AM11:AP11",
+        "X12:Z14",
+        "AA12:AP14",
+        "X15:Z20",
+        "AA15:AK15",
+        "AL15:AN15",
+        "AO15:AP15",
+        "AA16:AK16",
+        "AL16:AN16",
+        "AO16:AP16",
+        "AA17:AK17",
+        "AL17:AN17",
+        "AO17:AP17",
+        "A18:C23",
+        "D18:L23",
+        "M18:N23",
+        "O18:T23",
+        "AA18:AK18",
+        "AL18:AN18",
+        "AO18:AP18",
+        "AA19:AK19",
+        "AL19:AN19",
+        "AO19:AP19",
+        "AA20:AK20",
+        "AL20:AN20",
+        "AO20:AP20",
+        "U21:W33",
+        "X21:Z30",
+        "AA21:AD24",
+        "AE21:AJ21",
+        "AK21:AP21",
+        "AE22:AJ24",
+        "AK22:AP24",
+        "A24:T33",
+        "AA25:AD27",
+        "AE25:AJ27",
+        "AK25:AP27",
+        "AA28:AD30",
+        "AE28:AJ30",
+        "AK28:AP30",
+        "X31:Z33",
+        "AA31:AP33",
+        "A34:T35",
+        "U34:W41",
+        "X34:AP41",
+        "A36:C38",
+        "D36:T38",
+        "A39:C41",
+        "D39:T39",
+        "D40:T40",
+        "D41:T41",
+        "A42:AP46"
+      ],
+      "cells": [
+        {
+          "address": "AK2",
+          "text": "[과제번호]",
+          "value": "[과제번호]",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 20.0,
+            "bold": true,
+            "fontColor": "#C00000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 29.0,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "A4",
+          "text": "구분",
+          "value": "구분",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "D4",
+          "text": "신규",
+          "value": "신규",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "G4",
+          "text": "TRL 단계",
+          "value": "TRL 단계",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "J4",
+          "text": "현재",
+          "value": "현재",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U4",
+          "text": "수행부서",
+          "value": "수행부서",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AH4",
+          "text": "책임자",
+          "value": "책임자",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "J5",
+          "text": "완료",
+          "value": "완료",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U5",
+          "text": "의뢰(수요)부서",
+          "value": "의뢰(수요)부서",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AH5",
+          "text": "의뢰자",
+          "value": "의뢰자",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "A6",
+          "text": "개발 목적 \n및 \n내용",
+          "value": "개발 목적 \n및 \n내용",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U6",
+          "text": "의뢰자 협의여부",
+          "value": "의뢰자 협의여부",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AF6",
+          "text": "의뢰자와 목표(기대) 효과 협의여부",
+          "value": "의뢰자와 목표(기대) 효과 협의여부",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U7",
+          "text": "개발 기간",
+          "value": "개발 기간",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AH7",
+          "text": "적용 사업부",
+          "value": "적용 사업부",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U8",
+          "text": "개발비\n투자 규모",
+          "value": "개발비\n투자 규모",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X8",
+          "text": "항목",
+          "value": "항목",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA8",
+          "text": "전년",
+          "value": "전년",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AE8",
+          "text": "당해",
+          "value": "당해",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AI8",
+          "text": "당해이후",
+          "value": "당해이후",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AM8",
+          "text": "전체(총)",
+          "value": "전체(총)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X9",
+          "text": "직접비(억원)",
+          "value": "직접비(억원)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X10",
+          "text": "공수(M/H)",
+          "value": "공수(M/H)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X11",
+          "text": "개발비(억원)",
+          "value": "개발비(억원)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X12",
+          "text": "직접비용 \n소요 내역",
+          "value": "직접비용 \n소요 내역",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA12",
+          "text": "#NAME?",
+          "value": -2146826259,
+          "formula": "=- 없음",
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X15",
+          "text": "주요 추진 \n항목\n일정 및 MH",
+          "value": "주요 추진 \n항목\n일정 및 MH",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA15",
+          "text": "내 용",
+          "value": "내 용",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AL15",
+          "text": "일정",
+          "value": "일정",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AO15",
+          "text": "M/H",
+          "value": "M/H",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AL16",
+          "text": "25.01~25.03",
+          "value": "25.01~25.03",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AL17",
+          "text": "25.04~25.07",
+          "value": "25.04~25.07",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "A18",
+          "text": "경쟁사 \n개발 현황",
+          "value": "경쟁사 \n개발 현황",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "M18",
+          "text": "당사\n차별화 \n포인트",
+          "value": "당사\n차별화 \n포인트",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AL18",
+          "text": "25.08~25.12",
+          "value": "25.08~25.12",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U21",
+          "text": "목표\n(기대)\n효과",
+          "value": "목표\n(기대)\n효과",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X21",
+          "text": "재무적 효과",
+          "value": "재무적 효과",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA21",
+          "text": "재료비, \n제반소요비용\n(개발비 포함)",
+          "value": "재료비, \n제반소요비용\n(개발비 포함)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 16.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AE21",
+          "text": "재무적 절감",
+          "value": "재무적 절감",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AK21",
+          "text": "재무적 증가",
+          "value": "재무적 증가",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA25",
+          "text": "공수",
+          "value": "공수",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA28",
+          "text": "기타\n(품질실패\n비용 등)",
+          "value": "기타\n(품질실패\n비용 등)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X31",
+          "text": "기술적 효과",
+          "value": "기술적 효과",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U34",
+          "text": "재무적 \n효과\n산정 기준",
+          "value": "재무적 \n효과\n산정 기준",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "A36",
+          "text": "유관 \n부서와의\n 업무 분장",
+          "value": "유관 \n부서와의\n 업무 분장",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "A39",
+          "text": "관련 과제",
+          "value": "관련 과제",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        }
+      ],
+      "shapes": [],
+      "preview": "C:\\Coding\\WorkBench\\outputs\\drawing_to_analysis_2027\\final_inspection_3\\sheet_01_서식2.png",
+      "previewError": null,
+      "pdf": "C:\\Coding\\WorkBench\\outputs\\drawing_to_analysis_2027\\final_inspection_3\\sheet_01_서식2.pdf",
+      "pdfError": "Value does not fall within the expected range."
+    },
+    {
+      "index": 2,
+      "name": "2027작성본",
+      "visible": -1,
+      "usedRange": "A1:AU46",
+      "rowCount": 46,
+      "columnCount": 47,
+      "printArea": "$A$1:$AP$45",
+      "mergedAreas": [
+        "A1:AJ3",
+        "AK1:AP1",
+        "AK2:AM3",
+        "AN2:AP3",
+        "A4:C5",
+        "D4:F5",
+        "G4:I5",
+        "J4:M4",
+        "N4:T4",
+        "U4:Z4",
+        "AA4:AG4",
+        "AH4:AK4",
+        "AL4:AP4",
+        "J5:M5",
+        "N5:T5",
+        "U5:Z5",
+        "AA5:AG5",
+        "AH5:AK5",
+        "AL5:AP5",
+        "A6:C7",
+        "D6:F6",
+        "G6:T6",
+        "U6:Z6",
+        "AA6:AE6",
+        "AF6:AM6",
+        "AN6:AP6",
+        "D7:F7",
+        "G7:T7",
+        "U7:Z7",
+        "AA7:AG7",
+        "AH7:AK7",
+        "AL7:AP7",
+        "A8:C17",
+        "D8:T17",
+        "U8:W20",
+        "X8:Z8",
+        "AA8:AD8",
+        "AE8:AH8",
+        "AI8:AL8",
+        "AM8:AP8",
+        "X9:Z9",
+        "AA9:AD9",
+        "AE9:AH9",
+        "AI9:AL9",
+        "AM9:AP9",
+        "X10:Z10",
+        "AA10:AD10",
+        "AE10:AH10",
+        "AI10:AL10",
+        "AM10:AP10",
+        "X11:Z11",
+        "AA11:AD11",
+        "AE11:AH11",
+        "AI11:AL11",
+        "AM11:AP11",
+        "X12:Z14",
+        "AA12:AP14",
+        "X15:Z20",
+        "AA15:AK15",
+        "AL15:AN15",
+        "AO15:AP15",
+        "AA16:AK16",
+        "AL16:AN16",
+        "AO16:AP16",
+        "AA17:AK17",
+        "AL17:AN17",
+        "AO17:AP17",
+        "A18:C23",
+        "D18:L23",
+        "M18:N23",
+        "O18:T23",
+        "AA18:AK18",
+        "AL18:AN18",
+        "AO18:AP18",
+        "AA19:AK19",
+        "AL19:AN19",
+        "AO19:AP19",
+        "AA20:AK20",
+        "AL20:AN20",
+        "AO20:AP20",
+        "U21:W33",
+        "X21:Z30",
+        "AA21:AD24",
+        "AE21:AJ21",
+        "AK21:AP21",
+        "AE22:AJ24",
+        "AK22:AP24",
+        "A24:T33",
+        "AA25:AD27",
+        "AE25:AJ27",
+        "AK25:AP27",
+        "AA28:AD30",
+        "AE28:AJ30",
+        "AK28:AP30",
+        "X31:Z33",
+        "AA31:AP33",
+        "A34:T35",
+        "U34:W41",
+        "X34:AP41",
+        "A36:C38",
+        "D36:T38",
+        "A39:C41",
+        "D39:T39",
+        "D40:T40",
+        "D41:T41",
+        "A42:AP46"
+      ],
+      "cells": [
+        {
+          "address": "A1",
+          "text": "치공구 디지털 구조해석 자동화 플랫폼",
+          "value": "치공구 디지털 구조해석 자동화 플랫폼",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 18.0,
+            "bold": true,
+            "fontColor": "#FF0000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 29.0,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AK2",
+          "text": "[과제번호]",
+          "value": "[과제번호]",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 20.0,
+            "bold": true,
+            "fontColor": "#C00000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 29.0,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "A4",
+          "text": "구분",
+          "value": "구분",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "D4",
+          "text": "신규",
+          "value": "신규",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "G4",
+          "text": "전략 연계\n(TRM)",
+          "value": "전략 연계\n(TRM)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "J4",
+          "text": "기술분류",
+          "value": "기술분류",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "N4",
+          "text": "E.지능형 설계",
+          "value": "E.지능형 설계",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U4",
+          "text": "수행부서",
+          "value": "수행부서",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA4",
+          "text": "구조시스템연구실",
+          "value": "구조시스템연구실",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AH4",
+          "text": "책임자",
+          "value": "책임자",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AL4",
+          "text": "권혁민 책임연구원",
+          "value": "권혁민 책임연구원",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "J5",
+          "text": "핵심기술",
+          "value": "핵심기술",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "N5",
+          "text": "E01. AI/DT 기술 설계 적용_설계/해석 자동화 및 최적화",
+          "value": "E01. AI/DT 기술 설계 적용_설계/해석 자동화 및 최적화",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 7.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U5",
+          "text": "의뢰(수요)부서",
+          "value": "의뢰(수요)부서",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA5",
+          "text": "건조기술기획부",
+          "value": "건조기술기획부",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AH5",
+          "text": "의뢰자",
+          "value": "의뢰자",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "A6",
+          "text": "TRL 단계",
+          "value": "TRL 단계",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "D6",
+          "text": "시작",
+          "value": "시작",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "G6",
+          "text": "TRL4: 실험실 규모 핵심기능 검증 및 기준모델 비교",
+          "value": "TRL4: 실험실 규모 핵심기능 검증 및 기준모델 비교",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U6",
+          "text": "의뢰자 협의여부",
+          "value": "의뢰자 협의여부",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA6",
+          "text": "협의",
+          "value": "협의",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AF6",
+          "text": "의뢰자와 목표(기대) 효과 협의여부",
+          "value": "의뢰자와 목표(기대) 효과 협의여부",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AN6",
+          "text": "협의",
+          "value": "협의",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "D7",
+          "text": "완료",
+          "value": "완료",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "G7",
+          "text": "TRL7: 실제 치공구 도면 기반 현장 실증 및 성능 검증",
+          "value": "TRL7: 실제 치공구 도면 기반 현장 실증 및 성능 검증",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U7",
+          "text": "개발 기간",
+          "value": "개발 기간",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA7",
+          "text": "2027.01 ~ 2027.12 (12개월)",
+          "value": "2027.01 ~ 2027.12 (12개월)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AH7",
+          "text": "적용 사업부",
+          "value": "적용 사업부",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AL7",
+          "text": "조선",
+          "value": "조선",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "A8",
+          "text": "개발 목적 \n및 \n내용",
+          "value": "개발 목적 \n및 \n내용",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "D8",
+          "text": "- 치공구 구조해석은 2D 설계도면 해석, 형상 이상화, 재질·접합·하중·구속조건 입력을 해석자가 수작업으로 수행하여 많은 공수와 개인별 편차가 발생함.\n- PDF/DWG 도면에서 부재 형상, 치수, 재질, 용접·볼트 접합 정보를 인식하고 구조·연결 관계를 해석 의미모델(Engineering Semantic Model)로 변환하는 기술 개발.\n- 의미모델을 기반으로 Beam/Shell 이상화, 메시, 하중·경계조건 템플릿, Nastran 입력모델을 자동 생성하고 강도·변형·좌굴·접합부 안전성을 평가.\n- HiTESS WorkBench의 File-Based App인 DrawingToAnalysis로 통합하여 신뢰도 기반 엔지니어 검토, 추론 근거·수정이력 관리 및 안전성 보고서 자동생성 기능 구현.",
+          "value": "- 치공구 구조해석은 2D 설계도면 해석, 형상 이상화, 재질·접합·하중·구속조건 입력을 해석자가 수작업으로 수행하여 많은 공수와 개인별 편차가 발생함.\n- PDF/DWG 도면에서 부재 형상, 치수, 재질, 용접·볼트 접합 정보를 인식하고 구조·연결 관계를 해석 의미모델(Engineering Semantic Model)로 변환하는 기술 개발.\n- 의미모델을 기반으로 Beam/Shell 이상화, 메시, 하중·경계조건 템플릿, Nastran 입력모델을 자동 생성하고 강도·변형·좌굴·접합부 안전성을 평가.\n- HiTESS WorkBench의 File-Based App인 DrawingToAnalysis로 통합하여 신뢰도 기반 엔지니어 검토, 추론 근거·수정이력 관리 및 안전성 보고서 자동생성 기능 구현.",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4160,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U8",
+          "text": "개발비\n투자 규모",
+          "value": "개발비\n투자 규모",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X8",
+          "text": "항목",
+          "value": "항목",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA8",
+          "text": "~2026년",
+          "value": "~2026년",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AE8",
+          "text": "당해(2027년)",
+          "value": "당해(2027년)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AI8",
+          "text": "(2028년~)",
+          "value": "(2028년~)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AM8",
+          "text": "전체(총)",
+          "value": "전체(총)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X9",
+          "text": "직접비(억원)",
+          "value": "직접비(억원)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA9",
+          "text": "0.0",
+          "value": 0.0,
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "0.0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AE9",
+          "text": "0.1",
+          "value": 0.1,
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "0.0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AI9",
+          "text": "0.0",
+          "value": 0.0,
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "0.0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AM9",
+          "text": "0.1",
+          "value": 0.1,
+          "formula": "=SUM(AA9,AE9,AI9)",
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "0.0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X10",
+          "text": "공수(M/H)",
+          "value": "공수(M/H)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA10",
+          "text": "0",
+          "value": 0.0,
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "#,##0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AE10",
+          "text": "2,100",
+          "value": 2100.0,
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "#,##0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AI10",
+          "text": "0",
+          "value": 0.0,
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 10.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "#,##0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AM10",
+          "text": "2,100",
+          "value": 2100.0,
+          "formula": "=SUM(AA10,AE10,AI10)",
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "#,##0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X11",
+          "text": "개발비(억원)",
+          "value": "개발비(억원)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA11",
+          "text": "0.0",
+          "value": 0.0,
+          "formula": "=AA9+AA10*71807/100000000",
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "0.0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AE11",
+          "text": "1.6",
+          "value": 1.607947,
+          "formula": "=AE9+AE10*71807/100000000",
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "0.0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AI11",
+          "text": "0.0",
+          "value": 0.0,
+          "formula": "=AI9+AI10*71807/100000000",
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "0.0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AM11",
+          "text": "1.6",
+          "value": 1.607947,
+          "formula": "=SUM(AA11,AE11,AI11)",
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4152,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "0.0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X12",
+          "text": "직접비용 \n소요 내역",
+          "value": "직접비용 \n소요 내역",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA12",
+          "text": "도면 정답데이터 구축·검증 및 실증용 컴퓨팅/소프트웨어 비용: 0.1억원",
+          "value": "도면 정답데이터 구축·검증 및 실증용 컴퓨팅/소프트웨어 비용: 0.1억원",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X15",
+          "text": "주요 추진 \n항목\n일정 및 MH",
+          "value": "주요 추진 \n항목\n일정 및 MH",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA15",
+          "text": "내 용",
+          "value": "내 용",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AL15",
+          "text": "일정",
+          "value": "일정",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AO15",
+          "text": "M/H",
+          "value": "M/H",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA16",
+          "text": "대상 치공구 유형 정의 및 도면-해석 정답 데이터셋 구축",
+          "value": "대상 치공구 유형 정의 및 도면-해석 정답 데이터셋 구축",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AL16",
+          "text": "27.01~27.03",
+          "value": "27.01~27.03",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AO16",
+          "text": "400",
+          "value": 400.0,
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "#,##0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA17",
+          "text": "도면 요소·치수·재질·접합부 인식 및 해석 의미모델 생성",
+          "value": "도면 요소·치수·재질·접합부 인식 및 해석 의미모델 생성",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 96.0,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AL17",
+          "text": "27.04~27.06",
+          "value": "27.04~27.06",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 96.0,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AO17",
+          "text": "700",
+          "value": 700.0,
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "#,##0",
+            "rowHeight": 96.0,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "A18",
+          "text": "경쟁사 \n개발 현황",
+          "value": "경쟁사 \n개발 현황",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "D18",
+          "text": "- 상용 CAD/CAE는 3D CAD 불러오기·메시 자동화 기능을 제공하나, 국내 치공구 2D 도면을 해석 가능한 모델과 안전성 판정으로 직접 변환하는 기능은 제한적임.\n- 최신 2D→3D 연구도 도면 모호성, 접합 의미 해석, 실제 도면 일반화 및 검증 추적성 확보가 주요 과제로 남아 있음.",
+          "value": "- 상용 CAD/CAE는 3D CAD 불러오기·메시 자동화 기능을 제공하나, 국내 치공구 2D 도면을 해석 가능한 모델과 안전성 판정으로 직접 변환하는 기능은 제한적임.\n- 최신 2D→3D 연구도 도면 모호성, 접합 의미 해석, 실제 도면 일반화 및 검증 추적성 확보가 주요 과제로 남아 있음.",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4160,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "M18",
+          "text": "당사\n차별화 \n포인트",
+          "value": "당사\n차별화 \n포인트",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4160,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "O18",
+          "text": "- 사내 치공구 도면·해석 이력 기반 도메인 스키마와 표준 해석 템플릿\n- 결정론적 규칙 우선 + 멀티모달 AI 보조 + 신뢰도 임계값 기반 검토\n- 기존 Nastran/WorkBench 연계 및 입력·수정·판정 근거의 전 과정 추적",
+          "value": "- 사내 치공구 도면·해석 이력 기반 도메인 스키마와 표준 해석 템플릿\n- 결정론적 규칙 우선 + 멀티모달 AI 보조 + 신뢰도 임계값 기반 검토\n- 기존 Nastran/WorkBench 연계 및 입력·수정·판정 근거의 전 과정 추적",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4160,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA18",
+          "text": "Beam/Shell 이상화·하중/경계조건·Nastran 해석/평가 자동화",
+          "value": "Beam/Shell 이상화·하중/경계조건·Nastran 해석/평가 자동화",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AL18",
+          "text": "27.07~27.10",
+          "value": "27.07~27.10",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AO18",
+          "text": "650",
+          "value": 650.0,
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "#,##0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA19",
+          "text": "DrawingToAnalysis 앱 통합, 현장 실증 및 V&V",
+          "value": "DrawingToAnalysis 앱 통합, 현장 실증 및 V&V",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AL19",
+          "text": "27.11~27.12",
+          "value": "27.11~27.12",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AO19",
+          "text": "350",
+          "value": 350.0,
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "#,##0",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U21",
+          "text": "목표\n(기대)\n효과",
+          "value": "목표\n(기대)\n효과",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X21",
+          "text": "재무적 효과",
+          "value": "재무적 효과",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA21",
+          "text": "재료비, \n제반소요비용\n(개발비 포함)",
+          "value": "재료비, \n제반소요비용\n(개발비 포함)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 16.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AE21",
+          "text": "재무적 절감",
+          "value": "재무적 절감",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AK21",
+          "text": "재무적 증가",
+          "value": "재무적 증가",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AE22",
+          "text": "재료비 직접 절감: 미산정",
+          "value": "재료비 직접 절감: 미산정",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AK22",
+          "text": "총 개발비용 : 1.6억원",
+          "value": "총 개발비용 : 1.6억원",
+          "formula": "=\"총 개발비용 : \"&TEXT(AM11,\"0.0\")&\"억원\"",
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA25",
+          "text": "공수",
+          "value": "공수",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AE25",
+          "text": "분석·모델링 공수 절감: 0.8억원/년",
+          "value": "분석·모델링 공수 절감: 0.8억원/년",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AK25",
+          "text": "- 해당 사항 없음",
+          "value": "- 해당 사항 없음",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA28",
+          "text": "기타\n(품질실패\n비용 등)",
+          "value": "기타\n(품질실패\n비용 등)",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AE28",
+          "text": "재작업·품질실패 예방: 0.2억원/년",
+          "value": "재작업·품질실패 예방: 0.2억원/년",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AK28",
+          "text": "- 해당 사항 없음",
+          "value": "- 해당 사항 없음",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X31",
+          "text": "기술적 효과",
+          "value": "기술적 효과",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#F0F8FA",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": false,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "AA31",
+          "text": "- 도면→해석모델→안전성 보고서 전 과정 표준화 및 근거·수정이력 100% 추적\n- 모델링 시간 70% 이상 절감, 자동 모델 생성 성공률 85% 이상\n- 기준해석 대비 주요 응답 오차 10% 이내, 안전/불안전 판정 일치율 95% 이상",
+          "value": "- 도면→해석모델→안전성 보고서 전 과정 표준화 및 근거·수정이력 100% 추적\n- 모델링 시간 70% 이상 절감, 자동 모델 생성 성공률 85% 이상\n- 기준해석 대비 주요 응답 오차 10% 이내, 안전/불안전 판정 일치율 95% 이상",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "U34",
+          "text": "재무적 \n효과\n산정 기준",
+          "value": "재무적 \n효과\n산정 기준",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "X34",
+          "text": "연간 재무적 절감 : 1.0억원/년\n- 기존 80MH/건 → 목표 24MH/건(70% 절감), 연 20건 기준\n  : 56MH × 20건 × 71,807원 = 0.80억원/년\n- 모델링 오류에 따른 재해석·재작업 예방 : 0.20억원/년\n- 개발비 약 1.61억원, 단순 회수기간 약 1.6년\n※ 실제 효과는 2027년 실증 건수와 기준공수 측정 후 확정",
+          "value": "연간 재무적 절감 : 1.0억원/년\n- 기존 80MH/건 → 목표 24MH/건(70% 절감), 연 20건 기준\n  : 56MH × 20건 × 71,807원 = 0.80억원/년\n- 모델링 오류에 따른 재해석·재작업 예방 : 0.20억원/년\n- 개발비 약 1.61억원, 단순 회수기간 약 1.6년\n※ 실제 효과는 2027년 실증 건수와 기준공수 측정 후 확정",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "A36",
+          "text": "유관 \n부서와의\n 업무 분장",
+          "value": "유관 \n부서와의\n 업무 분장",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "D36",
+          "text": "- 구조시스템연구실: 도면 인식, 해석 의미모델, FEM 생성·안전성 평가 엔진 개발 및 V&V\n- 건조기술기획부/생산설계 수요부서: 대표 도면 제공, 하중·경계조건 검토, 현장 실증 및 효과 측정",
+          "value": "- 구조시스템연구실: 도면 인식, 해석 의미모델, FEM 생성·안전성 평가 엔진 개발 및 V&V\n- 건조기술기획부/생산설계 수요부서: 대표 도면 제공, 하중·경계조건 검토, 현장 실증 및 효과 측정",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 9.0,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "A39",
+          "text": "관련 과제",
+          "value": "관련 과제",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 19.0,
+            "bold": true,
+            "fontColor": "#000000",
+            "fillColor": "#DAEEF3",
+            "horizontalAlignment": -4108,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        },
+        {
+          "address": "D40",
+          "text": "[C2024011] 선박 의장품 설계 및 해석 자동화 시스템 기술 개발 / HiTESS WorkBench DrawingToAnalysis 선행개발",
+          "value": "[C2024011] 선박 의장품 설계 및 해석 자동화 시스템 기술 개발 / HiTESS WorkBench DrawingToAnalysis 선행개발",
+          "formula": null,
+          "style": {
+            "fontName": "맑은 고딕",
+            "fontSize": 8.5,
+            "bold": false,
+            "fontColor": "#000000",
+            "fillColor": "#FFFFFF",
+            "horizontalAlignment": -4131,
+            "verticalAlignment": -4108,
+            "wrapText": true,
+            "numberFormat": "G/표준",
+            "rowHeight": 27.75,
+            "columnWidth": 6.25
+          }
+        }
+      ],
+      "shapes": [
+        {
+          "name": "TextBox 5",
+          "type": 17,
+          "left": 123.75,
+          "top": 710.75,
+          "width": 701.25,
+          "height": 18.0,
+          "alternativeText": ""
+        },
+        {
+          "name": "Rounded Rectangle 6",
+          "type": 1,
+          "left": 123.75,
+          "top": 735.75,
+          "width": 121.8499984741211,
+          "height": 58.0,
+          "alternativeText": ""
+        },
+        {
+          "name": "Straight Connector 7",
+          "type": 9,
+          "left": 248.60000610351562,
+          "top": 764.75,
+          "width": 17.0,
+          "height": 0.0,
+          "alternativeText": ""
+        },
+        {
+          "name": "Rounded Rectangle 8",
+          "type": 1,
+          "left": 268.6000061035156,
+          "top": 735.75,
+          "width": 121.8499984741211,
+          "height": 58.0,
+          "alternativeText": ""
+        },
+        {
+          "name": "Straight Connector 9",
+          "type": 9,
+          "left": 393.45001220703125,
+          "top": 764.75,
+          "width": 17.0,
+          "height": 0.0,
+          "alternativeText": ""
+        },
+        {
+          "name": "Rounded Rectangle 10",
+          "type": 1,
+          "left": 413.45001220703125,
+          "top": 735.75,
+          "width": 121.8499984741211,
+          "height": 58.0,
+          "alternativeText": ""
+        },
+        {
+          "name": "Straight Connector 11",
+          "type": 9,
+          "left": 538.2999877929688,
+          "top": 764.75,
+          "width": 17.0,
+          "height": 0.0,
+          "alternativeText": ""
+        },
+        {
+          "name": "Rounded Rectangle 12",
+          "type": 1,
+          "left": 558.2999877929688,
+          "top": 735.75,
+          "width": 121.8499984741211,
+          "height": 58.0,
+          "alternativeText": ""
+        },
+        {
+          "name": "Straight Connector 13",
+          "type": 9,
+          "left": 683.1500244140625,
+          "top": 764.75,
+          "width": 17.0,
+          "height": 0.0,
+          "alternativeText": ""
+        },
+        {
+          "name": "Rounded Rectangle 14",
+          "type": 1,
+          "left": 703.1500244140625,
+          "top": 735.75,
+          "width": 121.8499984741211,
+          "height": 58.0,
+          "alternativeText": ""
+        },
+        {
+          "name": "Rounded Rectangle 15",
+          "type": 1,
+          "left": 135.75,
+          "top": 811.75,
+          "width": 677.25,
+          "height": 38.0,
+          "alternativeText": ""
+        }
+      ],
+      "preview": "C:\\Coding\\WorkBench\\outputs\\drawing_to_analysis_2027\\final_inspection_3\\sheet_02_2027작성본.png",
+      "previewError": null,
+      "pdf": "C:\\Coding\\WorkBench\\outputs\\drawing_to_analysis_2027\\final_inspection_3\\sheet_02_2027작성본.pdf",
+      "pdfError": null
+    }
+  ]
+}

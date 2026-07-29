@@ -1,0 +1,287 @@
+<!-- Hi-TESS WorkBench 기업 발표용 표지 키비주얼 (안 A: 정보건축파 / Massimo Vignelli·Pentagram 계열) -->
+<title>Hi-TESS WorkBench — Key Visual A (Vignelli)</title>
+<style>
+  /* 브랜드 지정 가변 폰트 self-host (brand-spec.md 원본 @font-face 그대로 사용) */
+  @font-face {
+    font-family: 'Inter';
+    src: url('assets/Inter-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-display: block;
+  }
+  @font-face {
+    font-family: 'SUIT';
+    src: url('assets/SUIT-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-display: block;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #002554;
+  }
+
+  /* 캔버스: 정확히 1920x1080 CSS px. 장식적 그라디언트 없이 완전 평평한 Trust Blue —
+     Vignelli 원칙("장식은 실패의 증거다")을 배경 단계부터 지킨다. */
+  .stage {
+    width: 1920px;
+    height: 1080px;
+    position: relative;
+    overflow: hidden;
+    background: #002554;
+    font-family: 'Inter', 'SUIT', sans-serif;
+    color: #ffffff;
+  }
+
+  :root {
+    --hairline: rgba(255, 255, 255, 0.16);      /* 1급 구조 규칙선 — 화면을 나누는 선 */
+    --hairline-soft: rgba(255, 255, 255, 0.08); /* 2급 내부 구획선 — 인덱스 리스트 행 구분용 */
+    --spark: #00E600;                            /* The Rare Spark — 이 화면 전체에서 정확히 한 곳에만 */
+  }
+
+  /* ── 전체 그리드 프레임: 상하 72px, 좌우 112px 여백. 8px 배수 리듬(72=9x8, 112=14x8) ── */
+  .grid {
+    width: 100%;
+    height: 100%;
+    padding: 72px 112px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── 등록 마크(registration mark): 여백 모서리 4곳, 인쇄 대지 관례를 인용한
+     극소 십자선. 장식이 아니라 "이 그리드는 의도된 것"이라는 신호. ── */
+  .reg {
+    position: absolute;
+    width: 13px;
+    height: 13px;
+  }
+  .reg::before, .reg::after {
+    content: '';
+    position: absolute;
+    background: rgba(255, 255, 255, 0.22);
+  }
+  .reg::before { width: 13px; height: 1px; top: 6px; left: 0; }
+  .reg::after  { width: 1px; height: 13px; left: 6px; top: 0; }
+  .reg.tl { left: 105.5px; top: 65.5px; }
+  .reg.tr { left: 1801.5px; top: 65.5px; }
+  .reg.bl { left: 105.5px; top: 1001.5px; }
+  .reg.br { left: 1801.5px; top: 1001.5px; }
+
+  /* ── 헤더 행: 로고 락업(좌) + 기관 식별 라벨(우), 96px ── */
+  .header-row {
+    flex: 0 0 96px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  /* 원본 783x147(5.327:1) 비율 그대로, 폭만 auto로 왜곡 방지.
+     표시 높이 48px → 폭 약 255px, 원본 절반(391px) 이내라 4K(2x) 렌더에서도 선명 */
+  .logo-lockup {
+    height: 48px;
+    width: auto;
+    display: block;
+  }
+  .header-tag {
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 15px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.62);
+    white-space: nowrap;
+  }
+
+  /* 헤더 아래 1급 수평 규칙선 */
+  .hr {
+    flex: 0 0 auto;
+    height: 1px;
+    background: var(--hairline);
+    margin: 32px 0;
+  }
+
+  /* ── 본문 행: 좌 8칼럼(1152px) 카피 블록 + 우 4칼럼(480px) mono 인덱스,
+     사이 64px 거터에 1급 수직 규칙선. 비대칭 2단 분할 = "명확한 수직 분할" ── */
+  .main-row {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: stretch;
+  }
+
+  .col-copy {
+    flex: 0 0 1152px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between; /* 헤드라인은 상단 그리드선, 워크플로 라인은 하단 그리드선에 각각 고정 */
+  }
+
+  .headline {
+    margin: 0;
+    font-weight: 800;
+    font-size: 104px;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+  }
+  /* 문장의 마침표를 그린 스파크로 대체 — 카피의 논리적 종착점이자
+     화면에서 유일하게 허용된 채도 지점. 크기는 미세하게(22px 정사각), 위치로 힘을 낸다. */
+  .spark {
+    display: inline-block;
+    width: 0.215em;
+    height: 0.215em;
+    margin-left: 0.14em;
+    margin-bottom: 0.05em;
+    background: var(--spark);
+    vertical-align: baseline;
+  }
+
+  .workflow {
+    margin: 0;
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 22px;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.65);
+  }
+
+  /* 거터 + 수직 규칙선 (본문 행 높이 전체로 stretch) */
+  .gutter {
+    flex: 0 0 64px;
+    position: relative;
+  }
+  .gutter::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--hairline);
+    transform: translateX(-50%);
+  }
+
+  /* 우측 mono 인덱스 컬럼 — 실제 존재하는 12개 해석 모듈명만, 상단 그리드선에 고정 */
+  .col-index {
+    flex: 0 0 480px;
+    align-self: flex-start;
+  }
+  .index-label {
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.6);
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .index-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .index-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .index-list li:last-child {
+    border-bottom: 1px solid var(--hairline); /* 리스트를 닫는 1급 규칙선 — 위 라벨 규칙선과 짝을 이뤄 인덱스 박스를 완결 */
+  }
+  .idx-num {
+    flex: 0 0 24px;
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.55);
+  }
+  .idx-name {
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 14px;
+    letter-spacing: 0.03em;
+    color: rgba(255, 255, 255, 0.88);
+  }
+
+  /* 본문 아래 1급 수평 규칙선 */
+
+  /* ── 푸터 행: HHI 워드마크(좌) + 검증된 기술 스택(우), 96px ── */
+  .footer-row {
+    flex: 0 0 96px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  /* 원본 1190x198(6.01:1), 표시 높이 30px → 폭 약 180px, 원본 절반(595px) 이내 */
+  .footer-brand {
+    height: 30px;
+    width: auto;
+    display: block;
+  }
+  .footer-stack {
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 14px;
+    letter-spacing: 0.1em;
+    color: rgba(255, 255, 255, 0.6);
+    text-align: right;
+    white-space: nowrap;
+  }
+</style>
+
+<div class="stage">
+  <span class="reg tl"></span>
+  <span class="reg tr"></span>
+  <span class="reg bl"></span>
+  <span class="reg br"></span>
+
+  <div class="grid">
+
+    <!-- 헤더 -->
+    <div class="header-row">
+      <img class="logo-lockup" src="assets/logo-lockup-white.png" alt="Hi-TESS WorkBench">
+      <div class="header-tag">HD HYUNDAI — STRUCTURAL ANALYSIS PLATFORM</div>
+    </div>
+
+    <div class="hr"></div>
+
+    <!-- 본문: 좌 카피 / 우 mono 인덱스 -->
+    <div class="main-row">
+      <div class="col-copy">
+        <h1 class="headline">
+          흩어진 구조 해석을,<br>
+          하나의 관제실로<span class="spark" aria-hidden="true"></span>
+        </h1>
+        <p class="workflow">업로드 → 실행 → 추적 → 결과</p>
+      </div>
+
+      <div class="gutter"></div>
+
+      <div class="col-index">
+        <div class="index-label">Platform Modules</div>
+        <ol class="index-list">
+          <li><span class="idx-num">01</span><span class="idx-name">TRUSS ANALYSIS</span></li>
+          <li><span class="idx-num">02</span><span class="idx-name">TRUSS STRUCTURAL ASSESSMENT</span></li>
+          <li><span class="idx-num">03</span><span class="idx-name">BDF SCANNER</span></li>
+          <li><span class="idx-num">04</span><span class="idx-name">HITESS MODEL BUILDER</span></li>
+          <li><span class="idx-num">05</span><span class="idx-name">MOORING FITTING ASSESSMENT</span></li>
+          <li><span class="idx-num">06</span><span class="idx-name">GROUP &amp; MODULE UNIT LIFTING</span></li>
+          <li><span class="idx-num">07</span><span class="idx-name">SIDE PASSAGE ASSESSMENT</span></li>
+          <li><span class="idx-num">08</span><span class="idx-name">SIMPLE BEAM ASSESSMENT</span></li>
+          <li><span class="idx-num">09</span><span class="idx-name">MAST POST</span></li>
+          <li><span class="idx-num">10</span><span class="idx-name">JIB REST</span></li>
+          <li><span class="idx-num">11</span><span class="idx-name">COLUMN BUCKLING</span></li>
+          <li><span class="idx-num">12</span><span class="idx-name">AI LAB ASSISTANT</span></li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="hr"></div>
+
+    <!-- 푸터 -->
+    <div class="footer-row">
+      <img class="footer-brand" src="assets/hhi-white-ko.png" alt="HD현대중공업">
+      <div class="footer-stack">ELECTRON · REACT · FASTAPI · MSC NASTRAN</div>
+    </div>
+
+  </div>
+</div>

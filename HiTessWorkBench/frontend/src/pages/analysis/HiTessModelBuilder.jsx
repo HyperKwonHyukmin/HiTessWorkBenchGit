@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronsRight,
-  Cpu, Download, ExternalLink, FileEdit, FileSpreadsheet, History, Loader2,
+  Cpu, DatabaseZap, Download, ExternalLink, FileEdit, FileSpreadsheet, History, Loader2,
   Lock, PackageX, RotateCcw, ShieldCheck, UploadCloud, X,
 } from 'lucide-react';
 
@@ -16,6 +16,7 @@ import { getAuthHeaders, handleUnauthorized, isAdmin } from '../../utils/auth';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import AppCommunityHub from '../../components/analysis/AppCommunityHub';
 import PreflightIssueCenter from '../../components/analysis/PreflightIssueCenter';
+import ModelRegistrationModal from '../../components/modelRegistry/ModelRegistrationModal';
 
 /* ──────────────────────────────────────────────────────────────────────────
    상수
@@ -2065,7 +2066,7 @@ function SummaryMetric({ label, value, variant }) {
    Nastran 패널
    ──────────────────────────────────────────────────────────────────────── */
 
-function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToSidePassage, gmuLocked }) {
+function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToSidePassage, gmuLocked, sourceAnalysisId, onRegister, canRegister }) {
   // step 3 "해석 모델 저장" — BDF 다운로드 전용 페이지.
   //   • 원본 최종 BDF (build-full) — 항상 표시
   //   • 최종 Edit BDF (apply-edit-intent) — 편집 적용 시에만 표시. 파일명은 *_edit.bdf 로 받음.
@@ -2104,6 +2105,12 @@ function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToS
             filename={fileBaseName(bdfResult.bdfPath)}
             filepath={bdfResult.bdfPath}
             primary
+            /* 원본과 편집본은 의미가 다르므로 각각 별도 artifact kind 로 등록한다. */
+            onRegister={
+              canRegister && sourceAnalysisId
+                ? () => onRegister('modelbuilder_final')
+                : undefined
+            }
           />
         )}
         {/* 최종 Edit BDF — 편집 적용된 경우에만 */}
@@ -2114,6 +2121,11 @@ function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToS
             filepath={editBdf}
             downloadName={makeEditDownloadName(editBdf, 'bdf')}
             primary
+            onRegister={
+              canRegister && sourceAnalysisId
+                ? () => onRegister('modelbuilder_edited')
+                : undefined
+            }
           />
         )}
       </div>
@@ -2173,19 +2185,31 @@ function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToS
   );
 }
 
-function FileDownloadRow({ label, filename, filepath, primary, downloadName }) {
+function FileDownloadRow({ label, filename, filepath, primary, downloadName, onRegister }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 flex items-center justify-between">
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 flex items-center justify-between gap-2">
       <div className="min-w-0">
         <p className="text-xs font-semibold text-slate-700">{label}</p>
         <p className="text-[10px] text-slate-400 font-mono truncate" title={filename}>{filename}</p>
       </div>
-      <button
-        onClick={() => triggerDownload(filepath, downloadName).catch(e => console.warn(e))}
-        className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 ${primary ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-700 hover:bg-slate-800'} text-white text-xs font-semibold rounded-lg cursor-pointer`}
-      >
-        <Download size={12} /> 받기
-      </button>
+      <div className="shrink-0 flex items-center gap-1.5">
+        {/* 등록은 관리자가 명시적으로 눌러야만 시작된다(자동 등록 없음). */}
+        {onRegister && (
+          <button
+            onClick={onRegister}
+            title="Model Library 에 등록"
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 hover:border-brand-blue hover:text-brand-blue text-slate-600 text-xs font-semibold rounded-lg cursor-pointer transition-colors"
+          >
+            <DatabaseZap size={12} /> 등록
+          </button>
+        )}
+        <button
+          onClick={() => triggerDownload(filepath, downloadName).catch(e => console.warn(e))}
+          className={`flex items-center gap-1.5 px-3 py-1.5 ${primary ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-700 hover:bg-slate-800'} text-white text-xs font-semibold rounded-lg cursor-pointer`}
+        >
+          <Download size={12} /> 받기
+        </button>
+      </div>
     </div>
   );
 }
@@ -2297,6 +2321,12 @@ export default function HiTessModelBuilder() {
   const [hasRunOnce, setHasRunOnce] = useState(saved?.hasRunOnce ?? false);
   const [jobStatus,  setJobStatus]  = useState(saved?.jobStatus ?? null);
   const [currentJobId, setCurrentJobId] = useState(saved?.currentJobId ?? null);
+  // Model Library 등록은 job_id 가 아니라 Analysis 레코드 id 를 쓴다.
+  // 상태 응답의 project.id 가 그 값이며(analysis_runner.record_analysis), GMU 페이지도 같은 방식으로 잡는다.
+  const [sourceAnalysisId, setSourceAnalysisId] = useState(saved?.sourceAnalysisId ?? null);
+  // 등록 모달은 관리자가 명시적으로 열 때만 뜬다. 해석 완료가 등록 트리거가 되지 않는다.
+  const [registerTarget, setRegisterTarget] = useState(null);
+  const canRegisterToStorage = isAdmin();
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [bdfResult,  setBdfResult]  = useState(saved?.bdfResult ?? null);
   const [engineLog,  setEngineLog]  = useState(saved?.engineLog ?? null);
@@ -2390,14 +2420,14 @@ export default function HiTessModelBuilder() {
       struFile, pipeFile, equiFile,
       meshSize, uboltFullFix, useNastran,
       steps, activeIdx, hasRunOnce,
-      jobStatus, currentJobId, bdfResult,
+      jobStatus, currentJobId, sourceAnalysisId, bdfResult,
       engineLog, runNastranRequested,
     });
   }, [
     struFile, pipeFile, equiFile,
     meshSize, uboltFullFix, useNastran,
     steps, activeIdx, hasRunOnce,
-    jobStatus, currentJobId, bdfResult,
+    jobStatus, currentJobId, sourceAnalysisId, bdfResult,
     engineLog, runNastranRequested,
     setPageState,
   ]);
@@ -2689,6 +2719,7 @@ export default function HiTessModelBuilder() {
         if (!res.ok) { handleUnauthorized(res.status); return; }
         const data = await res.json();
         setJobStatus(data);
+        if (typeof data.project?.id === 'number') setSourceAnalysisId(data.project.id);
 
         if (data.status === 'Running') {
           const p = data.progress || 0;
@@ -2715,6 +2746,7 @@ export default function HiTessModelBuilder() {
   const applyJobResult = useCallback((data) => {
     if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
     setJobStatus(data);
+    if (typeof data.project?.id === 'number') setSourceAnalysisId(data.project.id);
     if (data.status === 'Success') {
       setBdfResult({
         outputDir:    data.output_dir   ?? null,
@@ -3364,6 +3396,9 @@ export default function HiTessModelBuilder() {
                 hasResult={hasResult}
                 editStatus={editStatus}
                 gmuLocked={gmuLocked}
+                sourceAnalysisId={sourceAnalysisId}
+                canRegister={canRegisterToStorage}
+                onRegister={(artifactKind) => setRegisterTarget({ artifactKind })}
                 onSendToGmu={(bdfPath) => {
                   if (gmuLocked) return; // 개발 중 + 비관리자는 전달 차단
                   setGmuHandoff({ bdfServerPath: bdfPath, sourceApp: 'HiTESS Model Builder' });
@@ -3391,6 +3426,20 @@ export default function HiTessModelBuilder() {
         </div>
       </div>
 
+      <ModelRegistrationModal
+        isOpen={Boolean(registerTarget)}
+        onClose={() => setRegisterTarget(null)}
+        source={{
+          analysisId: sourceAnalysisId,
+          artifactKind: registerTarget?.artifactKind,
+        }}
+        onRegistered={(r) => showToast(
+          r?.restored
+            ? '삭제되었던 모델을 Model Library 에 복원했습니다.'
+            : 'Model Library 에 등록되었습니다.',
+          'success',
+        )}
+      />
     </div>
   );
 }

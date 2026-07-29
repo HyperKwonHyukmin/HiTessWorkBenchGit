@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 from app import database, models, sessions
-from app.dependencies import require_auth
+from app.dependencies import optional_auth, require_auth
 from app.routers import (
     carling,
     column_buckling,
@@ -53,13 +53,27 @@ def test_engineering_routes_require_auth():
             "/api/section-property/shapes",
         }),
         (doublepipe.router, {route.path for route in doublepipe.router.routes}),
-        (hitessbeam.router, {route.path for route in hitessbeam.router.routes}),
     ]
 
     for router, paths in expected:
         dependencies = _route_dependency_names(router)
         for path in paths:
             assert "require_auth" in dependencies[path], path
+
+
+def test_hitessbeam_legacy_routes_use_optional_auth_by_design():
+    """hitessbeam 라우터만 require_auth 예외다 — 실수가 아니라 결정이다.
+
+    이 창구를 쓰는 건 WorkBench 앱이 아니라 사내에 이미 배포된 실행 파일
+    (HiTESS Beam 이 띄우는 ModuleUnitAnalysis.exe 등)이라 Authorization 헤더를
+    붙일 수 없다. 2026-07-28 에 require_auth 로 닫았다가 배포본이 전부 401 로
+    죽었다. 토큰이 오면 신원·소유권을 그대로 강제한다 —
+    자세한 계약은 tests/test_hitessbeam_legacy_client.py 참조.
+    """
+    dependencies = _route_dependency_names(hitessbeam.router)
+    for route in hitessbeam.router.routes:
+        assert "optional_auth" in dependencies[route.path], route.path
+        assert "require_auth" not in dependencies[route.path], route.path
 
 
 def test_session_is_invalidated_when_user_becomes_inactive(db_session, monkeypatch):
@@ -287,6 +301,8 @@ def test_hitessbeam_malformed_work_folder_cannot_bypass_download_owner_check(
     tmp_path,
     monkeypatch,
 ):
+    # 인증된 요청 기준의 검사다. 토큰을 안 보내는 레거시 exe 는 이 창구에서
+    # 소유자 검사 자체가 없다(test_hitessbeam_legacy_client.py 참조).
     base = tmp_path / "userConnection"
     folder = base / "legacy-folder"
     folder.mkdir(parents=True)
@@ -298,7 +314,7 @@ def test_hitessbeam_malformed_work_folder_cannot_bypass_download_owner_check(
         yield db_session
 
     app.dependency_overrides[database.get_db] = override_db
-    app.dependency_overrides[require_auth] = lambda: "USER001"
+    app.dependency_overrides[optional_auth] = lambda: "USER001"
     monkeypatch.setattr(hitessbeam, "_USER_CONN_DIR", str(base))
 
     response = TestClient(app).get(

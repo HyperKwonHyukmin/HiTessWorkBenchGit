@@ -341,9 +341,20 @@ const flattenComparisonData = (project) => {
   return flattened;
 };
 
+/**
+ * 실행 비교 모달.
+ *
+ * ⚠ 이 컴포넌트는 **항상 마운트되어 있고** 부모가 `projects` 로 여닫는다
+ * (닫혀 있을 때는 빈 배열이 들어온다). 그래서 `isOpen` 만 보고 본문을 짜면 안 된다 —
+ * JSX 는 `Modal` 이 열림 여부를 판단하기 **전에** 이미 평가되므로,
+ * projects 가 비어 있으면 `projects[0].project_name` 에서 페이지 전체가 터진다.
+ * (실제로 My Projects 진입 시 흰 화면 대신 Electron 배경색만 남는 사고가 있었다.)
+ */
 const ProjectCompareModal = ({ projects, onClose }) => {
-  const left = projects[0];
-  const right = projects[1];
+  // null/undefined 가 섞여 들어와도 안전하게 두 개만 고른다.
+  const pair = Array.isArray(projects) ? projects.filter(Boolean) : [];
+  const left = pair[0];
+  const right = pair[1];
   const leftData = useMemo(() => flattenComparisonData(left), [left]);
   const rightData = useMemo(() => flattenComparisonData(right), [right]);
   const keys = useMemo(
@@ -351,9 +362,12 @@ const ProjectCompareModal = ({ projects, onClose }) => {
     [leftData, rightData],
   );
 
+  // 훅은 순서가 고정돼야 하므로 early return 은 반드시 훅 **뒤에** 둔다.
+  if (pair.length !== 2) return null;
+
   return (
     <Modal
-      isOpen={projects.length === 2}
+      isOpen
       onClose={onClose}
       title="Run Compare"
       size="xl"

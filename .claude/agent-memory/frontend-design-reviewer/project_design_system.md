@@ -4,18 +4,20 @@ description: HiTESS WorkBench 프론트엔드의 Tailwind 브랜드 컬러, 공�
 type: project
 ---
 
-## 브랜드 컬러 (tailwind.config.js)
+## 브랜드 컬러 (실제 소스는 Tailwind v4 — `src/index.css` 의 `@theme` 블록. tailwind.config.js 는 잔존물이라 여기 없는 토큰도 있음)
 - `brand-blue`: #002554 (HD 현대 Trust Blue — 매우 진한 남색, 제목·CTA에 사용)
+- `brand-blue-dark`: #003366 / `brand-blue-light`: #004080 (index.css 에만 정의됨)
 - `brand-green`: #008233 (Heritage Green)
 - `brand-accent`: #00E600 (형광 연두 포인트)
 - `brand-gray`: #F5F7FA (배경 연회색)
 
-## 공통 모달 패턴
+## 공통 모달 패턴 (components/ui/Modal.jsx)
 - `@headlessui/react`의 `Dialog` + `Transition` 사용
-- `Dialog.Panel`: `rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh~90vh]`
+- `Dialog.Panel`: `flex flex-col rounded-2xl shadow-2xl overflow-hidden` + `max-h-[calc(100vh-2rem)]`
 - 배경 오버레이: `bg-black/60 backdrop-blur-sm`
-- 헤더/본문/푸터 3단 flex 구조, 푸터는 `shrink-0`, 본문은 `flex-1 overflow-y-auto`
-- 커스텀 스크롤바: `custom-scrollbar` 클래스 사용
+- 헤더/본문/푸터 3단 flex 구조, 푸터는 `shrink-0`, 본문은 `min-h-0 flex-1 overflow-y-auto`
+- ⚠️ **본문 영역에 padding 이 전혀 없다.** 각 모달이 자기 wrapper(`<div className="p-5 lg:p-6">`)를 반드시 넣어야 한다 — 빠뜨리면 콘텐츠가 모서리에 붙어 잘려 보인다(실제 사용자 버그 보고 사례).
+- size 맵: `sm/md/lg` → max-w-sm/md/lg, `xl` → **max-w-2xl(672px)**, `full` → max-w-5xl, `screen` → **max-w-[1600px]**(밀도 높은 작업용 폼 전용)
 
 ## 타이포그래피
 - 페이지 제목: `text-2xl font-bold text-brand-blue tracking-tight`

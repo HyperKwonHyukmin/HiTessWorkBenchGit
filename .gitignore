@@ -64,6 +64,10 @@ HiTessWorkBenchBackEnd/logs/
 # ===== Custom =====
 # 사용자 해석 작업 파일
 HiTessWorkBenchBackEnd/userConnection/
+# Model Library 영구 저장소 로컬 폴백 (MODEL_REGISTRY_DIR 미설정 시 여기에 쌓인다).
+# 등록된 BDF·해석 산출물이 실제로 들어가므로 절대 커밋하지 않는다.
+# ⚠ 폴더명은 화면 이름(Model Library)과 달리 DataStorage 다 — 경로를 바꾸면 기존 등록본을 잃는다.
+HiTessWorkBenchBackEnd/DataStorage/
 # AI 벡터스토어 인덱스 (ingest 시 자동 생성)
 HiTessWorkBenchBackEnd/app/AI/vectorstore/
 # 내부 해석 실행 파일

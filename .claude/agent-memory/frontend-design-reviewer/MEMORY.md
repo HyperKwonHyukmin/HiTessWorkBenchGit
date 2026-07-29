@@ -14,3 +14,5 @@
 - [App 소식 기능 롤아웃 현황](project_app_community_rollout.md) — AppCommunityHub는 2026-07-15 기준 HiTessModelBuilder 1개 페이지에만 적용된 파일럿
 - [게시판 UI 중복 구현](project_duplicate_feature_request_ui.md) — 레거시 UserRequests.jsx(전역) vs 신규 AppCommunityHub.jsx(App별) 두 곳에 게시판 UI 존재, 패턴 참고용
 - [Administration 페이지군 디자인 패턴](project_administration_pages.md) — PageHeader violet 통일, KpiCard 표준화, 상태필터 백엔드 한계, UserManagement 일괄승인/포커스링, ApiApps 복사버튼 (2026-07-20)
+- [밀도 높은 폼은 가로로 펼친다](feedback_dense_forms_expand_horizontally.md) — Modal 본문엔 padding 없음 + size="screen" 3열 패턴, 그 이유와 렌더 검증법
+- [Data Storage 의 독립된 두 축](project_model_registry_two_axes.md) — 모델 품질 vs 설계 결과를 절대 합치지 않는 이유와 UI 표현 방법

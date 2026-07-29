@@ -234,3 +234,109 @@ class ActivityLog(Base):
   status = Column(String(20), nullable=True)
   ip_address = Column(String(50), nullable=True)
   created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class RegisteredModel(Base):
+  """관리자가 선별해 Model Library에 영구 등록한 BDF 모델의 논리 단위.
+
+  userConnection/ 은 30일 뒤 삭제되므로(cleanup_service.RETENTION_DAYS), 가치 있는
+  모델은 이 registry를 통해 registry root로 복사되어 영구 보관된다.
+
+  이 테이블은 '모델' 자체의 사용자 메타데이터만 담고, 실제 파일/요약/체크섬은
+  RegisteredModelRevision(불변 스냅샷)과 RegisteredModelArtifact(파일)에 있다.
+  제목·태그·설명 변경은 새 revision을 만들지 않는다.
+  """
+
+  __tablename__ = "registered_models"
+  id = Column(Integer, primary_key=True, index=True)
+  model_uid = Column(String(36), unique=True, index=True, nullable=False)  # 외부 노출용 UUID
+  title = Column(String(200), nullable=False)
+  description = Column(Text, nullable=True)
+  model_type = Column(String(100), index=True, nullable=True)   # module-unit, beam-frame 등
+  model_role = Column(String(30), index=True, nullable=True)    # reference/notable/failure/before/after
+  confidence = Column(String(20), nullable=True)                # high/medium/review-required
+  reuse_notes = Column(Text, nullable=True)
+  # 기본 company: 관리자가 선별한 기준 모델을 팀 전체가 참조하는 것이 이 기능의 목적.
+  visibility = Column(String(20), index=True, default="company", nullable=False)
+  tags = Column(JSON, nullable=True)
+  # owner_id = source Analysis 를 수행한 원 엔지니어(출처 보존). registered_by = 등록한 관리자.
+  owner_id = Column(String(50), index=True, nullable=True)
+  registered_by = Column(String(50), index=True, nullable=True)
+  status = Column(String(20), index=True, default="active", nullable=False)  # active/archived
+  created_at = Column(DateTime(timezone=True), server_default=func.now())
+  updated_at = Column(
+      DateTime(timezone=True),
+      default=datetime.now,
+      onupdate=datetime.now,
+  )
+
+
+class RegisteredModelRevision(Base):
+  """등록 시점의 불변 스냅샷. artifact나 자동 추출 summary가 바뀌면 새 revision이다.
+
+  source_analysis_id 는 의도적으로 ForeignKey 가 아니다 — Analysis 이력이 정리되어도
+  등록된 모델은 남아야 하며, cascade 삭제로 registry가 지워지면 안 된다.
+  """
+
+  __tablename__ = "registered_model_revisions"
+  __table_args__ = (
+      UniqueConstraint("model_id", "revision_no", name="uq_registry_model_rev"),
+  )
+
+  id = Column(Integer, primary_key=True, index=True)
+  model_id = Column(
+      Integer,
+      ForeignKey("registered_models.id", ondelete="CASCADE"),
+      nullable=False,
+      index=True,
+  )
+  revision_no = Column(Integer, nullable=False)          # model별 1부터 증가
+  schema_version = Column(String(20), nullable=False)    # summary contract version
+
+  # provenance — FK 없이 보관(위 docstring 참조)
+  source_analysis_id = Column(Integer, nullable=True, index=True)
+  source_program_name = Column(String(100), index=True, nullable=True)
+  source_artifact_kind = Column(String(50), index=True, nullable=True)
+
+  bdf_sha256 = Column(String(64), unique=True, index=True, nullable=False)
+  storage_relative_path = Column(String(500), nullable=False)  # registry root 기준 상대경로
+  summary_json = Column(JSON, nullable=True)
+  artifact_manifest = Column(JSON, nullable=True)
+
+  # 모델 품질(파싱·연결성·solver health)과 설계 결과(pass/fail)는 별개 축이다.
+  # 응력 초과 모델도 정확히 표현되었다면 고품질 회귀 예제일 수 있다.
+  quality_level = Column(String(10), index=True, nullable=True)   # Q0~Q4
+  review_status = Column(String(30), index=True, default="unreviewed", nullable=True)
+  design_outcome = Column(String(30), index=True, default="unknown", nullable=True)
+
+  # 자주 조회하는 scalar — 상세 breakdown은 summary_json 에서 읽는다.
+  # 소스에 값이 없으면 NULL 이다. 0 으로 대체하지 않는다.
+  node_count = Column(Integer, nullable=True)
+  element_count = Column(Integer, nullable=True)
+  total_mass_kg = Column(Float, nullable=True)
+  max_utilization = Column(Float, nullable=True)
+
+  created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RegisteredModelArtifact(Base):
+  """revision 폴더 안에 실제로 보관된 파일 1개. 다운로드 API가 받는 유일한 식별자는 id다.
+
+  relative_path 는 registry root 기준 상대경로만 저장한다(절대/UNC 경로 노출 금지).
+  """
+
+  __tablename__ = "registered_model_artifacts"
+  id = Column(Integer, primary_key=True, index=True)
+  revision_id = Column(
+      Integer,
+      ForeignKey("registered_model_revisions.id", ondelete="CASCADE"),
+      nullable=False,
+      index=True,
+  )
+  kind = Column(String(50), index=True, nullable=False)   # bdf/summary/validation/f06/op2 등
+  file_name = Column(String(255), nullable=False)         # 표시용 basename
+  relative_path = Column(String(500), nullable=False)
+  size_bytes = Column(Integer, nullable=True)
+  sha256 = Column(String(64), nullable=True)
+  media_type = Column(String(100), nullable=True)
+  created_at = Column(DateTime(timezone=True), server_default=func.now())

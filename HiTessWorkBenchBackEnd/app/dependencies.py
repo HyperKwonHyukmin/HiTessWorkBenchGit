@@ -15,6 +15,22 @@ def require_auth(authorization: str = Header(default=None)) -> str:
     return employee_id
 
 
+def optional_auth(authorization: str = Header(default=None)) -> str | None:
+    """Authorization 헤더가 있으면 검증하고, 아예 없으면 None 을 반환한다.
+
+    사내에 이미 배포되어 헤더를 붙일 수 없는 레거시 클라이언트(HiTESS Beam 이
+    실행하는 ModuleUnitAnalysis.exe 등) 전용 창구에만 사용한다. 새 엔드포인트는
+    반드시 require_auth 를 쓸 것.
+
+    헤더가 '있는데 잘못된' 경우는 익명으로 강등하지 않고 그대로 401 이다.
+    만료된 세션을 조용히 레거시 경로로 흘려보내면, 인증이 끝난 클라이언트가
+    임의의 사번을 주장할 수 있게 된다.
+    """
+    if authorization is None:
+        return None
+    return require_auth(authorization)
+
+
 def require_admin(employee_id: str = Depends(require_auth), db: Session = Depends(database.get_db)) -> str:
     """관리자 권한 검증. 성공 시 employee_id 반환."""
     user = db.query(models.User).filter(models.User.employee_id == employee_id).first()

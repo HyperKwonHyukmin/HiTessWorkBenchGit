@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Hi-TESS WorkBench · Key Visual B (Field)</title>
+<style>
+  @font-face { font-family:'Inter'; src:url('assets/Inter-Variable.woff2') format('woff2-variations');
+               font-weight:100 900; font-display:block; }
+  @font-face { font-family:'SUIT';  src:url('assets/SUIT-Variable.woff2')  format('woff2-variations');
+               font-weight:100 900; font-display:block; }
+
+  * { box-sizing:border-box; }
+  html, body { margin:0; padding:0; }
+  body { background:#002554; overflow:hidden; }
+
+  .stage {
+    width:1920px;
+    height:1080px;
+    position:relative;
+    overflow:hidden;
+    /* 네이비 깊이 그라디언트 — 소실점(우상단) 방향으로 밝아져 원근 깊이를 색으로도 암시 */
+    background: linear-gradient(to top right, #001A3D 0%, #002554 55%, #003366 100%);
+    font-family:'Inter','SUIT',sans-serif;
+    color:#ffffff;
+  }
+
+  /* FEM 와이어프레임 격자를 그리는 SVG. 좌표는 아래 스크립트가 결정론적으로 채운다 */
+  svg#mesh {
+    position:absolute;
+    inset:0;
+    width:1920px;
+    height:1080px;
+    display:block;
+  }
+
+  /* 좌측(타이포)·하단(모듈 스트립) 가독성 확보용 은은한 비네트. 격자를 지우지 않고 대비만 보강 */
+  .vignette {
+    position:absolute;
+    inset:0;
+    width:1920px;
+    height:1080px;
+    background:
+      linear-gradient(to top, rgba(0,10,25,0.55) 0px, rgba(0,10,25,0) 260px),
+      linear-gradient(to right, rgba(0,10,28,0.62) 0%, rgba(0,10,28,0.40) 32%, rgba(0,10,28,0.14) 58%, rgba(0,10,28,0) 80%);
+    pointer-events:none;
+  }
+
+  .brand {
+    position:absolute;
+    top:90px;
+    left:120px;
+    height:56px;
+  }
+  .brand img { height:56px; width:auto; display:block; }
+
+  .content {
+    position:absolute;
+    left:120px;
+    top:400px;
+    width:1040px;
+  }
+
+  .tagline {
+    margin:0;
+    font-weight:800;
+    font-size:100px;
+    line-height:1.16;
+    letter-spacing:-0.02em;
+    color:#ffffff;
+    word-break:keep-all; /* 한글 음절 단위 줄바꿈 방지 */
+  }
+  .tagline span { display:block; white-space:nowrap; }
+
+  .subline {
+    margin:28px 0 0 0;
+    max-width:820px;
+    font-size:26px;
+    font-weight:500;
+    line-height:1.55;
+    color:rgba(255,255,255,0.72);
+    word-break:keep-all; /* "실행" 같은 단어가 음절 중간에서 잘리는 것 방지 */
+  }
+
+  .footer-strip {
+    position:absolute;
+    left:120px;
+    top:892px;
+    width:1500px;
+  }
+  .footer-strip .rule {
+    width:100%;
+    height:1px;
+    background:rgba(255,255,255,0.14);
+  }
+  .footer-strip .modules {
+    margin-top:18px;
+    font-family:'Fira Code','Consolas',monospace;
+    font-size:14px;
+    line-height:1.7;
+    letter-spacing:0.01em;
+    color:rgba(255,255,255,0.55);
+    word-break:keep-all; /* 줄이 구분점(·)으로 시작하지 않도록 아래 <br> 지점에서만 끊는다 */
+  }
+
+  .attribution {
+    position:absolute;
+    right:120px;
+    bottom:74px;
+    height:30px;
+    opacity:0.92;
+  }
+  .attribution img { height:30px; width:auto; display:block; }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- 배경 FEM 와이어프레임 격자 (결정론적 생성, 하단 스크립트 참조) -->
+  <svg id="mesh" viewBox="0 0 1920 1080" aria-hidden="true"></svg>
+
+  <div class="vignette" aria-hidden="true"></div>
+
+  <div class="brand">
+    <img src="assets/logo-lockup-white.png" alt="Hi-TESS WorkBench">
+  </div>
+
+  <div class="content">
+    <h1 class="tagline">
+      <span>흩어진 구조 해석을,</span>
+      <span>하나의 관제실로.</span>
+    </h1>
+    <p class="subline">흩어진 레거시 해석 실행 파일을 하나의 플랫폼으로.<br>업로드부터 실행, 추적, 결과 확인까지 한 화면에서 이어집니다.</p>
+  </div>
+
+  <div class="footer-strip">
+    <div class="rule"></div>
+    <p class="modules">Truss Analysis · Truss Structural Assessment · BDF Scanner · HiTess Model Builder · Mooring Fitting Assessment · Group &amp; Module Unit Lifting<br>Side Passage Assessment · Simple Beam Assessment · Mast Post · Jib Rest · Column Buckling · AI Lab Assistant</p>
+  </div>
+
+  <div class="attribution">
+    <img src="assets/hhi-white-ko.png" alt="HD현대">
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+  // =====================================================================
+  // FEM 와이어프레임 격자 — 결정론적 1점 투시 생성
+  // 소실점(VP)을 캔버스 우상단 바깥에 두고, 근경(하단·좌측)에서 원경(VP)으로
+  // 갈수록 링(ring) 간격이 기하급수적으로 좁아지도록(t_k = 1 - r^k) 해
+  // "멀수록 조밀해지는" 원근 압축을 실제 좌표 계산으로 만든다.
+  // Math.random()은 전혀 쓰지 않는다 — 모든 좌표는 i,k 정수 인덱스의 함수.
+  // =====================================================================
+  var NS = 'http://www.w3.org/2000/svg';
+  var svg = document.getElementById('mesh');
+
+  var ORTHO_COUNT = 17;              // 소실점으로 향하는 종방향 부재(코드) 개수
+  var BASE_Y = 1220;                 // 근경 기준선(화면 하단 바깥) — 구조가 프레임 밖으로 이어지는 느낌
+  var BASE_X_START = -260;
+  var BASE_X_END = 2460;
+  var VP = { x: 2060, y: -140 };     // 소실점: 캔버스 우상단 바깥
+  var RING_COUNT = 14;                // 깊이 방향 횡부재(링) 개수, k = 0..13
+  var RATIO = 0.70;                   // 기하급수 압축 비율 (작을수록 원경에서 더 빨리 조밀해짐)
+  var DIAG_MAX_K = 4;                  // 트러스 대각 브레이싱은 근경 4개 베이에만 (원경은 순수 세밀 격자)
+
+  var spacingX = (BASE_X_END - BASE_X_START) / (ORTHO_COUNT - 1);
+  var origins = [];
+  for (var i = 0; i < ORTHO_COUNT; i++) {
+    origins.push({ x: BASE_X_START + i * spacingX, y: BASE_Y });
+  }
+
+  var tVals = [];
+  for (var k = 0; k < RING_COUNT; k++) {
+    tVals.push(1 - Math.pow(RATIO, k));
+  }
+
+  function pointAt(originIdx, ringIdx) {
+    var o = origins[originIdx];
+    var t = tVals[ringIdx];
+    return { x: o.x + t * (VP.x - o.x), y: o.y + t * (VP.y - o.y) };
+  }
+
+  // 근경 alpha 0.14 ~ 원경 alpha 0.06 (brand-spec 저대비 범위 준수)
+  function alphaFor(k) {
+    var f = k / (RING_COUNT - 1);
+    return +(0.14 - 0.08 * f).toFixed(3);
+  }
+  // 근경 blur 0 ~ 원경 blur 1.6px
+  function blurFor(k) {
+    var f = k / (RING_COUNT - 1);
+    return +(f * 1.6).toFixed(2);
+  }
+
+  function el(name, attrs) {
+    var e = document.createElementNS(NS, name);
+    for (var key in attrs) { e.setAttribute(key, attrs[key]); }
+    return e;
+  }
+
+  var LINE_RGB = '255,255,255';
+  var SPARK = { i: 10, k: 3 }; // 격자 위 단 하나의 절점 — 계산이 주목하는 그 한 점
+
+  for (var kk = 0; kk < RING_COUNT; kk++) {
+    var g = el('g', {});
+    g.setAttribute('style', 'opacity:' + alphaFor(kk) + '; filter: blur(' + blurFor(kk) + 'px);');
+
+    // 횡방향 링(같은 깊이의 절점을 잇는 선) — 소실점에 가까워질수록 좁게 뭉친다
+    var d = '';
+    for (var i2 = 0; i2 < ORTHO_COUNT; i2++) {
+      var p = pointAt(i2, kk);
+      d += (i2 === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ' ';
+    }
+    g.appendChild(el('path', { d: d.trim(), stroke: 'rgba(' + LINE_RGB + ',1)', 'stroke-width': 1, fill: 'none' }));
+
+    // 종방향 코드(소실점으로 향하는 부재) — 직전 링과 현재 링 사이 구간만
+    if (kk > 0) {
+      for (var i3 = 0; i3 < ORTHO_COUNT; i3++) {
+        var p0 = pointAt(i3, kk - 1);
+        var p1 = pointAt(i3, kk);
+        g.appendChild(el('line', {
+          x1: p0.x.toFixed(1), y1: p0.y.toFixed(1),
+          x2: p1.x.toFixed(1), y2: p1.y.toFixed(1),
+          stroke: 'rgba(' + LINE_RGB + ',1)', 'stroke-width': 1
+        }));
+      }
+    }
+
+    // 대각 브레이싱(트러스 특유의 지그재그) — 근경 베이에만, 원경은 세밀 격자로만 남긴다
+    if (kk > 0 && kk <= DIAG_MAX_K) {
+      for (var i4 = 0; i4 < ORTHO_COUNT - 1; i4++) {
+        var a = pointAt(i4, kk - 1);
+        var b = pointAt(i4 + 1, kk - 1);
+        var c = pointAt(i4, kk);
+        var e2 = pointAt(i4 + 1, kk);
+        var q1, q2;
+        if ((i4 + kk) % 2 === 0) { q1 = a; q2 = e2; } else { q1 = b; q2 = c; }
+        g.appendChild(el('line', {
+          x1: q1.x.toFixed(1), y1: q1.y.toFixed(1),
+          x2: q2.x.toFixed(1), y2: q2.y.toFixed(1),
+          stroke: 'rgba(' + LINE_RGB + ',1)', 'stroke-width': 0.9
+        }));
+      }
+    }
+
+    // 절점(노드) — 스파크 절점은 이 루프에서 제외하고 별도로 위에 그린다
+    for (var i5 = 0; i5 < ORTHO_COUNT; i5++) {
+      if (i5 === SPARK.i && kk === SPARK.k) { continue; }
+      var pn = pointAt(i5, kk);
+      g.appendChild(el('circle', { cx: pn.x.toFixed(1), cy: pn.y.toFixed(1), r: 1.6, fill: 'rgba(' + LINE_RGB + ',1)' }));
+    }
+
+    svg.appendChild(g);
+  }
+
+  // The Rare Spark — 격자 전체에서 유일한 형광 그린 절점, 은은한 글로우
+  var sp = pointAt(SPARK.i, SPARK.k);
+  svg.appendChild(el('circle', { cx: sp.x.toFixed(1), cy: sp.y.toFixed(1), r: 15, fill: '#00E600', opacity: 0.14, style: 'filter:blur(10px)' }));
+  svg.appendChild(el('circle', { cx: sp.x.toFixed(1), cy: sp.y.toFixed(1), r: 7, fill: '#00E600', opacity: 0.32, style: 'filter:blur(4px)' }));
+  svg.appendChild(el('circle', { cx: sp.x.toFixed(1), cy: sp.y.toFixed(1), r: 3.2, fill: '#00E600' }));
+})();
+</script>
+</body>
+</html>

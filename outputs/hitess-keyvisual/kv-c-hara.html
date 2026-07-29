@@ -1,0 +1,114 @@
+<!-- Hi-TESS WorkBench 기업 발표용 표지 키비주얼 (안 C: 동양 극소주의 / 하라 켄야·MUJI 계열) -->
+<title>Hi-TESS WorkBench — Key Visual C (Hara)</title>
+<style>
+  /* 브랜드 지정 가변 폰트 self-host (brand-spec.md 원본 그대로) */
+  @font-face {
+    font-family: 'Inter';
+    src: url('assets/Inter-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-display: block;
+  }
+  @font-face {
+    font-family: 'SUIT';
+    src: url('assets/SUIT-Variable.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-display: block;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #002554;
+  }
+
+  /* 캔버스: 정확히 1920x1080 CSS px */
+  .stage {
+    width: 1920px;
+    height: 1080px;
+    position: relative;
+    overflow: hidden;
+    /* 미세한 톤 변화만 — 그린 점(우측 여백 깊숙이)을 진원으로 삼는 아주 얕은 명도차, 그라디언트로 보이지 않을 정도 */
+    background: radial-gradient(ellipse 1500px 1000px at 1560px 489px, #002B60 0%, #002554 62%);
+  }
+
+  /* 로고 락업 — 실측 원본 783x147 비율(5.327:1) 유지, 폭만 지정해 비율 왜곡 방지.
+     표시 폭 391px = 원본 783px의 정확히 1/2 → 4K 2배 렌더 시 원본 픽셀 그대로, 픽셀 완벽 상한 그 자체를 사용.
+     top=452 — 블록을 캔버스 광학 중심 부근으로: 위 452 / 아래(태그라인 하단 기준) 455.8 로 거의 대칭,
+     아주 살짝 아래가 넓어 광학 중심(기하 중심보다 약간 위) 원칙에 맞춤 */
+  .lockup {
+    position: absolute;
+    left: 733px;
+    top: 452px;
+    width: 391px;
+    height: auto;
+    display: block;
+  }
+
+  /* 메인 카피 한 줄 — 46px는 이 유파에선 이미 "외침"이라 38px로 낮춰 로고 대비 폭을 좁히고(쐐기꼴 해소),
+     자간을 더 여유 있게. top = 로고 top(452) + 로고 height(391/5.327≈73.4) + 여백 46 ≈ 571 */
+  .tagline {
+    position: absolute;
+    left: 733px;
+    top: 571px;
+    white-space: nowrap;
+    font-family: 'Inter', 'SUIT', sans-serif;
+    font-weight: 400;
+    font-size: 38px;
+    line-height: 1.4;
+    letter-spacing: 0.03em;
+    color: rgba(255, 255, 255, 0.85);
+    margin: 0;
+  }
+
+  /* The Rare Spark — 화면 전체에서 유일한 형광 그린, 지름 10px 그 자체가 전부.
+     로고 락업의 세로 중심선(top 452 + height 73.4/2 ≈ 489)과 정확히 같은 높이, 우측 여백 깊숙이(x≈1560)에 배치해
+     로고→점으로 이어지는 보이지 않는 수평 시선선을 만든다 — 오른쪽 빈 들판이 그 선이 가로지르는 곳이 되도록 */
+  .spark {
+    position: absolute;
+    left: 1555px;
+    top: 484px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #00E600;
+    box-shadow: 0 0 22px 2px rgba(0, 230, 0, 0.32);
+  }
+
+  /* 최소 귀속 — HD현대, 아주 작고 조용하게 */
+  .attribution {
+    position: absolute;
+    right: 160px;
+    bottom: 64px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .attribution img {
+    height: 20px;
+    width: auto;
+    opacity: 0.55;
+  }
+  .attribution span {
+    font-family: 'Inter', 'SUIT', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.55);
+  }
+</style>
+
+<div class="stage">
+  <img class="lockup" src="assets/logo-lockup-white.png" alt="Hi-TESS WorkBench">
+
+  <p class="tagline">흩어진 구조 해석을, 하나의 관제실로.</p>
+
+  <div class="spark"></div>
+
+  <div class="attribution">
+    <img src="assets/hd-symbol.png" alt="HD Hyundai">
+    <span>HD Hyundai</span>
+  </div>
+</div>

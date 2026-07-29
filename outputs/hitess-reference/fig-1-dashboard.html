@@ -1,0 +1,241 @@
+<!-- Hi-TESS WorkBench — 발표자료 본문 삽입용 참조 도해 ①: 플랫폼 개요
+     흰 배경 슬라이드 삽입 전제 / 1920×1080 CSS → 3840×2160 렌더
+     로고 락업은 흰색 자산이므로 네이비 헤더 밴드 위에만 사용(제품 PageBanner 문법과 동일) -->
+<title>Hi-TESS WorkBench — 플랫폼 개요</title>
+<style>
+  @font-face { font-family:'Inter'; src:url('assets/Inter-Variable.woff2') format('woff2-variations');
+               font-weight:100 900; font-display:block; }
+  @font-face { font-family:'SUIT'; src:url('assets/SUIT-Variable.woff2') format('woff2-variations');
+               font-weight:100 900; font-display:block; }
+
+  * { box-sizing:border-box; }
+  html, body { margin:0; padding:0; overflow:hidden; background:#ffffff; }
+
+  .stage {
+    width:1920px; height:1080px; position:relative; overflow:hidden;
+    background:#ffffff;
+    font-family:'Inter','SUIT',sans-serif;
+    word-break: keep-all;      /* 한글이 음절 단위로 쪼개지지 않게 — 전 하위 요소 상속 */
+    color:#334155;
+  }
+
+  /* ───────── 네이비 헤더 밴드 (흰 로고를 쓸 수 있는 유일한 면) ───────── */
+  .header {
+    position:absolute; inset:0 0 auto 0; height:104px;
+    background:#002554;
+    display:flex; align-items:center; padding:0 56px; gap:28px;
+  }
+  .header img { width:250px; height:auto; display:block; }
+  .header .divider { width:1px; height:44px; background:rgba(255,255,255,0.22); }
+  .header h1 { margin:0; font-size:25px; font-weight:800; letter-spacing:-0.02em; color:#fff; line-height:1.25; }
+  .header .sub { margin:3px 0 0; font-size:14px; font-weight:400; color:rgba(255,255,255,0.68); }
+  .header .right {
+    margin-left:auto; text-align:right;
+    font-size:13px; font-weight:600; letter-spacing:0.04em; color:rgba(255,255,255,0.72);
+  }
+
+  /* ───────── 본문 2단: 좌 캡처 / 우 콜아웃 ───────── */
+  .body { position:absolute; top:104px; left:0; right:0; bottom:262px; display:flex; padding:36px 56px 0; gap:40px; }
+
+  /* 캡처 — 실제 대시보드. 표시 폭 1265px = 원본 2531px의 정확히 1/2 → 4K에서 픽셀 완벽 */
+  .shot-col { width:1265px; flex:none; }
+  .shot {
+    position:relative; width:1265px;
+    border:1px solid #e2e8f0; border-radius:10px; overflow:hidden;
+    box-shadow:0 4px 14px -4px rgba(15,23,42,0.16), 0 1px 2px 0 rgba(15,23,42,0.05);
+    background:#fff;
+  }
+  .shot > img { width:100%; height:auto; display:block; }
+
+  /* 보안 마스킹 — 사내 서버 IP / 개인 IP 가림 (제거하려면 .redact 두 줄 삭제) */
+  .redact { position:absolute; backdrop-filter:blur(9px); background:rgba(226,232,240,0.35); border-radius:3px; }
+  .redact.r-server { left:83.4%; top:0.4%;  width:7.4%; height:5.0%; }
+  .redact.r-myip   { left:73.2%; top:12.4%; width:6.0%; height:3.8%; }
+
+  /* 캡처 위 번호 뱃지 */
+  .pin {
+    position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px;
+    border-radius:50%; background:#002554; color:#fff;
+    font-size:15px; font-weight:700; line-height:30px; text-align:center;
+    box-shadow:0 0 0 3px rgba(255,255,255,0.92), 0 2px 6px rgba(15,23,42,0.3);
+  }
+
+  .shot-cap {
+    margin:16px 0 0; font-size:13px; color:#64748b; letter-spacing:0.01em;
+  }
+  .shot-cap b { color:#334155; font-weight:600; }
+
+  /* ───────── 우측 콜아웃 목록 ───────── */
+  .notes { flex:1; padding-top:2px; display:flex; flex-direction:column; }
+  .notes-title {
+    margin:0 0 20px; font-size:12px; font-weight:700; letter-spacing:0.12em;
+    color:#64748b; text-transform:uppercase;
+  }
+  .note { display:flex; gap:12px; padding:18px 0; border-top:1px solid #e2e8f0; }
+  .note:first-of-type { border-top:none; padding-top:0; }
+  .note .n {
+    flex:none; width:24px; height:24px; border-radius:50%;
+    background:#eef2f7; color:#002554;
+    font-size:12px; font-weight:700; line-height:24px; text-align:center;
+  }
+  .note h3 { margin:1px 0 3px; font-size:16px; font-weight:700; color:#1e293b; line-height:1.3; }
+  .note p  { margin:0; font-size:13px; line-height:1.5; color:#64748b; }
+
+  /* ───────── 하단 밴드: 해석 작업 흐름 (여백 채움이 아니라 실제 정보) ───────── */
+  .flow {
+    position:absolute; left:56px; right:56px; bottom:34px;
+    border-top:1px solid #e2e8f0; padding-top:22px;
+  }
+  .flow-title {
+    margin:0 0 16px; font-size:12px; font-weight:700; letter-spacing:0.12em;
+    color:#64748b; text-transform:uppercase;
+  }
+  .steps { display:flex; align-items:stretch; gap:0; }
+  .step { flex:1; padding-right:26px; position:relative; }
+  .step:not(:last-child)::after {
+    content:''; position:absolute; right:11px; top:9px;
+    width:7px; height:7px; border-top:1.5px solid #cbd5e1; border-right:1.5px solid #cbd5e1;
+    transform:rotate(45deg);
+  }
+  .step .idx {
+    font-family:'Fira Code',Consolas,monospace; font-size:11px; font-weight:600;
+    color:#94a3b8; letter-spacing:0.08em;
+  }
+  .step h4 { margin:5px 0 4px; font-size:16px; font-weight:700; color:#002554; line-height:1.3; }
+  .step p  { margin:0; font-size:12.5px; line-height:1.5; color:#64748b; }
+
+  .stack {
+    margin-top:20px; padding-top:14px; border-top:1px solid #f1f5f9;
+    display:flex; align-items:center; gap:10px;
+  }
+  .stack .lbl { font-size:11px; font-weight:700; letter-spacing:0.1em; color:#94a3b8; }
+  .stack .val { font-family:'Fira Code',Consolas,monospace; font-size:13px; color:#475569; }
+</style>
+
+<div class="stage">
+
+  <!-- 헤더 -->
+  <div class="header">
+    <img src="assets/logo-lockup-white.png" alt="Hi-TESS WorkBench">
+    <div class="divider"></div>
+    <div>
+      <h1>플랫폼 개요</h1>
+      <p class="sub">흩어진 레거시 해석 실행 파일을 하나의 사내 플랫폼으로</p>
+    </div>
+    <div class="right">HD현대 · 사내 통합 구조 해석 플랫폼</div>
+  </div>
+
+  <div class="body">
+
+    <!-- 좌: 실제 대시보드 캡처 -->
+    <div class="shot-col">
+      <div class="shot">
+        <img src="assets/shot-dashboard.png" alt="Hi-TESS WorkBench 대시보드 화면">
+
+        <!-- 사내 IP 마스킹 -->
+        <div class="redact r-server"></div>
+        <div class="redact r-myip"></div>
+
+        <!-- 영역 번호 — 모두 UI 글자를 가리지 않는 빈 영역에 배치 -->
+        <div class="pin" style="left:5.0%;  top:85.7%;">1</div>
+        <div class="pin" style="left:63.5%; top:3.1%;">2</div>
+        <div class="pin" style="left:54.7%; top:12.8%;">3</div>
+        <div class="pin" style="left:37.9%; top:38.3%;">4</div>
+        <div class="pin" style="left:35.7%; top:49.8%;">5</div>
+        <div class="pin" style="left:37.6%; top:65.7%;">6</div>
+      </div>
+      <p class="shot-cap"><b>실제 실행 화면</b> — Dashboard. 데스크탑(Electron) 앱으로 실행되며 팀 공용 서버와 통신합니다.</p>
+    </div>
+
+    <!-- 우: 콜아웃 -->
+    <div class="notes">
+      <p class="notes-title">화면 구성</p>
+
+      <div class="note">
+        <div class="n">1</div>
+        <div>
+          <h3>해석 앱 내비게이션</h3>
+          <p>File-Based · Interactive · Parametric · Productivity 등 카테고리별로 해석 앱을 모아 한 곳에서 진입합니다.</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="n">2</div>
+        <div>
+          <h3>전역 검색 · 최근 사용 앱</h3>
+          <p>메뉴와 앱을 단축키로 검색하고, 최근 사용한 해석으로 바로 복귀합니다.</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="n">3</div>
+        <div>
+          <h3>작업 컨텍스트</h3>
+          <p>현재 사용자와 접속 중인 해석 서버를 항상 표시해, 어디에 제출하는지 헷갈리지 않게 합니다.</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="n">4</div>
+        <div>
+          <h3>서비스 현황</h3>
+          <p>해석 서버 구동 수와 대기 큐, 실행 건수를 함께 드러냅니다. 상태를 숨기지 않는 것이 신뢰의 조건입니다.</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="n">5</div>
+        <div>
+          <h3>즐겨찾기</h3>
+          <p>자주 쓰는 해석 앱을 고정해 반복 작업의 진입 경로를 줄입니다.</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="n">6</div>
+        <div>
+          <h3>프로젝트 이력</h3>
+          <p>제출한 해석의 모듈·진행 상태·수행 일시를 이력으로 남기고, 결과 파일을 내려받습니다.</p>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- 하단: 해석 작업 흐름 (CLAUDE.md 기재 사실 기반) -->
+  <div class="flow">
+    <p class="flow-title">해석 작업 흐름</p>
+    <div class="steps">
+      <div class="step">
+        <div class="idx">01</div>
+        <h4>업로드</h4>
+        <p>CSV · BDF 등 입력 파일을 해석 앱에 제출합니다.</p>
+      </div>
+      <div class="step">
+        <div class="idx">02</div>
+        <h4>큐 제출</h4>
+        <p>작업이 서버 큐에 등록되고 최대 5건이 동시에 실행됩니다.</p>
+      </div>
+      <div class="step">
+        <div class="idx">03</div>
+        <h4>해석 실행</h4>
+        <p>사내 해석 프로그램과 MSC Nastran이 실제 계산을 수행합니다.</p>
+      </div>
+      <div class="step">
+        <div class="idx">04</div>
+        <h4>진행 추적</h4>
+        <p>진행률을 주기적으로 조회해 0~100%로 표시합니다. 페이지를 벗어나도 상태는 유지됩니다.</p>
+      </div>
+      <div class="step">
+        <div class="idx">05</div>
+        <h4>결과 확인</h4>
+        <p>결과를 이력에 남기고 파일 다운로드 · Excel 내보내기로 반출합니다.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <span class="lbl">STACK</span>
+      <span class="val">Electron · React · FastAPI · MySQL · MSC Nastran</span>
+    </div>
+  </div>
+</div>

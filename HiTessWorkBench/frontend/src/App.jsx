@@ -71,6 +71,7 @@ const DoublePipeFuelLineAssessment = lazy(() => import('./pages/analysis/DoubleP
 const MooringFittingAssessment = lazy(() => import('./pages/analysis/MooringFittingAssessment'));
 const BlockWeldAssessment = lazy(() => import('./pages/analysis/BlockWeldAssessment'));
 const HeavyBlockLiftingSimulation = lazy(() => import('./pages/analysis/HeavyBlockLiftingSimulation'));
+const ModelLibrary = lazy(() => import('./pages/analysis/ModelLibrary'));
 
 const KEEP_ALIVE_MENUS = new Set(
   ANALYSIS_DATA
@@ -467,6 +468,10 @@ function AppInner() {
       case 'Dashboard': return <Dashboard />;
       case 'My Project':
       case 'My Projects': return <MyProjects />;
+      // 'Data Storage' 는 옛 메뉴 이름이다. 최근 방문 기록·명령 팔레트에 남아 있을 수 있어
+      // alias 로 계속 받는다(빈 화면 대신 정상 진입).
+      case 'Data Storage':
+      case 'Model Library': return <ModelLibrary />;
       case 'New Analysis':
       case 'File-Based Apps': return <NewAnalysis />;
       case 'Truss Analysis': return <TrussAnalysis />;

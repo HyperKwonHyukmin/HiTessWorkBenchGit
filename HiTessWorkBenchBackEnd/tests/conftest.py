@@ -63,6 +63,49 @@ def admin_client(db_session):
 
 
 @pytest.fixture()
+def switchable_client(db_session):
+    """요청 도중 관리자↔일반 사용자를 전환할 수 있는 TestClient.
+
+    ``admin_client`` 는 require_admin 까지 덮어쓰기 때문에 '비관리자가 403 을 받는가' 를
+    검증할 수 없고, 두 클라이언트 픽스처를 한 테스트에서 함께 쓰면 전역
+    ``app.dependency_overrides`` 를 서로 덮어써 조용히 신원이 뒤바뀐다.
+
+    그래서 여기서는 **require_auth 만** 덮어쓰고 require_admin 은 실제 DB is_admin
+    검사를 그대로 타게 둔다. ``as_admin()`` / ``as_user()`` 로 신원을 바꾼다.
+    """
+    identity = {"employee_id": "ADMIN001"}
+
+    def _override_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[database.get_db] = _override_db
+    app.dependency_overrides[require_auth] = lambda: identity["employee_id"]
+
+    db_session.add_all([
+        models.User(
+            employee_id="ADMIN001", name="관리자", company="HHI",
+            is_active=True, is_admin=True, is_developer=False,
+        ),
+        models.User(
+            employee_id="EMP001", name="일반사용자", company="HHI",
+            is_active=True, is_admin=False, is_developer=False,
+        ),
+    ])
+    db_session.commit()
+
+    client = TestClient(app)
+    client.as_admin = lambda: identity.update(employee_id="ADMIN001")
+    client.as_user = lambda: identity.update(employee_id="EMP001")
+
+    yield client
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
 def make_analysis(db_session):
     """Analysis 행 생성 헬퍼."""
     def _make(employee_id, program_name, created_at, status="success"):
