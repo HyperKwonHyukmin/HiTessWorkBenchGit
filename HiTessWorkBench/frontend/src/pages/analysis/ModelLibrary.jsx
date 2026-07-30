@@ -88,6 +88,8 @@ export default function ModelLibrary() {
   const [insights, setInsights] = useState(null);
   const [insightState, setInsightState] = useState('idle'); // idle | loading | loaded | error
   const [insightError, setInsightError] = useState(null);
+  // Insight 하단(계열 스코프)에서 보고 있는 계열. null 이면 서버가 최다 계열을 고른다.
+  const [insightFamily, setInsightFamily] = useState(null);
 
   // 비교 대상 — 최대 2개. uid 만 담아 두고 열 때 상세를 받아온다.
   const [compareUids, setCompareUids] = useState([]);
@@ -137,7 +139,10 @@ export default function ModelLibrary() {
       setInsightState('loading');
       setInsightError(null);
       try {
-        const res = await getRegistryInsights({ status }, { signal: controller.signal });
+        const res = await getRegistryInsights(
+          insightFamily ? { status, family: insightFamily } : { status },
+          { signal: controller.signal },
+        );
         if (controller.signal.aborted) return;
         setInsights(res.data);
         setInsightState('loaded');
@@ -148,7 +153,7 @@ export default function ModelLibrary() {
       }
     })();
     return () => controller.abort();
-  }, [tab, status]);
+  }, [tab, status, insightFamily]);
 
   const toggleCompare = (uid) => {
     setCompareUids((prev) => {
@@ -254,6 +259,7 @@ export default function ModelLibrary() {
             data={insights}
             loading={insightState === 'loading'}
             error={insightError}
+            onFamilyChange={setInsightFamily}
           />
         )}
 

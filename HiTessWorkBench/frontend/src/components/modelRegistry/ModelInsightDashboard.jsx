@@ -3,14 +3,15 @@ import {
   Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import {
-  AlertTriangle, Archive, Boxes, Brain, CalendarDays, CheckCircle2, ChevronDown, Gauge,
-  Grid3x3, HelpCircle, Layers, ShieldCheck, Sigma, Split, Tag,
+  AlertTriangle, Archive, Boxes, Brain, CalendarDays, CheckCircle2, ChevronDown, ClipboardCheck,
+  Gauge, Grid3x3, HelpCircle, Layers, ShieldCheck, Sigma, Split, Tag,
 } from 'lucide-react';
 
 import { Badge, FeedbackState } from '../ui';
 import KpiCard from '../ui/KpiCard';
 import {
   QUALITY_LADDER,
+  familyLabel,
   formatNumber,
   formatUtilization,
   outcomeInfo,
@@ -47,19 +48,25 @@ const TASK_KIND_LABELS = {
  * - 품질(Q0~Q4)과 설계 결과(pass/fail)는 별도 축이다. 같은 카드·같은 줄에 두지 않는다.
  * - 교차표는 관측 빈도이며 인과가 아님을 그대로 적는다.
  *
- * 정보 위계(읽는 흐름): 읽는 법 → 라이브러리 규모 → 두 축(핵심) → 수치 요약 →
- * 품질 이슈·교차표 → 데이터셋 준비도 → 부가 정보. `SectionEyebrow` 로 각 전환을 표시해
- * 8개 카드가 평평하게 나열되던 이전 구조 대신 '무엇부터 볼지'가 스캔되게 한다.
+ * 스코프 분리(가장 중요): 이 대시보드는 **모집단이 다른 두 영역**으로 나뉜다.
+ * - 상단 `LibraryOverviewSection` = 전체. 개수·분포·데이터 위생은 계열을 섞어도 왜곡되지 않는다.
+ * - 하단 `FamilyInsightSection` = 계열 하나. 평균·중앙값·결함 비율·교차표·학습 표본은
+ *   혼합 모집단에서 의미를 잃는다(평균은 거짓말을 하고 교차표는 Simpson's paradox 로 역전된다).
+ * 그래서 블록마다 올바른 스코프가 하나로 정해진다 — 사용자가 전체/계열을 토글하는 구조가 아니다.
  */
-export default function ModelInsightDashboard({ data, loading, error }) {
+export default function ModelInsightDashboard({ data, loading, error, onFamilyChange }) {
   if (loading) return <FeedbackState variant="loading" title="통계를 계산하는 중…" />;
   if (error) return <FeedbackState variant="error" title="통계를 불러오지 못했습니다" message={error} />;
   if (!data) return null;
 
-  const {
-    totals, distributions, metrics, qualityIssues, qualityByOutcome, topTags, recentTrend,
-    datasetReadiness,
-  } = data;
+  // 구버전 백엔드(평면 응답)에서도 죽지 않게 한다 — 서버 재시작과 프론트 재배포 순서는
+  // 보장되지 않는다. 그때는 전체 스코프만 렌더하고 계열 영역은 안내로 대체된다.
+  const overall = data.overall ?? data;
+  const familyScope = data.family ?? null;
+  const families = data.families ?? [];
+  const scope = data.scope ?? null;
+
+  const { totals, distributions, topTags, recentTrend, dataHygiene } = overall;
 
   if (!totals?.revisions) {
     return (
@@ -72,7 +79,44 @@ export default function ModelInsightDashboard({ data, loading, error }) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      <LibraryOverviewSection
+        totals={totals}
+        distributions={distributions}
+        topTags={topTags}
+        recentTrend={recentTrend}
+        dataHygiene={dataHygiene}
+        sampleSize={scope?.sampleSize?.overall ?? totals.revisions}
+      />
+      <FamilyInsightSection
+        family={familyScope}
+        families={families}
+        scope={scope}
+        onFamilyChange={onFamilyChange}
+      />
+    </div>
+  );
+}
+
+/**
+ * 상단 — 라이브러리 현황. **항상 전체 모집단**이다.
+ *
+ * 개수·분포·데이터 위생은 계열을 섞어도 왜곡되지 않고, 오히려 계열별로 쪼개면
+ * "라이브러리가 어떤 상태인가"를 볼 수 없다. 그래서 이 영역에는 계열 선택기가 없다.
+ */
+function LibraryOverviewSection({ totals, distributions, topTags, recentTrend, dataHygiene, sampleSize }) {
+  return (
+    <section className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+        <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800">
+          <Boxes size={15} className="text-slate-400" /> 라이브러리 현황
+        </h3>
+        {/* 스코프를 라벨로 못박는다 — 한 화면에 두 모집단이 있으므로 오독을 막아야 한다 */}
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+          전체 {formatNumber(sampleSize)}건
+        </span>
+      </div>
+
       {/* ── 1. 읽는 법 — 이 대시보드의 두 가지 규칙을 먼저 못박는다 ── */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-[11px] text-slate-600">
         <span className="flex items-center gap-1.5 font-semibold text-slate-700">
@@ -153,6 +197,127 @@ export default function ModelInsightDashboard({ data, loading, error }) {
           </AxisPanel>
         </div>
       </div>
+
+      {/* ── 7. 부가 정보 — 원 프로그램 · 태그 · 등록 추이. 핵심 판단에는 영향 없어 마지막에, 가볍게 ── */}
+      <div>
+        <SectionEyebrow icon={Tag} title="부가 정보" hint="원 프로그램 · 태그 · 등록 추이" />
+        <div className="mt-2 grid gap-4 lg:grid-cols-4">
+          <Card icon={Split} title="모델 계열" caption="서로 다른 성질의 모델이 각각 몇 건인지">
+            <DistributionChart
+              rows={distributions.modelType}
+              colorFor={(_, i) => COLORS[i % COLORS.length]}
+              labelFor={(k) => familyLabel(k)}
+            />
+          </Card>
+          <Card icon={Boxes} title="원 프로그램" caption="어떤 해석 앱에서 나온 모델인지">
+            <DistributionChart
+              rows={distributions.sourceProgram}
+              colorFor={(_, i) => COLORS[i % COLORS.length]}
+            />
+          </Card>
+          <Card icon={Tag} title="자주 쓰인 태그" caption="검색·재사용에서 실제로 쓰이는 어휘입니다.">
+            {topTags?.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {topTags.map((t) => (
+                  <span
+                    key={t.tag}
+                    className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600"
+                  >
+                    #{t.tag}
+                    <span className="font-bold tabular-nums text-slate-800">{t.count}</span>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="py-6 text-center text-xs text-slate-500">태그가 아직 없습니다.</p>
+            )}
+          </Card>
+          {recentTrend?.length > 0 && (
+            <Card
+              icon={CalendarDays}
+              title="최근 등록 추이"
+              caption={`최근 ${recentTrend.length}일 · 총 ${recentTrend.reduce((s, d) => s + d.count, 0)}건`}
+            >
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={recentTrend} margin={{ top: 4, right: 8, bottom: 4, left: -16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                  <Bar dataKey="count" fill="#002554" radius={[4, 4, 0, 0]} name="등록" />
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {dataHygiene && <DataHygieneSection hygiene={dataHygiene} />}
+    </section>
+  );
+}
+
+/**
+ * 하단 — 계열별 특성. **선택된 한 계열의 모집단**이다.
+ *
+ * 연속값의 평균·중앙값, 결함 비율, 교차표, 학습 표본은 계열이 섞이면 의미를 잃는다
+ * (혼합 모집단에서 평균은 거짓말을 하고 교차표는 Simpson's paradox 로 역전된다).
+ * 그래서 이 영역은 항상 계열 하나로 좁혀서 본다.
+ */
+function FamilyInsightSection({ family, families, scope, onFamilyChange }) {
+  if (!family) {
+    return (
+      <section>
+        <FeedbackState
+          variant="empty"
+          title="계열별 통계를 표시할 수 없습니다"
+          message="백엔드가 계열 스코프를 제공하지 않습니다. 서버를 최신 버전으로 재시작하세요."
+        />
+      </section>
+    );
+  }
+
+  const { metrics, qualityIssues, qualityByOutcome, datasetReadiness } = family;
+  const selected = scope?.family ?? '';
+  const count = scope?.sampleSize?.family ?? 0;
+
+  return (
+    <section className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+        <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800">
+          <Split size={15} className="text-slate-400" /> 계열별 특성
+        </h3>
+        <div className="flex items-center gap-2">
+          {/* 계열이 1종이면 고를 것이 없다 — 선택기를 감추고 무엇을 보고 있는지만 밝힌다 */}
+          {families.length > 1 ? (
+            <select
+              value={selected}
+              onChange={(e) => onFamilyChange?.(e.target.value)}
+              aria-label="계열 선택"
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors hover:border-slate-400 focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+            >
+              {families.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label} ({f.count})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-[11px] font-semibold text-slate-600">
+              {scope?.familyLabel ?? familyLabel(selected)}
+            </span>
+          )}
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+            {formatNumber(count)}건
+          </span>
+        </div>
+      </div>
+
+      <p className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/70 px-3 py-2 text-[11px] text-slate-500">
+        <Split size={13} className="shrink-0 text-slate-400" aria-hidden="true" />
+        아래 통계는 위 라이브러리 현황과 <b className="font-semibold">모집단이 다릅니다</b> —
+        선택한 계열({formatNumber(count)}건)만 집계합니다.
+      </p>
 
       {/* ── 4. 기술통계 — 표본을 별도 열 그룹으로 떼어 항상 먼저 읽히게 한다 ── */}
       <div>
@@ -284,82 +449,32 @@ export default function ModelInsightDashboard({ data, loading, error }) {
       {datasetReadiness && (
         <DatasetReadinessSection readiness={datasetReadiness} />
       )}
-
-      {/* ── 7. 부가 정보 — 원 프로그램 · 태그 · 등록 추이. 핵심 판단에는 영향 없어 마지막에, 가볍게 ── */}
-      <div>
-        <SectionEyebrow icon={Tag} title="부가 정보" hint="원 프로그램 · 태그 · 등록 추이" />
-        <div className="mt-2 grid gap-4 lg:grid-cols-3">
-          <Card icon={Boxes} title="원 프로그램" caption="어떤 해석 앱에서 나온 모델인지">
-            <DistributionChart
-              rows={distributions.sourceProgram}
-              colorFor={(_, i) => COLORS[i % COLORS.length]}
-            />
-          </Card>
-          <Card icon={Tag} title="자주 쓰인 태그" caption="검색·재사용에서 실제로 쓰이는 어휘입니다.">
-            {topTags?.length ? (
-              <div className="flex flex-wrap gap-1.5">
-                {topTags.map((t) => (
-                  <span
-                    key={t.tag}
-                    className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600"
-                  >
-                    #{t.tag}
-                    <span className="font-bold tabular-nums text-slate-800">{t.count}</span>
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="py-6 text-center text-xs text-slate-500">태그가 아직 없습니다.</p>
-            )}
-          </Card>
-          {recentTrend?.length > 0 && (
-            <Card
-              icon={CalendarDays}
-              title="최근 등록 추이"
-              caption={`최근 ${recentTrend.length}일 · 총 ${recentTrend.reduce((s, d) => s + d.count, 0)}건`}
-            >
-              <ResponsiveContainer width="100%" height={140}>
-                <BarChart data={recentTrend} margin={{ top: 4, right: 8, bottom: 4, left: -16 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                  <Bar dataKey="count" fill="#002554" radius={[4, 4, 0, 0]} name="등록" />
-                </BarChart>
-              </ResponsiveContainer>
-            </Card>
-          )}
-        </div>
-      </div>
-    </div>
+    </section>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* 데이터셋 준비도 — 신규 섹션                                          */
+/* 데이터 위생(전체 스코프) · 데이터셋 준비도(계열 스코프)               */
 /* ------------------------------------------------------------------ */
 
 /**
- * "지금 이 라이브러리로 머신러닝/빅데이터 활용이 되는가" 에 답하는 절.
+ * 데이터 위생 — 스키마·결측·분할 누수. **계열과 무관하므로 전체 스코프에 둔다.**
  *
- * 목적은 기대를 부풀리지 않는 것이다. 표본이 쌓여 있어도 (1) 학습 입력이 실제로
- * 채워져 있는지, (2) 라벨이 있고 클래스가 치우치지 않았는지, (3) 과제별 최소
- * 표본을 채웠는지를 모두 따로 보여준다. `caveats`/`note` 는 문안 그대로 노출한다.
+ * "이 계열의 표본이 몇 건인가"(준비도)와 "우리 데이터가 깨끗한가"(위생)는 다른 질문이다.
+ * 후자는 계열별로 쪼개면 오히려 라이브러리 전체의 결측 상태를 볼 수 없다.
  */
-function DatasetReadinessSection({ readiness }) {
-  const {
-    sampleSize, distinctModels, features = [], labels, tasks = [], caveats = [], note,
-  } = readiness;
+function DataHygieneSection({ hygiene }) {
+  const { features = [], split, extractorVersion } = hygiene;
+  if (!features.length && !split) return null;
 
   return (
     <div>
-      <SectionEyebrow icon={Brain} title="데이터셋 준비도" hint="머신러닝/빅데이터 활용, 지금 가능한가" />
-      <p className="mt-2 px-0.5 text-xs text-slate-500">
-        현재 표본 <b className="tabular-nums text-slate-700">{formatNumber(sampleSize)}</b>건 revision
-        · 서로 다른 모델 <b className="tabular-nums text-slate-700">{formatNumber(distinctModels)}</b>개 기준입니다.
-      </p>
-
-      <div className="mt-3 grid gap-4 lg:grid-cols-2">
+      <SectionEyebrow
+        icon={ClipboardCheck}
+        title="데이터 위생"
+        hint={extractorVersion ? `추출기 v${extractorVersion} · 전체 기준` : '전체 기준'}
+      />
+      <div className="mt-2 grid gap-4 lg:grid-cols-2">
         <Card
           icon={Sigma}
           title="학습 입력 후보 커버리지"
@@ -395,6 +510,56 @@ function DatasetReadinessSection({ readiness }) {
           )}
         </Card>
 
+        <Card
+          icon={Grid3x3}
+          title="분할 누수 검증"
+          caption="같은 모델의 revision 이 학습·검증 양쪽에 들어가면 성능이 부풀려집니다."
+        >
+          {split ? (
+            <div className="space-y-1.5 text-xs leading-relaxed text-slate-600">
+              <p>
+                {split.folds} fold · 서로 다른 모델{' '}
+                <b className="tabular-nums text-slate-800">{formatNumber(split.distinctModels)}</b>개
+              </p>
+              <p className={split.leakageFree ? 'text-emerald-700' : 'text-red-700'}>
+                {split.leakageFree
+                  ? '겹치는 모델 없음 — 누수 없이 분할할 수 있습니다.'
+                  : `겹치는 모델 ${formatNumber(split.groupOverlap)}건 — 분할을 다시 만들어야 합니다.`}
+              </p>
+            </div>
+          ) : (
+            <p className="py-6 text-center text-xs text-slate-500">
+              서로 다른 모델이 2개 이상일 때 계산됩니다.
+            </p>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "지금 이 라이브러리로 머신러닝/빅데이터 활용이 되는가" 에 답하는 절. **계열 스코프**다.
+ *
+ * 목적은 기대를 부풀리지 않는 것이다. 표본이 쌓여 있어도 (1) 라벨이 있고 클래스가
+ * 치우치지 않았는지, (2) 과제별 최소 표본을 채웠는지를 따로 보여준다. 학습 입력의
+ * 커버리지는 계열과 무관한 위생 문제라 `DataHygieneSection`(전체 스코프)으로 옮겼다.
+ * `caveats`/`note` 는 문안 그대로 노출한다.
+ */
+function DatasetReadinessSection({ readiness }) {
+  const {
+    sampleSize, distinctModels, labels, tasks = [], caveats = [], note,
+  } = readiness;
+
+  return (
+    <div>
+      <SectionEyebrow icon={Brain} title="데이터셋 준비도" hint="머신러닝/빅데이터 활용, 지금 가능한가" />
+      <p className="mt-2 px-0.5 text-xs text-slate-500">
+        현재 표본 <b className="tabular-nums text-slate-700">{formatNumber(sampleSize)}</b>건 revision
+        · 서로 다른 모델 <b className="tabular-nums text-slate-700">{formatNumber(distinctModels)}</b>개 기준입니다.
+      </p>
+
+      <div className="mt-3">
         <Card icon={Grid3x3} title="라벨 가용성" caption="분류·회귀 과제는 정답 라벨이 있어야 학습할 수 있습니다.">
           {labels ? <LabelAvailability labels={labels} /> : (
             <p className="py-6 text-center text-xs text-slate-500">라벨 집계가 없습니다.</p>
