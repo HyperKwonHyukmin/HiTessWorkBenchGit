@@ -18,8 +18,8 @@
 | `ChatDock.jsx:178-186` | 대화 시작 경로가 `workbench:open-chat` 이벤트뿐이고, 이 이벤트는 User Management 접속자 카드(관리자 전용)에서만 발생 |
 | `presence.py:100` `/api/presence/online` | `require_admin` + `last_ip`·`last_page` 포함 → 사용자에게 그대로 열 수 없음 |
 
-즉 필요한 것은 ① 사용자용 **축소 presence 조회 경로** ② ChatDock의 **상대 선택 화면**
-두 가지이며, `send`의 인증·인가 규칙은 손대지 않는다.
+즉 필요한 것은 ① 사용자용 **축소 presence 조회 경로** ② ChatDock 목록 화면을 **관리자
+로스터**로 바꾸는 것, 두 가지이며 `send`의 인증·인가 규칙은 손대지 않는다.
 
 ## 2. 목표 / 비목표
 
@@ -43,6 +43,7 @@
 | 관리자 오프라인 시 | **오프라인에도 전송 가능** | 메시지가 DB에 남고 관리자 로그인 시 기존 미읽음 토스트(`ChatDock.jsx:114-119`)로 전달되는 경로가 이미 동작. 문의 유실 없음 |
 | 상태 세밀도 | **온라인 / 자리비움 / 오프라인 3단계** | presence의 `is_idle`(무입력 180초)을 활용해 사용자가 응답 기대치를 조절 |
 | 엔드포인트 배치 | **`GET /api/chat/contacts` 신설 + presence 판정 헬퍼 추출** | "누구에게 말 걸 수 있나" 정책을 `send`와 같은 파일에 두어 드리프트 방지, 임계값 판정은 presence에 한 벌 유지 |
+| UI 배치 | **도구 바 '작업' 버튼 옆 '메시지' 패널을 열면 곧바로 관리자 전원의 접속 상황이 보인다** — 별도 '＋ 새 대화' 단계 없음 | 사용자 지시. 문의 창구는 한 번의 클릭으로 도달해야 하고, 누가 지금 응답 가능한지가 첫 화면에 있어야 한다 |
 
 ### 기각된 대안
 
@@ -123,68 +124,96 @@ def presence_status(row: models.UserPresence | None, now: datetime) -> str:
 
 ## 5. 프론트엔드 설계
 
-### 5.1 도크 상시 노출
+### 5.1 진입점 — 도구 바 '메시지' 버튼 상시 노출
+
+화면 우하단 도구 바(`UtilityDock.jsx:244-287`)에 '작업'(Job Center) 버튼과 '메시지' 버튼이
+나란히 있다. 현재 '메시지' 버튼은 `chatAvailable` 조건부(`UtilityDock.jsx:268`)라 일반
+사용자에게 숨겨져 있다.
 
 - `ChatDock.jsx:242` `shouldShow` → 로그인 상태면 항상 `true`
 - `UtilityDock.jsx:140` `useState(isAdmin)` → 초기값을 함께 맞춘다
 
 진입점이 없으면 사용자가 대화를 시작할 방법 자체가 없으므로 이 변경이 기능의 전제다.
 
-### 5.2 화면 3단 구조와 컴포넌트 분리
+### 5.2 목록 화면 = 관리자 로스터 (별도 상대 선택 화면 없음)
 
-현재는 `activeOther ? 대화 : 목록` 2단이다. 여기에 상대 선택 화면이 추가되므로
-`view` 상태(`'threads' | 'contacts' | 'conversation'`)로 분기를 명시화한다.
+**패널을 열면 그 자리에서 등록된 관리자 전원의 접속 상황이 보이고 바로 대화를 걸 수
+있어야 한다.** 따라서 '＋ 새 대화'로 한 단계 들어가는 구조를 쓰지 않고, 목록 화면
+자체를 **관리자 로스터 + 대화 이력의 통합 목록**으로 만든다. 화면 단계는 기존
+2단(`목록` / `대화`)을 유지한다.
 
-ChatDock은 이미 468줄이라 새 화면을 인라인으로 넣으면 600줄에 가까워진다. 상대 선택
-화면은 `components/chat/ContactPicker.jsx`로 분리하되, **자체 폴링을 갖지 않는 표현
-컴포넌트**(입력 `items`·`onPick`)로 두어 ChatDock이 데이터 흐름을 단독 소유하게 한다.
+목록 화면 구성:
 
-### 5.3 진입점과 상태 표시
+| 섹션 | 내용 | 노출 조건 |
+|---|---|---|
+| **관리자** | 활성 관리자 **전원**(대화 이력 무관). 각 행 = 상태 점 + 이름/부서 + 대화 이력이 있으면 마지막 메시지·미읽음 뱃지 | 항상 (관리자 0명이면 안내 문구) |
+| **기타 대화** | 관리자 로스터에 없는 상대와의 기존 스레드 | 해당 스레드가 있을 때만 |
 
-- 대화 목록 헤더에 `＋`(새 대화) 버튼 — 관리자·사용자 공통
-- 빈 목록 문구(`ChatDock.jsx:384-386`)를 "관리자에게 문의하기" 버튼으로 교체
-- 상태 표시: 🟢 온라인 / 🟡 자리비움 / ⚪ 오프라인 — **색과 텍스트 라벨을 함께** 표시
+관리자 행이 곧 대화 행이므로 **같은 관리자가 두 섹션에 중복되지 않는다.** 일반 사용자는
+'기타 대화' 섹션이 대개 비어 있고, 관리자 계정에서는 관리자 섹션 = 다른 관리자들,
+기타 대화 = 일반 사용자들과의 스레드가 된다.
+
+정렬(관리자 섹션): **미읽음 있음 → `online` → `idle` → `offline` → 이름순.**
+답장을 기다리는 대화가 접속 상태 때문에 목록 아래로 묻히지 않게 한다.
+
+ChatDock은 이미 468줄이고 목록 행 렌더가 더 복잡해지므로, 목록 화면 전체를
+`components/chat/ChatRosterList.jsx`로 분리한다. **자체 폴링·자체 조회를 갖지 않는 표현
+컴포넌트**(입력 `sections`·`onPick`·`onDelete`)로 두어 ChatDock이 데이터 흐름을 단독
+소유하게 한다.
+
+### 5.3 상태 표시
+
+- 🟢 온라인 / 🟡 자리비움 / ⚪ 오프라인 — **색과 텍스트 라벨을 함께** 표시
   (색만으로 정보를 전달하지 않는다 — `PRODUCT.md` 접근성 기준)
 - 오프라인 관리자도 클릭 가능하며, 대화창 상단에 "현재 부재중입니다 — 접속 후
   확인합니다" 배너를 표시한다
 - 대화창 헤더에도 같은 상태 점을 표시한다. 상태의 출처는 **contacts 응답 하나뿐**이므로,
   상대가 contacts에 없으면(예: 관리자가 일반 사용자와의 대화를 열었을 때) 상태 점과
   배너를 모두 생략한다. `idle`에는 배너를 띄우지 않고 점·라벨로만 표시한다
+- 기존 빈 목록 문구(`ChatDock.jsx:384-386`)는 제거한다 — 관리자 로스터가 항상 있으므로
+  빈 상태는 "등록된 관리자가 없습니다" 한 가지뿐이다
 
-### 5.4 폴링 정책 (유일한 실질 리스크)
+### 5.4 폴링 정책
 
-threads 폴링이 이미 전 사용자 5초 주기로 돌고 있어, contacts를 같은 주기로 얹으면
-상시 부하가 2배가 된다. 따라서 조건부 폴링으로 제한한다.
+목록 화면에 관리자 접속 상황이 바로 보여야 하므로, contacts는 **패널이 열려 있는 동안
+계속** 폴링한다.
 
 | 상태 | contacts 폴링 |
 |---|---|
-| 도크 접힘 / 대화 목록 화면 | 하지 않음 |
-| 상대 선택 화면 · 대화 화면 | 진입 시 즉시 1회 + **20초 주기** |
+| 패널 접힘(도구 바만 보이는 상태) | 하지 않음 |
+| 패널 열림 — 목록 화면·대화 화면 모두 | 열 때 즉시 1회 + **20초 주기** |
 
-**설계상 한계(의도된 것):** 접힌 도크에는 관리자 접속 여부가 표시되지 않는다. 뱃지는
-미읽음 전용으로 남는다. 문의하려고 도크를 여는 순간 최신 상태를 받으므로 실사용은
-충족되며, 전 사용자 상시 폴링(사용자 수 비례 부하)을 피한다.
+threads 폴링(5초)은 기존대로 유지한다. contacts를 여기에 합치지 않는 이유는, 합치면
+패널을 열지 않은 전 사용자가 5초마다 관리자 명단·presence를 받아 상시 부하가 사용자 수에
+비례해 늘어나기 때문이다. 20초 주기 × 패널을 열어둔 사용자만 = threads 폴링의 1/4 이하
+빈도이고, 쿼리도 관리자 수 행에 대한 단일 join이다.
+
+**설계상 한계(의도된 것):** 도구 바의 '메시지' 버튼 자체에는 접속 표시가 없다(뱃지는
+미읽음 전용). 관리자 접속 상황은 패널을 여는 순간 보이며, 이는 "대화 공간 안에서 전원의
+접속 상황을 확인한다"는 요구를 충족한다.
 
 ### 5.5 프론트엔드 테스트
 
-컴포넌트 테스트 관례가 없고 `src/utils/*.test.js`(순수 함수)만 존재하므로, 판정·정렬
+컴포넌트 테스트 관례가 없고 `src/utils/*.test.js`(순수 함수)만 존재하므로, 병합·정렬·라벨
 로직을 `src/utils/chatContacts.js`로 분리해 테스트한다.
 
-- `sortContacts(items)` — online → idle → offline, 동순위 이름순
-- `statusLabel(status)` — 한국어 라벨
-- `statusDotClass(status)` — 색상 클래스
+- `buildChatSections(contacts, threads)` — 관리자 로스터에 대화 이력(마지막 메시지·미읽음)을
+  병합하고, 로스터에 없는 스레드를 '기타 대화'로 분리한다. **관리자 중복 없음**을 검증
+- `sortRoster(rows)` — 미읽음 있음 → online → idle → offline → 이름순
+- `statusLabel(status)` / `statusDotClass(status)` — 한국어 라벨, 색상 클래스
+- contacts 조회가 실패(빈 배열)해도 threads만으로 목록이 성립하는지 검증
 
 렌더링은 `npm run build` 통과로 확인한다.
 
 ## 6. 데이터 흐름
 
 ```
-[사용자] 도크 열기
+[사용자] 도구 바 [💬 메시지] 클릭 → 패널 열림
    → GET /api/chat/threads      (기존, 5초 주기)
-[사용자] ＋ 새 대화
-   → GET /api/chat/contacts     (신규, 진입 시 1회 + 20초 주기)
+   → GET /api/chat/contacts     (신규, 열 때 1회 + 패널 열려 있는 동안 20초 주기)
        └ User(is_admin, is_active) ⨝ UserPresence → presence_status()
-[사용자] 관리자 선택
+   → buildChatSections(contacts, threads) → 관리자 로스터 + 기타 대화
+[사용자] 관리자 행 클릭
    → GET /api/chat/conversation/{admin_id}   (기존)
 [사용자] 메시지 전송
    → POST /api/chat/send        (기존, 변경 없음)
@@ -195,8 +224,9 @@ threads 폴링이 이미 전 사용자 5초 주기로 돌고 있어, contacts를
 ## 7. 오류 처리
 
 - `contacts` 조회 실패 → 기존 폴링 관례대로 조용히 무시하고 다음 주기에 재시도
-  (`ChatDock.jsx`의 `catch {}` 패턴과 일치). 최초 진입 실패 시에만 "목록을 불러올 수
-  없습니다" 표시
+  (`ChatDock.jsx`의 `catch {}` 패턴과 일치). 관리자 로스터가 비더라도 **threads만으로
+  목록은 성립**해야 한다(기존 대화가 사라지면 안 된다). 패널 최초 진입에서 실패한
+  경우에만 "관리자 목록을 불러올 수 없습니다" 표시
 - 관리자 0명 → "현재 등록된 관리자가 없습니다" 안내
 - `send` 실패 → 기존 토스트 경로 유지(`ChatDock.jsx:204-207`)
 - 사용자가 대화 도중 상대의 관리자 권한이 해제된 경우 → `send`가 403을 반환하고 기존
@@ -220,10 +250,10 @@ threads 폴링이 이미 전 사용자 5초 주기로 돌고 있어, contacts를
 
 **프론트엔드**
 - `HiTessWorkBench/frontend/src/api/chat.js` — `getChatContacts()` 추가
-- `HiTessWorkBench/frontend/src/utils/chatContacts.js` — 신규 (순수 함수)
+- `HiTessWorkBench/frontend/src/utils/chatContacts.js` — 신규 (순수 함수: 병합·정렬·라벨)
 - `HiTessWorkBench/frontend/src/utils/chatContacts.test.js` — 신규
-- `HiTessWorkBench/frontend/src/components/chat/ContactPicker.jsx` — 신규
-- `HiTessWorkBench/frontend/src/components/chat/ChatDock.jsx` — 3단 view, 상시 노출, 조건부 폴링
+- `HiTessWorkBench/frontend/src/components/chat/ChatRosterList.jsx` — 신규 (목록 화면 표현 컴포넌트)
+- `HiTessWorkBench/frontend/src/components/chat/ChatDock.jsx` — 로스터 목록, 상시 노출, contacts 폴링
 - `HiTessWorkBench/frontend/src/components/platform/UtilityDock.jsx` — `chatAvailable` 초기값
 
 **커밋 제외:** `frontend/src/config.js` (로컬 전용 백엔드 URL 토글)
