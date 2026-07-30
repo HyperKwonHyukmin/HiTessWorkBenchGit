@@ -14,8 +14,10 @@ import {
 import { isAdmin } from '../../utils/auth';
 import { useToast } from '../../contexts/ToastContext';
 import {
+  MODEL_FAMILIES,
   buildListParams,
   extractApiError,
+  familyLabel,
   formatNumber,
   formatUtilization,
   outcomeInfo,
@@ -40,6 +42,13 @@ const OUTCOME_FILTERS = [
 const STATUS_FILTERS = [
   { value: 'active', label: '사용 중' },
   { value: 'archived', label: '삭제됨' },
+];
+
+// 계열 필터 — '미지정' 옵션은 두지 않는다. 이 변경 이후 신규 등록본에는 계열이 항상 채워지고,
+// SQL exact-match 로는 "null 또는 어휘 밖"을 표현할 수 없다. 미지정 확인은 Insight 에서 한다.
+const FAMILY_FILTERS = [
+  { value: 'All', label: '전체' },
+  ...MODEL_FAMILIES,
 ];
 
 const SELECT_CLASS =
@@ -67,6 +76,7 @@ export default function ModelLibrary() {
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [family, setFamily] = useState('All');
   const [quality, setQuality] = useState('All');
   const [outcome, setOutcome] = useState('All');
   const [status, setStatus] = useState('active');
@@ -92,6 +102,7 @@ export default function ModelLibrary() {
         skip: (page - 1) * PAGE_SIZE,
         limit: PAGE_SIZE,
         query: search,
+        modelType: family,
         qualityLevel: quality,
         designOutcome: outcome,
         status,
@@ -106,7 +117,7 @@ export default function ModelLibrary() {
       setError(extractApiError(e, '목록을 불러오지 못했습니다.').message);
       setState('error');
     }
-  }, [page, search, quality, outcome, status]);
+  }, [page, search, family, quality, outcome, status]);
 
   // 검색어 입력은 250ms 디바운스, 필터 변경은 즉시. 이전 요청은 취소한다.
   useEffect(() => {
@@ -116,7 +127,7 @@ export default function ModelLibrary() {
   }, [fetchModels, search]);
 
   // 필터가 바뀌면 1페이지로 되돌린다.
-  useEffect(() => { setPage(1); }, [search, quality, outcome, status]);
+  useEffect(() => { setPage(1); }, [search, family, quality, outcome, status]);
 
   // Insight 는 탭을 실제로 열 때만 계산한다(목록만 볼 사람에게 부담을 주지 않는다).
   useEffect(() => {
@@ -191,12 +202,14 @@ export default function ModelLibrary() {
 
   const resetFilters = () => {
     setSearch('');
+    setFamily('All');
     setQuality('All');
     setOutcome('All');
     setStatus('active');
   };
 
-  const filtersActive = Boolean(search) || quality !== 'All' || outcome !== 'All' || status !== 'active';
+  const filtersActive =
+    Boolean(search) || family !== 'All' || quality !== 'All' || outcome !== 'All' || status !== 'active';
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pageNumbers = useMemo(() => {
@@ -265,7 +278,14 @@ export default function ModelLibrary() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:w-[540px] lg:shrink-0">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:w-[720px] lg:shrink-0 lg:grid-cols-4">
+              <FilterSelect
+                id="ds-family"
+                label="모델 계열"
+                value={family}
+                onChange={setFamily}
+                options={FAMILY_FILTERS}
+              />
               <FilterSelect
                 id="ds-quality"
                 label="모델 품질"
@@ -301,6 +321,12 @@ export default function ModelLibrary() {
             <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3">
               <span className="text-[11px] font-semibold text-slate-500">적용된 조건</span>
               {search && <FilterChip label={`검색 "${search}"`} onClear={() => setSearch('')} />}
+              {family !== 'All' && (
+                <FilterChip
+                  label={familyLabel(family)}
+                  onClear={() => setFamily('All')}
+                />
+              )}
               {quality !== 'All' && (
                 <FilterChip
                   label={qualityLabelWithCode(quality)}
@@ -421,7 +447,7 @@ export default function ModelLibrary() {
                         <Td>
                           <p className="font-semibold text-slate-800">{m.title}</p>
                           <p className="mt-0.5 text-[11px] text-slate-500">
-                            {m.model_type || '종류 미지정'}
+                            {familyLabel(m.model_type)}
                             {m.tags?.length > 0 && ` · ${m.tags.slice(0, 3).map((t) => `#${t}`).join(' ')}`}
                           </p>
                         </Td>
