@@ -137,7 +137,10 @@ export default function UtilityDock({ currentUserId, isAdmin = false }) {
   const { currentMenu, setCurrentMenu } = useNavigation();
   const [activePanel, setActivePanel] = useState(null);
   const [chatUnread, setChatUnread] = useState(0);
-  const [chatAvailable, setChatAvailable] = useState(isAdmin);
+  // 로그인한 모든 사용자에게 '메시지' 버튼을 노출한다(ChatDock 이 로그인 여부로 최종 확정).
+  // UtilityDock 자체가 APP_STATE.MAIN(로그인 상태)에서만 렌더되므로 true 로 시작해도
+  // 비로그인 화면에 버튼이 새지 않고, 첫 렌더에 버튼이 깜빡이는 현상도 없다.
+  const [chatAvailable, setChatAvailable] = useState(true);
   const [psaActive, setPsaActive] = useState(false);
 
   useEffect(() => {
