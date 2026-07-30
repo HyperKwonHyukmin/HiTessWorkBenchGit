@@ -5,27 +5,29 @@ import StatusBadge from './StatusBadge';
 
 // --- 정적 클래스 맵 (Tailwind JIT 호환을 위해 동적 생성 금지) ---
 
-// 카드 배경 그라데이션 (accent-50 tint → white, 세로)
-const ACCENT_CARD_BG = {
-  blue:    'from-blue-50/100',
-  violet:  'from-violet-50/100',
-  emerald: 'from-emerald-50/100',
-  purple:  'from-purple-50/100',
-  amber:   'from-amber-50/100',
-  indigo:  'from-indigo-50/100',
-  cyan:    'from-cyan-50/100',
-  teal:    'from-teal-50/100',
+// 호버 시 카드 본문에 깔리는 옅은 액센트 — 색이 '지금 이 카드를 가리키고 있다'는
+// 상태를 나타낸다. 정지 상태의 카드는 흰색이라 색이 장식으로 남지 않는다.
+const ACCENT_HOVER_SURFACE = {
+  blue:    'hover:bg-blue-50/40',
+  violet:  'hover:bg-violet-50/40',
+  emerald: 'hover:bg-emerald-50/40',
+  purple:  'hover:bg-purple-50/40',
+  amber:   'hover:bg-amber-50/40',
+  indigo:  'hover:bg-indigo-50/40',
+  cyan:    'hover:bg-cyan-50/40',
+  teal:    'hover:bg-teal-50/40',
 };
 
-const ACCENT_CARD_BG_SOFT = {
-  blue:    'from-blue-50/55',
-  violet:  'from-violet-50/55',
-  emerald: 'from-emerald-50/55',
-  purple:  'from-purple-50/55',
-  amber:   'from-amber-50/55',
-  indigo:  'from-indigo-50/55',
-  cyan:    'from-cyan-50/55',
-  teal:    'from-teal-50/55',
+// 헤더 존은 본문보다 한 단계 진하게 물들어 호버 중에도 존 구분이 유지된다.
+const ACCENT_HOVER_ZONE = {
+  blue:    'group-hover:bg-blue-50',
+  violet:  'group-hover:bg-violet-50',
+  emerald: 'group-hover:bg-emerald-50',
+  purple:  'group-hover:bg-purple-50',
+  amber:   'group-hover:bg-amber-50',
+  indigo:  'group-hover:bg-indigo-50',
+  cyan:    'group-hover:bg-cyan-50',
+  teal:    'group-hover:bg-teal-50',
 };
 
 // 아이콘 박스 배경 (solid)
@@ -129,9 +131,8 @@ export default function AppCard({
   } = app;
 
   const isRestrained = visualTone === 'restrained';
-  const accentCardBg = isRestrained
-    ? (ACCENT_CARD_BG_SOFT[accentColor] ?? ACCENT_CARD_BG_SOFT.blue)
-    : (ACCENT_CARD_BG[accentColor] ?? ACCENT_CARD_BG.blue);
+  const accentHoverSurface = ACCENT_HOVER_SURFACE[accentColor] ?? ACCENT_HOVER_SURFACE.blue;
+  const accentHoverZone = ACCENT_HOVER_ZONE[accentColor] ?? ACCENT_HOVER_ZONE.blue;
   const accentIconBg = ACCENT_ICON_BG[accentColor] ?? ACCENT_ICON_BG.blue;
   const accentBorder = ACCENT_BORDER[accentColor]  ?? ACCENT_BORDER.blue;
   const accentTitle  = ACCENT_TITLE[accentColor]   ?? ACCENT_TITLE.blue;
@@ -152,9 +153,8 @@ export default function AppCard({
         'cursor-pointer flex flex-col h-full bg-white',
         'outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40',
         'transition-colors duration-200',
-        // restrained 톤은 표면을 흰색으로 둔다 — 액센트는 아이콘과 CTA 두 곳에만 남긴다.
-        // (기존의 accent-50 → white 세로 그라데이션은 정보를 담지 않는 장식이었다.)
-        isRestrained ? '' : `bg-gradient-to-b ${accentCardBg} via-white to-white`,
+        // 정지 상태는 흰색. 색은 호버에서만 등장해 '가리키고 있음'을 뜻한다.
+        accentHoverSurface,
         accentBorder,
       ].join(' ')}
       whileHover={{
@@ -198,14 +198,22 @@ export default function AppCard({
         />
       </motion.button>
 
-      {/* ── 콘텐츠 ── */}
-      <div className="flex flex-col flex-1 px-6 pt-6 pb-5">
-
+      {/* ── 헤더 존 ──
+          아이콘과 제목을 한 표면(slate-50)으로 묶는다. 색을 늘리지 않고 표면 분할만으로
+          '먼저 읽을 것'을 만들고, 흰 카드가 흰 배경(#F8F9FC) 위에서 납작해지는 것도 막는다. */}
+      <div
+        className={[
+          'px-6 pt-6 pb-4 border-b border-slate-200 bg-slate-50',
+          'transition-colors duration-200',
+          accentHoverZone,
+        ].join(' ')}
+      >
         {/* 아이콘 박스 */}
         <div
           className={[
-            'relative w-11 h-11 rounded-xl mb-4 shrink-0 overflow-hidden',
+            'relative w-11 h-11 rounded-xl mb-3.5 shrink-0 overflow-hidden',
             'flex items-center justify-center text-white',
+            'shadow-[0_6px_14px_-8px_rgba(37,99,235,0.55)]',
             'group-hover:scale-105 transition-transform duration-200',
             accentIconBg,
           ].join(' ')}
@@ -215,12 +223,16 @@ export default function AppCard({
         </div>
 
         {/* 제목 + 뱃지 — 본문(13px) 대비 1.3배로 두어 제목이 제목으로 읽히게 한다. */}
-        <div className="flex items-start gap-2 mb-1.5 flex-wrap pr-6">
+        <div className="flex items-start gap-2 flex-wrap pr-6">
           <h3 className={`text-[17px] font-bold text-slate-800 leading-snug tracking-tight transition-colors ${accentTitle}`}>
             {title}
           </h3>
           <DevStatusBadge devStatus={devStatus} />
         </div>
+      </div>
+
+      {/* ── 본문 ── */}
+      <div className="flex flex-col flex-1 px-6 pt-4 pb-5">
 
         {/* 설명 — 2줄로 자르되 최소 높이는 강제하지 않는다(카드가 내용만큼만 높아진다). */}
         {description && (

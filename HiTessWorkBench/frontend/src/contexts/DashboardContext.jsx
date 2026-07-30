@@ -4,11 +4,7 @@
 /// (신규) Truss Assessment 페이지 이탈 시에도 상태를 유지하기 위한 글로벌 State를 추가했습니다.
 /// </summary>
 import React, { createContext, useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
-import {
-  UploadCloud, PenTool, SlidersHorizontal, Wrench,
-  // File 모드 앱 아이콘 — 카드에서 가장 강한 자리이므로 앱마다 다른 글리프를 쓴다.
-  Triangle, ShieldCheck, Workflow, Spline, Cylinder, ArrowUpFromLine, DoorOpen, FileText, Anchor,
-} from 'lucide-react';
+import { UploadCloud, PenTool, SlidersHorizontal, Wrench } from 'lucide-react';
 import { useNavigation } from './NavigationContext';
 import { useAuth } from './AuthContext';
 import { usePolling } from '../hooks/usePolling';
@@ -23,20 +19,21 @@ import {
 } from '../hooks/useAppSettings';
 
 const RAW_ANALYSIS_DATA = [
-  // ── File-Based Apps ──────────── Active ──
-  // 아이콘·색은 카테고리를 나타낸다(카드에서 가장 강한 자리이므로 정보를 담게 한다).
+  // ── File-Based Apps (signature: blue) ──────────── Active ──
+  // ⚠️ 아이콘(UploadCloud)과 색(bg-blue-600)은 File 모드 전체가 공유하는 시그니처다.
+  //    앱마다 다른 글리프·색으로 분화하지 말 것 — 모드 정체성을 나타내는 의도된 통일이다.
   // 태그에는 파일 형식(BDF·CSV·PDF…)을 넣지 않는다 — 카드의 Input/Output 칩이 이미 표시하고,
   // 검색도 inputFormats/outputFormats 를 인덱싱하므로 태그로 중복시킬 이유가 없다.
-  { mode: "File", category: "Truss", title: "Truss Model Builder", description: "Truss 설계 정보를 활용하여 구조 해석 모델을 구축합니다.", icon: Triangle, color: "bg-blue-600", tags: ["트러스", "모델생성"], devStatus: "Active", contributor: "권혁민" },
-  { mode: "File", category: "Truss", title: "Truss Structural Assessment", description: "Truss BDF 모델을 업로드하여 구조적 안정성을 평가합니다.", icon: ShieldCheck, color: "bg-blue-600", tags: ["트러스", "구조평가"], devStatus: "Active", contributor: "권혁민" },
-  { mode: "File", category: "FEM Pipeline", title: "HiTESS Model Builder", description: "CSV부터 Nastran 해석까지 FEM 파이프라인 전 과정을 단일 UI에서 관리합니다.", icon: Workflow, color: "bg-indigo-600", tags: ["Nastran", "파이프라인"], devStatus: "Active", contributor: "권혁민" },
-  { mode: "File", category: "Pipe", title: "HP-SCR 배관응력 해석", description: "배관 BDF를 업로드하여 열변형 계산 및 배관응력 해석(PSA · POR)을 수행합니다.", icon: Spline, color: "bg-cyan-600", tags: ["배관", "PSA", "POR"], devStatus: "Active", contributor: "김윤환" },
-  // ── File-Based Apps ─────────── Developing ──
-  { mode: "File", category: "Pipe", title: "이중관 구조 연료배관 해석", description: "이중관 연료배관의 Inner Support 설계와 전체/선택 Load Case 배관응력 해석을 준비합니다.", icon: Cylinder, color: "bg-cyan-600", tags: ["이중관", "연료배관", "PSA"], devStatus: "Developing", contributor: "김윤환" },
-  { mode: "File", category: "Lifting", title: "Group & Module Unit 권상 구조 해석", description: "Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.", icon: ArrowUpFromLine, color: "bg-amber-500", tags: ["유닛", "블록", "국부강도"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "File", category: "Passage", title: "Side Passage Assessment", description: "Side Passage BDF 모델을 검증하고 Studio 기반 권상 조건·Nastran 해석·결과 판정을 진행합니다.", icon: DoorOpen, color: "bg-violet-600", tags: ["Side Passage", "Studio", "권상"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "File", category: "PDF", title: "DrawingToAnalysis", description: "설계 도면(PDF)을 업로드하여 LUG 구조 해석 BDF 모델로 변환합니다.", icon: FileText, color: "bg-emerald-600", tags: ["도면", "LUG"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "File", category: "Mooring Fitting", title: "Mooring Fitting Assessment", description: "Mooring Fitting / Winch 보강 구조의 CSV 2종을 입력받아 8단계 BDF 파이프라인을 자동 생성합니다.", icon: Anchor, color: "bg-teal-600", tags: ["Mooring", "Winch", "파이프라인"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "Truss", title: "Truss Model Builder", description: "Truss 설계 정보를 활용하여 구조 해석 모델을 구축합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "모델생성"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "File", category: "Truss", title: "Truss Structural Assessment", description: "Truss BDF 모델을 업로드하여 구조적 안정성을 평가합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "구조평가"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "File", category: "FEM Pipeline", title: "HiTESS Model Builder", description: "CSV부터 Nastran 해석까지 FEM 파이프라인 전 과정을 단일 UI에서 관리합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Nastran", "파이프라인"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "File", category: "Pipe", title: "HP-SCR 배관응력 해석", description: "배관 BDF를 업로드하여 열변형 계산 및 배관응력 해석(PSA · POR)을 수행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["배관", "PSA", "POR"], devStatus: "Active", contributor: "김윤환" },
+  // ── File-Based Apps (signature: blue) ─────────── Developing ──
+  { mode: "File", category: "Pipe", title: "이중관 구조 연료배관 해석", description: "이중관 연료배관의 Inner Support 설계와 전체/선택 Load Case 배관응력 해석을 준비합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["이중관", "연료배관", "PSA"], devStatus: "Developing", contributor: "김윤환" },
+  { mode: "File", category: "Lifting", title: "Group & Module Unit 권상 구조 해석", description: "Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["유닛", "블록", "국부강도"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "Passage", title: "Side Passage Assessment", description: "Side Passage BDF 모델을 검증하고 Studio 기반 권상 조건·Nastran 해석·결과 판정을 진행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Side Passage", "Studio", "권상"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "PDF", title: "DrawingToAnalysis", description: "설계 도면(PDF)을 업로드하여 LUG 구조 해석 BDF 모델로 변환합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["도면", "LUG"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "Mooring Fitting", title: "Mooring Fitting Assessment", description: "Mooring Fitting / Winch 보강 구조의 CSV 2종을 입력받아 8단계 BDF 파이프라인을 자동 생성합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Mooring", "Winch", "파이프라인"], devStatus: "Developing", contributor: "권혁민" },
   // ── Interactive Apps (signature: violet) ──────── Active ──
   { mode: "Interactive", category: "1D Beam", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-violet-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active", contributor: "권혁민" },
   { mode: "Interactive", category: "Section", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Active", contributor: "권혁민" },
