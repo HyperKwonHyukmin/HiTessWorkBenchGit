@@ -196,7 +196,7 @@ export default function AppCataloguePage({
       );
     }
     return (
-      <AnimatedGrid className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 ${dimmed ? 'opacity-60' : ''}`}>
+      <AnimatedGrid className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 items-start gap-6 ${dimmed ? 'opacity-60' : ''}`}>
         {sectionApps.map(item => <AppCard key={item.title} {...makeAppProps(item)} />)}
       </AnimatedGrid>
     );
@@ -206,14 +206,14 @@ export default function AppCataloguePage({
     <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
       <button
         onClick={() => handleViewMode('grid')}
-        className={`p-1.5 rounded-md transition-colors cursor-pointer ${viewMode === 'grid' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-400 hover:text-slate-600'}`}
+        className={`p-1.5 rounded-md transition-colors cursor-pointer ${viewMode === 'grid' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-500 hover:text-slate-700'}`}
         title="Grid view"
       >
         <LayoutGrid size={15} />
       </button>
       <button
         onClick={() => handleViewMode('list')}
-        className={`p-1.5 rounded-md transition-colors cursor-pointer ${viewMode === 'list' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-400 hover:text-slate-600'}`}
+        className={`p-1.5 rounded-md transition-colors cursor-pointer ${viewMode === 'list' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-500 hover:text-slate-700'}`}
         title="List view"
       >
         <List size={15} />
@@ -290,7 +290,7 @@ export default function AppCataloguePage({
                   {activeApps.length > 0 && (
                     <div className="flex items-center gap-3 my-8">
                       <div className="flex-1 border-t border-slate-200" />
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">개발 중</span>
+                      <span className="text-xs font-bold text-slate-500">개발 중</span>
                       <div className="flex-1 border-t border-slate-200" />
                     </div>
                   )}

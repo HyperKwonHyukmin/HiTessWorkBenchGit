@@ -28,17 +28,6 @@ const ACCENT_CARD_BG_SOFT = {
   teal:    'from-teal-50/55',
 };
 
-const ACCENT_TOP_BAND = {
-  blue:    'bg-blue-500',
-  violet:  'bg-violet-500',
-  emerald: 'bg-emerald-500',
-  purple:  'bg-purple-500',
-  amber:   'bg-amber-400',
-  indigo:  'bg-indigo-500',
-  cyan:    'bg-cyan-500',
-  teal:    'bg-teal-500',
-};
-
 // 아이콘 박스 배경 (solid)
 const ACCENT_ICON_BG = {
   blue:    'bg-blue-600',
@@ -143,7 +132,6 @@ export default function AppCard({
   const accentCardBg = isRestrained
     ? (ACCENT_CARD_BG_SOFT[accentColor] ?? ACCENT_CARD_BG_SOFT.blue)
     : (ACCENT_CARD_BG[accentColor] ?? ACCENT_CARD_BG.blue);
-  const accentTopBand = ACCENT_TOP_BAND[accentColor] ?? ACCENT_TOP_BAND.blue;
   const accentIconBg = ACCENT_ICON_BG[accentColor] ?? ACCENT_ICON_BG.blue;
   const accentBorder = ACCENT_BORDER[accentColor]  ?? ACCENT_BORDER.blue;
   const accentTitle  = ACCENT_TITLE[accentColor]   ?? ACCENT_TITLE.blue;
@@ -161,10 +149,12 @@ export default function AppCard({
       className={[
         'group relative rounded-2xl overflow-hidden',
         'border border-slate-200 shadow-sm',
-        'cursor-pointer flex flex-col h-full',
+        'cursor-pointer flex flex-col h-full bg-white',
         'outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40',
         'transition-colors duration-200',
-        `bg-gradient-to-b ${accentCardBg} via-white to-white`,
+        // restrained 톤은 표면을 흰색으로 둔다 — 액센트는 아이콘과 CTA 두 곳에만 남긴다.
+        // (기존의 accent-50 → white 세로 그라데이션은 정보를 담지 않는 장식이었다.)
+        isRestrained ? '' : `bg-gradient-to-b ${accentCardBg} via-white to-white`,
         accentBorder,
       ].join(' ')}
       whileHover={{
@@ -176,10 +166,6 @@ export default function AppCard({
       }}
       whileTap={{ scale: 0.98, transition: { duration: 0.1 } }}
     >
-      {isRestrained && (
-        <div className={`absolute inset-x-0 top-0 h-1 ${accentTopBand}`} aria-hidden="true" />
-      )}
-
       {/* ── App 설정 (관리자 전용) ── */}
       {onSettings && (
         <button
@@ -228,20 +214,20 @@ export default function AppCard({
           <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none" aria-hidden="true" />
         </div>
 
-        {/* 제목 + 뱃지 */}
+        {/* 제목 + 뱃지 — 본문(13px) 대비 1.3배로 두어 제목이 제목으로 읽히게 한다. */}
         <div className="flex items-start gap-2 mb-1.5 flex-wrap pr-6">
-          <h3 className={`text-[15px] font-bold text-slate-800 leading-snug transition-colors ${accentTitle}`}>
+          <h3 className={`text-[17px] font-bold text-slate-800 leading-snug tracking-tight transition-colors ${accentTitle}`}>
             {title}
           </h3>
           <DevStatusBadge devStatus={devStatus} />
         </div>
 
-        {/* 설명 */}
-        {(description || isRefined) && (
+        {/* 설명 — 2줄로 자르되 최소 높이는 강제하지 않는다(카드가 내용만큼만 높아진다). */}
+        {description && (
           <p
             className={[
               'text-[13px] text-slate-500 leading-relaxed',
-              isRefined ? 'min-h-[2.6rem] overflow-hidden' : '',
+              isRefined ? 'overflow-hidden' : '',
             ].join(' ')}
             style={isRefined ? {
               display: '-webkit-box',
@@ -253,14 +239,14 @@ export default function AppCard({
           </p>
         )}
 
-        {/* 입력 파일 형식 */}
+        {/* 입력 파일 형식 — 라벨·칩 모두 11px/600. 10px·900 은 제목보다 무거워 위계를 뒤집었다. */}
         {inputFormats.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{inputLabel}</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{inputLabel}</span>
             {inputFormats.map(format => (
               <span
                 key={format}
-                className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-slate-700 shadow-sm"
+                className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700"
               >
                 {format}
               </span>
@@ -269,11 +255,11 @@ export default function AppCard({
         )}
         {outputFormats.length > 0 && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Output</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Output</span>
             {outputFormats.map(format => (
               <span
                 key={format}
-                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600"
+                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600"
               >
                 {format}
               </span>
@@ -281,14 +267,15 @@ export default function AppCard({
           </div>
         )}
 
-        {/* 태그 */}
+        {/* 태그 — 한글이 섞이므로 uppercase/tracking-wider 를 쓰지 않는다.
+            (uppercase 는 한글에 무효과, tracking-wider 는 자간을 벌려 조판이 깨진다.) */}
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2">
             {tags.map((tag, idx) => (
               <span
                 key={idx}
                 className={[
-                  'text-[10px] font-bold px-2 py-0.5 border rounded-md uppercase tracking-wider',
+                  'text-[11px] font-medium px-2 py-0.5 border rounded-md',
                   isRefined
                     ? accentTagRefined
                     : isRestrained
@@ -304,20 +291,17 @@ export default function AppCard({
 
         <div className="flex-1" />
 
-        {/* contributor */}
-        {(contributor || isRefined) && (
-          <div className={[
-            'flex items-center justify-end gap-1 mt-4 text-[11px] text-slate-400',
-            !contributor ? 'invisible' : '',
-          ].join(' ')}>
-            <User size={10} />
-            <span>by <span className="font-medium text-slate-500">{contributor}</span></span>
+        {/* contributor — 없으면 빈 자리를 남기지 않는다(카드 높이를 억지로 맞추지 않는다). */}
+        {contributor && (
+          <div className="flex items-center justify-end gap-1 mt-4 text-[11px] text-slate-500">
+            <User size={11} />
+            <span>by <span className="font-medium text-slate-600">{contributor}</span></span>
           </div>
         )}
 
         {/* CTA */}
         <div className={`mt-3 pt-3 border-t border-slate-200/100 flex items-center font-semibold text-[13px] ${
-          isRestricted ? 'text-slate-400' : accentCta
+          isRestricted ? 'text-slate-500' : accentCta
         }`}>
           {isRestricted ? (
             <>

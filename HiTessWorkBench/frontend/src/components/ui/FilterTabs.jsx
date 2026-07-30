@@ -24,12 +24,14 @@ export default function FilterTabs({ categories = [], active, onChange, rightSlo
             key={category}
             onClick={() => onChange(category)}
             className={[
-              'relative cursor-pointer px-6 py-2.5 rounded-lg text-sm font-bold tracking-wide',
+              'relative cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold tracking-wide',
               'transition-colors duration-200 outline-none isolate overflow-hidden',
               'focus-visible:ring-2 focus-visible:ring-brand-blue/40',
+              // 비활성 탭은 테두리·그림자 없이 텍스트만 — 필터가 필터 대상(카드)보다
+              // 무거워 보이지 않게 한다. 강조는 활성 탭의 네이비 알약 하나로 충분하다.
               isActive
-                ? 'text-white border border-brand-blue shadow-md'
-                : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 shadow-sm',
+                ? 'text-white shadow-sm'
+                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800',
             ].join(' ')}
           >
             {/* 활성 탭 배경 (layoutId로 슬라이딩) */}

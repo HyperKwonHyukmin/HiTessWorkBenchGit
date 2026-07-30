@@ -87,7 +87,9 @@ export default function AppListRow({
       {/* 제목 + 설명 */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={`font-bold text-slate-800 transition-colors ${ACCENT_TITLE[accentColor] ?? ACCENT_TITLE.blue}`}>
+          {/* 크기를 명시한다 — 지정이 없으면 상속값(16px)이 되어 그리드 카드 제목과 어긋난다.
+              리스트는 밀도가 높으므로 15px, 설명(12px) 대비 1.25 비율을 유지한다. */}
+          <span className={`text-[15px] font-bold text-slate-800 tracking-tight transition-colors ${ACCENT_TITLE[accentColor] ?? ACCENT_TITLE.blue}`}>
             {title}
           </span>
           <DevStatusBadge devStatus={devStatus} />
@@ -98,28 +100,30 @@ export default function AppListRow({
       {/* 태그 */}
       {(inputFormats.length > 0 || outputFormats.length > 0 || tags.length > 0) && (
         <div className="hidden lg:flex items-center gap-1.5 shrink-0">
+          {/* 칩 어휘는 그리드 카드와 동일하게 맞춘다 — 11px/600, rounded-md. */}
           {inputFormats.length > 0 && (
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               {inputLabel}
             </span>
           )}
           {inputFormats.map(format => (
-            <span key={format} className="text-[10px] font-black px-2 py-0.5 bg-white text-slate-700 border border-slate-200 rounded uppercase tracking-wider shadow-sm">
+            <span key={format} className="text-[11px] font-semibold px-2 py-0.5 bg-white text-slate-700 border border-slate-200 rounded-md uppercase tracking-wide">
               {format}
             </span>
           ))}
           {outputFormats.length > 0 && (
-            <span className="ml-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
+            <span className="ml-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Output
             </span>
           )}
           {outputFormats.slice(0, 2).map(format => (
-            <span key={`output-${format}`} className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+            <span key={`output-${format}`} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
               {format}
             </span>
           ))}
+          {/* 태그는 한글이 섞이므로 uppercase/tracking 을 걸지 않는다. */}
           {tags.slice(0, 3).map((tag, i) => (
-            <span key={i} className="text-[10px] font-bold px-2 py-0.5 bg-slate-50 text-slate-600 border border-slate-200 rounded uppercase tracking-wider">
+            <span key={i} className="text-[11px] font-medium px-2 py-0.5 bg-slate-50 text-slate-600 border border-slate-200 rounded-md">
               {tag}
             </span>
           ))}

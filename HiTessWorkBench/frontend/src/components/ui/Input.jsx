@@ -51,7 +51,8 @@ export default function Input({
   const inputClasses = [
     'w-full border rounded-lg outline-none',
     'focus:ring-2 transition-all duration-200',
-    'bg-white text-slate-800 placeholder-slate-400',
+    // placeholder 도 본문과 같은 4.5:1 대비를 지킨다(slate-400 은 2.9:1로 미달).
+    'bg-white text-slate-800 placeholder-slate-500',
     sizeClass,
     borderClass,
     paddingLeft,
@@ -75,7 +76,7 @@ export default function Input({
       <div className="relative">
         {/* 좌측 아이콘 */}
         {LeftIcon && (
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
             <LeftIcon size={14} />
           </span>
         )}
