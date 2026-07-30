@@ -4,6 +4,8 @@ conftest 의 admin_client 는 require_auth 를 ADMIN001 로 고정한다. 특정
 '다른 사용자 시점'이 필요하면 _act_as() 로 require_auth override 만 교체한다
 (database.get_db override 는 유지되어 같은 인메모리 세션을 계속 사용).
 """
+from datetime import datetime, timedelta
+
 from app import models
 from app.dependencies import require_auth
 from app.main import app
@@ -214,3 +216,96 @@ def test_contacts_includes_name_and_department(admin_client, make_user):
     assert item["is_admin"] is True
     # conftest 의 ADMIN001 은 department 를 지정하지 않으므로 None 이다.
     assert "department" in item
+
+
+def test_contacts_status_reflects_presence(admin_client, make_user, db_session):
+    """하트비트 유무와 유휴 경과에 따라 online / idle / offline 이 구분된다."""
+    make_user("ADMIN_ON", name="가온라인", is_admin=True)
+    make_user("ADMIN_IDLE", name="나유휴", is_admin=True)
+    make_user("ADMIN_OFF", name="다오프", is_admin=True)
+    make_user("USER001")
+
+    now = datetime.now()
+    db_session.add_all([
+        models.UserPresence(employee_id="ADMIN_ON", last_seen=now, last_active_at=now),
+        models.UserPresence(
+            employee_id="ADMIN_IDLE", last_seen=now,
+            last_active_at=now - timedelta(seconds=300),
+        ),
+        models.UserPresence(
+            employee_id="ADMIN_OFF", last_seen=now - timedelta(seconds=600),
+        ),
+    ])
+    db_session.commit()
+
+    _act_as("USER001")
+    items = admin_client.get("/api/chat/contacts").json()["items"]
+    status = {i["employee_id"]: i["status"] for i in items}
+    assert status["ADMIN_ON"] == "online"
+    assert status["ADMIN_IDLE"] == "idle"
+    assert status["ADMIN_OFF"] == "offline"
+    assert status["ADMIN001"] == "offline"  # presence 행이 아예 없는 경우
+
+
+def test_contacts_sorted_online_then_idle_then_offline(admin_client, make_user, db_session):
+    """지금 응답 가능한 관리자가 목록 위로 온다."""
+    make_user("ADMIN_ON", name="가온라인", is_admin=True)
+    make_user("ADMIN_IDLE", name="나유휴", is_admin=True)
+    make_user("USER001")
+
+    now = datetime.now()
+    db_session.add_all([
+        models.UserPresence(employee_id="ADMIN_ON", last_seen=now, last_active_at=now),
+        models.UserPresence(
+            employee_id="ADMIN_IDLE", last_seen=now,
+            last_active_at=now - timedelta(seconds=300),
+        ),
+    ])
+    db_session.commit()
+
+    _act_as("USER001")
+    ids = [i["employee_id"] for i in admin_client.get("/api/chat/contacts").json()["items"]]
+    # ADMIN001 은 presence 가 없어 offline → 항상 마지막.
+    assert ids == ["ADMIN_ON", "ADMIN_IDLE", "ADMIN001"]
+
+
+def test_contacts_never_exposes_sensitive_presence_fields(admin_client, make_user, db_session):
+    """사용자 경로로 IP·마지막 페이지·앱 버전·마지막 접속 시각이 새지 않는다."""
+    make_user("USER001")
+    db_session.add(models.UserPresence(
+        employee_id="ADMIN001",
+        last_seen=datetime.now(),
+        last_ip="10.1.2.3",
+        last_page="System Settings",
+        app_version="1.3.40",
+    ))
+    db_session.commit()
+
+    _act_as("USER001")
+    r = admin_client.get("/api/chat/contacts")
+    item = r.json()["items"][0]
+    assert set(item.keys()) == {"employee_id", "name", "department", "status", "is_admin"}
+    # 값 단위로도 확인 — 필드명을 바꿔 우회하는 회귀까지 잡는다.
+    body = r.text
+    assert "10.1.2.3" not in body
+    assert "System Settings" not in body
+    assert "1.3.40" not in body
+
+
+def test_contacts_entries_are_all_sendable(admin_client, make_user):
+    """contacts 가 준 상대에게는 send 가 반드시 성공한다(목록↔전송 정책 정합성).
+
+    '화면에 보이지만 보내면 403' 인 상대가 생기지 않도록 못박는다.
+    """
+    make_user("ADMIN002", name="김철수", is_admin=True)
+    make_user("USER001")
+
+    _act_as("USER001")
+    items = admin_client.get("/api/chat/contacts").json()["items"]
+    assert items, "테스트 전제: 대화 가능한 관리자가 최소 1명 있어야 한다"
+    for i in items:
+        r = admin_client.post(
+            "/api/chat/send",
+            json={"recipient_id": i["employee_id"], "body": "문의합니다"},
+        )
+        assert r.status_code == 200, f"{i['employee_id']} 에게 전송 실패"
