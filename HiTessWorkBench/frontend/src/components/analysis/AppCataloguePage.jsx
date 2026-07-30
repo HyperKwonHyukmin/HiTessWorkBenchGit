@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { LayoutGrid, List, Search, X } from 'lucide-react';
+import { ChevronDown, LayoutGrid, List, Search, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getAppMenuName, useAnalysisPageState, useAppCatalogue, useFavorites } from '../../contexts/DashboardContext';
 import { useAppSettings } from '../../hooks/useAppSettings';
@@ -18,6 +18,9 @@ import Input from '../ui/Input';
 import { staggerContainer, cardEntrance } from '../../utils/motion';
 
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
+// '개발 중' 섹션 펼침 여부 — 기본은 접힘. 이 페이지는 오늘 쓸 앱을 고르는 곳이고,
+// 아직 못 쓰는 앱이 화면 절반을 차지하면 목적이 흐려진다.
+const DEV_SECTION_KEY = 'hitess_dev_section_open';
 
 const colorToAccent = (colorClass = '') => {
   if (colorClass.includes('cyan')) return 'cyan';
@@ -30,7 +33,9 @@ const colorToAccent = (colorClass = '') => {
   return 'blue';
 };
 
-const FILE_CATEGORY_ORDER = ['Truss', 'Pipe', 'Lifting', 'Mooring Fitting', 'Passage', 'PDF'];
+// 탭 노출 순서. 카테고리는 '무엇을 해석하는가' 한 축으로 통일해 3개로 묶었다
+// (이전 7개는 구조물·공정·파일형식이 축으로 섞여 있었고 5개가 항목 1개짜리였다).
+const FILE_CATEGORY_ORDER = ['구조 모델', '배관', '권상·의장'];
 const matchesSearch = (item, query) => {
   if (!query) return true;
   const source = [
@@ -67,6 +72,7 @@ export default function AppCataloguePage({
   const [gateApp, setGateApp] = useState(null);
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('hitess_app_view_mode') ?? 'grid');
   const [searchTerm, setSearchTerm] = useState('');
+  const [devOpen, setDevOpen] = useState(() => localStorage.getItem(DEV_SECTION_KEY) === 'open');
 
   // 관리자 오버라이드가 반영된 실효 카탈로그를 쓴다(ANALYSIS_DATA 직접 참조 금지 —
   // 그러면 App Settings 에서 바꾼 상태가 목록에 반영되지 않는다).
@@ -106,14 +112,31 @@ export default function AppCataloguePage({
     () => activeCategory === 'All' ? searchedApps : searchedApps.filter(item => item.category === activeCategory),
     [activeCategory, searchedApps],
   );
+  // 즐겨찾기를 목록 맨 위로 올린다. 별을 눌러도 화면이 그대로면 사용자는 저장이 됐는지
+  // 알 수 없고, 매일 같은 앱만 쓰는 실무자에게 가장 값싼 가속기가 보상 없이 방치된다.
+  const sortFavoritesFirst = useCallback(
+    (list) => [...list].sort((a, b) => {
+      const diff = (favorites.includes(b.title) ? 1 : 0) - (favorites.includes(a.title) ? 1 : 0);
+      return diff !== 0 ? diff : 0; // 동순위는 카탈로그 정의 순서를 유지한다.
+    }),
+    [favorites],
+  );
   const activeApps = useMemo(
-    () => filtered.filter(item => !item.devStatus || item.devStatus === 'Active'),
-    [filtered],
+    () => sortFavoritesFirst(filtered.filter(item => !item.devStatus || item.devStatus === 'Active')),
+    [filtered, sortFavoritesFirst],
   );
   const developingApps = useMemo(
-    () => filtered.filter(item => item.devStatus && item.devStatus !== 'Active'),
-    [filtered],
+    () => sortFavoritesFirst(filtered.filter(item => item.devStatus && item.devStatus !== 'Active')),
+    [filtered, sortFavoritesFirst],
   );
+
+  const handleDevToggle = useCallback(() => {
+    setDevOpen(prev => {
+      const next = !prev;
+      localStorage.setItem(DEV_SECTION_KEY, next ? 'open' : 'closed');
+      return next;
+    });
+  }, []);
 
   const handleViewMode = useCallback((nextMode) => {
     setViewMode(nextMode);
@@ -159,7 +182,6 @@ export default function AppCataloguePage({
         description: item.description,
         icon: <IconComponent className="text-white" size={viewMode === 'list' ? 20 : 24} />,
         iconBg: item.color,
-        tags: item.tags,
         inputFormats: item.inputFormats || [],
         outputFormats: item.outputFormats || [],
         devStatus: item.devStatus,
@@ -175,12 +197,14 @@ export default function AppCataloguePage({
     };
   }, [favorites, getBlock, handleStart, isAdmin, toggleFavorite, viewMode]);
 
-  const renderSection = (sectionApps, dimmed = false) => {
+  // 흐림(opacity) 처리는 쓰지 않는다 — 상태는 카드의 '개발중' 배지가 말하고,
+  // 흐림은 대비만 떨어뜨린다(slate-500 본문이 60%면 실효 대비 2.6:1).
+  const renderSection = (sectionApps) => {
     if (sectionApps.length === 0) return null;
     if (viewMode === 'list') {
       return (
         <motion.div
-          className={`flex flex-col gap-2.5 ${dimmed ? 'opacity-60' : ''}`}
+          className="flex flex-col gap-2.5"
           variants={staggerContainer}
           initial="hidden"
           animate="show"
@@ -194,7 +218,7 @@ export default function AppCataloguePage({
       );
     }
     return (
-      <AnimatedGrid className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 items-start gap-6 ${dimmed ? 'opacity-60' : ''}`}>
+      <AnimatedGrid className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 items-start gap-6">
         {sectionApps.map(item => <AppCard key={item.title} {...makeAppProps(item)} />)}
       </AnimatedGrid>
     );
@@ -284,16 +308,28 @@ export default function AppCataloguePage({
             <>
               {renderSection(activeApps)}
               {developingApps.length > 0 && (
-                <>
-                  {activeApps.length > 0 && (
-                    <div className="flex items-center gap-3 my-8">
-                      <div className="flex-1 border-t border-slate-200" />
-                      <span className="text-xs font-bold text-slate-500">개발 중</span>
-                      <div className="flex-1 border-t border-slate-200" />
-                    </div>
-                  )}
-                  {renderSection(developingApps, activeApps.length > 0)}
-                </>
+                <div className={activeApps.length > 0 ? 'mt-10' : ''}>
+                  <button
+                    type="button"
+                    onClick={handleDevToggle}
+                    aria-expanded={devOpen}
+                    className="mb-5 flex w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:bg-slate-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40"
+                  >
+                    <ChevronDown
+                      size={16}
+                      className={`shrink-0 text-slate-500 transition-transform duration-200 ${devOpen ? '' : '-rotate-90'}`}
+                      aria-hidden="true"
+                    />
+                    <span className="text-sm font-bold text-slate-700">개발 중</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold tabular-nums text-slate-600">
+                      {developingApps.length}
+                    </span>
+                    <span className="ml-auto text-xs text-slate-500">
+                      {devOpen ? '접기' : '펼쳐 보기'}
+                    </span>
+                  </button>
+                  {devOpen && renderSection(developingApps)}
+                </div>
               )}
             </>
           )}

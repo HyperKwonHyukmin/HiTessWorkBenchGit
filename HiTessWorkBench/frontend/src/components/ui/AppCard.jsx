@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Star, ArrowRight, Lock, Settings2 } from 'lucide-react';
 import StatusBadge from './StatusBadge';
+import FormatFlow from './FormatFlow';
 
 // --- 정적 클래스 맵 (Tailwind JIT 호환을 위해 동적 생성 금지) ---
 
@@ -47,48 +48,6 @@ function DevStatusBadge({ devStatus }) {
   return <StatusBadge status={devStatus === 'dev' ? 'Developing' : devStatus} size="sm" dot />;
 }
 
-/**
- * 입력 → 출력 형식을 한 줄로 보여준다.
- *
- * 예전에는 Input 칩 줄 / Output 칩 줄 / 태그 줄이 따로 있어 카드 아래 절반이 칩으로 막혔다.
- * 해석 앱의 본질은 '무엇을 넣으면 무엇이 나오는가' 하나이므로 화살표 한 줄로 합친다.
- */
-function FormatFlow({ inputLabel, inputFormats, outputFormats }) {
-  if (inputFormats.length === 0 && outputFormats.length === 0) return null;
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
-      {inputFormats.length === 0 && (
-        <span className="font-semibold text-slate-500">{inputLabel}</span>
-      )}
-      {inputFormats.map(format => (
-        <span
-          key={format}
-          className="rounded-md bg-slate-100 px-2 py-0.5 font-bold tracking-wide text-slate-700"
-        >
-          {format}
-        </span>
-      ))}
-      {inputFormats.length > 0 && outputFormats.length > 0 && (
-        <span className="px-0.5 text-slate-300" aria-hidden="true">→</span>
-      )}
-      {outputFormats.map(format => (
-        <span
-          key={`out-${format}`}
-          className="rounded-md bg-slate-50 px-2 py-0.5 font-semibold text-slate-500"
-        >
-          {format}
-        </span>
-      ))}
-      {/* 화살표는 장식이므로 스크린리더에는 관계를 말로 전달한다. */}
-      {inputFormats.length > 0 && outputFormats.length > 0 && (
-        <span className="sr-only">
-          {`입력 ${inputFormats.join(', ')} · 출력 ${outputFormats.join(', ')}`}
-        </span>
-      )}
-    </div>
-  );
-}
-
 export default function AppCard({
   app = {},
   accentColor = 'blue',
@@ -115,21 +74,17 @@ export default function AppCard({
   const accentCta    = ACCENT_CTA[accentColor]    ?? ACCENT_CTA.blue;
 
   return (
-    <motion.div
-      role="button"
-      tabIndex={0}
+    // 루트는 인터랙티브 역할을 갖지 않는다(article). 예전에는 role="button" 인 div 안에
+    // 즐겨찾기·설정 버튼이 중첩돼 ARIA 위반이었고 스크린리더 탐색이 예측 불가능했다.
+    // 지금은 제목만 실제 <button> 이고, 카드 클릭은 마우스 편의를 위한 보조 경로다.
+    <motion.article
       onClick={onStart}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') onStart?.();
-        // Space 는 기본 동작(페이지 스크롤)을 막고 실행한다.
-        if (e.key === ' ') { e.preventDefault(); onStart?.(); }
-      }}
       className={[
         'group relative rounded-2xl overflow-hidden bg-white',
         'border border-slate-200 shadow-sm',
         'cursor-pointer flex flex-col h-full',
-        'outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40',
         'transition-colors duration-200',
+        'focus-within:ring-2 focus-within:ring-brand-blue/40',
         accentBorder,
       ].join(' ')}
       whileHover={{
@@ -188,10 +143,18 @@ export default function AppCard({
           {icon}
         </div>
 
-        {/* 제목 + 상태 뱃지 */}
+        {/* 제목 + 상태 뱃지 — 제목이 이 카드의 유일한 포커스 가능 진입점이다.
+            버튼 시맨틱을 그대로 쓰므로 Enter·Space 가 네이티브로 동작하고,
+            Space 가 페이지를 스크롤시키던 문제도 구조적으로 사라진다. */}
         <div className="relative z-[1] flex items-start gap-2 flex-wrap pr-6">
           <h3 className="text-[18px] font-bold leading-snug tracking-tight text-white">
-            {title}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onStart?.(); }}
+              className="text-left outline-none cursor-pointer"
+            >
+              {title}
+            </button>
           </h3>
           <DevStatusBadge devStatus={devStatus} />
         </div>
@@ -243,6 +206,6 @@ export default function AppCard({
           )}
         </div>
       </div>
-    </motion.div>
+    </motion.article>
   );
 }

@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Star, ArrowRight, User, Lock, Settings2 } from 'lucide-react';
 import StatusBadge from './StatusBadge';
+import FormatFlow from './FormatFlow';
 
 const ACCENT_HOVER = {
   blue:    'hover:border-blue-300 hover:bg-blue-50/30',
@@ -54,7 +55,6 @@ export default function AppListRow({
     description = '',
     icon,
     iconBg = 'bg-blue-100',
-    tags = [],
     inputFormats = [],
     outputFormats = [],
     inputLabel = 'Input',
@@ -63,15 +63,13 @@ export default function AppListRow({
   } = app;
 
   return (
-    <motion.div
-      role="button"
-      tabIndex={0}
+    // 그리드 카드와 같은 구조 — 루트는 article, 제목만 실제 버튼.
+    <motion.article
       onClick={onStart}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onStart?.(); }}
       className={[
         'group flex items-center gap-4 bg-white px-5 py-4 rounded-xl',
         'border border-slate-200 shadow-sm cursor-pointer',
-        'outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40',
+        'focus-within:ring-2 focus-within:ring-brand-blue/40',
         'transition-colors duration-150',
         ACCENT_HOVER[accentColor] ?? ACCENT_HOVER.blue,
       ].join(' ')}
@@ -89,46 +87,26 @@ export default function AppListRow({
         <div className="flex items-center gap-2 flex-wrap">
           {/* 크기를 명시한다 — 지정이 없으면 상속값(16px)이 되어 그리드 카드 제목과 어긋난다.
               리스트는 밀도가 높으므로 15px, 설명(12px) 대비 1.25 비율을 유지한다. */}
-          <span className={`text-[15px] font-bold text-slate-800 tracking-tight transition-colors ${ACCENT_TITLE[accentColor] ?? ACCENT_TITLE.blue}`}>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onStart?.(); }}
+            className={`text-left text-[15px] font-bold text-slate-800 tracking-tight outline-none cursor-pointer transition-colors ${ACCENT_TITLE[accentColor] ?? ACCENT_TITLE.blue}`}
+          >
             {title}
-          </span>
+          </button>
           <DevStatusBadge devStatus={devStatus} />
         </div>
         {description && <p className="text-xs text-slate-500 truncate mt-0.5 leading-relaxed">{description}</p>}
       </div>
 
-      {/* 태그 */}
-      {(inputFormats.length > 0 || outputFormats.length > 0 || tags.length > 0) && (
-        <div className="hidden lg:flex items-center gap-1.5 shrink-0">
-          {/* 칩 어휘는 그리드 카드와 동일하게 맞춘다 — 11px/600, rounded-md. */}
-          {inputFormats.length > 0 && (
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              {inputLabel}
-            </span>
-          )}
-          {inputFormats.map(format => (
-            <span key={format} className="text-[11px] font-semibold px-2 py-0.5 bg-white text-slate-700 border border-slate-200 rounded-md uppercase tracking-wide">
-              {format}
-            </span>
-          ))}
-          {outputFormats.length > 0 && (
-            <span className="ml-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Output
-            </span>
-          )}
-          {outputFormats.slice(0, 2).map(format => (
-            <span key={`output-${format}`} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-              {format}
-            </span>
-          ))}
-          {/* 태그는 한글이 섞이므로 uppercase/tracking 을 걸지 않는다. */}
-          {tags.slice(0, 3).map((tag, i) => (
-            <span key={i} className="text-[11px] font-medium px-2 py-0.5 bg-slate-50 text-slate-600 border border-slate-200 rounded-md">
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
+      {/* 형식 — 그리드 카드와 같은 FormatFlow 를 쓴다(뷰 토글은 밀도만 바꾼다). */}
+      <div className="hidden lg:block shrink-0">
+        <FormatFlow
+          inputLabel={inputLabel}
+          inputFormats={inputFormats}
+          outputFormats={outputFormats}
+        />
+      </div>
 
       {/* contributor */}
       {contributor && (
@@ -156,6 +134,7 @@ export default function AppListRow({
         type="button"
         onClick={(e) => { e.stopPropagation(); onFavorite?.(); }}
         className="shrink-0 text-slate-300 hover:text-yellow-400 outline-none cursor-pointer"
+        aria-label={isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
         whileTap={{ scale: 1.35 }}
         transition={{ type: 'spring', stiffness: 500, damping: 20 }}
       >
@@ -168,6 +147,6 @@ export default function AppListRow({
           ? <Lock size={15} className="opacity-50" />
           : <ArrowRight size={17} className="group-hover:translate-x-1 transition-transform duration-150" />}
       </div>
-    </motion.div>
+    </motion.article>
   );
 }
