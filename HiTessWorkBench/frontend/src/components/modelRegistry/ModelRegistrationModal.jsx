@@ -15,6 +15,7 @@ import {
 import {
   ARTIFACT_KIND_LABELS,
   CONFIDENCE_LEVELS,
+  MODEL_FAMILIES,
   MODEL_ROLES,
   STORED_KIND_LABELS,
   VISIBILITY_OPTIONS,
@@ -95,6 +96,8 @@ export default function ModelRegistrationModal({ isOpen, onClose, source, onRegi
       setForm((f) => ({
         ...f,
         title: f.title || suggestTitle(data),
+        // 사용자가 이미 고른 값이 있으면 덮어쓰지 않는다.
+        modelType: f.modelType || data.suggested_model_type || '',
       }));
       setPhase('ready');
     } catch (e) {
@@ -451,12 +454,16 @@ export default function ModelRegistrationModal({ isOpen, onClose, source, onRegi
                       ))}
                     </select>
                   </Labeled>
-                  <Input
-                    label="모델 종류"
-                    value={form.modelType}
-                    onChange={setField('modelType')}
-                    placeholder="예: module-unit"
-                  />
+                  <Labeled label="모델 종류">
+                    <select className={SELECT_CLASS} value={form.modelType} onChange={setField('modelType')}>
+                      {/* preview 가 도착하기 전(또는 파생 실패)에는 빈 값이다.
+                          비워서 보내면 서버가 출처에서 파생해 채운다 — 미지정으로 남지 않는다. */}
+                      {!form.modelType && <option value="">자동 판정</option>}
+                      {MODEL_FAMILIES.map((f) => (
+                        <option key={f.value} value={f.value}>{f.label}</option>
+                      ))}
+                    </select>
+                  </Labeled>
                   <Labeled label="공개 범위">
                     <select className={SELECT_CLASS} value={form.visibility} onChange={setField('visibility')}>
                       {VISIBILITY_OPTIONS.map((v) => (
