@@ -754,13 +754,13 @@ def test_api_manifest_lists_every_stored_file(
 # Insight API
 # --------------------------------------------------------------------------- #
 
-def test_api_insights_empty_registry_returns_null_stats(switchable_client, registry_env):
+def test_api_insights_empty_registry_has_no_family_scope(switchable_client, registry_env):
+    """표본 0 → 계열 스코프 자체가 없다(0 표본 metrics 를 억지로 만들지 않는다)."""
     res = switchable_client.get("/api/model-registry/insights/overview")
 
     assert res.status_code == 200
     body = res.json()
     assert body["overall"]["totals"]["revisions"] == 0
-    # 표본이 없으면 계열 자체가 없다 — metrics 를 0 표본으로 억지로 만들지 않는다.
     assert body["family"] is None
 
 
@@ -1149,6 +1149,7 @@ def test_api_insights_expose_cohort_and_split_diagnostics(
     # 피처 커버리지·데이터 스플릿은 데이터 위생 — 전체 스코프에 속한다.
     hygiene = body["overall"]["dataHygiene"]
     assert "extractorVersion" in hygiene
+    assert "split" in hygiene          # 분할 누수 진단은 전체 스코프에 있다(값은 표본에 따라 null)
     # 피처 커버리지는 '해당 없음'을 결측과 분리해 보고한다.
     assert all("notApplicable" in f for f in hygiene["features"])
 
@@ -1276,4 +1277,6 @@ def test_api_insights_accept_family_query(
 
     assert body["scope"]["family"] == "truss"
     assert body["scope"]["sampleSize"] == {"overall": 1, "family": 0}
+    # ★ 표본이 0 이면 통계는 0 이 아니라 null 이다(이 코드베이스의 정직성 원칙).
+    assert body["family"]["metrics"]["nodeCount"]["mean"] is None
     assert body["overall"]["totals"]["revisions"] == 1     # 상단은 전체 유지
