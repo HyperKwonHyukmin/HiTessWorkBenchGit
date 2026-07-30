@@ -14,6 +14,14 @@ from .analysis_runner import (
     run_engine,
     update_progress,
 )
+from .assessment_diagnostics import (
+    EngineDiagnosis,
+    build_failure_report,
+    build_preflight_report,
+    diagnose_engine_failure,
+    preflight_case_control,
+    read_case_control_head,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -256,12 +264,38 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
     if not os.path.exists(exe_path):
       raise FileNotFoundError(f"Executable not found: {exe_path}")
 
-    update_progress(job_id, 40, "Running Nastran Analysis & Evaluation...")
+    # ── 사전 검증 ────────────────────────────────────────────
+    # 엔진은 .f06 에서 ELForce/SPCForce 를 읽는데, Case Control 에 PRINT 가
+    # 없으면 결과가 .pch 로만 나가 엔진이 KeyNotFoundException 으로 죽는다.
+    # Nastran 을 수 분 돌린 뒤 죽는 대신 여기서 즉시 원인과 함께 되돌려준다.
+    update_progress(job_id, 20, "Validating BDF Case Control...")
+    head = read_case_control_head(bdf_path)
+    problems = preflight_case_control(head) if head else []
+    blocking = [p for p in problems if p.blocking]
 
-    # 첫 번째 인자로 bdf_path 전달 (작업 폴더 기준 실행)
-    status_msg, engine_output = run_engine(
-      [exe_path, bdf_path], work_dir, timeout=600, engine_label="TrussAssessment",
-    )
+    if blocking:
+      status_msg = "Failed"
+      engine_output = build_preflight_report(problems, os.path.basename(bdf_path))
+      logger.warning(
+        "TrussAssessment preflight blocked job %s: %s",
+        job_id, [p.command for p in blocking],
+      )
+    else:
+      update_progress(job_id, 40, "Running Nastran Analysis & Evaluation...")
+
+      # 첫 번째 인자로 bdf_path 전달 (작업 폴더 기준 실행)
+      # capture_failure_output: 실패 시 엔진 stdout/stderr 원문을 받아 진단에 쓴다.
+      status_msg, engine_output = run_engine(
+        [exe_path, bdf_path], work_dir, timeout=600, engine_label="TrussAssessment",
+        capture_failure_output=True,
+      )
+
+      if status_msg != "Success":
+        engine_output = build_failure_report(
+          diagnosis=diagnose_engine_failure(engine_output),
+          engine_output=engine_output,
+          work_dir=work_dir,
+        )
 
     if status_msg == "Success":
       update_progress(job_id, 80, "Extracting Results & Converting to CSV...")
@@ -308,7 +342,19 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
       result_data["bdf"] = bdf_path
 
       if json_count == 0:
-        engine_output += "\n[Warning] JSON result files were NOT found in the user's work directory. C# 엔진의 출력 경로를 확인하세요."
+        # 엔진이 종료 코드 0 으로 끝나도 결과 JSON 이 없으면 해석은 실패한 것이다.
+        # (Program.cs 는 ".f06 없음" / "F06 FATAL" 에서도 exit 0 으로 빠져나온다 —
+        #  이를 Success 로 넘기면 화면에 "해석 완료"가 뜨고 결과만 비어 보인다.)
+        status_msg = "Failed"
+        engine_output = build_failure_report(
+          diagnosis=diagnose_engine_failure(engine_output) or EngineDiagnosis(
+            stage="리포트 출력",
+            cause="엔진이 종료되었지만 결과 파일(JSON)이 생성되지 않았습니다.",
+            remedy="아래 엔진 출력에서 중단 지점을 확인하세요. 원인이 보이지 않으면 관리자에게 문의하세요.",
+          ),
+          engine_output=engine_output,
+          work_dir=work_dir,
+        )
   except Exception as e:
     # exe_path 미존재(FileNotFoundError), 결과 파일 스캔 중 예기치 못한 오류 등을 일괄 처리.
     # subprocess 자체 오류는 run_engine 내부에서 처리되어 (Failed, 메시지)로 이미 반환됨.
@@ -326,7 +372,10 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
     employee_id=employee_id,
     status=status_msg,
     input_info={"bdf_model": bdf_path},
-    result_info=result_data if status_msg == "Success" else None,
+    # 결과 JSON 이 없어 Failed 로 내려가는 경우에도 f06/op2/bdf 는 남겨둔다.
+    # 원인 추적에 정작 필요한 파일이 F06 이라 여기서 버리면 사용자가 확인할 방법이 없다.
+    # (사전 검증·엔진 크래시 경로는 result_data 가 비어 있어 그대로 None 이 된다.)
+    result_info=result_data or None,
     source=source,
   )
   if db_err is not None:

@@ -167,6 +167,7 @@ export default function TrussAssessment() {
 
   const fileInputRef = useRef(null);
   const logEndRef = useRef(null);
+  const lastBlockRef = useRef(null);
   const elapsedTimerRef = useRef(null);
   const lastMsgRef = useRef('');
 
@@ -181,7 +182,12 @@ export default function TrussAssessment() {
       if (globalJob.project) loadResultsFromProject(globalJob.project);
     } else if (globalJob.status === 'Failed') {
       setCurrentPollingJobId(null);
-      updateState({ isRunning: false, statusMessage: '해석 실패' });
+      // 페이지를 벗어나 있는 동안 실패했더라도 원인은 콘솔에 남겨야 한다.
+      updateState({
+        isRunning: false,
+        statusMessage: '해석 실패',
+        ...buildFailureConsoleState(globalJob.engine_log, '해석 실패.'),
+      });
     }
   }, [globalJob?.status]);
 
@@ -195,7 +201,15 @@ export default function TrussAssessment() {
     return () => { if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current); };
   }, [isRunning]);
 
-  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
+  useEffect(() => {
+    // 실패 리포트가 방금 추가됐다면 리포트 '맨 위'(원인)로 스크롤한다.
+    // 평소처럼 맨 아래로 보내면 정작 읽어야 할 [원인] 줄이 화면 밖으로 밀린다.
+    if (logs[logs.length - 1]?.block && lastBlockRef.current) {
+      lastBlockRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
 
   usePolling({
     jobId: currentPollingJobId,
@@ -224,9 +238,32 @@ export default function TrussAssessment() {
     onError: (errData) => {
       setCurrentPollingJobId(null);
       const msg = errData?.timeout ? '해석 시간 초과 (3분). 서버 상태를 확인하세요.' : '해석 실패.';
-      updateState({ isRunning: false, logs: [...logs, { time: new Date().toLocaleTimeString(), message: msg, type: 'error' }] });
+      updateState({
+        isRunning: false,
+        statusMessage: '해석 실패',
+        ...buildFailureConsoleState(errData?.engine_log, msg),
+      });
     },
   });
+
+  /**
+   * 실패 시 Execution Console 에 남길 상태를 만든다.
+   *
+   * 백엔드(assessment_service)가 engine_log 에 원인·조치·엔진 출력을 담은
+   * 리포트를 넣어준다. 예전에는 이 값을 버리고 "해석 실패." 한 줄만 찍어서
+   * 사용자가 무엇을 고쳐야 할지 알 수 없었다.
+   * 리포트는 여러 줄 서식이 있으므로 block 로그로 넣어 원문 그대로 보여준다.
+   */
+  function buildFailureConsoleState(engineLog, headline) {
+    const now = new Date().toLocaleTimeString();
+    const report = (engineLog || '').trimEnd();
+    const nextLogs = [...logs, { time: now, message: headline, type: 'error' }];
+    if (report) nextLogs.push({ time: now, message: report, type: 'error', block: true });
+    return {
+      logs: nextLogs,
+      detailedLogs: report ? [...detailedLogs, `*** SOLVER OUTPUT ***\n${report}`] : detailedLogs,
+    };
+  }
 
   const parseNastranFloat = (str) => {
     if (!str || !str.trim()) return 0;
@@ -408,6 +445,35 @@ export default function TrussAssessment() {
             </div>
           </div>
 
+          {/*
+            참조사항 — Case Control 에 PRINT 가 빠지면 결과가 .pch 로만 출력되어
+            .f06 에 실리지 않는다. 엔진(TrussAssessment.exe)은 .f06 만 읽으므로
+            SPCForce/ELForce 를 찾지 못하고 평가가 중단된다(실측 확인).
+            해석 실패의 가장 흔한 원인이라 업로드 전에 보이도록 상시 노출한다.
+          */}
+          {/* 하단 '결과 보고서 저장' CTA 가 amber 슬래브라, 여기는 흰 배경 + amber 좌측
+              스트라이프로 주의는 주되 CTA 와 색이 겹치지 않게 한다. */}
+          <div className="rounded-2xl border border-slate-200 border-l-4 border-l-amber-400 bg-white shadow-sm p-4">
+            <h4 className="flex items-center gap-2 text-xs font-bold text-amber-700 uppercase tracking-widest">
+              <AlertCircle size={14} className="shrink-0" /> 참조사항 · BDF Case Control
+            </h4>
+            <p className="mt-2.5 text-xs leading-relaxed text-slate-600">
+              아래 세 줄이 <strong className="font-bold text-slate-800">PRINT</strong> 를 포함해 지정되어야 합니다.
+            </p>
+            <div className="mt-2 rounded-lg bg-[#0F172A] px-3 py-2.5 font-mono text-[11px] leading-relaxed text-slate-300 overflow-x-auto">
+              {['DISPLACEMENT', 'ELFORCE', 'SPCFORCES'].map(cmd => (
+                <div key={cmd} className="whitespace-nowrap">
+                  {cmd}(<strong className="font-bold text-amber-300">PRINT</strong>,PUNCH) = ALL
+                </div>
+              ))}
+            </div>
+            <p className="mt-2.5 text-[11px] leading-relaxed text-slate-500">
+              <strong className="font-bold text-slate-700">PUNCH</strong> 만 지정하면 결과가 <span className="font-mono">.pch</span> 파일로만
+              나가고 <span className="font-mono">.f06</span> 에는 실리지 않습니다. 엔진은 <span className="font-mono">.f06</span> 을
+              읽으므로 부재 응력·하중분산판 평가가 중단됩니다.
+            </p>
+          </div>
+
           <div className="mt-auto pt-4 border-t border-slate-100 border-dashed flex flex-col gap-3">
             {projectData ? (
               <div className="flex flex-col gap-1">
@@ -475,7 +541,8 @@ export default function TrussAssessment() {
             </div>
           </div>
 
-          <div className="h-48 bg-[#0F172A] rounded-2xl shadow-xl border border-slate-700 flex flex-col overflow-hidden shrink-0">
+          {/* 실패 리포트가 있으면 원인을 스크롤 없이 읽을 수 있도록 콘솔을 넓힌다 */}
+          <div className={`${logs.some(l => l.block) ? 'h-96' : 'h-48'} bg-[#0F172A] rounded-2xl shadow-xl border border-slate-700 flex flex-col overflow-hidden shrink-0 transition-[height] duration-300`}>
             <div className="h-10 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-4 shrink-0">
               <div className="flex items-center gap-2"><Terminal size={14} className="text-slate-400"/><span className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest">Execution Console</span></div>
               {detailedLogs.length > 0 && <button onClick={downloadDetailedLog} className="text-xs text-blue-400 hover:text-blue-300 font-bold cursor-pointer flex items-center gap-1"><Download size={12}/> Download Output</button>}
@@ -483,7 +550,10 @@ export default function TrussAssessment() {
             <div className="flex-1 p-4 font-mono text-[13px] overflow-y-auto custom-scrollbar">
               {logs.length === 0 ? <p className="text-slate-600">Waiting for user action...</p> : logs.map((log, i) => (
                 <div key={i} className={`mb-1 ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-brand-accent font-bold' : log.type === 'warning' ? 'text-yellow-400' : 'text-slate-300'}`}>
-                  <span className="text-slate-500 mr-3">[{log.time}]</span>{log.message}
+                  {log.block
+                    // 실패 리포트: 줄바꿈·들여쓰기를 유지해야 읽히므로 타임스탬프 없이 원문 출력
+                    ? <pre ref={i === logs.length - 1 ? lastBlockRef : null} className="m-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed">{log.message}</pre>
+                    : <><span className="text-slate-500 mr-3">[{log.time}]</span>{log.message}</>}
                 </div>
               ))}
               <div ref={logEndRef} />

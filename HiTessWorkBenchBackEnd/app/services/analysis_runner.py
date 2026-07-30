@@ -71,6 +71,8 @@ def run_engine(
     work_dir: Optional[str] = None,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     engine_label: str = "Analysis engine",
+    *,
+    capture_failure_output: bool = False,
 ) -> tuple[str, str]:
     """
     해석 실행 파일을 호출하고 (status, output) 튜플을 반환합니다.
@@ -81,7 +83,13 @@ def run_engine(
     work_dir이 None이면 subprocess는 현재 작업 디렉토리에서 실행됩니다
     (기존 truss_service.py와 동일한 동작).
 
-    예외별 처리/메시지는 기존 task_execute_* 함수들과 동일합니다.
+    capture_failure_output=True 이면 엔진이 0 이 아닌 코드로 종료했을 때
+    일반 안내 문구 대신 **엔진의 stdout+stderr 원문**을 돌려줍니다.
+    엔진은 대개 실패 원인을 stdout 에 찍는데(예: TrussAssessment 의
+    "No SPC Force data found." + KeyNotFoundException) 이를 버리면 화면에
+    "해석 실패"만 남아 사용자가 원인을 알 수 없습니다. 호출부는 받은 원문을
+    사용자에게 보여주기 전에 반드시 서버 경로를 가리고(redact) 해석해야 합니다.
+    기본값 False 라 기존 호출부의 동작은 그대로입니다.
     """
     try:
         result = subprocess.run(
@@ -98,6 +106,9 @@ def run_engine(
         return "Failed", f"해석 엔진이 제한 시간({timeout}초)을 초과했습니다. 관리자에게 문의하세요."
     except subprocess.CalledProcessError as e:
         logger.error("%s subprocess failed: %s", engine_label, e.stderr or e.stdout)
+        if capture_failure_output:
+            raw = "\n".join(part for part in (e.stdout, e.stderr) if part and part.strip())
+            return "Failed", raw
         return "Failed", "해석 엔진 실행 중 오류가 발생했습니다. 관리자에게 문의하세요."
     except Exception as e:
         logger.error("%s unexpected error: %s", engine_label, str(e), exc_info=True)
