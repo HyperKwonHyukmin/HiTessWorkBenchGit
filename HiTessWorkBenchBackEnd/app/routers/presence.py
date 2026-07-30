@@ -39,6 +39,23 @@ class HeartbeatRequest(BaseModel):
     app_version: Optional[str] = None
 
 
+def presence_status(row: Optional[models.UserPresence], now: datetime) -> str:
+    """접속 상태를 'online' | 'idle' | 'offline' 로 분류한다.
+
+    임계값 판정을 이 함수 하나로 모아, /online 과 chat 의 대화 상대 목록이 서로 다른
+    기준으로 온라인을 판정하는 드리프트를 막는다.
+    """
+    if row is None or row.last_seen is None:
+        return "offline"
+    if (now - row.last_seen).total_seconds() > ONLINE_THRESHOLD_SECONDS:
+        return "offline"
+    # 앱은 켜져 있으나 마지막 상호작용이 오래됐으면 '자리비움'.
+    active_ref = row.last_active_at or row.last_seen
+    if (now - active_ref).total_seconds() >= IDLE_THRESHOLD_SECONDS:
+        return "idle"
+    return "online"
+
+
 def _client_ip(req: Request) -> Optional[str]:
     """서버가 관측한 client IP. 클라이언트가 못 위조하도록 요청 정보만 사용한다."""
     forwarded_for = req.headers.get("x-forwarded-for", "")
@@ -132,7 +149,8 @@ def get_online_users(
             int((now - presence.session_started).total_seconds())
             if presence.session_started else None
         )
-        is_idle = bool(idle_seconds is not None and idle_seconds >= IDLE_THRESHOLD_SECONDS)
+        # 유휴 판정은 presence_status 로 단일화한다(/online 은 이미 cutoff 로 오프라인을 걸러냄).
+        is_idle = presence_status(presence, now) == "idle"
         if is_idle:
             idle_count += 1
         else:

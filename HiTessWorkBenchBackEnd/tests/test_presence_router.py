@@ -153,3 +153,29 @@ def test_force_logout_refuses_self(admin_client):
     r = admin_client.post("/api/presence/force-logout/ADMIN001")
     assert r.json()["ok"] is False
     assert r.json()["reason"] == "self"
+
+
+def test_presence_status_classifies_online_idle_offline():
+    """presence_status 는 하트비트/유휴 경과로 세 상태를 구분한다."""
+    from app.routers.presence import presence_status
+
+    now = datetime.now()
+    fresh = models.UserPresence(employee_id="A", last_seen=now, last_active_at=now)
+    idle = models.UserPresence(
+        employee_id="B", last_seen=now, last_active_at=now - timedelta(seconds=300),
+    )
+    stale = models.UserPresence(employee_id="C", last_seen=now - timedelta(seconds=600))
+
+    assert presence_status(fresh, now) == "online"
+    assert presence_status(idle, now) == "idle"
+    assert presence_status(stale, now) == "offline"
+    assert presence_status(None, now) == "offline"
+
+
+def test_presence_status_falls_back_to_last_seen_without_last_active_at():
+    """last_active_at 이 없는 구 행은 last_seen 을 활동 기준으로 사용한다."""
+    from app.routers.presence import presence_status
+
+    now = datetime.now()
+    row = models.UserPresence(employee_id="A", last_seen=now, last_active_at=None)
+    assert presence_status(row, now) == "online"
