@@ -1,6 +1,6 @@
 # Model Library (선별형 BDF Model Registry) — 흐름 · 사용법 · 유의사항
 
-> 최종 확인: 2026-07-29 (코드 기준)
+> 최종 확인: 2026-07-30 (코드 기준)
 > 관련 문서
 > - 운영/배포 정책: [`docs/operations/model-registry-operations-guide.md`](../operations/model-registry-operations-guide.md)
 > - 구현 계획서: `docs/superpowers/plans/2026-07-27-curated-bdf-model-registry.md`
@@ -108,6 +108,7 @@ root 결정 순서 (`model_registry_storage.resolve_registry_root`) — **존재
 | `app/routers/model_registry.py` | 8개 엔드포인트, 권한 분기, 도메인 오류 → HTTP 변환 |
 | `app/model_registry_schemas.py` | enum·요청/응답 스키마, 태그 정규화, `SUMMARY_SCHEMA_VERSION = "1.0"` |
 | `app/services/model_registry_service.py` | `ARTIFACT_RULES` 경로 해석 + 등록 오케스트레이션 + 읽기 ACL |
+| `app/services/model_family.py` | 모델 계열 파생 규칙(`derive_model_family`) + 읽기 관용 정규화(`family_key`/`family_label`) — 순수 함수 |
 | `app/services/model_summary_service.py` | summary.json 생성 — 품질 등급 산정, 설계 결과 추출 |
 | `app/services/model_registry_storage.py` | root 결정, staging→원자적 publish, 보상 트랜잭션 |
 | `app/services/model_insight_service.py` | Insight 집계 + export (순수 함수, DB 비의존) |
@@ -166,7 +167,7 @@ root 결정 순서 (`model_registry_storage.resolve_registry_root`) — **존재
    | 제목 | ✓ | preview 결과로 초안이 자동 채워짐 (`<파일명> — <산출물 종류>`) |
    | 역할 | | 기준 모델 / 주목할 사례 / 실패·회귀 예제 / 수정 전 / 수정 후 |
    | 신뢰도 | | 높음 / 보통 / 검토 필요 |
-   | 모델 종류 | | 자유 문자열 (예: `module-unit`) |
+   | 모델 종류 | | **계열 선택**(Module/Group Unit · Side Passage · Truss · 기타). 비워 두면 서버가 원 프로그램·산출물 종류에서 자동 판정한다 |
    | 공개 범위 | | **기본 전사 공개** / 소유자만 |
    | 태그 | | 쉼표 구분. trim→소문자→중복제거→최대 20개(각 50자)로 자동 정규화 |
    | 설명 / 재사용 주의사항 | | 왜 남기는지, 재사용 시 무엇을 재검토해야 하는지 |
@@ -182,7 +183,8 @@ root 결정 순서 (`model_registry_storage.resolve_registry_root`) — **존재
 `ANALYSIS > Model Library` → **등록 모델** 탭.
 
 - 검색: 제목·설명 부분일치 (입력 250ms 디바운스, 이전 요청은 취소)
-- 필터: 품질 등급 / 설계 결과 / 상태(사용 중·삭제됨)
+- 필터: **모델 계열** / 품질 등급 / 설계 결과 / 상태(사용 중·삭제됨). 계열 필터에는 **'미지정' 옵션이 없다**
+  (어휘 4종 + 전체) — 신규 등록본에는 계열이 항상 채워지기 때문이다. 행에는 계열 라벨 배지가 붙는다.
 - 필터를 바꾸면 1페이지로 되돌아간다. 페이지당 20건.
 - 행 클릭 → 상세 모달(요약·revision·artifact 목록·다운로드)
 
@@ -224,6 +226,10 @@ root 결정 순서 (`model_registry_storage.resolve_registry_root`) — **존재
   (요소 구성 0.30 / 노드 수 0.20 / 요소 수 0.20 / 치수 0.20 / 종류 0.10 가중 평균)
 - **값이 없어 비교하지 못한 항목은 숨기지 않고 사유와 함께** 표시합니다 —
   근거 4개인 80%와 근거 1개인 99%는 전혀 다른 이야기입니다
+- **종류(0.10)** 차원은 **완전 일치만** 같다고 봅니다(`categorical_similarity`). 예전에는
+  자유 입력이라 같은 계열이어도 표기가 갈려(예: `module unit` vs `모듈유닛`) 이 차원이 사실상
+  죽어 있었습니다. 계열이 통제 어휘로 자동 채워지면서 **신규 등록본 사이에서는 이제부터 실제로
+  판별력을 냅니다**(기존 자유 문자열 레거시 값은 그대로 남아 여전히 갈릴 수 있습니다)
 - 길이 단위가 다르면 **치수 항목만** 빼고 나머지는 비교합니다(개수·구성은 단위와 무관)
 - 결과를 누르면 같은 모달에서 그 모델로 갈아탑니다
 - ⚠ **'같은 모양'이지 '같은 용도'가 아닙니다.** 설계 판단으로 오독하지 마세요
@@ -238,18 +244,46 @@ root 결정 순서 (`model_registry_storage.resolve_registry_root`) — **존재
 **Insight** 탭을 열 때만 집계가 돈다(목록만 볼 사람에게 부담을 주지 않기 위한 지연 로드).
 현재 사용자가 **볼 수 있는 모델만** 집계 대상이다.
 
+Insight 는 **두 스코프**로 나뉜다. 개수·분포·데이터 위생은 계열을 섞어도 의미가 있지만,
+연속값의 평균·비율·교차표·학습 표본은 계열이 섞이면 의미를 잃기 때문이다(혼합 모집단에서
+평균은 거짓말을 하고 교차표는 역전된다).
+
+| 스코프 | 블록 |
+|---|---|
+| **라이브러리 현황(항상 전체)** | `totals` · `distributions`(계열·원 프로그램·역할·품질·설계 결과·단위) · `topTags` · `recentTrend` · `dataHygiene`(피처 커버리지 · 분할 누수 검증) |
+| **계열별 특성(선택 계열)** | `metrics` · `qualityIssues` · `qualityByOutcome` · `datasetReadiness`(표본·라벨·코호트) |
+
+`GET /api/model-registry/insights/overview?status=&family=` 를 호출한다. `family` 를 생략하면
+서버가 **건수 최다 계열**을 고르고, 무엇을 골랐는지 `scope.family` 로 되돌려 준다. 존재하지 않는
+계열 키는 오류가 아니라 **빈 계열 스코프**(표본 0, 통계 전부 null)로 온다. 값이 비었거나 어휘
+밖인 레거시 `model_type` 은 `other`(명시적 '기타')와 섞지 않고 `unassigned`(미분류) 버킷으로
+분리된다(`?family=unassigned` 조회도 된다).
+
+화면 구성: 상단 **「라이브러리 현황」**(항상 전체) + 하단 **「계열별 특성」**(계열 선택기, 기본값 =
+최다 계열). status 를 바꾸면 계열 선택은 초기화된다 — 이전 계열이 새 status 스코프에 없을 수
+있어, 선택기 value 가 options 에 없는 상태를 막기 위함이다.
+
+#### 전체 스코프 — 라이브러리 현황
+
 | 블록 | 내용 |
 |---|---|
 | `totals` | models / revisions / active / archived / **goldenApproved**(품질 축) / reviewNeeded / **designPass**(설계 축) |
-| `distributions` | 원 프로그램 · 모델 종류 · 역할 · 품질등급 · 설계결과 · 길이 단위 |
+| `distributions` | 계열 · 원 프로그램 · 역할 · 품질등급 · 설계결과 · 길이 단위 |
+| `topTags` / `recentTrend` | 상위 12개 태그 / 최근 30일 등록 추이 |
+| `dataHygiene` | 학습 입력 후보 커버리지(피처) + **분할 누수 검증**(같은 모델의 revision 이 학습/검증에 겹치는지) — 이번에 처음 화면에 노출됐다 |
+
+#### 계열 스코프 — 계열별 특성 (선택한 계열 하나만)
+
+| 블록 | 내용 |
+|---|---|
 | `metrics` | nodeCount / elementCount / maxUtilization / totalMassKg / **modelSpan**(지배 단위만) |
 | `qualityIssues` | 결함별 "영향받은 모델 수 / 측정된 모델 수" |
 | `qualityByOutcome` | 품질 × 설계 결과 교차표 — **관측 빈도이지 인과가 아니다** |
-| `topTags` / `recentTrend` | 상위 12개 태그 / 최근 30일 등록 추이 |
-| `datasetReadiness` | **머신러닝 준비도** — 과제별 확보/최소 표본·부족분, 피처 커버리지, 라벨 가용성, 구조적 제약 |
+| `datasetReadiness` | **머신러닝 준비도** — 과제별 확보/최소 표본·부족분, 라벨 가용성, 학습 가능 코호트, 구조적 제약(`caveats`) |
 
 > 「데이터셋 준비도」는 **기대를 부풀리지 않기 위한 블록**이다. 표본 수를 채워도
-> 클래스가 치우쳤으면 `ready=false` 로 두고 그 이유를 적는다.
+> 클래스가 치우쳤으면 `ready=false` 로 두고 그 이유를 적는다. 피처 커버리지·분할 누수
+> 검증은 계열과 무관한 데이터 위생이라 위 `dataHygiene`(전체 스코프)로 옮겨졌다.
 > 배경과 로드맵은 `docs/operations/model-registry-ml-roadmap.md` 참조.
 
 ### 5.8 export
@@ -416,6 +450,10 @@ Q1 이던 모델을 승인해 Q4 로 올렸다가 되돌리면 **Q1 이 아니�
 
 - **새 artifact_kind 추가** → ① `SourceArtifactKind` ② `ARTIFACT_RULES` resolver ③ `ARTIFACT_KIND_LABELS`
   ④ UI 진입점 ⑤ 테스트. resolver 는 반드시 `userConnection` 내부 경로만 돌려줘야 한다.
+- **새 계열 추가** → ① `ModelFamily` enum ② `MODEL_FAMILY_LABELS` ③ `model_family.PROGRAM_FAMILIES`
+  또는 `MODULE_UNIT_KINDS` 파생 규칙 ④ 프론트 `MODEL_FAMILIES` ⑤ `tests/test_model_family.py`.
+  ⚠ 파생 규칙에서 **프로그램 이름 판정이 artifact_kind 판정보다 먼저**여야 한다(SidePassage 가
+  kind 를 GroupModuleUnit 과 공유한다).
 - **summary 스키마 변경** → `SUMMARY_SCHEMA_VERSION` bump (기존 revision 은 옛 버전으로 남는다).
 - **품질 어휘 추가** → `transform_to_step1` 정의와 어긋나지 않게. `freeEnd` 를 결함으로 세지 말 것.
 - **새 통계 추가** → `sampleSize`/`missing` 동반, 단위 혼합 금지, 품질·설계 축 혼합 금지.
@@ -430,7 +468,7 @@ cd HiTessWorkBenchBackEnd
 WorkBenchEnv\Scripts\python.exe -m pytest `
   tests/test_model_registry_source_resolver.py tests/test_model_summary_service.py `
   tests/test_model_registry_storage.py tests/test_model_registry_api.py `
-  tests/test_model_insight_service.py -v
+  tests/test_model_insight_service.py tests/test_model_family.py -v
 
 # 프론트
 cd HiTessWorkBench/frontend
