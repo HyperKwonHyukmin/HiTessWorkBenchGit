@@ -166,8 +166,6 @@ export default function AppCataloguePage({
         contributor: item.contributor,
       },
       accentColor: colorToAccent(item.color),
-      visualTone: 'restrained',
-      cardDetailTone: 'refined',
       isRestricted,
       isFavorite: favorites.includes(item.title),
       onFavorite: () => toggleFavorite(item.title),
