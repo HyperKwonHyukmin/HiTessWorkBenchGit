@@ -759,9 +759,9 @@ def test_api_insights_empty_registry_returns_null_stats(switchable_client, regis
 
     assert res.status_code == 200
     body = res.json()
-    assert body["totals"]["revisions"] == 0
-    assert body["metrics"]["nodeCount"]["sampleSize"] == 0
-    assert body["metrics"]["nodeCount"]["mean"] is None, "표본이 없으면 0 이 아니라 null"
+    assert body["overall"]["totals"]["revisions"] == 0
+    # 표본이 없으면 계열 자체가 없다 — metrics 를 0 표본으로 억지로 만들지 않는다.
+    assert body["family"] is None
 
 
 def test_api_insights_reflects_registered_models(
@@ -772,12 +772,12 @@ def test_api_insights_reflects_registered_models(
 
     body = switchable_client.get("/api/model-registry/insights/overview").json()
 
-    assert body["totals"]["revisions"] == 1
-    assert body["totals"]["models"] == 1
-    programs = {d["key"]: d["count"] for d in body["distributions"]["sourceProgram"]}
+    assert body["overall"]["totals"]["revisions"] == 1
+    assert body["overall"]["totals"]["models"] == 1
+    programs = {d["key"]: d["count"] for d in body["overall"]["distributions"]["sourceProgram"]}
     assert programs["HiTessModelBuilder"] == 1
-    assert body["metrics"]["nodeCount"]["sampleSize"] == 1
-    assert {t["tag"] for t in body["topTags"]} == {"lifting"}
+    assert body["family"]["metrics"]["nodeCount"]["sampleSize"] == 1
+    assert {t["tag"] for t in body["overall"]["topTags"]} == {"lifting"}
 
 
 def test_api_insights_respects_visibility(switchable_client, db_session, registry_env):
@@ -787,12 +787,12 @@ def test_api_insights_respects_visibility(switchable_client, db_session, registr
 
     assert switchable_client.get(
         "/api/model-registry/insights/overview",
-    ).json()["totals"]["revisions"] == 1
+    ).json()["overall"]["totals"]["revisions"] == 1
 
     switchable_client.as_user()
     assert switchable_client.get(
         "/api/model-registry/insights/overview",
-    ).json()["totals"]["revisions"] == 0
+    ).json()["overall"]["totals"]["revisions"] == 0
 
 
 def test_api_insights_separates_quality_from_design_outcome(
@@ -806,7 +806,7 @@ def test_api_insights_separates_quality_from_design_outcome(
 
     totals = switchable_client.get(
         "/api/model-registry/insights/overview",
-    ).json()["totals"]
+    ).json()["overall"]["totals"]
 
     # 승인(Q4)은 품질 축, designPass 는 설계 축 — 별도 키로 나온다.
     assert totals["goldenApproved"] == 1
@@ -1142,11 +1142,15 @@ def test_api_insights_expose_cohort_and_split_diagnostics(
     _register(switchable_client, a.id)
 
     body = switchable_client.get("/api/model-registry/insights/overview").json()
-    readiness = body["datasetReadiness"]
+    # 학습 표본 코호트는 계열 스코프에 속한다(혼합 모집단이면 의미가 왜곡된다).
+    readiness = body["family"]["datasetReadiness"]
     assert "trainableCohort" in readiness
-    assert "extractorVersion" in readiness
+
+    # 피처 커버리지·데이터 스플릿은 데이터 위생 — 전체 스코프에 속한다.
+    hygiene = body["overall"]["dataHygiene"]
+    assert "extractorVersion" in hygiene
     # 피처 커버리지는 '해당 없음'을 결측과 분리해 보고한다.
-    assert all("notApplicable" in f for f in readiness["features"])
+    assert all("notApplicable" in f for f in hygiene["features"])
 
 
 # --------------------------------------------------------------------------- #
@@ -1238,3 +1242,38 @@ def test_api_legacy_value_outside_vocabulary_is_still_readable(
     detail = switchable_client.get(f"/api/model-registry/models/{uid}")
     assert detail.status_code == 200
     assert detail.json()["model_type"] == "beam-frame"   # 지우지 않는다
+
+
+# --------------------------------------------------------------------------- #
+# Insight — 전체/계열 스코프 분리
+# --------------------------------------------------------------------------- #
+
+def test_api_insights_are_split_into_overall_and_family_scopes(
+    switchable_client, db_session, registry_env,
+):
+    a = _seed_source(db_session, registry_env)
+    _register(switchable_client, a.id)
+
+    body = switchable_client.get("/api/model-registry/insights/overview").json()
+
+    assert body["scope"]["family"] == "module-unit"
+    assert body["families"] == [
+        {"key": "module-unit", "label": "Module / Group Unit 구조", "count": 1},
+    ]
+    assert body["overall"]["totals"]["revisions"] == 1
+    assert body["family"]["metrics"]["nodeCount"]["sampleSize"] >= 0
+
+
+def test_api_insights_accept_family_query(
+    switchable_client, db_session, registry_env,
+):
+    a = _seed_source(db_session, registry_env)
+    _register(switchable_client, a.id)
+
+    body = switchable_client.get(
+        "/api/model-registry/insights/overview", params={"family": "truss"},
+    ).json()
+
+    assert body["scope"]["family"] == "truss"
+    assert body["scope"]["sampleSize"] == {"overall": 1, "family": 0}
+    assert body["overall"]["totals"]["revisions"] == 1     # 상단은 전체 유지

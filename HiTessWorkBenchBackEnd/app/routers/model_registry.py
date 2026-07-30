@@ -52,8 +52,8 @@ from ..services.model_geometry_service import (
     load_preview_geometry,
 )
 from ..services.model_insight_service import (
-    aggregate_registry_insights,
     build_export_rows,
+    build_scoped_overview,
 )
 from ..services.model_search_service import (
     CANDIDATE_SCALE_BAND as SIMILAR_SCALE_BAND,
@@ -491,15 +491,20 @@ def _visible_revision_rows(db: Session, current_user: str, *, status: str | None
 @router.get("/insights/overview")
 def get_insights_overview(
     status: str = "active",
+    family: str | None = None,
     db: Session = Depends(database.get_db),
     current_user: str = Depends(require_auth),
 ):
     """등록 모델 통계. 현재 사용자가 볼 수 있는 모델만 집계한다.
 
+    응답은 **두 스코프**로 나뉜다 — `overall`(항상 전체)과 `family`(선택 계열).
+    개수·분포·데이터 위생은 전체에서만, 연속값 통계·교차표·학습 표본은 계열 안에서만
+    의미가 있기 때문이다. family 를 생략하면 서버가 건수 최다 계열을 고른다.
+
     표본 수·결측 수를 항상 함께 내며, 표본이 없는 통계는 0 이 아니라 null 이다.
     """
     rows = _visible_revision_rows(db, current_user, status=status)
-    return aggregate_registry_insights(rows)
+    return build_scoped_overview(rows, family=family)
 
 
 @router.get("/export.json")
