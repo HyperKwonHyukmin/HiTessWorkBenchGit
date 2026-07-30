@@ -32,7 +32,7 @@ def test_version_contract_is_exact_and_database_free(monkeypatch):
     response = TestClient(_system_app()).get("/api/version")
 
     assert response.status_code == 200
-    assert response.json() == {"version": "1.3.40"}
+    assert response.json() == {"version": "1.3.41"}
 
 
 def test_liveness_is_exact_and_database_free():
@@ -42,7 +42,7 @@ def test_liveness_is_exact_and_database_free():
     assert response.json() == {
         "status": "ok",
         "service": "HiTessWorkBench",
-        "version": "1.3.40",
+        "version": "1.3.41",
     }
 
 
