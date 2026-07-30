@@ -36,6 +36,7 @@ from ..model_registry_schemas import (
 )
 from ._access_control import is_admin_user
 from ..services.activity_service import log_activity
+from ..services.model_family import derive_model_family
 from ..services.model_registry_service import (
     RegistrationError,
     SourceResolutionError,
@@ -198,6 +199,9 @@ def preview_registration(
         available_artifacts=available_artifacts(resolved),
         duplicate=duplicate,
         warnings=warnings,
+        suggested_model_type=derive_model_family(
+            resolved.program_name, resolved.artifact_kind,
+        ),
     )
 
 

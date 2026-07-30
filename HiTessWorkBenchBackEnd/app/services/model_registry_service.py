@@ -33,6 +33,7 @@ from ..routers._access_control import is_admin_user
 from ..routers._intake import USER_CONNECTION_DIR
 from .hitess_modelflow_service import detect_edited_artifacts
 from .lifting_artifacts import scan_lifting_artifacts
+from .model_family import derive_model_family
 from .model_registry_storage import (
     PendingArtifact,
     RegistryStorageError,
@@ -465,12 +466,23 @@ def register_model(
         if model.status != "active":
             model.status = "active"
 
+    # 계열: 요청 → (기존 모델 유지) → 출처에서 파생.
+    # 신규 등록본에 미지정이 남지 않게 하는 것이 목적이다.
+    if request.model_type is not None:
+        family_value = request.model_type.value
+    elif model is not None and model.model_type:
+        family_value = model.model_type
+    else:
+        family_value = derive_model_family(
+            resolved.program_name, resolved.artifact_kind,
+        ).value
+
     if model is None:
         model = models.RegisteredModel(
             model_uid=str(uuid.uuid4()),
             title=request.title,
             description=request.description,
-            model_type=request.model_type,
+            model_type=family_value,
             model_role=request.model_role.value if request.model_role else None,
             confidence=request.confidence.value if request.confidence else None,
             reuse_notes=request.reuse_notes,
@@ -491,7 +503,7 @@ def register_model(
             "modelUid": model.model_uid,
             "revision": revision_no,
             "title": request.title,
-            "modelType": request.model_type,
+            "modelType": family_value,
             "modelRole": request.model_role.value if request.model_role else None,
             "description": request.description,
             "tags": request.tags,

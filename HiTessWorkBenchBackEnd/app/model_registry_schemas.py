@@ -173,7 +173,7 @@ class RegisterRequest(BaseModel):
 
     title: str = Field(min_length=1, max_length=200)
     description: Optional[str] = None
-    model_type: Optional[str] = Field(default=None, max_length=100)
+    model_type: Optional[ModelFamily] = None      # 미지정이면 서버가 출처에서 파생한다
     model_role: Optional[ModelRole] = None
     confidence: Optional[Confidence] = None
     reuse_notes: Optional[str] = None
@@ -204,7 +204,7 @@ class ModelPatchRequest(BaseModel):
 
     title: Optional[str] = Field(default=None, max_length=200)
     description: Optional[str] = None
-    model_type: Optional[str] = Field(default=None, max_length=100)
+    model_type: Optional[ModelFamily] = None
     model_role: Optional[ModelRole] = None
     confidence: Optional[Confidence] = None
     reuse_notes: Optional[str] = None
@@ -258,6 +258,8 @@ class PreviewResponse(BaseModel):
     available_artifacts: list[AvailableArtifact]
     duplicate: Optional[DuplicateInfo] = None
     warnings: list[str] = Field(default_factory=list)
+    # 등록 모달의 「모델 종류」 기본값. 제목 초안과 같은 성격의 '서버가 제안하는 값'이다.
+    suggested_model_type: Optional[ModelFamily] = None
 
 
 class RegisterResponse(BaseModel):

@@ -1147,3 +1147,94 @@ def test_api_insights_expose_cohort_and_split_diagnostics(
     assert "extractorVersion" in readiness
     # 피처 커버리지는 '해당 없음'을 결측과 분리해 보고한다.
     assert all("notApplicable" in f for f in readiness["features"])
+
+
+# --------------------------------------------------------------------------- #
+# 모델 계열(family)
+# --------------------------------------------------------------------------- #
+
+def test_api_preview_suggests_family_from_source(
+    switchable_client, db_session, registry_env,
+):
+    """자유 입력이던 「모델 종류」의 기본값을 서버가 정해 준다."""
+    a = _seed_source(db_session, registry_env)
+
+    res = switchable_client.post(
+        "/api/model-registry/preview",
+        json={"source_analysis_id": a.id, "artifact_kind": "modelbuilder_final"},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["suggested_model_type"] == "module-unit"
+
+
+def test_api_registration_fills_family_when_omitted(
+    switchable_client, db_session, registry_env,
+):
+    """미지정으로 등록해도 파생값이 저장된다 — 신규 등록본에 미분류가 남지 않는다."""
+    a = _seed_source(db_session, registry_env)
+
+    uid = _register(switchable_client, a.id).json()["model_uid"]
+
+    detail = switchable_client.get(f"/api/model-registry/models/{uid}").json()
+    assert detail["model_type"] == "module-unit"
+
+
+def test_api_registration_rejects_value_outside_vocabulary(
+    switchable_client, db_session, registry_env,
+):
+    """쓰기는 엄격하다 — model_role 과 같은 pydantic enum 검증 경로를 탄다."""
+    a = _seed_source(db_session, registry_env)
+
+    res = _register(switchable_client, a.id, model_type="beam-frame")
+
+    assert res.status_code == 422, res.text
+
+
+def test_api_patch_rejects_value_outside_vocabulary(
+    switchable_client, db_session, registry_env,
+):
+    a = _seed_source(db_session, registry_env)
+    uid = _register(switchable_client, a.id).json()["model_uid"]
+
+    res = switchable_client.patch(
+        f"/api/model-registry/models/{uid}", json={"model_type": "beam-frame"},
+    )
+
+    assert res.status_code == 422, res.text
+
+
+def test_api_patch_accepts_vocabulary_value(
+    switchable_client, db_session, registry_env,
+):
+    a = _seed_source(db_session, registry_env)
+    uid = _register(switchable_client, a.id).json()["model_uid"]
+
+    res = switchable_client.patch(
+        f"/api/model-registry/models/{uid}", json={"model_type": "truss"},
+    )
+
+    assert res.status_code == 200, res.text
+    # ★ enum 이 아니라 문자열 값이 저장되어야 한다 ('ModelFamily.TRUSS' 가 아니다)
+    assert res.json()["model_type"] == "truss"
+
+
+def test_api_legacy_value_outside_vocabulary_is_still_readable(
+    switchable_client, db_session, registry_env,
+):
+    """읽기는 관용적이다 — 어휘 밖 레거시 값이 있어도 목록·상세가 200 이어야 한다."""
+    a = _seed_source(db_session, registry_env)
+    uid = _register(switchable_client, a.id).json()["model_uid"]
+
+    row = (
+        db_session.query(models.RegisteredModel)
+        .filter(models.RegisteredModel.model_uid == uid)
+        .first()
+    )
+    row.model_type = "beam-frame"          # 옛 자유 입력 값을 직접 심는다
+    db_session.commit()
+
+    assert switchable_client.get("/api/model-registry/models").status_code == 200
+    detail = switchable_client.get(f"/api/model-registry/models/{uid}")
+    assert detail.status_code == 200
+    assert detail.json()["model_type"] == "beam-frame"   # 지우지 않는다
