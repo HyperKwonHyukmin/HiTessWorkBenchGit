@@ -28,8 +28,9 @@ Model Library 는 성질이 완전히 다른 모델(Module Unit, Side Passage, �
 
 ## 2. 범위
 
-**포함** — 계열 어휘 확정, 등록 시 자동 파생·통제 어휘 입력, 목록 필터/배지, **Insight 계열별 층화**
-(지표·품질이슈·교차표·데이터셋 준비도).
+**포함** — 계열 어휘 확정, 등록 시 자동 파생·통제 어휘 입력, 목록 필터/배지, **Insight 를 두 스코프
+영역으로 재구성**(상단 = 라이브러리 전체, 하단 = 선택 계열) — 지표·품질이슈·교차표·데이터셋 준비도가
+계열 스코프로 내려간다. `ModelInsightDashboard` 를 두 섹션 컴포넌트로 분할하는 작업을 포함한다.
 
 **제외** — 유사 모델 검색의 계열 게이트, 계열별 저장소/테이블/메뉴 분리, `RegisteredAnalysisRun`
 도입(별건, 아키텍처 검토 §1.5).
@@ -62,10 +63,44 @@ Model Library 는 성질이 완전히 다른 모델(Module Unit, Side Passage, �
   enum 으로 바꾸면 어휘 밖 레거시 값이 직렬화 단계에서 터진다. 모르는 값은 화면에서 '미분류'로
   표시하되 **원값을 지우지 않는다.**
 
-### 3.4 '전체' 스코프에서는 계열 민감 지표를 계산하지 않는다
+### 3.4 지표마다 소속 스코프가 정해져 있다 — '전체 보기 / 계열별 보기'는 토글이 아니다
 
-계열이 2종 이상인데 계열 선택 없이 지표를 보여 주면, 그 숫자는 틀린 것이 아니라 **의미가 없다.**
-단위가 섞이면 `modelSpan` 을 집계하지 않고 제외 건수를 밝히는 기존 태도와 같은 규칙을 적용한다.
+Insight 를 "전체로도 볼 수 있고 계열별로도 볼 수 있는 하나의 대시보드"로 만들면 안 된다.
+각 블록이 답하는 질문이 다르기 때문에, **블록마다 올바른 스코프가 하나로 정해진다.**
+기준은 그 숫자가 **"라이브러리가 어떤 상태인가"(운영·큐레이션)** 를 묻는지,
+**"이 종류의 모델이 어떤 특성인가"(공학)** 를 묻는지다.
+
+| 블록 | 스코프 | 근거 |
+|---|---|---|
+| `totals` | **전체** | 개수는 계열을 섞어도 왜곡되지 않는다. 계열별로만 보면 "전체 승인 진척"을 볼 수 없다 |
+| `distributions` | **전체** | 분포 자체가 라이브러리 구성이다. 특히 계열 분포는 전체에서만 의미가 있다 |
+| `topTags` / `recentTrend` | **전체** | 개수·추이 |
+| `datasetReadiness.features` | **전체** | 스키마·결측 = 데이터 위생 지표. 계열과 무관 |
+| `datasetReadiness.split` | **전체** | `model_uid` 그룹핑 누수 검증. 계열과 무관 |
+| `metrics` | **계열별** | 혼합 모집단의 평균·중앙값은 무의미. `describe()` 의 `min`/`max` 는 전체에서도 참이지만, 한 카드에서 일부만 살리면 더 헷갈리므로 **카드 단위로** 계열 스코프에 둔다 |
+| `qualityIssues` | **계열별** | 계열별 base rate 가 다르면 **Simpson's paradox** — 전체 share 는 "어느 계열을 손봐야 하나"에 답하지 못한다 |
+| `qualityByOutcome` | **계열별** | 혼합 모집단 교차표에서 역전이 일어난다 |
+| `datasetReadiness.tasks` / `labels` / `trainableCohort` | **계열별** | pooled 200건은 계열 3종이면 계열별 ~67건. §1-2 가 지적한 그 결함 |
+
+**따라서 화면은 한 화면 두 스코프 영역이다.**
+
+```text
+┌ Insight ─────────────────────────────┐
+│ ■ 라이브러리 현황   (항상 전체)        │
+│   총계 · 분포(계열 포함) · 태그 · 추이  │
+│   피처 커버리지 · 분할 누수 검증        │
+├──────────────────────────────────────┤
+│ ■ 계열별 특성   [module-unit ▾] 28건  │
+│   지표 · 품질이슈 · 품질×설계 교차표    │
+│   데이터셋 준비도(표본·라벨·코호트)     │
+└──────────────────────────────────────┘
+```
+
+- 하단 계열 선택기의 **기본값은 건수 최다 계열** — 첫 화면에 빈 카드가 없다.
+- 상·하단은 **카드 종류가 겹치지 않는다** → 계열이 1종이어도 중복 표시가 없다(선택기만 숨기고 배지로 표시).
+- 이 구조는 복잡도를 **추가하지 않고 교체한다.** '전체 스코프에서 계열 민감 블록을 `null` 로 마스킹하고
+  안내 문구를 띄우는' 처리가 **전부 불필요**해진다 — 상단은 계열 민감 블록을 애초에 계산하지 않고,
+  하단은 항상 계열 하나가 선택돼 있다.
 
 ## 4. 계열 어휘와 파생 규칙
 
@@ -129,41 +164,75 @@ Model Library 는 성질이 완전히 다른 모델(Module Unit, Side Passage, �
 
 **API**: `GET /api/model-registry/insights/overview?status=&family=`
 
-응답에 추가되는 것:
-
 ```jsonc
 {
-  "families": [ { "key": "module-unit", "label": "…", "count": 12 } ],  // 실제 존재하는 계열만
-  "scope":    { "family": "module-unit" | null, "familyCount": 3, "mixed": false },
-  "mixedNote": "계열이 3종 섞여 있어 …",                                  // mixed 일 때만
-  // 이하 기존 형태 그대로
+  "scope": {
+    "family": "module-unit",              // 서버가 실제로 고른 계열을 항상 에코
+    "familyCount": 3,
+    "sampleSize": { "overall": 42, "family": 28 }
+  },
+  "families": [ { "key": "module-unit", "label": "…", "count": 28 } ],
+  "overall": {                            // 항상 전체 모집단
+    "totals": {…}, "distributions": {…}, "topTags": […], "recentTrend": […],
+    "dataHygiene": { "extractorVersion": "1.0", "features": […], "split": {…} }
+  },
+  "family": {                             // 선택된 계열만. 계열이 0개면 null
+    "metrics": {…}, "qualityIssues": […], "qualityByOutcome": {…},
+    "datasetReadiness": { "sampleSize": 28, "distinctModels": 26,
+                          "trainableCohort": {…}, "labels": {…}, "tasks": […],
+                          "caveats": […], "note": "…" }
+  }
 }
 ```
 
-- `families` 는 **실제 존재하는 계열만** 낸다. 0건을 0으로 채우지 않는 기존 원칙(§7-6)을 따른다.
+규칙:
+
+- `?family=` 를 생략하면 **서버가 건수 최다 계열을 고른다.** 무엇을 골랐는지는 `scope.family` 로
+  항상 되돌려 준다 → 첫 렌더가 요청 1번으로 끝나고, 빈 카드가 없다.
+- `families` 는 **실제 존재하는 계열만** 낸다(0건을 0으로 채우지 않는 §7-6 원칙).
   값이 비었거나 어휘 밖인 revision 은 `other` 에 섞지 않고 **`unassigned`(라벨 `미분류`) 버킷**으로
-  분리하며, `?family=unassigned` 조회도 지원한다 — 명시적 '기타'와 미지정을 합치면 §3.3 의
-  '읽기 관용' 이 통계에서 무너진다.
-- `family` 지정 → 그 계열 revision 만으로 집계. **응답 형태가 지금과 동일**하므로
-  `ModelInsightDashboard` 본체를 손대지 않는다.
-- `family` 미지정 + 계열 2종 이상(`mixed=true`) → `totals` · `distributions` · `topTags` ·
-  `recentTrend` 만 채우고 **`metrics` · `qualityIssues` · `qualityByOutcome` · `datasetReadiness`
-  는 `null`**.
-- 계열이 1종이면 `mixed=false` → **지금과 완전히 동일하게** 전부 계산한다.
+  분리하며 `?family=unassigned` 조회도 지원한다 — 명시적 '기타'와 미지정을 합치면 §3.3 의
+  '읽기 관용'이 통계에서 무너진다.
+- **존재하지 않는 계열 키를 보내면 빈 계열 스코프**(`sampleSize=0`, 지표 전부 `null`)로 응답한다.
+  새 오류 코드를 만들지 않는다 — 표본 0을 정직하게 0으로 내는 기존 태도(`describe()`)와 같다.
 
-**서비스**: `aggregate_registry_insights(revisions, *, include_family_sensitive: bool = True)`
+**★ 서비스 계층은 손대지 않는다.**
 
-기본값이 `True` 라 **기존 호출부와 테스트가 전부 그대로 산다.** `False` 면 해당 4블록의 계산을
-건너뛰고 `None` 을 낸다(계산해 놓고 버리지 않는다).
+`aggregate_registry_insights(revisions)` 를 **그대로 두고**, 신규 순수 함수가 그것을 두 번 호출해
+블록을 스코프별로 투영한다.
+
+```python
+OVERALL_BLOCKS = ("totals", "distributions", "topTags", "recentTrend")
+FAMILY_BLOCKS  = ("metrics", "qualityIssues", "qualityByOutcome")
+
+def build_scoped_overview(all_rows, *, family_rows, family_key, families) -> dict
+```
+
+- `datasetReadiness` 는 함수를 쪼개지 않고 **투영으로 나눈다** — 전체 스코프는 거기서 `features` /
+  `split` 만 꺼내 `dataHygiene` 로 재구성하고, 계열 스코프는 나머지(`tasks` / `labels` /
+  `trainableCohort` / `caveats`)를 담는다.
+- 그 결과 `aggregate_registry_insights` · `build_dataset_readiness` · `describe` 의 계약이
+  **하나도 바뀌지 않는다** → 기존 `test_model_insight_service.py` 25건이 전부 그대로 통과한다.
+- 대가: `aggregate` 를 두 번 돌리며 투영에서 버릴 블록도 계산한다. 전부 순수 파이썬 카운팅이고
+  현재 규모(수십~수백 건)에서는 무의미하다. **규모가 커지면 여기가 손댈 자리다**(§7-11 과 같은 성격).
 
 **방어**: `build_dataset_readiness(revisions)` 는 입력에 계열이 2종 이상 섞여 있으면 `caveats` 에
 경고를 직접 추가한다 — 라우터를 거치지 않는 직접 호출(export·테스트·향후 배치)에서도 침묵하지 않게.
 
 **필터 지점**: `_visible_revision_rows()` 가 이미 dict 에 `model_type` 을 넣는다
-(`model_registry.py:464`) → 계열 필터는 행 리스트에 대한 한 줄 필터다. 새 쿼리가 필요 없다.
+(`model_registry.py:464`) → 계열 분할은 행 리스트에 대한 한 줄 필터다. 새 쿼리가 필요 없다.
 
-**프론트**: Insight 탭 상단에 계열 선택기(전체 / 계열별 건수 병기). `metrics` 등이 `null` 이면 해당
-카드 자리에 "계열을 선택하세요" 안내 + `mixedNote` 를 노출한다.
+**프론트**: `ModelInsightDashboard` 를 두 섹션으로 나눈다(대부분 기존 JSX 이동).
+
+| 컴포넌트 | 소비 | 내용 |
+|---|---|---|
+| `LibraryOverviewSection` | `data.overall` | 총계 · 분포(계열 포함) · 태그 · 추이 · `dataHygiene`(피처 커버리지 · 분할 누수 검증) |
+| `FamilyInsightSection` | `data.family` + `families` | 계열 선택기(건수 병기) · 지표 · 품질이슈 · 교차표 · 데이터셋 준비도 |
+
+- 계열 선택 변경 시 `?family=` 로 재요청한다(Insight 탭은 이미 지연 로드 구조다).
+- 계열이 1종이면 선택기를 감추고 계열 배지만 표시한다 — 상·하단은 카드 종류가 겹치지 않으므로
+  중복 표시가 되지 않는다.
+- 기존 `DatasetReadinessSection` 에서 피처 커버리지·분할 카드를 상단 `DataHygieneSection` 으로 옮긴다.
 
 ### 5.4 피처 모듈
 
@@ -184,14 +253,24 @@ Model Library 는 성질이 완전히 다른 모델(Module Unit, Side Passage, �
 - 어휘 밖 값 POST/PATCH → 422
 - 어휘 밖 레거시 값이 저장돼 있어도 목록·상세 조회가 200 (읽기 관용)
 - `?model_type=` 필터
-- `?family=` 지정 시 그 계열만 집계 / 미지정 + 2종 이상 → 4블록 `null` + `mixedNote` /
-  1종 → 기존과 동일하게 전부 계산
+- `?family=` 생략 → `scope.family` 가 **건수 최다 계열**로 에코된다
+- `?family=` 지정 → `family` 블록이 그 계열만 집계하고, `overall.totals` 는 **전체 건수를 유지한다**
+  (스코프가 섞이지 않는다는 것을 한 응답 안에서 검증)
+- 존재하지 않는 계열 키 → 200 + `family.metrics.nodeCount.sampleSize == 0`
 - 어휘 밖 레거시 값 + `other` 를 명시한 모델이 함께 있을 때 `families` 가 `unassigned` 와 `other` 를
   **분리해서** 낸다 + `?family=unassigned` 가 레거시 쪽만 집계한다
 
 **Insight 서비스 (`tests/test_model_insight_service.py` 보강)**
-- `include_family_sensitive=False` → 4블록 `None`, 나머지 유지
-- 계열 혼재 입력 → `datasetReadiness.caveats` 에 경고 추가
+- 기존 25건은 **수정하지 않는다** — `aggregate_registry_insights` / `build_dataset_readiness` /
+  `describe` 의 계약을 건드리지 않는 것이 §5.3 설계의 목적이다. 기존 테스트가 깨지면 설계를 잘못
+  구현한 것이다.
+- 신규 `build_scoped_overview()`:
+  - `OVERALL_BLOCKS` 는 `overall` 에만, `FAMILY_BLOCKS` 는 `family` 에만 나타난다(양쪽 중복 금지)
+  - `datasetReadiness` 투영 — `features`/`split` 은 `overall.dataHygiene` 에, `tasks`/`labels`/
+    `trainableCohort` 는 `family.datasetReadiness` 에
+  - 등록 0건 → `family` 가 `null`, `overall` 은 빈 통계로 존재
+  - 계열 1종 → `familyCount == 1`, `families` 길이 1
+- 계열 혼재 입력을 `build_dataset_readiness` 에 직접 넣으면 `caveats` 에 경고가 추가된다
 
 **프론트 (`modelRegistryUtils.test.js`)**
 - `familyLabel()` — 어휘 값 / 빈 값 / 어휘 밖 값
@@ -216,3 +295,6 @@ Model Library 는 성질이 완전히 다른 모델(Module Unit, Side Passage, �
    사람 눈에 걸리게 하는 것이 유일한 방어다.
 4. 계열별로 나누면 각 표본 수가 줄어 데이터셋 준비도의 `shortfall` 이 커진다. 이는 악화가 아니라
    **지금까지 가려져 있던 사실이 드러나는 것**이다.
+5. **한 화면에 두 스코프가 있으므로 상단 숫자를 계열 숫자로 오독할 수 있다.** 각 영역 헤더에 스코프와
+   표본 수를 항상 병기해 방어한다(`라이브러리 현황 · 전체 42건` / `계열별 특성 · module-unit 28건`).
+   `scope.sampleSize` 를 두 값으로 내는 이유가 이것이다.
