@@ -106,7 +106,7 @@ root 결정 순서 (`model_registry_storage.resolve_registry_root`) — **존재
 | 파일 | 역할 |
 |------|------|
 | `app/routers/model_registry.py` | 8개 엔드포인트, 권한 분기, 도메인 오류 → HTTP 변환 |
-| `app/model_registry_schemas.py` | enum·요청/응답 스키마, 태그 정규화, `SUMMARY_SCHEMA_VERSION = "1.0"` |
+| `app/model_registry_schemas.py` | enum·요청/응답 스키마, 태그 정규화, `SUMMARY_SCHEMA_VERSION = "1.1"` |
 | `app/services/model_registry_service.py` | `ARTIFACT_RULES` 경로 해석 + 등록 오케스트레이션 + 읽기 ACL |
 | `app/services/model_family.py` | 모델 계열 파생 규칙(`derive_model_family`) + 읽기 관용 정규화(`family_key`/`family_label`) — 순수 함수 |
 | `app/services/model_summary_service.py` | summary.json 생성 — 품질 등급 산정, 설계 결과 추출 |
