@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from .. import database, models
 from ..dependencies import require_auth
+from .presence import presence_status
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -77,6 +78,56 @@ def send_message(
     db.commit()
     db.refresh(msg)
     return {"ok": True, "id": msg.id}
+
+
+# 목록 정렬 우선순위 — 지금 응답 가능한 사람이 위로 온다.
+_STATUS_ORDER = {"online": 0, "idle": 1, "offline": 2}
+
+
+@router.get("/contacts")
+def get_contacts(
+    db: Session = Depends(database.get_db),
+    me: str = Depends(require_auth),
+):
+    """대화를 걸 수 있는 상대(활성 관리자) 목록 + 접속 상태.
+
+    send 의 '양측 중 1명은 관리자' 규칙과 짝을 이루는 목록이라 같은 파일에 둔다.
+    응답 필드는 화이트리스트로 최소화한다 — last_ip / last_page / app_version 은 물론
+    last_seen(마지막 접속 시각)도 넣지 않는다. 전 직원이 관리자의 근태를 조회하는
+    창구가 되면 안 되므로 상태는 3단계 라벨로만 노출한다.
+    """
+    now = datetime.now()
+    rows = (
+        db.query(models.User, models.UserPresence)
+        .outerjoin(
+            models.UserPresence,
+            models.User.employee_id == models.UserPresence.employee_id,
+        )
+        .filter(
+            models.User.is_admin.is_(True),
+            models.User.is_active.is_(True),
+            models.User.employee_id != me,
+        )
+        .all()
+    )
+
+    items = [
+        {
+            "employee_id": user.employee_id,
+            "name": user.name,
+            "department": user.department,
+            "status": presence_status(presence, now),
+            "is_admin": True,
+        }
+        for user, presence in rows
+    ]
+    items.sort(
+        key=lambda x: (
+            _STATUS_ORDER.get(x["status"], 3),
+            x["name"] or x["employee_id"],
+        )
+    )
+    return {"items": items}
 
 
 def _serialize(m: models.ChatMessage, me: str) -> dict:

@@ -165,3 +165,52 @@ def test_new_message_after_delete_reappears_for_deleter(admin_client, make_user)
     assert threads["threads"][0]["last_message"] == "new-3"
     msgs = admin_client.get("/api/chat/conversation/ADMIN001").json()["messages"]
     assert [m["body"] for m in msgs] == ["new-3"]
+
+
+def test_contacts_lists_active_admins_excluding_self(admin_client, make_user):
+    """사용자는 활성 관리자 전원을 대화 상대로 받는다(일반 사용자·본인은 제외)."""
+    make_user("ADMIN002", name="김철수", is_admin=True)
+    make_user("USER001", name="홍길동")
+
+    _act_as("USER001")
+    r = admin_client.get("/api/chat/contacts")
+    assert r.status_code == 200
+    ids = [i["employee_id"] for i in r.json()["items"]]
+    assert set(ids) == {"ADMIN001", "ADMIN002"}
+    assert "USER001" not in ids
+
+
+def test_contacts_excludes_caller_when_caller_is_admin(admin_client, make_user):
+    """관리자가 호출하면 자신은 목록에서 빠지고 다른 관리자만 남는다."""
+    make_user("ADMIN002", name="김철수", is_admin=True)
+
+    items = admin_client.get("/api/chat/contacts").json()["items"]
+    assert [i["employee_id"] for i in items] == ["ADMIN002"]
+
+
+def test_contacts_excludes_inactive_admin(admin_client, make_user):
+    """승인되지 않은(is_active=False) 관리자는 노출하지 않는다."""
+    make_user("ADMIN003", name="이영희", is_admin=True, is_active=False)
+    make_user("USER001")
+
+    _act_as("USER001")
+    items = admin_client.get("/api/chat/contacts").json()["items"]
+    assert [i["employee_id"] for i in items] == ["ADMIN001"]
+
+
+def test_contacts_returns_empty_list_when_no_other_admin(admin_client):
+    """대화 가능한 관리자가 없으면 빈 배열을 반환한다(프론트가 안내 문구를 띄운다)."""
+    assert admin_client.get("/api/chat/contacts").json()["items"] == []
+
+
+def test_contacts_includes_name_and_department(admin_client, make_user):
+    """행 표시에 필요한 이름·부서가 함께 내려온다."""
+    make_user("USER001")
+
+    _act_as("USER001")
+    item = admin_client.get("/api/chat/contacts").json()["items"][0]
+    assert item["employee_id"] == "ADMIN001"
+    assert item["name"] == "관리자"
+    assert item["is_admin"] is True
+    # conftest 의 ADMIN001 은 department 를 지정하지 않으므로 None 이다.
+    assert "department" in item

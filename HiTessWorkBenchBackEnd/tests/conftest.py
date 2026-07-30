@@ -125,10 +125,12 @@ def make_analysis(db_session):
 @pytest.fixture()
 def make_user(db_session):
     """User 행 생성 헬퍼."""
-    def _make(employee_id, name="홍길동", department="구조해석팀", is_developer=False):
+    def _make(employee_id, name="홍길동", department="구조해석팀", is_developer=False,
+              is_admin=False, is_active=True):
         u = models.User(
             employee_id=employee_id, name=name, company="HHI",
-            department=department, is_active=True, is_developer=is_developer,
+            department=department, is_active=is_active, is_admin=is_admin,
+            is_developer=is_developer,
         )
         db_session.add(u)
         db_session.commit()
