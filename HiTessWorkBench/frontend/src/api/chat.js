@@ -6,6 +6,10 @@ import { getAuthHeaders } from '../utils/auth';
 export const getChatThreads = () =>
   axios.get(`${API_BASE_URL}/api/chat/threads`, { headers: getAuthHeaders() });
 
+/** 대화 가능한 활성 관리자 목록 + 접속 상태 (패널 열려 있는 동안 폴링) */
+export const getChatContacts = () =>
+  axios.get(`${API_BASE_URL}/api/chat/contacts`, { headers: getAuthHeaders() });
+
 /** 특정 상대와의 대화내역 조회 — 조회 시 나에게 온 미읽음은 서버에서 읽음 처리됨 */
 export const getChatConversation = (otherId) =>
   axios.get(
