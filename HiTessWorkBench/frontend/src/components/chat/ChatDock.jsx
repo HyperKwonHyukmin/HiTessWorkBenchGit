@@ -1,50 +1,46 @@
 /**
  * @fileoverview 우하단 상주 채팅 도크 — 관리자↔사용자 1:1 DM.
  *
- * polling 기반(WebSocket 없음). /threads 를 주기적으로 폴링해 미읽음/최근 메시지를 받고,
- * 대화를 열면 /conversation 을 폴링하며 자신에게 온 미읽음을 읽음 처리한다.
- * 새 메시지가 오면 토스트로 즉시 알리고 도크를 자동으로 펼친다.
+ * polling 기반(WebSocket 없음).
+ *  - /threads   : 5초 주기. 미읽음/최근 메시지 → 새 메시지 토스트·자동 펼침
+ *  - /contacts  : 패널이 열려 있는 동안 20초 주기. 활성 관리자 전원 + 접속 상태
+ *  - /conversation : 대화를 열면 4초 주기. 자신에게 온 미읽음을 읽음 처리
+ *
+ * 목록 화면은 '관리자 로스터 + 기타 대화' 통합 목록이다(ChatRosterList). 사용자는 패널을
+ * 여는 것만으로 누가 지금 응답 가능한지 보고 먼저 대화를 걸 수 있다.
  *
  * 외부에서 특정 사용자와 대화를 열려면 window 커스텀 이벤트를 발생시킨다:
  *   window.dispatchEvent(new CustomEvent('workbench:open-chat',
  *     { detail: { employeeId, name } }))
  * (User Management 접속자 카드의 '대화' 버튼이 이 방식으로 도크를 연다.)
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MessageCircle, Send, ChevronLeft, Minus, Trash2 } from 'lucide-react';
 import {
   getChatThreads,
+  getChatContacts,
   getChatConversation,
   sendChatMessage,
   deleteChatConversation,
 } from '../../api/chat';
+import ChatRosterList from './ChatRosterList';
+import {
+  buildChatSections,
+  formatChatTime,
+  statusDotClass,
+  statusLabel,
+} from '../../utils/chatContacts';
 import { useToast } from '../../contexts/ToastContext';
 
 const THREADS_POLL_MS = 5000;
 const CONVERSATION_POLL_MS = 4000;
-
-/** 'HH:MM' 로컬 시각. */
-function formatTime(iso) {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
-}
-
-function Avatar({ name, id }) {
-  const label = (name || id || '?').trim().charAt(0).toUpperCase();
-  return (
-    <div className="h-9 w-9 shrink-0 rounded-xl bg-blue-100 text-blue-700 border border-blue-200 flex items-center justify-center font-bold">
-      {label}
-    </div>
-  );
-}
+// 관리자 접속 상태 갱신 주기. 패널이 열려 있는 동안만 돌아 접힘 상태에서는 부하가 없다.
+const CONTACTS_POLL_MS = 20000;
 
 export default function ChatDock({
   currentUserId,
+  // 도크 노출 여부가 로그인 상태만으로 결정되면서 화면 분기에는 더 쓰이지 않는다.
+  // 호출부(UtilityDock)의 인터페이스를 유지하기 위해 prop 은 그대로 받는다.
   isAdmin = false,
   embedded = false,
   isOpen,
@@ -63,6 +59,8 @@ export default function ChatDock({
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null); // 삭제 확인 대기 중인 상대 { id, name }
+  const [contacts, setContacts] = useState([]);
+  const [contactsError, setContactsError] = useState(false);
 
   const prevUnreadRef = useRef(null); // null = 최초 폴링(무음 baseline)
   const activeIdRef = useRef(null);
@@ -174,6 +172,33 @@ export default function ChatDock({
     };
   }, [activeOther]);
 
+  // 관리자 로스터 폴링 — 패널이 열려 있는 동안만 돌린다.
+  // threads(5초)에 합치지 않는 이유: 합치면 패널을 열지 않은 전 사용자가 5초마다
+  // 관리자 명단·접속 상태를 받아 상시 부하가 사용자 수에 비례해 늘어난다.
+  useEffect(() => {
+    if (!currentUserId || !open) return undefined;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const res = await getChatContacts();
+        if (cancelled) return;
+        setContacts(res.data.items || []);
+        setContactsError(false);
+      } catch {
+        // 실패해도 threads 로 만든 목록은 유지된다(기존 대화가 사라지면 안 됨).
+        if (!cancelled) setContactsError(true);
+      }
+    };
+
+    poll();
+    const timer = setInterval(poll, CONTACTS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [currentUserId, open]);
+
   // 외부(User Management 등)에서 특정 사용자와 대화 열기.
   useEffect(() => {
     const handler = (e) => {
@@ -238,18 +263,23 @@ export default function ChatDock({
     }
   };
 
-  // 도크 자체를 노출할지: 관리자는 항상, 일반 사용자는 대화가 있을 때만.
-  const shouldShow = isAdmin || threads.length > 0 || totalUnread > 0;
+  const sections = useMemo(() => buildChatSections(contacts, threads), [contacts, threads]);
+  // 대화창 헤더·배너용 상태. 출처가 contacts 뿐이라 상대가 관리자가 아니면 null 이다.
+  const activeStatus = activeOther
+    ? (contacts.find((c) => c.employee_id === activeOther.id)?.status || null)
+    : null;
 
+  // 도크는 로그인한 모든 사용자에게 노출한다 — 사용자가 관리자에게 먼저 문의할 수 있어야
+  // 하므로, '받은 대화가 있을 때만' 이라는 기존 조건은 진입점 자체를 없애 버린다.
   useEffect(() => {
     onUnreadChange?.(totalUnread);
   }, [onUnreadChange, totalUnread]);
 
   useEffect(() => {
-    onAvailabilityChange?.(!!currentUserId && shouldShow);
-  }, [currentUserId, onAvailabilityChange, shouldShow]);
+    onAvailabilityChange?.(!!currentUserId);
+  }, [currentUserId, onAvailabilityChange]);
 
-  if (!currentUserId || !shouldShow) return null;
+  if (!currentUserId) return null;
 
   // 접힌 상태 — 플로팅 버튼 + 미읽음 뱃지.
   if (!open) {
@@ -289,9 +319,19 @@ export default function ChatDock({
             >
               <ChevronLeft size={20} />
             </button>
-            <span className="font-bold text-sm flex-1 truncate">
+            <span className="font-bold text-sm truncate">
               {activeOther.name || activeOther.id}
             </span>
+            {activeStatus && (
+              <span className="inline-flex items-center gap-1 shrink-0 text-[10px] text-white/70">
+                <span
+                  className={`h-2 w-2 rounded-full ${statusDotClass(activeStatus)}`}
+                  aria-hidden="true"
+                />
+                {statusLabel(activeStatus)}
+              </span>
+            )}
+            <span className="flex-1" />
             <button
               type="button"
               onClick={() => setConfirmDelete({ id: activeOther.id, name: activeOther.name })}
@@ -326,6 +366,11 @@ export default function ChatDock({
       {/* 본문 */}
       {activeOther ? (
         <>
+          {activeStatus === 'offline' && (
+            <div className="shrink-0 bg-amber-50 border-b border-amber-200 px-3 py-2 text-[11px] text-amber-800">
+              현재 부재중입니다. 메시지는 저장되며 접속 후 확인합니다.
+            </div>
+          )}
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-slate-50">
             {messages.length === 0 ? (
               <div className="h-full flex items-center justify-center text-sm text-slate-400">
@@ -348,7 +393,7 @@ export default function ChatDock({
                     <div
                       className={`mt-1 text-[10px] ${m.mine ? 'text-white/60' : 'text-slate-400'}`}
                     >
-                      {formatTime(m.created_at)}
+                      {formatChatTime(m.created_at)}
                     </div>
                   </div>
                 </div>
@@ -378,55 +423,12 @@ export default function ChatDock({
           </div>
         </>
       ) : (
-        <div className="flex-1 overflow-y-auto bg-white">
-          {threads.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-sm text-slate-400 px-6 text-center">
-              {isAdmin
-                ? 'User Management 접속자 카드의 “대화” 버튼으로 대화를 시작하세요.'
-                : '아직 받은 메시지가 없습니다.'}
-            </div>
-          ) : (
-            threads.map((t) => (
-              <div
-                key={t.other_id}
-                className="group/row flex items-center gap-2 px-3 py-3 hover:bg-slate-50 border-b border-slate-100"
-              >
-                <button
-                  type="button"
-                  onClick={() => openConversation({ id: t.other_id, name: t.other_name })}
-                  className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer"
-                >
-                  <Avatar name={t.other_name} id={t.other_id} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-slate-700 truncate">
-                        {t.other_name || t.other_id}
-                      </span>
-                      <span className="text-[10px] text-slate-400 ml-auto shrink-0">
-                        {formatTime(t.last_at)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-500 truncate">{t.last_message}</div>
-                  </div>
-                </button>
-                {t.unread > 0 && (
-                  <span className="min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shrink-0">
-                    {t.unread}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete({ id: t.other_id, name: t.other_name })}
-                  className="shrink-0 rounded-lg p-1.5 text-slate-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover/row:opacity-100 cursor-pointer"
-                  title="대화 삭제"
-                  aria-label={`${t.other_name || t.other_id} 대화 삭제`}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
+        <ChatRosterList
+          sections={sections}
+          error={contactsError}
+          onPick={(row) => openConversation({ id: row.other_id, name: row.name })}
+          onDelete={(row) => setConfirmDelete({ id: row.other_id, name: row.name })}
+        />
       )}
 
       {/* 삭제 확인 오버레이 */}
