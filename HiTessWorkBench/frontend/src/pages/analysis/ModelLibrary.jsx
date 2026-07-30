@@ -131,6 +131,10 @@ export default function ModelLibrary() {
   // 필터가 바뀌면 1페이지로 되돌린다.
   useEffect(() => { setPage(1); }, [search, family, quality, outcome, status]);
 
+  // status 스코프가 바뀌면 계열 선택을 놓는다. 이전 계열이 새 스코프에 없으면
+  // 선택기 value 가 options 에 없어 화면이 서로 다른 말을 하게 된다(서버가 최다 계열을 고른다).
+  useEffect(() => { setInsightFamily(null); }, [status]);
+
   // Insight 는 탭을 실제로 열 때만 계산한다(목록만 볼 사람에게 부담을 주지 않는다).
   useEffect(() => {
     if (tab !== 'Insight') return undefined;
