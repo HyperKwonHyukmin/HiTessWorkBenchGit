@@ -280,8 +280,10 @@ def build_scoped_overview(all_rows, *, family_rows, family_key, families) -> dic
 
 - **DB 마이그레이션 없음**, `schema_bootstrap` 변경 없음, InHouse exe 교체 없음
 - `git pull` + 백엔드 재시작 + 프론트 재배포
-- 기존 등록본: 로컬 registry 는 1건. `model_type` 이 비었거나 어휘 밖이면 '미분류'로 표시되며
-  관리자가 상세 모달에서 PATCH 로 지정한다. **지금 하지 않으면 backfill 대상이 계속 늘어난다.**
+- 기존 등록본: 로컬 registry 는 1건. `model_type` 이 비었거나 어휘 밖이면 '미분류'로 표시된다.
+  ⚠ **화면에서 고칠 수단은 없다** — 상세 모달은 승인/삭제만 PATCH 한다. 관리자가
+  `PATCH /api/model-registry/models/{uid}` 를 직접 호출하거나 다시 등록하는 방법뿐이다
+  (편집 UI 는 후속 별건). **지금 하지 않으면 backfill 대상이 계속 늘어난다.**
 - 문서 갱신: `docs/apps/model-library.md` §5.1 등록 필드표, §5.2 필터 목록, §5.7 Insight 표,
   §9 체크리스트("새 계열 추가 시 손댈 곳: 어휘 / 파생 규칙 / 프론트 라벨 / 테스트")
 
