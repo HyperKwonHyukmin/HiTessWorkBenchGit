@@ -14,6 +14,7 @@ from app.services.model_insight_service import (
     aggregate_registry_insights,
     build_dataset_readiness,
     build_export_rows,
+    build_scoped_overview,
     describe,
 )
 
@@ -466,3 +467,101 @@ def test_insight_overview_embeds_dataset_readiness():
     result = aggregate_registry_insights([_revision()])
     assert "datasetReadiness" in result
     assert result["datasetReadiness"]["sampleSize"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# 스코프 투영 — 전체 통계와 계열 통계는 다른 질문에 답한다
+# --------------------------------------------------------------------------- #
+
+def test_scoped_overview_puts_each_block_in_exactly_one_scope():
+    """전체 전용 블록과 계열 전용 블록이 양쪽에 동시에 나타나면 안 된다."""
+    result = build_scoped_overview([_revision()])
+
+    assert set(result["overall"]) == {
+        "totals", "distributions", "topTags", "recentTrend", "dataHygiene",
+    }
+    assert set(result["family"]) == {
+        "metrics", "qualityIssues", "qualityByOutcome", "datasetReadiness",
+    }
+
+
+def test_scoped_overview_defaults_to_largest_family():
+    revisions = [
+        _revision(model_uid="u1", model_type="module-unit"),
+        _revision(model_uid="u2", model_type="module-unit"),
+        _revision(model_uid="u3", model_type="side-passage"),
+    ]
+
+    result = build_scoped_overview(revisions)
+
+    assert result["scope"]["family"] == "module-unit"
+    assert result["scope"]["familyCount"] == 2
+    assert result["scope"]["sampleSize"] == {"overall": 3, "family": 2}
+
+
+def test_scoped_overview_keeps_overall_totals_when_family_selected():
+    """계열을 골라도 상단은 전체 모집단이다 — 스코프가 섞이지 않는다."""
+    revisions = [
+        _revision(model_uid="u1", model_type="module-unit", node_count=100),
+        _revision(model_uid="u2", model_type="side-passage", node_count=900),
+    ]
+
+    result = build_scoped_overview(revisions, family="side-passage")
+
+    assert result["overall"]["totals"]["revisions"] == 2
+    assert result["family"]["metrics"]["nodeCount"]["sampleSize"] == 1
+    assert result["family"]["metrics"]["nodeCount"]["max"] == 900
+
+
+def test_scoped_overview_unknown_family_returns_empty_scope_not_error():
+    result = build_scoped_overview([_revision()], family="truss")
+
+    assert result["scope"]["family"] == "truss"
+    assert result["family"]["metrics"]["nodeCount"]["sampleSize"] == 0
+    assert result["family"]["metrics"]["nodeCount"]["mean"] is None
+
+
+def test_scoped_overview_separates_unassigned_from_explicit_other():
+    """명시적 '기타'와 어휘 밖 레거시 값을 한 버킷에 담으면 통계가 거짓말을 한다."""
+    revisions = [
+        _revision(model_uid="u1", model_type="other"),
+        _revision(model_uid="u2", model_type="beam-frame"),   # 옛 자유 입력
+        _revision(model_uid="u3", model_type=None),
+    ]
+
+    keys = {f["key"]: f["count"] for f in build_scoped_overview(revisions)["families"]}
+
+    assert keys == {"unassigned": 2, "other": 1}
+
+
+def test_scoped_overview_hygiene_and_readiness_go_to_different_scopes():
+    result = build_scoped_overview([_revision()])
+
+    hygiene = result["overall"]["dataHygiene"]
+    readiness = result["family"]["datasetReadiness"]
+
+    assert hygiene["features"]           # 피처 커버리지 = 데이터 위생 → 전체
+    assert "extractorVersion" in hygiene
+    assert readiness["tasks"]            # 학습 과제 표본 → 계열
+    assert "features" not in readiness   # 중복 노출 금지
+    assert "split" not in readiness
+
+
+def test_scoped_overview_returns_null_family_for_empty_registry():
+    result = build_scoped_overview([])
+
+    assert result["family"] is None
+    assert result["families"] == []
+    assert result["overall"]["totals"]["revisions"] == 0
+
+
+def test_readiness_warns_when_families_are_pooled():
+    """라우터를 거치지 않는 직접 호출에서도 침묵하지 않는다."""
+    revisions = [
+        _revision(model_uid="u1", model_type="module-unit"),
+        _revision(model_uid="u2", model_type="side-passage"),
+    ]
+
+    caveats = " ".join(build_dataset_readiness(revisions)["caveats"])
+
+    assert "계열" in caveats

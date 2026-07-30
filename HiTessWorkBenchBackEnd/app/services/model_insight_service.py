@@ -22,6 +22,7 @@ from .model_feature_service import (
     feature_coverage,
     split_report,
 )
+from .model_family import family_key, family_label
 
 # 품질 지표로 세는 결함 — transform_to_step1 의 어휘를 그대로 쓴다.
 # freeEndNodeCount 는 결함이 아니므로 여기 없다(degree=1 일 뿐).
@@ -413,6 +414,13 @@ def build_dataset_readiness(revisions: list[dict]) -> dict:
             f"같은 모델의 revision 이 함께 집계되어 있습니다(모델 {unique_models} / revision {total}) — "
             "학습·검증 분할 시 같은 모델이 양쪽에 들어가면 성능이 부풀려집니다."
         )
+    family_keys = {family_key(r.get("model_type")) for r in revisions}
+    if len(family_keys) > 1:
+        caveats.append(
+            f"서로 다른 계열 {len(family_keys)}종이 함께 집계되어 있습니다 — "
+            "계열이 다르면 형상·하중 특성이 달라, 한 학습 표본으로 섞으면 "
+            "계열을 맞히는 모델이 됩니다."
+        )
 
     # 학습에 실제로 쓸 수 있는 부분집합과, 무엇이 왜 빠졌는지.
     trainable = build_cohort(
@@ -451,6 +459,85 @@ def build_dataset_readiness(revisions: list[dict]) -> dict:
             "최소 표본 수는 통계적 보장이 아니라 착수 판단을 위한 사내 기준값입니다. "
             "표본을 채웠다는 것과 성능이 쓸 만하다는 것은 다른 문제입니다."
         ),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# 스코프 투영 — '라이브러리 전체' 와 '이 계열' 은 다른 질문이다
+# --------------------------------------------------------------------------- #
+#
+# 블록마다 올바른 스코프가 하나로 정해진다. 개수·분포·데이터 위생은 전체에서만 의미가 있고
+# (계열별로 쪼개면 라이브러리 상태를 볼 수 없다), 연속값의 중심경향·비율·교차표·학습 표본은
+# 계열 안에서만 의미가 있다(혼합 모집단에서는 평균이 거짓말을 하고 교차표는 역전된다).
+#
+# ★ 기존 aggregate_registry_insights() 의 계약은 건드리지 않는다. 두 번 호출해 투영만 한다.
+#   대가로 버릴 블록도 계산하지만 전부 순수 파이썬 카운팅이며, 규모가 커지면 여기가 손댈 자리다.
+
+OVERALL_BLOCKS = ("totals", "distributions", "topTags", "recentTrend")
+FAMILY_BLOCKS = ("metrics", "qualityIssues", "qualityByOutcome")
+
+# datasetReadiness 에서 전체 스코프로 올려 보내는 키(= 데이터 위생).
+HYGIENE_KEYS = ("features", "split")
+
+
+def family_distribution(revisions: list[dict]) -> list[dict]:
+    """계열별 revision 수. **실제 존재하는 계열만** 낸다(0 을 채우지 않는다).
+
+    정렬은 (건수 내림, 키 오름) 으로 결정적이다 — 첫 항목이 기본 선택 계열이 된다.
+    """
+    counter = Counter(family_key(r.get("model_type")) for r in revisions)
+    ordered = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [
+        {"key": key, "label": family_label(key), "count": count}
+        for key, count in ordered
+    ]
+
+
+def build_scoped_overview(
+    revisions: list[dict], *, family: Optional[str] = None,
+) -> dict:
+    """Insight 응답 — 전체 스코프와 계열 스코프를 각각 계산해 나란히 낸다.
+
+    family 를 주지 않으면 **건수 최다 계열**을 고르고, 무엇을 골랐는지 scope.family 로
+    항상 되돌려 준다(첫 렌더가 요청 1번으로 끝나고 빈 카드가 생기지 않는다).
+    존재하지 않는 계열 키를 주면 오류가 아니라 **빈 계열 스코프**를 낸다 —
+    표본 0 을 정직하게 0 으로 내는 기존 태도와 같다.
+    """
+    families = family_distribution(revisions)
+    selected = family if family is not None else (families[0]["key"] if families else None)
+
+    overall_agg = aggregate_registry_insights(revisions)
+    overall = {key: overall_agg[key] for key in OVERALL_BLOCKS}
+    overall_readiness = overall_agg.get("datasetReadiness") or {}
+    overall["dataHygiene"] = {
+        "extractorVersion": overall_readiness.get("extractorVersion"),
+        "features": overall_readiness.get("features") or [],
+        "split": overall_readiness.get("split"),
+    }
+
+    family_rows: list[dict] = []
+    family_block = None
+    if selected is not None:
+        family_rows = [r for r in revisions if family_key(r.get("model_type")) == selected]
+        family_agg = aggregate_registry_insights(family_rows)
+        family_block = {key: family_agg[key] for key in FAMILY_BLOCKS}
+        family_readiness = family_agg.get("datasetReadiness") or {}
+        family_block["datasetReadiness"] = {
+            key: value
+            for key, value in family_readiness.items()
+            if key not in HYGIENE_KEYS
+        }
+
+    return {
+        "scope": {
+            "family": selected,
+            "familyLabel": family_label(selected) if selected else None,
+            "familyCount": len(families),
+            "sampleSize": {"overall": len(revisions), "family": len(family_rows)},
+        },
+        "families": families,
+        "overall": overall,
+        "family": family_block,
     }
 
 
