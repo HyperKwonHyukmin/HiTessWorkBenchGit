@@ -118,7 +118,9 @@ def presence_status(row: models.UserPresence | None, now: datetime) -> str:
 - 최근 하트비트 → `online`
 - `last_active_at`이 180초 초과 → `idle`
 - `is_active=False` 관리자 제외
-- 미인증 → 401
+- 미인증 접근은 `require_auth` 의존성이 보장한다. `admin_client` fixture가 `require_auth`를
+  항상 덮어쓰므로 이 테스트 인프라로는 401을 재현할 수 없고, 기존 라우터 테스트들도 401을
+  검증하지 않는다 — **의도적으로 401 테스트를 만들지 않는다.**
 - **정합성 계약: `contacts`가 반환한 상대에게 `send`하면 반드시 200** — 목록과 전송 정책이
   어긋나 "보이지만 못 보내는" 상대가 생기는 것을 막는다
 
@@ -247,6 +249,8 @@ threads 폴링(5초)은 기존대로 유지한다. contacts를 여기에 합치�
 - `HiTessWorkBenchBackEnd/app/routers/presence.py` — `presence_status()` 추출 + `/online` 적용
 - `HiTessWorkBenchBackEnd/app/routers/chat.py` — `GET /contacts` 신설
 - `HiTessWorkBenchBackEnd/tests/test_chat_router.py` — contacts 테스트 추가
+- `HiTessWorkBenchBackEnd/tests/conftest.py` — `make_user`에 `is_admin`/`is_active` 파라미터 추가
+  (기본값이 기존 동작과 같아 기존 호출부는 영향 없음)
 
 **프론트엔드**
 - `HiTessWorkBench/frontend/src/api/chat.js` — `getChatContacts()` 추가
@@ -255,5 +259,8 @@ threads 폴링(5초)은 기존대로 유지한다. contacts를 여기에 합치�
 - `HiTessWorkBench/frontend/src/components/chat/ChatRosterList.jsx` — 신규 (목록 화면 표현 컴포넌트)
 - `HiTessWorkBench/frontend/src/components/chat/ChatDock.jsx` — 로스터 목록, 상시 노출, contacts 폴링
 - `HiTessWorkBench/frontend/src/components/platform/UtilityDock.jsx` — `chatAvailable` 초기값
+
+**문서**
+- `CLAUDE.md` — 백엔드 라우터 표의 `routers/chat.py` 행에 `GET /contacts` 기록
 
 **커밋 제외:** `frontend/src/config.js` (로컬 전용 백엔드 URL 토글)
