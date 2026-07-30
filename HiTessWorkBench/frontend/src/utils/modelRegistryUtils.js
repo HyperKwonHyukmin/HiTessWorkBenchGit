@@ -59,6 +59,32 @@ export const VISIBILITY_OPTIONS = [
 ];
 
 /**
+ * 모델 계열 — 백엔드 `ModelFamily` 와 1:1 로 유지한다.
+ *
+ * 계열은 '구조가 무엇인가'다. '어떤 해석인가'(권상/정적)는 이 축이 아니다.
+ * truss 는 아직 등록 경로가 없지만 어휘에 미리 둔다(등록 경로가 생겨도 배포가 갈리지 않게).
+ */
+export const MODEL_FAMILIES = [
+  { value: 'module-unit', label: 'Module / Group Unit 구조' },
+  { value: 'side-passage', label: 'Side Passage 구조' },
+  { value: 'truss', label: 'Truss 구조' },
+  { value: 'other', label: '기타' },
+];
+
+const FAMILY_LABELS = Object.fromEntries(MODEL_FAMILIES.map((f) => [f.value, f.label]));
+
+/**
+ * 저장된 `model_type` → 표시 라벨.
+ *
+ * 어휘 밖 레거시 값과 빈 값은 '미분류' 다 — 백엔드 `family_key()` 의 unassigned 와 같은 규칙.
+ * 관리자가 명시적으로 고른 '기타'(other)와 혼동하지 않게 라벨을 다르게 쓴다.
+ */
+export function familyLabel(value) {
+  const key = String(value ?? '').trim();
+  return FAMILY_LABELS[key] ?? '미분류';
+}
+
+/**
  * 품질 등급 — 'Q3' 같은 코드는 만든 사람만 안다.
  *
  * 그래서 **평문 한국어를 1차 표기(label)로 삼고 Q 코드는 부가 표기(code)** 로 내린다.

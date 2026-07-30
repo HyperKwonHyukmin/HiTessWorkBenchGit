@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 
 import {
   MAX_TAGS,
+  MODEL_FAMILIES,
   QUALITY_LADDER,
   SOFT_DELETE_NOTE,
   buildListParams,
   buildRegistrationPayload,
   defaultSelectedArtifactKinds,
   extractApiError,
+  familyLabel,
   formatBytes,
   formatNumber,
   formatUtilization,
@@ -272,4 +274,31 @@ test('archived status is presented as deleted, not archived', () => {
 test('soft delete note explains that files survive', () => {
   // 라벨을 '삭제'로 바꾸는 대신, 되돌릴 수 있다는 사실은 문구가 책임진다.
   assert.match(SOFT_DELETE_NOTE, /복원/);
+});
+
+// ── 모델 계열 어휘 (백엔드 ModelFamily 와 1:1) ─────────────────────────────
+
+test('MODEL_FAMILIES 는 백엔드 ModelFamily 어휘와 1:1 이다', () => {
+  assert.deepEqual(
+    MODEL_FAMILIES.map((f) => f.value),
+    ['module-unit', 'side-passage', 'truss', 'other'],
+  );
+});
+
+test('familyLabel 은 어휘 값을 사람이 읽는 라벨로 바꾼다', () => {
+  assert.equal(familyLabel('module-unit'), 'Module / Group Unit 구조');
+  assert.equal(familyLabel('other'), '기타');
+});
+
+test('familyLabel 은 어휘 밖·빈 값을 미분류로 표시한다', () => {
+  // 백엔드 family_key 의 unassigned 규칙과 같은 판정이어야 한다
+  assert.equal(familyLabel('beam-frame'), '미분류');
+  assert.equal(familyLabel(''), '미분류');
+  assert.equal(familyLabel(null), '미분류');
+  assert.equal(familyLabel(undefined), '미분류');
+});
+
+test('buildListParams 는 계열 필터를 model_type 으로 보낸다', () => {
+  const params = buildListParams({ modelType: 'side-passage' });
+  assert.equal(params.model_type, 'side-passage');
 });
