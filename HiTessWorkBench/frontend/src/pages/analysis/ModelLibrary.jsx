@@ -140,7 +140,10 @@ export default function ModelLibrary() {
     if (tab !== 'Insight') return undefined;
     const controller = new AbortController();
     (async () => {
-      setInsightState('loading');
+      // 한 번 불러온 뒤에는 loading 으로 되돌리지 않는다(목록 fetch 와 같은 패턴).
+      // 계열만 바꿨을 때 상단 「라이브러리 현황」은 스코프가 전체로 불변인데도
+      // 대시보드가 통째로 사라졌다 다시 그려져 계열 선택기의 포커스까지 날아갔다.
+      setInsightState((s) => (s === 'loaded' ? 'loaded' : 'loading'));
       setInsightError(null);
       try {
         const res = await getRegistryInsights(

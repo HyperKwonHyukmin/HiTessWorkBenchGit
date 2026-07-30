@@ -83,6 +83,7 @@ export default function ModelInsightDashboard({ data, loading, error, onFamilyCh
       <LibraryOverviewSection
         totals={totals}
         distributions={distributions}
+        families={families}
         topTags={topTags}
         recentTrend={recentTrend}
         dataHygiene={dataHygiene}
@@ -104,7 +105,26 @@ export default function ModelInsightDashboard({ data, loading, error, onFamilyCh
  * 개수·분포·데이터 위생은 계열을 섞어도 왜곡되지 않고, 오히려 계열별로 쪼개면
  * "라이브러리가 어떤 상태인가"를 볼 수 없다. 그래서 이 영역에는 계열 선택기가 없다.
  */
-function LibraryOverviewSection({ totals, distributions, topTags, recentTrend, dataHygiene, sampleSize }) {
+function LibraryOverviewSection({
+  totals, distributions, families, topTags, recentTrend, dataHygiene, sampleSize,
+}) {
+  // 「모델 계열」 카드는 `distributions.modelType`(원본 model_type 값의 분포)이 아니라
+  // `families`(백엔드가 계열로 버킷팅한 결과)를 쓴다. 전자는 값이 비어 있는 행을 버리고
+  // 어휘 밖 레거시 값을 각각 별도 막대로 내보내서, 아래 「계열별 특성」의 선택기가 세는
+  // '미분류' 건수와 한 화면에서 어긋난다.
+  // `DistributionChart` 는 rows 의 count 로 막대를, share 로 백분율 문구를 그린다
+  // (`families` 에는 share 가 없어 여기서 계산한다). 모든 행이 어딘가에 버킷되므로
+  // 분모는 곧 전체 revision 수다.
+  const familyTotal = (families ?? []).reduce((sum, f) => sum + f.count, 0);
+  const familyRows = (families ?? []).map((f) => ({
+    key: f.key,
+    count: f.count,
+    share: familyTotal > 0 ? f.count / familyTotal : null,
+  }));
+  // 라벨은 백엔드가 붙여 준 것을 그대로 쓴다(unassigned → '미분류'). 구버전 백엔드가
+  // families 를 주지 않으면 이 카드는 빈 상태가 된다 — 틀린 집계를 보여주는 것보다 낫다.
+  const familyLabels = new Map((families ?? []).map((f) => [f.key, f.label]));
+
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
@@ -202,11 +222,15 @@ function LibraryOverviewSection({ totals, distributions, topTags, recentTrend, d
       <div>
         <SectionEyebrow icon={Tag} title="부가 정보" hint="원 프로그램 · 태그 · 등록 추이" />
         <div className="mt-2 grid gap-4 lg:grid-cols-4">
-          <Card icon={Split} title="모델 계열" caption="서로 다른 성질의 모델이 각각 몇 건인지">
+          <Card
+            icon={Split}
+            title="모델 계열"
+            caption="서로 다른 성질의 모델이 각각 몇 건인지. 계열이 지정되지 않은 등록본은 미분류로 묶입니다."
+          >
             <DistributionChart
-              rows={distributions.modelType}
+              rows={familyRows}
               colorFor={(_, i) => COLORS[i % COLORS.length]}
-              labelFor={(k) => familyLabel(k)}
+              labelFor={(k) => familyLabels.get(k) ?? familyLabel(k)}
             />
           </Card>
           <Card icon={Boxes} title="원 프로그램" caption="어떤 해석 앱에서 나온 모델인지">
