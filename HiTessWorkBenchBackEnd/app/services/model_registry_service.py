@@ -467,7 +467,9 @@ def register_model(
             model.status = "active"
 
     # 계열: 요청 → (기존 모델 유지) → 출처에서 파생.
-    # 신규 등록본에 미지정이 남지 않게 하는 것이 목적이다.
+    # ★ 신규 모델을 만들 때만 모델 행에 반영된다. target_model_uid 로 revision 을 덧붙이는
+    #   경로(API 전용)에서는 summary.json 에만 남고 부모 행의 계열은 그대로다 — 계열 변경은
+    #   PATCH 의 몫이다(제목·설명도 같은 규칙).
     if request.model_type is not None:
         family_value = request.model_type.value
     elif model is not None and model.model_type:

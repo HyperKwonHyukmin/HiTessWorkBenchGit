@@ -504,7 +504,9 @@ def get_insights_overview(
     표본 수·결측 수를 항상 함께 내며, 표본이 없는 통계는 0 이 아니라 null 이다.
     """
     rows = _visible_revision_rows(db, current_user, status=status)
-    return build_scoped_overview(rows, family=family)
+    # 빈 문자열(`?family=`)은 '선택 안 함'과 같다 — 그대로 넘기면 존재하지 않는 계열을
+    # 명시적으로 고른 것으로 처리돼 빈 스코프가 나간다.
+    return build_scoped_overview(rows, family=family or None)
 
 
 @router.get("/export.json")

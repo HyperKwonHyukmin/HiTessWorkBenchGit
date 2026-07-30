@@ -1262,7 +1262,7 @@ def test_api_insights_are_split_into_overall_and_family_scopes(
         {"key": "module-unit", "label": "Module / Group Unit 구조", "count": 1},
     ]
     assert body["overall"]["totals"]["revisions"] == 1
-    assert body["family"]["metrics"]["nodeCount"]["sampleSize"] >= 0
+    assert body["family"]["metrics"]["nodeCount"]["sampleSize"] == 1
 
 
 def test_api_insights_accept_family_query(
