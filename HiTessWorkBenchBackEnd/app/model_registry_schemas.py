@@ -74,6 +74,33 @@ class Visibility(str, Enum):
     COMPANY = "company"
 
 
+class ModelFamily(str, Enum):
+    """모델 계열 — '구조가 무엇인가'.
+
+    ⚠ '어떤 해석인가'(lifting / static)는 이 축이 아니다. 그것은 향후
+    RegisteredAnalysisRun.run_kind 의 몫이며, 두 축을 한 필드에 섞으면 되돌릴 수 없다.
+    truss 는 아직 등록 경로(SourceArtifactKind)가 없어 어휘에만 예약돼 있다.
+    """
+
+    MODULE_UNIT = "module-unit"
+    SIDE_PASSAGE = "side-passage"
+    TRUSS = "truss"
+    OTHER = "other"
+
+
+MODEL_FAMILY_LABELS: dict[str, str] = {
+    ModelFamily.MODULE_UNIT.value: "Module / Group Unit 구조",
+    ModelFamily.SIDE_PASSAGE.value: "Side Passage 구조",
+    ModelFamily.TRUSS.value: "Truss 구조",
+    ModelFamily.OTHER.value: "기타",
+}
+
+# 값이 비었거나 어휘 밖인 레거시 model_type 을 담는 집계 버킷.
+# 관리자가 명시적으로 고른 'other'(기타)와 절대 합치지 않는다.
+UNASSIGNED_FAMILY_KEY = "unassigned"
+UNASSIGNED_FAMILY_LABEL = "미분류"
+
+
 class QualityLevel(str, Enum):
     """Q0 Raw / Q1 Parse Valid / Q2 Topology Valid / Q3 Solver Verified / Q4 Golden.
 
