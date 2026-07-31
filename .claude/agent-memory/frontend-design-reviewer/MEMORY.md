@@ -16,3 +16,4 @@
 - [Administration 페이지군 디자인 패턴](project_administration_pages.md) — PageHeader violet 통일, KpiCard 표준화, 상태필터 백엔드 한계, UserManagement 일괄승인/포커스링, ApiApps 복사버튼 (2026-07-20)
 - [밀도 높은 폼은 가로로 펼친다](feedback_dense_forms_expand_horizontally.md) — Modal 본문엔 padding 없음 + size="screen" 3열 패턴, 그 이유와 렌더 검증법
 - [Data Storage 의 독립된 두 축](project_model_registry_two_axes.md) — 모델 품질 vs 설계 결과를 절대 합치지 않는 이유와 UI 표현 방법
+- [App 카탈로그 그룹핑 세로 길이 문제](project_appcatalogue_grouping.md) — series 박스+singles 별도 grid 행 쌓임이 근본 원인, 검토한 3개 레이아웃 대안 (2026-07-31, 결정 대기)

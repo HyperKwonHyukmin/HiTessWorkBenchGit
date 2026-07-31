@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ChevronDown, LayoutGrid, List, Search, X } from 'lucide-react';
+import { ChevronDown, LayoutGrid, Layers, List, Search, Star, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getAppMenuName, useAnalysisPageState, useAppCatalogue, useFavorites } from '../../contexts/DashboardContext';
 import { useAppSettings } from '../../hooks/useAppSettings';
@@ -16,11 +16,29 @@ import AdminGateModal from '../ui/AdminGateModal';
 import FeedbackState from '../ui/FeedbackState';
 import Input from '../ui/Input';
 import { staggerContainer, cardEntrance } from '../../utils/motion';
+import { buildCatalogueGroups } from '../../utils/appCatalogueGroups';
 
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
 // '개발 중' 섹션 펼침 여부 — 기본은 접힘. 이 페이지는 오늘 쓸 앱을 고르는 곳이고,
 // 아직 못 쓰는 앱이 화면 절반을 차지하면 목적이 흐려진다.
 const DEV_SECTION_KEY = 'hitess_dev_section_open';
+
+/**
+ * 그룹 섹션 소제목. '개발 중' 헤더와 같은 시각 언어(굵은 slate-700)를 쓰되, 누르는 곳이
+ * 아니므로 버튼 껍데기 없이 구분선만 곁들인다.
+ *
+ * 개수는 일부러 붙이지 않는다 — 펼쳐진 섹션은 카드가 곧 개수이고, 필터 탭의 숫자는 개발 중까지
+ * 포함한 전체라 나란히 두면 '배관 2 / 배관 1' 처럼 어긋나 보인다. 개수가 필요한 곳은 내용이
+ * 보이지 않는 접힌 '개발 중' 섹션뿐이다.
+ */
+function SectionHeading({ label }) {
+  return (
+    <div className="mb-4 flex items-center gap-2.5">
+      <h3 className="text-sm font-bold text-slate-700">{label}</h3>
+      <div className="h-px flex-1 bg-slate-200" aria-hidden="true" />
+    </div>
+  );
+}
 
 const colorToAccent = (colorClass = '') => {
   if (colorClass.includes('cyan')) return 'cyan';
@@ -121,9 +139,23 @@ export default function AppCataloguePage({
     }),
     [favorites],
   );
+  // File 모드만 그룹으로 보여준다. 다른 모드는 카테고리당 앱이 1~2개뿐이라
+  // 소제목을 붙이면 앱 1개짜리 제목만 늘어나 오히려 시끄러워진다.
+  const isGroupedCatalogue = mode === 'File';
   const activeApps = useMemo(
-    () => sortFavoritesFirst(filtered.filter(item => !item.devStatus || item.devStatus === 'Active')),
-    [filtered, sortFavoritesFirst],
+    () => {
+      const list = filtered.filter(item => !item.devStatus || item.devStatus === 'Active');
+      // 그룹 모드에서는 즐겨찾기를 맨 위 별도 섹션으로 빼므로, 목록 자체는 정의 순서를
+      // 지켜야 Truss 처럼 붙어 있어야 할 앱이 갈라지지 않는다.
+      return isGroupedCatalogue ? list : sortFavoritesFirst(list);
+    },
+    [filtered, isGroupedCatalogue, sortFavoritesFirst],
+  );
+  const groupedActive = useMemo(
+    () => (isGroupedCatalogue
+      ? buildCatalogueGroups(activeApps, { favorites, categoryOrder: FILE_CATEGORY_ORDER })
+      : null),
+    [activeApps, favorites, isGroupedCatalogue],
   );
   const developingApps = useMemo(
     () => sortFavoritesFirst(filtered.filter(item => item.devStatus && item.devStatus !== 'Active')),
@@ -224,6 +256,106 @@ export default function AppCataloguePage({
     );
   };
 
+  // 서비스 중인 앱을 즐겨찾기 → 카테고리 → series 묶음 순으로 그린다.
+  // 개발 중 앱은 여기 들어오지 않는다 — 아래 별도 섹션에 따로 모으고, 서비스로 전환되면
+  // devStatus 만 바뀌어도 자연히 이 그룹 체계에 편입된다.
+  // 묶음 상자는 카드를 여러 장 품으므로 그리드에서 그만큼 폭을 차지해야 한다. 그래야 상자와
+  // 단독 앱이 같은 행을 나눠 쓰고 오른쪽에 빈 칸이 남지 않는다.
+  // (예전에는 상자와 단독 앱을 각각 별도 그리드로 그려서, 3열에 다 들어갈 3장을 2줄로 쌓았다.)
+  const seriesSpanClass = (count) => {
+    if (count <= 1) return '';
+    if (count === 2) return 'md:col-span-2 lg:col-span-2';
+    return 'md:col-span-2 lg:col-span-3';
+  };
+
+  const renderSeriesLabel = (series) => (
+    <p className="mb-3 flex items-center gap-1.5 text-xs font-bold text-slate-600">
+      <Layers size={13} aria-hidden="true" />
+      {series}
+    </p>
+  );
+
+  const renderCategoryBody = (category) => {
+    // 목록 뷰는 한 줄에 하나씩이라 그리드를 합칠 이유가 없다. 기존 구조를 그대로 쓴다.
+    if (viewMode === 'list') {
+      return (
+        <div className="flex flex-col gap-5">
+          {category.seriesClusters.map(cluster => (
+            <div key={cluster.series} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+              {renderSeriesLabel(cluster.series)}
+              {renderSection(cluster.apps)}
+            </div>
+          ))}
+          {category.singles.length > 0 && renderSection(category.singles)}
+        </div>
+      );
+    }
+    // col-span 은 그리드 자식에 붙어야 한다. AnimatedGrid 는 자식을 래퍼로 한 번 더 감싸
+    // 폭 지정이 먹지 않으므로, 여기서는 같은 variants 로 그리드를 직접 구성한다.
+    return (
+      <motion.div
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 items-start gap-6"
+        variants={staggerContainer}
+        initial="hidden"
+        animate="show"
+      >
+        {category.seriesClusters.map(cluster => (
+          <motion.div
+            key={cluster.series}
+            variants={cardEntrance}
+            className={seriesSpanClass(cluster.apps.length)}
+          >
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+              {renderSeriesLabel(cluster.series)}
+              <div className="grid grid-cols-1 sm:grid-cols-2 items-start gap-5">
+                {cluster.apps.map(item => <AppCard key={item.title} {...makeAppProps(item)} />)}
+              </div>
+            </div>
+          </motion.div>
+        ))}
+        {category.singles.map(item => (
+          <motion.div key={item.title} variants={cardEntrance} className="h-full">
+            <AppCard {...makeAppProps(item)} />
+          </motion.div>
+        ))}
+      </motion.div>
+    );
+  };
+
+  const renderGroupedActive = (groups) => (
+    <div className="flex flex-col gap-8">
+      {groups.favoriteApps.length > 0 && (
+        // 즐겨찾기는 카드를 다시 그리지 않고 칩 한 줄로 압축한다. 같은 카드를 두 번 그리면
+        // 화면만 길어지는데, 여기서 필요한 건 '자주 쓰는 앱으로 바로 가기' 하나뿐이다.
+        // 앱은 원래 카테고리 자리에 그대로 남아 Truss 같은 묶음에 구멍이 나지 않는다.
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+            <Star size={13} className="text-amber-400" fill="currentColor" aria-hidden="true" />
+            즐겨찾기
+          </span>
+          {groups.favoriteApps.map(item => (
+            <button
+              key={item.title}
+              type="button"
+              onClick={() => handleStart(item.title)}
+              aria-label={`${item.title} 열기`}
+              className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition-colors hover:border-brand-blue/40 hover:text-brand-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+            >
+              {item.title}
+            </button>
+          ))}
+        </div>
+      )}
+      {groups.categories.map(category => (
+        <section key={category.name}>
+          {/* 카테고리 탭을 고른 상태에서는 제목이 탭과 중복되므로 생략한다. */}
+          {activeCategory === 'All' && <SectionHeading label={category.name} />}
+          {renderCategoryBody(category)}
+        </section>
+      ))}
+    </div>
+  );
+
   const viewToggle = (
     <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
       <button
@@ -306,7 +438,9 @@ export default function AppCataloguePage({
             />
           ) : (
             <>
-              {renderSection(activeApps)}
+              {isGroupedCatalogue && groupedActive
+                ? renderGroupedActive(groupedActive)
+                : renderSection(activeApps)}
               {developingApps.length > 0 && (
                 <div className={activeApps.length > 0 ? 'mt-10' : ''}>
                   <button

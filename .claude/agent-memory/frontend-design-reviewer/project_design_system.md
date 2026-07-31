@@ -40,14 +40,14 @@ type: project
 - Framer Motion: `whileHover={{ y: -3 }}` 리프트 효과 표준
 - 상태별 accent: emerald(Active), blue(Developing), amber(Planned), red(Failed)
 
-## AppCard / AppListRow 패턴 (개선 후)
-- 아이콘 박스: solid 색상(`iconBg` 클래스 직접 적용), 흰색 아이콘, 광택 그라데이션 오버레이
-- accentColor는 `item.color`(`bg-cyan-600` 등)에서 `colorToAccent()` 함수로 동적 추출
-- 태그는 accentColor tint 배경 (`bg-cyan-50 text-cyan-600 border-cyan-100` 형태)
-- "시작하기" CTA도 accentColor 적용 (기존에는 brand-blue 고정이었음)
-- 카드 hover 배경도 accent tint (`hover:bg-cyan-50/30` 등) 적용
-- `colorToAccent()` 로직: cyan > violet > emerald > indigo > teal > amber > purple > blue 순서
-- AppListRow에도 동일한 solid 아이콘 박스 + 확장된 accentColor 맵 적용
+## AppCard / AppListRow 패턴 (2026-07-30 기준, 네이비 헤더형 재설계 이후 — `ed79a4b`/`c11f518`/`c2a5ac9`)
+⚠ 아래는 이전 "tint 배경" 세대를 대체한 현재 구조. AppCard.jsx 를 다시 열어보면 바로 확인 가능.
+- **헤더 존**: 카드 상단에 `bg-gradient-to-br ${ACCENT_HEADER[accentColor]}` 존을 두고(`from-brand-blue via-brand-blue-dark to-brand-blue-light` 등 accent별 맵), 그 위에 아이콘(반투명 유리박스 `bg-white/[0.13] border-white/20 backdrop-blur-sm`)과 흰색 제목을 얹는다. PageHeader 배너와 같은 시각 언어.
+- **색은 hover 상태로 이관됐다**: 카드 배경 자체는 흰색(`bg-white`)이고, tint 배경(`bg-cyan-50/30` 등)은 더 이상 기본 상태에 없다 — `ACCENT_BORDER`(hover 시 테두리)와 `AppListRow`의 `ACCENT_HOVER`(hover 시 `border+bg-*-50/30`)에만 남아 있음. 즉 그리드 카드는 hover 색이 아예 없고(리프트+그림자만), 리스트 행만 hover 시 은은한 tint 가 붙는다.
+- **태그(tags) 렌더링이 카드에서 사라졌다.** 지금은 `description`(2줄 clamp) + `FormatFlow`(input→output 포맷 흐름)만 본문에 있고, 별도 태그 칩은 없음. `item.tags` 는 여전히 데이터엔 있지만 검색 매칭(`matchesSearch`)에만 쓰이고 카드엔 노출 안 됨.
+- **a11y 재작업**: 카드 루트는 `<motion.article>`(인터랙티브 role 없음), 제목만 실제 `<button>`. 예전엔 role="button" div 안에 버튼이 중첩돼 ARIA 위반이었음(`c2a5ac9`에서 해소). 즐겨찾기·설정(톱니바퀴, 관리자 전용)은 헤더 우상단에 별도 버튼으로 절대 위치.
+- `colorToAccent()`(AppCataloguePage.jsx): `item.color`(`bg-cyan-600` 등 Tailwind 클래스 문자열)에서 accent 키를 뽑아내는 함수, cyan > violet > emerald > indigo > teal > amber > purple > blue 우선순위로 판별.
+- `AppListRow`는 여전히 solid 아이콘 박스(`iconBg` + 광택 오버레이) 유지 — 그리드 카드(네이비 헤더)와 리스트 행(solid 아이콘 박스)이 서로 다른 아이콘 처리 방식을 쓴다는 점 주의(의도된 차이, 밀도가 다른 뷰라서).
 
 ## 공통 UI 컴포넌트 (src/components/ui/)
 - `PageHeader`: title, icon, subtitle, actions props — 다른 페이지들에서 표준으로 사용
