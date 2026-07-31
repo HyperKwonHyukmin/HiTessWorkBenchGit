@@ -311,18 +311,27 @@ def detect_edited_artifacts(output_dir: str) -> dict:
     return result
 
 
-def _edit_json_has_kind(edit_json_path: str | None, kind: str) -> bool:
+# Cmb.Cli.exe(C# 엔진)가 모르는 intent 종류 — 이게 들어 있으면 exit 65 를 실패로 보지 않고
+# nastran_bridge(Python) fallback 으로 편집 BDF 를 만든다. 엔진이 지원하게 되면 여기서 뺀다.
+#   deleteRigid — RBE 병합 시 흡수되는 기존 RBE 삭제
+#   addNode     — Studio 에서 절대좌표로 만든 신규 GRID
+BRIDGE_ONLY_INTENT_KINDS = ("deleteRigid", "addNode")
+
+
+def _edit_json_kinds(edit_json_path: str | None) -> set[str]:
+    """*_edit.json 에 들어 있는 intent kind 집합 (읽기 실패 시 빈 집합)."""
     if not edit_json_path or not os.path.isfile(edit_json_path):
-        return False
+        return set()
     try:
         with open(edit_json_path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
-        return any(
-            isinstance(intent, dict) and intent.get("kind") == kind
+        return {
+            intent.get("kind")
             for intent in data.get("intents", [])
-        )
+            if isinstance(intent, dict) and intent.get("kind")
+        }
     except Exception:
-        return False
+        return set()
 
 
 def _load_nastran_bridge_module():
@@ -339,7 +348,7 @@ def _load_nastran_bridge_module():
 
 
 def _apply_edit_with_nastran_bridge(output_dir: str, edit_json_path: str) -> tuple[dict, str]:
-    """Cmb.Cli.exe가 모르는 신규 intent(deleteRigid 등)를 Python bridge로 적용한다."""
+    """Cmb.Cli.exe가 모르는 신규 intent(deleteRigid·addNode 등)를 Python bridge로 적용한다."""
     nb = _load_nastran_bridge_module()
     edit_path = Path(edit_json_path)
     stem = edit_path.stem[:-5] if edit_path.stem.lower().endswith("_edit") else edit_path.stem + "_final"
@@ -564,20 +573,24 @@ def task_execute_apply_edit(
                     status_msg = "Failed"
                     engine_output += "\n[오류] 적용할 편집 내역이 없습니다 (intents 비어있음)."
                 else:
+                    bridge_only = sorted(
+                        _edit_json_kinds(edit_json_path).intersection(BRIDGE_ONLY_INTENT_KINDS)
+                    )
                     can_bridge_fallback = (
                         result.returncode == 65
-                        and _edit_json_has_kind(edit_json_path, "deleteRigid")
+                        and bool(bridge_only)
                         and "unsupported intent kind" in engine_output
                     )
                     if can_bridge_fallback:
                         logger.warning(
-                            "[apply-edit] Cmb.Cli.exe가 deleteRigid를 지원하지 않아 nastran_bridge fallback 적용"
+                            "[apply-edit] Cmb.Cli.exe가 %s 를 지원하지 않아 nastran_bridge fallback 적용",
+                            ", ".join(bridge_only),
                         )
                         try:
                             edited, fallback_log = _apply_edit_with_nastran_bridge(output_dir, edit_json_path)
                             engine_output += (
                                 f"\n[Exit code: {result.returncode}]"
-                                "\n[호환 처리] Cmb.Cli.exe deleteRigid 미지원 → nastran_bridge로 편집 BDF 생성.\n"
+                                f"\n[호환 처리] Cmb.Cli.exe {', '.join(bridge_only)} 미지원 → nastran_bridge로 편집 BDF 생성.\n"
                                 f"{fallback_log}"
                             )
                             if not edited.get("edited_bdf_path"):
