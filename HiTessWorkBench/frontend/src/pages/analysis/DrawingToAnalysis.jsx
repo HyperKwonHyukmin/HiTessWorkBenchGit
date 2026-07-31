@@ -147,7 +147,7 @@ const formatBytes = (b) => {
 export default function DrawingToAnalysis() {
   const { setCurrentMenu } = useNavigation();
   const dashboardCtx = useDashboard();
-  const { startGlobalJob, clearGlobalJob } = dashboardCtx;
+  const { startGlobalJob, clearGlobalJob, clearGlobalJobForMenu } = dashboardCtx;
   const { showToast } = useToast();
   const PAGE_KEY = 'DrawingToAnalysis';
   const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
@@ -339,7 +339,8 @@ export default function DrawingToAnalysis() {
 
   const resetDrawingPage = () => {
     reset();
-    clearGlobalJob();
+    // 이 App 의 기록만 지운다 — 무인자 호출은 Job Center 전체를 비운다.
+    clearGlobalJobForMenu?.(PAGE_KEY);
     dashboardCtx?.clearAnalysisPageState?.(PAGE_KEY);
     setInputMode('pdf');
     setPdfFile(null);

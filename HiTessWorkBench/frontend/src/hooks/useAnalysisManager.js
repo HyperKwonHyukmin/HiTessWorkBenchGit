@@ -18,11 +18,14 @@ export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
   const [stressData, setStressData] = useState(savedResults.stressData ?? []);
   const [summaryData, setSummaryData] = useState(savedResults.summaryData ?? null);
 
-  const { globalJob, startGlobalJob, clearGlobalJob } = dashboardCtx;
+  const { startGlobalJob, clearGlobalJobForMenu, getJobForMenu } = dashboardCtx;
+  // 다른 App 해석이 더 최근이어도 이 App 의 해석을 집어야 한다(globalJob 은 최신 1개일 뿐).
+  const globalJob = getJobForMenu?.(PAGE_KEY) || null;
   const restoredJobRef = useRef(null);
-  
+  const notifiedFailureRef = useRef(null);
+
   const hasCharts = dispData.length > 0 || elForceData.length > 0 || stressData.length > 0;
-  const isAnalyzing = globalJob?.menu === 'Simple Beam Assessment' && globalJob?.status === 'Running';
+  const isAnalyzing = globalJob?.status === 'Running';
   const isReadOnly = hasCharts || isAnalyzing;
 
   useEffect(() => {
@@ -121,12 +124,16 @@ export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
   };
 
   useEffect(() => {
-    if (globalJob && globalJob.menu === PAGE_KEY) {
+    if (globalJob) {
       if (globalJob.status === 'Success' && !hasCharts) {
         restoreCompletedJob(globalJob);
       } else if (globalJob.status === 'Failed' && !hasCharts) {
-        showToast(`해석이 실패했습니다.\n${globalJob.engine_log}`, "error");
-        clearGlobalJob();
+        // 실패 기록은 Job Center 에 남긴다(30분 보관). 대신 토스트는 해석 1건당 한 번만 띄운다 —
+        // 지우지 않으므로 이 effect 가 다시 돌 때 같은 실패를 반복 통지하면 안 된다.
+        if (notifiedFailureRef.current !== globalJob.jobId) {
+          notifiedFailureRef.current = globalJob.jobId;
+          showToast(`해석이 실패했습니다.\n${globalJob.engine_log}`, "error");
+        }
       }
     }
   }, [globalJob, hasCharts]);
@@ -143,7 +150,7 @@ export function useAnalysisManager(modelingHook, showToast, setActiveTab) {
 
   const resetResults = () => {
     setDispData([]); setElForceData([]); setStressData([]); setSummaryData(null);
-    clearGlobalJob();
+    clearGlobalJobForMenu?.(PAGE_KEY);
     dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
       results: { dispData: [], elForceData: [], stressData: [], summaryData: null },
     });

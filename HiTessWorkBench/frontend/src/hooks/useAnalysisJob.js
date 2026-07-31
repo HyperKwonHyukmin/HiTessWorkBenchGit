@@ -217,13 +217,11 @@ export function useAnalysisJob({
       }
     },
     onComplete: (data) => {
-      const completedJobId = jobId;
       setIsRunning(false);
       setProgress(100);
       setJobId(null);
-      if (completedJobId && clearGlobalJobRef.current) {
-        clearGlobalJobRef.current(completedJobId);
-      }
+      // 완료 기록은 Job Center 에 그대로 둔다(완료 후 30분 보관 정책). 상태 갱신과 만료는
+      // GlobalJobPoller 가 맡는다. 여기서 지우면 결과를 확인하기도 전에 목록에서 사라진다.
       if (successLogMessage) {
         setLogs(prev => [...prev, {
           time: new Date().toLocaleTimeString(),
@@ -234,12 +232,9 @@ export function useAnalysisJob({
       if (onCompleteRef.current) onCompleteRef.current(data);
     },
     onError: (errData) => {
-      const failedJobId = jobId;
       setIsRunning(false);
       setJobId(null);
-      if (failedJobId && clearGlobalJobRef.current) {
-        clearGlobalJobRef.current(failedJobId);
-      }
+      // 실패 기록도 남긴다 — 사용자가 Job Center 에서 실패를 확인하고 원인 화면으로 돌아갈 수 있어야 한다.
       const isTimeout = !!errData?.timeout;
       const msg = isTimeout ? timeoutLogMessage : errorLogMessage;
       if (msg) {

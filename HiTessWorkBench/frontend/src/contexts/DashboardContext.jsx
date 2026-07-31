@@ -17,6 +17,15 @@ import {
   refreshAppSettings,
   useAppSettings,
 } from '../hooks/useAppSettings';
+import {
+  GLOBAL_JOB_HISTORY_LIMIT,
+  GLOBAL_JOB_VISIBLE_MS,
+  findJobForMenu,
+  isTerminalJobStatus,
+  pruneExpiredJobs,
+  removeJobsForMenu,
+  upsertGlobalJob,
+} from '../utils/globalJobs';
 
 const RAW_ANALYSIS_DATA = [
   // ── File-Based Apps (signature: blue) ──────────── Active ──
@@ -24,8 +33,10 @@ const RAW_ANALYSIS_DATA = [
   //    앱마다 다른 글리프·색으로 분화하지 말 것 — 모드 정체성을 나타내는 의도된 통일이다.
   // 태그에는 파일 형식(BDF·CSV·PDF…)을 넣지 않는다 — 카드의 Input/Output 칩이 이미 표시하고,
   // 검색도 inputFormats/outputFormats 를 인덱싱하므로 태그로 중복시킬 이유가 없다.
-  { mode: "File", category: "구조 모델", title: "Truss Model Builder", description: "Truss 설계 정보를 활용하여 구조 해석 모델을 구축합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "모델생성"], devStatus: "Active", contributor: "권혁민" },
-  { mode: "File", category: "구조 모델", title: "Truss Structural Assessment", description: "Truss BDF 모델을 업로드하여 구조적 안정성을 평가합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "구조평가"], devStatus: "Active", contributor: "권혁민" },
+  // series: 카테고리보다 한 단계 작은 묶음. 같은 대상을 이어서 다루는 앱들을 카탈로그에서
+  //   붙여 보여주기 위한 것이다(Truss = 모델 생성 → 구조 평가). 값이 없으면 단독으로 놓인다.
+  { mode: "File", category: "구조 모델", series: "Truss", title: "Truss Model Builder", description: "Truss 설계 정보를 활용하여 구조 해석 모델을 구축합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "모델생성"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "File", category: "구조 모델", series: "Truss", title: "Truss Structural Assessment", description: "Truss BDF 모델을 업로드하여 구조적 안정성을 평가합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "구조평가"], devStatus: "Active", contributor: "권혁민" },
   { mode: "File", category: "구조 모델", title: "HiTESS Model Builder", description: "CSV부터 Nastran 해석까지 FEM 파이프라인 전 과정을 단일 UI에서 관리합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Nastran", "파이프라인"], devStatus: "Active", contributor: "권혁민" },
   { mode: "File", category: "배관", title: "HP-SCR 배관응력 해석", description: "배관 BDF를 업로드하여 열변형 계산 및 배관응력 해석(PSA · POR)을 수행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["배관", "PSA", "POR"], devStatus: "Active", contributor: "김윤환" },
   // ── File-Based Apps (signature: blue) ─────────── Developing ──
@@ -290,10 +301,9 @@ const FavoritesContext = createContext();
 const GlobalJobContext = createContext();
 const AnalysisPageStateContext = createContext();
 const FAVORITES_KEY = 'favorites';
+// Job Center 목록은 sessionStorage 에 둔다 — 앱을 껐다 켜면 비워지고(요구사항),
+// 실수로 새로고침한 경우에는 살아남는다. 보관 한도·만료 시간은 utils/globalJobs 가 정의한다.
 const GLOBAL_JOBS_KEY = 'hitess_global_jobs';
-const GLOBAL_JOB_HISTORY_LIMIT = 10;
-const GLOBAL_JOB_VISIBLE_MS = 30 * 60 * 1000;
-const GLOBAL_JOB_COLLAPSE_MS = 30 * 1000;
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
 const ANALYSIS_MENU_RESUME_ENTRY_KEY = 'workbench:analysis-menu-resume-entry';
 const MENU_ENTRY_MAX_AGE_MS = 5000;
@@ -342,25 +352,29 @@ function writeLocalFavorites(next) {
 
 function readPersistedGlobalJobs() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(GLOBAL_JOBS_KEY) || '[]');
+    // 예전에는 localStorage 에 저장해 앱을 재시작해도 목록이 남았다. 이제 세션 단위로
+    // 관리하므로, 남아 있는 옛 기록은 한 번 지우고 넘어간다.
+    localStorage.removeItem(GLOBAL_JOBS_KEY);
+  } catch {
+    // 저장소 접근이 막힌 환경에서는 무시한다.
+  }
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(GLOBAL_JOBS_KEY) || '[]');
     if (!Array.isArray(parsed)) return [];
-    const now = Date.now();
-    return parsed
+    const restored = parsed
       .filter(job => job?.jobId && job?.menu)
       .map(job => {
         const firstShownAt = Number(job.firstShownAt || 0);
         return {
           ...job,
           firstShownAt,
-          collapseAt: firstShownAt ? Number(job.collapseAt || firstShownAt + GLOBAL_JOB_COLLAPSE_MS) : null,
           expiresAt: firstShownAt ? Number(job.expiresAt || firstShownAt + GLOBAL_JOB_VISIBLE_MS) : null,
           displayName: job.displayName || job.menu,
           stateKey: getAppStateKey(job.stateKey || job.menu),
           menu: job.routeMenu || getAppMenuName(job.menu),
         };
-      })
-      .filter(job => !job.expiresAt || now < job.expiresAt)
-      .slice(0, GLOBAL_JOB_HISTORY_LIMIT);
+      });
+    return pruneExpiredJobs(restored, Date.now()).slice(0, GLOBAL_JOB_HISTORY_LIMIT);
   } catch {
     return [];
   }
@@ -368,7 +382,7 @@ function readPersistedGlobalJobs() {
 
 function writePersistedGlobalJobs(jobs) {
   try {
-    localStorage.setItem(GLOBAL_JOBS_KEY, JSON.stringify(jobs.slice(0, GLOBAL_JOB_HISTORY_LIMIT)));
+    sessionStorage.setItem(GLOBAL_JOBS_KEY, JSON.stringify(jobs.slice(0, GLOBAL_JOB_HISTORY_LIMIT)));
   } catch {
     // ignore storage failures
   }
@@ -486,7 +500,14 @@ export function DashboardProvider({ children }) {
   const [globalJobs, setGlobalJobs] = useState(() => (
     isAuthenticated ? readPersistedGlobalJobs() : []
   ));
+  // ⚠ globalJob 은 '가장 최근 해석' 1개일 뿐이다. 해석 페이지는 이 값이 아니라
+  //   getJobForMenu(자기 메뉴) 로 자기 App 의 해석을 찾아야 한다. 여러 App 을 오가며
+  //   해석하면 첫 항목이 다른 App 의 것이라 복원에 실패한다.
   const globalJob = globalJobs[0] || null;
+  const getJobForMenu = useCallback(
+    (menuName) => findJobForMenu(globalJobs, getAppMenuName(menuName)),
+    [globalJobs],
+  );
   const handledFreshEntryRef = useRef({ menu: null, at: 0 });
 
   const resetAnalysisEntryState = useCallback((menuName) => {
@@ -504,7 +525,9 @@ export function DashboardProvider({ children }) {
     if (menuName === 'HiTESS Model Builder') {
       setModelBuilderPageState(null);
     }
-    setGlobalJobs(prev => prev.filter(job => job.menu !== menuName));
+    // 화면 상태만 초기화하고 Job Center 기록은 건드리지 않는다. 사이드 메뉴로 다시 들어와도
+    // 서버에서 돌고 있는 해석의 추적이 끊기면 안 되고, 완료 기록도 30분 동안은 남아야 한다.
+    // (새 해석을 시작하면 upsertGlobalJob 이 App 당 1개 규칙에 따라 알아서 교체한다.)
   }, []);
 
   const isFreshNavigationResume = useCallback((menuName) => {
@@ -550,7 +573,7 @@ export function DashboardProvider({ children }) {
       if (job.jobId !== jobId) return job;
       const now = Date.now();
       const patchedStatus = patch?.status ?? job.status;
-      const isTerminal = patchedStatus === 'Success' || patchedStatus === 'Failed' || patchedStatus === 'Interrupted';
+      const isTerminal = isTerminalJobStatus(patchedStatus);
       const nextJob = {
         ...job,
         ...patch,
@@ -565,7 +588,7 @@ export function DashboardProvider({ children }) {
       if (pageStateKey) {
         setAnalysisPageStates(pagePrev => {
           const current = pagePrev[pageStateKey] || {};
-          const isRunning = nextJob.status !== 'Success' && nextJob.status !== 'Failed' && nextJob.status !== 'Interrupted';
+          const isRunning = !isTerminalJobStatus(nextJob.status);
           const isSuccess = nextJob.status === 'Success';
           const isFailure = nextJob.status === 'Failed' || nextJob.status === 'Interrupted';
           return {
@@ -597,6 +620,13 @@ export function DashboardProvider({ children }) {
     setGlobalJobs(prev => jobId ? prev.filter(job => job.jobId !== jobId) : []);
   }, []);
 
+  // 페이지 '초기화'용 — 그 App 의 기록만 지운다. 무인자 clearGlobalJob() 은 목록 전체를
+  // 비우므로, 한 페이지를 초기화하려다 다른 App 의 진행 중인 해석까지 날아간다.
+  const clearGlobalJobForMenu = useCallback((menuName) => {
+    const routeMenu = getAppMenuName(menuName);
+    setGlobalJobs(prev => removeJobsForMenu(prev, routeMenu));
+  }, []);
+
   const startGlobalJob = useCallback((jobId, menuName) => {
     if (!jobId) return;
     const routeMenu = getAppMenuName(menuName);
@@ -613,13 +643,10 @@ export function DashboardProvider({ children }) {
       startedAt: now,
       updatedAt: now,
       firstShownAt: null,
-      collapseAt: null,
       expiresAt: null,
     };
-    setGlobalJobs(prev => [
-      nextJob,
-      ...prev.filter(job => job.jobId !== jobId),
-    ].slice(0, GLOBAL_JOB_HISTORY_LIMIT));
+    // 같은 App 에서 새 해석을 시작하면 이전 기록을 교체한다(App 당 1개).
+    setGlobalJobs(prev => upsertGlobalJob(prev, nextJob));
     setAnalysisPageState(stateKey, current => ({
       ...current,
       job: {
@@ -646,24 +673,14 @@ export function DashboardProvider({ children }) {
     writePersistedGlobalJobs(globalJobs);
   }, [globalJobs, isAuthenticated]);
 
-  useEffect(() => {
-    setGlobalJobs(prev => {
-      const next = prev.filter(job =>
-        !((job.status === 'Success' || job.status === 'Failed' || job.status === 'Interrupted') && job.menu === currentMenu)
-      );
-      return next.length === prev.length ? prev : next;
-    });
-  }, [currentMenu]);
+  // 완료된 해석은 그 App 페이지에 들어가도 목록에서 지우지 않는다. 30분이 지나거나
+  // 사용자가 휴지통으로 닫을 때까지 남겨 두는 것이 Job Center 의 보관 정책이다.
 
   useEffect(() => {
     if (!isAuthenticated || globalJobs.length === 0) return;
 
     const clearExpiredJobs = () => {
-      const now = Date.now();
-      setGlobalJobs(prev => {
-        const next = prev.filter(job => now < (job.expiresAt || Infinity));
-        return next.length === prev.length ? prev : next;
-      });
+      setGlobalJobs(prev => pruneExpiredJobs(prev, Date.now()));
     };
 
     clearExpiredJobs();
@@ -706,7 +723,7 @@ export function DashboardProvider({ children }) {
 
   const contextValue = useMemo(() => ({
     favorites, toggleFavorite, reorderFavorite,
-    globalJob, globalJobs, startGlobalJob, clearGlobalJob,
+    globalJob, globalJobs, getJobForMenu, startGlobalJob, clearGlobalJob, clearGlobalJobForMenu,
     assessmentPageState, setAssessmentPageState,
     modelBuilderPageState, setModelBuilderPageState,
     analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
@@ -716,7 +733,7 @@ export function DashboardProvider({ children }) {
     pendingJobTransfer, setPendingJobTransfer, clearPendingJobTransfer
   }), [
     favorites, toggleFavorite, reorderFavorite,
-    globalJob, globalJobs, startGlobalJob, clearGlobalJob,
+    globalJob, globalJobs, getJobForMenu, startGlobalJob, clearGlobalJob, clearGlobalJobForMenu,
     assessmentPageState,
     modelBuilderPageState,
     analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
@@ -735,9 +752,11 @@ export function DashboardProvider({ children }) {
   const globalJobValue = useMemo(() => ({
     globalJob,
     globalJobs,
+    getJobForMenu,
     startGlobalJob,
     clearGlobalJob,
-  }), [clearGlobalJob, globalJob, globalJobs, startGlobalJob]);
+    clearGlobalJobForMenu,
+  }), [clearGlobalJob, clearGlobalJobForMenu, getJobForMenu, globalJob, globalJobs, startGlobalJob]);
 
   const analysisPageStateValue = useMemo(() => ({
     assessmentPageState,
@@ -839,7 +858,7 @@ export const useGlobalJobs = () => useContext(GlobalJobContext);
 export const useAnalysisPageState = () => useContext(AnalysisPageStateContext);
 
 function GlobalJobPoller({ job, onPatchJob }) {
-  const isTerminal = job.status === 'Success' || job.status === 'Failed' || job.status === 'Interrupted';
+  const isTerminal = isTerminalJobStatus(job.status);
 
   usePolling({
     jobId: isTerminal ? null : job.jobId,

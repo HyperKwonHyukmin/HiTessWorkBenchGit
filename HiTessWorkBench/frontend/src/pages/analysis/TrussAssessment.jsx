@@ -42,8 +42,9 @@ export default function TrussAssessment() {
   }, [isResultFullscreen]);
 
   const startGlobalJob = dashboardCtx?.startGlobalJob || (() => {});
-  const clearGlobalJob = dashboardCtx?.clearGlobalJob || (() => {});
-  const globalJob = dashboardCtx?.globalJob || null;
+  const clearGlobalJobForMenu = dashboardCtx?.clearGlobalJobForMenu || (() => {});
+  // 다른 App 해석이 더 최근이어도 이 App 의 해석을 집어야 한다(globalJob 은 최신 1개일 뿐).
+  const globalJob = dashboardCtx?.getJobForMenu?.('Truss Structural Assessment') || null;
 
   const assessmentPageState = dashboardCtx?.assessmentPageState || {};
   const {
@@ -66,7 +67,8 @@ export default function TrussAssessment() {
     setIsResultFullscreen(false);
     lastMsgRef.current = '';
     if (fileInputRef.current) fileInputRef.current.value = '';
-    clearGlobalJob();
+    // 이 App 의 기록만 지운다 — 무인자 호출은 Job Center 전체를 비운다.
+    clearGlobalJobForMenu('Truss Structural Assessment');
     if (dashboardCtx?.setAssessmentPageState) {
       dashboardCtx.setAssessmentPageState({
         bdfFile: null,
