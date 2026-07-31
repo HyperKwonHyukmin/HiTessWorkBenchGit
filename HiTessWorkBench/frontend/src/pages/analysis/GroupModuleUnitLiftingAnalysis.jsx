@@ -16,9 +16,10 @@ import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import { API_BASE_URL } from '../../config';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
+import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.121';
+const MODULE_STUDIO_VERSION = '0.0.126';
 
 // ── 상태 설정 (HiTessModelBuilder와 동일) ─────────────────────
 const STATUS_CONFIG = {
@@ -308,12 +309,14 @@ export default function GroupModuleUnitLiftingAnalysis() {
     clearGmuHandoff,
     startGlobalJob,
     clearGlobalJob,
-    globalJob,
+    getJobForMenu,
     analysisPageStates,
     setAnalysisPageState,
     clearAnalysisPageState,
   } = dashboardCtx;
   const savedPageState = analysisPageStates?.[GMU_MENU_NAME] || {};
+  // 다른 App 해석이 더 최근이어도 이 App 의 해석을 집어야 한다(globalJob 은 최신 1개일 뿐).
+  const gmuJob = getJobForMenu?.(GMU_MENU_NAME) || null;
   const { showToast } = useToast();
 
   // ── 파이프라인 상태 ──────────────────────────────────────
@@ -388,6 +391,13 @@ export default function GroupModuleUnitLiftingAnalysis() {
       if (result_info.bdf) setBdfPath(result_info.bdf);
       // 후속 Unit 구조 해석에서 parent record 참조용
       if (typeof data.project?.id === 'number') setBdfAnalysisId(data.project.id);
+      // 새 BDF 로 검증이 끝났다 — 이전 모델로 열려 있는 Module Unit Studio 창에 경고를 띄운다.
+      // (Studio 가 안 떠 있거나 같은 모델이면 main 이 무시한다.)
+      notifyStudioSourceUpdated(
+        MODULE_STUDIO_VIEWER_ID,
+        result_info.bdf ?? null,
+        '워크벤치에서 새 BDF 가 검증됐습니다. 이 창은 이전 모델을 보고 있습니다 — WorkBench 에서 Studio 를 다시 여세요.',
+      );
       await Promise.allSettled(
         Object.entries(result_info).map(async ([key, path]) => {
           if (!path || typeof path !== 'string' || !path.endsWith('.json')) return;
@@ -424,6 +434,9 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const [jobStatus, setJobStatus]   = useState(savedPageState.jobStatus ?? null); // null | { status, progress, message }
   const [handoffSource, setHandoffSource] = useState(savedPageState.handoffSource ?? null); // 프로그램 간 연계로 진입한 경우 출처 앱 이름
   const [handoffBdfPath, setHandoffBdfPath] = useState(savedPageState.handoffBdfPath ?? null);
+  // 핸드오프로 파이프라인을 초기화한 시점에 돌고 있던 이전 검증 작업의 jobId.
+  // globalJob 복원 effect 가 그 작업으로 화면을 '검증 중' 으로 되돌리지 못하게 막는다.
+  const ignoredJobIdRef = useRef(null);
   const pollRef = useRef(null);
 
   // ── Step 3: 결과 ─────────────────────────────────────────
@@ -478,14 +491,17 @@ export default function GroupModuleUnitLiftingAnalysis() {
   ]);
 
   useEffect(() => {
-    if (!globalJob || globalJob.menu !== GMU_MENU_NAME) return;
-    if (globalJob.status !== 'Running' && globalJob.status !== 'Pending') return;
-    setValidJobId(prev => prev || globalJob.jobId);
+    if (!gmuJob) return;
+    if (gmuJob.status !== 'Running' && gmuJob.status !== 'Pending') return;
+    // 핸드오프로 새 BDF 를 받아 파이프라인을 리셋했다면, 그 직전에 돌던 작업으로
+    // 화면을 되돌리지 않는다(새 입력인데 이전 작업의 '검증 중' 이 뜨는 것 방지).
+    if (ignoredJobIdRef.current && gmuJob.jobId === ignoredJobIdRef.current) return;
+    setValidJobId(prev => prev || gmuJob.jobId);
     setValidating(true);
     setStepStatus('bdf-validation', 'running');
-    setValidProgress(globalJob.progress ?? 0);
-    setValidStatusMsg(globalJob.message ?? '서버 처리 중...');
-  }, [globalJob?.jobId, globalJob?.status, globalJob?.progress, globalJob?.message, globalJob?.menu]);
+    setValidProgress(gmuJob.progress ?? 0);
+    setValidStatusMsg(gmuJob.message ?? '서버 처리 중...');
+  }, [gmuJob?.jobId, gmuJob?.status, gmuJob?.progress, gmuJob?.message]);
 
   // ── Studio 설치본/서버 최신 버전 재확인 ──────────────────────────
   // 로컬 설치본 버전(viewer:check-installed) + 서버 최신 배포 버전(manifest)을 동시에 조회한다.
@@ -625,6 +641,9 @@ export default function GroupModuleUnitLiftingAnalysis() {
         initialFolder,
         parentAnalysisId: bdfAnalysisId,
         serverUrl: API_BASE_URL,
+        // 이 창이 보고 있는 원본 모델 식별자. 이후 새 BDF 가 검증되면 main 이 이 값과 비교해
+        // 열려 있는 Studio 에 "원본이 갱신됨" 배너를 띄운다.
+        sourceKey: bdfPath ?? null,
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok) throw new Error(openRes?.error || 'Studio 오픈 실패');
@@ -635,7 +654,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
       setStudioStatus('error');
       showToast(`ModuleUnitStudio 실행 실패 — ${e.message}`, 'error');
     }
-  }, [bdfFolderPath, bdfAnalysisId, showToast]);
+  }, [bdfFolderPath, bdfPath, bdfAnalysisId, showToast]);
 
   const activeStep = steps[activeIdx];
   const isBdfStep      = activeStep?.id === 'bdf-validation';
@@ -655,21 +674,41 @@ export default function GroupModuleUnitLiftingAnalysis() {
     );
   }, [isResultsStep, hasRunOnce]);
 
-  // ── 마운트: 프로그램 간 연계 핸드오프 처리 ───────────────────
+  // ── 프로그램 간 연계 핸드오프 처리 ───────────────────────────
+  // ⚠️ 이 페이지는 keep-alive 라 한 번 열면 unmount 되지 않는다(App.jsx KEEP_ALIVE_MENUS).
+  //    과거엔 이 effect 가 마운트 1회 전용([])이라, 그 세션에서 이 앱을 이미 열어 본 적이
+  //    있으면 Model Builder 가 보낸 BDF 를 영영 수신하지 못하고 입력이 빈 채로 남았다.
+  //    (샘플 데모처럼 '이 앱을 처음 여는' 흐름에서만 우연히 동작했던 이유.)
+  //    → 핸드오프 값 자체를 의존성으로 삼아 도착할 때마다 수신한다.
   useEffect(() => {
     if (!gmuHandoff?.bdfServerPath) return;
     const { bdfServerPath, sourceApp } = gmuHandoff;
-    setHandoffSource(sourceApp || '외부 프로그램');
-    setHandoffBdfPath(bdfServerPath);
-    setBdfFile(null);
-    setStep1Data(null);
-    setStep2Data(null);
-    setStepStatus('bdf-validation', 'wait');
+    const from = sourceApp || '외부 프로그램';
+    // 이미 이전 해석을 끝낸 상태일 수 있으므로 파이프라인을 처음 상태로 되돌린 뒤 수신한다.
+    // (되돌리지 않으면 새 BDF 인데 이전 결과/완료 표시가 그대로 남는다.)
+    ignoredJobIdRef.current = validJobId || gmuJob?.jobId || null;
+    setSteps(INITIAL_STEPS);
+    setActiveIdx(0);
+    setHasRunOnce(false);
+    setValidating(false);
+    setValidJobId(null);
     setValidProgress(0);
     setValidStatusMsg('');
+    setStep1Data(null);
+    setStep2Data(null);
+    setBdfFile(null);
+    setBdfPath(null);
+    setBdfAnalysisId(null);
+    setAnalysisResult(null);
+    setJobStatus(null);
+    setHandoffSource(from);
+    setHandoffBdfPath(bdfServerPath);
     clearGmuHandoff();
-    showToast(`${sourceApp || '외부 프로그램'}에서 BDF를 전달받았습니다. 실행 버튼을 눌러 검증을 시작하세요.`, 'info');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    showToast(`${from}에서 BDF를 전달받았습니다. 실행 버튼을 눌러 검증을 시작하세요.`, 'info');
+    // validJobId/gmuJob 은 '핸드오프 시점의 값'만 필요하므로 의존성에 넣지 않는다
+    // (넣으면 폴링 진행마다 effect 가 재평가된다 — 값은 어차피 early return 으로 무시됨).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gmuHandoff, clearGmuHandoff, showToast]);
 
   // ── BDF 검증 ─────────────────────────────────────────────
   const handleValidate = async () => {

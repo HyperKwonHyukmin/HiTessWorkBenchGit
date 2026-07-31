@@ -17,6 +17,7 @@ import SampleRunButton from '../../components/analysis/SampleRunButton';
 import AppCommunityHub from '../../components/analysis/AppCommunityHub';
 import PreflightIssueCenter from '../../components/analysis/PreflightIssueCenter';
 import ModelRegistrationModal from '../../components/modelRegistry/ModelRegistrationModal';
+import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 
 /* ──────────────────────────────────────────────────────────────────────────
    상수
@@ -27,7 +28,7 @@ import ModelRegistrationModal from '../../components/modelRegistry/ModelRegistra
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.0.72';
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.76';
 
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',  icon: FileSpreadsheet, status: 'wait' },
@@ -2434,8 +2435,9 @@ export default function HiTessModelBuilder() {
 
   // ── 최초 마운트: globalJob 동기화 ──
   useEffect(() => {
-    const gj = dashboardCtx?.globalJob;
-    if (saved?.jobStatus?.status === 'Running' && gj?.menu === 'HiTESS Model Builder') {
+    // 다른 App 해석이 더 최근이어도 이 App 의 해석을 집어야 한다(globalJob 은 최신 1개일 뿐).
+    const gj = dashboardCtx?.getJobForMenu?.('HiTESS Model Builder');
+    if (saved?.jobStatus?.status === 'Running' && gj) {
       if (gj.status === 'Success' || gj.status === 'Failed') {
         setCurrentJobId(gj.jobId);
         fetch(`${API_BASE_URL}/api/analysis/status/${gj.jobId}`, { headers: getAuthHeaders() })
@@ -2755,6 +2757,13 @@ export default function HiTessModelBuilder() {
         bdfPath:      data.bdf_path     ?? null,
         jsonPath:     data.json_path    ?? null,
       });
+      // 새 모델이 나왔다 — 이전 모델로 열려 있는 Model Builder Studio 창에 경고를 띄운다.
+      // (Studio 가 안 떠 있거나 같은 모델이면 main 이 무시한다.)
+      notifyStudioSourceUpdated(
+        VIEWER_ID,
+        data.output_dir ?? null,
+        'Model Builder 가 모델을 다시 만들었습니다. 이 창은 이전 빌드를 보고 있습니다 — WorkBench 에서 Studio 를 다시 여세요.',
+      );
       setSteps(prev => prev.map((s, i) => {
         if (i === 0) return { ...s, status: 'done' };
         if (i === 1) return { ...s, status: 'done' };
@@ -2849,6 +2858,9 @@ export default function HiTessModelBuilder() {
         //   viewerServerUrl 을 못 잡아 하드코딩 기본값(DEFAULT_BACKEND_BASE_URL=145)으로
         //   폴백 → config.js 가 70 이어도 solve 가 145 로 가 404 가 난다.
         serverUrl:     API_BASE_URL,
+        // 이 창이 보고 있는 원본 모델 식별자. 이후 새 빌드가 나오면 main 이 이 값과 비교해
+        // 열려 있는 Studio 에 "원본이 갱신됨" 배너를 띄운다.
+        sourceKey:     bdfResult?.outputDir ?? null,
         // 서버측 ModelFlow 빌드 산출 폴더(userConnection 하위) — Studio 의 구조해석(Analysis)
         // 이 백엔드 work_dir 로 쓴다. initialFolder(로컬 로드 폴더)와 달리 prod 에선 서버 경로라
         // 반드시 별도로 등록해야 viewer:runModelBuilderSolve 가 output_dir 을 찾는다.

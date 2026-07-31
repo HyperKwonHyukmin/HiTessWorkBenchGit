@@ -14,6 +14,7 @@ import { usePolling } from '../../hooks/usePolling';
 import { requestSidePassageAssessment, requestGroupModuleUnitFromPath, downloadFileText } from '../../api/analysis';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import { API_BASE_URL } from '../../config';
+import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 
 const SIDE_PASSAGE_STUDIO_VIEWER_ID = 'side-passage-studio';
 
@@ -314,10 +315,12 @@ function ModuleStudioLauncher({
 export default function SidePassageAssessment() {
   const { setCurrentMenu } = useNavigation();
   const {
-    startGlobalJob, globalJob, sidePassageHandoff, clearSidePassageHandoff,
+    startGlobalJob, getJobForMenu, sidePassageHandoff, clearSidePassageHandoff,
     analysisPageStates, setAnalysisPageState,
   } = useDashboard();
   const SIDE_PASSAGE_MENU_NAME = 'Side Passage Assessment';
+  // 다른 App 해석이 더 최근이어도 이 App 의 해석을 집어야 한다(globalJob 은 최신 1개일 뿐).
+  const sidePassageJob = getJobForMenu?.(SIDE_PASSAGE_MENU_NAME) || null;
   // 다른 화면 이탈 → 우측 하단 글로벌 작업 카드로 복귀 시 입력·진행·결과를 그대로 복원하기 위한
   // 전역 저장소(GMU/Truss 와 동일 패턴). 아래 useState 들이 이 값을 초기값으로 읽는다.
   const savedPageState = analysisPageStates?.[SIDE_PASSAGE_MENU_NAME] || {};
@@ -387,6 +390,12 @@ export default function SidePassageAssessment() {
       if (result_info.bdf) setBdfPath(result_info.bdf);
       // 후속 Unit 구조 해석에서 parent record 참조용
       if (typeof data.project?.id === 'number') setBdfAnalysisId(data.project.id);
+      // 새 BDF 로 검증이 끝났다 — 이전 모델로 열려 있는 Side Passage Studio 창에 경고를 띄운다.
+      notifyStudioSourceUpdated(
+        SIDE_PASSAGE_STUDIO_VIEWER_ID,
+        result_info.bdf ?? null,
+        '워크벤치에서 새 BDF 가 검증됐습니다. 이 창은 이전 모델을 보고 있습니다 — WorkBench 에서 Studio 를 다시 여세요.',
+      );
       await Promise.allSettled(
         Object.entries(result_info).map(async ([key, path]) => {
           if (!path || typeof path !== 'string' || !path.endsWith('.json')) return;
@@ -460,20 +469,34 @@ export default function SidePassageAssessment() {
     bdfPath, bdfAnalysisId, editedBdfPath, useNastran,
   ]);
 
+  // ── 프로그램 간 연계 핸드오프 처리 ───────────────────────────
+  // ⚠️ 이 페이지는 keep-alive 라 한 번 열면 unmount 되지 않는다(App.jsx KEEP_ALIVE_MENUS).
+  //    과거엔 이 effect 가 마운트 1회 전용([])이라, 그 세션에서 이 앱을 이미 열어 본 적이
+  //    있으면 Model Builder 가 보낸 BDF 를 영영 수신하지 못하고 입력이 빈 채로 남았다.
+  //    → 핸드오프 값 자체를 의존성으로 삼아 도착할 때마다 수신한다.
   useEffect(() => {
     if (!sidePassageHandoff?.bdfServerPath) return;
     const { bdfServerPath, sourceApp } = sidePassageHandoff;
-    setHandoffSource(sourceApp || '외부 프로그램');
-    setHandoffBdfPath(bdfServerPath);
-    setBdfFile(null);
-    setStep1Data(null);
-    setStep2Data(null);
-    setStepStatus('bdf-validation', 'wait');
+    const from = sourceApp || '외부 프로그램';
+    // 이미 이전 해석을 끝낸 상태일 수 있으므로 파이프라인을 처음 상태로 되돌린 뒤 수신한다.
+    setSteps(INITIAL_STEPS);
+    setActiveIdx(0);
+    setHasRunOnce(false);
+    setValidating(false);
+    setValidJobId(null);
     setValidProgress(0);
     setValidStatusMsg('');
+    setStep1Data(null);
+    setStep2Data(null);
+    setBdfFile(null);
+    setBdfPath(null);
+    setBdfAnalysisId(null);
+    setEditedBdfPath(null);
+    setHandoffSource(from);
+    setHandoffBdfPath(bdfServerPath);
     clearSidePassageHandoff?.();
-    showToast(`${sourceApp || '외부 프로그램'}에서 BDF를 전달받았습니다. 실행 버튼을 눌러 검증을 시작하세요.`, 'info');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    showToast(`${from}에서 BDF를 전달받았습니다. 실행 버튼을 눌러 검증을 시작하세요.`, 'info');
+  }, [sidePassageHandoff, clearSidePassageHandoff, showToast]);
 
   useEffect(() => {
     let cancelled = false;
@@ -608,6 +631,9 @@ export default function SidePassageAssessment() {
         serverUrl: API_BASE_URL,
         outputDir: bdfFolderPath,
         sidePassageBdfName,
+        // 이 창이 보고 있는 원본 모델 식별자. 이후 새 BDF 가 검증되면 main 이 이 값과 비교해
+        // 열려 있는 Studio 에 "원본이 갱신됨" 배너를 띄운다.
+        sourceKey: bdfPath ?? null,
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok) throw new Error(openRes?.error || 'Studio 오픈 실패');
@@ -631,13 +657,13 @@ export default function SidePassageAssessment() {
   // 빈 화면이 아니라 "검증 중" UI 를 그대로 보여준다.
   useEffect(() => {
     if (sidePassageHandoff?.bdfServerPath) return; // 핸드오프가 우선
-    if (!globalJob || globalJob.menu !== SIDE_PASSAGE_MENU_NAME) return;
-    if (globalJob.status !== 'Running' && globalJob.status !== 'Pending') return;
-    setValidJobId(globalJob.jobId);
+    if (!sidePassageJob) return;
+    if (sidePassageJob.status !== 'Running' && sidePassageJob.status !== 'Pending') return;
+    setValidJobId(sidePassageJob.jobId);
     setValidating(true);
     setStepStatus('bdf-validation', 'running');
-    setValidProgress(globalJob.progress ?? 0);
-    setValidStatusMsg(globalJob.message ?? '서버 처리 중...');
+    setValidProgress(sidePassageJob.progress ?? 0);
+    setValidStatusMsg(sidePassageJob.message ?? '서버 처리 중...');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── BDF 검증 ─────────────────────────────────────────────
