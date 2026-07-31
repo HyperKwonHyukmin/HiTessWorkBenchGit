@@ -7,6 +7,7 @@ const os      = require("os");
 const crypto  = require("crypto");
 const { spawn } = require("child_process");
 const { buildUpdateHelperVbs } = require("./update-helper");
+const { ViewerSessionRegistry, isSourceStale } = require("./viewer-sessions");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
 // 다이얼로그 제목으로 사용됨. 미설정 시 개발 모드 기본값 'electron-app' 이 노출되므로,
@@ -15,24 +16,50 @@ const { buildUpdateHelperVbs } = require("./update-helper");
 app.setName("HiTESS WorkBench");
 
 let mainWindow;
-let viewerWindow = null;
-// 현재 viewerWindow 에 로드된 viewerId — 다른 Studio 로 전환 시 reload 가 아니라 loadFile 을
-// 다시 호출해야 한다 (reload 는 이전 URL 을 유지하므로 잘못된 Studio 가 보이는 버그가 있음).
-let viewerCurrentId = null;
-// viewer:getInitialFolder 가 호출될 때 반환할 절대경로(보통 jsonPath 의 디렉터리)
-let viewerInitialFolder = null;
-// viewer:runUnitStructural 가 백엔드에 전달할 GroupModuleUnit Analysis.id (DB record).
-// viewer:open 에서 등록되며, viewer 창이 닫혀도 다음 viewer:open 이 덮어쓸 때까지 유지된다.
-let viewerParentAnalysisId = null;
-// viewer IPC 가 사용할 WorkBench 백엔드 URL. Studio 오픈 시점의 프론트 API_BASE_URL 을
-// 전달받아 Electron main process 의 별도 fallback 과 drift 되지 않게 한다.
-let viewerServerUrl = null;
-// viewer:runMooringStructural 가 백엔드에 전달할 서버측 output_dir(원본 BDF 보유 userConnection out 폴더).
-// MooringFittingStudio 는 로컬 추출 폴더만 알기에, solve 는 이 서버 경로 기준으로 수행된다.
-let viewerOutputDir = null;
-// viewer:exportSidePassageBdf 가 백엔드에 넘길 원본 SidePassage BDF 파일명(폴더 내 원본 식별용).
-// viewer:open 에서 등록된다. 없으면 백엔드가 폴더에서 파생본 제외 후 추정한다.
-let viewerSidePassageBdfName = null;
+
+// ── Studio(viewer) 세션 레지스트리 ────────────────────────────────────────
+// 과거엔 창 1개(viewerWindow) + 전역 컨텍스트 1벌이었다. 그래서 다른 Studio 를 열면
+// 먼저 띄운 창이 교체되고 컨텍스트도 덮어써져, Model Builder Studio 와 Module Unit
+// Studio 를 오가며 작업할 수 없었다. 이제 viewerId 별로 독립 창 + 독립 컨텍스트를 갖는다.
+//
+// ⚠️ 핵심 규약: Studio 가 호출하는 IPC 핸들러는 반드시 '요청을 보낸 창'(event.sender)
+//    으로 자기 세션을 찾는다. "현재 활성 Studio" 전역을 두고 전환할 때 스왑하는 방식은
+//    쓰지 않는다 — 백그라운드 Studio 가 IPC 를 한 번이라도 호출하면 다른 Studio 의
+//    컨텍스트(outputDir / parentAnalysisId)로 해석 요청이 나가고, 오류 없이 조용히
+//    잘못된 모델이 해석되기 때문이다.
+//
+// session = {
+//   viewerId, win,
+//   initialFolder,       // viewer:getInitialFolder 가 반환할 절대경로
+//   parentAnalysisId,    // runUnitStructural / exportUnitBdf / uploadEvaluationArtifact 용 Analysis.id
+//   serverUrl,           // Studio 오픈 시점의 프론트 API_BASE_URL
+//   outputDir,           // 서버측 산출 폴더(Mooring / SidePassage / ModelBuilder solve 의 기준 경로)
+//   sidePassageBdfName,  // SidePassage 원본 BDF 파일명(폴더 내 원본 식별용)
+// }
+// 레지스트리 본체는 viewer-sessions.js (Electron 비의존 · 단위 테스트 대상).
+const viewerSessions = new ViewerSessionRegistry();
+
+// IPC 발신 창으로부터 세션 해소. 못 찾으면 null — 폴백으로 다른 세션을 쓰지 않는다(위 규약).
+function sessionFromEvent(event) {
+  return viewerSessions.fromWebContentsId(event?.sender?.id);
+}
+
+function windowOfSession(session) {
+  return viewerSessions.windowOf(session);
+}
+
+// Studio 전용 IPC 가 세션을 해소하지 못했을 때의 공통 실패 응답.
+function noSessionError() {
+  return {
+    ok: false,
+    error: "이 Studio 창의 세션 정보를 찾을 수 없습니다. WorkBench 에서 Studio 를 다시 여세요.",
+  };
+}
+
+// 살아 있는 Studio 창 목록(닫힌 세션은 정리).
+function liveViewerSessions() {
+  return viewerSessions.live();
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -192,7 +219,7 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
     // parent 미설정: 부모-자식 창은 Windows 에서 포커스/z-order 가 묶여, 외부 앱 창을
     //   선택하면 OS 가 WorkBench 본체까지 함께 앞으로 끌어올린다(멀티모니터에서 본체가
     //   튀어나옴). 독립 top-level 창으로 두어 포커스/선택을 본체와 분리한다.
-    //   (viewerWindow 와 동일한 이유 — 해당 핸들러 주석 참고)
+    //   (Studio 창(viewer:open) 과 동일한 이유 — 해당 핸들러 주석 참고)
     backgroundColor: "#002554",
     autoHideMenuBar: true,
     icon: path.join(__dirname, "icon.ico"),
@@ -872,7 +899,9 @@ ipcMain.handle("viewer:readLocalFile", async (_e, payload) => {
 
 // 3) 풀스크린 보조 BrowserWindow 로 viewer 오픈
 ipcMain.handle("viewer:open", async (_e, payload) => {
-  const { viewerId, initialFolder, parentAnalysisId, serverUrl, outputDir, sidePassageBdfName } = payload || {};
+  const {
+    viewerId, initialFolder, parentAnalysisId, serverUrl, outputDir, sidePassageBdfName, sourceKey,
+  } = payload || {};
   if (!viewerId) return { ok: false, error: "viewerId 누락" };
 
   const dir = getViewerDir(viewerId);
@@ -881,43 +910,59 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
     return { ok: false, error: `viewer 미설치: ${viewerId}` };
   }
 
-  // viewer:getInitialFolder 가 사용
-  viewerInitialFolder = initialFolder ? path.resolve(initialFolder) : null;
-  // viewer:runUnitStructural 가 사용 — null 이면 그 IPC 가 거부 응답
+  // 이 Studio 의 컨텍스트. 다른 Studio 의 세션과 완전히 분리된다.
   const parsedParentId = Number(parentAnalysisId);
-  viewerParentAnalysisId = Number.isFinite(parsedParentId) && parsedParentId > 0 ? parsedParentId : null;
-  viewerServerUrl = typeof serverUrl === "string" && serverUrl.trim()
-    ? serverUrl.trim().replace(/\/$/, "")
-    : null;
-  // MooringFittingStudio 구조해석용 서버측 out 폴더(원본 BDF 위치). 없으면 null → 해당 IPC 거부.
-  // SidePassageStudio Check Plate export 도 같은 서버 폴더(원본 BDF 보유)를 기준으로 동작한다.
-  viewerOutputDir = typeof outputDir === "string" && outputDir.trim() ? outputDir.trim() : null;
-  // SidePassage 원본 BDF 파일명(폴더 내 원본 식별용). 없으면 백엔드가 파생본 제외 후 추정.
-  viewerSidePassageBdfName = typeof sidePassageBdfName === "string" && sidePassageBdfName.trim()
-    ? sidePassageBdfName.trim()
-    : null;
+  const session = {
+    viewerId,
+    win: null,
+    // viewer:getInitialFolder 가 사용
+    initialFolder: initialFolder ? path.resolve(initialFolder) : null,
+    // viewer:runUnitStructural 가 사용 — null 이면 그 IPC 가 거부 응답
+    parentAnalysisId: Number.isFinite(parsedParentId) && parsedParentId > 0 ? parsedParentId : null,
+    serverUrl: typeof serverUrl === "string" && serverUrl.trim()
+      ? serverUrl.trim().replace(/\/$/, "")
+      : null,
+    // MooringFittingStudio 구조해석용 서버측 out 폴더(원본 BDF 위치). 없으면 null → 해당 IPC 거부.
+    // SidePassageStudio Check Plate export 도 같은 서버 폴더(원본 BDF 보유)를 기준으로 동작한다.
+    outputDir: typeof outputDir === "string" && outputDir.trim() ? outputDir.trim() : null,
+    // SidePassage 원본 BDF 파일명(폴더 내 원본 식별용). 없으면 백엔드가 파생본 제외 후 추정.
+    sidePassageBdfName: typeof sidePassageBdfName === "string" && sidePassageBdfName.trim()
+      ? sidePassageBdfName.trim()
+      : null,
+    // 이 창이 보고 있는 '원본 모델' 식별자(서버측 산출 폴더 또는 BDF 경로).
+    // viewer:notifySourceUpdated 가 이 값과 비교해 모델이 갈아엎혔는지 판정한다.
+    sourceKey: typeof sourceKey === "string" && sourceKey.trim() ? sourceKey.trim() : null,
+  };
 
-  if (viewerWindow && !viewerWindow.isDestroyed()) {
-    viewerWindow.focus();
-    if (viewerCurrentId !== viewerId) {
-      // 다른 Studio 로 전환 — 새 index.html 로드 (reload 는 이전 URL 유지하므로 사용 X)
-      viewerWindow.loadFile(indexPath);
-      viewerCurrentId = viewerId;
-    } else {
-      // 같은 Studio 재오픈 — initialFolder 등 갱신을 위해 reload
-      viewerWindow.webContents.reload();
-    }
+  // 어느 모델을 보고 있는지 창 제목으로 식별 가능하게 한다 — Studio 를 여러 개 띄웠을 때
+  // "지금 이 창이 어떤 모델인가" 를 사용자가 판단할 유일한 단서다.
+  const modelLabel = session.initialFolder ? path.basename(session.initialFolder) : null;
+  const windowTitle = modelLabel
+    ? `HiTess Studio — ${viewerId} — ${modelLabel}`
+    : `HiTess Studio — ${viewerId}`;
+  session.windowTitle = windowTitle;
+
+  // 같은 Studio 가 이미 떠 있으면 그 창을 재사용(컨텍스트만 갱신 후 reload).
+  const existingWin = windowOfSession(viewerSessions.get(viewerId));
+  if (existingWin) {
+    session.win = existingWin;
+    viewerSessions.register(session, existingWin.webContents.id);
+    existingWin.setTitle(windowTitle);
+    if (existingWin.isMinimized()) existingWin.restore();
+    existingWin.focus();
+    // initialFolder 등 갱신을 위해 reload (같은 Studio 이므로 URL 은 동일)
+    existingWin.webContents.reload();
     return { ok: true, reused: true };
   }
 
-  viewerWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     // parent 미설정: Windows에서 child window가 parent를 비활성화하는 OS 동작 방지.
     // 독립 창으로 두어 WorkBench와 상호 작용 가능.
     show: false,                     // ready-to-show 까지 숨김 (깜빡임 방지)
     frame: true,                     // OS 표준 타이틀바 (최소화/최대화/닫기 버튼 살림)
     backgroundColor: "#0d0d1a",
     autoHideMenuBar: true,
-    title: "HiTess Model Viewer",
+    title: windowTitle,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -925,21 +970,42 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
     },
   });
 
-  viewerWindow.loadFile(indexPath);
-  viewerCurrentId = viewerId;
+  session.win = win;
+  // webContents.id 는 loadFile/reload 를 거쳐도 유지되므로 여기서 한 번만 등록하면 된다.
+  viewerSessions.register(session, win.webContents.id);
 
-  viewerWindow.once("ready-to-show", () => {
+  win.loadFile(indexPath);
+
+  // 창 제목이 렌더러의 <title> 로 덮이지 않게 고정 — 어느 모델인지 항상 보이게 한다.
+  // 제목은 세션에서 읽는다(같은 창을 다른 모델로 재사용해 reload 했을 때 옛 제목으로
+  // 되돌아가지 않도록).
+  win.on("page-title-updated", (e) => {
+    e.preventDefault();
+    win.setTitle(viewerSessions.get(viewerId)?.windowTitle || windowTitle);
+  });
+
+  win.once("ready-to-show", () => {
     // 화면 우측 절반에 배치 — WorkBench 본체(좌측)와 Studio(우측)를 동시에 볼 수 있도록.
+    // Studio 를 여러 개 띄우면 계단식으로 어긋나게 놓아 뒤 창이 완전히 가려지지 않게 한다.
     // 사용자가 이후 최대화/직접 리사이즈하면 OS 표준 동작에 따라 그대로 적용됨.
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const wa = display.workArea;
     const halfW = Math.floor(wa.width / 2);
     const minUsableW = Math.min(960, wa.width);
     const width = Math.max(halfW, minUsableW);
-    const x = Math.min(wa.x + wa.width - width, wa.x + halfW);
-    viewerWindow.setBounds({ x, y: wa.y, width, height: wa.height });
-    viewerWindow.show();
-    viewerWindow.focus();
+    const baseX = Math.min(wa.x + wa.width - width, wa.x + halfW);
+
+    // 이 창을 제외한 살아 있는 Studio 수만큼 계단식 오프셋(화면 밖으로 나가지 않게 상한).
+    const others = liveViewerSessions().filter((s) => s.win !== win).length;
+    const step = 36;
+    const maxShift = Math.max(0, Math.min(halfW - 120, wa.height - 200));
+    const shift = Math.min(others * step, maxShift);
+    const height = Math.max(400, wa.height - shift);
+
+    const x = Math.max(wa.x, baseX - shift);
+    win.setBounds({ x, y: wa.y + shift, width, height });
+    win.show();
+    win.focus();
   });
 
   // 키보드 단축키:
@@ -947,53 +1013,158 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
   //   Esc        → 풀스크린 해제 (창모드일 땐 무시)
   //   Ctrl+W     → 창 닫기
   //   Ctrl+Shift+I (개발 모드) → DevTools 토글
-  viewerWindow.webContents.on("before-input-event", (event, input) => {
+  win.webContents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown") return;
     const key = input.key;
 
     if (key === "F11") {
-      viewerWindow.setFullScreen(!viewerWindow.isFullScreen());
+      win.setFullScreen(!win.isFullScreen());
       event.preventDefault();
-    } else if (key === "Escape" && viewerWindow.isFullScreen()) {
-      viewerWindow.setFullScreen(false);
+    } else if (key === "Escape" && win.isFullScreen()) {
+      win.setFullScreen(false);
       event.preventDefault();
     } else if (input.control && (key === "w" || key === "W")) {
-      viewerWindow.close();
+      win.close();
       event.preventDefault();
     }
   });
 
-  viewerWindow.on("closed", () => { viewerWindow = null; viewerCurrentId = null; });
+  // 창이 닫히면 세션·역맵을 반드시 함께 정리한다. 남겨두면 webContents.id 가 재사용될 때
+  // 죽은 Studio 의 컨텍스트로 IPC 가 해소될 수 있다.
+  const closedWebContentsId = win.webContents.id;
+  win.on("closed", () => viewerSessions.remove(viewerId, closedWebContentsId, win));
 
   // 개발 모드에서는 viewer 창 디버깅 도구 자동 오픈
   if (!app.isPackaged) {
-    viewerWindow.webContents.once("did-finish-load", () => {
-      try { viewerWindow.webContents.openDevTools({ mode: "detach" }); } catch {}
+    win.webContents.once("did-finish-load", () => {
+      try { win.webContents.openDevTools({ mode: "detach" }); } catch {}
     });
   }
   return { ok: true };
 });
 
-ipcMain.handle("viewer:close", () => {
-  if (viewerWindow && !viewerWindow.isDestroyed()) {
-    viewerWindow.close();
+// ── Studio 원본 모델 갱신 알림 ────────────────────────────────────────────
+// WorkBench 가 모델을 다시 만들면, 그 모델을 입력으로 이미 열려 있는 Studio 는 옛 모델을
+// 든 채 남는다. Studio 를 여러 개 띄울 수 있게 되면서 실제로 발생 가능해진 유일한 실질
+// 위험이라, 해당 Studio 창 위에 호스트가 직접 경고 배너를 그린다.
+//
+// 왜 Studio 앱 내부 컴포넌트가 아니라 호스트가 그리는가:
+//   1) 이미 설치된 구 버전 Studio zip 에도 즉시 적용된다. Studio 쪽 리스너 방식은
+//      재배포 + 사용자 업데이트 이후에만 동작해, 정작 위험한 구버전 사용자를 못 지킨다.
+//   2) "WorkBench 가 모델을 다시 만들었다" 는 사실은 호스트만 아는 정보다.
+function injectSourceUpdatedNotice(win, message) {
+  const code = `(() => {
+    const MSG = ${JSON.stringify(message)};
+    const ID = '__hitess_source_updated_notice__';
+    const render = () => {
+      if (!document.body) return false;
+      let el = document.getElementById(ID);
+      if (!el) {
+        el = document.createElement('div');
+        el.id = ID;
+        el.style.cssText = [
+          'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:2147483647',
+          'display:flex', 'align-items:center', 'gap:12px',
+          'padding:10px 14px', 'box-sizing:border-box',
+          'background:#b45309', 'color:#fff',
+          'font:600 13px/1.45 system-ui,Segoe UI,sans-serif',
+          'box-shadow:0 2px 10px rgba(0,0,0,.35)',
+        ].join(';');
+        document.body.appendChild(el);
+      }
+      el.textContent = '';
+      const icon = document.createElement('span');
+      icon.textContent = '\\u26A0';
+      icon.style.cssText = 'flex:none;font-size:15px';
+      const text = document.createElement('span');
+      text.style.cssText = 'flex:1';
+      text.textContent = MSG;
+      const btn = document.createElement('button');
+      btn.textContent = '닫기';
+      btn.style.cssText = 'flex:none;padding:4px 10px;border:1px solid rgba(255,255,255,.65);'
+        + 'border-radius:6px;background:transparent;color:#fff;font:inherit;cursor:pointer';
+      btn.addEventListener('click', () => el.remove());
+      el.appendChild(icon);
+      el.appendChild(text);
+      el.appendChild(btn);
+      return true;
+    };
+    if (!render()) document.addEventListener('DOMContentLoaded', render, { once: true });
+    return true;
+  })()`;
+  return win.webContents.executeJavaScript(code, true).catch(() => false);
+}
+
+// WorkBench 본체가 "이 App 의 원본 모델을 새로 만들었다" 고 알린다.
+// 해당 Studio 가 열려 있고 그 창이 다른 모델(sourceKey 불일치)을 보고 있을 때만 배너를 띄운다.
+ipcMain.handle("viewer:notifySourceUpdated", async (_e, payload) => {
+  const { viewerId, sourceKey, message } = payload || {};
+  if (!viewerId) return { ok: false, error: "viewerId 누락" };
+
+  const session = viewerSessions.get(viewerId);
+  const win = windowOfSession(session);
+  if (!win) return { ok: true, notified: false, reason: "not-open" };
+  // 판정은 viewer-sessions.isSourceStale (단위 테스트 대상) 에 위임한다.
+  // 식별자를 모르면 경보하지 않는다 — 거짓 경보가 반복되면 사용자가 배너를 무시하게 된다.
+  if (!isSourceStale(session, sourceKey)) {
+    return {
+      ok: true,
+      notified: false,
+      reason: session.sourceKey && sourceKey ? "same-model" : "unknown-source",
+    };
   }
-  return { ok: true };
+
+  session.sourceUpdated = true;
+  await injectSourceUpdatedNotice(
+    win,
+    message
+      || "WorkBench 에서 원본 모델이 다시 만들어졌습니다. 이 창은 이전 모델을 보고 있습니다 — WorkBench 에서 Studio 를 다시 여세요.",
+  );
+  return { ok: true, notified: true };
+});
+
+// viewerId 지정 시 그 Studio 만 닫는다. 미지정이면 호출한 창이 Studio 면 자기 자신을,
+// WorkBench 본체가 호출했으면(레거시 계약) 열려 있는 Studio 를 모두 닫는다.
+ipcMain.handle("viewer:close", (event, payload) => {
+  const viewerId = typeof payload === "string" ? payload : payload?.viewerId;
+
+  if (viewerId) {
+    const win = windowOfSession(viewerSessions.get(viewerId));
+    if (win) win.close();
+    return { ok: true, closed: win ? [viewerId] : [] };
+  }
+
+  const own = sessionFromEvent(event);
+  if (own) {
+    const win = windowOfSession(own);
+    if (win) win.close();
+    return { ok: true, closed: [own.viewerId] };
+  }
+
+  const closed = [];
+  for (const session of liveViewerSessions()) {
+    closed.push(session.viewerId);
+    session.win.close();
+  }
+  return { ok: true, closed };
 });
 
 // ── viewer 측 host adapter (window.workbenchAPI) ─────────────
 
-ipcMain.handle("viewer:pickFolder", async () => {
-  const target = (viewerWindow && !viewerWindow.isDestroyed()) ? viewerWindow : mainWindow;
+ipcMain.handle("viewer:pickFolder", async (event) => {
+  const target = windowOfSession(sessionFromEvent(event)) || mainWindow;
   const r = await dialog.showOpenDialog(target, { properties: ["openDirectory"] });
   if (r.canceled || r.filePaths.length === 0) return null;
   return await readJsonFolderRecursive(r.filePaths[0]);
 });
 
-ipcMain.handle("viewer:getInitialFolder", async () => {
-  if (!viewerInitialFolder) return null;
-  if (!fs.existsSync(viewerInitialFolder)) return null;
-  return await readJsonFolderRecursive(viewerInitialFolder);
+ipcMain.handle("viewer:getInitialFolder", async (event) => {
+  // 호출한 Studio 자신의 initialFolder 만 돌려준다(다른 Studio 의 폴더가 섞이지 않게).
+  const session = sessionFromEvent(event);
+  const folder = session?.initialFolder;
+  if (!folder) return null;
+  if (!fs.existsSync(folder)) return null;
+  return await readJsonFolderRecursive(folder);
 });
 
 // ── Studio "최종 모델 출력" → workbench 자동 처리 ────────────────────
@@ -1008,8 +1179,11 @@ const _pendingFinalizeReqs = new Map();   // requestId → resolve
 // saved a custom server_url in localStorage.
 const DEFAULT_BACKEND_BASE_URL = "http://10.14.42.145:9091";
 
-async function getWorkbenchRuntimeConfig() {
-  const defaultServerUrl = viewerServerUrl || DEFAULT_BACKEND_BASE_URL;
+// session 을 넘기면 그 Studio 가 오픈될 때 전달받은 serverUrl 을 fallback 으로 쓴다.
+// (Studio 마다 다른 백엔드를 볼 수 있으므로 전역 하나로 두지 않는다.)
+async function getWorkbenchRuntimeConfig(session = null) {
+  const sessionServerUrl = session?.serverUrl || null;
+  const defaultServerUrl = sessionServerUrl || DEFAULT_BACKEND_BASE_URL;
   const fallback = { serverUrl: defaultServerUrl, token: "", employeeId: "" };
   if (!mainWindow || mainWindow.isDestroyed()) return fallback;
 
@@ -1030,7 +1204,7 @@ async function getWorkbenchRuntimeConfig() {
     `, true);
     const cfg = JSON.parse(raw || "{}");
     return {
-      serverUrl: String(cfg.serverUrl || viewerServerUrl || DEFAULT_BACKEND_BASE_URL).replace(/\/$/, ""),
+      serverUrl: String(cfg.serverUrl || sessionServerUrl || DEFAULT_BACKEND_BASE_URL).replace(/\/$/, ""),
       token: String(cfg.token || ""),
       employeeId: String(cfg.employeeId || ""),
     };
@@ -1101,8 +1275,10 @@ async function readBackendError(res) {
   }
 }
 
-ipcMain.handle("viewer:finalizeEditedModel", async (_e, payload) => {
+ipcMain.handle("viewer:finalizeEditedModel", async (event, payload) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     const folderPath   = payload?.folderPath;
     const editFileName = payload?.request?.editFileName;
     if (!folderPath) {
@@ -1134,7 +1310,7 @@ ipcMain.handle("viewer:finalizeEditedModel", async (_e, payload) => {
         }
       }, 10 * 60 * 1000);
 
-      const channel = viewerCurrentId === 'mooring-fitting-studio'
+      const channel = session.viewerId === 'mooring-fitting-studio'
         ? 'mooring:finalize-edit-request'
         : 'modelflow:finalize-edit-request';
 
@@ -1145,10 +1321,11 @@ ipcMain.handle("viewer:finalizeEditedModel", async (_e, payload) => {
       });
     });
 
-    // 성공 시 Studio 창 자동 종료 (Studio 의 await 가 결과를 받은 직후 닫히도록 마이크로태스크로)
+    // 성공 시 요청한 Studio 창만 종료 (Studio 의 await 가 결과를 받은 직후 닫히도록 마이크로태스크로)
     if (result?.ok) {
       setImmediate(() => {
-        if (viewerWindow && !viewerWindow.isDestroyed()) viewerWindow.close();
+        const win = windowOfSession(session);
+        if (win) win.close();
       });
     }
     return result;
@@ -1192,13 +1369,17 @@ ipcMain.handle("viewer:writeFile", async (_e, folderPath, fileName, content) => 
   }
 });
 
-ipcMain.handle("viewer:notifyModelSaved", async (_e, payload) => {
+ipcMain.handle("viewer:notifyModelSaved", async (event, payload) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     const filePath = payload?.filePath;
     if (!filePath) return { ok: false, error: "filePath 누락" };
     if (mainWindow && !mainWindow.isDestroyed()) {
+      // viewerId 는 WorkBench 각 페이지가 '내 Studio 의 저장인가' 를 가리는 필터다.
+      // 반드시 저장을 알린 Studio 자신의 id 여야 한다.
       mainWindow.webContents.send("viewer:model-saved", {
-        viewerId: viewerCurrentId,
+        viewerId: session.viewerId,
         filePath,
         fileName: path.basename(filePath),
         kind: payload?.kind || "model-bdf",
@@ -1206,7 +1387,8 @@ ipcMain.handle("viewer:notifyModelSaved", async (_e, payload) => {
       });
     }
     setImmediate(() => {
-      if (viewerWindow && !viewerWindow.isDestroyed()) viewerWindow.close();
+      const win = windowOfSession(session);
+      if (win) win.close();
     });
     return { ok: true };
   } catch (e) {
@@ -1219,8 +1401,10 @@ ipcMain.handle("viewer:notifyModelSaved", async (_e, payload) => {
 // 서버 PC 의 userConnection/{ts}_{empid}_GroupModuleUnit/ 로 같은 파일을 올린다.
 // 그 후 viewer:runStabilityAnalysis 는 반환된 remotePath 로 호출되어 같은 PC 디스크에서
 // 자세안정성 평가가 실행된다. 이로써 Studio/서버 PC 분리 운영을 지원한다.
-ipcMain.handle("viewer:uploadEvaluationArtifact", async (_e, payload) => {
+ipcMain.handle("viewer:uploadEvaluationArtifact", async (event, payload) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     const fileName = payload?.fileName;
     const content  = payload?.content;
     const artifactKind = payload?.artifactKind || "posture";
@@ -1228,14 +1412,14 @@ ipcMain.handle("viewer:uploadEvaluationArtifact", async (_e, payload) => {
       return { ok: false, error: "fileName / content 누락" };
     }
 
-    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     const { serverUrl } = runtimeConfig;
     // employee_id 는 백엔드의 require_auth 가 검증한 current_user 와 일치해야 한다.
     const employeeId = runtimeConfig.employeeId;
     if (!employeeId) {
       return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
     }
-    if (!viewerParentAnalysisId) {
+    if (!session.parentAnalysisId) {
       return { ok: false, error: "parentAnalysisId 가 없습니다. WorkBench 에서 BDF 검증을 완료한 뒤 Studio 를 여세요." };
     }
 
@@ -1243,7 +1427,7 @@ ipcMain.handle("viewer:uploadEvaluationArtifact", async (_e, payload) => {
       const form = new FormData();
       form.append("file", new Blob([content], { type: "application/json" }), fileName);
       form.append("employee_id", employeeId);
-      form.append("parent_analysis_id", String(viewerParentAnalysisId));
+      form.append("parent_analysis_id", String(session.parentAnalysisId));
       form.append("artifact_kind", artifactKind);
       return form;
     };
@@ -1268,14 +1452,16 @@ ipcMain.handle("viewer:uploadEvaluationArtifact", async (_e, payload) => {
   }
 });
 
-ipcMain.handle("viewer:runStabilityAnalysis", async (_e, posturePath) => {
+ipcMain.handle("viewer:runStabilityAnalysis", async (event, posturePath) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     if (!posturePath) return { ok: false, error: "posturePath 누락" };
     if (!path.isAbsolute(posturePath)) {
       return { ok: false, error: `_posture.json 절대경로가 아닙니다: ${posturePath}` };
     }
 
-    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     const { serverUrl } = runtimeConfig;
 
     const { res: reqRes, token } = await fetchWithSessionRefresh(`${serverUrl}/api/analysis/module-stability/request`, {
@@ -1328,14 +1514,16 @@ ipcMain.handle("viewer:runStabilityAnalysis", async (_e, posturePath) => {
   }
 });
 
-ipcMain.handle("viewer:optimizeHoistPositions", async (_e, posturePath) => {
+ipcMain.handle("viewer:optimizeHoistPositions", async (event, posturePath) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     if (!posturePath) return { ok: false, error: "posturePath 누락" };
     if (!path.isAbsolute(posturePath)) {
       return { ok: false, error: `_posture.json 절대경로가 아닙니다: ${posturePath}` };
     }
 
-    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     const { serverUrl } = runtimeConfig;
 
     const { res: reqRes, token } = await fetchWithSessionRefresh(`${serverUrl}/api/analysis/module-stability/optimize`, {
@@ -1392,8 +1580,10 @@ ipcMain.handle("viewer:optimizeHoistPositions", async (_e, posturePath) => {
 // Studio 측에서 IPC 한 번으로 호출 → main 이 백엔드 unit-structural endpoint 에 양식
 // 데이터를 보내 job 시작 → 1.5초 간격으로 30분 폴링 → 완료 시 nastranResult JSON 의
 // 내용까지 함께 돌려준다. 진행 상황은 viewer:unit-structural-progress 로 stream.
-ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
+ipcMain.handle("viewer:runUnitStructural", async (event, payload) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     const stabilityPath = payload?.stabilityPath;
     const safetyFactor  = Number(payload?.safetyFactor ?? 1.2);
     const allowableMpa  = Number(payload?.allowableMpa ?? 220);
@@ -1402,7 +1592,7 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
     if (!path.isAbsolute(stabilityPath)) {
       return { ok: false, error: `stabilityPath 절대경로가 아닙니다: ${stabilityPath}` };
     }
-    if (!viewerParentAnalysisId) {
+    if (!session.parentAnalysisId) {
       return { ok: false, error: "parentAnalysisId 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 BDF 검증을 먼저 마치고 Studio 를 여세요." };
     }
     if (!Number.isFinite(safetyFactor) || safetyFactor <= 0) {
@@ -1412,7 +1602,7 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
       return { ok: false, error: `allowableMpa 가 양수여야 합니다: ${allowableMpa}` };
     }
 
-    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     const { serverUrl } = runtimeConfig;
     const employeeId = runtimeConfig.employeeId;
     if (!employeeId) {
@@ -1421,7 +1611,7 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
 
     const form = new URLSearchParams();
     form.set("stability_path", stabilityPath);
-    form.set("parent_analysis_id", String(viewerParentAnalysisId));
+    form.set("parent_analysis_id", String(session.parentAnalysisId));
     form.set("safety_factor", String(safetyFactor));
     form.set("allowable_mpa", String(allowableMpa));
     form.set("employee_id", employeeId);
@@ -1440,11 +1630,11 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
     const jobId = reqBody.jobId || reqBody.job_id;
     if (!jobId) return { ok: false, error: "백엔드 응답에 jobId 가 없습니다." };
 
+    // 진행률은 이 해석을 요청한 Studio 창에만 보낸다(다른 Studio 로 새지 않게).
     const sendProgress = (data) => {
       try {
-        if (viewerWindow && !viewerWindow.isDestroyed()) {
-          viewerWindow.webContents.send("viewer:unit-structural-progress", { jobId, ...data });
-        }
+        const win = windowOfSession(session);
+        if (win) win.webContents.send("viewer:unit-structural-progress", { jobId, ...data });
       } catch {}
     };
     sendProgress({ status: "Pending", progress: 0, message: "큐 대기..." });
@@ -1520,15 +1710,17 @@ ipcMain.handle("viewer:runUnitStructural", async (_e, payload) => {
 //
 // payload = { bdfContent: string, fileName?: string }
 // 반환    = { ok, summary, resultPath, result, job, analysisId } | { ok:false, error, ... }
-ipcMain.handle("viewer:runPlateStructural", async (_e, payload) => {
+ipcMain.handle("viewer:runPlateStructural", async (event, payload) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     const bdfContent = payload?.bdfContent;
     const fileName   = payload?.fileName || "plate_model.bdf";
     if (typeof bdfContent !== "string" || !bdfContent.trim()) {
       return { ok: false, error: "bdfContent 누락" };
     }
 
-    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     const { serverUrl } = runtimeConfig;
     const employeeId = runtimeConfig.employeeId;
     if (!employeeId) {
@@ -1562,9 +1754,8 @@ ipcMain.handle("viewer:runPlateStructural", async (_e, payload) => {
 
     const sendProgress = (data) => {
       try {
-        if (viewerWindow && !viewerWindow.isDestroyed()) {
-          viewerWindow.webContents.send("viewer:plate-structural-progress", { jobId, ...data });
-        }
+        const win = windowOfSession(session);
+        if (win) win.webContents.send("viewer:plate-structural-progress", { jobId, ...data });
       } catch {}
     };
     sendProgress({ status: "Pending", progress: 0, message: "큐 대기..." });
@@ -1634,10 +1825,12 @@ ipcMain.handle("viewer:runPlateStructural", async (_e, payload) => {
 // payload = { intents: Array, yieldStrength?: number, gammaM?: number }
 //   yieldStrength = 항복강도 σy[MPa] (기본 315), gammaM = 재료계수 γM (기본 1.0). Usage=σeff/(σy/γM).
 // 반환    = { ok, summary, resultPath, result, job, editSummary } | { ok:false, error, ... }
-ipcMain.handle("viewer:runMooringStructural", async (_e, payload) => {
+ipcMain.handle("viewer:runMooringStructural", async (event, payload) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     const intents = Array.isArray(payload?.intents) ? payload.intents : [];
-    if (!viewerOutputDir) {
+    if (!session.outputDir) {
       return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 해석을 완료하고 Studio 를 다시 여세요." };
     }
 
@@ -1646,7 +1839,7 @@ ipcMain.handle("viewer:runMooringStructural", async (_e, payload) => {
     const yieldStrength = toPos(payload?.yieldStrength);
     const gammaM = toPos(payload?.gammaM);
 
-    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     const { serverUrl } = runtimeConfig;
     const employeeId = runtimeConfig.employeeId;
     if (!employeeId) {
@@ -1658,7 +1851,7 @@ ipcMain.handle("viewer:runMooringStructural", async (_e, payload) => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ output_dir: viewerOutputDir, intents, yieldStrength, gammaM }),
+        body: JSON.stringify({ output_dir: session.outputDir, intents, yieldStrength, gammaM }),
       },
       runtimeConfig,
     );
@@ -1676,9 +1869,8 @@ ipcMain.handle("viewer:runMooringStructural", async (_e, payload) => {
 
     const sendProgress = (data) => {
       try {
-        if (viewerWindow && !viewerWindow.isDestroyed()) {
-          viewerWindow.webContents.send("viewer:mooring-structural-progress", { jobId, ...data });
-        }
+        const win = windowOfSession(session);
+        if (win) win.webContents.send("viewer:mooring-structural-progress", { jobId, ...data });
       } catch {}
     };
     sendProgress({ status: "Pending", progress: 0, message: "큐 대기..." });
@@ -1743,10 +1935,12 @@ ipcMain.handle("viewer:runMooringStructural", async (_e, payload) => {
 // opts(Studio) = { bcs:[{nodes,dof}], loads:[{nodes,fx,fy,fz}], gravities:[{g,nx,ny,nz}],
 //                  loadCases:[{name,bc_ids,load_ids,gravity_ids}] }
 //   employee_id / work_dir / bdf_path 는 Studio 가 모르므로 viewer:open 시점에 등록된 컨텍스트
-//   (viewerOutputDir = 서버측 ModelFlow 빌드 산출 폴더, 로그인 사용자)에서 main 이 해소한다.
+//   (session.outputDir = 서버측 ModelFlow 빌드 산출 폴더, 로그인 사용자)에서 main 이 해소한다.
 // 반환 = { ok, analysisId, resultPath, result, summary, job } | { ok:false, error, stderr, job }
-ipcMain.handle("viewer:runModelBuilderSolve", async (_e, payload) => {
+ipcMain.handle("viewer:runModelBuilderSolve", async (event, payload) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     const bcs       = Array.isArray(payload?.bcs)       ? payload.bcs       : [];
     const loads     = Array.isArray(payload?.loads)     ? payload.loads     : [];
     const gravities = Array.isArray(payload?.gravities) ? payload.gravities : [];
@@ -1757,11 +1951,11 @@ ipcMain.handle("viewer:runModelBuilderSolve", async (_e, payload) => {
 
     // viewer:open 에서 등록된 서버측 output_dir(ModelFlow 빌드 산출 폴더, userConnection 하위).
     // MooringStudio 와 동일하게 Studio 는 로컬 추출본만 알기에, solve 는 이 서버 경로 기준으로 수행된다.
-    if (!viewerOutputDir) {
+    if (!session.outputDir) {
       return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 ModelFlow 빌드를 완료하고 Studio 를 다시 여세요." };
     }
 
-    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     const { serverUrl } = runtimeConfig;
     const employeeId = runtimeConfig.employeeId;
     if (!employeeId) {
@@ -1769,7 +1963,7 @@ ipcMain.handle("viewer:runModelBuilderSolve", async (_e, payload) => {
     }
 
     // work_dir = 서버측 ModelFlow 빌드 산출 폴더(userConnection 하위). 백엔드가 userConnection 프리픽스 검증.
-    const workDir = viewerOutputDir;
+    const workDir = session.outputDir;
     // bdf_path = work_dir 안의 "최종 모델 BDF"(phase 파일 NN_*.bdf 가 아닌 <designName>.bdf).
     //   Studio/클라이언트는 서버 폴더를 enumerate 할 수 없으므로 명시 경로가 있으면 사용하고,
     //   없으면 빈 문자열을 보내 백엔드가 work_dir 에서 비-phase(.bdf, ^\d{2}_ 미매치) 파일을 고르게 위임한다.
@@ -1811,9 +2005,8 @@ ipcMain.handle("viewer:runModelBuilderSolve", async (_e, payload) => {
 
     const sendProgress = (data) => {
       try {
-        if (viewerWindow && !viewerWindow.isDestroyed()) {
-          viewerWindow.webContents.send("viewer:modelbuilder-structural-progress", { jobId, ...data });
-        }
+        const win = windowOfSession(session);
+        if (win) win.webContents.send("viewer:modelbuilder-structural-progress", { jobId, ...data });
       } catch {}
     };
     sendProgress({ status: "Pending", progress: 0, message: "큐 대기..." });
@@ -1873,16 +2066,18 @@ ipcMain.handle("viewer:runModelBuilderSolve", async (_e, payload) => {
 });
 
 // MooringFittingStudio "최종 BDF 출력" → 백엔드 apply-edit(편집 반영 BDF 생성) → 사용자 PC 저장(대화상자).
-// runMooringStructural 과 동일하게 viewerOutputDir(서버측 out 폴더) 기준으로 동작한다.
+// runMooringStructural 과 동일하게 session.outputDir(서버측 out 폴더) 기준으로 동작한다.
 // MooringFittingStudio 는 zip 추출 데이터만 보유해 로컬 폴더가 없으므로, 서버측 out 폴더에서 BDF 를 만들어 내려받는다.
 // payload = { intents: Array }, 반환 = { ok, savedPath, summary } | { ok:false, canceled?, error }
-ipcMain.handle("viewer:exportMooringBdf", async (_e, payload) => {
+ipcMain.handle("viewer:exportMooringBdf", async (event, payload) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     const intents = Array.isArray(payload?.intents) ? payload.intents : [];
-    if (!viewerOutputDir) {
+    if (!session.outputDir) {
       return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 해석을 완료하고 Studio 를 다시 여세요." };
     }
-    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     const { serverUrl } = runtimeConfig;
     if (!runtimeConfig.employeeId) {
       return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
@@ -1894,7 +2089,7 @@ ipcMain.handle("viewer:exportMooringBdf", async (_e, payload) => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderPath: viewerOutputDir, intents }),
+        body: JSON.stringify({ folderPath: session.outputDir, intents }),
       },
       runtimeConfig,
     );
@@ -1919,7 +2114,7 @@ ipcMain.handle("viewer:exportMooringBdf", async (_e, payload) => {
     const bdfText = await dlRes.text();
 
     // 3) 사용자 PC 저장 (저장 대화상자)
-    const target = viewerWindow && !viewerWindow.isDestroyed() ? viewerWindow : mainWindow;
+    const target = windowOfSession(session) || mainWindow;
     const saveRes = await dialog.showSaveDialog(target, {
       title: "편집 반영 최종 BDF 저장",
       defaultPath: path.basename(bdfPath) || "mooring_fitting_edited.bdf",
@@ -1939,15 +2134,17 @@ ipcMain.handle("viewer:exportMooringBdf", async (_e, payload) => {
 // 최종 BDF(셸/RBE2 추가)를 만들고 사용자 PC 에 저장(대화상자). 손실 JS 라이터(bdfExport.js) 대신
 // 백엔드 라이터(convert_json_to_bdf)로 일원화해 Nastran 양식이 다시 깨지지 않게 한다.
 // payload = { checkPlates: Array }, 반환 = { ok, savedPath, stats } | { ok:false, canceled?, error }
-ipcMain.handle("viewer:exportSidePassageBdf", async (_e, payload) => {
+ipcMain.handle("viewer:exportSidePassageBdf", async (event, payload) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     const checkPlates = Array.isArray(payload?.checkPlates) ? payload.checkPlates : [];
     // Studio 편집 의도(RBE2 추가/삭제 등) — 백엔드가 apply_edit_json 으로 BDF 에 반영.
     const editIntents = payload?.editIntents ?? null;
-    if (!viewerOutputDir) {
+    if (!session.outputDir) {
       return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 BDF 검증을 완료하고 Studio 를 다시 여세요." };
     }
-    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     const { serverUrl } = runtimeConfig;
     if (!runtimeConfig.employeeId) {
       return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
@@ -1961,7 +2158,7 @@ ipcMain.handle("viewer:exportSidePassageBdf", async (_e, payload) => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderPath: viewerOutputDir, checkPlates, bdfName: viewerSidePassageBdfName, editIntents }),
+        body: JSON.stringify({ folderPath: session.outputDir, checkPlates, bdfName: session.sidePassageBdfName, editIntents }),
       },
       runtimeConfig,
     );
@@ -1980,7 +2177,7 @@ ipcMain.handle("viewer:exportSidePassageBdf", async (_e, payload) => {
     //    filePath 는 서버측 경로(out_path) — 페이지의 다운로드 핸들러가 /api/download 로 회수한다.
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("viewer:model-saved", {
-        viewerId: viewerCurrentId,
+        viewerId: session.viewerId,
         filePath: bdfPath,
         fileName: path.basename(bdfPath),
         kind: "side-passage-checkplate-bdf",
@@ -1989,7 +2186,8 @@ ipcMain.handle("viewer:exportSidePassageBdf", async (_e, payload) => {
     }
     // 3) Studio 닫기(저장 완료) — 사용자는 워크벤치 3단계로 돌아가 다운로드한다.
     setImmediate(() => {
-      if (viewerWindow && !viewerWindow.isDestroyed()) viewerWindow.close();
+      const win = windowOfSession(session);
+      if (win) win.close();
     });
     return { ok: true, savedPath: bdfPath, stats: body?.stats ?? null };
   } catch (e) {
@@ -2000,20 +2198,22 @@ ipcMain.handle("viewer:exportSidePassageBdf", async (_e, payload) => {
 // ModuleUnitStudio "Save" → 편집 반영 최종 모델 JSON 을 서버에 업로드 →
 // 백엔드 module-unit/export-bdf(convert_json_to_bdf)로 BDF 생성 → 다운로드 → 사용자 PC 저장.
 // payload = { fileName, content }, 반환 = { ok, savedPath, stats } | { ok:false, canceled?, error }
-ipcMain.handle("viewer:exportUnitBdf", async (_e, payload) => {
+ipcMain.handle("viewer:exportUnitBdf", async (event, payload) => {
   try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
     const fileName = payload?.fileName;
     const content  = payload?.content;
     if (!fileName || typeof content !== "string") {
       return { ok: false, error: "fileName / content 누락" };
     }
-    const runtimeConfig = await getWorkbenchRuntimeConfig();
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     const { serverUrl } = runtimeConfig;
     const employeeId = runtimeConfig.employeeId;
     if (!employeeId) {
       return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
     }
-    if (!viewerParentAnalysisId) {
+    if (!session.parentAnalysisId) {
       return { ok: false, error: "parentAnalysisId 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 BDF 검증을 먼저 마치고 Studio 를 여세요." };
     }
 
@@ -2022,7 +2222,7 @@ ipcMain.handle("viewer:exportUnitBdf", async (_e, payload) => {
       const form = new FormData();
       form.append("file", new Blob([content], { type: "application/json" }), fileName);
       form.append("employee_id", employeeId);
-      form.append("parent_analysis_id", String(viewerParentAnalysisId));
+      form.append("parent_analysis_id", String(session.parentAnalysisId));
       form.append("artifact_kind", "edited");
       return form;
     };
@@ -2070,7 +2270,7 @@ ipcMain.handle("viewer:exportUnitBdf", async (_e, payload) => {
     const bdfText = await dlRes.text();
 
     // 4) 사용자 PC 저장 (저장 대화상자)
-    const target = viewerWindow && !viewerWindow.isDestroyed() ? viewerWindow : mainWindow;
+    const target = windowOfSession(session) || mainWindow;
     const saveRes = await dialog.showSaveDialog(target, {
       title: "편집 반영 최종 BDF 저장",
       defaultPath: path.basename(bdfPath) || "module_unit_edited.bdf",

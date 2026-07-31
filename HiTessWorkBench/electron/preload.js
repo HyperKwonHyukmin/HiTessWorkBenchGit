@@ -36,6 +36,8 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:install',
   'viewer:open',
   'viewer:close',
+  // WorkBench 가 모델을 다시 만들었을 때, 이미 열려 있는 해당 Studio 창에 경고 배너를 띄운다.
+  'viewer:notifySourceUpdated',
   // viewer 호스트 어댑터(window.workbenchAPI)
   'viewer:pickFolder',
   'viewer:getInitialFolder',
