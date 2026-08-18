@@ -11,7 +11,7 @@ from app.services.report.models import (
     ReportSection,
     ReportTable,
 )
-from app.services.report.renderers.generic_xlsx import render_generic_xlsx
+from app.services.report.renderers.generic_xlsx import _text_width, render_generic_xlsx
 
 
 def _doc(**overrides) -> ReportDoc:
@@ -157,6 +157,24 @@ def test_wide_table_columns_are_sized_to_their_content():
     )
     ws = _load(render_generic_xlsx(doc))["해석 결과"]
 
-    # 고정 폭이던 시절 D·E 열은 기본값(약 8.43)이라 헤더가 잘렸다.
-    assert ws.column_dimensions["D"].width >= len("중량(kg/m)")
-    assert ws.column_dimensions["E"].width >= 10
+    # ⚠️ openpyxl 의 기본 열 너비는 None 이 아니라 13.0 이다. '>= 8' 같은 느슨한 임계값은
+    #    고정 폭 시절에도 우연히 통과한다. 실제로 내용에 맞춰졌는지 값으로 못박는다.
+    assert ws.column_dimensions["A"].width == _text_width("H-300x300") + 2   # 11
+    assert ws.column_dimensions["D"].width == _text_width("중량(kg/m)") + 2  # 12 (한글 2폭)
+    assert ws.column_dimensions["E"].width == 10  # 내용이 짧아 하한(_MIN_COL_WIDTH)에 걸린다
+
+
+def test_values_openpyxl_cannot_write_are_stringified_instead_of_crashing():
+    """표 셀에 리스트·사전이 들어와도 리포트 생성이 죽지 않아야 한다.
+
+    generic._table_from_rows 는 행 값에 리스트를 그대로 실을 수 있고, 그걸 openpyxl 에
+    넘기면 저장 시 ValueError 로 리포트 전체가 실패한다. 계산서는 죽는 대신
+    덜 예쁘게 나오는 쪽을 택한다.
+    """
+    doc = _table_doc(rows=((["a", "b"], {"k": 1}),), columns=("목록", "사전"))
+
+    ws = _load(render_generic_xlsx(doc))["해석 결과"]
+
+    values = [cell.value for cell in _cells(ws)]
+    assert "['a', 'b']" in values
+    assert "{'k': 1}" in values

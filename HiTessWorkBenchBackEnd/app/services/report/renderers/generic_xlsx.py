@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import io
+from datetime import date, datetime, time
+from decimal import Decimal
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -56,6 +58,18 @@ def _safe_sheet_name(title: str, used: set[str]) -> str:
         suffix += 1
     used.add(candidate.casefold())
     return candidate
+
+
+def _cell_value(value):
+    """openpyxl 이 셀에 쓸 수 없는 값은 텍스트로 굳힌다.
+
+    generic._table_from_rows 는 행 값에 리스트·사전을 그대로 실을 수 있다. 그대로
+    넘기면 wb.save 에서 ValueError 가 나 리포트 생성 전체가 죽는다 — 계산서는
+    죽는 대신 덜 예쁘게 나오는 쪽이 낫다.
+    """
+    if value is None or isinstance(value, (str, int, float, bool, Decimal, datetime, date, time)):
+        return value
+    return str(value)
 
 
 def _text_width(value) -> int:
@@ -134,7 +148,7 @@ def _write_section(ws, section: ReportSection) -> None:
     widths: dict[int, int] = {}
 
     def put(row, column, value, *, font=_BASE_FONT, fill=None, align=None):
-        cell = ws.cell(row=row, column=column, value=value)
+        cell = ws.cell(row=row, column=column, value=_cell_value(value))
         cell.font = font
         if fill is not None:
             cell.fill = fill
