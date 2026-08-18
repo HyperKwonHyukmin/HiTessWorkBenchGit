@@ -2228,11 +2228,18 @@ def test_unknown_program_name_still_produces_a_report(tmp_path):
     assert "unknown" in filename
 
 
-def test_generic_path_records_a_notice_about_the_missing_form(tmp_path):
+def test_applied_form_is_stated_on_the_cover_row_not_buried_in_notices(tmp_path):
+    """서식 종류는 표지의 「적용 양식」 행이 말한다.
+
+    유의 사항 블록은 이 해석 고유의 경고만 담는다 — 문서 메타 정보를 섞으면
+    '왜 판정이 비었는가' 같은 정작 중요한 줄이 묻힌다.
+    """
     _, data = build_report_xlsx(_record(), user_connection_base=str(tmp_path))
     wb = openpyxl.load_workbook(io.BytesIO(data))
     values = [cell.value for row in wb["표지"].iter_rows() for cell in row]
+
     assert "범용 서식" in values
+    assert not any(isinstance(v, str) and "범용 서식으로 생성" in v for v in values)
 
 
 def test_capabilities_lists_registered_programs():
@@ -2272,10 +2279,11 @@ logger = logging.getLogger(__name__)
 
 _COMPLETED_STATUSES: frozenset[str] = frozenset({"success", "완료", "completed"})
 
-# 1단계에는 템플릿 렌더러가 없으므로 모든 리포트가 범용 서식이다.
-# ⚠️ 2단계에서 TemplateRenderer 를 붙일 때 이 문구를 조건부로 바꿔야 한다
-#    (양식이 적용된 리포트에 "양식 미적용"이라고 적히면 그게 곧 거짓 표기다).
-_GENERIC_NOTICE = "표준 양식이 등록되지 않은 App 입니다 — 범용 서식으로 생성되었습니다."
+# ⚠️ '범용 서식으로 생성됨'을 notices 에 넣지 않는다.
+#    표지에 이미 「적용 양식 : 범용 서식」 행이 있어 순수 중복이고, 유의 사항 블록은
+#    이 해석 고유의 경고(무엇이 생략됐는지, 왜 판정이 비었는지)만 담아야 읽힌다.
+#    서식 종류 같은 문서 메타 정보를 같은 목록에 섞으면 정작 중요한 줄이 묻힌다.
+#    덤으로 2단계에서 문구가 거짓이 될 지뢰도 사라진다 — template_applied 가 표지를 몰고 간다.
 
 
 class ReportNotAvailable(Exception):
@@ -2357,7 +2365,7 @@ def build_report_doc(record, *, user_connection_base: str) -> ReportDoc:
         sections=sections,
         provenance=passport,
         template_applied=False,
-        notices=(*doc.notices, *notices, _GENERIC_NOTICE),
+        notices=(*doc.notices, *notices),
     )
 
 
