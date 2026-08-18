@@ -3035,6 +3035,7 @@ import { downloadAnalysisReport, getReportCapabilities } from '../../api/reports
 import { decorateHistoryForReport } from '../../utils/reportCatalogue';
 import { readBlobErrorDetail } from '../../utils/httpErrors';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function AnalysisReportGenerator() {
   const { showToast } = useToast();
@@ -3045,13 +3046,9 @@ export default function AnalysisReportGenerator() {
   const [generating, setGenerating] = useState(false);
   const [appFilter, setAppFilter] = useState('ALL');
 
-  const employeeId = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem('user') || '{}').employee_id || '';
-    } catch {
-      return '';
-    }
-  }, []);
+  // localStorage 를 직접 읽지 않는다 — 호출 시점에만 읽어서 로그인/로그아웃에 재렌더링되지 않는다.
+  // MyProjects.jsx 등 사번 기준 목록 페이지가 쓰는 정식 경로가 useAuth 다.
+  const { employeeId } = useAuth();
 
   useEffect(() => {
     let alive = true;
@@ -3155,7 +3152,7 @@ export default function AnalysisReportGenerator() {
                     <span>
                       <span className="block font-medium text-slate-800">{row.program_name}</span>
                       <span className="block text-xs text-slate-500">
-                        {row.project_name} · {row.created_at}
+                        {row.project_name} · {new Date(row.created_at).toLocaleString()}
                       </span>
                     </span>
                     {row.hasTemplate && (
