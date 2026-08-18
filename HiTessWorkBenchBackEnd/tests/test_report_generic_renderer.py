@@ -111,3 +111,52 @@ def test_long_section_title_is_truncated_to_excel_sheet_limit():
     doc = _doc(sections=(ReportSection(key="overview", title="가" * 40),))
     wb = _load(render_generic_xlsx(doc))
     assert all(len(name) <= 31 for name in wb.sheetnames)
+
+
+# ── 판정을 읽히게 만들기 ────────────────────────────────────────────────
+# 결재자가 긴 표를 훑을 때 실패 행이 눈에 걸려야 한다. 색만으로 알리지는 않는다
+# (글자는 그대로 '불합격'), 색을 아예 안 쓰지도 않는다.
+
+def _cells(ws):
+    return [cell for row in ws.iter_rows() for cell in row]
+
+
+def _table_doc(rows, columns=("부재", "판정")):
+    return _doc(
+        sections=(
+            ReportSection(
+                key="result",
+                title="해석 결과",
+                tables=(ReportTable(title="부재", columns=columns, rows=rows),),
+            ),
+        )
+    )
+
+
+def test_failing_table_row_is_filled_and_passing_row_is_not():
+    ws = _load(render_generic_xlsx(_table_doc((("A", "합격"), ("B", "불합격")))))["해석 결과"]
+
+    fail_cell = next(c for c in _cells(ws) if c.value == "불합격")
+    pass_cell = next(c for c in _cells(ws) if c.value == "합격")
+
+    assert fail_cell.fill.patternType == "solid"
+    assert fail_cell.font.color.rgb.endswith("CC0000")
+    assert pass_cell.fill.patternType is None
+
+
+def test_verdict_cell_on_cover_is_coloured_as_well_as_written():
+    ws = _load(render_generic_xlsx(_doc(verdict="불합격")))["표지"]
+    cell = next(c for c in _cells(ws) if c.value == "불합격")
+    assert cell.font.color.rgb.endswith("CC0000")
+
+
+def test_wide_table_columns_are_sized_to_their_content():
+    doc = _table_doc(
+        rows=(("H-300x300", 300, 10, 94.0, "합격"),),
+        columns=("호칭", "외경", "두께", "중량(kg/m)", "판정"),
+    )
+    ws = _load(render_generic_xlsx(doc))["해석 결과"]
+
+    # 고정 폭이던 시절 D·E 열은 기본값(약 8.43)이라 헤더가 잘렸다.
+    assert ws.column_dimensions["D"].width >= len("중량(kg/m)")
+    assert ws.column_dimensions["E"].width >= 10
