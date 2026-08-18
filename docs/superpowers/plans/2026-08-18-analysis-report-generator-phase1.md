@@ -1312,6 +1312,20 @@ def test_missing_output_falls_back_to_an_empty_result_section():
     assert doc.verdict is None
 
 
+def test_generic_omission_notices_survive_the_result_swap():
+    """result 섹션만 갈아끼우고 notices 를 떨어뜨리면 조용한 누락으로 되돌아간다.
+
+    truss 어댑터는 loadCases 만 해결한다. input 이나 output 의 다른 키를 generic 이
+    펴지 못했다면 그 사실은 계속 남아야 한다.
+    """
+    payload = _payload()
+    payload["input"]["weird"] = [1, {"a": 2}]  # generic 이 표로도 값으로도 못 펴는 모양
+
+    doc = get_adapter("truss-assessment")(payload, _meta())
+
+    assert doc.notices == ("입력 조건에서 생략됨: weird",)
+
+
 def test_every_declared_report_adapter_is_actually_registered():
     """레지스트리 오타는 조용히 generic 으로 떨어져 알아챌 수 없다.
 
@@ -1403,10 +1417,15 @@ def truss_assessment_adapter(payload: dict, meta: ReportMeta) -> ReportDoc:
         for section in base.sections
     )
 
+    # base.notices 를 반드시 이어받는다. 우리는 result 섹션만 다시 만들 뿐, generic 이
+    # 펴지 못한 다른 키(입력 조건 쪽, 또는 output 의 loadCases 외 항목)를 대신 표현하지는
+    # 않는다. 여기서 notices 를 떨어뜨리면 '무엇이 빠졌는지' 만 사라지고 데이터는 계속
+    # 빠진 채로 남는다 — 조용한 누락으로 되돌아간다.
     return ReportDoc(
         meta=meta,
         verdict="불합격" if any_fail else "합격",
         sections=sections,
+        notices=base.notices,
     )
 ```
 
@@ -1426,7 +1445,7 @@ ADAPTERS: dict[str, Adapter] = {
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_truss_adapter.py tests/test_report_generic_adapter.py -q`
-Expected: PASS — 88 passed (truss 7 + generic 81)
+Expected: PASS — 89 passed (truss 8 + generic 81)
 
 - [ ] **Step 5: 커밋**
 
