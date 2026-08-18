@@ -97,6 +97,7 @@ node --test src/utils/reportCatalogue.test.js
 |---|---|
 | `src/api/reports.js` | 함수 2개 추가(기존 사용량 리포트 함수는 그대로) |
 | `src/utils/reportCatalogue.js` | 이력 + capabilities 병합 순수 함수 (테스트 대상) |
+| `src/utils/httpErrors.js` | blob 오류 응답에서 detail 을 꺼내는 순수 함수 (테스트 대상) |
 | `src/utils/reportCatalogue.test.js` | 위 함수 테스트 |
 | `src/pages/analysis/AnalysisReportGenerator.jsx` | 페이지 |
 | `src/contexts/DashboardContext.jsx` | 카탈로그 항목 등록 |
@@ -2871,6 +2872,66 @@ export function decorateHistoryForReport(rows, capabilities) {
 }
 ```
 
+`src/utils/httpErrors.js` (신규):
+
+```javascript
+/**
+ * blob 요청의 오류 응답에서 detail 문구를 꺼낸다.
+ *
+ * ⚠️ axios 는 responseType:'blob' 을 오류 응답에도 적용한다. 그래서 400/403/404 의
+ * JSON 본문이 파싱된 객체가 아니라 Blob 으로 오고, error.response.data.detail 은
+ * 언제나 undefined 다. 그대로 두면 백엔드가 알려 준 사유('완료된 해석만 리포트를
+ * 생성할 수 있습니다', '접근 권한이 없는 작업입니다')가 사용자에게 영영 닿지 않고
+ * 늘 같은 일반 문구만 뜬다 — 사용자는 왜 실패했는지 알 방법이 없다.
+ */
+export async function readBlobErrorDetail(error, fallback) {
+  const data = error?.response?.data;
+  if (typeof Blob !== 'undefined' && data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text());
+      if (parsed?.detail) return parsed.detail;
+    } catch {
+      // JSON 이 아니면(프록시 HTML 오류 등) 기본 문구로 떨어진다.
+    }
+    return fallback;
+  }
+  return data?.detail || fallback;
+}
+```
+
+`src/utils/httpErrors.test.js` (신규):
+
+```javascript
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { readBlobErrorDetail } from './httpErrors.js';
+
+test('blob 오류 본문에서 detail 을 꺼낸다', async () => {
+  const error = { response: { data: new Blob([JSON.stringify({ detail: '완료된 해석만 가능합니다' })]) } };
+  assert.equal(await readBlobErrorDetail(error, '기본 문구'), '완료된 해석만 가능합니다');
+});
+
+test('JSON 이 아닌 blob 은 기본 문구로 떨어진다', async () => {
+  const error = { response: { data: new Blob(['<html>502</html>']) } };
+  assert.equal(await readBlobErrorDetail(error, '기본 문구'), '기본 문구');
+});
+
+test('detail 이 없는 JSON blob 도 기본 문구', async () => {
+  const error = { response: { data: new Blob([JSON.stringify({ message: 'nope' })]) } };
+  assert.equal(await readBlobErrorDetail(error, '기본 문구'), '기본 문구');
+});
+
+test('blob 이 아닌 평범한 JSON 응답도 처리한다', async () => {
+  const error = { response: { data: { detail: '접근 권한이 없는 작업입니다' } } };
+  assert.equal(await readBlobErrorDetail(error, '기본 문구'), '접근 권한이 없는 작업입니다');
+});
+
+test('응답 자체가 없으면 기본 문구', async () => {
+  assert.equal(await readBlobErrorDetail(new Error('network down'), '기본 문구'), '기본 문구');
+});
+```
+
 `src/api/reports.js` 맨 아래에 추가:
 
 ```javascript
@@ -2908,8 +2969,8 @@ export async function downloadAnalysisReport({ analysisId }) {
 
 - [ ] **Step 4: 테스트 통과 확인**
 
-Run: `node --test src/utils/reportCatalogue.test.js`
-Expected: PASS — 5 passed
+Run: `node --test src/utils/reportCatalogue.test.js src/utils/httpErrors.test.js`
+Expected: PASS — 10 passed (병합 5 + blob 오류 5)
 
 - [ ] **Step 5: 커밋**
 
@@ -2936,11 +2997,13 @@ import { FileSpreadsheet, Download, Loader2 } from 'lucide-react';
 import { getAnalysisHistory } from '../../api/analysis';
 import { downloadAnalysisReport, getReportCapabilities } from '../../api/reports';
 import { decorateHistoryForReport } from '../../utils/reportCatalogue';
+import { readBlobErrorDetail } from '../../utils/httpErrors';
 import { useToast } from '../../contexts/ToastContext';
 
 export default function AnalysisReportGenerator() {
   const { showToast } = useToast();
   const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -2963,7 +3026,11 @@ export default function AnalysisReportGenerator() {
           getReportCapabilities(),
         ]);
         if (!alive) return;
-        setRows(decorateHistoryForReport(historyRes.data, capsRes.data));
+        // ⚠️ 이력 응답은 배열이 아니라 { total, skip, limit, items, summary } 다.
+        //    historyRes.data 를 그대로 넘기면 decorateHistoryForReport 가 [] 를 돌려주고
+        //    목록이 언제나 비어 보인다.
+        setRows(decorateHistoryForReport(historyRes.data?.items, capsRes.data));
+        setTotal(historyRes.data?.total ?? 0);
       } catch {
         if (alive) showToast('해석 이력을 불러오지 못했습니다.', 'error');
       } finally {
@@ -2995,8 +3062,8 @@ export default function AnalysisReportGenerator() {
       await downloadAnalysisReport({ analysisId: selected.id });
       showToast('계산서를 내려받았습니다.', 'success');
     } catch (error) {
-      const detail = error?.response?.data?.detail || '리포트 생성에 실패했습니다.';
-      showToast(detail, 'error');
+      // blob 요청이라 오류 본문도 Blob 이다 — 그냥 .detail 을 읽으면 늘 undefined 다.
+      showToast(await readBlobErrorDetail(error, '리포트 생성에 실패했습니다.'), 'error');
     } finally {
       setGenerating(false);
     }
@@ -3014,7 +3081,14 @@ export default function AnalysisReportGenerator() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
         <section className="rounded-lg border border-slate-200 bg-white">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-            <h2 className="text-sm font-semibold text-slate-800">해석 이력</h2>
+            <h2 className="text-sm font-semibold text-slate-800">
+              해석 이력
+              {total > rows.length && (
+                <span className="ml-2 font-normal text-slate-500">
+                  최근 {rows.length}건 표시 (전체 {total}건)
+                </span>
+              )}
+            </h2>
             <select
               className="rounded border border-slate-300 px-2 py-1 text-sm"
               value={appFilter}
