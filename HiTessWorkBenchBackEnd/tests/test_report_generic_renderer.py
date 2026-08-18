@@ -2,6 +2,8 @@
 import io
 import zipfile
 
+import pytest
+
 import openpyxl
 
 from app.services.report.models import (
@@ -162,6 +164,50 @@ def test_wide_table_columns_are_sized_to_their_content():
     assert ws.column_dimensions["A"].width == _text_width("H-300x300") + 2   # 11
     assert ws.column_dimensions["D"].width == _text_width("중량(kg/m)") + 2  # 12 (한글 2폭)
     assert ws.column_dimensions["E"].width == 10  # 내용이 짧아 하한(_MIN_COL_WIDTH)에 걸린다
+
+
+def test_undetermined_verdict_is_written_out_not_left_blank():
+    """빈 칸은 '아직 안 채운 항목'처럼 보인다 — 판정 불가와 구분되어야 한다."""
+    ws = _load(render_generic_xlsx(_doc(verdict=None)))["표지"]
+    assert "판정 미확정" in [cell.value for cell in _cells(ws)]
+
+
+def test_undetermined_verdict_is_marked_as_a_caution_not_a_pass():
+    ws = _load(render_generic_xlsx(_doc(verdict=None)))["표지"]
+    cell = next(c for c in _cells(ws) if c.value == "판정 미확정")
+    assert cell.font.color.rgb.endswith("CC6600")
+
+
+def test_first_table_header_row_is_frozen():
+    """200행 넘는 표에서 스크롤하면 열 이름이 사라진다."""
+    doc = _table_doc(rows=tuple((f"E{index}", "합격") for index in range(50)))
+    ws = _load(render_generic_xlsx(doc))["해석 결과"]
+    assert ws.freeze_panes is not None
+
+
+@pytest.mark.parametrize(
+    "word,colour",
+    [("부적합", "CC0000"), ("failed", "CC0000"), ("주의", "CC6600"), ("적합", "1B7A3D")],
+)
+def test_renderer_highlights_every_word_the_adapter_understands(word, colour):
+    """어댑터가 아는 낱말인데 렌더러가 모르면 실패 행이 조용히 강조를 잃는다."""
+    ws = _load(render_generic_xlsx(_table_doc(rows=(("A", word),))))["해석 결과"]
+    cell = next(c for c in _cells(ws) if c.value == word)
+    assert cell.font.color.rgb.endswith(colour)
+
+
+def test_renderer_and_adapter_share_one_verdict_vocabulary():
+    """같은 낱말 목록을 두 곳에 적어 두면 언젠가 어긋난다 — 출처가 하나여야 한다."""
+    from app.services.report import verdict_vocab
+    from app.services.report.adapters import generic as adapter
+    from app.services.report.renderers import generic_xlsx as renderer
+
+    assert renderer._FAIL_WORDS is verdict_vocab.NEGATIVE_TOKENS
+    assert renderer._WARN_WORDS is verdict_vocab.WARNING_TOKENS
+    assert renderer._PASS_WORDS is verdict_vocab.POSITIVE_TOKENS
+    assert adapter._VERDICT_NEGATIVE_TOKENS is verdict_vocab.NEGATIVE_TOKENS
+    assert adapter._VERDICT_WARNING_TOKENS is verdict_vocab.WARNING_TOKENS
+    assert adapter._VERDICT_POSITIVE_TOKENS is verdict_vocab.POSITIVE_TOKENS
 
 
 def test_values_openpyxl_cannot_write_are_stringified_instead_of_crashing():

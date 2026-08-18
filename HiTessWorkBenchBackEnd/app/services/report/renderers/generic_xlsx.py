@@ -13,6 +13,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from .. import verdict_vocab
 from ..models import ReportDoc, ReportSection
 
 _HDR_FILL = PatternFill("solid", fgColor="002554")
@@ -33,9 +34,12 @@ _FAIL_FONT = Font(bold=True, color="CC0000", size=9)
 _WARN_FONT = Font(bold=True, color="CC6600", size=9)
 _PASS_FONT = Font(bold=True, color="1B7A3D", size=9)
 
-_FAIL_WORDS: frozenset[str] = frozenset({"불합격", "fail", "ng", "nok"})
-_WARN_WORDS: frozenset[str] = frozenset({"경고", "warn", "warning"})
-_PASS_WORDS: frozenset[str] = frozenset({"합격", "ok", "pass"})
+# ⚠️ 낱말 목록을 여기에 따로 적지 않는다. 어댑터가 '부적합'을 불합격으로 읽는데
+#    렌더러가 그 행을 강조하지 않으면, '실패 행이 눈에 걸려야 한다'는 약속이
+#    어휘 불일치만으로 조용히 깨진다. 단일 출처에서 가져온다.
+_FAIL_WORDS = verdict_vocab.NEGATIVE_TOKENS
+_WARN_WORDS = verdict_vocab.WARNING_TOKENS
+_PASS_WORDS = verdict_vocab.POSITIVE_TOKENS
 _STATUS_FONT = {"fail": _FAIL_FONT, "warn": _WARN_FONT, "pass": _PASS_FONT}
 
 _SHEET_NAME_LIMIT = 31
@@ -108,19 +112,32 @@ def _row_status(row) -> str | None:
     return None
 
 
+def _verdict_cell(verdict: str | None):
+    """판정 칸의 표기와 글꼴.
+
+    비어 있으면 '판정 미확정'이라고 분명히 적는다 — 빈 칸은 '아직 안 채운 항목'처럼
+    보여서 '판정할 근거가 없다'와 구분되지 않는다. 어댑터가 근거 부족을 이유로
+    None 을 낸 노력이 렌더 층에서 도로 사라지면 안 된다.
+    """
+    if verdict is None:
+        return "판정 미확정", _WARN_FONT
+    return verdict, _STATUS_FONT.get(_status_of(verdict), _BASE_FONT)
+
+
 def _write_cover(ws, doc: ReportDoc) -> None:
     ws["A1"] = f"{doc.meta.display_name} 해석 계산서"
     ws["A1"].font = _TITLE_FONT
     ws.column_dimensions["A"].width = 22
     ws.column_dimensions["B"].width = 46
 
+    verdict_text, verdict_font = _verdict_cell(doc.verdict)
     rows = [
         ("해석 App", doc.meta.display_name),
         ("프로젝트", doc.meta.project_name),
         ("수행자 사번", doc.meta.employee_id),
         ("수행 일시", doc.meta.created_at.strftime("%Y-%m-%d %H:%M") if doc.meta.created_at else None),
         ("작업 상태", doc.meta.status),
-        ("판정", doc.verdict),
+        ("판정", verdict_text),
         ("적용 양식", "사내 표준 양식" if doc.template_applied else "범용 서식"),
     ]
     row_ptr = 3
@@ -129,7 +146,7 @@ def _write_cover(ws, doc: ReportDoc) -> None:
         ws.cell(row=row_ptr, column=1).alignment = _LEFT
         cell = ws.cell(row=row_ptr, column=2, value=value)
         # 판정 줄만 색을 덧입힌다 — 글자('불합격')는 그대로 두므로 색에만 기대지 않는다.
-        cell.font = _STATUS_FONT.get(_status_of(value) if label == "판정" else None, _BASE_FONT)
+        cell.font = verdict_font if label == "판정" else _BASE_FONT
         cell.alignment = _LEFT
         row_ptr += 1
 
@@ -146,6 +163,7 @@ def _write_cover(ws, doc: ReportDoc) -> None:
 
 def _write_section(ws, section: ReportSection) -> None:
     widths: dict[int, int] = {}
+    freeze_at: int | None = None  # 첫 표의 헤더 아래 — 스크롤해도 열 이름이 남게
 
     def put(row, column, value, *, font=_BASE_FONT, fill=None, align=None):
         cell = ws.cell(row=row, column=column, value=_cell_value(value))
@@ -177,6 +195,8 @@ def _write_section(ws, section: ReportSection) -> None:
         for col_index, column in enumerate(table.columns, start=1):
             put(row_ptr, col_index, column, font=_HDR_FONT, fill=_HDR_FILL, align=_CENTER)
         row_ptr += 1
+        if freeze_at is None:
+            freeze_at = row_ptr
         for row in table.rows:
             # 긴 표에 묻힌 실패 행은 훑어서는 안 보인다. 글자는 그대로 두고 색을 덧입힌다.
             status = _row_status(row)
@@ -190,6 +210,9 @@ def _write_section(ws, section: ReportSection) -> None:
             row_ptr += 1
 
     _autofit(ws, widths)
+    if freeze_at is not None:
+        # 200행 넘는 표에서 스크롤하면 열 이름이 사라진다. 첫 표 헤더를 고정한다.
+        ws.freeze_panes = f"A{freeze_at}"
 
 
 def render_generic_xlsx(doc: ReportDoc) -> bytes:

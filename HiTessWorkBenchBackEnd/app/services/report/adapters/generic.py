@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .. import verdict_vocab
 from ..models import ReportDoc, ReportField, ReportMeta, ReportSection, ReportTable
 
 # 판정 문자열 토큰 분리 — 영숫자·한글이 아니면 전부 구분자.
@@ -43,15 +44,11 @@ _VERDICT_NEGATORS: frozenset[str] = frozenset({
 # 긍정 토큰을 포함하지 않아 위 규칙으로는 못 잡는 다어절 부정 표현.
 _VERDICT_NEGATIVE_PHRASES: tuple[str, ...] = ("no good",)
 # 아래 세 묶음은 모두 **토큰 완전 일치**로만 본다.
-_VERDICT_NEGATIVE_TOKENS: frozenset[str] = frozenset({
-    "fail", "failed", "ng", "nok", "불합격", "부적합",
-})
-_VERDICT_WARNING_TOKENS: frozenset[str] = frozenset({
-    "warn", "warning", "경고", "주의",
-})
-_VERDICT_POSITIVE_TOKENS: frozenset[str] = frozenset({
-    "ok", "pass", "passed", "safe", "합격", "적합",
-})
+# ⚠️ 낱말 목록을 여기에 따로 적지 않는다. 렌더러가 표의 실패 행을 강조할 때도 같은
+#    낱말을 봐야 한다 — 두 곳에 따로 적으면 조용히 어긋난다. 단일 출처에서 가져온다.
+_VERDICT_NEGATIVE_TOKENS = verdict_vocab.NEGATIVE_TOKENS
+_VERDICT_WARNING_TOKENS = verdict_vocab.WARNING_TOKENS
+_VERDICT_POSITIVE_TOKENS = verdict_vocab.POSITIVE_TOKENS
 
 _MAX_TABLE_ROWS = 500
 _MAX_LIST_ITEMS = 20
