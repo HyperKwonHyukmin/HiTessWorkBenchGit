@@ -1331,6 +1331,38 @@ def test_verdict_is_unknown_when_every_load_case_is_empty():
     assert get_adapter("truss-assessment")(payload, _meta()).verdict is None
 
 
+def test_partial_declaration_does_not_yield_a_pass():
+    """한 요소가 OK 라고 해서 옆의 판정 없는 과응력 요소까지 합격은 아니다.
+
+    부분 누락은 전면 누락보다 흔하다 — 파이프라인이 일부 result 만 빠뜨리는 경우.
+    """
+    payload = _payload()
+    payload["output"]["loadCases"] = [
+        {"loadCaseId": 1, "elements": [{"element": 1, "assessment": 0.4, "result": "OK"}]},
+        {"loadCaseId": 2, "elements": [{"element": 2, "assessment": 9.0}]},
+    ]
+    assert get_adapter("truss-assessment")(payload, _meta()).verdict is None
+
+
+def test_partial_declaration_is_explained_in_a_notice():
+    """판정을 비우기만 하면 승인자는 고장인지 데이터 부족인지 알 수 없다."""
+    payload = _payload()
+    payload["output"]["loadCases"] = [
+        {"loadCaseId": 1, "elements": [{"element": 1, "result": "OK"}, {"element": 2}]},
+    ]
+    doc = get_adapter("truss-assessment")(payload, _meta())
+    assert any("판정 표기가 없는 요소 1건" in notice for notice in doc.notices)
+
+
+def test_a_known_failure_still_dominates_incomplete_coverage():
+    """아는 실패는 커버리지 구멍과 무관하게 불합격이다."""
+    payload = _payload()
+    payload["output"]["loadCases"] = [
+        {"loadCaseId": 1, "elements": [{"element": 1, "result": "FAIL"}, {"element": 2}]},
+    ]
+    assert get_adapter("truss-assessment")(payload, _meta()).verdict == "불합격"
+
+
 def test_extra_element_keys_are_kept_as_columns():
     """허용응력 같은 '비율의 근거'가 고정 투영에 잘려 나가면 안 된다."""
     payload = _payload()
@@ -1482,6 +1514,7 @@ def truss_assessment_adapter(payload: dict, meta: ReportMeta) -> ReportDoc:
     worst: float | None = None
     any_fail = False
     any_declared = False  # result 값을 하나라도 읽었는가
+    undeclared = 0  # result 표기가 아예 없는 요소 수
 
     for case in load_cases:
         if not isinstance(case, dict):
@@ -1496,6 +1529,8 @@ def truss_assessment_adapter(payload: dict, meta: ReportMeta) -> ReportDoc:
                 any_declared = True
                 if token == "FAIL":
                     any_fail = True
+            else:
+                undeclared += 1
         columns = _columns_for(elements)
         tables.append(
             ReportTable(
@@ -1523,22 +1558,32 @@ def truss_assessment_adapter(payload: dict, meta: ReportMeta) -> ReportDoc:
     # 펴지 못한 다른 키(입력 조건 쪽, 또는 output 의 loadCases 외 항목)를 대신 표현하지는
     # 않는다. 여기서 notices 를 떨어뜨리면 '무엇이 빠졌는지' 만 사라지고 데이터는 계속
     # 빠진 채로 남는다 — 조용한 누락으로 되돌아간다.
-    # ⚠️ 판정 근거가 하나도 없으면 '합격'이라 단정하지 않는다.
-    #    result 키가 없는 요소만 있으면 과응력이어도 any_fail 은 False 로 남는다 —
-    #    그걸 합격으로 찍으면 없는 데이터로 결재를 통과시키는 셈이다.
-    #    generic._match_verdict 가 모를 때 None 을 내는 것과 같은 태도.
+    # ⚠️ 합격은 '전 부재가 통과했음이 확인될 때'만 쓴다.
+    #    한 요소만 OK 를 달아도 문서 전체가 합격으로 열리면, 바로 옆의 판정 표기 없는
+    #    과응력 요소가 합격에 묻힌다. 부분 누락(파이프라인이 일부 result 만 빠뜨림)이
+    #    전면 누락보다 흔하므로 여기가 실제 위험 지점이다.
+    #    불합격은 커버리지와 무관하게 우선한다 — 아는 실패는 아는 실패다.
     if any_fail:
         verdict = "불합격"
-    elif any_declared:
-        verdict = "합격"
-    else:
+    elif undeclared or not any_declared:
         verdict = None
+    else:
+        verdict = "합격"
+
+    # 판정을 비우는 데 그치지 않고 왜 비었는지 남긴다. 빈 칸만 보면 승인자는
+    # 도구가 고장 난 건지 데이터가 부족한 건지 구분할 수 없다.
+    notices = list(base.notices)
+    if undeclared:
+        notices.append(
+            f"판정 표기가 없는 요소 {undeclared}건이 있습니다 — "
+            "전 부재에 대한 합격 여부는 확인되지 않았습니다."
+        )
 
     return ReportDoc(
         meta=meta,
         verdict=verdict,
         sections=sections,
-        notices=base.notices,
+        notices=tuple(notices),
     )
 ```
 
@@ -1558,7 +1603,7 @@ ADAPTERS: dict[str, Adapter] = {
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_truss_adapter.py tests/test_report_generic_adapter.py -q`
-Expected: PASS — 95 passed (truss 14 + generic 81)
+Expected: PASS — 98 passed (truss 17 + generic 81)
 
 - [ ] **Step 5: 커밋**
 
