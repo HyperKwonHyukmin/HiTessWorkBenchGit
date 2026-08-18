@@ -19,6 +19,7 @@ _MAX_OUTPUT_BYTES = 8 * 1024 * 1024
 
 
 def _is_within(base: str, candidate: str) -> bool:
+    """base 안에 candidate 가 들어 있는지. 서로 다른 드라이브면 ValueError 를 던진다 — 호출자가 '거부'로 처리한다."""
     base_real = os.path.realpath(os.path.abspath(base))
     cand_real = os.path.realpath(os.path.abspath(candidate))
     return os.path.commonpath([base_real, cand_real]) == base_real
@@ -36,8 +37,10 @@ def _load_json_if_allowed(path: str, user_connection_base: str) -> Any | None:
             return None
         with open(path, encoding="utf-8-sig") as fp:
             return json.load(fp)
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         # 파일 유실·깨진 JSON 은 리포트 실패 사유가 아니다. 근거 섹션이 상태를 대신 보여 준다.
+        # RecursionError 는 RuntimeError 하위라 ValueError 로 안 잡힌다 — 깊게 중첩된 JSON
+        # (크기 상한과 무관하게 200KB 로도 재현된다) 이 리포트 생성을 죽이지 않게 명시적으로 받는다.
         logger.info("리포트: 결과 JSON 로드 실패 — 요약만으로 생성합니다", exc_info=True)
         return None
 

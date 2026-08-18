@@ -68,3 +68,47 @@ def test_null_json_columns_become_empty_dicts():
     )
     assert payload["input"] == {}
     assert payload["result"] == {}
+
+
+# ── 보안 경계 회귀 테스트 ──────────────────────────────────────────────
+# 아래 세 건은 이 모듈이 '보안 경계'이기 때문에 둔다. 리팩터링이 조용히
+# 경계를 무너뜨리면 여기서 잡힌다.
+
+def test_rejects_parent_traversal_escaping_the_base(tmp_path):
+    base = tmp_path / "userConnection"
+    base.mkdir()
+    secret = tmp_path / "secret.json"
+    secret.write_text(json.dumps({"leak": True}), encoding="utf-8")
+
+    record = _record(result_info={"output_json": str(base / ".." / "secret.json")})
+
+    assert collect_payload(record, user_connection_base=str(base))["output"] is None
+
+
+def test_rejects_sibling_directory_that_merely_shares_the_base_prefix(tmp_path):
+    base = tmp_path / "userConnection"
+    base.mkdir()
+    evil = tmp_path / "userConnectionEvil"
+    evil.mkdir()
+    target = evil / "x.json"
+    target.write_text(json.dumps({"leak": True}), encoding="utf-8")
+
+    record = _record(result_info={"output_json": str(target)})
+
+    assert collect_payload(record, user_connection_base=str(base))["output"] is None
+
+
+def test_deeply_nested_json_degrades_instead_of_raising(tmp_path):
+    """RecursionError 는 RuntimeError 하위라 ValueError 로 안 잡힌다.
+
+    크기 상한(8MB)으로는 막을 수 없다 — 200KB 짜리 '[[[[…' 로도 재현된다.
+    엔진이 잘못된 결과 파일을 뱉어도 리포트 생성은 죽지 않아야 한다.
+    """
+    base = tmp_path / "userConnection"
+    base.mkdir()
+    bomb = base / "bomb.json"
+    bomb.write_text("[" * 100000 + "]" * 100000, encoding="utf-8")
+
+    record = _record(result_info={"output_json": str(bomb)})
+
+    assert collect_payload(record, user_connection_base=str(base))["output"] is None
