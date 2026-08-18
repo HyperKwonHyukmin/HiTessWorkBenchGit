@@ -68,6 +68,42 @@ def test_generate_returns_400_for_an_incomplete_record(admin_client, db_session)
     assert res.status_code == 400
 
 
+def test_generate_writes_an_export_activity_log(admin_client, db_session):
+    """감사 기록이 없으면 누가 어떤 계산서를 뽑았는지 추적할 수 없다.
+
+    결재에 붙는 문서라 발급 이력이 남아야 한다. 인자 순서 하나만 틀어져도
+    조용히 사라지는 종류의 기능이라 테스트로 고정한다.
+    """
+    from app import models
+
+    record = _seed(db_session, employee_id="ADMIN001")
+    res = admin_client.post("/api/reports/generate", json={"analysis_id": record.id})
+    assert res.status_code == 200
+
+    logs = (
+        db_session.query(models.ActivityLog)
+        .filter(models.ActivityLog.action_type == "EXPORT_REPORT")
+        .all()
+    )
+    assert len(logs) == 1
+    assert logs[0].employee_id == "ADMIN001"
+    assert logs[0].action_detail["analysis_id"] == record.id
+
+
+def test_ownership_is_checked_before_completeness(switchable_client, db_session):
+    """남의 미완료 레코드에 400 을 주면 그 레코드의 상태가 새어 나간다.
+
+    소유권 검사가 완료 여부 검사보다 먼저여야 한다 — 순서가 뒤집히면
+    비소유자가 400/403 차이로 레코드의 존재와 상태를 알아낼 수 있다.
+    """
+    record = _seed(db_session, employee_id="ADMIN001", status="Failed")
+    switchable_client.as_user()
+
+    res = switchable_client.post("/api/reports/generate", json={"analysis_id": record.id})
+
+    assert res.status_code == 403
+
+
 def test_user_connection_base_matches_the_download_endpoint():
     """경로가 한 단계만 어긋나도 결과 파일과 근거 섹션이 조용히 사라진다.
 
