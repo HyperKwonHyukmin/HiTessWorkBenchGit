@@ -872,6 +872,18 @@ def test_punctuation_does_not_hide_the_negator(value):
 
 @pytest.mark.parametrize(
     "value",
+    ["cannot pass", "cannot be verified as safe", "CANNOT PASS", "cannot 합격"],
+)
+def test_cannot_is_recognised_without_an_apostrophe(value):
+    """'cannot' 은 축약형 복원으로 살아나지 않는다 — 별도 부정어 토큰이어야 한다.
+
+    형식체 보고서일수록 can't 대신 cannot 을 쓴다.
+    """
+    assert _verdict(value) == "불합격"
+
+
+@pytest.mark.parametrize(
+    "value",
     ["isn't safe", "doesn't pass", "wasn't ok", "aren't safe",
      "can't pass", "won't pass", "didn't pass", "isn’t safe"],
 )
@@ -930,7 +942,11 @@ _VERDICT_KEYS: tuple[str, ...] = ("assessment", "verdict", "judgement", "result_
 # 부정어. 같은 문자열 안에 긍정어와 함께 나오면 거리·순서를 따지지 않고 불합격으로 읽는다.
 # ⚠️ 창(window)을 두지 않는다. "부정어 바로 앞 N칸" 규칙은 N 을 아무리 키워도
 #    'not currently considered safe' 처럼 한 칸만 더 벌어지면 뚫린다. 창을 없애야 닫힌다.
-_VERDICT_NEGATORS: frozenset[str] = frozenset({"not", "no", "non", "never", "without"})
+# "cannot" 은 아포스트로피가 없어 축약형 복원으로도 살아나지 않는다. 별도 토큰으로 넣는다
+# (형식체 보고서일수록 can't 보다 cannot 을 쓴다).
+_VERDICT_NEGATORS: frozenset[str] = frozenset({
+    "not", "no", "non", "never", "without", "cannot",
+})
 
 # 긍정 토큰을 포함하지 않아 위 규칙으로는 못 잡는 다어절 부정 표현.
 _VERDICT_NEGATIVE_PHRASES: tuple[str, ...] = ("no good",)
@@ -1062,9 +1078,14 @@ def _match_verdict(value: str) -> str | None:
 
     ⚠️ 이 함수는 **틀리더라도 안전한 쪽으로만 틀리게** 만들어져 있다.
     잘못된 '합격'은 결재를 그대로 통과하지만, 지나친 '불합격'은 사람이 다시 보게 만든다.
-    그래서 부정어와 긍정어가 한 문자열에 함께 있으면 거리도 순서도 따지지 않고 불합격이다.
-    'no issues, safe' 같은 문장이 불합격으로 읽히는 대가를 치르더라도,
+    그래서 _VERDICT_NEGATORS 의 부정어와 긍정어가 한 문자열에 함께 있으면 거리도 순서도
+    따지지 않고 불합격이다. 'no issues, safe' 가 불합격으로 읽히는 대가를 치르더라도,
     'not currently considered safe' 가 합격으로 읽히는 일은 없어야 한다.
+
+    ⚠️ 다만 부정어는 **고정 목록**이다(not/no/non/never/without/cannot + n't 축약형).
+    목록 밖 부정 표현('insufficient', 'fails to meet', 'unable to')은 인식하지 못하고,
+    긍정어가 함께 있으면 합격으로 읽힌다. 새 표현이 실제로 관측되면 목록에 추가한다 —
+    이 fallback 을 문장 분류기로 키우지 않는다.
 
     한계(의도적): 'OK but check' 처럼 단서만 달린 표현은 합격으로 읽고, 한국어 활용형
     ('적합하지 않음')과 영어·한국어 밖 문자(중국어·일본어·키릴)는 인식하지 못해
@@ -1181,7 +1202,7 @@ def get_adapter(key: str | None) -> Adapter:
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_generic_adapter.py -q`
-Expected: PASS — 77 passed (69 + 축약형 부정 8)
+Expected: PASS — 81 passed (69 + 축약형 부정 8 + cannot 4)
 
 - [ ] **Step 5: 커밋**
 
@@ -1405,7 +1426,7 @@ ADAPTERS: dict[str, Adapter] = {
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_truss_adapter.py tests/test_report_generic_adapter.py -q`
-Expected: PASS — 84 passed (truss 7 + generic 77)
+Expected: PASS — 88 passed (truss 7 + generic 81)
 
 - [ ] **Step 5: 커밋**
 
