@@ -5,9 +5,13 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..models import ReportDoc, ReportField, ReportMeta, ReportSection, ReportTable
+
+# 판정 문자열 토큰 분리 — 영숫자·한글이 아니면 전부 구분자.
+_TOKEN_SPLIT_RE = re.compile(r"[^0-9a-z가-힣]+")
 
 # 경로·내부 식별자 — 계산서 본문에 노출하지 않는다(근거 섹션이 대신 보여 준다).
 _EXCLUDED_KEY_SUFFIXES: tuple[str, ...] = ("_json", "_path", "_dir", "_file")
@@ -24,11 +28,10 @@ _EXCLUDED_KEYS: frozenset[str] = frozenset({
 # ⚠️ 짧은 토큰(ng)은 부분 문자열로 찾지 않는다. "bending" 안의 "ng" 가 걸린다.
 _VERDICT_KEYS: tuple[str, ...] = ("assessment", "verdict", "judgement", "result_status")
 
-# 부정어. 긍정 토큰 바로 앞(최대 2칸)에 이게 오면 판정을 뒤집는다.
-# ⚠️ 리터럴 표현 목록으로 막으면 안 된다 — "not ok" 만 막고 "not safe" 를 놓치면
-#    긍정 토큰이 하나 늘 때마다 구멍이 하나 늘어난다. 규칙으로 막는다.
+# 부정어. 같은 문자열 안에 긍정어와 함께 나오면 거리·순서를 따지지 않고 불합격으로 읽는다.
+# ⚠️ 창(window)을 두지 않는다. "부정어 바로 앞 N칸" 규칙은 N 을 아무리 키워도
+#    'not currently considered safe' 처럼 한 칸만 더 벌어지면 뚫린다. 창을 없애야 닫힌다.
 _VERDICT_NEGATORS: frozenset[str] = frozenset({"not", "no", "non", "never", "without"})
-_NEGATOR_LOOKBACK = 2
 
 # 긍정 토큰을 포함하지 않아 위 규칙으로는 못 잡는 다어절 부정 표현.
 _VERDICT_NEGATIVE_PHRASES: tuple[str, ...] = ("no good",)
@@ -144,35 +147,37 @@ def _split(source: dict) -> tuple[tuple[ReportField, ...], tuple[ReportTable, ..
     return tuple(fields), tuple(tables), tuple(omitted)
 
 
-def _is_negated(tokens: list[str], index: int) -> bool:
-    """tokens[index] 바로 앞 최대 _NEGATOR_LOOKBACK 칸에 부정어가 있는가."""
-    start = max(0, index - _NEGATOR_LOOKBACK)
-    return any(token in _VERDICT_NEGATORS for token in tokens[start:index])
+def _tokenize(value: str) -> list[str]:
+    """casefold 후 영숫자·한글이 아닌 문자는 전부 구분자로 본다.
+
+    'not,safe' / 'not/safe' / 'safe?' 처럼 문장부호가 붙어도 부정어가 온전한 토큰으로
+    떨어지게 한다. 부호를 안 떼면 'not,' 이 부정어 목록에 안 걸려 그대로 새어 나간다.
+    """
+    return [token for token in _TOKEN_SPLIT_RE.split(value.casefold()) if token]
 
 
 def _match_verdict(value: str) -> str | None:
     """판정 문자열 하나를 한국어 판정으로.
 
-    순서가 안전을 좌우한다: 부정된 긍정 → 부정 표현 → 부정 토큰 → 경고 → 긍정.
-    'not safe' 를 합격으로 읽는 것이 이 기능의 최악 실패다 — 공란 판정은 사람이
-    들여다보게 만들지만, 확신에 찬 오판은 그대로 결재를 통과한다.
+    ⚠️ 이 함수는 **틀리더라도 안전한 쪽으로만 틀리게** 만들어져 있다.
+    잘못된 '합격'은 결재를 그대로 통과하지만, 지나친 '불합격'은 사람이 다시 보게 만든다.
+    그래서 부정어와 긍정어가 한 문자열에 함께 있으면 거리도 순서도 따지지 않고 불합격이다.
+    'no issues, safe' 같은 문장이 불합격으로 읽히는 대가를 치르더라도,
+    'not currently considered safe' 가 합격으로 읽히는 일은 없어야 한다.
 
-    한계(의도적): 'OK but check', '조건부 합격' 같은 단서 달린 판정은 그냥 합격으로
-    읽는다. 이런 표현을 쓰는 App 은 전용 어댑터에서 판정을 직접 채워야 한다.
+    한계(의도적): 'OK but check' 처럼 단서만 달린 표현은 합격으로 읽고, 한국어 활용형
+    ('적합하지 않음')은 토큰이 붙어 있어 아예 인식하지 못해 판정 없음이 된다.
+    이런 표현을 쓰는 App 은 전용 어댑터에서 판정을 직접 채워야 한다.
     """
-    text = " ".join(value.replace("_", " ").replace("-", " ").casefold().split())
-    if not text:
+    tokens = _tokenize(value)
+    if not tokens:
         return None
-
-    tokens = text.split()
-    for index, token in enumerate(tokens):
-        if token in _VERDICT_POSITIVE_TOKENS and _is_negated(tokens, index):
-            return "불합격"
-
-    if any(phrase in text for phrase in _VERDICT_NEGATIVE_PHRASES):
-        return "불합격"
-
     unique = set(tokens)
+
+    if (unique & _VERDICT_NEGATORS) and (unique & _VERDICT_POSITIVE_TOKENS):
+        return "불합격"
+    if any(phrase in " ".join(tokens) for phrase in _VERDICT_NEGATIVE_PHRASES):
+        return "불합격"
     if unique & _VERDICT_NEGATIVE_TOKENS:
         return "불합격"
     if unique & _VERDICT_WARNING_TOKENS:

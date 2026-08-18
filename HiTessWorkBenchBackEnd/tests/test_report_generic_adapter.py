@@ -207,3 +207,25 @@ def test_negated_positive_words_are_never_read_as_pass(value):
 def test_negated_non_verdict_words_stay_unknown(value):
     """부정어가 붙었다고 아무 문장이나 불합격으로 만들지는 않는다."""
     assert _verdict(value) is None
+
+
+# 고정 목록이 아니라 규칙 자체를 검사한다 — 목록으로 막으면 목록에 없는 표현이 새어 나간다.
+@pytest.mark.parametrize("positive", ["ok", "pass", "passed", "safe", "합격", "적합"])
+@pytest.mark.parametrize("gap", [0, 1, 2, 3, 5])
+def test_negator_flips_positive_at_any_distance(positive, gap):
+    """부정어와 긍정어 사이가 얼마나 벌어져도 합격으로 새지 않는다.
+
+    'not currently considered safe' 처럼 두 칸만 벌어져도 뚫리던 창(window) 방식을
+    버렸다. 창을 키우는 대신 없앴으므로, 거리를 늘려 가며 규칙을 고정한다.
+    """
+    filler = " ".join(["currently"] * gap)
+    value = f"not {filler} {positive}".replace("  ", " ")
+    assert _verdict(value) == "불합격"
+
+
+@pytest.mark.parametrize(
+    "value", ["not,safe", "not/safe", "not.ok", "not;합격", "(not) safe", "safe? no"]
+)
+def test_punctuation_does_not_hide_the_negator(value):
+    """부호가 붙어 'not,' 이 되면 부정어 목록에 안 걸려 그대로 합격이 되던 구멍."""
+    assert _verdict(value) == "불합격"
