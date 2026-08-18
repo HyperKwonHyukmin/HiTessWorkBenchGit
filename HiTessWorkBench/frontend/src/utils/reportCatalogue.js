@@ -11,14 +11,17 @@ const COMPLETED = new Set(['success', 'completed', '완료']);
 export function decorateHistoryForReport(rows, capabilities) {
   if (!Array.isArray(rows)) return [];
   const caps = capabilities || {};
-  const byDisplayName = new Map(
-    Object.values(caps)
-      .filter((entry) => entry && entry.displayName)
-      .map((entry) => [entry.displayName, entry]),
-  );
+  // 표시명 하나로만 맞추면 별칭으로 저장된 App(예: 'Jib Rest Assessment (1단)')이 빗나간다.
+  const byName = new Map();
+  for (const entry of Object.values(caps)) {
+    if (!entry) continue;
+    for (const name of [entry.displayName, ...(entry.aliases || [])]) {
+      if (name && !byName.has(name)) byName.set(name, entry);
+    }
+  }
 
   return rows.map((row) => {
-    const entry = byDisplayName.get(row.program_name) || null;
+    const entry = byName.get(row.program_name) || null;
     const completed = COMPLETED.has(String(row.status || '').toLowerCase());
     return {
       ...row,

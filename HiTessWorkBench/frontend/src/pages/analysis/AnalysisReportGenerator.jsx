@@ -10,6 +10,8 @@ import { useAuth } from '../../contexts/AuthContext';
 
 export default function AnalysisReportGenerator() {
   const { showToast } = useToast();
+  // localStorage 를 직접 읽지 않는다 — 호출 시점에만 읽어서 로그인/로그아웃에 재렌더링되지 않는다.
+  // MyProjects.jsx 등 사번 기준 목록 페이지가 쓰는 정식 경로가 useAuth 다.
   const { employeeId } = useAuth();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -19,6 +21,7 @@ export default function AnalysisReportGenerator() {
   const [appFilter, setAppFilter] = useState('ALL');
 
   useEffect(() => {
+    if (!employeeId) return undefined;
     let alive = true;
     (async () => {
       try {
@@ -113,6 +116,7 @@ export default function AnalysisReportGenerator() {
                     type="button"
                     disabled={!row.reportable}
                     onClick={() => setSelectedId(row.id)}
+                    title={row.blockedReason || undefined}
                     className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm ${
                       row.id === selectedId ? 'bg-blue-50' : 'hover:bg-slate-50'
                     } ${row.reportable ? '' : 'cursor-not-allowed opacity-50'}`}
