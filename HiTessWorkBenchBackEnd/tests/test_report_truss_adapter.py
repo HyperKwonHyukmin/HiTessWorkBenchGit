@@ -79,6 +79,20 @@ def test_missing_output_falls_back_to_an_empty_result_section():
     assert doc.verdict is None
 
 
+def test_generic_omission_notices_survive_the_result_swap():
+    """result 섹션만 갈아끼우고 notices 를 떨어뜨리면 조용한 누락으로 되돌아간다.
+
+    truss 어댑터는 loadCases 만 해결한다. input 이나 output 의 다른 키를 generic 이
+    펴지 못했다면 그 사실은 계속 남아야 한다.
+    """
+    payload = _payload()
+    payload["input"]["weird"] = [1, {"a": 2}]  # generic 이 표로도 값으로도 못 펴는 모양
+
+    doc = get_adapter("truss-assessment")(payload, _meta())
+
+    assert doc.notices == ("입력 조건에서 생략됨: weird",)
+
+
 def test_every_declared_report_adapter_is_actually_registered():
     """레지스트리 오타는 조용히 generic 으로 떨어져 알아챌 수 없다.
 

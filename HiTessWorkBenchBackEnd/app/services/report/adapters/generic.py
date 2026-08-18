@@ -34,7 +34,11 @@ _VERDICT_KEYS: tuple[str, ...] = ("assessment", "verdict", "judgement", "result_
 # 부정어. 같은 문자열 안에 긍정어와 함께 나오면 거리·순서를 따지지 않고 불합격으로 읽는다.
 # ⚠️ 창(window)을 두지 않는다. "부정어 바로 앞 N칸" 규칙은 N 을 아무리 키워도
 #    'not currently considered safe' 처럼 한 칸만 더 벌어지면 뚫린다. 창을 없애야 닫힌다.
-_VERDICT_NEGATORS: frozenset[str] = frozenset({"not", "no", "non", "never", "without"})
+# "cannot" 은 아포스트로피가 없어 축약형 복원으로도 살아나지 않는다. 별도 토큰으로 넣는다
+# (형식체 보고서일수록 can't 보다 cannot 을 쓴다).
+_VERDICT_NEGATORS: frozenset[str] = frozenset({
+    "not", "no", "non", "never", "without", "cannot",
+})
 
 # 긍정 토큰을 포함하지 않아 위 규칙으로는 못 잡는 다어절 부정 표현.
 _VERDICT_NEGATIVE_PHRASES: tuple[str, ...] = ("no good",)
@@ -172,7 +176,8 @@ def _match_verdict(value: str) -> str | None:
 
     한계(의도적): 'OK but check' 처럼 단서만 달린 표현은 합격으로 읽고, 한국어 활용형
     ('적합하지 않음')과 영어·한국어 밖 문자(중국어·일본어·키릴)는 인식하지 못해
-    판정 없음이 된다. 어휘 밖 부정 표현('insufficient', 'fails to meet')도 마찬가지다.
+    판정 없음이 된다. 부정어 인식은 _VERDICT_NEGATORS 에 등록된 **고정 목록**뿐이라,
+    어휘 밖 부정 표현('insufficient', 'fails to meet', 'unable to')은 잡지 못한다.
     이건 전용 어댑터가 없는 App 을 위한 fallback 이지 문장 분류기가 아니다 —
     판정이 중요한 App 은 전용 어댑터에서 직접 채운다.
     """

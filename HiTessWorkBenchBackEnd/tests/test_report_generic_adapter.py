@@ -233,6 +233,18 @@ def test_punctuation_does_not_hide_the_negator(value):
 
 @pytest.mark.parametrize(
     "value",
+    ["cannot pass", "cannot be verified as safe", "CANNOT PASS", "cannot 합격"],
+)
+def test_cannot_is_recognised_without_an_apostrophe(value):
+    """'cannot' 은 축약형 복원으로 살아나지 않는다 — 별도 부정어 토큰이어야 한다.
+
+    형식체 보고서일수록 can't 대신 cannot 을 쓴다.
+    """
+    assert _verdict(value) == "불합격"
+
+
+@pytest.mark.parametrize(
+    "value",
     ["isn't safe", "doesn't pass", "wasn't ok", "aren't safe",
      "can't pass", "won't pass", "didn't pass", "isn’t safe"],
 )

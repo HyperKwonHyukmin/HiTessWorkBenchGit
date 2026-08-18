@@ -68,4 +68,7 @@ def truss_assessment_adapter(payload: dict, meta: ReportMeta) -> ReportDoc:
         meta=meta,
         verdict="불합격" if any_fail else "합격",
         sections=sections,
+        # result 섹션만 갈아끼웠을 뿐 input/output 은 generic 이 편 그대로다.
+        # generic 이 못 편 키(notices)까지 갈아끼우면 그 사실이 조용히 사라진다.
+        notices=base.notices,
     )
