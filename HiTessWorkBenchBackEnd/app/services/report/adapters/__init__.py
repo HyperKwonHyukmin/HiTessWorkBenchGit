@@ -10,10 +10,13 @@ from typing import Callable
 
 from ..models import ReportDoc, ReportMeta
 from .generic import generic_adapter
+from .truss_assessment import truss_assessment_adapter
 
 Adapter = Callable[[dict, ReportMeta], ReportDoc]
 
-ADAPTERS: dict[str, Adapter] = {}
+ADAPTERS: dict[str, Adapter] = {
+    "truss-assessment": truss_assessment_adapter,
+}
 
 
 def get_adapter(key: str | None) -> Adapter:
