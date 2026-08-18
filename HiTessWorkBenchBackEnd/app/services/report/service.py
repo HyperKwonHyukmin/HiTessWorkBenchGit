@@ -9,7 +9,7 @@ import logging
 
 from ..analysis_passport import build_analysis_passport
 from ..program_registry import PROGRAM_SPECS, resolve_program
-from .adapters import get_adapter
+from .adapters import generic_adapter, get_adapter
 from .models import ReportDoc, ReportField, ReportMeta, ReportSection
 from .payload import collect_payload
 from .renderers.generic_xlsx import render_generic_xlsx
@@ -41,7 +41,12 @@ def _meta_for(record, program_id: str, display_name: str) -> ReportMeta:
     )
 
 
-def _provenance_section(passport: dict | None) -> ReportSection:
+def _provenance_section(passport: dict | None, *, lookup_failed: bool) -> ReportSection:
+    """근거 파일 섹션.
+
+    ⚠️ '조회 실패'와 '원래 없음'을 같은 문구로 쓰지 않는다. 둘은 다른 사실이고,
+    승인자가 구분할 수 없으면 근거가 없는 해석을 근거가 있는 것으로 오해할 수 있다.
+    """
     artifacts = (passport or {}).get("artifacts") or []
     fields = tuple(
         ReportField(
@@ -52,7 +57,16 @@ def _provenance_section(passport: dict | None) -> ReportSection:
         for item in artifacts
     )
     if not fields:
-        fields = (ReportField(label="산출물", value="기록 없음"),)
+        fields = (
+            ReportField(
+                label="산출물",
+                value="조회 실패" if lookup_failed else "기록 없음",
+                note=(
+                    "산출물 계보를 읽지 못했습니다 — 근거 파일이 없다는 뜻은 아닙니다."
+                    if lookup_failed else None
+                ),
+            ),
+        )
     return ReportSection(key="provenance", title="근거 파일", fields=fields)
 
 
@@ -78,24 +92,37 @@ def build_report_doc(record, *, user_connection_base: str) -> ReportDoc:
     meta = _meta_for(record, program_id, display_name)
 
     adapter = get_adapter(spec.report_adapter if spec else None)
+    notices: tuple[str, ...] = ()
     try:
         doc = adapter(payload, meta)
-        notices: tuple[str, ...] = ()
+        # 예외만 막으면 폴백이 반쪽이다 — 어댑터가 조용히 None 을 돌려주면(early return 실수 등)
+        # 이 블록 밖에서 AttributeError 로 터진다. 계약 위반도 예외와 같게 취급한다.
+        if not isinstance(doc, ReportDoc):
+            raise TypeError(f"어댑터가 ReportDoc 이 아닌 {type(doc).__name__} 을 돌려줬습니다")
     except Exception:
         logger.warning("리포트: 어댑터 실패 — generic 으로 폴백합니다", exc_info=True)
-        doc = get_adapter(None)(payload, meta)
+        # get_adapter(None) 을 다시 부르지 않는다 — 조회 자체가 깨졌을 수도 있는 경로다.
+        # generic_adapter 를 직접 참조해야 폴백이 '무조건 안전'하다는 이름값을 한다.
+        doc = generic_adapter(payload, meta)
         notices = ("전용 어댑터가 실패해 기본 서식으로 생성되었습니다.",)
 
+    passport_failed = False
     try:
         passport = build_analysis_passport(record, user_connection_base=user_connection_base)
     except Exception:
-        logger.info("리포트: passport 생성 실패 — 근거 섹션을 비웁니다", exc_info=True)
+        logger.info("리포트: passport 생성 실패 — 조회 실패로 표기합니다", exc_info=True)
         passport = None
+        passport_failed = True
+        notices = (
+            *notices,
+            "근거 파일 계보를 조회하지 못했습니다 — 산출물 유무는 이 계산서로 판단할 수 없습니다.",
+        )
 
     sections = (
+        # ordered_sections() 가 STANDARD_SECTION_ORDER 로 다시 정렬하므로 여기 순서는 무의미하다.
         *doc.sections,
         _verdict_section(doc.verdict),
-        _provenance_section(passport),
+        _provenance_section(passport, lookup_failed=passport_failed),
     )
 
     return ReportDoc(

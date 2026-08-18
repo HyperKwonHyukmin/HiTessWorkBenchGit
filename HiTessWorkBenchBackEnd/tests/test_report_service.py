@@ -71,6 +71,38 @@ def test_applied_form_is_stated_on_the_cover_row_not_buried_in_notices(tmp_path)
     assert not any(isinstance(v, str) and "범용 서식으로 생성" in v for v in values)
 
 
+def test_an_adapter_returning_the_wrong_type_falls_back_like_an_exception(tmp_path, monkeypatch):
+    """예외만 막으면 폴백이 반쪽이다 — 조용한 None 반환도 같게 취급해야 한다."""
+    from app.services.report import service as service_module
+
+    monkeypatch.setattr(service_module, "get_adapter", lambda key: (lambda payload, meta: None))
+
+    filename, data = build_report_xlsx(_record(), user_connection_base=str(tmp_path))
+
+    assert data
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    values = [cell.value for row in wb["표지"].iter_rows() for cell in row]
+    assert "전용 어댑터가 실패해 기본 서식으로 생성되었습니다." in values
+
+
+def test_failed_provenance_lookup_is_distinguished_from_having_no_artifacts(tmp_path, monkeypatch):
+    """'조회 실패'와 '원래 없음'은 다른 사실이다 — 같은 문구로 쓰면 승인자가 오해한다."""
+    from app.services.report import service as service_module
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("passport 실패")
+
+    monkeypatch.setattr(service_module, "build_analysis_passport", _boom)
+
+    _, data = build_report_xlsx(_record(), user_connection_base=str(tmp_path))
+
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    values = [cell.value for sheet in wb for row in sheet.iter_rows() for cell in row]
+    assert "조회 실패" in values
+    assert "기록 없음" not in values
+    assert any(isinstance(v, str) and "계보를 조회하지 못했습니다" in v for v in values)
+
+
 def test_capabilities_lists_registered_programs():
     caps = report_capabilities()
     assert caps["truss-assessment"]["reportable"] is True
