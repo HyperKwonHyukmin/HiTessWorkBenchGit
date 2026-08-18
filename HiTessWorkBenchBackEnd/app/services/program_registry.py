@@ -21,6 +21,8 @@ class ProgramSpec:
     rerun_adapter: str | None = None
     input_keys: tuple[str, ...] = ()
     statistics_group: str | None = None
+    report_adapter: str | None = None
+    report_template: str | None = None
 
     def __post_init__(self) -> None:
         if not self.program_id or not self.aliases:
@@ -38,6 +40,8 @@ def _spec(
     rerun_adapter: str | None = None,
     input_keys: tuple[str, ...] = (),
     statistics_group: str | None = None,
+    report_adapter: str | None = None,
+    report_template: str | None = None,
 ) -> ProgramSpec:
     return ProgramSpec(
         program_id=program_id,
@@ -48,6 +52,8 @@ def _spec(
         rerun_adapter=rerun_adapter,
         input_keys=input_keys,
         statistics_group=statistics_group,
+        report_adapter=report_adapter,
+        report_template=report_template,
     )
 
 
@@ -62,9 +68,10 @@ PROGRAM_SPECS: Final[tuple[ProgramSpec, ...]] = (
     ),
     _spec(
         "truss-assessment", "Truss Assessment", "Truss Structural Assessment",
-        capabilities=("file-analysis", "rerun", "passport"),
+        capabilities=("file-analysis", "rerun", "passport", "report"),
         rerun_adapter="truss-assessment",
         input_keys=("bdf_model",),
+        report_adapter="truss-assessment",
     ),
     _spec(
         "bdf-scanner", "BDF Scanner", "BdfScanner",

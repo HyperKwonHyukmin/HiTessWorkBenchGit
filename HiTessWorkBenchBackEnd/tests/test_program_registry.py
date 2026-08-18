@@ -172,3 +172,17 @@ def test_history_item_key_set_remains_unchanged(admin_client, db_session):
         "updated_at",
         "files_available",
     }
+
+
+def test_spec_defaults_report_fields_to_none():
+    spec = resolve_program("BDF Scanner")
+    assert spec is not None
+    assert spec.report_adapter is None
+    assert spec.report_template is None
+
+
+def test_truss_assessment_declares_a_report_adapter():
+    spec = resolve_program("Truss Structural Assessment")
+    assert spec is not None
+    assert spec.report_adapter == "truss-assessment"
+    assert "report" in spec.capabilities
