@@ -214,8 +214,17 @@ Trust Blue(`#002554`) 헤더, 판정은 색 + 텍스트 + 기호 병기, 숫자�
 
 ## 기존 엔드포인트 이행
 
-`/api/analysis/export-xlsx`(Truss)와 `/api/carling/{free,optimization}/report`는 **제거하지 않고
-새 엔진에 위임**한다. 프론트 변경 없이 사일로가 해소되고, 기존 출력과의 스냅샷 비교로 회귀를 잡을 수 있다.
+두 엔드포인트를 **제거하지 않는다**. 다만 이행 방식은 서로 다르다 — 구현 착수 시 실측한 결과를 반영한 정정이다.
+
+| 엔드포인트 | 이행 | 이유 |
+|---|---|---|
+| `/api/carling/{free,optimization}/report` | 새 엔진의 TemplateRenderer에 **위임** | 템플릿 주입 방식이라 이관 후에도 동일 bytes를 목표할 수 있다 |
+| `/api/analysis/export-xlsx` (Truss) | **손대지 않고 그대로 둔다** | `_json_to_xlsx_bytes`는 어댑터가 아니라 Load Case별 시트·FAIL 행 강조를 하는 200줄짜리 전용 렌더러다. ReportDoc 경유로 재작성하면 출력 bytes가 달라져 무손실 이관이 불가능하고, 사용자가 얻는 이득도 없다 |
+
+따라서 Truss Structural Assessment는 신규 App에서 **`truss-assessment` 어댑터 + 범용 서식**으로
+표준 계산서를 내고, 기존 화면의 상세 XLSX 내보내기는 지금 그대로 유지된다. 두 문서는 용도가 다르다
+(전자는 결재용 요약 계산서, 후자는 부재 전수 데이터). 나중에 전용 렌더러를 세 번째 렌더러로
+등록해 통합할 수 있으나 이번 범위가 아니다.
 
 Carling 경로는 `Analysis` 레코드가 아니라 클라이언트가 POST로 되돌려준 결과 dict를 받으므로,
 `report_service`는 진입점을 둘로 노출한다.
@@ -236,7 +245,8 @@ build_from_payload(payload, meta) -> ReportDoc    # 레거시 POST 경로
 - **GenericRenderer** — 반환 bytes가 유효한 XLSX ZIP인지 + 표지·섹션 시트 존재 + 판정 셀 스팟 체크.
 - **TemplateRenderer** — 매핑 JSON대로 셀에 값이 들어갔는지. 공유 스토리지 템플릿이 없는 환경에서는 skip.
 - **payload 수집** — `userConnection` 밖 경로가 `output_json`에 들어 있을 때 로드를 건너뛰는지(보안 회귀).
-- **회귀** — 기존 두 엔드포인트가 이관 전후 동일 bytes를 내는지 스냅샷 비교.
+- **회귀** — carling 엔드포인트가 이관 전후 동일 bytes를 내는지 스냅샷 비교
+  (Truss 엔드포인트는 이관하지 않으므로 회귀 대상이 아니다).
 - 백엔드 테스트는 인메모리 SQLite + `app.dependency_overrides`(`tests/conftest.py`) 관례를 따른다.
 
 ## 배포
@@ -247,6 +257,18 @@ build_from_payload(payload, meta) -> ReportDoc    # 레거시 POST 경로
   불가하면 carling이 쓰는 `CARLING_REPORT_DIR`과 같은 방식으로 env(`WORKBENCH_REPORT_TEMPLATE_DIR`)에
   로컬 경로를 지정하는 폴백을 쓴다.
 - 프론트 변경이 있으므로 WorkBench 클라이언트 재배포 대상이다.
+
+## 구현 단계 분리
+
+각 단계가 그 자체로 동작하는 소프트웨어를 낸다.
+
+- **1단계 — 엔진 + 범용 경로 + App**: `ReportDoc`, payload 수집, 레지스트리 확장,
+  generic 어댑터·렌더러, `routers/reports.py`, 프론트 App. 이것만으로 **25개 앱 전부**
+  범용 계산서가 나온다. 템플릿 관련 코드는 아직 없다.
+- **2단계 — 템플릿 렌더러 + Carling 이관**: `TemplateRenderer`, `<template>.map.json` 외부화,
+  carling 엔드포인트 위임, 스냅샷 회귀. 1단계와 독립적으로 가치가 있다.
+
+계획 문서는 단계별로 따로 쓴다.
 
 ## 열린 항목 (후속)
 
