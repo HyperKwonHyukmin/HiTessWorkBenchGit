@@ -24,6 +24,7 @@ _VERDICT_WORDS: dict[str, str] = {
 }
 
 _MAX_TABLE_ROWS = 500
+_MAX_LIST_ITEMS = 20
 
 
 def _is_excluded(key: str) -> bool:
@@ -52,22 +53,67 @@ def _table_from_rows(title: str, rows: list[dict]) -> ReportTable | None:
     )
 
 
+def _scalar_list_field(key: str, values: list) -> ReportField:
+    """스칼라 목록은 한 칸에 이어 붙인다(하중 배열 등이 통째로 사라지지 않게)."""
+    shown = values[:_MAX_LIST_ITEMS]
+    text = ", ".join("" if item is None else str(item) for item in shown)
+    note = (
+        None if len(values) <= _MAX_LIST_ITEMS
+        else f"상위 {_MAX_LIST_ITEMS}개만 표시 (전체 {len(values)}개)"
+    )
+    return ReportField(label=key, value=text, note=note)
+
+
 def _split(source: dict) -> tuple[tuple[ReportField, ...], tuple[ReportTable, ...]]:
+    """payload 한 덩어리를 필드/표로 편다.
+
+    ⚠️ 표현할 수 없는 값을 조용히 버리지 않는다 — 무엇이 빠졌는지 '생략된 항목' 필드로
+    남긴다. 계산서가 입력을 말없이 누락하면 결재자가 그 사실을 알 방법이 없다
+    (설계원칙 1: 신뢰가 곧 기능).
+    """
     fields: list[ReportField] = []
     tables: list[ReportTable] = []
+    omitted: list[str] = []
+
     for key, value in (source or {}).items():
         if _is_excluded(key):
             continue
         if _is_scalar(value):
             fields.append(ReportField(label=key, value=value))
-        elif isinstance(value, list) and value and all(isinstance(item, dict) for item in value):
-            table = _table_from_rows(key, value)
-            if table:
-                tables.append(table)
+        elif isinstance(value, list):
+            if not value:
+                continue  # 빈 목록은 잃을 정보가 없다
+            if all(isinstance(item, dict) for item in value):
+                table = _table_from_rows(key, value)
+                if table:
+                    tables.append(table)
+                else:
+                    omitted.append(key)
+            elif all(_is_scalar(item) for item in value):
+                fields.append(_scalar_list_field(key, value))
+            else:
+                omitted.append(key)  # 혼합 목록은 표로도 한 칸으로도 못 편다
         elif isinstance(value, dict):
+            if not value:
+                continue
             for sub_key, sub_value in value.items():
-                if _is_scalar(sub_value) and not _is_excluded(sub_key):
+                if _is_excluded(sub_key):
+                    continue
+                if _is_scalar(sub_value):
                     fields.append(ReportField(label=f"{key}.{sub_key}", value=sub_value))
+                else:
+                    omitted.append(f"{key}.{sub_key}")  # 2단계 이상 중첩은 펴지 않는다
+        else:
+            omitted.append(key)
+
+    if omitted:
+        fields.append(
+            ReportField(
+                label="생략된 항목",
+                value=", ".join(omitted),
+                note="이 서식으로 표현할 수 없어 본문에서 생략된 데이터 키입니다.",
+            )
+        )
     return tuple(fields), tuple(tables)
 
 
