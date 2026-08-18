@@ -18,10 +18,11 @@ logger = logging.getLogger(__name__)
 
 _COMPLETED_STATUSES: frozenset[str] = frozenset({"success", "완료", "completed"})
 
-# 1단계에는 템플릿 렌더러가 없으므로 모든 리포트가 범용 서식이다.
-# ⚠️ 2단계에서 TemplateRenderer 를 붙일 때 이 문구를 조건부로 바꿔야 한다
-#    (양식이 적용된 리포트에 "양식 미적용"이라고 적히면 그게 곧 거짓 표기다).
-_GENERIC_NOTICE = "표준 양식이 등록되지 않은 App 입니다 — 범용 서식으로 생성되었습니다."
+# ⚠️ '범용 서식으로 생성됨'을 notices 에 넣지 않는다.
+#    표지에 이미 「적용 양식 : 범용 서식」 행이 있어 순수 중복이고, 유의 사항 블록은
+#    이 해석 고유의 경고(무엇이 생략됐는지, 왜 판정이 비었는지)만 담아야 읽힌다.
+#    서식 종류 같은 문서 메타 정보를 같은 목록에 섞으면 정작 중요한 줄이 묻힌다.
+#    덤으로 2단계에서 문구가 거짓이 될 지뢰도 사라진다 — template_applied 가 표지를 몰고 간다.
 
 
 class ReportNotAvailable(Exception):
@@ -103,7 +104,7 @@ def build_report_doc(record, *, user_connection_base: str) -> ReportDoc:
         sections=sections,
         provenance=passport,
         template_applied=False,
-        notices=(*doc.notices, *notices, _GENERIC_NOTICE),
+        notices=(*doc.notices, *notices),
     )
 
 

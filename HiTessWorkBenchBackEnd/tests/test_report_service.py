@@ -57,11 +57,18 @@ def test_unknown_program_name_still_produces_a_report(tmp_path):
     assert "unknown" in filename
 
 
-def test_generic_path_records_a_notice_about_the_missing_form(tmp_path):
+def test_applied_form_is_stated_on_the_cover_row_not_buried_in_notices(tmp_path):
+    """서식 종류는 표지의 「적용 양식」 행이 말한다.
+
+    유의 사항 블록은 이 해석 고유의 경고만 담는다 — 문서 메타 정보를 섞으면
+    '왜 판정이 비었는가' 같은 정작 중요한 줄이 묻힌다.
+    """
     _, data = build_report_xlsx(_record(), user_connection_base=str(tmp_path))
     wb = openpyxl.load_workbook(io.BytesIO(data))
     values = [cell.value for row in wb["표지"].iter_rows() for cell in row]
+
     assert "범용 서식" in values
+    assert not any(isinstance(v, str) and "범용 서식으로 생성" in v for v in values)
 
 
 def test_capabilities_lists_registered_programs():
