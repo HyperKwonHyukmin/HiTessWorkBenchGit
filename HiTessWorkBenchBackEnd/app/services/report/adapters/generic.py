@@ -12,6 +12,9 @@ from ..models import ReportDoc, ReportField, ReportMeta, ReportSection, ReportTa
 
 # 판정 문자열 토큰 분리 — 영숫자·한글이 아니면 전부 구분자.
 _TOKEN_SPLIT_RE = re.compile(r"[^0-9a-z가-힣]+")
+# 축약형 부정. 아포스트로피가 구분자라 "isn't" 는 [isn, t] 로 쪼개져 부정어가 사라진다.
+# 조동사마다 토큰을 등록하는 대신 n't 를 not 으로 되돌린다.
+_CONTRACTION_NOT_RE = re.compile(r"n['’]t\b")
 
 # 경로·내부 식별자 — 계산서 본문에 노출하지 않는다(근거 섹션이 대신 보여 준다).
 _EXCLUDED_KEY_SUFFIXES: tuple[str, ...] = ("_json", "_path", "_dir", "_file")
@@ -148,12 +151,14 @@ def _split(source: dict) -> tuple[tuple[ReportField, ...], tuple[ReportTable, ..
 
 
 def _tokenize(value: str) -> list[str]:
-    """casefold 후 영숫자·한글이 아닌 문자는 전부 구분자로 본다.
+    """casefold → 축약형 부정 복원 → 영숫자·한글이 아닌 문자는 전부 구분자.
 
     'not,safe' / 'not/safe' / 'safe?' 처럼 문장부호가 붙어도 부정어가 온전한 토큰으로
     떨어지게 한다. 부호를 안 떼면 'not,' 이 부정어 목록에 안 걸려 그대로 새어 나간다.
+    축약형("isn't")은 부호를 떼는 순간 부정어가 통째로 사라지므로 먼저 되돌린다.
     """
-    return [token for token in _TOKEN_SPLIT_RE.split(value.casefold()) if token]
+    text = _CONTRACTION_NOT_RE.sub(" not ", value.casefold())
+    return [token for token in _TOKEN_SPLIT_RE.split(text) if token]
 
 
 def _match_verdict(value: str) -> str | None:
@@ -166,8 +171,10 @@ def _match_verdict(value: str) -> str | None:
     'not currently considered safe' 가 합격으로 읽히는 일은 없어야 한다.
 
     한계(의도적): 'OK but check' 처럼 단서만 달린 표현은 합격으로 읽고, 한국어 활용형
-    ('적합하지 않음')은 토큰이 붙어 있어 아예 인식하지 못해 판정 없음이 된다.
-    이런 표현을 쓰는 App 은 전용 어댑터에서 판정을 직접 채워야 한다.
+    ('적합하지 않음')과 영어·한국어 밖 문자(중국어·일본어·키릴)는 인식하지 못해
+    판정 없음이 된다. 어휘 밖 부정 표현('insufficient', 'fails to meet')도 마찬가지다.
+    이건 전용 어댑터가 없는 App 을 위한 fallback 이지 문장 분류기가 아니다 —
+    판정이 중요한 App 은 전용 어댑터에서 직접 채운다.
     """
     tokens = _tokenize(value)
     if not tokens:

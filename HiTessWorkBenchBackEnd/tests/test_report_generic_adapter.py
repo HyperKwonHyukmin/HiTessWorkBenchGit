@@ -229,3 +229,17 @@ def test_negator_flips_positive_at_any_distance(positive, gap):
 def test_punctuation_does_not_hide_the_negator(value):
     """부호가 붙어 'not,' 이 되면 부정어 목록에 안 걸려 그대로 합격이 되던 구멍."""
     assert _verdict(value) == "불합격"
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["isn't safe", "doesn't pass", "wasn't ok", "aren't safe",
+     "can't pass", "won't pass", "didn't pass", "isn’t safe"],
+)
+def test_contractions_are_not_read_as_pass(value):
+    """축약형은 아포스트로피를 떼는 순간 부정어가 통째로 사라진다.
+
+    'isn't safe' → [isn, t, safe] 가 되어 부정어가 없는 것처럼 보이고 'safe' 만 남는다.
+    마지막 따옴표는 유니코드 오른쪽 작은따옴표(’) — 문서에서 붙여넣은 문자열 대비.
+    """
+    assert _verdict(value) == "불합격"
