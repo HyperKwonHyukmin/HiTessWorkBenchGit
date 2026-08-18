@@ -196,6 +196,27 @@ def test_renderer_highlights_every_word_the_adapter_understands(word, colour):
     assert cell.font.color.rgb.endswith(colour)
 
 
+def test_an_unrelated_column_holding_a_verdict_word_does_not_paint_the_row():
+    """무관한 열의 'OK' 가 규격 이탈 행을 합격 색으로 칠하던 문제.
+
+    등록 어댑터가 없는 23개 App 이 전부 generic 표 경로를 쓰므로 실제로 도달한다.
+    """
+    doc = _table_doc(rows=(("W1", "OK", 8.4),), columns=("id", "inspector_note", "gap_mm"))
+    ws = _load(render_generic_xlsx(doc))["해석 결과"]
+
+    cell = next(c for c in _cells(ws) if c.value == "OK")
+    assert cell.fill.patternType is None
+    assert cell.font.color is None
+
+
+def test_a_real_verdict_column_still_paints_the_row():
+    doc = _table_doc(rows=(("W1", "불합격"),), columns=("id", "판정"))
+    ws = _load(render_generic_xlsx(doc))["해석 결과"]
+
+    cell = next(c for c in _cells(ws) if c.value == "불합격")
+    assert cell.fill.patternType == "solid"
+
+
 def test_renderer_and_adapter_share_one_verdict_vocabulary():
     """같은 낱말 목록을 두 곳에 적어 두면 언젠가 어긋난다 — 출처가 하나여야 한다."""
     from app.services.report import verdict_vocab
