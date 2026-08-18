@@ -1583,6 +1583,55 @@ def test_long_section_title_is_truncated_to_excel_sheet_limit():
     doc = _doc(sections=(ReportSection(key="overview", title="가" * 40),))
     wb = _load(render_generic_xlsx(doc))
     assert all(len(name) <= 31 for name in wb.sheetnames)
+
+
+# ── 판정을 읽히게 만들기 ────────────────────────────────────────────────
+# 결재자가 긴 표를 훑을 때 실패 행이 눈에 걸려야 한다. 색만으로 알리지는 않는다
+# (글자는 그대로 '불합격'), 색을 아예 안 쓰지도 않는다.
+
+def _cells(ws):
+    return [cell for row in ws.iter_rows() for cell in row]
+
+
+def _table_doc(rows, columns=("부재", "판정")):
+    return _doc(
+        sections=(
+            ReportSection(
+                key="result",
+                title="해석 결과",
+                tables=(ReportTable(title="부재", columns=columns, rows=rows),),
+            ),
+        )
+    )
+
+
+def test_failing_table_row_is_filled_and_passing_row_is_not():
+    ws = _load(render_generic_xlsx(_table_doc((("A", "합격"), ("B", "불합격")))))["해석 결과"]
+
+    fail_cell = next(c for c in _cells(ws) if c.value == "불합격")
+    pass_cell = next(c for c in _cells(ws) if c.value == "합격")
+
+    assert fail_cell.fill.patternType == "solid"
+    assert fail_cell.font.color.rgb.endswith("CC0000")
+    assert pass_cell.fill.patternType is None
+
+
+def test_verdict_cell_on_cover_is_coloured_as_well_as_written():
+    ws = _load(render_generic_xlsx(_doc(verdict="불합격")))["표지"]
+    cell = next(c for c in _cells(ws) if c.value == "불합격")
+    assert cell.font.color.rgb.endswith("CC0000")
+
+
+def test_wide_table_columns_are_sized_to_their_content():
+    doc = _table_doc(
+        rows=(("H-300x300", 300, 10, 94.0, "합격"),),
+        columns=("호칭", "외경", "두께", "중량(kg/m)", "판정"),
+    )
+    ws = _load(render_generic_xlsx(doc))["해석 결과"]
+
+    # 고정 폭이던 시절 D·E 열은 기본값(약 8.43)이라 헤더가 잘렸다.
+    assert ws.column_dimensions["D"].width >= len("중량(kg/m)")
+    assert ws.column_dimensions["E"].width >= 10
 ```
 
 - [ ] **Step 2: 테스트 실패 확인**
@@ -1606,6 +1655,7 @@ import io
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from ..models import ReportDoc, ReportSection
 
@@ -1619,9 +1669,26 @@ _LABEL_FONT = Font(bold=True, size=9)
 _LEFT = Alignment(horizontal="left", vertical="center")
 _CENTER = Alignment(horizontal="center", vertical="center")
 
+# 판정 강조 — 색만으로 알리지 않는다(PRODUCT.md 접근성). 글자는 이미 '불합격'/'합격'이고
+# 여기에 색을 덧입혀, 긴 표를 훑을 때 실패 행이 눈에 걸리게 한다.
+# assessment_service._json_to_xlsx_bytes 와 같은 팔레트를 쓴다.
+_FAIL_FILL = PatternFill("solid", fgColor="FFE4E4")
+_FAIL_FONT = Font(bold=True, color="CC0000", size=9)
+_WARN_FONT = Font(bold=True, color="CC6600", size=9)
+_PASS_FONT = Font(bold=True, color="1B7A3D", size=9)
+
+_FAIL_WORDS: frozenset[str] = frozenset({"불합격", "fail", "ng", "nok"})
+_WARN_WORDS: frozenset[str] = frozenset({"경고", "warn", "warning"})
+_PASS_WORDS: frozenset[str] = frozenset({"합격", "ok", "pass"})
+_STATUS_FONT = {"fail": _FAIL_FONT, "warn": _WARN_FONT, "pass": _PASS_FONT}
+
 _SHEET_NAME_LIMIT = 31
 # Excel 시트 이름에 쓸 수 없는 문자.
 _FORBIDDEN = ':\\/?*[]'
+
+# 열 너비 자동 맞춤 범위. 표 열이 3개를 넘으면 고정 너비로는 헤더가 잘린다.
+_MIN_COL_WIDTH = 10
+_MAX_COL_WIDTH = 52
 
 
 def _safe_sheet_name(title: str, used: set[str]) -> str:
@@ -1635,6 +1702,42 @@ def _safe_sheet_name(title: str, used: set[str]) -> str:
         suffix += 1
     used.add(candidate.casefold())
     return candidate
+
+
+def _text_width(value) -> int:
+    """대략적인 표시 폭. 한글·한자는 라틴 문자의 두 배로 친다."""
+    text = "" if value is None else str(value)
+    return sum(2 if ord(ch) > 0x2E80 else 1 for ch in text)
+
+
+def _autofit(ws, widths: dict[int, int]) -> None:
+    for index, width in widths.items():
+        ws.column_dimensions[get_column_letter(index)].width = max(
+            _MIN_COL_WIDTH, min(width + 2, _MAX_COL_WIDTH)
+        )
+
+
+def _status_of(value) -> str | None:
+    """셀 값이 판정어인지. 표 안에 묻힌 실패를 찾아내는 데 쓴다."""
+    if not isinstance(value, str):
+        return None
+    token = value.strip().casefold()
+    if token in _FAIL_WORDS:
+        return "fail"
+    if token in _WARN_WORDS:
+        return "warn"
+    if token in _PASS_WORDS:
+        return "pass"
+    return None
+
+
+def _row_status(row) -> str | None:
+    """행 전체의 판정. 실패가 하나라도 있으면 실패로 본다."""
+    seen: set[str] = {status for value in row if (status := _status_of(value))}
+    for level in ("fail", "warn", "pass"):
+        if level in seen:
+            return level
+    return None
 
 
 def _write_cover(ws, doc: ReportDoc) -> None:
@@ -1657,7 +1760,8 @@ def _write_cover(ws, doc: ReportDoc) -> None:
         ws.cell(row=row_ptr, column=1, value=label).font = _LABEL_FONT
         ws.cell(row=row_ptr, column=1).alignment = _LEFT
         cell = ws.cell(row=row_ptr, column=2, value=value)
-        cell.font = _BASE_FONT
+        # 판정 줄만 색을 덧입힌다 — 글자('불합격')는 그대로 두므로 색에만 기대지 않는다.
+        cell.font = _STATUS_FONT.get(_status_of(value) if label == "판정" else None, _BASE_FONT)
         cell.alignment = _LEFT
         row_ptr += 1
 
@@ -1673,44 +1777,51 @@ def _write_cover(ws, doc: ReportDoc) -> None:
 
 
 def _write_section(ws, section: ReportSection) -> None:
-    ws.column_dimensions["A"].width = 30
-    ws.column_dimensions["B"].width = 24
-    ws.column_dimensions["C"].width = 12
+    widths: dict[int, int] = {}
+
+    def put(row, column, value, *, font=_BASE_FONT, fill=None, align=None):
+        cell = ws.cell(row=row, column=column, value=value)
+        cell.font = font
+        if fill is not None:
+            cell.fill = fill
+        if align is not None:
+            cell.alignment = align
+        widths[column] = max(widths.get(column, 0), _text_width(value))
+        return cell
 
     row_ptr = 1
-    title = ws.cell(row=row_ptr, column=1, value=section.title)
-    title.fill = _SEC_FILL
-    title.font = _SEC_FONT
-    title.alignment = _LEFT
+    put(row_ptr, 1, section.title, font=_SEC_FONT, fill=_SEC_FILL, align=_LEFT)
     row_ptr += 2
 
     for item in section.fields:
-        ws.cell(row=row_ptr, column=1, value=item.label).font = _LABEL_FONT
-        ws.cell(row=row_ptr, column=2, value=item.value).font = _BASE_FONT
+        put(row_ptr, 1, item.label, font=_LABEL_FONT)
+        put(row_ptr, 2, item.value)
         if item.unit:
-            ws.cell(row=row_ptr, column=3, value=item.unit).font = _BASE_FONT
+            put(row_ptr, 3, item.unit)
         if item.note:
-            ws.cell(row=row_ptr, column=4, value=item.note).font = _BASE_FONT
+            put(row_ptr, 4, item.note)
         row_ptr += 1
 
     for table in section.tables:
         row_ptr += 1
-        caption = ws.cell(row=row_ptr, column=1, value=table.title)
-        caption.font = _SEC_FONT
+        put(row_ptr, 1, table.title, font=_SEC_FONT)
         row_ptr += 1
         for col_index, column in enumerate(table.columns, start=1):
-            cell = ws.cell(row=row_ptr, column=col_index, value=column)
-            cell.fill = _HDR_FILL
-            cell.font = _HDR_FONT
-            cell.alignment = _CENTER
+            put(row_ptr, col_index, column, font=_HDR_FONT, fill=_HDR_FILL, align=_CENTER)
         row_ptr += 1
         for row in table.rows:
+            # 긴 표에 묻힌 실패 행은 훑어서는 안 보인다. 글자는 그대로 두고 색을 덧입힌다.
+            status = _row_status(row)
+            font = _STATUS_FONT.get(status, _BASE_FONT)
+            fill = _FAIL_FILL if status == "fail" else None
             for col_index, value in enumerate(row, start=1):
-                ws.cell(row=row_ptr, column=col_index, value=value).font = _BASE_FONT
+                put(row_ptr, col_index, value, font=font, fill=fill)
             row_ptr += 1
         if table.note:
-            ws.cell(row=row_ptr, column=1, value=table.note).font = _BASE_FONT
+            put(row_ptr, 1, table.note)
             row_ptr += 1
+
+    _autofit(ws, widths)
 
 
 def render_generic_xlsx(doc: ReportDoc) -> bytes:
@@ -1733,7 +1844,7 @@ def render_generic_xlsx(doc: ReportDoc) -> bytes:
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_generic_renderer.py -q`
-Expected: PASS — 8 passed
+Expected: PASS — 11 passed (기본 8 + 판정 가독성 3)
 
 - [ ] **Step 5: 커밋**
 
