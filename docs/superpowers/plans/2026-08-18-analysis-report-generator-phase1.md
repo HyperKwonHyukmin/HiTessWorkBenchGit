@@ -2341,7 +2341,7 @@ import logging
 
 from ..analysis_passport import build_analysis_passport
 from ..program_registry import PROGRAM_SPECS, resolve_program
-from .adapters import get_adapter
+from .adapters import generic_adapter, get_adapter
 from .models import ReportDoc, ReportField, ReportMeta, ReportSection
 from .payload import collect_payload
 from .renderers.generic_xlsx import render_generic_xlsx
@@ -2433,7 +2433,10 @@ def build_report_doc(record, *, user_connection_base: str) -> ReportDoc:
             raise TypeError(f"어댑터가 ReportDoc 이 아닌 {type(doc).__name__} 을 돌려줬습니다")
     except Exception:
         logger.warning("리포트: 어댑터 실패 — generic 으로 폴백합니다", exc_info=True)
-        doc = get_adapter(None)(payload, meta)
+        # get_adapter(None) 을 다시 부르지 않는다. 그건 정의상 generic_adapter 이므로
+        # 안전을 더해 주는 게 없고, 1차 조회와 실패 지점만 공유하게 된다 —
+        # 조회 경로 자체가 망가진 상황에서 폴백이 같은 길로 다시 들어간다.
+        doc = generic_adapter(payload, meta)
         notices = ("전용 어댑터가 실패해 기본 서식으로 생성되었습니다.",)
 
     passport_failed = False
