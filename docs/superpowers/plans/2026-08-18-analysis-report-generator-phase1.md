@@ -1289,6 +1289,20 @@ def test_missing_output_falls_back_to_an_empty_result_section():
     result = next(s for s in doc.sections if s.key == "result")
     assert result.tables == ()
     assert doc.verdict is None
+
+
+def test_every_declared_report_adapter_is_actually_registered():
+    """레지스트리 오타는 조용히 generic 으로 떨어져 알아챌 수 없다.
+
+    get_adapter 는 모르는 키를 generic 으로 폴백한다 — 신규 App 이 등록 없이도
+    리포트가 나오게 하려는 의도지만, 그 탓에 report_adapter="truss-assesment" 같은
+    오타도 그냥 밋밋한 리포트가 되어 버린다. 여기서 고정한다.
+    """
+    from app.services.program_registry import PROGRAM_SPECS
+    from app.services.report.adapters import ADAPTERS
+
+    declared = {spec.report_adapter for spec in PROGRAM_SPECS if spec.report_adapter}
+    assert declared <= set(ADAPTERS), f"ADAPTERS 에 없는 report_adapter: {declared - set(ADAPTERS)}"
 ```
 
 - [ ] **Step 2: 테스트 실패 확인**
@@ -1391,7 +1405,7 @@ ADAPTERS: dict[str, Adapter] = {
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_truss_adapter.py tests/test_report_generic_adapter.py -q`
-Expected: PASS — 13 passed
+Expected: PASS — 84 passed (truss 7 + generic 77)
 
 - [ ] **Step 5: 커밋**
 
