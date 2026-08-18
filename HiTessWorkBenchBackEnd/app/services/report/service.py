@@ -25,6 +25,20 @@ _COMPLETED_STATUSES: frozenset[str] = frozenset({"success", "완료", "completed
 #    덤으로 2단계에서 문구가 거짓이 될 지뢰도 사라진다 — template_applied 가 표지를 몰고 간다.
 
 
+# 표지(renderers.generic_xlsx._verdict_cell)와 판정 시트가 같은 낱말을 써야 한다.
+# 실제 리포트에서 표지는 '판정 미확정', 판정 시트는 '판정 없음' 이 나와
+# 승인자가 서로 다른 상태로 읽을 수 있었다.
+_UNDETERMINED = "판정 미확정"
+
+# 전용 어댑터가 없는 App 은 최상위 판정 키가 없으면 판정을 못 만든다.
+# 그때 주황색 '판정 미확정' 만 덩그러니 두면 도구가 고장 난 것처럼 보인다 —
+# 실제로 Mast Post 는 후보가 전부 통과했는데도 미확정으로 나왔다.
+# 추측해서 합격을 찍지는 않되(거짓 합격이 최악이다), 왜 비었는지는 말해 준다.
+_NO_VERDICT_NOTICE = (
+    "이 App 은 종합 판정을 표기하지 않습니다 — 개별 검토 결과는 '해석 결과' 시트를 확인하세요."
+)
+
+
 class ReportNotAvailable(Exception):
     """리포트를 만들 수 없는 레코드 (미완료·결과 없음)."""
 
@@ -74,7 +88,7 @@ def _verdict_section(verdict: str | None) -> ReportSection:
     return ReportSection(
         key="verdict",
         title="판정",
-        fields=(ReportField(label="종합 판정", value=verdict or "판정 없음"),),
+        fields=(ReportField(label="종합 판정", value=verdict or _UNDETERMINED),),
     )
 
 
@@ -117,6 +131,11 @@ def build_report_doc(record, *, user_connection_base: str) -> ReportDoc:
             *notices,
             "근거 파일 계보를 조회하지 못했습니다 — 산출물 유무는 이 계산서로 판단할 수 없습니다.",
         )
+
+    # 전용 어댑터가 판정을 비운 경우(예: truss 의 커버리지 부족)는 그 어댑터가 이미
+    # 자기 사유를 notices 에 남긴다. 여기서는 generic 경로에서만 설명을 보탠다.
+    if doc.verdict is None and (spec is None or not spec.report_adapter):
+        notices = (*notices, _NO_VERDICT_NOTICE)
 
     sections = (
         # ordered_sections() 가 STANDARD_SECTION_ORDER 로 다시 정렬하므로 여기 순서는 무의미하다.

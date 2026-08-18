@@ -103,6 +103,34 @@ def test_failed_provenance_lookup_is_distinguished_from_having_no_artifacts(tmp_
     assert any(isinstance(v, str) and "계보를 조회하지 못했습니다" in v for v in values)
 
 
+def test_cover_and_verdict_sheet_use_the_same_wording(tmp_path):
+    """같은 None 판정을 표지는 '판정 미확정', 판정 시트는 '판정 없음' 이라 부르던 문제.
+
+    한 문서 안에서 같은 사실에 두 문구를 쓰면 승인자가 서로 다른 상태로 읽는다.
+    단위 테스트가 두 곳을 따로만 봐서 실제 리포트를 열기 전까지 드러나지 않았다.
+    """
+    _, data = build_report_xlsx(_record(result_info={"note": "판정 키 없음"}),
+                                user_connection_base=str(tmp_path))
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+
+    cover = [c.value for row in wb["표지"].iter_rows() for c in row]
+    verdict_sheet = [c.value for row in wb["판정"].iter_rows() for c in row]
+
+    assert "판정 미확정" in cover
+    assert "판정 미확정" in verdict_sheet
+    assert "판정 없음" not in cover + verdict_sheet
+
+
+def test_generic_path_explains_why_the_verdict_is_blank(tmp_path):
+    """통과한 해석이 이유 없는 주황색 '미확정' 으로만 나오면 도구가 고장 난 것처럼 보인다."""
+    _, data = build_report_xlsx(_record(result_info={"note": "판정 키 없음"}),
+                                user_connection_base=str(tmp_path))
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    values = [c.value for row in wb["표지"].iter_rows() for c in row]
+
+    assert any(isinstance(v, str) and "종합 판정을 표기하지 않습니다" in v for v in values)
+
+
 def test_capabilities_lists_registered_programs():
     caps = report_capabilities()
     assert caps["truss-assessment"]["reportable"] is True
