@@ -1312,6 +1312,77 @@ def test_missing_output_falls_back_to_an_empty_result_section():
     assert doc.verdict is None
 
 
+def test_verdict_is_unknown_when_no_element_declares_a_result():
+    """판정 근거가 없으면 합격이라 단정하지 않는다.
+
+    result 키가 없으면 5배 과응력이어도 any_fail 은 False 다. 그걸 합격으로 찍으면
+    없는 데이터로 결재를 통과시키는 셈이다.
+    """
+    payload = _payload()
+    payload["output"]["loadCases"] = [
+        {"loadCaseId": 1, "elements": [{"element": 11, "assessment": 5.0}]}
+    ]
+    assert get_adapter("truss-assessment")(payload, _meta()).verdict is None
+
+
+def test_verdict_is_unknown_when_every_load_case_is_empty():
+    payload = _payload()
+    payload["output"]["loadCases"] = [{"loadCaseId": 1, "elements": []}]
+    assert get_adapter("truss-assessment")(payload, _meta()).verdict is None
+
+
+def test_extra_element_keys_are_kept_as_columns():
+    """허용응력 같은 '비율의 근거'가 고정 투영에 잘려 나가면 안 된다."""
+    payload = _payload()
+    payload["output"]["loadCases"] = [{
+        "loadCaseId": 1,
+        "elements": [{
+            "element": 11, "axial": 100.0, "allowAxial": 250.0,
+            "assessment": 0.4, "result": "OK", "note": "x",
+        }],
+    }]
+    table = next(
+        s for s in get_adapter("truss-assessment")(payload, _meta()).sections
+        if s.key == "result"
+    ).tables[0]
+    assert table.columns == ("element", "axial", "allowAxial", "assessment", "result", "note")
+
+
+def test_boolean_assessment_does_not_pollute_the_worst_value():
+    payload = _payload()
+    payload["output"]["loadCases"] = [{
+        "loadCaseId": 1,
+        "elements": [{"element": 11, "assessment": True, "result": "OK"}],
+    }]
+    fields = next(
+        s for s in get_adapter("truss-assessment")(payload, _meta()).sections
+        if s.key == "result"
+    ).fields
+    assert not any(f.label == "최대 Assessment" for f in fields)
+
+
+def test_load_case_without_an_id_is_labelled_explicitly():
+    payload = _payload()
+    payload["output"]["loadCases"] = [{"elements": [{"element": 1, "result": "OK"}]}]
+    table = next(
+        s for s in get_adapter("truss-assessment")(payload, _meta()).sections
+        if s.key == "result"
+    ).tables[0]
+    assert table.title == "Load Case (미지정)"
+
+
+def test_generic_adapter_still_emits_the_result_section_we_replace():
+    """delegate-then-replace 는 generic 이 'result' 섹션을 낸다는 전제 위에 있다.
+
+    generic 이 그 키를 바꾸면 이 어댑터는 예외 없이 조용히 무력화된다 — 표도 판정도
+    사라진 채 generic 결과만 나간다. 런타임에 못 알아채니 여기서 고정한다.
+    """
+    from app.services.report.adapters.generic import generic_adapter
+
+    base = generic_adapter({"input": {}, "result": {}, "output": None}, _meta())
+    assert any(section.key == "result" for section in base.sections)
+
+
 def test_generic_omission_notices_survive_the_result_swap():
     """result 섹션만 갈아끼우고 notices 를 떨어뜨리면 조용한 누락으로 되돌아간다.
 
@@ -1363,15 +1434,41 @@ from typing import Any
 from ..models import ReportDoc, ReportField, ReportMeta, ReportSection, ReportTable
 from .generic import generic_adapter
 
-_ELEMENT_COLUMNS: tuple[str, ...] = ("element", "assessment", "result")
+# 열 순서 선호도. 실제 요소가 가진 키는 전부 싣되, 읽는 순서만 여기서 정한다.
+# ⚠️ 고정 3열로 투영하면 axial/allowAxial 같은 '비율의 근거'가 흔적 없이 사라진다.
+#    승인자가 assessment 값을 검산할 방법이 없어지고, 이 설계가 지켜 온
+#    '조용히 버리지 않는다'가 표 열에서만 깨진다.
+_PREFERRED_COLUMNS: tuple[str, ...] = (
+    "element", "set", "property", "leg", "condition",
+    "axial", "bending", "allowAxial", "allowBending",
+    "assessment", "result",
+)
 
 
-def _rows_for(elements: list[dict]) -> tuple[tuple[Any, ...], ...]:
-    return tuple(
-        tuple(item.get(col) for col in _ELEMENT_COLUMNS)
-        for item in elements
-        if isinstance(item, dict)
-    )
+def _is_number(value: Any) -> bool:
+    """bool 은 int 의 하위형이라 그냥 두면 최대값에 섞인다."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _columns_for(elements: list[dict]) -> tuple[str, ...]:
+    """요소들이 실제로 가진 키 전부를, 선호 순서를 앞세워 돌려준다."""
+    seen: list[str] = []
+    for item in elements:
+        for key in item:
+            if key not in seen:
+                seen.append(key)
+    preferred = [key for key in _PREFERRED_COLUMNS if key in seen]
+    rest = [key for key in seen if key not in _PREFERRED_COLUMNS]
+    return tuple(preferred + rest)
+
+
+def _rows_for(elements: list[dict], columns: tuple[str, ...]) -> tuple[tuple[Any, ...], ...]:
+    return tuple(tuple(item.get(col) for col in columns) for item in elements)
+
+
+def _case_title(case: dict) -> str:
+    case_id = case.get("loadCaseId")
+    return f"Load Case {case_id}" if case_id is not None else "Load Case (미지정)"
 
 
 def truss_assessment_adapter(payload: dict, meta: ReportMeta) -> ReportDoc:
@@ -1384,6 +1481,7 @@ def truss_assessment_adapter(payload: dict, meta: ReportMeta) -> ReportDoc:
     tables: list[ReportTable] = []
     worst: float | None = None
     any_fail = False
+    any_declared = False  # result 값을 하나라도 읽었는가
 
     for case in load_cases:
         if not isinstance(case, dict):
@@ -1391,15 +1489,19 @@ def truss_assessment_adapter(payload: dict, meta: ReportMeta) -> ReportDoc:
         elements = [e for e in (case.get("elements") or []) if isinstance(e, dict)]
         for element in elements:
             value = element.get("assessment")
-            if isinstance(value, (int, float)):
+            if _is_number(value):
                 worst = value if worst is None else max(worst, value)
-            if str(element.get("result", "")).strip().upper() == "FAIL":
-                any_fail = True
+            token = str(element.get("result", "")).strip().upper()
+            if token:
+                any_declared = True
+                if token == "FAIL":
+                    any_fail = True
+        columns = _columns_for(elements)
         tables.append(
             ReportTable(
-                title=f"Load Case {case.get('loadCaseId')}",
-                columns=_ELEMENT_COLUMNS,
-                rows=_rows_for(elements),
+                title=_case_title(case),
+                columns=columns,
+                rows=_rows_for(elements, columns),
             )
         )
 
@@ -1421,9 +1523,20 @@ def truss_assessment_adapter(payload: dict, meta: ReportMeta) -> ReportDoc:
     # 펴지 못한 다른 키(입력 조건 쪽, 또는 output 의 loadCases 외 항목)를 대신 표현하지는
     # 않는다. 여기서 notices 를 떨어뜨리면 '무엇이 빠졌는지' 만 사라지고 데이터는 계속
     # 빠진 채로 남는다 — 조용한 누락으로 되돌아간다.
+    # ⚠️ 판정 근거가 하나도 없으면 '합격'이라 단정하지 않는다.
+    #    result 키가 없는 요소만 있으면 과응력이어도 any_fail 은 False 로 남는다 —
+    #    그걸 합격으로 찍으면 없는 데이터로 결재를 통과시키는 셈이다.
+    #    generic._match_verdict 가 모를 때 None 을 내는 것과 같은 태도.
+    if any_fail:
+        verdict = "불합격"
+    elif any_declared:
+        verdict = "합격"
+    else:
+        verdict = None
+
     return ReportDoc(
         meta=meta,
-        verdict="불합격" if any_fail else "합격",
+        verdict=verdict,
         sections=sections,
         notices=base.notices,
     )
@@ -1445,7 +1558,7 @@ ADAPTERS: dict[str, Adapter] = {
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_truss_adapter.py tests/test_report_generic_adapter.py -q`
-Expected: PASS — 89 passed (truss 8 + generic 81)
+Expected: PASS — 95 passed (truss 14 + generic 81)
 
 - [ ] **Step 5: 커밋**
 
