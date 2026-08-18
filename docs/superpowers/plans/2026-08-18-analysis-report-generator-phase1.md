@@ -1869,6 +1869,27 @@ def test_renderer_highlights_every_word_the_adapter_understands(word, colour):
     assert cell.font.color.rgb.endswith(colour)
 
 
+def test_an_unrelated_column_holding_a_verdict_word_does_not_paint_the_row():
+    """무관한 열의 'OK' 가 규격 이탈 행을 합격 색으로 칠하던 문제.
+
+    등록 어댑터가 없는 23개 App 이 전부 generic 표 경로를 쓰므로 실제로 도달한다.
+    """
+    doc = _table_doc(rows=(("W1", "OK", 8.4),), columns=("id", "inspector_note", "gap_mm"))
+    ws = _load(render_generic_xlsx(doc))["해석 결과"]
+
+    cell = next(c for c in _cells(ws) if c.value == "OK")
+    assert cell.fill.patternType is None
+    assert cell.font.color is None
+
+
+def test_a_real_verdict_column_still_paints_the_row():
+    doc = _table_doc(rows=(("W1", "불합격"),), columns=("id", "판정"))
+    ws = _load(render_generic_xlsx(doc))["해석 결과"]
+
+    cell = next(c for c in _cells(ws) if c.value == "불합격")
+    assert cell.fill.patternType == "solid"
+
+
 def test_renderer_and_adapter_share_one_verdict_vocabulary():
     """같은 낱말 목록을 두 곳에 적어 두면 언젠가 어긋난다 — 출처가 하나여야 한다."""
     from app.services.report import verdict_vocab
@@ -1953,6 +1974,15 @@ _WARN_WORDS = verdict_vocab.WARNING_TOKENS
 _PASS_WORDS = verdict_vocab.POSITIVE_TOKENS
 _STATUS_FONT = {"fail": _FAIL_FONT, "warn": _WARN_FONT, "pass": _PASS_FONT}
 
+# ⚠️ 판정어를 행 전체에서 찾지 않는다. 표 열은 그냥 라벨이라 어떤 열이 판정인지 표시가 없고,
+#    무관한 열('inspector_note' 값이 우연히 "OK')이 행 전체를 합격 색으로 칠해 버린다.
+#    실제로 규격을 벗어난 행이 초록으로, 문제 있는 행이 무색으로 나오는 역전이 생긴다.
+#    adapters/generic._VERDICT_KEYS 가 최상위 키를 제한하는 것과 같은 취지를 열 이름에 적용한다.
+_VERDICT_COLUMN_NAMES: frozenset[str] = frozenset({
+    "result", "verdict", "judgement", "judgment", "result_status",
+    "assessment", "판정", "결과",
+})
+
 _SHEET_NAME_LIMIT = 31
 # Excel 시트 이름에 쓸 수 없는 문자.
 _FORBIDDEN = ':\\/?*[]'
@@ -2014,9 +2044,18 @@ def _status_of(value) -> str | None:
     return None
 
 
-def _row_status(row) -> str | None:
-    """행 전체의 판정. 실패가 하나라도 있으면 실패로 본다."""
-    seen: set[str] = {status for value in row if (status := _status_of(value))}
+def _row_status(row, columns: tuple[str, ...]) -> str | None:
+    """행의 판정. **판정 열에서만** 읽는다. 실패가 하나라도 있으면 실패로 본다.
+
+    판정으로 볼 만한 열이 하나도 없으면 아무 강조도 하지 않는다 — 잘못된 강조는
+    강조가 없는 것보다 나쁘다. 결재자의 눈을 엉뚱한 행으로 끌기 때문이다.
+    """
+    seen: set[str] = {
+        status
+        for name, value in zip(columns, row)
+        if str(name).strip().casefold() in _VERDICT_COLUMN_NAMES
+        and (status := _status_of(value))
+    }
     for level in ("fail", "warn", "pass"):
         if level in seen:
             return level
@@ -2110,7 +2149,7 @@ def _write_section(ws, section: ReportSection) -> None:
             freeze_at = row_ptr
         for row in table.rows:
             # 긴 표에 묻힌 실패 행은 훑어서는 안 보인다. 글자는 그대로 두고 색을 덧입힌다.
-            status = _row_status(row)
+            status = _row_status(row, table.columns)
             font = _STATUS_FONT.get(status, _BASE_FONT)
             fill = _FAIL_FILL if status == "fail" else None
             for col_index, value in enumerate(row, start=1):
@@ -2146,7 +2185,7 @@ def render_generic_xlsx(doc: ReportDoc) -> bytes:
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_generic_renderer.py -q`
-Expected: PASS — 20 passed (12 + 미확정 판정 2 + 헤더 고정 1 + 어휘 공유 5)
+Expected: PASS — 22 passed (20 + 판정 열 한정 2)
 
 - [ ] **Step 5: 커밋**
 
