@@ -1,4 +1,6 @@
 """generic 어댑터 — 어떤 App 이든 표준 섹션으로 편다."""
+import pytest
+
 from app.services.report.adapters import get_adapter
 from app.services.report.adapters.generic import generic_adapter
 from app.services.report.models import ReportMeta
@@ -185,3 +187,23 @@ def test_verdict_reads_warning_and_plain_words():
     assert _verdict("WARNING") == "경고"
     assert _verdict("pass") == "합격"
     assert _verdict("불합격") == "불합격"
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["not safe", "not pass", "not passed", "NOT PASS", "Not-Safe",
+     "does not pass", "not 합격", "not 적합", "no ok", "never safe"],
+)
+def test_negated_positive_words_are_never_read_as_pass(value):
+    """부정어가 앞선 긍정 토큰은 전부 불합격이다.
+
+    'not ok' 만 리터럴로 막으면 긍정 토큰이 하나 늘 때마다 구멍이 하나 늘어난다.
+    합격으로 새는 것이 이 기능의 최악 실패라 토큰 규칙으로 막고 여기서 고정한다.
+    """
+    assert _verdict(value) == "불합격"
+
+
+@pytest.mark.parametrize("value", ["not applicable", "not tested", "not run"])
+def test_negated_non_verdict_words_stay_unknown(value):
+    """부정어가 붙었다고 아무 문장이나 불합격으로 만들지는 않는다."""
+    assert _verdict(value) is None

@@ -24,8 +24,14 @@ _EXCLUDED_KEYS: frozenset[str] = frozenset({
 # ⚠️ 짧은 토큰(ng)은 부분 문자열로 찾지 않는다. "bending" 안의 "ng" 가 걸린다.
 _VERDICT_KEYS: tuple[str, ...] = ("assessment", "verdict", "judgement", "result_status")
 
-# 다어절 부정 표현 — 정규화한 문장에서 부분 문자열로 찾는다.
-_VERDICT_NEGATIVE_PHRASES: tuple[str, ...] = ("not ok", "no good")
+# 부정어. 긍정 토큰 바로 앞(최대 2칸)에 이게 오면 판정을 뒤집는다.
+# ⚠️ 리터럴 표현 목록으로 막으면 안 된다 — "not ok" 만 막고 "not safe" 를 놓치면
+#    긍정 토큰이 하나 늘 때마다 구멍이 하나 늘어난다. 규칙으로 막는다.
+_VERDICT_NEGATORS: frozenset[str] = frozenset({"not", "no", "non", "never", "without"})
+_NEGATOR_LOOKBACK = 2
+
+# 긍정 토큰을 포함하지 않아 위 규칙으로는 못 잡는 다어절 부정 표현.
+_VERDICT_NEGATIVE_PHRASES: tuple[str, ...] = ("no good",)
 # 아래 세 묶음은 모두 **토큰 완전 일치**로만 본다.
 _VERDICT_NEGATIVE_TOKENS: frozenset[str] = frozenset({
     "fail", "failed", "ng", "nok", "불합격", "부적합",
@@ -138,19 +144,40 @@ def _split(source: dict) -> tuple[tuple[ReportField, ...], tuple[ReportTable, ..
     return tuple(fields), tuple(tables), tuple(omitted)
 
 
+def _is_negated(tokens: list[str], index: int) -> bool:
+    """tokens[index] 바로 앞 최대 _NEGATOR_LOOKBACK 칸에 부정어가 있는가."""
+    start = max(0, index - _NEGATOR_LOOKBACK)
+    return any(token in _VERDICT_NEGATORS for token in tokens[start:index])
+
+
 def _match_verdict(value: str) -> str | None:
-    """판정 문자열 하나를 한국어 판정으로. 부정 → 경고 → 긍정 순서로 본다."""
+    """판정 문자열 하나를 한국어 판정으로.
+
+    순서가 안전을 좌우한다: 부정된 긍정 → 부정 표현 → 부정 토큰 → 경고 → 긍정.
+    'not safe' 를 합격으로 읽는 것이 이 기능의 최악 실패다 — 공란 판정은 사람이
+    들여다보게 만들지만, 확신에 찬 오판은 그대로 결재를 통과한다.
+
+    한계(의도적): 'OK but check', '조건부 합격' 같은 단서 달린 판정은 그냥 합격으로
+    읽는다. 이런 표현을 쓰는 App 은 전용 어댑터에서 판정을 직접 채워야 한다.
+    """
     text = " ".join(value.replace("_", " ").replace("-", " ").casefold().split())
     if not text:
         return None
-    tokens = set(text.split())
+
+    tokens = text.split()
+    for index, token in enumerate(tokens):
+        if token in _VERDICT_POSITIVE_TOKENS and _is_negated(tokens, index):
+            return "불합격"
+
     if any(phrase in text for phrase in _VERDICT_NEGATIVE_PHRASES):
         return "불합격"
-    if tokens & _VERDICT_NEGATIVE_TOKENS:
+
+    unique = set(tokens)
+    if unique & _VERDICT_NEGATIVE_TOKENS:
         return "불합격"
-    if tokens & _VERDICT_WARNING_TOKENS:
+    if unique & _VERDICT_WARNING_TOKENS:
         return "경고"
-    if tokens & _VERDICT_POSITIVE_TOKENS:
+    if unique & _VERDICT_POSITIVE_TOKENS:
         return "합격"
     return None
 
