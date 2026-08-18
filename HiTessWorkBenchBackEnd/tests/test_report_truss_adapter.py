@@ -79,6 +79,77 @@ def test_missing_output_falls_back_to_an_empty_result_section():
     assert doc.verdict is None
 
 
+def test_verdict_is_unknown_when_no_element_declares_a_result():
+    """판정 근거가 없으면 합격이라 단정하지 않는다.
+
+    result 키가 없으면 5배 과응력이어도 any_fail 은 False 다. 그걸 합격으로 찍으면
+    없는 데이터로 결재를 통과시키는 셈이다.
+    """
+    payload = _payload()
+    payload["output"]["loadCases"] = [
+        {"loadCaseId": 1, "elements": [{"element": 11, "assessment": 5.0}]}
+    ]
+    assert get_adapter("truss-assessment")(payload, _meta()).verdict is None
+
+
+def test_verdict_is_unknown_when_every_load_case_is_empty():
+    payload = _payload()
+    payload["output"]["loadCases"] = [{"loadCaseId": 1, "elements": []}]
+    assert get_adapter("truss-assessment")(payload, _meta()).verdict is None
+
+
+def test_extra_element_keys_are_kept_as_columns():
+    """허용응력 같은 '비율의 근거'가 고정 투영에 잘려 나가면 안 된다."""
+    payload = _payload()
+    payload["output"]["loadCases"] = [{
+        "loadCaseId": 1,
+        "elements": [{
+            "element": 11, "axial": 100.0, "allowAxial": 250.0,
+            "assessment": 0.4, "result": "OK", "note": "x",
+        }],
+    }]
+    table = next(
+        s for s in get_adapter("truss-assessment")(payload, _meta()).sections
+        if s.key == "result"
+    ).tables[0]
+    assert table.columns == ("element", "axial", "allowAxial", "assessment", "result", "note")
+
+
+def test_boolean_assessment_does_not_pollute_the_worst_value():
+    payload = _payload()
+    payload["output"]["loadCases"] = [{
+        "loadCaseId": 1,
+        "elements": [{"element": 11, "assessment": True, "result": "OK"}],
+    }]
+    fields = next(
+        s for s in get_adapter("truss-assessment")(payload, _meta()).sections
+        if s.key == "result"
+    ).fields
+    assert not any(f.label == "최대 Assessment" for f in fields)
+
+
+def test_load_case_without_an_id_is_labelled_explicitly():
+    payload = _payload()
+    payload["output"]["loadCases"] = [{"elements": [{"element": 1, "result": "OK"}]}]
+    table = next(
+        s for s in get_adapter("truss-assessment")(payload, _meta()).sections
+        if s.key == "result"
+    ).tables[0]
+    assert table.title == "Load Case (미지정)"
+
+
+def test_generic_adapter_still_emits_the_result_section_we_replace():
+    """delegate-then-replace 는 generic 이 'result' 섹션을 낸다는 전제 위에 있다.
+
+    generic 이 그 키를 바꾸면 이 어댑터는 예외 없이 조용히 무력화된다 — 표도 판정도
+    사라진 채 generic 결과만 나간다. 런타임에 못 알아채니 여기서 고정한다.
+    """
+    from app.services.report.adapters.generic import generic_adapter
+
+    base = generic_adapter({"input": {}, "result": {}, "output": None}, _meta())
+    assert any(section.key == "result" for section in base.sections)
+
+
 def test_generic_omission_notices_survive_the_result_swap():
     """result 섹션만 갈아끼우고 notices 를 떨어뜨리면 조용한 누락으로 되돌아간다.
 
