@@ -74,6 +74,7 @@ node --test src/utils/reportCatalogue.test.js
 |---|---|
 | `app/services/report/__init__.py` | 공개 API 재노출 (`build_report_xlsx`, `report_capabilities`) |
 | `app/services/report/models.py` | `ReportField/Table/Section/Meta/Doc` frozen dataclass |
+| `app/services/report/verdict_vocab.py` | 판정 낱말 — 어댑터(판정 추론)와 렌더러(행 강조)가 **함께 쓰는 단일 출처** |
 | `app/services/report/payload.py` | 레코드 → `payload` dict. `userConnection` 밖 경로 로드 차단 |
 | `app/services/report/adapters/__init__.py` | `ADAPTERS` 레지스트리와 조회 함수 |
 | `app/services/report/adapters/generic.py` | 어댑터 미지정 앱 공용. payload → 표준 5섹션 |
@@ -1617,8 +1618,50 @@ git commit -m "✨ feat: Truss Assessment 리포트 어댑터 추가"
 ## Task 6: GenericRenderer (ReportDoc → XLSX)
 
 **Files:**
+- Create: `app/services/report/verdict_vocab.py`
 - Create: `app/services/report/renderers/generic_xlsx.py`
+- Modify: `app/services/report/adapters/generic.py` (판정 낱말을 공유 모듈에서 가져오도록)
 - Test: `tests/test_report_generic_renderer.py`
+
+### Step 0: 판정 낱말 단일 출처
+
+`app/services/report/verdict_vocab.py`:
+
+```python
+"""판정 낱말 — 어댑터와 렌더러가 함께 쓰는 단일 출처.
+
+어댑터는 이 낱말로 문자열에서 판정을 읽어 내고, 렌더러는 같은 낱말로 표의 실패 행을
+강조한다. 두 곳에 따로 적어 두면 조용히 어긋난다 — 어댑터가 '부적합'을 불합격으로
+읽는데 렌더러는 그 행을 강조하지 않는 식이다. 그러면 '실패 행이 눈에 걸려야 한다'는
+약속이 어휘 불일치만으로 깨지고, 아무 테스트도 깨지지 않는다.
+
+여기에는 **낱말만** 둔다. 부정어·부정 표현처럼 문장을 해석하는 규칙은 어댑터의 몫이다.
+"""
+
+NEGATIVE_TOKENS: frozenset[str] = frozenset({
+    "fail", "failed", "ng", "nok", "불합격", "부적합",
+})
+WARNING_TOKENS: frozenset[str] = frozenset({
+    "warn", "warning", "경고", "주의",
+})
+POSITIVE_TOKENS: frozenset[str] = frozenset({
+    "ok", "pass", "passed", "safe", "합격", "적합",
+})
+```
+
+그리고 `app/services/report/adapters/generic.py` 의 세 상수를 이 모듈에서 가져오도록 바꾼다
+(값은 그대로다 — 출처만 옮긴다):
+
+```python
+from .. import verdict_vocab
+
+_VERDICT_NEGATIVE_TOKENS = verdict_vocab.NEGATIVE_TOKENS
+_VERDICT_WARNING_TOKENS = verdict_vocab.WARNING_TOKENS
+_VERDICT_POSITIVE_TOKENS = verdict_vocab.POSITIVE_TOKENS
+```
+
+`_VERDICT_NEGATORS` 와 `_VERDICT_NEGATIVE_PHRASES` 는 **옮기지 않는다** — 문장 해석 규칙이라
+렌더러에는 쓸모가 없다.
 
 스타일은 기존 `assessment_service._json_to_xlsx_bytes`(`app/services/assessment_service.py:57` 부근)의
 팔레트를 그대로 따른다 — 헤더 `002554`(Trust Blue), 섹션 `D6E0F0`, FAIL `FFE4E4`/`CC0000`.
@@ -1631,6 +1674,8 @@ git commit -m "✨ feat: Truss Assessment 리포트 어댑터 추가"
 """GenericRenderer — ReportDoc 을 XLSX bytes 로."""
 import io
 import zipfile
+
+import pytest
 
 import openpyxl
 
@@ -1794,6 +1839,50 @@ def test_wide_table_columns_are_sized_to_their_content():
     assert ws.column_dimensions["E"].width == 10  # 내용이 짧아 하한(_MIN_COL_WIDTH)에 걸린다
 
 
+def test_undetermined_verdict_is_written_out_not_left_blank():
+    """빈 칸은 '아직 안 채운 항목'처럼 보인다 — 판정 불가와 구분되어야 한다."""
+    ws = _load(render_generic_xlsx(_doc(verdict=None)))["표지"]
+    assert "판정 미확정" in [cell.value for cell in _cells(ws)]
+
+
+def test_undetermined_verdict_is_marked_as_a_caution_not_a_pass():
+    ws = _load(render_generic_xlsx(_doc(verdict=None)))["표지"]
+    cell = next(c for c in _cells(ws) if c.value == "판정 미확정")
+    assert cell.font.color.rgb.endswith("CC6600")
+
+
+def test_first_table_header_row_is_frozen():
+    """200행 넘는 표에서 스크롤하면 열 이름이 사라진다."""
+    doc = _table_doc(rows=tuple((f"E{index}", "합격") for index in range(50)))
+    ws = _load(render_generic_xlsx(doc))["해석 결과"]
+    assert ws.freeze_panes is not None
+
+
+@pytest.mark.parametrize(
+    "word,colour",
+    [("부적합", "CC0000"), ("failed", "CC0000"), ("주의", "CC6600"), ("적합", "1B7A3D")],
+)
+def test_renderer_highlights_every_word_the_adapter_understands(word, colour):
+    """어댑터가 아는 낱말인데 렌더러가 모르면 실패 행이 조용히 강조를 잃는다."""
+    ws = _load(render_generic_xlsx(_table_doc(rows=(("A", word),))))["해석 결과"]
+    cell = next(c for c in _cells(ws) if c.value == word)
+    assert cell.font.color.rgb.endswith(colour)
+
+
+def test_renderer_and_adapter_share_one_verdict_vocabulary():
+    """같은 낱말 목록을 두 곳에 적어 두면 언젠가 어긋난다 — 출처가 하나여야 한다."""
+    from app.services.report import verdict_vocab
+    from app.services.report.adapters import generic as adapter
+    from app.services.report.renderers import generic_xlsx as renderer
+
+    assert renderer._FAIL_WORDS is verdict_vocab.NEGATIVE_TOKENS
+    assert renderer._WARN_WORDS is verdict_vocab.WARNING_TOKENS
+    assert renderer._PASS_WORDS is verdict_vocab.POSITIVE_TOKENS
+    assert adapter._VERDICT_NEGATIVE_TOKENS is verdict_vocab.NEGATIVE_TOKENS
+    assert adapter._VERDICT_WARNING_TOKENS is verdict_vocab.WARNING_TOKENS
+    assert adapter._VERDICT_POSITIVE_TOKENS is verdict_vocab.POSITIVE_TOKENS
+
+
 def test_values_openpyxl_cannot_write_are_stringified_instead_of_crashing():
     """표 셀에 리스트·사전이 들어와도 리포트 생성이 죽지 않아야 한다.
 
@@ -1835,6 +1924,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from .. import verdict_vocab
 from ..models import ReportDoc, ReportSection
 
 _HDR_FILL = PatternFill("solid", fgColor="002554")
@@ -1855,9 +1945,12 @@ _FAIL_FONT = Font(bold=True, color="CC0000", size=9)
 _WARN_FONT = Font(bold=True, color="CC6600", size=9)
 _PASS_FONT = Font(bold=True, color="1B7A3D", size=9)
 
-_FAIL_WORDS: frozenset[str] = frozenset({"불합격", "fail", "ng", "nok"})
-_WARN_WORDS: frozenset[str] = frozenset({"경고", "warn", "warning"})
-_PASS_WORDS: frozenset[str] = frozenset({"합격", "ok", "pass"})
+# ⚠️ 낱말 목록을 여기에 따로 적지 않는다. 어댑터가 '부적합'을 불합격으로 읽는데
+#    렌더러가 그 행을 강조하지 않으면, '실패 행이 눈에 걸려야 한다'는 약속이
+#    어휘 불일치만으로 조용히 깨진다. 단일 출처에서 가져온다.
+_FAIL_WORDS = verdict_vocab.NEGATIVE_TOKENS
+_WARN_WORDS = verdict_vocab.WARNING_TOKENS
+_PASS_WORDS = verdict_vocab.POSITIVE_TOKENS
 _STATUS_FONT = {"fail": _FAIL_FONT, "warn": _WARN_FONT, "pass": _PASS_FONT}
 
 _SHEET_NAME_LIMIT = 31
@@ -1930,19 +2023,32 @@ def _row_status(row) -> str | None:
     return None
 
 
+def _verdict_cell(verdict: str | None):
+    """판정 칸의 표기와 글꼴.
+
+    비어 있으면 '판정 미확정'이라고 분명히 적는다 — 빈 칸은 '아직 안 채운 항목'처럼
+    보여서 '판정할 근거가 없다'와 구분되지 않는다. 어댑터가 근거 부족을 이유로
+    None 을 낸 노력이 렌더 층에서 도로 사라지면 안 된다.
+    """
+    if verdict is None:
+        return "판정 미확정", _WARN_FONT
+    return verdict, _STATUS_FONT.get(_status_of(verdict), _BASE_FONT)
+
+
 def _write_cover(ws, doc: ReportDoc) -> None:
     ws["A1"] = f"{doc.meta.display_name} 해석 계산서"
     ws["A1"].font = _TITLE_FONT
     ws.column_dimensions["A"].width = 22
     ws.column_dimensions["B"].width = 46
 
+    verdict_text, verdict_font = _verdict_cell(doc.verdict)
     rows = [
         ("해석 App", doc.meta.display_name),
         ("프로젝트", doc.meta.project_name),
         ("수행자 사번", doc.meta.employee_id),
         ("수행 일시", doc.meta.created_at.strftime("%Y-%m-%d %H:%M") if doc.meta.created_at else None),
         ("작업 상태", doc.meta.status),
-        ("판정", doc.verdict),
+        ("판정", verdict_text),
         ("적용 양식", "사내 표준 양식" if doc.template_applied else "범용 서식"),
     ]
     row_ptr = 3
@@ -1951,7 +2057,7 @@ def _write_cover(ws, doc: ReportDoc) -> None:
         ws.cell(row=row_ptr, column=1).alignment = _LEFT
         cell = ws.cell(row=row_ptr, column=2, value=value)
         # 판정 줄만 색을 덧입힌다 — 글자('불합격')는 그대로 두므로 색에만 기대지 않는다.
-        cell.font = _STATUS_FONT.get(_status_of(value) if label == "판정" else None, _BASE_FONT)
+        cell.font = verdict_font if label == "판정" else _BASE_FONT
         cell.alignment = _LEFT
         row_ptr += 1
 
@@ -1968,6 +2074,7 @@ def _write_cover(ws, doc: ReportDoc) -> None:
 
 def _write_section(ws, section: ReportSection) -> None:
     widths: dict[int, int] = {}
+    freeze_at: int | None = None  # 첫 표의 헤더 아래 — 스크롤해도 열 이름이 남게
 
     def put(row, column, value, *, font=_BASE_FONT, fill=None, align=None):
         cell = ws.cell(row=row, column=column, value=_cell_value(value))
@@ -1999,6 +2106,8 @@ def _write_section(ws, section: ReportSection) -> None:
         for col_index, column in enumerate(table.columns, start=1):
             put(row_ptr, col_index, column, font=_HDR_FONT, fill=_HDR_FILL, align=_CENTER)
         row_ptr += 1
+        if freeze_at is None:
+            freeze_at = row_ptr
         for row in table.rows:
             # 긴 표에 묻힌 실패 행은 훑어서는 안 보인다. 글자는 그대로 두고 색을 덧입힌다.
             status = _row_status(row)
@@ -2012,6 +2121,9 @@ def _write_section(ws, section: ReportSection) -> None:
             row_ptr += 1
 
     _autofit(ws, widths)
+    if freeze_at is not None:
+        # 200행 넘는 표에서 스크롤하면 열 이름이 사라진다. 첫 표 헤더를 고정한다.
+        ws.freeze_panes = f"A{freeze_at}"
 
 
 def render_generic_xlsx(doc: ReportDoc) -> bytes:
@@ -2034,7 +2146,7 @@ def render_generic_xlsx(doc: ReportDoc) -> bytes:
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_generic_renderer.py -q`
-Expected: PASS — 12 passed (기본 8 + 판정 가독성 3 + 비스칼라 셀 1)
+Expected: PASS — 20 passed (12 + 미확정 판정 2 + 헤더 고정 1 + 어휘 공유 5)
 
 - [ ] **Step 5: 커밋**
 
