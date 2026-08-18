@@ -98,6 +98,38 @@ def test_verdict_is_unknown_when_every_load_case_is_empty():
     assert get_adapter("truss-assessment")(payload, _meta()).verdict is None
 
 
+def test_partial_declaration_does_not_yield_a_pass():
+    """한 요소가 OK 라고 해서 옆의 판정 없는 과응력 요소까지 합격은 아니다.
+
+    부분 누락은 전면 누락보다 흔하다 — 파이프라인이 일부 result 만 빠뜨리는 경우.
+    """
+    payload = _payload()
+    payload["output"]["loadCases"] = [
+        {"loadCaseId": 1, "elements": [{"element": 1, "assessment": 0.4, "result": "OK"}]},
+        {"loadCaseId": 2, "elements": [{"element": 2, "assessment": 9.0}]},
+    ]
+    assert get_adapter("truss-assessment")(payload, _meta()).verdict is None
+
+
+def test_partial_declaration_is_explained_in_a_notice():
+    """판정을 비우기만 하면 승인자는 고장인지 데이터 부족인지 알 수 없다."""
+    payload = _payload()
+    payload["output"]["loadCases"] = [
+        {"loadCaseId": 1, "elements": [{"element": 1, "result": "OK"}, {"element": 2}]},
+    ]
+    doc = get_adapter("truss-assessment")(payload, _meta())
+    assert any("판정 표기가 없는 요소 1건" in notice for notice in doc.notices)
+
+
+def test_a_known_failure_still_dominates_incomplete_coverage():
+    """아는 실패는 커버리지 구멍과 무관하게 불합격이다."""
+    payload = _payload()
+    payload["output"]["loadCases"] = [
+        {"loadCaseId": 1, "elements": [{"element": 1, "result": "FAIL"}, {"element": 2}]},
+    ]
+    assert get_adapter("truss-assessment")(payload, _meta()).verdict == "불합격"
+
+
 def test_extra_element_keys_are_kept_as_columns():
     """허용응력 같은 '비율의 근거'가 고정 투영에 잘려 나가면 안 된다."""
     payload = _payload()
