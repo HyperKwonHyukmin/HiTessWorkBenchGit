@@ -2483,6 +2483,10 @@ def report_capabilities() -> dict[str, dict]:
             "reportable": True,
             "hasTemplate": bool(spec.report_template),
             "displayName": spec.display_name,
+            # 이력에 저장된 program_name 은 정본 표시명이 아닐 수 있다 —
+            # davit_service 는 "Jib Rest Assessment (1단)" 로 남긴다. 별칭까지 내려보내
+            # 프론트가 표시명 하나로만 맞추다 조용히 빗나가지 않게 한다.
+            "aliases": list(spec.aliases),
         }
         for spec in PROGRAM_SPECS
     }
@@ -2776,7 +2780,7 @@ def generate_report(
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_reports_router.py -q`
-Expected: PASS — 10 passed (6 + 경로 배선 2 + 감사·순서 2)
+Expected: PASS — 10 passed (6 + 경로 배선 2 + 감사·순서 2). capabilities 응답에 aliases 가 늘어도 기존 단언은 그대로 통과한다.
 
 - [ ] **Step 5: 백엔드 전체 회귀 확인**
 
@@ -2843,6 +2847,22 @@ test('실패한 이력은 사유와 함께 차단된다', () => {
   assert.equal(rows[0].blockedReason, '완료된 해석만 리포트를 만들 수 있습니다.');
 });
 
+test('별칭으로 저장된 App 도 양식 보유 여부를 찾아낸다', () => {
+  const caps = {
+    'jib-rest': {
+      reportable: true,
+      hasTemplate: true,
+      displayName: 'Jib Rest Assessment',
+      aliases: ['Jib Rest Assessment', 'Jib Rest Assessment (1단)', 'Jib Rest Assessment (2단)'],
+    },
+  };
+  const rows = decorateHistoryForReport(
+    [{ id: 1, program_name: 'Jib Rest Assessment (1단)', status: 'Success' }],
+    caps,
+  );
+  assert.equal(rows[0].hasTemplate, true);
+});
+
 test('capabilities 에 없는 App 도 범용 서식으로 생성 가능하다', () => {
   const rows = decorateHistoryForReport(
     [{ id: 1, program_name: '처음 보는 App', status: 'Success' }],
@@ -2889,14 +2909,17 @@ const COMPLETED = new Set(['success', 'completed', '완료']);
 export function decorateHistoryForReport(rows, capabilities) {
   if (!Array.isArray(rows)) return [];
   const caps = capabilities || {};
-  const byDisplayName = new Map(
-    Object.values(caps)
-      .filter((entry) => entry && entry.displayName)
-      .map((entry) => [entry.displayName, entry]),
-  );
+  // 표시명 하나로만 맞추면 별칭으로 저장된 App(예: 'Jib Rest Assessment (1단)')이 빗나간다.
+  const byName = new Map();
+  for (const entry of Object.values(caps)) {
+    if (!entry) continue;
+    for (const name of [entry.displayName, ...(entry.aliases || [])]) {
+      if (name && !byName.has(name)) byName.set(name, entry);
+    }
+  }
 
   return rows.map((row) => {
-    const entry = byDisplayName.get(row.program_name) || null;
+    const entry = byName.get(row.program_name) || null;
     const completed = COMPLETED.has(String(row.status || '').toLowerCase());
     return {
       ...row,
@@ -3006,7 +3029,7 @@ export async function downloadAnalysisReport({ analysisId }) {
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `node --test src/utils/reportCatalogue.test.js src/utils/httpErrors.test.js`
-Expected: PASS — 10 passed (병합 5 + blob 오류 5)
+Expected: PASS — 11 passed (병합 6 + blob 오류 5)
 
 - [ ] **Step 5: 커밋**
 
@@ -3051,6 +3074,7 @@ export default function AnalysisReportGenerator() {
   const { employeeId } = useAuth();
 
   useEffect(() => {
+    if (!employeeId) return undefined;
     let alive = true;
     (async () => {
       try {
@@ -3145,6 +3169,7 @@ export default function AnalysisReportGenerator() {
                     type="button"
                     disabled={!row.reportable}
                     onClick={() => setSelectedId(row.id)}
+                    title={row.blockedReason || undefined}
                     className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm ${
                       row.id === selectedId ? 'bg-blue-50' : 'hover:bg-slate-50'
                     } ${row.reportable ? '' : 'cursor-not-allowed opacity-50'}`}
