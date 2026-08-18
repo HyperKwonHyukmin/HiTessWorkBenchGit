@@ -1596,7 +1596,7 @@ from app.services.report.models import (
     ReportSection,
     ReportTable,
 )
-from app.services.report.renderers.generic_xlsx import render_generic_xlsx
+from app.services.report.renderers.generic_xlsx import _text_width, render_generic_xlsx
 
 
 def _doc(**overrides) -> ReportDoc:
@@ -1742,9 +1742,27 @@ def test_wide_table_columns_are_sized_to_their_content():
     )
     ws = _load(render_generic_xlsx(doc))["해석 결과"]
 
-    # 고정 폭이던 시절 D·E 열은 기본값(약 8.43)이라 헤더가 잘렸다.
-    assert ws.column_dimensions["D"].width >= len("중량(kg/m)")
-    assert ws.column_dimensions["E"].width >= 10
+    # ⚠️ openpyxl 의 기본 열 너비는 None 이 아니라 13.0 이다. '>= 8' 같은 느슨한 임계값은
+    #    고정 폭 시절에도 우연히 통과한다. 실제로 내용에 맞춰졌는지 값으로 못박는다.
+    assert ws.column_dimensions["A"].width == _text_width("H-300x300") + 2   # 11
+    assert ws.column_dimensions["D"].width == _text_width("중량(kg/m)") + 2  # 12 (한글 2폭)
+    assert ws.column_dimensions["E"].width == 10  # 내용이 짧아 하한(_MIN_COL_WIDTH)에 걸린다
+
+
+def test_values_openpyxl_cannot_write_are_stringified_instead_of_crashing():
+    """표 셀에 리스트·사전이 들어와도 리포트 생성이 죽지 않아야 한다.
+
+    generic._table_from_rows 는 행 값에 리스트를 그대로 실을 수 있고, 그걸 openpyxl 에
+    넘기면 저장 시 ValueError 로 리포트 전체가 실패한다. 계산서는 죽는 대신
+    덜 예쁘게 나오는 쪽을 택한다.
+    """
+    doc = _table_doc(rows=((["a", "b"], {"k": 1}),), columns=("목록", "사전"))
+
+    ws = _load(render_generic_xlsx(doc))["해석 결과"]
+
+    values = [cell.value for cell in _cells(ws)]
+    assert "['a', 'b']" in values
+    assert "{'k': 1}" in values
 ```
 
 - [ ] **Step 2: 테스트 실패 확인**
@@ -1765,6 +1783,8 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.report.re
 from __future__ import annotations
 
 import io
+from datetime import date, datetime, time
+from decimal import Decimal
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -1815,6 +1835,18 @@ def _safe_sheet_name(title: str, used: set[str]) -> str:
         suffix += 1
     used.add(candidate.casefold())
     return candidate
+
+
+def _cell_value(value):
+    """openpyxl 이 셀에 쓸 수 없는 값은 텍스트로 굳힌다.
+
+    generic._table_from_rows 는 행 값에 리스트·사전을 그대로 실을 수 있다. 그대로
+    넘기면 wb.save 에서 ValueError 가 나 리포트 생성 전체가 죽는다 — 계산서는
+    죽는 대신 덜 예쁘게 나오는 쪽이 낫다.
+    """
+    if value is None or isinstance(value, (str, int, float, bool, Decimal, datetime, date, time)):
+        return value
+    return str(value)
 
 
 def _text_width(value) -> int:
@@ -1893,7 +1925,7 @@ def _write_section(ws, section: ReportSection) -> None:
     widths: dict[int, int] = {}
 
     def put(row, column, value, *, font=_BASE_FONT, fill=None, align=None):
-        cell = ws.cell(row=row, column=column, value=value)
+        cell = ws.cell(row=row, column=column, value=_cell_value(value))
         cell.font = font
         if fill is not None:
             cell.fill = fill
@@ -1957,7 +1989,7 @@ def render_generic_xlsx(doc: ReportDoc) -> bytes:
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_generic_renderer.py -q`
-Expected: PASS — 11 passed (기본 8 + 판정 가독성 3)
+Expected: PASS — 12 passed (기본 8 + 판정 가독성 3 + 비스칼라 셀 1)
 
 - [ ] **Step 5: 커밋**
 
