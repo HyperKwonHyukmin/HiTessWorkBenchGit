@@ -65,6 +65,7 @@ const RAW_ANALYSIS_DATA = [
   { mode: "Productivity", category: "BDF Tools", title: "BDF Scanner", description: "BDF 모델 파일의 유효성을 검증하고, 선택적으로 Nastran 해석 후 F06 결과를 요약합니다.", icon: Wrench, color: "bg-amber-500", tags: ["BDF", "유효성검증", "Nastran"], devStatus: "Active", contributor: "권혁민", relatedApps: ["F06 Parser", "HiTESS Model Builder"], transferOutputs: [{ key: 'f06', label: 'F06 파일', targetApp: 'F06 Parser' }] },
   { mode: "Productivity", category: "F06 Tools", title: "F06 Parser", description: "Nastran SOL 101 F06 파일에서 Displacement, SPC Force, CBAR/CBEAM/CROD 내력·응력을 추출하고 Subcase별 테이블로 조회합니다.", icon: Wrench, color: "bg-amber-500", tags: ["F06", "Nastran", "결과추출", "1D"], devStatus: "Active", contributor: "권혁민", relatedApps: ["BDF Scanner"], acceptsTransferFrom: ['BDF Scanner'] },
   { mode: "Productivity", category: "Hull Accel", title: "선급 Rule 기반 선체 가속도 Calculation", description: "Trim & Stability Booklet PDF를 업로드하여 선박 제원과 Loading Conditions를 추출하고 선급 Rule 기반 선체 가속도를 계산합니다.", icon: Wrench, color: "bg-amber-500", tags: ["선급", "가속도", "PDF", "Loading Conditions"], devStatus: "Active", contributor: "정병훈" },
+  { mode: "Productivity", category: "Report", title: "Analysis Report Generator", description: "완료된 해석 이력을 선택하여 표준 계산서(XLSX)를 생성합니다.", icon: Wrench, color: "bg-amber-500", tags: ["계산서", "리포트", "XLSX"], devStatus: "Developing", contributor: "권혁민" },
 ];
 
 const APP_REGISTRY_OVERRIDES = {
@@ -215,6 +216,10 @@ const APP_REGISTRY_OVERRIDES = {
     apiEndpoint: "/api/analysis/hullacceleration/request",
     supportsRerun: true,
   },
+  "Analysis Report Generator": {
+    menuName: "Analysis Report Generator",
+    programNames: ["Analysis Report Generator"],
+  },
 };
 
 // 카탈로그/검색/재실행 UI가 설명 문구를 추측하지 않고 사용하는 명시적 I/O 계약.
@@ -245,6 +250,7 @@ const APP_CAPABILITY_METADATA = {
   "BDF Scanner": { inputFormats: ["BDF"], outputFormats: ["Validation", "F06"], workflow: "File" },
   "F06 Parser": { inputFormats: ["F06"], outputFormats: ["Table", "CSV"], workflow: "File" },
   "선급 Rule 기반 선체 가속도 Calculation": { inputFormats: ["PDF"], outputFormats: ["JSON", "CSV", "TXT"], workflow: "Pipeline" },
+  "Analysis Report Generator": { inputFormats: ["해석 이력"], outputFormats: ["XLSX"], workflow: "Productivity" },
 };
 
 export const ANALYSIS_DATA = Object.freeze(RAW_ANALYSIS_DATA.map(app => Object.freeze({

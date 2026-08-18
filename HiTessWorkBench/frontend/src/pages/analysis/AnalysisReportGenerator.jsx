@@ -120,7 +120,7 @@ export default function AnalysisReportGenerator() {
                     <span>
                       <span className="block font-medium text-slate-800">{row.program_name}</span>
                       <span className="block text-xs text-slate-500">
-                        {row.project_name} · {row.created_at}
+                        {row.project_name} · {new Date(row.created_at).toLocaleString()}
                       </span>
                     </span>
                     {row.hasTemplate && (
