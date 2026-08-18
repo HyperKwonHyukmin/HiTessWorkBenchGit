@@ -71,6 +71,7 @@ GUARDED_ROUTES: tuple[tuple[str, str], ...] = (
     # 막으면 이미 열려 있는 화면이 중간에 깨진다.
     ("/external-apps/block-weld/__wb_bootstrap", "Block Weld Assessment"),
     ("/external-apps/independent-tank/__wb_bootstrap", "Independent Tank Assessment"),
+    ("/api/reports/generate", "Analysis Report Generator"),
 )
 
 # 게이트를 적용할 HTTP 메서드 — 작업을 새로 만드는 요청만 막는다.

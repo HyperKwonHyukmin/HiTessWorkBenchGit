@@ -34,6 +34,7 @@ from .routers import (
     model_registry,
     newsletters,
     presence,
+    reports,
     section_property,
     support,
     system,
@@ -200,6 +201,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(chat.router)
     application.include_router(app_settings.router)
     application.include_router(model_registry.router)
+    application.include_router(reports.router)
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     application.mount(
