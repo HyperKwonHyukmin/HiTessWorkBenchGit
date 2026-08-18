@@ -149,6 +149,10 @@ def report_capabilities() -> dict[str, dict]:
             "reportable": True,
             "hasTemplate": bool(spec.report_template),
             "displayName": spec.display_name,
+            # 이력에 저장된 program_name 은 정본 표시명이 아닐 수 있다 —
+            # davit_service 는 "Jib Rest Assessment (1단)" 로 남긴다. 별칭까지 내려보내
+            # 프론트가 표시명 하나로만 맞추다 조용히 빗나가지 않게 한다.
+            "aliases": list(spec.aliases),
         }
         for spec in PROGRAM_SPECS
     }
