@@ -1788,7 +1788,16 @@ Expected: PASS — 6 passed
 - [ ] **Step 5: 백엔드 전체 회귀 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest -q`
-Expected: 기존 테스트 전부 통과 (신규 실패 0건)
+
+Expected: **신규 실패 0건.** 단, 아래 2건은 이 계획 착수 전부터 실패하던 것이라 무시한다
+(둘 다 `program_registry` / `services.report` 를 전혀 참조하지 않는다 — grep 0건으로 확인).
+
+| 기존 실패 | 원인 |
+|---|---|
+| `test_drawing_image_lug_fixtures.py::test_generated_lug_image_fixtures_seed_distinct_params_and_mesh` | `Figure/lug_test_basic_160x100.png` 픽스처 파일이 저장소에 없음 |
+| `test_mooring_edit_bdf.py::test_connect_rejects_node_already_dependent` | git 미추적인 `WorkBenchSubModule/Nastran_bridge/nastran_bridge.py` 의 동작 드리프트 |
+
+이 둘을 고치는 것은 이 계획의 범위가 아니다. **3건 이상 실패하면** 그때는 우리가 깬 것이므로 조사한다.
 
 - [ ] **Step 6: 커밋**
 
