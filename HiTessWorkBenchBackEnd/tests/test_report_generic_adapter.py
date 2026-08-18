@@ -97,6 +97,7 @@ def test_get_adapter_falls_back_to_generic_for_unknown_key():
 
 # ── 조용한 누락 금지 ────────────────────────────────────────────────────
 # 계산서가 입력을 말없이 빠뜨리면 결재자가 그 사실을 알 방법이 없다.
+# 생략 사실은 필드가 아니라 문서 수준 notices 로 올라간다(표지 '유의 사항').
 
 def _result_fields(payload):
     doc = generic_adapter(payload, _meta())
@@ -104,10 +105,10 @@ def _result_fields(payload):
 
 
 def test_scalar_list_is_joined_into_one_field():
-    fields = _result_fields({"input": {}, "result": {"loads": [1, 2, 3]}, "output": None})
-    loads = next(f for f in fields if f.label == "loads")
-    assert loads.value == "1, 2, 3"
-    assert not any(f.label == "생략된 항목" for f in fields)
+    doc = generic_adapter({"input": {}, "result": {"loads": [1, 2, 3]}, "output": None}, _meta())
+    fields = next(s for s in doc.sections if s.key == "result").fields
+    assert next(f for f in fields if f.label == "loads").value == "1, 2, 3"
+    assert doc.notices == ()
 
 
 def test_long_scalar_list_is_trimmed_with_a_note():
@@ -117,19 +118,70 @@ def test_long_scalar_list_is_trimmed_with_a_note():
     assert loads.note == "상위 20개만 표시 (전체 30개)"
 
 
-def test_mixed_list_is_recorded_as_omitted_instead_of_vanishing():
-    fields = _result_fields({"input": {}, "result": {"odd": [1, {"a": 2}]}, "output": None})
-    omitted = next(f for f in fields if f.label == "생략된 항목")
-    assert omitted.value == "odd"
+def test_float_list_is_not_written_with_binary_repr_artifacts():
+    fields = _result_fields({"input": {}, "result": {"vals": [0.1 + 0.2]}, "output": None})
+    assert next(f for f in fields if f.label == "vals").value == "0.3"
 
 
-def test_deeply_nested_dict_is_recorded_as_omitted():
+def test_mixed_list_becomes_a_document_notice_instead_of_vanishing():
+    doc = generic_adapter({"input": {}, "result": {"odd": [1, {"a": 2}]}, "output": None}, _meta())
+    assert doc.notices == ("해석 결과에서 생략됨: odd",)
+
+
+def test_rows_of_empty_dicts_become_a_document_notice():
+    doc = generic_adapter({"input": {}, "result": {"rows": [{}, {}]}, "output": None}, _meta())
+    assert doc.notices == ("해석 결과에서 생략됨: rows",)
+
+
+def test_deeply_nested_dict_becomes_a_document_notice():
     payload = {"input": {}, "result": {"meta": {"flat": 5, "inner": {"deep": 1}}}, "output": None}
-    fields = _result_fields(payload)
+    doc = generic_adapter(payload, _meta())
+    fields = next(s for s in doc.sections if s.key == "result").fields
     assert next(f for f in fields if f.label == "meta.flat").value == 5
-    assert next(f for f in fields if f.label == "생략된 항목").value == "meta.inner"
+    assert doc.notices == ("해석 결과에서 생략됨: meta.inner",)
 
 
-def test_empty_containers_produce_neither_field_nor_omission_note():
-    fields = _result_fields({"input": {}, "result": {"a": [], "b": {}}, "output": None})
-    assert fields == ()
+def test_result_and_output_omissions_merge_into_one_notice():
+    payload = {"input": {}, "result": {"a": [1, {"x": 1}]}, "output": {"b": [1, {"y": 2}]}}
+    doc = generic_adapter(payload, _meta())
+    assert doc.notices == ("해석 결과에서 생략됨: a, b",)
+
+
+def test_input_and_result_omissions_are_separate_notices():
+    payload = {"input": {"x": [1, {"a": 2}]}, "result": {"y": [1, {"b": 2}]}, "output": None}
+    doc = generic_adapter(payload, _meta())
+    assert doc.notices == ("입력 조건에서 생략됨: x", "해석 결과에서 생략됨: y")
+
+
+def test_empty_containers_produce_neither_field_nor_notice():
+    doc = generic_adapter({"input": {}, "result": {"a": [], "b": {}}, "output": None}, _meta())
+    assert next(s for s in doc.sections if s.key == "result").fields == ()
+    assert doc.notices == ()
+
+
+# ── 판정 감지 ───────────────────────────────────────────────────────────
+# 실제 서비스가 내보내는 문자열로 검증한다. 정확 일치만 보면 전부 공란이 된다.
+
+def _verdict(value):
+    return generic_adapter({"input": {}, "result": {"assessment": value}, "output": None}, _meta()).verdict
+
+
+def test_verdict_matches_carling_total_ok():
+    """carling_service._assessment_from_checks 는 'Total OK' 를 내보낸다."""
+    assert _verdict("Total OK") == "합격"
+
+
+def test_verdict_does_not_mistake_not_ok_for_ok():
+    """가장 위험한 오류 — 불합격을 합격으로 뒤집으면 안 된다."""
+    assert _verdict("Not OK") == "불합격"
+
+
+def test_verdict_ng_matches_only_as_a_whole_token():
+    assert _verdict("NG") == "불합격"
+    assert _verdict("bending governs") is None
+
+
+def test_verdict_reads_warning_and_plain_words():
+    assert _verdict("WARNING") == "경고"
+    assert _verdict("pass") == "합격"
+    assert _verdict("불합격") == "불합격"

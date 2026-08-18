@@ -16,12 +16,26 @@ _EXCLUDED_KEYS: frozenset[str] = frozenset({
 })
 
 # 판정으로 해석할 키와 값. 색이 아니라 한국어 문자열로 굳힌다.
+#
+# ⚠️ 정확 일치로는 실제 데이터를 못 잡는다 — carling_service 는 "Total OK" / "Not OK" 를
+#    내보낸다. 그래서 토큰 단위로 본다.
+# ⚠️ 순서가 안전을 좌우한다: 부정 표현을 **먼저** 검사한다. "Not OK" 를 토큰만 보고 처리하면
+#    "ok" 가 걸려 불합격이 합격으로 뒤집힌다 — 구조 계산서에서 가장 위험한 오류다.
+# ⚠️ 짧은 토큰(ng)은 부분 문자열로 찾지 않는다. "bending" 안의 "ng" 가 걸린다.
 _VERDICT_KEYS: tuple[str, ...] = ("assessment", "verdict", "judgement", "result_status")
-_VERDICT_WORDS: dict[str, str] = {
-    "pass": "합격", "ok": "합격", "safe": "합격", "합격": "합격",
-    "fail": "불합격", "ng": "불합격", "불합격": "불합격",
-    "warn": "경고", "warning": "경고", "경고": "경고",
-}
+
+# 다어절 부정 표현 — 정규화한 문장에서 부분 문자열로 찾는다.
+_VERDICT_NEGATIVE_PHRASES: tuple[str, ...] = ("not ok", "no good")
+# 아래 세 묶음은 모두 **토큰 완전 일치**로만 본다.
+_VERDICT_NEGATIVE_TOKENS: frozenset[str] = frozenset({
+    "fail", "failed", "ng", "nok", "불합격", "부적합",
+})
+_VERDICT_WARNING_TOKENS: frozenset[str] = frozenset({
+    "warn", "warning", "경고", "주의",
+})
+_VERDICT_POSITIVE_TOKENS: frozenset[str] = frozenset({
+    "ok", "pass", "passed", "safe", "합격", "적합",
+})
 
 _MAX_TABLE_ROWS = 500
 _MAX_LIST_ITEMS = 20
@@ -53,10 +67,21 @@ def _table_from_rows(title: str, rows: list[dict]) -> ReportTable | None:
     )
 
 
+def _as_text(item: Any) -> str:
+    """한 칸에 이어 붙일 때 쓰는 표기.
+
+    float 를 str() 하면 0.1+0.2 가 '0.30000000000000004' 로 굳어 버린다. 스칼라 필드는
+    숫자 그대로 넘겨 Excel 이 표시 자릿수를 정하지만, 목록은 텍스트로 굳으므로 여기서 다듬는다.
+    """
+    if isinstance(item, float):
+        return f"{item:g}"
+    return "" if item is None else str(item)
+
+
 def _scalar_list_field(key: str, values: list) -> ReportField:
     """스칼라 목록은 한 칸에 이어 붙인다(하중 배열 등이 통째로 사라지지 않게)."""
     shown = values[:_MAX_LIST_ITEMS]
-    text = ", ".join("" if item is None else str(item) for item in shown)
+    text = ", ".join(_as_text(item) for item in shown)
     note = (
         None if len(values) <= _MAX_LIST_ITEMS
         else f"상위 {_MAX_LIST_ITEMS}개만 표시 (전체 {len(values)}개)"
@@ -64,12 +89,16 @@ def _scalar_list_field(key: str, values: list) -> ReportField:
     return ReportField(label=key, value=text, note=note)
 
 
-def _split(source: dict) -> tuple[tuple[ReportField, ...], tuple[ReportTable, ...]]:
-    """payload 한 덩어리를 필드/표로 편다.
+def _split(source: dict) -> tuple[tuple[ReportField, ...], tuple[ReportTable, ...], tuple[str, ...]]:
+    """payload 한 덩어리를 (필드, 표, 생략된 키) 로 편다.
 
-    ⚠️ 표현할 수 없는 값을 조용히 버리지 않는다 — 무엇이 빠졌는지 '생략된 항목' 필드로
-    남긴다. 계산서가 입력을 말없이 누락하면 결재자가 그 사실을 알 방법이 없다
-    (설계원칙 1: 신뢰가 곧 기능).
+    ⚠️ 표현할 수 없는 값을 조용히 버리지 않는다 — 무엇이 빠졌는지 세 번째 반환값으로
+    올려 보내고, 호출자가 ReportDoc.notices 에 담는다. 계산서가 입력을 말없이 누락하면
+    결재자가 그 사실을 알 방법이 없다 (설계원칙 1: 신뢰가 곧 기능).
+
+    생략 사실을 '필드'로 끼워 넣지 않는 이유: 렌더러가 필드를 실제 데이터 행과 똑같이
+    그리므로 결재자가 데이터와 구분할 수 없고, result 와 output 에 각각 호출되면 같은
+    라벨이 두 번 나온다. notices 는 표지에 '유의 사항'으로 따로 그려진다.
     """
     fields: list[ReportField] = []
     tables: list[ReportTable] = []
@@ -106,15 +135,24 @@ def _split(source: dict) -> tuple[tuple[ReportField, ...], tuple[ReportTable, ..
         else:
             omitted.append(key)
 
-    if omitted:
-        fields.append(
-            ReportField(
-                label="생략된 항목",
-                value=", ".join(omitted),
-                note="이 서식으로 표현할 수 없어 본문에서 생략된 데이터 키입니다.",
-            )
-        )
-    return tuple(fields), tuple(tables)
+    return tuple(fields), tuple(tables), tuple(omitted)
+
+
+def _match_verdict(value: str) -> str | None:
+    """판정 문자열 하나를 한국어 판정으로. 부정 → 경고 → 긍정 순서로 본다."""
+    text = " ".join(value.replace("_", " ").replace("-", " ").casefold().split())
+    if not text:
+        return None
+    tokens = set(text.split())
+    if any(phrase in text for phrase in _VERDICT_NEGATIVE_PHRASES):
+        return "불합격"
+    if tokens & _VERDICT_NEGATIVE_TOKENS:
+        return "불합격"
+    if tokens & _VERDICT_WARNING_TOKENS:
+        return "경고"
+    if tokens & _VERDICT_POSITIVE_TOKENS:
+        return "합격"
+    return None
 
 
 def _detect_verdict(*sources: dict) -> str | None:
@@ -122,21 +160,32 @@ def _detect_verdict(*sources: dict) -> str | None:
         for key in _VERDICT_KEYS:
             value = (source or {}).get(key)
             if isinstance(value, str):
-                mapped = _VERDICT_WORDS.get(value.strip().casefold())
+                mapped = _match_verdict(value)
                 if mapped:
                     return mapped
     return None
 
 
+def _omission_notice(section_title: str, omitted: tuple[str, ...]) -> str:
+    return f"{section_title}에서 생략됨: {', '.join(omitted)}"
+
+
 def generic_adapter(payload: dict, meta: ReportMeta) -> ReportDoc:
-    input_fields, input_tables = _split(payload.get("input") or {})
-    result_fields, result_tables = _split(payload.get("result") or {})
+    input_fields, input_tables, input_omitted = _split(payload.get("input") or {})
+    result_fields, result_tables, result_omitted = _split(payload.get("result") or {})
 
     output = payload.get("output")
     if isinstance(output, dict):
-        output_fields, output_tables = _split(output)
+        output_fields, output_tables, output_omitted = _split(output)
         result_fields = (*result_fields, *output_fields)
         result_tables = (*result_tables, *output_tables)
+        result_omitted = (*result_omitted, *output_omitted)
+
+    notices: list[str] = []
+    if input_omitted:
+        notices.append(_omission_notice("입력 조건", input_omitted))
+    if result_omitted:
+        notices.append(_omission_notice("해석 결과", result_omitted))
 
     sections = (
         ReportSection(
@@ -157,4 +206,5 @@ def generic_adapter(payload: dict, meta: ReportMeta) -> ReportDoc:
         meta=meta,
         verdict=_detect_verdict(payload.get("result") or {}, payload.get("output") or {}),
         sections=sections,
+        notices=tuple(notices),
     )
