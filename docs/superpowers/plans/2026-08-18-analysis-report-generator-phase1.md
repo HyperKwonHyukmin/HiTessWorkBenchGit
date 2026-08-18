@@ -490,6 +490,50 @@ def test_null_json_columns_become_empty_dicts():
     )
     assert payload["input"] == {}
     assert payload["result"] == {}
+
+
+# ── 보안 경계 회귀 테스트 ──────────────────────────────────────────────
+# 아래 세 건은 이 모듈이 '보안 경계'이기 때문에 둔다. 리팩터링이 조용히
+# 경계를 무너뜨리면 여기서 잡힌다.
+
+def test_rejects_parent_traversal_escaping_the_base(tmp_path):
+    base = tmp_path / "userConnection"
+    base.mkdir()
+    secret = tmp_path / "secret.json"
+    secret.write_text(json.dumps({"leak": True}), encoding="utf-8")
+
+    record = _record(result_info={"output_json": str(base / ".." / "secret.json")})
+
+    assert collect_payload(record, user_connection_base=str(base))["output"] is None
+
+
+def test_rejects_sibling_directory_that_merely_shares_the_base_prefix(tmp_path):
+    base = tmp_path / "userConnection"
+    base.mkdir()
+    evil = tmp_path / "userConnectionEvil"
+    evil.mkdir()
+    target = evil / "x.json"
+    target.write_text(json.dumps({"leak": True}), encoding="utf-8")
+
+    record = _record(result_info={"output_json": str(target)})
+
+    assert collect_payload(record, user_connection_base=str(base))["output"] is None
+
+
+def test_deeply_nested_json_degrades_instead_of_raising(tmp_path):
+    """RecursionError 는 RuntimeError 하위라 ValueError 로 안 잡힌다.
+
+    크기 상한(8MB)으로는 막을 수 없다 — 200KB 짜리 '[[[[…' 로도 재현된다.
+    엔진이 잘못된 결과 파일을 뱉어도 리포트 생성은 죽지 않아야 한다.
+    """
+    base = tmp_path / "userConnection"
+    base.mkdir()
+    bomb = base / "bomb.json"
+    bomb.write_text("[" * 100000 + "]" * 100000, encoding="utf-8")
+
+    record = _record(result_info={"output_json": str(bomb)})
+
+    assert collect_payload(record, user_connection_base=str(base))["output"] is None
 ```
 
 - [ ] **Step 2: 테스트 실패 확인**
@@ -540,8 +584,10 @@ def _load_json_if_allowed(path: str, user_connection_base: str) -> Any | None:
             return None
         with open(path, encoding="utf-8-sig") as fp:
             return json.load(fp)
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         # 파일 유실·깨진 JSON 은 리포트 실패 사유가 아니다. 근거 섹션이 상태를 대신 보여 준다.
+        # RecursionError 는 RuntimeError 하위라 ValueError 로 안 잡힌다 — 깊게 중첩된 JSON
+        # (크기 상한과 무관하게 200KB 로도 재현된다) 이 리포트 생성을 죽이지 않게 명시적으로 받는다.
         logger.info("리포트: 결과 JSON 로드 실패 — 요약만으로 생성합니다", exc_info=True)
         return None
 
@@ -565,7 +611,7 @@ def collect_payload(record, *, user_connection_base: str) -> dict[str, Any]:
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_payload.py -q`
-Expected: PASS — 5 passed
+Expected: PASS — 8 passed (기본 5건 + 보안 경계 회귀 3건)
 
 - [ ] **Step 5: 커밋**
 
