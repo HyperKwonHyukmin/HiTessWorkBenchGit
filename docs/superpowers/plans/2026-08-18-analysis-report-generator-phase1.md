@@ -732,6 +732,46 @@ def test_output_json_contributes_a_result_table():
 def test_get_adapter_falls_back_to_generic_for_unknown_key():
     assert get_adapter(None) is generic_adapter
     assert get_adapter("no-such-adapter") is generic_adapter
+
+
+# ── 조용한 누락 금지 ────────────────────────────────────────────────────
+# 계산서가 입력을 말없이 빠뜨리면 결재자가 그 사실을 알 방법이 없다.
+
+def _result_fields(payload):
+    doc = generic_adapter(payload, _meta())
+    return next(s for s in doc.sections if s.key == "result").fields
+
+
+def test_scalar_list_is_joined_into_one_field():
+    fields = _result_fields({"input": {}, "result": {"loads": [1, 2, 3]}, "output": None})
+    loads = next(f for f in fields if f.label == "loads")
+    assert loads.value == "1, 2, 3"
+    assert not any(f.label == "생략된 항목" for f in fields)
+
+
+def test_long_scalar_list_is_trimmed_with_a_note():
+    fields = _result_fields({"input": {}, "result": {"loads": list(range(30))}, "output": None})
+    loads = next(f for f in fields if f.label == "loads")
+    assert loads.value.startswith("0, 1, 2")
+    assert loads.note == "상위 20개만 표시 (전체 30개)"
+
+
+def test_mixed_list_is_recorded_as_omitted_instead_of_vanishing():
+    fields = _result_fields({"input": {}, "result": {"odd": [1, {"a": 2}]}, "output": None})
+    omitted = next(f for f in fields if f.label == "생략된 항목")
+    assert omitted.value == "odd"
+
+
+def test_deeply_nested_dict_is_recorded_as_omitted():
+    payload = {"input": {}, "result": {"meta": {"flat": 5, "inner": {"deep": 1}}}, "output": None}
+    fields = _result_fields(payload)
+    assert next(f for f in fields if f.label == "meta.flat").value == 5
+    assert next(f for f in fields if f.label == "생략된 항목").value == "meta.inner"
+
+
+def test_empty_containers_produce_neither_field_nor_omission_note():
+    fields = _result_fields({"input": {}, "result": {"a": [], "b": {}}, "output": None})
+    assert fields == ()
 ```
 
 - [ ] **Step 2: 테스트 실패 확인**
@@ -770,6 +810,7 @@ _VERDICT_WORDS: dict[str, str] = {
 }
 
 _MAX_TABLE_ROWS = 500
+_MAX_LIST_ITEMS = 20
 
 
 def _is_excluded(key: str) -> bool:
@@ -798,22 +839,67 @@ def _table_from_rows(title: str, rows: list[dict]) -> ReportTable | None:
     )
 
 
+def _scalar_list_field(key: str, values: list) -> ReportField:
+    """스칼라 목록은 한 칸에 이어 붙인다(하중 배열 등이 통째로 사라지지 않게)."""
+    shown = values[:_MAX_LIST_ITEMS]
+    text = ", ".join("" if item is None else str(item) for item in shown)
+    note = (
+        None if len(values) <= _MAX_LIST_ITEMS
+        else f"상위 {_MAX_LIST_ITEMS}개만 표시 (전체 {len(values)}개)"
+    )
+    return ReportField(label=key, value=text, note=note)
+
+
 def _split(source: dict) -> tuple[tuple[ReportField, ...], tuple[ReportTable, ...]]:
+    """payload 한 덩어리를 필드/표로 편다.
+
+    ⚠️ 표현할 수 없는 값을 조용히 버리지 않는다 — 무엇이 빠졌는지 '생략된 항목' 필드로
+    남긴다. 계산서가 입력을 말없이 누락하면 결재자가 그 사실을 알 방법이 없다
+    (설계원칙 1: 신뢰가 곧 기능).
+    """
     fields: list[ReportField] = []
     tables: list[ReportTable] = []
+    omitted: list[str] = []
+
     for key, value in (source or {}).items():
         if _is_excluded(key):
             continue
         if _is_scalar(value):
             fields.append(ReportField(label=key, value=value))
-        elif isinstance(value, list) and value and all(isinstance(item, dict) for item in value):
-            table = _table_from_rows(key, value)
-            if table:
-                tables.append(table)
+        elif isinstance(value, list):
+            if not value:
+                continue  # 빈 목록은 잃을 정보가 없다
+            if all(isinstance(item, dict) for item in value):
+                table = _table_from_rows(key, value)
+                if table:
+                    tables.append(table)
+                else:
+                    omitted.append(key)
+            elif all(_is_scalar(item) for item in value):
+                fields.append(_scalar_list_field(key, value))
+            else:
+                omitted.append(key)  # 혼합 목록은 표로도 한 칸으로도 못 편다
         elif isinstance(value, dict):
+            if not value:
+                continue
             for sub_key, sub_value in value.items():
-                if _is_scalar(sub_value) and not _is_excluded(sub_key):
+                if _is_excluded(sub_key):
+                    continue
+                if _is_scalar(sub_value):
                     fields.append(ReportField(label=f"{key}.{sub_key}", value=sub_value))
+                else:
+                    omitted.append(f"{key}.{sub_key}")  # 2단계 이상 중첩은 펴지 않는다
+        else:
+            omitted.append(key)
+
+    if omitted:
+        fields.append(
+            ReportField(
+                label="생략된 항목",
+                value=", ".join(omitted),
+                note="이 서식으로 표현할 수 없어 본문에서 생략된 데이터 키입니다.",
+            )
+        )
     return tuple(fields), tuple(tables)
 
 
@@ -896,7 +982,7 @@ def get_adapter(key: str | None) -> Adapter:
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `./WorkBenchEnv/Scripts/python.exe -m pytest tests/test_report_generic_adapter.py -q`
-Expected: PASS — 7 passed
+Expected: PASS — 12 passed (기본 7건 + 조용한 누락 금지 5건)
 
 - [ ] **Step 5: 커밋**
 
