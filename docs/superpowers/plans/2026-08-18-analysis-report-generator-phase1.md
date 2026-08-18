@@ -3265,7 +3265,8 @@ git commit -m "✨ feat: Analysis Report Generator 페이지 추가"
 `src/App.jsx`의 import 블록에 추가한다(다른 페이지 import 들과 같은 자리):
 
 ```javascript
-import AnalysisReportGenerator from './pages/analysis/AnalysisReportGenerator';
+// App.jsx 의 페이지 import 는 전부 lazy 다 — 관례를 따른다.
+const AnalysisReportGenerator = lazy(() => import('./pages/analysis/AnalysisReportGenerator'));
 ```
 
 `renderPage()`의 `case 'Productivity Apps':` 줄 근처에 추가한다:
