@@ -20,7 +20,13 @@ from ._access_control import assert_current_user_can_access_owner
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# ⚠️ dirname 을 세 번 올라가야 백엔드 루트다(app/routers/reports.py → app/routers → app → 루트).
+#    두 번만 올라가면 존재하지 않는 app/userConnection 을 가리키고, payload._is_within 이
+#    모든 실제 경로를 거부해 결과 파일과 근거 파일 섹션이 **조용히** 사라진다 —
+#    보안 문제는 아니지만(더 엄격해질 뿐) 예외가 안 나서 깨진 줄 모른 채 배포된다.
+#    analysis.py 와 같은 값이어야 하며, tests/test_reports_router.py 가 그걸 고정한다.
+_ROUTER_DIR = os.path.dirname(os.path.abspath(__file__))
+_BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))
 _USER_CONNECTION_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
 
 _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
