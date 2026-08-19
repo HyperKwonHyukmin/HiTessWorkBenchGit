@@ -36,8 +36,37 @@ def test_builds_xlsx_for_an_app_without_any_adapter(tmp_path):
 
 def test_filename_carries_program_and_analysis_id(tmp_path):
     filename, _ = build_report_xlsx(_record(), user_connection_base=str(tmp_path))
-    assert "column-buckling" in filename
     assert "7" in filename
+
+
+def test_filename_names_the_app_in_words_a_person_reads(tmp_path):
+    """program_id 슬러그는 다운로드 폴더에서 App 을 알아보는 데 도움이 안 된다.
+
+    실제로 사용자는 받은 파일이 어느 App 결과인지 구분하지 못했다.
+    """
+    filename, _ = build_report_xlsx(_record(), user_connection_base=str(tmp_path))
+    assert "Column_Buckling_Load_Calculator" in filename
+
+
+def test_filename_carries_the_project_so_two_runs_differ(tmp_path):
+    filename, _ = build_report_xlsx(
+        _record(project_name="Deck A"), user_connection_base=str(tmp_path)
+    )
+    assert "Deck_A" in filename
+
+
+def test_filename_drops_characters_that_are_illegal_in_a_path(tmp_path):
+    filename, _ = build_report_xlsx(
+        _record(project_name='a/b:c*d?"e<f>g|h'), user_connection_base=str(tmp_path)
+    )
+    assert not set(filename) & set(r'/\:*?"<>|')
+
+
+def test_filename_stays_short_enough_for_windows(tmp_path):
+    filename, _ = build_report_xlsx(
+        _record(project_name="X" * 400), user_connection_base=str(tmp_path)
+    )
+    assert len(filename) <= 128
 
 
 def test_rejects_a_record_without_results(tmp_path):
@@ -51,10 +80,16 @@ def test_rejects_a_failed_record(tmp_path):
 
 
 def test_unknown_program_name_still_produces_a_report(tmp_path):
+    """미등록 App 도 파일명에 자기 이름을 남긴다.
+
+    예전에는 program_id 가 없다는 이유로 'unknown' 을 적었는데, 그러면 서로 다른
+    미등록 App 의 계산서가 다운로드 폴더에서 똑같아 보인다. 레지스트리에 없더라도
+    레코드에 남은 이름이 사용자가 아는 유일한 단서다.
+    """
     record = _record(program_name="아직 등록 안 된 App")
     filename, data = build_report_xlsx(record, user_connection_base=str(tmp_path))
     assert data
-    assert "unknown" in filename
+    assert "아직_등록_안_된_App" in filename
 
 
 def test_applied_form_is_stated_on_the_cover_row_not_buried_in_notices(tmp_path):

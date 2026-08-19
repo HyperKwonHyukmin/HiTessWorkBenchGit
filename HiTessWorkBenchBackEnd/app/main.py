@@ -177,6 +177,10 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
+        # ⚠️ 이걸 빼면 브라우저가 JS 에게 Content-Disposition 을 숨긴다(CORS 안전 목록에 없음).
+        #    그러면 프론트가 파일명을 못 읽고 App 이름 없는 폴백 이름으로 저장한다 —
+        #    계산서·사용량 리포트 다운로드가 모두 같은 증상을 겪었다.
+        expose_headers=["Content-Disposition"],
     )
 
     application.include_router(auth.router)

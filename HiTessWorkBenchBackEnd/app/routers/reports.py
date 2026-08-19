@@ -7,6 +7,8 @@ POST/PUT/PATCH/DELETE 만 검사한다. GET 으로 두면 관리자가 이 App �
 from __future__ import annotations
 
 import os
+import re
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -30,6 +32,27 @@ _BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))
 _USER_CONNECTION_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
 
 _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+# ASCII 폴백에 남길 문자. 한글 App 명(예: '선급 Rule 기반 선체 가속도 Calculation')을
+# raw 로 헤더에 넣으면 latin-1 인코딩 단계에서 깨진다.
+_NON_ASCII_FILENAME = re.compile(r"[^A-Za-z0-9.-]")
+
+
+def _content_disposition(filename: str, *, fallback_stem: str) -> str:
+    """RFC 5987 두 벌 표기.
+
+    구형 클라이언트를 위한 ASCII `filename=` 과, 실제 한글 이름을 담은
+    `filename*=UTF-8''` 을 함께 보낸다. 브라우저는 후자를 쓴다.
+    """
+    ascii_stem = _NON_ASCII_FILENAME.sub("_", filename.removesuffix(".xlsx"))
+    ascii_stem = re.sub(r"_+", "_", ascii_stem).strip("._")
+    # 이름이 통째로 한글이면 폴백이 빈 껍데기가 된다 — 그때는 뜻이 통하는 기본값을 쓴다.
+    if len(ascii_stem) < 3:
+        ascii_stem = fallback_stem
+    return (
+        f'attachment; filename="{ascii_stem}.xlsx"; '
+        f"filename*=UTF-8''{quote(filename, safe='')}"
+    )
 
 
 class ReportRequest(BaseModel):
@@ -71,5 +94,9 @@ def generate_report(
     return Response(
         content=data,
         media_type=_XLSX_MEDIA_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": _content_disposition(
+                filename, fallback_stem=f"WorkBench_Report_{record.id}"
+            ),
+        },
     )

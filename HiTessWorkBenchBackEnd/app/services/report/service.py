@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from ..analysis_passport import build_analysis_passport
 from ..program_registry import PROGRAM_SPECS, resolve_program
@@ -154,11 +155,40 @@ def build_report_doc(record, *, user_connection_base: str) -> ReportDoc:
     )
 
 
+# 확장자와 id 를 붙일 자리를 남긴다(100 + "_" + 7자리 id + ".xlsx" = 113).
+_FILENAME_STEM_MAX = 100
+# 파일 시스템이 거부하거나 경로로 해석하는 문자 + 제어 문자.
+_ILLEGAL_IN_FILENAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def _filename_part(text: str | None) -> str:
+    """파일명 조각으로 쓸 수 있게 다듬는다.
+
+    한글은 일부러 남긴다 — Content-Disposition 이 RFC 5987 로 실어 보내므로
+    여기서 지우면 사람이 읽을 이름을 잃는다(ASCII 폴백은 라우터가 따로 만든다).
+    """
+    if not text:
+        return ""
+    cleaned = _ILLEGAL_IN_FILENAME.sub("_", str(text))
+    cleaned = re.sub(r"\s+", "_", cleaned)
+    return re.sub(r"_+", "_", cleaned).strip("._")
+
+
+def _report_filename(doc: ReportDoc) -> str:
+    """다운로드 폴더에서 어느 App 의 어느 해석인지 바로 읽히는 이름.
+
+    ⚠️ program_id 슬러그('column-buckling')로는 App 을 알아보기 어렵다 —
+    사용자가 받은 파일이 무엇인지 구분하지 못한 실제 사유다.
+    """
+    parts = (_filename_part(doc.meta.display_name), _filename_part(doc.meta.project_name))
+    stem = "_".join(part for part in parts if part)[:_FILENAME_STEM_MAX].strip("._")
+    return f"{stem or 'WorkBench_Report'}_{doc.meta.analysis_id}.xlsx"
+
+
 def build_report_xlsx(record, *, user_connection_base: str) -> tuple[str, bytes]:
     """(파일명, XLSX bytes). 디스크에 쓰지 않는다."""
     doc = build_report_doc(record, user_connection_base=user_connection_base)
-    filename = f"WorkBench_Report_{doc.meta.program_id}_{doc.meta.analysis_id}.xlsx"
-    return filename, render_generic_xlsx(doc)
+    return _report_filename(doc), render_generic_xlsx(doc)
 
 
 def report_capabilities() -> dict[str, dict]:

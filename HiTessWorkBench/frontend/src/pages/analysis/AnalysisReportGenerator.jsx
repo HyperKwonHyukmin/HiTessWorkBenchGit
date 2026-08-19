@@ -63,7 +63,7 @@ export default function AnalysisReportGenerator() {
     if (!selected) return;
     setGenerating(true);
     try {
-      await downloadAnalysisReport({ analysisId: selected.id });
+      await downloadAnalysisReport({ analysisId: selected.id, programName: selected.program_name });
       showToast('계산서를 내려받았습니다.', 'success');
     } catch (error) {
       // blob 요청이라 오류 본문도 Blob 이다 — 그냥 .detail 을 읽으면 늘 undefined 다.

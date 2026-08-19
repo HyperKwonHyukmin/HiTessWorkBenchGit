@@ -147,3 +147,35 @@ def test_output_json_under_user_connection_reaches_the_report(admin_client, db_s
     wb = openpyxl.load_workbook(io.BytesIO(res.content))
     values = [cell.value for sheet in wb for row in sheet.iter_rows() for cell in row]
     assert 123.0 in values
+
+
+def test_content_disposition_is_exposed_to_the_browser(admin_client, db_session):
+    """CORS 로 노출하지 않으면 브라우저가 JS 에게 Content-Disposition 을 숨긴다.
+
+    그러면 프론트가 파일명을 못 읽고 App 이름 없는 폴백('WorkBench_Report_<id>')으로
+    저장한다 — 백엔드가 이름에 App 을 넣어도 사용자에게 닿지 않는다.
+    """
+    record = _seed(db_session, employee_id="ADMIN001")
+
+    res = admin_client.post(
+        "/api/reports/generate",
+        json={"analysis_id": record.id},
+        headers={"Origin": "http://localhost:5173"},
+    )
+
+    exposed = res.headers.get("access-control-expose-headers", "")
+    assert "content-disposition" in exposed.lower()
+
+
+def test_content_disposition_keeps_an_ascii_fallback_and_a_utf8_name(admin_client, db_session):
+    """한글 App 명을 raw 로 헤더에 넣으면 깨진다 — RFC 5987 두 벌 표기가 필요하다."""
+    record = _seed(db_session, employee_id="ADMIN001")
+    record.program_name = "선급 Rule 기반 선체 가속도 Calculation"
+    db_session.commit()
+
+    res = admin_client.post("/api/reports/generate", json={"analysis_id": record.id})
+
+    disposition = res.headers["content-disposition"]
+    assert "filename*=UTF-8''" in disposition
+    ascii_part = disposition.split("filename=")[1].split(";")[0]
+    assert ascii_part.isascii()
