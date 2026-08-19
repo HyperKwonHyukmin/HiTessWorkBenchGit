@@ -14,6 +14,9 @@ import DrawingCatalogueModal from '../../components/analysis/DrawingCatalogueMod
 import DrawingParamsPanel from '../../components/analysis/DrawingParamsPanel';
 import DrawingLoadBcPanel from '../../components/analysis/DrawingLoadBcPanel';
 import SolveResultsPanel from '../../components/analysis/SolveResultsPanel';
+import lugExampleImageUrl from '../../assets/images/drawing-to-analysis-lug-example.png';
+
+const LUG_EXAMPLE_FILENAME = 'lug_test.png';
 
 /** 파일명 / 카테고리에서 lug/support 모드 결정 — 백엔드 분류 규칙과 동일 */
 const resolveDrawingMode = (categoryOrFilename) => {
@@ -1031,6 +1034,43 @@ export default function DrawingToAnalysis() {
               </>
             ) : (
               <div className="px-4 pt-4 pb-4 space-y-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">예제 이미지</span>
+                  </div>
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    <div className="relative h-32 border-b border-slate-100 bg-slate-50 flex items-center justify-center p-2">
+                      <img
+                        src={lugExampleImageUrl}
+                        alt="손그림 LUG 입력 예제"
+                        className="w-full h-full object-contain"
+                      />
+                      <span className="absolute top-2 right-2 rounded-md border border-slate-200 bg-white/95 px-1.5 py-0.5 text-[9px] font-bold text-slate-500 shadow-sm">
+                        PNG 예제
+                      </span>
+                    </div>
+                    <div className="p-3">
+                      <div className="min-w-0 mb-2.5">
+                        <p className="text-[11px] font-bold text-slate-700">손그림 LUG 도면</p>
+                        <p className="text-[10px] font-mono text-slate-400 truncate">{LUG_EXAMPLE_FILENAME}</p>
+                      </div>
+                      <a
+                        href={lugExampleImageUrl}
+                        download={LUG_EXAMPLE_FILENAME}
+                        className="w-full rounded-xl border border-transparent bg-brand-green px-3 py-1.5 text-xs font-semibold text-white inline-flex items-center justify-center gap-2 transition-all hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-blue/40 focus:ring-offset-1 active:scale-[0.98]"
+                      >
+                        <Download size={13} /> 예제 다운로드
+                      </a>
+                      <p className="mt-2 text-[10px] text-slate-500 leading-snug text-center">
+                        다운로드한 뒤 아래 업로드 영역에서 직접 선택하세요.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100" />
+
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
