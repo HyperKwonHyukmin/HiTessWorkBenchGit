@@ -126,12 +126,27 @@ export default function AnalysisReportGenerator() {
                       <span className="block text-xs text-slate-500">
                         {row.project_name} · {new Date(row.created_at).toLocaleString()}
                       </span>
+                      {/* 목록에서 조용히 지우지 않는다 — 왜 못 만드는지 눈에 보이게 적는다.
+                          색·툴팁만으로 알리면 터치 환경과 색각 이상에서 사라진다. */}
+                      {row.blockedReason && (
+                        <span className="mt-0.5 block text-xs text-slate-400">
+                          {row.blockedReason}
+                        </span>
+                      )}
                     </span>
-                    {row.hasTemplate && (
-                      <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                    {row.hasTemplate ? (
+                      <span className="shrink-0 rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                         양식 있음
                       </span>
-                    )}
+                    ) : row.reportScope === 'planned' ? (
+                      <span className="shrink-0 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                        준비 중
+                      </span>
+                    ) : !row.reportable ? (
+                      <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        대상 아님
+                      </span>
+                    ) : null}
                   </button>
                 </li>
               ))}

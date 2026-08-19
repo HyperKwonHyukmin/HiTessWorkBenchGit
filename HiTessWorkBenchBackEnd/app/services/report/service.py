@@ -40,8 +40,17 @@ _NO_VERDICT_NOTICE = (
 )
 
 
+# 계산서 대상이 아닌 이유. '아직 없음'과 '원래 대상 아님'을 같은 문구로 쓰면
+# 승인자가 '언젠가 생기겠지'와 '영영 없다'를 구분하지 못한다.
+_EXCLUSION_REASONS: dict[str, str] = {
+    "planned": "이 App 의 전용 계산서는 준비 중입니다 — 해석 결과 파일을 직접 확인하세요.",
+    "not-applicable": "모델 생성·전처리 단계라 계산서 대상이 아닙니다.",
+}
+_UNREGISTERED_REASON = "레지스트리에 등록되지 않은 App 이라 계산서를 만들 수 없습니다."
+
+
 class ReportNotAvailable(Exception):
-    """리포트를 만들 수 없는 레코드 (미완료·결과 없음)."""
+    """리포트를 만들 수 없는 레코드 (미완료·결과 없음·계산서 대상 아님)."""
 
 
 def _meta_for(record, program_id: str, display_name: str) -> ReportMeta:
@@ -99,9 +108,17 @@ def build_report_doc(record, *, user_connection_base: str) -> ReportDoc:
     if not isinstance(record.result_info, dict) or not record.result_info:
         raise ReportNotAvailable("완료된 해석만 리포트를 생성할 수 있습니다.")
 
+    # ⚠️ 화면에서만 막으면 API 는 열려 있다(app_settings_gate 가 같은 이유로 존재한다).
+    #    리포트 대상 여부는 의도적으로 선언해야 하는 결정이므로, 미등록 App 은
+    #    기본 허용이 아니라 거절이다 — 그래야 신규 App 이 빈 계산서를 뱉지 않는다.
     spec = resolve_program(record.program_name)
-    program_id = spec.program_id if spec else "unknown"
-    display_name = spec.display_name if spec else (record.program_name or "Unknown App")
+    if spec is None:
+        raise ReportNotAvailable(_UNREGISTERED_REASON)
+    if spec.report_scope != "supported":
+        raise ReportNotAvailable(_EXCLUSION_REASONS[spec.report_scope])
+
+    program_id = spec.program_id
+    display_name = spec.display_name
 
     payload = collect_payload(record, user_connection_base=user_connection_base)
     meta = _meta_for(record, program_id, display_name)
@@ -195,7 +212,11 @@ def report_capabilities() -> dict[str, dict]:
     """program_id → 리포트 가능 여부. 프론트 카탈로그 표시용."""
     return {
         spec.program_id: {
-            "reportable": True,
+            "reportable": spec.report_scope == "supported",
+            "scope": spec.report_scope,
+            # 목록에서 조용히 지우지 않는다 — '내 해석이 왜 없지?' 가 되므로
+            # 왜 안 되는지 화면이 그대로 말할 수 있게 사유를 함께 내린다.
+            "reason": _EXCLUSION_REASONS.get(spec.report_scope),
             "hasTemplate": bool(spec.report_template),
             "displayName": spec.display_name,
             # 이력에 저장된 program_name 은 정본 표시명이 아닐 수 있다 —

@@ -79,17 +79,24 @@ def test_rejects_a_failed_record(tmp_path):
         build_report_xlsx(_record(status="Failed"), user_connection_base=str(tmp_path))
 
 
-def test_unknown_program_name_still_produces_a_report(tmp_path):
-    """미등록 App 도 파일명에 자기 이름을 남긴다.
+def test_unregistered_program_is_refused_with_a_reason(tmp_path):
+    """레지스트리에 없는 App 은 계산서를 만들지 않는다.
 
-    예전에는 program_id 가 없다는 이유로 'unknown' 을 적었는데, 그러면 서로 다른
-    미등록 App 의 계산서가 다운로드 폴더에서 똑같아 보인다. 레지스트리에 없더라도
-    레코드에 남은 이름이 사용자가 아는 유일한 단서다.
+    리포트 대상 여부는 의도적으로 선언해야 하는 결정이다. 미등록 App 을 기본
+    허용하면 신규 App 이 아무 검토 없이 빈 계산서를 뱉는다 — 지금 문제의 원인.
     """
     record = _record(program_name="아직 등록 안 된 App")
-    filename, data = build_report_xlsx(record, user_connection_base=str(tmp_path))
-    assert data
-    assert "아직_등록_안_된_App" in filename
+    with pytest.raises(ReportNotAvailable):
+        build_report_xlsx(record, user_connection_base=str(tmp_path))
+
+
+def test_filename_keeps_the_recorded_name_for_a_supported_app(tmp_path):
+    """파일명은 레코드에 남은 이름을 그대로 쓴다 — 슬러그가 아니라."""
+    filename, _ = build_report_xlsx(
+        _record(program_name="Mast Post Assessment", project_name="MastPost"),
+        user_connection_base=str(tmp_path),
+    )
+    assert "Mast_Post_Assessment_MastPost" in filename
 
 
 def test_applied_form_is_stated_on_the_cover_row_not_buried_in_notices(tmp_path):
@@ -171,3 +178,33 @@ def test_capabilities_lists_registered_programs():
     assert caps["truss-assessment"]["reportable"] is True
     assert caps["truss-assessment"]["hasTemplate"] is False
     assert "displayName" in caps["truss-assessment"]
+
+
+def test_capabilities_exclude_apps_that_do_not_need_a_report():
+    """모델 생성·전처리 App 이 계산서 목록에 뜨면 사용자가 빈 리포트를 받는다."""
+    caps = report_capabilities()
+    assert caps["hitess-model-builder"]["reportable"] is False
+    assert caps["bdf-scanner"]["reportable"] is False
+    assert caps["mast-post"]["reportable"] is True
+
+
+def test_capabilities_say_why_an_app_is_excluded():
+    """조용히 감추지 않는다 — 왜 안 되는지 화면이 설명할 수 있어야 한다."""
+    caps = report_capabilities()
+    assert caps["hitess-model-builder"]["reason"]
+    assert caps["mast-post"]["reason"] is None
+
+
+def test_capabilities_separate_planned_from_not_applicable():
+    """'아직 없음'과 '원래 대상 아님'은 다른 사실이라 같은 문구를 쓰면 안 된다."""
+    caps = report_capabilities()
+    assert caps["side-passage"]["scope"] == "planned"
+    assert caps["hitess-model-builder"]["scope"] == "not-applicable"
+    assert caps["side-passage"]["reason"] != caps["hitess-model-builder"]["reason"]
+
+
+def test_refuses_an_app_that_is_not_a_report_target(tmp_path):
+    """화면만 막으면 API 는 열려 있다 — 백엔드에서도 거절한다."""
+    record = _record(program_name="HiTessModelBuilder", result_info={"bdf": "x.bdf"})
+    with pytest.raises(ReportNotAvailable):
+        build_report_xlsx(record, user_connection_base=str(tmp_path))

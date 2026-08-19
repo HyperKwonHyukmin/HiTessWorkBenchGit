@@ -168,14 +168,35 @@ def test_content_disposition_is_exposed_to_the_browser(admin_client, db_session)
 
 
 def test_content_disposition_keeps_an_ascii_fallback_and_a_utf8_name(admin_client, db_session):
-    """한글 App 명을 raw 로 헤더에 넣으면 깨진다 — RFC 5987 두 벌 표기가 필요하다."""
+    """한글을 raw 로 헤더에 넣으면 latin-1 인코딩에서 깨진다 — RFC 5987 두 벌 표기."""
+    from urllib.parse import unquote
+
     record = _seed(db_session, employee_id="ADMIN001")
-    record.program_name = "선급 Rule 기반 선체 가속도 Calculation"
+    record.project_name = "선체 보강 검토"
     db_session.commit()
 
     res = admin_client.post("/api/reports/generate", json={"analysis_id": record.id})
 
     disposition = res.headers["content-disposition"]
-    assert "filename*=UTF-8''" in disposition
     ascii_part = disposition.split("filename=")[1].split(";")[0]
     assert ascii_part.isascii()
+    # 한글 이름이 실제로 실려 있어야 한다 — filename* 이 있기만 해서는 소용없다.
+    utf8_part = unquote(disposition.split("filename*=UTF-8''")[1])
+    assert "선체_보강_검토" in utf8_part
+
+
+def test_generate_rejects_an_app_that_is_not_a_report_target(admin_client, db_session):
+    record = _seed(db_session, employee_id="ADMIN001")
+    record.program_name = "HiTessModelBuilder"
+    db_session.commit()
+
+    res = admin_client.post("/api/reports/generate", json={"analysis_id": record.id})
+
+    assert res.status_code == 400
+    assert res.json()["detail"]
+
+
+def test_capabilities_report_which_apps_are_excluded(admin_client):
+    body = admin_client.get("/api/reports/capabilities").json()
+    assert body["hitess-model-builder"]["reportable"] is False
+    assert body["mast-post"]["reportable"] is True

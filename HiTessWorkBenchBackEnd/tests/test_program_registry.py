@@ -1,9 +1,12 @@
 """Program registry and its read-side integration contracts."""
 from datetime import datetime
 
+import pytest
+
 from app import models
 from app.services.program_registry import (
     PROGRAM_SPECS,
+    ProgramSpec,
     aliases_for,
     internal_substep_programs,
     resolve_program,
@@ -186,3 +189,56 @@ def test_truss_assessment_declares_a_report_adapter():
     assert spec is not None
     assert spec.report_adapter == "truss-assessment"
     assert "report" in spec.capabilities
+
+
+def test_model_builders_are_not_report_targets():
+    """모델을 만드는 App 은 계산서 대상이 아니다.
+
+    성과물이 BDF·모델이라 result_info 가 경로 매니페스트뿐이고, 실제로
+    HiTessModelBuilder 리포트의 '해석 결과' 시트는 필드가 0개로 비어 있었다.
+    """
+    for name in ("HiTessModelBuilder", "TrussModelBuilder", "DrawingToAnalysis", "BDF Scanner"):
+        spec = resolve_program(name)
+        assert spec is not None, name
+        assert spec.report_scope == "not-applicable", name
+
+
+def test_internal_substeps_are_never_report_targets():
+    """이력에도 안 보이는 내부 단계가 계산서 목록에 뜨면 안 된다."""
+    for spec in PROGRAM_SPECS:
+        if not spec.history_visible:
+            assert spec.report_scope == "not-applicable", spec.program_id
+
+
+def test_calculator_apps_are_report_targets():
+    for name in (
+        "Carling Free Calculator", "Column Buckling Load Calculator",
+        "Mast Post Assessment", "Jib Rest Assessment", "D Type Lug Assessment",
+        "Simplified Hole Fatigue Assessment", "Section Property Calculator",
+        "Simple Beam Assessment", "Truss Structural Assessment",
+    ):
+        spec = resolve_program(name)
+        assert spec is not None, name
+        assert spec.report_scope == "supported", name
+
+
+def test_report_scope_rejects_an_unknown_value():
+    with pytest.raises(ValueError):
+        ProgramSpec(
+            program_id="x", display_name="X", aliases=("X",),
+            capabilities=frozenset(), report_scope="maybe",
+        )
+
+
+def test_simple_beam_analyzer_is_a_known_alias():
+    """이력에 실제로 저장된 이름이다 — 미등록이면 program_id 가 'unknown' 이 된다."""
+    spec = resolve_program("Simple Beam Analyzer")
+    assert spec is not None
+    assert spec.program_id == "simple-beam"
+
+
+def test_hitess_modelflow_is_registered():
+    """Success 51건이 쌓여 있는데 레지스트리에 없어 'unknown' 으로 떨어지던 App."""
+    spec = resolve_program("HiTessModelFlow")
+    assert spec is not None
+    assert spec.report_scope == "not-applicable"
