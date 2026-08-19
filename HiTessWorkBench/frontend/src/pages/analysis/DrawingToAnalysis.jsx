@@ -14,7 +14,7 @@ import DrawingCatalogueModal from '../../components/analysis/DrawingCatalogueMod
 import DrawingParamsPanel from '../../components/analysis/DrawingParamsPanel';
 import DrawingLoadBcPanel from '../../components/analysis/DrawingLoadBcPanel';
 import SolveResultsPanel from '../../components/analysis/SolveResultsPanel';
-import lugExampleImageUrl from '../../assets/images/drawing-to-analysis-lug-example.png';
+import lugExampleImageDataUrl from '../../assets/images/drawing-to-analysis-lug-example.png?inline';
 
 const LUG_EXAMPLE_FILENAME = 'lug_test.png';
 
@@ -406,6 +406,30 @@ export default function DrawingToAnalysis() {
       message: `[IMAGE] ${file.name} 선택됨. 기준선 두 점과 실제 길이를 확인한 뒤 인식 단계로 진행합니다.`,
       type: 'info',
     }]);
+  };
+
+  const handleExampleDownload = () => {
+    try {
+      const commaIndex = lugExampleImageDataUrl.indexOf(',');
+      if (commaIndex < 0) throw new Error('잘못된 예제 이미지 데이터');
+
+      const metadata = lugExampleImageDataUrl.slice(0, commaIndex);
+      const payload = lugExampleImageDataUrl.slice(commaIndex + 1);
+      const mimeType = metadata.match(/^data:([^;,]+)/)?.[1] || 'image/png';
+      const decoded = metadata.includes(';base64') ? window.atob(payload) : decodeURIComponent(payload);
+      const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+      const blobUrl = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = LUG_EXAMPLE_FILENAME;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      showToast(`${LUG_EXAMPLE_FILENAME} 다운로드를 시작했습니다.`, 'success');
+    } catch {
+      showToast('예제 이미지 다운로드에 실패했습니다.', 'error');
+    }
   };
 
   const handleDrop = (e) => {
@@ -1042,7 +1066,7 @@ export default function DrawingToAnalysis() {
                   <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                     <div className="relative h-32 border-b border-slate-100 bg-slate-50 flex items-center justify-center p-2">
                       <img
-                        src={lugExampleImageUrl}
+                        src={lugExampleImageDataUrl}
                         alt="손그림 LUG 입력 예제"
                         className="w-full h-full object-contain"
                       />
@@ -1055,13 +1079,13 @@ export default function DrawingToAnalysis() {
                         <p className="text-[11px] font-bold text-slate-700">손그림 LUG 도면</p>
                         <p className="text-[10px] font-mono text-slate-400 truncate">{LUG_EXAMPLE_FILENAME}</p>
                       </div>
-                      <a
-                        href={lugExampleImageUrl}
-                        download={LUG_EXAMPLE_FILENAME}
+                      <button
+                        type="button"
+                        onClick={handleExampleDownload}
                         className="w-full rounded-xl border border-transparent bg-brand-green px-3 py-1.5 text-xs font-semibold text-white inline-flex items-center justify-center gap-2 transition-all hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-blue/40 focus:ring-offset-1 active:scale-[0.98]"
                       >
                         <Download size={13} /> 예제 다운로드
-                      </a>
+                      </button>
                       <p className="mt-2 text-[10px] text-slate-500 leading-snug text-center">
                         다운로드한 뒤 아래 업로드 영역에서 직접 선택하세요.
                       </p>
