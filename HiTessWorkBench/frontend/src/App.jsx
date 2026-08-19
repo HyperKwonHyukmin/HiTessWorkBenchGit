@@ -236,12 +236,12 @@ function AppInner() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = ({ forgetEmployeeId = false } = {}) => {
     if (isLoggingOutRef.current) return;
     isLoggingOutRef.current = true;
     setCachedAppMenus([]);
     callLogout();
-    authLogout();
+    authLogout({ forgetEmployeeId });
     setAppState(APP_STATE.LOGIN);
     resetNavigation('Dashboard');
   };
@@ -553,7 +553,7 @@ function AppInner() {
       }} />}
       {appState === APP_STATE.MAIN && (
         <Layout
-          onLogout={handleLogout}
+          onLogout={() => handleLogout({ forgetEmployeeId: true })}
           currentMenu={currentMenu}
           setCurrentMenu={setCurrentMenu}
           goBack={goBack}

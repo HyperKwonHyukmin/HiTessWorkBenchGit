@@ -5,7 +5,7 @@ import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { checkVersion, login } from '../../api/auth';
-import { useAuth } from '../../contexts/AuthContext';
+import { SAVED_EMPLOYEE_ID_KEY, useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL, DEFAULT_API_BASE_URL, setApiBaseUrl } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
 const structureBgUrl = "https://images.unsplash.com/photo-1553653841-453082536a9d?q=80&w=1000&auto=format&fit=crop";
@@ -87,7 +87,7 @@ export default function LoginScreen({ onLoginSuccess }) {
   useEffect(() => {
     checkServerConnection();
 
-    const savedId = localStorage.getItem('savedEmployeeId');
+    const savedId = localStorage.getItem(SAVED_EMPLOYEE_ID_KEY);
     if (savedId) setEmployeeId(savedId);
 
     const removeListener = window.electron?.onMessage('download-progress', (data) => {
@@ -114,8 +114,6 @@ export default function LoginScreen({ onLoginSuccess }) {
     setIsLoading(true);
     setErrorMsg('');
 
-    localStorage.setItem('savedEmployeeId', employeeId);
-
     try {
       const response = await login(employeeId);
 
@@ -123,6 +121,7 @@ export default function LoginScreen({ onLoginSuccess }) {
       // 일괄 세팅 + state 갱신을 캡슐화한다.
       const { token, ...userObj } = response.data;
       authLogin(userObj, token);
+      localStorage.setItem(SAVED_EMPLOYEE_ID_KEY, userObj.employee_id || employeeId.trim());
       onLoginSuccess();
 
     } catch (error) {

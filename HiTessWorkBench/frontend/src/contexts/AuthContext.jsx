@@ -15,6 +15,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
 const AuthContext = createContext(null);
+export const SAVED_EMPLOYEE_ID_KEY = 'savedEmployeeId';
 
 const parseUser = (raw) => {
   if (!raw) return null;
@@ -44,13 +45,16 @@ export function AuthProvider({ children }) {
   /**
    * 로그아웃 시 호출. App.jsx 의 handleLogout 이 기존에 직접 처리하던
    * removeItem 4개 + sessionStorage admin_gate 정리를 한 곳에 모은다.
+   * 사용자가 직접 로그아웃한 경우에는 forgetEmployeeId 옵션으로 공유 PC에
+   * 사번 자동 입력값이 남지 않도록 별도 저장 키도 함께 제거한다.
    * App.jsx 자체의 setAppState/resetNavigation 같은 라우팅 처리는 호출자가 담당.
    */
-  const logout = useCallback(() => {
+  const logout = useCallback(({ forgetEmployeeId = false } = {}) => {
     localStorage.removeItem('user');
     localStorage.removeItem('user_login_at');
     localStorage.removeItem('user_last_active');
     localStorage.removeItem('session_token');
+    if (forgetEmployeeId) localStorage.removeItem(SAVED_EMPLOYEE_ID_KEY);
     sessionStorage.removeItem('admin_gate_unlocked');
     setUser(null);
     setSessionToken('');
