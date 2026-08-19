@@ -4047,18 +4047,17 @@ def get_modelflow_sample_status(
     return {"remaining": quota["remaining"], "limit": SAMPLE_DAILY_LIMIT, "is_admin": quota["is_admin"]}
 
 
-@router.post("/analysis/modelflow/run-sample")
-async def run_modelflow_sample(
-        employee_id: str = Depends(require_auth),
-        db: Session = Depends(database.get_db),
-):
-    """HiTESS Model Builder — 사내 표준 샘플 CSV(stru/pipe/equip)로 즉시 build-full 실행.
-    옵션은 기본값(mesh_size=200.0, run_nastran=False)으로 고정 — 빠른 데모 목적.
-    """
-    quota = _check_sample_quota("modelflow", employee_id, db)
-    if not quota["allowed"]:
-        raise HTTPException(status_code=429, detail=quota["reason"])
+#: sample-preview 응답 1개 파일에 담는 최대 행 수(헤더 포함).
+#: 현재 사내 샘플은 1,300행 미만이라 걸리지 않는 안전밸브다. 초과하면 truncated=True.
+MODELFLOW_SAMPLE_PREVIEW_MAX_ROWS = 5000
 
+
+def _find_modelflow_sample_csvs():
+    """SampleFile/ModelBuilder/ 에서 stru/pipe/equip 샘플 CSV 경로를 찾는다.
+
+    run-sample 과 sample-preview 가 **항상 같은 파일**을 집도록 한 곳에 모아둔다.
+    각 종류는 파일명 키워드로 판별하며, 없으면 None 을 돌려준다(호출부가 판단).
+    """
     sample_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "SampleFile", "ModelBuilder"))
     if not os.path.isdir(sample_dir):
         raise HTTPException(status_code=404, detail="샘플 폴더가 없습니다.")
@@ -4074,6 +4073,54 @@ async def run_modelflow_sample(
             pipe_src = os.path.join(sample_dir, fname)
         elif ("equip" in low or "equp" in low) and equip_src is None:
             equip_src = os.path.join(sample_dir, fname)
+    return stru_src, pipe_src, equip_src
+
+
+def _modelflow_sample_preview_entry(path: Optional[str]):
+    """샘플 CSV 1개를 미리보기 응답 항목(dict)으로 변환. 경로가 없으면 None."""
+    if not path:
+        return None
+    rows = _read_csv_preview_rows(path)
+    total_rows = len(rows)
+    truncated = total_rows > MODELFLOW_SAMPLE_PREVIEW_MAX_ROWS
+    return {
+        "filename": os.path.basename(path),
+        "rows": rows[:MODELFLOW_SAMPLE_PREVIEW_MAX_ROWS] if truncated else rows,
+        "totalRows": total_rows,
+        "truncated": truncated,
+    }
+
+
+@router.get("/analysis/modelflow/sample-preview")
+def preview_modelflow_sample(current_user: str = Depends(require_auth)):
+    """HiTESS Model Builder 샘플 CSV(stru/pipe/equip) 미리보기.
+
+    해석을 돌리지 않고도 사내 표준 입력 CSV 의 컬럼 구성과 값을 확인할 수 있게 한다.
+    (Truss Model Builder 의 /analysis/truss/sample-preview 와 동일한 역할)
+    """
+    stru_src, pipe_src, equip_src = _find_modelflow_sample_csvs()
+    if not stru_src and not pipe_src and not equip_src:
+        raise HTTPException(status_code=404, detail="샘플 CSV를 찾을 수 없습니다.")
+    return {
+        "stru": _modelflow_sample_preview_entry(stru_src),
+        "pipe": _modelflow_sample_preview_entry(pipe_src),
+        "equip": _modelflow_sample_preview_entry(equip_src),
+    }
+
+
+@router.post("/analysis/modelflow/run-sample")
+async def run_modelflow_sample(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    """HiTESS Model Builder — 사내 표준 샘플 CSV(stru/pipe/equip)로 즉시 build-full 실행.
+    옵션은 기본값(mesh_size=200.0, run_nastran=False)으로 고정 — 빠른 데모 목적.
+    """
+    quota = _check_sample_quota("modelflow", employee_id, db)
+    if not quota["allowed"]:
+        raise HTTPException(status_code=429, detail=quota["reason"])
+
+    stru_src, pipe_src, equip_src = _find_modelflow_sample_csvs()
     if not stru_src:
         raise HTTPException(status_code=404, detail="샘플 구조(stru) CSV를 찾을 수 없습니다.")
 

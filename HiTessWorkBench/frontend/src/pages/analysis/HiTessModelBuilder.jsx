@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronsRight,
-  Cpu, DatabaseZap, Download, ExternalLink, FileEdit, FileSpreadsheet, History, Loader2,
+  Cpu, DatabaseZap, Download, ExternalLink, Eye, FileEdit, FileSpreadsheet, History, Loader2,
   Lock, PackageX, RotateCcw, ShieldCheck, UploadCloud, X,
 } from 'lucide-react';
 
@@ -16,6 +16,8 @@ import { getAuthHeaders, handleUnauthorized, isAdmin } from '../../utils/auth';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import AppCommunityHub from '../../components/analysis/AppCommunityHub';
 import PreflightIssueCenter from '../../components/analysis/PreflightIssueCenter';
+import CsvPreviewPanel from '../../components/analysis/CsvPreviewPanel';
+import { readCsvFileRows } from '../../utils/csvPreview';
 import ModelRegistrationModal from '../../components/modelRegistry/ModelRegistrationModal';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 
@@ -355,6 +357,28 @@ function CsvDropZone({ label, required, file, fileError, onFile, onClear, multip
           />
         </div>
       )}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   PreviewModeToggle — 미리보기 표를 '내 파일' / '사내 샘플' 로 전환
+   업로드 슬롯은 그대로 두고 표만 바꾼다. 두 포맷을 오가며 비교할 수 있게 하기 위함.
+   ──────────────────────────────────────────────────────────────────────── */
+
+function PreviewModeToggle({ mode, loading, onMine, onSample }) {
+  const base = 'px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1';
+  const on   = 'bg-white text-blue-700 shadow-sm';
+  const off  = 'text-slate-500 hover:text-slate-700';
+  return (
+    <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100 border border-slate-200 shrink-0">
+      <button type="button" onClick={onMine} className={`${base} ${mode === 'mine' ? on : off}`}>
+        내 파일
+      </button>
+      <button type="button" onClick={onSample} disabled={loading} className={`${base} ${mode === 'sample' ? on : off} ${loading ? 'opacity-60 cursor-wait' : ''}`}>
+        {loading ? <Loader2 size={11} className="animate-spin" /> : <Eye size={11} />}
+        사내 샘플
+      </button>
     </div>
   );
 }
@@ -2311,6 +2335,17 @@ export default function HiTessModelBuilder() {
   const [pipeError, setPipeError] = useState(null);
   const [equiError, setEquiError] = useState(null);
 
+  // ── CSV 미리보기 ──
+  // 실행 전 '1. CSV 입력 검증' 카드 자리에서 입력 CSV 를 표로 확인한다.
+  // 'mine' = 내가 올린 파일(브라우저에서 파싱) / 'sample' = 사내 표준 샘플(서버 응답).
+  // 샘플을 봐도 업로드 슬롯(struFile 등)은 건드리지 않는다 — 실행 조건이 흔들리면 안 된다.
+  const [previewMode,    setPreviewMode]    = useState('mine');
+  const [previewTabKey,  setPreviewTabKey]  = useState('stru');
+  const [minePreview,    setMinePreview]    = useState({});
+  const [samplePreview,  setSamplePreview]  = useState(null);
+  const [sampleLoading,  setSampleLoading]  = useState(false);
+  const [sampleError,    setSampleError]    = useState(null);
+
   // ── 옵션 (기본값: useNastran=false, uboltFullFix=true, meshSize=200) ──
   const [meshSize,      setMeshSize]      = useState(saved?.meshSize      ?? DEFAULT_MESH_SIZE_MM);
   const [uboltFullFix,  setUboltFullFix]  = useState(saved?.uboltFullFix  ?? true);
@@ -2480,6 +2515,69 @@ export default function HiTessModelBuilder() {
       .finally(() => { if (!cancelled) setSummaryLoading(false); });
     return () => { cancelled = true; };
   }, [bdfResult?.summaryPath]);
+
+  /* ── 업로드 CSV 미리보기 파싱 ──────────────────────────────────────
+     파일이 바뀔 때마다 브라우저에서 직접 읽는다(서버 왕복 없음). 사내 CSV 는
+     cp949 로 저장돼 오는 일이 잦아 readCsvFileRows 가 인코딩 폴백까지 처리한다. */
+  useEffect(() => {
+    const present = [
+      ['stru',  struFile],
+      ['pipe',  pipeFile],
+      ['equip', equiFile],
+    ].filter(([, f]) => !!f);
+
+    if (present.length === 0) { setMinePreview({}); return undefined; }
+
+    let cancelled = false;
+    setMinePreview(Object.fromEntries(
+      present.map(([key, file]) => [key, { filename: file.name, loading: true }])
+    ));
+
+    (async () => {
+      const entries = await Promise.all(present.map(async ([key, file]) => {
+        try {
+          const parsed = await readCsvFileRows(file);
+          return [key, { filename: file.name, ...parsed }];
+        } catch (e) {
+          return [key, { filename: file.name, error: e?.message || 'CSV를 읽지 못했습니다.' }];
+        }
+      }));
+      if (!cancelled) setMinePreview(Object.fromEntries(entries));
+    })();
+
+    return () => { cancelled = true; };
+  }, [struFile, pipeFile, equiFile]);
+
+  /* ── 사내 표준 샘플 CSV 미리보기 ───────────────────────────────────
+     한 번 받은 응답은 samplePreview 에 캐시해 재요청하지 않는다. */
+  const openSamplePreview = useCallback(async () => {
+    setPreviewMode('sample');
+    setActiveIdx(0);   // 미리보기가 사는 'CSV 입력 검증' 스텝으로 이동
+    if (samplePreview || sampleLoading) return;
+
+    setSampleLoading(true);
+    setSampleError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/analysis/modelflow/sample-preview`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        handleUnauthorized(res.status);
+        let detail = `HTTP ${res.status}`;
+        try { const b = await res.json(); if (b?.detail) detail = b.detail; } catch { /* 본문 없음 */ }
+        throw new Error(detail);
+      }
+      const data = await res.json();
+      setSamplePreview(data);
+      const firstKey = ['stru', 'pipe', 'equip'].find(k => data?.[k]?.rows?.length);
+      if (firstKey) setPreviewTabKey(firstKey);
+    } catch (e) {
+      setSampleError(`샘플 CSV를 불러오지 못했습니다. (${e.message})`);
+      showToast('샘플 CSV 미리보기를 불러오지 못했습니다.', 'error');
+    } finally {
+      setSampleLoading(false);
+    }
+  }, [samplePreview, sampleLoading, showToast]);
 
   /* ── CSV 자동 분류: 단일 드롭 ──────────────────────────────────────── */
   const handleAutoAssign = useCallback(async (file, slotHint) => {
@@ -3139,6 +3237,8 @@ export default function HiTessModelBuilder() {
     setViewerStatus('idle'); setViewerError(null); setViewerProgress(null);
     setEditStatus(null); setEditTrace(null); setEditedSummary(null);
     setEditApplying(false); setEditJobStatus(null); setEditError(null);
+    // 미리보기도 초기 상태로. 받아둔 샘플 응답은 캐시로 남겨 재요청을 아낀다.
+    setPreviewMode('mine'); setPreviewTabKey('stru'); setSampleError(null);
   };
 
   /* ── 파생 ──────────────────────────────────────────────────────────── */
@@ -3185,6 +3285,33 @@ export default function HiTessModelBuilder() {
     return issues;
   }, [equiError, meshSize, pipeError, pipeFile, struError, struFile]);
   const hasPreflightErrors = preflightIssues.some(issue => issue.severity === 'error');
+
+  /* ── CSV 미리보기 파생 ─────────────────────────────────────────────
+     '내 파일'/'사내 샘플' 어느 쪽이든 같은 표 컴포넌트가 그리도록 형태를 맞춘다. */
+  const previewTabs = useMemo(() => {
+    const source = previewMode === 'sample' ? samplePreview : minePreview;
+    return [
+      ['stru',  'Structural'],
+      ['pipe',  'Piping'],
+      ['equip', 'Equipment'],
+    ].map(([key, label]) => {
+      const entry = source?.[key] ?? null;
+      return {
+        key,
+        label,
+        filename:  entry?.filename,
+        rows:      entry?.rows,
+        totalRows: entry?.totalRows ?? 0,
+        truncated: !!entry?.truncated,
+        loading:   previewMode === 'sample' ? sampleLoading : !!entry?.loading,
+        error:     previewMode === 'sample' ? sampleError : entry?.error,
+      };
+    });
+  }, [previewMode, samplePreview, minePreview, sampleLoading, sampleError]);
+
+  // 검증 결과(또는 진행률)가 있을 때만 기존 CsvAuditPanel 로 넘긴다.
+  // 그 전까지 비어 있던 자리를 미리보기가 채운다.
+  const showAuditPanel = isRunning || (hasResult && !!bdfResult?.auditPath);
 
   /* ── 렌더 ──────────────────────────────────────────────────────────── */
   return (
@@ -3270,6 +3397,19 @@ export default function HiTessModelBuilder() {
                   {steps[activeIdx + 1]?.title} 보기
                 </button>
               )}
+              {/* 샘플 CSV 미리보기 — 해석을 돌리지 않고 사내 표준 입력 포맷만 확인 */}
+              <button
+                type="button"
+                onClick={openSamplePreview}
+                disabled={sampleLoading}
+                className={`w-full flex items-center justify-center gap-1.5 py-2 border rounded-xl text-xs font-semibold transition-colors
+                  ${sampleLoading
+                    ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-wait'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 cursor-pointer'}`}
+              >
+                {sampleLoading ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />}
+                샘플 CSV 미리보기
+              </button>
               {/* 샘플 실행 — 입력 CSV 없이도 학습용으로 즉시 build-full 체험 */}
               <SampleRunButton
                 appKey="modelflow"
@@ -3367,7 +3507,7 @@ export default function HiTessModelBuilder() {
             </div>
 
             <div className="flex-1 min-h-0">
-            {activeStep.id === 'csv-validation' && (
+            {activeStep.id === 'csv-validation' && (showAuditPanel ? (
               <CsvAuditPanel
                 audit={auditData}
                 jobStatus={jobStatus}
@@ -3376,7 +3516,34 @@ export default function HiTessModelBuilder() {
                 error={auditError}
                 onRetry={() => setBdfResult(prev => ({ ...prev }))}
               />
-            )}
+            ) : (
+              <CsvPreviewPanel
+                tabs={previewTabs}
+                activeKey={previewTabKey}
+                onActiveKeyChange={setPreviewTabKey}
+                emptyTitle={previewMode === 'sample' ? '샘플 CSV 대기 중' : 'CSV 미리보기 대기 중'}
+                emptyMessage={previewMode === 'sample'
+                  ? '사내 표준 샘플 CSV를 불러오면 여기에 표시됩니다.'
+                  : 'CSV 파일을 올리면 컬럼 구성과 값을 표로 확인할 수 있습니다.'}
+                emptyAction={previewMode === 'mine' ? (
+                  <button
+                    type="button"
+                    onClick={openSamplePreview}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
+                  >
+                    <Eye size={13} /> 사내 샘플 CSV 먼저 보기
+                  </button>
+                ) : null}
+                headerRight={
+                  <PreviewModeToggle
+                    mode={previewMode}
+                    loading={sampleLoading}
+                    onMine={() => setPreviewMode('mine')}
+                    onSample={openSamplePreview}
+                  />
+                }
+              />
+            ))}
             {activeStep.id === 'model-qc' && (
               <StageSummaryPanel
                 summary={summaryData}
