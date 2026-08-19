@@ -32,7 +32,12 @@ def test_version_contract_is_exact_and_database_free(monkeypatch):
     response = TestClient(_system_app()).get("/api/version")
 
     assert response.status_code == 200
-    assert response.json() == {"version": "1.3.42"}
+    # ⚠️ 버전 값을 리터럴로 박지 않는다. 지키는 계약은 '페이로드가 이 키 하나뿐이고
+    #    DB 를 건드리지 않는다' 이지 특정 버전이 아니다. 리터럴로 두면 릴리즈마다
+    #    깨지는데, 실제로 1.3.42 → 1.4.0 bump 때 여기를 아무도 못 보고 지나갔다 —
+    #    '버전 변경을 의식하게 만든다'는 취지가 실측으로 작동하지 않았다.
+    #    dict 동등 비교라 키 이름·추가 키가 바뀌면 여전히 잡힌다.
+    assert response.json() == {"version": system.SERVER_VERSION}
 
 
 def test_liveness_is_exact_and_database_free():
@@ -42,7 +47,7 @@ def test_liveness_is_exact_and_database_free():
     assert response.json() == {
         "status": "ok",
         "service": "HiTessWorkBench",
-        "version": "1.3.42",
+        "version": system.SERVER_VERSION,
     }
 
 
@@ -165,3 +170,30 @@ def test_system_status_uses_user_connection_drive_anchor(db_session, monkeypatch
     assert response.status_code == 200
     assert captured["path"] == system._DISK_ANCHOR
     assert captured["path"] != ""  # Windows에서는 C:\\, POSIX에서는 /
+
+
+def test_server_version_matches_the_client_package_version():
+    """서버 SERVER_VERSION 과 클라이언트 package.json 버전은 같아야 한다.
+
+    LoginScreen 이 package.json 의 version 을 서버 /api/version 과 비교해
+    업데이트 안내를 띄운다. 둘이 어긋나면 최신 클라이언트에도 업데이트를 권하거나
+    반대로 구버전을 통과시킨다.
+
+    이 테스트가 존재하는 이유: 1.4.0 bump 때 package.json 3개와 system.py 는
+    올렸는데 테스트는 1.3.42 로 남아 전체 스위트가 깨졌다. 버전을 여러 파일에
+    나눠 적는 구조라 '한 곳만 올리는' 실수가 반복된다.
+    """
+    import json
+    from pathlib import Path
+
+    client_manifest = (
+        Path(__file__).resolve().parents[2] / "HiTessWorkBench" / "package.json"
+    )
+    if not client_manifest.is_file():
+        # 백엔드만 단독 체크아웃한 환경(운영 서버 등)에서는 비교 대상이 없다.
+        import pytest
+
+        pytest.skip(f"클라이언트 매니페스트 없음: {client_manifest}")
+
+    client_version = json.loads(client_manifest.read_text(encoding="utf-8"))["version"]
+    assert system.SERVER_VERSION == client_version
