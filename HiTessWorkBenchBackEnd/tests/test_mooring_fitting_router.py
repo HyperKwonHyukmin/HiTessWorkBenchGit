@@ -115,3 +115,67 @@ def test_request_rejects_mismatched_employee_id(auth_client, monkeypatch):
     data = {"employee_id": "OTHER999", "source": "Workbench"}
     res = auth_client.post("/api/analysis/mooring-fitting/request", files=files, data=data)
     assert res.status_code == 403
+
+
+def test_run_sample_uses_backend_relative_csvs(
+    auth_client,
+    isolated_user_connection,
+    tmp_path,
+    monkeypatch,
+):
+    """서버 SampleFile/MooringFitting 의 두 CSV를 표준명으로 복사해 실행한다."""
+    from app.routers import analysis
+
+    sample_dir = tmp_path / "backend" / "SampleFile" / "MooringFitting"
+    sample_dir.mkdir(parents=True)
+    structure_bytes = b"MF,F1,Pipe,0,0,0\n"
+    load_bytes = b"LOADCASE,F1,1,2,3\n"
+    (sample_dir / "MooringFittingData.csv").write_bytes(structure_bytes)
+    (sample_dir / "MooringFittingDataLoad.csv").write_bytes(load_bytes)
+    monkeypatch.setattr(analysis, "_BACKEND_DIR", str(tmp_path / "backend"))
+    analysis._SAMPLE_RUN_TRACKER.pop(("mooring-fitting", "HHI123"), None)
+
+    captured = {}
+
+    def fake_submit(task_fn, *args, **kwargs):
+        captured["args"] = args
+
+    monkeypatch.setattr(
+        "app.services.job_manager.analysis_executor.submit", fake_submit
+    )
+
+    res = auth_client.post("/api/analysis/mooring-fitting/run-sample")
+
+    assert res.status_code == 200, res.text
+    assert "job_id" in res.json()
+    structure_path = captured["args"][1]
+    load_path = captured["args"][2]
+    work_dir = captured["args"][3]
+    assert os.path.commonpath([work_dir, str(isolated_user_connection)]) == str(
+        isolated_user_connection
+    )
+    assert os.path.basename(structure_path) == "MooringFittingData.csv"
+    assert os.path.basename(load_path) == "MooringFittingDataLoad.csv"
+    with open(structure_path, "rb") as structure_file:
+        assert structure_file.read() == structure_bytes
+    with open(load_path, "rb") as load_file:
+        assert load_file.read() == load_bytes
+    assert captured["args"][7] == "WorkbenchSample"
+    assert captured["args"][8] == 1.25
+
+
+def test_run_sample_returns_404_when_relative_sample_files_are_missing(
+    auth_client,
+    tmp_path,
+    monkeypatch,
+):
+    """배포 서버에 두 CSV가 없으면 필요한 상대 경로를 포함한 404를 반환한다."""
+    from app.routers import analysis
+
+    monkeypatch.setattr(analysis, "_BACKEND_DIR", str(tmp_path / "empty-backend"))
+    analysis._SAMPLE_RUN_TRACKER.pop(("mooring-fitting", "HHI123"), None)
+
+    res = auth_client.post("/api/analysis/mooring-fitting/run-sample")
+
+    assert res.status_code == 404
+    assert "SampleFile/MooringFitting" in res.json()["detail"]

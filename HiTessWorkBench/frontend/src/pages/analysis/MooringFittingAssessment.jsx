@@ -11,6 +11,7 @@ import { useDashboard } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
+import SampleRunButton from '../../components/analysis/SampleRunButton';
 import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -1023,6 +1024,43 @@ export default function MooringFittingAssessment() {
     }
   };
 
+  const handleSampleBeforeRun = () => {
+    setHasRunOnce(true);
+    setElapsedSecs(0);
+    setEngineLog(null);
+    setArtifactJson({ raw: null, validation: null, loading: false, error: null });
+    if (elapsedRef.current) clearInterval(elapsedRef.current);
+    elapsedRef.current = setInterval(() => setElapsedSecs(s => s + 1), 1000);
+    setSteps(prev => prev.map((s, i) =>
+      i === 0 ? { ...s, status: 'running' } : { ...s, status: 'wait' }
+    ));
+    setJobStatus({ status: 'Pending', progress: 0, message: '샘플 CSV 준비 중...' });
+    setActiveIdx(0);
+  };
+
+  const handleSampleSubmitted = (submittedJobId) => {
+    setJobId(submittedJobId);
+    startGlobalJob?.(submittedJobId, 'Mooring Fitting Assessment');
+  };
+
+  const handleSampleError = (status, detail) => {
+    if (elapsedRef.current) {
+      clearInterval(elapsedRef.current);
+      elapsedRef.current = null;
+    }
+    if (status === 429) {
+      setSteps(makeInitialSteps());
+      setJobStatus(null);
+      setHasRunOnce(false);
+      return;
+    }
+    setSteps(prev => prev.map((s, i) =>
+      i === 0 ? { ...s, status: 'error' } : { ...s, status: 'wait' }
+    ));
+    setJobStatus({ status: 'Failed', progress: 0, message: `샘플 실행 실패: ${detail}` });
+    setEngineLog(`[샘플 요청 실패]\n오류: ${detail}`);
+  };
+
   const handleDownload = async (path) => {
     try {
       const res = await fetch(`${API_BASE_URL}${DOWNLOAD_ENDPOINT(path)}`, { headers: getAuthHeaders() });
@@ -1340,6 +1378,14 @@ export default function MooringFittingAssessment() {
                 </button>
                 );
               })()}
+              <SampleRunButton
+                appKey="mooring-fitting"
+                disabled={isRunning || hasRunOnce}
+                label="샘플 CSV 사용하기"
+                onBeforeRun={handleSampleBeforeRun}
+                onJobSubmitted={handleSampleSubmitted}
+                onError={handleSampleError}
+              />
               <button
                 type="button"
                 onClick={handleRun}

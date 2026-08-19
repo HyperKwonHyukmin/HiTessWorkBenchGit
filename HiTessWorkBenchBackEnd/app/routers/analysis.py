@@ -3103,6 +3103,85 @@ def preview_hull_acceleration_sample(current_user: str = Depends(require_auth)):
 
 # ==================== Mooring Fitting Assessment ====================
 
+
+def _find_mooring_fitting_sample_csvs() -> tuple[str, str]:
+    """백엔드 기준 상대경로에서 Mooring Fitting 표준 샘플 CSV 두 개를 찾는다."""
+    sample_dir = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "SampleFile", "MooringFitting",
+    ))
+    structure_src = os.path.join(sample_dir, "MooringFittingData.csv")
+    load_src = os.path.join(sample_dir, "MooringFittingDataLoad.csv")
+    missing = [
+        os.path.basename(path)
+        for path in (structure_src, load_src)
+        if not os.path.isfile(path)
+    ]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "샘플 CSV를 찾을 수 없습니다. 서버 "
+                "SampleFile/MooringFitting/ 폴더에 다음 파일을 배치하세요: "
+                + ", ".join(missing)
+            ),
+        )
+    return structure_src, load_src
+
+
+@router.get("/analysis/mooring-fitting/sample-status")
+def get_mooring_fitting_sample_status(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    quota = _check_sample_quota("mooring-fitting", employee_id, db)
+    return {
+        "remaining": quota["remaining"],
+        "limit": SAMPLE_DAILY_LIMIT,
+        "is_admin": quota["is_admin"],
+    }
+
+
+@router.post("/analysis/mooring-fitting/run-sample")
+async def run_mooring_fitting_sample(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    """서버의 표준 Structure/Load CSV로 Mooring Fitting 파이프라인을 즉시 실행한다."""
+    quota = _check_sample_quota("mooring-fitting", employee_id, db)
+    if not quota["allowed"]:
+        raise HTTPException(status_code=429, detail=quota["reason"])
+
+    structure_src, load_src = _find_mooring_fitting_sample_csvs()
+    work_dir, timestamp = make_work_dir(employee_id, "MooringFitting")
+    structure_path = os.path.join(work_dir, "MooringFittingData.csv")
+    load_path = os.path.join(work_dir, "MooringFittingDataLoad.csv")
+    try:
+        shutil.copyfile(structure_src, structure_path)
+        shutil.copyfile(load_src, load_path)
+    except OSError as exc:
+        _cleanup_owned_workspace(work_dir, employee_id)
+        raise HTTPException(status_code=500, detail=f"샘플 CSV 복사 실패: {exc}") from exc
+
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "MooringFitting", "MooringFitting.exe",
+    ))
+    job_id = submit_analysis_job(
+        task_execute_mooring_fitting,
+        structure_path, load_path, work_dir, exe_path,
+        employee_id, timestamp, SAMPLE_SOURCE_TAG, 1.25,
+        queue_message="샘플 CSV 해석 대기 중...",
+        owned_work_dir=work_dir,
+    )
+    if not quota["is_admin"]:
+        _consume_sample_quota("mooring-fitting", employee_id)
+    return {
+        "job_id": job_id,
+        "source": SAMPLE_SOURCE_TAG,
+        "remaining": SAMPLE_DAILY_LIMIT if quota["is_admin"] else 0,
+        "is_admin": quota["is_admin"],
+    }
+
+
 @router.post("/analysis/mooring-fitting/request")
 async def request_mooring_fitting(
         structure_file: UploadFile = File(...),
