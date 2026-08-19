@@ -10,6 +10,7 @@ import re
 
 from ..analysis_passport import build_analysis_passport
 from ..program_registry import PROGRAM_SPECS, resolve_program
+from . import verdict_vocab
 from .adapters import generic_adapter, get_adapter
 from .models import ReportDoc, ReportField, ReportMeta, ReportSection
 from .payload import collect_payload
@@ -26,17 +27,18 @@ _COMPLETED_STATUSES: frozenset[str] = frozenset({"success", "완료", "completed
 #    덤으로 2단계에서 문구가 거짓이 될 지뢰도 사라진다 — template_applied 가 표지를 몰고 간다.
 
 
-# 표지(renderers.generic_xlsx._verdict_cell)와 판정 시트가 같은 낱말을 써야 한다.
-# 실제 리포트에서 표지는 '판정 미확정', 판정 시트는 '판정 없음' 이 나와
-# 승인자가 서로 다른 상태로 읽을 수 있었다.
-_UNDETERMINED = "판정 미확정"
+# 표지(renderers.generic_xlsx._verdict_cell)와 판정 시트가 반드시 같은 낱말을 써야 한다.
+# 실제 리포트에서 표지는 '판정 미확정', 판정 시트는 '판정 없음' 으로 갈려
+# 승인자가 서로 다른 상태로 읽을 수 있었다 — 그래서 단일 출처에서 가져온다.
+_UNDETERMINED = verdict_vocab.UNDETERMINED_VERDICT
 
-# 전용 어댑터가 없는 App 은 최상위 판정 키가 없으면 판정을 못 만든다.
-# 그때 주황색 '판정 미확정' 만 덩그러니 두면 도구가 고장 난 것처럼 보인다 —
-# 실제로 Mast Post 는 후보가 전부 통과했는데도 미확정으로 나왔다.
-# 추측해서 합격을 찍지는 않되(거짓 합격이 최악이다), 왜 비었는지는 말해 준다.
+# 판정이 나와야 정상인 App 인데 근거를 못 읽은 경우.
+# 주황색 경고만 덩그러니 두면 도구가 고장 난 것처럼 보인다 — 실제로 Mast Post 는
+# 후보가 전부 통과했는데도 미확정으로 나왔다. 추측해서 합격을 찍지는 않되
+# (거짓 합격이 최악이다), 왜 비었고 어디를 봐야 하는지는 말해 준다.
+# ⚠️ 판정 개념이 없는 App(verdict_kind="none")에는 이 문구도, 판정 칸도 뜨지 않는다.
 _NO_VERDICT_NOTICE = (
-    "이 App 은 종합 판정을 표기하지 않습니다 — 개별 검토 결과는 '해석 결과' 시트를 확인하세요."
+    "판정 근거를 찾지 못했습니다 — 개별 검토 결과는 '해석 결과' 시트에서 직접 확인하세요."
 )
 
 
@@ -53,7 +55,7 @@ class ReportNotAvailable(Exception):
     """리포트를 만들 수 없는 레코드 (미완료·결과 없음·계산서 대상 아님)."""
 
 
-def _meta_for(record, program_id: str, display_name: str) -> ReportMeta:
+def _meta_for(record, program_id: str, display_name: str, verdict_kind: str) -> ReportMeta:
     return ReportMeta(
         program_id=program_id,
         display_name=display_name,
@@ -62,6 +64,7 @@ def _meta_for(record, program_id: str, display_name: str) -> ReportMeta:
         employee_id=record.employee_id,
         created_at=record.created_at,
         status=record.status,
+        verdict_kind=verdict_kind,
     )
 
 
@@ -121,9 +124,9 @@ def build_report_doc(record, *, user_connection_base: str) -> ReportDoc:
     display_name = spec.display_name
 
     payload = collect_payload(record, user_connection_base=user_connection_base)
-    meta = _meta_for(record, program_id, display_name)
+    meta = _meta_for(record, program_id, display_name, spec.verdict_kind)
 
-    adapter = get_adapter(spec.report_adapter if spec else None)
+    adapter = get_adapter(spec.report_adapter)
     notices: tuple[str, ...] = ()
     try:
         doc = adapter(payload, meta)
@@ -150,15 +153,20 @@ def build_report_doc(record, *, user_connection_base: str) -> ReportDoc:
             "근거 파일 계보를 조회하지 못했습니다 — 산출물 유무는 이 계산서로 판단할 수 없습니다.",
         )
 
+    # 판정 개념이 없는 App(허용하중·단면 특성 산출 등)에는 판정 칸을 만들지 않는다.
+    # 사용자가 표지에서 본 「판정 : 판정 미확정」 이 정확히 이 경우였다 —
+    # 판정할 것이 없는데 판정이 비어 있는 것처럼 보였다.
+    has_verdict_row = spec.verdict_kind == "required"
+
     # 전용 어댑터가 판정을 비운 경우(예: truss 의 커버리지 부족)는 그 어댑터가 이미
     # 자기 사유를 notices 에 남긴다. 여기서는 generic 경로에서만 설명을 보탠다.
-    if doc.verdict is None and (spec is None or not spec.report_adapter):
+    if has_verdict_row and doc.verdict is None and not spec.report_adapter:
         notices = (*notices, _NO_VERDICT_NOTICE)
 
     sections = (
         # ordered_sections() 가 STANDARD_SECTION_ORDER 로 다시 정렬하므로 여기 순서는 무의미하다.
         *doc.sections,
-        _verdict_section(doc.verdict),
+        *((_verdict_section(doc.verdict),) if has_verdict_row else ()),
         _provenance_section(passport, lookup_failed=passport_failed),
     )
 

@@ -1,6 +1,7 @@
 """GenericRenderer — ReportDoc 을 XLSX bytes 로."""
 import io
 import zipfile
+from dataclasses import replace
 
 import pytest
 
@@ -48,6 +49,10 @@ def _doc(**overrides) -> ReportDoc:
             ),
         ),
     )
+    # verdict_kind 는 ReportDoc 이 아니라 meta 에 산다 — 어느 App 인가에 딸린 성질이라.
+    verdict_kind = overrides.pop("verdict_kind", None)
+    if verdict_kind is not None:
+        base["meta"] = replace(base["meta"], verdict_kind=verdict_kind)
     base.update(overrides)
     return ReportDoc(**base)
 
@@ -167,15 +172,28 @@ def test_wide_table_columns_are_sized_to_their_content():
 
 
 def test_undetermined_verdict_is_written_out_not_left_blank():
-    """빈 칸은 '아직 안 채운 항목'처럼 보인다 — 판정 불가와 구분되어야 한다."""
+    """빈 칸은 '아직 안 채운 항목'처럼 보인다 — 판정 불가와 구분되어야 한다.
+
+    문구는 '미확정'(상태 설명)이 아니라 '확인 필요'(행동 요구)다 —
+    판정이 나와야 정상인 App 에서만 뜨므로 사람이 할 일이 분명하다.
+    """
     ws = _load(render_generic_xlsx(_doc(verdict=None)))["표지"]
-    assert "판정 미확정" in [cell.value for cell in _cells(ws)]
+    assert "확인 필요" in [cell.value for cell in _cells(ws)]
 
 
 def test_undetermined_verdict_is_marked_as_a_caution_not_a_pass():
     ws = _load(render_generic_xlsx(_doc(verdict=None)))["표지"]
-    cell = next(c for c in _cells(ws) if c.value == "판정 미확정")
+    cell = next(c for c in _cells(ws) if c.value == "확인 필요")
     assert cell.font.color.rgb.endswith("CC6600")
+
+
+def test_cover_omits_the_verdict_row_when_the_app_has_no_verdict():
+    """판정 개념이 없는 App 에 판정 칸을 두면 그 자체가 혼동이다."""
+    doc = _doc(verdict=None, verdict_kind="none")
+    ws = _load(render_generic_xlsx(doc))["표지"]
+    values = [cell.value for cell in _cells(ws)]
+    assert "판정" not in values
+    assert "확인 필요" not in values
 
 
 def test_first_table_header_row_is_frozen():

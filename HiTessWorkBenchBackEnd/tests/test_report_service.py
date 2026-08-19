@@ -151,26 +151,30 @@ def test_cover_and_verdict_sheet_use_the_same_wording(tmp_path):
     한 문서 안에서 같은 사실에 두 문구를 쓰면 승인자가 서로 다른 상태로 읽는다.
     단위 테스트가 두 곳을 따로만 봐서 실제 리포트를 열기 전까지 드러나지 않았다.
     """
-    _, data = build_report_xlsx(_record(result_info={"note": "판정 키 없음"}),
-                                user_connection_base=str(tmp_path))
+    _, data = build_report_xlsx(
+        _record(program_name="Mast Post Assessment", result_info={"note": "판정 키 없음"}),
+        user_connection_base=str(tmp_path),
+    )
     wb = openpyxl.load_workbook(io.BytesIO(data))
 
     cover = [c.value for row in wb["표지"].iter_rows() for c in row]
     verdict_sheet = [c.value for row in wb["판정"].iter_rows() for c in row]
 
-    assert "판정 미확정" in cover
-    assert "판정 미확정" in verdict_sheet
-    assert "판정 없음" not in cover + verdict_sheet
+    assert "확인 필요" in cover
+    assert "확인 필요" in verdict_sheet
+    assert not any(v in ("판정 없음", "판정 미확정") for v in cover + verdict_sheet)
 
 
 def test_generic_path_explains_why_the_verdict_is_blank(tmp_path):
-    """통과한 해석이 이유 없는 주황색 '미확정' 으로만 나오면 도구가 고장 난 것처럼 보인다."""
-    _, data = build_report_xlsx(_record(result_info={"note": "판정 키 없음"}),
-                                user_connection_base=str(tmp_path))
+    """통과한 해석이 이유 없는 주황색 경고로만 나오면 도구가 고장 난 것처럼 보인다."""
+    _, data = build_report_xlsx(
+        _record(program_name="Mast Post Assessment", result_info={"note": "판정 키 없음"}),
+        user_connection_base=str(tmp_path),
+    )
     wb = openpyxl.load_workbook(io.BytesIO(data))
     values = [c.value for row in wb["표지"].iter_rows() for c in row]
 
-    assert any(isinstance(v, str) and "종합 판정을 표기하지 않습니다" in v for v in values)
+    assert any(isinstance(v, str) and "판정 근거를 찾지 못했습니다" in v for v in values)
 
 
 def test_capabilities_lists_registered_programs():
@@ -208,3 +212,33 @@ def test_refuses_an_app_that_is_not_a_report_target(tmp_path):
     record = _record(program_name="HiTessModelBuilder", result_info={"bdf": "x.bdf"})
     with pytest.raises(ReportNotAvailable):
         build_report_xlsx(record, user_connection_base=str(tmp_path))
+
+
+def test_no_verdict_row_for_an_app_that_has_no_verdict_concept(tmp_path):
+    """허용하중 계산서에 '판정' 칸이 있으면 그 자체가 혼동이다.
+
+    사용자가 표지에서 본 「판정 : 판정 미확정」 이 바로 이 경우였다 —
+    판정할 것이 없는 App 인데 판정 칸이 비어 있는 것처럼 보였다.
+    """
+    _, data = build_report_xlsx(
+        _record(program_name="Column Buckling Load Calculator"),
+        user_connection_base=str(tmp_path),
+    )
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+
+    assert "판정" not in wb.sheetnames
+    cover = [c.value for row in wb["표지"].iter_rows() for c in row]
+    assert "판정" not in cover
+
+
+def test_missing_verdict_on_an_assessment_app_asks_for_a_check(tmp_path):
+    """판정이 있어야 하는 App 에서 못 읽었을 때만 경고를 띄운다 — 그래야 진짜 신호다."""
+    _, data = build_report_xlsx(
+        _record(program_name="Mast Post Assessment", result_info={"note": "판정 키 없음"}),
+        user_connection_base=str(tmp_path),
+    )
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    cover = [c.value for row in wb["표지"].iter_rows() for c in row]
+
+    assert "확인 필요" in cover
+    assert any(isinstance(v, str) and "판정 근거를 찾지 못했습니다" in v for v in cover)

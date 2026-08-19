@@ -17,3 +17,10 @@ WARNING_TOKENS: frozenset[str] = frozenset({
 POSITIVE_TOKENS: frozenset[str] = frozenset({
     "ok", "pass", "passed", "safe", "합격", "적합",
 })
+
+# 판정이 나와야 정상인 App 인데 근거를 못 읽었을 때의 문구.
+# ⚠️ 표지(렌더러)와 판정 시트(서비스)가 반드시 같은 낱말을 써야 한다 —
+#    실제로 '판정 미확정' / '판정 없음' 으로 갈려 승인자가 서로 다른 상태로 읽었다.
+# '미확정'(상태 설명)이 아니라 '확인 필요'(행동 요구)를 쓴다. 판정 개념이 없는 App
+# 에는 애초에 이 칸이 뜨지 않으므로, 이 문구가 보이면 사람이 볼 일이 실제로 있다.
+UNDETERMINED_VERDICT = "확인 필요"

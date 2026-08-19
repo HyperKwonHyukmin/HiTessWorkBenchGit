@@ -51,6 +51,10 @@ class ReportMeta:
     employee_id: str
     created_at: datetime | None
     status: str | None
+    # program_registry.ProgramSpec.verdict_kind 를 그대로 옮겨 온다.
+    # "none" 이면 렌더러가 표지의 판정 행과 판정 시트를 아예 만들지 않는다 —
+    # 판정할 것이 없는 App 에 빈 판정 칸을 두면 그 자체가 혼동이다.
+    verdict_kind: str = "required"
 
 
 @dataclass(frozen=True, slots=True)

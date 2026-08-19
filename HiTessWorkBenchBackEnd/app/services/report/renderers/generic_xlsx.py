@@ -133,12 +133,15 @@ def _row_status(row, columns: tuple[str, ...]) -> str | None:
 def _verdict_cell(verdict: str | None):
     """판정 칸의 표기와 글꼴.
 
-    비어 있으면 '판정 미확정'이라고 분명히 적는다 — 빈 칸은 '아직 안 채운 항목'처럼
+    비어 있으면 '확인 필요'라고 분명히 적는다 — 빈 칸은 '아직 안 채운 항목'처럼
     보여서 '판정할 근거가 없다'와 구분되지 않는다. 어댑터가 근거 부족을 이유로
     None 을 낸 노력이 렌더 층에서 도로 사라지면 안 된다.
+
+    문구는 서비스(판정 시트)와 같은 상수를 쓴다 — 두 곳에 따로 적어 두면
+    표지와 판정 시트가 같은 사실을 다른 낱말로 말하게 된다(실제로 그랬다).
     """
     if verdict is None:
-        return "판정 미확정", _WARN_FONT
+        return verdict_vocab.UNDETERMINED_VERDICT, _WARN_FONT
     return verdict, _STATUS_FONT.get(_status_of(verdict), _BASE_FONT)
 
 
@@ -149,13 +152,16 @@ def _write_cover(ws, doc: ReportDoc) -> None:
     ws.column_dimensions["B"].width = 46
 
     verdict_text, verdict_font = _verdict_cell(doc.verdict)
+    # 판정 개념이 없는 App(허용하중·단면 특성 산출 등)에는 판정 행을 아예 두지 않는다.
+    # 빈 판정 칸은 '아직 안 나왔다'로 읽혀서, 판정할 것이 없다는 사실과 구분되지 않는다.
+    show_verdict = doc.meta.verdict_kind != "none"
     rows = [
         ("해석 App", doc.meta.display_name),
         ("프로젝트", doc.meta.project_name),
         ("수행자 사번", doc.meta.employee_id),
         ("수행 일시", doc.meta.created_at.strftime("%Y-%m-%d %H:%M") if doc.meta.created_at else None),
         ("작업 상태", doc.meta.status),
-        ("판정", verdict_text),
+        *([("판정", verdict_text)] if show_verdict else []),
         ("적용 양식", "사내 표준 양식" if doc.template_applied else "범용 서식"),
     ]
     row_ptr = 3

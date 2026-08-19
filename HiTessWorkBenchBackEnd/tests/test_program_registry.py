@@ -242,3 +242,30 @@ def test_hitess_modelflow_is_registered():
     spec = resolve_program("HiTessModelFlow")
     assert spec is not None
     assert spec.report_scope == "not-applicable"
+
+
+def test_property_calculators_declare_no_verdict():
+    """허용하중·단면 특성 산출은 합격/불합격을 내는 해석이 아니다.
+
+    이런 App 에 주황색 '판정 미확정' 을 띄우면 도구가 고장 난 것처럼 보인다.
+    """
+    for name in ("Column Buckling Load Calculator", "Section Property Calculator"):
+        spec = resolve_program(name)
+        assert spec is not None, name
+        assert spec.verdict_kind == "none", name
+
+
+def test_assessment_apps_require_a_verdict():
+    """판정이 있어야 정상인 App — 비어 있으면 '확인 필요' 라는 진짜 신호가 된다."""
+    for name in ("Truss Structural Assessment", "Mast Post Assessment", "D Type Lug Assessment"):
+        spec = resolve_program(name)
+        assert spec is not None, name
+        assert spec.verdict_kind == "required", name
+
+
+def test_verdict_kind_rejects_an_unknown_value():
+    with pytest.raises(ValueError):
+        ProgramSpec(
+            program_id="x", display_name="X", aliases=("X",),
+            capabilities=frozenset(), verdict_kind="probably",
+        )

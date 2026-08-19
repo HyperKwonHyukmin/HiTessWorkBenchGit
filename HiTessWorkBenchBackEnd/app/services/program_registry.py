@@ -18,6 +18,13 @@ from typing import Final
 #   not-applicable : 모델 생성·전처리·내부 단계라 애초에 계산서 대상이 아니다
 REPORT_SCOPES: Final = frozenset({"supported", "planned", "not-applicable"})
 
+# 이 App 이 종합 판정을 내는가.
+#   required : 판정이 나와야 정상. 비어 있으면 '확인 필요' 라는 진짜 경고가 된다.
+#   none     : 허용하중·단면 특성처럼 합격/불합격을 내지 않는다 → 판정 칸 자체를 안 만든다.
+# ⚠️ 기본값은 required 다. 새 App 을 등록하며 깜빡했을 때 판정 칸이 조용히 사라지는
+#    것보다, 눈에 보이는 '확인 필요' 가 뜨는 편이 안전하다.
+VERDICT_KINDS: Final = frozenset({"required", "none"})
+
 
 @dataclass(frozen=True, slots=True)
 class ProgramSpec:
@@ -32,6 +39,7 @@ class ProgramSpec:
     report_adapter: str | None = None
     report_template: str | None = None
     report_scope: str = "not-applicable"
+    verdict_kind: str = "required"
 
     def __post_init__(self) -> None:
         if not self.program_id or not self.aliases:
@@ -41,6 +49,10 @@ class ProgramSpec:
         if self.report_scope not in REPORT_SCOPES:
             raise ValueError(
                 f"Unknown report_scope {self.report_scope!r} in {self.program_id}"
+            )
+        if self.verdict_kind not in VERDICT_KINDS:
+            raise ValueError(
+                f"Unknown verdict_kind {self.verdict_kind!r} in {self.program_id}"
             )
 
 
@@ -56,6 +68,7 @@ def _spec(
     report_adapter: str | None = None,
     report_template: str | None = None,
     report_scope: str = "not-applicable",
+    verdict_kind: str = "required",
 ) -> ProgramSpec:
     # "report" capability 를 손으로 적지 않는다 — report_scope 와 두 출처가 되면
     # 한쪽만 고쳐 놓고 다른 쪽이 옛말을 하는 드리프트가 생긴다. 여기서 파생시킨다.
@@ -72,6 +85,7 @@ def _spec(
         report_adapter=report_adapter,
         report_template=report_template,
         report_scope=report_scope,
+        verdict_kind=verdict_kind,
     )
 
 
@@ -232,10 +246,12 @@ PROGRAM_SPECS: Final[tuple[ProgramSpec, ...]] = (
         report_scope="supported",
     ),
     _spec(
+        # 허용 하중을 산출할 뿐 합격/불합격을 내지 않는다 → 판정 칸을 만들지 않는다.
         "column-buckling", "Column Buckling Load Calculator",
         capabilities=("calculator", "passport"),
         input_keys=("input_json",),
         report_scope="supported",
+        verdict_kind="none",
     ),
     _spec(
         "mast-post", "Mast Post Assessment",
@@ -263,10 +279,12 @@ PROGRAM_SPECS: Final[tuple[ProgramSpec, ...]] = (
         report_scope="supported",
     ),
     _spec(
+        # 단면 특성(면적·단면2차모멘트 등) 계산이라 판정 대상이 아니다.
         "section-property", "Section Property Calculator",
         capabilities=("calculator", "passport"),
         input_keys=("input_json",),
         report_scope="supported",
+        verdict_kind="none",
     ),
     _spec(
         "module-stability", "ModuleStability",
