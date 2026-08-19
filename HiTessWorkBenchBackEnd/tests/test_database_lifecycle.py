@@ -156,6 +156,7 @@ def test_create_app_preserves_critical_route_and_mount_contracts():
         "/api/health/live",
         "/api/health/ready",
         "/api/system/capabilities",
+        "/api/presentations/hitess-launch-deck",
         "/static/inhouse/d-type-lug",
         "/static/videos",
     }.issubset(paths)

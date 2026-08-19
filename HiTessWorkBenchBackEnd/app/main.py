@@ -33,6 +33,7 @@ from .routers import (
     hole_calculation,
     model_registry,
     newsletters,
+    presentations,
     presence,
     reports,
     section_property,
@@ -201,6 +202,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(activity.router)
     application.include_router(viewers.router)
     application.include_router(newsletters.router)
+    application.include_router(presentations.router)
     application.include_router(presence.router)
     application.include_router(chat.router)
     application.include_router(app_settings.router)

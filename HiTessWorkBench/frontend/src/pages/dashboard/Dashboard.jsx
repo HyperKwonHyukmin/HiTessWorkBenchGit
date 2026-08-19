@@ -11,11 +11,11 @@ import { getSessionContext } from '../../api/auth';
 import {
   Activity, FileText, Server,
   Star, CalendarDays, Database, Map, Rocket,
-  Wrench, Clock, X, ChevronRight, ChevronDown, Layers, Cpu, Maximize2, Trophy, SlidersHorizontal,
+  Wrench, Clock, X, ChevronRight, ChevronDown, Layers, Maximize2, Trophy, SlidersHorizontal,
   Megaphone, Pin, Sparkles, Play, GripVertical, ArrowLeft, ArrowRight, Check
 } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
-import { findAppByProgramName, getAppMenuName, getDisplayProgramName, useAnalysisPageState, useAppCatalogue, useFavorites } from '../../contexts/DashboardContext';
+import { findAppByAnyName, findAppByProgramName, getAppMenuName, getDisplayProgramName, useAnalysisPageState, useAppCatalogue, useFavorites } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -41,6 +41,7 @@ const MODE_KO = {
 };
 
 const DASHBOARD_CARD_BASE = "relative bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-200 group";
+const FAVORITE_WINDOW_SIZE = 4;
 
 const DEV_STATUS_BADGE = {
   Active: { variant: 'success', label: '운영' },
@@ -328,74 +329,41 @@ const ProjectRow = ({ id, name, type, status, date, onOpen, className = '' }) =>
   );
 };
 
-// 소개 배너 테마. 짙은 네이비는 상단 overview에 집중시키고,
-// 하단 보조 영역은 밝은 작업면 계열로 맞춘다.
-const BANNER_THEMES = {
-  platform: {
-    gradient: 'linear-gradient(135deg, #ffffff 0%, #f8fbff 58%, #eef6ff 100%)',
-    DecorIcon: Layers,
-    decorIconClass: 'text-blue-900/[0.035]',
-    bgOverlay: 'bg-gradient-to-r from-blue-50/40 via-transparent to-transparent',
-    iconBg: 'bg-blue-50 border-blue-100 group-hover:bg-blue-100',
-    iconColor: 'text-blue-700',
-    titleColor: 'text-slate-900',
-    ctaColor: 'text-blue-700 group-hover:text-blue-800',
-    subtitleColor: 'text-slate-500',
-  },
-  workbench: {
-    gradient: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 58%, #f1f5f9 100%)',
-    DecorIcon: Cpu,
-    decorIconClass: 'text-slate-900/[0.035]',
-    bgOverlay: 'bg-gradient-to-r from-slate-50/70 via-transparent to-transparent',
-    iconBg: 'bg-slate-50 border-slate-200 group-hover:bg-slate-100',
-    iconColor: 'text-slate-700',
-    titleColor: 'text-slate-900',
-    ctaColor: 'text-slate-600 group-hover:text-blue-700',
-    subtitleColor: 'text-slate-500',
-  },
-};
-
-const DiscoverHiTessBanner = ({ variant = 'platform', title, subtitle, ctaText, MainIcon = Layers, onClick }) => {
-  const t = BANNER_THEMES[variant];
+// 서버에서 제공하는 단일 런칭 덱 진입점. 밝은 작업면 위에서 절제된
+// Trust Blue 계열만 사용해 로드맵 및 운영 카드와 시각적 위계를 맞춘다.
+const HiTessIntroBanner = ({ onClick }) => {
   return (
-    <motion.div
+    <motion.button
+      type="button"
       onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
-      className="relative rounded-xl overflow-hidden cursor-pointer group border border-slate-200 shadow-sm hover:border-blue-200 hover:shadow-md transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
-      style={{ background: t.gradient }}
+      className="relative w-full overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-white via-blue-50/30 to-blue-50/70 text-left shadow-sm transition-all hover:border-blue-200 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 group"
       whileHover={{ y: -2, transition: { type: 'spring', stiffness: 350, damping: 28 } }}
     >
-      {/* 배경 장식 (좌측 컬러 스트라이프 제거 — 절제된 네이비 카드) */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <t.DecorIcon size={120} className={`absolute -right-6 -bottom-6 ${t.decorIconClass} rotate-12`} />
-        <div className={`absolute inset-0 ${t.bgOverlay}`} />
+        <Layers size={120} className="absolute -right-6 -bottom-6 rotate-12 text-blue-900/[0.035]" />
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-50/40 via-transparent to-transparent" />
       </div>
 
       <div className="relative z-10 flex flex-row items-center gap-3 px-4 py-2.5">
-        {/* 아이콘 */}
-        <div className={`p-2 rounded-lg border group-hover:scale-110 transition-all shadow-md shrink-0 ${t.iconBg}`}>
-          <MainIcon size={18} className={t.iconColor} />
+        <div className="shrink-0 rounded-lg border border-blue-100 bg-blue-50 p-2 shadow-sm transition-all group-hover:scale-105 group-hover:bg-blue-100">
+          <Layers size={18} className="text-blue-700" />
         </div>
 
-        {/* 타이틀 (eyebrow 라벨 제거 — 제목·부제만으로 충분) */}
         <div className="min-w-0 flex-1">
-          <h3 className={`${t.titleColor} font-bold text-sm tracking-tight leading-tight truncate`}>
-            {title}
+          <h3 className="truncate text-sm font-bold leading-tight tracking-tight text-slate-900">
+            HiTESS WorkBench 소개
           </h3>
-          <p className={`${t.subtitleColor} text-[11px] truncate`}>
-            {subtitle}
+          <p className="truncate text-[11px] text-slate-500">
+            통합 해석 플랫폼과 주요 업무 흐름을 살펴보세요
           </p>
         </div>
 
-        {/* CTA 화살표 */}
-        <div className={`flex items-center gap-1 font-semibold text-xs shrink-0 transition-colors ${t.ctaColor}`}>
-          <span className="hidden lg:block whitespace-nowrap">{ctaText}</span>
+        <div className="flex shrink-0 items-center gap-1 text-xs font-semibold text-blue-700 transition-colors group-hover:text-blue-800">
+          <span className="hidden whitespace-nowrap lg:block">소개 보기</span>
           <ChevronRight size={15} className="group-hover:translate-x-0.5 transition-transform" />
         </div>
       </div>
-    </motion.div>
+    </motion.button>
   );
 };
 
@@ -1017,24 +985,77 @@ const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
     </Transition>
   );
 };
-function IntroModal({ isOpen, onClose, content, onRetry, modalTitle = 'Discover HiTESS', modalSubtitle = '차세대 조선해양 구조 해석 플랫폼 소개' }) {
+function IntroModal({ isOpen, onClose, src }) {
   const iframeRef = useRef(null);
+  const [loadState, setLoadState] = useState('idle');
+  const [loadError, setLoadError] = useState('');
+  const [retryKey, setRetryKey] = useState(0);
 
-  // 슬라이드 전환 시 history.pushState → Electron이 iframe에 blur 발생시키는 문제 대응
   useEffect(() => {
-    if (!isOpen || !content) return;
-    const iframe = iframeRef.current;
-    if (!iframe) return;
+    if (!isOpen) {
+      setLoadState('idle');
+      setLoadError('');
+      return undefined;
+    }
 
-    const handleBlur = () => {
-      requestAnimationFrame(() => {
-        if (document.contains(iframe)) iframe.focus();
-      });
+    const controller = new AbortController();
+    let active = true;
+    setLoadState('loading');
+    setLoadError('');
+
+    const timeoutId = window.setTimeout(() => {
+      if (!active) return;
+      controller.abort();
+      setLoadError('서버 응답 시간이 초과되었습니다.');
+      setLoadState('error');
+    }, 15000);
+
+    const verifyPresentation = async () => {
+      try {
+        const response = await fetch(src, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.toLowerCase().includes('text/html')) {
+          throw new Error('HTML 응답이 아닙니다.');
+        }
+        const html = await response.text();
+        if (!html.trim()) {
+          throw new Error('소개자료가 비어 있습니다.');
+        }
+        if (active) setLoadState('frame-loading');
+      } catch (error) {
+        if (!active || error?.name === 'AbortError') return;
+        console.error('소개자료 확인 실패:', error);
+        setLoadError(error?.message?.startsWith('HTTP ')
+          ? `서버가 소개자료를 제공하지 못했습니다. (${error.message})`
+          : '서버에서 소개자료를 불러오지 못했습니다.');
+        setLoadState('error');
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
     };
 
-    iframe.addEventListener('blur', handleBlur);
-    return () => iframe.removeEventListener('blur', handleBlur);
-  }, [isOpen, content]);
+    verifyPresentation();
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [isOpen, retryKey, src]);
+
+  useEffect(() => {
+    if (!isOpen || loadState !== 'frame-loading') return undefined;
+    const timeoutId = window.setTimeout(() => {
+      setLoadError('소개자료 화면을 여는 데 시간이 너무 오래 걸립니다.');
+      setLoadState('error');
+    }, 15000);
+    return () => window.clearTimeout(timeoutId);
+  }, [isOpen, loadState]);
 
   const handleFullscreen = () => {
     const iframe = iframeRef.current;
@@ -1043,12 +1064,8 @@ function IntroModal({ isOpen, onClose, content, onRetry, modalTitle = 'Discover 
     else if (iframe.webkitRequestFullscreen) iframe.webkitRequestFullscreen();
   };
 
-  const iframeProps = {
-    ref: iframeRef,
-    className: 'w-full h-full border-0',
-    title: 'Discover HiTESS',
-    onLoad: e => e.target.focus(),
-  };
+  const retry = () => setRetryKey(value => value + 1);
+  const canRenderFrame = loadState === 'frame-loading' || loadState === 'ready';
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -1080,21 +1097,27 @@ function IntroModal({ isOpen, onClose, content, onRetry, modalTitle = 'Discover 
                   </div>
                   <div>
                     <Dialog.Title className="text-white font-bold text-sm leading-tight">
-                      {modalTitle}
+                      HiTESS WorkBench 소개
                     </Dialog.Title>
-                    <p className="text-slate-300 text-[11px]">{modalSubtitle}</p>
+                    <p className="text-slate-300 text-[11px]">통합 해석 플랫폼 런칭 자료</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
+                    type="button"
                     onClick={handleFullscreen}
-                    title="전체화면 (F)"
-                    className="inline-flex items-center justify-center min-w-10 min-h-10 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                    title="소개자료 전체화면"
+                    aria-label="소개자료 전체화면"
+                    disabled={!canRenderFrame}
+                    className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
                   >
                     <Maximize2 size={16} />
                   </button>
                   <button
+                    type="button"
                     onClick={onClose}
+                    title="소개자료 닫기"
+                    aria-label="소개자료 닫기"
                     className="inline-flex items-center justify-center min-w-10 min-h-10 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                   >
                     <X size={18} />
@@ -1103,22 +1126,52 @@ function IntroModal({ isOpen, onClose, content, onRetry, modalTitle = 'Discover 
               </div>
 
               {/* iframe 본문 */}
-              <div className="flex-1 overflow-hidden bg-[#E8EDF5]">
-                {content ? (
-                  content.mode === 'srcdoc'
-                    ? <iframe {...iframeProps} srcdoc={content.value} sandbox="allow-scripts allow-same-origin" allowFullScreen />
-                    : <iframe {...iframeProps} src={content.value} allowFullScreen />
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4">
-                    <Layers size={48} className="text-slate-300" />
-                    <p className="text-sm font-bold">소개 페이지를 불러올 수 없습니다.</p>
-                    <p className="text-xs text-slate-500">Electron 앱을 재시작한 후 다시 시도해 주세요.</p>
-                    <button
-                      onClick={onRetry}
-                      className="mt-1 px-4 py-2 bg-brand-blue text-white text-xs font-bold rounded-lg hover:bg-brand-blue-dark transition-colors cursor-pointer"
-                    >
-                      다시 시도
-                    </button>
+              <div className="relative flex-1 overflow-hidden bg-[#E8EDF5]">
+                {canRenderFrame && (
+                  <iframe
+                    key={retryKey}
+                    ref={iframeRef}
+                    className={`h-full w-full border-0 transition-opacity duration-200 ${loadState === 'ready' ? 'opacity-100' : 'opacity-0'}`}
+                    src={src}
+                    title="HiTESS WorkBench 소개"
+                    sandbox="allow-scripts"
+                    allowFullScreen
+                    onLoad={() => {
+                      setLoadState('ready');
+                      iframeRef.current?.focus();
+                    }}
+                    onError={() => {
+                      setLoadError('소개자료 화면을 열지 못했습니다.');
+                      setLoadState('error');
+                    }}
+                  />
+                )}
+
+                {loadState !== 'ready' && (
+                  <div className="absolute inset-0 flex items-center justify-center p-6">
+                    {loadState === 'error' ? (
+                      <div className="flex max-w-lg flex-col items-center gap-3 text-center" role="alert">
+                        <div className="rounded-full border border-red-200 bg-red-50 p-3">
+                          <Server size={28} className="text-red-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">소개자료를 불러올 수 없습니다.</p>
+                          <p className="mt-1 text-xs text-slate-600">{loadError}</p>
+                          <p className="mt-2 break-all font-mono text-[11px] text-slate-500">서버: {API_BASE_URL}</p>
+                        </div>
+                        <Button type="button" variant="primary" size="sm" onClick={retry}>
+                          다시 시도
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-3 text-center" role="status" aria-live="polite">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" aria-hidden="true" />
+                        <div>
+                          <p className="text-sm font-bold text-slate-700">소개자료를 불러오는 중입니다.</p>
+                          <p className="mt-1 font-mono text-[11px] text-slate-500">{API_BASE_URL}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1152,6 +1205,7 @@ export default function Dashboard() {
   const [isRoadmapModalOpen, setIsRoadmapModalOpen] = useState(false);
   const [gateApp, setGateApp] = useState(null); // 개발 중/예정 앱 진입 차단 모달
   const [isIntroModalOpen, setIsIntroModalOpen] = useState(false);
+  const [introPresentationUrl, setIntroPresentationUrl] = useState('');
   // 홍보영상 플레이어 모달 — 열릴 때만 <video>가 DOM에 마운트됨
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   // 뉴스레터 아카이브 모달
@@ -1164,11 +1218,42 @@ export default function Dashboard() {
   const [isNoticeDetailOpen, setIsNoticeDetailOpen] = useState(false);
   const [isEditingFavorites, setIsEditingFavorites] = useState(false);
   const [draggedFavorite, setDraggedFavorite] = useState(null);
-  // { mode: 'srcdoc', value: htmlString } | { mode: 'src', value: url } | null
-  const [introContent, setIntroContent] = useState(null);
-  const [introTarget, setIntroTarget] = useState('platform');
-  // target별 로드된 콘텐츠 캐시 (재열람 시 재요청 방지)
-  const introCache = useRef({});
+  const [favoriteWindowStart, setFavoriteWindowStart] = useState(0);
+
+  // 저장소에는 앱 이름 변경 전의 메뉴명/프로그램명이 남아 있을 수 있다.
+  // 먼저 현재 카탈로그 앱으로 해석한 뒤 창을 잘라야 유효한 카드가 항상 4개 채워진다.
+  const resolvedFavorites = favorites.reduce((items, storedTitle, sourceIndex) => {
+    const canonicalTitle = findAppByAnyName(storedTitle)?.title ?? storedTitle;
+    const app = catalogue.find(item => item.title === canonicalTitle);
+    if (app) items.push({ storedTitle, sourceIndex, app });
+    return items;
+  }, []);
+  const favoriteWindowMaxStart = Math.max(0, resolvedFavorites.length - FAVORITE_WINDOW_SIZE);
+  const visibleFavoriteWindowStart = Math.min(favoriteWindowStart, favoriteWindowMaxStart);
+  const visibleFavorites = resolvedFavorites.slice(
+    visibleFavoriteWindowStart,
+    visibleFavoriteWindowStart + FAVORITE_WINDOW_SIZE,
+  );
+  const hasFavoriteOverflow = resolvedFavorites.length > FAVORITE_WINDOW_SIZE;
+  const canShowPreviousFavorites = visibleFavoriteWindowStart > 0;
+  const canShowNextFavorites = visibleFavoriteWindowStart < favoriteWindowMaxStart;
+
+  useEffect(() => {
+    setFavoriteWindowStart(current => Math.min(
+      current,
+      Math.max(0, resolvedFavorites.length - FAVORITE_WINDOW_SIZE),
+    ));
+  }, [resolvedFavorites.length]);
+
+  const handleOpenIntroModal = () => {
+    setIntroPresentationUrl(`${API_BASE_URL}/api/presentations/hitess-launch-deck`);
+    setIsIntroModalOpen(true);
+  };
+
+  const handleCloseIntroModal = () => {
+    setIsIntroModalOpen(false);
+    setIntroPresentationUrl('');
+  };
 
   // 플랫폼 소개 배너: 기본적으로 접어둔다(매일 쓰는 사용자 우선). 사용자가 펼치면 그 선호를 저장해 다음 방문에 반영.
   const [introOpen, setIntroOpen] = useState(() => localStorage.getItem('dashboard_intro_open') === '1');
@@ -1177,45 +1262,6 @@ export default function Dashboard() {
     localStorage.setItem('dashboard_intro_open', next ? '1' : '0');
     return next;
   });
-
-  const handleDiscoverHiTess = async (target) => {
-    setIsIntroModalOpen(true);
-    setIntroTarget(target);
-    // 캐시 히트 시 즉시 표시
-    if (introCache.current[target]) {
-      setIntroContent(introCache.current[target]);
-      return;
-    }
-    setIntroContent(null);
-    try {
-      if (window.electron) {
-        // Electron: 파일을 문자열로 읽어 srcdoc 주입 (file:// iframe 보안 우회)
-        let html = await window.electron.invoke('get-intro-page-html', target);
-        if (html) {
-          // srcdoc iframe은 opaque origin → history.pushState가 SecurityError를 발생시켜
-          // _goSlide()의 cleanup 코드가 전혀 실행되지 않고 isAnimating이 영구 고정됨.
-          // pushState 호출을 try-catch로 감싸서 예외가 스크립트 실행을 중단하지 않도록 차단.
-          html = html.replace(
-            "if (location.hash !== h) history.pushState(null, '', h);",
-            "try { history.pushState(null, '', h); } catch(e) {}"
-          );
-          const content = { mode: 'srcdoc', value: html };
-          introCache.current[target] = content;
-          setIntroContent(content);
-        }
-      } else {
-        // 웹: Vite 플러그인이 서빙하는 경로 사용.
-        //   'platform'  → hitess-introduction.html (Discover HiTESS)
-        //   'workbench' → hitess-platform.html     (HiTESS WorkBench)
-        const fileName = target === 'workbench' ? 'hitess-platform.html' : 'hitess-introduction.html';
-        const content = { mode: 'src', value: `/IntroductionPage/${fileName}` };
-        introCache.current[target] = content;
-        setIntroContent(content);
-      }
-    } catch (err) {
-      console.error('소개 페이지 로드 실패:', err);
-    }
-  };
 
   const fetchTopProgramStats = async () => {
     setTopProgramsLoading(true);
@@ -1560,14 +1606,8 @@ export default function Dashboard() {
       </Transition>
       <IntroModal
         isOpen={isIntroModalOpen}
-        onClose={() => setIsIntroModalOpen(false)}
-        content={introContent}
-        onRetry={() => {
-          delete introCache.current[introTarget];
-          handleDiscoverHiTess(introTarget);
-        }}
-        modalTitle={introTarget === 'workbench' ? 'HiTESS WorkBench' : 'Discover HiTESS'}
-        modalSubtitle={introTarget === 'workbench' ? 'HiTESS WorkBench 해석 플랫폼 소개' : '차세대 조선해양 구조 해석 플랫폼 소개'}
+        onClose={handleCloseIntroModal}
+        src={introPresentationUrl}
       />
 
       {/* HiTESS Story 플레이어 모달 */}
@@ -1627,24 +1667,7 @@ export default function Dashboard() {
         <div className="flex flex-col gap-2">
           {/* 소개 배너 — 접이식(첫 방문만 펼침) */}
           {introOpen && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <DiscoverHiTessBanner
-                variant="platform"
-                title="Discover HiTESS"
-                subtitle="차세대 조선해양 구조 해석 플랫폼을 살펴보세요"
-                ctaText="살펴보기"
-                MainIcon={Layers}
-                onClick={() => handleDiscoverHiTess('platform')}
-              />
-              <DiscoverHiTessBanner
-                variant="workbench"
-                title="HiTESS WorkBench"
-                subtitle="해석 도구 모음과 생산성 도구를 경험해보세요"
-                ctaText="살펴보기"
-                MainIcon={Cpu}
-                onClick={() => handleDiscoverHiTess('workbench')}
-              />
-            </div>
+            <HiTessIntroBanner onClick={handleOpenIntroModal} />
           )}
           {/* 로드맵 배너 — 소개 토글과 함께 접이식(기본 접힘). 매일 쓰는 사용자 화면 압박 완화. */}
           {introOpen && (
@@ -1757,30 +1780,67 @@ export default function Dashboard() {
 
       {/* 즐겨찾기 */}
       <div className="shrink-0">
-        <div className="flex items-center justify-between mb-2">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <DashboardSectionTitle icon={Star} title="즐겨찾기" accent="favorite">
             {isEditingFavorites && (
               <p className="mt-1 text-xs text-slate-500">카드를 드래그하거나 화살표 버튼으로 순서를 변경하세요.</p>
             )}
           </DashboardSectionTitle>
-          {favorites.length > 1 && (
-            <Button
-              type="button"
-              variant={isEditingFavorites ? 'primary' : 'secondary'}
-              size="sm"
-              onClick={() => {
-                setIsEditingFavorites(value => !value);
-                setDraggedFavorite(null);
-              }}
-              className="rounded-lg"
-            >
-              {isEditingFavorites ? <Check size={14} /> : <GripVertical size={14} />}
-              {isEditingFavorites ? '편집 완료' : '순서 편집'}
-            </Button>
-          )}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {hasFavoriteOverflow && (
+              <div
+                className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
+                role="group"
+                aria-label="즐겨찾기 목록 이동"
+              >
+                <span className="min-w-[62px] px-1 text-center text-[11px] font-bold tabular-nums text-slate-500" aria-live="polite">
+                  {visibleFavoriteWindowStart + 1}–{Math.min(visibleFavoriteWindowStart + FAVORITE_WINDOW_SIZE, resolvedFavorites.length)} / {resolvedFavorites.length}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={!canShowPreviousFavorites}
+                  onClick={() => setFavoriteWindowStart(current => Math.max(0, current - 1))}
+                  className="h-8 w-8 !rounded-lg !p-0"
+                  aria-label="이전 즐겨찾기 보기"
+                  title="이전 즐겨찾기 보기"
+                >
+                  <ArrowLeft size={14} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={!canShowNextFavorites}
+                  onClick={() => setFavoriteWindowStart(current => Math.min(favoriteWindowMaxStart, current + 1))}
+                  className="h-8 w-8 !rounded-lg !p-0"
+                  aria-label="다음 즐겨찾기 보기"
+                  title="다음 즐겨찾기 보기"
+                >
+                  <ArrowRight size={14} />
+                </Button>
+              </div>
+            )}
+            {resolvedFavorites.length > 1 && (
+              <Button
+                type="button"
+                variant={isEditingFavorites ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => {
+                  setIsEditingFavorites(value => !value);
+                  setDraggedFavorite(null);
+                }}
+                className="rounded-lg"
+              >
+                {isEditingFavorites ? <Check size={14} /> : <GripVertical size={14} />}
+                {isEditingFavorites ? '편집 완료' : '순서 편집'}
+              </Button>
+            )}
+          </div>
         </div>
 
-        {favorites.length === 0 ? (
+        {resolvedFavorites.length === 0 ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-2xl border border-blue-200 bg-white p-5 text-center shadow-sm">
             <div className="p-4 bg-blue-50 rounded-full mb-4">
               <Star size={32} className="text-slate-300" />
@@ -1819,12 +1879,11 @@ export default function Dashboard() {
             animate="show"
             variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }}
           >
-            {favorites.map((favTitle, index) => {
-              const analysisInfo = catalogue.find(a => a.title === favTitle);
-              if (!analysisInfo) return null;
+            {visibleFavorites.map(({ storedTitle: favTitle, sourceIndex, app: analysisInfo }, visibleIndex) => {
+              const index = visibleFavoriteWindowStart + visibleIndex;
               return (
                 <FavoriteCard
-                  key={favTitle}
+                  key={`${favTitle}-${sourceIndex}`}
                   title={analysisInfo.title}
                   desc={analysisInfo.description}
                   mode={analysisInfo.mode}
@@ -1832,12 +1891,12 @@ export default function Dashboard() {
                   icon={analysisInfo.icon}
                   color={analysisInfo.color}
                   onClick={() => handleFavoriteClick(analysisInfo.title)}
-                  onFavoriteRemove={() => toggleFavorite(analysisInfo.title)}
+                  onFavoriteRemove={() => toggleFavorite(favTitle)}
                   isEditing={isEditingFavorites}
                   position={index}
-                  total={favorites.length}
-                  onMoveLeft={() => reorderFavorite(favTitle, favorites[index - 1])}
-                  onMoveRight={() => reorderFavorite(favTitle, favorites[index + 1])}
+                  total={resolvedFavorites.length}
+                  onMoveLeft={() => reorderFavorite(favTitle, resolvedFavorites[index - 1]?.storedTitle)}
+                  onMoveRight={() => reorderFavorite(favTitle, resolvedFavorites[index + 1]?.storedTitle)}
                   onDragStart={(event) => {
                     setDraggedFavorite(favTitle);
                     event.dataTransfer.effectAllowed = 'move';

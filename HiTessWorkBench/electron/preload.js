@@ -26,7 +26,6 @@ const VALID_RECEIVE_CHANNELS = [
 const VALID_INVOKE_CHANNELS  = [
   'list-dir-csvs',
   'read-file-buffer',
-  'get-intro-page-html',
   'download-client',
   'start-self-update',
   'preferences:get',

@@ -499,27 +499,6 @@ ipcMain.handle("start-self-update", (event, payload) => {
   });
 });
 
-ipcMain.handle("get-intro-page-html", (_evt, which) => {
-  // 대시보드 두 배너의 매핑:
-  //   'platform'  → hitess-introduction.html  (Discover HiTESS 버튼)
-  //   'workbench' → hitess-platform.html      (HiTESS WorkBench 버튼)
-  const fileName = which === "workbench" ? "hitess-platform.html" : "hitess-introduction.html";
-  // 패키지된 .exe 는 process.resourcesPath 아래 IntroductionPage/ 를 우선 시도하고,
-  // 실패 시 app.asar 내부(레거시 빌드 호환)로 폴백. dev 모드는 워크스페이스 루트.
-  const candidates = app.isPackaged
-    ? [
-        path.join(process.resourcesPath, "IntroductionPage", fileName),
-        path.join(__dirname, "../IntroductionPage/", fileName),
-      ]
-    : [path.join(__dirname, "../IntroductionPage/", fileName)];
-  for (const p of candidates) {
-    try {
-      return fs.readFileSync(p, "utf-8");
-    } catch {}
-  }
-  return null;
-});
-
 // 지정 폴더의 CSV 파일 목록 반환
 ipcMain.handle("list-dir-csvs", (_, dirPath) => {
   try {
