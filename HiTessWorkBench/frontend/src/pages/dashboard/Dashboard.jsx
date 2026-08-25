@@ -1426,7 +1426,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-3 overflow-hidden animate-fade-in-up xl:gap-4">
+    <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-3 animate-fade-in-up xl:gap-4">
 
       <div className="shrink-0 overflow-hidden rounded-2xl border border-brand-blue/10 bg-gradient-to-r from-brand-blue via-[#07315d] to-slate-900 shadow-sm">
         <div className="relative px-5 py-4">
@@ -1923,13 +1923,10 @@ export default function Dashboard() {
       </div>
 
       {/* 프로젝트 이력 */}
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="shrink-0">
         <div className="flex items-center justify-between mb-2">
           <DashboardSectionTitle icon={Clock} title="프로젝트 이력" accent="history" />
           <div className="flex items-center gap-2">
-            <span className="hidden text-[11px] font-bold text-slate-500 [@media(max-height:900px)]:inline">
-              최근 5건 중 화면 높이에 맞춰 표시
-            </span>
             <button onClick={() => setCurrentMenu('My Projects')} className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer">
               전체 이력 보기 →
             </button>
@@ -1976,7 +1973,7 @@ export default function Dashboard() {
                     <td colSpan="5" className="py-8 text-center text-slate-500 text-sm">최근 수행된 프로젝트 내역이 없습니다.</td>
                   </tr>
                 ) : (
-                  projects.slice(0, 5).map((project, index) => (
+                  projects.slice(0, 5).map((project) => (
                     <ProjectRow
                       key={project.id}
                       id={project.id}
@@ -1985,13 +1982,6 @@ export default function Dashboard() {
                       status={project.status}
                       date={project.created_at}
                       onOpen={() => handleOpenProjectDetail(project)}
-                      className={
-                        index >= 4
-                          ? '[@media(max-height:900px)]:hidden'
-                          : index >= 3
-                            ? '[@media(max-height:780px)]:hidden'
-                            : ''
-                      }
                     />
                   ))
                 )}

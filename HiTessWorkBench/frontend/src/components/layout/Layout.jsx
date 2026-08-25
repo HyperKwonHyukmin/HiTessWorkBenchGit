@@ -341,11 +341,10 @@ export default function Layout({
           </div>
         </header>
 
-        <main className={`flex-1 p-4 sm:p-5 lg:p-6 bg-surface min-w-0 ${
-          currentMenu === 'Dashboard'
-            ? 'overflow-hidden'
-            : 'overflow-y-auto [scrollbar-gutter:stable]'
-        }`}>
+        {/* 모든 페이지 동일하게 세로 스크롤 허용. 과거 Dashboard 만 overflow-hidden 이라
+            낮은 해상도(또는 Windows 배율 125~150%)에서 하단 "프로젝트 이력" 표가
+            스크롤바도 없이 잘려 나갔다. 내용이 화면에 들어가면 스크롤은 나타나지 않는다. */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6 bg-surface min-w-0 [scrollbar-gutter:stable]">
           {children}
         </main>
       </div>
