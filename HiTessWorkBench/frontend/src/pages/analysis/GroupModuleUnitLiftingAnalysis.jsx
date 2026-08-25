@@ -19,7 +19,7 @@ import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.126';
+const MODULE_STUDIO_VERSION = '0.0.128';
 
 // ── 상태 설정 (HiTessModelBuilder와 동일) ─────────────────────
 const STATUS_CONFIG = {
