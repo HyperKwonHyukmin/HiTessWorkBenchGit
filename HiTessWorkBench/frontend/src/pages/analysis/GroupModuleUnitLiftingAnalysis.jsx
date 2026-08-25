@@ -827,7 +827,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
         title="Group & Module Unit 권상 구조 해석"
         subtitle="Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다."
         icon={UploadCloud}
-        guideTitle="[파일] Group & Module Unit 권상 구조 해석"
+        htmlGuide="posture-stability"
         onBack={() => setCurrentMenu('File-Based Apps')}
       />
 

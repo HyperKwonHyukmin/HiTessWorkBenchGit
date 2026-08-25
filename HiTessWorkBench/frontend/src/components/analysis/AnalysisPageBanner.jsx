@@ -11,6 +11,7 @@ export default function AnalysisPageBanner({
   subtitle,
   icon: Icon,
   guideTitle,
+  htmlGuide,
   onBack,
   backLabel = '이전 페이지로 돌아가기',
   gradient = DEFAULT_GRADIENT,
@@ -45,7 +46,9 @@ export default function AnalysisPageBanner({
       <div className="flex items-center gap-2 shrink-0">
         <AppUsageStatsButton appName={statsProgramName || title} />
         {actions}
-        {guideTitle && <GuideButton guideTitle={guideTitle} variant="dark" />}
+        {(guideTitle || htmlGuide) && (
+          <GuideButton guideTitle={guideTitle} htmlGuide={htmlGuide} variant="dark" />
+        )}
       </div>
     </PageBanner>
   );

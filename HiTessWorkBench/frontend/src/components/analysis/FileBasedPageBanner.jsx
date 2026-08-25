@@ -8,6 +8,7 @@ export default function FileBasedPageBanner({
   subtitle,
   icon: Icon,
   guideTitle,
+  htmlGuide,
   onBack,
   gradient = DEFAULT_GRADIENT,
   actions,
@@ -18,6 +19,7 @@ export default function FileBasedPageBanner({
       subtitle={subtitle}
       icon={Icon}
       guideTitle={guideTitle}
+      htmlGuide={htmlGuide}
       onBack={onBack}
       backLabel="File-Based Apps로 돌아가기"
       gradient={gradient}

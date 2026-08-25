@@ -32,6 +32,8 @@ const SIZE_CLASSES = {
  * @param {string}           [props.headerBg='bg-brand-blue'] - 헤더 배경 클래스
  * @param {'sm'|'md'|'lg'|'xl'|'full'} [props.size='md']     - 모달 최대 너비
  * @param {React.ReactNode}  props.children          - 모달 본문 콘텐츠
+ * @param {boolean}          [props.fullscreen=false] - true 면 화면을 꽉 채운다 (여백·라운드 제거)
+ * @param {React.ReactNode}  [props.headerActions]   - 헤더 우측, 닫기 버튼 왼쪽에 놓을 추가 컨트롤
  * @param {React.ReactNode}  [props.footer]          - 모달 하단 푸터 콘텐츠 (선택적)
  */
 export default function Modal({
@@ -40,6 +42,8 @@ export default function Modal({
   title,
   headerBg = 'bg-brand-blue',
   size = 'md',
+  fullscreen = false,
+  headerActions,
   children,
   footer,
 }) {
@@ -67,7 +71,7 @@ export default function Modal({
         </TransitionChild>
 
         {/* ── 모달 패널 위치 정렬 ── */}
-        <div className="fixed inset-0 flex items-center justify-center p-4">
+        <div className={`fixed inset-0 flex items-center justify-center ${fullscreen ? '' : 'p-4'}`}>
           <TransitionChild
             as={Fragment}
             enter="ease-out duration-200"
@@ -86,9 +90,10 @@ export default function Modal({
             <Dialog.Panel
               className={[
                 'relative flex w-full flex-col',
-                maxWidthClass,
-                'max-h-[calc(100vh-2rem)]',
-                'bg-white rounded-2xl shadow-2xl overflow-hidden',
+                'bg-white shadow-2xl overflow-hidden',
+                fullscreen
+                  ? 'max-w-none h-full rounded-none'
+                  : `${maxWidthClass} max-h-[calc(100vh-2rem)] rounded-2xl`,
               ].join(' ')}
             >
               {/* ── 헤더 ── */}
@@ -97,14 +102,18 @@ export default function Modal({
                   {title}
                 </Dialog.Title>
 
-                {/* X 닫기 버튼 */}
-                <button
-                  onClick={onClose}
-                  className="text-white/70 hover:text-white hover:bg-white/10 rounded-lg p-1 transition-colors outline-none cursor-pointer"
-                  aria-label="모달 닫기"
-                >
-                  <X size={18} />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {headerActions}
+
+                  {/* X 닫기 버튼 */}
+                  <button
+                    onClick={onClose}
+                    className="text-white/70 hover:text-white hover:bg-white/10 rounded-lg p-1 transition-colors outline-none cursor-pointer"
+                    aria-label="모달 닫기"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
               {/* ── 본문 콘텐츠 (min-h-0 이 있어야 flex 자식이 실제로 줄어든다) ── */}
