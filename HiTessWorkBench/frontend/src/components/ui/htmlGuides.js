@@ -9,6 +9,9 @@
 ///   원본을 고치면 이 사본도 반드시 같이 덮어써야 한다. 자동 동기화는 없다.
 ///   posture-stability 원본:
 ///     C:\Coding\WorkBenchSubModule\ModuleUnitAnalysis\docs\posture-stability-user-guide.html
+///   doublepipe-fuelline: 엔진(InHouseProgram/DoublePipe/)이 git 미추적이라 별도 원본 저장소가 없다.
+///     여기 있는 것이 정본이고, 엔진 폴더의 같은 이름 파일이 공동 개발자용 사본이다.
+///     InHouseProgram/DoublePipe/doublepipe-fuelline-user-guide.html
 /// </summary>
 
 /**
@@ -33,6 +36,12 @@ export const HTML_GUIDES = {
     title: '권상 자세안정성 평가 기준',
     load: () =>
       import('../../assets/guides/posture-stability-user-guide.html?raw')
+        .then(m => forceLightTheme(m.default)),
+  },
+  'doublepipe-fuelline': {
+    title: '이중관 연료배관 해석 파이프라인',
+    load: () =>
+      import('../../assets/guides/doublepipe-fuelline-user-guide.html?raw')
         .then(m => forceLightTheme(m.default)),
   },
 };

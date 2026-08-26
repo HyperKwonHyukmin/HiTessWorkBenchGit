@@ -1730,7 +1730,7 @@ export default function DoublePipeFuelLineAssessment() {
         title="이중관 구조 연료배관 해석"
         subtitle="Inner Support 설계와 연료배관 Load Case 해석 입력을 구성합니다."
         icon={Pipette}
-        guideTitle="[파일] 이중관 구조 연료배관 해석 — 사용 안내"
+        htmlGuide="doublepipe-fuelline"
         onBack={() => setCurrentMenu('File-Based Apps')}
       />
 
