@@ -27,6 +27,9 @@ import { isWorkbenchAxiosRequest } from './utils/workbenchRequest';
 
 const APP_STATE = { SPLASH: 'splash', LOGIN: 'login', MAIN: 'main' };
 const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8시간 미활동 시 자동 로그아웃
+const INACTIVITY_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 미활동 타임아웃 확인 주기
+const VERSION_POLL_INTERVAL_MS = 5 * 60 * 1000;     // 서버 버전 감시 주기
+const VERSION_CHECK_MIN_GAP_MS = 30 * 1000;         // 포커스 복귀 등으로 인한 중복 요청 방지
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
 const MENU_ENTRY_MAX_AGE_MS = 5000;
 
@@ -117,6 +120,8 @@ function AppInner() {
   const [appState, setAppState]           = useState(APP_STATE.SPLASH);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [latestVersion, setLatestVersion]     = useState('');
+  const updateAvailableRef  = useRef(false); // 최신 값 즉시 참조용 (setState 는 다음 렌더에 반영)
+  const lastVersionCheckRef = useRef(0);     // 버전 확인 요청 throttle
   const [cachedAppMenus, setCachedAppMenus] = useState([]);
   const [analysisPageInstanceKeys, setAnalysisPageInstanceKeys] = useState({});
   const isLoggingOutRef = useRef(false);
@@ -184,19 +189,36 @@ function AppInner() {
     };
   }, [appState, isAdmin, refreshPendingUserCount, showToast]);
 
+  // 서버에 배포된 버전과 실행 중인 클라이언트 버전을 비교한다.
+  // 불일치를 찾으면 UpdateModal 을 띄우고 true 를 반환한다. 네트워크 실패는 그대로 throw 한다.
+  //
+  // ⚠ 모달 상태를 먼저 세팅하고 감사 로그 전송은 그 뒤에 best-effort 로 돌린다.
+  //   과거에는 employee_id 를 뽑는 JSON.parse 가 먼저였는데, localStorage 의 'user' 가
+  //   손상돼 있으면 여기서 던져 버려 업데이트 안내가 통째로 사라졌다(폴링도 같이 죽음).
+  const runVersionCheck = useCallback(async () => {
+    if (updateAvailableRef.current) return true; // 이미 안내 중이면 재확인 불필요
+    const res = await checkVersion();
+    const serverVersion = res.data?.version;
+    if (!serverVersion || serverVersion === CLIENT_VERSION) return false;
+
+    updateAvailableRef.current = true;
+    setLatestVersion(serverVersion);
+    setUpdateAvailable(true);
+
+    try {
+      const storedUser = localStorage.getItem('user');
+      const employeeId = storedUser ? JSON.parse(storedUser).employee_id : null;
+      reportVersionUpdate(CLIENT_VERSION, serverVersion, employeeId);
+    } catch {
+      // 손상된 세션 값 — 로그만 못 남길 뿐 업데이트 안내는 그대로 진행
+    }
+    return true;
+  }, []);
+
   const handleSplashFinish = async () => {
     // 세션 여부와 무관하게 항상 버전 체크 먼저 수행
     try {
-      const res = await checkVersion();
-      const serverVersion = res.data?.version;
-      if (serverVersion && serverVersion !== CLIENT_VERSION) {
-        const storedUser = localStorage.getItem('user');
-        const employeeId = storedUser ? JSON.parse(storedUser).employee_id : null;
-        reportVersionUpdate(CLIENT_VERSION, serverVersion, employeeId);
-        setLatestVersion(serverVersion);
-        setUpdateAvailable(true);
-        return;
-      }
+      if (await runVersionCheck()) return;
     } catch {
       // 서버 응답 없으면 로그인 화면으로
       setAppState(APP_STATE.LOGIN);
@@ -318,38 +340,58 @@ function AppInner() {
     return () => window.removeEventListener('session-expired', onSessionExpired);
   }, [appState]);
 
-  // MAIN 상태에서 5분마다 서버 버전 체크 — 불일치 시 자동 로그아웃
+  // 미활동 타임아웃 감시 — 8시간 무활동이면 자동 로그아웃.
   useEffect(() => {
     if (appState !== APP_STATE.MAIN) return;
 
-    const poll = setInterval(async () => {
-      // 미활동 타임아웃 체크
+    const timer = setInterval(() => {
       const loginAt = parseInt(localStorage.getItem('user_login_at') || '0', 10);
       const lastActive = parseInt(localStorage.getItem('user_last_active') || loginAt.toString(), 10);
       if (lastActive > 0 && Date.now() - lastActive > INACTIVITY_TIMEOUT_MS) {
-        clearInterval(poll);
+        clearInterval(timer);
         handleLogout();
-        return;
       }
+    }, INACTIVITY_CHECK_INTERVAL_MS);
 
+    return () => clearInterval(timer);
+  }, [appState]);
+
+  // 서버 버전 감시 — 앱을 켜 둔 채로 새 버전이 배포되면 강제 업데이트 모달을 띄운다.
+  //
+  // 확인 시점을 셋으로 둔다.
+  //   ① MAIN 진입 직후 1회 — 스플래시에서 서버가 잠깐 안 떠 건너뛴 경우를 복구
+  //   ② 5분 주기 폴링
+  //   ③ 창 포커스 복귀 / 네트워크 온라인 복귀 — 최소화해 둔 창을 다시 열면 즉시 반영
+  // 미활동 타임아웃과 분리했다. 예전에는 한 타이머가 둘을 겸해, 로그아웃이나
+  // 예외 한 번으로 버전 감시까지 같이 멈춰 버렸다.
+  useEffect(() => {
+    if (appState !== APP_STATE.MAIN) return;
+    let stopped = false;
+
+    const check = async () => {
+      if (stopped || updateAvailableRef.current) return;
+      const now = Date.now();
+      if (now - lastVersionCheckRef.current < VERSION_CHECK_MIN_GAP_MS) return;
+      lastVersionCheckRef.current = now;
       try {
-        const res = await checkVersion();
-        const serverVersion = res.data?.version;
-        if (serverVersion && serverVersion !== CLIENT_VERSION) {
-          clearInterval(poll);
-          const storedUser = localStorage.getItem('user');
-          const employeeId = storedUser ? JSON.parse(storedUser).employee_id : null;
-          reportVersionUpdate(CLIENT_VERSION, serverVersion, employeeId);
-          setLatestVersion(serverVersion);
-          setUpdateAvailable(true);
-        }
+        await runVersionCheck();
       } catch {
         // 서버 일시 다운은 무시 (401 인터셉터가 별도 처리)
       }
-    }, 5 * 60 * 1000);
+    };
 
-    return () => clearInterval(poll);
-  }, [appState]);
+    check();
+    const timer = setInterval(check, VERSION_POLL_INTERVAL_MS);
+    window.addEventListener('focus', check);
+    window.addEventListener('online', check);
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+      window.removeEventListener('focus', check);
+      window.removeEventListener('online', check);
+    };
+  }, [appState, runVersionCheck]);
 
   // 사용자 활동 감지 — 클릭/키 입력 시 마지막 활동 시간 갱신 (throttle: 60초)
   useEffect(() => {
