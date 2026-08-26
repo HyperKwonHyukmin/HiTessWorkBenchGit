@@ -38,6 +38,8 @@ export const HTML_GUIDES = {
       import('../../assets/guides/posture-stability-user-guide.html?raw')
         .then(m => forceLightTheme(m.default)),
   },
+  // ⚠ 관리자 전용(개발 가이드). 엔진 내부 동작·WorkBench 패치 이력이 들어 있어
+  //   일반 사용자에게는 노출하지 않는다 — AnalysisPageBanner 의 devHtmlGuide 로 연결.
   'doublepipe-fuelline': {
     title: '이중관 연료배관 해석 파이프라인',
     load: () =>

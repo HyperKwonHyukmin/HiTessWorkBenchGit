@@ -1,17 +1,27 @@
 import React from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Code2 } from 'lucide-react';
 import PageBanner from '../ui/PageBanner';
 import GuideButton from '../ui/GuideButton';
 import AppUsageStatsButton from './AppUsageStatsButton';
 
 const DEFAULT_GRADIENT = 'from-brand-blue via-brand-blue-dark to-blue-700';
 
+/**
+ * 해석 앱 공통 상단 배너.
+ *
+ * 가이드 버튼은 두 종류를 나란히 놓을 수 있다.
+ *   · 사용 가이드 — 모든 사용자 대상 (guideTitle | htmlGuide | guidePlaceholder)
+ *   · 개발 가이드 — 관리자 전용 (devHtmlGuide). 엔진 내부 동작·패치 이력처럼
+ *     일반 사용자에게 공개하지 않는 문서를 여기에 건다.
+ */
 export default function AnalysisPageBanner({
   title,
   subtitle,
   icon: Icon,
   guideTitle,
   htmlGuide,
+  guidePlaceholder,
+  devHtmlGuide,
   onBack,
   backLabel = '이전 페이지로 돌아가기',
   gradient = DEFAULT_GRADIENT,
@@ -46,8 +56,24 @@ export default function AnalysisPageBanner({
       <div className="flex items-center gap-2 shrink-0">
         <AppUsageStatsButton appName={statsProgramName || title} />
         {actions}
-        {(guideTitle || htmlGuide) && (
-          <GuideButton guideTitle={guideTitle} htmlGuide={htmlGuide} variant="dark" />
+        {devHtmlGuide && (
+          <GuideButton
+            htmlGuide={devHtmlGuide}
+            label="개발 가이드"
+            emoji="🛠️"
+            icon={Code2}
+            adminOnly
+            variant="admin"
+            headerBg="bg-slate-800"
+          />
+        )}
+        {(guideTitle || htmlGuide || guidePlaceholder) && (
+          <GuideButton
+            guideTitle={guideTitle}
+            htmlGuide={htmlGuide}
+            placeholder={guidePlaceholder}
+            variant="dark"
+          />
         )}
       </div>
     </PageBanner>
