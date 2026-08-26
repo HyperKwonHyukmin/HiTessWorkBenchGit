@@ -22,7 +22,7 @@ from ..services.activity_service import log_activity
 
 logger = logging.getLogger(__name__)
 
-SERVER_VERSION = "1.4.5"
+SERVER_VERSION = "1.4.6"
 
 # 최신 클라이언트 exe 폴더 — 환경변수로 오버라이드 가능
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
