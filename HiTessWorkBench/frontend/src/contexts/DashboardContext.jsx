@@ -45,6 +45,7 @@ const RAW_ANALYSIS_DATA = [
   { mode: "File", category: "권상·의장", title: "Side Passage Assessment", description: "Side Passage BDF 모델을 검증하고 Studio 기반 권상 조건·Nastran 해석·결과 판정을 진행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Side Passage", "Studio", "권상"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "File", category: "권상·의장", title: "DrawingToAnalysis", description: "설계 도면(PDF)을 업로드하여 LUG 구조 해석 BDF 모델로 변환합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["도면", "LUG"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "File", category: "권상·의장", title: "Mooring Fitting Assessment", description: "Mooring Fitting / Winch 보강 구조의 CSV 2종을 입력받아 8단계 BDF 파이프라인을 자동 생성합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Mooring", "Winch", "파이프라인"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "운송", title: "Module Unit 해상 운송 구조 해석", description: "정반에 적재된 Module Unit의 해상 운송 하중에 대한 구조 안전성과 용접부 강도를 검토합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["유닛", "해상운송", "정반", "용접부"], devStatus: "Developing", contributor: "권혁민" },
   // ── Interactive Apps (signature: violet) ──────── Active ──
   { mode: "Interactive", category: "1D Beam", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-violet-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active", contributor: "권혁민" },
   { mode: "Interactive", category: "Section", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Active", contributor: "권혁민" },
@@ -111,6 +112,16 @@ const APP_REGISTRY_OVERRIDES = {
     apiEndpoint: "/api/analysis/groupmodule/request",
     supportsRerun: true,
     relatedApps: ["HiTESS Model Builder", "BDF Scanner"],
+  },
+  "Module Unit 해상 운송 구조 해석": {
+    menuName: "Module Unit 해상 운송 구조 해석",
+    // ⚠ 현재 Step1 검증은 GroupModuleUnit 엔드포인트를 재사용하므로 DB program_name 은
+    //   "GroupModuleUnit" 으로 기록된다. 여기에 "GroupModuleUnit" 을 넣으면 GMU 앱과
+    //   프로그램명이 충돌하므로 넣지 않는다(전용 엔드포인트 신설 시 함께 등록할 것).
+    programNames: ["ModuleOceanTransport", "Module Unit 해상 운송 구조 해석"],
+    apiEndpoint: "/api/analysis/groupmoduleunit/request",
+    supportsRerun: false,
+    relatedApps: ["HiTESS Model Builder", "Group & Module Unit 권상 구조 해석"],
   },
   "Side Passage Assessment": {
     menuName: "Side Passage Assessment",
@@ -232,6 +243,7 @@ const APP_CAPABILITY_METADATA = {
   "이중관 구조 연료배관 해석": { inputFormats: ["CSV", "JSON"], outputFormats: ["BDF", "XLSX"], workflow: "Pipeline" },
   "Group & Module Unit 권상 구조 해석": { inputFormats: ["BDF"], outputFormats: ["BDF", "F06", "JSON"], workflow: "Pipeline" },
   "Side Passage Assessment": { inputFormats: ["BDF"], outputFormats: ["BDF", "F06", "JSON"], workflow: "Pipeline" },
+  "Module Unit 해상 운송 구조 해석": { inputFormats: ["BDF"], outputFormats: ["BDF", "F06", "JSON"], workflow: "Pipeline" },
   "DrawingToAnalysis": { inputFormats: ["PDF", "Image"], outputFormats: ["BDF", "JSON"], workflow: "Pipeline" },
   "Mooring Fitting Assessment": { inputFormats: ["CSV ×2"], outputFormats: ["BDF", "JSON", "XLSX"], workflow: "Pipeline" },
   "Simple Beam Assessment": { inputFormats: ["Direct input", "JSON"], outputFormats: ["Chart", "JSON"], workflow: "Interactive" },

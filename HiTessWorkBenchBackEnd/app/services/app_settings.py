@@ -51,6 +51,9 @@ GUARDED_ROUTES: tuple[tuple[str, str], ...] = (
     ("/api/analysis/module-stability/", "Group & Module Unit 권상 구조 해석"),
     ("/api/analysis/unit-structural/", "Group & Module Unit 권상 구조 해석"),
     ("/api/analysis/sidepassage/", "Side Passage Assessment"),
+    # 이 앱의 1단계 검증은 /api/analysis/groupmoduleunit/request 를 재사용하므로 GMU 게이트에 함께 걸린다.
+    # 여기 등록분은 이 앱 전용 엔드포인트(샘플 실행 등)를 막는다.
+    ("/api/analysis/module-ocean-transport/", "Module Unit 해상 운송 구조 해석"),
     ("/api/analysis/drawing-to-analysis/", "DrawingToAnalysis"),
     ("/api/analysis/mooring-fitting/", "Mooring Fitting Assessment"),
     ("/api/analysis/plate-structure/", "Plate Structure Analysis"),

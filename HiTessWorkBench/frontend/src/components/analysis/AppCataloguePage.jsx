@@ -53,7 +53,7 @@ const colorToAccent = (colorClass = '') => {
 
 // 탭 노출 순서. 카테고리는 '무엇을 해석하는가' 한 축으로 통일해 3개로 묶었다
 // (이전 7개는 구조물·공정·파일형식이 축으로 섞여 있었고 5개가 항목 1개짜리였다).
-const FILE_CATEGORY_ORDER = ['구조 모델', '배관', '권상·의장'];
+const FILE_CATEGORY_ORDER = ['구조 모델', '배관', '권상·의장', '운송'];
 const matchesSearch = (item, query) => {
   if (!query) return true;
   const source = [

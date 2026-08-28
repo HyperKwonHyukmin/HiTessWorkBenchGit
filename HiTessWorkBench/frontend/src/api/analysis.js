@@ -147,6 +147,45 @@ export const requestHpscrAssessment = (formData) =>
 export const requestGroupModuleUnit = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/groupmoduleunit/request`, formData, 'GroupModuleUnit');
 
+/**
+ * Module Unit 해상 운송 구조 해석 — Step1 BDF 입력 검증.
+ * ⚠ 현재는 GroupModuleUnit 검증 엔진/엔드포인트를 그대로 재사용한다(사용자 결정).
+ *   → DB program_name 도 "GroupModuleUnit" 으로 기록되므로 My Project 이력에는
+ *     Group & Module Unit 권상 구조 해석으로 표시된다. 전용 엔드포인트가 생기면
+ *     (SidePassage 처럼 /api/analysis/moduleoceantransport/request) 이 한 줄만 교체하면 된다.
+ */
+export const requestModuleOceanTransport = (formData) =>
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/groupmoduleunit/request`, formData, 'ModuleOceanTransport');
+
+/**
+ * Module Unit 해상 운송 구조 해석 — 선택 가능한 정반 타입 목록과 제원.
+ * 지오메트리가 없어 가볍다(선택 화면의 Spec 표가 즉시 뜬다).
+ */
+export const getJungbanDeckTypes = () =>
+  axios.get(`${API_BASE_URL}/api/analysis/module-ocean-transport/jungban-decks`, {
+    headers: getAuthHeaders(),
+  });
+
+/**
+ * 선택한 타입의 고정 정반 모델(뷰어용 슬림 지오메트리).
+ * 백엔드가 타입별로 최초 1회만 파싱하고 이후는 캐시에서 즉시 응답한다. 응답은 gzip 으로 내려온다.
+ */
+export const getJungbanViewerModel = (deckType = 'A') =>
+  axios.get(`${API_BASE_URL}/api/analysis/module-ocean-transport/jungban-model`, {
+    params: { deck_type: deckType },
+    headers: getAuthHeaders(),
+  });
+
+/**
+ * 검증 단계가 만든 모델 JSON(JSON_ModelInfo)을 뷰어용 슬림 지오메트리로 받아온다.
+ * ⚠ 원본 모델 JSON 은 대형 모델에서 30MB 를 넘는다 — 절대 downloadFileText 로 직접 받지 말 것.
+ */
+export const getModuleOceanViewerModel = (modelJsonPath, name = 'model') =>
+  axios.get(`${API_BASE_URL}/api/analysis/module-ocean-transport/viewer-model`, {
+    params: { model_json: modelJsonPath, name },
+    headers: getAuthHeaders(),
+  });
+
 /** Side Passage Assessment — BDF 검증 */
 export const requestSidePassageAssessment = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/sidepassage/request`, formData, 'SidePassage');
