@@ -43,10 +43,13 @@ logger = logging.getLogger(__name__)
 _SERVICES_DIR = os.path.dirname(os.path.abspath(__file__))
 _APP_DIR = os.path.dirname(_SERVICES_DIR)
 _BACKEND_DIR = os.path.dirname(_APP_DIR)
-_PSA_DIR = os.path.join(
-    _BACKEND_DIR, "InHouseProgram", "DoublePipe",
-    "Piping Stress Analysis for all load cases",
-)
+_DOUBLEPIPE_DIR = os.path.join(_BACKEND_DIR, "InHouseProgram", "DoublePipe")
+# ★ 정본 프로그램 폴더 = 어댑터 배포 폴더. 연구원이 개발하는 엔진 폴더와 분리되어 있어,
+#    새 엔진이 오면 엔진 폴더만 통째로 덮어써도 exe·서식 템플릿이 지워지지 않는다.
+#    (설계: docs/superpowers/specs/2026-08-28-doublepipe-engine-adapter-design.md)
+_PSA_DIR = os.path.join(_DOUBLEPIPE_DIR, "HiTessAdapter")
+# 구 배치(엔진 폴더 안에 exe·템플릿이 있던 시절) 폴백 — 서버가 아직 이행 전이어도 무중단.
+_PSA_LEGACY_DIR = os.path.join(_DOUBLEPIPE_DIR, "Piping Stress Analysis for all load cases")
 _PSA_EXE_NAME = "PSA_AllLoadCases.exe"
 _USER_CONNECTION_DIR = os.path.join(_BACKEND_DIR, "userConnection")
 _REPORT_NAME = "Report for PSA.xlsx"
@@ -55,12 +58,24 @@ _REPORT_NAME = "Report for PSA.xlsx"
 #
 # ⚠️ DRM 함정: 회사 DRM 은 .xlsx 를 at-rest 로 암호화(HHIDRMC, +4096B)하고 로컬 프로세스는 복호화
 # 못 한다. 소스가 .xlsx 면 145 에서 이 원본이 암호화돼 있을 때 백엔드가 '암호화된 쓰레기'를 job 폴더로
-# 복사 → exe preload 가 BadZipFile → 빈 워크북(≈288KB) 보고서가 된다. 그래서 DRM 이 건드리지 않는
-# 비-Office 확장자 .bin 으로 템플릿을 보관하고(항상 PK 로 읽힘) 이걸 1순위 소스로 쓴다.
-# _REPORT_TEMPLATE_BIN 이 없거나 PK 가 아니면 기존 .xlsx 로 폴백한다.
-_REPORT_TEMPLATE_BIN = os.path.join(_PSA_DIR, "report_template.bin")
-_REPORT_TEMPLATE_SRC = os.path.join(_PSA_DIR, _REPORT_NAME)
+# 복사 → 빈 워크북(≈288KB) 보고서가 된다. 그래서 DRM 이 건드리지 않는 비-Office 확장자 .bin 으로
+# 템플릿을 보관하고(항상 PK 로 읽힘) 이걸 1순위 소스로 쓴다. .bin 이 없거나 PK 가 아니면 .xlsx 폴백.
+_REPORT_TEMPLATE_BIN_NAME = "report_template.bin"
 _ZIP_MAGIC = b"PK\x03\x04"
+
+
+def _program_dirs() -> tuple:
+    """프로그램 자산(exe·서식 템플릿) 탐색 폴더. 어댑터 폴더가 1순위, 구 배치가 폴백."""
+    return (_PSA_DIR, _PSA_LEGACY_DIR)
+
+
+def _resolve_psa_exe() -> "str | None":
+    """실행할 PSA exe 의 절대경로. 없으면 None."""
+    for directory in _program_dirs():
+        candidate = os.path.join(directory, _PSA_EXE_NAME)
+        if os.path.isfile(candidate):
+            return candidate
+    return None
 
 # userConnection 폴더 명명에 쓰는 프로그램 이름 (doublepipe_service.py 와 동일 규칙:
 # {timestamp}_{employee_id}_{ProgramName}). Tab2 직접 업로드 경로가 새 작업 폴더를 만들 때 사용.
@@ -251,8 +266,8 @@ def _launch_job(csv_path: str, employee_id: str, load_cases=None) -> dict:
     실행 로직 — exe 존재 확인 → (라이센스 원자적 점유) job 등록 → 스레드 기동.
     load_cases 가 지정되면 `--load-cases L18,L20,...` 인자를 붙여 선택 해석, 없으면 전체 29개.
     """
-    psa_exe_path = os.path.join(_PSA_DIR, _PSA_EXE_NAME)
-    if not os.path.isdir(_PSA_DIR) or not os.path.isfile(psa_exe_path):
+    psa_exe_path = _resolve_psa_exe()
+    if psa_exe_path is None:
         raise HTTPException(status_code=503, detail=f"PSA 해석 프로그램({_PSA_EXE_NAME})을 찾을 수 없습니다. 서버 관리자에게 문의하세요.")
 
     # ⚠️ cwd 는 반드시 CSV 가 있는 폴더(job_dir)여야 한다 — Main.py 내부의 write_LC()/
@@ -392,10 +407,12 @@ def _read_template_bytes(job_id: str):
     2순위: Report for PSA.xlsx (폴백 — 단 DRM 암호화 시 HHIDRMC 라 PK 검사에서 걸러짐)
     각 후보를 read() 한 뒤 첫 4바이트가 PK 매직인지 확인해 '암호화된 소스'를 조기에 잡아낸다.
     """
-    candidates = [
-        (_REPORT_TEMPLATE_BIN, "report_template.bin"),
-        (_REPORT_TEMPLATE_SRC, _REPORT_NAME),
-    ]
+    # 어댑터 폴더 → 구 배치 폴더 순으로, 각 폴더에서 .bin(1순위) → .xlsx(폴백).
+    candidates = []
+    for directory in _program_dirs():
+        tag = os.path.basename(directory)
+        for name in (_REPORT_TEMPLATE_BIN_NAME, _REPORT_NAME):
+            candidates.append((os.path.join(directory, name), f"{tag}/{name}"))
     for path, label in candidates:
         if not os.path.exists(path):
             continue
@@ -439,9 +456,9 @@ def _stage_report_template(cwd: str, job_id: str):
         _append_log(
             job_id,
             "[서식경고] 유효한(PK) 서식 템플릿 소스를 찾지 못했습니다 "
-            f"(.bin={_REPORT_TEMPLATE_BIN}, .xlsx={_REPORT_TEMPLATE_SRC}). "
+            f"(탐색 폴더: {', '.join(_program_dirs())}). "
             "보고서가 서식·이미지 없이(빈 워크북, ≈288KB) 생성될 수 있습니다 — "
-            "서버 관리자: report_template.bin 을 프로그램 폴더에 두세요.",
+            f"서버 관리자: {_REPORT_TEMPLATE_BIN_NAME} 을 {_PSA_DIR} 에 두세요.",
         )
         return
     try:
