@@ -18,9 +18,12 @@ from .assessment_diagnostics import (
     EngineDiagnosis,
     build_failure_report,
     build_preflight_report,
+    build_property_preflight_report,
     diagnose_engine_failure,
     preflight_case_control,
+    preflight_property_ids,
     read_case_control_head,
+    scan_element_property_ids,
 )
 
 logger = logging.getLogger(__name__)
@@ -158,6 +161,22 @@ def _json_to_xlsx_bytes(json_path: str) -> bytes:
     return buf.read()
 
 
+def _count_element_rows(json_path: str) -> int:
+    """결과 JSON 의 모든 Load Case 를 통틀어 평가된 부재 행 수를 센다.
+
+    엔진은 허용응력 테이블에 없는 Property ID 를 조용히 스킵하므로, 종료 코드가
+    0 이고 JSON 도 생성됐는데 이 값만 0 인 상태가 나올 수 있다(부재평가 시트가
+    헤더만 남은 리포트). 읽기에 실패하면 -1 을 돌려 판정을 건너뛴다 —
+    파싱 실패를 '결과 없음'으로 오해해 정상 해석을 실패로 뒤집으면 안 된다.
+    """
+    try:
+        with open(json_path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+        return sum(len(lc.get("elementAssessment", [])) for lc in data.get("loadCases", []))
+    except Exception:
+        return -1
+
+
 def _json_to_csv(json_path: str, work_dir: str, base_name: str) -> dict:
     """
     TrussAssessment JSON 결과를 CSV 파일 2종으로 변환합니다.
@@ -273,12 +292,28 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
     problems = preflight_case_control(head) if head else []
     blocking = [p for p in problems if p.blocking]
 
+    # Property ID 검증: 엔진의 허용응력 테이블(1~18)에 없는 Property 만 쓰는 BDF 는
+    # 해석해봐야 부재평가가 전부 빈다(엔진이 조용히 스킵한다). 여기서 되돌려준다.
+    # 일부만 어긋나면 원래 설계대로 평가에서 제외하고 해석은 계속한다.
+    property_problem = preflight_property_ids(scan_element_property_ids(bdf_path))
+    property_report = (
+      build_property_preflight_report(property_problem, os.path.basename(bdf_path))
+      if property_problem is not None else ""
+    )
+
     if blocking:
       status_msg = "Failed"
       engine_output = build_preflight_report(problems, os.path.basename(bdf_path))
       logger.warning(
         "TrussAssessment preflight blocked job %s: %s",
         job_id, [p.command for p in blocking],
+      )
+    elif property_problem is not None and property_problem.blocking:
+      status_msg = "Failed"
+      engine_output = property_report
+      logger.warning(
+        "TrussAssessment preflight blocked job %s: unmapped property ids %s",
+        job_id, [pid for pid, _ in property_problem.unmapped],
       )
     else:
       update_progress(job_id, 40, "Running Nastran Analysis & Evaluation...")
@@ -296,6 +331,9 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
           engine_output=engine_output,
           work_dir=work_dir,
         )
+      elif property_report:
+        # 부분 불일치 경고 — 엔진 출력 앞에 붙여 콘솔에서 먼저 읽히게 한다.
+        engine_output = f"{property_report}\n\n{engine_output}"
 
     if status_msg == "Success":
       update_progress(job_id, 80, "Extracting Results & Converting to CSV...")
@@ -303,6 +341,7 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
       # 결과 파일 스캔 (다중 Case 및 대소문자 확장자 완벽 대응)
       bdf_stem = os.path.splitext(os.path.basename(bdf_path))[0]
       json_count = 0
+      element_rows = 0
       for f in os.listdir(work_dir):
         full_path = os.path.join(work_dir, f)
         lower_f = f.lower()
@@ -314,6 +353,7 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
 
         elif lower_f.endswith('.json'):
           json_count += 1
+          element_rows += _count_element_rows(full_path)
           name_without_ext = os.path.splitext(f)[0]
           result_data[f"JSON_{name_without_ext}"] = full_path
 
@@ -351,6 +391,26 @@ def task_execute_assessment(job_id: str, bdf_path: str, work_dir: str, employee_
             stage="리포트 출력",
             cause="엔진이 종료되었지만 결과 파일(JSON)이 생성되지 않았습니다.",
             remedy="아래 엔진 출력에서 중단 지점을 확인하세요. 원인이 보이지 않으면 관리자에게 문의하세요.",
+          ),
+          engine_output=engine_output,
+          work_dir=work_dir,
+        )
+      elif element_rows == 0:
+        # JSON 은 나왔지만 평가된 부재가 한 개도 없다 — 사전 검증을 빠져나간
+        # 경우(예: 엔진이 F06 에서 BAR force 를 못 읽음)까지 잡는 최종 안전망.
+        # _count_element_rows 가 -1(읽기 실패)이면 여기 안 걸린다.
+        status_msg = "Failed"
+        engine_output = build_failure_report(
+          diagnosis=diagnose_engine_failure(engine_output) or EngineDiagnosis(
+            stage="부재 응력 검토",
+            cause=(
+              "해석은 끝났지만 평가된 부재가 한 개도 없습니다. BDF 의 Property ID 가 "
+              "엔진의 허용응력 테이블(1~18)과 맞지 않을 가능성이 높습니다."
+            ),
+            remedy=(
+              "PBAR/PBARL 의 Property ID 를 1~18 로 맞춰 다시 내보낸 뒤 업로드하세요. "
+              "원인이 보이지 않으면 아래 엔진 출력을 첨부해 관리자에게 문의하세요."
+            ),
           ),
           engine_output=engine_output,
           work_dir=work_dir,

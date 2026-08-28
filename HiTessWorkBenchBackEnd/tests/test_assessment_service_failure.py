@@ -3,6 +3,8 @@
 이전 동작: 어떤 실패든 engine_log 가 "해석 엔진 실행 중 오류가 발생했습니다.
 관리자에게 문의하세요." 한 줄이라 사용자가 원인을 알 수 없었다.
 """
+import json
+
 import pytest
 
 from app.services import assessment_service
@@ -158,3 +160,95 @@ class TestSilentSuccessIsNowFailure:
         monkeypatch.setattr(assessment_service, "run_engine", lambda *a, **k: ("Success", ""))
         _run(tmp_path, PUNCH_ONLY_BDF)
         assert captured["result_info"] is None
+
+
+# ── Property ID 검증 ──────────────────────────────────────────
+# 177K-01.bdf: FEGate 5.03.21 이 PBAR/PBARL 을 +1000 오프셋으로 내보내
+# 엔진 허용응력 테이블(1~18)과 하나도 맞지 않아 부재평가가 전부 비었다.
+
+def _cbar(eid: int, pid: int) -> str:
+    return f"{'CBAR':<8}{eid:>8}{pid:>8}{101:>8}{102:>8}"
+
+
+UNMAPPED_PID_BDF = HEALTHY_BDF.replace(
+    "ENDDATA", f"{_cbar(1, 1001)}\n{_cbar(2, 1008)}\nENDDATA"
+)
+PARTIAL_PID_BDF = HEALTHY_BDF.replace(
+    "ENDDATA", f"{_cbar(1, 1)}\n{_cbar(2, 1019)}\nENDDATA"
+)
+
+
+class TestPropertyIdPreflight:
+    def test_unmapped_ids_fail_before_running_engine(self, captured, tmp_path, monkeypatch):
+        called = []
+        monkeypatch.setattr(
+            assessment_service, "run_engine",
+            lambda *a, **k: called.append(a) or ("Success", ""),
+        )
+        _run(tmp_path, UNMAPPED_PID_BDF)
+
+        assert captured["status"] == "Failed"
+        assert called == [], "Property ID 가 하나도 안 맞으면 Nastran 을 돌리지 않아야 한다"
+
+    def test_console_text_lists_the_offending_property_ids(self, captured, tmp_path, monkeypatch):
+        monkeypatch.setattr(assessment_service, "run_engine", lambda *a, **k: ("Success", ""))
+        _run(tmp_path, UNMAPPED_PID_BDF)
+
+        log = captured["log"]
+        assert "1001" in log and "1008" in log
+        assert "1~18" in log
+        assert "[조치]" in log
+
+    def test_partial_mismatch_still_runs_the_engine(self, captured, tmp_path, monkeypatch):
+        """일부 PID 만 테이블 밖이면 평가 제외로 두고 해석은 계속한다."""
+        called = []
+        monkeypatch.setattr(
+            assessment_service, "run_engine",
+            lambda *a, **k: (called.append(a), ("Success", "ok"))[1],
+        )
+        _run(tmp_path, PARTIAL_PID_BDF)
+        assert called, "평가 가능한 부재가 남아 있으면 해석을 진행해야 한다"
+
+    def test_preflight_failure_stores_no_result_info(self, captured, tmp_path, monkeypatch):
+        monkeypatch.setattr(assessment_service, "run_engine", lambda *a, **k: ("Success", ""))
+        _run(tmp_path, UNMAPPED_PID_BDF)
+        assert captured["result_info"] is None
+
+
+class TestEmptyElementAssessmentIsFailure:
+    """사후 안전망: 사전 검증을 통과했는데도 부재평가가 비면 성공으로 넘기지 않는다."""
+
+    def _write_result_json(self, tmp_path, element_rows):
+        (tmp_path / "model.json").write_text(json.dumps({
+            "caseCount": 1,
+            "loadCases": [{
+                "loadCaseIndex": 0,
+                "loadCaseId": 1,
+                "summary": [],
+                "elementAssessment": element_rows,
+                "distributionPanel": [{"leg": 1, "condition": "Sustained", "reactionForce": 1.0}],
+                "sideSupport": [],
+            }],
+        }), encoding="utf-8")
+
+    def test_all_load_cases_empty_is_reported_as_failure(self, captured, tmp_path, monkeypatch):
+        self._write_result_json(tmp_path, [])
+        monkeypatch.setattr(
+            assessment_service, "run_engine",
+            lambda *a, **k: ("Success", "[INFO ] 부재 검토 완료 - 총 0개 평가, Fail: 0개"),
+        )
+        _run(tmp_path, HEALTHY_BDF)
+
+        assert captured["status"] == "Failed"
+        assert "Property ID" in captured["log"]
+        assert "[조치]" in captured["log"]
+
+    def test_non_empty_element_assessment_stays_successful(self, captured, tmp_path, monkeypatch):
+        self._write_result_json(tmp_path, [{"element": 1, "set": 1, "assessment": 0.5, "result": "OK"}])
+        monkeypatch.setattr(
+            assessment_service, "run_engine",
+            lambda *a, **k: ("Success", "[INFO ] 부재 검토 완료 - 총 1개 평가, Fail: 0개"),
+        )
+        _run(tmp_path, HEALTHY_BDF)
+
+        assert captured["status"] == "Success"

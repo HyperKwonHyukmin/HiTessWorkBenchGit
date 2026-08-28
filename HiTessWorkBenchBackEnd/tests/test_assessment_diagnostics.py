@@ -11,13 +11,18 @@ KeyNotFoundException('SPCForce') 로 죽고 exit code != 0 을 반환한다.
 """
 import pytest
 
+from collections import Counter
+
 from app.services.assessment_diagnostics import (
     build_failure_report,
+    build_property_preflight_report,
     diagnose_engine_failure,
     preflight_case_control,
+    preflight_property_ids,
     read_case_control_head,
     redact_paths,
     scan_case_control,
+    scan_element_property_ids,
 )
 
 
@@ -281,3 +286,103 @@ class TestBuildFailureReport:
         report = build_failure_report(diagnosis=None, engine_output=huge, work_dir=None)
         assert len(report) < 20000
         assert "line4999" in report  # 마지막(가장 중요한) 줄은 반드시 남는다
+
+
+# ══════════════════════════════════════════════════════════════
+# Property ID 검증
+#
+# 배경: 177K-01.bdf 는 FEGate 5.03.21 이 PBAR/PBARL 을 +1000 오프셋
+# (1001~1019)으로 내보내, 엔진의 허용응력 테이블(Property ID 1~18)과 하나도
+# 맞지 않았다. ElementStressChecker 가 KeyNotFoundException 을 catch 하고
+# continue 해버려 23,035 개 CBAR 가 전부 조용히 스킵됐고, 사용자는 FATAL 도
+# 오류도 없이 "부재평가" 시트가 빈 엑셀만 받았다.
+# ══════════════════════════════════════════════════════════════
+
+def _cbar(eid: int, pid: int, n1: int = 101, n2: int = 102) -> str:
+    """Nastran 고정 8칸 CBAR 카드 한 줄. 엔진 BdfParser 와 같은 필드 배치."""
+    return f"{'CBAR':<8}{eid:>8}{pid:>8}{n1:>8}{n2:>8}"
+
+
+class TestScanElementPropertyIds:
+    def test_counts_elements_per_property_id(self, tmp_path):
+        bdf = tmp_path / "m.bdf"
+        bdf.write_text(
+            "BEGIN BULK\n" + "\n".join([_cbar(1, 1), _cbar(2, 1), _cbar(3, 5)]) + "\nENDDATA\n",
+            encoding="utf-8",
+        )
+        assert scan_element_property_ids(str(bdf)) == Counter({1: 2, 5: 1})
+
+    def test_ignores_property_cards_that_no_element_references(self, tmp_path):
+        """참조 모델의 PBARL 37/38/39 는 카드로만 존재하고 CBAR 가 안 쓴다.
+
+        카드 기준으로 검사하면 정상 모델을 차단하게 되므로 CBAR 참조만 센다.
+        """
+        bdf = tmp_path / "m.bdf"
+        bdf.write_text(
+            "PBARL         37      20             BAR\n"
+            "PBARL         39      22             ROD\n" + _cbar(1, 1) + "\n",
+            encoding="utf-8",
+        )
+        assert scan_element_property_ids(str(bdf)) == Counter({1: 1})
+
+    def test_returns_none_when_no_cbar_field_is_readable(self, tmp_path):
+        """free-field 는 엔진(BdfParser)도 못 읽는다 — 판정을 포기해 오탐을 막는다."""
+        bdf = tmp_path / "m.bdf"
+        bdf.write_text("BEGIN BULK\nCBAR,1,1,101,102\nENDDATA\n", encoding="utf-8")
+        assert scan_element_property_ids(str(bdf)) is None
+
+    def test_returns_none_for_unreadable_file(self, tmp_path):
+        assert scan_element_property_ids(str(tmp_path / "missing.bdf")) is None
+
+
+class TestPreflightPropertyIds:
+    def test_no_problem_when_every_id_is_mapped(self):
+        assert preflight_property_ids(Counter({1: 10, 18: 5})) is None
+
+    def test_blocks_when_nothing_maps(self):
+        problem = preflight_property_ids(Counter({1001: 2380, 1008: 5844}))
+        assert problem is not None
+        assert problem.blocking is True
+        assert problem.mapped_elements == 0
+        assert problem.total_elements == 8224
+
+    def test_unmapped_ids_are_ordered_by_element_count(self):
+        problem = preflight_property_ids(Counter({1001: 2380, 1008: 5844}))
+        assert problem.unmapped == ((1008, 5844), (1001, 2380))
+
+    def test_partial_mismatch_warns_but_does_not_block(self):
+        """PID 1019(BOX) 처럼 일부만 테이블 밖이면 평가 제외로 두고 해석은 진행한다."""
+        problem = preflight_property_ids(Counter({1: 1000, 1019: 376}))
+        assert problem is not None
+        assert problem.blocking is False
+        assert problem.mapped_elements == 1000
+        assert problem.unmapped == ((1019, 376),)
+
+    def test_skips_when_scan_failed(self):
+        assert preflight_property_ids(None) is None
+
+    def test_skips_when_model_has_no_bar_elements(self):
+        assert preflight_property_ids(Counter()) is None
+
+
+class TestBuildPropertyPreflightReport:
+    def test_blocking_report_names_file_ids_and_remedy(self):
+        problem = preflight_property_ids(Counter({1001: 2380, 1008: 5844}))
+        report = build_property_preflight_report(problem, "177K-01.bdf")
+        assert "177K-01.bdf" in report
+        assert "1008" in report and "5,844" in report
+        assert "0 / 8,224" in report
+        assert "1~18" in report
+        assert "[조치]" in report
+
+    def test_blocking_report_says_analysis_did_not_start(self):
+        problem = preflight_property_ids(Counter({1001: 1}))
+        report = build_property_preflight_report(problem, "x.bdf")
+        assert "해석을 시작하지 않았습니다" in report
+
+    def test_warning_report_says_analysis_continues(self):
+        problem = preflight_property_ids(Counter({1: 1000, 1019: 376}))
+        report = build_property_preflight_report(problem, "x.bdf")
+        assert "1019" in report
+        assert "제외" in report
+        assert "해석을 시작하지 않았습니다" not in report
