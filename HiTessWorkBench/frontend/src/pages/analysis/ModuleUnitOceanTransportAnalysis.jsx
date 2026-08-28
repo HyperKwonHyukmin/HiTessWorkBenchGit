@@ -3,7 +3,7 @@ import {
   UploadCloud, ArrowRight, ChevronsRight,
   FileCheck2, Boxes, Waves, ShieldCheck,
   X, Loader2, RotateCcw, FileText, ExternalLink,
-  Construction, Download, Layers,
+  Construction, Download, Layers, ArrowDownToLine, Compass, AlertTriangle, Scale,
 } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
@@ -20,13 +20,26 @@ import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import FeModelViewer from '../../components/analysis/FeModelViewer';
 import JungbanDeckSelector from '../../components/analysis/JungbanDeckSelector';
-import { computeModulePlacement } from '../../utils/feGeometry';
+import {
+  computeModulePlacement,
+  buildDeckSurface,
+  prepareModuleFootprint,
+  computeSeating,
+  findBestSeatingRotation,
+  combineMassProperties,
+} from '../../utils/feGeometry';
 
 // 정반 상면에서 Module Unit 바닥까지의 기본 높이(mm). 사용자가 2단계에서 조정할 수 있다.
 const DEFAULT_DECK_GAP_MM = 5000;
+const DEFAULT_CONTACT_TOL_MM = 50;
 
 const PART_COLOR_JUNGBAN = '#8d9bb0';
 const PART_COLOR_MODULE  = '#38bdf8';
+
+// 무게중심 마커 색. 화면 범례와 이 상수가 같은 값을 써야 한다.
+const COG_COLOR_DECK   = '#a78bfa';   // 정반
+const COG_COLOR_MODULE = '#22c55e';   // Module Unit
+const COG_COLOR_TOTAL  = '#ef4444';   // 합산
 
 // ── 상태 설정 (Group & Module Unit 권상 구조 해석과 동일) ─────
 const STATUS_CONFIG = {
@@ -200,6 +213,8 @@ function PlacementStat({ label, value, emphasis, span = false }) {
 function ArrangementPanel({
   gapMm, offsetXMm, offsetYMm, rotationZDeg,
   onChange, onReset, placement, disabled,
+  contactTolMm, onContactTolChange, onSeat, seating, seatingBusy,
+  onCompareRotations, rotationCandidates, onApplyRotation,
 }) {
   const mm = (v) => Math.round(v).toLocaleString();
 
@@ -256,6 +271,140 @@ function ArrangementPanel({
             title="Module Unit 자체 평면 중심을 축으로 회전합니다."
           />
         </div>
+
+        {/* ─ 적치 ─ 현재 회전·오프셋 그대로 두고 높이만 내려 상판에 접촉시킨다 */}
+        <div className="px-3 pb-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+          <button
+            onClick={onSeat}
+            disabled={seatingBusy}
+            title="현재 회전·오프셋을 유지한 채, 정반 상판에 닿을 때까지 Module Unit 을 내립니다."
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-dark disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm"
+          >
+            <ArrowDownToLine size={13} /> 정반에 앉히기
+          </button>
+          <button
+            onClick={onCompareRotations}
+            disabled={seatingBusy}
+            title="1° 간격으로 360회 평가해 후보를 만듭니다. 자동으로 적용하지 않고 수치를 보여 드립니다."
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-blue-200 bg-white hover:bg-blue-50 disabled:opacity-50 text-blue-600 text-xs font-bold transition-colors cursor-pointer"
+          >
+            <Compass size={13} /> 회전각 비교
+          </button>
+          <div className="w-32">
+            <ArrangementField
+              label="접촉 허용오차"
+              unit="mm"
+              value={contactTolMm}
+              step={10}
+              onChange={onContactTolChange}
+              title="최저 접점에서 이 값 이내에 있는 절점을 지지점으로 셉니다. 바닥이 완전히 평평한 모델은 거의 없어서, 값을 키우면 실제 지지점 집합에 가까워집니다."
+            />
+          </div>
+          {seating && (
+            <div className="flex-1 min-w-[240px] text-[10px] leading-relaxed">
+              {seating.ok ? (
+                <>
+                  <span className="font-bold text-slate-700">
+                    지지점 {seating.contacts.length}개
+                  </span>
+                  <span className="text-slate-400">
+                    {' · '}상판 위 절점 {seating.onPlateCount.toLocaleString()} / 이탈 {seating.offPlateCount.toLocaleString()}
+                    {' · '}접점 범위 {Math.round(seating.contactSpan[0]).toLocaleString()} × {Math.round(seating.contactSpan[1]).toLocaleString()}mm
+                  </span>
+                  {seating.penetrationCount > 0 && (
+                    <p className="mt-0.5 flex items-start gap-1 text-amber-700 font-semibold">
+                      <AlertTriangle size={11} className="shrink-0 mt-px" />
+                      정반 형상과 겹치는 절점 {seating.penetrationCount.toLocaleString()}개 (최대 {Math.round(seating.penetrationMaxMm).toLocaleString()}mm) — 회전·오프셋 조정이 필요합니다.
+                    </p>
+                  )}
+                  {seating.penetrationCount === 0 && !seating.supportsCentroid && (
+                    <p className="mt-0.5 flex items-start gap-1 text-amber-700 font-semibold">
+                      <AlertTriangle size={11} className="shrink-0 mt-px" />
+                      지지점이 한 줄이라 평면 중심을 받치지 못합니다 — 받침 추가나 회전 조정을 검토하세요.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="flex items-start gap-1 text-amber-700 font-semibold">
+                  <AlertTriangle size={11} className="shrink-0 mt-px" /> {seating.reason}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ─ 회전각 후보 ─ 코드가 고르지 않는다. 수치를 나란히 두고 사용자가 고른다. */}
+        {rotationCandidates && (
+          <div className="px-3 pb-3">
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
+              <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-50 border-b border-slate-200">
+                <span className="text-[10px] font-bold text-slate-500">
+                  회전각 후보 — 눌러서 적용 (지지점이 많고 가장자리 여유가 클수록 안정적)
+                </span>
+                <span className="text-[9px] text-slate-400">자동 적용하지 않습니다</span>
+              </div>
+              <div className="max-h-36 overflow-y-auto">
+                <table className="w-full text-[10px]">
+                  <thead className="text-slate-400">
+                    <tr className="border-b border-slate-100">
+                      <th className="text-left font-semibold px-2.5 py-1">회전</th>
+                      <th className="text-right font-semibold px-2 py-1">지지점</th>
+                      <th className="text-right font-semibold px-2 py-1">접점 범위</th>
+                      <th className="text-right font-semibold px-2 py-1">가장자리 여유</th>
+                      <th className="text-right font-semibold px-2 py-1">상판 점유</th>
+                      <th className="text-right font-semibold px-2.5 py-1">관통</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rotationCandidates.map((c, idx) => {
+                      const r = c.seating;
+                      const current = Math.round(rotationZDeg) === c.rotationZDeg;
+                      // 축 정렬(0/90/180/270)과 그 외를 눈에 띄게 나눈다 — 적치는 축 정렬이 기본이라
+                      // 두 그룹을 한 줄로 섞어 점수순으로 세우면 4° 비튼 각도가 위로 올라온다.
+                      const groupHead = c.group === 'other' && rotationCandidates[idx - 1]?.group !== 'other';
+                      return (
+                        <React.Fragment key={`g${c.rotationZDeg}`}>
+                        {groupHead && (
+                          <tr className="bg-slate-50/70">
+                            <td colSpan={6} className="px-2.5 py-1 text-[9px] font-bold text-slate-400">
+                              그 외 후보 (축에서 벗어난 각도)
+                            </td>
+                          </tr>
+                        )}
+                        <tr
+                          onClick={() => onApplyRotation(c)}
+                          className={`cursor-pointer border-b border-slate-50 last:border-b-0 transition-colors ${
+                            current ? 'bg-blue-50' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <td className={`px-2.5 py-1 font-bold ${current ? 'text-blue-700' : 'text-slate-700'}`}>
+                            {c.rotationZDeg}°{current && ' (현재)'}
+                          </td>
+                          <td className="px-2 py-1 text-right font-mono text-slate-600">{r.contacts.length}</td>
+                          <td className="px-2 py-1 text-right font-mono text-slate-600">
+                            {Math.round(r.contactSpan[0]).toLocaleString()} × {Math.round(r.contactSpan[1]).toLocaleString()}
+                          </td>
+                          <td className="px-2 py-1 text-right font-mono text-slate-600">
+                            {Math.round(r.contactEdgeMarginMm).toLocaleString()}mm
+                          </td>
+                          <td className="px-2 py-1 text-right font-mono text-slate-600">
+                            {Math.round(r.onPlateRatio * 100)}%
+                          </td>
+                          <td className={`px-2.5 py-1 text-right font-mono font-bold ${
+                            r.penetrationCount ? 'text-amber-600' : 'text-emerald-600'
+                          }`}>
+                            {r.penetrationCount ? `${r.penetrationCount}개` : '없음'}
+                          </td>
+                        </tr>
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ─ 현재 배치 ─ */}
@@ -297,6 +446,150 @@ function ArrangementPanel({
 }
 
 // ── 메인 컴포넌트 ────────────────────────────────────────────
+/** 중량 여유(%) 입력. 기본 0 — 계산값을 그대로 쓰는 것이 기본이고, 여유는 사용자가 명시할 때만 붙는다. */
+function ContingencyField({ label, value, onChange, disabled }) {
+  return (
+    <label className={`flex items-center gap-1.5 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
+      <span className="text-[9px] text-slate-400 whitespace-nowrap">{label}</span>
+      <span className="relative">
+        <input
+          type="number" step={1} min={0} value={value}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            onChange(Number.isFinite(n) ? n : 0);
+          }}
+          className="w-14 pl-1.5 pr-4 py-0.5 text-[11px] font-mono text-right border border-slate-200 rounded-md
+                     focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+        />
+        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-slate-400 pointer-events-none">%</span>
+      </span>
+    </label>
+  );
+}
+
+/** 한 물체(정반 / 모듈 / 합산)의 중량·무게중심 칸. */
+function MassEntry({ label, color, entry, base, contingencyPct, emphasis }) {
+  const ton = (v) => v.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const mm  = (v) => Math.round(v).toLocaleString();
+  return (
+    <div className={`min-w-0 rounded-xl border p-2.5 ${emphasis ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white'}`}>
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+        <span className="text-[10px] font-bold text-slate-500 truncate">{label}</span>
+      </div>
+      {entry ? (
+        <>
+          <p className={`text-sm font-mono font-bold ${emphasis ? 'text-red-600' : 'text-slate-800'}`}>
+            {ton(entry.massTon)} <span className="text-[10px] font-sans font-normal text-slate-400">t</span>
+          </p>
+          {/* 여유를 걸었을 때만 계산 원값을 같이 보여 준다 — 어디서 온 숫자인지 추적 가능해야 한다. */}
+          {contingencyPct ? (
+            <p className="text-[9px] text-slate-400 font-mono">
+              계산값 {ton(base)} t + 여유 {contingencyPct}%
+            </p>
+          ) : null}
+          <p className="mt-1 text-[10px] font-mono text-slate-500 leading-tight">
+            X {mm(entry.cogMm.x)}<br />Y {mm(entry.cogMm.y)}<br />Z {mm(entry.cogMm.z)}
+          </p>
+        </>
+      ) : (
+        <p className="text-[10px] text-slate-400 py-2">—</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 2단계 중량·무게중심 요약.
+ *
+ * 왜 계산값과 여유 적용값을 함께 보여 주나: 이 숫자는 그대로 반력 산정으로 넘어간다.
+ * 나중에 "이 중량이 어디서 나왔나" 를 되짚을 수 있어야 해서 원값·여유율을 화면에 남긴다.
+ */
+function MassSummaryPanel({
+  summary, deckLabel, showCog, onToggleCog,
+  deckContingencyPct, onDeckContingencyChange,
+  moduleContingencyPct, onModuleContingencyChange,
+  deckSkipped, moduleSkipped,
+}) {
+  const skipNotes = [
+    ...Object.entries(deckSkipped || {}).map(([k, v]) => `정반 — ${k} ${v}개`),
+    ...Object.entries(moduleSkipped || {}).map(([k, v]) => `Module Unit — ${k} ${v}개`),
+  ];
+  const both = summary?.includes?.deck && summary?.includes?.module;
+
+  return (
+    <div className="shrink-0 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3.5 py-2 border-b border-slate-100">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <Scale size={12} className="text-slate-400 shrink-0 self-center" />
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">중량 · 무게중심</span>
+          <span className="text-[9px] text-slate-400 truncate">
+            BDF 단면·두께·밀도와 CONM2 로 산출 · 좌표는 정반 기준 · 단위 t / mm
+          </span>
+        </div>
+        <label className="flex items-center gap-1.5 shrink-0 cursor-pointer">
+          <input
+            type="checkbox" checked={showCog} onChange={(e) => onToggleCog(e.target.checked)}
+            className="w-3 h-3 accent-red-500 cursor-pointer"
+          />
+          <span className="text-[10px] font-bold text-slate-500">3D 표시</span>
+        </label>
+      </div>
+
+      {summary ? (
+        <div className="p-3">
+          <div className="grid grid-cols-3 gap-2">
+            <MassEntry
+              label={deckLabel} color={COG_COLOR_DECK}
+              entry={summary.deck} base={summary.deck?.baseMassTon}
+              contingencyPct={deckContingencyPct}
+            />
+            <MassEntry
+              label="Module Unit" color={COG_COLOR_MODULE}
+              entry={summary.module} base={summary.module?.baseMassTon}
+              contingencyPct={moduleContingencyPct}
+            />
+            <MassEntry
+              label={both ? '합산 (정반 + Module Unit)' : '합산'}
+              color={COG_COLOR_TOTAL}
+              entry={both ? summary.total : null}
+              base={summary.baseMassTon} contingencyPct={0} emphasis
+            />
+          </div>
+
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">중량 여유</span>
+            <ContingencyField label="정반" value={deckContingencyPct} onChange={onDeckContingencyChange} />
+            <ContingencyField
+              label="Module Unit" value={moduleContingencyPct}
+              onChange={onModuleContingencyChange} disabled={!summary.includes?.module}
+            />
+            {!summary.includes?.module && (
+              <span className="text-[9px] text-slate-400">
+                Module Unit 모델이 배치되면 합산됩니다.
+              </span>
+            )}
+          </div>
+
+          {skipNotes.length > 0 && (
+            <div className="mt-2 flex items-start gap-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+              <AlertTriangle size={11} className="shrink-0 mt-px" />
+              <span className="leading-relaxed">
+                중량에 반영되지 않은 요소가 있습니다 — {skipNotes.join(' · ')}.
+                표시된 중량은 실제보다 작습니다.
+              </span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="px-3.5 py-3 text-[11px] text-slate-400">
+          모델을 불러오면 중량과 무게중심이 계산됩니다.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function ModuleUnitOceanTransportAnalysis() {
   const { setCurrentMenu } = useNavigation();
   const MENU_NAME = 'Module Unit 해상 운송 구조 해석';
@@ -353,6 +646,16 @@ export default function ModuleUnitOceanTransportAnalysis() {
   const [arrangement, setArrangement]   = useState(savedPageState.arrangement ?? {
     gapMm: DEFAULT_DECK_GAP_MM, offsetXMm: 0, offsetYMm: 0, rotationZDeg: 0,
   });
+  // 적치 — 최저 접점에서 이 값 이내를 지지점으로 센다. 바닥이 완전히 평평한 모델은
+  // 거의 없어서 1mm 로 두면 지지점이 1점·1줄로만 잡힌다.
+  const [contactTolMm, setContactTolMm] = useState(savedPageState.contactTolMm ?? DEFAULT_CONTACT_TOL_MM);
+  // 중량 여유(%) — 기본 0. 계산값(순수 모델 중량)과 여유 적용값을 화면에 함께 보여 추적 가능하게 한다.
+  const [showCog, setShowCog] = useState(true);
+  const [deckContingencyPct, setDeckContingencyPct]     = useState(savedPageState.deckContingencyPct ?? 0);
+  const [moduleContingencyPct, setModuleContingencyPct] = useState(savedPageState.moduleContingencyPct ?? 0);
+  const [seating, setSeating]           = useState(null);
+  const [seatingBusy, setSeatingBusy]   = useState(false);
+  const [rotationCandidates, setRotationCandidates] = useState(null);
 
   // ── Step 4: 결과 ─────────────────────────────────────────
   const [weldResult, setWeldResult] = useState(savedPageState.weldResult ?? null);
@@ -373,14 +676,16 @@ export default function ModuleUnitOceanTransportAnalysis() {
       steps, activeIdx, hasRunOnce,
       bdfFile, validating, validJobId, validProgress, validStatusMsg,
       step1Data, step2Data, modelJsonPath, bdfPath, bdfAnalysisId,
-      useNastran, weldResult, moduleModel, arrangement, deckType,
+      useNastran, weldResult, moduleModel, arrangement, deckType, contactTolMm,
+      deckContingencyPct, moduleContingencyPct,
     });
   }, [
     setAnalysisPageState,
     steps, activeIdx, hasRunOnce,
     bdfFile, validating, validJobId, validProgress, validStatusMsg,
     step1Data, step2Data, modelJsonPath, bdfPath, bdfAnalysisId,
-    useNastran, weldResult, moduleModel, arrangement, deckType,
+    useNastran, weldResult, moduleModel, arrangement, deckType, contactTolMm,
+    deckContingencyPct, moduleContingencyPct,
   ]);
 
   // ── 진행 중이던 작업 복원 ────────────────────────────────
@@ -580,6 +885,140 @@ export default function ModuleUnitOceanTransportAnalysis() {
     }
     return list;
   }, [jungbanModel, moduleModel, placement, arrangement.rotationZDeg]);
+
+  // ── 적치(seating) ────────────────────────────────────────
+  // 정반 상판 추출과 높이맵은 정반 타입당 한 번만 만든다(A 기준 약 16ms).
+  const deckSurface = useMemo(
+    () => (jungbanModel ? buildDeckSurface(jungbanModel) : null),
+    [jungbanModel],
+  );
+  // 절점을 anchor 기준 로컬좌표로 펴 둔다 — 회전각 360회 스윕에서 매번 다시 만들지 않기 위함.
+  const moduleFootprint = useMemo(
+    () => (moduleModel ? prepareModuleFootprint(moduleModel) : null),
+    [moduleModel],
+  );
+  /* ── 중량 / 무게중심 ────────────────────────────────────────
+     각 모델의 질량·COG 는 백엔드가 계산해 페이로드(massProperties)로 보내 준다.
+     여기서는 모듈 COG 를 현재 배치로 옮겨 정반 것과 합치기만 한다 — 슬라이더를 만질 때마다
+     서버를 다시 부르지 않기 위함이다. */
+  const massSummary = useMemo(() => combineMassProperties({
+    deckMass: jungbanModel?.massProperties,
+    moduleMass: moduleModel?.massProperties,
+    placement: (placement?.anchor && placement?.deckCenter) ? {
+      anchor: placement.anchor,
+      deckCenter: placement.deckCenter,
+      deckTopZ: placement.deckTopZ,
+      offsetXMm: arrangement.offsetXMm,
+      offsetYMm: arrangement.offsetYMm,
+      rotationZDeg: arrangement.rotationZDeg,
+      gapMm: arrangement.gapMm,
+    } : null,
+    deckContingencyPct,
+    moduleContingencyPct,
+  }), [jungbanModel, moduleModel, placement, arrangement,
+       deckContingencyPct, moduleContingencyPct]);
+
+  // 추선(다림추)은 정반 바닥까지 내린다 — 공중의 점 하나로는 깊이를 못 읽는다.
+  const cogMarkers = useMemo(() => {
+    if (!showCog || !massSummary) return [];
+    const dropToZ = jungbanModel?.bounds?.min?.[2];
+    const out = [];
+    if (massSummary.deck)   out.push({ ...massSummary.deck.cogMm,   color: COG_COLOR_DECK,   dropToZ });
+    if (massSummary.module) out.push({ ...massSummary.module.cogMm, color: COG_COLOR_MODULE, dropToZ });
+    // 합산 COG 는 둘 다 있을 때만 의미가 있다 — 하나뿐이면 그 물체의 COG 와 같은 점이다.
+    if (massSummary.total && massSummary.includes.deck && massSummary.includes.module) {
+      out.push({ ...massSummary.total.cogMm, color: COG_COLOR_TOTAL, dropToZ });
+    }
+    return out;
+  }, [showCog, massSummary, jungbanModel]);
+
+  const seatingBase = useMemo(() => (
+    placement?.deckCenter
+      ? { deckCenter: placement.deckCenter, contactTolMm }
+      : null
+  ), [placement?.deckCenter, contactTolMm]);
+
+  const runSeating = (overrides = {}) => {
+    if (!deckSurface || !moduleFootprint || !seatingBase) {
+      showToast('정반과 Module Unit 모델이 모두 로드된 뒤에 사용할 수 있습니다.', 'warning');
+      return null;
+    }
+    return computeSeating(deckSurface, moduleFootprint, {
+      ...seatingBase,
+      offsetXMm: arrangement.offsetXMm,
+      offsetYMm: arrangement.offsetYMm,
+      rotationZDeg: arrangement.rotationZDeg,
+      ...overrides,
+    });
+  };
+
+  /** 현재 회전·오프셋을 유지한 채 상판에 닿을 때까지 내린다. */
+  const handleSeat = () => {
+    const r = runSeating();
+    if (!r) return;
+    setSeating(r);
+    if (!r.ok) { showToast(r.reason, 'warning'); return; }
+    setArrangement(prev => ({ ...prev, gapMm: Math.round(r.gapMm) }));
+    showToast(
+      r.penetrationCount > 0
+        ? `정반에 앉혔습니다 — 지지점 ${r.contacts.length}개, 다만 정반과 겹치는 절점 ${r.penetrationCount}개`
+        : `정반에 앉혔습니다 — 지지점 ${r.contacts.length}개`,
+      r.penetrationCount > 0 ? 'warning' : 'success',
+    );
+  };
+
+  /**
+   * 회전각 후보를 만든다. **자동으로 적용하지 않는다.**
+   *
+   * 거울상인 90°/270° 처럼 지지 넓이·벌어짐이 똑같이 나오는 배치가 흔해서, 코드가
+   * 하나를 골라 버리면 근거 없이 한쪽을 강요하게 된다(실제로 그래서 틀렸다).
+   * 수치를 나란히 보여 주고 사용자가 고르게 한다.
+   */
+  const handleCompareRotations = () => {
+    if (!deckSurface || !moduleFootprint || !seatingBase) {
+      showToast('정반과 Module Unit 모델이 모두 로드된 뒤에 사용할 수 있습니다.', 'warning');
+      return;
+    }
+    setSeatingBusy(true);
+    setTimeout(() => {
+      try {
+        const res = findBestSeatingRotation(deckSurface, moduleFootprint, {
+          ...seatingBase,
+          offsetXMm: arrangement.offsetXMm,
+          offsetYMm: arrangement.offsetYMm,
+        });
+        const list = (res?.candidates || []).filter(c => c.seating?.ok);
+        if (!list.length) {
+          showToast('상판에 앉힐 수 있는 회전각을 찾지 못했습니다. 오프셋을 조정해보세요.', 'warning');
+          return;
+        }
+        setRotationCandidates(list.slice(0, 8));
+        showToast(`회전각 후보 ${Math.min(list.length, 8)}개를 계산했습니다. 수치를 보고 고르세요.`, 'info');
+      } finally {
+        setSeatingBusy(false);
+      }
+    }, 0);
+  };
+
+  /** 후보 하나를 실제 배치에 적용한다. */
+  const handleApplyRotation = (candidate) => {
+    setArrangement(prev => ({
+      ...prev,
+      rotationZDeg: candidate.rotationZDeg,
+      gapMm: Math.round(candidate.seating.gapMm),
+    }));
+    setSeating(candidate.seating);
+  };
+
+  // 배치가 바뀌면 이전 적치 결과는 더 이상 그 배치의 것이 아니다.
+  // (후보 목록은 오프셋·정반이 바뀔 때만 무효화한다 — 회전각은 후보를 고르면 바뀌므로
+  //  회전 변경까지 무효화하면 방금 띄운 목록이 클릭하는 순간 사라진다.)
+  useEffect(() => { setSeating(null); }, [
+    arrangement.rotationZDeg, arrangement.offsetXMm, arrangement.offsetYMm, deckType, moduleModel,
+  ]);
+  useEffect(() => { setRotationCandidates(null); }, [
+    arrangement.offsetXMm, arrangement.offsetYMm, contactTolMm, deckType, moduleModel,
+  ]);
 
   // ── BDF 검증 요청 ────────────────────────────────────────
   const handleValidate = async () => {
@@ -956,6 +1395,8 @@ export default function ModuleUnitOceanTransportAnalysis() {
                   {/* 정반은 프로그램 내장 고정 모델이라 Module Unit 유무와 무관하게 항상 띄운다. */}
                   <FeModelViewer
                     parts={viewerParts}
+                    markers={seating?.contacts || []}
+                    cogMarkers={cogMarkers}
                     loading={viewerStatus === 'loading'}
                     loadingLabel={
                       jungbanModel
@@ -991,12 +1432,33 @@ export default function ModuleUnitOceanTransportAnalysis() {
                 offsetXMm={arrangement.offsetXMm}
                 offsetYMm={arrangement.offsetYMm}
                 rotationZDeg={arrangement.rotationZDeg}
+                contactTolMm={contactTolMm}
+                onContactTolChange={setContactTolMm}
+                onSeat={handleSeat}
+                onCompareRotations={handleCompareRotations}
+                rotationCandidates={rotationCandidates}
+                onApplyRotation={handleApplyRotation}
+                seating={seating}
+                seatingBusy={seatingBusy}
                 placement={placement}
                 disabled={!moduleModel}
                 onChange={(patch) => setArrangement(prev => ({ ...prev, ...patch }))}
                 onReset={() => setArrangement({
                   gapMm: DEFAULT_DECK_GAP_MM, offsetXMm: 0, offsetYMm: 0, rotationZDeg: 0,
                 })}
+              />
+
+              <MassSummaryPanel
+                summary={massSummary}
+                deckLabel={deckType ? `${deckType} 타입 정반` : '정반'}
+                showCog={showCog}
+                onToggleCog={setShowCog}
+                deckContingencyPct={deckContingencyPct}
+                onDeckContingencyChange={setDeckContingencyPct}
+                moduleContingencyPct={moduleContingencyPct}
+                onModuleContingencyChange={setModuleContingencyPct}
+                deckSkipped={jungbanModel?.massProperties?.skipped}
+                moduleSkipped={moduleModel?.massProperties?.skipped}
               />
             </div>
           )}

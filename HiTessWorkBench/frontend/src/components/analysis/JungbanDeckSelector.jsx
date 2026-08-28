@@ -18,6 +18,10 @@ const PREVIEW_COLOR = '#8d9bb0';
 
 const fmtMm = (v) => (typeof v === 'number' ? `${Math.round(v).toLocaleString()} mm` : '—');
 const fmtCount = (v) => (typeof v === 'number' ? v.toLocaleString() : '—');
+// 자중은 BDF 단면·두께·밀도에서 산출한 값이다. 못 구했으면 0 이 아니라 '—' 로 둔다.
+const fmtTon = (v) => (typeof v === 'number'
+  ? `${v.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t`
+  : '—');
 
 function SpecRow({ label, value, strong = false }) {
   return (
@@ -166,6 +170,7 @@ export default function JungbanDeckSelector({ selected, onSelect, deckModelCache
                         <SpecRow label="폭 (Y)" value={fmtMm(size[1])} />
                         <SpecRow label="높이 (Z)" value={fmtMm(size[2])} />
                         <SpecRow label="정반 상면 높이" value={fmtMm(deck.topZ)} strong />
+                        <SpecRow label="정반 자중" value={fmtTon(deck.massProperties?.totalMassTon)} strong />
                         <SpecRow label="절점 수" value={fmtCount(deck.nodeCount)} />
                         <SpecRow
                           label="요소 수 (쉘 / 빔)"

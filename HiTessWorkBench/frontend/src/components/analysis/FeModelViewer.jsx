@@ -193,6 +193,10 @@ export default function FeModelViewer({
   errorAction = null,     // 오류 화면 아래에 붙일 조치 버튼(예: 다시 시도)
   overlay = null,           // 뷰포트 위에 겹쳐 그릴 커스텀 노드 (범례·안내 등)
   showGridDefault = true,
+  // 접점 마커 — [{x,y,z}]. 표시 토글과 무관하게 항상 보인다(적치 접점 표시용).
+  markers = [],
+  markerColor = '#f59e0b',
+  cogMarkers = [],
   // 썸네일 모드 — 툴바·파트 목록·상태바를 모두 숨기고 카메라 조작도 끈다.
   // 정반 타입 선택 카드처럼 '형상만 보여 주는' 정적 미리보기에 쓴다.
   // (드래그 회전을 살려 두면 카드 클릭 선택과 제스처가 충돌한다.)
@@ -221,6 +225,9 @@ export default function FeModelViewer({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hidden,       setHidden]       = useState(() => new Set());
   const [readout,      setReadout]      = useState(null);
+
+  const markersRef = useRef(null);
+  const cogRef       = useRef(null);
 
   /* ── 온디맨드 렌더 ─────────────────────────────────────── */
   const renderFrame = useCallback(() => {
@@ -594,6 +601,90 @@ export default function FeModelViewer({
     if (gridRef.current) gridRef.current.visible = showGrid;
     requestRender();
   }, [showGrid, requestRender]);
+
+  /* ── 접점 마커 ─────────────────────────────────────────────
+     적치 접점은 요소가 아니라 '결과'라서 파트와 별개로 그린다.
+     depthTest 를 끄고 sizeAttenuation 을 꺼서 모델 안쪽 접점도 항상 같은 크기로 보인다. */
+  const markerSignature = useMemo(
+    () => markers.map(m => `${m.x},${m.y},${m.z}`).join('|'),
+    [markers],
+  );
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    if (markersRef.current) {
+      scene.remove(markersRef.current);
+      markersRef.current.geometry.dispose();
+      markersRef.current.material.dispose();
+      markersRef.current = null;
+    }
+    if (markers.length) {
+      const pos = new Float32Array(markers.length * 3);
+      markers.forEach((m, i) => { pos[3 * i] = m.x; pos[3 * i + 1] = m.y; pos[3 * i + 2] = m.z; });
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({
+        color: new THREE.Color(markerColor), size: 11,
+        sizeAttenuation: false, depthTest: false, transparent: true,
+      });
+      const pts = new THREE.Points(geo, mat);
+      pts.renderOrder = 999;
+      scene.add(pts);
+      markersRef.current = pts;
+    }
+    requestRender();
+  }, [markerSignature, markerColor, requestRender]);
+
+  /* ── 무게중심(COG) 마커 ────────────────────────────────────
+     접점 마커와 달리 한 점이 공중에 뜬다. 3D 에서 점 하나는 깊이를 읽을 수 없으므로
+     dropToZ 가 주어지면 그 높이까지 **수직 추선**을 함께 그린다(현장의 다림추와 같은 표현).
+     추선 길이를 씬 크기에서 뽑지 않고 호출부가 넘긴 Z 로 정하므로 모델 로딩 순서에 얽히지 않는다. */
+  const cogSignature = useMemo(
+    () => cogMarkers.map(m => `${m.x},${m.y},${m.z},${m.color},${m.dropToZ ?? ''}`).join('|'),
+    [cogMarkers],
+  );
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    if (cogRef.current) {
+      scene.remove(cogRef.current);
+      cogRef.current.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+      cogRef.current = null;
+    }
+    if (cogMarkers.length) {
+      const group = new THREE.Group();
+      group.renderOrder = 1000;
+      for (const m of cogMarkers) {
+        if (![m.x, m.y, m.z].every(Number.isFinite)) continue;
+        const color = new THREE.Color(m.color || '#ef4444');
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([m.x, m.y, m.z]), 3));
+        const dot = new THREE.Points(geo, new THREE.PointsMaterial({
+          color, size: 17, sizeAttenuation: false, depthTest: false, transparent: true,
+        }));
+        dot.renderOrder = 1001;
+        group.add(dot);
+
+        if (Number.isFinite(m.dropToZ)) {
+          const lineGeo = new THREE.BufferGeometry();
+          lineGeo.setAttribute('position', new THREE.BufferAttribute(
+            new Float32Array([m.x, m.y, m.z, m.x, m.y, m.dropToZ]), 3,
+          ));
+          const line = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({
+            color, depthTest: false, transparent: true, opacity: 0.55,
+          }));
+          line.renderOrder = 1000;
+          group.add(line);
+        }
+      }
+      scene.add(group);
+      cogRef.current = group;
+    }
+    requestRender();
+  }, [cogSignature, requestRender]);
+
 
   /* ── 투영 전환 (원근 ↔ 정투영) ─────────────────────────── */
   useEffect(() => {

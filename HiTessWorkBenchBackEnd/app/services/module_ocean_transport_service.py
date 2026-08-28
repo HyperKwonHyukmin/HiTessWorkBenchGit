@@ -24,6 +24,7 @@ import threading
 from typing import Any, Dict, List, Optional
 
 from .analysis_runner import build_nastran_bridge_command
+from .bdf_mass_properties import compute_mass_properties
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,10 @@ _BEAM_TYPES = {"CBEAM", "CBAR", "CROD", "CONROD", "CBUSH"}
 # 반올림만으로 JSON 텍스트가 30% 이상 줄어든다.
 _COORD_NDIGITS = 2
 
+# 슬림 페이로드 스키마 버전. 필드를 늘리면 올린다 — 이 값이 다른 .viewer.json 캐시는
+# 원본 BDF 보다 새 것이어도 버리고 다시 만든다(예전 캐시에는 massProperties 가 없다).
+_PAYLOAD_SCHEMA = 2
+
 _jungban_lock = threading.Lock()
 # 타입 id -> 슬림 페이로드. 타입이 둘뿐이라 둘 다 상주해도 메모리 부담이 없다(각 1~2MB).
 _jungban_cache: Dict[str, Dict[str, Any]] = {}
@@ -74,6 +79,26 @@ class ModelParseError(RuntimeError):
 
 
 # ── 모델 JSON → 슬림 지오메트리 ────────────────────────────────────────────
+
+def _round_mass_properties(mp: Dict[str, Any]) -> Dict[str, Any]:
+    """질량/무게중심을 화면에 쓸 자리수로 줄인다. 0.1kg·0.1mm 아래는 의미가 없다."""
+    def pt(p):
+        return None if not p else {k: round(v, 1) for k, v in p.items()}
+
+    out = dict(mp)
+    if out.get("totalMassTon") is not None:
+        out["totalMassTon"] = round(out["totalMassTon"], 4)
+    out["centerOfGravityMm"] = pt(out.get("centerOfGravityMm"))
+    out["components"] = {
+        name: {
+            "massTon": round(c["massTon"], 4),
+            "count": c["count"],
+            "centroidMm": pt(c.get("centroidMm")),
+        }
+        for name, c in (out.get("components") or {}).items()
+    }
+    return out
+
 
 def slim_model_json(model_json: Dict[str, Any], *, name: str) -> Dict[str, Any]:
     """
@@ -165,8 +190,12 @@ def slim_model_json(model_json: Dict[str, Any], *, name: str) -> Dict[str, Any]:
         logger.info("[ModuleOceanTransport] %s — 연결도 불완전으로 건너뛴 요소 %d개", name, skipped)
 
     return {
+        "schema": _PAYLOAD_SCHEMA,
         "name": name,
         "unit": (model_json.get("meta") or {}).get("unit") or "mm",
+        # 질량/무게중심은 여기서만 계산할 수 있다 — 아래 지오메트리에는 PBEAML 치수·PSHELL 두께·
+        # MAT1 밀도·CONM2 가 남지 않기 때문이다. 결과는 스칼라 몇 개뿐이라 페이로드 부담이 없다.
+        "massProperties": _round_mass_properties(compute_mass_properties(model_json)),
         "nodeCount": len(positions) // 3,
         "quadCount": len(quads) // 4,
         "triaCount": len(trias) // 3,
@@ -258,6 +287,12 @@ def get_jungban_viewer_model(deck_type: str = DEFAULT_DECK_TYPE, *,
                 #   백엔드 프로세스의 read() 는 복호화된 내용을 준다(viewers.py 와 동일 전제).
                 with open(cache_path, "r", encoding="utf-8") as fp:
                     slim = json.load(fp)
+                # 스키마가 올라간 뒤의 캐시만 신뢰한다. 예전 캐시에는 massProperties 가 없어서
+                # 그대로 쓰면 화면에 중량이 영영 안 뜬다(BDF 가 안 바뀌니 mtime 검사로는 못 잡는다).
+                if slim.get("schema") != _PAYLOAD_SCHEMA:
+                    logger.info("[ModuleOceanTransport] 정반(%s) 캐시 스키마 %s → %s, 재생성합니다",
+                                deck_type, slim.get("schema"), _PAYLOAD_SCHEMA)
+                    raise ValueError("stale schema")
                 _jungban_cache[deck_type] = slim
                 logger.info("[ModuleOceanTransport] 정반(%s) 뷰어 캐시 적중: %s", deck_type, cache_path)
                 return slim
@@ -320,6 +355,8 @@ def list_jungban_deck_types() -> List[Dict[str, Any]]:
                 "shellCount": model.get("quadCount", 0) + model.get("triaCount", 0),
                 "beamCount": model.get("beamCount", 0),
                 "rigidCount": model.get("rigidCount", 0),
+                # 선택 카드에서 정반 자중을 바로 비교할 수 있게 한다.
+                "massProperties": model.get("massProperties"),
             })
         out.append(entry)
     return out
