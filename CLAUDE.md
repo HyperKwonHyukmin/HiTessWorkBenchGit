@@ -184,6 +184,41 @@ Mooring Fitting Assessment(연결 메뉴 = "Mooring Fitting Assessment", viewer 
 
 **현재 상태(2026-07-23 확인):** 엔진 git 최신 `0494258`(CSV parse skip grouping). 스튜디오 `package.json`=`0.1.59`, UNC StudioProgram에 `0.1.58/0.1.59` 배포됨. ⚠ 백엔드-로컬 `HiTessWorkBenchBackEnd\StudioProgram\` 에는 mooring zip이 없어 현재 **UNC로 폴백 서빙 중** — 다음 배포 때 백엔드-로컬에도 복사할 것. 기능 이력: 최초 API(`52bc2ad`) → Studio Phase1 BDF뷰어(`37a50c6`) → solve-bdf 연동(`2d62be2`) → Safety Factor·v1.2.5(`79d9611`) → 편집 BDF solve PID패치·SPC충돌해소(`728b66e`).
 
+### 이중관 연료배관 PSA — 엔진은 외부 연구원 소유, WorkBench 개조는 어댑터로 분리 ★엔진 수정 금지
+
+이중관 연료배관 응력해석(PSA) 엔진(`InHouseProgram/DoublePipe/Piping Stress Analysis for all load cases/`)은
+**사내 다른 연구원이 개발**한다. 과거에는 WorkBench 실행에 필요한 개조(DRM 우회·인코딩·CLI 규약)를
+엔진 소스에 직접 넣어서, 연구원이 새 버전을 줄 때마다 개조가 유실됐다
+(실제 사례: `FuelLine_PSA_Report.preload_template()` 의 `_MEIPASS`/`report_template.bin` DRM 폴백이
+2026-08 신규 엔진에서 통째로 사라짐 → 서버에서 빈 워크북 보고서).
+
+- 🚫 **`Piping Stress Analysis for all load cases/` 는 수정하지 않는다.** 새 버전이 오면 폴더째 덮어쓴다.
+- ✅ WorkBench 개조는 전부 **어댑터**에 있다: `HiTessWorkBenchBackEnd/InHouseAdapters/doublepipe_psa/`
+  (**git 추적** — 이력이 남는 것이 이 설계의 핵심). 상세: `README.md` +
+  `docs/superpowers/specs/2026-08-28-doublepipe-engine-adapter-design.md`
+  - `shims/` — 엔진 무수정 런타임 주입: openpyxl `load_workbook` DRM 폴백 / `MergedCell.value` 쓰기 무시 /
+    `subprocess.Popen` 인코딩 교정 + `ask_delete=OFF` / stdout UTF-8.
+  - `cli.py` — 연구원 `Main.py` 를 대체하는 진입점(`--load-cases` 규약은 기존 exe 와 100% 동일).
+  - `patches.py` — shim 으로 못 뚫는 **엔진 로직 버그 fix** 만 선언적으로. 앵커 불일치 시 빌드 중단.
+    새 항목을 넣기 전에 "shim 으로 못 하나?"를 먼저 볼 것.
+- **exe·서식 템플릿 위치가 바뀌었다**: `InHouseProgram/DoublePipe/HiTessAdapter/` (엔진 폴더 밖).
+  엔진 폴더를 덮어써도 지워지지 않게 하려는 것. 백엔드는 어댑터 폴더 → 구 엔진 폴더 순으로 폴백 탐색한다
+  (`doublepipe_psa_service._resolve_psa_exe`).
+- **새 엔진 수령 절차**: ① 엔진 폴더 덮어쓰기 → ② `pytest tests/test_doublepipe_adapter.py`
+  (여기가 빨개지면 드리프트 — patches.py/engine.py 갱신) → ③ `InHouseAdapters/doublepipe_psa/build.ps1`
+  (엔진 의존성 설치된 Python 3.8 환경 필요) → ④ 서버(145) 수동 복사 + 백엔드 재시작.
+- ⚠️ 엔진 폴더의 `Report for PSA.xlsx` 는 dev PC 에서 **DRM 암호화(HHIDRMC, +4096B)된 상태**로 존재한다.
+  `prep.py` 가 PK 검사로 걸러 `HiTessAdapter/report_template.bin`(PK 정상 사본)으로 폴백한다.
+
+### Truss Structural Assessment — 허용응력 Property ID 테이블은 두 곳에서 참조된다 ★수정 시 동기화 필수
+
+엔진(`WorkBenchSubModule/TrussAssessment`, C#)의 허용응력 테이블은 **Property ID 1~18만** 하드코딩돼 있고(`ElementStressChecker.cs:28-48`, `AllowableInfo.propertiesInfo`), 테이블 밖 ID 는 `catch (KeyNotFoundException) { continue; }` 로 **아무 흔적 없이 스킵**된다.
+
+- 실제 장애(2026-08-28, `177K-01.bdf`): FEGate 5.03.21 이 PBAR/PBARL 을 **+1000 오프셋(1001~1019)** 으로 내보내 23,035 개 CBAR 가 전부 스킵 → F06 에 FATAL 도 없고 엔진도 exit 0 인데 엑셀의 `Summary_LC*` / `부재평가_LC*` 시트만 헤더만 남음. 하중분산판·SideSupport 는 SPC 반력만 쓰므로 정상 출력돼 "일부만 안 나오는" 모양이 된다.
+- ⚠ **ID 집합이 백엔드에도 있다**: `app/services/assessment_diagnostics.py` 의 `_ALLOWABLE_PROPERTY_IDS = frozenset(range(1, 19))`. **C# 테이블에 Property ID 를 추가·삭제하면 이 상수도 같이 고칠 것.** (허용응력 *값* 은 복제하지 않는다 — 판정에 필요한 건 ID 집합뿐이라 중복을 정수 리스트 한 줄로 묶어 뒀다.)
+- 검사는 **CBAR 가 참조하는 PID** 기준이다. PBAR/PBARL 카드 기준으로 바꾸지 말 것 — 정상 참조 모델 `3321_2tk_moving_04.bdf` 에는 어떤 CBAR 도 쓰지 않는 PBARL 37/38/39 가 카드로만 존재해서 카드 기준이면 **정상 모델이 차단된다.**
+- 방어선 2겹(둘 다 백엔드, `git pull` 로 서버 반영): ① `preflight_property_ids()` — 업로드 직후 차단(전량 미매핑) 또는 경고(부분 미매핑, 해석은 진행). ② `_count_element_rows()` — 엔진이 exit 0 + JSON 까지 냈는데 부재평가가 0 행이면 Success 를 Failed 로 뒤집는다.
+
 ### 프론트엔드 내비게이션 구조
 
 React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)를 사용합니다. `useReducer` 기반으로 `history[]` 배열과 `currentIndex`를 원자적으로 관리합니다. 페이지 컴포넌트에서 `useNavigation()` 훅으로 `setCurrentMenu(name)`, `goBack()`, `goForward()` 등에 접근합니다(이전의 props drilling 방식 제거). 전체 라우팅 분기는 `App.jsx:renderPage()`의 switch문에 있습니다.
