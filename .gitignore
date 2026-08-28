@@ -27,6 +27,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .venv/
+.venv*/
 env/
 venv/
 ENV/
@@ -112,3 +113,4 @@ HiTessWorkBenchBackEnd/Videos/
 # 외부 라이브러리 클론(자체 .git 보유) — 절대 커밋하지 않는다.
 # 그대로 add 하면 임베디드 저장소(gitlink) 한 줄로 기록돼 clone 시 빈 폴더가 된다.
 Darkmode.js/
+hitess-landing/
