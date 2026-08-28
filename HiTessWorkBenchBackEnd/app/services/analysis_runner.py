@@ -202,14 +202,29 @@ def record_analysis(
     try:
         new_analysis = db.query(models.Analysis).filter(models.Analysis.job_id == job_id).first() if job_id else None
         now = datetime.now()
+        normalized_status = (status or "").strip().lower()
+        is_success = normalized_status == "success"
+        is_failure = normalized_status in {"failed", "failure", "interrupted"}
+        is_terminal = is_success or is_failure
+        progress = 100 if is_terminal else 0
+        if is_success:
+            job_message = "해석 완료"
+        elif is_failure:
+            job_message = "해석 실패"
+        elif normalized_status == "running":
+            job_message = "해석 실행 중"
+        elif normalized_status == "pending":
+            job_message = "실행 대기 중"
+        else:
+            job_message = status or "상태 확인 중"
         if new_analysis:
             new_analysis.project_name = project_name
             new_analysis.program_name = program_name
             new_analysis.employee_id = employee_id
             new_analysis.status = status
             new_analysis.job_status = status
-            new_analysis.progress = 100
-            new_analysis.job_message = "해석 완료" if status == "Success" else "해석 실패"
+            new_analysis.progress = progress
+            new_analysis.job_message = job_message
             new_analysis.input_info = input_info
             new_analysis.result_info = result_info
             new_analysis.source = source
@@ -224,8 +239,8 @@ def record_analysis(
                 employee_id=employee_id,
                 status=status,
                 job_status=status,
-                progress=100,
-                job_message="해석 완료" if status == "Success" else "해석 실패",
+                progress=progress,
+                job_message=job_message,
                 input_info=input_info,
                 result_info=result_info,
                 source=source,
@@ -236,21 +251,24 @@ def record_analysis(
         db.commit()
         db.refresh(new_analysis)
 
-        try:
-            db.add(models.ActivityLog(
-                employee_id=employee_id,
-                action_type="ANALYSIS_COMPLETE" if status == "Success" else "ANALYSIS_FAILED",
-                action_detail={
-                    "analysis_id": new_analysis.id,
-                    "program_name": program_name,
-                    "project_name": project_name,
-                    "source": source,
-                },
-                status="success" if status == "Success" else "failure",
-            ))
-            db.commit()
-        except Exception:
-            db.rollback()
+        # Running/Pending 스냅샷은 My Projects의 즉시 복원용이며 완료/실패 활동으로 집계하지 않는다.
+        # 동일 job_id가 terminal 상태로 갱신될 때에만 활동 로그를 한 번 남긴다.
+        if is_terminal:
+            try:
+                db.add(models.ActivityLog(
+                    employee_id=employee_id,
+                    action_type="ANALYSIS_COMPLETE" if is_success else "ANALYSIS_FAILED",
+                    action_detail={
+                        "analysis_id": new_analysis.id,
+                        "program_name": program_name,
+                        "project_name": project_name,
+                        "source": source,
+                    },
+                    status="success" if is_success else "failure",
+                ))
+                db.commit()
+            except Exception:
+                db.rollback()
 
         project_data = {
             "id": new_analysis.id,

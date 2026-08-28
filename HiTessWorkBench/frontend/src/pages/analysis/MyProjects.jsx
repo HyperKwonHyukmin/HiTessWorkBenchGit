@@ -7,7 +7,8 @@ import {
   CheckCircle2,
   FileCode, Database, FileOutput, Eye, FileX,
   TrendingUp, CalendarClock, Award, BarChart3, Minus,
-  GitCompare, Play, Square, CheckSquare, Fingerprint
+  GitCompare, Play, Square, CheckSquare, Fingerprint,
+  Clock3, ListChecks, Pipette, Terminal
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
@@ -22,6 +23,7 @@ import AssessmentProjectModal from '../../components/analysis/AssessmentProjectM
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { findAppByProgramName, getDisplayProgramName, useGlobalJobs } from '../../contexts/DashboardContext';
+import { isDoublePipeProject, normalizeDoublePipeProject } from '../../utils/doublePipeProject';
 
 const FILE_RETENTION_DAYS = 30;
 
@@ -50,6 +52,211 @@ const FileDownloadRow = ({ label, path, icon: Icon, onClick, isResult }) => (
     <Download size={18} className="text-slate-300 group-hover:text-blue-600" />
   </button>
 );
+
+const DOUBLE_PIPE_FIELD_META = {
+  outDia: ['Out. Diameter', 'mm'],
+  thick: ['Thickness', 'mm'],
+  bendR: ['Bend Radius', 'mm'],
+  mass: ['U-Bolt Mass', 'kg'],
+  Pref: ['Design Pressure', 'barG'],
+  DesignTemperature: ['Design Temperature', '°C'],
+  InitialTemperature: ['Initial Temperature', '°C'],
+  FluidDensity: ['Fluid Density', 'kg/mm³'],
+  AccUX: ['Acceleration Ux', 'g'],
+  AccUY: ['Acceleration Uy', 'g'],
+  AccUZ: ['Acceleration Uz', 'g'],
+  Hogg: ['Hull Deflection (Hogg)', 'mm'],
+  Sagg: ['Hull Deflection (Sagg)', 'mm'],
+  Summer: ['Summer', '°C'],
+  Winter: ['Winter', '°C'],
+  Stiff: ['Support Stiffness', 'N/mm'],
+  FrictionFactor: ['Friction Factor', ''],
+};
+
+const DOUBLE_PIPE_GROUP_META = {
+  inner_pipe: ['Inner Pipe', Pipette],
+  ubolt: ['U-Bolt', Box],
+  load_conditions: ['Load Conditions', ListChecks],
+};
+
+const formatDetailValue = (value) => {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'number') {
+    const absolute = Math.abs(value);
+    if (value !== 0 && (absolute >= 1e9 || absolute < 0.001)) return value.toExponential(4);
+    return value.toLocaleString('ko-KR', { maximumFractionDigits: 8 });
+  }
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
+
+const DoublePipeProjectDetails = ({ project, filesMissing, onDownload }) => {
+  const detail = normalizeDoublePipeProject(project);
+  const configGroups = Object.entries(detail.config)
+    .filter(([, values]) => values && typeof values === 'object' && !Array.isArray(values));
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <Pipette size={16} className="text-brand-blue" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">이중관 해석 입력</h3>
+          <span className="ml-auto text-[10px] font-semibold text-slate-500">DB에 저장된 실행 스냅샷</span>
+        </div>
+        <dl className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-3">
+          {[
+            ['작업 단계', detail.workflowStepLabel],
+            ['배관 CSV', detail.inputCsv ? extractFilename(detail.inputCsv) : '—'],
+            ['Load Case', detail.loadCaseLabel],
+          ].map(([label, value]) => (
+            <div key={label} className="min-w-0 bg-white px-4 py-3">
+              <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</dt>
+              <dd className="mt-1 break-words text-xs font-semibold text-slate-800" title={value}>{value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        {configGroups.length > 0 ? (
+          <div className="divide-y divide-slate-200">
+            {configGroups.map(([groupKey, values]) => {
+              const [groupLabel, GroupIcon] = DOUBLE_PIPE_GROUP_META[groupKey] || [groupKey.replace(/_/g, ' '), ListChecks];
+              return (
+                <div key={groupKey} className="px-4 py-4">
+                  <div className="mb-3 flex items-center gap-2 text-xs font-bold text-slate-700">
+                    <GroupIcon size={14} className="text-slate-500" />
+                    {groupLabel}
+                  </div>
+                  <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {Object.entries(values).map(([key, value]) => {
+                      const [label, unit] = DOUBLE_PIPE_FIELD_META[key] || [key.replace(/_/g, ' '), ''];
+                      return (
+                        <div key={key} className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                          <dt className="text-[10px] font-semibold text-slate-500">{label}</dt>
+                          <dd className="mt-0.5 break-all font-mono text-xs font-bold text-slate-800">
+                            {formatDetailValue(value)}{unit ? <span className="ml-1 font-sans font-medium text-slate-500">{unit}</span> : null}
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
+            직접 업로드 또는 이전 버전에서 생성된 이력으로, 별도 Inner Support 설정값은 없습니다.
+          </div>
+        )}
+
+        {!filesMissing && detail.inputCsv && (
+          <div className="border-t border-slate-200 p-4">
+            <FileDownloadRow
+              label="입력 배관 CSV"
+              path={detail.inputCsv}
+              icon={Database}
+              onClick={() => onDownload(detail.inputCsv)}
+            />
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <CheckCircle2 size={16} className="text-emerald-600" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">{detail.resultSectionLabel}</h3>
+          <div className="ml-auto"><StatusBadge status={project.status} /></div>
+        </div>
+        <dl className="grid grid-cols-2 gap-px bg-slate-200 lg:grid-cols-4">
+          {(
+            detail.isInnerSupportOnly
+              ? [
+                  ['시작', detail.startedAt ? new Date(detail.startedAt).toLocaleString() : '—'],
+                  ['완료', detail.finishedAt ? new Date(detail.finishedAt).toLocaleString() : '—'],
+                  ['소요 시간', detail.durationLabel],
+                  ['결과 행', detail.rowCount ?? (project.status === 'Running' ? '변환 중' : '—')],
+                ]
+              : [
+                  ['시작', detail.startedAt ? new Date(detail.startedAt).toLocaleString() : '—'],
+                  ['완료', detail.finishedAt ? new Date(detail.finishedAt).toLocaleString() : '—'],
+                  ['소요 시간', detail.durationLabel],
+                  ['종료 코드', detail.returncode ?? (project.status === 'Running' ? '실행 중' : '—')],
+                ]
+          ).map(([label, value]) => (
+            <div key={label} className="min-w-0 bg-white px-4 py-3">
+              <dt className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                {label === '소요 시간' && <Clock3 size={11} />}{label}
+              </dt>
+              <dd className="mt-1 break-words font-mono text-xs font-semibold text-slate-800">{value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        {detail.diagnostic && (
+          <div className="border-t border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+            <span className="font-bold">진단:</span> {detail.diagnostic}
+          </div>
+        )}
+
+        {!filesMissing && detail.isInnerSupportOnly && detail.outputCsv && (
+          <div className="border-t border-slate-200 p-4">
+            <FileDownloadRow
+              label="Inner Support 결과 CSV"
+              path={detail.outputCsv}
+              icon={FileOutput}
+              onClick={() => onDownload(detail.outputCsv)}
+              isResult
+            />
+          </div>
+        )}
+
+        {!filesMissing && !detail.isInnerSupportOnly && detail.reportReady && detail.reportPath && (
+          <div className="border-t border-slate-200 p-4">
+            <FileDownloadRow
+              label="Report for PSA.xlsx"
+              path={detail.reportPath}
+              icon={FileOutput}
+              onClick={() => onDownload(detail.reportPath)}
+              isResult
+            />
+          </div>
+        )}
+
+        <div className="border-t border-slate-200 p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <Terminal size={14} className="text-slate-500" />
+            <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{detail.logSectionLabel}</h4>
+            <span className="ml-auto text-[10px] text-slate-400">{detail.logs.length.toLocaleString()} lines</span>
+          </div>
+          {detail.logs.length > 0 ? (
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-950 p-3 font-mono text-[11px] leading-relaxed text-slate-200">
+              {detail.logs.join('\n')}
+            </pre>
+          ) : (
+            <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+              {project.status === 'Running'
+                ? `${detail.isInnerSupportOnly ? '변환' : '해석'}이 완료되면 전체 로그가 이곳에 저장됩니다.`
+                : '저장된 실행 로그가 없습니다.'}
+            </p>
+          )}
+        </div>
+      </section>
+
+      {filesMissing && (
+        <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-500">
+          <FileX size={18} className="mt-0.5 shrink-0 text-slate-400" />
+          <div>
+            <p className="text-sm font-bold text-slate-700">파일 보관 기간 만료</p>
+            <p className="mt-0.5 text-xs leading-relaxed">
+              CSV와 XLSX 다운로드는 제한되지만, 위 입력값·실행 상태·결과 요약·로그는 My Projects 이력에 계속 남습니다.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ==========================================
 // 3. 프로젝트 상세 모달 (공유 Modal 컴포넌트 사용)
@@ -116,6 +323,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
   const isHpScr        = typeof project?.program_name === 'string' && project.program_name.startsWith('HP-SCR');
   // Simplified Hole Fatigue Assessment — input_json / output_json 만 다운로드 노출
   const isHoleFatigue  = project?.program_name === 'Simplified Hole Fatigue Assessment';
+  const isDoublePipe   = isDoublePipeProject(project);
 
   // result_info 필터링
   const getResultLabel = (key) => {
@@ -261,8 +469,17 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
             </div>
           </div>
 
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Files</h3>
-          {filesMissing ? (
+          {isDoublePipe && (
+            <DoublePipeProjectDetails
+              project={project}
+              filesMissing={filesMissing}
+              onDownload={handleDownload}
+            />
+          )}
+
+          {!isDoublePipe && <>
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Files</h3>
+            {filesMissing ? (
             <div className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-500">
               <FileX size={18} className="text-slate-400 shrink-0" />
               <div>
@@ -272,7 +489,7 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
                 </p>
               </div>
             </div>
-          ) : (
+            ) : (
             <div className="space-y-2">
               {/* input_info: Truss Assessment / Mast Post Assessment / HP-SCR / Hole Fatigue 는 숨김 */}
               {project.input_info && !isAssessment && !isHpScr && !isHoleFatigue && project.program_name !== "Mast Post Assessment" &&
@@ -291,7 +508,8 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
                   : null
               ))}
             </div>
-          )}
+            )}
+          </>}
         </div>
       )}
     </Modal>

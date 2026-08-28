@@ -14,9 +14,12 @@ import json
 import logging
 import os
 import subprocess
+import uuid
+from datetime import datetime
 
 from fastapi import HTTPException
 
+from .analysis_runner import record_analysis
 from .workspace import create_analysis_workspace
 
 logger = logging.getLogger(__name__)
@@ -61,6 +64,71 @@ def _pdf_supported() -> bool:
     return os.path.isfile(_INNER_EXE_PATH) or (importlib.util.find_spec("matplotlib") is not None)
 
 
+def _record_inner_support_analysis(job: dict):
+    """Tab 1 실행 스냅샷을 Analysis DB에 upsert한다.
+
+    변환 전에 Running 행을 만들고 성공/실패 시 같은 job_id를 갱신한다. WorkBench가 응답을
+    받기 전에 종료되어도 서버 작업 폴더와 입력값, 변환 결과를 My Projects에서 복원할 수 있다.
+    DB 장애가 실제 CSV 변환 결과까지 실패시키지는 않도록 오류는 로그로만 남긴다.
+    """
+    started_at = job.get("startedAt")
+    finished_at = job.get("finishedAt")
+    duration_sec = None
+    if started_at and finished_at:
+        try:
+            duration_sec = max(
+                0,
+                int((datetime.fromisoformat(finished_at) - datetime.fromisoformat(started_at)).total_seconds()),
+            )
+        except (TypeError, ValueError):
+            duration_sec = None
+
+    input_csv_path = job.get("inputCsvPath")
+    result_csv_path = job.get("resultCsvPath")
+    config_path = job.get("configPath")
+    input_info = {
+        "schema_version": 3,
+        "workflow_step": "inner_support",
+        "input_mode": "inner_support",
+        "input_csv": input_csv_path,
+        "input_filename": os.path.basename(input_csv_path) if input_csv_path else None,
+        "config_file": config_path,
+        "inner_support_config": job.get("config") or {},
+    }
+    result_info = {
+        "schema_version": 3,
+        "workflow_step": "inner_support",
+        "work_dir": job.get("workDir"),
+        "status": job.get("status"),
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_sec": duration_sec,
+        "row_count": job.get("rowCount"),
+        "result_csv": result_csv_path,
+        "result_filename": os.path.basename(result_csv_path) if result_csv_path else None,
+        "pdf_supported": bool(job.get("pdfSupported")),
+        "diagnostic": job.get("diagnostic"),
+        "logs": list(job.get("logs") or []),
+    }
+    try:
+        project, db_error = record_analysis(
+            job_id=job.get("jobId"),
+            project_name=job.get("projectName"),
+            program_name=_PROGRAM_NAME,
+            employee_id=job.get("employeeId") or "unknown",
+            status=job.get("status") or "Failed",
+            input_info=input_info,
+            result_info=result_info,
+            source="Workbench",
+        )
+        if db_error:
+            logger.error("Inner Support analysis DB record failed: %s", db_error)
+        return project
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Inner Support analysis DB record failed: %s", exc, exc_info=True)
+        return None
+
+
 def run_inner_pipe_preview(config: dict, csv_bytes: bytes, csv_name: str, employee_id: str) -> dict:
     """
     사용자가 업로드한 외관 배관 CSV(csv_bytes)를 입력으로, Design Inner Support(Tab1)
@@ -74,7 +142,7 @@ def run_inner_pipe_preview(config: dict, csv_bytes: bytes, csv_name: str, employ
     module = _load_transform_module()
 
     # ── 작업 폴더 생성 (다른 앱과 동일 명명 규칙) ──
-    work_dir, _timestamp = create_analysis_workspace(
+    work_dir, timestamp = create_analysis_workspace(
         _USER_CONNECTION_DIR,
         employee_id,
         _PROGRAM_NAME,
@@ -98,19 +166,56 @@ def run_inner_pipe_preview(config: dict, csv_bytes: bytes, csv_name: str, employ
     result_name = f"{stem}_Y-15000{ext or '.csv'}"
     result_csv_path = os.path.join(work_dir, result_name)
 
+    job = {
+        "jobId": uuid.uuid4().hex[:12],
+        "projectName": f"Inner Support 설계_{timestamp}",
+        "employeeId": employee_id or "unknown",
+        "status": "Running",
+        "config": config,
+        "configPath": os.path.join(work_dir, "inner_pipe_config.json"),
+        "inputCsvPath": input_csv_path,
+        "resultCsvPath": result_csv_path,
+        "workDir": work_dir,
+        "startedAt": datetime.now().isoformat(timespec="seconds"),
+        "finishedAt": None,
+        "rowCount": None,
+        "pdfSupported": _pdf_supported(),
+        "diagnostic": None,
+        "logs": [],
+    }
+    # 클라이언트가 응답을 받기 전에 닫혀도 이력이 보이도록 변환 시작 전에 먼저 저장한다.
+    _record_inner_support_analysis(job)
+
     log_buffer = io.StringIO()
     try:
         with contextlib.redirect_stdout(log_buffer):
             # output_pdf_path 미지정 → matplotlib 을 import 하지 않는 빠른 경로.
             result_df = module.run_transform(input_csv_path, config, output_csv_path=result_csv_path)
     except Exception:
+        job.update({
+            "status": "Failed",
+            "finishedAt": datetime.now().isoformat(timespec="seconds"),
+            "diagnostic": "inner_support_transform_failed",
+            "logs": [line for line in log_buffer.getvalue().splitlines() if line.strip()],
+        })
+        _record_inner_support_analysis(job)
         logger.exception("이중관 변환 실패 (employee_id=%s, csv=%s)", employee_id, safe_name)
         raise HTTPException(status_code=500, detail="이중관 변환 중 오류가 발생했습니다. CSV 형식과 입력값을 확인하세요.")
 
     result_df = result_df.fillna('')
     logs = [line for line in log_buffer.getvalue().splitlines() if line.strip()]
 
+    job.update({
+        "status": "Success",
+        "finishedAt": datetime.now().isoformat(timespec="seconds"),
+        "rowCount": len(result_df),
+        "logs": logs,
+    })
+    project = _record_inner_support_analysis(job)
+
     return {
+        "jobId": job["jobId"],
+        "analysisId": project.get("id") if project else None,
         "columns": list(result_df.columns),
         "rows": result_df.to_dict('records'),
         "rowCount": len(result_df),
@@ -119,7 +224,7 @@ def run_inner_pipe_preview(config: dict, csv_bytes: bytes, csv_name: str, employ
         "resultCsv": result_name,
         "workDir": folder_name,          # userConnection 기준 상대 폴더명 (이후 단계 진행 기준)
         "resultPath": result_csv_path,   # 서버 절대 경로 (Tab2 백엔드/다운로드 연동용)
-        "pdfSupported": _pdf_supported(),  # 프론트 'PDF 생성·다운로드' 버튼 표시 여부
+        "pdfSupported": job["pdfSupported"],  # 프론트 'PDF 생성·다운로드' 버튼 표시 여부
     }
 
 

@@ -283,11 +283,76 @@ def _norm_eid(value) -> str:
     return (value or "").strip().upper()
 
 
+_DOUBLEPIPE_PROGRAM_NAMES = {"DoublePipeFuelLine", "이중관 구조 연료배관 해석"}
+_DOUBLEPIPE_CONFIG_NAME = "inner_pipe_config.json"
+_DOUBLEPIPE_CONFIG_MAX_BYTES = 1024 * 1024
+
+
+def _enrich_legacy_doublepipe_payload(payload: dict) -> dict:
+    """보관 폴더가 남은 구버전 DoublePipe 이력에서 상세 입력을 읽어 응답만 보강한다.
+
+    2026-08 스냅샷 스키마 도입 전 레코드는 input_csv/load_cases만 DB에 들어갔지만, Tab1 실행은
+    같은 작업 폴더에 inner_pipe_config.json을 이미 남겼다. 이 파일이 아직 보관 중이면 신규
+    상세 화면이 읽는 형태로 복원한다. 조회 API는 DB를 수정하지 않으며 허용 폴더 밖 파일이나
+    1MB를 넘는 비정상 설정 파일은 읽지 않는다.
+    """
+    if payload.get("program_name") not in _DOUBLEPIPE_PROGRAM_NAMES:
+        return payload
+    original = payload.get("input_info")
+    if not isinstance(original, dict) or original.get("schema_version"):
+        return payload
+
+    info = dict(original)
+    input_csv = info.get("input_csv")
+    config = None
+    config_path = None
+    if isinstance(input_csv, str) and input_csv:
+        csv_path = os.path.abspath(urllib.parse.unquote(input_csv))
+        candidate = os.path.join(os.path.dirname(csv_path), _DOUBLEPIPE_CONFIG_NAME)
+        allowed_real = os.path.realpath(_ALLOWED_DOWNLOAD_BASE)
+        candidate_real = os.path.realpath(candidate)
+        if (
+            _is_within_dir(allowed_real, candidate_real)
+            and os.path.isfile(candidate_real)
+        ):
+            try:
+                if os.path.getsize(candidate_real) <= _DOUBLEPIPE_CONFIG_MAX_BYTES:
+                    with open(candidate_real, "r", encoding="utf-8") as config_file:
+                        loaded = json.load(config_file)
+                    if isinstance(loaded, dict):
+                        config = loaded
+                        config_path = candidate_real
+            except (OSError, ValueError, TypeError) as exc:
+                logger.warning("Legacy DoublePipe config recovery failed (%s): %s", candidate_real, exc)
+
+    raw_load_cases = info.get("load_cases")
+    if isinstance(raw_load_cases, list):
+        load_case_mode = "selected"
+        load_case_count = len(raw_load_cases)
+    else:
+        load_case_mode = "all"
+        load_case_count = 29
+
+    info.update({
+        "schema_version": 1,
+        "input_filename": os.path.basename(input_csv) if isinstance(input_csv, str) else None,
+        "input_mode": "inner_support" if config is not None else "direct_upload",
+        "load_case_mode": load_case_mode,
+        "load_case_count": load_case_count,
+    })
+    if config is not None:
+        info["config_file"] = config_path
+        info["inner_support_config"] = config
+
+    payload["input_info"] = info
+    return payload
+
+
 def _serialize_analysis(record: models.Analysis) -> dict:
     d = {c.name: getattr(record, c.name) for c in record.__table__.columns}
     d['employee_id'] = _norm_eid(d.get('employee_id'))
     d['files_available'] = _files_available(record)
-    return d
+    return _enrich_legacy_doublepipe_payload(d)
 
 
 def _apply_analysis_filters(

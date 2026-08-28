@@ -19,6 +19,7 @@ PSA_AllLoadCases.exe 는 원본 Main.py(+scipy·pyNastran·numpy·openpyxl)를 P
      프론트가 status 폴링으로 로그를 받아볼 수 있게 한다(작업 상태는 인메모리).
 """
 import glob
+import json
 import logging
 import os
 import re
@@ -269,6 +270,7 @@ def _launch_job(csv_path: str, employee_id: str, load_cases=None) -> dict:
     job_id = uuid.uuid4().hex[:12]
     now_epoch = _now_epoch()
     now = datetime.now().isoformat(timespec="seconds")
+    project_name = f"이중관 배관응력 해석_{datetime.fromtimestamp(now_epoch).strftime('%Y%m%d_%H%M%S')}"
     job = {
         "jobId": job_id,
         "status": "running",           # running | done | failed
@@ -280,6 +282,7 @@ def _launch_job(csv_path: str, employee_id: str, load_cases=None) -> dict:
         "reportReady": False,
         "employeeId": employee_id or "unknown",
         "loadCases": list(load_cases) if load_cases else None,  # None=전체 / 리스트=선택(로그·표시용)
+        "projectName": project_name,       # 시작/완료 DB upsert에서 같은 이름을 유지한다.
         "startedAt": now,
         "startedAtEpoch": now_epoch,
         "finishedAt": None,
@@ -297,6 +300,10 @@ def _launch_job(csv_path: str, employee_id: str, load_cases=None) -> dict:
             _raise_license_busy(active)
         _jobs[job_id] = job
         _active_job_id = job_id
+
+    # WorkBench/PC를 바로 종료해도 My Projects에서 입력과 Running 상태를 찾을 수 있도록
+    # solver thread를 시작하기 전에 DB 스냅샷을 먼저 만든다. 완료/실패 시 같은 job_id로 갱신된다.
+    _record_psa_analysis(job)
 
     thread = threading.Thread(target=_run_pipeline, args=(job_id, command, job_dir), daemon=True)
     try:
@@ -696,27 +703,89 @@ def _run_pipeline(job_id: str, command: list, cwd: str):
 
 
 def _record_psa_analysis(job: dict):
-    """완료/중단된 PSA 작업을 Analysis DB 에 기록한다 — 다른 해석 앱과 동일하게 MyProjects·이력에 노출.
+    """PSA 작업 스냅샷을 Analysis DB 에 upsert하여 My Projects에서 영구 복원한다.
+
+    시작 시 Running 레코드를 먼저 만들고 완료/실패/중단 시 같은 job_id 행을 갱신한다. 입력 CSV와
+    Load Case뿐 아니라 Tab1의 inner_pipe_config.json, 실행 시간, 종료 코드, 진단, 콘솔 로그까지
+    저장하므로 클라이언트 메모리/localStorage가 사라져도 상세 실행 근거를 다시 볼 수 있다.
 
     반드시 _jobs_lock 을 놓은 뒤 호출한다(DB I/O 로 상태 폴링을 막지 않도록). 실패해도 해석 결과에는
-    영향이 없어야 하므로 모든 예외를 삼키고 로그만 남긴다. status='done' → Success, 그 외 → Failed.
+    영향이 없어야 하므로 모든 예외를 삼키고 로그만 남긴다.
     """
     try:
-        status_msg = "Success" if job.get("status") == "done" else "Failed"
+        raw_status = job.get("status")
+        if raw_status == "running":
+            status_msg = "Running"
+        elif raw_status == "done":
+            status_msg = "Success"
+        else:
+            status_msg = "Failed"
+
         csv_path = job.get("csvPath") or ""
         work_dir = os.path.dirname(csv_path) if csv_path else None
         load_cases = job.get("loadCases")
         input_info = {
+            "schema_version": 3,
+            "workflow_step": "psa",
             "input_csv": csv_path,
-            "load_cases": load_cases if load_cases else "ALL(29)",
+            "input_filename": os.path.basename(csv_path) if csv_path else None,
+            "load_case_mode": "selected" if load_cases else "all",
+            "load_cases": list(load_cases) if load_cases else None,
+            "load_case_count": len(load_cases) if load_cases else 29,
         }
-        result_info = None
-        if status_msg == "Success":
-            result_info = {"work_dir": work_dir}
-            report_path = job.get("reportPath")
-            if job.get("reportReady") and report_path and os.path.isfile(report_path):
-                result_info["report"] = report_path
-        project_name = f"이중관 연료배관 해석_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # Tab1 경로는 변환 단계가 저장한 설정 JSON이 같은 폴더에 있다. 직접 업로드 경로에는
+        # 설정 파일이 없으므로 input_mode만 구분해 두고 배관 CSV 자체를 원본 입력으로 보존한다.
+        config_path = os.path.join(work_dir, "inner_pipe_config.json") if work_dir else None
+        config = None
+        if config_path and os.path.isfile(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as config_file:
+                    loaded = json.load(config_file)
+                if isinstance(loaded, dict):
+                    config = loaded
+            except (OSError, ValueError, TypeError) as exc:
+                logger.warning("DoublePipe input config read failed (%s): %s", config_path, exc)
+        input_info["input_mode"] = "inner_support" if config is not None else "direct_upload"
+        if config is not None:
+            input_info["config_file"] = config_path
+            input_info["inner_support_config"] = config
+
+        started_at = job.get("startedAt")
+        finished_at = job.get("finishedAt")
+        duration_sec = None
+        if started_at and finished_at:
+            try:
+                duration_sec = max(
+                    0,
+                    int((datetime.fromisoformat(finished_at) - datetime.fromisoformat(started_at)).total_seconds()),
+                )
+            except (TypeError, ValueError):
+                duration_sec = None
+
+        report_path = job.get("reportPath")
+        report_ready = bool(
+            job.get("reportReady") and report_path and os.path.isfile(report_path)
+        )
+        result_info = {
+            "schema_version": 3,
+            "workflow_step": "psa",
+            "work_dir": work_dir,
+            "status": status_msg,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "duration_sec": duration_sec,
+            "returncode": job.get("returncode"),
+            "diagnostic": job.get("diagnostic"),
+            "report_ready": report_ready,
+            "logs": list(job.get("logs") or []),
+        }
+        if report_ready:
+            result_info["report"] = report_path
+
+        project_name = job.get("projectName") or (
+            f"이중관 배관응력 해석_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
         _project, db_err = record_analysis(
             job_id=job.get("jobId"),
             project_name=project_name,
