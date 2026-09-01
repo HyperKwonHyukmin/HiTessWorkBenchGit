@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session
 
 from .. import database
 from ..dependencies import authenticated_employee_id, require_auth
+from ..services.doublepipe_modeshape_service import (
+    get_status as get_modeshape_status,
+    start_viewer as start_modeshape_viewer,
+)
 from ..services.doublepipe_service import generate_inner_pipe_pdf, run_inner_pipe_preview
 from ..services.doublepipe_psa_service import (
     cancel_psa_job,
@@ -210,6 +214,27 @@ async def run_modal_upload(
         modes or None,
         min_freq or None,
     )
+
+
+@router.get("/modeshape/status")
+def modeshape_status(current_user: str = Depends(require_auth)):
+    """Mode Shape 뷰어(Streamlit)의 가용/기동 상태.
+
+    available=false 면 서버에 ModeShapeViewer.exe 가 없다. running=true 면 바로 접속 가능,
+    starting=true 면 기동 중이므로 프론트가 이 엔드포인트를 계속 폴링한다.
+    port 는 뷰어 폴더의 .streamlit/config.toml 에서 읽는다(프론트가 이 포트로 접속).
+    """
+    return get_modeshape_status()
+
+
+@router.post("/modeshape/start")
+def modeshape_start(current_user: str = Depends(require_auth)):
+    """Mode Shape 뷰어가 꺼져 있으면 서버에서 띄운다(이미 떠 있으면 아무것도 하지 않음).
+
+    기동에 수십 초가 걸려(PyInstaller onefile 압축 해제 + Streamlit 부팅) 여기서 기다리지
+    않고 즉시 반환한다 — 완료 확인은 GET /modeshape/status 폴링으로 한다.
+    """
+    return start_modeshape_viewer()
 
 
 @router.get("/run-psa/status/{job_id}")

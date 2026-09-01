@@ -79,6 +79,34 @@ const TABS = [
 // 고유진동 해석 옵션 기본값 — Run_ModalAnalysis 의 --modes / --min-freq 기본값과 같다.
 const MODAL_DEFAULTS = { modes: 10, minFreq: 1.0 };
 
+// Mode Shape 뷰어(ModeShapeViewer.exe = Streamlit) 주소.
+// 뷰어는 해석 결과 JSON 이 있는 컴퓨터(=백엔드가 도는 곳)에서 상시 실행되므로, 사용자가 고른
+// 백엔드 호스트를 그대로 쓰고 포트만 8501 로 바꾼다(.streamlit/config.toml 의 server.port).
+// 다른 곳에 띄웠다면 localStorage 로 재빌드 없이 덮어쓸 수 있게 해 둔다.
+const MODE_SHAPE_PORT = 8501;
+const MODE_SHAPE_URL_KEY = 'doublepipe:modeshape-url';
+
+// 뷰어를 다른 곳에 직접 띄운 경우의 수동 지정(재빌드 없이 전환). 지정 시 자동 기동은 건너뛴다.
+function getModeShapeUrlOverride() {
+  try {
+    const value = localStorage.getItem(MODE_SHAPE_URL_KEY);
+    return value ? value.replace(/\/+$/, '') : null;
+  } catch {
+    return null;   // localStorage 접근 불가 — 기본 유도값 사용
+  }
+}
+
+// 포트를 뺀 뷰어 호스트(예: 'http://10.14.42.145'). 포트는 백엔드가 알려준 값을 쓴다
+// (뷰어 폴더의 .streamlit/config.toml 에서 읽으므로 연구원이 바꿔도 따라간다).
+function getModeShapeHost() {
+  try {
+    const base = new URL(API_BASE_URL);
+    return `${base.protocol}//${base.hostname}`;
+  } catch {
+    return 'http://localhost';
+  }
+}
+
 // 29개 Load Case (Main.py / hmNastranBDF.py 의 SUBCASE 정의). L17(SUS)은 Allowable Stress 선행조건이라 항상 자동 포함.
 const LOAD_CASES = [
   { id: 'L1', cat: 'OPE', label: 'W+P1+T1+D1' }, { id: 'L2', cat: 'OPE', label: 'W+P1+T1+D2' },
@@ -780,7 +808,8 @@ export default function DoublePipeFuelLineAssessment() {
   const [tab3Input, setTab3Input] = useState(null);
   const [tab3View, setTab3View] = useState('3d'); // '3d' | 'table' | 'result'
   const [modalOpts, setModalOpts] = useState({ ...MODAL_DEFAULTS });
-  const [modalResult, setModalResult] = useState(null);     // { modes: [{modeNo, freqHz}], resultPath }
+  const [modalResult, setModalResult] = useState(null);     // { modes: [{modeNo, freqHz}], resultPath, shapeDataPath }
+  const [modeShapeOpen, setModeShapeOpen] = useState(false); // Mode Shape 뷰어 모달(전체화면급 iframe)
   // Tab2 전체 Load Case 배관응력 해석
   const [psaRunning, setPsaRunning] = useState(false);      // 내 해석이 진행 중(오버레이 표시)
   const [psaJobId, setPsaJobId] = useState(null);
@@ -850,7 +879,7 @@ export default function DoublePipeFuelLineAssessment() {
           if (s.data.status === 'done' && isModal) {
             // 고유진동 해석 완료 → 모드별 고유진동수 표를 결과 뷰에 띄운다.
             const modes = s.data.modes || [];
-            setModalResult({ modes, resultPath: s.data.resultPath || null });
+            setModalResult({ modes, resultPath: s.data.resultPath || null, shapeDataPath: s.data.shapeDataPath || null });
             if (modes.length) setTab3View('result');
             addLog(`완료: 고유진동수 ${modes.length}개 모드를 추출했습니다.`, 'success');
             showToast('고유진동 해석이 완료되었습니다.', 'success');
@@ -939,7 +968,7 @@ export default function DoublePipeFuelLineAssessment() {
     if (data.status === 'done') {
       if (isModal) {
         const modes = data.modes || [];
-        setModalResult({ modes, resultPath: data.resultPath || null });
+        setModalResult({ modes, resultPath: data.resultPath || null, shapeDataPath: data.shapeDataPath || null });
         if (modes.length) setTab3View('result');
         addLog(`이전에 실행한 고유진동 해석이 완료되었습니다. (${modes.length}개 모드)`, 'success');
       } else {
@@ -1847,13 +1876,17 @@ export default function DoublePipeFuelLineAssessment() {
                 <CheckCircle2 size={15} className="shrink-0 text-emerald-600" />
                 <span className="text-xs font-bold text-emerald-800">해석 완료 · {modeCount}개 모드</span>
               </div>
-              <div className="p-2.5">
+              <div className="space-y-2 p-2.5">
                 <Button variant="secondary" fullWidth size="sm" onClick={() => setTab3View('result')}>
                   <Table2 size={14} />
                   고유진동수 결과 보기
                 </Button>
-                <p className="mt-1.5 text-center text-[10px] text-emerald-600/80">
-                  1차 모드 {modalResult.modes[0].freqHz.toFixed(4)} Hz
+                <Button variant="primary" fullWidth size="sm" onClick={() => setModeShapeOpen(true)}>
+                  <Box size={14} />
+                  Mode Shape 확인하기
+                </Button>
+                <p className="text-center text-[10px] text-emerald-600/80">
+                  1차 모드 {modalResult.modes[0].freqHz.toFixed(1)} Hz
                 </p>
               </div>
             </div>
@@ -2292,6 +2325,15 @@ export default function DoublePipeFuelLineAssessment() {
         </div>
       )}
 
+      {/* Mode Shape 뷰어 — ModeShapeViewer.exe(Streamlit)를 전체화면급 모달 iframe 으로 띄운다.
+          결과 JSON 주입은 뷰어 페이지가 담당하므로 여기서는 화면만 연결한다. */}
+      {modeShapeOpen && (
+        <ModeShapeModal
+          shapeDataPath={modalResult?.shapeDataPath || null}
+          onClose={() => setModeShapeOpen(false)}
+        />
+      )}
+
       <SolverCredit contributor="김윤환" />
     </div>
   );
@@ -2371,39 +2413,187 @@ function ModalOptionField({ label, unit, value, min, max, step, hint, onChange }
   );
 }
 
+// Mode Shape 뷰어 모달 — ModeShapeViewer.exe(Streamlit, 기본 <백엔드호스트>:8501)를 iframe 으로 띄운다.
+//
+// Streamlit 은 X-Frame-Options / frame-ancestors 를 보내지 않고 Electron CSP 도 frame-src 를
+// 따로 막지 않아(default-src 에 http: 포함) 임베딩이 가능하다.
+// 결과 JSON 을 뷰어에 넣는 일은 뷰어 페이지 쪽이 담당한다 — 여기서는 어느 결과인지 알 수 있도록
+// 경로만 쿼리로 넘기고(뷰어가 모르는 파라미터는 무시된다), 화면 연결만 책임진다.
+function ModeShapeModal({ shapeDataPath, onClose }) {
+  const [nonce, setNonce] = useState(0);   // 새로고침용 — key 를 바꿔 iframe 을 다시 마운트한다.
+  // phase: checking(상태 확인) → starting(서버가 뷰어 기동 중) → ready | unavailable | error
+  const [phase, setPhase] = useState('checking');
+  const [port, setPort] = useState(MODE_SHAPE_PORT);
+  const [detail, setDetail] = useState('');
+
+  const override = getModeShapeUrlOverride();
+  const baseUrl = override || `${getModeShapeHost()}:${port}`;
+  const src = shapeDataPath
+    ? `${baseUrl}/?json=${encodeURIComponent(shapeDataPath)}`
+    : `${baseUrl}/`;
+
+  // ESC 로 닫기.
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // 뷰어 확보 — 꺼져 있으면 백엔드에 기동을 요청하고 뜰 때까지 폴링한다.
+  // (뷰어는 결과 JSON 이 있는 백엔드 컴퓨터에서 돌아야 하므로 기동 주체도 백엔드다.)
+  useEffect(() => {
+    // 수동 주소를 지정한 경우엔 그 서버를 우리가 제어할 수 없으므로 바로 붙인다.
+    if (override) { setPhase('ready'); return undefined; }
+
+    let stopped = false;
+    let timer = null;
+
+    const apply = (data) => {
+      if (data?.port) setPort(data.port);
+      if (data?.available === false) {
+        setDetail(data.detail || 'ModeShapeViewer.exe 를 서버에서 찾을 수 없습니다.');
+        setPhase('unavailable');
+        return true;
+      }
+      if (data?.running) { setPhase('ready'); return true; }
+      return false;
+    };
+
+    const poll = async (deadline) => {
+      if (stopped) return;
+      try {
+        const { data } = await axios.get(`${API_BASE_URL}/api/doublepipe/modeshape/status`);
+        if (stopped) return;
+        if (apply(data)) return;
+      } catch {
+        // 일시 오류 — 남은 시간 동안 재시도
+      }
+      if (Date.now() > deadline) {
+        setDetail('뷰어가 제한 시간 안에 기동하지 않았습니다.');
+        setPhase('error');
+        return;
+      }
+      timer = setTimeout(() => poll(deadline), 2000);
+    };
+
+    (async () => {
+      try {
+        const { data } = await axios.get(`${API_BASE_URL}/api/doublepipe/modeshape/status`);
+        if (stopped) return;
+        if (apply(data)) return;
+
+        setPhase('starting');
+        const started = await axios.post(`${API_BASE_URL}/api/doublepipe/modeshape/start`, {});
+        if (stopped) return;
+        if (apply(started.data)) return;
+        // 압축 해제 + Streamlit 부팅에 보통 15~30초 걸린다. 넉넉히 3분까지 기다린다.
+        poll(Date.now() + 180000);
+      } catch (e) {
+        if (stopped) return;
+        const d = e.response?.data?.detail;
+        setDetail(typeof d === 'string' ? d : '뷰어 상태를 확인하지 못했습니다.');
+        setPhase('error');
+      }
+    })();
+
+    return () => { stopped = true; if (timer) clearTimeout(timer); };
+  }, [override, nonce]);
+
+  return (
+    <div className="fixed inset-0 z-[99999] flex flex-col bg-slate-950/80 p-3 backdrop-blur-sm sm:p-5">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+        <div className="flex shrink-0 items-center gap-3 border-b border-slate-800 px-4 py-2.5">
+          <Box size={16} className="shrink-0 text-sky-400" />
+          <span className="shrink-0 text-sm font-bold text-slate-200">Mode Shape 뷰어</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-slate-500" title={src}>
+            {phase === 'ready' ? src : ''}
+          </span>
+          <button
+            type="button"
+            onClick={() => { setPhase('checking'); setNonce(n => n + 1); }}
+            className="shrink-0 rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] font-bold text-slate-300 transition-colors hover:bg-slate-800"
+          >새로고침</button>
+          <button
+            type="button"
+            onClick={onClose}
+            title="닫기 (ESC)"
+            className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+          ><X size={16} /></button>
+        </div>
+
+        {phase === 'ready' ? (
+          <iframe
+            key={nonce}
+            src={src}
+            title="Mode Shape Viewer"
+            className="min-h-0 flex-1 border-0 bg-white"
+          />
+        ) : (
+          <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+            <div className="max-w-md text-center">
+              {phase === 'unavailable' || phase === 'error' ? (
+                <>
+                  <ShieldAlert size={40} className="mx-auto mb-3 text-amber-400" />
+                  <p className="text-sm font-bold text-slate-200">
+                    {phase === 'unavailable' ? '뷰어를 사용할 수 없습니다' : '뷰어를 열지 못했습니다'}
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-400">{detail}</p>
+                </>
+              ) : (
+                <>
+                  <Loader2 size={40} className="mx-auto mb-3 animate-spin text-sky-400" />
+                  <p className="text-sm font-bold text-slate-200">
+                    {phase === 'starting' ? '뷰어를 시작하는 중…' : '뷰어 상태를 확인하는 중…'}
+                  </p>
+                  {phase === 'starting' && (
+                    <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                      서버에서 Mode Shape 뷰어를 기동하고 있습니다. 처음 실행은 보통
+                      <span className="font-bold text-slate-300"> 15~30초</span> 걸립니다.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // 고유진동수 결과표 — Run_ModalAnalysis 가 .dat 에서 추출한 모드별 Hz.
+// 값 자체가 결론이라 막대 그래프 같은 장식 없이 Mode / Hz 두 열만 둔다(소수점 1자리).
 function NaturalFrequencyTable({ modes, minFreq }) {
-  const maxFreq = modes.reduce((acc, m) => Math.max(acc, m.freqHz), 0) || 1;
   return (
     <div className="flex h-full flex-col">
       <div className="shrink-0 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
         <p className="text-xs font-bold text-slate-700">
           고유진동수 <span className="text-slate-400">(≥ {minFreq} Hz · {modes.length}개 모드)</span>
         </p>
-        <p className="mt-0.5 text-[10px] text-slate-500">
-          1차 모드 <span className="font-mono font-bold text-sky-600">{modes[0].freqHz.toFixed(4)} Hz</span>
-        </p>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <div className="space-y-1.5">
-          {modes.map((m) => (
-            <div key={m.modeNo} className="flex items-center gap-3">
-              <span className="w-14 shrink-0 text-right font-mono text-[11px] font-bold text-slate-500">
-                MODE {m.modeNo}
-              </span>
-              <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100">
-                <span
-                  className="block h-full rounded-full bg-gradient-to-r from-sky-500 to-violet-500"
-                  style={{ width: `${Math.max(2, (m.freqHz / maxFreq) * 100)}%` }}
-                />
-              </span>
-              <span className="w-24 shrink-0 text-right font-mono text-xs font-black tabular-nums text-slate-800">
-                {m.freqHz.toFixed(4)}
-                <span className="ml-1 text-[9px] font-semibold text-slate-400">Hz</span>
-              </span>
-            </div>
-          ))}
-        </div>
+        <table className="w-full max-w-sm border-separate border-spacing-0 text-sm">
+          <thead>
+            <tr>
+              <th className="border-b border-slate-200 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                Mode
+              </th>
+              <th className="border-b border-slate-200 px-3 py-2 text-right text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                Frequency (Hz)
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {modes.map((m) => (
+              <tr key={m.modeNo} className="hover:bg-slate-50">
+                <td className="border-b border-slate-100 px-3 py-1.5 font-mono text-slate-600">{m.modeNo}</td>
+                <td className="border-b border-slate-100 px-3 py-1.5 text-right font-mono font-bold tabular-nums text-slate-800">
+                  {m.freqHz.toFixed(1)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
