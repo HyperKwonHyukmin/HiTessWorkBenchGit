@@ -16,6 +16,16 @@ ModeShapeViewer.exe 는 Streamlit 서버를 띄우는 상시 프로세스다. �
   신호가 uvicorn 까지 전파되지 않게 한다(PSA 에서 Abaqus 로 겪은 무-로그 급사와 같은 계열).
 * **기동 완료 판정은 포트로 한다**: PyInstaller onefile 압축 해제(약 91MB) + Streamlit 부팅
   때문에 수십 초가 걸린다. start 는 즉시 반환하고, 프론트가 status 를 폴링한다.
+
+결과 JSON 자동 로드
+-------------------
+뷰어는 `sys.argv[1:]` 의 첫 인자를 결과 JSON 경로로 받는다(`ModeShapeViewer._cli_json_path`).
+사이드바 파일 업로더에 사람이 끌어다 놓지 않아도, **기동 인자로 넘기면 그 결과가 자동으로 열린다.**
+
+한계: Streamlit 서버는 프로세스 하나가 계속 살아 있고 인자는 기동 시점에만 정해진다. 그래서
+"다른 결과를 보려면 다른 인자로 다시 띄우는" 수밖에 없다 — 요청된 JSON 이 지금 떠 있는 것과
+다르면 뷰어를 재기동한다(약 10~30초). URL 쿼리(`?json=`)로 매 요청 다른 결과를 여는 방식은
+엔진이 `st.query_params` 를 읽지 않아 지금은 불가능하다.
 """
 import logging
 import os
@@ -50,6 +60,8 @@ _PORT_PROBE_TIMEOUT = 0.4
 _lock = threading.Lock()
 _process = None          # 우리가 띄운 Popen (외부에서 띄운 인스턴스는 추적하지 않는다)
 _last_start_at = 0.0
+_loaded_json = None      # 지금 떠 있는 인스턴스를 어떤 JSON 인자로 띄웠는가 (없으면 None)
+_current_port = _DEFAULT_PORT   # 마지막으로 확인한 뷰어 포트 (_stop_running_viewer 의 해제 대기용)
 
 
 def _resolve_viewer() -> "tuple[str, str] | None":
@@ -95,14 +107,35 @@ def _port_is_open(port: int) -> bool:
         return False
 
 
-def get_status() -> dict:
-    """뷰어 가용/기동 상태. 프론트가 모달을 열 때와 폴링에 쓴다."""
+def _normalize_json_path(json_path) -> "str | None":
+    """요청된 결과 JSON 경로를 검증해 절대경로로 정규화한다.
+
+    뷰어에 넘길 인자이므로 userConnection 하위의 실제 파일만 허용한다(임의 경로 노출 차단).
+    """
+    if not json_path:
+        return None
+    candidate = os.path.abspath(str(json_path))
+    root = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
+    if not candidate.startswith(root + os.sep):
+        raise HTTPException(status_code=400, detail="결과 JSON 경로가 올바르지 않습니다.")
+    if not os.path.isfile(candidate):
+        raise HTTPException(status_code=404, detail="결과 JSON 파일을 찾을 수 없습니다.")
+    return candidate
+
+
+def get_status(json_path=None) -> dict:
+    """뷰어 가용/기동 상태. 프론트가 모달을 열 때와 폴링에 쓴다.
+
+    json_path 를 주면 '그 결과가 이미 열려 있는가'(matches)까지 알려준다 — 프론트는 이게
+    true 일 때만 iframe 으로 전환해, 이전 결과가 잠깐 보이는 일을 막는다.
+    """
     resolved = _resolve_viewer()
     if resolved is None:
         return {
             "available": False,
             "running": False,
             "starting": False,
+            "matches": False,
             "port": _DEFAULT_PORT,
             "detail": f"{_VIEWER_EXE_NAME} 를 서버에서 찾을 수 없습니다.",
         }
@@ -114,6 +147,7 @@ def get_status() -> dict:
     with _lock:
         proc = _process
         launched_at = _last_start_at
+        loaded = _loaded_json
     # 기동 직후 포트가 아직 안 열린 구간을 'starting' 으로 알려 프론트가 계속 폴링하게 한다.
     starting = (
         not running
@@ -122,22 +156,73 @@ def get_status() -> dict:
         and (time.monotonic() - launched_at) < _START_GRACE_SEC
     )
 
+    wanted = os.path.abspath(str(json_path)) if json_path else None
     return {
         "available": True,
         "running": running,
         "starting": starting,
+        # 요청한 결과를 열고 있는가. json 을 안 물어봤으면 '떠 있으면 OK'.
+        "matches": bool(running and (wanted is None or loaded == wanted)),
+        "loadedJson": loaded,
         "port": port,
     }
 
 
-def start_viewer() -> dict:
-    """뷰어가 꺼져 있으면 띄운다. 이미 떠 있거나 기동 중이면 아무것도 하지 않는다.
+def _stop_running_viewer(exe_path: str) -> None:
+    """떠 있는 뷰어를 종료한다(_lock 보유 상태에서 호출).
+
+    다른 결과 JSON 을 열려면 인자를 바꿔 다시 띄우는 수밖에 없다. 우리가 띄운 것뿐 아니라
+    사람이 손으로 띄워 둔 인스턴스도 정리해야 포트가 비므로, 같은 exe 경로를 실행 중인
+    프로세스를 모두 대상으로 한다.
+    """
+    global _process, _loaded_json
+
+    proc = _process
+    _process = None
+    _loaded_json = None
+    if proc is not None and proc.poll() is None:
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001
+            logger.warning("ModeShapeViewer kill failed", exc_info=True)
+
+    # onefile 은 부모/자식 2개 프로세스로 뜬다 — 경로가 같은 것을 모두 정리한다.
+    try:
+        import psutil
+    except ImportError:
+        return
+    target = os.path.normcase(os.path.abspath(exe_path))
+    for candidate in psutil.process_iter(["pid", "exe"]):
+        try:
+            exe = candidate.info.get("exe")
+            if exe and os.path.normcase(os.path.abspath(exe)) == target:
+                candidate.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+        except Exception:  # noqa: BLE001
+            continue
+
+    # 포트가 실제로 풀릴 때까지 잠깐 기다린다(바로 재기동하면 'Port is already in use').
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if not _port_is_open(_current_port):
+            return
+        time.sleep(0.3)
+
+
+def start_viewer(json_path=None) -> dict:
+    """뷰어를 요청된 결과 JSON 과 함께 띄운다.
+
+    - 이미 그 JSON 으로 떠 있으면 아무것도 하지 않는다.
+    - 다른 JSON 으로 떠 있으면 재기동한다(인자는 기동 시점에만 정해지므로 다른 방법이 없다).
+    - 꺼져 있으면 새로 띄운다.
 
     기동에는 수십 초가 걸리므로 여기서 기다리지 않고 즉시 반환한다 — 완료 판정은
     프론트가 get_status 폴링으로 한다.
     """
-    global _process, _last_start_at
+    global _process, _last_start_at, _loaded_json, _current_port
 
+    wanted = _normalize_json_path(json_path)
     resolved = _resolve_viewer()
     if resolved is None:
         raise HTTPException(
@@ -150,17 +235,34 @@ def start_viewer() -> dict:
 
     exe_path, viewer_dir = resolved
     port = _configured_port(viewer_dir)
+    _current_port = port
 
     with _lock:
-        if _port_is_open(port):
-            return {"available": True, "running": True, "starting": False, "port": port}
+        already_up = _port_is_open(port)
+        if already_up and _loaded_json == wanted:
+            # 원하는 결과가 이미 열려 있다 — 건드리지 않는다.
+            return {
+                "available": True, "running": True, "starting": False,
+                "matches": True, "loadedJson": _loaded_json, "port": port,
+            }
         if (
-            _process is not None
+            not already_up
+            and _process is not None
             and _process.poll() is None
+            and _loaded_json == wanted
             and (time.monotonic() - _last_start_at) < _START_GRACE_SEC
         ):
-            # 이미 기동 중 — 중복 실행하면 Streamlit 이 "Port is already in use" 로 죽는다.
-            return {"available": True, "running": False, "starting": True, "port": port}
+            # 같은 결과로 이미 기동 중 — 중복 실행하면 "Port is already in use" 로 죽는다.
+            return {
+                "available": True, "running": False, "starting": True,
+                "matches": False, "loadedJson": _loaded_json, "port": port,
+            }
+        if already_up or (_process is not None and _process.poll() is None):
+            # 다른 결과가 열려 있거나 기동 중 — 인자를 바꾸려면 재기동뿐이다.
+            logger.info(
+                "ModeShapeViewer restart for a different result (%s -> %s)", _loaded_json, wanted
+            )
+            _stop_running_viewer(exe_path)
 
         # stdout 을 파이프로 물면 버퍼가 차서 뷰어가 멈춘다. 로그 파일로 돌린다.
         log_path = os.path.join(viewer_dir, _LOG_NAME)
@@ -177,9 +279,12 @@ def start_viewer() -> dict:
                 subprocess, "CREATE_NEW_PROCESS_GROUP", 0
             )
 
+        # ★ 결과 JSON 을 기동 인자로 넘긴다 — 뷰어의 _cli_json_path() 가 sys.argv[1] 을 읽어
+        #    사이드바 업로드 없이 그 결과를 바로 연다.
+        command = [exe_path] + ([wanted] if wanted else [])
         try:
             _process = subprocess.Popen(
-                [exe_path],
+                command,
                 cwd=viewer_dir,          # ★ .streamlit/config.toml 은 cwd 기준으로 읽힌다
                 stdin=subprocess.DEVNULL,
                 stdout=log_file,
@@ -202,6 +307,12 @@ def start_viewer() -> dict:
                     pass
 
         _last_start_at = time.monotonic()
-        logger.info("ModeShapeViewer started (pid=%s, port=%s)", _process.pid, port)
+        _loaded_json = wanted
+        logger.info(
+            "ModeShapeViewer started (pid=%s, port=%s, json=%s)", _process.pid, port, wanted
+        )
 
-    return {"available": True, "running": False, "starting": True, "port": port}
+    return {
+        "available": True, "running": False, "starting": True,
+        "matches": False, "loadedJson": wanted, "port": port,
+    }

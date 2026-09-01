@@ -14,13 +14,14 @@ from app.services import doublepipe_modeshape_service as ms
 
 @pytest.fixture(autouse=True)
 def _reset_state():
-    with ms._lock:
-        ms._process = None
-        ms._last_start_at = 0.0
+    def _clear():
+        with ms._lock:
+            ms._process = None
+            ms._last_start_at = 0.0
+            ms._loaded_json = None
+    _clear()
     yield
-    with ms._lock:
-        ms._process = None
-        ms._last_start_at = 0.0
+    _clear()
 
 
 class _SpawnSpy:
@@ -120,3 +121,94 @@ def test_configured_port_follows_streamlit_config(tmp_path):
 
 def test_configured_port_falls_back_without_config(tmp_path):
     assert ms._configured_port(str(tmp_path)) == ms._DEFAULT_PORT
+
+
+# ── 결과 JSON 자동 로드 ─────────────────────────────────────────────────────
+
+def _job_json(monkeypatch, tmp_path, name):
+    """userConnection 하위로 인정되는 결과 JSON 을 만든다(경로 검증 통과용)."""
+    root = tmp_path / "userConnection" / "job"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / name
+    path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(ms, "_BACKEND_DIR", str(tmp_path))
+    return str(path)
+
+
+def test_start_passes_json_path_as_launch_argument(monkeypatch, tmp_path):
+    """뷰어는 sys.argv[1] 을 결과 JSON 으로 읽는다 — 인자로 넘겨야 자동으로 열린다."""
+    spy = _stub_viewer(monkeypatch, tmp_path, port_open=False)
+    json_path = _job_json(monkeypatch, tmp_path, "A_Modal_ModeShapeData.json")
+
+    ms.start_viewer(json_path)
+
+    args, _kwargs = spy.calls[0]
+    assert args == [str(tmp_path / ms._VIEWER_EXE_NAME), json_path]
+
+
+def test_same_json_does_not_restart_the_viewer(monkeypatch, tmp_path):
+    """이미 그 결과가 열려 있으면 건드리지 않는다(재기동은 10~30초 낭비다)."""
+    spy = _stub_viewer(monkeypatch, tmp_path, port_open=True)
+    json_path = _job_json(monkeypatch, tmp_path, "A_Modal_ModeShapeData.json")
+    with ms._lock:
+        ms._loaded_json = json_path
+
+    result = ms.start_viewer(json_path)
+
+    assert result["matches"] is True
+    assert spy.calls == []
+
+
+def test_different_json_restarts_the_viewer(monkeypatch, tmp_path):
+    """인자는 기동 시점에만 정해지므로, 다른 결과를 열려면 재기동뿐이다."""
+    spy = _stub_viewer(monkeypatch, tmp_path, port_open=True)
+    stopped = []
+    monkeypatch.setattr(ms, "_stop_running_viewer", lambda exe: stopped.append(exe))
+    old = _job_json(monkeypatch, tmp_path, "A_Modal_ModeShapeData.json")
+    new = _job_json(monkeypatch, tmp_path, "B_Modal_ModeShapeData.json")
+    with ms._lock:
+        ms._loaded_json = old
+
+    result = ms.start_viewer(new)
+
+    assert stopped == [str(tmp_path / ms._VIEWER_EXE_NAME)]
+    assert spy.calls[0][0] == [str(tmp_path / ms._VIEWER_EXE_NAME), new]
+    assert result["loadedJson"] == new
+    assert result["matches"] is False       # 아직 기동 중
+
+
+def test_status_matches_only_for_the_requested_result(monkeypatch, tmp_path):
+    """단순히 '떠 있음'으로 준비 완료를 판정하면 이전 결과가 잠깐 보인다."""
+    _stub_viewer(monkeypatch, tmp_path, port_open=True)
+    a = _job_json(monkeypatch, tmp_path, "A_Modal_ModeShapeData.json")
+    b = _job_json(monkeypatch, tmp_path, "B_Modal_ModeShapeData.json")
+    with ms._lock:
+        ms._loaded_json = a
+
+    assert ms.get_status(a)["matches"] is True
+    assert ms.get_status(b)["matches"] is False
+    assert ms.get_status(None)["matches"] is True   # 안 물어보면 떠 있으면 OK
+
+
+# ── 경로 검증 ───────────────────────────────────────────────────────────────
+
+def test_json_path_outside_userconnection_is_rejected(monkeypatch, tmp_path):
+    """뷰어에 넘기는 인자다 — 임의 경로를 열어주면 안 된다."""
+    _stub_viewer(monkeypatch, tmp_path, port_open=False)
+    monkeypatch.setattr(ms, "_BACKEND_DIR", str(tmp_path))
+    outside = tmp_path / "secret.json"
+    outside.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(HTTPException) as exc:
+        ms.start_viewer(str(outside))
+    assert exc.value.status_code == 400
+
+
+def test_missing_json_file_is_rejected(monkeypatch, tmp_path):
+    _stub_viewer(monkeypatch, tmp_path, port_open=False)
+    monkeypatch.setattr(ms, "_BACKEND_DIR", str(tmp_path))
+    missing = tmp_path / "userConnection" / "job" / "nope.json"
+
+    with pytest.raises(HTTPException) as exc:
+        ms.start_viewer(str(missing))
+    assert exc.value.status_code == 404

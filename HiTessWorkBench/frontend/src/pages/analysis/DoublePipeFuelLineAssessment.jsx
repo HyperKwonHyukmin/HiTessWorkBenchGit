@@ -2428,9 +2428,9 @@ function ModeShapeModal({ shapeDataPath, onClose }) {
 
   const override = getModeShapeUrlOverride();
   const baseUrl = override || `${getModeShapeHost()}:${port}`;
-  const src = shapeDataPath
-    ? `${baseUrl}/?json=${encodeURIComponent(shapeDataPath)}`
-    : `${baseUrl}/`;
+  // 결과 JSON 은 백엔드가 뷰어를 띄울 때 기동 인자로 넘겨 자동 로드시킨다(URL 쿼리가 아니다 —
+  // 뷰어가 st.query_params 를 읽지 않는다). 그래서 여기는 순수 뷰어 주소면 된다.
+  const src = `${baseUrl}/`;
 
   // ESC 로 닫기.
   useEffect(() => {
@@ -2448,6 +2448,10 @@ function ModeShapeModal({ shapeDataPath, onClose }) {
     let stopped = false;
     let timer = null;
 
+    const statusUrl = `${API_BASE_URL}/api/doublepipe/modeshape/status`
+      + (shapeDataPath ? `?json_path=${encodeURIComponent(shapeDataPath)}` : '');
+
+    // matches=true 여야 준비 완료다 — 단순히 떠 있기만 하면 이전 결과가 열려 있을 수 있다.
     const apply = (data) => {
       if (data?.port) setPort(data.port);
       if (data?.available === false) {
@@ -2455,14 +2459,14 @@ function ModeShapeModal({ shapeDataPath, onClose }) {
         setPhase('unavailable');
         return true;
       }
-      if (data?.running) { setPhase('ready'); return true; }
+      if (data?.matches) { setPhase('ready'); return true; }
       return false;
     };
 
     const poll = async (deadline) => {
       if (stopped) return;
       try {
-        const { data } = await axios.get(`${API_BASE_URL}/api/doublepipe/modeshape/status`);
+        const { data } = await axios.get(statusUrl);
         if (stopped) return;
         if (apply(data)) return;
       } catch {
@@ -2478,12 +2482,15 @@ function ModeShapeModal({ shapeDataPath, onClose }) {
 
     (async () => {
       try {
-        const { data } = await axios.get(`${API_BASE_URL}/api/doublepipe/modeshape/status`);
+        const { data } = await axios.get(statusUrl);
         if (stopped) return;
         if (apply(data)) return;
 
         setPhase('starting');
-        const started = await axios.post(`${API_BASE_URL}/api/doublepipe/modeshape/start`, {});
+        // 요청한 결과 JSON 을 기동 인자로 넘긴다 — 뷰어가 그 결과를 자동으로 연다.
+        const started = await axios.post(`${API_BASE_URL}/api/doublepipe/modeshape/start`, {
+          jsonPath: shapeDataPath || '',
+        });
         if (stopped) return;
         if (apply(started.data)) return;
         // 압축 해제 + Streamlit 부팅에 보통 15~30초 걸린다. 넉넉히 3분까지 기다린다.
@@ -2497,7 +2504,7 @@ function ModeShapeModal({ shapeDataPath, onClose }) {
     })();
 
     return () => { stopped = true; if (timer) clearTimeout(timer); };
-  }, [override, nonce]);
+  }, [override, nonce, shapeDataPath]);
 
   return (
     <div className="fixed inset-0 z-[99999] flex flex-col bg-slate-950/80 p-3 backdrop-blur-sm sm:p-5">

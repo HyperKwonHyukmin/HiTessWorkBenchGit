@@ -217,24 +217,44 @@ async def run_modal_upload(
 
 
 @router.get("/modeshape/status")
-def modeshape_status(current_user: str = Depends(require_auth)):
+def modeshape_status(
+    json_path: str = "",
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
     """Mode Shape 뷰어(Streamlit)의 가용/기동 상태.
 
-    available=false 면 서버에 ModeShapeViewer.exe 가 없다. running=true 면 바로 접속 가능,
+    available=false 면 서버에 ModeShapeViewer.exe 가 없다. running=true 면 접속 가능,
     starting=true 면 기동 중이므로 프론트가 이 엔드포인트를 계속 폴링한다.
+    json_path 를 주면 matches 로 '그 결과가 열려 있는지'까지 알려준다.
     port 는 뷰어 폴더의 .streamlit/config.toml 에서 읽는다(프론트가 이 포트로 접속).
     """
-    return get_modeshape_status()
+    if json_path:
+        assert_current_user_can_access_path(json_path, current_user, db, _USER_CONNECTION_DIR)
+    return get_modeshape_status(json_path or None)
+
+
+class ModeShapeStartRequest(BaseModel):
+    jsonPath: str = ""   # 뷰어에 자동으로 띄울 *_ModeShapeData.json 절대경로(빈 값=빈 뷰어)
 
 
 @router.post("/modeshape/start")
-def modeshape_start(current_user: str = Depends(require_auth)):
-    """Mode Shape 뷰어가 꺼져 있으면 서버에서 띄운다(이미 떠 있으면 아무것도 하지 않음).
+def modeshape_start(
+    req: ModeShapeStartRequest,
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
+    """Mode Shape 뷰어를 요청된 결과 JSON 과 함께 띄운다.
 
-    기동에 수십 초가 걸려(PyInstaller onefile 압축 해제 + Streamlit 부팅) 여기서 기다리지
-    않고 즉시 반환한다 — 완료 확인은 GET /modeshape/status 폴링으로 한다.
+    뷰어는 기동 인자로 받은 JSON 을 자동으로 열기 때문에(ModeShapeViewer._cli_json_path),
+    사용자가 사이드바에 파일을 끌어다 놓지 않아도 된다. 다만 인자는 기동 시점에만 정해지므로,
+    이미 다른 결과가 열려 있으면 재기동한다.
+    기동에 수십 초가 걸려 여기서 기다리지 않고 즉시 반환한다 —
+    완료 확인은 GET /modeshape/status?json_path=... 폴링으로 한다.
     """
-    return start_modeshape_viewer()
+    if req.jsonPath:
+        assert_current_user_can_access_path(req.jsonPath, current_user, db, _USER_CONNECTION_DIR)
+    return start_modeshape_viewer(req.jsonPath or None)
 
 
 @router.get("/run-psa/status/{job_id}")
