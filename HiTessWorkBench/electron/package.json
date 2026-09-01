@@ -1,6 +1,6 @@
 {
   "name": "electron-app",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "description": "HiTESS WorkBench Electron Shell",
   "main": "index.js",
   "scripts": {
