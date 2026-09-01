@@ -1494,7 +1494,7 @@ export default function MooringFittingAssessment() {
                   <p className="text-[10px] text-slate-400 leading-relaxed">
                     MF 하중(CHOCK·BOLLARD·Roller 등)에 곱해집니다.{' '}
                     <span className="font-semibold text-slate-500">Winch 하중에는 미적용.</span><br />
-                    <span className="font-mono">P = SWL × 1000 × SF (N)</span>
+                    <span className="font-mono">P = SWL × 9806.65 × SF (N)</span>
                   </p>
                 </div>
                 <input
