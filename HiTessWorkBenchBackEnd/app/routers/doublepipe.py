@@ -14,6 +14,8 @@ from ..services.doublepipe_psa_service import (
     cancel_psa_job,
     get_active_status,
     get_psa_job,
+    start_modal_job,
+    start_modal_job_from_upload,
     start_psa_job,
     start_psa_job_from_upload,
 )
@@ -153,6 +155,60 @@ async def run_psa_upload(
         csv_file.filename or "psa_input.csv",
         authenticated_employee_id(employee_id, current_user),
         load_cases,
+    )
+
+
+class RunModalRequest(BaseModel):
+    workDir: str            # userConnection 기준 작업 폴더명
+    resultCsv: str          # 그 폴더 안의 내관 포함 배관 CSV 파일명
+    employee_id: str = "unknown"
+    modes: "int | None" = None       # 추출 최대 모드 개수(기본 10)
+    min_freq: "float | None" = None  # 추출 최소 고유진동수 Hz(기본 1.0)
+
+
+@router.post("/run-modal")
+def run_modal(
+    req: RunModalRequest,
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
+    """
+    Tab1 결과 CSV 를 'Piping Normal Mode Analysis' 파이프라인(Run_ModalAnalysis.exe)의 입력으로
+    넘겨 고유진동(Normal Mode) 해석을 백그라운드로 시작합니다. *FREQUENCY 스텝 inp 를 만들고
+    Abaqus 를 1회 실행한 뒤 .dat 에서 고유진동수(Hz)를 추출합니다(마찰 반복 없음).
+    ⚠️ PSA 와 같은 Abaqus 라이센스를 쓰므로 동시에 하나만 실행됩니다(점유 중이면 409).
+    진행 상태·로그는 PSA 와 동일하게 GET /run-psa/status/{job_id} 로 폴링합니다.
+    """
+    work_path = os.path.join(_USER_CONNECTION_DIR, os.path.basename(req.workDir or ""))
+    assert_current_user_can_access_path(work_path, current_user, db, _USER_CONNECTION_DIR)
+    return start_modal_job(
+        req.workDir,
+        req.resultCsv,
+        authenticated_employee_id(req.employee_id, current_user),
+        req.modes,
+        req.min_freq,
+    )
+
+
+@router.post("/run-modal-upload")
+async def run_modal_upload(
+    csv_file: UploadFile = File(...),
+    employee_id: str = Form("unknown"),
+    modes: str = Form(""),      # 빈 값=엔진 기본(10)
+    min_freq: str = Form(""),   # 빈 값=엔진 기본(1.0Hz)
+    current_user: str = Depends(require_auth),
+):
+    """
+    Tab3 에서 직접 업로드한 배관 CSV 를 userConnection 작업 폴더에 저장하고 고유진동 해석을
+    백그라운드로 시작합니다. Tab1(Design Inner Support)을 거치지 않는 독립 경로입니다.
+    """
+    csv_bytes = await _read_csv_upload(csv_file)
+    return start_modal_job_from_upload(
+        csv_bytes,
+        csv_file.filename or "modal_input.csv",
+        authenticated_employee_id(employee_id, current_user),
+        modes or None,
+        min_freq or None,
     )
 
 

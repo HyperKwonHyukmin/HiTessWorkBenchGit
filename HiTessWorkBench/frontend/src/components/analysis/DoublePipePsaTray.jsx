@@ -1,4 +1,5 @@
-// 이중관 배관응력 해석(PSA) 전역 진행 위젯.
+// 이중관 해석(배관응력 PSA / 고유진동) 전역 진행 위젯.
+// 두 해석은 같은 Abaqus 라이센스 슬롯을 공유하므로 /active 가 돌려주는 kind 로 문구만 분기한다.
 //
 // 해석 실행 중 사용자가 페이지를 벗어나도(대시보드 등) 우측 하단에 경과시간 카드를 띄우고,
 // 클릭하면 해석 화면으로 복귀시킨다. 기존 GlobalJobTray(표준 /api/analysis/status, progress%)와는
@@ -61,7 +62,11 @@ export default function DoublePipePsaTray({
           data.jobId === hint.jobId &&
           String(data.employeeId || '') === String(employeeId || '');
         if (mine) {
-          setJob({ jobId: data.jobId, anchor: Date.now() / 1000 - (data.elapsedSec || 0) });
+          setJob({
+            jobId: data.jobId,
+            kind: data.kind || 'psa',
+            anchor: Date.now() / 1000 - (data.elapsedSec || 0),
+          });
         } else {
           setJob(null);
           // 내 작업이 더 이상 라이센스를 점유하지 않음(완료/중단/타사용자 교체) → 힌트 정리
@@ -107,6 +112,7 @@ export default function DoublePipePsaTray({
   if (!showCard) return null;
 
   const elapsed = Date.now() / 1000 - job.anchor;
+  const jobLabel = job.kind === 'modal' ? '이중관 고유진동 해석' : '이중관 배관응력 해석';
 
   const handleReturn = () => {
     try {
@@ -124,13 +130,13 @@ export default function DoublePipePsaTray({
     <div className={embedded ? 'w-full' : 'fixed bottom-4 right-4 z-[99998] w-[min(320px,calc(100vw-2rem))]'}>
       <div
         onClick={handleReturn}
-        title="클릭하여 배관응력 해석 화면으로 돌아가기"
+        title={`클릭하여 ${jobLabel} 화면으로 돌아가기`}
         className="animate-fade-in-up cursor-pointer rounded-xl border border-slate-700 bg-slate-900/95 p-3 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] backdrop-blur-xl transition-all hover:border-sky-500"
       >
         <div className="flex items-center gap-2">
           <RefreshCw size={13} className="shrink-0 animate-spin text-sky-400" />
           <span className="min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-wider text-slate-300">
-            이중관 배관응력 해석
+            {jobLabel}
           </span>
           <ArrowUpRight size={14} className="shrink-0 text-slate-500" />
         </div>

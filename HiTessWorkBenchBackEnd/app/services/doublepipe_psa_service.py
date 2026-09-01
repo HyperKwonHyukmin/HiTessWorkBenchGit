@@ -20,6 +20,7 @@ PSA_AllLoadCases.exe 는 원본 Main.py(+scipy·pyNastran·numpy·openpyxl)를 P
 """
 import glob
 import json
+import locale
 import logging
 import os
 import re
@@ -51,6 +52,15 @@ _PSA_DIR = os.path.join(_DOUBLEPIPE_DIR, "HiTessAdapter")
 # 구 배치(엔진 폴더 안에 exe·템플릿이 있던 시절) 폴백 — 서버가 아직 이행 전이어도 무중단.
 _PSA_LEGACY_DIR = os.path.join(_DOUBLEPIPE_DIR, "Piping Stress Analysis for all load cases")
 _PSA_EXE_NAME = "PSA_AllLoadCases.exe"
+# ── 고유진동(Normal Mode) 해석 프로그램 ───────────────────────────────────
+# Run_ModalAnalysis.exe 는 같은 AbaqusModelCreatorPKG 로 *FREQUENCY 스텝 inp 를 만들고 Abaqus 를
+# 1회 실행한 뒤 .dat 의 EIGENVALUE OUTPUT 표에서 고유진동수(Hz)를 뽑는다(마찰 반복 없음).
+#   Run_ModalAnalysis.exe <csv_path> --no-viewer [--modes N] [--min-freq F]
+# ⚠️ --no-viewer 필수: 빠지면 exe 가 해석 후 streamlit 뷰어를 foreground 로 띄워 프로세스가
+#    영원히 끝나지 않는다(서버에서는 타임아웃까지 라이센스를 물고 있게 된다).
+# PSA 와 동일하게 어댑터 폴더를 1순위로 보고, 현재 위치(엔진 폴더)를 폴백으로 둔다.
+_MODAL_DIR = os.path.join(_DOUBLEPIPE_DIR, "Piping Normal Mode Analysis")
+_MODAL_EXE_NAME = "Run_ModalAnalysis.exe"
 _USER_CONNECTION_DIR = os.path.join(_BACKEND_DIR, "userConnection")
 _REPORT_NAME = "Report for PSA.xlsx"
 # 서식 템플릿 원본(프로그램 폴더). make_report() 가 cwd(job_dir) 상대경로로 이 이름을 읽으므로,
@@ -77,12 +87,33 @@ def _resolve_psa_exe() -> "str | None":
             return candidate
     return None
 
+
+def _resolve_modal_exe() -> "str | None":
+    """실행할 고유진동 해석 exe 의 절대경로. 없으면 None.
+
+    어댑터 폴더(_PSA_DIR)를 1순위로 보는 이유는 PSA 와 같다 — 연구원 엔진 폴더를 통째로
+    덮어써도 배포본이 지워지지 않게 하려면 언젠가 이쪽으로 옮겨야 하고, 그때 코드 수정이
+    필요 없도록 미리 후보에 넣어 둔다.
+    """
+    for directory in (_PSA_DIR, _MODAL_DIR):
+        candidate = os.path.join(directory, _MODAL_EXE_NAME)
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
 # userConnection 폴더 명명에 쓰는 프로그램 이름 (doublepipe_service.py 와 동일 규칙:
 # {timestamp}_{employee_id}_{ProgramName}). Tab2 직접 업로드 경로가 새 작업 폴더를 만들 때 사용.
 _PROGRAM_NAME = "DoublePipeFuelLine"
 
 # 최대 실행 시간(초) — Abaqus 반복 해석까지 고려. 필요 시 env 로 override.
 _PSA_TIMEOUT = int(os.environ.get("DOUBLEPIPE_PSA_TIMEOUT", "7200"))
+# 고유진동 해석은 마찰 반복이 없는 단일 Abaqus run 이라 훨씬 짧다.
+_MODAL_TIMEOUT = int(os.environ.get("DOUBLEPIPE_MODAL_TIMEOUT", "3600"))
+
+# 고유진동 해석 옵션 허용 범위 — 엔진 기본값(10 모드 / 1.0Hz)과 동일한 기본을 쓴다.
+_MODAL_DEFAULT_MODES = 10
+_MODAL_DEFAULT_MIN_FREQ = 1.0
+_MODAL_MAX_MODES = 50
 
 # jobId -> 작업 상태(인메모리). 서버 재시작 시 소실(다른 앱과 동일한 구조적 한계).
 _jobs: dict[str, dict] = {}
@@ -198,6 +229,67 @@ def _normalize_load_cases(raw) -> "list[str] | None":
     return normalized or None
 
 
+def _normalize_modal_options(modes, min_freq) -> tuple:
+    """고유진동 해석 옵션(--modes / --min-freq)을 검증해 (int, float) 로 정규화한다."""
+    if modes in (None, ""):
+        n_modes = _MODAL_DEFAULT_MODES
+    else:
+        try:
+            n_modes = int(modes)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"올바르지 않은 모드 개수: '{modes}'")
+        if not (1 <= n_modes <= _MODAL_MAX_MODES):
+            raise HTTPException(
+                status_code=400,
+                detail=f"모드 개수는 1~{_MODAL_MAX_MODES} 범위여야 합니다 (입력: {n_modes}).",
+            )
+
+    if min_freq in (None, ""):
+        f_min = _MODAL_DEFAULT_MIN_FREQ
+    else:
+        try:
+            f_min = float(min_freq)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"올바르지 않은 최소 진동수: '{min_freq}'")
+        if not (0.0 <= f_min <= 10000.0):
+            raise HTTPException(status_code=400, detail=f"최소 진동수는 0~10000Hz 범위여야 합니다 (입력: {f_min}).")
+
+    return n_modes, f_min
+
+
+def _resolve_workspace_csv(work_dir: str, result_csv: str) -> str:
+    """userConnection 하위 작업 폴더의 CSV 절대경로를 검증해 돌려준다(디렉터리 탈출 차단)."""
+    safe_dir = os.path.basename(work_dir or "")
+    safe_csv = os.path.basename(result_csv or "")
+    if not safe_dir or not safe_csv:
+        raise HTTPException(status_code=400, detail="workDir 와 resultCsv 를 모두 지정하세요.")
+
+    csv_path = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, safe_dir, safe_csv))
+    if not csv_path.startswith(os.path.abspath(_USER_CONNECTION_DIR) + os.sep):
+        raise HTTPException(status_code=400, detail="입력 CSV 경로가 올바르지 않습니다.")
+    if not os.path.isfile(csv_path):
+        raise HTTPException(status_code=404, detail=f"Tab1 결과 CSV 를 찾을 수 없습니다: {safe_dir}/{safe_csv}")
+    return csv_path
+
+
+def _save_upload_to_workspace(csv_bytes: bytes, csv_name: str, employee_id: str) -> tuple:
+    """업로드 CSV 를 새 작업 폴더에 저장하고 (csv_path, folder_name, safe_name) 을 돌려준다."""
+    # 폴더명에 들어가는 사번은 경로 조작 문자를 제거해 userConnection 밖으로 새지 않게 한다.
+    safe_employee = re.sub(r"[^A-Za-z0-9_-]", "", employee_id or "") or "unknown"
+    work_dir, _timestamp = create_analysis_workspace(
+        _USER_CONNECTION_DIR,
+        safe_employee,
+        _PROGRAM_NAME,
+    )
+    safe_name = os.path.basename(csv_name or "") or "psa_input.csv"
+    if not safe_name.lower().endswith(".csv"):
+        safe_name += ".csv"
+    csv_path = os.path.join(work_dir, safe_name)
+    with open(csv_path, "wb") as f:
+        f.write(csv_bytes)
+    return csv_path, os.path.basename(work_dir), safe_name
+
+
 def start_psa_job(work_dir: str, result_csv: str, employee_id: str, load_cases=None) -> dict:
     """Tab1 작업 폴더에 이미 저장된 결과 CSV 로 PSA 해석을 백그라운드로 시작한다.
 
@@ -205,21 +297,35 @@ def start_psa_job(work_dir: str, result_csv: str, employee_id: str, load_cases=N
     """
     _ensure_license_available()  # 라이센스 점유 중이면 조기 409
     lcs = _normalize_load_cases(load_cases)  # 잘못된 LC 면 파일 확인 전 400
+    csv_path = _resolve_workspace_csv(work_dir, result_csv)
+    return _launch_job(csv_path, employee_id, load_cases=lcs)
 
-    # ── 입력 검증 ──
-    safe_dir = os.path.basename(work_dir or "")
-    safe_csv = os.path.basename(result_csv or "")
-    if not safe_dir or not safe_csv:
-        raise HTTPException(status_code=400, detail="workDir 와 resultCsv 를 모두 지정하세요.")
 
-    csv_path = os.path.abspath(os.path.join(_USER_CONNECTION_DIR, safe_dir, safe_csv))
-    # userConnection 하위로 경로 고정(디렉터리 탈출 차단)
-    if not csv_path.startswith(os.path.abspath(_USER_CONNECTION_DIR) + os.sep):
-        raise HTTPException(status_code=400, detail="입력 CSV 경로가 올바르지 않습니다.")
-    if not os.path.isfile(csv_path):
-        raise HTTPException(status_code=404, detail=f"Tab1 결과 CSV 를 찾을 수 없습니다: {safe_dir}/{safe_csv}")
+def start_modal_job(work_dir: str, result_csv: str, employee_id: str, modes=None, min_freq=None) -> dict:
+    """Tab1/Tab3 작업 폴더에 이미 저장된 CSV 로 고유진동(Normal Mode) 해석을 시작한다.
 
-    return _launch_job(csv_path, employee_id, lcs)
+    PSA 와 같은 Abaqus 라이센스를 쓰므로 같은 단일 슬롯(_active_job_id)을 공유한다 —
+    PSA 가 돌고 있으면 여기서도 409(license_busy)가 난다.
+    """
+    _ensure_license_available()
+    modal_opts = _normalize_modal_options(modes, min_freq)
+    csv_path = _resolve_workspace_csv(work_dir, result_csv)
+    return _launch_job(csv_path, employee_id, kind="modal", modal_opts=modal_opts)
+
+
+def start_modal_job_from_upload(csv_bytes: bytes, csv_name: str, employee_id: str, modes=None, min_freq=None) -> dict:
+    """Tab3 에서 직접 업로드한 배관 CSV 로 고유진동 해석을 시작한다(Tab1 미경유 독립 경로)."""
+    if not csv_bytes:
+        raise HTTPException(status_code=400, detail="업로드된 CSV 파일이 비어 있습니다.")
+
+    _ensure_license_available()  # 업로드 파일 저장/폴더 생성 전 fail-fast
+    modal_opts = _normalize_modal_options(modes, min_freq)
+
+    csv_path, folder_name, safe_name = _save_upload_to_workspace(csv_bytes, csv_name, employee_id)
+    result = _launch_job(csv_path, employee_id, kind="modal", modal_opts=modal_opts)
+    result["workDir"] = folder_name
+    result["resultCsv"] = safe_name
+    return result
 
 
 def start_psa_job_from_upload(csv_bytes: bytes, csv_name: str, employee_id: str, load_cases=None) -> dict:
@@ -237,38 +343,33 @@ def start_psa_job_from_upload(csv_bytes: bytes, csv_name: str, employee_id: str,
     _ensure_license_available()  # 업로드 파일 저장/폴더 생성 전 fail-fast
     lcs = _normalize_load_cases(load_cases)  # 잘못된 LC 면 파일 저장 전 400
 
-    # 폴더명에 들어가는 사번은 경로 조작 문자를 제거해 userConnection 밖으로 새지 않게 한다.
-    safe_employee = re.sub(r"[^A-Za-z0-9_-]", "", employee_id or "") or "unknown"
-    work_dir, _timestamp = create_analysis_workspace(
-        _USER_CONNECTION_DIR,
-        safe_employee,
-        _PROGRAM_NAME,
-    )
-    folder_name = os.path.basename(work_dir)
-
-    safe_name = os.path.basename(csv_name or "") or "psa_input.csv"
-    if not safe_name.lower().endswith(".csv"):
-        safe_name += ".csv"
-    csv_path = os.path.join(work_dir, safe_name)
-    with open(csv_path, "wb") as f:
-        f.write(csv_bytes)
-
-    result = _launch_job(csv_path, employee_id, lcs)
+    csv_path, folder_name, safe_name = _save_upload_to_workspace(csv_bytes, csv_name, employee_id)
+    result = _launch_job(csv_path, employee_id, load_cases=lcs)
     result["workDir"] = folder_name
     result["resultCsv"] = safe_name
     return result
 
 
-def _launch_job(csv_path: str, employee_id: str, load_cases=None) -> dict:
-    """userConnection 하위 절대경로 csv_path 를 입력으로 PSA exe 를 백그라운드 스레드로 실행한다.
+def _launch_job(csv_path: str, employee_id: str, kind: str = "psa", load_cases=None, modal_opts=None) -> dict:
+    """userConnection 하위 절대경로 csv_path 를 입력으로 해석 exe 를 백그라운드 스레드로 실행한다.
 
-    Tab1 결과 CSV(start_psa_job)와 Tab2 직접 업로드(start_psa_job_from_upload)가 공유하는
-    실행 로직 — exe 존재 확인 → (라이센스 원자적 점유) job 등록 → 스레드 기동.
-    load_cases 가 지정되면 `--load-cases L18,L20,...` 인자를 붙여 선택 해석, 없으면 전체 29개.
+    Tab1 결과 CSV / 직접 업로드, PSA / 고유진동 해석이 모두 공유하는 실행 로직 —
+    exe 존재 확인 → (라이센스 원자적 점유) job 등록 → 스레드 기동.
+    kind='psa' 면 load_cases 를, kind='modal' 이면 modal_opts=(모드수, 최소Hz) 를 인자로 붙인다.
+    ★ 두 종류 모두 같은 Abaqus 라이센스 슬롯(_active_job_id)을 공유한다.
     """
-    psa_exe_path = _resolve_psa_exe()
-    if psa_exe_path is None:
-        raise HTTPException(status_code=503, detail=f"PSA 해석 프로그램({_PSA_EXE_NAME})을 찾을 수 없습니다. 서버 관리자에게 문의하세요.")
+    is_modal = kind == "modal"
+    if is_modal:
+        exe_path = _resolve_modal_exe()
+        if exe_path is None:
+            raise HTTPException(
+                status_code=503,
+                detail=f"고유진동 해석 프로그램({_MODAL_EXE_NAME})을 찾을 수 없습니다. 서버 관리자에게 문의하세요.",
+            )
+    else:
+        exe_path = _resolve_psa_exe()
+        if exe_path is None:
+            raise HTTPException(status_code=503, detail=f"PSA 해석 프로그램({_PSA_EXE_NAME})을 찾을 수 없습니다. 서버 관리자에게 문의하세요.")
 
     # ⚠️ cwd 는 반드시 CSV 가 있는 폴더(job_dir)여야 한다 — Main.py 내부의 write_LC()/
     # make_report()/F06Format 이 "Report for PSA.xlsx", "Inforget_f06.txt", "L*_stress.txt" 등을
@@ -276,27 +377,49 @@ def _launch_job(csv_path: str, employee_id: str, load_cases=None) -> dict:
     # 지정해 cwd 와 무관하게 실행되게 하고, 하위 산출물만 job_dir 에 모이도록 한다. _PSA_DIR 를
     # cwd 로 쓰면 동시 작업 간 산출물이 서로 덮어써지고 make_report() 가 파일을 못 찾아
     # 빈 보고서가 나온다.
+    # (고유진동 exe 는 frozen 일 때 스스로 exe 폴더로 chdir 하지만, 입력 CSV 를 절대경로로 받아
+    #  work_dir=dirname(csv) 를 산출물·Abaqus cwd 로 쓰므로 결과는 동일하게 job_dir 에 모인다.)
     job_dir = os.path.dirname(csv_path)
-    command = [psa_exe_path, csv_path]
-    # 선택 Load Case 지정 시에만 --load-cases 를 붙인다(미지정=엔진 기본 전체 29개).
-    if load_cases:
-        command += ["--load-cases", ",".join(load_cases)]
+    modal_modes = modal_min_freq = None
+    if is_modal:
+        modal_modes, modal_min_freq = modal_opts or (_MODAL_DEFAULT_MODES, _MODAL_DEFAULT_MIN_FREQ)
+        # --no-viewer 는 필수(streamlit 뷰어가 뜨면 프로세스가 끝나지 않는다).
+        command = [
+            exe_path, csv_path, "--no-viewer",
+            "--modes", str(modal_modes),
+            "--min-freq", str(modal_min_freq),
+        ]
+    else:
+        command = [exe_path, csv_path]
+        # 선택 Load Case 지정 시에만 --load-cases 를 붙인다(미지정=엔진 기본 전체 29개).
+        if load_cases:
+            command += ["--load-cases", ",".join(load_cases)]
 
     job_id = uuid.uuid4().hex[:12]
     now_epoch = _now_epoch()
     now = datetime.now().isoformat(timespec="seconds")
-    project_name = f"이중관 배관응력 해석_{datetime.fromtimestamp(now_epoch).strftime('%Y%m%d_%H%M%S')}"
+    stamp = datetime.fromtimestamp(now_epoch).strftime("%Y%m%d_%H%M%S")
+    project_name = (
+        f"이중관 고유진동 해석_{stamp}" if is_modal else f"이중관 배관응력 해석_{stamp}"
+    )
     job = {
         "jobId": job_id,
+        "kind": kind,                  # psa | modal — 프론트가 완료 메시지/결과 표시를 분기한다.
         "status": "running",           # running | done | failed
         "returncode": None,
         "csvPath": csv_path,
         "command": " ".join(f'"{c}"' if " " in c else c for c in command),
         "logs": [],
-        "reportPath": os.path.join(job_dir, _REPORT_NAME),
+        # 고유진동 해석은 xlsx 보고서를 만들지 않는다 — 결과는 NaturalFrequencies.txt 이며
+        # _finish 가 파싱해 job["modes"] 로 실어 준다.
+        "reportPath": None if is_modal else os.path.join(job_dir, _REPORT_NAME),
         "reportReady": False,
         "employeeId": employee_id or "unknown",
-        "loadCases": list(load_cases) if load_cases else None,  # None=전체 / 리스트=선택(로그·표시용)
+        "loadCases": list(load_cases) if load_cases and not is_modal else None,  # None=전체 / 리스트=선택
+        "modalModes": modal_modes,         # 요청한 최대 모드 개수(표시용)
+        "modalMinFreq": modal_min_freq,    # 요청한 최소 진동수 Hz(표시용)
+        "modes": None,                     # 완료 후 [{modeNo, freqHz}, ...]
+        "resultPath": None,                # 완료 후 *_NaturalFrequencies.txt 절대경로
         "projectName": project_name,       # 시작/완료 DB upsert에서 같은 이름을 유지한다.
         "startedAt": now,
         "startedAtEpoch": now_epoch,
@@ -320,7 +443,7 @@ def _launch_job(csv_path: str, employee_id: str, load_cases=None) -> dict:
     # solver thread를 시작하기 전에 DB 스냅샷을 먼저 만든다. 완료/실패 시 같은 job_id로 갱신된다.
     _record_psa_analysis(job)
 
-    thread = threading.Thread(target=_run_pipeline, args=(job_id, command, job_dir), daemon=True)
+    thread = threading.Thread(target=_run_pipeline, args=(job_id, command, job_dir, kind), daemon=True)
     try:
         thread.start()
     except Exception as exc:
@@ -376,17 +499,36 @@ def _resolve_abaqus_commands_dir() -> "str | None":
     return None
 
 
+def _set_abaqus_resolved(job_id: str, resolved: bool) -> None:
+    """실행 직전 abaqus 런처를 찾았는지 기록한다.
+
+    고유진동 exe 는 abaqus 실패 메시지를 출력하다 인코딩 오류로 죽어 원인이 로그에서 지워지므로
+    (_finish 의 modal_console_encoding 참조), '애초에 abaqus 가 없었다'는 사실을 여기서 남겨 둬야
+    사용자에게 정확한 원인을 말해 줄 수 있다.
+    """
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is not None:
+            job["_abaqusResolved"] = resolved
+
+
 def _build_subprocess_env(job_id: str) -> dict:
     """자식(exe → abaqus)이 상속할 환경을 만든다.
 
     abaqus 가 현재 PATH 로 이미 잡히면 그대로 두고, 안 잡히면 런처 폴더를 찾아 PATH 앞에
     주입한다(찾으면 알림 로그, 못 찾으면 경고 로그). 이 env 를 exe 에 넘기면 exe 가 내부에서
     부르는 `abaqus` 도 같은 PATH 를 상속하므로 abaqus_not_found 를 방지한다.
+
+    ⚠️ PYTHONIOENCODING 으로 자식 stdout 을 UTF-8 로 돌리려는 시도는 통하지 않는다 —
+    PyInstaller 부트로더가 `python -E` 상당으로 PYTHON* 환경변수를 무시한다(실측 확인).
+    대신 읽는 쪽 인코딩을 맞춘다(_child_output_encoding 참조).
     """
     env = os.environ.copy()
     if shutil.which("abaqus"):
+        _set_abaqus_resolved(job_id, True)
         return env  # 이미 PATH 로 해석됨 — 주입 불필요
     abaqus_dir = _resolve_abaqus_commands_dir()
+    _set_abaqus_resolved(job_id, bool(abaqus_dir))
     if abaqus_dir:
         env["PATH"] = abaqus_dir + os.pathsep + env.get("PATH", "")
         _append_log(job_id, f"[환경] abaqus 가 PATH 에 없어 '{abaqus_dir}' 를 PATH 앞에 주입했습니다.")
@@ -601,12 +743,30 @@ def _mark_termination_pending(job_id: str, terminal_status: str, returncode: int
         )
 
 
-def _run_pipeline(job_id: str, command: list, cwd: str):
-    """subprocess 로 PSA 를 실행하고 stdout 스트리밍과 실행 제한 시간을 함께 보장한다."""
+def _child_output_encoding(kind: str) -> str:
+    """자식 프로세스 stdout 을 디코딩할 인코딩.
+
+    - PSA(`PSA_AllLoadCases.exe`): 어댑터 `shims/console.py` 가 stdout 을 UTF-8 로 고정하므로 utf-8.
+    - 고유진동(`Run_ModalAnalysis.exe`): 어댑터를 거치지 않은 연구원 원본 빌드라 그 shim 이 없다.
+      파이프로 실행하면 Python 이 콘솔 로케일(한국어 Windows = cp949)로 인코딩해 쓴다 —
+      utf-8 로 읽으면 로그의 한글이 전부 깨진다(실측: raw 바이트를 cp949 로 디코딩해야 정상).
+      환경변수로는 교정할 수 없어(PyInstaller 가 PYTHON* 무시) 읽는 쪽을 로케일에 맞춘다.
+    """
+    if kind != "modal":
+        return "utf-8"
+    return locale.getpreferredencoding(False) or "utf-8"
+
+
+def _run_pipeline(job_id: str, command: list, cwd: str, kind: str = "psa"):
+    """subprocess 로 해석을 실행하고 stdout 스트리밍과 실행 제한 시간을 함께 보장한다."""
+    is_modal = kind == "modal"
     # ⚠️ exe 가 파이프라인 끝에서 make_report() 로 이 템플릿을 cwd 상대경로로 읽으므로,
     # Abaqus 해석 시작 전에 미리 job 폴더로 복사해 둔다.
-    _stage_report_template(cwd, job_id)
+    # (고유진동 해석은 xlsx 보고서를 만들지 않으므로 스테이징이 필요 없다.)
+    if not is_modal:
+        _stage_report_template(cwd, job_id)
     env = _build_subprocess_env(job_id)
+    child_encoding = _child_output_encoding(kind)
     # 취소가 thread.start 직후, Popen 직전에 도착한 경우 프로세스를 만들지 않는다.
     with _jobs_lock:
         starting = _jobs.get(job_id)
@@ -629,7 +789,7 @@ def _run_pipeline(job_id: str, command: list, cwd: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            encoding="utf-8",
+            encoding=child_encoding,
             errors="replace",
             bufsize=1,
             creationflags=_SUBPROC_FLAGS,
@@ -683,15 +843,16 @@ def _run_pipeline(job_id: str, command: list, cwd: str):
 
     outcome = "completed"
     returncode = None
+    timeout_sec = _MODAL_TIMEOUT if is_modal else _PSA_TIMEOUT
     try:
-        returncode = proc.wait(timeout=_PSA_TIMEOUT)
+        returncode = proc.wait(timeout=timeout_sec)
     except subprocess.TimeoutExpired:
         outcome = "timeout"
         terminated = _terminate_process_tree(proc, job_id)
         if terminated:
-            _append_log(job_id, f"[치명] 해석 시간 초과({_PSA_TIMEOUT}s) — 프로세스를 종료했습니다.")
+            _append_log(job_id, f"[치명] 해석 시간 초과({timeout_sec}s) — 프로세스를 종료했습니다.")
         else:
-            _append_log(job_id, f"[치명] 해석 시간 초과({_PSA_TIMEOUT}s) — 프로세스 종료 확인 대기 중입니다.")
+            _append_log(job_id, f"[치명] 해석 시간 초과({timeout_sec}s) — 프로세스 종료 확인 대기 중입니다.")
     except Exception as exc:  # noqa: BLE001
         outcome = "error"
         terminated = _terminate_process_tree(proc, job_id)
@@ -715,8 +876,67 @@ def _run_pipeline(job_id: str, command: list, cwd: str):
     # Popen.wait() 의 반환값을 우선 사용하되, 일부 테스트/래퍼 구현과의 호환을 위해
     # None 인 경우 기존처럼 proc.returncode 를 읽는다.
     rc = returncode if returncode is not None else proc.returncode
+    if is_modal:
+        # 고유진동 결과는 <csv-stem>_Modal_NaturalFrequencies.txt 다(Run_ModalAnalysis 규칙).
+        modal_result = _collect_modal_result(cwd, command)
+        _finish(
+            job_id,
+            status="done" if rc == 0 else "failed",
+            returncode=rc,
+            report_ready=bool(modal_result),
+            modal_result=modal_result,
+        )
+        return
     report_ready = os.path.isfile(os.path.join(cwd, _REPORT_NAME))
     _finish(job_id, status="done" if rc == 0 else "failed", returncode=rc, report_ready=report_ready)
+
+
+def _modal_result_txt_path(cwd: str, csv_path: str) -> str:
+    """Run_ModalAnalysis 가 쓰는 고유진동수 결과 txt 의 절대경로."""
+    base = os.path.splitext(os.path.basename(csv_path))[0]
+    return os.path.join(cwd, f"{base}_Modal_NaturalFrequencies.txt")
+
+
+def _parse_modal_result_txt(path: str) -> list:
+    """*_NaturalFrequencies.txt 를 [{'modeNo': int, 'freqHz': float}, ...] 로 파싱한다.
+
+    파일 형식(SaveNaturalFrequencies):
+        Natural Frequency Result (>= 1.0 Hz, max 10 modes)
+        MODE NO      FREQUENCY (Hz)
+              1      12.3456
+    """
+    modes = []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                tokens = line.split()
+                if len(tokens) != 2 or not tokens[0].isdigit():
+                    continue
+                try:
+                    modes.append({"modeNo": int(tokens[0]), "freqHz": float(tokens[1])})
+                except ValueError:
+                    continue
+    except OSError as exc:
+        logger.warning("modal result read failed (%s): %s", path, exc)
+        return []
+    return modes
+
+
+def _collect_modal_result(cwd: str, command: list) -> "dict | None":
+    """고유진동 해석 산출물(결과 txt·모드형상 이미지/JSON)을 수집한다. 없으면 None."""
+    csv_path = command[1] if len(command) > 1 else ""
+    txt_path = _modal_result_txt_path(cwd, csv_path)
+    if not os.path.isfile(txt_path):
+        return None
+    base = os.path.splitext(os.path.basename(csv_path))[0]
+    shape_json = os.path.join(cwd, f"{base}_Modal_ModeShapeData.json")
+    shape_dir = os.path.join(cwd, f"{base}_Modal_ModeShapes")
+    return {
+        "resultPath": txt_path,
+        "modes": _parse_modal_result_txt(txt_path),
+        "shapeDataPath": shape_json if os.path.isfile(shape_json) else None,
+        "shapeImageDir": shape_dir if os.path.isdir(shape_dir) else None,
+    }
 
 
 def _record_psa_analysis(job: dict):
@@ -740,16 +960,22 @@ def _record_psa_analysis(job: dict):
 
         csv_path = job.get("csvPath") or ""
         work_dir = os.path.dirname(csv_path) if csv_path else None
+        is_modal = job.get("kind") == "modal"
+        workflow_step = "modal" if is_modal else "psa"
         load_cases = job.get("loadCases")
         input_info = {
             "schema_version": 3,
-            "workflow_step": "psa",
+            "workflow_step": workflow_step,
             "input_csv": csv_path,
             "input_filename": os.path.basename(csv_path) if csv_path else None,
-            "load_case_mode": "selected" if load_cases else "all",
-            "load_cases": list(load_cases) if load_cases else None,
-            "load_case_count": len(load_cases) if load_cases else 29,
         }
+        if is_modal:
+            input_info["modal_modes"] = job.get("modalModes")
+            input_info["modal_min_freq_hz"] = job.get("modalMinFreq")
+        else:
+            input_info["load_case_mode"] = "selected" if load_cases else "all"
+            input_info["load_cases"] = list(load_cases) if load_cases else None
+            input_info["load_case_count"] = len(load_cases) if load_cases else 29
 
         # Tab1 경로는 변환 단계가 저장한 설정 JSON이 같은 폴더에 있다. 직접 업로드 경로에는
         # 설정 파일이 없으므로 input_mode만 구분해 두고 배관 CSV 자체를 원본 입력으로 보존한다.
@@ -780,13 +1006,14 @@ def _record_psa_analysis(job: dict):
             except (TypeError, ValueError):
                 duration_sec = None
 
-        report_path = job.get("reportPath")
+        # 고유진동 해석의 '산출물 준비됨' 판정 기준은 xlsx 보고서가 아니라 결과 txt 다.
+        report_path = job.get("resultPath") if is_modal else job.get("reportPath")
         report_ready = bool(
             job.get("reportReady") and report_path and os.path.isfile(report_path)
         )
         result_info = {
             "schema_version": 3,
-            "workflow_step": "psa",
+            "workflow_step": workflow_step,
             "work_dir": work_dir,
             "status": status_msg,
             "started_at": started_at,
@@ -797,11 +1024,16 @@ def _record_psa_analysis(job: dict):
             "report_ready": report_ready,
             "logs": list(job.get("logs") or []),
         }
-        if report_ready:
+        if report_ready and not is_modal:
             result_info["report"] = report_path
+        if is_modal:
+            result_info["natural_frequencies"] = list(job.get("modes") or [])
+            result_info["result_txt"] = job.get("resultPath")
+            result_info["mode_shape_data"] = job.get("shapeDataPath")
 
+        default_name = "이중관 고유진동 해석" if is_modal else "이중관 배관응력 해석"
         project_name = job.get("projectName") or (
-            f"이중관 배관응력 해석_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            f"{default_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
         _project, db_err = record_analysis(
             job_id=job.get("jobId"),
@@ -819,7 +1051,7 @@ def _record_psa_analysis(job: dict):
         logger.error("PSA analysis DB record failed: %s", exc, exc_info=True)
 
 
-def _finish(job_id: str, status: str, returncode: int, report_ready: bool = False):
+def _finish(job_id: str, status: str, returncode: int, report_ready: bool = False, modal_result=None):
     global _active_job_id
     job_to_record = None
     with _jobs_lock:
@@ -846,6 +1078,7 @@ def _finish(job_id: str, status: str, returncode: int, report_ready: bool = Fals
                 "status": status,
                 "returncode": returncode,
                 "report_ready": report_ready,
+                "modal_result": modal_result,
             }
             if termination_pending:
                 job["diagnostic"] = "termination_pending"
@@ -858,6 +1091,7 @@ def _finish(job_id: str, status: str, returncode: int, report_ready: bool = Fals
         job.pop("_pendingTerminal", None)
         job.pop("_terminationReapPending", None)
         # 실패 원인별 사용자용 친절한 진단을 덧붙인다.
+        exe_label = _MODAL_EXE_NAME if job.get("kind") == "modal" else _PSA_EXE_NAME
         if status == "failed":
             joined = "\n".join(job["logs"])
             if "No module named" in joined:
@@ -865,7 +1099,7 @@ def _finish(job_id: str, status: str, returncode: int, report_ready: bool = Fals
                 # 함 — 발생하면 exe 자체가 손상/구버전일 가능성이 높다.
                 job["diagnostic"] = "solver_env_missing"
                 job["logs"].append(
-                    f"[안내] 해석 프로그램({_PSA_EXE_NAME}) 내부에 필요한 모듈이 빠져 있습니다. "
+                    f"[안내] 해석 프로그램({exe_label}) 내부에 필요한 모듈이 빠져 있습니다. "
                     "exe 가 손상되었거나 구버전일 수 있습니다 — 서버 관리자에게 문의하세요."
                 )
             elif "abaqus" in joined.lower() and (
@@ -876,6 +1110,27 @@ def _finish(job_id: str, status: str, returncode: int, report_ready: bool = Fals
                     "[안내] 이 컴퓨터에서 'abaqus' 명령을 찾을 수 없습니다. Abaqus CAE(외부 솔버)가 "
                     "설치되어 있고 PATH 에 등록되어 있는지 확인하세요."
                 )
+            elif job.get("kind") == "modal" and "UnicodeEncodeError" in joined:
+                # Run_ModalAnalysis.exe 는 abaqus 출력을 utf-8/errors=replace 로 읽은 뒤 그대로
+                # cp949 stdout 에 print 한다. abaqus 가 한글 메시지(예: "'abaqus'은(는) 내부 또는
+                # 외부 명령이 아닙니다")를 내면 U+FFFD 가 섞여 print 자체가 UnicodeEncodeError 로
+                # 죽는다 → 진짜 원인이 로그에서 지워진다. 실행 직전에 기록해 둔 abaqus 탐색 결과로
+                # 원인을 되살린다(대개 abaqus 미설치).
+                if job.get("_abaqusResolved") is False:
+                    job["diagnostic"] = "abaqus_not_found"
+                    job["logs"].append(
+                        "[안내] 이 컴퓨터에서 'abaqus' 명령을 찾을 수 없습니다. Abaqus CAE(외부 솔버)가 "
+                        "설치되어 있고 PATH 에 등록되어 있는지 확인하세요. (해석 프로그램이 그 오류 메시지를 "
+                        "출력하다 콘솔 인코딩 오류로 함께 중단됐습니다.)"
+                    )
+                else:
+                    job["diagnostic"] = "modal_console_encoding"
+                    job["logs"].append(
+                        "[안내] 고유진동 해석 프로그램이 콘솔 인코딩 오류(UnicodeEncodeError)로 중단됐습니다. "
+                        "직전에 Abaqus 가 한글 메시지를 출력했을 가능성이 높습니다 — 위 로그의 Abaqus 메시지를 "
+                        "확인하세요. (근본 해결: 엔진의 Run_ModalAnalysis.py 에 "
+                        "sys.stdout.reconfigure(encoding='utf-8') 추가 요청)"
+                    )
             elif "Abaqus/Analysis exited with errors" in joined or "Abaqus 해석" in joined:
                 job["diagnostic"] = "abaqus_solve_failed"
                 job["logs"].append(
@@ -884,6 +1139,11 @@ def _finish(job_id: str, status: str, returncode: int, report_ready: bool = Fals
         job["status"] = status
         job["returncode"] = returncode
         job["reportReady"] = report_ready
+        if modal_result:
+            job["resultPath"] = modal_result.get("resultPath")
+            job["modes"] = modal_result.get("modes") or []
+            job["shapeDataPath"] = modal_result.get("shapeDataPath")
+            job["shapeImageDir"] = modal_result.get("shapeImageDir")
         job["finishedAt"] = datetime.now().isoformat(timespec="seconds")
         job_to_record = job
     # DB 기록은 lock 밖에서 — 완료 시점에 Analysis 레코드를 남겨 MyProjects 에 노출한다.
@@ -918,6 +1178,7 @@ def get_active_status() -> dict:
         return {
             "active": True,
             "jobId": job["jobId"],
+            "kind": job.get("kind", "psa"),   # psa | modal — 프론트 재연결 시 어느 탭인지 판정
             "employeeId": job.get("employeeId"),
             "startedAtEpoch": started,
             "serverNowEpoch": now,

@@ -620,6 +620,7 @@ def test_survivor_late_finish_replays_only_after_verified_retry(monkeypatch, tmp
         "status": "done",
         "returncode": 0,
         "report_ready": True,
+        "modal_result": None,   # PSA 작업이므로 고유진동 결과는 없다.
     }
     assert service._active_job_id == job_id
 

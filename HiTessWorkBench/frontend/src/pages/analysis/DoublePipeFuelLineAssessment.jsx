@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import {
-  ArrowRight, Ban, Box, Check, CheckCircle2, ChevronRight, Clock, Download, Filter, Info, Loader2, Lock, ListChecks,
+  Activity, ArrowRight, Ban, Box, Check, CheckCircle2, ChevronRight, Clock, Download, Filter, Info, Loader2, Lock, ListChecks,
   Pipette, Play, RotateCcw, Ruler, Send, ShieldAlert, Sliders, Table2, Terminal, Upload, X, Zap,
 } from 'lucide-react';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
@@ -45,7 +45,8 @@ const DEFAULT_FORM = {
   },
 };
 
-// 2단계 워크플로 — 순서 자체가 정보(Inner Support 설계 → 배관응력 해석)이므로 번호를 부여한다.
+// 3단계 워크플로 — 순서 자체가 정보(Inner Support 설계 → 배관응력 해석 → 고유진동 해석)이므로
+// 번호를 부여한다. 2·3단계는 Tab1 결과 전달 / 직접 업로드 어느 쪽으로도 진입할 수 있다.
 const TABS = [
   {
     key: 'inner-support',
@@ -64,7 +65,19 @@ const TABS = [
       + 'Abaqus 비마찰·마찰 반복 해석과 ASME B31.3 적합성 검토를 실행합니다. 3D 뷰어로 생성된 배관 모델과 '
       + 'UBOLT 지지점을 확인하고, 전체 29개 Load Case를 자동 해석합니다.',
   },
+  {
+    key: 'natural-frequency',
+    label: 'Natural Frequency',
+    shortLabel: 'Natural Frequency',
+    icon: Activity,
+    statusLabel: '배관 CSV 대기',
+    description: '배관 CSV로 고유진동(Normal Mode) 해석용 inp를 생성해 Abaqus *FREQUENCY 스텝을 실행하고, '
+      + '결과(.dat)에서 모드별 고유진동수(Hz)를 추출합니다. 마찰 반복은 진행하지 않습니다.',
+  },
 ];
+
+// 고유진동 해석 옵션 기본값 — Run_ModalAnalysis 의 --modes / --min-freq 기본값과 같다.
+const MODAL_DEFAULTS = { modes: 10, minFreq: 1.0 };
 
 // 29개 Load Case (Main.py / hmNastranBDF.py 의 SUBCASE 정의). L17(SUS)은 Allowable Stress 선행조건이라 항상 자동 포함.
 const LOAD_CASES = [
@@ -738,7 +751,7 @@ export default function DoublePipeFuelLineAssessment() {
   const logEndRef = useRef(null);
   const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
   // Report 탭 제거로 저장된 activeTab 이 유효하지 않을 수 있어(예: 'selected-load-cases') 방어한다.
-  const VALID_TABS = ['inner-support', 'all-load-cases'];
+  const VALID_TABS = ['inner-support', 'all-load-cases', 'natural-frequency'];
   const [activeTab, setActiveTab] = useState(
     VALID_TABS.includes(savedPageState.activeTab) ? savedPageState.activeTab : 'inner-support',
   );
@@ -763,9 +776,17 @@ export default function DoublePipeFuelLineAssessment() {
   // Tab1 결과 CSV를 Tab2 입력값으로 전달했을 때 그 핸드오프 정보(폴더/결과 CSV/테이블 데이터).
   const [tab2Input, setTab2Input] = useState(null);
   const [tab2View, setTab2View] = useState('3d'); // '3d' | 'table'
+  // Tab3(Natural Frequency) — Tab2 와 같은 구조. Tab1 전달 또는 직접 업로드 어느 쪽이든 진입 가능.
+  const [tab3Input, setTab3Input] = useState(null);
+  const [tab3View, setTab3View] = useState('3d'); // '3d' | 'table' | 'result'
+  const [modalOpts, setModalOpts] = useState({ ...MODAL_DEFAULTS });
+  const [modalResult, setModalResult] = useState(null);     // { modes: [{modeNo, freqHz}], resultPath }
   // Tab2 전체 Load Case 배관응력 해석
   const [psaRunning, setPsaRunning] = useState(false);      // 내 해석이 진행 중(오버레이 표시)
   const [psaJobId, setPsaJobId] = useState(null);
+  // 실행 중인 작업 종류 — Abaqus 라이센스를 공유하므로 상태/오버레이/폴링을 한 벌로 쓰고
+  // 완료 메시지·결과 표시만 여기서 분기한다. 'psa' | 'modal'
+  const [runKind, setRunKind] = useState('psa');
   const [psaAnchor, setPsaAnchor] = useState(null);         // 내 해석 경과 앵커(클라 epoch 초)
   const [psaReportPath, setPsaReportPath] = useState(null); // 완료된 해석의 Report for PSA.xlsx 서버 경로(다운로드용)
   const [reportDownloading, setReportDownloading] = useState(false);
@@ -825,7 +846,15 @@ export default function DoublePipeFuelLineAssessment() {
           setPsaJobId(null);
           setPsaAnchor(null);
           clearPsaHint();
-          if (s.data.status === 'done') {
+          const isModal = s.data.kind === 'modal';
+          if (s.data.status === 'done' && isModal) {
+            // 고유진동 해석 완료 → 모드별 고유진동수 표를 결과 뷰에 띄운다.
+            const modes = s.data.modes || [];
+            setModalResult({ modes, resultPath: s.data.resultPath || null });
+            if (modes.length) setTab3View('result');
+            addLog(`완료: 고유진동수 ${modes.length}개 모드를 추출했습니다.`, 'success');
+            showToast('고유진동 해석이 완료되었습니다.', 'success');
+          } else if (s.data.status === 'done') {
             // 완료 → 보고서 다운로드 경로 확보(reportReady 이고 reportPath 있을 때만).
             if (s.data.reportReady && s.data.reportPath) setPsaReportPath(s.data.reportPath);
             addLog('완료: Report for PSA.xlsx 가 생성되었습니다.', 'success');
@@ -838,6 +867,9 @@ export default function DoublePipeFuelLineAssessment() {
           } else if (s.data.diagnostic === 'abaqus_not_found') {
             addLog('해석 실패 — 이 컴퓨터에 Abaqus 솔버가 없습니다.', 'error');
             showToast('Abaqus가 설치되어 있지 않아 해석을 완주할 수 없습니다. (콘솔 안내 참조)', 'error');
+          } else if (s.data.diagnostic === 'modal_console_encoding') {
+            addLog('해석 실패 — 해석 프로그램이 콘솔 인코딩 오류로 중단되었습니다(대개 Abaqus 실행 실패가 선행).', 'error');
+            showToast('고유진동 해석이 중단되었습니다. Abaqus 설치/PATH를 확인하세요.', 'error');
           } else if (s.data.diagnostic === 'abaqus_solve_failed') {
             addLog('해석 실패 — Abaqus 해석이 오류로 종료되었습니다.', 'error');
             showToast('Abaqus 해석 중 오류가 발생했습니다. 콘솔 로그를 확인하세요.', 'error');
@@ -881,12 +913,18 @@ export default function DoublePipeFuelLineAssessment() {
 
   // 진행 중인 내 해석에 다시 연결(마운트 재연결/전역 위젯 복귀). 콘솔은 재연결 헤더로 초기화 후
   // 백엔드가 보관한 로그를 처음부터 다시 스트리밍한다(중복 방지 + 완전한 콘솔).
-  const reconnectToRunning = (jobId, elapsedSec) => {
-    setActiveTab('all-load-cases');
+  const reconnectToRunning = (jobId, elapsedSec, kind = 'psa') => {
+    const isModal = kind === 'modal';
+    setRunKind(isModal ? 'modal' : 'psa');
+    setActiveTab(isModal ? 'natural-frequency' : 'all-load-cases');
     setPsaRunning(true);
     setPsaJobId(jobId);
     setPsaAnchor(Date.now() / 1000 - (elapsedSec || 0));
-    setLogs([{ time: new Date().toLocaleTimeString(), message: '진행 중인 배관응력 해석에 다시 연결했습니다.', type: 'info' }]);
+    setLogs([{
+      time: new Date().toLocaleTimeString(),
+      message: isModal ? '진행 중인 고유진동 해석에 다시 연결했습니다.' : '진행 중인 배관응력 해석에 다시 연결했습니다.',
+      type: 'info',
+    }]);
     psaLastIdxRef.current = 0;
     writePsaHint({ jobId, employeeId: employeeId || 'unknown' });
     startPsaPolling(jobId);
@@ -894,15 +932,25 @@ export default function DoublePipeFuelLineAssessment() {
 
   // 이탈 중 종료된 내 해석 결과를 페이지 복귀 시 복원 표시.
   const replayCompletion = (data) => {
-    setActiveTab('all-load-cases');
+    const isModal = data.kind === 'modal';
+    const label = isModal ? '고유진동 해석' : '배관응력 해석';
+    setRunKind(isModal ? 'modal' : 'psa');
+    setActiveTab(isModal ? 'natural-frequency' : 'all-load-cases');
     if (data.status === 'done') {
-      addLog('이전에 실행한 배관응력 해석이 완료되었습니다. (Report for PSA.xlsx 생성됨)', 'success');
-      showToast('배관응력 해석이 완료되었습니다.', 'success');
+      if (isModal) {
+        const modes = data.modes || [];
+        setModalResult({ modes, resultPath: data.resultPath || null });
+        if (modes.length) setTab3View('result');
+        addLog(`이전에 실행한 고유진동 해석이 완료되었습니다. (${modes.length}개 모드)`, 'success');
+      } else {
+        addLog('이전에 실행한 배관응력 해석이 완료되었습니다. (Report for PSA.xlsx 생성됨)', 'success');
+      }
+      showToast(`${label}이 완료되었습니다.`, 'success');
     } else if (data.diagnostic === 'cancelled') {
-      addLog('이전 배관응력 해석은 중단되었습니다.', 'warning');
+      addLog(`이전 ${label}은 중단되었습니다.`, 'warning');
     } else {
-      addLog('이전에 실행한 배관응력 해석이 실패로 종료되었습니다. 콘솔/서버 로그를 확인하세요.', 'error');
-      showToast('이전 배관응력 해석이 실패했습니다.', 'error');
+      addLog(`이전에 실행한 ${label}이 실패로 종료되었습니다. 콘솔/서버 로그를 확인하세요.`, 'error');
+      showToast(`이전 ${label}이 실패했습니다.`, 'error');
     }
   };
 
@@ -944,7 +992,7 @@ export default function DoublePipeFuelLineAssessment() {
         if (cancelledEffect) return;
         if (data.active) {
           const mine = String(data.employeeId || '') === String(employeeId || '');
-          if (mine) reconnectToRunning(data.jobId, data.elapsedSec || 0);
+          if (mine) reconnectToRunning(data.jobId, data.elapsedSec || 0, data.kind || 'psa');
           else enterLockState(data.elapsedSec || 0);
           return;
         }
@@ -954,7 +1002,7 @@ export default function DoublePipeFuelLineAssessment() {
           try {
             const s = await axios.get(`${API_BASE_URL}/api/doublepipe/run-psa/status/${hint.jobId}`);
             if (cancelledEffect) return;
-            if (s.data.status === 'running') reconnectToRunning(hint.jobId, 0);
+            if (s.data.status === 'running') reconnectToRunning(hint.jobId, 0, s.data.kind || 'psa');
             else { replayCompletion(s.data); clearPsaHint(); }
           } catch {
             clearPsaHint(); // 404 등 → 힌트 정리
@@ -982,6 +1030,10 @@ export default function DoublePipeFuelLineAssessment() {
     setTab1View('preview');
     setTab2Input(null);
     setTab2View('3d');
+    setTab3Input(null);
+    setTab3View('3d');
+    setModalOpts({ ...MODAL_DEFAULTS });
+    setModalResult(null);
     setLcMode('all');
     setSelectedLcs(new Set([MANDATORY_LC]));
     setPdfLoading(false);
@@ -1023,6 +1075,8 @@ export default function DoublePipeFuelLineAssessment() {
     setCsvFile(file);
     setPreviewResult(null);
     setTab2Input(null);
+    setTab3Input(null);
+    setModalResult(null);
     setTab1View('preview');
     addLog(`[FILE] ${file.name} 선택됨 (${formatBytes(file.size)}).`, 'info');
   };
@@ -1142,6 +1196,70 @@ export default function DoublePipeFuelLineAssessment() {
     addLog('배관 CSV 입력을 해제했습니다.', 'info');
   };
 
+  // ── Tab3 (Natural Frequency) — Tab2 와 동일한 두 진입 경로 ──────────────────
+  // Tab1 결과 CSV를 Tab3 입력값으로 지정하고 Tab3로 이동. (해제 시 on=false)
+  const handleSendToTab3 = (on) => {
+    if (on) {
+      if (!previewResult) return;
+      setTab3Input({
+        source: 'tab1',                 // Tab1 결과 CSV (이미 userConnection 폴더에 저장됨)
+        sourceCsv: previewResult.sourceCsv,
+        resultCsv: previewResult.resultCsv,
+        workDir: previewResult.workDir,
+        rowCount: previewResult.rowCount,
+        columns: previewResult.columns,
+        rows: previewResult.rows,
+      });
+      setModalResult(null);
+      setTab3View('3d');
+      addLog('결과 CSV를 Natural Frequency 입력으로 전달했습니다.', 'success');
+      showToast('Natural Frequency 입력으로 전달했습니다.', 'success');
+      setActiveTab('natural-frequency');
+    } else {
+      setTab3Input(null);
+      addLog('Natural Frequency 전달을 해제했습니다.', 'info');
+    }
+  };
+
+  // Tab3 에서 직접 업로드한 배관 CSV — 클라이언트에서 파싱해 뷰어에 띄우고 해석 입력으로 지정한다.
+  const handleTab3Csv = async (file) => {
+    const resetGeneration = resetGenerationRef.current;
+    addLog(`[FILE] ${file.name} 선택됨 (${formatBytes(file.size)}).`, 'info');
+    try {
+      const text = await file.text();
+      if (resetGenerationRef.current !== resetGeneration) return;
+      const { columns, rows } = parseCsv(text);
+      if (!columns.length || !rows.length) {
+        addLog('CSV 파싱 실패 — 유효한 배관 데이터를 찾지 못했습니다.', 'error');
+        showToast('CSV에서 배관 데이터를 읽지 못했습니다.', 'error');
+        return;
+      }
+      setTab3Input({
+        source: 'upload',               // 직접 업로드 (해석 실행 시 파일을 백엔드로 전송)
+        resultCsv: file.name,
+        rowCount: rows.length,
+        columns,
+        rows,
+        file,
+      });
+      setModalResult(null);
+      setTab3View('3d');
+      addLog(`업로드한 CSV로 이중관 배관 모델을 생성했습니다 (${rows.length}개 부재).`, 'success');
+      showToast('배관 모델을 3D 뷰어에 표시했습니다.', 'success');
+    } catch {
+      if (resetGenerationRef.current !== resetGeneration) return;
+      addLog('CSV 파일을 읽는 중 오류가 발생했습니다.', 'error');
+      showToast('CSV 파일을 읽을 수 없습니다.', 'error');
+    }
+  };
+
+  // Tab3 입력(전달/업로드) 해제.
+  const handleClearTab3Input = () => {
+    setTab3Input(null);
+    setModalResult(null);
+    addLog('고유진동 해석 배관 CSV 입력을 해제했습니다.', 'info');
+  };
+
   // 업로드한 외관 CSV + Tab1 입력값을 백엔드로 보내 append_offset.py 포팅본(inner_pipe_transform.py)을
   // 실행하고 내관 자동 생성 결과 CSV를 테이블로 받는다.
   const handleRunInnerSupport = async () => {
@@ -1152,6 +1270,8 @@ export default function DoublePipeFuelLineAssessment() {
     const resetGeneration = resetGenerationRef.current;
     setIsRunning(true);
     setTab2Input(null);
+    setTab3Input(null);
+    setModalResult(null);
     addLog(`내관 자동 생성(append_offset.py) 실행을 요청했습니다... (입력: ${csvFile.name})`, 'info');
     try {
       const formData = new FormData();
@@ -1227,6 +1347,7 @@ export default function DoublePipeFuelLineAssessment() {
       return;
     }
     setPsaRunning(true);
+    setRunKind('psa');
     setPsaReportPath(null);   // 새 해석 시작 — 이전 보고서 다운로드 버튼 숨김
     addLog(
       runLoadCases
@@ -1280,23 +1401,180 @@ export default function DoublePipeFuelLineAssessment() {
     }
   };
 
-  // Tab2 입력 CSV 의 부재/지지 요약(전달 입력 카드에 표시).
-  const tab2Summary = useMemo(() => {
-    if (!tab2Input) return null;
-    const cols = tab2Input.columns || [];
+  // 고유진동(Normal Mode) 해석 실행 — PSA 와 같은 Abaqus 라이센스/폴링/오버레이를 공유한다.
+  const handleRunModal = async () => {
+    if (!tab3Input) {
+      showToast('먼저 배관 CSV를 전달하거나 업로드하세요.', 'warning');
+      return;
+    }
+    setPsaRunning(true);
+    setRunKind('modal');
+    setModalResult(null);     // 새 해석 시작 — 이전 결과 숨김
+    addLog(
+      `고유진동 해석을 요청했습니다. (최대 ${modalOpts.modes}개 모드, ${modalOpts.minFreq}Hz 이상)`,
+      'info',
+    );
+    try {
+      let res;
+      if (tab3Input.source === 'upload' && tab3Input.file) {
+        // 직접 업로드 경로 — 파일을 백엔드로 올려 새 작업 폴더에 저장 후 해석 시작.
+        const formData = new FormData();
+        formData.append('csv_file', tab3Input.file);
+        formData.append('employee_id', employeeId || 'unknown');
+        formData.append('modes', String(modalOpts.modes));
+        formData.append('min_freq', String(modalOpts.minFreq));
+        res = await axios.post(`${API_BASE_URL}/api/doublepipe/run-modal-upload`, formData);
+        if (res.data.workDir) {
+          setTab3Input(prev => (prev ? { ...prev, workDir: res.data.workDir } : prev));
+        }
+      } else {
+        // Tab1 결과 CSV(이미 userConnection 폴더에 저장됨)로 해석 시작.
+        res = await axios.post(`${API_BASE_URL}/api/doublepipe/run-modal`, {
+          workDir: tab3Input.workDir,
+          resultCsv: tab3Input.resultCsv,
+          employee_id: employeeId || 'unknown',
+          modes: modalOpts.modes,
+          min_freq: modalOpts.minFreq,
+        });
+      }
+      const jobId = res.data.jobId;
+      addLog('고유진동 해석을 시작했습니다.', 'info');
+      setPsaJobId(jobId);
+      setPsaAnchor(Date.now() / 1000);
+      psaLastIdxRef.current = 0;
+      writePsaHint({ jobId, employeeId: employeeId || 'unknown' });
+      startPsaPolling(jobId);
+    } catch (e) {
+      setPsaRunning(false);
+      const detail = e.response?.data?.detail;
+      // PSA 와 같은 단일 Abaqus 라이센스를 공유하므로 PSA 실행 중에도 409 가 난다.
+      if (e.response?.status === 409 && detail?.code === 'license_busy') {
+        enterLockState(detail.elapsedSec || 0);
+        addLog('다른 해석이 라이센스를 사용 중이라 실행할 수 없습니다.', 'warning');
+        showToast('All licenses are currently occupied. Please try again later', 'warning');
+        return;
+      }
+      const message = typeof detail === 'string' ? detail : '고유진동 해석 요청에 실패했습니다.';
+      addLog(message, 'error');
+      showToast(message, 'error');
+    }
+  };
+
+  // 입력 CSV 의 부재/지지 요약(전달 입력 카드에 표시). Tab2/Tab3 가 같은 형식을 쓴다.
+  const summarizeCsv = (input) => {
+    if (!input) return null;
+    const cols = input.columns || [];
     const typeCol = cols.includes('type') ? 'type' : cols[1];
     let pipe = 0;
     let ubolt = 0;
-    for (const r of tab2Input.rows || []) {
+    for (const r of input.rows || []) {
       const k = String(r[typeCol] ?? '').trim().toUpperCase();
       if (k === 'UBOLT') ubolt += 1;
       else if (['TUBI', 'ELBO', 'BEND', 'TEE', 'OLET', 'INST'].includes(k)) pipe += 1;
     }
     return { pipe, ubolt };
-  }, [tab2Input]);
+  };
+  const tab2Summary = useMemo(() => summarizeCsv(tab2Input), [tab2Input]);
+  const tab3Summary = useMemo(() => summarizeCsv(tab3Input), [tab3Input]);
 
   // 사이드바 스크롤 영역(입력/설명) — 액션 버튼은 renderSidebarActions()에서 하단에 고정한다.
   const renderSidebarContent = () => {
+    if (activeTab === 'natural-frequency') {
+      return (
+        <>
+          {/* 입력 — Tab1 전달 또는 Tab3 직접 업로드(둘 다 지원, Tab2 와 동일 구조) */}
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <CardHeader
+              icon={tab3Input ? CheckCircle2 : Upload}
+              title="배관 CSV 입력"
+              tone={tab3Input ? 'success' : 'sky'}
+              right={tab3Input && (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                  tab3Input.source === 'upload' ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'
+                }`}>
+                  {tab3Input.source === 'upload' ? '직접 업로드' : 'Tab1 전달'}
+                </span>
+              )}
+            />
+            <div className="space-y-3 p-4">
+              {tab3Input && (
+                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                  <div className="flex items-center gap-2">
+                    <Table2 size={14} className="shrink-0 text-slate-400" />
+                    <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-700" title={tab3Input.resultCsv}>
+                      {tab3Input.resultCsv}
+                    </span>
+                    <button
+                      type="button"
+                      title="입력 해제"
+                      onClick={handleClearTab3Input}
+                      className="shrink-0 rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-2 gap-2">
+                    <MiniStat label="배관 부재" value={tab3Summary?.pipe ?? 0} />
+                    <MiniStat label="U-Bolt 지지" value={tab3Summary?.ubolt ?? 0} />
+                  </div>
+                </div>
+              )}
+
+              <Tab2Dropzone onFile={handleTab3Csv} hasInput={!!tab3Input} />
+
+              {!tab3Input && (
+                <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-500">
+                  <Info size={12} className="mt-0.5 shrink-0 text-slate-400" />
+                  <span>
+                    1단계에서 <span className="font-semibold text-sky-600">Natural Frequency로 전달</span>하거나,
+                    내관·U-Bolt가 포함된 이중관 배관 CSV를 직접 업로드하세요.
+                  </span>
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* 고유진동 해석 옵션 — Run_ModalAnalysis 의 --modes / --min-freq */}
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <CardHeader
+              icon={Activity}
+              title="고유진동 해석 조건"
+              subtitle="Abaqus *FREQUENCY 스텝으로 고유모드를 추출합니다 (마찰 반복 없음)."
+            />
+            <div className="space-y-3 p-4">
+              <ModalOptionField
+                label="추출 모드 개수"
+                unit="EA"
+                value={modalOpts.modes}
+                min={1}
+                max={50}
+                step={1}
+                hint="최대 50개"
+                onChange={(v) => setModalOpts(prev => ({ ...prev, modes: v }))}
+              />
+              <ModalOptionField
+                label="최소 고유진동수"
+                unit="Hz"
+                value={modalOpts.minFreq}
+                min={0}
+                max={10000}
+                step={0.1}
+                hint="이 값 미만 모드는 제외"
+                onChange={(v) => setModalOpts(prev => ({ ...prev, minFreq: v }))}
+              />
+              <p className="flex items-start gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 text-[10px] leading-relaxed text-slate-500">
+                <Info size={12} className="mt-0.5 shrink-0 text-slate-400" />
+                <span>
+                  배관응력 해석과 <span className="font-bold text-slate-700">같은 Abaqus 라이센스</span>를 사용하므로
+                  두 해석은 동시에 실행할 수 없습니다.
+                </span>
+              </p>
+            </div>
+          </div>
+        </>
+      );
+    }
+
     if (activeTab === 'all-load-cases') {
       const pipeCount = tab2Summary?.pipe ?? 0;
       const uboltCount = tab2Summary?.ubolt ?? 0;
@@ -1544,6 +1822,46 @@ export default function DoublePipeFuelLineAssessment() {
 
   // 사이드바 하단 고정 액션 — 스크롤과 무관하게 항상 보이도록 aside footer에 배치한다.
   const renderSidebarActions = () => {
+    if (activeTab === 'natural-frequency') {
+      const modeCount = modalResult?.modes?.length ?? 0;
+      return (
+        <>
+          <Button
+            variant="primary"
+            fullWidth
+            isLoading={psaRunning}
+            disabled={!tab3Input || psaRunning}
+            onClick={handleRunModal}
+          >
+            <Activity size={15} />
+            고유진동 해석 실행 ({modalOpts.modes}개 모드)
+          </Button>
+          {!tab3Input && (
+            <p className="mt-2 text-center text-[11px] text-slate-500">CSV를 전달하거나 업로드하면 실행할 수 있습니다.</p>
+          )}
+
+          {/* 해석 완료 후 고유진동수 요약 */}
+          {modeCount > 0 && !psaRunning && (
+            <div className="mt-3 overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50">
+              <div className="flex items-center gap-2 px-3 pt-2.5">
+                <CheckCircle2 size={15} className="shrink-0 text-emerald-600" />
+                <span className="text-xs font-bold text-emerald-800">해석 완료 · {modeCount}개 모드</span>
+              </div>
+              <div className="p-2.5">
+                <Button variant="secondary" fullWidth size="sm" onClick={() => setTab3View('result')}>
+                  <Table2 size={14} />
+                  고유진동수 결과 보기
+                </Button>
+                <p className="mt-1.5 text-center text-[10px] text-emerald-600/80">
+                  1차 모드 {modalResult.modes[0].freqHz.toFixed(4)} Hz
+                </p>
+              </div>
+            </div>
+          )}
+        </>
+      );
+    }
+
     if (activeTab === 'all-load-cases') {
       return (
         <>
@@ -1646,6 +1964,38 @@ export default function DoublePipeFuelLineAssessment() {
                 <ArrowRight size={15} className="transition-transform group-hover:translate-x-0.5" />
               </button>
             )}
+
+            {/* Tab3 전달 — 배관응력 해석과 독립적으로, 같은 결과 CSV를 고유진동 해석에도 보낼 수 있다. */}
+            {tab3Input ? (
+              <div className="flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2">
+                <CheckCircle2 size={16} className="shrink-0 text-violet-600" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-violet-800">Natural Frequency로 전달됨</p>
+                  <p className="truncate text-[10px] text-violet-600">{tab3Input.resultCsv}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('natural-frequency')}
+                  className="shrink-0 rounded-lg bg-violet-600 px-2 py-1 text-[10px] font-bold text-white transition-colors hover:bg-violet-700"
+                >이동</button>
+                <button
+                  type="button"
+                  title="전달 취소"
+                  onClick={() => handleSendToTab3(false)}
+                  className="shrink-0 rounded-lg p-1 text-violet-500 transition-colors hover:bg-violet-100 hover:text-violet-700"
+                ><X size={14} /></button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleSendToTab3(true)}
+                className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-all hover:from-violet-700 hover:to-violet-600 hover:shadow"
+              >
+                <Activity size={15} />
+                Natural Frequency로 전달
+                <ArrowRight size={15} className="transition-transform group-hover:translate-x-0.5" />
+              </button>
+            )}
           </>
         )}
       </div>
@@ -1710,7 +2060,47 @@ export default function DoublePipeFuelLineAssessment() {
       );
     }
 
-    // Tab3 (준비 중)
+    if (activeTab === 'natural-frequency') {
+      const has = !!tab3Input;
+      const modes = modalResult?.modes || [];
+      const dark = has && tab3View === '3d';
+      return (
+        <div className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border shadow-sm ${dark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+          {has && (
+            <div className={`flex shrink-0 items-center gap-1.5 border-b px-3 py-2 ${dark ? 'border-slate-800 bg-slate-800/70' : 'border-slate-100 bg-slate-50'}`}>
+              <ViewTab active={tab3View === '3d'} onClick={() => setTab3View('3d')} icon={Box} label="3D 배관 모델" dark={dark} />
+              <ViewTab active={tab3View === 'table'} onClick={() => setTab3View('table')} icon={Table2} label={`입력 CSV (${tab3Input.rowCount})`} dark={dark} />
+              <ViewTab
+                active={tab3View === 'result'}
+                onClick={() => modes.length && setTab3View('result')}
+                icon={Activity}
+                label={`고유진동수${modes.length ? ` (${modes.length})` : ''}`}
+                disabled={!modes.length}
+                dark={dark}
+              />
+            </div>
+          )}
+          <div className="min-h-0 flex-1">
+            {!has ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-center text-slate-500">
+                  <Activity size={44} className="mx-auto mb-3 opacity-40" />
+                  <p className="text-sm font-semibold text-slate-400">고유진동 해석</p>
+                  <p className="mt-1 text-xs">Tab1에서 결과 CSV를 전달하거나, 왼쪽에서 배관 CSV를 업로드하면 이중관 배관 모델이 3D로 표시됩니다.</p>
+                </div>
+              </div>
+            ) : tab3View === 'result' && modes.length ? (
+              <NaturalFrequencyTable modes={modes} minFreq={modalOpts.minFreq} />
+            ) : tab3View === 'table' ? (
+              <ResultTable columns={tab3Input.columns} rows={tab3Input.rows} />
+            ) : (
+              <Model3DViewer columns={tab3Input.columns} rows={tab3Input.rows} />
+            )}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex h-full items-center justify-center">
@@ -1736,16 +2126,17 @@ export default function DoublePipeFuelLineAssessment() {
         onBack={() => setCurrentMenu('File-Based Apps')}
       />
 
-      {/* 2단계 워크플로 스텝퍼 (컴팩트) — 두 카드 사이에 연결 화살표를 둬 순서가 있는 흐름임을 분명히 한다 */}
+      {/* 3단계 워크플로 스텝퍼 (컴팩트) — 카드 사이에 연결 화살표를 둬 순서가 있는 흐름임을 분명히 한다 */}
       <div className="relative mb-3 shrink-0">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {TABS.map((tab, index) => {
             const isActive = activeTab === tab.key;
             const Icon = tab.icon;
-            const isDone = (tab.key === 'inner-support' && !!previewResult)
-              || (tab.key === 'all-load-cases' && !!tab2Input);
-            const statusText = tab.key === 'all-load-cases' && tab2Input ? '입력 연결됨' : (isDone ? '완료' : tab.statusLabel);
-            const statusColor = (isDone || (tab.key === 'all-load-cases' && tab2Input) || tab.key === 'inner-support') ? 'text-emerald-600' : 'text-slate-400';
+            const linkedInput = (tab.key === 'all-load-cases' && !!tab2Input)
+              || (tab.key === 'natural-frequency' && !!tab3Input);
+            const isDone = (tab.key === 'inner-support' && !!previewResult) || linkedInput;
+            const statusText = linkedInput ? '입력 연결됨' : (isDone ? '완료' : tab.statusLabel);
+            const statusColor = (isDone || tab.key === 'inner-support') ? 'text-emerald-600' : 'text-slate-400';
             return (
               <button
                 key={tab.key}
@@ -1777,12 +2168,18 @@ export default function DoublePipeFuelLineAssessment() {
             );
           })}
         </div>
-        {/* 순서 흐름 표시용 장식 화살표 — 클릭 불가, 2열 그리드에서만 표시 */}
-        <div className="pointer-events-none absolute inset-y-0 left-1/2 z-10 hidden -translate-x-1/2 items-center sm:flex">
-          <span className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-300 shadow-sm">
-            <ChevronRight size={14} />
-          </span>
-        </div>
+        {/* 순서 흐름 표시용 장식 화살표 — 클릭 불가, 3열 그리드에서만 표시 */}
+        {['33.333%', '66.667%'].map((left) => (
+          <div
+            key={left}
+            style={{ left }}
+            className="pointer-events-none absolute inset-y-0 z-10 hidden -translate-x-1/2 items-center sm:flex"
+          >
+            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-300 shadow-sm">
+              <ChevronRight size={14} />
+            </span>
+          </div>
+        ))}
       </div>
 
       <div className="flex min-h-0 flex-1 gap-5">
@@ -1828,7 +2225,9 @@ export default function DoublePipeFuelLineAssessment() {
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-sky-500/15">
               <Loader2 size={28} className="animate-spin text-sky-400" />
             </div>
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">배관응력 해석 진행 중</h3>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">
+              {runKind === 'modal' ? '고유진동 해석 진행 중' : '배관응력 해석 진행 중'}
+            </h3>
             <div className="mt-3 flex items-center justify-center gap-2">
               <Clock size={18} className="text-sky-400" />
               <span className="font-mono text-3xl font-black tabular-nums text-white">
@@ -1926,6 +2325,86 @@ function MiniStat({ label, value }) {
         <span className="ml-0.5 text-[9px] font-semibold text-slate-400">EA</span>
       </div>
       <div className="text-[10px] font-semibold text-slate-500">{label}</div>
+    </div>
+  );
+}
+
+// 고유진동 해석 옵션(--modes / --min-freq) 숫자 입력 — 빈 문자열 편집을 허용하되
+// 실행에 넘기는 값은 항상 유효 범위의 숫자로 유지한다(blur 시 클램프).
+function ModalOptionField({ label, unit, value, min, max, step, hint, onChange }) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => { setDraft(String(value)); }, [value]);
+
+  const commit = () => {
+    const parsed = Number(draft);
+    if (draft.trim() === '' || Number.isNaN(parsed)) {
+      setDraft(String(value));
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, parsed));
+    setDraft(String(clamped));
+    onChange(clamped);
+  };
+
+  return (
+    <label className="block">
+      <span className="mb-1 flex items-baseline gap-1.5">
+        <span className="text-xs font-bold text-slate-700">{label}</span>
+        <span className="text-[10px] font-semibold text-slate-400">{hint}</span>
+      </span>
+      <span className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-500/20">
+        <input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+          className="min-w-0 flex-1 bg-transparent font-mono text-sm font-bold tabular-nums text-slate-800 outline-none"
+        />
+        <span className="shrink-0 text-[10px] font-bold uppercase text-slate-400">{unit}</span>
+      </span>
+    </label>
+  );
+}
+
+// 고유진동수 결과표 — Run_ModalAnalysis 가 .dat 에서 추출한 모드별 Hz.
+function NaturalFrequencyTable({ modes, minFreq }) {
+  const maxFreq = modes.reduce((acc, m) => Math.max(acc, m.freqHz), 0) || 1;
+  return (
+    <div className="flex h-full flex-col">
+      <div className="shrink-0 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
+        <p className="text-xs font-bold text-slate-700">
+          고유진동수 <span className="text-slate-400">(≥ {minFreq} Hz · {modes.length}개 모드)</span>
+        </p>
+        <p className="mt-0.5 text-[10px] text-slate-500">
+          1차 모드 <span className="font-mono font-bold text-sky-600">{modes[0].freqHz.toFixed(4)} Hz</span>
+        </p>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="space-y-1.5">
+          {modes.map((m) => (
+            <div key={m.modeNo} className="flex items-center gap-3">
+              <span className="w-14 shrink-0 text-right font-mono text-[11px] font-bold text-slate-500">
+                MODE {m.modeNo}
+              </span>
+              <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100">
+                <span
+                  className="block h-full rounded-full bg-gradient-to-r from-sky-500 to-violet-500"
+                  style={{ width: `${Math.max(2, (m.freqHz / maxFreq) * 100)}%` }}
+                />
+              </span>
+              <span className="w-24 shrink-0 text-right font-mono text-xs font-black tabular-nums text-slate-800">
+                {m.freqHz.toFixed(4)}
+                <span className="ml-1 text-[9px] font-semibold text-slate-400">Hz</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
