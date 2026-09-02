@@ -8,6 +8,7 @@
 """
 import os
 import io
+import ntpath
 import pickle
 import re
 import subprocess
@@ -75,10 +76,20 @@ def _load_role_list(content: bytes) -> list[str]:
         or any(not isinstance(item, str) for item in value)
     ):
         raise ValueError("input.pkl은 파일명 문자열 3개의 목록이어야 합니다.")
+    role_names = []
     for item in value:
-        if len(item) > 255 or (item.lower() != "none" and os.path.basename(item) != item):
-            raise ValueError("input.pkl에는 경로가 아닌 파일명만 사용할 수 있습니다.")
-    return value
+        if item.casefold() == "none":
+            role_names.append("None")
+            continue
+
+        # The deployed Windows client serializes each original absolute path.
+        # Never use that path on the server: retain only its final filename and
+        # resolve it exclusively against files uploaded in this same request.
+        filename = ntpath.basename(item)
+        if not filename or filename in {".", ".."} or len(filename) > 255:
+            raise ValueError("input.pkl에 유효하지 않은 CSV 파일명이 포함되어 있습니다.")
+        role_names.append(filename)
+    return role_names
 
 
 async def _read_limited(upload: UploadFile, max_bytes: int) -> bytes:

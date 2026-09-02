@@ -116,6 +116,20 @@ def test_hitessbeam_restricted_pickle_accepts_legacy_string_list():
     ]
 
 
+def test_hitessbeam_restricted_pickle_normalizes_legacy_absolute_paths():
+    content = pickle.dumps([
+        r"C:\Engineering\CsvToBdf\structure.csv",
+        r"C:\Engineering\CsvToBdf\pipe.csv",
+        r"C:\Engineering\CsvToBdf\equipment.csv",
+    ])
+
+    assert hitessbeam._load_role_list(content) == [
+        "structure.csv",
+        "pipe.csv",
+        "equipment.csv",
+    ]
+
+
 def test_hitessbeam_restricted_pickle_rejects_global_execution(tmp_path):
     marker = tmp_path / "pickle-executed.txt"
 

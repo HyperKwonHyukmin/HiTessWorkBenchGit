@@ -106,7 +106,7 @@ def test_module_unit_upload_without_authorization_is_accepted(db_session, module
 def test_csv_to_bdf_upload_without_authorization_is_accepted(
     db_session, tmp_path, monkeypatch
 ):
-    """같은 레거시 창구인 CSV→BDF 도 헤더 없이 동작해야 한다."""
+    """배포 클라이언트의 절대경로 pickle과 무인증 요청을 그대로 지원한다."""
     backend_dir = tmp_path / "backend"
     executable = backend_dir / "CsvToBdf_HiTESS.exe"
     executable.parent.mkdir(parents=True)
@@ -125,7 +125,17 @@ def test_csv_to_bdf_upload_without_authorization_is_accepted(
         "/hitessbeam/csvToBdf",
         data={"userID": "A552244"},
         files=[
-            ("file", ("input.pkl", io.BytesIO(pickle.dumps(["structure.csv", "None", "None"])))),
+            (
+                "file",
+                (
+                    "input.pkl",
+                    io.BytesIO(pickle.dumps([
+                        r"C:\Engineering\CsvToBdf\structure.csv",
+                        "None",
+                        "None",
+                    ])),
+                ),
+            ),
             ("file", ("structure.csv", io.BytesIO(b"node,x,y,z\n"))),
         ],
     )
