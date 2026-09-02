@@ -59,12 +59,38 @@ def _run_capture(cmd: list[str], cwd: str, timeout: int):
         raise                                  # 원래 TimeoutExpired 를 상위 핸들러로 재전파
 
 
+def _decode_engine_output(raw: bytes) -> str:
+    """
+    MooringFitting.exe 의 stdout/stderr 를 문자열로 디코딩한다.
+
+    왜 폴백이 필요한가 — Windows 콘솔 기본 출력 인코딩은 OEM 코드페이지(한국어 환경 CP949)다.
+    엔진은 2026-09-01 부터 Console.OutputEncoding 을 UTF-8 로 고정하지만,
+    InHouseProgram 의 exe 는 git 미추적이라 서버 교체가 수동이므로 한동안 구 버전(CP949)이
+    함께 돌아간다. UTF-8 로만 디코딩하면 그 기간 동안 한글 경고문이 전부 깨져 보인다(실측).
+    엄격 디코딩을 순서대로 시도해 성공하는 인코딩을 쓴다.
+    """
+    if not raw:
+        return ""
+    for enc in ("utf-8", "cp949"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    # 둘 다 실패하면 손실을 감수하고 복원 (로그가 통째로 사라지는 것보다 낫다)
+    return raw.decode("utf-8", errors="replace")
+
 def collect_artifacts(out_dir: str, work_dir: str) -> dict:
     """
     MooringFitting.exe 가 생성한 out/ 폴더 산출물을 분류·수집한다.
 
-    핵심 5개(페이지 기본 노출):
-        final_bdf, validation_json, lineage_json, report_mf_csv, report_winch_csv
+    핵심 7개(페이지 기본 노출):
+        final_bdf, validation_json, lineage_json, report_mf_csv, report_winch_csv,
+        transform_summary_json, parse_skips_csv
+
+    transform_summary_json / parse_skips_csv 를 추가한 이유:
+        validation.json 은 07단계 검사 5건(연결성/길이0/SPC존재/하중존재/roller각도)만 담아
+        "입력이 얼마나 누락됐는가", "자동 정리가 원 도면을 얼마나 바꿨는가" 를 보여주지 못한다.
+        이 둘이 없으면 사용자는 부재가 자동 제거되거나 MF 행이 통째로 빠진 사실을 알 수 없다.
     보조(Phase 2 뷰어용 펼치기 영역):
         stage_jsons, stage_bdfs, stage_verifications, raw_json, initial_json
 
@@ -112,6 +138,12 @@ def collect_artifacts(out_dir: str, work_dir: str) -> dict:
         "lineage_json":      _pick("LINEAGE.json"),
         "report_mf_csv":     _pick("Report_LoadCalculation_MF.csv"),
         "report_winch_csv":  _pick("Report_LoadCalculation_Winch.csv"),
+        # 원 도면 대비 위상 변형 총량 + 입력 실질 누락 건수 (엔진이 생성)
+        "transform_summary_json": _pick("MODEL_TRANSFORM_SUMMARY.json"),
+        # 파싱에서 제외된 CSV 행의 사유·행번호·원문
+        "parse_skips_csv":        _pick("CSV_Parse_Skips.csv"),
+        # phase 별 구조적 로그 (진단 원문)
+        "engine_log_file":        _pick("engine.log"),
         "stage_jsons":          stage_jsons,
         "stage_bdfs":           stage_bdfs,
         "stage_verifications":  stage_verifications,
@@ -160,8 +192,8 @@ def task_execute_mooring_fitting(
             cwd=work_dir,
             timeout=TIMEOUT_SECONDS,
         )
-        engine_output = stdout_b.decode("utf-8", errors="replace")
-        stderr_text = stderr_b.decode("utf-8", errors="replace")
+        engine_output = _decode_engine_output(stdout_b)
+        stderr_text = _decode_engine_output(stderr_b)
         if stderr_text.strip():
             engine_output += f"\n[stderr] {stderr_text.strip()}"
         if returncode != 0:
@@ -333,8 +365,8 @@ def task_solve_mooring_fitting(
             cwd=work_dir,
             timeout=SOLVE_TIMEOUT_SECONDS,
         )
-        engine_output = stdout_b.decode("utf-8", errors="replace")
-        stderr_text = stderr_b.decode("utf-8", errors="replace")
+        engine_output = _decode_engine_output(stdout_b)
+        stderr_text = _decode_engine_output(stderr_b)
         if stderr_text.strip():
             engine_output += f"\n[stderr] {stderr_text.strip()}"
         if returncode != 0:

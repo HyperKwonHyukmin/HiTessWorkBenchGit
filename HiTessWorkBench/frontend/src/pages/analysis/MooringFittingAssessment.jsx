@@ -679,6 +679,72 @@ function CsvValidationPanel({ rawJson, loading, error }) {
   );
 }
 
+// 개행 분리용. JSX 안에서 이스케이프가 깨지지 않도록 코드포인트로 구성한다.
+const NEWLINE_RE = new RegExp(String.fromCharCode(13) + '?' + String.fromCharCode(10));
+
+/**
+ * 엔진 stdout 패널.
+ *
+ * 왜 성공했을 때도 보여주는가 — 엔진은 다음을 정확히 경고하지만 종전에는 실패 시에만
+ * 화면에 실려 성공 케이스에서 전량 사라졌다:
+ *   - 입력 CSV 실질 누락(파싱 실패한 MF/부재 행)
+ *   - 자동 부재 제거(DANGLING_SHORT_REMOVED) / 절점 병합 / 신규 연결 생성
+ *   - 모델이 여러 컴포넌트로 분리됨(POST_COMPONENT_COUNT)
+ *   - 해석 후 평형 검증 결과, F06 구조적 경고
+ * 화면의 "Final Validation" 패널은 07단계 검사 5건만 담고 있어 위 내용을 포함하지 않는다.
+ */
+function EngineOutputPanel({ log, failed }) {
+  const lines = String(log).split(NEWLINE_RE);
+
+  // 주의가 필요한 줄만 추린다. 엔진이 쓰는 실제 표기에 맞춘 패턴.
+  const alerts = lines.filter((l) =>
+    /\[Warning\]|\[ERROR\]|Warning:|Error:|실질 누락|판정 불가|평형 검증|STRUCTURAL WARNING|SCAN FAILED|INCOMPLETE|하중경로에 영향|\[부재 제거\]|\[신규 연결 생성\]|\[절점 병합\]/.test(l)
+  );
+
+  const tone = failed
+    ? { box: 'border-red-200 bg-red-50', dot: 'text-red-600', title: 'text-red-700', label: '엔진 오류' }
+    : alerts.length > 0
+      ? { box: 'border-amber-200 bg-amber-50', dot: 'text-amber-600', title: 'text-amber-800', label: '엔진 경고' }
+      : { box: 'border-slate-200 bg-slate-50', dot: 'text-slate-400', title: 'text-slate-500', label: '엔진 출력' };
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${tone.box}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <AlertTriangle size={14} className={tone.dot} />
+        <p className={`text-xs font-bold ${tone.title}`}>{tone.label}</p>
+        {!failed && alerts.length > 0 && (
+          <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded-full px-2 py-0.5">
+            확인 필요 {alerts.length}건
+          </span>
+        )}
+      </div>
+
+      {alerts.length > 0 && (
+        <ul className="mb-2 space-y-1">
+          {alerts.map((l, i) => (
+            <li key={i} className="text-[11px] font-mono text-slate-700 leading-relaxed break-all">
+              {l.trim()}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!failed && alerts.length === 0 && (
+        <p className="text-[11px] text-slate-500 mb-2">경고 없이 완료되었습니다.</p>
+      )}
+
+      <details>
+        <summary className="text-[10px] text-slate-500 cursor-pointer select-none hover:text-slate-700">
+          엔진 출력 전문 보기 ({lines.length}줄)
+        </summary>
+        <pre className="mt-2 text-[10px] font-mono text-slate-600 whitespace-pre-wrap break-all max-h-64 overflow-y-auto">
+          {log}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
 function FinalValidationPanel({ validationJson, loading, error, onDownload, result }) {
   if (loading) return <LoadingValidationPanel />;
   if (error) return <MissingValidationPanel message={error} />;
@@ -940,6 +1006,12 @@ export default function MooringFittingAssessment() {
         if (data.status === 'Success' || data.status === 'Failed') {
           clearInterval(pollRef.current);
           if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
+          // 엔진 출력은 성공/실패 무관하게 보관한다.
+          // 엔진은 입력 누락(예: MF 행 파싱 실패), 부재 자동 제거, 컴포넌트 분리,
+          // 해석 후 평형 검증 결과를 stdout 으로 정확히 경고하는데, 종전에는 Failed 일 때만
+          // 이 로그를 화면에 실어 성공 케이스의 경고가 전량 사라졌다.
+          setEngineLog(data.engine_log || (data.status === 'Failed' ? (data.message || '알 수 없는 오류') : null));
+
           if (data.status === 'Success') {
             setSteps(prev => prev.map(s => {
               if (s.id === 'csv-validation') return { ...s, status: 'done' };
@@ -949,7 +1021,6 @@ export default function MooringFittingAssessment() {
             setActiveIdx(1); // Studio 단계로 이동
           } else {
             setSteps(prev => prev.map((s, i) => i === 0 ? { ...s, status: 'error' } : s));
-            setEngineLog(data.engine_log || data.message || '알 수 없는 오류');
           }
         }
       } catch { /* network blip — keep polling */ }
@@ -1628,17 +1699,9 @@ export default function MooringFittingAssessment() {
             )}
           </div>
 
-          {/* 엔진 로그 (오류 시) */}
+          {/* 엔진 출력 — 성공했을 때도 경고를 보여준다 */}
           {engineLog && (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle size={14} className="text-red-600" />
-                <p className="text-xs font-bold text-red-700">엔진 출력</p>
-              </div>
-              <pre className="text-[10px] font-mono text-slate-700 whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
-                {engineLog}
-              </pre>
-            </div>
+            <EngineOutputPanel log={engineLog} failed={jobStatus?.status === 'Failed'} />
           )}
 
           {/* 실행 중 System Console */}
