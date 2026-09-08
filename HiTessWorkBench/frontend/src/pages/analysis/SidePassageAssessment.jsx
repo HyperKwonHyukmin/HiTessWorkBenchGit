@@ -13,6 +13,7 @@ import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { usePolling } from '../../hooks/usePolling';
 import { requestSidePassageAssessment, requestGroupModuleUnitFromPath, downloadFileText } from '../../api/analysis';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
+import SampleRunButton from '../../components/analysis/SampleRunButton';
 import { API_BASE_URL } from '../../config';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 
@@ -705,6 +706,31 @@ export default function SidePassageAssessment() {
     }
   };
 
+  // 샘플 실행 콜백 — SampleRunButton 이 호출. handleValidate 와 동일한 폴링 흐름에 진입.
+  const sampleSidePassageBefore = () => {
+    setValidating(true);
+    setStepStatus('bdf-validation', 'running');
+    setStep1Data(null);
+    setStep2Data(null);
+    setValidProgress(0);
+    setValidStatusMsg('샘플 파일로 작업 요청 중...');
+  };
+  const sampleSidePassageSubmitted = (jobId) => {
+    setValidJobId(jobId);
+    startGlobalJob?.(jobId, SIDE_PASSAGE_MENU_NAME);
+  };
+  const sampleSidePassageError = (st, detail) => {
+    setValidating(false);
+    setValidJobId(null);
+    if (st === 429) {
+      setStepStatus('bdf-validation', 'wait');
+      setValidStatusMsg('');
+    } else {
+      setStepStatus('bdf-validation', 'error');
+      showToast(`샘플 실행 실패 — ${detail}`, 'error');
+    }
+  };
+
   // ── 해석 실행 ─────────────────────────────────────────────
   // hasRunOnce 는 validation 성공 후에만 true 가 된다(polling.onComplete 의 !hasError 분기).
   // 여기서는 게이트를 풀지 않는다 — 잘못된 BDF 로 다음 단계 진입을 막기 위함.
@@ -910,6 +936,14 @@ export default function SidePassageAssessment() {
                   <ArrowRight size={13} />
                 </button>
               )}
+              {/* 샘플 실행 — 입력 BDF 없이도 학습용으로 즉시 검증 체험 */}
+              <SampleRunButton
+                appKey="sidepassage"
+                disabled={validating}
+                onBeforeRun={sampleSidePassageBefore}
+                onJobSubmitted={sampleSidePassageSubmitted}
+                onError={sampleSidePassageError}
+              />
               <button
                 onClick={handleRun}
                 disabled={validating}

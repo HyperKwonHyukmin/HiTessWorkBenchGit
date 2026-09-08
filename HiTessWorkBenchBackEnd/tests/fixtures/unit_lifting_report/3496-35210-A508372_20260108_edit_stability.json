@@ -1,0 +1,1015 @@
+{
+ "meta": {
+  "schema": "module-analysis-stability/0.1",
+  "phase": "STABILITY",
+  "stageScope": "Stage 0~6 (Posture 평가)",
+  "generatedAt": "2026-09-07T05:57:20Z",
+  "sourceFiles": {
+   "model": "3496-35210-A508372_20260108_edit_edited.json",
+   "posture": "3496-35210-A508372_20260108_edit_posture.json"
+  },
+  "unit": "mm",
+  "engineVersion": "ModuleAnalysis.Stability v0.1.0"
+ },
+ "input": {
+  "liftingMode": {
+   "id": "hydro",
+   "label": "Hydro 방식",
+   "equipment": "Hook",
+   "internalMethod": "Hook"
+  },
+  "wireLengthM": 8,
+  "wireLengthMm": 8000,
+  "totalMassTon": 6.739850359742444,
+  "centerOfGravityMm": {
+   "x": 113832.94,
+   "y": -6886.61,
+   "z": 30723.34
+  },
+  "massSource": "computed:beam+pointMass",
+  "modelBboxMm": {
+   "minX": 108910,
+   "maxX": 120960,
+   "minY": -10730,
+   "maxY": -625,
+   "minZ": 29683,
+   "maxZ": 32188
+  },
+  "groupCount": 3,
+  "groups": [
+   {
+    "groupId": 1,
+    "nodeCount": 2,
+    "nodeIds": [
+     34,
+     2873
+    ]
+   },
+   {
+    "groupId": 2,
+    "nodeCount": 2,
+    "nodeIds": [
+     2728,
+     1378
+    ]
+   },
+   {
+    "groupId": 3,
+    "nodeCount": 3,
+    "nodeIds": [
+     26,
+     18,
+     19
+    ]
+   }
+  ]
+ },
+ "stages": [
+  {
+   "stage": 0,
+   "name": "InputParser",
+   "displayLabel": "0단계 · 입력 검증 및 파싱",
+   "purpose": "_posture.json / _edited.json 스키마와 일관성을 검증하고 내부 모델로 변환한다.",
+   "process": [
+    "_posture.json 스키마 검증 (posture-stability/1.0)",
+    "stageRef.editedFile 동일 폴더 존재성 확인",
+    "_edited.json meta.edited === true 검증",
+    "좌표 일관성 비교 (불일치 시 _edited.json 우선)",
+    "mode.id → LiftingMethod 매핑",
+    "wireLengthM × 1000 → wireLengthMm 단위 통일",
+    "그룹 수 / 노드 수 / NodeID 중복 / wireLengthM ≤ 0 검증"
+   ],
+   "rules": {
+    "expectedSchema": "posture-stability/1.0",
+    "groupCountLimits": {
+     "Hook": 8,
+     "Trolley": 3,
+     "Crane": 1
+    },
+    "rejectIfMassUnavailable": true
+   },
+   "status": "pass",
+   "summary": {
+    "schemaValid": true,
+    "modelLoaded": "3496-35210-A508372_20260108_edit_edited.json",
+    "modelLoadedFromFallback": false,
+    "modelLoadFailed": false,
+    "modelElementCount": 2502,
+    "modelNodeCount": 2555,
+    "liftingMethod": "Hook",
+    "strictEvaluation": false,
+    "groupCount": 3,
+    "wireLengthMm": 8000,
+    "totalMassTon": 6.739850359742444,
+    "warnings": 0,
+    "warningNotes": []
+   },
+   "results": [],
+   "displayPolicy": "internal",
+   "displayOrder": 0,
+   "severity": "info"
+  },
+  {
+   "stage": 1,
+   "name": "LiftingShapeClassifier",
+   "displayLabel": "1단계 · 권상 형상 분류",
+   "purpose": "권상 노드를 정렬하고 형상을 분류하며 권상 방식과의 적합성을 판정한다.",
+   "process": [
+    "노드를 (X, Y, Z) 순으로 정렬 (결정성 보장)",
+    "권상 방식 × 노드 개수 적합성 매트릭스 검사",
+    "4점 케이스: 3점 일직선 검사 (면적 ≈ 0이면 reject)",
+    "4점 케이스: 일직선(X/Y) 또는 사각형 판정"
+   ],
+   "rules": {
+    "shapeMatrix": {
+     "Hook": {
+      "2": "OK",
+      "3": "OK",
+      "4": "OK",
+      "5+": "REJECT"
+     },
+     "Trolley": {
+      "2": "OK",
+      "3": "REJECT",
+      "4": "OK",
+      "5+": "REJECT"
+     },
+     "Crane": {
+      "2": "REJECT",
+      "3": "OK",
+      "4": "OK",
+      "5+": "REJECT"
+     }
+    },
+    "lineAlignmentCosThreshold": 0.9,
+    "colinearAreaToleranceMm2": 1000
+   },
+   "status": "pass",
+   "summary": {
+    "totalGroups": 3,
+    "passed": 3,
+    "rejected": 0,
+    "shapeGateRelaxed": false
+   },
+   "results": [
+    {
+     "groupId": 1,
+     "liftingMethod": "Hook",
+     "nodeCount": 2,
+     "shapeType": "TwoPointLine",
+     "valid": true
+    },
+    {
+     "groupId": 2,
+     "liftingMethod": "Hook",
+     "nodeCount": 2,
+     "shapeType": "TwoPointLine",
+     "valid": true
+    },
+    {
+     "groupId": 3,
+     "liftingMethod": "Hook",
+     "nodeCount": 3,
+     "shapeType": "ThreePointTriangle",
+     "valid": true
+    }
+   ],
+   "displayPolicy": "user",
+   "displayOrder": 1,
+   "severity": "info"
+  },
+  {
+   "stage": 2,
+   "name": "LiftingShapeVerifier",
+   "displayLabel": "2단계 · 권상 형상 유효성 검증",
+   "purpose": "각 그룹의 기하 형상이 권상 안전 기준 이내인지 수치 검증한다.",
+   "process": [
+    "4점 사각형: atan2 순환 정렬 → Z단차 + convex + 평면도 검사",
+    "Trolley 4점 사각형: 단변 ≥ 900mm 검사 (Stage 3 분할 가능성)",
+    "3점 삼각형: Z단차 + 최대 내각 검사, 면적 출력",
+    "4점 일직선/2점: 검증 생략 (안전 가정)"
+   ],
+   "rules": {
+    "zDiffMaxMm": 500,
+    "quadPlanarityMaxMm": 300,
+    "triangleAngleMaxDeg": 120,
+    "trolleyQuadMinSideMm": 900,
+    "quadShapeCheck": "convex"
+   },
+   "status": "pass",
+   "summary": {
+    "totalGroups": 3,
+    "passed": 3,
+    "failed": 0,
+    "shapeGateRelaxed": false
+   },
+   "results": [
+    {
+     "groupId": 1,
+     "shapeType": "TwoPointLine",
+     "metrics": {
+      "skipped": true
+     },
+     "valid": true
+    },
+    {
+     "groupId": 2,
+     "shapeType": "TwoPointLine",
+     "metrics": {
+      "skipped": true
+     },
+     "valid": true
+    },
+    {
+     "groupId": 3,
+     "shapeType": "ThreePointTriangle",
+     "metrics": {
+      "zDiffMm": 0,
+      "anglesDeg": [
+       60.38,
+       90,
+       29.62
+      ],
+      "maxAngleDeg": 90,
+      "areaMm2": 7835625
+     },
+     "valid": true
+    }
+   ],
+   "displayPolicy": "user",
+   "displayOrder": 2,
+   "severity": "info"
+  },
+  {
+   "stage": 3,
+   "name": "LiftingApexCalculator",
+   "displayLabel": "3단계 · 권상 정점 좌표 산출",
+   "purpose": "그룹 중심에서 수직으로 wireLengthMm만큼 올린 위치를 정점으로 산출하고, Trolley는 ±450 mm 분할까지 수행한다.",
+   "process": [
+    "그룹 중심(centroid) 계산 — 노드 좌표 평균",
+    "정점 = (centroid.X, centroid.Y, centroid.Z + wireLengthMm)",
+    "Trolley 4점 사각형/일직선: 정점 ±TROLLEY_HALF_SPAN_MM 분할 (글로벌 축)",
+    "그 외 권상 방식/형상: 분할 없음"
+   ],
+   "rules": {
+    "apexRule": "centroid + (0, 0, wireLengthMm)",
+    "trolleyHalfSpanMm": 450,
+    "globalSplitAxisRule": "countX >= countY ? Y : X",
+    "splitGroupIdRule": "originalId × 10 + suffix"
+   },
+   "status": "pass",
+   "summary": {
+    "originalGroupCount": 3,
+    "finalApexCount": 3,
+    "trolleySplitApplied": false,
+    "globalSplitAxis": null,
+    "halfSpanMm": null,
+    "wireLengthMm": 8000
+   },
+   "results": [
+    {
+     "groupId": 1,
+     "shapeType": "TwoPointLine",
+     "liftingMethod": "Hook",
+     "calculatedTopPointMm": {
+      "x": 112054,
+      "y": -7195,
+      "z": 38376
+     },
+     "assignedNodeIds": [
+      34,
+      2873
+     ],
+     "metrics": {
+      "centroidMm": {
+       "x": 112054,
+       "y": -7195,
+       "z": 30376
+      },
+      "apexHeightMm": 8000
+     },
+     "valid": true
+    },
+    {
+     "groupId": 2,
+     "shapeType": "TwoPointLine",
+     "liftingMethod": "Hook",
+     "calculatedTopPointMm": {
+      "x": 115260.5,
+      "y": -8666,
+      "z": 38482.75
+     },
+     "assignedNodeIds": [
+      2728,
+      1378
+     ],
+     "metrics": {
+      "centroidMm": {
+       "x": 115260.5,
+       "y": -8666,
+       "z": 30482.75
+      },
+      "apexHeightMm": 8000
+     },
+     "valid": true
+    },
+    {
+     "groupId": 3,
+     "shapeType": "ThreePointTriangle",
+     "liftingMethod": "Hook",
+     "calculatedTopPointMm": {
+      "x": 112455,
+      "y": -2495,
+      "z": 38376
+     },
+     "assignedNodeIds": [
+      26,
+      18,
+      19
+     ],
+     "metrics": {
+      "centroidMm": {
+       "x": 112455,
+       "y": -2495,
+       "z": 30376
+      },
+      "apexHeightMm": 8000
+     },
+     "valid": true
+    }
+   ],
+   "displayPolicy": "user",
+   "displayOrder": 3,
+   "severity": "info"
+  },
+  {
+   "stage": 4,
+   "name": "SlingAngleInspector",
+   "displayLabel": "4단계 · 슬링 와이어 각도 검사",
+   "purpose": "각 와이어가 수평면과 이루는 각도가 권상 안전 한계(60°) 이상인지 확인한다.",
+   "process": [
+    "분할 후 정점 ↔ 권상 노드 와이어 선분 정의",
+    "각도 = atan2(|Δz|, xyDist) × 180/π",
+    "60° 미만 와이어 경고 기록"
+   ],
+   "rules": {
+    "minSafeAngleDeg": 60,
+    "minAbsoluteAngleDeg": 30
+   },
+   "status": "pass",
+   "summary": {
+    "totalWires": 7,
+    "unsafeCount": 0,
+    "belowFloorCount": 0,
+    "minAngleDeg": 65.54,
+    "minAngleAtGroupId": 3,
+    "minAngleAtLugNodeId": 19,
+    "maxTensionFactor": 1.099
+   },
+   "results": [
+    {
+     "groupId": 1,
+     "wires": [
+      {
+       "lugNodeId": 34,
+       "angleDeg": 77.91,
+       "safe": true,
+       "aboveFloor": true,
+       "tensionFactor": 1.023
+      },
+      {
+       "lugNodeId": 2873,
+       "angleDeg": 77.91,
+       "safe": true,
+       "aboveFloor": true,
+       "tensionFactor": 1.023
+      }
+     ],
+     "valid": true,
+     "belowFloorCount": 0
+    },
+    {
+     "groupId": 2,
+     "wires": [
+      {
+       "lugNodeId": 2728,
+       "angleDeg": 79.44,
+       "safe": true,
+       "aboveFloor": true,
+       "tensionFactor": 1.017
+      },
+      {
+       "lugNodeId": 1378,
+       "angleDeg": 79.71,
+       "safe": true,
+       "aboveFloor": true,
+       "tensionFactor": 1.016
+      }
+     ],
+     "valid": true,
+     "belowFloorCount": 0
+    },
+    {
+     "groupId": 3,
+     "wires": [
+      {
+       "lugNodeId": 26,
+       "angleDeg": 71.67,
+       "safe": true,
+       "aboveFloor": true,
+       "tensionFactor": 1.053
+      },
+      {
+       "lugNodeId": 18,
+       "angleDeg": 75.88,
+       "safe": true,
+       "aboveFloor": true,
+       "tensionFactor": 1.031
+      },
+      {
+       "lugNodeId": 19,
+       "angleDeg": 65.54,
+       "safe": true,
+       "aboveFloor": true,
+       "tensionFactor": 1.099
+      }
+     ],
+     "valid": true,
+     "belowFloorCount": 0
+    }
+   ],
+   "displayPolicy": "user",
+   "displayOrder": 4,
+   "severity": "info"
+  },
+  {
+   "stage": 5,
+   "name": "WireInterferenceInspector",
+   "displayLabel": "5단계 · 와이어-구조물 간섭 검사",
+   "purpose": "분할 후 와이어가 모델의 다른 구조물 요소와 물리적으로 간섭하는지 검사한다.",
+   "process": [
+    "각 와이어 선분(정점 ↔ 권상 노드) 정의",
+    "모든 구조물 요소와의 최단 거리 계산 (Lumelsky)",
+    "러그 인접 구간(maxDim + 150 mm) 검사 제외",
+    "최단 거리 < 요소 단면 최대 치수면 간섭 기록"
+   ],
+   "rules": {
+    "lugIgnoreMarginMm": 150,
+    "elementDimensionRule": "GetMaxCrossSectionDim by Property.Type",
+    "interferenceCriterion": "shortestSegmentDistanceMm < elementMaxDimMm",
+    "wireRadiusModel": "zero"
+   },
+   "status": "warn",
+   "summary": {
+    "totalWires": 7,
+    "totalElementChecks": 17514,
+    "conflictCount": 6,
+    "minClearanceMm": 1.55
+   },
+   "results": [
+    {
+     "groupId": 1,
+     "wires": [
+      {
+       "lugNodeId": 34,
+       "interfering": false,
+       "minClearanceMm": 188.69,
+       "nearestElementId": 4159,
+       "nearestElementMaxDimMm": 75
+      },
+      {
+       "lugNodeId": 2873,
+       "interfering": false,
+       "minClearanceMm": 159,
+       "nearestElementId": 3214,
+       "nearestElementMaxDimMm": 16.7
+      }
+     ],
+     "valid": true
+    },
+    {
+     "groupId": 2,
+     "wires": [
+      {
+       "lugNodeId": 2728,
+       "interfering": true,
+       "minClearanceMm": 1.55,
+       "nearestElementId": 3975,
+       "nearestElementMaxDimMm": 125
+      },
+      {
+       "lugNodeId": 1378,
+       "interfering": false,
+       "minClearanceMm": 19.92,
+       "nearestElementId": 2418,
+       "nearestElementMaxDimMm": 17
+      }
+     ],
+     "valid": false,
+     "reason": "4건의 간섭이 발견되었습니다."
+    },
+    {
+     "groupId": 3,
+     "wires": [
+      {
+       "lugNodeId": 26,
+       "interfering": true,
+       "minClearanceMm": 12.67,
+       "nearestElementId": 3240,
+       "nearestElementMaxDimMm": 38.2
+      },
+      {
+       "lugNodeId": 18,
+       "interfering": true,
+       "minClearanceMm": 12.67,
+       "nearestElementId": 3223,
+       "nearestElementMaxDimMm": 38.2
+      },
+      {
+       "lugNodeId": 19,
+       "interfering": false,
+       "minClearanceMm": 94.83,
+       "nearestElementId": 3993,
+       "nearestElementMaxDimMm": 90
+      }
+     ],
+     "valid": false,
+     "reason": "2건의 간섭이 발견되었습니다."
+    }
+   ],
+   "conflicts": [
+    {
+     "groupId": 2,
+     "fromLugNodeId": 2728,
+     "elementId": 1587,
+     "shortestDistMm": 87.86,
+     "elementMaxDimMm": 125,
+     "distFromLugMm": 471.38,
+     "wireParam": 0.0587,
+     "severity": "warn",
+     "message": "Group 2의 와이어가 Element 1587 (단면 125.0mm)와 87.9mm 떨어져 있습니다."
+    },
+    {
+     "groupId": 2,
+     "fromLugNodeId": 2728,
+     "elementId": 3974,
+     "shortestDistMm": 94.03,
+     "elementMaxDimMm": 125,
+     "distFromLugMm": 505.27,
+     "wireParam": 0.0629,
+     "severity": "warn",
+     "message": "Group 2의 와이어가 Element 3974 (단면 125.0mm)와 94.0mm 떨어져 있습니다."
+    },
+    {
+     "groupId": 2,
+     "fromLugNodeId": 2728,
+     "elementId": 3975,
+     "shortestDistMm": 1.55,
+     "elementMaxDimMm": 125,
+     "distFromLugMm": 487.75,
+     "wireParam": 0.0607,
+     "severity": "warn",
+     "message": "Group 2의 와이어가 Element 3975 (단면 125.0mm)와 1.5mm 떨어져 있습니다."
+    },
+    {
+     "groupId": 2,
+     "fromLugNodeId": 2728,
+     "elementId": 3980,
+     "shortestDistMm": 56.62,
+     "elementMaxDimMm": 125,
+     "distFromLugMm": 303.77,
+     "wireParam": 0.0378,
+     "severity": "warn",
+     "message": "Group 2의 와이어가 Element 3980 (단면 125.0mm)와 56.6mm 떨어져 있습니다."
+    },
+    {
+     "groupId": 3,
+     "fromLugNodeId": 26,
+     "elementId": 3240,
+     "shortestDistMm": 12.67,
+     "elementMaxDimMm": 38.2,
+     "distFromLugMm": 397.89,
+     "wireParam": 0.0472,
+     "severity": "warn",
+     "message": "Group 3의 와이어가 Element 3240 (단면 38.2mm)와 12.7mm 떨어져 있습니다."
+    },
+    {
+     "groupId": 3,
+     "fromLugNodeId": 18,
+     "elementId": 3223,
+     "shortestDistMm": 12.67,
+     "elementMaxDimMm": 38.2,
+     "distFromLugMm": 389.48,
+     "wireParam": 0.0472,
+     "severity": "warn",
+     "message": "Group 3의 와이어가 Element 3223 (단면 38.2mm)와 12.7mm 떨어져 있습니다."
+    }
+   ],
+   "displayPolicy": "user",
+   "displayOrder": 5,
+   "severity": "warning"
+  },
+  {
+   "stage": 6,
+   "name": "PostureStabilityInspector",
+   "displayLabel": "6단계 · 자세 안정성 평가 (전도 검사)",
+   "purpose": "정점들이 형성하는 XY 평면 영역 안에 COG 투영이 있는지 확인한다.",
+   "process": [
+    "정점 좌표를 XY 평면에 투영",
+    "N=1: COG ↔ 정점 직접 거리",
+    "N=2: 점-선분 수직 거리",
+    "N≥3: Convex Hull → 점-다각형 내부 판정 + 외부 시 경계 최단 거리",
+    "임계 비교: 모든 모드 공통 — 모델 BBox 대각의 1% (2026-07 통일, 이전엔 점/직선만 100mm 고정)"
+   ],
+   "rules": {
+    "overturnBboxRatio": 0.01,
+    "modelBboxDiagonalMm": 15924.463884225428,
+    "tiltWarnDeg": 1,
+    "tiltFailDeg": 2,
+    "tiltJudgmentActive": false
+   },
+   "status": "pass",
+   "summary": {
+    "topPointCount": 3,
+    "evaluationMode": "ConvexPolygon",
+    "isStable": true,
+    "deviationMm": 0,
+    "thresholdMm": 159.24,
+    "marginMm": 159.24,
+    "interiorMarginMm": 563.14,
+    "cogInsideHull": true,
+    "apexToCogHeightMm": 7688.25,
+    "tiltAngleDeg": 0,
+    "tiltAssessment": "pass",
+    "cogEnvelopeApplied": false
+   },
+   "results": [],
+   "geometry": {
+    "topPointsXY": [
+     {
+      "groupId": 1,
+      "x": 112054,
+      "y": -7195
+     },
+     {
+      "groupId": 2,
+      "x": 115260.5,
+      "y": -8666
+     },
+     {
+      "groupId": 3,
+      "x": 112455,
+      "y": -2495
+     }
+    ],
+    "convexHullXY": [
+     {
+      "x": 112054,
+      "y": -7195
+     },
+     {
+      "x": 115260.5,
+      "y": -8666
+     },
+     {
+      "x": 112455,
+      "y": -2495
+     }
+    ],
+    "polygonAreaMm2": 7830210,
+    "cogProjectionXY": {
+     "x": 113832.94,
+     "y": -6886.61
+    }
+   },
+   "displayPolicy": "user",
+   "displayOrder": 6,
+   "severity": "info"
+  },
+  {
+   "stage": 7,
+   "name": "RiggingLoadInspector",
+   "displayLabel": "7단계 · 권상 리깅 하중 검토 (슬링 장력·SWL)",
+   "purpose": "설계하중(DAF·여유 포함)을 apex 반력→슬링 장력으로 분배하고 SWL 대비 사용률을 판정한다.",
+   "process": [],
+   "rules": {},
+   "status": "skip",
+   "summary": {
+    "skipped": "liftAnalysis 미입력"
+   },
+   "results": [],
+   "displayPolicy": "internal",
+   "displayOrder": 7,
+   "severity": "info"
+  }
+ ],
+ "visualization": {
+  "coordinateSystem": "model-mm",
+  "description": "Calculated lifting apexes and generated wire segments after posture stability evaluation.",
+  "apexes": [
+   {
+    "groupId": 1,
+    "pointMm": {
+     "x": 112054,
+     "y": -7195,
+     "z": 38376
+    },
+    "assignedNodeIds": [
+     34,
+     2873
+    ]
+   },
+   {
+    "groupId": 2,
+    "pointMm": {
+     "x": 115260.5,
+     "y": -8666,
+     "z": 38482.75
+    },
+    "assignedNodeIds": [
+     2728,
+     1378
+    ]
+   },
+   {
+    "groupId": 3,
+    "pointMm": {
+     "x": 112455,
+     "y": -2495,
+     "z": 38376
+    },
+    "assignedNodeIds": [
+     26,
+     18,
+     19
+    ]
+   }
+  ],
+  "wires": [
+   {
+    "id": 1,
+    "groupId": 1,
+    "lugNodeId": 34,
+    "from": "apex",
+    "to": "lug",
+    "startMm": {
+     "x": 112054,
+     "y": -7195,
+     "z": 38376
+    },
+    "endMm": {
+     "x": 110340,
+     "y": -7195,
+     "z": 30376
+    },
+    "lengthMm": 8181.55,
+    "angleDeg": 77.91,
+    "safe": true,
+    "status": "pass"
+   },
+   {
+    "id": 2,
+    "groupId": 1,
+    "lugNodeId": 2873,
+    "from": "apex",
+    "to": "lug",
+    "startMm": {
+     "x": 112054,
+     "y": -7195,
+     "z": 38376
+    },
+    "endMm": {
+     "x": 113768,
+     "y": -7195,
+     "z": 30376
+    },
+    "lengthMm": 8181.55,
+    "angleDeg": 77.91,
+    "safe": true,
+    "status": "pass"
+   },
+   {
+    "id": 3,
+    "groupId": 2,
+    "lugNodeId": 2728,
+    "from": "apex",
+    "to": "lug",
+    "startMm": {
+     "x": 115260.5,
+     "y": -8666,
+     "z": 38482.75
+    },
+    "endMm": {
+     "x": 115235,
+     "y": -10137,
+     "z": 30589.5
+    },
+    "lengthMm": 8029.19,
+    "angleDeg": 79.44,
+    "safe": true,
+    "status": "pass"
+   },
+   {
+    "id": 4,
+    "groupId": 2,
+    "lugNodeId": 1378,
+    "from": "apex",
+    "to": "lug",
+    "startMm": {
+     "x": 115260.5,
+     "y": -8666,
+     "z": 38482.75
+    },
+    "endMm": {
+     "x": 115286,
+     "y": -7195,
+     "z": 30376
+    },
+    "lengthMm": 8239.17,
+    "angleDeg": 79.71,
+    "safe": true,
+    "status": "pass"
+   },
+   {
+    "id": 5,
+    "groupId": 3,
+    "lugNodeId": 26,
+    "from": "apex",
+    "to": "lug",
+    "startMm": {
+     "x": 112455,
+     "y": -2495,
+     "z": 38376
+    },
+    "endMm": {
+     "x": 110705,
+     "y": -4485,
+     "z": 30376
+    },
+    "lengthMm": 8427.49,
+    "angleDeg": 71.67,
+    "safe": true,
+    "status": "pass"
+   },
+   {
+    "id": 6,
+    "groupId": 3,
+    "lugNodeId": 18,
+    "from": "apex",
+    "to": "lug",
+    "startMm": {
+     "x": 112455,
+     "y": -2495,
+     "z": 38376
+    },
+    "endMm": {
+     "x": 110705,
+     "y": -1500,
+     "z": 30376
+    },
+    "lengthMm": 8249.4,
+    "angleDeg": 75.88,
+    "safe": true,
+    "status": "pass"
+   },
+   {
+    "id": 7,
+    "groupId": 3,
+    "lugNodeId": 19,
+    "from": "apex",
+    "to": "lug",
+    "startMm": {
+     "x": 112455,
+     "y": -2495,
+     "z": 38376
+    },
+    "endMm": {
+     "x": 115955,
+     "y": -1500,
+     "z": 30376
+    },
+    "lengthMm": 8788.63,
+    "angleDeg": 65.54,
+    "safe": true,
+    "status": "pass"
+   }
+  ]
+ },
+ "overall": {
+  "status": "warn",
+  "highestSeverity": "warning",
+  "stageStatuses": [
+   {
+    "stage": 0,
+    "status": "pass",
+    "severity": "info"
+   },
+   {
+    "stage": 1,
+    "status": "pass",
+    "severity": "info"
+   },
+   {
+    "stage": 2,
+    "status": "pass",
+    "severity": "info"
+   },
+   {
+    "stage": 3,
+    "status": "pass",
+    "severity": "info"
+   },
+   {
+    "stage": 4,
+    "status": "pass",
+    "severity": "info"
+   },
+   {
+    "stage": 5,
+    "status": "warn",
+    "severity": "warning"
+   },
+   {
+    "stage": 6,
+    "status": "pass",
+    "severity": "info"
+   },
+   {
+    "stage": 7,
+    "status": "skip",
+    "severity": "info"
+   }
+  ],
+  "userSummary": {
+   "status": "warn",
+   "statusLabel": "검토 필요",
+   "primaryMessage": "치명 오류는 없지만 와이어 경로 등 확인이 필요한 항목이 있습니다.",
+   "criticalIssueCount": 0,
+   "warningCount": 3,
+   "passHighlightCount": 2,
+   "criticalIssues": [],
+   "warnings": [
+    {
+     "stage": 5,
+     "target": "Group 2 / Node 2728",
+     "headline": "와이어가 구조물에 너무 가깝습니다. (Element 1587)",
+     "message": "최소 거리 87.86mm가 구조물 단면 기준 125mm보다 작거나 가깝습니다.",
+     "impact": "권상 중 와이어가 구조물과 접촉하거나 간섭할 수 있습니다.",
+     "action": "해당 러그 노드 또는 권상 정점을 이동해 와이어 경로를 구조물 밖으로 확보하세요.",
+     "metrics": {
+      "clearanceMm": 87.86,
+      "elementMaxDimMm": 125,
+      "elementId": 1587,
+      "nodeId": 2728,
+      "groupId": 2
+     }
+    },
+    {
+     "stage": 5,
+     "target": "Group 2 / Node 2728",
+     "headline": "와이어가 구조물에 너무 가깝습니다. (Element 3974)",
+     "message": "최소 거리 94.03mm가 구조물 단면 기준 125mm보다 작거나 가깝습니다.",
+     "impact": "권상 중 와이어가 구조물과 접촉하거나 간섭할 수 있습니다.",
+     "action": "해당 러그 노드 또는 권상 정점을 이동해 와이어 경로를 구조물 밖으로 확보하세요.",
+     "metrics": {
+      "clearanceMm": 94.03,
+      "elementMaxDimMm": 125,
+      "elementId": 3974,
+      "nodeId": 2728,
+      "groupId": 2
+     }
+    },
+    {
+     "stage": 5,
+     "target": "Group 2 / Node 2728",
+     "headline": "와이어가 구조물에 너무 가깝습니다. (Element 3975)",
+     "message": "최소 거리 1.55mm가 구조물 단면 기준 125mm보다 작거나 가깝습니다.",
+     "impact": "권상 중 와이어가 구조물과 접촉하거나 간섭할 수 있습니다.",
+     "action": "해당 러그 노드 또는 권상 정점을 이동해 와이어 경로를 구조물 밖으로 확보하세요.",
+     "metrics": {
+      "clearanceMm": 1.55,
+      "elementMaxDimMm": 125,
+      "elementId": 3975,
+      "nodeId": 2728,
+      "groupId": 2
+     }
+    }
+   ],
+   "passHighlights": [
+    "권상 방식과 노드 개수 조합은 허용 범위입니다.",
+    "슬링 와이어 최소 각도는 65.54°로 기준 60° 이상입니다."
+   ],
+   "context": {
+    "liftingMode": "Hydro 방식",
+    "groupCount": 3,
+    "wireLengthM": 8,
+    "totalMassTon": 6.74
+   }
+  },
+  "issueSummary": [
+   "와이어가 구조물에 너무 가깝습니다. (Element 1587)",
+   "와이어가 구조물에 너무 가깝습니다. (Element 3974)",
+   "와이어가 구조물에 너무 가깝습니다. (Element 3975)"
+  ]
+ }
+}

@@ -1,9 +1,10 @@
 """collect_artifacts() — MooringFitting out/ 폴더 산출물 수집 동작."""
+import json
 import os
 
 import pytest
 
-from app.services.mooring_fitting_service import collect_artifacts
+from app.services.mooring_fitting_service import collect_artifacts, write_diagnosis_file
 
 
 def _touch(path):
@@ -90,3 +91,40 @@ def test_collect_artifacts_partial(tmp_path):
     assert len(result["stage_jsons"]) == 1
     assert len(result["stage_bdfs"]) == 1
     assert result["stage_verifications"] == []
+
+
+# ══════════════════════════════════════════════════════════════
+# write_diagnosis_file() — 진단(mooring_diagnosis) 얇은 파일 I/O 래퍼
+# ══════════════════════════════════════════════════════════════
+
+_MINIMAL_EVIDENCE = {
+    "meta": {"schemaVersion": "1.0", "elementCount": 1, "elementsWithOrigin": 1, "fabricatedCount": 0},
+    "caseFacts": {
+        "substantiveSkips": 7, "mfInputCount": 8, "winchInputCount": 0,
+        "forceLoadCount": 8, "spcNodeCount": 82, "rbe2Count": 8, "loadCaseCount": 11,
+    },
+    "elements": [],
+}
+
+
+def test_write_diagnosis_file_creates_diagnosis_json(tmp_path):
+    out_dir = str(tmp_path)
+    _touch(os.path.join(out_dir, "MODEL_EVIDENCE.json"))
+    with open(os.path.join(out_dir, "MODEL_EVIDENCE.json"), "w", encoding="utf-8") as fh:
+        json.dump(_MINIMAL_EVIDENCE, fh)
+
+    diagnosis_path = write_diagnosis_file(out_dir, None)
+
+    assert diagnosis_path == os.path.join(out_dir, "DIAGNOSIS.json")
+    assert os.path.isfile(diagnosis_path)
+    with open(diagnosis_path, "r", encoding="utf-8") as fh:
+        report = json.load(fh)
+    codes = {f["code"] for f in report["findings"]}
+    assert "INPUT_ROW_DROPPED" in codes
+    assert report["elementFindings"] == []
+
+
+def test_write_diagnosis_file_returns_none_without_evidence(tmp_path):
+    out_dir = str(tmp_path)  # MODEL_EVIDENCE.json 없음
+    assert write_diagnosis_file(out_dir, None) is None
+    assert not os.path.isfile(os.path.join(out_dir, "DIAGNOSIS.json"))

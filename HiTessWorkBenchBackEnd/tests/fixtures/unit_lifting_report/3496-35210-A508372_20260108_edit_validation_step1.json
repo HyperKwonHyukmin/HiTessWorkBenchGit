@@ -1,0 +1,86 @@
+{
+ "stepName": "BDF 입력 검증 (NastranBridge)",
+ "status": "pass",
+ "sourceFile": "3496-35210-A508372_20260108_edit.bdf",
+ "version": "1.2",
+ "generatedAt": "2026-09-07T05:56:44.502320Z",
+ "summary": {
+  "totalErrors": 0,
+  "totalWarnings": 0,
+  "parserWarnings": 0
+ },
+ "parsingSummary": {
+  "cardCounts": {
+   "grid": 2555,
+   "element": 2705,
+   "property": 24,
+   "material": 7,
+   "pointMass": 40
+  },
+  "orphanNodes": 0,
+  "freeEndNodes": 260,
+  "isolatedNodes": 0,
+  "disconnectedGroupCount": 0,
+  "orphanProperties": 0,
+  "orphanMaterials": 0,
+  "boundingBox": {
+   "xMin": 108910.0,
+   "xMax": 120960.0,
+   "yMin": -10730.0,
+   "yMax": -625.0,
+   "zMin": 29683.0,
+   "zMax": 32188.0
+  },
+  "elementBreakdown": {
+   "CBEAM": 2502,
+   "RBE2": 203
+  },
+  "propertyBreakdown": {
+   "PBEAML": 24
+  },
+  "materialBreakdown": {
+   "MAT1": 7
+  },
+  "loadBreakdown": {},
+  "bcBreakdown": {},
+  "parserWarnings": []
+ },
+ "rulesChecked": [
+  {
+   "rule": "GridRule",
+   "status": "pass",
+   "checkedCount": 2555,
+   "errorCount": 0,
+   "warningCount": 0
+  },
+  {
+   "rule": "ElementRule",
+   "status": "pass",
+   "checkedCount": 2502,
+   "errorCount": 0,
+   "warningCount": 0
+  },
+  {
+   "rule": "PropertyRule",
+   "status": "pass",
+   "checkedCount": 24,
+   "errorCount": 0,
+   "warningCount": 0
+  },
+  {
+   "rule": "MaterialRule",
+   "status": "pass",
+   "checkedCount": 7,
+   "errorCount": 0,
+   "warningCount": 0
+  },
+  {
+   "rule": "BcRule",
+   "status": "pass",
+   "checkedCount": 1,
+   "errorCount": 0,
+   "warningCount": 0
+  }
+ ],
+ "validationResults": []
+}

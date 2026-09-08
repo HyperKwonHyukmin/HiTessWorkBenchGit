@@ -1,0 +1,1105 @@
+{
+ "_keys": {
+  "meta": "Result mapping metadata",
+  "lifting": "Lifting build summary (copied from build meta)",
+  "evaluation": "Allowable / threshold parameters used here",
+  "summary": "Top-level statistics for members and wires",
+  "members": "Per-element stress (wire elements excluded)",
+  "wires": "Per-wire CROD axial force",
+  "displacements": "Per-node translational displacement (T1/T2/T3 + magnitude)",
+  "warnings": "Human-readable warnings for Studio"
+ },
+ "meta": {
+  "phase": "LIFTING_RESULT",
+  "stageName": "LiftingResultMapper",
+  "timestamp": "2026-09-07T05:57:36.264245Z",
+  "schemaVersion": "1.0",
+  "liftingMetaJson": "3496-35210-A508372_20260108_edit_lifting_meta.json",
+  "f06Path": "3496-35210-a508372_20260108_edit_lifting.f06",
+  "subcaseId": 1
+ },
+ "lifting": {
+  "safetyFactor": 1.2,
+  "wireCount": 7,
+  "apexNodeCount": 3,
+  "wirePropertyId": 132,
+  "wireMaterialId": 8
+ },
+ "evaluation": {
+  "structuralAllowableMPa": 220.0,
+  "wireSlackThresholdN": 0.0,
+  "stressMeasure": "max(|σ|) across all stress points/ends per element"
+ },
+ "summary": {
+  "subcaseId": 1,
+  "memberElementCount": 2504,
+  "memberExceedCount": 0,
+  "memberMaxStressMPa": 145.7619,
+  "memberMaxStressElementId": 3857,
+  "nodeDisplacementCount": 2558,
+  "maxDisplacementMag": 23.524780688633207,
+  "maxDisplacementNodeId": 219,
+  "wireCount": 7,
+  "wireCompressionCount": 0,
+  "wireMinAxialForceN": 3103.244,
+  "wireMaxAxialForceN": 25348.28,
+  "wireMissingResultCount": 0
+ },
+ "members": [
+  {
+   "elementId": 3857,
+   "type": "CBEAM",
+   "maxStressMPa": 145.7619,
+   "utilization": 0.6626,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2320,
+   "type": "CBEAM",
+   "maxStressMPa": 138.1985,
+   "utilization": 0.6282,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3684,
+   "type": "CBEAM",
+   "maxStressMPa": 131.4058,
+   "utilization": 0.5973,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2321,
+   "type": "CBEAM",
+   "maxStressMPa": 129.675,
+   "utilization": 0.5894,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3290,
+   "type": "CBEAM",
+   "maxStressMPa": 128.6744,
+   "utilization": 0.5849,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 1994,
+   "type": "CBEAM",
+   "maxStressMPa": 125.9239,
+   "utilization": 0.5724,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2249,
+   "type": "CBEAM",
+   "maxStressMPa": 122.5629,
+   "utilization": 0.5571,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 534,
+   "type": "CBEAM",
+   "maxStressMPa": 120.5638,
+   "utilization": 0.548,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 1993,
+   "type": "CBEAM",
+   "maxStressMPa": 111.5656,
+   "utilization": 0.5071,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3291,
+   "type": "CBEAM",
+   "maxStressMPa": 111.0143,
+   "utilization": 0.5046,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3683,
+   "type": "CBEAM",
+   "maxStressMPa": 108.574,
+   "utilization": 0.4935,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 535,
+   "type": "CBEAM",
+   "maxStressMPa": 106.941,
+   "utilization": 0.4861,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2550,
+   "type": "CBEAM",
+   "maxStressMPa": 105.0172,
+   "utilization": 0.4774,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2428,
+   "type": "CBEAM",
+   "maxStressMPa": 104.5856,
+   "utilization": 0.4754,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2432,
+   "type": "CBEAM",
+   "maxStressMPa": 100.1446,
+   "utilization": 0.4552,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 1081,
+   "type": "CBEAM",
+   "maxStressMPa": 99.3814,
+   "utilization": 0.4517,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2395,
+   "type": "CBEAM",
+   "maxStressMPa": 99.2918,
+   "utilization": 0.4513,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2250,
+   "type": "CBEAM",
+   "maxStressMPa": 96.0518,
+   "utilization": 0.4366,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 4184,
+   "type": "CBEAM",
+   "maxStressMPa": 95.5168,
+   "utilization": 0.4342,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3610,
+   "type": "CBEAM",
+   "maxStressMPa": 93.5271,
+   "utilization": 0.4251,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2629,
+   "type": "CBEAM",
+   "maxStressMPa": 92.5302,
+   "utilization": 0.4206,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3617,
+   "type": "CBEAM",
+   "maxStressMPa": 91.7656,
+   "utilization": 0.4171,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 1525,
+   "type": "CBEAM",
+   "maxStressMPa": 88.9274,
+   "utilization": 0.4042,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 1080,
+   "type": "CBEAM",
+   "maxStressMPa": 87.204,
+   "utilization": 0.3964,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3682,
+   "type": "CBEAM",
+   "maxStressMPa": 85.9997,
+   "utilization": 0.3909,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2628,
+   "type": "CBEAM",
+   "maxStressMPa": 84.879,
+   "utilization": 0.3858,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 4185,
+   "type": "CBEAM",
+   "maxStressMPa": 84.8332,
+   "utilization": 0.3856,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2400,
+   "type": "CBEAM",
+   "maxStressMPa": 80.5296,
+   "utilization": 0.366,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2741,
+   "type": "CBEAM",
+   "maxStressMPa": 78.3203,
+   "utilization": 0.356,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3856,
+   "type": "CBEAM",
+   "maxStressMPa": 76.9379,
+   "utilization": 0.3497,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 364,
+   "type": "CBEAM",
+   "maxStressMPa": 76.5028,
+   "utilization": 0.3477,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 4082,
+   "type": "CBEAM",
+   "maxStressMPa": 75.9437,
+   "utilization": 0.3452,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 1712,
+   "type": "CBEAM",
+   "maxStressMPa": 75.9102,
+   "utilization": 0.345,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 1513,
+   "type": "CBEAM",
+   "maxStressMPa": 74.6654,
+   "utilization": 0.3394,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2410,
+   "type": "CBEAM",
+   "maxStressMPa": 74.081,
+   "utilization": 0.3367,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2427,
+   "type": "CBEAM",
+   "maxStressMPa": 72.3145,
+   "utilization": 0.3287,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2739,
+   "type": "CBEAM",
+   "maxStressMPa": 71.4818,
+   "utilization": 0.3249,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 4108,
+   "type": "CBEAM",
+   "maxStressMPa": 71.0077,
+   "utilization": 0.3228,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2384,
+   "type": "CBEAM",
+   "maxStressMPa": 70.5347,
+   "utilization": 0.3206,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3611,
+   "type": "CBEAM",
+   "maxStressMPa": 70.1286,
+   "utilization": 0.3188,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3616,
+   "type": "CBEAM",
+   "maxStressMPa": 69.7005,
+   "utilization": 0.3168,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2396,
+   "type": "CBEAM",
+   "maxStressMPa": 68.1694,
+   "utilization": 0.3099,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 365,
+   "type": "CBEAM",
+   "maxStressMPa": 67.6873,
+   "utilization": 0.3077,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2422,
+   "type": "CBEAM",
+   "maxStressMPa": 66.991,
+   "utilization": 0.3045,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3370,
+   "type": "CBEAM",
+   "maxStressMPa": 65.8721,
+   "utilization": 0.2994,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 951,
+   "type": "CBEAM",
+   "maxStressMPa": 65.6373,
+   "utilization": 0.2984,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2549,
+   "type": "CBEAM",
+   "maxStressMPa": 65.1766,
+   "utilization": 0.2963,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2388,
+   "type": "CBEAM",
+   "maxStressMPa": 64.6948,
+   "utilization": 0.2941,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2541,
+   "type": "CBEAM",
+   "maxStressMPa": 64.4418,
+   "utilization": 0.2929,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 1992,
+   "type": "CBEAM",
+   "maxStressMPa": 64.4028,
+   "utilization": 0.2927,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2429,
+   "type": "CBEAM",
+   "maxStressMPa": 64.2246,
+   "utilization": 0.2919,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3681,
+   "type": "CBEAM",
+   "maxStressMPa": 63.709,
+   "utilization": 0.2896,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3474,
+   "type": "CBEAM",
+   "maxStressMPa": 63.142,
+   "utilization": 0.287,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 101,
+   "type": "CROD",
+   "maxStressMPa": 63,
+   "utilization": 0.2864,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2247,
+   "type": "CBEAM",
+   "maxStressMPa": 62.3807,
+   "utilization": 0.2835,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 4216,
+   "type": "CBEAM",
+   "maxStressMPa": 62.2666,
+   "utilization": 0.283,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 2431,
+   "type": "CBEAM",
+   "maxStressMPa": 61.6307,
+   "utilization": 0.2801,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 4217,
+   "type": "CBEAM",
+   "maxStressMPa": 60.9001,
+   "utilization": 0.2768,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3738,
+   "type": "CBEAM",
+   "maxStressMPa": 60.691,
+   "utilization": 0.2759,
+   "exceedsLimit": false
+  },
+  {
+   "elementId": 3635,
+   "type": "CBEAM",
+   "maxStressMPa": 60.5284,
+   "utilization": 0.2751,
+   "exceedsLimit": false
+  }
+ ],
+ "wires": [
+  {
+   "wireElementId": 4264,
+   "groupId": 1,
+   "lugNodeId": 34,
+   "apexNodeId": 2897,
+   "axialForceN": 10198.65,
+   "isCompression": false,
+   "isSlack": false,
+   "hasResult": true
+  },
+  {
+   "wireElementId": 4265,
+   "groupId": 1,
+   "lugNodeId": 2873,
+   "apexNodeId": 2897,
+   "axialForceN": 25348.28,
+   "isCompression": false,
+   "isSlack": false,
+   "hasResult": true
+  },
+  {
+   "wireElementId": 4266,
+   "groupId": 2,
+   "lugNodeId": 2728,
+   "apexNodeId": 2898,
+   "axialForceN": 10566.14,
+   "isCompression": false,
+   "isSlack": false,
+   "hasResult": true
+  },
+  {
+   "wireElementId": 4267,
+   "groupId": 2,
+   "lugNodeId": 1378,
+   "apexNodeId": 2898,
+   "axialForceN": 23518.27,
+   "isCompression": false,
+   "isSlack": false,
+   "hasResult": true
+  },
+  {
+   "wireElementId": 4268,
+   "groupId": 3,
+   "lugNodeId": 26,
+   "apexNodeId": 2899,
+   "axialForceN": 4832.955,
+   "isCompression": false,
+   "isSlack": false,
+   "hasResult": true
+  },
+  {
+   "wireElementId": 4269,
+   "groupId": 3,
+   "lugNodeId": 18,
+   "apexNodeId": 2899,
+   "axialForceN": 3103.244,
+   "isCompression": false,
+   "isSlack": false,
+   "hasResult": true
+  },
+  {
+   "wireElementId": 4270,
+   "groupId": 3,
+   "lugNodeId": 19,
+   "apexNodeId": 2899,
+   "axialForceN": 5864.111,
+   "isCompression": false,
+   "isSlack": false,
+   "hasResult": true
+  }
+ ],
+ "displacements": [
+  {
+   "nodeId": 219,
+   "t1": -3.439761,
+   "t2": 2.863513,
+   "t3": -23.0951,
+   "magnitude": 23.524780688633207
+  },
+  {
+   "nodeId": 215,
+   "t1": -3.280593,
+   "t2": 2.863519,
+   "t3": -22.76434,
+   "magnitude": 23.177083663192185
+  },
+  {
+   "nodeId": 792,
+   "t1": -2.133229,
+   "t2": 3.691074,
+   "t3": -19.59185,
+   "magnitude": 20.05031869229058
+  },
+  {
+   "nodeId": 791,
+   "t1": -2.116683,
+   "t2": 3.684062,
+   "t3": -19.5697,
+   "magnitude": 20.02562902463573
+  },
+  {
+   "nodeId": 793,
+   "t1": -2.063047,
+   "t2": 3.698744,
+   "t3": -19.53339,
+   "magnitude": 19.987250811300814
+  },
+  {
+   "nodeId": 789,
+   "t1": -2.019276,
+   "t2": 3.679584,
+   "t3": -19.47072,
+   "magnitude": 19.917975582263175
+  },
+  {
+   "nodeId": 794,
+   "t1": -1.918923,
+   "t2": 3.705003,
+   "t3": -19.40713,
+   "magnitude": 19.85059212081186
+  },
+  {
+   "nodeId": 790,
+   "t1": -1.712805,
+   "t2": 3.707524,
+   "t3": -19.22359,
+   "magnitude": 19.652629535680486
+  },
+  {
+   "nodeId": 505,
+   "t1": -2.494137,
+   "t2": 1.593972,
+   "t3": -19.17825,
+   "magnitude": 19.405327597699888
+  },
+  {
+   "nodeId": 535,
+   "t1": -2.592773,
+   "t2": 1.383191,
+   "t3": -19.17825,
+   "magnitude": 19.4020865433208
+  },
+  {
+   "nodeId": 784,
+   "t1": -1.192026,
+   "t2": 3.713949,
+   "t3": -18.64215,
+   "magnitude": 19.04584206019196
+  },
+  {
+   "nodeId": 788,
+   "t1": -1.125974,
+   "t2": 3.707558,
+   "t3": -18.56299,
+   "magnitude": 18.963079958491445
+  },
+  {
+   "nodeId": 787,
+   "t1": -1.072325,
+   "t2": 3.679548,
+   "t3": -18.47461,
+   "magnitude": 18.86796674371748
+  },
+  {
+   "nodeId": 786,
+   "t1": -1.033448,
+   "t2": 3.629715,
+   "t3": -18.37905,
+   "magnitude": 18.7625244743992
+  },
+  {
+   "nodeId": 785,
+   "t1": -1.009581,
+   "t2": 3.560118,
+   "t3": -18.27843,
+   "magnitude": 18.64925460264793
+  },
+  {
+   "nodeId": 783,
+   "t1": -1.00095,
+   "t2": 3.47073,
+   "t3": -18.17273,
+   "magnitude": 18.528248252015086
+  },
+  {
+   "nodeId": 295,
+   "t1": -2.692811,
+   "t2": 0.6146216,
+   "t3": -17.92505,
+   "magnitude": 18.136604100420993
+  },
+  {
+   "nodeId": 294,
+   "t1": -2.584513,
+   "t2": 0.7570906,
+   "t3": -17.92505,
+   "magnitude": 18.12623267880773
+  },
+  {
+   "nodeId": 539,
+   "t1": -3.971304,
+   "t2": -2.335842,
+   "t3": -17.32738,
+   "magnitude": 17.929459305115145
+  },
+  {
+   "nodeId": 495,
+   "t1": -3.81381,
+   "t2": -2.094353,
+   "t3": -17.32738,
+   "magnitude": 17.86531720594709
+  },
+  {
+   "nodeId": 925,
+   "t1": -1.855481,
+   "t2": -1.064851,
+   "t3": -15.72394,
+   "magnitude": 15.868806083545227
+  },
+  {
+   "nodeId": 924,
+   "t1": -1.809045,
+   "t2": -1.045933,
+   "t3": -15.72582,
+   "magnitude": 15.864048484700053
+  },
+  {
+   "nodeId": 921,
+   "t1": -1.874399,
+   "t2": -1.111286,
+   "t3": -15.64062,
+   "magnitude": 15.791685222590939
+  },
+  {
+   "nodeId": 562,
+   "t1": -1.919286,
+   "t2": -1.200553,
+   "t3": -15.43396,
+   "magnitude": 15.599105985190466
+  },
+  {
+   "nodeId": 561,
+   "t1": -1.372256,
+   "t2": -1.033427,
+   "t3": -15.43395,
+   "magnitude": 15.529258530154136
+  },
+  {
+   "nodeId": 501,
+   "t1": -3.069966,
+   "t2": -2.487609,
+   "t3": -14.75899,
+   "magnitude": 15.278765512898515
+  },
+  {
+   "nodeId": 500,
+   "t1": -2.911376,
+   "t2": -2.32484,
+   "t3": -14.75899,
+   "magnitude": 15.221983348403585
+  },
+  {
+   "nodeId": 1609,
+   "t1": -0.6095402,
+   "t2": 0.1193044,
+   "t3": -14.7909,
+   "magnitude": 14.803935139187669
+  },
+  {
+   "nodeId": 197,
+   "t1": -1.012831,
+   "t2": -0.3776228,
+   "t3": -14.75651,
+   "magnitude": 14.796047208418228
+  },
+  {
+   "nodeId": 551,
+   "t1": -0.7009717,
+   "t2": 6.313319,
+   "t3": -13.12515,
+   "magnitude": 14.581458110986771
+  },
+  {
+   "nodeId": 473,
+   "t1": -0.8254907,
+   "t2": 6.20301,
+   "t3": -13.12515,
+   "magnitude": 14.540575314559824
+  },
+  {
+   "nodeId": 470,
+   "t1": -2.296857,
+   "t2": 4.900164,
+   "t3": -13.12561,
+   "magnitude": 14.197492636992104
+  },
+  {
+   "nodeId": 261,
+   "t1": -2.296416,
+   "t2": 4.735186,
+   "t3": -12.81447,
+   "magnitude": 13.85301968094148
+  },
+  {
+   "nodeId": 343,
+   "t1": -3.636693,
+   "t2": -3.704372,
+   "t3": -12.5273,
+   "magnitude": 13.560278506750258
+  },
+  {
+   "nodeId": 1628,
+   "t1": -3.636563,
+   "t2": -3.916748,
+   "t3": -12.18892,
+   "magnitude": 13.309217712355336
+  },
+  {
+   "nodeId": 675,
+   "t1": -2.877368,
+   "t2": 3.905942,
+   "t3": -12.17028,
+   "magnitude": 13.101577950506115
+  },
+  {
+   "nodeId": 770,
+   "t1": -0.1054572,
+   "t2": -1.194535,
+   "t3": -12.94952,
+   "magnitude": 13.004926117347104
+  },
+  {
+   "nodeId": 669,
+   "t1": -2.774997,
+   "t2": 3.905941,
+   "t3": -12.00759,
+   "magnitude": 12.928232711921225
+  },
+  {
+   "nodeId": 764,
+   "t1": -0.1263495,
+   "t2": -1.194584,
+   "t3": -12.78416,
+   "magnitude": 12.840472811964762
+  },
+  {
+   "nodeId": 349,
+   "t1": -3.628955,
+   "t2": -1.192998,
+   "t3": -12.14419,
+   "magnitude": 12.73082516477738
+  },
+  {
+   "nodeId": 670,
+   "t1": -2.59161,
+   "t2": 3.877066,
+   "t3": -11.66155,
+   "magnitude": 12.559451881469828
+  },
+  {
+   "nodeId": 765,
+   "t1": -0.159442,
+   "t2": -1.199892,
+   "t3": -12.41875,
+   "magnitude": 12.477600495509062
+  },
+  {
+   "nodeId": 263,
+   "t1": -2.297563,
+   "t2": 4.053221,
+   "t3": -11.52668,
+   "magnitude": 12.43268868894456
+  },
+  {
+   "nodeId": 550,
+   "t1": -0.6685359,
+   "t2": 5.074453,
+   "t3": -11.22249,
+   "magnitude": 12.334556955922569
+  },
+  {
+   "nodeId": 475,
+   "t1": -0.7974706,
+   "t2": 4.981185,
+   "t3": -11.22248,
+   "magnitude": 12.304154611857303
+  },
+  {
+   "nodeId": 1620,
+   "t1": -3.629313,
+   "t2": -0.92505,
+   "t3": -11.63687,
+   "magnitude": 12.224744322535708
+  },
+  {
+   "nodeId": 671,
+   "t1": -2.42649,
+   "t2": 3.792919,
+   "t3": -11.23926,
+   "magnitude": 12.107644428552607
+  },
+  {
+   "nodeId": 471,
+   "t1": -2.29857,
+   "t2": 3.89075,
+   "t3": -11.21885,
+   "magnitude": 12.094790404546083
+  },
+  {
+   "nodeId": 766,
+   "t1": -0.1866327,
+   "t2": -1.213876,
+   "t3": -11.91753,
+   "magnitude": 11.980644724261932
+  },
+  {
+   "nodeId": 499,
+   "t1": -2.838787,
+   "t2": -0.633921,
+   "t3": -11.61635,
+   "magnitude": 11.974980366919606
+  },
+  {
+   "nodeId": 498,
+   "t1": -2.690019,
+   "t2": -0.6489793,
+   "t3": -11.61635,
+   "magnitude": 11.941397057073745
+  },
+  {
+   "nodeId": 835,
+   "t1": -1.609129,
+   "t2": 3.721683,
+   "t3": -10.95092,
+   "magnitude": 11.677451320280893
+  },
+  {
+   "nodeId": 672,
+   "t1": -2.296296,
+   "t2": 3.662875,
+   "t3": -10.78381,
+   "magnitude": 11.618097378716577
+  },
+  {
+   "nodeId": 193,
+   "t1": -1.172706,
+   "t2": 4.025246,
+   "t3": -10.83195,
+   "magnitude": 11.615032738888514
+  },
+  {
+   "nodeId": 84,
+   "t1": -1.584017,
+   "t2": 3.751126,
+   "t3": -10.83195,
+   "magnitude": 11.572000558532004
+  },
+  {
+   "nodeId": 836,
+   "t1": -1.652354,
+   "t2": 3.721683,
+   "t3": -10.68203,
+   "magnitude": 11.431839878808004
+  },
+  {
+   "nodeId": 767,
+   "t1": -0.2060512,
+   "t2": -1.233438,
+   "t3": -11.3306,
+   "magnitude": 11.39940010513121
+  },
+  {
+   "nodeId": 833,
+   "t1": -1.690353,
+   "t2": 3.721658,
+   "t3": -10.45459,
+   "magnitude": 11.225260959179211
+  },
+  {
+   "nodeId": 834,
+   "t1": -1.696281,
+   "t2": 3.724039,
+   "t3": -10.37333,
+   "magnitude": 11.151314316858887
+  },
+  {
+   "nodeId": 673,
+   "t1": -2.213983,
+   "t2": 3.499644,
+   "t3": -10.33905,
+   "magnitude": 11.137557351301272
+  },
+  {
+   "nodeId": 832,
+   "t1": -1.697923,
+   "t2": 3.727892,
+   "t3": -10.27502,
+   "magnitude": 11.061471750087915
+  },
+  {
+   "nodeId": 768,
+   "t1": -0.2170216,
+   "t2": -1.255437,
+   "t3": -10.71253,
+   "magnitude": 10.788026670190222
+  },
+  {
+   "nodeId": 668,
+   "t1": -2.185543,
+   "t2": 3.321198,
+   "t3": -9.948533,
+   "magnitude": 10.713555115466667
+  },
+  {
+   "nodeId": 421,
+   "t1": 0.793403,
+   "t2": 2.825492,
+   "t3": -10.15654,
+   "magnitude": 10.572047963099344
+  },
+  {
+   "nodeId": 420,
+   "t1": 0.7930608,
+   "t2": 2.820369,
+   "t3": -9.863207,
+   "magnitude": 10.289134028357616
+  },
+  {
+   "nodeId": 762,
+   "t1": -0.220302,
+   "t2": -1.276592,
+   "t3": -10.12432,
+   "magnitude": 10.206864139786912
+  },
+  {
+   "nodeId": 830,
+   "t1": -1.69891,
+   "t2": 3.570195,
+   "t3": -9.034443,
+   "magnitude": 9.86173148318154
+  },
+  {
+   "nodeId": 831,
+   "t1": -1.68978,
+   "t2": 3.547609,
+   "t3": -8.933054,
+   "magnitude": 9.759115730033997
+  },
+  {
+   "nodeId": 353,
+   "t1": -1.854451,
+   "t2": -0.6964324,
+   "t3": -9.554071,
+   "magnitude": 9.757268022977117
+  },
+  {
+   "nodeId": 827,
+   "t1": -1.665791,
+   "t2": 3.537802,
+   "t3": -8.855108,
+   "magnitude": 9.680074397366427
+  },
+  {
+   "nodeId": 581,
+   "t1": -0.8384654,
+   "t2": 3.911829,
+   "t3": -8.722905,
+   "magnitude": 9.596588039051337
+  },
+  {
+   "nodeId": 579,
+   "t1": -1.265436,
+   "t2": 3.710171,
+   "t3": -8.722901,
+   "magnitude": 9.563247302832757
+  },
+  {
+   "nodeId": 1646,
+   "t1": -1.85789,
+   "t2": -0.3711293,
+   "t3": -9.05717,
+   "magnitude": 9.253205964330334
+  },
+  {
+   "nodeId": 507,
+   "t1": -1.079846,
+   "t2": 3.58404,
+   "t3": -8.430271,
+   "magnitude": 9.223929706950123
+  },
+  {
+   "nodeId": 509,
+   "t1": -1.562901,
+   "t2": 3.259731,
+   "t3": -8.429773,
+   "magnitude": 9.172217755793362
+  },
+  {
+   "nodeId": 859,
+   "t1": -1.879651,
+   "t2": 3.250212,
+   "t3": -8.331341,
+   "magnitude": 9.138282594942334
+  },
+  {
+   "nodeId": 855,
+   "t1": -1.826027,
+   "t2": 3.272038,
+   "t3": -8.330302,
+   "magnitude": 9.134250855400074
+  },
+  {
+   "nodeId": 858,
+   "t1": -1.900939,
+   "t2": 3.198052,
+   "t3": -8.262756,
+   "magnitude": 9.061690923440338
+  },
+  {
+   "nodeId": 990,
+   "t1": -0.6737872,
+   "t2": 3.61189,
+   "t3": -8.150092,
+   "magnitude": 8.940007727706272
+  },
+  {
+   "nodeId": 366,
+   "t1": -1.885614,
+   "t2": 0.613561,
+   "t3": -8.671923,
+   "magnitude": 8.895743126667158
+  }
+ ],
+ "warnings": []
+}

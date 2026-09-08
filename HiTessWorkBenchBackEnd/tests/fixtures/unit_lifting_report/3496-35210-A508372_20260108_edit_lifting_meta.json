@@ -1,0 +1,167 @@
+{
+ "_keys": {
+  "meta": "Build metadata",
+  "lifting": "Assigned IDs and physical mappings (apex/wire/SPC/LOAD)"
+ },
+ "meta": {
+  "phase": "LIFTING",
+  "stageName": "LiftingBdfBuild",
+  "timestamp": "2026-09-07T05:57:28.073626Z",
+  "schemaVersion": "1.0",
+  "sourceBdf": "3496-35210-A508372_20260108_edit_edited.bdf",
+  "stabilityJson": "3496-35210-A508372_20260108_edit_stability.json",
+  "outputBdf": "3496-35210-A508372_20260108_edit_lifting.bdf"
+ },
+ "lifting": {
+  "safetyFactor": 1.2,
+  "gravityMagMm": 9800.0,
+  "wireProperty": {
+   "propertyId": 132,
+   "preferredPropertyId": 132,
+   "remappedFromConflict": false,
+   "areaMm2": 1257.0,
+   "jMm4": 251327.0
+  },
+  "wireMaterial": {
+   "materialId": 8,
+   "preferredMaterialId": 2,
+   "remappedFromConflict": true,
+   "eMPa": 206000.0,
+   "nu": 0.3
+  },
+  "spcSid": 990001,
+  "spcComponents": "123456",
+  "stabilizationParams": {
+   "cards": [
+    "PARAM,AUTOSPC,YES",
+    "PARAM,BAILOUT,-1"
+   ],
+   "reason": "Mechanism(FATAL 9050) 회피 — CROD wire 가 lug 회전 DOF 를 못 잡는 케이스 대응."
+  },
+  "strippedOriginalConstraints": {
+   "spcCardCount": 0,
+   "suportCardCount": 0,
+   "linesRemoved": 0,
+   "rule": "SPC/SPC1/SPCD/SPCAX/SPCADD/SUPORT/SUPORT1 + continuation lines removed"
+  },
+  "antiRigidBodyAnchor": {
+   "applied": true,
+   "nodeId": 2874,
+   "components": "12",
+   "cogMm": [
+    113832.94,
+    -6886.61,
+    30723.34
+   ],
+   "candidatePoolSize": 20,
+   "pipeFilterApplied": true,
+   "structuralNodeCount": 1459,
+   "rigidDependentExcludedCount": 262,
+   "rbeIndependentExcludedCount": 203,
+   "rigidScannedNodeCount": 452,
+   "rigidBoundNodeCount": 452,
+   "rbeExclusionRelaxed": false,
+   "pipeFilterRelaxed": false,
+   "selectedDistanceMm": 479.50469372050964,
+   "selectedMaxDimMm": 150,
+   "selectedNodeXyzMm": [
+    113952,
+    -7195,
+    30376
+   ]
+  },
+  "gravSid": 990002,
+  "loadSid": 990003,
+  "apexGroups": [
+   {
+    "groupId": 1,
+    "splitFromGroupId": null,
+    "apexNodeId": 2897,
+    "apexCoordsMm": [
+     112054.0,
+     -7195.0,
+     38376.0
+    ],
+    "lugNodeIds": [
+     34,
+     2873
+    ]
+   },
+   {
+    "groupId": 2,
+    "splitFromGroupId": null,
+    "apexNodeId": 2898,
+    "apexCoordsMm": [
+     115260.5,
+     -8666.0,
+     38482.75
+    ],
+    "lugNodeIds": [
+     2728,
+     1378
+    ]
+   },
+   {
+    "groupId": 3,
+    "splitFromGroupId": null,
+    "apexNodeId": 2899,
+    "apexCoordsMm": [
+     112455.0,
+     -2495.0,
+     38376.0
+    ],
+    "lugNodeIds": [
+     26,
+     18,
+     19
+    ]
+   }
+  ],
+  "wires": [
+   {
+    "wireElementId": 4264,
+    "lugNodeId": 34,
+    "apexNodeId": 2897,
+    "groupId": 1
+   },
+   {
+    "wireElementId": 4265,
+    "lugNodeId": 2873,
+    "apexNodeId": 2897,
+    "groupId": 1
+   },
+   {
+    "wireElementId": 4266,
+    "lugNodeId": 2728,
+    "apexNodeId": 2898,
+    "groupId": 2
+   },
+   {
+    "wireElementId": 4267,
+    "lugNodeId": 1378,
+    "apexNodeId": 2898,
+    "groupId": 2
+   },
+   {
+    "wireElementId": 4268,
+    "lugNodeId": 26,
+    "apexNodeId": 2899,
+    "groupId": 3
+   },
+   {
+    "wireElementId": 4269,
+    "lugNodeId": 18,
+    "apexNodeId": 2899,
+    "groupId": 3
+   },
+   {
+    "wireElementId": 4270,
+    "lugNodeId": 19,
+    "apexNodeId": 2899,
+    "groupId": 3
+   }
+  ],
+  "wireCount": 7,
+  "apexNodeCount": 3
+ }
+}

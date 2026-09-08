@@ -149,13 +149,43 @@ export const requestGroupModuleUnit = (formData) =>
 
 /**
  * Module Unit 해상 운송 구조 해석 — Step1 BDF 입력 검증.
- * ⚠ 현재는 GroupModuleUnit 검증 엔진/엔드포인트를 그대로 재사용한다(사용자 결정).
- *   → DB program_name 도 "GroupModuleUnit" 으로 기록되므로 My Project 이력에는
- *     Group & Module Unit 권상 구조 해석으로 표시된다. 전용 엔드포인트가 생기면
- *     (SidePassage 처럼 /api/analysis/moduleoceantransport/request) 이 한 줄만 교체하면 된다.
+ *
+ * 검증 **엔진** 은 GroupModuleUnit 것을 재사용하지만 접수는 이 앱 전용 엔드포인트로 한다
+ * (SidePassage 와 같은 방식). 그래야 작업 폴더가
+ * `userConnection/{timestamp}_{사번}_ModuleOceanMoving/` 으로 만들어져 2·3단계 산출물이
+ * 한 자리에 모이고, DB program_name·앱 가용성 게이트도 이 앱 기준으로 걸린다.
  */
 export const requestModuleOceanTransport = (formData) =>
-  postAnalysisRequest(`${API_BASE_URL}/api/analysis/groupmoduleunit/request`, formData, 'ModuleOceanTransport');
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/module-ocean-transport/request`, formData, 'ModuleOceanTransport');
+
+/**
+ * Module Unit 해상 운송 구조 해석 — 3단계 구조 해석 수행.
+ * 과정 1(MU 응력) + 과정 2(Leg 반력) 를 한 job 으로 순차 실행한다.
+ * 다른 JSON 바디 해석 요청(solveDrawingModel 등)과 동일하게 axios 응답 전체를 반환한다 —
+ * 호출부는 res.data.job_id 로 꺼내 쓴다.
+ */
+export const requestModuleOceanStructural = (payload) =>
+  axios.post(`${API_BASE_URL}/api/analysis/module-ocean-transport/structural-run`, payload, {
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+  });
+
+/** 원본 Barge Excel의 APOL(1) 보간으로 선택 LC 한 개의 가속도를 계산한다. */
+export const calculateModuleOceanAcceleration = (payload) =>
+  axios.post(`${API_BASE_URL}/api/analysis/module-ocean-transport/acceleration-calculate`, payload, {
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+  });
+
+/**
+ * Module Unit 해상 운송 구조 해석 — 과정 2 정반 Leg 용접부 재평가.
+ *
+ * 용접 사양(각장·용접길이·tack 개수…)은 Leg 반력과 무관하므로 사양을 바꿀 때마다
+ * 20분짜리 Nastran 을 다시 돌릴 이유가 없다. 백엔드가 저장된 반력 결과 파일을 읽어
+ * 판정만 다시 하고, 결과 JSON 도 같은 작업 폴더에 덮어쓴다.
+ */
+export const assessModuleOceanWeld = (legResultJson, weld) =>
+  axios.post(`${API_BASE_URL}/api/analysis/module-ocean-transport/weld-assess`,
+    { leg_result_json: legResultJson, weld },
+    { headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } });
 
 /**
  * Module Unit 해상 운송 구조 해석 — 선택 가능한 정반 타입 목록과 제원.
@@ -271,3 +301,15 @@ export const requestGroupModuleCog = (bdfPath) =>
     { bdf_path: bdfPath },
     { headers: getAuthHeaders() }
   );
+
+/**
+ * Unit 권상 보고서(xlsx) — 응답 blob + 헤더(파일명·경고·요약).
+ * kind: 'result' = 사내 표준 서식 2~3페이지(기본) · 'detail' = 다장 기술보고서.
+ */
+export const downloadUnitLiftingReport = (analysisId, options = {}, kind = 'result') =>
+  axios.post(`${API_BASE_URL}/api/analysis/unit-structural/report`,
+    { analysisId, kind, options },
+    {
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      responseType: 'blob',
+    });

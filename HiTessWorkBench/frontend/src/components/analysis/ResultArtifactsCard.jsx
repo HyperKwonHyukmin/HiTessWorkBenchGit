@@ -3,11 +3,12 @@ import {
   Download, Loader2, RefreshCw, FileText, FileCog,
   FileBarChart2, AlertCircle, PackageOpen, DatabaseZap,
 } from 'lucide-react';
-import { getGroupModuleUnitArtifacts, downloadFileBlob } from '../../api/analysis';
-import { downloadBlob } from '../../utils/fileHelper';
-import { isAdmin } from '../../utils/auth';
+import { getGroupModuleUnitArtifacts, downloadFileBlob, downloadUnitLiftingReport } from '../../api/analysis';
+import { downloadBlob, filenameFromDisposition } from '../../utils/fileHelper';
+import { isAdmin, getCurrentUser } from '../../utils/auth';
 import { useToast } from '../../contexts/ToastContext';
 import ModelRegistrationModal from '../modelRegistry/ModelRegistrationModal';
+import UnitLiftingReportDialog from './UnitLiftingReportDialog';
 import { SOURCE_ARTIFACT_KINDS } from '../../utils/modelRegistryUtils';
 
 // 파일 용량 표시 (best-effort — DRM at-rest 시 약간의 오차 가능)
@@ -52,6 +53,10 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
   const [downloading, setDownloading] = useState(null); // 다운로드 중인 kind
   // 등록 모달은 사용자가 명시적으로 열 때만 뜬다. 여는 것만으로는 아무것도 등록되지 않는다.
   const [registerTarget, setRegisterTarget] = useState(null); // { artifactKind } | null
+  // 이 parent 로 실행된 최신 Unit 구조 해석 id — 검토 보고서 생성에 필요(없으면 버튼 비활성).
+  const [unitAnalysisId, setUnitAnalysisId] = useState(null);
+  const [reportKind, setReportKind] = useState(null);   // 'result' | 'detail' | null(닫힘)
+  const [reportBusy, setReportBusy] = useState(false);
   const canRegister = isAdmin();
 
   const fetchArtifacts = useCallback(async () => {
@@ -61,6 +66,7 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
     try {
       const res = await getGroupModuleUnitArtifacts(parentAnalysisId);
       setArtifacts(res.data?.artifacts ?? []);
+      setUnitAnalysisId(res.data?.unitStructuralAnalysisId ?? null);
       setState('loaded');
     } catch (e) {
       const detail = e?.response?.data?.detail || e?.message || '알 수 없는 오류';
@@ -86,6 +92,31 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
     }
   };
 
+  const handleReport = async (options) => {
+    setReportBusy(true);
+    try {
+      const res = await downloadUnitLiftingReport(unitAnalysisId, options, reportKind);
+      const name = filenameFromDisposition(res.headers['content-disposition'], 'Unit_권상_구조_검토_보고서.xlsx');
+      downloadBlob(res.data, name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      let warnings = [];
+      try { warnings = JSON.parse(decodeURIComponent(res.headers['x-report-warnings'] || '[]')); } catch { /* 헤더 없음 */ }
+      showToast(
+        warnings.length ? `보고서 생성 완료 · 경고 ${warnings.length}건 (부록 C 참조)` : '보고서 생성 완료',
+        warnings.length ? 'warning' : 'success',
+      );
+      setReportKind(null);
+    } catch (e) {
+      // blob 응답이라 에러 본문도 Blob 으로 온다 — 텍스트로 풀어 detail 을 꺼낸다.
+      let detail = e?.message;
+      if (e?.response?.data instanceof Blob) {
+        try { detail = JSON.parse(await e.response.data.text()).detail; } catch { /* JSON 아님 */ }
+      }
+      showToast(`보고서 생성 실패: ${detail || '알 수 없는 오류'}`, 'error');
+    } finally {
+      setReportBusy(false);
+    }
+  };
+
   const byKind = Object.fromEntries(artifacts.map(a => [a.kind, a]));
 
   return (
@@ -96,6 +127,33 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
           <h2 className="text-xs font-bold text-slate-700">산출물 다운로드</h2>
           <span className="text-[10px] text-slate-400">— 최종 모델 BDF · Nastran F06/OP2</span>
         </div>
+        <div className="flex items-center gap-1.5">
+        {state === 'loaded' && (
+          <>
+            <button
+              type="button"
+              onClick={() => setReportKind('result')}
+              disabled={!unitAnalysisId || reportBusy}
+              title={unitAnalysisId
+                ? '사내 표준 서식 결과 레포트(xlsx) 출력'
+                : 'Studio 에서 단위 구조 해석을 완료하면 활성화됩니다'}
+              className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg bg-[#002554] text-white hover:bg-[#003a7a] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <FileBarChart2 size={10} /> 결과 레포트 출력
+            </button>
+            <button
+              type="button"
+              onClick={() => setReportKind('detail')}
+              disabled={!unitAnalysisId || reportBusy}
+              title={unitAnalysisId
+                ? '입력·가정·전 결과를 담은 다장 상세 레포트(xlsx)'
+                : 'Studio 에서 단위 구조 해석을 완료하면 활성화됩니다'}
+              className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-[#002554]/30 text-[#002554] hover:bg-[#002554]/5 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <FileText size={10} /> 상세 레포트
+            </button>
+          </>
+        )}
         <button
           onClick={fetchArtifacts}
           disabled={!parentAnalysisId || state === 'loading'}
@@ -103,6 +161,7 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
         >
           <RefreshCw size={10} className={state === 'loading' ? 'animate-spin' : ''} /> 새로고침
         </button>
+        </div>
       </div>
 
       <div className="p-4">
@@ -205,6 +264,16 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
             : 'Model Library 에 등록되었습니다.',
           'success',
         )}
+      />
+
+      <UnitLiftingReportDialog
+        open={Boolean(reportKind)}
+        kind={reportKind}
+        busy={reportBusy}
+        onClose={() => setReportKind(null)}
+        onSubmit={handleReport}
+        sourceFileName={byKind.editedBdf?.fileName || byKind.liftingBdf?.fileName || ''}
+        defaultAuthor={getCurrentUser()?.employee_id || ''}
       />
     </div>
   );

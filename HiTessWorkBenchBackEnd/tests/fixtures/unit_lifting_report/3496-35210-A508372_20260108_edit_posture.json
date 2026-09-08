@@ -1,0 +1,121 @@
+{
+ "schema": "posture-stability/1.0",
+ "timestamp": "20260907_145720",
+ "sourceFile": "3496-35210-A508372_20260108_edit.json",
+ "stageRef": {
+  "phase": "BDF",
+  "stageName": "BdfImport",
+  "editedFile": "3496-35210-A508372_20260108_edit_edited.json"
+ },
+ "hoisting": {
+  "mode": {
+   "id": "hydro",
+   "label": "Hydro 방식",
+   "equipment": "Hook"
+  },
+  "groupCount": 3,
+  "wireLengthM": 8,
+  "groups": [
+   {
+    "id": 1,
+    "nodeCount": 2,
+    "nodes": [
+     {
+      "id": 34,
+      "x": 110340,
+      "y": -7195,
+      "z": 30376
+     },
+     {
+      "id": 2873,
+      "x": 113768,
+      "y": -7195,
+      "z": 30376
+     }
+    ],
+    "centroidMm": {
+     "x": 112054,
+     "y": -7195,
+     "z": 30376
+    }
+   },
+   {
+    "id": 2,
+    "nodeCount": 2,
+    "nodes": [
+     {
+      "id": 2728,
+      "x": 115235,
+      "y": -10137,
+      "z": 30589.5
+     },
+     {
+      "id": 1378,
+      "x": 115286,
+      "y": -7195,
+      "z": 30376
+     }
+    ],
+    "centroidMm": {
+     "x": 115260.5,
+     "y": -8666,
+     "z": 30482.75
+    }
+   },
+   {
+    "id": 3,
+    "nodeCount": 3,
+    "nodes": [
+     {
+      "id": 26,
+      "x": 110705,
+      "y": -4485,
+      "z": 30376
+     },
+     {
+      "id": 19,
+      "x": 115955,
+      "y": -1500,
+      "z": 30376
+     },
+     {
+      "id": 18,
+      "x": 110705,
+      "y": -1500,
+      "z": 30376
+     }
+    ],
+    "centroidMm": {
+     "x": 112455,
+     "y": -2495,
+     "z": 30376
+    }
+   }
+  ]
+ },
+ "model": {
+  "unit": "mm",
+  "nodeCount": 2555,
+  "bboxMm": {
+   "minX": 108910,
+   "maxX": 120960,
+   "minY": -10730,
+   "maxY": -625,
+   "minZ": 29683,
+   "maxZ": 32188
+  },
+  "centerMm": {
+   "x": 114935,
+   "y": -5677.5,
+   "z": 30935.5
+  },
+  "totalMassTon": 6.739850359742444,
+  "centerOfGravityMm": {
+   "x": 113832.93648699633,
+   "y": -6886.607088695889,
+   "z": 30723.33723046198
+  },
+  "massSource": "computed:beam+pointMass"
+ },
+ "strictEvaluation": false
+}

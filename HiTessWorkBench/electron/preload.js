@@ -47,10 +47,14 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:runStabilityAnalysis',
   'viewer:optimizeHoistPositions',
   'viewer:runUnitStructural',
+  'viewer:generateUnitLiftingReport',
   'viewer:runPlateStructural',
   'viewer:runMooringStructural',
   'viewer:runModelBuilderSolve',
   'viewer:exportMooringBdf',
+  'viewer:saveMooringReportFigures',
+  'viewer:generateMooringReport',
+  'viewer:buildMooringReportPlan',
   'viewer:exportSidePassageBdf',
   'viewer:exportUnitBdf',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
@@ -114,6 +118,9 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // main 이 처리. 진행 상황은 onUnitStructuralProgress() 로 stream.
   runUnitStructural: (opts) =>
     ipcRenderer.invoke('viewer:runUnitStructural', opts),
+  // ModuleUnitStudio 해석 완료 후 3D 자동 캡처 + 표준 XLSX 검토 보고서 생성/저장.
+  generateUnitLiftingReport: (opts) =>
+    ipcRenderer.invoke('viewer:generateUnitLiftingReport', opts),
   onUnitStructuralProgress: (callback) => {
     const listener = (_, data) => callback(data);
     ipcRenderer.on('viewer:unit-structural-progress', listener);
@@ -142,6 +149,19 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // payload = { intents: Array }, 반환 = { ok, savedPath, summary } | { ok:false, canceled?, error }
   exportMooringBdf: (opts) =>
     ipcRenderer.invoke('viewer:exportMooringBdf', opts),
+
+  // Studio 가 찍은 보고서 그림(PNG base64)을 서버 out/figures_studio 에 저장
+  saveMooringReportFigures: (opts) =>
+    ipcRenderer.invoke('viewer:saveMooringReportFigures', opts),
+  // MooringFittingStudio "보고서 생성" → 백엔드 report(강도검토 xlsx) → 사용자 PC 저장
+  // payload = { useStudioFigures?, top?, yieldStrength?, gammaM?, hullNo?, dwgNo?, reportDate?, title?, fitting? }
+  // 반환 = { ok, savedPath, pages, warnings, usedStudioFigures } | { ok:false, canceled?, error }
+  generateMooringReport: (opts) =>
+    ipcRenderer.invoke('viewer:generateMooringReport', opts),
+  // 보고서 1단계 — 캡쳐 계획(report-plan) 생성 후 계획 내용을 돌려준다
+  // payload = { top?, yieldStrength?, gammaM? }, 반환 = { ok, plan } | { ok:false, error }
+  buildMooringReportPlan: (opts) =>
+    ipcRenderer.invoke('viewer:buildMooringReportPlan', opts),
   // SidePassageStudio "Model 저장(Check Plate)" → 백엔드 checkplate-export(원본 BDF 양식 보존
   // + 셸/RBE2 추가) → 사용자 PC 저장. payload = { checkPlates: Array },
   // 반환 = { ok, savedPath, stats } | { ok:false, canceled?, error }

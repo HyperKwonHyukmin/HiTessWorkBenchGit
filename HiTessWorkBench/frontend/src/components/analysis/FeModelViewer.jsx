@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import {
-  Maximize2, Minimize2, Crosshair, Box, Grid3x3, Loader2,
+  Maximize2, Minimize2, Crosshair, Grid3x3, Loader2,
   AlertTriangle, Eye, EyeOff, Camera, Layers, HelpCircle,
 } from 'lucide-react';
 import { buildTriangleIndices, buildShellEdgeIndices, toIndexArray } from '../../utils/feGeometry';
+import { createFeOrthographicCamera, resizeFeOrthographicCamera } from '../../utils/feModelCamera';
 
 /**
  * 유한요소 모델 뷰어 — 상용 FE 전처리 GUI 의 조작 감각을 목표로 한 컴포넌트.
@@ -66,7 +67,7 @@ function makeBackgroundTexture() {
  * 슬림 모델 페이로드 → three.js 오브젝트 묶음.
  * 반환된 group 은 씬에 바로 넣을 수 있고, 표시 토글에 필요한 핸들을 함께 돌려준다.
  */
-function buildPartObjects(model, { color, anchor }) {
+function buildPartObjects(model, { color, anchor, beamColors }) {
   const positions = Float32Array.from(model.positions || []);
   const nodeCount = positions.length / 3;
 
@@ -125,10 +126,32 @@ function buildPartObjects(model, { color, anchor }) {
   let beams = null;
   if (model.beams?.length) {
     const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', posAttr);
-    geom.setIndex(new THREE.BufferAttribute(toIndexArray(model.beams, nodeCount), 1));
+    let material;
+    if (beamColors) {
+      // 요소마다 다른 색을 칠하려면 절점을 공유할 수 없다 — 한 절점은 여러 요소에
+      // 속하는데 정점 색은 절점당 하나뿐이라, 인접 요소의 색이 서로를 덮어쓴다.
+      // 그래서 인덱스를 풀어 선분마다 정점을 복제한다(메모리는 늘지만 요소 색이 정확하다).
+      const segments = model.beams.length / 2;
+      const flat = new Float32Array(segments * 6);
+      for (let s = 0; s < segments; s += 1) {
+        const a = model.beams[s * 2] * 3;
+        const b = model.beams[s * 2 + 1] * 3;
+        flat[s * 6]     = positions[a];
+        flat[s * 6 + 1] = positions[a + 1];
+        flat[s * 6 + 2] = positions[a + 2];
+        flat[s * 6 + 3] = positions[b];
+        flat[s * 6 + 4] = positions[b + 1];
+        flat[s * 6 + 5] = positions[b + 2];
+      }
+      geom.setAttribute('position', new THREE.BufferAttribute(flat, 3));
+      geom.setAttribute('color', new THREE.BufferAttribute(beamColors, 3));
+      material = new THREE.LineBasicMaterial({ vertexColors: true });
+    } else {
+      geom.setAttribute('position', posAttr);
+      geom.setIndex(new THREE.BufferAttribute(toIndexArray(model.beams, nodeCount), 1));
+      material = new THREE.LineBasicMaterial({ color: baseColor.clone().lerp(new THREE.Color('#ffffff'), 0.55) });
+    }
     geom.computeBoundingSphere();
-    const material = new THREE.LineBasicMaterial({ color: baseColor.clone().lerp(new THREE.Color('#ffffff'), 0.55) });
     beams = new THREE.LineSegments(geom, material);
     group.add(beams);
   }
@@ -161,7 +184,7 @@ function buildPartObjects(model, { color, anchor }) {
 /** 코너 축 표시기(triad) 씬. 메인 씬과 독립적으로 유지된다. */
 function createAxisTriad() {
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+  const camera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 100);
   camera.up.set(0, 0, 1);
   const group = new THREE.Group();
   const axes = [
@@ -187,6 +210,18 @@ function createAxisTriad() {
 
 export default function FeModelViewer({
   parts = [],
+  /**
+   * 절점 선택(지지점 지정) 모드. null 이면 평소처럼 보기 전용이다.
+   *   { partId, selected: Set<number>, onChange(nextSet) }
+   * selected 원소는 그 파트 슬림 페이로드의 **positions 인덱스** 다
+   * (nodeIds 와 같은 순서라 호출부가 nodeIds[i] 로 BDF 절점 ID 를 얻는다).
+   */
+  pick = null,
+  // 강체(RBE2) 요소를 처음부터 켜 둘지. Module Unit 단독 화면처럼 강체 연결이
+  // 판독에 필요한 곳에서 켠다(정반과 함께 볼 때는 선이 많아 기본은 꺼 둔다).
+  initialShowRigids = false,
+  // 특정 지점으로 카메라를 옮긴다. { x, y, z, radius? } — 값이 바뀔 때만 동작한다.
+  focusTarget = null,
   loading = false,
   loadingLabel = '모델을 불러오는 중...',
   error = null,
@@ -220,13 +255,15 @@ export default function FeModelViewer({
   const [displayMode,  setDisplayMode]  = useState('shadedEdges');
   const [showGrid,     setShowGrid]     = useState(showGridDefault);
   const [showNodes,    setShowNodes]    = useState(false);
-  const [showRigids,   setShowRigids]   = useState(false);
-  const [orthographic, setOrthographic] = useState(false);
+  const [showRigids,   setShowRigids]   = useState(initialShowRigids);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hidden,       setHidden]       = useState(() => new Set());
   const [readout,      setReadout]      = useState(null);
 
   const markersRef = useRef(null);
+  const selectionRef = useRef(null);      // 선택 절점 강조용 Points
+  const [boxRect, setBoxRect] = useState(null);   // 박스 선택 드래그 사각형(px)
+
   const cogRef       = useRef(null);
 
   /* ── 온디맨드 렌더 ─────────────────────────────────────── */
@@ -279,7 +316,7 @@ export default function FeModelViewer({
     const scene = new THREE.Scene();
     scene.background = makeBackgroundTexture();
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 1, 5_000_000);
+    const camera = createFeOrthographicCamera(width, height);
     camera.up.set(0, 0, 1);
     camera.position.set(1, -1, 0.75).multiplyScalar(1000);
 
@@ -345,14 +382,7 @@ export default function FeModelViewer({
       const h = el.clientHeight;
       if (!w || !h) return;
       const cam = cameraRef.current;
-      if (cam.isOrthographicCamera) {
-        const halfH = (cam.top - cam.bottom) / 2;
-        cam.left = -halfH * (w / h);
-        cam.right = halfH * (w / h);
-      } else {
-        cam.aspect = w / h;
-      }
-      cam.updateProjectionMatrix();
+      resizeFeOrthographicCamera(cam, w, h);
       renderer.setSize(w, h);
       requestRender();
     });
@@ -432,17 +462,11 @@ export default function FeModelViewer({
     }
 
     const pad = 1.1;   // 화면 가장자리에 살짝 여백
-    let distance;
-    if (camera.isOrthographicCamera) {
-      const halfH = Math.max(hy, hx / aspect) * pad;
-      camera.top = halfH; camera.bottom = -halfH;
-      camera.left = -halfH * aspect; camera.right = halfH * aspect;
-      distance = hz * 2 + Math.max(hx, hy, hz);
-    } else {
-      const vfov = (camera.fov * Math.PI) / 360;
-      const hfov = Math.atan(Math.tan(vfov) * aspect);
-      distance = Math.max(hy * pad / Math.tan(vfov), hx * pad / Math.tan(hfov)) + hz;
-    }
+    const halfH = Math.max(hy, hx / aspect, 1) * pad;
+    camera.top = halfH; camera.bottom = -halfH;
+    camera.left = -halfH * aspect; camera.right = halfH * aspect;
+    camera.zoom = 1;
+    const distance = hz * 2 + Math.max(hx, hy, hz, 1);
 
     camera.up.copy(upHint);
     camera.position.copy(center).addScaledVector(dir, distance);
@@ -460,6 +484,34 @@ export default function FeModelViewer({
   }, [frameCamera]);
 
   /** 현재 시점 방향을 유지한 채 다시 화면에 맞춘다(상용 GUI 의 Fit 동작). */
+  /**
+   * 지정한 지점으로 카메라를 옮긴다(결과 모달에서 "이 부재 어디?"에 답하는 동작).
+   * 시선 **방향은 유지**하고 거리만 좁힌다 — 방향까지 바꾸면 사용자가 방금 맞춰 둔
+   * 시점을 잃어 오히려 어디를 보는지 알 수 없게 된다.
+   */
+  const focusOn = useCallback(({ x, y, z, radius }) => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    const target = new THREE.Vector3(x, y, z);
+    const dist = radius || Math.max((boundsRef.current?.radius || 1000) * 0.35, 1);
+    const dir = camera.position.clone().sub(controls.target).normalize();
+    camera.position.copy(target).add(dir.multiplyScalar(dist * 2.2));
+    controls.target.copy(target);
+    camera.zoom = Math.max((boundsRef.current?.radius || 1000) / Math.max(dist * 2.2, 1), 0.01);
+    camera.updateProjectionMatrix();
+    controls.update();
+    requestRender();
+  }, [requestRender]);
+
+  const focusSignature = focusTarget
+    ? `${focusTarget.x},${focusTarget.y},${focusTarget.z},${focusTarget.radius ?? ''}` : '';
+  useEffect(() => {
+    if (!focusTarget) return;
+    focusOn(focusTarget);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSignature]);
+
   const fitView = useCallback(() => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
@@ -472,7 +524,9 @@ export default function FeModelViewer({
   /* ── 파트 지오메트리 구축 ──────────────────────────────── */
   // parts 의 model/anchor 가 바뀔 때만 재구축한다(위치·회전·표시 변경은 아래 effect 들이 담당).
   const partsSignature = useMemo(
-    () => parts.map(p => `${p.id}:${p.model ? p.model.nodeCount : 'x'}:${(p.anchor || []).join(',')}:${p.color}`).join('|'),
+    // colorKey — 요소별 색(beamColors)은 배열이라 참조 비교가 무의미하다.
+    // 호출부가 "무엇으로 칠했는지"를 짧은 문자열로 알려 주면 그때만 재구축한다.
+    () => parts.map(p => `${p.id}:${p.model ? p.model.nodeCount : 'x'}:${(p.anchor || []).join(',')}:${p.color}:${p.colorKey || ''}`).join('|'),
     [parts],
   );
 
@@ -482,10 +536,15 @@ export default function FeModelViewer({
 
     const store = partObjectsRef.current;
     const liveIds = new Set(parts.filter(p => p.model).map(p => p.id));
+    // colorKey 가 달라진 파트는 지오메트리 자체가 달라지므로 살아 있어도 버린다.
+    const staleIds = new Set(
+      parts.filter(p => p.model && store.has(p.id) && store.get(p.id).colorKey !== (p.colorKey || ''))
+        .map(p => p.id),
+    );
 
     // 사라진 파트 정리
     for (const [id, entry] of store) {
-      if (liveIds.has(id)) continue;
+      if (liveIds.has(id) && !staleIds.has(id)) continue;
       scene.remove(entry.group);
       entry.group.traverse(obj => {
         obj.geometry?.dispose?.();
@@ -498,7 +557,12 @@ export default function FeModelViewer({
     // 새 파트 구축
     parts.forEach(part => {
       if (!part.model || store.has(part.id)) return;
-      const entry = buildPartObjects(part.model, { color: part.color || '#8aa0b8', anchor: part.anchor });
+      const entry = buildPartObjects(part.model, {
+        color: part.color || '#8aa0b8',
+        anchor: part.anchor,
+        beamColors: part.beamColors,
+      });
+      entry.colorKey = part.colorKey || '';
       store.set(part.id, entry);
       scene.add(entry.group);
     });
@@ -589,24 +653,202 @@ export default function FeModelViewer({
         entry.mesh.material.depthWrite = opacity >= 1;
       }
       if (entry.edges)  entry.edges.visible  = displayMode !== 'shaded';
+      // 선(빔·경계선)에도 opacity 를 먹여야 '원형상 유령' 처럼 겹쳐 볼 수 있다.
+      // 빔 모델은 면이 없어서 mesh 에만 걸면 아무 효과가 없다.
+      [entry.beams, entry.edges].forEach((obj) => {
+        if (!obj) return;
+        const alpha = part.opacity ?? 1;
+        obj.material.opacity = alpha;
+        obj.material.transparent = alpha < 1;
+        obj.material.depthWrite = alpha >= 1;
+      });
       if (entry.rigids) entry.rigids.visible = showRigids;
-      if (entry.nodes)  entry.nodes.visible  = showNodes;
+      // 픽 모드에서는 찍을 대상이 보여야 하므로 절점 표시 토글과 무관하게 켠다.
+      if (entry.nodes)  entry.nodes.visible  = showNodes || (pick && part.id === pick.partId);
     });
     requestRender();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayMode, showNodes, showRigids, hidden, partsSignature,
-      parts.map(p => p.opacity ?? 1).join(',')]);
+      pick?.partId, parts.map(p => p.opacity ?? 1).join(',')]);
 
   useEffect(() => {
     if (gridRef.current) gridRef.current.visible = showGrid;
     requestRender();
   }, [showGrid, requestRender]);
 
+  /* ── 절점 선택(지지점 지정) ────────────────────────────────
+     상용 전처리기의 관례를 따른다 — 평범한 좌드래그는 그대로 회전이고,
+     Shift/Alt 드래그일 때만 박스 선택으로 전환한다. 회전을 뺏으면 3D 에서
+     원하는 면을 볼 수가 없어 선택 자체가 불가능해진다. */
+
+  // 드래그 중에도 핸들러가 다시 등록되면 안 된다 — 재등록되는 순간 진행 중인 박스가
+  // 취소된다(포인터 이동마다 setBoxRect 로 리렌더가 나므로 실제로 매번 일어난다).
+  // 그래서 최신 pick/parts 는 ref 로 읽고, 등록 effect 는 픽 대상이 바뀔 때만 돈다.
+  const pickRef = useRef(pick);
+  pickRef.current = pick;
+  const partsRef = useRef(parts);
+  partsRef.current = parts;
+
+  /** 선택 대상 파트의 절점 월드 좌표를 화면 픽셀로 투영한다(박스 선택용). */
+  const projectPickNodes = useCallback(() => {
+    const camera = cameraRef.current;
+    const renderer = rendererRef.current;
+    const active = pickRef.current;
+    const entry = active && partObjectsRef.current.get(active.partId);
+    const part = active && partsRef.current.find(p => p.id === active.partId);
+    if (!camera || !renderer || !entry?.nodes || !part?.model?.positions) return [];
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    const attr = entry.nodes.geometry.getAttribute('position');
+    entry.group.updateMatrixWorld(true);
+    const v = new THREE.Vector3();
+    const out = [];
+    for (let i = 0; i < attr.count; i += 1) {
+      v.fromBufferAttribute(attr, i).applyMatrix4(entry.group.matrixWorld).project(camera);
+      // 카메라 뒤로 넘어간 점은 화면 좌표가 뒤집혀 엉뚱하게 선택된다.
+      if (v.z > 1) continue;
+      out.push({
+        i,
+        px: rect.left + ((v.x + 1) / 2) * rect.width,
+        py: rect.top + ((1 - v.y) / 2) * rect.height,
+      });
+    }
+    return out;
+  }, []);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    const el = renderer?.domElement;
+    if (!el || !pick?.partId) return undefined;
+
+    let start = null;      // { x, y, mode: 'add'|'remove'|null }
+    const DRAG_SLOP_PX = 4;
+
+    const onDown = (e) => {
+      // 오른쪽 버튼은 '해제' 다. OrbitControls 의 우드래그 = 화면 이동은 그대로 두고,
+      // 움직이지 않고 뗐을 때만 해제로 본다(아래 onUp 의 DRAG_SLOP_PX 판정).
+      if (e.button === 2) { start = { x: e.clientX, y: e.clientY, mode: null, deselect: true }; return; }
+      if (e.button !== 0) return;
+      const mode = e.shiftKey ? 'add' : (e.altKey ? 'remove' : null);
+      start = { x: e.clientX, y: e.clientY, mode, deselect: false };
+      if (mode) {
+        // 박스 선택 중에는 회전이 같이 돌면 안 된다.
+        if (controlsRef.current) controlsRef.current.enabled = false;
+        setBoxRect({ x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY });
+      }
+    };
+
+    const onMove = (e) => {
+      if (!start?.mode) return;
+      setBoxRect({ x0: start.x, y0: start.y, x1: e.clientX, y1: e.clientY });
+    };
+
+    const onUp = (e) => {
+      if (!start) return;
+      const active = pickRef.current;
+      const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+      const next = new Set(active?.selected || []);
+
+      if (start.mode) {
+        const lo = { x: Math.min(start.x, e.clientX), y: Math.min(start.y, e.clientY) };
+        const hi = { x: Math.max(start.x, e.clientX), y: Math.max(start.y, e.clientY) };
+        projectPickNodes().forEach(({ i, px, py }) => {
+          if (px < lo.x || px > hi.x || py < lo.y || py > hi.y) return;
+          if (start.mode === 'add') next.add(i); else next.delete(i);
+        });
+        active?.onChange?.(next);
+        if (controlsRef.current) controlsRef.current.enabled = true;
+        setBoxRect(null);
+      } else if (moved <= DRAG_SLOP_PX) {
+        // 회전 드래그와 구분한다 — 몇 px 안에서 뗐을 때만 클릭으로 본다.
+        const entry = active && partObjectsRef.current.get(active.partId);
+        const camera = cameraRef.current;
+        if (entry?.nodes && camera) {
+          const rect = el.getBoundingClientRect();
+          const ndc = new THREE.Vector2(
+            ((e.clientX - rect.left) / rect.width) * 2 - 1,
+            -((e.clientY - rect.top) / rect.height) * 2 + 1,
+          );
+          const ray = new THREE.Raycaster();
+          // 임계값은 모델 크기에 비례해야 한다 — 고정값이면 큰 모델에서 아무것도 안 잡힌다.
+          ray.params.Points.threshold = Math.max((boundsRef.current?.radius || 1000) / 150, 1);
+          ray.setFromCamera(ndc, camera);
+          const hits = ray.intersectObject(entry.nodes, false);
+          if (hits.length) {
+            const i = hits[0].index;
+            // 좌클릭은 토글, 우클릭은 언제나 해제 — '지우개' 처럼 연속으로 눌러 지울 수 있다.
+            if (start.deselect) next.delete(i);
+            else if (next.has(i)) next.delete(i);
+            else next.add(i);
+            active?.onChange?.(next);
+          }
+        }
+      }
+      start = null;
+    };
+
+    const onContextMenu = (e) => e.preventDefault();
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('contextmenu', onContextMenu);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('contextmenu', onContextMenu);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      if (controlsRef.current) controlsRef.current.enabled = true;
+      setBoxRect(null);
+    };
+    // 픽 대상이 켜지고 꺼질 때만 등록한다(선택이 바뀔 때마다 재등록하면 드래그가 끊긴다).
+  }, [pick?.partId, projectPickNodes]);
+
+  /* 선택 절점 강조 — 원래 절점 위에 크고 밝은 점을 덧그린다. */
+  const selectionSignature = pick ? `${pick.partId}:${[...pick.selected].sort((a, b) => a - b).join(',')}` : '';
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    if (selectionRef.current) {
+      selectionRef.current.parent?.remove(selectionRef.current);
+      selectionRef.current.geometry.dispose();
+      selectionRef.current.material.dispose();
+      selectionRef.current = null;
+    }
+    const entry = pick && partObjectsRef.current.get(pick.partId);
+    const part = pick && partsRef.current.find(p => p.id === pick.partId);
+    if (entry && part?.model?.positions && pick.selected.size) {
+      const src = entry.nodes.geometry.getAttribute('position');
+      const pos = new Float32Array(pick.selected.size * 3);
+      let k = 0;
+      pick.selected.forEach((i) => {
+        if (i >= src.count) return;
+        pos[k * 3]     = src.getX(i);
+        pos[k * 3 + 1] = src.getY(i);
+        pos[k * 3 + 2] = src.getZ(i);
+        k += 1;
+      });
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos.subarray(0, k * 3), 3));
+      const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+        color: new THREE.Color('#22c55e'), size: 10,
+        sizeAttenuation: false, depthTest: false, transparent: true,
+      }));
+      pts.renderOrder = 998;
+      // 파트 그룹에 넣어야 배치(오프셋·회전)를 그대로 따라간다.
+      entry.group.add(pts);
+      selectionRef.current = pts;
+    }
+    requestRender();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionSignature, partsSignature, transformSignature]);
+
   /* ── 접점 마커 ─────────────────────────────────────────────
      적치 접점은 요소가 아니라 '결과'라서 파트와 별개로 그린다.
      depthTest 를 끄고 sizeAttenuation 을 꺼서 모델 안쪽 접점도 항상 같은 크기로 보인다. */
   const markerSignature = useMemo(
-    () => markers.map(m => `${m.x},${m.y},${m.z}`).join('|'),
+    // color/size 까지 서명에 넣어야 "같은 자리, 다른 의미"(지지점 vs 최대 응력 부재)가
+    // 색만 바뀔 때도 다시 그려진다.
+    () => markers.map(m => `${m.x},${m.y},${m.z},${m.color || ''},${m.size || ''}`).join('|'),
     [markers],
   );
 
@@ -615,23 +857,36 @@ export default function FeModelViewer({
     if (!scene) return;
     if (markersRef.current) {
       scene.remove(markersRef.current);
-      markersRef.current.geometry.dispose();
-      markersRef.current.material.dispose();
+      markersRef.current.traverse((o) => {
+        o.geometry?.dispose?.();
+        o.material?.dispose?.();
+      });
       markersRef.current = null;
     }
     if (markers.length) {
-      const pos = new Float32Array(markers.length * 3);
-      markers.forEach((m, i) => { pos[3 * i] = m.x; pos[3 * i + 1] = m.y; pos[3 * i + 2] = m.z; });
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const mat = new THREE.PointsMaterial({
-        color: new THREE.Color(markerColor), size: 11,
-        sizeAttenuation: false, depthTest: false, transparent: true,
+      // 마커마다 색·크기를 달리 줄 수 있어야 한 화면에서 지지점과 최대 응력 부재를
+      // 구분할 수 있다. size 는 재질 단위라 그룹으로 나눠 그린다.
+      const groups = new Map();
+      markers.forEach((m) => {
+        const key = `${m.color || markerColor}|${m.size || 11}`;
+        if (!groups.has(key)) groups.set(key, { color: m.color || markerColor, size: m.size || 11, pts: [] });
+        groups.get(key).pts.push(m);
       });
-      const pts = new THREE.Points(geo, mat);
-      pts.renderOrder = 999;
-      scene.add(pts);
-      markersRef.current = pts;
+      const holder = new THREE.Group();
+      groups.forEach(({ color, size, pts: list }) => {
+        const pos = new Float32Array(list.length * 3);
+        list.forEach((m, i) => { pos[3 * i] = m.x; pos[3 * i + 1] = m.y; pos[3 * i + 2] = m.z; });
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        const obj = new THREE.Points(geo, new THREE.PointsMaterial({
+          color: new THREE.Color(color), size,
+          sizeAttenuation: false, depthTest: false, transparent: true,
+        }));
+        obj.renderOrder = 999;
+        holder.add(obj);
+      });
+      scene.add(holder);
+      markersRef.current = holder;
     }
     requestRender();
   }, [markerSignature, markerColor, requestRender]);
@@ -685,35 +940,6 @@ export default function FeModelViewer({
     requestRender();
   }, [cogSignature, requestRender]);
 
-
-  /* ── 투영 전환 (원근 ↔ 정투영) ─────────────────────────── */
-  useEffect(() => {
-    const old = cameraRef.current;
-    const scene = sceneRef.current;
-    const controls = controlsRef.current;
-    const el = mountRef.current;
-    if (!old || !scene || !controls || !el) return;
-    if (orthographic === !!old.isOrthographicCamera) return;
-
-    const aspect = (el.clientWidth || 1) / (el.clientHeight || 1);
-    const { radius } = boundsRef.current;
-    const next = orthographic
-      ? new THREE.OrthographicCamera(-radius * 1.15 * aspect, radius * 1.15 * aspect, radius * 1.15, -radius * 1.15, 0.1, radius * 100)
-      : new THREE.PerspectiveCamera(45, aspect, Math.max(radius / 5000, 0.01), radius * 100);
-
-    next.up.copy(old.up);
-    next.position.copy(old.position);
-    // 조명은 카메라의 자식이다 — 카메라를 갈아끼울 때 함께 옮겨야 화면이 어두워지지 않는다.
-    [...old.children].forEach(child => next.add(child));
-    scene.remove(old);
-    scene.add(next);
-    cameraRef.current = next;
-    controls.object = next;
-    next.lookAt(controls.target);
-    next.updateProjectionMatrix();
-    controls.update();
-    requestRender();
-  }, [orthographic, requestRender]);
 
   /* ── 전체화면 ─────────────────────────────────────────── */
   useEffect(() => {
@@ -783,6 +1009,37 @@ export default function FeModelViewer({
     >
       <div ref={mountRef} className="absolute inset-0" />
 
+      {/* 박스 선택 사각형 — 화면 좌표라 컨테이너 기준으로 되돌려 그린다. */}
+      {boxRect && containerRef.current && (() => {
+        const host = containerRef.current.getBoundingClientRect();
+        const x = Math.min(boxRect.x0, boxRect.x1) - host.left;
+        const y = Math.min(boxRect.y0, boxRect.y1) - host.top;
+        return (
+          <div
+            className="absolute border-2 border-emerald-400 bg-emerald-400/15 pointer-events-none z-20"
+            style={{
+              left: x, top: y,
+              width: Math.abs(boxRect.x1 - boxRect.x0),
+              height: Math.abs(boxRect.y1 - boxRect.y0),
+            }}
+          />
+        );
+      })()}
+
+      {/* 픽 모드 조작 안내 — 회전을 뺏지 않았다는 사실을 알려야 헤매지 않는다. */}
+      {pick && chrome && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 rounded-lg bg-slate-900/85 backdrop-blur
+                        border border-emerald-500/40 px-3 py-1.5 text-[10px] text-slate-200 pointer-events-none
+                        whitespace-nowrap">
+          <b className="text-emerald-300">지지점 지정</b>
+          <span className="mx-2 text-slate-500">|</span>좌클릭 = 추가·해제
+          <span className="mx-2 text-slate-500">|</span>우클릭 = 해제
+          <span className="mx-2 text-slate-500">|</span>Shift+드래그 = 박스 추가
+          <span className="mx-2 text-slate-500">|</span>Alt+드래그 = 박스 해제
+          <span className="mx-2 text-slate-500">|</span>드래그 = 회전
+        </div>
+      )}
+
       {/* ── 상단 툴바 ── */}
       {chrome && (
       <div className="absolute top-2 left-2 right-2 flex flex-wrap items-start gap-2 pointer-events-none">
@@ -817,9 +1074,12 @@ export default function FeModelViewer({
         </div>
 
         <div className="flex items-center gap-1 rounded-lg bg-slate-900/80 backdrop-blur px-1.5 py-1 border border-slate-700/70 pointer-events-auto ml-auto">
-          <button onClick={() => setOrthographic(v => !v)} title="원근 / 정투영 전환" className={`${btn} ${orthographic ? btnOn : btnIdle}`}>
-            <Box size={10} className="inline mr-0.5" />{orthographic ? '정투영' : '원근'}
-          </button>
+          <span
+            className="px-1.5 text-[9px] font-bold text-slate-300"
+            title="모델 카메라는 정투영으로 고정됩니다."
+          >
+            정투영 고정
+          </span>
           <button onClick={() => setShowGrid(v => !v)} title="바닥 격자" className={`${btn} ${showGrid ? btnOn : btnIdle}`}>
             <Grid3x3 size={10} />
           </button>

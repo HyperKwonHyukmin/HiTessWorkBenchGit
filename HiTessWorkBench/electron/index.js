@@ -8,6 +8,7 @@ const crypto  = require("crypto");
 const { spawn } = require("child_process");
 const { buildUpdateHelperVbs } = require("./update-helper");
 const { ViewerSessionRegistry, isSourceStale } = require("./viewer-sessions");
+const { responseHeadersWithWorkbenchCsp } = require("./response-security");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
 // 다이얼로그 제목으로 사용됨. 미설정 시 개발 모드 기본값 'electron-app' 이 노출되므로,
@@ -1683,6 +1684,66 @@ ipcMain.handle("viewer:runUnitStructural", async (event, payload) => {
   }
 });
 
+// ModuleUnitStudio "보고서 생성" → 백엔드가 저장된 결과 JSON 만으로 표준 검토 보고서(xlsx)를
+// 만들어(그림도 백엔드가 렌더) 사용자 PC에 저장한다. Studio 캡처는 보내지 않는다.
+ipcMain.handle("viewer:generateUnitLiftingReport", async (event, payload) => {
+  try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
+    const analysisId = Number(payload?.analysisId);
+    if (!Number.isInteger(analysisId) || analysisId <= 0) {
+      return { ok: false, error: "성공한 Unit 구조 해석 analysisId가 없습니다." };
+    }
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
+    if (!runtimeConfig.employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+    const { res } = await fetchWithSessionRefresh(
+      `${runtimeConfig.serverUrl}/api/analysis/unit-structural/report`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysisId,
+          kind: payload.kind === "detail" ? "detail" : "result",
+          options: payload.options || {},
+        }),
+      },
+      runtimeConfig,
+    );
+    if (!res.ok) {
+      const detail = await readBackendError(res);
+      return { ok: false, error: `보고서 생성 실패: ${res.status}${detail ? ` - ${detail}` : ""}` };
+    }
+
+    const reportBuffer = Buffer.from(await res.arrayBuffer());
+    const encodedName = res.headers.get("x-report-filename") || "";
+    let fileName = payload.kind === "detail"
+      ? "Module_Unit_권상_구조_검토_보고서.xlsx"
+      : "Module_Unit_권상_구조_해석_보고서.xlsx";
+    try { if (encodedName) fileName = decodeURIComponent(encodedName); } catch {}
+    let warnings = [];
+    try {
+      const raw = res.headers.get("x-report-warnings");
+      if (raw) warnings = JSON.parse(decodeURIComponent(raw));
+    } catch {}
+
+    const target = windowOfSession(session) || mainWindow;
+    const saveRes = await dialog.showSaveDialog(target, {
+      title: payload.kind === "detail" ? "상세 레포트 저장" : "결과 레포트 저장",
+      defaultPath: fileName,
+      filters: [{ name: "Excel 통합 문서", extensions: ["xlsx"] }],
+    });
+    if (saveRes.canceled || !saveRes.filePath) {
+      return { ok: false, canceled: true, error: "저장이 취소되었습니다." };
+    }
+    fs.writeFileSync(saveRes.filePath, reportBuffer);
+    return { ok: true, savedPath: saveRes.filePath, warnings };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 // ── Plate Studio: BDF 본문 업로드 → Nastran SOL 101 → 결과 JSON ──
 // Studio 내 'Analysis' 탭 의 "구조해석 수행" 버튼 한 번으로 백엔드 job 시작 + 폴링 + 결과 JSON 다운로드까지 main 이 처리.
 // 진행 상황은 viewer:plate-structural-progress 로 stream.
@@ -2044,6 +2105,166 @@ ipcMain.handle("viewer:runModelBuilderSolve", async (event, payload) => {
   }
 });
 
+// MooringFittingStudio "보고서 그림 캡쳐" → 백엔드 report-figures(서버 out/figures_studio 에 저장).
+// 보고서(report verb)는 --figures 로 이 폴더를 받으면 엔진이 그린 그림 대신 Studio 캡쳐를 쓴다.
+// payload = { figures: [{ name, data(base64 또는 dataURL) }] }, 반환 = { ok, saved } | { ok:false, error }
+ipcMain.handle("viewer:saveMooringReportFigures", async (event, payload) => {
+  try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
+    const figures = Array.isArray(payload?.figures) ? payload.figures : [];
+    if (figures.length === 0) return { ok: false, error: "보낼 캡쳐가 없습니다." };
+    if (!session.outputDir) {
+      return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 해석을 완료하고 Studio 를 다시 여세요." };
+    }
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
+    const { serverUrl } = runtimeConfig;
+    if (!runtimeConfig.employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+
+    const { res } = await fetchWithSessionRefresh(
+      `${serverUrl}/api/analysis/mooring-fitting/report-figures`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ output_dir: session.outputDir, figures }),
+      },
+      runtimeConfig,
+    );
+    if (!res.ok) {
+      const detail = await readBackendError(res);
+      const hint = res.status === 404
+        ? ` - report-figures API가 해당 서버에 없습니다. 서버(${serverUrl})가 최신 WorkBench 백엔드인지 확인하세요.`
+        : "";
+      return { ok: false, error: `캡쳐 저장 실패: ${res.status}${detail ? ` - ${detail}` : ""}${hint}` };
+    }
+    const body = await res.json();
+    return { ok: true, saved: body?.saved ?? figures.length };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
+// MooringFittingStudio 보고서 1단계 — 캡쳐 계획(report-plan). 어느 LC 의 어느 부재를 강조해
+// 찍을지 엔진이 정해 out/REPORT_PLAN.json 으로 남기고, 그 내용을 Studio 에 돌려준다.
+// Studio 는 이 계획대로 3D 를 찍은 뒤 보고서를 만든다(한 버튼 안에서 연속 실행).
+// payload = { top?, yieldStrength?, gammaM? }, 반환 = { ok, plan } | { ok:false, error }
+ipcMain.handle("viewer:buildMooringReportPlan", async (event, payload) => {
+  try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
+    if (!session.outputDir) {
+      return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 해석을 완료하고 Studio 를 다시 여세요." };
+    }
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
+    const { serverUrl } = runtimeConfig;
+    if (!runtimeConfig.employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+
+    const body = { output_dir: session.outputDir };
+    if (payload?.top != null) body.top = payload.top;
+    if (payload?.yieldStrength != null) body.yield_strength = payload.yieldStrength;
+    if (payload?.gammaM != null) body.gamma_m = payload.gammaM;
+
+    const { res } = await fetchWithSessionRefresh(
+      `${serverUrl}/api/analysis/mooring-fitting/report-plan`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      runtimeConfig,
+    );
+    if (!res.ok) {
+      const detail = await readBackendError(res);
+      const hint = res.status === 404
+        ? ` - report-plan API가 해당 서버에 없습니다. 서버(${serverUrl})가 최신 WorkBench 백엔드인지 확인하세요.`
+        : "";
+      return { ok: false, error: `캡쳐 계획 생성 실패: ${res.status}${detail ? ` - ${detail}` : ""}${hint}` };
+    }
+    const out = await res.json();
+    return { ok: true, plan: out?.plan ?? null };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
+// MooringFittingStudio "보고서 생성" → 백엔드 report(강도검토 xlsx 생성) → report-download → 사용자 PC 저장.
+// Studio 는 구조해석이 끝난 뒤에만 이 버튼을 노출한다. 백엔드도 out/mooring_solve_CalcVerify.csv 가
+// 없으면 409 로 거절하므로(거짓 Pass 방지) 두 겹으로 막힌다.
+// payload = { useStudioFigures?, top?, yieldStrength?, gammaM?, hullNo?, dwgNo?, reportDate?, title?, fitting? }
+// 반환 = { ok, savedPath, pages, warnings, usedStudioFigures } | { ok:false, canceled?, error }
+ipcMain.handle("viewer:generateMooringReport", async (event, payload) => {
+  try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
+    if (!session.outputDir) {
+      return { ok: false, error: "서버측 output_dir 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 해석을 완료하고 Studio 를 다시 여세요." };
+    }
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
+    const { serverUrl } = runtimeConfig;
+    if (!runtimeConfig.employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+
+    // 1) 보고서 생성 — 동기(실측 ~5초). 경고는 저장 전에 사용자에게 돌려준다.
+    const body = {
+      output_dir: session.outputDir,
+      use_studio_figures: payload?.useStudioFigures !== false,
+    };
+    if (payload?.top != null) body.top = payload.top;
+    if (payload?.yieldStrength != null) body.yield_strength = payload.yieldStrength;
+    if (payload?.gammaM != null) body.gamma_m = payload.gammaM;
+    if (payload?.hullNo) body.hull_no = payload.hullNo;
+    if (payload?.dwgNo) body.dwg_no = payload.dwgNo;
+    if (payload?.reportDate) body.report_date = payload.reportDate;
+    if (payload?.title) body.title = payload.title;
+    if (payload?.fitting) body.fitting = payload.fitting;
+
+    const { res: genRes } = await fetchWithSessionRefresh(
+      `${serverUrl}/api/analysis/mooring-fitting/report`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      runtimeConfig,
+    );
+    if (!genRes.ok) {
+      const detail = await readBackendError(genRes);
+      const hint = genRes.status === 404
+        ? ` - 보고서 API가 해당 서버에 없습니다. 서버(${serverUrl})가 최신 WorkBench 백엔드인지 확인하세요.`
+        : "";
+      return { ok: false, error: `보고서 생성 실패: ${genRes.status}${detail ? ` - ${detail}` : ""}${hint}` };
+    }
+    const meta = await genRes.json();
+
+    // 2) 생성된 xlsx 다운로드 — DRM 때문에 백엔드가 read() 바이트로 내려보낸다.
+    const dlUrl = `${serverUrl}/api/analysis/mooring-fitting/report-download?output_dir=${encodeURIComponent(session.outputDir)}`;
+    const { res: dlRes } = await fetchWithSessionRefresh(dlUrl, { method: "GET" }, runtimeConfig);
+    if (!dlRes.ok) {
+      const detail = await readBackendError(dlRes);
+      return { ok: false, error: `보고서 다운로드 실패: ${dlRes.status}${detail ? ` - ${detail}` : ""}` };
+    }
+    const buf = Buffer.from(await dlRes.arrayBuffer());
+
+    // 3) 사용자 PC 저장 (저장 대화상자)
+    const target = windowOfSession(session) || mainWindow;
+    const saveRes = await dialog.showSaveDialog(target, {
+      title: "Mooring Fitting 강도검토 보고서 저장",
+      defaultPath: meta?.fileName || "MooringFitting_Report.xlsx",
+      filters: [{ name: "Excel 통합 문서", extensions: ["xlsx"] }],
+    });
+    if (saveRes.canceled || !saveRes.filePath) {
+      return { ok: false, canceled: true, error: "저장이 취소되었습니다." };
+    }
+    fs.writeFileSync(saveRes.filePath, buf);
+    return {
+      ok: true,
+      savedPath: saveRes.filePath,
+      pages: meta?.pages ?? null,
+      warnings: Array.isArray(meta?.warnings) ? meta.warnings : [],
+      usedStudioFigures: !!meta?.usedStudioFigures,
+    };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 // MooringFittingStudio "최종 BDF 출력" → 백엔드 apply-edit(편집 반영 BDF 생성) → 사용자 PC 저장(대화상자).
 // runMooringStructural 과 동일하게 session.outputDir(서버측 out 폴더) 기준으로 동작한다.
 // MooringFittingStudio 는 zip 추출 데이터만 보유해 로컬 폴더가 없으므로, 서버측 out 폴더에서 BDF 를 만들어 내려받는다.
@@ -2271,20 +2492,14 @@ app.whenReady().then(() => {
   session.defaultSession.setProxy({ mode: 'system' })
     .catch((e) => console.warn("[proxy] system proxy setup failed:", e?.message || e));
 
-  // CSP 헤더 설정 — XSS 방어
-  // connect-src는 사용자가 설정한 내부망 서버 URL을 허용해야 하므로 http:/https:/ws: 전체 허용
+  // CSP 헤더 설정 — XSS 방어. WorkBench 본창에만 적용한다.
+  // 외부 앱 창의 응답에 이 CSP를 덮어쓰면 해당 앱의 CDN 모듈 등이 차단될 수 있다.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const mainWebContentsId = mainWindow && !mainWindow.isDestroyed()
+      ? mainWindow.webContents.id
+      : null;
     callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        "Content-Security-Policy": [
-          "default-src 'self' http: https:; " +
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
-          "style-src 'self' 'unsafe-inline'; " +
-          "img-src 'self' data: blob: https:; " +
-          "connect-src 'self' http: https: ws: wss:;"
-        ]
-      }
+      responseHeaders: responseHeadersWithWorkbenchCsp(details, mainWebContentsId),
     });
   });
 

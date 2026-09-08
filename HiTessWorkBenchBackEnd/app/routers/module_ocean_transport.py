@@ -21,14 +21,31 @@ import logging
 import os
 import shutil
 import urllib.parse
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import (
+    APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile,
+)
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field, model_validator
 
 from .. import database
 from ..dependencies import require_auth
 from ._access_control import assert_current_user_can_access_path
 from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
+from ..services.job_manager import JobMetadata
+from ..services.module_ocean_structural_service import (
+    PROGRAM_NAME as STRUCTURAL_PROGRAM_NAME,
+    reassess_weld,
+    task_execute_ocean_structural,
+)
+from ..services.module_ocean_acceleration import (
+    BargeAccelerationError,
+    calculate_barge_acceleration,
+)
+from ..services.module_ocean_bdf import DEFAULT_SMALL_BORE_MAX_OD_MM
+from ..services.module_ocean_merge import DEFAULT_CLEARANCE_MM
+from ..services.module_ocean_weld import DEFAULT_WELD_SPEC
 from ..services.module_ocean_transport_service import (
     DEFAULT_DECK_TYPE,
     ModelParseError,
@@ -36,7 +53,7 @@ from ..services.module_ocean_transport_service import (
     get_model_viewer_payload,
     list_jungban_deck_types,
 )
-from ._intake import make_work_dir, submit_analysis_job
+from ._intake import make_work_dir, save_upload, submit_analysis_job
 # 샘플 실행 쿼터는 analysis.py 의 공용 트래커를 그대로 쓴다 —
 # 앱마다 dict 를 따로 두면 한도 정책이 갈라진다(analysis.py 는 이 모듈을 import 하지 않아 순환 없음).
 from .analysis import (
@@ -156,6 +173,13 @@ def viewer_model(
 # 샘플도 같은 태스크·같은 program_name 으로 돌려 결과 스키마를 완전히 일치시킨다.
 # 그래야 2단계 뷰어가 쓰는 result_info.JSON_ModelInfo 가 동일하게 나온다.
 
+# userConnection 작업 폴더명이자 DB program_name.
+# 1단계 검증 엔진(task_execute_groupmoduleunit)은 GMU 것을 그대로 재사용하되,
+# **폴더와 기록은 이 앱 이름으로 남긴다** — 그래야 사용자가 해석 산출물을 찾을 수 있고
+# 2·3단계가 만드는 파일이 GMU 작업 폴더에 섞이지 않는다.
+# (SidePassage 가 같은 엔진을 쓰면서 자기 이름으로 폴더를 만드는 것과 같은 방식이다.)
+PROGRAM_NAME = "ModuleOceanMoving"
+
 _SAMPLE_PROGRAM_KEY = "moduleoceantransport"
 _SAMPLE_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "SampleFile", "ModuleOceanMoving"))
 
@@ -193,13 +217,15 @@ def run_module_ocean_sample(
     if not bdf_src:
         raise HTTPException(status_code=404, detail="샘플 BDF 파일을 찾을 수 없습니다.")
 
-    work_dir, timestamp = make_work_dir(employee_id, "GroupModuleUnit")
+    work_dir, timestamp = make_work_dir(employee_id, PROGRAM_NAME)
     bdf_path = os.path.join(work_dir, os.path.basename(bdf_src))
     shutil.copyfile(bdf_src, bdf_path)
 
     job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
-        bdf_path, work_dir, employee_id, timestamp, SAMPLE_SOURCE_TAG, False,  # use_nastran=False
+        bdf_path, work_dir, employee_id, timestamp, SAMPLE_SOURCE_TAG,
+        False,            # use_nastran — 샘플은 입력 파싱까지만
+        PROGRAM_NAME,
         owned_work_dir=work_dir,
     )
     if not quota["is_admin"]:
@@ -210,3 +236,281 @@ def run_module_ocean_sample(
         "remaining": SAMPLE_DAILY_LIMIT if quota["is_admin"] else 0,
         "is_admin": quota["is_admin"],
     }
+
+
+# ── 1단계: Module Unit BDF 입력 검증 ─────────────────────────────────────
+# 검증 엔진은 GMU 것을 재사용하지만 **작업 폴더와 DB 기록은 이 앱 이름** 으로 남긴다.
+# 예전에는 프론트가 /api/analysis/groupmoduleunit/request 를 직접 불러 폴더가
+# `..._GroupModuleUnit` 으로 만들어졌고, 3단계 산출물까지 그 안에 쌓여
+# 사용자가 어느 앱의 해석인지 구분할 수 없었다. 앱 가용성 게이트도 GMU 기준으로
+# 걸려 이 앱을 점검 중으로 내려도 업로드가 막히지 않았다.
+
+
+@router.post("/request")
+async def request_module_ocean_transport(
+    bdf_file: UploadFile = File(...),
+    employee_id: str = Form(...),
+    use_nastran: bool = Form(False),
+    source: str = Form("Workbench"),
+    current_user: str = Depends(require_auth),
+):
+    """Module Unit 해상 운송 구조 해석 — 1단계 BDF 입력 검증."""
+    # Form 의 사번은 클라이언트 임의값이라 인증 토큰과 대조해야 한다.
+    if employee_id != current_user:
+        raise HTTPException(status_code=403, detail="본인 사번으로만 요청할 수 있습니다.")
+
+    work_dir, timestamp = make_work_dir(employee_id, PROGRAM_NAME)
+    bdf_path = await save_upload(bdf_file, work_dir, error_prefix="파일 저장 오류")
+    job_id = submit_analysis_job(
+        task_execute_groupmoduleunit,
+        bdf_path, work_dir, employee_id, timestamp, source, use_nastran, PROGRAM_NAME,
+        owned_work_dir=work_dir,
+    )
+    return {"job_id": job_id}
+
+
+# ── 3단계: 구조 해석 수행 ─────────────────────────────────────────────────
+# 과정 1(MU 단독 응력) + 과정 2(Leg 반력)를 한 job 으로 순차 실행한다.
+# 버튼 하나가 결과 한 세트를 만드는 구조다.
+
+class AccelInput(BaseModel):
+    """중력을 포함한 총 가속도[g]. 정지 상태 = (0, 0, -1)."""
+
+    ax: float = 0.0
+    ay: float = 0.0
+    az: float = -1.0
+
+
+class BargeAccelerationInput(BaseModel):
+    """Barge 가속도 원본 Excel의 사용자 입력 셀과 선택 LC."""
+
+    significantWaveHeightM: float = 2.0
+    criticalDampingPct: Literal[3, 5] = 3
+    cargoPosition: Literal["single-center", "multiple-offset"] = "single-center"
+    cargoWeightT: float = 207.7
+    cargoVcgFromBottomM: float = 1.2
+    bargeDepthM: float = 4.5
+    supportHeightM: float = 3.4
+    loadCase: Literal["LC1", "LC2", "LC3", "LC4"] = "LC1"
+
+
+def _calculate_barge_acceleration(body: BargeAccelerationInput) -> dict:
+    try:
+        return calculate_barge_acceleration(
+            significant_wave_height_m=body.significantWaveHeightM,
+            critical_damping_pct=body.criticalDampingPct,
+            cargo_position=body.cargoPosition,
+            cargo_weight_t=body.cargoWeightT,
+            cargo_vcg_from_bottom_m=body.cargoVcgFromBottomM,
+            barge_depth_m=body.bargeDepthM,
+            support_height_m=body.supportHeightM,
+            load_case=body.loadCase,
+        )
+    except BargeAccelerationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/acceleration-calculate")
+def calculate_module_ocean_acceleration(
+    body: BargeAccelerationInput,
+    _employee_id: str = Depends(require_auth),
+):
+    """원본 Barge Excel과 같은 보간으로 선택한 LC 한 개를 계산한다."""
+    return _calculate_barge_acceleration(body)
+
+
+class MaterialInput(BaseModel):
+    sigmaYMPa: float = Field(275.0, gt=0)      # SS275
+    factor: float = Field(0.8, gt=0, le=1.0)   # 허용 = 0.8 × σy = 220 MPa
+
+
+class WeldSpecInput(BaseModel):
+    """네 면 중앙 4분절 용접부 사양.
+
+    상한을 두는 이유는 오타 방어다 — 각장에 800 을 치면 용접 면적이 백 배가 되어
+    무엇이든 OK 로 나오는데, 화면에는 그저 통과로만 보인다.
+    """
+
+    yieldMPa: float = Field(DEFAULT_WELD_SPEC["yieldMPa"], gt=0, le=2000)
+    safetyFactor: float = Field(DEFAULT_WELD_SPEC["safetyFactor"], gt=0, le=20)
+    plateHeightMm: float = Field(DEFAULT_WELD_SPEC["plateHeightMm"], gt=0, le=10000)
+    plateBreadthMm: float = Field(DEFAULT_WELD_SPEC["plateBreadthMm"], gt=0, le=10000)
+    tackCount: int = Field(int(DEFAULT_WELD_SPEC["tackCount"]), ge=4, le=4)
+    weldLengthMm: float = Field(DEFAULT_WELD_SPEC["weldLengthMm"], gt=0, le=5000)
+    weldLegMm: float = Field(DEFAULT_WELD_SPEC["weldLegMm"], gt=0, le=200)
+    # schema v1 호환 입력. 검증 전에 새 직사각형 치수로 확장하고 응답에서는 숨긴다.
+    padSizeMm: float | None = Field(None, gt=0, le=10000, exclude=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def expand_legacy_square_pad(cls, data):
+        if not isinstance(data, dict) or data.get("padSizeMm") is None:
+            return data
+        expanded = dict(data)
+        expanded.setdefault("plateHeightMm", expanded["padSizeMm"])
+        expanded.setdefault("plateBreadthMm", expanded["padSizeMm"])
+        return expanded
+
+    @model_validator(mode="after")
+    def weld_must_fit_plate(self):
+        shortest_side = min(self.plateHeightMm, self.plateBreadthMm)
+        if self.weldLengthMm > shortest_side:
+            raise ValueError(
+                "용접 길이는 Plate 높이와 폭보다 클 수 없습니다 "
+                f"(용접 {self.weldLengthMm:g} mm, 최소 변 {shortest_side:g} mm)."
+            )
+        return self
+
+
+class PlacementInput(BaseModel):
+    """2단계에서 확정한 적치 배치. 서버가 Module Unit 절점을 정반 좌표로 옮길 때 쓴다.
+
+    deckCenterMm/deckTopZMm 은 화면이 계산한 값이다. 서버도 정반 BDF 에서 같은 값을
+    다시 찾아 **대조**한다 — 어긋나면 사용자가 본 자리와 다른 자리에서 해석이 돈다.
+    """
+
+    anchorMm: list[float]                      # 모듈 bbox XY 중심 + 최저 Z
+    rotationZDeg: float = 0.0
+    offsetXMm: float = 0.0
+    offsetYMm: float = 0.0
+    deckCenterMm: list[float] | None = None
+    deckTopZMm: float | None = None
+    # 화면이 계산한 적치 높이(기준 적치면 대비). 서버도 지지점 발밑 적치면에서 다시
+    # 계산해 대조한다 — 2단 정반의 층 판정이 어긋나면 여기서 걸린다.
+    gapMm: float | None = None
+
+    @model_validator(mode="after")
+    def coordinates_must_be_complete(self):
+        if len(self.anchorMm) != 3:
+            raise ValueError("anchorMm 은 [x, y, z] 3개여야 합니다.")
+        if self.deckCenterMm is not None and len(self.deckCenterMm) != 2:
+            raise ValueError("deckCenterMm 은 [x, y] 2개여야 합니다.")
+        return self
+
+
+class StructuralRunRequest(BaseModel):
+    bdf_path: str
+    deck_type: str = DEFAULT_DECK_TYPE
+    support_node_ids: list[int]
+    placement: PlacementInput
+    # 정반 적치면과 지지점 사이 이격. 사용자 결정으로 DEFAULT_CLEARANCE_MM 고정이며,
+    # 이 값 덕분에 어떤 부재도 정반 쉘을 통과할 수 없다(하한도 같은 상수라 더 낮출 수 없다).
+    clearance_mm: float = Field(DEFAULT_CLEARANCE_MM, ge=DEFAULT_CLEARANCE_MM, le=5000.0)
+    # 판정에서 뺄 소구경 배관의 외경 상한(mm). 0 = 제외 안 함.
+    # 상한 200mm 는 "소구경"이라 부를 수 있는 범위의 끝이다 — 그보다 크면 사실상
+    # 배관 전체를 빼는 것이라 부재 평가라는 취지가 무너진다.
+    small_bore_max_od_mm: float = Field(DEFAULT_SMALL_BORE_MAX_OD_MM, ge=0.0, le=200.0)
+    deck_contingency_pct: float = Field(0.0, ge=-50.0, le=200.0)
+    module_contingency_pct: float = Field(0.0, ge=-50.0, le=200.0)
+    total_mass_t: float = Field(..., gt=0)
+    total_cog_mm: list[float]
+    accel: AccelInput = AccelInput()
+    # 있으면 서버가 다시 계산해 accel과 일치하는지 확인하고 해석 이력에도 남긴다.
+    accelerationCalculation: BargeAccelerationInput | None = None
+    material: MaterialInput = MaterialInput()
+    weld: WeldSpecInput = WeldSpecInput()
+    parent_analysis_id: int | None = None
+
+
+@router.post("/structural-run")
+def run_structural_analysis(
+    body: StructuralRunRequest,
+    employee_id: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """2단계 적치 결과로 정반 + Module Unit 합본 모델을 한 번 풀어
+
+    ① Module Unit 부재 응력 ② 정반 Leg 반력·용접 판정 을 함께 낸다."""
+    bdf_path = os.path.abspath(body.bdf_path)
+    if not _is_within_dir(_USER_CONNECTION_DIR, bdf_path) or not os.path.isfile(bdf_path):
+        raise HTTPException(status_code=400, detail="BDF 경로가 올바르지 않습니다.")
+    assert_current_user_can_access_path(bdf_path, employee_id, db, _USER_CONNECTION_DIR)
+
+    if not body.support_node_ids:
+        raise HTTPException(status_code=400,
+                            detail="지지점이 없습니다. 2단계에서 지지점을 먼저 지정하세요.")
+    if len(body.total_cog_mm) != 3:
+        raise HTTPException(status_code=400, detail="무게중심 좌표는 [x, y, z] 3개여야 합니다.")
+
+    accel = body.accel
+    acceleration_calculation = None
+    if body.accelerationCalculation is not None:
+        acceleration_calculation = _calculate_barge_acceleration(body.accelerationCalculation)
+        expected = acceleration_calculation["totalAccelerationG"]
+        supplied = {"ax": accel.ax, "ay": accel.ay, "az": accel.az}
+        if any(abs(float(supplied[key]) - float(expected[key])) > 1e-8 for key in supplied):
+            raise HTTPException(
+                status_code=400,
+                detail="가속도 계산 입력과 구조 해석 가속도가 일치하지 않습니다. 다시 계산해주세요.",
+            )
+    if (accel.ax ** 2 + accel.ay ** 2 + accel.az ** 2) <= 0.0:
+        raise HTTPException(status_code=400,
+                            detail="가속도 크기가 0 입니다. 하중이 없어 해석할 수 없습니다.")
+
+    known_decks = {deck["id"] for deck in list_jungban_deck_types()}
+    if body.deck_type not in known_decks:
+        raise HTTPException(status_code=400,
+                            detail=f"알 수 없는 정반 타입입니다: {body.deck_type}")
+
+    payload = {
+        "employee_id": employee_id,
+        "bdf_path": bdf_path,
+        "work_dir": os.path.dirname(bdf_path),
+        "deck_type": body.deck_type,
+        "support_node_ids": body.support_node_ids,
+        "placement": body.placement.model_dump(),
+        "clearance_mm": body.clearance_mm,
+        "small_bore_max_od_mm": body.small_bore_max_od_mm,
+        "deck_contingency_pct": body.deck_contingency_pct,
+        "module_contingency_pct": body.module_contingency_pct,
+        "total_mass_t": body.total_mass_t,
+        "total_cog_mm": body.total_cog_mm,
+        "accel": accel.model_dump(),
+        "acceleration_calculation": acceleration_calculation,
+        "material": body.material.model_dump(),
+        "weld_spec": body.weld.model_dump(),
+        "parent_analysis_id": body.parent_analysis_id,
+        "source": "web",
+    }
+    job_id = submit_analysis_job(
+        task_execute_ocean_structural, payload,
+        queue_message="구조 해석 대기 중...",
+        # payload 가 dict 하나뿐이라 소유자 추론이 안 된다 — 명시적으로 넘긴다.
+        metadata=JobMetadata(employee_id=employee_id,
+                             program_name=STRUCTURAL_PROGRAM_NAME),
+    )
+    logger.info("[ModuleOceanTransport] 구조 해석 제출 job=%s deck=%s supports=%d",
+                job_id, body.deck_type, len(body.support_node_ids))
+    return {"job_id": job_id}
+
+
+# ── 과정 2 이어서: Leg 용접부 재평가 ─────────────────────────────────────
+# 용접 사양(각장·용접길이·tack 개수…)은 반력과 무관하다. 사양을 만질 때마다
+# 20분짜리 Nastran 을 다시 돌릴 이유가 없으므로, 저장된 반력으로 판정만 다시 한다.
+
+
+class WeldAssessRequest(BaseModel):
+    leg_result_json: str
+    weld: WeldSpecInput = WeldSpecInput()
+
+
+@router.post("/weld-assess")
+def assess_leg_weld(
+    body: WeldAssessRequest,
+    employee_id: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """저장된 Leg 반력으로 정반 Leg 용접부를 다시 평가한다(재해석 없음)."""
+    leg_json = os.path.abspath(body.leg_result_json)
+    if not _is_within_dir(_USER_CONNECTION_DIR, leg_json) or not os.path.isfile(leg_json):
+        raise HTTPException(status_code=400, detail="Leg 반력 결과 경로가 올바르지 않습니다.")
+    assert_current_user_can_access_path(leg_json, employee_id, db, _USER_CONNECTION_DIR)
+
+    try:
+        return reassess_weld(leg_json, body.weld.model_dump())
+    except ValueError as exc:
+        # 사양이 잘못됐다는 뜻이라 화면에 그대로 띄운다(어느 항목인지 문장에 들어 있다).
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400,
+                            detail="Leg 반력 결과 파일을 읽을 수 없습니다.") from exc

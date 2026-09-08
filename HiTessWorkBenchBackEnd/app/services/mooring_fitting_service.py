@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import re
 import subprocess
 
 from .analysis_runner import (
@@ -10,6 +11,7 @@ from .analysis_runner import (
     record_analysis,
     update_progress,
 )
+from .mooring_diagnosis import diagnose
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,17 @@ TIMEOUT_SECONDS = 600
 
 # 구조해석(solve-bdf)은 SOL 101 + 다중 SUBCASE 라 build-full 보다 길 수 있어 별도 타임아웃.
 SOLVE_TIMEOUT_SECONDS = 1800
+
+# 보고서(report)는 그림 렌더 + xlsx 조립이라 build-full 보다 짧다(실측 ~5초).
+# 그래도 첫 실행은 figures 를 전부 그리므로 여유를 둔다.
+REPORT_TIMEOUT_SECONDS = 300
+
+# 계류 의장품(MF) 하중 규정 안전계수. 엔진 BuildFullCommand.DefaultMfSafetyFactor 와 같은 값이며,
+# 라우터가 값을 주지 않았을 때 1.0(미적용)으로 떨어지지 않게 하는 두 번째 방어선이다.
+MF_SAFETY_FACTOR_CODE = 1.25
+
+REPORT_FILE_NAME = "MooringFitting_Report.xlsx"
+REPORT_PLAN_FILE_NAME = "REPORT_PLAN.json"
 
 
 def _kill_process_tree(pid: int) -> None:
@@ -142,6 +155,9 @@ def collect_artifacts(out_dir: str, work_dir: str) -> dict:
         "transform_summary_json": _pick("MODEL_TRANSFORM_SUMMARY.json"),
         # 파싱에서 제외된 CSV 행의 사유·행번호·원문
         "parse_skips_csv":        _pick("CSV_Parse_Skips.csv"),
+        # 부재 출신 조인 원본(진단 근거) / 해당 근거로 산출한 진단 문장
+        "model_evidence_json":  _pick("MODEL_EVIDENCE.json"),
+        "diagnosis_json":       _pick("DIAGNOSIS.json"),
         # phase 별 구조적 로그 (진단 원문)
         "engine_log_file":        _pick("engine.log"),
         "stage_jsons":          stage_jsons,
@@ -150,6 +166,47 @@ def collect_artifacts(out_dir: str, work_dir: str) -> dict:
         "raw_json":             _pick("STAGE_00.raw.json"),
         "initial_json":         _pick("STAGE_00.initial.json"),
     }
+
+
+def write_diagnosis_file(out_dir: str, result_json_path: str | None) -> str | None:
+    """
+    out/MODEL_EVIDENCE.json (+ 결과 JSON + EQUILIBRIUM.json) 으로 진단해 out/DIAGNOSIS.json 을 쓴다.
+
+    - MODEL_EVIDENCE.json 이 없으면(엔진이 아직 진단 근거를 내지 않는 구버전 등) 즉시 None —
+      아무것도 쓰지 않는다.
+    - result_json_path 가 없거나 파일이 없으면 result=None 으로 진행한다(해석 전 진단 — 케이스
+      단위 규칙만 평가되고 elementFindings 는 빈 리스트가 된다).
+    - 같은 폴더의 EQUILIBRIUM.json 이 있으면 읽어서 함께 넘긴다.
+    - 진단 실패가 해석·보고서 생성을 막아서는 안 되므로 예외는 잡아 로그만 남기고 None 을 돌려준다.
+    """
+    evidence_path = os.path.join(out_dir, "MODEL_EVIDENCE.json")
+    if not os.path.isfile(evidence_path):
+        return None
+
+    try:
+        with open(evidence_path, "r", encoding="utf-8") as fh:
+            evidence = json.load(fh)
+
+        result = None
+        if result_json_path and os.path.isfile(result_json_path):
+            with open(result_json_path, "r", encoding="utf-8") as fh:
+                result = json.load(fh)
+
+        equilibrium = None
+        equilibrium_path = os.path.join(out_dir, "EQUILIBRIUM.json")
+        if os.path.isfile(equilibrium_path):
+            with open(equilibrium_path, "r", encoding="utf-8") as fh:
+                equilibrium = json.load(fh)
+
+        report = diagnose(evidence, result, equilibrium, None)
+
+        diagnosis_path = os.path.join(out_dir, "DIAGNOSIS.json")
+        with open(diagnosis_path, "w", encoding="utf-8") as fh:
+            json.dump(report, fh, ensure_ascii=False, indent=2)
+        return diagnosis_path
+    except Exception:  # noqa: BLE001 — 진단 실패가 해석/보고서 흐름을 막지 않게 흡수
+        logger.warning("[MooringFitting] DIAGNOSIS.json 생성 실패(무시하고 계속 진행)", exc_info=True)
+        return None
 
 
 def task_execute_mooring_fitting(
@@ -161,7 +218,7 @@ def task_execute_mooring_fitting(
     employee_id: str,
     timestamp: str,
     source: str,
-    mf_safety_factor: float = 1.0,
+    mf_safety_factor: float = MF_SAFETY_FACTOR_CODE,
 ):
     """
     MooringFitting.exe build-full <work_dir> --mf-sf=<sf> 를 호출한다.
@@ -202,6 +259,11 @@ def task_execute_mooring_fitting(
 
         update_progress(job_id, 80, "결과 파일 수집 중...")
         out_dir = os.path.join(work_dir, "out")
+
+        # 해석 전 진단 — Studio 는 build-full 직후에 열리므로, 여기서 만들어 두지 않으면
+        # 입력 누락·하중 0건 같은 케이스 진단이 화면에 못 간다(결과 진단은 solve 후 갱신).
+        write_diagnosis_file(out_dir, None)
+
         result_data = collect_artifacts(out_dir, work_dir)
         if result_data.get("_artifacts_missing"):
             status_msg = "Failed"
@@ -251,15 +313,27 @@ SHEAR_ALLOW_FACTOR = 0.6
 
 def recompute_sigma_ny(payload: dict) -> dict:
     """
-    exe 가 von Mises 기준으로 내보낸 결과 JSON 을 '정응력 σNy / 전단 분리' 평가로 재계산한다.
+    exe 가 von Mises 기준으로 내보낸 결과 JSON 을 '정응력 / 전단 분리' 평가로 재계산한다.
 
-    실적 보고서 방식(닫힌 Chock 평가)에 맞춤 — exe 수정 없이 이미 출력된 성분
-    (nx/my/mz=σNx/σMy/σMz, qy/qz/mx=τQy/τQz/τMx)으로 재계산한다:
-      - 정응력 σN = |σNx| + max(|σMy|, |σMz|)   (= σNy, σNz 중 큰 값, 최악 섬유)  ≤ 허용(σy/γM)
-      - 전단  τ  = max(|τQy|, |τQz|, |τMx|)      (최대 전단 성분)                 ≤ 0.6·허용
+    DNV 3D Beam(Nauticus Hull)의 절차를 그대로 옮긴 것이다. exe 수정 없이 이미 출력된
+    성분(nx/my/mz = σNx/σMy/σMz, qy/qz/mx = τQy/τQz/τMx)으로 재계산한다:
+      - 정응력 σN = |σNx + σMz|  (축력 + 강축=연직면 굽힘, 부호 유지)  ≤ 허용(σy/γM)
+      - 전단  τ  = max(|τQy|, |τQz|, |τMx|)                          ≤ 0.6·허용
       - Usage = max(σN/허용, τ/전단허용),  OK if ≤ 1
-    주의: exe 는 element 당 'von Mises 최악 station' 성분만 출력하므로, σNy 최악 station 이
-          다른 드문 경우 근소한 차이가 있을 수 있다(정밀 일치는 exe solve-bdf 의 station 선정 변경 필요).
+
+    ★ 축 이름 주의 — DNV 와 NASTRAN 의 국부축 규약이 정반대다.
+        DNV 3D Beam : local z = up = 웹 방향  →  My 가 강축, 판정값이 Sig-Ny = Nx + My
+        NASTRAN     : local y = up = 웹 방향  →  Mz 가 강축
+      따라서 DNV 매뉴얼의 Sig-Ny 를 NASTRAN 성분으로 옮기면 |σNx + σMz| 다.
+      (근거: 3D Beam User Manual p.16/17/83/99, NASTRAN 쪽은 AxisTest.bdf/f06 실측)
+
+    약축 조합응력(σNx + σMy)은 화면·보고서 표에 그대로 표시하되 합/불에는 쓰지 않는다 —
+    실제 구조는 상판 판구조이고 면내 수평력은 판이 막응력으로 받으므로, 1D 보로 이상화하며
+    생긴 약축 굽힘은 실제 파괴 모드가 아니다. 보고서(ReportStressEvaluator)와 같은 기준이라
+    두 값이 일치해야 한다.
+
+    exe 가 sigmaNStrong 을 실어 보내면 그 값을 그대로 쓴다(exe 가 최악 station 을 고른다).
+    구버전 결과 JSON 에는 그 필드가 없으므로 성분에서 |σNx + σMz| 로 되계산한다.
     """
     ys = payload.get("yieldStress") or 315.0
     gm = payload.get("gammaM") or 1.0
@@ -274,14 +348,26 @@ def recompute_sigma_ny(payload: dict) -> dict:
         except (TypeError, ValueError):
             return 0.0
 
+    def _signed(v):
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
     g_max_n = g_max_t = g_max_u = 0.0
     overall_ok = True
     for case in payload.get("cases", []):
         c_max_n = c_max_t = c_max_u = 0.0
         for e in case.get("elements", []):
-            nx, my, mz = _abs(e.get("nx")), _abs(e.get("my")), _abs(e.get("mz"))
             mx, qy, qz = _abs(e.get("mx")), _abs(e.get("qy")), _abs(e.get("qz"))
-            sigma_n = nx + max(my, mz)          # σNy/σNz 중 큰 값
+            # 판정 정응력 = 축력 + 강축(연직면) 굽힘 = |σNx + σMz|.
+            # NASTRAN 국부축에서 Mz 가 강축이다(AxisTest 실측). DNV 3D Beam 의 Sig-Ny 와
+            # 같은 값 — 두 문서의 y/z 규약이 반대라 이름만 다르다.
+            # exe 가 실어 보낸 값을 우선 쓰고, 구버전 결과는 성분에서 되계산한다.
+            if e.get("sigmaNStrong") is not None:
+                sigma_n = _abs(e.get("sigmaNStrong"))
+            else:
+                sigma_n = abs(_signed(e.get("nx")) + _signed(e.get("mz")))
             tau = max(qy, qz, mx)               # 최대 전단 성분
             u_n = sigma_n / allow_n if allow_n else 0.0
             u_t = tau / allow_t if allow_t else 0.0
@@ -308,7 +394,7 @@ def recompute_sigma_ny(payload: dict) -> dict:
         g_max_t = max(g_max_t, c_max_t)
         g_max_u = max(g_max_u, c_max_u)
 
-    payload["quantity"] = "sigmaNyNormalShear"
+    payload["quantity"] = "sigmaNStrongNormalShear"
     payload["schemaVersion"] = "3.0"
     payload["allowable"] = round(allow_n, 2)
     payload["allowableShear"] = round(allow_t, 2)
@@ -402,7 +488,10 @@ def task_solve_mooring_fitting(
                 }
             except Exception as exc:
                 logger.warning("[MooringSolve] 결과 요약 파싱 실패: %s", exc)
+            diagnosis_path = write_diagnosis_file(work_dir, result_json_path)
             result_data = {"nastranResultJson": result_json_path, "summary": summary}
+            if diagnosis_path:
+                result_data["diagnosisJson"] = diagnosis_path
         else:
             status_msg = "Failed"
             engine_output += "\n[Error] 결과 JSON 이 생성되지 않았습니다 — Nastran FATAL 또는 solve-bdf 오류일 수 있습니다."
@@ -440,3 +529,134 @@ def task_solve_mooring_fitting(
         success_message="Mooring 구조해석 완료",
         failure_message="Mooring 구조해석 실패",
     )
+
+
+# ==================== 보고서(report / report-plan) ====================
+
+class ReportEngineError(RuntimeError):
+    """report 계열 verb 가 비정상 종료했을 때. exit code 를 보존해 라우터가 상태코드를 고른다.
+
+    엔진 규약: 2 = 선행 조건 미충족(예: 응력 결과 CSV 없음), 그 외 = 실제 실패.
+    """
+
+    def __init__(self, message: str, returncode: int):
+        super().__init__(message)
+        self.returncode = returncode
+
+
+def _report_common_args(case_dir: str, exe_path: str, verb: str,
+                        top: int, yield_strength: float, gamma_m: float) -> list[str]:
+    """report / report-plan 이 공유하는 앞부분 인자."""
+    if not os.path.isfile(exe_path):
+        raise FileNotFoundError(f"실행 파일을 찾을 수 없습니다: {exe_path}")
+    if not os.path.isdir(case_dir):
+        raise FileNotFoundError(f"케이스 폴더가 없습니다: {case_dir}")
+    # --gamma 는 Studio 화면 판정과 같은 허용응력(σy/γM)을 보고서에도 강제하기 위한 것.
+    return [exe_path, verb, case_dir,
+            f"--top={top}", f"--yield={yield_strength}", f"--gamma={gamma_m}"]
+
+
+def _run_report_verb(cmd: list[str], case_dir: str, verb: str) -> str:
+    """report 계열 verb 를 실행하고 stdout+stderr 를 합친 로그를 돌려준다."""
+    returncode, stdout_b, stderr_b = _run_capture(
+        cmd, cwd=case_dir, timeout=REPORT_TIMEOUT_SECONDS,
+    )
+    log = _decode_engine_output(stdout_b)
+    stderr_text = _decode_engine_output(stderr_b)
+    if stderr_text.strip():
+        log += f"\n[stderr] {stderr_text.strip()}"
+    if returncode != 0:
+        raise ReportEngineError(f"{verb} 실패 (exit {returncode})\n{log.strip()}", returncode)
+    return log
+
+
+def build_report(
+    case_dir: str,
+    exe_path: str,
+    *,
+    figures_dir: str | None = None,
+    top: int = 20,
+    yield_strength: float = 315.0,
+    gamma_m: float = 1.0,
+    hull_no: str = "",
+    dwg_no: str = "",
+    report_date: str = "",
+    title: str = "",
+    fitting: str = "",
+) -> dict:
+    """
+    MooringFitting.exe report <case-folder> ... 로 강도검토 보고서 xlsx 를 만든다.
+
+    case_dir 은 out/ 의 '부모'다 — 엔진의 report verb 는 케이스 폴더를 받고
+    스스로 out/ 안을 읽는다. 라우터가 out_dir 을 받으면 부모로 올려서 넘겨야 한다.
+
+    표제 항목(hull/dwg/date/title/fitting)은 값이 비면 인자를 아예 넘기지 않는다.
+    빈 문자열을 넘기면 엔진의 기본값(예: 오늘 날짜, 기본 제목)을 덮어써 버리기 때문이다.
+
+    figures_dir 이 있으면 --figures 로 넘어가 Studio 캡쳐가 엔진 렌더보다 우선한다.
+
+    실패(비정상 종료 또는 xlsx 미생성)는 엔진 로그를 담은 RuntimeError 로 올린다.
+    """
+    cmd = _report_common_args(case_dir, exe_path, "report", top, yield_strength, gamma_m)
+
+    out_path = os.path.join(case_dir, "out", REPORT_FILE_NAME)
+    cmd += ["-o", out_path]
+
+    if figures_dir and os.path.isdir(figures_dir):
+        cmd.append(f"--figures={figures_dir}")
+
+    for flag, value in (("hull", hull_no), ("dwg", dwg_no), ("date", report_date),
+                        ("title", title), ("fitting", fitting)):
+        if value and value.strip():
+            cmd.append(f"--{flag}={value.strip()}")
+
+    log = _run_report_verb(cmd, case_dir, "report")
+
+    if not os.path.isfile(out_path):
+        raise RuntimeError(f"보고서 파일이 생성되지 않았습니다: {out_path}\n{log.strip()}")
+
+    return {
+        "xlsx_path": out_path,
+        "log": log,
+        "pages": _parse_report_pages(log),
+        "warnings": _parse_report_warnings(log),
+    }
+
+
+def build_report_plan(
+    case_dir: str,
+    exe_path: str,
+    *,
+    top: int = 20,
+    yield_strength: float = 315.0,
+    gamma_m: float = 1.0,
+) -> dict:
+    """
+    MooringFitting.exe report-plan 으로 out/REPORT_PLAN.json 을 만든다.
+
+    Studio 가 이 파일을 읽어 '어느 부재에 라벨을 달고 무엇을 캡쳐할지' 정한다.
+    보고서 그림을 Studio 캡쳐로 채우려면 report 보다 먼저 호출해야 한다.
+    """
+    cmd = _report_common_args(case_dir, exe_path, "report-plan", top, yield_strength, gamma_m)
+    log = _run_report_verb(cmd, case_dir, "report-plan")
+
+    plan_path = os.path.join(case_dir, "out", REPORT_PLAN_FILE_NAME)
+    if not os.path.isfile(plan_path):
+        raise RuntimeError(f"보고서 계획 파일이 생성되지 않았습니다: {plan_path}\n{log.strip()}")
+
+    return {"plan_path": plan_path, "log": log}
+
+
+def _parse_report_pages(log: str) -> int | None:
+    """'[report] <path>  (33 pages)' 에서 페이지 수만 뽑는다. 못 찾으면 None."""
+    m = re.search(r"\((\d+)\s+pages?\)", log)
+    return int(m.group(1)) if m else None
+
+
+def _parse_report_warnings(log: str) -> list[str]:
+    """엔진이 '   [Warning] ...' 로 내보낸 줄만 모은다(결과 최신성 경고 등)."""
+    return [
+        line.split("[Warning]", 1)[1].strip()
+        for line in log.splitlines()
+        if "[Warning]" in line
+    ]

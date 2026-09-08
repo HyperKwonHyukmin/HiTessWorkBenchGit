@@ -1,0 +1,258 @@
+{
+ "Schema": "module-analysis-hoist-optimization/0.1",
+ "GeneratedAt": "2026-09-07T05:57:14Z",
+ "SourcePosture": "3496-35210-A508372_20260108_edit_posture.json",
+ "ModeId": "hydro",
+ "ModeLabel": "Hydro 방식",
+ "WireLengthM": 8,
+ "CandidateCount": 40000,
+ "EvaluatedCount": 21352,
+ "Current": {
+  "Label": "current",
+  "Score": -40956.208,
+  "OverallStatus": "fail",
+  "GroupCount": 1,
+  "Metrics": {
+   "stage6Status": "fail",
+   "evaluationMode": "Point",
+   "stage6MarginMm": -3071.57,
+   "stage6DeviationMm": 3230.81,
+   "minSlingAngleDeg": 79.18,
+   "wireConflictCount": 3,
+   "failedStages": [
+    6
+   ],
+   "supportSpanFraction": 0,
+   "supportSpanNarrow": true
+  }
+ },
+ "Best": {
+  "Label": "regions-3g-b",
+  "Score": 1165985.319,
+  "OverallStatus": "pass",
+  "GroupCount": 3,
+  "Groups": [
+   {
+    "Id": 1,
+    "NodeIds": [
+     34,
+     2873
+    ],
+    "Nodes": [
+     {
+      "Id": 34,
+      "X": 110340,
+      "Y": -7195,
+      "Z": 30376
+     },
+     {
+      "Id": 2873,
+      "X": 113768,
+      "Y": -7195,
+      "Z": 30376
+     }
+    ]
+   },
+   {
+    "Id": 2,
+    "NodeIds": [
+     2728,
+     1378
+    ],
+    "Nodes": [
+     {
+      "Id": 2728,
+      "X": 115235,
+      "Y": -10137,
+      "Z": 30589.5
+     },
+     {
+      "Id": 1378,
+      "X": 115286,
+      "Y": -7195,
+      "Z": 30376
+     }
+    ]
+   },
+   {
+    "Id": 3,
+    "NodeIds": [
+     26,
+     19,
+     18
+    ],
+    "Nodes": [
+     {
+      "Id": 26,
+      "X": 110705,
+      "Y": -4485,
+      "Z": 30376
+     },
+     {
+      "Id": 19,
+      "X": 115955,
+      "Y": -1500,
+      "Z": 30376
+     },
+     {
+      "Id": 18,
+      "X": 110705,
+      "Y": -1500,
+      "Z": 30376
+     }
+    ]
+   }
+  ],
+  "Metrics": {
+   "stage6Status": "pass",
+   "evaluationMode": "ConvexPolygon",
+   "stage6MarginMm": 563.14,
+   "stage6DeviationMm": 0,
+   "minSlingAngleDeg": 65.54,
+   "wireConflictCount": 6,
+   "failedStages": [],
+   "supportSpanFraction": 0.466,
+   "supportSpanNarrow": true,
+   "groupSpanFraction": 0.3734,
+   "groupSpanNarrow": false
+  }
+ },
+ "Candidates": [
+  {
+   "Label": "regions-3g-b",
+   "Score": 1165985.319,
+   "OverallStatus": "pass",
+   "GroupCount": 3,
+   "Groups": [
+    {
+     "Id": 1,
+     "NodeIds": [
+      34,
+      2873
+     ],
+     "Nodes": [
+      {
+       "Id": 34,
+       "X": 110340,
+       "Y": -7195,
+       "Z": 30376
+      },
+      {
+       "Id": 2873,
+       "X": 113768,
+       "Y": -7195,
+       "Z": 30376
+      }
+     ]
+    },
+    {
+     "Id": 2,
+     "NodeIds": [
+      2728,
+      1378
+     ],
+     "Nodes": [
+      {
+       "Id": 2728,
+       "X": 115235,
+       "Y": -10137,
+       "Z": 30589.5
+      },
+      {
+       "Id": 1378,
+       "X": 115286,
+       "Y": -7195,
+       "Z": 30376
+      }
+     ]
+    },
+    {
+     "Id": 3,
+     "NodeIds": [
+      26,
+      19,
+      18
+     ],
+     "Nodes": [
+      {
+       "Id": 26,
+       "X": 110705,
+       "Y": -4485,
+       "Z": 30376
+      },
+      {
+       "Id": 19,
+       "X": 115955,
+       "Y": -1500,
+       "Z": 30376
+      },
+      {
+       "Id": 18,
+       "X": 110705,
+       "Y": -1500,
+       "Z": 30376
+      }
+     ]
+    }
+   ],
+   "Metrics": {
+    "stage6Status": "pass",
+    "evaluationMode": "ConvexPolygon",
+    "stage6MarginMm": 563.14,
+    "stage6DeviationMm": 0,
+    "minSlingAngleDeg": 65.54,
+    "wireConflictCount": 6,
+    "failedStages": [],
+    "supportSpanFraction": 0.466,
+    "supportSpanNarrow": true,
+    "groupSpanFraction": 0.3734,
+    "groupSpanNarrow": false
+   }
+  }
+ ],
+ "SearchTrace": {
+  "ThreadsUsed": 22,
+  "ElapsedMs": 7241,
+  "TotalCombosScanned": 42250,
+  "LayoutsAssembled": 42621,
+  "LayoutsBracketed": 40000,
+  "LayoutsEvaluated": 21352,
+  "PassCount": 10130,
+  "WarnCount": 11222,
+  "FailCount": 0,
+  "StageFailHistogram": {},
+  "Zones": [
+   {
+    "GroupId": 1,
+    "RegionId": "zone-0-0",
+    "AllowedNodeCount": 478,
+    "RequestedPoints": 2,
+    "ZLevels": 1,
+    "CombosScanned": 529,
+    "ShapeValidCount": 318,
+    "KeptForAssembly": 40
+   },
+   {
+    "GroupId": 2,
+    "RegionId": "zone-0-1",
+    "AllowedNodeCount": 378,
+    "RequestedPoints": 2,
+    "ZLevels": 1,
+    "CombosScanned": 568,
+    "ShapeValidCount": 190,
+    "KeptForAssembly": 40
+   },
+   {
+    "GroupId": 3,
+    "RegionId": "zone-1-0",
+    "AllowedNodeCount": 613,
+    "RequestedPoints": 3,
+    "ZLevels": 1,
+    "CombosScanned": 6641,
+    "ShapeValidCount": 6505,
+    "KeptForAssembly": 40
+   }
+  ],
+  "EvaluationErrorCount": 0
+ }
+}

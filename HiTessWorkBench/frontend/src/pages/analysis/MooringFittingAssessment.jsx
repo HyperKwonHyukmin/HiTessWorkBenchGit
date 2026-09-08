@@ -4,7 +4,7 @@ import {
   Upload, CheckCircle2, AlertCircle, Download,
   ChevronDown, Loader2, RefreshCw,
   FileSpreadsheet, AlertTriangle, ChevronsRight, RotateCcw,
-  ExternalLink, PackageX, ShieldCheck,
+  ExternalLink, PackageX, ShieldCheck, FileText, Camera,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useDashboard } from '../../contexts/DashboardContext';
@@ -807,6 +807,275 @@ function FinalValidationPanel({ validationJson, loading, error, onDownload, resu
    MooringStudioLauncher
    ──────────────────────────────────────────────────────────────────────── */
 
+/** 확신도별 색. 판정 강도를 색으로 먼저 읽히게 한다. */
+const CONFIDENCE_STYLE = {
+  '확정': { chip: 'bg-red-100 text-red-700',      box: 'border-red-200 bg-red-50/60' },
+  '유력': { chip: 'bg-amber-100 text-amber-700',  box: 'border-amber-200 bg-amber-50/60' },
+  '참고': { chip: 'bg-slate-200 text-slate-600',  box: 'border-slate-200 bg-slate-50' },
+};
+
+/** 보고서 표제 입력 한 칸. ReportPanel 밖에 두어야 타이핑 중 포커스가 유지된다. */
+function ReportField({ label, value, onChange, placeholder }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</span>
+      <input
+        type="text" value={value} onChange={onChange} placeholder={placeholder}
+        className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700
+                   focus:border-blue-400 focus:outline-none"
+      />
+    </label>
+  );
+}
+
+/**
+ * 강도검토 보고서 생성 패널 — 표제 정보를 받아 엔진 report verb 를 돌리고 xlsx 를 받는다.
+ *
+ * 생성과 내려받기를 두 번의 호출로 나눈 이유: 엔진이 내는 경고(예: 결과 CSV 가 BDF 보다
+ * 오래됨)를 사용자가 파일을 열기 전에 보게 하려는 것이다. 파일 자체는 read() 한 바이트로
+ * 내려오므로 DRM 이 걸린 xlsx 에서도 길이가 어긋나지 않는다.
+ */
+function ReportPanel({ outputDir, onNotify }) {
+  const [form, setForm] = useState({
+    hull_no: '', dwg_no: '', fitting: '', title: '',
+    report_date: new Date().toISOString().slice(0, 10),
+  });
+  const [top, setTop] = useState(20);
+  const [yieldStrength, setYieldStrength] = useState(315);
+  // γM — Studio 화면 판정(허용 = σy/γM)과 같은 값이어야 보고서 판정이 화면과 일치한다.
+  const [gammaM, setGammaM] = useState(1.0);
+  const [useStudioFigures, setUseStudioFigures] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [meta, setMeta] = useState(null);
+
+  const set = (key) => (e) => setForm(prev => ({ ...prev, [key]: e.target.value }));
+
+  // Studio 캡쳐 준비 — 엔진이 'LC별로 어느 부재를 강조·라벨링할지' 계획서를 만든다.
+  // 이 파일이 있어야 Studio 에 [보고서 그림] 버튼이 나타난다.
+  const handlePlan = async () => {
+    if (!outputDir) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/analysis/mooring-fitting/report-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ output_dir: outputDir, top: Number(top),
+                               yield_strength: Number(yieldStrength),
+                               gamma_m: Number(gammaM) }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `계획 생성 실패 (${res.status})`);
+      }
+      const body = await res.json();
+      const lcCount = body?.plan?.loadCases?.length ?? 0;
+      onNotify?.(`캡쳐 계획 생성 완료 (LC ${lcCount}건). Studio 의 [보고서 생성] 이 이 계획대로 캡쳐합니다.`, 'success');
+    } catch (e) {
+      onNotify?.(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (!outputDir) return;
+    setBusy(true);
+    setMeta(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/analysis/mooring-fitting/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          output_dir: outputDir, ...form,
+          top: Number(top), yield_strength: Number(yieldStrength),
+          gamma_m: Number(gammaM),
+          use_studio_figures: useStudioFigures,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `보고서 생성 실패 (${res.status})`);
+      }
+      const info = await res.json();
+      setMeta(info);
+
+      const dl = await fetch(
+        `${API_BASE_URL}/api/analysis/mooring-fitting/report-download?output_dir=${encodeURIComponent(outputDir)}`,
+        { headers: getAuthHeaders() },
+      );
+      if (!dl.ok) throw new Error(`보고서 내려받기 실패 (${dl.status})`);
+      const blob = await dl.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = info.fileName || 'MooringFitting_Report.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      onNotify?.(`보고서 생성 완료 (${info.pages ?? '?'} 페이지)`, 'success');
+    } catch (e) {
+      onNotify?.(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <FileText size={14} className="text-slate-500" />
+        <h4 className="text-sm font-semibold text-slate-800">강도검토 보고서</h4>
+        <span className="text-[10px] text-slate-400">Studio 구조해석 결과로 작성됩니다</span>
+      </div>
+
+      <p className="text-xs text-slate-500">
+        Studio 에서 구조해석을 수행한 뒤 생성할 수 있습니다. 표제 정보는 보고서 머리말에 들어갑니다.
+        Studio 의 <b>[보고서 생성]</b> 버튼은 캡쳐까지 한 번에 처리하므로, 여기서는 표제 정보를 직접 넣어
+        만들 때만 쓰면 됩니다.
+      </p>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <ReportField label="선번" value={form.hull_no} onChange={set('hull_no')} placeholder="예: 3496" />
+        <ReportField label="도면번호" value={form.dwg_no} onChange={set('dwg_no')} placeholder="예: A508372" />
+        <ReportField label="대상 의장품" value={form.fitting} onChange={set('fitting')} placeholder="예: MF-F08(P)" />
+        <ReportField label="작성일" value={form.report_date} onChange={set('report_date')} placeholder="YYYY-MM-DD" />
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">LC별 상위 부재</span>
+          <input
+            type="number" min={1} value={top} onChange={e => setTop(e.target.value)}
+            className="w-24 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700
+                       focus:border-blue-400 focus:outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">항복강도 (MPa)</span>
+          <input
+            type="number" min={1} value={yieldStrength} onChange={e => setYieldStrength(e.target.value)}
+            className="w-28 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700
+                       focus:border-blue-400 focus:outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">재료계수 γM</span>
+          <input
+            type="number" min={0.1} step={0.05} value={gammaM} onChange={e => setGammaM(e.target.value)}
+            className="w-24 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700
+                       focus:border-blue-400 focus:outline-none"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 pb-1.5 text-xs text-slate-600">
+          <input
+            type="checkbox" checked={useStudioFigures}
+            onChange={e => setUseStudioFigures(e.target.checked)}
+          />
+          Studio 캡쳐 그림 사용
+        </label>
+
+        <button
+          type="button" onClick={handlePlan} disabled={busy || !outputDir}
+          title="Studio 가 찍을 그림 목록만 미리 만든다. Studio 의 [보고서 생성] 은 이 계획을 스스로 만들므로 보통 누를 필요가 없다."
+          className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2
+                     text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:text-slate-300"
+        >
+          <Camera size={13} /> Studio 캡쳐 준비
+        </button>
+
+        <button
+          type="button" onClick={handleGenerate} disabled={busy || !outputDir}
+          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs
+                     font-bold text-white hover:bg-blue-700 disabled:bg-slate-300"
+        >
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+          {busy ? '생성 중…' : '보고서 생성'}
+        </button>
+      </div>
+
+      {meta && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 space-y-1">
+          <p className="text-xs text-slate-600">
+            {meta.fileName} · {meta.pages ?? '?'} 페이지
+            {meta.usedStudioFigures ? ' · Studio 캡쳐 사용' : ' · 엔진 렌더 그림'}
+          </p>
+          {(meta.warnings || []).map((w, i) => (
+            <p key={i} className="flex items-start gap-1.5 text-xs text-amber-700">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" /> {w}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 원인 진단 패널 — 백엔드(mooring_diagnosis)가 판정한 문장을 그대로 보여준다.
+ * 프론트는 판정하지 않는다. 진단 파일이 없으면(구버전 엔진 산출물 등) 아무것도 그리지 않는다.
+ *
+ * showElements: 부재별 주원인까지 보여줄지. 입력 검증 단계에서는 케이스 진단만 보여준다
+ * (그 시점엔 해석 전이라 부재 판정 자체가 없다).
+ */
+function DiagnosisPanel({ diagnosis, showElements = false }) {
+  if (!diagnosis) return null;
+
+  const findings = diagnosis.findings ?? [];
+  const primaries = showElements
+    ? (diagnosis.elementFindings ?? []).filter(f => f.primary)
+    : [];
+  if (findings.length === 0 && primaries.length === 0) return null;
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <AlertTriangle size={15} className="text-amber-600" />
+        <h4 className="text-sm font-semibold text-slate-800">원인 진단</h4>
+        <span className="text-xs text-slate-400">
+          {findings.length + primaries.length}건
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        {findings.map((f, i) => (
+          <DiagnosisItem key={`c${i}`} finding={f} />
+        ))}
+        {primaries.map((f, i) => (
+          <DiagnosisItem
+            key={`e${i}`}
+            finding={f}
+            prefix={`Beam ${f.elementId} · LC ${f.loadCaseId}`}
+          />
+        ))}
+      </div>
+
+      <p className="mt-3 text-[11px] text-slate-400 leading-relaxed">
+        판정 근거 수치가 문장에 포함되어 있습니다. 확신도는 확정 · 유력 · 참고 세 단계입니다.
+      </p>
+    </div>
+  );
+}
+
+function DiagnosisItem({ finding, prefix }) {
+  const style = CONFIDENCE_STYLE[finding.confidence] ?? CONFIDENCE_STYLE['참고'];
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${style.box}`}>
+      <div className="flex items-center gap-2 mb-1">
+        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${style.chip}`}>
+          {finding.confidence}
+        </span>
+        {prefix && <span className="text-[11px] font-mono text-slate-600">{prefix}</span>}
+        <span className="text-[10px] font-mono text-slate-400">{finding.code}</span>
+      </div>
+      <p className="text-xs text-slate-700 leading-relaxed">{finding.message}</p>
+      {finding.hint && (
+        <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">→ {finding.hint}</p>
+      )}
+    </div>
+  );
+}
+
 function MooringStudioLauncher({ ready, onLaunch, installed, status, progress, error, installedVersion, latestVersion }) {
   const checking   = status === 'checking';
   const installing = status === 'installing';
@@ -933,6 +1202,7 @@ export default function MooringFittingAssessment() {
   const [artifactJson,  setArtifactJson]  = useState(savedPageState.artifactJson ?? {
     raw: null,
     validation: null,
+    diagnosis: null,
     loading: false,
     error: null,
   });
@@ -1351,20 +1621,22 @@ export default function MooringFittingAssessment() {
     Promise.all([
       fetchArtifactJson(result.raw_json),
       fetchArtifactJson(result.validation_json),
+      // 진단은 부가 정보다. 조회에 실패해도 검증 패널까지 같이 비면 안 되므로 개별로 삼킨다.
+      fetchArtifactJson(result.diagnosis_json).catch(() => null),
     ])
-      .then(([raw, validation]) => {
+      .then(([raw, validation, diagnosis]) => {
         if (!cancelled) {
-          setArtifactJson({ raw, validation, loading: false, error: null });
+          setArtifactJson({ raw, validation, diagnosis, loading: false, error: null });
         }
       })
       .catch((e) => {
         if (!cancelled) {
-          setArtifactJson({ raw: null, validation: null, loading: false, error: e.message });
+          setArtifactJson({ raw: null, validation: null, diagnosis: null, loading: false, error: e.message });
         }
       });
 
     return () => { cancelled = true; };
-  }, [isSuccess, result?.raw_json, result?.validation_json, result?._artifacts_missing]);
+  }, [isSuccess, result?.raw_json, result?.validation_json, result?.diagnosis_json, result?._artifacts_missing]);
 
   /* ── 렌더 ──────────────────────────────────────────────────────────── */
   return (
@@ -1651,11 +1923,14 @@ export default function MooringFittingAssessment() {
                   </div>
                 )}
                 {isSuccess && result && !result._artifacts_missing && (
-                  <CsvValidationPanel
-                    rawJson={artifactJson.raw}
-                    loading={artifactJson.loading}
-                    error={artifactJson.error}
-                  />
+                  <>
+                    <CsvValidationPanel
+                      rawJson={artifactJson.raw}
+                      loading={artifactJson.loading}
+                      error={artifactJson.error}
+                    />
+                    <DiagnosisPanel diagnosis={artifactJson.diagnosis} />
+                  </>
                 )}
                 {isSuccess && result?._artifacts_missing && (
                   <MissingValidationPanel message="out 폴더가 생성되지 않아 STAGE_00.raw.json을 찾을 수 없습니다." />
@@ -1687,13 +1962,17 @@ export default function MooringFittingAssessment() {
                   </div>
                 )}
                 {isSuccess && result && !result._artifacts_missing && (
-                  <FinalValidationPanel
-                    validationJson={artifactJson.validation}
-                    loading={artifactJson.loading}
-                    error={artifactJson.error}
-                    result={result}
-                    onDownload={handleDownload}
-                  />
+                  <>
+                    <FinalValidationPanel
+                      validationJson={artifactJson.validation}
+                      loading={artifactJson.loading}
+                      error={artifactJson.error}
+                      result={result}
+                      onDownload={handleDownload}
+                    />
+                    <DiagnosisPanel diagnosis={artifactJson.diagnosis} showElements />
+                    <ReportPanel outputDir={result.out_dir} onNotify={showToast} />
+                  </>
                 )}
               </>
             )}

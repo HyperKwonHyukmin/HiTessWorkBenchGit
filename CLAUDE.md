@@ -157,6 +157,27 @@ Hoist 좌측 도크 패널 상단의 토글. **기본 OFF(= 완화)** 이며 `lo
 - 실측 검증(A505080 골든 모델, 배포 exe): 정점편차 1mm·Z단차 6868mm 4점 조합 → **Strict ON** stage2=fail·overall=fail(진행 불가) / **Strict OFF** stage2=warn·stage6=pass·overall=warn(**진행 가능**, apex/wire 산출). 전도가 실패하는 조합은 OFF 여도 overall=fail 로 막힘.
 - 추적성: 화면 상시 경고 배너(`StrictEvaluationControl`) + `_posture.json` 플래그 + 단위 구조해석 준비 문구(`isShapeGateRelaxed(report)`). 토글을 바꾸면 이전 엄격도로 평가된 결과를 `useStabilityStore.reset()` 으로 무효화한다.
 
+#### Unit 권상 구조 검토 보고서 (2026-09-08 전면 재구성)
+
+`POST /api/analysis/unit-structural/report` (payload = `{analysisId, options}`) → `app/services/unit_lifting_report/` 패키지가 **결과 폴더 JSON 만으로** 다장(多章) xlsx 를 메모리에서 만든다. 표지·요약·목차·1~6장·부록 A/B/C + 데이터 시트 3개(`Members`/`Displacements`/`Wires`).
+
+- **패키지 4모듈**: `collector.py`(JSON 7종 → `ReportData` dataclass) · `figures.py`(matplotlib 2D 도면 → PNG bytes) · `sheet.py`(openpyxl 레이아웃 프리미티브·두 패스 목차) · `builder.py`(장 조립). `unit_lifting_report_service.py` 는 위임 껍데기(라우터 import 경로 보존).
+- ⚠️ **그림은 백엔드가 그린다 — Studio 3D 캡처를 쓰지 않는다.** 사용자 결정(Mooring 과 같은 철학). 그래서 Studio 가 안 떠 있어도, 서버에서도 재생성된다. codex 가 만들었던 캡처 경로(`ThreeViewport.captureReportViews`, `LiftingArrangementReport.js`, `DisplacementResultOverlay.js`, store `reportCapture`)는 **전부 삭제**했다.
+- ⚠️ **신규 의존성 `matplotlib==3.10.7`** (`requirements.txt`). 서버(145)는 `git pull` 후 **1회 `pip install -r requirements.txt`** 필요. 한글 폰트는 `Malgun Gothic`.
+- ⚠️ **절 제목 문자열은 `builder.toc_entries()` 와 `_write()` 가 글자 단위로 같아야** 목차 쪽번호가 채워진다(다르면 그 절이 0쪽으로 나옴). `tests/test_unit_lifting_report_builder.py::test_toc_pages_monotonic` 이 잡는다.
+- **고정 페이지 틀** — 원본 사내 서식처럼 한 페이지가 (머리글 3행 + HULL/UNIT/권상방식 1행 + 본문 50행 + 바닥글 2행) = **57행 프레임**이고 외곽선·머리글·바닥글이 페이지마다 반복된다. `sheet.ReportSheet` 가 `_open_page`/`_close_page`/`_ensure(rows)` 로 관리하며, **모든 행 높이가 ROW_PT(13.5pt)로 같아야** '행 수 = 세로 공간' 이 성립한다(여러 줄 텍스트는 행 세로 병합).
+- ⚠️ **인쇄 설정 3가지가 서로 맞물린다. 하나만 바꾸면 레이아웃이 깨진다.**
+  1. `fitToPage` 를 켜면 Excel 이 **수동 페이지 나누기를 무시**해 프레임 2개가 한 장에 겹친다 → `ps.scale = 100` 고정.
+  2. `ROW_PT` 는 픽셀에 정확히 떨어지는 값이어야 한다(13.5pt = 18px). 14pt 는 18.67px → 19px 로 반올림돼 프레임이 예상보다 높아지고 페이지가 쪼개진다.
+  3. 프레임 높이(769.5pt)와 인쇄 높이(여백 0.42 → 781pt) 사이 여유에 **다음 페이지 첫 행이 비친다**. 그래서 로고는 프레임 첫 행이 아니라 **둘째 행에 앵커**한다.
+- 그림은 폭 640px 고정(12열 ≈ 660px 을 넘으면 컬러바가 테두리를 뚫는다). 남은 공간이 부족하면 비율을 유지해 축소하고, `FIG_MIN_ROWS`(20행)보다도 좁으면 다음 페이지로 넘긴다. 표는 페이지를 넘어가면 머리행을 다시 그린다.
+- 표 셀은 `wrap=False` 라 열 폭을 넘으면 **잘린다**. 긴 문자열(자세안정성 단계 요약 등)은 `collector._stage_metric` 에서 짧게 만들고 열 폭(`widths`, 합계 ≤ 12)을 함께 조정할 것.
+- **진입점 2곳**: Studio `UnitStructuralReportButton`(→ `UnitStructuralReportDialog`) · WorkBench `ResultArtifactsCard` 의 "검토 보고서" 버튼(→ `UnitLiftingReportDialog`). 후자는 artifacts 응답의 **`unitStructuralAnalysisId`** 로 대상 해석을 찾는다(`GET /api/analysis/groupmoduleunit/{parent_id}/artifacts`).
+- **입력 옵션 키**(백엔드 `ReportOptions.from_payload` 와 1:1): `hullNo, unitNo, drawingNo, revision, author, department, jigLimitTon`(기본 6.2) `, yieldStrengthMpa`(기본 275) `, notes`. 폼 로직은 `frontend/src/utils/unitLiftingReport.js` 와 Studio `src/utils/unitLiftingReportForm.js` 에 **같은 내용의 사본**으로 있다(저장소가 달라서) — 한쪽 고치면 양쪽 다.
+- **판정**: σ허용 = σy × 0.8(결과 JSON 의 `structuralAllowableMPa` 우선), 활용도 > 1.0 이면 NG · 와이어 장력 > 지그 기준이면 "지그 필요" · **변위는 참고치(판정 없음)** · 자세안정성은 엔진 overall 그대로.
+- 필수 JSON 은 `nastranResultJson`·`stabilityJson` 둘뿐. 나머지(posture·hoist_optimization·validation·edited·원본 json·f06)는 없으면 해당 절을 "자료 없음"으로 쓰고 경고에 남긴다 — **과거 결과에도 보고서가 나온다.** 그림 렌더 실패도 그 그림만 자리표시로 대체.
+- 테스트: `tests/test_unit_lifting_report_{collector,figures,sheet,builder,service,route}.py` + `test_groupmoduleunit_artifacts_unit_id.py`. fixture 는 실측 결과를 축소한 `tests/fixtures/unit_lifting_report/`(`build_fixture.py` 로 재생성).
+
 ### Mooring Fitting Assessment — 3개 구성요소(엔진 / exe배포본 / 스튜디오)와 배포 흐름 ★작업 전 필독
 
 Mooring Fitting Assessment(연결 메뉴 = "Mooring Fitting Assessment", viewer id=`mooring-fitting-studio`)는 **별개의 세 위치**로 구성된다. 어느 쪽을 건드리는지 먼저 구분할 것.

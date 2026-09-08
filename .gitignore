@@ -114,3 +114,11 @@ HiTessWorkBenchBackEnd/Videos/
 # 그대로 add 하면 임베디드 저장소(gitlink) 한 줄로 기록돼 clone 시 빈 폴더가 된다.
 Darkmode.js/
 hitess-landing/
+
+# 구 보고서 서식(로컬 마스터). 새 보고서는 openpyxl 로 직접 그리므로 코드가 읽지 않는다.
+# 사내 DRM 이 .xlsx 를 at-rest 암호화(헤더 HHIDRMC)해서 커밋하면 암호문이 그대로 들어간다.
+HiTessWorkBenchBackEnd/app/templates/unit_lifting_report_template.xlsx
+
+# 세션 임시 산출물 — 저장소에 넣지 않는다(_audit 은 150MB 규모).
+_audit/
+scratchpad/

@@ -67,7 +67,7 @@ _COORD_NDIGITS = 2
 
 # 슬림 페이로드 스키마 버전. 필드를 늘리면 올린다 — 이 값이 다른 .viewer.json 캐시는
 # 원본 BDF 보다 새 것이어도 버리고 다시 만든다(예전 캐시에는 massProperties 가 없다).
-_PAYLOAD_SCHEMA = 2
+_PAYLOAD_SCHEMA = 4
 
 _jungban_lock = threading.Lock()
 # 타입 id -> 슬림 페이로드. 타입이 둘뿐이라 둘 다 상주해도 메모리 부담이 없다(각 1~2MB).
@@ -112,6 +112,7 @@ def slim_model_json(model_json: Dict[str, Any], *, name: str) -> Dict[str, Any]:
         raise ModelParseError("모델 JSON 에 nodes 가 없습니다.")
 
     index_of: Dict[Any, int] = {}
+    node_ids: List[Any] = []          # positions 와 같은 순서의 BDF 절점 ID
     positions: List[float] = []
     lo = [float("inf")] * 3
     hi = [float("-inf")] * 3
@@ -125,6 +126,7 @@ def slim_model_json(model_json: Dict[str, Any], *, name: str) -> Dict[str, Any]:
         except (TypeError, ValueError):
             continue
         index_of[nid] = len(positions) // 3
+        node_ids.append(nid)
         for axis in range(3):
             value = xyz[axis]
             positions.append(round(value, _COORD_NDIGITS))
@@ -139,17 +141,18 @@ def slim_model_json(model_json: Dict[str, Any], *, name: str) -> Dict[str, Any]:
     quads: List[int] = []
     trias: List[int] = []
     beams: List[int] = []
+    beam_ids: List[Any] = []   # beams 의 절점쌍과 1:1 대응하는 BDF 요소 ID
     skipped = 0
 
     for element in model_json.get("elements") or []:
         etype = str(element.get("type") or "").upper()
-        node_ids = element.get("nodeIds") or []
+        elem_node_ids = element.get("nodeIds") or []
         if etype in _SHELL_TYPES:
             want = 4 if etype == "CQUAD4" else 3
-            if len(node_ids) < want:
+            if len(elem_node_ids) < want:
                 skipped += 1
                 continue
-            idx = [index_of.get(n) for n in node_ids[:want]]
+            idx = [index_of.get(n) for n in elem_node_ids[:want]]
             if any(i is None for i in idx):
                 skipped += 1
                 continue
@@ -166,7 +169,7 @@ def slim_model_json(model_json: Dict[str, Any], *, name: str) -> Dict[str, Any]:
         elif etype in _BEAM_TYPES:
             # ⚠ nastran_bridge 는 1D 요소를 nodeIds 가 아니라 startNode/endNode 로 낸다
             #    (쉘만 nodeIds). 둘 다 받아 둬야 CBEAM 이 통째로 누락되지 않는다.
-            ends = node_ids if len(node_ids) >= 2 else [
+            ends = elem_node_ids if len(elem_node_ids) >= 2 else [
                 element.get("startNode"), element.get("endNode"),
             ]
             a, b = index_of.get(ends[0]), index_of.get(ends[1])
@@ -174,6 +177,8 @@ def slim_model_json(model_json: Dict[str, Any], *, name: str) -> Dict[str, Any]:
                 skipped += 1
                 continue
             beams.extend((a, b))
+            # 3단계 응력 색맵이 "이 선분 = 어느 요소" 를 알아야 색을 칠할 수 있다.
+            beam_ids.append(element.get("id"))
 
     # RBE2/RBE3 등 강체 요소는 독립절점↔종속절점을 잇는 선으로 표현한다.
     rigids: List[int] = []
@@ -196,6 +201,15 @@ def slim_model_json(model_json: Dict[str, Any], *, name: str) -> Dict[str, Any]:
         # 질량/무게중심은 여기서만 계산할 수 있다 — 아래 지오메트리에는 PBEAML 치수·PSHELL 두께·
         # MAT1 밀도·CONM2 가 남지 않기 때문이다. 결과는 스칼라 몇 개뿐이라 페이로드 부담이 없다.
         "massProperties": _round_mass_properties(compute_mass_properties(model_json)),
+        # 3단계 구조 해석이 접촉 절점을 SPC 로 잡으려면 BDF 절점 ID 가 필요하다.
+        # positions 와 같은 순서이므로 프론트는 nodeIds[i] 로 조회한다.
+        # 절점당 정수 1개라 positions(절점당 실수 3개)의 1/3 수준으로 커지지만, 페이로드
+        # 대부분을 차지하는 지오메트리(positions/quads/trias/beams)에 비하면 증가폭은 작고,
+        # 이 ID 없이는 3단계 SPC 지정 자체가 불가능하다(대안 없음).
+        "nodeIds": node_ids,
+        # beams 의 선분 순서와 1:1 대응하는 요소 ID. 응력 색맵 전용이며
+        # 이것이 없으면 요소별 응력을 화면의 선분에 대응시킬 수 없다.
+        "beamIds": beam_ids,
         "nodeCount": len(positions) // 3,
         "quadCount": len(quads) // 4,
         "triaCount": len(trias) // 3,
@@ -287,11 +301,13 @@ def get_jungban_viewer_model(deck_type: str = DEFAULT_DECK_TYPE, *,
                 #   백엔드 프로세스의 read() 는 복호화된 내용을 준다(viewers.py 와 동일 전제).
                 with open(cache_path, "r", encoding="utf-8") as fp:
                     slim = json.load(fp)
-                # 스키마가 올라간 뒤의 캐시만 신뢰한다. 예전 캐시에는 massProperties 가 없어서
-                # 그대로 쓰면 화면에 중량이 영영 안 뜬다(BDF 가 안 바뀌니 mtime 검사로는 못 잡는다).
-                if slim.get("schema") != _PAYLOAD_SCHEMA:
+                # 손상된 캐시는 json.load 는 성공하되 dict 가 아닐 수 있다(예: "[]", "123").
+                # 그대로 .get() 을 부르면 AttributeError 가 새어 나가 "조용히 재생성" 설계가
+                # 깨지므로, dict 가 아니면 스키마 불일치와 같은 재생성 경로로 흘려보낸다.
+                if not isinstance(slim, dict) or slim.get("schema") != _PAYLOAD_SCHEMA:
                     logger.info("[ModuleOceanTransport] 정반(%s) 캐시 스키마 %s → %s, 재생성합니다",
-                                deck_type, slim.get("schema"), _PAYLOAD_SCHEMA)
+                                deck_type, slim.get("schema") if isinstance(slim, dict) else type(slim).__name__,
+                                _PAYLOAD_SCHEMA)
                     raise ValueError("stale schema")
                 _jungban_cache[deck_type] = slim
                 logger.info("[ModuleOceanTransport] 정반(%s) 뷰어 캐시 적중: %s", deck_type, cache_path)
@@ -369,3 +385,116 @@ def get_model_viewer_payload(model_json_path: str, *, name: str) -> Dict[str, An
     with open(model_json_path, "r", encoding="utf-8") as fp:
         model_json = json.load(fp)
     return slim_model_json(model_json, name=name)
+
+
+# ── 정반 Leg 절점 (과정 2 반력 모델 입력) ─────────────────────────────────
+#
+# nastran_bridge 의 실제 모델 JSON 최상위 키는 "constraints" 가 아니라 "spcs" 다
+# (convert_bdf() 반환 dict, nastran_bridge.py). 각 원소는 parse_spc()/parse_spc1() 이
+# 만드는 {"nodeId": int, "components": str} — nodeId 필드명 자체는 맞았지만
+# 최상위 컨테이너 키가 달라 그대로는 못 쓴다.
+
+_LEGS_SCHEMA = "jungbanLegs/2"
+
+# Leg 절점 위에 서 있는 기둥의 상단을 찾을 때 쓰는 (x, y) 허용오차.
+# 정반 모델의 기둥은 Leg 와 같은 격자선 위에 있어 정수 좌표로 딱 맞는다.
+_LEG_COLUMN_XY_TOL_MM = 1.0
+
+
+def _legs_cache_path(deck_type: str) -> str:
+    """.viewer.json 과 같은 자리에 둔다 — 정반 BDF 수동 배포에 함께 따라가게."""
+    return f"{os.path.splitext(jungban_bdf_path(deck_type))[0]}.legs.json"
+
+
+def extract_leg_nodes(model_json: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """모델 JSON 에서 SPC 로 구속된 절점(=정반 Leg 하단)의 좌표를 뽑는다.
+
+    정반 A 는 6개, B 는 8개이며 모두 Z=-125mm 평면에 있다. 이 절점이 곧
+    **용접부가 있는 자리**다 — 과정 2 는 여기에 SPC 를 걸고 위로 기둥을 세운다.
+
+    ⚠ `zTop` 은 그 기둥의 상단, 즉 **Module Unit 이 얹히는 rigid 절점의 z** 다.
+      정반 모델에서 Leg 와 같은 (x, y) 에 있는 rigid independent 절점 중 Leg 보다
+      위에 있는 가장 낮은 것을 고른다(A/B 타입 모두 z=2020, 기둥 높이 2145mm).
+      이 높이가 곧 용접부에 걸리는 **모멘트의 지렛대**라, 임의 값으로 두면 판정이
+      통째로 달라진다 — 반드시 실제 정반 형상에서 읽어야 한다.
+      찾지 못하면 None 을 싣고, 과정 2 가 기본 높이로 폴백한다.
+    """
+    coords = {}
+    for node in model_json.get("nodes") or []:
+        nid = node.get("id")
+        if nid is None:
+            continue
+        coords[nid] = (
+            float(node.get("x", 0.0)),
+            float(node.get("y", 0.0)),
+            float(node.get("z", 0.0)),
+        )
+
+    leg_ids: List[Any] = []
+    for entry in model_json.get("spcs") or []:
+        nid = entry.get("nodeId")
+        if nid is None or nid in leg_ids or nid not in coords:
+            continue
+        leg_ids.append(nid)
+
+    if not leg_ids:
+        raise ValueError("정반 모델에서 구속(SPC) 절점을 찾지 못했습니다. Leg 위치를 알 수 없습니다.")
+
+    # Leg 위에 서 있는 기둥의 상단 = 같은 (x, y) 의 rigid independent 절점.
+    rigid_tops = []
+    for entry in model_json.get("rigids") or []:
+        nid = entry.get("independentNode")
+        if nid in coords:
+            rigid_tops.append(coords[nid])
+
+    legs = []
+    for nid in sorted(leg_ids):
+        x, y, z = coords[nid]
+        above = [tz for (tx, ty, tz) in rigid_tops
+                 if abs(tx - x) <= _LEG_COLUMN_XY_TOL_MM
+                 and abs(ty - y) <= _LEG_COLUMN_XY_TOL_MM
+                 and tz > z]
+        # 여러 개면 가장 낮은 것 — 강체(Module Unit)가 매달리기 시작하는 높이가
+        # 기둥의 유효 길이다. 그 위로는 휘지 않는다.
+        legs.append({"id": nid, "x": x, "y": y, "z": z,
+                     "zTop": min(above) if above else None})
+    return legs
+
+
+def get_jungban_leg_nodes(deck_type: str = DEFAULT_DECK_TYPE, *,
+                          force_rebuild: bool = False) -> List[Dict[str, Any]]:
+    """정반 Leg 절점 목록. .viewer.json 과 같은 캐시 규약을 따른다."""
+    bdf_path = jungban_bdf_path(deck_type)
+    cache_path = _legs_cache_path(deck_type)
+
+    if not os.path.exists(bdf_path):
+        raise ModelParseError(
+            f"{deck_type} 타입 정반 BDF 가 배치되어 있지 않습니다: {bdf_path}"
+        )
+
+    if not force_rebuild and os.path.exists(cache_path) and _cache_is_fresh(cache_path, bdf_path):
+        try:
+            # ⚠ 회사 DRM 은 로컬 디스크의 파일을 at-rest 로 암호화하지만
+            #   백엔드 프로세스의 read() 는 복호화된 내용을 준다(get_jungban_viewer_model 과 동일 전제).
+            with open(cache_path, "r", encoding="utf-8") as fp:
+                cached = json.load(fp)
+            # 손상된 캐시는 json.load 는 성공하되 dict 가 아닐 수 있다(예: "[]", "123").
+            # isinstance 로 먼저 거르지 않으면 cached.get() 에서 AttributeError 가 새어 나가
+            # "조용히 재생성" 경로를 벗어난다.
+            if isinstance(cached, dict) and cached.get("schema") == _LEGS_SCHEMA and cached.get("legs"):
+                return cached["legs"]
+        except (OSError, ValueError) as exc:
+            logger.warning("[ModuleOceanTransport] 정반(%s) Leg 캐시 로드 실패 — 재생성: %s",
+                           deck_type, exc)
+
+    model_json = parse_bdf_to_model_json(bdf_path)
+    legs = extract_leg_nodes(model_json)
+
+    try:
+        with open(cache_path, "w", encoding="utf-8") as fp:
+            json.dump({"schema": _LEGS_SCHEMA, "deckType": deck_type, "legs": legs},
+                      fp, ensure_ascii=False)
+    except OSError as exc:
+        logger.warning("[ModuleOceanTransport] 정반(%s) Leg 캐시 저장 실패: %s", deck_type, exc)
+
+    return legs

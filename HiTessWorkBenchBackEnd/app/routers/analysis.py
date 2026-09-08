@@ -1,12 +1,15 @@
 """해석 요청, 상태 조회, 이력 관리 API 라우터."""
+import base64
 import io
 import csv
 import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import stat
+import subprocess
 import tempfile
 import urllib.parse
 import zipfile
@@ -15,7 +18,7 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta, date as _date
 from typing import Optional
 from sqlalchemy import func, or_
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, File, UploadFile, Form, Query, Request
 from pydantic import BaseModel
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
@@ -30,6 +33,7 @@ from ..services.bdfscanner_service import task_execute_bdfscanner
 from ..services.hpscr_service import task_execute_hpscr
 from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
 from ..services.unit_structural_service import task_execute_unit_structural
+from ..services.unit_lifting_report_service import generate_result_report, generate_unit_lifting_report
 from ..services.module_stability_service import task_execute_module_stability, task_optimize_module_hoist_positions
 from ..services.lifting_artifacts import scan_lifting_artifacts
 from ..services.hitess_modelflow_service import (
@@ -42,7 +46,14 @@ from ..services.hitess_modelflow_service import (
 from ..services.f06parser_service import task_execute_f06parser
 from ..services.hull_acceleration_service import task_execute_hull_acceleration
 from ..services.plate_structure_service import task_execute_plate_structure
-from ..services.mooring_fitting_service import task_execute_mooring_fitting, task_solve_mooring_fitting
+from ..services.mooring_fitting_service import (
+    REPORT_FILE_NAME,
+    ReportEngineError,
+    build_report,
+    build_report_plan,
+    task_execute_mooring_fitting,
+    task_solve_mooring_fitting,
+)
 from ..services.drawing_to_analysis_service import (
     task_execute_drawing_to_analysis,
     task_execute_drawing_image_to_analysis,
@@ -2732,6 +2743,55 @@ async def request_sidepassage(
     return {"job_id": job_id}
 
 
+@router.get("/analysis/sidepassage/sample-status")
+def get_sidepassage_sample_status(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    quota = _check_sample_quota("sidepassage", employee_id, db)
+    return {"remaining": quota["remaining"], "limit": SAMPLE_DAILY_LIMIT, "is_admin": quota["is_admin"]}
+
+
+@router.post("/analysis/sidepassage/run-sample")
+async def run_sidepassage_sample(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    """Side Passage Assessment — 사내 표준 샘플 BDF로 즉시 Step1 검증 실행 (use_nastran=False).
+
+    GMU 샘플과 동일한 흐름이되 program_name 을 "SidePassage" 로 넘겨
+    userConnection 폴더명과 DB 기록이 Side Passage 로 남게 한다.
+    """
+    quota = _check_sample_quota("sidepassage", employee_id, db)
+    if not quota["allowed"]:
+        raise HTTPException(status_code=429, detail=quota["reason"])
+
+    sample_dir = os.path.abspath(os.path.join(_BACKEND_DIR, "SampleFile", "SidePassage"))
+    if not os.path.isdir(sample_dir):
+        raise HTTPException(status_code=404, detail="샘플 폴더가 없습니다.")
+    bdf_src = next((os.path.join(sample_dir, f) for f in sorted(os.listdir(sample_dir)) if f.lower().endswith(".bdf")), None)
+    if not bdf_src:
+        raise HTTPException(status_code=404, detail="샘플 BDF 파일을 찾을 수 없습니다.")
+
+    work_dir, timestamp = make_work_dir(employee_id, "SidePassage")
+    bdf_path = os.path.join(work_dir, os.path.basename(bdf_src))
+    shutil.copyfile(bdf_src, bdf_path)
+
+    job_id = submit_analysis_job(
+        task_execute_groupmoduleunit,
+        bdf_path, work_dir, employee_id, timestamp, SAMPLE_SOURCE_TAG, False,  # use_nastran=False
+        "SidePassage",
+        owned_work_dir=work_dir,
+    )
+    if not quota["is_admin"]:
+        _consume_sample_quota("sidepassage", employee_id)
+    return {
+        "job_id": job_id, "source": SAMPLE_SOURCE_TAG,
+        "remaining": SAMPLE_DAILY_LIMIT if quota["is_admin"] else 0,
+        "is_admin": quota["is_admin"],
+    }
+
+
 @router.get("/analysis/groupmoduleunit/sample-status")
 def get_gmu_sample_status(
         employee_id: str = Depends(require_auth),
@@ -2848,7 +2908,22 @@ def get_groupmoduleunit_artifacts(
     assert_current_user_can_access_path(folder, current_user, db, _USER_CONNECTION_DIR)
     stem = os.path.splitext(os.path.basename(bdf_model))[0]
     artifacts = scan_lifting_artifacts(folder, stem)
-    return {"folder": folder, "artifacts": artifacts}
+    # 이 parent 로 실행된 Unit 구조 해석 중 가장 최근 Success 레코드 — WorkBench 페이지의 '검토 보고서' 버튼이 쓴다.
+    # input_info 는 JSON 컬럼이라 DB 방언에 따라 JSON 경로 질의가 다르므로 후보를 파이썬에서 거른다(레코드 수가 작다).
+    unit_id = None
+    candidates = (
+        db.query(models.Analysis)
+        .filter(models.Analysis.program_name == "UnitStructuralAnalysis",
+                models.Analysis.employee_id == parent.employee_id,
+                models.Analysis.status == "Success")
+        .order_by(models.Analysis.created_at.desc(), models.Analysis.id.desc())
+        .limit(200).all()
+    )
+    for cand in candidates:
+        if (cand.input_info or {}).get("parent_analysis_id") == parent_id:
+            unit_id = cand.id
+            break
+    return {"folder": folder, "artifacts": artifacts, "unitStructuralAnalysisId": unit_id}
 
 
 # ==================== Unit Structural Analysis (Lifting + Nastran) ===========
@@ -2924,6 +2999,78 @@ async def request_unit_structural(
     )
 
     return {"job_id": job_id}
+
+
+@router.post("/analysis/unit-structural/report")
+def create_unit_structural_report(
+        payload: dict = Body(...),
+        db: Session = Depends(database.get_db),
+        current_user: str = Depends(require_auth),
+):
+    """저장된 해석 결과 JSON 만으로 Unit 권상 보고서(xlsx)를 생성한다.
+
+    payload = {analysisId, kind, options}. kind 는 "result"(사내 표준 서식 2~3페이지, 기본) 또는
+    "detail"(다장 기술보고서). 그림은 백엔드가 matplotlib 으로 직접 그린다(Studio 캡처 불필요).
+    """
+    analysis_id = payload.get("analysisId")
+    try:
+        analysis_id = int(analysis_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="analysisId 가 필요합니다.")
+
+    record = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Unit 구조 해석 결과(id={analysis_id})를 찾을 수 없습니다.")
+    assert_current_user_can_access_owner(record.employee_id, current_user, db)
+    if record.program_name != "UnitStructuralAnalysis":
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 해석 종류입니다: {record.program_name}")
+    if record.status != "Success":
+        raise HTTPException(status_code=409, detail="성공한 Unit 구조 해석 결과에서만 보고서를 생성할 수 있습니다.")
+
+    result_info = record.result_info or {}
+    for label, key in (("구조 해석 결과", "nastranResultJson"), ("자세안정성 결과", "stabilityJson")):
+        candidate = result_info.get(key)
+        if not candidate or not os.path.isfile(candidate):
+            raise HTTPException(status_code=409, detail=f"{label} 파일을 찾을 수 없습니다: {candidate}")
+        assert_current_user_can_access_path(candidate, current_user, db, _USER_CONNECTION_DIR)
+
+    kind = str(payload.get("kind") or "result").strip().lower()
+    if kind not in ("result", "detail"):
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 보고서 종류입니다: {kind}")
+
+    options = payload.get("options") or {}
+    for key in ("jigLimitTon", "yieldStrengthMpa"):
+        if options.get(key) not in (None, ""):
+            try:
+                if float(options[key]) <= 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=f"{key} 는 양수여야 합니다.")
+
+    try:
+        builder = generate_result_report if kind == "result" else generate_unit_lifting_report
+        file_name, report_bytes, warnings, summary = builder(
+            result_info, options, generated_by=current_user,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Unit 권상 보고서 생성 실패: %s", exc)
+        raise HTTPException(status_code=500, detail=f"보고서 생성 중 오류가 발생했습니다: {exc}")
+
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{urllib.parse.quote(file_name)}",
+        "X-Report-Filename": urllib.parse.quote(file_name),
+        "X-Report-Warnings": urllib.parse.quote(json.dumps(warnings, ensure_ascii=False)),
+        "X-Report-Summary": urllib.parse.quote(json.dumps(summary, ensure_ascii=False)),
+    }
+    return StreamingResponse(
+        io.BytesIO(report_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
 
 
 # ==================== F06 Parser ====================
@@ -3488,6 +3635,28 @@ def get_mooring_fitting_viewer_zip(
                 payload["safetyFactor"] = sf_val if sf_val is not None else 1.0
             zf.writestr(out_name, _json.dumps(payload, ensure_ascii=False))
             logger.info("[mooring viewer-zip] CSV 동봉: %s (%d rows)", out_name, len(rows))
+
+        # diagnosis.json — 백엔드가 판정한 원인 진단. Studio 가 부재 클릭 시 원인 문장을 보여준다.
+        # 해석 전이면 elementFindings 가 비어 있고 케이스 진단만 들어 있다. 없으면 조용히 스킵.
+        _diag_path = os.path.join(abs_dir, "DIAGNOSIS.json")
+        if os.path.isfile(_diag_path):
+            try:
+                with open(_diag_path, "r", encoding="utf-8") as fh:
+                    zf.writestr("diagnosis.json", fh.read())
+                logger.info("[mooring viewer-zip] 진단 동봉: DIAGNOSIS.json")
+            except Exception as exc:
+                logger.warning("[mooring viewer-zip] 진단 읽기 실패: %s", exc)
+
+        # report_plan.json — LC별 상위 N 부재. Studio 가 어느 부재에 라벨을 달고
+        # 무엇을 캡쳐할지 정하는 근거다. report-plan 을 먼저 돌린 케이스에만 있다.
+        _plan_path = os.path.join(abs_dir, "REPORT_PLAN.json")
+        if os.path.isfile(_plan_path):
+            try:
+                with open(_plan_path, "r", encoding="utf-8") as fh:
+                    zf.writestr("report_plan.json", fh.read())
+                logger.info("[mooring viewer-zip] 보고서 계획 동봉: REPORT_PLAN.json")
+            except Exception as exc:
+                logger.warning("[mooring viewer-zip] 보고서 계획 읽기 실패: %s", exc)
 
         # element_names.json — 최종 EID → 원본 부재(CSV B열 고유명 + CSV 행번호).
         # STAGE_00.initial.json 의 named 선분에 기하 매칭. 뷰어에서 부재 선택 시 CSV 대조용.
@@ -4089,6 +4258,266 @@ async def solve_mooring_fitting(
                 job_id, len(intents), edit_summary.get("applied", 0), yield_strength, gamma_m)
     return {"job_id": job_id, "editSummary": edit_summary,
             "assessment": {"yieldStrength": yield_strength, "gammaM": gamma_m}}
+
+
+# ==================== Mooring Fitting — 보고서 ====================
+
+# xlsx 는 회사 DRM 이 디스크에 쓰인 파일을 at-rest 로 감싼다(+4096B, 'HHID' 매직).
+# FileResponse 는 Content-Length 를 stat(=암호화 크기)로 잡는데 본문은 read()(=복호화)로
+# 나가므로 길이가 어긋나 ERR_CONTENT_LENGTH_MISMATCH 가 난다(viewers.py 에서 겪은 장애).
+# 따라서 보고서는 반드시 read() 한 바이트로 Response 를 만들어 서빙한다.
+_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _mooring_case_dir(output_dir: str, current_user: str, db: Session) -> str:
+    """
+    프론트가 아는 것은 out/ 폴더인데 엔진의 report verb 는 '케이스 폴더'를 받는다.
+    out/ 을 검증한 뒤 그 부모를 돌려준다.
+    """
+    try:
+        abs_dir = _validate_userconnection_path(output_dir)
+        assert_current_user_can_access_path(abs_dir, current_user, db, _ALLOWED_DOWNLOAD_BASE)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"경로 검증 실패: {e}")
+
+    if not os.path.isdir(abs_dir):
+        raise HTTPException(status_code=404, detail=f"output_dir 없음: {abs_dir}")
+
+    case_dir = os.path.dirname(os.path.normpath(abs_dir))
+    if not os.path.isdir(case_dir):
+        raise HTTPException(status_code=404, detail=f"케이스 폴더 없음: {case_dir}")
+    return case_dir
+
+
+# Studio 구조해석(solve-bdf)이 남기는 응력 CSV. 보고서는 이 결과로만 만든다.
+# build-full 만 돌린 모델에는 응력이 없어, 없는 상태로 보고서를 내면 Usage 0.000 ·
+# 전 부재 Pass 라는 거짓 합격이 된다. 그래서 '없으면 만들지 않는다'를 여기서 강제한다.
+_STUDIO_SOLVE_CALCVERIFY = "mooring_solve_CalcVerify.csv"
+
+
+def _require_studio_solve(case_dir: str) -> None:
+    """Studio 구조해석 결과가 없으면 409 — 보고서는 그 결과로만 만든다."""
+    if os.path.isfile(os.path.join(case_dir, "out", _STUDIO_SOLVE_CALCVERIFY)):
+        return
+    raise HTTPException(
+        status_code=409,
+        detail="구조해석 결과가 없습니다. Studio 에서 구조해석을 먼저 수행한 뒤 보고서를 만드세요.",
+    )
+
+
+def _report_criteria(payload: dict) -> tuple[int, float, float]:
+    """
+    보고서 판정 파라미터(top / σy / γM)를 payload 에서 읽는다.
+
+    `or` 기본값은 0 을 '미지정'으로 삼켜 버린다 — top=0 은 기본값이 아니라 잘못된 입력이다.
+    γM 은 Studio 화면 판정과 같은 허용응력(σy/γM)을 보고서에도 쓰기 위한 것으로,
+    없으면 1.0 이라 종전 동작과 같다.
+    """
+    raw_top = payload.get("top")
+    raw_yield = payload.get("yield_strength")
+    raw_gamma = payload.get("gamma_m")
+    try:
+        top = 20 if raw_top is None else int(raw_top)
+        yield_strength = 315.0 if raw_yield is None else float(raw_yield)
+        gamma_m = 1.0 if raw_gamma is None else float(raw_gamma)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="top / yield_strength / gamma_m 이 숫자가 아닙니다.")
+    if top <= 0 or yield_strength <= 0 or gamma_m <= 0:
+        raise HTTPException(status_code=400, detail="top / yield_strength / gamma_m 은 양수여야 합니다.")
+    return top, yield_strength, gamma_m
+
+
+def _mooring_exe_path() -> str:
+    return os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "MooringFitting", "MooringFitting.exe"
+    ))
+
+
+@router.post("/analysis/mooring-fitting/report")
+def create_mooring_fitting_report(
+    payload: dict = Body(...),
+    current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """
+    강도검토 보고서 xlsx 를 만든다 (MooringFitting.exe report).
+
+    실측 ~5초라 백그라운드 job 이 아니라 동기 실행이다. 파일 자체는 내려보내지 않고
+    페이지 수·경고만 돌려준다 — 경고(예: 결과 CSV 가 BDF 보다 오래됨)를 사용자가
+    받기 전에 보게 하려는 것. 실제 내려받기는 report-download 가 맡는다.
+    """
+    output_dir = (payload.get("output_dir") or "").strip()
+    if not output_dir:
+        raise HTTPException(status_code=400, detail="output_dir 이 필요합니다.")
+
+    case_dir = _mooring_case_dir(output_dir, current_user, db)
+    _require_studio_solve(case_dir)
+
+    figures_dir = None
+    if payload.get("use_studio_figures"):
+        candidate = os.path.join(case_dir, "out", "figures_studio")
+        if os.path.isdir(candidate):
+            figures_dir = candidate
+
+    top, yield_strength, gamma_m = _report_criteria(payload)
+
+    try:
+        result = build_report(
+            case_dir,
+            _mooring_exe_path(),
+            figures_dir=figures_dir,
+            top=top,
+            yield_strength=yield_strength,
+            gamma_m=gamma_m,
+            hull_no=str(payload.get("hull_no") or ""),
+            dwg_no=str(payload.get("dwg_no") or ""),
+            report_date=str(payload.get("report_date") or ""),
+            title=str(payload.get("title") or ""),
+            fitting=str(payload.get("fitting") or ""),
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="보고서 생성 시간이 초과되었습니다.")
+    except ReportEngineError as e:
+        # exit 2 = 선행 조건 미충족(구조해석 결과 없음 등) — 서버 잘못이 아니라 순서 문제다.
+        raise HTTPException(status_code=409 if e.returncode == 2 else 500, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    logger.info("[mooring report] %s (%s pages)", result["xlsx_path"], result["pages"])
+    return {
+        "fileName": os.path.basename(result["xlsx_path"]),
+        "pages": result["pages"],
+        "warnings": result["warnings"],
+        "usedStudioFigures": bool(figures_dir),
+        "log": result["log"],
+    }
+
+
+@router.get("/analysis/mooring-fitting/report-download")
+def download_mooring_fitting_report(
+    output_dir: str = Query(..., description="MooringFitting out/ 폴더 절대경로"),
+    current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """생성된 보고서 xlsx 를 바이트로 내려보낸다 (DRM Content-Length 불일치 회피)."""
+    case_dir = _mooring_case_dir(output_dir, current_user, db)
+    xlsx_path = os.path.join(case_dir, "out", REPORT_FILE_NAME)
+    if not os.path.isfile(xlsx_path):
+        raise HTTPException(status_code=404, detail="보고서가 아직 생성되지 않았습니다.")
+
+    with open(xlsx_path, "rb") as fh:
+        data = fh.read()
+
+    return Response(
+        content=data,
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{REPORT_FILE_NAME}"'},
+    )
+
+
+# Studio 캡쳐 파일명 화이트리스트 — 엔진 MooringReportBuilder.PrepareFigures 가 찾는 이름.
+# 정규식으로 고정해 파일명에 경로 조각(../)이 섞여 들어오는 것을 원천 차단한다.
+_REPORT_FIGURE_NAME = re.compile(r"^(model|boundary|loads|lc_\d{1,6})\.png$")
+_PNG_MAGIC = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])   # PNG 시그니처
+_MAX_FIGURE_BYTES = 8 * 1024 * 1024
+_STUDIO_FIGURES_DIRNAME = "figures_studio"
+
+
+@router.post("/analysis/mooring-fitting/report-figures")
+def upload_mooring_fitting_report_figures(
+    payload: dict = Body(...),
+    current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """
+    Studio 가 찍은 3D 뷰 PNG 를 out/figures_studio/ 에 저장한다.
+
+    report 는 --figures 로 이 폴더를 받으면 엔진 렌더보다 우선해서 쓴다.
+    이름이 곧 용도이므로(model/boundary/loads/lc_<subcase>) 화이트리스트로만 받는다.
+    """
+    output_dir = (payload.get("output_dir") or "").strip()
+    if not output_dir:
+        raise HTTPException(status_code=400, detail="output_dir 이 필요합니다.")
+
+    figures = payload.get("figures")
+    if not isinstance(figures, list) or not figures:
+        raise HTTPException(status_code=400, detail="figures 가 비어 있습니다.")
+
+    case_dir = _mooring_case_dir(output_dir, current_user, db)
+    fig_dir = os.path.join(case_dir, "out", _STUDIO_FIGURES_DIRNAME)
+
+    decoded: list[tuple[str, bytes]] = []
+    for item in figures:
+        name = str((item or {}).get("name") or "")
+        if not _REPORT_FIGURE_NAME.match(name):
+            raise HTTPException(status_code=400, detail=f"허용되지 않은 그림 이름: {name}")
+
+        raw = str((item or {}).get("data") or "")
+        if "," in raw and raw.startswith("data:"):
+            raw = raw.split(",", 1)[1]
+        try:
+            blob = base64.b64decode(raw, validate=True)
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"{name}: base64 디코딩 실패")
+
+        if not blob.startswith(_PNG_MAGIC):
+            raise HTTPException(status_code=400, detail=f"{name}: PNG 가 아닙니다.")
+        if len(blob) > _MAX_FIGURE_BYTES:
+            raise HTTPException(status_code=400, detail=f"{name}: 그림이 너무 큽니다.")
+        decoded.append((name, blob))
+
+    os.makedirs(fig_dir, exist_ok=True)
+    for name, blob in decoded:
+        with open(os.path.join(fig_dir, name), "wb") as fh:
+            fh.write(blob)
+
+    logger.info("[mooring report] Studio 캡쳐 %d장 저장 -> %s", len(decoded), fig_dir)
+    return {"saved": len(decoded), "dir": fig_dir}
+
+
+@router.post("/analysis/mooring-fitting/report-plan")
+def create_mooring_fitting_report_plan(
+    payload: dict = Body(...),
+    current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """
+    Studio 캡쳐 대상(LC별 상위 N 부재)을 정해 out/REPORT_PLAN.json 을 만들고 내용을 돌려준다.
+
+    Studio 는 이 계획을 읽어 어느 부재에 라벨을 달고 어떤 뷰를 찍을지 결정한다.
+    """
+    output_dir = (payload.get("output_dir") or "").strip()
+    if not output_dir:
+        raise HTTPException(status_code=400, detail="output_dir 이 필요합니다.")
+
+    case_dir = _mooring_case_dir(output_dir, current_user, db)
+    _require_studio_solve(case_dir)
+
+    top, yield_strength, gamma_m = _report_criteria(payload)
+
+    try:
+        result = build_report_plan(case_dir, _mooring_exe_path(), top=top,
+                                   yield_strength=yield_strength, gamma_m=gamma_m)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="보고서 계획 생성 시간이 초과되었습니다.")
+    except ReportEngineError as e:
+        raise HTTPException(status_code=409 if e.returncode == 2 else 500, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        with open(result["plan_path"], "r", encoding="utf-8") as fh:
+            plan = json.load(fh)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"보고서 계획을 읽지 못했습니다: {e}")
+
+    return {"plan": plan, "log": result["log"]}
 
 
 # ==================== Simple Beam Assessment ====================

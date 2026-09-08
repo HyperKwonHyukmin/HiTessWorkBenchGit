@@ -12,6 +12,7 @@ import Button from '../ui/Button';
 import Badge from '../ui/Badge';
 import SolverCredit from '../ui/SolverCredit';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAppCatalogue } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
@@ -91,10 +92,15 @@ export default function ExternalAppLauncherPage({
   cacheBustOnLaunch = true,
 }) {
   const { employeeId } = useAuth();
+  const { getApp } = useAppCatalogue();
   const { setCurrentMenu } = useNavigation();
   const { showToast } = useToast();
   const [serverStatus, setServerStatus] = useState('checking');
   const [isLaunching, setIsLaunching] = useState(false);
+  const appMeta = getApp(title);
+  const effectiveStatus = appMeta?.devStatus || status;
+  const effectiveDescription = appMeta?.description || description;
+  const effectiveContributor = appMeta?.contributor || contributor;
   const resolvedLaunchMode = resolveExternalAppMode(baseUrl, launchMode, API_BASE_URL);
   const resolvedHealthUrl = healthUrl || baseUrl;
   resolveExternalAppMode(resolvedHealthUrl, resolvedLaunchMode, API_BASE_URL);
@@ -162,8 +168,8 @@ export default function ExternalAppLauncherPage({
   };
 
   const isOffline = serverStatus === 'offline';
-  const statusVariant = status === 'Active' ? 'success' : 'warning';
-  const statusLabel = status === 'Active' ? '서비스 중' : '개발 중';
+  const statusVariant = effectiveStatus === 'Active' ? 'success' : 'warning';
+  const statusLabel = effectiveStatus === 'Active' ? '서비스 중' : '개발 중';
 
   return (
     <div className="max-w-4xl mx-auto pb-16 animate-fade-in-up">
@@ -192,7 +198,7 @@ export default function ExternalAppLauncherPage({
               <div className="min-w-0">
                 <Badge variant={statusVariant} size="sm" dot>{statusLabel}</Badge>
                 <h2 className="mt-3 text-xl font-bold text-slate-800 tracking-tight">{title}</h2>
-                <p className="mt-2 max-w-xl text-sm text-slate-500 leading-relaxed">{description}</p>
+                <p className="mt-2 max-w-xl text-sm text-slate-500 leading-relaxed">{effectiveDescription}</p>
               </div>
             </div>
           </div>
@@ -234,7 +240,7 @@ export default function ExternalAppLauncherPage({
             </div>
           )}
 
-          {status !== 'Active' && (
+          {effectiveStatus !== 'Active' && (
             <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
               <AlertCircle size={16} className="mt-0.5 shrink-0 text-amber-700" />
               <p className="text-xs font-medium leading-relaxed text-amber-800">
@@ -245,7 +251,7 @@ export default function ExternalAppLauncherPage({
         </div>
       </section>
 
-      <SolverCredit contributor={contributor} />
+      <SolverCredit contributor={effectiveContributor} />
     </div>
   );
 }

@@ -52,7 +52,7 @@ const RAW_ANALYSIS_DATA = [
   { mode: "Interactive", category: "Weld", title: "Block Weld Assessment", description: "블록 전도 방지 구속 용접양을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Weld", "Block", "용접"], devStatus: "Active", contributor: "김한별" },
   // ── Interactive Apps (signature: violet) ──────── Developing ──
   { mode: "Interactive", category: "Plate", title: "Plate Structure Analysis", description: "Plate 구조 해석용 Studio를 실행하여 판 구조 모델링 및 해석 작업을 진행합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Plate", "Studio", "구조해석"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "Interactive", category: "Tank", title: "Independent Tank Assessment", description: "독립 탱크 구조 평가를 위한 외부 앱을 실행합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Tank", "구조평가", "외부 앱"], devStatus: "Developing", contributor: "김한별" },
+  { mode: "Interactive", category: "Tank", title: "Independent Tank Assessment", description: "의장 단독형 탱크 구조 평가를 수행합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Tank", "구조평가", "외부 앱"], devStatus: "Developing", contributor: "김한별" },
   { mode: "Interactive", category: "Lifting", title: "Heavy Block Lifting Simulation", description: "중량물 블록의 권상 과정에서 자세 안정성을 사전에 예측·검증 합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Lifting", "Block", "권상", "자세안정성"], devStatus: "Developing", contributor: "김한별" },
   // ── Parametric Apps (signature: emerald) ──────── Active ──
   { mode: "Parametric", category: "Davit", title: "Jib Rest Assessment", description: "Jib Rest 구조물의 1단/2단 파이프 설계 후보를 산출합니다.", icon: SlidersHorizontal, color: "bg-emerald-600", tags: ["Jib Rest", "1단", "2단"], devStatus: "Active", contributor: "박준석" },
@@ -115,11 +115,12 @@ const APP_REGISTRY_OVERRIDES = {
   },
   "Module Unit 해상 운송 구조 해석": {
     menuName: "Module Unit 해상 운송 구조 해석",
-    // ⚠ 현재 Step1 검증은 GroupModuleUnit 엔드포인트를 재사용하므로 DB program_name 은
-    //   "GroupModuleUnit" 으로 기록된다. 여기에 "GroupModuleUnit" 을 넣으면 GMU 앱과
-    //   프로그램명이 충돌하므로 넣지 않는다(전용 엔드포인트 신설 시 함께 등록할 것).
-    programNames: ["ModuleOceanTransport", "Module Unit 해상 운송 구조 해석"],
-    apiEndpoint: "/api/analysis/groupmoduleunit/request",
+    // 1~3단계 모두 DB program_name = "ModuleOceanMoving" 으로 기록된다
+    //   (작업 폴더도 userConnection/{timestamp}_{사번}_ModuleOceanMoving/ 한 곳).
+    //   검증 엔진만 GMU 것을 재사용할 뿐 접수 엔드포인트는 이 앱 전용이라
+    //   GMU 와 프로그램명이 겹치지 않는다.
+    programNames: ["ModuleOceanMoving", "ModuleOceanTransport", "Module Unit 해상 운송 구조 해석"],
+    apiEndpoint: "/api/analysis/module-ocean-transport/request",
     supportsRerun: false,
     relatedApps: ["HiTESS Model Builder", "Group & Module Unit 권상 구조 해석"],
   },

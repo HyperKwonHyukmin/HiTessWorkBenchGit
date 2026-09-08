@@ -3,7 +3,8 @@ import {
   UploadCloud, ArrowRight, ChevronsRight,
   FileCheck2, Boxes, Waves, ShieldCheck,
   X, Loader2, RotateCcw, FileText, ExternalLink,
-  Construction, Download, Layers, ArrowDownToLine, Compass, AlertTriangle, Scale,
+  Layers, ArrowDownToLine, Compass, AlertTriangle, Info, Scale, Eye, EyeOff,
+  ChevronDown, SlidersHorizontal,
 } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
@@ -12,6 +13,8 @@ import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { usePolling } from '../../hooks/usePolling';
 import {
   requestModuleOceanTransport,
+  requestModuleOceanStructural,
+  calculateModuleOceanAcceleration,
   downloadFileText,
   getJungbanViewerModel,
   getModuleOceanViewerModel,
@@ -20,21 +23,73 @@ import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import FeModelViewer from '../../components/analysis/FeModelViewer';
 import JungbanDeckSelector from '../../components/analysis/JungbanDeckSelector';
+import StressColorMapModal from '../../components/analysis/StressColorMapModal';
+import LegReactionModal from '../../components/analysis/LegReactionModal';
+import SupportSelectionPanel from '../../components/analysis/SupportSelectionPanel';
+import SupportPickerModal from '../../components/analysis/SupportPickerModal';
+import NumberField from '../../components/analysis/NumberField';
+import OceanWeldModal, {
+  OceanWeldResultLauncher,
+} from '../../components/analysis/OceanWeldModal';
+import BargeAccelerationPanel from '../../components/analysis/BargeAccelerationPanel';
+import Button from '../../components/ui/Button';
+import {
+  evaluateSupportSelection, selectionPoints, selectionNodeIds, rigidDependentIndices,
+} from '../../utils/supportSelection';
+import { DEFAULT_WELD_SPEC, normalizeWeldSpec } from '../../utils/weldSpecDefaults';
+import {
+  DEFAULT_BARGE_ACCEL_INPUT,
+  bargeAccelerationInputKey,
+  getBargeAccelerationInputIssues,
+  moduleCargoAccelerationInputs,
+} from '../../utils/bargeAcceleration';
+import {
+  DEFAULT_MODULE_OCEAN_ARRANGEMENT,
+  DEFAULT_MODULE_OCEAN_CONTACT_TOL_MM,
+  resetModuleOceanPlacementState,
+} from '../../utils/moduleOceanReset';
 import {
   computeModulePlacement,
+  deckPlacementCenter,
   buildDeckSurface,
   prepareModuleFootprint,
+  computeSeatGap,
   computeSeating,
   findBestSeatingRotation,
   combineMassProperties,
+  transformModulePoint,
+  DECK_CLEARANCE_MM,
 } from '../../utils/feGeometry';
 
-// 정반 상면에서 Module Unit 바닥까지의 기본 높이(mm). 사용자가 2단계에서 조정할 수 있다.
-const DEFAULT_DECK_GAP_MM = 5000;
-const DEFAULT_CONTACT_TOL_MM = 50;
+/**
+ * 절점 ID 목록을 사람이 읽을 문장으로. 개수만 알려 주면 화면에서 어느 것인지 찾을 수
+ * 없다는 지적을 받아 넣었다 — 목록이 길면 앞쪽만 보여 주고 나머지는 개수로 줄인다.
+ */
+function nodeIdList(ids, limit = 8) {
+  if (!ids?.length) return '';
+  const head = ids.slice(0, limit).map(v => Number(v).toLocaleString()).join(', ');
+  return ids.length > limit ? `${head} 외 ${ids.length - limit}개` : head;
+}
+
+/**
+ * 스툴 길이를 적치면 층별로 풀어 쓴다.
+ *
+ * 정반이 2단이라 층마다 스툴이 다르다(정반 A + 3521: 하단 100mm, 상단 370mm).
+ * "300~570mm" 한 줄로 뭉치면 어느 자리 스툴이 6m 인지 알 수 없어, 층을 나눠 적는다.
+ */
+function describeStools(seating) {
+  const levels = seating?.supportLevels || [];
+  const mm = (v) => Math.round(v).toLocaleString();
+  const range = (lo, hi) => (Math.round(hi) - Math.round(lo) >= 1 ? `${mm(lo)}~${mm(hi)}` : mm(lo));
+  if (!levels.length) return `스툴 ${mm(seating?.stoolMinMm ?? 0)}mm`;
+  if (levels.length === 1) return `스툴 ${range(levels[0].stoolMinMm, levels[0].stoolMaxMm)}mm`;
+  return `스툴 ${levels.map(l => `z=${mm(l.landingZMm)} ${range(l.stoolMinMm, l.stoolMaxMm)}mm(${l.count}개)`).join(' · ')}`;
+}
 
 const PART_COLOR_JUNGBAN = '#8d9bb0';
 const PART_COLOR_MODULE  = '#38bdf8';
+// 스툴 — 지지점에서 발밑 적치면까지. 모듈·정반과 확실히 구분되는 색이어야 한다.
+const PART_COLOR_STOOL   = '#f59e0b';
 
 // 무게중심 마커 색. 화면 범례와 이 상수가 같은 값을 써야 한다.
 const COG_COLOR_DECK   = '#a78bfa';   // 정반
@@ -54,9 +109,131 @@ const STATUS_CONFIG = {
 const INITIAL_STEPS = [
   { id: 'bdf-validation',  title: 'Module Unit BDF 입력 검증',     sub: 'BDF 파일 업로드 및 유효성 검증',            icon: FileCheck2,  status: 'wait' },
   { id: 'arrangement',     title: '정반 상부 Module Unit 배치 설정', sub: '내장 정반 모델 위 Module Unit 배치 지정',   icon: Boxes,       status: 'wait' },
-  { id: 'structural-run',  title: 'Module Unit 구조 해석 수행',     sub: '해상 운송 하중 조건 구조 해석',             icon: Waves,       status: 'wait' },
-  { id: 'weld-assessment', title: '용접부 강도 평가 수행',           sub: '고박·접합 용접부 강도 판정',                icon: ShieldCheck, status: 'wait' },
+  // 한 번 실행하면 두 과정(MU 응력 / Leg 반력+용접)이 함께 나온다. 성격이 다른 검토라
+  // 단계를 쪼개는 대신 이 단계 안에서 탭으로 갈라 본다 — 실행 버튼은 하나여야 한다.
+  { id: 'structural-run',  title: 'Module Unit 구조 해석 수행',     sub: '구조 검토 · Leg 용접부 강도 평가',          icon: Waves,       status: 'wait' },
 ];
+
+// 계산 전 내부 대기값. 구조 해석 버튼은 Excel 계산 결과가 현재 입력과 일치할 때만 열린다.
+const GRAVITY_ONLY_ACCEL_G = { ax: 0, ay: 0, az: -1 };
+
+// 판정에서 뺄 소구경 배관의 외경 상한 [mm]. NPS 2"(OD 60.3) 이하가 배관 업계에서
+// small-bore 의 통상 정의이고, 도면 표기 60.4 까지 담도록 60.5 로 둔다.
+// ⚠ 백엔드 module_ocean_bdf.DEFAULT_SMALL_BORE_MAX_OD_MM 과 **같은 값이어야 한다** —
+//    이 값은 화면 기본값일 뿐이고 실제 제외는 백엔드가 한다. 어긋나면 화면이 말하는
+//    기준과 결과의 기준이 달라진다(이격 상수 DECK_CLEARANCE_MM 과 같은 규칙).
+const DEFAULT_SMALL_BORE_MAX_OD_MM = 60.5;
+
+// 3단계 결과 탭. 과정 1 은 Module Unit 자체, 과정 2 는 그것이 정반 Leg 에 주는 힘이다.
+const PROCESS_TABS = [
+  { id: 'stress', label: '과정 1 · Module Unit 구조 검토', icon: Waves },
+  { id: 'weld',   label: '과정 2 · 정반 Leg 용접부 강도 평가', icon: ShieldCheck },
+];
+
+/**
+ * 접이식 섹션. 3단계는 "입력 → 실행 → 결과" 가 한 화면에 다 있는데, 결과가 나온 뒤에도
+ * 입력 카드가 화면을 차지하면 정작 봐야 할 판정이 스크롤 아래로 밀린다.
+ * 결과 유무에 따라 기본 펼침을 바꿔 쓴다(결과 전 = 펼침, 결과 후 = 접힘).
+ */
+function Section({ icon: Icon, title, summary, defaultOpen = true, tone = 'slate', children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  // useState 는 초기값만 읽는다 — 이것만으로는 해석이 끝나 결과가 나와도 입력 카드가
+  // 펼쳐진 채 남아 판정이 스크롤 아래로 밀린다. defaultOpen 이 **뒤집힐 때만** 따라간다
+  // (사용자가 직접 연 뒤에는 같은 값이 유지되므로 다시 닫히지 않는다).
+  useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
+  const ring = tone === 'blue' ? 'border-blue-200 bg-blue-50/40' : 'border-slate-200 bg-white';
+  return (
+    <div className={`rounded-xl border ${ring} overflow-hidden`}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left transition-colors hover:bg-slate-50/80 cursor-pointer"
+      >
+        {Icon && <Icon size={14} className="shrink-0 text-slate-400" aria-hidden="true" />}
+        <span className="text-xs font-bold text-slate-700">{title}</span>
+        {/* 접힌 상태에서도 무엇이 들었는지 한 줄로 읽혀야 연다/안 연다를 판단할 수 있다. */}
+        {summary && !open && (
+          <span className="min-w-0 flex-1 truncate text-[11px] text-slate-400">{summary}</span>
+        )}
+        <ChevronDown
+          size={14}
+          aria-hidden="true"
+          className={`ml-auto shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {open && <div className="border-t border-slate-100 p-3.5">{children}</div>}
+    </div>
+  );
+}
+
+/** 판정 배너의 수치 한 칸. */
+function VerdictStat({ label, value, unit, bad }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] text-slate-500">{label}</p>
+      <p className={`truncate text-lg font-bold leading-tight ${bad ? 'text-red-600' : 'text-slate-800'}`}>
+        {value}
+        {unit && <span className="ml-1 text-[11px] font-semibold text-slate-400">{unit}</span>}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * 3단계 최상단 판정 배너. 사용자가 이 화면에서 **가장 먼저 확인해야 하는 것**만 담는다 —
+ * 합/부, 지배 수치 3개, 그리고 형상에서 되짚는 버튼.
+ * 근거·가정·모델 조작 내역은 아래 상세와 접이식 섹션으로 내린다.
+ */
+function StructuralVerdictBanner({ stress, weld, onOpenColorMap }) {
+  const s = stress?.summary;
+  if (!s) return null;
+  const stressNg = s.exceedCount > 0;
+  const weldNg = weld?.summary?.status === 'NG';
+  const ng = stressNg || weldNg;
+  // 지배 부재가 특이 자유도에 오염됐을 때만 결과 자체를 의심하게 만든다(과잉 차단 방지).
+  const untrusted = Boolean(stress?.quality?.governingContaminated);
+
+  return (
+    <div className={`rounded-2xl border p-4 ${
+      untrusted ? 'border-red-300 bg-red-50'
+        : ng ? 'border-red-200 bg-red-50/60' : 'border-emerald-200 bg-emerald-50/60'}`}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className={`rounded-lg px-2.5 py-1 text-sm font-extrabold tracking-wide ${
+          ng ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'}`}>
+          {ng ? 'NG' : 'OK'}
+        </span>
+        <p className="text-xs font-semibold text-slate-700">
+          {untrusted
+            ? '지배 부재가 특이 자유도의 영향권 안입니다 — 아래 경고를 먼저 확인하세요'
+            : ng
+              ? [stressNg && '부재 응력이 허용을 넘습니다', weldNg && '용접부가 NG 입니다']
+                  .filter(Boolean).join(' · ')
+              : '부재 응력·용접부 모두 허용 이내입니다'}
+        </p>
+        <button
+          type="button"
+          onClick={onOpenColorMap}
+          className="ml-auto inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-slate-800
+                     px-3 py-1.5 text-[11px] font-bold text-white transition-colors hover:bg-slate-700"
+        >
+          <Layers size={12} aria-hidden="true" /> 형상에서 확인
+        </button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <VerdictStat label="최대 응력" value={s.maxStressMPa.toFixed(1)} unit="MPa" bad={stressNg} />
+        <VerdictStat label={`사용률 (허용 ${Math.round(stress.allowableMPa)} MPa)`}
+          value={s.maxUsage.toFixed(2)} bad={stressNg} />
+        <VerdictStat label="허용 초과 부재" value={s.exceedCount} unit="개" bad={stressNg} />
+        {stress.displacementSummary && (
+          <VerdictStat label="최대 변위"
+            value={stress.displacementSummary.maxMagMm.toFixed(1)} unit="mm" />
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Toggle ────────────────────────────────────────────────────
 function Toggle({ checked, onChange }) {
@@ -130,37 +307,178 @@ function BdfDropZone({ file, onFile, onClear, disabled }) {
 }
 
 /**
- * 아직 세부 구현이 확정되지 않은 단계의 자리표시 패널.
- * 전체 틀 단계에서 각 단계가 "무엇을 하게 될 자리인지"를 화면에 명시해 둔다.
+ * 과정 1 상세. 헤드라인 수치(최대응력·사용률·초과·변위)는 상단 판정 배너가 이미 말했으므로
+ * 여기서는 **그 숫자를 믿어도 되는가**에 답하는 것만 둔다 — 결과 품질 경고, 판정에서 뺀 것,
+ * 모델에 가한 조작. 셋 다 없으면 이 패널은 한 줄로 끝난다.
  */
-function StepPlaceholder({ icon: Icon, title, description, todos }) {
+function StressResultPanel({ stress, model }) {
+  if (!stress) return null;
+
+  const s = stress.summary;
+  // mechanism 이 남은 채 PARAM,BAILOUT 으로 풀리면 응력이 허수가 될 수 있다.
+  // 다만 **고피벗이 있다는 사실만으로 결과 전체를 버리는 것은 과잉 차단**이다 —
+  // 실측(3521 모델)에서 특이 자유도는 하중을 거의 받지 않는 짧은 스터브 부재에 몰려
+  // 있었고 판정을 지배하는 최대 응력 부재는 영향권 밖이었다. 백엔드가 요소 연결을
+  // 되짚어 governingContaminated 로 둘을 갈라 준다.
+  const q = stress.quality && stress.quality.trustworthy === false ? stress.quality : null;
+  const invalid = Boolean(q?.governingContaminated);
+  // 특이 절점이 전부 자유단이면 원인을 단정해 말할 수 있다(실측 3521: 13/13).
+  const allFreeEnds = Boolean(q && q.highPivotNodeCount > 0
+    && q.freeEndNodeCount === q.highPivotNodeCount);
+  const tone = invalid
+    ? { box: 'border-red-300 bg-red-50', head: 'text-red-700', body: 'text-red-700', sub: 'text-red-600' }
+    : { box: 'border-amber-300 bg-amber-50', head: 'text-amber-800', body: 'text-amber-800', sub: 'text-amber-700' };
+
+  const dropped = stress.excludedSummary;
+  const promoted = model?.rigidPromotion?.promotedEids || [];
+  // 그중 조각의 자유 회전을 막으려고 회전(456)까지 잡은 것.
+  const escalated = model?.rigidPromotion?.escalatedEids?.length || 0;
+  const pairFar = Number.isFinite(model?.maxPairDistanceMm)
+    && model.maxPairDistanceMm > (model.pairWarnMm ?? Infinity);
+
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
-      <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
-        <Icon size={26} className="text-slate-300" />
-      </div>
-      <div>
-        <p className="text-sm font-bold text-slate-500">{title}</p>
-        <p className="text-[11px] text-slate-400 mt-1 leading-relaxed max-w-md">{description}</p>
-      </div>
-      {todos?.length > 0 && (
-        <div className="w-full max-w-md rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-3 text-left">
-          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            <Construction size={11} /> 구성 예정 항목
+    <div className="space-y-3">
+      {q && (
+        <div className={`rounded-xl border p-3.5 ${tone.box}`}>
+          <h4 className={`text-xs font-bold ${tone.head}`}>
+            {invalid
+              ? '⚠ 이 결과는 그대로 믿을 수 없습니다'
+              : '⚠ 국소 특이 자유도가 있습니다 — 아래 부재만 제외하고 보세요'}
+          </h4>
+          <p className={`mt-1 text-[11px] leading-relaxed ${tone.body}`}>
+            {invalid
+              ? '구속되지 않은 자유도가 남은 채 해석이 진행됐고, 판정을 지배하는 최대 응력 부재가 그 영향권 안에 있습니다. 이 응력은 허수일 수 있습니다.'
+              : '구속되지 않은 자유도가 남은 채 해석이 진행됐지만, 최대 응력 부재는 영향권 밖이라 전체 판정은 유효합니다.'}
+            {' '}
+            {/* "왜 이런 게 나왔나" 에 일반론 대신 이 모델의 사실로 답한다 —
+                자유단(부재 하나만 붙은 끝점)은 그 끝의 회전 자유도에 강성이 없다. */}
+            {allFreeEnds
+              ? <>특이 절점 {q.highPivotNodeCount}개는 <b>전부 부재 하나만 붙은 끝점(자유단)</b>입니다
+                  — 입력 BDF 의 국소 형상이지 지지점 부족이 아닙니다.</>
+              : q.freeEndNodeCount > 0
+                ? <>특이 절점 {q.highPivotNodeCount}개 중 {q.freeEndNodeCount}개가 자유단(부재 하나만
+                    붙은 끝점)입니다.</>
+                : null}
           </p>
-          <ul className="mt-2 space-y-1">
-            {todos.map(t => (
-              <li key={t} className="flex items-start gap-1.5 text-[11px] text-slate-500">
-                <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 shrink-0" />
-                <span>{t}</span>
-              </li>
-            ))}
-          </ul>
+          <details className={`mt-1.5 text-[11px] ${tone.sub}`}>
+            <summary className="cursor-pointer font-semibold">특이 절점 목록</summary>
+            <p className="mt-1">
+              자유도 {q.highPivotDofCount}개 · 절점 {q.highPivotNodeCount}개
+              {q.affectedElementCount > 0 && ` · 영향 부재 ${q.affectedElementCount}개`}
+            </p>
+            {q.highPivotNodeIds?.length > 0 && (
+              <p className="mt-0.5 opacity-80">
+                절점 {q.highPivotNodeIds.slice(0, 12).join(', ')}
+                {q.highPivotNodeIds.length > 12 && ` 외 ${q.highPivotNodeIds.length - 12}개`}
+              </p>
+            )}
+            {q.highPivotDeckNodeIds?.length > 0 && (
+              <p className="mt-0.5 opacity-80">
+                정반 쪽 절점 {q.highPivotDeckNodeIds.length}개(프로그램 내장 모델)
+              </p>
+            )}
+            {q.contaminatedTopElementIds?.length > 0 && (
+              <p className="mt-0.5 opacity-80">
+                영향권에 든 상위 응력 부재 EID {q.contaminatedTopElementIds.join(', ')}
+              </p>
+            )}
+          </details>
         </div>
       )}
+
+      {/* 판정에서 뺀 것. 감추면 배관에 실제 문제가 있어도 드러나지 않으므로 여기서 밝힌다. */}
+      {dropped && dropped.elementCount > 0 && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+          <p className="text-xs font-bold text-slate-700">
+            판정 제외 — {dropped.reason || '소구경 배관'} {dropped.elementCount.toLocaleString()}개
+          </p>
+          {dropped.maxStressMPa != null && (
+            <p className={`mt-1 text-[11px] leading-relaxed ${
+              dropped.exceedCount > 0 ? 'text-amber-700' : 'text-slate-500'}`}>
+              제외된 배관 최대 <b>{dropped.maxStressMPa.toFixed(1)} MPa</b> (EID {dropped.maxStressElementId})
+              {dropped.exceedCount > 0 && ` · 그중 허용 초과 ${dropped.exceedCount}개`}
+              {' — 배관 지지 상세는 배관 설계 쪽에서 별도로 확인하세요.'}
+            </p>
+          )}
+          <details className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+            <summary className="cursor-pointer font-semibold text-slate-600">왜 빼는가</summary>
+            <p className="mt-1">
+              이 해석의 평가 대상은 <b>모듈의 구조 부재</b>입니다. 소구경 배관은 화물이고, 실제 지지
+              상세(슈·클램프·U볼트)가 BDF 에 없어 <b>관 하나가 배관 계통 전체를 혼자 받는</b> 모양으로
+              모델링돼 응력이 비정상적으로 높게 나옵니다. 요소는 모델에 그대로 남아 질량·강성으로
+              기여합니다.
+            </p>
+          </details>
+        </div>
+      )}
+
+      {/* 사용자 모델을 건드린 내역 — 되짚을 수 있어야 하지만 늘 펼쳐 둘 필요는 없다. */}
+      {(promoted.length > 0 || pairFar || stress.supportCount != null) && (
+        <details className="rounded-xl border border-slate-200 bg-white p-3.5">
+          <summary className="cursor-pointer text-xs font-bold text-slate-700">
+            모델 조작 내역
+            <span className="ml-1.5 font-normal text-slate-400">
+              지지 {stress.supportCount ?? '-'}점
+              {promoted.length > 0 && ` · 고박 승격 ${promoted.length}개`}
+              {escalated > 0 && ` (회전까지 ${escalated}개)`}
+              {pairFar && ' · 지지 거리 경고'}
+            </span>
+          </summary>
+
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+            지지점 {stress.supportCount}개를 발밑 적치면 절점에 RBE2 로 연결했습니다.
+          </p>
+
+          {pairFar && (
+            <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-amber-700">
+              지지점 ↔ 정반 절점 최대 수평 거리 {Math.round(model.maxPairDistanceMm).toLocaleString()} mm —
+              정반 격자({Math.round(model.pairWarnMm).toLocaleString()}mm 기준)보다 멀어 스툴이 그만큼
+              비스듬히 붙었습니다.
+            </p>
+          )}
+
+          {promoted.length > 0 && (
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5
+                            text-[11px] leading-relaxed text-amber-800">
+              <b>고박 처리 — 부분 구속 RBE2 {promoted.length}개에 병진 3방향(123) 구속을 채웠습니다.</b>
+              {' '}입력 BDF 는 운전 조건이라 배관 지지가 한두 축만 잡는 <b>미끄러지는 지지</b>인데,
+              운송 가속도는 그 자유 방향으로 그대로 들어옵니다. 회전은 일부러 잡지 않습니다 —
+              회전까지 강결하면 짧은 부재에 실재하지 않는 모멘트가 생깁니다.
+              {escalated > 0 && (
+                <span className="mt-0.5 block">
+                  그중 <b>{escalated}개</b>는 회전까지 잡았습니다 — 그 자리를 병진만 잡으면
+                  조각이 그 점을 축으로 돌아가 버립니다(강체를 고정하려면 한 점 완전구속이거나
+                  비공선 3점이 필요합니다).
+                </span>
+              )}
+              {/* 바꾼 EID 전체 목록은 결과 JSON(rigidPromotion.promotedEids / escalatedEids)에
+                  남는다 — 화면에 늘어놓아도 읽는 사람이 할 일이 없어 개수만 밝힌다. */}
+              {model.rigidPromotion.skippedConflictCount > 0 && (
+                <span className="mt-0.5 block">
+                  ⚠ {model.rigidPromotion.skippedConflictCount}개는 같은 절점의 같은 자유도가 이미 다른
+                  강체의 종속이라 올리지 못했습니다 — 그 자리는 여전히 미끄러지는 지지입니다.
+                </span>
+              )}
+              {model.rigidPromotion.ungroundedComponentCount > 0 && (
+                <span className="mt-0.5 block">
+                  ⚠ 승격 뒤에도 본체에 접지되지 않은 조각이 {model.rigidPromotion.ungroundedComponentCount}개
+                  남아 있습니다 — 그 부분의 변위·응력은 믿을 수 없습니다.
+                </span>
+              )}
+            </div>
+          )}
+        </details>
+      )}
+
+      <p className="text-[11px] text-slate-400">
+        평가 부재 {(s.evaluatedCount ?? s.elementCount).toLocaleString()}개
+        {s.excludedCount > 0 && ` · 제외 ${s.excludedCount.toLocaleString()}개`}
+        {' · '}최대 응력 부재 EID {s.maxStressElementId}
+      </p>
     </div>
   );
 }
+
 
 /**
  * 정반은 프로그램 내장 고정 모델이라 앱을 쓰는 동안 바뀌지 않는다.
@@ -170,28 +488,6 @@ function StepPlaceholder({ icon: Icon, title, description, todos }) {
  * 배치 화면이 그대로 재사용하므로, 타입을 골라도 추가 다운로드가 없다.
  */
 const jungbanModelCache = {};   // deckType -> 슬림 지오메트리
-
-/** 배치 파라미터 수치 입력 한 칸. 하단 도크에 가로로 나열된다. */
-function ArrangementField({ label, unit, value, onChange, step = 100, title }) {
-  return (
-    <label className="block min-w-0" title={title}>
-      <span className="flex items-baseline justify-between gap-2">
-        <span className="text-[11px] font-semibold text-slate-600 truncate">{label}</span>
-        <span className="text-[9px] font-mono text-slate-400 shrink-0">{unit}</span>
-      </span>
-      <input
-        type="number"
-        value={value}
-        step={step}
-        onChange={(e) => {
-          const next = Number(e.target.value);
-          onChange(Number.isFinite(next) ? next : 0);
-        }}
-        className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-700 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-      />
-    </label>
-  );
-}
 
 /** 현재 배치 수치 한 칸. span 으로 여러 열을 차지할 수 있다. */
 function PlacementStat({ label, value, emphasis, span = false }) {
@@ -211,10 +507,11 @@ function PlacementStat({ label, value, emphasis, span = false }) {
  * (우측 세로 컬럼이던 것을 옮긴 것 — 3D 형상 판독에는 가로 폭이 훨씬 중요하다).
  */
 function ArrangementPanel({
-  gapMm, offsetXMm, offsetYMm, rotationZDeg,
+  offsetXMm, offsetYMm, rotationZDeg,
   onChange, onReset, placement, disabled,
   contactTolMm, onContactTolChange, onSeat, seating, seatingBusy,
   onCompareRotations, rotationCandidates, onApplyRotation,
+  nodeIdsAt, seatGap, landingLevels, supportCount,
 }) {
   const mm = (v) => Math.round(v).toLocaleString();
 
@@ -226,7 +523,7 @@ function ArrangementPanel({
           <div className="flex items-baseline gap-2 min-w-0">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">배치 설정</span>
             <span className="text-[9px] text-slate-400 truncate">
-              기본값 = 정반 전체 XY 중심 정렬 + 정반 상면 {DEFAULT_DECK_GAP_MM.toLocaleString()}mm 상부 · 단위 mm
+              기본값 = 정반 기준 적치면 XY 중심 정렬 · 높이는 <b>지지점마다 발밑 적치면 +{DECK_CLEARANCE_MM}mm</b> 로 자동 · 단위 mm
             </span>
           </div>
           <button
@@ -238,15 +535,30 @@ function ArrangementPanel({
           </button>
         </div>
         <div className="p-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <ArrangementField
-            label="정반 상면 기준 높이"
-            unit="mm"
-            value={gapMm}
-            step={500}
-            onChange={(v) => onChange({ gapMm: v })}
-            title="정반 상면에서 Module Unit 바닥까지의 높이"
-          />
-          <ArrangementField
+          {/* 높이는 사용자가 만지지 않는다 — 지지점마다 **발밑 적치면**을 찾아 그 위
+              +{DECK_CLEARANCE_MM}mm 를 확보하고, 가장 빡빡한 지지점에 맞춰 모듈 전체가 내려앉는다.
+              정반이 2단이면 층마다 스툴 길이가 다르게 나오므로 층별로 적는다. */}
+          <div className="min-w-0">
+            <p className="text-[9px] text-slate-400 truncate">스툴 높이 (적치면 → 지지점)</p>
+            <p className="mt-1 flex items-baseline gap-1">
+              <span className="text-sm font-bold font-mono text-slate-700">
+                {seatGap?.levels?.length
+                  ? seatGap.levels
+                      .map(l => Math.round(l.stoolMinMm).toLocaleString()
+                        + (Math.round(l.stoolMaxMm) - Math.round(l.stoolMinMm) >= 1
+                          ? `~${Math.round(l.stoolMaxMm).toLocaleString()}` : ''))
+                      .join(' / ')
+                  : DECK_CLEARANCE_MM}
+              </span>
+              <span className="text-[10px] text-slate-400">mm</span>
+            </p>
+            <p className="text-[9px] text-slate-400 leading-snug">
+              {seatGap?.levels?.length > 1
+                ? seatGap.levels.map(l => `z=${Math.round(l.landingZMm).toLocaleString()} ${l.count}개`).join(' · ')
+                : `지지점이 적치면 +${DECK_CLEARANCE_MM}mm 에 앉습니다. 모듈은 정반에 닿지 않습니다.`}
+            </p>
+          </div>
+          <NumberField
             label="X 오프셋 (종방향)"
             unit="mm"
             value={offsetXMm}
@@ -254,7 +566,7 @@ function ArrangementPanel({
             onChange={(v) => onChange({ offsetXMm: v })}
             title="정반 XY 중심 기준 종방향 이동량"
           />
-          <ArrangementField
+          <NumberField
             label="Y 오프셋 (횡방향)"
             unit="mm"
             value={offsetYMm}
@@ -262,7 +574,7 @@ function ArrangementPanel({
             onChange={(v) => onChange({ offsetYMm: v })}
             title="정반 XY 중심 기준 횡방향 이동량"
           />
-          <ArrangementField
+          <NumberField
             label="Z축 회전"
             unit="deg"
             value={rotationZDeg}
@@ -272,15 +584,15 @@ function ArrangementPanel({
           />
         </div>
 
-        {/* ─ 적치 ─ 현재 회전·오프셋 그대로 두고 높이만 내려 상판에 접촉시킨다 */}
+        {/* ─ 적치 ─ 현재 회전·오프셋 그대로 두고, 지지점이 발밑 적치면 위 이격값에 오도록 내린다 */}
         <div className="px-3 pb-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
           <button
             onClick={onSeat}
             disabled={seatingBusy}
-            title="현재 회전·오프셋을 유지한 채, 정반 상판에 닿을 때까지 Module Unit 을 내립니다."
+            title="현재 회전·오프셋에서 지지점 발밑에 적치면이 있는지, 지지점보다 낮은 부재가 정반에 닿지 않는지 검사합니다."
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-dark disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm"
           >
-            <ArrowDownToLine size={13} /> 정반에 앉히기
+            <ArrowDownToLine size={13} /> 적치 검사
           </button>
           <button
             onClick={onCompareRotations}
@@ -290,37 +602,70 @@ function ArrangementPanel({
           >
             <Compass size={13} /> 회전각 비교
           </button>
-          <div className="w-32">
-            <ArrangementField
-              label="접촉 허용오차"
-              unit="mm"
-              value={contactTolMm}
-              step={10}
-              onChange={onContactTolChange}
-              title="최저 접점에서 이 값 이내에 있는 절점을 지지점으로 셉니다. 바닥이 완전히 평평한 모델은 거의 없어서, 값을 키우면 실제 지지점 집합에 가까워집니다."
-            />
-          </div>
+          {/* 지지점을 지정하면 이 값은 아무 데도 쓰이지 않는다 — 적치 높이도 지지 다각형도
+              지지점에서 나온다. 남겨 두면 "이걸 만지면 결과가 바뀌나" 하는 오해를 준다. */}
+          {!supportCount && (
+            <div className="w-32">
+              <NumberField
+                label="밑면 판정 두께"
+                unit="mm"
+                value={contactTolMm}
+                step={10}
+                onChange={onContactTolChange}
+                title="지지점을 지정하기 전 미리보기에만 쓰입니다. 모듈 최하단에서 이 값 이내의 절점을 '밑면'으로 봅니다. 지지점을 지정하면 이 값은 쓰이지 않습니다."
+              />
+            </div>
+          )}
           {seating && (
             <div className="flex-1 min-w-[240px] text-[10px] leading-relaxed">
               {seating.ok ? (
                 <>
+                  {/* 이 화면이 답하는 것은 셋이다 — 지지점 발밑에 적치면이 다 있는가,
+                      지지점보다 낮은 부재가 정반 위에 있는가, 모듈이 적치면을 얼마나 덮는가.
+                      모듈 일부가 정반 밖으로 나가는 것 자체는 정상이다. */}
                   <span className="font-bold text-slate-700">
-                    지지점 {seating.contacts.length}개
+                    적치면 위 절점 {seating.onPlateCount.toLocaleString()} / {(seating.onPlateCount + seating.offPlateCount).toLocaleString()}
+                    <span className="ml-1 text-slate-400 font-normal">({Math.round(seating.onPlateRatio * 100)}%)</span>
                   </span>
-                  <span className="text-slate-400">
-                    {' · '}상판 위 절점 {seating.onPlateCount.toLocaleString()} / 이탈 {seating.offPlateCount.toLocaleString()}
-                    {' · '}접점 범위 {Math.round(seating.contactSpan[0]).toLocaleString()} × {Math.round(seating.contactSpan[1]).toLocaleString()}mm
-                  </span>
-                  {seating.penetrationCount > 0 && (
-                    <p className="mt-0.5 flex items-start gap-1 text-amber-700 font-semibold">
-                      <AlertTriangle size={11} className="shrink-0 mt-px" />
-                      정반 형상과 겹치는 절점 {seating.penetrationCount.toLocaleString()}개 (최대 {Math.round(seating.penetrationMaxMm).toLocaleString()}mm) — 회전·오프셋 조정이 필요합니다.
+                  {seating.supportCount > 0 && (
+                    <span className="text-slate-400">
+                      {' · '}지지점 {seating.supportCount}개{' · '}{describeStools(seating)}
+                    </span>
+                  )}
+                  {seating.supportCount === 0 && (
+                    <p className="mt-0.5 flex items-start gap-1 text-slate-500">
+                      <Info size={11} className="shrink-0 mt-px" />
+                      아직 지지점이 없어 모듈 바닥을 기준 적치면 +{DECK_CLEARANCE_MM}mm 에 둔 미리보기입니다.
+                      위에서 지지점을 먼저 지정하세요.
                     </p>
                   )}
-                  {seating.penetrationCount === 0 && !seating.supportsCentroid && (
+                  {seating.supportsOffPlateCount > 0 && (
+                    <p className="mt-0.5 flex items-start gap-1 text-red-700 font-semibold">
+                      <AlertTriangle size={11} className="shrink-0 mt-px" />
+                      <span>
+                        지지점 절점 {nodeIdList(nodeIdsAt(seating.supportsOffPlate))} 발밑에 정반 적치면이
+                        없습니다 — 스툴을 세울 자리가 없습니다(뷰어에 <b className="text-red-600">빨간 점</b>).
+                        회전·오프셋으로 정반 안으로 넣거나 그 지지점을 다시 고르세요.
+                      </span>
+                    </p>
+                  )}
+                  {seating.clearanceShortfallCount > 0 && (
+                    <p className="mt-0.5 flex items-start gap-1 text-red-700 font-semibold">
+                      <AlertTriangle size={11} className="shrink-0 mt-px" />
+                      <span>
+                        지지점보다 낮은 부재가 정반 위에 있습니다 — 절점
+                        {' '}{nodeIdList(nodeIdsAt([seating.worstClearanceIndex]))}
+                        {' '}이 정반면에서 {Math.round(seating.minDeckClearanceMm).toLocaleString()}mm 밖에 안 떨어져 있습니다
+                        (필요 {DECK_CLEARANCE_MM}mm, 이런 절점 {seating.clearanceShortfallCount.toLocaleString()}개).
+                        그 자리를 지지점에 추가하거나 배치를 조정하세요.
+                      </span>
+                    </p>
+                  )}
+                  {seating.supportsOffPlateCount === 0 && seating.clearanceShortfallCount === 0
+                    && seating.contacts.length >= 3 && !seating.supportsCentroid && (
                     <p className="mt-0.5 flex items-start gap-1 text-amber-700 font-semibold">
                       <AlertTriangle size={11} className="shrink-0 mt-px" />
-                      지지점이 한 줄이라 평면 중심을 받치지 못합니다 — 받침 추가나 회전 조정을 검토하세요.
+                      지지점이 한 줄로 몰려 평면 중심을 받치지 못합니다 — 지지점을 넓게 고르거나 회전을 조정하세요.
                     </p>
                   )}
                 </>
@@ -339,7 +684,7 @@ function ArrangementPanel({
             <div className="rounded-xl border border-slate-200 overflow-hidden">
               <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-50 border-b border-slate-200">
                 <span className="text-[10px] font-bold text-slate-500">
-                  회전각 후보 — 눌러서 적용 (지지점이 많고 가장자리 여유가 클수록 안정적)
+                  회전각 후보 — 눌러서 적용 (지지점이 모두 적치면 위에 있고 점유율·여유가 클수록 좋다)
                 </span>
                 <span className="text-[9px] text-slate-400">자동 적용하지 않습니다</span>
               </div>
@@ -348,11 +693,12 @@ function ArrangementPanel({
                   <thead className="text-slate-400">
                     <tr className="border-b border-slate-100">
                       <th className="text-left font-semibold px-2.5 py-1">회전</th>
-                      <th className="text-right font-semibold px-2 py-1">지지점</th>
-                      <th className="text-right font-semibold px-2 py-1">접점 범위</th>
+                      <th className="text-right font-semibold px-2 py-1">지지 절점</th>
+                      <th className="text-right font-semibold px-2 py-1">지지 범위</th>
                       <th className="text-right font-semibold px-2 py-1">가장자리 여유</th>
-                      <th className="text-right font-semibold px-2 py-1">상판 점유</th>
-                      <th className="text-right font-semibold px-2.5 py-1">관통</th>
+                      <th className="text-right font-semibold px-2 py-1">스툴</th>
+                      <th className="text-right font-semibold px-2 py-1">적치면 점유</th>
+                      <th className="text-right font-semibold px-2.5 py-1">문제</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -366,7 +712,7 @@ function ArrangementPanel({
                         <React.Fragment key={`g${c.rotationZDeg}`}>
                         {groupHead && (
                           <tr className="bg-slate-50/70">
-                            <td colSpan={6} className="px-2.5 py-1 text-[9px] font-bold text-slate-400">
+                            <td colSpan={7} className="px-2.5 py-1 text-[9px] font-bold text-slate-400">
                               그 외 후보 (축에서 벗어난 각도)
                             </td>
                           </tr>
@@ -387,13 +733,24 @@ function ArrangementPanel({
                           <td className="px-2 py-1 text-right font-mono text-slate-600">
                             {Math.round(r.contactEdgeMarginMm).toLocaleString()}mm
                           </td>
+                          {/* 단차 정반에서는 스툴 길이가 각도를 가른다 — 12m 스툴은 못 세운다. */}
+                          <td className={`px-2 py-1 text-right font-mono ${
+                            r.stoolMaxMm > 3000 ? 'text-amber-600 font-bold' : 'text-slate-600'
+                          }`}>
+                            {Math.round(r.stoolMinMm).toLocaleString()}~{Math.round(r.stoolMaxMm).toLocaleString()}
+                          </td>
                           <td className="px-2 py-1 text-right font-mono text-slate-600">
                             {Math.round(r.onPlateRatio * 100)}%
                           </td>
+                          {/* 3단계를 막는 두 조건. 지지점이 적치면을 벗어났거나(스툴 자리 없음),
+                              지지점보다 낮은 부재가 정반에 너무 가까운 경우다. */}
                           <td className={`px-2.5 py-1 text-right font-mono font-bold ${
-                            r.penetrationCount ? 'text-amber-600' : 'text-emerald-600'
+                            (r.supportsOffPlateCount || r.clearanceShortfallCount)
+                              ? 'text-red-600' : 'text-emerald-600'
                           }`}>
-                            {r.penetrationCount ? `${r.penetrationCount}개` : '없음'}
+                            {r.supportsOffPlateCount ? `지지점 ${r.supportsOffPlateCount}개 이탈`
+                              : r.clearanceShortfallCount ? `이격 ${Math.round(r.minDeckClearanceMm).toLocaleString()}mm`
+                              : '없음'}
                           </td>
                         </tr>
                         </React.Fragment>
@@ -415,9 +772,21 @@ function ArrangementPanel({
         <div className="p-3">
           {placement?.position ? (
             <div className="grid grid-cols-3 gap-x-4 gap-y-2">
-              <PlacementStat label="정반 상면 Z" value={mm(placement.deckTopZ)} />
+              {/* ⚠ '정반 상면' 이라고만 적으면 2단 정반에서 오독한다 — MU 바닥 2,320 이
+                  상면 8,026 보다 낮게 찍혀 모듈이 정반을 6m 뚫고 들어간 것처럼 보인다.
+                  실제로는 하단 적치면(2,020) 위에 앉은 것이다. 그래서 층을 다 적는다. */}
+              <PlacementStat label="최상단 적치면 Z" value={mm(placement.deckTopZ)} />
               <PlacementStat label="MU 바닥 Z" value={mm(placement.moduleBottomZ)} emphasis />
               <PlacementStat label="MU 상단 Z" value={mm(placement.moduleTopZ)} />
+              {landingLevels?.length > 1 && (
+                <PlacementStat
+                  span
+                  label={`정반 적치면 ${landingLevels.length}층 (Z · 면적)`}
+                  value={landingLevels
+                    .map(lv => `${mm(lv.z)} (${(lv.area / 1e6).toFixed(0)}㎡)`)
+                    .join('  /  ')}
+                />
+              )}
               <PlacementStat label="MU 중심 X" value={mm(placement.position[0])} />
               <PlacementStat label="MU 중심 Y" value={mm(placement.position[1])} />
               {/* 세 축 치수를 한 줄에 담아야 잘리지 않는다 — 전체 폭 사용. */}
@@ -601,6 +970,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
     analysisPageStates,
     setAnalysisPageState,
     clearAnalysisPageState,
+    clearGlobalJobForMenu,
   } = dashboardCtx;
   const savedPageState = analysisPageStates?.[MENU_NAME] || {};
   // 다른 App 해석이 더 최근이어도 이 App 의 해석을 집어야 한다(globalJob 은 최신 1개일 뿐).
@@ -608,8 +978,20 @@ export default function ModuleUnitOceanTransportAnalysis() {
   const { showToast } = useToast();
 
   // ── 파이프라인 상태 ──────────────────────────────────────
-  const [steps, setSteps]         = useState(savedPageState.steps ?? INITIAL_STEPS);
-  const [activeIdx, setActiveIdx] = useState(savedPageState.activeIdx ?? 0);
+  // 단계 구성이 바뀌면(4단계 용접 평가를 3단계 과정 2 로 흡수) 저장된 옛 단계 배열은
+  // 길이가 달라 activeIdx 가 없는 칸을 가리킨다 — 구성이 다르면 통째로 버린다.
+  const [steps, setSteps] = useState(() => {
+    const saved = savedPageState.steps;
+    const sameShape = Array.isArray(saved) && saved.length === INITIAL_STEPS.length
+      && saved.every((s, i) => s?.id === INITIAL_STEPS[i].id);
+    // 아이콘은 직렬화되지 않으므로 항상 코드 쪽 정의에서 되살린다.
+    return sameShape
+      ? saved.map((s, i) => ({ ...INITIAL_STEPS[i], status: s.status }))
+      : INITIAL_STEPS;
+  });
+  const [activeIdx, setActiveIdx] = useState(
+    () => Math.min(savedPageState.activeIdx ?? 0, INITIAL_STEPS.length - 1),
+  );
   // 검증이 성공적으로 끝났는지 여부 — 다음 단계 이동 게이트.
   const [hasRunOnce, setHasRunOnce] = useState(savedPageState.hasRunOnce ?? false);
 
@@ -643,22 +1025,95 @@ export default function ModuleUnitOceanTransportAnalysis() {
   const [viewerError, setViewerError]   = useState(null);
   // '다시 시도' 및 새 검증 시 로드를 강제로 다시 태우기 위한 토큰.
   const [viewerReloadToken, setViewerReloadToken] = useState(0);
-  const [arrangement, setArrangement]   = useState(savedPageState.arrangement ?? {
-    gapMm: DEFAULT_DECK_GAP_MM, offsetXMm: 0, offsetYMm: 0, rotationZDeg: 0,
-  });
+  // 높이는 더 이상 arrangement 에 없다 — 지지점마다 발밑 적치면 +DECK_CLEARANCE_MM 에 오도록 파생된다.
+  // 되살린 옛 상태에 gapMm 이 남아 있어도 그대로 무시된다.
+  const [arrangement, setArrangement]   = useState(() => ({
+    ...DEFAULT_MODULE_OCEAN_ARRANGEMENT,
+    ...(savedPageState.arrangement ?? {}),
+  }));
   // 적치 — 최저 접점에서 이 값 이내를 지지점으로 센다. 바닥이 완전히 평평한 모델은
   // 거의 없어서 1mm 로 두면 지지점이 1점·1줄로만 잡힌다.
-  const [contactTolMm, setContactTolMm] = useState(savedPageState.contactTolMm ?? DEFAULT_CONTACT_TOL_MM);
+  const [contactTolMm, setContactTolMm] = useState(
+    savedPageState.contactTolMm ?? DEFAULT_MODULE_OCEAN_CONTACT_TOL_MM,
+  );
   // 중량 여유(%) — 기본 0. 계산값(순수 모델 중량)과 여유 적용값을 화면에 함께 보여 추적 가능하게 한다.
   const [showCog, setShowCog] = useState(true);
+  // 정반이 Unit 밑면과 스툴을 가려 "어디를 받치는지" 를 못 읽는다 — 반투명 토글.
+  const [deckTransparent, setDeckTransparent] = useState(savedPageState.deckTransparent ?? false);
   const [deckContingencyPct, setDeckContingencyPct]     = useState(savedPageState.deckContingencyPct ?? 0);
   const [moduleContingencyPct, setModuleContingencyPct] = useState(savedPageState.moduleContingencyPct ?? 0);
-  const [seating, setSeating]           = useState(null);
+  // 적치 결과는 2단계의 산출물이자 3단계의 입력(접촉 절점 ID)이다 — 보존하지 않으면
+  // 다른 메뉴에 다녀온 뒤 완료 표식과 3단계 실행 가능 여부가 함께 사라진다.
+  const [seating, setSeating]           = useState(savedPageState.seating ?? null);
   const [seatingBusy, setSeatingBusy]   = useState(false);
+  // 지지점(경계조건) 지정 — 자동 접촉 탐지는 Z 임계값만 보기 때문에 밑면이 평평하지 않은
+  // 모듈에서는 한 줄짜리 지지를 고른다(실측: 5점 전부 같은 Y). 실제 지지는 높이가 다른
+  // 스툴을 어디에 놓을지의 **설계 결정**이라 형상에서 유도할 수 없어 사용자가 지정한다.
+  // 값은 뷰어 positions 인덱스다(모듈 자체 절점이라 회전·오프셋을 바꿔도 유효하다).
+  // 지정은 전용 모달에서 한다 — 2단계 뷰어는 정반이 Unit 밑면을 가려 찍을 수가 없다.
+  const [supportPickerOpen, setSupportPickerOpen] = useState(false);
+  const [supportIdx, setSupportIdx] = useState(() => new Set(savedPageState.supportIdx ?? []));
   const [rotationCandidates, setRotationCandidates] = useState(null);
 
-  // ── Step 4: 결과 ─────────────────────────────────────────
+  // ── Step 3: 구조 해석 ────────────────────────────────────────
+  const [accel, setAccel] = useState(savedPageState.accel ?? { ...GRAVITY_ONLY_ACCEL_G });
+  const [accelerationInput, setAccelerationInput] = useState(
+    savedPageState.accelerationInput ?? { ...DEFAULT_BARGE_ACCEL_INPUT },
+  );
+  const [accelerationResult, setAccelerationResult] = useState(
+    savedPageState.accelerationResult ?? null,
+  );
+  const [accelerationBusy, setAccelerationBusy] = useState(false);
+  const [accelerationError, setAccelerationError] = useState(null);
+  const [material, setMaterial] = useState(savedPageState.material ?? { sigmaYMPa: 275, factor: 0.8 });
+  // 판정에서 뺄 소구경 배관의 외경 상한. 0 이면 제외하지 않는다.
+  const [smallBoreMaxOdMm, setSmallBoreMaxOdMm] = useState(
+    savedPageState.smallBoreMaxOdMm ?? DEFAULT_SMALL_BORE_MAX_OD_MM);
+  // Nastran 해석은 수 분 걸린다. job id 를 페이지 상태에 남겨 두지 않으면
+  // 화면을 벗어난 순간 폴링이 끊기고, 백엔드는 계속 도는데 결과가 영영 안 뜬다.
+  const [structuralJobId, setStructuralJobId] = useState(savedPageState.structuralJobId ?? null);
+  const [structuralBusy, setStructuralBusy] = useState(false);
+  const [structuralProgress, setStructuralProgress] = useState(0);
+  const [structuralMsg, setStructuralMsg] = useState('');
+  const [structuralError, setStructuralError] = useState(null);
+  const [structuralResult, setStructuralResult] = useState(savedPageState.structuralResult ?? null);
+  // 색맵 모달 — 결과가 큰 배열이라 열 때만 받는다(페이지 상태에 저장하지 않는다).
+  const [colorMapOpen, setColorMapOpen] = useState(false);
+  const [legModalOpen, setLegModalOpen] = useState(false);
+  const [weldModalOpen, setWeldModalOpen] = useState(false);
+
+  const allowableMPa = useMemo(
+    () => Number(material.sigmaYMPa || 0) * Number(material.factor || 0),
+    [material],
+  );
+  // 입력칸 값 → 실제로 서버에 보낼 값. 빈 칸(사용자가 지운 상태)은 기본값으로 되돌리고,
+  // 0 은 '제외 안 함'이라는 사용자 의도이므로 그대로 살린다.
+  const smallBoreMaxOdMmForRun = useMemo(() => {
+    const raw = String(smallBoreMaxOdMm ?? '').trim();
+    if (raw === '') return DEFAULT_SMALL_BORE_MAX_OD_MM;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : DEFAULT_SMALL_BORE_MAX_OD_MM;
+  }, [smallBoreMaxOdMm]);
+  const accelerationKey = useMemo(
+    () => bargeAccelerationInputKey(accelerationInput),
+    [accelerationInput],
+  );
+  const accelerationIsCurrent = Boolean(
+    accelerationResult?.inputKey === accelerationKey,
+  );
+  const accelerationInputIssues = useMemo(
+    () => getBargeAccelerationInputIssues(accelerationInput),
+    [accelerationInput],
+  );
+
+  // ── 3단계 과정 2: 정반 Leg 용접부 강도 평가 ──────────────
+  // 사양은 사용자가 만지는 입력이라 페이지를 떠나도 보존한다. 판정 결과는 해석이
+  // 한 번 만들어 주고(result_info.weld), 사양을 바꾸면 /weld-assess 가 갈아 끼운다.
+  const [weldSpec, setWeldSpec] = useState(
+    () => normalizeWeldSpec(savedPageState.weldSpec ?? DEFAULT_WELD_SPEC),
+  );
   const [weldResult, setWeldResult] = useState(savedPageState.weldResult ?? null);
+  const [processTab, setProcessTab] = useState(savedPageState.processTab ?? 'stress');
 
   const bdfFolderPath = useMemo(
     () => bdfPath ? bdfPath.replace(/[/\\][^/\\]+$/, '') : null,
@@ -676,28 +1131,42 @@ export default function ModuleUnitOceanTransportAnalysis() {
       steps, activeIdx, hasRunOnce,
       bdfFile, validating, validJobId, validProgress, validStatusMsg,
       step1Data, step2Data, modelJsonPath, bdfPath, bdfAnalysisId,
-      useNastran, weldResult, moduleModel, arrangement, deckType, contactTolMm,
-      deckContingencyPct, moduleContingencyPct,
+      useNastran, weldResult, weldSpec, processTab, moduleModel, arrangement, deckType, contactTolMm,
+      deckContingencyPct, moduleContingencyPct, deckTransparent,
+      accel, accelerationInput, accelerationResult,
+      material, smallBoreMaxOdMm, structuralResult, structuralJobId, seating,
+      supportIdx: [...supportIdx],
     });
   }, [
     setAnalysisPageState,
     steps, activeIdx, hasRunOnce,
     bdfFile, validating, validJobId, validProgress, validStatusMsg,
     step1Data, step2Data, modelJsonPath, bdfPath, bdfAnalysisId,
-    useNastran, weldResult, moduleModel, arrangement, deckType, contactTolMm,
-    deckContingencyPct, moduleContingencyPct,
+    useNastran, weldResult, weldSpec, processTab, moduleModel, arrangement, deckType, contactTolMm,
+    deckContingencyPct, moduleContingencyPct, deckTransparent,
+    accel, accelerationInput, accelerationResult,
+    material, smallBoreMaxOdMm, structuralResult, structuralJobId, seating, supportIdx,
   ]);
 
   // ── 진행 중이던 작업 복원 ────────────────────────────────
   useEffect(() => {
     if (!pageJob) return;
     if (pageJob.status !== 'Running' && pageJob.status !== 'Pending') return;
+    // 전역 작업 슬롯은 메뉴당 하나뿐이라 1·3단계가 같은 자리를 쓴다.
+    // job id 로 갈라 주지 않으면 3단계 해석을 1단계 검증으로 되살려 버린다.
+    if (pageJob.jobId === structuralJobId) {
+      setStructuralBusy(true);
+      setStepStatus('structural-run', 'running');
+      setStructuralProgress(pageJob.progress ?? 0);
+      setStructuralMsg(pageJob.message ?? '서버 처리 중...');
+      return;
+    }
     setValidJobId(prev => prev || pageJob.jobId);
     setValidating(true);
     setStepStatus('bdf-validation', 'running');
     setValidProgress(pageJob.progress ?? 0);
     setValidStatusMsg(pageJob.message ?? '서버 처리 중...');
-  }, [pageJob?.jobId, pageJob?.status, pageJob?.progress, pageJob?.message]);
+  }, [pageJob?.jobId, pageJob?.status, pageJob?.progress, pageJob?.message, structuralJobId]);
 
   // ── BDF 검증 폴링 ────────────────────────────────────────
   usePolling({
@@ -852,51 +1321,56 @@ export default function ModuleUnitOceanTransportAnalysis() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStepId, deckType, modelJsonPath, viewerReloadToken]);
 
-  // 배치 규칙은 utils/feGeometry.computeModulePlacement 한 곳에만 있다(단위 테스트 대상).
-  const placement = useMemo(
-    () => computeModulePlacement(jungbanModel?.bounds, moduleModel?.bounds, arrangement),
-    [jungbanModel, moduleModel, arrangement],
-  );
-
-  const viewerParts = useMemo(() => {
-    const list = [];
-    if (jungbanModel) {
-      list.push({
-        id: 'jungban',
-        name: '정반 (고정)',
-        color: PART_COLOR_JUNGBAN,
-        model: jungbanModel,
-        position: [0, 0, 0],
-        rotationZ: 0,
-        opacity: 1,
-      });
-    }
-    if (moduleModel && placement?.position) {
-      list.push({
-        id: 'module-unit',
-        name: 'Module Unit',
-        color: PART_COLOR_MODULE,
-        model: moduleModel,
-        anchor: placement.anchor,
-        position: placement.position,
-        rotationZ: arrangement.rotationZDeg,
-        opacity: 1,
-      });
-    }
-    return list;
-  }, [jungbanModel, moduleModel, placement, arrangement.rotationZDeg]);
-
   // ── 적치(seating) ────────────────────────────────────────
-  // 정반 상판 추출과 높이맵은 정반 타입당 한 번만 만든다(A 기준 약 16ms).
+  // 정반 적치면 추출과 높이맵은 정반 타입당 한 번만 만든다(A 기준 약 16ms).
+  // 배치보다 먼저 만든다 — 모듈을 앉힐 기준이 정반 bbox 가 아니라 **기준 적치면**이다.
   const deckSurface = useMemo(
     () => (jungbanModel ? buildDeckSurface(jungbanModel) : null),
     [jungbanModel],
   );
+
+  /** footprint 인덱스 목록 → BDF 절점 ID 목록. 매핑이 없으면 인덱스를 그대로 보여 준다. */
+  const nodeIdsAt = (indices) => (indices || []).map(i => moduleModel?.nodeIds?.[i] ?? i);
+
   // 절점을 anchor 기준 로컬좌표로 펴 둔다 — 회전각 360회 스윕에서 매번 다시 만들지 않기 위함.
+  // 배치보다 먼저 만든다: 적치 높이가 지지점에서 나오고, 지지점 좌표가 여기서 나온다.
   const moduleFootprint = useMemo(
     () => (moduleModel ? prepareModuleFootprint(moduleModel) : null),
     [moduleModel],
   );
+
+  // 배치 기준점(기준 적치면 XY 중심). computeModulePlacement 와 같은 함수를 쓴다.
+  const deckCenter = useMemo(
+    () => deckPlacementCenter(jungbanModel?.bounds, deckSurface),
+    [jungbanModel, deckSurface],
+  );
+
+  // 배치 규칙은 utils/feGeometry 한 곳에만 있다(단위 테스트 대상).
+  /**
+   * 적치 높이 — **지지점이 각자 발밑 적치면 위 DECK_CLEARANCE_MM 에 오도록** 모듈이 내려앉은 결과.
+   *
+   * 정반은 2단이다(상단 z=8026 / 하단 z=2020). 지지점마다 발밑 층이 다를 수 있고,
+   * 가장 빡빡한 지지점이 그 이격값이 되는 높이로 모듈 전체가 내려간다. 층이 다르면
+   * 스툴 길이도 층마다 다르게 나온다 — 그 내역이 seatGap.levels 다.
+   * 지지점을 만질 때마다 다시 계산되지만 지지점 수만큼만 훑어서 싸다.
+   */
+  const seatGap = useMemo(() => computeSeatGap(deckSurface, moduleFootprint, {
+    deckCenter,
+    offsetXMm: arrangement.offsetXMm,
+    offsetYMm: arrangement.offsetYMm,
+    rotationZDeg: arrangement.rotationZDeg,
+    clearanceMm: DECK_CLEARANCE_MM,
+    supportIndices: supportIdx,
+  }), [deckSurface, moduleFootprint, deckCenter, arrangement, supportIdx]);
+  const seatGapMm = seatGap.gapMm;
+
+  const placement = useMemo(
+    () => computeModulePlacement(jungbanModel?.bounds, moduleModel?.bounds,
+                                 { ...arrangement, gapMm: seatGapMm }, deckSurface),
+    [jungbanModel, moduleModel, arrangement, seatGapMm, deckSurface],
+  );
+
+
   /* ── 중량 / 무게중심 ────────────────────────────────────────
      각 모델의 질량·COG 는 백엔드가 계산해 페이로드(massProperties)로 보내 준다.
      여기서는 모듈 COG 를 현재 배치로 옮겨 정반 것과 합치기만 한다 — 슬라이더를 만질 때마다
@@ -911,12 +1385,16 @@ export default function ModuleUnitOceanTransportAnalysis() {
       offsetXMm: arrangement.offsetXMm,
       offsetYMm: arrangement.offsetYMm,
       rotationZDeg: arrangement.rotationZDeg,
-      gapMm: arrangement.gapMm,
+      gapMm: seatGapMm,
     } : null,
     deckContingencyPct,
     moduleContingencyPct,
-  }), [jungbanModel, moduleModel, placement, arrangement,
+  }), [jungbanModel, moduleModel, placement, arrangement, seatGapMm,
        deckContingencyPct, moduleContingencyPct]);
+
+  // 3단계 해석 입력도 massSummary 를 그대로 쓴다. 중량 여유(%)는 이제 **실제 모델 질량**
+  // (MAT1 밀도·CONM2)에 곱해져 해석에 들어가므로, 반력 검산에 쓰는 합산 질량도 같은
+  // 여유를 포함해야 한다. 둘을 다르게 두면 검산이 늘 여유율만큼 어긋난다.
 
   // 추선(다림추)은 정반 바닥까지 내린다 — 공중의 점 하나로는 깊이를 못 읽는다.
   const cogMarkers = useMemo(() => {
@@ -948,22 +1426,47 @@ export default function ModuleUnitOceanTransportAnalysis() {
       offsetXMm: arrangement.offsetXMm,
       offsetYMm: arrangement.offsetYMm,
       rotationZDeg: arrangement.rotationZDeg,
+      clearanceMm: DECK_CLEARANCE_MM,
+      supportIndices: supportIdx,
       ...overrides,
     });
   };
 
-  /** 현재 회전·오프셋을 유지한 채 상판에 닿을 때까지 내린다. */
+  /**
+   * 현재 회전·오프셋에서 모듈이 적치면을 얼마나 덮는지 검사한다.
+   *
+   * 높이는 지지점마다 발밑 적치면 +DECK_CLEARANCE_MM 로 정해지므로 사용자가 내릴 것이
+   * 없다. 이 버튼이 답하는 질문은 셋이다 — 지지점 발밑에 적치면이 있는가, 지지점보다
+   * 낮은 부재가 정반에 너무 가깝지 않은가, 모듈이 적치면을 얼마나 덮는가.
+   * 모듈 일부가 정반 밖으로 나가는 것은 실패가 아니다(정반 A 상단 7.1m < 모듈 14.6m).
+   */
   const handleSeat = () => {
     const r = runSeating();
     if (!r) return;
     setSeating(r);
     if (!r.ok) { showToast(r.reason, 'warning'); return; }
-    setArrangement(prev => ({ ...prev, gapMm: Math.round(r.gapMm) }));
+    if (r.supportsOffPlateCount > 0) {
+      showToast(
+        `지지점 ${nodeIdList(nodeIdsAt(r.supportsOffPlate))} 발밑에 정반 적치면이 없습니다 `
+        + '— 뷰어에 빨간 점으로 표시했습니다.',
+        'warning',
+      );
+      return;
+    }
+    if (r.clearanceShortfallCount > 0) {
+      showToast(
+        `절점 ${nodeIdList(nodeIdsAt([r.worstClearanceIndex]))} 이 정반면에서 `
+        + `${Math.round(r.minDeckClearanceMm).toLocaleString()}mm 밖에 안 떨어져 있습니다 `
+        + `(필요 ${DECK_CLEARANCE_MM}mm).`,
+        'warning',
+      );
+      return;
+    }
     showToast(
-      r.penetrationCount > 0
-        ? `정반에 앉혔습니다 — 지지점 ${r.contacts.length}개, 다만 정반과 겹치는 절점 ${r.penetrationCount}개`
-        : `정반에 앉혔습니다 — 지지점 ${r.contacts.length}개`,
-      r.penetrationCount > 0 ? 'warning' : 'success',
+      r.supportCount
+        ? `지지점 ${r.supportCount}개가 적치면 위에 앉았습니다 · ${describeStools(r)}`
+        : `적치면 위 절점 ${r.onPlateCount.toLocaleString()}개 (${Math.round(r.onPlateRatio * 100)}%) — 지지점을 먼저 지정하세요.`,
+      'success',
     );
   };
 
@@ -986,10 +1489,12 @@ export default function ModuleUnitOceanTransportAnalysis() {
           ...seatingBase,
           offsetXMm: arrangement.offsetXMm,
           offsetYMm: arrangement.offsetYMm,
+          clearanceMm: DECK_CLEARANCE_MM,
+          supportIndices: supportIdx,
         });
         const list = (res?.candidates || []).filter(c => c.seating?.ok);
         if (!list.length) {
-          showToast('상판에 앉힐 수 있는 회전각을 찾지 못했습니다. 오프셋을 조정해보세요.', 'warning');
+          showToast('적치면에 앉힐 수 있는 회전각을 찾지 못했습니다. 오프셋을 조정해보세요.', 'warning');
           return;
         }
         setRotationCandidates(list.slice(0, 8));
@@ -1000,25 +1505,226 @@ export default function ModuleUnitOceanTransportAnalysis() {
     }, 0);
   };
 
-  /** 후보 하나를 실제 배치에 적용한다. */
+  /** 후보 하나를 실제 배치에 적용한다. 높이는 고정이라 회전각만 바뀐다. */
   const handleApplyRotation = (candidate) => {
-    setArrangement(prev => ({
-      ...prev,
-      rotationZDeg: candidate.rotationZDeg,
-      gapMm: Math.round(candidate.seating.gapMm),
-    }));
+    setArrangement(prev => ({ ...prev, rotationZDeg: candidate.rotationZDeg }));
     setSeating(candidate.seating);
   };
 
   // 배치가 바뀌면 이전 적치 결과는 더 이상 그 배치의 것이 아니다.
   // (후보 목록은 오프셋·정반이 바뀔 때만 무효화한다 — 회전각은 후보를 고르면 바뀌므로
   //  회전 변경까지 무효화하면 방금 띄운 목록이 클릭하는 순간 사라진다.)
-  useEffect(() => { setSeating(null); }, [
-    arrangement.rotationZDeg, arrangement.offsetXMm, arrangement.offsetYMm, deckType, moduleModel,
-  ]);
+  const seatingKeyRef = useRef(null);
+  useEffect(() => {
+    // 지지점이 바뀌면 적치 높이 자체가 달라진다 — 이전 검사 결과는 그 배치의 것이 아니다.
+    const supportKey = `${supportIdx.size}:${[...supportIdx].reduce((a, b) => a + b, 0)}`;
+    const key = [arrangement.rotationZDeg, arrangement.offsetXMm, arrangement.offsetYMm,
+      deckType, moduleModel ? 1 : 0, supportKey].join('|');
+    // 첫 실행은 '배치 변경' 이 아니라 '페이지 복원' 이다 — 여기서 지우면 다른 메뉴에
+    // 다녀올 때마다 멀쩡한 적치 결과가 사라진다.
+    if (seatingKeyRef.current === null || seatingKeyRef.current === key) {
+      seatingKeyRef.current = key;
+      return;
+    }
+    seatingKeyRef.current = key;
+    setSeating(null);
+  }, [arrangement.rotationZDeg, arrangement.offsetXMm, arrangement.offsetYMm, deckType,
+      moduleModel, supportIdx]);
   useEffect(() => { setRotationCandidates(null); }, [
     arrangement.offsetXMm, arrangement.offsetYMm, contactTolMm, deckType, moduleModel,
   ]);
+
+  // 선택한 지지점의 품질 판정 — 공선·전도·스툴 높이차를 **찍는 그 자리에서** 알린다.
+  // (이번 사고에서는 Nastran 을 다 돌린 뒤에야 드러났다.)
+  const supportPoints = useMemo(
+    () => selectionPoints(moduleModel, supportIdx),
+    [moduleModel, supportIdx],
+  );
+  const rigidDependent = useMemo(() => rigidDependentIndices(moduleModel), [moduleModel]);
+  const supportEval = useMemo(() => evaluateSupportSelection(supportPoints, {
+    // 모듈 자체 무게중심(모델 좌표) — 배치 변환 전 값이라 회전·오프셋과 무관하게 비교된다.
+    cogMm: moduleModel?.massProperties?.centerOfGravityMm,
+    rigidDependent,
+  }), [supportPoints, moduleModel, rigidDependent]);
+  // 확정한 지지점을 2단계 뷰어에 표시한다 — 정반 위 어디를 받치는지 보여야
+  // 배치를 조정할 근거가 생긴다. 자동 접촉점은 더 이상 해석에 쓰이지 않으므로,
+  // 선택이 있으면 선택을 보여 준다.
+  // 발밑에 적치면이 없는 지지점은 **빨갛게 크게** 찍는다 — "5개가 밖입니다" 라는 숫자만
+  // 보고는 어느 것인지 알 길이 없다는 지적을 받은 자리다. 절점 ID 는 아래 배치 패널이 쓴다.
+  const supportMarkers = useMemo(() => {
+    if (!supportPoints.length || !seatingBase) return [];
+    const off = new Set(seatGap.supportsOffPlate);
+    return supportPoints
+      .map((p) => {
+        const world = transformModulePoint(p, {
+          ...seatingBase,
+          offsetXMm: arrangement.offsetXMm,
+          offsetYMm: arrangement.offsetYMm,
+          rotationZDeg: arrangement.rotationZDeg,
+          gapMm: seatGapMm,
+        });
+        if (!world) return null;
+        return off.has(p.i) ? { ...world, color: '#ef4444', size: 16 } : world;
+      })
+      .filter(Boolean);
+  }, [supportPoints, seatingBase, arrangement, seatGapMm, seatGap.supportsOffPlate]);
+
+  /**
+   * 스툴 기둥 — 지지점에서 **자기 발밑 적치면**까지 내린 선.
+   *
+   * 숫자(300 / 570mm)만으로는 어느 자리 스툴이 긴지 형상 위에서 짚을 수 없다.
+   * 2단 정반에서는 이 그림이 "이 발은 하단, 저 발은 상단" 을 한눈에 보여 준다.
+   * 해석 모델의 지지 RBE2 가 실제로 건너뛰는 높이가 바로 이 선이다.
+   */
+  const stoolPart = useMemo(() => {
+    const rows = seatGap.supports || [];
+    if (!rows.length || !supportPoints.length || !seatingBase) return null;
+    const landingOf = new Map(rows.map(r => [r.i, r.landingZMm]));
+    const positions = [];
+    const beams = [];
+    for (const p of supportPoints) {
+      const landingZ = landingOf.get(p.i);
+      if (landingZ === undefined) continue;          // 발밑에 적치면이 없는 지지점
+      const world = transformModulePoint(p, {
+        ...seatingBase,
+        offsetXMm: arrangement.offsetXMm,
+        offsetYMm: arrangement.offsetYMm,
+        rotationZDeg: arrangement.rotationZDeg,
+        gapMm: seatGapMm,
+      });
+      if (!world) continue;
+      const k = positions.length / 3;
+      positions.push(world.x, world.y, world.z, world.x, world.y, landingZ);
+      beams.push(k, k + 1);
+    }
+    if (!beams.length) return null;
+    return {
+      name: '스툴',
+      key: `${arrangement.rotationZDeg}|${arrangement.offsetXMm}|${arrangement.offsetYMm}`
+        + `|${Math.round(seatGapMm)}|${beams.length}`,
+      positions,
+      beams,
+      rigids: [], quads: [], trias: [],
+      nodeCount: positions.length / 3,
+      beamCount: beams.length / 2,
+      quadCount: 0, triaCount: 0, rigidCount: 0,
+    };
+  }, [seatGap.supports, supportPoints, seatingBase, arrangement, seatGapMm]);
+
+  // ⚠ 이 훅은 stoolPart **뒤에** 있어야 한다. 의존성 배열은 렌더 중 그 자리에서
+  //   평가되므로, 위에 두면 아직 초기화되지 않은 stoolPart 를 읽어 TDZ 로 죽는다
+  //   (번들러는 못 잡고 화면을 열어야 드러난다).
+  const viewerParts = useMemo(() => {
+    const list = [];
+    if (jungbanModel) {
+      list.push({
+        id: 'jungban',
+        name: deckTransparent ? '정반 (반투명)' : '정반 (고정)',
+        color: PART_COLOR_JUNGBAN,
+        model: jungbanModel,
+        position: [0, 0, 0],
+        rotationZ: 0,
+        // 정반이 Unit 밑면과 스툴을 가려 지지 위치를 못 읽는다 — 투명도를 사용자가 켠다.
+        opacity: deckTransparent ? 0.25 : 1,
+      });
+    }
+    if (moduleModel && placement?.position) {
+      list.push({
+        id: 'module-unit',
+        name: 'Module Unit',
+        color: PART_COLOR_MODULE,
+        model: moduleModel,
+        anchor: placement.anchor,
+        position: placement.position,
+        rotationZ: arrangement.rotationZDeg,
+        opacity: 1,
+      });
+    }
+    // 스툴은 이미 정반 좌표로 만들어져 있다(배치 변환을 거친 값) — 그대로 얹는다.
+    if (stoolPart) {
+      list.push({
+        id: 'stools',
+        name: `스툴 ${stoolPart.beamCount}개 (지지점 → 적치면)`,
+        color: PART_COLOR_STOOL,
+        model: stoolPart,
+        opacity: 1,
+        // ⚠ 뷰어는 절점 수·anchor·색이 같으면 지오메트리를 다시 만들지 않는다. 스툴은
+        //    좌표를 이미 정반 기준으로 구워 넣었으므로, 배치를 바꾸면 절점 수가 같아도
+        //    다시 만들어야 한다 — 안 그러면 모듈만 움직이고 스툴이 제자리에 남는다.
+        colorKey: stoolPart.key,
+      });
+    }
+    return list;
+  }, [jungbanModel, moduleModel, placement, arrangement.rotationZDeg, stoolPart, deckTransparent]);
+
+  /** 적치면을 못 찾은 지지점의 BDF 절점 ID 목록 — 화면·토스트가 그대로 보여 준다. */
+  const offPlateSupportNodeIds = useMemo(
+    () => nodeIdsAt(seatGap.supportsOffPlate),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [seatGap.supportsOffPlate, moduleModel],
+  );
+
+  const supportNodeIds = useMemo(
+    () => selectionNodeIds(moduleModel, supportIdx),
+    [moduleModel, supportIdx],
+  );
+
+  // 접힌 '해석 조건' 머리에 한 줄로 얹을 요약. 무엇으로 돌렸는지 열지 않고도 읽혀야 한다.
+  // ⚠ 위치 고정 — allowableMPa·smallBoreMaxOdMmForRun·supportNodeIds 를 모두 읽으므로
+  //   셋 중 가장 늦게 선언되는 supportNodeIds **뒤**에 있어야 한다. 앞으로 옮기면
+  //   useMemo 가 선언 시점에 즉시 평가되면서 TDZ ReferenceError 로 페이지가 죽는다
+  //   (번들러는 잡지 못한다 — 과거 viewerParts 에서 같은 사고가 있었다).
+  const conditionSummary = useMemo(() => [
+    accelerationInput.loadCase,
+    `허용 ${allowableMPa.toFixed(0)} MPa`,
+    smallBoreMaxOdMmForRun > 0 ? `소구경 OD≤${smallBoreMaxOdMmForRun} 제외` : '소구경 제외 안 함',
+    `지지 ${supportNodeIds.length}점`,
+  ].join(' · '), [accelerationInput.loadCase, allowableMPa, smallBoreMaxOdMmForRun, supportNodeIds.length]);
+
+  // 모델이 바뀌면 이전 선택의 인덱스는 다른 절점을 가리킨다 — 반드시 버린다.
+  // 반대로 배치(회전·오프셋)가 바뀌어도 선택은 유효하다(모듈 자체 절점이므로).
+  const supportModelRef = useRef(null);
+  useEffect(() => {
+    const key = modelJsonPath || null;
+    if (supportModelRef.current === null) { supportModelRef.current = key; return; }
+    if (supportModelRef.current === key) return;
+    supportModelRef.current = key;
+    setSupportIdx(new Set());
+  }, [modelJsonPath]);
+
+  // 2단계 완료 표식은 적치 성공 여부에서 파생한다.
+  // handleSeat / handleApplyRotation / 배치 변경 무효화 세 경로가 모두 seating 을 거치므로
+  // 여기 한 곳에서 따라가면 각 경로에 setStepStatus 를 흩뿌리지 않아도 된다.
+  // (관통은 판단하지 않는다 — 합산 중량·무게중심은 겹침과 무관하다.)
+  /**
+   * 단계 이동 게이트.
+   *
+   * 3단계 경계조건은 **사용자가 지정한 지지점** 이다. 지정 없이 넘어가면 실행 버튼만
+   * 비활성인 화면을 마주하고 왜 막혔는지 모른다 — 넘어가기 전에 이유를 말해 준다.
+   */
+  const stepBlockReason = (idx) => {
+    if (idx < 2) return null;
+    if (!hasRunOnce) return '1단계 BDF 입력 검증을 먼저 완료하세요.';
+    if (!seating?.ok) return '2단계에서 Module Unit 을 정반에 적치한 뒤 넘어갈 수 있습니다.';
+    if (supportIdx.size === 0) {
+      return '2단계에서 지지점을 먼저 지정하세요. '
+        + '자동 접촉 탐지는 밑면이 평평하지 않은 모듈에서 한쪽 레일만 잡아 해석이 무의미해집니다.';
+    }
+    const blocker = supportEval.issues.find(i => i.level === 'block');
+    if (blocker) return blocker.message;
+    return null;
+  };
+
+  const goToStep = (idx) => {
+    const reason = stepBlockReason(idx);
+    if (reason) { showToast(reason, 'warning'); return; }
+    setActiveIdx(idx);
+  };
+
+  // 지지점 지정까지 끝나야 3단계로 넘어갈 수 있으므로 둘 다 봐야 한다.
+  useEffect(() => {
+    setStepStatus('arrangement', seating?.ok && supportEval.ok ? 'done' : 'wait');
+  }, [seating?.ok, supportEval.ok]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── BDF 검증 요청 ────────────────────────────────────────
   const handleValidate = async () => {
@@ -1101,9 +1807,67 @@ export default function ModuleUnitOceanTransportAnalysis() {
     showToast('정반 상부 Module Unit 배치 설정 단계로 이동합니다.', 'info');
   };
 
+  const handleAccelerationInputChange = (patch) => {
+    setAccelerationInput(previous => ({ ...previous, ...patch }));
+    setAccelerationError(null);
+  };
+
+  const handleImportModuleAccelerationInputs = () => {
+    // Support Height 는 배치에서 읽는다 — 2단 정반은 어느 적치면에 앉느냐로 이 높이가
+    // 6m 넘게 달라지고, 그 차이가 baseline VCG 에 그대로 실린다.
+    const imported = moduleCargoAccelerationInputs(
+      moduleModel,
+      massSummary,
+      {
+        unitBottomZMm: seatGap.baseZMm,
+        deckBottomZMm: jungbanModel?.bounds?.min?.[2],
+      },
+    );
+    if (!imported) {
+      showToast('2단계 정반+Unit 합산 중량 또는 Unit 무게중심을 가져올 수 없습니다.', 'warning');
+      return;
+    }
+    const nextInput = { ...accelerationInput, ...imported };
+    const importIssues = getBargeAccelerationInputIssues(nextInput);
+    setAccelerationInput(nextInput);
+    setAccelerationError(null);
+    if (importIssues.length) {
+      showToast(`정반+Unit 값을 가져왔지만 계산 범위를 벗어났습니다 — ${importIssues[0].message}`, 'warning');
+    } else if (Number.isFinite(imported.supportHeightM)) {
+      showToast(
+        `합산 중량 ${imported.cargoWeightT.toLocaleString()} ton · Unit 바닥 기준 VCG `
+        + `${imported.cargoVcgFromBottomM.toFixed(3)} m · Support Height `
+        + `${imported.supportHeightM.toFixed(3)} m(정반 바닥→Unit 바닥)를 반영했습니다.`,
+        'success',
+      );
+    } else {
+      showToast('정반+Unit 합산 중량과 Unit 바닥 기준 VCG를 가속도 입력에 반영했습니다.', 'success');
+    }
+  };
+
+  const handleCalculateAcceleration = async () => {
+    if (accelerationBusy || structuralBusy) return;
+    const requestInput = { ...accelerationInput };
+    const requestKey = bargeAccelerationInputKey(requestInput);
+    setAccelerationBusy(true);
+    setAccelerationError(null);
+    try {
+      const response = await calculateModuleOceanAcceleration(requestInput);
+      const calculated = response.data;
+      setAccelerationResult({ ...calculated, inputKey: requestKey });
+      setAccel({ ...calculated.totalAccelerationG });
+      showToast(`${calculated.loadCase.id} 가속도를 구조 해석 조건에 적용했습니다.`, 'success');
+    } catch (error) {
+      const detail = error?.response?.data?.detail || error?.message || '가속도 계산에 실패했습니다.';
+      setAccelerationError(detail);
+    } finally {
+      setAccelerationBusy(false);
+    }
+  };
+
   // ── 전체 초기화 ──────────────────────────────────────────
   const handleReset = () => {
-    if (validJobId) clearGlobalJob?.(validJobId);
+    clearGlobalJobForMenu?.(MENU_NAME);
     setBdfFile(null);
     setValidating(false);
     setValidJobId(null);
@@ -1115,19 +1879,213 @@ export default function ModuleUnitOceanTransportAnalysis() {
     setBdfPath(null);
     setBdfAnalysisId(null);
     setWeldResult(null);
+    setWeldSpec({ ...DEFAULT_WELD_SPEC });
+    setProcessTab('stress');
     setSteps(INITIAL_STEPS);
     setActiveIdx(0);
     setUseNastran(false);
     setHasRunOnce(false);
     setDeckType(null);
+    setDeckTransparent(false);
+    setViewerReloadToken(0);
+    resetModuleOceanPlacementState({
+      setArrangement,
+      setContactTolMm,
+      setShowCog,
+      setDeckContingencyPct,
+      setModuleContingencyPct,
+      setSeating,
+      setSeatingBusy,
+      setSupportPickerOpen,
+      setSupportIdx,
+      setRotationCandidates,
+    });
+    seatingKeyRef.current = null;
+    supportModelRef.current = null;
+    setAccel({ ...GRAVITY_ONLY_ACCEL_G });
+    setAccelerationInput({ ...DEFAULT_BARGE_ACCEL_INPUT });
+    setAccelerationResult(null);
+    setAccelerationBusy(false);
+    setAccelerationError(null);
+    setMaterial({ sigmaYMPa: 275, factor: 0.8 });
+    setStructuralJobId(null);
+    setStructuralBusy(false);
+    setStructuralProgress(0);
+    setStructuralMsg('');
+    setStructuralError(null);
+    setStructuralResult(null);
+    setColorMapOpen(false);
+    setLegModalOpen(false);
+    setWeldModalOpen(false);
     clearAnalysisPageState?.(MENU_NAME);
   };
+
+  // 2단계 적치가 성공하면 3단계를 열어 준다.
+  // 관통은 막지 않는다 — 2단계는 합산 중량·무게중심을 얻기 위한 과정이고,
+  // 그 두 값은 겹침 여부와 무관하게 정해진다(사용자 결정).
+  // 경계조건은 이제 자동 접촉점이 아니라 **사용자가 지정한 지지점** 이다.
+  const structuralRunBlockers = [];
+  if (!seating?.ok) structuralRunBlockers.push('2단계에서 Module Unit 적치를 완료하세요.');
+  if (supportIdx.size === 0) {
+    structuralRunBlockers.push('2단계에서 구조 해석 지지점을 지정하세요.');
+  } else if (!supportEval.ok) {
+    structuralRunBlockers.push(
+      supportEval.issues.find(issue => issue.level === 'block')?.message
+        || '선택한 지지점의 배치 조건을 확인하세요.',
+    );
+  } else if (!supportNodeIds.length) {
+    structuralRunBlockers.push('선택한 지지점에서 BDF 절점 ID를 찾을 수 없습니다. 지지점을 다시 지정하세요.');
+  }
+  if (seating?.ok && seating.supportsOffPlateCount > 0) {
+    structuralRunBlockers.push(
+      `지지점 절점 ${nodeIdList(nodeIdsAt(seating.supportsOffPlate))} 발밑에 정반 적치면이 없습니다`
+      + ' — 스툴을 세울 자리가 없습니다. 회전·오프셋으로 정반 안으로 넣거나 그 지지점을 다시 고르세요.',
+    );
+  }
+  if (seating?.ok && seating.clearanceShortfallCount > 0) {
+    structuralRunBlockers.push(
+      `지지점보다 낮은 부재가 정반 위에 있습니다 — 절점 ${nodeIdList(nodeIdsAt([seating.worstClearanceIndex]))} 이 정반면에서 `
+      + `${Math.round(seating.minDeckClearanceMm).toLocaleString()}mm 밖에 안 떨어져 있습니다`
+      + `(필요 ${DECK_CLEARANCE_MM}mm). 그 자리를 지지점에 추가하거나 배치를 조정하세요.`,
+    );
+  }
+  if (!bdfPath) structuralRunBlockers.push('1단계 BDF 검증 결과 경로가 없습니다. BDF 검증을 다시 수행하세요.');
+  if (!deckType) structuralRunBlockers.push('2단계에서 정반 타입을 선택하세요.');
+  if (!massSummary?.total) structuralRunBlockers.push('Module Unit과 정반의 중량·무게중심을 계산할 수 없습니다.');
+  if (!placement?.anchor || !placement?.deckCenter) {
+    structuralRunBlockers.push('정반과 Module Unit 모델이 모두 로드된 뒤에 해석할 수 있습니다.');
+  }
+  if (accelerationInputIssues.length) {
+    structuralRunBlockers.push(...accelerationInputIssues.map(issue => issue.message));
+  } else if (!accelerationIsCurrent) {
+    structuralRunBlockers.push('Barge 가속도를 계산하여 선택한 LC를 해석조건에 적용하세요.');
+  }
+  if (!(Number(material.sigmaYMPa) > 0)) structuralRunBlockers.push('항복응력은 0보다 커야 합니다.');
+  if (!(Number(material.factor) > 0 && Number(material.factor) <= 1)) {
+    structuralRunBlockers.push('허용 계수는 0보다 크고 1 이하여야 합니다.');
+  }
+  const canRunStructural = structuralRunBlockers.length === 0;
+
+  // ── 3단계 구조 해석 요청 ─────────────────────────────────
+  const handleRunStructural = async () => {
+    if (!canRunStructural || structuralBusy) return;
+    // 결과는 한 벌만 남는다 — 배치·LC 를 바꿔 다시 돌리면 앞선 판정이 사라진다.
+    // 산출물(BDF/F06/JSON)도 같은 이름으로 덮어쓰므로 되돌릴 방법이 없다.
+    if (structuralResult && !window.confirm(
+      '이미 나와 있는 해석 결과를 덮어씁니다.\n'
+      + '이전 결과의 응력·반력·용접 판정과 산출 파일(BDF·F06·JSON)은 남지 않습니다.\n\n'
+      + '계속할까요?',
+    )) return;
+    setStructuralBusy(true);
+    setStructuralError(null);
+    setStructuralResult(null);
+    setWeldResult(null);
+    setStepStatus('structural-run', 'running');
+    setStructuralProgress(0);
+    setStructuralMsg('서버 요청 중...');
+    try {
+      // 사용자가 2단계에서 지정한 지지점. 인덱스는 뷰어 positions 기준이며
+      // selectionNodeIds 가 nodeIds 로 실제 BDF 절점 ID 를 만든다.
+      if (!supportNodeIds.length) {
+        throw new Error('지지점의 BDF 절점 ID 를 찾지 못했습니다. 2단계에서 지지점을 다시 지정하세요.');
+      }
+
+      // combineMassProperties 의 cogMm 은 {x,y,z} 객체다 — 백엔드는 [x,y,z] 를 받는다.
+      const { massTon, cogMm } = massSummary.total;
+
+      const res = await requestModuleOceanStructural({
+        bdf_path: bdfPath,
+        deck_type: deckType,
+        support_node_ids: supportNodeIds,
+        // 서버가 Module Unit 절점을 정반 좌표로 옮길 때 쓰는 변환. deckCenter/deckTopZ 는
+        // 서버가 정반에서 다시 찾아 **대조**한다 — 어긋나면 해석을 시작하지 않는다.
+        placement: {
+          anchorMm: placement.anchor,
+          rotationZDeg: arrangement.rotationZDeg || 0,
+          offsetXMm: arrangement.offsetXMm || 0,
+          offsetYMm: arrangement.offsetYMm || 0,
+          deckCenterMm: placement.deckCenter,
+          deckTopZMm: placement.deckTopZ,
+          // 화면이 정한 적치 높이. 서버가 자기 계산과 대조한다 — 2단 정반의 층 판정이
+          // 프론트·백엔드에서 갈리면 여기서 잡힌다(결과만 보고는 못 알아챈다).
+          gapMm: seatGapMm,
+        },
+        clearance_mm: DECK_CLEARANCE_MM,
+        // 0 은 '제외 안 함'이라 **유효한 값**이다 — `||` 로 접으면 기본값으로 되살아난다.
+        // 반대로 빈 칸은 Number('') === 0 이라 그냥 Number 로 바꾸면 사용자가 지우기만
+        // 해도 제외가 조용히 꺼진다. 두 경우를 갈라서 본다.
+        small_bore_max_od_mm: smallBoreMaxOdMmForRun,
+        deck_contingency_pct: deckContingencyPct,
+        module_contingency_pct: moduleContingencyPct,
+        total_mass_t: massTon,
+        total_cog_mm: [cogMm.x, cogMm.y, cogMm.z],
+        accel: { ax: Number(accel.ax), ay: Number(accel.ay), az: Number(accel.az) },
+        accelerationCalculation: { ...accelerationInput },
+        material: { sigmaYMPa: Number(material.sigmaYMPa), factor: Number(material.factor) },
+        // 과정 2 용접 사양. 해석이 반력을 낸 직후 같은 job 에서 판정까지 마쳐 둔다.
+        weld: { ...weldSpec },
+        parent_analysis_id: bdfAnalysisId ?? null,
+      });
+      setStructuralJobId(res.data.job_id);
+      startGlobalJob?.(res.data.job_id, MENU_NAME);
+    } catch (err) {
+      setStructuralBusy(false);
+      setStructuralError(err?.response?.data?.detail || err.message);
+      setStepStatus('structural-run', 'error');
+    }
+  };
+
+  usePolling({
+    jobId: structuralJobId,
+    maxRetries: 240,
+    onProgress: (data) => {
+      setStructuralProgress(data.progress ?? 0);
+      setStructuralMsg(data.message ?? '');
+    },
+    onComplete: (data) => {
+      setStructuralBusy(false);
+      clearGlobalJob?.(structuralJobId);
+      setStructuralJobId(null);
+      setStructuralProgress(100);
+      const result_info = data.project?.result_info;
+      if (!result_info) {
+        setStepStatus('structural-run', 'error');
+        setStructuralError('결과 파일을 찾을 수 없습니다.');
+        showToast('구조 해석 결과를 찾을 수 없습니다.', 'error');
+        return;
+      }
+      setStructuralResult(result_info);
+      // 해석이 반력 직후 용접까지 판정해 둔다 — 열자마자 결과가 있어야 한다.
+      setWeldResult(result_info.weld ?? null);
+      // 판정이 NG 면 과정 2 부터 보여 준다. 통과했는데 탭이 튀면 그게 더 산만하다.
+      if (result_info.weld?.summary?.status === 'NG') {
+        setProcessTab('weld');
+        setWeldModalOpen(true);
+      }
+      setStepStatus('structural-run', 'done');
+      showToast('구조 해석이 완료되었습니다.', 'success');
+    },
+    onError: (errData) => {
+      setStructuralBusy(false);
+      clearGlobalJob?.(structuralJobId);
+      setStructuralJobId(null);
+      setStepStatus('structural-run', 'error');
+      const detail = errData?.timeout
+        ? '해석 시간 초과'
+        : (errData?.engine_log || errData?.message || '해석에 실패했습니다.');
+      setStructuralError(detail);
+      showToast('구조 해석 실패', 'error');
+    },
+  });
+
+  // 용접 판정은 해석 결과(result_info.weld)가 기본이고, 사양을 바꿔 재평가하면 그것으로
+  // 갈아 끼운다. 둘 다 없으면 용접 평가 이전에 돌린 옛 결과라는 뜻이다.
+  const weldShown = weldResult ?? structuralResult?.weld ?? null;
 
   const activeStep       = steps[activeIdx];
   const isBdfStep        = activeStep?.id === 'bdf-validation';
   const isArrangeStep    = activeStep?.id === 'arrangement';
   const isStructuralStep = activeStep?.id === 'structural-run';
-  const isWeldStep       = activeStep?.id === 'weld-assessment';
 
   // ── 렌더 ─────────────────────────────────────────────────
   return (
@@ -1200,7 +2158,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
                           ? 'border-blue-500 bg-blue-50 shadow-sm'
                           : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                         }`}
-                      onClick={() => step.status !== 'disabled' && setActiveIdx(idx)}
+                      onClick={() => step.status !== 'disabled' && goToStep(idx)}
                     >
                       <div className="flex items-start justify-between gap-2 mb-0.5">
                         <div className="flex items-center gap-1.5 min-w-0">
@@ -1231,21 +2189,25 @@ export default function ModuleUnitOceanTransportAnalysis() {
                 <Toggle checked={useNastran} onChange={setUseNastran} />
               </div>
 
-              {activeIdx < steps.length - 1 && (
+              {activeIdx < steps.length - 1 && (() => {
+                const nextIdx = activeIdx + 1;
+                const blocked = stepBlockReason(nextIdx);
+                return (
                 <button
-                  onClick={() => setActiveIdx(prev => Math.min(prev + 1, steps.length - 1))}
-                  disabled={!hasRunOnce}
-                  title={!hasRunOnce ? 'BDF 입력 검증 완료 후 활성화됩니다' : `다음 단계: ${steps[activeIdx + 1].title}`}
+                  onClick={() => goToStep(nextIdx)}
+                  disabled={Boolean(blocked)}
+                  title={blocked || `다음 단계: ${steps[nextIdx].title}`}
                   className={`w-full flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-xl transition-colors ${
-                    hasRunOnce
+                    !blocked
                       ? 'bg-white border border-blue-200 hover:bg-blue-50 hover:border-blue-300 text-blue-600 cursor-pointer'
                       : 'bg-slate-50 border border-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
                 >
-                  <span className="truncate">다음 단계: {steps[activeIdx + 1].title}</span>
+                  <span className="truncate">다음 단계: {steps[nextIdx].title}</span>
                   <ArrowRight size={13} className="shrink-0" />
                 </button>
-              )}
+                );
+              })()}
 
               {/* 샘플 실행 — 입력 BDF 없이도 학습용으로 즉시 검증 체험 */}
               <SampleRunButton
@@ -1383,6 +2345,19 @@ export default function ModuleUnitOceanTransportAnalysis() {
                       <Layers size={10} /> {deckType} 타입 정반
                       <span className="text-blue-400 font-semibold">변경</span>
                     </button>
+                    {/* 정반이 Unit 밑면과 스툴을 가린다 — 받치는 자리를 보려면 비쳐야 한다. */}
+                    <button
+                      type="button"
+                      onClick={() => setDeckTransparent(v => !v)}
+                      title="정반을 반투명하게 만들어 Unit 밑면과 스툴을 봅니다."
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-bold transition-colors cursor-pointer shrink-0 ${
+                        deckTransparent
+                          ? 'border-amber-300 bg-amber-50 text-amber-700'
+                          : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                      }`}
+                    >
+                      {deckTransparent ? <Eye size={10} /> : <EyeOff size={10} />} 정반 반투명
+                    </button>
                   </div>
                   {bdfFolderPath && (
                     <span className="text-[10px] font-mono text-slate-400 truncate max-w-[280px]" title={bdfFolderPath}>
@@ -1395,7 +2370,9 @@ export default function ModuleUnitOceanTransportAnalysis() {
                   {/* 정반은 프로그램 내장 고정 모델이라 Module Unit 유무와 무관하게 항상 띄운다. */}
                   <FeModelViewer
                     parts={viewerParts}
-                    markers={seating?.contacts || []}
+                    initialShowRigids
+                    markers={supportMarkers.length ? supportMarkers : (seating?.contacts || [])}
+                    markerColor={supportMarkers.length ? '#22c55e' : '#f59e0b'}
                     cogMarkers={cogMarkers}
                     loading={viewerStatus === 'loading'}
                     loadingLabel={
@@ -1427,8 +2404,15 @@ export default function ModuleUnitOceanTransportAnalysis() {
                 </div>
               </div>
 
+              <SupportSelectionPanel
+                onOpenPicker={() => setSupportPickerOpen(true)}
+                count={supportIdx.size}
+                evaluation={supportEval}
+                onClear={() => setSupportIdx(new Set())}
+                disabled={!moduleModel}
+              />
+
               <ArrangementPanel
-                gapMm={arrangement.gapMm}
                 offsetXMm={arrangement.offsetXMm}
                 offsetYMm={arrangement.offsetYMm}
                 rotationZDeg={arrangement.rotationZDeg}
@@ -1440,12 +2424,14 @@ export default function ModuleUnitOceanTransportAnalysis() {
                 onApplyRotation={handleApplyRotation}
                 seating={seating}
                 seatingBusy={seatingBusy}
+                seatGap={seatGap}
+                nodeIdsAt={nodeIdsAt}
+                landingLevels={deckSurface?.levels}
+                supportCount={supportIdx.size}
                 placement={placement}
                 disabled={!moduleModel}
                 onChange={(patch) => setArrangement(prev => ({ ...prev, ...patch }))}
-                onReset={() => setArrangement({
-                  gapMm: DEFAULT_DECK_GAP_MM, offsetXMm: 0, offsetYMm: 0, rotationZDeg: 0,
-                })}
+                onReset={() => setArrangement({ ...DEFAULT_MODULE_OCEAN_ARRANGEMENT })}
               />
 
               <MassSummaryPanel
@@ -1463,65 +2449,245 @@ export default function ModuleUnitOceanTransportAnalysis() {
             </div>
           )}
 
-          {/* ─ Step 3: Module Unit 구조 해석 수행 ─ */}
+          {/* ─ Step 3: Module Unit 구조 해석 수행 ─
+              결과가 나오면 판정을 **맨 위**로 올리고 입력 카드는 접는다. 예전에는 입력
+              → 실행 → 가정 → 결과 순으로 한 줄에 쌓여 있어, 정작 봐야 할 합/부가 늘
+              스크롤 맨 아래에 있었다. */}
           {isStructuralStep && (
             <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-100 shrink-0">
                 <h2 className="text-xs font-bold text-slate-700">3. Module Unit 구조 해석 수행</h2>
                 <span className="text-[10px] text-slate-400">— 해상 운송 하중 조건 구조 해석</span>
+                {structuralResult && (
+                  <span className="ml-auto min-w-0 truncate text-[10px] text-slate-400">{conditionSummary}</span>
+                )}
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-                <StepPlaceholder
-                  icon={Waves}
-                  title="구조 해석 실행 단계 (구성 예정)"
-                  description="배치가 확정된 통합 모델에 해상 운송 하중 조건을 적용하고 Nastran 구조 해석을 수행하는 단계입니다."
-                  todos={[
-                    '해상 운송 가속도 하중 조건 입력 (선체 가속도 연계 가능)',
-                    'Load Case 구성 및 해석 요청/진행률 표시',
-                    'F06 진단 메시지 수집 및 응력 결과 요약',
-                    '해석 산출물(BDF · F06 · OP2) 다운로드',
-                  ]}
-                />
-              </div>
-            </div>
-          )}
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
+                <div className="space-y-4">
 
-          {/* ─ Step 4: 용접부 강도 평가 수행 ─ */}
-          {isWeldStep && (
-            <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">4. 용접부 강도 평가</span>
-                  {weldResult && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                      weldResult.status === 'PASS'
-                        ? 'bg-green-50 text-green-600 border-green-200'
-                        : 'bg-red-50 text-red-600 border-red-200'
-                    }`}>
-                      {weldResult.status}
-                    </span>
+                  {/* ── 결과 ── 있으면 무조건 맨 위 ── */}
+                  {structuralResult && (
+                    <>
+                      <StructuralVerdictBanner
+                        stress={structuralResult.stress}
+                        weld={weldShown}
+                        onOpenColorMap={() => setColorMapOpen(true)}
+                      />
+
+                      {/* 두 과정은 성격이 다른 검토라 탭으로 갈라 본다. */}
+                      <div>
+                        <div className="flex gap-1 border-b border-slate-200">
+                          {PROCESS_TABS.map(tab => {
+                            const TabIcon = tab.icon;
+                            const active = processTab === tab.id;
+                            // 각 과정의 통과 여부를 탭에 얹어 둔다 — 열어 보지 않아도 어디가
+                            // 문제인지 보여야 한다. 판정이 없으면(옛 결과) 회색으로 둔다 —
+                            // 초록으로 칠하면 통과한 것으로 잘못 읽힌다.
+                            const verdict = tab.id === 'stress'
+                              ? (structuralResult.stress?.summary
+                                  ? (structuralResult.stress.summary.exceedCount > 0 ? 'ng' : 'ok')
+                                  : 'none')
+                              : (weldShown?.summary
+                                  ? (weldShown.summary.status === 'NG' ? 'ng' : 'ok')
+                                  : 'none');
+                            return (
+                              <button
+                                key={tab.id}
+                                onClick={() => {
+                                  setProcessTab(tab.id);
+                                  if (tab.id === 'weld') setWeldModalOpen(true);
+                                }}
+                                className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-t-lg
+                                            border-b-2 -mb-px transition-colors cursor-pointer ${
+                                  active
+                                    ? 'border-blue-600 text-blue-700 bg-blue-50/60'
+                                    : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
+                              >
+                                <TabIcon size={13} className="shrink-0" />
+                                <span className="truncate">{tab.label}</span>
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                  verdict === 'ng' ? 'bg-red-500'
+                                    : verdict === 'ok' ? 'bg-green-500' : 'bg-slate-300'}`} />
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <div className="pt-3">
+                          {processTab === 'stress' ? (
+                            <StressResultPanel
+                              stress={structuralResult.stress}
+                              model={structuralResult.model}
+                            />
+                          ) : (
+                            <OceanWeldResultLauncher
+                              weld={weldShown}
+                              weldSpec={weldSpec}
+                              onOpen={() => setWeldModalOpen(true)}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </>
                   )}
+
+                  {structuralBusy && (
+                    <p className="text-xs text-slate-500">{structuralMsg}</p>
+                  )}
+                  {structuralError && (
+                    <pre className="whitespace-pre-wrap rounded border border-red-200 bg-red-50 p-3
+                                    text-[11px] text-red-700">{structuralError}</pre>
+                  )}
+
+                  {/* ── 해석 조건 ── 결과가 나오면 접어 둔다(다시 돌릴 때만 편다) ── */}
+                  <Section
+                    icon={SlidersHorizontal}
+                    title={structuralResult ? '해석 조건 · 다시 실행' : '해석 조건'}
+                    summary={conditionSummary}
+                    defaultOpen={!structuralResult}
+                    tone={structuralResult ? 'slate' : 'blue'}
+                  >
+                    <div className="space-y-4">
+                      <BargeAccelerationPanel
+                        input={accelerationInput}
+                        onChange={handleAccelerationInputChange}
+                        onImportModule={handleImportModuleAccelerationInputs}
+                        canImportModule={Boolean(
+                          moduleModel
+                          && massSummary?.includes?.deck
+                          && massSummary?.includes?.module
+                          && massSummary?.total?.massTon
+                        )}
+                        onCalculate={handleCalculateAcceleration}
+                        calculating={accelerationBusy}
+                        result={accelerationResult}
+                        isCurrent={accelerationIsCurrent}
+                        error={accelerationError}
+                        disabled={structuralBusy || accelerationBusy}
+                      />
+
+                      {/* 판정 기준 — 허용응력과 '무엇을 평가 대상으로 볼 것인가' 를 한 카드에 둔다. */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-4">
+                        <h4 className="mb-3 text-sm font-semibold text-slate-700">판정 기준</h4>
+                        <div className="grid grid-cols-3 gap-3 items-end">
+                          <label className="text-xs text-slate-500">
+                            항복응력 σy [MPa]
+                            <input
+                              type="number" step="1" value={material.sigmaYMPa}
+                              disabled={structuralBusy}
+                              onChange={e => setMaterial(m => ({ ...m, sigmaYMPa: e.target.value }))}
+                              className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-800"
+                            />
+                          </label>
+                          <label className="text-xs text-slate-500">
+                            허용 계수
+                            <input
+                              type="number" step="0.05" value={material.factor}
+                              disabled={structuralBusy}
+                              onChange={e => setMaterial(m => ({ ...m, factor: e.target.value }))}
+                              className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-800"
+                            />
+                          </label>
+                          <div className="text-xs text-slate-500">
+                            허용응력
+                            <div className="mt-1 rounded bg-slate-50 px-2 py-1 text-sm font-semibold text-slate-800">
+                              {allowableMPa.toFixed(1)} MPa
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 평가 대상은 '구조 부재'다. 소구경 배관은 화물이고, 그 지지 상세가
+                            BDF 에 없어 관 하나가 배관 계통을 혼자 받는 모양으로 모델링된다. */}
+                        <div className="mt-3 grid grid-cols-3 gap-3 items-end border-t border-slate-100 pt-3">
+                          <label className="col-span-2 text-xs text-slate-500">
+                            판정 제외 — 소구경 배관 외경 [mm]
+                            <input
+                              type="number" step="0.1" min="0" max="200"
+                              value={smallBoreMaxOdMm}
+                              disabled={structuralBusy}
+                              onChange={e => setSmallBoreMaxOdMm(e.target.value)}
+                              className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-800"
+                            />
+                          </label>
+                          <div className="text-xs text-slate-500">
+                            적용 기준
+                            <div className="mt-1 rounded bg-slate-50 px-2 py-1 text-sm font-semibold text-slate-800">
+                              {smallBoreMaxOdMmForRun > 0
+                                ? `OD ≤ ${smallBoreMaxOdMmForRun}` : '제외 안 함'}
+                            </div>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+                          재질 SS275 · 기본 허용 0.8σy · 제외 기본 {DEFAULT_SMALL_BORE_MAX_OD_MM}mm
+                          (소구경 통상 정의 NPS 2″). <b>0 = 제외 안 함.</b>
+                        </p>
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="md"
+                        fullWidth
+                        onClick={handleRunStructural}
+                        disabled={!canRunStructural || structuralBusy}
+                        isLoading={structuralBusy}
+                      >
+                        {structuralBusy ? `해석 중… ${structuralProgress}%`
+                          : structuralResult ? '이 조건으로 다시 해석' : '구조 해석 수행'}
+                      </Button>
+                      {!structuralBusy && structuralRunBlockers.length > 0 && (
+                        <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-3 text-amber-900">
+                          <p className="flex items-center gap-1.5 text-xs font-bold">
+                            <AlertTriangle size={14} aria-hidden="true" /> 구조 해석을 아직 실행할 수 없습니다
+                          </p>
+                          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] leading-relaxed">
+                            {structuralRunBlockers.map(reason => <li key={reason}>{reason}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </Section>
+
+                  {/* ── 모델링 가정 ── 결과를 읽는 데 꼭 필요한 4가지만 앞에 두고,
+                      근거와 한계는 펼쳐 보게 한다. 예전에는 8줄이 늘 펼쳐져 있었다. ── */}
+                  <Section
+                    icon={Info}
+                    title="모델링 가정"
+                    summary={`평가 = Module Unit 부재 · σ ≤ ${allowableMPa.toFixed(0)} MPa · ${accelerationInput.loadCase} 1개`}
+                    defaultOpen={false}
+                  >
+                    <ul className="space-y-1.5 text-[11px] leading-relaxed text-slate-600">
+                      <li>· <b>하중</b> — 선택한 {accelerationInput.loadCase} 한 개(GRAV 하나). 정반 실형상과
+                        합쳐 한 모델로 풀고, 경계조건은 정반 자신의 Leg 구속뿐입니다.</li>
+                      <li>· <b>판정</b> — σ ≤ {allowableMPa.toFixed(0)} MPa 하나.
+                        빔 응력은 축력 + 굽힘의 합성 수직응력입니다(전단·비틀림 제외).</li>
+                      <li>· <b>평가 대상</b> — Module Unit 부재만 봅니다(정반 자체의 강도는 평가하지 않습니다).
+                        {smallBoreMaxOdMmForRun > 0
+                          ? ` 외경 ${smallBoreMaxOdMmForRun}mm 이하 소구경 배관은 판정에서 뺍니다.`
+                          : ' 소구경 배관 제외는 꺼져 있어 배관이 판정을 지배할 수 있습니다.'}</li>
+                      <li>· <b>연결</b> — 지지점 {supportNodeIds.length}개는 적치면에 RBE2 강결,
+                        모듈 안 미끄러지는 지지는 병진 3방향을 채워 고박 상태로 풉니다
+                        (그대로 두면 조각이 회전으로 떠나가는 자리만 회전까지 잡습니다).</li>
+                    </ul>
+                    <details className="mt-2.5 text-[11px] leading-relaxed text-slate-500">
+                      <summary className="cursor-pointer font-semibold text-slate-600">근거와 한계</summary>
+                      <ul className="mt-1.5 space-y-1.5">
+                        <li>· 지지점 RBE2 는 회전을 잡고 <b>인발도 견디는</b> 연결입니다. 실제 스툴이
+                          지압·전단만 전달한다면 지지점 주변 부재 응력은 보수적으로 나옵니다.</li>
+                        <li>· 고박에서 <b>회전은 일부러 잡지 않습니다</b>. 회전까지 강결하면 두 강체
+                          사이에 끼인 짧은 부재가 그 회전차를 흡수해 실재하지 않는 모멘트를 받습니다.</li>
+                        <li>· 소구경 배관은 화물이고, 실제 지지 상세(슈·클램프)가 BDF 에 없어 관 하나가
+                          배관 계통을 혼자 받는 모양이 됩니다. 요소는 모델에 남아 질량·강성으로 기여하고
+                          결과에는 별도 목록으로 나옵니다.</li>
+                        {supportEval.zRangeMm > 1 && (
+                          <li>· 지지점 높이 편차 {Math.round(supportEval.zRangeMm).toLocaleString()}mm —
+                            스툴 높이가 그만큼 달라집니다.</li>
+                        )}
+                      </ul>
+                    </details>
+                  </Section>
+
                 </div>
-                <button
-                  disabled
-                  title="결과 산출 후 활성화됩니다"
-                  className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg bg-slate-50 text-slate-300 border border-slate-200 cursor-not-allowed"
-                >
-                  <Download size={10} /> Excel 다운로드
-                </button>
-              </div>
-              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-                <StepPlaceholder
-                  icon={ShieldCheck}
-                  title="용접부 강도 평가 단계 (구성 예정)"
-                  description="구조 해석 결과로부터 고박·접합 용접부에 작용하는 하중을 산출하고 허용 응력 대비 강도를 판정하는 단계입니다."
-                  todos={[
-                    '평가 대상 용접부 정의 (각장 · 용접 길이 · 재질)',
-                    '해석 결과로부터 용접부 작용 하중 추출',
-                    '허용 응력 대비 사용률(Usage) 산출 및 PASS/FAIL 판정',
-                    '평가 결과 표 및 Excel 내보내기',
-                  ]}
-                />
               </div>
             </div>
           )}
@@ -1529,13 +2695,48 @@ export default function ModuleUnitOceanTransportAnalysis() {
         </div>{/* end Right Panel */}
       </div>
 
-      {/* 개발 진행 안내 — 전체 틀만 구성된 상태임을 명시 */}
-      <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5">
-        <ExternalLink size={13} className="mt-0.5 shrink-0 text-amber-500" />
-        <p className="text-[11px] leading-relaxed text-amber-800">
-          이 App 은 현재 개발 진행 중입니다. <b>1단계 BDF 입력 검증</b>과 <b>2단계 배치 뷰어</b>는 동작하며,
-          배치 결과를 해석 모델로 병합하는 부분과 3~4단계는 순차적으로 구현될 예정입니다.
-        </p>
+      <SupportPickerModal
+        open={supportPickerOpen}
+        onClose={() => setSupportPickerOpen(false)}
+        model={moduleModel}
+        selected={supportIdx}
+        onApply={setSupportIdx}
+      />
+
+      <LegReactionModal
+        open={legModalOpen}
+        onClose={() => setLegModalOpen(false)}
+        legReaction={structuralResult?.legReaction}
+      />
+
+      <OceanWeldModal
+        open={weldModalOpen}
+        onClose={() => setWeldModalOpen(false)}
+        legReaction={structuralResult?.legReaction}
+        weld={weldShown}
+        weldSpec={weldSpec}
+        onSpecChange={setWeldSpec}
+        onWeldResult={setWeldResult}
+        onOpenLegModel={() => {
+          setWeldModalOpen(false);
+          setLegModalOpen(true);
+        }}
+      />
+
+      <StressColorMapModal
+        open={colorMapOpen}
+        onClose={() => setColorMapOpen(false)}
+        stress={structuralResult?.stress}
+        modelJsonPath={modelJsonPath}
+        moduleModel={moduleModel}
+        supportIdx={supportIdx}
+      />
+
+      {/* 개발 진행 안내. 과정 구성은 3단계 탭이 이미 보여 주므로 여기서는 되풀이하지 않는다 —
+          늘 화면에 붙어 있는 문구라 길어질수록 정작 읽어야 할 결과를 밀어낸다. */}
+      <div className="mt-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2">
+        <ExternalLink size={13} className="shrink-0 text-amber-500" aria-hidden="true" />
+        <p className="text-[11px] text-amber-800">이 App 은 현재 개발 진행 중입니다.</p>
       </div>
     </div>
   );
