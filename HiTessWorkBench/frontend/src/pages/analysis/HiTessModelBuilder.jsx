@@ -30,7 +30,7 @@ import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.0.76';
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.77';
 
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',  icon: FileSpreadsheet, status: 'wait' },
@@ -111,6 +111,14 @@ function makeEditDownloadName(originalPath, ext) {
   const base = (originalPath || '').split(/[\\/]/).pop() || `model.${ext}`;
   const stem = base.replace(new RegExp(`\\.${ext}$`, 'i'), '');
   return `${stem}_edit.${ext}`;
+}
+
+// 후속 해석 화면에 표시할 출처 라벨. 편집본이 넘어간 경우를 문구로 명시한다.
+// edited/ 산출물은 원본과 파일명이 같고 폴더만 달라서, 라벨이 없으면 후속 해석 화면에서
+// 원본이 넘어온 것으로 오해하기 쉽다.
+function handoffSourceLabel(bdfPath, originalBdfPath) {
+  const isEdited = !!bdfPath && bdfPath !== originalBdfPath;
+  return isEdited ? 'HiTESS Model Builder (Edit BDF)' : 'HiTESS Model Builder';
 }
 
 function buildEditedModelCheckStage(editedSummary) {
@@ -2091,7 +2099,11 @@ function SummaryMetric({ label, value, variant }) {
    Nastran 패널
    ──────────────────────────────────────────────────────────────────────── */
 
-function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToSidePassage, gmuLocked, sourceAnalysisId, onRegister, canRegister }) {
+function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToSidePassage, gmuLocked, sourceAnalysisId, onRegister, canRegister, onResolveHandoffBdf }) {
+  // 후속 해석으로 넘길 BDF 를 확정하는 동안(edit-status 재조회) 버튼 잠금.
+  // 훅은 아래 early return 보다 위에 있어야 한다(rules of hooks).
+  const [handoffBusy, setHandoffBusy] = useState(null); // 'gmu' | 'sidepassage' | null
+
   // step 3 "해석 모델 저장" — BDF 다운로드 전용 페이지.
   //   • 원본 최종 BDF (build-full) — 항상 표시
   //   • 최종 Edit BDF (apply-edit-intent) — 편집 적용 시에만 표시. 파일명은 *_edit.bdf 로 받음.
@@ -2112,6 +2124,30 @@ function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToS
     );
   }
   const editBdf = editStatus?.edited_bdf_path;
+
+  // ── 후속 해석으로 전달할 BDF = 편집본이 있으면 '항상' 편집본 ─────────────
+  // 원본(build-full)과 편집본(edited/)은 파일명이 같고 폴더만 다르므로,
+  // 어느 쪽이 넘어가는지 화면에 명시해 두지 않으면 사용자가 확인할 방법이 없다.
+  const handoffPath   = editBdf || bdfResult.bdfPath;
+  const handoffIsEdit = !!editBdf;
+  const handoffName   = handoffIsEdit
+    ? makeEditDownloadName(editBdf, 'bdf')
+    : fileBaseName(bdfResult.bdfPath || '');
+  // 편집 intent(_edit.json)가 편집본 BDF 보다 최신이면 지금 넘길 편집본은 이전 회차의 것이다.
+  const handoffStale  = handoffIsEdit && !!editStatus?.needs_apply;
+
+  const sendHandoff = async (which, send) => {
+    setHandoffBusy(which);
+    try {
+      // 전달 직전에 edit-status 를 한 번 더 확인한다. Studio 에서 편집을 적용했지만
+      // 이 페이지의 editStatus 가 아직 갱신되지 않은 순간에 원본이 조용히 넘어가는 것을 막는다.
+      const fresh = onResolveHandoffBdf ? await onResolveHandoffBdf() : null;
+      send(fresh || handoffPath);
+    } finally {
+      setHandoffBusy(null);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center gap-2">
@@ -2173,28 +2209,56 @@ function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToS
               {gmuLocked ? <Lock size={16} /> : <ChevronsRight size={16} />}
             </div>
           </div>
+          {/* 실제로 전달될 파일 — 원본/편집본은 파일명이 같으므로 배지로 구분해 명시한다 */}
+          <div className="rounded-lg border border-white bg-white/70 px-3 py-2 flex items-center gap-2">
+            <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+              handoffIsEdit ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+            }`}>
+              {handoffIsEdit ? '최종 Edit BDF' : '원본 최종 BDF'}
+            </span>
+            <p className="text-[10px] text-slate-500 font-mono truncate" title={handoffPath}>{handoffName}</p>
+          </div>
+
+          {handoffStale && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 flex items-start gap-2">
+              <AlertTriangle size={12} className="text-amber-600 mt-0.5 shrink-0" />
+              <p className="text-[10px] text-amber-700">
+                Studio 편집 내용(_edit.json)이 편집본 BDF 보다 최신입니다. 2단계에서 편집을 다시 적용한 뒤 전달하세요.
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {onSendToGmu && (
               <button
-                onClick={() => { if (!gmuLocked) onSendToGmu(editBdf || bdfResult.bdfPath); }}
-                disabled={gmuLocked}
+                onClick={() => { if (!gmuLocked && !handoffBusy) sendHandoff('gmu', onSendToGmu); }}
+                disabled={gmuLocked || !!handoffBusy}
                 title={gmuLocked ? '개발 중인 해석입니다. 관리자만 사용할 수 있습니다.' : undefined}
                 className={`w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-lg shadow-sm ${
-                  gmuLocked
+                  gmuLocked || handoffBusy
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white cursor-pointer'
                 }`}
               >
-                {gmuLocked ? <Lock size={14} /> : <ChevronsRight size={14} />}
+                {handoffBusy === 'gmu'
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : gmuLocked ? <Lock size={14} /> : <ChevronsRight size={14} />}
                 {gmuLocked ? 'Group Module Unit (개발 중)' : 'Group Module Unit'}
               </button>
             )}
             {onSendToSidePassage && (
               <button
-                onClick={() => onSendToSidePassage(editBdf || bdfResult.bdfPath)}
-                className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-lg shadow-sm bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white cursor-pointer"
+                onClick={() => { if (!handoffBusy) sendHandoff('sidepassage', onSendToSidePassage); }}
+                disabled={!!handoffBusy}
+                className={`w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-lg shadow-sm ${
+                  handoffBusy
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white cursor-pointer'
+                }`}
               >
-                <ChevronsRight size={14} />
+                {handoffBusy === 'sidepassage'
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <ChevronsRight size={14} />}
                 Side Passage Assessment
               </button>
             )}
@@ -2202,7 +2266,9 @@ function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToS
           <p className={`text-[10px] text-center ${gmuLocked ? 'text-slate-400' : 'text-blue-500'}`}>
             {gmuLocked
               ? '개발 중인 해석입니다 — 관리자 계정에서만 전달할 수 있습니다.'
-              : `${editBdf ? 'Edit BDF' : '원본 최종 BDF'}를 선택한 후속 해석의 입력 대기 상태로 전달합니다.`}
+              : handoffIsEdit
+                ? '편집이 적용된 최종 Edit BDF 를 선택한 후속 해석의 입력 대기 상태로 전달합니다.'
+                : '원본 최종 BDF 를 선택한 후속 해석의 입력 대기 상태로 전달합니다. (편집을 적용하면 Edit BDF 가 전달됩니다)'}
           </p>
         </div>
       )}
@@ -3578,13 +3644,29 @@ export default function HiTessModelBuilder() {
                 sourceAnalysisId={sourceAnalysisId}
                 canRegister={canRegisterToStorage}
                 onRegister={(artifactKind) => setRegisterTarget({ artifactKind })}
+                /* 전달 직전 edit-status 를 다시 읽어 '지금 디스크에 있는' 최종 편집본을 확정한다.
+                   Studio 편집 적용 직후처럼 페이지의 editStatus 가 아직 낡은 순간에도
+                   원본이 아니라 편집본이 넘어가도록 보장한다. */
+                onResolveHandoffBdf={async () => {
+                  const fresh = await refreshEditStatus();
+                  return fresh?.edited_bdf_path
+                    || editStatus?.edited_bdf_path
+                    || bdfResult?.bdfPath
+                    || null;
+                }}
                 onSendToGmu={(bdfPath) => {
                   if (gmuLocked) return; // 개발 중 + 비관리자는 전달 차단
-                  setGmuHandoff({ bdfServerPath: bdfPath, sourceApp: 'HiTESS Model Builder' });
+                  setGmuHandoff({
+                    bdfServerPath: bdfPath,
+                    sourceApp: handoffSourceLabel(bdfPath, bdfResult?.bdfPath),
+                  });
                   setCurrentMenu(GMU_MENU_NAME);
                 }}
                 onSendToSidePassage={(bdfPath) => {
-                  setSidePassageHandoff({ bdfServerPath: bdfPath, sourceApp: 'HiTESS Model Builder' });
+                  setSidePassageHandoff({
+                    bdfServerPath: bdfPath,
+                    sourceApp: handoffSourceLabel(bdfPath, bdfResult?.bdfPath),
+                  });
                   setCurrentMenu(SIDE_PASSAGE_MENU_NAME);
                 }}
               />
