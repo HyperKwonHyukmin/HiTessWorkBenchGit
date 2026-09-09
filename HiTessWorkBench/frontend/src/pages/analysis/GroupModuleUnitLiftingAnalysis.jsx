@@ -19,7 +19,7 @@ import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.143';
+const MODULE_STUDIO_VERSION = '0.0.144';
 
 // ── 상태 설정 (HiTessModelBuilder와 동일) ─────────────────────
 const STATUS_CONFIG = {
@@ -120,19 +120,27 @@ function ResultsPanel({ result }) {
     );
   }
 
+  if (result.status === 'ERROR') {
+    return <div className="m-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+      <p className="font-bold">구조 해석을 완료하지 못했습니다.</p>
+      <p className="mt-1 text-xs">{result.error || 'Studio에서 오류 내용을 확인한 뒤 다시 실행하세요.'}</p>
+    </div>;
+  }
+
   const isPass = result.status === 'PASS';
+  const isWarn = result.status === 'WARN';
   return (
     <div className="p-4 space-y-4 overflow-y-auto h-full custom-scrollbar">
       {/* 종합 판정 배너 */}
       <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${
-        isPass ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+        isPass ? 'bg-green-50 border-green-200' : isWarn ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
       }`}>
         {isPass
           ? <CheckCircle2 size={20} className="text-green-600 shrink-0" />
-          : <AlertOctagon size={20} className="text-red-500 shrink-0" />}
+          : <AlertOctagon size={20} className={`${isWarn ? 'text-amber-500' : 'text-red-500'} shrink-0`} />}
         <div>
-          <p className={`text-sm font-bold ${isPass ? 'text-green-700' : 'text-red-700'}`}>
-            종합 판정: {isPass ? 'PASS' : 'FAIL'}
+          <p className={`text-sm font-bold ${isPass ? 'text-green-700' : isWarn ? 'text-amber-700' : 'text-red-700'}`}>
+            종합 판정: {result.status}
           </p>
           <p className="text-[10px] text-slate-500">최대 합성 응력 / 허용 응력 기준</p>
         </div>
@@ -447,6 +455,28 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const setStepStatus = (id, status) =>
     setSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
 
+  // Studio 창을 열었다는 사실이 아니라 실제 SOL 101 완료 이벤트로 WorkBench 단계를 끝낸다.
+  useEffect(() => {
+    if (!window.electron?.onMessage) return undefined;
+    return window.electron.onMessage('viewer:unit-structural-completed', (payload) => {
+      if (payload?.viewerId !== MODULE_STUDIO_VIEWER_ID) return;
+      if (bdfAnalysisId && payload?.parentAnalysisId && Number(payload.parentAnalysisId) !== Number(bdfAnalysisId)) return;
+      if (payload.ok) {
+        setAnalysisResult(payload);
+        setHasRunOnce(true);
+        setStepStatus('lifting-points', 'done');
+        setStepStatus('results', 'done');
+        setActiveIdx(INITIAL_STEPS.findIndex(step => step.id === 'results'));
+        showToast(`Studio 구조 해석 완료 — ${payload.status}`, payload.status === 'PASS' ? 'success' : 'warning');
+      } else {
+        setAnalysisResult({ status: 'ERROR', items: [], error: payload.error });
+        setStepStatus('lifting-points', 'error');
+        setStepStatus('results', 'error');
+        showToast(`Studio 구조 해석 실패 — ${payload.error || '알 수 없는 오류'}`, 'error');
+      }
+    });
+  }, [bdfAnalysisId, showToast]);
+
   useEffect(() => {
     setAnalysisPageState?.(GMU_MENU_NAME, {
       steps,
@@ -647,7 +677,8 @@ export default function GroupModuleUnitLiftingAnalysis() {
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok) throw new Error(openRes?.error || 'Studio 오픈 실패');
-      setStepStatus('lifting-points', 'done');
+      // 창을 연 것만으로 완료 처리하지 않는다. 실제 SOL 101 이벤트가 done으로 바꾼다.
+      setStepStatus('lifting-points', 'running');
       setStudioStatus('idle');
     } catch (e) {
       setStudioError(e.message);
@@ -662,17 +693,11 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const isResultsStep  = activeStep?.id === 'results';
 
   // ── 3단계(결과) 진입 시 파이프라인 1·2·3 을 모두 '완료'로 표시 ───────────
-  // 결과/다운로드 페이지를 보면 전체 파이프라인을 "다 본 것"으로 간주한다.
-  // 검증 성공(hasRunOnce) 이후에만 — 검증 전 단계만 클릭한 경우엔 활성화하지 않는다.
-  // (error 단계는 보존: 검증 오류 상태를 done 으로 덮지 않는다.)
+  // 결과 객체가 실제로 수신된 경우에만 결과 단계를 완료로 유지한다.
   useEffect(() => {
-    if (!isResultsStep || !hasRunOnce) return;
-    setSteps(prev =>
-      prev.every(s => s.status === 'done')
-        ? prev
-        : prev.map(s => (s.status === 'error' ? s : { ...s, status: 'done' })),
-    );
-  }, [isResultsStep, hasRunOnce]);
+    if (!isResultsStep || !analysisResult || analysisResult.status === 'ERROR') return;
+    setStepStatus('results', 'done');
+  }, [isResultsStep, analysisResult]);
 
   // ── 프로그램 간 연계 핸드오프 처리 ───────────────────────────
   // ⚠️ 이 페이지는 keep-alive 라 한 번 열면 unmount 되지 않는다(App.jsx KEEP_ALIVE_MENUS).
@@ -1104,7 +1129,9 @@ export default function GroupModuleUnitLiftingAnalysis() {
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
                       analysisResult.status === 'PASS'
                         ? 'bg-green-50 text-green-600 border-green-200'
-                        : 'bg-red-50 text-red-600 border-red-200'
+                        : analysisResult.status === 'WARN'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-red-50 text-red-600 border-red-200'
                     }`}>
                       {analysisResult.status}
                     </span>

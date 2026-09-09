@@ -15,6 +15,8 @@ const VALID_RECEIVE_CHANNELS = [
   'modelflow:finalize-edit-request',
   // main 이 viewer 창에 Unit 구조 해석 진행 상황을 stream
   'viewer:unit-structural-progress',
+  // ModuleUnitStudio 실제 구조해석 완료/실패를 WorkBench 메인 화면으로 전달
+  'viewer:unit-structural-completed',
   // main 이 viewer 창에 Plate 구조 해석 진행 상황을 stream
   'viewer:plate-structural-progress',
   // main 이 viewer 창에 Mooring 구조 해석 진행 상황을 stream

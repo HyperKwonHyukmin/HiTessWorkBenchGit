@@ -1560,33 +1560,51 @@ ipcMain.handle("viewer:optimizeHoistPositions", async (event, posturePath) => {
 // Studio 측에서 IPC 한 번으로 호출 → main 이 백엔드 unit-structural endpoint 에 양식
 // 데이터를 보내 job 시작 → 1.5초 간격으로 30분 폴링 → 완료 시 nastranResult JSON 의
 // 내용까지 함께 돌려준다. 진행 상황은 viewer:unit-structural-progress 로 stream.
+function notifyUnitStructuralCompleted(session, payload) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("viewer:unit-structural-completed", {
+        viewerId: session?.viewerId,
+        parentAnalysisId: session?.parentAnalysisId ?? null,
+        ...payload,
+      });
+    }
+  } catch (e) {
+    console.warn("[ModuleUnitStudio] WorkBench 완료 이벤트 전달 실패:", e?.message || e);
+  }
+}
+
 ipcMain.handle("viewer:runUnitStructural", async (event, payload) => {
   try {
     const session = sessionFromEvent(event);
     if (!session) return noSessionError();
+    const fail = (error, extra = {}) => {
+      notifyUnitStructuralCompleted(session, { ok: false, status: "ERROR", error });
+      return { ok: false, error, ...extra };
+    };
     const stabilityPath = payload?.stabilityPath;
     const safetyFactor  = Number(payload?.safetyFactor ?? 1.2);
     const allowableMpa  = Number(payload?.allowableMpa ?? 220);
 
-    if (!stabilityPath) return { ok: false, error: "stabilityPath 누락" };
+    if (!stabilityPath) return fail("stabilityPath 누락");
     if (!path.isAbsolute(stabilityPath)) {
-      return { ok: false, error: `stabilityPath 절대경로가 아닙니다: ${stabilityPath}` };
+      return fail(`stabilityPath 절대경로가 아닙니다: ${stabilityPath}`);
     }
     if (!session.parentAnalysisId) {
-      return { ok: false, error: "parentAnalysisId 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 BDF 검증을 먼저 마치고 Studio 를 여세요." };
+      return fail("parentAnalysisId 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 BDF 검증을 먼저 마치고 Studio 를 여세요.");
     }
     if (!Number.isFinite(safetyFactor) || safetyFactor <= 0) {
-      return { ok: false, error: `safetyFactor 가 양수여야 합니다: ${safetyFactor}` };
+      return fail(`safetyFactor 가 양수여야 합니다: ${safetyFactor}`);
     }
     if (!Number.isFinite(allowableMpa) || allowableMpa <= 0) {
-      return { ok: false, error: `allowableMpa 가 양수여야 합니다: ${allowableMpa}` };
+      return fail(`allowableMpa 가 양수여야 합니다: ${allowableMpa}`);
     }
 
     const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     const { serverUrl } = runtimeConfig;
     const employeeId = runtimeConfig.employeeId;
     if (!employeeId) {
-      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+      return fail("사용자 정보가 없습니다 (로그인 필요).");
     }
 
     const form = new URLSearchParams();
@@ -1604,11 +1622,11 @@ ipcMain.handle("viewer:runUnitStructural", async (event, payload) => {
     }, runtimeConfig);
     if (!reqRes.ok) {
       const detail = await readBackendError(reqRes);
-      return { ok: false, error: `백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}` };
+      return fail(`백엔드 요청 실패: ${reqRes.status}${detail ? ` - ${detail}` : ""}`);
     }
     const reqBody = await reqRes.json();
     const jobId = reqBody.jobId || reqBody.job_id;
-    if (!jobId) return { ok: false, error: "백엔드 응답에 jobId 가 없습니다." };
+    if (!jobId) return fail("백엔드 응답에 jobId 가 없습니다.");
 
     // 진행률은 이 해석을 요청한 Studio 창에만 보낸다(다른 Studio 로 새지 않게).
     const sendProgress = (data) => {
@@ -1647,39 +1665,54 @@ ipcMain.handle("viewer:runUnitStructural", async (event, payload) => {
             const { res: dlRes } = await fetchWithSessionRefresh(dlUrl, { method: "GET" });
             if (!dlRes.ok) {
               const detail = await readBackendError(dlRes);
-              return {
-                ok: false,
-                error: `결과 JSON 다운로드 실패: ${dlRes.status}${detail ? ` - ${detail}` : ""}`,
-                job,
-              };
+              return fail(`결과 JSON 다운로드 실패: ${dlRes.status}${detail ? ` - ${detail}` : ""}`, { job });
             }
             resultContent = JSON.parse(await dlRes.text());
           } catch (e) {
-            return { ok: false, error: `결과 JSON 다운로드/파싱 실패: ${e.message}`, job };
+            return fail(`결과 JSON 다운로드/파싱 실패: ${e.message}`, { job });
           }
         }
+        const summary = resultContent?.summary ?? resultInfo.summary ?? {};
+        const warnings = Array.isArray(resultContent?.warnings)
+          ? resultContent.warnings
+          : (Array.isArray(resultInfo.warnings) ? resultInfo.warnings : []);
+        const failed = Number(summary.memberExceedCount || 0) > 0
+          || Number(summary.wireCompressionCount || 0) > 0
+          || Number(summary.wireMissingResultCount || 0) > 0;
+        const status = failed ? "FAIL" : warnings.length > 0 ? "WARN" : "PASS";
+        notifyUnitStructuralCompleted(session, {
+          ok: true,
+          status,
+          analysisId: job.project?.id ?? null,
+          summary,
+          warnings,
+          resultPath,
+          result: resultContent,
+          items: [
+            { label: "최대 부재 응력", value: `${Number(summary.memberMaxStressMPa || 0).toFixed(2)} MPa`, allowable: `${allowableMpa.toFixed(2)} MPa`, ok: Number(summary.memberExceedCount || 0) === 0 },
+            { label: "응력 초과 부재", value: `${Number(summary.memberExceedCount || 0)} / ${Number(summary.memberElementCount || 0)}`, allowable: "0", ok: Number(summary.memberExceedCount || 0) === 0 },
+            { label: "Wire 압축", value: `${Number(summary.wireCompressionCount || 0)} / ${Number(summary.wireCount || 0)}`, allowable: "0", ok: Number(summary.wireCompressionCount || 0) === 0 },
+            { label: "Wire 결과 누락", value: String(Number(summary.wireMissingResultCount || 0)), allowable: "0", ok: Number(summary.wireMissingResultCount || 0) === 0 },
+          ],
+        });
         return {
           ok: true,
           analysisId: job.project?.id ?? null,
-          summary: resultInfo.summary ?? null,
-          warnings: resultInfo.warnings ?? [],
+          summary,
+          warnings,
           resultPath,
           result: resultContent,
           job,
         };
       }
       if (job.status === "Failed") {
-        return {
-          ok: false,
-          error: job.message || "Unit 구조 해석 실패",
-          stderr: job.engine_log || "",
-          job,
-        };
+        return fail(job.message || "Unit 구조 해석 실패", { stderr: job.engine_log || "", job });
       }
     }
 
-    return { ok: false, error: "시간 초과 (30분)" };
+    return fail("시간 초과 (30분)");
   } catch (e) {
+    try { notifyUnitStructuralCompleted(sessionFromEvent(event), { ok: false, status: "ERROR", error: e?.message || "예외 발생" }); } catch {}
     return { ok: false, error: e?.message || "예외 발생" };
   }
 });
