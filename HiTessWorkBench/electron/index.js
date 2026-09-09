@@ -947,6 +947,9 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Studio 자체가 FHD 논리 작업면을 기준으로 해상도를 보정한다. Electron 확대가
+      // 추가로 겹치면 정보 패널 좌표와 3D 캔버스 밀도가 달라지므로 항상 100%로 시작한다.
+      zoomFactor: 1.0,
     },
   });
 
@@ -955,6 +958,10 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
   viewerSessions.register(session, win.webContents.id);
 
   win.loadFile(indexPath);
+
+  win.webContents.on("did-finish-load", () => {
+    win.webContents.setZoomFactor(1.0);
+  });
 
   // 창 제목이 렌더러의 <title> 로 덮이지 않게 고정 — 어느 모델인지 항상 보이게 한다.
   // 제목은 세션에서 읽는다(같은 창을 다른 모델로 재사용해 reload 했을 때 옛 제목으로
