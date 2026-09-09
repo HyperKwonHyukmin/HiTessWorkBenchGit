@@ -30,7 +30,7 @@ import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.0.77';
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.78';
 
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',  icon: FileSpreadsheet, status: 'wait' },
