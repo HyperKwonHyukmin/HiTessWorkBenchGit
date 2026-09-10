@@ -138,6 +138,24 @@ ModuleUnitStudio(viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module
 - 버전 bump 전 StudioProgram 양쪽의 기존 최고 버전을 먼저 확인(충돌 시 앱이 재다운로드 안 함).
 - 서버(145) 반영: StudioProgram zip 수동 복사 + (프론트 변경이므로) WorkBench 프론트 재배포 대상.
 
+#### 화면 배율 대응 — 셸을 `transform: scale()` 로 키우지 말 것 (0.0.148, 2026-09-09)
+
+0.0.147 에 "1920×1080 을 논리 작업면으로 고정하고 셸 전체를 균일 확대"하는 발표 모드
+(`utils/resolutionFrame.js`)가 들어갔다가 **폐기**됐다. Chromium/Electron 이 Windows 디스플레이
+배율을 이미 `devicePixelRatio` 에 반영하므로 **배율이 두 번 곱해진다**:
+
+- 상단 리본(42px)·좌측 도크(301px) 같은 고정 치수까지 확대돼 4K 에서 메뉴가 비정상적으로 커진다.
+- 스케일된 셸의 CSS 박스와 실제 뷰포트가 어긋나 정보 패널 좌표가 밀린다.
+- 렌더 픽셀비가 `dpr × scale` 이 돼 캔버스 버퍼가 과도하게 커진다.
+
+현재 규약: 셸은 `width/height: 100%` 유동 레이아웃 + 미디어쿼리(폭 ≤1100·≤820, 높이 ≤680)만 쓰고,
+3D 는 `utils/renderPixelRatio.js` 의 `studioRenderPixelRatio(devicePixelRatio)` = `min(max(dpr,1),2)`
+로 **GPU 상한만** 건다. WorkBench `electron/index.js` 는 메인·뷰어 창 모두 `zoomFactor: 1.0` +
+`did-finish-load` 재고정으로 Electron 확대가 겹치지 않게 한다.
+검증은 빌드 산출물을 Playwright 로 띄워 셸 박스 == 뷰포트, 리본 높이 42(높이 ≤680 이면 36),
+캔버스 버퍼 == CSS 크기 × min(dpr,2) 를 4K/QHD/일반 창에서 실측한다(`docs/display-scaling-0.0.148.md`).
+⚠ 4K 를 Windows 배율 100% 로 쓰면 UI 가 작게 보이는 건 **의도된 동작**이다(실사용은 통상 150~200%).
+
 #### 권상 위치 자동 선정 — 핵심 동작·함정 (2026-07-01 세션, ★ 넓은 면적/PASS 관련)
 
 - **Z 밴드(tolMm) 이중 용도 분리**: `hoistToleranceMm`(UI "가상판 ±값")는 **수동 선택 강조용**일 뿐인데, 과거엔 이 좁은 값(모델높이×0.004 ≈ 10mm)이 **엔진 자동 최적화의 Z 클러스터링 tol** 로도 재사용돼 같은 데크의 근소 Z편차 노드가 서로 다른 레벨로 쪼개져 **좁고 작은 그룹만** 나왔다. → `useEditStore.js zoneSelectHoistPositions`는 이제 auto 시 **`tolMm: null`** 을 보내고(사용자가 명시하면 그 값 존중), 엔진(`HoistPositionOptimizer.RunRegionsSearch`)이 **Z 밴드 스윕**(`BuildZBandSweep` = {60,120,200,300}mm)을 돌려 **축적된 후보 중 랭킹으로 '가장 넓은 PASS'** 를 고른다. (payload 직렬화 시 `Number(null)===0` 함정 주의 — `opt.tolMm != null` 가드 필수.)
