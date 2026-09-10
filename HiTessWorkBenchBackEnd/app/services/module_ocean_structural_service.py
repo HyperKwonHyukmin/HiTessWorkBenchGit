@@ -417,6 +417,14 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
 
         # ── 마감 ─────────────────────────────────────────────────────────
         result_info = {
+            # ★ My Project 가 파일을 내려받는 통로. 저 화면은 result_info 의 **최상위
+            #   문자열 값**만 다운로드 행으로 그린다(다른 앱과 같은 규약). 아래 model/
+            #   stress 는 전부 dict 라, 이 키가 없으면 이 앱만 받을 파일이 하나도
+            #   안 보인다. model.bdf 와 같은 경로를 가리키는 별칭이다.
+            #   ⚠ 키 이름을 'bdf' 로 하면 안 된다 — My Project 는 result_info.bdf 가
+            #     있으면 '3D 시각화' 버튼을 띄우는데, 합본은 정반 포함 10만 요소라
+            #     그 뷰어가 감당하지 못한다.
+            "combined_bdf": run["bdfPath"],
             # 어떤 Excel 입력/LC가 이 가속도를 만들었는지 결과와 함께 보존한다.
             "accelerationCalculation": payload.get("acceleration_calculation"),
             "model": {

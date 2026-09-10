@@ -4,7 +4,7 @@ import {
   FileCheck2, Boxes, Waves, ShieldCheck,
   X, Loader2, RotateCcw, FileText, ExternalLink,
   Layers, ArrowDownToLine, Compass, AlertTriangle, Info, Scale, Eye, EyeOff,
-  ChevronDown, SlidersHorizontal,
+  ChevronDown, SlidersHorizontal, Download,
 } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
@@ -15,6 +15,7 @@ import {
   requestModuleOceanTransport,
   requestModuleOceanStructural,
   calculateModuleOceanAcceleration,
+  downloadFileBlob,
   downloadFileText,
   getJungbanViewerModel,
   getModuleOceanViewerModel,
@@ -33,6 +34,7 @@ import OceanWeldModal, {
 } from '../../components/analysis/OceanWeldModal';
 import BargeAccelerationPanel from '../../components/analysis/BargeAccelerationPanel';
 import Button from '../../components/ui/Button';
+import { downloadBlob, filenameFromDisposition } from '../../utils/fileHelper';
 import {
   evaluateSupportSelection, selectionPoints, selectionNodeIds, rigidDependentIndices,
 } from '../../utils/supportSelection';
@@ -185,7 +187,7 @@ function VerdictStat({ label, value, unit, bad }) {
  * 합/부, 지배 수치 3개, 그리고 형상에서 되짚는 버튼.
  * 근거·가정·모델 조작 내역은 아래 상세와 접이식 섹션으로 내린다.
  */
-function StructuralVerdictBanner({ stress, weld, onOpenColorMap }) {
+function StructuralVerdictBanner({ stress, weld, onOpenColorMap, onDownloadBdf, downloadingBdf }) {
   const s = stress?.summary;
   if (!s) return null;
   const stressNg = s.exceedCount > 0;
@@ -211,14 +213,33 @@ function StructuralVerdictBanner({ stress, weld, onOpenColorMap }) {
                   .filter(Boolean).join(' · ')
               : '부재 응력·용접부 모두 허용 이내입니다'}
         </p>
-        <button
-          type="button"
-          onClick={onOpenColorMap}
-          className="ml-auto inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-slate-800
-                     px-3 py-1.5 text-[11px] font-bold text-white transition-colors hover:bg-slate-700"
-        >
-          <Layers size={12} aria-hidden="true" /> 형상에서 확인
-        </button>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {/* 실제로 푼 모델을 그대로 받아 갈 수 있어야 한다 — 검토서에 붙이거나
+              사내 다른 도구로 재검산할 때 필요하다(정반 실형상 포함 합본). */}
+          {onDownloadBdf && (
+            <button
+              type="button"
+              onClick={onDownloadBdf}
+              disabled={downloadingBdf}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300
+                         bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 transition-colors
+                         hover:bg-slate-50 disabled:cursor-default disabled:opacity-50"
+            >
+              {downloadingBdf
+                ? <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+                : <Download size={12} aria-hidden="true" />}
+              해석 BDF 받기
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onOpenColorMap}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-800
+                       px-3 py-1.5 text-[11px] font-bold text-white transition-colors hover:bg-slate-700"
+          >
+            <Layers size={12} aria-hidden="true" /> 형상에서 확인
+          </button>
+        </div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1079,6 +1100,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
   const [structuralResult, setStructuralResult] = useState(savedPageState.structuralResult ?? null);
   // 색맵 모달 — 결과가 큰 배열이라 열 때만 받는다(페이지 상태에 저장하지 않는다).
   const [colorMapOpen, setColorMapOpen] = useState(false);
+  const [bdfDownloading, setBdfDownloading] = useState(false);
   const [legModalOpen, setLegModalOpen] = useState(false);
   const [weldModalOpen, setWeldModalOpen] = useState(false);
 
@@ -1967,6 +1989,36 @@ export default function ModuleUnitOceanTransportAnalysis() {
   const canRunStructural = structuralRunBlockers.length === 0;
 
   // ── 3단계 구조 해석 요청 ─────────────────────────────────
+  /**
+   * 실제로 푼 합본 BDF(정반 실형상 + Module Unit)를 그대로 내려받는다.
+   * 결과 JSON 이 아니라 **해석에 들어간 입력 그 자체**라, 검토서 첨부나 사내 다른
+   * 도구로 재검산할 때 이것이 있어야 한다.
+   */
+  const handleDownloadBdf = async () => {
+    const path = structuralResult?.model?.bdf;
+    if (!path) {
+      showToast('해석 BDF 경로를 찾을 수 없습니다. 구조 해석을 먼저 수행하세요.', 'error');
+      return;
+    }
+    setBdfDownloading(true);
+    try {
+      const res = await downloadFileBlob(path);
+      // 파일명은 서버가 준 Content-Disposition 을 쓴다 — 경로를 직접 잘라 내면
+      // Windows 백슬래시 때문에 전체 경로가 파일명이 되어 버린다.
+      downloadBlob(
+        res.data,
+        filenameFromDisposition(res.headers['content-disposition'], 'module_ocean.bdf'),
+        'text/plain',
+      );
+    } catch (e) {
+      showToast(e?.response?.status === 404
+        ? '파일을 찾을 수 없습니다 — 결과가 서버에서 지워졌을 수 있습니다.'
+        : (e?.message || 'BDF 다운로드에 실패했습니다.'), 'error');
+    } finally {
+      setBdfDownloading(false);
+    }
+  };
+
   const handleRunStructural = async () => {
     if (!canRunStructural || structuralBusy) return;
     // 결과는 한 벌만 남는다 — 배치·LC 를 바꿔 다시 돌리면 앞선 판정이 사라진다.
@@ -2472,6 +2524,8 @@ export default function ModuleUnitOceanTransportAnalysis() {
                         stress={structuralResult.stress}
                         weld={weldShown}
                         onOpenColorMap={() => setColorMapOpen(true)}
+                        onDownloadBdf={structuralResult.model?.bdf ? handleDownloadBdf : null}
+                        downloadingBdf={bdfDownloading}
                       />
 
                       {/* 두 과정은 성격이 다른 검토라 탭으로 갈라 본다. */}

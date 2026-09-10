@@ -328,6 +328,9 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
   // result_info 필터링
   const getResultLabel = (key) => {
     if (key === 'bdf' || key === 'bdf_path') return 'BDF Model';
+    // 해상 운송은 정반 실형상까지 합쳐 한 모델로 푼다 — 받는 사람이 '어느 BDF 인지'
+    // 알아야 하므로 그냥 'BDF Model' 로 두지 않는다.
+    if (key === 'combined_bdf') return '최종 해석 BDF (정반 + Module Unit)';
     if (key === 'XLSX_Report') return 'XLSX Report';
     if (key === 'input_json') return '입력 JSON';
     if (key === 'output_json') return '결과 JSON';
@@ -343,6 +346,13 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
         return true;
       })
     : [];
+  // 해상 운송은 결과가 model/stress/... 처럼 **중첩 dict** 라 위 필터에 하나도 안 걸린다
+  // (이 화면은 최상위 문자열 값만 다운로드 행으로 그린다). 백엔드가 combined_bdf 별칭을
+  // 내주기 **전에** 돌린 과거 해석도 파일을 받을 수 있어야 하므로 중첩 경로에서 끌어온다.
+  if (!filteredResultEntries.some(([key]) => key === 'combined_bdf')
+      && typeof project?.result_info?.model?.bdf === 'string') {
+    filteredResultEntries.push(['combined_bdf', project.result_info.model.bdf]);
+  }
   // JSON_* 키는 filteredResultEntries 에서 이미 제외되므로,
   // Excel 변환 대상은 원본 result_info 에서 직접 추출한다 (Truss Assessment 전용).
   const jsonFiles = isAssessment && project?.result_info
