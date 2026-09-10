@@ -431,3 +431,68 @@ def test_proxy_path_policy_rejects_host_escape_and_traversal(path):
 )
 def test_proxy_path_policy_preserves_normal_subpaths(path):
     assert external_apps._path_is_safe(path) is True
+
+
+@pytest.mark.parametrize(
+    ("request_path", "expected"),
+    [
+        ("", "/external-apps/independent-tank/"),
+        ("A476854", "/external-apps/independent-tank/"),
+        ("sub/page", "/external-apps/independent-tank/sub/"),
+        ("a/b/c", "/external-apps/independent-tank/a/b/"),
+    ],
+)
+def test_document_base_href_mirrors_upstream_directory(request_path, expected):
+    assert (
+        external_apps._document_base_href(
+            external_apps.INDEPENDENT_TANK_PROXY_PATH, request_path
+        )
+        == expected
+    )
+
+
+def test_document_base_href_escapes_attribute_injection():
+    base = external_apps._document_base_href(
+        external_apps.INDEPENDENT_TANK_PROXY_PATH, 'a"onload=alert(1)/x'
+    )
+    assert '"' not in base
+    assert "<" not in base
+
+
+def test_rewrite_pins_relative_assets_to_the_proxy_subpath():
+    """The shim moves location.pathname, so relative assets need a fixed base.
+
+    Without <base>, ``<script src="app.js">`` parsed after the shim resolves
+    against the rewritten document URL and leaks to the WorkBench origin root.
+    """
+
+    upstream = (
+        b'<html><head><link rel="stylesheet" href="style.css">'
+        b'</head><body><script type="module" src="app.js"></script></body></html>'
+    )
+    rewritten = external_apps._rewrite_html_links(
+        upstream,
+        "text/html; charset=utf-8",
+        external_apps.INDEPENDENT_TANK_PROXY_PATH,
+        "A476854",
+    ).decode()
+
+    assert '<base href="/external-apps/independent-tank/">' in rewritten
+    assert rewritten.index("<base") < rewritten.index("style.css")
+    # 상대경로는 그대로 두고 base 로만 해석을 고정한다.
+    assert 'src="app.js"' in rewritten
+
+
+def test_rewrite_keeps_an_upstream_supplied_base():
+    upstream = b'<html><head><base href="/fixed/"><script src="app.js"></script></head></html>'
+    rewritten = external_apps._rewrite_html_links(
+        upstream,
+        "text/html; charset=utf-8",
+        external_apps.INDEPENDENT_TANK_PROXY_PATH,
+        "A476854",
+    ).decode()
+
+    # 상류가 base 를 직접 제어하면 두 번째 base 를 끼워 넣지 않는다.
+    # 그 base 자체는 루트 절대경로 재작성 대상이라 프록시 접두사가 붙는다.
+    assert rewritten.count("<base") == 1
+    assert '<base href="/external-apps/independent-tank/fixed/">' in rewritten

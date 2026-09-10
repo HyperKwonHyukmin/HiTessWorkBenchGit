@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape as html_escape
 import json
 import re
 import time
@@ -27,7 +28,7 @@ router = APIRouter(prefix="/external-apps", tags=["external-apps"])
 
 BLOCK_WELD_UPSTREAM = "http://10.14.42.145:31880/"
 BLOCK_WELD_PROXY_PATH = "/external-apps/block-weld"
-INDEPENDENT_TANK_UPSTREAM = "http://10.14.42.114:31870/"
+INDEPENDENT_TANK_UPSTREAM = "http://10.14.42.145:31870/"
 INDEPENDENT_TANK_PROXY_PATH = "/external-apps/independent-tank"
 
 HOP_BY_HOP_HEADERS = {
@@ -302,7 +303,28 @@ def _build_subpath_shim(proxy_path: str) -> str:
     )
 
 
-def _rewrite_html_links(content: bytes, content_type: str, proxy_path: str) -> bytes:
+def _document_base_href(proxy_path: str, request_path: str) -> str:
+    """Return the proxy-side base URL for the upstream document's directory.
+
+    The shim below rewrites ``location.pathname`` so the external app can still
+    read the employee id from the first path segment.  That also moves the
+    document URL, and with it the base every *relative* asset resolves against:
+    ``<script src="app.js">`` parsed after the shim would resolve to ``/app.js``
+    on the WorkBench origin instead of the proxied subpath.  Pinning ``<base>``
+    to the upstream directory keeps relative resolution stable regardless.
+    """
+
+    directory = f"{request_path.rsplit('/', 1)[0]}/" if "/" in request_path else ""
+    encoded = quote(directory, safe="/:@!$&'()*+,;=-._~%")
+    return html_escape(f"{proxy_path}/{encoded}", quote=True)
+
+
+def _rewrite_html_links(
+    content: bytes,
+    content_type: str,
+    proxy_path: str,
+    request_path: str = "",
+) -> bytes:
     if "text/html" not in content_type.lower():
         return content
 
@@ -330,6 +352,16 @@ def _rewrite_html_links(content: bytes, content_type: str, proxy_path: str) -> b
         html,
         flags=re.DOTALL | re.IGNORECASE,
     )
+
+    # Pin relative resolution before any asset tag is parsed.  An upstream that
+    # ships its own <base> already controls resolution and is left untouched.
+    if not re.search(r"<base\b", html, re.IGNORECASE):
+        base_tag = f'<base href="{_document_base_href(proxy_path, request_path)}">'
+        head_open = re.search(r"<head\b[^>]*>", html, re.IGNORECASE)
+        if head_open:
+            html = html[: head_open.end()] + base_tag + html[head_open.end() :]
+        else:
+            html = base_tag + html
 
     shim = _build_subpath_shim(proxy_path)
     if "</head>" in html:
@@ -561,6 +593,7 @@ async def _proxy_request(request: Request, config: ExternalAppProxy, path: str =
             await upstream.aread(),
             content_type,
             config.proxy_path,
+            path,
         )
         response = Response(
             content=content,
