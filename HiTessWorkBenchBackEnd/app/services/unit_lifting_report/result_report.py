@@ -21,7 +21,7 @@ from typing import Any, Optional
 
 from openpyxl import load_workbook
 
-from .collector import ReportOptions, collect
+from .collector import ReportOptions, collect, format_contact
 from . import figures3d
 
 TEMPLATE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "templates"))
@@ -42,11 +42,13 @@ WIRES_PER_BLOCK = 4
 
 
 def generate_result_report(result_info: dict[str, Any], options: dict[str, Any] | None = None, *,
-                           generated_by: str = "") -> tuple[str, bytes, list[str], dict[str, Any]]:
+                           generated_by: str = "", generator: dict[str, Any] | None = None,
+                           ) -> tuple[str, bytes, list[str], dict[str, Any]]:
     """``(파일명, xlsx 바이트, 경고, 요약)``. 디스크에 쓰지 않는다."""
     opts = ReportOptions.from_payload(options)
     if not opts.author:
         opts.author = generated_by or "-"
+    opts.contact = opts.contact or format_contact(generator, generated_by)   # 바닥글 '문의' 줄
     now = datetime.now()
     data = collect(result_info, opts, generated_at=now.strftime("%Y-%m-%d %H:%M"))
     warnings: list[str] = list(data.warnings)
@@ -120,8 +122,9 @@ def _fill_titles(ws, d, has_support: bool):
         ws[f"O{info_row}"] = f"HULL NO. {d.identity.hull_no}"
         ws[f"Y{info_row}"] = f"UNIT NO. {d.identity.unit_no}"
         ws[f"AI{info_row}"] = d.identity.lifting_method
-    footer = ("본 보고서는 Hi-TESS WorkBench 를 통해 자동 생성되었습니다.\n"
-              f"작성 | {d.identity.author} / {d.identity.department}   생성일 {d.identity.generated_at}")
+    # 문의처는 보고서를 만든 WorkBench 사용자(이름/직급/부서) — 표지의 '작성자' 입력과 별개다
+    footer = ("본 보고서는 Hi-TESS WorkBench를 통해 자동 생성되었습니다.\n"
+              f"문의 | {d.identity.contact}   생성일 {d.identity.generated_at}")
     for row in ([52, 106] + ([160] if has_support else [])):
         ws[f"F{row}"] = footer
 
@@ -156,7 +159,7 @@ def _fill_hook_table(ws, d, warnings: list[str]):
 
     for block, start in enumerate(HOOK_BLOCK_ROWS):
         for offset in range(WIRES_PER_BLOCK):
-            ws[f"L{start + offset}"] = offset + 1
+            ws[f"L{start + offset}"] = None
         if block >= len(group_ids):
             ws[f"F{start}"] = "-"
             for offset in range(WIRES_PER_BLOCK):
@@ -164,7 +167,8 @@ def _fill_hook_table(ws, d, warnings: list[str]):
             continue
         gid = group_ids[block]
         wires = sorted(by_group[gid], key=lambda w: (w.lug_node_id, w.wire_element_id))
-        ws[f"F{start}"] = gid
+        # 그룹·러그를 캡처 그림의 라벨(G1·N34)과 같은 표기로 적어 어느 와이어인지 그림에서 찾을 수 있게 한다
+        ws[f"F{start}"] = f"G{gid}"
         if len(wires) > WIRES_PER_BLOCK:
             warnings.append(f"그룹 {gid}의 wire {len(wires)}개 중 {WIRES_PER_BLOCK}개만 서식에 기록했습니다.")
         for offset in range(len(wires), WIRES_PER_BLOCK):
@@ -172,6 +176,7 @@ def _fill_hook_table(ws, d, warnings: list[str]):
         reaction = 0.0
         has_reaction = False
         for offset, w in enumerate(wires[:WIRES_PER_BLOCK]):
+            ws[f"L{start + offset}"] = f"G{gid}-N{w.lug_node_id}"
             ws[f"X{start + offset}"] = round(w.tension_ton, 3)
             if w.vertical_ton is not None:
                 reaction += w.vertical_ton

@@ -3047,10 +3047,15 @@ def create_unit_structural_report(
             except (TypeError, ValueError):
                 raise HTTPException(status_code=400, detail=f"{key} 는 양수여야 합니다.")
 
+    # 보고서 바닥글의 '문의' 줄 — 로그인 사용자의 이름/직급/부서를 DB 에서 채운다(입력 폼에 없는 정보다)
+    user = db.query(models.User).filter(models.User.employee_id == current_user).first()
+    generator = {"employeeId": current_user, "name": getattr(user, "name", ""),
+                 "position": getattr(user, "position", ""), "department": getattr(user, "department", "")}
+
     try:
         builder = generate_result_report if kind == "result" else generate_unit_lifting_report
         file_name, report_bytes, warnings, summary = builder(
-            result_info, options, generated_by=current_user,
+            result_info, options, generated_by=current_user, generator=generator,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=409, detail=str(exc))

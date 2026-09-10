@@ -55,12 +55,14 @@ def text_width(text) -> int:
 class ReportSheet:
     def __init__(self, ws, doc_title: str = "", hull: str = "", unit: str = "",
                  method: str = "", department: str = "", drawing_no: str = "",
-                 logo_png: Optional[bytes] = None, total_pages: Optional[int] = None):
+                 logo_png: Optional[bytes] = None, total_pages: Optional[int] = None,
+                 contact: str = ""):
         self.ws = ws
         ws.title = "Report"
         self.doc_title = doc_title
         self.hull, self.unit, self.method = hull, unit, method
         self.department, self.drawing_no = department, drawing_no
+        self.contact = contact            # 페이지 바닥글 '문의' — 보고서를 만든 WorkBench 사용자
         self.logo = logo_png
         self.total_pages = total_pages
 
@@ -181,6 +183,8 @@ class ReportSheet:
         foot = r + HEADER_ROWS + BODY_ROWS          # 바닥글 첫 행
         self._hline(foot - 1)
         total = f" / {self.total_pages}" if self.total_pages else ""
+        # ⚠ 바닥글은 8열(≈36자) 안에서 한 줄이어야 한다 — 넘치면 줄바꿈되어 페이지 프레임 밖으로 새어 나온다.
+        # 문의처(이름/직급/부서)는 길어서 여기 대신 표지의 '문의' 줄에만 적는다.
         self._cell(foot + 1, 1, 8, "본 보고서는 Hi-TESS WorkBench 가 해석 결과로부터 자동 생성했습니다.",
                    size=8, color=GRAY)
         self._cell(foot + 1, 9, COLS, f"Page {self.page}{total}", size=8, color=GRAY, align="right")

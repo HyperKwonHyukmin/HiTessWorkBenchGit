@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from .builder import build_workbook
-from .collector import ReportOptions, collect
+from .collector import ReportOptions, collect, format_contact
 from .figures import render_all_safe
 from .result_report import generate_result_report  # noqa: F401  사내 서식 기반 '결과 레포트'
 
@@ -23,11 +23,13 @@ def generate_unit_lifting_report(
     options: dict[str, Any] | None = None,
     *,
     generated_by: str = "",
+    generator: dict[str, Any] | None = None,
 ) -> tuple[str, bytes, list[str], dict[str, Any]]:
     """``(파일명, xlsx 바이트, 경고, 요약)`` 을 돌려준다. 디스크에 쓰지 않는다."""
     opts = ReportOptions.from_payload(options)
     if not opts.author:
         opts.author = generated_by or "-"
+    opts.contact = opts.contact or format_contact(generator, generated_by)   # 표지·바닥글 '문의' 줄
     now = datetime.now()
     data = collect(result_info, opts, generated_at=now.strftime("%Y-%m-%d %H:%M"))
     figs, errors = render_all_safe(data)

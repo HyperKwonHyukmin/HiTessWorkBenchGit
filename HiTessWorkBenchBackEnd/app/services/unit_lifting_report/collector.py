@@ -34,6 +34,7 @@ class ReportOptions:
     revision: str = "0"
     author: str = ""
     department: str = ""
+    contact: str = ""                # 보고서 문의처 '이름/직급/부서' — WorkBench 로그인 사용자에서 채운다
     jig_limit_ton: float = 6.2
     yield_strength_mpa: float = 275.0
     notes: str = ""
@@ -53,16 +54,25 @@ class ReportOptions:
             hull_no=str(p.get("hullNo") or "").strip(), unit_no=str(p.get("unitNo") or "").strip(),
             drawing_no=str(p.get("drawingNo") or "").strip(), revision=str(p.get("revision") or "0").strip(),
             author=str(p.get("author") or "").strip(), department=str(p.get("department") or "").strip(),
+            contact=str(p.get("contact") or "").strip(),
             jig_limit_ton=num("jigLimitTon", 6.2), yield_strength_mpa=num("yieldStrengthMpa", 275.0),
             notes=str(p.get("notes") or "").strip(),
         )
+
+
+def format_contact(generator: dict | None, fallback: str = "") -> str:
+    """보고서 문의처 문자열 — `이름/직급/부서`. 빠진 항목은 건너뛰고, 아무것도 없으면 fallback(사번)."""
+    g = generator or {}
+    parts = [str(g.get(k) or "").strip() for k in ("name", "position", "department")]
+    parts = [p for p in parts if p]
+    return "/".join(parts) or str(fallback or "").strip()
 
 
 # ── 데이터 모델 ───────────────────────────────────────────────────────────────
 @dataclass
 class Identity:
     title_prefix: str; hull_no: str; unit_no: str; drawing_no: str; revision: str
-    author: str; department: str; lifting_method: str; equipment: str
+    author: str; department: str; contact: str; lifting_method: str; equipment: str
     group_count: int; wire_length_m: float; source_bdf: str; edited_model: str
     generated_at: str; engine_version: str; notes: str
 
@@ -285,7 +295,8 @@ def _identity(o: ReportOptions, info, stability, posture, meta, generated_at) ->
     return Identity(
         title_prefix=prefix, hull_no=o.hull_no or hull or "-", unit_no=o.unit_no or unit or "-",
         drawing_no=o.drawing_no or "-", revision=o.revision or "0", author=o.author or "-",
-        department=o.department or "-", lifting_method=method, equipment=equipment,
+        department=o.department or "-", contact=o.contact or o.author or "-",
+        lifting_method=method, equipment=equipment,
         group_count=int(inp.get("groupCount") or 0), wire_length_m=float(inp.get("wireLengthM") or 0),
         source_bdf=os.path.basename(src),
         edited_model=str(((stability.get("meta") or {}).get("sourceFiles") or {}).get("model") or ""),

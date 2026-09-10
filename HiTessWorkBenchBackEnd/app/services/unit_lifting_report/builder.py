@@ -52,7 +52,7 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
         doc_title=f"{i.title_prefix} 권상 구조 검토 보고서",
         hull=i.hull_no, unit=i.unit_no, method=i.lifting_method,
         department=i.department if i.department != "-" else "", drawing_no=i.drawing_no,
-        logo_png=logo, total_pages=total_pages,
+        logo_png=logo, total_pages=total_pages, contact=i.contact if i.contact != "-" else "",
     )
     sec_pages: dict[str, int] = {}
 
@@ -75,7 +75,7 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
     s.cover(f"{i.title_prefix} 권상 구조 검토 보고서",
             [("HULL NO.", i.hull_no), ("UNIT NO.", i.unit_no), ("도면 번호", i.drawing_no),
              ("권상 방식", f"{i.lifting_method} ({i.equipment or 'Hook'})"), ("리비전", f"Rev. {i.revision}"),
-             ("작성", f"{i.author} / {i.department}"), ("작성일", i.generated_at)],
+             ("작성", f"{i.author} / {i.department}"), ("문의", i.contact), ("작성일", i.generated_at)],
             [("구조 판정", v.structure, "ok" if v.structure == "OK" else ("ng" if v.structure == "NG" else "skip")),
              ("자세 안정성", STATUS_KO.get(v.stability, str(v.stability).upper()), v.stability),
              ("국부변형 방지 지그", "필요" if v.jig_required else "불요", "warn" if v.jig_required else "ok")])
@@ -186,7 +186,7 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
                 widths=[3, 9], title="권상 그룹")
     fig("hoist_plan", "권상 배치 평면도 — 러그·정점·와이어·COG")
     fig("hoist_side", "권상 배치 측면도")
-    fig("hoist_iso", "권상 위치 3D — 지시 핀은 권상 그룹, 검정은 무게중심")
+    fig("hoist_iso", "권상 배치 3D — 체결 위치(●)·와이어·훅(○)은 그룹색, COG 는 검정 ◆, 배관은 붉은색")
     sec("3.2 권상 위치 선정 근거")
     if h:
         if h.auto_selected:

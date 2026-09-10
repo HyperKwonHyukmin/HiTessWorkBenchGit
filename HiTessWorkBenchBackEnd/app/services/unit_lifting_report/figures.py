@@ -49,12 +49,18 @@ def project(p, view: str) -> tuple[float, float]:
 
 
 def place_label(occupied: list, px: float, py: float, w: float, h: float, gap: float = 6.0):
-    """겹치지 않는 라벨 박스(x0, y0) 를 고른다. 6개 후보 중 첫 미충돌, 없으면 마지막 후보."""
+    """겹치지 않는 라벨 박스(x0, y0) 를 고른다. 가까운 후보부터 훑고, 모두 막히면 점점 멀리
+    8방향 고리로 넓혀 간다. 그래도 자리가 없으면 마지막 후보를 쓴다."""
     cands = [(px + gap, py + gap), (px + gap, py - h - gap), (px - w - gap, py + gap),
              (px - w - gap, py - h - gap), (px + gap * 2, py - h / 2), (px - w - gap * 2, py - h / 2),
              # 같은 선상에 점이 몰릴 때를 위한 2단째 후보(위·아래로 한 칸 더)
              (px - w / 2, py + h + gap * 2), (px - w / 2, py - 2 * h - gap * 2),
              (px + gap, py + 2 * h + gap * 3), (px + gap, py - 3 * h - gap * 3)]
+    # 밀집 구역에서 앞 후보가 전부 막히는 경우를 위한 확장 고리(리더선이 길어질 뿐 겹치진 않는다)
+    for ring in (1, 2, 3, 4):
+        r = (h + gap) * 2.0 * ring
+        for ux, uy in ((1, 0), (0, 1), (-1, 0), (0, -1), (0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7)):
+            cands.append((px + ux * r - w / 2, py + uy * r - h / 2))
     for cx, cy in cands:
         box = (cx, cy, cx + w, cy + h)
         if not any(_overlap(box, o) for o in occupied):

@@ -51,7 +51,9 @@ def test_hook_table_filled_and_blank_rows_cleared(built):
     _n, wb, _w, _s = built
     ws = wb["Report"]
     assert ws["AD92"].value == pytest.approx(6.2)
-    assert [ws[f"F{r}"].value for r in RR.HOOK_BLOCK_ROWS] == [1, 2, 3]
+    # 그룹·러그는 캡처 그림의 라벨(G1·N34)과 같은 표기여야 표에서 어느 와이어인지 찾을 수 있다
+    assert [ws[f"F{r}"].value for r in RR.HOOK_BLOCK_ROWS] == ["G1", "G2", "G3"]
+    assert [ws[f"L{r}"].value for r in (92, 93, 94, 95)] == ["G1-N34", "G1-N2873", None, None]
     assert ws["X92"].value == pytest.approx(10198.65 / 9800, abs=1e-3)
     assert ws["R92"].value == pytest.approx(3.547, abs=1e-2)
     # 그룹 1·2 는 wire 가 2개뿐 → 3·4행의 '지그 불요' 수식을 지워야 오해가 없다
@@ -98,3 +100,20 @@ def test_summary_values(built):
 def test_missing_required_json_raises():
     with pytest.raises(FileNotFoundError):
         generate_result_report({"nastranResultJson": "nope.json", "stabilityJson": "nope.json"}, {})
+
+
+def test_footer_contact_uses_logged_in_user():
+    """바닥글 '문의' 는 보고서를 만든 WorkBench 사용자(이름/직급/부서)다 — 입력 폼에 없는 정보."""
+    _n, data, _w, _s = generate_result_report(
+        INFO, {"department": "구조기본설계부"}, generated_by="A476854",
+        generator={"name": "김도현", "position": "선임연구원", "department": "구조시스템연구실"})
+    ws = load_workbook(io.BytesIO(data))["Report"]
+    footer = ws["F52"].value
+    assert "문의 | 김도현/선임연구원/구조시스템연구실" in footer
+    assert "본 보고서는 Hi-TESS WorkBench를 통해 자동 생성되었습니다." in footer
+
+
+def test_footer_contact_falls_back_to_employee_id(built):
+    """사용자 정보가 비어 있으면 사번으로라도 연락처를 남긴다."""
+    _n, wb, _w, _s = built
+    assert "문의 | A476854" in wb["Report"]["F52"].value

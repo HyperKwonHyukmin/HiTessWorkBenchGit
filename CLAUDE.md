@@ -163,6 +163,22 @@ Hoist 좌측 도크 패널 상단의 토글. **기본 OFF(= 완화)** 이며 `lo
 
 - **패키지 4모듈**: `collector.py`(JSON 7종 → `ReportData` dataclass) · `figures.py`(matplotlib 2D 도면 → PNG bytes) · `sheet.py`(openpyxl 레이아웃 프리미티브·두 패스 목차) · `builder.py`(장 조립). `unit_lifting_report_service.py` 는 위임 껍데기(라우터 import 경로 보존).
 - ⚠️ **그림은 백엔드가 그린다 — Studio 3D 캡처를 쓰지 않는다.** 사용자 결정(Mooring 과 같은 철학). 그래서 Studio 가 안 떠 있어도, 서버에서도 재생성된다. codex 가 만들었던 캡처 경로(`ThreeViewport.captureReportViews`, `LiftingArrangementReport.js`, `DisplacementResultOverlay.js`, store `reportCapture`)는 **전부 삭제**했다.
+- **3D 캡처(`solid3d.py` + `figures3d.py`, 2026-09-08 재구축)** — 결과 레포트(사내 서식) 캡처 4~6장과 상세 레포트의 `*_iso` 그림이 같은 코드다. 부재는 PBEAML 단면 치수대로 세운 각기둥, 와이어·COG(◆) 도 **솔리드**로 만들어 같은 `Poly3DCollection` 에 넣는다(scatter/line 은 깊이 정렬에 끼지 못해 부재에 가려지거나 항상 앞에 뜬다). 라벨(`G1·N34 77.9°`, `HOOK G1`, `COG`)·지지 다각형·좌표축은 3D→픽셀로 투영해 **2D 로 맨 위에** 그리고, 겹침 회피는 `figures.place_label` 을 그대로 쓴다.
+  - ⚠️ **`Axes3D` 는 지정 영역 안에서 항상 정사각형으로 줄어든다**(`apply_aspect`). 가로로 넓은 자리를 채우려면 `render()` 처럼 축을 가시 영역보다 큰 정사각형으로 놓고 가시 영역 기준으로 zoom 을 '그려 보고 재서' 맞춰야 한다. `ax.set_position` 만 넓혀서는 절반밖에 안 쓴다(과거 증상: 모델이 슬롯의 45%).
+  - ⚠️ 서식의 캡처 자리는 `TwoCellAnchor` 라 그림을 **자리 비율(1243:719)로 늘린다.** `fit_aspect()` 로 흰 여백을 덧대 비율을 먼저 맞춰야 왜곡이 없다(`test_result_figures_match_template_slot_ratio`).
+  - 권상 배치 그림의 **와이어는 3D 솔리드에 더해 2D 중심선(`overlays`, `avoid=True`)을 겹쳐 그린다.** 평면도에서는 와이어가 거의 수직이라 솔리드가 눌려 흐릿해지기 때문이다. `avoid` 는 그 선을 따라 점유 상자를 깔아 **라벨이 권상 선을 덮지 못하게** 한다(사용자 요청: 선을 진하게, 라벨은 비켜서).
+  - **라벨에 슬링각을 넣지 않는다**(사용자 요청 — 도면이 난잡해진다). 최소 슬링각은 부제에, 그룹별 전량은 상세 레포트 표 11 에 있다. 상세 레포트의 2D 평면도(`figures.py`)는 여백이 넉넉해 각도를 그대로 둔다.
+  - 결과 그림(변위·응력·가서포트)의 와이어는 `clip_z` 로 모델 상단+12% 에서 잘라 훅을 생략한다 — 훅 정점(모델 위 수 m)까지 그리면 모델이 작아진다. 권상 배치 그림만 훅까지 그린다.
+  - **배관은 둥근 기둥 + 붉은색**(2026-09-08 사용자 요청). ① 모양 — `section_profile()` 이 TUBE·ROD 를 `round=True` 로 돌려 `_tube()`(정8각기둥)로 세운다. ② ⚠ **TUBE·ROD 의 DIM1 은 반지름이라 지름 = 2·DIM1**(Studio `computeCrossSectionAreaMm2` 와 같은 규약, Hypermesh 질량 99% 일치로 검증). 과거엔 DIM1 을 지름으로 써서 배관을 **실제의 절반 굵기**로 그렸다. ③ 색 — `_pipe_colors()` 가 **PID ≥ 101**(`PIPE_PID_MIN`, ModelBuilder 의 배관 property 대역. 실제 모델은 1000번대이고 요소 `category=='Pipe'` 와 정확히 일치)만 붉은색으로 칠하고 구조·가서포트는 강재색(회색)으로 남긴다. **변위·응력 그림에는 적용하지 않는다** — 거기선 요소 색이 곧 해석 결과다(사용자 결정).
+  - ⚡ **배치를 잡는 draw 동안 `Poly3DCollection` 을 숨긴다**(`render()` 의 `coll.set_visible(False)` → savefig 직전 True). 줌 맞춤 반복·범례/좌표축 계산에 쓰는 `fig.canvas.draw()` 는 투영 행렬만 필요한데, 3만 면을 매번 깊이 정렬해 그리고 있었다. 그림 1장 3.3s → 1.4s, 결과 레포트 14.4s → 6.2s, 상세 17.5s → 9.1s (출력 PNG 는 바이트까지 동일).
+  - ⚠️ 마구리 면은 끄고(`TUBE_CAPS = False`) 옆면 8장만 그린다. 배관끼리 이어져 끝이 거의 안 보이는데 면 수가 3배(1장 렌더 3.4s → 6.7s)가 된다.
+  - **체결 위치는 가득 찬 원(●), 훅은 빈 원(○)** — 2D 도면(`figures.py`)과 같은 기호다(사용자 요청, `Figure/1.png`·`2.png`). 솔리드 큐브·다이아는 평면도에서 부재에 묻혀 서로 구분이 안 됐다. `_Rig.meshes(solid_markers=False)` + `_Rig.points2d()` → `render(points2d=...)` 가 투영해 **2D 로 맨 위에** 찍고, 그 자리를 점유로 등록해 라벨이 마커를 덮지 않게 한다.
+  - **결과 레포트 Hook/Trolley 표도 같은 표기**를 쓴다(`result_report._fill_hook_table`): 1열 = `G1`·`G2`·`G3`, 2열 = `G1-N34`·`G1-N2873`… (그룹+러그 절점). 그림 라벨(`G1·N34`)과 글자가 같아야 표의 한 줄이 그림의 어느 와이어인지 찾을 수 있다. 와이어가 없는 행은 2열을 비운다.
+- **바닥글 '문의' 줄 = 보고서를 만든 WorkBench 로그인 사용자**(2026-09-08). 라우터가 `models.User` 에서 이름·직급(`position`)·부서를 읽어 `generator={name, position, department}` 로 넘기고, `collector.format_contact()` 가 `권혁민/책임연구원/구조시스템연구실` 로 조립한다(빠진 항목은 건너뛰고, 전부 없으면 사번). 표지 입력 폼의 '작성자/부서' 와는 **별개** — 폼에는 직급이 없다.
+  - 결과 레포트는 페이지 바닥글이 `본 보고서는 Hi-TESS WorkBench를 통해 자동 생성되었습니다.
+문의 | …   생성일 …` 두 줄.
+  - ⚠️ 상세 레포트는 **표지의 '문의' 줄에만** 넣는다. 페이지 바닥글(`sheet._close_page`)은 8열(≈36자) 한 줄이 한계라 문의처를 붙이면 **줄바꿈되어 페이지 프레임 밖으로 새어 나온다**(실측).
+- **Studio 보고서 버튼은 전체 화면 안내막을 띄운다**(`ReportProgressOverlay.jsx`, 0.0.138~). 백엔드가 3D 그림을 그리는 동안 화면이 멀쩡해 보이면 사용자가 버튼을 다시 누른다. 예상 시간(결과 25s·상세 35s — dev PC 실측은 6.2s/9.1s 이고 서버·전송·저장을 감안한 값)과 경과를 보여 주고 `zIndex 4000` 으로 조작을 막는다. 진행률은 서버 값이 아니라 예상 대비 경과라 **95% 에서 멈추고** 초과 시 '마무리 중' 으로 바꾼다. WorkBench 쪽 버튼(`UnitLiftingReportDialog`)은 기존대로 제출 버튼 스피너만 쓴다.
 - ⚠️ **신규 의존성 `matplotlib==3.10.7`** (`requirements.txt`). 서버(145)는 `git pull` 후 **1회 `pip install -r requirements.txt`** 필요. 한글 폰트는 `Malgun Gothic`.
 - ⚠️ **절 제목 문자열은 `builder.toc_entries()` 와 `_write()` 가 글자 단위로 같아야** 목차 쪽번호가 채워진다(다르면 그 절이 0쪽으로 나옴). `tests/test_unit_lifting_report_builder.py::test_toc_pages_monotonic` 이 잡는다.
 - **고정 페이지 틀** — 원본 사내 서식처럼 한 페이지가 (머리글 3행 + HULL/UNIT/권상방식 1행 + 본문 50행 + 바닥글 2행) = **57행 프레임**이고 외곽선·머리글·바닥글이 페이지마다 반복된다. `sheet.ReportSheet` 가 `_open_page`/`_close_page`/`_ensure(rows)` 로 관리하며, **모든 행 높이가 ROW_PT(13.5pt)로 같아야** '행 수 = 세로 공간' 이 성립한다(여러 줄 텍스트는 행 세로 병합).
