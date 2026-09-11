@@ -11,7 +11,7 @@ const DOWNLOADS = [
     name: 'HiTESS BEAM',
     category: 'Software',
     description: '1D Beam 구조해석을 위한 사용자 데스크탑 어플리케이션.',
-    version: 'v1.0.0',
+    version: 'v1.1.0',
     status: 'stable',
     filename: 'HiTESSBEAM.zip',
     size: '131 MB',
