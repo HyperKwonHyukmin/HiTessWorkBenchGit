@@ -15,7 +15,8 @@ from ..services.external_app_access import external_app_access_store
 
 router = APIRouter(prefix="/api", tags=["auth"])
 member_router = APIRouter(prefix="/member", tags=["member"])
-EMPLOYEE_ID_PATTERN = re.compile(r"^A\d{6}$")
+# 사번 형식: 영문 1자 + 숫자 5~7자리 (A123456, D12345 등 계열사별 자릿수 차이를 허용)
+EMPLOYEE_ID_PATTERN = re.compile(r"^[A-Z]\d{5,7}$")
 
 
 class CheckUserRequest(BaseModel):

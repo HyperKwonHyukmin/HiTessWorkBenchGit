@@ -26,12 +26,14 @@ const BASE_DEPARTMENTS = [
 const BASE_COMPANIES = ['HD 현대중공업', 'HD 현대삼호', 'HD 한국조선해양'];
 const BASE_POSITIONS = ['책임연구원', '책임엔지니어', '선임연구원', '선임엔지니어', '연구원', '엔지니어'];
 
-// 직접 입력은 최상단에 고정 — 단, 회사는 HD 계열사 3개로 고정하므로 제외
-const COMPANY_OPTIONS    = BASE_COMPANIES;
+// 직접 입력은 최상단에 고정 — 목록에 없는 회사·부서·직급을 직접 적을 수 있게 한다
+const COMPANY_OPTIONS    = [CUSTOM_LABEL, ...BASE_COMPANIES];
 const DEPARTMENT_OPTIONS = [CUSTOM_LABEL, ...BASE_DEPARTMENTS];
 const POSITION_OPTIONS   = [CUSTOM_LABEL, ...BASE_POSITIONS];
-const EMPLOYEE_ID_PATTERN = /^A\d{6}$/;
-const EMPLOYEE_ID_FORMAT_MESSAGE = '사번 형식이 올바르지 않습니다. A + 숫자 6자리 형식으로 다시 사번을 확인해 주세요.';
+const EMPLOYEE_ID_PATTERN = /^[A-Z]\d{5,7}$/;
+const EMPLOYEE_ID_MIN_LENGTH = 6;   // 영문 1자 + 숫자 5자리
+const EMPLOYEE_ID_MAX_LENGTH = 8;   // 영문 1자 + 숫자 7자리
+const EMPLOYEE_ID_FORMAT_MESSAGE = '사번 형식이 올바르지 않습니다. 영문 1자 + 숫자 5~7자리(예: A123456, D12345) 형식으로 다시 사번을 확인해 주세요.';
 
 export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
   const [formData, setFormData] = useState({
@@ -42,8 +44,8 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
     department: BASE_DEPARTMENTS[0],
   });
 
-  // 직접 입력 선택 시 사용자가 타이핑한 텍스트 — 필드별 별도 보관 (회사는 고정 옵션이라 제외)
-  const [customValues, setCustomValues] = useState({ department: '', position: '' });
+  // 직접 입력 선택 시 사용자가 타이핑한 텍스트 — 필드별 별도 보관
+  const [customValues, setCustomValues] = useState({ company: '', department: '', position: '' });
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -57,7 +59,7 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
       setIsSuccess(false);
       setErrorMsg('');
       setIsLoading(false);
-      setCustomValues({ department: '', position: '' });
+      setCustomValues({ company: '', department: '', position: '' });
     }
   }, [isOpen, initialEmployeeId]);
 
@@ -95,11 +97,13 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
 
     setIsLoading(true);
 
+    const finalCompany    = resolveValue('company');
     const finalDepartment = resolveValue('department');
     const finalPosition   = resolveValue('position');
 
-    // 직접 입력을 선택하고 비워둔 경우 차단 (회사는 고정 옵션이라 검증 불필요)
+    // 직접 입력을 선택하고 비워둔 경우 차단
     const missing = [];
+    if (formData.company    === CUSTOM_LABEL && !finalCompany)    missing.push('회사명');
     if (formData.department === CUSTOM_LABEL && !finalDepartment) missing.push('부서명');
     if (formData.position   === CUSTOM_LABEL && !finalPosition)   missing.push('직급');
 
@@ -112,6 +116,7 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
     const payload = {
       ...formData,
       employee_id: employeeId,
+      company: finalCompany,
       department: finalDepartment,
       position: finalPosition,
     };
@@ -138,11 +143,11 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
     onClose();
   };
 
-  // 사번 실시간 형식 피드백 (값이 7자에 도달했을 때만 invalid 표시 — 입력 중에는 깜빡임 방지)
+  // 사번 실시간 형식 피드백 (최소 길이에 도달했을 때만 invalid 표시 — 입력 중에는 깜빡임 방지)
   const employeeIdLength = formData.employee_id.length;
   const isEmployeeIdValid = EMPLOYEE_ID_PATTERN.test(formData.employee_id);
   const showEmployeeIdValid = employeeIdLength > 0 && isEmployeeIdValid;
-  const showEmployeeIdInvalid = employeeIdLength >= 7 && !isEmployeeIdValid;
+  const showEmployeeIdInvalid = employeeIdLength >= EMPLOYEE_ID_MIN_LENGTH && !isEmployeeIdValid;
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -239,7 +244,7 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
                                   value={formData.employee_id}
                                   onChange={handleChange}
                                   required
-                                  maxLength={7}
+                                  maxLength={EMPLOYEE_ID_MAX_LENGTH}
                                   placeholder="A123456"
                                   className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-lg outline-none placeholder:text-slate-400 focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15 transition-all"
                                 />
@@ -254,7 +259,7 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
                                   </span>
                                 )}
                               </div>
-                              <p className="mt-1 text-[11px] text-slate-500 font-medium ml-1">형식: A + 숫자 6자리</p>
+                              <p className="mt-1 text-[11px] text-slate-500 font-medium ml-1">형식: 영문 1자 + 숫자 5~7자리 (예: A123456, D12345)</p>
                             </div>
 
                             {/* 이름 */}
@@ -286,15 +291,18 @@ export default function RegisterModal({ isOpen, onClose, initialEmployeeId }) {
                           </div>
 
                           <div className="space-y-4">
-                            <div className="relative z-30">
-                              <StyledListbox
-                                label="회사"
-                                value={formData.company}
-                                onChange={(v) => handleSelectChange('company', v)}
-                                options={COMPANY_OPTIONS}
-                                icon={Building}
-                              />
-                            </div>
+                            <SelectWithCustom
+                              label="회사"
+                              field="company"
+                              icon={Building}
+                              zIndex="z-30"
+                              options={COMPANY_OPTIONS}
+                              value={formData.company}
+                              onChange={handleSelectChange}
+                              customValue={customValues.company}
+                              onCustomChange={handleCustomChange}
+                              placeholder="회사명을 입력하세요"
+                            />
                             <SelectWithCustom
                               label="소속 부서"
                               field="department"
