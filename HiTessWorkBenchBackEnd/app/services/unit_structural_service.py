@@ -34,6 +34,7 @@ from .analysis_runner import (
 )
 
 logger = logging.getLogger(__name__)
+from .lifting_review_archive import archive_lifting_review
 
 # 사내 표준 Nastran 경로 (없으면 환경변수 NASTRAN_EXE 로 override)
 _DEFAULT_NASTRAN_EXE = r"C:\MSC.Software\MSC_Nastran\20131\bin\nastran.exe"
@@ -257,6 +258,20 @@ def task_execute_unit_structural(
             "summary":           result_summary,
             "warnings":          result_payload.get("warnings", []),
         }
+        try:
+            result_data["reviewManifestJson"] = archive_lifting_review(bdf_dir, job_id, {
+                "sourceBdf": bdf_path, "editedModel": edited_json,
+                "stability": stability_json_path, "liftingBdf": lifting_bdf,
+                "liftingMeta": lifting_meta, "f06": lifting_f06, "result": result_json,
+                "bridgeScript": bridge_script,
+            }, {"parentAnalysisId": parent_analysis_id, "safetyFactor": safety_factor,
+                "allowableMPa": allowable_mpa, "solverReturnCode": run.returncode,
+                "solverExecutable": nastran_exe, "engineScript": bridge_script,
+                "status": status_msg})
+        except Exception as archive_error:
+            logger.warning("권상 실행 기록 보관 실패: %s", archive_error)
+            result_data["warnings"] = [*result_data["warnings"], "실행 기록 보관 실패 — 입력과 결과 파일을 별도로 보관하세요."]
+            engine_output += f"\n[Warning] 실행 기록 보관 실패: {archive_error}"
         # F06 fatal 등으로 이미 status=Failed 인 경우 "[OK] 완료" 요약을 찍지 않는다(모순 방지).
         # 실패여도 디버깅용 수치는 남기되, 성공을 뜻하는 [OK] 문구는 붙이지 않는다.
         _summary_line = (

@@ -5,6 +5,7 @@ import csv
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -2947,10 +2948,10 @@ async def request_unit_structural(
     그리고 _USER_CONNECTION_DIR 하위에 있어야 한다.
     """
     _verify_employee_self(employee_id, current_user)
-    if safety_factor <= 0:
-        raise HTTPException(status_code=400, detail="safety_factor must be > 0")
-    if allowable_mpa <= 0:
-        raise HTTPException(status_code=400, detail="allowable_mpa must be > 0")
+    if not math.isfinite(safety_factor) or safety_factor <= 0:
+        raise HTTPException(status_code=400, detail="safety_factor: 하중계수는 0보다 큰 유한한 숫자여야 합니다.")
+    if not math.isfinite(allowable_mpa) or allowable_mpa <= 0:
+        raise HTTPException(status_code=400, detail="allowable_mpa: 허용응력은 0보다 큰 유한한 숫자여야 합니다.")
 
     parent = db.query(models.Analysis).filter(
         models.Analysis.id == parent_analysis_id
