@@ -187,27 +187,35 @@ function VerdictStat({ label, value, unit, bad }) {
  * 합/부, 지배 수치 3개, 그리고 형상에서 되짚는 버튼.
  * 근거·가정·모델 조작 내역은 아래 상세와 접이식 섹션으로 내린다.
  */
-function StructuralVerdictBanner({ stress, weld, onOpenColorMap, onDownloadBdf, downloadingBdf }) {
+function StructuralVerdictBanner({
+  stress, weld, resultCurrent, onOpenColorMap, onDownloadBdf, downloadingBdf,
+}) {
   const s = stress?.summary;
   if (!s) return null;
   const stressNg = s.exceedCount > 0;
   const weldNg = weld?.summary?.status === 'NG';
   const ng = stressNg || weldNg;
-  // 지배 부재가 특이 자유도에 오염됐을 때만 결과 자체를 의심하게 만든다(과잉 차단 방지).
-  const untrusted = Boolean(stress?.quality?.governingContaminated);
+  const qualityReview = stress?.quality?.trustworthy === false;
+  const incomplete = !weld?.summary || Boolean(weld?.error);
+  const review = !resultCurrent || qualityReview || incomplete;
+  const status = ng ? 'NG' : review ? '검토 필요' : 'OK';
 
   return (
     <div className={`rounded-2xl border p-4 ${
-      untrusted ? 'border-red-300 bg-red-50'
-        : ng ? 'border-red-200 bg-red-50/60' : 'border-emerald-200 bg-emerald-50/60'}`}>
+      ng ? 'border-red-300 bg-red-50'
+        : review ? 'border-amber-300 bg-amber-50' : 'border-emerald-200 bg-emerald-50/60'}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className={`rounded-lg px-2.5 py-1 text-sm font-extrabold tracking-wide ${
-          ng ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'}`}>
-          {ng ? 'NG' : 'OK'}
+          ng ? 'bg-red-600 text-white' : review ? 'bg-amber-600 text-white' : 'bg-emerald-600 text-white'}`}>
+          {status}
         </span>
         <p className="text-xs font-semibold text-slate-700">
-          {untrusted
-            ? '지배 부재가 특이 자유도의 영향권 안입니다 — 아래 경고를 먼저 확인하세요'
+          {!resultCurrent
+            ? '현재 화면의 입력과 다른 조건에서 만든 결과입니다 — 다시 해석해야 판정할 수 있습니다'
+            : qualityReview
+              ? '해석에 특이 자유도 또는 수치 경고가 있습니다 — 원인 확인 전 승인 판정에 사용할 수 없습니다'
+              : incomplete
+                ? '용접부 평가가 없거나 실패했습니다 — 부재 응력만으로 전체 OK를 판정할 수 없습니다'
             : ng
               ? [stressNg && '부재 응력이 허용을 넘습니다', weldNg && '용접부가 NG 입니다']
                   .filter(Boolean).join(' · ')
@@ -249,7 +257,8 @@ function StructuralVerdictBanner({ stress, weld, onOpenColorMap, onDownloadBdf, 
         <VerdictStat label="허용 초과 부재" value={s.exceedCount} unit="개" bad={stressNg} />
         {stress.displacementSummary && (
           <VerdictStat label="최대 변위"
-            value={stress.displacementSummary.maxMagMm.toFixed(1)} unit="mm" />
+            value={Number.isFinite(stress.displacementSummary.maxMagMm)
+              ? stress.displacementSummary.maxMagMm.toFixed(1) : '결과 없음'} unit="mm" />
         )}
       </div>
     </div>
@@ -342,7 +351,7 @@ function StressResultPanel({ stress, model }) {
   // 있었고 판정을 지배하는 최대 응력 부재는 영향권 밖이었다. 백엔드가 요소 연결을
   // 되짚어 governingContaminated 로 둘을 갈라 준다.
   const q = stress.quality && stress.quality.trustworthy === false ? stress.quality : null;
-  const invalid = Boolean(q?.governingContaminated);
+  const invalid = Boolean(q);
   // 특이 절점이 전부 자유단이면 원인을 단정해 말할 수 있다(실측 3521: 13/13).
   const allFreeEnds = Boolean(q && q.highPivotNodeCount > 0
     && q.freeEndNodeCount === q.highPivotNodeCount);
@@ -364,12 +373,12 @@ function StressResultPanel({ stress, model }) {
           <h4 className={`text-xs font-bold ${tone.head}`}>
             {invalid
               ? '⚠ 이 결과는 그대로 믿을 수 없습니다'
-              : '⚠ 국소 특이 자유도가 있습니다 — 아래 부재만 제외하고 보세요'}
+              : '⚠ 해석 품질 경고가 있습니다'}
           </h4>
           <p className={`mt-1 text-[11px] leading-relaxed ${tone.body}`}>
-            {invalid
+            {q.governingContaminated
               ? '구속되지 않은 자유도가 남은 채 해석이 진행됐고, 판정을 지배하는 최대 응력 부재가 그 영향권 안에 있습니다. 이 응력은 허수일 수 있습니다.'
-              : '구속되지 않은 자유도가 남은 채 해석이 진행됐지만, 최대 응력 부재는 영향권 밖이라 전체 판정은 유효합니다.'}
+              : '구속되지 않은 자유도가 남은 채 해석이 진행됐습니다. 상위 응력 부재가 탐지 영향권 밖이라는 사실만으로 전체 모델의 수치적 타당성을 확정할 수 없으므로, 원인 검토 전에는 승인 판정에 사용하지 마세요.'}
             {' '}
             {/* "왜 이런 게 나왔나" 에 일반론 대신 이 모델의 사실로 답한다 —
                 자유단(부재 하나만 붙은 끝점)은 그 끝의 회전 자유도에 강성이 없다. */}
@@ -1098,6 +1107,9 @@ export default function ModuleUnitOceanTransportAnalysis() {
   const [structuralMsg, setStructuralMsg] = useState('');
   const [structuralError, setStructuralError] = useState(null);
   const [structuralResult, setStructuralResult] = useState(savedPageState.structuralResult ?? null);
+  const [structuralResultInputKey, setStructuralResultInputKey] = useState(
+    savedPageState.structuralResultInputKey ?? null);
+  const pendingStructuralInputKeyRef = useRef(null);
   // 색맵 모달 — 결과가 큰 배열이라 열 때만 받는다(페이지 상태에 저장하지 않는다).
   const [colorMapOpen, setColorMapOpen] = useState(false);
   const [bdfDownloading, setBdfDownloading] = useState(false);
@@ -1156,7 +1168,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
       useNastran, weldResult, weldSpec, processTab, moduleModel, arrangement, deckType, contactTolMm,
       deckContingencyPct, moduleContingencyPct, deckTransparent,
       accel, accelerationInput, accelerationResult,
-      material, smallBoreMaxOdMm, structuralResult, structuralJobId, seating,
+      material, smallBoreMaxOdMm, structuralResult, structuralResultInputKey, structuralJobId, seating,
       supportIdx: [...supportIdx],
     });
   }, [
@@ -1167,7 +1179,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
     useNastran, weldResult, weldSpec, processTab, moduleModel, arrangement, deckType, contactTolMm,
     deckContingencyPct, moduleContingencyPct, deckTransparent,
     accel, accelerationInput, accelerationResult,
-    material, smallBoreMaxOdMm, structuralResult, structuralJobId, seating, supportIdx,
+    material, smallBoreMaxOdMm, structuralResult, structuralResultInputKey, structuralJobId, seating, supportIdx,
   ]);
 
   // ── 진행 중이던 작업 복원 ────────────────────────────────
@@ -1539,7 +1551,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
   const seatingKeyRef = useRef(null);
   useEffect(() => {
     // 지지점이 바뀌면 적치 높이 자체가 달라진다 — 이전 검사 결과는 그 배치의 것이 아니다.
-    const supportKey = `${supportIdx.size}:${[...supportIdx].reduce((a, b) => a + b, 0)}`;
+    const supportKey = [...supportIdx].sort((a, b) => a - b).join(',');
     const key = [arrangement.rotationZDeg, arrangement.offsetXMm, arrangement.offsetYMm,
       deckType, moduleModel ? 1 : 0, supportKey].join('|');
     // 첫 실행은 '배치 변경' 이 아니라 '페이지 복원' 이다 — 여기서 지우면 다른 메뉴에
@@ -1702,6 +1714,32 @@ export default function ModuleUnitOceanTransportAnalysis() {
     smallBoreMaxOdMmForRun > 0 ? `소구경 OD≤${smallBoreMaxOdMmForRun} 제외` : '소구경 제외 안 함',
     `지지 ${supportNodeIds.length}점`,
   ].join(' · '), [accelerationInput.loadCase, allowableMPa, smallBoreMaxOdMmForRun, supportNodeIds.length]);
+
+  const structuralInputKey = useMemo(() => JSON.stringify({
+    bdfPath, deckType,
+    supportNodeIds: [...supportNodeIds].sort((a, b) => a - b),
+    placement: placement ? {
+      anchorMm: placement.anchor,
+      rotationZDeg: Number(arrangement.rotationZDeg || 0),
+      offsetXMm: Number(arrangement.offsetXMm || 0),
+      offsetYMm: Number(arrangement.offsetYMm || 0),
+      gapMm: Number(seatGapMm),
+    } : null,
+    smallBoreMaxOdMm: smallBoreMaxOdMmForRun,
+    deckContingencyPct: Number(deckContingencyPct || 0),
+    moduleContingencyPct: Number(moduleContingencyPct || 0),
+    accelG: { ax: Number(accel.ax), ay: Number(accel.ay), az: Number(accel.az) },
+    material: { sigmaYMPa: Number(material.sigmaYMPa), factor: Number(material.factor) },
+  }), [bdfPath, deckType, supportNodeIds, placement, arrangement, seatGapMm,
+    smallBoreMaxOdMmForRun, deckContingencyPct, moduleContingencyPct, accel, material]);
+  const structuralResultCurrent = Boolean(
+    structuralResult && structuralResultInputKey === structuralInputKey,
+  );
+  useEffect(() => {
+    if (structuralJobId && pendingStructuralInputKeyRef.current == null) {
+      pendingStructuralInputKeyRef.current = structuralInputKey;
+    }
+  }, [structuralJobId, structuralInputKey]);
 
   // 모델이 바뀌면 이전 선택의 인덱스는 다른 절점을 가리킨다 — 반드시 버린다.
   // 반대로 배치(회전·오프셋)가 바뀌어도 선택은 유효하다(모듈 자체 절점이므로).
@@ -2021,11 +2059,10 @@ export default function ModuleUnitOceanTransportAnalysis() {
 
   const handleRunStructural = async () => {
     if (!canRunStructural || structuralBusy) return;
-    // 결과는 한 벌만 남는다 — 배치·LC 를 바꿔 다시 돌리면 앞선 판정이 사라진다.
-    // 산출물(BDF/F06/JSON)도 같은 이름으로 덮어쓰므로 되돌릴 방법이 없다.
+    // 현재 화면은 새 결과로 바뀌지만 서버의 이전 Analysis 레코드와 산출물은 보존된다.
     if (structuralResult && !window.confirm(
-      '이미 나와 있는 해석 결과를 덮어씁니다.\n'
-      + '이전 결과의 응력·반력·용접 판정과 산출 파일(BDF·F06·JSON)은 남지 않습니다.\n\n'
+      '현재 화면의 결과를 새 해석 결과로 교체합니다.\n'
+      + '이전 실행의 판정과 산출 파일은 My Project 이력에 보존됩니다.\n\n'
       + '계속할까요?',
     )) return;
     setStructuralBusy(true);
@@ -2035,6 +2072,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
     setStepStatus('structural-run', 'running');
     setStructuralProgress(0);
     setStructuralMsg('서버 요청 중...');
+    pendingStructuralInputKeyRef.current = structuralInputKey;
     try {
       // 사용자가 2단계에서 지정한 지지점. 인덱스는 뷰어 positions 기준이며
       // selectionNodeIds 가 nodeIds 로 실제 BDF 절점 ID 를 만든다.
@@ -2089,7 +2127,8 @@ export default function ModuleUnitOceanTransportAnalysis() {
 
   usePolling({
     jobId: structuralJobId,
-    maxRetries: 240,
+    // 백엔드 Nastran 제한 30분보다 먼저 포기하지 않는다(1.5초 × 1320 = 33분).
+    maxRetries: 1320,
     onProgress: (data) => {
       setStructuralProgress(data.progress ?? 0);
       setStructuralMsg(data.message ?? '');
@@ -2107,6 +2146,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
         return;
       }
       setStructuralResult(result_info);
+      setStructuralResultInputKey(pendingStructuralInputKeyRef.current);
       // 해석이 반력 직후 용접까지 판정해 둔다 — 열자마자 결과가 있어야 한다.
       setWeldResult(result_info.weld ?? null);
       // 판정이 NG 면 과정 2 부터 보여 준다. 통과했는데 탭이 튀면 그게 더 산만하다.
@@ -2523,6 +2563,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
                       <StructuralVerdictBanner
                         stress={structuralResult.stress}
                         weld={weldShown}
+                        resultCurrent={structuralResultCurrent}
                         onOpenColorMap={() => setColorMapOpen(true)}
                         onDownloadBdf={structuralResult.model?.bdf ? handleDownloadBdf : null}
                         downloadingBdf={bdfDownloading}
@@ -2539,7 +2580,10 @@ export default function ModuleUnitOceanTransportAnalysis() {
                             // 초록으로 칠하면 통과한 것으로 잘못 읽힌다.
                             const verdict = tab.id === 'stress'
                               ? (structuralResult.stress?.summary
-                                  ? (structuralResult.stress.summary.exceedCount > 0 ? 'ng' : 'ok')
+                                  ? (structuralResult.stress.summary.exceedCount > 0 ? 'ng'
+                                    : (!structuralResultCurrent
+                                      || structuralResult.stress?.quality?.trustworthy === false
+                                      ? 'review' : 'ok'))
                                   : 'none')
                               : (weldShown?.summary
                                   ? (weldShown.summary.status === 'NG' ? 'ng' : 'ok')
@@ -2561,6 +2605,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
                                 <span className="truncate">{tab.label}</span>
                                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                                   verdict === 'ng' ? 'bg-red-500'
+                                    : verdict === 'review' ? 'bg-amber-500'
                                     : verdict === 'ok' ? 'bg-green-500' : 'bg-slate-300'}`} />
                               </button>
                             );
@@ -2778,12 +2823,22 @@ export default function ModuleUnitOceanTransportAnalysis() {
       />
 
       <StressColorMapModal
+        key={`${structuralResult?.runId || structuralResult?.stress?.resultJson || 'none'}:${structuralInputKey}`}
         open={colorMapOpen}
         onClose={() => setColorMapOpen(false)}
         stress={structuralResult?.stress}
         modelJsonPath={modelJsonPath}
         moduleModel={moduleModel}
-        supportIdx={supportIdx}
+        supportIdx={structuralResultCurrent ? supportIdx : new Set()}
+        placement={structuralResult?.inputSnapshot?.placement ? {
+          anchor: structuralResult.inputSnapshot.placement.anchorMm,
+          deckCenter: structuralResult.inputSnapshot.placement.deckCenterMm,
+          deckTopZ: structuralResult.inputSnapshot.placement.deckTopZMm,
+          offsetXMm: structuralResult.inputSnapshot.placement.offsetXMm,
+          offsetYMm: structuralResult.inputSnapshot.placement.offsetYMm,
+          rotationZDeg: structuralResult.inputSnapshot.placement.rotationZDeg,
+          gapMm: structuralResult.inputSnapshot.placement.gapMm,
+        } : null}
       />
 
       {/* 개발 진행 안내. 과정 구성은 3단계 탭이 이미 보여 주므로 여기서는 되풀이하지 않는다 —

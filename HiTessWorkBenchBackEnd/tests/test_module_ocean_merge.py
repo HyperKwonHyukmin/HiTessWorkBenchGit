@@ -286,6 +286,34 @@ def test_placement_puts_the_module_bottom_exactly_at_the_gap():
     assert stats["bottomZMm"] == pytest.approx(8326.0)
 
 
+def test_placement_rotates_beam_orientation_offsets_and_concentrated_mass():
+    """배치 회전은 절점뿐 아니라 전역좌표로 적힌 요소 데이터에도 적용돼야 한다."""
+    source = [
+        line("GRID", 1, None, 0.0, 0.0, 0.0),
+        line("GRID", 2, None, 1000.0, 0.0, 0.0),
+        line("CBEAM", 10, 1, 1, 2, 0.0, 1.0, 0.0, None),
+        cont(None, None, 100.0, 20.0, 30.0, -40.0, 50.0, 60.0),
+        line("CONM2", 20, 2, 0, 1.0, 100.0, 20.0, 30.0, 11.0),
+        cont(2.0, 22.0, 3.0, 4.0, 33.0),
+    ]
+
+    out, _ = place_grid_lines(
+        source, anchor_mm=[0.0, 0.0, 0.0], deck_center_mm=[0.0, 0.0],
+        deck_top_z_mm=0.0, rotation_z_deg=90.0, gap_mm=0.0,
+    )
+
+    beam = [_fields(out[2]), _fields(out[3])]
+    assert [float(v) for v in beam[0][4:7]] == pytest.approx([-1.0, 0.0, 0.0])
+    assert [float(beam[1][2]), float(beam[1][3])] == pytest.approx([-20.0, 100.0])
+    assert [float(beam[1][5]), float(beam[1][6])] == pytest.approx([-50.0, -40.0])
+
+    mass = [_fields(out[4]), _fields(out[5])]
+    assert [float(v) for v in mass[0][4:7]] == pytest.approx([-20.0, 100.0, 30.0])
+    # I' = R I R^T: I11/I22 swap, I12 changes sign, XZ/YZ rotate.
+    assert float(mass[0][7]) == pytest.approx(22.0)
+    assert [float(v) for v in mass[1][:5]] == pytest.approx([-2.0, 11.0, -4.0, 3.0, 33.0])
+
+
 # ── 정반 상판과 지지점 배정 ───────────────────────────────────────────────
 
 def test_landing_levels_are_the_flat_shell_faces_only():

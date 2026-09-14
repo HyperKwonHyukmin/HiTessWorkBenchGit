@@ -8,6 +8,7 @@ import {
   buildNodalBeamColors, nodalDisplacementArrays, deformedPositions, autoDeformScale,
 } from '../../utils/stressColorMap';
 import { selectionPoints } from '../../utils/supportSelection';
+import { transformModulePoint } from '../../utils/feGeometry';
 
 /**
  * 요소 응력 색맵 모달 — "최대 응력 2215.7 MPa" 가 **모델 어디에서** 나온 값인지 보여 준다.
@@ -35,7 +36,7 @@ const fmt = (v) => (Math.abs(v) >= 100 ? v.toFixed(0)
   : Math.abs(v) >= 1 ? v.toFixed(2) : v.toFixed(4));
 
 export default function StressColorMapModal({
-  open, onClose, stress, modelJsonPath, moduleModel, supportIdx,
+  open, onClose, stress, modelJsonPath, moduleModel, supportIdx, placement,
 }) {
   const [elements, setElements] = useState(null);
   const [dispNodes, setDispNodes] = useState(null);
@@ -119,6 +120,33 @@ export default function StressColorMapModal({
     return () => { cancelled = true; };
   }, [open, stress?.resultJson, modelJsonPath, moduleModel]);  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 결과는 정반 전역좌표계에서 계산된다. 원본 Module Unit 형상과 변위벡터도 같은
+  // 회전/이동을 적용해야 응력 위치·지지점·변형방향이 실제 해석 BDF 와 일치한다.
+  const placedModel = useMemo(() => {
+    if (!model || !placement?.anchor || !placement?.deckCenter) return model;
+    const positions = Float32Array.from(model.positions || []);
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i + 2 < positions.length; i += 3) {
+      const p = transformModulePoint({ x: positions[i], y: positions[i + 1], z: positions[i + 2] }, placement);
+      positions[i] = p.x; positions[i + 1] = p.y; positions[i + 2] = p.z;
+      lo[0] = Math.min(lo[0], p.x); lo[1] = Math.min(lo[1], p.y); lo[2] = Math.min(lo[2], p.z);
+      hi[0] = Math.max(hi[0], p.x); hi[1] = Math.max(hi[1], p.y); hi[2] = Math.max(hi[2], p.z);
+    }
+    return { ...model, positions, bounds: { min: lo, max: hi } };
+  }, [model, placement]);
+
+  const placedDispNodes = useMemo(() => {
+    if (!dispNodes?.length) return dispNodes;
+    const th = (Number(placement?.rotationZDeg || 0) * Math.PI) / 180;
+    const cs = Math.cos(th), sn = Math.sin(th);
+    return dispNodes.map(d => ({
+      ...d,
+      t1: d.t1 * cs - d.t2 * sn,
+      t2: d.t1 * sn + d.t2 * cs,
+    }));
+  }, [dispNodes, placement?.rotationZDeg]);
+
   // 판정 제외 요소가 있는가 — 없으면 토글 자체를 띄우지 않는다.
   const excludedCount = useMemo(
     () => (elements || []).reduce((n, e) => n + (e.excluded ? 1 : 0), 0), [elements]);
@@ -137,8 +165,8 @@ export default function StressColorMapModal({
 
   // 절점 변위를 positions 인덱스 순서로 편다(응력은 요소 값이라 이 경로를 안 탄다).
   const nodal = useMemo(
-    () => (model && hasDisp ? nodalDisplacementArrays(model, dispNodes) : null),
-    [model, dispNodes, hasDisp],
+    () => (placedModel && hasDisp ? nodalDisplacementArrays(placedModel, placedDispNodes) : null),
+    [placedModel, placedDispNodes, hasDisp],
   );
 
   // 선택한 성분의 값 범위. 합성은 0 부터, 부호가 있는 성분은 실제 min~max 를 편다.
@@ -155,49 +183,49 @@ export default function StressColorMapModal({
   }, [nodal, isDisp, viewDef.key]);
 
   const autoScale = useMemo(
-    () => autoDeformScale(model?.bounds, nodal ? Math.max(...nodal.mag, 0) : 0),
-    [model, nodal],
+    () => autoDeformScale(placedModel?.bounds, nodal ? Math.max(...nodal.mag, 0) : 0),
+    [placedModel, nodal],
   );
   const effectiveScale = isDisp ? (deformScale ?? autoScale) : 0;
 
   // 표에서 고른 부재를 변위 화면에서도 흰색으로 짚어 준다.
   const highlightSegments = useMemo(() => {
-    if (focusEid == null || !model?.beamIds) return undefined;
+    if (focusEid == null || !placedModel?.beamIds) return undefined;
     const set = new Set();
-    model.beamIds.forEach((id, i) => { if (id === focusEid) set.add(i); });
+    placedModel.beamIds.forEach((id, i) => { if (id === focusEid) set.add(i); });
     return set;
-  }, [focusEid, model]);
+  }, [focusEid, placedModel]);
 
   // 선분마다 양 끝 정점 2개 × RGB 3 — FeModelViewer 가 인덱스를 풀어 그대로 쓴다.
   const [beamColors, colorError] = useMemo(() => {
-    if (!model) return [null, null];
+    if (!placedModel) return [null, null];
     try {
       if (isDisp) {
         if (!nodal || !range) return [null, null];
-        return [buildNodalBeamColors(model.beams, nodal[viewDef.key],
+        return [buildNodalBeamColors(placedModel.beams, nodal[viewDef.key],
           { ...range, highlightSegments }), null];
       }
       if (!shownElements) return [null, null];
-      return [buildBeamColors(model.beams, model.beamIds, usageOf,
+      return [buildBeamColors(placedModel.beams, placedModel.beamIds, usageOf,
         { onlyExceed, highlightElementId: focusEid }), null];
     } catch (e) {
       // 길이 불일치 = 색이 통째로 밀린 상태다. 잘못된 그림을 보여 주느니 알린다.
       return [null, e.message];
     }
-  }, [model, shownElements, usageOf, onlyExceed, focusEid, isDisp, nodal, range, viewDef.key, highlightSegments]);
+  }, [placedModel, shownElements, usageOf, onlyExceed, focusEid, isDisp, nodal, range, viewDef.key, highlightSegments]);
 
   // 변형 형상 — 원형상 좌표에 배율×변위를 더한 별도 모델을 만든다.
   const deformedModel = useMemo(() => {
-    if (!model || !isDisp || !nodal || !(effectiveScale > 0)) return null;
-    return { ...model, positions: deformedPositions(model.positions, nodal, effectiveScale) };
-  }, [model, isDisp, nodal, effectiveScale]);
+    if (!placedModel || !isDisp || !nodal || !(effectiveScale > 0)) return null;
+    return { ...placedModel, positions: deformedPositions(placedModel.positions, nodal, effectiveScale) };
+  }, [placedModel, isDisp, nodal, effectiveScale]);
 
   // 마커 세 갈래 — 최대 응력 부재, 표에서 고른 부재, 그리고 경계조건(지지점).
   // 경계조건이 어디였는지 함께 보여야 "왜 여기가 붉은가"를 판단할 수 있다.
   const markers = useMemo(() => {
     // 변형 형상을 그릴 때는 마커도 그 좌표를 따라야 부재 위에 얹힌다.
     // (지지점은 SPC 로 변위가 0 이라 어느 쪽이든 같은 자리다.)
-    const shown = deformedModel || model;
+    const shown = deformedModel || placedModel;
     if (!shown) return [];
     const out = [];
     if (showSupports && supportIdx?.size) {
@@ -214,29 +242,29 @@ export default function StressColorMapModal({
       if (mid) out.push({ ...mid, color: '#ffffff', size: 15 });
     }
     return out;
-  }, [model, deformedModel, summary, focusEid, supportIdx, showSupports, isDisp]);
+  }, [placedModel, deformedModel, summary, focusEid, supportIdx, showSupports, isDisp]);
 
   const focusTarget = useMemo(() => {
-    const shown = deformedModel || model;
+    const shown = deformedModel || placedModel;
     if (focusEid == null || !shown) return null;
     const mid = elementMidpoint(shown, focusEid);
     return mid ? { ...mid, radius: 1500 } : null;
-  }, [focusEid, model, deformedModel]);
+  }, [focusEid, placedModel, deformedModel]);
 
   const parts = useMemo(() => {
-    if (!model) return [];
+    if (!placedModel) return [];
     const out = [];
     // 원형상은 옅은 유령으로 깔아 변형량을 눈으로 비교할 수 있게 한다.
     if (deformedModel && showUndeformed) {
       out.push({
-        id: 'mu-undeformed', name: '원형상', model, color: '#64748b', opacity: 0.28,
+        id: 'mu-undeformed', name: '원형상', model: placedModel, color: '#64748b', opacity: 0.28,
         colorKey: 'ghost',
       });
     }
     out.push({
       id: 'mu-result',
       name: deformedModel ? `변형 형상 (×${Math.round(effectiveScale)})` : 'Module Unit',
-      model: deformedModel || model,
+      model: deformedModel || placedModel,
       color: '#8aa0b8',
       beamColors,
       // 색·좌표가 바뀌면 지오메트리를 다시 만들어야 한다(배열은 참조 비교가 안 된다).
@@ -244,7 +272,7 @@ export default function StressColorMapModal({
         + `:${focusEid ?? ''}:${effectiveScale.toFixed(3)}`,
     });
     return out;
-  }, [model, deformedModel, showUndeformed, beamColors, view, shownElements,
+  }, [placedModel, deformedModel, showUndeformed, beamColors, view, shownElements,
       onlyExceed, focusEid, effectiveScale]);
 
   if (!open) return null;

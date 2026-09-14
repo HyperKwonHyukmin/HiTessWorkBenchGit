@@ -287,10 +287,14 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
     project_name = os.path.basename(work_dir)
 
     mark_running(job_id, "해석 모델을 준비하는 중...", 10)
-    stem = os.path.join(work_dir,
+    # 재실행은 이전 검토 근거를 덮어쓰지 않는다. job id 는 이미 유일하므로 별도 시각
+    # 문자열보다 충돌에 강하고, My Project 의 Analysis 레코드와 산출물 폴더도 연결된다.
+    run_dir = os.path.join(work_dir, "ocean_runs", job_id)
+    stem = os.path.join(run_dir,
                         os.path.splitext(os.path.basename(bdf_path))[0] + _COMBINED_STEM_SUFFIX)
 
     try:
+        os.makedirs(run_dir, exist_ok=False)
         update_progress(job_id, 15, "정반 + Module Unit 합본 모델 생성 중...")
         deck_bulk = extract_bulk_lines(_read(jungban_bdf_path(deck_type)))
         unit_bulk = extract_bulk_lines(_read(bdf_path))
@@ -425,6 +429,22 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
             #     있으면 '3D 시각화' 버튼을 띄우는데, 합본은 정반 포함 10만 요소라
             #     그 뷰어가 감당하지 못한다.
             "combined_bdf": run["bdfPath"],
+            "runId": job_id,
+            "inputSnapshot": {
+                "bdfPath": bdf_path,
+                "deckType": deck_type,
+                "supportNodeIds": support_node_ids,
+                "placement": placement,
+                "clearanceMm": clearance_mm,
+                "smallBoreMaxOdMm": small_bore_max_od_mm,
+                "deckContingencyPct": float(payload.get("deck_contingency_pct") or 0.0),
+                "moduleContingencyPct": float(payload.get("module_contingency_pct") or 0.0),
+                "totalMassT": float(payload["total_mass_t"]),
+                "totalCogMm": list(payload["total_cog_mm"]),
+                "accelG": {"ax": accel_g[0], "ay": accel_g[1], "az": accel_g[2]},
+                "material": material,
+                "weldSpec": payload.get("weld_spec"),
+            },
             # 어떤 Excel 입력/LC가 이 가속도를 만들었는지 결과와 함께 보존한다.
             "accelerationCalculation": payload.get("acceleration_calculation"),
             "model": {
@@ -503,6 +523,10 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
                 "deck_contingency_pct": payload.get("deck_contingency_pct"),
                 "module_contingency_pct": payload.get("module_contingency_pct"),
                 "support_node_count": len(support_node_ids),
+                "support_node_ids": support_node_ids,
+                "small_bore_max_od_mm": small_bore_max_od_mm,
+                "weld_spec": payload.get("weld_spec"),
+                "run_id": job_id,
             },
             result_info=result_info,
             source=source,

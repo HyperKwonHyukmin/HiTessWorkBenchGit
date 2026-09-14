@@ -337,22 +337,69 @@ def place_grid_lines(
     hi = [-math.inf] * 3
     moved = 0
 
-    for head, name, _rows in _iter_cards(lines):
-        if name != "GRID":
-            continue
-        x, y, z = _grid_coords(lines[head])
-        lx, ly, lz = x - ax, y - ay, z - az
-        # 회전 행렬의 round-off(cos 90° = 6.1e-17)가 8칸 표기를 잡아먹지 않게 눌러 둔다.
-        world = (
-            round(cx + lx * cos_t - ly * sin_t, 4),
-            round(cy + lx * sin_t + ly * cos_t, 4),
-            round(base_z + lz, 4),
-        )
-        for axis in range(3):
-            lines[head] = _replace_field(lines[head], 3 + axis, real8(world[axis]))
-            lo[axis] = min(lo[axis], world[axis])
-            hi[axis] = max(hi[axis], world[axis])
-        moved += 1
+    def card_field(rows: Sequence[int], field_index: int) -> str:
+        row_index, local_index = divmod(field_index - 1, 8)
+        if row_index >= len(rows):
+            return ""
+        fields = _card_fields(lines[rows[row_index]])
+        return fields[local_index] if local_index < len(fields) else ""
+
+    def set_card_field(rows: Sequence[int], field_index: int, value: float) -> None:
+        row_index, local_index = divmod(field_index - 1, 8)
+        if row_index >= len(rows):
+            raise MergeError(f"카드 연속행에 {field_index}번 필드가 없습니다.")
+        row = rows[row_index]
+        lines[row] = _replace_field(lines[row], local_index + 1, real8(round(value, 8)))
+
+    def rotate_pair(rows: Sequence[int], x_field: int, y_field: int) -> None:
+        x_text, y_text = card_field(rows, x_field).strip(), card_field(rows, y_field).strip()
+        if not x_text and not y_text:
+            return
+        x = _parse_real(x_text) if x_text else 0.0
+        y = _parse_real(y_text) if y_text else 0.0
+        set_card_field(rows, x_field, x * cos_t - y * sin_t)
+        set_card_field(rows, y_field, x * sin_t + y * cos_t)
+
+    for head, name, rows in _iter_cards(lines):
+        if name == "GRID":
+            x, y, z = _grid_coords(lines[head])
+            lx, ly, lz = x - ax, y - ay, z - az
+            # 회전 행렬의 round-off(cos 90° = 6.1e-17)가 8칸 표기를 잡아먹지 않게 눌러 둔다.
+            world = (
+                round(cx + lx * cos_t - ly * sin_t, 4),
+                round(cy + lx * sin_t + ly * cos_t, 4),
+                round(base_z + lz, 4),
+            )
+            for axis in range(3):
+                lines[head] = _replace_field(lines[head], 3 + axis, real8(world[axis]))
+                lo[axis] = min(lo[axis], world[axis])
+                hi[axis] = max(hi[axis], world[axis])
+            moved += 1
+        elif name in ("CBEAM", "CBAR"):
+            fields = _card_fields(lines[head])
+            if _cbeam_g0_index(fields) is None:
+                rotate_pair(rows, 5, 6)       # 방향벡터 X1/X2
+            rotate_pair(rows, 11, 12)         # WA 단부 오프셋
+            rotate_pair(rows, 14, 15)         # WB 단부 오프셋
+        elif name == "CONM2":
+            cid = card_field(rows, 3).strip()
+            if cid and int(cid) != 0:
+                raise MergeError("CONM2 배치 회전은 전역 좌표계(CID=0)만 지원합니다.")
+            rotate_pair(rows, 5, 6)           # 질량중심 편심 X1/X2
+
+            inertia_text = [card_field(rows, i).strip() for i in range(8, 14)]
+            if any(inertia_text):
+                values = [_parse_real(v) if v else 0.0 for v in inertia_text]
+                i11, i21, i22, i31, i32, i33 = values
+                # 대칭 관성텐서 I' = Rz I Rz^T.
+                new_i11 = cos_t*cos_t*i11 - 2*cos_t*sin_t*i21 + sin_t*sin_t*i22
+                new_i21 = cos_t*sin_t*(i11-i22) + (cos_t*cos_t-sin_t*sin_t)*i21
+                new_i22 = sin_t*sin_t*i11 + 2*cos_t*sin_t*i21 + cos_t*cos_t*i22
+                new_i31 = cos_t*i31 - sin_t*i32
+                new_i32 = sin_t*i31 + cos_t*i32
+                for index, value in zip(range(8, 14),
+                                        (new_i11, new_i21, new_i22, new_i31, new_i32, i33)):
+                    set_card_field(rows, index, value)
 
     if not moved:
         raise MergeError("Module Unit BDF 에 GRID 카드가 없습니다.")
