@@ -293,8 +293,9 @@ def test_placement_rotates_beam_orientation_offsets_and_concentrated_mass():
         line("GRID", 2, None, 1000.0, 0.0, 0.0),
         line("CBEAM", 10, 1, 1, 2, 0.0, 1.0, 0.0, None),
         cont(None, None, 100.0, 20.0, 30.0, -40.0, 50.0, 60.0),
-        line("CONM2", 20, 2, 0, 1.0, 100.0, 20.0, 30.0, 11.0),
-        cont(2.0, 22.0, 3.0, 4.0, 33.0),
+        # CONM2 규격: 첫 줄은 X3 까지 7필드(8번째 칸은 빈다), I11~I33 은 연속행 6칸.
+        line("CONM2", 20, 2, 0, 1.0, 100.0, 20.0, 30.0),
+        cont(11.0, 2.0, 22.0, 3.0, 4.0, 33.0),
     ]
 
     out, _ = place_grid_lines(
@@ -309,9 +310,8 @@ def test_placement_rotates_beam_orientation_offsets_and_concentrated_mass():
 
     mass = [_fields(out[4]), _fields(out[5])]
     assert [float(v) for v in mass[0][4:7]] == pytest.approx([-20.0, 100.0, 30.0])
-    # I' = R I R^T: I11/I22 swap, I12 changes sign, XZ/YZ rotate.
-    assert float(mass[0][7]) == pytest.approx(22.0)
-    assert [float(v) for v in mass[1][:5]] == pytest.approx([-2.0, 11.0, -4.0, 3.0, 33.0])
+    # I' = R I R^T: I11/I22 swap, I21 changes sign, I31/I32 rotate, I33 불변.
+    assert [float(v) for v in mass[1][:6]] == pytest.approx([22.0, -2.0, 11.0, -4.0, 3.0, 33.0])
 
 
 # ── 정반 상판과 지지점 배정 ───────────────────────────────────────────────

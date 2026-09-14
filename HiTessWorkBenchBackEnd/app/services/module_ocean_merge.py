@@ -387,7 +387,10 @@ def place_grid_lines(
                 raise MergeError("CONM2 배치 회전은 전역 좌표계(CID=0)만 지원합니다.")
             rotate_pair(rows, 5, 6)           # 질량중심 편심 X1/X2
 
-            inertia_text = [card_field(rows, i).strip() for i in range(8, 14)]
+            # CONM2 첫 줄은 데이터 필드가 7개(EID G CID M X1 X2 X3)뿐이고 8번째 칸은
+            # 비워 둔다 — 관성텐서 I11~I33 은 **연속행의 첫 6칸**(여기 번호로 9~14)이다.
+            # 8부터 읽으면 빈 칸을 I11 로 잡아 텐서 전체가 한 칸씩 밀린다.
+            inertia_text = [card_field(rows, i).strip() for i in range(9, 15)]
             if any(inertia_text):
                 values = [_parse_real(v) if v else 0.0 for v in inertia_text]
                 i11, i21, i22, i31, i32, i33 = values
@@ -397,7 +400,7 @@ def place_grid_lines(
                 new_i22 = sin_t*sin_t*i11 + 2*cos_t*sin_t*i21 + cos_t*cos_t*i22
                 new_i31 = cos_t*i31 - sin_t*i32
                 new_i32 = sin_t*i31 + cos_t*i32
-                for index, value in zip(range(8, 14),
+                for index, value in zip(range(9, 15),
                                         (new_i11, new_i21, new_i22, new_i31, new_i32, i33)):
                     set_card_field(rows, index, value)
 
