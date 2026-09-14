@@ -156,6 +156,47 @@ ModuleUnitStudio(viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module
 캔버스 버퍼 == CSS 크기 × min(dpr,2) 를 4K/QHD/일반 창에서 실측한다(`docs/display-scaling-0.0.148.md`).
 ⚠ 4K 를 Windows 배율 100% 로 쓰면 UI 가 작게 보이는 건 **의도된 동작**이다(실사용은 통상 150~200%).
 
+#### 화면 구성 = ModelBuilderStudio 와 같은 셸 (0.0.150, 2026-09-11)
+
+사용자 요청으로 **ModelBuilderStudio 의 공통 구성을 그대로 들여왔다.** 두 Studio 를 같이 고칠 때는
+셸 코드를 한쪽에서 고치고 다른 쪽에 옮기는 것이 기본이다(파일명·prop 이름을 일부러 같게 뒀다).
+상세: `ModuleUnitStudio/docs/shell-alignment-and-auto-connect-0.0.150.md`
+
+- **탭 6개** — Model │ Model Check │ Edit │ Hoist │ Analysis │ Save. (ModuleUnit 고유 = Hoist 탭 + 탭별 상태 점)
+- **좌측 `components/shell/TabPanel.jsx`** — 4구역 고정(헤더+목적 한 줄+`?` 팝오버 / 상태 스트립 /
+  아코디언 본문 / 고정 액션 푸터), 폭 300. `StatusLine`·`Accordion`·`HelpList`·`FooterNote` 동봉.
+  기존 패널의 지역 `Section` 은 **호출부를 그대로 두고 `Accordion` 위임으로만 교체**했다(Sidebar·AnalyzePanel).
+- **우측 `shell/RightDock.jsx`** — 표시/정보 2탭, 세로 레일 36px ↔ 펼침 280px, `Ctrl+B`.
+  질량·COG·인스펙터는 `embedded` prop 으로 여기 들어간다(3D 위 floating 은 걷었다).
+  ⚠ **카메라 프리셋·내비게이션 모드는 뷰포트 좌상단 툴바에 그대로 둔다** — 뷰포트별 조작이라 3D 옆에 있어야 하고,
+  분할 뷰에서 "어느 뷰에 적용되나"가 흐려진다. 도크에는 전역 설정(표시 방식·3D 단면·선택만 보기)만.
+- **하단 `shell/BottomDock.jsx`** — 구조 해석 결과 / 입력 감사 / 메시지 3탭, `Ctrl+J`·`Ctrl+Shift+J`(최대화).
+  예전엔 결과 도크(position:fixed)와 변환 감사 도크가 **따로 쌓여** 화면 아래를 두 겹으로 먹었다.
+  `BottomReviewDock.jsx` 는 삭제됐고 내용은 `dock/AuditTab.jsx` 로 옮겼다. '메시지' = `store/useErrorLogStore.js`.
+- ⚠ **`utils/theme.js` 는 다크 전용이다.** 라이트/다크 토글은 가져오지 않았다(사용자 결정). `palette()` 는
+  인자를 무시하고 항상 같은 값을 준다 — 이식 코드가 `palette(theme)` 로 호출해도 되게 한 호환 장치다.
+  색의 원본은 여전히 `utils/tokens.js` 이고 theme.js 는 그것을 셸 이름으로 다시 묶은 것뿐이다.
+- **멀티뷰포트가 되살아났다** — `2f6281f`(2026-06-23) 에서 지웠던 뷰 추가/삭제·카메라 동기화를 복구.
+  ⚠ `hooks/useCameraSync.js` 는 **ModelBuilder 판**(직교용 `camera.zoom` 동기화 포함)을 써야 한다.
+  ModuleUnit 카메라는 Orthographic 이라 position/quaternion/up/target 만 맞추면 **배율이 어긋난다.**
+
+#### 독립 그룹 자동 연결 (Edit › 자동 연결, 0.0.150)
+
+`data/groupAutoConnect.js`(+테스트 14건)를 ModelBuilderStudio 에서 **무수정 이식**했다 — 두 Studio 의
+`StageData` 모양(nodeMap=원본 mm·propertyMap·finalGroups/groups·rigids·element.category/propertyId)이
+같아서 그대로 통과한다. **한쪽을 고치면 다른 쪽도 같이 고칠 것.**
+
+- 규칙: 요소 수 최대 그룹 = 주 구조. 소그룹의 **자유단(Free) 노드**를 반경(기본 450mm) 안 최근접
+  **주 구조 Structure 부재 노드**에 RBE2(독립=주 구조, 종속=소그룹)로 잇는다.
+  **배관(`category==='Pipe'`) 노드는 타깃 제외** — 배관에 묶으면 배관이 하중을 받는다.
+- ⚠ **커밋 직전에 종속 중복을 다시 본다**(`useEditStore.applyGroupConnectProposals` → `collectDependentNodes`).
+  후보 계산 이후 수동 RBE 가 생겼을 수 있고, 한 노드가 두 RBE2 의 종속이면 Nastran **FATAL 2101** 이다.
+  한 번의 적용은 같은 `batchId` 라 Ctrl+Z 로 통째로 되돌아간다.
+- ⚠ ModuleUnit 에는 ModelBuilder 의 `groupPreview`(적용 즉시 그룹 병합 표시)가 **없다.** 적용 결과 문구로
+  "실제 반영은 Hoist 탭 자세안정성 평가 실행 시점"을 알린다(적용된 RBE 는 `AddRigidPreview` 노란 점선으로 보인다).
+- 실측(주 구조 3,657 요소 + 소그룹 80/78/48/14/1): 후보 8건, 거리 190~211mm, 타깃 L·Rod.
+  건너뜀 = 반경 밖 10 · 이미 RBE 20 · 소그룹 내부 노드 161.
+
 #### 권상 위치 자동 선정 — 핵심 동작·함정 (2026-07-01 세션, ★ 넓은 면적/PASS 관련)
 
 - **Z 밴드(tolMm) 이중 용도 분리**: `hoistToleranceMm`(UI "가상판 ±값")는 **수동 선택 강조용**일 뿐인데, 과거엔 이 좁은 값(모델높이×0.004 ≈ 10mm)이 **엔진 자동 최적화의 Z 클러스터링 tol** 로도 재사용돼 같은 데크의 근소 Z편차 노드가 서로 다른 레벨로 쪼개져 **좁고 작은 그룹만** 나왔다. → `useEditStore.js zoneSelectHoistPositions`는 이제 auto 시 **`tolMm: null`** 을 보내고(사용자가 명시하면 그 값 존중), 엔진(`HoistPositionOptimizer.RunRegionsSearch`)이 **Z 밴드 스윕**(`BuildZBandSweep` = {60,120,200,300}mm)을 돌려 **축적된 후보 중 랭킹으로 '가장 넓은 PASS'** 를 고른다. (payload 직렬화 시 `Number(null)===0` 함정 주의 — `opt.tolMm != null` 가드 필수.)
