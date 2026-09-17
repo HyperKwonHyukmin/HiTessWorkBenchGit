@@ -30,7 +30,7 @@ import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.0.82';
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.83';
 
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',  icon: FileSpreadsheet, status: 'wait' },
@@ -100,6 +100,44 @@ async function triggerDownload(filepath, downloadName) {
   const a = document.createElement('a');
   a.href = url;
   a.download = downloadName || filepath.split(/[\\/]/).pop();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+const AUDIT_STATUS_LABELS = {
+  converted: '변환 성공',
+  error: '오류',
+  ignored: '제외',
+  parseFailed: '파싱 실패',
+  blank: '공백 행',
+};
+
+function csvCell(value) {
+  const text = value == null ? '' : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadRowAuditCsv(rowAudit) {
+  const headers = [
+    '파일 종류', '원본 파일', '실제 줄 번호', '데이터 행 번호', '이름',
+    '상태', '사유 코드', '사유', '매핑 신뢰도', '원본 행', '원본 필드',
+  ];
+  const rows = rowAudit.map((row) => [
+    row.kind, row.file, row.physicalLineNumber, row.dataRowNumber, row.name,
+    AUDIT_STATUS_LABELS[row.status] ?? row.status, row.reasonCode, row.reason,
+    row.mappingConfidence, row.rawLine,
+    row.rawFields == null ? '' : JSON.stringify(row.rawFields),
+  ]);
+  const csv = [headers, ...rows].map(columns => columns.map(csvCell).join(',')).join('\r\n');
+  const blob = new Blob([`\uFEFF${csv}\r\n`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const now = new Date();
+  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+  a.href = url;
+  a.download = `HiTESS_ModelBuilder_행단위검증_${stamp}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -780,10 +818,11 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
       {audit.rowAudit?.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm w-full max-w-full min-w-0">
           {/* 토글 헤더 */}
-          <button
-            onClick={() => setShowRows(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer"
-          >
+          <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors">
+            <button
+              onClick={() => setShowRows(v => !v)}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
+            >
             <div className="flex items-center gap-2">
               <History size={14} className="text-slate-500" />
               <span className="text-sm font-semibold text-slate-700">행 단위 검증</span>
@@ -794,8 +833,26 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                 <span className="text-[11px] text-slate-400 ml-1">— 클릭하여 자세히 보기</span>
               )}
             </div>
-            <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${showRows ? 'rotate-180' : ''}`} />
-          </button>
+            </button>
+            <div className="ml-3 flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => downloadRowAuditCsv(audit.rowAudit)}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-400 hover:text-blue-600 cursor-pointer"
+                title="전체 행의 검증 상태와 오류·제외 사유를 CSV 파일로 저장"
+              >
+                <Download size={12} /> CSV 저장
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowRows(v => !v)}
+                className="p-1 cursor-pointer"
+                aria-label={showRows ? '행 단위 검증 접기' : '행 단위 검증 펼치기'}
+              >
+                <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${showRows ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+          </div>
 
           {showRows && (
             <>
