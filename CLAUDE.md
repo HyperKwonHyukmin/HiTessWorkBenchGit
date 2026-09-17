@@ -197,6 +197,47 @@ ModuleUnitStudio(viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module
 - 실측(주 구조 3,657 요소 + 소그룹 80/78/48/14/1): 후보 8건, 거리 190~211mm, 타깃 L·Rod.
   건너뜀 = 반경 밖 10 · 이미 RBE 20 · 소그룹 내부 노드 161.
 
+#### 가서포트 단면 3종 + 가서포트 CSV 내보내기 (Edit › 가서포트, 0.0.151)
+
+상세: `ModuleUnitStudio/docs/support-sections-and-csv-0.0.151.md`
+
+- **단면 카탈로그는 `data/supportSections.js` 한 곳** — `ANG_100x100x10`(기본) · `ANG_100x100x13` ·
+  `ANG_130x130x12`. 사내 구조 CSV 의 `size` 열에 실재하는 규격만 연다. **임의 치수 입력을 열지 말 것** —
+  CSV 로 되돌렸을 때 ModelBuilder 의 `ANG_<w>x<h>x<t>` 파서를 통과해야 한다.
+- **dims 규약**: `FeModelBuilder.NormalizeDims` 가 L 의 3개 dims 를 `[d0,d1,d2,d2]` 로 늘리므로
+  PBEAML L = [수평다리, 수직다리, tw, tf](두 두께 동일). `computeCrossSectionAreaMm2('L')`·`makeSection('L')`
+  과 같은 순서다.
+- 단면은 **설치 시점 값이 intent(`params.sectionId`+`dims`)에 박힌다.** 도중에 바꿔도 기존 부재는
+  그대로라 한 모델에 규격을 섞을 수 있다. `sectionId` 가 없는 0.0.150 이전 intent 는
+  `resolveSupportSection()` 이 dims → 기본값 순으로 해석한다(구 JSON 호환).
+- ⚠ `applyEditedModel` 은 **규격별 PBEAML 을 1장만** 만들고 같은 규격끼리 PID 를 공유한다.
+- ⚠ `three/SupportBeamPreview.buildSupportBeam3D` 의 반환형이 **InstancedMesh → Group** 으로 바뀌었다
+  (치수별 InstancedMesh). InstancedMesh 는 geometry 가 하나뿐이라 한 덩어리로 묶으면 굵기가 다른
+  앵글이 같은 굵기로 보인다. 그 Group 에는 **중심선도 함께** 들어간다 — 솔리드만 두면 100mm 앵글이
+  주위 부재에 가려져 "3D 단면으로 바꾸면 사라진다"(0.0.153 수정). 선의 투명도를 낮추거나 솔리드를
+  `depthTest:false` 로 만들지 말 것.
+- ⚠ **가서포트 CSV 는 항상 저장 위치를 묻는다**(`saveTextFile(..., { askLocation: true })`, 0.0.153).
+  사용자가 CAD 로 가져가는 산출물이라 모델 폴더 무단 저장 금지 — 편집 의도 JSON(폴더 직접 쓰기)과
+  정책이 다르다. Electron 뷰어는 `file://` 이라 showSaveFilePicker 가 막힐 수 있는데, blob 다운로드가
+  `will-download` 를 발화시켜 OS 저장 대화상자를 띄운다(실측). 저장 대화상자는 사용자 제스처가
+  필요하므로 호출 직전에 `await` 를 끼우지 말 것.
+- **CSV 내보내기** = `useEditStore.exportSupportCsv()` → `data/supportCsv.js`. 기준 구현은
+  HiTessCloud `PythonModule/BdfToCsv.py`, 기준 출력은 `ModuleUnit/BDFtoCSV/3370_M04_csv.csv`.
+  열은 ModelBuilder `Cmb.Io.Csv.StructureCsv` 와 1:1, CRLF + 마지막 줄 개행(pandas 동일).
+  **BDF 를 거치지 않는다** — intent 에서 바로 만들어 구조 해석 전에도 뽑힌다.
+  - ⚠ `name`(` =30137/384565`)·`stru`(`0.0308360511306552`)는 BdfToCsv.py 가 박아 둔 예시 CAD 참조라
+    그대로 상수로 쓴다. 엔진은 `stru` 를 읽지 않고(`StructureCsv.ParentStru` 상수만 존재) `name` 은 라벨뿐.
+  - ⚠ `ori` 는 국부축 **기준 벡터**(엔진이 직교화)라 축 단위벡터를 쓰되 **수직 부재(|dz|>0.9)에서는
+    [1,0,0]** 으로 갈아탄다 — `0 0 1` 고정이면 축과 평행해 퇴화한다.
+  - 저장 경로는 편집 의도 JSON 과 같은 `saveTextFile()` 3단 폴백(폴더 → 파일 선택 → 다운로드).
+- **가서포트 PBEAML 의 PID 는 기존 최대값+1 을 유지한다** (2026-09-17 사용자 결정). 레거시
+  `BdfToCsv.py` 의 매직넘버 **PID 1000** 을 예약하지 않는다 — 기존 모델이 이미 그 번호를 쓰고
+  있을 수 있고(실제로 `3370_M04.bdf` 의 1000 번이 그 모델의 가서포트다), 단면 3종이라 가서포트
+  PBEAML 이 최대 3장이라 단일 번호로는 담기지도 않는다. 가서포트 식별은 요소의
+  `remark: '가서포트'` 로 한다.
+  ⚠ 그래서 **스튜디오가 낸 BDF 를 레거시 `BdfToCsv.py` 에 넣으면 가서포트를 못 찾는다.**
+  그 경로 대신 스튜디오의 "가서포트 CSV 내보내기" 를 쓸 것.
+
 #### 권상 위치 자동 선정 — 핵심 동작·함정 (2026-07-01 세션, ★ 넓은 면적/PASS 관련)
 
 - **Z 밴드(tolMm) 이중 용도 분리**: `hoistToleranceMm`(UI "가상판 ±값")는 **수동 선택 강조용**일 뿐인데, 과거엔 이 좁은 값(모델높이×0.004 ≈ 10mm)이 **엔진 자동 최적화의 Z 클러스터링 tol** 로도 재사용돼 같은 데크의 근소 Z편차 노드가 서로 다른 레벨로 쪼개져 **좁고 작은 그룹만** 나왔다. → `useEditStore.js zoneSelectHoistPositions`는 이제 auto 시 **`tolMm: null`** 을 보내고(사용자가 명시하면 그 값 존중), 엔진(`HoistPositionOptimizer.RunRegionsSearch`)이 **Z 밴드 스윕**(`BuildZBandSweep` = {60,120,200,300}mm)을 돌려 **축적된 후보 중 랭킹으로 '가장 넓은 PASS'** 를 고른다. (payload 직렬화 시 `Number(null)===0` 함정 주의 — `opt.tolMm != null` 가드 필수.)
@@ -237,6 +278,68 @@ Hoist 좌측 도크 패널 상단의 토글. **기본 OFF(= 완화)** 이며 `lo
   - 결과 레포트는 페이지 바닥글이 `본 보고서는 Hi-TESS WorkBench를 통해 자동 생성되었습니다.
 문의 | …   생성일 …` 두 줄.
   - ⚠️ 상세 레포트는 **표지의 '문의' 줄에만** 넣는다. 페이지 바닥글(`sheet._close_page`)은 8열(≈36자) 한 줄이 한계라 문의처를 붙이면 **줄바꿈되어 페이지 프레임 밖으로 새어 나온다**(실측).
+#### 보고서 PDF 출력 — 서버 Excel 로 인쇄해 변환 (2026-09-17)
+
+보고서는 여전히 **openpyxl 이 메모리에서 만든 xlsx 가 원본**이고, PDF 는 그 xlsx 를 서버의 MS Excel 로
+열어 인쇄한 결과다(`app/services/xlsx_to_pdf.py`). 라우터 payload 에 `format: "pdf" | "xlsx"` 가 붙었고
+**기본은 xlsx**(구 클라이언트 호환), 화면의 기본 선택은 **PDF** 다. 실측: 결과 2p·상세 21p, A4 세로,
+한글 폰트 임베드, 프레임·그림·컬러바 그대로. 소요는 xlsx 생성 위에 **결과 +4s · 상세 +12s**(Excel 기동 2.6s 포함).
+
+- 서식을 새로 그리지 않고 Excel 인쇄를 쓰는 이유: 이 보고서는 이미 `fitToPage=False + scale=100 +
+  수동 페이지 나누기`로 **인쇄를 확정**해 둔 레이아웃이라(위 '고정 페이지 틀'), Excel 이 찍는 페이지가
+  곧 설계한 프레임이다. reportlab 등으로 다시 그리는 건 `sheet.py` 전면 재작성이다.
+- ⚠ **`Worksheets("Report")` 만 내보낸다.** 워크북째 `ExportAsFixedFormat` 하면 상세 레포트의
+  데이터 시트(`Members`/`Displacements`/`Wires`)까지 인쇄돼 21p 가 **29p** 로 나온다(프레임 바닥글의
+  "Page n / 21" 과 어긋남).
+- ⚠ **회사 DRM 때문에 PDF 되읽기를 변환 함수 안에서 끝내야 한다.** 디스크에 쓴 파일은 `HHIDRMC`+4096B 로
+  감싸지고 **평범한 python 프로세스는 암호문을 읽는다**. 그런데 **Excel COM 인스턴스를 띄운 프로세스**는
+  DRM 훅이 붙어 `read()` 가 평문을 준다(실측 stat 466,080 / read 461,984 = `%PDF-1.7`). 경로만 밖으로
+  넘기면 호출자가 암호문을 읽는다. 안전장치로 `%PDF` 매직을 확인하고 아니면 예외를 던진다.
+- ⚠ Excel 은 동시 실행에 안전하지 않다 — 모듈 락으로 직렬화하고 인스턴스는 **호출마다 띄우고 닫는다**
+  (상주시키면 대화상자 하나에 영구히 멈춘다). Excel 이 없으면 깨진 파일 대신 **503 + 사유**가 나간다.
+- ⚠ **Excel 확장자 규칙**: `ExportAsFixedFormat` 는 대상이 `.pdf` 가 아니면 **아무 파일도 쓰지 않는다**
+  (실측 `.pdfdata`/`.dat` 는 조용히 실패). DRM 회피용으로 확장자를 바꾸는 우회는 여기선 못 쓴다.
+- `sheet.py` 는 openpyxl 기본 바닥글(`Page &P / &N`)을 **비운다** — 프레임 안에 자체 쪽번호가 있어
+  PDF 에서 두 겹이 된다. 단 **결과 레포트는 사내 서식 템플릿(.bin)이 그 바닥글을 갖고 있어 그대로 둔다**
+  (우리 레이아웃이 아니라 회사 서식이다).
+- 진입점 양쪽 모두 형식 선택이 있다(PDF 기본): Studio `UnitStructuralReportDialog` ·
+  WorkBench `UnitLiftingReportDialog`. 두 파일은 같은 선택지를 사본으로 갖는다 — **한쪽 고치면 양쪽 다.**
+  서버 응답 헤더에 `X-Report-Format` 이 실린다.
+- ⚠ **결과 레포트 그림은 절대 크기(OneCellAnchor + ext)로 붙인다** — `result_report._absolute_anchor`.
+  서식의 캡처 자리는 TwoCellAnchor 인데, 이 서식은 1.71자짜리 좁은 열 56개라 Excel **인쇄** 엔진이 열 폭을
+  화면(정수 px)과 다르게(소수 px) 계산해 셀 박스가 ~8% 넓어지고, 거기 늘려 붙은 3D 그림이 PDF 에서 옆으로
+  **11% 늘어났다**(실측 1.731 → 1.932; 원본 서식도 동일). Zoom/맞춤 등 페이지 설정으로는 안 바뀐다(실측).
+  셀 박스 px 는 Excel 규칙(열 `int((256w+int(128/7))/256·7)`, 행 `pt·96/72`)으로 계산하고, 그림은 그 안에
+  비율을 지켜 가운데 놓는다. 1페이지 로고도 같은 이유로 함께 고정했다(1.10배 늘어났었다).
+  표·박스 자체는 여전히 인쇄에서 ~8% 넓다 — 셀 폭은 우리가 못 고친다(Excel 반올림).
+- ⚠ **상세 레포트는 다른 원인으로 같은 증상이 있었다** — `sheet.figure()` 가 `FIG_W×FIG_H`(640×410, 1.56)를
+  표시 크기로 그대로 써서 3D 그림(1.73)·2D 도면(1.44)이 **xlsx 에서부터 ±10%** 눌려 있었다(인쇄 무관).
+  이제 그 값은 **최대 상자**이고 그림은 항상 PNG 원본 비율이다(3D 640×369 · 2D 590×410). 21p 그대로.
+- 서식 글자는 `_fit_form_text` 가 **shrinkToFit** 을 켠다(제목 O·HULL·UNIT·권상방식·부서 AS·주의사항 F행).
+  주의사항 셋째 줄이 12pt 로는 박스를 넘쳐 테두리를 덮고 인쇄 영역 끝에서 잘렸다 → 10.8pt 로 줄어 들어간다.
+  넘치지 않는 칸은 그대로다. 인쇄는 `_print_setup` 이 좌우 가운데 + 여백 L 0.22in/R 0.56in — 서식 왼쪽에
+  빈 여백 열(A~C ≈ 23pt)이 있어 인쇄 영역을 그냥 가운데 맞추면 보이는 내용이 오른쪽으로 12pt 치우친다.
+- **가서포트 배치 그림에서만 배관을 반투명(α 0.22)** 으로 누른다(사용자 요청, 2026-09-17) —
+  `figures3d.PIPE_ALPHA_SUPPORT`, `solid3d.face_colors(alpha_per_element=…)` 가 (N,4) RGBA 를 돌려주고
+  `render()` 는 모서리에도 같은 α 를 준다. 8각 기둥은 앞·뒷면이 겹쳐 체감 α 는 약 1.8배. 권상 배치·변위·응력
+  그림은 그대로 불투명(RGB). 범례는 좁아서 '배관 (반투명)' 짧은 라벨을 쓴다('PID ≥ 101 · 반투명' 은 잘린다).
+  테스트: `tests/test_unit_lifting_report_pdf_layout.py`.
+
+- ⚠ **페이지 외곽선이 끊겨 보이던 원인은 두 보고서가 서로 달랐다** (사용자 신고·수정 2026-09-17).
+  둘 다 `tests/test_unit_lifting_report_pdf_layout.py` 가 잡는다.
+  - **상세 레포트 — 그림이 외곽선을 덮었다.** `sheet.py` 가 그림·로고를 문자열 앵커(`"A5"`)로 붙이면
+    왼쪽 끝이 인쇄 원점(왼쪽 여백 0.4in = 28.8pt)과 **정확히 같아진다.** 그런데 A열의 왼쪽 medium
+    테두리는 눈금선을 걸치고 그려져 28.32~30.24pt 를 차지하므로, 그림의 흰 배경이 그 선의 안쪽
+    3/4 을 덮는다 → **그림이 있는 페이지에서만** 세로 외곽선이 토막난다(실측 21쪽 중 5·6·9·10·14·16·17쪽).
+    이제 `ReportSheet._place()` 가 `OneCellAnchor` 로 `FRAME_CLEAR_PX`(3px) 만큼 안으로 밀어 붙인다.
+    문자열 앵커를 다시 쓰지 말 것. 그림 폭은 여유(오른쪽 ~50pt)가 있어 밀어도 잘리지 않는다.
+  - **결과 레포트 — 서식의 외곽선이 hairline 이었다.** 좌우 외곽선은 D열 오른쪽·BC열 왼쪽에
+    있는데 머리글 블록(3~4행)만 thin(0.96pt)이고 나머지는 **hair(0.12pt)** 라, 한 선의 굵기가
+    페이지 중간에서 8배 바뀌고 PDF 뷰어 배율에 따라 사라졌다 나타난다. `_solid_frame()` 이 hair 를
+    thin 으로 올린다. ⚠ 같은 선이 **열 스타일**(`column_dimensions['D'].border`)과 **셀 테두리**
+    (23~43행 등)에 나뉘어 있어 둘 다 봐야 한다 — 열 스타일은 openpyxl 의 셀 테두리 조회에 안 잡히고
+    (Excel COM 으로만 보인다), 셀 테두리는 열 스타일을 덮는다. 한쪽만 고치면 가운데 토막만 남는다.
+
 - **Studio 보고서 버튼은 전체 화면 안내막을 띄운다**(`ReportProgressOverlay.jsx`, 0.0.138~). 백엔드가 3D 그림을 그리는 동안 화면이 멀쩡해 보이면 사용자가 버튼을 다시 누른다. 예상 시간(결과 25s·상세 35s — dev PC 실측은 6.2s/9.1s 이고 서버·전송·저장을 감안한 값)과 경과를 보여 주고 `zIndex 4000` 으로 조작을 막는다. 진행률은 서버 값이 아니라 예상 대비 경과라 **95% 에서 멈추고** 초과 시 '마무리 중' 으로 바꾼다. WorkBench 쪽 버튼(`UnitLiftingReportDialog`)은 기존대로 제출 버튼 스피너만 쓴다.
 - ⚠️ **신규 의존성 `matplotlib==3.10.7`** (`requirements.txt`). 서버(145)는 `git pull` 후 **1회 `pip install -r requirements.txt`** 필요. 한글 폰트는 `Malgun Gothic`.
 - ⚠️ **절 제목 문자열은 `builder.toc_entries()` 와 `_write()` 가 글자 단위로 같아야** 목차 쪽번호가 채워진다(다르면 그 절이 0쪽으로 나옴). `tests/test_unit_lifting_report_builder.py::test_toc_pages_monotonic` 이 잡는다.
@@ -248,10 +351,36 @@ Hoist 좌측 도크 패널 상단의 토글. **기본 OFF(= 완화)** 이며 `lo
 - 그림은 폭 640px 고정(12열 ≈ 660px 을 넘으면 컬러바가 테두리를 뚫는다). 남은 공간이 부족하면 비율을 유지해 축소하고, `FIG_MIN_ROWS`(20행)보다도 좁으면 다음 페이지로 넘긴다. 표는 페이지를 넘어가면 머리행을 다시 그린다.
 - 표 셀은 `wrap=False` 라 열 폭을 넘으면 **잘린다**. 긴 문자열(자세안정성 단계 요약 등)은 `collector._stage_metric` 에서 짧게 만들고 열 폭(`widths`, 합계 ≤ 12)을 함께 조정할 것.
 - **진입점 2곳**: Studio `UnitStructuralReportButton`(→ `UnitStructuralReportDialog`) · WorkBench `ResultArtifactsCard` 의 "검토 보고서" 버튼(→ `UnitLiftingReportDialog`). 후자는 artifacts 응답의 **`unitStructuralAnalysisId`** 로 대상 해석을 찾는다(`GET /api/analysis/groupmoduleunit/{parent_id}/artifacts`).
-- **입력 옵션 키**(백엔드 `ReportOptions.from_payload` 와 1:1): `hullNo, unitNo, drawingNo, revision, author, department, jigLimitTon`(기본 6.2) `, yieldStrengthMpa`(기본 275) `, notes`. 폼 로직은 `frontend/src/utils/unitLiftingReport.js` 와 Studio `src/utils/unitLiftingReportForm.js` 에 **같은 내용의 사본**으로 있다(저장소가 달라서) — 한쪽 고치면 양쪽 다.
+- **입력 옵션 키**(백엔드 `ReportOptions.from_payload` 와 1:1): `hullNo, unitNo, drawingNo, revision, author, department, jigLimitTon`(기본 6.2) `, yieldStrengthMpa`(기본 275) `, notes, extraNotice`. 폼 로직은 `frontend/src/utils/unitLiftingReport.js` 와 Studio `src/utils/unitLiftingReportForm.js` 에 **같은 내용의 사본**으로 있다(저장소가 달라서) — 한쪽 고치면 양쪽 다.
 - **판정**: σ허용 = σy × 0.8(결과 JSON 의 `structuralAllowableMPa` 우선), 활용도 > 1.0 이면 NG · 와이어 장력 > 지그 기준이면 "지그 필요" · **변위는 참고치(판정 없음)** · 자세안정성은 엔진 overall 그대로.
 - 필수 JSON 은 `nastranResultJson`·`stabilityJson` 둘뿐. 나머지(posture·hoist_optimization·validation·edited·원본 json·f06)는 없으면 해당 절을 "자료 없음"으로 쓰고 경고에 남긴다 — **과거 결과에도 보고서가 나온다.** 그림 렌더 실패도 그 그림만 자리표시로 대체.
 - 테스트: `tests/test_unit_lifting_report_{collector,figures,sheet,builder,service,route}.py` + `test_groupmoduleunit_artifacts_unit_id.py`. fixture 는 실측 결과를 축소한 `tests/fixtures/unit_lifting_report/`(`build_fixture.py` 로 재생성).
+
+#### 결과 레포트 '주의 사항' 5줄 — 서식 1페이지를 재배치했다 (2026-09-17, 0.0.154)
+
+사내 표준 서식의 주의 사항은 원래 3줄(`F7`·`F8`·`F9`, F~BA 병합)이었다. 여기에 고정 문구 1줄과
+**사용자가 모달에 직접 적는 1줄**을 더해 5줄(`F7`~`F11`)로 만들었다.
+
+- 문구 4행은 `result_report.NOTICE_ADDED_LINE` 상수다. **1~3행은 서식이 갖고 있는 문구라 코드에
+  없다** — 그 세 줄을 고치려면 서식(.bin)을 고쳐야 하고, 4행은 여기만 고치면 된다.
+- 5행은 `extraNotice` 옵션. **비면 그 행을 `hidden` 처리하고 박스 아랫변을 4행으로 올린다**
+  (`_move_bottom_border`) — 빈 줄을 남기면 서식에 한 줄이 뚫린 것처럼 보인다(사용자 결정).
+  글자 수 상한 **36자**(`collector.EXTRA_NOTICE_MAX_CHARS` = 프런트 `EXTRA_NOTICE_MAX`): 서식의
+  F~BA 박스가 576px 이고 12pt 한글이 정확히 36자 들어간다. 넘으면 `_fit_form_text` 의 shrinkToFit
+  이 글자를 줄여 다른 줄보다 작아 보인다. 프런트 `maxLength` 를 붙여넣기로 우회해도 백엔드가 자른다.
+- ⚠ **서식(.bin) 1페이지를 실제로 재배치했다.** 행 수(1~54)와 페이지 나누기(54·108)는 그대로지만
+  안쪽 배치가 바뀌었다 — 주의 사항 7~11행(높이 20.1 → **18.0pt**), 요약표 11~13행 → **13~15행**,
+  각주 14 → 16행, 3D 그림 두 장은 16~33·34~51행 → **17~33·34~50행**(크기 17행 그대로, 각주 아래와
+  두 그림 사이의 빈 행을 하나씩 내줬다). 그래서 `_fill_summary` 의 셀 좌표와 서식 수식
+  (`V15=N15*0.8`, `AT15=IF(AL15<=V15…)`)·조건부 서식(`AT15:BA15`)도 같이 옮겼다.
+  - 1페이지 높이 여유는 20pt 뿐이다(759.95 → **762.65pt**, 97% 배율 기준 상한 780pt). 주의 사항
+    행 높이를 원래 20.1pt 로 두면 넘쳐서 페이지가 쪼개진다 — **18.0pt(24px)로 줄인 이유가 이것이다.**
+  - ⚠ **바닥글 위 빈 행(51)을 없애지 말 것.** Excel 인쇄 엔진은 그림을 계산상 자리보다 ~9px 아래에
+    찍어서, 등각 그림을 51행까지 끌어내리면 **바닥글 첫 줄이 그림 흰 배경에 덮인다**(실측).
+  - 사내 서식이 새 버전으로 배포되면 이 재배치를 처음부터 다시 해야 한다. 재배치 스크립트는
+    세션 스크래치패드에만 있으므로, 서식 갱신 시에는 위 좌표표를 보고 다시 만들 것.
+- 검증: `tests/test_unit_lifting_result_report.py` 의 `test_notice_*` 2건 + PDF 실측(입력 있음/없음/
+  36자 꽉참 세 경우 모두 **2쪽**, 박스가 닫히고 바닥글이 가려지지 않음).
 
 ### Mooring Fitting Assessment — 3개 구성요소(엔진 / exe배포본 / 스튜디오)와 배포 흐름 ★작업 전 필독
 
