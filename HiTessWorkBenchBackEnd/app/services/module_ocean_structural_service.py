@@ -37,6 +37,10 @@ from .module_ocean_bdf import (
 from .module_ocean_merge import DEFAULT_CLEARANCE_MM, build_combined_bdf
 from .module_ocean_results import (
     assess_singularity_impact,
+    envelope_displacement,
+    envelope_leg_reactions,
+    envelope_stress,
+    envelope_weld,
     evaluate_stress,
     extract_displacements,
     extract_leg_reactions,
@@ -53,6 +57,33 @@ logger = logging.getLogger(__name__)
 # 기록만 다른 이름으로 남기면 My Project 에서 한 앱의 작업이 둘로 갈라져 보인다.
 PROGRAM_NAME = "ModuleOceanMoving"
 MATERIAL_NAME = "SS275"
+
+# ★ 이 해석이 **무엇을 판정하고 무엇을 판정하지 않는가**. 화면 첫 줄과 결과 파일이
+#   같은 문구를 쓰도록 서버에 한 벌만 둔다.
+#
+#   왜 코드에 박는가 — 화면은 큰 글씨로 OK/NG 를 띄우는데 그 OK 의 범위는 지금까지
+#   코드에만 있었다. 특히 소구경 배관은 판정에서 빠지는데 실측(3521)에서 그 배관
+#   32개가 허용의 2배(437.9 MPa)였다. "무엇을 안 봤는지"가 판정 옆에 없으면
+#   프로그램은 맞는 말을 했는데 사람이 틀리게 읽는다.
+ASSESSMENT_SCOPE = {
+    "version": "2026-09-14",
+    "title": "이 해석이 판정하는 범위",
+    "included": [
+        "Module Unit 부재의 축력+굽힘 합성 수직응력 (쉘은 von Mises)",
+        "정반 Leg 용접부 — SPC 반력을 패드 용접면으로 옮겨 4분절 용접군 등가응력",
+        "선택한 하중조건 전체의 포락 (부재·Leg 마다 자기 최악 조건)",
+        "반력의 힘·모멘트 6성분 평형 검산",
+    ],
+    "excluded": [
+        "부재의 전단·비틀림·좌굴·횡좌굴·처짐 허용 (수직응력 하나로만 판정한다)",
+        "소구경 배관 — 화물이며 실제 지지 상세가 모델에 없다. 응력은 따로 표시한다",
+        "스툴 — 지지점을 강체(RBE2)로 이었다. 단면·좌굴·인발·용접은 평가하지 않는다",
+        "정반 본체·Leg 기둥·바지 갑판 국부 강도 (출력 자체를 Module Unit 으로 좁혔다)",
+        "풍하중·슬래밍·그린워터, 피로",
+        "재질별 허용응력 — 입력한 항복강도 하나를 전 부재에 적용한다",
+    ],
+    "note": "범위 밖 항목은 별도 검토가 필요하다. 이 결과만으로 운송 적합을 판정하지 않는다.",
+}
 
 # 사내 표준 Nastran 경로 (없으면 환경변수 NASTRAN_EXE 로 override)
 _DEFAULT_NASTRAN_EXE = r"C:\MSC.Software\MSC_Nastran\20131\bin\nastran.exe"
@@ -143,7 +174,19 @@ def reassess_weld(leg_json_path: str, spec: Optional[Dict[str, Any]]) -> Dict[st
     if not legs:
         raise ValueError("결과 파일에 Leg 반력이 없습니다.")
 
-    weld_result = evaluate_weld(legs, spec)
+    # ⚠ 저장된 `legs` 는 **이전 사양으로 고른** 지배 LC 의 행이다. 사양이 바뀌면
+    #   단면계수 비가 달라져 지배 LC 도 바뀔 수 있으므로, LC 별 반력이 남아 있으면
+    #   전부 다시 판정해 포락한다. 그렇지 않으면 새 사양의 최악을 놓친다.
+    per_case = leg_result.get("perLoadCase") or {}
+    case_ids = leg_result.get("loadCaseIds") or list(per_case)
+    cases = [(case_id, per_case[case_id]["legs"])
+             for case_id in case_ids
+             if case_id in per_case and per_case[case_id].get("legs")]
+    if len(cases) > 1:
+        weld_result = envelope_weld([(case_id, evaluate_weld(rows, spec))
+                                     for case_id, rows in cases])
+    else:
+        weld_result = evaluate_weld(legs, spec)
     weld_path = weld_json_path_for(leg_json_path)
     _write(weld_path, json.dumps(weld_result, ensure_ascii=False, indent=2))
     weld_result["resultJson"] = weld_path
@@ -250,6 +293,16 @@ def _to_module_ids(stress_result: Dict[str, Any], displacement: Dict[str, Any],
         _shift_ids([dropped], "maxStressElementId", offset)
     _shift_ids(displacement["nodes"], "nodeId", offset)
     _shift_ids([displacement["summary"]], "maxNodeId", offset)
+    # LC 별 요약도 같은 ID 규약을 따라야 한다 — 여기만 빠지면 포락 표의 '지배 부재'
+    # 열만 합본 ID 로 남아 사용자가 자기 BDF 에서 찾지 못한다.
+    _shift_ids(list((stress_result.get("perLoadCase") or {}).values()),
+               "maxStressElementId", offset)
+    for rows in (stress_result.get("perLoadCaseElements") or {}).values():
+        _shift_ids(rows, "elementId", offset)
+    for rows in (stress_result.get("perLoadCaseTopElements") or {}).values():
+        _shift_ids(rows, "elementId", offset)
+    _shift_ids(list((displacement.get("perLoadCase") or {}).values()),
+               "maxNodeId", offset)
 
 
 def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
@@ -279,6 +332,11 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
         float(payload["accel"]["ay"]),
         float(payload["accel"]["az"]),
     )
+    # 하중조건 목록. 라우터가 Barge 표에서 8개를 펼쳐 넘긴다. 없으면 단일 accel 로
+    # 한 조건만 푼다(구 요청 호환).
+    load_case_inputs = payload.get("load_cases") or [
+        {"id": "LC1", "label": "", "accelG": {"ax": accel_g[0], "ay": accel_g[1], "az": accel_g[2]}}
+    ]
     sigma_y = float(payload["material"]["sigmaYMPa"])
     factor = float(payload["material"]["factor"])
     allowable = sigma_y * factor
@@ -303,18 +361,26 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
             unit_bulk_lines=unit_bulk,
             support_node_ids=support_node_ids,
             placement=placement,
-            accel_g=accel_g,
+            load_cases=[
+                {"id": case["id"], "label": case.get("label") or "",
+                 "accelG": (float(case["accelG"]["ax"]), float(case["accelG"]["ay"]),
+                            float(case["accelG"]["az"]))}
+                for case in load_case_inputs
+            ],
             deck_contingency_pct=float(payload.get("deck_contingency_pct") or 0.0),
             module_contingency_pct=float(payload.get("module_contingency_pct") or 0.0),
             clearance_mm=clearance_mm,
         )
         offset = int(build["idOffset"])
 
-        update_progress(job_id, 25, "Nastran 해석 중... (정반 포함 모델이라 몇 분 걸립니다)")
+        cases = build["loadCases"]
+        update_progress(job_id, 25,
+                        f"Nastran 해석 중... 하중조건 {len(cases)}개 "
+                        "(정반 포함 모델이라 몇 분 걸립니다)")
         run = _run_one(stem, build["text"], "합본 해석")
 
         # ── Module Unit 부재 응력 ────────────────────────────────────────
-        update_progress(job_id, 70, "Module Unit 부재 응력 평가 중...")
+        update_progress(job_id, 70, f"하중조건 {len(cases)}개 부재 응력 평가 중...")
         # 소구경 배관은 평가 대상 '부재'가 아니라 화물이다 — 판정에서만 뺀다.
         # EID 는 아직 합본 기준이라 원본 ID 에 offset 을 더해 맞춘다.
         small_bore = {
@@ -322,13 +388,35 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
             for eid, outer in small_bore_element_ids(
                 unit_bulk, max_od_mm=small_bore_max_od_mm).items()
         }
-        stress_result = evaluate_stress(
-            run["f06Json"],
-            allowable_mpa=allowable,
-            excluded_elements=small_bore,
-            excluded_reason=f"외경 {small_bore_max_od_mm:g}mm 이하 소구경 배관",
-        )
-        displacement = extract_displacements(run["f06Json"])
+        legs = get_jungban_leg_nodes(deck_type)
+        stress_cases: List[Any] = []
+        disp_cases: List[Any] = []
+        leg_cases: List[Any] = []
+        for case in cases:
+            case_accel = (float(case["accelG"]["ax"]), float(case["accelG"]["ay"]),
+                          float(case["accelG"]["az"]))
+            stress_cases.append((case["id"], evaluate_stress(
+                run["f06Json"],
+                allowable_mpa=allowable,
+                subcase_id=int(case["subcaseId"]),
+                excluded_elements=small_bore,
+                excluded_reason=f"외경 {small_bore_max_od_mm:g}mm 이하 소구경 배관",
+            )))
+            disp_cases.append((case["id"], extract_displacements(
+                run["f06Json"], subcase_id=int(case["subcaseId"]))))
+            # 합본에서는 정반 Leg 절점 자체가 SPC 절점이고, 모멘트는 그 위 패드
+            # 용접면으로 옮겨진 값이 실린다(legs 의 weldPlaneZMm).
+            leg_cases.append((case["id"], extract_leg_reactions(
+                run["f06Json"],
+                legs=legs,
+                total_mass_t=float(payload["total_mass_t"]),
+                accel_g=case_accel,
+                subcase_id=int(case["subcaseId"]),
+                cog_mm=payload["total_cog_mm"],
+            )))
+
+        stress_result = envelope_stress(stress_cases)
+        displacement = envelope_displacement(disp_cases)
 
         quality = dict(run["quality"])
         # 고피벗이 있다는 사실만으로 결과 전체를 버리면 과잉 차단이다 — 특이 절점이
@@ -352,8 +440,16 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
                 int(eid) - offset for eid in (rigid_promotion.get(key) or [])
             ]
 
+        governing_case = next(
+            (case for case in cases
+             if case["id"] == stress_result["summary"].get("governingLoadCase")),
+            cases[0],
+        )
         stress_result.update({
-            "accelG": {"ax": accel_g[0], "ay": accel_g[1], "az": accel_g[2]},
+            # 포락의 지배 LC 가속도. 단일 LC 시절 키를 그대로 두어 화면·이력이 깨지지 않게 한다.
+            "accelG": governing_case["accelG"],
+            "loadCases": cases,
+            "assessmentScope": ASSESSMENT_SCOPE,
             "rotationZDeg": float(placement.get("rotationZDeg") or 0.0),
             "material": material,
             "supportCount": len(build["supportPairs"]),
@@ -376,17 +472,26 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
         stress_json_path = f"{stem}_stress.json"
         _write(stress_json_path, json.dumps(stress_result, ensure_ascii=False, indent=2))
 
-        # ── 정반 Leg 반력 ────────────────────────────────────────────────
-        update_progress(job_id, 85, "정반 Leg 반력 정리 중...")
-        legs = get_jungban_leg_nodes(deck_type)
-        # 합본에서는 정반 Leg 절점 자체가 SPC 절점이다 — 예전처럼 기둥을 세워 그 밑동을
-        # 대신 보지 않는다. 그래서 반력의 모멘트가 곧 그 자리의 실제 모멘트다.
-        leg_result = extract_leg_reactions(
-            run["f06Json"],
-            legs=legs,
-            total_mass_t=float(payload["total_mass_t"]),
-            accel_g=accel_g,
-        )
+        # ── 정반 Leg 반력 · 용접 ─────────────────────────────────────────
+        # Leg 마다 지배 LC 가 다르다(실측: +Y 는 Leg 2, −Y 는 Leg 7). 그래서 용접을
+        # LC 마다 판정한 뒤 Leg 별로 최악을 고르고, 반력 표시 행도 그 LC 로 맞춘다 —
+        # 두 표가 다른 LC 를 가리키면 사용자가 대조할 수 없다.
+        update_progress(job_id, 85, "정반 Leg 반력·용접 포락 중...")
+        try:
+            weld_cases = [(case_id, evaluate_weld(result["legs"], payload.get("weld_spec")))
+                          for case_id, result in leg_cases]
+            weld_result = envelope_weld(weld_cases)
+            weld_error: Optional[str] = None
+        except Exception as weld_exc:                         # noqa: BLE001
+            # 용접 사양이 잘못됐다고 해석 결과까지 버릴 수는 없다. 응력·반력은 그대로
+            # 살리고, 화면에서 사양을 고쳐 재평가하게 둔다.
+            logger.warning("[ModuleOceanStructural] 용접 평가 실패 job=%s: %s", job_id, weld_exc)
+            weld_result, weld_error = None, str(weld_exc)
+
+        leg_result = envelope_leg_reactions(leg_cases, weld_result)
+        leg_result["accelG"] = governing_case["accelG"]
+        leg_result["loadCases"] = cases
+        leg_result["assessmentScope"] = ASSESSMENT_SCOPE
         leg_result["deckType"] = deck_type
         leg_result["cogMm"] = payload["total_cog_mm"]
         leg_result["legColumnHeightsMm"] = [
@@ -397,13 +502,9 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
         leg_json_path = f"{stem}{_LEG_JSON_SUFFIX}"
         _write(leg_json_path, json.dumps(leg_result, ensure_ascii=False, indent=2))
 
-        # ── Leg 용접부 강도 평가 ─────────────────────────────────────────
-        # 반력이 나오면 곧바로 용접까지 판정해 둔다 — 화면을 열자마자 결과가 있어야
-        # "반력만 나오고 평가는 따로" 라는 어중간한 상태가 생기지 않는다.
         # 사양을 바꾼 재평가는 /weld-assess 가 이 파일을 덮어쓴다.
         update_progress(job_id, 93, "Leg 용접부 강도 평가 중...")
-        try:
-            weld_result = evaluate_weld(leg_result["legs"], payload.get("weld_spec"))
+        if weld_result is not None:
             weld_json_path = weld_json_path_for(leg_json_path)
             _write(weld_json_path, json.dumps(weld_result, ensure_ascii=False, indent=2))
             weld_info = {
@@ -413,11 +514,8 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
                 "summary": weld_result["summary"],
                 "legs": weld_result["legs"],
             }
-        except Exception as weld_exc:                         # noqa: BLE001
-            # 용접 사양이 잘못됐다고 해석 결과까지 버릴 수는 없다. 응력·반력은 그대로
-            # 살리고, 화면에서 사양을 고쳐 재평가하게 둔다.
-            logger.warning("[ModuleOceanStructural] 용접 평가 실패 job=%s: %s", job_id, weld_exc)
-            weld_info = {"error": str(weld_exc), "legReactionJson": leg_json_path}
+        else:
+            weld_info = {"error": weld_error, "legReactionJson": leg_json_path}
 
         # ── 마감 ─────────────────────────────────────────────────────────
         result_info = {
@@ -430,6 +528,7 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
             #     그 뷰어가 감당하지 못한다.
             "combined_bdf": run["bdfPath"],
             "runId": job_id,
+            "assessmentScope": ASSESSMENT_SCOPE,
             "inputSnapshot": {
                 "bdfPath": bdf_path,
                 "deckType": deck_type,
@@ -442,6 +541,7 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
                 "totalMassT": float(payload["total_mass_t"]),
                 "totalCogMm": list(payload["total_cog_mm"]),
                 "accelG": {"ax": accel_g[0], "ay": accel_g[1], "az": accel_g[2]},
+                "loadCases": cases,
                 "material": material,
                 "weldSpec": payload.get("weld_spec"),
             },
@@ -478,6 +578,10 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
                 "f06": run["f06Path"],
                 "summary": stress_result["summary"],
                 "allowableMPa": allowable,
+                # 어느 조건들을 포락했고 무엇이 지배했는지 — 요약 카드가 바로 보여 준다.
+                "loadCases": cases,
+                "perLoadCase": stress_result.get("perLoadCase"),
+                "assessmentScope": ASSESSMENT_SCOPE,
                 # 무엇을 판정에서 뺐는지는 요약 카드에서 바로 보여야 한다 —
                 # 결과 파일을 열어야만 알 수 있으면 사실상 감춘 것과 같다.
                 "smallBoreMaxOdMm": small_bore_max_od_mm,
@@ -485,6 +589,9 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
                 "quality": quality,
                 # 최대 변위는 요약 카드에서 바로 보여 준다(전체 절점 값은 결과 파일에만).
                 "displacementSummary": displacement["summary"],
+                # 변위도 응력과 같이 **조건별 값**을 따로 보여 준다. 포락값 하나만 주면
+                # "어느 조건에서 얼마나 눕는가" 를 사용자가 되짚을 수 없다.
+                "displacementPerLoadCase": displacement.get("perLoadCase"),
                 "supportCount": len(build["supportPairs"]),
             },
             "legReaction": {
@@ -495,6 +602,8 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
                 "check": leg_result["check"],
                 # 결과 모달이 Leg 모델을 그리는 데 필요한 것들(합쳐야 몇 개 안 된다).
                 "cogMm": leg_result["cogMm"],
+                "loadCases": cases,
+                "weldMomentReference": leg_result.get("weldMomentReference"),
                 "deckType": deck_type,
                 "legColumnHeightsMm": leg_result["legColumnHeightsMm"],
                 "totalMassT": leg_result["totalMassT"],
@@ -514,6 +623,7 @@ def task_execute_ocean_structural(job_id: str, payload: Dict[str, Any]) -> None:
                 "bdf_path": bdf_path,
                 "deck_type": deck_type,
                 "accel_g": {"ax": accel_g[0], "ay": accel_g[1], "az": accel_g[2]},
+                "load_case_ids": [case["id"] for case in cases],
                 "acceleration_calculation": payload.get("acceleration_calculation"),
                 "placement": placement,
                 "clearance_mm": clearance_mm,

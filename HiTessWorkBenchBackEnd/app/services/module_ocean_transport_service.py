@@ -394,7 +394,8 @@ def get_model_viewer_payload(model_json_path: str, *, name: str) -> Dict[str, An
 # 만드는 {"nodeId": int, "components": str} — nodeId 필드명 자체는 맞았지만
 # 최상위 컨테이너 키가 달라 그대로는 못 쓴다.
 
-_LEGS_SCHEMA = "jungbanLegs/2"
+# 3 = weldPlaneZMm 추가. 스키마를 올려야 기존 .legs.json 캐시가 재생성된다.
+_LEGS_SCHEMA = "jungbanLegs/3"
 
 # Leg 절점 위에 서 있는 기둥의 상단을 찾을 때 쓰는 (x, y) 허용오차.
 # 정반 모델의 기둥은 Leg 와 같은 격자선 위에 있어 정수 좌표로 딱 맞는다.
@@ -415,9 +416,15 @@ def extract_leg_nodes(model_json: Dict[str, Any]) -> List[Dict[str, Any]]:
     ⚠ `zTop` 은 그 기둥의 상단, 즉 **Module Unit 이 얹히는 rigid 절점의 z** 다.
       정반 모델에서 Leg 와 같은 (x, y) 에 있는 rigid independent 절점 중 Leg 보다
       위에 있는 가장 낮은 것을 고른다(A/B 타입 모두 z=2020, 기둥 높이 2145mm).
-      이 높이가 곧 용접부에 걸리는 **모멘트의 지렛대**라, 임의 값으로 두면 판정이
-      통째로 달라진다 — 반드시 실제 정반 형상에서 읽어야 한다.
+      이 값은 이제 **화면이 Leg 기둥을 그리는 데만** 쓴다(합본 모델에서는 기둥을
+      세우지 않으므로 모멘트의 지렛대가 아니다).
       찾지 못하면 None 을 싣고, 과정 2 가 기본 높이로 폴백한다.
+
+    ★ `weldPlaneZMm` = 그 Leg 의 RBE2 종속 절점(500×500 패드, 실측 441개)이 이루는
+      면의 z. **용접군이 실제로 놓인 평면**이라 Leg 반력의 모멘트를 여기로 옮겨야
+      용접 응력이 맞는다. SPC 절점(z=−125)과 패드면(z=−25)은 100mm 떨어져 있고,
+      옮기지 않으면 용접 응력이 실측 4~7% 부풀려진다.
+      패드를 찾지 못하면 None — 그때는 SPC 절점 값을 그대로 쓴다(구 동작).
     """
     coords = {}
     for node in model_json.get("nodes") or []:
@@ -442,10 +449,16 @@ def extract_leg_nodes(model_json: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     # Leg 위에 서 있는 기둥의 상단 = 같은 (x, y) 의 rigid independent 절점.
     rigid_tops = []
+    # Leg 절점을 독립절점으로 갖는 RBE2 = 그 Leg 의 패드. 종속 절점이 이루는 평면이
+    # 용접군의 자리다(실측: 441절점 × 500×500, z 가 모두 같은 값).
+    pad_by_leg: Dict[Any, List[float]] = {}
     for entry in model_json.get("rigids") or []:
         nid = entry.get("independentNode")
         if nid in coords:
             rigid_tops.append(coords[nid])
+        dependents = [coords[d][2] for d in (entry.get("dependentNodes") or []) if d in coords]
+        if nid is not None and dependents:
+            pad_by_leg.setdefault(nid, []).extend(dependents)
 
     legs = []
     for nid in sorted(leg_ids):
@@ -456,8 +469,10 @@ def extract_leg_nodes(model_json: Dict[str, Any]) -> List[Dict[str, Any]]:
                  and tz > z]
         # 여러 개면 가장 낮은 것 — 강체(Module Unit)가 매달리기 시작하는 높이가
         # 기둥의 유효 길이다. 그 위로는 휘지 않는다.
+        pad_z = pad_by_leg.get(nid)
         legs.append({"id": nid, "x": x, "y": y, "z": z,
-                     "zTop": min(above) if above else None})
+                     "zTop": min(above) if above else None,
+                     "weldPlaneZMm": (sum(pad_z) / len(pad_z)) if pad_z else None})
     return legs
 
 

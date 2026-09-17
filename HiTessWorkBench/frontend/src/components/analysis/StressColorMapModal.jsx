@@ -58,6 +58,9 @@ export default function StressColorMapModal({
 
   const allowable = stress?.allowableMPa || 0;
   const summary = stress?.summary;
+  // 포락한 하중조건 수 — 1개면 예전과 똑같이 아무 표식도 붙이지 않는다.
+  const loadCaseCount = stress?.loadCases?.length
+    || Object.keys(stress?.perLoadCase || {}).length || 1;
   // 요약은 작업 레코드에 이미 실려 있어 모달을 열자마자 쓸 수 있다.
   const dispSummary = stress?.displacementSummary;
 
@@ -295,6 +298,16 @@ export default function StressColorMapModal({
               {isDisp
                 ? `과정 1 — Module Unit 부재 · ${viewDef.label} · 변형 형상 ×${Math.round(effectiveScale)} 과장`
                 : `과정 1 — Module Unit 부재 · 허용응력 ${allowable.toLocaleString()} MPa 기준 사용률 색맵`}
+              {/* 여러 조건을 포락한 결과에서는 '지금 보는 그림이 어느 하중상태인가' 가
+                  값만큼 중요하다. 변위는 지배 조건 하나의 변형장이고, 응력은 부재마다
+                  최악 조건을 고른 합성이라 **한 하중상태의 그림이 아니다.** */}
+              {loadCaseCount > 1 && (
+                <span className="ml-1 font-semibold text-slate-600">
+                  {isDisp
+                    ? `· ${dispSummary?.loadCase || '지배 조건'} 변형장`
+                    : `· ${loadCaseCount}개 조건 포락(부재별 최악)`}
+                </span>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-1 shrink-0">

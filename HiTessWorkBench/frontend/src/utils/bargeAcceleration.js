@@ -9,12 +9,29 @@ export const DEFAULT_BARGE_ACCEL_INPUT = Object.freeze({
   loadCase: 'LC1',
 });
 
+/**
+ * 백엔드 `module_ocean_acceleration.LOAD_CASE_SIGNS` 와 **같은 순서·같은 부호**여야 한다.
+ *
+ * ⚠ LC1~4 는 x=±, z=± 를 훑으면서 y 가 항상 + 라 그 자체로는 포락이 아니다.
+ *   모듈·정반 배치가 좌우 대칭이 아니므로 −Y 를 빼면 지배 Leg 를 놓친다
+ *   (실측 3521·정반 B: +Y 는 Leg 2, −Y 는 Leg 7 지배 / 용접 114.9 → 117.6 MPa).
+ *   LC5~8 이 그 −Y 쌍이다.
+ */
 export const BARGE_LOAD_CASES = Object.freeze([
   { id: 'LC1', signs: '++−', description: '+X · +Y · −Z' },
   { id: 'LC2', signs: '−+−', description: '−X · +Y · −Z' },
   { id: 'LC3', signs: '+++', description: '+X · +Y · +Z' },
   { id: 'LC4', signs: '−++', description: '−X · +Y · +Z' },
+  { id: 'LC5', signs: '+−−', description: '+X · −Y · −Z' },
+  { id: 'LC6', signs: '−−−', description: '−X · −Y · −Z' },
+  { id: 'LC7', signs: '+−+', description: '+X · −Y · +Z' },
+  { id: 'LC8', signs: '−−+', description: '−X · −Y · +Z' },
 ]);
+
+/** 기본 포락 집합 = 8개 전부. 부분 집합은 사용자의 선택이지 기본값이 아니다. */
+export const DEFAULT_ENVELOPE_LOAD_CASES = Object.freeze(
+  BARGE_LOAD_CASES.map(item => item.id),
+);
 
 const INPUT_KEYS = [
   'significantWaveHeightM', 'criticalDampingPct', 'cargoPosition',
@@ -82,35 +99,42 @@ export function getBargeAccelerationInputIssues(input) {
 }
 
 /**
- * 2단계의 정반 + Unit 합산 중량 · Unit 바닥 기준 VCG · 적치 높이를 Excel 입력 형식으로 바꾼다.
- * 합산 여부를 함수 안에서 확인해 호출부가 Unit 중량만 잘못 넘기는 회귀를 막는다.
+ * 2단계의 정반 + Unit **스택 전체**를 Excel 의 '화물' 로 보고 입력값을 만든다.
  *
- * Support Height 는 **바지 갑판(=정반 최하단)에서 Unit 최하단까지**다. 2단 정반에서는
- * 어느 적치면에 앉느냐로 이 높이가 6m 넘게 달라지므로 배치에서 직접 읽어 온다 —
- * 사용자가 손으로 맞추게 두면 baseline VCG 가 통째로 어긋난다.
+ * ★ 2026-09-14 — 기준을 정합시켰다(사용자 결정).
+ *   예전에는 중량은 `정반 + Unit`(실측 142.2 t)인데 VCG 는 `Unit 자체`(Unit 바닥 기준)라
+ *   **두 값의 기준이 서로 달랐다.** 정반이 질량의 88%(125.8 t, COG z=4,986)를 차지하므로
+ *   합산 무게중심보다 훨씬 높은 VCG 가 표에 들어가 가속도가 과대 계산됐다
+ *   (실측 baseline VCG 17.65 m → ay +0.3198 g).
  *
- * @param {{unitBottomZMm:number, deckBottomZMm:number}} [stack] 배치 결과. 없으면
- *        Support Height 는 손대지 않는다(중량·VCG 만 가져온다).
+ *   '화물' 이 스택 전체라는 근거: 표의 DWT 축 범위가 50~1,200 t 이라 Unit 만(16.4 t)으로는
+ *   계산 자체가 성립하지 않는다. 그래서 셋을 한 기준으로 맞춘다.
+ *     · 중량      = 정반 + Unit 합산
+ *     · VCG       = **합산 무게중심** 의 정반 바닥 기준 높이
+ *     · Support   = 0 — 정반이 곧 화물이라 그 아래 받침이 따로 없다
+ *   결과: baseline VCG 10.13 m → ay +0.1965 g (실측, 종전 대비 −38%).
+ *
+ * @param {{unitBottomZMm:number, deckBottomZMm:number}} [stack] 배치 결과.
+ *        정반 바닥(deckBottomZMm)이 곧 화물 바닥이다. 없으면 중량만 가져온다.
  */
 export function moduleCargoAccelerationInputs(moduleModel, massForAnalysis, stack) {
   if (!massForAnalysis?.includes?.deck || !massForAnalysis?.includes?.module) return null;
   const mass = Number(massForAnalysis?.total?.massTon);
-  const bottomZMm = Number(moduleModel?.bounds?.min?.[2]);
-  const cogZMm = Number(moduleModel?.massProperties?.centerOfGravityMm?.z);
-  if (![mass, bottomZMm, cogZMm].every(Number.isFinite) || mass <= 0) return null;
-  const vcgM = (cogZMm - bottomZMm) / 1000;
-  if (!Number.isFinite(vcgM) || vcgM < 0) return null;
+  const totalCogZMm = Number(massForAnalysis?.total?.cogMm?.z);
+  if (!Number.isFinite(mass) || mass <= 0) return null;
 
-  const out = {
-    cargoWeightT: Number(mass.toFixed(4)),
-    cargoVcgFromBottomM: Number(vcgM.toFixed(4)),
-  };
+  const out = { cargoWeightT: Number(mass.toFixed(4)) };
 
-  const unitBottom = Number(stack?.unitBottomZMm);
-  const deckBottom = Number(stack?.deckBottomZMm);
-  if ([unitBottom, deckBottom].every(Number.isFinite)) {
-    const supportM = (unitBottom - deckBottom) / 1000;
-    if (supportM >= 0) out.supportHeightM = Number(supportM.toFixed(4));
+  // 화물 바닥 = 정반 최하단. 배치가 없으면 이 기준을 세울 수 없으므로 VCG 는 건드리지 않는다
+  // — 잘못된 기준으로 덮어쓰느니 사용자가 입력한 값을 그대로 두는 편이 낫다.
+  const deckBottomZMm = Number(stack?.deckBottomZMm);
+  if (Number.isFinite(deckBottomZMm) && Number.isFinite(totalCogZMm)) {
+    const vcgM = (totalCogZMm - deckBottomZMm) / 1000;
+    if (vcgM >= 0) {
+      out.cargoVcgFromBottomM = Number(vcgM.toFixed(4));
+      // 화물(=스택) 아래에 별도 받침이 없다. baseline VCG = bargeDepth + 0 + 화물 VCG.
+      out.supportHeightM = 0;
+    }
   }
   return out;
 }

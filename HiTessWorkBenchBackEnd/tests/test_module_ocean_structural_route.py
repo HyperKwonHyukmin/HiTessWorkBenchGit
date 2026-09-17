@@ -520,3 +520,103 @@ def test_structural_run_rejects_absurd_small_bore_threshold(db_session, tmp_path
         "/api/analysis/module-ocean-transport/structural-run",
         json=_body(bdf_path, small_bore_max_od_mm=600))
     assert response.status_code == 422
+
+
+# ── 하중조건 포락 (±Y) ────────────────────────────────────────────────────
+
+def test_acceleration_calculate_returns_all_eight_load_cases(db_session):
+    """LC 8개가 한 번의 계산으로 다 나와야 한다 — 포락이 표를 8번 보간할 이유가 없다."""
+    result = _client(db_session, "OWNER01").post(
+        "/api/analysis/module-ocean-transport/acceleration-calculate",
+        json=_acceleration_body(),
+    ).json()
+
+    cases = result["loadCases"]
+    assert list(cases) == ["LC1", "LC2", "LC3", "LC4", "LC5", "LC6", "LC7", "LC8"]
+    # ±Y 쌍은 ay 부호만 다르고 나머지는 같아야 한다(같은 표, 같은 크기).
+    lc1, lc5 = cases["LC1"]["totalAccelerationG"], cases["LC5"]["totalAccelerationG"]
+    assert lc5["ay"] == pytest.approx(-lc1["ay"])
+    assert lc5["ax"] == pytest.approx(lc1["ax"])
+    assert lc5["az"] == pytest.approx(lc1["az"])
+    # LC1~4 는 전부 +Y 다 — 그래서 그 4개만으로는 포락이 아니다.
+    assert all(cases[f"LC{n}"]["totalAccelerationG"]["ay"] > 0 for n in (1, 2, 3, 4))
+    assert all(cases[f"LC{n}"]["totalAccelerationG"]["ay"] < 0 for n in (5, 6, 7, 8))
+
+
+def _submitting_client(db_session, monkeypatch):
+    submitted = {}
+
+    def fake_submit(task_fn, payload, **kwargs):
+        submitted["payload"] = payload
+        return "job-test"
+
+    monkeypatch.setattr(mod, "submit_analysis_job", fake_submit)
+    return _client(db_session, "OWNER01"), submitted
+
+
+def test_structural_run_expands_every_load_case_on_the_server(db_session, tmp_path, monkeypatch):
+    """LC 가속도는 **서버가 원본 표에서 직접** 만든다 — 클라이언트가 보낸 벡터를 믿지 않는다."""
+    bdf_path = _workspace(tmp_path, monkeypatch)
+    client, submitted = _submitting_client(db_session, monkeypatch)
+    accel_input = _acceleration_body()
+    calculated = mod._calculate_barge_acceleration(mod.BargeAccelerationInput(**accel_input))
+    lc1 = calculated["loadCases"]["LC1"]["totalAccelerationG"]
+
+    response = client.post(
+        "/api/analysis/module-ocean-transport/structural-run",
+        json=_body(bdf_path, accel=lc1, accelerationCalculation=accel_input),
+    )
+
+    assert response.status_code == 200, response.text
+    cases = submitted["payload"]["load_cases"]
+    assert [case["id"] for case in cases] == ["LC1", "LC2", "LC3", "LC4",
+                                              "LC5", "LC6", "LC7", "LC8"]
+    assert cases[0]["accelG"] == pytest.approx(lc1)
+    assert cases[4]["accelG"]["ay"] == pytest.approx(-lc1["ay"])
+
+
+def test_structural_run_keeps_only_the_requested_load_cases(db_session, tmp_path, monkeypatch):
+    bdf_path = _workspace(tmp_path, monkeypatch)
+    client, submitted = _submitting_client(db_session, monkeypatch)
+    accel_input = _acceleration_body()
+    lc1 = mod._calculate_barge_acceleration(
+        mod.BargeAccelerationInput(**accel_input))["loadCases"]["LC1"]["totalAccelerationG"]
+
+    response = client.post(
+        "/api/analysis/module-ocean-transport/structural-run",
+        json=_body(bdf_path, accel=lc1, accelerationCalculation=accel_input,
+                   load_cases=["LC5", "LC1"]),
+    )
+
+    assert response.status_code == 200, response.text
+    # 정의 순서로 정리된다 — 요청 순서가 결과 subcase 번호를 흔들면 안 된다.
+    assert [case["id"] for case in submitted["payload"]["load_cases"]] == ["LC1", "LC5"]
+
+
+def test_structural_run_rejects_an_unknown_load_case(db_session, tmp_path, monkeypatch):
+    bdf_path = _workspace(tmp_path, monkeypatch)
+    client, _ = _submitting_client(db_session, monkeypatch)
+    accel_input = _acceleration_body()
+    lc1 = mod._calculate_barge_acceleration(
+        mod.BargeAccelerationInput(**accel_input))["loadCases"]["LC1"]["totalAccelerationG"]
+
+    response = client.post(
+        "/api/analysis/module-ocean-transport/structural-run",
+        json=_body(bdf_path, accel=lc1, accelerationCalculation=accel_input,
+                   load_cases=["LC9"]),
+    )
+    assert response.status_code == 400
+    assert "LC9" in response.json()["detail"]
+
+
+def test_structural_run_needs_the_excel_input_to_envelope(db_session, tmp_path, monkeypatch):
+    """부호만 다른 조건의 가속도는 원본 표에서 나온다 — 계산 입력 없이 포락할 수 없다."""
+    bdf_path = _workspace(tmp_path, monkeypatch)
+    client, _ = _submitting_client(db_session, monkeypatch)
+
+    response = client.post(
+        "/api/analysis/module-ocean-transport/structural-run",
+        json=_body(bdf_path, load_cases=["LC1", "LC5"]),
+    )
+    assert response.status_code == 400
+    assert "가속도 계산 입력" in response.json()["detail"]

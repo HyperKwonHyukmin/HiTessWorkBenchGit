@@ -25,7 +25,16 @@ export default function SupportSelectionPanel({
   const needsAttention = !disabled && count === 0;
 
   return (
-    <div className={`rounded-2xl border bg-white overflow-hidden transition-colors
+    // ⚠ shrink-0 필수. 이 패널은 2단계의 세로 flex 기둥(카드 · 이 패널 · ArrangementPanel)
+    //   안에 있는데, 페이지 루트가 xl(≥1280px)에서 `h-full` 이라 그 기둥의 높이가 화면에
+    //   **고정**된다. 뷰어 카드는 `flex-1`(basis 0 → 줄어들 몫이 0) + `min-h-[440px]`,
+    //   ArrangementPanel 은 `shrink-0` 이라, 높이가 모자라면 **줄어들 수 있는 것이 이 패널뿐**이다.
+    //   게다가 루트에 `overflow-hidden` 이 있어 flex 자동 최소 높이가 0 이 되므로
+    //   (CSS Flexbox: overflow 가 visible 이 아니면 min-height:auto → 0) 0px 까지 눌린다.
+    //   실측(동일 구조 재현): 1920×1080 121px(정상) / 1600×900 55px(버튼 잘림)
+    //   / 1366×768·1280×720(1920 @150% 배율)·1280×800(1600 @125%) **2px = 사실상 사라짐**.
+    //   xl 미만에서는 루트가 `min-h-full` 이라 페이지가 늘어나 스크롤되므로 멀쩡했다.
+    <div className={`shrink-0 rounded-2xl border bg-white overflow-hidden transition-colors
                      ${needsAttention
                        ? 'border-emerald-400 shadow-md shadow-emerald-500/10'
                        : 'border-slate-200 shadow-sm'}`}>

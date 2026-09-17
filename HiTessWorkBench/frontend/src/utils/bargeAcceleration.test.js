@@ -36,37 +36,39 @@ describe('bargeAcceleration', () => {
     bounds: { min: [137102, -19586, 29262] },
     massProperties: { centerOfGravityMm: { x: 144023.4, y: -12839.4, z: 36642.8 } },
   };
+  // 정반 A 실측 COG z=4,584.8 / Unit 은 배치 후 world z. 합산 COG 는 정반 쪽으로 크게 쏠린다
+  // (정반이 질량의 84%) — 이 쏠림이 바로 예전 기준 불일치가 놓치던 부분이다.
   const SAMPLE_MASS = {
-    deck: { massTon: 83.5507 },
-    module: { massTon: 16.3811 },
-    total: { massTon: 99.9318 },
+    deck: { massTon: 83.5507, cogMm: { x: 27486, y: 35.1, z: 4584.8 } },
+    module: { massTon: 16.3811, cogMm: { x: 27000, y: 0, z: 9700 } },
+    total: { massTon: 99.9318, cogMm: { x: 27406.3, y: 29.4, z: 5423.6 } },
     includes: { deck: true, module: true },
   };
 
-  it('uses the sample deck + Unit total mass and Unit-bottom VCG for Excel inputs', () => {
-    assert.deepEqual(moduleCargoAccelerationInputs(SAMPLE_MODULE, SAMPLE_MASS), {
-      cargoWeightT: 99.9318,
-      cargoVcgFromBottomM: 7.3808,
-    });
+  it('화물 = 정반+Unit 스택 — 중량과 VCG 를 같은 기준으로 낸다', () => {
+    // 화물 바닥 = 정반 최하단(z=-125). VCG = (5423.6 + 125)/1000.
+    assert.deepEqual(
+      moduleCargoAccelerationInputs(SAMPLE_MODULE, SAMPLE_MASS, { deckBottomZMm: -125 }),
+      { cargoWeightT: 99.9318, cargoVcgFromBottomM: 5.5486, supportHeightM: 0 },
+    );
   });
 
-  it('★ 2단 정반에서는 Support Height 를 배치에서 읽어 온다', () => {
-    // 정반 A 실측: 바닥 z=-125. 하단 적치면(2020)+스툴 300 이면 Unit 바닥 world z=2320.
-    const low = moduleCargoAccelerationInputs(SAMPLE_MODULE, SAMPLE_MASS,
-      { unitBottomZMm: 2320, deckBottomZMm: -125 });
-    assert.equal(low.supportHeightM, 2.445);
-
-    // 같은 정반이라도 상단 적치면(8026)에 앉으면 6m 넘게 달라진다.
-    const high = moduleCargoAccelerationInputs(SAMPLE_MODULE, SAMPLE_MASS,
-      { unitBottomZMm: 8326, deckBottomZMm: -125 });
-    assert.equal(high.supportHeightM, 8.451);
+  it('★ 중량과 VCG 의 기준이 어긋나지 않는다 — 합산 COG 를 쓴다', () => {
+    // Unit 자체 VCG(Unit 바닥 기준 7.38 m)를 쓰면 정반 질량 84% 를 무시한 값이 된다.
+    // 스택 기준은 그보다 낮아야 한다 — 합산 무게중심이 정반 쪽에 있기 때문이다.
+    const out = moduleCargoAccelerationInputs(
+      SAMPLE_MODULE, SAMPLE_MASS, { deckBottomZMm: -125 });
+    const unitOwnVcgM = (SAMPLE_MODULE.massProperties.centerOfGravityMm.z
+      - SAMPLE_MODULE.bounds.min[2]) / 1000;
+    assert.ok(out.cargoVcgFromBottomM < unitOwnVcgM,
+      '스택 기준 VCG 는 Unit 자체 VCG 보다 낮아야 한다');
+    // Support Height 는 0 이다 — 정반이 곧 화물이라 그 아래 받침이 따로 없다.
+    assert.equal(out.supportHeightM, 0);
   });
 
-  it('leaves Support Height alone when the placement is not seated yet', () => {
-    const noSeat = moduleCargoAccelerationInputs(SAMPLE_MODULE, SAMPLE_MASS,
-      { unitBottomZMm: -Infinity, deckBottomZMm: -125 });
-    assert.equal('supportHeightM' in noSeat, false);
-    assert.equal(noSeat.cargoWeightT, 99.9318);
+  it('배치가 없으면 VCG 기준을 세울 수 없으므로 중량만 가져온다', () => {
+    const noSeat = moduleCargoAccelerationInputs(SAMPLE_MODULE, SAMPLE_MASS);
+    assert.deepEqual(noSeat, { cargoWeightT: 99.9318 });
   });
 
   it('does not invent cargo inputs unless both deck and Unit masses are included', () => {

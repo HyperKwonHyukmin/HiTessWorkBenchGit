@@ -21,7 +21,7 @@ import logging
 import os
 import shutil
 import urllib.parse
-from typing import Literal
+from typing import Any, Literal, Optional
 
 from fastapi import (
     APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile,
@@ -29,9 +29,12 @@ from fastapi import (
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, model_validator
 
-from .. import database
+from .. import database, models
 from ..dependencies import require_auth
-from ._access_control import assert_current_user_can_access_path
+from ._access_control import (
+    assert_current_user_can_access_owner,
+    assert_current_user_can_access_path,
+)
 from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
 from ..services.job_manager import JobMetadata
 from ..services.module_ocean_structural_service import (
@@ -42,9 +45,12 @@ from ..services.module_ocean_structural_service import (
 from ..services.module_ocean_acceleration import (
     BargeAccelerationError,
     calculate_barge_acceleration,
+    normalize_load_cases,
 )
 from ..services.module_ocean_bdf import DEFAULT_SMALL_BORE_MAX_OD_MM
 from ..services.module_ocean_merge import DEFAULT_CLEARANCE_MM
+from ..services.module_ocean_figures import render_report_figures
+from ..services.module_ocean_report import build_module_ocean_report
 from ..services.module_ocean_weld import DEFAULT_WELD_SPEC
 from ..services.module_ocean_transport_service import (
     DEFAULT_DECK_TYPE,
@@ -291,7 +297,9 @@ class BargeAccelerationInput(BaseModel):
     cargoVcgFromBottomM: float = 1.2
     bargeDepthM: float = 4.5
     supportHeightM: float = 3.4
-    loadCase: Literal["LC1", "LC2", "LC3", "LC4"] = "LC1"
+    # ±Y 를 포함한 8개. LC1~4 는 y 가 항상 + 라 그 자체로는 포락이 아니다.
+    loadCase: Literal["LC1", "LC2", "LC3", "LC4",
+                      "LC5", "LC6", "LC7", "LC8"] = "LC1"
 
 
 def _calculate_barge_acceleration(body: BargeAccelerationInput) -> dict:
@@ -407,6 +415,9 @@ class StructuralRunRequest(BaseModel):
     accel: AccelInput = AccelInput()
     # 있으면 서버가 다시 계산해 accel과 일치하는지 확인하고 해석 이력에도 남긴다.
     accelerationCalculation: BargeAccelerationInput | None = None
+    # 포락할 하중조건. 비우면 8개 전부다. accelerationCalculation 이 있어야 의미가
+    # 있다 — 부호만 다른 조건들의 가속도는 **서버가 원본 표에서 직접** 만든다.
+    load_cases: list[str] | None = None
     material: MaterialInput = MaterialInput()
     weld: WeldSpecInput = WeldSpecInput()
     parent_analysis_id: int | None = None
@@ -434,6 +445,7 @@ def run_structural_analysis(
 
     accel = body.accel
     acceleration_calculation = None
+    load_cases: list[dict] = []
     if body.accelerationCalculation is not None:
         acceleration_calculation = _calculate_barge_acceleration(body.accelerationCalculation)
         expected = acceleration_calculation["totalAccelerationG"]
@@ -443,6 +455,23 @@ def run_structural_analysis(
                 status_code=400,
                 detail="가속도 계산 입력과 구조 해석 가속도가 일치하지 않습니다. 다시 계산해주세요.",
             )
+        # 포락에 쓸 LC 가속도는 **서버가 원본 표에서 직접** 만든다. 클라이언트가
+        # 8개 벡터를 보내면 그중 하나만 조작해도 알아챌 방법이 없다.
+        try:
+            chosen = normalize_load_cases(body.load_cases)
+        except BargeAccelerationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        load_cases = [
+            {"id": case_id,
+             "label": acceleration_calculation["loadCases"][case_id]["signs"],
+             "accelG": acceleration_calculation["loadCases"][case_id]["totalAccelerationG"]}
+            for case_id in chosen
+        ]
+    elif body.load_cases:
+        raise HTTPException(
+            status_code=400,
+            detail="하중조건을 포락하려면 Barge 가속도 계산 입력이 필요합니다.",
+        )
     if (accel.ax ** 2 + accel.ay ** 2 + accel.az ** 2) <= 0.0:
         raise HTTPException(status_code=400,
                             detail="가속도 크기가 0 입니다. 하중이 없어 해석할 수 없습니다.")
@@ -466,6 +495,7 @@ def run_structural_analysis(
         "total_mass_t": body.total_mass_t,
         "total_cog_mm": body.total_cog_mm,
         "accel": accel.model_dump(),
+        "load_cases": load_cases,
         "acceleration_calculation": acceleration_calculation,
         "material": body.material.model_dump(),
         "weld_spec": body.weld.model_dump(),
@@ -479,9 +509,121 @@ def run_structural_analysis(
         metadata=JobMetadata(employee_id=employee_id,
                              program_name=STRUCTURAL_PROGRAM_NAME),
     )
-    logger.info("[ModuleOceanTransport] 구조 해석 제출 job=%s deck=%s supports=%d",
-                job_id, body.deck_type, len(body.support_node_ids))
+    logger.info("[ModuleOceanTransport] 구조 해석 제출 job=%s deck=%s supports=%d lc=%s",
+                job_id, body.deck_type, len(body.support_node_ids),
+                [case["id"] for case in load_cases] or ["단일"])
     return {"job_id": job_id}
+
+
+class StructuralReportRequest(BaseModel):
+    """보고서는 **해석 레코드 하나만** 있으면 만들어진다.
+
+    예전에는 결과 파일 경로 3개와 화면 캡처 PNG 를 클라이언트가 올려 보냈다. 그러면
+    해석 화면이 떠 있어야만 보고서가 나오고 이력에서 다시 뽑을 수 없다 — Unit 권상
+    보고서(`/analysis/unit-structural/report`)와 같은 규약으로 맞췄다.
+    """
+
+    analysis_id: int
+    metadata: dict = Field(default_factory=dict)
+
+
+def _report_result_path(result_info: dict, *section: str) -> Optional[str]:
+    """result_info 안의 결과 파일 경로를 꺼낸다(없으면 None)."""
+    node: Any = result_info
+    for key in section:
+        node = (node or {}).get(key) if isinstance(node, dict) else None
+    return node if isinstance(node, str) and node else None
+
+
+@router.post("/structural-report")
+def create_structural_report(
+    body: StructuralReportRequest,
+    employee_id: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """저장된 구조해석 결과로 XLSX 보고서를 만든다. 그림은 백엔드가 직접 그린다."""
+    record = db.query(models.Analysis).filter(models.Analysis.id == body.analysis_id).first()
+    if record is None:
+        raise HTTPException(status_code=404,
+                            detail=f"구조 해석 결과(id={body.analysis_id})를 찾을 수 없습니다.")
+    assert_current_user_can_access_owner(record.employee_id, employee_id, db)
+    if record.program_name != STRUCTURAL_PROGRAM_NAME:
+        raise HTTPException(status_code=400,
+                            detail=f"지원하지 않는 해석 종류입니다: {record.program_name}")
+    if record.status != "Success":
+        raise HTTPException(status_code=409,
+                            detail="성공한 구조 해석 결과에서만 보고서를 생성할 수 있습니다.")
+
+    result_info = dict(record.result_info or {})
+    stress_path = _report_result_path(result_info, "stress", "resultJson")
+    if not stress_path:
+        raise HTTPException(status_code=409, detail="부재 응력 결과 파일이 기록되어 있지 않습니다.")
+
+    paths: list[Optional[str]] = []
+    for label, candidate in (
+        ("부재 응력", stress_path),
+        ("Leg 반력", _report_result_path(result_info, "legReaction", "resultJson")),
+        ("Leg 용접", _report_result_path(result_info, "weld", "resultJson")),
+    ):
+        if not candidate:
+            paths.append(None)
+            continue
+        path = os.path.abspath(candidate)
+        if not _is_within_dir(_USER_CONNECTION_DIR, path) or not os.path.isfile(path):
+            # 응력은 필수, 나머지는 없으면 그 절만 비운다.
+            if label == "부재 응력":
+                raise HTTPException(status_code=409,
+                                    detail=f"{label} 결과 파일을 찾을 수 없습니다: {candidate}")
+            paths.append(None)
+            continue
+        assert_current_user_can_access_path(path, employee_id, db, _USER_CONNECTION_DIR)
+        paths.append(path)
+
+    # ── 그림: 합본 BDF 에서 서버가 직접 그린다 ─────────────────────────────
+    figures: dict = {}
+    warnings: list[str] = []
+    combined_bdf = result_info.get("combined_bdf") or _report_result_path(
+        result_info, "stress", "bdf")
+    id_offset = ((result_info.get("model") or {}).get("idOffset"))
+    if not combined_bdf or not os.path.isfile(combined_bdf):
+        warnings.append("합본 BDF 가 없어 3D 그림을 그리지 못했습니다.")
+    elif id_offset is None:
+        warnings.append("ID offset 기록이 없어 3D 그림을 그리지 못했습니다.")
+    else:
+        bdf_path = os.path.abspath(combined_bdf)
+        if not _is_within_dir(_USER_CONNECTION_DIR, bdf_path):
+            raise HTTPException(status_code=400, detail="합본 BDF 경로가 올바르지 않습니다.")
+        assert_current_user_can_access_path(bdf_path, employee_id, db, _USER_CONNECTION_DIR)
+        try:
+            stress_json = json.loads(open(paths[0], encoding="utf-8").read())
+            figures, figure_errors = render_report_figures(
+                stress=stress_json, bdf_path=bdf_path, id_offset=int(id_offset),
+                load_case_ids=[str(case.get("id")) for case
+                               in (result_info.get("stress") or {}).get("loadCases") or []],
+            )
+            warnings += [f"{key}: {reason}" for key, reason in figure_errors.items()]
+        except Exception as exc:                                   # noqa: BLE001
+            logger.exception("[ModuleOceanTransport] 보고서 그림 렌더 실패 id=%s", body.analysis_id)
+            warnings.append(f"3D 그림 렌더 실패: {exc}")
+
+    try:
+        filename, data, report_meta = build_module_ocean_report(
+            stress_json_path=paths[0], leg_json_path=paths[1], weld_json_path=paths[2],
+            figures=figures, metadata=body.metadata, figure_warnings=warnings,
+        )
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    encoded = urllib.parse.quote(filename)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded}",
+            "X-Report-Filename": encoded,
+            "X-Report-Summary": urllib.parse.quote(
+                json.dumps(report_meta, ensure_ascii=False)),
+        },
+    )
 
 
 # ── 과정 2 이어서: Leg 용접부 재평가 ─────────────────────────────────────

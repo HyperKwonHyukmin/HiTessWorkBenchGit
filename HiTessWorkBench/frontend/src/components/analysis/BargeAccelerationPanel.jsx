@@ -47,6 +47,10 @@ export default function BargeAccelerationPanel({
   isCurrent,
   error,
   disabled,
+  // 구조 해석에서 포락할 하중조건. 넘기지 않으면 선택 UI 를 띄우지 않는다
+  // (이 패널은 가속도 계산만 하는 자리로도 쓰인다).
+  envelopeLoadCases,
+  onEnvelopeChange,
 }) {
   const baselineVcgM = useMemo(() => (
     Number(input.cargoVcgFromBottomM || 0)
@@ -92,7 +96,7 @@ export default function BargeAccelerationPanel({
                 onClick={onImportModule}
                 disabled={disabled || !canImportModule}
                 className="shrink-0"
-                title="2단계의 정반+Unit 합산 중량 · Unit 바닥 기준 VCG · Support Height(정반 바닥→Unit 바닥)를 가져옵니다."
+                title="화물 = 정반+Unit 스택 전체로 봅니다. 합산 중량 · 정반 바닥 기준 합산 무게중심 VCG · Support Height 0 을 가져옵니다."
               >
                 <ArrowDownToLine size={12} /> 2단계 정반+Unit 값 가져오기
               </Button>
@@ -121,12 +125,14 @@ export default function BargeAccelerationPanel({
               <NumberField
                 label="화물 총중량" unit="ton" value={input.cargoWeightT}
                 min={0} step={0.1} disabled={disabled}
+                title="화물 = 정반 + Module Unit 스택 전체. 아래 VCG 도 반드시 같은 기준이어야 한다."
                 error={issueByField.get('cargoWeightT')}
                 onChange={value => onChange({ cargoWeightT: value })}
               />
               <NumberField
                 label="화물 바닥 기준 VCG" unit="m" value={input.cargoVcgFromBottomM}
                 min={0} step={0.1} disabled={disabled}
+                title="화물(정반+Unit) 합산 무게중심의, 정반 바닥 기준 높이. 총중량과 같은 기준이어야 한다 — Unit 자체 VCG 를 넣으면 정반 질량(약 84%)을 무시한 값이 된다."
                 onChange={value => onChange({ cargoVcgFromBottomM: value })}
               />
               <NumberField
@@ -137,7 +143,7 @@ export default function BargeAccelerationPanel({
               <NumberField
                 label="Support Height" unit="m" value={input.supportHeightM}
                 min={0} step={0.1} disabled={disabled}
-                title="바지 갑판에서 Unit 바닥까지의 높이. 가져오기는 정반 바닥→Unit 최하단(정반 높이 + 스툴)을 넣습니다."
+                title="바지 갑판에서 화물 바닥까지의 높이. 화물 = 정반+Unit 스택이므로 가져오기는 0 을 넣습니다(정반이 곧 화물이라 그 아래 받침이 없다)."
                 onChange={value => onChange({ supportHeightM: value })}
               />
               <div className="sm:col-span-1 lg:col-span-2">
@@ -162,7 +168,9 @@ export default function BargeAccelerationPanel({
           </div>
 
           <div className="border-t border-slate-100 pt-3">
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">적용 하중조건</p>
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              대표 하중조건 <span className="font-normal normal-case text-slate-400">— 아래 가속도 표에 보일 조건</span>
+            </p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {BARGE_LOAD_CASES.map(lc => {
                 const selected = input.loadCase === lc.id;
@@ -190,6 +198,60 @@ export default function BargeAccelerationPanel({
               부호는 동적 가속도 방향입니다. 총 Z 가속도에는 중력 −1g가 합성되며, 환산값은 9.8 m/s²를 사용합니다.
             </p>
           </div>
+
+          {onEnvelopeChange && (
+            <div className="border-t border-slate-100 pt-3">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  구조 해석 포락 조건
+                </p>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onEnvelopeChange(BARGE_LOAD_CASES.map(lc => lc.id))}
+                  className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold
+                    text-slate-600 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  8개 전부
+                </button>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8">
+                {BARGE_LOAD_CASES.map(lc => {
+                  const on = envelopeLoadCases.includes(lc.id);
+                  const last = on && envelopeLoadCases.length <= 1;
+                  return (
+                    <button
+                      key={lc.id}
+                      type="button"
+                      disabled={disabled || last}
+                      title={`${lc.description}${last ? ' — 최소 한 개는 남겨야 합니다' : ''}`}
+                      onClick={() => onEnvelopeChange(
+                        on ? envelopeLoadCases.filter(id => id !== lc.id)
+                          : [...envelopeLoadCases, lc.id],
+                      )}
+                      aria-pressed={on}
+                      className={`rounded-md border px-1.5 py-1 text-center transition-colors
+                        ${on ? 'border-blue-500 bg-blue-50 text-blue-800'
+                          : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300'}
+                        disabled:cursor-not-allowed disabled:opacity-60`}
+                    >
+                      <span className="block text-[11px] font-bold">{lc.id}</span>
+                      <span className="block font-mono text-[9px]">{lc.signs}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 flex items-start gap-1.5 text-[10px] leading-relaxed text-slate-500">
+                <Info size={11} className="mt-0.5 shrink-0" />
+                <span>
+                  고른 조건을 <b>한 모델의 SUBCASE 로 함께</b> 풀고 부재·Leg 마다 자기 최악 조건을 고릅니다.
+                  강성 분해가 한 번이라 8개를 다 풀어도 해석 시간은 1개일 때와 사실상 같습니다.
+                  <b className="text-amber-700"> LC1~4 는 횡방향이 모두 +Y 라 그 4개만으로는 포락이 아닙니다</b>
+                  {' '}— 실측에서 −Y(LC5~8)가 지배 Leg 를 바꿨습니다.
+                </span>
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-slate-50 p-3">

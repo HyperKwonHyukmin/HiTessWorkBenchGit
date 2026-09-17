@@ -236,6 +236,8 @@ export default function FeModelViewer({
   // 정반 타입 선택 카드처럼 '형상만 보여 주는' 정적 미리보기에 쓴다.
   // (드래그 회전을 살려 두면 카드 클릭 선택과 제스처가 충돌한다.)
   chrome = true,
+  // 보고서 캡처처럼 뷰어를 외부에서 제어해야 하는 호출부에만 공개한다.
+  onApiReady = null,
 }) {
   // ⚠ 루트의 min-h 는 낮게 유지한다 — 부모 컨테이너의 안쪽 높이보다 커지면
   //    부모 overflow-hidden 에 우하단 파트 패널과 하단 상태바가 잘린다.
@@ -520,6 +522,21 @@ export default function FeModelViewer({
     if (dir.lengthSq() === 0) { applyView('iso'); return; }
     frameCamera(dir.normalize().toArray(), camera.up.toArray());
   }, [frameCamera, applyView]);
+
+  useEffect(() => {
+    if (!onApiReady) return undefined;
+    onApiReady({
+      fitView,
+      setStandardView: applyView,
+      captureDataUrl: () => {
+        const renderer = rendererRef.current;
+        if (!renderer) return null;
+        renderFrame();
+        return renderer.domElement.toDataURL('image/png');
+      },
+    });
+    return () => onApiReady(null);
+  }, [onApiReady, fitView, applyView, renderFrame]);
 
   /* ── 파트 지오메트리 구축 ──────────────────────────────── */
   // parts 의 model/anchor 가 바뀔 때만 재구축한다(위치·회전·표시 변경은 아래 effect 들이 담당).

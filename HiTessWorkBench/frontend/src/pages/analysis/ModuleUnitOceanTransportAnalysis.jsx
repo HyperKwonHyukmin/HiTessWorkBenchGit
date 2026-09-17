@@ -4,7 +4,7 @@ import {
   FileCheck2, Boxes, Waves, ShieldCheck,
   X, Loader2, RotateCcw, FileText, ExternalLink,
   Layers, ArrowDownToLine, Compass, AlertTriangle, Info, Scale, Eye, EyeOff,
-  ChevronDown, SlidersHorizontal, Download,
+  ChevronDown, SlidersHorizontal, Download, FileSpreadsheet,
 } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
@@ -25,6 +25,7 @@ import SampleRunButton from '../../components/analysis/SampleRunButton';
 import FeModelViewer from '../../components/analysis/FeModelViewer';
 import JungbanDeckSelector from '../../components/analysis/JungbanDeckSelector';
 import StressColorMapModal from '../../components/analysis/StressColorMapModal';
+import ModuleOceanReportDialog from '../../components/analysis/ModuleOceanReportDialog';
 import LegReactionModal from '../../components/analysis/LegReactionModal';
 import SupportSelectionPanel from '../../components/analysis/SupportSelectionPanel';
 import SupportPickerModal from '../../components/analysis/SupportPickerModal';
@@ -44,6 +45,8 @@ import {
   bargeAccelerationInputKey,
   getBargeAccelerationInputIssues,
   moduleCargoAccelerationInputs,
+  BARGE_LOAD_CASES,
+  DEFAULT_ENVELOPE_LOAD_CASES,
 } from '../../utils/bargeAcceleration';
 import {
   DEFAULT_MODULE_OCEAN_ARRANGEMENT,
@@ -187,8 +190,61 @@ function VerdictStat({ label, value, unit, bad }) {
  * 합/부, 지배 수치 3개, 그리고 형상에서 되짚는 버튼.
  * 근거·가정·모델 조작 내역은 아래 상세와 접이식 섹션으로 내린다.
  */
+/**
+ * 평가 범위 — 판정 바로 아래 고정. 접히지만 **요약 한 줄은 늘 보인다.**
+ *
+ * 왜 필요한가 — 화면은 큰 글씨로 OK/NG 를 띄우는데 그 OK 의 범위는 지금까지 코드에만
+ * 있었다. 특히 소구경 배관은 판정에서 빠지는데 실측(3521)에서 그 배관 32개가 허용의
+ * 2배(437.9 MPa)였다. "무엇을 안 봤는지"가 판정 옆에 없으면 프로그램은 맞는 말을 했는데
+ * 사람이 틀리게 읽는다.
+ *
+ * 문구는 **서버가 준 것**(module_ocean_structural_service.ASSESSMENT_SCOPE)을 그대로 쓴다.
+ * 여기에 다시 적으면 두 벌이 갈린다. 옛 결과(문구 없음)에는 이 카드를 띄우지 않는다.
+ */
+function AssessmentScopeCard({ scope, loadCases, governingLoadCase }) {
+  if (!scope?.included?.length) return null;
+  const ids = (loadCases || []).map(item => item.id ?? item).filter(Boolean);
+  return (
+    <details className="rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3" open>
+      <summary className="cursor-pointer list-none">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <ShieldCheck size={14} className="shrink-0 text-slate-500" aria-hidden="true" />
+          <span className="text-xs font-bold text-slate-700">{scope.title}</span>
+          {ids.length > 0 && (
+            <span className="rounded-md bg-white px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-600">
+              하중조건 {ids.length}개 포락{governingLoadCase ? ` · 지배 ${governingLoadCase}` : ''}
+            </span>
+          )}
+          <span className="ml-auto text-[10px] font-semibold text-slate-400">펼쳐서 전체 보기</span>
+        </div>
+      </summary>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">판정에 포함</p>
+          <ul className="mt-1.5 space-y-1 text-[11px] leading-relaxed text-slate-600">
+            {scope.included.map(item => <li key={item}>· {item}</li>)}
+          </ul>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">판정에 포함되지 않음</p>
+          <ul className="mt-1.5 space-y-1 text-[11px] leading-relaxed text-slate-600">
+            {scope.excluded.map(item => <li key={item}>· {item}</li>)}
+          </ul>
+        </div>
+      </div>
+      {ids.length > 0 && (
+        <p className="mt-2.5 font-mono text-[10px] text-slate-500">포락 조건: {ids.join(' · ')}</p>
+      )}
+      <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold leading-relaxed text-amber-900">
+        {scope.note}
+      </p>
+    </details>
+  );
+}
+
+
 function StructuralVerdictBanner({
-  stress, weld, resultCurrent, onOpenColorMap, onDownloadBdf, downloadingBdf,
+  stress, weld, resultCurrent, onOpenColorMap, onOpenReport, onDownloadBdf, downloadingBdf,
 }) {
   const s = stress?.summary;
   if (!s) return null;
@@ -222,6 +278,16 @@ function StructuralVerdictBanner({
               : '부재 응력·용접부 모두 허용 이내입니다'}
         </p>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {onOpenReport && (
+            <button
+              type="button"
+              onClick={onOpenReport}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-blue-600
+                         px-3 py-1.5 text-[11px] font-bold text-white transition-colors hover:bg-blue-700"
+            >
+              <FileSpreadsheet size={12} aria-hidden="true" /> 보고서 생성
+            </button>
+          )}
           {/* 실제로 푼 모델을 그대로 받아 갈 수 있어야 한다 — 검토서에 붙이거나
               사내 다른 도구로 재검산할 때 필요하다(정반 실형상 포함 합본). */}
           {onDownloadBdf && (
@@ -251,12 +317,17 @@ function StructuralVerdictBanner({
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <VerdictStat label="최대 응력" value={s.maxStressMPa.toFixed(1)} unit="MPa" bad={stressNg} />
+        {/* 포락이면 그 수치가 어느 조건에서 나왔는지가 값만큼 중요하다 —
+            Leg 마다 지배 조건이 달라서(실측 4가지) 하나로 말할 수 없다. */}
+        <VerdictStat label={`최대 응력${s.governingLoadCase ? ` (${s.governingLoadCase})` : ''}`}
+          value={s.maxStressMPa.toFixed(1)} unit="MPa" bad={stressNg} />
         <VerdictStat label={`사용률 (허용 ${Math.round(stress.allowableMPa)} MPa)`}
           value={s.maxUsage.toFixed(2)} bad={stressNg} />
         <VerdictStat label="허용 초과 부재" value={s.exceedCount} unit="개" bad={stressNg} />
         {stress.displacementSummary && (
-          <VerdictStat label="최대 변위"
+          <VerdictStat
+            label={`최대 변위${stress.displacementSummary.loadCase
+              ? ` (${stress.displacementSummary.loadCase})` : ''}`}
             value={Number.isFinite(stress.displacementSummary.maxMagMm)
               ? stress.displacementSummary.maxMagMm.toFixed(1) : '결과 없음'} unit="mm" />
         )}
@@ -359,6 +430,8 @@ function StressResultPanel({ stress, model }) {
     ? { box: 'border-red-300 bg-red-50', head: 'text-red-700', body: 'text-red-700', sub: 'text-red-600' }
     : { box: 'border-amber-300 bg-amber-50', head: 'text-amber-800', body: 'text-amber-800', sub: 'text-amber-700' };
 
+  const dispSummary = stress.displacementSummary;
+  const dispPerCase = stress.displacementPerLoadCase;
   const dropped = stress.excludedSummary;
   const promoted = model?.rigidPromotion?.promotedEids || [];
   // 그중 조각의 자유 회전을 막으려고 회전(456)까지 잡은 것.
@@ -414,6 +487,79 @@ function StressResultPanel({ stress, model }) {
             )}
           </details>
         </div>
+      )}
+
+      {/* 하중조건별 결과 vs 전 조건 포락 — 둘을 한 표에 나란히 둔다.
+          포락값 하나만 보여 주면 "어느 조건이 왜 지배했는가" 를 알 수 없고,
+          조건별 값만 보여 주면 판정에 쓰는 수치가 무엇인지 흐려진다.
+          실측(3521·정반 B): 부재는 LC2 가, 변위는 LC6 이, 용접은 LC5 가 지배했다. */}
+      {stress.perLoadCase && Object.keys(stress.perLoadCase).length > 1 && (
+        <details open className="rounded-xl border border-slate-200 bg-white p-3.5">
+          <summary className="cursor-pointer text-xs font-bold text-slate-700">
+            하중조건별 결과 {Object.keys(stress.perLoadCase).length}개
+            <span className="ml-1.5 font-normal text-slate-500">
+              {[s.governingLoadCase && `부재 지배 ${s.governingLoadCase}`,
+                dispSummary?.loadCase && `변위 지배 ${dispSummary.loadCase}`]
+                .filter(Boolean).join(' · ')}
+            </span>
+          </summary>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[560px] text-[11px]">
+              <thead className="text-[10px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="py-1 pr-2 text-left font-semibold">조건</th>
+                  <th className="py-1 px-2 text-right font-semibold">최대 응력</th>
+                  <th className="py-1 px-2 text-right font-semibold">사용률</th>
+                  <th className="py-1 px-2 text-right font-semibold">초과</th>
+                  <th className="py-1 px-2 text-right font-semibold">지배 부재</th>
+                  <th className="py-1 px-2 text-right font-semibold">최대 변위</th>
+                  <th className="py-1 pl-2 text-right font-semibold">변위 절점</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(stress.perLoadCase).map(([id, row]) => {
+                  const gov = id === s.governingLoadCase;
+                  const dispRow = dispPerCase?.[id];
+                  const dispGov = id === dispSummary?.loadCase;
+                  return (
+                    <tr key={id} className={gov ? 'bg-amber-50 font-semibold text-amber-900' : 'text-slate-600'}>
+                      <td className="py-1 pr-2 font-mono">{id}</td>
+                      <td className="py-1 px-2 text-right font-mono">
+                        {Number(row.maxStressMPa).toFixed(1)}{gov && ' ◀'}
+                      </td>
+                      <td className="py-1 px-2 text-right font-mono">{Number(row.maxUsage).toFixed(2)}</td>
+                      <td className="py-1 px-2 text-right font-mono">{row.exceedCount}</td>
+                      <td className="py-1 px-2 text-right font-mono">{row.maxStressElementId}</td>
+                      <td className={`py-1 px-2 text-right font-mono ${
+                        dispGov && !gov ? 'font-semibold text-amber-900' : ''}`}>
+                        {Number.isFinite(dispRow?.maxMagMm) ? `${dispRow.maxMagMm.toFixed(1)}${dispGov ? ' ◀' : ''}` : '—'}
+                      </td>
+                      <td className="py-1 pl-2 text-right font-mono">{dispRow?.maxNodeId ?? '—'}</td>
+                    </tr>
+                  );
+                })}
+                {/* 판정에 실제로 쓰는 줄. 위 조건별 행과 시각적으로 갈라 놓는다. */}
+                <tr className="border-t-2 border-slate-300 font-bold text-slate-800">
+                  <td className="py-1 pr-2">전 조건 포락</td>
+                  <td className="py-1 px-2 text-right font-mono">{s.maxStressMPa.toFixed(1)}</td>
+                  <td className="py-1 px-2 text-right font-mono">{s.maxUsage.toFixed(2)}</td>
+                  <td className="py-1 px-2 text-right font-mono">{s.exceedCount}</td>
+                  <td className="py-1 px-2 text-right font-mono">{s.maxStressElementId}</td>
+                  <td className="py-1 px-2 text-right font-mono">
+                    {Number.isFinite(dispSummary?.maxMagMm) ? dispSummary.maxMagMm.toFixed(1) : '—'}
+                  </td>
+                  <td className="py-1 pl-2 text-right font-mono">{dispSummary?.maxNodeId ?? '—'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+            포락은 <b>부재마다 자기 최악 조건</b>을 골라 모은 것입니다. 최대 응력·최대 변위 자체는
+            가장 나쁜 조건의 값과 같지만, <b>허용 초과 부재 수는 조건마다 넘는 부재가 달라</b>
+            어느 한 조건보다 많을 수 있습니다. 변위는 절점별로 섞으면 실재하지 않는 변형 형상이
+            되므로 <b>지배 조건의 변형장을 통째로</b> 씁니다.
+          </p>
+        </details>
       )}
 
       {/* 판정에서 뺀 것. 감추면 배관에 실제 문제가 있어도 드러나지 않으므로 여기서 밝힌다. */}
@@ -1096,6 +1242,12 @@ export default function ModuleUnitOceanTransportAnalysis() {
   const [accelerationBusy, setAccelerationBusy] = useState(false);
   const [accelerationError, setAccelerationError] = useState(null);
   const [material, setMaterial] = useState(savedPageState.material ?? { sigmaYMPa: 275, factor: 0.8 });
+  // 포락할 하중조건. 기본은 8개 전부 — 부분 집합은 사용자가 일부러 고른 것이어야 한다.
+  // ⚠ 한 조건만 풀면 포락이 아니다(실측: LC1 만 보면 부재 최대가 21% 낮게 나오고
+  //   지배 Leg 도 2번 → 7번으로 바뀐다). 8개를 한 BDF 의 SUBCASE 로 함께 풀어
+  //   강성 분해를 한 번만 하므로 해석 시간은 1개일 때와 사실상 같다(실측 14.6초).
+  const [envelopeLoadCases, setEnvelopeLoadCases] = useState(
+    savedPageState.envelopeLoadCases ?? [...DEFAULT_ENVELOPE_LOAD_CASES]);
   // 판정에서 뺄 소구경 배관의 외경 상한. 0 이면 제외하지 않는다.
   const [smallBoreMaxOdMm, setSmallBoreMaxOdMm] = useState(
     savedPageState.smallBoreMaxOdMm ?? DEFAULT_SMALL_BORE_MAX_OD_MM);
@@ -1109,9 +1261,14 @@ export default function ModuleUnitOceanTransportAnalysis() {
   const [structuralResult, setStructuralResult] = useState(savedPageState.structuralResult ?? null);
   const [structuralResultInputKey, setStructuralResultInputKey] = useState(
     savedPageState.structuralResultInputKey ?? null);
+  // 보고서 생성이 서버에 보내는 유일한 값. result_info 만으로는 어느 Analysis 레코드인지
+  // 알 수 없어서 완료 응답의 project.id 를 따로 붙잡아 둔다.
+  const [structuralAnalysisId, setStructuralAnalysisId] = useState(
+    savedPageState.structuralAnalysisId ?? null);
   const pendingStructuralInputKeyRef = useRef(null);
   // 색맵 모달 — 결과가 큰 배열이라 열 때만 받는다(페이지 상태에 저장하지 않는다).
   const [colorMapOpen, setColorMapOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [bdfDownloading, setBdfDownloading] = useState(false);
   const [legModalOpen, setLegModalOpen] = useState(false);
   const [weldModalOpen, setWeldModalOpen] = useState(false);
@@ -1169,6 +1326,8 @@ export default function ModuleUnitOceanTransportAnalysis() {
       deckContingencyPct, moduleContingencyPct, deckTransparent,
       accel, accelerationInput, accelerationResult,
       material, smallBoreMaxOdMm, structuralResult, structuralResultInputKey, structuralJobId, seating,
+      structuralAnalysisId,
+      envelopeLoadCases,
       supportIdx: [...supportIdx],
     });
   }, [
@@ -1180,6 +1339,8 @@ export default function ModuleUnitOceanTransportAnalysis() {
     deckContingencyPct, moduleContingencyPct, deckTransparent,
     accel, accelerationInput, accelerationResult,
     material, smallBoreMaxOdMm, structuralResult, structuralResultInputKey, structuralJobId, seating, supportIdx,
+    structuralAnalysisId,
+    envelopeLoadCases,
   ]);
 
   // ── 진행 중이던 작업 복원 ────────────────────────────────
@@ -1703,20 +1864,28 @@ export default function ModuleUnitOceanTransportAnalysis() {
     [moduleModel, supportIdx],
   );
 
+  // 실행할 LC = 포락 선택 ∪ 대표 조건. 대표 조건의 가속도가 곧 화면이 보여 주는 값이라
+  // 그것만 빠지면 "화면 값으로 해석했다"는 말이 성립하지 않는다.
+  const runLoadCases = useMemo(() => {
+    const chosen = new Set([...envelopeLoadCases, accelerationInput.loadCase]);
+    return BARGE_LOAD_CASES.map(lc => lc.id).filter(id => chosen.has(id));
+  }, [envelopeLoadCases, accelerationInput.loadCase]);
+
   // 접힌 '해석 조건' 머리에 한 줄로 얹을 요약. 무엇으로 돌렸는지 열지 않고도 읽혀야 한다.
-  // ⚠ 위치 고정 — allowableMPa·smallBoreMaxOdMmForRun·supportNodeIds 를 모두 읽으므로
-  //   셋 중 가장 늦게 선언되는 supportNodeIds **뒤**에 있어야 한다. 앞으로 옮기면
+  // ⚠ 위치 고정 — runLoadCases·allowableMPa·smallBoreMaxOdMmForRun·supportNodeIds 를 모두
+  //   읽으므로 그중 가장 늦게 선언되는 것 **뒤**에 있어야 한다. 앞으로 옮기면
   //   useMemo 가 선언 시점에 즉시 평가되면서 TDZ ReferenceError 로 페이지가 죽는다
   //   (번들러는 잡지 못한다 — 과거 viewerParts 에서 같은 사고가 있었다).
   const conditionSummary = useMemo(() => [
-    accelerationInput.loadCase,
+    runLoadCases.length > 1 ? `LC ${runLoadCases.length}개 포락` : runLoadCases[0],
     `허용 ${allowableMPa.toFixed(0)} MPa`,
     smallBoreMaxOdMmForRun > 0 ? `소구경 OD≤${smallBoreMaxOdMmForRun} 제외` : '소구경 제외 안 함',
     `지지 ${supportNodeIds.length}점`,
-  ].join(' · '), [accelerationInput.loadCase, allowableMPa, smallBoreMaxOdMmForRun, supportNodeIds.length]);
+  ].join(' · '), [runLoadCases, allowableMPa, smallBoreMaxOdMmForRun, supportNodeIds.length]);
 
   const structuralInputKey = useMemo(() => JSON.stringify({
     bdfPath, deckType,
+    loadCases: runLoadCases,
     supportNodeIds: [...supportNodeIds].sort((a, b) => a - b),
     placement: placement ? {
       anchorMm: placement.anchor,
@@ -1730,7 +1899,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
     moduleContingencyPct: Number(moduleContingencyPct || 0),
     accelG: { ax: Number(accel.ax), ay: Number(accel.ay), az: Number(accel.az) },
     material: { sigmaYMPa: Number(material.sigmaYMPa), factor: Number(material.factor) },
-  }), [bdfPath, deckType, supportNodeIds, placement, arrangement, seatGapMm,
+  }), [bdfPath, deckType, runLoadCases, supportNodeIds, placement, arrangement, seatGapMm,
     smallBoreMaxOdMmForRun, deckContingencyPct, moduleContingencyPct, accel, material]);
   const structuralResultCurrent = Boolean(
     structuralResult && structuralResultInputKey === structuralInputKey,
@@ -1875,13 +2044,11 @@ export default function ModuleUnitOceanTransportAnalysis() {
   const handleImportModuleAccelerationInputs = () => {
     // Support Height 는 배치에서 읽는다 — 2단 정반은 어느 적치면에 앉느냐로 이 높이가
     // 6m 넘게 달라지고, 그 차이가 baseline VCG 에 그대로 실린다.
+    // 화물 = 정반 + Unit 스택 전체. 그 바닥은 **정반 최하단**이다(2026-09-14 기준 정합).
     const imported = moduleCargoAccelerationInputs(
       moduleModel,
       massSummary,
-      {
-        unitBottomZMm: seatGap.baseZMm,
-        deckBottomZMm: jungbanModel?.bounds?.min?.[2],
-      },
+      { deckBottomZMm: jungbanModel?.bounds?.min?.[2] },
     );
     if (!imported) {
       showToast('2단계 정반+Unit 합산 중량 또는 Unit 무게중심을 가져올 수 없습니다.', 'warning');
@@ -1893,15 +2060,14 @@ export default function ModuleUnitOceanTransportAnalysis() {
     setAccelerationError(null);
     if (importIssues.length) {
       showToast(`정반+Unit 값을 가져왔지만 계산 범위를 벗어났습니다 — ${importIssues[0].message}`, 'warning');
-    } else if (Number.isFinite(imported.supportHeightM)) {
+    } else if (Number.isFinite(imported.cargoVcgFromBottomM)) {
       showToast(
-        `합산 중량 ${imported.cargoWeightT.toLocaleString()} ton · Unit 바닥 기준 VCG `
-        + `${imported.cargoVcgFromBottomM.toFixed(3)} m · Support Height `
-        + `${imported.supportHeightM.toFixed(3)} m(정반 바닥→Unit 바닥)를 반영했습니다.`,
+        `화물(정반+Unit) ${imported.cargoWeightT.toLocaleString()} ton · 정반 바닥 기준 합산 VCG `
+        + `${imported.cargoVcgFromBottomM.toFixed(3)} m · Support Height 0 m 를 반영했습니다.`,
         'success',
       );
     } else {
-      showToast('정반+Unit 합산 중량과 Unit 바닥 기준 VCG를 가속도 입력에 반영했습니다.', 'success');
+      showToast('정반+Unit 합산 중량을 가속도 입력에 반영했습니다(배치 후 VCG 도 함께 들어옵니다).', 'success');
     }
   };
 
@@ -1974,7 +2140,9 @@ export default function ModuleUnitOceanTransportAnalysis() {
     setStructuralMsg('');
     setStructuralError(null);
     setStructuralResult(null);
+    setStructuralAnalysisId(null);
     setColorMapOpen(false);
+    setReportOpen(false);
     setLegModalOpen(false);
     setWeldModalOpen(false);
     clearAnalysisPageState?.(MENU_NAME);
@@ -2068,6 +2236,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
     setStructuralBusy(true);
     setStructuralError(null);
     setStructuralResult(null);
+    setStructuralAnalysisId(null);
     setWeldResult(null);
     setStepStatus('structural-run', 'running');
     setStructuralProgress(0);
@@ -2111,6 +2280,9 @@ export default function ModuleUnitOceanTransportAnalysis() {
         total_cog_mm: [cogMm.x, cogMm.y, cogMm.z],
         accel: { ax: Number(accel.ax), ay: Number(accel.ay), az: Number(accel.az) },
         accelerationCalculation: { ...accelerationInput },
+        // 포락할 하중조건. 가속도 **크기**는 LC 와 무관하므로 서버가 원본 표에서
+        // 부호만 바꿔 직접 만든다 — 여기서는 어떤 조건을 볼지만 고른다.
+        load_cases: runLoadCases,
         material: { sigmaYMPa: Number(material.sigmaYMPa), factor: Number(material.factor) },
         // 과정 2 용접 사양. 해석이 반력을 낸 직후 같은 job 에서 판정까지 마쳐 둔다.
         weld: { ...weldSpec },
@@ -2146,6 +2318,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
         return;
       }
       setStructuralResult(result_info);
+      setStructuralAnalysisId(data.project?.id ?? null);
       setStructuralResultInputKey(pendingStructuralInputKeyRef.current);
       // 해석이 반력 직후 용접까지 판정해 둔다 — 열자마자 결과가 있어야 한다.
       setWeldResult(result_info.weld ?? null);
@@ -2422,8 +2595,11 @@ export default function ModuleUnitOceanTransportAnalysis() {
             <div className="flex-1 min-h-0 flex flex-col gap-3">
               {/* 최소 높이는 '카드'에 준다. 안쪽 캔버스 래퍼에 주면 카드보다 커져서
                   overflow-hidden 에 잘리고, 뷰어 우하단 오버레이가 사라진다.
-                  카드에 주면 세로가 부족할 때 <main> 이 스크롤될 뿐 잘리지 않는다. */}
-              <div className="flex-1 min-h-[440px] flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                  카드에 주면 세로가 부족할 때 <main> 이 스크롤될 뿐 잘리지 않는다.
+                  세로가 760px 이하(1920 을 150% 배율로 쓰는 경우 등)면 440 을 고집하는 순간
+                  아래의 '지지점 지정' 박스가 첫 화면 밖으로 밀린다 — 3단계로 가는 관문이라
+                  스크롤해야 보이면 안 된다. 그때만 380 으로 낮춘다(실측 40px 부족). */}
+              <div className="flex-1 min-h-[440px] [@media(max-height:760px)]:min-h-[380px] flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100 shrink-0">
                   <div className="flex items-center gap-2 min-w-0">
                     <h2 className="text-xs font-bold text-slate-700 shrink-0">2. 정반 상부 Module Unit 배치 설정</h2>
@@ -2565,8 +2741,15 @@ export default function ModuleUnitOceanTransportAnalysis() {
                         weld={weldShown}
                         resultCurrent={structuralResultCurrent}
                         onOpenColorMap={() => setColorMapOpen(true)}
+                        onOpenReport={structuralResultCurrent ? () => setReportOpen(true) : null}
                         onDownloadBdf={structuralResult.model?.bdf ? handleDownloadBdf : null}
                         downloadingBdf={bdfDownloading}
+                      />
+
+                      <AssessmentScopeCard
+                        scope={structuralResult.stress?.assessmentScope}
+                        loadCases={structuralResult.stress?.loadCases}
+                        governingLoadCase={structuralResult.stress?.summary?.governingLoadCase}
                       />
 
                       {/* 두 과정은 성격이 다른 검토라 탭으로 갈라 본다. */}
@@ -2662,6 +2845,8 @@ export default function ModuleUnitOceanTransportAnalysis() {
                         result={accelerationResult}
                         isCurrent={accelerationIsCurrent}
                         error={accelerationError}
+                        envelopeLoadCases={envelopeLoadCases}
+                        onEnvelopeChange={setEnvelopeLoadCases}
                         disabled={structuralBusy || accelerationBusy}
                       />
 
@@ -2752,14 +2937,17 @@ export default function ModuleUnitOceanTransportAnalysis() {
                   <Section
                     icon={Info}
                     title="모델링 가정"
-                    summary={`평가 = Module Unit 부재 · σ ≤ ${allowableMPa.toFixed(0)} MPa · ${accelerationInput.loadCase} 1개`}
+                    summary={`평가 = Module Unit 부재 · σ ≤ ${allowableMPa.toFixed(0)} MPa · `
+                      + (runLoadCases.length > 1 ? `LC ${runLoadCases.length}개 포락` : `${runLoadCases[0]} 1개`)}
                     defaultOpen={false}
                   >
                     <ul className="space-y-1.5 text-[11px] leading-relaxed text-slate-600">
-                      <li>· <b>하중</b> — 선택한 {accelerationInput.loadCase} 한 개(GRAV 하나). 정반 실형상과
-                        합쳐 한 모델로 풀고, 경계조건은 정반 자신의 Leg 구속뿐입니다.</li>
+                      <li>· <b>하중</b> — 고른 {runLoadCases.length}개 조건({runLoadCases.join(', ')})을
+                        한 모델의 SUBCASE 로 함께 풀어 <b>부재·Leg 마다 자기 최악 조건</b>으로 판정합니다.
+                        정반 실형상과 합쳐 한 모델로 풀고, 경계조건은 정반 자신의 Leg 구속뿐입니다.</li>
                       <li>· <b>판정</b> — σ ≤ {allowableMPa.toFixed(0)} MPa 하나.
-                        빔 응력은 축력 + 굽힘의 합성 수직응력입니다(전단·비틀림 제외).</li>
+                        빔 응력은 축력 + 굽힘의 합성 수직응력입니다(전단·비틀림 제외).
+                        용접부 모멘트는 SPC 절점이 아니라 <b>패드 용접면</b>으로 옮겨 씁니다.</li>
                       <li>· <b>평가 대상</b> — Module Unit 부재만 봅니다(정반 자체의 강도는 평가하지 않습니다).
                         {smallBoreMaxOdMmForRun > 0
                           ? ` 외경 ${smallBoreMaxOdMmForRun}mm 이하 소구경 배관은 판정에서 뺍니다.`
@@ -2839,6 +3027,15 @@ export default function ModuleUnitOceanTransportAnalysis() {
           rotationZDeg: structuralResult.inputSnapshot.placement.rotationZDeg,
           gapMm: structuralResult.inputSnapshot.placement.gapMm,
         } : null}
+      />
+
+      {/* 보고서는 해석 id 하나만 있으면 된다 — 그림은 서버가 합본 BDF 로 직접 그린다. */}
+      <ModuleOceanReportDialog
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        analysisId={structuralAnalysisId}
+        result={structuralResult}
+        onNotify={showToast}
       />
 
       {/* 개발 진행 안내. 과정 구성은 3단계 탭이 이미 보여 주므로 여기서는 되풀이하지 않는다 —

@@ -684,3 +684,55 @@ def test_combined_bdf_publishes_the_pair_distance_warning_threshold():
     # 이 픽스처의 정반 격자는 1,000mm 라 가장 가까운 절점도 707mm 떨어져 있다 —
     # 실제 정반(약 400mm 격자)보다 성기므로 경고 문턱을 넘는 것이 정상이다.
     assert build["maxPairDistanceMm"] > PAIR_WARN_MM
+
+
+# ── 다중 하중조건(±Y 포락) ────────────────────────────────────────────────
+
+def test_combined_bdf_writes_one_subcase_and_grav_per_load_case():
+    """LC 는 한 BDF 의 SUBCASE 여러 개로 나간다 — 강성 분해를 한 번만 하려는 것이다."""
+    cases = [
+        {"id": "LC1", "label": "++-", "accelG": (0.1, 0.2, -1.1)},
+        {"id": "LC5", "label": "+--", "accelG": (0.1, -0.2, -1.1)},
+    ]
+    build = build_combined_bdf(
+        deck_bulk_lines=_deck_lines(), unit_bulk_lines=_unit_lines(),
+        support_node_ids=[1], placement=_placement(), load_cases=cases,
+    )
+    text = build["text"]
+
+    assert [case["subcaseId"] for case in build["loadCases"]] == [1, 2]
+    assert [case["id"] for case in build["loadCases"]] == ["LC1", "LC5"]
+    sids = [case["loadSid"] for case in build["loadCases"]]
+    assert len(set(sids)) == 2, "LC 마다 다른 하중 SID 여야 한다"
+
+    header = text.split("BEGIN BULK")[0]
+    assert header.count("SUBCASE ") == 2
+    for case in build["loadCases"]:
+        assert f"SUBCASE {case['subcaseId']}" in header
+        assert f"  LOAD = {case['loadSid']}" in header
+
+    gravs = [raw for raw in extract_bulk_lines(text) if raw.startswith("GRAV")]
+    assert len(gravs) == 2
+    # 부호가 실제로 반대로 나가는지 — 여기가 틀리면 포락이 같은 해를 두 번 푼다.
+    assert "0.2" in gravs[0] and "-0.2" in gravs[1]
+
+
+def test_combined_bdf_still_accepts_a_single_accel_vector():
+    """구 호출부(단일 LC) 호환 — accel_g 하나면 SUBCASE 도 하나다."""
+    build = build_combined_bdf(
+        deck_bulk_lines=_deck_lines(), unit_bulk_lines=_unit_lines(),
+        support_node_ids=[1], placement=_placement(), accel_g=(0.0, 0.0, -1.0),
+    )
+    assert len(build["loadCases"]) == 1
+    assert build["loadCases"][0]["loadSid"] == build["loadSid"]
+    assert build["text"].split("BEGIN BULK")[0].count("SUBCASE ") == 1
+
+
+def test_combined_bdf_rejects_duplicate_load_case_names():
+    with pytest.raises(MergeError):
+        build_combined_bdf(
+            deck_bulk_lines=_deck_lines(), unit_bulk_lines=_unit_lines(),
+            support_node_ids=[1], placement=_placement(),
+            load_cases=[{"id": "LC1", "accelG": (0, 0, -1)},
+                        {"id": "LC1", "accelG": (0, 0, 1)}],
+        )

@@ -779,13 +779,42 @@ def deck_spc_sid(bulk_lines: Sequence[str]) -> int:
     return sids.pop()
 
 
+def normalize_load_case_inputs(
+    load_cases: Sequence[Dict[str, object]] | None,
+    accel_g: Sequence[float] | None,
+) -> List[Dict[str, object]]:
+    """해석할 하중조건 목록을 [{id, label, accelG}] 로 정리한다.
+
+    `accel_g` 단일 벡터는 LC 이름 없는 1개짜리 목록으로 취급한다(구 호출부 호환).
+    """
+    if load_cases:
+        cases: List[Dict[str, object]] = []
+        for index, case in enumerate(load_cases, start=1):
+            accel = case.get("accelG") or case.get("accel_g")
+            if accel is None or len(tuple(accel)) != 3:
+                raise MergeError(f"하중조건 {index} 에 가속도 [ax, ay, az] 가 없습니다.")
+            cases.append({
+                "id": str(case.get("id") or f"LC{index}"),
+                "label": str(case.get("label") or ""),
+                "accelG": tuple(float(v) for v in accel),
+            })
+        ids = [case["id"] for case in cases]
+        if len(set(ids)) != len(ids):
+            raise MergeError(f"하중조건 이름이 중복됩니다: {ids}")
+        return cases
+    if accel_g is None:
+        raise MergeError("하중조건이 없습니다. load_cases 또는 accel_g 를 주세요.")
+    return [{"id": "LC1", "label": "", "accelG": tuple(float(v) for v in accel_g)}]
+
+
 def build_combined_bdf(
     *,
     deck_bulk_lines: Sequence[str],
     unit_bulk_lines: Sequence[str],
     support_node_ids: Sequence[int],
     placement: Dict[str, object],
-    accel_g: Sequence[float],
+    accel_g: Sequence[float] | None = None,
+    load_cases: Sequence[Dict[str, object]] | None = None,
     deck_contingency_pct: float = 0.0,
     module_contingency_pct: float = 0.0,
     clearance_mm: float = DEFAULT_CLEARANCE_MM,
@@ -964,7 +993,16 @@ def build_combined_bdf(
     params = {**unit_params, **deck_params}          # 이름이 겹치면 정반 것을 남긴다
 
     merged = [*deck_kept, *unit_kept]
-    load_sid = next_free_load_sid(merged, LOAD_SID)
+    # LC 마다 빈 SID 를 하나씩 고른다. 방금 고른 SID 는 merged 에 없으므로
+    # 다음 탐색의 시작점을 직접 +1 해 주어야 같은 번호를 다시 집지 않는다.
+    cases = normalize_load_case_inputs(load_cases, accel_g)
+    next_sid = LOAD_SID
+    for index, case in enumerate(cases, start=1):
+        sid = next_free_load_sid(merged, next_sid)
+        case["loadSid"] = sid
+        case["subcaseId"] = index
+        next_sid = sid + 1
+    load_sid = int(cases[0]["loadSid"])
 
     support_rbe2 = [
         # GN = Module Unit 지지점, GM = 정반 상판 절점.
@@ -990,10 +1028,27 @@ def build_combined_bdf(
         f"still-ungrounded beam components = {rigid_info['ungroundedComponentCount']}, "
         f"skipped by m-set clash = {rigid_info['skippedConflictCount']}",
         *support_rbe2,
-        grav_line(load_sid, accel_g),
+        *(grav_line(int(case["loadSid"]), case["accelG"]) for case in cases),
         "$ 해석 안정화 — GMU 권상 파이프라인과 동일 정책(Mechanism/FATAL 9050 회피)",
         *stabilization_param_lines(merged),
     ]
+
+    # LC 를 **한 BDF 의 SUBCASE 여러 개**로 낸다. 강성행렬 분해가 한 번이라
+    # LC 를 따로 제출하는 것보다 훨씬 싸다(실측 1 LC 15초, 분해가 대부분).
+    subcases: List[str] = []
+    for case in cases:
+        label = f"{case['id']} {case['label']}".strip()
+        ax, ay, az = case["accelG"]
+        subcases += [
+            f"SUBCASE {case['subcaseId']}",
+            f"  LABEL = {label} g=({ax:+.4f}, {ay:+.4f}, {az:+.4f})",
+            f"  SPC = {spc_sid}",
+            f"  LOAD = {case['loadSid']}",
+            f"  DISPLACEMENT = {_SET_UNIT_NODES}",
+            "  SPCFORCES = ALL",
+            f"  FORCE = {_SET_UNIT_ELEMENTS}",
+            f"  STRESS = {_SET_UNIT_ELEMENTS}",
+        ]
 
     header = [
         "SOL 101",
@@ -1002,14 +1057,7 @@ def build_combined_bdf(
         # 출력을 Module Unit 으로 좁힌다. 정반 요소·절점은 SPC 반력만 필요하다.
         f"SET {_SET_UNIT_NODES} = {node_ids[0]} THRU {node_ids[-1]}",
         f"SET {_SET_UNIT_ELEMENTS} = {element_ids[0]} THRU {element_ids[-1]}",
-        "SUBCASE 1",
-        "  LABEL = Ocean transport acceleration",
-        f"  SPC = {spc_sid}",
-        f"  LOAD = {load_sid}",
-        f"  DISPLACEMENT = {_SET_UNIT_NODES}",
-        "  SPCFORCES = ALL",
-        f"  FORCE = {_SET_UNIT_ELEMENTS}",
-        f"  STRESS = {_SET_UNIT_ELEMENTS}",
+        *subcases,
         "BEGIN BULK",
     ]
 
@@ -1017,7 +1065,15 @@ def build_combined_bdf(
         "text": "\n".join([*header, *params.values(), *merged, *generated, "ENDDATA"]) + "\n",
         "idOffset": id_offset,
         "spcSid": spc_sid,
+        # 첫 LC 의 SID. 단일 LC 시절 결과 스키마와의 호환용이다 — 여러 LC 의
+        # 실제 대응은 loadCases 를 봐야 한다.
         "loadSid": load_sid,
+        "loadCases": [
+            {"id": case["id"], "label": case["label"], "subcaseId": case["subcaseId"],
+             "loadSid": case["loadSid"],
+             "accelG": {"ax": case["accelG"][0], "ay": case["accelG"][1], "az": case["accelG"][2]}}
+            for case in cases
+        ],
         "deckTopZMm": deck_top_z,
         "deckMaxZMm": deck_max_z,
         "deckCenterMm": [plate_center[0], plate_center[1]],

@@ -89,3 +89,28 @@ def test_empty_quality_is_untouched():
     _quality_to_display_ids(quality, offset=ID_OFFSET)
     assert quality["highPivotNodeIds"] == []
     assert quality["highPivotDeckNodeIds"] == []
+
+
+def test_per_load_case_summaries_are_shifted_back():
+    """포락 표의 '지배 부재'·'변위 절점' 열도 사용자 BDF 의 ID 여야 한다.
+
+    이 열만 합본 ID 로 남으면 표는 멀쩡해 보이는데 사용자가 자기 모델에서
+    그 부재·절점을 찾지 못한다 — 조용히 틀리는 종류의 오류다.
+    """
+    stress = _stress(perLoadCase={
+        "LC1": {"maxStressElementId": 480 + ID_OFFSET, "maxStressMPa": 180.4},
+        "LC2": {"maxStressElementId": 3509 + ID_OFFSET, "maxStressMPa": 218.4},
+    })
+    displacement = _disp()
+    displacement["perLoadCase"] = {
+        "LC1": {"maxNodeId": 1141 + ID_OFFSET, "maxMagMm": 35.9},
+        "LC6": {"maxNodeId": 2044 + ID_OFFSET, "maxMagMm": 48.7},
+    }
+
+    _to_module_ids(stress, displacement, offset=ID_OFFSET)
+
+    assert [row["maxStressElementId"] for row in stress["perLoadCase"].values()] == [480, 3509]
+    assert [row["maxNodeId"] for row in displacement["perLoadCase"].values()] == [1141, 2044]
+    # 포락 요약(화면 상단 수치)과 조건별 행이 **각각 한 번씩만** 밀려야 한다.
+    assert stress["summary"]["maxStressElementId"] == 480
+    assert displacement["summary"]["maxNodeId"] == 1141

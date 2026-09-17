@@ -8,13 +8,17 @@ from __future__ import annotations
 import math
 import re
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 RESULT_SCHEMA_STRESS = "moduleOceanStress/1"
 RESULT_SCHEMA_LEG = "moduleOceanLegReaction/1"
 
 # 반력 합계 검산 허용 상대오차.
 REACTION_CHECK_TOL = 1.0e-3
+# 모멘트 검산 허용 상대오차. 힘보다 느슨한 이유는 무게중심이 **화면 계산값**이라
+# NSM·CONM2 편심 같은 미반영 항이 지렛대(10^4 mm)에 곱해져 들어오기 때문이다.
+# 해가 틀린 것과 무게중심 입력이 거친 것을 구분하려면 여기서 갈라야 한다.
+MOMENT_CHECK_TOL = 5.0e-3
 
 
 def f06_fatal_messages(f06_json: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -151,8 +155,8 @@ def evaluate_stress(
         # 제외된 요소도 **빠짐없이 담는다** — 색맵에서 구멍이 나면 사용자는 그 자리에
         # 요소가 없다고 읽는다. excluded 플래그로 구분만 해 준다.
         "elements": [
-            dict({"elementId": e["elementId"], "stressMPa": e["stressMPa"],
-                  "usage": e["usage"]},
+            dict({"elementId": e["elementId"], "type": e["type"],
+                  "stressMPa": e["stressMPa"], "usage": e["usage"]},
                  **({"excluded": True} if e.get("excluded") else {}))
             for e in ordered
         ],
@@ -225,13 +229,26 @@ def extract_leg_reactions(
     total_mass_t: float,
     accel_g: Sequence[float],
     subcase_id: int = 1,
+    cog_mm: Optional[Sequence[float]] = None,
 ) -> Dict[str, Any]:
-    """정반 Leg 절점의 SPC 반력을 걷어 온다.
+    """정반 Leg 절점의 SPC 반력을 걷어 **용접면 기준**으로 옮겨 온다.
 
     합본 모델에서는 Leg 절점 자체가 SPC 절점이다(정반 BDF 가 원래 그렇게 만들어져 있다).
-    그래서 반력의 힘·모멘트가 곧 그 자리, 즉 **용접부의 실제 하중**이다.
     예전에는 가짜 기둥을 세우고 그 밑동 절점을 대신 봤는데, 그때는 기둥 높이가
     모멘트의 지렛대를 정해 버려서 용접 판정이 임의의 높이에 좌우됐다.
+
+    ★ 그래도 지렛대가 완전히 사라진 것은 아니다. SPC 절점(실측 z=−125)과 실제
+      **용접군이 놓인 패드면**(RBE2 종속 441절점이 이루는 500×500 면, z=−25)은
+      100mm 떨어져 있다. 힘은 같지만 모멘트는 다르다. 모멘트를 옮기지 않으면
+      용접 응력이 실측 4~7% 부풀려진다(3521·정반B: 114.9 → 109.6 MPa).
+      leg 에 `weldPlaneZMm` 이 있으면 그 면으로 옮긴 값을 `mxNmm/myNmm/mzNmm` 에 싣고,
+      원래 SPC 절점 값은 `momentAtSpcNmm` 로 함께 남긴다.
+
+          M_pad = M_spc + (r_spc − r_pad) × F,  r_spc − r_pad = (0, 0, dz)
+                → Mx −= dz·Fy,  My += dz·Fx,  Mz 불변
+
+    `cog_mm` 을 주면 힘 3성분뿐 아니라 **모멘트 3성분까지** 검산한다. 힘만 맞아도
+    각 Leg 의 분담이 맞는다는 보장은 없다.
     """
     from .module_ocean_bdf import G_MM_S2      # 순환 없음 — bdf 는 results 를 모른다
 
@@ -246,6 +263,8 @@ def extract_leg_reactions(
 
     rows: List[Dict[str, Any]] = []
     total = [0.0, 0.0, 0.0]
+    moment_total = [0.0, 0.0, 0.0]
+    transferred = 0
     for index, leg in enumerate(legs, start=1):
         node_id = int(leg["id"])
         record = by_point.get(node_id)
@@ -254,7 +273,26 @@ def extract_leg_reactions(
         fx = float(record.get("t1") or 0.0)
         fy = float(record.get("t2") or 0.0)
         fz = float(record.get("t3") or 0.0)
+        mx_spc = float(record.get("r1") or 0.0)
+        my_spc = float(record.get("r2") or 0.0)
+        mz_spc = float(record.get("r3") or 0.0)
+        leg_x, leg_y, leg_z = float(leg["x"]), float(leg["y"]), float(leg["z"])
+
+        # 전역 평형용 — 기준점은 SPC 절점이어야 한다(이송 전 값과 짝이 맞는 위치).
         total = [total[0] + fx, total[1] + fy, total[2] + fz]
+        moment_total = [
+            moment_total[0] + mx_spc + leg_y * fz - leg_z * fy,
+            moment_total[1] + my_spc + leg_z * fx - leg_x * fz,
+            moment_total[2] + mz_spc + leg_x * fy - leg_y * fx,
+        ]
+
+        weld_plane_z = leg.get("weldPlaneZMm")
+        if weld_plane_z is None:
+            mx, my, mz = mx_spc, my_spc, mz_spc
+        else:
+            dz = leg_z - float(weld_plane_z)
+            mx, my, mz = mx_spc - dz * fy, my_spc + dz * fx, mz_spc
+            transferred += 1
         rows.append({
             "index": index,
             "jungbanNodeId": node_id,
@@ -268,28 +306,61 @@ def extract_leg_reactions(
             "zTopMm": float(leg["zTop"]) if leg.get("zTop") is not None else None,
             "fxN": fx, "fyN": fy, "fzN": fz,
             "resultantN": (fx * fx + fy * fy + fz * fz) ** 0.5,
-            "mxNmm": float(record.get("r1") or 0.0),
-            "myNmm": float(record.get("r2") or 0.0),
-            "mzNmm": float(record.get("r3") or 0.0),
+            # ★ 용접면 기준 모멘트. weldPlaneZMm 이 없으면 SPC 절점 값 그대로다.
+            "mxNmm": mx, "myNmm": my, "mzNmm": mz,
+            "weldPlaneZMm": float(weld_plane_z) if weld_plane_z is not None else None,
+            # 이송 전 원본 — "이 5% 는 어디서 왔나" 를 되짚을 수 있어야 한다.
+            "momentAtSpcNmm": {"mx": mx_spc, "my": my_spc, "mz": mz_spc},
         })
 
-    # 검산: 반력 합계는 관성력과 크기가 같고 방향이 반대다(Nastran SPCFORCE 규약).
+    # 검산 ① 힘: 반력 합계는 관성력과 크기가 같고 방향이 반대다(Nastran SPCFORCE 규약).
     # 기둥 밀도를 0 으로 둔 것이 이 등식을 깨끗하게 만든다.
     mass = float(total_mass_t)
     expected = [-mass * float(component) * G_MM_S2 for component in accel_g]
     scale = max(abs(v) for v in expected) or 1.0
     max_rel_error = max(abs(total[i] - expected[i]) / scale for i in range(3))
 
+    # 검산 ② 모멘트: 균일 가속도장의 합력은 **무게중심을 지난다**. 그러므로
+    # (원점 기준) 반력 모멘트 합 + r_cog × 하중합력 = 0 이어야 한다.
+    # 힘만 맞아도 각 Leg 의 분담·모멘트가 맞는다는 보장은 없어서 따로 본다.
+    moment_check: Optional[Dict[str, Any]] = None
+    if cog_mm is not None and len(tuple(cog_mm)) == 3:
+        cx, cy, cz = (float(v) for v in cog_mm)
+        load = [-v for v in expected]                     # 하중 합력 = −반력 합력
+        expected_moment = [
+            -(cy * load[2] - cz * load[1]),
+            -(cz * load[0] - cx * load[2]),
+            -(cx * load[1] - cy * load[0]),
+        ]
+        moment_scale = max((abs(v) for v in expected_moment), default=0.0) or 1.0
+        moment_error = max(abs(moment_total[i] - expected_moment[i]) / moment_scale
+                           for i in range(3))
+        moment_check = {
+            "sumMomentNmm": moment_total,
+            "expectedNmm": expected_moment,
+            "cogMm": [cx, cy, cz],
+            "maxRelError": moment_error,
+            "ok": moment_error <= MOMENT_CHECK_TOL,
+        }
+
     return {
         "schema": RESULT_SCHEMA_LEG,
         "totalMassT": mass,
         "accelG": {"ax": float(accel_g[0]), "ay": float(accel_g[1]), "az": float(accel_g[2])},
         "legs": rows,
+        # 용접 판정이 어느 면의 모멘트를 썼는지 결과만 보고 알 수 있어야 한다.
+        "weldMomentReference": "weld-plane" if transferred == len(rows) else (
+            "spc-node" if transferred == 0 else "mixed"),
         "check": {
             "sumReactionN": total,
             "expectedN": expected,
             "maxRelError": max_rel_error,
             "ok": max_rel_error <= REACTION_CHECK_TOL,
+            "moment": moment_check,
+            # 힘·모멘트를 함께 통과해야 검산 통과다. 모멘트 검산은 무게중심이
+            # 주어졌을 때만 돌므로, 없으면 힘 결과를 그대로 쓴다.
+            "allOk": (max_rel_error <= REACTION_CHECK_TOL
+                      and (moment_check is None or moment_check["ok"])),
         },
     }
 
@@ -432,4 +503,219 @@ def assess_singularity_impact(
         "localized": not contaminated,
         # 특이 절점 중 자유단(부재 1개만 붙은 끝점)의 개수.
         "freeEndNodeCount": free_ends,
+    }
+
+
+# ── 하중조건 포락 ─────────────────────────────────────────────────────────
+# LC 는 한 번에 하나씩 푸는 것이 아니다. 부재도 Leg 도 자기 최악 LC 가 따로이고
+# (실측 3521: 부재는 +Y, 용접은 −Y 가 지배), 포락하지 않으면 지배 대상을 놓친다.
+# 아래 함수들의 공통 규칙:
+#   · 성분별 최댓값을 섞지 않는다 — 언제나 **실재하는 한 LC 의 한 상태**를 고른다.
+#   · 고른 값마다 `loadCase` 를 달아 준다. 포락값만 남기면 근거를 되짚을 수 없다.
+
+RESULT_SCHEMA_STRESS_ENVELOPE = "moduleOceanStressEnvelope/1"
+RESULT_SCHEMA_LEG_ENVELOPE = "moduleOceanLegReactionEnvelope/1"
+
+
+def envelope_stress(
+    cases: Sequence[Tuple[str, Dict[str, Any]]],
+    *,
+    top_n: int = 20,
+) -> Dict[str, Any]:
+    """LC 별 `evaluate_stress` 결과를 **요소별 최댓값**으로 포락한다.
+
+    부재 검토는 각 부재를 자기 최악 LC 로 재는 것이 관행이다. 요소마다 그 값이
+    어느 LC 에서 나왔는지(`loadCase`)를 함께 싣는다 — 포락값만 남기면 그 응력이
+    실재하는 하중상태의 것인지 되짚을 수 없다.
+    """
+    if not cases:
+        raise ValueError("포락할 하중조건 결과가 없습니다.")
+    allowable = float(cases[0][1]["allowableMPa"])
+
+    peak: Dict[int, Dict[str, Any]] = {}
+    for case_id, result in cases:
+        if abs(float(result["allowableMPa"]) - allowable) > 1e-9:
+            raise ValueError("하중조건마다 허용응력이 다릅니다 — 포락할 수 없습니다.")
+        for entry in result["elements"]:
+            eid = int(entry["elementId"])
+            current = peak.get(eid)
+            if current is None or entry["stressMPa"] > current["stressMPa"]:
+                peak[eid] = {**entry, "elementId": eid, "loadCase": case_id,
+                             "verdict": "NG" if entry["usage"] > 1.0 else "OK"}
+
+    ordered = sorted(peak.values(), key=lambda e: e["stressMPa"], reverse=True)
+    evaluated = [e for e in ordered if not e.get("excluded")]
+    dropped = [e for e in ordered if e.get("excluded")]
+    if not evaluated:
+        raise ValueError("제외 기준이 모든 요소를 걸러 평가할 부재가 남지 않았습니다.")
+    worst = evaluated[0]
+
+    excluded_summary = None
+    if dropped:
+        reason = next((result.get("excludedSummary", {}).get("reason", "")
+                       for _cid, result in cases if result.get("excludedSummary")), "")
+        worst_dropped = dropped[0]
+        excluded_summary = {
+            "reason": reason,
+            "elementCount": len(dropped),
+            "maxStressMPa": worst_dropped["stressMPa"],
+            "maxStressElementId": worst_dropped["elementId"],
+            "maxUsage": worst_dropped["usage"],
+            "exceedCount": sum(1 for e in dropped if e["usage"] > 1.0),
+            "governingLoadCase": worst_dropped.get("loadCase"),
+            # ⚠ elements 와 **같은 객체를 공유하면 안 된다** — 호출부가 ID 를
+            #   제자리에서 되돌리므로 한 요소가 두 번 밀린다.
+            "topElements": [dict(e) for e in dropped[:top_n]],
+        }
+
+    return {
+        "schema": RESULT_SCHEMA_STRESS_ENVELOPE,
+        "allowableMPa": allowable,
+        "loadCaseIds": [case_id for case_id, _ in cases],
+        "elements": ordered,
+        # elements 와 객체를 공유하지 않는 사본(위 excludedSummary 주석과 같은 이유).
+        "topElements": [dict(e) for e in evaluated[:top_n]],
+        "summary": {
+            "elementCount": len(ordered),
+            "evaluatedCount": len(evaluated),
+            "excludedCount": len(dropped),
+            "maxStressMPa": worst["stressMPa"],
+            "maxStressElementId": worst["elementId"],
+            "maxUsage": worst["usage"],
+            "exceedCount": sum(1 for e in evaluated if e["usage"] > 1.0),
+            "governingLoadCase": worst.get("loadCase"),
+        },
+        # LC 별 요약 — 어느 조건이 무엇을 지배했는지 표로 보여 주기 위한 것.
+        "perLoadCase": {case_id: {**result["summary"], "loadCase": case_id}
+                        for case_id, result in cases},
+        # 보고서와 3D 색맵이 각 LC의 실제 응력장을 재현할 수 있도록 LC별 요소 결과도
+        # 보존한다. 요약만 남기면 LC2~LC8은 숫자 한 줄 외에는 되짚을 방법이 없다.
+        "perLoadCaseElements": {
+            case_id: [dict(entry) for entry in result["elements"]]
+            for case_id, result in cases
+        },
+        "perLoadCaseTopElements": {
+            case_id: [dict(entry) for entry in result.get("topElements") or []]
+            for case_id, result in cases
+        },
+        "excludedSummary": excluded_summary,
+    }
+
+
+def envelope_displacement(
+    cases: Sequence[Tuple[str, Dict[str, Any]]],
+) -> Dict[str, Any]:
+    """변위는 **지배 LC 하나의 장(場)을 통째로** 고른다.
+
+    ⚠ 절점별 최댓값으로 포락하면 변형 형상이 어떤 하중상태에도 존재하지 않는
+      그림이 된다. 색맵·변형형상은 실재하는 한 상태여야 한다.
+    """
+    if not cases:
+        raise ValueError("포락할 하중조건 결과가 없습니다.")
+    governing_id, governing = max(
+        cases, key=lambda item: float(item[1]["summary"].get("maxMagMm") or 0.0))
+    return {
+        **governing,
+        "loadCase": governing_id,
+        "summary": {**governing["summary"], "loadCase": governing_id},
+        "perLoadCase": {case_id: result["summary"] for case_id, result in cases},
+    }
+
+
+def envelope_weld(
+    cases: Sequence[Tuple[str, Dict[str, Any]]],
+) -> Dict[str, Any]:
+    """Leg 마다 **용접 등가응력이 가장 큰 LC 의 실제 하중상태**를 고른다.
+
+    실측(3521·정반 B): +Y 는 Leg 2(114.9 MPa), −Y 는 Leg 7(117.6 MPa)이 지배였다.
+    한 LC 만 보면 더 위험한 Leg 를 통째로 놓친다.
+    """
+    if not cases:
+        raise ValueError("포락할 하중조건 결과가 없습니다.")
+    template = cases[0][1]
+
+    best_by_index: Dict[Any, Dict[str, Any]] = {}
+    for case_id, result in cases:
+        for row in result["legs"]:
+            key = row["index"]
+            current = best_by_index.get(key)
+            if current is None or row["sigmaEqMPa"] > current["sigmaEqMPa"]:
+                best_by_index[key] = {**row, "loadCase": case_id}
+
+    rows = [best_by_index[key] for key in sorted(best_by_index)]
+    governing = max(rows, key=lambda row: row["sigmaEqMPa"])
+    ng_count = sum(1 for row in rows if row["status"] == "NG")
+    section = template["section"]
+    return {
+        "schema": template["schema"],
+        "method": template["method"],
+        "capacityBasis": template["capacityBasis"],
+        "spec": template["spec"],
+        "section": section,
+        "legs": rows,
+        "loadCaseIds": [case_id for case_id, _ in cases],
+        "perLoadCase": {case_id: result["summary"] for case_id, result in cases},
+        "summary": {
+            "legCount": len(rows),
+            "allowableMPa": section["allowableMPa"],
+            "maxSigmaEqMPa": governing["sigmaEqMPa"],
+            "maxUsage": governing["usage"],
+            "actualSafetyFactor": governing["actualSafetyFactor"],
+            "governingLegIndex": governing["index"],
+            "governingLoadCase": governing["loadCase"],
+            "governingPoint": governing["governingPoint"],
+            "ngCount": ng_count,
+            "status": "NG" if ng_count else "OK",
+        },
+    }
+
+
+def envelope_leg_reactions(
+    cases: Sequence[Tuple[str, Dict[str, Any]]],
+    weld_envelope: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Leg 반력을 포락한다 — 표시 행은 **용접이 지배한 LC** 의 것으로 맞춘다.
+
+    화면의 반력 표와 용접 표가 서로 다른 LC 를 가리키면 사용자가 둘을 대조할 수 없다.
+    용접 포락이 없으면 합력이 가장 큰 LC 를 고른다.
+    """
+    if not cases:
+        raise ValueError("포락할 하중조건 결과가 없습니다.")
+    governing_case_by_leg = {
+        row["index"]: row["loadCase"] for row in (weld_envelope or {}).get("legs", [])
+    }
+
+    rows: List[Dict[str, Any]] = []
+    for position in range(len(cases[0][1]["legs"])):
+        candidates = [(case_id, result["legs"][position]) for case_id, result in cases]
+        wanted = governing_case_by_leg.get(candidates[0][1]["index"])
+        chosen_id, chosen = next(
+            ((cid, row) for cid, row in candidates if cid == wanted),
+            max(candidates, key=lambda item: item[1]["resultantN"]),
+        )
+        rows.append({**chosen, "loadCase": chosen_id})
+
+    checks = {case_id: result["check"] for case_id, result in cases}
+    template = cases[0][1]
+    moment_errors = [check["moment"]["maxRelError"] for check in checks.values()
+                     if check.get("moment")]
+    return {
+        "schema": RESULT_SCHEMA_LEG_ENVELOPE,
+        "totalMassT": template["totalMassT"],
+        "weldMomentReference": template.get("weldMomentReference"),
+        "loadCaseIds": [case_id for case_id, _ in cases],
+        "legs": rows,
+        "perLoadCase": {
+            case_id: {"accelG": result["accelG"], "legs": result["legs"],
+                      "check": result["check"]}
+            for case_id, result in cases
+        },
+        "check": {
+            "maxRelError": max(check["maxRelError"] for check in checks.values()),
+            "ok": all(check["ok"] for check in checks.values()),
+            "momentMaxRelError": max(moment_errors) if moment_errors else None,
+            "momentOk": (all(check["moment"]["ok"] for check in checks.values()
+                             if check.get("moment")) if moment_errors else None),
+            "allOk": all(check.get("allOk", check["ok"]) for check in checks.values()),
+        },
     }

@@ -127,7 +127,13 @@ def test_allowable_must_be_positive():
 # ── 과정 2: Leg 반력 ──────────────────────────────────────────────────────
 
 from app.services.module_ocean_bdf import G_MM_S2
-from app.services.module_ocean_results import extract_leg_reactions, scan_f06_warnings
+from app.services.module_ocean_results import (
+    envelope_displacement,
+    envelope_stress,
+    envelope_weld,
+    extract_leg_reactions,
+    scan_f06_warnings,
+)
 
 
 # 합본 모델에서는 정반 Leg 절점 자체가 SPC 절점이다 — F06 의 pointId 가 곧 이 id 다.
@@ -504,3 +510,183 @@ def test_singularity_impact_reports_zero_free_ends_when_none_are_singular():
     out = assess_singularity_impact(singular_node_ids=[], element_nodes={1: (1, 2)},
                                     top_element_ids=[])
     assert out["freeEndNodeCount"] == 0
+
+
+# ── 용접면 모멘트 이송 ────────────────────────────────────────────────────
+
+def test_leg_moments_are_moved_to_the_weld_plane():
+    """SPC 절점(z=−125)과 용접군이 놓인 패드면(z=−25)은 100mm 떨어져 있다.
+
+    모멘트를 옮기지 않으면 용접 응력이 그 지렛대만큼 틀린다(실측 4~7%).
+    """
+    legs = [{**LEGS[0], "weldPlaneZMm": -25.0}]
+    f06 = {"analysisResults": {"subcases": [{
+        "subcaseId": 1, "displacements": [],
+        "spcForces": [{"pointId": 102723, "t1": 300.0, "t2": -500.0, "t3": 7000.0,
+                       "r1": 1.0e6, "r2": 2.0e6, "r3": 3.0e6}],
+    }]}}
+    out = extract_leg_reactions(f06, legs=legs, total_mass_t=10.0, accel_g=(0.0, 0.0, -1.0))
+    row = out["legs"][0]
+
+    dz = -125.0 - (-25.0)                       # = −100
+    assert row["mxNmm"] == pytest.approx(1.0e6 - dz * (-500.0))
+    assert row["myNmm"] == pytest.approx(2.0e6 + dz * 300.0)
+    assert row["mzNmm"] == pytest.approx(3.0e6)       # 비틀림은 이송에 불변
+    # 힘은 옮겨도 그대로다.
+    assert (row["fxN"], row["fyN"], row["fzN"]) == (300.0, -500.0, 7000.0)
+    # 원본을 남겨 두어야 "이 차이가 어디서 왔나" 를 되짚을 수 있다.
+    assert row["momentAtSpcNmm"] == {"mx": 1.0e6, "my": 2.0e6, "mz": 3.0e6}
+    assert out["weldMomentReference"] == "weld-plane"
+
+
+def test_leg_moments_stay_at_the_spc_node_when_no_weld_plane_is_known():
+    """패드를 못 찾은 정반(구 캐시 포함)에서는 예전 동작 그대로여야 한다."""
+    f06 = {"analysisResults": {"subcases": [{
+        "subcaseId": 1, "displacements": [],
+        "spcForces": [{"pointId": 102723, "t1": 0.0, "t2": -500.0, "t3": 7000.0,
+                       "r1": 1.0e6, "r2": 0.0, "r3": 0.0}],
+    }]}}
+    out = extract_leg_reactions(f06, legs=[LEGS[0]], total_mass_t=10.0,
+                               accel_g=(0.0, 0.0, -1.0))
+    assert out["legs"][0]["mxNmm"] == pytest.approx(1.0e6)
+    assert out["legs"][0]["weldPlaneZMm"] is None
+    assert out["weldMomentReference"] == "spc-node"
+
+
+# ── 모멘트 평형 검산 ──────────────────────────────────────────────────────
+
+def _moment_f06(rows):
+    return {"analysisResults": {"subcases": [{
+        "subcaseId": 1, "displacements": [], "spcForces": rows,
+    }]}}
+
+
+def test_moment_check_passes_for_a_balanced_pair():
+    """무게중심이 두 Leg 한가운데면 두 반력이 같고 모멘트 잔차가 0 이다."""
+    mass = 10.0
+    each = mass * G_MM_S2 / 2.0
+    out = extract_leg_reactions(
+        _moment_f06([
+            {"pointId": 102723, "t1": 0.0, "t2": 0.0, "t3": each, "r1": 0.0, "r2": 0.0, "r3": 0.0},
+            {"pointId": 102724, "t1": 0.0, "t2": 0.0, "t3": each, "r1": 0.0, "r2": 0.0, "r3": 0.0},
+        ]),
+        legs=LEGS, total_mass_t=mass, accel_g=(0.0, 0.0, -1.0),
+        cog_mm=[20260.0, 0.0, 3000.0],
+    )
+    assert out["check"]["moment"]["ok"] is True
+    assert out["check"]["allOk"] is True
+
+
+def test_moment_check_catches_a_wrong_center_of_gravity():
+    """힘 합계만 보면 통과하는데 무게중심이 틀린 경우 — 여기서 걸려야 한다."""
+    mass = 10.0
+    each = mass * G_MM_S2 / 2.0
+    f06 = _moment_f06([
+        {"pointId": 102723, "t1": 0.0, "t2": 0.0, "t3": each, "r1": 0.0, "r2": 0.0, "r3": 0.0},
+        {"pointId": 102724, "t1": 0.0, "t2": 0.0, "t3": each, "r1": 0.0, "r2": 0.0, "r3": 0.0},
+    ])
+    out = extract_leg_reactions(
+        f06, legs=LEGS, total_mass_t=mass, accel_g=(0.0, 0.0, -1.0),
+        cog_mm=[20260.0, 4000.0, 3000.0],      # Y 로 4m 틀린 무게중심
+    )
+    assert out["check"]["ok"] is True           # 힘은 여전히 맞는다
+    assert out["check"]["moment"]["ok"] is False
+    assert out["check"]["allOk"] is False
+
+
+def test_moment_check_is_skipped_without_a_center_of_gravity():
+    out = extract_leg_reactions(
+        _moment_f06([
+            {"pointId": 102723, "t1": 0.0, "t2": 0.0, "t3": 10.0 * G_MM_S2 / 2.0,
+             "r1": 0.0, "r2": 0.0, "r3": 0.0},
+            {"pointId": 102724, "t1": 0.0, "t2": 0.0, "t3": 10.0 * G_MM_S2 / 2.0,
+             "r1": 0.0, "r2": 0.0, "r3": 0.0},
+        ]),
+        legs=LEGS, total_mass_t=10.0, accel_g=(0.0, 0.0, -1.0),
+    )
+    assert out["check"]["moment"] is None
+    assert out["check"]["allOk"] is True
+
+
+# ── 하중조건 포락 ─────────────────────────────────────────────────────────
+
+def _stress_case(values, allowable=220.0):
+    """{EID: 응력} → evaluate_stress 와 같은 모양의 결과."""
+    ordered = sorted(({"elementId": eid, "type": "CBEAM", "stressMPa": s,
+                       "usage": s / allowable} for eid, s in values.items()),
+                     key=lambda e: e["stressMPa"], reverse=True)
+    worst = ordered[0]
+    return {
+        "schema": "moduleOceanStress/1", "allowableMPa": allowable,
+        "elements": ordered, "topElements": ordered,
+        "summary": {"elementCount": len(ordered), "evaluatedCount": len(ordered),
+                    "excludedCount": 0, "maxStressMPa": worst["stressMPa"],
+                    "maxStressElementId": worst["elementId"],
+                    "maxUsage": worst["usage"],
+                    "exceedCount": sum(1 for e in ordered if e["usage"] > 1.0)},
+        "excludedSummary": None,
+    }
+
+
+def test_stress_envelope_takes_each_element_at_its_own_worst_load_case():
+    """부재마다 최악 LC 가 다르다 — 하나의 LC 만 보면 지배 부재를 놓친다."""
+    envelope = envelope_stress([
+        ("LC1", _stress_case({1: 180.0, 2: 40.0})),
+        ("LC5", _stress_case({1: 100.0, 2: 200.0})),
+    ])
+    by_id = {e["elementId"]: e for e in envelope["elements"]}
+    assert by_id[1]["stressMPa"] == pytest.approx(180.0)
+    assert by_id[1]["loadCase"] == "LC1"
+    assert by_id[2]["stressMPa"] == pytest.approx(200.0)
+    assert by_id[2]["loadCase"] == "LC5"
+    assert envelope["summary"]["maxStressElementId"] == 2
+    assert envelope["summary"]["governingLoadCase"] == "LC5"
+    assert set(envelope["perLoadCase"]) == {"LC1", "LC5"}
+    assert set(envelope["perLoadCaseElements"]) == {"LC1", "LC5"}
+    assert {row["elementId"] for row in envelope["perLoadCaseElements"]["LC5"]} == {1, 2}
+
+
+def test_stress_envelope_refuses_to_mix_different_allowables():
+    with pytest.raises(ValueError, match="허용응력"):
+        envelope_stress([("LC1", _stress_case({1: 10.0}, allowable=220.0)),
+                         ("LC2", _stress_case({1: 10.0}, allowable=200.0))])
+
+
+def _weld_case(sigmas):
+    legs = [{"index": i + 1, "sigmaEqMPa": s, "usage": s / 150.0,
+             "actualSafetyFactor": 450.0 / s, "status": "OK",
+             "resultantN": 1000.0 * (i + 1), "governingPoint": {"key": "top-right"}}
+            for i, s in enumerate(sigmas)]
+    worst = max(legs, key=lambda r: r["sigmaEqMPa"])
+    return {
+        "schema": "module-ocean-weld/2", "method": "m", "capacityBasis": "c",
+        "spec": {}, "section": {"allowableMPa": 150.0}, "legs": legs,
+        "summary": {"maxSigmaEqMPa": worst["sigmaEqMPa"],
+                    "governingLegIndex": worst["index"], "status": "OK", "ngCount": 0},
+    }
+
+
+def test_weld_envelope_finds_the_leg_that_only_the_other_sign_governs():
+    """실측 그대로 — +Y 는 Leg 2, −Y 는 Leg 7 이 지배였다."""
+    envelope = envelope_weld([
+        ("LC1", _weld_case([94.0, 114.9, 107.3, 78.0, 75.5, 99.6, 101.3, 80.6])),
+        ("LC5", _weld_case([83.4, 100.1, 97.8, 76.2, 79.9, 109.1, 117.6, 98.0])),
+    ])
+    assert envelope["summary"]["maxSigmaEqMPa"] == pytest.approx(117.6)
+    assert envelope["summary"]["governingLegIndex"] == 7
+    assert envelope["summary"]["governingLoadCase"] == "LC5"
+    by_index = {row["index"]: row for row in envelope["legs"]}
+    assert by_index[2]["loadCase"] == "LC1"       # Leg 별로 지배 LC 가 다르다
+    assert by_index[7]["loadCase"] == "LC5"
+
+
+def test_displacement_envelope_keeps_one_real_load_case_field():
+    """변위장을 절점별로 섞으면 어떤 하중상태에도 없는 변형 형상이 된다."""
+    def case(mag):
+        return {"nodes": [{"nodeId": 1, "t1": mag, "t2": 0.0, "t3": 0.0, "mag": mag}],
+                "summary": {"nodeCount": 1, "maxMagMm": mag, "maxNodeId": 1}}
+
+    envelope = envelope_displacement([("LC1", case(35.9)), ("LC5", case(38.4))])
+    assert envelope["loadCase"] == "LC5"
+    assert envelope["nodes"][0]["t1"] == pytest.approx(38.4)
+    assert envelope["perLoadCase"]["LC1"]["maxMagMm"] == pytest.approx(35.9)

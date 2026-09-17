@@ -207,6 +207,12 @@ export default function OceanWeldPanel({
   const pendingClass = stale ? 'opacity-40 transition-opacity' : 'transition-opacity';
   const governingPoint = summary?.governingPoint;
   const check = legReaction?.check;
+  // 모멘트 검산은 무게중심이 있어야 돌아간다(옛 결과에는 없다) — 있을 때만 표시한다.
+  // 단일 LC 결과는 check.moment, 포락 결과는 check.momentOk/momentMaxRelError 로 온다.
+  const momentOk = check?.moment ? check.moment.ok : check?.momentOk;
+  const momentError = check?.moment ? check.moment.maxRelError : check?.momentMaxRelError;
+  const momentChecked = momentOk !== null && momentOk !== undefined;
+  const allChecksOk = check?.ok === true && (!momentChecked || momentOk === true);
   // 기둥 높이를 정반 실형상에서 읽기 전(스터브 500mm 아래로 매달던 시절)의 결과는
   // 반력 모멘트가 실제의 1/4 이라 용접 안전율이 과대하게 나온다. 숫자만 보면
   // 구분할 수 없으므로 반드시 표시해야 한다 — 결과에 zTopMm 이 있는지가 판별자다.
@@ -426,7 +432,9 @@ export default function OceanWeldPanel({
                   return (
                     <tr key={row.index} className={row.status === 'NG' ? 'bg-red-50' : isGoverning ? 'bg-amber-50' : 'bg-white'}>
                       <td className="whitespace-nowrap border-b border-l border-slate-200 px-2 py-2 font-semibold">
-                        Case 1 / Leg {row.index}
+                        {/* Leg 마다 지배 LC 가 다르다(실측: +Y 는 Leg 2, −Y 는 Leg 7).
+                            'Case 1' 로 고정해 두면 어느 조건의 값인지 알 수 없다. */}
+                        {row.loadCase || 'Case 1'} / Leg {row.index}
                         {isGoverning && <span className="ml-1 text-[9px] font-bold text-amber-700">GOV.</span>}
                       </td>
                       <td className="border-b border-l border-slate-200 px-2 py-2 font-mono">{row.jungbanNodeId ?? '—'}</td>
@@ -464,19 +472,36 @@ export default function OceanWeldPanel({
 
       {check && (
         <section className={`rounded-xl border px-4 py-3 ${
-          check.ok ? 'border-slate-200 bg-white' : 'border-red-300 bg-red-50'
+          allChecksOk ? 'border-slate-200 bg-white' : 'border-red-300 bg-red-50'
         }`}>
           <div className="flex items-start gap-2">
-            <Info size={14} className={check.ok ? 'mt-0.5 text-slate-500' : 'mt-0.5 text-red-600'} />
+            <Info size={14} className={allChecksOk ? 'mt-0.5 text-slate-500' : 'mt-0.5 text-red-600'} />
             <div>
-              <p className={`text-xs font-semibold ${check.ok ? 'text-slate-700' : 'text-red-700'}`}>
-                반력 평형 검산 {check.ok ? '통과' : '불일치'}
+              <p className={`text-xs font-semibold ${allChecksOk ? 'text-slate-700' : 'text-red-700'}`}>
+                반력 평형 검산 {allChecksOk ? '통과' : '불일치'}
+                <span className="ml-1 font-normal text-slate-500">
+                  {momentChecked ? '(힘 3성분 + 모멘트 3성분)' : '(힘 3성분)'}
+                </span>
               </p>
               <p className="mt-0.5 text-[10px] text-slate-600">
-                ΣFz {formatNumber(check.sumReactionN?.[2] / 1000, 1)} kN ·
-                m·a {formatNumber(check.expectedN?.[2] / 1000, 1)} kN
-                {' · '}상대오차 {Number(check.maxRelError ?? 0).toExponential(1)}
+                {check.sumReactionN
+                  ? <>ΣFz {formatNumber(check.sumReactionN?.[2] / 1000, 1)} kN ·
+                      m·a {formatNumber(check.expectedN?.[2] / 1000, 1)} kN{' · '}</>
+                  : null}
+                힘 상대오차 {Number(check.maxRelError ?? 0).toExponential(1)}
+                {momentChecked && <>
+                  {' · '}모멘트 상대오차 {Number(momentError).toExponential(1)}
+                </>}
               </p>
+              {momentChecked && (
+                /* 힘만 맞아도 각 Leg 의 분담과 모멘트가 맞는다는 보장은 없다.
+                   균일 가속도장의 합력은 무게중심을 지나므로, 그 조건을 따로 본다. */
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                  모멘트 검산은 <b>합력의 작용선이 무게중심을 지나는가</b>를 봅니다 —
+                  힘 합계가 맞아도 Leg 별 분담이 틀리면 여기서 걸립니다.
+                  {!momentOk && ' 지금은 통과하지 못했으므로 무게중심 입력과 Leg 반력을 함께 확인하세요.'}
+                </p>
+              )}
               {!check.ok && (
                 <p className="mt-1 text-[10px] leading-relaxed text-red-700">
                   Σ반력이 <b>합산 중량 × 가속도</b>와 맞지 않습니다. 화면의 합산 중량은 BDF 의

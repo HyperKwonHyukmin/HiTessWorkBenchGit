@@ -21,7 +21,7 @@ from functools import lru_cache
 import json
 import math
 import os
-from typing import Dict, Sequence
+from typing import Any, Dict, Optional, Sequence
 
 
 GRAVITY_MS2 = 9.8
@@ -47,7 +47,21 @@ LOAD_CASE_SIGNS = {
     "LC2": {"label": "−+−", "x": -1.0, "y": 1.0, "z": -1.0},
     "LC3": {"label": "+++", "x": 1.0, "y": 1.0, "z": 1.0},
     "LC4": {"label": "−++", "x": -1.0, "y": 1.0, "z": 1.0},
+    # ★ 2026-09-14 추가 — 횡방향 −Y. LC1~4 는 x=±, z=± 를 다 훑으면서 **y 만 항상 +**
+    #   였다. 모듈·정반 배치는 좌우 대칭이 아니므로 그 4개는 포락이 아니다.
+    #   실측(3521 · 정반 B · LC1 의 부호만 −Y 로 바꿔 Nastran 재실행):
+    #     부재 최대  180.4 → 103.6 MPa   (내려간다)
+    #     Leg 용접   114.9 → 117.6 MPa   (**올라가고**)
+    #     지배 Leg   2번   → 7번          (**바뀐다**, Leg 별 −13% ~ +21.5%)
+    #   즉 +Y 만 풀면 지배 Leg 를 통째로 놓친다. 8개가 한 세트다.
+    "LC5": {"label": "+−−", "x": 1.0, "y": -1.0, "z": -1.0},
+    "LC6": {"label": "−−−", "x": -1.0, "y": -1.0, "z": -1.0},
+    "LC7": {"label": "+−+", "x": 1.0, "y": -1.0, "z": 1.0},
+    "LC8": {"label": "−−+", "x": -1.0, "y": -1.0, "z": 1.0},
 }
+
+# 기본 포락 집합 = 전부. 부분 집합을 고르는 것은 사용자의 선택이지 기본값이 아니다.
+DEFAULT_LOAD_CASES = tuple(LOAD_CASE_SIGNS)
 
 _SHEET_BY_OPTION = {
     (3, "single-center"): "COT_ACCOMMODATION_CD3",
@@ -184,6 +198,36 @@ def _axis_ssa(
     return apol_rational(DWT_POINTS, values_by_dwt, cargo_weight_t)
 
 
+def _apply_signs(dynamic_ms2: Dict[str, float], load_case: str) -> Dict[str, Any]:
+    """LC 부호를 씌워 그 조건의 동적·총 가속도[g]를 만든다."""
+    signs = LOAD_CASE_SIGNS[load_case]
+    dynamic_g = {
+        "ax": signs["x"] * dynamic_ms2["x"] / GRAVITY_MS2,
+        "ay": signs["y"] * dynamic_ms2["y"] / GRAVITY_MS2,
+        "az": signs["z"] * dynamic_ms2["z"] / GRAVITY_MS2,
+    }
+    # 전역 Z+가 위쪽인 현재 Nastran 모델에서 중력은 -1g이다.
+    total_g = {**dynamic_g, "az": -1.0 + dynamic_g["az"]}
+    return {
+        "id": load_case,
+        "signs": signs["label"],
+        "dynamicAccelerationG": dynamic_g,
+        "totalAccelerationG": total_g,
+        "totalMagnitudeG": math.sqrt(sum(value * value for value in total_g.values())),
+    }
+
+
+def normalize_load_cases(requested: Optional[Sequence[str]]) -> list[str]:
+    """요청한 LC 목록을 정의 순서로 정리한다. 비어 있으면 8개 전부(기본 포락)."""
+    if not requested:
+        return list(DEFAULT_LOAD_CASES)
+    unknown = [case for case in requested if case not in LOAD_CASE_SIGNS]
+    if unknown:
+        raise BargeAccelerationError(f"알 수 없는 하중조건입니다: {', '.join(unknown)}")
+    chosen = set(requested)
+    return [case for case in LOAD_CASE_SIGNS if case in chosen]
+
+
 def calculate_barge_acceleration(
     *,
     significant_wave_height_m: float,
@@ -227,16 +271,16 @@ def calculate_barge_acceleration(
         for index, axis in enumerate(("x", "y", "z"))
     }
 
-    signs = LOAD_CASE_SIGNS[load_case]
-    dynamic_g = {
-        "ax": signs["x"] * dynamic_ms2["x"] / GRAVITY_MS2,
-        "ay": signs["y"] * dynamic_ms2["y"] / GRAVITY_MS2,
-        "az": signs["z"] * dynamic_ms2["z"] / GRAVITY_MS2,
-    }
-    # 전역 Z+가 위쪽인 현재 Nastran 모델에서 중력은 -1g이다.
-    total_g = {**dynamic_g, "az": -1.0 + dynamic_g["az"]}
+    # 동적 가속도의 **크기**는 LC 와 무관하다(Hs·VCG·DWT·감쇠·화물위치만의 함수).
+    # LC 는 부호 조합일 뿐이므로 8개를 한 번에 펼쳐 두고, 호출부가 그중 필요한 것을
+    # 고른다 — 포락 해석이 LC 마다 표를 다시 보간하지 않아도 되게 하려는 것이다.
+    all_cases = {case: _apply_signs(dynamic_ms2, case) for case in LOAD_CASE_SIGNS}
+    selected = all_cases[load_case]
+    dynamic_g = selected["dynamicAccelerationG"]
+    total_g = selected["totalAccelerationG"]
 
     return {
+        "loadCases": all_cases,
         "source": {
             "workbook": SOURCE_WORKBOOK_NAME,
             "sheet": sheet_name,
@@ -254,9 +298,9 @@ def calculate_barge_acceleration(
             "cargoVcgFromBaselineM": baseline_vcg,
             "loadCase": load_case,
         },
-        "loadCase": {"id": load_case, "signs": signs["label"]},
+        "loadCase": {"id": load_case, "signs": selected["signs"]},
         "dynamicAccelerationMS2": dynamic_ms2,
         "dynamicAccelerationG": dynamic_g,
         "totalAccelerationG": total_g,
-        "totalMagnitudeG": math.sqrt(sum(value * value for value in total_g.values())),
+        "totalMagnitudeG": selected["totalMagnitudeG"],
     }
