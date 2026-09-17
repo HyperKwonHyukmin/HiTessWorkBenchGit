@@ -303,12 +303,13 @@ export const requestGroupModuleCog = (bdfPath) =>
   );
 
 /**
- * Unit 권상 보고서(xlsx) — 응답 blob + 헤더(파일명·경고·요약).
- * kind: 'result' = 사내 표준 서식 2~3페이지(기본) · 'detail' = 다장 기술보고서.
+ * Unit 권상 보고서 — 응답 blob + 헤더(파일명·경고·요약).
+ * kind:   'result' = 사내 표준 서식 2~3페이지(기본) · 'detail' = 다장 기술보고서.
+ * format: 'pdf'(기본) = 백엔드가 만든 xlsx 를 서버 Excel 로 인쇄해 변환 · 'xlsx' = 원본 그대로.
  */
-export const downloadUnitLiftingReport = (analysisId, options = {}, kind = 'result') =>
+export const downloadUnitLiftingReport = (analysisId, options = {}, kind = 'result', format = 'pdf') =>
   axios.post(`${API_BASE_URL}/api/analysis/unit-structural/report`,
-    { analysisId, kind, options },
+    { analysisId, kind, format, options },
     {
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       responseType: 'blob',

@@ -98,6 +98,9 @@ def task_execute_unit_structural(
             if parent.status != "Success":
                 raise RuntimeError(f"Parent BDF 검증이 성공 상태가 아닙니다 (status={parent.status}).")
             bdf_path = (parent.input_info or {}).get("bdf_model")
+            # 보고서 표지·파일명이 "Module Unit" / "Side Passage" 중 무엇을 쓸지는 부모만 안다
+            # (자식 레코드는 양쪽 모두 program_name="UnitStructuralAnalysis" 로 같다).
+            project_kind = parent.program_name
         finally:
             parent_db.close()
 
@@ -247,6 +250,7 @@ def task_execute_unit_structural(
         result_summary = result_payload.get("summary") or {}
         result_data = {
             "parentAnalysisId": parent_analysis_id,
+            "projectKind":       project_kind,
             "bdf":               bdf_path,
             "stabilityJson":     stability_json_path,
             "liftingBdf":        lifting_bdf,

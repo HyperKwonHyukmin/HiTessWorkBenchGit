@@ -275,13 +275,21 @@ def concat(*meshes: SolidMesh) -> SolidMesh:
 
 
 def face_colors(mesh: SolidMesh, base_rgb=STEEL_RGB, per_element: Optional[dict] = None,
-                missing_rgb=(0.565, 0.643, 0.690)) -> np.ndarray:
-    """면 색 = (부재 색) × (음영). per_element 는 요소 id → (r,g,b) 0~1."""
+                missing_rgb=(0.565, 0.643, 0.690), alpha_per_element: Optional[dict] = None) -> np.ndarray:
+    """면 색 = (부재 색) × (음영). per_element 는 요소 id → (r,g,b) 0~1.
+
+    alpha_per_element(요소 id → 0~1)를 주면 (N,4) RGBA 로 돌려준다 — 없는 요소는 불투명(1.0).
+    가서포트 배치 그림처럼 일부 부재(배관)를 반투명하게 눌러 뒤의 부재를 드러낼 때 쓴다.
+    """
     if per_element:
         base = np.array([per_element.get(int(e), missing_rgb) for e in mesh.elem_ids], dtype=float)
     else:
         base = np.tile(np.asarray(base_rgb, dtype=float), (len(mesh.elem_ids), 1))
-    return np.clip(base * mesh.shades[:, None], 0.0, 1.0)
+    rgb = np.clip(base * mesh.shades[:, None], 0.0, 1.0)
+    if alpha_per_element:
+        alpha = np.array([alpha_per_element.get(int(e), 1.0) for e in mesh.elem_ids], dtype=float)
+        return np.column_stack([rgb, np.clip(alpha, 0.0, 1.0)])
+    return rgb
 
 
 # ── 렌더 ─────────────────────────────────────────────────────────────────────
@@ -310,8 +318,12 @@ def render(mesh: SolidMesh, colors: np.ndarray, view: str = "home", *,
     ax.set_facecolor("white")
     coll = None
     if len(mesh.quads):
-        coll = Poly3DCollection(mesh.quads, facecolors=colors,
-                                edgecolors=np.clip(colors * 0.55, 0, 1), linewidths=0.18)
+        # colors 가 (N,4) RGBA 면 면·모서리가 같은 알파를 쓴다(모서리만 진하면 반투명이 깨진다).
+        colors = np.asarray(colors, dtype=float)
+        edges = np.clip(colors[:, :3] * 0.55, 0, 1)
+        if colors.shape[1] == 4:
+            edges = np.column_stack([edges, colors[:, 3]])
+        coll = Poly3DCollection(mesh.quads, facecolors=colors, edgecolors=edges, linewidths=0.18)
         # 배치를 잡는 동안(줌 맞춤·범례·좌표축) 은 숨겨 둔다. 이 draw 들은 투영 행렬만 있으면 되는데
         # 3만 면을 매번 깊이 정렬해 그리면 그림 1장이 3.3s → 1.2s 차이로 벌어진다(실측).
         coll.set_visible(False)

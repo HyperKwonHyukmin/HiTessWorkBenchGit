@@ -11,6 +11,13 @@ export function deriveIds(fileName = '') {
   return { hullNo: m ? m[1] : '', unitNo: m ? m[2] : '' };
 }
 
+/**
+ * 결과 레포트 '주의 사항' 5행에 넣을 수 있는 글자 수.
+ * 서식의 F~BA 박스(576px)에 12pt 한글이 정확히 36자 들어간다 — 넘으면 Excel 이 글자를 줄여
+ * 다른 줄보다 작아 보인다(사용자 결정 2026-09-17). 백엔드 `collector.EXTRA_NOTICE_MAX_CHARS` 와 같다.
+ */
+export const EXTRA_NOTICE_MAX = 36;
+
 /** 지그 기준·항복강도 기본값. 백엔드 기본값과 같아야 한다. */
 export const REPORT_DEFAULTS = { jigLimitTon: 6.2, yieldStrengthMpa: 275 };
 
@@ -20,7 +27,7 @@ export function initialReportForm(fileName = '', author = '') {
     ...deriveIds(fileName),
     drawingNo: '', revision: '0', author: author || '', department: '',
     jigLimitTon: REPORT_DEFAULTS.jigLimitTon, yieldStrengthMpa: REPORT_DEFAULTS.yieldStrengthMpa,
-    notes: '',
+    notes: '', extraNotice: '',
   };
 }
 
@@ -42,5 +49,7 @@ export function toReportOptions(form) {
     revision: text(form?.revision) || '0', author: text(form?.author), department: text(form?.department),
     jigLimitTon: Number(form?.jigLimitTon), yieldStrengthMpa: Number(form?.yieldStrengthMpa),
     notes: text(form?.notes),
+    // 주의 사항 5행 — 서식 박스 폭이 정해져 있어 입력란(maxLength)과 같은 길이로 자른다
+    extraNotice: text(form?.extraNotice).slice(0, EXTRA_NOTICE_MAX),
   };
 }

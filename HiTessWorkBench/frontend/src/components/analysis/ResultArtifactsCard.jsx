@@ -92,12 +92,18 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
     }
   };
 
-  const handleReport = async (options) => {
+  const handleReport = async (options, format = 'pdf') => {
     setReportBusy(true);
     try {
-      const res = await downloadUnitLiftingReport(unitAnalysisId, options, reportKind);
-      const name = filenameFromDisposition(res.headers['content-disposition'], 'Unit_권상_구조_검토_보고서.xlsx');
-      downloadBlob(res.data, name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      const res = await downloadUnitLiftingReport(unitAnalysisId, options, reportKind, format);
+      const pdf = format === 'pdf';
+      const name = filenameFromDisposition(
+        res.headers['content-disposition'],
+        `Unit_권상_구조_검토_보고서.${pdf ? 'pdf' : 'xlsx'}`,
+      );
+      downloadBlob(res.data, name, pdf
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       let warnings = [];
       try { warnings = JSON.parse(decodeURIComponent(res.headers['x-report-warnings'] || '[]')); } catch { /* 헤더 없음 */ }
       showToast(

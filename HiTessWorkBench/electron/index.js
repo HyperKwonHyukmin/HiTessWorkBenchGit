@@ -1724,8 +1724,9 @@ ipcMain.handle("viewer:runUnitStructural", async (event, payload) => {
   }
 });
 
-// ModuleUnitStudio "보고서 생성" → 백엔드가 저장된 결과 JSON 만으로 표준 검토 보고서(xlsx)를
+// ModuleUnitStudio "보고서 생성" → 백엔드가 저장된 결과 JSON 만으로 표준 검토 보고서를
 // 만들어(그림도 백엔드가 렌더) 사용자 PC에 저장한다. Studio 캡처는 보내지 않는다.
+// payload.format 은 "pdf"(기본) | "xlsx" — PDF 는 백엔드가 서버 Excel 로 인쇄해 변환한다.
 ipcMain.handle("viewer:generateUnitLiftingReport", async (event, payload) => {
   try {
     const session = sessionFromEvent(event);
@@ -1734,6 +1735,9 @@ ipcMain.handle("viewer:generateUnitLiftingReport", async (event, payload) => {
     if (!Number.isInteger(analysisId) || analysisId <= 0) {
       return { ok: false, error: "성공한 Unit 구조 해석 analysisId가 없습니다." };
     }
+    // 기본값은 xlsx — 백엔드와 같게 둬서 format 을 보내지 않는 구 버전 Studio 가 종전대로 동작한다.
+    // 새 Studio 는 항상 명시해 보내고 그쪽 기본 선택이 PDF 다.
+    const reportFormat = payload?.format === "pdf" ? "pdf" : "xlsx";
     const runtimeConfig = await getWorkbenchRuntimeConfig(session);
     if (!runtimeConfig.employeeId) {
       return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
@@ -1746,6 +1750,7 @@ ipcMain.handle("viewer:generateUnitLiftingReport", async (event, payload) => {
         body: JSON.stringify({
           analysisId,
           kind: payload.kind === "detail" ? "detail" : "result",
+          format: reportFormat,
           options: payload.options || {},
         }),
       },
@@ -1759,8 +1764,8 @@ ipcMain.handle("viewer:generateUnitLiftingReport", async (event, payload) => {
     const reportBuffer = Buffer.from(await res.arrayBuffer());
     const encodedName = res.headers.get("x-report-filename") || "";
     let fileName = payload.kind === "detail"
-      ? "Module_Unit_권상_구조_검토_보고서.xlsx"
-      : "Module_Unit_권상_구조_해석_보고서.xlsx";
+      ? `Module_Unit_권상_구조_검토_보고서.${reportFormat}`
+      : `Module_Unit_권상_구조_해석_보고서.${reportFormat}`;
     try { if (encodedName) fileName = decodeURIComponent(encodedName); } catch {}
     let warnings = [];
     try {
@@ -1772,7 +1777,9 @@ ipcMain.handle("viewer:generateUnitLiftingReport", async (event, payload) => {
     const saveRes = await dialog.showSaveDialog(target, {
       title: payload.kind === "detail" ? "상세 레포트 저장" : "결과 레포트 저장",
       defaultPath: fileName,
-      filters: [{ name: "Excel 통합 문서", extensions: ["xlsx"] }],
+      filters: [reportFormat === "pdf"
+        ? { name: "PDF 문서", extensions: ["pdf"] }
+        : { name: "Excel 통합 문서", extensions: ["xlsx"] }],
     });
     if (saveRes.canceled || !saveRes.filePath) {
       return { ok: false, canceled: true, error: "저장이 취소되었습니다." };

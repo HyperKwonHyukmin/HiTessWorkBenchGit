@@ -32,6 +32,23 @@ def test_identity_from_filename_and_mode(data):
     assert data.identity.wire_length_m == 8
 
 
+def test_title_prefix_follows_project_kind():
+    """표지·파일명 제목은 부모 프로젝트(projectKind)를 따른다."""
+    base = _result_info()
+    assert collect(base, ReportOptions()).identity.title_prefix == "Module Unit"
+    sp = {**base, "projectKind": "SidePassage"}
+    assert collect(sp, ReportOptions()).identity.title_prefix == "Side Passage"
+    gmu = {**base, "projectKind": "GroupModuleUnit"}
+    assert collect(gmu, ReportOptions()).identity.title_prefix == "Module Unit"
+
+
+def test_title_prefix_falls_back_to_result_folder_name():
+    """projectKind 기록 이전의 해석도 결과 폴더 이름으로 프로젝트를 알아낸다."""
+    base = _result_info()
+    legacy = {**base, "bdf": "C:/uc/20260101_A476854_SidePassage/model.bdf"}
+    assert collect(legacy, ReportOptions()).identity.title_prefix == "Side Passage"
+
+
 def test_model_and_geometry(data):
     assert data.model.total_mass_ton == pytest.approx(6.73985, abs=1e-4)
     assert data.model.node_count == 2555            # validation 카드 수(원본 규모)

@@ -35,6 +35,7 @@ from ..services.hpscr_service import task_execute_hpscr
 from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
 from ..services.unit_structural_service import task_execute_unit_structural
 from ..services.unit_lifting_report_service import generate_result_report, generate_unit_lifting_report
+from ..services.xlsx_to_pdf import PdfConversionError, convert_xlsx_to_pdf
 from ..services.module_stability_service import task_execute_module_stability, task_optimize_module_hoist_positions
 from ..services.lifting_artifacts import scan_lifting_artifacts
 from ..services.hitess_modelflow_service import (
@@ -3008,10 +3009,13 @@ def create_unit_structural_report(
         db: Session = Depends(database.get_db),
         current_user: str = Depends(require_auth),
 ):
-    """저장된 해석 결과 JSON 만으로 Unit 권상 보고서(xlsx)를 생성한다.
+    """저장된 해석 결과 JSON 만으로 Unit 권상 보고서(xlsx 또는 PDF)를 생성한다.
 
-    payload = {analysisId, kind, options}. kind 는 "result"(사내 표준 서식 2~3페이지, 기본) 또는
-    "detail"(다장 기술보고서). 그림은 백엔드가 matplotlib 으로 직접 그린다(Studio 캡처 불필요).
+    payload = {analysisId, kind, format, options}. kind 는 "result"(사내 표준 서식 2~3페이지, 기본)
+    또는 "detail"(다장 기술보고서). 그림은 백엔드가 matplotlib 으로 직접 그린다(Studio 캡처 불필요).
+
+    format="pdf" 면 만들어진 xlsx 를 서버 Excel 로 인쇄해 PDF 로 변환한다(`xlsx_to_pdf`).
+    보고서가 이미 인쇄 배율·페이지 나누기를 확정해 두어 프레임 1개 = 1페이지로 그대로 나온다.
     """
     analysis_id = payload.get("analysisId")
     try:
@@ -3028,7 +3032,15 @@ def create_unit_structural_report(
     if record.status != "Success":
         raise HTTPException(status_code=409, detail="성공한 Unit 구조 해석 결과에서만 보고서를 생성할 수 있습니다.")
 
-    result_info = record.result_info or {}
+    result_info = dict(record.result_info or {})
+    # 보고서 표지·파일명의 제목("Module Unit" / "Side Passage")은 부모 레코드만 안다.
+    # projectKind 기록 이전에 끝난 해석에도 보고서가 나오도록 여기서 한 번 더 채운다.
+    if not result_info.get("projectKind"):
+        parent_id = (record.input_info or {}).get("parent_analysis_id")
+        if parent_id:
+            parent_rec = db.query(models.Analysis).filter(models.Analysis.id == parent_id).first()
+            if parent_rec is not None:
+                result_info["projectKind"] = parent_rec.program_name
     for label, key in (("구조 해석 결과", "nastranResultJson"), ("자세안정성 결과", "stabilityJson")):
         candidate = result_info.get(key)
         if not candidate or not os.path.isfile(candidate):
@@ -3038,6 +3050,11 @@ def create_unit_structural_report(
     kind = str(payload.get("kind") or "result").strip().lower()
     if kind not in ("result", "detail"):
         raise HTTPException(status_code=400, detail=f"지원하지 않는 보고서 종류입니다: {kind}")
+
+    # format 기본값은 xlsx — 구 버전 Studio/프론트는 이 키를 보내지 않는다.
+    out_format = str(payload.get("format") or "xlsx").strip().lower()
+    if out_format not in ("xlsx", "pdf"):
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 출력 형식입니다: {out_format}")
 
     options = payload.get("options") or {}
     for key in ("jigLimitTon", "yieldStrengthMpa"):
@@ -3066,15 +3083,27 @@ def create_unit_structural_report(
         logger.exception("Unit 권상 보고서 생성 실패: %s", exc)
         raise HTTPException(status_code=500, detail=f"보고서 생성 중 오류가 발생했습니다: {exc}")
 
+    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    if out_format == "pdf":
+        try:
+            # 데이터 시트(Members/Displacements/Wires)는 인쇄 대상이 아니다 — Report 시트만.
+            report_bytes = convert_xlsx_to_pdf(report_bytes, sheet_name="Report")
+        except PdfConversionError as exc:
+            logger.error("Unit 권상 보고서 PDF 변환 실패: %s", exc)
+            raise HTTPException(status_code=503, detail=f"PDF 변환 실패: {exc}")
+        file_name = re.sub(r"\.xlsx$", "", file_name, flags=re.IGNORECASE) + ".pdf"
+        media_type = "application/pdf"
+
     headers = {
         "Content-Disposition": f"attachment; filename*=UTF-8''{urllib.parse.quote(file_name)}",
         "X-Report-Filename": urllib.parse.quote(file_name),
+        "X-Report-Format": out_format,
         "X-Report-Warnings": urllib.parse.quote(json.dumps(warnings, ensure_ascii=False)),
         "X-Report-Summary": urllib.parse.quote(json.dumps(summary, ensure_ascii=False)),
     }
     return StreamingResponse(
         io.BytesIO(report_bytes),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        media_type=media_type,
         headers=headers,
     )
 

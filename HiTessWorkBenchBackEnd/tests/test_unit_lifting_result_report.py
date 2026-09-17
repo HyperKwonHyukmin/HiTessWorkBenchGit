@@ -36,15 +36,42 @@ def test_header_and_summary_cells(built):
     assert ws["O4"].value == "HULL NO. 3496"
     assert ws["Y4"].value == "UNIT NO. 35210"
     assert ws["AI4"].value == "Hydro Crane"
-    assert ws["F13"].value == pytest.approx(6.74, abs=1e-3)
-    assert ws["N13"].value == pytest.approx(275.0)
-    assert ws["AD13"].value == pytest.approx(23.52, abs=1e-2)
-    assert ws["AL13"].value == pytest.approx(145.76, abs=1e-2)
-    # 허용응력·검토결과는 서식의 수식을 그대로 둔다
-    assert str(ws["V13"].value).startswith("=")
-    assert str(ws["AT13"].value).startswith("=IF")
+    assert ws["F15"].value == pytest.approx(6.74, abs=1e-3)
+    assert ws["N15"].value == pytest.approx(275.0)
+    assert ws["AD15"].value == pytest.approx(23.52, abs=1e-2)
+    assert ws["AL15"].value == pytest.approx(145.76, abs=1e-2)
+    # 허용응력·검토결과는 서식의 수식을 그대로 둔다 (주의 사항 2줄 추가로 13행 → 15행)
+    assert ws["V15"].value == "=N15*0.8"
+    assert str(ws["AT15"].value).startswith("=IF(AL15<=V15")
     assert "23.52" in ws["N74"].value
     assert "145.8" in ws["N88"].value
+
+
+def test_notice_adds_fixed_line_and_hides_empty_user_line(built):
+    """주의 사항 4행은 고정 문구, 5행은 사용자 입력. 입력이 없으면 그 줄을 감춘다."""
+    _n, wb, _w, _s = built
+    ws = wb["Report"]
+    lines = [ws[f"F{r}"].value for r in range(7, 12)]
+    assert lines[:3] == [                                    # 1~3행은 사내 서식 문구 그대로
+        "- 표시된 권상 위치는 구조물 형상 및 중량 분포를 고려한 권장 위치",
+        "- 이를 절대적인 기준으로 오인하여 작업하지 않도록 주의",
+        "- 현장에서는 반드시 현장 여건, 무게중심 등을 종합 검토 후 권상 위치 최종 결정 필요"]
+    assert lines[3] == RR.NOTICE_ADDED_LINE
+    assert lines[4] is None
+    assert ws.row_dimensions[RR.NOTICE_EXTRA_ROW].hidden is True
+    # 감춘 줄의 아랫변을 4행으로 올려야 박스가 닫힌다
+    assert ws[f"F{RR.NOTICE_ADDED_ROW}"].border.bottom.style is not None
+    assert all(ws[f"F{r}"].border.bottom.style is None for r in (7, 8, 9))
+
+
+def test_notice_extra_line_written_with_bullet(built):
+    """사용자 입력은 글머리표를 붙여 5행에 쓰고, 그 줄을 감추지 않는다."""
+    _name, data, _w, _s = generate_result_report(
+        INFO, {"extraNotice": "체결 전 러그 용접부 육안 검사 필수"}, generated_by="A476854")
+    ws = load_workbook(io.BytesIO(data))["Report"]
+    assert ws[f"F{RR.NOTICE_EXTRA_ROW}"].value == "- 체결 전 러그 용접부 육안 검사 필수"
+    assert ws.row_dimensions[RR.NOTICE_EXTRA_ROW].hidden is not True
+    assert ws[f"F{RR.NOTICE_EXTRA_ROW}"].alignment.shrink_to_fit is True   # 넘치면 글자만 줄인다
 
 
 def test_hook_table_filled_and_blank_rows_cleared(built):

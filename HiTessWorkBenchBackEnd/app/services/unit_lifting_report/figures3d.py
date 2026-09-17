@@ -30,6 +30,10 @@ WIRE_LINE_LW = 2.6           # 와이어 중심선(2D 덧그림) 두께
 LUG_MS, HOOK_MS = 6.5, 9.5   # 체결 위치(●) · 훅(○) 2D 마커 크기 — 2D 도면(figures.py)과 같은 기호
 PIPE_PID_MIN = 101           # 배관 판별 — ModelBuilder 는 배관 property 를 101 이상으로 매긴다(구조재는 100 이하)
 PIPE_RGB = mcolors.to_rgb("#B3382C")   # 배관은 붉은색, 구조·가서포트는 강재색(회색)
+# 가서포트 배치 그림에서만 배관을 이 알파로 누른다(사용자 요청). 가서포트는 배관 사이·아래에 들어가는
+# 짧은 부재라 불투명 배관에 가려 보이지 않았다. 8각 기둥은 앞·뒷면이 겹쳐 실제 체감 알파는 이 값의
+# 약 1.8배(0.22 → 0.4)다. 다른 그림(권상 배치·변위·응력)은 그대로 불투명이다.
+PIPE_ALPHA_SUPPORT = 0.22
 SLOT_W_IN, SLOT_H_IN = S3.SLOT_W_IN, S3.SLOT_H_IN
 VIEW_NAMES = {"top": "Top View (평면)", "home": "Home View (등각)", "iso": "등각도", "side": "측면도"}
 
@@ -80,9 +84,11 @@ def _pipe_colors(data: ReportData) -> dict:
             if pid and int(pid) >= PIPE_PID_MIN}
 
 
-def _pipe_handle(per: dict):
-    """배관이 실제로 있을 때만 범례에 한 줄 넣는다."""
-    return ([Line2D([], [], color=mcolors.to_hex(PIPE_RGB), lw=3, label=f"배관 (PID ≥ {PIPE_PID_MIN})")]
+def _pipe_handle(per: dict, alpha: float = 1.0):
+    """배관이 실제로 있을 때만 범례에 한 줄 넣는다. alpha 는 그림과 같은 반투명 표시용."""
+    # 범례 띠가 좁아 'PID ≥ 101 · 반투명' 은 잘린다 — 반투명일 때는 짧은 라벨을 쓴다.
+    label = "배관 (반투명)" if alpha < 1.0 else f"배관 (PID ≥ {PIPE_PID_MIN})"
+    return ([Line2D([], [], color=mcolors.to_hex(PIPE_RGB), lw=3, alpha=alpha, label=label)]
             if per else [])
 
 
@@ -349,10 +355,12 @@ def render_support(data: ReportData, view: str = "home") -> bytes:
         if a and b:
             labels.append((tuple((a[i] + b[i]) / 2 for i in range(3)), f"S{k + 1}", "#E07A16"))
     mesh = S3.concat(*parts)
-    colors = S3.face_colors(mesh, per_element=per, missing_rgb=S3.STEEL_RGB)
+    # 배관만 반투명 — 가서포트(주황)가 배관에 가려 안 보이던 문제. 이 그림에서만 적용한다.
+    colors = S3.face_colors(mesh, per_element=per, missing_rgb=S3.STEEL_RGB,
+                            alpha_per_element={eid: PIPE_ALPHA_SUPPORT for eid in pipes})
     handles = [Line2D([], [], color="#E07A16", lw=3, label=f"가서포트 {len(data.edits.support_beams)}개"),
                Line2D([], [], color="#B8BFC6", lw=2, label="와이어 방향(참고)"),
-               Line2D([], [], color=STRUCTURE, lw=3, label="기존 구조")] + _pipe_handle(pipes)
+               Line2D([], [], color=STRUCTURE, lw=3, label="기존 구조")] + _pipe_handle(pipes, PIPE_ALPHA_SUPPORT)
     return S3.render(mesh, colors, view, title=f"가서포트 배치 — {VIEW_NAMES.get(view, view)}",
                      subtitle="권상 중 처짐·응력 저감을 위해 추가한 임시 보강재", labels=labels, legend=handles,
                      width_in=SLOT_W_IN, height_in=SLOT_H_IN)

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   deriveIds, initialReportForm, isPositiveNumber, isReportFormValid, toReportOptions, REPORT_DEFAULTS,
+  EXTRA_NOTICE_MAX,
 } from './unitLiftingReport.js';
 
 test('deriveIds: 파일명의 호선-유닛 패턴을 뽑는다', () => {
@@ -47,9 +48,18 @@ test('toReportOptions: 숫자 변환·trim·리비전 기본값', () => {
   const o = toReportOptions({
     hullNo: ' 3496 ', unitNo: '35210', drawingNo: ' D-1 ', revision: '  ', author: ' A1 ',
     department: ' 구조 ', jigLimitTon: '5', yieldStrengthMpa: '355', notes: ' 비고 ',
+    extraNotice: ' 추가 문구 ',
   });
   assert.deepEqual(o, {
     hullNo: '3496', unitNo: '35210', drawingNo: 'D-1', revision: '0', author: 'A1',
     department: '구조', jigLimitTon: 5, yieldStrengthMpa: 355, notes: '비고',
+    extraNotice: '추가 문구',
   });
+});
+
+test('toReportOptions: 주의 사항 추가 문구는 서식 박스 폭에 맞춰 잘린다', () => {
+  // 입력란 maxLength 를 우회해 붙여넣기로 긴 글이 들어와도 서식을 넘지 않게 한다.
+  const o = toReportOptions({ jigLimitTon: 6.2, yieldStrengthMpa: 275, extraNotice: '가'.repeat(60) });
+  assert.equal(o.extraNotice.length, EXTRA_NOTICE_MAX);
+  assert.equal(initialReportForm().extraNotice, '');
 });

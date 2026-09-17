@@ -78,7 +78,8 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
              ("작성", f"{i.author} / {i.department}"), ("문의", i.contact), ("작성일", i.generated_at)],
             [("구조 판정", v.structure, "ok" if v.structure == "OK" else ("ng" if v.structure == "NG" else "skip")),
              ("자세 안정성", STATUS_KO.get(v.stability, str(v.stability).upper()), v.stability),
-             ("국부변형 방지 지그", "필요" if v.jig_required else "불요", "warn" if v.jig_required else "ok")])
+             ("국부변형 방지 지그", "필요" if v.jig_required else "불요", "warn" if v.jig_required else "ok")],
+            subtitle=f"Structural Review Report for {i.title_prefix} Lifting")
 
     # ── 요약 ────────────────────────────────────────────────────────────────
     chap("summary", "요약 (Summary)")
@@ -116,7 +117,7 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
     s.kv([("원본 BDF", i.source_bdf or "-"), ("해석 모델(편집본)", i.edited_model or "-"),
           ("결과 생성 시각", i.generated_at), ("비고", i.notes or "-")])
     sec("1.4 소프트웨어")
-    s.kv([("플랫폼", "Hi-TESS WorkBench / Module Unit Studio"), ("자세안정성 엔진", i.engine_version or "ModuleAnalysis.Stability"),
+    s.kv([("플랫폼", f"Hi-TESS WorkBench / {i.title_prefix} Studio"), ("자세안정성 엔진", i.engine_version or "ModuleAnalysis.Stability"),
           ("BDF 생성·결과 매핑", "NastranBridge (LiftingBdfBuild / LiftingResultMapper)"), ("해석기", L.solver)])
     sec("1.5 판정 기준")
     s.table(["항목", "기준", "비고"],

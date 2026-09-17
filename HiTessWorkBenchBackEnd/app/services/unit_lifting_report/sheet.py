@@ -23,6 +23,8 @@ import unicodedata
 from typing import Iterable, Optional, Sequence
 
 from openpyxl.drawing.image import Image as XLImage
+from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, OneCellAnchor
+from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.pagebreak import Break
@@ -45,6 +47,12 @@ STATUS_FILL = {"ok": "E3F6EA", "pass": "E3F6EA", "warn": "FFF3D6", "ng": "FFE0E3
 _THIN = Side(style="thin", color=LINE)
 _MEDIUM = Side(style="medium", color=NAVY)
 CELL_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+
+EMU_PER_PX = 9525
+# A 열의 왼쪽 medium 테두리(1.92pt)는 눈금선을 걸치고 그려져 셀 안쪽으로 1.44pt(≈2px) 들어온다.
+# 그림을 A 열 왼쪽 끝에 그대로 붙이면 흰 배경이 그 부분을 덮어 **그림이 있는 페이지에서만
+# 외곽선이 토막난다**(사용자 신고 2026-09-17). 그만큼 안으로 밀어 피한다.
+FRAME_CLEAR_PX = 3
 
 
 def text_width(text) -> int:
@@ -94,6 +102,10 @@ class ReportSheet:
         # 둘째 행에 앵커한다(_open_page 참조).
         ws.page_margins.top = ws.page_margins.bottom = 0.42
         ws.page_margins.header = ws.page_margins.footer = 0.2
+        # openpyxl 기본 바닥글이 'Page &P / &N' 이라 인쇄·PDF 에서 프레임 밖 아래에 쪽번호가
+        # 한 줄 더 찍힌다. 이 보고서는 프레임 안(_close_page)에 자체 쪽번호를 그리므로 비운다.
+        ws.oddFooter.center.text = None
+        ws.evenFooter.center.text = None
 
     # ── 셀/테두리 저수준 ────────────────────────────────────────────────────
     def _cell(self, row, c0, c1=None, value=None, size=9.5, bold=False, color="18242F",
@@ -115,6 +127,17 @@ class ReportSheet:
                 for c in range(c0, c1 + 1):
                     self.ws.cell(row=r, column=c).border = CELL_BORDER
         return cell
+
+    def _place(self, img, row: int, col: int = 0, off_px: int = FRAME_CLEAR_PX):
+        """그림을 (col, row) 셀에 절대 크기로 붙인다 — 문자열 앵커("A5") 대신 쓴다.
+
+        문자열 앵커는 시작점이 인쇄 원점(왼쪽 여백)과 정확히 같아져 페이지 외곽선을 덮는다.
+        `img.width/height` 를 먼저 정한 뒤 호출할 것 — 그 값이 그대로 앵커 크기가 된다.
+        """
+        img.anchor = OneCellAnchor(
+            _from=AnchorMarker(col=col, colOff=off_px * EMU_PER_PX, row=row - 1, rowOff=0),
+            ext=XDRPositiveSize2D(int(img.width) * EMU_PER_PX, int(img.height) * EMU_PER_PX))
+        self.ws.add_image(img)
 
     def _edge(self, row, col, top=None, bottom=None, left=None, right=None):
         """기존 테두리를 유지하며 지정한 변만 교체한다."""
@@ -148,8 +171,7 @@ class ReportSheet:
             if self.logo:
                 img = XLImage(io.BytesIO(self.logo))
                 img.width, img.height = 218, 36
-                img.anchor = f"A{r + 1}"
-                self.ws.add_image(img)
+                self._place(img, r + 1)
             self._cell(r, 1, 4, None, rows=3)
             self._cell(r, 5, COLS, "STRUCTURAL REVIEW REPORT", size=9, bold=True, color=GRAY,
                        align="right", rows=3)
@@ -158,8 +180,7 @@ class ReportSheet:
             if self.logo:
                 img = XLImage(io.BytesIO(self.logo))
                 img.width, img.height = 145, 24
-                img.anchor = f"A{r + 1}"
-                self.ws.add_image(img)
+                self._place(img, r + 1)
             self._cell(r, 1, 3, None, rows=3)
             self._cell(r, 4, 9, self.doc_title, size=12.5, bold=True, color=NAVY, align="center", rows=3)
             right = self.department or (f"DWG. {self.drawing_no}" if self.drawing_no and self.drawing_no != "-" else "")
@@ -228,13 +249,13 @@ class ReportSheet:
         return n
 
     # ── 공개 프리미티브 ─────────────────────────────────────────────────────
-    def cover(self, title: str, facts: Sequence[tuple[str, str]], verdicts: Sequence[tuple[str, str, str]]):
+    def cover(self, title: str, facts: Sequence[tuple[str, str]], verdicts: Sequence[tuple[str, str, str]],
+              subtitle: str = "Structural Review Report for Module Unit Lifting"):
         self._ensure(1, cover=True)
         r = self._take(4)
         self._cell(r, 1, COLS, title, size=22, bold=True, color=NAVY, align="center", valign="center", rows=4)
         r = self._take(2)
-        self._cell(r, 1, COLS, "Structural Review Report for Module Unit Lifting",
-                   size=10.5, color=GRAY, align="center", rows=2)
+        self._cell(r, 1, COLS, subtitle, size=10.5, color=GRAY, align="center", rows=2)
         self._take(3)
         for k, v in facts:
             r = self._take(2)
@@ -377,10 +398,19 @@ class ReportSheet:
 
     def figure(self, png: bytes, caption: str, width_px: int = 0, height_px: int = 0) -> int:
         """그림을 넣는다. 남은 공간이 모자라면 비율을 유지한 채 줄여 그 페이지에 담고,
-        그마저 좁으면 다음 페이지로 넘긴다(그림 하나가 페이지를 통째로 비우지 않게)."""
+        그마저 좁으면 다음 페이지로 넘긴다(그림 하나가 페이지를 통째로 비우지 않게).
+
+        width_px/height_px 는 **넣을 수 있는 최대 상자**다 — 그림은 항상 PNG 원본 비율로, 그 상자 안에
+        들어가는 최대 크기가 된다. 예전엔 이 값을 표시 크기로 그대로 써서 3D 그림(1.73)·2D 도면(1.44)이
+        모두 640×410(1.56)에 눌려 ±10% 찌그러졌다(xlsx·PDF 모두).
+        """
         self._fig_no += 1
-        width_px = width_px or self.FIG_W
-        height_px = height_px or self.FIG_H
+        img = XLImage(io.BytesIO(png))
+        box_w = width_px or self.FIG_W
+        box_h = height_px or self.FIG_H
+        nat_w, nat_h = max(1, int(img.width)), max(1, int(img.height))
+        scale = min(box_w / nat_w, box_h / nat_h)
+        width_px, height_px = max(1, int(nat_w * scale)), max(1, int(nat_h * scale))
         if not self._page_open:
             self._open_page()
         want = -(-height_px // int(PX_PER_ROW))
@@ -393,10 +423,8 @@ class ReportSheet:
             scale = (rows * PX_PER_ROW) / height_px
             width_px, height_px = int(width_px * scale), int(rows * PX_PER_ROW)
         r = self._take(rows)
-        img = XLImage(io.BytesIO(png))
         img.width, img.height = width_px, height_px
-        img.anchor = f"A{r}"
-        self.ws.add_image(img)
+        self._place(img, r)
         cr = self._take(1)
         self._cell(cr, 1, COLS, f"그림 {self._fig_no}. {caption}", size=8.5, color=GRAY, align="center")
         self._take(1)

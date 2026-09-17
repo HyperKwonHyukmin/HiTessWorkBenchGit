@@ -26,6 +26,11 @@ SUPPORT_REMARK = "가서포트"
 
 
 # ── 옵션 ─────────────────────────────────────────────────────────────────────
+# 결과 레포트 '주의 사항' 5행에 넣을 수 있는 글자 수. 서식의 F~BA 박스(576px)에 12pt 한글이
+# 정확히 36자 들어간다 — 이보다 길면 Excel 이 글자를 줄여 다른 줄보다 작아 보인다(사용자 결정).
+EXTRA_NOTICE_MAX_CHARS = 36
+
+
 @dataclass
 class ReportOptions:
     hull_no: str = ""
@@ -38,6 +43,7 @@ class ReportOptions:
     jig_limit_ton: float = 6.2
     yield_strength_mpa: float = 275.0
     notes: str = ""
+    extra_notice: str = ""           # 결과 레포트 '주의 사항' 5행 — 사용자가 모달에 직접 적는 한 줄
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any] | None) -> "ReportOptions":
@@ -57,6 +63,9 @@ class ReportOptions:
             contact=str(p.get("contact") or "").strip(),
             jig_limit_ton=num("jigLimitTon", 6.2), yield_strength_mpa=num("yieldStrengthMpa", 275.0),
             notes=str(p.get("notes") or "").strip(),
+            # 서식의 주의 사항 칸은 폭이 정해져 있다 — 길면 글자가 줄어 다른 줄보다 작아 보이므로
+            # 프런트(maxLength)와 같은 길이로 여기서도 자른다. [[NOTICE_EXTRA_MAX_CHARS]]
+            extra_notice=str(p.get("extraNotice") or "").strip()[:EXTRA_NOTICE_MAX_CHARS],
         )
 
 
@@ -291,9 +300,8 @@ def _identity(o: ReportOptions, info, stability, posture, meta, generated_at) ->
     mode_id = str(mode.get("id") or "").lower()
     method = LIFTING_MODE_LABELS.get(mode_id) or str(mode.get("label") or "-")
     equipment = str((((posture or {}).get("hoisting") or {}).get("mode") or {}).get("equipment") or "")
-    prefix = "Group Unit" if str(info.get("analysisType") or "").lower().startswith("group") else "Module Unit"
     return Identity(
-        title_prefix=prefix, hull_no=o.hull_no or hull or "-", unit_no=o.unit_no or unit or "-",
+        title_prefix=_title_prefix(info), hull_no=o.hull_no or hull or "-", unit_no=o.unit_no or unit or "-",
         drawing_no=o.drawing_no or "-", revision=o.revision or "0", author=o.author or "-",
         department=o.department or "-", contact=o.contact or o.author or "-",
         lifting_method=method, equipment=equipment,
@@ -303,6 +311,25 @@ def _identity(o: ReportOptions, info, stability, posture, meta, generated_at) ->
         generated_at=generated_at, engine_version=str((stability.get("meta") or {}).get("engineVersion") or ""),
         notes=o.notes,
     )
+
+
+# result_info["projectKind"] (= 부모 Analysis.program_name) → 보고서 표지·파일명의 제목 머리말.
+# 같은 결과 스키마를 Module Unit 과 Side Passage 가 함께 쓰므로, 어느 쪽 프로젝트인지는
+# 결과 JSON 이 아니라 부모 레코드만 안다. 없으면 폴더 이름으로 추정한다(과거 기록 호환).
+_TITLE_PREFIX_BY_PROJECT = {
+    "sidepassage": "Side Passage",
+    "groupmoduleunit": "Module Unit",
+}
+
+
+def _title_prefix(info) -> str:
+    kind = re.sub(r"[^a-z]", "", str(info.get("projectKind") or "").lower())
+    if kind in _TITLE_PREFIX_BY_PROJECT:
+        return _TITLE_PREFIX_BY_PROJECT[kind]
+    folder = re.sub(r"[^a-z]", "", str(info.get("bdf") or "").lower())
+    if "sidepassage" in folder:
+        return "Side Passage"
+    return "Group Unit" if str(info.get("analysisType") or "").lower().startswith("group") else "Module Unit"
 
 
 def _parse_ids(path: str):
