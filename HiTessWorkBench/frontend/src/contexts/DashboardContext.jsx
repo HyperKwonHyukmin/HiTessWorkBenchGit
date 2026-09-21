@@ -50,6 +50,7 @@ const RAW_ANALYSIS_DATA = [
   { mode: "Interactive", category: "1D Beam", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-violet-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active", contributor: "권혁민" },
   { mode: "Interactive", category: "Section", title: "Section Property Calculator", description: "단면 형상과 치수를 입력하여 단면 2차 모멘트(I), 단면계수(S), 회전반경(r) 등의 단면 특성값을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["단면", "특성값", "계산"], devStatus: "Active", contributor: "권혁민" },
   { mode: "Interactive", category: "Weld", title: "Block Weld Assessment", description: "블록 전도 방지 구속 용접양을 산출합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Weld", "Block", "용접"], devStatus: "Active", contributor: "김한별" },
+  { mode: "Interactive", category: "Lifting", title: "BCC Lifting Calculator", description: "면적 중심 기반 자세 안전성을 평가합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Lifting", "BCC", "면적중심", "자세안정성"], devStatus: "Active", contributor: "권혁민" },
   // ── Interactive Apps (signature: violet) ──────── Developing ──
   { mode: "Interactive", category: "Plate", title: "Plate Structure Analysis", description: "Plate 구조 해석용 Studio를 실행하여 판 구조 모델링 및 해석 작업을 진행합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Plate", "Studio", "구조해석"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "Interactive", category: "Tank", title: "Independent Tank Assessment", description: "의장 단독형 탱크 구조 평가를 수행합니다.", icon: PenTool, color: "bg-violet-600", tags: ["Tank", "구조평가", "외부 앱"], devStatus: "Developing", contributor: "김한별" },
@@ -172,6 +173,11 @@ const APP_REGISTRY_OVERRIDES = {
     menuName: "Heavy Block Lifting Simulation",
     programNames: ["Heavy Block Lifting Simulation"],
   },
+  // 브라우저 안에서 전부 계산되는 대화형 앱 — 서버 API 없음.
+  "BCC Lifting Calculator": {
+    menuName: "BCC Lifting Calculator",
+    programNames: ["BCC Lifting", "BCC Lifting Calculator"],
+  },
   "Jib Rest Assessment": {
     menuName: "Jib Rest Assessment",
     programNames: ["Jib Rest Assessment", "Jib Rest Assessment (1단)", "Jib Rest Assessment (2단)"],
@@ -253,6 +259,7 @@ const APP_CAPABILITY_METADATA = {
   "Plate Structure Analysis": { inputFormats: ["Direct input"], outputFormats: ["BDF", "Result"], workflow: "Studio" },
   "Independent Tank Assessment": { inputFormats: ["Direct input"], outputFormats: ["Assessment"], workflow: "External" },
   "Heavy Block Lifting Simulation": { inputFormats: ["Direct input"], outputFormats: ["Simulation"], workflow: "Interactive" },
+  "BCC Lifting Calculator": { inputFormats: ["Image (Ctrl+V)"], outputFormats: ["PNG"], workflow: "Interactive" },
   "Jib Rest Assessment": { inputFormats: ["Direct input"], outputFormats: ["Candidate table", "JSON"], workflow: "Parametric" },
   "Mast Post Assessment": { inputFormats: ["Direct input"], outputFormats: ["Candidate table", "JSON"], workflow: "Parametric" },
   "Column Buckling Load Calculator": { inputFormats: ["Direct input"], outputFormats: ["Assessment", "JSON"], workflow: "Parametric" },

@@ -76,6 +76,7 @@ const DoublePipeFuelLineAssessment = lazy(() => import('./pages/analysis/DoubleP
 const MooringFittingAssessment = lazy(() => import('./pages/analysis/MooringFittingAssessment'));
 const BlockWeldAssessment = lazy(() => import('./pages/analysis/BlockWeldAssessment'));
 const HeavyBlockLiftingSimulation = lazy(() => import('./pages/analysis/HeavyBlockLiftingSimulation'));
+const BccLiftingCalculator = lazy(() => import('./pages/analysis/BccLiftingCalculator'));
 const ModelLibrary = lazy(() => import('./pages/analysis/ModelLibrary'));
 
 const KEEP_ALIVE_MENUS = new Set(
@@ -524,6 +525,7 @@ function AppInner() {
       case 'Interactive Apps': return <InteractiveApps />;
       case 'Block Weld Assessment': return <BlockWeldAssessment />;
       case 'Heavy Block Lifting Simulation': return <HeavyBlockLiftingSimulation />;
+      case 'BCC Lifting Calculator': return <BccLiftingCalculator />;
       case 'Parametric Apps': return <ParametricApps />;
       case 'Mast Post Assessment': return <MastPostAssessment />;
       case 'Jib Rest Assessment': return <JibRestAssessment />;
