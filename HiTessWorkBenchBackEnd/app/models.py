@@ -92,6 +92,11 @@ class Analysis(Base):
   created_at = Column(DateTime(timezone=True), server_default=func.now())
   started_at = Column(DateTime(timezone=True), nullable=True)
   updated_at = Column(DateTime(timezone=True), nullable=True)
+  # Plan B — 결과 파일 보관 정책. 판정 우선순위: pinned > retain_until > 폴더 나이(30일).
+  # retain_until 은 연장된 만료 시각(없으면 폴더 생성+30일 규칙), pinned=True 면 자동 삭제 제외.
+  # created_at 과 마찬가지로 naive datetime 으로 비교한다(라우터 replace(tzinfo=None) 패턴).
+  retain_until = Column(DateTime(timezone=True), nullable=True)
+  pinned = Column(Boolean, default=False, nullable=False)
 
 
 class AppSpace(Base):
@@ -340,3 +345,40 @@ class RegisteredModelArtifact(Base):
   sha256 = Column(String(64), nullable=True)
   media_type = Column(String(100), nullable=True)
   created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Notification(Base):
+  """사용자별 인앱 알림(알림 센터). 서버가 남기고 클라이언트가 30초 폴링으로 가져간다.
+
+  - employee_id : 수신자 사번
+  - kind        : notification_service.NOTIFICATION_KINDS 어휘(job.completed 등)
+  - link        : {"menu": <NavigationContext 메뉴명>, "params": {...}} — 클릭 시 이동처
+  - dedupe_key  : 같은 키의 미읽음 알림이 있으면 새로 만들지 않는다(만료 경고를 매일 돌려도 1건)
+  - read_at     : NULL = 미읽음
+  보관은 cleanup_service 가 90일(NOTIFICATION_RETENTION_DAYS) 로 정리한다.
+  """
+
+  __tablename__ = "notifications"
+  id = Column(Integer, primary_key=True, index=True)
+  employee_id = Column(String(50), nullable=False, index=True)
+  kind = Column(String(50), nullable=False)
+  title = Column(String(200), nullable=False)
+  body = Column(String(1000), nullable=False, default="")
+  link = Column(JSON, nullable=True)
+  dedupe_key = Column(String(200), nullable=True, index=True)
+  read_at = Column(DateTime, nullable=True)
+  created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class UserPreference(Base):
+  """사용자 환경설정(즐겨찾기·최근 앱·알림 설정·시작 메뉴) — 소유는 Plan E.
+
+  마스터 설계 §2.2 정의 그대로다. 알림 센터(Plan A)는 prefs["notifications"] 를
+  {"muted_kinds": [...], "desktop_toast": bool} 로 읽기만 하고, 쓰기 엔드포인트
+  (GET/PUT /api/preferences)는 Plan E 가 만든다. Plan E 는 이 클래스가 이미 있으면 건너뛴다.
+  """
+
+  __tablename__ = "user_preferences"
+  employee_id = Column(String(50), primary_key=True)
+  prefs = Column(JSON, nullable=False, default=dict)
+  updated_at = Column(DateTime, nullable=True)

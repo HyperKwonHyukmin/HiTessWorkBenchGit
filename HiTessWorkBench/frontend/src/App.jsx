@@ -18,6 +18,7 @@ import { ToastProvider, useToast } from './contexts/ToastContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { NetworkProvider } from './contexts/NetworkContext';
 import { RecentActivityProvider } from './contexts/RecentActivityContext';
+import { PreferencesProvider, usePreferences } from './contexts/PreferencesContext';
 import UpdateModal from './components/UpdateModal';
 import UtilityDock from './components/platform/UtilityDock';
 import { ADMIN_MENUS } from './constants/adminMenus';
@@ -78,6 +79,7 @@ const BlockWeldAssessment = lazy(() => import('./pages/analysis/BlockWeldAssessm
 const HeavyBlockLiftingSimulation = lazy(() => import('./pages/analysis/HeavyBlockLiftingSimulation'));
 const BccLiftingCalculator = lazy(() => import('./pages/analysis/BccLiftingCalculator'));
 const ModelLibrary = lazy(() => import('./pages/analysis/ModelLibrary'));
+const MySettings = lazy(() => import('./pages/settings/MySettings'));
 
 const KEEP_ALIVE_MENUS = new Set(
   ANALYSIS_DATA
@@ -139,6 +141,48 @@ function AppInner() {
     getBlock: appBlockOf,
     isBlockedFor: isAppBlocked,
   } = useAppCatalogue();
+
+  // 시작 화면(landing_menu) — 서버 하이드레이션이 올 때 1회만 적용한다.
+  const { prefs: serverPrefs, hydration } = usePreferences();
+  const landingAppliedForRef = useRef(0);   // hydration 카운터 스냅숏
+
+  useEffect(() => {
+    if (appState !== APP_STATE.MAIN) return;
+    if (hydration === 0) return;
+    // 한 하이드레이션당 1회만 적용
+    if (landingAppliedForRef.current === hydration) return;
+    landingAppliedForRef.current = hydration;
+
+    const landing = serverPrefs?.landing_menu;
+    if (!landing || typeof landing !== 'string') return;
+    // 사용자가 이미 다른 화면에 있으면 납치하지 않는다(spec D8).
+    if (currentMenu !== 'Dashboard' || canGoBack) return;
+
+    // 관리자 메뉴는 비관리자에게 무시.
+    if (ADMIN_MENUS.has(landing) && !isAdmin) return;
+    // 카탈로그의 앱 이름이면 차단 여부 확인.
+    const app = appCatalogue.find(a =>
+      a.title === landing || getAppMenuName(a.title) === landing);
+    if (app) {
+      if (!app.hasPage) return;
+      if (isAppBlocked(app, isAdmin)) return;
+      resetNavigation(getAppMenuName(app.title));
+      return;
+    }
+    // 알려진 메뉴 상수(사이드바에 있는 것)면 그대로 이동, 아니면 Dashboard 유지.
+    const KNOWN = new Set([
+      'Dashboard', 'My Projects', 'Model Library',
+      'File-Based Apps', 'Interactive Apps', 'Parametric Apps', 'Productivity Apps',
+      'Notice & Updates', 'User Guide',
+      // 관리자 메뉴는 위에서 걸러졌음
+      'User Management', 'Analysis Management', 'System Management', 'Usage Reports',
+      'App Community', 'App Settings', 'API Apps',
+    ]);
+    if (KNOWN.has(landing)) resetNavigation(landing);
+  }, [
+    appState, hydration, serverPrefs, currentMenu, canGoBack,
+    isAdmin, appCatalogue, isAppBlocked, resetNavigation,
+  ]);
 
   // 승인 대기 사용자 수 — 사이드바 뱃지 + 로그인 시 토스트 알림.
   const [pendingUserCount, setPendingUserCount] = useState(0);
@@ -548,6 +592,8 @@ function AppInner() {
       case 'User Requests': return <UserRequests />;
       case 'User Guide': return <UserGuide />;
       case 'Download Center': return <DownloadCenter />;
+      // 개인 환경설정(사용자 공통) — 관리자 메뉴 앞에 둔다.
+      case 'My Settings': return <MySettings />;
       case 'User Management': return <UserManagement />;
       case 'Analysis Management': return <AnalysisManagement />;
       case 'Usage Reports': return <UsageReports />;
@@ -646,9 +692,12 @@ export default function App() {
       <NavigationProvider>
         <ToastProvider>
           <NetworkProvider>
-            <RecentActivityProvider>
-              <AppInner />
-            </RecentActivityProvider>
+            {/* PreferencesProvider 는 useAuth 를 쓰고, RecentActivity·Dashboard 가 이를 소비한다. */}
+            <PreferencesProvider>
+              <RecentActivityProvider>
+                <AppInner />
+              </RecentActivityProvider>
+            </PreferencesProvider>
           </NetworkProvider>
         </ToastProvider>
       </NavigationProvider>

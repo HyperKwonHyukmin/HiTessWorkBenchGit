@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { getAnalysisHistory, downloadFileBlob, exportAssessmentXlsx, rerunAnalysisProject } from '../../api/analysis';
+// 보관 연장/핀 호출(updateAnalysisRetention)은 RetentionExtendDialog 안에서 직접 한다.
+import {
+  getAnalysisHistory, downloadFileBlob, exportAssessmentXlsx, rerunAnalysisProject,
+} from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import {
   Search, Filter, Download, RefreshCw,
   ChevronRight, ChevronLeft, Box,
   CheckCircle2,
   FileCode, Database, FileOutput, Eye, FileX,
-  TrendingUp, CalendarClock, Award, BarChart3, Minus,
+  TrendingUp, CalendarClock, CalendarPlus, Pin, Award, BarChart3, Minus,
   GitCompare, Play, Square, CheckSquare, Fingerprint,
   Clock3, ListChecks, Pipette, Terminal
 } from 'lucide-react';
@@ -20,6 +23,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import StatusBadge from '../../components/ui/StatusBadge';
 import FeedbackState from '../../components/ui/FeedbackState';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
+import RetentionExtendDialog from '../../components/analysis/RetentionExtendDialog';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { findAppByProgramName, getDisplayProgramName, useGlobalJobs } from '../../contexts/DashboardContext';
@@ -27,14 +31,24 @@ import { isDoublePipeProject, normalizeDoublePipeProject } from '../../utils/dou
 
 const FILE_RETENTION_DAYS = 30;
 
-const fileStatusOf = (project) => (project?.files_available === false ? 'expired' : 'available');
+/**
+ * 행의 파일 상태(available|expiring|pinned|expired).
+ *
+ * 백엔드가 새 응답에는 retention.status 를 채워 준다. retention 이 없는 과거/타 경로
+ * 응답은 기존과 똑같이 files_available 로 판정한다(available/expired 2상태).
+ */
+const fileStatusOf = (project) => {
+  const retentionStatus = project?.retention?.status;
+  if (retentionStatus) return retentionStatus;
+  return project?.files_available === false ? 'expired' : 'available';
+};
 const supportsProjectRerun = (project) => (
   findAppByProgramName(project?.program_name)?.supportsRerun === true
 );
 
 const FileRetentionBadge = ({ project }) => {
-  const expired = fileStatusOf(project) === 'expired';
-  return <StatusBadge status={expired ? 'expired' : 'available'} size="md" className="whitespace-nowrap" />;
+  const status = fileStatusOf(project);
+  return <StatusBadge status={status} size="md" className="whitespace-nowrap" />;
 };
 
 // ==========================================
@@ -640,9 +654,12 @@ const ProjectCompareModal = ({ projects, onClose }) => {
 // ==========================================
 const PROGRAM_FILTERS = ['All', 'TrussModelBuilder', 'Truss Assessment', 'Simple Beam Assessment'];
 const STATUS_FILTERS = ['All', 'Success', 'Failed'];
+// ⚠ available 은 '파일이 남아 있는 모든 기록'(핀·임박 포함)이라는 기존 의미를 그대로 쓴다.
 const FILE_STATUS_FILTERS = [
   { value: 'All', label: 'All Files' },
   { value: 'available', label: 'Files Available' },
+  { value: 'expiring', label: '7일 내 만료' },
+  { value: 'pinned', label: '보관 고정' },
   { value: 'expired', label: 'Files Expired' },
 ];
 const PAGE_SIZE = 10;
@@ -664,25 +681,33 @@ export default function MyProjects() {
   const [compareProjects, setCompareProjects] = useState([]);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
   const [rerunningIds, setRerunningIds] = useState(() => new Set());
+  // 보관 연장/핀 다이얼로그 대상 (null 이면 닫힘)
+  const [retentionDialogProject, setRetentionDialogProject] = useState(null);
 
   // 3D 뷰어 모달 상태
   const [is3DViewerOpen, setIs3DViewerOpen] = useState(false);
   // Truss Assessment 결과 모델 뷰어(결과 색상 시각화) 상태
   const [isResultViewerOpen, setIsResultViewerOpen] = useState(false);
 
-  // 대시보드 "프로젝트 이력" 행에서 넘어온 경우, 해당 프로젝트 상세 모달을 자동으로 연다.
-  // (Dashboard.jsx 의 OPEN_PROJECT_DETAIL_KEY 와 동일 키)
+  // 대시보드 "프로젝트 이력" 행 또는 알림 센터에서 넘어온 경우, 해당 프로젝트 상세 모달을 자동으로 연다.
+  // (Dashboard.jsx / NotificationCenter.jsx 의 OPEN_PROJECT_DETAIL 키·이벤트와 동일)
+  // 마운트 시 1회 + 'workbench:open-project-detail' 이벤트 — 이미 이 화면에 있을 때
+  // setCurrentMenu('My Projects') 는 no-op 이라 마운트 effect 가 다시 돌지 않기 때문이다.
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem('workbench:open-project-detail');
-      if (raw) {
+    const consumePendingProjectDetail = () => {
+      try {
+        const raw = sessionStorage.getItem('workbench:open-project-detail');
+        if (!raw) return;
         sessionStorage.removeItem('workbench:open-project-detail');
         const project = JSON.parse(raw);
         if (project && typeof project === 'object') setSelectedProject(project);
+      } catch {
+        // 잘못된 값이면 자동 오픈하지 않는다
       }
-    } catch {
-      // 잘못된 값이면 자동 오픈하지 않는다
-    }
+    };
+    consumePendingProjectDetail();
+    window.addEventListener('workbench:open-project-detail', consumePendingProjectDetail);
+    return () => window.removeEventListener('workbench:open-project-detail', consumePendingProjectDetail);
   }, []);
 
   const fetchHistory = useCallback(async (signal) => {
@@ -770,6 +795,9 @@ export default function MyProjects() {
     const successRate = total > 0 ? Math.round((success / total) * 100) : 0;
     const expiredFiles = projects.filter(p => fileStatusOf(p) === 'expired').length;
     const availableFiles = total - expiredFiles;
+    // 백엔드 summary 가 없을 때의 폴백 집계(available 의 부분집합, 서로 배타적)
+    const expiringSoon = projects.filter(p => fileStatusOf(p) === 'expiring').length;
+    const pinnedFiles = projects.filter(p => fileStatusOf(p) === 'pinned').length;
 
     const now = Date.now();
     const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
@@ -802,6 +830,8 @@ export default function MyProjects() {
       moduleEntries,
       expiredFiles,
       availableFiles,
+      expiringSoon,
+      pinnedFiles,
     };
   }, [projects, summary]);
 
@@ -982,7 +1012,7 @@ export default function MyProjects() {
       )}
 
       {!loading && stats.total > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 animate-fade-in-up">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 animate-fade-in-up">
           <button
             type="button"
             onClick={() => setFileStatusFilter('available')}
@@ -995,6 +1025,27 @@ export default function MyProjects() {
               <FileOutput size={16} className="text-blue-500" />
             </div>
             <p className="mt-2 text-2xl font-extrabold text-slate-800">{stats.availableFiles}<span className="ml-1 text-xs text-slate-400">건</span></p>
+            {Number.isFinite(stats.pinnedFiles) && stats.pinnedFiles > 0 && (
+              <p className="mt-1 flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                <Pin size={11} /> 보관 고정 {stats.pinnedFiles}건 포함
+              </p>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setFileStatusFilter('expiring')}
+            className={`text-left bg-white rounded-xl border shadow-sm p-4 transition-colors cursor-pointer ${
+              fileStatusFilter === 'expiring' ? 'border-amber-400 ring-2 ring-amber-100' : 'border-slate-200 hover:border-amber-300'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">7일 내 만료</span>
+              <CalendarClock size={16} className="text-amber-500" />
+            </div>
+            <p className="mt-2 text-2xl font-extrabold text-slate-800">
+              {stats.expiringSoon ?? 0}<span className="ml-1 text-xs text-slate-400">건</span>
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500">보관 연장 또는 핀 고정으로 유지할 수 있습니다.</p>
           </button>
           <button
             type="button"
@@ -1084,7 +1135,7 @@ export default function MyProjects() {
                 <th className="py-4 px-6 font-semibold">Status</th>
                 <th className="py-4 px-6 font-semibold">Files</th>
                 <th className="py-4 px-6 font-semibold text-right">Date</th>
-                <th className="py-4 px-4 font-semibold text-center w-24">Actions</th>
+                <th className="py-4 px-4 font-semibold text-center w-32">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -1159,6 +1210,27 @@ export default function MyProjects() {
                           {rerunningIds.has(project.id)
                             ? <RefreshCw size={16} className="animate-spin" />
                             : <Play size={16} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setRetentionDialogProject(project);
+                          }}
+                          disabled={fileStatusOf(project) === 'expired'}
+                          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-35"
+                          title={
+                            fileStatusOf(project) === 'expired'
+                              ? '파일이 이미 만료되어 연장할 수 없습니다.'
+                              : project.retention?.pinned
+                                ? '보관 정책 변경 (현재 핀 고정 중)'
+                                : '보관 연장 / 핀 고정'
+                          }
+                          aria-label={`${project.project_name} 보관 연장 / 핀`}
+                        >
+                          {project.retention?.pinned
+                            ? <Pin size={16} className="text-emerald-500" />
+                            : <CalendarPlus size={16} />}
                         </button>
                         <button
                           type="button"
@@ -1289,6 +1361,22 @@ export default function MyProjects() {
       <ProjectCompareModal
         projects={isCompareOpen ? compareProjects : []}
         onClose={() => setIsCompareOpen(false)}
+      />
+
+      {/* 결과 파일 보관 연장 / 핀 */}
+      <RetentionExtendDialog
+        isOpen={!!retentionDialogProject}
+        project={retentionDialogProject}
+        onClose={() => setRetentionDialogProject(null)}
+        onUpdated={(updated) => {
+          // 서버가 갱신된 record 를 그대로 돌려주므로 목록의 한 행을 즉시 교체한다.
+          if (updated?.id != null) {
+            setProjects(prev => prev.map(p => (p.id === updated.id ? { ...p, ...updated } : p)));
+            setSelectedProject(prev => (prev?.id === updated.id ? { ...prev, ...updated } : prev));
+          }
+          // 상단 카운트(보관 중 / 임박 / 만료 / 핀)는 summary 재조회로 맞춘다.
+          fetchHistory();
+        }}
       />
 
     </div>

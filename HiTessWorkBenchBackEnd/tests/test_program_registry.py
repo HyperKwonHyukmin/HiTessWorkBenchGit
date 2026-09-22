@@ -174,6 +174,15 @@ def test_history_item_key_set_remains_unchanged(admin_client, db_session):
         "started_at",
         "updated_at",
         "files_available",
+        # Plan B — 결과 보관 정책 컬럼. _serialize_analysis 가 Analysis 의 모든 컬럼을
+        # 그대로 덤프하므로 컬럼을 늘리면 응답 키도 늘어난다(키 추가는 가산적 변경이라
+        # 기존 소비자는 영향 없음). 이 계약 테스트는 그 변화를 의도적으로 승인하는 자리다.
+        "retain_until",
+        "pinned",
+        # Plan B Task 4 — 컬럼이 아니라 _serialize_analysis 가 계산해 붙이는 파생 블록
+        # (status/expires_at/days_left/연장 잔여). 프런트 배지·연장 다이얼로그가 소비한다.
+        # 키 추가는 가산적 변경이라 기존 소비자는 영향 없음 — 의도된 계약 확장이다.
+        "retention",
     }
 
 

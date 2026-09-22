@@ -29,6 +29,27 @@ export const rerunAnalysisProject = (analysisId) =>
     { headers: getAuthHeaders() },
   );
 
+/**
+ * 해석 기록의 결과 파일 보관 정책을 변경합니다.
+ *
+ *  - extendDays : 1~180. null|undefined 면 연장 없음.
+ *  - pinned     : true/false 면 핀 상태를 그 값으로 설정, null|undefined 면 변경 없음.
+ *  - 성공 시 갱신된 프로젝트(`{ ..., retention: {...} }`) 를 그대로 돌려준다.
+ *
+ * 상태 코드:
+ *  - 400 : 요청 비었거나 누적 상한(180일) 초과 · 422 : extend_days 범위/타입 오류
+ *  - 403 : 소유자/관리자 아님 · 404 : 기록 없음 · 409 : 파일이 이미 만료
+ */
+export const updateAnalysisRetention = (analysisId, { extendDays = null, pinned = null } = {}) =>
+  axios.post(
+    `${API_BASE_URL}/api/analysis/${analysisId}/retention`,
+    {
+      extend_days: extendDays == null ? null : Number(extendDays),
+      pinned: pinned == null ? null : Boolean(pinned),
+    },
+    { headers: getAuthHeaders() },
+  );
+
 /** 전체 해석 이력 조회 (관리자용) */
 export const getAllAnalysisHistory = (limit = 50, skip = 0, filters = {}) =>
   axios.get(`${API_BASE_URL}/api/analysis/all`, {

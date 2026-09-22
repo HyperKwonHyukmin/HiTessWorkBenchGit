@@ -87,6 +87,21 @@ def ensure_analysis_job_columns(*, engine=None) -> None:
     }, engine=engine)
 
 
+def ensure_analysis_retention_columns(*, engine=None) -> None:
+    """analysis 테이블에 결과 보관 정책 컬럼(retain_until, pinned)을 멱등하게 보강한다.
+
+    운영 DB(MySQL)에는 두 컬럼이 없다. 서버 기동 시 ALTER TABLE 로 채워 넣어야 하며,
+    없으면 이력 조회 응답 직렬화 단계에서 500 이 난다(마스터 규약 §1.3).
+
+    pinned 는 NOT NULL DEFAULT FALSE 로 만들어 기존 행이 즉시 False 를 얻게 하고,
+    retain_until 은 NULL 허용(연장 안 된 기록).
+    """
+    _add_missing_columns("analysis", {
+        "retain_until": "ALTER TABLE analysis ADD COLUMN retain_until DATETIME NULL",
+        "pinned": "ALTER TABLE analysis ADD COLUMN pinned BOOL NOT NULL DEFAULT FALSE",
+    }, engine=engine)
+
+
 def ensure_app_community_columns(*, engine=None) -> None:
     """기존 공지·요청 테이블을 App별 커뮤니티 구조로 확장합니다."""
 
@@ -121,6 +136,31 @@ def ensure_chat_message_columns(*, engine=None) -> None:
     }, engine=engine)
 
 
+def ensure_notification_columns(*, engine=None) -> None:
+    """알림 센터 notifications 테이블의 컬럼을 멱등하게 보강합니다.
+
+    테이블 자체는 create_all 로 생기지만, 이후 컬럼이 늘어날 때 운영 DB 에서 500 이
+    나지 않도록 전 컬럼을 여기에 둔다(마스터 규약 §1.3).
+    """
+    _add_missing_columns("notifications", {
+        "body": "ALTER TABLE notifications ADD COLUMN body VARCHAR(1000) NOT NULL DEFAULT ''",
+        "link": "ALTER TABLE notifications ADD COLUMN link JSON NULL",
+        "dedupe_key": "ALTER TABLE notifications ADD COLUMN dedupe_key VARCHAR(200) NULL",
+        "read_at": "ALTER TABLE notifications ADD COLUMN read_at DATETIME NULL",
+    }, engine=engine)
+    _add_missing_indexes("notifications", {
+        "ix_notifications_employee_id": (
+            "CREATE INDEX ix_notifications_employee_id ON notifications (employee_id)"
+        ),
+        "ix_notifications_dedupe_key": (
+            "CREATE INDEX ix_notifications_dedupe_key ON notifications (dedupe_key)"
+        ),
+        "ix_notifications_created_at": (
+            "CREATE INDEX ix_notifications_created_at ON notifications (created_at)"
+        ),
+    }, engine=engine)
+
+
 def ensure_app_spaces(*, engine=None) -> None:
     """요청된 App만 커뮤니티 기능을 활성화합니다."""
 
@@ -149,12 +189,28 @@ def ensure_app_spaces(*, engine=None) -> None:
             )
 
 
+def ensure_user_preferences_columns(*, engine=None) -> None:
+    """사용자 환경설정 user_preferences 테이블의 컬럼을 멱등하게 보강합니다.
+
+    테이블 자체는 create_all 로 생기지만, 이후 컬럼이 늘어날 때 운영 DB 에서 500 이
+    나지 않도록 전 컬럼을 여기에 둔다(마스터 규약 §1.3). 지금은 updated_at 하나뿐이라
+    Plan A 가 만든 옛 행이 있다면 그것을 대상으로 삼는다. 테이블 자체가 없으면(초기
+    기동 전) 조용히 지나간다 — _add_missing_columns 는 테이블 부재를 감지해 skip 한다.
+    """
+    _add_missing_columns("user_preferences", {
+        "updated_at": "ALTER TABLE user_preferences ADD COLUMN updated_at DATETIME NULL",
+    }, engine=engine)
+
+
 def run_schema_bootstrap(*, engine=None) -> None:
     """기존 호출은 production engine을, 테스트는 주입된 engine을 사용합니다."""
     ensure_notice_columns(engine=engine)
     ensure_user_columns(engine=engine)
     ensure_user_presence_columns(engine=engine)
     ensure_analysis_job_columns(engine=engine)
+    ensure_analysis_retention_columns(engine=engine)
     ensure_app_community_columns(engine=engine)
     ensure_chat_message_columns(engine=engine)
+    ensure_notification_columns(engine=engine)
     ensure_app_spaces(engine=engine)
+    ensure_user_preferences_columns(engine=engine)

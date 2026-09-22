@@ -12,10 +12,11 @@ import {
   Activity, FileText, Server,
   Star, CalendarDays, Database, Map, Rocket,
   Wrench, Clock, X, ChevronRight, ChevronDown, Layers, Maximize2, Trophy, SlidersHorizontal,
-  Megaphone, Pin, Sparkles, Play, GripVertical, ArrowLeft, ArrowRight, Check
+  Megaphone, Pin, Sparkles, Play, GripVertical, ArrowLeft, ArrowRight, Check, History
 } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 import { findAppByAnyName, findAppByProgramName, getAppMenuName, getDisplayProgramName, useAnalysisPageState, useAppCatalogue, useFavorites } from '../../contexts/DashboardContext';
+import { useRecentActivity } from '../../contexts/RecentActivityContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -42,6 +43,23 @@ const MODE_KO = {
 
 const DASHBOARD_CARD_BASE = "relative bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-200 group";
 const FAVORITE_WINDOW_SIZE = 4;
+// "최근 사용" 섹션에 노출할 최대 카드 수(서버에는 최대 8건까지 저장된다).
+const RECENT_APPS_WINDOW_SIZE = 6;
+
+/** 방문 시각(epoch ms) → '방금 / n분 전 / n시간 전 / n일 전 / M/D' 상대 표기. */
+const formatRecentVisitTime = (at, now = Date.now()) => {
+  const t = Number(at);
+  if (!Number.isFinite(t) || t <= 0) return '';
+  const minutes = Math.floor(Math.max(0, now - t) / 60000);
+  if (minutes < 1) return '방금';
+  if (minutes < 60) return `${minutes}분 전`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}일 전`;
+  const d = new Date(t);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+};
 
 const DEV_STATUS_BADGE = {
   Active: { variant: 'success', label: '운영' },
@@ -220,6 +238,111 @@ const FavoriteCard = ({
       />
     )}
   </motion.div>
+  );
+};
+
+/**
+ * 최근 사용 앱 카드 — 아이콘·제목·모드 칩·방문 시각·즐겨찾기 별.
+ * 별 클릭은 카드 진입과 분리한다(stopPropagation → onToggleFavorite).
+ */
+const RecentAppCard = ({ app, at, isFavorite, onOpen, onToggleFavorite }) => {
+  const Icon = app.icon;
+  const modeStyle = FAVORITE_MODE_STYLE[app.mode] || FAVORITE_MODE_STYLE.File;
+  const visitedLabel = formatRecentVisitTime(at);
+
+  return (
+    <div
+      className={`relative flex min-h-[96px] w-full flex-col items-start overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md ${modeStyle.shell}`}
+    >
+      <div className={`pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${modeStyle.accent}`} aria-hidden="true" />
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleFavorite?.();
+        }}
+        aria-label={`${app.title} 즐겨찾기 ${isFavorite ? '해제' : '추가'}`}
+        title={isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+        className={`absolute top-1.5 right-1.5 z-20 inline-flex h-7 w-7 items-center justify-center rounded-lg transition-all hover:bg-amber-50 hover:text-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+          isFavorite ? 'text-amber-400' : 'text-slate-300'
+        }`}
+      >
+        <Star size={14} fill={isFavorite ? 'currentColor' : 'none'} />
+      </button>
+      <div className="mb-2 flex w-full items-center gap-2 pr-7">
+        <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${app.color} text-white shadow-sm ring-1 ring-black/5`}>
+          {Icon ? <Icon size={15} /> : <Sparkles size={15} />}
+        </span>
+        {app.mode && (
+          <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-black ${modeStyle.chip}`}>
+            {(MODE_KO[app.mode] || app.mode).replace(/ Apps$/, '')}
+          </span>
+        )}
+      </div>
+      <h3 className="line-clamp-2 pr-2 text-[13px] font-bold leading-snug text-slate-800">{app.title}</h3>
+      {visitedLabel && (
+        <p className="mt-auto pt-1 text-[11px] font-semibold text-slate-400">{visitedLabel}</p>
+      )}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="absolute inset-0 z-10 cursor-pointer rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
+        aria-label={`${app.title} 열기`}
+      />
+    </div>
+  );
+};
+
+/**
+ * "최근 사용" 섹션 — 서버에 동기화된 최근 방문 앱을 최신순으로 최대 6장 보여준다.
+ * 표시할 카드가 없으면 섹션 자체를 그리지 않는다(spec D9).
+ * ⚠ Hook 규약을 지키기 위해 IIFE 가 아닌 별도 컴포넌트로 분리했다.
+ */
+const RecentAppsSection = ({ favorites, onOpen, onToggleFavorite }) => {
+  const { recentApps } = useRecentActivity();
+  const { apps: catalogue, isBlockedFor } = useAppCatalogue();
+  const isAdmin = getIsAdmin();
+
+  // 저장된 즐겨찾기 이름은 앱 이름 변경 전 값일 수 있으므로 정식 이름으로 맞춘 뒤 비교한다.
+  // 해제할 때는 저장된 원래 문자열을 그대로 넘겨야 toggleFavorite(정확 일치)이 제대로 지운다.
+  // ⚠ 이 파일은 lucide-react 의 `Map` 아이콘을 import 해 전역 Map 생성자가 가려진다 — 평범한 객체를 쓴다.
+  const favoriteStoredTitleByApp = Object.create(null);
+  for (const storedTitle of favorites || []) {
+    const canonical = findAppByAnyName(storedTitle)?.title ?? storedTitle;
+    if (favoriteStoredTitleByApp[canonical] === undefined) favoriteStoredTitleByApp[canonical] = storedTitle;
+  }
+
+  const items = (recentApps || [])
+    .map(item => {
+      const app = findAppByAnyName(item.label || item.menu)
+        || catalogue.find(a => getAppMenuName(a.title) === item.menu);
+      // 카탈로그 기준 앱(관리자 오버라이드 반영)으로 다시 해석한다.
+      const resolved = app ? catalogue.find(a => a.title === app.title) : null;
+      return resolved ? { app: resolved, item } : null;
+    })
+    .filter(pair => pair && pair.app.hasPage && !isBlockedFor(pair.app, isAdmin))
+    .slice(0, RECENT_APPS_WINDOW_SIZE);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="shrink-0">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <DashboardSectionTitle icon={History} title="최근 사용" accent="history" />
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {items.map(({ app, item }) => (
+          <RecentAppCard
+            key={item.menu}
+            app={app}
+            at={item.at}
+            isFavorite={favoriteStoredTitleByApp[app.title] !== undefined}
+            onOpen={() => onOpen(app.title)}
+            onToggleFavorite={() => onToggleFavorite(favoriteStoredTitleByApp[app.title] ?? app.title)}
+          />
+        ))}
+      </div>
+    </div>
   );
 };
 
@@ -1921,6 +2044,13 @@ export default function Dashboard() {
           </motion.div>
         )}
       </div>
+
+      {/* 최근 사용 — 서버 동기화된 최근 방문 앱. 표시할 카드가 없으면 섹션이 통째로 사라진다. */}
+      <RecentAppsSection
+        favorites={favorites}
+        onOpen={handleFavoriteClick}
+        onToggleFavorite={toggleFavorite}
+      />
 
       {/* 프로젝트 이력 */}
       <div className="shrink-0">

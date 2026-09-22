@@ -220,7 +220,16 @@ def test_filesystem_cleanup_failure_is_sanitized(monkeypatch, caplog):
     secret = r"\\server\share?password=top-secret"
     monkeypatch.setattr(cleanup_service.os.path, "isdir", lambda path: True)
     monkeypatch.setattr(cleanup_service.os, "listdir", lambda path: ["job"])
-    monkeypatch.setattr(cleanup_service, "_get_folder_age_days", lambda path: 31)
+    # run_cleanup 은 이제 보호 인덱스(pinned/retain_until)를 먼저 읽는다 — 이 테스트는
+    # 파일 삭제 실패 경로만 보므로 인덱스는 비어 있는 것으로 고정한다.
+    monkeypatch.setattr(
+        cleanup_service.retention_service,
+        "load_retention_index",
+        lambda session, base, *, now: {},
+    )
+    monkeypatch.setattr(
+        cleanup_service, "_get_folder_age_days", lambda path, now=None: 31
+    )
     monkeypatch.setattr(
         cleanup_service,
         "_force_rmtree",
@@ -259,6 +268,12 @@ def test_activity_log_session_failure_does_not_restart_scheduler(
     monkeypatch.setattr(
         cleanup_service,
         "run_session_cleanup",
+        lambda dry_run=False: {"deleted": 0, "errors": []},
+    )
+    # 이 테스트는 activity_log 경로만 실제 SessionLocal 을 타게 둔다(session_attempts == 1).
+    monkeypatch.setattr(
+        cleanup_service,
+        "run_notification_cleanup",
         lambda dry_run=False: {"deleted": 0, "errors": []},
     )
     monkeypatch.setattr(

@@ -2534,6 +2534,10 @@ ipcMain.handle("viewer:exportUnitBdf", async (event, payload) => {
 });
 
 app.whenReady().then(() => {
+  // Windows 토스트(렌더러 new Notification())가 앱을 식별하도록 AUMID 를 고정한다.
+  // package.json build.appId 와 같은 값이어야 설치본·포터블 모두 같은 앱으로 묶인다.
+  app.setAppUserModelId('com.hitess.workbench');
+
   // 외부 회사 네트워크 등 시스템 프록시가 설정된 환경에서도 정상 동작하도록
   // 시스템 프록시 설정을 자동으로 적용
   session.defaultSession.setProxy({ mode: 'system' })

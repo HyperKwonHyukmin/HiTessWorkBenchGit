@@ -16,6 +16,7 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import EnvironmentDiagnosticsModal from '../platform/EnvironmentDiagnosticsModal';
 import CommandPalette from '../platform/CommandPalette';
+import NotificationCenter from '../platform/NotificationCenter';
 import { ADMIN_MENUS } from '../../constants/adminMenus';
 
 const ADMIN_GATE_SESSION_KEY = 'admin_gate_unlocked';
@@ -104,6 +105,8 @@ export default function Layout({
     { label: 'User Requests', menu: 'User Requests' },
     { label: 'User Guide', menu: 'User Guide' },
     { label: 'Download Center', menu: 'Download Center' },
+    // 개인 환경설정 — 헤더 사용자 블록과 같은 화면. 한글 검색어로도 찾히게 keywords 를 붙인다.
+    { label: 'My Settings', menu: 'My Settings', keywords: '내 설정 환경설정 시작 화면 알림 수신 즐겨찾기 초기화' },
     ...(userInfo.is_admin ? [
       { label: 'User Management', menu: 'User Management' },
       { label: 'Analysis Management', menu: 'Analysis Management' },
@@ -325,8 +328,16 @@ export default function Layout({
                 </span>
               </button>
             )}
+            <NotificationCenter />
             <div className="h-6 w-px bg-gray-200 mx-0.5 lg:mx-1"></div>
-            <div className="flex items-center gap-3">
+            {/* 사용자 블록 클릭 → 개인 환경설정(My Settings) */}
+            <button
+              type="button"
+              onClick={() => setCurrentMenu('My Settings')}
+              className="flex items-center gap-3 rounded-lg px-2 py-1 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              title="내 설정"
+              aria-label="내 설정 열기"
+            >
               <div className="text-right hidden xl:block">
                 <p className="text-sm font-bold text-slate-800 leading-none">{userInfo.name}</p>
                 <p className="text-xs text-slate-500 mt-1 font-medium">{userInfo.position}</p>
@@ -334,7 +345,7 @@ export default function Layout({
               <div className="h-9 w-9 bg-blue-100 rounded-full flex items-center justify-center border border-blue-200 text-blue-700">
                 <User size={18} />
               </div>
-            </div>
+            </button>
             <button onClick={onLogout} className="ml-2 p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Logout">
               <LogOut size={20} />
             </button>

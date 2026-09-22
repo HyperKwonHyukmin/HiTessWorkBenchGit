@@ -53,11 +53,13 @@ export default function CommandPalette({
       action: () => onNavigate(item.menu),
     }));
 
+    // menuItems 는 Layout 이 소유한다('My Settings' 등). keywords 가 있으면 한글 검색어도 매칭된다.
     const menus = menuItems.map(item => ({
       id: `menu:${item.menu}`,
       type: 'menu',
       label: item.label,
-      subtitle: '메뉴 이동',
+      subtitle: item.subtitle || '메뉴 이동',
+      keywords: item.keywords || '',
       action: () => onNavigate(item.menu),
     }));
 

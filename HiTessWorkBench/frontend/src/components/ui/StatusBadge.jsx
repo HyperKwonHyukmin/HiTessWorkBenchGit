@@ -1,11 +1,13 @@
 import React from 'react';
 import {
   AlertCircle,
+  CalendarClock,
   CheckCircle2,
   Clock,
   FileOutput,
   FileX,
   Loader2,
+  Pin,
   XCircle,
 } from 'lucide-react';
 import Badge from './Badge';
@@ -21,6 +23,8 @@ const STATUS_META = {
   Developing: { variant: 'warning', label: '개발중', icon: Clock },
   Planned: { variant: 'info', label: '출시 예정', icon: Clock },
   available: { variant: 'info', label: '파일 보관 중', icon: FileOutput },
+  expiring: { variant: 'warning', label: '만료 임박', icon: CalendarClock },
+  pinned: { variant: 'success', label: '보관 고정', icon: Pin },
   expired: { variant: 'neutral', label: '파일 만료', icon: FileX },
 };
 

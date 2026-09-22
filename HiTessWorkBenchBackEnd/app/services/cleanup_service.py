@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 from .. import database, models
 from ..sessions import session_store
 from .activity_service import ACTIVITY_LOG_RETENTION_DAYS, prune_activity_logs
+from .notification_service import NOTIFICATION_RETENTION_DAYS, prune_notifications
+from . import retention_service
 
 logger = logging.getLogger(__name__)
 
@@ -33,26 +35,26 @@ _scheduler_generation = 0
 _scheduler_desired_running = False
 
 
-def _get_folder_age_days(folder_path: str) -> float:
+def _get_folder_age_days(folder_path: str, now: datetime | None = None) -> float:
+    """폴더명(`YYYYMMDD_HHMMSS_<eid>_<program>`) 을 우선 파싱하고, 실패 시 stat 폴백.
+
+    기존 구현은 ``prefix.split("_")[0]`` 로 8자리를 얻어 ``len(prefix) == 14`` 검사에 걸려
+    항상 stat 폴백으로 떨어지는 결함이 있었다(파일 복사·백업 복원 시 mtime 이 갱신되면
+    실제보다 어린 폴더로 오판). 이 판정을 retention_service 로 위임해 라우터·cleanup 이
+    같은 규약을 쓴다.
     """
-    폴더명의 타임스탬프(YYYYMMDDHHmmss 또는 YYYYMMDD_HHMMSS 형식)를 먼저 파싱하고,
-    파싱 실패 시 OS stat의 생성/수정 시각 중 더 오래된 값을 사용합니다.
-    """
+    reference = now or datetime.now()
     folder_name = os.path.basename(folder_path)
-
-    # 폴더명 앞 14자리가 숫자면 타임스탬프로 간주
-    prefix = folder_name.split("_")[0] if "_" in folder_name else folder_name[:14]
-    try:
-        if prefix.isdigit() and len(prefix) == 14:
-            created = datetime.strptime(prefix, "%Y%m%d%H%M%S")
-            return (datetime.now() - created).total_seconds() / 86400
-    except ValueError:
-        pass
-
+    created = retention_service.folder_created_at(folder_name)
+    if created is not None:
+        return (reference - created).total_seconds() / 86400
     # fallback: stat 기반 (mtime/ctime 중 더 오래된 값)
     try:
-        stat = os.stat(folder_path)
-        oldest_ts = min(stat.st_mtime, getattr(stat, "st_birthtime", stat.st_ctime))
+        stat_result = os.stat(folder_path)
+        oldest_ts = min(
+            stat_result.st_mtime,
+            getattr(stat_result, "st_birthtime", stat_result.st_ctime),
+        )
         return (time.time() - oldest_ts) / 86400
     except OSError:
         return 0.0
@@ -117,72 +119,122 @@ def _force_rmtree(path: str) -> None:
         raise OSError(f"폴더 제거 실패(잔여 항목 존재): {path}")
 
 
-def run_cleanup(dry_run: bool = False) -> dict:
+def run_cleanup(dry_run: bool = False, *, now: datetime | None = None,
+                db=None) -> dict:
     """
-    userConnection/ 하위의 30일 초과 폴더를 삭제합니다.
+    userConnection/ 하위 폴더를 pinned > retain_until > 폴더 나이 순으로 판정합니다.
 
     Parameters
     ----------
     dry_run : bool
         True이면 실제 삭제 없이 대상 목록만 반환합니다.
+    now : datetime | None
+        판정 기준 시각(테스트 주입용). 기본은 datetime.now().
+    db : Session | None
+        보호 인덱스 조회용 세션(테스트 주입용). 기본은 database.SessionLocal() 로 새로 연다.
 
     Returns
     -------
     dict
-        { "deleted": [...], "errors": [...], "skipped": int }
+        {
+          "deleted": [{"folder", "age_days", ...}],
+          "errors": [...],                    # 폴더 삭제 실패 + 인덱스 실패
+          "skipped": int,                     # 일반 폴더(<30일) 유지
+          "pinned": int,                      # 핀 폴더 유지
+          "extended": int,                    # retain_until 로 유지
+        }
+
+    만료가 임박했다는 사실은 **알리지 않는다**(사용자 결정 2026-09-22). 남은 일수는
+    My Projects 화면의 '7일 내 만료' 카드·배지로만 보여 주고, 정리 작업은 알림을
+    만들지 않는다 — 알림 센터가 매일 같은 경고로 채워지는 것을 막는다.
     """
-    result = {"deleted": [], "errors": [], "skipped": 0}
+    reference = now or datetime.now()
+    result = {
+        "deleted": [], "errors": [], "skipped": 0,
+        "pinned": 0, "extended": 0,
+    }
 
     if not os.path.isdir(_USER_CONN_DIR):
         logger.warning("[Cleanup] userConnection 디렉터리가 존재하지 않습니다: %s", _USER_CONN_DIR)
         return result
 
+    # 보호 인덱스 조회. 실패하면 D6: 아무것도 지우지 않는다.
+    owns_session = False
     try:
-        entries = os.listdir(_USER_CONN_DIR)
-    except OSError as exc:
-        logger.error(
-            "[Cleanup] 디렉터리 목록 조회 실패 (%s)",
-            type(exc).__name__,
-        )
+        session = db if db is not None else database.SessionLocal()
+        owns_session = db is None
+        index = retention_service.load_retention_index(session, _USER_CONN_DIR, now=reference)
+    except Exception as exc:
+        # 오류 원문에는 DB URL/파일 경로가 포함될 수 있어 type만 기록한다.
+        logger.error("[Cleanup] 보호 인덱스 조회 실패 (%s)", type(exc).__name__)
+        result["errors"].append({"error": "retention_index_unavailable"})
+        if owns_session:
+            try:
+                session.close()
+            except Exception:
+                pass
         return result
 
-    for entry in entries:
-        folder_path = os.path.join(_USER_CONN_DIR, entry)
-        if not os.path.isdir(folder_path):
-            continue
-
-        age_days = _get_folder_age_days(folder_path)
-
-        if age_days < RETENTION_DAYS:
-            result["skipped"] += 1
-            continue
-
-        if dry_run:
-            result["deleted"].append({"folder": entry, "age_days": round(age_days, 1)})
-            continue
-
+    try:
         try:
-            _force_rmtree(folder_path)
-            result["deleted"].append({"folder": entry, "age_days": round(age_days, 1)})
-            logger.info("[Cleanup] 삭제 완료: %s (%.1f일 경과)", entry, age_days)
+            entries = os.listdir(_USER_CONN_DIR)
         except OSError as exc:
-            error_type = type(exc).__name__
-            result["errors"].append({
-                "folder": entry,
-                "error": "filesystem_cleanup_failed",
-                "error_type": error_type,
-            })
             logger.error(
-                "[Cleanup] 삭제 실패: %s (%s)",
-                entry,
-                error_type,
+                "[Cleanup] 디렉터리 목록 조회 실패 (%s)",
+                type(exc).__name__,
+            )
+            return result
+
+        for entry in entries:
+            folder_path = os.path.join(_USER_CONN_DIR, entry)
+            if not os.path.isdir(folder_path):
+                continue
+
+            age_days = _get_folder_age_days(folder_path, now=reference)
+            decision = retention_service.decide_folder(
+                entry, index.get(entry, []),
+                folder_age_days=age_days, now=reference,
             )
 
-    logger.info(
-        "[Cleanup] 완료 — 삭제: %d개, 오류: %d개, 유지: %d개",
-        len(result["deleted"]), len(result["errors"]), result["skipped"],
-    )
-    return result
+            if decision.action == "keep_pinned":
+                result["pinned"] += 1
+                continue
+            if decision.action == "keep_extended":
+                result["extended"] += 1
+                continue
+            if decision.action == "keep":
+                result["skipped"] += 1
+                continue
+
+            # decision.action == "delete"
+            if dry_run:
+                result["deleted"].append({"folder": entry, "age_days": round(age_days, 1)})
+                continue
+            try:
+                _force_rmtree(folder_path)
+                result["deleted"].append({"folder": entry, "age_days": round(age_days, 1)})
+                logger.info("[Cleanup] 삭제 완료: %s (%.1f일 경과)", entry, age_days)
+            except OSError as exc:
+                error_type = type(exc).__name__
+                result["errors"].append({
+                    "folder": entry,
+                    "error": "filesystem_cleanup_failed",
+                    "error_type": error_type,
+                })
+                logger.error("[Cleanup] 삭제 실패: %s (%s)", entry, error_type)
+
+        logger.info(
+            "[Cleanup] 완료 — 삭제: %d개, 오류: %d개, 유지: %d개, 핀: %d개, 연장: %d개",
+            len(result["deleted"]), len(result["errors"]),
+            result["skipped"], result["pinned"], result["extended"],
+        )
+        return result
+    finally:
+        if owns_session:
+            try:
+                session.close()
+            except Exception:
+                logger.warning("[Cleanup] retention session close failed")
 
 
 def run_activity_log_cleanup(dry_run: bool = False) -> dict:
@@ -269,12 +321,55 @@ def run_session_cleanup(dry_run: bool = False) -> dict:
     return result
 
 
+def run_notification_cleanup(dry_run: bool = False) -> dict:
+    """
+    notifications 테이블에서 90일(NOTIFICATION_RETENTION_DAYS) 초과 알림을 읽음 여부와 무관하게 삭제합니다.
+
+    Parameters
+    ----------
+    dry_run : bool
+        True이면 삭제하지 않고 대상 건수만 반환합니다.
+    """
+    result = {"deleted": 0, "errors": []}
+    db = None
+    try:
+        db = database.SessionLocal()
+        if dry_run:
+            cutoff = datetime.now() - timedelta(days=NOTIFICATION_RETENTION_DAYS)
+            result["deleted"] = (
+                db.query(models.Notification)
+                .filter(models.Notification.created_at < cutoff)
+                .count()
+            )
+        else:
+            result["deleted"] = prune_notifications(db)
+        logger.info("[Cleanup] 알림 정리 완료 — 삭제: %d건", result["deleted"])
+    except Exception as exc:
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        # DB driver 오류 원문에는 접속 정보가 포함될 수 있어 type만 기록한다.
+        error_type = type(exc).__name__
+        result["errors"].append(error_type)
+        logger.error("[Cleanup] 알림 정리 실패 (%s)", error_type)
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                logger.warning("[Cleanup] 알림 DB session close failed")
+    return result
+
+
 def run_all_cleanup(dry_run: bool = False) -> dict:
-    """파일 작업 폴더, Activity Log, 만료 세션 보존 정책을 함께 적용합니다."""
+    """파일 작업 폴더, Activity Log, 만료 세션, 알림 보존 정책을 함께 적용합니다."""
     return {
         "user_connection": run_cleanup(dry_run=dry_run),
         "activity_logs": run_activity_log_cleanup(dry_run=dry_run),
         "sessions": run_session_cleanup(dry_run=dry_run),
+        "notifications": run_notification_cleanup(dry_run=dry_run),
     }
 
 

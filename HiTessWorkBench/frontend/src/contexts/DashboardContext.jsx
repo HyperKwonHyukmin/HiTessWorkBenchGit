@@ -7,6 +7,7 @@ import React, { createContext, useState, useEffect, useContext, useCallback, use
 import { UploadCloud, PenTool, SlidersHorizontal, Wrench } from 'lucide-react';
 import { useNavigation } from './NavigationContext';
 import { useAuth } from './AuthContext';
+import { usePreferences } from './PreferencesContext';
 import { usePolling } from '../hooks/usePolling';
 import { POLLING_POLICY } from '../hooks/pollingPolicy';
 import {
@@ -426,6 +427,9 @@ async function writeElectronFavorites(next) {
 export function DashboardProvider({ children }) {
   const { currentMenu } = useNavigation();
   const { isAuthenticated } = useAuth();
+  const { prefs: serverPrefs, hydration, updatePrefs } = usePreferences();
+  // 서버 하이드레이션이 온 뒤에는 Electron 마운트 effect 가 값을 덮어쓰지 않도록 잠근다.
+  const serverHydratedRef = useRef(false);
   const [favorites, setFavorites] = useState(() => readLocalFavorites());
 
   // 관리자가 지정한 App 오버라이드(서비스 상태·점검 안내·설명 등)를 받아 둔다.
@@ -452,6 +456,9 @@ export function DashboardProvider({ children }) {
 
     const loadFavorites = async () => {
       if (!window.electron?.invoke) return;
+      // 서버 하이드레이션이 이미 왔으면 Electron 값을 쓰지 않는다(사번 구분 없음 → 앞 사람 값이
+      // 새 사번의 서버 실효값을 덮어쓰는 사고 방지, spec D4).
+      if (serverHydratedRef.current) return;
 
       try {
         const result = await window.electron.invoke('preferences:get');
@@ -484,6 +491,19 @@ export function DashboardProvider({ children }) {
       cancelled = true;
     };
   }, []);
+
+  // PreferencesContext 의 서버 pull 이 끝날 때마다 즐겨찾기를 3곳(state · localStorage · Electron)에
+  // 반영한다. hydration === 0 (아직 안 왔음) 이면 아무것도 하지 않는다.
+  useEffect(() => {
+    if (hydration === 0) return;
+    serverHydratedRef.current = true;
+    const next = Array.isArray(serverPrefs.favorites)
+      ? serverPrefs.favorites.filter(x => typeof x === 'string')
+      : [];
+    setFavorites(next);
+    writeLocalFavorites(next);
+    writeElectronFavorites(next);
+  }, [hydration, serverPrefs.favorites]);
 
   // =========================================================
   // [핵심 추가] Truss Assessment 페이지의 상태를 전역으로 보존
@@ -721,34 +741,49 @@ export function DashboardProvider({ children }) {
     return () => clearTimeout(timer);
   }, [globalJobs, isAuthenticated]);
 
+  // StrictMode 의 updater 이중 호출로 PUT 이 두 번 나가지 않도록, 현재값은 ref 로 읽어
+  // setFavorites 바깥에서 next 를 계산한다(spec §5.3).
+  // ⚠ 동기화는 effect 가 아니라 렌더 중에 한다 — effect 는 paint 뒤에 돌아서 연속 토글이
+  //   직전 변경을 놓친다(PreferencesContext 의 prefsRef 와 같은 관례).
+  const favoritesRef = useRef(favorites);
+  favoritesRef.current = favorites;
+
   const toggleFavorite = useCallback((title) => {
-    setFavorites(prev => {
-      const next = prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title];
-      writeLocalFavorites(next);
-      writeElectronFavorites(next);
-      return next;
-    });
-  }, []);
+    if (!title) return;
+    const current = favoritesRef.current;
+    const next = current.includes(title)
+      ? current.filter(t => t !== title)
+      : [...current, title];
+    setFavorites(next);
+    writeLocalFavorites(next);
+    writeElectronFavorites(next);
+    updatePrefs({ favorites: next });
+  }, [updatePrefs]);
 
   const reorderFavorite = useCallback((activeTitle, overTitle) => {
     if (!activeTitle || !overTitle || activeTitle === overTitle) return;
+    const current = favoritesRef.current;
+    const fromIndex = current.indexOf(activeTitle);
+    const toIndex = current.indexOf(overTitle);
+    if (fromIndex < 0 || toIndex < 0) return;
+    const next = [...current];
+    const [movedFavorite] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, movedFavorite);
+    setFavorites(next);
+    writeLocalFavorites(next);
+    writeElectronFavorites(next);
+    updatePrefs({ favorites: next });
+  }, [updatePrefs]);
 
-    setFavorites(prev => {
-      const fromIndex = prev.indexOf(activeTitle);
-      const toIndex = prev.indexOf(overTitle);
-      if (fromIndex < 0 || toIndex < 0) return prev;
-
-      const next = [...prev];
-      const [movedFavorite] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, movedFavorite);
-      writeLocalFavorites(next);
-      writeElectronFavorites(next);
-      return next;
-    });
-  }, []);
+  const clearFavorites = useCallback(() => {
+    setFavorites([]);
+    writeLocalFavorites([]);
+    writeElectronFavorites([]);
+    updatePrefs({ favorites: [] });
+  }, [updatePrefs]);
 
   const contextValue = useMemo(() => ({
-    favorites, toggleFavorite, reorderFavorite,
+    favorites, toggleFavorite, reorderFavorite, clearFavorites,
     globalJob, globalJobs, getJobForMenu, startGlobalJob, clearGlobalJob, clearGlobalJobForMenu,
     assessmentPageState, setAssessmentPageState,
     modelBuilderPageState, setModelBuilderPageState,
@@ -758,7 +793,7 @@ export function DashboardProvider({ children }) {
     carlingHandoff, setCarlingHandoff, clearCarlingHandoff,
     pendingJobTransfer, setPendingJobTransfer, clearPendingJobTransfer
   }), [
-    favorites, toggleFavorite, reorderFavorite,
+    favorites, toggleFavorite, reorderFavorite, clearFavorites,
     globalJob, globalJobs, getJobForMenu, startGlobalJob, clearGlobalJob, clearGlobalJobForMenu,
     assessmentPageState,
     modelBuilderPageState,
@@ -773,7 +808,8 @@ export function DashboardProvider({ children }) {
     favorites,
     toggleFavorite,
     reorderFavorite,
-  }), [favorites, toggleFavorite, reorderFavorite]);
+    clearFavorites,
+  }), [favorites, toggleFavorite, reorderFavorite, clearFavorites]);
 
   const globalJobValue = useMemo(() => ({
     globalJob,

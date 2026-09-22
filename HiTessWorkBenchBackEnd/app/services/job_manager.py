@@ -3,6 +3,7 @@
 ThreadPoolExecutor 기반의 동시 실행 제한과 메모리 기반 작업 상태 저장소를 제공합니다.
 스레드 안전(Thread-safe) 클래스로 구현되어 있으며, 완료된 작업은 24시간 후 자동 만료됩니다.
 """
+import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -10,10 +11,29 @@ from datetime import datetime, timedelta
 
 from .. import database, models
 
+logger = logging.getLogger(__name__)
+
 MAX_CONCURRENT_JOBS = 5
 
 JOB_RETENTION_SECONDS = 86400  # 24시간
 PERSISTED_STATUS_FIELDS = {"status", "progress", "message"}
+
+
+def _notify_job_terminal(db, record, status: str) -> None:
+    """작업 종료 알림. 알림 실패가 상태 저장을 되돌리면 안 되므로 commit 뒤에 따로 감싼다.
+
+    notification_service 는 지연 import 한다(마스터 §2.1 규약) — 이 모듈이 알림 모듈 없이도
+    import 되게 하고, 테스트가 notification_service.notify_job_terminal 을 monkeypatch 할 수 있다.
+    """
+    try:
+        from . import notification_service
+    except ImportError:
+        return
+    try:
+        notification_service.notify_job_terminal(db, record, status)
+    except Exception:
+        db.rollback()
+        logger.warning("작업 %s 종료 알림 생성 실패", record.job_id, exc_info=True)
 
 
 @dataclass(frozen=True)
@@ -108,7 +128,11 @@ class JobStatusStore:
             return stats
 
     def _write_through(self, job_id: str, updates: dict) -> None:
-        """Analysis 레코드가 존재하면 메모리 상태를 DB에도 반영합니다."""
+        """Analysis 레코드가 존재하면 메모리 상태를 DB에도 반영합니다.
+
+        Success/Failed 반영이 끝나면 소유자에게 알림(알림 센터)을 남긴다 — 모든 해석
+        서비스가 update_job() 으로 종료를 알리므로 발신 지점은 여기 한 곳이면 된다.
+        """
         if not job_id:
             return
         if not PERSISTED_STATUS_FIELDS.intersection(updates):
@@ -132,6 +156,8 @@ class JobStatusStore:
                 record.job_message = updates.get("message")
             record.updated_at = now
             db.commit()
+            if status in ("Success", "Failed"):
+                _notify_job_terminal(db, record, status)
         except Exception:
             db.rollback()
         finally:

@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, date as _date
 from typing import Optional
 from sqlalchemy import func, or_
 from fastapi import APIRouter, Body, Depends, HTTPException, File, UploadFile, Form, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models, database
@@ -80,6 +80,9 @@ from ._access_control import (
     assert_current_user_can_access_owner,
     assert_current_user_can_access_path,
 )
+# 결과 파일 보관 정책(핀·연장·D-7). 판정 로직은 라우터에 복제하지 않고 이 모듈만 쓴다.
+from ..services import retention_service
+from ..services.retention_service import RetentionLimitError
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -364,7 +367,14 @@ def _enrich_legacy_doublepipe_payload(payload: dict) -> dict:
 def _serialize_analysis(record: models.Analysis) -> dict:
     d = {c.name: getattr(record, c.name) for c in record.__table__.columns}
     d['employee_id'] = _norm_eid(d.get('employee_id'))
-    d['files_available'] = _files_available(record)
+    files_available = _files_available(record)
+    d['files_available'] = files_available
+    # 보관 상태(status/expires_at/연장 잔여)는 프런트 배지·연장 다이얼로그가 쓴다.
+    folder = retention_service.work_folder_of(record, _USER_CONNECTION_DIR)
+    d['retention'] = retention_service.retention_state(
+        record, folder,
+        files_available=files_available, now=datetime.now(),
+    )
     return _enrich_legacy_doublepipe_payload(d)
 
 
@@ -401,6 +411,8 @@ def _analysis_summary(query) -> dict:
     success = sum(1 for r in rows if r.status == "Success")
     module_count = {}
     expired_files = 0
+    expiring_soon = 0
+    pinned_files = 0
     now = datetime.now()
     seven_days_ago = now - timedelta(days=7)
     prev_seven_days_ago = now - timedelta(days=14)
@@ -409,8 +421,19 @@ def _analysis_summary(query) -> dict:
 
     for r in rows:
         module_count[r.program_name or "Unknown"] = module_count.get(r.program_name or "Unknown", 0) + 1
-        if not _files_available(r):
+        files_available = _files_available(r)
+        if not files_available:
             expired_files += 1
+        else:
+            # 파일이 남은 기록만 핀/임박으로 나눈다(expired 와 겹치지 않는다).
+            folder = retention_service.work_folder_of(r, _USER_CONNECTION_DIR)
+            state = retention_service.classify(
+                r, folder, files_available=True, now=now,
+            )
+            if state == "pinned":
+                pinned_files += 1
+            elif state == "expiring":
+                expiring_soon += 1
         if r.created_at:
             created = r.created_at.replace(tzinfo=None) if getattr(r.created_at, "tzinfo", None) else r.created_at
             if created >= seven_days_ago:
@@ -430,6 +453,9 @@ def _analysis_summary(query) -> dict:
         "moduleEntries": module_entries,
         "expiredFiles": expired_files,
         "availableFiles": total - expired_files,
+        # Plan B — availableFiles 의 부분집합(핀 / 만료 D-7 이내).
+        "expiringSoon": expiring_soon,
+        "pinnedFiles": pinned_files,
     }
 
 
@@ -680,9 +706,22 @@ def get_analysis_history(
     summary = _analysis_summary(base_q) if include_summary else None
 
     if file_status and file_status != "All":
+        now = datetime.now()
+        base_dir = _USER_CONNECTION_DIR
+
+        def _matches(record) -> bool:
+            available = _files_available(record)
+            # UI 의 'available' 은 기존 의미 그대로 '파일이 남아 있는 상태 전체'(핀·임박 포함)다.
+            if file_status == "available":
+                return available
+            folder = retention_service.work_folder_of(record, base_dir)
+            return retention_service.classify(
+                record, folder, files_available=available, now=now,
+            ) == file_status
+
         filtered = [
             r for r in base_q.order_by(models.Analysis.created_at.desc()).all()
-            if ("expired" if not _files_available(r) else "available") == file_status
+            if _matches(r)
         ]
         total = len(filtered)
         history = filtered[skip:skip + limit]
@@ -1677,6 +1716,92 @@ def get_analysis_passport(
         raise HTTPException(status_code=404, detail="Analysis record not found")
     assert_current_user_can_access_owner(record.employee_id, current_user, db)
     return build_analysis_passport(record, user_connection_base=_USER_CONNECTION_DIR)
+
+
+class RetentionUpdateRequest(BaseModel):
+    """POST /api/analysis/{id}/retention 요청 본문.
+
+    - extend_days: 1~180. null 이면 연장 없음.
+    - pinned: null 이면 변경 없음. True/False 면 그 값으로 설정.
+    - 둘 다 null 이면 400.
+
+    StrictInt/StrictBool 을 쓰는 이유: 기본(lax) 모드는 "30" 같은 문자열을 정수로
+    조용히 받아들인다. 보관 기간은 사용자 데이터 수명을 좌우하므로 타입을 느슨하게
+    받지 않고 422 로 되돌린다. extra="forbid" 로 오타 필드도 422 다.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    extend_days: Optional[StrictInt] = None
+    pinned: Optional[StrictBool] = None
+
+
+@router.post("/analysis/{analysis_id}/retention")
+def update_analysis_retention(
+    analysis_id: int,
+    payload: RetentionUpdateRequest = Body(...),
+    request: Request = None,
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
+    """해석 기록의 보관 정책(연장·핀)을 변경한다.
+
+    - 404: 존재하지 않음
+    - 403: 소유자/관리자가 아님 (spec §2 D3)
+    - 422: extend_days 타입/범위(1~180) 위반 · 알 수 없는 필드
+    - 400: 요청이 비었거나 누적 연장 상한(180일) 초과 (spec §2 D2)
+    - 409: 이미 파일이 만료 (spec §2 D4)
+    - 200: 갱신된 record 를 _serialize_analysis 그대로 반환
+    """
+    record = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Analysis record not found")
+    assert_current_user_can_access_owner(record.employee_id, current_user, db)
+
+    if payload.extend_days is None and payload.pinned is None:
+        raise HTTPException(status_code=400, detail="변경 사항이 없습니다. extend_days 또는 pinned 중 하나는 지정해야 합니다.")
+    if payload.extend_days is not None and not (
+        1 <= payload.extend_days <= retention_service.EXTENSION_MAX_DAYS
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"extend_days 는 1~{retention_service.EXTENSION_MAX_DAYS} 사이여야 합니다.",
+        )
+
+    if not _files_available(record):
+        raise HTTPException(status_code=409, detail="결과 파일이 이미 삭제되어 보관 정책을 변경할 수 없습니다.")
+
+    folder = retention_service.work_folder_of(record, _USER_CONNECTION_DIR)
+    prev_retain, prev_pinned = record.retain_until, record.pinned
+    try:
+        retention_service.apply_retention_change(
+            record, folder,
+            extend_days=payload.extend_days, pinned=payload.pinned,
+            now=datetime.now(),
+        )
+    except RetentionLimitError as exc:
+        # apply_retention_change 는 in-place 로 필드를 먼저 바꾼 뒤 상한을 확인한다.
+        # commit 전이지만 세션에 더럽혀진 값이 남지 않도록 직접 되돌린다.
+        record.retain_until, record.pinned = prev_retain, prev_pinned
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        record.retain_until, record.pinned = prev_retain, prev_pinned
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    record.updated_at = datetime.now()
+    db.commit()
+    db.refresh(record)
+    log_activity(
+        db, "RETENTION_UPDATE",
+        employee_id=current_user,
+        action_detail={
+            "analysis_id": record.id,
+            "extend_days": payload.extend_days,
+            "pinned": payload.pinned,
+            "retain_until": record.retain_until.isoformat() if record.retain_until else None,
+        },
+        ip_address=request.client.host if request and request.client else None,
+    )
+    return _serialize_analysis(record)
 
 
 def _open_rerun_source(path: str) -> int:
