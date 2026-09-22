@@ -1870,8 +1870,13 @@ function StageSummaryDetail({ summary, audit }) {
   const effectiveSelectedKey = selectedStageIdx ?? stages[stages.length - 1]?.stageIndex ?? null;
   const selectedStage = stages.find(st => st.stageIndex === effectiveSelectedKey) ?? stages[stages.length - 1];
 
-  const mp     = s.massProperties ?? null;
+  // Studio 로드 직후 기본값 = "배관 유체 비움". 엔진이 함께 저장한 fluid-empty 변형이 있으면
+  // 그걸 표시해 Studio 화면과 값이 어긋나지 않게 한다. 구버전 summary 는 이 필드가 없어
+  // 원본(유체 포함) 값으로 폴백한다.
+  const mpFluidEmpty = s.massPropertiesFluidEmpty ?? null;
+  const mp     = mpFluidEmpty ?? s.massProperties ?? null;
   const cgArr  = mp?.centerOfGravityMm;
+  const isFluidEmpty = !!mpFluidEmpty;
 
   // 사용자 요구: 경고는 대부분 중복 이름이라 정상 → 화면에서 완전히 삭제. 에러/정보만 표시.
   const totalErr  = s.totalErrors ?? 0;
@@ -1927,7 +1932,17 @@ function StageSummaryDetail({ summary, audit }) {
          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mp && (
         <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm w-full min-w-0">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">질량 특성 (Mass Properties)</p>
+          <div className="flex items-baseline gap-2 mb-3">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">질량 특성 (Mass Properties)</p>
+            {isFluidEmpty && (
+              <span
+                className="text-[10px] font-medium text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded"
+                title="Model Builder Studio 로드 직후의 기본 상태(배관 내부 유체를 강재 밀도로 대체)와 동일한 값입니다."
+              >
+                배관 유체 비움 기준
+              </span>
+            )}
+          </div>
 
           {/* 총 질량 — 큰 수치 */}
           <div className="flex items-end gap-2 mb-3">
