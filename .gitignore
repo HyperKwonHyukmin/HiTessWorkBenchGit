@@ -32,6 +32,7 @@ env/
 venv/
 ENV/
 WorkBenchEnv/
+psa_build_env/
 build/
 dist/
 *.egg-info/
