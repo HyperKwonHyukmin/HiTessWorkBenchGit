@@ -100,6 +100,13 @@ def ensure_analysis_retention_columns(*, engine=None) -> None:
         "retain_until": "ALTER TABLE analysis ADD COLUMN retain_until DATETIME NULL",
         "pinned": "ALTER TABLE analysis ADD COLUMN pinned BOOL NOT NULL DEFAULT FALSE",
     }, engine=engine)
+    # 이력 목록은 전부 created_at 내림차순이다. 인덱스가 없으면 MySQL 이 filesort 를 타고,
+    # analysis 행에는 JSON 컬럼(input_info/result_info)이 있어 정렬 버퍼가 넘친다
+    # ((1038, 'Out of sort memory') — 운영 145 실측). 라우터의 _ordered_analysis_rows 가
+    # 정렬 대상을 id 로 줄여 1차 방어하고, 이 인덱스가 filesort 자체를 없애 2차 방어한다.
+    _add_missing_indexes("analysis", {
+        "ix_analysis_created_at": "CREATE INDEX ix_analysis_created_at ON analysis (created_at)",
+    }, engine=engine)
 
 
 def ensure_app_community_columns(*, engine=None) -> None:

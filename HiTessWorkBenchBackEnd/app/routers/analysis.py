@@ -378,6 +378,29 @@ def _serialize_analysis(record: models.Analysis) -> dict:
     return _enrich_legacy_doublepipe_payload(d)
 
 
+def _ordered_analysis_rows(db: Session, query, *, skip: int = 0, limit: int | None = None):
+    """created_at 내림차순 정렬 결과를 안전하게 가져온다(MySQL 정렬 버퍼 회피).
+
+    ⚠ analysis 테이블에는 input_info / result_info JSON 컬럼이 있다. MySQL 은 filesort 시
+    **선택한 모든 컬럼을 정렬 버퍼에 담으므로**, ORM 행 전체를 ORDER BY 로 가져오면 행 하나가
+    sort_buffer_size 를 넘겨 `(1038, 'Out of sort memory')` 로 터진다(운영 145 실측).
+    컬럼이 하나만 늘어도 한계를 넘길 수 있어, 정렬은 항상 id + created_at 만으로 하고
+    본문은 id 로 되가져온 뒤 원래 순서를 복원한다. 쿼리 2번으로 끝나므로 N+1 이 아니다.
+    """
+    id_query = query.with_entities(models.Analysis.id).order_by(
+        models.Analysis.created_at.desc(), models.Analysis.id.desc()
+    ).offset(skip)
+    if limit is not None:
+        id_query = id_query.limit(limit)
+    ids = [row[0] for row in id_query.all()]
+    if not ids:
+        return []
+    rows = db.query(models.Analysis).filter(models.Analysis.id.in_(ids)).all()
+    position = {pk: index for index, pk in enumerate(ids)}
+    rows.sort(key=lambda r: position[r.id])
+    return rows
+
+
 def _apply_analysis_filters(
     query,
     *,
@@ -719,20 +742,12 @@ def get_analysis_history(
                 record, folder, files_available=available, now=now,
             ) == file_status
 
-        filtered = [
-            r for r in base_q.order_by(models.Analysis.created_at.desc()).all()
-            if _matches(r)
-        ]
+        filtered = [r for r in _ordered_analysis_rows(db, base_q) if _matches(r)]
         total = len(filtered)
         history = filtered[skip:skip + limit]
     else:
         total = base_q.count()
-        history = (
-            base_q
-            .order_by(models.Analysis.created_at.desc())
-            .offset(skip).limit(limit)
-            .all()
-        )
+        history = _ordered_analysis_rows(db, base_q, skip=skip, limit=limit)
     return {"total": total, "skip": skip, "limit": limit, "items": [_serialize_analysis(r) for r in history], "summary": summary}
 
 
@@ -758,12 +773,7 @@ def get_all_analysis_history(
     users_by_employee_id = {_norm_eid(u.employee_id): u for u in users}
     summary = _analysis_management_summary(base_q, users_by_employee_id) if include_summary else None
     total = base_q.count()
-    items = (
-        base_q
-        .order_by(models.Analysis.created_at.desc())
-        .offset(skip).limit(limit)
-        .all()
-    )
+    items = _ordered_analysis_rows(db, base_q, skip=skip, limit=limit)
     serialized = []
     for item in items:
         payload = _serialize_analysis(item)
@@ -3038,13 +3048,14 @@ def get_groupmoduleunit_artifacts(
     # 이 parent 로 실행된 Unit 구조 해석 중 가장 최근 Success 레코드 — WorkBench 페이지의 '검토 보고서' 버튼이 쓴다.
     # input_info 는 JSON 컬럼이라 DB 방언에 따라 JSON 경로 질의가 다르므로 후보를 파이썬에서 거른다(레코드 수가 작다).
     unit_id = None
-    candidates = (
-        db.query(models.Analysis)
-        .filter(models.Analysis.program_name == "UnitStructuralAnalysis",
-                models.Analysis.employee_id == parent.employee_id,
-                models.Analysis.status == "Success")
-        .order_by(models.Analysis.created_at.desc(), models.Analysis.id.desc())
-        .limit(200).all()
+    candidates = _ordered_analysis_rows(
+        db,
+        db.query(models.Analysis).filter(
+            models.Analysis.program_name == "UnitStructuralAnalysis",
+            models.Analysis.employee_id == parent.employee_id,
+            models.Analysis.status == "Success",
+        ),
+        limit=200,
     )
     for cand in candidates:
         if (cand.input_info or {}).get("parent_analysis_id") == parent_id:
