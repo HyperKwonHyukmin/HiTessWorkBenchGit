@@ -242,7 +242,7 @@ ModuleUnitStudio(viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module
 
 - **Z 밴드(tolMm) 이중 용도 분리**: `hoistToleranceMm`(UI "가상판 ±값")는 **수동 선택 강조용**일 뿐인데, 과거엔 이 좁은 값(모델높이×0.004 ≈ 10mm)이 **엔진 자동 최적화의 Z 클러스터링 tol** 로도 재사용돼 같은 데크의 근소 Z편차 노드가 서로 다른 레벨로 쪼개져 **좁고 작은 그룹만** 나왔다. → `useEditStore.js zoneSelectHoistPositions`는 이제 auto 시 **`tolMm: null`** 을 보내고(사용자가 명시하면 그 값 존중), 엔진(`HoistPositionOptimizer.RunRegionsSearch`)이 **Z 밴드 스윕**(`BuildZBandSweep` = {60,120,200,300}mm)을 돌려 **축적된 후보 중 랭킹으로 '가장 넓은 PASS'** 를 고른다. (payload 직렬화 시 `Number(null)===0` 함정 주의 — `opt.tolMm != null` 가드 필수.)
 - **면적 vs 상태(비단조)**: 밴드를 넓힐수록 면적↑ 이지만 **너무 넓으면 `wireConflictCount`(와이어 간섭)↑ → warn**(stage6 안정성 margin 은 오히려 동일). 실측(3496-35210-A508372): tol 10mm→3.07㎡ pass, 100→12.78 pass, 200→**16.84㎡ pass**, 350→2.38(붕괴), 500→23.72㎡ **warn(간섭29)**. 단일 고정 밴드는 keep-K/greedy 클러스터 경계 때문에 **비단조**라 스윕으로 회피. 스윕은 **조기 종료 없음**(모든 밴드 시도 후 랭킹) — 백엔드 `--optimize` 타임아웃 **300s** 이내(실측 ~15s).
-- **2D 방향 = 앱 3D '평면도(A키)' 와 동일**: 앱 평면도는 `camera.up=+X`·−Z 내려봄 → 화면 **↑X(종)·←Y(횡)**. 썸네일(`HoistCandidateThumbnail` + `planViewProjector`)과 구역 미니맵(`buildZonePartitionView`) 모두 이 방향으로 통일(과거 ↑Y·→X 라 3D와 90° 어긋나 "대칭"처럼 보였음). 형상 지표(면적/정사각형도/축편차)는 화면방향과 무관한 모델좌표 계산이라 불변.
+- **2D 방향 = 앱 3D '평면도(A키)' 와 동일**: 앱 평면도는 `camera.up=+X`·−Z 내려봄 → 화면 **↑X(종)·←Y(횡)**. 썸네일(`HoistCandidateThumbnail` + `planViewProjector`)은 이 방향이다(과거 ↑Y·→X 라 3D와 90° 어긋나 "대칭"처럼 보였음). ⚠ **구역 미니맵(`buildZonePartitionView`)만은 사용자 요청으로 →X(횡)·↑Y(종)** 이다(0.0.156) — 3D 평면도와 90° 다른 것이 의도된 상태. 형상 지표(면적/정사각형도/축편차)는 화면방향과 무관한 모델좌표 계산이라 불변.
 
 #### 'Strict 평가' 토글 — 형상 FAIL 완화 (2026-07-27 세션, 0.0.121)
 
