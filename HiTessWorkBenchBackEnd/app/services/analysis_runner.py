@@ -21,11 +21,75 @@ from datetime import datetime
 from typing import Optional
 
 from .. import database, models
-from .job_manager import job_status_store
+# CANCELLED_MESSAGE / JobCancelledError 는 여기서 재노출한다 — 각 해석 서비스가 취소 사전 체크를
+# 걸 때 analysis_runner 한 곳에서만 import 하면 되도록 하기 위한 의도적 re-export 다.
+from .job_manager import (  # noqa: F401  (re-export)
+    CANCELLED_MESSAGE,
+    JobCancelledError,
+    current_job_id,
+    job_status_store,
+)
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 600
+
+
+# ── 작업 취소 훅 ─────────────────────────────────────────────────────────
+# 아래 3개는 공용 취소 API(job_status_store.cancel)가 실행 중인 Popen 을 찾아 종료할 수
+# 있도록 참조를 매달고 떼는 얇은 래퍼다. 훅의 실패가 해석 성공률에 영향을 주면 안 되므로
+# 모든 예외를 삼키고 로그만 남긴다(기존 실행 경로·반환 계약은 무변경).
+
+def _resolve_cancel_job_id(job_id: Optional[str]) -> Optional[str]:
+    """등록·사전 체크에 쓸 job_id. 명시값이 없으면 worker 컨텍스트에서 찾는다."""
+    if job_id:
+        return job_id
+    try:
+        return current_job_id()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _register_job_process(job_id: Optional[str], popen) -> None:
+    """job 에 Popen 참조를 매단다. job_id 가 없으면(레거시 호출) 아무것도 하지 않는다."""
+    if not job_id:
+        return
+    try:
+        job_status_store.register_process(job_id, popen)
+    except Exception:  # noqa: BLE001
+        logger.debug("job_status_store 프로세스 등록 실패 job=%s", job_id, exc_info=True)
+
+
+def _unregister_job_process(job_id: Optional[str], popen) -> None:
+    """끝난 Popen 참조를 해제한다(죽은 객체 재종료 방지 + 참조 누수 방지)."""
+    if not job_id:
+        return
+    try:
+        job_status_store.unregister_process(job_id, popen)
+    except Exception:  # noqa: BLE001
+        logger.debug("job_status_store 프로세스 해제 실패 job=%s", job_id, exc_info=True)
+
+
+def is_cancel_requested(job_id: Optional[str] = None) -> bool:
+    """이 작업에 취소가 요청됐는지.
+
+    `subprocess.run()` 기반(블로킹이라 중도 중단 불가) 서비스가 해석기를 띄우기 **직전**에
+    부르는 사전 체크다. 실행 중 프로세스를 회수하는 Popen 경로(run_subprocess_killtree 등)와
+    달리, 여기서는 "아직 안 띄운 단계를 시작하지 않는다" 만 보장한다.
+
+    안전 규약:
+      - job_id 가 없고 worker 컨텍스트도 없으면 **항상 False** — 레거시·내부 단계 호출이
+        취소로 오인돼 차단되는 일이 없어야 한다.
+      - 스토어 조회가 실패해도 False — 훅 때문에 해석 성공률이 떨어지면 안 된다.
+    """
+    effective_job_id = _resolve_cancel_job_id(job_id)
+    if not effective_job_id:
+        return False
+    try:
+        return bool(job_status_store.is_cancel_requested(effective_job_id))
+    except Exception:  # noqa: BLE001
+        logger.debug("취소 요청 조회 실패 job=%s", effective_job_id, exc_info=True)
+        return False
 
 
 def get_backend_dir() -> str:
@@ -120,34 +184,63 @@ def run_subprocess_killtree(
     *,
     cwd: Optional[str] = None,
     timeout: Optional[float] = None,
+    job_id: Optional[str] = None,
 ) -> subprocess.CompletedProcess:
-    """subprocess.run(stdout=PIPE, stderr=PIPE) 의 부분 대체.
+    """subprocess.run(stdout=PIPE, stderr=PIPE) 의 부분 대체 + 자식 트리 정리 + 작업 취소 훅.
 
     Nastran launcher(nastran.exe) 는 실제 solver 를 손자 프로세스로 띄우므로, timeout 시
     subprocess.run 은 직계 자식만 죽이고 손자 solver 는 좀비로 남을 수 있다. 이 헬퍼는 timeout
     초과 시 psutil 로 자식 프로세스 트리 전체(손자 포함)를 종료한 뒤 subprocess.TimeoutExpired
     를 재-raise 한다 → 기존 호출부의 except subprocess.TimeoutExpired 처리를 그대로 재사용한다.
 
-    반환/예외 계약은 subprocess.run(bytes 출력) 과 동일: CompletedProcess(returncode, stdout,
-    stderr:bytes) 를 반환하고, 초과 시 TimeoutExpired 를 던진다. psutil 미가용 시에는 트리 kill
-    없이 표준 subprocess.run 으로 폴백한다(동작 후퇴 없이 안전).
+    반환/예외 계약(무변경): CompletedProcess(returncode, stdout, stderr:bytes) 를 반환하고,
+    초과 시 TimeoutExpired 를 던진다.
+
+    취소 훅(추가):
+      - Popen 생성 직전에 `job_status_store.is_cancel_requested(job_id)` 를 검사한다. True 면
+        프로세스를 만들지 않고 TimeoutExpired 로 잘라 호출부의 기존 실패 경로를 재사용한다.
+      - Popen 생성 직후 register_process, 정상/타임아웃/예외 어느 경로에서도 unregister_process.
+      - job_id 를 명시하지 않으면 `job_manager.current_job_id()` 로 폴백하고, 그마저 없으면
+        (레거시·내부 단계 호출) 훅을 전혀 건드리지 않는다.
     """
+    effective_job_id = _resolve_cancel_job_id(job_id)
+    if is_cancel_requested(effective_job_id):
+        raise subprocess.TimeoutExpired(cmd_args, timeout, output=b"", stderr=b"")
+
     try:
         import psutil  # optional dependency
     except Exception:
         psutil = None
 
     if psutil is None:
-        return subprocess.run(
+        # psutil 이 없으면 손자 트리 정리는 못 하지만(기존과 동일한 한계) 취소 훅은 유효하다.
+        # subprocess.run 과 동일하게 timeout 시 직계 자식을 죽이고 파이프를 비운 뒤 재-raise 한다.
+        proc = subprocess.Popen(
             cmd_args, cwd=cwd,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            timeout=timeout,
         )
+        _register_job_process(effective_job_id, proc)
+        try:
+            out, err = proc.communicate(timeout=timeout)
+            return subprocess.CompletedProcess(cmd_args, proc.returncode, out, err)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            try:
+                out, err = proc.communicate(timeout=5)
+            except Exception:
+                out, err = b"", b""
+            raise subprocess.TimeoutExpired(cmd_args, timeout, output=out, stderr=err)
+        finally:
+            _unregister_job_process(effective_job_id, proc)
 
     proc = subprocess.Popen(
         cmd_args, cwd=cwd,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
+    _register_job_process(effective_job_id, proc)
     try:
         out, err = proc.communicate(timeout=timeout)
         return subprocess.CompletedProcess(cmd_args, proc.returncode, out, err)
@@ -173,6 +266,8 @@ def run_subprocess_killtree(
         except Exception:
             out, err = b"", b""
         raise subprocess.TimeoutExpired(cmd_args, timeout, output=out, stderr=err)
+    finally:
+        _unregister_job_process(effective_job_id, proc)
 
 
 def record_analysis(

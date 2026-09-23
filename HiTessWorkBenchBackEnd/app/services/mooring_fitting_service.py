@@ -33,43 +33,94 @@ REPORT_FILE_NAME = "MooringFitting_Report.xlsx"
 REPORT_PLAN_FILE_NAME = "REPORT_PLAN.json"
 
 
-def _kill_process_tree(pid: int) -> None:
-    """자식 프로세스 트리 전체를 강제 종료(Windows taskkill /T /F)."""
+def _register_process_with_job_manager(job_id: str | None, proc) -> None:
+    """공용 취소 API 가 이 Popen 을 찾아 종료할 수 있도록 job_status_store 에 등록한다.
+
+    등록 실패가 해석 실행을 막으면 안 되므로 예외는 삼킨다(doublepipe_psa_service 와 같은 패턴).
+    job_id 가 없으면(레거시·라우터 동기 호출) 아무것도 하지 않는다.
+    """
+    if not job_id:
+        return
     try:
-        subprocess.run(
-            ["taskkill", "/F", "/T", "/PID", str(pid)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=30,
-        )
-    except Exception:  # noqa: BLE001 — 정리 실패가 상위 흐름을 막지 않게 흡수
-        logger.warning("[MooringFitting] taskkill 실패 (pid=%s)", pid, exc_info=True)
+        from . import job_manager
+        job_manager.job_status_store.register_process(job_id, proc)
+    except Exception:  # noqa: BLE001
+        logger.debug("[MooringFitting] 프로세스 등록 실패 job=%s", job_id, exc_info=True)
 
 
-def _run_capture(cmd: list[str], cwd: str, timeout: int):
+def _unregister_process_with_job_manager(job_id: str | None, proc) -> None:
+    """끝난 Popen 참조를 공용 스토어에서 해제한다(죽은 객체 재종료·참조 누수 방지)."""
+    if not job_id:
+        return
+    try:
+        from . import job_manager
+        job_manager.job_status_store.unregister_process(job_id, proc)
+    except Exception:  # noqa: BLE001
+        logger.debug("[MooringFitting] 프로세스 해제 실패 job=%s", job_id, exc_info=True)
+
+
+def _resolve_job_id(job_id: str | None) -> str | None:
+    """취소 훅에 쓸 job_id. 명시값이 없으면 worker 컨텍스트에서 찾고, 없으면 None."""
+    if job_id:
+        return job_id
+    try:
+        from . import job_manager
+        return job_manager.current_job_id()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _cancel_requested(job_id: str | None) -> bool:
+    """취소가 이미 요청됐는지. job_id 가 없으면 항상 False(레거시 호출 오작동 방지)."""
+    if not job_id:
+        return False
+    try:
+        from . import job_manager
+        return bool(job_manager.job_status_store.is_cancel_requested(job_id))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _run_capture(cmd: list[str], cwd: str, timeout: int, *, job_id: str | None = None):
     """
     subprocess.run(timeout=...) 대체 — 타임아웃 시 자식 프로세스 '트리 전체'를 종료한다.
 
     문제: subprocess.run(timeout)은 Windows에서 직계 자식(MooringFitting.exe)만 kill하여
     cmd.exe → nastran.exe → analysis.exe 손자 프로세스가 고아(zombie)로 남고 MSC 라이선스
     seat 를 계속 점유한다(다음 job 라이선스 체크아웃 실패로 전이).
-    해결: Popen + 타임아웃 시 taskkill /T /F 로 트리 전체를 정리한 뒤 TimeoutExpired 를 재전파.
+    해결: Popen + 타임아웃 시 공용 `job_manager._kill_process_tree(proc)` 로 트리 전체를 정리한
+    뒤 TimeoutExpired 를 재전파. (취소 API 와 같은 종료 절차를 쓰기 위해 통일했다.)
+
+    취소 훅(추가):
+      - Popen 직전에 취소 요청을 확인하고, 이미 요청됐으면 exe 를 띄우지 않고 TimeoutExpired 로
+        잘라 상위의 기존 실패 경로를 그대로 탄다.
+      - Popen 직후 register_process, 성공/타임아웃/예외 어느 경로에서도 unregister_process.
+      - job_id 미지정 시 `job_manager.current_job_id()` 폴백, 그마저 없으면 훅을 건드리지 않는다.
 
     반환: (returncode, stdout_bytes, stderr_bytes)
     """
+    from . import job_manager
+
+    effective_job_id = _resolve_job_id(job_id)
+    if _cancel_requested(effective_job_id):
+        raise subprocess.TimeoutExpired(cmd, timeout, output=b"", stderr=b"")
+
     proc = subprocess.Popen(
         cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
+    _register_process_with_job_manager(effective_job_id, proc)
     try:
         stdout_b, stderr_b = proc.communicate(timeout=timeout)
         return proc.returncode, stdout_b, stderr_b
     except subprocess.TimeoutExpired:
-        _kill_process_tree(proc.pid)          # 손자까지 전부 종료(좀비/라이선스 누수 방지)
+        job_manager._kill_process_tree(proc)  # 손자까지 전부 종료(좀비/라이선스 누수 방지)
         try:
             proc.communicate(timeout=10)      # 파이프 drain (deadlock 방지)
         except Exception:  # noqa: BLE001
             pass
         raise                                  # 원래 TimeoutExpired 를 상위 핸들러로 재전파
+    finally:
+        _unregister_process_with_job_manager(effective_job_id, proc)
 
 
 def _decode_engine_output(raw: bytes) -> str:
@@ -248,6 +299,7 @@ def task_execute_mooring_fitting(
             [exe_path, "build-full", work_dir, f"--mf-sf={mf_safety_factor}"],
             cwd=work_dir,
             timeout=TIMEOUT_SECONDS,
+            job_id=job_id,
         )
         engine_output = _decode_engine_output(stdout_b)
         stderr_text = _decode_engine_output(stderr_b)
@@ -450,6 +502,7 @@ def task_solve_mooring_fitting(
              "--yield", str(yield_strength), "--gamma", str(gamma_m)],
             cwd=work_dir,
             timeout=SOLVE_TIMEOUT_SECONDS,
+            job_id=job_id,
         )
         engine_output = _decode_engine_output(stdout_b)
         stderr_text = _decode_engine_output(stderr_b)

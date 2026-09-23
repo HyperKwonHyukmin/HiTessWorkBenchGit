@@ -165,7 +165,15 @@ export default function ProgramDetailModal({ programName, programNames = EMPTY_P
               {/* KPI */}
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
                 <StatTile label="총 실행" value={summary.total.toLocaleString()} sub={`${summary.coveredDays}일 · 일평균 ${summary.avgPerDay}건`} icon={Activity} accent="text-blue-500" />
-                <StatTile label="성공률" value={`${summary.successRate}%`} sub={`성공 ${summary.success} · 실패 ${summary.fail}`} icon={CheckCircle2} accent="text-emerald-500" />
+                {/* 사용자가 중단한 작업은 성공도 실패도 아니라 성공률 분모에서 빠진다(백엔드 규약).
+                    건수를 함께 보여주지 않으면 성공+실패가 총 실행과 안 맞아 보인다. */}
+                <StatTile
+                  label="성공률"
+                  value={`${summary.successRate}%`}
+                  sub={`성공 ${summary.success} · 실패 ${summary.fail}${summary.cancelled ? ` · 중단 ${summary.cancelled}` : ''}`}
+                  icon={CheckCircle2}
+                  accent="text-emerald-500"
+                />
                 <StatTile label="사용자" value={summary.userCount.toLocaleString()} sub={`${summary.deptCount}개 부서`} icon={Users} accent="text-violet-500" />
                 <StatTile label="피크 시간대" value={summary.peakHour} sub={`최근 사용 ${summary.lastRunLabel}`} icon={Clock3} accent="text-amber-500" />
               </div>

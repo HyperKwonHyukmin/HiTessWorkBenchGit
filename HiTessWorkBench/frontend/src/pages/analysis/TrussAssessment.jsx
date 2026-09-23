@@ -182,13 +182,17 @@ export default function TrussAssessment() {
       setCurrentPollingJobId(null);
       updateState({ isRunning: false, progress: 100, statusMessage: '해석 완료', projectData: globalJob.project });
       if (globalJob.project) loadResultsFromProject(globalJob.project);
-    } else if (globalJob.status === 'Failed') {
+    } else if (globalJob.status === 'Failed' || globalJob.status === 'Cancelled') {
       setCurrentPollingJobId(null);
       // 페이지를 벗어나 있는 동안 실패했더라도 원인은 콘솔에 남겨야 한다.
+      const cancelled = globalJob.status === 'Cancelled';
       updateState({
         isRunning: false,
-        statusMessage: '해석 실패',
-        ...buildFailureConsoleState(globalJob.engine_log, '해석 실패.'),
+        statusMessage: cancelled ? '사용자 중단' : '해석 실패',
+        ...buildFailureConsoleState(
+          globalJob.engine_log,
+          cancelled ? '사용자 요청으로 해석을 중단했습니다.' : '해석 실패.',
+        ),
       });
     }
   }, [globalJob?.status]);

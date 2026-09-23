@@ -16,6 +16,7 @@ test('isTerminalJobStatus 는 종료 상태 3종만 true 로 본다', () => {
   assert.equal(isTerminalJobStatus('Success'), true);
   assert.equal(isTerminalJobStatus('Failed'), true);
   assert.equal(isTerminalJobStatus('Interrupted'), true);
+  assert.equal(isTerminalJobStatus('Cancelled'), true);
   assert.equal(isTerminalJobStatus('Running'), false);
   assert.equal(isTerminalJobStatus('Pending'), false);
   assert.equal(isTerminalJobStatus(undefined), false);

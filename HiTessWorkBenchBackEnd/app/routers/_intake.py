@@ -196,7 +196,13 @@ def _handle_future_result(job_id: str, future) -> None:
     하지 않는다. 그러나 task 내부 try 로 감싸지지 않은 지점(초기화 등)에서 예외가 escape 하면
     ThreadPoolExecutor 는 그것을 Future 에 저장하고 조용히 삼킨다 → job 이 영원히 Running.
     그 케이스를 잡아 로깅하고 job 을 Failed 로 마킹(메모리+DB write-through)한다.
+
+    단, 대기 중 취소된 Future 는 예외가 아니다 — .result() 가 CancelledError 를 던지므로
+    "task 외부 예외" 로 오인해 Failed 를 쓰려 한다(동결 규칙이 상태는 막지만 오류 로그가
+    남는다). 그래서 취소된 Future 는 조용히 돌려보낸다.
     """
+    if future is not None and getattr(future, "cancelled", lambda: False)():
+        return
     try:
         future.result()
     except BaseException as exc:  # noqa: BLE001 — task 밖에서 새어 나온 모든 예외를 회수

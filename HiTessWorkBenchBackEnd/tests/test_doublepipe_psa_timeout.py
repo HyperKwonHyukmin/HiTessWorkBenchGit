@@ -181,6 +181,48 @@ def test_normal_output_streaming_completion_and_report_ready(monkeypatch, tmp_pa
     assert proc.wait_calls == [service._PSA_TIMEOUT]
 
 
+def test_pipeline_registers_running_process_and_releases_it_after_finish(monkeypatch, tmp_path):
+    """공용 취소 API 가 찾을 수 있도록 Popen 을 job_status_store 에 등록/해제한다."""
+    from app.services import job_manager
+
+    job_id = "register-job"
+    _seed_running_job(job_id, tmp_path)
+    seen: list = []
+
+    class _ProbeProcess(_NormalProcess):
+        def wait(self, timeout=None):
+            # 실행 중 시점의 공용 스토어 스냅샷
+            seen.append(list(job_manager.job_status_store._processes.get(job_id, ())))
+            return super().wait(timeout)
+
+    proc = _ProbeProcess("first line\n")
+    monkeypatch.setattr(service.subprocess, "Popen", lambda *a, **k: proc)
+
+    service._run_pipeline(job_id, ["psa.exe"], str(tmp_path))
+
+    assert seen == [[proc]]
+    # 파이프라인이 끝나면 죽은 Popen 참조를 남기지 않는다.
+    assert job_id not in job_manager.job_status_store._processes
+
+
+def test_pipeline_releases_registered_process_when_cancelled_right_after_popen(
+    monkeypatch, tmp_path,
+):
+    """Popen 직후 취소로 조기 return 하는 경로에서도 등록 참조가 남지 않는다."""
+    from app.services import job_manager
+
+    job_id = "register-cancel-job"
+    job = _seed_running_job(job_id, tmp_path)
+    proc = _NormalProcess("ignored\n")
+    monkeypatch.setattr(service.subprocess, "Popen", lambda *a, **k: proc)
+    monkeypatch.setattr(service, "_cancel_running_process", lambda *_: True)
+    job["_cancelRequested"] = True
+
+    service._run_pipeline(job_id, ["psa.exe"], str(tmp_path))
+
+    assert job_id not in job_manager.job_status_store._processes
+
+
 def test_cancel_wins_race_without_pipeline_overwriting_cancel_state(monkeypatch, tmp_path):
     job_id = "cancel-job"
     _seed_running_job(job_id, tmp_path)

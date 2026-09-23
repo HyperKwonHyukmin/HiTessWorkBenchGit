@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 // 보관 연장/핀 호출(updateAnalysisRetention)은 RetentionExtendDialog 안에서 직접 한다.
 import {
   getAnalysisHistory, downloadFileBlob, exportAssessmentXlsx, rerunAnalysisProject,
+  cancelAnalysisJob,
 } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import {
@@ -11,7 +12,7 @@ import {
   FileCode, Database, FileOutput, Eye, FileX,
   TrendingUp, CalendarClock, CalendarPlus, Pin, Award, BarChart3, Minus,
   GitCompare, Play, Square, CheckSquare, Fingerprint,
-  Clock3, ListChecks, Pipette, Terminal
+  Clock3, ListChecks, Pipette, Terminal, Ban
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
@@ -24,6 +25,7 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import FeedbackState from '../../components/ui/FeedbackState';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
 import RetentionExtendDialog from '../../components/analysis/RetentionExtendDialog';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { findAppByProgramName, getDisplayProgramName, useGlobalJobs } from '../../contexts/DashboardContext';
@@ -653,7 +655,9 @@ const ProjectCompareModal = ({ projects, onClose }) => {
 // 4. 메인 MyProjects 페이지 컴포넌트
 // ==========================================
 const PROGRAM_FILTERS = ['All', 'TrussModelBuilder', 'Truss Assessment', 'Simple Beam Assessment'];
-const STATUS_FILTERS = ['All', 'Success', 'Failed'];
+const STATUS_FILTERS = ['All', 'Success', 'Failed', 'Cancelled'];
+/** 아직 끝나지 않아 사용자가 중단할 수 있는 상태. */
+const CANCELLABLE_STATUSES = new Set(['Pending', 'Running']);
 // ⚠ available 은 '파일이 남아 있는 모든 기록'(핀·임박 포함)이라는 기존 의미를 그대로 쓴다.
 const FILE_STATUS_FILTERS = [
   { value: 'All', label: 'All Files' },
@@ -683,6 +687,9 @@ export default function MyProjects() {
   const [rerunningIds, setRerunningIds] = useState(() => new Set());
   // 보관 연장/핀 다이얼로그 대상 (null 이면 닫힘)
   const [retentionDialogProject, setRetentionDialogProject] = useState(null);
+  // 해석 중단 확인 다이얼로그 대상 (null 이면 닫힘) + 요청 진행 중 플래그
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
 
   // 3D 뷰어 모달 상태
   const [is3DViewerOpen, setIs3DViewerOpen] = useState(false);
@@ -786,6 +793,33 @@ export default function MyProjects() {
       });
     }
   }, [rerunningIds, showToast, startGlobalJob]);
+
+  // ── 실행/대기 중 해석 중단 ──
+  const confirmCancel = useCallback(async () => {
+    if (!cancelTarget || cancelling) return;
+    setCancelling(true);
+    try {
+      const res = await cancelAnalysisJob(cancelTarget.job_id);
+      const body = res?.data || {};
+      if (body.cancelled) {
+        showToast('해석을 중단했습니다.', 'success');
+      } else {
+        // 취소 직전에 스스로 끝난 경우 — 서버가 실제 상태를 알려 준다.
+        showToast(body.message || '이미 종료된 작업입니다.', 'info');
+      }
+      fetchHistory();
+    } catch (error) {
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      if (status === 403) showToast('본인이 시작한 해석만 중단할 수 있습니다.', 'error');
+      else if (status === 404) showToast('작업을 찾을 수 없습니다(이미 만료됐거나 삭제됨).', 'error');
+      else showToast(detail || '중단 요청에 실패했습니다.', 'error', 7000);
+      if (status === 409) fetchHistory();
+    } finally {
+      setCancelling(false);
+      setCancelTarget(null);
+    }
+  }, [cancelTarget, cancelling, fetchHistory, showToast]);
 
   // ── 통계 집계 ──
   const stats = useMemo(() => {
@@ -1186,6 +1220,20 @@ export default function MyProjects() {
                     <td className="py-4 px-6 text-xs text-slate-400 text-right font-mono">{new Date(project.created_at).toLocaleString()}</td>
                     <td className="py-4 px-4 text-center">
                       <div className="flex items-center justify-center gap-1">
+                        {CANCELLABLE_STATUSES.has(project.status) && !!project.job_id && (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setCancelTarget(project);
+                            }}
+                            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-amber-50 hover:text-amber-700"
+                            title="해석 중단"
+                            aria-label={`${project.project_name} 해석 중단`}
+                          >
+                            <Ban size={16} />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={(event) => {
@@ -1377,6 +1425,23 @@ export default function MyProjects() {
           // 상단 카운트(보관 중 / 임박 / 만료 / 핀)는 summary 재조회로 맞춘다.
           fetchHistory();
         }}
+      />
+
+      {/* 실행/대기 중 해석 중단 확인 */}
+      <ConfirmDialog
+        isOpen={!!cancelTarget}
+        onCancel={() => { if (!cancelling) setCancelTarget(null); }}
+        onConfirm={confirmCancel}
+        title="해석 중단"
+        message={
+          cancelTarget
+            ? `『${cancelTarget.project_name || getDisplayProgramName(cancelTarget.program_name)}』 해석을 중단할까요? `
+              + '실행 중인 해석기 프로세스를 종료하며 되돌릴 수 없습니다.'
+            : ''
+        }
+        confirmLabel={cancelling ? '중단 중…' : '중단'}
+        cancelLabel="유지"
+        variant="warning"
       />
 
     </div>

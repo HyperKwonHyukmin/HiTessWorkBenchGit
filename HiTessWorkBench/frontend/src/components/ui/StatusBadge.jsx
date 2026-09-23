@@ -19,6 +19,7 @@ const STATUS_META = {
   Running: { variant: 'info', label: '실행 중', icon: Loader2, spin: true },
   Solving: { variant: 'info', label: '해석 중', icon: Clock },
   Interrupted: { variant: 'warning', label: '중단됨', icon: AlertCircle },
+  Cancelled: { variant: 'warning', label: '사용자 중단', icon: XCircle },
   Active: { variant: 'success', label: '서비스 중', icon: CheckCircle2 },
   Developing: { variant: 'warning', label: '개발중', icon: Clock },
   Planned: { variant: 'info', label: '출시 예정', icon: Clock },

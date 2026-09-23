@@ -19,9 +19,12 @@ from datetime import datetime
 from typing import Optional
 
 from .analysis_runner import (
+    CANCELLED_MESSAGE,
+    JobCancelledError,
     build_nastran_bridge_command,
     get_backend_dir,
     get_nastran_bridge_script_path,
+    is_cancel_requested,
     mark_complete,
     mark_running,
     record_analysis,
@@ -379,6 +382,13 @@ def task_execute_drawing_to_analysis(
             ]
         step("engine_invoke", cmd=cmd_args, mode=mode)
 
+        # 사용자가 이미 취소를 요청했으면 엔진을 띄우지 않는다.
+        # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+        if is_cancel_requested(job_id):
+            status_msg = "Failed"
+            user_reason = CANCELLED_MESSAGE
+            step("cancel_requested")
+            raise JobCancelledError(CANCELLED_MESSAGE)
         try:
             result = subprocess.run(
                 cmd_args,
@@ -671,6 +681,13 @@ def task_execute_drawing_rebuild(
                 "--mesh-size", str(mesh_size),
             ]
             step("engine_invoke", cmd=cmd_args, mode=mode)
+            # 사용자가 이미 취소를 요청했으면 엔진을 띄우지 않는다.
+            # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+            if is_cancel_requested(job_id):
+                status_msg = "Failed"
+                user_reason = CANCELLED_MESSAGE
+                step("cancel_requested")
+                raise JobCancelledError(CANCELLED_MESSAGE)
             try:
                 result = subprocess.run(
                     cmd_args, cwd=work_dir,
@@ -725,6 +742,13 @@ def task_execute_drawing_rebuild(
                 "--mesh-size", str(mesh_size),
             ]
             step("engine_invoke", cmd=cmd_args, mode=mode)
+            # 사용자가 이미 취소를 요청했으면 엔진을 띄우지 않는다.
+            # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+            if is_cancel_requested(job_id):
+                status_msg = "Failed"
+                user_reason = CANCELLED_MESSAGE
+                step("cancel_requested")
+                raise JobCancelledError(CANCELLED_MESSAGE)
             try:
                 result = subprocess.run(
                     cmd_args, cwd=work_dir,
@@ -2424,6 +2448,13 @@ def task_execute_drawing_solve(
         #   scr=yes(스크래치)·old=no(덮어쓰기)·batch=no(포그라운드)로 동기 실행을 강제한다(modelflow 와 동일).
         cmd_args = ["nastran", "solved_model.bdf", "scr=yes", "old=no", "batch=no"]
         step("nastran_invoke", cmd=cmd_args, cwd=solve_dir)
+        # 사용자가 이미 취소를 요청했으면 엔진을 띄우지 않는다.
+        # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+        if is_cancel_requested(job_id):
+            status_msg = "Failed"
+            user_reason = CANCELLED_MESSAGE
+            step("cancel_requested")
+            raise JobCancelledError(CANCELLED_MESSAGE)
         try:
             result = subprocess.run(
                 cmd_args,

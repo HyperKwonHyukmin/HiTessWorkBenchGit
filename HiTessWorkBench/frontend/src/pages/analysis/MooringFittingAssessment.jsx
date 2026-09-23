@@ -1273,14 +1273,14 @@ export default function MooringFittingAssessment() {
           }));
         }
 
-        if (data.status === 'Success' || data.status === 'Failed') {
+        if (data.status === 'Success' || data.status === 'Failed' || data.status === 'Cancelled') {
           clearInterval(pollRef.current);
           if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
           // 엔진 출력은 성공/실패 무관하게 보관한다.
           // 엔진은 입력 누락(예: MF 행 파싱 실패), 부재 자동 제거, 컴포넌트 분리,
           // 해석 후 평형 검증 결과를 stdout 으로 정확히 경고하는데, 종전에는 Failed 일 때만
           // 이 로그를 화면에 실어 성공 케이스의 경고가 전량 사라졌다.
-          setEngineLog(data.engine_log || (data.status === 'Failed' ? (data.message || '알 수 없는 오류') : null));
+          setEngineLog(data.engine_log || (data.status !== 'Success' ? (data.message || '알 수 없는 오류') : null));
 
           if (data.status === 'Success') {
             setSteps(prev => prev.map(s => {
@@ -1604,7 +1604,7 @@ export default function MooringFittingAssessment() {
   /* ── 파생 ──────────────────────────────────────────────────────────── */
   const isRunning  = jobStatus?.status === 'Pending' || jobStatus?.status === 'Running';
   const isSuccess  = jobStatus?.status === 'Success';
-  const isFailed   = jobStatus?.status === 'Failed';
+  const isFailed   = jobStatus?.status === 'Failed' || jobStatus?.status === 'Cancelled';
   const result     = jobStatus?.project?.result_info;
   const canRun     = !!structureFile && !!loadFile && !isRunning;
   const doneCount  = steps.filter(s => s.status === 'done').length;

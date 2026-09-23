@@ -335,3 +335,23 @@ export const downloadUnitLiftingReport = (analysisId, options = {}, kind = 'resu
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       responseType: 'blob',
     });
+
+/**
+ * 실행/대기 중인 해석 작업을 중단한다. 소유자 또는 관리자만 허용된다.
+ *
+ * 응답(200):
+ *   - 큐 작업: { job_id, kind: 'queue', cancelled: true,  status: 'Cancelled', message }
+ *              취소 직전에 스스로 끝났으면 cancelled:false + status 는 실제 상태(예: 'Success')
+ *   - PSA 작업: { job_id, kind: 'psa',  cancelled: true }
+ *              또는 cancelled:false + status 는 PSA 자체 어휘(소문자 'running'/'done')
+ * 오류: 403(권한 없음) / 404(작업 없음) / 409(이미 종료됨, detail 에 사유)
+ *
+ * @param {string} jobId
+ * @returns {Promise<import('axios').AxiosResponse<{job_id: string, kind: 'queue'|'psa', cancelled: boolean, status?: string, message?: string}>>}
+ */
+export const cancelAnalysisJob = (jobId) =>
+  axios.post(
+    `${API_BASE_URL}/api/analysis/${encodeURIComponent(jobId)}/cancel`,
+    {},
+    { headers: getAuthHeaders() },
+  );

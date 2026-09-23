@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { usePolling } from './usePolling';
 import { useAuth } from '../contexts/AuthContext';
+import { isTerminalJobStatus } from '../utils/globalJobs';
 
 /**
  * 해석 작업의 공통 상태(폴링/로그/진행률/사번)를 한 곳에서 관리하는 훅.
@@ -54,7 +55,7 @@ export function useAnalysisJob({
   pollingMaxRetries,
 } = {}) {
   const savedJob = savedState?.job || {};
-  const savedJobIsTerminal = savedJob.status === 'Success' || savedJob.status === 'Failed' || savedJob.status === 'Interrupted';
+  const savedJobIsTerminal = isTerminalJobStatus(savedJob.status);
   const [jobId, setJobId] = useState(savedJobIsTerminal ? null : savedJob.jobId ?? null);
   const [isRunning, setIsRunning] = useState(savedJobIsTerminal ? false : savedJob.isRunning ?? false);
   const [progress, setProgress] = useState(savedJob.progress ?? 0);
@@ -136,7 +137,7 @@ export function useAnalysisJob({
       !savedJob.resultRestored &&
       (
         (savedJob.status === 'Success' && savedJob.completeData) ||
-        ((savedJob.status === 'Failed' || savedJob.status === 'Interrupted') && savedJob.errorData)
+        ((savedJob.status === 'Failed' || savedJob.status === 'Interrupted' || savedJob.status === 'Cancelled') && savedJob.errorData)
       );
     if (hasUnrestoredTerminalPayload) return;
 
@@ -183,11 +184,15 @@ export function useAnalysisJob({
       return;
     }
 
-    if ((savedJob.status === 'Failed' || savedJob.status === 'Interrupted') && savedJob.errorData) {
+    if ((savedJob.status === 'Failed' || savedJob.status === 'Interrupted' || savedJob.status === 'Cancelled') && savedJob.errorData) {
       restoredTerminalJobRef.current = savedJob.jobId;
       setJobId(null);
       setIsRunning(false);
-      setStatusMessage(savedJob.statusMessage || savedJob.message || '해석 실패');
+      setStatusMessage(
+        savedJob.statusMessage
+        || savedJob.message
+        || (savedJob.status === 'Cancelled' ? '사용자 중단' : '해석 실패'),
+      );
       setSavedStateRef.current?.({
         job: {
           ...savedJob,
@@ -236,7 +241,11 @@ export function useAnalysisJob({
       setJobId(null);
       // 실패 기록도 남긴다 — 사용자가 Job Center 에서 실패를 확인하고 원인 화면으로 돌아갈 수 있어야 한다.
       const isTimeout = !!errData?.timeout;
-      const msg = isTimeout ? timeoutLogMessage : errorLogMessage;
+      // 사용자 중단은 '실패'가 아니다 — 서버 메시지를 그대로 남긴다.
+      const isCancelled = errData?.status === 'Cancelled';
+      const msg = isCancelled
+        ? (errData?.message || '사용자 요청으로 해석을 중단했습니다.')
+        : isTimeout ? timeoutLogMessage : errorLogMessage;
       if (msg) {
         setLogs(prev => [...prev, {
           time: new Date().toLocaleTimeString(),

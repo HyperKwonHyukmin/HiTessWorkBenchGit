@@ -2,7 +2,7 @@ import React from 'react';
 import { Download, CalendarRange } from 'lucide-react';
 
 // 상태 필터 옵션 — All(전체) / Success(성공) / Failed(실패)
-const STATUS_OPTIONS = [['All', '전체'], ['Success', '성공'], ['Failed', '실패']];
+const STATUS_OPTIONS = [['All', '전체'], ['Success', '성공'], ['Failed', '실패'], ['Cancelled', '사용자 중단']];
 
 export default function AnalysisFilterBar({
   dateFrom, dateTo, onDateFromChange, onDateToChange, onDownloadCSV,

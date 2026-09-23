@@ -25,8 +25,11 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from .analysis_runner import (
+    CANCELLED_MESSAGE,
+    JobCancelledError,
     build_nastran_bridge_command,
     get_nastran_bridge_script_path,
+    is_cancel_requested,
     mark_complete,
     mark_running,
     record_analysis,
@@ -368,6 +371,10 @@ def task_execute_plate_structure(
         update_progress(job_id, 30, "Nastran 실행 중...")
         nastran_args = [nastran_exe, bdf_filename]
         logger.info("[PlateStructure] nastran cmd: %s (cwd=%s)", " ".join(nastran_args), bdf_dir)
+        # 사용자가 이미 취소를 요청했으면 해석기를 띄우지 않는다.
+        # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+        if is_cancel_requested(job_id):
+            raise JobCancelledError(CANCELLED_MESSAGE)
         run = subprocess.run(
             nastran_args, cwd=bdf_dir,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -388,6 +395,9 @@ def task_execute_plate_structure(
             os.path.basename(f06_path), "-o", os.path.basename(bridge_result_json)
         )
         logger.info("[PlateStructure] bridge cmd: %s (cwd=%s)", " ".join(bridge_args), bdf_dir)
+        # Nastran 단계가 수 분 걸리므로 그 사이 들어온 취소를 여기서 한 번 더 본다.
+        if is_cancel_requested(job_id):
+            raise JobCancelledError(CANCELLED_MESSAGE)
         bridge = subprocess.run(
             bridge_args, cwd=bdf_dir,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300,

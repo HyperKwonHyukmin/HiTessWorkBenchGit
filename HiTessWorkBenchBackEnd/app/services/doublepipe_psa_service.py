@@ -693,6 +693,28 @@ def _reap_after_tree_kill(proc) -> bool:
         return False
 
 
+def _register_process_with_job_manager(job_id: str, proc) -> None:
+    """공용 취소 API 가 이 Popen 을 찾아 종료할 수 있도록 job_status_store 에 등록한다.
+
+    PSA 의 라이센스 슬롯·검증 로직은 그대로 두고, 참조만 공용 스토어에 함께 매단다.
+    등록 실패가 해석 실행을 막으면 안 되므로 예외는 삼킨다.
+    """
+    try:
+        from . import job_manager
+        job_manager.job_status_store.register_process(job_id, proc)
+    except Exception:  # noqa: BLE001
+        logger.debug("job_status_store 프로세스 등록 실패 job=%s", job_id, exc_info=True)
+
+
+def _unregister_process_with_job_manager(job_id: str, proc) -> None:
+    """파이프라인이 끝난 Popen 참조를 공용 스토어에서 해제한다(죽은 객체 재종료 방지)."""
+    try:
+        from . import job_manager
+        job_manager.job_status_store.unregister_process(job_id, proc)
+    except Exception:  # noqa: BLE001
+        logger.debug("job_status_store 프로세스 해제 실패 job=%s", job_id, exc_info=True)
+
+
 def _terminate_process_tree(proc, job_id: str) -> bool:
     """OS 프로세스 트리 종료와 Popen 회수를 모두 확인한 경우에만 True."""
     tree_stopped = _kill_process_tree(getattr(proc, "pid", None), job_id)
@@ -820,9 +842,12 @@ def _run_pipeline(job_id: str, command: list, cwd: str, kind: str = "psa"):
             running.setdefault("_processReady", threading.Event()).set()
         else:
             cancel_after_popen = False
+    # 공용 취소 API(job_status_store.cancel) 가 이 Popen 을 찾아 종료할 수 있도록 등록한다.
+    _register_process_with_job_manager(job_id, proc)
 
     if cancel_after_popen:
         _cancel_running_process(job_id)
+        _unregister_process_with_job_manager(job_id, proc)
         stream = getattr(proc, "stdout", None)
         if stream is not None:
             try:
@@ -859,6 +884,7 @@ def _run_pipeline(job_id: str, command: list, cwd: str, kind: str = "psa"):
         _append_log(job_id, f"[치명] 해석 중 예외: {exc}")
     finally:
         _close_process_output(proc, output_reader)
+        _unregister_process_with_job_manager(job_id, proc)
 
     if outcome == "timeout":
         if not terminated:

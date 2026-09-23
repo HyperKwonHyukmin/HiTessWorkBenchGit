@@ -3,6 +3,7 @@ import {
   Activity,
   AlertCircle,
   ArrowUpRight,
+  Ban,
   CheckCircle2,
   Clock3,
   Loader2,
@@ -12,13 +13,16 @@ import {
 } from 'lucide-react';
 import { useGlobalJobs } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
+import { useToast } from '../../contexts/ToastContext';
+import { cancelAnalysisJob } from '../../api/analysis';
 import ChatDock from '../chat/ChatDock';
 import DoublePipePsaTray from '../analysis/DoublePipePsaTray';
 import Badge from '../ui/Badge';
+import ConfirmDialog from '../ui/ConfirmDialog';
 
 const RESUME_ENTRY_KEY = 'workbench:analysis-menu-resume-entry';
 
-const TERMINAL_STATUSES = new Set(['Success', 'Failed', 'Interrupted']);
+const TERMINAL_STATUSES = new Set(['Success', 'Failed', 'Interrupted', 'Cancelled']);
 
 const STATUS_CONFIG = {
   Pending: {
@@ -51,7 +55,16 @@ const STATUS_CONFIG = {
     icon: AlertCircle,
     iconClass: 'text-red-600',
   },
+  Cancelled: {
+    label: '사용자 중단',
+    badge: 'warning',
+    icon: Ban,
+    iconClass: 'text-amber-600',
+  },
 };
+
+/** 사용자가 중단할 수 있는 상태(아직 끝나지 않은 작업). */
+const CANCELLABLE_STATUSES = new Set(['Pending', 'Running']);
 
 function formatElapsed(startedAt, completedAt) {
   if (!startedAt) return '—';
@@ -62,7 +75,7 @@ function formatElapsed(startedAt, completedAt) {
   return minutes > 0 ? `${minutes}분 ${remainder}초` : `${remainder}초`;
 }
 
-function JobRow({ job, onNavigate, onDismiss }) {
+function JobRow({ job, onNavigate, onDismiss, onRequestCancel }) {
   const config = STATUS_CONFIG[job.status] || STATUS_CONFIG.Pending;
   const StatusIcon = config.icon;
   const progress = Math.min(100, Math.max(0, Number(job.progress) || 0));
@@ -88,6 +101,17 @@ function JobRow({ job, onNavigate, onDismiss }) {
             {job.message || config.label}
           </p>
         </button>
+        {CANCELLABLE_STATUSES.has(job.status) && (
+          <button
+            type="button"
+            onClick={() => onRequestCancel(job)}
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-amber-50 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            title="해석 중단"
+            aria-label={`${job.displayName || job.menu} 해석 중단`}
+          >
+            <Ban size={14} />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => onDismiss(job.jobId)}
@@ -105,9 +129,11 @@ function JobRow({ job, onNavigate, onDismiss }) {
             className={`h-full rounded-full transition-[width] duration-300 ${
               job.status === 'Success'
                 ? 'bg-emerald-500'
-                : job.status === 'Failed' || job.status === 'Interrupted'
-                  ? 'bg-red-500'
-                  : 'bg-blue-500'
+                : job.status === 'Cancelled'
+                  ? 'bg-amber-500'
+                  : job.status === 'Failed' || job.status === 'Interrupted'
+                    ? 'bg-red-500'
+                    : 'bg-blue-500'
             }`}
             style={{ width: `${progress}%` }}
           />
@@ -135,7 +161,11 @@ function JobRow({ job, onNavigate, onDismiss }) {
 export default function UtilityDock({ currentUserId, isAdmin = false }) {
   const { globalJobs = [], clearGlobalJob } = useGlobalJobs();
   const { currentMenu, setCurrentMenu } = useNavigation();
+  const { showToast } = useToast();
   const [activePanel, setActivePanel] = useState(null);
+  // 중단 확인 대상 job(null 이면 다이얼로그 닫힘) + 요청 진행 중 플래그
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
   const [chatUnread, setChatUnread] = useState(0);
   // 로그인한 모든 사용자에게 '메시지' 버튼을 노출한다(ChatDock 이 로그인 여부로 최종 확정).
   // UtilityDock 자체가 APP_STATE.MAIN(로그인 상태)에서만 렌더되므로 true 로 시작해도
@@ -160,6 +190,33 @@ export default function UtilityDock({ currentUserId, isAdmin = false }) {
 
   const togglePanel = (panel) => {
     setActivePanel(current => current === panel ? null : panel);
+  };
+
+  const requestCancel = (job) => setCancelTarget(job);
+
+  const confirmCancel = async () => {
+    if (!cancelTarget || cancelling) return;
+    setCancelling(true);
+    try {
+      const res = await cancelAnalysisJob(cancelTarget.jobId);
+      const body = res?.data || {};
+      if (body.cancelled) {
+        // 카드 상태는 GlobalJobPoller 가 다음 tick(1.5초)에 Cancelled 로 갱신한다.
+        showToast('해석을 중단했습니다.', 'success');
+      } else {
+        // 취소 직전에 스스로 끝난 경우 — 서버가 실제 상태를 알려 준다(PSA 는 소문자 어휘).
+        showToast(body.message || '이미 종료된 작업입니다.', 'info');
+      }
+    } catch (err) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (status === 403) showToast('본인이 시작한 해석만 중단할 수 있습니다.', 'error');
+      else if (status === 404) showToast('작업을 찾을 수 없습니다(이미 만료됐거나 삭제됨).', 'error');
+      else showToast(detail || '중단 요청에 실패했습니다.', 'error');
+    } finally {
+      setCancelling(false);
+      setCancelTarget(null);
+    }
   };
 
   const navigateToJob = (job) => {
@@ -219,6 +276,7 @@ export default function UtilityDock({ currentUserId, isAdmin = false }) {
                   job={job}
                   onNavigate={navigateToJob}
                   onDismiss={clearGlobalJob}
+                  onRequestCancel={requestCancel}
                 />
               ))
             ) : !psaActive && (
@@ -288,6 +346,22 @@ export default function UtilityDock({ currentUserId, isAdmin = false }) {
           </button>
         )}
       </nav>
+
+      <ConfirmDialog
+        isOpen={!!cancelTarget}
+        onCancel={() => { if (!cancelling) setCancelTarget(null); }}
+        onConfirm={confirmCancel}
+        title="해석 중단"
+        message={
+          cancelTarget
+            ? `『${cancelTarget.displayName || cancelTarget.menu}』 해석을 중단할까요? `
+              + '실행 중인 해석기 프로세스를 종료하며 되돌릴 수 없습니다.'
+            : ''
+        }
+        confirmLabel={cancelling ? '중단 중…' : '중단'}
+        cancelLabel="유지"
+        variant="warning"
+      />
     </>
   );
 }

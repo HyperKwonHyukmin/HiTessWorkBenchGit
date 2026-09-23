@@ -636,7 +636,11 @@ export function DashboardProvider({ children }) {
           const current = pagePrev[pageStateKey] || {};
           const isRunning = !isTerminalJobStatus(nextJob.status);
           const isSuccess = nextJob.status === 'Success';
-          const isFailure = nextJob.status === 'Failed' || nextJob.status === 'Interrupted';
+          // Cancelled(사용자 중단)도 '결과 없이 끝난 작업'이라 errorData 로 보존한다.
+          // 그래야 페이지로 돌아왔을 때 진행 중 스피너가 아니라 중단 사유가 복원된다.
+          const isFailure = nextJob.status === 'Failed'
+            || nextJob.status === 'Interrupted'
+            || nextJob.status === 'Cancelled';
           return {
             ...pagePrev,
             [pageStateKey]: {
@@ -928,11 +932,16 @@ function GlobalJobPoller({ job, onPatchJob }) {
     maxRetries: POLLING_POLICY.analysisMaxRetries,
     onProgress: (data) => onPatchJob(job.jobId, data),
     onComplete: (data) => onPatchJob(job.jobId, data),
-    onError: (err) => onPatchJob(job.jobId, {
-      status: 'Failed',
-      progress: 100,
-      message: err?.timeout ? '해석 시간 초과 (3분)' : '서버 통신 오류 발생',
-    }),
+    // usePolling 은 종료 상태(Failed/Interrupted/Cancelled)에서도 onError 를 부른다.
+    // 서버 payload(err.status 가 있는 경우)는 그대로 반영해야 카드가 '사용자 중단'으로
+    // 표시된다. 예전처럼 무조건 Failed 로 덮으면 취소·엔진 실패 메시지가 모두 사라진다.
+    onError: (err) => onPatchJob(job.jobId, err?.status
+      ? { ...err, progress: 100 }
+      : {
+        status: 'Failed',
+        progress: 100,
+        message: err?.timeout ? '해석 시간 초과 (3분)' : '서버 통신 오류 발생',
+      }),
   });
 
   return null;

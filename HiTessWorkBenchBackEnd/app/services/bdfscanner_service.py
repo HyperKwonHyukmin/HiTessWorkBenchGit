@@ -4,7 +4,10 @@ import subprocess
 import logging
 
 from .analysis_runner import (
+    CANCELLED_MESSAGE,
+    JobCancelledError,
     get_backend_dir,
+    is_cancel_requested,
     mark_complete,
     mark_running,
     record_analysis,
@@ -63,6 +66,10 @@ def task_execute_bdfscanner(
         logger.info("[BdfScanner] cmd   : %s", " ".join(cmd_args))
         # ───────────────────────────────────────────────────────────────
 
+        # 사용자가 이미 취소를 요청했으면 해석기를 띄우지 않는다.
+        # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+        if is_cancel_requested(job_id):
+            raise JobCancelledError(CANCELLED_MESSAGE)
         # bytes 모드로 실행: .NET 콘솔 인코딩(OEM) 문제 회피
         result = subprocess.run(
             cmd_args,

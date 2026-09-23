@@ -7,6 +7,7 @@ import { getAuthHeaders } from '../../utils/auth';
 
 function statusVariant(status) {
   if (status === 'Success') return 'success';
+  if (status === 'Cancelled') return 'warning';
   if (status === 'Failed' || status === 'Interrupted') return 'error';
   if (status === 'Pending') return 'warning';
   return 'info';
@@ -25,7 +26,8 @@ export default function AnalysisResultPanel({ job, compact = false, onNavigate, 
   const resultInfo = job.project?.result_info || job.result_info || {};
   const files = collectFiles(resultInfo);
   const isSuccess = job.status === 'Success';
-  const isFailed = job.status === 'Failed' || job.status === 'Interrupted';
+  // Cancelled 도 '결과 없이 끝난 상태'로 다뤄야 진행률 스피너가 계속 돌지 않는다.
+  const isFailed = job.status === 'Failed' || job.status === 'Interrupted' || job.status === 'Cancelled';
 
   const handleDownload = async (path) => {
     const res = await fetch(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(path)}`, {

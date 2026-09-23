@@ -24,6 +24,9 @@ from datetime import datetime
 from typing import Optional
 
 from .analysis_runner import (
+    CANCELLED_MESSAGE,
+    JobCancelledError,
+    is_cancel_requested,
     mark_complete,
     mark_running,
     record_analysis,
@@ -214,6 +217,16 @@ def task_execute_modelbuilder_solve(
         #   포그라운드 실행을 강제한다(검증된 modelflow 경로와 동일).
         cmd_args = ["nastran", "solved_model.bdf", "scr=yes", "old=no", "batch=no"]
         step("nastran_invoke", cmd=cmd_args, cwd=solve_dir)
+        # 사용자가 이미 취소를 요청했으면 해석기를 띄우지 않는다.
+        # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+        # ⚠ 이 함수의 except RuntimeError 는 status_msg 를 건드리지 않고 pass 하므로,
+        #   이 파일의 다른 실패 분기와 똑같이 raise 전에 status_msg/user_reason 을 먼저 확정한다.
+        if is_cancel_requested(job_id):
+            status_msg = "Failed"
+            user_reason = CANCELLED_MESSAGE
+            step("cancel_requested")
+            engine_output_parts.append("[Cancelled] " + CANCELLED_MESSAGE)
+            raise JobCancelledError(CANCELLED_MESSAGE)
         try:
             result = subprocess.run(
                 cmd_args,

@@ -16,7 +16,9 @@ export const GLOBAL_JOB_HISTORY_LIMIT = 10;
 /** 완료된 해석을 목록에 남겨 두는 시간(30분). */
 export const GLOBAL_JOB_VISIBLE_MS = 30 * 60 * 1000;
 
-const TERMINAL_JOB_STATUSES = new Set(['Success', 'Failed', 'Interrupted']);
+// Cancelled = 사용자가 중단한 작업(Plan D). 서버 재시작 유실인 Interrupted 와 구분되지만
+// '더 이상 진행되지 않는다'는 점은 같다 — 빠뜨리면 취소된 작업을 화면이 영원히 폴링한다.
+const TERMINAL_JOB_STATUSES = new Set(['Success', 'Failed', 'Interrupted', 'Cancelled']);
 
 /** 더 이상 진행되지 않는 상태인지. 만료 타이머는 이 시점부터 돈다. */
 export function isTerminalJobStatus(status) {

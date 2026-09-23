@@ -22,8 +22,11 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from .analysis_runner import (
+    CANCELLED_MESSAGE,
+    JobCancelledError,
     build_nastran_bridge_command,
     get_nastran_bridge_script_path,
+    is_cancel_requested,
     mark_complete,
     mark_running,
     record_analysis,
@@ -587,6 +590,9 @@ def _run_nastran_validate(
     )
     logger.info("[GroupModuleUnit] validate-run prepare cmd: %s (cwd=%s)", " ".join(prepare_args), bdf_dir)
     try:
+        # 사용자가 이미 취소를 요청했으면 해석기를 띄우지 않는다(job_id 는 worker 컨텍스트에서 해석).
+        if is_cancel_requested():
+            raise JobCancelledError(CANCELLED_MESSAGE)
         prepare = subprocess.run(
             prepare_args, cwd=bdf_dir,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -630,6 +636,8 @@ def _run_nastran_validate(
         run_args = [nastran_exe, validation_bdf]
         logger.info("[GroupModuleUnit] nastran cmd: %s (cwd=%s)", " ".join(run_args), bdf_dir)
         # nastran.exe 는 solver 를 손자 프로세스로 띄우므로 timeout 시 트리 kill 이 필요하다.
+        if is_cancel_requested():
+            raise JobCancelledError(CANCELLED_MESSAGE)
         run_result = run_subprocess_killtree(
             run_args,
             cwd=bdf_dir,
@@ -701,6 +709,9 @@ def task_execute_groupmoduleunit(
         update_progress(job_id, 30, "BDF 모델 파싱 중...")
         logger.info("[GroupModuleUnit] cmd: %s (cwd=%s)", " ".join(cmd_args), bdf_dir)
 
+        # 사용자가 이미 취소를 요청했으면 해석기를 띄우지 않는다.
+        if is_cancel_requested(job_id):
+            raise JobCancelledError(CANCELLED_MESSAGE)
         result = subprocess.run(
             cmd_args,
             cwd=bdf_dir,

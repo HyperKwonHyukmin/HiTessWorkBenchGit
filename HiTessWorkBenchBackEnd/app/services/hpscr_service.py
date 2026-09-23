@@ -19,7 +19,10 @@ import os
 import subprocess
 
 from .analysis_runner import (
+    CANCELLED_MESSAGE,
+    JobCancelledError,
     get_backend_dir,
+    is_cancel_requested,
     mark_complete,
     mark_running,
     record_analysis,
@@ -121,6 +124,11 @@ def task_execute_hpscr(
         logger.info("[HP-SCR] exe=%s bdf=%s", target_exe, bdf_path)
         # POR_Assessment_CLI.exe 는 상대 파일명을 cwd 가 아닌 EXE 디렉터리 기준으로 해석한다.
         # PSA/POR 모두 일관되게 절대경로로 전달해야 BDF 를 정확히 찾을 수 있다.
+        # 사용자가 이미 취소를 요청했으면 해석기를 띄우지 않는다.
+        # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.
+        #  Step 1 의 FemScanner 는 짧아서(≤3분) 별도 게이트를 두지 않는다.)
+        if is_cancel_requested(job_id):
+            raise JobCancelledError(CANCELLED_MESSAGE)
         result = subprocess.run(
             [target_exe, bdf_path],
             cwd=bdf_dir,

@@ -24,8 +24,11 @@ from typing import Any, Dict
 
 from .. import database, models
 from .analysis_runner import (
+    CANCELLED_MESSAGE,
+    JobCancelledError,
     build_nastran_bridge_command,
     get_nastran_bridge_script_path,
+    is_cancel_requested,
     mark_complete,
     mark_running,
     record_analysis,
@@ -146,6 +149,9 @@ def task_execute_unit_structural(
                 "-o", os.path.basename(edited_bdf),
             )
             logger.info("[UnitStructural] apply-edit cmd: %s (cwd=%s)", " ".join(apply_args), bdf_dir)
+            # 사용자가 이미 취소를 요청했으면 다음 단계를 시작하지 않는다.
+            if is_cancel_requested(job_id):
+                raise JobCancelledError(CANCELLED_MESSAGE)
             apply_proc = subprocess.run(
                 apply_args, cwd=bdf_dir,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
@@ -174,6 +180,10 @@ def task_execute_unit_structural(
             "--prepare-only",
         )
         logger.info("[UnitStructural] prepare cmd: %s (cwd=%s)", " ".join(prepare_args), bdf_dir)
+        # 사용자가 이미 취소를 요청했으면 다음 단계를 시작하지 않는다.
+        # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+        if is_cancel_requested(job_id):
+            raise JobCancelledError(CANCELLED_MESSAGE)
         prepare = subprocess.run(
             prepare_args, cwd=bdf_dir,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300,
@@ -204,6 +214,7 @@ def task_execute_unit_structural(
         run = run_subprocess_killtree(
             nastran_args, cwd=bdf_dir,
             timeout=1800,  # SOL 101 + 모델 크기 고려해 30분 여유
+            job_id=job_id,  # 취소 시 nastran 트리를 공용 API 가 회수할 수 있게 등록
         )
         engine_output += "\n" + _decode_completed(run)
         # Nastran 의 비정상 종료(returncode != 0) 는 F06 가 존재해도 결과 신뢰성이 없을 수 있다.
@@ -227,6 +238,10 @@ def task_execute_unit_structural(
             "--allowable-mpa", str(allowable_mpa),
         )
         logger.info("[UnitStructural] result cmd: %s (cwd=%s)", " ".join(result_args), bdf_dir)
+        # 사용자가 이미 취소를 요청했으면 다음 단계를 시작하지 않는다.
+        # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+        if is_cancel_requested(job_id):
+            raise JobCancelledError(CANCELLED_MESSAGE)
         rmap = subprocess.run(
             result_args, cwd=bdf_dir,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300,

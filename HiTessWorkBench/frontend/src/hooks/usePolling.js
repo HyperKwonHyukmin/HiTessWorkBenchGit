@@ -15,7 +15,8 @@ import { POLLING_POLICY } from './pollingPolicy';
  * @param {number}      options.maxRetries    - 최대 재시도 횟수. 기본값 120 (약 3분).
  * @param {function}    options.onProgress    - 진행 중 콜백. (data) 수신.
  * @param {function}    options.onComplete    - 완료(Success) 콜백. (data) 수신.
- * @param {function}    options.onError       - 실패/타임아웃 콜백. (data | { timeout: true }) 수신.
+ * @param {function}    options.onError       - 실패/중단/타임아웃 콜백. (data | { timeout: true }) 수신.
+ *                                              data.status 로 Failed / Interrupted / Cancelled 구분.
  */
 export function usePolling({
   jobId,
@@ -71,7 +72,10 @@ export function usePolling({
           return;
         }
 
-        if (data.status === 'Failed' || data.status === 'Interrupted') {
+        // Cancelled(사용자 중단)도 종료 상태다. 여기서 멈추지 않으면 취소된 작업을
+        // maxRetries 까지 계속 조회한다. 서버 payload 를 그대로 넘겨 호출측이
+        // data.status 로 '실패'와 '사용자 중단'을 구분할 수 있게 한다.
+        if (data.status === 'Failed' || data.status === 'Interrupted' || data.status === 'Cancelled') {
           if (onErrorRef.current) onErrorRef.current(data);
           return;
         }

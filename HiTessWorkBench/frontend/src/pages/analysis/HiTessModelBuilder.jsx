@@ -30,7 +30,7 @@ import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.0.83';
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.86';
 
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',  icon: FileSpreadsheet, status: 'wait' },
@@ -676,7 +676,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
   /* ── 데이터 계산 ── */
   const summary  = audit.summary || {};
   const byKind   = summarizeAuditByKind(audit);
-  const isFailed = jobStatus?.status === 'Failed';
+  const isFailed = jobStatus?.status === 'Failed' || jobStatus?.status === 'Cancelled';
 
   const total     = summary.totalDataRows   || 0;
   const converted = summary.convertedRows   || 0;
@@ -2611,7 +2611,7 @@ export default function HiTessModelBuilder() {
     // 다른 App 해석이 더 최근이어도 이 App 의 해석을 집어야 한다(globalJob 은 최신 1개일 뿐).
     const gj = dashboardCtx?.getJobForMenu?.('HiTESS Model Builder');
     if (saved?.jobStatus?.status === 'Running' && gj) {
-      if (gj.status === 'Success' || gj.status === 'Failed') {
+      if (gj.status === 'Success' || gj.status === 'Failed' || gj.status === 'Cancelled') {
         setCurrentJobId(gj.jobId);
         fetch(`${API_BASE_URL}/api/analysis/status/${gj.jobId}`, { headers: getAuthHeaders() })
           .then(r => r.ok ? r.json() : Promise.reject(r.status))
@@ -2968,7 +2968,8 @@ export default function HiTessModelBuilder() {
           }));
         }
 
-        if (data.status === 'Success' || data.status === 'Failed') {
+        // Cancelled(사용자 중단)도 종료 상태 — 빠지면 폴러가 멈추지 않는다.
+        if (data.status === 'Success' || data.status === 'Failed' || data.status === 'Cancelled') {
           clearInterval(pollRef.current);
           pollRef.current = null;
           applyJobResult(data);
@@ -3008,9 +3009,13 @@ export default function HiTessModelBuilder() {
       }));
       // 사용자 요구: 실행 완료 시 자동으로 step 0 (CSV 검증) 으로 이동
       setActiveIdx(0);
-    } else if (data.status === 'Failed') {
+    } else if (data.status === 'Failed' || data.status === 'Cancelled') {
       setSteps(prev => prev.map((s, i) => i <= 1 ? { ...s, status: 'error' } : s));
-      setEngineLog(data.engine_log || data.message || '알 수 없는 오류');
+      setEngineLog(
+        data.engine_log
+        || data.message
+        || (data.status === 'Cancelled' ? '사용자 요청으로 해석을 중단했습니다.' : '알 수 없는 오류'),
+      );
     }
   }, []);
 
@@ -3181,7 +3186,7 @@ export default function HiTessModelBuilder() {
         if (!sr.ok) { handleUnauthorized(sr.status); return; }
         const sd = await sr.json();
         setEditJobStatus(sd);
-        if (sd.status === 'Success' || sd.status === 'Failed') {
+        if (sd.status === 'Success' || sd.status === 'Failed' || sd.status === 'Cancelled') {
           clearInterval(editPollRef.current);
           editPollRef.current = null;
           setEditApplying(false);
@@ -3607,7 +3612,7 @@ export default function HiTessModelBuilder() {
             <ProgressBar
               progress={jobStatus?.progress ?? 0}
               message={jobStatus?.message}
-              error={jobStatus?.status === 'Failed'}
+              error={jobStatus?.status === 'Failed' || jobStatus?.status === 'Cancelled'}
               elapsed={elapsedSecs}
             />
           )}

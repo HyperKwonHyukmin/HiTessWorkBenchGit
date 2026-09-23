@@ -25,6 +25,9 @@ from datetime import datetime
 from pathlib import Path
 
 from .analysis_runner import (
+    CANCELLED_MESSAGE,
+    JobCancelledError,
+    is_cancel_requested,
     mark_complete,
     mark_running,
     record_analysis,
@@ -150,6 +153,10 @@ def task_execute_modelflow(
         update_progress(job_id, 30, "Model Builder 실행 중...")
 
         try:
+            # 사용자가 이미 취소를 요청했으면 엔진을 띄우지 않는다.
+            # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+            if is_cancel_requested(job_id):
+                raise JobCancelledError(CANCELLED_MESSAGE)
             result = subprocess.run(
                 cmd,
                 cwd=work_dir,
@@ -454,6 +461,10 @@ def _run_nastran_on_bdf(bdf_path: str, nastran_path: str, timeout_sec: int = 180
     bdf_basename = os.path.basename(bdf_path)
     cmd = [nastran_path, bdf_basename, "scr=yes", "old=no", "batch=no"]
     logger.info("[Nastran] cmd: %s (cwd=%s)", " ".join(cmd), work_dir)
+    # 취소 사전 체크 — job_id 는 worker 컨텍스트(current_job_id)에서 해석한다.
+    # 이 함수는 예외 대신 (exit_code, log) 를 돌려주는 계약이라 여기서도 튜플로 끊는다.
+    if is_cancel_requested():
+        return -1, f"[Nastran] {CANCELLED_MESSAGE}"
     try:
         proc = subprocess.run(
             cmd,
@@ -486,6 +497,8 @@ def _run_f06parser(f06_path: str, work_dir: str, timeout_sec: int = 300) -> tupl
 
     cmd = [parser_exe, f06_path, "--output-dir", work_dir]
     logger.info("[F06Parser] cmd: %s", " ".join(cmd))
+    if is_cancel_requested():
+        return -1, f"[F06Parser] {CANCELLED_MESSAGE}"
     try:
         proc = subprocess.run(
             cmd,
@@ -549,6 +562,9 @@ def task_execute_apply_edit(
             job_status_store.update_job(job_id, {"progress": 15, "message": "편집 적용 중 (1/3)..."})
 
             try:
+                # 사용자가 이미 취소를 요청했으면 엔진을 띄우지 않는다.
+                if is_cancel_requested(job_id):
+                    raise JobCancelledError(CANCELLED_MESSAGE)
                 result = subprocess.run(
                     cmd,
                     cwd=output_dir,

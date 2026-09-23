@@ -8,7 +8,10 @@ import subprocess
 from typing import Any, Dict
 
 from .analysis_runner import (
+    CANCELLED_MESSAGE,
+    JobCancelledError,
     get_backend_dir,
+    is_cancel_requested,
     mark_complete,
     mark_running,
     record_analysis,
@@ -58,6 +61,10 @@ def task_execute_module_stability(
         update_progress(job_id, 40, "CLI 실행 중...")
         logger.info("[ModuleStability] cmd: %s", " ".join(cmd_args))
 
+        # 사용자가 이미 취소를 요청했으면 해석기를 띄우지 않는다.
+        # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+        if is_cancel_requested(job_id):
+            raise JobCancelledError(CANCELLED_MESSAGE)
         result = subprocess.run(
             cmd_args,
             stdout=subprocess.PIPE,
@@ -169,6 +176,10 @@ def task_optimize_module_hoist_positions(
         update_progress(job_id, 40, "권상 위치 후보 평가 중...")
         logger.info("[ModuleHoistOptimize] cmd: %s", " ".join(cmd_args))
 
+        # 사용자가 이미 취소를 요청했으면 해석기를 띄우지 않는다.
+        # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
+        if is_cancel_requested(job_id):
+            raise JobCancelledError(CANCELLED_MESSAGE)
         result = subprocess.run(
             cmd_args,
             stdout=subprocess.PIPE,

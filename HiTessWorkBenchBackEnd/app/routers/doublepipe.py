@@ -15,7 +15,6 @@ from ..services.doublepipe_modeshape_service import (
 )
 from ..services.doublepipe_service import generate_inner_pipe_pdf, run_inner_pipe_preview
 from ..services.doublepipe_psa_service import (
-    cancel_psa_job,
     get_active_status,
     get_psa_job,
     start_modal_job,
@@ -308,11 +307,22 @@ def cancel_psa(
     db: Session = Depends(database.get_db),
     current_user: str = Depends(require_auth),
 ):
-    """실행 중인 PSA 해석을 소유자가 중단합니다 — 프로세스 트리 종료 후 라이센스를 즉시 해제합니다."""
-    job = get_psa_job(req.jobId)
-    owner = job.get("employeeId")
-    assert_current_user_can_access_owner(owner, current_user, db)
-    authenticated_employee_id(req.employee_id, current_user)
+    """실행 중인 PSA 해석을 소유자가 중단합니다 — 프로세스 트리 종료 후 라이센스를 즉시 해제합니다.
+
+    공용 취소 API(`POST /api/analysis/{job_id}/cancel`)와 같은 경로를 타도록 위임하되,
+    실제 종료·라이센스 해제는 여전히 doublepipe_psa_service.cancel_psa_job 이 수행한다
+    (자손 프로세스 소멸을 identity 로 검증한 뒤에만 슬롯을 반환하는 계약을 그대로 유지).
+    응답은 기존 스키마(cancelled/status/message)에 job_id·kind 만 덧붙인 상위 호환이다.
+    """
+    from ..services import job_cancel_service
+
+    location = job_cancel_service.locate_job(req.jobId, db)
+    if location is None or location.kind != "psa":
+        raise HTTPException(status_code=404, detail="해당 해석 작업을 찾을 수 없습니다(서버 재시작으로 소실되었을 수 있음).")
     # The service performs a second owner check.  Administrators are authorized
-    # above and pass the actual owner to retain that defence-in-depth check.
-    return cancel_psa_job(req.jobId, owner or current_user)
+    # here and the actual owner is passed on to retain that defence-in-depth check.
+    assert_current_user_can_access_owner(location.owner_id, current_user, db)
+    authenticated_employee_id(req.employee_id, current_user)
+    return job_cancel_service.cancel_located(
+        req.jobId, location, requester=current_user, db=db,
+    )

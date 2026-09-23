@@ -24,7 +24,8 @@ from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models, database
-from ..services.job_manager import JobMetadata, job_status_store
+from ..services.job_manager import TERMINAL_STATUSES, JobMetadata, job_status_store
+from ..services import job_cancel_service
 from ..dependencies import require_auth, require_admin
 from ..services.activity_service import log_activity
 from ..services.truss_service import task_execute_truss
@@ -599,7 +600,12 @@ def _program_usage_detail(program_name: str, rows: list, users_by_employee_id: d
 
     total = len(rows)
     success = sum(1 for r in rows if r.status == "Success")
-    fail = total - success
+    # 사용자가 스스로 중단한 작업(Cancelled)은 프로그램의 실패가 아니다.
+    # fail 에서 빼고 성공률 분모에서도 제외한다 — 빼지 않으면 중단을 많이 한 사용자일수록
+    # 그 App 의 성공률이 낮아 보인다(Plan D 로 status 어휘에 Cancelled 가 늘면서 생긴 문제).
+    cancelled = sum(1 for r in rows if r.status == "Cancelled")
+    fail = total - success - cancelled
+    rated_total = total - cancelled
 
     user_map = {}
     dept_map = {}
@@ -620,11 +626,13 @@ def _program_usage_detail(program_name: str, rows: list, users_by_employee_id: d
 
         u = user_map.setdefault(employee_id, {
             "employee_id": employee_id, "name": user_name, "dept": department,
-            "count": 0, "success": 0, "firstRun": None, "lastRun": None,
+            "count": 0, "success": 0, "cancelled": 0, "firstRun": None, "lastRun": None,
         })
         u["count"] += 1
         if is_success:
             u["success"] += 1
+        elif row.status == "Cancelled":
+            u["cancelled"] += 1
 
         dept_map[department] = dept_map.get(department, 0) + 1
 
@@ -660,7 +668,11 @@ def _program_usage_detail(program_name: str, rows: list, users_by_employee_id: d
             "name": u["name"],
             "dept": u["dept"],
             "count": u["count"],
-            "successRate": round((u["success"] / u["count"]) * 100) if u["count"] else 0,
+            # count 는 총 실행 건수(취소 포함)지만, 성공률 분모에서는 취소를 뺀다.
+            "successRate": (
+                round((u["success"] / (u["count"] - u["cancelled"])) * 100)
+                if u["count"] - u["cancelled"] else 0
+            ),
             "share": round((u["count"] / total) * 100) if total else 0,
             "firstRunLabel": u["firstRun"].strftime("%Y-%m-%d") if u["firstRun"] else "-",
             "lastRunLabel": u["lastRun"].strftime("%Y-%m-%d %H:%M") if u["lastRun"] else "-",
@@ -678,7 +690,8 @@ def _program_usage_detail(program_name: str, rows: list, users_by_employee_id: d
         "total": total,
         "success": success,
         "fail": fail,
-        "successRate": round((success / total) * 100) if total else 0,
+        "cancelled": cancelled,
+        "successRate": round((success / rated_total) * 100) if rated_total else 0,
         "userCount": len(user_map),
         "deptCount": len(dept_map),
         "coveredDays": covered_days,
@@ -2314,6 +2327,37 @@ def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_
         "message": record.job_message or record.status,
         "project": _serialize_analysis(record),
     }
+
+
+@router.post("/analysis/{job_id}/cancel")
+def cancel_analysis_job(
+    job_id: str,
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
+    """실행/대기 중인 해석 작업을 중단합니다(소유자 또는 관리자).
+
+    - 404: 공용 큐·PSA 스토어·DB 어디에도 없는 job
+    - 403: 소유자도 관리자도 아님
+    - 409: 이미 종료된 작업(스토어 terminal 이거나 스토어에서 만료돼 DB 기록만 남은 경우)
+    """
+    location = job_cancel_service.locate_job(job_id, db)
+    if location is None:
+        raise HTTPException(status_code=404, detail="해당 작업을 찾을 수 없습니다.")
+    assert_current_user_can_access_owner(location.owner_id, current_user, db)
+    if location.kind == "record":
+        raise HTTPException(
+            status_code=409,
+            detail=f"이미 종료된 작업입니다(상태: {location.status or '?'})",
+        )
+    # PSA 는 자체 상태 어휘(running/done/...)를 쓰고 종료 판정·라이센스 해제를 서비스가 직접
+    # 책임지므로 여기서 가로막지 않고 그대로 위임한다.
+    if location.kind == "queue" and location.status in TERMINAL_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"이미 종료된 작업입니다(상태: {location.status})",
+        )
+    return job_cancel_service.cancel_located(job_id, location, requester=current_user, db=db)
 
 
 # ==================== Truss Model Builder ====================

@@ -20,7 +20,10 @@ import os
 from typing import Any, Dict, List, Optional
 
 from .analysis_runner import (
+    CANCELLED_MESSAGE,
+    JobCancelledError,
     build_nastran_bridge_command,
+    is_cancel_requested,
     mark_complete,
     mark_running,
     record_analysis,
@@ -123,6 +126,9 @@ def _run_nastran(bdf_path: str) -> str:
     # ⚠ subprocess.run 을 쓰면 안 된다 — nastran.exe 는 런처라 실제 solver 를 **손자
     #   프로세스**로 띄운다. timeout 시 직계 자식만 죽고 solver 는 남아 CPU 와 scratch 를
     #   계속 잡는다(30분짜리 해석이라 실제로 마주칠 수 있는 상황이다).
+    # 사용자가 이미 취소를 요청했으면 해석기를 띄우지 않는다(job_id 는 worker 컨텍스트에서 해석).
+    if is_cancel_requested():
+        raise JobCancelledError(CANCELLED_MESSAGE)
     proc = run_subprocess_killtree(cmd, cwd=work_dir, timeout=NASTRAN_TIMEOUT_SEC)
     log = safe_decode(proc.stdout)
     stderr_text = safe_decode(proc.stderr)
@@ -135,6 +141,8 @@ def _f06_to_json(f06_path: str) -> Dict[str, Any]:
     """nastran_bridge <f06> 로 결과 JSON 을 만든다(CLI 무변경 재사용)."""
     json_path = os.path.splitext(f06_path)[0] + "_f06.json"
     cmd = build_nastran_bridge_command(f06_path, "-o", json_path)
+    if is_cancel_requested():
+        raise JobCancelledError(CANCELLED_MESSAGE)
     proc = run_subprocess_killtree(cmd, cwd=os.path.dirname(f06_path),
                                    timeout=BRIDGE_TIMEOUT_SEC)
     if proc.returncode != 0 or not os.path.exists(json_path):
