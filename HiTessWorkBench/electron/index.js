@@ -2533,6 +2533,108 @@ ipcMain.handle("viewer:exportUnitBdf", async (event, payload) => {
   }
 });
 
+// ModuleUnitStudio Analysis/Save 탭의 파일 다운로드 공통부 — 백엔드 응답 본문을 받아
+// 저장 대화상자로 사용자 PC 에 쓴다. 파일명은 백엔드 X-Filename 헤더(없으면 fallbackName).
+async function saveUnitStructuralDownload(session, res, { title, fallbackName, filter }) {
+  const buffer = Buffer.from(await res.arrayBuffer());
+  let fileName = fallbackName;
+  try {
+    const encoded = res.headers.get("x-filename");
+    if (encoded) fileName = decodeURIComponent(encoded);
+  } catch {}
+  const target = windowOfSession(session) || mainWindow;
+  const saveRes = await dialog.showSaveDialog(target, { title, defaultPath: fileName, filters: [filter] });
+  if (saveRes.canceled || !saveRes.filePath) {
+    return { ok: false, canceled: true, error: "저장이 취소되었습니다." };
+  }
+  fs.writeFileSync(saveRes.filePath, buffer);
+  return { ok: true, savedPath: saveRes.filePath };
+}
+
+// ModuleUnitStudio Analysis 탭 "Wire 포함 BDF 다운로드" — 구조 해석(SOL 101)에 들어가는 BDF.
+// 자세안정성 평가 후(해석 전)에는 백엔드가 해석과 같은 함수로 새로 만들고,
+// analysisId 가 오면(해석 성공 후) 그 해석이 실제로 푼 BDF 를 그대로 내려준다(OP2 와 짝).
+// payload = { stabilityPath, safetyFactor, analysisId? }
+ipcMain.handle("viewer:downloadLiftingBdf", async (event, payload) => {
+  try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
+    if (!session.parentAnalysisId) {
+      return { ok: false, error: "parentAnalysisId 가 viewer:open 시점에 등록되지 않았습니다. WorkBench 에서 BDF 검증을 먼저 마치고 Studio 를 여세요." };
+    }
+    const analysisId = Number(payload?.analysisId);
+    const hasAnalysis = Number.isInteger(analysisId) && analysisId > 0;
+    if (!hasAnalysis && !payload?.stabilityPath) {
+      return { ok: false, error: "자세안정성 평가 결과(stability JSON)가 없습니다. Hoist 탭에서 평가를 먼저 실행하세요." };
+    }
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
+    if (!runtimeConfig.employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+    const { res } = await fetchWithSessionRefresh(
+      `${runtimeConfig.serverUrl}/api/analysis/unit-structural/lifting-bdf`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parentAnalysisId: session.parentAnalysisId,
+          stabilityPath: payload?.stabilityPath ?? null,
+          safetyFactor: Number(payload?.safetyFactor ?? 1.2),
+          analysisId: hasAnalysis ? analysisId : null,
+        }),
+      },
+      runtimeConfig,
+    );
+    if (!res.ok) {
+      const detail = await readBackendError(res);
+      const hint = res.status === 404 || res.status === 405
+        ? ` - 서버(${runtimeConfig.serverUrl})가 최신 WorkBench 백엔드인지 확인하세요.`
+        : "";
+      return { ok: false, error: `Wire 포함 BDF 생성 실패: ${res.status}${detail ? ` - ${detail}` : ""}${hint}` };
+    }
+    return await saveUnitStructuralDownload(session, res, {
+      title: "Wire 포함 구조 해석 BDF 저장",
+      fallbackName: "module_unit_lifting.bdf",
+      filter: { name: "Nastran BDF", extensions: ["bdf"] },
+    });
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
+// ModuleUnitStudio Analysis·Save 탭 "OP2 다운로드" — 위 BDF 를 Nastran 이 푼 결과 OP2.
+// payload = { analysisId }
+ipcMain.handle("viewer:downloadUnitOp2", async (event, payload) => {
+  try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
+    const analysisId = Number(payload?.analysisId);
+    if (!Number.isInteger(analysisId) || analysisId <= 0) {
+      return { ok: false, error: "성공한 Unit 구조 해석 analysisId가 없습니다." };
+    }
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
+    if (!runtimeConfig.employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+    const { res } = await fetchWithSessionRefresh(
+      `${runtimeConfig.serverUrl}/api/analysis/unit-structural/${analysisId}/op2`,
+      { method: "GET" },
+      runtimeConfig,
+    );
+    if (!res.ok) {
+      const detail = await readBackendError(res);
+      return { ok: false, error: `OP2 다운로드 실패: ${res.status}${detail ? ` - ${detail}` : ""}` };
+    }
+    return await saveUnitStructuralDownload(session, res, {
+      title: "구조 해석 결과 OP2 저장",
+      fallbackName: "module_unit_lifting.op2",
+      filter: { name: "Nastran OP2", extensions: ["op2"] },
+    });
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 app.whenReady().then(() => {
   // Windows 토스트(렌더러 new Notification())가 앱을 식별하도록 AUMID 를 고정한다.
   // package.json build.appId 와 같은 값이어야 설치본·포터블 모두 같은 앱으로 묶인다.

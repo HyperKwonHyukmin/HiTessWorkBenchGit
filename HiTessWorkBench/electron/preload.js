@@ -59,6 +59,8 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:buildMooringReportPlan',
   'viewer:exportSidePassageBdf',
   'viewer:exportUnitBdf',
+  'viewer:downloadLiftingBdf',
+  'viewer:downloadUnitOp2',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
   'viewer:checkPathAccess',
   'viewer:fetchResultDir',
@@ -174,6 +176,14 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // 반환 = { ok, savedPath, stats } | { ok:false, canceled?, error }
   exportUnitBdf: (opts) =>
     ipcRenderer.invoke('viewer:exportUnitBdf', opts),
+  // ModuleUnitStudio Analysis 탭 — 구조 해석에 들어가는 Wire 포함 BDF 저장.
+  // payload = { stabilityPath, safetyFactor, analysisId? } (analysisId 가 있으면 그 해석이 실제로 푼 BDF)
+  // 반환 = { ok, savedPath } | { ok:false, canceled?, error }
+  downloadLiftingBdf: (opts) =>
+    ipcRenderer.invoke('viewer:downloadLiftingBdf', opts),
+  // ModuleUnitStudio Analysis·Save 탭 — 구조 해석 결과 OP2 저장. payload = { analysisId }
+  downloadUnitOp2: (opts) =>
+    ipcRenderer.invoke('viewer:downloadUnitOp2', opts),
   onMooringStructuralProgress: (callback) => {
     const listener = (_, data) => callback(data);
     ipcRenderer.on('viewer:mooring-structural-progress', listener);

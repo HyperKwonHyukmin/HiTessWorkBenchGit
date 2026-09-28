@@ -20,7 +20,7 @@ import json
 import logging
 import os
 import subprocess
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .. import database, models
 from .analysis_runner import (
@@ -61,6 +61,112 @@ def _decode_completed(proc: subprocess.CompletedProcess) -> str:
     if err.strip():
         out += "\n[stderr] " + err.strip()
     return out
+
+
+def build_lifting_bdf(
+    bdf_path: str,
+    stability_json_path: str,
+    safety_factor: float,
+    lifting_bdf: str,
+    lifting_meta: str,
+    edited_bdf: str,
+    job_id: Optional[str] = None,
+) -> str:
+    """Studio 편집(_edited.json) 적용 → lift-run --prepare-only 로 Wire 포함 BDF 를 만든다.
+
+    구조 해석 실행(task_execute_unit_structural)과 Analysis 탭의 'Wire 포함 BDF 다운로드'가
+    **이 함수 하나를 공유한다** — 다운로드한 BDF 가 해석에 들어가는 BDF 와 같은 입력·같은
+    라이터로 만들어지게 하려는 것이다. 출력 경로(lifting_bdf/meta/edited_bdf)만 호출자가 정한다.
+
+    반환: 엔진 로그 문자열. 실패하면 RuntimeError/FileNotFoundError.
+    """
+    bdf_dir = os.path.dirname(os.path.abspath(bdf_path))
+    bdf_stem = os.path.splitext(os.path.basename(bdf_path))[0]
+    engine_output = ""
+
+    # Studio 가 업로드한 편집 적용 결과 (이미 편집이 반영된 완전한 모델 JSON).
+    # 존재하면 이 모델로부터 만든 BDF 를 lift-run 입력으로 쓴다. 편집이 없으면 원본 BDF 그대로.
+    edited_json = os.path.join(bdf_dir, f"{bdf_stem}_edited.json")
+    # 입력 BDF 는 cwd(=bdf_dir) 기준 상대경로로 넘긴다(기존 실행과 같은 인자 모양).
+    lift_input_bdf = os.path.relpath(os.path.abspath(bdf_path), bdf_dir)
+    if os.path.exists(edited_json):
+        if job_id:
+            update_progress(job_id, 10, "Studio 편집 적용 BDF 생성 중...")
+        apply_args = build_nastran_bridge_command(
+            os.path.basename(edited_json),
+            "-o", os.path.relpath(os.path.abspath(edited_bdf), bdf_dir),
+        )
+        logger.info("[UnitStructural] apply-edit cmd: %s (cwd=%s)", " ".join(apply_args), bdf_dir)
+        # 사용자가 이미 취소를 요청했으면 다음 단계를 시작하지 않는다.
+        if job_id and is_cancel_requested(job_id):
+            raise JobCancelledError(CANCELLED_MESSAGE)
+        apply_proc = subprocess.run(
+            apply_args, cwd=bdf_dir,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
+        )
+        engine_output += "\n[apply-edit]\n" + _decode_completed(apply_proc)
+        if apply_proc.returncode != 0:
+            raise RuntimeError(
+                f"Studio 편집 적용 실패 (exit={apply_proc.returncode}). "
+                f"_edited.json 을 BDF 로 변환할 수 없습니다."
+            )
+        if not os.path.exists(edited_bdf):
+            raise FileNotFoundError(f"편집 적용 BDF 가 생성되지 않았습니다: {edited_bdf}")
+        lift_input_bdf = os.path.relpath(os.path.abspath(edited_bdf), bdf_dir)
+        logger.info("[UnitStructural] Studio 편집 반영된 BDF 를 lift-run 입력으로 사용: %s", edited_bdf)
+    else:
+        logger.info("[UnitStructural] _edited.json 없음 — 원본 BDF 를 lift-run 입력으로 사용: %s", bdf_path)
+
+    # lift-run --prepare-only — Wire 포함 BDF + meta 빌드
+    if job_id:
+        update_progress(job_id, 15, "Wire 포함 BDF 생성 중...")
+    prepare_args = build_nastran_bridge_command(
+        "lift-run", lift_input_bdf,
+        "--stability", stability_json_path,
+        "-o", lifting_bdf,
+        "--meta", lifting_meta,
+        "--safety-factor", str(safety_factor),
+        "--prepare-only",
+    )
+    logger.info("[UnitStructural] prepare cmd: %s (cwd=%s)", " ".join(prepare_args), bdf_dir)
+    # subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.
+    if job_id and is_cancel_requested(job_id):
+        raise JobCancelledError(CANCELLED_MESSAGE)
+    prepare = subprocess.run(
+        prepare_args, cwd=bdf_dir,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300,
+    )
+    prepare_log = _decode_completed(prepare)
+    engine_output += prepare_log
+    if prepare.returncode != 0:
+        raise RuntimeError(
+            f"lift-run prepare exit code {prepare.returncode}. 로그:\n{prepare_log.strip()[-4000:]}"
+        )
+    if not os.path.exists(lifting_bdf) or not os.path.exists(lifting_meta):
+        raise RuntimeError("lifting BDF/meta 가 생성되지 않았습니다.")
+    return engine_output
+
+
+def find_lifting_op2(lifting_bdf: str) -> Optional[str]:
+    """lifting BDF 를 Nastran 이 풀어 남긴 OP2 경로. 없으면 None.
+
+    Nastran 은 출력 파일명을 소문자로 쓴다(`..._lifting.op2`). Windows 는 대소문자를 가리지
+    않지만 서버 이전 등에 대비해 같은 폴더를 대소문자 무시로 한 번 더 찾는다.
+    """
+    if not lifting_bdf:
+        return None
+    candidate = os.path.splitext(lifting_bdf)[0] + ".op2"
+    if os.path.isfile(candidate):
+        return candidate
+    folder = os.path.dirname(candidate)
+    want = os.path.basename(candidate).lower()
+    try:
+        for name in os.listdir(folder):
+            if name.lower() == want:
+                return os.path.join(folder, name)
+    except OSError:
+        pass
+    return None
 
 
 def task_execute_unit_structural(
@@ -138,64 +244,12 @@ def task_execute_unit_structural(
                 try: os.remove(stale)
                 except OSError: pass
 
-        # 1.5. Studio 편집(_edited.json) 이 있으면 nastran_bridge 로 BDF 변환 후
-        #      그 _edited.bdf 를 lift-run 입력으로 사용한다. 편집이 없으면 원본 BDF 그대로.
-        #      nastran_bridge 는 입력이 plain model JSON 이면 -o 로 지정된 경로에 BDF 를 출력한다.
-        lift_input_bdf = bdf_filename
-        if os.path.exists(edited_json):
-            update_progress(job_id, 10, "Studio 편집 적용 BDF 생성 중...")
-            apply_args = build_nastran_bridge_command(
-                os.path.basename(edited_json),
-                "-o", os.path.basename(edited_bdf),
-            )
-            logger.info("[UnitStructural] apply-edit cmd: %s (cwd=%s)", " ".join(apply_args), bdf_dir)
-            # 사용자가 이미 취소를 요청했으면 다음 단계를 시작하지 않는다.
-            if is_cancel_requested(job_id):
-                raise JobCancelledError(CANCELLED_MESSAGE)
-            apply_proc = subprocess.run(
-                apply_args, cwd=bdf_dir,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
-            )
-            engine_output += "\n[apply-edit]\n" + _decode_completed(apply_proc)
-            if apply_proc.returncode != 0:
-                raise RuntimeError(
-                    f"Studio 편집 적용 실패 (exit={apply_proc.returncode}). "
-                    f"_edited.json 을 BDF 로 변환할 수 없습니다."
-                )
-            if not os.path.exists(edited_bdf):
-                raise FileNotFoundError(f"편집 적용 BDF 가 생성되지 않았습니다: {edited_bdf}")
-            lift_input_bdf = os.path.basename(edited_bdf)
-            logger.info("[UnitStructural] Studio 편집 반영된 BDF 를 lift-run 입력으로 사용: %s", edited_bdf)
-        else:
-            logger.info("[UnitStructural] _edited.json 없음 — 원본 BDF 를 lift-run 입력으로 사용: %s", bdf_filename)
-
-        # 2. lift-run --prepare-only — Wire 포함 BDF + meta 빌드
-        update_progress(job_id, 15, "Wire 포함 BDF 생성 중...")
-        prepare_args = build_nastran_bridge_command(
-            "lift-run", lift_input_bdf,
-            "--stability", stability_json_path,
-            "-o", lifting_bdf,
-            "--meta", lifting_meta,
-            "--safety-factor", str(safety_factor),
-            "--prepare-only",
+        # 1.5~2. Studio 편집 적용(있으면) → lift-run --prepare-only 로 Wire 포함 BDF + meta 빌드.
+        #         Analysis 탭 'Wire 포함 BDF 다운로드' 와 같은 함수다(build_lifting_bdf).
+        engine_output += build_lifting_bdf(
+            bdf_path, stability_json_path, safety_factor,
+            lifting_bdf, lifting_meta, edited_bdf, job_id=job_id,
         )
-        logger.info("[UnitStructural] prepare cmd: %s (cwd=%s)", " ".join(prepare_args), bdf_dir)
-        # 사용자가 이미 취소를 요청했으면 다음 단계를 시작하지 않는다.
-        # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
-        if is_cancel_requested(job_id):
-            raise JobCancelledError(CANCELLED_MESSAGE)
-        prepare = subprocess.run(
-            prepare_args, cwd=bdf_dir,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300,
-        )
-        prepare_log = _decode_completed(prepare)
-        engine_output += prepare_log
-        if prepare.returncode != 0:
-            raise RuntimeError(
-                f"lift-run prepare exit code {prepare.returncode}. 로그:\n{prepare_log.strip()[-4000:]}"
-            )
-        if not os.path.exists(lifting_bdf) or not os.path.exists(lifting_meta):
-            raise RuntimeError("lifting BDF/meta 가 생성되지 않았습니다.")
 
         # 3. Nastran SOL 101 실행
         nastran_exe = _resolve_nastran_exe()
@@ -271,6 +325,8 @@ def task_execute_unit_structural(
             "liftingBdf":        lifting_bdf,
             "liftingMetaJson":   lifting_meta,
             "f06":               lifting_f06,
+            # 이 BDF 를 풀어 나온 OP2 — Studio Analysis/Save 탭의 OP2 다운로드가 쓴다.
+            "liftingOp2":        find_lifting_op2(lifting_bdf),
             "nastranResultJson": result_json,
             "safetyFactor":      safety_factor,
             "allowableMPa":      allowable_mpa,

@@ -17,7 +17,7 @@ import zipfile
 
 logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta, date as _date
-from typing import Optional
+from typing import Any, Optional
 from sqlalchemy import func, or_
 from fastapi import APIRouter, Body, Depends, HTTPException, File, UploadFile, Form, Query, Request
 from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
@@ -34,7 +34,11 @@ from ..services.beam_service import task_execute_beam
 from ..services.bdfscanner_service import task_execute_bdfscanner
 from ..services.hpscr_service import task_execute_hpscr
 from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
-from ..services.unit_structural_service import task_execute_unit_structural
+from ..services.unit_structural_service import (
+    build_lifting_bdf,
+    find_lifting_op2,
+    task_execute_unit_structural,
+)
 from ..services.unit_lifting_report_service import generate_result_report, generate_unit_lifting_report
 from ..services.xlsx_to_pdf import PdfConversionError, convert_xlsx_to_pdf
 from ..services.module_stability_service import task_execute_module_stability, task_optimize_module_hoist_positions
@@ -3110,6 +3114,166 @@ def get_groupmoduleunit_artifacts(
 
 # ==================== Unit Structural Analysis (Lifting + Nastran) ===========
 
+def _validate_unit_stability_path(stability_path: str, bdf_path: str) -> str:
+    """stability JSON 경로 보안 검증 — 통과하면 절대경로를 돌려준다.
+
+    (1) 절대경로, (2) parent BDF 와 같은 폴더 안, (3) userConnection 디렉터리 하위,
+    (4) .json 확장자, (5) 실제 존재 — 모두 만족해야 한다.
+    """
+    stab_abs = os.path.abspath(stability_path or "")
+    bdf_dir_abs = os.path.dirname(os.path.abspath(bdf_path))
+    user_root_abs = os.path.abspath(_USER_CONNECTION_DIR)
+    if not stability_path or not os.path.isabs(stability_path):
+        raise HTTPException(status_code=400, detail="stability_path 는 절대경로여야 합니다.")
+    if not stab_abs.lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="stability_path 는 .json 파일이어야 합니다.")
+    if not _is_within_dir(user_root_abs, stab_abs):
+        raise HTTPException(status_code=400,
+                            detail="stability_path 가 userConnection 디렉터리 안에 있지 않습니다.")
+    if os.path.dirname(stab_abs) != bdf_dir_abs:
+        raise HTTPException(status_code=400,
+                            detail="stability_path 가 parent BDF 와 같은 폴더에 있지 않습니다.")
+    if not os.path.exists(stab_abs):
+        raise HTTPException(status_code=400, detail=f"stability_path 파일을 찾을 수 없습니다: {stab_abs}")
+    return stab_abs
+
+
+def _load_unit_parent_bdf(parent_analysis_id: Any, db: Session, current_user: str) -> str:
+    """Unit 구조 해석의 parent(GroupModuleUnit/SidePassage) 원본 BDF 경로를 검증해 돌려준다."""
+    try:
+        parent_analysis_id = int(parent_analysis_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="parentAnalysisId 가 필요합니다.")
+    parent = db.query(models.Analysis).filter(models.Analysis.id == parent_analysis_id).first()
+    if parent is None:
+        raise HTTPException(status_code=404, detail=f"Parent Analysis (id={parent_analysis_id}) not found")
+    assert_current_user_can_access_owner(parent.employee_id, current_user, db)
+    if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
+        raise HTTPException(status_code=400,
+                            detail=f"Parent program_name '{parent.program_name}' is not supported")
+    if parent.status != "Success":
+        raise HTTPException(status_code=400,
+                            detail=f"Parent BDF 검증이 성공 상태가 아닙니다 (status={parent.status})")
+    bdf_path = (parent.input_info or {}).get("bdf_model")
+    if not bdf_path or not os.path.exists(bdf_path):
+        raise HTTPException(status_code=400, detail=f"Parent BDF 파일을 찾을 수 없습니다: {bdf_path}")
+    assert_current_user_can_access_path(bdf_path, current_user, db, _USER_CONNECTION_DIR)
+    return bdf_path
+
+
+def _load_unit_structural_record(analysis_id: Any, db: Session, current_user: str) -> "models.Analysis":
+    """성공한 Unit 구조 해석 레코드(UnitStructuralAnalysis)를 권한 검사 후 돌려준다."""
+    try:
+        analysis_id = int(analysis_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="analysisId 가 필요합니다.")
+    record = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Unit 구조 해석 결과(id={analysis_id})를 찾을 수 없습니다.")
+    assert_current_user_can_access_owner(record.employee_id, current_user, db)
+    if record.program_name != "UnitStructuralAnalysis":
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 해석 종류입니다: {record.program_name}")
+    if record.status != "Success":
+        raise HTTPException(status_code=409, detail="성공한 Unit 구조 해석 결과가 아닙니다.")
+    return record
+
+
+def _read_userconnection_file(path: str, current_user: str, db: Session, label: str) -> bytes:
+    """userConnection 안의 파일을 read() 한 바이트로 돌려준다.
+
+    FileResponse 는 Content-Length 를 stat(=DRM 암호화 크기)로 잡아 본문과 어긋날 수 있어
+    (ERR_CONTENT_LENGTH_MISMATCH) 항상 읽은 바이트로 Response 를 만든다.
+    """
+    if not path or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail=f"{label} 파일을 찾을 수 없습니다: {path}")
+    abs_path = os.path.abspath(path)
+    if not _is_within_dir(_USER_CONNECTION_DIR, abs_path):
+        raise HTTPException(status_code=403, detail="허용되지 않은 경로입니다.")
+    assert_current_user_can_access_path(abs_path, current_user, db, _USER_CONNECTION_DIR)
+    with open(abs_path, "rb") as f:
+        return f.read()
+
+
+def _attachment_response(data: bytes, file_name: str, media_type: str) -> Response:
+    return Response(content=data, media_type=media_type, headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{urllib.parse.quote(file_name)}",
+        "X-Filename": urllib.parse.quote(file_name),
+    })
+
+
+@router.post("/analysis/unit-structural/lifting-bdf")
+def download_unit_lifting_bdf(
+        payload: dict = Body(...),
+        db: Session = Depends(database.get_db),
+        current_user: str = Depends(require_auth),
+):
+    """구조 해석에 들어가는 **Wire 포함 BDF** 를 내려준다(Studio Analysis 탭 'BDF 다운로드').
+
+    payload = {parentAnalysisId, stabilityPath, safetyFactor, analysisId?}
+
+    - analysisId 가 오면(구조 해석 성공 후) 그 해석이 **실제로 푼** `_lifting.bdf` 를 그대로
+      내려준다 — 같은 화면에서 받는 OP2 와 짝이 맞아야 하기 때문이다.
+    - 없으면(자세안정성 평가 후, 해석 전) 해석과 같은 함수(`build_lifting_bdf`)로 임시 폴더에
+      새로 만들어 내려주고 지운다. 해석 산출물(`<stem>_lifting.*`)은 건드리지 않는다.
+    """
+    if payload.get("analysisId") not in (None, ""):
+        record = _load_unit_structural_record(payload.get("analysisId"), db, current_user)
+        lifting_bdf = (record.result_info or {}).get("liftingBdf")
+        data = _read_userconnection_file(lifting_bdf, current_user, db, "Wire 포함 BDF")
+        return _attachment_response(data, os.path.basename(lifting_bdf), "text/plain; charset=utf-8")
+
+    bdf_path = _load_unit_parent_bdf(payload.get("parentAnalysisId"), db, current_user)
+    stab_abs = _validate_unit_stability_path(payload.get("stabilityPath"), bdf_path)
+    try:
+        safety_factor = float(payload.get("safetyFactor", 1.2))
+    except (TypeError, ValueError):
+        safety_factor = float("nan")
+    if not math.isfinite(safety_factor) or safety_factor <= 0:
+        raise HTTPException(status_code=400, detail="safetyFactor: 하중계수는 0보다 큰 유한한 숫자여야 합니다.")
+
+    bdf_dir = os.path.dirname(os.path.abspath(bdf_path))
+    stem = os.path.splitext(os.path.basename(bdf_path))[0]
+    # 해석 산출물과 같은 파일명을 하위 임시 폴더에 쓴다 — 이름까지 같게 만들어야 BDF 본문이
+    # 해석본과 달라지지 않고, 폴더가 달라 진행 중인 해석의 파일과도 섞이지 않는다.
+    work = tempfile.mkdtemp(prefix="_lifting_bdf_export_", dir=bdf_dir)
+    try:
+        lifting_bdf = os.path.join(work, f"{stem}_lifting.bdf")
+        try:
+            build_lifting_bdf(
+                bdf_path, stab_abs, safety_factor,
+                lifting_bdf,
+                os.path.join(work, f"{stem}_lifting_meta.json"),
+                os.path.join(work, f"{stem}_edited.bdf"),
+            )
+        except subprocess.TimeoutExpired as e:
+            raise HTTPException(status_code=504, detail=f"Wire 포함 BDF 생성 시간 초과: {e}")
+        except (RuntimeError, FileNotFoundError) as e:
+            raise HTTPException(status_code=500, detail=f"Wire 포함 BDF 생성 실패: {e}")
+        with open(lifting_bdf, "rb") as f:
+            data = f.read()
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return _attachment_response(data, f"{stem}_lifting.bdf", "text/plain; charset=utf-8")
+
+
+@router.get("/analysis/unit-structural/{analysis_id}/op2")
+def download_unit_structural_op2(
+        analysis_id: int,
+        db: Session = Depends(database.get_db),
+        current_user: str = Depends(require_auth),
+):
+    """Unit 구조 해석이 푼 `_lifting.bdf` 의 결과 OP2 를 내려준다(PARAM,POST,-1 산출물)."""
+    record = _load_unit_structural_record(analysis_id, db, current_user)
+    info = record.result_info or {}
+    # liftingOp2 는 이 기능 이후 실행분부터 기록된다 — 이전 결과는 liftingBdf 옆에서 찾는다.
+    op2_path = info.get("liftingOp2") or find_lifting_op2(info.get("liftingBdf"))
+    if not op2_path:
+        raise HTTPException(status_code=404, detail="이 해석의 OP2 파일을 찾을 수 없습니다.")
+    data = _read_userconnection_file(op2_path, current_user, db, "OP2")
+    # Nastran 이 소문자로 쓴 이름 대신 BDF 와 같은 대소문자로 내려준다.
+    bdf_name = os.path.basename(info.get("liftingBdf") or op2_path)
+    return _attachment_response(data, os.path.splitext(bdf_name)[0] + ".op2", "application/octet-stream")
+
 @router.post("/analysis/unit-structural/request")
 async def request_unit_structural(
         stability_path: str = Form(...),
@@ -3153,23 +3317,7 @@ async def request_unit_structural(
                             detail=f"Parent BDF 파일을 찾을 수 없습니다: {bdf_path}")
     assert_current_user_can_access_path(bdf_path, current_user, db, _USER_CONNECTION_DIR)
 
-    # 보안 — stability_path 는 (1) 절대경로, (2) parent BDF 와 같은 폴더 안,
-    # (3) userConnection 디렉터리 하위, (4) .json 확장자, (5) 실제 존재 — 모두 만족해야 함.
-    stab_abs = os.path.abspath(stability_path)
-    bdf_dir_abs = os.path.dirname(os.path.abspath(bdf_path))
-    user_root_abs = os.path.abspath(_USER_CONNECTION_DIR)
-    if not os.path.isabs(stability_path):
-        raise HTTPException(status_code=400, detail="stability_path 는 절대경로여야 합니다.")
-    if not stab_abs.lower().endswith(".json"):
-        raise HTTPException(status_code=400, detail="stability_path 는 .json 파일이어야 합니다.")
-    if not _is_within_dir(user_root_abs, stab_abs):
-        raise HTTPException(status_code=400,
-                            detail="stability_path 가 userConnection 디렉터리 안에 있지 않습니다.")
-    if os.path.dirname(stab_abs) != bdf_dir_abs:
-        raise HTTPException(status_code=400,
-                            detail="stability_path 가 parent BDF 와 같은 폴더에 있지 않습니다.")
-    if not os.path.exists(stab_abs):
-        raise HTTPException(status_code=400, detail=f"stability_path 파일을 찾을 수 없습니다: {stab_abs}")
+    stab_abs = _validate_unit_stability_path(stability_path, bdf_path)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     job_id = submit_analysis_job(

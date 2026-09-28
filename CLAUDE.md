@@ -67,10 +67,9 @@ npm run dist
 - **데이터베이스**: MySQL `localhost:3306/hitessworkbench`, 접속 정보는 `HiTessWorkBenchBackEnd/app/database.py`. SQLAlchemy로 서버 시작 시 테이블 자동 생성.
 - **Electron 환경 감지**: `electron/index.js`의 `app.isPackaged` 여부로 개발/프로덕션 로드 경로 분기.
 - ⚠️ **InHouse 프로그램 배포 규칙 (개발 위치 ≠ 실사용 위치)**: 해석 실행 파일·스크립트의 **코드 작업은 `C:\Coding\WorkBenchSubModule\<Program>\`**(예: `Nastran_bridge`, `MooringFitting`)에서 하더라도, **WorkBench 백엔드가 실제로 실행·import 하는 최종본은 반드시 `HiTessWorkBenchBackEnd/InHouseProgram/<Program>/`로 복사**해야 한다.
-  - 이유: 운영 서버(`10.14.42.145`, 경로 `C:\KHM\HiTessWorkbench\HiTessWorkBenchGit\HiTessWorkBenchBackEnd\`)에는 **`WorkBenchSubModule/` 폴더가 존재하지 않는다.** 서버는 `git pull`로 백엔드 레포만 받고 InHouse 프로그램은 `InHouseProgram/`에서만 찾는다. 따라서 `WorkBenchSubModule`만 고치고 `InHouseProgram`에 반영하지 않으면 **dev에서는 되지만 서버에서 깨진다** (실제 사례: `nastran_bridge.py`의 신규 함수 `rbe2_fixed_lines` 누락 → mooring solve가 HTTP 500).
-  - 실천: `WorkBenchSubModule/<Program>` 소스를 수정하면 **대응하는 `InHouseProgram/<Program>` 사본도 항상 같이 갱신**해 버전 드리프트를 막을 것.
-  - 폴더명 주의: `InHouseProgram`은 camelCase(`NastranBridge`, `TrussAssessment`…), `WorkBenchSubModule`은 underscore 혼용(`Nastran_bridge`). 백엔드 `analysis.py`의 nastran_bridge 탐색은 `InHouseProgram/Nastran_bridge` → `WorkBenchSubModule/Nastran_bridge` → `InHouseProgram/NastranBridge` 후보를 모두 보고, `NASTRAN_BRIDGE_DIR` 환경변수 override도 지원한다(commit `146db53`).
-  - 🔔 **커밋 시 보고 의무(필수)**: `InHouseProgram/`은 git 미추적(`.gitignore`에 `*.exe` 및 `HiTessWorkBenchBackEnd/InHouseProgram/`)이라 **`git pull`로 서버에 절대 안 따라온다.** 따라서 InHouse 프로그램(exe/py)이 변경되거나 관련된 작업을 커밋할 때마다, 커밋 보고에 **"서버(145)에 수동 교체해야 할 프로그램 파일 목록 + 교체 후 백엔드 재시작 필요"를 항상 함께 명시**할 것. 또 **"`git pull`만으로 끝나는지 / 수동 교체가 추가로 필요한지"를 커밋마다 분명히 구분**해 알릴 것. (실제 사례: `nastran_bridge.py`는 rbe2_fixed_lines 포함본, `MooringFitting.exe`는 solve-bdf 지원본으로 서버 `InHouseProgram/`에 덮어쓰고 재시작해야 mooring 구조해석이 동작.)
+  - 운영 서버(145)에는 `WorkBenchSubModule/`이 없고 `InHouseProgram/`은 git 미추적이라, SubModule만 고치면 **dev에서는 되고 서버에서 깨진다**(실례: `rbe2_fixed_lines` 누락 → mooring solve HTTP 500). InHouse 관련 작업 보고에는 **"`git pull`만으로 끝나는지 / 서버 수동 교체 파일 목록 + 재시작 필요"를 항상 구분해 명시**한다.
+  - 폴더명: `InHouseProgram`은 camelCase(`NastranBridge`), SubModule은 underscore 혼용(`Nastran_bridge`). `analysis.py`의 nastran_bridge 탐색은 `InHouseProgram/Nastran_bridge` → `WorkBenchSubModule/Nastran_bridge` → `InHouseProgram/NastranBridge` 순 + `NASTRAN_BRIDGE_DIR` override.
+- 📦 **배포 절차(Studio zip 2곳 복사·버전 확인·버전 핀 동기화, 엔진 exe 빌드·교체, 서버 보고 형식)는 전역 `/deploy` 스킬에 있다.** "배포해" 요청 시 그 스킬을 따른다. 전역 훅(`~/.claude/hooks/workbench_guard.js`)이 config.js 커밋을 차단하고 InHouseProgram/StudioProgram 변경 시 서버 반영을 알린다.
 
 ### Model Builder Studio — 2개 구성요소(엔진 / 스튜디오)와 배포 흐름 ★작업 전 필독
 
@@ -83,17 +82,8 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
 
 **② 스튜디오 (React UI 뷰어)**
 - 소스: `C:\Coding\WorkBenchSubModule\ModelBuilderStudio\apps\model-studio\` (viewer id=`model-studio`, 연결 메뉴=`HiTess Model Builder`)
-- zip 빌드: 해당 폴더에서 `npm run package` → `release/model-studio-<ver>.zip` (+ `.sha256`). 버전은 `package.json` 한 곳만 올림.
-- **배포 위치 2곳 — 둘 다 복사해야 함:**
-  1. **`HiTessWorkBenchBackEnd\StudioProgram\` (백엔드-로컬)** — ★ WorkBench 앱이 백엔드 `viewers.py`로 **실제 읽는 곳, UNC보다 우선 스캔**. 여기에 안 넣으면 앱은 새 버전을 못 본다(과거 실수 사례).
-  2. **UNC** `\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram` — 운영 표준 아카이브. (한글·대괄호 때문에 PowerShell은 `Copy-Item -LiteralPath ... -Destination '<경로>' -Force`)
-- 사용 흐름: WorkBench가 `GET /api/viewers/manifest|download/model-studio`로 **백엔드에서 최신 버전 zip을 다운로드 → 로컬 PC에 설치**해 띄운다. `viewers.py`의 `_find_zip`은 후보 폴더를 순서대로 보고 **첫 번째 폴더에서 최고 버전**을 내려준다(백엔드-로컬이 1순위 → 거기 최고 버전이 곧 앱이 보는 버전).
-
-**배포 시 체크리스트 / 함정(이번 세션 실측):**
-- 버전 bump 전 **StudioProgram 양쪽의 기존 배포 버전을 먼저 확인**할 것. 로컬 `package.json`이 실제 배포본보다 **뒤처져 있을 수 있다**(ModelBuilderStudio는 `src/`가 git 미추적이라 버전·코드 드리프트 발생). 로컬 버전+1만 하면 배포본보다 낮아질 수 있음.
-- ⚠️ **회사 DRM**이 로컬 C: 디스크에 쓴 zip을 at-rest로 **정확히 +4096 byte 암호화** → PowerShell엔 "EOCD 없음(손상)"으로 보인다(UNC 네트워크 경로엔 안 걸림). 백엔드(DRM 화이트리스트)는 `read()`로 복호화해 정상으로 읽는다.
-- 그래서 `app/routers/viewers.py`는 size/sha256/다운로드 본문을 **모두 `read()`한 바이트 기준**으로 서빙해야 한다. `os.path.getsize`(stat=암호화된 on-disk 크기)나 `FileResponse`(Content-Length를 stat로 잡음)를 쓰면 본문(복호화)과 길이가 어긋나 앱이 **`ERR_CONTENT_LENGTH_MISMATCH`** 로 다운로드 실패한다. (이미 설치된 버전은 재다운로드가 없어 증상이 안 보이고, **신규 버전 다운로드에서만** 터짐.)
-- 서버(145) 반영: `viewers.py` 등 git 추적 백엔드 코드는 `git pull`+백엔드 재시작, 스튜디오 zip은 서버 `HiTessWorkBenchBackEnd\StudioProgram\`에 **수동 복사**.
+- 사용 흐름: WorkBench가 `GET /api/viewers/manifest|download/model-studio`로 백엔드에서 최신 zip을 받아 로컬에 설치해 띄운다. `viewers.py`의 `_find_zip`은 후보 폴더를 순서대로 보고 **첫 번째 폴더(백엔드-로컬 `StudioProgram\`)의 최고 버전**을 내려준다. 배포 절차·버전 핀(`MODEL_BUILDER_STUDIO_VERSION`)은 `/deploy` 스킬.
+- ⚠️ **회사 DRM**이 로컬 C:에 쓴 zip을 정확히 +4096B 암호화한다(백엔드는 `read()`로 복호화해 읽음). 그래서 `app/routers/viewers.py`는 size/sha256/다운로드 본문을 **모두 `read()`한 바이트 기준**으로 서빙해야 한다. `os.path.getsize`나 `FileResponse`(Content-Length=stat)를 쓰면 **`ERR_CONTENT_LENGTH_MISMATCH`** 로 신규 버전 다운로드가 실패한다.
 
 **런타임 파이프라인 — 엔진↔스튜디오가 실제로 맞물리는 절차 (오케스트레이터: `app/services/hitess_modelflow_service.py`)**
 
@@ -125,18 +115,10 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
 - **nastran_bridge 폴더명 불일치(잠재 `FileNotFoundError`)**: `hitess_modelflow_service.py` 의 `_load_nastran_bridge_module()` 은 **오직 `InHouseProgram/NastranBridge`(camelCase) 하드코딩, 폴백 없음**. 반면 `analysis.py` 는 `InHouseProgram/Nastran_bridge`(**underscore**)를 1순위로 본다. → nastran_bridge.py 를 **underscore 폴더에만** 두면 modelflow 의 deleteRigid 폴백이 깨진다. **둘 다 만족하려면 `NastranBridge`(camelCase)에 둘 것**(또는 양쪽 복사). [이상적으론 modelflow service 도 analysis.py 처럼 다중 후보 탐색으로 통일 권장.]
 - **편집 BDF 포맷 fix 의 적용 범위**: `nastran_bridge.py` 의 BDF 포맷 수정은 **fallback(deleteRigid) 경로에만** 효력. ModelBuilder 일반 편집의 기본 BDF writer 는 **C# `Cmb.Cli.exe`** 다. 깨진 BDF 가 Cmb.Cli 산출물이면 **C# 엔진 쪽도 같은 수정 필요**. (단 Mooring/SidePassage 스튜디오의 apply-edit 는 `analysis.py` 가 nastran_bridge 를 **기본 경로로** 직접 호출 → 그쪽 BDF 는 이 Python fix 로 완결.)
 
-### Module Unit Studio — 배포 시 버전 핀 동기화 (★필수, 안 하면 스튜디오 안 뜸)
+### Module Unit Studio
 
-ModuleUnitStudio(viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구조 해석")를 배포할 때는 **zip 배포 + WorkBench 버전 핀 수정을 항상 세트로** 해야 한다. zip만 올리면 버전 불일치로 새 스튜디오가 뜨지 않는다.
-
-- ⭐ **버전 정책 (사용자 지시, 무조건):** Module Unit 관련 코드를 수정하면 — **스튜디오(React) 뿐 아니라 엔진(`ModuleUnitAnalysis` → `InHouseProgram/GroupModuleAnalysis`) 등 어느 쪽을 고쳤든** — **항상 `module-unit-studio` 버전을 bump 해서 zip을 재배포하고, WorkBench의 `MODULE_STUDIO_VERSION`도 같은 버전으로 올린다.** 엔진에는 사용자 눈에 보이는 버전 표면이 없으므로, 스튜디오 버전을 이 기능 전체의 단일 릴리스 번호로 삼는다(엔진-only 수정이라 zip 내용이 동일해도 버전만 올려 재배포·재다운로드를 강제). 즉 "코드 수정 → 버전 bump → 배포 → WorkBench 핀 동기화"는 예외 없는 세트다.
-
-- **버전 핀 위치:** `HiTessWorkBench/frontend/src/pages/analysis/GroupModuleUnitLiftingAnalysis.jsx` 상단 상수 `const MODULE_STUDIO_VERSION = '<버전>'` (약 line 21). 이 값이 이 페이지가 기대·설치하는 워크벤치 버전이자, 백엔드 manifest 미가용 시 fallback, UI 표시 버전(약 line 1000)이다.
-- **배포 절차 (2스텝 세트):**
-  1. `apps/module-unit-studio/package.json` 버전 bump → `npm run package` → `release/module-unit-studio-<ver>.zip`(+`.sha256`)을 **StudioProgram 2곳**(백엔드-로컬 `HiTessWorkBenchBackEnd/StudioProgram/` + UNC `\\storage.hpc.hd.com\...\StudioProgram`)에 복사.
-  2. `GroupModuleUnitLiftingAnalysis.jsx`의 `MODULE_STUDIO_VERSION`을 **같은 버전**으로 수정.
-- 버전 bump 전 StudioProgram 양쪽의 기존 최고 버전을 먼저 확인(충돌 시 앱이 재다운로드 안 함).
-- 서버(145) 반영: StudioProgram zip 수동 복사 + (프론트 변경이므로) WorkBench 프론트 재배포 대상.
+viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구조 해석".
+- ⭐ **버전 정책 (사용자 지시, 무조건):** Module Unit 코드를 고치면(스튜디오든 엔진 `ModuleUnitAnalysis`든) **항상 `module-unit-studio` 버전 bump → zip 재배포 → `GroupModuleUnitLiftingAnalysis.jsx` 의 `MODULE_STUDIO_VERSION` 동기화**를 세트로 한다. 핀이 어긋나면 새 스튜디오가 뜨지 않는다. 절차는 `/deploy` 스킬.
 
 #### 화면 배율 대응 — 셸을 `transform: scale()` 로 키우지 말 것 (0.0.148, 2026-09-09)
 
@@ -237,6 +219,23 @@ ModuleUnitStudio(viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module
   `remark: '가서포트'` 로 한다.
   ⚠ 그래서 **스튜디오가 낸 BDF 를 레거시 `BdfToCsv.py` 에 넣으면 가서포트를 못 찾는다.**
   그 경로 대신 스튜디오의 "가서포트 CSV 내보내기" 를 쓸 것.
+
+#### Wire 포함 BDF · 결과 OP2 다운로드 (Analysis/Save 탭, 2026-09-28)
+
+- **Analysis 탭 '해석 파일'** = Wire 포함 BDF(자세안정성 PASS/WARN 후 활성) + 결과 OP2(구조 해석 성공 후).
+  **Save 탭**에도 OP2. 편집 모델 BDF(Wire 없음, `BdfExportSection`)는 Save·Edit 탭에만 남겼다.
+  활성 조건은 `utils/structuralDownloads.js`(순수 함수 + 테스트).
+- 백엔드: `POST /api/analysis/unit-structural/lifting-bdf` · `GET /api/analysis/unit-structural/{id}/op2`.
+  Electron IPC: `viewer:downloadLiftingBdf` · `viewer:downloadUnitOp2` (저장 대화상자는 main 이 띄운다).
+- ⚠ **BDF 와 OP2 가 짝이 맞게 하는 규칙**: 해석 전 BDF 는 해석 실행과 **같은 함수**
+  `unit_structural_service.build_lifting_bdf()` 로 **임시 하위 폴더**에 같은 파일명으로 만들어 내려준다
+  (실측: 해석본 `_lifting.bdf` 와 바이트 동일). 해석 성공 후에는 `analysisId` 로 **실제로 푼** `_lifting.bdf`
+  를 준다. Studio 는 해석 전 다운로드 때도 `syncEditedModel()` 로 현재 편집을 먼저 올린다 — 안 올리면
+  서버의 옛 `_edited.json` 으로 만든 BDF 가 나간다. 임시 폴더를 `<stem>_lifting.*` 자리에 쓰지 말 것
+  (해석 task 가 그 glob 으로 이전 산출물을 지운다).
+- OP2 는 lifting BDF 의 `PARAM,POST,-1` 산출물(Nastran 이 **소문자 파일명**으로 씀 → `find_lifting_op2`
+  가 대소문자 무시로 찾는다). `result_info.liftingOp2` 는 이 기능 이후 실행분부터 있고, 이전 결과는
+  `liftingBdf` 옆에서 찾는다. 두 라우트 모두 `read()` 바이트로 응답한다(DRM Content-Length 함정).
 
 #### 권상 위치 자동 선정 — 핵심 동작·함정 (2026-07-01 세션, ★ 넓은 면적/PASS 관련)
 
@@ -393,21 +392,9 @@ Mooring Fitting Assessment(연결 메뉴 = "Mooring Fitting Assessment", viewer 
   - `build-full` — 모델/BDF 생성. 안전계수 `--mf-sf`(기본 1.25), Angle_H/Angle_V force 역산 기록.
   - `solve-bdf <bdf> <model.json> -o <result.json> --yield <σy기본315 AH32> --gamma <γM기본1.0>` — Nastran SOL 101 해석, von Mises Usage=σeff/(σy/γM). `SOLVE_TIMEOUT=1800s`.
 
-**② 스튜디오 (React 뷰어)**
-- 소스: `C:\Coding\WorkBenchSubModule\MooringFittingStudio\` (viewer id=`mooring-fitting-studio`). 버전은 `package.json` 한 곳만 올림. 빌드 시 `mooring-fitting-studio-<ver>.zip`(+`.sha256`).
-- **배포 위치:**
-  1. **UNC(사용자 지정 표준 아카이브)**: `\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram` — 버전 올려 zip+sha256 저장. (한글·대괄호 → PowerShell `Copy-Item -LiteralPath ... -Destination '<경로>' -Force`)
-  2. **★ 권장 + 서버 필수**: 백엔드-로컬 `HiTessWorkBenchBackEnd\StudioProgram\` 에도 복사. 백엔드 `viewers.py` `_candidate_dirs` 우선순위 = (env override) → **백엔드-로컬 StudioProgram → UNC**. '첫 후보가 존재하는 폴더'에서 멈춰 최고 버전을 서빙한다. 운영 서버(145)는 UNC 접근 불가 가정이므로 **서버 `StudioProgram\` 수동 복사가 실제 배포 통로**다.
-
-**③ WorkBench 버전 동기화 — ★ ModuleUnit/ModelBuilder와 다름 (수동 핀 없음)**
-- `HiTessWorkBench/frontend/src/pages/analysis/MooringFittingAssessment.jsx` 에는 **하드코딩 버전 상수(예 `MOORING_STUDIO_VERSION`)가 없다.** `latestVersion`을 백엔드 manifest(`GET /api/viewers/manifest/mooring-fitting-studio`)에서 **동적으로** 읽는다(`studioLatestVersion`). 설치본은 `studioInstalledVersion`. 불일치 시 "업데이트 후 열기" 버튼 노출.
-- 즉 **버전 맞춤 = zip을 StudioProgram(UNC/백엔드-로컬)에 올리면 백엔드 `_find_zip`이 최고 버전을 manifest로 서빙 → 프론트가 자동으로 그 버전을 latest로 인식.** 프론트 수동 핀 수정 불필요(ModuleUnit처럼 세트로 상수 bump 하는 절차가 여기엔 없음).
+**② 스튜디오 (React 뷰어)** — `C:\Coding\WorkBenchSubModule\MooringFittingStudio\` (git 미추적, `npm run package` 없음 → 수동 zip). `MooringFittingAssessment.jsx` 에는 **버전 핀이 없고** 백엔드 manifest 로 최신 버전을 동적으로 읽는다. 빌드·배포 절차는 `/deploy` 스킬.
 
 **런타임 InHouse 의존 (서버 145 수동 반영 대상):** `InHouseProgram/MooringFitting/MooringFitting.exe` + `InHouseProgram/NastranBridge/nastran_bridge.py`(rbe2_fixed_lines 등 편집 BDF fix, `analysis.py` apply-edit 기본 경로) + `InHouseProgram/F06Parser/` + 외부 MSC `nastran.exe`.
-
-**배포 세트 요약:** 엔진 수정 → publish → `InHouseProgram/MooringFitting/` 복사(+서버145 수동·재시작) / 스튜디오 수정 → `package.json` bump → `npm` 빌드 zip → **UNC + 백엔드-로컬** 복사 → WorkBench는 manifest로 **자동 버전 인식**(프론트 수동 핀 없음).
-
-**현재 상태(2026-07-23 확인):** 엔진 git 최신 `0494258`(CSV parse skip grouping). 스튜디오 `package.json`=`0.1.59`, UNC StudioProgram에 `0.1.58/0.1.59` 배포됨. ⚠ 백엔드-로컬 `HiTessWorkBenchBackEnd\StudioProgram\` 에는 mooring zip이 없어 현재 **UNC로 폴백 서빙 중** — 다음 배포 때 백엔드-로컬에도 복사할 것. 기능 이력: 최초 API(`52bc2ad`) → Studio Phase1 BDF뷰어(`37a50c6`) → solve-bdf 연동(`2d62be2`) → Safety Factor·v1.2.5(`79d9611`) → 편집 BDF solve PID패치·SPC충돌해소(`728b66e`).
 
 ### 이중관 연료배관 PSA — 엔진은 외부 연구원 소유, WorkBench 개조는 어댑터로 분리 ★엔진 수정 금지
 
