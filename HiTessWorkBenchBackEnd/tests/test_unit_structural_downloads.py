@@ -158,3 +158,32 @@ def test_find_lifting_op2_matches_case_insensitively(tmp_path):
     found = find_lifting_op2(str(bdf))
     assert found and found.lower().endswith("model_b_lifting.op2")
     assert find_lifting_op2("") is None
+
+
+# ── 결과 확인(Step 3)·My Projects 산출물 목록 ─────────────────────────────
+
+def test_artifacts_offer_source_bdf_before_wire_analysis(tmp_path):
+    from app.services.lifting_artifacts import scan_lifting_artifacts
+    src = tmp_path / "Model_C.bdf"
+    src.write_bytes(b"CEND\n")
+    arts = scan_lifting_artifacts(str(tmp_path), "Model_C", source_bdf=str(src))
+    assert [a["kind"] for a in arts] == ["sourceBdf"]
+    assert arts[0]["fileName"] == "Model_C.bdf"
+
+
+def test_artifacts_prefer_wire_bdf_and_list_op2_after_analysis(tmp_path):
+    from app.services.lifting_artifacts import scan_lifting_artifacts
+    src = tmp_path / "Model_C.bdf"
+    src.write_bytes(b"CEND\n")
+    (tmp_path / "Model_C_lifting.bdf").write_bytes(b"SOL 101\n")
+    (tmp_path / "model_c_lifting.op2").write_bytes(b"\x00")
+    kinds = [a["kind"] for a in scan_lifting_artifacts(str(tmp_path), "Model_C", source_bdf=str(src))]
+    assert "sourceBdf" not in kinds          # Wire 해석본이 있으면 그것만
+    assert "liftingBdf" in kinds and "op2" in kinds
+
+
+def test_artifacts_route_includes_source_bdf(db_session, tmp_path, monkeypatch):
+    _work, _bdf, _stab, parent = _workspace(tmp_path, monkeypatch, db_session)
+    res = _client(db_session, "OWNER01").get(f"/api/analysis/groupmoduleunit/{parent.id}/artifacts")
+    assert res.status_code == 200, res.text
+    assert [a["kind"] for a in res.json()["artifacts"]] == ["sourceBdf"]

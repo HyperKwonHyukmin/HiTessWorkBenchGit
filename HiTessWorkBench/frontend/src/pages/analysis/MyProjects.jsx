@@ -24,6 +24,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import StatusBadge from '../../components/ui/StatusBadge';
 import FeedbackState from '../../components/ui/FeedbackState';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
+import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 import RetentionExtendDialog from '../../components/analysis/RetentionExtendDialog';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../contexts/ToastContext';
@@ -340,6 +341,8 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
   // Simplified Hole Fatigue Assessment — input_json / output_json 만 다운로드 노출
   const isHoleFatigue  = project?.program_name === 'Simplified Hole Fatigue Assessment';
   const isDoublePipe   = isDoublePipeProject(project);
+  // 권상 구조 해석 부모 프로젝트 — 산출물은 ResultArtifactsCard 가 폴더 스캔으로 보여 준다.
+  const isLiftingProject = project?.program_name === 'GroupModuleUnit' || project?.program_name === 'SidePassage';
 
   // result_info 필터링
   const getResultLabel = (key) => {
@@ -501,6 +504,15 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
               filesMissing={filesMissing}
               onDownload={handleDownload}
             />
+          )}
+
+          {/* Group & Module Unit / Side Passage — 결과 확인(Step 3)과 같은 산출물 카드.
+              구조 해석(Wire)은 별도 하위 레코드라 이 프로젝트의 result_info 에는 없다 →
+              부모 폴더를 스캔하는 카드로 Wire 포함 BDF(없으면 원본 BDF)·F06·OP2·보고서를 받는다. */}
+          {isLiftingProject && project.status === 'Success' && !filesMissing && (
+            <div className="mb-6">
+              <ResultArtifactsCard parentAnalysisId={project.id} />
+            </div>
           )}
 
           {!isDoublePipe && <>

@@ -147,7 +147,7 @@ def build_lifting_bdf(
     return engine_output
 
 
-def find_lifting_op2(lifting_bdf: str) -> Optional[str]:
+def find_lifting_op2(lifting_bdf: Optional[str]) -> Optional[str]:
     """lifting BDF 를 Nastran 이 풀어 남긴 OP2 경로. 없으면 None.
 
     Nastran 은 출력 파일명을 소문자로 쓴다(`..._lifting.op2`). Windows 는 대소문자를 가리지

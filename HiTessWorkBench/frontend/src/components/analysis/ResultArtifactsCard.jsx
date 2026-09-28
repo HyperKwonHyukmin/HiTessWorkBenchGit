@@ -21,14 +21,15 @@ function formatSize(bytes) {
 
 // 산출물 그룹 정의 — 백엔드 kind 와 일치. 해당 kind 가 하나도 없으면 그룹 헤더는 숨김.
 const GROUPS = [
-  { title: '모델 BDF',     kinds: ['liftingBdf', 'editedBdf'] },
+  { title: '모델 BDF',     kinds: ['liftingBdf', 'editedBdf', 'sourceBdf'] },
   { title: 'Nastran 결과', kinds: ['f06', 'op2'] },
 ];
 
 const KIND_ICON = {
   liftingBdf: FileText,
   editedBdf:  FileCog,
-  f06:        FileText,
+  sourceBdf:  FileText,
+  f06:       FileText,
   op2:        FileBarChart2,
 };
 
@@ -43,7 +44,8 @@ const REGISTRABLE_KINDS = {
 /**
  * Group & Module Unit 권상 구조해석 Step3 상단 카드.
  * parent BDF 폴더에서 존재하는 lifting 산출물(_lifting.bdf/_edited.bdf/_lifting.f06/_lifting.op2)을
- * 조회해 다운로드 버튼으로 노출한다. 구조해석은 Studio 에서 비동기로 끝나므로 "새로고침"으로 갱신.
+ * 조회해 다운로드 버튼으로 노출한다. Wire 포함 구조 해석 전이면 원본 모델 BDF(sourceBdf)가 대신 나온다.
+ * My Projects 상세 모달(GroupModuleUnit/SidePassage)도 이 카드를 그대로 쓴다. 구조해석은 Studio 에서 비동기로 끝나므로 "새로고침"으로 갱신.
  */
 export default function ResultArtifactsCard({ parentAnalysisId }) {
   const { showToast } = useToast();
@@ -278,7 +280,7 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
         busy={reportBusy}
         onClose={() => setReportKind(null)}
         onSubmit={handleReport}
-        sourceFileName={byKind.editedBdf?.fileName || byKind.liftingBdf?.fileName || ''}
+        sourceFileName={byKind.editedBdf?.fileName || byKind.liftingBdf?.fileName || byKind.sourceBdf?.fileName || ''}
         defaultAuthor={getCurrentUser()?.employee_id || ''}
       />
     </div>

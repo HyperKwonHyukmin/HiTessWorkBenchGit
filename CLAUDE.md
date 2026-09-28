@@ -236,6 +236,10 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
 - OP2 는 lifting BDF 의 `PARAM,POST,-1` 산출물(Nastran 이 **소문자 파일명**으로 씀 → `find_lifting_op2`
   가 대소문자 무시로 찾는다). `result_info.liftingOp2` 는 이 기능 이후 실행분부터 있고, 이전 결과는
   `liftingBdf` 옆에서 찾는다. 두 라우트 모두 `read()` 바이트로 응답한다(DRM Content-Length 함정).
+- **WorkBench 쪽(Studio 를 안 거쳐도)**: Step 3 `ResultArtifactsCard` 와 **My Projects 상세 모달**
+  (GroupModuleUnit/SidePassage 부모 프로젝트)이 같은 카드로 `GET .../groupmoduleunit/{id}/artifacts` 를 쓴다.
+  Wire 해석 전이면 `scan_lifting_artifacts(source_bdf=…)` 가 원본 BDF 를 `sourceBdf` 로 대신 준다.
+  구조 해석 자식 레코드(UnitStructuralAnalysis)는 My Projects 목록에서 숨겨져 있어 이 카드가 유일한 통로다.
 
 #### 권상 위치 자동 선정 — 핵심 동작·함정 (2026-07-01 세션, ★ 넓은 면적/PASS 관련)
 

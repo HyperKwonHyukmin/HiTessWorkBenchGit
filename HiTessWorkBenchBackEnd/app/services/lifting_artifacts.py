@@ -43,12 +43,36 @@ def _find_artifact(folder: str, suffix: str, stem: Optional[str]) -> Optional[st
     return matches[0] if matches else None
 
 
-def scan_lifting_artifacts(folder: str, stem: Optional[str] = None) -> list[dict]:
+SOURCE_BDF_LABEL = "모델 BDF (Wire 해석 전)"
+
+
+def _entry(kind: str, label: str, path: str) -> dict:
+    try:
+        size: Optional[int] = os.path.getsize(path)
+    except OSError:
+        size = None
+    return {
+        "kind": kind,
+        "label": label,
+        "fileName": os.path.basename(path),
+        "path": os.path.abspath(path),
+        "sizeBytes": size,
+    }
+
+
+def scan_lifting_artifacts(
+    folder: str,
+    stem: Optional[str] = None,
+    source_bdf: Optional[str] = None,
+) -> list[dict]:
     """folder 안에서 알려진 lifting 산출물을 존재하는 것만 메타와 함께 반환.
 
     Args:
-        folder: 산출물이 위치한 폴더(절대경로).
-        stem:   원본 BDF 파일명 stem (예: 'model'). 정확 매칭 우선용. 없으면 글롭만 사용.
+        folder:     산출물이 위치한 폴더(절대경로).
+        stem:       원본 BDF 파일명 stem (예: 'model'). 정확 매칭 우선용. 없으면 글롭만 사용.
+        source_bdf: 원본(부모) 모델 BDF 경로. Wire 포함 구조 해석을 아직 안 했으면(`_lifting.bdf`
+                    없음) 이 BDF 를 kind='sourceBdf' 로 대신 노출한다 — 결과 확인 화면·My Projects 에서
+                    "받을 BDF 가 하나도 없는" 상태를 없애기 위함. Wire 해석본이 있으면 그것만 준다.
 
     Returns:
         [{ kind, label, fileName, path(abs), sizeBytes(int|None) }, ...]
@@ -57,17 +81,9 @@ def scan_lifting_artifacts(folder: str, stem: Optional[str] = None) -> list[dict
     out: list[dict] = []
     for kind, suffix, label in ARTIFACT_SPECS:
         path = _find_artifact(folder, suffix, stem)
-        if not path:
-            continue
-        try:
-            size: Optional[int] = os.path.getsize(path)
-        except OSError:
-            size = None
-        out.append({
-            "kind": kind,
-            "label": label,
-            "fileName": os.path.basename(path),
-            "path": os.path.abspath(path),
-            "sizeBytes": size,
-        })
+        if path:
+            out.append(_entry(kind, label, path))
+    has_lifting = any(a["kind"] == "liftingBdf" for a in out)
+    if not has_lifting and source_bdf and os.path.isfile(source_bdf):
+        out.insert(0, _entry("sourceBdf", SOURCE_BDF_LABEL, source_bdf))
     return out

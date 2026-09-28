@@ -3092,7 +3092,8 @@ def get_groupmoduleunit_artifacts(
         raise HTTPException(status_code=403, detail="허용되지 않은 경로입니다.")
     assert_current_user_can_access_path(folder, current_user, db, _USER_CONNECTION_DIR)
     stem = os.path.splitext(os.path.basename(bdf_model))[0]
-    artifacts = scan_lifting_artifacts(folder, stem)
+    # Wire 포함 구조 해석 전이면 원본 모델 BDF 를 대신 노출한다(받을 BDF 가 항상 하나는 있게).
+    artifacts = scan_lifting_artifacts(folder, stem, source_bdf=bdf_model)
     # 이 parent 로 실행된 Unit 구조 해석 중 가장 최근 Success 레코드 — WorkBench 페이지의 '검토 보고서' 버튼이 쓴다.
     # input_info 는 JSON 컬럼이라 DB 방언에 따라 JSON 경로 질의가 다르므로 후보를 파이썬에서 거른다(레코드 수가 작다).
     unit_id = None
@@ -3114,7 +3115,7 @@ def get_groupmoduleunit_artifacts(
 
 # ==================== Unit Structural Analysis (Lifting + Nastran) ===========
 
-def _validate_unit_stability_path(stability_path: str, bdf_path: str) -> str:
+def _validate_unit_stability_path(stability_path: Optional[str], bdf_path: str) -> str:
     """stability JSON 경로 보안 검증 — 통과하면 절대경로를 돌려준다.
 
     (1) 절대경로, (2) parent BDF 와 같은 폴더 안, (3) userConnection 디렉터리 하위,
@@ -3178,7 +3179,7 @@ def _load_unit_structural_record(analysis_id: Any, db: Session, current_user: st
     return record
 
 
-def _read_userconnection_file(path: str, current_user: str, db: Session, label: str) -> bytes:
+def _read_userconnection_file(path: Optional[str], current_user: str, db: Session, label: str) -> bytes:
     """userConnection 안의 파일을 read() 한 바이트로 돌려준다.
 
     FileResponse 는 Content-Length 를 stat(=DRM 암호화 크기)로 잡아 본문과 어긋날 수 있어
@@ -3220,7 +3221,7 @@ def download_unit_lifting_bdf(
         record = _load_unit_structural_record(payload.get("analysisId"), db, current_user)
         lifting_bdf = (record.result_info or {}).get("liftingBdf")
         data = _read_userconnection_file(lifting_bdf, current_user, db, "Wire 포함 BDF")
-        return _attachment_response(data, os.path.basename(lifting_bdf), "text/plain; charset=utf-8")
+        return _attachment_response(data, os.path.basename(str(lifting_bdf)), "text/plain; charset=utf-8")
 
     bdf_path = _load_unit_parent_bdf(payload.get("parentAnalysisId"), db, current_user)
     stab_abs = _validate_unit_stability_path(payload.get("stabilityPath"), bdf_path)
