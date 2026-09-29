@@ -219,6 +219,12 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   `remark: '가서포트'` 로 한다.
   ⚠ 그래서 **스튜디오가 낸 BDF 를 레거시 `BdfToCsv.py` 에 넣으면 가서포트를 못 찾는다.**
   그 경로 대신 스튜디오의 "가서포트 CSV 내보내기" 를 쓸 것.
+- ⚠ **구조 해석 결과의 elementId 는 '편집 모델' 기준이다** (2026-09-28). 가서포트는 원본 `stageData.elements`
+  에 없어서, 결과를 원본에서만 찾으면 응력 색·결과 표 행 클릭·3D 선택이 조용히 빠진다(실제 장애).
+  해석 실행 순간 `snapshotResultElements()`(`data/resultElements.js`)가 편집 모델에만 있는 부재를 떠서
+  `useUnitStructuralStore.resultElements` 에 결과와 함께 둔다 — 결과를 조회하는 곳은 **원본 → 이 스냅숏** 순으로
+  찾을 것(`buildResultElementIndex`, `buildElementsHighlight` 의 `fallbackElements`, 오버레이 `pickTargets`).
+  결과가 있는 가서포트는 청록 미리보기 선(renderOrder 999)을 빼야 응력 색이 보인다.
 
 #### Wire 포함 BDF · 결과 OP2 다운로드 (Analysis/Save 탭, 2026-09-28)
 
