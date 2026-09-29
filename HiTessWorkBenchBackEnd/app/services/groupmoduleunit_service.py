@@ -120,6 +120,28 @@ def transform_to_step1(model_json: Dict[str, Any], bdf_path: str) -> Dict[str, A
     isolated_ids = (connectivity.get('isolatedNodeIds') or [])
     zero_len_ids = (quality.get('zeroLengthElementIds') or [])
 
+    # 순수 orphan 은 해석 강성/질량/경계조건에 참여하지 않으므로 검증을 막지 않는다.
+    # 단, element/rigid/CONM2 에 참조되면서도 연결 그래프에서 고립된 GRID 는
+    # 모델링 결함일 수 있으므로 기존처럼 error 로 유지한다.
+    orphan_id_keys = {str(node_id) for node_id in orphan_ids}
+    if isolated_ids:
+        ignored_orphan_group_count = sum(
+            1 for node_id in isolated_ids if str(node_id) in orphan_id_keys
+        )
+        blocking_isolated_ids = [
+            node_id for node_id in isolated_ids if str(node_id) not in orphan_id_keys
+        ]
+        blocking_isolated_count = len(blocking_isolated_ids)
+    else:
+        # 구버전 bridge 가 ID 목록 없이 count 만 제공하는 경우 중복 수만큼 제외한다.
+        ignored_orphan_group_count = min(isolated_count, orphan_node_count)
+        blocking_isolated_count = max(isolated_count - orphan_node_count, 0)
+        blocking_isolated_ids = []
+    actionable_disconnected_groups = max(
+        disconnected_groups - ignored_orphan_group_count,
+        0,
+    )
+
     # ── 검증 결과 누적 ──────────────────────────────────────────────
     validation_results: List[Dict[str, Any]] = []
     error_count = 0
@@ -148,26 +170,30 @@ def transform_to_step1(model_json: Dict[str, Any], bdf_path: str) -> Dict[str, A
             diag.get('message')   or '',
         )
 
-    # 2) 진짜 orphan (element/rigid/CONM2 어느 카드도 참조 안 함) — error
+    # 2) 진짜 orphan (element/rigid/CONM2 어느 카드도 참조 안 함) — warning
+    #    해석계에 참여하지 않으므로 사용자에게 알리되 다음 단계 진행은 허용한다.
     if orphan_node_count > 0:
         ids_preview = orphan_ids[:5]; suffix = '…' if len(orphan_ids) > 5 else ''
-        _push('error', 'GRID', f'{orphan_node_count} 개', 'reference',
-              f'미참조(orphan) GRID {orphan_node_count} 개 — 예시 ID {ids_preview}{suffix}. 어떤 element/rigid/CONM2 도 참조하지 않습니다.')
+        _push('warning', 'GRID', f'{orphan_node_count} 개', 'reference',
+              f'미참조(orphan) GRID {orphan_node_count} 개 — 예시 ID {ids_preview}{suffix}. '
+              '어떤 element/rigid/CONM2 도 참조하지 않아 해석에는 참여하지 않으며, 입력 검증 진행을 차단하지 않습니다.')
 
-    # 3) 고립(isolated) — graph edge 0 — error
-    if isolated_count > 0:
-        ids_preview = isolated_ids[:5]; suffix = '…' if len(isolated_ids) > 5 else ''
-        _push('error', 'GRID', f'{isolated_count} 개', 'graph',
-              f'고립(isolated) GRID {isolated_count} 개 — 예시 ID {ids_preview}{suffix}. connectivity 그래프 edge 가 없습니다.')
+    # 3) 고립(isolated) 중 orphan 과 중복되지 않는 GRID 만 error
+    if blocking_isolated_count > 0:
+        ids_preview = blocking_isolated_ids[:5]
+        suffix = '…' if len(blocking_isolated_ids) > 5 else ''
+        _push('error', 'GRID', f'{blocking_isolated_count} 개', 'graph',
+              f'참조되었지만 고립된(isolated) GRID {blocking_isolated_count} 개 — 예시 ID {ids_preview}{suffix}. '
+              'connectivity 그래프 edge 가 없어 연결 관계를 확인해야 합니다.')
 
     # 4) (자유 끝단 GRID 표시는 사용자 요청에 따라 검증 결과에 노출하지 않음 —
     #     RBE/CONM2 연결을 제외한 단순 degree 기반 카운트라 권상 해석 의사결정에 큰 영향이 없음)
 
     # 5) 분리 그룹 — warning
-    if disconnected_groups > 0:
-        total_groups = disconnected_groups + 1
+    if actionable_disconnected_groups > 0:
+        total_groups = actionable_disconnected_groups + 1
         _push('warning', 'CONNECTIVITY', f'{total_groups} groups', 'graph',
-              f'분리 그룹 {total_groups} 개 (메인 외 추가 {disconnected_groups} 개). 권상 해석은 단일 그룹 모델을 가정합니다 — 추가 RBE 연결 검토 필요.')
+              f'분리 그룹 {total_groups} 개 (메인 외 추가 {actionable_disconnected_groups} 개). 권상 해석은 단일 그룹 모델을 가정합니다 — 추가 RBE 연결 검토 필요.')
 
     # 6) zero-length elements — error
     if zero_len_count > 0:
@@ -185,14 +211,15 @@ def transform_to_step1(model_json: Dict[str, Any], bdf_path: str) -> Dict[str, A
     def _rule_status(err: int, warn: int) -> str:
         return 'error' if err > 0 else ('warning' if warn > 0 else 'pass')
 
-    grid_err = orphan_node_count + isolated_count
+    grid_err = blocking_isolated_count
+    grid_warn = orphan_node_count
     rules_checked = [
         {
             'rule': 'GridRule',
-            'status': _rule_status(grid_err, 0),
+            'status': _rule_status(grid_err, grid_warn),
             'checkedCount': len(nodes),
             'errorCount':   grid_err,
-            'warningCount': 0,  # free-end 는 표시 대상 아님 (사용자 요청)
+            'warningCount': grid_warn,  # free-end 는 표시 대상 아님 (사용자 요청)
         },
         {
             'rule': 'ElementRule',
@@ -217,10 +244,10 @@ def transform_to_step1(model_json: Dict[str, Any], bdf_path: str) -> Dict[str, A
         },
         {
             'rule': 'BcRule',
-            'status': _rule_status(0, disconnected_groups),
-            'checkedCount': disconnected_groups + 1,
+            'status': _rule_status(0, actionable_disconnected_groups),
+            'checkedCount': actionable_disconnected_groups + 1,
             'errorCount':   0,
-            'warningCount': disconnected_groups,
+            'warningCount': actionable_disconnected_groups,
         },
     ]
 
@@ -249,8 +276,13 @@ def transform_to_step1(model_json: Dict[str, Any], bdf_path: str) -> Dict[str, A
             # free-end 와 isolated 는 별도 필드로 분리해 의미 혼동 방지.
             'orphanNodes':           orphan_node_count,
             'freeEndNodes':          free_end_count,
-            'isolatedNodes':         isolated_count,
-            'disconnectedGroupCount': disconnected_groups,
+            # orphan 과 중복되는 isolated 는 이슈 분포에서 다시 세지 않는다.
+            # bridge 원시 수치는 추적을 위해 rawIsolatedNodes 에 보존한다.
+            'isolatedNodes':         blocking_isolated_count,
+            'rawIsolatedNodes':      isolated_count,
+            # orphan singleton 그룹을 제외한, 실제 연결 검토 대상 그룹 수
+            'disconnectedGroupCount': actionable_disconnected_groups,
+            'rawDisconnectedGroupCount': disconnected_groups,
             'orphanProperties':      0,
             'orphanMaterials':       0,
             'boundingBox':           bbox,
