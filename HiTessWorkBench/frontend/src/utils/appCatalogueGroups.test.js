@@ -86,3 +86,36 @@ test('buildCatalogueGroups 는 빈 목록을 안전하게 처리한다', () => {
   assert.deepEqual(buildCatalogueGroups([], { categoryOrder: ORDER }), { favoriteApps: [], categories: [] });
   assert.deepEqual(buildCatalogueGroups(undefined, {}), { favoriteApps: [], categories: [] });
 });
+
+// ── buildCategoryTabs ─────────────────────────────────────────────
+
+const DOUBLE_PIPE = app('이중관 구조 연료배관 해석', '배관', { devStatus: 'Developing' });
+const OCEAN = app('Module Unit 해상 운송 구조 해석', '운송', { devStatus: 'Developing' });
+
+test('buildCategoryTabs 는 개발 중 섹션이 접혀 있으면 서비스 중인 앱만 센다', async () => {
+  const { buildCategoryTabs } = await import('./appCatalogueGroups.js');
+  const { categories, counts } = buildCategoryTabs(
+    [TRUSS_MB, TRUSS_SA, HITESS, HPSCR, DOUBLE_PIPE, OCEAN],
+    { categoryOrder: ORDER },
+  );
+
+  // 운송은 개발 중 앱뿐이라 탭 자체가 없다.
+  assert.deepEqual(categories, ['All', '구조 모델', '배관']);
+  assert.deepEqual(counts, { All: 4, '구조 모델': 3, 배관: 1 });
+});
+
+test('buildCategoryTabs 는 개발 중 섹션을 펼치면 개발 중 앱도 세고 순서 밖 카테고리는 뒤에 붙인다', async () => {
+  const { buildCategoryTabs } = await import('./appCatalogueGroups.js');
+  const { categories, counts } = buildCategoryTabs(
+    [TRUSS_MB, TRUSS_SA, HITESS, HPSCR, DOUBLE_PIPE, OCEAN],
+    { categoryOrder: ORDER, includeDeveloping: true },
+  );
+
+  assert.deepEqual(categories, ['All', '구조 모델', '배관', '운송']);
+  assert.deepEqual(counts, { All: 6, '구조 모델': 3, 배관: 2, 운송: 1 });
+});
+
+test('buildCategoryTabs 는 빈 목록에서 All 0 만 돌려준다', async () => {
+  const { buildCategoryTabs } = await import('./appCatalogueGroups.js');
+  assert.deepEqual(buildCategoryTabs([]), { categories: ['All'], counts: { All: 0 } });
+});

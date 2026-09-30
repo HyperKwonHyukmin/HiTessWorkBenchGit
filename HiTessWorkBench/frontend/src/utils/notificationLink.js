@@ -52,10 +52,11 @@ export function mergeNotifications(prev, fresh, cap = NOTIFICATION_LIST_CAP) {
   return [...byId.values()].sort((a, b) => b.id - a.id).slice(0, cap);
 }
 
-/** ISO 시각 → '방금 | n분 전 | n시간 전 | n일 전 | M/D'. 파싱 실패는 ''. */
+/** ISO 시각 또는 epoch(ms) → '방금 | n분 전 | n시간 전 | n일 전 | M/D'. 파싱 실패는 ''. */
 export function formatNotificationTime(iso, now = Date.now()) {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return '';
+  // 최근 사용 기록(recent_apps)은 epoch 숫자로 저장된다 — Date.parse(숫자) 는 NaN 이라 따로 받는다.
+  const t = typeof iso === 'number' ? iso : Date.parse(iso);
+  if (!Number.isFinite(t) || t <= 0) return '';
   const minutes = Math.floor(Math.max(0, now - t) / 60000);
   if (minutes < 1) return '방금';
   if (minutes < 60) return `${minutes}분 전`;

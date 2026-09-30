@@ -34,18 +34,20 @@ const RAW_ANALYSIS_DATA = [
   //    앱마다 다른 글리프·색으로 분화하지 말 것 — 모드 정체성을 나타내는 의도된 통일이다.
   // 태그에는 파일 형식(BDF·CSV·PDF…)을 넣지 않는다 — 카드의 Input/Output 칩이 이미 표시하고,
   // 검색도 inputFormats/outputFormats 를 인덱싱하므로 태그로 중복시킬 이유가 없다.
+  // art: 카탈로그 카드 도면 띠의 선화(components/ui/cardArt.jsx). 없으면 분류 기본 그림을 쓴다 —
+  //   분류 기본과 다른 그림이 필요한 앱에만 적는다.
   // series: 카테고리보다 한 단계 작은 묶음. 같은 대상을 이어서 다루는 앱들을 카탈로그에서
   //   붙여 보여주기 위한 것이다(Truss = 모델 생성 → 구조 평가). 값이 없으면 단독으로 놓인다.
-  { mode: "File", category: "구조 모델", series: "Truss", title: "Truss Model Builder", description: "Truss 설계 정보를 활용하여 구조 해석 모델을 구축합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "모델생성"], devStatus: "Active", contributor: "권혁민" },
-  { mode: "File", category: "구조 모델", series: "Truss", title: "Truss Structural Assessment", description: "Truss BDF 모델을 업로드하여 구조적 안정성을 평가합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "구조평가"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "File", category: "구조 모델", series: "Truss", title: "Truss Model Builder", art: "truss", description: "Truss 설계 정보를 활용하여 구조 해석 모델을 구축합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "모델생성"], devStatus: "Active", contributor: "권혁민" },
+  { mode: "File", category: "구조 모델", series: "Truss", title: "Truss Structural Assessment", art: "truss", description: "Truss BDF 모델을 업로드하여 구조적 안정성을 평가합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["트러스", "구조평가"], devStatus: "Active", contributor: "권혁민" },
   { mode: "File", category: "구조 모델", title: "HiTESS Model Builder", description: "CSV부터 Nastran 해석까지 FEM 파이프라인 전 과정을 단일 UI에서 관리합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Nastran", "파이프라인"], devStatus: "Active", contributor: "권혁민" },
   { mode: "File", category: "배관", title: "HP-SCR 배관응력 해석", description: "배관 BDF를 업로드하여 열변형 계산 및 배관응력 해석(PSA · POR)을 수행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["배관", "PSA", "POR"], devStatus: "Active", contributor: "김윤환" },
   // ── File-Based Apps (signature: blue) ─────────── Developing ──
   { mode: "File", category: "배관", title: "이중관 구조 연료배관 해석", description: "이중관 연료배관의 Inner Support 설계와 전체/선택 Load Case 배관응력 해석을 준비합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["이중관", "연료배관", "PSA"], devStatus: "Developing", contributor: "김윤환" },
   { mode: "File", category: "권상·의장", title: "Group & Module Unit 권상 구조 해석", description: "Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["유닛", "블록", "국부강도"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "File", category: "권상·의장", title: "Side Passage Assessment", description: "Side Passage BDF 모델을 검증하고 Studio 기반 권상 조건·Nastran 해석·결과 판정을 진행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Side Passage", "Studio", "권상"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "File", category: "권상·의장", title: "DrawingToAnalysis", description: "설계 도면(PDF)을 업로드하여 LUG 구조 해석 BDF 모델로 변환합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["도면", "LUG"], devStatus: "Developing", contributor: "권혁민" },
-  { mode: "File", category: "권상·의장", title: "Mooring Fitting Assessment", description: "Mooring Fitting / Winch 보강 구조의 CSV 2종을 입력받아 8단계 BDF 파이프라인을 자동 생성합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Mooring", "Winch", "파이프라인"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "권상·의장", title: "DrawingToAnalysis", art: "doc", description: "설계 도면(PDF)을 업로드하여 LUG 구조 해석 BDF 모델로 변환합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["도면", "LUG"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "권상·의장", title: "Mooring Fitting Assessment", art: "weld", description: "Mooring Fitting / Winch 보강 구조의 CSV 2종을 입력받아 8단계 BDF 파이프라인을 자동 생성합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Mooring", "Winch", "파이프라인"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "File", category: "운송", title: "Module Unit 해상 운송 구조 해석", description: "정반에 적재된 Module Unit의 해상 운송 하중에 대한 구조 안전성과 용접부 강도를 검토합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["유닛", "해상운송", "정반", "용접부"], devStatus: "Developing", contributor: "권혁민" },
   // ── Interactive Apps (signature: violet) ──────── Active ──
   { mode: "Interactive", category: "1D Beam", title: "Simple Beam Assessment", description: "단면 형상과 치수를 직접 입력하여 단순 보(Beam)의 응력 및 변위을 평가합니다.", icon: PenTool, color: "bg-violet-600", tags: ["1D요소", "굽힘응력", "실시간"], devStatus: "Active", contributor: "권혁민" },

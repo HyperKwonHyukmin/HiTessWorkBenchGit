@@ -10,12 +10,16 @@ import { motion } from 'framer-motion';
  * @param {string}  active        - 현재 활성 탭
  * @param {(c:string)=>void} onChange - 탭 변경 핸들러
  * @param {Record<string, number>} [counts] - 탭별 항목 수
+ * @param {boolean} [dense] - 아래 구분선·큰 여백 없이 낮은 탭으로 그린다(목록 바로 위 도구줄용)
  */
-export default function FilterTabs({ categories = [], active, onChange, rightSlot, counts }) {
+export default function FilterTabs({ categories = [], active, onChange, rightSlot, counts, dense = false }) {
   const layoutId = useId();
 
   return (
-    <div className="flex flex-wrap items-center gap-2 mb-8 border-b border-slate-200 pb-5">
+    <div className={dense
+      ? 'flex flex-wrap items-center gap-1'
+      : 'flex flex-wrap items-center gap-2 mb-8 border-b border-slate-200 pb-5'}
+    >
       {categories.map(category => {
         const isActive = active === category;
         const count = counts?.[category];
@@ -24,7 +28,8 @@ export default function FilterTabs({ categories = [], active, onChange, rightSlo
             key={category}
             onClick={() => onChange(category)}
             className={[
-              'relative cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold tracking-wide',
+              'relative cursor-pointer rounded-lg font-bold',
+              dense ? 'px-3 py-1.5 text-[13px]' : 'px-4 py-2.5 text-sm tracking-wide',
               'transition-colors duration-200 outline-none isolate overflow-hidden',
               'focus-visible:ring-2 focus-visible:ring-brand-blue/40',
               // 비활성 탭은 테두리·그림자 없이 텍스트만 — 필터가 필터 대상(카드)보다

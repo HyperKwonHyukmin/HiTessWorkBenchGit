@@ -62,3 +62,37 @@ export function buildCatalogueGroups(apps, { favorites = [], categoryOrder = [] 
 
   return { favoriteApps, categories };
 }
+
+const isServiceActive = (app) => !app.devStatus || app.devStatus === 'Active';
+
+/**
+ * 카테고리 필터 탭과 개수 — '그 탭을 누르면 지금 화면에 보이는 앱 수'만 센다.
+ *
+ * 개발 중 앱은 접힌 섹션에 따로 모으므로, 접혀 있는 동안 세면 탭은 '배관 2' 인데 보이는 앱은
+ * 1개인 식으로 어긋난다. 그래서 개발 중 섹션을 펼쳤을 때만 함께 센다.
+ * 보이는 앱이 0개인 카테고리는 탭을 만들지 않는다(눌러도 빈 화면만 나오는 탭을 두지 않는다).
+ *
+ * @param {Array} apps  검색어까지 반영된 앱 목록(카탈로그 정의 순서).
+ * @param {object} options
+ * @param {string[]} options.categoryOrder       카테고리 노출 순서. 여기 없는 카테고리는 등장 순서로 뒤에 붙는다.
+ * @param {boolean}  options.includeDeveloping   개발 중 섹션이 펼쳐져 있는지.
+ * @returns {{categories: string[], counts: Record<string, number>}}  categories[0] 은 항상 'All'.
+ */
+export function buildCategoryTabs(apps, { categoryOrder = [], includeDeveloping = false } = {}) {
+  const list = Array.isArray(apps) ? apps : [];
+  const visible = list.filter((app) => includeDeveloping || isServiceActive(app));
+
+  const counts = { All: visible.length };
+  for (const app of visible) {
+    counts[app.category] = (counts[app.category] || 0) + 1;
+  }
+
+  const seen = Object.keys(counts).filter((name) => name !== 'All');
+  const categories = [
+    'All',
+    ...categoryOrder.filter((name) => seen.includes(name)),
+    ...seen.filter((name) => !categoryOrder.includes(name)),
+  ];
+
+  return { categories, counts };
+}

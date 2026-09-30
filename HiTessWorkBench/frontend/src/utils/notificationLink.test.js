@@ -59,4 +59,7 @@ test('상대 시각', () => {
   assert.equal(formatNotificationTime('2026-09-15T10:00:00', now), '3일 전');
   assert.equal(formatNotificationTime('2026-09-01T10:00:00', now), '9/1');
   assert.equal(formatNotificationTime('garbage', now), '');
+  // epoch(ms) 숫자도 받는다 — 최근 사용 기록(recent_apps)이 이 형식이다
+  assert.equal(formatNotificationTime(now - 48 * 60000, now), '48분 전');
+  assert.equal(formatNotificationTime(0, now), '');
 });
