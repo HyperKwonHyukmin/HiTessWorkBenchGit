@@ -314,9 +314,11 @@ export default function UtilityDock({ currentUserId, isAdmin = false }) {
           }`}
           aria-expanded={activePanel === 'jobs'}
           title="Job Center"
+          aria-label="작업"
         >
           <Activity size={18} />
-          <span className="hidden sm:inline">작업</span>
+          {/* 1536px 미만에서는 아이콘만 — 떠 있는 도크가 본문 카드 오른쪽을 덜 가리게 */}
+          <span className="hidden 2xl:inline">작업</span>
           {(activeJobCount > 0 || failedJobCount > 0) && (
             <span className={`absolute -right-1.5 -top-1.5 min-w-[19px] rounded-full px-1 text-center text-[10px] font-black leading-[19px] text-white ${
               failedJobCount > 0 ? 'bg-red-500' : 'bg-blue-500'
@@ -335,9 +337,10 @@ export default function UtilityDock({ currentUserId, isAdmin = false }) {
             }`}
             aria-expanded={activePanel === 'chat'}
             title="메시지"
+            aria-label="메시지"
           >
             <MessageCircle size={18} />
-            <span className="hidden sm:inline">메시지</span>
+            <span className="hidden 2xl:inline">메시지</span>
             {chatUnread > 0 && (
               <span className="absolute -right-1.5 -top-1.5 min-w-[19px] rounded-full bg-red-500 px-1 text-center text-[10px] font-black leading-[19px] text-white">
                 {chatUnread > 99 ? '99+' : chatUnread}

@@ -71,7 +71,8 @@ export default function Badge({
   return (
     <span
       className={[
-        'inline-flex items-center gap-1.5',
+        // 뱃지는 한 덩어리 라벨 — 좁은 표 칸에서 '해석 / 완료' 처럼 세로로 쪼개지지 않게 한다
+        'inline-flex items-center gap-1.5 whitespace-nowrap',
         'rounded-full font-bold',
         badgeClass,
         sizeClass,

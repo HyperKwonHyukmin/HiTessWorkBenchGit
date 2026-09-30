@@ -49,6 +49,14 @@ const supportsProjectRerun = (project) => (
   findAppByProgramName(project?.program_name)?.supportsRerun === true
 );
 
+/** 표 날짜 칸: '2026-09-30 16:10' — 로케일 긴 형식('2026. 9. 30. 오후 4:10:12')은 칸을 넓혀 다른 칸을 밀어낸다 */
+const formatTableDate = (value) => {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '-';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 const FileRetentionBadge = ({ project }) => {
   const status = fileStatusOf(project);
   return <StatusBadge status={status} size="md" className="whitespace-nowrap" />;
@@ -688,7 +696,17 @@ export default function MyProjects() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [programFilter, setProgramFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
+  // 대시보드 '7일 실패' 칩이 남긴 필터를 첫 렌더에 적용하고 지운다(한 번만)
+  const [statusFilter, setStatusFilter] = useState(() => {
+    try {
+      const preset = sessionStorage.getItem('workbench:my-projects-status-filter');
+      if (preset) {
+        sessionStorage.removeItem('workbench:my-projects-status-filter');
+        if (STATUS_FILTERS.includes(preset)) return preset;
+      }
+    } catch { /* 기본값 */ }
+    return 'All';
+  });
   const [fileStatusFilter, setFileStatusFilter] = useState('All');
   const [selectedProject, setSelectedProject] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1173,15 +1191,16 @@ export default function MyProjects() {
         <div className="overflow-x-auto min-h-[400px]">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
-                <th className="py-4 pl-4 pr-2 font-semibold w-14 text-center">Compare</th>
-                <th className="py-4 px-4 font-semibold w-16 text-center">No.</th>
-                <th className="py-4 px-6 font-semibold">Project Name</th>
-                <th className="py-4 px-6 font-semibold">App</th>
-                <th className="py-4 px-6 font-semibold">Status</th>
-                <th className="py-4 px-6 font-semibold">Files</th>
-                <th className="py-4 px-6 font-semibold text-right">Date</th>
-                <th className="py-4 px-4 font-semibold text-center w-32">Actions</th>
+              {/* 머리글·짧은 칸은 줄바꿈 금지 — 남는 폭은 Project Name 이 가져가고 거기서만 말줄임한다 */}
+              <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider whitespace-nowrap">
+                <th className="py-3 pl-4 pr-2 font-semibold w-10 text-center" title="Compare — 두 건을 골라 비교"><CheckSquare size={14} className="mx-auto" aria-hidden="true" /><span className="sr-only">Compare</span></th>
+                <th className="py-3 px-3 font-semibold w-14 text-center">No.</th>
+                <th className="py-3 px-4 font-semibold min-w-[220px]">Project Name</th>
+                <th className="py-3 px-4 font-semibold w-[1%]">App</th>
+                <th className="py-3 px-4 font-semibold w-[1%]">Status</th>
+                <th className="py-3 px-4 font-semibold w-[1%]">Files</th>
+                <th className="py-3 px-4 font-semibold w-[1%] text-right">Date</th>
+                <th className="py-3 px-4 font-semibold w-[1%] text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -1217,21 +1236,21 @@ export default function MyProjects() {
                           : <Square size={17} />}
                       </button>
                     </td>
-                    <td className="py-4 px-4 font-mono text-xs text-slate-500 font-bold text-center">{(currentPage - 1) * PAGE_SIZE + index + 1}</td>
-                    <td className="py-4 px-6">
-                      <div className="flex items-center">
-                        <div className="p-2 bg-slate-100 rounded text-slate-400 mr-3 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors"><Box size={18} /></div>
-                        <p className="font-bold text-slate-700 text-sm group-hover:text-blue-700 transition-colors">{project.project_name || 'Unnamed Project'}</p>
+                    <td className="py-3 px-3 font-mono text-xs text-slate-500 font-bold text-center">{(currentPage - 1) * PAGE_SIZE + index + 1}</td>
+                    <td className="py-3 px-4 max-w-0">
+                      <div className="flex min-w-0 items-center">
+                        <div className="hidden 2xl:block shrink-0 p-2 bg-slate-100 rounded text-slate-400 mr-3 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors"><Box size={18} /></div>
+                        <p className="min-w-0 truncate font-bold text-slate-700 text-sm group-hover:text-blue-700 transition-colors" title={project.project_name || undefined}>{project.project_name || 'Unnamed Project'}</p>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-xs font-medium text-slate-600"><span className="inline-block bg-slate-100 px-2 py-1 rounded border border-slate-200 whitespace-nowrap max-w-[220px] truncate align-middle" title={project.program_name}>{getDisplayProgramName(project.program_name)}</span></td>
-                    <td className="py-4 px-6">
+                    <td className="py-3 px-4 text-xs font-medium text-slate-600"><span className="inline-block bg-slate-100 px-2 py-1 rounded border border-slate-200 whitespace-nowrap max-w-[170px] 2xl:max-w-[220px] truncate align-middle" title={project.program_name}>{getDisplayProgramName(project.program_name)}</span></td>
+                    <td className="py-3 px-4">
                       <StatusBadge status={project.status} />
                     </td>
-                    <td className="py-4 px-6"><FileRetentionBadge project={project} /></td>
-                    <td className="py-4 px-6 text-xs text-slate-400 text-right font-mono">{new Date(project.created_at).toLocaleString()}</td>
-                    <td className="py-4 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1">
+                    <td className="py-3 px-4"><FileRetentionBadge project={project} /></td>
+                    <td className="py-3 px-4 whitespace-nowrap text-xs text-slate-500 text-right font-mono tabular-nums" title={new Date(project.created_at).toLocaleString()}>{formatTableDate(project.created_at)}</td>
+                    <td className="py-3 px-4 text-center">
+                      <div className="flex flex-nowrap items-center justify-center gap-1">
                         {CANCELLABLE_STATUSES.has(project.status) && !!project.job_id && (
                           <button
                             type="button"

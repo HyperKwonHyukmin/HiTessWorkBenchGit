@@ -43,7 +43,10 @@ const NewsletterArchiveModal = lazy(() => import('../../components/NewsletterArc
 const OPEN_PROJECT_DETAIL_KEY = 'workbench:open-project-detail';
 const QUICK_APP_COUNT = 6; // 한 번에 보이는 타일 수(2줄). 즐겨찾기는 '더 보기'로 나머지를 펼친다.
 const QUICK_TAB_KEY = 'workbench:dashboard-quick-tab';
-const RECENT_RESULT_COUNT = 6;
+const RECENT_RESULT_COUNT = 8;
+const PINNED_FAILURE_MAX = 3;
+// My Projects 가 마운트 시 읽어 상태 필터를 미리 건다(7일 실패 칩 → 실패만 보기)
+const MY_PROJECTS_STATUS_FILTER_KEY = 'workbench:my-projects-status-filter';
 const HISTORY_FETCH = 30;
 const TREND_MONTHS = 6;
 
@@ -87,6 +90,39 @@ const formatElapsed = (startedAt) => {
   if (!startedAt || sec > 86400) return '';
   const m = Math.floor(sec / 60);
   return m > 0 ? `${m}분 ${sec % 60}초` : `${sec}초`;
+};
+
+const INPUT_FILE_RE = /\.(bdf|dat|nas|blk|csv|pdf|f06|json|png|jpe?g)$/i;
+const baseName = (p) => String(p).split(/[\\/]/).pop();
+
+/**
+ * 결과 행에 보여 줄 입력 파일명. 프로젝트명은 '앱이름_날짜시각' 이라 앱·시간과 겹치고,
+ * 같은 앱을 여러 번 돌리면 어느 모델이었는지 구분이 안 된다. input_info 의 키는 앱마다 달라
+ * (stru_csv·bdf_path·file_path …) 파일 확장자로 끝나는 첫 문자열 값을 쓴다. 여러 개면 '외 N'.
+ */
+const inputFileLabel = (record) => {
+  let info = record?.input_info;
+  if (typeof info === 'string') {
+    try { info = JSON.parse(info); } catch { return null; }
+  }
+  if (!info || typeof info !== 'object') return null;
+  const names = [];
+  // MySQL JSON 은 키를 길이·사전순으로 재정렬한다(pipe_csv 가 stru_csv 보다 앞). 주 입력으로 보이는 키를 먼저 본다.
+  const PRIMARY_KEY_RE = /stru|bdf|model|main|input/i;
+  const entries = Object.entries(info).sort(([a], [b]) => Number(PRIMARY_KEY_RE.test(b)) - Number(PRIMARY_KEY_RE.test(a)));
+  const visit = (value, depth) => {
+    if (typeof value === 'string') {
+      if (INPUT_FILE_RE.test(value.trim())) names.push(baseName(value.trim()));
+    } else if (Array.isArray(value)) {
+      value.forEach(v => visit(v, depth));
+    } else if (value && typeof value === 'object' && depth < 1) {
+      Object.values(value).forEach(v => visit(v, depth + 1));
+    }
+  };
+  entries.forEach(([, v]) => visit(v, 0));
+  const unique = [...new Set(names)];
+  if (unique.length === 0) return null;
+  return unique.length > 1 ? `${unique[0]} 외 ${unique.length - 1}` : unique[0];
 };
 
 /**
@@ -378,7 +414,7 @@ const QuickAppTile = ({ app, meta, isFavorite, onOpen, onToggleFavorite }) => {
       >
         {Icon ? <Icon size={15} /> : <LayoutGrid size={15} />}
       </span>
-      <h3 className="line-clamp-2 text-[13px] font-bold leading-snug text-slate-800" title={app.title}>{app.title}</h3>
+      <h3 className="line-clamp-2 break-keep text-[13px] font-bold leading-snug text-slate-800" title={app.title}>{app.title}</h3>
       {meta && <p className="mt-auto pt-1 text-[11px] font-semibold text-slate-500">{meta}</p>}
       {/* 카드 전체 진입 버튼과 별 버튼은 형제(중첩 아님) */}
       <button
@@ -443,6 +479,7 @@ const ResultRow = ({ project, onDetail, onRestart }) => {
   const Icon = status.icon;
   const failed = project.status === 'Failed' || project.status === 'Interrupted';
   const appTitle = getDisplayProgramName(project.program_name);
+  const subtitle = inputFileLabel(project) || project.project_name || '이름 없는 프로젝트';
   const when = (
     <span className="shrink-0 text-xs tabular-nums text-slate-500" title={formatAbsolute(project.created_at)}>
       {formatRelative(project.created_at)}
@@ -461,7 +498,7 @@ const ResultRow = ({ project, onDetail, onRestart }) => {
           <Icon size={15} className={`shrink-0 ${status.cls}`} aria-label={status.label} />
           <span className="shrink-0 text-sm font-bold text-slate-800" title={project.program_name}>{appTitle}</span>
           <span className="min-w-0 flex-1 truncate text-xs text-slate-500" title={project.project_name}>
-            {project.project_name || '이름 없는 프로젝트'}
+            {subtitle}
           </span>
           {when}
           <ChevronRight size={14} className="shrink-0 text-slate-300 transition-colors group-hover:text-blue-600" />
@@ -479,7 +516,7 @@ const ResultRow = ({ project, onDetail, onRestart }) => {
           <div className="flex items-baseline gap-2">
             <span className="shrink-0 text-sm font-bold text-slate-800" title={project.program_name}>{appTitle}</span>
             <span className={`shrink-0 text-xs font-bold ${status.cls}`}>{status.label}</span>
-            <span className="min-w-0 flex-1 truncate text-xs text-slate-500" title={project.project_name}>{project.project_name}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-slate-500" title={project.project_name}>{subtitle}</span>
           </div>
           {reason ? (
             <p className="mt-1 text-xs font-medium text-red-800">사유: {reason}</p>
@@ -515,13 +552,13 @@ const MonthlyTrendCard = ({ months, loading }) => {
   const max = Math.max(1, ...months.map(m => m.count));
   const current = months[months.length - 1]?.count ?? 0;
   const previous = months[months.length - 2]?.count ?? 0;
-  const delta = current - previous;
   return (
     <Card className="flex flex-1 flex-col p-4">
       <p className="text-xs text-slate-500">
         이번 달 <b className="tabular-nums text-slate-800">{current}건</b>
         {months.length > 1 && (
-          <> · 전월 대비 <b className={`tabular-nums ${delta >= 0 ? 'text-emerald-700' : 'text-slate-700'}`}>{delta >= 0 ? `+${delta}` : delta}</b></>
+          // 개인 건수는 테스트 실행이 섞여 달마다 들쭉날쭉하다 — '+382' 같은 증감 대신 두 달 값을 그대로 둔다
+          <> · 지난달 <b className="tabular-nums text-slate-700">{previous}건</b></>
         )}
       </p>
       <div className="mt-3 flex min-h-[80px] flex-1 items-end gap-2" role="img" aria-label={months.map(m => `${m.label} ${m.count}건`).join(', ')}>
@@ -593,6 +630,7 @@ export default function Dashboard() {
   const admin = getIsAdmin();
 
   const [history, setHistory] = useState([]);
+  const [recentFailures, setRecentFailures] = useState([]); // 최근 7일 Failed·Interrupted
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState(null);
   const [historyToken, setHistoryToken] = useState(0);
@@ -621,6 +659,18 @@ export default function Dashboard() {
       .then(res => { if (!cancelled) setHistory(res.data?.items ?? res.data ?? []); })
       .catch(() => { if (!cancelled) { setHistory([]); setHistoryError('작업 이력을 불러오지 못했습니다.'); } })
       .finally(() => { if (!cancelled) setHistoryLoading(false); });
+    // 실패는 상태 필터로 따로 받는다 — 최근 N건만 보면 성공 실행에 밀려 칩 숫자와 목록이 어긋난다.
+    const weekAgo = Date.now() - 7 * 86400000;
+    Promise.all(['Failed', 'Interrupted'].map(status =>
+      getAnalysisHistory(employeeId, 0, 20, { status })
+        .then(res => res.data?.items ?? [])
+        .catch(() => [])))
+      .then(([failed, interrupted]) => {
+        if (cancelled) return;
+        setRecentFailures([...failed, ...interrupted]
+          .filter(p => Date.parse(p.created_at) >= weekAgo)
+          .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)));
+      });
     return () => { cancelled = true; };
   }, [employeeId, historyToken]);
 
@@ -762,10 +812,19 @@ export default function Dashboard() {
 
   // ── 내 작업 ─────────────────────────────────────────────
   const liveJobs = globalJobs.filter(job => !isTerminalJobStatus(job.status));
-  const recentResults = history.slice(0, RECENT_RESULT_COUNT);
-  const weekAgo = Date.now() - 7 * 86400000;
-  const failedThisWeek = history.filter(p =>
-    (p.status === 'Failed' || p.status === 'Interrupted') && Date.parse(p.created_at) >= weekAgo).length;
+  const failedThisWeek = recentFailures.length;
+  // 확인이 필요한 실패 = 최근 7일 실패 중 그 뒤로 같은 앱이 아직 성공하지 않은 것.
+  // 다시 돌려 성공했다면 이미 처리한 실패라 위에 붙들어 두지 않는다.
+  const pinnedFailures = recentFailures.filter(f => !history.some(h =>
+    h.program_name === f.program_name && h.status === 'Success'
+    && Date.parse(h.created_at) > Date.parse(f.created_at))).slice(0, PINNED_FAILURE_MAX);
+  const pinnedIds = new Set(pinnedFailures.map(p => p.id));
+  const recentResults = [...pinnedFailures, ...history.filter(p => !pinnedIds.has(p.id))]
+    .slice(0, RECENT_RESULT_COUNT);
+  const openFailedProjects = () => {
+    try { sessionStorage.setItem(MY_PROJECTS_STATUS_FILTER_KEY, 'Failed'); } catch { /* 필터 없이 이동 */ }
+    setCurrentMenu('My Projects');
+  };
 
   const firstName = user?.name || employeeId || '';
   const todayLabel = new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
@@ -800,8 +859,8 @@ export default function Dashboard() {
               label="7일 실패"
               value={failedThisWeek}
               tone={failedThisWeek > 0 ? 'danger' : 'neutral'}
-              onClick={failedThisWeek > 0 ? () => setCurrentMenu('My Projects') : undefined}
-              title={failedThisWeek > 0 ? '내 프로젝트에서 실패 건 확인' : undefined}
+              onClick={failedThisWeek > 0 ? openFailedProjects : undefined}
+              title={failedThisWeek > 0 ? '내 프로젝트에서 실패 건만 보기' : undefined}
             />
             <StatusChip
               icon={Server}
@@ -824,6 +883,8 @@ export default function Dashboard() {
       {/* ── 공지 (기존 한 줄 컴포넌트 재사용) ── */}
       <NoticeStrip
         newWithinDays={14}
+        pinnedWithinDays={30}
+        hideAfterDays={60}
         onOpenDetail={(n) => setNotice(n)}
         onOpenList={() => setCurrentMenu('Notice & Updates')}
       />
@@ -919,7 +980,7 @@ export default function Dashboard() {
                 </ul>
               </>
             )}
-            <p className="px-1 pb-1.5 pt-1 text-xs font-bold text-slate-500">최근 결과</p>
+            {liveJobs.length > 0 && <p className="px-1 pb-1.5 pt-1 text-xs font-bold text-slate-500">최근 결과</p>}
             {historyLoading ? (
               <ul className="space-y-1.5" role="status" aria-live="polite">
                 {[0, 1, 2, 3].map(i => <li key={i} className="h-12 animate-pulse rounded-xl bg-slate-100" />)}
@@ -962,7 +1023,7 @@ export default function Dashboard() {
             icon={TrendingUp}
             title="내 월별 실행"
             accent="service"
-            meta={successRate != null ? `성공률 ${successRate}%` : null}
+            meta={successRate != null ? `누적 성공률 ${successRate}%` : null}
           />
           <MonthlyTrendCard months={months} loading={monthsLoading} />
         </div>

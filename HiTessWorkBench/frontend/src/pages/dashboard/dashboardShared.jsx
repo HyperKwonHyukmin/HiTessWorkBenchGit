@@ -204,7 +204,11 @@ export const VideoPlayerModal = ({ isOpen, onClose }) => {
 
 // newWithinDays: 지정하면 그 기간보다 오래된 공지는 읽지 않았어도 NEW 로 세지 않는다
 // (고정 공지가 몇 달째 NEW 로 남는 문제). 넘기지 않으면 예전처럼 읽음 여부만 본다.
-export const NoticeStrip = ({ onOpenDetail, onOpenList, newWithinDays = null }) => {
+// pinnedWithinDays: 지정하면 그 기간보다 오래된 고정 공지는 맨 앞 자리를 잃고 날짜순에 섞인다
+// (관리자가 고정 해제를 잊으면 몇 달 지난 안내가 첫 화면을 차지해 앱이 방치된 것처럼 보인다).
+// hideAfterDays: 지정하면 모든 공지가 그 기간보다 오래됐을 때 줄 자체를 숨긴다 — 넉 달 지난 안내 한 줄이
+// 첫 화면에 남아 있으면 오히려 방치된 앱처럼 보인다. 공지 목록은 사이드바 'Notice & Updates' 에 그대로 있다.
+export const NoticeStrip = ({ onOpenDetail, onOpenList, newWithinDays = null, pinnedWithinDays = null, hideAfterDays = null }) => {
   const [notices, setNotices] = useState([]);
   const [lastSeenId, setLastSeenId] = useState(0);
 
@@ -212,8 +216,10 @@ export const NoticeStrip = ({ onOpenDetail, onOpenList, newWithinDays = null }) 
     getNotices()
       .then(res => {
         const data = Array.isArray(res.data) ? res.data : [];
+        const pinCutoff = pinnedWithinDays ? Date.now() - pinnedWithinDays * 86400000 : null;
+        const pinnedNow = (n) => !!n.is_pinned && (pinCutoff === null || Date.parse(n.created_at) >= pinCutoff);
         const sorted = [...data].sort((a, b) => {
-          if (!!a.is_pinned !== !!b.is_pinned) return a.is_pinned ? -1 : 1;
+          if (pinnedNow(a) !== pinnedNow(b)) return pinnedNow(a) ? -1 : 1;
           return new Date(b.created_at) - new Date(a.created_at);
         });
         setNotices(sorted.slice(0, 5));
@@ -224,6 +230,10 @@ export const NoticeStrip = ({ onOpenDetail, onOpenList, newWithinDays = null }) 
   }, []);
 
   if (notices.length === 0) return null;
+  if (hideAfterDays) {
+    const staleCutoff = Date.now() - hideAfterDays * 86400000;
+    if (notices.every(n => Date.parse(n.created_at) < staleCutoff)) return null;
+  }
 
   const newCutoff = newWithinDays ? Date.now() - newWithinDays * 86400000 : null;
   const unreadCount = notices.filter(n =>
