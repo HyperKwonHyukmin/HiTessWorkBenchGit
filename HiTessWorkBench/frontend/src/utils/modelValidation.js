@@ -1,4 +1,5 @@
 const GUIDANCE = {
+  EMPTY_RIGID_EXCLUDED: ['연결 대상 없는 RBE2 제외', '종속 노드가 없어 연결 조건을 제공하지 않는 RBE2만 제외했습니다. 연결된 노드·배관·질량·구속조건은 보존했습니다.', '제외 내역을 기록했습니다. 해당 U-bolt의 지지 연결은 생성되지 않았으므로 설계상 필요한 지지인지 검토할 때 참고하세요.'],
   MISSING_PROPERTY: ['단면 정보 누락', '요소가 참조하는 단면 번호가 모델에 없습니다.', '대상 요소의 입력 단면과 변환·편집 내역을 확인하고 단면 정보를 수정한 뒤 모델을 다시 생성하세요.'],
   MISSING_MATERIAL: ['재료 정보 누락', '단면이 참조하는 재료 번호가 모델에 없습니다.', '원문에 표시된 단면과 재료 번호를 확인하세요. 재료 지정 정보를 수정하거나 진단 파일을 엔진 담당자에게 전달하세요.'],
   EMPTY_RIGID: ['연결 대상이 없는 강체 요소', 'RBE2의 종속 노드가 없어 유효한 강체 연결을 만들 수 없습니다.', 'Studio에서 기준 노드와 주변 부재를 확인하세요. 필요한 연결이면 올바른 대상 노드로 RBE를 다시 생성하고, 불필요한 연결이면 해당 RBE만 제거한 뒤 편집 적용·재검증하세요. 입력을 수정하지 않아도 발생하면 진단 파일과 CSV를 담당자에게 전달하세요.'],
@@ -24,7 +25,8 @@ export function enrichDiagnostic(d, model) {
   const id = d.elemId ?? d.elementId
   const entity = (rigidCheck ? model.rigids : model.elements)?.find(e => e.id === id)
   const node = model.nodeMap?.get(d.nodeId) ?? model.nodes?.find(n => n.id === d.nodeId)
-  return { ...d, sourceName: entity?.sourceName ?? d.sourceName ?? '',
+  const recordedSource = d.code === 'EMPTY_RIGID_EXCLUDED' ? d.message?.match(/SourceName=([^;]*);/)?.[1] : null
+  return { ...d, sourceName: entity?.sourceName ?? d.sourceName ?? recordedSource ?? '',
     positionMm: node ? [node.x, node.y, node.z] : d.positionMm }
 }
 export function downloadDiagnostics(diagnostics, name = 'HiTESS_Validation') {

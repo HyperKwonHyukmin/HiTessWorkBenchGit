@@ -32,7 +32,7 @@ import { useDashboardFilesHandoff } from '../../utils/dashboardFileHandoff';
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.0.87';
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.88';
 
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',  icon: FileSpreadsheet, status: 'wait' },
@@ -2032,21 +2032,23 @@ function StageSummaryDetail({ summary, audit }) {
 }
 
 function ValidationDiagnosticList({ stage }) {
-  const errors = (stage.diagnosticDetails ?? []).filter(d => String(d.severity).toLowerCase() === 'error');
-  if (!(stage.diagnostics?.error > 0)) return null;
+  const records = (stage.diagnosticDetails ?? []).filter(d => String(d.severity).toLowerCase() === 'error' || d.code === 'EMPTY_RIGID_EXCLUDED');
+  const failed = stage.diagnostics?.error > 0;
+  if (!failed && !records.length) return null;
   return (
     <section aria-label="검증 오류 원인과 조치" className="space-y-3 text-xs">
       <div className="flex items-center justify-between gap-2">
-        <p className="font-bold text-red-700">검증 실패 — 수정 후 재검증이 필요합니다</p>
-        {errors.length > 0 && <button type="button" className="text-blue-700 underline shrink-0" onClick={() => downloadDiagnostics(stage.diagnosticDetails, `HiTESS_${stage.stageName}_진단`)}>진단 CSV 저장</button>}
+        <p className={`font-bold ${failed ? 'text-red-700' : 'text-amber-800'}`}>{failed ? '검증 실패 — 수정 후 재검증이 필요합니다' : `자동 제외 기록 ${records.length}건`}</p>
+        {records.length > 0 && <button type="button" className="text-blue-700 underline shrink-0" onClick={() => downloadDiagnostics(records, `HiTESS_${stage.stageName}_진단`)}>진단 CSV 저장</button>}
       </div>
-      <p className="text-slate-600">생성된 단계 모델은 오류 확인용입니다. 오류가 해결된 최종 모델로 해석을 진행하세요.</p>
+      <p className="text-slate-600">{failed ? '생성된 단계 모델은 오류 확인용입니다. 오류가 해결된 최종 모델로 해석을 진행하세요.' : '연결 조건을 제공하지 않는 빈 RBE2만 제외했으며 나머지 모델은 보존했습니다.'}</p>
       {stage.diagnosticLoadError && <p role="alert" className="text-red-700">{stage.diagnosticLoadError}</p>}
-      {!stage.diagnosticLoadError && errors.length === 0 && <p className="text-red-700">오류 개수는 기록됐지만 상세 진단이 없습니다. Studio 또는 실행 로그에서 확인하세요.</p>}
-      {errors.map((d, i) => {
+      {!stage.diagnosticLoadError && failed && records.length === 0 && <p className="text-red-700">오류 개수는 기록됐지만 상세 진단이 없습니다. Studio 또는 실행 로그에서 확인하세요.</p>}
+      {records.map((d, i) => {
         const g = describeDiagnostic(d);
-        return <div key={i} className="border-l-2 border-red-400 pl-3 space-y-1 break-words">
-          <p className="font-bold text-red-700">{g.title} · {d.code}</p>
+        const excluded = d.code === 'EMPTY_RIGID_EXCLUDED';
+        return <div key={i} className={`border-l-2 ${excluded ? 'border-amber-400' : 'border-red-400'} pl-3 space-y-1 break-words`}>
+          <p className={`font-bold ${excluded ? 'text-amber-800' : 'text-red-700'}`}>{g.title} · {d.code}</p>
           <p className="font-mono text-slate-700">{d.elemId != null && `요소/RBE ${d.elemId} `}{d.nodeId != null && `노드 N${d.nodeId}`}</p>
           {d.sourceName && <p className="text-slate-700">입력 이름: {d.sourceName}</p>}
           {d.positionMm && <p className="text-slate-700">위치 XYZ(mm): {d.positionMm.map(v => Number(v).toFixed(1)).join(', ')}</p>}
@@ -2682,7 +2684,7 @@ export default function HiTessModelBuilder() {
       .then(async d => {
         const folder = bdfResult.summaryPath.replace(/[^\\/]+$/, '');
         const stages = await Promise.all((d.stages ?? []).map(async stage => {
-          if (!(stage.diagnostics?.error > 0)) return stage;
+          if (!(stage.diagnostics?.error > 0) && !(stage.stageName === 'Validation' && stage.diagnostics?.warning > 0)) return stage;
           if (!stage.jsonFile || /[\\/]/.test(stage.jsonFile) || stage.jsonFile.includes('..')) {
             return { ...stage, diagnosticLoadError: '진단 파일 경로가 없습니다. Studio에서 해당 단계의 진단을 확인하세요.' };
           }
