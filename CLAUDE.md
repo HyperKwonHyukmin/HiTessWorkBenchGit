@@ -93,7 +93,7 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
    - 업로드: `stru_file`(필수) + `pipe_file`·`equip_file`(선택). UI 옵션 → CLI 플래그: `mesh_size→--mesh-size`, `ubolt_full_fix→--ubolt-full-fix`, `run_nastran→--run-nastran(+--nastran-path,--leg-z-tol)` 등.
    - 실행: `Cmb.Cli.exe build-full --stru <csv> [--pipe --equip] --mesh-size N [...]` (cwd=work_dir, timeout 20분).
    - 산출: `userConnection/<ts>_<id>_HiTessModelBuilder/<yyyyMMdd_HHmmss>/` 안에 **phase 파일**(`00_InputAudit.json`, `00_StageSummary.json`, `NN_*.json/.bdf` — 정규식 `^\d{2}_[A-Za-z]+\.(json|bdf)$`) + **최종 산출물** `<designName>.json/.bdf`.
-   - output_dir 확정: 백엔드가 stdout 첫 줄 `출력 폴더: <path>`(또는 `폴더:`)를 파싱, 성공 실행에서 못 찾으면 work_dir의 최신 `yyyyMMdd_HHmmss` 폴더로 폴백. exit **0=완료, 2=검증 Error, 1=실행/파이프라인 실패**. 실패해도 phase JSON/감사 경로를 보존해 진단을 표시하며, 실패 phase BDF는 최종 산출물로 제공하지 않는다.
+   - output_dir 확정: 백엔드가 stdout 첫 줄 `출력 폴더: <path>`(또는 `폴더:`)를 파싱, 못 찾으면 성공/실패 모두 해당 요청의 work_dir 바로 아래 최신 `yyyyMMdd_HHmmss` 폴더로 폴백. exit **0=완료, 2=검증 Error, 1=실행/파이프라인 실패**. 실패해도 phase JSON/감사 경로를 보존해 진단을 표시하며, 실패 phase BDF는 최종 산출물로 제공하지 않는다.
    - 뷰: 스튜디오(`model-studio`)가 이 output_dir 을 **initialFolder 로 받아 phase JSON 을 일괄 자동 로드** → 3D 뷰/검증/편집.
 
 2. **편집 적용** — `task_execute_apply_edit` (apply-edit 엔드포인트)

@@ -48,6 +48,20 @@ _OUTPUT_LINE_RE = re.compile(r"^(?:출력\s*폴더|폴더)\s*[:：]\s*(.+)$")
 _PHASE_FILE_RE = re.compile(r"^\d{2}_[A-Za-z]+\.(?:json|bdf)$", re.IGNORECASE)
 
 
+def _decode_engine_output(output: bytes | str | None) -> str:
+    """신규 UTF-8 엔진 및 한국어 Windows의 기존 CP949 엔진 로그를 보존한다."""
+    if output is None:
+        return ""
+    if isinstance(output, str):
+        return output.lstrip("\ufeff")
+    for encoding in ("utf-8-sig", "cp949"):
+        try:
+            return output.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return output.decode("utf-8", errors="replace")
+
+
 def _parse_output_dir(stdout: str) -> str | None:
     """stdout 에서 timestamp 산출 디렉터리 경로를 캡처한다."""
     for line in stdout.splitlines():
@@ -181,14 +195,13 @@ def task_execute_modelflow(
                 cmd,
                 cwd=work_dir,
                 capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
                 timeout=1200,  # 20분
             )
-            engine_output = result.stdout or ""
-            if result.stderr and result.stderr.strip():
-                engine_output += f"\n[stderr]\n{result.stderr}"
+            stdout = _decode_engine_output(result.stdout)
+            stderr = _decode_engine_output(result.stderr)
+            engine_output = stdout
+            if stderr.strip():
+                engine_output += f"\n[stderr]\n{stderr}"
 
             logger.info("[ModelBuilder] exit=%d", result.returncode)
 
@@ -200,8 +213,10 @@ def task_execute_modelflow(
                 engine_output += f"\n[Exit code: {result.returncode}]"
             update_progress(job_id, 70, "산출물 수집 중...")
             output_dir = (
-                _parse_output_dir(result.stdout)
-                or (_scan_latest_timestamp_dir(work_dir) if status_msg == "Success" else None)
+                _parse_output_dir(stdout)
+                # work_dir는 요청별 작업 폴더다. 실패/로그 손상 시에도
+                # 해당 폴더 바로 아래의 날짜 폴더에서 진단 산출물을 회수한다.
+                or _scan_latest_timestamp_dir(work_dir)
             )
             if output_dir and os.path.isdir(output_dir):
                 result_data["output_dir"] = output_dir
@@ -589,14 +604,12 @@ def task_execute_apply_edit(
                     cmd,
                     cwd=output_dir,
                     capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
                     timeout=600,
                 )
-                engine_output = "[apply-edit-intent]\n" + (result.stdout or "")
-                if result.stderr and result.stderr.strip():
-                    engine_output += f"\n[stderr]\n{result.stderr}"
+                engine_output = "[apply-edit-intent]\n" + _decode_engine_output(result.stdout)
+                stderr = _decode_engine_output(result.stderr)
+                if stderr.strip():
+                    engine_output += f"\n[stderr]\n{stderr}"
                 logger.info("[apply-edit] exit=%d", result.returncode)
 
                 # README §6 exit codes: 0=성공, 2=*_edit.json 없음/intents 빔, 64/65/70=실패

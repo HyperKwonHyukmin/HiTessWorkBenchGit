@@ -7,7 +7,9 @@ from app.services import hitess_modelflow_service as service
 
 
 @pytest.mark.parametrize('exit_code', [1, 2])
-def test_failed_validation_preserves_review_artifacts(tmp_path, exit_code):
+@pytest.mark.parametrize('encoding', ['utf-8', 'cp949'])
+@pytest.mark.parametrize('output_line', [True, False])
+def test_failed_validation_preserves_review_artifacts(tmp_path, exit_code, encoding, output_line):
     output = tmp_path / '20260930_114530'
     output.mkdir()
     (output / '00_InputAudit.json').write_text('{}', encoding='utf-8')
@@ -15,7 +17,8 @@ def test_failed_validation_preserves_review_artifacts(tmp_path, exit_code):
     (output / '06_Validation.json').write_text(json.dumps({'diagnostics': [
         {'severity': 'error', 'code': 'EMPTY_RIGID', 'elemId': 1022, 'nodeId': 1293}
     ]}), encoding='utf-8')
-    result = SimpleNamespace(returncode=exit_code, stdout=f'출력 폴더: {output}\n[Error] EMPTY_RIGID', stderr='')
+    stdout = f'출력 폴더: {output}\n[Error] EMPTY_RIGID' if output_line else '��� ����: unreadable\n[Error] EMPTY_RIGID'
+    result = SimpleNamespace(returncode=exit_code, stdout=stdout.encode(encoding, errors='replace'), stderr=b'')
     executable = tmp_path / 'engine.exe'
     executable.touch()
     with patch.object(service, 'mark_running'), patch.object(service, 'update_progress'), \
