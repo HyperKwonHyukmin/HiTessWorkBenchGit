@@ -471,6 +471,18 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 5. 프론트엔드에서 1.5초마다 `GET /api/analysis/status/{job_id}` 폴링 (0~100%)
 6. 완료 후 결과 파일 경로를 DB `result_info` (JSON 컬럼)에 저장, `GET /api/download?filepath=...`로 다운로드
 
+**대시보드(2026-09-30 개편, 되돌리기 기준 태그 `dashboard-v1-backup`)**: `pages/dashboard/Dashboard.jsx` = 인사 줄(실행 중·7일 실패·서버 칩 + '자료' 메뉴) →
+공지 한 줄 → **새 해석 시작 | 내 작업**(5:7) → **내 월별 실행 | 많이 쓰는 앱**(5:7, 위아래 경계를 맞춘 같은 격자).
+공지 줄·로드맵/소개/영상 모달·섹션 제목은 `dashboardShared.jsx`. 실패 사유는 DB `analysis.job_message`(job_manager 가 마지막 진행 메시지를 기록)를 쓴다.
+- **파일 전달**: '새 해석 시작'에 놓은 파일 → 추천 앱을 고르면 `utils/dashboardFileHandoff.js` 가 파일을 들고 이동하고, 앱 페이지의
+  `useDashboardFileHandoff`(1개) / `useDashboardFilesHandoff`(여러 개)가 **그 페이지의 기존 업로드 처리 함수**에 태운다.
+  ⚠ 새 파일 입력 앱을 만들면 페이지에 훅을 붙이고 `FILE_HANDOFF_MENUS` 에 메뉴명을 등록할 것(미등록 앱은 추천 목록에 '다시 선택').
+  ⚠ 대시보드→앱 이동은 fresh-entry 리셋으로 페이지가 1~2번 **재마운트**된다(DashboardContext 가 페이지 상태 삭제, App.jsx 인스턴스 키 증가).
+  그래서 보관소는 꺼내도 지우지 않고(TTL 8s), 적용은 60ms 미뤄 언마운트 시 취소한다 — 바로 적용하면 리셋에 지워지거나 자동 배정 토스트가 여러 번 뜬다.
+  다중 슬롯 앱의 배정 규칙은 각 페이지 것을 그대로 쓴다(Truss NODE/WAY 파일명, Mooring `load` 파일명, Model Builder 헤더 ori/outdia/cog, 이중관은 UBOLT 행 유무로 탭 선택).
+- **월별 건수**(`/analysis/stats/monthly`)는 이력 목록과 같은 기준(샘플·권상 세부 검토 제외)이다. 예전 값(세부 검토 포함)과 비교하지 말 것.
+- **버전 체크**는 서버 버전이 **더 높을 때만** 업데이트를 요구한다(`utils/versionCompare.js`, App.jsx·LoginScreen 공통) — exe 를 서버보다 먼저 배포해도 새 클라이언트가 막히지 않는다.
+
 **사용 통계 합산(2026-09-30)**: 권상 App 의 세부 검토 레코드(`ModuleStability`·`ModuleHoistOptimize`·`UnitStructuralAnalysis`)는
 통계에서 부모 App(`GroupModuleUnit`/`SidePassage`) 한 줄로 합산되고 세부 건수는 `steps`/`stepBreakdown` 으로 나간다
 (대시보드 Top·Analysis Management·프로그램 상세 모달·Usage Reports 4곳 공통, 규칙은 `services/usage_rollup.py`).
@@ -548,7 +560,7 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 
 | 메뉴 이름 | 컴포넌트 | 설명 |
 |-----------|----------|------|
-| `'Dashboard'` | `dashboard/Dashboard.jsx` | 메인 대시보드, 통계 및 즐겨찾기 |
+| `'Dashboard'` | `dashboard/Dashboard.jsx` | 메인 대시보드 — 새 해석 시작(파일 전달)·내 작업·월별 실행 |
 | `'My Project'` / `'My Projects'` | `analysis/MyProjects.jsx` | 내 해석 이력 및 프로젝트 관리 |
 | `'New Analysis'` / `'File-Based Apps'` | `analysis/NewAnalysis.jsx` | 파일 업로드 기반 해석 선택 |
 | `'Truss Analysis'` | `analysis/TrussAnalysis.jsx` | CSV 업로드 + 3D 모델 뷰어 |

@@ -15,6 +15,7 @@ import DrawingParamsPanel from '../../components/analysis/DrawingParamsPanel';
 import DrawingLoadBcPanel from '../../components/analysis/DrawingLoadBcPanel';
 import SolveResultsPanel from '../../components/analysis/SolveResultsPanel';
 import lugExampleImageDataUrl from '../../assets/images/drawing-to-analysis-lug-example.png?inline';
+import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 const LUG_EXAMPLE_FILENAME = 'lug_test.png';
 
@@ -438,6 +439,12 @@ export default function DrawingToAnalysis() {
     if (inputMode === 'image') handleImageFile(e.dataTransfer.files?.[0]);
     else handleFile(e.dataTransfer.files?.[0]);
   };
+
+  // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다(이 화면의 업로드 처리와 같은 경로)
+  useDashboardFileHandoff(PAGE_KEY, (f) => {
+    if (/\.pdf$/i.test(f.name)) { setInputMode('pdf'); handleFile(f); }
+    else { setInputMode('image'); handleImageFile(f); }
+  }, ['.pdf', '.png', '.jpg', '.jpeg']);
 
   const handleRun = async () => {
     if (isRunning) return;

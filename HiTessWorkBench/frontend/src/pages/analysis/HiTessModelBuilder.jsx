@@ -20,6 +20,7 @@ import CsvPreviewPanel from '../../components/analysis/CsvPreviewPanel';
 import { readCsvFileRows } from '../../utils/csvPreview';
 import ModelRegistrationModal from '../../components/modelRegistry/ModelRegistrationModal';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
+import { useDashboardFilesHandoff } from '../../utils/dashboardFileHandoff';
 
 /* ──────────────────────────────────────────────────────────────────────────
    상수
@@ -2805,6 +2806,12 @@ export default function HiTessModelBuilder() {
       if (placed.length > 0) showToast(`동일 폴더에서 추가 CSV ${placed.length}개를 자동 배치했습니다.`, 'success');
     }
   }, [pipeFile, equiFile, showToast]);
+
+  // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다(이 화면의 업로드 처리와 같은 경로)
+  useDashboardFilesHandoff('HiTESS Model Builder', (files) => {
+    if (files.length > 1) handleMultipleFiles(files);
+    else handleAutoAssign(files[0], 'stru');
+  }, ['.csv']);
 
   /* ── 동일 폴더 형제 CSV 자동 스캔 (Electron) ─────────────────────── */
   const scanSiblingCsvs = async (struFile, options = {}) => {

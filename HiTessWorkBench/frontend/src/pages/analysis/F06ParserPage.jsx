@@ -18,6 +18,7 @@ import { useIncomingTransfer } from '../../hooks/useIncomingTransfer';
 import PageBanner from '../../components/ui/PageBanner';
 import AppUsageStatsButton from '../../components/analysis/AppUsageStatsButton';
 import { buildFormData } from '../../utils/fileHelper';
+import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -198,6 +199,9 @@ export default function F06ParserPage() {
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
   };
+
+  // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다(이 화면의 업로드 처리와 같은 경로)
+  useDashboardFileHandoff(PAGE_KEY, handleFile, ['.f06']);
 
   const handleLoadFromTransfer = async (filePath, andRun = true) => {
     try {

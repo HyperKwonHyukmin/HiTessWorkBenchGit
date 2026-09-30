@@ -15,6 +15,7 @@ import PageBanner from '../../components/ui/PageBanner';
 import AppUsageStatsButton from '../../components/analysis/AppUsageStatsButton';
 import { buildFormData } from '../../utils/fileHelper';
 import { buildFilteredEnvelope, getConditionNumbersFromRules, getRuleAxisMaxima } from '../../utils/hullAcceleration';
+import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -340,6 +341,9 @@ export default function HullAccelerationPage() {
     setManualCb(''); // 새 PDF 는 Cb 자동 검출부터 다시 시도
     setLogs([{ time: new Date().toLocaleTimeString(), message: `[FILE] ${file.name} 선택됨.`, type: 'info' }]);
   };
+
+  // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다(이 화면의 업로드 처리와 같은 경로)
+  useDashboardFileHandoff(PAGE_KEY, handleFile, ['.pdf']);
 
   const handleDrop = (e) => {
     e.preventDefault();

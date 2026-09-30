@@ -276,11 +276,11 @@ const DropZone = ({ catalogue, isBlocked, onOpenApp }) => {
                     if (carries) offerDashboardFiles(menu, dropped.files);
                     onOpenApp(app.title);
                   }}
-                  title={carries ? '파일을 그대로 가지고 이동합니다' : '앱 화면에서 파일을 다시 선택해야 합니다'}
+                  title={carries ? '파일을 그대로 가지고 이동합니다' : '이 앱은 화면에서 파일을 다시 선택해야 합니다'}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-700"
                 >
                   {app.title}
-                  {carries && <span className="rounded bg-blue-100 px-1 py-px text-[11px] font-bold text-blue-700">파일 전달</span>}
+                  {!carries && <span className="rounded bg-slate-100 px-1 py-px text-[11px] font-bold text-slate-600">다시 선택</span>}
                   <ChevronRight size={13} />
                 </button>
               );
@@ -289,7 +289,13 @@ const DropZone = ({ catalogue, isBlocked, onOpenApp }) => {
         ) : (
           <p className="mt-2 text-xs text-slate-600">이 형식을 입력으로 받는 앱이 없습니다.</p>
         )}
-        <p className="mt-2 text-[11px] text-slate-500">'파일 전달' 표시가 없는 앱은 앱 화면에서 같은 파일을 다시 선택하세요.</p>
+        {matches.length > 0 && (
+          <p className="mt-2 text-[11px] text-slate-500">
+            {matches.every(app => FILE_HANDOFF_MENUS.has(getAppMenuName(app.title)))
+              ? '앱을 고르면 파일을 가지고 바로 이동합니다.'
+              : "앱을 고르면 파일을 가지고 이동합니다 — '다시 선택' 표시 앱은 화면에서 파일을 다시 고르세요."}
+          </p>
+        )}
       </div>
     );
   }

@@ -16,6 +16,7 @@ import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { readPsaHint, writePsaHint, clearPsaHint, formatElapsed } from '../../utils/doublePipePsa';
 import { getAuthHeaders } from '../../utils/auth';
+import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 const PAGE_KEY = '이중관 구조 연료배관 해석';
 
@@ -1288,6 +1289,15 @@ export default function DoublePipeFuelLineAssessment() {
     setModalResult(null);
     addLog('고유진동 해석 배관 CSV 입력을 해제했습니다.', 'info');
   };
+
+  // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다(이 화면의 업로드 처리와 같은 경로)
+  // 외관 CSV 와 이중관 CSV 는 확장자가 같아 내용으로 가른다 — 이중관 CSV 에만 UBOLT 행이 있다(summarizeCsv 기준).
+  useDashboardFileHandoff(PAGE_KEY, async (f) => {
+    let isDoublePipe = false;
+    try { isDoublePipe = /\bUBOLT\b/i.test(await f.text()); } catch { /* 못 읽으면 외관 CSV 로 */ }
+    if (isDoublePipe) { setActiveTab('all-load-cases'); handleTab2Csv(f); }
+    else { setActiveTab('inner-support'); handleCsvFile(f); }
+  }, ['.csv']);
 
   // 업로드한 외관 CSV + Tab1 입력값을 백엔드로 보내 append_offset.py 포팅본(inner_pipe_transform.py)을
   // 실행하고 내관 자동 생성 결과 CSV를 테이블로 받는다.

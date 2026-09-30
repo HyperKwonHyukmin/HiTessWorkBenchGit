@@ -21,6 +21,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { buildFormData } from '../../utils/fileHelper';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
+import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 const MENU_NAME = 'Truss Structural Assessment';
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
@@ -331,6 +332,9 @@ export default function TrussAssessment() {
     reader.onload = (e) => parseBDF(e.target.result);
     reader.readAsText(file);
   };
+
+  // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다(이 화면의 업로드 처리와 같은 경로)
+  useDashboardFileHandoff('Truss Structural Assessment', handleFile, ['.bdf', '.dat']);
 
   const runAnalysis = async () => {
     if (!bdfFile) return;

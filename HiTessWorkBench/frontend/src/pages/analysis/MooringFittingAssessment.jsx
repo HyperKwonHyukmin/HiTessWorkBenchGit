@@ -14,6 +14,7 @@ import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
 import { useAuth } from '../../contexts/AuthContext';
+import { useDashboardFilesHandoff } from '../../utils/dashboardFileHandoff';
 
 const API_ENDPOINT = '/api/analysis/mooring-fitting/request';
 const STATUS_ENDPOINT = (jobId) => `/api/analysis/status/${jobId}`;
@@ -1248,6 +1249,9 @@ export default function MooringFittingAssessment() {
       setStructureFile(file);
     }
   };
+
+  // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다(이 화면의 업로드 처리와 같은 경로)
+  useDashboardFilesHandoff('Mooring Fitting Assessment', (files) => files.forEach(classifyAndAssign), ['.csv']);
 
   /* ── 폴링 ──────────────────────────────────────────────────────────── */
   useEffect(() => {

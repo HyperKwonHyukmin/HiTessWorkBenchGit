@@ -26,6 +26,7 @@ import { buildFormData } from '../../utils/fileHelper';
 import FileDropzone from '../../components/ui/FileDropzone';
 import FeedbackState from '../../components/ui/FeedbackState';
 import StatusBadge from '../../components/ui/StatusBadge';
+import { useDashboardFilesHandoff } from '../../utils/dashboardFileHandoff';
 
 export default function TrussAnalysis() {
   const { showToast } = useToast();
@@ -186,6 +187,12 @@ export default function TrussAnalysis() {
     if (nodeF && memberF)
       showToast(`자동 매핑 완료 ✓  Node → ${nodeF.name}  /  Member → ${memberF.name}`, 'success');
   };
+
+  // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다(이 화면의 업로드 처리와 같은 경로)
+  useDashboardFilesHandoff('Truss Analysis', (files) => {
+    if (files.length >= 2) autoAssignFiles(files);
+    else handleFile(files[0], detectFileType(files[0].name) || 'node');
+  }, ['.csv']);
 
   const clearLogs = () => {
     setLogs([]);

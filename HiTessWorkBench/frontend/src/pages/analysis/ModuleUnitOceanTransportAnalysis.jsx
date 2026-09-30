@@ -65,6 +65,7 @@ import {
   transformModulePoint,
   DECK_CLEARANCE_MM,
 } from '../../utils/feGeometry';
+import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 /**
  * 절점 ID 목록을 사람이 읽을 문장으로. 개수만 알려 주면 화면에서 어느 것인지 찾을 수
@@ -1436,6 +1437,11 @@ export default function ModuleUnitOceanTransportAnalysis() {
     // 로드 기록까지 지워야 같은 경로로 재검증했을 때 새 모델을 다시 받는다.
     loadedViewerKeyRef.current = null;
   };
+
+  // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다(이 화면의 업로드 처리와 같은 경로)
+  useDashboardFileHandoff(MENU_NAME, (f) => {
+    setBdfFile(f); setStep1Data(null); setStep2Data(null); resetViewerModel(); setStepStatus('bdf-validation', 'wait');
+  }, ['.bdf']);
 
   /**
    * 정반 타입 선택. 타입이 바뀌면 이전 정반 지오메트리를 반드시 버린다 —
