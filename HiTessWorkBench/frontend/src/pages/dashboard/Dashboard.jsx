@@ -4,7 +4,7 @@
 /// 배치 원칙:
 ///  - 첫 화면 = "새 해석 시작" + "내 작업". 실패하면 대부분 파일 업로드부터 다시 하므로
 ///    '이어서 작업' 대신 실패를 빨리 알아채고 같은 앱에서 새로 시작하는 동선을 앞에 둔다.
-///  - 즐겨찾기 + 최근 사용 → "자주 쓰는 앱" 한 묶음(중복 제거).
+///  - 앱 바로가기는 '즐겨찾기 | 최근 사용' 두 탭으로 나눈다. 한 묶음에 섞으면 어느 쪽인지 구분이 안 됐다.
 ///  - 공지는 상단 한 줄, 소개·로드맵·Story·Newsletter 는 인사 줄의 "자료" 메뉴 하나로.
 ///  - 지표(월별 실행·많이 쓰는 앱)는 참고 정보라 아래 두 카드로.
 ///  - 위·아래 두 줄 모두 같은 12열 격자(5 : 7)를 써서 카드 좌우 경계가 세로로 맞는다.
@@ -41,7 +41,8 @@ const NewsletterArchiveModal = lazy(() => import('../../components/NewsletterArc
 
 // Dashboard.jsx 와 같은 키 — My Projects 가 이 값을 읽어 상세 모달을 연다.
 const OPEN_PROJECT_DETAIL_KEY = 'workbench:open-project-detail';
-const QUICK_APP_COUNT = 6;
+const QUICK_APP_COUNT = 6; // 한 번에 보이는 타일 수(2줄). 즐겨찾기는 '더 보기'로 나머지를 펼친다.
+const QUICK_TAB_KEY = 'workbench:dashboard-quick-tab';
 const RECENT_RESULT_COUNT = 6;
 const HISTORY_FETCH = 30;
 const TREND_MONTHS = 6;
@@ -329,6 +330,42 @@ const DropZone = ({ catalogue, isBlocked, onOpenApp }) => {
   );
 };
 
+const QUICK_TABS = [
+  { key: 'favorites', label: '즐겨찾기', icon: Star },
+  { key: 'recent', label: '최근 사용', icon: Clock },
+];
+
+/** '즐겨찾기 | 최근 사용' 세그먼트 탭 — 지금 보이는 타일이 어느 목록인지 이름으로 드러낸다 */
+const QuickTabs = ({ active, onSelect, favoriteCount }) => (
+  <div role="tablist" aria-label="앱 바로가기" className="inline-flex rounded-lg bg-slate-100 p-0.5">
+    {QUICK_TABS.map(({ key, label, icon: Icon }) => {
+      const selected = active === key;
+      return (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          aria-selected={selected}
+          onClick={() => onSelect(key)}
+          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+            selected ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Icon size={12} className={selected && key === 'favorites' ? 'text-amber-400' : undefined} fill={selected && key === 'favorites' ? 'currentColor' : 'none'} />
+          {label}
+          {key === 'favorites' && favoriteCount > 0 && (
+            <span className={`rounded px-1 text-[10px] tabular-nums ${selected ? 'bg-amber-50 text-amber-700' : 'bg-slate-200 text-slate-500'}`}>{favoriteCount}</span>
+          )}
+        </button>
+      );
+    })}
+  </div>
+);
+
+const QuickEmpty = ({ children }) => (
+  <p className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-500">{children}</p>
+);
+
 const QuickAppTile = ({ app, meta, isFavorite, onOpen, onToggleFavorite }) => {
   const Icon = app.icon;
   return (
@@ -567,6 +604,10 @@ export default function Dashboard() {
   const [serverQueue, setServerQueue] = useState(null);
 
   const [gateApp, setGateApp] = useState(null);
+  const [quickTab, setQuickTab] = useState(() => {
+    try { return localStorage.getItem(QUICK_TAB_KEY); } catch { return null; }
+  });
+  const [showAllFavorites, setShowAllFavorites] = useState(false);
   const [modal, setModal] = useState(null); // 'intro' | 'roadmap' | 'video' | 'newsletter'
   const [notice, setNotice] = useState(null);
 
@@ -677,20 +718,25 @@ export default function Dashboard() {
     return map;
   }, [favorites]);
 
-  const quickApps = useMemo(() => {
-    const seen = new Set();
-    const out = [];
-    const visitedAt = Object.create(null);
+  // 앱별 마지막 방문 시각(최근 사용 목록은 최신순)
+  const visitedAt = useMemo(() => {
+    const map = Object.create(null);
     for (const item of recentApps || []) {
       const found = findAppByAnyName(item.label || item.menu);
-      if (found && visitedAt[found.title] === undefined) visitedAt[found.title] = item.at;
+      if (found && map[found.title] === undefined) map[found.title] = item.at;
     }
-    for (const title of Object.keys(favoriteStoredByTitle)) {
-      const app = catalogue.find(a => a.title === title);
-      if (!app || seen.has(app.title)) continue;
-      seen.add(app.title);
-      out.push({ app, meta: visitedAt[app.title] ? formatRelative(visitedAt[app.title]) : null });
-    }
+    return map;
+  }, [recentApps]);
+
+  // 즐겨찾기 = 개수 제한 없이 전부(넘치는 부분은 '더 보기'로 펼친다)
+  const favoriteApps = useMemo(() => Object.keys(favoriteStoredByTitle)
+    .map(title => catalogue.find(a => a.title === title))
+    .filter(Boolean), [favoriteStoredByTitle, catalogue]);
+
+  // 최근 사용 = 방문 기록 최신순. 즐겨찾기 앱도 빼지 않는다(별 표시로 구분).
+  const recentAppList = useMemo(() => {
+    const seen = new Set();
+    const out = [];
     for (const item of recentApps || []) {
       if (out.length >= QUICK_APP_COUNT) break;
       const found = findAppByAnyName(item.label || item.menu)
@@ -698,10 +744,21 @@ export default function Dashboard() {
       const app = found ? catalogue.find(a => a.title === found.title) : null;
       if (!app || seen.has(app.title) || !app.hasPage || isBlockedFor(app, admin)) continue;
       seen.add(app.title);
-      out.push({ app, meta: formatRelative(item.at) });
+      out.push({ app, at: item.at });
     }
-    return out.slice(0, QUICK_APP_COUNT);
-  }, [favoriteStoredByTitle, recentApps, catalogue, isBlockedFor, admin]);
+    return out;
+  }, [recentApps, catalogue, isBlockedFor, admin]);
+
+  // 고른 탭이 없으면 즐겨찾기가 있을 때 즐겨찾기, 없으면 최근 사용
+  const activeQuickTab = quickTab === 'favorites' || quickTab === 'recent'
+    ? quickTab
+    : (favoriteApps.length > 0 ? 'favorites' : 'recent');
+  const selectQuickTab = (tab) => {
+    setQuickTab(tab);
+    try { localStorage.setItem(QUICK_TAB_KEY, tab); } catch { /* 이번 화면에서만 유지 */ }
+  };
+  const hiddenFavoriteCount = Math.max(0, favoriteApps.length - QUICK_APP_COUNT);
+  const visibleFavorites = showAllFavorites ? favoriteApps : favoriteApps.slice(0, QUICK_APP_COUNT);
 
   // ── 내 작업 ─────────────────────────────────────────────
   const liveJobs = globalJobs.filter(job => !isTerminalJobStatus(job.status));
@@ -783,20 +840,54 @@ export default function Dashboard() {
           <Card className="flex flex-1 flex-col gap-3 p-4">
             <DropZone catalogue={catalogue} isBlocked={(app) => isBlockedFor(app, admin)} onOpenApp={openApp} />
             <div>
-              <p className="mb-2 text-xs font-bold text-slate-500">자주 쓰는 앱</p>
-              {quickApps.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-500">
-                  앱 목록에서 별을 누르면 여기에 고정됩니다.
-                </p>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <QuickTabs
+                  active={activeQuickTab}
+                  onSelect={selectQuickTab}
+                  favoriteCount={favoriteApps.length}
+                />
+                {activeQuickTab === 'favorites' && hiddenFavoriteCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllFavorites(v => !v)}
+                    aria-expanded={showAllFavorites}
+                    className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-xs font-bold text-brand-blue hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  >
+                    {showAllFavorites ? '접기' : `+${hiddenFavoriteCount}개 더 보기`}
+                    <ChevronDown size={13} className={`transition-transform ${showAllFavorites ? 'rotate-180' : ''}`} />
+                  </button>
+                )}
+              </div>
+              {activeQuickTab === 'favorites' ? (
+                favoriteApps.length === 0 ? (
+                  <QuickEmpty>
+                    즐겨찾기한 앱이 없습니다. 타일이나 앱 목록의 <Star size={11} className="inline -mt-0.5 text-amber-400" fill="currentColor" /> 를 누르면 여기에 고정됩니다.
+                  </QuickEmpty>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {visibleFavorites.map(app => (
+                      <QuickAppTile
+                        key={app.title}
+                        app={app}
+                        meta={visitedAt[app.title] ? `마지막 사용 ${formatRelative(visitedAt[app.title])}` : '아직 사용 안 함'}
+                        isFavorite
+                        onOpen={() => openApp(app.title)}
+                        onToggleFavorite={() => toggleFavorite(favoriteStoredByTitle[app.title] ?? app.title)}
+                      />
+                    ))}
+                  </div>
+                )
+              ) : recentAppList.length === 0 ? (
+                <QuickEmpty>아직 사용한 앱이 없습니다. 앱을 열면 최근 순서대로 여기에 쌓입니다.</QuickEmpty>
               ) : (
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {quickApps.map(({ app, meta }) => {
+                  {recentAppList.map(({ app, at }) => {
                     const stored = favoriteStoredByTitle[app.title];
                     return (
                       <QuickAppTile
                         key={app.title}
-                                    app={app}
-                        meta={meta}
+                        app={app}
+                        meta={formatRelative(at)}
                         isFavorite={stored !== undefined}
                         onOpen={() => openApp(app.title)}
                         onToggleFavorite={() => toggleFavorite(stored ?? app.title)}
