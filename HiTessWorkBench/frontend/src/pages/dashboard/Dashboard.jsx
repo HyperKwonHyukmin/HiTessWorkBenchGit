@@ -12,7 +12,7 @@
 /// </summary>
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Activity, AlertTriangle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Clock,
+  Activity, AlertTriangle, BookOpen, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock,
   FileUp, History, LayoutGrid, Loader2, Map as MapIcon, Newspaper, Play, RotateCcw,
   Server, Star, TrendingUp, Trophy, X, XCircle, Layers,
 } from 'lucide-react';
@@ -282,57 +282,101 @@ const DropZone = ({ catalogue, isBlocked, onOpenApp }) => {
 
   if (dropped) {
     const formatText = [...dropped.formats].join(' · ') || '알 수 없는 형식';
+    // 파일을 들고 갈 수 있는 앱을 위로 — 같은 조건이면 카탈로그 순서 유지
+    const ordered = [...matches].sort((x, y) =>
+      Number(FILE_HANDOFF_MENUS.has(getAppMenuName(y.title))) - Number(FILE_HANDOFF_MENUS.has(getAppMenuName(x.title))));
     return (
-      <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-xs font-bold text-blue-800">{formatText} 파일로 할 수 있는 해석</p>
-            <p className="mt-0.5 truncate font-mono text-[11px] text-slate-500" title={dropped.names.join(', ')}>
-              {dropped.names.join(', ')}
+      <div
+        className={`rounded-xl border p-3 transition-colors ${dragging ? 'border-blue-400 bg-blue-50' : 'border-blue-200 bg-blue-50/40'}`}
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
+      >
+        {/* 머리: 놓은 파일 + 다른 파일 / 닫기 */}
+        <div className="flex items-start gap-2.5">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-blue-600 ring-1 ring-blue-200">
+            <FileUp size={17} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-slate-800" title={dropped.names.join(', ')}>
+              {dropped.names[0]}{dropped.names.length > 1 && <span className="font-medium text-slate-500"> 외 {dropped.names.length - 1}개</span>}
+            </p>
+            <p className="text-xs text-slate-600">
+              {formatText} · 이 파일로 할 수 있는 해석 <b className="tabular-nums text-blue-700">{matches.length}</b>개
             </p>
           </div>
           <button
             type="button"
+            onClick={() => inputRef.current?.click()}
+            className="shrink-0 rounded-lg px-2 py-1.5 text-xs font-bold text-blue-700 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          >
+            다른 파일
+          </button>
+          <button
+            type="button"
             onClick={() => setDropped(null)}
             aria-label="추천 닫기"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-700"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
-            <X size={14} />
+            <X size={15} />
           </button>
         </div>
-        {matches.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {matches.map(app => {
+
+        {/* 앱 목록 — 한 줄에 하나, 행 전체가 누르는 자리(좁은 칩은 고르기 어려웠다) */}
+        {ordered.length > 0 ? (
+          <ul className="mt-3 max-h-[372px] space-y-1.5 overflow-y-auto pr-0.5">{/* 6행(BDF 추천 최대치)까지는 스크롤 없이 */}
+            {ordered.map(app => {
               const menu = getAppMenuName(app.title);
               const carries = FILE_HANDOFF_MENUS.has(menu);
+              const Icon = app.icon || LayoutGrid;
               return (
-                <button
-                  key={app.title}
-                  type="button"
-                  onClick={() => {
-                    if (carries) offerDashboardFiles(menu, dropped.files);
-                    onOpenApp(app.title);
-                  }}
-                  title={carries ? '파일을 그대로 가지고 이동합니다' : '이 앱은 화면에서 파일을 다시 선택해야 합니다'}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-700"
-                >
-                  {app.title}
-                  {!carries && <span className="rounded bg-slate-100 px-1 py-px text-[11px] font-bold text-slate-600">다시 선택</span>}
-                  <ChevronRight size={13} />
-                </button>
+                <li key={app.title}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (carries) offerDashboardFiles(menu, dropped.files);
+                      onOpenApp(app.title);
+                    }}
+                    className="group flex min-h-[56px] w-full items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition-all hover:border-blue-400 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  >
+                    <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${app.color || 'bg-blue-600'} text-white`}>
+                      <Icon size={17} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold text-slate-800 group-hover:text-blue-700">{app.title}</span>
+                      {app.description && (
+                        <span className="block truncate text-xs text-slate-500" title={app.description}>{app.description}</span>
+                      )}
+                    </span>
+                    {/* 대부분 앱이 파일을 들고 가므로 예외('다시 선택')만 표시한다 — 전부 붙이면 제목만 잘린다 */}
+                    {!carries && (
+                      <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600" title="이 앱은 화면에서 파일을 다시 선택해야 합니다">
+                        다시 선택
+                      </span>
+                    )}
+                    <ChevronRight size={16} className="shrink-0 text-slate-300 transition-colors group-hover:text-blue-600" />
+                  </button>
+                </li>
               );
             })}
-          </div>
+          </ul>
         ) : (
-          <p className="mt-2 text-xs text-slate-600">이 형식을 입력으로 받는 앱이 없습니다.</p>
-        )}
-        {matches.length > 0 && (
-          <p className="mt-2 text-[11px] text-slate-500">
-            {matches.every(app => FILE_HANDOFF_MENUS.has(getAppMenuName(app.title)))
-              ? '앱을 고르면 파일을 가지고 바로 이동합니다.'
-              : "앱을 고르면 파일을 가지고 이동합니다 — '다시 선택' 표시 앱은 화면에서 파일을 다시 고르세요."}
+          <p className="mt-3 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-4 text-center text-xs text-slate-600">
+            이 형식을 입력으로 받는 앱이 없습니다. BDF · CSV · PDF · F06 파일을 넣어 보세요.
           </p>
         )}
+        {ordered.length > 0 && (
+          <p className="mt-2 px-0.5 text-[11px] text-slate-500">
+            앱을 고르면 이 파일을 가지고 바로 이동합니다{ordered.some(app => !FILE_HANDOFF_MENUS.has(getAppMenuName(app.title))) ? " — '다시 선택' 앱은 화면에서 파일을 다시 고르세요" : ''}.
+          </p>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
+        />
       </div>
     );
   }
@@ -645,7 +689,7 @@ export default function Dashboard() {
   const [quickTab, setQuickTab] = useState(() => {
     try { return localStorage.getItem(QUICK_TAB_KEY); } catch { return null; }
   });
-  const [showAllFavorites, setShowAllFavorites] = useState(false);
+  const [favoritePage, setFavoritePage] = useState(0);
   const [modal, setModal] = useState(null); // 'intro' | 'roadmap' | 'video' | 'newsletter'
   const [notice, setNotice] = useState(null);
 
@@ -807,8 +851,12 @@ export default function Dashboard() {
     setQuickTab(tab);
     try { localStorage.setItem(QUICK_TAB_KEY, tab); } catch { /* 이번 화면에서만 유지 */ }
   };
-  const hiddenFavoriteCount = Math.max(0, favoriteApps.length - QUICK_APP_COUNT);
-  const visibleFavorites = showAllFavorites ? favoriteApps : favoriteApps.slice(0, QUICK_APP_COUNT);
+  // 즐겨찾기는 6개씩 한 쪽 — 넘치면 좌우 화살표로 넘긴다(펼치면 카드가 길어져 오른쪽 '내 작업'과 높이가 어긋났다)
+  const favoritePages = [];
+  for (let i = 0; i < favoriteApps.length; i += QUICK_APP_COUNT) favoritePages.push(favoriteApps.slice(i, i + QUICK_APP_COUNT));
+  const favoritePageCount = favoritePages.length;
+  // 별을 해제해 쪽 수가 줄면 마지막 쪽으로 당긴다
+  const currentFavoritePage = Math.min(favoritePage, Math.max(0, favoritePageCount - 1));
 
   // ── 내 작업 ─────────────────────────────────────────────
   const liveJobs = globalJobs.filter(job => !isTerminalJobStatus(job.status));
@@ -822,7 +870,7 @@ export default function Dashboard() {
   const recentResults = [...pinnedFailures, ...history.filter(p => !pinnedIds.has(p.id))]
     .slice(0, RECENT_RESULT_COUNT);
   const openFailedProjects = () => {
-    try { sessionStorage.setItem(MY_PROJECTS_STATUS_FILTER_KEY, 'Failed'); } catch { /* 필터 없이 이동 */ }
+    try { sessionStorage.setItem(MY_PROJECTS_STATUS_FILTER_KEY, JSON.stringify({ value: 'Failed', at: Date.now() })); } catch { /* 필터 없이 이동 */ }
     setCurrentMenu('My Projects');
   };
 
@@ -907,16 +955,30 @@ export default function Dashboard() {
                   onSelect={selectQuickTab}
                   favoriteCount={favoriteApps.length}
                 />
-                {activeQuickTab === 'favorites' && hiddenFavoriteCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllFavorites(v => !v)}
-                    aria-expanded={showAllFavorites}
-                    className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-xs font-bold text-brand-blue hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                  >
-                    {showAllFavorites ? '접기' : `+${hiddenFavoriteCount}개 더 보기`}
-                    <ChevronDown size={13} className={`transition-transform ${showAllFavorites ? 'rotate-180' : ''}`} />
-                  </button>
+                {activeQuickTab === 'favorites' && favoritePageCount > 1 && (
+                  <div className="flex items-center gap-1" role="group" aria-label="즐겨찾기 쪽 이동">
+                    <span className="mr-1 text-xs font-bold tabular-nums text-slate-500" aria-live="polite">
+                      {currentFavoritePage + 1} / {favoritePageCount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setFavoritePage(Math.max(0, currentFavoritePage - 1))}
+                      disabled={currentFavoritePage === 0}
+                      aria-label="이전 즐겨찾기"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-slate-200 disabled:hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFavoritePage(Math.min(favoritePageCount - 1, currentFavoritePage + 1))}
+                      disabled={currentFavoritePage >= favoritePageCount - 1}
+                      aria-label="다음 즐겨찾기"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-slate-200 disabled:hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    >
+                      <ChevronRight size={15} />
+                    </button>
+                  </div>
                 )}
               </div>
               {activeQuickTab === 'favorites' ? (
@@ -925,17 +987,33 @@ export default function Dashboard() {
                     즐겨찾기한 앱이 없습니다. 타일이나 앱 목록의 <Star size={11} className="inline -mt-0.5 text-amber-400" fill="currentColor" /> 를 누르면 여기에 고정됩니다.
                   </QuickEmpty>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {visibleFavorites.map(app => (
-                      <QuickAppTile
-                        key={app.title}
-                        app={app}
-                        meta={visitedAt[app.title] ? `마지막 사용 ${formatRelative(visitedAt[app.title])}` : '아직 사용 안 함'}
-                        isFavorite
-                        onOpen={() => openApp(app.title)}
-                        onToggleFavorite={() => toggleFavorite(favoriteStoredByTitle[app.title] ?? app.title)}
-                      />
-                    ))}
+                  // 모든 쪽을 가로로 늘어놓고 translateX 로 민다 — 높이는 가장 큰 쪽(6개)에 고정돼
+                  // 마지막 쪽에 타일이 적어도 카드 높이가 흔들리지 않는다.
+                  <div className="overflow-hidden">
+                    <div
+                      className="flex transition-transform duration-300 ease-out motion-reduce:transition-none"
+                      style={{ transform: `translateX(-${currentFavoritePage * 100}%)` }}
+                    >
+                      {favoritePages.map((page, pageIndex) => (
+                        <div
+                          key={pageIndex}
+                          className="grid w-full shrink-0 grid-cols-2 content-start gap-2 sm:grid-cols-3"
+                          aria-hidden={pageIndex !== currentFavoritePage}
+                          inert={pageIndex !== currentFavoritePage ? '' : undefined}
+                        >
+                          {page.map(app => (
+                            <QuickAppTile
+                              key={app.title}
+                              app={app}
+                              meta={visitedAt[app.title] ? `마지막 사용 ${formatRelative(visitedAt[app.title])}` : '아직 사용 안 함'}
+                              isFavorite
+                              onOpen={() => openApp(app.title)}
+                              onToggleFavorite={() => toggleFavorite(favoriteStoredByTitle[app.title] ?? app.title)}
+                            />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )
               ) : recentAppList.length === 0 ? (

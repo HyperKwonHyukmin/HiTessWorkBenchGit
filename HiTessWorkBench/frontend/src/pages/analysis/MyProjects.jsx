@@ -696,14 +696,13 @@ export default function MyProjects() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [programFilter, setProgramFilter] = useState('All');
-  // 대시보드 '7일 실패' 칩이 남긴 필터를 첫 렌더에 적용하고 지운다(한 번만)
+  // 대시보드 '7일 실패' 칩이 남긴 필터를 첫 렌더에 적용한다.
+  // ⚠ 꺼내면서 지우지 않는다 — 메뉴 진입 시 fresh-entry 리셋으로 이 화면이 한 번 더 마운트되는데,
+  //   첫 인스턴스가 지우면 최종 인스턴스는 'All' 로 뜬다. 대신 5초 유효 시간으로 흘려보낸다.
   const [statusFilter, setStatusFilter] = useState(() => {
     try {
-      const preset = sessionStorage.getItem('workbench:my-projects-status-filter');
-      if (preset) {
-        sessionStorage.removeItem('workbench:my-projects-status-filter');
-        if (STATUS_FILTERS.includes(preset)) return preset;
-      }
+      const preset = JSON.parse(sessionStorage.getItem('workbench:my-projects-status-filter') || 'null');
+      if (preset && Date.now() - preset.at < 5000 && STATUS_FILTERS.includes(preset.value)) return preset.value;
     } catch { /* 기본값 */ }
     return 'All';
   });
