@@ -232,7 +232,12 @@ def get_monthly_analysis_count(
     db: Session = Depends(database.get_db),
     current_user: str = Depends(require_auth),
 ):
-    """특정 사용자의 당월(또는 지정 연월) 해석 수행 건수를 반환합니다."""
+    """특정 사용자의 당월(또는 지정 연월) 해석 수행 건수를 반환합니다.
+
+    세는 기준은 /analysis/history 와 같다 — 샘플 실행과 권상 App 내부 세부 검토
+    (ModuleStability 등)는 빼야 대시보드의 '월간'과 '누적(이력 total)'이 같은 단위가 된다.
+    (예전에는 세부 검토까지 세어 월간이 누적의 25%처럼 부풀려 보였다.)
+    """
     _verify_employee_self(employee_id, current_user)
     now = datetime.now()
     y = year or now.year
@@ -247,6 +252,8 @@ def get_monthly_analysis_count(
         db.query(func.count(models.Analysis.id))
         .filter(
             models.Analysis.employee_id == employee_id,
+            models.Analysis.source != SAMPLE_SOURCE_TAG,
+            models.Analysis.program_name.notin_(INTERNAL_SUBSTEP_PROGRAMS),
             models.Analysis.created_at >= date_from,
             models.Analysis.created_at < date_to,
         )
