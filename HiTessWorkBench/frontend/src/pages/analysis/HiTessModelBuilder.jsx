@@ -20,6 +20,7 @@ import CsvPreviewPanel from '../../components/analysis/CsvPreviewPanel';
 import { readCsvFileRows } from '../../utils/csvPreview';
 import ModelRegistrationModal from '../../components/modelRegistry/ModelRegistrationModal';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
+import { describeDiagnostic, downloadDiagnostics, enrichDiagnostic } from '../../utils/modelValidation';
 import { useDashboardFilesHandoff } from '../../utils/dashboardFileHandoff';
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -31,7 +32,7 @@ import { useDashboardFilesHandoff } from '../../utils/dashboardFileHandoff';
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.0.86';
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.87';
 
 const INITIAL_STEPS = [
   { id: 'csv-validation', title: 'CSV 입력 검증',  icon: FileSpreadsheet, status: 'wait' },
@@ -1828,8 +1829,8 @@ function StageTrack({ stages, selectedKey, onSelect }) {
                   <div className={`w-3.5 h-3.5 rounded-full shrink-0 ${dotCls}`} />
                   <p className={`text-[12px] font-bold text-center truncate w-full leading-snug
                     ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}
-                    title={st.stageName}>
-                    {st.stageName}
+                    title={st.stageName === 'Validation' ? '최종 검증 (Validation)' : st.stageName}>
+                    {st.stageName === 'Validation' ? '최종 검증' : st.stageName}
                   </p>
                 </div>
                 <div className="mt-2.5 w-full min-w-0 space-y-1 text-center">
@@ -2007,7 +2008,7 @@ function StageSummaryDetail({ summary, audit }) {
             </p>
             {selectedStage && (
               <span className="text-[10px] font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                선택: #{selectedStage.stageIndex} {selectedStage.stageName}
+                선택: #{selectedStage.stageIndex} {selectedStage.stageName === 'Validation' ? '최종 검증 (Validation)' : selectedStage.stageName}
               </span>
             )}
           </div>
@@ -2030,6 +2031,34 @@ function StageSummaryDetail({ summary, audit }) {
   );
 }
 
+function ValidationDiagnosticList({ stage }) {
+  const errors = (stage.diagnosticDetails ?? []).filter(d => String(d.severity).toLowerCase() === 'error');
+  if (!(stage.diagnostics?.error > 0)) return null;
+  return (
+    <section aria-label="검증 오류 원인과 조치" className="space-y-3 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-bold text-red-700">검증 실패 — 수정 후 재검증이 필요합니다</p>
+        {errors.length > 0 && <button type="button" className="text-blue-700 underline shrink-0" onClick={() => downloadDiagnostics(stage.diagnosticDetails, `HiTESS_${stage.stageName}_진단`)}>진단 CSV 저장</button>}
+      </div>
+      <p className="text-slate-600">생성된 단계 모델은 오류 확인용입니다. 오류가 해결된 최종 모델로 해석을 진행하세요.</p>
+      {stage.diagnosticLoadError && <p role="alert" className="text-red-700">{stage.diagnosticLoadError}</p>}
+      {!stage.diagnosticLoadError && errors.length === 0 && <p className="text-red-700">오류 개수는 기록됐지만 상세 진단이 없습니다. Studio 또는 실행 로그에서 확인하세요.</p>}
+      {errors.map((d, i) => {
+        const g = describeDiagnostic(d);
+        return <div key={i} className="border-l-2 border-red-400 pl-3 space-y-1 break-words">
+          <p className="font-bold text-red-700">{g.title} · {d.code}</p>
+          <p className="font-mono text-slate-700">{d.elemId != null && `요소/RBE ${d.elemId} `}{d.nodeId != null && `노드 N${d.nodeId}`}</p>
+          {d.sourceName && <p className="text-slate-700">입력 이름: {d.sourceName}</p>}
+          {d.positionMm && <p className="text-slate-700">위치 XYZ(mm): {d.positionMm.map(v => Number(v).toFixed(1)).join(', ')}</p>}
+          <p className="text-slate-700">{g.cause}</p>
+          <p className="text-slate-700">조치: {g.action}</p>
+          <details className="text-slate-600"><summary className="cursor-pointer">엔진 원문</summary>{d.message}</details>
+        </div>;
+      })}
+    </section>
+  );
+}
+
 function PhaseDeltaCard({ stage }) {
   const d = stage.delta        ?? {};
   const c = stage.connectivity ?? {};
@@ -2045,7 +2074,7 @@ function PhaseDeltaCard({ stage }) {
         <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold shrink-0">
           #{stage.stageIndex}
         </span>
-        <span className="text-xs font-bold text-slate-700 truncate">{stage.stageName}</span>
+        <span className="text-xs font-bold text-slate-700 truncate">{stage.stageName === 'Validation' ? '최종 검증 (Validation)' : stage.stageName}</span>
         {(stage.diagnostics?.error ?? 0) > 0 && (
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-bold shrink-0">
             에러 {stage.diagnostics.error}
@@ -2063,6 +2092,7 @@ function PhaseDeltaCard({ stage }) {
 
       {/* 3섹션 세로 스택 표 — 부모 폭 절대 넘지 않음 */}
       <div className="px-4 py-3 space-y-3 w-full min-w-0 overflow-hidden">
+        <ValidationDiagnosticList stage={stage} />
 
         {/* 변화량 (Δ) 표 */}
         <div className="w-full min-w-0 overflow-hidden">
@@ -2649,7 +2679,22 @@ export default function HiTessModelBuilder() {
     let cancelled = false;
     setSummaryLoading(true); setSummaryError(null);
     fetchJson(bdfResult.summaryPath)
-      .then(d => { if (!cancelled) setSummaryData(d); })
+      .then(async d => {
+        const folder = bdfResult.summaryPath.replace(/[^\\/]+$/, '');
+        const stages = await Promise.all((d.stages ?? []).map(async stage => {
+          if (!(stage.diagnostics?.error > 0)) return stage;
+          if (!stage.jsonFile || /[\\/]/.test(stage.jsonFile) || stage.jsonFile.includes('..')) {
+            return { ...stage, diagnosticLoadError: '진단 파일 경로가 없습니다. Studio에서 해당 단계의 진단을 확인하세요.' };
+          }
+          try {
+            const phase = await fetchJson(folder + stage.jsonFile);
+            return { ...stage, diagnosticDetails: (phase.diagnostics ?? []).map(item => enrichDiagnostic(item, phase)) };
+          } catch (e) {
+            return { ...stage, diagnosticLoadError: `상세 진단을 불러오지 못했습니다: ${e.message}. Studio에서 해당 단계를 확인하세요.` };
+          }
+        }));
+        if (!cancelled) setSummaryData({ ...d, stages });
+      })
       .catch(e => { if (!cancelled) setSummaryError(`StageSummary 로드 실패: ${e.message}`); })
       .finally(() => { if (!cancelled) setSummaryLoading(false); });
     return () => { cancelled = true; };
@@ -3017,7 +3062,13 @@ export default function HiTessModelBuilder() {
       // 사용자 요구: 실행 완료 시 자동으로 step 0 (CSV 검증) 으로 이동
       setActiveIdx(0);
     } else if (data.status === 'Failed' || data.status === 'Cancelled') {
-      setSteps(prev => prev.map((s, i) => i <= 1 ? { ...s, status: 'error' } : s));
+      if (data.status === 'Failed' && data.output_dir) {
+        setBdfResult({ outputDir: data.output_dir, auditPath: data.audit_path ?? null,
+          summaryPath: data.summary_path ?? null, bdfPath: null, jsonPath: null });
+        setActiveIdx(1);
+      }
+      setSteps(prev => prev.map((s, i) => i <= 1
+        ? { ...s, status: i === 0 && data.audit_path ? 'done' : 'error' } : s));
       setEngineLog(
         data.engine_log
         || data.message

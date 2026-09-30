@@ -78,6 +78,26 @@ def _pick_final_artifact(output_dir: str, ext: str) -> str | None:
     return files[0]
 
 
+def _validation_failure_message(output_dir: str | None) -> str:
+    if not output_dir:
+        return "모델 생성 실패 — 실행 로그를 확인하세요."
+    try:
+        with open(os.path.join(output_dir, "06_Validation.json"), encoding="utf-8-sig") as stream:
+            phase = json.load(stream)
+        errors = [d for d in phase.get("diagnostics", []) if d.get("severity") == "error"]
+        if errors:
+            first = errors[0]
+            parts = [f"최종 검증 실패: {first.get('code', '검증 오류')}"]
+            if first.get("elemId") is not None:
+                parts.append(f"요소/RBE {first['elemId']}")
+            if first.get("nodeId") is not None:
+                parts.append(f"노드 N{first['nodeId']}")
+            return " · ".join(parts) + f" (오류 {len(errors)}건) — 원인과 조치를 확인하세요."
+    except (OSError, ValueError, TypeError, AttributeError):
+        logger.warning("[ModelBuilder] Validation 진단 요약을 읽지 못함: %s", output_dir)
+    return "모델 생성 실패 — 실행 로그를 확인하세요."
+
+
 def task_execute_modelflow(
     job_id: str,
     stru_path: str | None,
@@ -172,38 +192,38 @@ def task_execute_modelflow(
 
             logger.info("[ModelBuilder] exit=%d", result.returncode)
 
-            # README §5.5: exit 0/2 = 산출물 작성 OK, 1 = 산출물 없음
-            if result.returncode == 1:
+            # Cmb.Cli build-full: 0=완료, 2=검증 Error, 1=실행/파이프라인 실패.
+            # 실패(exit 1/2)에도 phase JSON/감사 파일은 작성될 수 있다.
+            # 실패 상태를 유지하면서 검토용 산출물을 회수한다.
+            if result.returncode != 0:
                 status_msg = "Failed"
                 engine_output += f"\n[Exit code: {result.returncode}]"
-            else:
-                update_progress(job_id, 70, "산출물 수집 중...")
-                output_dir = (
-                    _parse_output_dir(result.stdout)
-                    or _scan_latest_timestamp_dir(work_dir)
-                )
-                if output_dir and os.path.isdir(output_dir):
-                    result_data["output_dir"] = output_dir
-
-                    audit_cand = os.path.join(output_dir, "00_InputAudit.json")
-                    if os.path.exists(audit_cand):
-                        audit_path = audit_cand
-                        result_data["audit_path"] = audit_path
-
-                    summary_cand = os.path.join(output_dir, "00_StageSummary.json")
-                    if os.path.exists(summary_cand):
-                        summary_path = summary_cand
-                        result_data["summary_path"] = summary_path
-
+            update_progress(job_id, 70, "산출물 수집 중...")
+            output_dir = (
+                _parse_output_dir(result.stdout)
+                or (_scan_latest_timestamp_dir(work_dir) if status_msg == "Success" else None)
+            )
+            if output_dir and os.path.isdir(output_dir):
+                result_data["output_dir"] = output_dir
+                audit_cand = os.path.join(output_dir, "00_InputAudit.json")
+                if os.path.exists(audit_cand):
+                    audit_path = audit_cand
+                    result_data["audit_path"] = audit_path
+                summary_cand = os.path.join(output_dir, "00_StageSummary.json")
+                if os.path.exists(summary_cand):
+                    summary_path = summary_cand
+                    result_data["summary_path"] = summary_path
+                # 실패한 phase BDF를 해석 가능한 최종 모델로 취급하지 않는다.
+                if status_msg == "Success":
                     bdf_path = _pick_final_artifact(output_dir, "bdf")
                     if bdf_path:
                         result_data["bdf_path"] = bdf_path
                     json_path = _pick_final_artifact(output_dir, "json")
                     if json_path:
                         result_data["json_path"] = json_path
-                else:
-                    status_msg = "Failed"
-                    engine_output += "\n[오류] 출력 폴더 라인을 stdout에서 찾을 수 없음."
+            else:
+                status_msg = "Failed"
+                engine_output += "\n[오류] 출력 폴더 라인을 stdout에서 찾을 수 없음."
 
         except subprocess.TimeoutExpired:
             status_msg = "Failed"
@@ -223,7 +243,7 @@ def task_execute_modelflow(
         employee_id=employee_id,
         status=status_msg,
         input_info=input_data,
-        result_info=result_data if status_msg == "Success" else None,
+        result_info=result_data or None,
         source=source,
         include_io_in_project=False,
     )
@@ -235,7 +255,7 @@ def task_execute_modelflow(
     mark_complete(
         job_id, status_msg, engine_output, project_data,
         success_message="모델 생성 완료",
-        failure_message="모델 생성 실패",
+        failure_message=_validation_failure_message(output_dir) if status_msg == "Failed" else "모델 생성 실패",
         extra={
             "output_dir":   output_dir,
             "audit_path":   audit_path,
