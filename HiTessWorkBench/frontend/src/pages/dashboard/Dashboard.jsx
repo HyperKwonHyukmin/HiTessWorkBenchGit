@@ -1,54 +1,69 @@
 /// <summary>
-/// 메인 대시보드 UI 컴포넌트입니다.
-/// (수정) 즐겨찾기에서 Truss Assessment 진입 시 글로벌 상태를 초기화하는 로직 추가
+/// 메인 대시보드 (2026-09-30 개편).
+///
+/// 배치 원칙:
+///  - 첫 화면 = "새 해석 시작" + "내 작업". 실패하면 대부분 파일 업로드부터 다시 하므로
+///    '이어서 작업' 대신 실패를 빨리 알아채고 같은 앱에서 새로 시작하는 동선을 앞에 둔다.
+///  - 즐겨찾기 + 최근 사용 → "자주 쓰는 앱" 한 묶음(중복 제거).
+///  - 공지는 상단 한 줄, 소개·로드맵·Story·Newsletter 는 인사 줄의 "자료" 메뉴 하나로.
+///  - 지표(월별 실행·많이 쓰는 앱)는 참고 정보라 아래 두 카드로.
+///  - 위·아래 두 줄 모두 같은 12열 격자(5 : 7)를 써서 카드 좌우 경계가 세로로 맞는다.
+/// 공지 줄·모달·섹션 제목은 dashboardShared.jsx 에 있다.
 /// </summary>
-import React, { Suspense, lazy, useState, useEffect, useRef, Fragment } from 'react';
-import { motion } from 'framer-motion';
-import { Dialog, Transition } from '@headlessui/react';
-import { getQueueStatus, getNotices } from '../../api/admin';
-import { getAnalysisHistory, getTopPrograms, getMonthlyAnalysisCount } from '../../api/analysis';
-import { getSessionContext } from '../../api/auth';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Activity, FileText, Server,
-  Star, CalendarDays, Database, Map, Rocket,
-  Wrench, Clock, X, ChevronRight, ChevronDown, Layers, Maximize2, Trophy, SlidersHorizontal,
-  Megaphone, Pin, Sparkles, Play, GripVertical, ArrowLeft, ArrowRight, Check, History
+  Activity, AlertTriangle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Clock,
+  FileUp, History, LayoutGrid, Loader2, Map as MapIcon, Newspaper, Play, RotateCcw,
+  Server, Star, TrendingUp, Trophy, X, XCircle, Layers,
 } from 'lucide-react';
+import { getQueueStatus } from '../../api/admin';
+import { getAnalysisHistory, getMonthlyAnalysisCount, getTopPrograms } from '../../api/analysis';
 import { API_BASE_URL } from '../../config';
-import { findAppByAnyName, findAppByProgramName, getAppMenuName, getDisplayProgramName, useAnalysisPageState, useAppCatalogue, useFavorites } from '../../contexts/DashboardContext';
+import {
+  findAppByAnyName, findAppByProgramName, getAppMenuName, getDisplayProgramName,
+  useAnalysisPageState, useAppCatalogue, useFavorites, useGlobalJobs,
+} from '../../contexts/DashboardContext';
 import { useRecentActivity } from '../../contexts/RecentActivityContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
 import { POLLING_POLICY } from '../../hooks/pollingPolicy';
-import { NOTICE_TYPE_STYLE } from '../../components/modals/noticeTypeStyle';
-import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
-import DashboardFab from '../../components/DashboardFab';
+import { isTerminalJobStatus } from '../../utils/globalJobs';
+import { FILE_HANDOFF_MENUS, offerDashboardFiles } from '../../utils/dashboardFileHandoff';
+import {
+  DashboardSectionTitle, IntroModal, NoticeStrip, RoadmapModal, VideoPlayerModal, isRoadmapAppNavigable,
+} from './dashboardShared';
+
 const AdminGateModal = lazy(() => import('../../components/ui/AdminGateModal'));
 const NoticeDetailModal = lazy(() => import('../../components/modals/NoticeDetailModal'));
 const NewsletterArchiveModal = lazy(() => import('../../components/NewsletterArchiveModal'));
 
-// 대시보드 "프로젝트 이력" 행 클릭 시, 선택한 프로젝트를 My Projects 페이지로 넘겨
-// 상세 모달을 자동으로 열기 위한 sessionStorage 키. (MyProjects.jsx 에서 동일 키를 읽는다)
+// Dashboard.jsx 와 같은 키 — My Projects 가 이 값을 읽어 상세 모달을 연다.
 const OPEN_PROJECT_DETAIL_KEY = 'workbench:open-project-detail';
+const QUICK_APP_COUNT = 6;
+const RECENT_RESULT_COUNT = 6;
+const HISTORY_FETCH = 30;
+const TREND_MONTHS = 6;
 
-const MODE_KO = {
-  File: "File-Based Apps",
-  Interactive: "Interactive Apps",
-  Parametric: "Parametric Apps",
-  Productivity: "Productivity Apps"
+const MODE_LABEL = { File: 'File-Based', Interactive: 'Interactive', Parametric: 'Parametric', Productivity: 'Productivity' };
+const MODE_ACCENT = {
+  File: 'from-blue-500/70 via-blue-300/40 to-transparent',
+  Interactive: 'from-violet-500/70 via-violet-300/40 to-transparent',
+  Parametric: 'from-emerald-500/70 via-emerald-300/40 to-transparent',
+  Productivity: 'from-amber-500/70 via-amber-300/40 to-transparent',
 };
 
-const DASHBOARD_CARD_BASE = "relative bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-200 group";
-const FAVORITE_WINDOW_SIZE = 4;
-// "최근 사용" 섹션에 노출할 최대 카드 수(서버에는 최대 8건까지 저장된다).
-const RECENT_APPS_WINDOW_SIZE = 6;
+// 드롭한 파일 확장자 → 카탈로그 inputFormats 의 첫 토큰("CSV ×2" → "CSV")
+const EXT_TO_FORMAT = {
+  bdf: 'BDF', dat: 'BDF', nas: 'BDF', blk: 'BDF',
+  csv: 'CSV', pdf: 'PDF', f06: 'F06', json: 'JSON',
+  png: 'Image', jpg: 'Image', jpeg: 'Image',
+};
 
-/** 방문 시각(epoch ms) → '방금 / n분 전 / n시간 전 / n일 전 / M/D' 상대 표기. */
-const formatRecentVisitTime = (at, now = Date.now()) => {
-  const t = Number(at);
+/** epoch/ISO → '방금 / n분 전 / n시간 전 / n일 전 / M/D' */
+const formatRelative = (value, now = Date.now()) => {
+  const t = typeof value === 'number' ? value : Date.parse(value);
   if (!Number.isFinite(t) || t <= 0) return '';
   const minutes = Math.floor(Math.max(0, now - t) / 60000);
   if (minutes < 1) return '방금';
@@ -61,1546 +76,811 @@ const formatRecentVisitTime = (at, now = Date.now()) => {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 };
 
-const DEV_STATUS_BADGE = {
-  Active: { variant: 'success', label: '운영' },
-  Developing: { variant: 'warning', label: '개발' },
-  Planned: { variant: 'neutral', label: '예정' },
+const formatAbsolute = (value) => {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('ko-KR');
 };
 
-const SECTION_ACCENTS = {
-  service: {
-    iconWrap: 'bg-blue-50 text-blue-600 ring-blue-100',
-    rule: 'from-blue-500 via-blue-300 to-transparent',
-  },
-  favorite: {
-    iconWrap: 'bg-amber-50 text-amber-500 ring-amber-100',
-    rule: 'from-amber-400 via-amber-200 to-transparent',
-  },
-  history: {
-    iconWrap: 'bg-slate-100 text-slate-600 ring-slate-200',
-    rule: 'from-slate-500 via-slate-300 to-transparent',
-  },
-};
-
-const FAVORITE_MODE_STYLE = {
-  File: {
-    shell: 'hover:border-blue-300 hover:bg-blue-50/[0.18]',
-    accent: 'from-blue-500/70 via-blue-300/40 to-transparent',
-    chip: 'border-blue-200 bg-blue-50 text-blue-700',
-  },
-  Interactive: {
-    shell: 'hover:border-violet-300 hover:bg-violet-50/[0.16]',
-    accent: 'from-violet-500/70 via-violet-300/40 to-transparent',
-    chip: 'border-violet-200 bg-violet-50 text-violet-700',
-  },
-  Parametric: {
-    shell: 'hover:border-emerald-300 hover:bg-emerald-50/[0.16]',
-    accent: 'from-emerald-500/70 via-emerald-300/40 to-transparent',
-    chip: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  },
-  Productivity: {
-    shell: 'hover:border-amber-300 hover:bg-amber-50/[0.16]',
-    accent: 'from-amber-500/70 via-amber-300/40 to-transparent',
-    chip: 'border-amber-200 bg-amber-50 text-amber-700',
-  },
-};
-
-const DashboardSectionTitle = ({ icon: Icon, title, accent = 'service', children }) => {
-  const tone = SECTION_ACCENTS[accent] || SECTION_ACCENTS.service;
-  return (
-    <div className="min-w-0">
-      <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-800">
-        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ring-1 ${tone.iconWrap}`}>
-          <Icon size={15} />
-        </span>
-        <span>{title}</span>
-      </h2>
-      <div className={`mt-1 h-0.5 w-24 rounded-full bg-gradient-to-r ${tone.rule}`} aria-hidden="true" />
-      {children}
-    </div>
-  );
-};
-
-const FavoriteCard = ({
-  title,
-  icon: Icon,
-  color,
-  desc,
-  mode,
-  devStatus,
-  onClick,
-  onFavoriteRemove,
-  isEditing,
-  position,
-  total,
-  onMoveLeft,
-  onMoveRight,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onDrop,
-  isDragging,
-}) => {
-  const modeStyle = FAVORITE_MODE_STYLE[mode] || FAVORITE_MODE_STYLE.File;
-
-  return (
-  <motion.div
-    draggable={isEditing}
-    onDragStart={onDragStart}
-    onDragEnd={onDragEnd}
-    onDragOver={onDragOver}
-    onDrop={onDrop}
-    className={`flex min-h-[118px] w-full flex-col items-start p-3.5 bg-white rounded-2xl border shadow-sm group text-left h-full relative overflow-hidden transition-all duration-200 ${
-      isEditing
-        ? 'border-blue-300 ring-1 ring-blue-100 cursor-grab active:cursor-grabbing'
-        : `border-slate-200 hover:shadow-md ${modeStyle.shell}`
-    } ${isDragging ? 'opacity-45' : 'opacity-100'}`}
-    initial={{ opacity: 0, y: 10 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.28, ease: 'easeOut' }}
-    whileHover={!isEditing ? {
-      y: -1,
-      boxShadow: '0 6px 16px -12px rgba(0, 37, 84, 0.18)',
-      transition: { type: 'spring', stiffness: 380, damping: 28 },
-    } : undefined}
-  >
-    <div className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${modeStyle.accent}`} aria-hidden="true" />
-    {isEditing ? (
-      <div className="absolute top-3 right-3 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={onMoveLeft}
-          disabled={position === 0}
-          aria-label={`${title} 왼쪽으로 이동`}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          <ArrowLeft size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={onMoveRight}
-          disabled={position === total - 1}
-          aria-label={`${title} 오른쪽으로 이동`}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          <ArrowRight size={14} />
-        </button>
-        <GripVertical size={16} className="ml-1 text-slate-400" aria-hidden="true" />
-      </div>
-    ) : (
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          onFavoriteRemove?.();
-        }}
-        aria-label={`${title} 즐겨찾기 해제`}
-        title="즐겨찾기 해제"
-        className="group/star absolute top-2.5 right-2.5 z-20 inline-flex h-8 w-8 items-center justify-center rounded-lg text-amber-400 opacity-75 transition-all hover:bg-amber-50 hover:text-amber-500 hover:opacity-100 hover:ring-1 hover:ring-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-1"
-      >
-        <Star size={16} fill="currentColor" className="transition-transform group-hover/star:scale-110" />
-      </button>
-    )}
-    <div className="mb-2.5 flex w-full items-start justify-between gap-2 pr-7">
-      <div className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${color} text-white shadow-sm ring-1 ring-black/5`}>
-        <Icon size={17} />
-      </div>
-      <div className="flex min-w-0 flex-wrap justify-end gap-1">
-        {mode && (
-          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${modeStyle.chip}`}>
-            {(MODE_KO[mode] || mode).replace(/ Apps$/, '')}
-          </span>
-        )}
-        {devStatus && (
-          <Badge variant={DEV_STATUS_BADGE[devStatus]?.variant || 'neutral'} size="sm" dot>
-            {DEV_STATUS_BADGE[devStatus]?.label || devStatus}
-          </Badge>
-        )}
-      </div>
-    </div>
-    <h3 className="font-bold text-slate-800 text-sm leading-snug pr-6 line-clamp-1">{title}</h3>
-    <p
-      className="text-xs text-slate-500 mt-1 max-w-full leading-relaxed overflow-hidden"
-      style={{ display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}
-    >
-      {desc}
-    </p>
-    {isEditing ? (
-      <span className="pt-2 text-[11px] font-semibold text-blue-700">
-        {position + 1} / {total} · 드래그하여 이동
-      </span>
-    ) : (
-      <button
-        type="button"
-        onClick={onClick}
-        className="absolute inset-0 z-10 cursor-pointer rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
-        aria-label={`${title} 열기`}
-      />
-    )}
-  </motion.div>
-  );
+const formatElapsed = (startedAt) => {
+  const sec = Math.max(0, Math.floor((Date.now() - Number(startedAt || 0)) / 1000));
+  if (!startedAt || sec > 86400) return '';
+  const m = Math.floor(sec / 60);
+  return m > 0 ? `${m}분 ${sec % 60}초` : `${sec}초`;
 };
 
 /**
- * 최근 사용 앱 카드 — 아이콘·제목·모드 칩·방문 시각·즐겨찾기 별.
- * 별 클릭은 카드 진입과 분리한다(stopPropagation → onToggleFavorite).
+ * 실패 레코드에서 사유 한 줄을 찾는다.
+ * 1순위 job_message — job_manager 가 모든 해석의 마지막 진행 메시지를 DB 에 남긴다(실측 실패 627건 중 575건).
+ * 없으면 result_info 의 error/diagnostic 류 필드.
  */
-const RecentAppCard = ({ app, at, isFavorite, onOpen, onToggleFavorite }) => {
-  const Icon = app.icon;
-  const modeStyle = FAVORITE_MODE_STYLE[app.mode] || FAVORITE_MODE_STYLE.File;
-  const visitedLabel = formatRecentVisitTime(at);
+const failureReason = (record) => {
+  const jobMessage = typeof record?.job_message === 'string' ? record.job_message.trim() : '';
+  if (jobMessage) return jobMessage.split('\n')[0].slice(0, 140);
+  let info = record?.result_info;
+  if (typeof info === 'string') {
+    try { info = JSON.parse(info); } catch { return null; }
+  }
+  if (!info || typeof info !== 'object') return null;
+  const diag = info.diagnostic;
+  const candidates = [
+    info.error, info.error_message, info.message, info.detail, info.reason,
+    typeof diag === 'string' ? diag : diag?.message || diag?.summary || diag?.error,
+  ];
+  const hit = candidates.find(v => typeof v === 'string' && v.trim());
+  return hit ? hit.trim().split('\n')[0].slice(0, 140) : null;
+};
+
+/** 카드 공통 틀 — 상단 그라데이션 띠는 구 대시보드와 같은 표현이다. */
+const Card = ({ accent = 'from-brand-blue/70 via-blue-400/40 to-transparent', className = '', children }) => (
+  <section className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>
+    <div className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${accent}`} aria-hidden="true" />
+    {children}
+  </section>
+);
+
+/** 섹션 제목 — 네 카드 모두 같은 틀(제목 · 보조 정보 · 오른쪽 동작)을 카드 바깥 위에 둔다. */
+const SectionHeader = ({ icon, title, accent, meta, action }) => (
+  <div className="mb-2 flex min-h-[36px] items-end justify-between gap-3">
+    <div className="flex min-w-0 items-end gap-2">
+      <DashboardSectionTitle icon={icon} title={title} accent={accent} />
+      {meta && <span className="pb-1 text-xs font-semibold text-slate-500">{meta}</span>}
+    </div>
+    {action}
+  </div>
+);
+
+const LinkButton = ({ onClick, children }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="inline-flex shrink-0 items-center gap-0.5 rounded-lg px-2 py-1 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+  >
+    {children} <ChevronRight size={14} />
+  </button>
+);
+
+// ─────────────────────────────────────────────────────────────── 인사 줄
+
+const ResourceMenu = ({ onIntro, onRoadmap, onVideo, onNewsletter }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+
+  const items = [
+    { icon: Layers, label: 'HiTESS WorkBench 소개', onClick: onIntro },
+    { icon: MapIcon, label: '앱 로드맵', onClick: onRoadmap },
+    { icon: Play, label: 'HiTESS Story 영상', onClick: onVideo },
+    { icon: Newspaper, label: 'News Letter', onClick: onNewsletter },
+  ];
 
   return (
-    <div
-      className={`relative flex min-h-[96px] w-full flex-col items-start overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm transition-all duration-200 hover:shadow-md ${modeStyle.shell}`}
-    >
-      <div className={`pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${modeStyle.accent}`} aria-hidden="true" />
+    <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggleFavorite?.();
-        }}
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-xs font-bold text-white transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+      >
+        <BookOpen size={14} /> 자료
+        <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 z-30 mt-1.5 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+          {items.map(({ icon: Icon, label, onClick }) => (
+            <button
+              key={label}
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onClick(); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 focus:bg-slate-50 focus:outline-none"
+            >
+              <Icon size={15} className="text-slate-500" /> {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const StatusChip = ({ icon: Icon, label, value, tone = 'neutral', onClick, title }) => {
+  const toneCls = {
+    neutral: 'border-white/15 bg-white/[0.08] text-white',
+    running: 'border-blue-300/40 bg-blue-400/15 text-white',
+    danger: 'border-red-300/50 bg-red-500/20 text-white',
+  }[tone];
+  const Tag = onClick ? 'button' : 'div';
+  return (
+    <Tag
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      title={title}
+      className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold ${toneCls} ${
+        onClick ? 'cursor-pointer transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60' : ''
+      }`}
+    >
+      <Icon size={14} className="opacity-80" />
+      <span className="text-blue-100">{label}</span>
+      <span className="text-sm font-extrabold tabular-nums">{value}</span>
+    </Tag>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────── 새 해석 시작
+
+const DropZone = ({ catalogue, isBlocked, onOpenApp }) => {
+  const [dragging, setDragging] = useState(false);
+  const [dropped, setDropped] = useState(null); // { files: File[], names, formats: Set }
+  const inputRef = useRef(null);
+
+  const handleFiles = (fileList) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    const formats = new Set(
+      files.map(f => EXT_TO_FORMAT[(f.name.split('.').pop() || '').toLowerCase()]).filter(Boolean),
+    );
+    setDropped({ files, names: files.map(f => f.name), formats });
+  };
+
+  const matches = useMemo(() => {
+    if (!dropped) return [];
+    return catalogue.filter(app =>
+      app.hasPage
+      && (app.mode === 'File' || app.mode === 'Productivity')
+      && !isBlocked(app)
+      && (app.inputFormats || []).some(f => dropped.formats.has(String(f).split(' ')[0])),
+    );
+  }, [catalogue, dropped, isBlocked]);
+
+  if (dropped) {
+    const formatText = [...dropped.formats].join(' · ') || '알 수 없는 형식';
+    return (
+      <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-blue-800">{formatText} 파일로 할 수 있는 해석</p>
+            <p className="mt-0.5 truncate font-mono text-[11px] text-slate-500" title={dropped.names.join(', ')}>
+              {dropped.names.join(', ')}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDropped(null)}
+            aria-label="추천 닫기"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-700"
+          >
+            <X size={14} />
+          </button>
+        </div>
+        {matches.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {matches.map(app => {
+              const menu = getAppMenuName(app.title);
+              const carries = FILE_HANDOFF_MENUS.has(menu);
+              return (
+                <button
+                  key={app.title}
+                  type="button"
+                  onClick={() => {
+                    if (carries) offerDashboardFiles(menu, dropped.files);
+                    onOpenApp(app.title);
+                  }}
+                  title={carries ? '파일을 그대로 가지고 이동합니다' : '앱 화면에서 파일을 다시 선택해야 합니다'}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-700"
+                >
+                  {app.title}
+                  {carries && <span className="rounded bg-blue-100 px-1 py-px text-[11px] font-bold text-blue-700">파일 전달</span>}
+                  <ChevronRight size={13} />
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-slate-600">이 형식을 입력으로 받는 앱이 없습니다.</p>
+        )}
+        <p className="mt-2 text-[11px] text-slate-500">'파일 전달' 표시가 없는 앱은 앱 화면에서 같은 파일을 다시 선택하세요.</p>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => inputRef.current?.click()}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
+      className={`flex w-full items-center gap-3 rounded-xl border-2 border-dashed px-4 py-3.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
+        dragging ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-slate-50/60 hover:border-blue-300 hover:bg-blue-50/40'
+      }`}
+    >
+      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 ring-1 ring-slate-200">
+        <FileUp size={19} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-bold text-slate-800">입력 파일을 끌어다 놓으세요</span>
+        <span className="block text-xs text-slate-500">BDF · CSV · PDF · F06 — 맞는 해석 앱을 추천합니다</span>
+      </span>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
+      />
+    </button>
+  );
+};
+
+const QuickAppTile = ({ app, meta, isFavorite, onOpen, onToggleFavorite }) => {
+  const Icon = app.icon;
+  return (
+    <div className="relative flex min-h-[92px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 hover:shadow-md">
+      <div className={`pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${MODE_ACCENT[app.mode] || MODE_ACCENT.File}`} aria-hidden="true" />
+      {/* 모드는 아이콘 색·글리프가 이미 나타낸다(카탈로그의 모드 시그니처) — 칩은 좁은 타일에서 줄바꿈돼 뺐다 */}
+      <span
+        className={`mb-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${app.color} text-white`}
+        title={MODE_LABEL[app.mode] || app.mode}
+      >
+        {Icon ? <Icon size={15} /> : <LayoutGrid size={15} />}
+      </span>
+      <h3 className="line-clamp-2 text-[13px] font-bold leading-snug text-slate-800" title={app.title}>{app.title}</h3>
+      {meta && <p className="mt-auto pt-1 text-[11px] font-semibold text-slate-500">{meta}</p>}
+      {/* 카드 전체 진입 버튼과 별 버튼은 형제(중첩 아님) */}
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`${app.title} 열기`}
+        className="absolute inset-0 z-10 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+      />
+      <button
+        type="button"
+        onClick={onToggleFavorite}
         aria-label={`${app.title} 즐겨찾기 ${isFavorite ? '해제' : '추가'}`}
         title={isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
-        className={`absolute top-1.5 right-1.5 z-20 inline-flex h-7 w-7 items-center justify-center rounded-lg transition-all hover:bg-amber-50 hover:text-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-400 ${
-          isFavorite ? 'text-amber-400' : 'text-slate-300'
+        className={`absolute right-1.5 top-1.5 z-20 inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-amber-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+          isFavorite ? 'text-amber-400' : 'text-slate-300 hover:text-amber-500'
         }`}
       >
         <Star size={14} fill={isFavorite ? 'currentColor' : 'none'} />
       </button>
-      <div className="mb-2 flex w-full items-center gap-2 pr-7">
-        <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${app.color} text-white shadow-sm ring-1 ring-black/5`}>
-          {Icon ? <Icon size={15} /> : <Sparkles size={15} />}
-        </span>
-        {app.mode && (
-          <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-black ${modeStyle.chip}`}>
-            {(MODE_KO[app.mode] || app.mode).replace(/ Apps$/, '')}
-          </span>
-        )}
-      </div>
-      <h3 className="line-clamp-2 pr-2 text-[13px] font-bold leading-snug text-slate-800">{app.title}</h3>
-      {visitedLabel && (
-        <p className="mt-auto pt-1 text-[11px] font-semibold text-slate-400">{visitedLabel}</p>
-      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────── 내 작업
+
+const RESULT_STATUS = {
+  Success: { icon: CheckCircle2, cls: 'text-emerald-600', label: '완료' },
+  Failed: { icon: XCircle, cls: 'text-red-600', label: '실패' },
+  Interrupted: { icon: XCircle, cls: 'text-red-600', label: '중단됨' },
+  Cancelled: { icon: XCircle, cls: 'text-slate-500', label: '취소됨' },
+};
+
+const LiveJobRow = ({ job, onOpen }) => {
+  const progress = Math.min(100, Math.max(0, Number(job.progress) || 0));
+  const elapsed = formatElapsed(job.startedAt);
+  return (
+    <li>
       <button
         type="button"
         onClick={onOpen}
-        className="absolute inset-0 z-10 cursor-pointer rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
-        aria-label={`${app.title} 열기`}
-      />
-    </div>
+        className="w-full rounded-xl border border-blue-200 bg-blue-50/50 px-3 py-2.5 text-left transition-colors hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+      >
+        <div className="flex items-center gap-2.5">
+          <Loader2 size={16} className="shrink-0 animate-spin text-blue-600" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">{job.displayName || job.menu}</span>
+          <span className="shrink-0 text-xs font-bold tabular-nums text-blue-700">{progress}%</span>
+        </div>
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-blue-100">
+          <div className="h-full rounded-full bg-blue-600 transition-all duration-500" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-600">
+          <span className="truncate">{job.message || '실행 중'}</span>
+          {elapsed && <span className="shrink-0 tabular-nums">경과 {elapsed}</span>}
+        </div>
+      </button>
+    </li>
   );
 };
 
-/**
- * "최근 사용" 섹션 — 서버에 동기화된 최근 방문 앱을 최신순으로 최대 6장 보여준다.
- * 표시할 카드가 없으면 섹션 자체를 그리지 않는다(spec D9).
- * ⚠ Hook 규약을 지키기 위해 IIFE 가 아닌 별도 컴포넌트로 분리했다.
- */
-const RecentAppsSection = ({ favorites, onOpen, onToggleFavorite }) => {
-  const { recentApps } = useRecentActivity();
-  const { apps: catalogue, isBlockedFor } = useAppCatalogue();
-  const isAdmin = getIsAdmin();
+const ResultRow = ({ project, onDetail, onRestart }) => {
+  const status = RESULT_STATUS[project.status] || { icon: Clock, cls: 'text-slate-500', label: project.status || '대기' };
+  const Icon = status.icon;
+  const failed = project.status === 'Failed' || project.status === 'Interrupted';
+  const appTitle = getDisplayProgramName(project.program_name);
+  const when = (
+    <span className="shrink-0 text-xs tabular-nums text-slate-500" title={formatAbsolute(project.created_at)}>
+      {formatRelative(project.created_at)}
+    </span>
+  );
 
-  // 저장된 즐겨찾기 이름은 앱 이름 변경 전 값일 수 있으므로 정식 이름으로 맞춘 뒤 비교한다.
-  // 해제할 때는 저장된 원래 문자열을 그대로 넘겨야 toggleFavorite(정확 일치)이 제대로 지운다.
-  // ⚠ 이 파일은 lucide-react 의 `Map` 아이콘을 import 해 전역 Map 생성자가 가려진다 — 평범한 객체를 쓴다.
-  const favoriteStoredTitleByApp = Object.create(null);
-  for (const storedTitle of favorites || []) {
-    const canonical = findAppByAnyName(storedTitle)?.title ?? storedTitle;
-    if (favoriteStoredTitleByApp[canonical] === undefined) favoriteStoredTitleByApp[canonical] = storedTitle;
+  // 성공·취소 등은 한 줄 — 행 전체가 상세 열기 버튼이다.
+  if (!failed) {
+    return (
+      <li>
+        <button
+          type="button"
+          onClick={onDetail}
+          className="group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+        >
+          <Icon size={15} className={`shrink-0 ${status.cls}`} aria-label={status.label} />
+          <span className="shrink-0 text-sm font-bold text-slate-800" title={project.program_name}>{appTitle}</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-slate-500" title={project.project_name}>
+            {project.project_name || '이름 없는 프로젝트'}
+          </span>
+          {when}
+          <ChevronRight size={14} className="shrink-0 text-slate-300 transition-colors group-hover:text-blue-600" />
+        </button>
+      </li>
+    );
   }
 
-  const items = (recentApps || [])
-    .map(item => {
-      const app = findAppByAnyName(item.label || item.menu)
-        || catalogue.find(a => getAppMenuName(a.title) === item.menu);
-      // 카탈로그 기준 앱(관리자 오버라이드 반영)으로 다시 해석한다.
-      const resolved = app ? catalogue.find(a => a.title === app.title) : null;
-      return resolved ? { app: resolved, item } : null;
-    })
-    .filter(pair => pair && pair.app.hasPage && !isBlockedFor(pair.app, isAdmin))
-    .slice(0, RECENT_APPS_WINDOW_SIZE);
-
-  if (items.length === 0) return null;
-
+  const reason = failureReason(project);
   return (
-    <div className="shrink-0">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <DashboardSectionTitle icon={History} title="최근 사용" accent="history" />
-      </div>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {items.map(({ app, item }) => (
-          <RecentAppCard
-            key={item.menu}
-            app={app}
-            at={item.at}
-            isFavorite={favoriteStoredTitleByApp[app.title] !== undefined}
-            onOpen={() => onOpen(app.title)}
-            onToggleFavorite={() => onToggleFavorite(favoriteStoredTitleByApp[app.title] ?? app.title)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const QueueStatusCard = React.memo(function QueueStatusCard({ className = '' }) {
-  const [queueStatus, setQueueStatus] = useState({ running: 0, pending: 0, limit: 2 });
-  const [isBackendConnected, setIsBackendConnected] = useState(false);
-
-  useEffect(() => {
-    const fetchQueue = async () => {
-      if (document.hidden) return;
-      try {
-        const res = await getQueueStatus();
-        setQueueStatus(res.data);
-        setIsBackendConnected(true);
-      } catch (error) {
-        console.error("Queue Status fetch error", error);
-        setIsBackendConnected(false);
-      }
-    };
-    fetchQueue();
-    const interval = setInterval(fetchQueue, POLLING_POLICY.systemIntervalMs);
-    const onVisible = () => { if (!document.hidden) fetchQueue(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, []);
-
-  const usageRatio = queueStatus.limit > 0 ? (queueStatus.running / queueStatus.limit) * 100 : 0;
-
-  return (
-    <div className={`${DASHBOARD_CARD_BASE} min-h-[116px] p-4 xl:p-5 border-blue-200 bg-blue-50/45 hover:border-blue-300 hover:shadow-md ${className}`}>
-      <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-        <Server size={100} />
-      </div>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-slate-600 text-sm font-bold tracking-tight flex items-center gap-2">
-          <Activity size={16} className="text-blue-500" /> 해석 서버 부하 현황
-        </h3>
-        {isBackendConnected ? (
-          <span className="inline-flex items-center text-[10px] font-bold text-emerald-700" title="백엔드 서버와 정상적으로 연결되어 있습니다.">
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1 animate-pulse"></span>
-            온라인
-          </span>
-        ) : (
-          <span className="inline-flex items-center text-[10px] font-bold text-red-700" title="백엔드 서버 연결이 끊겼습니다.">
-            <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-1"></span>
-            오프라인
-          </span>
-        )}
-      </div>
-      <p className="text-[11px] text-slate-600 font-bold mb-2">현재 서버 구동 현황</p>
-      <div className="text-2xl font-extrabold text-slate-800 tracking-tight mb-2">
-        {queueStatus.running} <span className="text-sm text-slate-500 font-medium">/ {queueStatus.limit} 구동 중</span>
-      </div>
-      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-3">
-        <div
-          className={`h-full transition-all duration-500 ${queueStatus.running >= queueStatus.limit ? 'bg-red-500' : 'bg-blue-500'}`}
-          style={{ width: `${usageRatio}%` }}
-        ></div>
-      </div>
-      <div className="flex items-center gap-2 text-xs font-bold text-slate-600 bg-white/70 p-2 rounded-xl border border-blue-100">
-        <Activity size={14} className={queueStatus.pending > 0 ? "text-orange-500" : "text-slate-500"} />
-        대기 중인 큐: <span className={queueStatus.pending > 0 ? "text-orange-600" : "text-slate-500"}>{queueStatus.pending} 건</span>
-      </div>
-    </div>
-  );
-});
-
-// 공유 Badge 컴포넌트에 매핑(자체 구현 제거 — bg-emerald-100 등 드리프트 해소)
-const STATUS_BADGE = {
-  Success: { variant: 'success', label: '해석 완료' },
-  Failed:  { variant: 'error',   label: '해석 실패' },
-  Pending: { variant: 'neutral', label: '대기 중' },
-};
-
-const ProjectRow = ({ id, name, type, status, date, onOpen, className = '' }) => {
-  const s = STATUS_BADGE[status] || { variant: 'neutral', label: status || '대기 중' };
-  const displayName = name || '이름 없는 프로젝트';
-  return (
-    <tr
-      onClick={onOpen}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen?.(); } }}
-      aria-label={`${displayName} 결과 상세 열기`}
-      className={`group cursor-pointer border-b border-slate-100 last:border-0 hover:bg-blue-50/60 transition-colors focus:outline-none focus-visible:bg-blue-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 ${className}`}
-    >
-      <td className="py-2.5 px-4 font-mono text-xs text-slate-500 text-center">{id}</td>
-      <td className="py-2.5 px-4">
-        <div className="flex items-center">
-          <FileText size={15} className="text-slate-400 mr-2" />
-          <span className="font-bold text-sm text-slate-700 group-hover:text-blue-700 transition-colors">
-            {displayName}
-          </span>
-        </div>
-      </td>
-      <td className="py-2.5 px-4 text-xs text-slate-500 font-mono">
-        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 font-semibold text-slate-600" title={type}>{getDisplayProgramName(type)}</span>
-      </td>
-      <td className="py-2.5 px-4">
-        <Badge variant={s.variant} size="sm" dot>{s.label}</Badge>
-      </td>
-      <td className="py-2.5 px-4 text-xs font-medium text-slate-500 text-right">{new Date(date).toLocaleString()}</td>
-    </tr>
-  );
-};
-
-// 서버에서 제공하는 단일 런칭 덱 진입점. 밝은 작업면 위에서 절제된
-// Trust Blue 계열만 사용해 로드맵 및 운영 카드와 시각적 위계를 맞춘다.
-const HiTessIntroBanner = ({ onClick }) => {
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      className="relative w-full overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-white via-blue-50/30 to-blue-50/70 text-left shadow-sm transition-all hover:border-blue-200 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 group"
-      whileHover={{ y: -2, transition: { type: 'spring', stiffness: 350, damping: 28 } }}
-    >
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <Layers size={120} className="absolute -right-6 -bottom-6 rotate-12 text-blue-900/[0.035]" />
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-50/40 via-transparent to-transparent" />
-      </div>
-
-      <div className="relative z-10 flex flex-row items-center gap-3 px-4 py-2.5">
-        <div className="shrink-0 rounded-lg border border-blue-100 bg-blue-50 p-2 shadow-sm transition-all group-hover:scale-105 group-hover:bg-blue-100">
-          <Layers size={18} className="text-blue-700" />
-        </div>
-
+    <li className="rounded-xl border border-red-200 bg-red-50/60 px-3 py-2.5">
+      <div className="flex items-start gap-2.5">
+        <Icon size={16} className={`mt-0.5 shrink-0 ${status.cls}`} aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-bold leading-tight tracking-tight text-slate-900">
-            HiTESS WorkBench 소개
-          </h3>
-          <p className="truncate text-[11px] text-slate-500">
-            통합 해석 플랫폼과 주요 업무 흐름을 살펴보세요
-          </p>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1 text-xs font-semibold text-blue-700 transition-colors group-hover:text-blue-800">
-          <span className="hidden whitespace-nowrap lg:block">소개 보기</span>
-          <ChevronRight size={15} className="group-hover:translate-x-0.5 transition-transform" />
-        </div>
-      </div>
-    </motion.button>
-  );
-};
-
-const AppRoadmapBanner = ({ onOpenModal }) => {
-  // 관리자가 App Settings 에서 바꾼 상태가 로드맵 집계에도 반영되도록 실효 카탈로그를 쓴다.
-  const { apps: catalogue } = useAppCatalogue();
-  const statusCounts = catalogue.reduce((acc, app) => {
-    const status = app.devStatus || 'Active';
-    acc[status] = (acc[status] || 0) + 1;
-    return acc;
-  }, {});
-  const activeCount = statusCounts.Active || 0;
-  const devCount = statusCounts.Developing || 0;
-  const plannedCount = statusCounts.Planned || 0;
-  const modeSummary = ROADMAP_MODE_ORDER
-    .map(mode => ({
-      mode,
-      info: MODE_BADGE[mode],
-      apps: catalogue.filter(a => a.mode === mode),
-    }))
-    .filter(item => item.apps.length > 0);
-
-  return (
-    <div
-      onClick={onOpenModal}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenModal(); } }}
-      className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden cursor-pointer hover:border-blue-200 hover:shadow-md transition-all group flex flex-col lg:flex-row lg:min-h-[68px] relative focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
-    >
-      <Map size={86} className="absolute -left-8 -bottom-9 text-brand-blue/[0.04] rotate-12 pointer-events-none" />
-      <div className="px-4 py-3 lg:w-[280px] border-b lg:border-b-0 lg:border-r border-slate-200 relative z-10 flex flex-col justify-center bg-slate-50/60">
-        <h3 className="text-slate-800 font-bold text-sm flex items-center gap-2 mb-2">
-          <Map size={15} className="text-blue-600"/> 시스템 해석 앱 로드맵
-        </h3>
-        <div className="grid grid-cols-3 gap-1.5 text-center">
-          <span className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5">
-            <span className="text-sm font-black text-slate-900 leading-none">{activeCount}</span>
-            <span className="text-[10px] font-bold text-emerald-700">서비스</span>
-          </span>
-          <span className="flex items-center justify-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5">
-            <span className="text-sm font-black text-slate-900 leading-none">{devCount}</span>
-            <span className="text-[10px] font-bold text-amber-700">개발</span>
-          </span>
-          <span className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-            <span className="text-sm font-black text-slate-900 leading-none">{plannedCount}</span>
-            <span className="text-[10px] font-bold text-slate-500">예정</span>
-          </span>
-        </div>
-      </div>
-      <div className="px-3.5 py-2.5 lg:flex-1 relative overflow-hidden flex flex-col justify-center gap-2">
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 items-stretch gap-2 pr-0 lg:pr-28">
-          {modeSummary.map(({ mode, info, apps }) => {
-            const modeActive = apps.filter(a => (a.devStatus || 'Active') === 'Active').length;
-            const modeDev = apps.filter(a => a.devStatus === 'Developing').length;
-            return (
-            <div key={mode} className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-1.5 min-h-[46px] min-w-0 h-full flex flex-col justify-center transition-colors group-hover:border-blue-200 group-hover:bg-blue-50/50">
-              <p className="text-[11px] font-bold text-slate-700 truncate">{(MODE_KO[mode] || info.label).replace(/ Apps$/, '')}</p>
-              <div className="mt-1 flex items-end justify-between gap-2">
-                <p className="text-brand-blue text-base font-black leading-none">{apps.length}</p>
-                <p className="text-[10px] font-semibold text-slate-500 whitespace-nowrap">
-                  운영 <span className="font-extrabold text-emerald-600">{modeActive}</span>
-                  <span className="mx-0.5 text-slate-300">·</span>
-                  개발 <span className="font-extrabold text-amber-600">{modeDev}</span>
-                </p>
-              </div>
-            </div>
-            );
-          })}
-        </div>
-        <div className="hidden lg:flex absolute right-3 top-1/2 -translate-y-1/2 items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1.5 group-hover:bg-blue-100 transition-colors">
-          지도 열기 <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform"/>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const PROMOTION_VIDEOS = [
-  {
-    id: 'workbench',
-    title: 'HiTESS WorkBench',
-    subtitle: '차세대 조선해양 구조 해석 플랫폼',
-    filename: 'HiTESS Workbench.mp4',
-  },
-  {
-    id: 'digital-engineering',
-    title: 'HiTESS 설계와 디지털 엔지니어링의 연결',
-    subtitle: '설계 데이터와 디지털 엔지니어링 업무 흐름 소개',
-    filename: 'HiTESS 설계와 디지털 엔지니어링의 연결.mp4',
-  },
-];
-
-const buildPromotionVideoUrl = (filename) => (
-  `${API_BASE_URL}/static/videos/${encodeURIComponent(filename)}`
-);
-
-// HiTESS Story 선택 및 플레이어 모달
-// — 모달이 열릴 때만 <video>를 DOM에 마운트하여 백그라운드 디코딩/네트워크 낭비를 방지한다.
-// — crossOrigin 속성 미설정: 미디어 스트리밍은 CORS 헤더 없이도 동작하며,
-//   crossOrigin을 켜면 오히려 CORS 헤더를 요구해 재생이 깨진다.
-const VideoPlayerModal = ({ isOpen, onClose }) => {
-  const videoRef = useRef(null);
-  const [selectedVideo, setSelectedVideo] = useState(null);
-
-  useEffect(() => {
-    if (!isOpen) {
-      const video = videoRef.current;
-      if (video) {
-        video.pause();
-        video.currentTime = 0;
-      }
-      setSelectedVideo(null);
-    }
-  }, [isOpen]);
-
-  const videoUrl = selectedVideo ? buildPromotionVideoUrl(selectedVideo.filename) : '';
-
-  return (
-    <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-[100]" onClose={onClose}>
-        {/* 배경 오버레이 */}
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
-          leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
-        </Transition.Child>
-
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-250" enterFrom="opacity-0 scale-95 translate-y-4" enterTo="opacity-100 scale-100 translate-y-0"
-            leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
-          >
-            <Dialog.Panel
-              className="w-full max-w-4xl bg-[#001a3d] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-            >
-              {/* 모달 헤더 */}
-              <div
-                className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 shrink-0"
-                style={{ background: 'linear-gradient(90deg, #002554 0%, #00305c 100%)' }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-white/10 border border-white/15">
-                    <Play size={16} className="text-blue-200" fill="currentColor" />
-                  </div>
-                  <div>
-                    <Dialog.Title className="text-white font-bold text-sm leading-tight">
-                      {selectedVideo ? selectedVideo.title : 'HiTESS Story'}
-                    </Dialog.Title>
-                    <p className="text-slate-300 text-[11px]">
-                      {selectedVideo ? selectedVideo.subtitle : '재생할 영상을 선택하세요'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={onClose}
-                  className="inline-flex items-center justify-center min-w-10 min-h-10 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-                  aria-label="영상 모달 닫기"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              {selectedVideo ? (
-                <>
-                  <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.04] px-5 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedVideo(null)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-blue-100 hover:bg-white/15 hover:text-white transition-colors cursor-pointer"
-                    >
-                      <ChevronRight size={14} className="rotate-180" />
-                      영상 목록
-                    </button>
-                    <span className="truncate text-[11px] font-semibold text-slate-300">{selectedVideo.filename}</span>
-                  </div>
-
-                  {/* 16:9 비율 영상 컨테이너 */}
-                  {/* isOpen이 true일 때만 <video>를 마운트 — 닫힌 상태에서 네트워크 요청 없음 */}
-                  <div className="relative w-full bg-black" style={{ paddingBottom: '56.25%' }}>
-                    {isOpen && (
-                      <video
-                        ref={videoRef}
-                        src={videoUrl}
-                        controls
-                        autoPlay
-                        className="absolute inset-0 w-full h-full"
-                        style={{ display: 'block' }}
-                      />
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="grid gap-3 bg-slate-950/45 p-5 sm:grid-cols-2">
-                  {PROMOTION_VIDEOS.map((video) => (
-                    <button
-                      key={video.id}
-                      type="button"
-                      onClick={() => setSelectedVideo(video)}
-                      className="group flex min-h-32 items-start justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.07] p-4 text-left transition-colors hover:border-blue-300/50 hover:bg-white/[0.11] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 cursor-pointer"
-                    >
-                      <span className="min-w-0">
-                        <span className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-400/15 text-blue-200 ring-1 ring-blue-200/20">
-                          <Play size={16} fill="currentColor" />
-                        </span>
-                        <span className="block text-sm font-extrabold leading-snug text-white">
-                          {video.title}
-                        </span>
-                        <span className="mt-1.5 block text-xs font-medium leading-relaxed text-slate-300">
-                          {video.subtitle}
-                        </span>
-                      </span>
-                      <ChevronRight size={18} className="mt-1 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-200" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </Dialog.Panel>
-          </Transition.Child>
-        </div>
-      </Dialog>
-    </Transition>
-  );
-};
-
-const NoticeStrip = ({ onOpenDetail, onOpenList }) => {
-  const [notices, setNotices] = useState([]);
-  const [lastSeenId, setLastSeenId] = useState(0);
-
-  useEffect(() => {
-    getNotices()
-      .then(res => {
-        const data = Array.isArray(res.data) ? res.data : [];
-        const sorted = [...data].sort((a, b) => {
-          if (!!a.is_pinned !== !!b.is_pinned) return a.is_pinned ? -1 : 1;
-          return new Date(b.created_at) - new Date(a.created_at);
-        });
-        setNotices(sorted.slice(0, 5));
-      })
-      .catch(() => {});
-    const seen = parseInt(localStorage.getItem('notice_last_seen_id') || '0', 10);
-    if (Number.isFinite(seen)) setLastSeenId(seen);
-  }, []);
-
-  if (notices.length === 0) return null;
-
-  const unreadCount = notices.filter(n => Number(n.id) > lastSeenId).length;
-  const current = notices[0];
-  const style = NOTICE_TYPE_STYLE[current.type] || NOTICE_TYPE_STYLE.Notice;
-
-  const formatRelative = (s) => {
-    if (!s) return '';
-    const d = new Date(s);
-    const now = new Date();
-    const diffH = (now - d) / 36e5;
-    if (diffH < 1) return '방금 전';
-    if (diffH < 24) return `${Math.floor(diffH)}시간 전`;
-    if (diffH < 24 * 7) return `${Math.floor(diffH / 24)}일 전`;
-    return d.toLocaleDateString();
-  };
-
-  const markAsSeen = () => {
-    const maxId = notices.reduce((m, n) => Math.max(m, Number(n.id) || 0), 0);
-    if (maxId > lastSeenId) {
-      localStorage.setItem('notice_last_seen_id', String(maxId));
-      setLastSeenId(maxId);
-    }
-  };
-
-  const handleOpenCurrent = () => {
-    markAsSeen();
-    if (current) onOpenDetail(current);
-  };
-
-  const handleOpenAll = (e) => {
-    e.stopPropagation();
-    markAsSeen();
-    onOpenList();
-  };
-
-  return (
-    <motion.div
-      onClick={handleOpenCurrent}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpenCurrent(); }
-      }}
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: 'easeOut' }}
-      whileHover={{ y: -1 }}
-      className="relative bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors cursor-pointer overflow-hidden group"
-    >
-      {/* 좌측 컬러 스트라이프·글로우 제거 — 아이콘·타입 칩으로 구분 */}
-      <div className="relative flex items-center gap-2.5 px-3.5 py-2">
-        {/* 좌측 라벨 + NEW 배지 */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <div className="relative">
-            <div className="p-1.5 rounded-md bg-slate-50 border border-slate-100 group-hover:bg-blue-50 group-hover:border-blue-100 transition-colors">
-              <Megaphone size={13} className="text-slate-600 group-hover:text-blue-600 transition-colors" />
-            </div>
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 ring-2 ring-white" />
-              </span>
-            )}
+          <div className="flex items-baseline gap-2">
+            <span className="shrink-0 text-sm font-bold text-slate-800" title={project.program_name}>{appTitle}</span>
+            <span className={`shrink-0 text-xs font-bold ${status.cls}`}>{status.label}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-slate-500" title={project.project_name}>{project.project_name}</span>
           </div>
-          <span className="text-[11px] font-bold text-slate-700 tracking-tight whitespace-nowrap">공지 &amp; 업데이트</span>
-          {unreadCount > 0 && (
-            <motion.span
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="inline-flex items-center gap-1 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-100"
-            >
-              <Sparkles size={9} />
-              NEW {unreadCount}
-            </motion.span>
+          {reason ? (
+            <p className="mt-1 text-xs font-medium text-red-800">사유: {reason}</p>
+          ) : (
+            <p className="mt-1 text-xs text-slate-600">실패 사유가 기록되지 않았습니다 — 상세에서 로그를 확인하세요.</p>
           )}
         </div>
-
-        {/* 구분선 */}
-        <div className="h-5 w-px bg-slate-200 shrink-0" />
-
-        {/* 본문 (회전) */}
-        <div className="flex-1 min-w-0 flex items-center gap-2 overflow-hidden">
-          <span className={`shrink-0 inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded border ${style.chip}`}>
-            {current.is_pinned && <Pin size={9} className="-mt-px" />}
-            {style.label}
-          </span>
-          <motion.div
-            key={current.id}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.35, ease: 'easeOut' }}
-            className="flex-1 min-w-0 flex items-center gap-2"
-          >
-            <span className="text-xs font-semibold text-slate-700 truncate group-hover:text-blue-600 transition-colors">
-              {current.title || '(제목 없음)'}
-            </span>
-            <span className="text-[10px] text-slate-500 shrink-0 hidden sm:inline">
-              {formatRelative(current.created_at)}
-            </span>
-          </motion.div>
-        </div>
-
-        {/* 우측 CTA */}
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={handleOpenAll}
-            title="전체 공지 목록으로 이동"
-            className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-blue-600 px-2 py-1 rounded-md hover:bg-blue-50 transition-colors cursor-pointer"
-          >
-            <span className="hidden md:inline">전체보기</span>
-            <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
-          </button>
-        </div>
+        {when}
       </div>
-    </motion.div>
-  );
-};
-
-const MODE_BADGE = {
-  File:         { title: 'File-Based Apps', label: 'File-Based',   cls: 'text-blue-700 bg-blue-50 border-blue-200',       ring: 'border-l-blue-500',       iconBg: 'bg-blue-600',       summary: 'CSV, BDF, FEM 결과 파일을 업로드해 해석 모델 생성, 검토, 파이프라인 작업을 수행합니다.' },
-  Interactive:  { title: 'Interactive Apps', label: 'Interactive',   cls: 'text-violet-700 bg-violet-50 border-violet-200', ring: 'border-l-violet-500',     iconBg: 'bg-violet-600',     summary: '형상과 단면 조건을 화면에서 직접 조작하며 즉시 계산 결과를 확인하는 도구입니다.' },
-  Parametric:   { title: 'Parametric Apps', label: 'Parametric', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', ring: 'border-l-emerald-500', iconBg: 'bg-emerald-600',    summary: '설계 파라미터를 입력해 규칙 기반 계산, 최적 후보 탐색, 상세 판정을 수행합니다.' },
-  Productivity: { title: 'Productivity Apps', label: 'Productivity', cls: 'text-amber-700 bg-amber-50 border-amber-200',   ring: 'border-l-amber-500',      iconBg: 'bg-amber-500',      summary: '해석 전후처리, 파일 검증, 결과 추출처럼 반복 업무를 줄이는 보조 도구입니다.' },
-};
-
-const STATUS_GROUP_STYLE = {
-  Active:     { label: '서비스 중', bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', dot: 'bg-emerald-500', icon: Rocket },
-  Developing: { label: '개발 중',   bg: 'bg-amber-50 border-amber-200',     text: 'text-amber-700',   dot: 'bg-amber-500',   icon: Wrench },
-  Planned:    { label: '예정',      bg: 'bg-slate-50 border-slate-200',      text: 'text-slate-600',   dot: 'bg-slate-400',   icon: Clock },
-};
-
-const ROADMAP_STATUS_DOT = {
-  Active: 'bg-emerald-500',
-  Developing: 'bg-amber-400',
-  Planned: 'bg-slate-400',
-};
-
-const ROADMAP_MODE_ORDER = ['File', 'Interactive', 'Parametric', 'Productivity'];
-const ROADMAP_STATUS_ORDER = ['Active', 'Developing', 'Planned'];
-
-const ROADMAP_STATUS_BADGE = {
-  Active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  Developing: 'bg-amber-50 text-amber-700 border-amber-200',
-  Planned: 'bg-slate-50 text-slate-600 border-slate-200',
-};
-
-const isRoadmapAppNavigable = (app) =>
-  (app.devStatus || 'Active') === 'Active' && app.hasPage;
-
-const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
-  const { apps: catalogue } = useAppCatalogue();
-  const totalCount = catalogue.length;
-  const statusCounts = catalogue.reduce((acc, app) => {
-    const status = app.devStatus || 'Active';
-    acc[status] = (acc[status] || 0) + 1;
-    return acc;
-  }, {});
-  const modeSummaries = ROADMAP_MODE_ORDER
-    .map(mode => {
-      const apps = catalogue.filter(a => a.mode === mode);
-      const categories = new Set(apps.map(a => a.category));
-      return {
-        mode,
-        apps,
-        categories,
-        info: MODE_BADGE[mode] || MODE_BADGE.File,
-        activeCount: apps.filter(a => (a.devStatus || 'Active') === 'Active').length,
-        developingCount: apps.filter(a => a.devStatus === 'Developing').length,
-      };
-    })
-    .filter(item => item.apps.length > 0);
-
-  return (
-    <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-[100]" onClose={onClose}>
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" />
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Dialog.Panel className="w-full max-w-7xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" style={{ background: '#F0F3FA' }}>
-            {/* 헤더 */}
-            <div className="bg-brand-blue px-5 py-4 flex justify-between items-center text-white shrink-0">
-              <div>
-                <Dialog.Title className="font-bold text-lg flex items-center gap-2">
-                  <Map size={20} className="text-blue-300"/> HiTESS 워크벤치 로드맵
-                </Dialog.Title>
-                <p className="text-xs text-blue-100 mt-1">업무 유형, 서비스 상태, 앱 목적을 한 번에 훑어볼 수 있는 전체 지도입니다.</p>
-              </div>
-              <button onClick={onClose} className="inline-flex items-center justify-center min-w-10 min-h-10 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"><X size={20}/></button>
-            </div>
-
-            {/* 읽는 순서: 전체 요약 → 상태 범례 → 업무 유형 바로가기 */}
-            <div className="px-5 py-4 border-b border-slate-200 bg-white shrink-0">
-              <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-4">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-bold text-slate-500 mb-1">전체 구조</p>
-                  <div className="flex items-end gap-2">
-                    <span className="text-3xl font-black text-slate-900 leading-none">{totalCount}</span>
-                    <span className="pb-1 text-sm font-bold text-slate-600">개 앱 · {modeSummaries.length}개 업무 유형</span>
-                  </div>
-                  <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                    먼저 서비스 중 앱을 확인하고, 필요한 업무 유형을 선택해 세부 앱 설명을 비교하세요.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-3">
-                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                    <p className="text-[11px] font-bold text-slate-500 mb-2">상태 범례</p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {ROADMAP_STATUS_ORDER.map(key => {
-                        const style = STATUS_GROUP_STYLE[key];
-                        const Icon = style.icon;
-                        return (
-                          <div key={key} className={`rounded-lg border px-3 py-2 ${style.bg}`}>
-                            <div className={`flex items-center gap-1.5 text-[11px] font-bold ${style.text}`}>
-                              <Icon size={12} />
-                              {style.label}
-                            </div>
-                            <p className="mt-1 text-lg font-black text-slate-900">{statusCounts[key] || 0}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                    <p className="text-[11px] font-bold text-slate-500 mb-2">업무 유형 바로가기</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                      {modeSummaries.map(({ mode, apps, info, activeCount, developingCount }) => (
-                        <a
-                          key={mode}
-                          href={`#roadmap-mode-${mode}`}
-                          className={`rounded-lg border px-3 py-2 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 ${info.cls}`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-bold text-[11px] truncate">{info.title}</span>
-                            <span className="text-[11px] font-black">{apps.length}</span>
-                          </div>
-                          <p className="mt-1 text-[10px] font-semibold opacity-80">운영 {activeCount} · 개발 {developingCount}</p>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-5 py-5 custom-scrollbar space-y-4 scroll-smooth">
-              {modeSummaries.map(({ mode, apps, categories, info: modeInfo, activeCount, developingCount }) => {
-                const FirstIcon = apps[0].icon;
-                const sortedApps = [...apps].sort((a, b) => {
-                  const statusA = ROADMAP_STATUS_ORDER.indexOf(a.devStatus || 'Active');
-                  const statusB = ROADMAP_STATUS_ORDER.indexOf(b.devStatus || 'Active');
-                  if (statusA !== statusB) return statusA - statusB;
-                  return a.title.localeCompare(b.title);
-                });
-
-                return (
-                  <section id={`roadmap-mode-${mode}`} key={mode} className="scroll-mt-4 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-                    <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center gap-3">
-                      <div className={`p-2 rounded-lg ${modeInfo.iconBg} text-white shadow-sm shrink-0`}>
-                        <FirstIcon size={17} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-sm font-extrabold text-slate-800">{modeInfo.title}</h3>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${modeInfo.cls}`}>
-                            {modeInfo.label}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-white text-slate-500 border-slate-200">
-                            앱 {apps.length}개 · 카테고리 {categories.size}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs leading-relaxed text-slate-600">{modeInfo.summary}</p>
-                      </div>
-                      <div className="flex gap-1.5 shrink-0">
-                        <span className="px-2 py-1 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">서비스 {activeCount}</span>
-                        {developingCount > 0 && (
-                          <span className="px-2 py-1 text-[10px] font-bold rounded-full bg-slate-50 text-slate-500 border border-slate-200">개발 {developingCount}</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="p-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
-                      {sortedApps.map((app) => {
-                        const status = app.devStatus || 'Active';
-                        const isDeveloping = status === 'Developing';
-                        const statusStyle = STATUS_GROUP_STYLE[status] || STATUS_GROUP_STYLE.Planned;
-                        const canNavigate = isRoadmapAppNavigable(app);
-                        const AppIcon = app.icon;
-                        return (
-                          <button
-                            type="button"
-                            key={app.title}
-                            disabled={!canNavigate}
-                            title={canNavigate ? `${app.title} 열기` : `${app.title}은 현재 바로가기를 지원하지 않습니다.`}
-                            onClick={() => canNavigate && onSelectApp?.(app)}
-                            className={`relative text-left rounded-lg px-3.5 py-3 transition-all border group overflow-hidden min-h-[138px] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 ${
-                              canNavigate
-                                ? 'bg-white border-slate-200 shadow-sm cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-blue-300 hover:bg-blue-50/30'
-                                : isDeveloping
-                                  ? 'bg-slate-50/70 border-slate-200 shadow-none opacity-80 cursor-default hover:border-amber-200 hover:bg-amber-50/30'
-                                  : 'bg-slate-50/70 border-slate-200 shadow-none opacity-80 cursor-default hover:border-slate-300 hover:bg-slate-100/60'
-                            }`}
-                          >
-                            <div className={`absolute -right-4 -bottom-4 pointer-events-none ${isDeveloping ? 'opacity-[0.025]' : 'opacity-[0.035]'}`}>
-                              <AppIcon size={58} />
-                            </div>
-
-                            <div className="relative flex items-start gap-2">
-                              <div className={`p-1.5 text-white rounded-md transition-transform shrink-0 ${
-                                isDeveloping
-                                  ? 'bg-slate-300 shadow-sm'
-                                  : `${app.color} shadow-md group-hover:scale-105`
-                              }`}>
-                                <AppIcon size={15} />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ROADMAP_STATUS_DOT[status] || ROADMAP_STATUS_DOT.Planned}`} />
-                                  <span className="text-[10px] font-bold text-slate-500 truncate">{app.category}</span>
-                                </div>
-                                <h4 className="font-bold text-slate-800 text-[13px] leading-snug line-clamp-2">{app.title}</h4>
-                              </div>
-                            </div>
-
-                            <p className="relative mt-2 text-[11px] leading-relaxed text-slate-600 line-clamp-2">
-                              {app.description}
-                            </p>
-
-                            <div className="relative mt-3 flex flex-wrap items-center gap-1.5">
-                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${ROADMAP_STATUS_BADGE[status] || ROADMAP_STATUS_BADGE.Planned}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
-                                {statusStyle.label}
-                              </span>
-                              {canNavigate && (
-                                <span className="text-[10px] text-blue-600 font-bold bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                                  바로가기
-                                </span>
-                              )}
-                              {(app.relatedApps?.length > 0 || app.acceptsTransferFrom?.length > 0) && (
-                                <span className="text-[10px] text-indigo-500 font-bold bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">
-                                  연계
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="relative mt-2 flex items-center justify-between gap-2">
-                              <div className="flex flex-wrap gap-1 overflow-hidden">
-                                {(app.tags || []).slice(0, 3).map(tag => (
-                                  <span key={tag} className="text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">
-                                    {tag}
-                                  </span>
-                                ))}
-                              </div>
-                              {app.contributor && (
-                                <span className="text-[10px] font-bold text-slate-500 shrink-0">{app.contributor}</span>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-                );
-              })}
-            </div>
-          </Dialog.Panel>
-        </div>
-      </Dialog>
-    </Transition>
-  );
-};
-function IntroModal({ isOpen, onClose, src }) {
-  const iframeRef = useRef(null);
-  const [loadState, setLoadState] = useState('idle');
-  const [loadError, setLoadError] = useState('');
-  const [retryKey, setRetryKey] = useState(0);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setLoadState('idle');
-      setLoadError('');
-      return undefined;
-    }
-
-    const controller = new AbortController();
-    let active = true;
-    setLoadState('loading');
-    setLoadError('');
-
-    const timeoutId = window.setTimeout(() => {
-      if (!active) return;
-      controller.abort();
-      setLoadError('서버 응답 시간이 초과되었습니다.');
-      setLoadState('error');
-    }, 15000);
-
-    const verifyPresentation = async () => {
-      try {
-        const response = await fetch(src, {
-          cache: 'no-store',
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.toLowerCase().includes('text/html')) {
-          throw new Error('HTML 응답이 아닙니다.');
-        }
-        const html = await response.text();
-        if (!html.trim()) {
-          throw new Error('소개자료가 비어 있습니다.');
-        }
-        if (active) setLoadState('frame-loading');
-      } catch (error) {
-        if (!active || error?.name === 'AbortError') return;
-        console.error('소개자료 확인 실패:', error);
-        setLoadError(error?.message?.startsWith('HTTP ')
-          ? `서버가 소개자료를 제공하지 못했습니다. (${error.message})`
-          : '서버에서 소개자료를 불러오지 못했습니다.');
-        setLoadState('error');
-      } finally {
-        window.clearTimeout(timeoutId);
-      }
-    };
-
-    verifyPresentation();
-    return () => {
-      active = false;
-      window.clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [isOpen, retryKey, src]);
-
-  useEffect(() => {
-    if (!isOpen || loadState !== 'frame-loading') return undefined;
-    const timeoutId = window.setTimeout(() => {
-      setLoadError('소개자료 화면을 여는 데 시간이 너무 오래 걸립니다.');
-      setLoadState('error');
-    }, 15000);
-    return () => window.clearTimeout(timeoutId);
-  }, [isOpen, loadState]);
-
-  const handleFullscreen = () => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    if (iframe.requestFullscreen) iframe.requestFullscreen();
-    else if (iframe.webkitRequestFullscreen) iframe.webkitRequestFullscreen();
-  };
-
-  const retry = () => setRetryKey(value => value + 1);
-  const canRenderFrame = loadState === 'frame-loading' || loadState === 'ready';
-
-  return (
-    <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-[100]" onClose={onClose}>
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
-          leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
+      <div className="mt-2 flex justify-end gap-1.5">
+        <button
+          type="button"
+          onClick={onRestart}
+          className="inline-flex items-center gap-1 rounded-lg bg-brand-blue px-2.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#003366] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
         >
-          <div className="fixed inset-0 bg-black/75 backdrop-blur-sm" />
-        </Transition.Child>
-
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-250" enterFrom="opacity-0 scale-95 translate-y-4" enterTo="opacity-100 scale-100 translate-y-0"
-            leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
-          >
-            <Dialog.Panel className="w-full max-w-6xl bg-brand-blue rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-              style={{ height: 'min(90vh, 860px)' }}
-            >
-              {/* 헤더 */}
-              <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 shrink-0"
-                style={{ background: 'linear-gradient(90deg, #00305c 0%, #002554 70%)' }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-white/10 border border-white/15">
-                    <Layers size={18} className="text-blue-200" />
-                  </div>
-                  <div>
-                    <Dialog.Title className="text-white font-bold text-sm leading-tight">
-                      HiTESS WorkBench 소개
-                    </Dialog.Title>
-                    <p className="text-slate-300 text-[11px]">통합 해석 플랫폼 런칭 자료</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={handleFullscreen}
-                    title="소개자료 전체화면"
-                    aria-label="소개자료 전체화면"
-                    disabled={!canRenderFrame}
-                    className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
-                  >
-                    <Maximize2 size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    title="소개자료 닫기"
-                    aria-label="소개자료 닫기"
-                    className="inline-flex items-center justify-center min-w-10 min-h-10 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-              </div>
-
-              {/* iframe 본문 */}
-              <div className="relative flex-1 overflow-hidden bg-[#E8EDF5]">
-                {canRenderFrame && (
-                  <iframe
-                    key={retryKey}
-                    ref={iframeRef}
-                    className={`h-full w-full border-0 transition-opacity duration-200 ${loadState === 'ready' ? 'opacity-100' : 'opacity-0'}`}
-                    src={src}
-                    title="HiTESS WorkBench 소개"
-                    sandbox="allow-scripts"
-                    allowFullScreen
-                    onLoad={() => {
-                      setLoadState('ready');
-                      iframeRef.current?.focus();
-                    }}
-                    onError={() => {
-                      setLoadError('소개자료 화면을 열지 못했습니다.');
-                      setLoadState('error');
-                    }}
-                  />
-                )}
-
-                {loadState !== 'ready' && (
-                  <div className="absolute inset-0 flex items-center justify-center p-6">
-                    {loadState === 'error' ? (
-                      <div className="flex max-w-lg flex-col items-center gap-3 text-center" role="alert">
-                        <div className="rounded-full border border-red-200 bg-red-50 p-3">
-                          <Server size={28} className="text-red-600" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-800">소개자료를 불러올 수 없습니다.</p>
-                          <p className="mt-1 text-xs text-slate-600">{loadError}</p>
-                          <p className="mt-2 break-all font-mono text-[11px] text-slate-500">서버: {API_BASE_URL}</p>
-                        </div>
-                        <Button type="button" variant="primary" size="sm" onClick={retry}>
-                          다시 시도
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-3 text-center" role="status" aria-live="polite">
-                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" aria-hidden="true" />
-                        <div>
-                          <p className="text-sm font-bold text-slate-700">소개자료를 불러오는 중입니다.</p>
-                          <p className="mt-1 font-mono text-[11px] text-slate-500">{API_BASE_URL}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </Dialog.Panel>
-          </Transition.Child>
-        </div>
-      </Dialog>
-    </Transition>
+          <RotateCcw size={13} /> 같은 앱에서 새로 시작
+        </button>
+        <button
+          type="button"
+          onClick={onDetail}
+          className="inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-300 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+        >
+          상세·로그 <ChevronRight size={13} />
+        </button>
+      </div>
+    </li>
   );
-}
+};
+
+// ─────────────────────────────────────────────────────────────── 하단 참고 카드
+
+const MonthlyTrendCard = ({ months, loading }) => {
+  const max = Math.max(1, ...months.map(m => m.count));
+  const current = months[months.length - 1]?.count ?? 0;
+  const previous = months[months.length - 2]?.count ?? 0;
+  const delta = current - previous;
+  return (
+    <Card className="flex flex-1 flex-col p-4">
+      <p className="text-xs text-slate-500">
+        이번 달 <b className="tabular-nums text-slate-800">{current}건</b>
+        {months.length > 1 && (
+          <> · 전월 대비 <b className={`tabular-nums ${delta >= 0 ? 'text-emerald-700' : 'text-slate-700'}`}>{delta >= 0 ? `+${delta}` : delta}</b></>
+        )}
+      </p>
+      <div className="mt-3 flex min-h-[80px] flex-1 items-end gap-2" role="img" aria-label={months.map(m => `${m.label} ${m.count}건`).join(', ')}>
+        {loading
+          ? Array.from({ length: TREND_MONTHS }).map((_, i) => (
+            <div key={i} className="flex-1 animate-pulse rounded-t bg-slate-200" style={{ height: `${30 + i * 8}%` }} />
+          ))
+          : months.map((m, i) => (
+            <div key={m.label} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
+              <span className="text-[11px] font-bold tabular-nums text-slate-600">{m.count}</span>
+              <div
+                className={`w-full rounded-t ${i === months.length - 1 ? 'bg-brand-blue' : 'bg-blue-200'}`}
+                style={{ height: `${Math.max(4, (m.count / max) * 100)}%` }}
+              />
+            </div>
+          ))}
+      </div>
+      <div className="mt-1 flex gap-2">
+        {months.map(m => <span key={m.label} className="flex-1 text-center text-[11px] text-slate-500">{m.label}</span>)}
+      </div>
+    </Card>
+  );
+};
+
+const PopularCard = ({ rows, loading, onOpen }) => {
+  const max = rows[0]?.count || 1;
+  return (
+    <Card accent="from-amber-400/70 via-amber-200/40 to-transparent" className="flex-1 p-3">
+      <ol className="space-y-0.5">
+        {loading ? (
+          [0, 1, 2, 3, 4].map(i => <li key={i} className="h-8 animate-pulse rounded-lg bg-slate-100" />)
+        ) : rows.length === 0 ? (
+          <li className="py-6 text-center text-xs text-slate-500">최근 30일 사용 기록이 없습니다.</li>
+        ) : rows.map((item, i) => (
+          <li key={item.program_name}>
+            <button
+              type="button"
+              onClick={() => onOpen(item.program_name)}
+              className="group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            >
+              <span className="w-4 shrink-0 text-xs font-bold tabular-nums text-slate-500">{i + 1}</span>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700" title={item.program_name}>
+                {getDisplayProgramName(item.program_name)}
+              </span>
+              <span className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-slate-100">
+                <span className="block h-full rounded-full bg-blue-400" style={{ width: `${(item.count / max) * 100}%` }} />
+              </span>
+              <span className="w-10 shrink-0 text-right text-xs font-bold tabular-nums text-slate-600">{item.count}</span>
+              <ChevronRight size={14} className="shrink-0 text-slate-300 transition-colors group-hover:text-blue-600" />
+            </button>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────── 페이지
 
 export default function Dashboard() {
   const { showToast } = useToast();
   const { employeeId, user } = useAuth();
   const { setCurrentMenu } = useNavigation();
-  const { favorites, toggleFavorite, reorderFavorite } = useFavorites();
+  const { favorites, toggleFavorite } = useFavorites();
   const { setAssessmentPageState } = useAnalysisPageState();
-  // 관리자 오버라이드가 반영된 실효 카탈로그 — 즐겨찾기 카드 표시·진입 판정에 쓴다.
-  const { apps: catalogue, getBlock } = useAppCatalogue();
+  const { apps: catalogue, getBlock, isBlockedFor } = useAppCatalogue();
+  const { globalJobs = [] } = useGlobalJobs() || {};
+  const { recentApps } = useRecentActivity();
+  const admin = getIsAdmin();
 
-  const [projects, setProjects] = useState([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [monthlyUsageCount, setMonthlyUsageCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState(null);
-  const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
-  const [topProgramsLoading, setTopProgramsLoading] = useState(true);
-  const [topProgramsError, setTopProgramsError] = useState(null);
-  const [sessionContext, setSessionContext] = useState(null);
+  const [historyToken, setHistoryToken] = useState(0);
+  const [months, setMonths] = useState([]);
+  const [monthsLoading, setMonthsLoading] = useState(true);
+  const [successRate, setSuccessRate] = useState(null);
+  const [popular, setPopular] = useState([]);
+  const [popularLoading, setPopularLoading] = useState(true);
+  const [serverQueue, setServerQueue] = useState(null);
 
-  const [isRoadmapModalOpen, setIsRoadmapModalOpen] = useState(false);
-  const [gateApp, setGateApp] = useState(null); // 개발 중/예정 앱 진입 차단 모달
-  const [isIntroModalOpen, setIsIntroModalOpen] = useState(false);
-  const [introPresentationUrl, setIntroPresentationUrl] = useState('');
-  // 홍보영상 플레이어 모달 — 열릴 때만 <video>가 DOM에 마운트됨
-  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
-  // 뉴스레터 아카이브 모달
-  const [isNewsletterModalOpen, setIsNewsletterModalOpen] = useState(false);
-  const [topPrograms30, setTopPrograms30] = useState([]);
-  const [topProgramsAll, setTopProgramsAll] = useState([]);
-  const [activeTopProgramsTab, setActiveTopProgramsTab] = useState('30d');
-  const [isTopProgramsModalOpen, setIsTopProgramsModalOpen] = useState(false);
-  const [selectedNotice, setSelectedNotice] = useState(null);
-  const [isNoticeDetailOpen, setIsNoticeDetailOpen] = useState(false);
-  const [isEditingFavorites, setIsEditingFavorites] = useState(false);
-  const [draggedFavorite, setDraggedFavorite] = useState(null);
-  const [favoriteWindowStart, setFavoriteWindowStart] = useState(0);
+  const [gateApp, setGateApp] = useState(null);
+  const [modal, setModal] = useState(null); // 'intro' | 'roadmap' | 'video' | 'newsletter'
+  const [notice, setNotice] = useState(null);
 
-  // 저장소에는 앱 이름 변경 전의 메뉴명/프로그램명이 남아 있을 수 있다.
-  // 먼저 현재 카탈로그 앱으로 해석한 뒤 창을 잘라야 유효한 카드가 항상 4개 채워진다.
-  const resolvedFavorites = favorites.reduce((items, storedTitle, sourceIndex) => {
-    const canonicalTitle = findAppByAnyName(storedTitle)?.title ?? storedTitle;
-    const app = catalogue.find(item => item.title === canonicalTitle);
-    if (app) items.push({ storedTitle, sourceIndex, app });
-    return items;
-  }, []);
-  const favoriteWindowMaxStart = Math.max(0, resolvedFavorites.length - FAVORITE_WINDOW_SIZE);
-  const visibleFavoriteWindowStart = Math.min(favoriteWindowStart, favoriteWindowMaxStart);
-  const visibleFavorites = resolvedFavorites.slice(
-    visibleFavoriteWindowStart,
-    visibleFavoriteWindowStart + FAVORITE_WINDOW_SIZE,
-  );
-  const hasFavoriteOverflow = resolvedFavorites.length > FAVORITE_WINDOW_SIZE;
-  const canShowPreviousFavorites = visibleFavoriteWindowStart > 0;
-  const canShowNextFavorites = visibleFavoriteWindowStart < favoriteWindowMaxStart;
+  // ── 데이터 ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!employeeId) return undefined;
+    let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    getAnalysisHistory(employeeId, 0, HISTORY_FETCH)
+      .then(res => { if (!cancelled) setHistory(res.data?.items ?? res.data ?? []); })
+      .catch(() => { if (!cancelled) { setHistory([]); setHistoryError('작업 이력을 불러오지 못했습니다.'); } })
+      .finally(() => { if (!cancelled) setHistoryLoading(false); });
+    return () => { cancelled = true; };
+  }, [employeeId, historyToken]);
 
   useEffect(() => {
-    setFavoriteWindowStart(current => Math.min(
-      current,
-      Math.max(0, resolvedFavorites.length - FAVORITE_WINDOW_SIZE),
-    ));
-  }, [resolvedFavorites.length]);
-
-  const handleOpenIntroModal = () => {
-    setIntroPresentationUrl(`${API_BASE_URL}/api/presentations/hitess-launch-deck`);
-    setIsIntroModalOpen(true);
-  };
-
-  const handleCloseIntroModal = () => {
-    setIsIntroModalOpen(false);
-    setIntroPresentationUrl('');
-  };
-
-  // 플랫폼 소개 배너: 기본적으로 접어둔다(매일 쓰는 사용자 우선). 사용자가 펼치면 그 선호를 저장해 다음 방문에 반영.
-  const [introOpen, setIntroOpen] = useState(() => localStorage.getItem('dashboard_intro_open') === '1');
-  const toggleIntro = () => setIntroOpen(v => {
-    const next = !v;
-    localStorage.setItem('dashboard_intro_open', next ? '1' : '0');
-    return next;
-  });
-
-  const fetchTopProgramStats = async () => {
-    setTopProgramsLoading(true);
-    setTopProgramsError(null);
-    try {
-      const [recentRes, allRes] = await Promise.all([
-        getTopPrograms(30, 5),
-        getTopPrograms(0, 10),
-      ]);
-      setTopPrograms30(Array.isArray(recentRes.data) ? recentRes.data : []);
-      setTopProgramsAll(Array.isArray(allRes.data) ? allRes.data : []);
-    } catch (error) {
-      console.error('인기 프로그램 집계 불러오기 실패:', error);
-      setTopProgramsError('인기 프로그램 집계를 불러오지 못했습니다.');
-      setTopPrograms30([]);
-      setTopProgramsAll([]);
-    } finally {
-      setTopProgramsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchTopProgramStats();
-  }, []);
+    if (!employeeId) return undefined;
+    let cancelled = false;
+    const now = new Date();
+    const targets = Array.from({ length: TREND_MONTHS }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (TREND_MONTHS - 1 - i), 1);
+      return { year: d.getFullYear(), month: d.getMonth() + 1 };
+    });
+    setMonthsLoading(true);
+    Promise.all(targets.map(t => getMonthlyAnalysisCount(employeeId, t.year, t.month)
+      .then(res => res.data?.count ?? 0).catch(() => 0)))
+      .then(counts => {
+        if (cancelled) return;
+        setMonths(targets.map((t, i) => ({ label: `${t.month}월`, count: counts[i] })));
+      })
+      .finally(() => { if (!cancelled) setMonthsLoading(false); });
+    // 성공률 = 성공 건수 / 전체 건수 (limit=1 로 total 만 받는다)
+    Promise.all([
+      getAnalysisHistory(employeeId, 0, 1),
+      getAnalysisHistory(employeeId, 0, 1, { status: 'Success' }),
+    ]).then(([all, ok]) => {
+      if (cancelled) return;
+      const total = all.data?.total ?? 0;
+      setSuccessRate(total > 0 ? Math.round(((ok.data?.total ?? 0) / total) * 100) : null);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [employeeId]);
 
   useEffect(() => {
     let cancelled = false;
-    getSessionContext()
-      .then(res => {
-        if (!cancelled) setSessionContext(res.data || null);
-      })
-      .catch(() => {
-        if (!cancelled) setSessionContext(null);
-      });
-    return () => {
-      cancelled = true;
-    };
+    getTopPrograms(30, 5)
+      .then(res => { if (!cancelled) setPopular(Array.isArray(res.data) ? res.data : []); })
+      .catch(() => { if (!cancelled) setPopular([]); })
+      .finally(() => { if (!cancelled) setPopularLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
+  // 서버 슬롯·대기 — 예전 서버 카드 대신 인사 줄 칩 하나로 보여 준다.
   useEffect(() => {
-    const fetchHistory = async () => {
-      setLoading(true);
-      setHistoryError(null);
+    const fetchQueue = async () => {
+      if (document.hidden) return;
       try {
-        if (!employeeId) return;
-
-        const now = new Date();
-        const [historyRes, monthlyRes] = await Promise.all([
-          getAnalysisHistory(employeeId, 0, 5),
-          getMonthlyAnalysisCount(employeeId, now.getFullYear(), now.getMonth() + 1),
-        ]);
-
-        const rawData = historyRes.data?.items ?? historyRes.data;
-        setProjects(rawData);
-        setTotalCount(historyRes.data?.total ?? rawData.length);
-        setMonthlyUsageCount(monthlyRes.data?.count ?? 0);
-      } catch (error) {
-        console.error("이력 불러오기 실패:", error);
-        setHistoryError('프로젝트 이력 데이터를 불러오지 못했습니다.');
-        setProjects([]);
-      } finally {
-        setLoading(false);
+        const res = await getQueueStatus();
+        setServerQueue({ ...(res.data || {}), online: true });
+      } catch {
+        setServerQueue(prev => ({ ...(prev || {}), online: false }));
       }
     };
-    fetchHistory();
-  }, [employeeId, historyRefreshToken]);
+    fetchQueue();
+    const timer = setInterval(fetchQueue, POLLING_POLICY.systemIntervalMs);
+    return () => clearInterval(timer);
+  }, []);
 
-  const totalExecutions = totalCount;
-  // 누적 대비 이번 달 비중 — 병합된 '해석 수행 건수' 카드 하단 맥락 지표
-  const monthlyShare = totalExecutions > 0
-    ? Math.round((monthlyUsageCount / totalExecutions) * 100)
-    : 0;
-
-  // 즐겨찾기 카드 진입 로직.
-  // AppCataloguePage.handleStart 와 동일한 데이터 기반 규칙을 사용한다.
-  // (기존에는 title 하드코딩 switch 라서 목록에 없던 Active 앱 —
-  //  HiTESS Model Builder, HP-SCR, F06 Parser, Mooring Fitting 등 — 이
-  //  전부 '준비 중' 으로 잘못 막혔다.)
-  const handleFavoriteClick = (title) => {
-    const appMeta = catalogue.find(a => a.title === title);
+  // ── 앱 진입(Dashboard.jsx handleFavoriteClick 과 같은 규칙) ─────────────
+  const openApp = (title) => {
+    const appMeta = catalogue.find(a => a.title === title) || findAppByAnyName(title);
     if (!appMeta) {
       showToast(`'${title}' 앱 정보를 찾을 수 없습니다.`, 'info');
       return;
     }
-    // 개발 중/예정·점검 중 앱은 관리자가 아니면 안내 모달로 차단
-    const block = getIsAdmin() ? null : getBlock(appMeta);
+    const block = admin ? null : getBlock(appMeta);
     if (block) {
-      setGateApp({
-        title: appMeta.title,
-        devStatus: appMeta.devStatus,
-        reason: block.reason,
-        message: block.message,
-      });
+      setGateApp({ title: appMeta.title, devStatus: appMeta.devStatus, reason: block.reason, message: block.message });
       return;
     }
-    const menuName = getAppMenuName(title);
-    // 실제 페이지가 등록된 앱(hasPage)은 진입 허용. 페이지가 없는 미구현 앱만 '준비 중' 안내.
     if (!appMeta.hasPage && appMeta.devStatus && appMeta.devStatus !== 'Active') {
-      showToast(`'${title}' 앱은 현재 준비 중입니다.`, 'info');
+      showToast(`'${appMeta.title}' 앱은 현재 준비 중입니다.`, 'info');
       return;
     }
-    // Truss Structural Assessment 는 진입 시 이전 글로벌 상태를 초기화한다.
-    if (title === 'Truss Structural Assessment' && setAssessmentPageState) {
-      setAssessmentPageState({});
-    }
-    setCurrentMenu(menuName);
+    if (appMeta.title === 'Truss Structural Assessment' && setAssessmentPageState) setAssessmentPageState({});
+    setCurrentMenu(getAppMenuName(appMeta.title));
   };
 
-  const handleProgramShortcut = (programName) => {
-    const appMeta =
-      findAppByProgramName(programName) ||
-      catalogue.find(app => app.title === programName);
-
-    if (!appMeta) {
-      showToast(`'${programName}' 앱 정보를 찾을 수 없습니다.`, 'info');
-      return;
-    }
-
-    handleFavoriteClick(appMeta.title);
+  const openProgram = (programName) => {
+    const app = findAppByProgramName(programName) || catalogue.find(a => a.title === programName);
+    if (app) openApp(app.title);
+    else showToast(`'${programName}' 앱 정보를 찾을 수 없습니다.`, 'info');
   };
 
-  const topProgramTabs = [
-    { id: '30d', label: '최근 30일', rows: topPrograms30, emptyText: '최근 30일 사용 데이터가 없습니다.' },
-    { id: 'all', label: '전체 기간', rows: topProgramsAll, emptyText: '전체 기간 사용 데이터가 없습니다.' },
-  ];
-  const activeTopProgramTab = topProgramTabs.find(tab => tab.id === activeTopProgramsTab) ?? topProgramTabs[0];
-  const activeTopProgramRows = activeTopProgramTab.rows;
-  const activeTopProgramMaxCount = activeTopProgramRows[0]?.count || 1;
-  const activeTopProgramTotalCount = activeTopProgramRows.reduce((sum, item) => sum + (Number(item.count) || 0), 0);
-  const activeTopProgramTopShare = activeTopProgramTotalCount
-    ? Math.round((activeTopProgramMaxCount / activeTopProgramTotalCount) * 100)
-    : 0;
-  const todayLabel = new Date().toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    weekday: 'short',
-  });
-  const serverHost = (() => {
-    try {
-      return new URL(API_BASE_URL).host;
-    } catch {
-      return API_BASE_URL;
-    }
-  })();
-
-  const handleRoadmapAppSelect = (app) => {
-    if (!isRoadmapAppNavigable(app)) return;
-    setIsRoadmapModalOpen(false);
-    handleFavoriteClick(app.title);
-  };
-
-  // 프로젝트 이력 행 클릭 → 선택 프로젝트를 넘겨 My Projects 에서 상세 모달 자동 오픈
-  const handleOpenProjectDetail = (project) => {
-    if (!project) return;
-    try {
-      sessionStorage.setItem(OPEN_PROJECT_DETAIL_KEY, JSON.stringify(project));
-    } catch {
-      // sessionStorage 접근이 막힌 환경에서는 목록으로만 이동한다
-    }
+  const openProjectDetail = (project) => {
+    try { sessionStorage.setItem(OPEN_PROJECT_DETAIL_KEY, JSON.stringify(project)); } catch { /* 목록으로만 이동 */ }
     setCurrentMenu('My Projects');
   };
 
+  // ── 자주 쓰는 앱 = 즐겨찾기 먼저 + 최근 사용으로 채움(중복 제거) ─────────
+  const favoriteStoredByTitle = useMemo(() => {
+    const map = Object.create(null);
+    for (const stored of favorites || []) {
+      const canonical = findAppByAnyName(stored)?.title ?? stored;
+      if (map[canonical] === undefined) map[canonical] = stored;
+    }
+    return map;
+  }, [favorites]);
+
+  const quickApps = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    const visitedAt = Object.create(null);
+    for (const item of recentApps || []) {
+      const found = findAppByAnyName(item.label || item.menu);
+      if (found && visitedAt[found.title] === undefined) visitedAt[found.title] = item.at;
+    }
+    for (const title of Object.keys(favoriteStoredByTitle)) {
+      const app = catalogue.find(a => a.title === title);
+      if (!app || seen.has(app.title)) continue;
+      seen.add(app.title);
+      out.push({ app, meta: visitedAt[app.title] ? formatRelative(visitedAt[app.title]) : null });
+    }
+    for (const item of recentApps || []) {
+      if (out.length >= QUICK_APP_COUNT) break;
+      const found = findAppByAnyName(item.label || item.menu)
+        || catalogue.find(a => getAppMenuName(a.title) === item.menu);
+      const app = found ? catalogue.find(a => a.title === found.title) : null;
+      if (!app || seen.has(app.title) || !app.hasPage || isBlockedFor(app, admin)) continue;
+      seen.add(app.title);
+      out.push({ app, meta: formatRelative(item.at) });
+    }
+    return out.slice(0, QUICK_APP_COUNT);
+  }, [favoriteStoredByTitle, recentApps, catalogue, isBlockedFor, admin]);
+
+  // ── 내 작업 ─────────────────────────────────────────────
+  const liveJobs = globalJobs.filter(job => !isTerminalJobStatus(job.status));
+  const recentResults = history.slice(0, RECENT_RESULT_COUNT);
+  const weekAgo = Date.now() - 7 * 86400000;
+  const failedThisWeek = history.filter(p =>
+    (p.status === 'Failed' || p.status === 'Interrupted') && Date.parse(p.created_at) >= weekAgo).length;
+
+  const firstName = user?.name || employeeId || '';
+  const todayLabel = new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+  const serverOffline = serverQueue?.online === false;
+  const serverPending = Number(serverQueue?.pending) || 0;
+  const serverLabel = serverOffline
+    ? '끊김'
+    : serverQueue
+      ? `${serverQueue.running ?? 0}/${serverQueue.limit ?? 0}${serverPending > 0 ? ` · 대기 ${serverPending}` : ''}`
+      : '-';
+
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-3 animate-fade-in-up xl:gap-4">
+    <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-4 pb-24">
 
-      <div className="shrink-0 overflow-hidden rounded-2xl border border-brand-blue/10 bg-gradient-to-r from-brand-blue via-[#07315d] to-slate-900 shadow-sm">
-        <div className="relative px-5 py-4">
-          <Layers size={118} className="pointer-events-none absolute -right-7 -top-8 rotate-12 text-white/[0.035]" />
-          <div className="relative z-10 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" aria-hidden="true" />
-                <h1 className="text-2xl font-extrabold tracking-tight text-white">WorkBench Overview</h1>
-              </div>
-              <p className="mt-1 text-sm font-medium text-blue-100">
-                작업을 시작하고, 최근 흐름과 운영 상태를 빠르게 확인하세요.
-              </p>
-            </div>
-
-            <div className="flex min-w-0 flex-col gap-2 xl:w-[560px]">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {[
-                  { icon: Sparkles, label: '사용자', value: user?.name || employeeId || '-', sub: user?.department || '부서 정보 없음' },
-                  { icon: CalendarDays, label: '오늘', value: todayLabel, sub: 'KST 기준' },
-                  { icon: Server, label: '연결 서버', value: serverHost, sub: sessionContext?.client_ip ? `내 IP ${sessionContext.client_ip}` : 'API endpoint' },
-                ].map(item => {
-                  const Icon = item.icon;
-                  return (
-                    <div
-                      key={item.label}
-                      className="min-w-0 rounded-xl border border-white/10 bg-white/[0.08] px-3 py-2"
-                      title={`${item.label}: ${item.value}${item.sub ? ` (${item.sub})` : ''}`}
-                    >
-                      <div className="mb-1 flex items-center gap-1.5 text-[10px] font-black text-blue-200">
-                        <Icon size={11} />
-                        {item.label}
-                      </div>
-                      <p className="truncate text-sm font-extrabold text-white">{item.value}</p>
-                      <p className="truncate text-[10px] font-semibold text-slate-300">{item.sub}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+      {/* ── 인사 줄 ── */}
+      {/* overflow-hidden 을 바깥에 두면 '자료' 드롭다운이 잘린다 → 워터마크만 안쪽 층에서 자른다 */}
+      <div className="relative z-20 rounded-2xl border border-brand-blue/10 bg-gradient-to-r from-brand-blue via-[#07315d] to-slate-900 shadow-sm">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl" aria-hidden="true">
+          <Layers size={96} className="absolute -right-5 -top-6 rotate-12 text-white/[0.035]" />
+        </div>
+        <div className="relative flex flex-col gap-3 px-5 py-3.5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-extrabold tracking-tight text-white">{firstName}님, 오늘 작업을 시작하세요</h1>
+            <p className="mt-0.5 text-xs font-medium text-blue-100">
+              {todayLabel} · {user?.department || '부서 정보 없음'} · <span className="font-mono">{(() => { try { return new URL(API_BASE_URL).host; } catch { return API_BASE_URL; } })()}</span>
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusChip icon={Activity} label="실행 중" value={liveJobs.length} tone={liveJobs.length > 0 ? 'running' : 'neutral'} />
+            <StatusChip
+              icon={AlertTriangle}
+              label="7일 실패"
+              value={failedThisWeek}
+              tone={failedThisWeek > 0 ? 'danger' : 'neutral'}
+              onClick={failedThisWeek > 0 ? () => setCurrentMenu('My Projects') : undefined}
+              title={failedThisWeek > 0 ? '내 프로젝트에서 실패 건 확인' : undefined}
+            />
+            <StatusChip
+              icon={Server}
+              label="서버"
+              value={serverLabel}
+              tone={serverOffline ? 'danger' : serverPending > 0 ? 'running' : 'neutral'}
+              title={serverOffline ? '해석 서버에 연결할 수 없습니다' : `사용 중 슬롯 / 전체 슬롯 · 대기 ${serverPending}건`}
+            />
+            <span className="mx-0.5 hidden h-6 w-px bg-white/15 lg:block" aria-hidden="true" />
+            <ResourceMenu
+              onIntro={() => setModal('intro')}
+              onRoadmap={() => setModal('roadmap')}
+              onVideo={() => setModal('video')}
+              onNewsletter={() => setModal('newsletter')}
+            />
           </div>
         </div>
       </div>
 
-      <RoadmapModal
-        isOpen={isRoadmapModalOpen}
-        onClose={() => setIsRoadmapModalOpen(false)}
-        onSelectApp={handleRoadmapAppSelect}
+      {/* ── 공지 (기존 한 줄 컴포넌트 재사용) ── */}
+      <NoticeStrip
+        newWithinDays={14}
+        onOpenDetail={(n) => setNotice(n)}
+        onOpenList={() => setCurrentMenu('Notice & Updates')}
       />
 
-      {/* 즐겨찾기에서 개발 중/예정 앱 진입 시도 시 안내 (관리자는 위 로직에서 통과) */}
+      {/* ── 새 해석 시작 | 내 작업 — 아래 줄과 같은 5 : 7 격자 ── */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div className="flex flex-col xl:col-span-5">
+          <SectionHeader
+            icon={FileUp}
+            title="새 해석 시작"
+            accent="service"
+            action={<LinkButton onClick={() => setCurrentMenu('File-Based Apps')}>전체 앱</LinkButton>}
+          />
+          <Card className="flex flex-1 flex-col gap-3 p-4">
+            <DropZone catalogue={catalogue} isBlocked={(app) => isBlockedFor(app, admin)} onOpenApp={openApp} />
+            <div>
+              <p className="mb-2 text-xs font-bold text-slate-500">자주 쓰는 앱</p>
+              {quickApps.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-500">
+                  앱 목록에서 별을 누르면 여기에 고정됩니다.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {quickApps.map(({ app, meta }) => {
+                    const stored = favoriteStoredByTitle[app.title];
+                    return (
+                      <QuickAppTile
+                        key={app.title}
+                                    app={app}
+                        meta={meta}
+                        isFavorite={stored !== undefined}
+                        onOpen={() => openApp(app.title)}
+                        onToggleFavorite={() => toggleFavorite(stored ?? app.title)}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+
+        <div className="flex flex-col xl:col-span-7">
+          <SectionHeader
+            icon={History}
+            title="내 작업"
+            accent="history"
+            meta={liveJobs.length > 0 ? `진행 중 ${liveJobs.length}` : null}
+            action={<LinkButton onClick={() => setCurrentMenu('My Projects')}>전체 이력</LinkButton>}
+          />
+          <Card accent="from-slate-500/70 via-blue-300/40 to-transparent" className="flex-1 p-3">
+            {liveJobs.length > 0 && (
+              <>
+                <p className="px-1 pb-1.5 pt-1 text-xs font-bold text-slate-500">진행 중</p>
+                <ul className="mb-2 space-y-1.5">
+                  {liveJobs.map(job => (
+                    <LiveJobRow key={job.jobId} job={job} onOpen={() => setCurrentMenu(job.menu)} />
+                  ))}
+                </ul>
+              </>
+            )}
+            <p className="px-1 pb-1.5 pt-1 text-xs font-bold text-slate-500">최근 결과</p>
+            {historyLoading ? (
+              <ul className="space-y-1.5" role="status" aria-live="polite">
+                {[0, 1, 2, 3].map(i => <li key={i} className="h-12 animate-pulse rounded-xl bg-slate-100" />)}
+              </ul>
+            ) : historyError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-4 text-center">
+                <p className="text-sm font-bold text-red-700">{historyError}</p>
+                <button
+                  type="button"
+                  onClick={() => setHistoryToken(v => v + 1)}
+                  className="mt-2 inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100"
+                >
+                  다시 시도
+                </button>
+              </div>
+            ) : recentResults.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-200 px-3 py-8 text-center text-sm text-slate-500">
+                아직 실행한 해석이 없습니다. 왼쪽에서 입력 파일로 새 해석을 시작하세요.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {recentResults.map(project => (
+                  <ResultRow
+                    key={project.id}
+                    project={project}
+                    onDetail={() => openProjectDetail(project)}
+                    onRestart={() => openProgram(project.program_name)}
+                  />
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
+      </div>
+
+      {/* ── 참고 지표 ── */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div className="flex flex-col xl:col-span-5">
+          <SectionHeader
+            icon={TrendingUp}
+            title="내 월별 실행"
+            accent="service"
+            meta={successRate != null ? `성공률 ${successRate}%` : null}
+          />
+          <MonthlyTrendCard months={months} loading={monthsLoading} />
+        </div>
+        <div className="flex flex-col xl:col-span-7">
+          <SectionHeader
+            icon={Trophy}
+            title="많이 쓰는 앱"
+            accent="favorite"
+            meta="최근 30일 · 전체 사용자"
+          />
+          <PopularCard rows={popular} loading={popularLoading} onOpen={openProgram} />
+        </div>
+      </div>
+
+      {/* ── 모달 ── */}
       <Suspense fallback={null}>
         <AdminGateModal
           isOpen={!!gateApp}
@@ -1610,524 +890,25 @@ export default function Dashboard() {
           reason={gateApp?.reason}
           message={gateApp?.message}
         />
-      </Suspense>
-
-      {/* ── 인기 프로그램 기간별 순위 모달 ── */}
-      <Transition appear show={isTopProgramsModalOpen} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={() => setIsTopProgramsModalOpen(false)}>
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
-            leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
-          >
-            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" />
-          </Transition.Child>
-          <div className="fixed inset-0 overflow-y-auto flex items-center justify-center p-4">
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100"
-              leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
-            >
-              <Dialog.Panel className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Trophy size={18} className="text-amber-500 shrink-0" />
-                      <Dialog.Title className="text-base font-bold text-slate-800">인기 해석 프로그램</Dialog.Title>
-                    </div>
-                    <p className="mt-1 text-xs font-medium text-slate-500">기간별 사용 순위를 비교하고 바로 앱으로 이동합니다.</p>
-                  </div>
-                  <button onClick={() => setIsTopProgramsModalOpen(false)} className="inline-flex items-center justify-center min-w-9 min-h-9 -mr-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer">
-                    <X size={18} />
-                  </button>
-                </div>
-                <div className="mb-4 grid grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
-                  {topProgramTabs.map(tab => {
-                    const isActive = activeTopProgramsTab === tab.id;
-                    return (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setActiveTopProgramsTab(tab.id)}
-                        className={`min-h-8 rounded-md px-3 text-xs font-bold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 ${
-                          isActive
-                            ? 'bg-white text-amber-700 shadow-sm'
-                            : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
-                        }`}
-                        aria-pressed={isActive}
-                      >
-                        {tab.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="mb-4 grid grid-cols-3 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                  <div className="px-3 py-2">
-                    <p className="text-[10px] font-bold text-slate-500">집계 건수</p>
-                    <p className="mt-0.5 text-sm font-black text-slate-700">{activeTopProgramTotalCount}건</p>
-                  </div>
-                  <div className="border-x border-slate-200 px-3 py-2">
-                    <p className="text-[10px] font-bold text-slate-500">표시 앱</p>
-                    <p className="mt-0.5 text-sm font-black text-slate-700">{activeTopProgramRows.length}개</p>
-                  </div>
-                  <div className="px-3 py-2">
-                    <p className="text-[10px] font-bold text-slate-500">1위 점유율</p>
-                    <p className="mt-0.5 text-sm font-black text-slate-700">{activeTopProgramTopShare}%</p>
-                  </div>
-                </div>
-                <div className="space-y-1 max-h-[60vh] overflow-y-auto pr-1">
-                  {topProgramsLoading ? (
-                    <div className="space-y-2 py-2" role="status" aria-live="polite">
-                      {[0, 1, 2, 3].map(i => (
-                        <div key={i} className="h-10 animate-pulse rounded-lg bg-slate-100" />
-                      ))}
-                    </div>
-                  ) : topProgramsError ? (
-                    <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-5 text-center">
-                      <p className="text-sm font-bold text-red-700">{topProgramsError}</p>
-                      <button
-                        type="button"
-                        onClick={fetchTopProgramStats}
-                        className="mt-3 inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 cursor-pointer"
-                      >
-                        다시 시도
-                      </button>
-                    </div>
-                  ) : activeTopProgramRows.map((item, i) => {
-                    return (
-                      <button
-                        key={item.program_name}
-                        type="button"
-                        onClick={() => handleProgramShortcut(item.program_name)}
-                        className="w-full flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0 px-1 rounded-lg hover:bg-blue-50/60 transition-colors text-left cursor-pointer"
-                      >
-                        <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
-                          i < 3 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {i + 1}
-                        </span>
-                        <span className="flex-1 text-sm font-medium text-slate-700 truncate" title={item.program_name}>{getDisplayProgramName(item.program_name)}</span>
-                        <div className="w-20 bg-slate-100 rounded-full h-1.5 shrink-0">
-                          <div
-                            className="bg-blue-400 h-1.5 rounded-full"
-                            style={{ width: `${(item.count / activeTopProgramMaxCount) * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-bold text-slate-500 w-12 text-right shrink-0">{item.count}건</span>
-                        <ChevronRight size={14} className="text-blue-500 shrink-0" />
-                      </button>
-                    );
-                  })}
-                  {!topProgramsLoading && !topProgramsError && activeTopProgramRows.length === 0 && (
-                    <p className="text-sm text-slate-500 text-center py-8">{activeTopProgramTab.emptyText}</p>
-                  )}
-                </div>
-              </Dialog.Panel>
-            </Transition.Child>
-          </div>
-        </Dialog>
-      </Transition>
-      <IntroModal
-        isOpen={isIntroModalOpen}
-        onClose={handleCloseIntroModal}
-        src={introPresentationUrl}
-      />
-
-      {/* HiTESS Story 플레이어 모달 */}
-      <VideoPlayerModal
-        isOpen={isVideoModalOpen}
-        onClose={() => setIsVideoModalOpen(false)}
-      />
-
-      {/* 공지 & 업데이트 + 자료 액션 */}
-      <div className="shrink-0 flex flex-col gap-2 lg:flex-row lg:items-center">
-        <div className="min-w-0 flex-1">
-          <NoticeStrip
-            onOpenDetail={(n) => { setSelectedNotice(n); setIsNoticeDetailOpen(true); }}
-            onOpenList={() => setCurrentMenu('Notice & Updates')}
-          />
-        </div>
-        <div className="flex justify-end lg:shrink-0">
-          <div className="inline-flex flex-wrap items-center justify-end gap-1 rounded-xl border border-slate-200 bg-slate-100/80 p-1 shadow-inner ring-1 ring-white/70">
-            <span className="px-2 text-[10px] font-black tracking-wide text-slate-600">자료</span>
-            <DashboardFab
-              onOpenVideo={() => setIsVideoModalOpen(true)}
-              onOpenNewsletter={() => setIsNewsletterModalOpen(true)}
-            />
-            <span className="mx-0.5 h-5 w-px bg-slate-300/70" aria-hidden="true" />
-            {/* 클릭 가능함을 명시하는 버튼형 칩 — 접힘이 기본, 누르면 소개가 펼쳐진다 */}
-            <button
-              type="button"
-              onClick={toggleIntro}
-              aria-expanded={introOpen}
-              className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 ${
-                introOpen
-                  ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm'
-                  : 'border-slate-200 bg-white text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
-              }`}
-            >
-              {introOpen ? '접기' : '소개'}
-              <ChevronDown size={15} className={`transition-transform ${introOpen ? 'rotate-180' : ''}`} />
-            </button>
-          </div>
-        </div>
-      </div>
-      <Suspense fallback={null}>
         <NoticeDetailModal
-          isOpen={isNoticeDetailOpen}
-          notice={selectedNotice}
-          onClose={() => setIsNoticeDetailOpen(false)}
-          primaryAction={{
-            label: '전체 공지 보기',
-            onClick: () => setCurrentMenu('Notice & Updates'),
-            icon: <ChevronRight size={14} />,
-          }}
+          isOpen={!!notice}
+          notice={notice}
+          onClose={() => setNotice(null)}
+          primaryAction={{ label: '전체 공지 보기', onClick: () => setCurrentMenu('Notice & Updates'), icon: <ChevronRight size={14} /> }}
         />
+        <NewsletterArchiveModal isOpen={modal === 'newsletter'} onClose={() => setModal(null)} />
       </Suspense>
-
-      {/* 플랫폼 소개 & 로드맵 */}
-      <div className="shrink-0">
-        <div className="flex flex-col gap-2">
-          {/* 소개 배너 — 접이식(첫 방문만 펼침) */}
-          {introOpen && (
-            <HiTessIntroBanner onClick={handleOpenIntroModal} />
-          )}
-          {/* 로드맵 배너 — 소개 토글과 함께 접이식(기본 접힘). 매일 쓰는 사용자 화면 압박 완화. */}
-          {introOpen && (
-            <AppRoadmapBanner onOpenModal={() => setIsRoadmapModalOpen(true)} />
-          )}
-        </div>
-      </div>
-
-      {/* 서비스 현황 */}
-      <div className="shrink-0">
-        <div className="flex items-center justify-between mb-2">
-          <DashboardSectionTitle icon={Activity} title="서비스 현황" accent="service" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 xl:gap-4">
-        <QueueStatusCard className="md:col-span-2" />
-
-        {/* 월간·누적 해석 수행 건수 — 좌우 2분할 한 카드로 병합.
-            (과거: min-h-96 compact 카드 2개가 grid stretch로 늘어나 각 ~46% 빈 카드였음) */}
-        <div className={`${DASHBOARD_CARD_BASE} min-h-[116px] p-4 xl:p-5 flex flex-col hover:border-blue-300 hover:shadow-md md:col-span-2`}>
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand-blue/70 via-blue-400/40 to-transparent" aria-hidden="true" />
-          <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-            <Database size={100} />
-          </div>
-          <h3 className="text-slate-600 text-sm font-bold tracking-tight flex items-center gap-2">
-            <CalendarDays size={16} className="text-brand-blue" /> 해석 수행 건수
-          </h3>
-          <div className="my-auto grid grid-cols-2 divide-x divide-slate-200">
-            <div className="pr-4">
-              <p className="text-[11px] font-bold text-slate-500">월간</p>
-              <p className="mt-1 text-2xl font-extrabold text-slate-800 tracking-tight leading-none">
-                {monthlyUsageCount} <span className="text-sm font-medium text-slate-500">건</span>
-              </p>
-              <p className="mt-1.5 text-[11px] font-medium text-slate-500">이번 달 실행</p>
-            </div>
-            <div className="pl-4">
-              <p className="text-[11px] font-bold text-slate-500">누적</p>
-              <p className="mt-1 text-2xl font-extrabold text-slate-800 tracking-tight leading-none">
-                {totalExecutions} <span className="text-sm font-medium text-slate-500">건</span>
-              </p>
-              <p className="mt-1.5 text-[11px] font-medium text-slate-500">전체 프로젝트</p>
-            </div>
-          </div>
-          <div className="relative flex items-center gap-1.5 border-t border-slate-100 pt-2 text-[11px] font-semibold text-slate-500">
-            <Activity size={13} className="text-slate-400" />
-            누적 중 이번 달 <span className="font-extrabold text-brand-blue">{monthlyShare}%</span>
-          </div>
-        </div>
-        <div
-          className={`${DASHBOARD_CARD_BASE} min-h-[116px] p-4 xl:p-5 hover:border-amber-300 hover:shadow-md md:col-span-2`}
-        >
-          <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-            <Trophy size={100} />
-          </div>
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-slate-600 text-sm font-bold tracking-tight flex items-center gap-2">
-              <Trophy size={16} className="text-amber-500" /> 인기 해석 프로그램
-            </h3>
-            <button
-              type="button"
-              onClick={() => setIsTopProgramsModalOpen(true)}
-              className="relative z-10 inline-flex h-7 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[10px] font-black text-amber-700 transition-colors hover:bg-amber-100 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
-              aria-label="기간별 인기 해석 프로그램 순위 보기"
-            >
-              순위 보기 <ChevronRight size={12} />
-            </button>
-          </div>
-          <p className="text-[11px] text-slate-500 font-bold mb-2">최근 30일 상위 3개</p>
-          {topProgramsLoading ? (
-            <div className="space-y-1.5" role="status" aria-live="polite">
-              {[0, 1, 2].map(i => (
-                <div key={i} className="h-6 animate-pulse rounded-md bg-slate-100" />
-              ))}
-            </div>
-          ) : topProgramsError ? (
-            <div className="rounded-lg border border-red-100 bg-red-50 px-2.5 py-2">
-              <p className="text-[11px] font-bold text-red-700">{topProgramsError}</p>
-              <button
-                type="button"
-                onClick={fetchTopProgramStats}
-                className="mt-1 text-[10px] font-black text-red-700 underline underline-offset-2"
-              >
-                다시 시도
-              </button>
-            </div>
-          ) : topPrograms30.length > 0 ? (
-            <div className="space-y-1.5">
-              {topPrograms30.slice(0, 3).map((item, i) => {
-                const RANK_COLORS = ['text-amber-500', 'text-slate-500', 'text-orange-400'];
-                return (
-                  <button
-                    key={item.program_name}
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleProgramShortcut(item.program_name); }}
-                    className="w-full flex items-center gap-2 rounded-md px-1 py-1 hover:bg-amber-50/80 transition-colors text-left cursor-pointer"
-                  >
-                    <span className={`text-xs font-extrabold w-4 shrink-0 ${RANK_COLORS[i]}`}>{i + 1}</span>
-                    <span className="flex-1 text-xs font-medium text-slate-700 truncate" title={item.program_name}>{getDisplayProgramName(item.program_name)}</span>
-                    <span className="text-[10px] text-slate-500 font-bold shrink-0">{item.count}건</span>
-                    <ChevronRight size={12} className="text-amber-500 shrink-0" />
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-xs text-slate-500 mt-2">데이터 없음</p>
-          )}
-        </div>
-      </div>
-      </div>
-
-      {/* 즐겨찾기 */}
-      <div className="shrink-0">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <DashboardSectionTitle icon={Star} title="즐겨찾기" accent="favorite">
-            {isEditingFavorites && (
-              <p className="mt-1 text-xs text-slate-500">카드를 드래그하거나 화살표 버튼으로 순서를 변경하세요.</p>
-            )}
-          </DashboardSectionTitle>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {hasFavoriteOverflow && (
-              <div
-                className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
-                role="group"
-                aria-label="즐겨찾기 목록 이동"
-              >
-                <span className="min-w-[62px] px-1 text-center text-[11px] font-bold tabular-nums text-slate-500" aria-live="polite">
-                  {visibleFavoriteWindowStart + 1}–{Math.min(visibleFavoriteWindowStart + FAVORITE_WINDOW_SIZE, resolvedFavorites.length)} / {resolvedFavorites.length}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={!canShowPreviousFavorites}
-                  onClick={() => setFavoriteWindowStart(current => Math.max(0, current - 1))}
-                  className="h-8 w-8 !rounded-lg !p-0"
-                  aria-label="이전 즐겨찾기 보기"
-                  title="이전 즐겨찾기 보기"
-                >
-                  <ArrowLeft size={14} />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={!canShowNextFavorites}
-                  onClick={() => setFavoriteWindowStart(current => Math.min(favoriteWindowMaxStart, current + 1))}
-                  className="h-8 w-8 !rounded-lg !p-0"
-                  aria-label="다음 즐겨찾기 보기"
-                  title="다음 즐겨찾기 보기"
-                >
-                  <ArrowRight size={14} />
-                </Button>
-              </div>
-            )}
-            {resolvedFavorites.length > 1 && (
-              <Button
-                type="button"
-                variant={isEditingFavorites ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => {
-                  setIsEditingFavorites(value => !value);
-                  setDraggedFavorite(null);
-                }}
-                className="rounded-lg"
-              >
-                {isEditingFavorites ? <Check size={14} /> : <GripVertical size={14} />}
-                {isEditingFavorites ? '편집 완료' : '순서 편집'}
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {resolvedFavorites.length === 0 ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-2xl border border-blue-200 bg-white p-5 text-center shadow-sm">
-            <div className="p-4 bg-blue-50 rounded-full mb-4">
-              <Star size={32} className="text-slate-300" />
-            </div>
-            <p className="font-bold text-slate-700 mb-1">자주 쓰는 앱을 바로 꺼내 쓰세요.</p>
-            <p className="text-sm text-slate-500 mb-5">앱 카드의 별을 누르면 이 영역에 고정됩니다. 먼저 업무 유형별 앱 목록으로 이동할 수 있습니다.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full max-w-2xl">
-              {[
-                { label: '파일 기반 앱', menu: 'File-Based Apps', icon: Layers },
-                { label: '계산/설계 앱', menu: 'Parametric Apps', icon: SlidersHorizontal },
-                { label: '후처리 도구', menu: 'Productivity Apps', icon: Wrench },
-              ].map(item => {
-                const Icon = item.icon;
-                return (
-                  <Button
-                    key={item.menu}
-                    type="button"
-                    onClick={() => setCurrentMenu(item.menu)}
-                    variant="primary"
-                    size="sm"
-                    fullWidth
-                    className="rounded-lg"
-                  >
-                    <Icon size={14}/>
-                    {item.label}
-                    <ChevronRight size={14}/>
-                  </Button>
-                );
-              })}
-            </div>
-          </div>
-        ) : (
-          <motion.div
-            className="grid grid-cols-2 md:grid-cols-4 gap-3"
-            initial="hidden"
-            animate="show"
-            variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }}
-          >
-            {visibleFavorites.map(({ storedTitle: favTitle, sourceIndex, app: analysisInfo }, visibleIndex) => {
-              const index = visibleFavoriteWindowStart + visibleIndex;
-              return (
-                <FavoriteCard
-                  key={`${favTitle}-${sourceIndex}`}
-                  title={analysisInfo.title}
-                  desc={analysisInfo.description}
-                  mode={analysisInfo.mode}
-                  devStatus={analysisInfo.devStatus}
-                  icon={analysisInfo.icon}
-                  color={analysisInfo.color}
-                  onClick={() => handleFavoriteClick(analysisInfo.title)}
-                  onFavoriteRemove={() => toggleFavorite(favTitle)}
-                  isEditing={isEditingFavorites}
-                  position={index}
-                  total={resolvedFavorites.length}
-                  onMoveLeft={() => reorderFavorite(favTitle, resolvedFavorites[index - 1]?.storedTitle)}
-                  onMoveRight={() => reorderFavorite(favTitle, resolvedFavorites[index + 1]?.storedTitle)}
-                  onDragStart={(event) => {
-                    setDraggedFavorite(favTitle);
-                    event.dataTransfer.effectAllowed = 'move';
-                    event.dataTransfer.setData('text/plain', favTitle);
-                  }}
-                  onDragEnd={() => setDraggedFavorite(null)}
-                  onDragOver={(event) => {
-                    if (!isEditingFavorites) return;
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = 'move';
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const activeTitle = draggedFavorite || event.dataTransfer.getData('text/plain');
-                    reorderFavorite(activeTitle, favTitle);
-                    setDraggedFavorite(null);
-                  }}
-                  isDragging={draggedFavorite === favTitle}
-                />
-              );
-            })}
-          </motion.div>
-        )}
-      </div>
-
-      {/* 최근 사용 — 서버 동기화된 최근 방문 앱. 표시할 카드가 없으면 섹션이 통째로 사라진다. */}
-      <RecentAppsSection
-        favorites={favorites}
-        onOpen={handleFavoriteClick}
-        onToggleFavorite={toggleFavorite}
+      <IntroModal
+        isOpen={modal === 'intro'}
+        onClose={() => setModal(null)}
+        src={modal === 'intro' ? `${API_BASE_URL}/api/presentations/hitess-launch-deck` : ''}
       />
-
-      {/* 프로젝트 이력 */}
-      <div className="shrink-0">
-        <div className="flex items-center justify-between mb-2">
-          <DashboardSectionTitle icon={Clock} title="프로젝트 이력" accent="history" />
-          <div className="flex items-center gap-2">
-            <button onClick={() => setCurrentMenu('My Projects')} className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer">
-              전체 이력 보기 →
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="h-1 bg-gradient-to-r from-slate-500/70 via-blue-300/40 to-transparent" aria-hidden="true" />
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gradient-to-r from-slate-50 via-blue-50/35 to-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
-                  <th className="py-3 px-4 font-bold w-24 text-center">ID</th>
-                  <th className="py-3 px-4 font-bold">프로젝트명</th>
-                  <th className="py-3 px-4 font-bold">모듈 (유형)</th>
-                  <th className="py-3 px-4 font-bold">진행 상태</th>
-                  <th className="py-3 px-4 font-bold text-right">수행 일시</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {loading ? (
-                  <tr>
-                    <td colSpan="5" className="py-8 text-center text-slate-500 text-sm" role="status" aria-live="polite">
-                      <div className="animate-spin inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mb-2" aria-hidden="true"></div>
-                      <p>이력 데이터를 불러오는 중입니다...</p>
-                    </td>
-                  </tr>
-                ) : historyError ? (
-                  <tr>
-                    <td colSpan="5" className="py-8 text-center text-sm">
-                      <p className="font-bold text-red-700">{historyError}</p>
-                      <p className="mt-1 text-xs text-slate-500">서버 연결 또는 인증 상태를 확인한 뒤 다시 시도하세요.</p>
-                      <button
-                        type="button"
-                        onClick={() => setHistoryRefreshToken(value => value + 1)}
-                        className="mt-3 inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 cursor-pointer"
-                      >
-                        다시 시도
-                      </button>
-                    </td>
-                  </tr>
-                ) : projects.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="py-8 text-center text-slate-500 text-sm">최근 수행된 프로젝트 내역이 없습니다.</td>
-                  </tr>
-                ) : (
-                  projects.slice(0, 5).map((project) => (
-                    <ProjectRow
-                      key={project.id}
-                      id={project.id}
-                      name={project.project_name}
-                      type={project.program_name}
-                      status={project.status}
-                      date={project.created_at}
-                      onOpen={() => handleOpenProjectDetail(project)}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* 뉴스레터 아카이브 모달 */}
-      <Suspense fallback={null}>
-        <NewsletterArchiveModal
-          isOpen={isNewsletterModalOpen}
-          onClose={() => setIsNewsletterModalOpen(false)}
-        />
-      </Suspense>
+      <RoadmapModal
+        isOpen={modal === 'roadmap'}
+        onClose={() => setModal(null)}
+        onSelectApp={(app) => { if (!isRoadmapAppNavigable(app)) return; setModal(null); openApp(app.title); }}
+      />
+      <VideoPlayerModal isOpen={modal === 'video'} onClose={() => setModal(null)} />
     </div>
   );
 }
