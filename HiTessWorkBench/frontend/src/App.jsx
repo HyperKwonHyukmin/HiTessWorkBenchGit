@@ -4,6 +4,7 @@
 import React, { Suspense, lazy, useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { version as CLIENT_VERSION } from '../package.json';
+import { isServerVersionNewer } from './utils/versionCompare';
 import { checkVersion } from './api/auth';
 import { reportVersionUpdate, callLogout, logActivity } from './api/activity';
 import { sendHeartbeat, beaconOffline } from './api/presence';
@@ -245,7 +246,8 @@ function AppInner() {
     if (updateAvailableRef.current) return true; // 이미 안내 중이면 재확인 불필요
     const res = await checkVersion();
     const serverVersion = res.data?.version;
-    if (!serverVersion || serverVersion === CLIENT_VERSION) return false;
+    // 서버가 더 높을 때만 — 새 exe 를 서버 반영보다 먼저 배포해도 새 클라이언트를 막지 않는다.
+    if (!isServerVersionNewer(serverVersion, CLIENT_VERSION)) return false;
 
     updateAvailableRef.current = true;
     setLatestVersion(serverVersion);

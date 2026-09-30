@@ -8,6 +8,7 @@ import { checkVersion, login } from '../../api/auth';
 import { SAVED_EMPLOYEE_ID_KEY, useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL, DEFAULT_API_BASE_URL, setApiBaseUrl } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
+import { isServerVersionNewer } from '../../utils/versionCompare';
 const structureBgUrl = "https://images.unsplash.com/photo-1553653841-453082536a9d?q=80&w=1000&auto=format&fit=crop";
 
 export default function LoginScreen({ onLoginSuccess }) {
@@ -42,8 +43,10 @@ export default function LoginScreen({ onLoginSuccess }) {
       const fetchedServerVersion = response.data.version;
       setServerVersion(fetchedServerVersion);
       setIsServerLive(true);
-      setIsVersionMismatch(fetchedServerVersion !== CLIENT_VERSION);
-      if (fetchedServerVersion !== CLIENT_VERSION) {
+      // 서버가 더 높을 때만 로그인을 막는다(App.jsx 업데이트 안내와 같은 규칙).
+      const needsUpdate = isServerVersionNewer(fetchedServerVersion, CLIENT_VERSION);
+      setIsVersionMismatch(needsUpdate);
+      if (needsUpdate) {
         console.warn(`Version Mismatch! Client: ${CLIENT_VERSION}, Server: ${fetchedServerVersion}`);
       }
       return true;
