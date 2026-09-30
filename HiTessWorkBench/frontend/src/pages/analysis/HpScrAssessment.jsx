@@ -23,6 +23,7 @@ import {
   parseCbushFromBdf,
   parseForcesFromBdf,
 } from '../../utils/bdfPipeParsers';
+import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -155,6 +156,9 @@ export default function HpScrAssessment() {
     setReportPath(null);
     setLogs([{ time: new Date().toLocaleTimeString(), message: `[FILE] ${file.name} 선택됨.`, type: 'info' }]);
   };
+
+  // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다
+  useDashboardFileHandoff(PAGE_KEY, handleFile, ['.bdf', '.dat']);
 
   const handleDrop = (e) => {
     e.preventDefault();

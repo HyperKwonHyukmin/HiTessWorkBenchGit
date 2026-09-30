@@ -16,6 +16,7 @@ import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import { API_BASE_URL } from '../../config';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
+import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 const SIDE_PASSAGE_STUDIO_VIEWER_ID = 'side-passage-studio';
 
@@ -436,6 +437,11 @@ export default function SidePassageAssessment() {
 
   const setStepStatus = (id, status) =>
     setSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+
+  // 대시보드 '새 해석 시작'에 놓은 BDF 를 이어받는다(업로드 카드의 onFile 과 같은 처리)
+  useDashboardFileHandoff(SIDE_PASSAGE_MENU_NAME, (f) => {
+    setBdfFile(f); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait');
+  }, ['.bdf']);
 
   // ── 페이지 상태 지속 저장 (전역 analysisPageStates) ──
   // 관련 상태가 바뀔 때마다 전역에 저장 → 페이지 이탈 후 트레이 카드로 복귀(remount)했을 때

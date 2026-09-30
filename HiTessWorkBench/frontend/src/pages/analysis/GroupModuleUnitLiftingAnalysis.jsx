@@ -17,6 +17,7 @@ import { API_BASE_URL } from '../../config';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
+import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
 const MODULE_STUDIO_VERSION = '0.0.162';
@@ -454,6 +455,11 @@ export default function GroupModuleUnitLiftingAnalysis() {
 
   const setStepStatus = (id, status) =>
     setSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+
+  // 대시보드 '새 해석 시작'에 놓은 BDF 를 이어받는다(업로드 카드의 onFile 과 같은 처리)
+  useDashboardFileHandoff(GMU_MENU_NAME, (f) => {
+    setBdfFile(f); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait');
+  }, ['.bdf']);
 
   // Studio 창을 열었다는 사실이 아니라 실제 SOL 101 완료 이벤트로 WorkBench 단계를 끝낸다.
   useEffect(() => {
