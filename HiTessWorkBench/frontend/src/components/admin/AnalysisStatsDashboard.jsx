@@ -8,6 +8,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
 import ProgramDetailModal from './ProgramDetailModal';
+import ProgramStepList from './ProgramStepList';
 import { KpiCard } from '../ui/KpiCard';
 
 const COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be123c', '#4f46e5'];
@@ -48,6 +49,7 @@ function ProgramTable({ rows, onSelect }) {
                     <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
                     <span className="font-bold text-slate-800 truncate group-hover:text-blue-700" title={row.name}>{row.name}</span>
                   </div>
+                  <ProgramStepList steps={row.steps} className="mt-1 pl-[18px]" />
                 </td>
                 <td className="px-4 py-3 text-right font-black text-slate-800">{row.count}</td>
                 <td className="px-4 py-3 text-right text-slate-600">{row.share}%</td>

@@ -96,6 +96,7 @@ def resolve_period(
 from collections import Counter
 from sqlalchemy.orm import Session
 from app import models
+from app.services import usage_rollup
 
 
 def _norm_eid(value) -> str:
@@ -134,6 +135,10 @@ def aggregate_period(db: Session, period: str, start: datetime, end: datetime) -
           .all()
     )
     raw_rows = list(rows)
+    # 권상 App 세부 검토(자세안정성·권상 최적화·Unit 구조 해석)는 부모 App 한 줄로 합산한다.
+    # Raw 시트(개발자 행 포함)도 같은 기준을 보여 주므로 전체 행으로 한 번만 조회한다.
+    parent_programs = usage_rollup.load_parent_programs(db, [a for a, _ in raw_rows])
+    raw_rollup = {a.id: usage_rollup.rollup_program(a, parent_programs) for a, _ in raw_rows}
     stats_rows = [(a, u) for a, u in rows if not (u and u.is_developer)]
     total = len(stats_rows)
 
@@ -144,7 +149,7 @@ def aggregate_period(db: Session, period: str, start: datetime, end: datetime) -
             "busiestProgram": None, "peakHour": None, "newUsers": 0,
             "programs": [], "users": [], "departments": [],
             "timeBuckets": {"type": _bucket_type(period), "data": _empty_buckets(period, start, end)},
-            "raw_rows": raw_rows,
+            "raw_rows": raw_rows, "raw_rollup": raw_rollup,
         }
 
     program_map: dict = {}
@@ -155,15 +160,16 @@ def aggregate_period(db: Session, period: str, start: datetime, end: datetime) -
     weekday_counts = [0] * 7
 
     for a, u in stats_rows:
-        pname = a.program_name or "Unknown"
+        pname = raw_rollup[a.id]
         eid = _norm_eid(a.employee_id) or "UNKNOWN"
         dept = (u.department if u and u.department else "Unknown")
         name = (u.name if u else "Deleted User")
         ts = a.created_at
 
-        p = program_map.setdefault(pname, {"name": pname, "count": 0, "_users": set(), "lastRun": None})
+        p = program_map.setdefault(pname, {"name": pname, "count": 0, "_users": set(), "lastRun": None, "_steps": {}})
         p["count"] += 1
         p["_users"].add(eid)
+        usage_rollup.add_step(p["_steps"], a.program_name, success=a.status == "Success", employee_id=eid)
         if not p["lastRun"] or ts > p["lastRun"]:
             p["lastRun"] = ts
 
@@ -189,6 +195,7 @@ def aggregate_period(db: Session, period: str, start: datetime, end: datetime) -
                 "share": round(p["count"] * 100 / total),
                 "userCount": len(p["_users"]),
                 "lastRun": p["lastRun"].isoformat() if p["lastRun"] else None,
+                "steps": usage_rollup.serialize_steps(p["_steps"], p["count"]),
             }
             for p in program_map.values()
         ],
@@ -232,6 +239,7 @@ def aggregate_period(db: Session, period: str, start: datetime, end: datetime) -
         "departments": [{"name": k, "count": v} for k, v in dept_counter.most_common()],
         "timeBuckets": time_buckets,
         "raw_rows": raw_rows,
+        "raw_rollup": raw_rollup,
     }
 
 
@@ -306,14 +314,15 @@ def build_report_xlsx(bounds: PeriodBounds, current: dict, previous: dict, delta
     _build_summary_sheet(wb, bounds, current, previous, deltas)
     _build_table_sheet(wb, "Programs", current["programs"],
                        columns=[("순위", None), ("프로그램", "name"), ("실행수", "count"),
-                                ("점유율(%)", "share"), ("사용자수", "userCount"), ("최근실행", "lastRun")])
+                                ("점유율(%)", "share"), ("사용자수", "userCount"), ("최근실행", "lastRun"),
+                                ("세부 검토", "stepsText")])
     _build_table_sheet(wb, "Users", current["users"],
                        columns=[("순위", None), ("사번", "employeeId"), ("이름", "name"),
                                 ("부서", "department"), ("실행수", "count"), ("점유율(%)", "share"),
                                 ("사용프로그램수", "programCount"), ("최근실행", "lastRun")])
     _build_dept_sheet(wb, current)
     _build_time_sheet(wb, current["timeBuckets"])
-    _build_raw_sheet(wb, current["raw_rows"])
+    _build_raw_sheet(wb, current["raw_rows"], current.get("raw_rollup") or {})
 
     buf = _bio.BytesIO()
     wb.save(buf)
@@ -346,6 +355,11 @@ def _build_summary_sheet(wb, bounds, current, previous, deltas):
         ws.column_dimensions[chr(64 + col)].width = 24
 
 
+def format_steps_text(steps) -> str:
+    """세부 검토 내역 한 줄 표기 — '모델 입력·검증 3 · 자세안정성 평가 12'."""
+    return " · ".join(f"{s['label']} {s['count']}" for s in (steps or []))
+
+
 def _build_table_sheet(wb, title, rows, columns):
     ws = wb.create_sheet(title)
     headers = [c[0] for c in columns]
@@ -357,6 +371,8 @@ def _build_table_sheet(wb, title, rows, columns):
         for label, key in columns:
             if key is None:
                 row_values.append(i)
+            elif key == "stepsText":
+                row_values.append(format_steps_text(r.get("steps")))
             else:
                 row_values.append(r.get(key, ""))
         ws.append(row_values)
@@ -388,9 +404,10 @@ def _build_time_sheet(wb, time_buckets):
         ws.column_dimensions[chr(64 + idx)].width = 18
 
 
-def _build_raw_sheet(wb, raw_rows):
+def _build_raw_sheet(wb, raw_rows, raw_rollup):
     ws = wb.create_sheet("Raw Data")
-    ws.append(["ID", "프로젝트", "프로그램", "사번", "이름", "부서", "상태", "실행시각", "개발자"])
+    # '프로그램' 은 DB 원문, '통계 프로그램' 은 합산 기준(권상 세부 검토 → 부모 App)
+    ws.append(["ID", "프로젝트", "프로그램", "통계 프로그램", "사번", "이름", "부서", "상태", "실행시각", "개발자"])
     for c in ws[1]:
         _apply_header_style(c)
     for a, u in raw_rows:
@@ -398,6 +415,7 @@ def _build_raw_sheet(wb, raw_rows):
             a.id,
             getattr(a, "project_name", "") or "",
             a.program_name or "",
+            raw_rollup.get(a.id) or a.program_name or "",
             _norm_eid(a.employee_id),
             (u.name if u else "Deleted User"),
             (u.department if u and u.department else "Unknown"),
@@ -405,6 +423,6 @@ def _build_raw_sheet(wb, raw_rows):
             a.created_at.isoformat() if a.created_at else "",
             "Y" if (u and u.is_developer) else "",
         ])
-    widths = [8, 24, 28, 12, 14, 18, 12, 22, 8]
+    widths = [8, 24, 28, 28, 12, 14, 18, 12, 22, 8]
     for idx, w in enumerate(widths, start=1):
         ws.column_dimensions[chr(64 + idx)].width = w

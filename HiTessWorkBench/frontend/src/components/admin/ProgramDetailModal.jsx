@@ -98,6 +98,9 @@ export default function ProgramDetailModal({ programName, programNames = EMPTY_P
   const summary = detail?.summary;
   const userRanking = detail?.userRanking || [];
   const records = detail?.records || [];
+  // 권상 App 의 세부 검토 내역(자세안정성 평가 등). 그 밖의 App 은 빈 배열.
+  const stepBreakdown = detail?.stepBreakdown || [];
+  const hasSteps = stepBreakdown.length > 0;
 
   const totalRecordPages = Math.max(1, Math.ceil(records.length / RECORDS_PER_PAGE));
   const pagedRecords = useMemo(
@@ -177,6 +180,37 @@ export default function ProgramDetailModal({ programName, programNames = EMPTY_P
                 <StatTile label="사용자" value={summary.userCount.toLocaleString()} sub={`${summary.deptCount}개 부서`} icon={Users} accent="text-violet-500" />
                 <StatTile label="피크 시간대" value={summary.peakHour} sub={`최근 사용 ${summary.lastRunLabel}`} icon={Clock3} accent="text-amber-500" />
               </div>
+
+              {/* 세부 검토 — 권상 App 은 Studio 안의 검토를 이 App 한 줄로 합산한다 */}
+              {hasSteps && (
+                <SectionCard title="세부 검토 내역" icon={Layers} iconColor="text-blue-600"
+                  action={<span className="text-xs text-slate-400">총 실행 = 세부 검토 합계</span>}>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm whitespace-nowrap">
+                      <thead className="bg-slate-50 text-xs text-slate-500">
+                        <tr>
+                          <th className="px-5 py-2.5 text-left font-bold">검토 단계</th>
+                          <th className="px-4 py-2.5 text-right font-bold">실행</th>
+                          <th className="px-4 py-2.5 text-right font-bold">점유율</th>
+                          <th className="px-4 py-2.5 text-right font-bold">성공</th>
+                          <th className="px-5 py-2.5 text-right font-bold">사용자</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {stepBreakdown.map((s) => (
+                          <tr key={s.label}>
+                            <td className="px-5 py-2.5 font-medium text-slate-800">{s.label}</td>
+                            <td className="px-4 py-2.5 text-right font-black text-slate-800 tabular-nums">{s.count.toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-right text-slate-600 tabular-nums">{s.share ?? 0}%</td>
+                            <td className="px-4 py-2.5 text-right text-slate-600 tabular-nums">{s.success.toLocaleString()}</td>
+                            <td className="px-5 py-2.5 text-right text-slate-600 tabular-nums">{s.userCount}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </SectionCard>
+              )}
 
               {/* 추이 */}
               <SectionCard title="실행 추이" icon={Clock3} iconColor="text-emerald-600"
@@ -301,6 +335,7 @@ export default function ProgramDetailModal({ programName, programNames = EMPTY_P
                     <thead className="bg-slate-50 text-xs text-slate-500">
                       <tr>
                         <th className="px-4 py-2.5 text-left font-bold">프로젝트</th>
+                        {hasSteps && <th className="px-4 py-2.5 text-left font-bold">검토 단계</th>}
                         <th className="px-4 py-2.5 text-left font-bold">사용자</th>
                         <th className="px-4 py-2.5 text-left font-bold">부서</th>
                         <th className="px-4 py-2.5 text-center font-bold">상태</th>
@@ -311,6 +346,7 @@ export default function ProgramDetailModal({ programName, programNames = EMPTY_P
                       {pagedRecords.map((r) => (
                         <tr key={r.id} className="hover:bg-slate-50">
                           <td className="px-4 py-2.5 max-w-[240px] truncate font-medium text-slate-800" title={r.project_name}>{r.project_name || <span className="text-slate-400">—</span>}</td>
+                          {hasSteps && <td className="px-4 py-2.5 text-slate-600">{r.step || '—'}</td>}
                           <td className="px-4 py-2.5">
                             <span className="text-slate-800">{r.userName}</span>
                             <span className="ml-1.5 text-[11px] text-slate-400 font-mono">{r.employee_id}</span>

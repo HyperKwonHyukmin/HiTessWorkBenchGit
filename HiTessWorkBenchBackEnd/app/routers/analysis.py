@@ -87,6 +87,7 @@ from ._access_control import (
 )
 # 결과 파일 보관 정책(핀·연장·D-7). 판정 로직은 라우터에 복제하지 않고 이 모듈만 쓴다.
 from ..services import retention_service
+from ..services import usage_rollup
 from ..services.retention_service import RetentionLimitError
 
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -261,7 +262,13 @@ def get_top_programs(
     db: Session = Depends(database.get_db),
     _user: str = Depends(require_auth),
 ):
-    """프로그램별 사용 건수 집계 (대시보드 Top 5 / 전체 기간 순위 모달용)."""
+    """프로그램별 사용 건수 집계 (대시보드 Top 5 / 전체 기간 순위 모달용).
+
+    권상 App 의 세부 검토(자세안정성·권상 최적화·Unit 구조 해석)는 부모 App
+    (GroupModuleUnit/SidePassage) 건수에 합산한다 — usage_rollup 참고.
+    """
+    since = datetime.now() - timedelta(days=days) if days > 0 else None
+
     query = db.query(
         models.Analysis.program_name,
         func.count(models.Analysis.id).label("count")
@@ -270,17 +277,31 @@ def get_top_programs(
         models.Analysis.program_name.isnot(None),
         models.Analysis.program_name.notin_(INTERNAL_SUBSTEP_PROGRAMS),
     )
-    if days > 0:
-        since = datetime.now() - timedelta(days=days)
+    if since:
         query = query.filter(models.Analysis.created_at >= since)
-    results = (
-        query
-        .group_by(models.Analysis.program_name)
-        .order_by(func.count(models.Analysis.id).desc())
-        .limit(limit)
-        .all()
+    counts: dict = {
+        r.program_name: r.count
+        for r in query.group_by(models.Analysis.program_name).all()
+    }
+
+    # 세부 검토는 레코드마다 부모가 달라 SQL GROUP BY 로 못 묶는다 → 해당 행만 읽어 합산.
+    sub_q = db.query(models.Analysis).filter(
+        models.Analysis.source != SAMPLE_SOURCE_TAG,
+        models.Analysis.program_name.in_(usage_rollup.SUBSTEP_PROGRAMS),
     )
-    return [{"program_name": r.program_name, "count": r.count} for r in results]
+    if since:
+        sub_q = sub_q.filter(models.Analysis.created_at >= since)
+    sub_rows = sub_q.all()
+    parents = usage_rollup.load_parent_programs(db, sub_rows)
+    for r in sub_rows:
+        name = usage_rollup.rollup_program(r, parents)
+        # 부모를 못 찾은 세부 검토는 예전처럼 대시보드 순위에 올리지 않는다.
+        if usage_rollup.is_substep(name):
+            continue
+        counts[name] = counts.get(name, 0) + 1
+
+    ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+    return [{"program_name": name, "count": count} for name, count in ranked]
 
 
 # ==================== 이력 및 다운로드 ====================
@@ -487,10 +508,12 @@ def _analysis_summary(query) -> dict:
     }
 
 
-def _analysis_management_summary(query, users_by_employee_id: dict) -> Optional[dict]:
+def _analysis_management_summary(query, users_by_employee_id: dict, db: Optional[Session] = None) -> Optional[dict]:
     rows = [r for r in query.all() if not getattr(users_by_employee_id.get(_norm_eid(r.employee_id)), "is_developer", False)]
     if not rows:
         return None
+    # 권상 App 세부 검토는 부모 App 한 줄로 합산하고 steps 로 나눠 보여 준다.
+    parent_programs = usage_rollup.load_parent_programs(db, rows) if db is not None else {}
 
     rows.sort(key=lambda r: r.created_at or datetime.min)
     total = len(rows)
@@ -507,16 +530,17 @@ def _analysis_management_summary(query, users_by_employee_id: dict) -> Optional[
 
     for row in rows:
         created_at = row.created_at.replace(tzinfo=None) if getattr(row.created_at, "tzinfo", None) else row.created_at
-        program_name = row.program_name or "Unknown"
+        program_name = usage_rollup.rollup_program(row, parent_programs)
         employee_id = _norm_eid(row.employee_id) or "UNKNOWN"
         user = users_by_employee_id.get(employee_id)
         department = user.department if user and user.department else "Unknown"
         user_name = user.name if user else "Deleted User"
         day_key = created_at.date().isoformat()
 
-        program = program_map.setdefault(program_name, {"name": program_name, "count": 0, "users": set(), "lastRun": None})
+        program = program_map.setdefault(program_name, {"name": program_name, "count": 0, "users": set(), "lastRun": None, "steps": {}})
         program["count"] += 1
         program["users"].add(employee_id)
+        usage_rollup.add_step(program["steps"], row.program_name, success=row.status == "Success", employee_id=employee_id)
         if not program["lastRun"] or created_at > program["lastRun"]:
             program["lastRun"] = created_at
 
@@ -543,9 +567,11 @@ def _analysis_management_summary(query, users_by_employee_id: dict) -> Optional[
 
     program_rows = sorted([
         {
-            **{k: v for k, v in p.items() if k not in ("users", "lastRun")},
+            **{k: v for k, v in p.items() if k not in ("users", "lastRun", "steps")},
             "share": round((p["count"] / total) * 100),
             "userCount": len(p["users"]),
+            # 세부 검토 내역 — 합산 대상 App 에서만 채워지고 나머지는 빈 리스트
+            "steps": usage_rollup.serialize_steps(p["steps"], p["count"]),
             "lastRunLabel": p["lastRun"].strftime("%Y-%m-%d %H:%M:%S") if p["lastRun"] else "-",
         }
         for p in program_map.values()
@@ -619,6 +645,7 @@ def _program_usage_detail(program_name: str, rows: list, users_by_employee_id: d
     first_dt = None
     last_dt = None
     records = []
+    steps: dict = {}
 
     for row in rows:
         created_at = _naive(row.created_at) if row.created_at else None
@@ -639,6 +666,7 @@ def _program_usage_detail(program_name: str, rows: list, users_by_employee_id: d
             u["cancelled"] += 1
 
         dept_map[department] = dept_map.get(department, 0) + 1
+        usage_rollup.add_step(steps, row.program_name, success=is_success, employee_id=employee_id)
 
         if created_at:
             if not u["firstRun"] or created_at < u["firstRun"]:
@@ -662,6 +690,8 @@ def _program_usage_detail(program_name: str, rows: list, users_by_employee_id: d
             "dept": department,
             "status": row.status or "Unknown",
             "created_at": row.created_at.isoformat() if row.created_at else None,
+            # 권상 App 의 세부 검토 표기(자세안정성 평가 등). 그 밖의 App 은 None.
+            "step": usage_rollup.step_label(row.program_name),
         })
 
     records.sort(key=lambda r: r["created_at"] or "", reverse=True)
@@ -708,6 +738,8 @@ def _program_usage_detail(program_name: str, rows: list, users_by_employee_id: d
     return {
         "programName": program_name,
         "summary": summary,
+        # 세부 검토별 건수 — 권상 App 에서만 채워진다(나머지는 빈 리스트)
+        "stepBreakdown": usage_rollup.serialize_steps(steps, total),
         "userRanking": user_ranking,
         "records": records,
         "trendData": [{"date": datetime.fromisoformat(day).strftime("%b %d"), "count": count} for day, count in trend_items],
@@ -788,7 +820,7 @@ def get_all_analysis_history(
     base_q = _apply_analysis_filters(base_q, search=search, date_from=date_from, date_to=date_to)
     users = db.query(models.User).all()
     users_by_employee_id = {_norm_eid(u.employee_id): u for u in users}
-    summary = _analysis_management_summary(base_q, users_by_employee_id) if include_summary else None
+    summary = _analysis_management_summary(base_q, users_by_employee_id, db) if include_summary else None
     total = base_q.count()
     items = _ordered_analysis_rows(db, base_q, skip=skip, limit=limit)
     serialized = []
@@ -838,8 +870,27 @@ def get_program_usage_detail(
     users = db.query(models.User).all()
     users_by_employee_id = {_norm_eid(u.employee_id): u for u in users}
 
+    rows = base_q.all()
+    # 세부 검토 이름으로 직접 요청하면(부모를 못 찾은 잔여 행) 요약과 같게 부모가 없는 것만 남긴다.
+    if any(usage_rollup.is_substep(r.program_name) for r in rows):
+        own_parents = usage_rollup.load_parent_programs(db, rows)
+        rows = [r for r in rows if usage_rollup.is_substep(usage_rollup.rollup_program(r, own_parents))
+                or not usage_rollup.is_substep(r.program_name)]
+
+    # 권상 App 은 대시보드 요약과 같게 세부 검토 레코드를 합산한다(행 '실행' 수 = 모달 총계).
+    rollup_targets = set(program_names) & set(usage_rollup.ROLLUP_PARENTS)
+    if rollup_targets:
+        sub_q = db.query(models.Analysis).filter(
+            models.Analysis.source != SAMPLE_SOURCE_TAG,
+            models.Analysis.program_name.in_(usage_rollup.SUBSTEP_PROGRAMS),
+        )
+        sub_q = _apply_analysis_filters(sub_q, date_from=date_from, date_to=date_to)
+        sub_rows = sub_q.all()
+        parents = usage_rollup.load_parent_programs(db, sub_rows)
+        rows.extend(r for r in sub_rows if usage_rollup.rollup_program(r, parents) in rollup_targets)
+
     rows = [
-        r for r in base_q.all()
+        r for r in rows
         if not getattr(users_by_employee_id.get(_norm_eid(r.employee_id)), "is_developer", False)
     ]
     return _program_usage_detail(program_name, rows, users_by_employee_id)

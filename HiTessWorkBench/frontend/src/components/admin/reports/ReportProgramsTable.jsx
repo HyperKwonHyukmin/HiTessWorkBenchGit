@@ -1,5 +1,6 @@
 import React from 'react';
 import { Layers } from 'lucide-react';
+import ProgramStepList from '../ProgramStepList';
 
 export default function ReportProgramsTable({ programs, footnote }) {
   return (
@@ -26,7 +27,10 @@ export default function ReportProgramsTable({ programs, footnote }) {
               <tr><td className="px-5 py-6 text-center text-slate-400" colSpan={5}>데이터 없음</td></tr>
             ) : programs.map(p => (
               <tr key={p.name} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-5 py-3 font-medium text-slate-800">{p.name}</td>
+                <td className="px-5 py-3">
+                  <div className="font-medium text-slate-800">{p.name}</div>
+                  <ProgramStepList steps={p.steps} className="mt-0.5" />
+                </td>
                 <td className="px-4 py-3 text-right text-slate-700">{p.count}</td>
                 <td className="px-4 py-3 text-right text-slate-500">{p.share}%</td>
                 <td className="px-4 py-3 text-right text-slate-700">{p.userCount}</td>

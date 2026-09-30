@@ -1,6 +1,6 @@
 """Usage Report API 응답 스키마."""
 from datetime import datetime
-from typing import Optional, Literal
+from typing import List, Optional, Literal
 from pydantic import BaseModel
 
 
@@ -34,12 +34,24 @@ class Summary(BaseModel):
     newUsers: int
 
 
+class ProgramStep(BaseModel):
+    """권상 App 세부 검토 1줄 (services/usage_rollup.serialize_steps)."""
+    label: str
+    program: Optional[str] = None
+    count: int
+    success: int = 0
+    userCount: int = 0
+    share: Optional[int] = None
+
+
 class ProgramRow(BaseModel):
     name: str
     count: int
     share: int
     userCount: int
     lastRun: Optional[str] = None
+    # ⚠ 여기 없으면 response_model 이 steps 를 조용히 떨군다(화면에 세부 검토가 안 보임).
+    steps: List[ProgramStep] = []
 
 
 class UserRow(BaseModel):

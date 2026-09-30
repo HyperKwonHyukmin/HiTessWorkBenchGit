@@ -471,6 +471,12 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 5. 프론트엔드에서 1.5초마다 `GET /api/analysis/status/{job_id}` 폴링 (0~100%)
 6. 완료 후 결과 파일 경로를 DB `result_info` (JSON 컬럼)에 저장, `GET /api/download?filepath=...`로 다운로드
 
+**사용 통계 합산(2026-09-30)**: 권상 App 의 세부 검토 레코드(`ModuleStability`·`ModuleHoistOptimize`·`UnitStructuralAnalysis`)는
+통계에서 부모 App(`GroupModuleUnit`/`SidePassage`) 한 줄로 합산되고 세부 건수는 `steps`/`stepBreakdown` 으로 나간다
+(대시보드 Top·Analysis Management·프로그램 상세 모달·Usage Reports 4곳 공통, 규칙은 `services/usage_rollup.py`).
+부모 판별: UnitStructural = `input_info.parent_analysis_id`, 나머지 = `input_info.posture` 경로의 `<ts>_<사번>_<부모>` 폴더명
+(Studio 가 보내는 `source` 는 두 App 모두 `ModuleUnitStudio` 라 못 쓴다). ⚠ 새 세부 검토 program_name 을 만들면 `SUBSTEP_LABELS` 에 등록할 것.
+
 작업 상태는 인메모리(`job_status_store` dict)에 저장됩니다. 서버 재시작 시 진행 중인 작업 상태가 소실되는 구조적 한계가 있습니다(프로덕션에서는 Redis 권장).
 
 **다운로드 보안**: `GET /api/download`는 `os.path.abspath` 프리픽스 검사로 `userConnection/` 디렉토리 외부 경로 접근을 차단합니다.
