@@ -19,6 +19,8 @@ import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 const SIDE_PASSAGE_STUDIO_VIEWER_ID = 'side-passage-studio';
+// 다른 App 이 넘긴 BDF 는 fresh-entry 재마운트가 끝난 뒤 살아남은 인스턴스에만 적용한다.
+const HANDOFF_APPLY_DELAY_MS = 60;
 
 // ── 상태 설정 (HiTessModelBuilder와 동일) ─────────────────────
 const STATUS_CONFIG = {
@@ -481,8 +483,11 @@ export default function SidePassageAssessment() {
   //    과거엔 이 effect 가 마운트 1회 전용([])이라, 그 세션에서 이 앱을 이미 열어 본 적이
   //    있으면 Model Builder 가 보낸 BDF 를 영영 수신하지 못하고 입력이 빈 채로 남았다.
   //    → 핸드오프 값 자체를 의존성으로 삼아 도착할 때마다 수신한다.
+  //    ⚠️ 적용은 HANDOFF_APPLY_DELAY_MS 만큼 미루고 언마운트 시 취소한다 — fresh-entry 재마운트로
+  //    첫 인스턴스가 받은 BDF 가 폐기되는 것을 막는다(GroupModuleUnitLiftingAnalysis 와 동일).
   useEffect(() => {
-    if (!sidePassageHandoff?.bdfServerPath) return;
+    if (!sidePassageHandoff?.bdfServerPath) return undefined;
+    const timer = setTimeout(() => {
     const { bdfServerPath, sourceApp } = sidePassageHandoff;
     const from = sourceApp || '외부 프로그램';
     // 이미 이전 해석을 끝낸 상태일 수 있으므로 파이프라인을 처음 상태로 되돌린 뒤 수신한다.
@@ -503,6 +508,8 @@ export default function SidePassageAssessment() {
     setHandoffBdfPath(bdfServerPath);
     clearSidePassageHandoff?.();
     showToast(`${from}에서 BDF를 전달받았습니다. 실행 버튼을 눌러 검증을 시작하세요.`, 'info');
+    }, HANDOFF_APPLY_DELAY_MS);
+    return () => clearTimeout(timer);
   }, [sidePassageHandoff, clearSidePassageHandoff, showToast]);
 
   useEffect(() => {

@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import math
+import glob
 import os
 import re
 import shutil
@@ -5335,6 +5336,48 @@ def upload_edit_file(
         shutil.copyfileobj(file.file, out)
 
     return {"saved": dest, "size": os.path.getsize(dest)}
+
+
+class DiscardEditPayload(BaseModel):
+    output_dir: str
+
+
+@router.post("/analysis/modelflow/discard-edit")
+def discard_edit(
+    payload: DiscardEditPayload,
+    current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """Studio 가 '수정 내역 0건' 으로 저장했을 때 이전 회차의 편집 상태를 걷어낸다.
+
+    *_edit.json / edited/ 가 남아 있으면 후속 해석 전달·다운로드가 계속 옛 편집본(예: 기본값인
+    '배관 유체 비움' BDF)을 쓴다. 0건 저장의 의미는 '원본 그대로' 이므로 둘을 치운다.
+    지우지 않고 output_dir/_superseded/<시각>/ 로 옮긴다 — 탐색 glob(*_edit.json, edited/)에서
+    빠지면서도 필요하면 되살릴 수 있다.
+    """
+    abs_dir = _validate_userconnection_path(payload.output_dir)
+    assert_current_user_can_access_path(abs_dir, current_user, db, _ALLOWED_DOWNLOAD_BASE)
+    if not os.path.isdir(abs_dir):
+        raise HTTPException(status_code=404, detail="output_dir 없음")
+
+    targets = [
+        f for f in glob.glob(os.path.join(abs_dir, "*_edit.json")) if os.path.isfile(f)
+    ]
+    edited_dir = os.path.join(abs_dir, "edited")
+    if os.path.isdir(edited_dir):
+        targets.append(edited_dir)
+    if not targets:
+        return {"moved": [], "superseded_dir": None}
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    superseded_dir = os.path.join(abs_dir, "_superseded", stamp)
+    os.makedirs(superseded_dir, exist_ok=True)
+    moved = []
+    for src in targets:
+        shutil.move(src, os.path.join(superseded_dir, os.path.basename(src)))
+        moved.append(os.path.basename(src))
+    logger.info("[discard-edit] %s → %s: %s", abs_dir, superseded_dir, moved)
+    return {"moved": moved, "superseded_dir": superseded_dir}
 
 
 @router.post("/analysis/modelflow/apply-edit")

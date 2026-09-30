@@ -21,6 +21,8 @@ import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
 const MODULE_STUDIO_VERSION = '0.0.162';
+// 다른 App 이 넘긴 BDF 는 fresh-entry 재마운트가 끝난 뒤 살아남은 인스턴스에만 적용한다.
+const HANDOFF_APPLY_DELAY_MS = 60;
 
 // ── 상태 설정 (HiTessModelBuilder와 동일) ─────────────────────
 const STATUS_CONFIG = {
@@ -711,8 +713,13 @@ export default function GroupModuleUnitLiftingAnalysis() {
   //    있으면 Model Builder 가 보낸 BDF 를 영영 수신하지 못하고 입력이 빈 채로 남았다.
   //    (샘플 데모처럼 '이 앱을 처음 여는' 흐름에서만 우연히 동작했던 이유.)
   //    → 핸드오프 값 자체를 의존성으로 삼아 도착할 때마다 수신한다.
+  //    ⚠️ 적용은 HANDOFF_APPLY_DELAY_MS 만큼 미루고 언마운트 시 취소한다. 다른 App 에서
+  //    setCurrentMenu 로 들어오면 fresh-entry 처리(App.jsx 인스턴스 키 증가)로 이 페이지가
+  //    같은 틱에 재마운트되는데, 바로 적용하면 첫 인스턴스가 BDF 를 받고 clearGmuHandoff() 한 뒤
+  //    폐기돼 최종 화면은 입력이 빈 채로 남는다. 미루면 살아남은 인스턴스 하나에만 적용된다.
   useEffect(() => {
-    if (!gmuHandoff?.bdfServerPath) return;
+    if (!gmuHandoff?.bdfServerPath) return undefined;
+    const timer = setTimeout(() => {
     const { bdfServerPath, sourceApp } = gmuHandoff;
     const from = sourceApp || '외부 프로그램';
     // 이미 이전 해석을 끝낸 상태일 수 있으므로 파이프라인을 처음 상태로 되돌린 뒤 수신한다.
@@ -736,6 +743,8 @@ export default function GroupModuleUnitLiftingAnalysis() {
     setHandoffBdfPath(bdfServerPath);
     clearGmuHandoff();
     showToast(`${from}에서 BDF를 전달받았습니다. 실행 버튼을 눌러 검증을 시작하세요.`, 'info');
+    }, HANDOFF_APPLY_DELAY_MS);
+    return () => clearTimeout(timer);
     // validJobId/gmuJob 은 '핸드오프 시점의 값'만 필요하므로 의존성에 넣지 않는다
     // (넣으면 폴링 진행마다 effect 가 재평가된다 — 값은 어차피 early return 으로 무시됨).
     // eslint-disable-next-line react-hooks/exhaustive-deps

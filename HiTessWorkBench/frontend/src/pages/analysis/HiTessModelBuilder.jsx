@@ -3358,6 +3358,35 @@ export default function HiTessModelBuilder() {
       let uploadFailed = null;
 
       if (!editFileName) {
+        // 수정 내역 0건 = 원본 그대로. 이전 회차의 *_edit.json / edited/ 가 남아 있으면
+        // 후속 해석 전달·다운로드가 옛 편집본(기본값 '유체 비움' BDF 등)을 계속 쓰므로 걷어낸다.
+        let discardError = null;
+        try {
+          const r = await fetch(`${API_BASE_URL}/api/analysis/modelflow/discard-edit`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ output_dir: backendOutputDir }),
+          });
+          if (!r.ok) {
+            let detail = `HTTP ${r.status}`;
+            try { const b = await r.json(); detail += ` — ${b.detail ?? JSON.stringify(b)}`; } catch {}
+            throw new Error(detail);
+          }
+        } catch (e) {
+          discardError = e.message || String(e);
+        }
+        try { await refreshEditStatus(); } catch {}
+        if (discardError) {
+          try {
+            window.electron.sendMessage('modelflow:finalize-edit-response', {
+              requestId,
+              ok: false,
+              error: `이전 편집본 정리 실패: ${discardError}`,
+            });
+          } catch {}
+          showToast(`이전 편집본을 정리하지 못했습니다: ${discardError}`, 'error');
+          return;
+        }
         setActiveIdx(2);
         setSteps(prev => prev.map((s, i) => (i <= 2 ? { ...s, status: 'done' } : s)));
         if (currentJobId) clearGlobalJob(currentJobId);
