@@ -13,9 +13,15 @@
 
 import { resolveCardArtName } from '../../utils/cardArt';
 
-const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinejoin: 'round', strokeLinecap: 'round' };
-const THIN = { ...S, strokeWidth: 1, strokeDasharray: '2.5 2.5' };
-const Node = ({ x, y, r = 2.1 }) => <circle cx={x} cy={y} r={r} fill="#fff" stroke="currentColor" strokeWidth="1.3" />;
+// pathLength=1 은 '선이 그려지는' 진입 모션(index.css .art-draw)용이다 — 모든 실선의 길이를 1 로 맞춰
+// 한 줄 CSS 로 그릴 수 있게 한다. ⚠ 점선(strokeDasharray)에는 붙이지 말 것: 대시 길이가 1 기준으로
+// 다시 계산돼 점선이 실선으로 보인다. 그래서 THIN 과 점선 path 는 pathLength 를 undefined 로 지운다.
+const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinejoin: 'round', strokeLinecap: 'round', pathLength: 1 };
+const THIN = { ...S, pathLength: undefined, strokeWidth: 1, strokeDasharray: '2.5 2.5' };
+// 절점 채움은 기본 흰색, 어두운 바탕(인사 띠)에서는 --art-node 로 바꾼다.
+const Node = ({ x, y, r = 2.1 }) => (
+  <circle className="art-node" cx={x} cy={y} r={r} style={{ fill: 'var(--art-node, #fff)' }} stroke="currentColor" strokeWidth="1.3" />
+);
 
 const ART = {
   truss: (
@@ -37,7 +43,7 @@ const ART = {
   pipe: (
     <>
       <path {...S} d="M2 30H52A14 14 0 0 0 66 16V4M2 42H52A26 26 0 0 0 78 16V4M22 26V46M27 26V46M62 12H82M62 7H82" />
-      <path {...S} strokeWidth="1" strokeDasharray="6 3 1.5 3" d="M2 36H50A20 20 0 0 0 72 16V4" />
+      <path {...S} pathLength={undefined} strokeWidth="1" strokeDasharray="6 3 1.5 3" d="M2 36H50A20 20 0 0 0 72 16V4" />
       <path {...S} strokeWidth="1" d="M90 36h10M95 31v10" />
     </>
   ),
@@ -107,11 +113,21 @@ export function resolveCardArt(app = {}) {
   return name && ART[name] ? name : null;
 }
 
-export function CardArt({ name, className = '' }) {
+/**
+ * draw: 처음 나타날 때 선이 그려지는 모션(기본 켬). drawDelay 로 여러 장을 차례로 그린다(ms).
+ * 동작 줄이기 사용자는 index.css 의 전역 규칙이 모션을 즉시 끝내 완성된 그림만 보인다.
+ */
+export function CardArt({ name, className = '', draw = true, drawDelay = 0, style }) {
   const body = ART[name];
   if (!body) return null;
   return (
-    <svg viewBox="0 0 104 54" className={className} aria-hidden="true" focusable="false">
+    <svg
+      viewBox="0 0 104 54"
+      className={`${draw ? 'art-draw ' : ''}${className}`}
+      style={draw && drawDelay ? { ...style, '--draw-delay': `${drawDelay}ms` } : style}
+      aria-hidden="true"
+      focusable="false"
+    >
       {body}
     </svg>
   );

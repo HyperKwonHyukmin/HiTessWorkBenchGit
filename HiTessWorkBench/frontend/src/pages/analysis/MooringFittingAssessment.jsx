@@ -11,6 +11,8 @@ import { useDashboard } from '../../contexts/DashboardContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { API_BASE_URL } from '../../config';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
+import ProgressTrack from '../../components/ui/ProgressBar';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
 import { useAuth } from '../../contexts/AuthContext';
@@ -55,15 +57,16 @@ function ProgressBar({ progress, message, error, elapsed }) {
         <p className="text-xs font-semibold text-slate-700">{message || '진행 중...'}</p>
         <div className="flex items-center gap-2">
           {elapsed != null && <span className="text-xs text-slate-400 font-mono">{fmtTime(elapsed)}</span>}
-          <p className="text-xs font-bold text-blue-600 font-mono">{progress ?? 0}%</p>
+          <p className="text-xs font-bold text-blue-600 font-mono"><AnimatedNumber value={progress ?? 0} />%</p>
         </div>
       </div>
-      <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-300 ${error ? 'bg-red-500' : 'bg-blue-500'}`}
-          style={{ width: `${progress ?? 0}%` }}
-        />
-      </div>
+      {/* 공용 진행 막대 — 진행 중엔 빛이 흐르고, 실패하면 멈춘 자리에서 빨강으로 */}
+      <ProgressTrack
+        value={progress ?? 0}
+        status={error ? 'failed' : 'running'}
+        size="sm"
+        trackClassName="bg-slate-100"
+      />
     </div>
   );
 }
@@ -147,8 +150,9 @@ function UploadDropzone({ label, hint, file, disabled, onFiles, onClear }) {
 function StatusPill({ passed, label = passed ? 'PASSED' : 'FAILED' }) {
   const ok = passed === true || label === 'PASSED';
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${
-      ok ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+    // 최종 판정 칩 — 결과가 도착할 때 한 번 나타나고, FAILED 면 빨간 고리가 한 번 퍼진다
+    <span className={`relative inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold verdict-arrive ${
+      ok ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700 verdict-alert'
     }`}>
       {ok ? <CheckCircle2 size={11} /> : <AlertCircle size={11} />}
       {label}
@@ -1678,7 +1682,13 @@ export default function MooringFittingAssessment() {
                   <div key={step.id} className="flex items-stretch">
                     <div className="flex flex-col items-center w-8 shrink-0 pt-5">
                       <div className={`w-4 h-4 rounded-full shrink-0 ${cfg.dot}`} />
-                      {!isLast && <div className="flex-1 w-0.5 my-1.5 rounded-full bg-blue-300" />}
+                      {/* 앞 단계가 완료되면 연결선이 완료 dot 과 같은 초록으로 채워진다(step-connector) */}
+                      {!isLast && (
+                        <div
+                          className="step-connector step-connector-y flex-1 w-0.5 my-1.5 rounded-full bg-slate-200"
+                          style={{ '--step-progress': step.status === 'done' ? 1 : 0, '--step-fill': '#10b981' }}
+                        />
+                      )}
                     </div>
                     <div
                       className={`flex-1 mb-3 ml-2 rounded-xl border px-4 py-4 transition-all cursor-pointer

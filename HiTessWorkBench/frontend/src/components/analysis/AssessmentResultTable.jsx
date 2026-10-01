@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Database, Layers, GitMerge, Box, FileText, RotateCcw, CheckCircle2, AlertCircle, Tag } from 'lucide-react';
+import AnimatedNumber from '../ui/AnimatedNumber';
 
 function EmptyState({ msg, Icon }) {
   return (
@@ -317,14 +318,15 @@ function LoadCaseViewer({ data }) {
 
       <div className="flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-100 shrink-0 flex-wrap">
         <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">LC {activeTab.lcId}</span>
-        <StatBadge label="Members"     value={`${totalElem.toLocaleString()} ea`} color="blue" />
-        <StatBadge label="Member FAIL" value={failedElem}  color={failedElem > 0 ? 'red' : 'green'} />
-        <StatBadge label="Pass Rate"   value={`${passRate}%`} color={parseFloat(passRate) >= 100 ? 'green' : 'amber'} />
-        <StatBadge label="Max Assess." value={maxAssmt.toFixed(2)} color={maxAssmt >= 1.0 ? 'red' : maxAssmt >= 0.8 ? 'amber' : 'green'} />
+        {/* 요약 수치는 결과가 도착할 때(또는 LC 탭을 바꿀 때) 한 번 세어 올라간다 — 표 셀은 그대로 */}
+        <StatBadge label="Members"     value={<><AnimatedNumber value={totalElem} locale /> ea</>} color="blue" />
+        <StatBadge label="Member FAIL" value={<AnimatedNumber value={failedElem} />}  color={failedElem > 0 ? 'red' : 'green'} />
+        <StatBadge label="Pass Rate"   value={totalElem > 0 ? <><AnimatedNumber value={Number(passRate)} digits={1} />%</> : `${passRate}%`} color={parseFloat(passRate) >= 100 ? 'green' : 'amber'} />
+        <StatBadge label="Max Assess." value={<AnimatedNumber value={maxAssmt} digits={2} />} color={maxAssmt >= 1.0 ? 'red' : maxAssmt >= 0.8 ? 'amber' : 'green'} />
         {panelData.length > 0 && <>
           <div className="w-px h-8 bg-slate-200 mx-1"/>
           <StatBadge label="Panel" value={`${panelData.length} ea`} color="blue" />
-          <StatBadge label="Panel FAIL" value={panelFail} color={panelFail > 0 ? 'red' : 'green'} />
+          <StatBadge label="Panel FAIL" value={<AnimatedNumber value={panelFail} />} color={panelFail > 0 ? 'red' : 'green'} />
         </>}
         {(activeLc?.sideSupport || []).length > 0 && <>
           <div className="w-px h-8 bg-slate-200 mx-1"/>

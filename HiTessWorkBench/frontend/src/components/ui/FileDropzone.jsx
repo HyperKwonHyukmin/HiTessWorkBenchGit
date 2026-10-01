@@ -82,7 +82,9 @@ export default function FileDropzone({
           pickFiles(event.dataTransfer.files);
         }}
         className={[
-          'rounded-xl border-2 border-dashed p-5 transition-colors outline-none',
+          // 끌고 오면 살짝 떠오르며 테두리가 진해진다(index.css .dropzone-armed)
+          'rounded-xl border-2 border-dashed p-5 transition-[border-color,background-color,transform,box-shadow] duration-200 ease-out outline-none',
+          isDragOver && !disabled ? 'dropzone-armed' : '',
           'focus-visible:ring-2 focus-visible:ring-brand-blue/40 focus-visible:ring-offset-1',
           disabled ? 'cursor-not-allowed border-slate-200 bg-slate-50 opacity-60' : `cursor-pointer ${accentClasses.hover}`,
           isDragOver ? accentClasses.active : isUploaded ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-300 hover:bg-slate-50',
@@ -101,12 +103,16 @@ export default function FileDropzone({
           }}
         />
         <div className="flex items-center gap-4 min-w-0">
-          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${isUploaded ? 'bg-emerald-50 text-emerald-600' : accentClasses.icon}`}>
-            {isUploaded ? <FileCheck2 size={23} /> : <Upload size={23} />}
+          {/* 파일을 받으면 아이콘·이름이 새로 들어온다(key 가 파일명이라 바꿀 때마다 한 번) */}
+          <div
+            key={isUploaded ? `ok-${file.name}` : 'empty'}
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${isUploaded ? 'file-accepted bg-emerald-50 text-emerald-600' : accentClasses.icon}`}
+          >
+            {isUploaded ? <FileCheck2 size={23} /> : <Upload size={23} className={`transition-transform duration-200 ease-out ${isDragOver ? '-translate-y-0.5' : ''}`} />}
           </div>
           <div className="min-w-0 flex-1 text-left">
-            <p className="text-sm font-bold text-slate-700">{title}</p>
-            <p className="truncate text-xs text-slate-500">
+            <p className="text-sm font-bold text-slate-700">{isDragOver && !disabled ? '놓으면 바로 불러옵니다' : title}</p>
+            <p key={isUploaded ? file.name : 'placeholder'} className={`truncate text-xs text-slate-500 ${isUploaded ? 'file-accepted' : ''}`}>
               {isUploaded ? file.name : placeholder}
             </p>
             <p className="mt-1 text-[11px] font-medium text-slate-400">

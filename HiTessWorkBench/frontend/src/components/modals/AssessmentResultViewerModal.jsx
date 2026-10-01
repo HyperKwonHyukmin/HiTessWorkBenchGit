@@ -18,6 +18,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { downloadFileText, downloadFileBlob } from '../../api/analysis';
+import AnimatedNumber from '../ui/AnimatedNumber';
 import AssessmentBdfViewer from '../analysis/AssessmentBdfViewer';
 
 // Nastran 부동소수 파서 (BdfViewerModal 와 동일 패턴)
@@ -342,18 +343,18 @@ export default function AssessmentResultViewerModal({ isOpen, project, onClose }
                 <div className="grid grid-cols-3 border-b border-slate-800">
                   <div className="border-r border-slate-800 px-3 py-3">
                     <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">Elements</p>
-                    <p className="mt-1 font-mono text-base font-black text-white">{allAssessmentRows.length}</p>
+                    <p className="mt-1 font-mono text-base font-black text-white"><AnimatedNumber value={allAssessmentRows.length} /></p>
                   </div>
                   <div className="border-r border-slate-800 px-3 py-3">
                     <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">Max U.F.</p>
                     <p className={`mt-1 font-mono text-base font-black ${maxAssessment >= 1 ? 'text-red-400' : 'text-emerald-400'}`}>
-                      {maxAssessment.toFixed(3)}
+                      <AnimatedNumber value={maxAssessment} digits={3} />
                     </p>
                   </div>
                   <div className="px-3 py-3">
                     <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">Failed</p>
                     <p className={`mt-1 font-mono text-base font-black ${failedCount > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                      {failedCount}
+                      <AnimatedNumber value={failedCount} />
                     </p>
                   </div>
                 </div>

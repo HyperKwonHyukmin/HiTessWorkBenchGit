@@ -12,6 +12,7 @@ import MultiJsonViewer from '../../components/analysis/AssessmentResultTable';
 import AssessmentProjectModal from '../../components/analysis/AssessmentProjectModal';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import SolverCredit from '../../components/ui/SolverCredit';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { useToast } from '../../contexts/ToastContext';
 import {
   Upload, Play, Database, RefreshCw, Layers,
@@ -449,8 +450,8 @@ export default function TrussAssessment() {
               <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2"><Box size={14}/> 2. Model Summary</h3>
             </div>
             <div className="p-5 space-y-3">
-              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100"><div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><GitMerge size={16} className="text-indigo-400" /> Parsed Nodes</div><span className="font-mono font-bold text-brand-blue">{numNodes.toLocaleString()} EA</span></div>
-              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100"><div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><Layers size={16} className="text-cyan-400" /> Parsed Elements</div><span className="font-mono font-bold text-brand-blue">{numMembers.toLocaleString()} EA</span></div>
+              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100"><div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><GitMerge size={16} className="text-indigo-400" /> Parsed Nodes</div><span className="font-mono font-bold text-brand-blue"><AnimatedNumber value={numNodes} locale /> EA</span></div>
+              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100"><div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><Layers size={16} className="text-cyan-400" /> Parsed Elements</div><span className="font-mono font-bold text-brand-blue"><AnimatedNumber value={numMembers} locale /> EA</span></div>
               <div className={`mt-2 flex items-center justify-center gap-2 p-3 rounded-lg border border-dashed text-sm font-bold ${isDataReady ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-300 text-slate-500'}`}>{isDataReady ? <><CheckCircle2 size={18} /> Model Ready</> : <><AlertCircle size={18} /> Awaiting BDF Data</>}</div>
             </div>
           </div>
@@ -513,7 +514,8 @@ export default function TrussAssessment() {
             </button>
             <button onClick={runAnalysis} disabled={!isDataReady || isRunning || bdfFile?.sample}
               className={`relative w-full py-4 rounded-xl text-lg font-bold flex items-center justify-center gap-3 transition-all duration-300 shadow-lg overflow-hidden ${!isDataReady || bdfFile?.sample ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : isRunning ? 'bg-[#001b3d] text-white cursor-wait' : 'bg-brand-blue hover:bg-brand-blue-dark text-white hover:-translate-y-1 cursor-pointer'}`}>
-              {isRunning && <div className="absolute left-0 top-0 bottom-0 bg-blue-600 transition-all duration-500 ease-out opacity-80" style={{ width: `${progress}%` }}></div>}
+              {/* 버튼 배경을 채우는 진행 막대 — 실행 중엔 빛이 흘러 작업이 살아 있음을 알린다 */}
+              {isRunning && <div className="absolute left-0 top-0 bottom-0 bg-blue-600 transition-all duration-500 ease-out opacity-80 progress-flow" style={{ width: `${progress}%` }}></div>}
               <div className="relative z-10 flex items-center gap-3 drop-shadow-md">
                 {isRunning ? <RefreshCw className="animate-spin" size={24} /> : <Play size={24} fill="currentColor" />}
                 {isRunning ? `${progress}% - ${statusMessage} (${elapsedSeconds}s)` : bdfFile?.sample ? '샘플 결과 표시 중' : '구조 해석 시작'}

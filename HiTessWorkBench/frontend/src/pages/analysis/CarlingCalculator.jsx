@@ -6,6 +6,7 @@ import {
   SlidersHorizontal, TableProperties, XCircle
 } from 'lucide-react';
 import SolverCredit from '../../components/ui/SolverCredit';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { useAuth } from '../../contexts/AuthContext';
 import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
@@ -192,15 +193,16 @@ const SelectField = ({ label, value, onChange, options }) => (
 // ─────────────────────────────────────────────
 // 판정 배지 (pill 스타일)
 // ─────────────────────────────────────────────
-const CheckBadge = ({ value }) => {
+// animate: 최종 판정처럼 한 번 '도착' 하는 자리에서만 켠다(후보 표의 행 배지는 끈 채로).
+const CheckBadge = ({ value, animate = false }) => {
   const ok = value === 'OK' || value === 'Total OK' || value === 'Carling Free';
   const Icon = ok ? CheckCircle2 : XCircle;
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-wide ring-1 ring-inset ${
+    <span className={`relative inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-wide ring-1 ring-inset ${
       ok
         ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'
         : 'bg-rose-50 text-rose-700 ring-rose-600/20'
-    }`}>
+    } ${animate ? `verdict-arrive${ok ? '' : ' verdict-alert'}` : ''}`}>
       <Icon size={12} strokeWidth={2.5} /> {value || '-'}
     </span>
   );
@@ -243,7 +245,7 @@ const Metric = ({ label, value, unit }) => (
   <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3">
     <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-500 truncate">{label}</p>
     <p className="text-lg font-extrabold text-emerald-700 mt-0.5 tabular-nums">
-      {fmt(value, 2)} <span className="text-xs font-medium opacity-70">{unit}</span>
+      {value != null ? <AnimatedNumber value={Number(value)} digits={2} /> : '-'} <span className="text-xs font-medium opacity-70">{unit}</span>
     </p>
   </div>
 );
@@ -849,13 +851,13 @@ function FreeResult({ result, onStartOptimization }) {
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 reveal-stagger">
       {/* 판정 결과 카드 */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
         {/* 헤더: 타이틀 + 최종 판정 배지 */}
         <div className="px-5 py-3.5 flex items-center justify-between border-b border-gray-100">
           <h3 className="text-xs font-extrabold text-slate-500 uppercase tracking-widest">판정 결과</h3>
-          <CheckBadge value={assessment} />
+          <CheckBadge value={assessment} animate />
         </div>
 
         {/* 응력 비교 3열 */}
@@ -881,7 +883,7 @@ function FreeResult({ result, onStartOptimization }) {
                   <p className={`text-xl font-extrabold tabular-nums leading-none ${
                     fail ? 'text-rose-600' : 'text-slate-700'
                   }`}>
-                    {fmt(calc, 2)}
+                    {calc != null ? <AnimatedNumber value={Number(calc)} digits={2} /> : fmt(calc, 2)}
                     <span className="text-xs font-medium ml-1 opacity-60">{unit}</span>
                   </p>
                   {/* 허용값 구분선 아래 */}
@@ -939,7 +941,7 @@ function OptimizationResult({ result, okCandidates, candidates, onDownloadRow, r
   const optimal = result.optimal || {};
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 reveal-stagger">
       {/* 최적 후보 카드 */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="px-5 py-3.5 flex items-center justify-between border-b border-gray-100">

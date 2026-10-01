@@ -21,6 +21,7 @@ import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useFileParser, parseCsvText } from '../../hooks/useFileParser';
 import SolverCredit from '../../components/ui/SolverCredit';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { useToast } from '../../contexts/ToastContext';
 import { buildFormData } from '../../utils/fileHelper';
 import FileDropzone from '../../components/ui/FileDropzone';
@@ -404,11 +405,11 @@ export default function TrussAnalysis() {
               <div className="space-y-3">
                 <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
                   <div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><GitMerge size={16} className="text-indigo-400" /> Total Nodes</div>
-                  <span className="font-mono font-bold text-brand-blue">{numNodes.toLocaleString()} EA</span>
+                  <span className="font-mono font-bold text-brand-blue"><AnimatedNumber value={numNodes} locale /> EA</span>
                 </div>
                 <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
                   <div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><Layers size={16} className="text-cyan-400" /> Total Members</div>
-                  <span className="font-mono font-bold text-brand-blue">{numMembers.toLocaleString()} EA</span>
+                  <span className="font-mono font-bold text-brand-blue"><AnimatedNumber value={numMembers} locale /> EA</span>
                 </div>
                 <div className={`mt-2 flex items-center justify-center gap-2 p-3 rounded-lg border border-dashed text-sm font-bold transition-colors ${isDataReady ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-300 text-slate-500'}`}>
                   {isDataReady ? <><CheckCircle2 size={18} /> Ready to Build</> : <><AlertCircle size={18} /> Awaiting CSV Data</>}
@@ -462,8 +463,9 @@ export default function TrussAnalysis() {
                     : 'bg-brand-blue hover:bg-brand-blue-dark text-white hover:-translate-y-1 cursor-pointer'
               }`}
             >
+              {/* 버튼 배경을 채우는 진행 막대 — 실행 중엔 빛이 흘러 작업이 살아 있음을 알린다 */}
               {isRunning && (
-                <div className="absolute left-0 top-0 bottom-0 bg-blue-600 transition-all duration-500 ease-out opacity-80" style={{ width: `${progress}%` }}></div>
+                <div className="absolute left-0 top-0 bottom-0 bg-blue-600 transition-all duration-500 ease-out opacity-80 progress-flow" style={{ width: `${progress}%` }}></div>
               )}
               <div className="relative z-10 flex items-center gap-3 drop-shadow-md">
                 {isRunning ? <RefreshCw className="animate-spin" size={24} /> : <Play size={24} fill="currentColor" />}

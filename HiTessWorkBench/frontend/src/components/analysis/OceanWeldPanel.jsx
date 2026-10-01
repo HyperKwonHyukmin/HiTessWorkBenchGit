@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, Crosshair, Info, Layers, Loader2, RotateCcw, ShieldCheck,
 } from 'lucide-react';
+import AnimatedNumber from '../ui/AnimatedNumber';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import NumberField from './NumberField';
@@ -33,6 +34,12 @@ const formatNumber = (value, digits = 1) => {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
+};
+
+// 요약 값은 결과가 뜰 때 0 에서 올라간다(formatNumber 와 같은 표기 — 고정 소수 자릿수).
+const AnimatedMetric = ({ value, digits = 1 }) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? <AnimatedNumber value={number} digits={digits} locale fixed /> : '—';
 };
 
 const formatMoment = (value) => {
@@ -123,8 +130,12 @@ function WeldLayoutDiagram({ spec, governingPoint }) {
   );
 }
 
-function ResultBadge({ status }) {
-  return <Badge variant={status === 'OK' ? 'success' : 'error'} size="sm" dot>{status === 'OK' ? 'OK' : 'NG'}</Badge>;
+// arrive=true 는 요약 판정 한 자리에만 — 판정이 도착할 때 한 번 나타나고 NG 면 빨간 고리가 한 번 퍼진다.
+// 표의 행 배지는 한꺼번에 여러 개가 뜨므로 움직이지 않는다.
+function ResultBadge({ status, arrive = false }) {
+  const ok = status === 'OK';
+  const motion = arrive ? `relative verdict-arrive${ok ? '' : ' verdict-alert'}` : '';
+  return <Badge variant={ok ? 'success' : 'error'} size="sm" dot className={motion}>{ok ? 'OK' : 'NG'}</Badge>;
 }
 
 function SpecFieldGroup({ title, fields, weldSpec, onSpecChange }) {
@@ -277,7 +288,7 @@ export default function OceanWeldPanel({
             <div className="flex items-center gap-2">
               <ShieldCheck size={17} className="text-slate-600" />
               <h4 className="text-sm font-bold text-slate-800">정반 Leg 용접부 판정</h4>
-              {summary && <ResultBadge status={summary.status} />}
+              {summary && <ResultBadge status={summary.status} arrive />}
             </div>
             <Badge variant="info" size="sm" dot>Elastic line weld group · 8 endpoints · 6-DOF</Badge>
           </div>
@@ -295,14 +306,14 @@ export default function OceanWeldPanel({
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3 xl:grid-cols-6">
               <div><p className="text-[10px] text-slate-500">Maximum Equivalent</p>
-                <p className="font-mono text-sm font-bold text-slate-800">{formatNumber(summary.maxSigmaEqMPa)} MPa</p></div>
+                <p className="font-mono text-sm font-bold text-slate-800"><AnimatedMetric value={summary.maxSigmaEqMPa} /> MPa</p></div>
               <div><p className="text-[10px] text-slate-500">Allowable</p>
                 <p className="font-mono text-sm font-bold text-slate-800">{formatNumber(summary.allowableMPa)} MPa</p></div>
               <div><p className="text-[10px] text-slate-500">Usage</p>
                 <p className={`font-mono text-sm font-bold ${summary.maxUsage > 1 ? 'text-red-700' : 'text-slate-800'}`}>
-                  {formatNumber(summary.maxUsage, 3)}</p></div>
+                  <AnimatedMetric value={summary.maxUsage} digits={3} /></p></div>
               <div><p className="text-[10px] text-slate-500">Actual Safety Factor</p>
-                <p className="font-mono text-sm font-bold text-slate-800">{formatNumber(summary.actualSafetyFactor, 2)}</p></div>
+                <p className="font-mono text-sm font-bold text-slate-800"><AnimatedMetric value={summary.actualSafetyFactor} digits={2} /></p></div>
               <div><p className="text-[10px] text-slate-500">Governing Boundary</p>
                 <p className="text-sm font-bold text-slate-800">Leg {summary.governingLegIndex}</p></div>
               <div><p className="text-[10px] text-slate-500">Governing Point</p>

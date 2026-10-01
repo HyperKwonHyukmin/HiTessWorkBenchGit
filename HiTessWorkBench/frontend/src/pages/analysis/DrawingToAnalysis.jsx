@@ -16,6 +16,8 @@ import DrawingLoadBcPanel from '../../components/analysis/DrawingLoadBcPanel';
 import SolveResultsPanel from '../../components/analysis/SolveResultsPanel';
 import lugExampleImageDataUrl from '../../assets/images/drawing-to-analysis-lug-example.png?inline';
 import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+import ProgressBar from '../../components/ui/ProgressBar';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 
 const LUG_EXAMPLE_FILENAME = 'lug_test.png';
 
@@ -1023,9 +1025,9 @@ export default function DrawingToAnalysis() {
                     onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
                     onDragLeave={() => setIsDragOver(false)}
                     onDrop={handleDrop}
-                    className={`border-2 border-dashed rounded-xl py-5 px-4 text-center cursor-pointer transition-colors ${
+                    className={`border-2 border-dashed rounded-xl py-5 px-4 text-center cursor-pointer transition-[border-color,background-color,transform,box-shadow] duration-200 ease-out ${
                       isDragOver
-                        ? 'border-blue-400 bg-blue-50'
+                        ? 'border-blue-400 bg-blue-50 dropzone-armed'
                         : pdfFile
                         ? 'border-blue-300 bg-blue-50/50'
                         : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
@@ -1115,9 +1117,9 @@ export default function DrawingToAnalysis() {
                     onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
                     onDragLeave={() => setIsDragOver(false)}
                     onDrop={handleDrop}
-                    className={`border-2 border-dashed rounded-xl py-5 px-4 text-center cursor-pointer transition-colors ${
+                    className={`border-2 border-dashed rounded-xl py-5 px-4 text-center cursor-pointer transition-[border-color,background-color,transform,box-shadow] duration-200 ease-out ${
                       isDragOver
-                        ? 'border-emerald-400 bg-emerald-50'
+                        ? 'border-emerald-400 bg-emerald-50 dropzone-armed'
                         : imageFile
                         ? 'border-emerald-300 bg-emerald-50/50'
                         : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
@@ -1233,11 +1235,10 @@ export default function DrawingToAnalysis() {
                   <RefreshCw size={10} className="animate-spin text-blue-500" />
                   진행 중...
                 </span>
-                <span className="text-[11px] font-mono text-blue-600 font-bold">{progress}%</span>
+                <span className="text-[11px] font-mono text-blue-600 font-bold"><AnimatedNumber value={progress} />%</span>
               </div>
-              <div className="h-1.5 bg-blue-100 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 transition-all rounded-full" style={{ width: `${progress}%` }} />
-              </div>
+              {/* 실행 중일 때만 보이는 카드라 상태는 항상 running */}
+              <ProgressBar value={progress} status="running" tone="blue" size="sm" trackClassName="bg-blue-100" />
               {statusMessage && (
                 <p className="mt-2 text-[11px] text-blue-600/80 font-mono truncate">{statusMessage}</p>
               )}

@@ -21,36 +21,25 @@ const MODE_KO = {
   Productivity: "Productivity Apps"
 };
 
+// 대시보드의 섹션 제목은 이 한 가지 모양뿐이다(아이콘 칩 + 제목). 2026-10-01 에 제목 밑 그라데이션 줄,
+// 카드 위 색 띠, '참고 지표' 자간 라벨이 섞여 있던 것을 이것으로 통일했다. 색은 아이콘 칩에만 쓴다.
 const SECTION_ACCENTS = {
-  service: {
-    iconWrap: 'bg-blue-50 text-blue-600 ring-blue-100',
-    rule: 'from-blue-500 via-blue-300 to-transparent',
-  },
-  favorite: {
-    iconWrap: 'bg-amber-50 text-amber-500 ring-amber-100',
-    rule: 'from-amber-400 via-amber-200 to-transparent',
-  },
-  history: {
-    iconWrap: 'bg-slate-100 text-slate-600 ring-slate-200',
-    rule: 'from-slate-500 via-slate-300 to-transparent',
-  },
+  service: 'bg-blue-50 text-blue-600 ring-blue-100',
+  favorite: 'bg-amber-50 text-amber-500 ring-amber-100',
+  history: 'bg-slate-100 text-slate-600 ring-slate-200',
 };
 
-export const DashboardSectionTitle = ({ icon: Icon, title, accent = 'service', children }) => {
-  const tone = SECTION_ACCENTS[accent] || SECTION_ACCENTS.service;
-  return (
-    <div className="min-w-0">
-      <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-800">
-        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ring-1 ${tone.iconWrap}`}>
-          <Icon size={15} />
-        </span>
-        <span>{title}</span>
-      </h2>
-      <div className={`mt-1 h-0.5 w-24 rounded-full bg-gradient-to-r ${tone.rule}`} aria-hidden="true" />
-      {children}
-    </div>
-  );
-};
+export const DashboardSectionTitle = ({ icon: Icon, title, accent = 'service', children }) => (
+  <div className="min-w-0">
+    <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-800">
+      <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ring-1 ${SECTION_ACCENTS[accent] || SECTION_ACCENTS.service}`}>
+        <Icon size={15} />
+      </span>
+      <span>{title}</span>
+    </h2>
+    {children}
+  </div>
+);
 
 const PROMOTION_VIDEOS = [
   {

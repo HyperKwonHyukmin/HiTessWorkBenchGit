@@ -16,10 +16,12 @@ const formatNumber = (value, digits = 1) => {
   });
 };
 
+// 요약 판정 배지 — 판정이 도착할 때 한 번 나타나고, NG 면 빨간 고리가 한 번 퍼진다(verdict-arrive/alert)
 function ResultBadge({ status }) {
+  const ok = status === 'OK';
   return (
-    <Badge variant={status === 'OK' ? 'success' : 'error'} size="sm" dot>
-      {status === 'OK' ? 'OK' : 'NG'}
+    <Badge variant={ok ? 'success' : 'error'} size="sm" dot className={`relative verdict-arrive${ok ? '' : ' verdict-alert'}`}>
+      {ok ? 'OK' : 'NG'}
     </Badge>
   );
 }

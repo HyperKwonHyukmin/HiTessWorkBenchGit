@@ -10,6 +10,7 @@
  *  6) 전체 판정 배너
  */
 import React, { useState } from 'react';
+import AnimatedNumber from '../ui/AnimatedNumber';
 import {
   AlertTriangle, CheckCircle2, Info, ChevronDown, ChevronRight,
   AlertOctagon, History, AlertCircle, Move3d, Wrench as WrenchIcon,
@@ -50,12 +51,12 @@ function KindBar({ label, icon, count, errorCount = 0, warnCount = 0, breakdown 
       {count > 0 && (
         <>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-bold text-slate-800 font-mono leading-none">{count.toLocaleString()}</span>
+            <span className="text-2xl font-bold text-slate-800 font-mono leading-none"><AnimatedNumber value={count} locale /></span>
             <span className="text-xs text-slate-400">개</span>
           </div>
 
           {/* 스택 막대 — 정상/경고/오류 */}
-          <div className="h-2 rounded-full bg-slate-100 overflow-hidden flex">
+          <div className="bar-grow-x h-2 rounded-full bg-slate-100 overflow-hidden flex">
             <div
               className="h-full bg-emerald-500 transition-all duration-700 rounded-l-full"
               style={{ width: `${(count / Math.max(total, 1)) * 100}%` }}
@@ -113,7 +114,7 @@ function IssueBar({ label, count, maxCount, severity = 'warning' }) {
     <div className="flex items-center gap-3">
       <span className="text-sm text-slate-700 w-56 shrink-0 truncate" title={label}>{label}</span>
       <div className={`flex-1 ${c.track} rounded-full h-2.5 overflow-hidden`}>
-        <div className={`h-full ${c.bar} rounded-full transition-all duration-700`}
+        <div className={`bar-grow-x h-full ${c.bar} rounded-full transition-all duration-700`}
              style={{ width: `${pct}%` }} />
       </div>
       <span className={`text-sm font-bold font-mono ${c.text} w-12 text-right shrink-0`}>
@@ -272,7 +273,8 @@ function Step1View({ step1Data }) {
   ];
 
   return (
-    <div className="space-y-4 w-full min-w-0">
+    // 검증 결과가 처음 뜰 때 요약 → 카드 분류 → 이슈 → 좌표 → 상세 순으로 0.05s 간격(index.css .reveal-stagger)
+    <div className="reveal-stagger space-y-4 w-full min-w-0">
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           A. Hero 검증 요약 (CSV 형식)
@@ -293,12 +295,13 @@ function Step1View({ step1Data }) {
                   strokeDasharray={`${2 * Math.PI * 26}`}
                   strokeDashoffset={`${2 * Math.PI * 26 * (1 - passRate / 100)}`}
                   strokeLinecap="round"
-                  className="transition-all duration-700"
+                  className="gauge-arc transition-all duration-700"
+                  style={{ '--gauge-from': `${2 * Math.PI * 26}` }}
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className={`text-base font-bold font-mono leading-none ${isFailed ? 'text-red-600' : 'text-slate-800'}`}>
-                  {passRate}%
+                  <AnimatedNumber value={passRate} />%
                 </span>
               </div>
             </div>
@@ -321,18 +324,18 @@ function Step1View({ step1Data }) {
 
             <div className="grid grid-cols-3 gap-3">
               <div className="text-center">
-                <p className="text-2xl font-bold font-mono text-slate-800 leading-none">{totalCards.toLocaleString()}</p>
+                <p className="text-2xl font-bold font-mono text-slate-800 leading-none"><AnimatedNumber value={totalCards} locale /></p>
                 <p className="text-xs text-slate-400 mt-0.5">전체 카드</p>
               </div>
               <div className="text-center">
                 <p className={`text-2xl font-bold font-mono leading-none ${(summary.totalWarnings ?? 0) > 0 ? 'text-amber-600' : 'text-slate-300'}`}>
-                  {(summary.totalWarnings ?? 0).toLocaleString()}
+                  <AnimatedNumber value={summary.totalWarnings ?? 0} locale />
                 </p>
                 <p className="text-xs text-slate-400 mt-0.5">경고</p>
               </div>
               <div className="text-center">
                 <p className={`text-2xl font-bold font-mono leading-none ${(summary.totalErrors ?? 0) > 0 ? 'text-red-600' : 'text-slate-300'}`}>
-                  {(summary.totalErrors ?? 0).toLocaleString()}
+                  <AnimatedNumber value={summary.totalErrors ?? 0} locale />
                 </p>
                 <p className="text-xs text-slate-400 mt-0.5">오류</p>
               </div>
@@ -352,7 +355,7 @@ function Step1View({ step1Data }) {
          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <div>
         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">카드 분류 — Bdf Card Counts</p>
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="reveal-stagger grid grid-cols-2 lg:grid-cols-3 gap-3">
           <KindBar
             label={CARD_KIND_META.grid.label} icon={CARD_KIND_META.grid.icon}
             count={counts.grid || 0}

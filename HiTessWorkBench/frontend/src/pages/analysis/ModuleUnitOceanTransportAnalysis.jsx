@@ -35,6 +35,8 @@ import OceanWeldModal, {
 } from '../../components/analysis/OceanWeldModal';
 import BargeAccelerationPanel from '../../components/analysis/BargeAccelerationPanel';
 import Button from '../../components/ui/Button';
+import ProgressTrack from '../../components/ui/ProgressBar';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { downloadBlob, filenameFromDisposition } from '../../utils/fileHelper';
 import {
   evaluateSupportSelection, selectionPoints, selectionNodeIds, rigidDependentIndices,
@@ -262,8 +264,9 @@ function StructuralVerdictBanner({
       ng ? 'border-red-300 bg-red-50'
         : review ? 'border-amber-300 bg-amber-50' : 'border-emerald-200 bg-emerald-50/60'}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className={`rounded-lg px-2.5 py-1 text-sm font-extrabold tracking-wide ${
-          ng ? 'bg-red-600 text-white' : review ? 'bg-amber-600 text-white' : 'bg-emerald-600 text-white'}`}>
+        {/* 판정 칩 — 결과가 도착할 때 한 번 나타나고, NG 면 빨간 고리가 한 번 퍼진다(verdict-arrive/alert) */}
+        <span className={`relative rounded-lg px-2.5 py-1 text-sm font-extrabold tracking-wide verdict-arrive ${
+          ng ? 'bg-red-600 text-white verdict-alert' : review ? 'bg-amber-600 text-white' : 'bg-emerald-600 text-white'}`}>
           {status}
         </span>
         <p className="text-xs font-semibold text-slate-700">
@@ -321,16 +324,16 @@ function StructuralVerdictBanner({
         {/* 포락이면 그 수치가 어느 조건에서 나왔는지가 값만큼 중요하다 —
             Leg 마다 지배 조건이 달라서(실측 4가지) 하나로 말할 수 없다. */}
         <VerdictStat label={`최대 응력${s.governingLoadCase ? ` (${s.governingLoadCase})` : ''}`}
-          value={s.maxStressMPa.toFixed(1)} unit="MPa" bad={stressNg} />
+          value={<AnimatedNumber value={s.maxStressMPa} digits={1} />} unit="MPa" bad={stressNg} />
         <VerdictStat label={`사용률 (허용 ${Math.round(stress.allowableMPa)} MPa)`}
-          value={s.maxUsage.toFixed(2)} bad={stressNg} />
+          value={<AnimatedNumber value={s.maxUsage} digits={2} />} bad={stressNg} />
         <VerdictStat label="허용 초과 부재" value={s.exceedCount} unit="개" bad={stressNg} />
         {stress.displacementSummary && (
           <VerdictStat
             label={`최대 변위${stress.displacementSummary.loadCase
               ? ` (${stress.displacementSummary.loadCase})` : ''}`}
             value={Number.isFinite(stress.displacementSummary.maxMagMm)
-              ? stress.displacementSummary.maxMagMm.toFixed(1) : '결과 없음'} unit="mm" />
+              ? <AnimatedNumber value={stress.displacementSummary.maxMagMm} digits={1} /> : '결과 없음'} unit="mm" />
         )}
       </div>
     </div>
@@ -390,11 +393,11 @@ function BdfDropZone({ file, onFile, onClear, disabled }) {
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
       onClick={() => !disabled && inputRef.current?.click()}
-      className={`flex flex-col items-center justify-center gap-2 p-8 border-2 border-dashed rounded-xl transition-colors cursor-pointer ${
+      className={`flex flex-col items-center justify-center gap-2 p-8 border-2 border-dashed rounded-xl transition-[border-color,background-color,transform,box-shadow] duration-200 ease-out cursor-pointer ${
         disabled
           ? 'border-slate-200 opacity-40 cursor-not-allowed'
           : dragOver
-          ? 'border-blue-400 bg-blue-50'
+          ? 'border-blue-400 bg-blue-50 dropzone-armed'
           : 'border-slate-200 hover:border-blue-400 hover:bg-blue-50/50'
       }`}
     >
@@ -2417,7 +2420,11 @@ export default function ModuleUnitOceanTransportAnalysis() {
                     <div className="flex flex-col items-center w-7 shrink-0 pt-4">
                       <div className={`w-3.5 h-3.5 rounded-full shrink-0 transition-all duration-300 ${cfg.dot}`} />
                       {!isLast && (
-                        <div className="flex-1 w-0.5 my-1 transition-colors duration-300 rounded-full bg-violet-400" />
+                        // 앞 단계가 완료되면 연결선이 완료 dot 과 같은 초록으로 채워진다(step-connector)
+                        <div
+                          className="step-connector step-connector-y flex-1 w-0.5 my-1 rounded-full bg-slate-200"
+                          style={{ '--step-progress': step.status === 'done' ? 1 : 0, '--step-fill': '#22c55e' }}
+                        />
                       )}
                     </div>
 
@@ -2566,9 +2573,7 @@ export default function ModuleUnitOceanTransportAnalysis() {
                       <Loader2 size={28} className="animate-spin text-blue-500" />
                       <p className="text-sm font-semibold text-slate-500">{validStatusMsg || 'BDF 파일 파싱 중...'}</p>
                       {validProgress > 0 && (
-                        <div className="w-48 bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                          <div className="bg-blue-500 h-full rounded-full transition-all duration-300" style={{ width: `${validProgress}%` }} />
-                        </div>
+                        <ProgressTrack value={validProgress} status="running" size="sm" trackClassName="bg-slate-200" className="w-48" />
                       )}
                     </div>
                   )}

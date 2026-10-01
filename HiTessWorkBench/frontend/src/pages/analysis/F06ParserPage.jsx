@@ -16,9 +16,14 @@ import RelatedAppsWidget from '../../components/ui/RelatedAppsWidget';
 import TransferBrowseModal from '../../components/ui/TransferBrowseModal';
 import { useIncomingTransfer } from '../../hooks/useIncomingTransfer';
 import PageBanner from '../../components/ui/PageBanner';
+import ProgressBar from '../../components/ui/ProgressBar';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import AppUsageStatsButton from '../../components/analysis/AppUsageStatsButton';
 import { buildFormData } from '../../utils/fileHelper';
 import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+
+// 배너 배경 선화 — 카탈로그 카드와 같은 그림(분류 'F06 Tools' 기본값, utils/cardArt.js)
+const BANNER_ART = 'doc';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -349,7 +354,7 @@ export default function F06ParserPage() {
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-      <PageBanner gradient="from-brand-blue via-amber-900 to-amber-700">
+      <PageBanner gradient="from-brand-blue via-amber-900 to-amber-700" artName={BANNER_ART}>
           <div className="flex items-center gap-4">
             <button
               onClick={() => setCurrentMenu('Productivity Apps')}
@@ -425,8 +430,8 @@ export default function F06ParserPage() {
                 onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                  isDragOver ? 'border-amber-400 bg-amber-50' : 'border-slate-300 hover:border-amber-400 hover:bg-slate-50'
+                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-[border-color,background-color,transform,box-shadow] duration-200 ease-out ${
+                  isDragOver ? 'border-amber-400 bg-amber-50 dropzone-armed' : 'border-slate-300 hover:border-amber-400 hover:bg-slate-50'
                 }`}
               >
                 <Upload size={28} className="mx-auto mb-2 text-slate-400" />
@@ -510,14 +515,16 @@ export default function F06ParserPage() {
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-600">진행률</span>
-                <span className="text-xs font-bold text-amber-600">{progress}%</span>
+                <span className="text-xs font-bold text-amber-600"><AnimatedNumber value={progress} />%</span>
               </div>
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-amber-500 rounded-full transition-all duration-500"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
+              {/* 진행 중엔 흐름, 완료되면 초록으로 — 상태를 막대가 직접 알린다 */}
+              <ProgressBar
+                value={progress}
+                status={isRunning ? 'running' : progress >= 100 ? 'success' : 'idle'}
+                tone="amber"
+                size="md"
+                trackClassName="bg-slate-100"
+              />
               {statusMessage && (
                 <p className="text-xs text-slate-500 mt-2 truncate">{statusMessage}</p>
               )}

@@ -2,6 +2,7 @@ import React from 'react';
 import { AlertCircle, CheckCircle2, Download, FileText, RotateCcw } from 'lucide-react';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
+import ProgressBar from '../ui/ProgressBar';
 import { API_BASE_URL } from '../../config';
 import { getAuthHeaders } from '../../utils/auth';
 
@@ -69,9 +70,14 @@ export default function AnalysisResultPanel({ job, compact = false, onNavigate, 
       </div>
 
       {!isSuccess && !isFailed && (
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200">
-          <div className="h-1.5 rounded-full bg-blue-500 transition-all" style={{ width: `${job.progress || 0}%` }} />
-        </div>
+        <ProgressBar
+          value={job.progress || 0}
+          status="running"
+          tone="blue"
+          size="sm"
+          trackClassName="bg-slate-200"
+          className="mt-3"
+        />
       )}
 
       {files.length > 0 && (

@@ -21,13 +21,31 @@
 /// </summary>
 import React from 'react';
 
-export default function PageBanner({ gradient, className = '', children }) {
+import { CardArt } from './cardArt';
+
+// artName: 배경에 옅게 깔 도면 선화 이름(cardArt 라이브러리 — 카탈로그 카드와 같은 그림).
+// 화면에 들어올 때 한 번 천천히 그려지고 7% 로 남는다. 버튼 무리와 제목 사이(오른쪽 28%)에 둔다.
+export default function PageBanner({ gradient, className = '', artName = null, children }) {
+  const art = artName ? (
+    <CardArt
+      name={artName}
+      drawDelay={120}
+      style={{ '--draw-duration': '1200ms' }}
+      className="absolute -bottom-2 right-[28%] hidden h-[88px] w-[170px] text-white/[0.07] md:block"
+    />
+  ) : null;
   return (
     <div className={`relative -mx-4 sm:-mx-5 lg:-mx-6 -mt-4 sm:-mt-5 lg:-mt-6 mb-5 sm:mb-6 px-4 sm:px-6 lg:px-8 py-4 sm:py-5 bg-gradient-to-r ${gradient} overflow-hidden shrink-0 ${className}`}>
       <div className="absolute inset-0 opacity-[0.04]" aria-hidden="true">
         <div className="absolute right-0 top-0 h-full w-48 -skew-x-12 bg-white" />
         <div className="absolute right-24 bottom-0 h-px w-40 bg-white" />
       </div>
+      {art && (
+        // 절점은 비워 둔다 — 흰 채움이면 어두운 배너 위에 점으로 튄다
+        <div className="pointer-events-none absolute inset-0" aria-hidden="true" style={{ '--art-node': 'transparent' }}>
+          {art}
+        </div>
+      )}
       <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between min-w-0">
         {children}
       </div>

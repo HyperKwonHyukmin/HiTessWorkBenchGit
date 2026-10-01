@@ -12,10 +12,15 @@ import { requestHullAcceleration, requestHullAccelerationSample, getHullAccelera
 import { useToast } from '../../contexts/ToastContext';
 import SolverCredit from '../../components/ui/SolverCredit';
 import PageBanner from '../../components/ui/PageBanner';
+import ProgressBar from '../../components/ui/ProgressBar';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import AppUsageStatsButton from '../../components/analysis/AppUsageStatsButton';
 import { buildFormData } from '../../utils/fileHelper';
 import { buildFilteredEnvelope, getConditionNumbersFromRules, getRuleAxisMaxima } from '../../utils/hullAcceleration';
 import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+
+// 배너 배경 선화 — 카탈로그 카드와 같은 그림(분류 'Hull Accel' 기본값, utils/cardArt.js)
+const BANNER_ART = 'hull';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -548,7 +553,7 @@ export default function HullAccelerationPage() {
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-      <PageBanner gradient="from-brand-blue via-amber-900 to-amber-700">
+      <PageBanner gradient="from-brand-blue via-amber-900 to-amber-700" artName={BANNER_ART}>
         <div className="flex items-center gap-4">
           <button
             onClick={() => setCurrentMenu('Productivity Apps')}
@@ -595,9 +600,9 @@ export default function HullAccelerationPage() {
                 onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${
+                className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-[border-color,background-color,transform,box-shadow] duration-200 ease-out ${
                   isDragOver
-                    ? 'border-amber-400 bg-amber-50 scale-[1.01]'
+                    ? 'border-amber-400 bg-amber-50 dropzone-armed'
                     : pdfFile
                     ? 'border-amber-300 bg-amber-50/60'
                     : 'border-slate-300 hover:border-amber-400 hover:bg-slate-50'
@@ -821,14 +826,16 @@ export default function HullAccelerationPage() {
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[11px] font-semibold text-slate-500">진행률</span>
-                    <span className="text-xs font-bold text-amber-600">{progress}%</span>
+                    <span className="text-xs font-bold text-amber-600"><AnimatedNumber value={progress} />%</span>
                   </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
+                  {/* 진행 중엔 흐름, 완료되면 초록으로 — 상태를 막대가 직접 알린다 */}
+                  <ProgressBar
+                    value={progress}
+                    status={isRunning ? 'running' : progress >= 100 ? 'success' : 'idle'}
+                    tone="amber"
+                    size="md"
+                    trackClassName="bg-slate-100"
+                  />
                   {statusMessage && (
                     <p className="text-[11px] text-slate-400 mt-1.5 truncate">{statusMessage}</p>
                   )}
@@ -968,7 +975,7 @@ export default function HullAccelerationPage() {
               </div>
 
               {/* 스크롤 가능한 결과 본문 */}
-              <div className="flex-1 overflow-auto space-y-5 min-h-0 pr-0.5">
+              <div className="flex-1 overflow-auto space-y-5 min-h-0 pr-0.5 reveal-stagger">
 
                 {/* ── Cb 미검출 → 수동 입력 후 재계산 프롬프트 ── */}
                 {resultData.cb_missing && (
@@ -1193,7 +1200,7 @@ export default function HullAccelerationPage() {
                               {/* 대표 수치 */}
                               <p className={`text-[11px] font-semibold mb-1 ${ac.color} uppercase tracking-wide`}>{ac.label} Envelope</p>
                               <div className="flex items-end gap-1.5 mb-3">
-                                <span className={`text-3xl font-black ${ac.color} leading-none`}>{fmt(item.value, 2)}</span>
+                                <span className={`text-3xl font-black ${ac.color} leading-none tabular-nums`}>{Number.isFinite(Number(item.value)) ? <AnimatedNumber value={Number(item.value)} digits={2} /> : fmt(item.value, 2)}</span>
                                 <span className="text-xs text-slate-500 mb-0.5 font-mono">m/s²</span>
                               </div>
                               {/* g 환산 */}
@@ -1275,7 +1282,7 @@ export default function HullAccelerationPage() {
                                   {/* 대표 수치 */}
                                   <p className={`text-[11px] font-semibold mb-1 ${ac.color} uppercase tracking-wide`}>{ac.label} · 최대</p>
                                   <div className="flex items-end gap-1.5 mb-3">
-                                    <span className={`text-3xl font-black ${ac.color} leading-none`}>{fmt(value, 2)}</span>
+                                    <span className={`text-3xl font-black ${ac.color} leading-none tabular-nums`}>{Number.isFinite(Number(value)) ? <AnimatedNumber value={Number(value)} digits={2} /> : fmt(value, 2)}</span>
                                     <span className="text-xs text-slate-500 mb-0.5 font-mono">m/s²</span>
                                   </div>
                                   {/* g 환산 */}

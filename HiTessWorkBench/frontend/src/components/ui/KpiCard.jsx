@@ -1,4 +1,5 @@
 import React from 'react';
+import AnimatedNumber from './AnimatedNumber';
 
 /**
  * KpiCard — 관리 페이지 상단 통계 카드의 표준 컴포넌트.
@@ -23,14 +24,18 @@ const KPI_ICON_TONE = {
   cyan: 'bg-cyan-50 text-cyan-600',
 };
 
-export function KpiCard({ label, value, sub, icon: Icon, color = 'blue' }) {
+// 숫자 값은 처음 나타날 때 0 에서 올라가고, 카드는 살짝 떠오르며 들어온다(한 번).
+// 여러 장을 나란히 둘 때 index 를 주면 0.05s 씩 차례로 들어온다.
+export function KpiCard({ label, value, sub, icon: Icon, color = 'blue', index = 0, digits = 0 }) {
   const tone = KPI_ICON_TONE[color] || KPI_ICON_TONE.blue;
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+    <div className="reveal-up bg-white border border-slate-200 rounded-xl p-4 shadow-sm" style={{ '--reveal-delay': `${index * 50}ms` }}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">{label}</p>
-          <p className="mt-1 text-2xl font-black text-slate-900 tabular-nums">{value}</p>
+          <p className="mt-1 text-2xl font-black text-slate-900 tabular-nums">
+            {typeof value === 'number' ? <AnimatedNumber value={value} digits={digits} locale /> : value}
+          </p>
           {sub && <p className="mt-1 text-xs text-slate-500 truncate">{sub}</p>}
         </div>
         {Icon && (

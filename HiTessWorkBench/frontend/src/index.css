@@ -159,6 +159,91 @@
   height: 2.25rem;
 }
 
+/* ── 대시보드·카탈로그 모션 (2026-10-01) ──
+   모두 '처음 한 번' 또는 '상태를 말하는' 움직임이다. 장식용 반복 모션은 두지 않는다.
+   끝은 ease-out-quart(튀지 않음). 동작 줄이기 사용자는 아래 전역 규칙이 즉시 끝낸다. */
+
+/* A·D 선화가 그려지는 진입 — cardArt.jsx 의 실선은 pathLength=1 이라 길이 1 로 그린다.
+   점선·절점은 선이 거의 그려진 뒤 흐려진 상태에서 나타난다. */
+.art-draw [pathLength] {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: art-draw var(--draw-duration, 700ms) cubic-bezier(0.25, 1, 0.5, 1) var(--draw-delay, 0ms) forwards;
+}
+.art-draw [stroke-dasharray],
+.art-draw .art-node {
+  opacity: 0;
+  animation: art-fade 320ms ease-out calc(var(--draw-delay, 0ms) + var(--draw-duration, 700ms) * 0.6) forwards;
+}
+@keyframes art-draw { to { stroke-dashoffset: 0; } }
+@keyframes art-fade { to { opacity: 1; } }
+
+/* B 실행 중 진행 막대 — 옅은 사선 무늬가 흐른다(작업이 살아 있다는 표시, 실행 중에만 붙는다) */
+.progress-flow {
+  background-image: linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.35) 50%, rgba(255,255,255,0) 70%);
+  background-size: 200% 100%;
+  animation: progress-flow 1.6s linear infinite;
+}
+@keyframes progress-flow { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+/* C 지표 막대가 처음 한 번 자란다 — 세로(월별)·가로(많이 쓰는 앱) */
+.bar-grow-y { transform-origin: bottom; animation: bar-grow-y 520ms cubic-bezier(0.25, 1, 0.5, 1) var(--bar-delay, 0ms) backwards; }
+.bar-grow-x { transform-origin: left; animation: bar-grow-x 520ms cubic-bezier(0.25, 1, 0.5, 1) var(--bar-delay, 0ms) backwards; }
+@keyframes bar-grow-y { from { transform: scaleY(0); } }
+@keyframes bar-grow-x { from { transform: scaleX(0); } }
+
+/* ③ 판정 도착 — 배지가 살짝 커지며 나타나고, NG 는 빨간 고리가 한 번 퍼진다(반복 없음) */
+.verdict-arrive { animation: verdict-arrive 260ms cubic-bezier(0.25, 1, 0.5, 1) backwards; }
+.verdict-alert::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45);
+  animation: verdict-ring 900ms ease-out 200ms 1 both;
+  pointer-events: none;
+}
+@keyframes verdict-arrive { from { opacity: 0; transform: scale(0.88); } }
+@keyframes verdict-ring { to { box-shadow: 0 0 0 7px rgba(220, 38, 38, 0); } }
+
+/* ⚠ transform 을 쓰는 등장 모션은 fill 을 backwards 로만 둔다 — both/forwards 면 끝난 뒤에도 transform 이 남아
+   안쪽의 position:fixed 모달이 화면이 아니라 이 상자를 기준으로 자리 잡는다. */
+/* ④ 결과가 차례로 펼쳐짐 — 결과 영역이 처음 나타날 때 자식들이 위에서부터 0.05s 간격으로 */
+.reveal-up { animation: reveal-up 360ms cubic-bezier(0.25, 1, 0.5, 1) var(--reveal-delay, 0ms) backwards; }
+.reveal-stagger > * { animation: reveal-up 360ms cubic-bezier(0.25, 1, 0.5, 1) backwards; }
+.reveal-stagger > *:nth-child(2) { animation-delay: 50ms; }
+.reveal-stagger > *:nth-child(3) { animation-delay: 100ms; }
+.reveal-stagger > *:nth-child(4) { animation-delay: 150ms; }
+.reveal-stagger > *:nth-child(5) { animation-delay: 200ms; }
+.reveal-stagger > *:nth-child(6) { animation-delay: 250ms; }
+.reveal-stagger > *:nth-child(n+7) { animation-delay: 300ms; }
+@keyframes reveal-up { from { opacity: 0; transform: translateY(6px); } }
+
+/* 원형 게이지(검증 건전도 등) — 처음 한 번 빈 원에서 값까지 찬다. 끝값은 SVG 속성 그대로(backwards) */
+.gauge-arc { animation: gauge-fill 760ms cubic-bezier(0.25, 1, 0.5, 1) 120ms backwards; }
+@keyframes gauge-fill { from { stroke-dashoffset: var(--gauge-from); } }
+
+/* ⑤ 업로드 칸 — 파일을 끌고 오면 테두리가 진해지고 살짝 떠오른다 / 받은 파일 칩이 들어온다 */
+.dropzone-armed { transform: scale(1.01); box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12); }
+.file-accepted { animation: reveal-up 280ms cubic-bezier(0.25, 1, 0.5, 1) backwards; }
+
+/* ⑥ 단계 연결선 — 완료되면 다음 단계 쪽으로 선이 채워진다 */
+.step-connector { position: relative; overflow: hidden; }
+.step-connector::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--step-fill, #10b981);
+  transform: scaleX(var(--step-progress, 0));
+  transform-origin: left;
+  transition: transform 520ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+/* 세로 단계 흐름(위 → 아래)용 — 선이 위에서 아래로 찬다 */
+.step-connector-y::after {
+  transform: scaleY(var(--step-progress, 0));
+  transform-origin: top;
+}
+
 /* ── 접근성: 동작 줄이기(prefers-reduced-motion) ──
    CSS 애니메이션·트랜지션을 사실상 즉시 완료로 만든다.
    framer-motion 은 main.jsx 의 MotionConfig(reducedMotion="user")가 별도로 처리. */

@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
+import ProgressTrack from '../../components/ui/ProgressBar';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { isAppBlockedFor, mergeAppSetting, useAppSettings } from '../../hooks/useAppSettings';
@@ -306,15 +308,16 @@ function ProgressBar({ progress, message, error, elapsed }) {
         <p className="text-xs font-semibold text-slate-700">{message || '진행 중...'}</p>
         <div className="flex items-center gap-2">
           {elapsed != null && <span className="text-xs text-slate-400 font-mono">{fmtTime(elapsed)}</span>}
-          <p className="text-xs font-bold text-blue-600 font-mono">{progress ?? 0}%</p>
+          <p className="text-xs font-bold text-blue-600 font-mono"><AnimatedNumber value={progress ?? 0} />%</p>
         </div>
       </div>
-      <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-300 ${error ? 'bg-red-500' : 'bg-blue-500'}`}
-          style={{ width: `${progress ?? 0}%` }}
-        />
-      </div>
+      {/* 공용 진행 막대 — 진행 중엔 빛이 흐르고, 실패하면 멈춘 자리에서 빨강으로 */}
+      <ProgressTrack
+        value={progress ?? 0}
+        status={error ? 'failed' : 'running'}
+        size="sm"
+        trackClassName="bg-slate-100"
+      />
     </div>
   );
 }
@@ -515,7 +518,7 @@ function KindBar({ label, icon, converted, total, ignored, errored = 0, failed, 
         <>
           {/* 수치 요약 */}
           <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-bold text-slate-800 font-mono leading-none">{converted.toLocaleString()}</span>
+            <span className="text-2xl font-bold text-slate-800 font-mono leading-none"><AnimatedNumber value={converted} locale /></span>
             <span className="text-xs text-slate-400">행 변환</span>
           </div>
 
@@ -626,10 +629,8 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
           <p className="text-sm font-semibold text-blue-600">{jobStatus.message}</p>
           <p className="text-xs text-slate-400 mt-1">CSV 파싱 및 변환 중...</p>
         </div>
-        <div className="w-56 bg-slate-100 rounded-full h-2 overflow-hidden">
-          <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${jobStatus.progress}%` }} />
-        </div>
-        <p className="text-xs font-mono font-bold text-blue-500">{jobStatus.progress}%</p>
+        <ProgressTrack value={jobStatus.progress} status="running" size="md" trackClassName="bg-slate-100" className="w-56" />
+        <p className="text-xs font-mono font-bold text-blue-500"><AnimatedNumber value={jobStatus.progress} />%</p>
       </div>
     );
   }
@@ -1113,11 +1114,9 @@ function EditResultPanel({
         <div className="flex items-center gap-2 mb-2">
           <Loader2 size={16} className="text-blue-600 animate-spin" />
           <p className="text-sm font-bold text-blue-900">apply-edit-intent 실행 중...</p>
-          <span className="ml-auto text-xs font-mono text-blue-700">{p}%</span>
+          <span className="ml-auto text-xs font-mono text-blue-700"><AnimatedNumber value={p} />%</span>
         </div>
-        <div className="h-2 rounded-full bg-blue-100 overflow-hidden">
-          <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${p}%` }} />
-        </div>
+        <ProgressTrack value={p} status="running" size="md" trackClassName="bg-blue-100" />
         <p className="mt-2 text-[11px] text-blue-700">{editJobStatus?.message ?? '편집 적용 중...'}</p>
       </div>
     );
@@ -1323,11 +1322,9 @@ function EditApplyingOverlay({ status }) {
             <p className="text-base font-bold text-slate-800">Edit Model로 구조해석 진행 중</p>
             <p className="text-[11px] text-slate-500 mt-0.5 truncate">화면 조작이 일시 중단됩니다.</p>
           </div>
-          <span className="ml-auto text-base font-bold font-mono text-blue-700">{p}%</span>
+          <span className="ml-auto text-base font-bold font-mono text-blue-700"><AnimatedNumber value={p} />%</span>
         </div>
-        <div className="h-2 rounded-full bg-blue-100 overflow-hidden mb-3">
-          <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${p}%` }} />
-        </div>
+        <ProgressTrack value={p} status="running" size="md" trackClassName="bg-blue-100" className="mb-3" />
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[10px] font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
             STEP {stage.idx} / 3
@@ -3594,7 +3591,13 @@ export default function HiTessModelBuilder() {
                   <div key={step.id} className="flex items-stretch">
                     <div className="flex flex-col items-center w-8 shrink-0 pt-5">
                       <div className={`w-4 h-4 rounded-full shrink-0 ${cfg.dot}`} />
-                      {!isLast && <div className="flex-1 w-0.5 my-1.5 rounded-full bg-blue-300" />}
+                      {/* 앞 단계가 완료되면 연결선이 완료 dot 과 같은 초록으로 채워진다(step-connector) */}
+                      {!isLast && (
+                        <div
+                          className="step-connector step-connector-y flex-1 w-0.5 my-1.5 rounded-full bg-slate-200"
+                          style={{ '--step-progress': step.status === 'done' ? 1 : 0, '--step-fill': '#10b981' }}
+                        />
+                      )}
                     </div>
                     <div
                       className={`flex-1 mb-3 ml-2 rounded-xl border px-4 py-4 transition-all cursor-pointer

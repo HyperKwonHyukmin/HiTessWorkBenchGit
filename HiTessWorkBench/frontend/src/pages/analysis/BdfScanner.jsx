@@ -5,6 +5,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Play, Terminal, FileSearch, AlertOctagon, Info, History } from 'lucide-react';
 import ChangelogModal from '../../components/ui/ChangelogModal';
 import FileDropzone from '../../components/ui/FileDropzone';
+import ProgressBar from '../../components/ui/ProgressBar';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import FeedbackState from '../../components/ui/FeedbackState';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
@@ -276,14 +278,16 @@ export default function BdfScanner() {
             <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
               <div className="flex justify-between text-xs text-slate-500 mb-1.5">
                 <span>{statusMessage}</span>
-                <span className="font-bold text-amber-600">{progress}%</span>
+                <span className="font-bold text-amber-600"><AnimatedNumber value={progress} />%</span>
               </div>
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-amber-500 rounded-full transition-all duration-500"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
+              {/* 진행 중엔 흐름, 완료되면 초록으로 — 상태를 막대가 직접 알린다 */}
+              <ProgressBar
+                value={progress}
+                status={isRunning ? 'running' : progress >= 100 ? 'success' : 'idle'}
+                tone="amber"
+                size="md"
+                trackClassName="bg-slate-100"
+              />
             </div>
           )}
           <RelatedAppsWidget appTitle="BDF Scanner" />

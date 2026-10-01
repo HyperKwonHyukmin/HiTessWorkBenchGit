@@ -13,6 +13,8 @@ import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { usePolling } from '../../hooks/usePolling';
 import { requestGroupModuleUnit, requestGroupModuleUnitFromPath, downloadFileText } from '../../api/analysis';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
+import ProgressBar from '../../components/ui/ProgressBar';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { API_BASE_URL } from '../../config';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
@@ -69,7 +71,7 @@ function BdfDropZone({ file, onFile, onClear, disabled }) {
 
   if (file) {
     return (
-      <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+      <div className="file-accepted flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
         <FileText size={22} className="text-blue-600 shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-blue-800 truncate">{file.name}</p>
@@ -93,11 +95,11 @@ function BdfDropZone({ file, onFile, onClear, disabled }) {
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
       onClick={() => !disabled && inputRef.current?.click()}
-      className={`flex flex-col items-center justify-center gap-2 p-8 border-2 border-dashed rounded-xl transition-colors cursor-pointer ${
+      className={`flex flex-col items-center justify-center gap-2 p-8 border-2 border-dashed rounded-xl transition-[border-color,background-color,transform,box-shadow] duration-200 ease-out cursor-pointer ${
         disabled
           ? 'border-slate-200 opacity-40 cursor-not-allowed'
           : dragOver
-          ? 'border-blue-400 bg-blue-50'
+          ? 'border-blue-400 bg-blue-50 dropzone-armed'
           : 'border-slate-200 hover:border-blue-400 hover:bg-blue-50/50'
       }`}
     >
@@ -133,10 +135,11 @@ function ResultsPanel({ result }) {
   const isPass = result.status === 'PASS';
   const isWarn = result.status === 'WARN';
   return (
-    <div className="p-4 space-y-4 overflow-y-auto h-full custom-scrollbar">
-      {/* 종합 판정 배너 */}
-      <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${
-        isPass ? 'bg-green-50 border-green-200' : isWarn ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
+    <div className="reveal-stagger p-4 space-y-4 overflow-y-auto h-full custom-scrollbar">
+      {/* 종합 판정 배너 — reveal-stagger 로 표보다 먼저 올라오고, FAIL 은 빨간 고리가 한 번 퍼진다
+          (verdict-arrive 는 reveal-stagger 의 animation 과 겹쳐 덮이므로 쓰지 않는다) */}
+      <div className={`relative flex items-center gap-3 px-4 py-3 rounded-xl border ${
+        isPass ? 'bg-green-50 border-green-200' : isWarn ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200 verdict-alert'
       }`}>
         {isPass
           ? <CheckCircle2 size={20} className="text-green-600 shrink-0" />
@@ -256,7 +259,7 @@ function ModuleStudioLauncher({
 
   const Icon = installed === false ? PackageX : versionMismatch ? AlertCircle : ShieldCheck;
   const buttonText = (() => {
-    if (installing) return <><Loader2 size={14} className="animate-spin" /> 설치 중 {progress?.progress ?? 0}%</>;
+    if (installing) return <><Loader2 size={14} className="animate-spin" /> 설치 중 <AnimatedNumber value={progress?.progress ?? 0} />%</>;
     if (checking) return <><Loader2 size={14} className="animate-spin" /> 확인 중</>;
     if (opening) return <><Loader2 size={14} className="animate-spin" /> 실행 중</>;
     if (installed === false) return <><Download size={14} /> Studio 설치 후 열기</>;
@@ -921,7 +924,11 @@ export default function GroupModuleUnitLiftingAnalysis() {
                     <div className="flex flex-col items-center w-7 shrink-0 pt-4">
                       <div className={`w-3.5 h-3.5 rounded-full shrink-0 transition-all duration-300 ${cfg.dot}`} />
                       {!isLast && (
-                        <div className="flex-1 w-0.5 my-1 transition-colors duration-300 rounded-full bg-violet-400" />
+                        // 앞 단계가 완료되면 연결선이 완료 dot 과 같은 초록으로 채워진다(step-connector)
+                        <div
+                          className="step-connector step-connector-y flex-1 w-0.5 my-1 rounded-full bg-slate-200"
+                          style={{ '--step-progress': step.status === 'done' ? 1 : 0, '--step-fill': '#22c55e' }}
+                        />
                       )}
                     </div>
 
@@ -1087,9 +1094,14 @@ export default function GroupModuleUnitLiftingAnalysis() {
                       <Loader2 size={28} className="animate-spin text-blue-500" />
                       <p className="text-sm font-semibold text-slate-500">{validStatusMsg || 'BDF 파일 파싱 중...'}</p>
                       {validProgress > 0 && (
-                        <div className="w-48 bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                          <div className="bg-blue-500 h-full rounded-full transition-all duration-300" style={{ width: `${validProgress}%` }} />
-                        </div>
+                        <ProgressBar
+                          value={validProgress}
+                          status="running"
+                          size="sm"
+                          trackClassName="bg-slate-200"
+                          className="w-48"
+                          label="BDF 검증 진행률"
+                        />
                       )}
                     </div>
                   )}

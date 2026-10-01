@@ -3,6 +3,8 @@ import { ArrowLeft, Code2 } from 'lucide-react';
 import PageBanner from '../ui/PageBanner';
 import GuideButton from '../ui/GuideButton';
 import AppUsageStatsButton from './AppUsageStatsButton';
+import { resolveCardArt } from '../ui/cardArt';
+import { findAppByAnyName } from '../../contexts/DashboardContext';
 
 const DEFAULT_GRADIENT = 'from-brand-blue via-brand-blue-dark to-blue-700';
 
@@ -29,9 +31,15 @@ export default function AnalysisPageBanner({
   subtitleClassName = 'text-blue-200/80',
   actions,
   statsProgramName,
+  // 배경 선화 이름(cardArt 라이브러리). 생략하면 제목으로 앱을 찾아 카탈로그 카드와 같은 그림을 쓴다.
+  // false 면 그리지 않는다.
+  art,
 }) {
+  // 카탈로그 카드에서 본 그림이 앱 안 배너까지 이어진다 — 어느 앱 안에 있는지 그림으로도 읽힌다.
+  const artName = art === false ? null
+    : art || resolveCardArt(findAppByAnyName(statsProgramName || title) || {});
   return (
-    <PageBanner gradient={gradient}>
+    <PageBanner gradient={gradient} artName={artName}>
       <div className="flex items-center gap-4 min-w-0">
         {onBack && (
           <button

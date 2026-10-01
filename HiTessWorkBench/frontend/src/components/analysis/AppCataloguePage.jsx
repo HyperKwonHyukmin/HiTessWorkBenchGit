@@ -15,9 +15,8 @@ import FeedbackState from '../ui/FeedbackState';
 import { buildCatalogueGroups, buildCategoryTabs } from '../../utils/appCatalogueGroups';
 
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
-// '개발 중' 섹션 펼침 여부 — 기본은 접힘. 이 페이지는 오늘 쓸 앱을 고르는 곳이고,
-// 아직 못 쓰는 앱이 화면 절반을 차지하면 목적이 흐려진다.
-const DEV_SECTION_KEY = 'hitess_dev_section_open';
+// '개발 중' 섹션은 페이지에 들어올 때마다 접힌 상태로 시작한다(펼침을 저장하지 않는다).
+// 이 페이지는 오늘 쓸 앱을 고르는 곳이고, 아직 못 쓰는 앱이 화면 절반을 차지하면 목적이 흐려진다.
 // 보기 방식(카드/목록). 기본은 카드. 예전 키 'hitess_app_view_mode' 는 일부러 읽지 않는다 —
 // 개편 전 화면에서 고른 값이라 그대로 따르면 새 기본 화면을 한 번도 못 보는 사용자가 생긴다.
 const VIEW_MODE_KEY = 'hitess_app_view_mode_v2';
@@ -117,7 +116,7 @@ export default function AppCataloguePage({
   const [searchTerm, setSearchTerm] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const { recentApps } = useRecentActivity();
-  const [devOpen, setDevOpen] = useState(() => localStorage.getItem(DEV_SECTION_KEY) === 'open');
+  const [devOpen, setDevOpen] = useState(false);
 
   // 관리자 오버라이드가 반영된 실효 카탈로그를 쓴다(ANALYSIS_DATA 직접 참조 금지 —
   // 그러면 App Settings 에서 바꾼 상태가 목록에 반영되지 않는다).
@@ -209,13 +208,7 @@ export default function AppCataloguePage({
     [filtered, sortFavoritesFirst],
   );
 
-  const handleDevToggle = useCallback(() => {
-    setDevOpen(prev => {
-      const next = !prev;
-      localStorage.setItem(DEV_SECTION_KEY, next ? 'open' : 'closed');
-      return next;
-    });
-  }, []);
+  const handleDevToggle = useCallback(() => setDevOpen(prev => !prev), []);
 
   const handleViewMode = useCallback((nextMode) => {
     setViewMode(nextMode);

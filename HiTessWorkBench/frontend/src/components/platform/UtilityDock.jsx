@@ -188,6 +188,30 @@ export default function UtilityDock({ currentUserId, isAdmin = false }) {
     [globalJobs],
   );
 
+  // 본문을 아래로 읽는 동안에는 도크를 접어 오른쪽 아래 내용을 가리지 않는다(1366 폭에서 대시보드
+  // 지표 행을 덮었다). 위로 올리거나, 맨 아래에 닿거나, 메뉴를 옮기면 다시 나온다.
+  // 본문 스크롤 영역(<main>)만 본다 — 안쪽 목록의 스크롤까지 반응하면 도크가 깜빡인다.
+  const [tucked, setTucked] = useState(false);
+  useEffect(() => {
+    const lastTop = new WeakMap();
+    const onScroll = (event) => {
+      const el = event.target;
+      if (!(el instanceof HTMLElement) || el.tagName !== 'MAIN') return;
+      const prev = lastTop.get(el) ?? 0;
+      const top = el.scrollTop;
+      lastTop.set(el, top);
+      const atBottom = top + el.clientHeight >= el.scrollHeight - 8;
+      if (atBottom || top < 24 || top < prev - 4) setTucked(false);
+      else if (top > prev + 4) setTucked(true);
+    };
+    document.addEventListener('scroll', onScroll, true);
+    return () => document.removeEventListener('scroll', onScroll, true);
+  }, []);
+  useEffect(() => { setTucked(false); }, [currentMenu]);
+  // 진행 중 작업·안 읽은 메시지가 있으면 접지 않는다 — 상태 배지가 곧 정보다.
+  // 접힌 채로 Tab 이 도크에 들어오면 onFocusCapture 가 바로 펼친다.
+  const hideNav = tucked && !activePanel && activeJobCount === 0 && chatUnread === 0;
+
   const togglePanel = (panel) => {
     setActivePanel(current => current === panel ? null : panel);
   };
@@ -303,8 +327,11 @@ export default function UtilityDock({ currentUserId, isAdmin = false }) {
       </div>
 
       <nav
-        className="fixed bottom-4 right-4 z-[99990] flex items-center gap-1 rounded-2xl border border-slate-700 bg-slate-900/95 p-1.5 shadow-xl backdrop-blur-xl"
+        className={`fixed bottom-4 right-4 z-[99990] flex items-center gap-1 rounded-2xl border border-slate-700 bg-slate-900/95 p-1.5 shadow-xl backdrop-blur-xl transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none ${
+          hideNav ? 'pointer-events-none translate-y-[calc(100%+1rem)] opacity-0' : ''
+        }`}
         aria-label="전역 도구"
+        onFocusCapture={() => setTucked(false)}
       >
         <button
           type="button"

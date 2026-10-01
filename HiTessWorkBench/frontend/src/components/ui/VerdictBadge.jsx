@@ -12,12 +12,16 @@ const SIZES = {
   md: { box: 'px-2.5 py-1 text-xs gap-1.5', icon: 13 },
 };
 
+// 판정이 '도착' 하는 순간(배지가 처음 그려질 때) 살짝 커지며 나타나고, NG 는 빨간 고리가 한 번 퍼진다
+// (index.css .verdict-arrive / .verdict-alert). 반복하지 않는다. 표 안의 수많은 행 배지처럼
+// 한꺼번에 여러 개가 뜨는 자리에서는 animate={false} 로 끈다.
 export default function VerdictBadge({
   ok,
   okLabel = 'OK',
   ngLabel = 'NG',
   size = 'sm',
   className = '',
+  animate = true,
 }) {
   const s = SIZES[size] ?? SIZES.sm;
   const Icon = ok ? CheckCircle2 : XCircle;
@@ -26,7 +30,7 @@ export default function VerdictBadge({
     : 'bg-red-100 text-red-700 border-red-200';
 
   return (
-    <span className={`inline-flex items-center font-bold border rounded-full ${s.box} ${tone} ${className}`}>
+    <span className={`relative inline-flex items-center font-bold border rounded-full ${s.box} ${tone} ${animate ? `verdict-arrive${ok ? '' : ' verdict-alert'}` : ''} ${className}`}>
       <Icon size={s.icon} className="shrink-0" aria-hidden="true" />
       {ok ? okLabel : ngLabel}
     </span>
