@@ -15,7 +15,7 @@ import DrawingParamsPanel from '../../components/analysis/DrawingParamsPanel';
 import DrawingLoadBcPanel from '../../components/analysis/DrawingLoadBcPanel';
 import SolveResultsPanel from '../../components/analysis/SolveResultsPanel';
 import lugExampleImageDataUrl from '../../assets/images/drawing-to-analysis-lug-example.png?inline';
-import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 import ProgressBar from '../../components/ui/ProgressBar';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 
@@ -526,6 +526,9 @@ export default function DrawingToAnalysis() {
       showToast(`요청 실패: ${msg}`, 'error');
     }
   };
+
+  // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
+  useDashboardAutoRun(PAGE_KEY, (!isRunning && (inputMode === 'pdf' ? pdfFile : imageFile)) || null, handleRun);
 
   /** 카탈로그 모달에서 PDF 선택 → 카탈로그 변환 API 호출 */
   const handleCatalogueSelect = async (filename, category) => {

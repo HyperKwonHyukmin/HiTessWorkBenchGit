@@ -16,7 +16,7 @@ import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import { getAuthHeaders, handleUnauthorized } from '../../utils/auth';
 import { useAuth } from '../../contexts/AuthContext';
-import { useDashboardFilesHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 const API_ENDPOINT = '/api/analysis/mooring-fitting/request';
 const STATUS_ENDPOINT = (jobId) => `/api/analysis/status/${jobId}`;
@@ -1615,6 +1615,9 @@ export default function MooringFittingAssessment() {
   const isFailed   = jobStatus?.status === 'Failed' || jobStatus?.status === 'Cancelled';
   const result     = jobStatus?.project?.result_info;
   const canRun     = !!structureFile && !!loadFile && !isRunning;
+
+  // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
+  useDashboardAutoRun('Mooring Fitting Assessment', (canRun && !hasRunOnce && structureFile) || null, handleRun);
   const doneCount  = steps.filter(s => s.status === 'done').length;
   const activeStep = steps[activeIdx];
 

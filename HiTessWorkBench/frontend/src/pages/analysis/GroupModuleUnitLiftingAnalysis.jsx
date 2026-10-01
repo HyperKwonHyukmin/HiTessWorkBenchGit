@@ -19,7 +19,7 @@ import { API_BASE_URL } from '../../config';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
-import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
 const MODULE_STUDIO_VERSION = '0.0.165';
@@ -791,6 +791,9 @@ export default function GroupModuleUnitLiftingAnalysis() {
       showToast(`BDF 검증 요청 실패 — ${detail}`, 'error');
     }
   };
+
+  // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
+  useDashboardAutoRun(GMU_MENU_NAME, (!validating && bdfFile) || null, handleValidate);
 
   // 샘플 실행 콜백 — SampleRunButton 이 호출. handleValidate 와 동일한 폴링 흐름에 진입.
   const sampleGmuBefore = () => {

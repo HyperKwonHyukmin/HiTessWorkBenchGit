@@ -16,7 +16,7 @@ import { useNavigation } from '../../contexts/NavigationContext';
 import { useToast } from '../../contexts/ToastContext';
 import { readPsaHint, writePsaHint, clearPsaHint, formatElapsed } from '../../utils/doublePipePsa';
 import { getAuthHeaders } from '../../utils/auth';
-import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 const PAGE_KEY = '이중관 구조 연료배관 해석';
 
@@ -1439,6 +1439,10 @@ export default function DoublePipeFuelLineAssessment() {
       showToast(message, 'error');
     }
   };
+
+  // 대시보드에서 넘겨받은 CSV 로 입력이 갖춰지면 실행까지 바로 이어간다 — 전달 시 고른 탭의 실행 버튼.
+  useDashboardAutoRun(PAGE_KEY, (activeTab === 'inner-support' && !isRunning && csvFile) || null, handleRunInnerSupport);
+  useDashboardAutoRun(PAGE_KEY, (activeTab === 'all-load-cases' && !psaRunning && canRunLc && tab2Input) || null, handleRunPsa);
 
   // 고유진동(Normal Mode) 해석 실행 — PSA 와 같은 Abaqus 라이센스/폴링/오버레이를 공유한다.
   const handleRunModal = async () => {

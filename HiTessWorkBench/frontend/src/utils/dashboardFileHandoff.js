@@ -10,12 +10,17 @@
  *   (바로 적용하면 리셋에 지워지거나, 자동 배정 토스트가 2~3번 뜬다).
  * File 객체는 직렬화할 수 없어 저장소가 아닌 모듈 메모리에 둔다(창을 새로 고치면 사라짐).
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 // 첫 진입 때 lazy 청크 로드 + 두 번째 마운트까지 넉넉히. 짧게 줄이면 느린 PC 에서 파일이 빠진다.
 const HANDOFF_TTL_MS = 8000;
 const APPLY_DELAY_MS = 60;
 let pending = null; // { menu, files: File[], at }
+// 대시보드에서 넘긴 파일을 적용한 직후 '자동 실행'을 기다리는 메뉴 → 무장 시각.
+// 입력이 끝내 갖춰지지 않으면(파일 하나가 모자람·형식 오류) 이 시간이 지나 조용히 해제된다 —
+// 나중에 사용자가 직접 입력을 고쳤을 때 갑자기 실행되지 않게 하려는 것이다.
+const AUTO_RUN_TTL_MS = 15000;
+const autoRunArmed = new Map();
 
 /**
  * 파일을 넘겨받는 앱(메뉴명 = getAppMenuName). 새 앱을 추가하면 그 페이지에
@@ -62,7 +67,7 @@ export function useDashboardFileHandoff(menu, apply, accept = null) {
   useEffect(() => {
     const file = peekDashboardFiles(menu)?.find(f => matchesAccept(f, accept));
     if (!file) return undefined;
-    const timer = setTimeout(() => apply(file), APPLY_DELAY_MS);
+    const timer = setTimeout(() => { autoRunArmed.set(menu, Date.now()); apply(file); }, APPLY_DELAY_MS);
     return () => clearTimeout(timer);
     // 마운트 1회만 본다 — apply 는 매 렌더 새 함수라 의존성에 넣으면 반복 적용된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -74,8 +79,30 @@ export function useDashboardFilesHandoff(menu, applyAll, accept = null) {
   useEffect(() => {
     const files = (peekDashboardFiles(menu) || []).filter(f => matchesAccept(f, accept));
     if (files.length === 0) return undefined;
-    const timer = setTimeout(() => applyAll(files), APPLY_DELAY_MS);
+    const timer = setTimeout(() => { autoRunArmed.set(menu, Date.now()); applyAll(files); }, APPLY_DELAY_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+}
+
+/**
+ * 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 그 페이지의 '실행' 동작을 한 번 자동으로 부른다.
+ *
+ * - 대시보드 전달로 들어온 경우에만 동작한다(직접 업로드·재방문·트레이 복귀에는 실행하지 않는다).
+ * - `ready` 는 페이지가 실행 버튼을 누를 수 있는 상태인지(파일 배정 완료·검증 통과·실행 중 아님)다.
+ *   파일 적용은 setState 라 다음 렌더에서야 반영되므로, ready 가 true 로 바뀌는 렌더에서 실행한다 —
+ *   그 렌더의 run 은 새 상태를 보는 함수다.
+ * - 한 번 실행하면 해제된다. AUTO_RUN_TTL_MS 안에 ready 가 되지 않으면 실행하지 않는다.
+ */
+export function useDashboardAutoRun(menu, ready, run) {
+  const runRef = useRef(run);
+  runRef.current = run;
+  useEffect(() => {
+    if (!ready) return;
+    const at = autoRunArmed.get(menu);
+    if (at == null) return;
+    autoRunArmed.delete(menu);
+    if (Date.now() - at > AUTO_RUN_TTL_MS) return;
+    runRef.current();
+  }, [menu, ready]);
 }

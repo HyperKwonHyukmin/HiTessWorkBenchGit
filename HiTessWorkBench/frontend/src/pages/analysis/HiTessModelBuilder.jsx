@@ -23,7 +23,7 @@ import { readCsvFileRows } from '../../utils/csvPreview';
 import ModelRegistrationModal from '../../components/modelRegistry/ModelRegistrationModal';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 import { describeDiagnostic, downloadDiagnostics, enrichDiagnostic } from '../../utils/modelValidation';
-import { useDashboardFilesHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 /* ──────────────────────────────────────────────────────────────────────────
    상수
@@ -2852,9 +2852,15 @@ export default function HiTessModelBuilder() {
   }, [pipeFile, equiFile, showToast]);
 
   // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다(이 화면의 업로드 처리와 같은 경로)
-  useDashboardFilesHandoff('HiTESS Model Builder', (files) => {
-    if (files.length > 1) handleMultipleFiles(files);
-    else handleAutoAssign(files[0], 'stru');
+  // 배정은 비동기(헤더 판별 + 같은 폴더 형제 CSV 스캔)라, 끝난 뒤에 자동 실행이 걸리도록 완료 표시를 남긴다.
+  const [handoffAssigned, setHandoffAssigned] = useState(null);
+  useDashboardFilesHandoff('HiTESS Model Builder', async (files) => {
+    try {
+      if (files.length > 1) await handleMultipleFiles(files);
+      else await handleAutoAssign(files[0], 'stru');
+    } finally {
+      setHandoffAssigned(Date.now());
+    }
   }, ['.csv']);
 
   /* ── 동일 폴더 형제 CSV 자동 스캔 (Electron) ─────────────────────── */
@@ -3514,6 +3520,13 @@ export default function HiTessModelBuilder() {
     return issues;
   }, [equiError, meshSize, pipeError, pipeFile, struError, struFile]);
   const hasPreflightErrors = preflightIssues.some(issue => issue.severity === 'error');
+
+  // 대시보드에서 넘겨받은 CSV 배정이 끝나고 실행 버튼이 열려 있으면 실행까지 바로 이어간다
+  useDashboardAutoRun(
+    'HiTESS Model Builder',
+    (handoffAssigned && (struFile || pipeFile) && !isRunning && !hasRunOnce && !hasPreflightErrors && handoffAssigned) || null,
+    handleRunModelBuilder,
+  );
 
   /* ── CSV 미리보기 파생 ─────────────────────────────────────────────
      '내 파일'/'사내 샘플' 어느 쪽이든 같은 표 컴포넌트가 그리도록 형태를 맞춘다. */

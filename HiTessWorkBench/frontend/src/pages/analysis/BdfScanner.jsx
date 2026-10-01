@@ -20,7 +20,7 @@ import TransferButton from '../../components/ui/TransferButton';
 import BdfModelViewer from '../../components/analysis/BdfModelViewer';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import { buildFormData } from '../../utils/fileHelper';
-import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -175,6 +175,9 @@ export default function BdfScanner() {
       addLog('서버 요청 실패.', 'error');
     }
   };
+
+  // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
+  useDashboardAutoRun(PAGE_KEY, (!isRunning && bdfFile) || null, runAnalysis);
 
   const hasResult = !!(modelData || step1Data || step2Data);
   const hasUnsupported = !!(unsupportedElements && Object.keys(unsupportedElements).length > 0);

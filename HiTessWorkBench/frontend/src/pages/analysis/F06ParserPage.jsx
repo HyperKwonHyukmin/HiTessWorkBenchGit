@@ -20,7 +20,7 @@ import ProgressBar from '../../components/ui/ProgressBar';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import AppUsageStatsButton from '../../components/analysis/AppUsageStatsButton';
 import { buildFormData } from '../../utils/fileHelper';
-import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 // 배너 배경 선화 — 카탈로그 카드와 같은 그림(분류 'F06 Tools' 기본값, utils/cardArt.js)
 const BANNER_ART = 'doc';
@@ -268,6 +268,9 @@ export default function F06ParserPage() {
       addLog('서버 요청 실패.', 'error');
     }
   };
+
+  // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
+  useDashboardAutoRun(PAGE_KEY, (!isRunning && f06File) || null, () => runParse());
 
   const handleCsvDownload = async () => {
     if (!resultInfo || selectedSubcase == null) return;

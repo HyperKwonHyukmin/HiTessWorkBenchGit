@@ -27,7 +27,7 @@ import { buildFormData } from '../../utils/fileHelper';
 import FileDropzone from '../../components/ui/FileDropzone';
 import FeedbackState from '../../components/ui/FeedbackState';
 import StatusBadge from '../../components/ui/StatusBadge';
-import { useDashboardFilesHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 export default function TrussAnalysis() {
   const { showToast } = useToast();
@@ -337,6 +337,9 @@ export default function TrussAnalysis() {
   };
 
   const canRun = nodeFile && memberFile && !nodeFile.sample && !memberFile.sample && !isRunning;
+
+  // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
+  useDashboardAutoRun('Truss Analysis', (canRun && nodeFile) || null, runAnalysis);
   
   const downloadSummaryLog = () => {
     if (logs.length === 0) { showToast('다운로드할 로그가 없습니다.', 'warning'); return; }

@@ -67,7 +67,7 @@ import {
   transformModulePoint,
   DECK_CLEARANCE_MM,
 } from '../../utils/feGeometry';
-import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 /**
  * 절점 ID 목록을 사람이 읽을 문장으로. 개수만 알려 주면 화면에서 어느 것인지 찾을 수
@@ -1997,6 +1997,9 @@ export default function ModuleUnitOceanTransportAnalysis() {
       showToast(`BDF 검증 요청 실패 — ${detail}`, 'error');
     }
   };
+
+  // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
+  useDashboardAutoRun(MENU_NAME, (!validating && bdfFile) || null, handleValidate);
 
   // ── 샘플 실행 콜백 ───────────────────────────────────────
   // SampleRunButton 이 호출한다. 서버가 만든 job_id 를 handleValidate 와 **같은 폴링 흐름**에

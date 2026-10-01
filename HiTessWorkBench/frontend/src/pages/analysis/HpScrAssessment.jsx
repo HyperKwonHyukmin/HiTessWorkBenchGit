@@ -23,7 +23,7 @@ import {
   parseCbushFromBdf,
   parseForcesFromBdf,
 } from '../../utils/bdfPipeParsers';
-import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 const LOG_COLORS = { success: 'text-green-400', error: 'text-red-400', warning: 'text-yellow-400', info: 'text-sky-400' };
 
@@ -192,6 +192,9 @@ export default function HpScrAssessment() {
       addLog('서버 요청 실패.', 'error');
     }
   };
+
+  // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
+  useDashboardAutoRun(PAGE_KEY, (!isRunning && bdfFile) || null, runAnalysis);
 
   // 샘플 실행 콜백 — SampleRunButton 이 호출. analysisMode(PSA/POR)를 그대로 백엔드로 넘김.
   const sampleHpscrBefore = () => {

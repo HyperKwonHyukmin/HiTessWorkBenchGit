@@ -18,7 +18,7 @@ import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import { API_BASE_URL } from '../../config';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
-import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 const SIDE_PASSAGE_STUDIO_VIEWER_ID = 'side-passage-studio';
 // 다른 App 이 넘긴 BDF 는 fresh-entry 재마운트가 끝난 뒤 살아남은 인스턴스에만 적용한다.
@@ -720,6 +720,9 @@ export default function SidePassageAssessment() {
       showToast(`BDF 검증 요청 실패 — ${detail}`, 'error');
     }
   };
+
+  // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
+  useDashboardAutoRun(SIDE_PASSAGE_MENU_NAME, (!validating && bdfFile) || null, handleValidate);
 
   // 샘플 실행 콜백 — SampleRunButton 이 호출. handleValidate 와 동일한 폴링 흐름에 진입.
   const sampleSidePassageBefore = () => {

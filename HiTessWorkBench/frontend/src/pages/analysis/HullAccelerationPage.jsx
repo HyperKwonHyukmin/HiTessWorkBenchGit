@@ -17,7 +17,7 @@ import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import AppUsageStatsButton from '../../components/analysis/AppUsageStatsButton';
 import { buildFormData } from '../../utils/fileHelper';
 import { buildFilteredEnvelope, getConditionNumbersFromRules, getRuleAxisMaxima } from '../../utils/hullAcceleration';
-import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 // 배너 배경 선화 — 카탈로그 카드와 같은 그림(분류 'Hull Accel' 기본값, utils/cardArt.js)
 const BANNER_ART = 'hull';
@@ -415,6 +415,9 @@ export default function HullAccelerationPage() {
       addLog('서버 요청 실패.', 'error');
     }
   };
+
+  // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
+  useDashboardAutoRun(PAGE_KEY, (!isRunning && pdfFile) || null, runExtraction);
 
   // 업로드 없이 서버 내장 샘플 PDF 로 바로 실행한다. 현재 입력된 상수/위치(X·Y·Z)를 그대로 사용.
   const runSample = async () => {

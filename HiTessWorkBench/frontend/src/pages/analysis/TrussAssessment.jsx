@@ -22,7 +22,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { buildFormData } from '../../utils/fileHelper';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
-import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
+import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 const MENU_NAME = 'Truss Structural Assessment';
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
@@ -412,6 +412,9 @@ export default function TrussAssessment() {
   const numNodes = Object.keys(nodes).length;
   const numMembers = elements.length;
   const isDataReady = numNodes > 0 && numMembers > 0;
+
+  // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
+  useDashboardAutoRun('Truss Structural Assessment', (isDataReady && !isRunning && !bdfFile?.sample && bdfFile) || null, runAnalysis);
 
   return (
     <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
