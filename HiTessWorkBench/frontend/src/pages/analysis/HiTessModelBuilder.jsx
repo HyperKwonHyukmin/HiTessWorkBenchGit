@@ -67,7 +67,7 @@ const STATUS_CONFIG = {
   disabled: { dot: 'bg-slate-200',                          badge: 'bg-slate-100 text-slate-400',     label: '비활성' },
 };
 
-const DEFAULT_MESH_SIZE_MM = '200';
+const DEFAULT_MESH_SIZE_MM = '500';
 
 // 1단계: 파일명으로 유형 추측
 const CSV_TYPE_KEYWORDS = {
@@ -2514,7 +2514,7 @@ export default function HiTessModelBuilder() {
   const [sampleLoading,  setSampleLoading]  = useState(false);
   const [sampleError,    setSampleError]    = useState(null);
 
-  // ── 옵션 (기본값: useNastran=false, uboltFullFix=true, meshSize=200) ──
+  // ── 옵션 (기본값: useNastran=false, uboltFullFix=true, meshSize=500) ──
   const [meshSize,      setMeshSize]      = useState(saved?.meshSize      ?? DEFAULT_MESH_SIZE_MM);
   const [uboltFullFix,  setUboltFullFix]  = useState(saved?.uboltFullFix  ?? true);
   const [useNastran,    setUseNastran]    = useState(saved?.useNastran    ?? false);
