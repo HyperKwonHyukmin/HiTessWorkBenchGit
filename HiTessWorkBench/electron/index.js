@@ -929,6 +929,7 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
     viewerSessions.register(session, existingWin.webContents.id);
     existingWin.setTitle(windowTitle);
     if (existingWin.isMinimized()) existingWin.restore();
+    if (!existingWin.isFullScreen()) existingWin.maximize();
     existingWin.focus();
     // initialFolder 등 갱신을 위해 reload (같은 Studio 이므로 URL 은 동일)
     existingWin.webContents.reload();
@@ -972,9 +973,8 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
   });
 
   win.once("ready-to-show", () => {
-    // 화면 우측 절반에 배치 — WorkBench 본체(좌측)와 Studio(우측)를 동시에 볼 수 있도록.
-    // Studio 를 여러 개 띄우면 계단식으로 어긋나게 놓아 뒤 창이 완전히 가려지지 않게 한다.
-    // 사용자가 이후 최대화/직접 리사이즈하면 OS 표준 동작에 따라 그대로 적용됨.
+    // 최대화해서 연다(사용자 요청 2026-10-01). 아래 우측 절반·계단식 배치는 '이전 크기로'
+    // 복원했을 때의 크기로 남겨 둔다 — WorkBench 와 나란히 보고 싶으면 최대화를 풀면 된다.
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const wa = display.workArea;
     const halfW = Math.floor(wa.width / 2);
@@ -991,6 +991,7 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
 
     const x = Math.max(wa.x, baseX - shift);
     win.setBounds({ x, y: wa.y + shift, width, height });
+    win.maximize();
     win.show();
     win.focus();
   });
