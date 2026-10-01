@@ -251,7 +251,7 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
 
 - **Z 밴드(tolMm) 이중 용도 분리**: `hoistToleranceMm`(UI "가상판 ±값")는 **수동 선택 강조용**일 뿐인데, 과거엔 이 좁은 값(모델높이×0.004 ≈ 10mm)이 **엔진 자동 최적화의 Z 클러스터링 tol** 로도 재사용돼 같은 데크의 근소 Z편차 노드가 서로 다른 레벨로 쪼개져 **좁고 작은 그룹만** 나왔다. → `useEditStore.js zoneSelectHoistPositions`는 이제 auto 시 **`tolMm: null`** 을 보내고(사용자가 명시하면 그 값 존중), 엔진(`HoistPositionOptimizer.RunRegionsSearch`)이 **Z 밴드 스윕**(`BuildZBandSweep` = {60,120,200,300}mm)을 돌려 **축적된 후보 중 랭킹으로 '가장 넓은 PASS'** 를 고른다. (payload 직렬화 시 `Number(null)===0` 함정 주의 — `opt.tolMm != null` 가드 필수.)
 - **면적 vs 상태(비단조)**: 밴드를 넓힐수록 면적↑ 이지만 **너무 넓으면 `wireConflictCount`(와이어 간섭)↑ → warn**(stage6 안정성 margin 은 오히려 동일). 실측(3496-35210-A508372): tol 10mm→3.07㎡ pass, 100→12.78 pass, 200→**16.84㎡ pass**, 350→2.38(붕괴), 500→23.72㎡ **warn(간섭29)**. 단일 고정 밴드는 keep-K/greedy 클러스터 경계 때문에 **비단조**라 스윕으로 회피. 스윕은 **조기 종료 없음**(모든 밴드 시도 후 랭킹) — 백엔드 `--optimize` 타임아웃 **300s** 이내(실측 ~15s).
-- **2D 방향 = 앱 3D '평면도(A키)' 와 동일**: 앱 평면도는 `camera.up=+X`·−Z 내려봄 → 화면 **↑X(종)·←Y(횡)**. 썸네일(`HoistCandidateThumbnail` + `planViewProjector`)은 이 방향이다(과거 ↑Y·→X 라 3D와 90° 어긋나 "대칭"처럼 보였음). ⚠ **구역 미니맵(`buildZonePartitionView`)만은 사용자 요청으로 →X(횡)·↑Y(종)** 이다(0.0.156) — 3D 평면도와 90° 다른 것이 의도된 상태. 형상 지표(면적/정사각형도/축편차)는 화면방향과 무관한 모델좌표 계산이라 불변.
+- **2D 방향 = 앱 3D '평면도(A키)' 와 동일 = 화면 →X(종, 가로)·↑Y(횡, 세로)** (2026-10-01 사용자 요청으로 변경). 평면도는 `STANDARD_VIEWS.top.up=+Y`·−Z 내려봄 — ModelBuilderStudio(`three/viewportGeometry.js`)·ModuleUnitStudio(`three/viewportFraming.js`) **둘 다 같은 값**이어야 한다. 후보 썸네일(`HoistCandidateThumbnail` + `planViewProjector`)·구역 미니맵(`buildZonePartitionView`)도 같은 방향이라 세 화면이 일치한다(이전엔 평면도·썸네일이 ↑X·←Y, 미니맵만 →X·↑Y 였다). 형상 지표(면적/정사각형도/축편차)는 화면방향과 무관한 모델좌표 계산이라 불변.
 
 #### 'Strict 평가' 토글 — 형상 FAIL 완화 (2026-07-27 세션, 0.0.121)
 
@@ -471,7 +471,7 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 5. 프론트엔드에서 1.5초마다 `GET /api/analysis/status/{job_id}` 폴링 (0~100%)
 6. 완료 후 결과 파일 경로를 DB `result_info` (JSON 컬럼)에 저장, `GET /api/download?filepath=...`로 다운로드
 
-**대시보드(2026-09-30 개편, 되돌리기 기준 태그 `dashboard-v1-backup`)**: `pages/dashboard/Dashboard.jsx` = 인사 줄(실행 중·7일 실패·서버 칩 + '자료' 메뉴) →
+**대시보드(2026-09-30 개편, 되돌리기 기준 태그 `dashboard-v1-backup`)**: `pages/dashboard/Dashboard.jsx` = 인사 줄(실행 중·확인할 실패·서버 칩 + '자료' 메뉴) →
 공지 한 줄 → **새 해석 시작 | 내 작업**(5:7) → **내 월별 실행 | 많이 쓰는 앱**(5:7, 위아래 경계를 맞춘 같은 격자).
 공지 줄·로드맵/소개/영상 모달·섹션 제목은 `dashboardShared.jsx`. 실패 사유는 DB `analysis.job_message`(job_manager 가 마지막 진행 메시지를 기록)를 쓴다.
 - **파일 전달**: '새 해석 시작'에 놓은 파일 → 추천 앱을 고르면 `utils/dashboardFileHandoff.js` 가 파일을 들고 이동하고, 앱 페이지의
@@ -480,6 +480,10 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
   ⚠ 대시보드→앱 이동은 fresh-entry 리셋으로 페이지가 1~2번 **재마운트**된다(DashboardContext 가 페이지 상태 삭제, App.jsx 인스턴스 키 증가).
   그래서 보관소는 꺼내도 지우지 않고(TTL 8s), 적용은 60ms 미뤄 언마운트 시 취소한다 — 바로 적용하면 리셋에 지워지거나 자동 배정 토스트가 여러 번 뜬다.
   다중 슬롯 앱의 배정 규칙은 각 페이지 것을 그대로 쓴다(Truss NODE/WAY 파일명, Mooring `load` 파일명, Model Builder 헤더 ori/outdia/cog, 이중관은 UBOLT 행 유무로 탭 선택).
+- **내 작업 목록 규칙**은 `utils/dashboardResults.js`(+테스트)에 있다: 같은 앱·같은 입력의 **연속** 실행은 한 줄로 묶고(실패는 안 묶음),
+  판정 칩은 결과에 판정 값이 실제로 있는 앱만(Mooring `summary.ok`, 권상 `step1/2_status`, Column Buckling, Carling) 읽는다.
+  '확인할 실패' = 최근 7일 실패 중 이후 같은 앱이 성공하지 않은 것 — 상단 칩과 큰 실패 카드가 같은 기준이다.
+  ⚠ 새 앱이 판정 값을 내면 `resultHighlight()` 에 한 줄 추가할 것(없으면 칩이 안 뜰 뿐 깨지진 않는다).
 - **월별 건수**(`/analysis/stats/monthly`)는 이력 목록과 같은 기준(샘플·권상 세부 검토 제외)이다. 예전 값(세부 검토 포함)과 비교하지 말 것.
 - **버전 체크**는 서버 버전이 **더 높을 때만** 업데이트를 요구한다(`utils/versionCompare.js`, App.jsx·LoginScreen 공통) — exe 를 서버보다 먼저 배포해도 새 클라이언트가 막히지 않는다.
 
