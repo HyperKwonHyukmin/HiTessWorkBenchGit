@@ -20,7 +20,7 @@ import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 import { useDashboardFileHandoff } from '../../utils/dashboardFileHandoff';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.162';
+const MODULE_STUDIO_VERSION = '0.0.163';
 // 다른 App 이 넘긴 BDF 는 fresh-entry 재마운트가 끝난 뒤 살아남은 인스턴스에만 적용한다.
 const HANDOFF_APPLY_DELAY_MS = 60;
 
