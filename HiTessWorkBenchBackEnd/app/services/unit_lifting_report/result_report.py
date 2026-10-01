@@ -193,9 +193,12 @@ def _fill_hook_table(ws, d, warnings: list[str]):
     for row in range(HOOK_BLOCK_ROWS[0], HOOK_BLOCK_ROWS[-1] + WIRES_PER_BLOCK):
         ws[f"X{row}"] = None
 
+    # Trolley 4점 그룹은 엔진이 훅 2개(G31·G32)로 나눈다. 서식 블록은 '원래 그룹' 단위로 묶어
+    # 두 훅의 wire 4개와 반력 합을 한 블록에 적는다 — 훅별로 블록을 쓰면 블록이 모자라 뒤 훅이 잘린다.
+    parent_of = _split_parent_map(d)
     by_group: dict[int, list] = {}
     for w in d.results.wires:
-        by_group.setdefault(w.group_id, []).append(w)
+        by_group.setdefault(parent_of.get(w.group_id, w.group_id), []).append(w)
     group_ids = sorted(by_group)
     if len(group_ids) > len(HOOK_BLOCK_ROWS):
         warnings.append(f"서식은 Hook/Trolley {len(HOOK_BLOCK_ROWS)}개까지 표시합니다. "
@@ -210,9 +213,11 @@ def _fill_hook_table(ws, d, warnings: list[str]):
                 ws[f"AJ{start + offset}"] = None
             continue
         gid = group_ids[block]
-        wires = sorted(by_group[gid], key=lambda w: (w.lug_node_id, w.wire_element_id))
-        # 그룹·러그를 캡처 그림의 라벨(G1·N34)과 같은 표기로 적어 어느 와이어인지 그림에서 찾을 수 있게 한다
-        ws[f"F{start}"] = f"G{gid}"
+        wires = sorted(by_group[gid], key=lambda w: (w.group_id, w.lug_node_id, w.wire_element_id))
+        hooks = sorted({w.group_id for w in wires})
+        # 그룹·러그를 캡처 그림의 라벨(G1·N34, 분할 훅은 G31·N86)과 같은 표기로 적어 어느 와이어인지
+        # 그림에서 찾을 수 있게 한다. 분할 그룹은 블록 이름에 두 훅을 모두 적는다(G31+G32).
+        ws[f"F{start}"] = "+".join(f"G{h}" for h in hooks) if len(hooks) > 1 else f"G{hooks[0]}"
         if len(wires) > WIRES_PER_BLOCK:
             warnings.append(f"그룹 {gid}의 wire {len(wires)}개 중 {WIRES_PER_BLOCK}개만 서식에 기록했습니다.")
         for offset in range(len(wires), WIRES_PER_BLOCK):
@@ -220,7 +225,7 @@ def _fill_hook_table(ws, d, warnings: list[str]):
         reaction = 0.0
         has_reaction = False
         for offset, w in enumerate(wires[:WIRES_PER_BLOCK]):
-            ws[f"L{start + offset}"] = f"G{gid}-N{w.lug_node_id}"
+            ws[f"L{start + offset}"] = f"G{w.group_id}-N{w.lug_node_id}"
             ws[f"X{start + offset}"] = round(w.tension_ton, 3)
             if w.vertical_ton is not None:
                 reaction += w.vertical_ton
@@ -229,6 +234,26 @@ def _fill_hook_table(ws, d, warnings: list[str]):
                 warnings.append(f"그룹 {gid}, Lug {w.lug_node_id}의 슬링각이 없어 반력을 기록하지 못했습니다.")
         if has_reaction:
             ws[f"R{start}"] = round(reaction, 3)
+
+
+def _split_parent_map(d) -> dict[int, int]:
+    """분할 훅 groupId → 원래 groupId. 분할되지 않은 그룹은 넣지 않는다.
+
+    엔진(Stage 3)이 visualization.apexes 에 `splitFromGroupId` 를 싣는다. 그 필드가 없는 옛
+    결과는 엔진의 ID 규칙(원래 ID × 10 + 1·2)으로 되짚는다 — 단 두 짝(×10+1, ×10+2)이 모두
+    있고 원래 ID 가 따로 존재하지 않을 때만(우연히 ID 가 11·12 인 그룹을 묶지 않도록).
+    """
+    apexes = [a for a in (d.stability.apexes or []) if isinstance(a, dict)]
+    ids = {int(a.get("groupId") or 0) for a in apexes} | {w.group_id for w in d.results.wires}
+    if any("splitFromGroupId" in a for a in apexes):
+        return {int(a.get("groupId") or 0): int(a["splitFromGroupId"])
+                for a in apexes if a.get("splitFromGroupId") is not None}
+    parent: dict[int, int] = {}
+    for gid in ids:
+        base = gid // 10
+        if gid >= 10 and base not in ids and {base * 10 + 1, base * 10 + 2} <= ids:
+            parent[gid] = base
+    return parent
 
 
 # ── 이미지 ───────────────────────────────────────────────────────────────────
@@ -347,7 +372,10 @@ def _fit_form_text(ws):
         if not isinstance(v, str) or not v.strip():
             continue
         col = cell.column_letter
-        if col in _FORM_TEXT_COLUMNS or (col == "F" and v.lstrip().startswith("-")):
+        # Hook/Trolley 표의 블록 이름(G31+G32)·wire 이름(G31-N2059)도 좁은 칸이라 넘치면 앞글자가 잘린다
+        in_hook_table = (col in ("F", "L")
+                         and HOOK_BLOCK_ROWS[0] <= cell.row < HOOK_BLOCK_ROWS[-1] + WIRES_PER_BLOCK)
+        if col in _FORM_TEXT_COLUMNS or (col == "F" and v.lstrip().startswith("-")) or in_hook_table:
             targets.append(cell)
     for cell in targets:
         a = cell.alignment

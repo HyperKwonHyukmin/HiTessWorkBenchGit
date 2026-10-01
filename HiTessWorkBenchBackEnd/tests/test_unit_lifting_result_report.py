@@ -144,3 +144,47 @@ def test_footer_contact_falls_back_to_employee_id(built):
     """사용자 정보가 비어 있으면 사번으로라도 연락처를 남긴다."""
     _n, wb, _w, _s = built
     assert "문의 | A476854" in wb["Report"]["F52"].value
+
+
+# ── Trolley 4점 분할 훅(G31·G32) — 원래 그룹 한 블록에 반력 합으로 ─────────────────────
+def _split_case(with_split_field=True):
+    from types import SimpleNamespace as NS
+
+    def wire(gid, lug, eid, tension, vertical):
+        return NS(group_id=gid, lug_node_id=lug, wire_element_id=eid, tension_ton=tension, vertical_ton=vertical)
+
+    wires = [wire(1, 1154, 1, 2.573, 2.4), wire(1, 1186, 2, 1.788, 1.953),
+             wire(2, 1218, 3, 1.954, 2.0), wire(2, 1250, 4, 2.169, 2.115),
+             wire(31, 86, 5, 6.104, 6.0), wire(31, 2059, 6, 5.996, 5.942),
+             wire(32, 4518, 7, 7.6, 7.5), wire(32, 4600, 8, 7.7, 7.579)]
+    apexes = [{"groupId": 1}, {"groupId": 2}, {"groupId": 31}, {"groupId": 32}]
+    if with_split_field:
+        for a in apexes:
+            a["splitFromGroupId"] = 3 if a["groupId"] > 10 else None
+    return NS(options=NS(jig_limit_ton=6.2), results=NS(wires=wires), stability=NS(apexes=apexes))
+
+
+@pytest.mark.parametrize("with_split_field", [True, False])
+def test_split_trolley_hooks_merge_into_one_block(with_split_field):
+    wb = RR._load_template()
+    ws = wb["Report"]
+    warnings: list[str] = []
+    RR._fill_hook_table(ws, _split_case(with_split_field), warnings)
+
+    # 훅 4개(1·2·31·32)를 블록 3개에 쓰다 G32 가 잘리던 문제 — 이제 경고 없이 3블록에 다 들어간다
+    assert warnings == []
+    assert [ws[f"F{r}"].value for r in RR.HOOK_BLOCK_ROWS] == ["G1", "G2", "G31+G32"]
+    assert [ws[f"L{r}"].value for r in (100, 101, 102, 103)] == [
+        "G31-N86", "G31-N2059", "G32-N4518", "G32-N4600"]
+    assert [ws[f"X{r}"].value for r in (100, 101, 102, 103)] == [6.104, 5.996, 7.6, 7.7]
+    # 반력 = 두 훅 수직 성분의 합(11.942 + 15.079) — Total(=SUM(R92:W103)) 도 이 값을 포함한다
+    assert ws["R100"].value == pytest.approx(27.021, abs=1e-3)
+    assert str(ws["AJ103"].value).startswith("=IF")
+
+
+def test_ordinary_group_ids_above_ten_are_not_merged():
+    """splitFromGroupId 가 없는 옛 결과라도 짝(×10+1·×10+2)이 아니면 묶지 않는다."""
+    from types import SimpleNamespace as NS
+    d = NS(results=NS(wires=[NS(group_id=11), NS(group_id=13)]),
+           stability=NS(apexes=[{"groupId": 11}, {"groupId": 13}]))
+    assert RR._split_parent_map(d) == {}
