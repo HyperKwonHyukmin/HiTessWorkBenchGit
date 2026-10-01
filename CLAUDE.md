@@ -477,6 +477,10 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 - **파일 전달**: '새 해석 시작'에 놓은 파일 → 추천 앱을 고르면 `utils/dashboardFileHandoff.js` 가 파일을 들고 이동하고, 앱 페이지의
   `useDashboardFileHandoff`(1개) / `useDashboardFilesHandoff`(여러 개)가 **그 페이지의 기존 업로드 처리 함수**에 태운다.
   ⚠ 새 파일 입력 앱을 만들면 페이지에 훅을 붙이고 `FILE_HANDOFF_MENUS` 에 메뉴명을 등록할 것(미등록 앱은 추천 목록에 '다시 선택').
+  **자동 실행(2026-10-01)**: 파일 적용 뒤 `useDashboardAutoRun(menu, ready, run)` 이 그 페이지의 실행 버튼 핸들러를 한 번 부른다.
+  `ready` 는 실행 버튼이 열리는 조건 && **입력 파일 객체**(값이 바뀌어야 다시 판정된다), 대시보드 전달로 들어온 경우만·15초 안에
+  ready 가 안 되면 해제. 권상·Side Passage·해상 운송은 'BDF 검증', Model Builder 는 비동기 배정(형제 CSV 스캔) 완료 후 실행.
+  ⚠ 훅은 run·ready 에 쓰는 변수 **선언 뒤**에 둘 것(앞에 두면 렌더 시 TDZ 오류로 페이지가 죽는다). 새 앱도 이 훅을 같이 붙일 것.
   ⚠ 대시보드→앱 이동은 fresh-entry 리셋으로 페이지가 1~2번 **재마운트**된다(DashboardContext 가 페이지 상태 삭제, App.jsx 인스턴스 키 증가).
   그래서 보관소는 꺼내도 지우지 않고(TTL 8s), 적용은 60ms 미뤄 언마운트 시 취소한다 — 바로 적용하면 리셋에 지워지거나 자동 배정 토스트가 여러 번 뜬다.
   다중 슬롯 앱의 배정 규칙은 각 페이지 것을 그대로 쓴다(Truss NODE/WAY 파일명, Mooring `load` 파일명, Model Builder 헤더 ori/outdia/cog, 이중관은 UBOLT 행 유무로 탭 선택).
