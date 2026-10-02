@@ -63,6 +63,44 @@ def _decode_completed(proc: subprocess.CompletedProcess) -> str:
     return out
 
 
+# Nastran FATAL 코드 → 사용자가 바로 알아볼 원인. 없는 코드는 메시지 원문만 보여준다.
+_FATAL_HINTS = {
+    "9994": "BDF 카드 형식 오류",
+    "300": "BDF 카드 필드 값 오류",
+    "307": "BDF 카드 필드 값 오류",
+    "9050": "모델이 충분히 구속되지 않음(Mechanism)",
+    "2101": "한 절점이 여러 RBE2 의 종속 절점",
+}
+
+
+def describe_f06_fatal(result_payload: Dict[str, Any]) -> str:
+    """lift-result 가 모은 F06 FATAL 목록을 Studio 에 띄울 한 줄 사유로 만든다.
+
+    예: 'Nastran 해석 오류 — FATAL 9994 ×7, 300 ×6 (BDF 카드 형식 오류). 첫 메시지: …'
+    Studio·WorkBench 는 job.message 를 '실행 실패' 옆에 그대로 보여 주므로, 여기서 원인을 말해야 한다.
+    """
+    fatals = result_payload.get("fatalMessages") or []
+    if not fatals:
+        return "Nastran 해석 오류 — F06 에 FATAL 이 있어 결과를 매핑하지 못했습니다."
+    # 첫 오류가 뒤따르는 연쇄 오류(6498 등)보다 원인에 가깝다 — 나온 순서대로 앞의 몇 개만 보인다.
+    codes: list = []
+    for item in fatals:
+        code = str(item.get("code") or "").strip()
+        if code and code not in codes:
+            codes.append(code)
+    code_text = " · ".join(codes[:4]) + (" 등" if len(codes) > 4 else "")
+    hints = []
+    for code in codes:
+        hint = _FATAL_HINTS.get(code)
+        if hint and hint not in hints:
+            hints.append(hint)
+    first = " ".join(str(fatals[0].get("message") or "").split())
+    if len(first) > 240:
+        first = first[:240] + "…"
+    hint_text = f" ({' · '.join(hints)})" if hints else ""
+    return f"Nastran 해석 오류 — FATAL {len(fatals)}건(코드 {code_text}){hint_text}. 첫 메시지: {first}"
+
+
 def build_lifting_bdf(
     bdf_path: str,
     stability_json_path: str,
@@ -185,6 +223,8 @@ def task_execute_unit_structural(
     status_msg = "Success"
     engine_output = ""
     result_data: Dict[str, Any] = {}
+    # 실패 시 job.message 로 나갈 사유. Studio 는 이 문구를 '실행 실패' 옆에 보여 준다.
+    failure_reason = "Unit 구조 해석 실패"
 
     bridge_script = get_nastran_bridge_script_path()
 
@@ -313,7 +353,8 @@ def task_execute_unit_structural(
             result_payload = json.load(f)
 
         if result_payload.get("meta", {}).get("hasFatal"):
-            engine_output += "\n[Error] F06 fatal — 결과 매핑 불가."
+            failure_reason = describe_f06_fatal(result_payload)
+            engine_output += f"\n[Error] {failure_reason}"
             status_msg = "Failed"
 
         result_summary = result_payload.get("summary") or {}
@@ -362,11 +403,15 @@ def task_execute_unit_structural(
 
     except subprocess.TimeoutExpired as te:
         status_msg = "Failed"
+        failure_reason = f"시간 초과: {te}"
         engine_output += f"\n[Error] 시간 초과: {te}"
     except Exception as e:
         status_msg = "Failed"
         logger.error("UnitStructural 오류: %s", str(e), exc_info=True)
         engine_output += f"\n[Error] {str(e)}"
+        # 엔진 로그를 통째로 붙인 예외(lift-run prepare exit …)는 첫 줄만 사유로 쓴다 — 전문은 engine_log 에 있다.
+        if not isinstance(e, JobCancelledError):
+            failure_reason = (str(e).strip().splitlines() or ["Unit 구조 해석 실패"])[0][:300]
 
     # 실패 원인(엔진 stdout/stderr)을 DB result_info 에 영속화한다(서버 재시작 후에도 추적 가능).
     if status_msg == "Failed":
@@ -396,5 +441,5 @@ def task_execute_unit_structural(
     mark_complete(
         job_id, status_msg, engine_output, project_data,
         success_message="Unit 구조 해석 완료",
-        failure_message="Unit 구조 해석 실패",
+        failure_message=failure_reason,
     )

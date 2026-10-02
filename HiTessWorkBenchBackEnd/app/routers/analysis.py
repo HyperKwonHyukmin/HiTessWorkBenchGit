@@ -35,6 +35,7 @@ from ..services.beam_service import task_execute_beam
 from ..services.bdfscanner_service import task_execute_bdfscanner
 from ..services.hpscr_service import task_execute_hpscr
 from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
+from ..services.bdf_deck_check import apply_deck_fixes_lines, read_deck_lines
 from ..services.unit_structural_service import (
     build_lifting_bdf,
     find_lifting_op2,
@@ -3133,6 +3134,59 @@ async def request_groupmoduleunit_from_path(
         owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
+
+
+class DeckFixRequest(BaseModel):
+    employee_id: str
+    # None 이면 고칠 수 있는 문제를 전부 고친다.
+    codes: Optional[list[str]] = None
+    use_nastran: bool = False
+
+
+@router.post("/analysis/groupmoduleunit/{analysis_id}/deck-fix")
+def fix_groupmoduleunit_deck(
+        analysis_id: int,
+        payload: DeckFixRequest,
+        db: Session = Depends(database.get_db),
+        current_user: str = Depends(require_auth),
+):
+    """BDF 검증에서 찾은 구간 경계 문제(BEGIN BULK 누락 등)를 고친 수정본으로 다시 검증한다.
+
+    사용자가 페이지에서 확인한 뒤에만 부른다. 원본 BDF 는 건드리지 않고, 새 작업 폴더에 같은 파일명의
+    수정본을 만들어 request-from-path 와 같은 검증 작업을 띄운다. 응답의 fixedPath 를 페이지가 이후
+    '다시 검증' 입력으로 쓴다.
+    """
+    _verify_employee_self(payload.employee_id, current_user)
+    record = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
+    if record is None or record.program_name not in ("GroupModuleUnit", "SidePassage"):
+        raise HTTPException(status_code=404, detail="BDF 검증 기록을 찾을 수 없습니다.")
+    assert_current_user_can_access_owner(record.employee_id, current_user, db)
+    src = (record.input_info or {}).get("bdf_model")
+    if not src:
+        raise HTTPException(status_code=404, detail="검증한 BDF 경로가 기록에 없습니다.")
+    abs_src = os.path.abspath(src)
+    if not _is_within_dir(_USER_CONNECTION_DIR, abs_src):
+        raise HTTPException(status_code=400, detail="허용되지 않은 파일 경로입니다.")
+    if not os.path.isfile(abs_src):
+        raise HTTPException(status_code=404, detail="BDF 파일이 보관 기간이 지나 삭제되었습니다.")
+
+    fixed_lines, applied = apply_deck_fixes_lines(read_deck_lines(abs_src), payload.codes)
+    if not applied:
+        raise HTTPException(status_code=400, detail="자동으로 고칠 문제가 없습니다.")
+
+    work_dir, timestamp = make_work_dir(payload.employee_id, record.program_name)
+    fixed_path = os.path.join(work_dir, os.path.basename(abs_src))
+    # latin-1 로 읽고 써서 고치지 않은 줄은 바이트 그대로 둔다(cp949 주석 보존).
+    with open(fixed_path, "w", encoding="latin-1", newline="") as f:
+        f.write("".join(fixed_lines))
+
+    source = "SidePassage" if record.program_name == "SidePassage" else "Workbench"
+    job_id = submit_analysis_job(
+        task_execute_groupmoduleunit,
+        fixed_path, work_dir, payload.employee_id, timestamp, source, payload.use_nastran, record.program_name,
+        owned_work_dir=work_dir,
+    )
+    return {"job_id": job_id, "fixedPath": fixed_path, "applied": applied}
 
 
 @router.get("/analysis/groupmoduleunit/{parent_id}/artifacts")

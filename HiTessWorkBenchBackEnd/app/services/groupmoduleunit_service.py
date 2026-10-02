@@ -33,6 +33,7 @@ from .analysis_runner import (
     run_subprocess_killtree,
     update_progress,
 )
+from .bdf_deck_check import inspect_deck, merge_into_step1
 
 logger = logging.getLogger(__name__)
 
@@ -782,6 +783,11 @@ def task_execute_groupmoduleunit(
 
         # Step1 변환 + 저장
         step1 = transform_to_step1(model_json, bdf_path)
+        # BEGIN BULK 누락·Bulk 안 해석 설정 줄 같은 구간 경계 문제 — 페이지가 확인을 받고 수정본을 만든다.
+        try:
+            merge_into_step1(step1, inspect_deck(bdf_path))
+        except Exception as deck_error:  # 검사 실패가 검증 전체를 막지 않게 한다
+            logger.warning("[GroupModuleUnit] deck 구조 검사 실패: %s", deck_error)
         validation_path = os.path.join(bdf_dir, f"{bdf_stem}_validation_step1.json")
         with open(validation_path, "w", encoding="utf-8") as f:
             json.dump(step1, f, indent=2, ensure_ascii=False)
