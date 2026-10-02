@@ -162,6 +162,14 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   ⚠ `hooks/useCameraSync.js` 는 **ModelBuilder 판**(직교용 `camera.zoom` 동기화 포함)을 써야 한다.
   ModuleUnit 카메라는 Orthographic 이라 position/quaternion/up/target 만 맞추면 **배율이 어긋난다.**
 
+#### Find(Ctrl+F) — Node/Element/RBE 를 ID 로 찾기 (ModuleUnit 0.0.167 · ModelBuilder 0.0.91, 2026-10-02)
+
+뷰포트 우상단 찾기 바(툴바 `찾기` 또는 `Ctrl+F`). `data/findEntity.js`·`components/FindBar.jsx` 는 **두 Studio 에서 바이트 단위로 같다** —
+한쪽을 고치면 복사하고 `diff` 로 확인할 것. 상세: `ModuleUnitStudio/docs/find-by-id-ctrl-f.md`.
+- ⚠ ModuleUnit 뷰포트의 `focusEntity` API 는 회전 중심 고정 정책상 no-op 이고, **`source:'find'` 선택만** 카메라·회전 중심을 옮긴다.
+  이 예외를 넓히면 결과 행 클릭이 카메라를 흔든다.
+- 가서포트 Element 는 해석 스냅숏(`resultElements`)을 `extraElements` 로 넘겨 찾는다(원본 → 스냅숏 순).
+
 #### 독립 그룹 자동 연결 (Edit › 자동 연결, 0.0.150)
 
 `data/groupAutoConnect.js`(+테스트 14건)를 ModelBuilderStudio 에서 **무수정 이식**했다 — 두 Studio 의
@@ -506,6 +514,13 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 - **적용 앱 2호 = GMU 권상**(`GroupModuleUnitLiftingAnalysis.jsx`, 2026-10-01). 단계 = BDF 입력 검증 → Studio 권상 검토 → 결과·보고서.
   판정은 두 시점: 검증 직후(`basis:'validation'` — 오류·Nastran FATAL=실패, 분리 그룹=검토 필요) / Studio 구조 해석 후(`basis:'structural'`, 우선).
   구조 판정 규칙은 `utils/gmuLiftingVerdict.js` 와 Electron `viewer:runUnitStructural` 의 status 계산이 **같아야 한다**(재진입 때 DB `result_info.summary` 로 다시 계산). 한쪽 고치면 양쪽 다.
+  **BDF 구간 경계 검사·자동 수정(2026-10-02)**: 검증이 `services/bdf_deck_check.py` 로 Executive/Case Control/Bulk 경계를 보고 step1 JSON `deckIssues` 에 싣는다 —
+  `missing_begin_bulk`(경고) · `case_control_in_bulk`(오류, SOL·CEND·SUBCASE·'키 = 값' 줄이 Bulk 안에 있음). 고칠 수 있는 문제가 있으면 판정은 최소 '검토 필요'이고 화면은 1단계에 남아
+  '다음 행동 바'에 'BDF 자동 수정 후 다시 검증'을 띄운다 → `window.confirm` 으로 무엇을 고치는지 보여 준 뒤 `POST /api/analysis/groupmoduleunit/{id}/deck-fix` 가
+  **새 작업 폴더에 같은 파일명의 수정본**을 만들고 검증 작업을 띄운다(원본 불변, 고치지 않은 줄은 latin-1 로 바이트 그대로). 이후 '다시 검증' 입력은 수정본(`handoffBdfPath`)이다.
+  실례: `3542_m09.bdf` 는 BEGIN BULK 가 없어 검증은 통과했는데 Wire 포함 구조 해석에서 Nastran FATAL 9994/300 — nastran_bridge `bulk_start_index` 도 함께 고쳐 이제는 그대로 둬도 해석된다.
+  새 검사 규칙은 이 모듈에 추가하고, 오탐 확인은 `userConnection/**/*.bdf` 전수 스캔으로 할 것(도입 시 925개 중 오탐 0).
+  구조 해석 실패 시 job.message 는 고정 문구가 아니라 원인이다(`unit_structural_service.describe_f06_fatal` — FATAL 건수·코드·첫 메시지). Studio 는 이 문구를 '실행 실패' 옆에 보여 준다.
   단계 상태는 저장하지 않고 사건(검증 결과·Studio 열기·`viewer:unit-structural-completed`·산출물/보고서 받기 = `ResultArtifactsCard onDownloaded`)에서 매번 계산한다.
 - **첫 화면(입력 전)은 `runFrame/RunStartPanel`** — 진행 순서(단계별 하는 일) + 이 앱의 내 최근 실행 5건(`program_name` 필터, '결과 열기' = 페이지의 `applyResultReentry`,
   '입력 불러오기' = 페이지의 `applyRecentInput` — 실패한 실행도 허용, 보관 만료면 끔). 입력 경로는 `input_info` 에서 읽는다:
@@ -514,6 +529,25 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 - **적용 3·4호 = Truss Model Builder · Truss Structural Assessment**(2026-10-02). 판정 = `utils/trussVerdict.js`(+테스트).
   Assessment 의 Side Support 허용 반력 `SIDE_SUPPORT_ALLOWABLE` 은 이 파일 한 곳 — 결과 표(`AssessmentResultTable`)도 여기서 import 한다.
   예전 검은 콘솔은 `runFrame/RunLogPanel`(접힘, 실패 시 펼침)로 바꿨다. `AssessmentProjectModal` 에 `onDownloaded`·`onOpenResult`(My Projects '결과 화면에서 열기') prop 추가.
+- **작업 탭(2026-10-02) — Model Builder · GMU 권상** — 한 페이지에서 그 앱의 해석 과정을 **최대 4개 동시에** 진행한다(탭별 Studio 창·탭별 Job Center 기록).
+  페이지 컴포넌트 = 배너 + `WorkspaceTabBar` + `WorkspaceFrame` 안에 탭마다 작업 화면 1개(`ModelBuilderWorkspace` / `GmuLiftingWorkspace` = 예전 페이지 본문).
+  숨은 탭도 언마운트하지 않아 폴링이 계속 돈다. 탭 UI·저장 훅은 `runFrame/WorkspaceTabs.jsx`(`useWorkspaceStore`), 탭 규칙은 `utils/appWorkspaces.js` 의
+  `createWorkspaceKit({ isIdle })` + 앱별 `utils/modelBuilderWorkspaces.js` · `utils/gmuLiftingWorkspaces.js`(+테스트).
+  저장소는 DashboardContext `modelBuilderPageState` · `gmuLiftingPageState`(`{activeId, workspaces, states}`). GMU 는 더 이상 `analysisPageStates[GMU]` 를 쓰지 않는다.
+  **다른 앱에 붙일 때**: kit(isIdle·label·status) + 컨텍스트 저장소 + `resetAnalysisEntryState` 의 freshEntry + 페이지 분리 + `MULTI_INSTANCE_VIEWERS` 등록.
+  - **메뉴 재진입은 탭을 지우지 않는다** — 진행 중·결과 있는 탭은 남기고 빈 탭을 하나 열어 그리로 간다. 대시보드 파일 전달·결과 다시 열기·**다른 App 연계(gmuHandoff)** 는
+    **마운트 시점에 활성이고 비어 있던 탭만** 받는다(`useDashboardFileHandoff`·`useDashboardFilesHandoff`·`useDashboardAutoRun`·`useResultReentry` 의 `enabled` 인자).
+    탭이 가득 차면 토스트로 알리고 GMU 연계 BDF 는 버린다. ⚠ '가득 찼는가'는 **마운트 시점 값**(`entryBlocked`)으로 판정할 것 — 미뤄서 보면 방금 전달을 받은 빈 탭이 채워져 있어 오판한다(실측).
+  - **Studio 는 모델마다 창이 따로다** — Electron `viewer-sessions.js` 의 `MULTI_INSTANCE_VIEWERS`(`model-studio`·`module-unit-studio`)는 세션 키가 `viewerId::sourceKey`
+    (MB = 산출 폴더, GMU = 검증한 서버 BDF 경로). 다른 Studio 는 viewerId 당 창 1개. 탭에서 재빌드·재검증 후 Studio 를 다시 열면 그 탭의 옛 모델 창을 닫는다.
+  - ⚠ **Studio → WorkBench 이벤트는 반드시 탭을 특정해서 받는다.** 탭이 여러 개라 '현재 페이지 상태' 로 처리하면 **다른 탭 모델에 오류 없이 적용된다.**
+    MB `modelflow:finalize-edit-request` = 세션 `outputDir` ↔ 탭 `bdfResult.outputDir`(탭이 닫혔으면 페이지가 Studio 에 실패 회신).
+    GMU `viewer:unit-structural-completed` = `parentAnalysisId` ↔ 탭 `bdfAnalysisId`(`isOwnStructuralEvent` — id 가 없으면 받지 않는다. 예전 코드는 id 가 없을 때 통과시켰다).
+  - **작업 번호(1~4, `ws.slotNo`)가 탭의 고정 정체성**이다 — 번호별 색 칩, 이름 `작업 N · <입력 파일 이름>`을 탭·Job Center 카드·**Studio 창 제목**
+    (`viewer:open` 의 `windowTitle`)이 함께 쓴다. 탭을 닫아도 다른 탭 번호는 그대로, 새 탭은 빈 가장 작은 번호. 위치 순번으로 바꾸지 말 것(이미 뜬 Studio 창 제목과 어긋난다).
+  - 탭 모양 = 폴더 탭(활성 탭이 `bg-slate-50` 작업 영역과 이어짐) + 작업 영역 머리(`작업 N · 이름 · 상태`). 상태 문구는 앱별 `statusText` 로 바꾼다.
+  - Job Center 는 `startGlobalJob(jobId, menu, { slot, label })` 로 **탭당 1개** 기록(같은 App 이라도 slot 이 다르면 공존). 카드를 누르면 `workbench:job-slot-focus` 이벤트로 그 탭으로 간다.
+  - ⚠ Electron 변경이 있어 **WorkBench exe 재빌드가 있어야 Studio 다중 창이 동작**한다(웹 쪽 탭·동시 실행은 프론트만으로 동작).
 - **Studio 열기 카드는 공용** `runFrame/StudioLauncherCard`(Model Builder·GMU 공통). 앱마다 그라데이션 카드를 새로 만들지 말 것.
 - **결과 다시 열기 조건**은 `canOpenResult(project)` 한 곳 — 앱마다 기준 키가 다르다(Model Builder `output_dir`, GMU `bdf`). 새 앱은 `RESULT_KEYS` 에도 등록.
 - ⚠ **앱 페이지는 전부 keep-alive**(`App.jsx KEEP_ALIVE_MENUS`)라 window 키 단축키(Ctrl+Enter)는 `currentMenu === 자기 메뉴`일 때만 반응하게 할 것 — 안 그러면 다른 앱 화면에서 숨은 페이지의 실행이 눌린다.
@@ -524,6 +558,14 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 (대시보드 Top·Analysis Management·프로그램 상세 모달·Usage Reports 4곳 공통, 규칙은 `services/usage_rollup.py`).
 부모 판별: UnitStructural = `input_info.parent_analysis_id`, 나머지 = `input_info.posture` 경로의 `<ts>_<사번>_<부모>` 폴더명
 (Studio 가 보내는 `source` 는 두 App 모두 `ModuleUnitStudio` 라 못 쓴다). ⚠ 새 세부 검토 program_name 을 만들면 `SUBSTEP_LABELS` 에 등록할 것.
+
+**해석 오류 유형 기록(2026-10-02)** — 반복되는 Nastran/엔진 오류를 코드로 막아 가기 위한 영구 기록. 절차·규칙 원본: `docs/operations/nastran-diagnostics.md`, 대응 스킬 `/nastran-triage`(70 로컬).
+작업 종료(`mark_complete`·Model Builder 편집 적용)마다 `services/nastran_diagnostics.py` 가 F06 FATAL/WARNING·엔진 실패를 DB `diagnostic_signatures`(유형)·`diagnostic_occurrences`(발생)에 쌓고,
+**처음 보는 유형(또는 handled 후 재발 = regressed)일 때만** 입력 BDF·F06 발췌를 `DataStorage/DiagnosticsArchive/cases/` 에 보관한다(30일 정리 제외). 경고는 세기만 한다.
+유형 = Nastran **코드 + 모듈**(본문으로 묶으면 한 원인이 수십 유형으로 갈라진다), 연쇄 코드(6498·6624·9002·208·102·285)는 원인 FATAL 이 있으면 뺀다,
+F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 같이 써서 다음 작업 F06 을 가져가는 오귀속이 실측됐다).
+운영(145) 기록은 70 에서 `scripts/pull_diagnostics.py`(관리자 사번 로그인, 로그아웃 안 함 — 로그아웃 API 가 외부 앱 세션을 끊는다)로 가져오고 대응 후 `mark` 로 handled 표시.
+⚠ 새 Nastran 실행 경로가 `mark_complete` 를 안 거치면 `schedule_collection(job_id, …, extra_dirs=[산출 폴더])` 를 직접 부를 것(편집 적용이 그 예). 테스트는 conftest 가 `HITESS_DIAGNOSTICS=0` 으로 끈다.
 
 작업 상태는 인메모리(`job_status_store` dict)에 저장됩니다. 서버 재시작 시 진행 중인 작업 상태가 소실되는 구조적 한계가 있습니다(프로덕션에서는 Redis 권장).
 
