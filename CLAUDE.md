@@ -491,6 +491,34 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 - **월별 건수**(`/analysis/stats/monthly`)는 이력 목록과 같은 기준(샘플·권상 세부 검토 제외)이다. 예전 값(세부 검토 포함)과 비교하지 말 것.
 - **버전 체크**는 서버 버전이 **더 높을 때만** 업데이트를 요구한다(`utils/versionCompare.js`, App.jsx·LoginScreen 공통) — exe 를 서버보다 먼저 배포해도 새 클라이언트가 막히지 않는다.
 
+**파일 기반 해석 앱 공통 틀(2026-10-01, 기준 앱 = HiTESS Model Builder · GMU 권상)**: 새 앱·기존 앱 개편은 `components/analysis/runFrame/` 부품을 먼저 쓴다.
+★ **표준 문서 = `docs/standards/file-based-app-page-standard.md`** — 골격·부품 props·상태 규칙·체크리스트. 새 페이지/개편은 이 문서와 두 기준 페이지에서 더하고 빼서 시작한다.
+골격 = 왼쪽 레일(`StepRail` · `InputSummary` · 옵션 · 주 실행 버튼 1개 + 보조 링크) + 오른쪽 작업면(`JobProgressCard` → `VerdictHeader` → `NextActionBar` → 단계 본문 → `EngineLogPanel`).
+- **판정은 통과 / 검토 필요 / 실패 한 가지**(색+아이콘+글자). 판정 함수는 순수 함수 + 테스트로 둔다(Model Builder = `utils/modelBuilderVerdict.js`).
+  Model Builder '검토 필요' = 질량 있는 입력 행 제외 · 분리 그룹 · 미해결 U-bolt(사용자 결정). 자유단·경고 수는 판정에 쓰지 않되 **숨기지 않는다**(경고 N '판정 미반영').
+- **단계 완료는 실제 사건으로만** — 실행 성공 / 판정 통과·'확인함'·편집 적용 / BDF 받기·후속 전달. 탭을 열었다고 완료로 바꾸지 말 것(예전 600ms 가짜 완료 제거).
+- 실행이 끝나면 **판정 화면(2단계)으로 이동**한다. ⚠ 옛 코드 주석의 '사용자 요구: 완료 시 1단계로 이동', '경고 화면에서 삭제'는 2026-10-01 사용자가 뒤집었다 — 되살리지 말 것.
+- `NextActionBar` 는 판정 머리 **바로 아래**에 둔다. 화면 하단 sticky 로 두면 오른쪽 아래 전역 작업·메시지 도크가 주 버튼을 가린다(실측). 페이지 루트는 `pb-28`.
+- 편집 적용 등 긴 후속 작업에 **전체 화면 잠금 오버레이를 쓰지 않는다** — 해당 패널 안 `JobProgressCard` + 결과에 의존하는 버튼만 잠근다.
+- **재실행**: 실행 후 주 버튼은 '옵션 바꿔 다시 실행'. 브라우저에 File 이 있으면 다시 올리고, 없으면 `POST /api/analysis/{id}/rerun` 에 옵션 덮어쓰기(`mesh_size`·`ubolt_full_fix`·`run_nastran`, 현재 Model Builder 만 읽음)를 보낸다. 빈 본문 `{}` 은 원본 옵션 그대로(My Projects 호환).
+- **결과 다시 열기**: `utils/resultReentry.js` — My Projects 상세 '결과 화면에서 열기'와 대시보드 '내 작업' 행(성공·파일 보관 중)이 `offerResultReentry(menu, id)` 후 이동, 페이지의 `useResultReentry` 가 `GET /api/analysis/{id}` 의 result_info(산출 폴더)로 결과 상태를 복원한다. 새 앱을 붙이려면 `RESULT_REENTRY_MENUS` 등록 + 페이지에 훅.
+- 보조 텍스트 최소 11px · slate-500 이상, 자간 대문자 라벨·그라데이션 카드·2px 색 테두리·측면 색 띠·이모지 금지(대시보드 2026-10 문법과 동일). 비평 기록: `.impeccable/critique/*hitessmodelbuilder*`.
+- **적용 앱 2호 = GMU 권상**(`GroupModuleUnitLiftingAnalysis.jsx`, 2026-10-01). 단계 = BDF 입력 검증 → Studio 권상 검토 → 결과·보고서.
+  판정은 두 시점: 검증 직후(`basis:'validation'` — 오류·Nastran FATAL=실패, 분리 그룹=검토 필요) / Studio 구조 해석 후(`basis:'structural'`, 우선).
+  구조 판정 규칙은 `utils/gmuLiftingVerdict.js` 와 Electron `viewer:runUnitStructural` 의 status 계산이 **같아야 한다**(재진입 때 DB `result_info.summary` 로 다시 계산). 한쪽 고치면 양쪽 다.
+  단계 상태는 저장하지 않고 사건(검증 결과·Studio 열기·`viewer:unit-structural-completed`·산출물/보고서 받기 = `ResultArtifactsCard onDownloaded`)에서 매번 계산한다.
+- **첫 화면(입력 전)은 `runFrame/RunStartPanel`** — 진행 순서(단계별 하는 일) + 이 앱의 내 최근 실행 5건(`program_name` 필터, '결과 열기' = 페이지의 `applyResultReentry`,
+  '입력 불러오기' = 페이지의 `applyRecentInput` — 실패한 실행도 허용, 보관 만료면 끔). 입력 경로는 `input_info` 에서 읽는다:
+  GMU `bdf_model` → 다시 올리지 않고 `handoffBdfPath`(request-from-path), Model Builder `stru/pipe/equip_csv` → `/api/download` 로 받아 File 로 만들어 칸에 넣는다(옵션도 그 실행 값).
+  첫 화면에서만 레일의 `xl:self-start` 를 풀어 두 칸 높이를 맞춘다(화면 높이까지 늘리지 않는다 — 늘리면 카드 안이 다시 빈다). 입력 칸이 덩그러니 있는 빈 화면을 꾸밈으로 채우지 말 것.
+- **적용 3·4호 = Truss Model Builder · Truss Structural Assessment**(2026-10-02). 판정 = `utils/trussVerdict.js`(+테스트).
+  Assessment 의 Side Support 허용 반력 `SIDE_SUPPORT_ALLOWABLE` 은 이 파일 한 곳 — 결과 표(`AssessmentResultTable`)도 여기서 import 한다.
+  예전 검은 콘솔은 `runFrame/RunLogPanel`(접힘, 실패 시 펼침)로 바꿨다. `AssessmentProjectModal` 에 `onDownloaded`·`onOpenResult`(My Projects '결과 화면에서 열기') prop 추가.
+- **Studio 열기 카드는 공용** `runFrame/StudioLauncherCard`(Model Builder·GMU 공통). 앱마다 그라데이션 카드를 새로 만들지 말 것.
+- **결과 다시 열기 조건**은 `canOpenResult(project)` 한 곳 — 앱마다 기준 키가 다르다(Model Builder `output_dir`, GMU `bdf`). 새 앱은 `RESULT_KEYS` 에도 등록.
+- ⚠ **앱 페이지는 전부 keep-alive**(`App.jsx KEEP_ALIVE_MENUS`)라 window 키 단축키(Ctrl+Enter)는 `currentMenu === 자기 메뉴`일 때만 반응하게 할 것 — 안 그러면 다른 앱 화면에서 숨은 페이지의 실행이 눌린다.
+- `ValidationStepLog`(BDF 검증 본문, BdfScanner·GMU·Side Passage·해상 운송 공용)도 같은 문법으로 바꿨다: 근거 없는 '건전도 %' 게이지 삭제, 카드 분류는 표. 미참조·고립 GRID 는 엔진이 오류로 세지 않으므로 **경고**로 표시한다(판정 머리와 같은 기준). 공통 틀 페이지 안에서는 `bare` prop.
+
 **사용 통계 합산(2026-09-30)**: 권상 App 의 세부 검토 레코드(`ModuleStability`·`ModuleHoistOptimize`·`UnitStructuralAnalysis`)는
 통계에서 부모 App(`GroupModuleUnit`/`SidePassage`) 한 줄로 합산되고 세부 건수는 `steps`/`stepBreakdown` 으로 나간다
 (대시보드 Top·Analysis Management·프로그램 상세 모달·Usage Reports 4곳 공통, 규칙은 `services/usage_rollup.py`).
