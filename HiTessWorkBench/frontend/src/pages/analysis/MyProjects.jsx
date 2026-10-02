@@ -31,6 +31,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { findAppByProgramName, getDisplayProgramName, useGlobalJobs } from '../../contexts/DashboardContext';
 import { isDoublePipeProject, normalizeDoublePipeProject } from '../../utils/doublePipeProject';
+import { canOpenResult, offerResultReentry, reentryMenuForProgram } from '../../utils/resultReentry';
+import { useNavigation } from '../../contexts/NavigationContext';
 
 const FILE_RETENTION_DAYS = 30;
 
@@ -286,7 +288,7 @@ const DoublePipeProjectDetails = ({ project, filesMissing, onDownload }) => {
 // ==========================================
 // 3. 프로젝트 상세 모달 (공유 Modal 컴포넌트 사용)
 // ==========================================
-const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
+const ProjectDetailModal = ({ project, onClose, onOpen3D, onOpenResult }) => {
   const { showToast } = useToast();
   const [xlsxDownloading, setXlsxDownloading] = useState({});
   const [filesMissing, setFilesMissing] = useState(false);
@@ -433,6 +435,18 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D }) => {
               ))}
             </dl>
           </section>
+
+          {/* 앱 결과 화면으로 다시 열기 — 판정·Studio·BDF 전달을 이어서 할 수 있다(지원 앱만) */}
+          {onOpenResult && canOpenResult(project) && !filesMissing && (
+            <button
+              type="button"
+              onClick={() => onOpenResult(project)}
+              className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
+            >
+              <ChevronRight size={18} aria-hidden="true" />
+              {getDisplayProgramName(project.program_name)} 결과 화면에서 열기
+            </button>
+          )}
 
           {/* 3D 시각화 버튼 */}
           {project.status === 'Success' && project.result_info?.bdf && !filesMissing && (
@@ -692,6 +706,7 @@ export default function MyProjects() {
   const { showToast } = useToast();
   const { employeeId } = useAuth();
   const { startGlobalJob } = useGlobalJobs();
+  const { setCurrentMenu } = useNavigation();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -1406,12 +1421,25 @@ export default function MyProjects() {
           project={selectedProject}
           onClose={() => setSelectedProject(null)}
           onViewResultModel={() => setIsResultViewerOpen(true)}
+          onOpenResult={canOpenResult(selectedProject) ? () => {
+            const menu = reentryMenuForProgram(selectedProject.program_name);
+            offerResultReentry(menu, selectedProject.id);
+            setSelectedProject(null);
+            setCurrentMenu(menu);
+          } : undefined}
         />
       ) : (
         <ProjectDetailModal
           project={selectedProject}
           onClose={() => setSelectedProject(null)}
           onOpen3D={() => setIs3DViewerOpen(true)}
+          onOpenResult={(p) => {
+            const menu = reentryMenuForProgram(p.program_name);
+            if (!menu) return;
+            offerResultReentry(menu, p.id);
+            setSelectedProject(null);
+            setCurrentMenu(menu);
+          }}
         />
       )}
 

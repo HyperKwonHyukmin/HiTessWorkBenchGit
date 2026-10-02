@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Database, Layers, GitMerge, Box, FileText, RotateCcw, CheckCircle2, AlertCircle, Tag } from 'lucide-react';
 import AnimatedNumber from '../ui/AnimatedNumber';
+// 판정 머리(utils/trussVerdict)와 같은 허용 반력을 쓴다 — 표와 판정이 어긋나지 않게 한 곳에 둔다.
+import { SIDE_SUPPORT_ALLOWABLE } from '../../utils/trussVerdict';
 
 function EmptyState({ msg, Icon }) {
   return (
@@ -27,7 +29,6 @@ function StatBadge({ label, value, color }) {
   );
 }
 
-const SIDE_SUPPORT_ALLOWABLE = 100800;
 
 function AssessmentTable({ data, section }) {
   const [sortConfig, setSortConfig] = useState(null);

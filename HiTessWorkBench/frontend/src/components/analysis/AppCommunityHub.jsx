@@ -548,7 +548,7 @@ export default function AppCommunityHub({ appKey, appName }) {
               className="min-w-0 flex-1 truncate text-left text-xs font-bold text-slate-500 transition-colors hover:text-blue-700 cursor-pointer"
             >
               App 소식
-              <span className="ml-1 font-semibold text-slate-400">
+              <span className="ml-1 font-semibold text-slate-500">
                 · 공지 {notices.length} · 게시판 {requests.length}
               </span>
             </button>
@@ -559,7 +559,7 @@ export default function AppCommunityHub({ appKey, appName }) {
               type="button"
               onClick={toggleBannerCollapse}
               aria-label="App 소식 펼치기"
-              className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+              className="rounded-lg p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
             >
               <ChevronDown size={16} />
             </button>
@@ -576,7 +576,7 @@ export default function AppCommunityHub({ appKey, appName }) {
               </span>
               <span className="min-w-0 flex-1 py-0.5">
                 <span className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">App 소식</span>
+                  <span className="text-xs font-extrabold text-slate-500">App 소식</span>
                   {entryNotices.length > 0 && (
                     <Badge variant="notify" size="sm" dot>새 공지 {entryNotices.length}건</Badge>
                   )}
@@ -607,7 +607,7 @@ export default function AppCommunityHub({ appKey, appName }) {
                   </span>
                 )}
               </span>
-              <ChevronRight size={17} className="mr-1 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-600" aria-hidden="true" />
+              <ChevronRight size={17} className="mr-1 shrink-0 text-slate-500 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-600" aria-hidden="true" />
             </button>
 
             <div className="flex shrink-0 items-center gap-2 border-t border-slate-200 pt-3 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
@@ -623,9 +623,9 @@ export default function AppCommunityHub({ appKey, appName }) {
                   <MessageSquare size={14} />
                   App 게시판
                   {newRequestCount > 0 ? (
-                    <span className="rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-slate-900">새 {newRequestCount}</span>
+                    <span className="rounded-full bg-amber-400 px-1.5 py-0.5 text-[11px] font-bold text-slate-900">새 {newRequestCount}</span>
                   ) : requests.length > 0 ? (
-                    <span className="rounded-full bg-white/15 px-1.5 py-0.5 text-[10px]">{requests.length}</span>
+                    <span className="rounded-full bg-white/15 px-1.5 py-0.5 text-[11px]">{requests.length}</span>
                   ) : null}
                 </Button>
               )}
@@ -635,7 +635,7 @@ export default function AppCommunityHub({ appKey, appName }) {
                   onClick={toggleBannerCollapse}
                   aria-label="App 소식 접기"
                   title="App 소식 접기"
-                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+                  className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
                 >
                   <ChevronUp size={16} />
                 </button>
@@ -781,7 +781,7 @@ export default function AppCommunityHub({ appKey, appName }) {
               {!loading && !error && (
                 <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-6 py-3">
                   <div className="relative min-w-[180px] flex-1">
-                    <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                     <input
                       type="search"
                       value={activeTab === 'notices' ? noticeQuery : requestQuery}
@@ -830,7 +830,7 @@ export default function AppCommunityHub({ appKey, appName }) {
               <div className="divide-y divide-slate-100 px-6 py-2">
                 {visibleNotices.length === 0 ? (
                   <div className="flex min-h-[300px] flex-col items-center justify-center text-center">
-                    <Megaphone size={28} className="mb-3 text-slate-400" />
+                    <Megaphone size={28} className="mb-3 text-slate-500" />
                     {notices.length === 0 ? (
                       <>
                         <p className="text-sm font-bold text-slate-700">등록된 App 공지가 없습니다.</p>
@@ -900,7 +900,7 @@ export default function AppCommunityHub({ appKey, appName }) {
               <div className="divide-y divide-slate-100 px-6 py-2">
                 {visibleRequests.length === 0 ? (
                   <div className="flex min-h-[300px] flex-col items-center justify-center text-center">
-                    <MessageSquare size={28} className="mb-3 text-slate-400" />
+                    <MessageSquare size={28} className="mb-3 text-slate-500" />
                     {requests.length === 0 ? (
                       <>
                         <p className="text-sm font-bold text-slate-700">등록된 게시글이 없습니다.</p>
@@ -922,7 +922,7 @@ export default function AppCommunityHub({ appKey, appName }) {
                         <div className="mb-2 flex flex-wrap items-center gap-2">
                           <Badge variant={status.variant} size="sm" dot>{status.label}</Badge>
                           <span className="text-xs text-slate-500">{request.author_name} · {formatDate(request.created_at)}</span>
-                          {isOwner && <span className="text-[10px] font-bold text-slate-400">내 글</span>}
+                          {isOwner && <span className="text-[11px] font-bold text-slate-500">내 글</span>}
                         </div>
                         <h3 className="text-base font-bold text-slate-800 hover:text-blue-700">{request.title}</h3>
                         <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{request.content}</p>
@@ -949,7 +949,7 @@ export default function AppCommunityHub({ appKey, appName }) {
                               <button
                                 type="button"
                                 onClick={() => openRequestForm(request)}
-                                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-blue-50 hover:text-blue-700 cursor-pointer"
+                                className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-700 cursor-pointer"
                                 aria-label={`${request.title} 수정`}
                               >
                                 <Edit2 size={13} />
@@ -958,7 +958,7 @@ export default function AppCommunityHub({ appKey, appName }) {
                             <button
                               type="button"
                               onClick={() => setDeleteRequestCandidate(request)}
-                              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-700 cursor-pointer"
+                              className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-red-50 hover:text-red-700 cursor-pointer"
                               aria-label={`${request.title} 삭제`}
                             >
                               <Trash2 size={13} />

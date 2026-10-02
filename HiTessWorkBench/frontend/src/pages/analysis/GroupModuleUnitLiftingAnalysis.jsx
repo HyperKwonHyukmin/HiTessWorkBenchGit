@@ -1,367 +1,206 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
-  UploadCloud, ArrowRight, ChevronsRight,
-  FileCheck2, MapPin, BarChart3,
-  X, CheckCircle2, Loader2,
-  RotateCcw, AlertOctagon, FileText, Download, Wand2,
-  PackageX, AlertCircle, ExternalLink, HardDrive, ShieldCheck,
+  UploadCloud, ChevronsRight, FileCheck2, MapPin, BarChart3, X, CheckCircle2, Loader2,
+  FileText, ExternalLink, FilePlus2, RefreshCw, Wand2, Info,
 } from 'lucide-react';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { usePolling } from '../../hooks/usePolling';
-import { requestGroupModuleUnit, requestGroupModuleUnitFromPath, downloadFileText } from '../../api/analysis';
+import {
+  requestGroupModuleUnit, requestGroupModuleUnitFromPath, downloadFileText,
+  getAnalysisById, getGroupModuleUnitArtifacts,
+} from '../../api/analysis';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
-import ProgressBar from '../../components/ui/ProgressBar';
-import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { API_BASE_URL } from '../../config';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
+import {
+  StepRail, InputSummary, VerdictHeader, KeyFigures, NextActionBar, JobProgressCard, EngineLogPanel, StudioLauncherCard,
+  RunStartPanel,
+} from '../../components/analysis/runFrame';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
+import { useResultReentry } from '../../utils/resultReentry';
+import { buildStructuralResult, computeGmuVerdict } from '../../utils/gmuLiftingVerdict';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.165';
+const MODULE_STUDIO_VERSION = '0.0.166';
 // 다른 App 이 넘긴 BDF 는 fresh-entry 재마운트가 끝난 뒤 살아남은 인스턴스에만 적용한다.
 const HANDOFF_APPLY_DELAY_MS = 60;
+const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
 
-// ── 상태 설정 (HiTessModelBuilder와 동일) ─────────────────────
-const STATUS_CONFIG = {
-  wait:     { dot: 'bg-white border-2 border-slate-300',                   badge: 'bg-slate-100 text-slate-500',  label: '대기' },
-  running:  { dot: 'bg-blue-500 border-2 border-blue-500 animate-pulse',     badge: 'bg-blue-100 text-blue-700',    label: '실행 중' },
-  done:     { dot: 'bg-green-500 border-2 border-green-500',               badge: 'bg-green-100 text-green-800',  label: '완료' },
-  error:    { dot: 'bg-red-500 border-2 border-red-500',                   badge: 'bg-red-100 text-red-700',      label: '오류' },
-  disabled: { dot: 'bg-slate-200 border-2 border-slate-200',               badge: 'bg-slate-100 text-slate-400',  label: '비활성' },
-};
-
-// ── 파이프라인 단계 초기 정의 ──────────────────────────────────
-const INITIAL_STEPS = [
-  { id: 'bdf-validation', title: 'BDF 입력 검증',  sub: 'BDF 파일 업로드 및 유효성 검증', icon: FileCheck2, status: 'wait' },
-  { id: 'lifting-points', title: 'Group Module Unit Studio', sub: 'Studio 실행', icon: MapPin, status: 'wait' },
-  { id: 'results',        title: '해석 결과 확인', sub: 'Studio 권상 구조 해석 결과 및 판정', icon: BarChart3,  status: 'wait' },
+/* ── 작업 단계 — 상태는 저장하지 않고 실제 사건(검증 결과·Studio 열기·구조 해석 완료·산출물 받기)에서 매번 계산한다 ── */
+const STEP_DEFS = [
+  { id: 'input',   title: 'BDF 입력 검증', icon: FileCheck2 },
+  { id: 'studio',  title: 'Studio 권상 검토', icon: MapPin },
+  { id: 'results', title: '결과·보고서', icon: BarChart3 },
 ];
+const STEP_INDEX = Object.fromEntries(STEP_DEFS.map((s, i) => [s.id, i]));
 
-// ── Toggle (HiTessModelBuilder와 동일) ────────────────────────
-function Toggle({ checked, onChange }) {
-  return (
-    <button
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200
-        ${checked ? 'bg-blue-600' : 'bg-slate-300'}`}
-    >
-      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200
-        ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
-    </button>
-  );
-}
+const fmtKB = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
+const baseName = (p) => (p ? String(p).split(/[\\/]/).pop() : '');
 
-// ── BDF 파일 드롭존 ──────────────────────────────────────────
-function BdfDropZone({ file, onFile, onClear, disabled }) {
+/* ── BDF 드롭 칸 — Model Builder CsvDropZone 과 같은 모양(머리 줄 + 본문 버튼) ── */
+function BdfDropZone({ file, onFile, onClear, disabled, onWarnNotBdf }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-    if (disabled) return;
-    const f = e.dataTransfer.files[0];
-    if (f && f.name.toLowerCase().endsWith('.bdf')) onFile(f);
+  const take = (f) => {
+    if (!f) return;
+    if (!f.name.toLowerCase().endsWith('.bdf')) { onWarnNotBdf?.(); return; }
+    onFile(f);
   };
 
-  if (file) {
-    return (
-      <div className="file-accepted flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-        <FileText size={22} className="text-blue-600 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-blue-800 truncate">{file.name}</p>
-          <p className="text-[11px] text-slate-400">{(file.size / 1024).toFixed(1)} KB</p>
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <FileText size={13} className="shrink-0 text-slate-500" aria-hidden="true" />
+          <span className="text-xs font-bold text-slate-800">모델 BDF</span>
+          <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[11px] font-semibold text-blue-800">필수</span>
         </div>
-        {!disabled && (
+        {file && !disabled && (
           <button
+            type="button"
             onClick={onClear}
-            className="p-1.5 hover:bg-red-50 rounded-lg transition-colors text-slate-400 hover:text-red-500 cursor-pointer"
+            aria-label="BDF 파일 제거"
+            className="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
           >
             <X size={13} />
           </button>
         )}
       </div>
-    );
-  }
-
-  return (
-    <div
-      onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragOver(true); }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={handleDrop}
-      onClick={() => !disabled && inputRef.current?.click()}
-      className={`flex flex-col items-center justify-center gap-2 p-8 border-2 border-dashed rounded-xl transition-[border-color,background-color,transform,box-shadow] duration-200 ease-out cursor-pointer ${
-        disabled
-          ? 'border-slate-200 opacity-40 cursor-not-allowed'
-          : dragOver
-          ? 'border-blue-400 bg-blue-50 dropzone-armed'
-          : 'border-slate-200 hover:border-blue-400 hover:bg-blue-50/50'
-      }`}
-    >
-      <UploadCloud size={28} className={dragOver ? 'text-blue-500' : 'text-slate-300'} />
-      <div className="text-center">
-        <p className="text-xs font-semibold text-slate-600">BDF 파일을 끌어다 놓거나 클릭하여 선택</p>
-        <p className="text-[10px] text-slate-400 mt-0.5">*.bdf 파일만 지원됩니다</p>
-      </div>
-      <input ref={inputRef} type="file" accept=".bdf" onChange={e => { if (e.target.files[0]) onFile(e.target.files[0]); e.target.value = ''; }} className="hidden" />
-    </div>
-  );
-}
-
-
-// ── 결과 테이블 패널 ──────────────────────────────────────────
-function ResultsPanel({ result }) {
-  if (!result) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
-        <BarChart3 size={36} className="opacity-20" />
-        <p className="text-sm text-slate-500">해석 완료 후 결과가 표시됩니다.</p>
-      </div>
-    );
-  }
-
-  if (result.status === 'ERROR') {
-    return <div className="m-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-      <p className="font-bold">구조 해석을 완료하지 못했습니다.</p>
-      <p className="mt-1 text-xs">{result.error || 'Studio에서 오류 내용을 확인한 뒤 다시 실행하세요.'}</p>
-    </div>;
-  }
-
-  const isPass = result.status === 'PASS';
-  const isWarn = result.status === 'WARN';
-  return (
-    <div className="reveal-stagger p-4 space-y-4 overflow-y-auto h-full custom-scrollbar">
-      {/* 종합 판정 배너 — reveal-stagger 로 표보다 먼저 올라오고, FAIL 은 빨간 고리가 한 번 퍼진다
-          (verdict-arrive 는 reveal-stagger 의 animation 과 겹쳐 덮이므로 쓰지 않는다) */}
-      <div className={`relative flex items-center gap-3 px-4 py-3 rounded-xl border ${
-        isPass ? 'bg-green-50 border-green-200' : isWarn ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200 verdict-alert'
-      }`}>
-        {isPass
-          ? <CheckCircle2 size={20} className="text-green-600 shrink-0" />
-          : <AlertOctagon size={20} className={`${isWarn ? 'text-amber-500' : 'text-red-500'} shrink-0`} />}
-        <div>
-          <p className={`text-sm font-bold ${isPass ? 'text-green-700' : isWarn ? 'text-amber-700' : 'text-red-700'}`}>
-            종합 판정: {result.status}
-          </p>
-          <p className="text-[10px] text-slate-500">최대 합성 응력 / 허용 응력 기준</p>
+      {file ? (
+        <div className="flex items-center gap-2 px-3 py-3">
+          <CheckCircle2 size={15} className="shrink-0 text-emerald-600" aria-hidden="true" />
+          <p className="min-w-0 truncate text-sm font-semibold text-slate-800" title={file.name}>{file.name}</p>
+          <span className="shrink-0 text-xs text-slate-600">{fmtKB(file.size)}</span>
         </div>
-      </div>
-
-      {/* 결과 요약 테이블 */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-        <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">결과 요약</span>
-          <button className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 transition-colors cursor-pointer">
-            <Download size={10} /> Excel 다운로드
-          </button>
-        </div>
-        <table className="w-full text-[11px]">
-          <thead className="bg-slate-50">
-            <tr className="border-b border-slate-100">
-              <th className="px-4 py-2 text-left text-slate-500 font-medium">항목</th>
-              <th className="px-4 py-2 text-right text-slate-500 font-medium">계산값</th>
-              <th className="px-4 py-2 text-right text-slate-500 font-medium">허용치</th>
-              <th className="px-4 py-2 text-right text-slate-500 font-medium">판정</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(result.items || []).map((item, i) => (
-              <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
-                <td className="px-4 py-2 text-slate-700">{item.label}</td>
-                <td className="px-4 py-2 text-right font-mono text-slate-700">{item.value}</td>
-                <td className="px-4 py-2 text-right font-mono text-slate-400">{item.allowable}</td>
-                <td className="px-4 py-2 text-right">
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                    item.ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {item.ok ? 'OK' : 'NG'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function ModuleStudioLauncher({
-  ready,
-  onLaunch,
-  installed,
-  status,
-  progress,
-  error,
-  installedVersion,
-  latestVersion,
-  installDir,
-}) {
-  const checking = status === 'checking';
-  const installing = status === 'installing';
-  const opening = status === 'opening';
-  const versionMismatch = !!(installedVersion && latestVersion && installedVersion !== latestVersion);
-  const disabled = !ready || checking || installing || opening;
-
-  const versionLine = (() => {
-    if (installedVersion && latestVersion && versionMismatch) {
-      return (
-        <p className="text-[10px] font-mono text-amber-700">
-          설치본 v{installedVersion} → 워크벤치 v{latestVersion}
-          <span className="ml-1 px-1.5 py-[1px] rounded bg-amber-100 text-amber-800 font-bold">업데이트 필요</span>
-        </p>
-      );
-    }
-    if (installedVersion) return <p className="text-[10px] font-mono text-slate-500">설치본 v{installedVersion}</p>;
-    if (latestVersion) return <p className="text-[10px] font-mono text-slate-500">워크벤치 v{latestVersion}</p>;
-    return <p className="text-[10px] text-slate-400">버전 확인 대기 중</p>;
-  })();
-
-  const featureBullets = (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-4">
-      {[
-        ['입력 폴더 연결', 'BDF 검증 결과 폴더를 Studio에 자동 전달'],
-        ['권상 조건 편집', '권상 위치 및 자세 안정성 입력 작업 수행'],
-        ['후속 JSON 생성', '다음 단계에서 사용할 Studio 결과 파일 작성'],
-      ].map(([title, desc]) => (
-        <div key={title} className="rounded-lg border border-white/70 bg-white/65 px-3 py-2">
-          <p className="text-[11px] font-bold text-slate-700">{title}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">{desc}</p>
-        </div>
-      ))}
-    </div>
-  );
-
-  const palette = installed === false || versionMismatch
-    ? {
-        card: 'border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50',
-        icon: 'text-amber-700',
-        title: 'text-amber-950',
-        body: 'text-amber-900',
-        badge: installed === false ? 'bg-amber-200 text-amber-800' : 'bg-amber-200 text-amber-800',
-        badgeText: installed === false ? '미설치 — 설치 필요' : '버전 업데이트 필요',
-        button: 'bg-amber-600 hover:bg-amber-700',
-      }
-    : {
-        card: 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50',
-        icon: 'text-emerald-700',
-        title: 'text-emerald-950',
-        body: 'text-emerald-900',
-        badge: checking ? 'bg-slate-200 text-slate-700' : 'bg-emerald-200 text-emerald-800',
-        badgeText: checking ? '설치 확인 중' : installed === true ? '설치됨 — 사용 가능' : '상태 확인 전',
-        button: 'bg-emerald-600 hover:bg-emerald-700',
-      };
-
-  const Icon = installed === false ? PackageX : versionMismatch ? AlertCircle : ShieldCheck;
-  const buttonText = (() => {
-    if (installing) return <><Loader2 size={14} className="animate-spin" /> 설치 중 <AnimatedNumber value={progress?.progress ?? 0} />%</>;
-    if (checking) return <><Loader2 size={14} className="animate-spin" /> 확인 중</>;
-    if (opening) return <><Loader2 size={14} className="animate-spin" /> 실행 중</>;
-    if (installed === false) return <><Download size={14} /> Studio 설치 후 열기</>;
-    if (versionMismatch) return <><Download size={14} /> 업데이트 후 열기</>;
-    return <><ExternalLink size={14} /> Studio 열기</>;
-  })();
-
-  return (
-    <div className={`rounded-2xl border-2 ${palette.card} px-5 py-5 shadow-sm`}>
-      <div className="flex items-start justify-between gap-5">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <Icon size={18} className={palette.icon} />
-            <h3 className={`text-base font-bold ${palette.title}`}>Group Module Unit Studio</h3>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${palette.badge}`}>{palette.badgeText}</span>
-          </div>
-          <p className={`text-[13px] font-bold leading-snug mt-2 ${palette.body}`}>
-            {installed === false
-              ? <>Studio가 이 사용자 PC에 설치되어 있지 않습니다. <b>“Studio 설치 후 열기”</b>를 눌러 최초 1회 설치를 진행하세요.</>
-              : versionMismatch
-              ? <>설치된 Studio 버전이 워크벤치 배포본과 다릅니다. <b>“업데이트 후 열기”</b>를 누르면 자동 갱신됩니다.</>
-              : <>BDF 검증 결과를 확인한 뒤 Studio를 열어 Group Module Unit 권상 작업을 진행하세요.</>}
-          </p>
-          <p className="text-[11px] text-slate-600 leading-relaxed mt-2">
-            설치 파일은 사내 배포 위치에서 자동으로 내려받고, 사용자 PC의 WorkBench 앱 데이터 폴더에 보관됩니다.
-            최초 설치 이후에는 같은 위치의 설치본을 재사용합니다.
-          </p>
-          <div className="flex flex-col gap-1 mt-3">
-            {versionLine}
-            {installDir && (
-              <p className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono break-all">
-                <HardDrive size={11} className="shrink-0 text-slate-400" />
-                {installDir}
-              </p>
-            )}
-            {error && <p className="text-[10px] text-red-600 leading-snug">⚠ {error}</p>}
-          </div>
-          {featureBullets}
-        </div>
+      ) : (
         <button
-          onClick={onLaunch}
+          type="button"
           disabled={disabled}
-          title={!ready ? '먼저 BDF 입력 검증을 완료하세요' : ''}
-          className={`shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors cursor-pointer shadow-sm ${palette.button}`}
+          onClick={() => inputRef.current?.click()}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); if (!disabled) take(e.dataTransfer.files[0]); }}
+          onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          className={`flex w-full flex-col items-center justify-center gap-1 py-6 text-center transition-colors
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/50
+            disabled:cursor-not-allowed disabled:opacity-60
+            ${dragOver ? 'bg-blue-50' : 'hover:bg-slate-50 cursor-pointer'}`}
         >
-          {buttonText}
+          <UploadCloud size={18} className="text-slate-500" aria-hidden="true" />
+          <span className="text-xs text-slate-600">
+            .bdf 파일을 놓거나 <span className="font-semibold text-blue-700">눌러서 선택</span>
+          </span>
         </button>
-      </div>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".bdf"
+        className="hidden"
+        tabIndex={-1}
+        onChange={e => { take(e.target.files[0]); e.target.value = ''; }}
+      />
     </div>
+  );
+}
+
+/* ── 구조 해석 결과 — 판정 문구는 VerdictHeader 가 말하고, 여기는 수치·경고만 ── */
+function StructuralResultPanel({ result }) {
+  const [showWarnings, setShowWarnings] = useState(false);
+  if (!result || result.status === 'ERROR') return null;
+  const s = result.summary ?? {};
+  const n = (v) => Number(v || 0);
+  const warnings = result.warnings ?? [];
+  const allowable = result.items?.[0]?.allowable;
+  return (
+    <section className="space-y-2" aria-label="구조 해석 결과">
+      <KeyFigures
+        items={[
+          { key: 'stress', label: '최대 부재 응력', value: n(s.memberMaxStressMPa).toFixed(1), unit: 'MPa',
+            sub: allowable && allowable !== '—' ? `허용 ${allowable}` : null, tone: n(s.memberExceedCount) > 0 ? 'bad' : 'default' },
+          { key: 'exceed', label: '응력 초과 부재', value: n(s.memberExceedCount).toLocaleString(),
+            sub: `전체 ${n(s.memberElementCount).toLocaleString()}개`, tone: n(s.memberExceedCount) > 0 ? 'bad' : 'default' },
+          { key: 'wire', label: 'Wire 압축', value: n(s.wireCompressionCount).toLocaleString(),
+            sub: `Wire ${n(s.wireCount)}개`, tone: n(s.wireCompressionCount) > 0 ? 'bad' : 'default' },
+          { key: 'missing', label: 'Wire 결과 누락', value: n(s.wireMissingResultCount).toLocaleString(),
+            tone: n(s.wireMissingResultCount) > 0 ? 'bad' : 'default' },
+        ]}
+        caption="Studio 에서 실행한 Nastran SOL 101 결과입니다. 부재별 응력·변위는 Studio 결과 도크에서 봅니다."
+      />
+      {warnings.length > 0 && (
+        <div className="rounded-lg border border-slate-200">
+          <button
+            type="button"
+            aria-expanded={showWarnings}
+            onClick={() => setShowWarnings(v => !v)}
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
+          >
+            <Info size={14} className="text-amber-600" aria-hidden="true" />
+            해석 경고 {warnings.length}건
+            <span className="ml-auto text-xs font-normal text-slate-600">{showWarnings ? '접기' : '펼치기'}</span>
+          </button>
+          {showWarnings && (
+            <ul className="space-y-1 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-700">
+              {warnings.map((w, i) => (
+                <li key={i} className="list-inside list-disc">{typeof w === 'string' ? w : w?.message ?? JSON.stringify(w)}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
 // ── 메인 컴포넌트 ────────────────────────────────────────────
 export default function GroupModuleUnitLiftingAnalysis() {
   const { setCurrentMenu, currentMenu } = useNavigation();
-  const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
-  const dashboardCtx = useDashboard();
   const {
-    currentUser,
-    gmuHandoff,
-    clearGmuHandoff,
-    startGlobalJob,
-    clearGlobalJob,
-    getJobForMenu,
-    analysisPageStates,
-    setAnalysisPageState,
-    clearAnalysisPageState,
-  } = dashboardCtx;
+    gmuHandoff, clearGmuHandoff, startGlobalJob, clearGlobalJob, getJobForMenu,
+    analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
+  } = useDashboard();
   const savedPageState = analysisPageStates?.[GMU_MENU_NAME] || {};
   // 다른 App 해석이 더 최근이어도 이 App 의 해석을 집어야 한다(globalJob 은 최신 1개일 뿐).
   const gmuJob = getJobForMenu?.(GMU_MENU_NAME) || null;
   const { showToast } = useToast();
 
-  // ── 파이프라인 상태 ──────────────────────────────────────
-  const [steps, setSteps]     = useState(savedPageState.steps ?? INITIAL_STEPS);
-  const [activeIdx, setActiveIdx] = useState(savedPageState.activeIdx ?? 0);
-  // 해석 실행이 한 번이라도 트리거됐는지 여부 (다음 단계 이동 버튼 활성화 조건)
-  const [hasRunOnce, setHasRunOnce] = useState(savedPageState.hasRunOnce ?? false);
+  // 옛 페이지 상태(단계 id: bdf-validation/lifting-points/results)도 활성 단계 번호는 같은 자리라 그대로 쓴다.
+  const [activeIdx, setActiveIdx] = useState(Math.min(savedPageState.activeIdx ?? 0, STEP_DEFS.length - 1));
 
-
-  // ── Step 0: BDF 입력 ─────────────────────────────────────
-  const [bdfFile, setBdfFile]           = useState(savedPageState.bdfFile ?? null);
-  const [validating, setValidating]     = useState(savedPageState.validating ?? false);
-  const [validJobId, setValidJobId]     = useState(savedPageState.validJobId ?? null);
+  // ── 1단계: BDF 입력 검증 ─────────────────────────────────
+  const [bdfFile, setBdfFile]             = useState(savedPageState.bdfFile ?? null);
+  const [validating, setValidating]       = useState(savedPageState.validating ?? false);
+  const [validJobId, setValidJobId]       = useState(savedPageState.validJobId ?? null);
   const [validProgress, setValidProgress] = useState(savedPageState.validProgress ?? 0);
   const [validStatusMsg, setValidStatusMsg] = useState(savedPageState.validStatusMsg ?? '');
-  const [step1Data, setStep1Data]       = useState(savedPageState.step1Data ?? null);
-  const [step2Data, setStep2Data]       = useState(savedPageState.step2Data ?? null);
-  const [validOpen, setValidOpen]       = useState(savedPageState.validOpen ?? true);
+  const [validStartedAt, setValidStartedAt] = useState(savedPageState.validStartedAt ?? null);
+  const [validFailed, setValidFailed]     = useState(savedPageState.validFailed ?? false);
+  const [engineLog, setEngineLog]         = useState(savedPageState.engineLog ?? null);
+  const [step1Data, setStep1Data]         = useState(savedPageState.step1Data ?? null);
+  const [step2Data, setStep2Data]         = useState(savedPageState.step2Data ?? null);
+  // Nastran 을 통한 BDF 입력 검증은 기본 OFF — 필요 시 사용자가 켠다.
+  const [useNastran, setUseNastran]       = useState(savedPageState.useNastran ?? false);
+  // 검증할 때 실제로 쓴 Nastran 설정 — 결과 화면은 지금 토글이 아니라 이 값으로 그린다.
+  const [validatedWithNastran, setValidatedWithNastran] = useState(savedPageState.validatedWithNastran ?? false);
 
-  // ── Step 1: Studio 실행 ─────────────────────────────────
-  const [bdfPath, setBdfPath]           = useState(savedPageState.bdfPath ?? null);
+  // ── 2단계: Studio ───────────────────────────────────────
+  const [bdfPath, setBdfPath]             = useState(savedPageState.bdfPath ?? null);
   // BDF 검증 시 생성된 GroupModuleUnit Analysis.id (DB record).
   // viewer:open 시 main 으로 전달 → main 이 viewer:runUnitStructural 호출 시 백엔드 parent_analysis_id 로 사용.
   const [bdfAnalysisId, setBdfAnalysisId] = useState(savedPageState.bdfAnalysisId ?? null);
-  const [studioStatus, setStudioStatus] = useState('idle'); // idle | checking | installing | opening | error
+  // Studio 창을 이 BDF 로 열었는가 — 단계 레일 '진행 중' 표시용(완료는 구조 해석 이벤트만 정한다).
+  const [studioOpened, setStudioOpened]   = useState(savedPageState.studioOpened ?? false);
+  const [studioStatus, setStudioStatus]   = useState('idle'); // idle | checking | installing | opening | error
   const [studioInstalled, setStudioInstalled] = useState(null); // null=확인 전, true/false=결과
   const [studioProgress, setStudioProgress] = useState(null);
-  const [studioError, setStudioError]   = useState(null);
+  const [studioError, setStudioError]     = useState(null);
   const [studioInstalledVersion, setStudioInstalledVersion] = useState(null);
   const [studioLatestVersion, setStudioLatestVersion] = useState(MODULE_STUDIO_VERSION);
-  const [studioInstallDir, setStudioInstallDir] = useState(null);
   // 최신 studioStatus 를 async 콜백에서 stale 없이 읽기 위한 ref (설치/열기 중 재확인 차단용)
   const studioStatusRef = useRef('idle');
   useEffect(() => { studioStatusRef.current = studioStatus; }, [studioStatus]);
@@ -370,17 +209,68 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const studioMountedRef = useRef(true);
   // ⚠️ StrictMode(dev) 는 mount 시 effect 를 setup→cleanup→setup 으로 이중 실행한다.
   //    setup 에서 반드시 true 로 복구해야, cleanup 이 false 로 만든 뒤에도 최종 상태가 true 로 남는다.
-  //    (setup 이 복구하지 않으면 mount 직후 current=false 로 고정 → stale() 항상 true → 버전 확인이
-  //     'checking' 에서 영구 정지한다.)
   useEffect(() => {
     studioMountedRef.current = true;
     return () => { studioMountedRef.current = false; };
   }, []);
 
+  // ── 3단계: 결과 ─────────────────────────────────────────
+  const [analysisResult, setAnalysisResult] = useState(savedPageState.analysisResult ?? null);
+  // 산출물·보고서를 실제로 받았는가 — 3단계 완료 조건.
+  const [delivered, setDelivered]         = useState(savedPageState.delivered ?? false);
+
+  // ── 연계 진입 ───────────────────────────────────────────
+  const [handoffSource, setHandoffSource] = useState(savedPageState.handoffSource ?? null); // 프로그램 간 연계로 진입한 경우 출처 앱 이름
+  const [handoffBdfPath, setHandoffBdfPath] = useState(savedPageState.handoffBdfPath ?? null);
+  // 핸드오프로 파이프라인을 초기화한 시점에 돌고 있던 이전 검증 작업의 jobId.
+  // globalJob 복원 effect 가 그 작업으로 화면을 '검증 중' 으로 되돌리지 못하게 막는다.
+  const ignoredJobIdRef = useRef(null);
+
   const bdfFolderPath = useMemo(
     () => bdfPath ? bdfPath.replace(/[/\\][^/\\]+$/, '') : null,
     [bdfPath]
   );
+
+  // 경과 시간(진행 카드용)
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    if (!validating) return undefined;
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [validating]);
+  const elapsedSecs = validating && validStartedAt ? Math.max(0, Math.round((nowTick - validStartedAt) / 1000)) : null;
+
+  /** 새 입력을 받을 때 이전 검증·Studio·결과를 모두 비운다. */
+  const clearResults = () => {
+    setStep1Data(null);
+    setStep2Data(null);
+    setValidFailed(false);
+    setEngineLog(null);
+    setBdfPath(null);
+    setBdfAnalysisId(null);
+    setStudioOpened(false);
+    setAnalysisResult(null);
+    setDelivered(false);
+  };
+
+  /** 검증 결과(result_info)로 화면을 채운다 — 방금 끝난 검증과 지난 결과 다시 열기가 함께 쓴다. */
+  const applyValidationResult = async (resultInfo, analysisId) => {
+    if (resultInfo.bdf) setBdfPath(resultInfo.bdf);
+    if (typeof analysisId === 'number') setBdfAnalysisId(analysisId);
+    let s1 = null, s2 = null;
+    await Promise.allSettled(
+      [['JSON_Validation', (v) => { s1 = v; }], ['JSON_F06Summary', (v) => { s2 = v; }]].map(async ([key, set]) => {
+        const p = resultInfo[key];
+        if (!p || typeof p !== 'string') return;
+        const res = await downloadFileText(p);
+        set(JSON.parse(res.data));
+      })
+    );
+    setStep1Data(s1);
+    setStep2Data(s2);
+    setValidatedWithNastran(!!resultInfo.use_nastran || !!s2);
+    return s1;
+  };
 
   // BDF 검증 폴링
   usePolling({
@@ -394,79 +284,40 @@ export default function GroupModuleUnitLiftingAnalysis() {
       setValidating(false);
       setValidJobId(null);
       setValidProgress(100);
-      const result_info = data.project?.result_info;
-      if (!result_info) {
-        setStepStatus('bdf-validation', 'error');
+      const resultInfo = data.project?.result_info;
+      if (!resultInfo) {
+        setValidFailed(true);
         showToast('결과 파일을 찾을 수 없습니다.', 'error');
         return;
       }
-      let s1 = null, s2 = null;
-      // BDF 경로 및 모델 JSON 경로 캡처
-      if (result_info.bdf) setBdfPath(result_info.bdf);
-      // 후속 Unit 구조 해석에서 parent record 참조용
-      if (typeof data.project?.id === 'number') setBdfAnalysisId(data.project.id);
       // 새 BDF 로 검증이 끝났다 — 이전 모델로 열려 있는 Module Unit Studio 창에 경고를 띄운다.
       // (Studio 가 안 떠 있거나 같은 모델이면 main 이 무시한다.)
       notifyStudioSourceUpdated(
         MODULE_STUDIO_VIEWER_ID,
-        result_info.bdf ?? null,
+        resultInfo.bdf ?? null,
         '워크벤치에서 새 BDF 가 검증됐습니다. 이 창은 이전 모델을 보고 있습니다 — WorkBench 에서 Studio 를 다시 여세요.',
       );
-      await Promise.allSettled(
-        Object.entries(result_info).map(async ([key, path]) => {
-          if (!path || typeof path !== 'string' || !path.endsWith('.json')) return;
-          try {
-            const res = await downloadFileText(path);
-            const parsed = JSON.parse(res.data);
-            if (key === 'JSON_Validation') s1 = parsed;
-            else if (key === 'JSON_F06Summary') s2 = parsed;
-          } catch {}
-        })
-      );
-      if (s1) setStep1Data(s1);
-      if (s2) setStep2Data(s2);
-      const hasError = s1?.status === 'error';
-      setStepStatus('bdf-validation', hasError ? 'error' : 'done');
-      // 검증이 error 로 끝났을 때는 다음 단계(Studio) 진입 게이트(hasRunOnce)를 풀지 않는다.
-      // 잘못된 BDF 로 Studio 가 열려 후속 Nastran 해석에서 원인 불명 오류가 나는 것을 차단.
-      if (!hasError) setHasRunOnce(true);
-      showToast(hasError ? 'BDF 검증 — 오류 발견' : 'BDF 검증 완료', hasError ? 'warning' : 'success');
+      const s1 = await applyValidationResult(resultInfo, data.project?.id);
+      const v = computeGmuVerdict({ step1Data: s1, step2Data: null });
+      // 공통 틀 규칙: 실행이 끝나면 다음 단계로 이동한다. 검증이 실패면 원인을 볼 수 있게 1단계에 남는다.
+      if (v.level && v.level !== 'fail') setActiveIdx(STEP_INDEX.studio);
+      showToast(v.level === 'fail' ? 'BDF 검증 — 오류 발견' : 'BDF 검증 완료', v.level === 'fail' ? 'warning' : 'success');
     },
     onError: (errData) => {
       setValidating(false);
       setValidJobId(null);
-      setStepStatus('bdf-validation', 'error');
+      setValidFailed(true);
+      setEngineLog(errData?.engine_log || errData?.message || null);
       showToast(errData?.timeout ? '검증 시간 초과' : 'BDF 검증 실패', 'error');
     },
   });
 
-  // ── Step 0: 해석 설정 ───────────────────────────────────
-  // Nastran 을 통한 BDF 입력 검증은 기본 OFF — 필요 시 사용자가 토글로 켠다.
-  const [useNastran, setUseNastran] = useState(savedPageState.useNastran ?? false);
-
-  // ── 작업 상태 추적 ───────────────────────────────────────
-  const [jobStatus, setJobStatus]   = useState(savedPageState.jobStatus ?? null); // null | { status, progress, message }
-  const [handoffSource, setHandoffSource] = useState(savedPageState.handoffSource ?? null); // 프로그램 간 연계로 진입한 경우 출처 앱 이름
-  const [handoffBdfPath, setHandoffBdfPath] = useState(savedPageState.handoffBdfPath ?? null);
-  // 핸드오프로 파이프라인을 초기화한 시점에 돌고 있던 이전 검증 작업의 jobId.
-  // globalJob 복원 effect 가 그 작업으로 화면을 '검증 중' 으로 되돌리지 못하게 막는다.
-  const ignoredJobIdRef = useRef(null);
-  const pollRef = useRef(null);
-
-  // ── Step 3: 결과 ─────────────────────────────────────────
-  const [analysisResult, setAnalysisResult] = useState(savedPageState.analysisResult ?? null);
-
-  const doneCount = steps.filter(s => s.status === 'done').length;
-
-  const setStepStatus = (id, status) =>
-    setSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
-
-  // 대시보드 '새 해석 시작'에 놓은 BDF 를 이어받는다(업로드 카드의 onFile 과 같은 처리)
+  // 대시보드 '새 해석 시작'에 놓은 BDF 를 이어받는다(업로드 칸의 onFile 과 같은 처리)
   useDashboardFileHandoff(GMU_MENU_NAME, (f) => {
-    setBdfFile(f); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait');
+    setBdfFile(f); clearResults(); setActiveIdx(0);
   }, ['.bdf']);
 
-  // Studio 창을 열었다는 사실이 아니라 실제 SOL 101 완료 이벤트로 WorkBench 단계를 끝낸다.
+  // Studio 창을 열었다는 사실이 아니라 실제 SOL 101 완료 이벤트로 2단계를 끝낸다.
   useEffect(() => {
     if (!window.electron?.onMessage) return undefined;
     return window.electron.onMessage('viewer:unit-structural-completed', (payload) => {
@@ -474,15 +325,11 @@ export default function GroupModuleUnitLiftingAnalysis() {
       if (bdfAnalysisId && payload?.parentAnalysisId && Number(payload.parentAnalysisId) !== Number(bdfAnalysisId)) return;
       if (payload.ok) {
         setAnalysisResult(payload);
-        setHasRunOnce(true);
-        setStepStatus('lifting-points', 'done');
-        setStepStatus('results', 'done');
-        setActiveIdx(INITIAL_STEPS.findIndex(step => step.id === 'results'));
+        setDelivered(false);
+        setActiveIdx(STEP_INDEX.results);
         showToast(`Studio 구조 해석 완료 — ${payload.status}`, payload.status === 'PASS' ? 'success' : 'warning');
       } else {
         setAnalysisResult({ status: 'ERROR', items: [], error: payload.error });
-        setStepStatus('lifting-points', 'error');
-        setStepStatus('results', 'error');
         showToast(`Studio 구조 해석 실패 — ${payload.error || '알 수 없는 오류'}`, 'error');
       }
     });
@@ -490,45 +337,14 @@ export default function GroupModuleUnitLiftingAnalysis() {
 
   useEffect(() => {
     setAnalysisPageState?.(GMU_MENU_NAME, {
-      steps,
-      activeIdx,
-      hasRunOnce,
-      bdfFile,
-      validating,
-      validJobId,
-      validProgress,
-      validStatusMsg,
-      step1Data,
-      step2Data,
-      validOpen,
-      bdfPath,
-      bdfAnalysisId,
-      useNastran,
-      jobStatus,
-      handoffSource,
-      handoffBdfPath,
-      analysisResult,
+      activeIdx, bdfFile, validating, validJobId, validProgress, validStatusMsg, validStartedAt,
+      validFailed, engineLog, step1Data, step2Data, useNastran, validatedWithNastran,
+      bdfPath, bdfAnalysisId, studioOpened, analysisResult, delivered, handoffSource, handoffBdfPath,
     });
   }, [
-    setAnalysisPageState,
-    steps,
-    activeIdx,
-    hasRunOnce,
-    bdfFile,
-    validating,
-    validJobId,
-    validProgress,
-    validStatusMsg,
-    step1Data,
-    step2Data,
-    validOpen,
-    bdfPath,
-    bdfAnalysisId,
-    useNastran,
-    jobStatus,
-    handoffSource,
-    handoffBdfPath,
-    analysisResult,
+    setAnalysisPageState, activeIdx, bdfFile, validating, validJobId, validProgress, validStatusMsg, validStartedAt,
+    validFailed, engineLog, step1Data, step2Data, useNastran, validatedWithNastran,
+    bdfPath, bdfAnalysisId, studioOpened, analysisResult, delivered, handoffSource, handoffBdfPath,
   ]);
 
   useEffect(() => {
@@ -539,7 +355,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
     if (ignoredJobIdRef.current && gmuJob.jobId === ignoredJobIdRef.current) return;
     setValidJobId(prev => prev || gmuJob.jobId);
     setValidating(true);
-    setStepStatus('bdf-validation', 'running');
+    setValidStartedAt(prev => prev || Date.now());
     setValidProgress(gmuJob.progress ?? 0);
     setValidStatusMsg(gmuJob.message ?? '서버 처리 중...');
   }, [gmuJob?.jobId, gmuJob?.status, gmuJob?.progress, gmuJob?.message]);
@@ -569,7 +385,6 @@ export default function GroupModuleUnitLiftingAnalysis() {
         if (stale()) return;
         setStudioInstalled(r === null ? false : !!r?.installed);
         setStudioInstalledVersion(r?.manifest?.version ?? null);
-        setStudioInstallDir(r?.dir ?? null);
       } catch (e) {
         if (stale()) return;
         setStudioInstalled(false);
@@ -599,7 +414,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
   //    Electron 재시작 없이 곧바로 '업데이트' 배지에 반영되게 한다.
   useEffect(() => {
     if (currentMenu === GMU_MENU_NAME) refreshStudioVersion();
-  }, [currentMenu, GMU_MENU_NAME, refreshStudioVersion]);
+  }, [currentMenu, refreshStudioVersion]);
 
   useEffect(() => {
     if (!window.electron?.onMessage) return undefined;
@@ -607,10 +422,8 @@ export default function GroupModuleUnitLiftingAnalysis() {
       if (!data || data.viewerId !== MODULE_STUDIO_VIEWER_ID) return;
       setStudioProgress(data);
     });
-    return () => { try { unsub?.(); } catch {} };
+    return () => { try { unsub?.(); } catch { /* 이미 해제됨 */ } };
   }, []);
-
-  const goStep = (idx) => setActiveIdx(idx);
 
   const launchModuleUnitStudio = useCallback(async () => {
     if (!window.electron?.invoke) {
@@ -637,7 +450,6 @@ export default function GroupModuleUnitLiftingAnalysis() {
       setStudioInstalled(!!check?.installed);
       setStudioInstalledVersion(localVer);
       setStudioLatestVersion(serverVer);
-      setStudioInstallDir(check?.dir ?? null);
 
       const needInstall = !check?.installed || (serverVer && localVer && serverVer !== localVer);
       if (needInstall) {
@@ -657,7 +469,6 @@ export default function GroupModuleUnitLiftingAnalysis() {
         setStudioInstalled(true);
         setStudioInstalledVersion(installRes?.manifest?.version ?? serverVer);
         setStudioLatestVersion(serverVer);
-        setStudioInstallDir(installRes?.dir ?? check?.dir ?? null);
       }
 
       let initialFolder = bdfFolderPath;
@@ -688,8 +499,8 @@ export default function GroupModuleUnitLiftingAnalysis() {
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok) throw new Error(openRes?.error || 'Studio 오픈 실패');
-      // 창을 연 것만으로 완료 처리하지 않는다. 실제 SOL 101 이벤트가 done으로 바꾼다.
-      setStepStatus('lifting-points', 'running');
+      // 창을 연 것만으로 완료 처리하지 않는다. 실제 SOL 101 완료 이벤트가 2단계를 끝낸다.
+      setStudioOpened(true);
       setStudioStatus('idle');
     } catch (e) {
       setStudioError(e.message);
@@ -698,24 +509,9 @@ export default function GroupModuleUnitLiftingAnalysis() {
     }
   }, [bdfFolderPath, bdfPath, bdfAnalysisId, showToast]);
 
-  const activeStep = steps[activeIdx];
-  const isBdfStep      = activeStep?.id === 'bdf-validation';
-  const isLiftingStep  = activeStep?.id === 'lifting-points';
-  const isResultsStep  = activeStep?.id === 'results';
-
-  // ── 3단계(결과) 진입 시 파이프라인 1·2·3 을 모두 '완료'로 표시 ───────────
-  // 결과 객체가 실제로 수신된 경우에만 결과 단계를 완료로 유지한다.
-  useEffect(() => {
-    if (!isResultsStep || !analysisResult || analysisResult.status === 'ERROR') return;
-    setStepStatus('results', 'done');
-  }, [isResultsStep, analysisResult]);
-
   // ── 프로그램 간 연계 핸드오프 처리 ───────────────────────────
   // ⚠️ 이 페이지는 keep-alive 라 한 번 열면 unmount 되지 않는다(App.jsx KEEP_ALIVE_MENUS).
-  //    과거엔 이 effect 가 마운트 1회 전용([])이라, 그 세션에서 이 앱을 이미 열어 본 적이
-  //    있으면 Model Builder 가 보낸 BDF 를 영영 수신하지 못하고 입력이 빈 채로 남았다.
-  //    (샘플 데모처럼 '이 앱을 처음 여는' 흐름에서만 우연히 동작했던 이유.)
-  //    → 핸드오프 값 자체를 의존성으로 삼아 도착할 때마다 수신한다.
+  //    그래서 마운트 1회 전용([])이 아니라 핸드오프 값 자체를 의존성으로 삼아 도착할 때마다 수신한다.
   //    ⚠️ 적용은 HANDOFF_APPLY_DELAY_MS 만큼 미루고 언마운트 시 취소한다. 다른 App 에서
   //    setCurrentMenu 로 들어오면 fresh-entry 처리(App.jsx 인스턴스 키 증가)로 이 페이지가
   //    같은 틱에 재마운트되는데, 바로 적용하면 첫 인스턴스가 BDF 를 받고 clearGmuHandoff() 한 뒤
@@ -723,46 +519,42 @@ export default function GroupModuleUnitLiftingAnalysis() {
   useEffect(() => {
     if (!gmuHandoff?.bdfServerPath) return undefined;
     const timer = setTimeout(() => {
-    const { bdfServerPath, sourceApp } = gmuHandoff;
-    const from = sourceApp || '외부 프로그램';
-    // 이미 이전 해석을 끝낸 상태일 수 있으므로 파이프라인을 처음 상태로 되돌린 뒤 수신한다.
-    // (되돌리지 않으면 새 BDF 인데 이전 결과/완료 표시가 그대로 남는다.)
-    ignoredJobIdRef.current = validJobId || gmuJob?.jobId || null;
-    setSteps(INITIAL_STEPS);
-    setActiveIdx(0);
-    setHasRunOnce(false);
-    setValidating(false);
-    setValidJobId(null);
-    setValidProgress(0);
-    setValidStatusMsg('');
-    setStep1Data(null);
-    setStep2Data(null);
-    setBdfFile(null);
-    setBdfPath(null);
-    setBdfAnalysisId(null);
-    setAnalysisResult(null);
-    setJobStatus(null);
-    setHandoffSource(from);
-    setHandoffBdfPath(bdfServerPath);
-    clearGmuHandoff();
-    showToast(`${from}에서 BDF를 전달받았습니다. 실행 버튼을 눌러 검증을 시작하세요.`, 'info');
+      const { bdfServerPath, sourceApp } = gmuHandoff;
+      const from = sourceApp || '외부 프로그램';
+      // 이미 이전 해석을 끝낸 상태일 수 있으므로 처음 상태로 되돌린 뒤 수신한다.
+      ignoredJobIdRef.current = validJobId || gmuJob?.jobId || null;
+      setActiveIdx(0);
+      setValidating(false);
+      setValidJobId(null);
+      setValidProgress(0);
+      setValidStatusMsg('');
+      setBdfFile(null);
+      clearResults();
+      setHandoffSource(from);
+      setHandoffBdfPath(bdfServerPath);
+      clearGmuHandoff();
+      showToast(`${from}에서 BDF를 전달받았습니다. 'BDF 검증 실행'을 누르세요.`, 'info');
     }, HANDOFF_APPLY_DELAY_MS);
     return () => clearTimeout(timer);
-    // validJobId/gmuJob 은 '핸드오프 시점의 값'만 필요하므로 의존성에 넣지 않는다
-    // (넣으면 폴링 진행마다 effect 가 재평가된다 — 값은 어차피 early return 으로 무시됨).
+    // validJobId/gmuJob 은 '핸드오프 시점의 값'만 필요하므로 의존성에 넣지 않는다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gmuHandoff, clearGmuHandoff, showToast]);
+
+  /** 검증을 시작하는 공통 준비 — 직접 실행·샘플 실행이 같이 쓴다. */
+  const beginValidation = (message) => {
+    clearResults();
+    setValidating(true);
+    setValidProgress(0);
+    setValidStatusMsg(message);
+    setValidStartedAt(Date.now());
+    setValidatedWithNastran(useNastran);
+    setActiveIdx(0);
+  };
 
   // ── BDF 검증 ─────────────────────────────────────────────
   const handleValidate = async () => {
     if (!bdfFile && !handoffBdfPath) return;
-    setValidating(true);
-    setStepStatus('bdf-validation', 'running');
-    setStep1Data(null);
-    setStep2Data(null);
-    setValidProgress(0);
-    setValidStatusMsg('서버 요청 중...');
-
+    beginValidation('서버 요청 중...');
     try {
       const userStr = localStorage.getItem('user');
       const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
@@ -786,7 +578,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
       console.error('[BDF 검증] 요청 실패:', e);
       setValidating(false);
       setValidJobId(null);
-      setStepStatus('bdf-validation', 'error');
+      setValidFailed(true);
       const detail = e?.response?.data?.detail || e?.message || '알 수 없는 오류';
       showToast(`BDF 검증 요청 실패 — ${detail}`, 'error');
     }
@@ -796,14 +588,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
   useDashboardAutoRun(GMU_MENU_NAME, (!validating && bdfFile) || null, handleValidate);
 
   // 샘플 실행 콜백 — SampleRunButton 이 호출. handleValidate 와 동일한 폴링 흐름에 진입.
-  const sampleGmuBefore = () => {
-    setValidating(true);
-    setStepStatus('bdf-validation', 'running');
-    setStep1Data(null);
-    setStep2Data(null);
-    setValidProgress(0);
-    setValidStatusMsg('샘플 파일로 작업 요청 중...');
-  };
+  const sampleGmuBefore = () => beginValidation('샘플 파일로 작업 요청 중...');
   const sampleGmuSubmitted = (jobId) => {
     setValidJobId(jobId);
     startGlobalJob?.(jobId, GMU_MENU_NAME);
@@ -812,376 +597,452 @@ export default function GroupModuleUnitLiftingAnalysis() {
     setValidating(false);
     setValidJobId(null);
     if (st === 429) {
-      setStepStatus('bdf-validation', 'wait');
       setValidStatusMsg('');
     } else {
-      setStepStatus('bdf-validation', 'error');
+      setValidFailed(true);
       showToast(`샘플 실행 실패 — ${detail}`, 'error');
     }
   };
 
-  // ── 해석 실행 ─────────────────────────────────────────────
-  // hasRunOnce 는 validation 성공 후에만 true 가 된다(polling.onComplete 의 !hasError 분기).
-  // 여기서는 게이트를 풀지 않는다 — 잘못된 BDF 로 다음 단계 진입을 막기 위함.
-  const handleRun = () => {
-    const bdfDone = steps.find(s => s.id === 'bdf-validation')?.status === 'done';
-    if (!bdfDone) {
-      if (!bdfFile && !handoffBdfPath) {
-        showToast('BDF 파일을 업로드해주세요.', 'warning');
-        setActiveIdx(0);
-        return;
-      }
-      handleValidate();
-      return;
-    }
-    // bdfDone(=done) 상태이므로 검증을 통과했음이 보장된다 → 게이트는 onComplete 에서 이미 true.
-    setActiveIdx(1);
-    showToast('Group Module Unit Studio를 열어 후속 작업을 진행하세요.', 'info');
-  };
-
-  // ── 전체 초기화 ──────────────────────────────────────────
+  // ── 새 입력으로 시작 ─────────────────────────────────────
   const handleReset = () => {
-    if (pollRef.current) clearInterval(pollRef.current);
     if (validJobId) clearGlobalJob?.(validJobId);
     setBdfFile(null);
     setHandoffSource(null);
     setHandoffBdfPath(null);
     setValidating(false);
     setValidJobId(null);
-    setStep1Data(null);
-    setStep2Data(null);
     setValidProgress(0);
     setValidStatusMsg('');
-    setBdfPath(null);
+    setValidStartedAt(null);
+    clearResults();
     setStudioStatus('idle');
     setStudioProgress(null);
     setStudioError(null);
-    setJobStatus(null);
-    setAnalysisResult(null);
-    setSteps(INITIAL_STEPS);
     setActiveIdx(0);
     setUseNastran(false);
-    setHasRunOnce(false);
     clearAnalysisPageState?.(GMU_MENU_NAME);
   };
 
-  // ── 렌더 ─────────────────────────────────────────────────
+  // ── 지난 결과 다시 열기(My Projects·대시보드 '내 작업') ─────────────
+  // BDF 검증 기록(GroupModuleUnit)으로 1단계를 복원하고, 그 BDF 로 Studio 구조 해석까지 했다면
+  // 최신 구조 해석 기록으로 결과까지 다시 계산한다(판정 규칙 = utils/gmuLiftingVerdict).
+  const applyResultReentry = async (analysisId) => {
+    try {
+      const { data: rec } = await getAnalysisById(analysisId);
+      if (rec.program_name !== 'GroupModuleUnit') throw new Error('권상 구조 해석 기록이 아닙니다.');
+      if (rec.files_available === false) throw new Error('결과 파일이 보관 기간이 지나 삭제되었습니다.');
+      const info = rec.result_info || {};
+      if (!info.bdf) throw new Error('이 기록에는 검증한 BDF 정보가 없습니다.');
+
+      handleReset();
+      setUseNastran(!!(rec.input_info?.use_nastran ?? info.use_nastran));
+      setHandoffSource('지난 결과');
+      setHandoffBdfPath(info.bdf);
+      const s1 = await applyValidationResult(info, rec.id);
+      let structural = null;
+      try {
+        const { data: arts } = await getGroupModuleUnitArtifacts(rec.id);
+        if (arts?.unitStructuralAnalysisId) {
+          const { data: unit } = await getAnalysisById(arts.unitStructuralAnalysisId);
+          const ui = unit.result_info || {};
+          if (unit.status === 'Success' && ui.summary) {
+            structural = buildStructuralResult({
+              summary: ui.summary, warnings: ui.warnings, allowableMPa: ui.allowableMPa, analysisId: unit.id,
+            });
+          }
+        }
+      } catch { /* 구조 해석 기록이 없으면 검증 결과까지만 연다 */ }
+      if (structural) {
+        setAnalysisResult(structural);
+        setStudioOpened(true);
+        setActiveIdx(STEP_INDEX.results);
+      } else {
+        const v = computeGmuVerdict({ step1Data: s1 });
+        setActiveIdx(v.level && v.level !== 'fail' ? STEP_INDEX.studio : 0);
+      }
+      const when = rec.created_at ? new Date(rec.created_at).toLocaleString('ko-KR') : '';
+      showToast(`지난 결과를 열었습니다${when ? ` (${when})` : ''}.`, 'success');
+    } catch (e) {
+      showToast(`결과를 열지 못했습니다: ${e?.response?.data?.detail || e.message}`, 'error');
+    }
+  };
+  useResultReentry(GMU_MENU_NAME, applyResultReentry);
+
+  // ── 최근 실행의 입력 불러오기 ─────────────────────────────────────
+  // 서버에 보관된 그 실행의 BDF 를 다시 올리지 않고 경로로 넘긴다(Model Builder 연계와 같은 request-from-path 경로).
+  // 결과는 열지 않는다 — 옵션을 바꿔 '다시 검증'하려는 용도다.
+  const applyRecentInput = (record) => {
+    const bdfModel = record?.input_info?.bdf_model;
+    if (!bdfModel) { showToast('이 실행에는 불러올 BDF 정보가 없습니다.', 'warning'); return; }
+    handleReset();
+    setUseNastran(!!record.input_info?.use_nastran);
+    setHandoffSource('최근 실행');
+    setHandoffBdfPath(bdfModel);
+    showToast(`${baseName(bdfModel)} 을 입력으로 불러왔습니다. 'BDF 검증 실행'을 누르세요.`, 'info');
+  };
+
+  /* ── 파생 상태 ─────────────────────────────────────────────────── */
+  const hasValidation = !!step1Data;
+  const verdict = computeGmuVerdict({
+    jobFailed: validFailed && !step1Data,
+    step1Data,
+    step2Data: validatedWithNastran ? step2Data : null,
+    structural: analysisResult,
+  });
+  const validationVerdict = computeGmuVerdict({ step1Data, step2Data: validatedWithNastran ? step2Data : null, jobFailed: validFailed && !step1Data });
+  const validationOk = !!validationVerdict.level && validationVerdict.level !== 'fail';
+  const structuralLevel = analysisResult ? verdict.level : null;
+
+  const displaySteps = STEP_DEFS.map((def) => {
+    if (def.id === 'input') {
+      if (validating) return { ...def, status: 'running', hint: '검증 중' };
+      if (validationVerdict.level === 'fail') return { ...def, status: 'error', hint: '검증 실패' };
+      if (validationVerdict.level === 'review') return { ...def, status: 'review', hint: '통과 · 분리 그룹 있음' };
+      if (validationVerdict.level === 'pass') return { ...def, status: 'done', hint: '검증 통과' };
+      return { ...def, status: 'wait' };
+    }
+    if (def.id === 'studio') {
+      if (!validationOk) return { ...def, status: 'wait' };
+      if (analysisResult?.status === 'ERROR') return { ...def, status: 'error', hint: '구조 해석 실패' };
+      if (analysisResult) return { ...def, status: 'done', hint: '구조 해석 완료' };
+      if (studioOpened) return { ...def, status: 'running', hint: 'Studio 에서 작업 중' };
+      return { ...def, status: 'wait', hint: 'Studio 열기 전' };
+    }
+    if (!analysisResult || analysisResult.status === 'ERROR') return { ...def, status: 'wait' };
+    if (delivered) return { ...def, status: 'done', hint: '산출물 받음' };
+    const level = structuralLevel;
+    return { ...def, status: level === 'pass' ? 'wait' : level === 'review' ? 'review' : 'error',
+      hint: level === 'pass' ? '판정 통과 · 보고서 대기' : level === 'review' ? '검토 필요' : '불합격' };
+  });
+  const activeStep = displaySteps[activeIdx] ?? displaySteps[0];
+
+  const inputName = bdfFile?.name || baseName(handoffBdfPath) || baseName(bdfPath);
+  const inputItems = [{
+    key: 'bdf', label: 'BDF', fileName: inputName || null,
+    state: validationVerdict.level === 'fail' ? 'error' : validationVerdict.level === 'review' ? 'warn' : 'ok',
+  }];
+
+  /* ── 실행 버튼 — 검증 전 'BDF 검증 실행', 검증 후 '다시 검증' ───────── */
+  const hasInput = !!(bdfFile || handoffBdfPath);
+  const runAction = {
+    label: hasValidation || validFailed ? 'BDF 다시 검증' : 'BDF 검증 실행',
+    icon: hasValidation || validFailed ? RefreshCw : ChevronsRight,
+    onClick: handleValidate,
+    enabled: hasInput && !validating,
+    title: hasValidation ? '같은 BDF 를 지금 설정으로 다시 검증합니다. Studio 결과는 지워집니다.' : undefined,
+  };
+  // Ctrl+Enter = 실행 버튼
+  const runActionRef = useRef(runAction);
+  runActionRef.current = runAction;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return;
+      if (currentMenu !== GMU_MENU_NAME) return; // keep-alive 라 다른 화면에서도 살아 있다
+      const a = runActionRef.current;
+      if (!a.enabled) return;
+      e.preventDefault();
+      a.onClick();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [currentMenu]);
+
+  /* ── 다음 행동 바 — 단계마다 주 행동 1개 ─────────────────────────── */
+  const studioBusy = ['checking', 'installing', 'opening'].includes(studioStatus);
+  const openStudioAction = {
+    label: studioOpened ? 'Studio 다시 열기' : 'Studio 열기', icon: ExternalLink,
+    onClick: launchModuleUnitStudio, busy: studioBusy,
+  };
+  const nextAction = (() => {
+    if (validating) return null;
+    if (activeStep.id === 'input') {
+      if (validationOk) {
+        return {
+          note: '입력 검증이 끝났습니다. Studio 에서 권상 위치·자세 안정성·구조 해석을 진행합니다.',
+          primary: { label: 'Studio 권상 검토로', icon: ChevronsRight, onClick: () => setActiveIdx(STEP_INDEX.studio) },
+        };
+      }
+      return null;
+    }
+    if (activeStep.id === 'studio') {
+      if (!validationOk) {
+        return {
+          note: validationVerdict.level === 'fail' ? 'BDF 에 오류가 있어 Studio 로 넘길 수 없습니다.' : 'BDF 입력 검증을 먼저 마치세요.',
+          primary: { label: '입력으로 돌아가기', icon: FileCheck2, onClick: () => setActiveIdx(0) },
+        };
+      }
+      if (analysisResult && analysisResult.status !== 'ERROR') {
+        return {
+          note: '구조 해석 결과가 도착했습니다. 결과를 확인하고 보고서를 받으세요.',
+          primary: { label: '결과·보고서로', icon: ChevronsRight, onClick: () => setActiveIdx(STEP_INDEX.results) },
+          secondary: [{ key: 'studio', ...openStudioAction, label: 'Studio 다시 열기' }],
+        };
+      }
+      return {
+        note: studioOpened
+          ? 'Studio 에서 Hoist 탭 → 자세 안정성 → Analysis 탭 구조 해석까지 마치면 결과가 이 화면으로 옵니다.'
+          : 'Studio 를 열어 권상 위치를 정하고 구조 해석을 실행하세요.',
+        primary: openStudioAction,
+      };
+    }
+    // 결과 단계
+    if (!analysisResult) {
+      return {
+        note: '아직 구조 해석 결과가 없습니다. Studio 에서 구조 해석을 실행하세요.',
+        primary: { label: 'Studio 권상 검토로', icon: ChevronsRight, onClick: () => setActiveIdx(STEP_INDEX.studio) },
+      };
+    }
+    if (structuralLevel === 'pass') return null; // 보고서·산출물 버튼은 아래 카드에 있다
+    return {
+      note: structuralLevel === 'review'
+        ? '경고를 확인하세요. 문제없다고 판단하면 그대로 보고서를 받을 수 있습니다.'
+        : '권상 위치나 가서포트를 Studio 에서 보정한 뒤 구조 해석을 다시 실행하세요.',
+      primary: { ...openStudioAction, label: 'Studio 에서 보정' },
+    };
+  })();
+
+  const verdictSummary = verdict.basis === 'structural'
+    ? (verdict.level === 'pass' ? '응력 초과 부재 0 · Wire 압축 0 · 해석 경고 0' : null)
+    : verdict.level === 'pass'
+      ? `BDF 오류 0 · 분리 그룹 0${validatedWithNastran ? ' · Nastran FATAL 0' : ''}`
+      : verdict.level === 'review' ? 'BDF 는 쓸 수 있지만 아래 항목을 Studio 에서 확인하세요.' : null;
+  // 첫 화면(입력 검증 단계 · 아직 아무것도 돌리지 않음) — 두 칸 높이를 맞추고 아래를 진행 순서·최근 실행으로 채운다.
+  const isStartScreen = activeStep.id === 'input' && !hasValidation && !validating && !validFailed;
+  const verdictMeta = verdict.basis === 'structural' ? '구조 해석 결과 기준' : verdict.basis === 'validation' ? '입력 검증 기준 · 구조 해석 전' : null;
+
+  /* ── 렌더 ──────────────────────────────────────────────────────────── */
   return (
-    <div className="min-h-full xl:h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
+    // pb-28: 화면 오른쪽 아래 전역 작업·메시지 도크가 마지막 버튼을 가리지 않게 여백을 둔다.
+    <div className="relative mx-auto flex min-h-full max-w-[1400px] flex-col pb-28 animate-fade-in-up">
 
       <FileBasedPageBanner
-        title="Group & Module Unit 권상 구조 해석"
+        title={GMU_MENU_NAME}
         subtitle="Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다."
         icon={UploadCloud}
         htmlGuide="posture-stability"
         onBack={() => setCurrentMenu('File-Based Apps')}
       />
 
-      {/* ── Body ── */}
-      <div className="flex flex-1 flex-col gap-5 min-h-0 xl:flex-row">
+      <div className="flex flex-col items-stretch gap-5 px-1 xl:flex-row">
 
-        {/* ── Left Panel ── */}
-        <div className="w-full flex flex-col gap-3 xl:w-96 xl:shrink-0">
+        {/* ── 왼쪽 레일: 단계 · 입력 요약 · 옵션 · 실행 ── */}
+        <aside className={`flex w-full flex-col gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 xl:w-80 xl:shrink-0 ${isStartScreen ? '' : 'xl:self-start'}`}>
+          <StepRail steps={displaySteps} activeIdx={activeIdx} onSelect={setActiveIdx} />
 
-          {/* 스텝퍼 */}
-          <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            {/* BDF 가 없을 때 진입 — 파이프라인 박스 최상단, 해석 실행 버튼과 시각적으로 분리 */}
+          {activeStep.id !== 'input' && (
+            <>
+              <div className="h-px bg-slate-100" />
+              <InputSummary
+                items={inputItems}
+                footer={handoffSource && (
+                  <p className="text-[11px] text-slate-600">{handoffSource}에서 받은 서버 BDF 입니다.</p>
+                )}
+              />
+            </>
+          )}
+
+          <div className="h-px bg-slate-100" />
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={useNastran}
+              onChange={e => setUseNastran(e.target.checked)}
+              disabled={validating}
+              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-blue-600"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-slate-800">Nastran 으로도 검증</span>
+              <span className="block text-xs text-slate-600">BDF 를 한 번 풀어 FATAL 여부까지 봅니다. 시간이 더 걸립니다.</span>
+            </span>
+          </label>
+
+          <div className="space-y-2">
             <button
-              onClick={() => setCurrentMenu('HiTESS Model Builder')}
-              className="w-full relative flex items-center justify-between gap-3 px-5 py-4 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 hover:from-indigo-400 hover:via-indigo-500 hover:to-violet-600 active:scale-[0.995] text-white transition-all duration-200 cursor-pointer overflow-hidden group"
+              type="button"
+              onClick={runAction.onClick}
+              disabled={!runAction.enabled}
+              title={runAction.title}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
-              <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full pointer-events-none" />
-              <div className="absolute -right-2 -bottom-6 w-16 h-16 bg-white/5 rounded-full pointer-events-none" />
-              <div className="absolute left-3 top-2 w-1.5 h-1.5 rounded-full bg-white/40 pointer-events-none animate-pulse" />
-              <div className="relative flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
-                  <Wand2 size={22} className="text-white" />
-                </div>
-                <div className="text-left">
-                  <p className="text-[11px] font-semibold text-indigo-100 leading-tight tracking-wide">BDF 가 없다면?</p>
-                  <p className="text-base font-black text-white leading-tight mt-0.5">CSV 로부터 시작하세요</p>
-                  <p className="text-[10px] text-indigo-200 mt-0.5">HiTESS Model Builder 로 이동</p>
-                </div>
-              </div>
-              <div className="relative w-9 h-9 rounded-full bg-white/20 group-hover:bg-white/30 flex items-center justify-center transition-colors shrink-0">
-                <ArrowRight size={18} className="text-white group-hover:translate-x-1 transition-transform" />
-              </div>
+              {validating
+                ? <><Loader2 size={15} className="animate-spin" aria-hidden="true" /> 검증 중…</>
+                : <><runAction.icon size={15} aria-hidden="true" /> {runAction.label}</>}
             </button>
-
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">파이프라인</span>
-              <span className="text-xs font-bold text-blue-600">{doneCount} / {steps.length} 완료</span>
-            </div>
-
-            <div className="flex-1 overflow-y-auto custom-scrollbar py-3 px-3">
-              {steps.map((step, idx) => {
-                const StepIcon = step.icon;
-                const effectiveStatus = step.status;
-                const cfg      = STATUS_CONFIG[effectiveStatus] ?? STATUS_CONFIG.wait;
-                const isActive = idx === activeIdx;
-                const isLast   = idx === steps.length - 1;
-
-                return (
-                  <div key={step.id} className="flex items-stretch">
-                    {/* 타임라인 dot + 수직선 */}
-                    <div className="flex flex-col items-center w-7 shrink-0 pt-4">
-                      <div className={`w-3.5 h-3.5 rounded-full shrink-0 transition-all duration-300 ${cfg.dot}`} />
-                      {!isLast && (
-                        // 앞 단계가 완료되면 연결선이 완료 dot 과 같은 초록으로 채워진다(step-connector)
-                        <div
-                          className="step-connector step-connector-y flex-1 w-0.5 my-1 rounded-full bg-slate-200"
-                          style={{ '--step-progress': step.status === 'done' ? 1 : 0, '--step-fill': '#22c55e' }}
-                        />
-                      )}
-                    </div>
-
-                    {/* 스텝 카드 */}
-                    <div
-                      className={`flex-1 mb-2 ml-2 rounded-xl border px-3.5 py-3 transition-all duration-200 cursor-pointer
-                        ${effectiveStatus === 'disabled'
-                          ? 'border-slate-100 bg-slate-50 opacity-50 cursor-default'
-                          : isActive
-                          ? 'border-blue-500 bg-blue-50 shadow-sm'
-                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                        }`}
-                      onClick={() => effectiveStatus !== 'disabled' && goStep(idx)}
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-0.5">
-                        <div className="flex items-center gap-1.5">
-                          <StepIcon size={13} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
-                          <span className={`text-sm font-semibold leading-tight ${isActive ? 'text-blue-700' : 'text-slate-700'}`}>
-                            {idx + 1}. {step.title}
-                          </span>
-                        </div>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 whitespace-nowrap ${cfg.badge}`}>
-                          {effectiveStatus === 'disabled' ? '비활성' : isActive && step.status === 'wait' ? '선택됨' : cfg.label}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 pl-5">{step.sub}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* 실행 버튼 푸터 */}
-            <div className="px-3 py-3 border-t border-slate-100 bg-slate-50/60 space-y-2">
-              {/* 해석 설정 토글 */}
-              <div className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition-colors ${
-                useNastran ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200'
-              }`}>
-                <p className={`text-xs font-bold ${useNastran ? 'text-blue-700' : 'text-slate-500'}`}>
-                  Nastran을 통한 BDF 입력 검증
-                </p>
-                <Toggle checked={useNastran} onChange={setUseNastran} />
-              </div>
-              {activeIdx < steps.length - 1 && (
+            {!hasInput ? (
+              <p className="text-center text-xs text-slate-600">BDF 를 올리면 열립니다.</p>
+            ) : (
+              <p className="text-center text-[11px] text-slate-600">
+                <kbd className="rounded border border-slate-300 bg-slate-50 px-1 font-mono text-[11px]">Ctrl</kbd>
+                {' + '}
+                <kbd className="rounded border border-slate-300 bg-slate-50 px-1 font-mono text-[11px]">Enter</kbd>
+                {' 로도 실행합니다'}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-1">
+              {(hasInput || hasValidation || validFailed) && (
                 <button
-                  onClick={() => setActiveIdx(prev => Math.min(prev + 1, steps.length - 1))}
-                  disabled={!hasRunOnce}
-                  title={!hasRunOnce ? '권상 구조 해석 수행 후 활성화됩니다' : `다음 단계: ${steps[activeIdx + 1].title}`}
-                  className={`w-full flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-xl transition-colors ${
-                    hasRunOnce
-                      ? 'bg-white border border-blue-200 hover:bg-blue-50 hover:border-blue-300 text-blue-600 cursor-pointer'
-                      : 'bg-slate-50 border border-slate-200 text-slate-400 cursor-not-allowed'
-                  }`}
+                  type="button"
+                  onClick={handleReset}
+                  disabled={validating}
+                  className="inline-flex items-center gap-1 rounded text-xs font-semibold text-blue-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:cursor-not-allowed disabled:text-slate-500 disabled:no-underline cursor-pointer"
                 >
-                  <span>다음 단계: {steps[activeIdx + 1].title}</span>
-                  <ArrowRight size={13} />
+                  <FilePlus2 size={12} aria-hidden="true" /> 새 입력으로 시작
                 </button>
               )}
-              {/* 샘플 실행 — 입력 BDF 없이도 학습용으로 즉시 검증 체험 */}
               <SampleRunButton
                 appKey="groupmoduleunit"
-                disabled={validating || jobStatus?.status === 'Running'}
+                variant="link"
+                label="샘플로 실행"
+                disabled={validating}
                 onBeforeRun={sampleGmuBefore}
                 onJobSubmitted={sampleGmuSubmitted}
                 onError={sampleGmuError}
               />
-              <button
-                onClick={handleRun}
-                disabled={validating || jobStatus?.status === 'Running'}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-blue hover:bg-brand-blue-dark active:bg-brand-blue/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-colors cursor-pointer shadow-sm"
-              >
-                {validating
-                  ? <><Loader2 size={15} className="animate-spin" /> BDF 검증 중...</>
-                  : jobStatus?.status === 'Running'
-                  ? <><Loader2 size={15} className="animate-spin" /> 권상 구조 해석 수행 중...</>
-                  : <><ChevronsRight size={16} /> 권상 구조 해석 수행</>
-                }
-              </button>
-              <button
-                onClick={handleReset}
-                disabled={validating || jobStatus?.status === 'Running'}
-                className="w-full flex items-center justify-center gap-1.5 py-2 border border-slate-200 bg-white hover:bg-red-50 hover:border-red-300 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-500 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-              >
-                <RotateCcw size={13} /> 전체 초기화
-              </button>
             </div>
           </div>
 
+          <div className="h-px bg-slate-100" />
+          <button
+            type="button"
+            onClick={() => setCurrentMenu('HiTESS Model Builder')}
+            className="flex items-center gap-2 rounded-lg px-1 py-1 text-left text-xs text-slate-700 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
+          >
+            <Wand2 size={14} className="shrink-0 text-slate-500" aria-hidden="true" />
+            <span>BDF 가 없으면 <span className="font-semibold text-blue-700 underline-offset-2 hover:underline">Model Builder 로 만들기</span></span>
+          </button>
+        </aside>
 
-        </div>{/* end Left Panel */}
+        {/* ── 오른쪽 작업면 ── */}
+        <main className="flex min-w-0 flex-1 flex-col gap-3">
+          {validating && (
+            <JobProgressCard
+              title="BDF 검증 중"
+              message={validStatusMsg}
+              progress={validProgress}
+              elapsed={elapsedSecs}
+              note="다른 화면으로 이동해도 계속 진행됩니다. 오른쪽 아래 작업 카드로 돌아올 수 있습니다."
+            />
+          )}
 
-        {/* ── Right Panel ── */}
-        <div className="flex-1 flex flex-col min-h-0 gap-3">
+          {!validating && verdict.level && (
+            <VerdictHeader
+              level={verdict.level}
+              title={verdict.title}
+              summary={verdictSummary}
+              reasons={verdict.reasons}
+              meta={verdictMeta}
+            />
+          )}
+          {nextAction && <NextActionBar {...nextAction} />}
 
-          {/* ─ Step 0: BDF 입력 검증 ─ */}
-          {isBdfStep && (
-            <>
-              {/* 입력 패널 */}
-              <div className="shrink-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
-                  <h2 className="text-xs font-bold text-slate-700">1. BDF 입력 검증</h2>
-                  <span className="text-[10px] text-slate-400">— BDF 파일 업로드 및 유효성 검증</span>
-                </div>
-                <div className="p-4 space-y-3">
-                  {handoffSource && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-200">
-                      <ExternalLink size={13} className="text-violet-500 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-xs text-violet-700 font-medium">
-                          <span className="font-bold">{handoffSource}</span>에서 전달된 BDF — 실행 버튼 대기 중
+          <section className={`flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white px-5 py-4 ${isStartScreen ? 'flex-1' : ''}`}>
+            <div className="mb-3 flex shrink-0 items-center gap-2 border-b border-slate-100 pb-3">
+              <activeStep.icon size={15} className="text-slate-600" aria-hidden="true" />
+              <h2 className="text-base font-bold text-slate-800">{activeIdx + 1}. {activeStep.title}</h2>
+            </div>
+
+            <div className="min-w-0 space-y-4">
+              {activeStep.id === 'input' && (
+                <>
+                  {handoffSource ? (
+                    <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                      <ExternalLink size={14} className="mt-0.5 shrink-0 text-slate-600" aria-hidden="true" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-slate-800">
+                          <span className="font-bold">{handoffSource}</span>에서 받은 서버 BDF
                         </p>
-                        <p className="text-[10px] text-violet-500 font-mono truncate" title={handoffBdfPath || ''}>
-                          {handoffBdfPath}
-                        </p>
+                        <p className="truncate font-mono text-xs text-slate-600" title={handoffBdfPath || ''}>{handoffBdfPath}</p>
                       </div>
+                      {!validating && (
+                        <button
+                          type="button"
+                          onClick={handleReset}
+                          className="shrink-0 rounded text-xs font-semibold text-blue-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
+                        >
+                          다른 BDF 올리기
+                        </button>
+                      )}
                     </div>
-                  )}
-                  {!handoffSource && (
+                  ) : (
                     <BdfDropZone
                       file={bdfFile}
-                      onFile={f => { setBdfFile(f); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait'); }}
-                      onClear={() => { setBdfFile(null); setStep1Data(null); setStep2Data(null); setStepStatus('bdf-validation', 'wait'); }}
+                      onFile={f => { setBdfFile(f); clearResults(); }}
+                      onClear={() => { setBdfFile(null); clearResults(); }}
+                      onWarnNotBdf={() => showToast('BDF 파일(.bdf)만 올릴 수 있습니다.', 'warning')}
                       disabled={validating}
                     />
                   )}
-                </div>
-              </div>
 
-              {/* BDF 검증 결과 패널 */}
-              <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">BDF 검증 결과</span>
-                    {step1Data && step1Data.status !== 'error' && <><div className="w-1.5 h-1.5 rounded-full bg-green-400" /><span className="text-[10px] text-slate-400">완료</span></>}
-                    {step1Data?.status === 'error'             && <><div className="w-1.5 h-1.5 rounded-full bg-red-400"   /><span className="text-[10px] text-red-400">오류</span></>}
-                    {validating                                && <><Loader2 size={11} className="animate-spin text-blue-500" /><span className="text-[10px] text-blue-600">{validStatusMsg || '검증 중'}</span></>}
-                  </div>
-                  {step1Data && step1Data.status !== 'error' && (
-                    <button
-                      onClick={() => setActiveIdx(1)}
-                      className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors cursor-pointer"
-                    >
-                      다음 단계 — Group Module Unit Studio →
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-                  {/* 대기: 안내 */}
-                  {!validating && !step1Data && (
-                    <div className="flex flex-col items-center justify-center h-full gap-3 p-6 text-center">
-                      <FileCheck2 size={32} className="text-slate-200" />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-400">BDF 파일을 업로드하고 검증을 실행하세요</p>
-                        <p className="text-[11px] text-slate-300 mt-1">GRID, ELEMENT, SPC 카드를 파싱하여 오류 유무를 확인합니다.</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 검증 중 */}
-                  {validating && (
-                    <div className="flex flex-col items-center justify-center h-full gap-3 p-6">
-                      <Loader2 size={28} className="animate-spin text-blue-500" />
-                      <p className="text-sm font-semibold text-slate-500">{validStatusMsg || 'BDF 파일 파싱 중...'}</p>
-                      {validProgress > 0 && (
-                        <ProgressBar
-                          value={validProgress}
-                          status="running"
-                          size="sm"
-                          trackClassName="bg-slate-200"
-                          className="w-48"
-                          label="BDF 검증 진행률"
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  {/* 결과 표시 */}
-                  {!validating && step1Data && (
+                  {hasValidation ? (
                     <ValidationStepLog
                       step1Data={step1Data}
                       step2Data={step2Data}
-                      useNastran={useNastran}
+                      useNastran={validatedWithNastran}
+                      bare
+                    />
+                  ) : isStartScreen && (
+                    <RunStartPanel
+                      programName="GroupModuleUnit"
+                      onOpen={applyResultReentry}
+                      onUseInput={applyRecentInput}
+                      hasInput={r => !!r.input_info?.bdf_model}
+                      steps={[
+                        { title: 'BDF 입력 검증', detail: 'GRID·요소·물성·SPC 카드를 읽어 오류와 주 구조에서 떨어진 그룹을 찾습니다. Nastran 을 켜면 FATAL 여부까지 봅니다.' },
+                        { title: 'Studio 권상 검토', detail: 'Studio 에서 권상 위치를 정하고 자세 안정성과 Wire 포함 구조 해석을 실행합니다.' },
+                        { title: '결과·보고서', detail: '부재 응력·Wire 판정을 확인하고 해석 파일과 검토 보고서(PDF)를 받습니다.' },
+                      ]}
                     />
                   )}
-                </div>
-              </div>
-            </>
-          )}
+                </>
+              )}
 
-          {/* ─ Step 1: Group Module Unit Studio ─ */}
-          {isLiftingStep && (
-            <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-100 shrink-0">
-                <h2 className="text-xs font-bold text-slate-700">
-                  2. Group Module Unit Studio <span className="font-mono text-slate-400">v{MODULE_STUDIO_VERSION}</span>
-                </h2>
-              </div>
-              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-5 bg-slate-50/60">
-                <ModuleStudioLauncher
-                  ready={!!bdfFolderPath}
-                  onLaunch={launchModuleUnitStudio}
-                  installed={studioInstalled}
-                  status={studioStatus}
-                  progress={studioProgress}
-                  error={studioError}
-                  installedVersion={studioInstalledVersion}
-                  latestVersion={studioLatestVersion}
-                  installDir={studioInstallDir}
-                />
-              </div>
+              {activeStep.id === 'studio' && (
+                <>
+                  <StudioLauncherCard
+                    title="Group Module Unit Studio"
+                    description="검증한 BDF 를 3D 로 열어 권상 위치를 정하고, 자세 안정성과 Wire 포함 구조 해석(SOL 101)을 실행합니다."
+                    installed={studioInstalled}
+                    status={studioStatus}
+                    progress={studioProgress}
+                    error={studioError}
+                    installedVersion={studioInstalledVersion}
+                    latestVersion={studioLatestVersion}
+                    ready={validationOk && !!bdfFolderPath}
+                    notReadyTitle="먼저 BDF 입력 검증을 통과하세요"
+                    onLaunch={launchModuleUnitStudio}
+                  />
+                  <ol className="space-y-1.5 text-sm text-slate-700">
+                    {[
+                      ['Hoist 탭', '권상 위치를 자동 선정하거나 직접 고릅니다.'],
+                      ['자세 안정성', '전도·형상 판정이 PASS 또는 WARN 이어야 다음으로 갑니다.'],
+                      ['Analysis 탭', '구조 해석을 실행하면 결과가 이 화면 3단계로 자동으로 넘어옵니다.'],
+                    ].map(([t, d], i) => (
+                      <li key={t} className="flex gap-2.5">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 font-mono text-xs font-bold text-slate-700">{i + 1}</span>
+                        <span><span className="font-semibold text-slate-800">{t}</span> — {d}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </>
+              )}
+
+              {activeStep.id === 'results' && (
+                <>
+                  {analysisResult && analysisResult.status !== 'ERROR'
+                    ? <StructuralResultPanel result={analysisResult} />
+                    : <p className="text-sm text-slate-600">Studio 에서 구조 해석을 마치면 응력·Wire 결과가 여기에 표시됩니다.</p>}
+                  <ResultArtifactsCard
+                    parentAnalysisId={bdfAnalysisId}
+                    onDownloaded={() => setDelivered(true)}
+                  />
+                </>
+              )}
             </div>
-          )}
+          </section>
 
-          {/* ─ Step 2: 해석 결과 ─ */}
-          {isResultsStep && (
-            <>
-            {/* 산출물 다운로드 — 최종 모델 BDF(해석 덱/편집) + Nastran F06/OP2 */}
-            <ResultArtifactsCard parentAnalysisId={bdfAnalysisId} />
-            <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">해석 결과 확인</span>
-                  {analysisResult && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                      analysisResult.status === 'PASS'
-                        ? 'bg-green-50 text-green-600 border-green-200'
-                        : analysisResult.status === 'WARN'
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : 'bg-red-50 text-red-600 border-red-200'
-                    }`}>
-                      {analysisResult.status}
-                    </span>
-                  )}
-                </div>
-                {analysisResult && (
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                    <span className="text-[10px] text-slate-400">검증 완료</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 min-h-0">
-                <ResultsPanel result={analysisResult} />
-              </div>
-            </div>
-            </>
-          )}
-
-        </div>{/* end Right Panel */}
+          {validFailed && !step1Data && <EngineLogPanel log={engineLog} />}
+        </main>
       </div>
     </div>
   );

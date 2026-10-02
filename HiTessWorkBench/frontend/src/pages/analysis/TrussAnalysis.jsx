@@ -1,18 +1,18 @@
 /// <summary>
-/// 파일 기반(File-Based)의 비동기 트러스 모델 구축 패널입니다.
-/// (수정) 해석 완료 시 XLSX 파일의 다이렉트 다운로드 및 JSON 데이터의 테이블 렌더링 기능을 추가했습니다.
+/// Truss Model Builder — Node·Member CSV 로 트러스 구조 해석 모델(BDF)을 만든다.
+/// 화면은 파일 기반 해석 앱 공통 틀(docs/standards/file-based-app-page-standard.md)을 따른다:
+///   왼쪽 레일(단계·입력 요약·실행) + 오른쪽 작업면(진행 → 판정 → 다음 행동 → 단계 본문 → 실행 기록).
+/// 단계 = CSV 입력 → 모델 확인(3D) → BDF 받기. 판정 규칙은 utils/trussVerdict.
 /// </summary>
 import React, { useState, useRef, useEffect, Fragment } from 'react';
-import { requestTrussAnalysis, getTrussSamplePreview, downloadFileBlob } from '../../api/analysis';
+import { requestTrussAnalysis, getTrussSamplePreview, downloadFileBlob, getAnalysisById } from '../../api/analysis';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import { extractFilename } from '../../utils/fileHelper';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
 import { Dialog, Transition } from '@headlessui/react';
 import {
-  Play, Download, Trash2, Database,
-  RefreshCw, FileSpreadsheet, Terminal, Layers,
-  Box, GitMerge, CheckCircle2, AlertCircle, Maximize2, X, FileText,
-  FileOutput, Eye, RotateCcw
+  Download, Database, Layers, Box, CheckCircle2, AlertCircle, Maximize2, X, FileText,
+  FileOutput, Eye, ChevronsRight, RefreshCw, FilePlus2, FileCheck2, Loader2, Trash2,
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
@@ -21,20 +21,52 @@ import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useFileParser, parseCsvText } from '../../hooks/useFileParser';
 import SolverCredit from '../../components/ui/SolverCredit';
-import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { useToast } from '../../contexts/ToastContext';
 import { buildFormData } from '../../utils/fileHelper';
 import FileDropzone from '../../components/ui/FileDropzone';
 import FeedbackState from '../../components/ui/FeedbackState';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
+import { useResultReentry } from '../../utils/resultReentry';
+import { computeTrussBuilderVerdict } from '../../utils/trussVerdict';
+import {
+  StepRail, InputSummary, VerdictHeader, KeyFigures, NextActionBar, JobProgressCard,
+  RunStartPanel, RunLogPanel,
+} from '../../components/analysis/runFrame';
+
+const MENU_NAME = 'Truss Analysis';   // App.jsx 라우팅 메뉴명
+const PAGE_KEY = 'Truss Model Builder'; // 페이지 상태·전역 작업 라벨(기존 값 유지)
+const STEP_DEFS = [
+  { id: 'input', title: 'CSV 입력', icon: Database },
+  { id: 'model', title: '모델 확인', icon: Box },
+  { id: 'deliver', title: 'BDF 받기', icon: FileOutput },
+];
+const STEP_INDEX = Object.fromEntries(STEP_DEFS.map((s, i) => [s.id, i]));
+const CARD_RE = /^(GRID|CBAR|CROD|CBEAM)$/i;
+
+/**
+ * CSV 행 → 표. Truss 입력 CSV 는 머리글 없이 'GRID,1,…' / 'CBAR,1,…' 로 바로 시작한다.
+ * 예전에는 첫 줄을 무조건 머리글로 써서 데이터 한 줄이 머리글로 올라가고 개수가 1 적게 나왔다.
+ * 첫 칸이 카드 이름이거나 숫자면 머리글이 없는 것으로 보고 '열 N' 머리글을 붙인다.
+ */
+function csvTable(rows) {
+  if (!rows || rows.length === 0) return { header: [], body: [] };
+  const first = String(rows[0][0] ?? '').replace(/^\uFEFF/, '').trim();
+  const headerless = CARD_RE.test(first) || (first !== '' && Number.isFinite(Number(first)));
+  if (headerless) {
+    const width = Math.max(...rows.slice(0, 50).map(r => r.length));
+    return { header: Array.from({ length: width }, (_, i) => `열 ${i + 1}`), body: rows };
+  }
+  return { header: rows[0], body: rows.slice(1) };
+}
+
+const baseName = (p) => (p ? String(p).split(/[\\/]/).pop() : '');
 
 export default function TrussAnalysis() {
   const { showToast } = useToast();
-  const { setCurrentMenu } = useNavigation();
+  const { setCurrentMenu, currentMenu } = useNavigation();
   const dashboardCtx = useDashboard();
   const { startGlobalJob, clearGlobalJob } = dashboardCtx;
-  const PAGE_KEY = 'Truss Model Builder';
   const savedPageState = dashboardCtx?.analysisPageStates?.[PAGE_KEY] || {};
   const [nodeFile, setNodeFile] = useState(savedPageState.nodeFile ?? null);
   const [memberFile, setMemberFile] = useState(savedPageState.memberFile ?? null);
@@ -42,9 +74,9 @@ export default function TrussAnalysis() {
   const [memberData, setMemberData] = useState(savedPageState.memberData ?? []);
   const [detailedLogs, setDetailedLogs] = useState(savedPageState.detailedLogs ?? []);
 
-  const [activeTab, setActiveTab] = useState(savedPageState.activeTab ?? 'node');
+  const [activeTab, setActiveTab] = useState(savedPageState.activeTab === 'member' ? 'member' : 'node');
 
-  // (추가) 파싱된 JSON 결과 데이터를 담을 State
+  // 결과 JSON(엔진이 낼 때만) — 모델 확인 단계에 표로 보인다.
   const [resultJsonData, setResultJsonData] = useState(savedPageState.resultJsonData ?? null);
 
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
@@ -53,7 +85,14 @@ export default function TrussAnalysis() {
   const [is3DViewerOpen, setIs3DViewerOpen] = useState(false);
   const [isSamplePreviewLoading, setIsSamplePreviewLoading] = useState(false);
 
-  const logEndRef = useRef(null);
+  // 공통 틀 상태 — 단계 화면·실패·실제 사건(3D 확인·BDF 받기)
+  const [activeIdx, setActiveIdx] = useState(savedPageState.activeIdx ?? 0);
+  const [runFailed, setRunFailed] = useState(savedPageState.runFailed ?? false);
+  const [failureLog, setFailureLog] = useState(savedPageState.failureLog ?? '');
+  const [modelViewed, setModelViewed] = useState(savedPageState.modelViewed ?? false);
+  const [delivered, setDelivered] = useState(savedPageState.delivered ?? false);
+  const [runStartedAt, setRunStartedAt] = useState(savedPageState.runStartedAt ?? null);
+  const [elapsedSecs, setElapsedSecs] = useState(0);
 
   const addDetailedLog = (message) => {
     const time = new Date().toISOString();
@@ -87,15 +126,18 @@ export default function TrussAnalysis() {
         addDetailedLog(engine_log);
       }
       setAnalysisResultData(project);
+      setRunFailed(false);
+      setFailureLog('');
+      // 실행이 끝나면 판정 화면(모델 확인)으로 넘어간다(공통 틀 규칙).
+      setActiveIdx(STEP_INDEX.model);
       if (project?.result_info) {
-        const jsonKey = Object.keys(project.result_info).find(k => project.result_info[k].endsWith('.json'));
+        const jsonKey = Object.keys(project.result_info).find(k => String(project.result_info[k]).endsWith('.json'));
         if (jsonKey) {
           addLog('JSON 결과 데이터를 파싱 중입니다...', 'info');
           try {
             const res = await downloadFileBlob(project.result_info[jsonKey]);
             const text = await res.data.text();
             setResultJsonData(JSON.parse(text));
-            setActiveTab('result');
             addLog('결과 테이블 렌더링 완료.', 'success');
           } catch (e) {
             console.error("JSON Fetch/Parse Error:", e);
@@ -105,6 +147,9 @@ export default function TrussAnalysis() {
       }
     },
     onError: (err) => {
+      setRunFailed(true);
+      setFailureLog(err?.engine_log || '');
+      setActiveIdx(STEP_INDEX.input);
       // 타임아웃은 훅이 자동 로그. 그 외 케이스만 페이지가 분기 처리.
       if (err?.timeout) return;
       if (err?.engine_log) {
@@ -116,8 +161,10 @@ export default function TrussAnalysis() {
     },
   });
 
-  const numNodes = nodeData.length > 1 ? nodeData.length - 1 : 0;
-  const numMembers = memberData.length > 1 ? memberData.length - 1 : 0;
+  const nodeTable = csvTable(nodeData);
+  const memberTable = csvTable(memberData);
+  const numNodes = nodeTable.body.length;
+  const numMembers = memberTable.body.length;
   const isDataReady = numNodes > 0 && numMembers > 0;
 
   useEffect(() => {
@@ -130,17 +177,25 @@ export default function TrussAnalysis() {
       activeTab,
       resultJsonData,
       analysisResultData,
+      activeIdx, runFailed, failureLog, modelViewed, delivered, runStartedAt,
     });
-  }, [nodeFile, memberFile, nodeData, memberData, detailedLogs, activeTab, resultJsonData, analysisResultData]);
+  }, [nodeFile, memberFile, nodeData, memberData, detailedLogs, activeTab, resultJsonData, analysisResultData,
+    activeIdx, runFailed, failureLog, modelViewed, delivered, runStartedAt]);
 
-  useEffect(() => { 
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
-  }, [logs]);
+  // 경과 시간 — 진행 카드 한 곳에만 보인다.
+  useEffect(() => {
+    if (!isRunning || !runStartedAt) { setElapsedSecs(0); return undefined; }
+    const tick = () => setElapsedSecs(Math.max(0, Math.floor((Date.now() - runStartedAt) / 1000)));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [isRunning, runStartedAt]);
 
   const handleCsvParsed = (rows, file, setter, type) => {
     setter(rows);
-    addLog(`[DATA] ${type.toUpperCase()} 데이터 로드 완료 (${rows.length - 1}행)`, 'info');
-    addDetailedLog(`PARSING ${file.name} ... OK (${rows.length - 1} Entries)`);
+    const count = csvTable(rows).body.length;
+    addLog(`[DATA] ${type.toUpperCase()} 데이터 로드 완료 (${count}행)`, 'info');
+    addDetailedLog(`PARSING ${file.name} ... OK (${count} Entries)`);
   };
 
   const handleCsvError = (err, file) => {
@@ -186,11 +241,11 @@ export default function TrussAnalysis() {
     if (nodeF) handleFile(nodeF, 'node');
     if (memberF) handleFile(memberF, 'member');
     if (nodeF && memberF)
-      showToast(`자동 매핑 완료 ✓  Node → ${nodeF.name}  /  Member → ${memberF.name}`, 'success');
+      showToast(`자동 매핑 완료 — Node: ${nodeF.name} / Member: ${memberF.name}`, 'success');
   };
 
   // 대시보드 '새 해석 시작'에 놓은 파일을 이어받는다(이 화면의 업로드 처리와 같은 경로)
-  useDashboardFilesHandoff('Truss Analysis', (files) => {
+  useDashboardFilesHandoff(MENU_NAME, (files) => {
     if (files.length >= 2) autoAssignFiles(files);
     else handleFile(files[0], detectFileType(files[0].name) || 'node');
   }, ['.csv']);
@@ -200,7 +255,8 @@ export default function TrussAnalysis() {
     setDetailedLogs([]);
   };
 
-  const resetPage = () => {
+  /** 상태 초기화(토스트 없음) — '새 입력으로 시작'·결과 다시 열기·입력 불러오기가 같이 쓴다. */
+  const resetState = () => {
     resetJob();
     setNodeFile(null);
     setMemberFile(null);
@@ -216,24 +272,42 @@ export default function TrussAnalysis() {
     setIsSamplePreviewLoading(false);
     setStatusMessage('');
     setProgress(0);
+    setActiveIdx(0);
+    setRunFailed(false);
+    setFailureLog('');
+    setModelViewed(false);
+    setDelivered(false);
+    setRunStartedAt(null);
     dashboardCtx?.clearAnalysisPageState?.(PAGE_KEY);
+  };
+
+  const resetPage = () => {
+    resetState();
     showToast('Truss Model Builder가 초기 상태로 되돌아갔습니다.', 'success');
+  };
+
+  /** 새 실행 직전 공통 준비 — 직접 실행·샘플 실행이 같이 쓴다. */
+  const beginRun = (message) => {
+    setIsRunning(true);
+    setProgress(0);
+    setStatusMessage(message);
+    setAnalysisResultData(null);
+    setResultJsonData(null);
+    setIsResultModalOpen(false);
+    setIs3DViewerOpen(false);
+    setLogs([]);
+    setDetailedLogs([]);
+    setRunFailed(false);
+    setFailureLog('');
+    setModelViewed(false);
+    setDelivered(false);
+    setRunStartedAt(Date.now());
   };
 
   // 해석 서버 요청 로직
   const runAnalysis = async () => {
     if (!nodeFile || !memberFile) return;
-    
-    setIsRunning(true);
-    setProgress(0);
-    setStatusMessage('서버에 작업 요청 중...');
-    setAnalysisResultData(null);
-    setResultJsonData(null); // (추가) 재실행 시 기존 결과 초기화
-    setIsResultModalOpen(false);
-    setIs3DViewerOpen(false);
-    setLogs([]);
-    setDetailedLogs([]);
-
+    beginRun('서버에 작업 요청 중...');
     addLog('System Check OK. Requesting Analysis Job...', 'info');
 
     const formData = buildFormData({
@@ -241,7 +315,7 @@ export default function TrussAnalysis() {
       member_file: memberFile,
       employee_id: employeeId,
       source: 'Workbench',
-        });
+    });
     try {
       const requestRes = await requestTrussAnalysis(formData);
 
@@ -252,23 +326,18 @@ export default function TrussAnalysis() {
       startJob(jobId, PAGE_KEY);
     } catch (error) {
       addLog('SERVER COMMUNICATION FAILED.', 'error');
-      addDetailedLog(error.response ? `SERVER ERROR [${error.response.status}]` : `NETWORK ERROR: ${error.message}`);
+      const detail = error.response ? `SERVER ERROR [${error.response.status}]` : `NETWORK ERROR: ${error.message}`;
+      addDetailedLog(detail);
       setIsRunning(false);
+      setRunFailed(true);
+      setFailureLog(`[원인] 서버 요청이 실패했습니다 (${detail}).\n[조치] 서버 연결 상태를 확인한 뒤 다시 실행하세요.`);
     }
   };
 
   // 샘플 실행 — 공통 컴포넌트(SampleRunButton)가 호출하는 콜백 묶음.
   // 사용 기록(activity log) / 통계 / MyProjects 이력에는 남지 않음.
   const sampleBeforeRun = () => {
-    setIsRunning(true);
-    setProgress(0);
-    setStatusMessage('샘플 파일로 작업 요청 중...');
-    setAnalysisResultData(null);
-    setResultJsonData(null);
-    setIsResultModalOpen(false);
-    setIs3DViewerOpen(false);
-    setLogs([]);
-    setDetailedLogs([]);
+    beginRun('샘플 파일로 작업 요청 중...');
     addLog('Sample run requested — 사내 표준 NODE/WAY CSV 사용', 'info');
   };
   const sampleOnJobSubmitted = (jobId) => {
@@ -281,6 +350,8 @@ export default function TrussAnalysis() {
     } else {
       addLog('SAMPLE RUN FAILED.', 'error');
       addDetailedLog(status ? `SERVER ERROR [${status}] ${detail}` : `NETWORK ERROR: ${detail}`);
+      setRunFailed(true);
+      setFailureLog(`[원인] 샘플 실행 요청이 실패했습니다: ${detail}`);
     }
     setIsRunning(false);
   };
@@ -296,7 +367,8 @@ export default function TrussAnalysis() {
       setNodeFile({ name: res.data?.node?.filename || 'Sample NODE.csv', sample: true });
       setMemberFile({ name: res.data?.member?.filename || 'Sample WAY.csv', sample: true });
       setActiveTab('node');
-      addLog(`[SAMPLE] 미리보기 로드 완료 — Node ${Math.max(nextNodeData.length - 1, 0)}행 / Member ${Math.max(nextMemberData.length - 1, 0)}행`, 'success');
+      setActiveIdx(STEP_INDEX.input);
+      addLog(`[SAMPLE] 미리보기 로드 완료 — Node ${csvTable(nextNodeData).body.length}행 / Member ${csvTable(nextMemberData).body.length}행`, 'success');
     } catch (error) {
       const detail = error?.response?.data?.detail || error.message;
       addLog(`[SAMPLE] 미리보기 로드 실패: ${detail}`, 'error');
@@ -306,51 +378,91 @@ export default function TrussAnalysis() {
     }
   };
 
-  // ==========================================
-  // (신규) 다이렉트 엑셀 다운로드 핸들러
-  // ==========================================
-  const handleDirectExcelDownload = async () => {
-    if (!analysisResultData?.result_info) return;
-    const excelKey = Object.keys(analysisResultData.result_info).find(k => analysisResultData.result_info[k].endsWith('.xlsx') || analysisResultData.result_info[k].endsWith('.csv'));
-    
-    if (excelKey) {
-      const filePath = analysisResultData.result_info[excelKey];
-      try {
-        const response = await downloadFileBlob(filePath);
-        const filename = extractFilename(filePath);
-        const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(blobUrl);
-      } catch (error) {
-        console.error("Excel download failed", error);
-        showToast('엑셀 파일 다운로드에 실패했습니다.', 'error');
-      }
-    } else {
-      // 엑셀이 명시적으로 없을 경우엔 기존 폴더/모달을 엽니다.
-      setIsResultModalOpen(true);
+  /** 서버 파일 → File (입력 다시 쓰기용). */
+  const fetchAsFile = async (path) => {
+    const res = await downloadFileBlob(path);
+    return new File([res.data], baseName(path), { type: 'text/csv' });
+  };
+
+  /** 서버에 보관된 입력 CSV 두 개를 입력 칸에 채운다. */
+  const loadServerInputs = async (input) => {
+    if (!input?.node_csv || !input?.member_csv) throw new Error('이 실행에는 Node·Member CSV 정보가 없습니다.');
+    const [nodeF, memberF] = await Promise.all([fetchAsFile(input.node_csv), fetchAsFile(input.member_csv)]);
+    handleFile(nodeF, 'node');
+    handleFile(memberF, 'member');
+    setActiveTab('node');
+  };
+
+  // ── 지난 결과 다시 열기(My Projects·대시보드·최근 실행) ─────────────
+  const applyResultReentry = async (analysisId) => {
+    try {
+      const { data: rec } = await getAnalysisById(analysisId);
+      if (rec.program_name !== 'TrussModelBuilder') throw new Error('Truss Model Builder 기록이 아닙니다.');
+      if (rec.files_available === false) throw new Error('결과 파일이 보관 기간이 지나 삭제되었습니다.');
+      if (!rec.result_info?.bdf) throw new Error('이 기록에는 결과 BDF 정보가 없습니다.');
+      resetState();
+      try { await loadServerInputs(rec.input_info); } catch { /* 입력이 없어도 결과는 연다 */ }
+      setAnalysisResultData(rec);
+      setActiveIdx(STEP_INDEX.model);
+      const when = rec.created_at ? new Date(rec.created_at).toLocaleString('ko-KR') : '';
+      showToast(`지난 결과를 열었습니다${when ? ` (${when})` : ''}.`, 'success');
+    } catch (e) {
+      showToast(`결과를 열지 못했습니다: ${e?.response?.data?.detail || e.message}`, 'error');
     }
+  };
+  useResultReentry(MENU_NAME, applyResultReentry);
+
+  // ── 최근 실행의 입력 불러오기 ─────────────────────────────────────
+  const applyRecentInput = async (record) => {
+    try {
+      const input = record?.input_info || {};
+      if (!input.node_csv || !input.member_csv) throw new Error('이 실행에는 Node·Member CSV 정보가 없습니다.');
+      resetState();
+      await loadServerInputs(input);
+      showToast('최근 실행의 Node·Member CSV 를 불러왔습니다.', 'success');
+    } catch (e) {
+      showToast(`입력을 불러오지 못했습니다: ${e?.response?.status === 404 ? '서버에 파일이 없습니다' : e.message}`, 'error');
+    }
+  };
+
+  // ── 결과 BDF 받기 ──────────────────────────────────────────────
+  // 예전 '결과 BDF 다운로드' 버튼은 xlsx/csv 키를 찾다가 없으면 파일 목록 모달을 열었다
+  // (이 앱의 결과는 BDF 하나라 항상 모달이 떴다). 이제 BDF 를 바로 받고, 없을 때만 모달을 연다.
+  const resultBdfPath = analysisResultData?.result_info?.bdf || null;
+  const downloadResultBdf = async () => {
+    if (!resultBdfPath) { setIsResultModalOpen(true); return; }
+    try {
+      const response = await downloadFileBlob(resultBdfPath);
+      const filename = extractFilename(resultBdfPath);
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+      setDelivered(true);
+    } catch (error) {
+      console.error("BDF download failed", error);
+      showToast(error?.response?.status === 404 ? '결과 파일이 서버에 없습니다(보관 기간 만료).' : 'BDF 다운로드에 실패했습니다.', 'error');
+    }
+  };
+
+  const open3DViewer = () => {
+    setIs3DViewerOpen(true);
+    setModelViewed(true);
   };
 
   const canRun = nodeFile && memberFile && !nodeFile.sample && !memberFile.sample && !isRunning;
 
   // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
-  useDashboardAutoRun('Truss Analysis', (canRun && nodeFile) || null, runAnalysis);
-  
+  useDashboardAutoRun(MENU_NAME, (canRun && nodeFile) || null, runAnalysis);
+
   const downloadSummaryLog = () => {
     if (logs.length === 0) { showToast('다운로드할 로그가 없습니다.', 'warning'); return; }
     const logText = logs.map(l => `[${l.time}] ${l.message}`).join('\n');
     downloadFile(logText, `Summary_Log_${new Date().getTime()}.txt`);
-  };
-  
-  const downloadDetailedLog = () => {
-    if (detailedLogs.length === 0) { showToast('상세 로그가 없습니다.', 'warning'); return; }
-    const logText = detailedLogs.join('\n');
-    downloadFile(logText, `Detailed_Raw_Log_${new Date().getTime()}.out`);
   };
 
   const downloadFile = (content, filename) => {
@@ -363,8 +475,107 @@ export default function TrussAnalysis() {
     URL.revokeObjectURL(url);
   };
 
+  /* ── 파생 상태 ─────────────────────────────────────────────────── */
+  const hasResult = analysisResultData?.status === 'Success';
+  const verdict = computeTrussBuilderVerdict({ jobFailed: runFailed, project: analysisResultData, report: failureLog });
+  const isSample = !!(nodeFile?.sample || memberFile?.sample);
+
+  const displaySteps = STEP_DEFS.map((def) => {
+    if (def.id === 'input') {
+      if (isRunning) return { ...def, status: 'running', hint: '생성 중' };
+      if (verdict.level === 'fail') return { ...def, status: 'error', hint: '생성 실패' };
+      if (verdict.level === 'pass') return { ...def, status: 'done', hint: 'BDF 생성됨' };
+      if (isDataReady) return { ...def, status: 'wait', hint: isSample ? '샘플 미리보기' : '실행 대기' };
+      return { ...def, status: 'wait' };
+    }
+    if (def.id === 'model') {
+      if (verdict.level !== 'pass') return { ...def, status: 'wait' };
+      return modelViewed ? { ...def, status: 'done', hint: '3D 확인함' } : { ...def, status: 'wait', hint: '3D 확인 전' };
+    }
+    if (verdict.level !== 'pass') return { ...def, status: 'wait' };
+    return delivered ? { ...def, status: 'done', hint: 'BDF 받음' } : { ...def, status: 'wait', hint: '받기 전' };
+  });
+  const activeStep = displaySteps[activeIdx] ?? displaySteps[0];
+
+  const inputItems = [
+    { key: 'node', label: 'Node', fileName: nodeFile?.name || null, state: nodeFile ? (numNodes > 0 ? 'ok' : 'warn') : 'empty', note: nodeFile ? `${numNodes.toLocaleString()}행` : undefined },
+    { key: 'member', label: 'Member', fileName: memberFile?.name || null, state: memberFile ? (numMembers > 0 ? 'ok' : 'warn') : 'empty', note: memberFile ? `${numMembers.toLocaleString()}행` : undefined },
+  ];
+
+  /* ── 실행 버튼 — 주 버튼 1개 + Ctrl+Enter ─────────────────────────── */
+  const runAction = {
+    label: hasResult || runFailed ? '다시 생성' : 'BDF 생성 실행',
+    icon: hasResult || runFailed ? RefreshCw : ChevronsRight,
+    onClick: runAnalysis,
+    enabled: !!canRun,
+  };
+  const runActionRef = useRef(runAction);
+  runActionRef.current = runAction;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return;
+      if (currentMenu !== MENU_NAME) return; // keep-alive 라 다른 화면에서도 살아 있다
+      const a = runActionRef.current;
+      if (!a.enabled) return;
+      e.preventDefault();
+      a.onClick();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [currentMenu]);
+  const runHint = isRunning ? null
+    : isSample ? '샘플 미리보기는 실행할 수 없습니다. \u2018샘플로 실행\u2019을 쓰세요.'
+      : !nodeFile || !memberFile ? 'Node·Member CSV 를 올리면 열립니다.' : null;
+
+  /* ── 다음 행동 ───────────────────────────────────────────────────── */
+  const backToInput = { label: '입력으로 돌아가기', icon: FileCheck2, onClick: () => setActiveIdx(STEP_INDEX.input) };
+  const nextAction = (() => {
+    if (isRunning) return null;
+    if (activeStep.id === 'input') {
+      if (verdict.level !== 'pass') return null;
+      return {
+        note: '모델이 만들어졌습니다. 3D 로 형상을 확인하세요.',
+        primary: { label: '모델 확인으로', icon: ChevronsRight, onClick: () => setActiveIdx(STEP_INDEX.model) },
+      };
+    }
+    if (verdict.level !== 'pass') {
+      return { note: '먼저 Node·Member CSV 로 BDF 를 생성하세요.', primary: backToInput };
+    }
+    if (activeStep.id === 'model') {
+      return {
+        note: modelViewed ? '형상을 확인했다면 BDF 를 받으세요.' : '부재 연결과 형상을 3D 로 확인하세요.',
+        primary: modelViewed
+          ? { label: 'BDF 받기로', icon: ChevronsRight, onClick: () => setActiveIdx(STEP_INDEX.deliver) }
+          : { label: '3D 로 보기', icon: Eye, onClick: open3DViewer },
+        secondary: modelViewed
+          ? [{ key: '3d', label: '3D 다시 보기', icon: Eye, onClick: open3DViewer }]
+          : [{ key: 'deliver', label: 'BDF 받기로', icon: ChevronsRight, onClick: () => setActiveIdx(STEP_INDEX.deliver) }],
+      };
+    }
+    return {
+      note: delivered ? 'BDF 를 받았습니다. 구조 평가는 하중·Case Control 을 넣은 BDF 로 Truss Structural Assessment 에서 진행합니다.' : '결과 BDF 를 받으세요.',
+      primary: { label: 'BDF 받기', icon: Download, onClick: downloadResultBdf },
+      secondary: [{ key: 'files', label: '입력·결과 파일 전체', icon: FileText, onClick: () => setIsResultModalOpen(true) }],
+    };
+  })();
+
+  // 샘플 실행은 입력 칸이 비어 있을 수 있다 — 그때는 개수 없이 결과 파일만 적는다.
+  const verdictSummary = verdict.level !== 'pass' ? null
+    : isDataReady
+      ? `Node ${numNodes.toLocaleString()} · Member ${numMembers.toLocaleString()} → ${baseName(resultBdfPath)}`
+      : `결과 ${baseName(resultBdfPath)}`;
+
+  const isStartScreen = activeStep.id === 'input' && !nodeFile && !memberFile && !isRunning && !analysisResultData && !runFailed;
+  const previewTabs = [
+    { key: 'node', label: 'Node', count: numNodes, table: nodeTable, empty: 'Node CSV 를 올리면 여기에 표로 보입니다.' },
+    { key: 'member', label: 'Member', count: numMembers, table: memberTable, empty: 'Member CSV 를 올리면 여기에 표로 보입니다.' },
+  ];
+  const activePreview = previewTabs.find(t => t.key === activeTab) ?? previewTabs[0];
+
+  /* ── 렌더 ──────────────────────────────────────────────────────────── */
   return (
-    <div className="h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6">
+    // pb-28: 화면 오른쪽 아래 전역 작업·메시지 도크가 마지막 버튼을 가리지 않게 여백을 둔다.
+    <div className="relative mx-auto flex min-h-full max-w-[1400px] flex-col pb-28 animate-fade-in-up">
 
       <FileBasedPageBanner
         title="Truss Model Builder"
@@ -374,185 +585,272 @@ export default function TrussAnalysis() {
         onBack={() => setCurrentMenu('File-Based Apps')}
       />
 
-      {/* Main Workspace */}
-      <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
-        
-        {/* LEFT PANE */}
-        <div className="w-full lg:w-[400px] flex flex-col gap-5 shrink-0 overflow-y-auto pr-1 custom-scrollbar">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-3 flex justify-between items-center">
-              <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2"><Database size={14}/> 1. Data Input</h3>
-            </div>
-            <div className="p-5 space-y-4">
-              <UploadDropzone title="Node Data" file={nodeFile} rowCount={numNodes} onFiles={(incomingFiles) => {
-                const files = incomingFiles.filter(f => f.name.endsWith('.csv'));
-                files.length >= 2 ? autoAssignFiles(files) : handleFile(files[0], 'node');
-              }} />
-              <UploadDropzone title="Member Data" file={memberFile} rowCount={numMembers} onFiles={(incomingFiles) => {
-                const files = incomingFiles.filter(f => f.name.endsWith('.csv'));
-                files.length >= 2 ? autoAssignFiles(files) : handleFile(files[0], 'member');
-              }} />
-              <p className="text-[10px] text-slate-400 text-center">
-                💡 두 파일을 동시에 드래그하면 <span className="font-bold text-slate-500">NODE / WAY(MEMBER)</span> 파일명을 인식해 자동 배정합니다.
+      <div className="flex flex-col items-stretch gap-5 px-1 xl:flex-row">
+
+        {/* ── 왼쪽 레일: 단계 · 입력 요약 · 실행 ── */}
+        <aside className={`flex w-full flex-col gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 xl:w-80 xl:shrink-0 ${isStartScreen ? '' : 'xl:self-start'}`}>
+          <StepRail steps={displaySteps} activeIdx={activeIdx} onSelect={setActiveIdx} />
+
+          {activeStep.id !== 'input' && (
+            <>
+              <div className="h-px bg-slate-100" />
+              <InputSummary items={inputItems} />
+            </>
+          )}
+
+          <div className="h-px bg-slate-100" />
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={runAction.onClick}
+              disabled={!runAction.enabled}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            >
+              {isRunning
+                ? <><Loader2 size={15} className="animate-spin" aria-hidden="true" /> 생성 중…</>
+                : <><runAction.icon size={15} aria-hidden="true" /> {runAction.label}</>}
+            </button>
+            {runHint ? (
+              <p className="text-center text-xs text-slate-600">{runHint}</p>
+            ) : !isRunning && (
+              <p className="text-center text-[11px] text-slate-600">
+                <kbd className="rounded border border-slate-300 bg-slate-50 px-1 font-mono text-[11px]">Ctrl</kbd>
+                {' + '}
+                <kbd className="rounded border border-slate-300 bg-slate-50 px-1 font-mono text-[11px]">Enter</kbd>
+                {' 로도 실행합니다'}
               </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-r from-slate-700 to-slate-600 px-5 py-3">
-              <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
-                <Box size={14}/> 2. Model Summary
-              </h3>
-            </div>
-            <div className="p-5">
-              <div className="space-y-3">
-                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><GitMerge size={16} className="text-indigo-400" /> Total Nodes</div>
-                  <span className="font-mono font-bold text-brand-blue"><AnimatedNumber value={numNodes} locale /> EA</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <div className="flex items-center gap-2 text-sm text-slate-600 font-medium"><Layers size={16} className="text-cyan-400" /> Total Members</div>
-                  <span className="font-mono font-bold text-brand-blue"><AnimatedNumber value={numMembers} locale /> EA</span>
-                </div>
-                <div className={`mt-2 flex items-center justify-center gap-2 p-3 rounded-lg border border-dashed text-sm font-bold transition-colors ${isDataReady ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-300 text-slate-500'}`}>
-                  {isDataReady ? <><CheckCircle2 size={18} /> Ready to Build</> : <><AlertCircle size={18} /> Awaiting CSV Data</>}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={resetPage}
-              disabled={isRunning || isSamplePreviewLoading}
-              className={`w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 border transition-colors shadow-sm ${
-                isRunning || isSamplePreviewLoading
-                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 cursor-pointer'
-              }`}
-            >
-              <RotateCcw size={17} />
-              초기화
-            </button>
-            {/* 샘플 실행 — 입력 파일 없이도 학습용으로 즉시 해석 체험 */}
-            <button
-              onClick={openSamplePreview}
-              disabled={isSamplePreviewLoading}
-              className={`w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 border transition-colors shadow-sm ${
-                isSamplePreviewLoading
-                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-wait'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50 hover:border-blue-300 hover:text-brand-blue cursor-pointer'
-              }`}
-            >
-              {isSamplePreviewLoading ? <RefreshCw size={17} className="animate-spin" /> : <Eye size={17} />}
-              샘플 CSV 미리보기
-            </button>
-            <SampleRunButton
-              appKey="truss"
-              disabled={isRunning}
-              onBeforeRun={sampleBeforeRun}
-              onJobSubmitted={sampleOnJobSubmitted}
-              onError={sampleOnError}
-            />
-
-            <button
-              onClick={runAnalysis}
-              disabled={!canRun}
-              className={`relative w-full py-4 rounded-xl text-lg font-bold flex items-center justify-center gap-3 transition-all duration-300 shadow-lg overflow-hidden ${
-                !canRun 
-                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' 
-                  : isRunning 
-                    ? 'bg-[#001b3d] text-white cursor-wait'
-                    : 'bg-brand-blue hover:bg-brand-blue-dark text-white hover:-translate-y-1 cursor-pointer'
-              }`}
-            >
-              {/* 버튼 배경을 채우는 진행 막대 — 실행 중엔 빛이 흘러 작업이 살아 있음을 알린다 */}
-              {isRunning && (
-                <div className="absolute left-0 top-0 bottom-0 bg-blue-600 transition-all duration-500 ease-out opacity-80 progress-flow" style={{ width: `${progress}%` }}></div>
-              )}
-              <div className="relative z-10 flex items-center gap-3 drop-shadow-md">
-                {isRunning ? <RefreshCw className="animate-spin" size={24} /> : <Play size={24} fill="currentColor" />}
-                {isRunning ? `${progress}% - ${statusMessage || '생성 중...'}` : 'BDF 생성 시작'}
-              </div>
-            </button>
-            
-            {/* (수정) 결과 액션 버튼: 엑셀 직접 다운로드 지원 */}
-            {analysisResultData && analysisResultData.status === "Success" && (
-              <div className="flex flex-col gap-2 animate-fade-in-up mt-1">
-                <div className="flex gap-2">
-                  <button onClick={handleDirectExcelDownload} className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-sm cursor-pointer">
-                    <FileSpreadsheet size={18} /> 결과 BDF 다운로드
-                  </button>
-                  <button onClick={() => setIs3DViewerOpen(true)} className="flex-1 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-brand-blue text-white hover:bg-brand-blue-dark transition-colors shadow-lg cursor-pointer">
-                    <Eye size={18} /> 3D 시각화
-                  </button>
-                </div>
-              </div>
             )}
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-1">
+              {(nodeFile || memberFile || analysisResultData || runFailed) && (
+                <button
+                  type="button"
+                  onClick={resetPage}
+                  disabled={isRunning || isSamplePreviewLoading}
+                  className="inline-flex items-center gap-1 rounded text-xs font-semibold text-blue-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:cursor-not-allowed disabled:text-slate-500 disabled:no-underline cursor-pointer"
+                >
+                  <FilePlus2 size={12} aria-hidden="true" /> 새 입력으로 시작
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={openSamplePreview}
+                disabled={isSamplePreviewLoading || isRunning}
+                className="inline-flex items-center gap-1 rounded text-xs font-semibold text-blue-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:cursor-not-allowed disabled:text-slate-500 disabled:no-underline cursor-pointer"
+              >
+                {isSamplePreviewLoading ? <Loader2 size={12} className="animate-spin" aria-hidden="true" /> : <Eye size={12} aria-hidden="true" />}
+                샘플 CSV 보기
+              </button>
+              <SampleRunButton
+                appKey="truss"
+                variant="link"
+                label="샘플로 실행"
+                disabled={isRunning}
+                onBeforeRun={sampleBeforeRun}
+                onJobSubmitted={sampleOnJobSubmitted}
+                onError={sampleOnError}
+              />
+            </div>
           </div>
-        </div>
+        </aside>
 
-        {/* RIGHT PANE */}
-        <div className="flex-1 flex flex-col gap-6 min-h-0">
-          <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-            <div className="flex items-end border-b border-slate-200 bg-gradient-to-r from-indigo-900 to-blue-800 px-4 pt-3 gap-1">
-              <TabButton active={activeTab === 'node'} onClick={() => setActiveTab('node')} icon={Database} label="Node Preview" count={numNodes} />
-              <TabButton active={activeTab === 'member'} onClick={() => setActiveTab('member')} icon={Layers} label="Member Preview" count={numMembers} />
-              {resultJsonData && (
-                <TabButton active={activeTab === 'result'} onClick={() => setActiveTab('result')} icon={FileText} label="Result Viewer" count={Array.isArray(resultJsonData) ? resultJsonData.length : 1} />
+        {/* ── 오른쪽 작업면 ── */}
+        <main className="flex min-w-0 flex-1 flex-col gap-3">
+          {isRunning && (
+            <JobProgressCard
+              title="모델 생성 중"
+              message={statusMessage}
+              progress={progress}
+              elapsed={elapsedSecs}
+              note="다른 화면으로 이동해도 계속 진행됩니다. 오른쪽 아래 작업 카드로 돌아올 수 있습니다."
+            />
+          )}
+
+          {!isRunning && verdict.level && (
+            <VerdictHeader
+              level={verdict.level}
+              title={verdict.title}
+              summary={verdictSummary}
+              reasons={verdict.reasons}
+            />
+          )}
+          {nextAction && <NextActionBar {...nextAction} />}
+
+          <section className={`flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white px-5 py-4 ${isStartScreen ? 'flex-1' : ''}`}>
+            <div className="mb-3 flex shrink-0 items-center gap-2 border-b border-slate-100 pb-3">
+              <activeStep.icon size={15} className="text-slate-600" aria-hidden="true" />
+              <h2 className="text-base font-bold text-slate-800">{activeIdx + 1}. {activeStep.title}</h2>
+            </div>
+
+            <div className="min-w-0 space-y-4">
+              {activeStep.id === 'input' && (
+                <>
+                  <p className="text-sm text-slate-700">
+                    칸에 하나씩 놓거나, 두 파일을 한 번에 놓으면 파일명(NODE / WAY·MEMBER)을 보고 자동으로 나눕니다.
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <UploadDropzone title="Node CSV" file={nodeFile} rowCount={numNodes} disabled={isRunning} onFiles={(incomingFiles) => {
+                      const files = incomingFiles.filter(f => f.name.endsWith('.csv'));
+                      if (files.length === 0) { showToast('CSV 파일만 업로드 가능합니다.', 'warning'); return; }
+                      files.length >= 2 ? autoAssignFiles(files) : handleFile(files[0], 'node');
+                    }} />
+                    <UploadDropzone title="Member CSV (WAY)" file={memberFile} rowCount={numMembers} disabled={isRunning} onFiles={(incomingFiles) => {
+                      const files = incomingFiles.filter(f => f.name.endsWith('.csv'));
+                      if (files.length === 0) { showToast('CSV 파일만 업로드 가능합니다.', 'warning'); return; }
+                      files.length >= 2 ? autoAssignFiles(files) : handleFile(files[0], 'member');
+                    }} />
+                  </div>
+
+                  {isStartScreen ? (
+                    <RunStartPanel
+                      programName="TrussModelBuilder"
+                      onOpen={applyResultReentry}
+                      onUseInput={applyRecentInput}
+                      hasInput={r => !!(r.input_info?.node_csv && r.input_info?.member_csv)}
+                      steps={[
+                        { title: 'CSV 입력', detail: 'Node(GRID) · Member(WAY) CSV 를 읽어 표로 보여 주고, 둘 다 있으면 BDF 를 생성합니다.' },
+                        { title: '모델 확인', detail: '만들어진 모델의 부재 연결과 형상을 3D 로 확인합니다.' },
+                        { title: 'BDF 받기', detail: '결과 BDF 를 받습니다. 하중·Case Control 을 더해 Truss Structural Assessment 로 평가합니다.' },
+                      ]}
+                    />
+                  ) : (
+                    <div className="overflow-hidden rounded-lg border border-slate-200">
+                      <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 pt-2" role="tablist" aria-label="CSV 미리보기">
+                        {previewTabs.map(t => (
+                          <button
+                            key={t.key}
+                            type="button"
+                            role="tab"
+                            aria-selected={activeTab === t.key}
+                            onClick={() => setActiveTab(t.key)}
+                            className={`-mb-px flex items-center gap-1.5 rounded-t-md border px-3 py-1.5 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer ${activeTab === t.key ? 'border-slate-200 border-b-white bg-white text-slate-900' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
+                          >
+                            {t.label}
+                            {t.count > 0 && <span className="rounded-full bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-700">{t.count.toLocaleString()}</span>}
+                          </button>
+                        ))}
+                        {isSample && <span className="ml-auto pb-1.5 text-[11px] font-semibold text-slate-600">사내 샘플 미리보기</span>}
+                      </div>
+                      <div className="relative h-[clamp(280px,48vh,560px)] overflow-auto">
+                        <DataTable table={activePreview.table} emptyMsg={activePreview.empty} />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {activeStep.id === 'model' && (
+                hasResult ? (
+                  <>
+                    <KeyFigures items={[
+                      { key: 'n', label: 'Node', value: numNodes.toLocaleString(), unit: 'EA', sub: '입력 CSV 기준' },
+                      { key: 'm', label: 'Member', value: numMembers.toLocaleString(), unit: 'EA', sub: '입력 CSV 기준' },
+                      { key: 'bdf', label: '결과 BDF', value: baseName(resultBdfPath) || '—' },
+                    ]} />
+                    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 px-4 py-3">
+                      <Eye size={15} className="shrink-0 text-slate-600" aria-hidden="true" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-800">3D 모델 보기</p>
+                        <p className="text-xs text-slate-600">결과 BDF 를 3D 로 그립니다. 부재 연결이 끊긴 곳이나 좌표가 튄 Node 를 찾을 때 씁니다.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={open3DViewer}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
+                      >
+                        <Eye size={13} aria-hidden="true" /> {modelViewed ? '3D 다시 보기' : '3D 로 보기'}
+                      </button>
+                    </div>
+                    {resultJsonData && (
+                      <div className="relative h-[clamp(260px,40vh,480px)] overflow-auto rounded-lg border border-slate-200">
+                        <JsonDataTable data={resultJsonData} emptyMsg="결과 데이터가 없습니다." />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-600">BDF 를 생성하면 여기서 모델을 확인합니다.</p>
+                )
+              )}
+
+              {activeStep.id === 'deliver' && (
+                hasResult ? (
+                  <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                    <li className="flex flex-wrap items-center gap-3 px-4 py-3">
+                      <FileOutput size={15} className="shrink-0 text-slate-600" aria-hidden="true" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-800" title={resultBdfPath || ''}>{baseName(resultBdfPath)}</p>
+                        <p className="text-xs text-slate-600">결과 BDF · Nastran 입력</p>
+                      </div>
+                      {delivered && <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><CheckCircle2 size={13} aria-hidden="true" /> 받음</span>}
+                      <button
+                        type="button"
+                        onClick={downloadResultBdf}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
+                      >
+                        <Download size={13} aria-hidden="true" /> 받기
+                      </button>
+                    </li>
+                    <li className="flex flex-wrap items-center gap-3 px-4 py-3">
+                      <FileText size={15} className="shrink-0 text-slate-600" aria-hidden="true" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-800">입력·결과 파일 전체</p>
+                        <p className="text-xs text-slate-600">서버에 보관된 입력 CSV 와 결과 파일을 하나씩 받습니다.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsResultModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
+                      >
+                        <FileText size={13} aria-hidden="true" /> 목록 열기
+                      </button>
+                    </li>
+                  </ul>
+                ) : (
+                  <p className="text-sm text-slate-600">BDF 를 생성하면 여기서 받습니다.</p>
+                )
               )}
             </div>
-            <div className="flex-1 overflow-auto bg-white custom-scrollbar relative">
-              {activeTab === 'node' && <DataTable data={nodeData} emptyMsg="Node CSV 파일을 업로드하면 데이터를 미리볼 수 있습니다." />}
-              {activeTab === 'member' && <DataTable data={memberData} emptyMsg="Member CSV 파일을 업로드하면 데이터를 미리볼 수 있습니다." />}
-              {activeTab === 'result' && <JsonDataTable data={resultJsonData} emptyMsg="결과 데이터가 없습니다." />}
-            </div>
-          </div>
+          </section>
 
-          <div className="h-64 bg-[#0F172A] rounded-2xl shadow-xl border border-slate-700 flex flex-col overflow-hidden shrink-0">
-            <div className="h-10 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-4">
-              <div className="flex items-center gap-2"><Terminal size={14} className="text-slate-400" /><span className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest">System Console</span></div>
-              <div className="flex gap-3">
-                <button onClick={() => setIsLogModalOpen(true)} className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-bold cursor-pointer"><Maximize2 size={12}/> 상세 로그 보기</button>
-                <button onClick={downloadSummaryLog} className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"><Download size={14}/> Save</button>
-                <button onClick={clearLogs} className="text-xs text-slate-400 hover:text-red-400 flex items-center gap-1 cursor-pointer"><Trash2 size={14}/> Clear</button>
-              </div>
-            </div>
-            <div className="flex-1 p-4 font-mono text-[13px] overflow-y-auto custom-scrollbar">
-              {logs.length === 0 ? <p className="text-slate-600">Waiting for task execution...</p> : logs.map((log, i) => (
-                <div key={i} className={`mb-1 ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-brand-accent font-bold' : log.type === 'warning' ? 'text-yellow-400' : 'text-slate-300'}`}>
-                  <span className="text-slate-500 mr-3">[{log.time}]</span>{log.message}
-                </div>
-              ))}
-              <div ref={logEndRef} />
-            </div>
-          </div>
-        </div>
+          <RunLogPanel
+            logs={logs}
+            open={runFailed}
+            note={runFailed ? '실패 원인은 위 판정과 상세 로그에서 확인' : undefined}
+            actions={logs.length > 0 || detailedLogs.length > 0 ? [
+              { key: 'detail', label: '상세 로그', icon: Maximize2, onClick: () => setIsLogModalOpen(true) },
+              { key: 'save', label: '저장', icon: Download, onClick: downloadSummaryLog },
+              { key: 'clear', label: '지우기', icon: Trash2, onClick: clearLogs, disabled: isRunning },
+            ] : []}
+          />
+        </main>
       </div>
 
       <SolverCredit contributor="권혁민" />
 
-      {/* 모달 1: 텍스트 로그 */}
+      {/* 모달 1: 상세 로그(엔진 원문) */}
       <Transition appear show={isLogModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-[100]" onClose={() => setIsLogModalOpen(false)}>
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
+          <div className="fixed inset-0 bg-black/60" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="w-full max-w-5xl h-[80vh] flex flex-col rounded-2xl bg-[#0F172A] border border-slate-700">
-              <div className="bg-slate-800 px-6 py-4 flex justify-between items-center border-b border-slate-700 shrink-0">
-                <Dialog.Title as="h3" className="text-lg font-bold text-white flex items-center gap-2"><FileText className="text-blue-400" /> Detailed System Log</Dialog.Title>
-                <button onClick={() => setIsLogModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer"><X size={24} /></button>
+            <Dialog.Panel className="flex h-[80vh] w-full max-w-5xl flex-col rounded-xl border border-slate-200 bg-white">
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-3">
+                <Dialog.Title as="h3" className="flex items-center gap-2 text-base font-bold text-slate-800"><FileText size={16} className="text-slate-600" /> 상세 로그 (엔진 출력 원문)</Dialog.Title>
+                <button type="button" onClick={() => setIsLogModalOpen(false)} aria-label="닫기" className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 cursor-pointer"><X size={20} /></button>
               </div>
-              <div className="flex-1 p-6 overflow-auto bg-black font-mono text-xs text-slate-300 whitespace-pre-wrap">
-                {detailedLogs.join('\n')}
-              </div>
+              <pre className="flex-1 overflow-auto whitespace-pre-wrap bg-slate-50 p-5 font-mono text-xs text-slate-800">
+                {detailedLogs.length > 0 ? detailedLogs.join('\n') : '상세 로그가 없습니다.'}
+              </pre>
             </Dialog.Panel>
           </div>
         </Dialog>
       </Transition>
 
-      {/* 모달 2: 전체 결과 파일 다운로드 */}
-      <ProjectDetailModal project={isResultModalOpen ? analysisResultData : null} onClose={() => setIsResultModalOpen(false)} />
-      
+      {/* 모달 2: 입력·결과 파일 전체 다운로드 */}
+      <ProjectDetailModal
+        project={isResultModalOpen ? analysisResultData : null}
+        onClose={() => setIsResultModalOpen(false)}
+        onDownloaded={(kind) => { if (kind === 'result') setDelivered(true); }}
+      />
+
       {/* 모달 3: 3D BDF 뷰어 */}
       <BdfViewerModal
         isOpen={is3DViewerOpen}
@@ -568,15 +866,15 @@ export default function TrussAnalysis() {
 // Helper Components
 // ==========================================
 
-// (신규) JSON 기반 동적 테이블 렌더러
+// JSON 기반 동적 테이블 렌더러(엔진이 결과 JSON 을 낼 때)
 function JsonDataTable({ data, emptyMsg }) {
   if (!data) return <FeedbackState className="absolute inset-0" icon={Database} title={emptyMsg} />;
-  
+
   let tableData = [];
   // 1. JSON 최상위가 배열인 경우 (일반적인 행/열 구조)
   if (Array.isArray(data)) {
     tableData = data;
-  } 
+  }
   // 2. JSON 최상위가 객체인 경우
   else if (typeof data === 'object') {
     // 혹시 객체 내부에 배열이 들어있는지 탐색 ("Results": [...] 등)
@@ -585,28 +883,28 @@ function JsonDataTable({ data, emptyMsg }) {
       tableData = data[arrayKey];
     } else {
       // 순수 객체라면 Key-Value 형태로 평탄화(Flatten)하여 표시
-      tableData = Object.entries(data).map(([key, value]) => ({ 
-        Key: key, 
-        Value: typeof value === 'object' ? JSON.stringify(value) : String(value) 
+      tableData = Object.entries(data).map(([key, value]) => ({
+        Key: key,
+        Value: typeof value === 'object' ? JSON.stringify(value) : String(value)
       }));
     }
   }
 
-  if (tableData.length === 0) return <div className="p-4 text-center text-slate-500">표시할 데이터가 없습니다.</div>;
+  if (tableData.length === 0) return <div className="p-4 text-center text-slate-600">표시할 데이터가 없습니다.</div>;
 
   const headers = Object.keys(tableData[0]);
 
   return (
-    <table className="w-full text-left text-sm font-mono whitespace-nowrap">
-      <thead className="sticky top-0 bg-slate-50 shadow-sm z-10">
+    <table className="w-full whitespace-nowrap text-left font-mono text-xs">
+      <thead className="sticky top-0 z-10 bg-slate-50">
         <tr>
-          {headers.map((h, i) => <th key={i} className="px-6 py-3 text-brand-blue font-bold uppercase tracking-wider text-xs border-b border-slate-200">{h}</th>)}
+          {headers.map((h, i) => <th key={i} className="border-b border-slate-200 px-4 py-2 font-semibold text-slate-700">{h}</th>)}
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
         {tableData.map((row, i) => (
-          <tr key={i} className="hover:bg-blue-50/50 transition-colors">
-            {headers.map((h, j) => <td key={j} className="px-6 py-2.5 text-slate-700">{String(row[h])}</td>)}
+          <tr key={i} className="hover:bg-slate-50">
+            {headers.map((h, j) => <td key={j} className="px-4 py-1.5 text-slate-800">{String(row[h])}</td>)}
           </tr>
         ))}
       </tbody>
@@ -615,11 +913,11 @@ function JsonDataTable({ data, emptyMsg }) {
 }
 
 
-const ProjectDetailModal = ({ project, onClose }) => {
+const ProjectDetailModal = ({ project, onClose, onDownloaded }) => {
   const { showToast } = useToast();
   if (!project) return null;
 
-  const handleDownload = async (filePath) => {
+  const handleDownload = async (filePath, kind) => {
     if (!filePath) return;
     try {
       const response = await downloadFileBlob(filePath);
@@ -632,6 +930,7 @@ const ProjectDetailModal = ({ project, onClose }) => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
+      onDownloaded?.(kind);
     } catch (error) {
       console.error("Download failed:", error);
       showToast('파일 다운로드에 실패했습니다.', 'error');
@@ -640,113 +939,67 @@ const ProjectDetailModal = ({ project, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-slide-up">
-        
+      <div className="absolute inset-0 bg-black/40" onClick={onClose}></div>
+      <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl animate-slide-up">
+
         {/* Header */}
-        <div className="bg-brand-blue p-6 text-white flex justify-between items-start">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="bg-white/20 text-blue-100 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">
-                ID: {project.id}
-              </span>
-              <span className="text-blue-200 text-xs">| {new Date(project.created_at).toLocaleString()}</span>
-            </div>
-            <h2 className="text-xl font-bold leading-tight">{project.project_name || 'Unnamed Project'}</h2>
-            <p className="text-blue-200 text-xs mt-1 font-mono">{project.program_name}</p>
+        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+          <div className="min-w-0">
+            <p className="text-xs text-slate-600">ID {project.id} · {new Date(project.created_at).toLocaleString()}</p>
+            <h2 className="mt-0.5 truncate text-lg font-bold text-slate-900">{project.project_name || 'Unnamed Project'}</h2>
           </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors cursor-pointer">
-            <X size={24} />
+          <button type="button" onClick={onClose} aria-label="닫기" className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 cursor-pointer">
+            <X size={20} />
           </button>
         </div>
 
         {/* Body */}
-        <div className="p-6 overflow-y-auto">
-          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Analysis Status</h3>
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-400 block mb-1">Execution Status</span>
-              <StatusBadge status={project.status} />
-            </div>
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-400 block mb-1">Module</span>
-              <div className="font-bold text-slate-700 flex items-center gap-2">
-                <Box size={16} className="text-blue-500"/> {project.program_name}
-              </div>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-400 block mb-1">Requester ID</span>
-              <div className="font-bold text-slate-700">{project.employee_id}</div>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-400 block mb-1">Execution Date</span>
-              <div className="text-slate-700 font-bold text-sm">{new Date(project.created_at).toLocaleDateString()}</div>
-            </div>
+        <div className="space-y-5 overflow-y-auto p-6">
+          <div className="flex items-center gap-2 text-sm text-slate-700">
+            <StatusBadge status={project.status} /> <span>{project.program_name}</span> <span className="text-slate-500">·</span> <span>{project.employee_id}</span>
           </div>
 
           {/* Input Files */}
           {project.input_info && Object.keys(project.input_info).length > 0 && (
-            <>
-              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 mt-4">Input Data (CSV)</h3>
-              <div className="space-y-2 mb-6">
+            <div>
+              <h3 className="mb-2 text-sm font-bold text-slate-800">입력 CSV</h3>
+              <div className="space-y-2">
                 {Object.entries(project.input_info).map(([key, path]) => (
-                  <button key={key} onClick={() => handleDownload(path)} className="w-full flex items-center justify-between p-3 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group cursor-pointer">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-slate-100 text-slate-500 rounded-lg group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
-                        <Database size={18} />
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-bold text-slate-700 uppercase">{key}</p>
-                        <p className="text-[10px] text-slate-400 truncate max-w-sm" title={path}>{path}</p>
-                      </div>
-                    </div>
-                    <Download size={18} className="text-slate-300 group-hover:text-blue-600" />
-                  </button>
+                  <FileRow key={key} label={key} path={path} icon={Database} onClick={() => handleDownload(path, 'input')} />
                 ))}
               </div>
-            </>
+            </div>
           )}
 
           {/* Result Files */}
           {project.status === 'Success' && project.result_info && Object.keys(project.result_info).length > 0 && (
-            <>
-              <h3 className="text-sm font-bold text-brand-green uppercase tracking-wider mb-3">Analysis Results</h3>
+            <div>
+              <h3 className="mb-2 text-sm font-bold text-slate-800">결과 파일</h3>
               <div className="space-y-2">
                 {Object.entries(project.result_info).map(([key, path]) => (
-                  <button key={key} onClick={() => handleDownload(path)} className="w-full flex items-center justify-between p-4 border border-green-200 rounded-xl hover:border-green-500 hover:bg-green-50 transition-all group cursor-pointer">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-green-100 text-green-600 rounded-lg group-hover:bg-green-500 group-hover:text-white transition-colors">
-                        <FileOutput size={20} />
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-bold text-slate-700 uppercase">{key} File</p>
-                        <p className="text-[10px] text-slate-400 truncate max-w-sm">{path}</p>
-                      </div>
-                    </div>
-                    <Download size={18} className="text-slate-300 group-hover:text-green-600" />
-                  </button>
+                  <FileRow key={key} label={`${key} 파일`} path={path} icon={FileOutput} onClick={() => handleDownload(path, 'result')} />
                 ))}
               </div>
-            </>
+            </div>
           )}
 
           {project.status === 'Failed' && (
-             <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 mt-4">
-                <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={20} />
-                <div>
-                  <h4 className="text-sm font-bold text-red-700">Analysis Failed</h4>
-                  <p className="text-xs text-red-600 mt-1">
-                    해석 중 오류가 발생하여 결과 파일이 생성되지 않았습니다. System Console 로그를 확인해 주세요.
-                  </p>
-                </div>
-             </div>
+            <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+              <AlertCircle className="mt-0.5 shrink-0 text-red-600" size={18} />
+              <div>
+                <h4 className="text-sm font-bold text-red-800">생성 실패</h4>
+                <p className="mt-1 text-xs text-red-800">
+                  해석 중 오류가 발생하여 결과 파일이 생성되지 않았습니다. 실행 기록을 확인해 주세요.
+                </p>
+              </div>
+            </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer">
-            Close
+        <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 p-4">
+          <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 cursor-pointer">
+            닫기
           </button>
         </div>
       </div>
@@ -754,45 +1007,55 @@ const ProjectDetailModal = ({ project, onClose }) => {
   );
 };
 
-function UploadDropzone({ title, file, rowCount, onFiles }) {
+function FileRow({ label, path, icon: Icon, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-left transition-colors hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
+    >
+      <Icon size={16} className="shrink-0 text-slate-600" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-slate-800">{label}</p>
+        <p className="truncate text-[11px] text-slate-600" title={path}>{path}</p>
+      </div>
+      <Download size={16} className="shrink-0 text-slate-500 group-hover:text-blue-700" aria-hidden="true" />
+    </button>
+  );
+}
+
+function UploadDropzone({ title, file, rowCount, onFiles, disabled }) {
   return (
     <FileDropzone
       title={title}
       file={file}
       accept=".csv"
       multiple
-      helperText={rowCount > 0 ? `${rowCount.toLocaleString()} rows loaded` : '.csv'}
+      disabled={disabled}
+      helperText={rowCount > 0 ? `${rowCount.toLocaleString()}행 읽음` : '.csv'}
       onFiles={onFiles}
     />
   );
 }
 
-function TabButton({ active, onClick, icon: Icon, label, count }) {
+function DataTable({ table, emptyMsg }) {
+  if (!table || table.body.length === 0) return <FeedbackState className="absolute inset-0" icon={Database} title={emptyMsg} />;
   return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-2.5 rounded-t-lg font-bold text-sm flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${
-        active
-          ? 'bg-white text-brand-blue shadow-sm'
-          : 'text-blue-200 hover:text-white hover:bg-white/10'
-      }`}
-    >
-      <Icon size={16} /> {label}
-      {count !== undefined && count > 0 && (
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${active ? 'bg-blue-100 text-blue-600' : 'bg-white/20 text-white'}`}>
-          {count}
-        </span>
-      )}
-    </button>
-  );
-}
-
-function DataTable({ data, emptyMsg }) {
-  if (!data || data.length === 0) return <FeedbackState className="absolute inset-0" icon={Database} title={emptyMsg} />;
-  return (
-    <table className="w-full text-left text-sm font-mono whitespace-nowrap">
-      <thead className="sticky top-0 bg-white shadow-sm z-10"><tr>{data[0].map((h, i) => <th key={i} className="px-6 py-3 text-slate-500 font-bold uppercase tracking-wider text-xs border-b">{h}</th>)}</tr></thead>
-      <tbody className="divide-y divide-slate-100">{data.slice(1).map((row, i) => <tr key={i} className="hover:bg-slate-50">{row.map((cell, j) => <td key={j} className="px-6 py-2 text-slate-700">{cell}</td>)}</tr>)}</tbody>
+    <table className="w-full whitespace-nowrap text-left font-mono text-xs">
+      <thead className="sticky top-0 z-10 bg-slate-50">
+        <tr>
+          <th className="border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-600">#</th>
+          {table.header.map((h, i) => <th key={i} className="border-b border-slate-200 px-4 py-2 font-semibold text-slate-700">{h}</th>)}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {table.body.map((row, i) => (
+          <tr key={i} className="hover:bg-slate-50">
+            <td className="px-3 py-1.5 text-right text-slate-500">{i + 1}</td>
+            {row.map((cell, j) => <td key={j} className="px-4 py-1.5 text-slate-800">{cell}</td>)}
+          </tr>
+        ))}
+      </tbody>
     </table>
   );
 }

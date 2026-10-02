@@ -1,19 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronsRight,
-  Cpu, DatabaseZap, Download, ExternalLink, Eye, FileEdit, FileSpreadsheet, History, Loader2,
-  Lock, PackageX, RotateCcw, ShieldCheck, UploadCloud, X,
+  DatabaseZap, Download, ExternalLink, Eye, FileEdit, FilePlus2, FileSpreadsheet, History, Loader2,
+  Lock, PackageCheck, RefreshCw, RotateCcw, ScanSearch, Send, ShieldCheck, UploadCloud, X,
 } from 'lucide-react';
 
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
-import ProgressTrack from '../../components/ui/ProgressBar';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
+import {
+  StepRail, InputSummary, VerdictHeader, KeyFigures, NextActionBar, JobProgressCard, EngineLogPanel, StudioLauncherCard,
+  RunStartPanel,
+} from '../../components/analysis/runFrame';
+import { computeModelBuilderVerdict } from '../../utils/modelBuilderVerdict';
+import { useResultReentry } from '../../utils/resultReentry';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { isAppBlockedFor, mergeAppSetting, useAppSettings } from '../../hooks/useAppSettings';
 import { useToast } from '../../contexts/ToastContext';
 import { API_BASE_URL } from '../../config';
-import { downloadFileBlob } from '../../api/analysis';
+import { downloadFileBlob, rerunAnalysisProject } from '../../api/analysis';
 import { getAuthHeaders, handleUnauthorized, isAdmin } from '../../utils/auth';
 import SampleRunButton from '../../components/analysis/SampleRunButton';
 import AppCommunityHub from '../../components/analysis/AppCommunityHub';
@@ -36,10 +41,12 @@ const VIEWER_ID = 'model-studio';
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
 const MODEL_BUILDER_STUDIO_VERSION = '0.0.90';
 
+// 단계 이름은 '도구'가 아니라 엔지니어가 할 일로 쓴다(Studio 는 2단계에서 쓰는 도구).
+// 상태는 실제 사건으로만 바뀐다 — 1: 실행 성공, 2: 판정 통과·검토 확인·편집 적용, 3: BDF 받기·후속 해석 전달.
 const INITIAL_STEPS = [
-  { id: 'csv-validation', title: 'CSV 입력 검증',  icon: FileSpreadsheet, status: 'wait' },
-  { id: 'model-qc',       title: 'Model Builder Studio', icon: ShieldCheck,     status: 'wait' },
-  { id: 'nastran',        title: '해석 모델 저장', icon: Cpu,             status: 'wait' },
+  { id: 'input',   title: '입력 검증',      icon: FileSpreadsheet, status: 'wait' },
+  { id: 'review',  title: '모델 확인·보정', icon: ScanSearch,      status: 'wait' },
+  { id: 'deliver', title: 'BDF 저장·전달',  icon: PackageCheck,    status: 'wait' },
 ];
 
 const REASON_LABELS = {
@@ -59,13 +66,6 @@ const REASON_LABELS = {
   blank:                          '공백 행',
 };
 
-const STATUS_CONFIG = {
-  wait:     { dot: 'bg-slate-300',                          badge: 'bg-slate-100 text-slate-500',     label: '대기' },
-  running:  { dot: 'bg-blue-500 ring-4 ring-blue-100',      badge: 'bg-blue-100 text-blue-700',       label: '진행' },
-  done:     { dot: 'bg-emerald-500',                        badge: 'bg-emerald-100 text-emerald-700', label: '완료' },
-  error:    { dot: 'bg-red-500',                            badge: 'bg-red-100 text-red-700',         label: '오류' },
-  disabled: { dot: 'bg-slate-200',                          badge: 'bg-slate-100 text-slate-400',     label: '비활성' },
-};
 
 const DEFAULT_MESH_SIZE_MM = '500';
 
@@ -267,9 +267,9 @@ function summarizeAuditByKind(audit) {
   const inputFiles = Array.isArray(audit.inputFiles) ? audit.inputFiles : [];
   const findFile = (kind) => inputFiles.find(f => f.kind === kind) || null;
   return {
-    Structure: { kind: 'Structure', icon: '🏗️', file: findFile('Structure'), rows: kindMap.Structure, counts: tally(kindMap.Structure) },
-    Pipe:      { kind: 'Pipe',      icon: '🔧', file: findFile('Pipe'),      rows: kindMap.Pipe,      counts: tally(kindMap.Pipe) },
-    Equipment: { kind: 'Equipment', icon: '⚙️', file: findFile('Equipment'), rows: kindMap.Equipment, counts: tally(kindMap.Equipment) },
+    Structure: { kind: 'Structure', file: findFile('Structure'), rows: kindMap.Structure, counts: tally(kindMap.Structure) },
+    Pipe:      { kind: 'Pipe',      file: findFile('Pipe'),      rows: kindMap.Pipe,      counts: tally(kindMap.Pipe) },
+    Equipment: { kind: 'Equipment', file: findFile('Equipment'), rows: kindMap.Equipment, counts: tally(kindMap.Equipment) },
   };
 }
 
@@ -277,57 +277,13 @@ function summarizeAuditByKind(audit) {
    소형 UI 컴포넌트
    ──────────────────────────────────────────────────────────────────────── */
 
-function CollapseSection({ label, open, onToggle, children, accent }) {
-  return (
-    <div>
-      <button
-        onClick={onToggle}
-        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-colors
-          ${accent === 'amber'
-            ? 'bg-amber-50 border border-amber-200 hover:bg-amber-100'
-            : 'bg-slate-50 border border-slate-200 hover:bg-slate-100'
-          }`}
-      >
-        <span className={`text-[10px] font-bold uppercase tracking-widest ${accent === 'amber' ? 'text-amber-700' : 'text-slate-500'}`}>
-          {label}
-        </span>
-        <span className={`text-[10px] ${accent === 'amber' ? 'text-amber-400' : 'text-slate-400'}`}>
-          {open ? '▲ 닫기' : '▼ 펼치기'}
-        </span>
-      </button>
-      {open && <div className="mt-1.5">{children}</div>}
-    </div>
-  );
-}
-
-function ProgressBar({ progress, message, error, elapsed }) {
-  const fmtTime = (s) => s >= 60 ? `${Math.floor(s / 60)}분 ${s % 60}초` : `${s}초`;
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs font-semibold text-slate-700">{message || '진행 중...'}</p>
-        <div className="flex items-center gap-2">
-          {elapsed != null && <span className="text-xs text-slate-400 font-mono">{fmtTime(elapsed)}</span>}
-          <p className="text-xs font-bold text-blue-600 font-mono"><AnimatedNumber value={progress ?? 0} />%</p>
-        </div>
-      </div>
-      {/* 공용 진행 막대 — 진행 중엔 빛이 흐르고, 실패하면 멈춘 자리에서 빨강으로 */}
-      <ProgressTrack
-        value={progress ?? 0}
-        status={error ? 'failed' : 'running'}
-        size="sm"
-        trackClassName="bg-slate-100"
-      />
-    </div>
-  );
-}
-
 /* ──────────────────────────────────────────────────────────────────────────
    CsvDropZone — 단일/다중 파일 드롭존 (이전 버전 룩앤필 그대로)
    ──────────────────────────────────────────────────────────────────────── */
 
-function CsvDropZone({ label, required, file, fileError, onFile, onClear, multiple = false, onMultipleFiles, onWarnNotCsv }) {
+function CsvDropZone({ label, requirement, file, fileError, onFile, onClear, multiple = false, onMultipleFiles, onWarnNotCsv, disabled = false }) {
   const inputRef = useRef(null);
+  const [dragOver, setDragOver] = useState(false);
   const isWarn = typeof fileError === 'string' && fileError.startsWith('__warn__');
   const displayError = isWarn ? fileError.slice(8) : fileError;
 
@@ -342,72 +298,89 @@ function CsvDropZone({ label, required, file, fileError, onFile, onClear, multip
 
   const handleFileList = (fileList) => {
     const csvFiles = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith('.csv'));
-    if (csvFiles.length === 0) return;
+    if (csvFiles.length === 0) { onWarnNotCsv?.(); return; }
     if (csvFiles.length === 1) handleSingleFile(csvFiles[0]);
     else if (multiple && onMultipleFiles) onMultipleFiles(csvFiles);
     else handleSingleFile(csvFiles[0]);
   };
 
-  const handleDrop = (e) => { e.preventDefault(); handleFileList(e.dataTransfer.files); };
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (!disabled) handleFileList(e.dataTransfer.files);
+  };
+
+  // 배지는 파일 유무와 무관하게 '이 칸이 무엇을 요구하는지'만 말한다.
+  // (예전엔 파일을 넣으면 '필수'가 '선택'으로 바뀌어, '선택 입력'과 '선택됨'이 같은 글자였다.)
+  const badge = requirement === 'either'
+    ? <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[11px] font-semibold text-blue-800">둘 중 하나 필수</span>
+    : <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">선택 입력</span>;
+
+  const tone = fileError && !isWarn ? 'border-red-300' : isWarn ? 'border-amber-300' : 'border-slate-200';
 
   return (
-    <div className={`rounded-xl border bg-white shadow-sm overflow-hidden transition-colors
-      ${fileError && !isWarn ? 'border-red-300' : isWarn ? 'border-amber-300' : 'border-slate-200'}`}>
-      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <FileSpreadsheet size={12} className={fileError && !isWarn ? 'text-red-400' : isWarn ? 'text-amber-400' : 'text-slate-400'} />
-          <span className="text-xs font-semibold text-slate-700 truncate">{label}</span>
-          {required
-            ? <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium shrink-0">필수</span>
-            : <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-medium shrink-0">선택</span>
-          }
+    <div className={`overflow-hidden rounded-lg border bg-white transition-colors ${tone}`}>
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <FileSpreadsheet size={13} className="shrink-0 text-slate-500" aria-hidden="true" />
+          <span className="truncate text-xs font-bold text-slate-800">{label}</span>
+          {badge}
         </div>
-        {file && (
-          <button onClick={onClear} className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer shrink-0" title="제거">
-            <X size={12} />
+        {file && !disabled && (
+          <button
+            type="button"
+            onClick={onClear}
+            aria-label={`${label} 파일 제거`}
+            className="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
+          >
+            <X size={13} />
           </button>
         )}
       </div>
       {file ? (
         <div className="flex flex-col items-center justify-center gap-0.5 px-3 py-2.5 text-center">
           {fileError && !isWarn
-            ? <AlertCircle size={14} className="text-red-500 shrink-0 mb-0.5" />
+            ? <AlertCircle size={14} className="mb-0.5 shrink-0 text-red-600" aria-hidden="true" />
             : isWarn
-            ? <AlertCircle size={14} className="text-amber-400 shrink-0 mb-0.5" />
-            : <CheckCircle2 size={14} className="text-green-500 shrink-0 mb-0.5" />
+            ? <AlertCircle size={14} className="mb-0.5 shrink-0 text-amber-600" aria-hidden="true" />
+            : <CheckCircle2 size={14} className="mb-0.5 shrink-0 text-emerald-600" aria-hidden="true" />
           }
-          <p className="text-[10px] font-semibold text-slate-700 truncate w-full text-center" title={file.name}>{file.name}</p>
+          <p className="w-full truncate text-center text-xs font-semibold text-slate-800" title={file.name}>{file.name}</p>
           {fileError && !isWarn
-            ? <p className="text-[10px] text-red-500 leading-tight text-center">{displayError}</p>
+            ? <p className="text-center text-[11px] leading-tight text-red-700">{displayError}</p>
             : isWarn
-            ? <p className="text-[10px] text-amber-500 leading-tight text-center">{displayError}</p>
-            : <p className="text-[10px] text-slate-400">{(file.size / 1024).toFixed(1)} KB</p>
+            ? <p className="text-center text-[11px] leading-tight text-amber-800">{displayError}</p>
+            : <p className="text-[11px] text-slate-600">{(file.size / 1024).toFixed(1)} KB</p>
           }
         </div>
       ) : (
-        <div
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
+        <button
+          type="button"
+          disabled={disabled}
           onClick={() => inputRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-1 py-3 cursor-pointer hover:bg-blue-50/40 transition-colors text-center"
+          onDrop={handleDrop}
+          onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          className={`flex w-full flex-col items-center justify-center gap-1 py-3 text-center transition-colors
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/50
+            disabled:cursor-not-allowed disabled:opacity-60
+            ${dragOver ? 'bg-blue-50' : 'hover:bg-slate-50 cursor-pointer'}`}
         >
-          <UploadCloud size={16} className="text-slate-300" />
-          <p className="text-[10px] text-slate-400 leading-relaxed px-2">
-            {multiple
-              ? <>드롭 또는 <span className="text-blue-600 font-medium">클릭</span><br /><span className="text-slate-300">여러 파일 자동 분류</span></>
-              : <>드롭 또는 <span className="text-blue-600 font-medium">클릭</span></>
-            }
-          </p>
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".csv"
-            multiple={multiple}
-            className="hidden"
-            onChange={(e) => { if (e.target.files?.length) handleFileList(e.target.files); e.target.value = ''; }}
-          />
-        </div>
+          <UploadCloud size={16} className="text-slate-500" aria-hidden="true" />
+          <span className="px-2 text-[11px] leading-relaxed text-slate-600">
+            놓거나 <span className="font-semibold text-blue-700">눌러서 선택</span>
+          </span>
+        </button>
       )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".csv"
+        multiple={multiple}
+        className="hidden"
+        tabIndex={-1}
+        onChange={(e) => { if (e.target.files?.length) handleFileList(e.target.files); e.target.value = ''; }}
+      />
     </div>
   );
 }
@@ -439,55 +412,32 @@ function DetailCSV({
   struError, pipeError, equiError,
   setStruFile, setPipeFile, setEquiFile,
   setStruError, setPipeError, setEquiError,
-  onAutoAssign, onMultipleFiles, onWarnNotCsv,
+  onAutoAssign, onMultipleFiles, onWarnNotCsv, disabled,
 }) {
-  // Structural 또는 Piping 중 하나만 있어도 준비 완료(둘 중 하나 필수).
-  const isReady = (!!struFile || !!pipeFile) && !struError && !pipeError && !equiError;
-  const hasError = (struError && !struError.startsWith('__warn__'))
-                || (pipeError && !pipeError.startsWith('__warn__'))
-                || (equiError && !equiError.startsWith('__warn__'));
+  const common = { multiple: true, onMultipleFiles, onWarnNotCsv, disabled };
   return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-3 gap-2">
-        <CsvDropZone
-          label="Structural" required={!struFile && !pipeFile}
-          file={struFile} fileError={struError}
-          onFile={(f) => onAutoAssign(f, 'stru')}
-          onClear={() => { setStruFile(null); setStruError(null); }}
-          multiple={true}
-          onMultipleFiles={onMultipleFiles}
-          onWarnNotCsv={onWarnNotCsv}
-        />
-        <CsvDropZone
-          label="Piping" required={!struFile && !pipeFile}
-          file={pipeFile} fileError={pipeError}
-          onFile={(f) => onAutoAssign(f, 'pipe')}
-          onClear={() => { setPipeFile(null); setPipeError(null); }}
-          multiple={true}
-          onMultipleFiles={onMultipleFiles}
-          onWarnNotCsv={onWarnNotCsv}
-        />
-        <CsvDropZone
-          label="Equipment"
-          file={equiFile} fileError={equiError}
-          onFile={(f) => onAutoAssign(f, 'equip')}
-          onClear={() => { setEquiFile(null); setEquiError(null); }}
-          multiple={true}
-          onMultipleFiles={onMultipleFiles}
-          onWarnNotCsv={onWarnNotCsv}
-        />
-      </div>
-      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold transition-colors
-        ${hasError ? 'bg-red-50 border-red-200 text-red-700'
-          : isReady ? 'bg-green-50 border-green-200 text-green-700'
-          : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
-        {hasError
-          ? <><AlertCircle size={13} /> 파일 형식 오류를 확인하세요</>
-          : isReady
-          ? <><CheckCircle2 size={13} /> 필수 파일 준비 완료 — 실행 가능</>
-          : <><AlertCircle size={13} /> Structural 또는 Piping CSV 파일이 필요합니다 (드래그 한 번에 3개 자동 분류)</>
-        }
-      </div>
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <CsvDropZone
+        label="Structural" requirement="either"
+        file={struFile} fileError={struError}
+        onFile={(f) => onAutoAssign(f, 'stru')}
+        onClear={() => { setStruFile(null); setStruError(null); }}
+        {...common}
+      />
+      <CsvDropZone
+        label="Piping" requirement="either"
+        file={pipeFile} fileError={pipeError}
+        onFile={(f) => onAutoAssign(f, 'pipe')}
+        onClear={() => { setPipeFile(null); setPipeError(null); }}
+        {...common}
+      />
+      <CsvDropZone
+        label="Equipment" requirement="optional"
+        file={equiFile} fileError={equiError}
+        onFile={(f) => onAutoAssign(f, 'equip')}
+        onClear={() => { setEquiFile(null); setEquiError(null); }}
+        {...common}
+      />
     </div>
   );
 }
@@ -497,20 +447,17 @@ function DetailCSV({
    ──────────────────────────────────────────────────────────────────────── */
 
 /* 파일별 변환 막대 */
-function KindBar({ label, icon, converted, total, ignored, errored = 0, failed, fileName }) {
+function KindBar({ label, converted, total, ignored, errored = 0, failed, fileName }) {
   const pct = total > 0 ? Math.round((converted / total) * 100) : 0;
   const hasIssue = ignored > 0 || failed > 0 || errored > 0;
   return (
-    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm flex flex-col gap-2">
+    <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3">
       {/* 헤더 행 */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <span className="text-base leading-none">{icon}</span>
-          <span className="text-sm font-bold text-slate-700">{label}</span>
-        </div>
+        <span className="text-sm font-bold text-slate-800">{label}</span>
         {total > 0
           ? <span className={`text-xs font-bold font-mono ${hasIssue ? 'text-amber-600' : 'text-emerald-600'}`}>{pct}%</span>
-          : <span className="text-xs text-slate-300 italic">미입력</span>
+          : <span className="text-xs text-slate-600">입력 없음</span>
         }
       </div>
 
@@ -519,7 +466,7 @@ function KindBar({ label, icon, converted, total, ignored, errored = 0, failed, 
           {/* 수치 요약 */}
           <div className="flex items-baseline gap-1.5">
             <span className="text-2xl font-bold text-slate-800 font-mono leading-none"><AnimatedNumber value={converted} locale /></span>
-            <span className="text-xs text-slate-400">행 변환</span>
+            <span className="text-xs text-slate-500">행 변환</span>
           </div>
 
           {/* 스택 진행 바 */}
@@ -571,7 +518,7 @@ function KindBar({ label, icon, converted, total, ignored, errored = 0, failed, 
 
           {/* 파일명 */}
           {fileName && (
-            <p className="text-[11px] text-slate-400 font-mono truncate pt-1 border-t border-slate-100" title={fileName}>{fileName}</p>
+            <p className="text-[11px] text-slate-500 font-mono truncate pt-1 border-t border-slate-100" title={fileName}>{fileName}</p>
           )}
         </>
       )}
@@ -600,7 +547,7 @@ function IgnoreReasonRow({ label, count, maxCount }) {
 function FilterPills({ label, value, onChange, options }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-xs text-slate-400 font-semibold">{label}</span>
+      <span className="text-xs text-slate-500 font-semibold">{label}</span>
       {options.map(o => (
         <button
           key={o.v}
@@ -620,55 +567,29 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
   const [statusFilter, setStatusFilter] = useState('all');
   const [kindFilter,   setKindFilter]   = useState('all');
 
-  /* ── 공통 상태 렌더 ── */
-  if (jobStatus?.status === 'Running' || jobStatus?.status === 'Pending') {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-4 py-16">
-        <Loader2 size={32} className="text-blue-500 animate-spin" />
-        <div className="text-center">
-          <p className="text-sm font-semibold text-blue-600">{jobStatus.message}</p>
-          <p className="text-xs text-slate-400 mt-1">CSV 파싱 및 변환 중...</p>
-        </div>
-        <ProgressTrack value={jobStatus.progress} status="running" size="md" trackClassName="bg-slate-100" className="w-56" />
-        <p className="text-xs font-mono font-bold text-blue-500"><AnimatedNumber value={jobStatus.progress} />%</p>
-      </div>
-    );
-  }
-
-  if (!hasResult) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-3 py-16 text-center">
-        <FileSpreadsheet size={36} className="text-slate-200" />
-        <div>
-          <p className="text-sm font-semibold text-slate-400">검증 결과 대기 중</p>
-          <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-            CSV 파일을 업로드하고 <span className="text-blue-400 font-semibold">Model Builder 실행</span>을 누르면<br />
-            변환 결과가 여기에 표시됩니다.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // 실행 중·실행 전 상태는 페이지(진행 카드·미리보기)가 그린다. 이 패널은 결과가 있을 때만 쓰인다.
+  if (!hasResult) return null;
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center gap-2 py-16 text-slate-500">
-        <Loader2 size={16} className="animate-spin" />
-        <span className="text-sm">InputAudit 불러오는 중...</span>
+      <div className="flex items-center justify-center gap-2 py-12 text-slate-600">
+        <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+        <span className="text-sm">입력 검증 결과를 불러오는 중…</span>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center py-16 gap-3">
-        <AlertCircle size={32} className="text-red-400" />
-        <p className="text-sm text-red-500">{error}</p>
+      <div className="flex flex-col items-center gap-3 py-12">
+        <AlertCircle size={28} className="text-red-600" aria-hidden="true" />
+        <p className="text-sm text-red-700">{error}</p>
         <button
+          type="button"
           onClick={onRetry}
-          className="flex items-center gap-1.5 text-sm px-4 py-1.5 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 cursor-pointer transition-colors"
+          className="flex items-center gap-1.5 rounded-lg border border-red-300 px-4 py-1.5 text-sm text-red-700 transition-colors hover:bg-red-50 cursor-pointer"
         >
-          <RotateCcw size={13} /> 재시도
+          <RotateCcw size={13} aria-hidden="true" /> 다시 불러오기
         </button>
       </div>
     );
@@ -679,7 +600,6 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
   /* ── 데이터 계산 ── */
   const summary  = audit.summary || {};
   const byKind   = summarizeAuditByKind(audit);
-  const isFailed = jobStatus?.status === 'Failed' || jobStatus?.status === 'Cancelled';
 
   const total     = summary.totalDataRows   || 0;
   const converted = summary.convertedRows   || 0;
@@ -688,95 +608,41 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
   const failed    = summary.parseFailedRows || 0;
   const convRate  = total > 0 ? Math.round((converted / total) * 100) : 0;
 
-  // ambiguousDuplicate 제외, ignored만 표시
   const ignoredEntries = Object.entries(summary.ignoredByReason || {})
     .map(([code, count]) => ({ code, count, label: REASON_LABELS[code] ?? code }))
     .sort((a, b) => b.count - a.count);
   const maxIgnored = ignoredEntries.length > 0 ? Math.max(...ignoredEntries.map(e => e.count)) : 1;
 
-  // rowAudit 필터링
   const filteredRows = (audit.rowAudit || [])
     .filter(r => statusFilter === 'all' || r.status === statusFilter)
     .filter(r => kindFilter   === 'all' || r.kind   === kindFilter);
 
   return (
-    <div className="space-y-4 w-full min-w-0">
-
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          A. Hero 변환 요약
-         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <div className={`rounded-2xl border px-5 py-4 shadow-sm ${isFailed ? 'bg-red-50 border-red-200' : 'bg-gradient-to-br from-slate-50 to-white border-slate-200'}`}>
-        <div className="flex items-start gap-5">
-          {/* 변환률 원형 표시 */}
-          <div className="shrink-0 flex flex-col items-center gap-1">
-            <div className="relative w-16 h-16">
-              <svg viewBox="0 0 64 64" className="w-16 h-16 -rotate-90">
-                <circle cx="32" cy="32" r="26" fill="none" stroke="#e2e8f0" strokeWidth="7" />
-                <circle
-                  cx="32" cy="32" r="26" fill="none"
-                  stroke={isFailed ? '#ef4444' : (failed > 0 || errors > 0) ? '#f59e0b' : '#10b981'}
-                  strokeWidth="7"
-                  strokeDasharray={`${2 * Math.PI * 26}`}
-                  strokeDashoffset={`${2 * Math.PI * 26 * (1 - convRate / 100)}`}
-                  strokeLinecap="round"
-                  className="transition-all duration-700"
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className={`text-base font-bold font-mono leading-none ${isFailed ? 'text-red-600' : 'text-slate-800'}`}>{convRate}%</span>
-              </div>
-            </div>
-            <span className="text-xs text-slate-400 font-medium">변환률</span>
-          </div>
-
-          {/* 핵심 지표 */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              {isFailed
-                ? <AlertCircle size={15} className="text-red-600 shrink-0" />
-                : <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />}
-              <span className={`text-sm font-bold ${isFailed ? 'text-red-700' : 'text-emerald-700'}`}>
-                {isFailed ? 'CSV 검증 실패' : 'CSV 입력 검증 완료'}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div className="text-center">
-                <p className="text-2xl font-bold font-mono text-slate-800 leading-none">{total.toLocaleString()}</p>
-                <p className="text-xs text-slate-400 mt-0.5">전체 입력</p>
-              </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold font-mono text-emerald-600 leading-none">{converted.toLocaleString()}</p>
-                <p className="text-xs text-slate-400 mt-0.5">변환 성공</p>
-              </div>
-              <div className="text-center">
-                <p className={`text-2xl font-bold font-mono leading-none ${ignored > 0 ? 'text-amber-600' : 'text-slate-300'}`}>{ignored.toLocaleString()}</p>
-                <p className="text-xs text-slate-400 mt-0.5">제외됨</p>
-              </div>
-            </div>
-
-            {errors > 0 && (
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-red-700 font-bold">
-                <AlertCircle size={12} /> 데이터 오류 {errors.toLocaleString()}건 — 변환 시 형상 누락 가능 (예: 배관 outDia=0). log 확인
-              </div>
-            )}
-
-            {failed > 0 && (
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600 font-semibold">
-                <AlertCircle size={12} /> 파싱 실패 {failed.toLocaleString()}건 — 원본 CSV 확인 필요
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+    <div className="w-full min-w-0 space-y-4">
+      <KeyFigures
+        items={[
+          { key: 'total',     label: '입력 행',   value: total.toLocaleString() },
+          { key: 'converted', label: '변환됨',    value: converted.toLocaleString(), sub: `${convRate}%` },
+          { key: 'ignored',   label: '제외됨',    value: ignored.toLocaleString(), tone: ignored > 0 ? 'warn' : 'default', sub: '사유는 아래 분포 참고' },
+          { key: 'errors',    label: '오류·파싱 실패', value: (errors + failed).toLocaleString(), tone: errors + failed > 0 ? 'bad' : 'default' },
+        ]}
+      />
+      {(errors > 0 || failed > 0) && (
+        <p className="flex items-start gap-1.5 text-sm text-red-700">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          {errors > 0 && `데이터 오류 ${errors.toLocaleString()}건(예: 배관 outDia=0)은 형상이 빠질 수 있습니다. `}
+          {failed > 0 && `파싱 실패 ${failed.toLocaleString()}건은 원본 CSV 를 확인하세요. `}
+          아래 '행 단위 검증'에서 해당 행을 볼 수 있습니다.
+        </p>
+      )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           B. 파일별 처리 현황 (3열 카드)
          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {byKind && (
         <div>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">파일별 처리 현황</p>
-          <div className="grid grid-cols-3 gap-3">
+          <h3 className="mb-2 text-sm font-bold text-slate-800">파일별 처리 현황</h3>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {['Structure', 'Pipe', 'Equipment'].map((k) => {
               const d = byKind[k];
               const c = d.counts;
@@ -785,7 +651,6 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                 <KindBar
                   key={k}
                   label={k}
-                  icon={d.icon}
                   converted={c.converted ?? 0}
                   total={rowTotal}
                   ignored={c.ignored ?? 0}
@@ -803,10 +668,10 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
           C. 제외 사유 분포
          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {ignoredEntries.length > 0 && (
-        <div className="bg-white border border-amber-200 rounded-xl px-4 py-4 shadow-sm">
-          <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-3">
-            제외·오류 사유 분포 — {ignoredEntries.reduce((a, e) => a + e.count, 0).toLocaleString()}건
-          </p>
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-4">
+          <h3 className="mb-3 text-sm font-bold text-slate-800">
+            제외 사유 분포 <span className="font-mono font-semibold text-slate-600">{ignoredEntries.reduce((a, e) => a + e.count, 0).toLocaleString()}건</span>
+          </h3>
           <div className="space-y-2.5">
             {ignoredEntries.map(({ code, count, label }) => (
               <IgnoreReasonRow key={code} label={label} count={count} maxCount={maxIgnored} />
@@ -833,7 +698,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                 {audit.rowAudit.length.toLocaleString()}행
               </span>
               {!showRows && (
-                <span className="text-[11px] text-slate-400 ml-1">— 클릭하여 자세히 보기</span>
+                <span className="text-[11px] text-slate-500 ml-1">— 클릭하여 자세히 보기</span>
               )}
             </div>
             </button>
@@ -852,7 +717,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                 className="p-1 cursor-pointer"
                 aria-label={showRows ? '행 단위 검증 접기' : '행 단위 검증 펼치기'}
               >
-                <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${showRows ? 'rotate-180' : ''}`} />
+                <ChevronDown size={14} className={`text-slate-500 transition-transform duration-200 ${showRows ? 'rotate-180' : ''}`} />
               </button>
             </div>
           </div>
@@ -884,7 +749,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                     { v: 'blank',       label: '공백' },
                   ]}
                 />
-                <span className="ml-auto text-xs font-mono text-slate-400">
+                <span className="ml-auto text-xs font-mono text-slate-500">
                   {filteredRows.length.toLocaleString()} / {audit.rowAudit.length.toLocaleString()}행
                 </span>
               </div>
@@ -925,13 +790,13 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                       return (
                         <tr key={i} className={`hover:bg-blue-50/30 transition-colors ${rowBg}`}>
                           <td className="px-3 py-1.5 text-slate-600 truncate" title={r.kind}>{r.kind}</td>
-                          <td className="px-2 py-1.5 text-right font-mono text-slate-400">{r.physicalLineNumber}</td>
+                          <td className="px-2 py-1.5 text-right font-mono text-slate-500">{r.physicalLineNumber}</td>
                           <td className="px-3 py-1.5">
-                            <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full ${badge}`}>{r.status}</span>
+                            <span className={`inline-block text-[11px] font-bold px-1.5 py-0.5 rounded-full ${badge}`}>{AUDIT_STATUS_LABELS[r.status] ?? r.status}</span>
                           </td>
                           <td className="px-3 py-1.5 font-mono text-[11px] truncate" title={r.name}>{r.name}</td>
                           <td
-                            className={`px-3 py-1.5 whitespace-normal break-keep leading-snug ${r.status === 'converted' ? 'text-slate-400' : 'text-slate-600'}`}
+                            className={`px-3 py-1.5 whitespace-normal break-keep leading-snug ${r.status === 'converted' ? 'text-slate-500' : 'text-slate-600'}`}
                             title={reasonText}
                           >
                             {reasonText}
@@ -942,7 +807,7 @@ function CsvAuditPanel({ audit, jobStatus, hasResult, loading, error, onRetry })
                   </tbody>
                 </table>
                 {filteredRows.length > 1000 && (
-                  <p className="text-center text-xs text-slate-400 py-3 italic border-t border-slate-100">
+                  <p className="text-center text-xs text-slate-500 py-3 italic border-t border-slate-100">
                     상위 1,000행만 표시 — 전체 {filteredRows.length.toLocaleString()}행
                   </p>
                 )}
@@ -975,12 +840,18 @@ function StageSummaryPanel({
     if (editStatus?.has_edited) setSubTab('edit');
   }, [editStatus?.has_edited]);
 
+  // 편집 적용이 시작되면 진행을 보여 주는 Edit 탭으로 넘긴다(전체 화면 잠금 대신 이 자리에서 진행 표시).
+  useEffect(() => {
+    if (editApplying) setSubTab('edit');
+  }, [editApplying]);
+
   if (!hasResult) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
-        <ShieldCheck size={36} className="opacity-40" />
-        <p className="text-xs text-center max-w-md">
-          모델 알고리즘 실행 후 phase별 메트릭과 <b>Model Builder Studio</b>(외부 풀스크린 뷰어)가 여기에 표시됩니다.
+      <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+        <ScanSearch size={28} className="text-slate-500" aria-hidden="true" />
+        <p className="text-sm font-semibold text-slate-700">아직 확인할 모델이 없습니다</p>
+        <p className="max-w-md text-xs text-slate-600">
+          1단계에서 CSV 를 넣고 실행하면 판정과 단계별 변화량, Studio 열기가 여기에 나타납니다.
         </p>
       </div>
     );
@@ -996,6 +867,7 @@ function StageSummaryPanel({
         viewerError={viewerError}
         installedVersion={installedVersion}
         latestVersion={latestVersion}
+        locked={editApplying}
       />
 
       {/* ── 서브 탭: 원본 / Edit ─────────────────────────────────────── */}
@@ -1006,18 +878,19 @@ function StageSummaryPanel({
         />
         <SubTab
           active={subTab === 'edit'} onClick={() => setSubTab('edit')}
-          label="Edit 적용 모델" icon={FileEdit}
-          badge={editStatus?.has_edited ? '적용됨' : (editStatus?.has_edit_json ? '대기' : null)}
+          label="편집 적용 모델" icon={FileEdit}
+          badge={editApplying ? '적용 중' : editStatus?.has_edited ? '적용됨' : (editStatus?.has_edit_json ? '대기' : null)}
           badgeCls={editStatus?.has_edited ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}
           disabled={!editAvailable && !editApplying}
         />
         <button
           type="button"
           onClick={onRefreshEditStatus}
-          title="Edit 상태 새로고침 및 신규 편집 자동 적용"
-          className="ml-auto mb-1 p-1.5 rounded-md hover:bg-slate-100 text-slate-400 cursor-pointer"
+          title="Studio 편집 내역을 다시 확인하고, 새 편집이 있으면 적용합니다"
+          aria-label="편집 상태 새로 고침"
+          className="ml-auto mb-1 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
         >
-          <RotateCcw size={12} />
+          <RefreshCw size={12} aria-hidden="true" /> 편집 확인
         </button>
       </div>
 
@@ -1025,7 +898,7 @@ function StageSummaryPanel({
         <>
           {loading && (
             <div className="flex items-center justify-center py-10 text-slate-500 gap-2">
-              <Loader2 size={16} className="animate-spin" /> StageSummary 불러오는 중...
+              <Loader2 size={16} className="animate-spin" aria-hidden="true" /> 단계별 요약을 불러오는 중…
             </div>
           )}
           {error && (
@@ -1035,20 +908,6 @@ function StageSummaryPanel({
           )}
           {summary && <StageSummaryDetail summary={summary} audit={audit} />}
 
-          {bdfResult?.bdfPath && (
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 flex items-center justify-between">
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">원본 최종 산출물</p>
-                <p className="text-xs text-slate-700 font-mono truncate" title={bdfResult.bdfPath}>{fileBaseName(bdfResult.bdfPath)}</p>
-              </div>
-              <button
-                onClick={() => triggerDownload(bdfResult.bdfPath)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg cursor-pointer"
-              >
-                <Download size={12} /> BDF
-              </button>
-            </div>
-          )}
         </>
       )}
 
@@ -1078,13 +937,13 @@ function SubTab({ active, onClick, label, icon: Icon, badge, badgeCls = '', disa
         ${active
           ? 'border-blue-500 text-blue-700'
           : disabled
-            ? 'border-transparent text-slate-300 cursor-not-allowed'
+            ? 'border-transparent text-slate-500 cursor-not-allowed'
             : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}
     >
       {Icon && <Icon size={13} />}
       {label}
       {badge && (
-        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${badgeCls}`}>{badge}</span>
+        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${badgeCls}`}>{badge}</span>
       )}
     </button>
   );
@@ -1098,10 +957,10 @@ function EditResultPanel({
   // 1) 편집 자체가 없는 상태
   if (!editStatus?.has_edit_json && !editStatus?.has_edited) {
     return (
-      <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
-        <FileEdit size={28} className="text-slate-300 mx-auto mb-2" />
-        <p className="text-xs text-slate-500 mb-1">아직 편집 내역이 없습니다.</p>
-        <p className="text-[11px] text-slate-400">Studio에서 모델 수정 후 "최종 모델 출력"을 누르면 자동으로 적용됩니다.</p>
+      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center">
+        <FileEdit size={24} className="mx-auto mb-2 text-slate-500" aria-hidden="true" />
+        <p className="mb-1 text-sm font-semibold text-slate-700">아직 편집 내역이 없습니다</p>
+        <p className="text-xs text-slate-600">Studio 에서 모델을 고친 뒤 '최종 모델 출력'을 누르면 자동으로 적용됩니다.</p>
       </div>
     );
   }
@@ -1109,16 +968,15 @@ function EditResultPanel({
   // 2) 적용 진행 중
   if (editApplying) {
     const p = editJobStatus?.progress ?? 0;
+    // 진행률 구간으로 지금 하는 일을 추정한다(서버는 단계 이름을 따로 주지 않는다).
+    const phase = p < 20 ? '편집 내용을 모델에 반영' : p < 70 ? '편집 모델 Nastran 해석' : 'F06 결과 정리';
     return (
-      <div className="rounded-2xl border-2 border-blue-200 bg-blue-50 px-5 py-6">
-        <div className="flex items-center gap-2 mb-2">
-          <Loader2 size={16} className="text-blue-600 animate-spin" />
-          <p className="text-sm font-bold text-blue-900">apply-edit-intent 실행 중...</p>
-          <span className="ml-auto text-xs font-mono text-blue-700"><AnimatedNumber value={p} />%</span>
-        </div>
-        <ProgressTrack value={p} status="running" size="md" trackClassName="bg-blue-100" />
-        <p className="mt-2 text-[11px] text-blue-700">{editJobStatus?.message ?? '편집 적용 중...'}</p>
-      </div>
+      <JobProgressCard
+        title="편집 적용 중"
+        message={`${phase} · ${editJobStatus?.message ?? ''}`}
+        progress={p}
+        note="수 분 걸릴 수 있습니다. 다른 화면으로 이동해도 계속 진행되며, 끝나면 알림이 뜹니다."
+      />
     );
   }
 
@@ -1127,23 +985,23 @@ function EditResultPanel({
   return (
     <div className="space-y-3 w-full min-w-0">
       {needsApply && (
-        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 px-5 py-4 flex items-center justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <AlertCircle size={14} className="text-amber-700" />
-              <p className="text-sm font-bold text-amber-900">신규 편집 내역이 적용 대기 중입니다</p>
-            </div>
-            <p className="text-[11px] text-amber-800">
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1.5 text-sm font-bold text-amber-900">
+              <AlertCircle size={14} className="text-amber-700" aria-hidden="true" /> 적용하지 않은 편집이 있습니다
+            </p>
+            <p className="mt-0.5 text-xs text-amber-900">
               {editStatus?.edited_bdf_mtime
-                ? '기존 적용본보다 최신 편집이 감지되었습니다 — 다시 적용할 수 있습니다.'
-                : 'Studio에서 작성한 _edit.json 을 base 모델에 적용합니다.'}
+                ? '지금 편집본보다 새로운 Studio 편집이 있습니다. 적용해야 후속 해석에 반영됩니다.'
+                : 'Studio 에서 저장한 편집 내용을 원본 모델에 적용합니다.'}
             </p>
           </div>
           <button
+            type="button"
             onClick={onApplyEdit}
-            className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 cursor-pointer"
           >
-            <ChevronsRight size={13} /> 편집 적용 실행
+            <ChevronsRight size={13} aria-hidden="true" /> 편집 적용
           </button>
         </div>
       )}
@@ -1167,196 +1025,6 @@ function EditResultPanel({
       {editStatus?.has_edited && (
         <NastranDiagnosticsCard diag={editStatus.f06_diagnostics} hasF06={!!editStatus.edited_f06_path} />
       )}
-    </div>
-  );
-}
-
-/* (legacy) Nastran F06 Subcase 메트릭 표시는 더 이상 사용하지 않음.
-   사용자 요구: F06 의 FATAL/ERROR 유무만 표시. 아래 컴포넌트는 다른 곳에서 재사용 가능성을
-   위해 유지하되 호출하지 않음. tree-shaking 으로 번들에서 제거됨. */
-function EditNastranResults_LEGACY({ editStatus }) {
-  const [results, setResults] = useState(null);
-  const [error, setError]     = useState(null);
-
-  useEffect(() => {
-    if (!editStatus?.edited_f06_results_path) { setResults(null); return; }
-    let cancelled = false;
-    fetchJson(editStatus.edited_f06_results_path)
-      .then(d => { if (!cancelled) setResults(d); })
-      .catch(e => { if (!cancelled) setError(`F06 결과 로드 실패: ${e.message}`); });
-    return () => { cancelled = true; };
-  }, [editStatus?.edited_f06_results_path]);
-
-  if (error) {
-    return (
-      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">{error}</div>
-    );
-  }
-  if (!results) {
-    return (
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-        <Loader2 size={12} className="inline-block mr-1 animate-spin" /> F06 결과 불러오는 중...
-      </div>
-    );
-  }
-
-  // F06Parser _results.json 의 일반 구조 (방어적 파싱):
-  // { subcases: [{ id, displacement: {max:{}, min:{}}, spc_force: {...}, cbar_force: {...}, ... }] }
-  const subcases = Array.isArray(results?.subcases) ? results.subcases
-                 : Array.isArray(results?.Subcases) ? results.Subcases
-                 : [];
-  const csvByKind = {};
-  (editStatus?.edited_f06_csv_paths ?? []).forEach(p => {
-    const fn = p.split(/[\\/]/).pop().toLowerCase();
-    const m = fn.match(/_sc(\d+)_([a-z_]+)\.csv$/);
-    if (m) {
-      const sc = `SC${m[1]}`;
-      const kind = m[2].replace(/\.csv$/, '');
-      csvByKind[sc] = csvByKind[sc] || {};
-      csvByKind[sc][kind] = p;
-    }
-  });
-
-  return (
-    <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50/60 to-white px-5 py-4 shadow-sm w-full min-w-0">
-      <div className="flex items-center gap-2 mb-3">
-        <Cpu size={14} className="text-blue-600" />
-        <p className="text-sm font-bold text-slate-800">Nastran 해석 결과 (Edit BDF)</p>
-        <span className="ml-auto text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-          Subcase {subcases.length}
-        </span>
-      </div>
-
-      {subcases.length === 0 && (
-        <p className="text-xs text-slate-500">Subcase 정보를 찾을 수 없습니다 — JSON 구조를 확인하세요.</p>
-      )}
-
-      <div className="space-y-3">
-        {subcases.map((sc, idx) => {
-          const scId = sc?.id ?? sc?.subcase_id ?? sc?.subcaseId ?? (idx + 1);
-          const scKey = `SC${scId}`;
-          const csvs = csvByKind[scKey] ?? {};
-          return (
-            <div key={scKey} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">
-                  {scKey}
-                </span>
-                {sc?.title && <span className="text-xs text-slate-700 font-semibold truncate">{sc.title}</span>}
-              </div>
-              <SubcaseMetricsRow sc={sc} />
-              {Object.keys(csvs).length > 0 && (
-                <div className="mt-3 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">CSV 다운로드</span>
-                  {Object.entries(csvs).map(([kind, p]) => (
-                    <button
-                      key={kind}
-                      onClick={() => triggerDownload(p)}
-                      className="flex items-center gap-1 text-[10px] font-mono bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full cursor-pointer"
-                      title={p}
-                    >
-                      <Download size={10} /> {kind}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function SubcaseMetricsRow({ sc }) {
-  // 가능한 키 패턴 — F06Parser 출력 스키마에 따라 방어적으로 표시
-  const dispMax = sc?.displacement?.max?.magnitude ?? sc?.displacement?.maxMagnitude ?? sc?.maxDisplacement;
-  const dispNode = sc?.displacement?.max?.nodeId ?? sc?.displacement?.maxNode ?? null;
-  const spcMax = sc?.spc_force?.max?.magnitude ?? sc?.spcForce?.maxMagnitude;
-  const beamMaxStress = sc?.cbeam_stress?.max?.value ?? sc?.cbar_stress?.max?.value
-                       ?? sc?.cbeamStress?.max ?? sc?.cbarStress?.max;
-
-  const items = [
-    {
-      label: '최대 변위',
-      value: dispMax != null ? `${Number(dispMax).toFixed(3)} mm` : '—',
-      sub:   dispNode != null ? `노드 ${dispNode}` : null,
-    },
-    {
-      label: 'SPC 반력 최대',
-      value: spcMax != null ? `${Number(spcMax).toFixed(1)} N` : '—',
-    },
-    {
-      label: 'BEAM 최대 응력',
-      value: beamMaxStress != null ? `${Number(beamMaxStress).toFixed(1)} MPa` : '—',
-    },
-  ];
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {items.map(({ label, value, sub }) => (
-        <div key={label} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 min-w-0 overflow-hidden">
-          <p className="text-[10px] text-slate-400 truncate mb-0.5">{label}</p>
-          <p className="text-sm font-bold font-mono leading-tight truncate text-slate-800">{value}</p>
-          {sub && <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">{sub}</p>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ── 페이지 잠금 오버레이: Edit BDF Nastran 해석 + F06 파싱 진행 중 ── */
-function EditApplyingOverlay({ status }) {
-  const p = status?.progress ?? 0;
-  const message = status?.message ?? '편집 적용 + Nastran + F06 파싱 진행 중...';
-  // 단계 추정
-  const stage =
-    p < 20 ? { idx: 1, label: 'Edit BDF 생성 (apply-edit-intent)' } :
-    p < 70 ? { idx: 2, label: 'Edit BDF Nastran 구조해석' } :
-             { idx: 3, label: 'F06 결과 파싱' };
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm cursor-wait">
-      <div className="rounded-2xl border-2 border-blue-300 bg-white shadow-2xl px-8 py-6 max-w-md w-[90%]">
-        <div className="flex items-center gap-3 mb-4">
-          <Loader2 size={22} className="text-blue-600 animate-spin shrink-0" />
-          <div className="min-w-0">
-            <p className="text-base font-bold text-slate-800">Edit Model로 구조해석 진행 중</p>
-            <p className="text-[11px] text-slate-500 mt-0.5 truncate">화면 조작이 일시 중단됩니다.</p>
-          </div>
-          <span className="ml-auto text-base font-bold font-mono text-blue-700"><AnimatedNumber value={p} />%</span>
-        </div>
-        <ProgressTrack value={p} status="running" size="md" trackClassName="bg-blue-100" className="mb-3" />
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-[10px] font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-            STEP {stage.idx} / 3
-          </span>
-          <span className="text-xs font-semibold text-slate-700">{stage.label}</span>
-        </div>
-        <p className="text-[11px] text-slate-500">{message}</p>
-        <p className="mt-3 pt-3 border-t border-slate-100 text-[10px] text-slate-400 italic">
-          해석 완료까지 수 분이 소요될 수 있습니다 — 완료 시 자동으로 잠금이 해제됩니다.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function DownloadRowSlim({ label, filepath, primary }) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-1">
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold text-slate-700">{label}</p>
-        <p className="text-[10px] text-slate-400 font-mono truncate" title={filepath}>{fileBaseName(filepath)}</p>
-      </div>
-      <button
-        onClick={() => triggerDownload(filepath).catch(e => console.warn(e))}
-        className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold rounded cursor-pointer ${
-          primary
-            ? 'bg-slate-700 hover:bg-slate-800 text-white'
-            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-        }`}
-      >
-        <Download size={10} /> 다운로드
-      </button>
     </div>
   );
 }
@@ -1395,23 +1063,23 @@ function EditTraceSummary({ trace }) {
     <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm w-full min-w-0">
       <div className="flex items-center gap-2 mb-3">
         <FileEdit size={14} className="text-blue-600" />
-        <p className="text-sm font-bold text-slate-700">Model Edit 결과</p>
+        <p className="text-sm font-bold text-slate-800">편집 적용 결과</p>
         {trace?.baseStage && (
-          <span className="ml-auto text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-            base: {trace.baseStage}
+          <span className="ml-auto text-xs text-slate-600" title={`base: ${trace.baseStage}`}>
+            기준 단계 {trace.baseStage}
           </span>
         )}
       </div>
 
       <div className="grid grid-cols-3 gap-2 mb-3">
-        <SummaryMetric label="총 의도(intent)" value={total.toLocaleString()} variant="neutral" />
+        <SummaryMetric label="편집 항목" value={total.toLocaleString()} variant="neutral" />
         <SummaryMetric label="적용 성공"       value={success.toLocaleString()} variant={failed > 0 || success === 0 ? 'neutral' : 'good'} />
         <SummaryMetric label="실패/거부"       value={failed.toLocaleString()}  variant={failed > 0 ? 'error' : 'neutral'} />
       </div>
 
       {Object.keys(kindCounts).length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">유형</span>
+          <span className="mr-1 text-xs font-semibold text-slate-600">유형</span>
           {Object.entries(kindCounts).map(([kind, count]) => (
             <span key={kind} className="text-[11px] font-mono bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
               {kind} <span className="font-bold">{count.toLocaleString()}</span>
@@ -1422,7 +1090,7 @@ function EditTraceSummary({ trace }) {
 
       {detailLines.length > 0 && (
         <div className="pt-3 border-t border-slate-100">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">적용 상세 ({detailLines.length}/{appliedOps.length})</p>
+          <p className="mb-1.5 text-xs font-semibold text-slate-600">적용 상세 ({detailLines.length}/{appliedOps.length})</p>
           <ul className="space-y-1">
             {detailLines.map((d, i) => (
               <li key={i} className="text-[11px] text-slate-600 leading-snug flex items-start gap-1.5">
@@ -1444,7 +1112,7 @@ function NastranDiagnosticsCard({ diag, hasF06 }) {
   if (!hasF06) {
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-        ⚠ Nastran 해석 결과(F06)가 없습니다. Nastran 실행이 실패했거나 비활성 상태였습니다.
+        Nastran 해석 결과(F06)가 없습니다. Nastran 실행이 실패했거나 꺼져 있었습니다.
       </div>
     );
   }
@@ -1461,11 +1129,11 @@ function NastranDiagnosticsCard({ diag, hasF06 }) {
   // 클린: FATAL/ERROR 모두 0
   if (fatal === 0 && error === 0) {
     return (
-      <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-5 py-4 shadow-sm">
+      <div className="rounded-2xl border border-emerald-300 bg-emerald-50 px-5 py-4 shadow-sm">
         <div className="flex items-center gap-2">
           <CheckCircle2 size={16} className="text-emerald-600" />
           <p className="text-sm font-bold text-emerald-900">Nastran 해석 정상 종료</p>
-          <span className="ml-auto text-[10px] font-mono text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+          <span className="ml-auto text-[11px] font-mono text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
             FATAL 0 · ERROR 0
           </span>
         </div>
@@ -1476,21 +1144,21 @@ function NastranDiagnosticsCard({ diag, hasF06 }) {
 
   // 발생: 카운트 + 샘플 메시지 표시
   return (
-    <div className="rounded-2xl border-2 border-red-300 bg-red-50 px-5 py-4 shadow-sm space-y-3">
+    <div className="rounded-2xl border border-red-300 bg-red-50 px-5 py-4 shadow-sm space-y-3">
       <div className="flex items-center gap-2">
         <AlertCircle size={16} className="text-red-600" />
         <p className="text-sm font-bold text-red-900">Nastran 해석 오류 발생</p>
-        <span className="ml-auto text-[10px] font-mono text-red-700 bg-red-100 px-2 py-0.5 rounded-full font-bold">
+        <span className="ml-auto text-[11px] font-mono text-red-700 bg-red-100 px-2 py-0.5 rounded-full font-bold">
           FATAL {fatal} · ERROR {error}
         </span>
       </div>
 
       {fatal > 0 && Array.isArray(diag.fatalSamples) && diag.fatalSamples.length > 0 && (
         <div>
-          <p className="text-[10px] font-bold text-red-700 uppercase tracking-widest mb-1.5">FATAL 메시지</p>
+          <p className="text-[11px] font-bold text-red-700 mb-1.5">FATAL 메시지</p>
           <div className="space-y-1.5">
             {diag.fatalSamples.map((s, i) => (
-              <pre key={i} className="text-[10px] font-mono text-red-900 bg-white border border-red-200 rounded-lg px-3 py-2 whitespace-pre-wrap break-all leading-snug">{s}</pre>
+              <pre key={i} className="text-[11px] font-mono text-red-900 bg-white border border-red-200 rounded-lg px-3 py-2 whitespace-pre-wrap break-all leading-snug">{s}</pre>
             ))}
           </div>
         </div>
@@ -1498,10 +1166,10 @@ function NastranDiagnosticsCard({ diag, hasF06 }) {
 
       {error > 0 && Array.isArray(diag.errorSamples) && diag.errorSamples.length > 0 && (
         <div>
-          <p className="text-[10px] font-bold text-red-700 uppercase tracking-widest mb-1.5">ERROR 메시지</p>
+          <p className="text-[11px] font-bold text-red-700 mb-1.5">ERROR 메시지</p>
           <div className="space-y-1.5">
             {diag.errorSamples.map((s, i) => (
-              <pre key={i} className="text-[10px] font-mono text-red-900 bg-white border border-red-200 rounded-lg px-3 py-2 whitespace-pre-wrap break-all leading-snug">{s}</pre>
+              <pre key={i} className="text-[11px] font-mono text-red-900 bg-white border border-red-200 rounded-lg px-3 py-2 whitespace-pre-wrap break-all leading-snug">{s}</pre>
             ))}
           </div>
         </div>
@@ -1544,7 +1212,7 @@ function EditedMetricsCard({ editedSummary, originalSummary }) {
   const fmtDelta = (eVal, oVal) => {
     if (eVal == null || oVal == null) return null;
     const d = (eVal ?? 0) - (oVal ?? 0);
-    if (d === 0) return { txt: '±0', cls: 'text-slate-400' };
+    if (d === 0) return { txt: '±0', cls: 'text-slate-500' };
     if (d > 0)   return { txt: `+${d.toLocaleString()}`, cls: 'text-blue-600' };
     return { txt: d.toLocaleString(), cls: 'text-red-500' };
   };
@@ -1560,11 +1228,11 @@ function EditedMetricsCard({ editedSummary, originalSummary }) {
   const cgArr = mp?.centerOfGravityMm ?? mp?.cg ?? null;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-emerald-50/40 to-white px-5 py-4 shadow-sm w-full min-w-0 space-y-3">
+    <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm w-full min-w-0 space-y-3">
       <div className="flex items-center gap-2">
         <CheckCircle2 size={14} className="text-emerald-600" />
-        <p className="text-sm font-bold text-slate-700">Edit 적용 모델 메트릭</p>
-        <span className="ml-auto text-[10px] text-slate-400">원본 대비 Δ</span>
+        <p className="text-sm font-bold text-slate-800">편집 적용 모델</p>
+        <span className="ml-auto text-xs text-slate-600">원본 대비 변화</span>
       </div>
 
       {/* 4개 핵심 카운트 */}
@@ -1573,12 +1241,12 @@ function EditedMetricsCard({ editedSummary, originalSummary }) {
           const delta = fmtDelta(eVal, oVal);
           return (
             <div key={label} className="bg-white border border-slate-200 rounded-xl px-3 py-2.5 shadow-sm min-w-0 overflow-hidden">
-              <p className="text-[10px] text-slate-400 truncate mb-0.5">{label}</p>
+              <p className="text-[11px] text-slate-500 truncate mb-0.5">{label}</p>
               <p className="text-lg font-bold font-mono leading-tight truncate text-slate-800">
                 {eVal != null ? eVal.toLocaleString() : '—'}
               </p>
               {delta && (
-                <p className={`text-[10px] font-mono leading-none mt-0.5 ${delta.cls}`}>{delta.txt}</p>
+                <p className={`text-[11px] font-mono leading-none mt-0.5 ${delta.cls}`}>{delta.txt}</p>
               )}
             </div>
           );
@@ -1588,21 +1256,21 @@ function EditedMetricsCard({ editedSummary, originalSummary }) {
       {/* 질량 특성 — Final JSON 에 포함된 경우 */}
       {mp && (
         <div className="pt-3 border-t border-slate-100">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">질량 특성 (Mass Properties)</p>
+          <p className="text-[11px] font-bold text-slate-500 mb-2">질량 특성 (Mass Properties)</p>
           <div className="flex items-end gap-2 mb-2">
             <span className="text-2xl font-bold font-mono text-slate-800 leading-none">
               {Number(mp.totalMassTon ?? mp.totalMassKg / 1000 ?? 0).toFixed(2)}
             </span>
             <span className="text-xs text-slate-500 mb-0.5">ton</span>
             {mp.beamMassTon != null && (
-              <span className="ml-auto text-[10px] text-slate-500 font-mono">
+              <span className="ml-auto text-[11px] text-slate-500 font-mono">
                 BEAM {Number(mp.beamMassTon).toFixed(2)} · PM {Number(mp.pointMassTon ?? 0).toFixed(2)}
               </span>
             )}
           </div>
           {Array.isArray(cgArr) && (
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CG</span>
+              <span className="text-[11px] font-bold text-slate-500">CG</span>
               {['X', 'Y', 'Z'].map((axis, idx) => (
                 <span key={axis} className="text-[11px] font-mono text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded">
                   {axis} {cgArr[idx] != null ? Number(cgArr[idx]).toFixed(0) : '—'} mm
@@ -1617,8 +1285,8 @@ function EditedMetricsCard({ editedSummary, originalSummary }) {
         <div className="pt-3 border-t border-slate-100">
           <div className="flex items-center gap-2 mb-2">
             <ShieldCheck size={13} className="text-blue-600" />
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Edit Model Check
+            <p className="text-xs font-semibold text-slate-700">
+              편집 모델 점검
             </p>
           </div>
           <PhaseDeltaCard stage={editCheckStage} />
@@ -1630,172 +1298,31 @@ function EditedMetricsCard({ editedSummary, originalSummary }) {
 
 function StudioLauncher({
   bdfResult, onLaunchViewer, viewerInstalled, viewerStatus, viewerProgress, viewerError,
-  installedVersion, latestVersion,
+  installedVersion, latestVersion, locked = false,
 }) {
-  const ready = !!bdfResult?.outputDir;
-  const installing = viewerStatus === 'installing';
-  const checking   = viewerStatus === 'checking';
-  // 버전 일치 판단 — 둘 다 알 때만 비교. 한쪽이라도 null 이면 일치/불일치 판단 보류.
-  const versionMismatch = !!(installedVersion && latestVersion && installedVersion !== latestVersion);
-
-  // 버튼 하부에 표시할 버전 라인 — 설치본 v{x}, (다르면) → 워크벤치 v{y} 업데이트 필요
-  const versionLine = (() => {
-    if (installedVersion && latestVersion && versionMismatch) {
-      return (
-        <p className="mt-1.5 text-[10px] font-mono text-amber-700 text-right whitespace-nowrap">
-          설치본 v{installedVersion} → 워크벤치 v{latestVersion}
-          <span className="ml-1 px-1.5 py-[1px] rounded bg-amber-100 text-amber-800 font-bold">업데이트 필요</span>
-        </p>
-      );
-    }
-    if (installedVersion) {
-      return (
-        <p className="mt-1.5 text-[10px] font-mono text-slate-400 text-right whitespace-nowrap">v{installedVersion}</p>
-      );
-    }
-    if (latestVersion) {
-      return (
-        <p className="mt-1.5 text-[10px] font-mono text-slate-400 text-right whitespace-nowrap">워크벤치 v{latestVersion}</p>
-      );
-    }
-    return null;
-  })();
-
-  const featureBullets = (
-    <ul className="text-[11px] text-slate-700 mt-2 space-y-0.5 leading-relaxed">
-      <li>• <b>3D 모델 시각화</b> — 노드/요소/RBE2/CONM2/U-bolt 회전·확대 검토</li>
-      <li>• <b>연결성 그룹 진단</b> — 비연결 그룹·고립 노드·자유단 색상 구분</li>
-      <li>• <b>모델 수정</b> — RBE2 강체 수동 추가, 불필요 그룹 삭제</li>
-      <li>• <b>편집 결과 BDF 재생성</b> — apply-edit-intent 적용 후 Nastran 검증 가능</li>
-    </ul>
-  );
-
-  // 설치되지 않음 — 안내 카드
-  if (viewerInstalled === false) {
-    return (
-      <div className="rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 px-5 py-4 shadow-sm">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1.5">
-              <PackageX size={16} className="text-amber-700" />
-              <p className="text-base font-bold text-amber-900">Model Builder Studio</p>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-800 font-bold">미설치</span>
-            </div>
-            <p className="text-[13px] text-amber-900 font-bold leading-snug mb-1">
-              모델 검증 · 수정 · 그룹 진단을 수행하려면 아래 <b>“Studio 설치 후 열기”</b> 버튼을 눌러주세요.
-            </p>
-            <p className="text-[12px] text-amber-900 font-semibold leading-relaxed">
-              Model Builder Studio가 설치되지 않아 설치가 필요합니다.
-            </p>
-            <p className="text-[11px] text-amber-800/90 mt-1 leading-relaxed">
-              ⓘ <b>최초 1회만</b> 자동 다운로드 후 설치됩니다. 한번 설치된 뒤로는 이 단계 없이 즉시 열립니다.
-            </p>
-            {featureBullets}
-            {viewerError && <p className="mt-1.5 text-[10px] text-red-600 leading-snug">⚠ {viewerError}</p>}
-          </div>
-          <div className="shrink-0 flex flex-col items-end">
-            <button
-              onClick={onLaunchViewer}
-              disabled={!ready || installing || checking}
-              title={!ready ? '먼저 Model Builder 실행을 완료하세요' : ''}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer"
-            >
-              {installing
-                ? <><Loader2 size={13} className="animate-spin" /> 설치 중 {viewerProgress?.progress ?? 0}%</>
-                : checking
-                ? <><Loader2 size={13} className="animate-spin" /> 확인 중...</>
-                : <><Download size={13} /> Studio 설치 후 열기</>
-              }
-            </button>
-            {versionLine}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 설치됨 (또는 확인 중) — 정상 카드 / 버전 불일치 시 amber 톤으로 전환
-  const cardCls = versionMismatch
-    ? 'rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 px-5 py-4 shadow-sm'
-    : 'rounded-2xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50 px-5 py-4 shadow-sm';
-  const titleCls = versionMismatch ? 'text-amber-900' : 'text-emerald-900';
-  const bodyCls  = versionMismatch ? 'text-amber-900' : 'text-emerald-900';
-  const subCls   = versionMismatch ? 'text-amber-900/80' : 'text-emerald-900/80';
-  const monoCls  = versionMismatch ? 'text-amber-700' : 'text-emerald-700';
-  const btnCls   = versionMismatch
-    ? 'flex items-center gap-1.5 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer'
-    : 'flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer';
-  const iconColor = versionMismatch ? 'text-amber-700' : 'text-emerald-700';
-
   return (
-    <div className={cardCls}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1.5">
-            {versionMismatch
-              ? <AlertCircle size={16} className={iconColor} />
-              : <CheckCircle2 size={16} className={iconColor} />}
-            <p className={`text-base font-bold ${titleCls}`}>Model Builder Studio</p>
-            {versionMismatch ? (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-800 font-bold">버전 업데이트 필요</span>
-            ) : viewerInstalled === true ? (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-200 text-emerald-800 font-bold">설치됨 — 사용 가능</span>
-            ) : viewerInstalled === null && checking ? (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 font-medium">확인 중...</span>
-            ) : null}
-          </div>
-          <p className={`text-[13px] ${bodyCls} font-bold leading-snug mb-1`}>
-            {versionMismatch
-              ? <>설치본이 워크벤치 버전과 일치하지 않습니다. <b>“업데이트 후 열기”</b> 버튼을 누르면 자동 갱신됩니다.</>
-              : <>모델 검증 · 수정 · 그룹 진단을 수행하려면 <b>“Studio 열기”</b> 버튼을 눌러주세요.</>}
-          </p>
-          <p className={`text-[11px] ${subCls} leading-relaxed`}>
-            풀스크린 외부 창으로 phase JSON 결과 폴더를 자동 로드합니다.
-            {' '}<span className={`font-mono text-[10px] ${monoCls}`}>/ {fileBaseName(bdfResult?.outputDir) || '결과 폴더 대기 중'}</span>
-          </p>
-          {featureBullets}
-          {viewerError && <p className="mt-1.5 text-[10px] text-red-600 leading-snug">⚠ {viewerError}</p>}
-        </div>
-        <div className="shrink-0 flex flex-col items-end">
-          <button
-            onClick={onLaunchViewer}
-            disabled={!ready || installing || checking}
-            title={!ready ? '먼저 Model Builder 실행을 완료하세요' : ''}
-            className={btnCls}
-          >
-            {installing
-              ? <><Loader2 size={13} className="animate-spin" /> 업데이트 중 {viewerProgress?.progress ?? 0}%</>
-              : checking
-              ? <><Loader2 size={13} className="animate-spin" /> 확인 중...</>
-              : versionMismatch
-              ? <><Download size={13} /> 업데이트 후 열기</>
-              : <><ExternalLink size={13} /> Studio 열기</>
-            }
-          </button>
-          {versionLine}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── Stage 진행 트랙 내 진단 배지 ── */
-function DiagBadge({ count, kind }) {
-  if (count === 0) return <span className="text-[10px] font-mono text-slate-300">—</span>;
-  const cls = kind === 'error'   ? 'bg-red-100 text-red-700 font-bold'
-            : kind === 'warning' ? 'bg-amber-100 text-amber-700'
-            : 'bg-blue-50 text-blue-600';
-  return (
-    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${cls}`}>
-      {count.toLocaleString()}
-    </span>
+    <StudioLauncherCard
+      title="Model Builder Studio"
+      description="3D 로 모델을 보고 분리 그룹·자유단을 확인하며, RBE2 추가·그룹 삭제 같은 보정을 합니다. Studio 에서 '최종 모델 출력'을 누르면 이 화면이 편집을 자동으로 적용합니다."
+      installed={viewerInstalled}
+      status={viewerStatus}
+      progress={viewerProgress}
+      error={viewerError}
+      installedVersion={installedVersion}
+      latestVersion={latestVersion}
+      ready={!!bdfResult?.outputDir}
+      locked={locked}
+      notReadyTitle="먼저 Model Builder 실행을 완료하세요"
+      lockedTitle="편집 적용이 끝난 뒤 다시 열 수 있습니다."
+      onLaunch={onLaunchViewer}
+    />
   );
 }
 
 /* ── Stage 트랙 — 6단계를 가로로 강제 등분, 클릭 시 해당 stage 선택 ──
    stages: 역순(최종→초기)으로 들어옴. selectedKey/onSelect 로 master-detail 연동.
    부모 박스를 절대 안 넘기 위해: 각 stage 버튼을 flex-basis: 0 + flex-grow: 1 로 강제 등분
-   + 모든 텍스트 truncate. 선택 표시는 inset border-2 로 ring 잘림 방지. */
+   + 모든 텍스트 truncate. 선택 표시는 inset border 로 ring 잘림 방지. */
 function StageTrack({ stages, selectedKey, onSelect }) {
   if (!stages.length) return null;
   return (
@@ -1805,22 +1332,22 @@ function StageTrack({ stages, selectedKey, onSelect }) {
           const d   = st.diagnostics ?? {};
           const c   = st.counts ?? {};
           const hasErr  = (d.error ?? 0) > 0;
-          const hasWarn = (d.warning ?? 0) > 0;
           const isLast  = i === stages.length - 1;
           const isSelected = st.stageIndex === selectedKey;
-          const dotCls  = hasErr  ? 'bg-red-500'
-                        : hasWarn ? 'bg-amber-400'
-                        : 'bg-emerald-500';
+          // 점 색과 글자는 같은 규칙(에러 유무)을 따른다. 경고는 판정에 쓰지 않으므로 색으로 표시하지 않는다.
+          const dotCls  = hasErr ? 'bg-red-600' : 'bg-emerald-600';
           return (
             <React.Fragment key={st.stageIndex ?? i}>
               <button
                 type="button"
                 onClick={() => onSelect?.(st.stageIndex)}
                 style={{ flexBasis: 0, flexGrow: 1, flexShrink: 1, minWidth: 0 }}
-                className={`flex flex-col items-center px-1.5 py-3 rounded-lg cursor-pointer transition-all border-2 overflow-hidden
+                aria-pressed={isSelected}
+                className={`flex flex-col items-center overflow-hidden rounded-lg border px-1.5 py-3 transition-colors cursor-pointer
+                  focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50
                   ${isSelected
-                    ? 'bg-blue-50 border-blue-500 shadow-sm'
-                    : 'border-transparent hover:bg-slate-50 hover:border-slate-200'}`}
+                    ? 'border-blue-400 bg-blue-50'
+                    : 'border-transparent hover:border-slate-200 hover:bg-slate-50'}`}
               >
                 <div className="flex flex-col items-center gap-1.5 w-full min-w-0">
                   <div className={`w-3.5 h-3.5 rounded-full shrink-0 ${dotCls}`} />
@@ -1834,29 +1361,29 @@ function StageTrack({ stages, selectedKey, onSelect }) {
                   <p className="text-[14px] font-mono font-bold text-slate-800 leading-none truncate" title={`노드 ${(c.nodes ?? 0).toLocaleString()}`}>
                     {(c.nodes ?? 0).toLocaleString()}
                   </p>
-                  <p className="text-[10px] text-slate-400 leading-none">노드</p>
+                  <p className="text-[11px] text-slate-500 leading-none">노드</p>
                   <p className="text-[14px] font-mono font-bold text-slate-800 leading-none mt-1.5 truncate" title={`요소 ${(c.elements ?? 0).toLocaleString()}`}>
                     {(c.elements ?? 0).toLocaleString()}
                   </p>
-                  <p className="text-[10px] text-slate-400 leading-none">요소</p>
+                  <p className="text-[11px] text-slate-500 leading-none">요소</p>
                 </div>
                 <div className="mt-2.5 w-full flex flex-col items-center gap-0.5 min-w-0">
                   {hasErr
-                    ? <DiagBadge count={d.error} kind="error" />
-                    : <span className="text-[11px] text-emerald-500 font-semibold">OK</span>}
+                    ? <span className="text-[11px] font-bold text-red-700">에러 {d.error.toLocaleString()}</span>
+                    : <span className="text-[11px] font-semibold text-emerald-700">에러 없음</span>}
                 </div>
-                <p className="mt-1.5 text-[10px] font-mono text-slate-400 truncate w-full text-center">{st.processingDurationMs ?? 0}ms</p>
+                <p className="mt-1.5 text-[11px] font-mono text-slate-500 truncate w-full text-center">{st.processingDurationMs ?? 0}ms</p>
               </button>
               {!isLast && (
                 <div className="flex items-center shrink-0 px-0.5 pt-3">
-                  <ChevronsRight size={11} className="text-slate-300" />
+                  <ChevronsRight size={11} className="text-slate-500" />
                 </div>
               )}
             </React.Fragment>
           );
         })}
       </div>
-      <p className="mt-2 text-[10px] text-slate-400 italic text-center">↑ 단계를 클릭하면 아래에 상세 변화량이 표시됩니다 (좌측 1단계 → 우측 최종)</p>
+      <p className="mt-2 text-center text-[11px] text-slate-600">단계를 누르면 아래에 그 단계의 변화량이 나옵니다 (왼쪽 1단계 → 오른쪽 최종).</p>
     </div>
   );
 }
@@ -1877,134 +1404,51 @@ function StageSummaryDetail({ summary, audit }) {
   const cgArr  = mp?.centerOfGravityMm;
   const isFluidEmpty = !!mpFluidEmpty;
 
-  // 사용자 요구: 경고는 대부분 중복 이름이라 정상 → 화면에서 완전히 삭제. 에러/정보만 표시.
-  const totalErr  = s.totalErrors ?? 0;
-  const totalInfo = s.totalInfos  ?? 0;
+  // 경고는 판정에 쓰지 않지만(대부분 동일 이름 중복) 숨기지도 않는다 — 수를 보여 주고 이유를 함께 적는다.
+  const totalErr  = s.totalErrors   ?? 0;
+  const totalWarn = s.totalWarnings ?? 0;
+  const totalInfo = s.totalInfos    ?? 0;
+  const fmtMm = (v) => (v != null ? Number(v).toFixed(0) : '—');
+  const massCaption = mp
+    ? <>COG X {fmtMm(cgArr?.[0])} · Y {fmtMm(cgArr?.[1])} · Z {fmtMm(cgArr?.[2])} mm{isFluidEmpty && <> · 배관 유체 비움 기준(Studio 기본 표시와 같은 값)</>}</>
+    : null;
 
   return (
-    <div className="space-y-3 w-full min-w-0">
-
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          A. Hero — 최종 모델 요약 + 진단 합계
-         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <div className={`rounded-2xl border px-5 py-4 shadow-sm w-full min-w-0
-        ${totalErr > 0
-          ? 'bg-red-50 border-red-200'
-          : 'bg-gradient-to-br from-slate-50 to-white border-slate-200'}`}>
-
-        {/* 헤더 행 */}
-        <div className="flex items-center gap-2 mb-3">
-          {totalErr > 0
-            ? <AlertCircle size={15} className="text-red-600 shrink-0" />
-            : <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />}
-          <span className={`text-sm font-bold ${totalErr > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
-            {totalErr > 0 ? '모델 검증 완료 — 에러 발생' : '모델 검증 완료'}
-          </span>
-          <span className="ml-auto text-[10px] text-slate-400 font-mono">
-            {stages.length}단계 · {s.firstStage ?? '—'} → {s.lastStage ?? '—'}
-          </span>
-        </div>
-
-        {/* 최종 FEM 메트릭 4개 */}
-        <div className="grid grid-cols-4 gap-2 mb-3">
-          <SummaryMetric label="노드"        value={(s.finalNodeCount      ?? 0).toLocaleString()} variant="neutral" />
-          <SummaryMetric label="요소 CBEAM"  value={(s.finalElementCount   ?? 0).toLocaleString()} variant="neutral" />
-          <SummaryMetric label="강체 RBE2"   value={(s.finalRigidCount     ?? 0).toLocaleString()} variant="neutral" />
-          <SummaryMetric label="질점 PM"     value={(s.finalPointMassCount ?? 0).toLocaleString()} variant="neutral" />
-        </div>
-
-        {/* 진단 합계 배지 — 에러/정보만 (경고는 대부분 정상이므로 표시 안 함) */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">진단</span>
-          <span className={`flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full
-            ${totalErr > 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-            <AlertCircle size={11} /> 에러 {totalErr.toLocaleString()}
-          </span>
-          <span className="flex items-center gap-1 text-[11px] text-slate-500 px-2.5 py-1 rounded-full bg-slate-100">
-            정보 {totalInfo.toLocaleString()}
-          </span>
-        </div>
-      </div>
-
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          B. 질량 특성
-         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {mp && (
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm w-full min-w-0">
-          <div className="flex items-baseline gap-2 mb-3">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">질량 특성 (Mass Properties)</p>
-            {isFluidEmpty && (
-              <span
-                className="text-[10px] font-medium text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded"
-                title="Model Builder Studio 로드 직후의 기본 상태(배관 내부 유체를 강재 밀도로 대체)와 동일한 값입니다."
-              >
-                배관 유체 비움 기준
-              </span>
-            )}
-          </div>
-
-          {/* 총 질량 — 큰 수치 */}
-          <div className="flex items-end gap-2 mb-3">
-            <span className="text-3xl font-bold font-mono text-slate-800 leading-none">
-              {Number(mp.totalMassTon ?? 0).toFixed(2)}
-            </span>
-            <span className="text-sm text-slate-500 mb-0.5">ton</span>
-          </div>
-
-          {/* BEAM / PointMass 분리 진행 바 */}
-          {(() => {
-            const total = Number(mp.totalMassTon ?? 0);
-            const beam  = Number(mp.beamMassTon  ?? 0);
-            const pm    = Number(mp.pointMassTon ?? 0);
-            const beamPct = total > 0 ? (beam / total) * 100 : 0;
-            const pmPct   = total > 0 ? (pm   / total) * 100 : 0;
-            return (
-              <div className="space-y-1.5 mb-3">
-                <div className="h-2 rounded-full bg-slate-100 overflow-hidden flex">
-                  <div className="h-full bg-blue-500 rounded-l-full" style={{ width: `${beamPct}%` }} />
-                  <div className="h-full bg-blue-300 rounded-r-full" style={{ width: `${pmPct}%` }} />
-                </div>
-                <div className="flex items-center gap-4 flex-wrap">
-                  <span className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                    <span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" />
-                    BEAM {beam.toFixed(2)} ton
-                    <span className="text-slate-400 font-mono">({beamPct.toFixed(0)}%)</span>
-                  </span>
-                  <span className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                    <span className="w-2 h-2 rounded-sm bg-blue-300 inline-block" />
-                    PointMass {pm.toFixed(2)} ton
-                    <span className="text-slate-400 font-mono">({pmPct.toFixed(0)}%)</span>
-                  </span>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* CG 좌표 */}
-          {Array.isArray(cgArr) && (
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CG</span>
-              {['X', 'Y', 'Z'].map((axis, idx) => (
-                <span key={axis} className="text-[11px] font-mono text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded">
-                  {axis} {cgArr[idx] != null ? Number(cgArr[idx]).toFixed(0) : '—'} mm
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+    <div className="w-full min-w-0 space-y-3">
+      <KeyFigures
+        items={[
+          { key: 'nodes',    label: '노드',       value: (s.finalNodeCount      ?? 0).toLocaleString() },
+          { key: 'elements', label: '요소 CBEAM', value: (s.finalElementCount   ?? 0).toLocaleString() },
+          { key: 'rigids',   label: '강체 RBE2',  value: (s.finalRigidCount     ?? 0).toLocaleString() },
+          { key: 'pm',       label: '질점 CONM2', value: (s.finalPointMassCount ?? 0).toLocaleString() },
+          ...(mp ? [{
+            key: 'mass', label: '총중량', value: Number(mp.totalMassTon ?? 0).toFixed(2), unit: 'ton',
+            sub: `BEAM ${Number(mp.beamMassTon ?? 0).toFixed(2)} · 질점 ${Number(mp.pointMassTon ?? 0).toFixed(2)}`,
+          }] : []),
+        ]}
+        caption={massCaption}
+      />
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+        <span className="font-semibold text-slate-700">진단</span>
+        <span className={totalErr > 0 ? 'font-bold text-red-700' : ''}>에러 {totalErr.toLocaleString()}</span>
+        <span title="경고는 대부분 동일 이름 중복으로, 판정에 반영하지 않습니다. 단계별 건수는 아래 표에서 볼 수 있습니다.">
+          경고 {totalWarn.toLocaleString()} <span className="text-slate-500">(판정 미반영)</span>
+        </span>
+        <span>정보 {totalInfo.toLocaleString()}</span>
+        <span className="ml-auto font-mono text-slate-500">{stages.length}단계 · {s.firstStage ?? '—'} → {s.lastStage ?? '—'}</span>
+      </p>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           C. Stage 진행 트랙 + 선택된 stage 상세 (마스터-디테일)
          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {stages.length > 0 && (
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm w-full min-w-0 overflow-hidden">
-          <div className="flex items-center justify-between mb-3 gap-2">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Stage 진행 ({stages.length}단계)
-            </p>
+        <div className="w-full min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white px-4 py-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-bold text-slate-800">
+              단계별 변화 ({stages.length}단계)
+            </h3>
             {selectedStage && (
-              <span className="text-[10px] font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+              <span className="text-[11px] font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
                 선택: #{selectedStage.stageIndex} {selectedStage.stageName === 'Validation' ? '최종 검증 (Validation)' : selectedStage.stageName}
               </span>
             )}
@@ -2044,7 +1488,7 @@ function ValidationDiagnosticList({ stage }) {
       {records.map((d, i) => {
         const g = describeDiagnostic(d);
         const excluded = d.code === 'EMPTY_RIGID_EXCLUDED';
-        return <div key={i} className={`border-l-2 ${excluded ? 'border-amber-400' : 'border-red-400'} pl-3 space-y-1 break-words`}>
+        return <div key={i} className={`space-y-1 break-words rounded-lg border px-3 py-2 ${excluded ? 'border-amber-200 bg-amber-50/50' : 'border-red-200 bg-red-50/50'}`}>
           <p className={`font-bold ${excluded ? 'text-amber-800' : 'text-red-700'}`}>{g.title} · {d.code}</p>
           <p className="font-mono text-slate-700">{d.elemId != null && `요소/RBE ${d.elemId} `}{d.nodeId != null && `노드 N${d.nodeId}`}</p>
           {d.sourceName && <p className="text-slate-700">입력 이름: {d.sourceName}</p>}
@@ -2064,27 +1508,27 @@ function PhaseDeltaCard({ stage }) {
   const h = stage.health       ?? {};
 
   const fmtDiff = (n) => n > 0 ? `+${n.toLocaleString()}` : n < 0 ? n.toLocaleString() : '0';
-  const diffCls = (n) => n > 0 ? 'text-blue-600' : n < 0 ? 'text-red-500' : 'text-slate-300';
+  const diffCls = (n) => n > 0 ? 'text-blue-600' : n < 0 ? 'text-red-500' : 'text-slate-500';
 
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/60 overflow-hidden w-full min-w-0">
       {/* 카드 헤더 */}
       <div className="flex items-center gap-2 px-4 py-2.5 bg-white border-b border-slate-100">
-        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold shrink-0">
+        <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold shrink-0">
           #{stage.stageIndex}
         </span>
         <span className="text-xs font-bold text-slate-700 truncate">{stage.stageName === 'Validation' ? '최종 검증 (Validation)' : stage.stageName}</span>
         {(stage.diagnostics?.error ?? 0) > 0 && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-bold shrink-0">
+          <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-bold shrink-0">
             에러 {stage.diagnostics.error}
           </span>
         )}
         {(stage.diagnostics?.warning ?? 0) > 0 && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 shrink-0">
+          <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 shrink-0">
             경고 {(stage.diagnostics.warning).toLocaleString()}
           </span>
         )}
-        <span className="ml-auto text-[10px] text-slate-400 font-mono shrink-0">
+        <span className="ml-auto text-[11px] text-slate-500 font-mono shrink-0">
           {stage.processingDurationMs ?? 0} ms
         </span>
       </div>
@@ -2095,7 +1539,7 @@ function PhaseDeltaCard({ stage }) {
 
         {/* 변화량 (Δ) 표 */}
         <div className="w-full min-w-0 overflow-hidden">
-          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">변화량 (Δ)</p>
+          <p className="mb-1 text-xs font-semibold text-slate-700">변화량 (Δ)</p>
           <table className="w-full table-fixed text-[11px]">
             <colgroup>
               <col style={{ width: '50%' }} />
@@ -2121,7 +1565,7 @@ function PhaseDeltaCard({ stage }) {
         <div className="grid grid-cols-2 gap-3 w-full min-w-0">
           {/* 연결성 */}
           <div className="min-w-0 overflow-hidden">
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">연결성</p>
+            <p className="mb-1 text-xs font-semibold text-slate-700">연결성</p>
             <table className="w-full table-fixed text-[11px]">
               <colgroup>
                 <col style={{ width: '55%' }} />
@@ -2139,7 +1583,7 @@ function PhaseDeltaCard({ stage }) {
           </div>
           {/* 건전성 */}
           <div className="min-w-0 overflow-hidden">
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">건전성</p>
+            <p className="mb-1 text-xs font-semibold text-slate-700">건전성</p>
             <table className="w-full table-fixed text-[11px]">
               <colgroup>
                 <col style={{ width: '55%' }} />
@@ -2175,23 +1619,13 @@ function KvRow({ label, val, cls = '', bold = false }) {
   );
 }
 
-/* ── KvLine은 기존 코드에서 사용될 수 있으므로 유지 ── */
-function KvLine({ label, value, cls = '', bold = false }) {
-  return (
-    <div className="flex items-center justify-between gap-2 min-w-0">
-      <span className="text-slate-500 truncate shrink">{label}</span>
-      <span className={`font-mono shrink-0 ${bold ? 'font-bold' : ''} ${cls || 'text-slate-700'}`}>{value}</span>
-    </div>
-  );
-}
-
 function SummaryMetric({ label, value, variant }) {
   const color = variant === 'error' ? 'text-red-600'
               : variant === 'warn'  ? 'text-amber-600'
               : variant === 'good'  ? 'text-emerald-600' : 'text-slate-800';
   return (
     <div className="bg-white border border-slate-200 rounded-xl px-3 py-2.5 shadow-sm min-w-0 overflow-hidden">
-      <p className="text-[10px] text-slate-400 truncate mb-0.5">{label}</p>
+      <p className="text-[11px] text-slate-500 truncate mb-0.5">{label}</p>
       <p className={`text-lg font-bold font-mono leading-tight truncate ${color}`}>{value}</p>
     </div>
   );
@@ -2201,27 +1635,27 @@ function SummaryMetric({ label, value, variant }) {
    Nastran 패널
    ──────────────────────────────────────────────────────────────────────── */
 
-function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToSidePassage, gmuLocked, sourceAnalysisId, onRegister, canRegister, onResolveHandoffBdf }) {
+function DeliverPanel({
+  bdfResult, hasResult, editStatus, onSendToGmu, onSendToSidePassage, gmuLocked,
+  sourceAnalysisId, onRegister, canRegister, onResolveHandoffBdf, onDelivered, massLine, verdict,
+}) {
   // 후속 해석으로 넘길 BDF 를 확정하는 동안(edit-status 재조회) 버튼 잠금.
   // 훅은 아래 early return 보다 위에 있어야 한다(rules of hooks).
   const [handoffBusy, setHandoffBusy] = useState(null); // 'gmu' | 'sidepassage' | null
 
-  // step 3 "해석 모델 저장" — BDF 다운로드 전용 페이지.
-  //   • 원본 최종 BDF (build-full) — 항상 표시
-  //   • 최종 Edit BDF (apply-edit-intent) — 편집 적용 시에만 표시. 파일명은 *_edit.bdf 로 받음.
-  // 다른 산출물(JSON / StageSummary / InputAudit / F06 / OP2 / LOG) 다운로드는 노출하지 않음.
   if (!hasResult) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
-        <Cpu size={36} className="opacity-40" />
-        <p className="text-xs text-center max-w-md">Model Builder 실행 후 최종 BDF 가 여기에 표시됩니다.</p>
+      <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+        <PackageCheck size={28} className="text-slate-500" aria-hidden="true" />
+        <p className="text-sm font-semibold text-slate-700">아직 받을 BDF 가 없습니다</p>
+        <p className="max-w-md text-xs text-slate-600">Model Builder 실행이 끝나면 최종 BDF 와 후속 해석 전달이 여기에 나타납니다.</p>
       </div>
     );
   }
-  if (!bdfResult?.outputDir) {
+  if (!bdfResult?.outputDir || !bdfResult?.bdfPath) {
     return (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-6">
-        <p className="text-xs text-amber-700">출력 디렉터리 정보를 찾을 수 없습니다.</p>
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4">
+        <p className="text-sm text-amber-900">최종 BDF 를 찾을 수 없습니다. 모델 생성이 실패했다면 1·2단계의 원인을 먼저 확인하세요.</p>
       </div>
     );
   }
@@ -2244,163 +1678,153 @@ function NastranPanel({ bdfResult, hasResult, editStatus, onSendToGmu, onSendToS
       // 전달 직전에 edit-status 를 한 번 더 확인한다. Studio 에서 편집을 적용했지만
       // 이 페이지의 editStatus 가 아직 갱신되지 않은 순간에 원본이 조용히 넘어가는 것을 막는다.
       const fresh = onResolveHandoffBdf ? await onResolveHandoffBdf() : null;
+      onDelivered?.('handoff');
       send(fresh || handoffPath);
     } finally {
       setHandoffBusy(null);
     }
   };
 
-  return (
-    <div className="space-y-3">
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center gap-2">
-        <CheckCircle2 size={14} className="text-emerald-600" />
-        <p className="text-xs text-emerald-800">
-          최종 BDF 를 다운로드하여 외부 해석/공유에 사용하세요.
-          {editBdf && ' Edit 모델이 적용된 경우 두 가지 BDF 가 표시됩니다.'}
-        </p>
-      </div>
+  const handoffBtn = 'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50';
+  const handoffOn  = 'border-blue-300 bg-white text-blue-800 hover:border-blue-500 hover:bg-blue-50 cursor-pointer';
+  const handoffOff = 'border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed';
 
-      <div className="space-y-2">
-        {/* 원본 최종 BDF */}
-        {bdfResult.bdfPath && (
+  return (
+    <div className="space-y-4">
+      <section aria-label="BDF 받기" className="space-y-2">
+        <h3 className="text-sm font-bold text-slate-800">BDF 받기</h3>
+        <FileDownloadRow
+          label="원본 최종 BDF"
+          filename={fileBaseName(bdfResult.bdfPath)}
+          filepath={bdfResult.bdfPath}
+          primary={!editBdf}
+          onDownloaded={() => onDelivered?.('download')}
+          /* 원본과 편집본은 의미가 다르므로 각각 별도 artifact kind 로 등록한다. */
+          onRegister={canRegister && sourceAnalysisId ? () => onRegister('modelbuilder_final') : undefined}
+        />
+        {editBdf ? (
           <FileDownloadRow
-            label="원본 최종 BDF"
-            filename={fileBaseName(bdfResult.bdfPath)}
-            filepath={bdfResult.bdfPath}
-            primary
-            /* 원본과 편집본은 의미가 다르므로 각각 별도 artifact kind 로 등록한다. */
-            onRegister={
-              canRegister && sourceAnalysisId
-                ? () => onRegister('modelbuilder_final')
-                : undefined
-            }
-          />
-        )}
-        {/* 최종 Edit BDF — 편집 적용된 경우에만 */}
-        {editBdf && (
-          <FileDownloadRow
-            label="최종 Edit BDF"
+            label="편집 적용 BDF"
             filename={makeEditDownloadName(editBdf, 'bdf')}
             filepath={editBdf}
             downloadName={makeEditDownloadName(editBdf, 'bdf')}
             primary
-            onRegister={
-              canRegister && sourceAnalysisId
-                ? () => onRegister('modelbuilder_edited')
-                : undefined
-            }
+            onDownloaded={() => onDelivered?.('download')}
+            onRegister={canRegister && sourceAnalysisId ? () => onRegister('modelbuilder_edited') : undefined}
           />
+        ) : (
+          <p className="px-1 text-xs text-slate-600">Studio 에서 모델을 고쳐 적용하면 &lsquo;편집 적용 BDF&rsquo;가 여기에 추가됩니다.</p>
         )}
-      </div>
+      </section>
 
-      {!editBdf && (
-        <p className="text-[10px] text-slate-400 italic px-1">
-          모델 수정을 수행하면 "최종 Edit BDF" 다운로드가 추가됩니다.
-        </p>
-      )}
-
-      {/* 다음 단계 해석 */}
-      {(onSendToGmu || onSendToSidePassage) && (bdfResult.bdfPath || editBdf) && (
-        <div className={`rounded-xl border px-4 py-3 space-y-3 ${gmuLocked ? 'border-slate-200 bg-slate-50' : 'border-blue-200 bg-blue-50'}`}>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className={`text-[10px] font-bold uppercase tracking-widest ${gmuLocked ? 'text-slate-400' : 'text-blue-500'}`}>다음 해석으로 전달</p>
-              <p className="text-xs font-semibold text-slate-700 mt-0.5">현재 BDF 모델을 후속 해석의 입력값으로 전달합니다.</p>
-            </div>
-            <div className={`shrink-0 w-8 h-8 rounded-full bg-white border flex items-center justify-center ${gmuLocked ? 'border-slate-200 text-slate-400' : 'border-blue-200 text-blue-600'}`}>
-              {gmuLocked ? <Lock size={16} /> : <ChevronsRight size={16} />}
-            </div>
+      {(onSendToGmu || onSendToSidePassage) && (
+        <section aria-label="후속 해석으로 전달" className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">후속 해석으로 전달</h3>
+            <p className="mt-0.5 text-xs text-slate-600">이 BDF 를 선택한 해석의 입력으로 넘기고 그 화면으로 이동합니다.</p>
           </div>
           {/* 실제로 전달될 파일 — 원본/편집본은 파일명이 같으므로 배지로 구분해 명시한다 */}
-          <div className="rounded-lg border border-white bg-white/70 px-3 py-2 flex items-center gap-2">
-            <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-              handoffIsEdit ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold ${
+              handoffIsEdit ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
             }`}>
-              {handoffIsEdit ? '최종 Edit BDF' : '원본 최종 BDF'}
+              {handoffIsEdit ? '편집 적용 BDF' : '원본 최종 BDF'}
             </span>
-            <p className="text-[10px] text-slate-500 font-mono truncate" title={handoffPath}>{handoffName}</p>
+            <p className="min-w-0 truncate font-mono text-xs text-slate-700" title={handoffPath}>{handoffName}</p>
+            {massLine && <p className="ml-auto shrink-0 text-xs text-slate-600">{massLine}</p>}
           </div>
 
+          {verdict?.level === 'review' && (
+            <p className="flex items-start gap-1.5 text-xs text-amber-900">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" aria-hidden="true" />
+              2단계 판정이 &lsquo;검토 필요&rsquo;입니다. 사유를 확인한 뒤 전달하세요.
+            </p>
+          )}
           {handoffStale && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 flex items-start gap-2">
-              <AlertTriangle size={12} className="text-amber-600 mt-0.5 shrink-0" />
-              <p className="text-[10px] text-amber-700">
-                Studio 편집 내용(_edit.json)이 편집본 BDF 보다 최신입니다. 2단계에서 편집을 다시 적용한 뒤 전달하세요.
-              </p>
-            </div>
+            <p role="alert" className="flex items-start gap-1.5 text-xs text-amber-900">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" aria-hidden="true" />
+              Studio 편집 내용이 편집본 BDF 보다 새롭습니다. 2단계에서 편집을 다시 적용한 뒤 전달하세요.
+            </p>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {onSendToGmu && (
               <button
+                type="button"
                 onClick={() => { if (!gmuLocked && !handoffBusy) sendHandoff('gmu', onSendToGmu); }}
                 disabled={gmuLocked || !!handoffBusy}
                 title={gmuLocked ? '개발 중인 해석입니다. 관리자만 사용할 수 있습니다.' : undefined}
-                className={`w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-lg shadow-sm ${
-                  gmuLocked || handoffBusy
-                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white cursor-pointer'
-                }`}
+                className={`${handoffBtn} ${gmuLocked || handoffBusy ? handoffOff : handoffOn}`}
               >
                 {handoffBusy === 'gmu'
-                  ? <Loader2 size={14} className="animate-spin" />
-                  : gmuLocked ? <Lock size={14} /> : <ChevronsRight size={14} />}
-                {gmuLocked ? 'Group Module Unit (개발 중)' : 'Group Module Unit'}
+                  ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                  : gmuLocked ? <Lock size={14} aria-hidden="true" /> : <Send size={14} aria-hidden="true" />}
+                {gmuLocked ? 'Group & Module Unit 권상 (개발 중)' : 'Group & Module Unit 권상 구조 해석'}
               </button>
             )}
             {onSendToSidePassage && (
               <button
+                type="button"
                 onClick={() => { if (!handoffBusy) sendHandoff('sidepassage', onSendToSidePassage); }}
                 disabled={!!handoffBusy}
-                className={`w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-lg shadow-sm ${
-                  handoffBusy
-                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white cursor-pointer'
-                }`}
+                className={`${handoffBtn} ${handoffBusy ? handoffOff : handoffOn}`}
               >
                 {handoffBusy === 'sidepassage'
-                  ? <Loader2 size={14} className="animate-spin" />
-                  : <ChevronsRight size={14} />}
+                  ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                  : <Send size={14} aria-hidden="true" />}
                 Side Passage Assessment
               </button>
             )}
           </div>
-          <p className={`text-[10px] text-center ${gmuLocked ? 'text-slate-400' : 'text-blue-500'}`}>
-            {gmuLocked
-              ? '개발 중인 해석입니다 — 관리자 계정에서만 전달할 수 있습니다.'
-              : handoffIsEdit
-                ? '편집이 적용된 최종 Edit BDF 를 선택한 후속 해석의 입력 대기 상태로 전달합니다.'
-                : '원본 최종 BDF 를 선택한 후속 해석의 입력 대기 상태로 전달합니다. (편집을 적용하면 Edit BDF 가 전달됩니다)'}
-          </p>
-        </div>
+          {gmuLocked && (
+            <p className="text-xs text-slate-600">권상 해석은 개발 중이라 관리자 계정에서만 전달할 수 있습니다.</p>
+          )}
+        </section>
       )}
     </div>
   );
 }
 
-function FileDownloadRow({ label, filename, filepath, primary, downloadName, onRegister }) {
+function FileDownloadRow({ label, filename, filepath, primary, downloadName, onRegister, onDownloaded }) {
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true);
+    try {
+      await triggerDownload(filepath, downloadName);
+      onDownloaded?.();
+    } catch (e) {
+      console.warn(e);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 flex items-center justify-between gap-2">
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5">
       <div className="min-w-0">
-        <p className="text-xs font-semibold text-slate-700">{label}</p>
-        <p className="text-[10px] text-slate-400 font-mono truncate" title={filename}>{filename}</p>
+        <p className="text-sm font-semibold text-slate-800">{label}</p>
+        <p className="truncate font-mono text-xs text-slate-600" title={filename}>{filename}</p>
       </div>
-      <div className="shrink-0 flex items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1.5">
         {/* 등록은 관리자가 명시적으로 눌러야만 시작된다(자동 등록 없음). */}
         {onRegister && (
           <button
+            type="button"
             onClick={onRegister}
             title="Model Library 에 등록"
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 hover:border-brand-blue hover:text-brand-blue text-slate-600 text-xs font-semibold rounded-lg cursor-pointer transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
           >
-            <DatabaseZap size={12} /> 등록
+            <DatabaseZap size={12} aria-hidden="true" /> 등록
           </button>
         )}
         <button
-          onClick={() => triggerDownload(filepath, downloadName).catch(e => console.warn(e))}
-          className={`flex items-center gap-1.5 px-3 py-1.5 ${primary ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-700 hover:bg-slate-800'} text-white text-xs font-semibold rounded-lg cursor-pointer`}
+          type="button"
+          onClick={download}
+          disabled={busy}
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-60 cursor-pointer ${
+            primary ? 'bg-blue-600 text-white hover:bg-blue-700' : 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
+          }`}
         >
-          <Download size={12} /> 받기
+          {busy ? <Loader2 size={12} className="animate-spin" aria-hidden="true" /> : <Download size={12} aria-hidden="true" />} 받기
         </button>
       </div>
     </div>
@@ -2408,7 +1832,7 @@ function FileDownloadRow({ label, filename, filepath, primary, downloadName, onR
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   옵션 패널
+   옵션 — 자주 바꾸는 Mesh size 만 위에 두고 나머지는 '고급'으로 접는다
    ──────────────────────────────────────────────────────────────────────── */
 
 function OptionsPanel({
@@ -2417,48 +1841,56 @@ function OptionsPanel({
   useNastran, setUseNastran,
   disabled,
 }) {
+  const changed = uboltFullFix !== true || useNastran !== false;
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-4 py-3">
-      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">해석 설정</p>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium text-slate-700">Mesh Size</p>
-            <p className="text-[10px] text-slate-400">기본 요소 크기 (mm)</p>
-          </div>
-          <div className="flex items-center gap-1.5">
+    <section aria-label="실행 옵션" className="space-y-2">
+      <label className="flex items-center justify-between gap-3">
+        <span>
+          <span className="block text-xs font-bold text-slate-700">Mesh size</span>
+          <span className="block text-[11px] text-slate-600">요소 최대 길이</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <input
+            type="number" value={meshSize} onChange={(e) => setMeshSize(e.target.value)}
+            step="10" min="10" disabled={disabled}
+            aria-label="Mesh size (mm)"
+            className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-right font-mono text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
+          />
+          <span className="text-xs text-slate-600">mm</span>
+        </span>
+      </label>
+      <details className="group rounded-lg border border-slate-200 bg-white" open={changed || undefined}>
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50">
+          고급 옵션
+          <span className="flex items-center gap-1 text-[11px] font-normal text-slate-600">
+            {changed ? '기본값에서 바뀜' : '기본값'}
+            <ChevronDown size={13} className="transition-transform group-open:rotate-180" aria-hidden="true" />
+          </span>
+        </summary>
+        <div className="space-y-2.5 border-t border-slate-100 px-3 py-2.5">
+          <label className="flex cursor-pointer items-center justify-between gap-3">
+            <span>
+              <span className="block text-xs font-semibold text-slate-700">U-bolt 강체 완전 고정</span>
+              <span className="block text-[11px] text-slate-600">U-bolt RBE2 를 6자유도(123456) 모두 묶음</span>
+            </span>
             <input
-              type="number" value={meshSize} onChange={(e) => setMeshSize(e.target.value)}
-              step="10" min="10" disabled={disabled}
-              className="w-24 text-right text-xs px-2 py-1.5 border border-slate-200 bg-white text-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 cursor-text"
+              type="checkbox" checked={uboltFullFix} onChange={(e) => setUboltFullFix(e.target.checked)} disabled={disabled}
+              className="h-4 w-4 cursor-pointer rounded text-blue-600 disabled:opacity-50"
             />
-            <span className="text-xs text-slate-400">mm</span>
-          </div>
+          </label>
+          <label className="flex cursor-pointer items-center justify-between gap-3">
+            <span>
+              <span className="block text-xs font-semibold text-slate-700">Nastran 해석까지 실행</span>
+              <span className="block text-[11px] text-slate-600">BDF 생성 후 자중(GRAV)·SPC 로 바로 해석. 결과 파일은 산출 폴더에 저장</span>
+            </span>
+            <input
+              type="checkbox" checked={useNastran} onChange={(e) => setUseNastran(e.target.checked)} disabled={disabled}
+              className="h-4 w-4 cursor-pointer rounded text-blue-600 disabled:opacity-50"
+            />
+          </label>
         </div>
-        <div className="h-px bg-slate-100" />
-        <label className="flex items-center justify-between gap-3 cursor-pointer">
-          <div>
-            <p className="text-xs font-medium text-slate-700">U-bolt Rigid 자동 고정</p>
-            <p className="text-[10px] text-slate-400">U-bolt RBE2 DOF=123456</p>
-          </div>
-          <input
-            type="checkbox" checked={uboltFullFix} onChange={(e) => setUboltFullFix(e.target.checked)} disabled={disabled}
-            className="w-4 h-4 rounded text-blue-600 cursor-pointer disabled:opacity-50"
-          />
-        </label>
-        <div className="h-px bg-slate-100" />
-        <label className="flex items-center justify-between gap-3 cursor-pointer">
-          <div>
-            <p className="text-xs font-medium text-slate-700">Nastran 자동 실행</p>
-            <p className="text-[10px] text-slate-400">GRAV+SPC1 후 nastran.exe</p>
-          </div>
-          <input
-            type="checkbox" checked={useNastran} onChange={(e) => setUseNastran(e.target.checked)} disabled={disabled}
-            className="w-4 h-4 rounded text-blue-600 cursor-pointer disabled:opacity-50"
-          />
-        </label>
-      </div>
-    </div>
+      </details>
+    </section>
   );
 }
 
@@ -2483,7 +1915,7 @@ function isGmuHandoffLocked(overrides) {
 
 export default function HiTessModelBuilder() {
   const { showToast } = useToast();
-  const { setCurrentMenu } = useNavigation();
+  const { setCurrentMenu, currentMenu } = useNavigation();
   const dashboardCtx = useDashboard();
   const startGlobalJob = dashboardCtx?.startGlobalJob || (() => {});
   const clearGlobalJob = dashboardCtx?.clearGlobalJob || (() => {});
@@ -2520,7 +1952,10 @@ export default function HiTessModelBuilder() {
   const [useNastran,    setUseNastran]    = useState(saved?.useNastran    ?? false);
 
   // ── 작업/결과 상태 ──
-  const [steps,      setSteps]      = useState(() => saved?.steps ?? INITIAL_STEPS.map(s => ({ ...s })));
+  // 이전 버전 페이지 상태(단계 id 가 csv-validation/model-qc/nastran)는 새 단계 정의로 바꾼다.
+  const [steps,      setSteps]      = useState(() => (
+    saved?.steps?.[0]?.id === INITIAL_STEPS[0].id ? saved.steps : INITIAL_STEPS.map(s => ({ ...s }))
+  ));
   const [activeIdx,  setActiveIdx]  = useState(saved?.activeIdx ?? 0);
   const [hasRunOnce, setHasRunOnce] = useState(saved?.hasRunOnce ?? false);
   const [jobStatus,  setJobStatus]  = useState(saved?.jobStatus ?? null);
@@ -2528,6 +1963,11 @@ export default function HiTessModelBuilder() {
   // Model Library 등록은 job_id 가 아니라 Analysis 레코드 id 를 쓴다.
   // 상태 응답의 project.id 가 그 값이며(analysis_runner.record_analysis), GMU 페이지도 같은 방식으로 잡는다.
   const [sourceAnalysisId, setSourceAnalysisId] = useState(saved?.sourceAnalysisId ?? null);
+  // '검토 필요' 판정을 사용자가 확인했는지 — 확인하면 2단계가 완료로 바뀐다.
+  const [reviewAck, setReviewAck] = useState(saved?.reviewAck ?? false);
+  // 결과를 다시 열었을 때(브라우저에 File 객체 없음) 입력 요약에 보여 줄 서버 쪽 입력 파일명.
+  const [serverInputs, setServerInputs] = useState(saved?.serverInputs ?? null);
+  const [rerunBusy, setRerunBusy] = useState(false);
   // 등록 모달은 관리자가 명시적으로 열 때만 뜬다. 해석 완료가 등록 트리거가 되지 않는다.
   const [registerTarget, setRegisterTarget] = useState(null);
   const canRegisterToStorage = isAdmin();
@@ -2625,14 +2065,14 @@ export default function HiTessModelBuilder() {
       meshSize, uboltFullFix, useNastran,
       steps, activeIdx, hasRunOnce,
       jobStatus, currentJobId, sourceAnalysisId, bdfResult,
-      engineLog, runNastranRequested,
+      engineLog, runNastranRequested, reviewAck, serverInputs,
     });
   }, [
     struFile, pipeFile, equiFile,
     meshSize, uboltFullFix, useNastran,
     steps, activeIdx, hasRunOnce,
     jobStatus, currentJobId, sourceAnalysisId, bdfResult,
-    engineLog, runNastranRequested,
+    engineLog, runNastranRequested, reviewAck, serverInputs,
     setPageState,
   ]);
 
@@ -2934,20 +2374,8 @@ export default function HiTessModelBuilder() {
     formData.append('ubolt_full_fix', String(!!uboltFullFix));
     formData.append('run_nastran',    String(!!useNastran));
 
-    setHasRunOnce(true);
-    setRunNastranRequested(!!useNastran);
-    setActiveIdx(0);
-    setBdfResult(null);
-    setElapsedSecs(0);
-    if (elapsedRef.current) clearInterval(elapsedRef.current);
-    elapsedRef.current = setInterval(() => setElapsedSecs(s => s + 1), 1000);
-    setAuditData(null);
-    setSummaryData(null);
-    setEngineLog(null);
-    setSteps(prev => prev.map((s, i) =>
-      i === 0 ? { ...s, status: 'running' } : { ...s, status: 'wait' }
-    ));
-    setJobStatus({ status: 'Running', progress: 10, message: '파일 전송 중...' });
+    beginRun('파일 전송 중…', !!useNastran);
+    setServerInputs(null);
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/analysis/modelflow/request`, {
@@ -2970,20 +2398,60 @@ export default function HiTessModelBuilder() {
     }
   };
 
-  // 샘플 실행 콜백 — SampleRunButton 이 호출. 실제 build-full 흐름과 동일하게 폴링 시스템에 등록.
-  const sampleMfBefore = () => {
+  // 실행 시작 공통 상태 — 직접 실행·샘플 실행·옵션 바꿔 재실행이 같은 출발점을 쓴다.
+  const beginRun = (message, nastran) => {
     setHasRunOnce(true);
-    setRunNastranRequested(false);
+    setRunNastranRequested(!!nastran);
     setActiveIdx(0);
     setBdfResult(null);
+    setReviewAck(false);
     setElapsedSecs(0);
     if (elapsedRef.current) clearInterval(elapsedRef.current);
     elapsedRef.current = setInterval(() => setElapsedSecs(s => s + 1), 1000);
     setAuditData(null);
     setSummaryData(null);
     setEngineLog(null);
-    setSteps(prev => prev.map((s, i) => (i === 0 ? { ...s, status: 'running' } : { ...s, status: 'wait' })));
-    setJobStatus({ status: 'Running', progress: 5, message: '샘플 파일 준비 중...' });
+    setSteps(INITIAL_STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'running' : 'wait' })));
+    setJobStatus({ status: 'Running', progress: 5, message });
+  };
+
+  // 같은 입력 CSV 로 옵션만 바꿔 다시 실행. 브라우저에 파일이 있으면 그대로 다시 올리고,
+  // 결과를 다시 연 경우처럼 파일이 없으면 서버에 남은 원본 CSV 로 재실행한다(POST /analysis/{id}/rerun).
+  const handleRerunSameInputs = async () => {
+    if (struFile || pipeFile) { handleRunModelBuilder(); return; }
+    if (!sourceAnalysisId) {
+      showToast('다시 실행할 입력 파일이 없습니다. CSV 를 올려 주세요.', 'warning');
+      return;
+    }
+    const mesh = Number(meshSize);
+    if (!Number.isFinite(mesh) || mesh <= 0) { showToast('Mesh size 를 확인하세요.', 'warning'); return; }
+    setRerunBusy(true);
+    beginRun('서버에 남은 입력 CSV 로 다시 실행 요청 중…', !!useNastran);
+    try {
+      const res = await rerunAnalysisProject(sourceAnalysisId, {
+        mesh_size: mesh, ubolt_full_fix: !!uboltFullFix, run_nastran: !!useNastran,
+      });
+      const jobId = res.data?.job_id;
+      if (!jobId) throw new Error('작업 ID 를 받지 못했습니다.');
+      setCurrentJobId(jobId);
+      startPolling(jobId);
+      startGlobalJob(jobId, 'HiTESS Model Builder');
+    } catch (e) {
+      const detail = e?.response?.data?.detail || e?.message || '알 수 없는 오류';
+      setSteps(prev => prev.map((s, i) => (i === 0 ? { ...s, status: 'error' } : s)));
+      setJobStatus({ status: 'Failed', progress: 0, message: `재실행 요청 실패: ${detail}` });
+      setEngineLog(`[재실행 요청 실패]
+오류: ${detail}`);
+      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
+    } finally {
+      setRerunBusy(false);
+    }
+  };
+
+  // 샘플 실행 콜백 — SampleRunButton 이 호출. 실제 build-full 흐름과 동일하게 폴링 시스템에 등록.
+  const sampleMfBefore = () => {
+    beginRun('샘플 파일 준비 중…', false);
+    setServerInputs({ stru: '사내 표준 샘플', pipe: '사내 표준 샘플', equip: '사내 표준 샘플' });
   };
   const sampleMfSubmitted = (jobId) => {
     setCurrentJobId(jobId);
@@ -3016,14 +2484,6 @@ export default function HiTessModelBuilder() {
         setJobStatus(data);
         if (typeof data.project?.id === 'number') setSourceAnalysisId(data.project.id);
 
-        if (data.status === 'Running') {
-          const p = data.progress || 0;
-          setSteps(prev => prev.map((s, i) => {
-            if (i === 0) return { ...s, status: p >= 60 ? 'done' : 'running' };
-            if (i === 1) return { ...s, status: p >= 60 ? 'running' : 'wait' };
-            return s;
-          }));
-        }
 
         // Cancelled(사용자 중단)도 종료 상태 — 빠지면 폴러가 멈추지 않는다.
         if (data.status === 'Success' || data.status === 'Failed' || data.status === 'Cancelled') {
@@ -3058,22 +2518,21 @@ export default function HiTessModelBuilder() {
         data.output_dir ?? null,
         'Model Builder 가 모델을 다시 만들었습니다. 이 창은 이전 빌드를 보고 있습니다 — WorkBench 에서 Studio 를 다시 여세요.',
       );
-      setSteps(prev => prev.map((s, i) => {
-        if (i === 0) return { ...s, status: 'done' };
-        if (i === 1) return { ...s, status: 'done' };
-        if (i === 2) return { ...s, status: data.run_nastran ? 'done' : 'wait' };
-        return s;
-      }));
-      // 사용자 요구: 실행 완료 시 자동으로 step 0 (CSV 검증) 으로 이동
-      setActiveIdx(0);
+      // 1단계만 완료. 2단계는 판정(통과)·검토 확인·편집 적용으로, 3단계는 BDF 받기·전달로 완료된다.
+      setSteps(INITIAL_STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'done' : 'wait' })));
+      // 실행이 끝나면 판정을 보는 2단계로 간다(2026-10-01 사용자 결정 — 예전엔 1단계로 되돌아갔다).
+      setActiveIdx(1);
     } else if (data.status === 'Failed' || data.status === 'Cancelled') {
       if (data.status === 'Failed' && data.output_dir) {
         setBdfResult({ outputDir: data.output_dir, auditPath: data.audit_path ?? null,
           summaryPath: data.summary_path ?? null, bdfPath: null, jsonPath: null });
         setActiveIdx(1);
       }
-      setSteps(prev => prev.map((s, i) => i <= 1
-        ? { ...s, status: i === 0 && data.audit_path ? 'done' : 'error' } : s));
+      setSteps(prev => prev.map((s, i) => {
+        if (i === 0) return { ...s, status: data.audit_path ? 'done' : 'error' };
+        if (i === 1) return { ...s, status: data.output_dir ? 'error' : 'wait' };
+        return { ...s, status: 'wait' };
+      }));
       setEngineLog(
         data.engine_log
         || data.message
@@ -3081,6 +2540,78 @@ export default function HiTessModelBuilder() {
       );
     }
   }, []);
+
+  /* ── 지난 결과 다시 열기 (My Projects·대시보드 → 결과 화면) ─────────────
+     브라우저 메모리의 페이지 상태가 아니라 서버 기록(result_info 의 산출 폴더)으로 복원한다.
+     그래서 앱을 떠났다 오거나 다른 날에도 같은 결과 화면으로 돌아올 수 있다. */
+  const applyResultReentry = async (analysisId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/analysis/${analysisId}`, { headers: getAuthHeaders() });
+      if (!res.ok) { handleUnauthorized(res.status); throw new Error(`HTTP ${res.status}`); }
+      const rec = await res.json();
+      if (rec.program_name !== 'HiTessModelBuilder') throw new Error('Model Builder 기록이 아닙니다.');
+      const info = rec.result_info || {};
+      const input = rec.input_info || {};
+      if (!info.output_dir) throw new Error('이 기록에는 결과 폴더 정보가 없습니다.');
+      if (rec.files_available === false) throw new Error('결과 파일이 보관 기간이 지나 삭제되었습니다.');
+
+      handleReset();
+      setMeshSize(String(input.mesh_size ?? DEFAULT_MESH_SIZE_MM));
+      setUboltFullFix(input.ubolt_full_fix ?? true);
+      setUseNastran(!!input.run_nastran);
+      setServerInputs({
+        stru:  input.stru_csv  ? fileBaseName(input.stru_csv)  : null,
+        pipe:  input.pipe_csv  ? fileBaseName(input.pipe_csv)  : null,
+        equip: input.equip_csv ? fileBaseName(input.equip_csv) : null,
+      });
+      setHasRunOnce(true);
+      applyJobResult({
+        status: rec.status === 'Success' ? 'Success' : 'Failed',
+        progress: 100,
+        message: rec.job_message || '지난 결과',
+        project: { id: rec.id },
+        output_dir: info.output_dir,
+        audit_path: info.audit_path,
+        summary_path: info.summary_path,
+        bdf_path: info.bdf_path,
+        json_path: info.json_path,
+        engine_log: rec.status === 'Success' ? null : (rec.job_message || null),
+      });
+      const when = rec.created_at ? new Date(rec.created_at).toLocaleString('ko-KR') : '';
+      showToast(`지난 결과를 열었습니다${when ? ` (${when})` : ''}.`, 'success');
+    } catch (e) {
+      showToast(`결과를 열지 못했습니다: ${e.message}`, 'error');
+    }
+  };
+  useResultReentry('HiTESS Model Builder', applyResultReentry);
+
+  /* ── 최근 실행의 입력 불러오기 ──────────────────────────────────────
+     그 실행에 쓴 CSV 를 서버 보관본에서 받아 File 로 만들어 입력 칸에 넣는다. 사용자가 직접 올린 것과
+     같은 상태라 미리보기·실행 전 점검·업로드 실행이 그대로 돈다. 옵션(Mesh size·U-bolt·Nastran)도 그 실행 값으로. */
+  const applyRecentInput = async (record) => {
+    const input = record?.input_info || {};
+    const slots = [
+      ['stru',  input.stru_csv,  setStruFile, setStruError],
+      ['pipe',  input.pipe_csv,  setPipeFile, setPipeError],
+      ['equip', input.equip_csv, setEquiFile, setEquiError],
+    ].filter(([, path]) => !!path);
+    if (slots.length === 0) { showToast('이 실행에는 불러올 CSV 정보가 없습니다.', 'warning'); return; }
+    try {
+      const files = await Promise.all(slots.map(async ([, path]) => {
+        const res = await fetch(`${API_BASE_URL}/api/download?filepath=${encodeURIComponent(path)}`, { headers: getAuthHeaders() });
+        if (!res.ok) { handleUnauthorized(res.status); throw new Error(res.status === 404 ? `${fileBaseName(path)} 이 서버에 없습니다` : `HTTP ${res.status}`); }
+        return new File([await res.blob()], fileBaseName(path), { type: 'text/csv' });
+      }));
+      handleReset();
+      setMeshSize(String(input.mesh_size ?? DEFAULT_MESH_SIZE_MM));
+      setUboltFullFix(input.ubolt_full_fix ?? true);
+      setUseNastran(!!input.run_nastran);
+      slots.forEach(([, , setFile, setErr], i) => { setFile(files[i]); setErr(null); });
+      showToast(`최근 실행의 CSV ${files.length}개와 옵션을 불러왔습니다.`, 'success');
+    } catch (e) {
+      showToast(`입력을 불러오지 못했습니다: ${e.message}`, 'error');
+    }
+  };
 
   /* ── viewer 런처 ───────────────────────────────────────────────────── */
   const launchAlgorithmViewer = useCallback(async () => {
@@ -3255,10 +2786,11 @@ export default function HiTessModelBuilder() {
           setEditApplying(false);
           if (sd.status === 'Success') {
             await refreshEditStatus();
+            // 편집을 적용했으면 2단계(확인·보정)는 끝난 것이다. 3단계는 BDF 받기·전달로 끝난다.
             setActiveIdx(2);
-            setSteps(prev => prev.map((s, i) => (i <= 2 ? { ...s, status: 'done' } : s)));
+            setSteps(prev => prev.map((s, i) => (i <= 1 ? { ...s, status: 'done' } : s)));
             if (currentJobId) clearGlobalJob(currentJobId);
-            showToast('편집 적용 완료 — Edit 탭에서 확인하세요.', 'success');
+            showToast('편집을 적용했습니다. 편집 적용 BDF 를 받거나 후속 해석으로 전달하세요.', 'success');
           } else {
             const errText = sd.engine_log || sd.message || '편집 적용 실패';
             setEditError(errText);
@@ -3285,7 +2817,7 @@ export default function HiTessModelBuilder() {
     const st = await refreshEditStatus();
     if (st?.has_edit_json && st?.needs_apply && !editApplying) {
       // *_edit.json 이 새로 작성되었거나 edited 보다 신규 — 자동 적용 (백그라운드)
-      showToast('새 편집 내역 감지 — apply-edit-intent 자동 실행', 'info');
+      showToast('Studio 에서 저장한 새 편집을 적용합니다.', 'info');
       const r = await startApplyEditJob();
       if (r.ok) pollEditJobInBackground(r.jobId);
     }
@@ -3322,29 +2854,12 @@ export default function HiTessModelBuilder() {
     if (editPollRef.current) clearInterval(editPollRef.current);
   }, []);
 
-  // ── 3단계(해석 모델 저장) 진입 시: '진행' 활성화 → 표시 직후 '완료'(종료) 자동 전이 ──
-  // 결과(outputDir)가 있는 상태에서 사용자가 step3(nastran) 탭을 보면, 그 단계를 '진행'으로
-  // 켰다가 렌더 직후 '완료'로 마감해 파이프라인을 3/3 완료(종료)로 인식시킨다.
-  // 이미 'done' 이면 재전이하지 않아 재진입 시 깜빡임을 방지한다.
-  useEffect(() => {
-    if (activeIdx !== 2 || !bdfResult?.outputDir) return;
-    if (steps[2]?.status === 'done') return;
-    // 진입 즉시 '진행'으로 활성화
-    setSteps(prev => prev.map((s, i) => (i === 2 ? { ...s, status: 'running' } : s)));
-    // 페이지 표시 직후 '완료'(종료)로 전환 → doneCount 3/3
-    const t = setTimeout(() => {
-      setSteps(prev => prev.map((s, i) => (i === 2 ? { ...s, status: 'done' } : s)));
-    }, 600);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIdx, bdfResult?.outputDir]);
-
   // ── Studio finalizeEditedModel IPC 리스너 ─────────────────────────
   // 핵심 설계: Studio 는 POST 성공(작업 시작) 까지만 await 한다.
   // 전체 체인(apply-edit + Nastran + F06 파싱, 수 분) 을 await 하면 Studio 가 그 시간 동안
   // 응답 없음 상태로 멈춰 보이므로, POST 가 job_id 를 회수한 직후 즉시 회신해서
   // Studio 가 빠르게 닫히도록 한다. 폴링은 백그라운드에서 계속하며 워크벤치 페이지의
-  // EditApplyingOverlay 가 진행률을 표시.
+  // 2단계 편집 탭의 진행 카드가 진행률을 표시한다(전체 화면을 잠그지 않는다).
   useEffect(() => {
     if (!window.electron?.onMessage) return;
     const unsub = window.electron.onMessage('modelflow:finalize-edit-request', async (msg) => {
@@ -3393,7 +2908,7 @@ export default function HiTessModelBuilder() {
           return;
         }
         setActiveIdx(2);
-        setSteps(prev => prev.map((s, i) => (i <= 2 ? { ...s, status: 'done' } : s)));
+        setSteps(prev => prev.map((s, i) => (i <= 1 ? { ...s, status: 'done' } : s)));
         if (currentJobId) clearGlobalJob(currentJobId);
         try {
           window.electron.sendMessage('modelflow:finalize-edit-response', {
@@ -3466,6 +2981,7 @@ export default function HiTessModelBuilder() {
     setLocalResultDir(null);
     setSteps(INITIAL_STEPS.map(s => ({ ...s })));
     setActiveIdx(0); setHasRunOnce(false); setCurrentJobId(null);
+    setReviewAck(false); setServerInputs(null); setSourceAnalysisId(null);
     setJobStatus(null); setBdfResult(null); setEngineLog(null);
     setRunNastranRequested(false);
     setAuditData(null); setSummaryData(null);
@@ -3477,8 +2993,6 @@ export default function HiTessModelBuilder() {
   };
 
   /* ── 파생 ──────────────────────────────────────────────────────────── */
-  const activeStep = steps[activeIdx];
-  const doneCount  = steps.filter(s => s.status === 'done').length;
   const isRunning  = jobStatus?.status === 'Running' || jobStatus?.status === 'Pending';
   const hasResult  = !!bdfResult?.outputDir;
   const preflightIssues = useMemo(() => {
@@ -3520,6 +3034,12 @@ export default function HiTessModelBuilder() {
     return issues;
   }, [equiError, meshSize, pipeError, pipeFile, struError, struFile]);
   const hasPreflightErrors = preflightIssues.some(issue => issue.severity === 'error');
+  // 아무것도 올리기 전에는 '파일이 필요합니다' 를 오류로 띄우지 않는다 — 아직 실수한 게 없다.
+  // 실행 버튼은 그대로 잠그고, 버튼 아래 안내 한 줄로 무엇을 하면 되는지만 알린다.
+  const inputTouched = !!(struFile || pipeFile || equiFile || struError || pipeError || equiError);
+  const visiblePreflightIssues = inputTouched
+    ? preflightIssues
+    : preflightIssues.filter(issue => issue.id !== 'source-required');
 
   // 대시보드에서 넘겨받은 CSV 배정이 끝나고 실행 버튼이 열려 있으면 실행까지 바로 이어간다
   useDashboardAutoRun(
@@ -3551,22 +3071,133 @@ export default function HiTessModelBuilder() {
     });
   }, [previewMode, samplePreview, minePreview, sampleLoading, sampleError]);
 
-  // 검증 결과(또는 진행률)가 있을 때만 기존 CsvAuditPanel 로 넘긴다.
-  // 그 전까지 비어 있던 자리를 미리보기가 채운다.
-  const showAuditPanel = isRunning || (hasResult && !!bdfResult?.auditPath);
+  // 결과가 있을 때만 1단계에 입력 검증 결과를 보여 준다. 실행 전·실행 중에는 그 자리를 CSV 미리보기가 채운다.
+  const showAuditPanel = hasResult && !!bdfResult?.auditPath;
+  // 첫 화면(아무 입력·실행 없음) — 빈 CSV 표 자리 대신 진행 순서·최근 실행을 두고 두 칸 높이를 맞춘다.
+  const isStartScreen = activeIdx === 0 && !inputTouched && !jobStatus && !hasResult && previewMode === 'mine';
+
+  /* ── 판정 · 단계 표시 ─────────────────────────────────────────────── */
+  const editedStage = useMemo(() => buildEditedModelCheckStage(editedSummary), [editedSummary]);
+  const verdict = useMemo(() => (
+    isRunning
+      ? { level: null, title: '', reasons: [] }
+      : computeModelBuilderVerdict({
+          jobStatus: jobStatus?.status,
+          summary: summaryData,
+          audit: auditData,
+          editedStage: editStatus?.has_edited ? editedStage : null,
+        })
+  ), [isRunning, jobStatus?.status, summaryData, auditData, editStatus?.has_edited, editedStage]);
+
+  // 2단계 상태는 저장값(편집 적용 시 완료)에 판정을 겹쳐 그린다 — 판정이 바뀌면 자동으로 따라간다.
+  const displaySteps = steps.map((st, i) => {
+    if (i === 0 && st.status === 'running') return { ...st, hint: jobStatus?.message || '진행 중' };
+    if (i !== 1 || st.status === 'done' || !verdict.level) return st;
+    if (verdict.level === 'pass') return { ...st, status: 'done', hint: '판정 통과' };
+    if (verdict.level === 'review') {
+      return reviewAck ? { ...st, status: 'done', hint: '검토 확인함' } : { ...st, status: 'review' };
+    }
+    return { ...st, status: 'error' };
+  });
+  const activeStep = displaySteps[activeIdx];
+
+  const fileState = (file, err) => (!file ? 'empty' : err && !String(err).startsWith('__warn__') ? 'error' : err ? 'warn' : 'ok');
+  const inputItems = [
+    { key: 'stru',  label: 'Structural', fileName: struFile?.name ?? serverInputs?.stru ?? null, state: fileState(struFile ?? serverInputs?.stru, struError) },
+    { key: 'pipe',  label: 'Piping',     fileName: pipeFile?.name ?? serverInputs?.pipe ?? null, state: fileState(pipeFile ?? serverInputs?.pipe, pipeError) },
+    { key: 'equip', label: 'Equipment',  fileName: equiFile?.name ?? serverInputs?.equip ?? null, state: fileState(equiFile ?? serverInputs?.equip, equiError) },
+  ];
+
+  /* ── 실행 버튼 — 실행 전 '실행', 실행 후 '옵션 바꿔 다시 실행' ───────── */
+  const hasLocalInputs = !!(struFile || pipeFile);
+  const meshValid = Number.isFinite(Number(meshSize)) && Number(meshSize) > 0;
+  const canRunFresh = hasLocalInputs && !hasPreflightErrors && !isRunning;
+  const canRerun = !isRunning && !rerunBusy && meshValid
+    && (hasLocalInputs ? !hasPreflightErrors : !!sourceAnalysisId);
+  const runAction = !hasRunOnce
+    ? { label: 'Model Builder 실행', icon: ChevronsRight, onClick: handleRunModelBuilder, enabled: canRunFresh,
+        title: hasPreflightErrors ? '입력 점검 오류를 먼저 해결하세요.' : undefined }
+    : { label: '옵션 바꿔 다시 실행', icon: RefreshCw, onClick: handleRerunSameInputs, enabled: canRerun,
+        title: hasLocalInputs ? '올려 둔 CSV 로 현재 옵션을 적용해 다시 만듭니다.' : '서버에 남아 있는 지난 입력 CSV 로 현재 옵션을 적용해 다시 만듭니다.' };
+
+  // Ctrl+Enter = 실행 버튼. 입력 칸에 커서가 있어도 동작한다(Mesh size 를 고치고 바로 실행).
+  const runActionRef = useRef(runAction);
+  runActionRef.current = runAction;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return;
+      if (currentMenu !== 'HiTESS Model Builder') return; // 앱 페이지는 keep-alive 라 다른 화면에서도 살아 있다
+      const a = runActionRef.current;
+      if (!a.enabled) return;
+      e.preventDefault();
+      a.onClick();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [currentMenu]);
+
+  const markDelivered = useCallback(() => {
+    setSteps(prev => prev.map((s, i) => (i === 2 ? { ...s, status: 'done' } : s)));
+  }, []);
+
+  // 전달 화면에 함께 보여 줄 질량 — 원본과 편집본이 다르면 둘 다(권상 해석의 핵심 입력이 총중량이다).
+  const massLine = useMemo(() => {
+    const orig = summaryData?.summary?.massPropertiesFluidEmpty ?? summaryData?.summary?.massProperties;
+    const edited = editedSummary?.meta?.massProperties ?? editedSummary?.massProperties;
+    const o = orig?.totalMassTon != null ? Number(orig.totalMassTon) : null;
+    const e = edited?.totalMassTon != null ? Number(edited.totalMassTon) : null;
+    if (editStatus?.has_edited && o != null && e != null && Math.abs(o - e) >= 0.005) {
+      return `총중량 원본 ${o.toFixed(2)} → 편집본 ${e.toFixed(2)} ton`;
+    }
+    const v = editStatus?.has_edited && e != null ? e : o;
+    return v != null ? `총중량 ${v.toFixed(2)} ton` : null;
+  }, [summaryData, editedSummary, editStatus?.has_edited]);
+
+  /* ── 다음 행동 바 — 단계마다 주 행동 1개 ─────────────────────────── */
+  const nextAction = (() => {
+    if (isRunning || editApplying || !hasResult) return null;
+    if (activeStep.id === 'input') {
+      return {
+        note: '입력 검증 결과입니다. 모델 판정은 2단계에서 봅니다.',
+        primary: { label: '판정 보기', icon: ChevronsRight, onClick: () => setActiveIdx(1) },
+      };
+    }
+    if (activeStep.id === 'review') {
+      if (verdict.level === 'fail') {
+        return {
+          note: '모델을 해석에 쓸 수 없습니다. 원인을 고친 입력으로 다시 실행하세요.',
+          primary: { label: '입력으로 돌아가기', icon: FileSpreadsheet, onClick: () => setActiveIdx(0) },
+          secondary: bdfResult?.outputDir ? [{ key: 'studio', label: 'Studio 에서 위치 확인', icon: ExternalLink, onClick: launchAlgorithmViewer }] : [],
+        };
+      }
+      if (verdict.level === 'review' && !reviewAck) {
+        return {
+          note: '사유를 Studio 에서 확인·보정하세요. 문제없다고 판단했다면 확인하고 넘어갈 수 있습니다.',
+          primary: { label: 'Studio 에서 확인·보정', icon: ExternalLink, onClick: launchAlgorithmViewer },
+          secondary: [{ key: 'ack', label: '확인함 — 이대로 진행', icon: CheckCircle2, onClick: () => { setReviewAck(true); setActiveIdx(2); } }],
+        };
+      }
+      return {
+        note: verdict.level === 'pass' ? '판정 통과. 필요하면 Studio 로 확인한 뒤 BDF 를 받거나 전달하세요.' : '검토를 확인했습니다. BDF 를 받거나 후속 해석으로 전달하세요.',
+        primary: { label: 'BDF 저장·전달로', icon: ChevronsRight, onClick: () => setActiveIdx(2) },
+        secondary: [{ key: 'studio', label: 'Studio 에서 확인·보정', icon: ExternalLink, onClick: launchAlgorithmViewer }],
+      };
+    }
+    return null;
+  })();
+
+  const verdictSummary = verdict.level === 'pass'
+    ? '검증 에러 없음 · 질량 있는 입력 모두 반영 · 분리 그룹 0 · 미해결 U-bolt 0'
+    : verdict.level === 'review' ? '모델은 만들어졌지만 아래 항목을 확인해야 합니다.' : null;
 
   /* ── 렌더 ──────────────────────────────────────────────────────────── */
   return (
-    <div className="min-h-full flex flex-col max-w-[1400px] mx-auto animate-fade-in-up pb-6 relative">
-
-      {/* ── Edit Nastran 진행 중 페이지 잠금 오버레이 ── */}
-      {editApplying && (
-        <EditApplyingOverlay status={editJobStatus} />
-      )}
+    // pb-28: 화면 오른쪽 아래 전역 작업·메시지 도크가 마지막 버튼을 가리지 않게 여백을 둔다(1366 실측).
+    <div className="relative mx-auto flex min-h-full max-w-[1400px] flex-col pb-28 animate-fade-in-up">
 
       <FileBasedPageBanner
         title="HiTESS Model Builder"
-        subtitle="AM 3D 설계 CSV → 1D Beam FEM → Nastran BDF 자동 변환"
+        subtitle="설계 CSV(구조·배관·장비) → 1D Beam FE 모델 → Nastran BDF"
         icon={ShieldCheck}
         guideTitle="[파일] HiTESS Model Builder — CSV → BDF 변환"
         onBack={() => setCurrentMenu('File-Based Apps')}
@@ -3579,294 +3210,269 @@ export default function HiTessModelBuilder() {
         />
       )}
 
-      {/* ── Body ── */}
-      {/* 콘텐츠 높이 기준(items-stretch 기본)으로 좌우 컬럼 높이를 맞춘다. 긴 결과는
-          페이지(main)의 overflow-y-auto가 스크롤을 담당 → 좌우 하단 정렬 유지. */}
       <div className="flex flex-col items-stretch gap-5 px-1 xl:flex-row">
 
-        {/* ── Left ── */}
-        <div className="flex w-full flex-col gap-3 pr-1 xl:w-80 xl:shrink-0">
+        {/* ── 왼쪽 레일: 단계 · 입력 요약 · 옵션 · 실행 ── */}
+        <aside className={`flex w-full flex-col gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 xl:w-80 xl:shrink-0 ${isStartScreen ? '' : 'xl:self-start'}`}>
+          <StepRail
+            steps={displaySteps}
+            activeIdx={activeIdx}
+            onSelect={setActiveIdx}
+          />
 
-          {/* 파이프라인 스텝퍼 + 실행 */}
-          <div className="flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">파이프라인</span>
-              <span className="text-xs font-bold text-blue-600">{doneCount} / {steps.length} 완료</span>
-            </div>
-            <div className="py-5 px-4">
-              {steps.map((step, idx) => {
-                const StepIcon = step.icon;
-                const effective = (step.id === 'nastran' && !runNastranRequested && step.status === 'wait') ? 'wait' : step.status;
-                const cfg = STATUS_CONFIG[effective];
-                const isActive = idx === activeIdx;
-                const isLast = idx === steps.length - 1;
-                return (
-                  <div key={step.id} className="flex items-stretch">
-                    <div className="flex flex-col items-center w-8 shrink-0 pt-5">
-                      <div className={`w-4 h-4 rounded-full shrink-0 ${cfg.dot}`} />
-                      {/* 앞 단계가 완료되면 연결선이 완료 dot 과 같은 초록으로 채워진다(step-connector) */}
-                      {!isLast && (
-                        <div
-                          className="step-connector step-connector-y flex-1 w-0.5 my-1.5 rounded-full bg-slate-200"
-                          style={{ '--step-progress': step.status === 'done' ? 1 : 0, '--step-fill': '#10b981' }}
-                        />
-                      )}
-                    </div>
-                    <div
-                      className={`flex-1 mb-3 ml-2 rounded-xl border px-4 py-4 transition-all cursor-pointer
-                        ${isActive ? 'border-blue-500 bg-blue-50 shadow-sm'
-                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}
-                      onClick={() => setActiveIdx(idx)}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <StepIcon size={15} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
-                          <span className={`text-sm font-bold leading-tight ${isActive ? 'text-blue-700' : 'text-slate-700'}`}>
-                            {idx + 1}. {step.title}
-                          </span>
-                        </div>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 whitespace-nowrap ${cfg.badge}`}>
-                          {isActive && step.status === 'wait' ? '선택됨' : cfg.label}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="px-3 py-3 border-t border-slate-100 bg-slate-50/60 space-y-2">
-              {activeIdx < steps.length - 1 && (
-                <button
-                  onClick={() => setActiveIdx(activeIdx + 1)}
-                  disabled={isRunning || !hasRunOnce}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 border border-blue-200 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed text-blue-700 text-xs font-semibold rounded-xl cursor-pointer"
-                >
-                  <ChevronsRight size={13} />
-                  {steps[activeIdx + 1]?.title} 보기
-                </button>
-              )}
-              {/* 샘플 CSV 미리보기 — 해석을 돌리지 않고 사내 표준 입력 포맷만 확인 */}
-              <button
-                type="button"
-                onClick={openSamplePreview}
-                disabled={sampleLoading}
-                className={`w-full flex items-center justify-center gap-1.5 py-2 border rounded-xl text-xs font-semibold transition-colors
-                  ${sampleLoading
-                    ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-wait'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 cursor-pointer'}`}
-              >
-                {sampleLoading ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />}
-                샘플 CSV 미리보기
-              </button>
-              {/* 샘플 실행 — 입력 CSV 없이도 학습용으로 즉시 build-full 체험 */}
-              <SampleRunButton
-                appKey="modelflow"
-                disabled={isRunning || hasRunOnce}
-                onBeforeRun={sampleMfBefore}
-                onJobSubmitted={sampleMfSubmitted}
-                onError={sampleMfError}
+          {/* 입력 단계에서는 파일 칸이 이미 파일명을 보여 주므로 요약을 숨긴다(1366 에서 실행 버튼이 첫 화면에 들어오게). */}
+          {activeStep.id !== 'input' && (
+            <>
+              <div className="h-px bg-slate-100" />
+              <InputSummary
+                items={inputItems}
+                footer={serverInputs && !hasLocalInputs && (
+                  <p className="text-[11px] text-slate-600">서버에 저장된 지난 입력입니다. 다른 CSV 로 바꾸려면 &lsquo;새 입력으로 시작&rsquo;을 누르세요.</p>
+                )}
               />
-              <button
-                onClick={handleRunModelBuilder}
-                disabled={isRunning || hasRunOnce || hasPreflightErrors}
-                title={
-                  hasRunOnce && !isRunning
-                    ? "다시 실행하려면 '전체 초기화' 후 진행하세요."
-                    : hasPreflightErrors
-                      ? 'Preflight 오류를 먼저 해결하세요.'
-                      : undefined
-                }
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl shadow-sm cursor-pointer"
-              >
-                {isRunning
-                  ? <>
-                      <Loader2 size={15} className="animate-spin" />
-                      실행 중...
-                      <span className="font-mono text-blue-200 text-xs font-normal">
-                        {elapsedSecs >= 60 ? `${Math.floor(elapsedSecs / 60)}분 ${elapsedSecs % 60}초` : `${elapsedSecs}초`}
-                      </span>
-                    </>
-                  : hasRunOnce
-                    ? <><CheckCircle2 size={15} /> 실행 완료 — 초기화 후 재실행</>
-                    : <><ChevronsRight size={16} /> Model Builder 실행</>
-                }
-              </button>
-              <button
-                onClick={handleReset}
-                disabled={!hasRunOnce || isRunning}
-                className="w-full flex items-center justify-center gap-1.5 py-2 border border-slate-200 bg-white hover:bg-red-50 hover:border-red-300 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-500 text-xs font-semibold rounded-xl cursor-pointer"
-              >
-                <RotateCcw size={13} /> 전체 초기화
-              </button>
-            </div>
-          </div>
+            </>
+          )}
 
-          {/* 옵션 */}
+          <div className="h-px bg-slate-100" />
           <OptionsPanel
             meshSize={meshSize} setMeshSize={setMeshSize}
             uboltFullFix={uboltFullFix} setUboltFullFix={setUboltFullFix}
             useNastran={useNastran} setUseNastran={setUseNastran}
             disabled={isRunning}
           />
-        </div>
 
-        {/* ── Right ── */}
-        <div className="flex-1 flex flex-col gap-3 min-w-0">
-          {/* 진행률 (실행 중) */}
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={runAction.onClick}
+              disabled={!runAction.enabled}
+              title={runAction.title}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            >
+              {isRunning || rerunBusy
+                ? <><Loader2 size={15} className="animate-spin" aria-hidden="true" /> 실행 중…</>
+                : <><runAction.icon size={15} aria-hidden="true" /> {runAction.label}</>}
+            </button>
+            {!hasRunOnce && !hasLocalInputs ? (
+              <p className="text-center text-xs text-slate-600">구조 또는 배관 CSV 를 올리면 열립니다.</p>
+            ) : (
+            <p className="text-center text-[11px] text-slate-600">
+              <kbd className="rounded border border-slate-300 bg-slate-50 px-1 font-mono text-[11px]">Ctrl</kbd>
+              {' + '}
+              <kbd className="rounded border border-slate-300 bg-slate-50 px-1 font-mono text-[11px]">Enter</kbd>
+              {' 로도 실행합니다'}
+            </p>
+            )}
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-1">
+              {hasRunOnce && (
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  disabled={isRunning}
+                  className="inline-flex items-center gap-1 rounded text-xs font-semibold text-blue-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:cursor-not-allowed disabled:text-slate-500 disabled:no-underline cursor-pointer"
+                >
+                  <FilePlus2 size={12} aria-hidden="true" /> 새 입력으로 시작
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={openSamplePreview}
+                disabled={sampleLoading}
+                className="inline-flex items-center gap-1 rounded text-xs font-semibold text-blue-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:cursor-wait disabled:text-slate-500 cursor-pointer"
+              >
+                {sampleLoading ? <Loader2 size={12} className="animate-spin" aria-hidden="true" /> : <Eye size={12} aria-hidden="true" />}
+                샘플 CSV 보기
+              </button>
+              <SampleRunButton
+                appKey="modelflow"
+                variant="link"
+                label="샘플로 실행"
+                disabled={isRunning || hasRunOnce}
+                onBeforeRun={sampleMfBefore}
+                onJobSubmitted={sampleMfSubmitted}
+                onError={sampleMfError}
+              />
+            </div>
+          </div>
+        </aside>
+
+        {/* ── 오른쪽 작업면 ── */}
+        <main className="flex min-w-0 flex-1 flex-col gap-3">
           {isRunning && (
-            <ProgressBar
-              progress={jobStatus?.progress ?? 0}
+            <JobProgressCard
+              title="모델 생성 중"
               message={jobStatus?.message}
-              error={jobStatus?.status === 'Failed' || jobStatus?.status === 'Cancelled'}
+              progress={jobStatus?.progress ?? 0}
               elapsed={elapsedSecs}
+              note="다른 화면으로 이동해도 계속 진행됩니다. 오른쪽 아래 작업 카드로 돌아올 수 있습니다."
             />
           )}
 
-          {/* CSV 입력 영역 (csv-validation 활성 시) */}
-          {activeStep.id === 'csv-validation' && (
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-5 py-4">
-              <div className="flex items-center gap-2 pb-3 mb-3 border-b border-slate-100">
-                <UploadCloud size={14} className="text-blue-600" />
-                <h2 className="text-sm font-bold text-slate-700">CSV 입력</h2>
-                <span className="text-[10px] text-slate-400">— 한 번에 3개 드래그하면 자동 분류</span>
-              </div>
-              <DetailCSV
-                struFile={struFile} pipeFile={pipeFile} equiFile={equiFile}
-                struError={struError} pipeError={pipeError} equiError={equiError}
-                setStruFile={setStruFile} setPipeFile={setPipeFile} setEquiFile={setEquiFile}
-                setStruError={setStruError} setPipeError={setPipeError} setEquiError={setEquiError}
-                onAutoAssign={handleAutoAssign}
-                onMultipleFiles={handleMultipleFiles}
-                onWarnNotCsv={() => showToast('CSV 파일(.csv)만 업로드 가능합니다.', 'warning')}
-              />
-              <div className="mt-4">
-                <PreflightIssueCenter issues={preflightIssues} compact />
-              </div>
-            </div>
+          {verdict.level && (
+            <VerdictHeader
+              level={verdict.level}
+              title={verdict.title}
+              summary={verdictSummary}
+              reasons={verdict.reasons}
+              meta={verdict.basis === 'edited' ? '편집 적용 모델 기준' : null}
+            />
           )}
+          {nextAction && <NextActionBar {...nextAction} />}
 
-          {/* 활성 스텝 컨텐츠 — 카드는 콘텐츠 크기에 따라 자연스럽게 자라며,
-              우측 컬럼의 overflow-y-auto가 스크롤을 담당. flex-1/min-h-0 제거하여
-              부모 박스 밖으로 콘텐츠가 비집고 나오는 현상 해결. */}
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-5 py-4 min-w-0 flex-1 flex flex-col">
-            <div className="flex items-center gap-2 pb-3 mb-3 border-b border-slate-100 shrink-0">
-              <activeStep.icon size={14} className="text-blue-600" />
-              <h2 className="text-sm font-bold text-slate-700">{activeIdx + 1}. {activeStep.title}</h2>
+          <section className="flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white px-5 py-4">
+            <div className="mb-3 flex shrink-0 items-center gap-2 border-b border-slate-100 pb-3">
+              <activeStep.icon size={15} className="text-slate-600" aria-hidden="true" />
+              <h2 className="text-base font-bold text-slate-800">{activeIdx + 1}. {activeStep.title}</h2>
             </div>
 
-            <div className="flex-1 min-h-0">
-            {activeStep.id === 'csv-validation' && (showAuditPanel ? (
-              <CsvAuditPanel
-                audit={auditData}
-                jobStatus={jobStatus}
-                hasResult={hasResult && !!bdfResult?.auditPath}
-                loading={auditLoading}
-                error={auditError}
-                onRetry={() => setBdfResult(prev => ({ ...prev }))}
-              />
-            ) : (
-              <CsvPreviewPanel
-                tabs={previewTabs}
-                activeKey={previewTabKey}
-                onActiveKeyChange={setPreviewTabKey}
-                emptyTitle={previewMode === 'sample' ? '샘플 CSV 대기 중' : 'CSV 미리보기 대기 중'}
-                emptyMessage={previewMode === 'sample'
-                  ? '사내 표준 샘플 CSV를 불러오면 여기에 표시됩니다.'
-                  : 'CSV 파일을 올리면 컬럼 구성과 값을 표로 확인할 수 있습니다.'}
-                emptyAction={previewMode === 'mine' ? (
-                  <button
-                    type="button"
-                    onClick={openSamplePreview}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
-                  >
-                    <Eye size={13} /> 사내 샘플 CSV 먼저 보기
-                  </button>
-                ) : null}
-                headerRight={
-                  <PreviewModeToggle
-                    mode={previewMode}
-                    loading={sampleLoading}
-                    onMine={() => setPreviewMode('mine')}
-                    onSample={openSamplePreview}
-                  />
-                }
-              />
-            ))}
-            {activeStep.id === 'model-qc' && (
-              <StageSummaryPanel
-                summary={summaryData}
-                audit={auditData}
-                loading={summaryLoading}
-                error={summaryError}
-                hasResult={hasResult}
-                bdfResult={bdfResult}
-                onLaunchViewer={launchAlgorithmViewer}
-                viewerInstalled={viewerInstalled}
-                viewerStatus={viewerStatus}
-                viewerProgress={viewerProgress}
-                viewerError={viewerError}
-                installedVersion={installedVersion}
-                latestVersion={latestVersion}
-                editStatus={editStatus}
-                editApplying={editApplying}
-                editJobStatus={editJobStatus}
-                editTrace={editTrace}
-                editedSummary={editedSummary}
-                editError={editError}
-                onApplyEdit={applyEdit}
-                onRefreshEditStatus={refreshEditStatusAndMaybeApply}
-              />
-            )}
-            {activeStep.id === 'nastran' && (
-              <NastranPanel
-                bdfResult={bdfResult}
-                hasResult={hasResult}
-                editStatus={editStatus}
-                gmuLocked={gmuLocked}
-                sourceAnalysisId={sourceAnalysisId}
-                canRegister={canRegisterToStorage}
-                onRegister={(artifactKind) => setRegisterTarget({ artifactKind })}
-                /* 전달 직전 edit-status 를 다시 읽어 '지금 디스크에 있는' 최종 편집본을 확정한다.
-                   Studio 편집 적용 직후처럼 페이지의 editStatus 가 아직 낡은 순간에도
-                   원본이 아니라 편집본이 넘어가도록 보장한다. */
-                onResolveHandoffBdf={async () => {
-                  const fresh = await refreshEditStatus();
-                  return fresh?.edited_bdf_path
-                    || editStatus?.edited_bdf_path
-                    || bdfResult?.bdfPath
-                    || null;
-                }}
-                onSendToGmu={(bdfPath) => {
-                  if (gmuLocked) return; // 개발 중 + 비관리자는 전달 차단
-                  setGmuHandoff({
-                    bdfServerPath: bdfPath,
-                    sourceApp: handoffSourceLabel(bdfPath, bdfResult?.bdfPath),
-                  });
-                  setCurrentMenu(GMU_MENU_NAME);
-                }}
-                onSendToSidePassage={(bdfPath) => {
-                  setSidePassageHandoff({
-                    bdfServerPath: bdfPath,
-                    sourceApp: handoffSourceLabel(bdfPath, bdfResult?.bdfPath),
-                  });
-                  setCurrentMenu(SIDE_PASSAGE_MENU_NAME);
-                }}
-              />
-            )}
+            <div className="min-h-0 flex-1 space-y-4">
+              {activeStep.id === 'input' && (
+                <>
+                  {!showAuditPanel && (
+                    <div className="space-y-3">
+                      <p className="text-sm text-slate-700">
+                        CSV 를 칸에 하나씩 놓거나, 세 파일을 한 번에 놓으면 헤더를 보고 자동으로 나눕니다.
+                      </p>
+                      <DetailCSV
+                        struFile={struFile} pipeFile={pipeFile} equiFile={equiFile}
+                        struError={struError} pipeError={pipeError} equiError={equiError}
+                        setStruFile={setStruFile} setPipeFile={setPipeFile} setEquiFile={setEquiFile}
+                        setStruError={setStruError} setPipeError={setPipeError} setEquiError={setEquiError}
+                        onAutoAssign={handleAutoAssign}
+                        onMultipleFiles={handleMultipleFiles}
+                        onWarnNotCsv={() => showToast('CSV 파일(.csv)만 올릴 수 있습니다.', 'warning')}
+                        disabled={isRunning}
+                      />
+                      {(inputTouched || visiblePreflightIssues.length > 0) && (
+                        <PreflightIssueCenter issues={visiblePreflightIssues} compact />
+                      )}
+                    </div>
+                  )}
+                  {isStartScreen ? (
+                    <RunStartPanel
+                      programName="HiTessModelBuilder"
+                      onOpen={applyResultReentry}
+                      onUseInput={applyRecentInput}
+                      hasInput={r => !!(r.input_info?.stru_csv || r.input_info?.pipe_csv)}
+                      steps={[
+                        { title: '입력 검증', detail: '구조·배관·장비 CSV 를 읽어 열 구성과 값을 점검하고, 1D Beam FE 모델과 BDF 를 만듭니다.' },
+                        { title: '모델 확인·보정', detail: '분리 그룹·제외된 행·U-bolt 를 판정하고, 필요하면 Studio 에서 3D 로 열어 고칩니다.' },
+                        { title: 'BDF 저장·전달', detail: 'BDF 를 받거나 권상 구조 해석 등 다음 앱으로 바로 넘깁니다.' },
+                      ]}
+                    />
+                  ) : showAuditPanel ? (
+                    <CsvAuditPanel
+                      audit={auditData}
+                      jobStatus={jobStatus}
+                      hasResult={hasResult && !!bdfResult?.auditPath}
+                      loading={auditLoading}
+                      error={auditError}
+                      onRetry={() => setBdfResult(prev => ({ ...prev }))}
+                    />
+                  ) : (
+                    // 높이는 여기서 정한다. 패널의 h-full 이 단계 상자 높이를 그대로 물려받으면
+                    // 위 업로드 칸만큼 상자 밖으로 밀려난다. 표가 있을 때만 고정 높이, 비었을 땐 내용 높이.
+                    <div className={previewTabs.some(t => t.rows?.length || t.loading || t.error) ? 'h-[clamp(320px,58vh,640px)]' : ''}>
+                    <CsvPreviewPanel
+                      tabs={previewTabs}
+                      activeKey={previewTabKey}
+                      onActiveKeyChange={setPreviewTabKey}
+                      emptyTitle={previewMode === 'sample' ? '샘플 CSV 를 불러오는 중' : '올린 CSV 가 여기에 표로 보입니다'}
+                      emptyMessage={previewMode === 'sample'
+                        ? '사내 표준 샘플 CSV 를 불러오면 여기에 표시됩니다.'
+                        : '처음이라면 사내 표준 샘플 CSV 로 열 구성을 먼저 확인할 수 있습니다.'}
+                      emptyAction={previewMode === 'mine' ? (
+                        <button
+                          type="button"
+                          onClick={openSamplePreview}
+                          className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
+                        >
+                          <Eye size={13} aria-hidden="true" /> 사내 샘플 CSV 보기
+                        </button>
+                      ) : null}
+                      headerRight={
+                        <PreviewModeToggle
+                          mode={previewMode}
+                          loading={sampleLoading}
+                          onMine={() => setPreviewMode('mine')}
+                          onSample={openSamplePreview}
+                        />
+                      }
+                    />
+                    </div>
+                  )}
+                </>
+              )}
+              {activeStep.id === 'review' && (
+                <StageSummaryPanel
+                  summary={summaryData}
+                  audit={auditData}
+                  loading={summaryLoading}
+                  error={summaryError}
+                  hasResult={hasResult}
+                  bdfResult={bdfResult}
+                  onLaunchViewer={launchAlgorithmViewer}
+                  viewerInstalled={viewerInstalled}
+                  viewerStatus={viewerStatus}
+                  viewerProgress={viewerProgress}
+                  viewerError={viewerError}
+                  installedVersion={installedVersion}
+                  latestVersion={latestVersion}
+                  editStatus={editStatus}
+                  editApplying={editApplying}
+                  editJobStatus={editJobStatus}
+                  editTrace={editTrace}
+                  editedSummary={editedSummary}
+                  editError={editError}
+                  onApplyEdit={applyEdit}
+                  onRefreshEditStatus={refreshEditStatusAndMaybeApply}
+                />
+              )}
+              {activeStep.id === 'deliver' && (
+                <DeliverPanel
+                  bdfResult={bdfResult}
+                  hasResult={hasResult}
+                  editStatus={editStatus}
+                  gmuLocked={gmuLocked}
+                  sourceAnalysisId={sourceAnalysisId}
+                  canRegister={canRegisterToStorage}
+                  onRegister={(artifactKind) => setRegisterTarget({ artifactKind })}
+                  onDelivered={markDelivered}
+                  massLine={massLine}
+                  verdict={verdict}
+                  /* 전달 직전 edit-status 를 다시 읽어 '지금 디스크에 있는' 최종 편집본을 확정한다.
+                     Studio 편집 적용 직후처럼 페이지의 editStatus 가 아직 낡은 순간에도
+                     원본이 아니라 편집본이 넘어가도록 보장한다. */
+                  onResolveHandoffBdf={async () => {
+                    const fresh = await refreshEditStatus();
+                    return fresh?.edited_bdf_path
+                      || editStatus?.edited_bdf_path
+                      || bdfResult?.bdfPath
+                      || null;
+                  }}
+                  onSendToGmu={(bdfPath) => {
+                    if (gmuLocked) return; // 개발 중 + 비관리자는 전달 차단
+                    setGmuHandoff({
+                      bdfServerPath: bdfPath,
+                      sourceApp: handoffSourceLabel(bdfPath, bdfResult?.bdfPath),
+                    });
+                    setCurrentMenu(GMU_MENU_NAME);
+                  }}
+                  onSendToSidePassage={(bdfPath) => {
+                    setSidePassageHandoff({
+                      bdfServerPath: bdfPath,
+                      sourceApp: handoffSourceLabel(bdfPath, bdfResult?.bdfPath),
+                    });
+                    setCurrentMenu(SIDE_PASSAGE_MENU_NAME);
+                  }}
+                />
+              )}
             </div>
-          </div>
+          </section>
 
-          {/* 엔진 로그 (오류 시) */}
-          {engineLog && (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle size={14} className="text-red-600" />
-                <p className="text-xs font-bold text-red-700">엔진 출력</p>
-              </div>
-              <pre className="text-[10px] font-mono text-slate-700 whitespace-pre-wrap break-all max-h-48 overflow-y-auto">{engineLog}</pre>
-            </div>
-          )}
-        </div>
+          {/* 실패했을 때만 — 기본 접힘. 사용자가 먼저 읽을 것은 판정 머리의 원인이다. */}
+          <EngineLogPanel log={engineLog} />
+        </main>
       </div>
 
       <ModelRegistrationModal

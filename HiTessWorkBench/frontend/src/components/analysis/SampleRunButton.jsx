@@ -17,6 +17,7 @@
 ///   onJobSubmitted  : (jobId) => void — 작업 ID 수신 시 startJob 등 호출
 ///   onError         : (status, detail) => void — 429 외 에러 시 로그 등에 기록
 ///   label           : 기본 라벨 오버라이드 (옵션)
+///   variant         : 'card'(기본, 테두리 버튼) | 'link'(공통 틀 실행 영역의 보조 링크 — 주 실행 버튼과 경쟁하지 않게)
 /// </summary>
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
@@ -33,6 +34,7 @@ export default function SampleRunButton({
   onJobSubmitted,
   onError,
   label = '샘플로 한 번 돌려보기',
+  variant = 'card',
 }) {
   const [status, setStatus] = useState({ remaining: 1, limit: 1, is_admin: false, loaded: false });
   const [busy, setBusy] = useState(false);
@@ -93,6 +95,25 @@ export default function SampleRunButton({
       setBusy(false);
     }
   };
+
+  if (variant === 'link') {
+    return (
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={sampleDisabled}
+        title={
+          quotaExceeded
+            ? '오늘 샘플 실행은 모두 사용했습니다. 자정 이후 다시 시도해주세요.'
+            : `사내 표준 샘플 파일로 즉시 실행 (학습용, 사용 기록에 남지 않음) · ${remainingLabel}`
+        }
+        className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 rounded disabled:cursor-not-allowed disabled:text-slate-500 disabled:no-underline cursor-pointer"
+      >
+        <Sparkles size={12} aria-hidden="true" />
+        {quotaExceeded ? '오늘 샘플 실행 소진' : label}
+      </button>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-1">

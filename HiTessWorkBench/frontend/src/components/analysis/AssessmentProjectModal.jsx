@@ -12,8 +12,11 @@ import { useToast } from '../../contexts/ToastContext';
  * @param {() => void} props.onClose
  * @param {() => void} [props.onViewResultModel] - 제공 시 상단에 "결과 모델 보기" 버튼 노출
  *   (MyProjects 등 과거 프로젝트 이력에서만 사용; TrussAssessment 즉시 결과 모달에서는 미전달)
+ * @param {() => void} [props.onOpenResult] - 제공 시 '결과 화면에서 열기' 버튼 노출(My Projects → Truss Assessment 페이지)
+ * @param {(kind: string) => void} [props.onDownloaded] - 파일을 실제로 받았을 때(Excel·원본) 호출.
+ *   TrussAssessment 의 '보고서 저장' 단계 완료 표시에 쓴다(단계는 실제 사건으로만 완료).
  */
-export default function AssessmentProjectModal({ project, onClose, onViewResultModel }) {
+export default function AssessmentProjectModal({ project, onClose, onViewResultModel, onDownloaded, onOpenResult }) {
   const { showToast } = useToast();
   const [downloading, setDownloading] = useState({});
   const [filesMissing, setFilesMissing] = useState(project?.files_available === false);
@@ -37,6 +40,7 @@ export default function AssessmentProjectModal({ project, onClose, onViewResultM
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
+      onDownloaded?.('excel');
     } catch (error) {
       console.error('Excel export failed:', error);
       if (error?.response?.status === 404) {
@@ -64,6 +68,7 @@ export default function AssessmentProjectModal({ project, onClose, onViewResultM
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
+      onDownloaded?.(keyPrefix);
     } catch (error) {
       console.error(`${keyPrefix} download failed:`, error);
       if (error?.response?.status === 404) {
@@ -104,6 +109,17 @@ export default function AssessmentProjectModal({ project, onClose, onViewResultM
           <CheckCircle2 size={14} className="text-emerald-500" />
           Job ID: {project?.id}
         </p>
+
+        {/* 결과 화면에서 열기 — 앱 페이지로 가서 판정·3D·결과 표·보고서를 이어서 본다 */}
+        {onOpenResult && !filesMissing && (
+          <button
+            type="button"
+            onClick={onOpenResult}
+            className="w-full mb-3 py-3 rounded-xl flex items-center justify-center gap-2 border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:bg-slate-50 transition-colors cursor-pointer"
+          >
+            <FileOutput size={16} /> 결과 화면에서 열기
+          </button>
+        )}
 
         {/* 결과 모델 뷰어 진입 버튼 (MyProjects 등 외부에서 onViewResultModel 핸들러가 전달될 때만 노출) */}
         {onViewResultModel && !filesMissing && project?.result_info?.bdf && (

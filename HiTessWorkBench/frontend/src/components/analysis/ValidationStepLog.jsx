@@ -1,125 +1,87 @@
 /**
  * @fileoverview BDF 입력 검증 결과 뷰어
  *
- * HiTessModelBuilder 의 CSV 입력 검증 패널(CsvAuditPanel) 과 동일한 시각 형식을 사용한다.
- *  1) Hero 요약 (좌측 원형 게이지 + 우측 핵심 지표 3개)
- *  2) 카드 분류 (Grid / Element / Rigid / Property / Material 등 KindBar)
- *  3) 검출 이슈 분포 (free-end / isolated / multi-group … horizontal bar)
- *  4) 좌표 범위 / 미사용 항목 (보조 박스)
- *  5) 행 단위 검증 상세 (FilterPills + 접이식 테이블)
- *  6) 전체 판정 배너
+ * 공통 틀(runFrame) 문법을 따른다 — 판정 문구는 페이지의 VerdictHeader 가 맡고, 여기는 근거만 보여 준다.
+ *  1) 핵심 수치 행(KeyFigures) — 카드 수·경고·오류
+ *  2) 카드 분류 표 — 종류별 개수·경고·오류·세부 구성
+ *  3) 검출 이슈 분포(있을 때만)
+ *  4) 좌표 범위
+ *  5) 행 단위 검증 상세(필터 + 접이식 표)
+ * BdfScanner · GMU 권상 · Side Passage · 해상 운송이 함께 쓴다.
  */
 import React, { useState } from 'react';
-import AnimatedNumber from '../ui/AnimatedNumber';
 import {
   AlertTriangle, CheckCircle2, Info, ChevronDown, ChevronRight,
-  AlertOctagon, History, AlertCircle, Move3d, Wrench as WrenchIcon,
+  AlertOctagon, History, Move3d, Wrench as WrenchIcon,
 } from 'lucide-react';
+import KeyFigures from './runFrame/KeyFigures';
 
-/* ── 카드 종류별 아이콘/라벨 ─────────────────────────────────── */
-const CARD_KIND_META = {
-  grid:      { icon: '⚙️', label: 'Grid (절점)' },
-  element:   { icon: '🏗️', label: 'Element (요소)' },
-  property:  { icon: '🧩', label: 'Property (물성)' },
-  material:  { icon: '🔬', label: 'Material (재질)' },
-  pointMass: { icon: '⚖️', label: 'Point Mass' },
-  load:      { icon: '⚡', label: 'Load (하중)' },
-  boundaryCondition: { icon: '⚓', label: 'Boundary' },
-  subcase:   { icon: '🧪', label: 'Subcase' },
-  param:     { icon: '🛠️', label: 'Param' },
+/* ── 카드 종류 라벨 ─────────────────────────────────────────── */
+const CARD_KIND_LABEL = {
+  grid:      'Grid (절점)',
+  element:   'Element (요소)',
+  property:  'Property (물성)',
+  material:  'Material (재질)',
+  pointMass: 'Point Mass',
+  load:      'Load (하중)',
+  boundaryCondition: 'Boundary',
 };
 
-/* ── KindBar — CsvAuditPanel 의 KindBar 와 시각적 동등 ───────── */
-function KindBar({ label, icon, count, errorCount = 0, warnCount = 0, breakdown }) {
-  const hasIssue = errorCount > 0 || warnCount > 0;
-  const total = count + errorCount + warnCount;
+/* ── 카드 분류 표 — 종류마다 한 행. 0 인 경고·오류 칸은 비워 눈이 문제 행에만 가게 한다. ── */
+function CardKindTable({ rows }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <span className="text-base leading-none">{icon}</span>
-          <span className="text-sm font-bold text-slate-700">{label}</span>
-        </div>
-        {count > 0
-          ? <span className={`text-xs font-bold font-mono ${hasIssue ? 'text-amber-600' : 'text-emerald-600'}`}>
-              {hasIssue ? '⚠' : '✓'}
-            </span>
-          : <span className="text-xs text-slate-300 italic">없음</span>
-        }
-      </div>
-
-      {count > 0 && (
-        <>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-bold text-slate-800 font-mono leading-none"><AnimatedNumber value={count} locale /></span>
-            <span className="text-xs text-slate-400">개</span>
-          </div>
-
-          {/* 스택 막대 — 정상/경고/오류 */}
-          <div className="bar-grow-x h-2 rounded-full bg-slate-100 overflow-hidden flex">
-            <div
-              className="h-full bg-emerald-500 transition-all duration-700 rounded-l-full"
-              style={{ width: `${(count / Math.max(total, 1)) * 100}%` }}
-            />
-            {warnCount > 0 && (
-              <div className="h-full bg-amber-400 transition-all duration-700"
-                   style={{ width: `${(warnCount / Math.max(total, 1)) * 100}%` }} />
-            )}
-            {errorCount > 0 && (
-              <div className="h-full bg-red-400 transition-all duration-700 rounded-r-full"
-                   style={{ width: `${(errorCount / Math.max(total, 1)) * 100}%` }} />
-            )}
-          </div>
-
-          {(warnCount > 0 || errorCount > 0) && (
-            <div className="flex items-center gap-3 flex-wrap">
-              {warnCount > 0 && (
-                <span className="flex items-center gap-1 text-xs text-amber-700">
-                  <span className="w-2 h-2 rounded-sm bg-amber-400 inline-block" /> 경고 {warnCount.toLocaleString()}
-                </span>
-              )}
-              {errorCount > 0 && (
-                <span className="flex items-center gap-1 text-xs text-red-600">
-                  <span className="w-2 h-2 rounded-sm bg-red-400 inline-block" /> 오류 {errorCount.toLocaleString()}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* 카드 종류 breakdown */}
-          {breakdown && Object.keys(breakdown).length > 0 && (
-            <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-100">
-              {Object.entries(breakdown).map(([k, v]) => (
-                <span key={k} className="text-[10px] font-mono text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
-                  {k}: <strong className="text-slate-700">{v.toLocaleString()}</strong>
-                </span>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+    <div className="overflow-hidden rounded-lg border border-slate-200">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-xs text-slate-600">
+          <tr className="border-b border-slate-200">
+            <th className="px-3 py-2 text-left font-semibold">카드 종류</th>
+            <th className="px-3 py-2 text-right font-semibold">개수</th>
+            <th className="px-3 py-2 text-right font-semibold">경고</th>
+            <th className="px-3 py-2 text-right font-semibold">오류</th>
+            <th className="px-3 py-2 text-left font-semibold">구성</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map(r => (
+            <tr key={r.key}>
+              <td className="px-3 py-2 font-semibold text-slate-800">{r.label}</td>
+              <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-800">{r.count.toLocaleString()}</td>
+              <td className={`px-3 py-2 text-right font-mono tabular-nums ${r.warn ? 'font-bold text-amber-700' : 'text-slate-500'}`}>{r.warn ? r.warn.toLocaleString() : '—'}</td>
+              <td className={`px-3 py-2 text-right font-mono tabular-nums ${r.error ? 'font-bold text-red-700' : 'text-slate-500'}`}>{r.error ? r.error.toLocaleString() : '—'}</td>
+              <td className="px-3 py-2">
+                {r.breakdown && Object.keys(r.breakdown).length > 0 ? (
+                  <span className="flex flex-wrap gap-1">
+                    {Object.entries(r.breakdown).map(([k, v]) => (
+                      <span key={k} className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] text-slate-600">
+                        {k} <strong className="text-slate-800">{Number(v).toLocaleString()}</strong>
+                      </span>
+                    ))}
+                  </span>
+                ) : <span className="text-xs text-slate-500">—</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-/* ── IssueBar — IgnoreReasonRow 와 시각적 동등 ──────────────── */
+/* ── IssueBar — 이슈별 건수 막대 ─────────────────────────────── */
 function IssueBar({ label, count, maxCount, severity = 'warning' }) {
   const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
   const colorMap = {
-    warning: { track: 'bg-amber-50',   bar: 'bg-amber-400',   text: 'text-amber-700' },
-    error:   { track: 'bg-red-50',     bar: 'bg-red-400',     text: 'text-red-700' },
+    warning: { track: 'bg-amber-50', bar: 'bg-amber-400', text: 'text-amber-800' },
+    error:   { track: 'bg-red-50',   bar: 'bg-red-500',   text: 'text-red-700' },
   };
   const c = colorMap[severity] || colorMap.warning;
   return (
     <div className="flex items-center gap-3">
-      <span className="text-sm text-slate-700 w-56 shrink-0 truncate" title={label}>{label}</span>
-      <div className={`flex-1 ${c.track} rounded-full h-2.5 overflow-hidden`}>
-        <div className={`bar-grow-x h-full ${c.bar} rounded-full transition-all duration-700`}
-             style={{ width: `${pct}%` }} />
+      <span className="w-72 shrink-0 truncate text-sm text-slate-700" title={label}>{label}</span>
+      <div className={`h-2 flex-1 overflow-hidden rounded-full ${c.track}`}>
+        <div className={`bar-grow-x h-full rounded-full ${c.bar} transition-all duration-700`} style={{ width: `${pct}%` }} />
       </div>
-      <span className={`text-sm font-bold font-mono ${c.text} w-12 text-right shrink-0`}>
-        {count.toLocaleString()}
-      </span>
+      <span className={`w-14 shrink-0 text-right font-mono text-sm font-bold ${c.text}`}>{count.toLocaleString()}</span>
     </div>
   );
 }
@@ -128,13 +90,15 @@ function IssueBar({ label, count, maxCount, severity = 'warning' }) {
 function FilterPills({ label, value, onChange, options }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-xs text-slate-400 font-semibold">{label}</span>
+      <span className="text-xs font-semibold text-slate-600">{label}</span>
       {options.map(o => (
         <button
           key={o.v}
+          type="button"
           onClick={() => onChange(o.v)}
-          className={`text-xs px-2.5 py-1 rounded-full font-medium cursor-pointer transition-colors
-            ${value === o.v ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+          aria-pressed={value === o.v}
+          className={`cursor-pointer rounded-full px-2.5 py-1 text-xs font-medium transition-colors
+            ${value === o.v ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
         >
           {o.label}
         </button>
@@ -176,7 +140,7 @@ function F06Message({ msg }) {
           : <ChevronRight size={14} className="mt-0.5 shrink-0 text-slate-500" />}
         {isFatal
           ? <AlertOctagon size={14} className="mt-0.5 shrink-0 text-red-500" />
-          : <AlertTriangle size={14} className={`mt-0.5 shrink-0 ${isCopyright ? 'text-slate-400' : 'text-amber-500'}`} />}
+          : <AlertTriangle size={14} className={`mt-0.5 shrink-0 ${isCopyright ? 'text-slate-500' : 'text-amber-500'}`} />}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-xs font-bold font-mono ${
@@ -184,7 +148,7 @@ function F06Message({ msg }) {
             }`}>
               {isFatal ? 'FATAL' : 'WARNING'} — Line {msg.lineNumber}
             </span>
-            {isCopyright && <span className="text-[10px] text-slate-400 font-mono">(저작권 고지)</span>}
+            {isCopyright && <span className="text-[11px] text-slate-500 font-mono">(저작권 고지)</span>}
           </div>
           <p className={`text-xs font-mono mt-0.5 break-all ${
             isFatal ? 'text-red-800' : isCopyright ? 'text-slate-500' : 'text-amber-800'
@@ -227,15 +191,8 @@ function Step1View({ step1Data }) {
   const ps      = step1Data?.parsingSummary || {};
   const summary = step1Data?.summary || {};
   const counts  = ps.cardCounts || {};
-  const isFailed = step1Data.status === 'error';
-
-  // pass-rate: 검증 오류/경고가 0 이면 100%, 아니면 (전체 카드 - 결함 카드) / 전체 비율로 시각화
+  
   const totalCards = Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0);
-  const issues = (summary.totalErrors || 0) + (summary.totalWarnings || 0);
-  // 단순 시각화: 오류 0+경고 0 -> 100%, 그 외에는 issue/totalCards 비율을 반대로
-  const passRate = totalCards > 0
-    ? Math.max(0, Math.min(100, Math.round(100 - (issues / totalCards) * 100 * 5))) // 5x weighting
-    : (issues === 0 ? 100 : 0);
 
   /* ── 검출 이슈 항목 추출 ───────────────────────────────────────
      README (NastranBridge) 의 정의 중:
@@ -250,11 +207,12 @@ function Step1View({ step1Data }) {
   const shortLenCount = (step1Data.validationResults || []).filter(v => v.cardType === 'ELEMENT' && v.severity === 'warning').length;
 
   const issueItems = [];
-  if (orphanCount   > 0) issueItems.push({ key: 'orphan',    label: '미참조 GRID (orphan — element/rigid/CONM2 어디에서도 참조 안 함)', count: orphanCount,   severity: 'error' });
-  if (isolatedCnt   > 0) issueItems.push({ key: 'isolated',  label: '고립 GRID (connectivity 그래프 edge 0)',                          count: isolatedCnt,   severity: 'error' });
+  // 미참조·고립 GRID 는 엔진이 오류로 세지 않는다(summary.totalErrors 에 없음) — 판정 머리와 같은 기준으로 '경고'에 둔다.
+  if (orphanCount   > 0) issueItems.push({ key: 'orphan',    label: '미참조 GRID — 요소·RBE·CONM2 어디에도 안 쓰임', count: orphanCount,   severity: 'warning' });
+  if (isolatedCnt   > 0) issueItems.push({ key: 'isolated',  label: '고립 GRID — 연결된 요소 없음',                   count: isolatedCnt,   severity: 'warning' });
   if (zeroLenCount  > 0) issueItems.push({ key: 'zeroLen',   label: '길이 0 요소',                                                     count: zeroLenCount,  severity: 'error' });
-  if (disconnGroups > 0) issueItems.push({ key: 'disconn',   label: `분리 그룹 (메인 외 추가 ${disconnGroups}개 — 단일 그룹 권장)`,    count: disconnGroups, severity: 'warning' });
-  if (shortLenCount > 0) issueItems.push({ key: 'shortLen',  label: '짧은 요소 (수치 안정성 영향)',                                    count: shortLenCount, severity: 'warning' });
+  if (disconnGroups > 0) issueItems.push({ key: 'disconn',   label: `분리 그룹 — 주 구조 외 ${disconnGroups}개`,    count: disconnGroups, severity: 'warning' });
+  if (shortLenCount > 0) issueItems.push({ key: 'shortLen',  label: '짧은 요소 — 수치 안정성 영향',                                    count: shortLenCount, severity: 'warning' });
   if ((ps.orphanProperties ?? 0) > 0) issueItems.push({ key: 'orphanProp', label: '미사용 Property', count: ps.orphanProperties, severity: 'warning' });
   if ((ps.orphanMaterials  ?? 0) > 0) issueItems.push({ key: 'orphanMat',  label: '미사용 Material', count: ps.orphanMaterials,  severity: 'warning' });
 
@@ -272,186 +230,80 @@ function Step1View({ step1Data }) {
     ...Array.from(new Set(allRows.map(r => r.cardType))).filter(Boolean).map(t => ({ v: t, label: t })),
   ];
 
+  const kindRows = [
+    { key: 'grid',     count: counts.grid || 0,     warn: orphanCount + isolatedCnt },
+    { key: 'element',  count: counts.element || 0,  warn: shortLenCount, error: zeroLenCount, breakdown: ps.elementBreakdown },
+    { key: 'property', count: counts.property || 0, warn: ps.orphanProperties || 0, breakdown: ps.propertyBreakdown },
+    { key: 'material', count: counts.material || 0, warn: ps.orphanMaterials || 0, breakdown: ps.materialBreakdown },
+    { key: 'pointMass', count: counts.pointMass || 0 },
+    { key: 'load', count: counts.load || 0, breakdown: ps.loadBreakdown },
+    { key: 'boundaryCondition', count: counts.boundaryCondition || 0, breakdown: ps.bcBreakdown },
+  ]
+    // Grid~Material 은 0 이어도 보인다(빠졌다는 사실이 정보다). 나머지는 있을 때만.
+    .filter(r => ['grid', 'element', 'property', 'material'].includes(r.key) || r.count > 0)
+    .map(r => ({ ...r, label: CARD_KIND_LABEL[r.key] }));
+
+  const warnTotal = summary.totalWarnings ?? 0;
+  const errorTotal = summary.totalErrors ?? 0;
+
   return (
-    // 검증 결과가 처음 뜰 때 요약 → 카드 분류 → 이슈 → 좌표 → 상세 순으로 0.05s 간격(index.css .reveal-stagger)
-    <div className="reveal-stagger space-y-4 w-full min-w-0">
+    <div className="w-full min-w-0 space-y-4">
+      <KeyFigures
+        items={[
+          { key: 'cards', label: '전체 카드', value: totalCards.toLocaleString() },
+          { key: 'grid', label: 'Grid', value: (counts.grid || 0).toLocaleString() },
+          { key: 'element', label: 'Element', value: (counts.element || 0).toLocaleString() },
+          { key: 'warn', label: '경고', value: warnTotal.toLocaleString(), tone: warnTotal > 0 ? 'warn' : 'default', sub: warnTotal > 0 ? '판정 미반영' : null },
+          { key: 'error', label: '오류', value: errorTotal.toLocaleString(), tone: errorTotal > 0 ? 'bad' : 'default' },
+        ]}
+        caption={[
+          step1Data.sourceFile && `원본 ${step1Data.sourceFile}`,
+          (summary.parserWarnings ?? 0) > 0 && `파서 경고 ${summary.parserWarnings.toLocaleString()}건 — 읽지 못한 카드가 있습니다`,
+        ].filter(Boolean).join(' · ') || null}
+      />
 
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          A. Hero 검증 요약 (CSV 형식)
-         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <div className={`rounded-2xl border px-5 py-4 shadow-sm ${
-        isFailed ? 'bg-red-50 border-red-200' : 'bg-gradient-to-br from-slate-50 to-white border-slate-200'
-      }`}>
-        <div className="flex items-start gap-5">
-          {/* 좌측: 원형 게이지 */}
-          <div className="shrink-0 flex flex-col items-center gap-1">
-            <div className="relative w-16 h-16">
-              <svg viewBox="0 0 64 64" className="w-16 h-16 -rotate-90">
-                <circle cx="32" cy="32" r="26" fill="none" stroke="#e2e8f0" strokeWidth="7" />
-                <circle
-                  cx="32" cy="32" r="26" fill="none"
-                  stroke={isFailed ? '#ef4444' : (summary.totalWarnings ?? 0) > 0 ? '#f59e0b' : '#10b981'}
-                  strokeWidth="7"
-                  strokeDasharray={`${2 * Math.PI * 26}`}
-                  strokeDashoffset={`${2 * Math.PI * 26 * (1 - passRate / 100)}`}
-                  strokeLinecap="round"
-                  className="gauge-arc transition-all duration-700"
-                  style={{ '--gauge-from': `${2 * Math.PI * 26}` }}
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className={`text-base font-bold font-mono leading-none ${isFailed ? 'text-red-600' : 'text-slate-800'}`}>
-                  <AnimatedNumber value={passRate} />%
-                </span>
-              </div>
-            </div>
-            <span className="text-xs text-slate-400 font-medium">건전도</span>
-          </div>
+      <section className="space-y-2">
+        <h3 className="text-sm font-bold text-slate-800">카드 분류</h3>
+        <CardKindTable rows={kindRows} />
+      </section>
 
-          {/* 우측: 핵심 지표 */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              {isFailed
-                ? <AlertCircle size={15} className="text-red-600 shrink-0" />
-                : <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />}
-              <span className={`text-sm font-bold ${isFailed ? 'text-red-700' : 'text-emerald-700'}`}>
-                {isFailed ? 'BDF 검증 실패' : 'BDF 입력 검증 완료'}
-              </span>
-              {step1Data.sourceFile && (
-                <span className="text-xs font-mono text-slate-400 ml-1 truncate">— {step1Data.sourceFile}</span>
-              )}
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div className="text-center">
-                <p className="text-2xl font-bold font-mono text-slate-800 leading-none"><AnimatedNumber value={totalCards} locale /></p>
-                <p className="text-xs text-slate-400 mt-0.5">전체 카드</p>
-              </div>
-              <div className="text-center">
-                <p className={`text-2xl font-bold font-mono leading-none ${(summary.totalWarnings ?? 0) > 0 ? 'text-amber-600' : 'text-slate-300'}`}>
-                  <AnimatedNumber value={summary.totalWarnings ?? 0} locale />
-                </p>
-                <p className="text-xs text-slate-400 mt-0.5">경고</p>
-              </div>
-              <div className="text-center">
-                <p className={`text-2xl font-bold font-mono leading-none ${(summary.totalErrors ?? 0) > 0 ? 'text-red-600' : 'text-slate-300'}`}>
-                  <AnimatedNumber value={summary.totalErrors ?? 0} locale />
-                </p>
-                <p className="text-xs text-slate-400 mt-0.5">오류</p>
-              </div>
-            </div>
-
-            {(summary.parserWarnings ?? 0) > 0 && (
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-sky-600 font-semibold">
-                <Info size={12} /> 파서 경고 {(summary.parserWarnings).toLocaleString()}건 — 미인식 카드 검토 필요
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          B. 카드 분류 (KindBar 5칼럼)
-         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <div>
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">카드 분류 — Bdf Card Counts</p>
-        <div className="reveal-stagger grid grid-cols-2 lg:grid-cols-3 gap-3">
-          <KindBar
-            label={CARD_KIND_META.grid.label} icon={CARD_KIND_META.grid.icon}
-            count={counts.grid || 0}
-            errorCount={orphanCount + isolatedCnt}
-          />
-          <KindBar
-            label={CARD_KIND_META.element.label} icon={CARD_KIND_META.element.icon}
-            count={counts.element || 0}
-            warnCount={shortLenCount}
-            errorCount={zeroLenCount}
-            breakdown={ps.elementBreakdown}
-          />
-          <KindBar
-            label={CARD_KIND_META.property.label} icon={CARD_KIND_META.property.icon}
-            count={counts.property || 0}
-            warnCount={ps.orphanProperties || 0}
-            breakdown={ps.propertyBreakdown}
-          />
-          <KindBar
-            label={CARD_KIND_META.material.label} icon={CARD_KIND_META.material.icon}
-            count={counts.material || 0}
-            warnCount={ps.orphanMaterials || 0}
-            breakdown={ps.materialBreakdown}
-          />
-          {!!counts.pointMass && (
-            <KindBar
-              label={CARD_KIND_META.pointMass.label} icon={CARD_KIND_META.pointMass.icon}
-              count={counts.pointMass || 0}
-            />
-          )}
-          {!!counts.load && (
-            <KindBar
-              label={CARD_KIND_META.load.label} icon={CARD_KIND_META.load.icon}
-              count={counts.load || 0}
-              breakdown={ps.loadBreakdown}
-            />
-          )}
-          {!!counts.boundaryCondition && (
-            <KindBar
-              label={CARD_KIND_META.boundaryCondition.label} icon={CARD_KIND_META.boundaryCondition.icon}
-              count={counts.boundaryCondition || 0}
-              breakdown={ps.bcBreakdown}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          C. 검출 이슈 분포 (있을 때만)
-         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {issueItems.length > 0 && (
-        <div className="bg-white border border-amber-200 rounded-xl px-4 py-4 shadow-sm">
-          <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-3">
-            검출 이슈 분포 — {issueItems.reduce((s, i) => s + i.count, 0).toLocaleString()}건
-          </p>
-          <div className="space-y-2.5">
-            {issueItems.map(it => (
-              <IssueBar
-                key={it.key}
-                label={it.label}
-                count={it.count}
-                maxCount={maxIssue}
-                severity={it.severity}
-              />
-            ))}
-          </div>
-        </div>
+        <section className="space-y-2.5 rounded-lg border border-slate-200 px-4 py-3">
+          <h3 className="text-sm font-bold text-slate-800">
+            검출 이슈 <span className="font-mono text-slate-600">{issueItems.reduce((s, i) => s + i.count, 0).toLocaleString()}건</span>
+          </h3>
+          {issueItems.map(it => (
+            <IssueBar key={it.key} label={it.label} count={it.count} maxCount={maxIssue} severity={it.severity} />
+          ))}
+        </section>
       )}
 
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          D. 좌표 범위 (보조 정보)
-         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {ps.boundingBox && (
-        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-            <Move3d size={11} /> 좌표 범위 (Bounding Box)
-          </p>
-          <div className="grid grid-cols-3 gap-3">
+        <section className="rounded-lg border border-slate-200 px-4 py-3">
+          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800">
+            <Move3d size={14} className="text-slate-600" aria-hidden="true" /> 좌표 범위
+          </h3>
+          <dl className="grid grid-cols-3 gap-3">
             {['x', 'y', 'z'].map(a => (
-              <div key={a} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                <p className="text-[10px] font-bold text-sky-600 font-mono uppercase mb-0.5">{a}</p>
-                <p className="text-xs text-slate-700 font-mono">
+              <div key={a} className="rounded-lg bg-slate-50 px-3 py-2">
+                <dt className="font-mono text-xs font-bold text-slate-600">{a.toUpperCase()}</dt>
+                <dd className="font-mono text-xs text-slate-800">
                   {Number(ps.boundingBox[`${a}Min`]).toLocaleString()} ~ {Number(ps.boundingBox[`${a}Max`]).toLocaleString()}
-                </p>
+                </dd>
               </div>
             ))}
-          </div>
-        </div>
+          </dl>
+        </section>
       )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           E. 검증 상세 (FilterPills + 접이식 테이블)
          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {allRows.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm w-full max-w-full min-w-0">
+        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden w-full max-w-full min-w-0">
           <button
+            type="button"
+            aria-expanded={showRows}
             onClick={() => setShowRows(v => !v)}
             className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer"
           >
@@ -461,9 +313,9 @@ function Step1View({ step1Data }) {
               <span className="text-xs font-mono font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
                 {allRows.length.toLocaleString()}건
               </span>
-              {!showRows && <span className="text-[11px] text-slate-400 ml-1">— 클릭하여 자세히 보기</span>}
+              {!showRows && <span className="text-xs text-slate-600 ml-1">카드별 오류·경고 행</span>}
             </div>
-            <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${showRows ? 'rotate-180' : ''}`} />
+            <ChevronDown size={14} className={`text-slate-500 transition-transform duration-200 ${showRows ? 'rotate-180' : ''}`} />
           </button>
 
           {showRows && (
@@ -482,7 +334,7 @@ function Step1View({ step1Data }) {
                     { v: 'warning', label: '경고' },
                   ]}
                 />
-                <span className="ml-auto text-xs font-mono text-slate-400">
+                <span className="ml-auto text-xs font-mono text-slate-500">
                   {filteredRows.length.toLocaleString()} / {allRows.length.toLocaleString()}건
                 </span>
               </div>
@@ -514,12 +366,12 @@ function Step1View({ step1Data }) {
                           <td className="px-3 py-1.5 text-slate-600 truncate" title={r.cardType}>{r.cardType}</td>
                           <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500 truncate" title={r.cardId}>{r.cardId}</td>
                           <td className="px-3 py-1.5">
-                            <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full ${badge}`}>
+                            <span className={`inline-block text-[11px] font-bold px-1.5 py-0.5 rounded-full ${badge}`}>
                               {(r.severity || '').toUpperCase()}
                             </span>
                           </td>
                           <td className="px-3 py-1.5 text-slate-700 truncate" title={r.message}>
-                            {r.fieldName && <span className="text-slate-400 mr-1">({r.fieldName})</span>}
+                            {r.fieldName && <span className="text-slate-500 mr-1">({r.fieldName})</span>}
                             {r.message}
                           </td>
                         </tr>
@@ -528,7 +380,7 @@ function Step1View({ step1Data }) {
                   </tbody>
                 </table>
                 {filteredRows.length > 1000 && (
-                  <p className="text-center text-xs text-slate-400 py-3 italic border-t border-slate-100">
+                  <p className="text-center text-xs text-slate-500 py-3 italic border-t border-slate-100">
                     상위 1,000건만 표시 — 전체 {filteredRows.length.toLocaleString()}건
                   </p>
                 )}
@@ -545,13 +397,14 @@ function Step1View({ step1Data }) {
    메인 컴포넌트
    ──────────────────────────────────────────────────────────── */
 
-export default function ValidationStepLog({ step1Data, step2Data, useNastran }) {
+/** bare: 공통 틀의 단계 본문처럼 바깥에 이미 여백·흰 바탕이 있을 때 겉 여백을 뺀다. */
+export default function ValidationStepLog({ step1Data, step2Data, useNastran, bare = false }) {
   const f06Messages = step2Data?.f06Summary?.messages || [];
   const fatals   = f06Messages.filter(m => m.level === 'fatal');
   const warnings = f06Messages.filter(m => m.level === 'warning');
 
   return (
-    <div className="bg-white p-5 space-y-6">
+    <div className={bare ? 'space-y-6' : 'bg-white p-5 space-y-6'}>
       {/* ── Step 1 — CSV 입력 검증 형식 ── */}
       {step1Data && <Step1View step1Data={step1Data} />}
 
@@ -560,7 +413,7 @@ export default function ValidationStepLog({ step1Data, step2Data, useNastran }) 
         <div className="pt-5 border-t border-slate-200">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <span className="text-base font-bold text-purple-600 font-mono">Step 2 — Nastran F06 검증</span>
+              <h3 className="text-sm font-bold text-slate-800">Nastran F06 검증</h3>
               {step2Data.summary?.f06Fatals > 0
                 ? <span className="text-xs font-bold px-2.5 py-0.5 rounded border bg-red-50 text-red-700 border-red-200">FATAL</span>
                 : step2Data.summary?.f06Warnings > 0
@@ -586,14 +439,14 @@ export default function ValidationStepLog({ step1Data, step2Data, useNastran }) 
 
           {fatals.length > 0 && (
             <div className="mb-3">
-              <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-2">Fatal 메시지 ({fatals.length}건)</p>
+              <p className="text-xs font-bold text-red-700 mb-2">Fatal 메시지 ({fatals.length}건)</p>
               {fatals.map((msg, i) => <F06Message key={i} msg={msg} />)}
             </div>
           )}
 
           {warnings.length > 0 && (
             <div>
-              <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-2">Warning 메시지 ({warnings.length}건)</p>
+              <p className="text-xs font-bold text-amber-700 mb-2">Warning 메시지 ({warnings.length}건)</p>
               {warnings.map((msg, i) => <F06Message key={i} msg={msg} />)}
             </div>
           )}
@@ -611,7 +464,7 @@ export default function ValidationStepLog({ step1Data, step2Data, useNastran }) 
       {useNastran && !step2Data && step1Data && (
         <div className="pt-5 border-t border-slate-200">
           <div className="flex items-start gap-2.5 px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-            <Info size={14} className="text-slate-400 shrink-0 mt-0.5" />
+            <Info size={14} className="text-slate-500 shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-bold text-slate-700 mb-0.5">Step 2: Nastran 해석 검토</p>
               <p className="text-xs font-mono text-slate-500">결과 파일을 로드 중이거나 아직 생성되지 않았습니다.</p>

@@ -48,6 +48,40 @@ const STEP_STATUS = {
   error: { tone: 'ng', label: '검증 오류' },
 };
 
+const INPUT_FILE_RE = /\.(bdf|dat|nas|blk|csv|pdf|f06|json|png|jpe?g)$/i;
+const baseName = (p) => String(p).split(/[\\/]/).pop();
+
+/**
+ * 결과 행에 보여 줄 입력 파일명. 프로젝트명은 '앱이름_날짜시각' 이라 앱·시간과 겹치고,
+ * 같은 앱을 여러 번 돌리면 어느 모델이었는지 구분이 안 된다. input_info 의 키는 앱마다 달라
+ * (stru_csv·bdf_path·file_path …) 파일 확장자로 끝나는 첫 문자열 값을 쓴다. 여러 개면 '외 N'.
+ */
+export const inputFileLabel = (record) => {
+  let info = record?.input_info;
+  if (typeof info === 'string') {
+    try { info = JSON.parse(info); } catch { return null; }
+  }
+  if (!info || typeof info !== 'object') return null;
+  const names = [];
+  // MySQL JSON 은 키를 길이·사전순으로 재정렬한다(pipe_csv 가 stru_csv 보다 앞). 주 입력으로 보이는 키를 먼저 본다.
+  const PRIMARY_KEY_RE = /stru|bdf|model|main|input/i;
+  const entries = Object.entries(info).sort(([a], [b]) => Number(PRIMARY_KEY_RE.test(b)) - Number(PRIMARY_KEY_RE.test(a)));
+  const visit = (value, depth) => {
+    if (typeof value === 'string') {
+      if (INPUT_FILE_RE.test(value.trim())) names.push(baseName(value.trim()));
+    } else if (Array.isArray(value)) {
+      value.forEach(v => visit(v, depth));
+    } else if (value && typeof value === 'object' && depth < 1) {
+      Object.values(value).forEach(v => visit(v, depth + 1));
+    }
+  };
+  entries.forEach(([, v]) => visit(v, 0));
+  const unique = [...new Set(names)];
+  if (unique.length === 0) return null;
+  return unique.length > 1 ? `${unique[0]} 외 ${unique.length - 1}` : unique[0];
+};
+
+
 const fmt = (n, digits) => Number(n).toLocaleString('ko-KR', { maximumFractionDigits: digits });
 
 /**

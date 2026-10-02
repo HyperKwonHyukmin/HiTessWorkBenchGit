@@ -19,14 +19,14 @@ function TabButton({ active, label, count, disabled, onClick }) {
       disabled={disabled}
       className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border
         ${disabled
-          ? 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
+          ? 'bg-slate-50 text-slate-500 border-slate-100 cursor-not-allowed'
           : active
             ? 'bg-blue-600 text-white border-blue-600 shadow-sm cursor-pointer'
             : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300 cursor-pointer'}`}
     >
       {label}
       {count != null && (
-        <span className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-full
+        <span className={`text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full
           ${active ? 'bg-blue-500/60 text-white' : 'bg-slate-100 text-slate-500'}`}>
           {count.toLocaleString()}
         </span>
@@ -99,15 +99,15 @@ export default function CsvPreviewPanel({
         <table className="min-w-full text-left text-xs font-mono whitespace-nowrap border-separate border-spacing-0">
           <thead className="sticky top-0 z-10">
             <tr>
-              <th className="sticky left-0 z-20 bg-slate-100 border-b border-r border-slate-200 px-2 py-1.5 text-[10px] font-sans font-bold text-slate-400 text-right">
+              <th className="sticky left-0 z-20 bg-slate-100 border-b border-r border-slate-200 px-2 py-1.5 text-[11px] font-sans font-bold text-slate-500 text-right">
                 #
               </th>
               {header.map((h, i) => (
                 <th
                   key={i}
-                  className="bg-slate-100 border-b border-slate-200 px-3 py-1.5 text-[10px] font-sans font-bold text-slate-500 uppercase tracking-wider"
+                  className="bg-slate-100 border-b border-slate-200 px-3 py-1.5 text-[11px] font-sans font-bold text-slate-500"
                 >
-                  {h || <span className="text-slate-300">(빈 컬럼)</span>}
+                  {h || <span className="text-slate-500">(빈 컬럼)</span>}
                 </th>
               ))}
             </tr>
@@ -115,7 +115,7 @@ export default function CsvPreviewPanel({
           <tbody>
             {bodyRows.map((row, i) => (
               <tr key={i} className="hover:bg-blue-50/50">
-                <td className="sticky left-0 z-10 bg-white border-b border-r border-slate-100 px-2 py-1 text-[10px] font-sans text-slate-300 text-right">
+                <td className="sticky left-0 z-10 bg-white border-b border-r border-slate-100 px-2 py-1 text-[11px] font-sans text-slate-500 text-right">
                   {i + 1}
                 </td>
                 {header.map((_, j) => (
@@ -154,11 +154,11 @@ export default function CsvPreviewPanel({
       {active?.rows?.length > 0 && (
         <div className="flex items-center justify-between gap-3 flex-wrap shrink-0 mb-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-100">
           <div className="flex items-center gap-1.5 min-w-0">
-            <FileSpreadsheet size={12} className="text-slate-400 shrink-0" />
+            <FileSpreadsheet size={12} className="text-slate-500 shrink-0" />
             <span className="text-[11px] font-medium text-slate-600 truncate" title={active.filename}>
               {active.filename}
             </span>
-            <span className="text-[11px] text-slate-400 shrink-0">
+            <span className="text-[11px] text-slate-500 shrink-0">
               · {header.length}컬럼 · 전체 {dataRowCount.toLocaleString()}행
             </span>
           </div>
@@ -190,13 +190,13 @@ export default function CsvPreviewPanel({
 
       {/* 상한 안내 — 미리보기가 브라우저를 멈추게 두지 않는다는 사실을 알린다 */}
       {expanded && hiddenCount > 0 && (
-        <p className="shrink-0 mt-1.5 text-[10px] text-slate-400 text-center">
+        <p className="shrink-0 mt-1.5 text-[11px] text-slate-500 text-center">
           미리보기는 최대 {EXPANDED_ROW_LIMIT.toLocaleString()}행까지 표시합니다.
           전체 행 검증 결과는 실행 후 <span className="font-semibold text-slate-500">CSV 입력 검증</span>에서 확인하세요.
         </p>
       )}
       {active?.truncated && (
-        <p className="shrink-0 mt-1.5 text-[10px] text-amber-500 text-center">
+        <p className="shrink-0 mt-1.5 text-[11px] text-amber-500 text-center">
           파일이 매우 커서 앞부분만 읽었습니다.
         </p>
       )}

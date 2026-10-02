@@ -34,7 +34,10 @@ import { isAdmin as getIsAdmin } from '../../utils/auth';
 import { POLLING_POLICY } from '../../hooks/pollingPolicy';
 import { isTerminalJobStatus } from '../../utils/globalJobs';
 import { FILE_HANDOFF_MENUS, offerDashboardFiles } from '../../utils/dashboardFileHandoff';
-import { FAILED_STATUSES, groupConsecutiveRuns, resultHighlight, unresolvedFailures } from '../../utils/dashboardResults';
+import { canOpenResult, offerResultReentry, reentryMenuForProgram } from '../../utils/resultReentry';
+import {
+  FAILED_STATUSES, groupConsecutiveRuns, inputFileLabel, resultHighlight, unresolvedFailures,
+} from '../../utils/dashboardResults';
 import { CardArt, resolveCardArt } from '../../components/ui/cardArt';
 import {
   DashboardSectionTitle, IntroModal, NoticeStrip, RoadmapModal, VideoPlayerModal, isRoadmapAppNavigable,
@@ -89,39 +92,6 @@ const formatElapsed = (startedAt) => {
   if (!startedAt || sec > 86400) return '';
   const m = Math.floor(sec / 60);
   return m > 0 ? `${m}분 ${sec % 60}초` : `${sec}초`;
-};
-
-const INPUT_FILE_RE = /\.(bdf|dat|nas|blk|csv|pdf|f06|json|png|jpe?g)$/i;
-const baseName = (p) => String(p).split(/[\\/]/).pop();
-
-/**
- * 결과 행에 보여 줄 입력 파일명. 프로젝트명은 '앱이름_날짜시각' 이라 앱·시간과 겹치고,
- * 같은 앱을 여러 번 돌리면 어느 모델이었는지 구분이 안 된다. input_info 의 키는 앱마다 달라
- * (stru_csv·bdf_path·file_path …) 파일 확장자로 끝나는 첫 문자열 값을 쓴다. 여러 개면 '외 N'.
- */
-const inputFileLabel = (record) => {
-  let info = record?.input_info;
-  if (typeof info === 'string') {
-    try { info = JSON.parse(info); } catch { return null; }
-  }
-  if (!info || typeof info !== 'object') return null;
-  const names = [];
-  // MySQL JSON 은 키를 길이·사전순으로 재정렬한다(pipe_csv 가 stru_csv 보다 앞). 주 입력으로 보이는 키를 먼저 본다.
-  const PRIMARY_KEY_RE = /stru|bdf|model|main|input/i;
-  const entries = Object.entries(info).sort(([a], [b]) => Number(PRIMARY_KEY_RE.test(b)) - Number(PRIMARY_KEY_RE.test(a)));
-  const visit = (value, depth) => {
-    if (typeof value === 'string') {
-      if (INPUT_FILE_RE.test(value.trim())) names.push(baseName(value.trim()));
-    } else if (Array.isArray(value)) {
-      value.forEach(v => visit(v, depth));
-    } else if (value && typeof value === 'object' && depth < 1) {
-      Object.values(value).forEach(v => visit(v, depth + 1));
-    }
-  };
-  entries.forEach(([, v]) => visit(v, 0));
-  const unique = [...new Set(names)];
-  if (unique.length === 0) return null;
-  return unique.length > 1 ? `${unique[0]} 외 ${unique.length - 1}` : unique[0];
 };
 
 /**
@@ -1109,6 +1079,14 @@ export default function Dashboard() {
   };
 
   const openProjectDetail = (project) => {
+    // 결과 화면으로 다시 열 수 있는 앱(Model Builder·GMU 권상)의 성공 결과는 그 앱의 결과 화면으로 바로 간다 —
+    // 판정 확인·Studio·BDF 전달을 이어서 하려는 것이 '내 작업'을 누르는 이유이기 때문이다.
+    const reentryMenu = reentryMenuForProgram(project?.program_name);
+    if (reentryMenu && canOpenResult(project)) {
+      offerResultReentry(reentryMenu, project.id);
+      setCurrentMenu(reentryMenu);
+      return;
+    }
     try { sessionStorage.setItem(OPEN_PROJECT_DETAIL_KEY, JSON.stringify(project)); } catch { /* 목록으로만 이동 */ }
     setCurrentMenu('My Projects');
   };

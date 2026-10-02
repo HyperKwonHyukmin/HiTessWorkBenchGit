@@ -28,7 +28,7 @@ const SEVERITY_CONFIG = {
 
 export default function PreflightIssueCenter({
   issues = [],
-  title = 'Preflight Check',
+  title = '실행 전 점검',
   readyMessage = '실행 전 필수 검사를 통과했습니다.',
   onIssueClick,
   compact = false,
@@ -75,7 +75,7 @@ export default function PreflightIssueCenter({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <p className="text-xs font-bold text-slate-800">{issue.title}</p>
-                    <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500">{config.label}</span>
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{config.label}</span>
                   </div>
                   {issue.detail && <p className="mt-0.5 text-[11px] leading-relaxed text-slate-600">{issue.detail}</p>}
                 </div>

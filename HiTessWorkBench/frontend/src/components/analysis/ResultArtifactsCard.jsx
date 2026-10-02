@@ -47,7 +47,7 @@ const REGISTRABLE_KINDS = {
  * 조회해 다운로드 버튼으로 노출한다. Wire 포함 구조 해석 전이면 원본 모델 BDF(sourceBdf)가 대신 나온다.
  * My Projects 상세 모달(GroupModuleUnit/SidePassage)도 이 카드를 그대로 쓴다. 구조해석은 Studio 에서 비동기로 끝나므로 "새로고침"으로 갱신.
  */
-export default function ResultArtifactsCard({ parentAnalysisId }) {
+export default function ResultArtifactsCard({ parentAnalysisId, onDownloaded }) {
   const { showToast } = useToast();
   const [state, setState] = useState('idle'); // idle | loading | loaded | error
   const [artifacts, setArtifacts] = useState([]);
@@ -75,6 +75,7 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
       setError(detail);
       setState('error');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parentAnalysisId]);
 
   useEffect(() => { fetchArtifacts(); }, [fetchArtifacts]);
@@ -84,6 +85,7 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
     try {
       const res = await downloadFileBlob(art.path);
       downloadBlob(res.data, art.fileName);
+      onDownloaded?.(art.kind);
     } catch (e) {
       const detail = e?.response?.status === 404
         ? '파일을 찾을 수 없습니다 — 다시 새로고침해 주세요.'
@@ -113,6 +115,7 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
         warnings.length ? 'warning' : 'success',
       );
       setReportKind(null);
+      onDownloaded?.(`report-${reportKind}`);
     } catch (e) {
       // blob 응답이라 에러 본문도 Blob 으로 온다 — 텍스트로 풀어 detail 을 꺼낸다.
       let detail = e?.message;
@@ -128,12 +131,12 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
   const byKind = Object.fromEntries(artifacts.map(a => [a.kind, a]));
 
   return (
-    <div className="shrink-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+    <div className="shrink-0 flex flex-col bg-white border border-slate-200 rounded-lg overflow-hidden">
       <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <PackageOpen size={14} className="text-blue-600" />
-          <h2 className="text-xs font-bold text-slate-700">산출물 다운로드</h2>
-          <span className="text-[10px] text-slate-400">— 최종 모델 BDF · Nastran F06/OP2</span>
+          <PackageOpen size={15} className="text-slate-600" aria-hidden="true" />
+          <h3 className="text-sm font-bold text-slate-800">산출물·보고서</h3>
+          <span className="text-xs text-slate-600">모델 BDF · Nastran F06/OP2</span>
         </div>
         <div className="flex items-center gap-1.5">
         {state === 'loaded' && (
@@ -145,7 +148,7 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
               title={unitAnalysisId
                 ? '사내 표준 서식 결과 레포트(xlsx) 출력'
                 : 'Studio 에서 단위 구조 해석을 완료하면 활성화됩니다'}
-              className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg bg-[#002554] text-white hover:bg-[#003a7a] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-[#002554] text-white hover:bg-[#003a7a] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <FileBarChart2 size={10} /> 결과 레포트 출력
             </button>
@@ -156,7 +159,7 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
               title={unitAnalysisId
                 ? '입력·가정·전 결과를 담은 다장 상세 레포트(xlsx)'
                 : 'Studio 에서 단위 구조 해석을 완료하면 활성화됩니다'}
-              className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-[#002554]/30 text-[#002554] hover:bg-[#002554]/5 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg border border-[#002554]/30 text-[#002554] hover:bg-[#002554]/5 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <FileText size={10} /> 상세 레포트
             </button>
@@ -165,7 +168,7 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
         <button
           onClick={fetchArtifacts}
           disabled={!parentAnalysisId || state === 'loading'}
-          className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <RefreshCw size={10} className={state === 'loading' ? 'animate-spin' : ''} /> 새로고침
         </button>
@@ -175,7 +178,7 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
       <div className="p-4">
         {/* parent 없음 — 검증 선행 안내 */}
         {state === 'idle' && (
-          <p className="text-xs text-slate-400 text-center py-3">
+          <p className="text-xs text-slate-500 text-center py-3">
             BDF 입력 검증을 먼저 완료하세요.
           </p>
         )}
@@ -198,9 +201,9 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
 
         {/* 로드 완료, 산출물 없음 */}
         {state === 'loaded' && artifacts.length === 0 && (
-          <p className="text-xs text-slate-400 text-center py-3 leading-relaxed">
+          <p className="text-xs text-slate-500 text-center py-3 leading-relaxed">
             아직 산출물이 없습니다.<br />
-            Studio에서 권상 구조 해석을 수행한 뒤 <b className="text-slate-500">새로고침</b>하세요.
+            Studio에서 권상 구조 해석을 수행한 뒤 <b className="text-slate-700">새로고침</b>하세요.
           </p>
         )}
 
@@ -212,7 +215,7 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
               if (items.length === 0) return null;
               return (
                 <div key={group.title}>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{group.title}</p>
+                  <p className="text-xs font-bold text-slate-600 mb-1.5">{group.title}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {items.map(art => {
                       const Icon = KIND_ICON[art.kind] ?? FileText;
@@ -231,19 +234,19 @@ export default function ResultArtifactsCard({ parentAnalysisId }) {
                             <Icon size={18} className="text-blue-600 shrink-0" />
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-semibold text-slate-700 truncate">{art.label}</p>
-                              <p className="text-[10px] text-slate-400 font-mono truncate" title={art.fileName}>
+                              <p className="text-[11px] text-slate-500 font-mono truncate" title={art.fileName}>
                                 {art.fileName}{art.sizeBytes != null ? ` · ${formatSize(art.sizeBytes)}` : ''}
                               </p>
                             </div>
                             {busy
                               ? <Loader2 size={14} className="animate-spin text-blue-500 shrink-0" />
-                              : <Download size={14} className="text-slate-400 shrink-0" />}
+                              : <Download size={14} className="text-slate-500 shrink-0" />}
                           </button>
                           {canRegister && registerKind && parentAnalysisId && (
                             <button
                               onClick={() => setRegisterTarget({ artifactKind: registerKind })}
                               title="Model Library 에 등록"
-                              className="px-2.5 border-l border-slate-200 text-slate-400 hover:text-brand-blue hover:bg-blue-50 transition-colors cursor-pointer shrink-0"
+                              className="px-2.5 border-l border-slate-200 text-slate-500 hover:text-brand-blue hover:bg-blue-50 transition-colors cursor-pointer shrink-0"
                             >
                               <DatabaseZap size={15} />
                             </button>
