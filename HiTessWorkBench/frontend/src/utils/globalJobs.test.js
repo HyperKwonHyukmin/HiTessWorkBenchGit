@@ -124,3 +124,38 @@ test('pruneExpiredJobs 는 지울 것이 없으면 같은 배열을 그대로 �
 
   assert.equal(pruneExpiredJobs(jobs, 1_000_000), jobs);
 });
+
+// ── 작업 탭(slot) — Model Builder 는 탭마다 다른 모델을 동시에 진행한다 ──────
+test('upsertGlobalJob 은 같은 App 이라도 다른 작업 탭의 해석은 지우지 않는다', () => {
+  const prev = [job('mb-a', 'HiTESS Model Builder', { slot: 'ws-a' })];
+  const next = upsertGlobalJob(prev, job('mb-b', 'HiTESS Model Builder', { slot: 'ws-b' }));
+  assert.deepEqual(next.map((j) => j.jobId), ['mb-b', 'mb-a']);
+});
+
+test('upsertGlobalJob 은 같은 작업 탭의 이전 해석은 교체한다', () => {
+  const prev = [job('old', 'HiTESS Model Builder', { slot: 'ws-a' })];
+  const next = upsertGlobalJob(prev, job('new', 'HiTESS Model Builder', { slot: 'ws-a' }));
+  assert.deepEqual(next.map((j) => j.jobId), ['new']);
+});
+
+test('findJobForMenu 는 slot 을 주면 그 작업 탭의 해석만 찾는다', () => {
+  const jobs = [
+    job('mb-b', 'HiTESS Model Builder', { slot: 'ws-b' }),
+    job('mb-a', 'HiTESS Model Builder', { slot: 'ws-a' }),
+  ];
+  assert.equal(findJobForMenu(jobs, 'HiTESS Model Builder', 'ws-a')?.jobId, 'mb-a');
+  assert.equal(findJobForMenu(jobs, 'HiTESS Model Builder', 'ws-c'), null);
+  // slot 을 안 주면 예전처럼 App 의 가장 최근 해석
+  assert.equal(findJobForMenu(jobs, 'HiTESS Model Builder')?.jobId, 'mb-b');
+});
+
+test('removeJobsForMenu 는 slot 을 주면 그 작업 탭의 기록만 지운다', () => {
+  const jobs = [
+    job('mb-b', 'HiTESS Model Builder', { slot: 'ws-b' }),
+    job('mb-a', 'HiTESS Model Builder', { slot: 'ws-a' }),
+  ];
+  assert.deepEqual(
+    removeJobsForMenu(jobs, 'HiTESS Model Builder', 'ws-a').map((j) => j.jobId),
+    ['mb-b'],
+  );
+});

@@ -62,9 +62,13 @@ export function peekResultReentry(menu) {
   return pending.analysisId;
 }
 
-/** 페이지 마운트 시 맡겨진 해석 ID 가 있으면 apply(analysisId) 를 한 번 부른다. */
-export function useResultReentry(menu, apply) {
+/**
+ * 페이지 마운트 시 맡겨진 해석 ID 가 있으면 apply(analysisId) 를 한 번 부른다.
+ * enabled=false 면 받지 않는다(작업 탭이 여러 개인 App 은 활성 빈 탭만 받는다 — 마운트 시점 값).
+ */
+export function useResultReentry(menu, apply, enabled = true) {
   useEffect(() => {
+    if (!enabled) return undefined;
     const analysisId = peekResultReentry(menu);
     if (analysisId == null) return undefined;
     const timer = setTimeout(() => {

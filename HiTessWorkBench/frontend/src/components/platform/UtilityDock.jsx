@@ -254,6 +254,12 @@ export default function UtilityDock({ currentUserId, isAdmin = false }) {
     }
     setCurrentMenu(job.menu);
     setActivePanel(null);
+    // 작업 탭을 쓰는 App(Model Builder)은 이 해석을 돌린 탭으로 바꿔 보여 준다.
+    if (job.slot) {
+      window.dispatchEvent(new CustomEvent('workbench:job-slot-focus', {
+        detail: { menu: job.menu, slot: job.slot, jobId: job.jobId },
+      }));
+    }
   };
 
   return (

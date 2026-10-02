@@ -281,6 +281,15 @@ export const downloadFileText = (filepath) =>
   });
 
 /** Group/Module Unit 권상 구조해석 산출물 목록 (parent BDF 폴더에서 존재하는 lifting 산출물만) */
+/**
+ * BDF 검증에서 찾은 구간 경계 문제(BEGIN BULK 누락 등)를 고친 수정본으로 다시 검증한다.
+ * 원본은 그대로 두고 새 작업 폴더에 수정본을 만든다. 응답 = { job_id, fixedPath, applied[] }.
+ */
+export const fixGroupModuleUnitDeck = (analysisId, { employeeId, codes = null, useNastran = false }) =>
+  axios.post(`${API_BASE_URL}/api/analysis/groupmoduleunit/${analysisId}/deck-fix`, {
+    employee_id: employeeId, codes, use_nastran: useNastran,
+  }, { headers: getAuthHeaders() });
+
 export const getGroupModuleUnitArtifacts = (parentId) =>
   axios.get(`${API_BASE_URL}/api/analysis/groupmoduleunit/${parentId}/artifacts`, {
     headers: getAuthHeaders()

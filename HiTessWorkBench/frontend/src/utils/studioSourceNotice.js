@@ -13,9 +13,12 @@
  * @param {string} viewerId  대상 Studio id (예: 'model-studio', 'module-unit-studio')
  * @param {string} sourceKey 새로 만들어진 모델의 식별자(서버측 산출 폴더 또는 BDF 경로)
  * @param {string} [message] 배너 문구 (미지정 시 main 의 기본 문구)
+ * @param {{previousSourceKey?: string|null}} [options]
+ *   previousSourceKey — 모델마다 창이 따로 뜨는 Studio(model-studio)에서 '이 작업이 직전에 만든 모델'.
+ *   main 은 이 값으로 경고할 창을 고른다(다른 작업 탭의 Studio 를 건드리지 않게). 없으면 경고하지 않는다.
  * @returns {Promise<boolean>} 실제로 배너를 띄웠으면 true
  */
-export async function notifyStudioSourceUpdated(viewerId, sourceKey, message) {
+export async function notifyStudioSourceUpdated(viewerId, sourceKey, message, options = {}) {
   if (!viewerId || !sourceKey) return false;
   // Electron 밖(브라우저 개발 모드)에서는 Studio 자체가 없으므로 무시한다.
   if (!window.electron?.invoke) return false;
@@ -23,6 +26,7 @@ export async function notifyStudioSourceUpdated(viewerId, sourceKey, message) {
     const res = await window.electron.invoke('viewer:notifySourceUpdated', {
       viewerId,
       sourceKey,
+      previousSourceKey: options.previousSourceKey ?? null,
       message,
     });
     return !!res?.notified;

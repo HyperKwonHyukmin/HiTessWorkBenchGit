@@ -44,3 +44,25 @@ test('구조 해석 결과가 있으면 그 판정이 우선한다', () => {
 
   assert.equal(computeGmuVerdict({ structural: { status: 'ERROR', error: 'x' } }).level, 'fail');
 });
+
+test('BDF 구간 경계 오류는 무엇이 문제인지와 자동 수정 가능 여부를 실패 사유 맨 앞에 말한다', () => {
+  const v = computeGmuVerdict({ step1Data: {
+    status: 'error', summary: { totalErrors: 1 },
+    deckIssues: [
+      { code: 'case_control_in_bulk', severity: 'error', title: 'Bulk 구간에 해석 설정 줄', fixable: true },
+      { code: 'missing_begin_bulk', severity: 'warning', title: 'BEGIN BULK 줄 없음', fixable: true },
+    ],
+  } });
+  assert.equal(v.level, 'fail');
+  assert.equal(v.reasons[0].text, 'Bulk 구간에 해석 설정 줄 — 자동 수정할 수 있습니다');
+  assert.equal(v.reasons.filter(r => r.code.startsWith('deck-')).length, 1); // 경고는 실패 사유가 아니다
+});
+
+test('경고 등급 BDF 형식 문제(BEGIN BULK 누락)는 통과가 아니라 검토 필요', () => {
+  const v = computeGmuVerdict({ step1Data: {
+    status: 'warning', summary: { totalErrors: 0, totalWarnings: 1 }, parsingSummary: { disconnectedGroupCount: 2 },
+    deckIssues: [{ code: 'missing_begin_bulk', severity: 'warning', title: 'BEGIN BULK 줄 없음', fixable: true }],
+  } });
+  assert.equal(v.level, 'review');
+  assert.deepEqual(v.reasons.map(r => r.code), ['deck-missing_begin_bulk', 'disconnected']);
+});

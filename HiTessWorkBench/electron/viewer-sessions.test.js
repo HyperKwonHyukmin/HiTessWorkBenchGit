@@ -3,7 +3,7 @@
 // 절대 다른 Studio 의 컨텍스트로 폴백해서는 안 된다(잘못된 모델에 해석이 걸리는 무증상 사고 방지).
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { ViewerSessionRegistry, isSourceStale } = require("./viewer-sessions");
+const { ViewerSessionRegistry, isSourceStale, sessionKeyOf } = require("./viewer-sessions");
 
 // 가짜 BrowserWindow — isDestroyed 만 흉내낸다.
 function fakeWin(id) {
@@ -163,4 +163,58 @@ test("식별자를 모르면 경보하지 않는다(판단 불가는 침묵)", (
   assert.equal(isSourceStale({ sourceKey: "C:/out/build-1" }, undefined), false);
   assert.equal(isSourceStale({}, "C:/out/build-2"), false);
   assert.equal(isSourceStale(null, "C:/out/build-2"), false);
+});
+
+// ── 모델별 창(model-studio): Model Builder 작업 탭마다 자기 Studio 를 띄운다 ──
+
+test("model-studio 는 모델(sourceKey)마다 다른 세션 키를 쓴다", () => {
+  const a = sessionKeyOf("model-studio", "C:\\userConnection\\A\\20261002_100000");
+  const b = sessionKeyOf("model-studio", "C:\\userConnection\\B\\20261002_100500");
+  assert.notEqual(a, b);
+  assert.notEqual(a, "model-studio");
+});
+
+test("같은 모델은 경로 표기가 달라도 같은 키다(역슬래시·대소문자·끝 슬래시)", () => {
+  assert.equal(
+    sessionKeyOf("model-studio", "C:\\UserConnection\\A\\out\\"),
+    sessionKeyOf("model-studio", "c:/userconnection/a/out"),
+  );
+});
+
+test("sourceKey 를 모르면 viewerId 하나로 묶는다(같은 창이 쌓이지 않게)", () => {
+  assert.equal(sessionKeyOf("model-studio", null), "model-studio");
+  assert.equal(sessionKeyOf("model-studio", "   "), "model-studio");
+});
+
+test("모델별 창 목록에 없는 Studio 는 sourceKey 가 있어도 viewerId 당 창 1개다", () => {
+  assert.equal(sessionKeyOf("mooring-fitting-studio", "C:/a.bdf"), "mooring-fitting-studio");
+  assert.equal(sessionKeyOf("side-passage-studio", "C:/a.bdf"), "side-passage-studio");
+});
+
+test("GMU 권상(module-unit-studio)도 검증한 BDF 마다 창을 따로 둔다", () => {
+  assert.notEqual(
+    sessionKeyOf("module-unit-studio", "C:/uc/A/A.bdf"),
+    sessionKeyOf("module-unit-studio", "C:/uc/B/B.bdf"),
+  );
+});
+
+test("두 모델의 model-studio 가 동시에 떠도 각 창은 자기 모델 컨텍스트만 해소한다", () => {
+  const reg = new ViewerSessionRegistry();
+  const winA = fakeWin("a");
+  const winB = fakeWin("b");
+  const keyA = sessionKeyOf("model-studio", "C:/out/A");
+  const keyB = sessionKeyOf("model-studio", "C:/out/B");
+  reg.register({ viewerId: "model-studio", sessionKey: keyA, win: winA, outputDir: "C:/out/A" }, 301);
+  reg.register({ viewerId: "model-studio", sessionKey: keyB, win: winB, outputDir: "C:/out/B" }, 302);
+
+  assert.equal(reg.fromWebContentsId(301).outputDir, "C:/out/A");
+  assert.equal(reg.fromWebContentsId(302).outputDir, "C:/out/B");
+  assert.equal(reg.liveOfViewer("model-studio").length, 2);
+
+  // A 창을 닫아도 B 는 그대로 남는다.
+  winA.destroyed = true;
+  reg.remove(keyA, 301, winA);
+  assert.equal(reg.fromWebContentsId(301), null);
+  assert.equal(reg.fromWebContentsId(302).outputDir, "C:/out/B");
+  assert.equal(reg.liveOfViewer("model-studio").length, 1);
 });

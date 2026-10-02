@@ -79,16 +79,28 @@ export function computeGmuVerdict({ jobFailed = false, step1Data = null, step2Da
   const fatals = num(step2Data?.summary?.f06Fatals);
   if (step1Data.status === 'error' || num(summary.totalErrors) > 0 || fatals > 0) {
     const reasons = [];
+    // deck 구간 경계 오류(백엔드 bdf_deck_check) — 무엇이 문제인지와 자동 수정 가능 여부를 먼저 말한다.
+    for (const issue of step1Data.deckIssues ?? []) {
+      if (issue.severity !== 'error') continue;
+      reasons.push({ code: `deck-${issue.code}`, text: `${issue.title}${issue.fixable ? ' — 자동 수정할 수 있습니다' : ''}` });
+    }
     if (num(summary.totalErrors) > 0) reasons.push({ code: 'bdf-errors', text: `BDF 검증 오류 ${num(summary.totalErrors).toLocaleString()}건 — 아래 '검증 상세'에서 카드별로 확인` });
     if (fatals > 0) reasons.push({ code: 'f06-fatal', text: `Nastran FATAL ${fatals}건 — 해석이 돌지 않는 BDF 입니다` });
     if (reasons.length === 0) reasons.push({ code: 'bdf-error', text: 'BDF 를 해석 모델로 읽지 못했습니다.' });
     return { level: 'fail', title: 'BDF 를 쓸 수 없음', basis: 'validation', reasons };
   }
 
+  // 경고 등급 deck 문제(BEGIN BULK 누락 등)도 '검토 필요'로 올린다 — 통과로 두면 화면이 바로 Studio 단계로
+  // 넘어가 자동 수정 제안을 못 보고, 다른 도구로 가져갔을 때 깨지는 BDF 를 그대로 쓰게 된다.
+  const reviewReasons = (step1Data.deckIssues ?? [])
+    .filter((issue) => issue.severity !== 'error')
+    .map((issue) => ({ code: `deck-${issue.code}`, text: `${issue.title}${issue.fixable ? ' — 자동 수정할 수 있습니다' : ''}` }));
   const groups = num(ps.disconnectedGroupCount);
   if (groups > 0) {
-    return { level: 'review', title: '검토 필요', basis: 'validation',
-      reasons: [{ code: 'disconnected', text: `주 구조와 떨어진 그룹 ${groups}개 — Studio Edit › 자동 연결로 잇거나, 의도한 분리인지 확인하세요` }] };
+    reviewReasons.push({ code: 'disconnected', text: `주 구조와 떨어진 그룹 ${groups}개 — Studio Edit › 자동 연결로 잇거나, 의도한 분리인지 확인하세요` });
+  }
+  if (reviewReasons.length > 0) {
+    return { level: 'review', title: '검토 필요', basis: 'validation', reasons: reviewReasons };
   }
   return { level: 'pass', title: '입력 검증 통과', basis: 'validation', reasons: [] };
 }

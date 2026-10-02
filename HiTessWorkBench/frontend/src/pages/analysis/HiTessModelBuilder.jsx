@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronsRight,
   DatabaseZap, Download, ExternalLink, Eye, FileEdit, FilePlus2, FileSpreadsheet, History, Loader2,
@@ -9,10 +9,10 @@ import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import {
   StepRail, InputSummary, VerdictHeader, KeyFigures, NextActionBar, JobProgressCard, EngineLogPanel, StudioLauncherCard,
-  RunStartPanel,
+  RunStartPanel, WorkspaceTabBar, WorkspaceFrame, useWorkspaceStore,
 } from '../../components/analysis/runFrame';
 import { computeModelBuilderVerdict } from '../../utils/modelBuilderVerdict';
-import { useResultReentry } from '../../utils/resultReentry';
+import { peekResultReentry, useResultReentry } from '../../utils/resultReentry';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
 import { isAppBlockedFor, mergeAppSetting, useAppSettings } from '../../hooks/useAppSettings';
@@ -28,7 +28,12 @@ import { readCsvFileRows } from '../../utils/csvPreview';
 import ModelRegistrationModal from '../../components/modelRegistry/ModelRegistrationModal';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 import { describeDiagnostic, downloadDiagnostics, enrichDiagnostic } from '../../utils/modelValidation';
-import { useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
+import { peekDashboardFiles, useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
+import {
+  MAX_MODEL_BUILDER_WORKSPACES, canAddWorkspace, closeWorkspace, findWorkspaceByOutputDir,
+  isWorkspaceIdle, isWorkspaceRunning, modelBuilderWorkspaceKit, normalizePath,
+  workspaceLabel, workspaceStatus, workspaceTitle,
+} from '../../utils/modelBuilderWorkspaces';
 
 /* ──────────────────────────────────────────────────────────────────────────
    상수
@@ -39,7 +44,7 @@ import { useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashb
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.0.90';
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.91';
 
 // 단계 이름은 '도구'가 아니라 엔지니어가 할 일로 쓴다(Studio 는 2단계에서 쓰는 도구).
 // 상태는 실제 사건으로만 바뀐다 — 1: 실행 성공, 2: 판정 통과·검토 확인·편집 적용, 3: BDF 받기·후속 해석 전달.
@@ -1913,16 +1918,36 @@ function isGmuHandoffLocked(overrides) {
   return isAppBlockedFor(mergeAppSetting(meta, overrides?.[GMU_MENU_NAME]), isAdmin());
 }
 
-export default function HiTessModelBuilder() {
+/* ──────────────────────────────────────────────────────────────────────────
+   작업 화면 — 작업 탭 하나 = Model Builder 과정 하나(입력 → 판정·Studio → BDF 저장·전달).
+   페이지(아래 HiTessModelBuilder)가 탭마다 하나씩 띄우고, 숨긴 탭도 언마운트하지 않아
+   실행 중인 폴링·편집 적용이 계속 돈다. 상태 저장은 onSaveState(workspaceId, state) 로 탭별로 한다.
+   ──────────────────────────────────────────────────────────────────────── */
+const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
+  workspaceId, active, getSaved, onSaveState, onRequestFocus, jobLabel,
+}) {
   const { showToast } = useToast();
+  // 저장된 탭 상태는 마운트할 때 한 번만 읽는다(복원용). prop 으로 매번 받으면 저장할 때마다
+  // 숨은 탭까지 전부 다시 그려진다.
+  const [saved] = useState(() => getSaved(workspaceId));
   const { setCurrentMenu, currentMenu } = useNavigation();
   const dashboardCtx = useDashboard();
   const startGlobalJob = dashboardCtx?.startGlobalJob || (() => {});
   const clearGlobalJob = dashboardCtx?.clearGlobalJob || (() => {});
-  const setPageState   = dashboardCtx?.setModelBuilderPageState || (() => {});
+  const setPageState   = useCallback((state) => onSaveState(workspaceId, state), [onSaveState, workspaceId]);
   const setGmuHandoff  = dashboardCtx?.setGmuHandoff  || (() => {});
   const setSidePassageHandoff = dashboardCtx?.setSidePassageHandoff || (() => {});
-  const saved          = dashboardCtx?.modelBuilderPageState;
+  // 대시보드 파일 전달·결과 다시 열기를 이 탭이 받는가 — 마운트 시점에 활성이고 비어 있던 탭만.
+  // (탭이 여러 개 동시에 마운트되므로, 아니면 진행 중인 다른 탭의 입력을 덮는다.)
+  const [acceptsEntry] = useState(() => active && isWorkspaceIdle(saved));
+  // Job Center 기록을 탭별로 둔다 — 다른 탭의 실행이 이 탭의 진행 기록을 지우지 않게.
+  const jobLabelRef = useRef(jobLabel);
+  jobLabelRef.current = jobLabel;
+  const jobSlot = () => ({ slot: workspaceId, label: jobLabelRef.current });
+  // 이 탭이 마지막으로 만든 모델의 서버 산출 폴더 — 재빌드 시 '이전 모델' Studio 창을 찾는 키.
+  const lastOutputDirRef = useRef(saved?.bdfResult?.outputDir ?? null);
+  // 이 탭이 Studio 를 연 모델. 재빌드 후 다시 열면 이전 모델의 창을 닫는다(탭당 Studio 1개).
+  const openedStudioKeyRef = useRef(null);
   const appOverrides   = useAppSettings();
   // 개발 중/점검 중 + 비관리자 → GMU 전달 버튼 비활성화
   const gmuLocked      = isGmuHandoffLocked(appOverrides);
@@ -2079,7 +2104,7 @@ export default function HiTessModelBuilder() {
   // ── 최초 마운트: globalJob 동기화 ──
   useEffect(() => {
     // 다른 App 해석이 더 최근이어도 이 App 의 해석을 집어야 한다(globalJob 은 최신 1개일 뿐).
-    const gj = dashboardCtx?.getJobForMenu?.('HiTESS Model Builder');
+    const gj = dashboardCtx?.getJobForMenu?.('HiTESS Model Builder', workspaceId);
     if (saved?.jobStatus?.status === 'Running' && gj) {
       if (gj.status === 'Success' || gj.status === 'Failed' || gj.status === 'Cancelled') {
         setCurrentJobId(gj.jobId);
@@ -2301,7 +2326,7 @@ export default function HiTessModelBuilder() {
     } finally {
       setHandoffAssigned(Date.now());
     }
-  }, ['.csv']);
+  }, ['.csv'], acceptsEntry);
 
   /* ── 동일 폴더 형제 CSV 자동 스캔 (Electron) ─────────────────────── */
   const scanSiblingCsvs = async (struFile, options = {}) => {
@@ -2390,7 +2415,7 @@ export default function HiTessModelBuilder() {
       const data = await res.json();
       setCurrentJobId(data.job_id);
       startPolling(data.job_id);
-      startGlobalJob(data.job_id, 'HiTESS Model Builder');
+      startGlobalJob(data.job_id, 'HiTESS Model Builder', jobSlot());
     } catch (e) {
       setSteps(prev => prev.map((s, i) => i === 0 ? { ...s, status: 'error' } : s));
       setJobStatus({ status: 'Failed', progress: 0, message: `요청 실패: ${e.message}` });
@@ -2435,7 +2460,7 @@ export default function HiTessModelBuilder() {
       if (!jobId) throw new Error('작업 ID 를 받지 못했습니다.');
       setCurrentJobId(jobId);
       startPolling(jobId);
-      startGlobalJob(jobId, 'HiTESS Model Builder');
+      startGlobalJob(jobId, 'HiTESS Model Builder', jobSlot());
     } catch (e) {
       const detail = e?.response?.data?.detail || e?.message || '알 수 없는 오류';
       setSteps(prev => prev.map((s, i) => (i === 0 ? { ...s, status: 'error' } : s)));
@@ -2456,7 +2481,7 @@ export default function HiTessModelBuilder() {
   const sampleMfSubmitted = (jobId) => {
     setCurrentJobId(jobId);
     startPolling(jobId);
-    startGlobalJob(jobId, 'HiTESS Model Builder');
+    startGlobalJob(jobId, 'HiTESS Model Builder', jobSlot());
   };
   const sampleMfError = (st, detail) => {
     if (elapsedRef.current) clearInterval(elapsedRef.current);
@@ -2513,11 +2538,14 @@ export default function HiTessModelBuilder() {
       });
       // 새 모델이 나왔다 — 이전 모델로 열려 있는 Model Builder Studio 창에 경고를 띄운다.
       // (Studio 가 안 떠 있거나 같은 모델이면 main 이 무시한다.)
+      // Studio 는 모델마다 창이 따로라, 이 탭이 직전에 만든 모델(previousSourceKey)의 창을 지목한다.
       notifyStudioSourceUpdated(
         VIEWER_ID,
         data.output_dir ?? null,
         'Model Builder 가 모델을 다시 만들었습니다. 이 창은 이전 빌드를 보고 있습니다 — WorkBench 에서 Studio 를 다시 여세요.',
+        { previousSourceKey: lastOutputDirRef.current },
       );
+      if (data.output_dir) lastOutputDirRef.current = data.output_dir;
       // 1단계만 완료. 2단계는 판정(통과)·검토 확인·편집 적용으로, 3단계는 BDF 받기·전달로 완료된다.
       setSteps(INITIAL_STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'done' : 'wait' })));
       // 실행이 끝나면 판정을 보는 2단계로 간다(2026-10-01 사용자 결정 — 예전엔 1단계로 되돌아갔다).
@@ -2583,7 +2611,7 @@ export default function HiTessModelBuilder() {
       showToast(`결과를 열지 못했습니다: ${e.message}`, 'error');
     }
   };
-  useResultReentry('HiTESS Model Builder', applyResultReentry);
+  useResultReentry('HiTESS Model Builder', applyResultReentry, acceptsEntry);
 
   /* ── 최근 실행의 입력 불러오기 ──────────────────────────────────────
      그 실행에 쓴 CSV 를 서버 보관본에서 받아 File 로 만들어 입력 칸에 넣는다. 사용자가 직접 올린 것과
@@ -2685,8 +2713,16 @@ export default function HiTessModelBuilder() {
         setLocalResultDir(null);
       }
 
+      // 이 탭이 이전 모델로 연 Studio 가 남아 있으면 닫는다 — 모델마다 창이 따로 뜨므로,
+      // 재빌드 후 다시 열 때 옛 모델 창이 쌓이지 않게 한다(다른 탭의 Studio 는 건드리지 않는다).
+      const prevStudioKey = openedStudioKeyRef.current;
+      if (prevStudioKey && normalizePath(prevStudioKey) !== normalizePath(bdfResult.outputDir)) {
+        try { await window.electron.invoke('viewer:close', { viewerId: VIEWER_ID, sourceKey: prevStudioKey }); } catch { /* 이미 닫힘 */ }
+      }
       const openRes = await window.electron.invoke('viewer:open', {
         viewerId:      VIEWER_ID,
+        // 창 제목 = '작업 N · 구조 CSV 이름' — 작업 탭과 같은 이름이라 여러 창 중 어느 작업인지 바로 보인다.
+        windowTitle:   jobLabelRef.current ? `${jobLabelRef.current} — HiTESS Model Builder Studio` : undefined,
         initialFolder,
         // ★ Studio 구조해석(solve)이 호출할 백엔드 주소. 형제 스튜디오(Mooring/SidePassage/
         //   ModuleUnit/Plate)와 동일하게 반드시 넘긴다. 누락하면 electron main 이
@@ -2703,6 +2739,7 @@ export default function HiTessModelBuilder() {
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok)     throw new Error(openRes?.error || '오픈 실패');
+      openedStudioKeyRef.current = bdfResult.outputDir;
       setViewerStatus('idle');
 
       // Studio 풀스크린 창이 닫힌 직후 — *_edit.json 신규 작성 여부를 즉시 확인.
@@ -2863,8 +2900,16 @@ export default function HiTessModelBuilder() {
   useEffect(() => {
     if (!window.electron?.onMessage) return;
     const unsub = window.electron.onMessage('modelflow:finalize-edit-request', async (msg) => {
-      const { requestId, folderPath, editFileName } = msg || {};
+      const { requestId, folderPath, editFileName, outputDir: requestOutputDir } = msg || {};
       if (!requestId) return;
+      // 작업 탭이 여러 개라 '내 모델의 Studio' 요청만 받는다. 아니면 다른 탭의 모델에 편집이
+      // 오류 없이 적용된다. 산출 폴더가 없는 요청(구버전 main)은 활성 탭만 받는다.
+      if (requestOutputDir) {
+        if (!bdfResult?.outputDir || normalizePath(requestOutputDir) !== normalizePath(bdfResult.outputDir)) return;
+      } else if (!active) {
+        return;
+      }
+      onRequestFocus?.(workspaceId);
 
       // 1) 사용자가 워크벤치를 봤을 때 곧바로 Edit 탭이 활성화되어 있도록 step 1 로 전환
       setActiveIdx(1);
@@ -2969,7 +3014,7 @@ export default function HiTessModelBuilder() {
       }
     });
     return () => { try { unsub?.(); } catch {} };
-  }, [startApplyEditJob, pollEditJobInBackground, refreshEditStatus, showToast, localResultDir, bdfResult?.outputDir, clearGlobalJob, currentJobId]);
+  }, [startApplyEditJob, pollEditJobInBackground, refreshEditStatus, showToast, localResultDir, bdfResult?.outputDir, clearGlobalJob, currentJobId, active, onRequestFocus, workspaceId]);
 
   /* ── 리셋 ──────────────────────────────────────────────────────────── */
   const handleReset = () => {
@@ -3046,6 +3091,7 @@ export default function HiTessModelBuilder() {
     'HiTESS Model Builder',
     (handoffAssigned && (struFile || pipeFile) && !isRunning && !hasRunOnce && !hasPreflightErrors && handoffAssigned) || null,
     handleRunModelBuilder,
+    acceptsEntry,
   );
 
   /* ── CSV 미리보기 파생 ─────────────────────────────────────────────
@@ -3127,6 +3173,7 @@ export default function HiTessModelBuilder() {
     const onKey = (e) => {
       if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return;
       if (currentMenu !== 'HiTESS Model Builder') return; // 앱 페이지는 keep-alive 라 다른 화면에서도 살아 있다
+      if (!active) return; // 숨은 작업 탭은 반응하지 않는다
       const a = runActionRef.current;
       if (!a.enabled) return;
       e.preventDefault();
@@ -3134,7 +3181,7 @@ export default function HiTessModelBuilder() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [currentMenu]);
+  }, [currentMenu, active]);
 
   const markDelivered = useCallback(() => {
     setSteps(prev => prev.map((s, i) => (i === 2 ? { ...s, status: 'done' } : s)));
@@ -3191,25 +3238,9 @@ export default function HiTessModelBuilder() {
     : verdict.level === 'review' ? '모델은 만들어졌지만 아래 항목을 확인해야 합니다.' : null;
 
   /* ── 렌더 ──────────────────────────────────────────────────────────── */
+  // 페이지 머리(배너·커뮤니티·작업 탭 바)는 HiTessModelBuilder 가 그린다. 여기는 작업 화면 본문만.
   return (
-    // pb-28: 화면 오른쪽 아래 전역 작업·메시지 도크가 마지막 버튼을 가리지 않게 여백을 둔다(1366 실측).
-    <div className="relative mx-auto flex min-h-full max-w-[1400px] flex-col pb-28 animate-fade-in-up">
-
-      <FileBasedPageBanner
-        title="HiTESS Model Builder"
-        subtitle="설계 CSV(구조·배관·장비) → 1D Beam FE 모델 → Nastran BDF"
-        icon={ShieldCheck}
-        guideTitle="[파일] HiTESS Model Builder — CSV → BDF 변환"
-        onBack={() => setCurrentMenu('File-Based Apps')}
-      />
-
-      {MODEL_BUILDER_COMMUNITY_KEY && (
-        <AppCommunityHub
-          appKey={MODEL_BUILDER_COMMUNITY_KEY}
-          appName="HiTESS Model Builder"
-        />
-      )}
-
+    <>
       <div className="flex flex-col items-stretch gap-5 px-1 xl:flex-row">
 
         {/* ── 왼쪽 레일: 단계 · 입력 요약 · 옵션 · 실행 ── */}
@@ -3487,6 +3518,135 @@ export default function HiTessModelBuilder() {
             ? '삭제되었던 모델을 Model Library 에 복원했습니다.'
             : 'Model Library 에 등록되었습니다.',
           'success',
+        )}
+      />
+    </>
+  );
+});
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   페이지 — 작업 탭 여러 개를 동시에 진행한다(탭당 Model Builder 과정 1개).
+   탭 UI = runFrame/WorkspaceTabs(GMU 권상과 공용), 탭 규칙 = utils/modelBuilderWorkspaces(+테스트).
+   ──────────────────────────────────────────────────────────────────────── */
+
+const MODEL_BUILDER_MENU = 'HiTESS Model Builder';
+const MB_STATUS_TEXT = { idle: '실행 전', ready: '모델 확인 단계', delivered: 'BDF 저장·전달 완료' };
+
+export default function HiTessModelBuilder() {
+  const { setCurrentMenu } = useNavigation();
+  const { showToast } = useToast();
+  const dashboardCtx = useDashboard();
+  const {
+    store, storeRef, update, saveState, focusWorkspace, getSaved, addWorkspace,
+  } = useWorkspaceStore({
+    rawStore: dashboardCtx?.modelBuilderPageState,
+    setRawStore: dashboardCtx?.setModelBuilderPageState,
+    kit: modelBuilderWorkspaceKit,
+  });
+
+  const handleClose = (id) => {
+    const state = store.states[id];
+    const running = isWorkspaceRunning(state);
+    if (running || workspaceStatus(state) === 'ready') {
+      const message = running
+        ? '이 작업은 아직 서버에서 실행 중입니다.\n탭을 닫아도 서버 실행은 계속되고, 결과는 My Projects 에서 다시 열 수 있습니다.\n탭을 닫을까요?'
+        : '이 작업의 BDF 를 아직 저장·전달하지 않았습니다.\n결과는 My Projects 에서 다시 열 수 있습니다. 이 작업의 Studio 창도 함께 닫힙니다.\n탭을 닫을까요?';
+      if (!window.confirm(message)) return;
+    }
+    // 이 탭의 Studio 창만 닫는다(다른 탭의 Studio 는 그대로).
+    const outputDir = state?.bdfResult?.outputDir;
+    if (outputDir && window.electron?.invoke) {
+      window.electron.invoke('viewer:close', { viewerId: VIEWER_ID, sourceKey: outputDir }).catch(() => {});
+    }
+    update((prev) => closeWorkspace(prev, id));
+  };
+
+  // Studio 의 편집 적용 요청인데 그 모델의 탭이 이미 닫혔다 — 받을 탭이 없으니 Studio 에 바로 알린다
+  // (안 알리면 Studio 가 응답 시간 초과(10분)까지 기다린다). 탭이 있으면 그 탭이 처리한다.
+  useEffect(() => {
+    if (!window.electron?.onMessage) return undefined;
+    const unsub = window.electron.onMessage('modelflow:finalize-edit-request', (msg) => {
+      if (!msg?.requestId || !msg.outputDir) return;
+      if (findWorkspaceByOutputDir(storeRef.current, msg.outputDir)) return;
+      try {
+        window.electron.sendMessage('modelflow:finalize-edit-response', {
+          requestId: msg.requestId,
+          ok: false,
+          error: '이 Studio 의 작업 탭이 닫혀 있어 편집을 적용할 곳이 없습니다. 편집 내용(*_edit.json)은 결과 폴더에 남아 있습니다 — My Projects 에서 이 결과를 다시 연 뒤 Studio 를 다시 여세요.',
+        });
+      } catch { /* 응답 실패는 Studio 쪽 시간 초과로 처리된다 */ }
+    });
+    return () => { try { unsub?.(); } catch { /* noop */ } };
+  }, [storeRef]);
+
+  // 대시보드 파일 전달·결과 다시 열기로 들어왔는데 탭이 가득 차 받을 빈 탭이 없을 때 알린다.
+  // '받을 빈 탭이 있었는가'는 마운트 시점 값으로 판정한다 — 미뤄 둔 사이 빈 탭이 전달을 받아
+  // 채워지므로, 나중에 보면 가득 찬 것으로 오판한다(실측: 연계 성공인데 '가득 참' 토스트).
+  // (재진입 직후 재마운트가 겹치므로 토스트는 잠깐 미뤄 살아남은 인스턴스에서 한 번만.)
+  const [entryBlocked] = useState(() => !isWorkspaceIdle(store.states[store.activeId]));
+  useEffect(() => {
+    if (!entryBlocked) return undefined;
+    const timer = setTimeout(() => {
+      if (peekDashboardFiles(MODEL_BUILDER_MENU) || peekResultReentry(MODEL_BUILDER_MENU) != null) {
+        showToast(`작업 탭이 가득 찼습니다(최대 ${MAX_MODEL_BUILDER_WORKSPACES}개). 끝난 작업 탭을 닫고 다시 시도하세요.`, 'warning');
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const tabItems = store.workspaces.map((ws) => ({
+    id: ws.id,
+    slotNo: ws.slotNo,
+    label: workspaceLabel(store.states[ws.id]),
+    // '작업 N · 이름' — Job Center 카드·Studio 창 제목이 같은 이름을 쓴다.
+    title: workspaceTitle(ws, store.states[ws.id]),
+    status: workspaceStatus(store.states[ws.id]),
+  }));
+
+  return (
+    // pb-28: 화면 오른쪽 아래 전역 작업·메시지 도크가 마지막 버튼을 가리지 않게 여백을 둔다(1366 실측).
+    <div className="relative mx-auto flex min-h-full max-w-[1400px] flex-col pb-28 animate-fade-in-up">
+      <FileBasedPageBanner
+        title="HiTESS Model Builder"
+        subtitle="설계 CSV(구조·배관·장비) → 1D Beam FE 모델 → Nastran BDF"
+        icon={ShieldCheck}
+        guideTitle="[파일] HiTESS Model Builder — CSV → BDF 변환"
+        onBack={() => setCurrentMenu('File-Based Apps')}
+      />
+
+      {MODEL_BUILDER_COMMUNITY_KEY && (
+        <AppCommunityHub
+          appKey={MODEL_BUILDER_COMMUNITY_KEY}
+          appName="HiTESS Model Builder"
+        />
+      )}
+
+      <WorkspaceTabBar
+        items={tabItems}
+        activeId={store.activeId}
+        ariaLabel="Model Builder 작업"
+        onActivate={focusWorkspace}
+        onClose={handleClose}
+        onAdd={addWorkspace}
+        canAdd={canAddWorkspace(store)}
+        max={MAX_MODEL_BUILDER_WORKSPACES}
+        statusText={MB_STATUS_TEXT}
+      />
+      <WorkspaceFrame
+        items={tabItems}
+        activeId={store.activeId}
+        statusText={MB_STATUS_TEXT}
+        renderWorkspace={(item) => (
+          <ModelBuilderWorkspace
+            workspaceId={item.id}
+            active={item.id === store.activeId}
+            getSaved={getSaved}
+            onSaveState={saveState}
+            onRequestFocus={focusWorkspace}
+            jobLabel={item.title}
+          />
         )}
       />
     </div>

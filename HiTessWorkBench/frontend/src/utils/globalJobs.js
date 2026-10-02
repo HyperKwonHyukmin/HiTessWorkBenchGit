@@ -3,6 +3,8 @@
  *
  * 보관 정책:
  *  - App 당 최신 해석 1개만 남긴다. 같은 App 에서 새 해석을 시작하면 이전 기록을 교체한다.
+ *    단, 작업 탭(slot)을 쓰는 App(HiTESS Model Builder)은 '탭당 1개'다 — 탭마다 다른 모델을
+ *    동시에 진행하므로, 한 탭의 실행이 다른 탭의 진행 기록을 지우면 안 된다.
  *  - 완료된 해석은 완료 시점부터 30분 뒤 만료된다. 실행 중인 해석은 만료되지 않는다.
  *  - 그 밖에는 사용자가 휴지통으로 지우거나 앱을 재시작할 때만 사라진다.
  *
@@ -25,28 +27,35 @@ export function isTerminalJobStatus(status) {
   return TERMINAL_JOB_STATUSES.has(status);
 }
 
+/** 같은 자리(App + 작업 탭)의 기록인지. slot 이 없으면 App 단위로 본다. */
+function sameSlot(a, b) {
+  return a.menu === b.menu && (a.slot ?? null) === (b.slot ?? null);
+}
+
 /**
- * 새 해석을 목록 맨 앞에 넣는다. 같은 App(menu)의 이전 해석은 제거해 App 당 1개를 지킨다.
+ * 새 해석을 목록 맨 앞에 넣는다. 같은 자리(App, 작업 탭이 있으면 App+탭)의 이전 해석은 제거한다.
  * 같은 jobId 로 다시 들어오면 갱신으로 취급한다(중복 누적 방지).
  */
 export function upsertGlobalJob(jobs, nextJob, limit = GLOBAL_JOB_HISTORY_LIMIT) {
   const prev = Array.isArray(jobs) ? jobs : [];
   return [
     nextJob,
-    ...prev.filter((job) => job.menu !== nextJob.menu && job.jobId !== nextJob.jobId),
+    ...prev.filter((job) => !sameSlot(job, nextJob) && job.jobId !== nextJob.jobId),
   ].slice(0, limit);
 }
 
 /**
- * 해당 App 의 해석을 찾는다.
+ * 해당 App 의 해석을 찾는다. slot 을 주면 그 작업 탭의 해석만 본다.
  *
  * 페이지는 '가장 최근 해석'이 아니라 '자기 App 의 해석'을 봐야 한다. 예전에는 목록의 첫
  * 항목만 참조해서, Model Builder 실행 중 Module Unit 을 돌리면 Model Builder 로 돌아가도
  * 진행 상태가 복원되지 않았다.
  */
-export function findJobForMenu(jobs, menuName) {
+export function findJobForMenu(jobs, menuName, slot = undefined) {
   if (!Array.isArray(jobs) || !menuName) return null;
-  return jobs.find((job) => job.menu === menuName) || null;
+  return jobs.find((job) => (
+    job.menu === menuName && (slot === undefined || (job.slot ?? null) === (slot ?? null))
+  )) || null;
 }
 
 /**
@@ -55,10 +64,12 @@ export function findJobForMenu(jobs, menuName) {
  * 메뉴명이 비어 있으면 아무것도 지우지 않는다 — 페이지 하나를 초기화하려다 다른 App 의
  * 진행 중인 해석까지 날리는 사고를 막기 위한 안전장치다.
  */
-export function removeJobsForMenu(jobs, menuName) {
+export function removeJobsForMenu(jobs, menuName, slot = undefined) {
   if (!Array.isArray(jobs)) return [];
   if (!menuName) return jobs;
-  const next = jobs.filter((job) => job.menu !== menuName);
+  const next = jobs.filter((job) => !(
+    job.menu === menuName && (slot === undefined || (job.slot ?? null) === (slot ?? null))
+  ));
   return next.length === jobs.length ? jobs : next;
 }
 

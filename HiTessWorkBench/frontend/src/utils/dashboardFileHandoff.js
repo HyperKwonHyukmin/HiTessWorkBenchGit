@@ -62,9 +62,11 @@ const matchesAccept = (file, accept) =>
 /**
  * 파일 한 개를 받는 페이지용. 마운트 시 넘겨받은 파일 중 accept 에 맞는 첫 파일로 apply(file) 를 부른다.
  * accept 예: ['.bdf', '.dat'] — 페이지가 받지 않는 형식이면 아무것도 하지 않는다.
+ * enabled=false 면 받지 않는다(작업 탭이 여러 개인 App 은 활성 빈 탭만 받는다 — 마운트 시점 값).
  */
-export function useDashboardFileHandoff(menu, apply, accept = null) {
+export function useDashboardFileHandoff(menu, apply, accept = null, enabled = true) {
   useEffect(() => {
+    if (!enabled) return undefined;
     const file = peekDashboardFiles(menu)?.find(f => matchesAccept(f, accept));
     if (!file) return undefined;
     const timer = setTimeout(() => { autoRunArmed.set(menu, Date.now()); apply(file); }, APPLY_DELAY_MS);
@@ -74,9 +76,14 @@ export function useDashboardFileHandoff(menu, apply, accept = null) {
   }, []);
 }
 
-/** 파일 여러 개(CSV 2종 등)를 받는 페이지용. accept 에 맞는 파일 전부로 applyAll(files) 를 부른다. */
-export function useDashboardFilesHandoff(menu, applyAll, accept = null) {
+/**
+ * 파일 여러 개(CSV 2종 등)를 받는 페이지용. accept 에 맞는 파일 전부로 applyAll(files) 를 부른다.
+ * enabled=false 면 받지 않는다 — 한 페이지에 작업 화면이 여러 개 떠 있는 App(Model Builder 작업 탭)은
+ * 활성 빈 탭 하나만 받아야 다른 탭의 입력을 덮지 않는다(마운트 시점 값으로 판정).
+ */
+export function useDashboardFilesHandoff(menu, applyAll, accept = null, enabled = true) {
   useEffect(() => {
+    if (!enabled) return undefined;
     const files = (peekDashboardFiles(menu) || []).filter(f => matchesAccept(f, accept));
     if (files.length === 0) return undefined;
     const timer = setTimeout(() => { autoRunArmed.set(menu, Date.now()); applyAll(files); }, APPLY_DELAY_MS);
@@ -94,15 +101,15 @@ export function useDashboardFilesHandoff(menu, applyAll, accept = null) {
  *   그 렌더의 run 은 새 상태를 보는 함수다.
  * - 한 번 실행하면 해제된다. AUTO_RUN_TTL_MS 안에 ready 가 되지 않으면 실행하지 않는다.
  */
-export function useDashboardAutoRun(menu, ready, run) {
+export function useDashboardAutoRun(menu, ready, run, enabled = true) {
   const runRef = useRef(run);
   runRef.current = run;
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !enabled) return;
     const at = autoRunArmed.get(menu);
     if (at == null) return;
     autoRunArmed.delete(menu);
     if (Date.now() - at > AUTO_RUN_TTL_MS) return;
     runRef.current();
-  }, [menu, ready]);
+  }, [menu, ready, enabled]);
 }

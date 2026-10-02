@@ -27,6 +27,8 @@ import {
   removeJobsForMenu,
   upsertGlobalJob,
 } from '../utils/globalJobs';
+import { freshEntryWorkspaces } from '../utils/modelBuilderWorkspaces';
+import { gmuWorkspaceKit } from '../utils/gmuLiftingWorkspaces';
 
 const RAW_ANALYSIS_DATA = [
   // ── File-Based Apps (signature: blue) ──────────── Active ──
@@ -513,6 +515,8 @@ export function DashboardProvider({ children }) {
   const [assessmentPageState, setAssessmentPageState] = useState(INITIAL_ASSESSMENT_PAGE_STATE);
 
   const [modelBuilderPageState, setModelBuilderPageState] = useState(null);
+  // GMU 권상 작업 탭 저장소(utils/gmuLiftingWorkspaces). 예전 analysisPageStates[GMU] 단일 상태를 대신한다.
+  const [gmuLiftingPageState, setGmuLiftingPageState] = useState(null);
   const [analysisPageStates, setAnalysisPageStates] = useState({});
   const setAnalysisPageState = useCallback((menuName, updater) => {
     if (!menuName) return;
@@ -552,8 +556,9 @@ export function DashboardProvider({ children }) {
   //   getJobForMenu(자기 메뉴) 로 자기 App 의 해석을 찾아야 한다. 여러 App 을 오가며
   //   해석하면 첫 항목이 다른 App 의 것이라 복원에 실패한다.
   const globalJob = globalJobs[0] || null;
+  // slot = 작업 탭 id(Model Builder). 주면 그 탭의 해석만 찾는다.
   const getJobForMenu = useCallback(
-    (menuName) => findJobForMenu(globalJobs, getAppMenuName(menuName)),
+    (menuName, slot) => findJobForMenu(globalJobs, getAppMenuName(menuName), slot),
     [globalJobs],
   );
   const handledFreshEntryRef = useRef({ menu: null, at: 0 });
@@ -571,7 +576,12 @@ export function DashboardProvider({ children }) {
       setAssessmentPageState(INITIAL_ASSESSMENT_PAGE_STATE);
     }
     if (menuName === 'HiTESS Model Builder') {
-      setModelBuilderPageState(null);
+      // 작업 탭은 지우지 않는다 — 진행 중·결과 있는 탭은 남기고 빈 탭 하나를 열어 그리로 간다.
+      // (메뉴를 다시 눌렀다고 다른 모델의 작업이 사라지면 안 된다. utils/modelBuilderWorkspaces)
+      setModelBuilderPageState(prev => freshEntryWorkspaces(prev));
+    }
+    if (menuName === 'Group & Module Unit 권상 구조 해석') {
+      setGmuLiftingPageState(prev => gmuWorkspaceKit.freshEntry(prev));
     }
     // 화면 상태만 초기화하고 Job Center 기록은 건드리지 않는다. 사이드 메뉴로 다시 들어와도
     // 서버에서 돌고 있는 해석의 추적이 끊기면 안 되고, 완료 기록도 30분 동안은 남아야 한다.
@@ -674,12 +684,14 @@ export function DashboardProvider({ children }) {
 
   // 페이지 '초기화'용 — 그 App 의 기록만 지운다. 무인자 clearGlobalJob() 은 목록 전체를
   // 비우므로, 한 페이지를 초기화하려다 다른 App 의 진행 중인 해석까지 날아간다.
-  const clearGlobalJobForMenu = useCallback((menuName) => {
+  const clearGlobalJobForMenu = useCallback((menuName, slot) => {
     const routeMenu = getAppMenuName(menuName);
-    setGlobalJobs(prev => removeJobsForMenu(prev, routeMenu));
+    setGlobalJobs(prev => removeJobsForMenu(prev, routeMenu, slot));
   }, []);
 
-  const startGlobalJob = useCallback((jobId, menuName) => {
+  // options.slot  = 작업 탭 id. 같은 App 이라도 탭이 다르면 기록을 따로 둔다(Model Builder).
+  // options.label = Job Center 카드에 App 이름 뒤로 붙일 작업 이름(예: 구조 CSV 파일명).
+  const startGlobalJob = useCallback((jobId, menuName, options = {}) => {
     if (!jobId) return;
     const routeMenu = getAppMenuName(menuName);
     const stateKey = getAppStateKey(menuName);
@@ -688,7 +700,8 @@ export function DashboardProvider({ children }) {
       jobId,
       menu: routeMenu,
       stateKey,
-      displayName: menuName,
+      ...(options.slot ? { slot: options.slot } : {}),
+      displayName: options.label ? `${menuName} · ${options.label}` : menuName,
       status: 'Running',
       progress: 0,
       message: '서버에 작업을 요청하는 중...',
@@ -793,6 +806,7 @@ export function DashboardProvider({ children }) {
     globalJob, globalJobs, getJobForMenu, startGlobalJob, clearGlobalJob, clearGlobalJobForMenu,
     assessmentPageState, setAssessmentPageState,
     modelBuilderPageState, setModelBuilderPageState,
+    gmuLiftingPageState, setGmuLiftingPageState,
     analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
     gmuHandoff, setGmuHandoff, clearGmuHandoff,
     sidePassageHandoff, setSidePassageHandoff, clearSidePassageHandoff,
@@ -803,6 +817,7 @@ export function DashboardProvider({ children }) {
     globalJob, globalJobs, getJobForMenu, startGlobalJob, clearGlobalJob, clearGlobalJobForMenu,
     assessmentPageState,
     modelBuilderPageState,
+    gmuLiftingPageState,
     analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
     gmuHandoff, clearGmuHandoff,
     sidePassageHandoff, clearSidePassageHandoff,
@@ -831,6 +846,8 @@ export function DashboardProvider({ children }) {
     setAssessmentPageState,
     modelBuilderPageState,
     setModelBuilderPageState,
+    gmuLiftingPageState,
+    setGmuLiftingPageState,
     analysisPageStates,
     setAnalysisPageState,
     clearAnalysisPageState,
@@ -849,6 +866,7 @@ export function DashboardProvider({ children }) {
   }), [
     assessmentPageState,
     modelBuilderPageState,
+    gmuLiftingPageState,
     analysisPageStates,
     setAnalysisPageState,
     clearAnalysisPageState,

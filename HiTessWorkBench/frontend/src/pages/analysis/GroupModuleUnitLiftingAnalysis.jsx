@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   UploadCloud, ChevronsRight, FileCheck2, MapPin, BarChart3, X, CheckCircle2, Loader2,
   FileText, ExternalLink, FilePlus2, RefreshCw, Wand2, Info,
@@ -10,7 +10,7 @@ import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { usePolling } from '../../hooks/usePolling';
 import {
   requestGroupModuleUnit, requestGroupModuleUnitFromPath, downloadFileText,
-  getAnalysisById, getGroupModuleUnitArtifacts,
+  getAnalysisById, getGroupModuleUnitArtifacts, fixGroupModuleUnitDeck,
 } from '../../api/analysis';
 import ValidationStepLog from '../../components/analysis/ValidationStepLog';
 import { API_BASE_URL } from '../../config';
@@ -18,15 +18,19 @@ import SampleRunButton from '../../components/analysis/SampleRunButton';
 import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 import {
   StepRail, InputSummary, VerdictHeader, KeyFigures, NextActionBar, JobProgressCard, EngineLogPanel, StudioLauncherCard,
-  RunStartPanel,
+  RunStartPanel, WorkspaceTabBar, WorkspaceFrame, useWorkspaceStore,
 } from '../../components/analysis/runFrame';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
-import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
-import { useResultReentry } from '../../utils/resultReentry';
+import { peekDashboardFiles, useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
+import { peekResultReentry, useResultReentry } from '../../utils/resultReentry';
+import {
+  gmuWorkspaceKit, gmuWorkspaceLabel, gmuWorkspaceStatus, gmuWorkspaceTitle,
+  isGmuWorkspaceIdle, isGmuWorkspaceRunning, isOwnStructuralEvent, normalizePath,
+} from '../../utils/gmuLiftingWorkspaces';
 import { buildStructuralResult, computeGmuVerdict } from '../../utils/gmuLiftingVerdict';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.166';
+const MODULE_STUDIO_VERSION = '0.0.168';
 // 다른 App 이 넘긴 BDF 는 fresh-entry 재마운트가 끝난 뒤 살아남은 인스턴스에만 적용한다.
 const HANDOFF_APPLY_DELAY_MS = 60;
 const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
@@ -157,16 +161,32 @@ function StructuralResultPanel({ result }) {
   );
 }
 
-// ── 메인 컴포넌트 ────────────────────────────────────────────
-export default function GroupModuleUnitLiftingAnalysis() {
+// ── 작업 화면 ────────────────────────────────────────────────
+// 작업 탭 하나 = 권상 검토 과정 하나(BDF 입력 검증 → Studio 권상 검토 → 결과·보고서).
+// 페이지(아래 GroupModuleUnitLiftingAnalysis)가 탭마다 하나씩 띄우고, 숨긴 탭도 언마운트하지 않아
+// 검증 폴링이 계속 돈다. 상태 저장은 onSaveState(workspaceId, state) 로 탭별로 한다.
+const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
+  workspaceId, active, getSaved, onSaveState, jobLabel,
+}) {
   const { setCurrentMenu, currentMenu } = useNavigation();
   const {
     gmuHandoff, clearGmuHandoff, startGlobalJob, clearGlobalJob, getJobForMenu,
-    analysisPageStates, setAnalysisPageState, clearAnalysisPageState,
   } = useDashboard();
-  const savedPageState = analysisPageStates?.[GMU_MENU_NAME] || {};
-  // 다른 App 해석이 더 최근이어도 이 App 의 해석을 집어야 한다(globalJob 은 최신 1개일 뿐).
-  const gmuJob = getJobForMenu?.(GMU_MENU_NAME) || null;
+  // 저장된 탭 상태는 마운트할 때 한 번만 읽는다(복원용) — 저장할 때마다 숨은 탭까지 다시 그리지 않게.
+  const [savedPageState] = useState(() => getSaved(workspaceId) || {});
+  // 대시보드 파일 전달·결과 다시 열기·다른 App 연계를 이 탭이 받는가 — 마운트 시점에 활성이고 비어 있던 탭만.
+  // (탭이 여러 개 동시에 마운트되므로, 아니면 진행 중인 다른 탭의 입력을 덮는다.)
+  const [acceptsEntry] = useState(() => active && isGmuWorkspaceIdle(getSaved(workspaceId)));
+  // Job Center 기록을 탭별로 둔다 — 다른 탭의 검증이 이 탭의 진행 기록을 지우지 않게.
+  const jobLabelRef = useRef(jobLabel);
+  jobLabelRef.current = jobLabel;
+  const jobSlot = () => ({ slot: workspaceId, label: jobLabelRef.current });
+  // 이 탭이 마지막으로 검증한 BDF(서버 경로) — 재검증 시 '이전 모델' Studio 창을 찾는 키.
+  const lastBdfPathRef = useRef(savedPageState.bdfPath ?? null);
+  // 이 탭이 Studio 를 연 BDF. 재검증 후 다시 열면 이전 모델의 창을 닫는다(탭당 Studio 1개).
+  const openedStudioKeyRef = useRef(null);
+  // 다른 App 해석이 더 최근이어도 이 탭의 해석을 집어야 한다(globalJob 은 최신 1개일 뿐).
+  const gmuJob = getJobForMenu?.(GMU_MENU_NAME, workspaceId) || null;
   const { showToast } = useToast();
 
   // 옛 페이지 상태(단계 id: bdf-validation/lifting-points/results)도 활성 단계 번호는 같은 자리라 그대로 쓴다.
@@ -292,16 +312,24 @@ export default function GroupModuleUnitLiftingAnalysis() {
       }
       // 새 BDF 로 검증이 끝났다 — 이전 모델로 열려 있는 Module Unit Studio 창에 경고를 띄운다.
       // (Studio 가 안 떠 있거나 같은 모델이면 main 이 무시한다.)
+      // Studio 는 BDF 마다 창이 따로라, 이 탭이 직전에 검증한 BDF(previousSourceKey)의 창을 지목한다.
       notifyStudioSourceUpdated(
         MODULE_STUDIO_VIEWER_ID,
         resultInfo.bdf ?? null,
         '워크벤치에서 새 BDF 가 검증됐습니다. 이 창은 이전 모델을 보고 있습니다 — WorkBench 에서 Studio 를 다시 여세요.',
+        { previousSourceKey: lastBdfPathRef.current },
       );
+      if (resultInfo.bdf) lastBdfPathRef.current = resultInfo.bdf;
       const s1 = await applyValidationResult(resultInfo, data.project?.id);
       const v = computeGmuVerdict({ step1Data: s1, step2Data: null });
       // 공통 틀 규칙: 실행이 끝나면 다음 단계로 이동한다. 검증이 실패면 원인을 볼 수 있게 1단계에 남는다.
-      if (v.level && v.level !== 'fail') setActiveIdx(STEP_INDEX.studio);
-      showToast(v.level === 'fail' ? 'BDF 검증 — 오류 발견' : 'BDF 검증 완료', v.level === 'fail' ? 'warning' : 'success');
+      // 자동 수정할 수 있는 BDF 형식 문제가 있어도 1단계에 남는다 — 수정 제안(다음 행동 바)이 거기 있다.
+      const hasDeckFix = (s1?.deckIssues ?? []).some(i => i.fixable);
+      if (v.level && v.level !== 'fail' && !hasDeckFix) setActiveIdx(STEP_INDEX.studio);
+      showToast(
+        v.level === 'fail' ? 'BDF 검증 — 오류 발견' : hasDeckFix ? 'BDF 검증 완료 — 자동 수정할 수 있는 형식 문제가 있습니다' : 'BDF 검증 완료',
+        v.level === 'fail' || hasDeckFix ? 'warning' : 'success',
+      );
     },
     onError: (errData) => {
       setValidating(false);
@@ -315,34 +343,37 @@ export default function GroupModuleUnitLiftingAnalysis() {
   // 대시보드 '새 해석 시작'에 놓은 BDF 를 이어받는다(업로드 칸의 onFile 과 같은 처리)
   useDashboardFileHandoff(GMU_MENU_NAME, (f) => {
     setBdfFile(f); clearResults(); setActiveIdx(0);
-  }, ['.bdf']);
+  }, ['.bdf'], acceptsEntry);
 
   // Studio 창을 열었다는 사실이 아니라 실제 SOL 101 완료 이벤트로 2단계를 끝낸다.
   useEffect(() => {
     if (!window.electron?.onMessage) return undefined;
     return window.electron.onMessage('viewer:unit-structural-completed', (payload) => {
       if (payload?.viewerId !== MODULE_STUDIO_VIEWER_ID) return;
-      if (bdfAnalysisId && payload?.parentAnalysisId && Number(payload.parentAnalysisId) !== Number(bdfAnalysisId)) return;
+      // 작업 탭이 여러 개라 '내 검증 기록으로 연 Studio' 의 결과만 받는다. 검증 기록 id 가 없거나
+      // 다르면 받지 않는다 — 예전처럼 id 가 없을 때 통과시키면 다른 탭의 결과가 이 탭에 들어온다.
+      if (!isOwnStructuralEvent(payload, bdfAnalysisId)) return;
+      const who = jobLabelRef.current ? `${jobLabelRef.current} — ` : '';
       if (payload.ok) {
         setAnalysisResult(payload);
         setDelivered(false);
         setActiveIdx(STEP_INDEX.results);
-        showToast(`Studio 구조 해석 완료 — ${payload.status}`, payload.status === 'PASS' ? 'success' : 'warning');
+        showToast(`${who}Studio 구조 해석 완료 — ${payload.status}`, payload.status === 'PASS' ? 'success' : 'warning');
       } else {
         setAnalysisResult({ status: 'ERROR', items: [], error: payload.error });
-        showToast(`Studio 구조 해석 실패 — ${payload.error || '알 수 없는 오류'}`, 'error');
+        showToast(`${who}Studio 구조 해석 실패 — ${payload.error || '알 수 없는 오류'}`, 'error');
       }
     });
   }, [bdfAnalysisId, showToast]);
 
   useEffect(() => {
-    setAnalysisPageState?.(GMU_MENU_NAME, {
+    onSaveState(workspaceId, {
       activeIdx, bdfFile, validating, validJobId, validProgress, validStatusMsg, validStartedAt,
       validFailed, engineLog, step1Data, step2Data, useNastran, validatedWithNastran,
       bdfPath, bdfAnalysisId, studioOpened, analysisResult, delivered, handoffSource, handoffBdfPath,
     });
   }, [
-    setAnalysisPageState, activeIdx, bdfFile, validating, validJobId, validProgress, validStatusMsg, validStartedAt,
+    onSaveState, workspaceId, activeIdx, bdfFile, validating, validJobId, validProgress, validStatusMsg, validStartedAt,
     validFailed, engineLog, step1Data, step2Data, useNastran, validatedWithNastran,
     bdfPath, bdfAnalysisId, studioOpened, analysisResult, delivered, handoffSource, handoffBdfPath,
   ]);
@@ -413,8 +444,8 @@ export default function GroupModuleUnitLiftingAnalysis() {
   // → currentMenu 가 이 페이지로 올 때마다(=페이지를 열 때마다) 버전을 재확인해, 새 Studio 배포가
   //    Electron 재시작 없이 곧바로 '업데이트' 배지에 반영되게 한다.
   useEffect(() => {
-    if (currentMenu === GMU_MENU_NAME) refreshStudioVersion();
-  }, [currentMenu, refreshStudioVersion]);
+    if (currentMenu === GMU_MENU_NAME && active) refreshStudioVersion();
+  }, [currentMenu, active, refreshStudioVersion]);
 
   useEffect(() => {
     if (!window.electron?.onMessage) return undefined;
@@ -488,8 +519,16 @@ export default function GroupModuleUnitLiftingAnalysis() {
       }
 
       setStudioStatus('opening');
+      // 이 탭이 이전 BDF 로 연 Studio 가 남아 있으면 닫는다 — BDF 마다 창이 따로 뜨므로,
+      // 재검증 후 다시 열 때 옛 모델 창이 쌓이지 않게 한다(다른 탭의 Studio 는 건드리지 않는다).
+      const prevStudioKey = openedStudioKeyRef.current;
+      if (prevStudioKey && bdfPath && normalizePath(prevStudioKey) !== normalizePath(bdfPath)) {
+        try { await window.electron.invoke('viewer:close', { viewerId: MODULE_STUDIO_VIEWER_ID, sourceKey: prevStudioKey }); } catch { /* 이미 닫힘 */ }
+      }
       const openRes = await window.electron.invoke('viewer:open', {
         viewerId: MODULE_STUDIO_VIEWER_ID,
+        // 창 제목 = '작업 N · BDF 이름' — 작업 탭과 같은 이름이라 여러 창 중 어느 작업인지 바로 보인다.
+        windowTitle: jobLabelRef.current ? `${jobLabelRef.current} — Module Unit 권상 Studio` : undefined,
         initialFolder,
         parentAnalysisId: bdfAnalysisId,
         serverUrl: API_BASE_URL,
@@ -499,6 +538,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
       });
       if (openRes === null) throw new Error('IPC viewer:open 미등록');
       if (!openRes?.ok) throw new Error(openRes?.error || 'Studio 오픈 실패');
+      openedStudioKeyRef.current = bdfPath ?? null;
       // 창을 연 것만으로 완료 처리하지 않는다. 실제 SOL 101 완료 이벤트가 2단계를 끝낸다.
       setStudioOpened(true);
       setStudioStatus('idle');
@@ -516,8 +556,9 @@ export default function GroupModuleUnitLiftingAnalysis() {
   //    setCurrentMenu 로 들어오면 fresh-entry 처리(App.jsx 인스턴스 키 증가)로 이 페이지가
   //    같은 틱에 재마운트되는데, 바로 적용하면 첫 인스턴스가 BDF 를 받고 clearGmuHandoff() 한 뒤
   //    폐기돼 최종 화면은 입력이 빈 채로 남는다. 미루면 살아남은 인스턴스 하나에만 적용된다.
+  //    작업 탭이 여러 개라 연계는 '마운트 시점에 활성이고 비어 있던 탭' 하나만 받는다(acceptsEntry).
   useEffect(() => {
-    if (!gmuHandoff?.bdfServerPath) return undefined;
+    if (!acceptsEntry || !gmuHandoff?.bdfServerPath) return undefined;
     const timer = setTimeout(() => {
       const { bdfServerPath, sourceApp } = gmuHandoff;
       const from = sourceApp || '외부 프로그램';
@@ -538,7 +579,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
     return () => clearTimeout(timer);
     // validJobId/gmuJob 은 '핸드오프 시점의 값'만 필요하므로 의존성에 넣지 않는다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gmuHandoff, clearGmuHandoff, showToast]);
+  }, [gmuHandoff, clearGmuHandoff, showToast, acceptsEntry]);
 
   /** 검증을 시작하는 공통 준비 — 직접 실행·샘플 실행이 같이 쓴다. */
   const beginValidation = (message) => {
@@ -573,7 +614,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
         res = await requestGroupModuleUnit(formData);
       }
       setValidJobId(res.data.job_id);
-      startGlobalJob?.(res.data.job_id, GMU_MENU_NAME);
+      startGlobalJob?.(res.data.job_id, GMU_MENU_NAME, jobSlot());
     } catch (e) {
       console.error('[BDF 검증] 요청 실패:', e);
       setValidating(false);
@@ -584,14 +625,46 @@ export default function GroupModuleUnitLiftingAnalysis() {
     }
   };
 
+  // ── BDF 구간 경계 자동 수정 — 검증이 찾은 BEGIN BULK 누락 등을 사용자 확인 후 고쳐 다시 검증 ──
+  // 원본은 그대로 두고 서버가 새 작업 폴더에 수정본을 만든다. 이후 '다시 검증'은 그 수정본을 쓴다.
+  const deckFixes = (step1Data?.deckIssues ?? []).filter(i => i.fixable);
+  const handleDeckFix = async () => {
+    const sourceId = bdfAnalysisId; // beginValidation 이 지우기 전에 잡아 둔다
+    const fixes = deckFixes;
+    if (!sourceId || fixes.length === 0) return;
+    const list = fixes.map(i => `· ${i.title} — ${i.fix}`).join('\n');
+    if (!window.confirm(`BDF 를 다음과 같이 고쳐 다시 검증합니다.\n\n${list}\n\n원본 파일은 그대로 두고 수정본을 새로 만듭니다. 진행할까요?`)) return;
+    beginValidation('BDF 수정본 만드는 중...');
+    try {
+      const userStr = localStorage.getItem('user');
+      const employeeId = userStr ? JSON.parse(userStr).employee_id : 'guest';
+      const { data } = await fixGroupModuleUnitDeck(sourceId, {
+        employeeId, codes: fixes.map(i => i.code), useNastran,
+      });
+      setBdfFile(null);
+      setHandoffSource('BDF 자동 수정');
+      setHandoffBdfPath(data.fixedPath);
+      setValidJobId(data.job_id);
+      startGlobalJob?.(data.job_id, GMU_MENU_NAME, jobSlot());
+      showToast(`BDF 를 고쳐 다시 검증합니다 — ${data.applied.map(a => a.title).join(', ')}`, 'info');
+    } catch (e) {
+      console.error('[BDF 자동 수정] 요청 실패:', e);
+      setValidating(false);
+      setValidJobId(null);
+      setValidFailed(true);
+      const detail = e?.response?.data?.detail || e?.message || '알 수 없는 오류';
+      showToast(`BDF 자동 수정 실패 — ${detail}`, 'error');
+    }
+  };
+
   // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
-  useDashboardAutoRun(GMU_MENU_NAME, (!validating && bdfFile) || null, handleValidate);
+  useDashboardAutoRun(GMU_MENU_NAME, (!validating && bdfFile) || null, handleValidate, acceptsEntry);
 
   // 샘플 실행 콜백 — SampleRunButton 이 호출. handleValidate 와 동일한 폴링 흐름에 진입.
   const sampleGmuBefore = () => beginValidation('샘플 파일로 작업 요청 중...');
   const sampleGmuSubmitted = (jobId) => {
     setValidJobId(jobId);
-    startGlobalJob?.(jobId, GMU_MENU_NAME);
+    startGlobalJob?.(jobId, GMU_MENU_NAME, jobSlot());
   };
   const sampleGmuError = (st, detail) => {
     setValidating(false);
@@ -621,7 +694,6 @@ export default function GroupModuleUnitLiftingAnalysis() {
     setStudioError(null);
     setActiveIdx(0);
     setUseNastran(false);
-    clearAnalysisPageState?.(GMU_MENU_NAME);
   };
 
   // ── 지난 결과 다시 열기(My Projects·대시보드 '내 작업') ─────────────
@@ -667,7 +739,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
       showToast(`결과를 열지 못했습니다: ${e?.response?.data?.detail || e.message}`, 'error');
     }
   };
-  useResultReentry(GMU_MENU_NAME, applyResultReentry);
+  useResultReentry(GMU_MENU_NAME, applyResultReentry, acceptsEntry);
 
   // ── 최근 실행의 입력 불러오기 ─────────────────────────────────────
   // 서버에 보관된 그 실행의 BDF 를 다시 올리지 않고 경로로 넘긴다(Model Builder 연계와 같은 request-from-path 경로).
@@ -698,7 +770,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
     if (def.id === 'input') {
       if (validating) return { ...def, status: 'running', hint: '검증 중' };
       if (validationVerdict.level === 'fail') return { ...def, status: 'error', hint: '검증 실패' };
-      if (validationVerdict.level === 'review') return { ...def, status: 'review', hint: '통과 · 분리 그룹 있음' };
+      if (validationVerdict.level === 'review') return { ...def, status: 'review', hint: deckFixes.length > 0 ? '통과 · BDF 형식 수정 가능' : '통과 · 분리 그룹 있음' };
       if (validationVerdict.level === 'pass') return { ...def, status: 'done', hint: '검증 통과' };
       return { ...def, status: 'wait' };
     }
@@ -739,6 +811,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
     const onKey = (e) => {
       if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return;
       if (currentMenu !== GMU_MENU_NAME) return; // keep-alive 라 다른 화면에서도 살아 있다
+      if (!active) return; // 숨은 작업 탭은 반응하지 않는다
       const a = runActionRef.current;
       if (!a.enabled) return;
       e.preventDefault();
@@ -746,7 +819,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [currentMenu]);
+  }, [currentMenu, active]);
 
   /* ── 다음 행동 바 — 단계마다 주 행동 1개 ─────────────────────────── */
   const studioBusy = ['checking', 'installing', 'opening'].includes(studioStatus);
@@ -757,10 +830,20 @@ export default function GroupModuleUnitLiftingAnalysis() {
   const nextAction = (() => {
     if (validating) return null;
     if (activeStep.id === 'input') {
+      const deckFixAction = { key: 'deck-fix', label: 'BDF 자동 수정 후 다시 검증', icon: Wand2, onClick: handleDeckFix };
       if (validationOk) {
         return {
-          note: '입력 검증이 끝났습니다. Studio 에서 권상 위치·자세 안정성·구조 해석을 진행합니다.',
+          note: deckFixes.length > 0
+            ? `입력 검증이 끝났습니다. BDF 형식 문제 ${deckFixes.length}건은 자동으로 고칠 수 있습니다(확인 후 수정본으로 다시 검증).`
+            : '입력 검증이 끝났습니다. Studio 에서 권상 위치·자세 안정성·구조 해석을 진행합니다.',
           primary: { label: 'Studio 권상 검토로', icon: ChevronsRight, onClick: () => setActiveIdx(STEP_INDEX.studio) },
+          secondary: deckFixes.length > 0 ? [deckFixAction] : [],
+        };
+      }
+      if (deckFixes.length > 0) {
+        return {
+          note: `BDF 형식 문제 ${deckFixes.length}건은 자동으로 고칠 수 있습니다. 무엇을 고치는지 확인한 뒤 수정본으로 다시 검증합니다.`,
+          primary: deckFixAction,
         };
       }
       return null;
@@ -806,24 +889,19 @@ export default function GroupModuleUnitLiftingAnalysis() {
     ? (verdict.level === 'pass' ? '응력 초과 부재 0 · Wire 압축 0 · 해석 경고 0' : null)
     : verdict.level === 'pass'
       ? `BDF 오류 0 · 분리 그룹 0${validatedWithNastran ? ' · Nastran FATAL 0' : ''}`
-      : verdict.level === 'review' ? 'BDF 는 쓸 수 있지만 아래 항목을 Studio 에서 확인하세요.' : null;
+      : verdict.level === 'review'
+        ? (deckFixes.length > 0
+          ? 'BDF 는 쓸 수 있지만 형식 문제를 자동 수정한 뒤 진행하길 권합니다.'
+          : 'BDF 는 쓸 수 있지만 아래 항목을 Studio 에서 확인하세요.')
+        : null;
   // 첫 화면(입력 검증 단계 · 아직 아무것도 돌리지 않음) — 두 칸 높이를 맞추고 아래를 진행 순서·최근 실행으로 채운다.
   const isStartScreen = activeStep.id === 'input' && !hasValidation && !validating && !validFailed;
   const verdictMeta = verdict.basis === 'structural' ? '구조 해석 결과 기준' : verdict.basis === 'validation' ? '입력 검증 기준 · 구조 해석 전' : null;
 
   /* ── 렌더 ──────────────────────────────────────────────────────────── */
+  // 페이지 머리(배너·작업 탭 바)는 GroupModuleUnitLiftingAnalysis 가 그린다. 여기는 작업 화면 본문만.
   return (
-    // pb-28: 화면 오른쪽 아래 전역 작업·메시지 도크가 마지막 버튼을 가리지 않게 여백을 둔다.
-    <div className="relative mx-auto flex min-h-full max-w-[1400px] flex-col pb-28 animate-fade-in-up">
-
-      <FileBasedPageBanner
-        title={GMU_MENU_NAME}
-        subtitle="Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다."
-        icon={UploadCloud}
-        htmlGuide="posture-stability"
-        onBack={() => setCurrentMenu('File-Based Apps')}
-      />
-
+    <>
       <div className="flex flex-col items-stretch gap-5 px-1 xl:flex-row">
 
         {/* ── 왼쪽 레일: 단계 · 입력 요약 · 옵션 · 실행 ── */}
@@ -1044,6 +1122,115 @@ export default function GroupModuleUnitLiftingAnalysis() {
           {validFailed && !step1Data && <EngineLogPanel log={engineLog} />}
         </main>
       </div>
+    </>
+  );
+});
+
+/* ──────────────────────────────────────────────────────────────────────────
+   페이지 — 작업 탭 여러 개를 동시에 진행한다(탭당 권상 검토 과정 1개).
+   탭 UI = runFrame/WorkspaceTabs(Model Builder 와 공용), 탭 규칙 = utils/gmuLiftingWorkspaces(+테스트).
+   ──────────────────────────────────────────────────────────────────────── */
+const GMU_STATUS_TEXT = {
+  idle: '검증 전',
+  running: 'BDF 검증 중',
+  failed: '검증·해석 실패',
+  ready: '권상 검토 단계',
+  delivered: '산출물 받음',
+};
+
+export default function GroupModuleUnitLiftingAnalysis() {
+  const { setCurrentMenu } = useNavigation();
+  const { showToast } = useToast();
+  const dashboardCtx = useDashboard();
+  const {
+    store, update, saveState, focusWorkspace, getSaved, addWorkspace,
+  } = useWorkspaceStore({
+    rawStore: dashboardCtx?.gmuLiftingPageState,
+    setRawStore: dashboardCtx?.setGmuLiftingPageState,
+    kit: gmuWorkspaceKit,
+  });
+
+  const handleClose = (id) => {
+    const state = store.states[id];
+    const running = isGmuWorkspaceRunning(state);
+    if (running || gmuWorkspaceStatus(state) === 'ready') {
+      const message = running
+        ? '이 작업은 아직 서버에서 BDF 를 검증하는 중입니다.\n탭을 닫아도 서버 검증은 계속되고, 결과는 My Projects 에서 다시 열 수 있습니다.\n탭을 닫을까요?'
+        : '이 작업의 권상 검토 결과·보고서를 아직 받지 않았습니다.\n결과는 My Projects 에서 다시 열 수 있습니다. 이 작업의 Studio 창도 함께 닫힙니다.\n탭을 닫을까요?';
+      if (!window.confirm(message)) return;
+    }
+    // 이 탭의 Studio 창만 닫는다(다른 탭의 Studio 는 그대로).
+    const bdfPath = state?.bdfPath;
+    if (bdfPath && window.electron?.invoke) {
+      window.electron.invoke('viewer:close', { viewerId: MODULE_STUDIO_VIEWER_ID, sourceKey: bdfPath }).catch(() => {});
+    }
+    update((prev) => gmuWorkspaceKit.close(prev, id));
+  };
+
+  // 대시보드 파일 전달·결과 다시 열기·다른 App 연계로 들어왔는데 탭이 가득 차 받을 빈 탭이 없을 때 알린다.
+  // 연계 BDF 는 버린다 — 남겨 두면 나중에 새 탭을 열 때 사용자가 잊은 BDF 가 갑자기 들어온다.
+  // '받을 빈 탭이 있었는가'는 마운트 시점 값으로 판정한다 — 미뤄 둔 사이 빈 탭이 연계를 받아
+  // 채워지므로, 나중에 보면 가득 찬 것으로 오판한다(실측: 연계 성공인데 '가득 참' 토스트).
+  // (재진입 직후 재마운트가 겹치므로 토스트는 잠깐 미뤄 살아남은 인스턴스에서 한 번만.)
+  const [entryBlocked] = useState(() => !isGmuWorkspaceIdle(store.states[store.activeId]));
+  useEffect(() => {
+    if (!entryBlocked) return undefined;
+    const timer = setTimeout(() => {
+      const pendingHandoff = !!dashboardCtx?.gmuHandoff?.bdfServerPath;
+      if (pendingHandoff || peekDashboardFiles(GMU_MENU_NAME) || peekResultReentry(GMU_MENU_NAME) != null) {
+        if (pendingHandoff) dashboardCtx?.clearGmuHandoff?.();
+        showToast(`작업 탭이 가득 찼습니다(최대 ${gmuWorkspaceKit.max}개). 끝난 작업 탭을 닫고 다시 시도하세요.`, 'warning');
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const tabItems = store.workspaces.map((ws) => ({
+    id: ws.id,
+    slotNo: ws.slotNo,
+    label: gmuWorkspaceLabel(store.states[ws.id]),
+    // '작업 N · 이름' — Job Center 카드·Studio 창 제목이 같은 이름을 쓴다.
+    title: gmuWorkspaceTitle(ws, store.states[ws.id]),
+    status: gmuWorkspaceStatus(store.states[ws.id]),
+  }));
+
+  return (
+    // pb-28: 화면 오른쪽 아래 전역 작업·메시지 도크가 마지막 버튼을 가리지 않게 여백을 둔다.
+    <div className="relative mx-auto flex min-h-full max-w-[1400px] flex-col pb-28 animate-fade-in-up">
+      <FileBasedPageBanner
+        title={GMU_MENU_NAME}
+        subtitle="Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다."
+        icon={UploadCloud}
+        htmlGuide="posture-stability"
+        onBack={() => setCurrentMenu('File-Based Apps')}
+      />
+
+      <WorkspaceTabBar
+        items={tabItems}
+        activeId={store.activeId}
+        ariaLabel="권상 검토 작업"
+        onActivate={focusWorkspace}
+        onClose={handleClose}
+        onAdd={addWorkspace}
+        canAdd={gmuWorkspaceKit.canAdd(store)}
+        max={gmuWorkspaceKit.max}
+        statusText={GMU_STATUS_TEXT}
+      />
+      <WorkspaceFrame
+        items={tabItems}
+        activeId={store.activeId}
+        statusText={GMU_STATUS_TEXT}
+        renderWorkspace={(item) => (
+          <GmuLiftingWorkspace
+            workspaceId={item.id}
+            active={item.id === store.activeId}
+            getSaved={getSaved}
+            onSaveState={saveState}
+            jobLabel={item.title}
+          />
+        )}
+      />
     </div>
   );
 }

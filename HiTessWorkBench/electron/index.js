@@ -7,7 +7,9 @@ const os      = require("os");
 const crypto  = require("crypto");
 const { spawn } = require("child_process");
 const { buildUpdateHelperVbs } = require("./update-helper");
-const { ViewerSessionRegistry, isSourceStale } = require("./viewer-sessions");
+const {
+  ViewerSessionRegistry, isSourceStale, sessionKeyOf, MULTI_INSTANCE_VIEWERS,
+} = require("./viewer-sessions");
 const { responseHeadersWithWorkbenchCsp } = require("./response-security");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
@@ -881,6 +883,7 @@ ipcMain.handle("viewer:readLocalFile", async (_e, payload) => {
 ipcMain.handle("viewer:open", async (_e, payload) => {
   const {
     viewerId, initialFolder, parentAnalysisId, serverUrl, outputDir, sidePassageBdfName, sourceKey,
+    windowTitle: requestedTitle,
   } = payload || {};
   if (!viewerId) return { ok: false, error: "viewerId 누락" };
 
@@ -892,8 +895,11 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
 
   // 이 Studio 의 컨텍스트. 다른 Studio 의 세션과 완전히 분리된다.
   const parsedParentId = Number(parentAnalysisId);
+  // 창을 구분하는 키. model-studio 는 모델(sourceKey)마다 창을 따로 두고, 나머지는 viewerId 당 1개.
+  const sessionKey = sessionKeyOf(viewerId, sourceKey);
   const session = {
     viewerId,
+    sessionKey,
     win: null,
     // viewer:getInitialFolder 가 사용
     initialFolder: initialFolder ? path.resolve(initialFolder) : null,
@@ -916,14 +922,16 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
 
   // 어느 모델을 보고 있는지 창 제목으로 식별 가능하게 한다 — Studio 를 여러 개 띄웠을 때
   // "지금 이 창이 어떤 모델인가" 를 사용자가 판단할 유일한 단서다.
+  // 호출측이 제목을 주면(Model Builder: '작업 N · 구조 CSV 이름 — …') 그대로 쓴다 — 작업표시줄에서
+  // 앞부분만 보이므로 사용자가 넣은 CSV 이름이 먼저 와야 창을 구분할 수 있다. 없으면 산출 폴더명.
   const modelLabel = session.initialFolder ? path.basename(session.initialFolder) : null;
-  const windowTitle = modelLabel
-    ? `HiTess Studio — ${viewerId} — ${modelLabel}`
-    : `HiTess Studio — ${viewerId}`;
+  const customTitle = typeof requestedTitle === "string" ? requestedTitle.trim().slice(0, 200) : "";
+  const windowTitle = customTitle
+    || (modelLabel ? `HiTess Studio — ${viewerId} — ${modelLabel}` : `HiTess Studio — ${viewerId}`);
   session.windowTitle = windowTitle;
 
-  // 같은 Studio 가 이미 떠 있으면 그 창을 재사용(컨텍스트만 갱신 후 reload).
-  const existingWin = windowOfSession(viewerSessions.get(viewerId));
+  // 같은 Studio(모델별 창이면 같은 모델)가 이미 떠 있으면 그 창을 재사용(컨텍스트만 갱신 후 reload).
+  const existingWin = windowOfSession(viewerSessions.get(sessionKey));
   if (existingWin) {
     session.win = existingWin;
     viewerSessions.register(session, existingWin.webContents.id);
@@ -969,7 +977,7 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
   // 되돌아가지 않도록).
   win.on("page-title-updated", (e) => {
     e.preventDefault();
-    win.setTitle(viewerSessions.get(viewerId)?.windowTitle || windowTitle);
+    win.setTitle(viewerSessions.get(sessionKey)?.windowTitle || windowTitle);
   });
 
   win.once("ready-to-show", () => {
@@ -1020,7 +1028,7 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
   // 창이 닫히면 세션·역맵을 반드시 함께 정리한다. 남겨두면 webContents.id 가 재사용될 때
   // 죽은 Studio 의 컨텍스트로 IPC 가 해소될 수 있다.
   const closedWebContentsId = win.webContents.id;
-  win.on("closed", () => viewerSessions.remove(viewerId, closedWebContentsId, win));
+  win.on("closed", () => viewerSessions.remove(sessionKey, closedWebContentsId, win));
 
   // 개발 모드에서는 viewer 창 디버깅 도구 자동 오픈
   if (!app.isPackaged) {
@@ -1085,11 +1093,18 @@ function injectSourceUpdatedNotice(win, message) {
 
 // WorkBench 본체가 "이 App 의 원본 모델을 새로 만들었다" 고 알린다.
 // 해당 Studio 가 열려 있고 그 창이 다른 모델(sourceKey 불일치)을 보고 있을 때만 배너를 띄운다.
+// 모델별 창을 쓰는 Studio(model-studio)는 previousSourceKey(그 작업이 직전에 보던 모델)로 창을 찾는다 —
+// 다른 작업 탭의 Studio 는 애초에 다른 모델이라 sourceKey 비교로는 거를 수 없기 때문이다.
 ipcMain.handle("viewer:notifySourceUpdated", async (_e, payload) => {
-  const { viewerId, sourceKey, message } = payload || {};
+  const { viewerId, sourceKey, previousSourceKey, message } = payload || {};
   if (!viewerId) return { ok: false, error: "viewerId 누락" };
 
-  const session = viewerSessions.get(viewerId);
+  const isPerModel = MULTI_INSTANCE_VIEWERS.has(viewerId);
+  if (isPerModel && !previousSourceKey) {
+    // 모델별 창인데 직전 모델을 모른다 — 어느 창인지 특정할 수 없으니 경보하지 않는다.
+    return { ok: true, notified: false, reason: "unknown-source" };
+  }
+  const session = viewerSessions.get(isPerModel ? sessionKeyOf(viewerId, previousSourceKey) : viewerId);
   const win = windowOfSession(session);
   if (!win) return { ok: true, notified: false, reason: "not-open" };
   // 판정은 viewer-sessions.isSourceStale (단위 테스트 대상) 에 위임한다.
@@ -1113,13 +1128,23 @@ ipcMain.handle("viewer:notifySourceUpdated", async (_e, payload) => {
 
 // viewerId 지정 시 그 Studio 만 닫는다. 미지정이면 호출한 창이 Studio 면 자기 자신을,
 // WorkBench 본체가 호출했으면(레거시 계약) 열려 있는 Studio 를 모두 닫는다.
+// 모델별 창을 쓰는 Studio 는 sourceKey 를 함께 주면 그 모델의 창만, 안 주면 그 Studio 의 창을 모두 닫는다.
 ipcMain.handle("viewer:close", (event, payload) => {
   const viewerId = typeof payload === "string" ? payload : payload?.viewerId;
+  const sourceKey = typeof payload === "object" ? payload?.sourceKey : null;
 
   if (viewerId) {
-    const win = windowOfSession(viewerSessions.get(viewerId));
-    if (win) win.close();
-    return { ok: true, closed: win ? [viewerId] : [] };
+    const targets = sourceKey
+      ? [viewerSessions.get(sessionKeyOf(viewerId, sourceKey))].filter(Boolean)
+      : viewerSessions.liveOfViewer(viewerId);
+    const closed = [];
+    for (const session of targets) {
+      const win = windowOfSession(session);
+      if (!win) continue;
+      win.close();
+      closed.push(viewerId);
+    }
+    return { ok: true, closed };
   }
 
   const own = sessionFromEvent(event);
@@ -1306,6 +1331,10 @@ ipcMain.handle("viewer:finalizeEditedModel", async (event, payload) => {
         requestId,
         folderPath: baseAbs,
         editFileName,
+        // 어느 작업의 Studio 인지. Model Builder 페이지는 작업 탭이 여러 개라 이 값으로
+        // 자기 작업인지 판별한다 — 없으면 다른 탭의 모델에 편집이 적용될 수 있다.
+        outputDir: session.outputDir || null,
+        sourceKey: session.sourceKey || null,
       });
     });
 
