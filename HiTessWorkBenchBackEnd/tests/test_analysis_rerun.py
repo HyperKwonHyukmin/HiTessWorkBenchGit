@@ -494,3 +494,72 @@ def test_rerun_rejects_source_path_swap_during_copy(
     assert exc_info.value.status_code == 409
     assert not (destination / "node.csv").exists()
     assert not any(item.name.startswith(".rerun-copy-") for item in destination.iterdir())
+
+
+def _seed_model_builder(db_session, employee_id, stru_path, pipe_path):
+    record = models.Analysis(
+        employee_id=employee_id,
+        program_name="HiTessModelBuilder",
+        project_name="mb-source",
+        status="Success",
+        input_info={
+            "stru_csv": str(stru_path), "pipe_csv": str(pipe_path), "equip_csv": None,
+            "mesh_size": 500.0, "ubolt_full_fix": True, "run_nastran": False,
+        },
+        result_info={},
+        source="Workbench",
+    )
+    db_session.add(record)
+    db_session.commit()
+    db_session.refresh(record)
+    return record
+
+
+def _model_builder_setup(db_session, tmp_path, monkeypatch):
+    source_dir = tmp_path / "userConnection" / "20260930_090000_USER001_HiTessModelBuilder"
+    source_dir.mkdir(parents=True)
+    stru = source_dir / "A-struData.csv"
+    pipe = source_dir / "A-pipeData.csv"
+    stru.write_text("name,ori\nS1,0 0 1\n", encoding="utf-8")
+    pipe.write_text("name,outDia\nP1,60\n", encoding="utf-8")
+    record = _seed_model_builder(db_session, "USER001", stru, pipe)
+    rerun_dir = tmp_path / "userConnection" / "mb-rerun"
+    rerun_dir.mkdir()
+    monkeypatch.setattr(analysis, "make_work_dir", lambda *_args: (str(rerun_dir), "20261001_120000"))
+    submitted = {}
+
+    def fake_submit(task, *args, **kwargs):
+        submitted["task"] = task
+        submitted["args"] = args
+        return "mb-job"
+
+    monkeypatch.setattr(analysis, "submit_analysis_job", fake_submit)
+    return record, rerun_dir, submitted
+
+
+def test_model_builder_rerun_keeps_original_options_without_overrides(db_session, tmp_path, monkeypatch):
+    record, rerun_dir, submitted = _model_builder_setup(db_session, tmp_path, monkeypatch)
+    # 기존 클라이언트(My Projects)는 빈 객체를 보낸다 — 원본 옵션 그대로여야 한다.
+    r = _client(db_session, "USER001").post(f"/api/analysis/{record.id}/rerun", json={})
+    assert r.status_code == 200, r.text
+    assert submitted["task"] is analysis.task_execute_modelflow
+    # mesh_size, ubolt_full_fix, run_nastran
+    assert submitted["args"][8:11] == (500.0, True, False)
+    assert (rerun_dir / "A-struData.csv").is_file()
+
+
+def test_model_builder_rerun_applies_option_overrides(db_session, tmp_path, monkeypatch):
+    record, _, submitted = _model_builder_setup(db_session, tmp_path, monkeypatch)
+    r = _client(db_session, "USER001").post(
+        f"/api/analysis/{record.id}/rerun",
+        json={"mesh_size": 300, "ubolt_full_fix": False, "run_nastran": True},
+    )
+    assert r.status_code == 200, r.text
+    assert submitted["args"][8:11] == (300.0, False, True)
+
+
+def test_model_builder_rerun_rejects_non_positive_mesh(db_session, tmp_path, monkeypatch):
+    record, _, submitted = _model_builder_setup(db_session, tmp_path, monkeypatch)
+    r = _client(db_session, "USER001").post(f"/api/analysis/{record.id}/rerun", json={"mesh_size": 0})
+    assert r.status_code == 400
+    assert "task" not in submitted

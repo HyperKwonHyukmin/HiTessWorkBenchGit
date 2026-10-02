@@ -2189,17 +2189,32 @@ def _rerun_bool(value, default: bool = False) -> bool:
     return default
 
 
+class RerunOverrides(BaseModel):
+    """재실행 시 원본 옵션 대신 쓸 값. 비워 두면(None) 원본 input_info 값을 그대로 쓴다.
+
+    지금은 Model Builder 만 읽는다 — '옵션 바꿔 다시 실행'(같은 CSV, 다른 Mesh 크기 등).
+    다른 어댑터는 이 값을 무시하고 원본 옵션으로 재실행한다.
+    """
+    mesh_size: Optional[float] = None
+    ubolt_full_fix: Optional[bool] = None
+    run_nastran: Optional[bool] = None
+
+
 @router.post("/analysis/{analysis_id}/rerun")
 def rerun_analysis(
     analysis_id: int,
+    overrides: Optional[RerunOverrides] = Body(None),
     db: Session = Depends(database.get_db),
     current_user: str = Depends(require_auth),
 ):
     """보존된 입력 파일/옵션을 새 작업 폴더로 복제해 동일 해석을 다시 제출한다.
 
     파일 기반 비동기 앱부터 지원한다. 원본 레코드와 결과는 변경하지 않으며 새 job_id와
-    새 Analysis 레코드가 생성된다.
+    새 Analysis 레코드가 생성된다. 본문에 ``overrides`` 필드가 있으면 그 옵션으로 바꿔 실행한다.
     """
+    overrides = overrides or RerunOverrides()
+    if overrides.mesh_size is not None and not overrides.mesh_size > 0:
+        raise HTTPException(status_code=400, detail="Mesh size 는 0보다 커야 합니다.")
     record = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Analysis record not found")
@@ -2303,9 +2318,11 @@ def rerun_analysis(
             task_execute_modelflow,
             stru_path, pipe_path, equip_path, work_dir, exe_path,
             current_user, timestamp, source,
-            float(info.get("mesh_size") or 500.0),
-            _rerun_bool(info.get("ubolt_full_fix"), False),
-            _rerun_bool(info.get("run_nastran"), False),
+            float(overrides.mesh_size if overrides.mesh_size is not None else (info.get("mesh_size") or 500.0)),
+            overrides.ubolt_full_fix if overrides.ubolt_full_fix is not None
+            else _rerun_bool(info.get("ubolt_full_fix"), False),
+            overrides.run_nastran if overrides.run_nastran is not None
+            else _rerun_bool(info.get("run_nastran"), False),
             info.get("nastran_path"),
             info.get("leg_z_tol"),
             info.get("mesh_size_structure"),

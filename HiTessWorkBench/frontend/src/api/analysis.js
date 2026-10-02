@@ -21,11 +21,14 @@ export const getAnalysisHistory = (employeeId, skip = 0, limit = 50, filters = {
     headers: getAuthHeaders()
   });
 
-/** 보존된 입력 파일/옵션으로 과거 해석을 새 작업으로 재제출 */
-export const rerunAnalysisProject = (analysisId) =>
+/**
+ * 보존된 입력 파일/옵션으로 과거 해석을 새 작업으로 재제출.
+ * overrides 를 주면 그 옵션으로 바꿔 실행한다(현재 Model Builder 의 mesh_size·ubolt_full_fix·run_nastran).
+ */
+export const rerunAnalysisProject = (analysisId, overrides = {}) =>
   axios.post(
     `${API_BASE_URL}/api/analysis/${analysisId}/rerun`,
-    {},
+    overrides,
     { headers: getAuthHeaders() },
   );
 
