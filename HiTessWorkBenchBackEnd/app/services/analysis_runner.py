@@ -415,3 +415,14 @@ def mark_complete(
     if extra:
         payload.update(extra)
     job_status_store.update_job(job_id, payload)
+    # 오류·경고 유형을 영구 기록에 쌓는다(새 유형이면 재현 자료 보관). 백그라운드 + 실패 무시라
+    # 해석 응답에 영향이 없다. 상세: services/nastran_diagnostics.py
+    try:
+        from .nastran_diagnostics import schedule_collection
+        schedule_collection(
+            job_id, engine_log or "",
+            fallback_reason=None if status == "Success" else failure_message,
+            status=status,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[diagnostics] 수집 예약 실패: %s", e)

@@ -713,6 +713,9 @@ def task_execute_apply_edit(
             "run_nastran":             nastran_used,
             "f06_parsed":              f06_parsed,
         })
+        # 편집 적용은 mark_complete 를 거치지 않고 DB 기록에 경로도 없어, 산출 폴더를 직접 넘겨 오류 유형을 모은다.
+        # (실측: 편집 BDF 의 FATAL 9050 Mechanism 이 여기서만 난다.)
+        _collect_diagnostics(job_id, engine_output, status_msg, output_dir)
     except Exception as outer:
         logger.error("apply-edit task fatal: %s", outer, exc_info=True)
         job_status_store.update_job(job_id, {
@@ -721,3 +724,12 @@ def task_execute_apply_edit(
             "message": "편집 적용 중 예외",
             "engine_log": engine_output + f"\n[fatal] {outer}",
         })
+        _collect_diagnostics(job_id, engine_output + f"\n[Error] {outer}", "Failed", output_dir)
+
+
+def _collect_diagnostics(job_id: str, engine_log: str, status: str, output_dir: str) -> None:
+    try:
+        from .nastran_diagnostics import schedule_collection
+        schedule_collection(job_id, engine_log, None, status=status, extra_dirs=[output_dir])
+    except Exception as e:  # noqa: BLE001 — 수집 실패가 편집 적용 결과에 영향을 주면 안 된다
+        logger.warning("[diagnostics] 편집 적용 수집 예약 실패: %s", e)

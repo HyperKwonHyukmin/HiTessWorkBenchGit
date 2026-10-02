@@ -6,6 +6,8 @@ import os
 os.environ.setdefault("WORKBENCH_ENV", "test")
 os.environ.setdefault("WORKBENCH_DISABLE_CRASH_DIAGNOSTICS", "1")
 os.environ.setdefault("WORKBENCH_DISABLE_RUNTIME_SERVICES", "1")
+# 작업 종료 시 오류 유형 수집(nastran_diagnostics) — 수많은 mark_complete 테스트가 스레드를 띄우지 않게 끈다.
+os.environ.setdefault("HITESS_DIAGNOSTICS", "0")
 
 import pytest
 from datetime import datetime

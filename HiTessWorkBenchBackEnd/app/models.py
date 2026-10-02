@@ -382,3 +382,50 @@ class UserPreference(Base):
   employee_id = Column(String(50), primary_key=True)
   prefs = Column(JSON, nullable=False, default=dict)
   updated_at = Column(DateTime, nullable=True)
+
+
+class DiagnosticSignature(Base):
+  """해석 오류·경고의 '유형' 1건 — 같은 지문(fingerprint)이면 발생 횟수만 늘린다.
+
+  작업이 끝날 때(analysis_runner.mark_complete) services/nastran_diagnostics 가 F06 FATAL/WARNING 과
+  Nastran 전 단계 실패(엔진 로그)를 모아 여기에 쌓는다. userConnection 은 30일 뒤 지워지지만 이 표와
+  DiagnosticsArchive/ 의 재현 자료는 남는다 — 반복되는 오류를 코드로 막아 가는 근거 자료다.
+
+  - fingerprint : level + code + 정규화한 메시지(숫자·ID·경로 제거)의 해시
+  - level       : fatal | warning | engine(Nastran 전 단계 실패)
+  - status      : new(미처리) | handled(코드로 대응함) | ignored(대응 안 함) | regressed(처리 후 재발)
+  - archive_dir : 처음 발생(그리고 재발) 때 보관한 재현 자료 폴더(DiagnosticsArchive 기준 상대 경로)
+  """
+
+  __tablename__ = "diagnostic_signatures"
+  id = Column(Integer, primary_key=True, index=True)
+  fingerprint = Column(String(40), unique=True, index=True, nullable=False)
+  level = Column(String(20), index=True, nullable=False)
+  code = Column(String(20), index=True, nullable=True)
+  template = Column(String(1000), nullable=False)
+  sample_message = Column(Text, nullable=True)
+  programs = Column(JSON, nullable=True)            # 발생한 program_name 목록
+  occurrence_count = Column(Integer, default=0, nullable=False)
+  first_seen = Column(DateTime, default=datetime.now, index=True)
+  last_seen = Column(DateTime, default=datetime.now, index=True)
+  status = Column(String(20), default="new", index=True, nullable=False)
+  handled_note = Column(Text, nullable=True)        # 무엇으로 대응했는지(규칙·커밋·버전)
+  handled_at = Column(DateTime, nullable=True)
+  archive_dir = Column(String(500), nullable=True)
+
+
+class DiagnosticOccurrence(Base):
+  """DiagnosticSignature 가 실제로 난 해석 1건(어느 App·누구·어느 기록)."""
+
+  __tablename__ = "diagnostic_occurrences"
+  id = Column(Integer, primary_key=True, index=True)
+  signature_id = Column(Integer, ForeignKey("diagnostic_signatures.id"), index=True, nullable=False)
+  analysis_id = Column(Integer, index=True, nullable=True)
+  job_id = Column(String(100), index=True, nullable=True)
+  program_name = Column(String(100), index=True, nullable=True)
+  employee_id = Column(String(50), index=True, nullable=True)
+  analysis_status = Column(String(20), nullable=True)
+  source_file = Column(String(500), nullable=True)  # 오류가 난 F06/입력 경로(30일 뒤엔 사라질 수 있음)
+  message = Column(Text, nullable=True)             # 이 발생의 원문 메시지
+  archived = Column(Boolean, default=False, nullable=False)
+  created_at = Column(DateTime, default=datetime.now, index=True)

@@ -35,6 +35,7 @@ from .routers import (
     module_ocean_transport,
     newsletters,
     notifications,
+    diagnostics,
     preferences,
     presentations,
     presence,
@@ -213,6 +214,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(module_ocean_transport.router)
     application.include_router(reports.router)
     application.include_router(notifications.router)
+    application.include_router(diagnostics.router)
     application.include_router(preferences.router)
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
