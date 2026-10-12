@@ -4,6 +4,7 @@
 /// 화면은 파일 기반 해석 앱 공통 틀(docs/standards/file-based-app-page-standard.md)을 따른다:
 ///   단계 = BDF 입력 → 평가 결과 → 보고서 저장. 판정 규칙은 utils/trussVerdict.
 /// 페이지 상태는 예전처럼 DashboardContext.assessmentPageState 에 둔다(페이지 이탈 후에도 유지).
+/// Hi-TESS LogBook 에서 보낸 모델(target 'truss')을 받아 바로 해석을 시작한다(utils/logbookLink).
 /// </summary>
 import { useState, useRef, useEffect } from 'react';
 import { requestAssessment, downloadFileBlob, getAnalysisById } from '../../api/analysis';
@@ -28,8 +29,13 @@ import { useResultReentry } from '../../utils/resultReentry';
 import { computeTrussAssessmentVerdict, SIDE_SUPPORT_ALLOWABLE } from '../../utils/trussVerdict';
 import {
   StepRail, InputSummary, VerdictHeader, KeyFigures, NextActionBar, JobProgressCard,
-  RunStartPanel, RunLogPanel,
+  RunStartPanel, RunLogPanel, LogbookImportButton, useLogbookLauncher,
 } from '../../components/analysis/runFrame';
+import { importFromLogbook } from '../../api/logbook';
+import {
+  LOGBOOK_TARGET_TRUSS, LOGBOOK_IMPORT_TARGET, TRUSS_LOGBOOK_BUSY_MESSAGE, TRUSS_LOGBOOK_STARTED_MESSAGE,
+  decideTrussLogbookPick, isLogbookPickFor, logbookErrorMessage,
+} from '../../utils/logbookLink';
 
 const MENU_NAME = 'Truss Structural Assessment';
 const ANALYSIS_MENU_FRESH_ENTRY_KEY = 'workbench:analysis-menu-fresh-entry';
@@ -42,6 +48,21 @@ const STEP_DEFS = [
 ];
 const STEP_INDEX = Object.fromEntries(STEP_DEFS.map((s, i) => [s.id, i]));
 const baseName = (p) => (p ? String(p).split(/[\\/]/).pop() : '');
+// LogBook 에서 가져온 BDF 를 읽어 해석을 시작하기까지 기다리는 상한. 넘으면 LogBook 창에 실패로 회신한다.
+const LOGBOOK_RUN_START_TIMEOUT_MS = 20000;
+
+/** LogBook 창(Electron main)에 가져오기 결과를 돌려준다. requestId 당 최종 결과는 한 번만 보낸다. */
+function replyLogbookPick(requestId, ok, message) {
+  try {
+    window.electron?.sendMessage?.('logbook:model-picked-result', { requestId, ok: !!ok, message });
+  } catch { /* 창이 이미 닫힘 */ }
+}
+/** '받아서 가져오는 중' — main 이 15초 대기를 가져오기 시간만큼 늘린다(최종 결과는 따로 보낸다). */
+function ackLogbookPick(requestId) {
+  try {
+    window.electron?.sendMessage?.('logbook:model-picked-result', { requestId, pending: true });
+  } catch { /* 무시 */ }
+}
 
 /** 초기 상태 — 초기화·fresh-entry 가 같이 쓴다. 예전 키는 그대로 두고 공통 틀 키만 더했다. */
 const INITIAL_STATE = {
@@ -187,7 +208,11 @@ export default function TrussAssessment() {
 
     const resumeEntry = readEntry(ANALYSIS_MENU_RESUME_ENTRY_KEY);
     if (resumeEntry) {
-      sessionStorage.removeItem(ANALYSIS_MENU_RESUME_ENTRY_KEY);
+      // 바로 지우면 같은 커밋에서 뒤이어 도는 DashboardContext(부모) 효과가 표식을 못 보고
+      // fresh-entry 초기화를 해 버린다(자식 효과가 먼저 돈다). 이번 효과 처리가 끝난 뒤 지운다.
+      setTimeout(() => {
+        try { sessionStorage.removeItem(ANALYSIS_MENU_RESUME_ENTRY_KEY); } catch { /* 무시 */ }
+      }, 0);
       return;
     }
 
@@ -395,6 +420,7 @@ export default function TrussAssessment() {
       updateState({ currentJobId: jobId, logs: [{ time: new Date().toLocaleTimeString(), message: `[JOB] 해석 작업 큐 등록 완료. (Job ID: ${jobId})`, type: 'success' }] });
       startGlobalJob(jobId, MENU_NAME);
       setCurrentPollingJobId(jobId);
+      return true; // 요청 접수 — LogBook 가져오기가 결과 회신에 쓴다
     } catch (e) {
       const detail = e?.response?.data?.detail || e?.message || '';
       updateState({
@@ -402,6 +428,7 @@ export default function TrussAssessment() {
         failureLog: `[원인] 서버 요청이 실패했습니다.${detail ? ` (${detail})` : ''}\n[조치] 서버 연결 상태를 확인한 뒤 다시 실행하세요.`,
         logs: [...logs, { time: new Date().toLocaleTimeString(), message: '서버 요청 실패.', type: 'error' }],
       });
+      return false;
     }
   };
 
@@ -506,6 +533,125 @@ export default function TrussAssessment() {
 
   // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
   useDashboardAutoRun(MENU_NAME, (isDataReady && !isRunning && !bdfFile?.sample && bdfFile) || null, runAnalysis);
+
+  // ── Hi-TESS LogBook 에서 보낸 모델 받기(target 'truss') ─────────────────────
+  // LogBook 창 [WorkBench로 보내기] → Electron → 'logbook:model-picked'. 이 페이지는 작업 탭이 없는
+  // 단일 화면이라 slot 은 항상 1 이다. 받을 수 있으면 서버로 가져와(import) File 로 받고 입력을 바꾼 뒤,
+  // BDF 파싱이 끝나면 아래 효과가 해석을 한 번 시작하고 회신한다(사용자 결정: 가져오면 바로 해석).
+  // keep-alive 페이지라 다른 화면에 있어도 듣는다 — 현재 메뉴에 의존하지 않는다. 회신은 requestId 당 한 번.
+  const { open: openLogbook, launching: logbookLaunching } = useLogbookLauncher({
+    target: LOGBOOK_TARGET_TRUSS,
+    slot: 1,
+    showToast,
+    openedMessage: 'Hi-TESS LogBook 을 열었습니다. 해석할 Truss BDF 를 고르세요.',
+  });
+  const logbookPendingRef = useRef(null); // { requestId, file, timer } — 파싱 후 해석 시작을 기다리는 중
+  const logbookInFlightRef = useRef(false); // 서버에서 가져오는 중
+  const [logbookRunTick, setLogbookRunTick] = useState(0);
+  const isRunningRef = useRef(isRunning);
+  isRunningRef.current = isRunning;
+  const currentMenuRef = useRef(currentMenu);
+  currentMenuRef.current = currentMenu;
+
+  /** 대기 중인 LogBook 요청을 실패로 끝낸다(타이머 해제 + 회신). 이미 끝났으면 아무것도 하지 않는다. */
+  const failLogbookPending = (requestId, message) => {
+    const p = logbookPendingRef.current;
+    if (!p || p.requestId !== requestId) return;
+    logbookPendingRef.current = null;
+    clearTimeout(p.timer);
+    replyLogbookPick(requestId, false, message);
+  };
+
+  const handleLogbookPick = async (msg) => {
+    // GMU 권상 화면도 같은 이벤트를 듣는다 — Truss 몫(target 'truss')이 아니면 회신 없이 넘긴다.
+    if (!isLogbookPickFor(msg, LOGBOOK_TARGET_TRUSS)) return;
+    const { requestId } = msg;
+    const decision = decideTrussLogbookPick({
+      isRunning: isRunningRef.current,
+      inFlight: logbookInFlightRef.current || !!logbookPendingRef.current,
+    });
+    if (!decision.ok) {
+      replyLogbookPick(requestId, false, decision.message);
+      return;
+    }
+    logbookInFlightRef.current = true;
+    ackLogbookPick(requestId);
+    let file;
+    try {
+      const { data } = await importFromLogbook({ fileId: msg.fileId, target: LOGBOOK_IMPORT_TARGET.truss });
+      // 서버에 둔 BDF 를 File 로 받는다(최근 실행 '입력 불러오기'와 같은 경로) — 직접 올린 것과 같은 입력이 된다.
+      file = await fetchBdfAsFile(data.bdfServerPath);
+    } catch (e) {
+      logbookInFlightRef.current = false;
+      const reason = logbookErrorMessage(e);
+      replyLogbookPick(requestId, false, reason);
+      showToast(`LogBook 에서 가져오지 못했습니다: ${reason}`, 'error');
+      return;
+    }
+    logbookInFlightRef.current = false;
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith('.bdf') && !lower.endsWith('.dat')) {
+      replyLogbookPick(requestId, false, 'Truss Structural Assessment 는 BDF(.bdf·.dat) 파일만 해석합니다.');
+      return;
+    }
+    // 가져오는 사이 해석이 시작됐으면 입력을 덮지 않는다.
+    if (isRunningRef.current) {
+      replyLogbookPick(requestId, false, TRUSS_LOGBOOK_BUSY_MESSAGE);
+      return;
+    }
+    if (currentMenuRef.current !== MENU_NAME) {
+      // 다른 화면에서 왔으면 fresh-entry(상태 초기화·재마운트) 없이 이 화면으로 돌아온다.
+      try {
+        sessionStorage.setItem(ANALYSIS_MENU_RESUME_ENTRY_KEY, JSON.stringify({ menu: MENU_NAME, at: Date.now() }));
+      } catch { /* sessionStorage 차단 — 이동은 계속 */ }
+      setCurrentMenu(MENU_NAME);
+    }
+    resetAssessmentPage();
+    handleFile(file);
+    logbookPendingRef.current = {
+      requestId,
+      file,
+      timer: setTimeout(() => {
+        failLogbookPending(requestId,
+          '가져온 BDF 로 해석을 시작하지 못했습니다. BDF 에서 GRID·요소를 읽지 못했거나 입력이 바뀌었습니다.');
+      }, LOGBOOK_RUN_START_TIMEOUT_MS),
+    };
+    setLogbookRunTick(t => t + 1);
+  };
+  const handleLogbookPickRef = useRef(handleLogbookPick);
+  handleLogbookPickRef.current = handleLogbookPick;
+  useEffect(() => {
+    if (!window.electron?.onMessage) return undefined;
+    const off = window.electron.onMessage('logbook:model-picked', (msg) => { handleLogbookPickRef.current(msg); });
+    return () => {
+      if (typeof off === 'function') off();
+      // 해석 시작 전에 페이지가 사라지면 LogBook 창이 오래 기다리지 않게 실패로 회신한다.
+      const p = logbookPendingRef.current;
+      if (p) {
+        logbookPendingRef.current = null;
+        clearTimeout(p.timer);
+        replyLogbookPick(p.requestId, false, 'Truss Structural Assessment 화면이 닫혀 해석을 시작하지 못했습니다.');
+      }
+    };
+  }, []);
+
+  // 가져온 BDF 의 파싱이 끝나면(입력이 그 파일 그대로일 때만) 해석을 한 번 시작하고 회신한다.
+  // runAnalysis 를 쓰므로 그 선언 뒤에 둔다(앞에 두면 렌더 시 TDZ).
+  useEffect(() => {
+    const p = logbookPendingRef.current;
+    if (!p || bdfFile !== p.file || isRunning || !isDataReady) return;
+    logbookPendingRef.current = null;
+    clearTimeout(p.timer);
+    runAnalysis().then((ok) => {
+      if (ok) {
+        showToast(`Hi-TESS LogBook 에서 ${p.file.name} 을 가져와 해석을 시작했습니다.`, 'info');
+        replyLogbookPick(p.requestId, true, TRUSS_LOGBOOK_STARTED_MESSAGE);
+      } else {
+        replyLogbookPick(p.requestId, false, '가져온 BDF 의 해석 요청이 서버에서 거절되었습니다. WorkBench 화면에서 원인을 확인해 주세요.');
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bdfFile, isDataReady, isRunning, logbookRunTick]);
 
   /* ── 파생 상태 ─────────────────────────────────────────────────── */
   const verdict = computeTrussAssessmentVerdict({ jobFailed: runFailed, report: failureLog, resultsMap: resultJsonData });
@@ -744,6 +890,14 @@ export default function TrussAssessment() {
                     disabled={isRunning}
                     onFile={handleFile}
                   />
+                  {!bdfFile && (
+                    <LogbookImportButton
+                      onClick={openLogbook}
+                      disabled={isRunning}
+                      launching={logbookLaunching}
+                      hint="LogBook 창에서 모델을 골라 보내면 바로 해석을 시작합니다."
+                    />
+                  )}
 
                   {isStartScreen ? (
                     <RunStartPanel

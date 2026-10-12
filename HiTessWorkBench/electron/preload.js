@@ -5,6 +5,8 @@ const VALID_SEND_CHANNELS    = [
   'app-ready', 'open-external',
   // mainWindow 렌더러가 finalize-edit 처리 결과를 main 으로 보고
   'modelflow:finalize-edit-response',
+  // GMU 페이지가 Hi-TESS LogBook 에서 보낸 모델을 받은 결과를 main 으로 보고
+  'logbook:model-picked-result',
 ];
 const VALID_RECEIVE_CHANNELS = [
   'app-update',
@@ -24,6 +26,8 @@ const VALID_RECEIVE_CHANNELS = [
   // main 이 viewer 창에 ModelBuilder 구조 해석 진행 상황을 stream
   'viewer:modelbuilder-structural-progress',
   'viewer:model-saved',
+  // Hi-TESS LogBook 창에서 [WorkBench로 보내기] 한 모델(main 이 발신 창·origin 확인 후 전달)
+  'logbook:model-picked',
 ];
 const VALID_INVOKE_CHANNELS  = [
   'list-dir-csvs',
@@ -71,6 +75,8 @@ const VALID_INVOKE_CHANNELS  = [
   'place-server-ip',
   // 외부/별도 웹앱을 WorkBench 내부의 별도 창(BrowserWindow)으로 오픈
   'open-app-window',
+  // 외부 앱 창 닫기(WorkBench 로그아웃 때 Hi-TESS LogBook 창)
+  'close-app-window',
 ];
 
 contextBridge.exposeInMainWorld("electron", {

@@ -15,3 +15,4 @@ export { default as StudioLauncherCard } from './StudioLauncherCard';
 export { default as RunStartPanel } from './RunStartPanel';
 export { default as RunLogPanel } from './RunLogPanel';
 export { WorkspaceTabBar, WorkspaceFrame, useWorkspaceStore, WORKSPACE_STATUS_META } from './WorkspaceTabs';
+export { default as LogbookImportButton, useLogbookLauncher } from './LogbookImportButton';

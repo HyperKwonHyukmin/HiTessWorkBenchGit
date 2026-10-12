@@ -11,6 +11,7 @@ const {
   ViewerSessionRegistry, isSourceStale, sessionKeyOf, MULTI_INSTANCE_VIEWERS,
 } = require("./viewer-sessions");
 const { responseHeadersWithWorkbenchCsp } = require("./response-security");
+const logbookBridge = require("./logbook-bridge");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
 // 다이얼로그 제목으로 사용됨. 미설정 시 개발 모드 기본값 'electron-app' 이 노출되므로,
@@ -146,6 +147,10 @@ ipcMain.on("open-external", (_, url) => {
 // 보안: http/https 만 허용. 외부 웹앱이므로 WorkBench preload(IPC)는 주입하지 않는다(격리).
 // ──────────────────────────────────────────────────────────────
 const appWindows = new Map(); // url -> BrowserWindow
+// 다리(bridge)가 붙은 외부 앱 창의 메타 — webContents.id -> { key, bridge, origin }.
+// origin 은 그 창을 연 URL 의 origin 이다. 다리 IPC 는 이 origin 에서 온 요청만 받는다.
+const appWindowMeta = new Map();
+const APP_WINDOW_BRIDGES = new Set([logbookBridge.LOGBOOK_BRIDGE]);
 
 // 다운로드 저장 대화상자('다른 이름으로 저장') 제목에 다운로드 소스 URL(blob:/http...)이
 // 노출되는 것을 막는다. 외부 앱이 파일을 다운로드하면 Electron 기본 저장창의 제목이 URL 로
@@ -185,6 +190,8 @@ async function clearExternalAppSessionData(ses, origin) {
 
 ipcMain.handle("open-app-window", async (_e, payload = {}) => {
   const { url, title, windowKey, clearCache = false } = payload || {};
+  // bridge: 'logbook' 일 때만 전용 preload 를 붙인다(그 외 외부 앱 창은 preload 없이 격리).
+  const bridge = APP_WINDOW_BRIDGES.has(payload?.bridge) ? payload.bridge : null;
   let parsed;
   try {
     parsed = new URL(url);
@@ -197,8 +204,16 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
   const key = windowKey || url;
 
   // 이미 열린 창이 있으면 재사용(포커스)
-  const existing = appWindows.get(key);
+  let existing = appWindows.get(key);
+  // 다리 유무가 다른 창은 재사용하지 않는다(preload 는 창을 만들 때만 붙일 수 있다).
+  if (existing && !existing.isDestroyed()
+      && (appWindowMeta.get(existing.webContents.id)?.bridge || null) !== bridge) {
+    existing.destroy();
+    existing = null;
+  }
   if (existing && !existing.isDestroyed()) {
+    const meta = appWindowMeta.get(existing.webContents.id);
+    if (meta) meta.origin = parsed.origin;
     if (clearCache) {
       await clearExternalAppSessionData(existing.webContents.session, parsed.origin);
     }
@@ -230,14 +245,22 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      ...(bridge === logbookBridge.LOGBOOK_BRIDGE
+        ? { preload: path.join(__dirname, "logbook-preload.js"), sandbox: true }
+        : {}),
     },
   });
 
   appWindows.set(key, win);
+  const webContentsId = win.webContents.id;
+  if (bridge) appWindowMeta.set(webContentsId, { key, bridge, origin: parsed.origin });
   // 외부 앱이 파일을 다운로드할 때 저장창 제목에 URL 이 노출되지 않도록 처리.
   installCleanSaveDialogTitle(win.webContents.session);
   win.once("ready-to-show", () => { win.show(); win.focus(); });
-  win.on("closed", () => { appWindows.delete(key); });
+  win.on("closed", () => {
+    if (appWindows.get(key) === win) appWindows.delete(key);
+    appWindowMeta.delete(webContentsId);
+  });
 
   // 창 내부에서 새 창 요청(window.open/target=_blank) 시 → 시스템 브라우저로 위임(무한 자식창 방지)
   win.webContents.setWindowOpenHandler(({ url: u }) => {
@@ -260,6 +283,93 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
     if (!win.isDestroyed() && !win.isVisible()) win.show();
   }
   return { ok: true, cacheCleared: Boolean(clearCache) };
+});
+
+// 외부 앱 창 닫기 — WorkBench 로그아웃 때 Hi-TESS LogBook 창을 닫는 데 쓴다. payload = { windowKey }
+ipcMain.handle("close-app-window", (event, payload = {}) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    return { ok: false, error: "본체 창에서만 닫을 수 있습니다." };
+  }
+  const key = typeof payload?.windowKey === "string" ? payload.windowKey : "";
+  const win = key ? appWindows.get(key) : null;
+  if (!win || win.isDestroyed()) return { ok: true, closed: false };
+  win.close();
+  return { ok: true, closed: true };
+});
+
+// ── Hi-TESS LogBook 창 → 본체: 모델 보내기 ─────────────────────────────────────
+// LogBook 창의 window.hitessBridge.sendModel(payload) → 여기서 발신 창·origin·payload 를 확인하고
+// 본체 렌더러에 'logbook:model-picked' 를 보낸 뒤, 받을 페이지(GMU 권상·Truss)가 'logbook:model-picked-result' 로
+// 돌려주는 결과를 15초까지 기다린다. requestId 당 결과는 정확히 한 번만 받는다.
+const _pendingLogbookPicks = new Map(); // requestId -> { resolve, timer, arm }
+
+ipcMain.handle("logbook:send-model", async (event, payload) => {
+  const meta = appWindowMeta.get(event.sender.id);
+  const senderWin = BrowserWindow.fromWebContents(event.sender);
+  if (!meta || meta.bridge !== logbookBridge.LOGBOOK_BRIDGE
+      || !senderWin || appWindows.get(meta.key) !== senderWin) {
+    return { ok: false, message: "허용되지 않은 창입니다." };
+  }
+  const frame = event.senderFrame;
+  if (!frame || frame.parent || !logbookBridge.isAllowedSenderOrigin(frame.url, meta.origin)) {
+    return { ok: false, message: "허용되지 않은 주소에서 보낸 요청입니다." };
+  }
+  const checked = logbookBridge.validateSendModelPayload(payload);
+  if (!checked.ok) return { ok: false, message: checked.message };
+  // 받을 화면(GMU 권상 / Truss Structural Assessment)에 맞춘 '화면이 열려 있지 않음' 문구.
+  const notOpenMessage = logbookBridge.notOpenMessage(checked.value.target);
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { ok: false, message: notOpenMessage };
+  }
+
+  const requestId = crypto.randomUUID();
+  const result = await new Promise((resolve) => {
+    const entry = { resolve, timer: null };
+    // 15초 안에 받을 페이지가 응답하지 않으면 화면이 없다고 본다. 페이지가 '받았다(pending)' 고
+    // 먼저 알리면 큰 BDF 를 서버끼리 옮기는 시간만큼(최대 PENDING_TIMEOUT_MS) 더 기다린다.
+    entry.arm = (ms, message) => {
+      clearTimeout(entry.timer);
+      entry.timer = setTimeout(() => {
+        if (_pendingLogbookPicks.get(requestId) === entry) {
+          _pendingLogbookPicks.delete(requestId);
+          resolve({ ok: false, message });
+        }
+      }, ms);
+    };
+    _pendingLogbookPicks.set(requestId, entry);
+    entry.arm(logbookBridge.RESULT_TIMEOUT_MS, notOpenMessage);
+    try {
+      mainWindow.webContents.send("logbook:model-picked", { requestId, ...checked.value });
+    } catch {
+      if (_pendingLogbookPicks.delete(requestId)) {
+        clearTimeout(entry.timer);
+        resolve({ ok: false, message: notOpenMessage });
+      }
+    }
+  });
+
+  if (result.ok && mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+  return result;
+});
+
+// 본체 렌더러(GMU 권상·Truss 페이지)가 가져오기 결과를 돌려주는 채널.
+ipcMain.on("logbook:model-picked-result", (event, msg) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+  const requestId = msg?.requestId;
+  const entry = _pendingLogbookPicks.get(requestId);
+  if (!entry) return;
+  if (msg?.pending) {
+    // 받을 탭이 정해져 가져오는 중 — 최종 결과를 더 기다린다(결과는 여전히 한 번만 돌려준다).
+    entry.arm(logbookBridge.PENDING_TIMEOUT_MS, logbookBridge.PENDING_TIMEOUT_MESSAGE);
+    return;
+  }
+  _pendingLogbookPicks.delete(requestId);
+  clearTimeout(entry.timer);
+  entry.resolve(logbookBridge.normalizeResult(msg));
 });
 
 // 개발자 런북에서 "탐색기 열기" 액션용. 파일이면 부모 폴더가 선택된 채 열림,

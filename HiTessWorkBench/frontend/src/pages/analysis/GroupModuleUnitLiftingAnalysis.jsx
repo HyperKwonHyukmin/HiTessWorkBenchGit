@@ -19,6 +19,7 @@ import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 import {
   StepRail, InputSummary, VerdictHeader, KeyFigures, NextActionBar, JobProgressCard, EngineLogPanel, StudioLauncherCard,
   RunStartPanel, WorkspaceTabBar, WorkspaceFrame, useWorkspaceStore,
+  LogbookImportButton, useLogbookLauncher,
 } from '../../components/analysis/runFrame';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 import { peekDashboardFiles, useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
@@ -28,12 +29,31 @@ import {
   isGmuWorkspaceIdle, isGmuWorkspaceRunning, isOwnStructuralEvent, normalizePath,
 } from '../../utils/gmuLiftingWorkspaces';
 import { buildStructuralResult, computeGmuVerdict } from '../../utils/gmuLiftingVerdict';
+import { importFromLogbook } from '../../api/logbook';
+import {
+  LOGBOOK_SOURCE, LOGBOOK_TARGET_GMU, LOGBOOK_IMPORT_TARGET, decideLogbookPick, isLogbookPickFor, logbookErrorMessage,
+} from '../../utils/logbookLink';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
 const MODULE_STUDIO_VERSION = '0.0.168';
 // 다른 App 이 넘긴 BDF 는 fresh-entry 재마운트가 끝난 뒤 살아남은 인스턴스에만 적용한다.
 const HANDOFF_APPLY_DELAY_MS = 60;
 const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
+// Job Center 와 같은 '이어서 들어가기' 표식 — 이게 있으면 메뉴 이동이 fresh-entry(빈 탭 정리·재마운트)를 하지 않는다.
+const RESUME_ENTRY_KEY = 'workbench:analysis-menu-resume-entry';
+
+/** LogBook 창(Electron main)에 가져오기 결과를 돌려준다. requestId 당 최종 결과는 한 번만 보낸다. */
+function replyLogbookPick(requestId, ok, message) {
+  try {
+    window.electron?.sendMessage?.('logbook:model-picked-result', { requestId, ok: !!ok, message });
+  } catch { /* 창이 이미 닫힘 */ }
+}
+/** '받을 탭을 정해 가져오는 중' — main 이 15초 대기를 가져오기 시간만큼 늘린다(최종 결과는 따로 보낸다). */
+function ackLogbookPick(requestId) {
+  try {
+    window.electron?.sendMessage?.('logbook:model-picked-result', { requestId, pending: true });
+  } catch { /* 무시 */ }
+}
 
 /* ── 작업 단계 — 상태는 저장하지 않고 실제 사건(검증 결과·Studio 열기·구조 해석 완료·산출물 받기)에서 매번 계산한다 ── */
 const STEP_DEFS = [
@@ -166,7 +186,7 @@ function StructuralResultPanel({ result }) {
 // 페이지(아래 GroupModuleUnitLiftingAnalysis)가 탭마다 하나씩 띄우고, 숨긴 탭도 언마운트하지 않아
 // 검증 폴링이 계속 돈다. 상태 저장은 onSaveState(workspaceId, state) 로 탭별로 한다.
 const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
-  workspaceId, active, getSaved, onSaveState, jobLabel,
+  workspaceId, active, getSaved, onSaveState, jobLabel, slotNo, logbookDelivery, onLogbookDelivered,
 }) {
   const { setCurrentMenu, currentMenu } = useNavigation();
   const {
@@ -593,8 +613,9 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
   };
 
   // ── BDF 검증 ─────────────────────────────────────────────
+  /** 검증 요청을 보낸다. 요청이 접수되면 true(LogBook 가져오기가 결과 회신에 쓴다). */
   const handleValidate = async () => {
-    if (!bdfFile && !handoffBdfPath) return;
+    if (!bdfFile && !handoffBdfPath) return false;
     beginValidation('서버 요청 중...');
     try {
       const userStr = localStorage.getItem('user');
@@ -615,6 +636,7 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
       }
       setValidJobId(res.data.job_id);
       startGlobalJob?.(res.data.job_id, GMU_MENU_NAME, jobSlot());
+      return true;
     } catch (e) {
       console.error('[BDF 검증] 요청 실패:', e);
       setValidating(false);
@@ -622,6 +644,7 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
       setValidFailed(true);
       const detail = e?.response?.data?.detail || e?.message || '알 수 없는 오류';
       showToast(`BDF 검증 요청 실패 — ${detail}`, 'error');
+      return false;
     }
   };
 
@@ -659,6 +682,64 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
 
   // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
   useDashboardAutoRun(GMU_MENU_NAME, (!validating && bdfFile) || null, handleValidate, acceptsEntry);
+
+  // ── Hi-TESS LogBook 에서 보낸 모델 받기 ─────────────────────────
+  // 페이지가 작업 번호(slot)로 이 탭을 골라 서버로 가져온 뒤(logbookDelivery) 여기서 입력을 바꾸고
+  // BDF 검증을 바로 시작한다(사용자 결정). 검증은 입력 상태가 화면에 반영된 다음 렌더에서 시작해야
+  // handleValidate 가 새 handoffBdfPath 를 읽으므로, 대기 표식(ref)을 두고 아래 effect 가 소비한다.
+  // ⚠ 이 effect 들은 handleValidate 선언 뒤에 둔다(앞에 두면 TDZ 로 페이지가 죽는다).
+  const logbookAppliedRef = useRef(null);
+  const logbookRunRef = useRef(null);
+  const [logbookRunTick, setLogbookRunTick] = useState(0);
+  useEffect(() => {
+    const d = logbookDelivery;
+    if (!d?.requestId || logbookAppliedRef.current === d.requestId) return;
+    logbookAppliedRef.current = d.requestId;
+    onLogbookDelivered?.(workspaceId, d.requestId);
+    if (validating) {
+      replyLogbookPick(d.requestId, false, `작업 ${d.slot}은 진행 중입니다. BDF 검증이 끝난 뒤 다시 보내 주세요.`);
+      return;
+    }
+    // 연계 핸드오프와 같은 초기화 — 이전 검증·Studio·결과를 비우고 서버 BDF 를 입력으로 둔다.
+    ignoredJobIdRef.current = validJobId || gmuJob?.jobId || null;
+    setActiveIdx(0);
+    setValidJobId(null);
+    setValidProgress(0);
+    setValidStatusMsg('');
+    setBdfFile(null);
+    clearResults();
+    setHandoffSource(LOGBOOK_SOURCE);
+    setHandoffBdfPath(d.bdfServerPath);
+    logbookRunRef.current = { requestId: d.requestId, path: d.bdfServerPath, slot: d.slot, fileName: d.fileName };
+    setLogbookRunTick(t => t + 1);
+    // 도착한 값 하나만 보면 된다(나머지는 도착 시점의 값).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logbookDelivery]);
+
+  useEffect(() => {
+    const pending = logbookRunRef.current;
+    if (!pending || validating || handoffBdfPath !== pending.path) return;
+    logbookRunRef.current = null;
+    const label = pending.fileName ? `${pending.fileName} — ` : '';
+    handleValidate().then((ok) => {
+      if (ok) {
+        showToast(`${label}Hi-TESS LogBook 에서 가져와 BDF 검증을 시작했습니다.`, 'info');
+        replyLogbookPick(pending.requestId, true, `작업 ${pending.slot}으로 가져와 BDF 검증을 시작했습니다.`);
+      } else {
+        replyLogbookPick(pending.requestId, false,
+          `작업 ${pending.slot}으로 가져왔지만 BDF 검증을 시작하지 못했습니다. WorkBench 화면을 확인해 주세요.`);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoffBdfPath, validating, logbookRunTick]);
+
+  // ── Hi-TESS LogBook 창 열기 — 자동 로그인 + 'GMU 작업 N 에 보낼 BDF 고르기' 선택 모드 ──
+  const { open: openLogbook, launching: logbookLaunching } = useLogbookLauncher({
+    target: LOGBOOK_TARGET_GMU,
+    slot: slotNo,
+    showToast,
+    openedMessage: `Hi-TESS LogBook 을 열었습니다. 작업 ${slotNo}에 보낼 BDF 를 고르세요.`,
+  });
 
   // 샘플 실행 콜백 — SampleRunButton 이 호출. handleValidate 와 동일한 폴링 흐름에 진입.
   const sampleGmuBefore = () => beginValidation('샘플 파일로 작업 요청 중...');
@@ -1043,13 +1124,23 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
                       )}
                     </div>
                   ) : (
-                    <BdfDropZone
-                      file={bdfFile}
-                      onFile={f => { setBdfFile(f); clearResults(); }}
-                      onClear={() => { setBdfFile(null); clearResults(); }}
-                      onWarnNotBdf={() => showToast('BDF 파일(.bdf)만 올릴 수 있습니다.', 'warning')}
-                      disabled={validating}
-                    />
+                    <>
+                      <BdfDropZone
+                        file={bdfFile}
+                        onFile={f => { setBdfFile(f); clearResults(); }}
+                        onClear={() => { setBdfFile(null); clearResults(); }}
+                        onWarnNotBdf={() => showToast('BDF 파일(.bdf)만 올릴 수 있습니다.', 'warning')}
+                        disabled={validating}
+                      />
+                      {!bdfFile && (
+                        <LogbookImportButton
+                          onClick={openLogbook}
+                          disabled={validating}
+                          launching={logbookLaunching}
+                          hint={`LogBook 창에서 모델을 골라 보내면 작업 ${slotNo}에서 바로 검증합니다.`}
+                        />
+                      )}
+                    </>
                   )}
 
                   {hasValidation ? (
@@ -1139,7 +1230,7 @@ const GMU_STATUS_TEXT = {
 };
 
 export default function GroupModuleUnitLiftingAnalysis() {
-  const { setCurrentMenu } = useNavigation();
+  const { setCurrentMenu, currentMenu } = useNavigation();
   const { showToast } = useToast();
   const dashboardCtx = useDashboard();
   const {
@@ -1149,6 +1240,75 @@ export default function GroupModuleUnitLiftingAnalysis() {
     setRawStore: dashboardCtx?.setGmuLiftingPageState,
     kit: gmuWorkspaceKit,
   });
+
+  // ── Hi-TESS LogBook 창에서 보낸 모델 → 작업 번호(slot)가 같은 탭으로 ─────────────
+  // 작업 탭 규칙: 이벤트는 반드시 탭을 특정해서 받는다(활성 탭·위치 순번으로 받으면 다른 모델을 덮는다).
+  // 받을 수 있는지(utils/logbookLink) 확인 → 서버로 가져오기 → 그 탭을 앞으로 → 탭이 입력을 바꾸고 검증을 시작해
+  // 결과를 회신한다. 거절·가져오기 실패는 여기서 바로 회신한다 — requestId 당 최종 결과는 정확히 한 번.
+  const [logbookDeliveries, setLogbookDeliveries] = useState({}); // workspaceId -> { requestId, slot, bdfServerPath, … }
+  const logbookInFlightRef = useRef(new Set()); // 가져오는 중인 작업 번호
+  const storeRef = useRef(store);
+  storeRef.current = store;
+  const currentMenuRef = useRef(currentMenu);
+  currentMenuRef.current = currentMenu;
+
+  const handleLogbookPick = async (msg) => {
+    // Truss 화면도 같은 이벤트를 듣는다 — GMU 몫(target 'gmu')이 아니면 회신 없이 넘긴다.
+    if (!isLogbookPickFor(msg, LOGBOOK_TARGET_GMU)) return;
+    const requestId = msg.requestId;
+    const slot = Number(msg.slot);
+    const decision = decideLogbookPick(storeRef.current, slot, logbookInFlightRef.current);
+    if (!decision.ok) {
+      replyLogbookPick(requestId, false, decision.message);
+      return;
+    }
+    logbookInFlightRef.current.add(slot);
+    ackLogbookPick(requestId);
+    let data;
+    try {
+      ({ data } = await importFromLogbook({ fileId: msg.fileId, target: LOGBOOK_IMPORT_TARGET.gmu }));
+    } catch (e) {
+      logbookInFlightRef.current.delete(slot);
+      const reason = logbookErrorMessage(e);
+      replyLogbookPick(requestId, false, reason);
+      showToast(`작업 ${slot} — LogBook 에서 가져오지 못했습니다: ${reason}`, 'error');
+      return;
+    }
+    // 가져오는 사이 탭이 닫혔거나 다른 작업을 시작했으면 받지 않는다.
+    const again = decideLogbookPick(storeRef.current, slot);
+    if (!again.ok || again.workspaceId !== decision.workspaceId) {
+      logbookInFlightRef.current.delete(slot);
+      replyLogbookPick(requestId, false, again.ok ? `작업 ${slot} 탭이 바뀌었습니다. 다시 보내 주세요.` : again.message);
+      return;
+    }
+    if (currentMenuRef.current !== GMU_MENU_NAME) {
+      // 다른 화면에서 왔으면 fresh-entry(빈 탭 정리·페이지 재마운트) 없이 이 페이지로 돌아온다.
+      try {
+        sessionStorage.setItem(RESUME_ENTRY_KEY, JSON.stringify({ menu: GMU_MENU_NAME, at: Date.now() }));
+      } catch { /* sessionStorage 차단 — 이동은 계속 */ }
+      setCurrentMenu(GMU_MENU_NAME);
+    }
+    focusWorkspace(decision.workspaceId);
+    setLogbookDeliveries(prev => ({ ...prev, [decision.workspaceId]: { requestId, slot, ...data } }));
+  };
+  const handleLogbookPickRef = useRef(handleLogbookPick);
+  handleLogbookPickRef.current = handleLogbookPick;
+  useEffect(() => {
+    if (!window.electron?.onMessage) return undefined;
+    return window.electron.onMessage('logbook:model-picked', (msg) => { handleLogbookPickRef.current(msg); });
+  }, []);
+
+  // 탭이 전달을 받아 갔다 — 회신은 그 탭이 검증을 시작한 뒤 직접 한다.
+  const handleLogbookDelivered = useCallback((workspaceId, requestId) => {
+    setLogbookDeliveries((prev) => {
+      const d = prev[workspaceId];
+      if (!d || d.requestId !== requestId) return prev;
+      logbookInFlightRef.current.delete(d.slot);
+      const next = { ...prev };
+      delete next[workspaceId];
+      return next;
+    });
+  }, []);
 
   const handleClose = (id) => {
     const state = store.states[id];
@@ -1163,6 +1323,12 @@ export default function GroupModuleUnitLiftingAnalysis() {
     const bdfPath = state?.bdfPath;
     if (bdfPath && window.electron?.invoke) {
       window.electron.invoke('viewer:close', { viewerId: MODULE_STUDIO_VIEWER_ID, sourceKey: bdfPath }).catch(() => {});
+    }
+    // 받아 가기 전의 LogBook 전달이 있으면 거절로 회신한다(회신 없이 사라지면 LogBook 창이 오래 기다린다).
+    const pendingPick = logbookDeliveries[id];
+    if (pendingPick) {
+      replyLogbookPick(pendingPick.requestId, false, `작업 ${pendingPick.slot} 탭이 닫혀 있습니다.`);
+      handleLogbookDelivered(id, pendingPick.requestId);
     }
     update((prev) => gmuWorkspaceKit.close(prev, id));
   };
@@ -1228,6 +1394,9 @@ export default function GroupModuleUnitLiftingAnalysis() {
             getSaved={getSaved}
             onSaveState={saveState}
             jobLabel={item.title}
+            slotNo={item.slotNo}
+            logbookDelivery={logbookDeliveries[item.id] ?? null}
+            onLogbookDelivered={handleLogbookDelivered}
           />
         )}
       />

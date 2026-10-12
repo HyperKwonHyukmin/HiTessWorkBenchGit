@@ -31,6 +31,7 @@ from .routers import (
     external_apps,
     hitessbeam,
     hole_calculation,
+    logbook_link,
     model_registry,
     module_ocean_transport,
     newsletters,
@@ -216,6 +217,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(notifications.router)
     application.include_router(diagnostics.router)
     application.include_router(preferences.router)
+    application.include_router(logbook_link.router)
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     application.mount(

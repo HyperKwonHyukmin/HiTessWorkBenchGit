@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from .. import database, models
 from ..dependencies import require_admin, require_auth
 from ..services.external_app_access import external_app_access_store
+from ..services.logbook_integration import notify_logbook_logout
 
 router = APIRouter(prefix="/api/presence", tags=["presence"])
 
@@ -232,6 +233,11 @@ def force_logout(
     if employee_id == current_admin:
         return {"ok": False, "reason": "self", "revoked_sessions": 0}
 
+    # LogBook 세션도 따라 폐기하도록, 지우기 전에 토큰을 모아 둔다.
+    revoked_tokens = [
+        row.token for row in db.query(models.UserSession.token)
+        .filter(models.UserSession.employee_id == employee_id)
+    ]
     revoked = (
         db.query(models.UserSession)
         .filter(models.UserSession.employee_id == employee_id)
@@ -242,4 +248,5 @@ def force_logout(
     ).delete(synchronize_session=False)
     db.commit()
     external_app_access_store.revoke_employee(employee_id)
+    notify_logbook_logout(revoked_tokens)
     return {"ok": True, "revoked_sessions": int(revoked)}

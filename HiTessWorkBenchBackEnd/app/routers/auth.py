@@ -12,6 +12,7 @@ from ..sessions import session_store
 from ..dependencies import require_auth
 from ..services.activity_service import log_activity
 from ..services.external_app_access import external_app_access_store
+from ..services.logbook_integration import notify_logbook_logout
 
 router = APIRouter(prefix="/api", tags=["auth"])
 member_router = APIRouter(prefix="/member", tags=["member"])
@@ -115,6 +116,8 @@ def logout(req: Request, db: Session = Depends(database.get_db), employee_id: st
   token = req.headers.get("Authorization", "").removeprefix("Bearer ").strip()
   session_store.revoke(token)
   external_app_access_store.revoke_employee(employee_id)
+  # Hi-TESS LogBook 세션도 함께 폐기(백그라운드·실패 무시 — 로그아웃을 늦추지 않는다).
+  notify_logbook_logout(token)
   # 접속 상태(presence) 행 삭제 — 로그아웃 즉시 오프라인으로 표시.
   db.query(models.UserPresence).filter(models.UserPresence.employee_id == employee_id).delete()
   db.commit()
