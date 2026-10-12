@@ -410,9 +410,13 @@ export default function HullAccelerationPage() {
       const jobId = res.data.job_id;
       addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
       startJob(jobId, '선급 Rule 기반 선체 가속도 Calculation');
-    } catch {
+    } catch (err) {
       setIsRunning(false);
-      addLog('서버 요청 실패.', 'error');
+      // 서버가 준 사유(예: 파일 이름이 너무 김)를 그대로 보여 준다 — 사용자가 직접 고칠 수 있는 경우가 많다.
+      const detail = err?.response?.data?.detail;
+      const message = typeof detail === 'string' && detail ? detail : '서버 요청 실패.';
+      addLog(message, 'error');
+      if (detail) showToast(message, 'error');
     }
   };
 
@@ -444,9 +448,10 @@ export default function HullAccelerationPage() {
       if (res.data.sample_name) addLog(`[SAMPLE] ${res.data.sample_name}`, 'success');
       addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
       startJob(jobId, '선급 Rule 기반 선체 가속도 Calculation');
-    } catch {
+    } catch (err) {
       setIsRunning(false);
-      addLog('샘플 실행 요청 실패. (서버에 샘플 PDF가 없을 수 있습니다)', 'error');
+      const detail = err?.response?.data?.detail;
+      addLog(typeof detail === 'string' && detail ? detail : '샘플 실행 요청 실패. (서버에 샘플 PDF가 없을 수 있습니다)', 'error');
     }
   };
 
@@ -526,6 +531,9 @@ export default function HullAccelerationPage() {
   // 5개 선급 Rule(DNV/CSR/IGC/BV/LR) 결과를 모두 표시한다.
   const ruleRows = Object.values(rules);
   const allConditionNumbers = getConditionNumbersFromRules(rules);
+  // 엔진이 Summary 머리의 'NO.n : 이름' 으로 읽은 조건 이름과, 항해 상태가 아니라 계산에서 뺀 조건(경량선·도킹)
+  const conditionNames = resultData?.condition_names ?? {};
+  const excludedConditions = Array.isArray(resultData?.excluded_conditions) ? resultData.excluded_conditions : [];
   const effectiveSelectedLcNumbers = selectedLcNumbers == null ? allConditionNumbers : selectedLcNumbers;
   const selectedLcSet = new Set(effectiveSelectedLcNumbers.map(Number));
   const gravityValue = Number(resultData?.ship_constants?.gravity) || 9.81;
@@ -1143,6 +1151,7 @@ export default function HullAccelerationPage() {
                           {allConditionNumbers.map((conditionNo) => (
                             <label
                               key={conditionNo}
+                              title={conditionNames[conditionNo] ?? undefined}
                               className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 shrink-0 transition-colors ${
                                 selectedLcSet.has(conditionNo)
                                   ? 'border-amber-200 bg-amber-50 text-amber-800'
@@ -1159,6 +1168,12 @@ export default function HullAccelerationPage() {
                             </label>
                           ))}
                         </div>
+                        {excludedConditions.length > 0 && (
+                          <p className="mt-1.5 text-[11px] text-slate-500">
+                            계산 제외(항해 상태 아님):{' '}
+                            {excludedConditions.map((item) => `LC ${item.condition_no}${item.name ? ` ${item.name}` : ''}`).join(' · ')}
+                          </p>
+                        )}
                       </div>
                     )}
 

@@ -35,6 +35,11 @@ _BACKEND_DIR = os.path.dirname(os.path.dirname(_ROUTER_DIR))       # HiTessWorkB
 USER_CONNECTION_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "userConnection"))
 _TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")
 _UPLOAD_CHUNK_SIZE = 1024 * 1024
+# 업로드 저장 경로(작업 폴더 + 파일명)의 최대 글자 수.
+# Windows 는 LongPathsEnabled 가 꺼져 있으면 260자(MAX_PATH)를 넘는 경로를 못 연다. 게다가
+# 회사 DRM 훅이 붙은 프로세스는 실측 한계가 246자로 더 짧다(백엔드 import 후 측정, 2026-10-12).
+# 그래서 여유를 둔 240자를 쓴다. 넘으면 OS 오류(500) 대신 파일명을 줄이라는 400 을 준다.
+MAX_UPLOAD_PATH_CHARS = 240
 
 
 class _OwnedWorkDir(str):
@@ -96,6 +101,7 @@ async def save_upload(
         if ext not in normalized:
             raise HTTPException(status_code=400, detail=f"허용되지 않은 파일 형식입니다: {ext or '(none)'}")
     dest_path = os.path.join(work_dir, fname)
+    _check_upload_path_length(dest_path, fname)
     try:
         written = 0
         with open(dest_path, "wb") as buffer:
@@ -117,6 +123,25 @@ async def save_upload(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{error_prefix}: {str(e)}")
     return dest_path
+
+
+def _check_upload_path_length(dest_path: str, fname: str) -> None:
+    """저장 경로가 MAX_UPLOAD_PATH_CHARS 를 넘으면 사용자가 고칠 수 있는 400 으로 거부한다.
+
+    실례(2026-10-12): 운영 서버에서 126자 PDF 이름이 FileNotFoundError(500)로 떨어져
+    화면엔 '서버 요청 실패' 만 보였다. 같은 파일을 test.pdf 로 바꾸면 정상 동작했다.
+    """
+    full_len = len(os.path.abspath(dest_path))
+    if full_len <= MAX_UPLOAD_PATH_CHARS:
+        return
+    max_name = MAX_UPLOAD_PATH_CHARS - (full_len - len(fname))
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"파일 이름이 너무 깁니다({len(fname)}자). 서버 저장 경로 길이 제한 때문에 저장할 수 없습니다. "
+            f"파일 이름을 {max_name}자 이하로 줄여 다시 올려 주세요."
+        ),
+    )
 
 
 def submit_analysis_job(

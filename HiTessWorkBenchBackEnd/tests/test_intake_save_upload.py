@@ -6,7 +6,7 @@ import pytest
 from fastapi import UploadFile
 from fastapi import HTTPException
 
-from app.routers._intake import USER_CONNECTION_DIR, _infer_work_folder_metadata, save_upload
+from app.routers._intake import MAX_UPLOAD_PATH_CHARS, USER_CONNECTION_DIR, _infer_work_folder_metadata, save_upload
 
 
 def _make_upload(filename: str, content: bytes) -> UploadFile:
@@ -74,3 +74,37 @@ def test_infer_work_folder_metadata_from_nested_output_path():
     employee_id, program_name = _infer_work_folder_metadata(nested)
     assert employee_id == "A123456"
     assert program_name == "HiTessModelBuilder"
+
+
+
+def test_save_upload_rejects_filename_exceeding_path_limit(tmp_path):
+    """저장 경로가 한계를 넘으면 OS 오류(500) 대신 파일명 길이 안내(400)를 준다.
+
+    실례(2026-10-12): 운영 서버의 긴 백엔드 경로 + 126자 PDF 이름 → FileNotFoundError 500 →
+    화면엔 '서버 요청 실패' 만 보였다. test.pdf 로 바꾸면 정상 동작했다.
+    """
+    work_dir = str(tmp_path)
+    max_len = MAX_UPLOAD_PATH_CHARS - len(os.path.abspath(work_dir)) - 1
+    upload = _make_upload("A" * (max_len - 3) + ".pdf", b"%PDF-1.7")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(save_upload(upload, work_dir))
+    assert exc.value.status_code == 400
+    assert "파일 이름이 너무 깁니다" in exc.value.detail
+    assert f"{max_len}자 이하" in exc.value.detail
+    assert not os.listdir(work_dir)
+
+
+def test_save_upload_accepts_filename_at_path_limit(tmp_path):
+    """경계값: 한계 길이까지는 그대로 저장된다."""
+    work_dir = str(tmp_path)
+    max_len = MAX_UPLOAD_PATH_CHARS - len(os.path.abspath(work_dir)) - 1
+    saved = asyncio.run(save_upload(_make_upload("B" * (max_len - 4) + ".pdf", b"%PDF-1.7"), work_dir))
+    assert len(saved) == MAX_UPLOAD_PATH_CHARS
+    assert os.path.exists(saved)
+
+
+def test_save_upload_checks_dest_name_length_too(tmp_path):
+    """dest_name 으로 강제 저장해도 같은 검사를 거친다(짧은 이름이면 원본 이름 길이와 무관)."""
+    long_original = "C" * 300 + ".csv"
+    saved = asyncio.run(save_upload(_make_upload(long_original, b"x"), str(tmp_path), dest_name="short.csv"))
+    assert os.path.basename(saved) == "short.csv"
