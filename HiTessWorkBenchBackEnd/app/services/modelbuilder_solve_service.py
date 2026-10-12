@@ -17,6 +17,8 @@ ModelFlow 빌드 산출 BDF 에 사용자 정의 경계조건(SPC1)/하중(FORCE
 import json
 import logging
 import os
+import re
+import shutil
 import subprocess
 import time
 import traceback
@@ -43,6 +45,72 @@ from .drawing_to_analysis_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_CMB_EXE = os.path.join(_BACKEND_DIR, "InHouseProgram", "HiTessModeBuilder", "Cmb.Cli.exe")
+_SAFE_BASE_NAME = re.compile(r"^[^\\/:*?\"<>|]+$")
+
+
+def _grid_ids(bdf_text: str) -> set:
+    """BDF 의 GRID id 집합(고정·자유 필드 모두)."""
+    ids = set()
+    for line in bdf_text.splitlines():
+        head = line[:8].strip().upper().rstrip("*")
+        if line.upper().startswith("GRID,"):
+            parts = line.split(",")
+            token = parts[1] if len(parts) > 1 else ""
+        elif head == "GRID":
+            token = line[8:16] if not line[:8].rstrip().endswith("*") else line[8:24]
+        else:
+            continue
+        try:
+            ids.add(int(token.strip()))
+        except ValueError:
+            pass
+    return ids
+
+
+def build_edited_source_bdf(source_bdf_path: str, solve_dir: str, edits: dict, job_id: Optional[str] = None):
+    """Studio 편집 intent 전체를 '편집 적용(finalize)' 과 같은 경로로 적용한 BDF 텍스트를 만든다.
+
+    edits = { intent_document: serializeIntents 결과, base_name: 마지막 단계 파일명(확장자 없음) }.
+    work_dir(빌드 산출 폴더)의 <base>.json/.bdf 를 solve_dir/edit_apply/ 로 복사하고 <base>_edit.json 을
+    써서 hitess_modelflow_service.apply_edit_intents(엔진 → bridge fallback)로 편집 BDF 를 만든다.
+    예전 경로(삭제·RBE 추가만 BDF 텍스트에 직접 반영)는 노드 추가·회전·유체 비움을 빠뜨려
+    Studio 화면과 다른 모델로 해석됐다(2026-10-02 정합성 검토).
+
+    반환: (편집 BDF 텍스트, 로그). 실패하면 RuntimeError(사용자에게 보일 사유).
+    """
+    from .hitess_modelflow_service import apply_edit_intents  # 순환 import 회피
+
+    doc = edits.get("intent_document")
+    base_name = (edits.get("base_name") or "").strip()
+    if not isinstance(doc, dict) or not doc.get("intents"):
+        raise RuntimeError("편집 의도 문서가 비어 있습니다.")
+    if not base_name or not _SAFE_BASE_NAME.match(base_name) or base_name in (".", ".."):
+        raise RuntimeError(f"편집 대상 단계 파일명이 올바르지 않습니다: {base_name!r}")
+    work_dir = os.path.dirname(os.path.abspath(source_bdf_path))
+    base_json = os.path.join(work_dir, base_name + ".json")
+    if not os.path.isfile(base_json):
+        raise RuntimeError(f"편집 대상 단계 파일을 서버에서 찾을 수 없습니다: {base_name}.json")
+
+    apply_dir = os.path.join(solve_dir, "edit_apply")
+    os.makedirs(apply_dir, exist_ok=True)
+    shutil.copy2(base_json, os.path.join(apply_dir, base_name + ".json"))
+    base_bdf = os.path.join(work_dir, base_name + ".bdf")
+    if os.path.isfile(base_bdf):
+        shutil.copy2(base_bdf, os.path.join(apply_dir, base_name + ".bdf"))
+    edit_json = os.path.join(apply_dir, base_name + "_edit.json")
+    with open(edit_json, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, ensure_ascii=False, indent=2)
+
+    status, log, edited = apply_edit_intents(apply_dir, _CMB_EXE, edit_json, job_id=job_id)
+    bdf = edited.get("edited_bdf_path")
+    if status != "Success" or not bdf or not os.path.isfile(bdf):
+        tail = "\n".join(log.strip().splitlines()[-6:])
+        raise RuntimeError(f"Studio 편집을 모델에 적용하지 못했습니다. {tail}".strip())
+    with open(bdf, "r", encoding="utf-8", errors="replace") as fh:
+        return fh.read(), log
 
 
 def task_execute_modelbuilder_solve(
@@ -134,8 +202,37 @@ def task_execute_modelbuilder_solve(
         ed_nodes   = ed.get("deleted_node_ids") or []
         ed_elems   = ed.get("deleted_element_ids") or []
         ed_rigids  = ed.get("removed_rigid_ids") or []
-        ed_added   = ed.get("added_rigids") or []
-        if ed_nodes or ed_elems or ed_rigids or ed_added:
+        # 무게중심 RBE(독립노드 = 엔진이 새로 만듦)는 예전 경로로 표현할 수 없다 — intent 경로에서만 반영된다.
+        ed_added   = [a for a in (ed.get("added_rigids") or []) if a.get("independent_node") is not None]
+        if ed.get("intent_document"):
+            # ── 새 경로: intent 전체를 편집 적용(finalize)과 같은 엔진으로 적용 ──
+            update_progress(job_id, 15, "Studio 편집 적용 중 (편집 적용과 같은 엔진)...")
+            try:
+                src_text, apply_log = build_edited_source_bdf(source_bdf_path, solve_dir, ed, job_id)
+            except RuntimeError as apply_error:
+                status_msg = "Failed"
+                user_reason = str(apply_error)
+                engine_output_parts.append("[Error] " + user_reason)
+                raise
+            step("apply_edit_intents", intents=len(ed["intent_document"].get("intents") or []))
+            engine_output_parts.append(apply_log.strip())
+            # 편집 모델에 없는 노드(삭제됨)를 가리키는 경계조건·하중 노드는 뺀다(세트 인덱스는 유지).
+            alive = _grid_ids(src_text)
+            pruned = 0
+            for coll in (bcs or [], loads or []):
+                for item in coll:
+                    if not isinstance(item, dict):
+                        continue
+                    orig = item.get("nodes") or []
+                    kept = [x for x in orig if int(x) in alive]
+                    if len(kept) != len(orig):
+                        pruned += len(orig) - len(kept)
+                        item["nodes"] = kept
+            if pruned:
+                engine_output_parts.append(
+                    f"[Warning] 편집 모델에 없는 노드를 참조하던 경계조건/하중 노드 {pruned}개를 제외했습니다."
+                )
+        elif ed_nodes or ed_elems or ed_rigids or ed_added:
             update_progress(job_id, 18, "모델 편집(그룹/요소 삭제) 반영 중...")
             src_text, edit_meta = _apply_model_edits_to_bdf(
                 src_text, ed_nodes, ed_elems, ed_rigids, ed_added,

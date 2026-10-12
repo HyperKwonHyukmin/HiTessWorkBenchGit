@@ -1,0 +1,2088 @@
+{
+  "_keys": {
+    "meta": "스테이지 메타 (phase, stageName, timestamp, unit, schemaVersion)",
+    "nodes": "노드 배열 (id, x, y, z, tags[])",
+    "elements": "빔 요소 배열 (id, type, startNode, endNode, propertyId, category, orientation[])",
+    "rigids": "RBE2 배열 (id, independentNode, dependentNodes[], remark, cm)",
+    "properties": "빔 단면 배열 (id, kind, dims[], materialId)",
+    "materials": "재료 배열 (id, name, E, nu, rho)",
+    "pointMasses": "집중질량 배열 (id, nodeId, mass)",
+    "connectivity": "연결성 분석 (groupCount, largestGroupNodeCount, largestGroupElementCount, largestGroupNodeRatio, isolatedNodeCount, groups[])",
+    "healthMetrics": "FEM 건전성 지표 — totals(규모), issues(감소 목표: freeEndNodes/orphanNodes/shortElements/unresolvedUbolts/disconnectedGroups), diagnosticCounts(error/warning/info/byCode)",
+    "elementQuality": "요소 품질 분포 요약 (lengthDistribution, shortElementCount, shortElementThresholdMm, aspectRatioOk)",
+    "diagnostics": "스테이지 진단 메시지 배열 (severity, code, message, elemId?, nodeId?)",
+    "stageDeltas": "이전 스테이지 대비 변화량 (fromStage, toStage, elemCountBefore, elemCountAfter, nodeCountBefore, nodeCountAfter, netElementDelta, netNodeDelta) — 옵션",
+    "stageHistory": "스테이지별 처리 이력 배열 (stageIndex, stage, timestamp, processingDurationMs, elementCount, nodeCount, issueCount) — 마지막 스테이지에만 포함",
+    "trace": "변환 추적 이벤트 배열 — 옵션 (action, stage, elemId?, nodeId?, relatedElemId?, relatedNodeId?, note?)"
+  },
+  "meta": {
+    "phase": "C",
+    "stageName": "Validation",
+    "stageIndex": 6,
+    "timestamp": "2026-06-16T23:26:21.5335863Z",
+    "processingDurationMs": 29,
+    "unit": "mm",
+    "schemaVersion": "1.2"
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "x": 90072,
+      "y": 4908,
+      "z": 38610,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 2,
+      "x": 90072,
+      "y": 4908,
+      "z": 39616,
+      "tags": [
+        "Intersection",
+        "Merged"
+      ]
+    },
+    {
+      "id": 3,
+      "x": 90072,
+      "y": 4908,
+      "z": 38766,
+      "tags": []
+    },
+    {
+      "id": 4,
+      "x": 90225,
+      "y": 4908,
+      "z": 38766,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 6,
+      "x": 88793,
+      "y": 4908,
+      "z": 39616,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 7,
+      "x": 79558,
+      "y": 10610,
+      "z": 38655,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 8,
+      "x": 79558,
+      "y": 10890,
+      "z": 35451,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 9,
+      "x": 78964,
+      "y": 9780,
+      "z": 38660,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 10,
+      "x": 78964,
+      "y": 10555,
+      "z": 38660,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 11,
+      "x": 81420,
+      "y": 3975,
+      "z": 36844,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 12,
+      "x": 81420,
+      "y": 3975,
+      "z": 35527,
+      "tags": [
+        "Weld",
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 13,
+      "x": 82435,
+      "y": 4050,
+      "z": 38531,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 14,
+      "x": 83497,
+      "y": 4050,
+      "z": 38531,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 15,
+      "x": 76600,
+      "y": 8965,
+      "z": 37252,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 16,
+      "x": 77100,
+      "y": 8965,
+      "z": 37252,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 21,
+      "x": 77578,
+      "y": 8965,
+      "z": 37252,
+      "tags": [
+        "Boundary",
+        "Spc"
+      ]
+    },
+    {
+      "id": 22,
+      "x": 90940,
+      "y": 2435,
+      "z": 38850,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 23,
+      "x": 91023,
+      "y": 2435,
+      "z": 38850,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 24,
+      "x": 90858,
+      "y": 2435,
+      "z": 38850,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 25,
+      "x": 92064,
+      "y": 3407,
+      "z": 38850,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 26,
+      "x": 92064,
+      "y": 3345,
+      "z": 38850,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 27,
+      "x": 90428,
+      "y": 2435,
+      "z": 37252,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 28,
+      "x": 90275,
+      "y": 2435,
+      "z": 37252,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 29,
+      "x": 90351,
+      "y": 2435,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 30,
+      "x": 90351,
+      "y": 2435,
+      "z": 37319,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 31,
+      "x": 81616,
+      "y": 6245,
+      "z": 38069,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 32,
+      "x": 81006,
+      "y": 6245,
+      "z": 37968,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 33,
+      "x": 79558,
+      "y": 10750,
+      "z": 37053,
+      "tags": []
+    }
+  ],
+  "elements": [
+    {
+      "id": 2,
+      "type": "BEAM",
+      "startNode": 3,
+      "endNode": 4,
+      "propertyId": 2,
+      "category": "Structure",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 153,
+      "sourceName": "=268454733/2974298_0",
+      "parentElemId": null
+    },
+    {
+      "id": 5,
+      "type": "BEAM",
+      "startNode": 9,
+      "endNode": 10,
+      "propertyId": 5,
+      "category": "Structure",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 775,
+      "sourceName": "=268454733/2967647",
+      "parentElemId": null
+    },
+    {
+      "id": 6,
+      "type": "BEAM",
+      "startNode": 11,
+      "endNode": 12,
+      "propertyId": 6,
+      "category": "Structure",
+      "orientation": [
+        0,
+        1,
+        0
+      ],
+      "lengthMm": 1317,
+      "sourceName": "=21945/499850",
+      "parentElemId": null
+    },
+    {
+      "id": 7,
+      "type": "BEAM",
+      "startNode": 13,
+      "endNode": 14,
+      "propertyId": 7,
+      "category": "Structure",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 1062,
+      "sourceName": "=21945/499957",
+      "parentElemId": null
+    },
+    {
+      "id": 8,
+      "type": "BEAM",
+      "startNode": 15,
+      "endNode": 16,
+      "propertyId": 1000,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 500,
+      "sourceName": "=21945/52134",
+      "parentElemId": null
+    },
+    {
+      "id": 15,
+      "type": "BEAM",
+      "startNode": 25,
+      "endNode": 26,
+      "propertyId": 1001,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 62,
+      "sourceName": "=21945/52194",
+      "parentElemId": null
+    },
+    {
+      "id": 17,
+      "type": "BEAM",
+      "startNode": 27,
+      "endNode": 29,
+      "propertyId": 1000,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 77,
+      "sourceName": "=21945/52154",
+      "parentElemId": null
+    },
+    {
+      "id": 18,
+      "type": "BEAM",
+      "startNode": 29,
+      "endNode": 28,
+      "propertyId": 1000,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 76,
+      "sourceName": "=21945/52154",
+      "parentElemId": null
+    },
+    {
+      "id": 19,
+      "type": "BEAM",
+      "startNode": 29,
+      "endNode": 30,
+      "propertyId": 1002,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        1,
+        0
+      ],
+      "lengthMm": 67,
+      "sourceName": "=21945/52154",
+      "parentElemId": null
+    },
+    {
+      "id": 20,
+      "type": "BEAM",
+      "startNode": 31,
+      "endNode": 32,
+      "propertyId": 1003,
+      "category": "Pipe",
+      "orientation": [
+        -0.16334981869179005,
+        0,
+        0.9865682119009103
+      ],
+      "lengthMm": 618.305,
+      "sourceName": "=21945/52369",
+      "parentElemId": null
+    },
+    {
+      "id": 21,
+      "type": "BEAM",
+      "startNode": 7,
+      "endNode": 33,
+      "propertyId": 4,
+      "category": "Structure",
+      "orientation": [
+        0,
+        0.9962031613657033,
+        0.08705895292833861
+      ],
+      "lengthMm": 1608.106,
+      "sourceName": "=268454733/2967350",
+      "parentElemId": 4
+    },
+    {
+      "id": 22,
+      "type": "BEAM",
+      "startNode": 33,
+      "endNode": 8,
+      "propertyId": 4,
+      "category": "Structure",
+      "orientation": [
+        0,
+        0.9962031613657033,
+        0.08705895292833861
+      ],
+      "lengthMm": 1608.106,
+      "sourceName": "=268454733/2967350",
+      "parentElemId": 4
+    },
+    {
+      "id": 25,
+      "type": "BEAM",
+      "startNode": 1,
+      "endNode": 3,
+      "propertyId": 1,
+      "category": "Structure",
+      "orientation": [
+        0,
+        1,
+        0
+      ],
+      "lengthMm": 156,
+      "sourceName": "=268454733/2974123_0",
+      "parentElemId": 1
+    },
+    {
+      "id": 26,
+      "type": "BEAM",
+      "startNode": 3,
+      "endNode": 2,
+      "propertyId": 1,
+      "category": "Structure",
+      "orientation": [
+        0,
+        1,
+        0
+      ],
+      "lengthMm": 850,
+      "sourceName": "=268454733/2974123_0",
+      "parentElemId": 1
+    },
+    {
+      "id": 28,
+      "type": "BEAM",
+      "startNode": 2,
+      "endNode": 6,
+      "propertyId": 3,
+      "category": "Structure",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 1279,
+      "sourceName": "=268454733/2974189_0",
+      "parentElemId": 24
+    }
+  ],
+  "rigids": [
+    {
+      "id": 13,
+      "independentNode": 22,
+      "dependentNodes": [
+        23,
+        24
+      ],
+      "remark": "VALV",
+      "cm": "123456",
+      "sourceName": "=21945/52169"
+    }
+  ],
+  "properties": [
+    {
+      "id": 1,
+      "kind": "Bar",
+      "dims": [
+        65,
+        16
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 2,
+      "kind": "Rod",
+      "dims": [
+        9.5
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 3,
+      "kind": "Tube",
+      "dims": [
+        21.35,
+        18.1
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 4,
+      "kind": "Bar",
+      "dims": [
+        65,
+        9
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 5,
+      "kind": "L",
+      "dims": [
+        75,
+        75,
+        9,
+        9
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 6,
+      "kind": "L",
+      "dims": [
+        150,
+        150,
+        15,
+        15
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 7,
+      "kind": "H",
+      "dims": [
+        84,
+        16,
+        100,
+        6
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 1000,
+      "kind": "Tube",
+      "dims": [
+        36.5,
+        33.45
+      ],
+      "materialId": 2
+    },
+    {
+      "id": 1001,
+      "kind": "Tube",
+      "dims": [
+        24.15,
+        20.47
+      ],
+      "materialId": 3
+    },
+    {
+      "id": 1002,
+      "kind": "Tube",
+      "dims": [
+        24.15,
+        21.38
+      ],
+      "materialId": 4
+    },
+    {
+      "id": 1003,
+      "kind": "Tube",
+      "dims": [
+        330,
+        323.65
+      ],
+      "materialId": 5
+    }
+  ],
+  "materials": [
+    {
+      "id": 1,
+      "name": "Steel",
+      "E": 206000,
+      "nu": 0.3,
+      "rho": 7.85E-09
+    },
+    {
+      "id": 2,
+      "name": "Steel_Fluid_R36.5x33.5",
+      "E": 206000,
+      "nu": 0.3,
+      "rho": 1.309450720069371E-08
+    },
+    {
+      "id": 3,
+      "name": "Steel_Fluid_R24.1x20.5",
+      "E": 206000,
+      "nu": 0.3,
+      "rho": 1.0401868556701031E-08
+    },
+    {
+      "id": 4,
+      "name": "Steel_Fluid_R24.1x21.4",
+      "E": 206000,
+      "nu": 0.3,
+      "rho": 1.1474415527985276E-08
+    },
+    {
+      "id": 5,
+      "name": "Steel_Fluid_R330.0x323.6",
+      "E": 206000,
+      "nu": 0.3,
+      "rho": 3.3086680638281215E-08
+    }
+  ],
+  "pointMasses": [
+    {
+      "id": 14,
+      "nodeId": 22,
+      "mass": 0.0143,
+      "sourceName": "=21945/52169"
+    },
+    {
+      "id": 16,
+      "nodeId": 26,
+      "mass": 0.00172,
+      "sourceName": "=21945/52194"
+    }
+  ],
+  "connectivity": {
+    "groupCount": 10,
+    "largestGroupNodeCount": 5,
+    "largestGroupElementCount": 4,
+    "largestGroupNodeRatio": 0.1786,
+    "isolatedNodeCount": 1,
+    "groups": [
+      {
+        "id": 0,
+        "nodeCount": 5,
+        "elementCount": 4,
+        "nodeIds": [
+          3,
+          4,
+          1,
+          2,
+          6
+        ],
+        "elementIds": [
+          2,
+          25,
+          26,
+          28
+        ]
+      },
+      {
+        "id": 1,
+        "nodeCount": 4,
+        "elementCount": 3,
+        "nodeIds": [
+          27,
+          29,
+          28,
+          30
+        ],
+        "elementIds": [
+          17,
+          18,
+          19
+        ]
+      },
+      {
+        "id": 2,
+        "nodeCount": 3,
+        "elementCount": 2,
+        "nodeIds": [
+          7,
+          33,
+          8
+        ],
+        "elementIds": [
+          21,
+          22
+        ]
+      },
+      {
+        "id": 3,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          9,
+          10
+        ],
+        "elementIds": [
+          5
+        ]
+      },
+      {
+        "id": 4,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          11,
+          12
+        ],
+        "elementIds": [
+          6
+        ]
+      },
+      {
+        "id": 5,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          13,
+          14
+        ],
+        "elementIds": [
+          7
+        ]
+      },
+      {
+        "id": 6,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          15,
+          16
+        ],
+        "elementIds": [
+          8
+        ]
+      },
+      {
+        "id": 7,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          25,
+          26
+        ],
+        "elementIds": [
+          15
+        ]
+      },
+      {
+        "id": 8,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          31,
+          32
+        ],
+        "elementIds": [
+          20
+        ]
+      },
+      {
+        "id": 9,
+        "nodeCount": 3,
+        "elementCount": 0,
+        "nodeIds": [
+          22,
+          23,
+          24
+        ],
+        "elementIds": []
+      }
+    ]
+  },
+  "healthMetrics": {
+    "totals": {
+      "nodeCount": 28,
+      "elementCount": 15,
+      "rigidCount": 1,
+      "pointMassCount": 2,
+      "elementsByCategory": {
+        "Structure": 9,
+        "Pipe": 6
+      },
+      "totalLengthMm": 10208.52,
+      "lengthByCategoryMm": {
+        "Structure": 8808.21,
+        "Pipe": 1400.3
+      },
+      "bbox": {
+        "minX": 76600,
+        "minY": 2435,
+        "minZ": 35451,
+        "maxX": 92064,
+        "maxY": 10890,
+        "maxZ": 39616
+      }
+    },
+    "issues": {
+      "freeEndNodes": 20,
+      "orphanNodes": 1,
+      "shortElements": 0,
+      "unresolvedUbolts": 0,
+      "disconnectedGroups": 9
+    },
+    "diagnosticCounts": {
+      "error": 0,
+      "warning": 54,
+      "info": 3,
+      "byCode": {
+        "FREE_END_NODE": 40,
+        "BEAM_ISOLATED_NODE": 4,
+        "GROUP_NOT_CONNECTED": 8,
+        "ORPHAN_NODE_REMOVED": 1,
+        "ORPHAN_NODE_PRESERVED": 1,
+        "DUPLICATE_NODE": 1,
+        "NODES_MERGED": 1,
+        "ORPHAN_NODE": 1
+      }
+    },
+    "elementQuality": {
+      "lengthDistribution": {
+        "min": 62,
+        "max": 1608.106,
+        "mean": 680.568,
+        "median": 618.305,
+        "p10": 70.6,
+        "p90": 1491.663
+      },
+      "shortElementCount": 0,
+      "shortElementThresholdMm": 5,
+      "aspectRatioOk": true
+    }
+  },
+  "elementQuality": {
+    "lengthDistribution": {
+      "min": 62,
+      "max": 1608.106,
+      "mean": 680.568,
+      "median": 618.305,
+      "p10": 70.6,
+      "p90": 1491.663
+    },
+    "shortElementCount": 0,
+    "shortElementThresholdMm": 5,
+    "aspectRatioOk": true
+  },
+  "diagnostics": [
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 1 is connected to exactly one BEAM element.",
+      "nodeId": 1
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 4 is connected to exactly one BEAM element.",
+      "nodeId": 4
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 6 is connected to exactly one BEAM element.",
+      "nodeId": 6
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 7 is connected to exactly one BEAM element.",
+      "nodeId": 7
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 8 is connected to exactly one BEAM element.",
+      "nodeId": 8
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 9 is connected to exactly one BEAM element.",
+      "nodeId": 9
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 10 is connected to exactly one BEAM element.",
+      "nodeId": 10
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 11 is connected to exactly one BEAM element.",
+      "nodeId": 11
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 12 is connected to exactly one BEAM element.",
+      "nodeId": 12
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 13 is connected to exactly one BEAM element.",
+      "nodeId": 13
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 14 is connected to exactly one BEAM element.",
+      "nodeId": 14
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 15 is connected to exactly one BEAM element.",
+      "nodeId": 15
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 16 is connected to exactly one BEAM element.",
+      "nodeId": 16
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 21 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 21
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 22 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 22
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 23 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 23
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 24 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 24
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 25 is connected to exactly one BEAM element.",
+      "nodeId": 25
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 26 is connected to exactly one BEAM element.",
+      "nodeId": 26
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 27 is connected to exactly one BEAM element.",
+      "nodeId": 27
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 28 is connected to exactly one BEAM element.",
+      "nodeId": 28
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 30 is connected to exactly one BEAM element.",
+      "nodeId": 30
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 31 is connected to exactly one BEAM element.",
+      "nodeId": 31
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 32 is connected to exactly one BEAM element.",
+      "nodeId": 32
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 1 (4 nodes, 3 elements) is not connected to the largest group.",
+      "groupId": 1
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 2 (3 nodes, 2 elements) is not connected to the largest group.",
+      "groupId": 2
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 3 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 3
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 4 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 4
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 5 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 5
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 6 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 6
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 7 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 7
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 8 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 8
+    },
+    {
+      "severity": "info",
+      "code": "ORPHAN_NODE_REMOVED",
+      "message": "5 orphan node(s) removed (no element/rigid/pointMass reference)."
+    },
+    {
+      "severity": "info",
+      "code": "ORPHAN_NODE_PRESERVED",
+      "message": "1 orphan node(s) preserved due to Boundary tag."
+    },
+    {
+      "severity": "warning",
+      "code": "DUPLICATE_NODE",
+      "message": "Node 34 duplicates node 2 within 1 mm tolerance and was merged.",
+      "nodeId": 34
+    },
+    {
+      "severity": "info",
+      "code": "NODES_MERGED",
+      "message": "1 node(s) merged within 1 mm tolerance."
+    },
+    {
+      "severity": "warning",
+      "code": "ORPHAN_NODE",
+      "message": "Node 21 at (77578.0,8965.0,37252.0) is not referenced by any element/rigid/PointMass.",
+      "nodeId": 21
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 4 is a free end (connected to exactly 1 element).",
+      "nodeId": 4
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 9 is a free end (connected to exactly 1 element).",
+      "nodeId": 9
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 10 is a free end (connected to exactly 1 element).",
+      "nodeId": 10
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 11 is a free end (connected to exactly 1 element).",
+      "nodeId": 11
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 12 is a free end (connected to exactly 1 element).",
+      "nodeId": 12
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 13 is a free end (connected to exactly 1 element).",
+      "nodeId": 13
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 14 is a free end (connected to exactly 1 element).",
+      "nodeId": 14
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 15 is a free end (connected to exactly 1 element).",
+      "nodeId": 15
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 16 is a free end (connected to exactly 1 element).",
+      "nodeId": 16
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 25 is a free end (connected to exactly 1 element).",
+      "nodeId": 25
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 26 is a free end (connected to exactly 1 element).",
+      "nodeId": 26
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 27 is a free end (connected to exactly 1 element).",
+      "nodeId": 27
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 28 is a free end (connected to exactly 1 element).",
+      "nodeId": 28
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 30 is a free end (connected to exactly 1 element).",
+      "nodeId": 30
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 31 is a free end (connected to exactly 1 element).",
+      "nodeId": 31
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 32 is a free end (connected to exactly 1 element).",
+      "nodeId": 32
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 7 is a free end (connected to exactly 1 element).",
+      "nodeId": 7
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 8 is a free end (connected to exactly 1 element).",
+      "nodeId": 8
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 1 is a free end (connected to exactly 1 element).",
+      "nodeId": 1
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 6 is a free end (connected to exactly 1 element).",
+      "nodeId": 6
+    }
+  ],
+  "stageDeltas": {
+    "fromStage": "SplitByExistingNodes",
+    "toStage": "Validation",
+    "elementsCreated": 1,
+    "elementsRemoved": 1,
+    "elementsSplit": 0,
+    "nodesCreated": 0,
+    "nodesRemoved": 5,
+    "nodesMerged": 1,
+    "nodesMoved": 0,
+    "elemCountBefore": 15,
+    "elemCountAfter": 15,
+    "nodeCountBefore": 34,
+    "nodeCountAfter": 28,
+    "netElementDelta": 0,
+    "netNodeDelta": -6
+  },
+  "validationResult": {
+    "passed": true,
+    "errorCount": 0,
+    "warningCount": 21,
+    "summary": "모델이 유효합니다. 경고 21개 (자유단 20, 고립노드 1).",
+    "checklist": [
+      {
+        "check": "connectivity",
+        "passed": false,
+        "detail": "10개 그룹 분리"
+      },
+      {
+        "check": "noZeroLength",
+        "passed": true,
+        "detail": "길이=0 요소 없음"
+      },
+      {
+        "check": "noShortElements",
+        "passed": true,
+        "detail": "짧은 요소 없음"
+      },
+      {
+        "check": "noOrphanNodes",
+        "passed": false,
+        "detail": "1개 고립 노드"
+      },
+      {
+        "check": "noEmptyRigids",
+        "passed": true,
+        "detail": "유효 RBE2"
+      },
+      {
+        "check": "bdfExportCompatible",
+        "passed": true,
+        "detail": "ID 8자리 이내"
+      },
+      {
+        "check": "boundaryCondition",
+        "passed": true,
+        "detail": "경계조건 노드 1개"
+      }
+    ]
+  },
+  "stageHistory": [
+    {
+      "stageIndex": 1,
+      "stage": "SanityPreprocess",
+      "timestamp": "2026-06-16T23:26:21.1024549Z",
+      "processingDurationMs": 4,
+      "elementCount": 16,
+      "nodeCount": 32,
+      "issueCount": {
+        "error": 0,
+        "warning": 1,
+        "info": 2
+      }
+    },
+    {
+      "stageIndex": 2,
+      "stage": "Meshing",
+      "timestamp": "2026-06-16T23:26:21.1083875Z",
+      "processingDurationMs": 4,
+      "elementCount": 17,
+      "nodeCount": 33,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 1
+      }
+    },
+    {
+      "stageIndex": 3,
+      "stage": "NodeEquivalence",
+      "timestamp": "2026-06-16T23:26:21.2821745Z",
+      "processingDurationMs": 4,
+      "elementCount": 17,
+      "nodeCount": 33,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 4,
+      "stage": "Intersection",
+      "timestamp": "2026-06-16T23:26:21.2944552Z",
+      "processingDurationMs": 12,
+      "elementCount": 18,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 1
+      }
+    },
+    {
+      "stageIndex": 5,
+      "stage": "DanglingShortRemove",
+      "timestamp": "2026-06-16T23:26:21.2995569Z",
+      "processingDurationMs": 4,
+      "elementCount": 14,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 1
+      }
+    },
+    {
+      "stageIndex": 6,
+      "stage": "CollinearNodeMerge",
+      "timestamp": "2026-06-16T23:26:21.3162382Z",
+      "processingDurationMs": 8,
+      "elementCount": 14,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 7,
+      "stage": "ConnectivityConvergence",
+      "timestamp": "2026-06-16T23:26:21.3695291Z",
+      "processingDurationMs": 46,
+      "elementCount": 15,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 6
+      }
+    },
+    {
+      "stageIndex": 8,
+      "stage": "PointMassReattach",
+      "timestamp": "2026-06-16T23:26:21.3832789Z",
+      "processingDurationMs": 6,
+      "elementCount": 15,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 9,
+      "stage": "BoxUboltConnection",
+      "timestamp": "2026-06-16T23:26:21.3892016Z",
+      "processingDurationMs": 5,
+      "elementCount": 15,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 10,
+      "stage": "SplitByExistingNodes",
+      "timestamp": "2026-06-16T23:26:21.3893433Z",
+      "processingDurationMs": 0,
+      "elementCount": 15,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 11,
+      "stage": "RigidProximityMerge",
+      "timestamp": "2026-06-16T23:26:21.3963149Z",
+      "processingDurationMs": 6,
+      "elementCount": 15,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 12,
+      "stage": "FreeEndRbe",
+      "timestamp": "2026-06-16T23:26:21.4341824Z",
+      "processingDurationMs": 37,
+      "elementCount": 15,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 20,
+        "info": 3
+      }
+    },
+    {
+      "stageIndex": 13,
+      "stage": "SplitByExistingNodes",
+      "timestamp": "2026-06-16T23:26:21.4343764Z",
+      "processingDurationMs": 0,
+      "elementCount": 15,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 14,
+      "stage": "PreservedFreeEndCleanup",
+      "timestamp": "2026-06-16T23:26:21.4435582Z",
+      "processingDurationMs": 0,
+      "elementCount": 15,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 15,
+      "stage": "UboltAnchorVerticalize",
+      "timestamp": "2026-06-16T23:26:21.4441785Z",
+      "processingDurationMs": 0,
+      "elementCount": 15,
+      "nodeCount": 34,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 16,
+      "stage": "OrphanNodeRemove",
+      "timestamp": "2026-06-16T23:26:21.4481048Z",
+      "processingDurationMs": 3,
+      "elementCount": 15,
+      "nodeCount": 29,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 2
+      }
+    },
+    {
+      "stageIndex": 17,
+      "stage": "FinalMeshSize",
+      "timestamp": "2026-06-16T23:26:21.4513515Z",
+      "processingDurationMs": 3,
+      "elementCount": 15,
+      "nodeCount": 29,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 18,
+      "stage": "FinalMeshProximityConnect",
+      "timestamp": "2026-06-16T23:26:21.4563330Z",
+      "processingDurationMs": 4,
+      "elementCount": 15,
+      "nodeCount": 29,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 19,
+      "stage": "LoopCloseProximity",
+      "timestamp": "2026-06-16T23:26:21.4758119Z",
+      "processingDurationMs": 19,
+      "elementCount": 15,
+      "nodeCount": 29,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 20,
+      "stage": "SplitByExistingNodes",
+      "timestamp": "2026-06-16T23:26:21.4760109Z",
+      "processingDurationMs": 0,
+      "elementCount": 15,
+      "nodeCount": 29,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 21,
+      "stage": "FinalTopologyHealing",
+      "timestamp": "2026-06-16T23:26:21.4793619Z",
+      "processingDurationMs": 3,
+      "elementCount": 15,
+      "nodeCount": 29,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 22,
+      "stage": "NodeEquivalence",
+      "timestamp": "2026-06-16T23:26:21.4868559Z",
+      "processingDurationMs": 7,
+      "elementCount": 15,
+      "nodeCount": 28,
+      "issueCount": {
+        "error": 0,
+        "warning": 1,
+        "info": 1
+      }
+    },
+    {
+      "stageIndex": 23,
+      "stage": "RbeBeamDeduplicate",
+      "timestamp": "2026-06-16T23:26:21.4902221Z",
+      "processingDurationMs": 3,
+      "elementCount": 15,
+      "nodeCount": 28,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 24,
+      "stage": "RedundantBridgeRbeRemove",
+      "timestamp": "2026-06-16T23:26:21.4938796Z",
+      "processingDurationMs": 3,
+      "elementCount": 15,
+      "nodeCount": 28,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 25,
+      "stage": "RigidSharedNodeMerge",
+      "timestamp": "2026-06-16T23:26:21.4993883Z",
+      "processingDurationMs": 5,
+      "elementCount": 15,
+      "nodeCount": 28,
+      "issueCount": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      }
+    },
+    {
+      "stageIndex": 26,
+      "stage": "FinalValidation",
+      "timestamp": "2026-06-16T23:26:21.5293717Z",
+      "processingDurationMs": 29,
+      "elementCount": 15,
+      "nodeCount": 28,
+      "issueCount": {
+        "error": 0,
+        "warning": 21,
+        "info": 0
+      }
+    }
+  ],
+  "trace": [
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 1
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 2
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 1,
+      "note": "=268454733/2974123_0"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 3
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 4
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 2,
+      "note": "=268454733/2974298_0"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 5
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 6
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 3,
+      "note": "=268454733/2974189_0"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 7
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 8
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 4,
+      "note": "=268454733/2967350"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 9
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 10
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 5,
+      "note": "=268454733/2967647"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 11
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 12
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 6,
+      "note": "=21945/499850"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 13
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 14
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 7,
+      "note": "=21945/499957"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 15
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 16
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 8,
+      "note": "=21945/52134"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 17
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 18
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 19
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 20
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 9,
+      "note": "=21945/52138"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 10,
+      "note": "=21945/52138"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 11,
+      "note": "=21945/52138"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 21
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 12,
+      "note": "=21945/496593"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 22
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 23
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 24
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 13,
+      "note": "=21945/52169"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 14,
+      "note": "=21945/52169"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 25
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 26
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 15,
+      "note": "=21945/52194"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 16,
+      "note": "=21945/52194"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 27
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 28
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 29
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 17,
+      "note": "=21945/52154"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 18,
+      "note": "=21945/52154"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 30
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 19,
+      "note": "=21945/52154"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 31
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "initial",
+      "nodeId": 32
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 20,
+      "note": "=21945/52369"
+    },
+    {
+      "action": "NodeMoved",
+      "stage": "UboltRbe",
+      "nodeId": 21,
+      "note": "UBOLT fallback — marked Boundary"
+    },
+    {
+      "action": "ElementRemoved",
+      "stage": "UboltRbe",
+      "elemId": 12,
+      "nodeId": 21,
+      "note": "empty dep UBOLT removed (indep tagged Boundary for SPC1)"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "Meshing",
+      "nodeId": 33,
+      "relatedElemId": 4,
+      "note": "meshed segment 1/2"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "Meshing",
+      "elemId": 21,
+      "relatedElemId": 4,
+      "note": "split into 2 segments"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "Meshing",
+      "elemId": 22,
+      "relatedElemId": 4,
+      "note": "split into 2 segments"
+    },
+    {
+      "action": "NodeCreated",
+      "stage": "Intersection",
+      "nodeId": 34,
+      "relatedElemId": 1,
+      "note": "intersection of E1↔E3"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "Intersection",
+      "elemId": 23,
+      "relatedElemId": 3,
+      "note": "split into 2 segments"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "Intersection",
+      "elemId": 24,
+      "relatedElemId": 3,
+      "note": "split into 2 segments"
+    },
+    {
+      "action": "ElementRemoved",
+      "stage": "DanglingShortRemove",
+      "elemId": 9,
+      "note": "dangling short (< 50 mm)"
+    },
+    {
+      "action": "ElementRemoved",
+      "stage": "DanglingShortRemove",
+      "elemId": 11,
+      "note": "dangling short (< 50 mm)"
+    },
+    {
+      "action": "ElementRemoved",
+      "stage": "DanglingShortRemove",
+      "elemId": 23,
+      "note": "dangling short (< 50 mm)"
+    },
+    {
+      "action": "ElementRemoved",
+      "stage": "DanglingShortRemove",
+      "elemId": 10,
+      "note": "dangling short (< 50 mm)"
+    },
+    {
+      "action": "NodeMoved",
+      "stage": "ExtendToIntersect",
+      "nodeId": 3,
+      "note": "free end extended to adjacent element"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "SplitByExistingNodes",
+      "elemId": 25,
+      "relatedElemId": 1,
+      "note": "split into 2 at existing node(s)"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "SplitByExistingNodes",
+      "elemId": 26,
+      "relatedElemId": 1,
+      "note": "split into 2 at existing node(s)"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "FreeEndRbe",
+      "elemId": 27,
+      "note": "free N34 → E26 @ N2 (0.0mm)"
+    },
+    {
+      "action": "ElementPreserved",
+      "stage": "FreeEndRbe",
+      "nodeId": 2,
+      "relatedElemId": 24,
+      "note": "free N2 ↔ N34 already linked by RBE — bidirectional cycle skipped"
+    },
+    {
+      "action": "NodeRemoved",
+      "stage": "OrphanNodeRemove",
+      "nodeId": 5,
+      "note": "orphan (no element/rigid/pointMass reference)"
+    },
+    {
+      "action": "NodeRemoved",
+      "stage": "OrphanNodeRemove",
+      "nodeId": 17,
+      "note": "orphan (no element/rigid/pointMass reference)"
+    },
+    {
+      "action": "NodeRemoved",
+      "stage": "OrphanNodeRemove",
+      "nodeId": 18,
+      "note": "orphan (no element/rigid/pointMass reference)"
+    },
+    {
+      "action": "NodeRemoved",
+      "stage": "OrphanNodeRemove",
+      "nodeId": 19,
+      "note": "orphan (no element/rigid/pointMass reference)"
+    },
+    {
+      "action": "NodeRemoved",
+      "stage": "OrphanNodeRemove",
+      "nodeId": 20,
+      "note": "orphan (no element/rigid/pointMass reference)"
+    },
+    {
+      "action": "ElementRemoved",
+      "stage": "NodeEquivalence",
+      "elemId": 24,
+      "note": "node merge changed element endpoints"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "NodeEquivalence",
+      "elemId": 28,
+      "relatedElemId": 24,
+      "note": "recreated after node merge"
+    },
+    {
+      "action": "NodeMerged",
+      "stage": "NodeEquivalence",
+      "nodeId": 34,
+      "relatedNodeId": 2,
+      "note": "merged within 1 mm"
+    }
+  ]
+}

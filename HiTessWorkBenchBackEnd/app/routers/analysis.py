@@ -1630,8 +1630,12 @@ class ModelBuilderLoadCase(BaseModel):
 
 
 class ModelBuilderAddedRigid(BaseModel):
-    """Studio 편집으로 추가된 강체(RBE2) — 독립노드 1 + 종속노드 N + 성분(cm)."""
-    independent_node: int
+    """Studio 편집으로 추가된 강체(RBE2) — 독립노드 1 + 종속노드 N + 성분(cm).
+
+    independent_node 가 None 이면 무게중심 RBE(엔진이 독립노드를 새로 만든다) — 예전 경로로는 표현할 수
+    없어 무시되고, intent_document 경로에서만 반영된다. int 로만 받으면 요청 전체가 422 로 거부됐다.
+    """
+    independent_node: Optional[int] = None
     dependent_nodes: list[int] = []
     cm: str = "123456"
 
@@ -1646,6 +1650,10 @@ class ModelBuilderEdits(BaseModel):
     deleted_element_ids: list[int] = []
     removed_rigid_ids: list[int] = []
     added_rigids: list[ModelBuilderAddedRigid] = []
+    # 새 Studio: 편집 intent 문서 전체(serializeIntents) + 편집 대상 단계 파일명(확장자 없음).
+    # 있으면 위 목록 대신 '편집 적용'과 같은 엔진으로 편집 BDF 를 만들어 해석한다(노드 추가·회전·유체 비움 포함).
+    intent_document: Optional[dict] = None
+    base_name: Optional[str] = None
 
 
 class ModelBuilderSolveRequest(BaseModel):

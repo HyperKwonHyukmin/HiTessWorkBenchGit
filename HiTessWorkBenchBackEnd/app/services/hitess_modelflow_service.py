@@ -553,6 +553,100 @@ def _run_f06parser(f06_path: str, work_dir: str, timeout_sec: int = 300) -> tupl
         return -1, f"[F06Parser] 실행 오류: {e}"
 
 
+def apply_edit_intents(
+    output_dir: str,
+    exe_path: str,
+    edit_json_path: str | None,
+    strict: bool = False,
+    job_id: str | None = None,
+) -> tuple[str, str, dict]:
+    """output_dir 의 *_edit.json 을 적용해 edited/ 에 편집 BDF·JSON 을 만든다. (status, log, edited)
+
+    엔진(Cmb.Cli apply-edit-intent)이 기본이고, 엔진이 모르는 intent(BRIDGE_ONLY_INTENT_KINDS)가
+    섞이면 nastran_bridge 가 **전체 intent** 를 대신 적용한다.
+    'Studio → 편집 적용(finalize)' 과 'Analysis 탭 해석 실행' 이 이 함수 하나를 공유한다 — 같은 편집이
+    두 경로에서 다른 모델이 되던 문제(2026-10-02 정합성 검토) 때문이다.
+    """
+    engine_output = ""
+    status_msg = "Success"
+    edited: dict = {}
+    if not os.path.isdir(output_dir):
+        return "Failed", f"output_dir 없음: {output_dir}", edited
+    if not edit_json_path:
+        return "Failed", f"*_edit.json 을 찾을 수 없습니다: {output_dir}", edited
+    if not os.path.exists(exe_path):
+        return "Failed", f"Model Builder 실행 파일을 찾을 수 없습니다: {exe_path}", edited
+
+    cmd = [exe_path, "apply-edit-intent", output_dir]
+    if strict:
+        cmd.append("--strict")
+    logger.info("[apply-edit] cmd: %s", " ".join(cmd))
+    try:
+        # 사용자가 이미 취소를 요청했으면 엔진을 띄우지 않는다.
+        if job_id and is_cancel_requested(job_id):
+            raise JobCancelledError(CANCELLED_MESSAGE)
+        result = subprocess.run(cmd, cwd=output_dir, capture_output=True, timeout=600)
+        engine_output = "[apply-edit-intent]\n" + _decode_engine_output(result.stdout)
+        stderr = _decode_engine_output(result.stderr)
+        if stderr.strip():
+            engine_output += f"\n[stderr]\n{stderr}"
+        logger.info("[apply-edit] exit=%d", result.returncode)
+
+        # README §6 exit codes: 0=성공, 2=*_edit.json 없음/intents 빔, 64/65/70=실패
+        if result.returncode == 0:
+            edited = detect_edited_artifacts(output_dir)
+            if not edited.get("edited_bdf_path"):
+                status_msg = "Failed"
+                engine_output += "\n[오류] edited/ 폴더에 BDF 산출물이 없습니다."
+        elif result.returncode == 2:
+            status_msg = "Failed"
+            engine_output += "\n[오류] 적용할 편집 내역이 없습니다 (intents 비어있음)."
+        else:
+            bridge_only = sorted(
+                _edit_json_kinds(edit_json_path).intersection(BRIDGE_ONLY_INTENT_KINDS)
+            )
+            can_bridge_fallback = (
+                result.returncode == 65
+                and bool(bridge_only)
+                and "unsupported intent kind" in engine_output
+            )
+            if can_bridge_fallback:
+                logger.warning(
+                    "[apply-edit] Cmb.Cli.exe가 %s 를 지원하지 않아 nastran_bridge fallback 적용",
+                    ", ".join(bridge_only),
+                )
+                try:
+                    edited, fallback_log = _apply_edit_with_nastran_bridge(output_dir, edit_json_path)
+                    engine_output += (
+                        f"\n[Exit code: {result.returncode}]"
+                        f"\n[호환 처리] Cmb.Cli.exe {', '.join(bridge_only)} 미지원 → nastran_bridge로 편집 BDF 생성.\n"
+                        f"{fallback_log}"
+                    )
+                    if not edited.get("edited_bdf_path"):
+                        status_msg = "Failed"
+                        engine_output += "\n[오류] nastran_bridge fallback 후 edited/ 폴더에 BDF 산출물이 없습니다."
+                except Exception as fallback_error:
+                    status_msg = "Failed"
+                    logger.exception("[apply-edit] nastran_bridge fallback 실패")
+                    engine_output += (
+                        f"\n[Exit code: {result.returncode}]"
+                        f"\n[오류] nastran_bridge fallback 실패: {fallback_error}"
+                    )
+            else:
+                status_msg = "Failed"
+                engine_output += f"\n[Exit code: {result.returncode}]"
+    except subprocess.TimeoutExpired:
+        status_msg = "Failed"
+        engine_output += "\napply-edit-intent 실행 시간 초과 (10분)."
+    except JobCancelledError:
+        raise
+    except Exception as e:
+        status_msg = "Failed"
+        logger.error("apply-edit-intent error: %s", e, exc_info=True)
+        engine_output += f"\n실행 오류: {e}"
+    return status_msg, engine_output, edited
+
+
 def task_execute_apply_edit(
     job_id: str,
     output_dir: str,
@@ -580,89 +674,10 @@ def task_execute_apply_edit(
 
     try:
         # ────────── (1/3) apply-edit-intent ──────────
-        if not os.path.isdir(output_dir):
-            status_msg = "Failed"
-            engine_output = f"output_dir 없음: {output_dir}"
-        elif not edit_json_path:
-            status_msg = "Failed"
-            engine_output = f"*_edit.json 을 찾을 수 없습니다: {output_dir}"
-        elif not os.path.exists(exe_path):
-            status_msg = "Failed"
-            engine_output = f"Model Builder 실행 파일을 찾을 수 없습니다: {exe_path}"
-        else:
-            cmd = [exe_path, "apply-edit-intent", output_dir]
-            if strict:
-                cmd.append("--strict")
-            logger.info("[apply-edit] cmd: %s", " ".join(cmd))
-            job_status_store.update_job(job_id, {"progress": 15, "message": "편집 적용 중 (1/3)..."})
-
-            try:
-                # 사용자가 이미 취소를 요청했으면 엔진을 띄우지 않는다.
-                if is_cancel_requested(job_id):
-                    raise JobCancelledError(CANCELLED_MESSAGE)
-                result = subprocess.run(
-                    cmd,
-                    cwd=output_dir,
-                    capture_output=True,
-                    timeout=600,
-                )
-                engine_output = "[apply-edit-intent]\n" + _decode_engine_output(result.stdout)
-                stderr = _decode_engine_output(result.stderr)
-                if stderr.strip():
-                    engine_output += f"\n[stderr]\n{stderr}"
-                logger.info("[apply-edit] exit=%d", result.returncode)
-
-                # README §6 exit codes: 0=성공, 2=*_edit.json 없음/intents 빔, 64/65/70=실패
-                if result.returncode == 0:
-                    edited = detect_edited_artifacts(output_dir)
-                    if not edited.get("edited_bdf_path"):
-                        status_msg = "Failed"
-                        engine_output += "\n[오류] edited/ 폴더에 BDF 산출물이 없습니다."
-                elif result.returncode == 2:
-                    status_msg = "Failed"
-                    engine_output += "\n[오류] 적용할 편집 내역이 없습니다 (intents 비어있음)."
-                else:
-                    bridge_only = sorted(
-                        _edit_json_kinds(edit_json_path).intersection(BRIDGE_ONLY_INTENT_KINDS)
-                    )
-                    can_bridge_fallback = (
-                        result.returncode == 65
-                        and bool(bridge_only)
-                        and "unsupported intent kind" in engine_output
-                    )
-                    if can_bridge_fallback:
-                        logger.warning(
-                            "[apply-edit] Cmb.Cli.exe가 %s 를 지원하지 않아 nastran_bridge fallback 적용",
-                            ", ".join(bridge_only),
-                        )
-                        try:
-                            edited, fallback_log = _apply_edit_with_nastran_bridge(output_dir, edit_json_path)
-                            engine_output += (
-                                f"\n[Exit code: {result.returncode}]"
-                                f"\n[호환 처리] Cmb.Cli.exe {', '.join(bridge_only)} 미지원 → nastran_bridge로 편집 BDF 생성.\n"
-                                f"{fallback_log}"
-                            )
-                            if not edited.get("edited_bdf_path"):
-                                status_msg = "Failed"
-                                engine_output += "\n[오류] nastran_bridge fallback 후 edited/ 폴더에 BDF 산출물이 없습니다."
-                        except Exception as fallback_error:
-                            status_msg = "Failed"
-                            logger.exception("[apply-edit] nastran_bridge fallback 실패")
-                            engine_output += (
-                                f"\n[Exit code: {result.returncode}]"
-                                f"\n[오류] nastran_bridge fallback 실패: {fallback_error}"
-                            )
-                    else:
-                        status_msg = "Failed"
-                        engine_output += f"\n[Exit code: {result.returncode}]"
-
-            except subprocess.TimeoutExpired:
-                status_msg = "Failed"
-                engine_output += "\napply-edit-intent 실행 시간 초과 (10분)."
-            except Exception as e:
-                status_msg = "Failed"
-                logger.error("apply-edit-intent error: %s", e, exc_info=True)
-                engine_output += f"\n실행 오류: {e}"
+        job_status_store.update_job(job_id, {"progress": 15, "message": "편집 적용 중 (1/3)..."})
+        status_msg, engine_output, edited = apply_edit_intents(
+            output_dir, exe_path, edit_json_path, strict=strict, job_id=job_id,
+        )
 
         # ────────── (2/3) Nastran 해석 (Edit BDF) ──────────
         if status_msg == "Success" and run_nastran and edited.get("edited_bdf_path"):

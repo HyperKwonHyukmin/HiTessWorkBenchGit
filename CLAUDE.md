@@ -111,6 +111,14 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
 | `InHouseProgram/F06Parser/F06Parser.Console.exe` | F06 → 결과 JSON(`_results.json`)/CSV 파서 |
 | 외부 MSC `nastran.exe` (`C:\MSC.Software\MSC_Nastran\20131\bin`, `--nastran-path` override) | 해석기. InHouse 아님 — 서버에 **MSC 설치** 필요 |
 
+**편집 정합성 계약 (2026-10-02)** — 같은 편집 intent 를 Studio 미리보기·C# 엔진·nastran_bridge·Analysis 탭 해석 실행이 같은 모델로 만들어야 한다.
+해석 실행(`modelbuilder_solve_service`)도 이제 Studio 가 보낸 `edits.intent_document` + `base_name` 으로 **편집 적용과 같은 함수**
+`hitess_modelflow_service.apply_edit_intents`(엔진 → bridge fallback)를 거쳐 편집 BDF 를 만든다(예전 삭제·RBE 추가 직접 반영 경로는 옛 Studio 호환용).
+엔진마다 규칙을 맞추는 대신 Studio 가 결정값을 intent 에 박는다 — 회전 `pivot`, 무게중심 RBE 의 미리 거른 종속 + `independentCoord`(산술 평균),
+일반 RBE 종속 중복 = 오류, 회전은 노드 추가·무게중심 RBE 보다 먼저. 상세·지원 표: Studio `docs/edit-intent-spec.md` 맨 앞 '현재 계약'.
+계약 테스트 `tests/test_modelbuilder_edit_contract.py` 가 C# 엔진 ↔ bridge 산출 모델을 비교한다(새 빌드 검증 시 `CMB_CLI_EXE`·`NASTRAN_BRIDGE_PY` 로 지정).
+⚠ 새 intent kind 를 만들면 Studio·C#·bridge·계약 테스트를 함께 고칠 것.
+
 **⚠️ 교정/함정 (이번 재검토에서 발견)**
 - **nastran_bridge 폴더명 불일치(잠재 `FileNotFoundError`)**: `hitess_modelflow_service.py` 의 `_load_nastran_bridge_module()` 은 **오직 `InHouseProgram/NastranBridge`(camelCase) 하드코딩, 폴백 없음**. 반면 `analysis.py` 는 `InHouseProgram/Nastran_bridge`(**underscore**)를 1순위로 본다. → nastran_bridge.py 를 **underscore 폴더에만** 두면 modelflow 의 deleteRigid 폴백이 깨진다. **둘 다 만족하려면 `NastranBridge`(camelCase)에 둘 것**(또는 양쪽 복사). [이상적으론 modelflow service 도 analysis.py 처럼 다중 후보 탐색으로 통일 권장.]
 - **편집 BDF 포맷 fix 의 적용 범위**: `nastran_bridge.py` 의 BDF 포맷 수정은 **fallback(deleteRigid) 경로에만** 효력. ModelBuilder 일반 편집의 기본 BDF writer 는 **C# `Cmb.Cli.exe`** 다. 깨진 BDF 가 Cmb.Cli 산출물이면 **C# 엔진 쪽도 같은 수정 필요**. (단 Mooring/SidePassage 스튜디오의 apply-edit 는 `analysis.py` 가 nastran_bridge 를 **기본 경로로** 직접 호출 → 그쪽 BDF 는 이 Python fix 로 완결.)
