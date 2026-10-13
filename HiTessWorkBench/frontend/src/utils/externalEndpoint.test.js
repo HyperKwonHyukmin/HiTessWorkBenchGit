@@ -69,3 +69,10 @@ test('validateRegisteredAppForm 은 생성 때만 이름·주소 이름을 본�
   assert.deepEqual(validateRegisteredAppForm({ ...form, title: '', slug: '' }, { isCreate: false }), {});
   assert.match(validateRegisteredEndpoint('10.1.1.1', '70000'), /1~65535/);
 });
+
+test('validateRegisteredAppForm 은 이미 등록된 App 의 주소 이름을 막는다', () => {
+  const form = { title: 'Block Lug', slug: 'lug-lab', category: 'Lifting', host: '10.14.42.200', port: '31890' };
+  const errors = validateRegisteredAppForm(form, { isCreate: true, usedSlugs: new Set(['lug-lab']) });
+  assert.equal(errors.slug, '이미 쓰는 주소 이름입니다.');
+  assert.deepEqual(validateRegisteredAppForm({ ...form, slug: 'block-lug' }, { isCreate: true, usedSlugs: new Set(['lug-lab']) }), {});
+});

@@ -86,9 +86,10 @@ export function validateRegisteredEndpoint(host, port) {
 /**
  * 등록 폼 검사. 칸 이름 → 오류 문구 map(빈 객체면 통과).
  * @param {object} form { title, slug, category, host, port }
- * @param {{ isCreate: boolean, existingTitles: Set<string> }} options
+ * @param {{ isCreate: boolean, existingTitles: Set<string>, usedSlugs?: Set<string> }} options
+ *   usedSlugs = 이미 쓰는 주소 이름(기본 제공 외부 App + 등록 App)
  */
-export function validateRegisteredAppForm(form, { isCreate, existingTitles = new Set() }) {
+export function validateRegisteredAppForm(form, { isCreate, existingTitles = new Set(), usedSlugs = new Set() }) {
   const errors = {};
   if (isCreate) {
     const title = String(form.title ?? '').trim();
@@ -99,6 +100,8 @@ export function validateRegisteredAppForm(form, { isCreate, existingTitles = new
       errors.slug = '영문 소문자·숫자·하이픈 2~40자(하이픈으로 시작·끝 불가)';
     } else if (RESERVED_REGISTERED_APP_SLUGS.has(slug)) {
       errors.slug = '예약된 주소 이름입니다.';
+    } else if (usedSlugs.has(slug)) {
+      errors.slug = '이미 쓰는 주소 이름입니다.';
     }
   }
   if (!String(form.category ?? '').trim()) errors.category = '분류를 고르거나 입력하세요.';

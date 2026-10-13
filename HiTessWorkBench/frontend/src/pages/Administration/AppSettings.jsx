@@ -63,6 +63,7 @@ function AddressCell({ app, endpoint, serverAddress, onSaved }) {
   const [saving, setSaving] = useState(false);
 
   const registered = Boolean(endpoint?.registered);
+  const addressName = endpoint?.slug || String(endpoint?.proxy_path ?? '').split('/').filter(Boolean).pop() || '';
   const error = editing
     ? (registered ? validateRegisteredEndpoint(host, port) : validateExternalEndpoint(host, port))
     : null;
@@ -186,6 +187,16 @@ function AddressCell({ app, endpoint, serverAddress, onSaved }) {
             </span>
           )}
         </div>
+        {addressName && (
+          // 주소 이름 = WorkBench 입구 /external-apps/<주소 이름>. 기본 제공 앱도 보여 줘서
+          // 새 외부 App 을 등록할 때 이미 쓰는 이름을 확인할 수 있게 한다.
+          <div
+            className="mt-0.5 font-mono text-[11px] text-slate-500"
+            title={`주소 이름 — WorkBench 입구 ${endpoint.proxy_path}`}
+          >
+            /{addressName}
+          </div>
+        )}
       </div>
       <button
         type="button"
@@ -243,6 +254,14 @@ export default function AppSettings() {
     [apps],
   );
   const existingTitles = useMemo(() => new Set(apps.map(app => app.title)), [apps]);
+  // 이미 쓰는 주소 이름(기본 제공 외부 App + 등록 App) — 새 App 등록 창의 안내·중복 검사에 쓴다.
+  const usedSlugs = useMemo(
+    () => Object.values(endpoints)
+      .map(item => item.slug || String(item.proxy_path ?? '').split('/').filter(Boolean).pop())
+      .filter(Boolean)
+      .sort(),
+    [endpoints],
+  );
 
   // 화면에 처음 들어올 때 최신 설정을 확실히 받아 온다(정기 폴링 주기를 기다리지 않도록).
   useEffect(() => {
@@ -367,7 +386,7 @@ export default function AppSettings() {
           <thead className="border-b border-slate-200 bg-slate-50">
             <tr className="text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
               <th className="px-4 py-3">App</th>
-              <th className="px-4 py-3 w-44">접속 IP · Port</th>
+              <th className="px-4 py-3 w-44">접속 IP · Port · 주소 이름</th>
               <th className="px-4 py-3 w-32">상태</th>
               <th className="px-4 py-3 w-40">사용자 접근</th>
               <th className="px-4 py-3 w-28">담당자</th>
@@ -483,6 +502,7 @@ export default function AppSettings() {
         registration={registryEditor?.mode === 'edit' ? registrations[registryEditor.slug] ?? null : null}
         categories={categoryOptions}
         existingTitles={existingTitles}
+        usedSlugs={usedSlugs}
         onSaved={reloadAll}
       />
     </div>

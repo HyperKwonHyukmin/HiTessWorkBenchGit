@@ -73,10 +73,12 @@ function buildForm(registration) {
  * @param {object|null} registration  수정할 등록 정보(관리자 목록 항목). null 이면 새로 등록.
  * @param {string[]}    categories    고를 수 있는 기존 분류(카탈로그에서 모음)
  * @param {Set<string>} existingTitles 이미 있는 App 이름(코드 앱 + 등록 앱)
+ * @param {string[]} usedSlugs 이미 쓰는 주소 이름(기본 제공 외부 App + 등록 App) — 등록 때 안내·중복 검사
  */
 export default function RegisteredAppEditorModal({
-  isOpen, onClose, registration, categories = [], existingTitles = new Set(), onSaved,
+  isOpen, onClose, registration, categories = [], existingTitles = new Set(), usedSlugs = [], onSaved,
 }) {
+  const usedSlugSet = useMemo(() => new Set(usedSlugs), [usedSlugs]);
   const { showToast } = useToast();
   const isCreate = !registration;
   const [form, setForm] = useState(() => buildForm(registration));
@@ -113,8 +115,8 @@ export default function RegisteredAppEditorModal({
   };
 
   const errors = useMemo(
-    () => validateRegisteredAppForm(form, { isCreate, existingTitles }),
-    [form, isCreate, existingTitles],
+    () => validateRegisteredAppForm(form, { isCreate, existingTitles, usedSlugs: usedSlugSet }),
+    [form, isCreate, existingTitles, usedSlugSet],
   );
   const hasErrors = Object.keys(errors).length > 0;
   const shown = (key) => (submitted || key === 'endpoint' ? errors[key] : null);
@@ -324,6 +326,12 @@ export default function RegisteredAppEditorModal({
               placeholder="block-lug"
               className={`${monoInputCls} disabled:bg-slate-50 disabled:text-slate-500`}
             />
+            {isCreate && usedSlugs.length > 0 && (
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                이미 쓰는 이름:{' '}
+                <span className="font-mono text-slate-600">{usedSlugs.join(' · ')}</span>
+              </p>
+            )}
           </Field>
         </section>
 
