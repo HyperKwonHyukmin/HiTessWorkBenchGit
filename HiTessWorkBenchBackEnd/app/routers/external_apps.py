@@ -19,6 +19,7 @@ from starlette.responses import JSONResponse, RedirectResponse, Response, Stream
 from app import database, models
 from app.dependencies import require_auth
 from app.services import app_settings as app_settings_service
+from app.services import external_app_registry
 from app.services.external_app_access import (
     GRANT_TTL_SECONDS,
     SESSION_TTL_SECONDS,
@@ -49,11 +50,14 @@ HOP_BY_HOP_HEADERS = {
 WORKBENCH_CREDENTIAL_HEADERS = {"authorization"}
 RESERVED_QUERY_PARAMETERS = {"__wb_grant"}
 EXTERNAL_PROXY_MAX_BODY_BYTES = 25 * 1024 * 1024
+# 외부 앱이 요청 하나에 응답해야 하는 시간(App Settings 등록 창의 개발자 안내와 같은 값).
+UPSTREAM_READ_TIMEOUT_SECONDS = 30.0
 _EMPLOYEE_PATH_RE = re.compile(r"^A\d{6}$", re.IGNORECASE)
 
 _block_weld_client: httpx.AsyncClient | None = None
 _independent_tank_client: httpx.AsyncClient | None = None
 _heavy_block_lifting_client: httpx.AsyncClient | None = None
+_registered_app_client: httpx.AsyncClient | None = None
 
 
 def get_block_weld_client() -> httpx.AsyncClient:
@@ -61,7 +65,7 @@ def get_block_weld_client() -> httpx.AsyncClient:
     if _block_weld_client is None or _block_weld_client.is_closed:
         _block_weld_client = httpx.AsyncClient(
             follow_redirects=False,
-            timeout=httpx.Timeout(30.0, connect=5.0),
+            timeout=httpx.Timeout(UPSTREAM_READ_TIMEOUT_SECONDS, connect=5.0),
             limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
         )
     return _block_weld_client
@@ -79,7 +83,7 @@ def get_independent_tank_client() -> httpx.AsyncClient:
     if _independent_tank_client is None or _independent_tank_client.is_closed:
         _independent_tank_client = httpx.AsyncClient(
             follow_redirects=False,
-            timeout=httpx.Timeout(30.0, connect=5.0),
+            timeout=httpx.Timeout(UPSTREAM_READ_TIMEOUT_SECONDS, connect=5.0),
             limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
         )
     return _independent_tank_client
@@ -97,7 +101,7 @@ def get_heavy_block_lifting_client() -> httpx.AsyncClient:
     if _heavy_block_lifting_client is None or _heavy_block_lifting_client.is_closed:
         _heavy_block_lifting_client = httpx.AsyncClient(
             follow_redirects=False,
-            timeout=httpx.Timeout(30.0, connect=5.0),
+            timeout=httpx.Timeout(UPSTREAM_READ_TIMEOUT_SECONDS, connect=5.0),
             limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
         )
     return _heavy_block_lifting_client
@@ -108,6 +112,25 @@ async def close_heavy_block_lifting_client() -> None:
     if _heavy_block_lifting_client is not None and not _heavy_block_lifting_client.is_closed:
         await _heavy_block_lifting_client.aclose()
     _heavy_block_lifting_client = None
+
+
+def get_registered_app_client() -> httpx.AsyncClient:
+    """App Settings 에서 등록한 외부 앱이 함께 쓰는 클라이언트(대상 주소는 요청마다 다르다)."""
+    global _registered_app_client
+    if _registered_app_client is None or _registered_app_client.is_closed:
+        _registered_app_client = httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=httpx.Timeout(UPSTREAM_READ_TIMEOUT_SECONDS, connect=5.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        )
+    return _registered_app_client
+
+
+async def close_registered_app_client() -> None:
+    global _registered_app_client
+    if _registered_app_client is not None and not _registered_app_client.is_closed:
+        await _registered_app_client.aclose()
+    _registered_app_client = None
 
 
 @dataclass(frozen=True)
@@ -164,6 +187,52 @@ def external_app_configs() -> tuple[ExternalAppProxy, ...]:
     return (BLOCK_WELD, INDEPENDENT_TANK, HEAVY_BLOCK_LIFTING)
 
 
+def registered_app_proxy_path(slug: str) -> str:
+    return f"/external-apps/{slug}"
+
+
+def _registered_app_config(registration: dict) -> ExternalAppProxy:
+    slug = registration["slug"]
+    return ExternalAppProxy(
+        # 접두사로 코드 앱 키와 겹치지 않게 한다(실행 권한·세션 저장소의 이름공간).
+        key=f"registered:{slug}",
+        display_name=registration["title"],
+        app_key=registration["title"],
+        upstream=f"http://{registration['host']}:{registration['port']}/",
+        proxy_path=registered_app_proxy_path(slug),
+        cookie_name=f"{_GATEWAY_COOKIE_PREFIX}app_{slug.replace('-', '_')}",
+        get_client=get_registered_app_client,
+    )
+
+
+def _load_registration(slug: str) -> tuple[dict | None, dict | None]:
+    """(등록 정보, app_settings 오버라이드). 없는 slug 면 (None, None)."""
+    db = database.SessionLocal()
+    try:
+        registration = external_app_registry.load_registrations(db).get(slug)
+        if registration is None:
+            return None, None
+        setting = app_settings_service.load_settings(db).get(registration["title"])
+        return registration, setting
+    finally:
+        db.close()
+
+
+def _is_admin(employee_id: str) -> bool:
+    db = database.SessionLocal()
+    try:
+        return app_settings_service.is_admin_user(db, employee_id)
+    finally:
+        db.close()
+
+
+async def _registered_config_or_404(slug: str) -> tuple[ExternalAppProxy, dict, dict | None]:
+    registration, setting = await run_in_threadpool(_load_registration, slug)
+    if registration is None:
+        raise HTTPException(status_code=404, detail="등록되지 않은 외부 앱입니다.")
+    return _registered_app_config(registration), registration, setting
+
+
 def _load_app_setting(app_key: str) -> dict | None:
     db = database.SessionLocal()
     try:
@@ -185,7 +254,13 @@ async def _effective_config(config: ExternalAppProxy) -> ExternalAppProxy:
     return replace(config, upstream=upstream)
 
 
+# 등록 앱 쿠키는 이름이 동적이라 고정 목록 대신 이 접두사로 거른다(코드 앱 쿠키도 같은 접두사).
+_GATEWAY_COOKIE_PREFIX = "wb_ext_"
 _COOKIE_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+
+
+def _is_gateway_cookie(name: str) -> bool:
+    return name in _GATEWAY_COOKIE_NAMES or name.startswith(_GATEWAY_COOKIE_PREFIX)
 
 
 class BootstrapRequest(BaseModel):
@@ -270,7 +345,7 @@ def _upstream_cookie_header(raw_cookie: str | None) -> str | None:
         # RFC 2109 attributes occasionally appear in legacy Cookie headers.
         # They are metadata rather than upstream cookie pairs and retain the
         # gateway's established filtering behavior.
-        if name.startswith("$") or name in _GATEWAY_COOKIE_NAMES:
+        if name.startswith("$") or _is_gateway_cookie(name):
             continue
         pairs.append(f"{name}={value}")
 
@@ -297,7 +372,7 @@ def _upstream_set_cookie_headers(headers) -> list[str]:
         name, _cookie_value = first_pair.split("=", 1)
         if (
             not _COOKIE_NAME_RE.fullmatch(name)
-            or name in _GATEWAY_COOKIE_NAMES
+            or _is_gateway_cookie(name)
         ):
             continue
         safe_values.append(value)
@@ -639,10 +714,19 @@ async def _proxy_request(request: Request, config: ExternalAppProxy, path: str =
             ),
             stream=True,
         )
+    except httpx.TimeoutException as exc:
+        # 예전엔 아래 502 로 빠져 "unavailable: " 처럼 원인이 빈 문구가 나갔다(실측).
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"{config.display_name} 가 {UPSTREAM_READ_TIMEOUT_SECONDS:.0f}초 안에 응답하지 않았습니다. "
+                "오래 걸리는 계산은 작업을 시작한 뒤 상태를 나눠 확인하도록 외부 앱을 고쳐야 합니다."
+            ),
+        ) from exc
     except httpx.RequestError as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"{config.display_name} upstream server is unavailable: {exc}",
+            detail=f"{config.display_name} upstream server is unavailable: {exc!r}",
         ) from exc
 
     upstream_origin = config.upstream.rstrip("/")
@@ -811,3 +895,52 @@ async def proxy_heavy_block_lifting_root(request: Request):
 )
 async def proxy_heavy_block_lifting_path(request: Request, path: str):
     return await _proxy_heavy_block_lifting(request, path)
+
+
+# ── App Settings 에서 등록한 외부 앱 ──────────────────────────────────────
+# ⚠ 반드시 파일 맨 끝에 둔다. FastAPI 는 등록 순서대로 경로를 맞추므로, 위의 코드 앱
+# 경로(/block-weld/...)가 먼저 잡혀야 한다. 같은 slug 는 RESERVED_SLUGS 로 막는다.
+
+
+@router.post("/{slug}/__wb_bootstrap")
+async def issue_registered_app_bootstrap(
+    slug: str,
+    payload: BootstrapRequest,
+    employee_id: str = Depends(require_auth),
+):
+    config, registration, setting = await _registered_config_or_404(slug)
+    # 코드 앱은 app_settings 게이트 미들웨어가 막지만 등록 앱은 경로가 동적이라 여기서 막는다.
+    reason = external_app_registry.effective_block_reason(registration, setting)
+    if reason is not None and not await run_in_threadpool(_is_admin, employee_id):
+        raise HTTPException(status_code=403, detail=reason[1])
+    return _issue_bootstrap(config, employee_id, payload)
+
+
+@router.get("/{slug}/__wb_bootstrap")
+async def exchange_registered_app_bootstrap(request: Request, slug: str, grant: str):
+    config, _registration, _setting = await _registered_config_or_404(slug)
+    return _exchange_bootstrap(request, config, grant)
+
+
+@router.get("/{slug}/__wb_proxy_health")
+async def proxy_registered_app_health(slug: str, _employee_id: str = Depends(require_auth)):
+    config, _registration, _setting = await _registered_config_or_404(slug)
+    return await _proxy_health(config)
+
+
+@router.api_route(
+    "/{slug}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
+async def proxy_registered_app_root(request: Request, slug: str):
+    config, _registration, _setting = await _registered_config_or_404(slug)
+    return await _proxy_request(request, config)
+
+
+@router.api_route(
+    "/{slug}/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
+async def proxy_registered_app_path(request: Request, slug: str, path: str):
+    config, _registration, _setting = await _registered_config_or_404(slug)
+    return await _proxy_request(request, config, path)

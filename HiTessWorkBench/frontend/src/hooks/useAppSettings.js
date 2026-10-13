@@ -5,15 +5,20 @@
  * 그 위에 덮을 값만 백엔드에서 받아 들고 있는다. 오버라이드가 없는 앱은 코드
  * 기본값을 그대로 쓰므로, 코드에 앱을 새로 추가해도 DB 를 미리 손댈 필요가 없다.
  *
+ * 관리자가 App Settings 에서 '등록'한 외부 앱 목록도 여기 함께 둔다 — 코드에 없는 앱이라
+ * 카탈로그에 덧붙여야 하고, 갱신 주기·로그아웃 정리가 오버라이드와 같기 때문이다.
+ *
  * ⚠ 이 모듈은 ANALYSIS_DATA 를 import 하지 않는다(순환 참조 방지).
  *    카탈로그와 합친 '실효 목록'은 DashboardContext 의 useAppCatalogue() 가 준다.
  */
 import { useSyncExternalStore } from 'react';
-import { getAppSettings } from '../api/appSettings';
+import { getAppSettings, getRegisteredApps } from '../api/appSettings';
 
 const EMPTY = Object.freeze({});
+const EMPTY_LIST = Object.freeze([]);
 
 let overrides = EMPTY;
+let registeredApps = EMPTY_LIST;
 const listeners = new Set();
 
 function emit() {
@@ -27,6 +32,28 @@ function subscribe(listener) {
 
 function getSnapshot() {
   return overrides;
+}
+
+function getRegisteredSnapshot() {
+  return registeredApps;
+}
+
+/** 서버 응답(등록 외부 앱 배열)을 저장한다. */
+export function setRegisteredApps(list) {
+  registeredApps = Object.freeze(
+    (Array.isArray(list) ? list : []).filter(row => row?.slug && row?.title).map(row => Object.freeze({ ...row })),
+  );
+  emit();
+}
+
+/** 등록 외부 앱 목록(동기 조회 — 훅 밖의 이름 찾기용). */
+export function getRegisteredAppsSnapshot() {
+  return registeredApps;
+}
+
+/** 등록 외부 앱 목록을 구독한다. */
+export function useRegisteredApps() {
+  return useSyncExternalStore(subscribe, getRegisteredSnapshot, getRegisteredSnapshot);
 }
 
 /** 서버 응답(배열)을 app_key 기준 map 으로 바꿔 저장한다. */
@@ -43,21 +70,22 @@ export function getAppSettingOverrides() {
   return overrides;
 }
 
-/** 백엔드에서 최신 오버라이드를 다시 읽는다. 실패는 조용히 무시(기존 값 유지). */
+/**
+ * 백엔드에서 최신 오버라이드와 등록 외부 앱을 다시 읽는다.
+ * 실패한 쪽은 기존 값을 유지하고, 둘 다 성공해야 true.
+ */
 export async function refreshAppSettings() {
-  try {
-    const res = await getAppSettings();
-    setAppSettingOverrides(res.data);
-    return true;
-  } catch {
-    return false;
-  }
+  const [settings, registered] = await Promise.allSettled([getAppSettings(), getRegisteredApps()]);
+  if (settings.status === 'fulfilled') setAppSettingOverrides(settings.value.data);
+  if (registered.status === 'fulfilled') setRegisteredApps(registered.value.data);
+  return settings.status === 'fulfilled' && registered.status === 'fulfilled';
 }
 
-/** 로그아웃 시 등 — 오버라이드를 비워 코드 기본값으로 되돌린다. */
+/** 로그아웃 시 등 — 오버라이드와 등록 앱을 비워 코드 기본값으로 되돌린다. */
 export function clearAppSettings() {
-  if (overrides === EMPTY) return;
+  if (overrides === EMPTY && registeredApps === EMPTY_LIST) return;
   overrides = EMPTY;
+  registeredApps = EMPTY_LIST;
   emit();
 }
 

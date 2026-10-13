@@ -7,23 +7,32 @@
 ///
 /// 앱 목록의 원본은 코드(ANALYSIS_DATA)이고 이 화면은 그 위에 덮는 오버라이드만
 /// 다룹니다 — 그래서 '설정 없음' 상태가 정상이며, 초기화하면 코드 값으로 돌아갑니다.
+/// 예외: [외부 App 추가]로 등록한 외부 앱은 코드에 없고 이 화면에서 만들고 지웁니다.
 /// </summary>
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Check, CheckCircle2, Hammer, Pencil, RefreshCw, Search, Settings2, ShieldAlert, SlidersHorizontal, X,
+  Check, CheckCircle2, FileEdit, Hammer, Pencil, Plus, RefreshCw, Search, Settings2, ShieldAlert,
+  SlidersHorizontal, X,
 } from 'lucide-react';
 import PageHeader from '../../components/ui/PageHeader';
 import { KpiCard } from '../../components/ui/KpiCard';
 import AppSettingsModal from '../../components/admin/AppSettingsModal';
+import RegisteredAppEditorModal from '../../components/admin/RegisteredAppEditorModal';
 import { useAppCatalogue } from '../../contexts/DashboardContext';
 import { refreshAppSettings, useAppSettings } from '../../hooks/useAppSettings';
 import { useToast } from '../../contexts/ToastContext';
-import { getExternalAppEndpoints, updateAppSetting } from '../../api/appSettings';
+import {
+  getAdminRegisteredApps,
+  getExternalAppEndpoints,
+  updateAppSetting,
+  updateRegisteredApp,
+} from '../../api/appSettings';
 import { API_BASE_URL } from '../../config';
 import {
   buildExternalEndpointPayload,
   parseServerAddress,
   validateExternalEndpoint,
+  validateRegisteredEndpoint,
 } from '../../utils/externalEndpoint';
 
 const STATUS_STYLE = {
@@ -53,7 +62,10 @@ function AddressCell({ app, endpoint, serverAddress, onSaved }) {
   const [port, setPort] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const error = editing ? validateExternalEndpoint(host, port) : null;
+  const registered = Boolean(endpoint?.registered);
+  const error = editing
+    ? (registered ? validateRegisteredEndpoint(host, port) : validateExternalEndpoint(host, port))
+    : null;
 
   const startEdit = () => {
     setHost(endpoint.host);
@@ -69,7 +81,11 @@ function AddressCell({ app, endpoint, serverAddress, onSaved }) {
     }
     setSaving(true);
     try {
-      await updateAppSetting(app.title, buildExternalEndpointPayload(endpoint, host, port));
+      if (registered) {
+        await updateRegisteredApp(endpoint.slug, { host: host.trim(), port: Number(port) });
+      } else {
+        await updateAppSetting(app.title, buildExternalEndpointPayload(endpoint, host, port));
+      }
       await Promise.all([refreshAppSettings(), onSaved?.()]);
       showToast(`'${app.title}' 접속 주소를 ${host.trim()}:${Number(port)} 로 바꿨습니다.`, 'success');
       setEditing(false);
@@ -146,7 +162,7 @@ function AddressCell({ app, endpoint, serverAddress, onSaved }) {
         </div>
         {error ? (
           <p className="text-[11px] font-bold text-red-600">{error}</p>
-        ) : (
+        ) : registered ? null : (
           <p className="text-[11px] text-slate-500">
             기본값 <span className="font-mono">{endpoint.default_host}:{endpoint.default_port}</span>
           </p>
@@ -193,6 +209,10 @@ export default function AppSettings() {
   const [modeFilter, setModeFilter] = useState('all');
   const [editingTitle, setEditingTitle] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  // 등록 외부 앱(관리자용, 접속 주소 포함) slug → 등록 정보.
+  const [registrations, setRegistrations] = useState({});
+  // 등록 창: { mode: 'create' } | { mode: 'edit', slug }
+  const [registryEditor, setRegistryEditor] = useState(null);
   // 외부 접속 App 의 실제 접속 주소(app_key → endpoint).
   const [endpoints, setEndpoints] = useState({});
 
@@ -201,13 +221,28 @@ export default function AppSettings() {
 
   const loadEndpoints = useCallback(async () => {
     try {
-      const { data } = await getExternalAppEndpoints();
+      const [{ data }, { data: registered }] = await Promise.all([
+        getExternalAppEndpoints(),
+        getAdminRegisteredApps(),
+      ]);
       setEndpoints(Object.fromEntries((data || []).map(item => [item.app_key, item])));
+      setRegistrations(Object.fromEntries((registered || []).map(item => [item.slug, item])));
       return true;
     } catch {
       return false;
     }
   }, []);
+
+  // 등록 후 목록·카탈로그를 함께 새로 읽는다.
+  const reloadAll = useCallback(async () => {
+    await Promise.all([refresh(), loadEndpoints()]);
+  }, [refresh, loadEndpoints]);
+
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(apps.map(app => app.category).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [apps],
+  );
+  const existingTitles = useMemo(() => new Set(apps.map(app => app.title)), [apps]);
 
   // 화면에 처음 들어올 때 최신 설정을 확실히 받아 온다(정기 폴링 주기를 기다리지 않도록).
   useEffect(() => {
@@ -253,22 +288,33 @@ export default function AppSettings() {
   const editingApp = editingTitle ? apps.find(app => app.title === editingTitle) : null;
 
   return (
-    <div>
+    // pb-28: 오른쪽 아래 전역 도구 막대가 마지막 행의 버튼을 가리지 않게 한다.
+    <div className="pb-28">
       <PageHeader
         title="App Settings"
         icon={SlidersHorizontal}
-        subtitle="App별 서비스 상태와 점검 여부, 표시 정보를 관리합니다."
+        subtitle="App별 서비스 상태와 점검 여부, 표시 정보를 관리하고 외부 App을 등록합니다."
         accentColor="indigo"
         actions={(
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-white/20 disabled:opacity-50 cursor-pointer"
-          >
-            <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
-            새로고침
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRegistryEditor({ mode: 'create' })}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-bold text-indigo-700 transition-colors hover:bg-indigo-50 cursor-pointer"
+            >
+              <Plus size={13} />
+              외부 App 추가
+            </button>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-white/20 disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
+              새로고침
+            </button>
+          </div>
         )}
       />
 
@@ -342,6 +388,14 @@ export default function AppSettings() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-slate-800">{app.title}</span>
+                      {app.isRegisteredExternal && (
+                        <span
+                          className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700"
+                          title="App Settings 에서 등록한 외부 App입니다(코드에 없음)."
+                        >
+                          등록 App
+                        </span>
+                      )}
                       {app.hasAdminOverride && (
                         <span
                           className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700"
@@ -386,14 +440,27 @@ export default function AppSettings() {
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-600">{app.contributor || '—'}</td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setEditingTitle(app.title)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:border-slate-300 hover:bg-white cursor-pointer"
-                    >
-                      <Settings2 size={13} />
-                      설정
-                    </button>
+                    <div className="flex flex-col items-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditingTitle(app.title)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:border-slate-300 hover:bg-white cursor-pointer"
+                      >
+                        <Settings2 size={13} />
+                        설정
+                      </button>
+                      {app.isRegisteredExternal && (
+                        <button
+                          type="button"
+                          onClick={() => setRegistryEditor({ mode: 'edit', slug: app.slug })}
+                          title="이름 외 분류·그림·설명·주소를 고치거나 삭제합니다."
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 px-2.5 py-1.5 text-xs font-bold text-indigo-700 transition-colors hover:bg-indigo-50 cursor-pointer"
+                        >
+                          <FileEdit size={13} />
+                          등록 정보
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -408,6 +475,15 @@ export default function AppSettings() {
         app={editingApp}
         setting={editingApp ? overrides[editingApp.title] : undefined}
         onSaved={loadEndpoints}
+      />
+
+      <RegisteredAppEditorModal
+        isOpen={Boolean(registryEditor)}
+        onClose={() => setRegistryEditor(null)}
+        registration={registryEditor?.mode === 'edit' ? registrations[registryEditor.slug] ?? null : null}
+        categories={categoryOptions}
+        existingTitles={existingTitles}
+        onSaved={reloadAll}
       />
     </div>
   );

@@ -19,8 +19,9 @@ from sqlalchemy.orm import Session
 from .. import database, models, schemas
 from ..dependencies import require_admin, require_auth
 from ..services import app_settings as app_settings_service
+from ..services import external_app_registry
 from ..services.activity_service import log_activity
-from .external_apps import external_app_configs
+from .external_apps import external_app_configs, registered_app_proxy_path
 
 router = APIRouter(tags=["app-settings"])
 
@@ -95,6 +96,18 @@ def list_external_app_endpoints(
             host=host,
             port=port,
             overridden=(host, port) != (default_host, default_port),
+        ))
+    for registration in external_app_registry.load_registrations(db, use_cache=False).values():
+        result.append(schemas.ExternalAppEndpointResponse(
+            app_key=registration["title"],
+            proxy_path=registered_app_proxy_path(registration["slug"]),
+            default_host=registration["host"],
+            default_port=registration["port"],
+            host=registration["host"],
+            port=registration["port"],
+            overridden=False,
+            registered=True,
+            slug=registration["slug"],
         ))
     return result
 

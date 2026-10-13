@@ -5,7 +5,7 @@ import { API_BASE_URL, setApiBaseUrl } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
 import { useServerHealth } from '../../hooks/useServerStatus';
 import { useRemoteSessions } from '../../hooks/useRemoteSessions';
-import { ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
+import { findCatalogueAppByMenu, getAppMenuName } from '../../contexts/DashboardContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { useRecentActivity } from '../../contexts/RecentActivityContext';
@@ -118,7 +118,7 @@ export default function Layout({
 
   // 브레드크럼용 그룹 — 현재 메뉴가 특정 앱이면 상위 그룹 메뉴를 계산한다(Sidebar와 동일 규칙).
   const breadcrumbGroup = useMemo(() => {
-    const app = ANALYSIS_DATA.find(item => getAppMenuName(item.title) === currentMenu || item.title === currentMenu);
+    const app = findCatalogueAppByMenu(currentMenu);
     return app ? GROUP_MENU_BY_MODE[app.mode] : null;
   }, [currentMenu]);
 
@@ -127,7 +127,7 @@ export default function Layout({
   }, []);
 
   const handleNavigate = useCallback((menu) => {
-    const app = ANALYSIS_DATA.find(item => getAppMenuName(item.title) === menu || item.title === menu);
+    const app = findCatalogueAppByMenu(menu);
     if (app) {
       const routeMenu = getAppMenuName(app.title);
       sessionStorage.setItem(ANALYSIS_MENU_FRESH_ENTRY_KEY, JSON.stringify({ menu: routeMenu, at: Date.now() }));
@@ -149,7 +149,7 @@ export default function Layout({
   }, [setCurrentMenu, userInfo.is_admin]);
 
   useEffect(() => {
-    const app = ANALYSIS_DATA.find(item => getAppMenuName(item.title) === currentMenu || item.title === currentMenu);
+    const app = findCatalogueAppByMenu(currentMenu);
     if (app) {
       recordAppVisit(currentMenu, app.title, { mode: app.mode, category: app.category });
     }

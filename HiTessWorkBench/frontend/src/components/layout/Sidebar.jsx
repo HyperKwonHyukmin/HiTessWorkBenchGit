@@ -21,7 +21,7 @@ import {
   MessagesSquare,
   Database,
 } from 'lucide-react';
-import { ANALYSIS_DATA, getAppMenuName } from '../../contexts/DashboardContext';
+import { findCatalogueAppByMenu } from '../../contexts/DashboardContext';
 
 const GROUP_MENU_BY_MODE = {
   File: 'File-Based Apps',
@@ -85,7 +85,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate,
   }, [isAdmin, pendingCount]);
 
   const activeGroupMenu = useMemo(() => {
-    const app = ANALYSIS_DATA.find(item => getAppMenuName(item.title) === currentMenu || item.title === currentMenu);
+    const app = findCatalogueAppByMenu(currentMenu);
     return app ? GROUP_MENU_BY_MODE[app.mode] : currentMenu;
   }, [currentMenu]);
 

@@ -12,6 +12,7 @@ const {
 } = require("./viewer-sessions");
 const { responseHeadersWithWorkbenchCsp } = require("./response-security");
 const logbookBridge = require("./logbook-bridge");
+const { externalAppBinding, redirectIntoExternalApp } = require("./external-app-paths");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
 // 다이얼로그 제목으로 사용됨. 미설정 시 개발 모드 기본값 'electron-app' 이 노출되므로,
@@ -150,6 +151,9 @@ const appWindows = new Map(); // url -> BrowserWindow
 // 다리(bridge)가 붙은 외부 앱 창의 메타 — webContents.id -> { key, bridge, origin }.
 // origin 은 그 창을 연 URL 의 origin 이다. 다리 IPC 는 이 origin 에서 온 요청만 받는다.
 const appWindowMeta = new Map();
+// 프록시로 연 외부 앱 창 — webContents.id -> { origin, base }. 프록시 밖으로 새는 요청
+// (새로고침·CSS url(/…)·JS 로 만든 링크)을 그 앱 경로 아래로 돌리는 데 쓴다(external-app-paths.js).
+const externalAppBindings = new Map();
 const APP_WINDOW_BRIDGES = new Set([logbookBridge.LOGBOOK_BRIDGE]);
 
 // 다운로드 저장 대화상자('다른 이름으로 저장') 제목에 다운로드 소스 URL(blob:/http...)이
@@ -202,6 +206,7 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
     return { ok: false, error: "http/https 주소만 열 수 있습니다." };
   }
   const key = windowKey || url;
+  const proxyBinding = externalAppBinding(url);
 
   // 이미 열린 창이 있으면 재사용(포커스)
   let existing = appWindows.get(key);
@@ -214,6 +219,8 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
   if (existing && !existing.isDestroyed()) {
     const meta = appWindowMeta.get(existing.webContents.id);
     if (meta) meta.origin = parsed.origin;
+    if (proxyBinding) externalAppBindings.set(existing.webContents.id, proxyBinding);
+    else externalAppBindings.delete(existing.webContents.id);
     if (clearCache) {
       await clearExternalAppSessionData(existing.webContents.session, parsed.origin);
     }
@@ -254,12 +261,14 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
   appWindows.set(key, win);
   const webContentsId = win.webContents.id;
   if (bridge) appWindowMeta.set(webContentsId, { key, bridge, origin: parsed.origin });
+  if (proxyBinding) externalAppBindings.set(webContentsId, proxyBinding);
   // 외부 앱이 파일을 다운로드할 때 저장창 제목에 URL 이 노출되지 않도록 처리.
   installCleanSaveDialogTitle(win.webContents.session);
   win.once("ready-to-show", () => { win.show(); win.focus(); });
   win.on("closed", () => {
     if (appWindows.get(key) === win) appWindows.delete(key);
     appWindowMeta.delete(webContentsId);
+    externalAppBindings.delete(webContentsId);
   });
 
   // 창 내부에서 새 창 요청(window.open/target=_blank) 시 → 시스템 브라우저로 위임(무한 자식창 방지)
@@ -2794,6 +2803,14 @@ app.whenReady().then(() => {
     callback({
       responseHeaders: responseHeadersWithWorkbenchCsp(details, mainWebContentsId),
     });
+  });
+
+  // 외부 앱 창에서 프록시 밖으로 새는 요청을 그 앱 경로 아래로 돌린다(본창·LogBook 창은 대상 아님).
+  // ⚠ onBeforeRequest 는 세션당 리스너가 하나뿐이다 — 다른 용도가 생기면 이 리스너 안에서 함께 처리할 것.
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    const binding = externalAppBindings.get(details.webContentsId);
+    const redirectURL = binding ? redirectIntoExternalApp(details.url, binding) : null;
+    callback(redirectURL ? { redirectURL } : {});
   });
 
   createWindow();

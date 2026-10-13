@@ -179,6 +179,61 @@ class ExternalAppEndpointResponse(BaseModel):
     host: str
     port: int
     overridden: bool
+    # App Settings 에서 등록한 앱이면 True — 주소는 등록 정보 자체를 고친다(오버라이드 아님).
+    registered: bool = False
+    slug: Optional[str] = None
+
+
+class ExternalAppRegistrationPublic(BaseModel):
+    """카탈로그용 등록 외부 앱 — 모든 로그인 사용자. 접속 주소(IP·Port)는 싣지 않는다."""
+
+    slug: str
+    title: str
+    description: Optional[str] = None
+    mode: str
+    category: str
+    art: Optional[str] = None
+    tags: list[str] = []
+    contributor: Optional[str] = None
+    dev_status: str
+    proxy_path: str
+
+
+class ExternalAppRegistrationAdmin(ExternalAppRegistrationPublic):
+    host: str
+    port: int
+    created_by: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_by: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class ExternalAppRegistrationCreate(BaseModel):
+    slug: str
+    title: str
+    description: Optional[str] = None
+    mode: str = "Interactive"
+    category: str
+    art: Optional[str] = None
+    tags: Optional[list[str]] = None
+    contributor: Optional[str] = None
+    dev_status: str = "Active"
+    host: str
+    port: int
+
+
+class ExternalAppRegistrationUpdate(BaseModel):
+    """부분 갱신. slug·title 은 바꿀 수 없다(주소·설정·즐겨찾기 키라서)."""
+
+    description: Optional[str] = None
+    mode: Optional[str] = None
+    category: Optional[str] = None
+    art: Optional[str] = None
+    tags: Optional[list[str]] = None
+    contributor: Optional[str] = None
+    dev_status: Optional[str] = None
+    host: Optional[str] = None
+    port: Optional[int] = None
 
 
 class UserGuideCreate(BaseModel):

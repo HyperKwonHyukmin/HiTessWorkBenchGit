@@ -78,6 +78,7 @@ const DoublePipeFuelLineAssessment = lazy(() => import('./pages/analysis/DoubleP
 const MooringFittingAssessment = lazy(() => import('./pages/analysis/MooringFittingAssessment'));
 const BlockWeldAssessment = lazy(() => import('./pages/analysis/BlockWeldAssessment'));
 const HeavyBlockLiftingSimulation = lazy(() => import('./pages/analysis/HeavyBlockLiftingSimulation'));
+const RegisteredExternalApp = lazy(() => import('./pages/analysis/RegisteredExternalApp'));
 const BccLiftingCalculator = lazy(() => import('./pages/analysis/BccLiftingCalculator'));
 const ModelLibrary = lazy(() => import('./pages/analysis/ModelLibrary'));
 const MySettings = lazy(() => import('./pages/settings/MySettings'));
@@ -616,6 +617,10 @@ function AppInner() {
       case '이중관 구조 연료배관 해석': return <DoublePipeFuelLineAssessment />;
       case 'DrawingToAnalysis': return <DrawingToAnalysis />;
       default:
+        // App Settings 에서 등록한 외부 앱 — 코드에 페이지가 없고 공용 실행 페이지를 쓴다.
+        if (gatedApp?.isRegisteredExternal) {
+          return <RegisteredExternalApp key={gatedApp.slug} app={gatedApp} />;
+        }
         return (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">
             <div className="p-6 bg-slate-100 rounded-full mb-4">

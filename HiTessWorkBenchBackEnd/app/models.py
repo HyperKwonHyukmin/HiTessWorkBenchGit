@@ -233,6 +233,37 @@ class AppSetting(Base):
   )
 
 
+class ExternalAppRegistration(Base):
+  """관리자가 App Settings 에서 등록한 외부 앱(코드 수정 없이 만든 입구).
+
+  코드에 박힌 외부 앱(Block Weld 등)과 달리 행 하나가 곧 앱 하나다 —
+  카탈로그 카드·실행 페이지·프록시(/external-apps/<slug>)가 모두 이 행에서 나온다.
+  서비스 상태·점검 안내는 다른 앱처럼 app_settings(app_key=title)로 덮을 수 있다.
+  """
+
+  __tablename__ = "external_app_registrations"
+  id = Column(Integer, primary_key=True, index=True)
+  slug = Column(String(40), unique=True, nullable=False, index=True)  # 주소 이름, 생성 후 변경 불가
+  title = Column(String(200), unique=True, nullable=False)  # 카탈로그 제목 = app_settings app_key
+  description = Column(String(1000), nullable=True)
+  mode = Column(String(20), nullable=False, default="Interactive")
+  category = Column(String(40), nullable=False)
+  art = Column(String(20), nullable=True)
+  tags = Column(JSON, nullable=True)
+  contributor = Column(String(100), nullable=True)
+  dev_status = Column(String(20), nullable=False, default="Active")
+  host = Column(String(253), nullable=False)
+  port = Column(Integer, nullable=False)
+  created_by = Column(String(50), nullable=True)
+  created_at = Column(DateTime(timezone=True), default=datetime.now)
+  updated_by = Column(String(50), nullable=True)
+  updated_at = Column(
+      DateTime(timezone=True),
+      default=datetime.now,
+      onupdate=datetime.now,
+  )
+
+
 class ActivityLog(Base):
   __tablename__ = "activity_logs"
   id = Column(Integer, primary_key=True, index=True)

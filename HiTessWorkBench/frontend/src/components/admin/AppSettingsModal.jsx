@@ -77,7 +77,7 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
     getExternalAppEndpoints()
       .then(({ data }) => {
         if (cancelled) return;
-        const found = (data || []).find(item => item.app_key === app.title) || null;
+        const found = (data || []).find(item => item.app_key === app.title && !item.registered) || null;
         setEndpoint(found);
         if (found) {
           setForm(prev => ({ ...prev, externalHost: found.host, externalPort: String(found.port) }));
@@ -128,9 +128,12 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
         maintenance: form.maintenance,
         // 빈 문자열은 서버에서 null(오버라이드 해제)로 접힌다.
         maintenance_message: form.maintenanceMessage.trim() || null,
-        description: form.description.trim() || null,
-        tags: parsedTags,
-        contributor: form.contributor.trim() || null,
+        // 등록 외부 앱의 표시 정보는 등록 정보에서 고친다(두 곳에서 덮어쓰지 않게).
+        ...(app.isRegisteredExternal ? {} : {
+          description: form.description.trim() || null,
+          tags: parsedTags,
+          contributor: form.contributor.trim() || null,
+        }),
       });
       await refreshAppSettings();
       showToast(`'${app.title}' 설정을 저장했습니다.`, 'success');
@@ -352,7 +355,13 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
           </section>
         )}
 
-        {/* 표시 메타데이터 */}
+        {/* 표시 메타데이터 — 등록 외부 앱은 등록 정보 창에서 고친다 */}
+        {app.isRegisteredExternal ? (
+          <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+            App Settings 에서 등록한 외부 App입니다. 설명·분류·카드 그림·태그·담당자·접속 주소는
+            목록의 [등록 정보]에서 고칩니다.
+          </p>
+        ) : (
         <section className="space-y-3">
           <h4 className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
             <Wrench size={13} className="text-slate-400" />
@@ -408,6 +417,7 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
             </div>
           )}
         </section>
+        )}
       </div>
     </Modal>
   );

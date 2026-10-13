@@ -4,7 +4,7 @@
 /// (신규) Truss Assessment 페이지 이탈 시에도 상태를 유지하기 위한 글로벌 State를 추가했습니다.
 /// </summary>
 import React, { createContext, useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
-import { UploadCloud, PenTool, SlidersHorizontal, Wrench } from 'lucide-react';
+import { AppWindow, UploadCloud, PenTool, SlidersHorizontal, Wrench } from 'lucide-react';
 import { useNavigation } from './NavigationContext';
 import { useAuth } from './AuthContext';
 import { usePreferences } from './PreferencesContext';
@@ -13,11 +13,14 @@ import { POLLING_POLICY } from '../hooks/pollingPolicy';
 import {
   clearAppSettings,
   getAppBlock,
+  getRegisteredAppsSnapshot,
   isAppBlockedFor,
   mergeAppSetting,
   refreshAppSettings,
   useAppSettings,
+  useRegisteredApps,
 } from '../hooks/useAppSettings';
+import { mergeRegisteredApps } from '../utils/registeredApps';
 import {
   GLOBAL_JOB_HISTORY_LIMIT,
   GLOBAL_JOB_VISIBLE_MS,
@@ -288,12 +291,23 @@ export const ANALYSIS_DATA = Object.freeze(RAW_ANALYSIS_DATA.map(app => Object.f
   hasPage: Object.prototype.hasOwnProperty.call(APP_REGISTRY_OVERRIDES, app.title),
 })));
 
+/**
+ * 코드 앱 + App Settings 에서 등록한 외부 앱(관리자 오버라이드 적용 전).
+ * 이름으로 앱을 찾는 곳은 ANALYSIS_DATA 대신 이것을 써야 등록 앱도 찾는다.
+ */
+export const getCatalogueBaseApps = () =>
+  mergeRegisteredApps(ANALYSIS_DATA, getRegisteredAppsSnapshot(), AppWindow);
+
+/** 메뉴 이름(또는 제목)으로 카탈로그 앱을 찾는다(등록 외부 앱 포함). */
+export const findCatalogueAppByMenu = (menu) =>
+  getCatalogueBaseApps().find(item => getAppMenuName(item.title) === menu || item.title === menu);
+
 const normalizeProgramName = (value) =>
   String(value ?? '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
 
 export const findAppByAnyName = (value) => {
   const normalizedValue = normalizeProgramName(value);
-  return ANALYSIS_DATA.find(item =>
+  return getCatalogueBaseApps().find(item =>
     item.title === value ||
     item.menuName === value ||
     item.programNames?.includes(value) ||
@@ -315,7 +329,7 @@ const getAppStateKey = (value) => {
 
 export const findAppByProgramName = (programName) => {
   const normalizedProgramName = normalizeProgramName(programName);
-  return ANALYSIS_DATA.find(app =>
+  return getCatalogueBaseApps().find(app =>
     app.programNames?.includes(programName) ||
     app.programNames?.some(name => normalizeProgramName(name) === normalizedProgramName)
   );
@@ -907,7 +921,7 @@ export function DashboardProvider({ children }) {
 /**
  * 관리자 오버라이드가 반영된 '실효' 앱 카탈로그.
  *
- * ANALYSIS_DATA(코드 기본값) 위에 App Settings 값을 덮은 목록을 돌려준다.
+ * ANALYSIS_DATA(코드 기본값) + App Settings 에서 등록한 외부 앱 위에 App Settings 값을 덮은 목록을 돌려준다.
  * 서비스 상태·차단 여부·설명/태그/담당자는 반드시 이 훅으로 읽어야 관리자가
  * 바꾼 내용이 화면에 반영된다(ANALYSIS_DATA 를 직접 읽으면 코드 기본값 고정).
  *
@@ -918,9 +932,11 @@ export function DashboardProvider({ children }) {
  */
 export const useAppCatalogue = () => {
   const overrides = useAppSettings();
+  const registered = useRegisteredApps();
   const apps = useMemo(
-    () => ANALYSIS_DATA.map(app => mergeAppSetting(app, overrides[app.title])),
-    [overrides],
+    () => mergeRegisteredApps(ANALYSIS_DATA, registered, AppWindow)
+      .map(app => mergeAppSetting(app, overrides[app.title])),
+    [overrides, registered],
   );
   const getApp = useCallback(
     (title) => apps.find(app => app.title === title),

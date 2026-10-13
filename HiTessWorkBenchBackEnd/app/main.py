@@ -28,6 +28,7 @@ from .routers import (
     d_type_lug,
     davit,
     doublepipe,
+    external_app_registry,
     external_apps,
     hitessbeam,
     hole_calculation,
@@ -140,6 +141,7 @@ def build_lifespan(
                 try:
                     await external_apps.close_independent_tank_client()
                     await external_apps.close_heavy_block_lifting_client()
+                    await external_apps.close_registered_app_client()
                 finally:
                     if cleanup_started:
                         if not shutdown_cleanup_scheduler():
@@ -212,6 +214,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(presence.router)
     application.include_router(chat.router)
     application.include_router(app_settings.router)
+    application.include_router(external_app_registry.router)
     application.include_router(model_registry.router)
     application.include_router(module_ocean_transport.router)
     application.include_router(reports.router)

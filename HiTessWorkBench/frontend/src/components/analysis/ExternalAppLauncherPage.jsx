@@ -90,6 +90,7 @@ export default function ExternalAppLauncherPage({
   launchMode,
   clearCacheOnLaunch = true,
   cacheBustOnLaunch = true,
+  backMenu = 'Interactive Apps',
 }) {
   const { employeeId } = useAuth();
   const { getApp } = useAppCatalogue();
@@ -177,8 +178,8 @@ export default function ExternalAppLauncherPage({
         title={title}
         icon={Icon}
         subtitle={subtitle}
-        onBack={() => setCurrentMenu('Interactive Apps')}
-        backLabel="Interactive Apps로 돌아가기"
+        onBack={() => setCurrentMenu(backMenu)}
+        backLabel={`${backMenu}로 돌아가기`}
         gradient="from-brand-blue via-violet-900 to-violet-700"
         iconClassName="text-violet-300"
         subtitleClassName="text-violet-200/80"
