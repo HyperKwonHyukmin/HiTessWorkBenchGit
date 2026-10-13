@@ -243,6 +243,15 @@ export default function HullAccelerationPage() {
     successLogMessage: '가속도 계산 완료.',
     errorLogMessage: '가속도 계산 실패.',
     timeoutLogMessage: '시간 초과 (5분). 파일 크기 또는 서버 상태를 확인하세요.',
+    // 실패 사유(엔진이 알린 입력 문제 — DRM PDF·제원/Summary 표 미검출 등)를 그대로 보여 준다.
+    onError: (errData) => {
+      if (errData?.timeout || errData?.status === 'Cancelled') return;
+      const reason = typeof errData?.engine_log === 'string' ? errData.engine_log.trim() : '';
+      if (!reason) return;
+      setStatusMessage('가속도 계산 실패');
+      addLog(`[원인] ${reason}`, 'error');
+      showToast(reason, 'error');
+    },
     onComplete: async (data) => {
       setStatusMessage('가속도 계산 완료');
       const { engine_log, project } = data;
@@ -531,7 +540,7 @@ export default function HullAccelerationPage() {
   // 5개 선급 Rule(DNV/CSR/IGC/BV/LR) 결과를 모두 표시한다.
   const ruleRows = Object.values(rules);
   const allConditionNumbers = getConditionNumbersFromRules(rules);
-  // 엔진이 Summary 머리의 'NO.n : 이름' 으로 읽은 조건 이름과, 항해 상태가 아니라 계산에서 뺀 조건(경량선·도킹)
+  // 엔진이 Summary 머리의 'NO.n : 이름' 으로 읽은 조건 이름과, 항해 상태가 아니라 계산에서 뺀 조건(경량·도킹·점검 + 사유)
   const conditionNames = resultData?.condition_names ?? {};
   const excludedConditions = Array.isArray(resultData?.excluded_conditions) ? resultData.excluded_conditions : [];
   const effectiveSelectedLcNumbers = selectedLcNumbers == null ? allConditionNumbers : selectedLcNumbers;
@@ -1169,10 +1178,20 @@ export default function HullAccelerationPage() {
                           ))}
                         </div>
                         {excludedConditions.length > 0 && (
-                          <p className="mt-1.5 text-[11px] text-slate-500">
-                            계산 제외(항해 상태 아님):{' '}
-                            {excludedConditions.map((item) => `LC ${item.condition_no}${item.name ? ` ${item.name}` : ''}`).join(' · ')}
-                          </p>
+                          <div className="mt-2 border-t border-slate-100 pt-2">
+                            <p className="text-[11px] font-bold text-slate-600">
+                              계산에서 제외한 LC {excludedConditions.length}개
+                            </p>
+                            <ul className="mt-1 space-y-0.5">
+                              {excludedConditions.map((item) => (
+                                <li key={item.condition_no} className="text-[11px] leading-relaxed text-slate-600">
+                                  <span className="font-mono font-bold text-slate-700">LC {item.condition_no}</span>
+                                  {item.name ? <span className="text-slate-700"> {item.name}</span> : null}
+                                  <span className="text-slate-500"> — {item.reason || '항해 상태가 아님'}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         )}
                       </div>
                     )}

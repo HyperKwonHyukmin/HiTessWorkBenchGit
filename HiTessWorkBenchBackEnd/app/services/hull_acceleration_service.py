@@ -26,6 +26,25 @@ logger = logging.getLogger(__name__)
 
 PROGRAM_NAME = "선급 Rule 기반 선체 가속도 Calculation"
 
+# 엔진(ts_hull_acceleration.py)이 사용자가 고칠 수 있는 입력 문제를 알릴 때 쓰는 표식.
+USER_ERROR_MARK = "[USER_ERROR]"
+GENERIC_ENGINE_FAILURE = "해석 엔진 실행 중 오류가 발생했습니다. 관리자에게 문의하세요."
+
+
+def user_facing_failure(raw_output: str) -> str:
+    """엔진 실패 출력에서 사용자에게 보여 줄 사유만 고른다.
+
+    표식 줄이 있으면 그 문장(예: 'PDF 에서 선박 주요 치수를 찾지 못했습니다…'), 없으면 일반 안내.
+    트레이스백·서버 경로는 화면에 보내지 않는다.
+    """
+    for line in (raw_output or "").splitlines():
+        line = line.strip()
+        if line.startswith(USER_ERROR_MARK):
+            message = line[len(USER_ERROR_MARK):].strip()
+            if message:
+                return message
+    return GENERIC_ENGINE_FAILURE
+
 
 def task_execute_hull_acceleration(
     job_id: str,
@@ -77,7 +96,11 @@ def task_execute_hull_acceleration(
             work_dir=work_dir,
             timeout=300,
             engine_label="HullAcceleration",
+            capture_failure_output=True,
         )
+        # 시간 초과 안내(run_engine 이 만든 문장)는 그대로, 엔진 출력은 사용자 사유만 남긴다.
+        if status_msg != "Success" and not engine_output.startswith("해석 엔진이 제한 시간"):
+            engine_output = user_facing_failure(engine_output)
 
         if status_msg == "Success":
             update_progress(job_id, 80, "결과 파일 수집 중...")
