@@ -32,6 +32,7 @@ const BASE_MENUS = [
 const ADMIN_MENU_ITEMS = [
   { menu: 'User Management',     label: 'User Management' },
   { menu: 'Analysis Management', label: 'Analysis Management' },
+  { menu: 'All Projects',        label: 'All Projects' },
   { menu: 'System Management',   label: 'System Settings' },
   { menu: 'Usage Reports',       label: 'Usage Reports' },
   { menu: 'App Community',       label: 'App Community' },

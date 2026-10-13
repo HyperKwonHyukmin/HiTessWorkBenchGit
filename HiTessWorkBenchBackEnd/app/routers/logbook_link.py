@@ -46,6 +46,7 @@ IMPORT_TIMEOUT_SECONDS = 120.0
 IMPORT_CHUNK_SIZE = 1024 * 1024
 SOURCE_FILE_NAME = "logbook_source.json"
 VALID_TARGETS = {"gmu", "truss"}
+VALID_NEXT = {"inbox"}
 VALID_IMPORT_TARGETS = {"GroupModuleUnit", "TrussAssessment"}
 # import target(WB App 이름) → LB content 요청의 target(=launch/sso 의 target 과 같은 짧은 이름).
 LB_TARGET_OF_IMPORT = {"GroupModuleUnit": "gmu", "TrussAssessment": "truss"}
@@ -70,6 +71,8 @@ def _bearer_token(request: Request) -> str:
 class LaunchRequest(BaseModel):
     target: Optional[str] = None
     slot: Optional[int] = None
+    # 자동 로그인 뒤 열 LogBook 화면 — 'inbox'(정리 대기, All Projects 보내기 후)만. LogBook 도 같은 허용 목록이다.
+    next: Optional[str] = None
 
 
 @router.post("/launch")
@@ -102,6 +105,8 @@ def launch_logbook(
             params["slot"] = "1"
         elif isinstance(payload.slot, int) and 1 <= payload.slot <= 4:
             params["slot"] = str(payload.slot)
+    if (payload.next or "").strip().lower() in VALID_NEXT:
+        params["next"] = payload.next.strip().lower()
     url = f"{lb.public_base_url(request.url.hostname)}/sso?{urlencode(params)}"
     return {"url": url, "windowKey": lb.WINDOW_KEY}
 

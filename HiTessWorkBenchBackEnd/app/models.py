@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -465,4 +466,27 @@ class DiagnosticOccurrence(Base):
   source_file = Column(String(500), nullable=True)  # 오류가 난 F06/입력 경로(30일 뒤엔 사라질 수 있음)
   message = Column(Text, nullable=True)             # 이 발생의 원문 메시지
   archived = Column(Boolean, default=False, nullable=False)
+  created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class LogbookExport(Base):
+  """관리자가 All Projects 에서 해석 1건의 파일을 Hi-TESS LogBook 으로 보낸 기록.
+
+  LogBook 쪽에는 보낸 관리자 이름의 '정리 대기' 묶음(batch_key)이 생긴다. 목록의 'LogBook 보냄' 표시와
+  상세 창의 보낸 이력에 쓴다. 실패한 시도도 남긴다(state='failed', error).
+  """
+
+  __tablename__ = "logbook_exports"
+  id = Column(Integer, primary_key=True, index=True)
+  analysis_id = Column(Integer, index=True, nullable=False)
+  sent_by = Column(String(50), index=True, nullable=False)
+  batch_key = Column(String(40), nullable=True)
+  state = Column(String(20), nullable=False, default="staged")   # staged | blocked | failed
+  title = Column(String(255), nullable=True)
+  note = Column(Text, nullable=True)
+  file_count = Column(Integer, default=0, nullable=False)
+  total_bytes = Column(BigInteger, default=0, nullable=False)
+  blocked = Column(JSON, nullable=True)   # LogBook 에 이미 같은 BDF 가 있어 받지 않은 파일
+  rejected = Column(JSON, nullable=True)  # DRM 등으로 보내지 못한 파일
+  error = Column(Text, nullable=True)
   created_at = Column(DateTime, default=datetime.now, index=True)

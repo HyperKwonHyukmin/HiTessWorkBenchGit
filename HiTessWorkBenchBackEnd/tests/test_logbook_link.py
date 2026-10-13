@@ -374,3 +374,11 @@ def test_force_logout_notifies_each_revoked_session(admin_client, db_session, en
     r = admin_client.post("/api/presence/force-logout/USER001")
     assert r.json()["revoked_sessions"] == 2
     assert sorted(sent) == sorted([lb.wb_ref_of("tok-a"), lb.wb_ref_of("tok-b")])
+
+
+def test_launch_next_inbox_only(admin_client, clock, enabled):
+    # All Projects 에서 보낸 뒤 '정리 대기 열기' — 허용 목록(inbox)만 넘긴다.
+    q = parse_qs(urlparse(_launch(admin_client, {"next": "inbox"}).json()["url"]).query)
+    assert q["next"] == ["inbox"]
+    q2 = parse_qs(urlparse(_launch(admin_client, {"next": "https://evil"}).json()["url"]).query)
+    assert "next" not in q2

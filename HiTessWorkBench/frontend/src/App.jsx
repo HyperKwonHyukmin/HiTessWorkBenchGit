@@ -49,6 +49,7 @@ const DownloadCenter = lazy(() => import('./pages/Support/DownloadCenter'));
 const UserManagement = lazy(() => import('./pages/Administration/UserManagement'));
 const SystemSettings = lazy(() => import('./pages/Administration/SystemSettings'));
 const AnalysisManagement = lazy(() => import('./pages/Administration/AnalysisManagement'));
+const AllProjects = lazy(() => import('./pages/Administration/AllProjects'));
 const UsageReports = lazy(() => import('./pages/Administration/UsageReports'));
 const AppCommunityManagement = lazy(() => import('./pages/Administration/AppCommunityManagement'));
 const AppSettings = lazy(() => import('./pages/Administration/AppSettings'));
@@ -177,7 +178,7 @@ function AppInner() {
       'File-Based Apps', 'Interactive Apps', 'Parametric Apps', 'Productivity Apps',
       'Notice & Updates', 'User Guide',
       // 관리자 메뉴는 위에서 걸러졌음
-      'User Management', 'Analysis Management', 'System Management', 'Usage Reports',
+      'User Management', 'Analysis Management', 'All Projects', 'System Management', 'Usage Reports',
       'App Community', 'App Settings', 'API Apps',
     ]);
     if (KNOWN.has(landing)) resetNavigation(landing);
@@ -599,6 +600,7 @@ function AppInner() {
       case 'My Settings': return <MySettings />;
       case 'User Management': return <UserManagement />;
       case 'Analysis Management': return <AnalysisManagement />;
+      case 'All Projects': return <AllProjects />;
       case 'Usage Reports': return <UsageReports />;
       case 'App Community': return <AppCommunityManagement />;
       case 'App Settings': return <AppSettings />;

@@ -610,6 +610,19 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 - 관리 UI: `Administration > App Settings`(전체 표) + 앱 카드/행의 톱니바퀴(관리자에게만 노출) → `components/admin/AppSettingsModal.jsx`.
 - 설정 캐시 TTL 5초(쓰기 시 즉시 invalidate) + 프론트 60초 폴링 → 다른 관리자의 변경이 최대 1분 내 반영.
 
+### All Projects → Hi-TESS LogBook 보내기 (2026-10-13)
+
+관리자가 `ADMINISTRATION > All Projects` 에서 **모든 사용자의 해석 기록**(My Projects 와 같은 기준 — 샘플·권상 세부 검토 제외)을 보고,
+기록을 열면 **작업 폴더의 모든 파일**(입력/결과/기타 산출물)을 받거나 체크한 파일을 LogBook 으로 보낸다.
+- 작업 폴더 = `input_info`/`result_info` 안 userConnection 경로(중첩 dict·list 포함)의 최상위 폴더 + 권상 부모면 세부 검토 자식(`parent_analysis_id`)의 폴더.
+  파일 받기는 기존 `GET /api/download`(관리자는 남의 작업 폴더도 통과).
+- 보내기는 **서버끼리 전송**: WB → LogBook `/api/integration/uploads*`(공유 비밀키 `LOGBOOK_INTEGRATION_SECRET`, `as=<관리자 사번>`).
+  LogBook 에는 **보낸 관리자 이름의 '정리 대기' 묶음**이 생기고 정리·확정은 LogBook 에서 한다. 계약 원본: LogBook 저장소
+  `docs/plans/2026-10-08-logbook-18-workbench-link.md` 9절. 보낸 기록은 `logbook_exports`(실패도 남긴다).
+- LogBook 이 받지 않는 것: 이미 LogBook 에 있는 것과 **완전 동일한 BDF**(blocked), 회사 **DRM 암호문**(`HHIDRMC` 머리, rejected). 둘 다 화면에 그대로 보인다.
+  ⚠ 개발 PC 는 DRM 에이전트가 python 의 읽기를 가로채 `HHIDRMC` 흉내 파일을 0바이트로 돌려준다(실측) — DRM 거절 확인은 단위 테스트로 한다.
+- ⚠ 배포 순서: **LogBook 을 먼저** `git pull` + 재시작. 옛 LogBook 이면 WB 가 404 를 받아 "보내기 기능이 없거나 연동이 꺼져 있습니다" 로 알린다.
+
 ### DB 모델 (`app/models.py`)
 
 | 모델 | 테이블 | 주요 컬럼 |
@@ -620,6 +633,7 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 | `UserGuide` | `user_guides` | category, content |
 | `FeatureRequest` | `feature_requests` | status, upvotes, admin_comment |
 | `AppSetting` | `app_settings` | app_key(=ANALYSIS_DATA title), dev_status, maintenance, maintenance_message, description, tags(JSON), contributor |
+| `LogbookExport` | `logbook_exports` | analysis_id, sent_by, batch_key, state(staged/blocked/failed), file_count, blocked/rejected(JSON) |
 
 ### 백엔드 라우터 구조
 
@@ -635,6 +649,7 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 | `routers/column_buckling.py` | (별도 프리픽스) | AISC 기둥 좌굴 하중 계산 |
 | `routers/chat.py` | `/api/chat` | 관리자↔사용자 1:1 DM (폴링 기반, WebSocket 없음). `GET /contacts` 는 대화 가능한 활성 관리자 + 접속 상태(online/idle/offline)를 필드 화이트리스트로 반환 — 사용자가 먼저 대화를 걸 수 있는 진입점 |
 | `routers/app_settings.py` | `/api/app-settings`, `/api/admin/app-settings` | App별 서비스 상태·점검·표시 메타 오버라이드 |
+| `routers/admin_projects.py` | `/api/admin/projects` | 관리자 All Projects — 전체 이력·작업 폴더 파일 목록·LogBook 보내기 |
 
 **`/member/check_user`**: 사번(`userID`) + 회사(`company`) 기반으로 사용자 등록·승인 여부 확인. `/api/check_user`로도 동일하게 접근 가능. Electron 앱 초기 로그인에 사용.
 
@@ -678,6 +693,7 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 | `'Hi-Lab Insight'` | `AI/HiLabInsight.jsx` | AI 인사이트 페이지 |
 | `'User Management'` | `Administration/UserManagement.jsx` | 관리자: 사용자 승인/관리 |
 | `'Analysis Management'` | `Administration/AnalysisManagement.jsx` | 관리자: 전체 해석 이력 |
+| `'All Projects'` | `Administration/AllProjects.jsx` | 관리자: 모든 사용자의 My Projects — 작업 폴더 파일 받기·LogBook 보내기 |
 | `'Usage Reports'` | `Administration/UsageReports.jsx` | 관리자: 일/주/월 사용량 정형 리포트, Excel 내보내기 |
 | `'System Settings'` | `Administration/SystemSettings.jsx` | 관리자: 시스템 모니터링 |
 | `'App Settings'` | `Administration/AppSettings.jsx` | 관리자: App별 서비스 상태·점검 모드·표시 정보 |

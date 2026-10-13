@@ -19,6 +19,7 @@ install_crash_diagnostics()
 from . import database, models
 from .routers import (
     activity,
+    admin_projects,
     analysis,
     app_settings,
     auth,
@@ -222,6 +223,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(diagnostics.router)
     application.include_router(preferences.router)
     application.include_router(logbook_link.router)
+    application.include_router(admin_projects.router)
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     application.mount(

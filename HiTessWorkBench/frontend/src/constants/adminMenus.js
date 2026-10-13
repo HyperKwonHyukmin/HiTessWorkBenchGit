@@ -8,6 +8,7 @@
 export const ADMIN_MENUS = new Set([
   'User Management',
   'Analysis Management',
+  'All Projects',
   'System Management',
   'System Settings',
   'Usage Reports',

@@ -110,6 +110,7 @@ export default function Layout({
     ...(userInfo.is_admin ? [
       { label: 'User Management', menu: 'User Management' },
       { label: 'Analysis Management', menu: 'Analysis Management' },
+      { label: 'All Projects', menu: 'All Projects', keywords: '전체 프로젝트 모든 사용자 결과 파일 LogBook 보내기' },
       { label: 'System Management', menu: 'System Management' },
       { label: 'Usage Reports', menu: 'Usage Reports' },
       { label: 'API Apps', menu: 'API Apps' },

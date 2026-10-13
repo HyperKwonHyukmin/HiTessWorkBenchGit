@@ -8,8 +8,8 @@ import { getAuthHeaders } from '../utils/auth';
  * ('WorkBench GMU 작업 N 에 보낼 BDF…' / 'WorkBench · Truss Structural Assessment에 보낼 BDF…'). truss 는 slot 1 고정.
  * 반환 data = { url, windowKey }
  */
-export const launchLogbook = ({ target, slot } = {}) =>
-  axios.post(`${API_BASE_URL}/api/logbook/launch`, { target, slot }, { headers: getAuthHeaders() });
+export const launchLogbook = ({ target, slot, next } = {}) =>
+  axios.post(`${API_BASE_URL}/api/logbook/launch`, { target, slot, next }, { headers: getAuthHeaders() });
 
 /**
  * LogBook 의 BDF 를 WorkBench 서버로 가져온다(서버끼리 전송).

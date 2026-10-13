@@ -14,7 +14,7 @@ import { LOGBOOK_WINDOW_KEY, logbookErrorMessage } from '../../../utils/logbookL
  * @param {{ target: 'gmu'|'truss', slot?: number, showToast: Function, openedMessage: string }} opts
  * @returns {{ open: () => Promise<void>, launching: boolean }}
  */
-export function useLogbookLauncher({ target, slot, showToast, openedMessage }) {
+export function useLogbookLauncher({ target, slot, next, showToast, openedMessage }) {
   const [launching, setLaunching] = useState(false);
   const open = async () => {
     const inElectron = !!window.electron?.invoke;
@@ -23,7 +23,7 @@ export function useLogbookLauncher({ target, slot, showToast, openedMessage }) {
     if (fallbackWindow) fallbackWindow.opener = null;
     setLaunching(true);
     try {
-      const { data } = await launchLogbook({ target, slot });
+      const { data } = await launchLogbook({ target, slot, next });
       if (inElectron) {
         const result = await window.electron.invoke('open-app-window', {
           url: data.url,
