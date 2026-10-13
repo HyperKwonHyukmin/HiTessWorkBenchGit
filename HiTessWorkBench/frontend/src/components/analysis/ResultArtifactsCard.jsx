@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { getGroupModuleUnitArtifacts, downloadFileBlob, downloadUnitLiftingReport } from '../../api/analysis';
 import { downloadBlob, filenameFromDisposition } from '../../utils/fileHelper';
-import { isAdmin, getCurrentUser } from '../../utils/auth';
+import { isAdmin } from '../../utils/auth';
 import { useToast } from '../../contexts/ToastContext';
 import ModelRegistrationModal from '../modelRegistry/ModelRegistrationModal';
 import UnitLiftingReportDialog from './UnitLiftingReportDialog';
@@ -284,7 +284,6 @@ export default function ResultArtifactsCard({ parentAnalysisId, onDownloaded }) 
         onClose={() => setReportKind(null)}
         onSubmit={handleReport}
         sourceFileName={byKind.editedBdf?.fileName || byKind.liftingBdf?.fileName || byKind.sourceBdf?.fileName || ''}
-        defaultAuthor={getCurrentUser()?.employee_id || ''}
       />
     </div>
   );

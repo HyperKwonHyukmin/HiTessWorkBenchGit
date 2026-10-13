@@ -188,3 +188,12 @@ def test_ordinary_group_ids_above_ten_are_not_merged():
     d = NS(results=NS(wires=[NS(group_id=11), NS(group_id=13)]),
            stability=NS(apexes=[{"groupId": 11}, {"groupId": 13}]))
     assert RR._split_parent_map(d) == {}
+
+
+def test_file_name_ends_with_revision():
+    # 모달의 '리비전' 은 파일명 맨 끝에만 쓰인다 — 1 → rev01, 비면 붙이지 않는다 (2026-10-13)
+    from app.services.unit_lifting_report.collector import revision_suffix
+    assert [revision_suffix(v) for v in ("1", "02", "rev3", "Rev. 4", "A", "", None, " ")] == \
+        ["_rev01", "_rev02", "_rev03", "_rev04", "_revA", "", "", ""]
+    name, _data, _w, _s = generate_result_report(INFO, {"revision": "2"}, generated_by="A476854")
+    assert name.endswith("_rev02.xlsx")

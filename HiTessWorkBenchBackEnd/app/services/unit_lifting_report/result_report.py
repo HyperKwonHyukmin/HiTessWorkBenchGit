@@ -21,7 +21,7 @@ from typing import Any, Optional
 
 from openpyxl import load_workbook
 
-from .collector import ReportOptions, collect, format_contact
+from .collector import ReportOptions, collect, format_contact, revision_suffix
 from . import figures3d
 
 TEMPLATE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "templates"))
@@ -93,7 +93,7 @@ def generate_result_report(result_info: dict[str, Any], options: dict[str, Any] 
 
     i = data.identity
     name = (f"{_safe(i.hull_no)}-{_safe(i.unit_no)}_{_safe(i.lifting_method)}_"
-            f"{_safe(i.title_prefix)}_권상_구조_해석_보고서_{now:%Y%m%d}.xlsx")
+            f"{_safe(i.title_prefix)}_권상_구조_해석_보고서_{now:%Y%m%d}{revision_suffix(opts.revision)}.xlsx")
     summary = {
         "totalMassTon": data.model.total_mass_ton,
         "yieldStrengthMPa": data.results.yield_mpa,

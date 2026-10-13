@@ -36,7 +36,7 @@ class ReportOptions:
     hull_no: str = ""
     unit_no: str = ""
     drawing_no: str = ""
-    revision: str = "0"
+    revision: str = ""               # 비면 파일명에 리비전을 붙이지 않는다(표지 표기는 "0")
     author: str = ""
     department: str = ""
     contact: str = ""                # 보고서 문의처 '이름/직급/부서' — WorkBench 로그인 사용자에서 채운다
@@ -58,7 +58,7 @@ class ReportOptions:
 
         return cls(
             hull_no=str(p.get("hullNo") or "").strip(), unit_no=str(p.get("unitNo") or "").strip(),
-            drawing_no=str(p.get("drawingNo") or "").strip(), revision=str(p.get("revision") or "0").strip(),
+            drawing_no=str(p.get("drawingNo") or "").strip(), revision=str(p.get("revision") or "").strip(),
             author=str(p.get("author") or "").strip(), department=str(p.get("department") or "").strip(),
             contact=str(p.get("contact") or "").strip(),
             jig_limit_ton=num("jigLimitTon", 6.2), yield_strength_mpa=num("yieldStrengthMpa", 275.0),
@@ -67,6 +67,18 @@ class ReportOptions:
             # 프런트(maxLength)와 같은 길이로 여기서도 자른다. [[NOTICE_EXTRA_MAX_CHARS]]
             extra_notice=str(p.get("extraNotice") or "").strip()[:EXTRA_NOTICE_MAX_CHARS],
         )
+
+
+def revision_suffix(revision: str | None) -> str:
+    """파일명 끝에 붙일 리비전 — `1`·`01`·`rev1`·`Rev.1` → `_rev01`, `A` → `_revA`, 비면 `""`.
+
+    결과·상세 보고서 모두 확장자 바로 앞에 붙인다(사용자 요청 2026-10-13, 예: `..._20261013_rev02.pdf`).
+    """
+    raw = re.sub(r"^rev\.?\s*", "", str(revision or "").strip(), flags=re.IGNORECASE)
+    raw = re.sub(r'[<>:"/\\|?*\s]+', "", raw)   # 파일명에 못 쓰는 글자 제거
+    if not raw:
+        return ""
+    return f"_rev{int(raw):02d}" if raw.isdigit() else f"_rev{raw}"
 
 
 def format_contact(generator: dict | None, fallback: str = "") -> str:

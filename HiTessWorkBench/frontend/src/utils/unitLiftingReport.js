@@ -21,14 +21,28 @@ export const EXTRA_NOTICE_MAX = 36;
 /** 지그 기준·항복강도 기본값. 백엔드 기본값과 같아야 한다. */
 export const REPORT_DEFAULTS = { jigLimitTon: 6.2, yieldStrengthMpa: 275 };
 
-/** 모달 초기값 — 파일명에서 호선·유닛을 선입력한다. */
-export function initialReportForm(fileName = '', author = '') {
+/**
+ * 모달 초기값 — 파일명에서 호선·유닛을 선입력한다.
+ * 도면 번호·작성자·부서 입력은 뺐다(2026-10-13 사용자 결정 — 결과 보고서에 쓰이지 않는다).
+ * 리비전은 비워 두면 파일명에 붙지 않고, 적으면 저장 파일명 끝에 `_rev01` 처럼 붙는다(백엔드 `revision_suffix`).
+ */
+export function initialReportForm(fileName = '') {
   return {
     ...deriveIds(fileName),
-    drawingNo: '', revision: '0', author: author || '', department: '',
+    revision: '',
     jigLimitTon: REPORT_DEFAULTS.jigLimitTon, yieldStrengthMpa: REPORT_DEFAULTS.yieldStrengthMpa,
     notes: '', extraNotice: '',
   };
+}
+
+/**
+ * 저장 파일명 끝에 붙을 리비전 — 백엔드 `collector.revision_suffix` 와 같은 규칙(화면 미리보기용).
+ * `1`·`01`·`rev1` → `_rev01`, `A` → `_revA`, 비면 `''`.
+ */
+export function revisionSuffix(revision) {
+  const raw = String(revision ?? '').trim().replace(/^rev\.?\s*/i, '').replace(/[<>:"/\\|?*\s]+/g, '')
+  if (!raw) return ''
+  return /^\d+$/.test(raw) ? `_rev${String(Number(raw)).padStart(2, '0')}` : `_rev${raw}`
 }
 
 /** 양수 숫자인가 (문자열 입력 허용). */
@@ -45,8 +59,7 @@ export function isReportFormValid(form) {
 export function toReportOptions(form) {
   const text = (v) => String(v ?? '').trim();
   return {
-    hullNo: text(form?.hullNo), unitNo: text(form?.unitNo), drawingNo: text(form?.drawingNo),
-    revision: text(form?.revision) || '0', author: text(form?.author), department: text(form?.department),
+    hullNo: text(form?.hullNo), unitNo: text(form?.unitNo), revision: text(form?.revision),
     jigLimitTon: Number(form?.jigLimitTon), yieldStrengthMpa: Number(form?.yieldStrengthMpa),
     notes: text(form?.notes),
     // 주의 사항 5행 — 서식 박스 폭이 정해져 있어 입력란(maxLength)과 같은 길이로 자른다

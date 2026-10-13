@@ -1,14 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { X, FileSpreadsheet, FileType2, Loader2 } from 'lucide-react';
-import { EXTRA_NOTICE_MAX, initialReportForm, isPositiveNumber, isReportFormValid, toReportOptions } from '../../utils/unitLiftingReport';
+import { EXTRA_NOTICE_MAX, initialReportForm, isPositiveNumber, isReportFormValid, revisionSuffix, toReportOptions } from '../../utils/unitLiftingReport';
 
 const FIELDS = [
   ['hullNo', '호선 (HULL NO.)', 'text'],
   ['unitNo', '유닛 (UNIT NO.)', 'text'],
-  ['drawingNo', '도면 번호', 'text'],
-  ['revision', '리비전', 'text'],
-  ['author', '작성자', 'text'],
-  ['department', '부서', 'text'],
   ['jigLimitTon', '지그 기준 (ton)', 'number'],
   ['yieldStrengthMpa', '항복강도 (MPa)', 'number'],
 ];
@@ -24,21 +20,22 @@ const FORMATS = [
 /**
  * Unit 권상 검토 보고서 표지 정보 입력 모달.
  * Studio 의 UnitStructuralReportDialog 와 같은 필드를 쓴다(백엔드 options 키 동일).
+ * 도면 번호·작성자·부서는 뺐다(2026-10-13). 리비전은 저장 파일명 끝에 `_rev01` 처럼 붙는다.
  *
- * props: open, sourceFileName, defaultAuthor, busy, onClose(), onSubmit(options, format)
+ * props: open, sourceFileName, busy, onClose(), onSubmit(options, format)
  */
 export default function UnitLiftingReportDialog({
-  open, kind = 'result', sourceFileName = '', defaultAuthor = '', busy = false, onClose, onSubmit,
+  open, kind = 'result', sourceFileName = '', busy = false, onClose, onSubmit,
 }) {
-  const [form, setForm] = useState(() => initialReportForm(sourceFileName, defaultAuthor));
+  const [form, setForm] = useState(() => initialReportForm(sourceFileName));
   const [format, setFormat] = useState('pdf');
 
   useEffect(() => {
     if (open) {
-      setForm(initialReportForm(sourceFileName, defaultAuthor));
+      setForm(initialReportForm(sourceFileName));
       setFormat('pdf');
     }
-  }, [open, sourceFileName, defaultAuthor]);
+  }, [open, sourceFileName]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -52,6 +49,7 @@ export default function UnitLiftingReportDialog({
   const valid = isReportFormValid(form);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const extraLen = [...String(form.extraNotice ?? '')].length;   // 서로게이트 쌍을 1자로 센다
+  const revTail = revisionSuffix(form.revision);
   const submit = () => { if (valid && !busy) onSubmit?.(toReportOptions(form), format); };
 
   return (
@@ -89,6 +87,20 @@ export default function UnitLiftingReportDialog({
               </label>
             );
           })}
+          <label className="col-span-2 flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+            리비전 (선택)
+            <input
+              aria-label="리비전"
+              type="text"
+              placeholder="예: 1 → 파일명 끝에 _rev01"
+              value={form.revision}
+              onChange={set('revision')}
+              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm font-normal text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002554]/30"
+            />
+            <span className="font-normal text-slate-500">
+              {revTail ? `저장 파일명 끝에 ${revTail} 가 붙습니다.` : '비워 두면 파일명에 리비전을 붙이지 않습니다.'}
+            </span>
+          </label>
           {kind !== 'detail' && (
             // 사내 표준 서식의 '주의 사항' 5행. 4행까지는 고정 문구이고 이 한 줄만 사용자가 적는다.
             // 입력이 없으면 백엔드가 그 줄을 감춰 4줄짜리 박스로 인쇄한다.

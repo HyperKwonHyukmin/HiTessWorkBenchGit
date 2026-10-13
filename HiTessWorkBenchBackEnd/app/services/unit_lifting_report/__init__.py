@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from .builder import build_workbook
-from .collector import ReportOptions, collect, format_contact
+from .collector import ReportOptions, collect, format_contact, revision_suffix
 from .figures import render_all_safe
 from .result_report import generate_result_report  # noqa: F401  사내 서식 기반 '결과 레포트'
 
@@ -41,7 +41,7 @@ def generate_unit_lifting_report(
 
     i = data.identity
     name = (f"{_safe(i.hull_no)}-{_safe(i.unit_no)}_{_safe(i.lifting_method)}_{_safe(i.title_prefix)}"
-            f"_권상_구조_검토_보고서_Rev{_safe(i.revision)}_{now:%Y%m%d}.xlsx")
+            f"_권상_구조_검토_보고서_{now:%Y%m%d}{revision_suffix(opts.revision)}.xlsx")
     summary = {
         "totalMassTon": data.model.total_mass_ton,
         "yieldStrengthMPa": data.results.yield_mpa,
