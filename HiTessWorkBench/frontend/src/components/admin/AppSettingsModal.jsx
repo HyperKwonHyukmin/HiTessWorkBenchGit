@@ -2,7 +2,7 @@
 /// App별 관리자 설정 모달입니다.
 ///
 /// 서비스 상태(Active/Developing/Planned), 점검 모드와 안내 문구, 그리고 표시
-/// 메타데이터(설명·태그·담당자)를 편집합니다. 외부 접속 App 은 접속 주소(IP·Port)도 바꿀 수 있습니다. 저장하면 백엔드에 '오버라이드'로
+/// 메타데이터(설명·태그·담당자·카드 분류·카드 그림)를 편집합니다. 외부 접속 App 은 접속 주소(IP·Port)도 바꿀 수 있습니다. 저장하면 백엔드에 '오버라이드'로
 /// 남고, [기본값으로 초기화]는 그 오버라이드를 지워 코드 값으로 되돌립니다.
 /// </summary>
 import React, { useEffect, useMemo, useState } from 'react';
@@ -13,6 +13,9 @@ import { getExternalAppEndpoints, resetAppSetting, updateAppSetting } from '../.
 import { refreshAppSettings } from '../../hooks/useAppSettings';
 import { useToast } from '../../contexts/ToastContext';
 import { buildExternalEndpointPayload, validateExternalEndpoint } from '../../utils/externalEndpoint';
+import { findAppByAnyName, useAppCatalogue } from '../../contexts/DashboardContext';
+import { CATEGORY_ART } from '../../utils/cardArt';
+import { ART_LABELS, CardArtPicker, CategorySelect } from './CardMetaFields';
 
 const DEV_STATUS_OPTIONS = [
   {
@@ -46,6 +49,9 @@ function buildInitialForm(app, setting) {
     description: setting?.description ?? app?.description ?? '',
     tags: (setting?.tags?.length ? setting.tags : app?.tags || []).join(', '),
     contributor: setting?.contributor ?? app?.contributor ?? '',
+    category: app?.category ?? '',
+    // '' = 오버라이드 없음(코드에 정한 그림 → 분류 기본 그림 순).
+    art: setting?.art || '',
     externalHost: '',
     externalPort: '',
   };
@@ -63,10 +69,21 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
   const [resetting, setResetting] = useState(false);
   // 외부 접속 App 이면 { host, port, default_host, default_port, ... }, 아니면 null.
   const [endpoint, setEndpoint] = useState(null);
+  // 폼을 다시 채울 때마다 올린다 — 분류 칸이 새 값으로 '직접 입력' 여부를 다시 정하게.
+  const [formVersion, setFormVersion] = useState(0);
+  const { apps: catalogueApps } = useAppCatalogue();
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(catalogueApps.map(item => item.category).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [catalogueApps],
+  );
+  // 오버라이드 전 코드 값 — '기본' 그림 미리보기와 '코드 값과 같으면 오버라이드 해제' 판단에 쓴다.
+  const baseApp = useMemo(() => (app?.title ? findAppByAnyName(app.title) : null), [app?.title]);
 
   // 다른 앱을 열었거나 서버 값이 갱신되면 폼을 다시 채운다.
   useEffect(() => {
-    if (isOpen) setForm(buildInitialForm(app, setting));
+    if (!isOpen) return;
+    setForm(buildInitialForm(app, setting));
+    setFormVersion(v => v + 1);
   }, [isOpen, app, setting]);
 
   // 외부 접속 App 인지, 지금 어느 주소로 붙는지 서버에서 받아 온다(목록의 원본은 백엔드 프록시 등록).
@@ -88,6 +105,8 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
   }, [isOpen, app?.title]);
 
   const endpointError = endpoint ? validateExternalEndpoint(form.externalHost, form.externalPort) : null;
+  // '기본' 그림 = 코드에 정한 그림, 없으면 지금 고른 분류의 기본 그림(utils/cardArt resolveCardArtName 과 같은 순서).
+  const defaultArt = baseApp?.art || CATEGORY_ART[form.category.trim()] || null;
 
   const hasOverride = Boolean(setting);
   const patch = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
@@ -133,6 +152,9 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
           description: form.description.trim() || null,
           tags: parsedTags,
           contributor: form.contributor.trim() || null,
+          // 코드 값과 같으면 null(오버라이드 해제) — 코드에서 분류를 바꾸면 따라가게.
+          category: !form.category.trim() || form.category.trim() === baseApp?.category ? null : form.category.trim(),
+          art: form.art || null,
         }),
       });
       await refreshAppSettings();
@@ -376,6 +398,37 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
               onChange={(e) => patch('description', e.target.value)}
               maxLength={1000}
               className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-bold text-slate-600">
+              분류
+              <span className="ml-1 font-normal text-slate-500">(카드 이름표·목록 칩·기본 그림이 따라 바뀝니다)</span>
+            </label>
+            <CategorySelect
+              key={formVersion}
+              value={form.category}
+              onChange={(value) => patch('category', value)}
+              categories={categoryOptions}
+            />
+            {baseApp?.category && form.category.trim() !== baseApp.category && (
+              <p className="mt-1 text-[11px] text-slate-500">코드 기본 분류: {baseApp.category}</p>
+            )}
+          </div>
+
+          <div>
+            <p className="mb-1 text-[11px] font-bold text-slate-600">
+              카드 그림
+              <span className="ml-1 font-normal text-slate-500">
+                (기본 = {defaultArt ? ART_LABELS[defaultArt] || defaultArt : '그림 없음'})
+              </span>
+            </p>
+            <CardArtPicker
+              value={form.art}
+              onChange={(name) => patch('art', name)}
+              defaultArt={defaultArt}
+              defaultLabel="기본"
             />
           </div>
 

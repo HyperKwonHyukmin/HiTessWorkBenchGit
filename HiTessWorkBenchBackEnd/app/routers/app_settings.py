@@ -182,6 +182,15 @@ def _validated_updates(payload: schemas.AppSettingUpdate, app_key: str) -> dict:
     if "tags" in sent:
         updates["tags"] = _clean_tags(sent["tags"])
 
+    if "category" in sent:
+        updates["category"] = _clean_optional_text(sent["category"], max_len=40)
+
+    if "art" in sent:
+        art = _clean_optional_text(sent["art"], max_len=20)
+        if art is not None and art not in external_app_registry.VALID_ART_NAMES:
+            raise HTTPException(status_code=422, detail="지원하지 않는 카드 그림입니다.")
+        updates["art"] = art
+
     if "external_host" in sent or "external_port" in sent:
         if app_key not in _external_app_keys():
             raise HTTPException(

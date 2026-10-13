@@ -19,6 +19,10 @@ const EMPTY_LIST = Object.freeze([]);
 
 let overrides = EMPTY;
 let registeredApps = EMPTY_LIST;
+// 마지막으로 받은 서버 응답(문자열). 같으면 새 객체를 만들지 않는다 — 60초 주기 갱신이
+// 카탈로그 항목을 매번 새로 만들면 열려 있는 설정 창의 입력이 초기화된다.
+let lastOverridesJson = '';
+let lastRegisteredJson = '';
 const listeners = new Set();
 
 function emit() {
@@ -40,6 +44,9 @@ function getRegisteredSnapshot() {
 
 /** 서버 응답(등록 외부 앱 배열)을 저장한다. */
 export function setRegisteredApps(list) {
+  const json = JSON.stringify(list ?? []);
+  if (json === lastRegisteredJson) return;
+  lastRegisteredJson = json;
   registeredApps = Object.freeze(
     (Array.isArray(list) ? list : []).filter(row => row?.slug && row?.title).map(row => Object.freeze({ ...row })),
   );
@@ -58,6 +65,9 @@ export function useRegisteredApps() {
 
 /** 서버 응답(배열)을 app_key 기준 map 으로 바꿔 저장한다. */
 export function setAppSettingOverrides(list) {
+  const json = JSON.stringify(list ?? []);
+  if (json === lastOverridesJson) return;
+  lastOverridesJson = json;
   const next = {};
   (Array.isArray(list) ? list : []).forEach((row) => {
     if (row?.app_key) next[row.app_key] = row;
@@ -86,6 +96,8 @@ export function clearAppSettings() {
   if (overrides === EMPTY && registeredApps === EMPTY_LIST) return;
   overrides = EMPTY;
   registeredApps = EMPTY_LIST;
+  lastOverridesJson = '';
+  lastRegisteredJson = '';
   emit();
 }
 
@@ -111,6 +123,8 @@ export function mergeAppSetting(app, setting) {
   if (setting.description) merged.description = setting.description;
   if (Array.isArray(setting.tags) && setting.tags.length) merged.tags = setting.tags;
   if (setting.contributor) merged.contributor = setting.contributor;
+  if (setting.category) merged.category = setting.category;
+  if (setting.art) merged.art = setting.art;
   merged.maintenance = Boolean(setting.maintenance);
   merged.maintenanceMessage = setting.maintenance_message || null;
   merged.hasAdminOverride = true;

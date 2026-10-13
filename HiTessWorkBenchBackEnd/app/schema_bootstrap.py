@@ -210,8 +210,10 @@ def ensure_user_preferences_columns(*, engine=None) -> None:
 
 
 def ensure_app_settings_columns(*, engine=None) -> None:
-    """외부 앱 접속 주소(IP·Port) 오버라이드 컬럼을 보강합니다."""
+    """카드 분류·그림, 외부 앱 접속 주소(IP·Port) 오버라이드 컬럼을 보강합니다."""
     _add_missing_columns("app_settings", {
+        "category": "ALTER TABLE app_settings ADD COLUMN category VARCHAR(40) NULL",
+        "art": "ALTER TABLE app_settings ADD COLUMN art VARCHAR(20) NULL",
         "external_host": "ALTER TABLE app_settings ADD COLUMN external_host VARCHAR(253) NULL",
         "external_port": "ALTER TABLE app_settings ADD COLUMN external_port INT NULL",
     }, engine=engine)

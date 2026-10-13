@@ -9,7 +9,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, CheckCircle2, ChevronDown, Copy, Loader2, PlugZap, Save, Trash2, XCircle } from 'lucide-react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
-import { CardArt } from '../ui/cardArt';
+import { ART_LABELS, CardArtPicker, CategorySelect } from './CardMetaFields';
 import {
   createRegisteredApp,
   deleteRegisteredApp,
@@ -18,7 +18,7 @@ import {
 } from '../../api/appSettings';
 import { refreshAppSettings } from '../../hooks/useAppSettings';
 import { useToast } from '../../contexts/ToastContext';
-import { CARD_ART_NAMES, CATEGORY_ART } from '../../utils/cardArt';
+import { CATEGORY_ART } from '../../utils/cardArt';
 import { suggestSlug, validateRegisteredAppForm } from '../../utils/externalEndpoint';
 import { buildDeveloperNotes, developerNotesText } from '../../utils/externalAppDeveloperNotes';
 
@@ -29,18 +29,12 @@ const MODE_OPTIONS = [
   { value: 'Productivity', label: 'Productivity Apps' },
 ];
 
-const ART_LABELS = {
-  truss: '트러스', frame: '프레임', pipe: '배관', lift: '권상', beam: '보',
-  column: '기둥', plate: '판', weld: '용접', hull: '선체', doc: '문서',
-};
-
 const STATUS_OPTIONS = [
   { value: 'Active', label: '서비스 중' },
   { value: 'Developing', label: '개발 중(관리자만)' },
   { value: 'Planned', label: '출시 예정(관리자만)' },
 ];
 
-const CUSTOM_CATEGORY = '__custom__';
 const MAX_TAGS = 12;
 
 const inputCls = 'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200';
@@ -87,19 +81,20 @@ export default function RegisteredAppEditorModal({
   const isCreate = !registration;
   const [form, setForm] = useState(() => buildForm(registration));
   const [slugTouched, setSlugTouched] = useState(false);
-  const [customCategory, setCustomCategory] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [probe, setProbe] = useState(null); // { state: 'checking'|'ok'|'fail', message }
   const [notesOpen, setNotesOpen] = useState(false);
+  // 폼을 다시 채울 때마다 올린다 — 분류 칸이 새 값으로 '직접 입력' 여부를 다시 정하게.
+  const [formVersion, setFormVersion] = useState(0);
 
   useEffect(() => {
     if (!isOpen) return;
     const next = buildForm(registration);
     setForm(next);
+    setFormVersion(v => v + 1);
     setSlugTouched(Boolean(registration));
-    setCustomCategory(Boolean(next.category) && !categories.includes(next.category));
     setSubmitted(false);
     setProbe(null);
     // categories 는 목록이 바뀔 때마다 새 배열이라 의존성에서 뺀다(열 때 한 번만 맞춘다).
@@ -125,7 +120,7 @@ export default function RegisteredAppEditorModal({
   const shown = (key) => (submitted || key === 'endpoint' ? errors[key] : null);
 
   const parsedTags = form.tags.split(',').map(t => t.trim()).filter(Boolean).slice(0, MAX_TAGS);
-  const previewArt = form.art || CATEGORY_ART[form.category.trim()] || null;
+  const categoryArt = CATEGORY_ART[form.category.trim()] || null;
 
   const noteInput = {
     title: form.title,
@@ -353,38 +348,13 @@ export default function RegisteredAppEditorModal({
             </select>
           </Field>
           <Field label="분류" error={shown('category')}>
-            <div className="flex gap-2">
-              <select
-                value={customCategory ? CUSTOM_CATEGORY : form.category}
-                onChange={(e) => {
-                  if (e.target.value === CUSTOM_CATEGORY) {
-                    setCustomCategory(true);
-                    patch('category', '');
-                  } else {
-                    setCustomCategory(false);
-                    patch('category', e.target.value);
-                  }
-                }}
-                className={inputCls}
-              >
-                <option value="">분류 선택</option>
-                {categories.map(category => (
-                  <option key={category} value={category}>{category}</option>
-                ))}
-                <option value={CUSTOM_CATEGORY}>직접 입력…</option>
-              </select>
-              {customCategory && (
-                <input
-                  type="text"
-                  value={form.category}
-                  onChange={(e) => patch('category', e.target.value)}
-                  maxLength={40}
-                  autoFocus
-                  placeholder="새 분류"
-                  className={inputCls}
-                />
-              )}
-            </div>
+            {/* 창을 열 때마다 직접 입력 여부를 처음 값으로 다시 정한다. */}
+            <CategorySelect
+              key={formVersion}
+              value={form.category}
+              onChange={(value) => patch('category', value)}
+              categories={categories}
+            />
           </Field>
         </section>
 
@@ -393,38 +363,15 @@ export default function RegisteredAppEditorModal({
           <h4 className="mb-2 text-[11px] font-bold text-slate-600">
             카드 그림
             <span className="ml-1 font-normal text-slate-500">
-              (분류 기본을 고르면 분류에 맞는 그림{CATEGORY_ART[form.category.trim()] ? ` — ${ART_LABELS[CATEGORY_ART[form.category.trim()]]}` : ' — 없음'})
+              (분류 기본을 고르면 분류에 맞는 그림{categoryArt ? ` — ${ART_LABELS[categoryArt]}` : ' — 없음'})
             </span>
           </h4>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-            {[''].concat(CARD_ART_NAMES).map(name => {
-              const selected = form.art === name;
-              const artForTile = name || CATEGORY_ART[form.category.trim()] || null;
-              return (
-                <button
-                  key={name || 'default'}
-                  type="button"
-                  onClick={() => patch('art', name)}
-                  aria-pressed={selected}
-                  className={`flex flex-col items-center gap-1 rounded-xl border-2 px-2 py-2 transition-colors cursor-pointer ${
-                    selected ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'
-                  }`}
-                >
-                  <span className="grid h-9 w-full place-items-center text-slate-500">
-                    {artForTile
-                      ? <CardArt name={artForTile} draw={false} className="h-9 w-full" />
-                      : <span className="text-[11px] text-slate-400">그림 없음</span>}
-                  </span>
-                  <span className={`text-[11px] font-bold ${selected ? 'text-blue-700' : 'text-slate-600'}`}>
-                    {name ? ART_LABELS[name] || name : '분류 기본'}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          {!previewArt && (
-            <p className="mt-1 text-[11px] text-slate-500">그림이 없으면 카드에는 모눈과 분류 이름표만 보입니다.</p>
-          )}
+          <CardArtPicker
+            value={form.art}
+            onChange={(name) => patch('art', name)}
+            defaultArt={categoryArt}
+            defaultLabel="분류 기본"
+          />
         </section>
 
         {/* 접속 주소 */}

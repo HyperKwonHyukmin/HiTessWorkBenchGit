@@ -327,3 +327,29 @@ def test_effective_upstream_falls_back_on_bad_stored_values():
     assert svc.effective_external_upstream(
         default, {"external_host": "bad host/", "external_port": 99999}
     ) == default
+
+
+# ── 카드 분류·그림 ───────────────────────────────────────────────
+
+
+def test_category_and_art_override_round_trip(admin_client):
+    saved = admin_client.put(
+        f"/api/admin/app-settings/{APP_KEY}",
+        json={"category": " 구조 모델 ", "art": "weld"},
+    )
+    assert saved.status_code == 200
+    assert (saved.json()["category"], saved.json()["art"]) == ("구조 모델", "weld")
+
+    # 일반 사용자 목록에도 실린다(모든 화면의 카드가 바뀌어야 하므로).
+    row = next(r for r in admin_client.get("/api/app-settings").json() if r["app_key"] == APP_KEY)
+    assert (row["category"], row["art"]) == ("구조 모델", "weld")
+
+    cleared = admin_client.put(
+        f"/api/admin/app-settings/{APP_KEY}", json={"category": "", "art": None}
+    )
+    assert (cleared.json()["category"], cleared.json()["art"]) == (None, None)
+
+
+def test_unknown_card_art_is_rejected(admin_client):
+    response = admin_client.put(f"/api/admin/app-settings/{APP_KEY}", json={"art": "rocket"})
+    assert response.status_code == 422

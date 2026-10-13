@@ -103,6 +103,8 @@ def _row_to_dict(row: models.AppSetting) -> dict:
         "description": row.description,
         "tags": row.tags if isinstance(row.tags, list) else None,
         "contributor": row.contributor,
+        "category": row.category,
+        "art": row.art,
         "external_host": row.external_host,
         "external_port": row.external_port,
         "updated_by": row.updated_by,

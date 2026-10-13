@@ -140,6 +140,9 @@ class AppSettingResponse(BaseModel):
     description: Optional[str] = None
     tags: Optional[list[str]] = None
     contributor: Optional[str] = None
+    # 카탈로그 카드 분류·그림(코드 기본값 위에 덮음).
+    category: Optional[str] = None
+    art: Optional[str] = None
     updated_by: Optional[str] = None
     updated_at: Optional[datetime] = None
 
@@ -157,6 +160,8 @@ class AppSettingUpdate(BaseModel):
     description: Optional[str] = None
     tags: Optional[list[str]] = None
     contributor: Optional[str] = None
+    category: Optional[str] = None
+    art: Optional[str] = None
     # 외부 앱 전용. 외부 앱이 아닌 App 에 보내면 422.
     external_host: Optional[str] = None
     external_port: Optional[int] = None
