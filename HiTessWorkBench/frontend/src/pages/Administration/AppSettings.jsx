@@ -10,14 +10,21 @@
 /// </summary>
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  CheckCircle2, Hammer, RefreshCw, Search, Settings2, ShieldAlert, SlidersHorizontal,
+  Check, CheckCircle2, Hammer, Pencil, RefreshCw, Search, Settings2, ShieldAlert, SlidersHorizontal, X,
 } from 'lucide-react';
 import PageHeader from '../../components/ui/PageHeader';
 import { KpiCard } from '../../components/ui/KpiCard';
 import AppSettingsModal from '../../components/admin/AppSettingsModal';
 import { useAppCatalogue } from '../../contexts/DashboardContext';
-import { useAppSettings } from '../../hooks/useAppSettings';
+import { refreshAppSettings, useAppSettings } from '../../hooks/useAppSettings';
 import { useToast } from '../../contexts/ToastContext';
+import { getExternalAppEndpoints, updateAppSetting } from '../../api/appSettings';
+import { API_BASE_URL } from '../../config';
+import {
+  buildExternalEndpointPayload,
+  parseServerAddress,
+  validateExternalEndpoint,
+} from '../../utils/externalEndpoint';
 
 const STATUS_STYLE = {
   Active: { label: '서비스 중', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -34,6 +41,149 @@ function StatusPill({ status }) {
   );
 }
 
+/**
+ * 접속 주소(IP·Port) 칸.
+ * - 외부 접속 App: 실제 적용 주소 + 연필 버튼으로 이 자리에서 바로 수정(Enter 저장 · Esc 취소).
+ * - 그 밖의 App: WorkBench 서버 주소(읽기 전용) — 이 App 들은 WorkBench 서버로 접속한다.
+ */
+function AddressCell({ app, endpoint, serverAddress, onSaved }) {
+  const { showToast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [host, setHost] = useState('');
+  const [port, setPort] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const error = editing ? validateExternalEndpoint(host, port) : null;
+
+  const startEdit = () => {
+    setHost(endpoint.host);
+    setPort(String(endpoint.port));
+    setEditing(true);
+  };
+
+  const save = async () => {
+    if (saving) return;
+    if (error) {
+      showToast(error, 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateAppSetting(app.title, buildExternalEndpointPayload(endpoint, host, port));
+      await Promise.all([refreshAppSettings(), onSaved?.()]);
+      showToast(`'${app.title}' 접속 주소를 ${host.trim()}:${Number(port)} 로 바꿨습니다.`, 'success');
+      setEditing(false);
+    } catch (err) {
+      showToast(err?.response?.data?.detail || '접속 주소 저장에 실패했습니다.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') setEditing(false);
+  };
+
+  if (!endpoint) {
+    if (!serverAddress) return <span className="text-xs text-slate-400">—</span>;
+    return (
+      <div title="WorkBench 서버로 접속하는 App입니다(App별로 바꿀 수 없음).">
+        <div className="font-mono text-xs text-slate-600">{serverAddress.host}</div>
+        <div className="font-mono text-xs text-slate-500">:{serverAddress.port}</div>
+      </div>
+    );
+  }
+
+  if (editing) {
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center gap-1">
+          <input
+            type="text"
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            onKeyDown={onKeyDown}
+            maxLength={253}
+            spellCheck={false}
+            autoFocus
+            aria-label="IP"
+            placeholder={endpoint.default_host}
+            className="w-28 rounded-md border border-slate-300 px-2 py-1 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-200"
+          />
+          <span className="text-xs text-slate-400">:</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={port}
+            onChange={(e) => setPort(e.target.value.replace(/[^0-9]/g, ''))}
+            onKeyDown={onKeyDown}
+            maxLength={5}
+            aria-label="Port"
+            placeholder={String(endpoint.default_port)}
+            className="w-16 rounded-md border border-slate-300 px-2 py-1 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-200"
+          />
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving || Boolean(error)}
+            title="저장 (Enter)"
+            aria-label="접속 주소 저장"
+            className="rounded-md p-1 text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+          >
+            <Check size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            disabled={saving}
+            title="취소 (Esc)"
+            aria-label="수정 취소"
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+        {error ? (
+          <p className="text-[11px] font-bold text-red-600">{error}</p>
+        ) : (
+          <p className="text-[11px] text-slate-500">
+            기본값 <span className="font-mono">{endpoint.default_host}:{endpoint.default_port}</span>
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="group flex items-start gap-1.5">
+      <div title="외부 접속 App — 이 주소의 /<사번> 경로를 엽니다.">
+        <div className="font-mono text-xs font-bold text-slate-800">{endpoint.host}</div>
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-xs font-bold text-slate-700">:{endpoint.port}</span>
+          {endpoint.overridden && (
+            <span
+              className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700"
+              title={`코드 기본값 ${endpoint.default_host}:${endpoint.default_port}`}
+            >
+              변경됨
+            </span>
+          )}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={startEdit}
+        title="접속 주소 수정"
+        aria-label={`${app.title} 접속 주소 수정`}
+        className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+      >
+        <Pencil size={13} />
+      </button>
+    </div>
+  );
+}
+
 export default function AppSettings() {
   const { showToast } = useToast();
   const { apps, getBlock, refresh } = useAppCatalogue();
@@ -43,18 +193,34 @@ export default function AppSettings() {
   const [modeFilter, setModeFilter] = useState('all');
   const [editingTitle, setEditingTitle] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  // 외부 접속 App 의 실제 접속 주소(app_key → endpoint).
+  const [endpoints, setEndpoints] = useState({});
+
+  // 외부 접속 App 이 아닌 App 은 WorkBench 서버로 접속한다 — 그 주소를 같은 형식으로 보여 준다.
+  const serverAddress = useMemo(() => parseServerAddress(API_BASE_URL), []);
+
+  const loadEndpoints = useCallback(async () => {
+    try {
+      const { data } = await getExternalAppEndpoints();
+      setEndpoints(Object.fromEntries((data || []).map(item => [item.app_key, item])));
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   // 화면에 처음 들어올 때 최신 설정을 확실히 받아 온다(정기 폴링 주기를 기다리지 않도록).
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    loadEndpoints();
+  }, [refresh, loadEndpoints]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    const ok = await refresh();
+    const [ok, endpointsOk] = await Promise.all([refresh(), loadEndpoints()]);
     setRefreshing(false);
-    if (!ok) showToast('설정을 불러오지 못했습니다.', 'error');
-  }, [refresh, showToast]);
+    if (!ok || !endpointsOk) showToast('설정을 불러오지 못했습니다.', 'error');
+  }, [refresh, loadEndpoints, showToast]);
 
   const modes = useMemo(
     () => ['all', ...Array.from(new Set(apps.map(app => app.mode)))],
@@ -155,6 +321,7 @@ export default function AppSettings() {
           <thead className="border-b border-slate-200 bg-slate-50">
             <tr className="text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
               <th className="px-4 py-3">App</th>
+              <th className="px-4 py-3 w-44">접속 IP · Port</th>
               <th className="px-4 py-3 w-32">상태</th>
               <th className="px-4 py-3 w-40">사용자 접근</th>
               <th className="px-4 py-3 w-28">담당자</th>
@@ -164,7 +331,7 @@ export default function AppSettings() {
           <tbody className="divide-y divide-slate-100">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-sm text-slate-400">
+                <td colSpan={6} className="px-4 py-12 text-center text-sm text-slate-400">
                   조건에 맞는 App이 없습니다.
                 </td>
               </tr>
@@ -187,6 +354,14 @@ export default function AppSettings() {
                     <div className="mt-0.5 text-xs text-slate-500">
                       {app.mode} · {app.category}
                     </div>
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <AddressCell
+                      app={app}
+                      endpoint={endpoints[app.title]}
+                      serverAddress={serverAddress}
+                      onSaved={loadEndpoints}
+                    />
                   </td>
                   <td className="px-4 py-3">
                     <StatusPill status={app.devStatus || 'Active'} />
@@ -232,6 +407,7 @@ export default function AppSettings() {
         onClose={() => setEditingTitle(null)}
         app={editingApp}
         setting={editingApp ? overrides[editingApp.title] : undefined}
+        onSaved={loadEndpoints}
       />
     </div>
   );

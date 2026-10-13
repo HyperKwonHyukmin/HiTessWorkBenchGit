@@ -29,3 +29,10 @@ export const resetAppSetting = (appKey) =>
     `${API_BASE_URL}/api/admin/app-settings/${encodeURIComponent(appKey)}`,
     { headers: getAuthHeaders() },
   );
+
+/**
+ * 외부 접속 App(백엔드 프록시로 여는 타 개발자 웹앱)의 접속 주소 목록 (관리자 전용).
+ * 각 항목: { app_key, proxy_path, default_host, default_port, host, port, overridden }
+ */
+export const getExternalAppEndpoints = () =>
+  axios.get(`${API_BASE_URL}/api/admin/app-settings/external-apps`, { headers: getAuthHeaders() });

@@ -31,8 +31,13 @@ def proxy_harness(monkeypatch):
     )
     monkeypatch.setattr(external_apps, "external_app_access_store", store)
     monkeypatch.setattr(external_apps, "_employee_is_active", lambda _employee_id: True)
+    # App Settings 의 IP·Port 오버라이드(app_key → setting dict). 기본은 없음.
+    upstream_overrides: dict = {}
+    monkeypatch.setattr(
+        external_apps, "_load_app_setting", lambda app_key: upstream_overrides.get(app_key)
+    )
 
-    captured = {"block-weld": [], "independent-tank": []}
+    captured = {"block-weld": [], "independent-tank": [], "heavy-block-lifting": []}
 
     def make_client(app_key):
         async def handler(request: httpx.Request):
@@ -75,6 +80,7 @@ def proxy_harness(monkeypatch):
 
     block_client = make_client("block-weld")
     tank_client = make_client("independent-tank")
+    lifting_client = make_client("heavy-block-lifting")
     monkeypatch.setattr(
         external_apps,
         "BLOCK_WELD",
@@ -85,10 +91,16 @@ def proxy_harness(monkeypatch):
         "INDEPENDENT_TANK",
         replace(external_apps.INDEPENDENT_TANK, get_client=lambda: tank_client),
     )
+    monkeypatch.setattr(
+        external_apps,
+        "HEAVY_BLOCK_LIFTING",
+        replace(external_apps.HEAVY_BLOCK_LIFTING, get_client=lambda: lifting_client),
+    )
 
     app = FastAPI()
     app.include_router(external_apps.router)
     app.dependency_overrides[require_auth] = lambda: "USER001"
+    app.state.upstream_overrides = upstream_overrides
     return app, clock, captured
 
 
@@ -214,6 +226,11 @@ def test_expired_grant_cannot_create_browser_session(proxy_harness):
             "independent-tank",
             external_apps.INDEPENDENT_TANK_PROXY_PATH,
             "wb_ext_independent_tank",
+        ),
+        (
+            "heavy-block-lifting",
+            external_apps.HEAVY_BLOCK_LIFTING_PROXY_PATH,
+            "wb_ext_heavy_block_lifting",
         ),
     ],
 )
@@ -364,7 +381,11 @@ def test_browser_session_revalidation_runs_outside_event_loop(
 
     assert response.status_code == 200
     assert len(captured["block-weld"]) == 1
-    assert calls == [(external_apps._employee_is_active, ("USER001",))]
+    # 계정 재검증과 App Settings 주소 조회 모두 DB 를 읽으므로 이벤트 루프 밖에서 돈다.
+    assert calls == [
+        (external_apps._employee_is_active, ("USER001",)),
+        (external_apps._load_app_setting, ("Block Weld Assessment",)),
+    ]
 
 
 def test_cookie_filter_is_fail_closed_and_preserves_valid_quoted_values():
@@ -496,3 +517,93 @@ def test_rewrite_keeps_an_upstream_supplied_base():
     # 그 base 자체는 루트 절대경로 재작성 대상이라 프록시 접두사가 붙는다.
     assert rewritten.count("<base") == 1
     assert '<base href="/external-apps/independent-tank/fixed/">' in rewritten
+
+
+def test_proxy_follows_app_settings_upstream_override(proxy_harness):
+    app, _clock, captured = proxy_harness
+    app.state.upstream_overrides["Heavy Block Lifting Simulation"] = {
+        "external_host": "10.14.42.114",
+        "external_port": 31861,
+    }
+
+    with TestClient(app) as client:
+        launch_path = _bootstrap(client, external_apps.HEAVY_BLOCK_LIFTING_PROXY_PATH)
+        _exchange(client, launch_path)
+        response = client.get("/external-apps/heavy-block-lifting/USER001")
+
+    assert response.status_code == 200
+    upstream = captured["heavy-block-lifting"][0]
+    assert upstream["url"] == "http://10.14.42.114:31861/USER001"
+    assert upstream["headers"]["host"] == "10.14.42.114:31861"
+
+
+def test_app_settings_save_redirects_real_proxy_traffic(admin_client, db_session, monkeypatch):
+    """App Settings API 로 저장 → 실제 DB 조회 경로(SessionLocal·load_settings) → 프록시 대상 주소.
+
+    _load_app_setting 을 대체하지 않고 처음부터 끝까지 잇는다.
+    """
+    from sqlalchemy.orm import sessionmaker as _sessionmaker
+
+    from app import database
+    from app.services import app_settings as app_settings_service
+
+    app_settings_service.invalidate_cache()
+    monkeypatch.setattr(
+        database, "SessionLocal", _sessionmaker(bind=db_session.get_bind())
+    )
+    db_session.add(models.User(employee_id="A100001", name="사용자", company="HHI", is_active=True))
+    db_session.commit()
+    monkeypatch.setattr(
+        external_apps,
+        "external_app_access_store",
+        ExternalAppAccessStore(clock=MutableClock(), grant_ttl_seconds=5, session_ttl_seconds=60),
+    )
+
+    seen = []
+
+    async def handler(request: httpx.Request):
+        seen.append((str(request.url), request.headers.get("host")))
+        return httpx.Response(200, content=b"ok", headers={"content-type": "text/plain"})
+
+    lifting_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        external_apps,
+        "HEAVY_BLOCK_LIFTING",
+        replace(external_apps.HEAVY_BLOCK_LIFTING, get_client=lambda: lifting_client),
+    )
+    proxy_app = FastAPI()
+    proxy_app.include_router(external_apps.router)
+    proxy_app.dependency_overrides[require_auth] = lambda: "A100001"
+
+    def open_app():
+        with TestClient(proxy_app) as client:
+            launch_path = _bootstrap(client, external_apps.HEAVY_BLOCK_LIFTING_PROXY_PATH)
+            _exchange(client, launch_path)
+            assert client.get("/external-apps/heavy-block-lifting/A100001").status_code == 200
+            assert client.get("/external-apps/heavy-block-lifting/__wb_proxy_health").status_code == 200
+
+    # 1) 기본 주소
+    open_app()
+    assert seen[0] == ("http://10.14.42.145:31860/A100001", "10.14.42.145:31860")
+    assert seen[1][0] == "http://10.14.42.145:31860/"
+
+    # 2) 관리자가 App Settings 에서 IP·Port 변경 → 같은 프로세스의 다음 접속부터 새 주소
+    saved = admin_client.put(
+        "/api/admin/app-settings/Heavy Block Lifting Simulation",
+        json={"external_host": "10.14.42.114", "external_port": 31861},
+    )
+    assert saved.status_code == 200
+    seen.clear()
+    open_app()
+    assert seen[0] == ("http://10.14.42.114:31861/A100001", "10.14.42.114:31861")
+    assert seen[1][0] == "http://10.14.42.114:31861/"
+
+    # 3) 기본값 복원 → 다시 원래 주소
+    admin_client.put(
+        "/api/admin/app-settings/Heavy Block Lifting Simulation",
+        json={"external_host": None, "external_port": None},
+    )
+    seen.clear()
+    open_app()
+    assert seen[0][0] == "http://10.14.42.145:31860/A100001"
+    app_settings_service.invalidate_cache()

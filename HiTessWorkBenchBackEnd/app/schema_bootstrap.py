@@ -209,8 +209,17 @@ def ensure_user_preferences_columns(*, engine=None) -> None:
     }, engine=engine)
 
 
+def ensure_app_settings_columns(*, engine=None) -> None:
+    """외부 앱 접속 주소(IP·Port) 오버라이드 컬럼을 보강합니다."""
+    _add_missing_columns("app_settings", {
+        "external_host": "ALTER TABLE app_settings ADD COLUMN external_host VARCHAR(253) NULL",
+        "external_port": "ALTER TABLE app_settings ADD COLUMN external_port INT NULL",
+    }, engine=engine)
+
+
 def run_schema_bootstrap(*, engine=None) -> None:
     """기존 호출은 production engine을, 테스트는 주입된 engine을 사용합니다."""
+    ensure_app_settings_columns(engine=engine)
     ensure_notice_columns(engine=engine)
     ensure_user_columns(engine=engine)
     ensure_user_presence_columns(engine=engine)

@@ -235,3 +235,95 @@ def test_middleware_passes_when_no_override(gated_client):
         headers={"Authorization": "Bearer user-token"},
     )
     assert response.status_code != 403
+
+
+# ── 외부 앱 접속 주소(IP·Port) ─────────────────────────────────────
+
+EXTERNAL_APP_KEY = "Heavy Block Lifting Simulation"
+
+
+def test_external_app_endpoints_show_code_defaults(admin_client):
+    response = admin_client.get("/api/admin/app-settings/external-apps")
+    assert response.status_code == 200
+    rows = {row["app_key"]: row for row in response.json()}
+    assert set(rows) >= {
+        "Block Weld Assessment",
+        "Independent Tank Assessment",
+        EXTERNAL_APP_KEY,
+    }
+    lifting = rows[EXTERNAL_APP_KEY]
+    assert (lifting["host"], lifting["port"]) == ("10.14.42.145", 31860)
+    assert (lifting["default_host"], lifting["default_port"]) == ("10.14.42.145", 31860)
+    assert lifting["overridden"] is False
+
+
+def test_external_endpoint_override_round_trip(admin_client):
+    saved = admin_client.put(
+        f"/api/admin/app-settings/{EXTERNAL_APP_KEY}",
+        json={"external_host": " 10.14.42.114 ", "external_port": 31861},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["external_host"] == "10.14.42.114"
+    assert saved.json()["external_port"] == 31861
+
+    rows = {
+        row["app_key"]: row
+        for row in admin_client.get("/api/admin/app-settings/external-apps").json()
+    }
+    assert (rows[EXTERNAL_APP_KEY]["host"], rows[EXTERNAL_APP_KEY]["port"]) == ("10.14.42.114", 31861)
+    assert rows[EXTERNAL_APP_KEY]["overridden"] is True
+
+    # null 은 코드 기본값으로 되돌린다.
+    admin_client.put(
+        f"/api/admin/app-settings/{EXTERNAL_APP_KEY}",
+        json={"external_host": None, "external_port": None},
+    )
+    rows = {
+        row["app_key"]: row
+        for row in admin_client.get("/api/admin/app-settings/external-apps").json()
+    }
+    assert rows[EXTERNAL_APP_KEY]["overridden"] is False
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"external_host": "http://10.14.42.145"},
+        {"external_host": "10.14.42.145:31860"},
+        {"external_host": "10.14.42.145/a"},
+        {"external_port": 0},
+        {"external_port": 70000},
+    ],
+)
+def test_invalid_external_endpoint_is_rejected(admin_client, payload):
+    response = admin_client.put(f"/api/admin/app-settings/{EXTERNAL_APP_KEY}", json=payload)
+    assert response.status_code == 422
+
+
+def test_external_endpoint_only_for_external_apps(admin_client):
+    response = admin_client.put(
+        f"/api/admin/app-settings/{APP_KEY}",
+        json={"external_host": "10.14.42.114"},
+    )
+    assert response.status_code == 422
+
+
+def test_public_settings_list_hides_external_endpoint(admin_client):
+    admin_client.put(
+        f"/api/admin/app-settings/{EXTERNAL_APP_KEY}",
+        json={"external_host": "10.14.42.114"},
+    )
+    rows = admin_client.get("/api/app-settings").json()
+    row = next(item for item in rows if item["app_key"] == EXTERNAL_APP_KEY)
+    assert "external_host" not in row
+
+
+def test_effective_upstream_falls_back_on_bad_stored_values():
+    default = "http://10.14.42.145:31860/"
+    assert svc.effective_external_upstream(default, None) == default
+    assert svc.effective_external_upstream(
+        default, {"external_host": "10.0.0.1", "external_port": 8080}
+    ) == "http://10.0.0.1:8080/"
+    assert svc.effective_external_upstream(
+        default, {"external_host": "bad host/", "external_port": 99999}
+    ) == default

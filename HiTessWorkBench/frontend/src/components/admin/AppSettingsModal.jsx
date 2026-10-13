@@ -2,16 +2,17 @@
 /// App별 관리자 설정 모달입니다.
 ///
 /// 서비스 상태(Active/Developing/Planned), 점검 모드와 안내 문구, 그리고 표시
-/// 메타데이터(설명·태그·담당자)를 편집합니다. 저장하면 백엔드에 '오버라이드'로
+/// 메타데이터(설명·태그·담당자)를 편집합니다. 외부 접속 App 은 접속 주소(IP·Port)도 바꿀 수 있습니다. 저장하면 백엔드에 '오버라이드'로
 /// 남고, [기본값으로 초기화]는 그 오버라이드를 지워 코드 값으로 되돌립니다.
 /// </summary>
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Hammer, RotateCcw, Save, Wrench } from 'lucide-react';
+import { AlertTriangle, Globe, Hammer, RotateCcw, Save, Wrench } from 'lucide-react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
-import { resetAppSetting, updateAppSetting } from '../../api/appSettings';
+import { getExternalAppEndpoints, resetAppSetting, updateAppSetting } from '../../api/appSettings';
 import { refreshAppSettings } from '../../hooks/useAppSettings';
 import { useToast } from '../../contexts/ToastContext';
+import { buildExternalEndpointPayload, validateExternalEndpoint } from '../../utils/externalEndpoint';
 
 const DEV_STATUS_OPTIONS = [
   {
@@ -45,6 +46,8 @@ function buildInitialForm(app, setting) {
     description: setting?.description ?? app?.description ?? '',
     tags: (setting?.tags?.length ? setting.tags : app?.tags || []).join(', '),
     contributor: setting?.contributor ?? app?.contributor ?? '',
+    externalHost: '',
+    externalPort: '',
   };
 }
 
@@ -58,11 +61,33 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
   const [form, setForm] = useState(() => buildInitialForm(app, setting));
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  // 외부 접속 App 이면 { host, port, default_host, default_port, ... }, 아니면 null.
+  const [endpoint, setEndpoint] = useState(null);
 
   // 다른 앱을 열었거나 서버 값이 갱신되면 폼을 다시 채운다.
   useEffect(() => {
     if (isOpen) setForm(buildInitialForm(app, setting));
   }, [isOpen, app, setting]);
+
+  // 외부 접속 App 인지, 지금 어느 주소로 붙는지 서버에서 받아 온다(목록의 원본은 백엔드 프록시 등록).
+  useEffect(() => {
+    if (!isOpen || !app?.title) return undefined;
+    let cancelled = false;
+    setEndpoint(null);
+    getExternalAppEndpoints()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const found = (data || []).find(item => item.app_key === app.title) || null;
+        setEndpoint(found);
+        if (found) {
+          setForm(prev => ({ ...prev, externalHost: found.host, externalPort: String(found.port) }));
+        }
+      })
+      .catch(() => { if (!cancelled) setEndpoint(null); });
+    return () => { cancelled = true; };
+  }, [isOpen, app?.title]);
+
+  const endpointError = endpoint ? validateExternalEndpoint(form.externalHost, form.externalPort) : null;
 
   const hasOverride = Boolean(setting);
   const patch = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
@@ -88,9 +113,17 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
 
   const handleSave = async () => {
     if (!app?.title || saving) return;
+    if (endpointError) {
+      showToast(endpointError, 'error');
+      return;
+    }
+    const externalFields = endpoint
+      ? buildExternalEndpointPayload(endpoint, form.externalHost, form.externalPort)
+      : {};
     setSaving(true);
     try {
       await updateAppSetting(app.title, {
+        ...externalFields,
         dev_status: form.devStatus,
         maintenance: form.maintenance,
         // 빈 문자열은 서버에서 null(오버라이드 해제)로 접힌다.
@@ -154,7 +187,7 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
               variant="primary"
               size="md"
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || Boolean(endpointError)}
               className="cursor-pointer"
             >
               <span className="inline-flex items-center gap-1.5">
@@ -272,6 +305,51 @@ export default function AppSettingsModal({ isOpen, onClose, app, setting, onSave
               </span>
             </span>
           </div>
+        )}
+
+        {/* 외부 접속 주소 — 백엔드 프록시로 여는 외부 App 만 */}
+        {endpoint && (
+          <section className="space-y-2">
+            <h4 className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+              <Globe size={13} className="text-slate-400" />
+              외부 접속 주소
+            </h4>
+            <div className="grid grid-cols-[1fr_8rem] gap-3">
+              <div>
+                <label className="mb-1 block text-[11px] font-bold text-slate-600">IP</label>
+                <input
+                  type="text"
+                  value={form.externalHost}
+                  onChange={(e) => patch('externalHost', e.target.value)}
+                  maxLength={253}
+                  spellCheck={false}
+                  placeholder={endpoint.default_host}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-bold text-slate-600">Port</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={form.externalPort}
+                  onChange={(e) => patch('externalPort', e.target.value.replace(/[^0-9]/g, ''))}
+                  maxLength={5}
+                  placeholder={String(endpoint.default_port)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
+            </div>
+            {endpointError ? (
+              <p className="text-[11px] font-bold text-red-600">{endpointError}</p>
+            ) : (
+              <p className="text-[11px] text-slate-500">
+                사용자는 <span className="font-mono">{`http://${form.externalHost.trim()}:${form.externalPort}/<사번>`}</span>(으)로
+                연결됩니다. 저장하면 몇 초 안에 새로 여는 창부터 적용됩니다
+                (코드 기본값 <span className="font-mono">{endpoint.default_host}:{endpoint.default_port}</span>).
+              </p>
+            )}
+          </section>
         )}
 
         {/* 표시 메타데이터 */}

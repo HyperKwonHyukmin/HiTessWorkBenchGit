@@ -15,8 +15,10 @@ API 를 직접 호출하는 우회를 차단한다(프론트 차단만으로는 
 """
 from __future__ import annotations
 
+import re
 import threading
 import time
+from urllib.parse import urlparse
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -74,6 +76,7 @@ GUARDED_ROUTES: tuple[tuple[str, str], ...] = (
     # 막으면 이미 열려 있는 화면이 중간에 깨진다.
     ("/external-apps/block-weld/__wb_bootstrap", "Block Weld Assessment"),
     ("/external-apps/independent-tank/__wb_bootstrap", "Independent Tank Assessment"),
+    ("/external-apps/heavy-block-lifting/__wb_bootstrap", "Heavy Block Lifting Simulation"),
     ("/api/reports/generate", "Analysis Report Generator"),
 )
 
@@ -100,6 +103,8 @@ def _row_to_dict(row: models.AppSetting) -> dict:
         "description": row.description,
         "tags": row.tags if isinstance(row.tags, list) else None,
         "contributor": row.contributor,
+        "external_host": row.external_host,
+        "external_port": row.external_port,
         "updated_by": row.updated_by,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -129,6 +134,45 @@ def load_settings(db: Session, *, use_cache: bool = True) -> dict[str, dict]:
         _cache = settings
         _cache_expires_at = time.monotonic() + _CACHE_TTL_SECONDS
     return settings
+
+
+# 외부 앱 접속 주소 — IPv4 또는 호스트 이름만(스킴·경로·포트 없이).
+_EXTERNAL_HOST_RE = re.compile(
+    r"^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
+)
+
+
+def is_valid_external_host(host: str) -> bool:
+    return bool(_EXTERNAL_HOST_RE.fullmatch(host or ""))
+
+
+def is_valid_external_port(port) -> bool:
+    return isinstance(port, int) and not isinstance(port, bool) and 1 <= port <= 65535
+
+
+def effective_external_endpoint(default_upstream: str, setting: dict | None) -> tuple[str, int]:
+    """코드 기본 upstream 위에 관리자 IP·Port 오버라이드를 덮어 (host, port) 를 돌려준다.
+
+    잘못된 값이 DB 에 들어 있어도(직접 수정 등) 그 항목만 기본값으로 되돌린다.
+    """
+    parsed = urlparse(default_upstream)
+    host = parsed.hostname or ""
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if setting:
+        override_host = (setting.get("external_host") or "").strip()
+        if override_host and is_valid_external_host(override_host):
+            host = override_host
+        override_port = setting.get("external_port")
+        if is_valid_external_port(override_port):
+            port = override_port
+    return host, port
+
+
+def effective_external_upstream(default_upstream: str, setting: dict | None) -> str:
+    scheme = urlparse(default_upstream).scheme or "http"
+    host, port = effective_external_endpoint(default_upstream, setting)
+    return f"{scheme}://{host}:{port}/"
 
 
 def resolve_app_key(path: str) -> str | None:

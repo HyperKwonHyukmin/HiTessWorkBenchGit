@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html import escape as html_escape
 import json
+import logging
 import re
 import time
 from typing import Callable
@@ -17,6 +18,7 @@ from starlette.responses import JSONResponse, RedirectResponse, Response, Stream
 
 from app import database, models
 from app.dependencies import require_auth
+from app.services import app_settings as app_settings_service
 from app.services.external_app_access import (
     GRANT_TTL_SECONDS,
     SESSION_TTL_SECONDS,
@@ -24,12 +26,15 @@ from app.services.external_app_access import (
 )
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/external-apps", tags=["external-apps"])
 
 BLOCK_WELD_UPSTREAM = "http://10.14.42.145:31880/"
 BLOCK_WELD_PROXY_PATH = "/external-apps/block-weld"
 INDEPENDENT_TANK_UPSTREAM = "http://10.14.42.145:31870/"
 INDEPENDENT_TANK_PROXY_PATH = "/external-apps/independent-tank"
+HEAVY_BLOCK_LIFTING_UPSTREAM = "http://10.14.42.145:31860/"
+HEAVY_BLOCK_LIFTING_PROXY_PATH = "/external-apps/heavy-block-lifting"
 
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -48,6 +53,7 @@ _EMPLOYEE_PATH_RE = re.compile(r"^A\d{6}$", re.IGNORECASE)
 
 _block_weld_client: httpx.AsyncClient | None = None
 _independent_tank_client: httpx.AsyncClient | None = None
+_heavy_block_lifting_client: httpx.AsyncClient | None = None
 
 
 def get_block_weld_client() -> httpx.AsyncClient:
@@ -86,10 +92,31 @@ async def close_independent_tank_client() -> None:
     _independent_tank_client = None
 
 
+def get_heavy_block_lifting_client() -> httpx.AsyncClient:
+    global _heavy_block_lifting_client
+    if _heavy_block_lifting_client is None or _heavy_block_lifting_client.is_closed:
+        _heavy_block_lifting_client = httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=httpx.Timeout(30.0, connect=5.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        )
+    return _heavy_block_lifting_client
+
+
+async def close_heavy_block_lifting_client() -> None:
+    global _heavy_block_lifting_client
+    if _heavy_block_lifting_client is not None and not _heavy_block_lifting_client.is_closed:
+        await _heavy_block_lifting_client.aclose()
+    _heavy_block_lifting_client = None
+
+
 @dataclass(frozen=True)
 class ExternalAppProxy:
     key: str
     display_name: str
+    # App Settings 의 app_key(= ANALYSIS_DATA title). 관리자가 IP·Port 를 바꾸는 단위.
+    app_key: str
+    # 코드 기본 upstream. 실제 요청은 _effective_config() 가 오버라이드를 덮어 쓴다.
     upstream: str
     proxy_path: str
     cookie_name: str
@@ -99,6 +126,7 @@ class ExternalAppProxy:
 BLOCK_WELD = ExternalAppProxy(
     key="block-weld",
     display_name="Block Weld",
+    app_key="Block Weld Assessment",
     upstream=BLOCK_WELD_UPSTREAM,
     proxy_path=BLOCK_WELD_PROXY_PATH,
     cookie_name="wb_ext_block_weld",
@@ -107,14 +135,56 @@ BLOCK_WELD = ExternalAppProxy(
 INDEPENDENT_TANK = ExternalAppProxy(
     key="independent-tank",
     display_name="Independent Tank",
+    app_key="Independent Tank Assessment",
     upstream=INDEPENDENT_TANK_UPSTREAM,
     proxy_path=INDEPENDENT_TANK_PROXY_PATH,
     cookie_name="wb_ext_independent_tank",
     get_client=get_independent_tank_client,
 )
-_GATEWAY_COOKIE_NAMES = frozenset(
-    {BLOCK_WELD.cookie_name, INDEPENDENT_TANK.cookie_name}
+HEAVY_BLOCK_LIFTING = ExternalAppProxy(
+    key="heavy-block-lifting",
+    display_name="Heavy Block Lifting",
+    app_key="Heavy Block Lifting Simulation",
+    upstream=HEAVY_BLOCK_LIFTING_UPSTREAM,
+    proxy_path=HEAVY_BLOCK_LIFTING_PROXY_PATH,
+    cookie_name="wb_ext_heavy_block_lifting",
+    get_client=get_heavy_block_lifting_client,
 )
+_GATEWAY_COOKIE_NAMES = frozenset(
+    {
+        BLOCK_WELD.cookie_name,
+        INDEPENDENT_TANK.cookie_name,
+        HEAVY_BLOCK_LIFTING.cookie_name,
+    }
+)
+
+
+def external_app_configs() -> tuple[ExternalAppProxy, ...]:
+    """등록된 외부 앱 전체(App Settings 의 IP·Port 편집 대상)."""
+    return (BLOCK_WELD, INDEPENDENT_TANK, HEAVY_BLOCK_LIFTING)
+
+
+def _load_app_setting(app_key: str) -> dict | None:
+    db = database.SessionLocal()
+    try:
+        return app_settings_service.load_settings(db).get(app_key)
+    finally:
+        db.close()
+
+
+async def _effective_config(config: ExternalAppProxy) -> ExternalAppProxy:
+    """App Settings 에서 바꾼 IP·Port 를 반영한 설정. 조회 실패 시 코드 기본값."""
+    try:
+        setting = await run_in_threadpool(_load_app_setting, config.app_key)
+    except Exception:  # DB 장애로 외부 앱 전체가 막히지 않게 기본 주소로 계속한다.
+        logger.warning("외부 앱 주소 설정 조회 실패 — 기본 주소 사용: %s", config.key, exc_info=True)
+        return config
+    upstream = app_settings_service.effective_external_upstream(config.upstream, setting)
+    if upstream == config.upstream:
+        return config
+    return replace(config, upstream=upstream)
+
+
 _COOKIE_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 
 
@@ -542,6 +612,7 @@ def _exchange_bootstrap(request: Request, config: ExternalAppProxy, grant_token:
 async def _proxy_request(request: Request, config: ExternalAppProxy, path: str = ""):
     employee_id = await _require_browser_session(request, config)
     _assert_path_employee(path, employee_id)
+    config = await _effective_config(config)
     target_url = _build_target_url(config, path, request)
     proxy_origin = str(request.base_url).rstrip("/")
     proxy_base = f"{proxy_origin}{config.proxy_path}"
@@ -608,6 +679,7 @@ async def _proxy_request(request: Request, config: ExternalAppProxy, path: str =
 
 
 async def _proxy_health(config: ExternalAppProxy):
+    config = await _effective_config(config)
     target_url = config.upstream
     client = config.get_client()
     try:
@@ -633,6 +705,10 @@ async def _proxy_block_weld(request: Request, path: str = ""):
 
 async def _proxy_independent_tank(request: Request, path: str = ""):
     return await _proxy_request(request, INDEPENDENT_TANK, path)
+
+
+async def _proxy_heavy_block_lifting(request: Request, path: str = ""):
+    return await _proxy_request(request, HEAVY_BLOCK_LIFTING, path)
 
 
 @router.post("/block-weld/__wb_bootstrap")
@@ -701,3 +777,37 @@ async def proxy_independent_tank_root(request: Request):
 )
 async def proxy_independent_tank_path(request: Request, path: str):
     return await _proxy_independent_tank(request, path)
+
+
+@router.post("/heavy-block-lifting/__wb_bootstrap")
+async def issue_heavy_block_lifting_bootstrap(
+    payload: BootstrapRequest,
+    employee_id: str = Depends(require_auth),
+):
+    return _issue_bootstrap(HEAVY_BLOCK_LIFTING, employee_id, payload)
+
+
+@router.get("/heavy-block-lifting/__wb_bootstrap")
+async def exchange_heavy_block_lifting_bootstrap(request: Request, grant: str):
+    return _exchange_bootstrap(request, HEAVY_BLOCK_LIFTING, grant)
+
+
+@router.get("/heavy-block-lifting/__wb_proxy_health")
+async def proxy_heavy_block_lifting_health(_employee_id: str = Depends(require_auth)):
+    return await _proxy_health(HEAVY_BLOCK_LIFTING)
+
+
+@router.api_route(
+    "/heavy-block-lifting",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
+async def proxy_heavy_block_lifting_root(request: Request):
+    return await _proxy_heavy_block_lifting(request)
+
+
+@router.api_route(
+    "/heavy-block-lifting/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
+async def proxy_heavy_block_lifting_path(request: Request, path: str):
+    return await _proxy_heavy_block_lifting(request, path)

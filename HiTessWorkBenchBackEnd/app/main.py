@@ -139,6 +139,7 @@ def build_lifespan(
             finally:
                 try:
                     await external_apps.close_independent_tank_client()
+                    await external_apps.close_heavy_block_lifting_client()
                 finally:
                     if cleanup_started:
                         if not shutdown_cleanup_scheduler():

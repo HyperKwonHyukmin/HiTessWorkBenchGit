@@ -222,6 +222,9 @@ class AppSetting(Base):
   description = Column(String(1000), nullable=True)
   tags = Column(JSON, nullable=True)
   contributor = Column(String(100), nullable=True)
+  # 외부 앱(백엔드 프록시로 여는 타 개발자 웹앱)의 접속 주소. NULL = 코드 기본값.
+  external_host = Column(String(253), nullable=True)
+  external_port = Column(Integer, nullable=True)
   updated_by = Column(String(50), nullable=True)
   updated_at = Column(
       DateTime(timezone=True),

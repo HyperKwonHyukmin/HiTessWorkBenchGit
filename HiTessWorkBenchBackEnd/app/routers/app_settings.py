@@ -20,6 +20,7 @@ from .. import database, models, schemas
 from ..dependencies import require_admin, require_auth
 from ..services import app_settings as app_settings_service
 from ..services.activity_service import log_activity
+from .external_apps import external_app_configs
 
 router = APIRouter(tags=["app-settings"])
 
@@ -30,6 +31,14 @@ MAX_TAG_LEN = 30
 
 def _serialize(row: models.AppSetting) -> schemas.AppSettingResponse:
     return schemas.AppSettingResponse.model_validate(row)
+
+
+def _serialize_admin(row: models.AppSetting) -> schemas.AppSettingAdminResponse:
+    return schemas.AppSettingAdminResponse.model_validate(row)
+
+
+def _external_app_keys() -> set[str]:
+    return {config.app_key for config in external_app_configs()}
 
 
 @router.get("/api/app-settings", response_model=list[schemas.AppSettingResponse])
@@ -46,18 +55,48 @@ def list_effective_app_settings(
     return [_serialize(row) for row in rows]
 
 
-@router.get("/api/admin/app-settings", response_model=list[schemas.AppSettingResponse])
+@router.get("/api/admin/app-settings", response_model=list[schemas.AppSettingAdminResponse])
 def list_app_settings_admin(
     db: Session = Depends(database.get_db),
     _admin: str = Depends(require_admin),
 ):
-    """관리 화면용 — 현재는 사용자용과 같은 내용이지만 권한 경계를 분리해 둔다."""
+    """관리 화면용 — 외부 앱 접속 주소 오버라이드까지 포함한다."""
     rows = (
         db.query(models.AppSetting)
         .order_by(models.AppSetting.app_key.asc())
         .all()
     )
-    return [_serialize(row) for row in rows]
+    return [_serialize_admin(row) for row in rows]
+
+
+@router.get(
+    "/api/admin/app-settings/external-apps",
+    response_model=list[schemas.ExternalAppEndpointResponse],
+)
+def list_external_app_endpoints(
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
+):
+    """외부 앱별 접속 주소 — 코드 기본값과 App Settings 오버라이드가 적용된 실제 값."""
+    settings = app_settings_service.load_settings(db, use_cache=False)
+    result = []
+    for config in external_app_configs():
+        default_host, default_port = app_settings_service.effective_external_endpoint(
+            config.upstream, None
+        )
+        host, port = app_settings_service.effective_external_endpoint(
+            config.upstream, settings.get(config.app_key)
+        )
+        result.append(schemas.ExternalAppEndpointResponse(
+            app_key=config.app_key,
+            proxy_path=config.proxy_path,
+            default_host=default_host,
+            default_port=default_port,
+            host=host,
+            port=port,
+            overridden=(host, port) != (default_host, default_port),
+        ))
+    return result
 
 
 def _normalize_app_key(app_key: str) -> str:
@@ -90,7 +129,7 @@ def _clean_tags(value):
     return tags[:MAX_TAGS] or None
 
 
-def _validated_updates(payload: schemas.AppSettingUpdate) -> dict:
+def _validated_updates(payload: schemas.AppSettingUpdate, app_key: str) -> dict:
     """요청에 담긴 필드만 골라 정규화한다(명시적 null = 오버라이드 해제).
 
     ⚠ DB 세션을 건드리기 **전에** 호출해야 한다. 검증 실패 시 예외를 던지므로,
@@ -130,12 +169,34 @@ def _validated_updates(payload: schemas.AppSettingUpdate) -> dict:
     if "tags" in sent:
         updates["tags"] = _clean_tags(sent["tags"])
 
+    if "external_host" in sent or "external_port" in sent:
+        if app_key not in _external_app_keys():
+            raise HTTPException(
+                status_code=422,
+                detail="접속 주소(IP·Port)는 외부 접속 App에만 설정할 수 있습니다.",
+            )
+
+    if "external_host" in sent:
+        host = _clean_optional_text(sent["external_host"], max_len=253)
+        if host is not None and not app_settings_service.is_valid_external_host(host):
+            raise HTTPException(
+                status_code=422,
+                detail="IP 형식이 올바르지 않습니다. 예) 10.14.42.145 (http://·포트·경로 없이)",
+            )
+        updates["external_host"] = host
+
+    if "external_port" in sent:
+        port = sent["external_port"]
+        if port is not None and not app_settings_service.is_valid_external_port(port):
+            raise HTTPException(status_code=422, detail="Port는 1~65535 사이의 숫자여야 합니다.")
+        updates["external_port"] = port
+
     return updates
 
 
 @router.put(
     "/api/admin/app-settings/{app_key:path}",
-    response_model=schemas.AppSettingResponse,
+    response_model=schemas.AppSettingAdminResponse,
 )
 def upsert_app_setting(
     app_key: str,
@@ -152,7 +213,7 @@ def upsert_app_setting(
     """
     key = _normalize_app_key(app_key)
     # 세션을 건드리기 전에 검증을 끝낸다.
-    updates = _validated_updates(payload)
+    updates = _validated_updates(payload, key)
 
     row = (
         db.query(models.AppSetting)
@@ -181,11 +242,13 @@ def upsert_app_setting(
             "app_key": key,
             "dev_status": row.dev_status,
             "maintenance": bool(row.maintenance),
+            "external_host": row.external_host,
+            "external_port": row.external_port,
         },
         status="success",
         ip_address=request.client.host if request.client else None,
     )
-    return _serialize(row)
+    return _serialize_admin(row)
 
 
 @router.delete("/api/admin/app-settings/{app_key:path}")

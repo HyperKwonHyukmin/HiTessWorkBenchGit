@@ -157,6 +157,28 @@ class AppSettingUpdate(BaseModel):
     description: Optional[str] = None
     tags: Optional[list[str]] = None
     contributor: Optional[str] = None
+    # 외부 앱 전용. 외부 앱이 아닌 App 에 보내면 422.
+    external_host: Optional[str] = None
+    external_port: Optional[int] = None
+
+
+class AppSettingAdminResponse(AppSettingResponse):
+    """관리 화면용 — 외부 앱 접속 주소 오버라이드까지 담는다(일반 사용자 응답엔 없음)."""
+
+    external_host: Optional[str] = None
+    external_port: Optional[int] = None
+
+
+class ExternalAppEndpointResponse(BaseModel):
+    """외부 앱 하나의 접속 주소 — 코드 기본값과 실제 적용 값."""
+
+    app_key: str
+    proxy_path: str
+    default_host: str
+    default_port: int
+    host: str
+    port: int
+    overridden: bool
 
 
 class UserGuideCreate(BaseModel):
