@@ -8,9 +8,10 @@ import {
   Users, Search, Shield, ShieldOff, Trash2, RefreshCw, Clock, Activity,
   UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
   Download, BarChart3, ChevronRight, Code2, ArrowUpDown, Radio, MapPin, Globe, Timer,
-  LogOut, Layers, MessageCircle, ChevronDown, UserX, FileDown, ArrowUp, ArrowDown
+  LogOut, Layers, MessageCircle, ChevronDown, UserX, FileDown, ArrowUp, ArrowDown,
+  Mail, Loader2
 } from 'lucide-react';
-import { getUsers, updateUser, deleteUser } from '../../api/admin';
+import { getUsers, updateUser, deleteUser, syncUserEmail } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
 import { getOnlineUsers, forceLogoutUser } from '../../api/presence';
 import { getEmployeeId } from '../../utils/auth';
@@ -193,6 +194,7 @@ export default function UserManagement() {
   const [selectedUserIds, setSelectedUserIds] = useState(new Set());       // 메인 테이블 일괄 선택
   const [confirmDeactivateTarget, setConfirmDeactivateTarget] = useState(null); // 단건 비활성화 확인
   const [bulkAction, setBulkAction] = useState(null); // { type: 'deactivate'|'delete', ids: [] } — 일괄 확인
+  const [syncingEmailIds, setSyncingEmailIds] = useState(new Set()); // PLM 메일 갱신 진행 중인 사용자 id 집합
   const myEmployeeId = (getEmployeeId() || '').toUpperCase();
 
   // 사이드바 뱃지/로그인 토스트가 참조하는 대기자 수를 갱신하도록 App 에 신호.
@@ -329,6 +331,29 @@ export default function UserManagement() {
       notifyPendingChanged();
     } catch (error) {
       showToast('승인 처리에 실패했습니다.', 'error');
+    }
+  };
+
+  // 사내 PLM(HIPLM.VT_PLM_USER) 조회로 메일 주소를 갱신한다. 응답 { email, changed }·
+  // 404(PLM 에 사번 없음)·503(PLM 미설정) 세 가지만 분기. 변경이 없으면 토스트만 띄우고 상태는 그대로.
+  const handleSyncEmail = async (user) => {
+    if (!user || syncingEmailIds.has(user.id)) return;
+    setSyncingEmailIds(prev => { const next = new Set(prev); next.add(user.id); return next; });
+    try {
+      const res = await syncUserEmail(user.id);
+      const email = res?.data?.email || null;
+      const changed = Boolean(res?.data?.changed);
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, email } : u));
+      const name = user.name || user.employee_id;
+      if (changed) showToast(`${name} 메일을 ${email} 로 갱신했습니다.`, 'success');
+      else showToast(`${name} 메일은 이미 최신입니다.`, 'info');
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 404) showToast('PLM 에 해당 사번의 메일 주소가 없습니다.', 'warning');
+      else if (status === 503) showToast('PLM 조회가 비활성 상태입니다. 서버 .env 의 PLM_ORACLE_* 설정을 확인하세요.', 'warning');
+      else showToast('메일 갱신에 실패했습니다.', 'error');
+    } finally {
+      setSyncingEmailIds(prev => { const next = new Set(prev); next.delete(user.id); return next; });
     }
   };
 
@@ -1237,10 +1262,18 @@ export default function UserManagement() {
                     </button>
                   </td>
 
-                  {/* 소속 & 직급 */}
+                  {/* 소속 & 직급 & 메일 — PLM 에서 백필한 메일 주소를 세 번째 줄에 함께 표시 */}
                   <td className="py-3 px-6">
                     <p className="text-sm font-bold text-slate-700">{user.department || '-'}</p>
                     <p className="text-xs text-slate-500">{user.company || '-'} / {user.position || '-'}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+                      <Mail size={11} className="text-slate-400"/>
+                      {user.email ? (
+                        <span className="font-mono" title={user.email}>{user.email}</span>
+                      ) : (
+                        <span className="text-slate-400 italic">메일 없음</span>
+                      )}
+                    </p>
                   </td>
 
                   {/* 활동성: 로그인 막대 + 해석 수 + 마지막 로그인 */}
@@ -1333,6 +1366,16 @@ export default function UserManagement() {
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => openActivityModal(user)} className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400" title="활동 로그">
                         <ClipboardList size={18}/>
+                      </button>
+                      <button
+                        onClick={() => handleSyncEmail(user)}
+                        disabled={syncingEmailIds.has(user.id)}
+                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50 disabled:cursor-wait"
+                        title="PLM 에서 메일 갱신"
+                      >
+                        {syncingEmailIds.has(user.id)
+                          ? <Loader2 size={18} className="animate-spin"/>
+                          : <Mail size={18}/>}
                       </button>
                       <button onClick={() => openEditModal(user)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" title="정보 수정">
                         <Edit2 size={18}/>

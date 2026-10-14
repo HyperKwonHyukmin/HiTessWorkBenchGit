@@ -16,6 +16,11 @@ export const updateUser = (userId, data) =>
 export const deleteUser = (userId) =>
   axios.delete(`${API_BASE_URL}/api/users/${userId}`, { headers: getAuthHeaders() });
 
+/** 사내 PLM(HIPLM.VT_PLM_USER)에서 사번으로 메일 주소를 조회해 갱신한다.
+ *  성공 응답: { email, changed }. PLM 미설정이면 503, PLM 에 사번이 없으면 404. */
+export const syncUserEmail = (userId) =>
+  axios.post(`${API_BASE_URL}/api/users/${userId}/sync-email`, {}, { headers: getAuthHeaders() });
+
 // ==================== System ====================
 
 /** 시스템 상태 조회 (CPU, 메모리, DB) */
