@@ -58,6 +58,41 @@ def is_configured() -> bool:
     return _plm_settings() is not None
 
 
+# thick mode 초기화 상태. 프로세스당 1회만 호출 가능하므로 플래그로 보호한다.
+# 운영 서버의 Oracle 이 10G password verifier(0x939) 를 쓰면 thin mode 는 DPY-3015 로
+# 인증을 못 하기 때문에 Oracle Client(OCI) 를 로드하는 thick mode 로 전환해야 한다.
+# .env 에 PLM_ORACLE_LIB_DIR 가 있으면 thick, 없으면 thin(기본).
+_thick_initialized = False
+
+
+def _ensure_thick_mode() -> bool:
+    """PLM_ORACLE_LIB_DIR 가 설정돼 있으면 OCI 를 로드해 thick mode 로 전환한다.
+
+    반환값은 참고용(True=이번/이전 호출로 thick 활성, False=thin 유지 또는 실패).
+    실패해도 예외는 던지지 않고 로그만 남긴다 — 어떤 상황에서도 가입/로그인을 가로채지 않는다.
+    """
+    global _thick_initialized
+    if _thick_initialized:
+        return False  # 이미 1회 시도했음. 재시도하지 않는다(oracledb 가 중복 호출을 거부).
+    lib_dir = (os.getenv("PLM_ORACLE_LIB_DIR") or "").strip()
+    if not lib_dir:
+        _thick_initialized = True  # thin 유지. 다음 호출에선 다시 안 들어온다.
+        return False
+    try:
+        import oracledb  # type: ignore[import-not-found]
+        oracledb.init_oracle_client(lib_dir=lib_dir)
+        _thick_initialized = True
+        logger.info("PLM thick mode 활성화 (lib_dir=%s)", lib_dir)
+        return True
+    except Exception as exc:
+        _thick_initialized = True  # 실패도 1회로 끝내 로그 소음 방지
+        logger.warning(
+            "PLM thick mode 초기화 실패 (lib_dir=%s): %s — thin mode 로 폴백합니다",
+            lib_dir, exc,
+        )
+        return False
+
+
 def _default_fetcher(employee_id: str) -> Optional[str]:
     """운영용 fetcher — python-oracledb thin mode 로 1건만 조회한다.
 
@@ -78,6 +113,9 @@ def _default_fetcher(employee_id: str) -> Optional[str]:
             "requirements.txt 반영 후 pip install 필요"
         )
         return None
+
+    # thick mode 가 필요한 환경이면 1회 로드. 설정이 없으면 조용히 thin 유지.
+    _ensure_thick_mode()
 
     connection = None
     try:
