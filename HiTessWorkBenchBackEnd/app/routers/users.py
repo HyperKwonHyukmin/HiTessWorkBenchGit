@@ -1,11 +1,12 @@
 """사용자 관리 API 라우터."""
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from .. import models, database
 from ..dependencies import require_admin
 from ..services.activity_service import log_activity
 from ..services.external_app_access import external_app_access_store
+from ..services.plm_user_directory import fetch_plm_email, is_configured as plm_is_configured
 from ._crud_helpers import get_or_404
 
 router = APIRouter(prefix="/api", tags=["users"])
@@ -59,6 +60,7 @@ def get_users(
             "company": u.company,
             "department": u.department,
             "position": u.position,
+            "email": getattr(u, "email", None),
             "is_active": u.is_active,
             "is_admin": u.is_admin,
             "is_developer": bool(getattr(u, "is_developer", False)),
@@ -69,6 +71,46 @@ def get_users(
             "last_analysis_at": _iso(s["last_at"]) if s else None,
         })
     return result
+
+
+@router.post("/users/{user_id}/sync-email")
+def sync_user_email(
+    user_id: int,
+    req: Request,
+    db: Session = Depends(database.get_db),
+    current_admin: str = Depends(require_admin),
+):
+    """사내 PLM(HIPLM.VT_PLM_USER)에서 사번으로 메일 주소를 조회해 갱신한다.
+
+    PLM 접속이 비활성이면 503, 사번이 PLM 에 없으면 404 를 돌려준다. 성공 시
+    갱신된 메일 주소를 함께 돌려준다(변경 없음도 성공).
+    """
+    user = get_or_404(db, models.User, user_id, _USER_NOT_FOUND)
+    if not plm_is_configured():
+        raise HTTPException(status_code=503, detail="plm_not_configured")
+
+    email = fetch_plm_email(user.employee_id)
+    if not email:
+        raise HTTPException(status_code=404, detail="plm_email_not_found")
+
+    before = getattr(user, "email", None)
+    user.email = email
+    db.commit()
+    db.refresh(user)
+
+    log_activity(
+        db,
+        "USER_EMAIL_SYNC",
+        employee_id=current_admin,
+        action_detail={
+            "target_employee_id": user.employee_id,
+            "target_user_id": user.id,
+            "changed": (before or None) != email,
+        },
+        status="success",
+        ip_address=req.client.host if req.client else None,
+    )
+    return {"email": email, "changed": (before or None) != email}
 
 
 # is_admin / is_developer 는 관리자만 변경 가능 (PUT 시 화이트리스트 분리)

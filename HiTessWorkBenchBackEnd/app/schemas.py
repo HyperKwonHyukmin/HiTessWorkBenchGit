@@ -25,6 +25,7 @@ class UserResponse(BaseModel):
     company: str
     department: Optional[str] = None
     position: str
+    email: Optional[str] = None
     is_active: bool = False
     is_admin: bool = False
     login_count: int

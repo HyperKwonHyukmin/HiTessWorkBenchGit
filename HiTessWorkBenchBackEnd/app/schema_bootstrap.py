@@ -65,6 +65,9 @@ def ensure_notice_columns(*, engine=None) -> None:
 def ensure_user_columns(*, engine=None) -> None:
     _add_missing_columns("users", {
         "is_developer": "ALTER TABLE users ADD COLUMN is_developer BOOL DEFAULT FALSE",
+        # 사내 PLM(HIPLM.VT_PLM_USER)에서 사번으로 백필하는 메일 주소. 기존 운영 DB 에는
+        # 없어서 조회·직렬화 단계에서 500 이 나지 않도록 서버 기동 시 보강한다.
+        "email": "ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL",
     }, engine=engine)
 
 

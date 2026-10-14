@@ -30,3 +30,7 @@ httpx==0.28.1
 
 # Carling Free 리포트 생성용 Excel COM 자동화 (Windows 전용)
 pywin32==312
+
+# 사내 PLM(HIPLM.VT_PLM_USER) 메일 주소 조회 — thin mode 라 Oracle Instant Client 불필요.
+# .env 에 PLM_ORACLE_DSN/USER/PASSWORD 가 비어 있으면 조용히 비활성 상태로 돈다.
+oracledb==2.5.1

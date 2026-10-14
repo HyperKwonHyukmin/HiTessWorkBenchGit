@@ -13,6 +13,7 @@ from ..dependencies import require_auth
 from ..services.activity_service import log_activity
 from ..services.external_app_access import external_app_access_store
 from ..services.logbook_integration import notify_logbook_logout
+from ..services.plm_user_directory import fetch_plm_email
 
 router = APIRouter(prefix="/api", tags=["auth"])
 member_router = APIRouter(prefix="/member", tags=["member"])
@@ -70,6 +71,13 @@ def login(request: schemas.LoginRequest, req: Request, db: Session = Depends(dat
   if user.employee_id != employee_id:
     user.employee_id = employee_id
 
+  # PLM 메일 주소 백필(best-effort) — 가입 시점 PLM 접속이 실패했거나 그때는 미등록
+  # 사번이었던 사용자도 다음 로그인 때 다시 시도한다. 실패해도 로그인은 통과.
+  if not getattr(user, "email", None):
+    plm_email = fetch_plm_email(employee_id)
+    if plm_email:
+      user.email = plm_email
+
   user.login_count += 1
   user.last_login = datetime.now()
   try:
@@ -101,6 +109,7 @@ def login(request: schemas.LoginRequest, req: Request, db: Session = Depends(dat
       company=user.company,
       department=user.department,
       position=user.position,
+      email=user.email,
       is_active=user.is_active,
       is_admin=user.is_admin,
       login_count=user.login_count,
@@ -148,12 +157,17 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(database.get_d
     raise HTTPException(status_code=400, detail="Employee ID already registered")
 
   current_time = datetime.now()
+  # 가입 시점에 PLM 메일 주소를 best-effort 로 조회해 함께 저장한다.
+  # 접속 실패/미등록 사번은 None 을 돌려주므로 가입 자체는 막히지 않는다 — 이후
+  # 로그인 때 다시 시도된다(login 쪽 best-effort 백필 참조).
+  plm_email = fetch_plm_email(employee_id)
   new_user = models.User(
     employee_id=employee_id,
     name=user.name,
     company=user.company,
     department=user.department,
     position=user.position,
+    email=plm_email,
     is_active=False,
     is_admin=False,
     login_count=0,
