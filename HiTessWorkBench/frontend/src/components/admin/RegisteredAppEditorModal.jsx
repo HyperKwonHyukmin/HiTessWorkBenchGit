@@ -6,7 +6,7 @@
 /// 서비스 상태·점검 안내는 다른 App 처럼 [설정] 창에서 바꾼다.
 /// </summary>
 import React, { useEffect, useMemo, useState } from 'react';
-import { BookOpen, CheckCircle2, ChevronDown, Copy, Loader2, PlugZap, Save, Trash2, XCircle } from 'lucide-react';
+import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, Copy, Loader2, PlugZap, Save, Trash2, XCircle } from 'lucide-react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import { ART_LABELS, CardArtPicker, CategorySelect } from './CardMetaFields';
@@ -84,6 +84,8 @@ export default function RegisteredAppEditorModal({
   const [form, setForm] = useState(() => buildForm(registration));
   const [slugTouched, setSlugTouched] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // 서버가 등록을 거절한 사유(예: 다른 관리자가 같은 이름을 먼저 등록) — 창 안에 남겨 보여 준다.
+  const [serverError, setServerError] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [probe, setProbe] = useState(null); // { state: 'checking'|'ok'|'fail', message }
@@ -98,14 +100,19 @@ export default function RegisteredAppEditorModal({
     setFormVersion(v => v + 1);
     setSlugTouched(Boolean(registration));
     setSubmitted(false);
+    setServerError('');
     setProbe(null);
     // categories 는 목록이 바뀔 때마다 새 배열이라 의존성에서 뺀다(열 때 한 번만 맞춘다).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, registration]);
 
-  const patch = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+  const patch = (key, value) => {
+    setForm(prev => ({ ...prev, [key]: value }));
+    if (key === 'title' || key === 'slug') setServerError('');
+  };
 
   const onTitleChange = (value) => {
+    setServerError('');
     setForm(prev => ({
       ...prev,
       title: value,
@@ -119,7 +126,9 @@ export default function RegisteredAppEditorModal({
     [form, isCreate, existingTitles, usedSlugSet],
   );
   const hasErrors = Object.keys(errors).length > 0;
-  const shown = (key) => (submitted || key === 'endpoint' ? errors[key] : null);
+  // 이름 중복·예약 이름은 입력하는 즉시 보여 준다(등록을 눌러야 알게 하지 않는다). 나머지는 [등록] 후.
+  const isNameConflict = (key) => (key === 'title' || key === 'slug') && /이미|예약/.test(errors[key] || '');
+  const shown = (key) => (submitted || key === 'endpoint' || isNameConflict(key) ? errors[key] : null);
 
   const parsedTags = form.tags.split(',').map(t => t.trim()).filter(Boolean).slice(0, MAX_TAGS);
   const categoryArt = CATEGORY_ART[form.category.trim()] || null;
@@ -185,7 +194,10 @@ export default function RegisteredAppEditorModal({
       await onSaved?.();
       onClose?.();
     } catch (err) {
-      showToast(err?.response?.data?.detail || '저장에 실패했습니다.', 'error');
+      const detail = err?.response?.data?.detail;
+      const message = typeof detail === 'string' && detail ? detail : '저장에 실패했습니다.';
+      if (err?.response?.status === 409) setServerError(message);
+      showToast(message, 'error');
     } finally {
       setSaving(false);
     }
@@ -249,6 +261,12 @@ export default function RegisteredAppEditorModal({
       )}
     >
       <div className="space-y-6 p-6">
+        {serverError && (
+          <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-600" />
+            <p className="text-sm font-bold text-red-800">{serverError}</p>
+          </div>
+        )}
         {/* 외부 개발자 안내 — 실측으로 확인한 연결 조건. 입력한 IP·Port·주소 이름이 들어간다. */}
         <section className="rounded-xl border border-indigo-200 bg-indigo-50/60">
           <div className="flex items-center gap-2 px-4 py-2.5">

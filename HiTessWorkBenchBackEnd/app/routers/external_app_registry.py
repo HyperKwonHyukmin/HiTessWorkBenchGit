@@ -148,14 +148,14 @@ def create_registered_app(
             detail="주소 이름은 영문 소문자·숫자·하이픈 2~40자여야 합니다(하이픈으로 시작·끝 불가).",
         )
     if slug in registry.RESERVED_SLUGS:
-        raise HTTPException(status_code=409, detail=f"'{slug}' 는 예약된 주소 이름입니다.")
+        raise HTTPException(status_code=409, detail=f"주소 이름 '{slug}' 는 WorkBench 기본 앱이 쓰는 예약된 이름입니다. 다른 주소 이름을 입력하세요.")
 
     title = _clean_text(payload.title, max_len=200)
     if not title:
         raise HTTPException(status_code=422, detail="App 이름을 입력하세요.")
     # 코드 앱(해석 앱·코드 외부 앱)과 이름이 겹치면 설정·즐겨찾기·통계가 섞인다.
     if resolve_program(title) is not None or title in {c.app_key for c in external_app_configs()}:
-        raise HTTPException(status_code=409, detail=f"'{title}' 는 이미 있는 App 이름입니다.")
+        raise HTTPException(status_code=409, detail=f"App 이름 '{title}' 는 WorkBench 에 이미 있는 App 이름입니다. 다른 이름을 입력하세요.")
 
     fields = _validate_common(payload.model_dump())
     host, port = _validate_host_port(payload.host, payload.port)
@@ -169,7 +169,15 @@ def create_registered_app(
         .first()
     )
     if duplicate is not None:
-        raise HTTPException(status_code=409, detail="같은 주소 이름이나 App 이름이 이미 등록되어 있습니다.")
+        # 어느 이름이 겹쳤는지·누가 쓰는지 알려 줘야 등록하는 사람이 바로 고칠 수 있다.
+        if duplicate.slug == slug:
+            detail = (
+                f"주소 이름 '{slug}' 는 이미 등록된 App '{duplicate.title}' 가 쓰고 있습니다. "
+                "다른 주소 이름을 입력하세요."
+            )
+        else:
+            detail = f"App 이름 '{title}' 는 이미 등록되어 있습니다. 다른 이름을 입력하세요."
+        raise HTTPException(status_code=409, detail=detail)
 
     row = models.ExternalAppRegistration(
         slug=slug,

@@ -84,8 +84,15 @@ def test_create_rejects_invalid_values(admin_client, overrides, status):
 
 def test_duplicate_slug_or_title_is_rejected(admin_client):
     assert _create(admin_client).status_code == 201
-    assert _create(admin_client, title="Other Name").status_code == 409
-    assert _create(admin_client, slug="other-slug").status_code == 409
+    same_slug = _create(admin_client, title="Other Name")
+    assert same_slug.status_code == 409
+    # 어느 이름이 겹쳤는지·누가 쓰는지 알려 준다(등록하는 사람이 바로 고칠 수 있게)
+    assert "주소 이름 'block-lug'" in same_slug.json()["detail"]
+    assert "Block Lug" in same_slug.json()["detail"]
+    same_title = _create(admin_client, slug="other-slug")
+    assert same_title.status_code == 409
+    assert "App 이름" in same_title.json()["detail"]
+    assert "다른 이름" in same_title.json()["detail"]
 
 
 def test_update_changes_address_and_meta_but_not_identity(admin_client):
