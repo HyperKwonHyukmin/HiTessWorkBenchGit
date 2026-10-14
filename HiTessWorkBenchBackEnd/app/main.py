@@ -57,6 +57,10 @@ from .services.cleanup_service import (
 )
 from .services.app_settings_gate import install_app_availability_guard
 from .services.job_manager import shutdown_job_manager, start_job_manager
+from .services.user_directory_sync import (
+    shutdown_user_directory_sync_scheduler,
+    start_user_directory_sync_scheduler,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +104,7 @@ def build_lifespan(
         )
         job_manager_started = False
         cleanup_started = False
+        plm_sync_started = False
         app.state.startup_complete = False
         app.state.schema_ready = False
         app.state.session_factory = target_session_factory
@@ -132,6 +137,8 @@ def build_lifespan(
                 job_manager_started = True
                 # userConnection/ 30일 초과 폴더 자동 정리
                 cleanup_started = start_cleanup_scheduler()
+                # 주기 PLM 리프레시 — 매주 월요일 03:00 KST
+                plm_sync_started = start_user_directory_sync_scheduler()
 
             app.state.startup_complete = should_initialize
             yield
@@ -148,6 +155,11 @@ def build_lifespan(
                         if not shutdown_cleanup_scheduler():
                             logger.warning(
                                 "Cleanup scheduler did not stop within the shutdown timeout"
+                            )
+                    if plm_sync_started:
+                        if not shutdown_user_directory_sync_scheduler():
+                            logger.warning(
+                                "User directory sync scheduler did not stop within the shutdown timeout"
                             )
                     if job_manager_started:
                         shutdown_job_manager()

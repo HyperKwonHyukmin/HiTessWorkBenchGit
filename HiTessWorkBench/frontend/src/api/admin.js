@@ -16,10 +16,16 @@ export const updateUser = (userId, data) =>
 export const deleteUser = (userId) =>
   axios.delete(`${API_BASE_URL}/api/users/${userId}`, { headers: getAuthHeaders() });
 
-/** 사내 PLM(HIPLM.VT_PLM_USER)에서 사번으로 메일 주소를 조회해 갱신한다.
- *  성공 응답: { email, changed }. PLM 미설정이면 503, PLM 에 사번이 없으면 404. */
-export const syncUserEmail = (userId) =>
-  axios.post(`${API_BASE_URL}/api/users/${userId}/sync-email`, {}, { headers: getAuthHeaders() });
+/** 사내 PLM(HIPLM.VT_PLM_USER)에서 사번으로 이름·회사·부서·직책·메일을 갱신한다.
+ *  성공 응답: { changed, changedFields, changes, profile }.
+ *  PLM 미설정이면 503, PLM 에 사번이 없으면 404, PLM 접속·조회 자체 실패면 502. */
+export const syncUserPlm = (userId) =>
+  axios.post(`${API_BASE_URL}/api/users/${userId}/sync-plm`, {}, { headers: getAuthHeaders() });
+
+/** 전체 사용자의 PLM 정보를 한 번에 리프레시한다(관리자 수동 트리거).
+ *  성공 응답: { total, updated, unchanged, missing, errors, dryRun, changed[] }. */
+export const syncAllUsersPlm = () =>
+  axios.post(`${API_BASE_URL}/api/users/sync-plm-all`, {}, { headers: getAuthHeaders(), timeout: 180000 });
 
 // ==================== System ====================
 

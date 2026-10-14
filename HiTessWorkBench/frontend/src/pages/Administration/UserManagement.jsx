@@ -11,7 +11,7 @@ import {
   LogOut, Layers, MessageCircle, ChevronDown, UserX, FileDown, ArrowUp, ArrowDown,
   Mail, Loader2
 } from 'lucide-react';
-import { getUsers, updateUser, deleteUser, syncUserEmail } from '../../api/admin';
+import { getUsers, updateUser, deleteUser, syncUserPlm, syncAllUsersPlm } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
 import { getOnlineUsers, forceLogoutUser } from '../../api/presence';
 import { getEmployeeId } from '../../utils/auth';
@@ -194,7 +194,8 @@ export default function UserManagement() {
   const [selectedUserIds, setSelectedUserIds] = useState(new Set());       // 메인 테이블 일괄 선택
   const [confirmDeactivateTarget, setConfirmDeactivateTarget] = useState(null); // 단건 비활성화 확인
   const [bulkAction, setBulkAction] = useState(null); // { type: 'deactivate'|'delete', ids: [] } — 일괄 확인
-  const [syncingEmailIds, setSyncingEmailIds] = useState(new Set()); // PLM 메일 갱신 진행 중인 사용자 id 집합
+  const [syncingPlmIds, setSyncingPlmIds] = useState(new Set()); // 단건 PLM 정보 갱신 진행 중 사용자 id
+  const [syncingAllPlm, setSyncingAllPlm] = useState(false);     // 전체 PLM 정보 갱신 진행 중
   const myEmployeeId = (getEmployeeId() || '').toUpperCase();
 
   // 사이드바 뱃지/로그인 토스트가 참조하는 대기자 수를 갱신하도록 App 에 신호.
@@ -334,26 +335,60 @@ export default function UserManagement() {
     }
   };
 
-  // 사내 PLM(HIPLM.VT_PLM_USER) 조회로 메일 주소를 갱신한다. 응답 { email, changed }·
-  // 404(PLM 에 사번 없음)·503(PLM 미설정) 세 가지만 분기. 변경이 없으면 토스트만 띄우고 상태는 그대로.
-  const handleSyncEmail = async (user) => {
-    if (!user || syncingEmailIds.has(user.id)) return;
-    setSyncingEmailIds(prev => { const next = new Set(prev); next.add(user.id); return next; });
+  // 사내 PLM(HIPLM.VT_PLM_USER) 조회로 사용자의 이름·회사·부서·직책·메일을 한 번에 갱신한다.
+  // 응답 { changed, changedFields, profile } · 404(PLM 미등록)·503(PLM 미설정)·502(접속 실패) 분기.
+  // 조회 자체가 실패하거나 사번이 PLM 에 없으면 백엔드가 기존 DB 값을 그대로 유지한다.
+  const handleSyncPlm = async (user) => {
+    if (!user || syncingPlmIds.has(user.id)) return;
+    setSyncingPlmIds(prev => { const next = new Set(prev); next.add(user.id); return next; });
     try {
-      const res = await syncUserEmail(user.id);
-      const email = res?.data?.email || null;
-      const changed = Boolean(res?.data?.changed);
-      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, email } : u));
-      const name = user.name || user.employee_id;
-      if (changed) showToast(`${name} 메일을 ${email} 로 갱신했습니다.`, 'success');
-      else showToast(`${name} 메일은 이미 최신입니다.`, 'info');
+      const res = await syncUserPlm(user.id);
+      const profile = res?.data?.profile || {};
+      const changedFields = res?.data?.changedFields || [];
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, ...profile } : u));
+      const name = profile.name || user.name || user.employee_id;
+      if (changedFields.length > 0) {
+        const labels = { email: '메일', name: '이름', company: '회사', department: '부서', position: '직책' };
+        const changed = changedFields.map(k => labels[k] || k).join(' · ');
+        showToast(`${name} 정보를 PLM 에서 갱신했습니다 (${changed})`, 'success');
+      } else {
+        showToast(`${name} 정보는 이미 최신입니다.`, 'info');
+      }
     } catch (err) {
       const status = err?.response?.status;
-      if (status === 404) showToast('PLM 에 해당 사번의 메일 주소가 없습니다.', 'warning');
+      if (status === 404) showToast('PLM 에 해당 사번의 정보가 없습니다. 기존 값은 유지됩니다.', 'warning');
       else if (status === 503) showToast('PLM 조회가 비활성 상태입니다. 서버 .env 의 PLM_ORACLE_* 설정을 확인하세요.', 'warning');
-      else showToast('메일 갱신에 실패했습니다.', 'error');
+      else if (status === 502) showToast('PLM 조회에 실패했습니다. 기존 값은 유지됩니다.', 'warning');
+      else showToast('PLM 정보 갱신에 실패했습니다.', 'error');
     } finally {
-      setSyncingEmailIds(prev => { const next = new Set(prev); next.delete(user.id); return next; });
+      setSyncingPlmIds(prev => { const next = new Set(prev); next.delete(user.id); return next; });
+    }
+  };
+
+  // 전체 사용자 PLM 정보 리프레시 — 관리자 수동 트리거. 주기 스케줄러(월요일 03:00 KST)와
+  // 동일한 로직을 즉시 실행한다. 사용자 수에 따라 수십 초~1분 걸릴 수 있어 전역 로딩 상태로 묶는다.
+  const handleSyncAllPlm = async () => {
+    if (syncingAllPlm) return;
+    const ok = window.confirm(
+      '전체 사용자의 PLM 정보(이름·회사·부서·직책·메일)를 사내 PLM 에서 다시 받아 갱신합니다.\n' +
+      '사용자 수에 따라 수십 초~1분 걸릴 수 있습니다. 진행할까요?'
+    );
+    if (!ok) return;
+    setSyncingAllPlm(true);
+    try {
+      const res = await syncAllUsersPlm();
+      const { total, updated, unchanged, missing, errors } = res?.data || {};
+      await fetchUsers();
+      const parts = [`전체 ${total}명`, `갱신 ${updated}건`, `그대로 ${unchanged}건`];
+      if (missing) parts.push(`PLM 미등록 ${missing}건`);
+      if (errors) parts.push(`오류 ${errors}건`);
+      showToast(parts.join(' · '), updated > 0 ? 'success' : 'info');
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 503) showToast('PLM 조회가 비활성 상태입니다. 서버 .env 의 PLM_ORACLE_* 설정을 확인하세요.', 'warning');
+      else showToast('전체 PLM 정보 갱신에 실패했습니다.', 'error');
+    } finally {
+      setSyncingAllPlm(false);
     }
   };
 
@@ -1132,6 +1167,15 @@ export default function UserManagement() {
             <FileDown size={14}/> 명부 CSV
           </button>
           <button
+            onClick={handleSyncAllPlm}
+            disabled={syncingAllPlm}
+            className="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white font-bold text-sm rounded-lg hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 disabled:opacity-70 disabled:cursor-wait"
+            title="사내 PLM 에서 전체 사용자의 이름·회사·부서·직책·메일을 다시 받아 갱신"
+          >
+            {syncingAllPlm ? <Loader2 size={14} className="animate-spin"/> : <Mail size={14}/>}
+            {syncingAllPlm ? '전체 PLM 갱신 중…' : '전체 PLM 정보 갱신'}
+          </button>
+          <button
             onClick={fetchUsers}
             className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-200 transition-colors shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1"
           >
@@ -1368,12 +1412,12 @@ export default function UserManagement() {
                         <ClipboardList size={18}/>
                       </button>
                       <button
-                        onClick={() => handleSyncEmail(user)}
-                        disabled={syncingEmailIds.has(user.id)}
+                        onClick={() => handleSyncPlm(user)}
+                        disabled={syncingPlmIds.has(user.id) || syncingAllPlm}
                         className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50 disabled:cursor-wait"
-                        title="PLM 에서 메일 갱신"
+                        title="PLM 에서 정보 갱신 (이름·회사·부서·직책·메일)"
                       >
-                        {syncingEmailIds.has(user.id)
+                        {syncingPlmIds.has(user.id)
                           ? <Loader2 size={18} className="animate-spin"/>
                           : <Mail size={18}/>}
                       </button>

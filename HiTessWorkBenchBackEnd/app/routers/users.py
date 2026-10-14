@@ -6,7 +6,8 @@ from .. import models, database
 from ..dependencies import require_admin
 from ..services.activity_service import log_activity
 from ..services.external_app_access import external_app_access_store
-from ..services.plm_user_directory import fetch_plm_email, is_configured as plm_is_configured
+from ..services.plm_user_directory import is_configured as plm_is_configured
+from ..services.user_directory_sync import sync_users
 from ._crud_helpers import get_or_404
 
 router = APIRouter(prefix="/api", tags=["users"])
@@ -73,44 +74,87 @@ def get_users(
     return result
 
 
-@router.post("/users/{user_id}/sync-email")
-def sync_user_email(
+@router.post("/users/{user_id}/sync-plm")
+def sync_user_plm(
     user_id: int,
     req: Request,
     db: Session = Depends(database.get_db),
     current_admin: str = Depends(require_admin),
 ):
-    """사내 PLM(HIPLM.VT_PLM_USER)에서 사번으로 메일 주소를 조회해 갱신한다.
+    """사내 PLM(HIPLM.VT_PLM_USER)에서 사번으로 이름·회사·부서·직책·메일을 한 번에 갱신한다.
 
-    PLM 접속이 비활성이면 503, 사번이 PLM 에 없으면 404 를 돌려준다. 성공 시
-    갱신된 메일 주소를 함께 돌려준다(변경 없음도 성공).
+    조회 자체가 실패하거나 사번이 PLM 에 없으면 **기존 DB 값을 유지**하고 404 를 돌려준다.
+    PLM 접속이 비활성이면 503. 성공 응답은 변경된 필드 요약을 담는다.
     """
     user = get_or_404(db, models.User, user_id, _USER_NOT_FOUND)
     if not plm_is_configured():
         raise HTTPException(status_code=503, detail="plm_not_configured")
 
-    email = fetch_plm_email(user.employee_id)
-    if not email:
-        raise HTTPException(status_code=404, detail="plm_email_not_found")
+    summary = sync_users(db, employee_ids=[user.employee_id])
+    outcome = summary.outcomes[0] if summary.outcomes else None
+    if outcome is None or outcome.status == "missing":
+        raise HTTPException(status_code=404, detail="plm_profile_not_found")
+    if outcome.status == "error":
+        raise HTTPException(status_code=502, detail=outcome.reason or "plm_fetch_error")
 
-    before = getattr(user, "email", None)
-    user.email = email
-    db.commit()
     db.refresh(user)
-
+    changed_fields = sorted(outcome.changes.keys())
     log_activity(
         db,
-        "USER_EMAIL_SYNC",
+        "USER_PLM_SYNC",
         employee_id=current_admin,
         action_detail={
             "target_employee_id": user.employee_id,
             "target_user_id": user.id,
-            "changed": (before or None) != email,
+            "changed_fields": changed_fields,
         },
         status="success",
         ip_address=req.client.host if req.client else None,
     )
-    return {"email": email, "changed": (before or None) != email}
+    return {
+        "changed": bool(outcome.changes),
+        "changedFields": changed_fields,
+        "changes": {k: {"before": v[0], "after": v[1]} for k, v in outcome.changes.items()},
+        "profile": {
+            "email": user.email, "name": user.name, "company": user.company,
+            "department": user.department, "position": user.position,
+        },
+    }
+
+
+@router.post("/users/sync-plm-all")
+def sync_all_users_plm(
+    req: Request,
+    db: Session = Depends(database.get_db),
+    current_admin: str = Depends(require_admin),
+):
+    """전체 사용자의 PLM 정보를 한 번에 리프레시한다(관리자 수동 트리거).
+
+    조회 실패자는 기존 값 유지, 변경된 사용자만 커밋한다. 주기 스케줄러가 매주 월요일
+    03:00 KST 에 돌리는 작업과 동일한 로직을 즉시 실행하는 것과 같다.
+    """
+    if not plm_is_configured():
+        raise HTTPException(status_code=503, detail="plm_not_configured")
+
+    summary = sync_users(db)
+    log_activity(
+        db,
+        "USER_PLM_SYNC_ALL",
+        employee_id=current_admin,
+        action_detail=summary.as_dict(),
+        status="success",
+        ip_address=req.client.host if req.client else None,
+    )
+    return {
+        **summary.as_dict(),
+        "changed": [
+            {
+                "employeeId": o.employee_id, "name": o.name,
+                "changedFields": sorted(o.changes.keys()),
+            }
+            for o in summary.outcomes if o.status == "updated"
+        ],
+    }
 
 
 # is_admin / is_developer 는 관리자만 변경 가능 (PUT 시 화이트리스트 분리)
