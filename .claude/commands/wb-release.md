@@ -18,7 +18,9 @@ pwsh -NoProfile -File scripts/release.ps1 -Bump -BuildOnly -Yes          # 인�
 pwsh -NoProfile -File scripts/release.ps1 -SetVersion X.Y.Z -BuildOnly -Yes   # 인자 X.Y.Z
 ```
 - 작업 폴더 `C:\Coding\WorkBench`. 오래 걸리니 백그라운드로 돌리고 끝나면 이어 간다.
-- 스크립트가 하는 일: 버전 4곳 → Python 문법 → `config.js` 를 145 주소로 바꿔 프런트 빌드 후 되돌림 → `npx electron-builder` → exe 이름에 버전이 맞는지.
+- 스크립트가 하는 일: 버전 4곳 → Python 문법 → `config.js` 를 **지금 어느 쪽이 켜져 있든 무조건** '내 컴퓨터(70) 줄 주석 + 서버 컴퓨터(145) 줄 활성'으로
+  맞춰 프런트 빌드 → 번들에 70 주소가 없고 145 주소가 있는지 검사 → config.js 를 빌드 전 상태로 되돌림 → `npx electron-builder` → exe 이름에 버전이 맞는지.
+  배포 exe 는 항상 145 에 접속한다. 로컬 개발 상태(70/145)는 건드리지 않는다.
 - 끝 줄의 `RELEASE_EXE=`·`RELEASE_VERSION=` 을 읽는다. 실패하면(종료 코드 ≠ 0) **커밋하지 않고** 오류 줄을 그대로 보고한다.
 
 ## 3. 커밋 메시지
@@ -35,6 +37,7 @@ Co-Authored-By: (이 세션의 attribution 줄)
 
 ## 4. 커밋·푸시
 - `git add` 는 **버전 4파일만**. `config.js`·`Darkmode.js`·다른 세션 파일은 넣지 않는다(커밋 훅도 막는다).
+  ⚠ 훅은 Bash 명령 문자열에 `config.js` 가 들어 있기만 해도 막는다 — config.js 확인은 Grep 도구로 따로 하고 `git add` 명령에 섞지 않는다.
 - 커밋 전 `git diff --cached --stat` 이 4파일·각 1줄인지 확인 → 커밋 → `git push`.
 
 ## 5. 보고 (짧게)

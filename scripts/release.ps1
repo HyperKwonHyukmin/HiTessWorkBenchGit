@@ -44,7 +44,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ROOT      = Split-Path $PSScriptRoot -Parent
+# 출력을 파일로 돌려받을 때(/wb-release) 한글이 깨지지 않게 UTF-8 로 쓴다.
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+$ROOT     = Split-Path $PSScriptRoot -Parent
 $StartTime = Get-Date
 if ($Bump -and $SetVersion -ne "") { Write-Host "  ✗ -Bump 와 -SetVersion 은 함께 쓸 수 없습니다." -ForegroundColor Red; exit 1 }
 
@@ -155,28 +158,26 @@ if ($SkipBuild) {
     OK "기존 빌드 사용"
 } elseif ($Dry) {
     DRY "cd HiTessWorkBench\frontend && npm run build"
-    $configContent = Get-Content $configPath -Raw
-    if ($configContent -match "(?m)^const DEFAULT_API_BASE_URL = `"$([regex]::Escape($DEV_URL))`"") {
-        DRY "config.js: 개발 PC URL → 서버 PC URL 전환 후 build → 빌드 완료 후 복원"
-    } else {
-        INFO "config.js: 서버 PC URL 이미 활성 — 변경 없음"
-    }
+    DRY "config.js: 개발 PC 줄 주석 + 서버 PC 줄 활성으로 맞춰 build → 빌드 후 원래대로 복원"
 } else {
     if (Confirm-Step "npm run build 를 실행할까요?") {
-        # config.js URL 자동 전환 (개발 PC → 서버 PC)
+        # config.js 는 지금 어느 쪽이 활성이든 무조건 '개발 PC 줄 주석 + 서버 PC 줄 활성' 으로 맞춰 빌드한다.
+        # 주석 기호 띄어쓰기·앞 공백이 달라도 잡는다(예전엔 정확한 모양일 때만 바꾸고 나머지는 '이미 서버'로 넘겼다).
         $configOriginal = Get-Content $configPath -Raw
-        $configModified = $false
-        if ($configOriginal -match "(?m)^const DEFAULT_API_BASE_URL = `"$([regex]::Escape($DEV_URL))`"") {
-            INFO "config.js: 개발 PC URL 감지 → 서버 PC URL 로 자동 전환"
-            $patched = $configOriginal `
-                -replace "(?m)^const DEFAULT_API_BASE_URL = `"$([regex]::Escape($DEV_URL))`"", "// const DEFAULT_API_BASE_URL = `"$DEV_URL`"" `
-                -replace "(?m)^// const DEFAULT_API_BASE_URL = `"$([regex]::Escape($SRV_URL))`"", "const DEFAULT_API_BASE_URL = `"$SRV_URL`""
+        $devLine = "(?m)^[ \t]*(?://[ \t]*)?const DEFAULT_API_BASE_URL\s*=\s*`"$([regex]::Escape($DEV_URL))`""
+        $srvLine = "(?m)^[ \t]*(?://[ \t]*)?const DEFAULT_API_BASE_URL\s*=\s*`"$([regex]::Escape($SRV_URL))`""
+        if ($configOriginal -notmatch $srvLine) { ERR "config.js 에 서버 PC 주소 줄($SRV_URL)이 없습니다."; exit 1 }
+        $patched = $configOriginal `
+            -replace $devLine, "// const DEFAULT_API_BASE_URL = `"$DEV_URL`"" `
+            -replace $srvLine, "const DEFAULT_API_BASE_URL = `"$SRV_URL`""
+        $activeCount = ([regex]::Matches($patched, "(?m)^const DEFAULT_API_BASE_URL\s*=")).Count
+        if ($activeCount -ne 1) { ERR "config.js 활성 DEFAULT_API_BASE_URL 이 $activeCount 개입니다(1개여야 함)."; exit 1 }
+        $configModified = ($patched -ne $configOriginal)
+        if ($configModified) {
             [System.IO.File]::WriteAllText($configPath, $patched, [System.Text.UTF8Encoding]::new($false))
-            $configModified = $true
-            OK "서버 PC URL 활성화: $SRV_URL"
-        } else {
-            OK "config.js: 서버 PC URL 이미 활성"
+            INFO "config.js: 서버 PC URL 로 전환(빌드 후 원래대로 되돌림)"
         }
+        OK "서버 PC URL 활성: $SRV_URL"
 
         $prevLoc = Get-Location
         Set-Location $frontendDir
@@ -187,11 +188,16 @@ if ($SkipBuild) {
         # 빌드 성공/실패 무관하게 config.js 원래 상태로 복원
         if ($configModified) {
             [System.IO.File]::WriteAllText($configPath, $configOriginal, [System.Text.UTF8Encoding]::new($false))
-            INFO "config.js: 개발 PC URL 복원"
+            INFO "config.js: 원래 상태로 복원"
         }
 
         if (-not $buildOk) { ERR "Frontend build 실패"; exit 1 }
-        OK "Frontend build 완료"
+        # 번들 검사 — 개발 PC 주소는 config.js 에만 있으므로 번들에 보이면 개발 PC 로 빌드된 것이다.
+        $bundle = Get-ChildItem (Join-Path $frontendDir "dist\assets") -Filter *.js | ForEach-Object { Get-Content $_.FullName -Raw }
+        $bundleText = $bundle -join "`n"
+        if ($bundleText.Contains($DEV_URL)) { ERR "번들에 개발 PC 주소($DEV_URL)가 들어 있습니다."; exit 1 }
+        if (-not $bundleText.Contains($SRV_URL)) { ERR "번들에 서버 PC 주소($SRV_URL)가 없습니다."; exit 1 }
+        OK "Frontend build 완료 (번들 기본 주소 = $SRV_URL)"
     } else {
         WARN "Frontend build 건너뜀"
     }
