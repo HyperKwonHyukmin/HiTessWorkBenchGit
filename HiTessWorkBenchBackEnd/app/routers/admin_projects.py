@@ -1,6 +1,7 @@
 """관리자 All Projects (`/api/admin/projects*`) — 모든 사용자의 해석 이력·작업 폴더 파일·LogBook 보내기.
 
-- `GET  /api/admin/projects`                     — 전체 사용자 이력(My Projects 와 같은 기준: 샘플·세부 검토 제외)
+- `GET  /api/admin/projects`                     — 전체 사용자 이력(My Projects 와 같은 기준: 샘플·세부 검토 제외).
+                                                   `logbook=sent` 면 LogBook 으로 보낸 기록만
 - `GET  /api/admin/projects/{id}/files`          — 작업 폴더의 모든 파일(입력/결과/기타 구분) + LogBook 보낸 이력
 - `POST /api/admin/projects/{id}/logbook`        — 고른 파일을 Hi-TESS LogBook '정리 대기'로 보낸다(서버끼리)
 
@@ -61,6 +62,7 @@ def list_projects(
     date_from: Optional[_date] = Query(None),
     date_to: Optional[_date] = Query(None),
     file_status: Optional[str] = Query(None),
+    logbook: Optional[str] = Query(None),
     db: Session = Depends(database.get_db),
     _admin: str = Depends(require_admin),
 ):
@@ -68,6 +70,10 @@ def list_projects(
     q = analysis_router._apply_analysis_filters(
         q, program_name=program_name, status=status, date_from=date_from, date_to=date_to,
     )
+    if logbook == "sent":
+        # 목록의 'N번 보냄' 표시(_export_summary)와 같은 기준 — 실패한 시도만 있는 기록은 빼고 blocked 는 포함
+        sent_ids = db.query(models.LogbookExport.analysis_id).filter(models.LogbookExport.state != "failed")
+        q = q.filter(models.Analysis.id.in_(sent_ids))
     users = db.query(models.User).all()
     users_by_eid = {analysis_router._norm_eid(u.employee_id): u for u in users}
     if employee_id and employee_id.strip():

@@ -39,6 +39,7 @@ export default function AllProjects() {
   const [fileStatus, setFileStatus] = useState('All');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [sentOnly, setSentOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
 
@@ -53,6 +54,7 @@ export default function AllProjects() {
         file_status: fileStatus === 'All' ? undefined : fileStatus,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
+        logbook: sentOnly ? 'sent' : undefined,
       });
       if (signal?.aborted) return;
       setItems(data.items || []);
@@ -64,7 +66,7 @@ export default function AllProjects() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [page, search, program, status, fileStatus, dateFrom, dateTo]);
+  }, [page, search, program, status, fileStatus, dateFrom, dateTo, sentOnly]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -117,6 +119,19 @@ export default function AllProjects() {
         </div>
         <button
           type="button"
+          onClick={() => withReset(setSentOnly)(!sentOnly)}
+          aria-pressed={sentOnly}
+          title="LogBook 으로 보낸 기록만 봅니다(실패한 시도만 있는 기록은 제외)"
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
+            sentOnly
+              ? 'border-blue-300 bg-blue-50 text-brand-blue'
+              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <BookOpen size={15} aria-hidden="true" /> LogBook 보낸 것만
+        </button>
+        <button
+          type="button"
           onClick={() => fetchData()}
           className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
           aria-label="새로 고침"
@@ -143,7 +158,9 @@ export default function AllProjects() {
               {error ? (
                 <tr><td colSpan={7} className="py-12 text-center text-sm text-red-600">{error}</td></tr>
               ) : !loading && items.length === 0 ? (
-                <tr><td colSpan={7} className="py-12 text-center text-sm text-slate-500">조건에 맞는 해석 기록이 없습니다.</td></tr>
+                <tr><td colSpan={7} className="py-12 text-center text-sm text-slate-500">
+                  {sentOnly ? '조건에 맞는 기록 중 LogBook 으로 보낸 것이 없습니다.' : '조건에 맞는 해석 기록이 없습니다.'}
+                </td></tr>
               ) : items.map(item => (
                 <tr
                   key={item.id}

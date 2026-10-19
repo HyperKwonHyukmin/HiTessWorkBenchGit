@@ -98,6 +98,30 @@ def test_list_all_users_and_filters(switchable_client, db_session, user_conn):
     assert switchable_client.get("/api/admin/projects", params={"file_status": "expired"}).json()["total"] == 1
 
 
+def test_list_filter_sent_to_logbook(switchable_client, db_session, user_conn):
+    sent = _analysis(db_session, project="보낸 것", created_at=datetime(2026, 10, 1))
+    failed_only = _analysis(db_session, project="실패만", created_at=datetime(2026, 10, 2))
+    _analysis(db_session, project="안 보냄", created_at=datetime(2026, 10, 3))
+    db_session.add_all([
+        models.LogbookExport(analysis_id=sent.id, sent_by="ADMIN", state="staged"),
+        models.LogbookExport(analysis_id=sent.id, sent_by="ADMIN", state="blocked"),
+        models.LogbookExport(analysis_id=failed_only.id, sent_by="ADMIN", state="failed"),
+    ])
+    db_session.commit()
+
+    assert switchable_client.get("/api/admin/projects").json()["total"] == 3
+    body = switchable_client.get("/api/admin/projects", params={"logbook": "sent"}).json()
+    # 실패한 시도만 있는 기록은 '보낸 것' 이 아니다(목록의 'N번 보냄' 표시와 같은 기준)
+    assert body["total"] == 1
+    assert [i["project_name"] for i in body["items"]] == ["보낸 것"]
+    assert body["items"][0]["logbook"]["count"] == 2
+    # 다른 필터와 함께 — 파일 상태 필터 경로(파이썬 거르기)에서도 유지
+    assert switchable_client.get("/api/admin/projects",
+                                 params={"logbook": "sent", "file_status": "available"}).json()["total"] == 0
+    # 모르는 값은 무시
+    assert switchable_client.get("/api/admin/projects", params={"logbook": "x"}).json()["total"] == 3
+
+
 # ── 파일 목록 ─────────────────────────────────────────────────────────────────
 
 def test_files_lists_whole_work_folder_with_roles(switchable_client, db_session, user_conn):
