@@ -21,7 +21,10 @@ pwsh -NoProfile -File scripts/release.ps1 -SetVersion X.Y.Z -BuildOnly -Yes   # 
 - 스크립트가 하는 일: 버전 4곳 → Python 문법 → `config.js` 를 **지금 어느 쪽이 켜져 있든 무조건** '내 컴퓨터(70) 줄 주석 + 서버 컴퓨터(145) 줄 활성'으로
   맞춰 프런트 빌드 → 번들에 70 주소가 없고 145 주소가 있는지 검사 → config.js 를 빌드 전 상태로 되돌림 → `npx electron-builder` → exe 이름에 버전이 맞는지.
   배포 exe 는 항상 145 에 접속한다. 로컬 개발 상태(70/145)는 건드리지 않는다.
-- 끝 줄의 `RELEASE_EXE=`·`RELEASE_VERSION=` 을 읽는다. 실패하면(종료 코드 ≠ 0) **커밋하지 않고** 오류 줄을 그대로 보고한다.
+- **빌드와 커밋·푸시는 동시에 진행한다**(사용자 지시, 2026-10-19 — 별개의 과정). 스크립트는 맨 앞에서 버전 4곳을 올리므로,
+  백그라운드로 띄운 뒤 `system.py` 의 `SERVER_VERSION` 이 새 버전이 된 것을 확인하면 빌드를 기다리지 않고 3·4단계로 간다.
+- 빌드가 끝나면 끝 줄의 `RELEASE_EXE=`·`RELEASE_VERSION=` 을 읽는다. 실패하면(종료 코드 ≠ 0) 오류 줄을 그대로 보고한다 —
+  버전 커밋은 이미 올라가 있으니 원인을 고친 뒤 `-Bump` 없이 `-BuildOnly -Yes` 로 같은 버전 exe 만 다시 만든다.
 
 ## 3. 커밋 메시지
 지난 릴리스 커밋 이후 커밋 제목을 모은다: `git log --format=%s <지난 '🔖 release:' 커밋>..HEAD`.
