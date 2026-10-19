@@ -1,6 +1,7 @@
 from pathlib import Path
 import subprocess
 
+import pytest
 from PIL import Image
 
 from app.services.analysis_runner import build_nastran_bridge_command
@@ -76,6 +77,9 @@ def test_image_lug_rebuild_uses_edited_overall_length(tmp_path):
 
 
 def test_generated_lug_image_fixtures_seed_distinct_params_and_mesh(tmp_path):
+    missing = [f for f in CASES if not (ROOT / "Figure" / f).is_file()]
+    if missing:   # 그림 고정물은 git 밖(Figure/ 에 손으로 둔다) — 없는 PC 에서는 건너뛴다
+        pytest.skip(f"Figure 고정물 없음: {', '.join(missing)}")
     for filename, expected in CASES.items():
         image_path = ROOT / "Figure" / filename
         assert image_path.is_file()

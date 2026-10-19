@@ -252,8 +252,11 @@ def test_connect_centroid_creates_node_and_rbe2(tmp_path):
     assert not [ln for ln in out if ln[:8].strip().upper() == "SPC"], "SPC 카드 잔존"
 
 
-def test_connect_rejects_node_already_dependent(tmp_path):
-    """이미 다른 RBE 의 종속노드인 노드를 또 종속으로 묶으면 SystemExit(2개 이상 RBE 종속 불가)."""
+def test_connect_keeps_one_rbe_per_node(tmp_path):
+    """이미 다른 RBE 의 종속노드인 노드를 또 종속으로 묶어도 결과에서 한 노드는 RBE2 하나에만 속한다.
+
+    엔진 정책 변경(nastran_bridge dedupe_rigids_one_per_node, 2026-10): 예전에는 SystemExit 로 멈췄고,
+    지금은 뒤쪽 RBE 에서 겹친 종속을 떼어 낸다(m-set 중복 FATAL 방지는 같다)."""
     bdf_path = tmp_path / "STAGE_07_FinalValidation.bdf"
     _write_minimal_bdf(bdf_path)
     base = _nb.convert_bdf(bdf_path)
@@ -261,8 +264,9 @@ def test_connect_rejects_node_already_dependent(tmp_path):
         base, {"schemaVersion": "1.0",
                "intents": [{"kind": "addRigid", "params": {"independentNode": 2, "dependentNodes": [1]}}]},
     )
-    with pytest.raises(SystemExit):
-        _nb.apply_edit_json(
-            edited, {"schemaVersion": "1.0",
-                     "intents": [{"kind": "addRigid", "params": {"independentNode": 2, "dependentNodes": [1]}}]},
-        )
+    again, _ = _nb.apply_edit_json(
+        edited, {"schemaVersion": "1.0",
+                 "intents": [{"kind": "addRigid", "params": {"independentNode": 2, "dependentNodes": [1]}}]},
+    )
+    owners = [r for r in again["rigids"] if 1 in (r.get("dependentNodes") or []) or r.get("independentNode") == 1]
+    assert len(owners) == 1

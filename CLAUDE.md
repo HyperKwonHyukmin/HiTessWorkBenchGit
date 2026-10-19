@@ -624,6 +624,14 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 - LogBook 이 받지 않는 것: 이미 LogBook 에 있는 것과 **완전 동일한 BDF**(blocked), 회사 **DRM 암호문**(`HHIDRMC` 머리, rejected). 둘 다 화면에 그대로 보인다.
   ⚠ 개발 PC 는 DRM 에이전트가 python 의 읽기를 가로채 `HHIDRMC` 흉내 파일을 0바이트로 돌려준다(실측) — DRM 거절 확인은 단위 테스트로 한다.
 - ⚠ 배포 순서: **LogBook 을 먼저** `git pull` + 재시작. 옛 LogBook 이면 WB 가 404 를 받아 "보내기 기능이 없거나 연동이 꺼져 있습니다" 로 알린다.
+- 해석 여권 함께 싣기(Hi-TESS Core 1단계, 2026-10-19): `.env` `LOGBOOK_SEND_PASSPORT=1` 이면 `origin.passport`(검증된 산출물 sha256)를 싣고,
+  LogBook 자료 화면이 'WB 산출물과 같음'을 보인다. 비우면 예전 본문. 두 플랫폼 연동 약속은 `hitess-core` 저장소 — 바꾸기 전에 먼저 본다.
+- ⚠ 작업 폴더에 `nul` 파일이 생기는 해석이 있다 — 만드는 쪽은 WorkBench 밖의 레거시 해석 엔진(.exe, `Cmb.Cli`·Nastran 임시 파일,
+  d33e9fd·e25c20c 기록)이라 이 저장소에서 근원을 막을 수 없다. Python 3.13+ 에서 이 경로가 `\\.\nul` 장치로 바뀌어 목록 전체가 500 이었다
+  → 목록에서 예약 이름(nul·con·aux·prn·com/lpt)을 뺀다(1ee564c, 2026-10-19).
+  작업 폴더를 훑는 곳은 이렇게 지킨다: 파일마다 `relpath`·`abspath` 를 부르면 예약 이름을 먼저 거르거나 prefix 자르기
+  (`admin_projects`·`analysis.py` result-zip·`cleanup_service._extended_path`). 확장자로 먼저 거르는 곳은 안전(2026-10-19 전수 확인).
+  해석 뒤 `nul` 을 자동으로 지우는 것은 하지 않는다(작업 폴더 자동 삭제 위험 > 이득).
 
 ### DB 모델 (`app/models.py`)
 
