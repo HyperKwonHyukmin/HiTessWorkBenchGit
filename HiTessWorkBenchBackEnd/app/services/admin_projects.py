@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Iterable, Optional
 
@@ -79,7 +80,10 @@ def _under(base_abs: str, value: str) -> Optional[str]:
 
 
 def _folder_of(base_abs: str, path_abs: str) -> Optional[str]:
-    first = os.path.relpath(path_abs, base_abs).split(os.sep, 1)[0]
+    try:
+        first = os.path.relpath(path_abs, base_abs).split(os.sep, 1)[0]
+    except ValueError:   # 다른 드라이브·장치 경로(\\.\nul 등) — 작업 폴더가 아니다
+        return None
     return first if first and first not in (".", "..") else None
 
 
@@ -139,6 +143,12 @@ def resolve(records: list[models.Analysis], base_dir: str) -> dict:
     return {"base": base_abs, "folders": folders, "inputs": inputs, "results": results}
 
 
+# Windows 예약 장치 이름(nul·con·aux·prn·com1~9·lpt1~9, 확장자가 붙어도 같다). 셸의 '> nul' 이 실수로
+# 만든 파일 등 — Python 3.13+ 는 이 경로를 \\.\nul 장치로 바꿔 relpath 가 ValueError 를 낸다(145 에서 목록 전체 500).
+# 읽어도 장치를 읽게 되므로 목록·보내기에서 뺀다.
+_WIN_RESERVED = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$", re.IGNORECASE)
+
+
 def _is_drm(path: str) -> bool:
     try:
         with open(path, "rb") as fh:
@@ -160,19 +170,25 @@ def list_files(resolved: dict) -> dict:
                 if count >= MAX_LIST_FILES:
                     truncated = True
                     break
+                if _WIN_RESERVED.match(fn):
+                    continue
                 path = os.path.join(dirpath, fn)
                 try:
                     st = os.stat(path)
-                except OSError:
+                    rel = os.path.relpath(path, full).replace(os.sep, "/")
+                    modified = datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")
+                except (OSError, ValueError, OverflowError):
+                    # 파일 하나가 이상해도(경로 계산·수정 시각) 목록 전체를 실패시키지 않는다
+                    logger.warning("작업 폴더 파일을 목록에서 뺌: %s", path, exc_info=True)
                     continue
                 norm = os.path.normcase(os.path.abspath(path))
                 role = "input" if norm in resolved["inputs"] else "result" if norm in resolved["results"] else "other"
                 files.append({
                     "path": path,
                     "folder": name,
-                    "rel": os.path.relpath(path, full).replace(os.sep, "/"),
+                    "rel": rel,
                     "size": st.st_size,
-                    "modified": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds"),
+                    "modified": modified,
                     "role": role,
                     "drm": _is_drm(path),
                 })

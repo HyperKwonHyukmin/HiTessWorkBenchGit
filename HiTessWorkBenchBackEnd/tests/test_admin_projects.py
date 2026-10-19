@@ -338,3 +338,36 @@ def test_export_passport_failure_still_sends(switchable_client, db_session, user
     r = switchable_client.post(f"/api/admin/projects/{a.id}/logbook", json={"paths": _paths(switchable_client, a.id)})
     assert r.status_code == 200, r.text
     assert "passport" not in fake.begin_body["origin"]
+
+
+# ── Windows 예약 이름 파일(nul 등) — 145(Python 3.13+)에서 목록 전체가 500 이던 문제 ─────────────
+
+def test_files_skip_windows_reserved_names(switchable_client, db_session, user_conn, monkeypatch):
+    a = _gmu(db_session, user_conn)
+    real_walk = svc.os.walk
+
+    def walk_with_nul(top, *args, **kwargs):
+        for dirpath, dirnames, filenames in real_walk(top, *args, **kwargs):
+            yield dirpath, dirnames, filenames + ["nul", "CON.txt"]
+
+    monkeypatch.setattr(svc.os, "walk", walk_with_nul)
+    r = switchable_client.get(f"/api/admin/projects/{a.id}/files")
+    assert r.status_code == 200, r.text
+    names = {f["rel"].split("/")[-1] for f in r.json()["files"]}
+    assert "9999_m01.bdf" in names and "nul" not in names and "CON.txt" not in names
+
+
+def test_files_one_bad_path_does_not_fail_listing(switchable_client, db_session, user_conn, monkeypatch):
+    a = _gmu(db_session, user_conn)
+    real_relpath = svc.os.path.relpath
+
+    def relpath(path, start=None):
+        if path.endswith("step1.json"):
+            raise ValueError("path is on mount")
+        return real_relpath(path, start)
+
+    monkeypatch.setattr(svc.os.path, "relpath", relpath)
+    r = switchable_client.get(f"/api/admin/projects/{a.id}/files")
+    assert r.status_code == 200, r.text
+    rels = [f["rel"] for f in r.json()["files"]]
+    assert "9999_m01.bdf" in rels and not any(x.endswith("step1.json") for x in rels)
