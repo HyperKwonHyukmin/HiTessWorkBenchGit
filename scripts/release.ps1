@@ -19,23 +19,34 @@
 .PARAMETER SetVersion
   실행 전 4곳의 버전을 일괄 갱신합니다. 예: -SetVersion 1.2.0
 
+.PARAMETER Bump
+  실행 전 4곳의 버전을 패치 1 증가시킵니다(check-versions.ps1 인자 없음, 1.6.17 → 1.6.18).
+
+.PARAMETER BuildOnly
+  exe 를 만들고 검증까지만 합니다(배포 폴더 복사·git 태그 건너뜀). 커밋·푸시는 하지 않는다 —
+  Claude Code 의 /wb-release 명령이 메시지를 써서 버전 파일만 커밋·푸시한다(.claude/commands/wb-release.md).
+
 .EXAMPLE
   pwsh scripts/release.ps1
   pwsh scripts/release.ps1 -Yes
   pwsh scripts/release.ps1 -Dry
   pwsh scripts/release.ps1 -SetVersion 1.2.0 -Yes
   pwsh scripts/release.ps1 -SkipBuild -Yes
+  pwsh scripts/release.ps1 -Bump -BuildOnly -Yes    # /wb-release 가 쓰는 조합
 #>
 param(
     [Alias("y")][switch]$Yes,
     [switch]$Dry,
     [switch]$SkipBuild,
-    [string]$SetVersion = ""
+    [string]$SetVersion = "",
+    [switch]$Bump,
+    [switch]$BuildOnly
 )
 
 $ErrorActionPreference = "Stop"
 $ROOT      = Split-Path $PSScriptRoot -Parent
 $StartTime = Get-Date
+if ($Bump -and $SetVersion -ne "") { Write-Host "  ✗ -Bump 와 -SetVersion 은 함께 쓸 수 없습니다." -ForegroundColor Red; exit 1 }
 
 function Step([string]$n, [string]$msg) { Write-Host "`n  [$n] $msg" -ForegroundColor Cyan }
 function OK([string]$msg)   { Write-Host "  ✓ $msg" -ForegroundColor Green }
@@ -88,11 +99,20 @@ if ($SetVersion -ne "") {
         & pwsh -NonInteractive -File $checkScript -SetVersion $SetVersion
         if ($LASTEXITCODE -ne 0) { ERR "버전 갱신 실패"; exit 1 }
     }
+} elseif ($Bump) {
+    INFO "버전 패치를 1 올립니다..."
+    if ($Dry) {
+        DRY "pwsh $checkScript"
+    } else {
+        & pwsh -NonInteractive -File $checkScript
+        if ($LASTEXITCODE -ne 0) { ERR "버전 갱신 실패"; exit 1 }
+    }
 } else {
-    & pwsh -NonInteractive -File $checkScript 2>&1 | Out-Null
+    # -Check 필수 — check-versions.ps1 은 인자가 없으면 버전을 올린다(2026-10-19 수정 전에는 조용히 올라갔다)
+    & pwsh -NonInteractive -File $checkScript -Check 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         ERR "버전 불일치 감지. 먼저 -SetVersion X.Y.Z 옵션으로 갱신하세요."
-        & pwsh -NonInteractive -File $checkScript
+        & pwsh -NonInteractive -File $checkScript -Check
         exit 1
     }
 }
@@ -183,12 +203,14 @@ $electronRoot = Join-Path $ROOT "HiTessWorkBench"
 if ($SkipBuild) {
     OK "기존 dist_electron 사용"
 } elseif ($Dry) {
-    DRY "cd HiTessWorkBench && npm run dist"
+    DRY "cd HiTessWorkBench && npx electron-builder"
 } else {
-    if (Confirm-Step "npm run dist 를 실행할까요? (수 분 소요)") {
+    # npm run dist 는 프런트를 다시 빌드한다 — Step 4 가 config.js 를 되돌린 뒤라 개발 PC 주소로 빌드된다(2026-10-19).
+    # Step 4 에서 서버 주소로 빌드한 frontend/dist 를 그대로 묶는다.
+    if (Confirm-Step "electron-builder 를 실행할까요? (수 분 소요)") {
         $prevLoc = Get-Location
         Set-Location $electronRoot
-        npm run dist
+        npx electron-builder
         $distOk = ($LASTEXITCODE -eq 0)
         Set-Location $prevLoc
         if (-not $distOk) { ERR "Electron dist 실패"; exit 1 }
@@ -210,6 +232,14 @@ if (-not $exe) {
 }
 $sizeMB = [Math]::Round($exe.Length / 1MB, 1)
 OK "산출물: $($exe.Name)  ($sizeMB MB)"
+
+if ($BuildOnly) {
+    Write-Host ""
+    Write-Host "  ✓ exe 완료: $($exe.FullName)  (v$version, 배포 복사·태그는 건너뜀)" -ForegroundColor Green
+    Write-Host "  RELEASE_EXE=$($exe.FullName)"
+    Write-Host "  RELEASE_VERSION=$version"
+    exit 0
+}
 
 # ── Step 7: 배포 복사 ─────────────────────────────────────────────────────
 Step "7/8" "배포 폴더 복사"

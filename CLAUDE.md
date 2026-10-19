@@ -465,6 +465,9 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 
 키보드 단축키: **Alt + ←** (뒤로), **Alt + →** (앞으로), **F5** (새로고침 방지).
 
+⚠ **한글 입력칸의 Enter 처리에는 조합 검사를 붙인다** (2026-10-19, v1.6.16): `if (e.nativeEvent.isComposing || e.keyCode === 229) return;`.
+빠지면 글자 조합을 확정하는 Enter 가 전송·저장까지 실행해 마지막 글자가 두 번 보내지거나 빠진다. 적용된 곳은 `ChatDock`·`CommandPalette`·`AppSettings` 의 편집칸이다. Enter 로 보내거나 저장하는 입력칸을 새로 만들 때도 같이 넣을 것.
+
 ### 주요 Context
 
 | 파일 | 훅 | 역할 |
