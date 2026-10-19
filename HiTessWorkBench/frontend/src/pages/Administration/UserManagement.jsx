@@ -9,11 +9,13 @@ import {
   UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
   Download, BarChart3, ChevronRight, Code2, ArrowUpDown, Radio, MapPin, Globe, Timer,
   LogOut, Layers, MessageCircle, ChevronDown, UserX, FileDown, ArrowUp, ArrowDown,
-  Mail, Loader2
+  Mail, Loader2, BookOpen
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser, syncUserPlm, syncAllUsersPlm } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
 import { getOnlineUsers, forceLogoutUser } from '../../api/presence';
+import { getLogbookLevels } from '../../api/logbook';
+import { logbookLevelOf, logbookErrorMessage } from '../../utils/logbookLink';
 import { getEmployeeId } from '../../utils/auth';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -197,6 +199,9 @@ export default function UserManagement() {
   const [syncingPlmIds, setSyncingPlmIds] = useState(new Set()); // 단건 PLM 정보 갱신 진행 중 사용자 id
   const [syncingAllPlm, setSyncingAllPlm] = useState(false);     // 전체 PLM 정보 갱신 진행 중
   const myEmployeeId = (getEmployeeId() || '').toUpperCase();
+  // Hi-TESS LogBook 등급(보기 전용 — 바꾸기는 LogBook 사용자 관리). null = 아직/못 읽음
+  const [logbookLevels, setLogbookLevels] = useState(null);
+  const [logbookLevelsError, setLogbookLevelsError] = useState('');
 
   // 사이드바 뱃지/로그인 토스트가 참조하는 대기자 수를 갱신하도록 App 에 신호.
   const notifyPendingChanged = () => window.dispatchEvent(new CustomEvent('workbench:pending-users-changed'));
@@ -222,8 +227,20 @@ export default function UserManagement() {
     }
   };
 
+  const fetchLogbookLevels = async () => {
+    try {
+      const res = await getLogbookLevels();
+      setLogbookLevels(res.data || null);
+      setLogbookLevelsError('');
+    } catch (error) {
+      setLogbookLevels(null);
+      setLogbookLevelsError(logbookErrorMessage(error));
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchLogbookLevels();
   }, []);
 
   // 접속 현황 자동 갱신 (15초)
@@ -1253,17 +1270,20 @@ export default function UserManagement() {
                 <th className="py-4 px-6 font-bold text-center">Status</th>
                 <th className="py-4 px-6 font-bold text-center">Admin</th>
                 <th className="py-4 px-6 font-bold text-center">Dev</th>
+                <th className="py-4 px-4 font-bold text-center" title={logbookLevelsError ? `LogBook 등급을 읽지 못했습니다 — ${logbookLevelsError}` : 'Hi-TESS LogBook 등급 — WorkBench 관리자는 자동 LV3. 바꾸기는 LogBook 사용자 관리에서'}>
+                  LogBook
+                </th>
                 <th className="py-4 px-6 font-bold text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan="8" className="text-center py-20 text-slate-400">
+                <tr><td colSpan="9" className="text-center py-20 text-slate-400">
                   <RefreshCw className="animate-spin inline-block mb-2"/>
                   <p>데이터를 불러오는 중입니다...</p>
                 </td></tr>
               ) : sortedUsers.length === 0 ? (
-                <tr><td colSpan="8" className="text-center py-20 text-slate-400">
+                <tr><td colSpan="9" className="text-center py-20 text-slate-400">
                   검색 결과가 없습니다.
                 </td></tr>
               ) : pagedUsers.map((user) => (
@@ -1403,6 +1423,29 @@ export default function UserManagement() {
                       <Code2 size={18}/>
                       <span className="text-[9px] font-bold leading-none">{user.is_developer ? '개발자' : '일반'}</span>
                     </button>
+                  </td>
+
+                  {/* Hi-TESS LogBook 등급(보기 전용) — LV1 게스트(공유·허락받은 자료만) · LV2 일반 · LV3 관리자 */}
+                  <td className="py-3 px-4 text-center">
+                    {(() => {
+                      const lb = logbookLevelOf(user, logbookLevels);
+                      if (!lb) {
+                        return <span className="text-xs text-slate-300" title={logbookLevelsError || '불러오는 중'}>—</span>;
+                      }
+                      const tone = lb.level === 3
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : lb.level === 2 ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-600 border-slate-200';
+                      const note = lb.auto ? 'WorkBench 관리자 — 자동 LV3' : lb.known ? '' : 'LogBook 미접속 — 처음 들어가면 LV1';
+                      return (
+                        <span
+                          className={`inline-flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg border text-[11px] font-bold leading-none ${tone}`}
+                          title={`LogBook LV${lb.level} ${lb.label}${note ? ` · ${note}` : ''}`}
+                        >
+                          <span className="inline-flex items-center gap-1"><BookOpen size={11} aria-hidden="true"/>LV{lb.level}</span>
+                          <span className="text-[9px] font-semibold opacity-80">{lb.label}{lb.auto ? ' · 자동' : ''}</span>
+                        </span>
+                      );
+                    })()}
                   </td>
 
                   {/* 수정 및 삭제 버튼 */}

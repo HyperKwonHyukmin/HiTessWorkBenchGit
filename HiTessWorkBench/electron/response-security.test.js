@@ -18,3 +18,17 @@ test('adds the WorkBench CSP only to responses owned by the main window', () => 
   );
   assert.deepEqual(externalHeaders, originalHeaders);
 });
+
+test('leaves iframe documents inside the main window with their own headers', () => {
+  const originalHeaders = { 'Content-Security-Policy': ["default-src 'self'"] };
+  const frameHeaders = responseHeadersWithWorkbenchCsp(
+    { webContentsId: 10, resourceType: 'subFrame', responseHeaders: originalHeaders },
+    10,
+  );
+  assert.deepEqual(frameHeaders, originalHeaders);
+  const scriptHeaders = responseHeadersWithWorkbenchCsp(
+    { webContentsId: 10, resourceType: 'script', responseHeaders: {} },
+    10,
+  );
+  assert.ok(scriptHeaders['Content-Security-Policy']);
+});

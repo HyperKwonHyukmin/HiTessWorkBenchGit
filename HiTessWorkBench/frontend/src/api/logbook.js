@@ -23,3 +23,10 @@ export const importFromLogbook = ({ fileId, target = 'GroupModuleUnit' }) =>
     { file_id: fileId, target },
     { headers: getAuthHeaders(), timeout: 180000 },
   );
+
+/**
+ * (관리자) 사용자 관리 화면용 LogBook 등급. 반환 data = { labels: {'1':'게스트',…}, levels: { 사번: {level, last_login} } }.
+ * 판단 규칙(WB 관리자 → LV3, 없는 사번 → LV1)은 utils/logbookLink 의 logbookLevelOf.
+ */
+export const getLogbookLevels = () =>
+  axios.get(`${API_BASE_URL}/api/logbook/levels`, { headers: getAuthHeaders(), timeout: 10000 });

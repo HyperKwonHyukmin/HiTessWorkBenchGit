@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   LOGBOOK_SOURCE, canAcceptLogbookPick, decideLogbookPick, logbookErrorMessage,
   isLogbookPickFor, decideTrussLogbookPick, LOGBOOK_IMPORT_TARGET,
-  TRUSS_LOGBOOK_BUSY_MESSAGE, TRUSS_LOGBOOK_STARTED_MESSAGE,
+  TRUSS_LOGBOOK_BUSY_MESSAGE, TRUSS_LOGBOOK_STARTED_MESSAGE, logbookLevelOf,
 } from './logbookLink.js';
 
 const store = (entries) => ({
@@ -100,4 +100,15 @@ test('분류 규칙 거절(logbook_target_not_allowed)은 고정 문구 + LogBoo
   );
   // 같은 409 라도 INCLUDE 거절은 그대로.
   assert.match(logbookErrorMessage(err({ detail: 'logbook_has_includes' })), /INCLUDE/);
+});
+
+test('LogBook 등급 — WB 관리자는 자동 LV3, 저장값, 미접속은 LV1, 못 읽었으면 null', () => {
+  const data = { labels: { 1: '게스트', 2: '일반', 3: '관리자' },
+                 levels: { A100001: { level: 2 }, B100001: { level: 3 }, C100001: { level: 1 } } };
+  assert.deepEqual(logbookLevelOf({ employee_id: 'a100001' }, data), { level: 2, label: '일반', auto: false, known: true });
+  assert.deepEqual(logbookLevelOf({ employee_id: 'B100001' }, data), { level: 3, label: '관리자', auto: false, known: true });
+  assert.deepEqual(logbookLevelOf({ employee_id: 'Z100001' }, data), { level: 1, label: '게스트', auto: false, known: false });
+  assert.deepEqual(logbookLevelOf({ employee_id: 'C100001', is_admin: true }, data),
+    { level: 3, label: '관리자', auto: true, known: true });
+  assert.equal(logbookLevelOf({ employee_id: 'A100001' }, null), null);
 });

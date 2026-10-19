@@ -382,3 +382,35 @@ def test_launch_next_inbox_only(admin_client, clock, enabled):
     assert q["next"] == ["inbox"]
     q2 = parse_qs(urlparse(_launch(admin_client, {"next": "https://evil"}).json()["url"]).query)
     assert "next" not in q2
+
+
+# ── levels ────────────────────────────────────────────────────────────────────
+
+def test_levels_proxies_logbook(admin_client, enabled, monkeypatch):
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["secret"] = request.headers.get("X-HiTESS-Integration")
+        return httpx.Response(200, json={"labels": {"1": "게스트", "2": "일반", "3": "관리자"},
+                                         "levels": {"a100001": {"level": 2, "last_login": "2026-10-19T09:00:00"},
+                                                    "B100001": {"level": 9}}})
+
+    _mock_logbook(monkeypatch, handler)
+    r = admin_client.get("/api/logbook/levels", headers=_auth())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert seen["url"] == "http://127.0.0.1:9095/api/integration/levels" and seen["secret"] == SECRET
+    assert body["levels"] == {"A100001": {"level": 2, "last_login": "2026-10-19T09:00:00"}}   # 이상한 등급은 버린다
+    assert body["labels"]["1"] == "게스트"
+
+
+def test_levels_errors(admin_client, enabled, monkeypatch):
+    def refused(request):
+        raise httpx.ConnectError("refused", request=request)
+
+    _mock_logbook(monkeypatch, refused)
+    r = admin_client.get("/api/logbook/levels", headers=_auth())
+    assert r.status_code == 502 and r.json()["detail"] == "logbook_unreachable"
+    monkeypatch.delenv("LOGBOOK_INTEGRATION_SECRET", raising=False)
+    assert admin_client.get("/api/logbook/levels", headers=_auth()).status_code == 503

@@ -107,3 +107,24 @@ export function logbookErrorMessage(error) {
   if (!error?.response && error?.request) return 'WorkBench 서버에 연결할 수 없습니다.';
   return error?.message || '알 수 없는 오류가 발생했습니다.';
 }
+
+/** LogBook 등급 이름(LogBook lib/levels.js 와 같은 값). 서버가 다른 이름을 주면 그것을 쓴다. */
+export const LOGBOOK_LEVEL_LABELS = { 1: '게스트', 2: '일반', 3: '관리자' };
+
+/**
+ * 사용자 관리 화면의 LogBook 등급 — LogBook access.level_of 와 같은 규칙.
+ *   WorkBench 관리자 → LV3(자동), LogBook 에 저장된 등급이 있으면 그 값, 없으면(LogBook 미접속) LV1.
+ * @param {{ employee_id?: string, is_admin?: boolean }} user  WorkBench 사용자 행
+ * @param {{ labels?: Record<string,string>, levels?: Record<string,{level:number, last_login?:string|null}> } | null} data
+ *        /api/logbook/levels 응답(못 읽었으면 null)
+ * @returns {{ level: number, label: string, auto: boolean, known: boolean } | null}  data 가 없으면 null
+ */
+export function logbookLevelOf(user, data) {
+  if (!data) return null;
+  const labels = { ...LOGBOOK_LEVEL_LABELS, ...(data.labels || {}) };
+  const row = data.levels?.[String(user?.employee_id || '').trim().toUpperCase()];
+  const known = !!row;
+  if (user?.is_admin) return { level: 3, label: labels[3], auto: true, known };
+  const level = [1, 2, 3].includes(row?.level) ? row.level : 1;
+  return { level, label: labels[level], auto: false, known };
+}

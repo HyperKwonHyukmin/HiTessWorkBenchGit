@@ -46,6 +46,7 @@ import {
 const AdminGateModal = lazy(() => import('../../components/ui/AdminGateModal'));
 const NoticeDetailModal = lazy(() => import('../../components/modals/NoticeDetailModal'));
 const NewsletterArchiveModal = lazy(() => import('../../components/NewsletterArchiveModal'));
+const LogbookModal = lazy(() => import('../../components/modals/LogbookModal'));
 
 // Dashboard.jsx 와 같은 키 — My Projects 가 이 값을 읽어 상세 모달을 연다.
 const OPEN_PROJECT_DETAIL_KEY = 'workbench:open-project-detail';
@@ -1248,6 +1249,15 @@ export default function Dashboard() {
                   + (serverPending > 0 ? ` · 대기 ${serverPending}건 — 새 해석은 앞 작업이 끝나면 시작됩니다` : ' · 지금 실행하면 바로 시작됩니다')}
             />
             <span className="mx-0.5 hidden h-6 w-px bg-white/15 lg:block" aria-hidden="true" />
+            {/* Hi-TESS LogBook — 모달 안에서 WorkBench 계정으로 바로 접속 */}
+            <button
+              type="button"
+              onClick={() => setModal('logbook')}
+              title="Hi-TESS LogBook(구조해석 자료 창고)을 바로 엽니다"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-xs font-bold text-white transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 cursor-pointer"
+            >
+              <BookOpen size={14} aria-hidden="true" /> Hi-TESS LogBook
+            </button>
             <ResourceMenu
               onGuide={() => setGuideRequested(true)}
               onUserGuide={() => setCurrentMenu('User Guide')}
@@ -1471,6 +1481,7 @@ export default function Dashboard() {
           primaryAction={{ label: '전체 공지 보기', onClick: () => setCurrentMenu('Notice & Updates'), icon: <ChevronRight size={14} /> }}
         />
         <NewsletterArchiveModal isOpen={modal === 'newsletter'} onClose={() => setModal(null)} />
+        {modal === 'logbook' && <LogbookModal isOpen onClose={() => setModal(null)} showToast={showToast} />}
       </Suspense>
       <IntroModal
         isOpen={modal === 'intro'}

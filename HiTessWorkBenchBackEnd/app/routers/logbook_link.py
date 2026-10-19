@@ -2,6 +2,7 @@
 
 - `POST /launch`  — WB 로그인 사용자에게 LogBook 자동 로그인용 일회 코드 URL 을 준다.
 - `POST /redeem`  — LogBook 서버가 공유 비밀키로 코드를 사번으로 바꾼다(1회용).
+- `GET  /levels`  — (관리자) 사용자 관리 화면에 보일 LogBook 등급(LV1 게스트·LV2 일반·LV3 관리자). LB 에 서버끼리 묻는다.
 - `POST /import`  — LogBook 의 BDF 를 서버끼리 받아 `userConnection/<ts>_<사번>_LogBookImport/` 에 둔다.
   이 폴더명은 `_access_control.WORK_FOLDER_RE` 를 통과하므로 GMU `request-from-path` 가 그대로 받는다.
   LB 에는 `&target=<gmu|truss>` 를 함께 보낸다 — LB 가 대상별 분류 규칙으로 거절하면 409 `target_not_allowed`.
@@ -28,7 +29,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import database, models
-from ..dependencies import require_auth
+from ..dependencies import require_admin, require_auth
 from ..services import logbook_integration as lb
 from ..services.workspace import create_analysis_workspace
 from ._access_control import assert_current_user_can_access_path
@@ -300,3 +301,37 @@ def import_from_logbook(
         "entryId": meta["entryId"],
         "fileId": payload.file_id,
     }
+
+
+# ── levels (사용자 관리 화면) ────────────────────────────────────────────────────
+
+LEVELS_TIMEOUT_SECONDS = 5.0
+LEVEL_LABELS_FALLBACK = {"1": "게스트", "2": "일반", "3": "관리자"}
+
+
+@router.get("/levels")
+def logbook_levels(_admin: str = Depends(require_admin)):
+    """LogBook 에 저장된 사번별 등급. 화면은 WB 관리자면 LV3, 목록에 없는 사람(LogBook 미접속)은 LV1 로 보인다
+    (LogBook access.level_of 와 같은 규칙). 연동이 꺼져 있으면 503, LB 에 닿지 않으면 502 logbook_unreachable."""
+    secret = _require_enabled()
+    url = f"{lb.internal_url()}/api/integration/levels"
+    try:
+        with httpx.Client(timeout=LEVELS_TIMEOUT_SECONDS, transport=_http_transport) as client:
+            resp = client.get(url, headers={lb.INTEGRATION_HEADER: secret})
+        if resp.status_code != 200:
+            logger.warning("LogBook 등급 조회 실패: HTTP %s", resp.status_code)
+            raise HTTPException(status_code=502, detail="logbook_unreachable")
+        body = resp.json()
+    except httpx.HTTPError as exc:
+        logger.warning("LogBook 등급 조회 연결 실패: %s", exc)
+        raise HTTPException(status_code=502, detail="logbook_unreachable") from exc
+    except ValueError as exc:   # JSON 이 아님
+        raise HTTPException(status_code=502, detail="logbook_unreachable") from exc
+    levels = body.get("levels") if isinstance(body, dict) else None
+    labels = body.get("labels") if isinstance(body, dict) else None
+    out = {}
+    for eid, row in (levels or {}).items():
+        lv = row.get("level") if isinstance(row, dict) else row
+        if isinstance(eid, str) and lv in (1, 2, 3):
+            out[eid.strip().upper()] = {"level": lv, "last_login": row.get("last_login") if isinstance(row, dict) else None}
+    return {"labels": labels if isinstance(labels, dict) else LEVEL_LABELS_FALLBACK, "levels": out}
