@@ -300,3 +300,41 @@ def test_export_blocked_duplicates_returned(switchable_client, db_session, user_
                                   json={"paths": _paths(switchable_client, a.id)}).json()
     assert body["blocked"] == [{"name": "9999_m01.bdf", "same_as": "E-0001"}]
     assert db_session.query(models.LogbookExport).one().blocked == body["blocked"]
+
+
+# ── Hi-TESS Core 1단계: 해석 여권 함께 보내기(LOGBOOK_SEND_PASSPORT) ─────────────────
+
+def test_export_without_passport_key_sends_same_origin(switchable_client, db_session, user_conn, enabled, fake_lb,
+                                                       monkeypatch):
+    monkeypatch.delenv("LOGBOOK_SEND_PASSPORT", raising=False)
+    fake = fake_lb()
+    a = _gmu(db_session, user_conn)
+    r = switchable_client.post(f"/api/admin/projects/{a.id}/logbook", json={"paths": _paths(switchable_client, a.id)})
+    assert r.status_code == 200, r.text
+    assert set(fake.begin_body["origin"]) == {"analysis_id", "owner", "program", "project", "created_at", "note"}
+
+
+def test_export_with_passport_key_adds_verified_artifacts(switchable_client, db_session, user_conn, enabled, fake_lb,
+                                                          monkeypatch):
+    import hashlib
+    monkeypatch.setenv("LOGBOOK_SEND_PASSPORT", "1")
+    fake = fake_lb()
+    a = _gmu(db_session, user_conn)
+    r = switchable_client.post(f"/api/admin/projects/{a.id}/logbook", json={"paths": _paths(switchable_client, a.id)})
+    assert r.status_code == 200, r.text
+    arts = {x["name"]: x for x in fake.begin_body["origin"]["passport"]["artifacts"]}
+    bdf = b"SOL 101\nCEND\nBEGIN BULK\nENDDATA\n"
+    assert arts["9999_m01.bdf"]["sha256"] == hashlib.sha256(bdf).hexdigest()
+    assert arts["9999_m01.bdf"]["size"] == len(bdf) and arts["9999_m01.bdf"]["role"]
+
+
+def test_export_passport_failure_still_sends(switchable_client, db_session, user_conn, enabled, fake_lb, monkeypatch):
+    from app.services import analysis_passport
+    monkeypatch.setenv("LOGBOOK_SEND_PASSPORT", "1")
+    monkeypatch.setattr(analysis_passport, "build_analysis_passport",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    fake = fake_lb()
+    a = _gmu(db_session, user_conn)
+    r = switchable_client.post(f"/api/admin/projects/{a.id}/logbook", json={"paths": _paths(switchable_client, a.id)})
+    assert r.status_code == 200, r.text
+    assert "passport" not in fake.begin_body["origin"]

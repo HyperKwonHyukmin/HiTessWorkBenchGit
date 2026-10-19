@@ -38,6 +38,12 @@ LOGOUT_TIMEOUT_SECONDS = 3.0
 
 # ── 설정 (환경 변수 — 다른 설정과 같이 os.environ 에서 읽는다) ──────────────────
 
+def send_passport_enabled() -> bool:
+    """Hi-TESS Core 1단계(hitess-core docs/10) — LogBook 으로 보낼 때 해석 여권 요약을 origin 에 싣는가.
+    `LOGBOOK_SEND_PASSPORT` 가 비어 있으면 꺼짐(지금과 같은 본문을 보낸다)."""
+    return os.environ.get("LOGBOOK_SEND_PASSPORT", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def integration_secret() -> str:
     return os.environ.get("LOGBOOK_INTEGRATION_SECRET", "").strip()
 

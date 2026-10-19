@@ -31,6 +31,26 @@ EXPORT_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 _http_transport: Optional[httpx.BaseTransport] = None
 
 
+# ── 해석 여권 요약(Hi-TESS Core 1단계) ────────────────────────────────────────────
+PASSPORT_MAX_ARTIFACTS = 500   # LogBook wb_origin.MAX_ARTIFACTS 와 같다
+
+
+def passport_summary(record: models.Analysis, user_connection_base: str) -> Optional[dict]:
+    """LogBook 으로 보낼 여권 요약 {artifacts: [{role, name, sha256, size}]} — 검증된(verified) 산출물만.
+    여권을 만들지 못하거나 검증된 산출물이 없으면 None(보내기는 여권 없이 계속한다)."""
+    from .analysis_passport import build_analysis_passport
+
+    try:
+        passport = build_analysis_passport(record, user_connection_base=user_connection_base)
+    except Exception:  # noqa: BLE001 — 여권은 덧붙이는 정보다. 실패가 보내기를 막지 않는다
+        logger.warning("해석 여권 생성 실패 — 여권 없이 보냄: analysis=%s", record.id, exc_info=True)
+        return None
+    out = [{"role": a.get("role"), "name": a.get("name"), "sha256": a.get("sha256"), "size": a.get("sizeBytes")}
+           for a in passport.get("artifacts") or []
+           if a.get("status") == "verified" and a.get("sha256")][:PASSPORT_MAX_ARTIFACTS]
+    return {"artifacts": out} if out else None
+
+
 # ── 작업 폴더 ──────────────────────────────────────────────────────────────────
 
 def _iter_strings(value) -> Iterable[str]:

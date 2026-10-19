@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from .. import database, models
 from ..dependencies import require_admin
 from ..services import admin_projects as svc
+from ..services import logbook_integration as lb
 from ..services.activity_service import log_activity
 from . import analysis as analysis_router
 
@@ -177,6 +178,11 @@ def export_to_logbook(
     origin = {"analysis_id": record.id, "owner": owner, "program": record.program_name,
               "project": record.project_name, "created_at": record.created_at.isoformat() if record.created_at else None,
               "note": note}
+    # Hi-TESS Core 1단계 — 해석 여권(산출물 sha256)을 함께 보낸다. LOGBOOK_SEND_PASSPORT 가 비면 지금과 같다
+    if lb.send_passport_enabled():
+        passport = svc.passport_summary(record, analysis_router._USER_CONNECTION_DIR)
+        if passport:
+            origin["passport"] = passport
     row = models.LogbookExport(analysis_id=record.id, sent_by=admin_id, title=title, note=note,
                                created_at=datetime.now())
     ip = request.client.host if request.client else None
