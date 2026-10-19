@@ -26,14 +26,25 @@ class CheckUserRequest(BaseModel):
     company: str
 
 
+# 회사명 비교용 정규화 — 법인 표기·공백·대소문자 차이를 무시한다.
+# PLM 리프레시(user_directory_sync)가 회사를 'HD현대중공업㈜' 처럼 PLM 표기로 덮어쓰는데,
+# 이미 배포된 외부 프로그램(HiTESS Beam 등)은 가입 화면 표기('HD 현대중공업')를 그대로 보낸다.
+# 표기는 PLM 값으로 두되 같은 회사로 인식되게 한다.
+_COMPANY_NOISE = re.compile(r"㈜|\(주\)|（주）|주식회사|\s+")
+
+
+def normalize_company(value: Optional[str]) -> str:
+    return _COMPANY_NOISE.sub("", value or "").casefold()
+
+
 @member_router.post("/check_user")
 @router.post("/check_user")
 def check_user(req: CheckUserRequest, db: Session = Depends(database.get_db)):
-    user_id = req.userID.upper()
-    user = db.query(models.User).filter(
-        models.User.employee_id == user_id,
-        models.User.company == req.company
-    ).first()
+    user_id = req.userID.strip().upper()
+    user = db.query(models.User).filter(models.User.employee_id == user_id).first()
+    # 사번이 맞아도 회사가 다르면 기존과 같이 미등록으로 본다(계약 유지).
+    if user and normalize_company(user.company) != normalize_company(req.company):
+        user = None
 
     if not user:
         raise HTTPException(status_code=404, detail="not_registered")
