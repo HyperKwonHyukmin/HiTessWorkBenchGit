@@ -66,10 +66,12 @@ npm run dist
 - **백엔드 개발 서버 포트**: `9091` (uvicorn 실행 시 `--port 9091` 사용).
 - **데이터베이스**: MySQL `localhost:3306/hitessworkbench`, 접속 정보는 `HiTessWorkBenchBackEnd/app/database.py`. SQLAlchemy로 서버 시작 시 테이블 자동 생성.
 - **Electron 환경 감지**: `electron/index.js`의 `app.isPackaged` 여부로 개발/프로덕션 로드 경로 분기.
+  - ⚠ **배포 exe 의 Electron 버전 ≠ 개발 모드 (2026-10-19 확인)**: `package.json` 은 `electron ^36.3.2` 인데 루트 `node_modules/electron` 이 **26.0.0** 이라 exe 는 Electron 26(Chromium 116)으로 빌드된다(`dist_electron/builder-effective-config.yaml` `electronVersion`). 개발 모드(`electron/node_modules`)는 40. 화면·웹 기능 확인은 exe 기준으로 하고, 버전을 맞출 때는 루트에서 electron 을 다시 설치한다.
 - ⚠️ **InHouse 프로그램 배포 규칙 (개발 위치 ≠ 실사용 위치)**: 해석 실행 파일·스크립트의 **코드 작업은 `C:\Coding\WorkBenchSubModule\<Program>\`**(예: `Nastran_bridge`, `MooringFitting`)에서 하더라도, **WorkBench 백엔드가 실제로 실행·import 하는 최종본은 반드시 `HiTessWorkBenchBackEnd/InHouseProgram/<Program>/`로 복사**해야 한다.
   - 운영 서버(145)에는 `WorkBenchSubModule/`이 없고 `InHouseProgram/`은 git 미추적이라, SubModule만 고치면 **dev에서는 되고 서버에서 깨진다**(실례: `rbe2_fixed_lines` 누락 → mooring solve HTTP 500). InHouse 관련 작업 보고에는 **"`git pull`만으로 끝나는지 / 서버 수동 교체 파일 목록 + 재시작 필요"를 항상 구분해 명시**한다.
   - 폴더명: `InHouseProgram`은 camelCase(`NastranBridge`), SubModule은 underscore 혼용(`Nastran_bridge`). `analysis.py`의 nastran_bridge 탐색은 `InHouseProgram/Nastran_bridge` → `WorkBenchSubModule/Nastran_bridge` → `InHouseProgram/NastranBridge` 순 + `NASTRAN_BRIDGE_DIR` override.
 - 📦 **배포 절차(Studio zip 2곳 복사·버전 확인·버전 핀 동기화, 엔진 exe 빌드·교체, 서버 보고 형식)는 전역 `/deploy` 스킬에 있다.** "배포해" 요청 시 그 스킬을 따른다. 전역 훅(`~/.claude/hooks/workbench_guard.js`)이 config.js 커밋을 차단하고 InHouseProgram/StudioProgram 변경 시 서버 반영을 알린다.
+  - "zip 빌드해서 저장해" = 모든 Studio(Model Builder·Mooring Fitting·Module Unit·Plate Analysis 등) zip 을 백엔드-로컬 `HiTessWorkBenchBackEnd\StudioProgram\` 과 UNC `...\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram` 두 곳에 둔다(전체 경로·복사 명령은 `/deploy` 스킬 `studio.md`). 대괄호 때문에 PowerShell 은 `Copy-Item -LiteralPath`. 버전은 각 studio 의 `package.json` 한 곳만 올린다(2026-10-19 전역 규칙에서 옮김).
 
 ### Model Builder Studio — 2개 구성요소(엔진 / 스튜디오)와 배포 흐름 ★작업 전 필독
 
@@ -575,7 +577,7 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 운영(145) 기록은 70 에서 `scripts/pull_diagnostics.py`(관리자 사번 로그인, 로그아웃 안 함 — 로그아웃 API 가 외부 앱 세션을 끊는다)로 가져오고 대응 후 `mark` 로 handled 표시.
 ⚠ 새 Nastran 실행 경로가 `mark_complete` 를 안 거치면 `schedule_collection(job_id, …, extra_dirs=[산출 폴더])` 를 직접 부를 것(편집 적용이 그 예). 테스트는 conftest 가 `HITESS_DIAGNOSTICS=0` 으로 끈다.
 
-작업 상태는 인메모리(`job_status_store` dict)에 저장됩니다. 서버 재시작 시 진행 중인 작업 상태가 소실되는 구조적 한계가 있습니다(프로덕션에서는 Redis 권장).
+작업 상태는 인메모리(`job_status_store`)가 1차 저장소이고, status·progress·message 는 변경마다 DB `analysis.job_status/progress/job_message` 에 write-through 된다(`_write_through`). 상태 조회 API 는 메모리에 없으면 DB 값으로 응답하고, 서버 시작 시 Pending/Running 으로 남은 레코드는 `Interrupted`(실패)로 바뀐다(`main.py` lifespan). 재시작 시 잃는 것은 실행 중이던 프로세스 자체와 대기열 순번·취소 핸들뿐이다 — Redis 는 필요 없다(2026-10-19 확인).
 
 **다운로드 보안**: `GET /api/download`는 `os.path.abspath` 프리픽스 검사로 `userConnection/` 디렉토리 외부 경로 접근을 차단합니다.
 

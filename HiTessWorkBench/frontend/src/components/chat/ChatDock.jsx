@@ -235,6 +235,8 @@ export default function ChatDock({
   };
 
   const handleKeyDown = (e) => {
+    // 한글 조합 중 Enter 는 조합 확정용이다 — 여기서 보내면 마지막 글자가 한 번 더 전송된다.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();

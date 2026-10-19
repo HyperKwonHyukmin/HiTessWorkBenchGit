@@ -131,6 +131,8 @@ export default function CommandPalette({
       event.preventDefault();
       setActiveIndex(i => Math.max(i - 1, 0));
     } else if (event.key === 'Enter') {
+      // 한글 조합 확정용 Enter 로 명령이 실행되지 않게 한다.
+      if (event.nativeEvent.isComposing || event.keyCode === 229) return;
       event.preventDefault();
       execute(filtered[activeIndex]);
     }

@@ -98,7 +98,8 @@ function AddressCell({ app, endpoint, serverAddress, onSaved }) {
   };
 
   const onKeyDown = (e) => {
-    if (e.key === 'Enter') save();
+    // 한글 조합 확정용 Enter 로 저장되면 마지막 글자가 빠진 값이 저장된다.
+    if (e.key === 'Enter' && !(e.nativeEvent.isComposing || e.keyCode === 229)) save();
     if (e.key === 'Escape') setEditing(false);
   };
 
