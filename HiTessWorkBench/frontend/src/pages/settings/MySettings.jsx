@@ -20,7 +20,6 @@ import { NOTIFICATION_KINDS } from '../../constants/notificationKinds';
 const BASE_MENUS = [
   { menu: 'Dashboard',         label: 'Dashboard(기본)' },
   { menu: 'My Projects',       label: 'My Projects' },
-  { menu: 'Model Library',     label: 'Model Library' },
   { menu: 'File-Based Apps',   label: 'File-Based Apps' },
   { menu: 'Interactive Apps',  label: 'Interactive Apps' },
   { menu: 'Parametric Apps',   label: 'Parametric Apps' },

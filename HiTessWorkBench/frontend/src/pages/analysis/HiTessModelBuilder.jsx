@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronsRight,
-  DatabaseZap, Download, ExternalLink, Eye, FileEdit, FilePlus2, FileSpreadsheet, History, Loader2,
+  Download, ExternalLink, Eye, FileEdit, FilePlus2, FileSpreadsheet, History, Loader2,
   Lock, PackageCheck, RefreshCw, RotateCcw, ScanSearch, Send, ShieldCheck, UploadCloud, X,
 } from 'lucide-react';
 
@@ -25,7 +25,6 @@ import AppCommunityHub from '../../components/analysis/AppCommunityHub';
 import PreflightIssueCenter from '../../components/analysis/PreflightIssueCenter';
 import CsvPreviewPanel from '../../components/analysis/CsvPreviewPanel';
 import { readCsvFileRows } from '../../utils/csvPreview';
-import ModelRegistrationModal from '../../components/modelRegistry/ModelRegistrationModal';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 import { describeDiagnostic, downloadDiagnostics, enrichDiagnostic } from '../../utils/modelValidation';
 import { peekDashboardFiles, useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
@@ -1642,7 +1641,7 @@ function SummaryMetric({ label, value, variant }) {
 
 function DeliverPanel({
   bdfResult, hasResult, editStatus, onSendToGmu, onSendToSidePassage, gmuLocked,
-  sourceAnalysisId, onRegister, canRegister, onResolveHandoffBdf, onDelivered, massLine, verdict,
+  onResolveHandoffBdf, onDelivered, massLine, verdict,
 }) {
   // 후속 해석으로 넘길 BDF 를 확정하는 동안(edit-status 재조회) 버튼 잠금.
   // 훅은 아래 early return 보다 위에 있어야 한다(rules of hooks).
@@ -1704,8 +1703,6 @@ function DeliverPanel({
           filepath={bdfResult.bdfPath}
           primary={!editBdf}
           onDownloaded={() => onDelivered?.('download')}
-          /* 원본과 편집본은 의미가 다르므로 각각 별도 artifact kind 로 등록한다. */
-          onRegister={canRegister && sourceAnalysisId ? () => onRegister('modelbuilder_final') : undefined}
         />
         {editBdf ? (
           <FileDownloadRow
@@ -1715,7 +1712,6 @@ function DeliverPanel({
             downloadName={makeEditDownloadName(editBdf, 'bdf')}
             primary
             onDownloaded={() => onDelivered?.('download')}
-            onRegister={canRegister && sourceAnalysisId ? () => onRegister('modelbuilder_edited') : undefined}
           />
         ) : (
           <p className="px-1 text-xs text-slate-600">Studio 에서 모델을 고쳐 적용하면 &lsquo;편집 적용 BDF&rsquo;가 여기에 추가됩니다.</p>
@@ -1790,7 +1786,7 @@ function DeliverPanel({
   );
 }
 
-function FileDownloadRow({ label, filename, filepath, primary, downloadName, onRegister, onDownloaded }) {
+function FileDownloadRow({ label, filename, filepath, primary, downloadName, onDownloaded }) {
   const [busy, setBusy] = useState(false);
   const download = async () => {
     setBusy(true);
@@ -1810,17 +1806,6 @@ function FileDownloadRow({ label, filename, filepath, primary, downloadName, onR
         <p className="truncate font-mono text-xs text-slate-600" title={filename}>{filename}</p>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        {/* 등록은 관리자가 명시적으로 눌러야만 시작된다(자동 등록 없음). */}
-        {onRegister && (
-          <button
-            type="button"
-            onClick={onRegister}
-            title="Model Library 에 등록"
-            className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer"
-          >
-            <DatabaseZap size={12} aria-hidden="true" /> 등록
-          </button>
-        )}
         <button
           type="button"
           onClick={download}
@@ -1985,7 +1970,7 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
   const [hasRunOnce, setHasRunOnce] = useState(saved?.hasRunOnce ?? false);
   const [jobStatus,  setJobStatus]  = useState(saved?.jobStatus ?? null);
   const [currentJobId, setCurrentJobId] = useState(saved?.currentJobId ?? null);
-  // Model Library 등록은 job_id 가 아니라 Analysis 레코드 id 를 쓴다.
+  // 서버 쪽 재실행(rerun)은 job_id 가 아니라 Analysis 레코드 id 를 쓴다.
   // 상태 응답의 project.id 가 그 값이며(analysis_runner.record_analysis), GMU 페이지도 같은 방식으로 잡는다.
   const [sourceAnalysisId, setSourceAnalysisId] = useState(saved?.sourceAnalysisId ?? null);
   // '검토 필요' 판정을 사용자가 확인했는지 — 확인하면 2단계가 완료로 바뀐다.
@@ -1993,9 +1978,6 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
   // 결과를 다시 열었을 때(브라우저에 File 객체 없음) 입력 요약에 보여 줄 서버 쪽 입력 파일명.
   const [serverInputs, setServerInputs] = useState(saved?.serverInputs ?? null);
   const [rerunBusy, setRerunBusy] = useState(false);
-  // 등록 모달은 관리자가 명시적으로 열 때만 뜬다. 해석 완료가 등록 트리거가 되지 않는다.
-  const [registerTarget, setRegisterTarget] = useState(null);
-  const canRegisterToStorage = isAdmin();
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [bdfResult,  setBdfResult]  = useState(saved?.bdfResult ?? null);
   const [engineLog,  setEngineLog]  = useState(saved?.engineLog ?? null);
@@ -3465,9 +3447,6 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
                   hasResult={hasResult}
                   editStatus={editStatus}
                   gmuLocked={gmuLocked}
-                  sourceAnalysisId={sourceAnalysisId}
-                  canRegister={canRegisterToStorage}
-                  onRegister={(artifactKind) => setRegisterTarget({ artifactKind })}
                   onDelivered={markDelivered}
                   massLine={massLine}
                   verdict={verdict}
@@ -3506,20 +3485,6 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
         </main>
       </div>
 
-      <ModelRegistrationModal
-        isOpen={Boolean(registerTarget)}
-        onClose={() => setRegisterTarget(null)}
-        source={{
-          analysisId: sourceAnalysisId,
-          artifactKind: registerTarget?.artifactKind,
-        }}
-        onRegistered={(r) => showToast(
-          r?.restored
-            ? '삭제되었던 모델을 Model Library 에 복원했습니다.'
-            : 'Model Library 에 등록되었습니다.',
-          'success',
-        )}
-      />
     </>
   );
 });

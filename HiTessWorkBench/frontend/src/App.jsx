@@ -81,7 +81,6 @@ const BlockWeldAssessment = lazy(() => import('./pages/analysis/BlockWeldAssessm
 const HeavyBlockLiftingSimulation = lazy(() => import('./pages/analysis/HeavyBlockLiftingSimulation'));
 const RegisteredExternalApp = lazy(() => import('./pages/analysis/RegisteredExternalApp'));
 const BccLiftingCalculator = lazy(() => import('./pages/analysis/BccLiftingCalculator'));
-const ModelLibrary = lazy(() => import('./pages/analysis/ModelLibrary'));
 const MySettings = lazy(() => import('./pages/settings/MySettings'));
 
 const KEEP_ALIVE_MENUS = new Set(
@@ -174,7 +173,7 @@ function AppInner() {
     }
     // 알려진 메뉴 상수(사이드바에 있는 것)면 그대로 이동, 아니면 Dashboard 유지.
     const KNOWN = new Set([
-      'Dashboard', 'My Projects', 'Model Library',
+      'Dashboard', 'My Projects',
       'File-Based Apps', 'Interactive Apps', 'Parametric Apps', 'Productivity Apps',
       'Notice & Updates', 'User Guide',
       // 관리자 메뉴는 위에서 걸러졌음
@@ -561,10 +560,22 @@ function AppInner() {
       case 'Dashboard': return <Dashboard />;
       case 'My Project':
       case 'My Projects': return <MyProjects />;
-      // 'Data Storage' 는 옛 메뉴 이름이다. 최근 방문 기록·명령 팔레트에 남아 있을 수 있어
-      // alias 로 계속 받는다(빈 화면 대신 정상 진입).
+      // Model Library(옛 이름 Data Storage)는 Hi-TESS LogBook 으로 옮겨 WorkBench 에서 뺐다.
+      // 최근 방문 기록·명령 팔레트에 남은 항목으로 들어오면 '개발 중' 대신 옮긴 곳을 알린다.
       case 'Data Storage':
-      case 'Model Library': return <ModelLibrary />;
+      case 'Model Library':
+        return (
+          <div className="flex flex-col items-center justify-center h-full text-slate-500">
+            <p className="text-lg font-bold text-slate-700">Model Library 는 Hi-TESS LogBook 으로 옮겨졌습니다.</p>
+            <p className="text-sm mt-1">모델 보관·검색·비교는 LogBook 에서 하세요.</p>
+            <button
+              onClick={() => setCurrentMenu('Dashboard')}
+              className="mt-6 px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
+            >
+              대시보드로 돌아가기
+            </button>
+          </div>
+        );
       case 'New Analysis':
       case 'File-Based Apps': return <NewAnalysis />;
       case 'Truss Analysis': return <TrussAnalysis />;

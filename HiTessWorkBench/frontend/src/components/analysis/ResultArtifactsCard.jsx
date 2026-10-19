@@ -1,15 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Download, Loader2, RefreshCw, FileText, FileCog,
-  FileBarChart2, AlertCircle, PackageOpen, DatabaseZap,
+  FileBarChart2, AlertCircle, PackageOpen,
 } from 'lucide-react';
 import { getGroupModuleUnitArtifacts, downloadFileBlob, downloadUnitLiftingReport } from '../../api/analysis';
 import { downloadBlob, filenameFromDisposition } from '../../utils/fileHelper';
-import { isAdmin } from '../../utils/auth';
 import { useToast } from '../../contexts/ToastContext';
-import ModelRegistrationModal from '../modelRegistry/ModelRegistrationModal';
 import UnitLiftingReportDialog from './UnitLiftingReportDialog';
-import { SOURCE_ARTIFACT_KINDS } from '../../utils/modelRegistryUtils';
 
 // 파일 용량 표시 (best-effort — DRM at-rest 시 약간의 오차 가능)
 function formatSize(bytes) {
@@ -33,14 +30,6 @@ const KIND_ICON = {
   op2:        FileBarChart2,
 };
 
-// Model Library 등록이 가능한 산출물 → 백엔드 artifact_kind 매핑.
-// _edited.bdf 와 _lifting.bdf 는 의미가 다르므로(편집 구조 모델 vs 와이어·하중 반영 해석 모델)
-// 한 버튼이 둘을 암묵적으로 고르게 하지 않고 각각 별도 kind 로 등록한다.
-const REGISTRABLE_KINDS = {
-  liftingBdf: SOURCE_ARTIFACT_KINDS.MODULE_UNIT_LIFTING,
-  editedBdf:  SOURCE_ARTIFACT_KINDS.MODULE_UNIT_EDITED,
-};
-
 /**
  * Group & Module Unit 권상 구조해석 Step3 상단 카드.
  * parent BDF 폴더에서 존재하는 lifting 산출물(_lifting.bdf/_edited.bdf/_lifting.f06/_lifting.op2)을
@@ -53,13 +42,10 @@ export default function ResultArtifactsCard({ parentAnalysisId, onDownloaded }) 
   const [artifacts, setArtifacts] = useState([]);
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(null); // 다운로드 중인 kind
-  // 등록 모달은 사용자가 명시적으로 열 때만 뜬다. 여는 것만으로는 아무것도 등록되지 않는다.
-  const [registerTarget, setRegisterTarget] = useState(null); // { artifactKind } | null
   // 이 parent 로 실행된 최신 Unit 구조 해석 id — 검토 보고서 생성에 필요(없으면 버튼 비활성).
   const [unitAnalysisId, setUnitAnalysisId] = useState(null);
   const [reportKind, setReportKind] = useState(null);   // 'result' | 'detail' | null(닫힘)
   const [reportBusy, setReportBusy] = useState(false);
-  const canRegister = isAdmin();
 
   const fetchArtifacts = useCallback(async () => {
     if (!parentAnalysisId) { setState('idle'); return; }
@@ -220,7 +206,6 @@ export default function ResultArtifactsCard({ parentAnalysisId, onDownloaded }) 
                     {items.map(art => {
                       const Icon = KIND_ICON[art.kind] ?? FileText;
                       const busy = downloading === art.kind;
-                      const registerKind = REGISTRABLE_KINDS[art.kind];
                       return (
                         <div
                           key={art.kind}
@@ -242,15 +227,6 @@ export default function ResultArtifactsCard({ parentAnalysisId, onDownloaded }) 
                               ? <Loader2 size={14} className="animate-spin text-blue-500 shrink-0" />
                               : <Download size={14} className="text-slate-500 shrink-0" />}
                           </button>
-                          {canRegister && registerKind && parentAnalysisId && (
-                            <button
-                              onClick={() => setRegisterTarget({ artifactKind: registerKind })}
-                              title="Model Library 에 등록"
-                              className="px-2.5 border-l border-slate-200 text-slate-500 hover:text-brand-blue hover:bg-blue-50 transition-colors cursor-pointer shrink-0"
-                            >
-                              <DatabaseZap size={15} />
-                            </button>
-                          )}
                         </div>
                       );
                     })}
@@ -261,21 +237,6 @@ export default function ResultArtifactsCard({ parentAnalysisId, onDownloaded }) 
           </div>
         )}
       </div>
-
-      <ModelRegistrationModal
-        isOpen={Boolean(registerTarget)}
-        onClose={() => setRegisterTarget(null)}
-        source={{
-          analysisId: parentAnalysisId,
-          artifactKind: registerTarget?.artifactKind,
-        }}
-        onRegistered={(r) => showToast(
-          r?.restored
-            ? '삭제되었던 모델을 Model Library 에 복원했습니다.'
-            : 'Model Library 에 등록되었습니다.',
-          'success',
-        )}
-      />
 
       <UnitLiftingReportDialog
         open={Boolean(reportKind)}

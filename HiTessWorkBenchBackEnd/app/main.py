@@ -34,7 +34,6 @@ from .routers import (
     hitessbeam,
     hole_calculation,
     logbook_link,
-    model_registry,
     module_ocean_transport,
     newsletters,
     notifications,
@@ -228,7 +227,6 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(chat.router)
     application.include_router(app_settings.router)
     application.include_router(external_app_registry.router)
-    application.include_router(model_registry.router)
     application.include_router(module_ocean_transport.router)
     application.include_router(reports.router)
     application.include_router(notifications.router)
