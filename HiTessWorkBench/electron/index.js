@@ -13,6 +13,7 @@ const {
 const { responseHeadersWithWorkbenchCsp } = require("./response-security");
 const logbookBridge = require("./logbook-bridge");
 const { externalAppBinding, redirectIntoExternalApp } = require("./external-app-paths");
+const clientTelemetry = require("./client-telemetry");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
 // 다이얼로그 제목으로 사용됨. 미설정 시 개발 모드 기본값 'electron-app' 이 노출되므로,
@@ -126,6 +127,31 @@ function createWindow() {
     appWindows.clear();
   });
 }
+
+// ── 사용 기록: PC 정보 + 크래시 보관함 ───────────────────────────────
+// 화면이 죽으면 그 화면은 서버로 보고할 수 없다. main 이 파일에 쌓아 두고,
+// 다음에 로그인한 화면이 'app:take-client-errors' 로 꺼내 서버(/api/activity/client-error)로 보낸다.
+function pendingClientErrorsPath() {
+  return path.join(app.getPath("userData"), "pending-client-errors.json");
+}
+
+ipcMain.handle("app:client-info", () => clientTelemetry.clientInfo());
+
+ipcMain.handle("app:take-client-errors", () =>
+  clientTelemetry.takePending(pendingClientErrorsPath()));
+
+app.on("render-process-gone", (_event, webContents, details) => {
+  let title = "";
+  let url = "";
+  try { title = webContents.getTitle(); url = webContents.getURL(); } catch { /* 이미 파괴됨 */ }
+  const record = clientTelemetry.renderGoneRecord(details, title, url);
+  if (record) clientTelemetry.appendPending(pendingClientErrorsPath(), record);
+});
+
+app.on("child-process-gone", (_event, details) => {
+  const record = clientTelemetry.childGoneRecord(details);
+  if (record) clientTelemetry.appendPending(pendingClientErrorsPath(), record);
+});
 
 ipcMain.on("open-external", (_, url) => {
   try {

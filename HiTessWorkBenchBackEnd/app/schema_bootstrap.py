@@ -87,6 +87,7 @@ def ensure_analysis_job_columns(*, engine=None) -> None:
         "job_message": "ALTER TABLE analysis ADD COLUMN job_message TEXT NULL",
         "started_at": "ALTER TABLE analysis ADD COLUMN started_at DATETIME NULL",
         "updated_at": "ALTER TABLE analysis ADD COLUMN updated_at DATETIME NULL",
+        "finished_at": "ALTER TABLE analysis ADD COLUMN finished_at DATETIME NULL",
     }, engine=engine)
 
 

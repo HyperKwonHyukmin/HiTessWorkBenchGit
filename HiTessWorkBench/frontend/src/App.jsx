@@ -8,6 +8,7 @@ import { isServerVersionNewer } from './utils/versionCompare';
 import { checkVersion } from './api/auth';
 import { reportVersionUpdate, callLogout, logActivity } from './api/activity';
 import { sendHeartbeat, beaconOffline } from './api/presence';
+import { getClientInfo, installClientErrorReporting, flushPendingCrashReports } from './api/clientTelemetry';
 import { getUsers } from './api/admin';
 import SplashScreen from './pages/auth/SplashScreen';
 import LoginScreen from './pages/auth/LoginScreen';
@@ -471,12 +472,27 @@ function AppInner() {
       const loginAt = parseInt(localStorage.getItem('user_login_at') || '0', 10);
       const lastActive = parseInt(localStorage.getItem('user_last_active') || (loginAt ? String(loginAt) : '0'), 10);
       const idleSeconds = lastActive > 0 ? Math.max(0, Math.floor((Date.now() - lastActive) / 1000)) : 0;
-      sendHeartbeat(currentMenu, idleSeconds, CLIENT_VERSION);
+      getClientInfo().then((client) => sendHeartbeat(currentMenu, idleSeconds, CLIENT_VERSION, client));
     };
     beat();
     const heartbeat = setInterval(beat, 45 * 1000);
     return () => clearInterval(heartbeat);
   }, [appState, currentMenu]);
+
+  // 화면 JS 오류 수집 — 로그인 전 화면에서 난 오류도 받도록 appState 와 무관하게 한 번만 건다.
+  // 페이지는 ref 로 읽어 리스너를 다시 걸지 않는다.
+  const currentMenuRef = useRef(currentMenu);
+  currentMenuRef.current = currentMenu;
+  useEffect(() => installClientErrorReporting(() => ({
+    page: currentMenuRef.current,
+    appVersion: CLIENT_VERSION,
+  })), []);
+
+  // 지난번에 화면(렌더러)이 죽었으면 Electron 이 보관해 둔 크래시를 로그인 뒤 서버로 보낸다.
+  useEffect(() => {
+    if (appState !== APP_STATE.MAIN) return;
+    flushPendingCrashReports(CLIENT_VERSION);
+  }, [appState]);
 
   // 앱 종료(창 닫기) 시 sendBeacon 으로 즉시 오프라인 처리 — '유령 온라인'(하트비트 정지
   // 후 임계시간까지 접속 중으로 남는 문제)을 방지한다. appState 기준이라 재실행이 잦지 않다.

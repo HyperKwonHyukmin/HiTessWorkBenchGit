@@ -12,12 +12,14 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import database, models
 from ..dependencies import require_admin, require_auth
+from ..services import access_session_service
+from ..services.activity_service import log_activity
 from ..services.external_app_access import external_app_access_store
 from ..services.logbook_integration import notify_logbook_logout
 
@@ -38,6 +40,9 @@ class HeartbeatRequest(BaseModel):
     idle_seconds: Optional[int] = None
     # 클라이언트 앱 버전(package.json). 관리자가 구버전 사용자를 식별하는 데 사용.
     app_version: Optional[str] = None
+    # Electron 이 알려 주는 PC 정보 {hostname, os_user, platform}. 접속 이력(access_sessions)에만
+    # 남긴다. 웹 단독 실행·옛 exe 는 보내지 않는다.
+    client: Optional[dict] = None
 
 
 def presence_status(row: Optional[models.UserPresence], now: datetime) -> str:
@@ -109,6 +114,15 @@ def heartbeat(
             app_version=app_version,
         ))
     db.commit()
+    try:
+        access_session_service.record_heartbeat(
+            db, employee_id, now=now, page=page, idle_seconds=idle,
+            ip=ip, app_version=app_version, client=payload.client,
+        )
+        db.commit()
+    except Exception:
+        # 접속 이력은 부가 기록이다 — 실패해도 접속 상태 갱신(위에서 commit)은 그대로 둔다.
+        db.rollback()
     return {"ok": True}
 
 
@@ -216,6 +230,7 @@ async def presence_offline(req: Request, db: Session = Depends(database.get_db))
     db.query(models.UserPresence).filter(
         models.UserPresence.employee_id == session.employee_id
     ).delete(synchronize_session=False)
+    access_session_service.close_open_sessions(db, session.employee_id, "closed")
     db.commit()
     return {"ok": True}
 
@@ -246,7 +261,60 @@ def force_logout(
     db.query(models.UserPresence).filter(
         models.UserPresence.employee_id == employee_id
     ).delete(synchronize_session=False)
+    access_session_service.close_open_sessions(db, employee_id, "forced")
     db.commit()
     external_app_access_store.revoke_employee(employee_id)
     notify_logbook_logout(revoked_tokens)
+    log_activity(
+        db, "FORCE_LOGOUT", employee_id=current_admin,
+        action_detail={"target": employee_id, "revoked_sessions": int(revoked)},
+    )
     return {"ok": True, "revoked_sessions": int(revoked)}
+
+
+MAX_SESSION_LOOKBACK_DAYS = 366
+
+
+def _session_rows(db: Session, days: int, employee_id: Optional[str]):
+    since = datetime.now() - timedelta(days=days)
+    q = (
+        db.query(models.AccessSession, models.User)
+        .outerjoin(models.User, models.AccessSession.employee_id == models.User.employee_id)
+        .filter(models.AccessSession.started_at >= since)
+    )
+    if employee_id:
+        q = q.filter(models.AccessSession.employee_id == employee_id.strip().upper())
+    return q
+
+
+@router.get("/sessions")
+def list_access_sessions(
+    days: int = Query(30, ge=1, le=MAX_SESSION_LOOKBACK_DAYS),
+    employee_id: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(database.get_db),
+    _: str = Depends(require_admin),
+):
+    """접속 이력(관리자 전용). 최근 days 일 안에 시작한 세션을 최신순으로."""
+    q = _session_rows(db, days, employee_id)
+    total = q.count()
+    rows = q.order_by(models.AccessSession.started_at.desc()).offset(skip).limit(limit).all()
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": [access_session_service.serialize_session(row, user) for row, user in rows],
+    }
+
+
+@router.get("/sessions/summary")
+def summarize_access_sessions(
+    days: int = Query(30, ge=1, le=MAX_SESSION_LOOKBACK_DAYS),
+    employee_id: Optional[str] = Query(None),
+    db: Session = Depends(database.get_db),
+    _: str = Depends(require_admin),
+):
+    """접속 이력 요약(관리자 전용) — 사용자별 접속 일수·시간, 화면별 활성 시간."""
+    rows = _session_rows(db, days, employee_id).all()
+    return {"days": days, **access_session_service.summarize_sessions(rows)}

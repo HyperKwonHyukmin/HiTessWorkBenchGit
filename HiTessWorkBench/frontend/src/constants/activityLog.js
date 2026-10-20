@@ -20,6 +20,11 @@ export const ACTION_TYPE_LABELS = {
   REQUEST_STATUS_CHANGE: '요청 상태변경',
   GUIDE_EDIT: '가이드 편집',
   APPSPACE_EDIT: 'App 커뮤니티 관리',
+  EXPORT_REPORT: '보고서 생성',
+  RETENTION_UPDATE: '보관 연장',
+  LOGBOOK_EXPORT: 'LogBook 보내기',
+  FORCE_LOGOUT: '강제 로그아웃',
+  CLIENT_ERROR: '화면 오류',
 };
 
 export const ACTION_TYPE_COLORS = {
@@ -41,4 +46,9 @@ export const ACTION_TYPE_COLORS = {
   REQUEST_STATUS_CHANGE: 'bg-violet-100 text-violet-700',
   GUIDE_EDIT: 'bg-teal-100 text-teal-700',
   APPSPACE_EDIT: 'bg-teal-100 text-teal-700',
+  EXPORT_REPORT: 'bg-cyan-100 text-cyan-700',
+  RETENTION_UPDATE: 'bg-slate-100 text-slate-600',
+  LOGBOOK_EXPORT: 'bg-indigo-100 text-indigo-700',
+  FORCE_LOGOUT: 'bg-orange-100 text-orange-700',
+  CLIENT_ERROR: 'bg-red-100 text-red-700',
 };

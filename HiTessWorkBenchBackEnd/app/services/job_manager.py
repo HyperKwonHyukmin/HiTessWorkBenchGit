@@ -407,6 +407,8 @@ class JobStatusStore:
                     record.started_at = now
                 if status in ("Success", "Failed", "Cancelled"):
                     record.status = status
+                    if not record.finished_at:
+                        record.finished_at = now
             if "progress" in updates:
                 record.progress = updates.get("progress")
             if "message" in updates:

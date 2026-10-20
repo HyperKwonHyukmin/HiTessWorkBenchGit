@@ -10,6 +10,7 @@ from .. import models, schemas, database
 from ..state import server_state
 from ..sessions import session_store
 from ..dependencies import require_auth
+from ..services import access_session_service
 from ..services.activity_service import log_activity
 from ..services.external_app_access import external_app_access_store
 from ..services.logbook_integration import notify_logbook_logout
@@ -110,6 +111,8 @@ def login(request: schemas.LoginRequest, req: Request, db: Session = Depends(dat
   db.query(models.UserPresence).filter(
       models.UserPresence.employee_id == user.employee_id
   ).delete(synchronize_session=False)
+  # 이전 접속 이력이 열려 있으면(창을 닫지 않고 재로그인 등) 마지막 하트비트 시각에 닫는다.
+  access_session_service.close_open_sessions(db, user.employee_id, "relogin")
   db.commit()
 
   token = session_store.create(user.employee_id)
@@ -140,6 +143,7 @@ def logout(req: Request, db: Session = Depends(database.get_db), employee_id: st
   notify_logbook_logout(token)
   # 접속 상태(presence) 행 삭제 — 로그아웃 즉시 오프라인으로 표시.
   db.query(models.UserPresence).filter(models.UserPresence.employee_id == employee_id).delete()
+  access_session_service.close_open_sessions(db, employee_id, "logout")
   db.commit()
   log_activity(db, "LOGOUT", employee_id=employee_id, ip_address=req.client.host if req.client else None)
   return {"ok": True}

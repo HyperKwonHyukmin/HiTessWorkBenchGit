@@ -326,6 +326,8 @@ def record_analysis(
             new_analysis.updated_at = now
             if not new_analysis.started_at:
                 new_analysis.started_at = now
+            if is_terminal and not new_analysis.finished_at:
+                new_analysis.finished_at = now
         else:
             new_analysis = models.Analysis(
                 job_id=job_id,
@@ -341,6 +343,7 @@ def record_analysis(
                 source=source,
                 started_at=now,
                 updated_at=now,
+                finished_at=now if is_terminal else None,
             )
             db.add(new_analysis)
         db.commit()

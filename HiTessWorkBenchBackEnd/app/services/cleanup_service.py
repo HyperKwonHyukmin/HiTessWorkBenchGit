@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 
 from .. import database, models
 from ..sessions import session_store
+from .access_session_service import close_stale_sessions
 from .activity_service import ACTIVITY_LOG_RETENTION_DAYS, prune_activity_logs
 from .notification_service import NOTIFICATION_RETENTION_DAYS, prune_notifications
 from . import retention_service
@@ -363,6 +364,32 @@ def run_notification_cleanup(dry_run: bool = False) -> dict:
     return result
 
 
+def run_access_session_close(dry_run: bool = False) -> dict:
+    """하트비트가 끊긴 채 열려 있는 접속 이력을 닫습니다(삭제하지 않습니다 — 영구 보관)."""
+    result = {"closed": 0, "errors": []}
+    if dry_run:
+        return result
+    db = None
+    try:
+        db = database.SessionLocal()
+        result["closed"] = close_stale_sessions(db)
+    except Exception as exc:
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        result["errors"].append(type(exc).__name__)
+        logger.error("[Cleanup] 접속 이력 닫기 실패 (%s)", type(exc).__name__)
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                logger.warning("[Cleanup] 접속 이력 DB session close failed")
+    return result
+
+
 def run_all_cleanup(dry_run: bool = False) -> dict:
     """파일 작업 폴더, Activity Log, 만료 세션, 알림 보존 정책을 함께 적용합니다."""
     return {
@@ -370,6 +397,7 @@ def run_all_cleanup(dry_run: bool = False) -> dict:
         "activity_logs": run_activity_log_cleanup(dry_run=dry_run),
         "sessions": run_session_cleanup(dry_run=dry_run),
         "notifications": run_notification_cleanup(dry_run=dry_run),
+        "access_sessions": run_access_session_close(dry_run=dry_run),
     }
 
 

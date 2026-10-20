@@ -173,6 +173,7 @@ def test_history_item_key_set_remains_unchanged(admin_client, db_session):
         "created_at",
         "started_at",
         "updated_at",
+        "finished_at",
         "files_available",
         # Plan B — 결과 보관 정책 컬럼. _serialize_analysis 가 Analysis 의 모든 컬럼을
         # 그대로 덤프하므로 컬럼을 늘리면 응답 키도 늘어난다(키 추가는 가산적 변경이라

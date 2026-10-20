@@ -42,5 +42,5 @@ def test_errors_are_reported_by_type_only(db_session, monkeypatch):
 def test_run_all_cleanup_includes_notifications(db_session, monkeypatch):
     monkeypatch.setattr(database, "SessionLocal", lambda: db_session)
     result = cleanup_service.run_all_cleanup(dry_run=True)
-    assert set(result) == {"user_connection", "activity_logs", "sessions", "notifications"}
+    assert set(result) == {"user_connection", "activity_logs", "sessions", "notifications", "access_sessions"}
     assert result["notifications"] == {"deleted": 0, "errors": []}

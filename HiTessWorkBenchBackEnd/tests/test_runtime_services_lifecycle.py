@@ -277,6 +277,11 @@ def test_activity_log_session_failure_does_not_restart_scheduler(
         lambda dry_run=False: {"deleted": 0, "errors": []},
     )
     monkeypatch.setattr(
+        cleanup_service,
+        "run_access_session_close",
+        lambda dry_run=False: {"closed": 0, "errors": []},
+    )
+    monkeypatch.setattr(
         cleanup_service.database,
         "SessionLocal",
         fail_session_creation,

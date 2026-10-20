@@ -134,6 +134,9 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
 - ⚠ 옛 `Cmb.Cli.exe` 는 `--hull-no` 를 모르면 인자 오류로 실패한다 → 백엔드는 `engine_supports_hull_no()`(`--help` 확인, exe mtime 캐시)로
   지원할 때만 넘긴다. 그래서 서버에서 백엔드·엔진 반영 순서가 바뀌어도 깨지지 않는다(엔진 교체 전에는 경고만 로그에 남음).
 - 계약 테스트 `test_engine_and_bridge_keep_hull_no` 가 두 편집 경로 모두 첫 줄 주석을 확인한다(호선 이전 엔진이면 skip).
+- 배포 상태(2026-10-20): 백엔드·프론트는 v1.6.20 으로 릴리스됨. **엔진 `Cmb.Cli.exe`·`nastran_bridge.py` 는 아직 InHouseProgram(70·145) 미교체** —
+  소스는 `WorkBenchSubModule\HiTessModelBuilder`(미커밋)·`WorkBenchSubModule\Nastran_bridge\nastran_bridge.py`. 교체 전까지 BDF 에 주석이 안 남는다.
+  권상 Wire 포함 BDF(lift-run)의 호선 주석은 단위 테스트만 했고 실제 권상 해석으로는 확인 안 함.
 
 **⚠️ 교정/함정 (이번 재검토에서 발견)**
 - **nastran_bridge 폴더명 불일치(잠재 `FileNotFoundError`)**: `hitess_modelflow_service.py` 의 `_load_nastran_bridge_module()` 은 **오직 `InHouseProgram/NastranBridge`(camelCase) 하드코딩, 폴백 없음**. 반면 `analysis.py` 는 `InHouseProgram/Nastran_bridge`(**underscore**)를 1순위로 본다. → nastran_bridge.py 를 **underscore 폴더에만** 두면 modelflow 의 deleteRigid 폴백이 깨진다. **둘 다 만족하려면 `NastranBridge`(camelCase)에 둘 것**(또는 양쪽 복사). [이상적으론 modelflow service 도 analysis.py 처럼 다중 후보 탐색으로 통일 권장.]
@@ -593,6 +596,18 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 같이 써서 다음 작업 F06 을 가져가는 오귀속이 실측됐다).
 운영(145) 기록은 70 에서 `scripts/pull_diagnostics.py`(관리자 사번 로그인, 로그아웃 안 함 — 로그아웃 API 가 외부 앱 세션을 끊는다)로 가져오고 대응 후 `mark` 로 handled 표시.
 ⚠ 새 Nastran 실행 경로가 `mark_complete` 를 안 거치면 `schedule_collection(job_id, …, extra_dirs=[산출 폴더])` 를 직접 부를 것(편집 적용이 그 예). 테스트는 conftest 가 `HITESS_DIAGNOSTICS=0` 으로 끈다.
+
+**사용 기록 — 접속 이력·화면 오류·해석 소요시간 (2026-10-20)** — `activity_logs` 는 30일 뒤 지워지고 `user_presence` 는 현재값뿐이라, 장기 기록을 따로 둔다.
+- **접속 이력 `access_sessions`**(기간 제한 없음): 로그인~앱 닫기 1행. 하트비트(45초)마다 `services/access_session_service.record_heartbeat` 가
+  직전 간격을 `online_seconds` 에, 유휴(3분)가 아니면 `active_seconds` 와 **직전 화면**의 `page_seconds` 에 더한다(화면 이동 즉시 하트비트라 간격 = 직전 화면 몫).
+  간격이 150초를 넘으면 새 세션. 닫는 곳 = 로그아웃(logout)·창 닫기 beacon(closed)·강제 로그아웃(forced)·재로그인(relogin)·정리 스케줄러/다음 하트비트(timeout).
+  PC 정보(`hostname`·`os_user`·`platform`)는 Electron `app:client-info` → 하트비트 `client` 로 온다. 관리 화면 = User Management '접속 이력'(`/api/presence/sessions[/summary]`).
+  ⚠ 임계값(150·180초)은 `presence.py` 와 같아야 한다(`test_thresholds_match_presence_router`).
+- **화면 오류 `CLIENT_ERROR`**(activity_logs, 30일): React `window.onerror`·`unhandledrejection`(`api/clientTelemetry.js`, 같은 메시지 3회·세션 30건 상한)과
+  Electron `render-process-gone`·`child-process-gone`(main 이 userData `pending-client-errors.json` 에 쌓고 다음 로그인 때 화면이 꺼내 보냄).
+  `POST /api/activity/client-error` 는 로그인 전 오류도 받으려고 **인증 없음**(유효 토큰이면 사번, IP당 분당 20건).
+- **`analysis.finished_at`**: `_write_through`·`record_analysis` 가 Success/Failed/Cancelled 때 기록. 소요시간 = finished_at − started_at. 도입 전 기록·Interrupted 는 NULL.
+- 강제 로그아웃은 이제 `FORCE_LOGOUT` 감사 로그를 남긴다. ⚠ PC 정보·크래시 수집은 **새 exe 부터** 동작한다(Electron 변경).
 
 작업 상태는 인메모리(`job_status_store`)가 1차 저장소이고, status·progress·message 는 변경마다 DB `analysis.job_status/progress/job_message` 에 write-through 된다(`_write_through`). 상태 조회 API 는 메모리에 없으면 DB 값으로 응답하고, 서버 시작 시 Pending/Running 으로 남은 레코드는 `Interrupted`(실패)로 바뀐다(`main.py` lifespan). 재시작 시 잃는 것은 실행 중이던 프로세스 자체와 대기열 순번·취소 핸들뿐이다 — Redis 는 필요 없다(2026-10-19 확인).
 

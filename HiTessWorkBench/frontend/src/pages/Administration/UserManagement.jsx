@@ -19,6 +19,7 @@ import { logbookLevelOf, logbookErrorMessage } from '../../utils/logbookLink';
 import { getEmployeeId } from '../../utils/auth';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import AccessHistoryPanel from '../../components/admin/AccessHistoryPanel';
 import UserStatisticsModal from '../../components/modals/UserStatisticsModal';
 import { useToast } from '../../contexts/ToastContext';
 import { ACTION_TYPE_LABELS, ACTION_TYPE_COLORS } from '../../constants/activityLog';
@@ -936,6 +937,9 @@ export default function UserManagement() {
           )}
         </div>
       </div>
+
+      {/* 0-1. 접속 이력 — 기간 제한 없이 보관하는 사용 기록(펼칠 때 불러온다) */}
+      <AccessHistoryPanel />
 
       <ConfirmDialog
         isOpen={!!forceLogoutCandidate}

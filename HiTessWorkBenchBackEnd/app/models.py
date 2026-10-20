@@ -60,6 +60,36 @@ class UserPresence(Base):
   app_version = Column(String(30), nullable=True)
 
 
+class AccessSession(Base):
+  """접속 이력 — 로그인부터 앱을 닫을 때까지 1행. 하트비트(45초)마다 갱신된다.
+
+  user_presence 는 '지금' 상태만 덮어쓰고 지워지지만, 이 테이블은 끝난 세션도 남긴다.
+  activity_logs(30일 삭제)와 달리 기간 제한 없이 보관하는 장기 사용 기록이다.
+  - online_seconds : 앱이 열려 있던 시간(하트비트 간격 합)
+  - active_seconds : 그중 유휴(3분 무입력)가 아니던 시간
+  - page_seconds   : {메뉴명: 활성 시간(초)} — 어느 화면에서 일했는지
+  - end_reason     : logout | closed(창 닫음) | forced(관리자) | relogin | timeout(하트비트 끊김)
+  """
+
+  __tablename__ = "access_sessions"
+  id = Column(Integer, primary_key=True, index=True)
+  employee_id = Column(String(50), nullable=False, index=True)
+  started_at = Column(DateTime, nullable=False, default=datetime.now, index=True)
+  last_seen_at = Column(DateTime, nullable=False, default=datetime.now)
+  ended_at = Column(DateTime, nullable=True)
+  end_reason = Column(String(20), nullable=True)
+  ip = Column(String(50), nullable=True)
+  app_version = Column(String(30), nullable=True)
+  hostname = Column(String(100), nullable=True)
+  os_user = Column(String(100), nullable=True)
+  platform = Column(String(50), nullable=True)
+  heartbeat_count = Column(Integer, nullable=False, default=0)
+  online_seconds = Column(Integer, nullable=False, default=0)
+  active_seconds = Column(Integer, nullable=False, default=0)
+  last_page = Column(String(200), nullable=True)
+  page_seconds = Column(JSON, nullable=True)
+
+
 class ChatMessage(Base):
   """관리자↔사용자 1:1 DM 메시지. 양측 중 최소 1명은 관리자다(peer-to-peer 금지).
 
@@ -96,6 +126,9 @@ class Analysis(Base):
   created_at = Column(DateTime(timezone=True), server_default=func.now())
   started_at = Column(DateTime(timezone=True), nullable=True)
   updated_at = Column(DateTime(timezone=True), nullable=True)
+  # 작업이 Success/Failed/Cancelled 로 끝난 시각. 소요시간 = finished_at - started_at.
+  # 이 컬럼 도입 전 기록과 서버 재시작으로 Interrupted 된 기록은 NULL 이다.
+  finished_at = Column(DateTime(timezone=True), nullable=True)
   # Plan B — 결과 파일 보관 정책. 판정 우선순위: pinned > retain_until > 폴더 나이(30일).
   # retain_until 은 연장된 만료 시각(없으면 폴더 생성+30일 규칙), pinned=True 면 자동 삭제 제외.
   # created_at 과 마찬가지로 naive datetime 으로 비교한다(라우터 replace(tzinfo=None) 패턴).

@@ -2,12 +2,16 @@ import axios from 'axios';
 import { API_BASE_URL } from '../config';
 import { getAuthHeaders, getSessionToken } from '../utils/auth';
 
-/** 접속 상태 하트비트 전송 — 현재 페이지 + 유휴 경과초 + 앱 버전을 함께 보고. 실패는 조용히 무시. */
-export const sendHeartbeat = (page, idleSeconds = 0, appVersion = null) =>
+/**
+ * 접속 상태 하트비트 전송 — 현재 페이지 + 유휴 경과초 + 앱 버전을 함께 보고. 실패는 조용히 무시.
+ * client 는 Electron 이 알려 준 PC 정보(호스트명·Windows 계정) — 서버가 접속 이력에 남긴다.
+ */
+export const sendHeartbeat = (page, idleSeconds = 0, appVersion = null, client = null) =>
   axios.post(`${API_BASE_URL}/api/presence/heartbeat`, {
     page,
     idle_seconds: idleSeconds,
     app_version: appVersion,
+    client,
   }, {
     headers: getAuthHeaders(),
   }).catch(() => {});
@@ -15,6 +19,13 @@ export const sendHeartbeat = (page, idleSeconds = 0, appVersion = null) =>
 /** 현재 접속 중인 사용자 목록 조회 (관리자 전용) */
 export const getOnlineUsers = () =>
   axios.get(`${API_BASE_URL}/api/presence/online`, { headers: getAuthHeaders() });
+
+/** 접속 이력 요약(관리자 전용) — 사용자별 접속 일수·시간, 화면별 활성 시간 */
+export const getAccessSessionSummary = (days = 30) =>
+  axios.get(`${API_BASE_URL}/api/presence/sessions/summary`, {
+    params: { days },
+    headers: getAuthHeaders(),
+  });
 
 /** 특정 사용자의 모든 세션을 무효화하고 오프라인 처리 (관리자 전용) */
 export const forceLogoutUser = (employeeId) =>

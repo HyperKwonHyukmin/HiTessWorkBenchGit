@@ -36,6 +36,9 @@ const VALID_INVOKE_CHANNELS  = [
   'start-self-update',
   'preferences:get',
   'preferences:set',
+  // 사용 기록: PC 정보(접속 이력) · 화면이 죽었을 때 보관한 크래시 꺼내기
+  'app:client-info',
+  'app:take-client-errors',
   // viewer 라이프사이클
   'viewer:check-installed',
   'viewer:install',
