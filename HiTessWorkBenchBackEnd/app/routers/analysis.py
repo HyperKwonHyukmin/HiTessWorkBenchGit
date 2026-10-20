@@ -2207,6 +2207,7 @@ class RerunOverrides(BaseModel):
     mesh_size: Optional[float] = None
     ubolt_full_fix: Optional[bool] = None
     run_nastran: Optional[bool] = None
+    hull_no: Optional[str] = None   # 빈 문자열 = 사용자 입력 지우기(파일명 제안으로 돌아감)
 
 
 @router.post("/analysis/{analysis_id}/rerun")
@@ -2336,6 +2337,9 @@ def rerun_analysis(
             info.get("leg_z_tol"),
             info.get("mesh_size_structure"),
             info.get("mesh_size_pipe"),
+            # 호선: 덮어쓰기 > 원본에서 사용자가 적은 값. 파일명에서 나온 값은 넘기지 않고 다시 제안받는다.
+            overrides.hull_no if overrides.hull_no is not None
+            else (info.get("hull_no") if info.get("hull_no_source") == "user" else None),
             queue_message="재실행 대기 중...",
             owned_work_dir=work_dir,
         )
@@ -5061,6 +5065,7 @@ async def request_modelflow_analysis(
     leg_z_tol: Optional[float] = Form(None),
     mesh_size_structure: Optional[float] = Form(None),
     mesh_size_pipe: Optional[float] = Form(None),
+    hull_no: Optional[str] = Form(None),
 ):
     """Cmb.Cli build-full 한 번 호출로 phase JSON/BDF + InputAudit + StageSummary 생성.
 
@@ -5070,6 +5075,7 @@ async def request_modelflow_analysis(
       mesh_size_pipe       → --mesh-size-pipe <MM>
       ubolt_full_fix       → --ubolt-full-fix
       run_nastran          → --run-nastran (+ --nastran-path / --leg-z-tol)
+      hull_no              → --hull-no (선택. 비우면 CSV 파일명 앞 4자리, BDF 첫 줄 주석으로 남는다)
     """
     _verify_employee_self(employee_id, current_user)
 
@@ -5105,7 +5111,7 @@ async def request_modelflow_analysis(
         stru_path, pipe_path, equip_path, work_dir, exe_path,
         employee_id, timestamp, source,
         mesh_size, ubolt_full_fix, run_nastran, nastran_path, leg_z_tol,
-        mesh_size_structure, mesh_size_pipe,
+        mesh_size_structure, mesh_size_pipe, hull_no,
         queue_message="해석 대기 중...",
         owned_work_dir=work_dir,
     )

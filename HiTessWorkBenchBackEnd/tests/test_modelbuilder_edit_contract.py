@@ -122,3 +122,39 @@ def test_engine_and_bridge_produce_same_model(tmp_path):
     assert engine["rigids"] == bridge["rigids"]                               # 무게중심 NodeA 좌표·종속 포함
     assert engine["rho"] == pytest.approx(bridge["rho"])
     assert engine["masses"] == bridge["masses"]
+
+
+HULL_COMMENT = "$ HiTessModelBuilder: HullNo=3454"
+
+
+@pytest.mark.skipif(not CMB_EXE.is_file(), reason="Cmb.Cli.exe 없음")
+@pytest.mark.parametrize("hull_in", ["json", "bdf"])
+def test_engine_and_bridge_keep_hull_no(tmp_path, hull_in):
+    """편집 적용 두 경로(엔진 기본 · bridge fallback) 모두 호선 주석을 편집 BDF 첫 줄에 다시 쓴다(2026-10-20).
+
+    hull_in='json' = 이 기능 이후 빌드(meta.hullNo 가 원본) / 'bdf' = base JSON 에 없고 base BDF 주석에만 있는 경우.
+    엔진이 호선 기능 이전 빌드면(--hull-no 미지원) 건너뛴다.
+    """
+    helped = subprocess.run([str(CMB_EXE), "build-full", "--help"], capture_output=True, timeout=60)
+    if b"--hull-no" not in helped.stdout + helped.stderr:
+        pytest.skip("호선 기록 이전 엔진")
+    base = json.loads((FIXTURE / f"{BASE}.json").read_text(encoding="utf-8"))
+    bdf_text = (FIXTURE / f"{BASE}.bdf").read_text(encoding="utf-8")
+    if hull_in == "json":
+        base["meta"]["hullNo"] = "3454"
+    else:
+        bdf_text = HULL_COMMENT + "\n" + bdf_text
+    (tmp_path / f"{BASE}.json").write_text(json.dumps(base), encoding="utf-8")
+    (tmp_path / f"{BASE}.bdf").write_text(bdf_text, encoding="utf-8")
+    (tmp_path / f"{BASE}_edit.json").write_text(json.dumps(_edit_document(base)), encoding="utf-8")
+
+    engine_json = _run_engine(tmp_path)
+    assert engine_json["meta"]["hullNo"] == "3454"
+    engine_bdf = (tmp_path / "edited" / f"{BASE}.bdf").read_text(encoding="utf-8")
+    assert engine_bdf.splitlines()[0] == HULL_COMMENT
+
+    if hull_in == "json":   # bridge fallback 은 base JSON 만 본다
+        bridge_json = _run_bridge(tmp_path)
+        assert bridge_json["meta"]["hullNo"] == "3454"
+        bridge_bdf = (tmp_path / "bridge" / f"{BASE}.bdf").read_text(encoding="utf-8")
+        assert bridge_bdf.splitlines()[0] == HULL_COMMENT

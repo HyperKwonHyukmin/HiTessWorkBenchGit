@@ -12,6 +12,7 @@ viewer 는 이 경로를 initialFolder 로 받아 phase JSON 일괄 자동 로�
   run_nastran          → --run-nastran (bool)
   nastran_path         → --nastran-path <PATH>
   leg_z_tol            → --leg-z-tol <MM>
+  hull_no              → --hull-no <호선>  (비우면 CSV 파일명 앞 4자리. 엔진이 지원할 때만)
 """
 import glob
 import importlib.util
@@ -33,6 +34,7 @@ from .analysis_runner import (
     record_analysis,
     update_progress,
 )
+from .hull_no import engine_supports_hull_no, normalize_hull_no, suggest_hull_no_from_filename
 from .job_manager import job_status_store  # task_execute_apply_edit 가 여전히 직접 사용
 
 logger = logging.getLogger(__name__)
@@ -129,9 +131,20 @@ def task_execute_modelflow(
     leg_z_tol: float | None = None,
     mesh_size_structure: float | None = None,
     mesh_size_pipe: float | None = None,
+    hull_no: str | None = None,
 ):
     """Cmb.Cli build-full 백그라운드 실행 작업."""
     mark_running(job_id, "Model Builder 실행 준비...", progress=10)
+
+    # 호선 — 사용자가 적은 값이 우선, 없으면 CSV 파일명 앞 4자리. 둘 다 없으면 BDF 에 남기지 않는다(필수 아님).
+    resolved_hull_no = normalize_hull_no(hull_no)
+    hull_no_source = "user" if resolved_hull_no else None
+    if not resolved_hull_no:
+        for csv_path in (stru_path, pipe_path, equip_path):
+            resolved_hull_no = suggest_hull_no_from_filename(csv_path)
+            if resolved_hull_no:
+                hull_no_source = "filename"
+                break
 
     input_data = {
         "stru_csv": stru_path,
@@ -144,6 +157,8 @@ def task_execute_modelflow(
         "leg_z_tol": leg_z_tol,
         "mesh_size_structure": mesh_size_structure,
         "mesh_size_pipe": mesh_size_pipe,
+        "hull_no": resolved_hull_no,
+        "hull_no_source": hull_no_source,   # "user" | "filename" | None
     }
     result_data: dict = {}
     status_msg = "Success"
@@ -182,6 +197,15 @@ def task_execute_modelflow(
                 cmd += ["--nastran-path", nastran_path]
             if leg_z_tol is not None:
                 cmd += ["--leg-z-tol", str(int(leg_z_tol))]
+        hull_note = ""
+        if resolved_hull_no:
+            if engine_supports_hull_no(exe_path):
+                cmd += ["--hull-no", resolved_hull_no]
+            else:
+                # 옛 엔진은 모르는 옵션에 인자 오류로 실패한다 — 호선 없이 모델은 만든다.
+                hull_note = f"[경고] 설치된 Model Builder 엔진이 호선 기록을 지원하지 않아 BDF 에 호선({resolved_hull_no})을 남기지 못했습니다.\n"
+                logger.warning("[ModelBuilder] 엔진이 --hull-no 미지원 — 호선 %s 생략", resolved_hull_no)
+                input_data["hull_no_written"] = False
 
         logger.info("[ModelBuilder] cmd: %s", " ".join(cmd))
         update_progress(job_id, 30, "Model Builder 실행 중...")
@@ -202,6 +226,8 @@ def task_execute_modelflow(
             engine_output = stdout
             if stderr.strip():
                 engine_output += f"\n[stderr]\n{stderr}"
+            if hull_note:
+                engine_output += "\n" + hull_note
 
             logger.info("[ModelBuilder] exit=%d", result.returncode)
 
@@ -284,6 +310,7 @@ def task_execute_modelflow(
             "ubolt":        ubolt_full_fix,
             "run_nastran":  run_nastran,
             "mesh_size":    mesh_size,
+            "hull_no":      resolved_hull_no,
         },
     )
 

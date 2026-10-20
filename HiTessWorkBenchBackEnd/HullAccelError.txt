@@ -1,0 +1,19 @@
+Traceback (most recent call last):
+  File "C:\Coding\WorkBench\HiTessWorkBenchBackEnd\InHouseProgram\TS\ts_hull_acceleration.py", line 309, in main
+    payload = run(
+        args.pdf, args.constants, args.out, args.page_min, args.page_max,
+        args.work_dir, args.condition_overrides,
+    )
+  File "C:\Coding\WorkBench\HiTessWorkBenchBackEnd\InHouseProgram\TS\ts_hull_acceleration.py", line 203, in run
+    matched_pages, row_count = extract(pdf_path, txt_loading, csv_loading, json_loading)
+                               ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Coding\WorkBench\HiTessWorkBenchBackEnd\InHouseProgram\TS\extract_summary_loading_conditions.py", line 118, in extract
+    doc = fitz.open(stream=pdf_path.read_bytes(), filetype="pdf")
+                           ~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\HHI\AppData\Local\Programs\Python\Python314\Lib\pathlib\__init__.py", line 782, in read_bytes
+    with self.open(mode='rb', buffering=0) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\HHI\AppData\Local\Programs\Python\Python314\Lib\pathlib\__init__.py", line 776, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Program Files\\Git\\short.pdf'

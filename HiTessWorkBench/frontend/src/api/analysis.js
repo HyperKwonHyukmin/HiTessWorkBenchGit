@@ -23,7 +23,7 @@ export const getAnalysisHistory = (employeeId, skip = 0, limit = 50, filters = {
 
 /**
  * 보존된 입력 파일/옵션으로 과거 해석을 새 작업으로 재제출.
- * overrides 를 주면 그 옵션으로 바꿔 실행한다(현재 Model Builder 의 mesh_size·ubolt_full_fix·run_nastran).
+ * overrides 를 주면 그 옵션으로 바꿔 실행한다(현재 Model Builder 의 mesh_size·ubolt_full_fix·run_nastran·hull_no).
  */
 export const rerunAnalysisProject = (analysisId, overrides = {}) =>
   axios.post(

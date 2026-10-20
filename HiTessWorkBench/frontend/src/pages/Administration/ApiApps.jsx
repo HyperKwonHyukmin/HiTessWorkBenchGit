@@ -127,6 +127,7 @@ const API_LIST = [
       { name: 'run_nastran', type: 'boolean (form)', required: false, desc: 'BDF 생성 후 Nastran 실행 여부. 기본값: false' },
       { name: 'nastran_path', type: 'string (form)', required: false, desc: 'Nastran 실행 파일 경로' },
       { name: 'leg_z_tol', type: 'float (form)', required: false, desc: 'Leg Z 좌표 허용 오차' },
+      { name: 'hull_no', type: 'string (form)', required: false, desc: '호선 번호(영문·숫자·-·_ 20자 이내). BDF 첫 줄 주석으로 남음. 비우면 CSV 파일명 앞 4자리' },
       { name: 'source', type: 'string (form)', required: false, desc: '호출 출처. 기본값: Workbench' },
     ],
     example: `curl -X POST ${API_BASE_URL}/api/analysis/modelflow/request \\

@@ -62,6 +62,8 @@ npm run dist
 
 - **백엔드 URL**: `HiTessWorkBench/frontend/src/config.js`의 `DEFAULT_API_BASE_URL` — 기본값 `http://10.133.122.70:9091`. 사용자가 앱 내에서 서버 주소를 변경하면 `localStorage`의 `'server_url'` 키에 저장되며 이 값이 우선 사용됨(`setApiBaseUrl()` 함수로 런타임 변경 가능).
   - ⚠️ **`config.js`의 `DEFAULT_API_BASE_URL` 변경은 항상 커밋에서 제외할 것.** 이 값은 개발자가 로컬 백엔드(`10.133.122.70` '내 컴퓨터')와 팀 서버(`10.14.42.145` '서버 컴퓨터') 사이를 토글하는 **로컬 전용 변경**이다. 커밋하면 배포 빌드의 기본 백엔드가 개발자 개인 PC로 바뀌어 팀/릴리즈가 깨진다. `/git:commit` 등 모든 커밋 작업에서 `config.js`는 스테이징하지 말고 로컬 변경으로 남겨둔다.
+  - **WorkBench exe 릴리스 = `/wb-release`** (2026-10-19, `.claude/commands/wb-release.md`). `scripts/release.ps1 -Bump -BuildOnly` 가 버전 4곳을 올리고, config.js 가 어느 쪽이든 **무조건 145 줄 활성**으로 맞춰 빌드한 뒤 번들에 70 주소가 없는지 검사하고 빌드 전 상태로 되돌린다. 버전 커밋·푸시는 빌드와 동시에 진행한다.
+    ⚠ 커밋 훅은 Bash 명령 문자열(커밋 메시지 포함)에 `config.js` 가 들어 있기만 해도 막는다 — 메시지는 파일로 넘기고 config.js 확인은 Grep 도구로.
 - 🚫 **`Darkmode.js/` 는 영구적으로 커밋하지 않는다 (사용자 지시).** 저장소 루트의 이 폴더는 **자체 `.git/` 를 가진 외부 라이브러리 클론**(50파일·1.3MB)이다. `git add -A` 로 넣으면 내부 파일이 아니라 **임베디드 저장소(gitlink) 한 줄**만 기록돼 다른 사람이 clone 하면 **빈 폴더가 되는 깨진 엔트리**가 된다. `.gitignore` 에 등재해 뒀으니 어떤 커밋 작업에서도 되살리지 말 것.
 - **백엔드 개발 서버 포트**: `9091` (uvicorn 실행 시 `--port 9091` 사용).
 - **데이터베이스**: MySQL `localhost:3306/hitessworkbench`, 접속 정보는 `HiTessWorkBenchBackEnd/app/database.py`. SQLAlchemy로 서버 시작 시 테이블 자동 생성.
@@ -120,6 +122,18 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
 일반 RBE 종속 중복 = 오류, 회전은 노드 추가·무게중심 RBE 보다 먼저. 상세·지원 표: Studio `docs/edit-intent-spec.md` 맨 앞 '현재 계약'.
 계약 테스트 `tests/test_modelbuilder_edit_contract.py` 가 C# 엔진 ↔ bridge 산출 모델을 비교한다(새 빌드 검증 시 `CMB_CLI_EXE`·`NASTRAN_BRIDGE_PY` 로 지정).
 ⚠ 새 intent kind 를 만들면 Studio·C#·bridge·계약 테스트를 함께 고칠 것.
+
+**호선 주석 (2026-10-20)** — Model Builder BDF **첫 줄**에 `$ HiTessModelBuilder: HullNo=3454` 를 남긴다(해석 무관).
+권상(GMU)에 올라온 BDF 를 LogBook 으로 보낼 때 호선을 알아내는 통로다. 입력은 **선택**: Model Builder 옵션의 '호선' 칸 →
+비우면 CSV 파일명 앞 4자리(`^\d{4}` 뒤에 `-`/`_`, `5PPP_-…` 같은 예외는 제안 없음) → 둘 다 없으면 주석 없음.
+- 경로: 프론트 `hull_no` → `task_execute_modelflow`(`input_info.hull_no`/`hull_no_source`=user|filename) → `Cmb.Cli build-full --hull-no`
+  → BDF 주석 + JSON `meta.hullNo` → `apply-edit-intent`·bridge fallback·bridge `lift-run`(Wire BDF)이 다시 쓴다.
+  GMU 검증은 `hull_no.resolve_bdf_hull_no`(주석 → 파일명)로 `input_info.hull_no`/`hull_no_source`=comment|filename 을 남긴다.
+- 정규화 규칙(대문자, 영문·숫자·`-`·`_` 20자)은 C# `FeModel.NormalizeHullNo` · bridge `normalize_hull_no` · `app/services/hull_no.py` ·
+  프론트 `utils/hullNo.js` 가 같아야 한다.
+- ⚠ 옛 `Cmb.Cli.exe` 는 `--hull-no` 를 모르면 인자 오류로 실패한다 → 백엔드는 `engine_supports_hull_no()`(`--help` 확인, exe mtime 캐시)로
+  지원할 때만 넘긴다. 그래서 서버에서 백엔드·엔진 반영 순서가 바뀌어도 깨지지 않는다(엔진 교체 전에는 경고만 로그에 남음).
+- 계약 테스트 `test_engine_and_bridge_keep_hull_no` 가 두 편집 경로 모두 첫 줄 주석을 확인한다(호선 이전 엔진이면 skip).
 
 **⚠️ 교정/함정 (이번 재검토에서 발견)**
 - **nastran_bridge 폴더명 불일치(잠재 `FileNotFoundError`)**: `hitess_modelflow_service.py` 의 `_load_nastran_bridge_module()` 은 **오직 `InHouseProgram/NastranBridge`(camelCase) 하드코딩, 폴백 없음**. 반면 `analysis.py` 는 `InHouseProgram/Nastran_bridge`(**underscore**)를 1순위로 본다. → nastran_bridge.py 를 **underscore 폴더에만** 두면 modelflow 의 deleteRigid 폴백이 깨진다. **둘 다 만족하려면 `NastranBridge`(camelCase)에 둘 것**(또는 양쪽 복사). [이상적으론 modelflow service 도 analysis.py 처럼 다중 후보 탐색으로 통일 권장.]
@@ -624,6 +638,7 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 - 보내기는 **서버끼리 전송**: WB → LogBook `/api/integration/uploads*`(공유 비밀키 `LOGBOOK_INTEGRATION_SECRET`, `as=<관리자 사번>`).
   LogBook 에는 **보낸 관리자 이름의 '정리 대기' 묶음**이 생기고 정리·확정은 LogBook 에서 한다. 계약 원본: LogBook 저장소
   `docs/plans/2026-10-08-logbook-18-workbench-link.md` 9절. 보낸 기록은 `logbook_exports`(실패도 남긴다).
+  목록의 'LogBook 보낸 것만' 토글(`GET /api/admin/projects?logbook=sent`, 2026-10-19 v1.6.19)은 'N번 보냄' 표시와 같은 기준 — failed 만 있는 기록 제외, blocked 포함.
 - LogBook 이 받지 않는 것: 이미 LogBook 에 있는 것과 **완전 동일한 BDF**(blocked), 회사 **DRM 암호문**(`HHIDRMC` 머리, rejected). 둘 다 화면에 그대로 보인다.
   ⚠ 개발 PC 는 DRM 에이전트가 python 의 읽기를 가로채 `HHIDRMC` 흉내 파일을 0바이트로 돌려준다(실측) — DRM 거절 확인은 단위 테스트로 한다.
 - ⚠ 배포 순서: **LogBook 을 먼저** `git pull` + 재시작. 옛 LogBook 이면 WB 가 404 를 받아 "보내기 기능이 없거나 연동이 꺼져 있습니다" 로 알린다.

@@ -12,6 +12,7 @@ import {
   RunStartPanel, WorkspaceTabBar, WorkspaceFrame, useWorkspaceStore,
 } from '../../components/analysis/runFrame';
 import { computeModelBuilderVerdict } from '../../utils/modelBuilderVerdict';
+import { HULL_NO_MAX_LENGTH, sanitizeHullInput, suggestHullNo } from '../../utils/hullNo';
 import { peekResultReentry, useResultReentry } from '../../utils/resultReentry';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
@@ -1826,14 +1827,33 @@ function FileDownloadRow({ label, filename, filepath, primary, downloadName, onD
    ──────────────────────────────────────────────────────────────────────── */
 
 function OptionsPanel({
+  hullNo, setHullNo, hullSuggestion,
   meshSize, setMeshSize,
   uboltFullFix, setUboltFullFix,
   useNastran, setUseNastran,
   disabled,
 }) {
   const changed = uboltFullFix !== true || useNastran !== false;
+  // 호선은 선택 입력 — 비우면 파일명 제안값을 쓴다. 최종 값은 BDF 첫 줄 주석으로 남는다.
+  const effectiveHull = hullNo || hullSuggestion;
+  let hullHint;
+  if (hullNo) hullHint = `BDF 에 호선 ${hullNo} 을 주석으로 남깁니다`;
+  else if (hullSuggestion) hullHint = `비워 두면 파일명의 ${hullSuggestion} 을 씁니다`;
+  else hullHint = '파일명에서 호선을 찾지 못했습니다. 적으면 BDF 에 남깁니다';
   return (
     <section aria-label="실행 옵션" className="space-y-2">
+      <label className="flex items-center justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block text-xs font-bold text-slate-700">호선 <span className="font-normal text-slate-600">(선택)</span></span>
+          <span className={`block text-[11px] ${effectiveHull ? 'text-slate-600' : 'text-amber-700'}`}>{hullHint}</span>
+        </span>
+        <input
+          type="text" value={hullNo} onChange={(e) => setHullNo(sanitizeHullInput(e.target.value))}
+          placeholder={hullSuggestion || '예: 3454'} maxLength={HULL_NO_MAX_LENGTH} disabled={disabled}
+          aria-label="호선 번호" spellCheck={false} autoComplete="off"
+          className="w-24 shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-right font-mono text-sm text-slate-800 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
+        />
+      </label>
       <label className="flex items-center justify-between gap-3">
         <span>
           <span className="block text-xs font-bold text-slate-700">Mesh size</span>
@@ -1960,6 +1980,8 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
   const [meshSize,      setMeshSize]      = useState(saved?.meshSize      ?? DEFAULT_MESH_SIZE_MM);
   const [uboltFullFix,  setUboltFullFix]  = useState(saved?.uboltFullFix  ?? true);
   const [useNastran,    setUseNastran]    = useState(saved?.useNastran    ?? false);
+  // 호선(선택) — 사용자가 적은 값만 담는다. 비면 파일명 제안값(hullSuggestion)을 서버가 쓴다.
+  const [hullNo,        setHullNo]        = useState(saved?.hullNo        ?? '');
 
   // ── 작업/결과 상태 ──
   // 이전 버전 페이지 상태(단계 id 가 csv-validation/model-qc/nastran)는 새 단계 정의로 바꾼다.
@@ -1977,6 +1999,12 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
   const [reviewAck, setReviewAck] = useState(saved?.reviewAck ?? false);
   // 결과를 다시 열었을 때(브라우저에 File 객체 없음) 입력 요약에 보여 줄 서버 쪽 입력 파일명.
   const [serverInputs, setServerInputs] = useState(saved?.serverInputs ?? null);
+  // 호선 제안 — 올린 CSV(없으면 서버에 남은 입력) 파일명 앞 4자리. 서버도 같은 규칙으로 다시 계산한다.
+  const hullSuggestion = suggestHullNo([
+    struFile?.name ?? serverInputs?.stru,
+    pipeFile?.name ?? serverInputs?.pipe,
+    equiFile?.name ?? serverInputs?.equip,
+  ]);
   const [rerunBusy, setRerunBusy] = useState(false);
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [bdfResult,  setBdfResult]  = useState(saved?.bdfResult ?? null);
@@ -2069,14 +2097,14 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
   useEffect(() => {
     setPageState({
       struFile, pipeFile, equiFile,
-      meshSize, uboltFullFix, useNastran,
+      meshSize, uboltFullFix, useNastran, hullNo,
       steps, activeIdx, hasRunOnce,
       jobStatus, currentJobId, sourceAnalysisId, bdfResult,
       engineLog, runNastranRequested, reviewAck, serverInputs,
     });
   }, [
     struFile, pipeFile, equiFile,
-    meshSize, uboltFullFix, useNastran,
+    meshSize, uboltFullFix, useNastran, hullNo,
     steps, activeIdx, hasRunOnce,
     jobStatus, currentJobId, sourceAnalysisId, bdfResult,
     engineLog, runNastranRequested, reviewAck, serverInputs,
@@ -2380,6 +2408,7 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
     formData.append('mesh_size',      String(parseInt(meshSize, 10) || Number(DEFAULT_MESH_SIZE_MM)));
     formData.append('ubolt_full_fix', String(!!uboltFullFix));
     formData.append('run_nastran',    String(!!useNastran));
+    if (hullNo) formData.append('hull_no', hullNo);
 
     beginRun('파일 전송 중…', !!useNastran);
     setServerInputs(null);
@@ -2437,6 +2466,7 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
     try {
       const res = await rerunAnalysisProject(sourceAnalysisId, {
         mesh_size: mesh, ubolt_full_fix: !!uboltFullFix, run_nastran: !!useNastran,
+        hull_no: hullNo,   // 빈 값 = 파일명 제안으로 다시 계산
       });
       const jobId = res.data?.job_id;
       if (!jobId) throw new Error('작업 ID 를 받지 못했습니다.');
@@ -2569,6 +2599,7 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
       setMeshSize(String(input.mesh_size ?? DEFAULT_MESH_SIZE_MM));
       setUboltFullFix(input.ubolt_full_fix ?? true);
       setUseNastran(!!input.run_nastran);
+      setHullNo(input.hull_no_source === 'user' ? sanitizeHullInput(input.hull_no) : '');
       setServerInputs({
         stru:  input.stru_csv  ? fileBaseName(input.stru_csv)  : null,
         pipe:  input.pipe_csv  ? fileBaseName(input.pipe_csv)  : null,
@@ -2616,6 +2647,7 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
       setMeshSize(String(input.mesh_size ?? DEFAULT_MESH_SIZE_MM));
       setUboltFullFix(input.ubolt_full_fix ?? true);
       setUseNastran(!!input.run_nastran);
+      setHullNo(input.hull_no_source === 'user' ? sanitizeHullInput(input.hull_no) : '');
       slots.forEach(([, , setFile, setErr], i) => { setFile(files[i]); setErr(null); });
       showToast(`최근 실행의 CSV ${files.length}개와 옵션을 불러왔습니다.`, 'success');
     } catch (e) {
@@ -3004,7 +3036,7 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
     if (editPollRef.current) { clearInterval(editPollRef.current); editPollRef.current = null; }
     setStruFile(null); setPipeFile(null); setEquiFile(null);
     setStruError(null); setPipeError(null); setEquiError(null);
-    setMeshSize(DEFAULT_MESH_SIZE_MM); setUboltFullFix(true); setUseNastran(false);
+    setMeshSize(DEFAULT_MESH_SIZE_MM); setUboltFullFix(true); setUseNastran(false); setHullNo('');
     setLocalResultDir(null);
     setSteps(INITIAL_STEPS.map(s => ({ ...s })));
     setActiveIdx(0); setHasRunOnce(false); setCurrentJobId(null);
@@ -3248,6 +3280,7 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
 
           <div className="h-px bg-slate-100" />
           <OptionsPanel
+            hullNo={hullNo} setHullNo={setHullNo} hullSuggestion={hullSuggestion}
             meshSize={meshSize} setMeshSize={setMeshSize}
             uboltFullFix={uboltFullFix} setUboltFullFix={setUboltFullFix}
             useNastran={useNastran} setUseNastran={setUseNastran}

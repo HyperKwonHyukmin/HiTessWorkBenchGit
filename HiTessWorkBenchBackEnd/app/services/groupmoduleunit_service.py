@@ -34,6 +34,7 @@ from .analysis_runner import (
     update_progress,
 )
 from .bdf_deck_check import inspect_deck, merge_into_step1
+from .hull_no import resolve_bdf_hull_no
 
 logger = logging.getLogger(__name__)
 
@@ -874,13 +875,19 @@ def task_execute_groupmoduleunit(
 
     update_progress(job_id, 95, "데이터베이스 저장 중...")
 
+    # 호선 — Model Builder BDF 의 'HullNo' 주석 → 파일명 앞 4자리 순. LogBook 보내기 등이 이 값을 읽는다.
+    hull_no, hull_no_source = resolve_bdf_hull_no(bdf_path)
+
     project_data, db_err = record_analysis(
         job_id=job_id,
         project_name=f"{program_name}_{timestamp}",
         program_name=program_name,
         employee_id=employee_id,
         status=status_msg,
-        input_info={"bdf_model": bdf_path, "use_nastran": use_nastran},
+        input_info={
+            "bdf_model": bdf_path, "use_nastran": use_nastran,
+            "hull_no": hull_no, "hull_no_source": hull_no_source,   # "comment" | "filename" | None
+        },
         # F06 부분 결과 등을 위해 status 무관 result_data 저장 (기존 동작 보존)
         result_info=result_data if result_data else None,
         source=source,

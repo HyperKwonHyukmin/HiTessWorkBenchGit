@@ -558,6 +558,26 @@ def test_model_builder_rerun_applies_option_overrides(db_session, tmp_path, monk
     assert submitted["args"][8:11] == (300.0, False, True)
 
 
+def test_model_builder_rerun_hull_no(db_session, tmp_path, monkeypatch):
+    record, _, submitted = _model_builder_setup(db_session, tmp_path, monkeypatch)
+    client = _client(db_session, "USER001")
+    # 원본에 호선 기록이 없으면 None → 서비스가 파일명에서 다시 제안한다.
+    assert client.post(f"/api/analysis/{record.id}/rerun", json={}).status_code == 200
+    assert submitted["args"][15] is None
+    # 덮어쓰기 값은 그대로 넘긴다.
+    assert client.post(f"/api/analysis/{record.id}/rerun", json={"hull_no": "3454"}).status_code == 200
+    assert submitted["args"][15] == "3454"
+    # 사용자가 적었던 호선은 이어받고, 파일명에서 나온 값은 넘기지 않는다.
+    record.input_info = {**record.input_info, "hull_no": "5PPP", "hull_no_source": "user"}
+    db_session.commit()
+    assert client.post(f"/api/analysis/{record.id}/rerun", json={}).status_code == 200
+    assert submitted["args"][15] == "5PPP"
+    record.input_info = {**record.input_info, "hull_no": "3454", "hull_no_source": "filename"}
+    db_session.commit()
+    assert client.post(f"/api/analysis/{record.id}/rerun", json={}).status_code == 200
+    assert submitted["args"][15] is None
+
+
 def test_model_builder_rerun_rejects_non_positive_mesh(db_session, tmp_path, monkeypatch):
     record, _, submitted = _model_builder_setup(db_session, tmp_path, monkeypatch)
     r = _client(db_session, "USER001").post(f"/api/analysis/{record.id}/rerun", json={"mesh_size": 0})
