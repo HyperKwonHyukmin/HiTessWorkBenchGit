@@ -1,10 +1,11 @@
 /// <summary>
 /// 관리자 All Projects — 해석 1건의 작업 폴더 파일(입력·결과·기타)을 보고 받고,
 /// 고른 파일을 Hi-TESS LogBook '정리 대기'로 보낸다(서버끼리 전송).
+/// BDF 는 보내기 전에 3D 로 확인할 수 있다(BdfPreviewDialog — LogBook 뷰어 사본).
 /// </summary>
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  BookOpen, Download, FileWarning, FolderOpen, Loader2, RefreshCw, Send,
+  BookOpen, Box, Download, FileWarning, FolderOpen, Loader2, RefreshCw, Send,
 } from 'lucide-react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -16,8 +17,9 @@ import { downloadFileBlob } from '../../api/analysis';
 import { downloadBlob } from '../../utils/fileHelper';
 import {
   defaultExportTitle, describeExportResult, formatBytes, formatShortDateTime, groupFilesByRole,
-  summarizeSelection,
+  isPreviewableBdf, summarizeSelection,
 } from '../../utils/adminProjectFiles';
+import BdfPreviewDialog from '../bdfPreview/BdfPreviewDialog';
 import { useLogbookLauncher } from '../analysis/runFrame/LogbookImportButton';
 
 const inputCls = 'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200';
@@ -31,7 +33,7 @@ function MetaItem({ label, children, wrap = false }) {
   );
 }
 
-function FileGroup({ group, selected, onToggle, onToggleAll, onDownload, showFolder, downloading }) {
+function FileGroup({ group, selected, onToggle, onToggleAll, onDownload, onPreview, showFolder, downloading }) {
   const sendable = group.files.filter(f => !f.drm);
   const allChecked = sendable.length > 0 && sendable.every(f => selected.has(f.path));
   return (
@@ -73,6 +75,19 @@ function FileGroup({ group, selected, onToggle, onToggleAll, onDownload, showFol
             <span className="hidden w-28 shrink-0 text-right text-[11px] tabular-nums text-slate-500 md:inline">
               {formatShortDateTime(f.modified)}
             </span>
+            {isPreviewableBdf(f) ? (
+              <button
+                type="button"
+                onClick={() => onPreview(f)}
+                className="shrink-0 rounded p-1 text-slate-500 hover:bg-blue-50 hover:text-blue-700"
+                aria-label={`${f.rel} 3D 미리보기`}
+                title="3D 미리보기"
+              >
+                <Box size={14} />
+              </button>
+            ) : (
+              <span className="w-[22px] shrink-0" aria-hidden="true" />
+            )}
             <button
               type="button"
               onClick={() => onDownload(f)}
@@ -101,6 +116,7 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
   const [downloading, setDownloading] = useState(null);
+  const [previewPath, setPreviewPath] = useState(null);
   const { open: openLogbookInbox, launching } = useLogbookLauncher({
     next: 'inbox', showToast, openedMessage: 'LogBook 정리 대기 화면을 열었습니다.',
   });
@@ -126,6 +142,7 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
     setResult(null);
     setTitle('');
     setNote('');
+    setPreviewPath(null);
     load();
   }, [load]);
 
@@ -133,6 +150,14 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
   const groups = useMemo(() => groupFilesByRole(files), [files]);
   const summary = useMemo(() => summarizeSelection(files, selected), [files, selected]);
   const showFolder = (listing?.folders?.length || 0) > 1;
+  const bdfFiles = useMemo(() => groups.flatMap(g => g.files).filter(isPreviewableBdf), [groups]);
+  // 미리보기에서 오갈 목록 — 체크한 BDF 가 있으면 그것만, 없으면 전체 BDF(행의 3D 버튼으로 연 경우 그 파일 포함)
+  const checkedBdf = useMemo(() => bdfFiles.filter(f => selected.has(f.path)), [bdfFiles, selected]);
+  const previewFiles = useMemo(() => {
+    if (!previewPath) return [];
+    const base = checkedBdf.length ? checkedBdf : bdfFiles;
+    return base.some(f => f.path === previewPath) ? base : bdfFiles;
+  }, [previewPath, checkedBdf, bdfFiles]);
 
   const toggle = (path) => setSelected(prev => {
     const next = new Set(prev);
@@ -199,6 +224,12 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
             <span className="tabular-nums">{formatBytes(summary.bytes)}</span>
           </p>
           <div className="ml-auto flex gap-2">
+            {checkedBdf.length > 0 && (
+              <Button variant="secondary" size="md" onClick={() => setPreviewPath(checkedBdf[0].path)} disabled={sending}>
+                <Box size={15} aria-hidden="true" />
+                선택한 BDF 3D 보기{checkedBdf.length > 1 ? ` (${checkedBdf.length})` : ''}
+              </Button>
+            )}
             <Button variant="secondary" size="md" onClick={onClose} disabled={sending}>닫기</Button>
             <Button
               variant="primary"
@@ -270,6 +301,7 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
                     onToggle={toggle}
                     onToggleAll={toggleAll}
                     onDownload={download}
+                    onPreview={(f) => setPreviewPath(f.path)}
                     showFolder={showFolder}
                     downloading={downloading}
                   />
@@ -364,6 +396,14 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
           </section>
         </div>
       )}
+      <BdfPreviewDialog
+        analysisId={project?.id}
+        files={previewFiles}
+        initialPath={previewPath}
+        selected={selected}
+        onToggleSelected={toggle}
+        onClose={() => setPreviewPath(null)}
+      />
     </Modal>
   );
 }

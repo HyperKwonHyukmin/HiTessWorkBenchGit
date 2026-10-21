@@ -7,6 +7,7 @@ import {
   formatBytes,
   formatShortDateTime,
   groupFilesByRole,
+  isPreviewableBdf,
   summarizeSelection,
 } from './adminProjectFiles.js';
 
@@ -51,4 +52,13 @@ test('묶음 이름 기본값은 서버 기본값과 같은 모양', () => {
 test('보낸 결과 요약', () => {
   assert.match(describeExportResult({ state: 'staged', file_count: 3, blocked: [], rejected: [{}] }), /3개 파일, DRM 파일 1개 제외/);
   assert.match(describeExportResult({ state: 'blocked', file_count: 0, blocked: [{}], rejected: [] }), /이미 LogBook 에 있어/);
+});
+
+test('isPreviewableBdf: BDF 계열 확장자만, DRM 은 제외', () => {
+  assert.equal(isPreviewableBdf({ rel: 'sub/3496_M01.BDF' }), true);
+  assert.equal(isPreviewableBdf({ rel: 'part.dat' }), true);
+  assert.equal(isPreviewableBdf({ rel: 'model.bdf', drm: true }), false);
+  assert.equal(isPreviewableBdf({ rel: 'model.f06' }), false);
+  assert.equal(isPreviewableBdf({ rel: 'model.bdf.bak' }), false);
+  assert.equal(isPreviewableBdf(null), false);
 });

@@ -78,3 +78,12 @@ export function describeExportResult(result) {
   if (result.state === 'blocked') return `모든 파일이 이미 LogBook 에 있어 새 묶음을 만들지 않았습니다 (${parts.slice(1).join(', ')}).`;
   return `LogBook 정리 대기로 보냈습니다 — ${parts.join(', ')}.`;
 }
+
+/** 3D 미리보기가 되는 BDF 인가 — 백엔드 admin_projects.PREVIEW_SUFFIXES 와 같아야 한다. DRM 파일은 서버가 못 읽는다. */
+export const PREVIEW_SUFFIXES = ['.bdf', '.dat', '.nas', '.blk', '.bulk'];
+
+export function isPreviewableBdf(file) {
+  if (!file || file.drm) return false;
+  const name = String(file.rel || file.path || '').toLowerCase();
+  return PREVIEW_SUFFIXES.some(s => name.endsWith(s));
+}

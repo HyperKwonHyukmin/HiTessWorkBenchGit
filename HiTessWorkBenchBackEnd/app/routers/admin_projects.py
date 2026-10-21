@@ -4,6 +4,7 @@
                                                    `logbook=sent` 면 LogBook 으로 보낸 기록만
 - `GET  /api/admin/projects/{id}/files`          — 작업 폴더의 모든 파일(입력/결과/기타 구분) + LogBook 보낸 이력
 - `POST /api/admin/projects/{id}/logbook`        — 고른 파일을 Hi-TESS LogBook '정리 대기'로 보낸다(서버끼리)
+- `GET  /api/admin/projects/{id}/model-preview`  — 작업 폴더의 BDF 를 3D 미리보기용 model.lbm 으로(LogBook 뷰어 형식)
 
 파일 받기는 기존 `GET /api/download` 를 쓴다(관리자는 남의 작업 폴더도 통과 — `_access_control`).
 """
@@ -15,6 +16,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -23,6 +25,7 @@ from .. import database, models
 from ..dependencies import require_admin
 from ..services import admin_projects as svc
 from ..services import logbook_integration as lb
+from ..services.bdf_preview import service as preview
 from ..services.activity_service import log_activity
 from . import analysis as analysis_router
 
@@ -153,6 +156,39 @@ def project_files(
     listing = svc.list_files(_resolved(db, record))
     listing["exports"] = _export_rows(db, analysis_id)
     return listing
+
+
+PREVIEW_SUFFIXES = (".bdf", ".dat", ".nas", ".blk", ".bulk")
+
+
+@router.get("/{analysis_id}/model-preview")
+def model_preview(
+    analysis_id: int,
+    path: str = Query(..., min_length=1),
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
+):
+    """BDF → model.lbm(gzip). 이미 gzip 이라 Content-Encoding 으로 내려 브라우저가 풀게 한다(LogBook files.py 와 같다).
+    INCLUDE 는 그 작업 폴더 안에서만 따라간다. sync def 라 스레드풀에서 돈다."""
+    record = _record_or_404(db, analysis_id)
+    resolved = _resolved(db, record)
+    try:
+        [(_real, folder, rel)] = svc.select_paths(resolved, [path])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if not rel.lower().endswith(PREVIEW_SUFFIXES):
+        raise HTTPException(status_code=422, detail="BDF 파일만 3D 미리보기를 할 수 있습니다.")
+    root = resolved["folders"][folder]
+    try:
+        out = preview.build_preview(os.path.realpath(root), rel)
+    except preview.PreviewError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    return Response(content=out["lbm"], media_type="application/octet-stream", headers={
+        "Content-Encoding": "gzip",
+        "Cache-Control": "no-store",
+        "X-Lbm-Version": str(out["version"]),
+        "X-Lbm-Missing": str(len(out["missing"])),
+    })
 
 
 class LogbookExportRequest(BaseModel):

@@ -607,6 +607,8 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   Electron `render-process-gone`·`child-process-gone`(main 이 userData `pending-client-errors.json` 에 쌓고 다음 로그인 때 화면이 꺼내 보냄).
   `POST /api/activity/client-error` 는 로그인 전 오류도 받으려고 **인증 없음**(유효 토큰이면 사번, IP당 분당 20건).
 - **`analysis.finished_at`**: `_write_through`·`record_analysis` 가 Success/Failed/Cancelled 때 기록. 소요시간 = finished_at − started_at. 도입 전 기록·Interrupted 는 NULL.
+  화면 표시는 하지 않는다(2026-10-20 사용자 결정 — 필요 없음). 기록만 유지.
+- 배포(2026-10-20): v1.6.21(`733d3dc`). 145 Server Manager ⟳ Update 와 exe 배포는 사용자가 한다. 접속 이력 패널·exe 실행은 눈으로 확인 안 함.
 - 강제 로그아웃은 이제 `FORCE_LOGOUT` 감사 로그를 남긴다. ⚠ PC 정보·크래시 수집은 **새 exe 부터** 동작한다(Electron 변경).
 
 작업 상태는 인메모리(`job_status_store`)가 1차 저장소이고, status·progress·message 는 변경마다 DB `analysis.job_status/progress/job_message` 에 write-through 된다(`_write_through`). 상태 조회 API 는 메모리에 없으면 DB 값으로 응답하고, 서버 시작 시 Pending/Running 으로 남은 레코드는 `Interrupted`(실패)로 바뀐다(`main.py` lifespan). 재시작 시 잃는 것은 실행 중이던 프로세스 자체와 대기열 순번·취소 핸들뿐이다 — Redis 는 필요 없다(2026-10-19 확인).
@@ -659,6 +661,13 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 - ⚠ 배포 순서: **LogBook 을 먼저** `git pull` + 재시작. 옛 LogBook 이면 WB 가 404 를 받아 "보내기 기능이 없거나 연동이 꺼져 있습니다" 로 알린다.
 - 해석 여권 함께 싣기(Hi-TESS Core 1단계, 2026-10-19): `.env` `LOGBOOK_SEND_PASSPORT=1` 이면 `origin.passport`(검증된 산출물 sha256)를 싣고,
   LogBook 자료 화면이 'WB 산출물과 같음'을 보인다. 비우면 예전 본문. 두 플랫폼 연동 약속은 `hitess-core` 저장소 — 바꾸기 전에 먼저 본다.
+- **BDF 3D 미리보기(2026-10-21)** — 보내기 전에 모델을 본다. 파일 행의 3D 버튼 / 체크한 BDF '선택한 BDF 3D 보기' → `BdfPreviewDialog`
+  (중첩 headlessui Dialog — 부모 모달이 바깥 클릭으로 닫히지 않게). 뷰어 안 'LogBook 으로 보낼 파일에 포함' 이 부모 체크와 같은 상태다.
+  `GET /api/admin/projects/{id}/model-preview?path=` 가 BDF → `model.lbm`(gzip, `Content-Encoding: gzip`)을 메모리에서 만든다(디스크 안 씀 — DRM).
+  INCLUDE 는 그 작업 폴더 안에서만 따라가고, 상한 200MB·최근 4개 메모리 캐시. 실측: 7MB 판 모델(CQUAD4 6.3만) 1.3s.
+  ⚠ 변환기(`app/services/bdf_preview/` deck·fields·coords·model·lbm)와 엔진·계산(`frontend/src/components/bdfPreview/lb/`)은
+  **LogBook 무수정 사본**이다(lbm 형식 v2). 여기서 고치지 말고 LogBook 에서 고친 뒤 다시 복사한다. WorkBench 코드는 `service.py`·`useBdfPreview.js`·`BdfPreviewDialog.jsx` 뿐.
+  이 때문에 **WorkBench three 를 LogBook 과 같은 `~0.184.0` 으로 올렸다**(0.155 → 0.184, 2026-10-21). r163 부터 WebGL1 이 빠져 WebGL2 가 없는 PC 에서는 기존 3D 화면도 안 뜬다.
 - ⚠ 작업 폴더에 `nul` 파일이 생기는 해석이 있다 — 만드는 쪽은 WorkBench 밖의 레거시 해석 엔진(.exe, `Cmb.Cli`·Nastran 임시 파일,
   d33e9fd·e25c20c 기록)이라 이 저장소에서 근원을 막을 수 없다. Python 3.13+ 에서 이 경로가 `\\.\nul` 장치로 바뀌어 목록 전체가 500 이었다
   → 목록에서 예약 이름(nul·con·aux·prn·com/lpt)을 뺀다(1ee564c, 2026-10-19).

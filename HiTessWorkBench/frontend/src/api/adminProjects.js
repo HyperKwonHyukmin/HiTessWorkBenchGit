@@ -19,6 +19,19 @@ export const getAdminProjectFiles = (analysisId) =>
   axios.get(`${API_BASE_URL}/api/admin/projects/${analysisId}/files`, { headers: getAuthHeaders() });
 
 /**
+ * 작업 폴더의 BDF 1개를 3D 미리보기용 model.lbm 으로 받는다(LogBook 뷰어 형식, 서버가 Content-Encoding gzip 으로 줌).
+ * 반환 data = ArrayBuffer. 실패 시 detail 은 JSON 이라 arraybuffer 를 글자로 풀어 읽는다(previewErrorText).
+ */
+export const getAdminModelPreview = (analysisId, path, { signal } = {}) =>
+  axios.get(`${API_BASE_URL}/api/admin/projects/${analysisId}/model-preview`, {
+    params: { path },
+    headers: getAuthHeaders(),
+    responseType: 'arraybuffer',
+    timeout: 5 * 60 * 1000,
+    signal,
+  });
+
+/**
  * 고른 파일을 Hi-TESS LogBook '정리 대기'로 보낸다(서버끼리 전송 — 큰 파일은 오래 걸린다).
  * 반환 data = { key, state: 'staged'|'blocked', blocked, rejected, file_count, total_bytes, title }
  */
