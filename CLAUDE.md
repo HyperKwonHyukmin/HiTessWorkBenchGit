@@ -667,6 +667,8 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 - **솔버별 개발 이력**(`ChangelogModal` + `constants/changelog.js`)과 같은 규칙을 `utils/updateHistory.js`(+테스트)로 공유한다:
   '새 항목' = 이 PC 에서 지난번에 연 맨 위 항목보다 위(localStorage `wb_admin_updates_seen` · `wb_changelog_seen:<programKey>`), 처음 연 PC 는 새 항목 없음.
   분류는 한글 중립 배지(기능·개선·수정), `break` 만 주의 배지('사용 방식 변경').
+- 배포(2026-10-22): v1.6.25(`a16a216` 기준으로 **같은 버전 exe 재빌드** — '확인 남음' 필터 제거분 포함). 이력 json 은 `74fe2e9`(큰 범주 15건).
+  145 ⟳ Update·exe 배포는 사용자. Update History 화면·솔버별 개발 이력 모달은 **눈으로 확인 안 함**. 솔버별 이력 내용(`constants/changelog.js`)은 4월에서 멈춰 있다.
 
 ### All Projects → Hi-TESS LogBook 보내기 (2026-10-13)
 
