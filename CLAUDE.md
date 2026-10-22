@@ -650,7 +650,8 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 
 - **관리자 `Update History`**(ADMINISTRATION 메뉴, `pages/Administration/UpdateHistory.jsx`) — 내용은 백엔드 `app/changelog/changelog.json`
   (`GET /api/admin/updates`, `require_admin`, 요청마다 다시 읽음). **json 만 고쳐 서버에 올리면 exe 재배포·재시작 없이 바뀐다.**
-  항목 = `{date, version?, kind(기능|개선|수정|정리|운영), title, summary, status?(남은 확인), screen?, requester?('이름 직급'), points?}`,
+  항목 = `{date, version?, kind(기능|개선|수정|정리|운영), title, summary, screen?, requester?('이름 직급'), points?}`.
+  ⚠ **`status`(확인 남음) 칸·필터는 없앴다**(2026-10-22 사용자 결정) — '화면 눈으로 확인 안 함' 같은 검증 상태를 이력에 쓰지 않는다. 테스트가 막는다.
   최신이 맨 앞, 화면 문구에 em dash 금지(`tests/test_admin_updates.py` 가 잡는다). 기능을 릴리스하면 여기에 한 줄 더한다.
   **2026년 10월부터 기록**한다(사용자 결정). version 은 그 변경이 처음 실린 릴리스.
 - ★ **"업데이트 이력 작성해" = `git log` 를 보고 `changelog.json` 만 고친다**(사용자 지시, LogBook 과 같은 규칙). 기능 단위로 묶고 작은 수정은 그 기능에 합친다,

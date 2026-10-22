@@ -9,7 +9,7 @@ import { CHANGELOG, CHANGELOG_TYPE_META, changelogKey } from '../constants/chang
 
 const items = [
   { date: '2026-10-21', version: '1.6.22', kind: '기능', title: 'C', summary: '3D 미리보기' },
-  { date: '2026-10-21', version: '1.6.21', kind: '수정', title: 'B', summary: '목록', status: '확인 남음' },
+  { date: '2026-10-21', version: '1.6.21', kind: '수정', title: 'B', summary: '목록' },
   { date: '2026-09-30', kind: '개선', title: 'A', summary: '대시보드', points: ['내 작업'] },
 ];
 
@@ -26,11 +26,10 @@ test('본 항목이 목록에서 빠졌으면 날짜로 판단', () => {
   assert.deepEqual([...newIndexes(items, '2026-10-01|9.9.9|없어짐')], [0, 1]);
 });
 
-test('필터: 분류·확인 남음·찾기(세부 줄·버전·요청자 포함)', () => {
+test('필터: 분류·찾기(세부 줄·버전·요청자 포함)', () => {
   assert.equal(matchesUpdate({ ...items[0], requester: '김도현 선임' }, { q: '김도현' }), true);
   assert.equal(matchesUpdate(items[0], { q: '김도현' }), false);
   assert.equal(items.filter((it) => matchesUpdate(it, { kind: '수정' })).length, 1);
-  assert.equal(items.filter((it) => matchesUpdate(it, { pending: true })).length, 1);
   assert.equal(items.filter((it) => matchesUpdate(it, { q: '내 작업' })).length, 1);
   assert.equal(items.filter((it) => matchesUpdate(it, { q: 'v1.6.22' })).length, 1);
   assert.equal(items.filter((it) => matchesUpdate(it, {})).length, 3);

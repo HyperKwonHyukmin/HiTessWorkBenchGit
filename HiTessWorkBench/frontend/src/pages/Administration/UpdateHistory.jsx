@@ -69,7 +69,6 @@ function UpdateItem({ it, isNew, showDate, isFirst, isLast, q }) {
           <span className="text-sm font-bold text-slate-800"><Hits text={it.title} q={q} /></span>
           {isNew && <Badge variant="notify" size="sm">새 항목</Badge>}
           <Badge variant="neutral" size="sm">{it.kind}</Badge>
-          {it.status && <Badge variant="warning" size="sm" dot>{it.status}</Badge>}
         </div>
         {it.summary && <p className="mt-1 text-sm leading-relaxed text-slate-700"><Hits text={it.summary} q={q} /></p>}
         {it.points?.length > 0 && (
@@ -97,7 +96,6 @@ export default function UpdateHistory() {
   const [error, setError] = useState(null);
   const [kind, setKind] = useState('');
   const [q, setQ] = useState('');
-  const [pending, setPending] = useState(false);
   // 기간 — ''(전체, 기본: 처음부터 끝까지 이어 보기) | 'd7'·'d30' | 'YYYY' | 'YYYY-MM'
   const [periodPick, setPeriodPick] = useState('');
   const [lastYear, setLastYear] = useState('');   // 둘째 단(달)에 마지막으로 보인 해
@@ -156,24 +154,23 @@ export default function UpdateHistory() {
   };
 
   const rows = useMemo(
-    () => items.map((it, index) => ({ it, index })).filter(({ it }) => matchesUpdate(it, { period, kind, q, pending })),
-    [items, period, kind, q, pending],
+    () => items.map((it, index) => ({ it, index })).filter(({ it }) => matchesUpdate(it, { period, kind, q })),
+    [items, period, kind, q],
   );
   const groups = useMemo(() => groupByMonth(rows), [rows]);
-  // 기간 단추의 건수는 '분류·찾기·확인 남음'을, 분류 버튼의 건수는 '기간·찾기·확인 남음'을 반영한다.
+  // 기간 단추의 건수는 '분류·찾기'를, 분류 버튼의 건수는 '기간·찾기'를 반영한다.
   const periodCount = useMemo(() => {
-    const base = items.filter((it) => matchesUpdate(it, { kind, q, pending }));
+    const base = items.filter((it) => matchesUpdate(it, { kind, q }));
     return (p) => base.filter((it) => matchesUpdate(it, { period: p })).length;
-  }, [items, kind, q, pending]);
+  }, [items, kind, q]);
   const kindCounts = useMemo(() => {
-    const base = items.filter((it) => matchesUpdate(it, { period, q, pending }));
+    const base = items.filter((it) => matchesUpdate(it, { period, q }));
     return Object.fromEntries(['', ...UPDATE_KINDS].map((k) => [k, k ? base.filter((it) => it.kind === k).length : base.length]));
-  }, [items, period, q, pending]);
+  }, [items, period, q]);
   const kinds = UPDATE_KINDS.filter((k) => items.some((it) => it.kind === k));
-  const pendingCount = items.filter((it) => matchesUpdate(it, { period }) && it.status).length;
-  const filtering = Boolean(period || kind || pending || q.trim());
+  const filtering = Boolean(period || kind || q.trim());
   const elsewhere = period ? periodCount('') - rows.length : 0;   // 고른 기간 밖에 맞는 항목
-  const clearFilters = () => { setKind(''); setQ(''); setPending(false); setPeriodPick(''); inputRef.current?.focus(); };
+  const clearFilters = () => { setKind(''); setQ(''); setPeriodPick(''); inputRef.current?.focus(); };
 
   return (
     <div className="mx-auto max-w-4xl pb-28">
@@ -214,7 +211,6 @@ export default function UpdateHistory() {
             {fresh.size > 0 && <> · <strong className="font-semibold text-slate-800">지난번에 본 뒤 새 항목 {fresh.size}건</strong></>}
           </p>
 
-
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <label className="relative min-w-[14rem] flex-1">
               <span className="sr-only">이력 찾기</span>
@@ -246,12 +242,6 @@ export default function UpdateHistory() {
                 </button>
               ))}
             </div>
-            {pendingCount > 0 && (
-              <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-slate-700">
-                <input type="checkbox" checked={pending} onChange={(e) => setPending(e.target.checked)} className="h-3.5 w-3.5 accent-brand-blue" />
-                확인 남음만 <span className="font-mono text-slate-500">{pendingCount}</span>
-              </label>
-            )}
           </div>
 
           {/* 기간 두 단 — 첫 단: 전체 · 최근 7일 · 최근 30일 | 해, 둘째 단: 보고 있는 해의 달 */}

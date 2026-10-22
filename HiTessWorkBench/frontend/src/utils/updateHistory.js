@@ -53,14 +53,13 @@ export function inPeriod(it, period, today = new Date()) {
   return period.length === 4 ? date.slice(0, 4) === period : date.slice(0, 7) === period;
 }
 
-/** 기간·찾기 글자·분류·확인 남음 필터. 찾기는 제목·설명·버전·상태·화면·날짜·분류·요청자·세부 줄. */
-export function matchesUpdate(it, { period = '', today, kind = '', q = '', pending = false } = {}) {
+/** 기간·찾기 글자·분류 필터. 찾기는 제목·설명·버전·화면·날짜·분류·요청자·세부 줄. */
+export function matchesUpdate(it, { period = '', today, kind = '', q = '' } = {}) {
   if (!inPeriod(it, period, today)) return false;
   if (kind && it.kind !== kind) return false;
-  if (pending && !it.status) return false;
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
-  return [it.title, it.summary, it.version ? `v${it.version}` : '', it.status, it.screen, it.date, it.kind,
+  return [it.title, it.summary, it.version ? `v${it.version}` : '', it.screen, it.date, it.kind,
     it.requester, ...(it.points || [])].join(' ').toLowerCase().includes(needle);
 }
 
