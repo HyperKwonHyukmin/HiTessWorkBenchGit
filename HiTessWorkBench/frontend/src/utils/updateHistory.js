@@ -28,8 +28,9 @@ export function newIndexes(items, seen, keyFn = itemKey) {
   return fresh;
 }
 
-/** 찾기 글자·분류·확인 남음 거르기. kind 를 빼고 세려면 { ...filters, kind: '' }. */
-export function matchesUpdate(it, { kind = '', q = '', pending = false } = {}) {
+/** 달·찾기 글자·분류·확인 남음 거르기. month = 'YYYY-MM'(빈 값이면 전체 기간). */
+export function matchesUpdate(it, { month = '', kind = '', q = '', pending = false } = {}) {
+  if (month && (it.date || '').slice(0, 7) !== month) return false;
   if (kind && it.kind !== kind) return false;
   if (pending && !it.status) return false;
   const needle = q.trim().toLowerCase();
@@ -41,6 +42,16 @@ export function matchesUpdate(it, { kind = '', q = '', pending = false } = {}) {
 export function monthLabel(ym) {
   const [y, m] = String(ym || '').split('-');
   return y && m ? `${y}년 ${Number(m)}월` : '날짜 없음';
+}
+
+/** 기록이 있는 달 목록(최근 달 먼저) — [{ month:'2026-10', label:'2026년 10월', count }]. */
+export function listMonths(items) {
+  const counts = new Map();
+  (items || []).forEach((it) => {
+    const month = (it?.date || '').slice(0, 7);
+    if (month) counts.set(month, (counts.get(month) || 0) + 1);
+  });
+  return [...counts.keys()].sort().reverse().map((month) => ({ month, label: monthLabel(month), count: counts.get(month) }));
 }
 
 /** [{ month:'2026-10', label:'2026년 10월', rows:[{ it, index }] }] — 들어온 순서(최신 먼저)를 유지한다. */

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  groupByMonth, itemKey, matchesUpdate, monthLabel, newIndexes, splitHits,
+  groupByMonth, itemKey, listMonths, matchesUpdate, monthLabel, newIndexes, splitHits,
 } from './updateHistory.js';
 import { CHANGELOG, CHANGELOG_TYPE_META, changelogKey } from '../constants/changelog.js';
 
@@ -31,6 +31,16 @@ test('거르기: 분류·확인 남음·찾기(세부 줄·버전 포함)', () =
   assert.equal(items.filter((it) => matchesUpdate(it, { q: '내 작업' })).length, 1);
   assert.equal(items.filter((it) => matchesUpdate(it, { q: 'v1.6.22' })).length, 1);
   assert.equal(items.filter((it) => matchesUpdate(it, {})).length, 3);
+});
+
+test('달 목록은 최근 달 먼저, 건수와 함께 · 달로 거르기', () => {
+  assert.deepEqual(listMonths(items), [
+    { month: '2026-10', label: '2026년 10월', count: 2 },
+    { month: '2026-09', label: '2026년 9월', count: 1 },
+  ]);
+  assert.equal(items.filter((it) => matchesUpdate(it, { month: '2026-09' })).length, 1);
+  assert.equal(items.filter((it) => matchesUpdate(it, { month: '2026-10', kind: '수정' })).length, 1);
+  assert.deepEqual(listMonths([]), []);
 });
 
 test('달 묶음은 순서를 지킨다', () => {

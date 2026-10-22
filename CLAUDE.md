@@ -652,6 +652,8 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   (`GET /api/admin/updates`, `require_admin`, 요청마다 다시 읽음). **json 만 고쳐 서버에 올리면 exe 재배포·재시작 없이 바뀐다.**
   항목 = `{date, version?, kind(기능|개선|수정|정리|운영), title, summary, status?(남은 확인), screen?, points?}`, 최신이 맨 앞, 화면 문구에 em dash 금지
   (`tests/test_admin_updates.py` 가 잡는다). 기능을 릴리스하면 여기에 한 줄 더한다.
+  **2026년 10월부터 기록**한다(사용자 결정). version 은 그 변경이 처음 실린 릴리스, 테스트·문서만 바뀐 커밋은 넣지 않는다.
+  화면은 **달 탭**(최근 달이 기본, '전체 기간' 따로)으로 나눠 보고, 거르기에 맞는 항목이 다른 달에 있으면 '전체 기간에서 보기'를 띄운다.
 - LogBook 46 처럼 서버가 주는 독립 HTML(`/updates`)로 만들지 않았다(사용자 결정) — WorkBench 화면은 `file://` Electron 이라 서버 페이지가
   앱 로그인 토큰을 못 읽고, 브라우저 로그인 폼은 관리자 게이트를 우회하게 된다.
 - **솔버별 개발 이력**(`ChangelogModal` + `constants/changelog.js`)과 같은 규칙을 `utils/updateHistory.js`(+테스트)로 공유한다:
