@@ -179,3 +179,18 @@ def test_presence_status_falls_back_to_last_seen_without_last_active_at():
     now = datetime.now()
     row = models.UserPresence(employee_id="A", last_seen=now, last_active_at=None)
     assert presence_status(row, now) == "online"
+
+
+def test_offline_beacon_ignores_client_disconnect(db_session):
+    """앱이 본문을 다 보내기 전에 끊으면(ClientDisconnect) 예외 없이 ok=False 로 끝난다."""
+    import asyncio
+
+    from starlette.requests import ClientDisconnect
+
+    from app.routers.presence import presence_offline
+
+    class _DisconnectedRequest:
+        async def body(self):
+            raise ClientDisconnect()
+
+    assert asyncio.run(presence_offline(_DisconnectedRequest(), db_session)) == {"ok": False}

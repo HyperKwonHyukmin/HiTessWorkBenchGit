@@ -15,6 +15,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from starlette.requests import ClientDisconnect
 
 from .. import database, models
 from ..dependencies import require_admin, require_auth
@@ -215,7 +216,13 @@ async def presence_offline(req: Request, db: Session = Depends(database.get_db))
     sendBeacon 은 커스텀 헤더(Authorization)를 실을 수 없으므로 세션 토큰을 본문으로 받아
     검증한다. 유효한 토큰이면 해당 사용자의 presence 행을 삭제해 즉시 오프라인으로 만든다.
     """
-    token = _extract_token(await req.body())
+    try:
+        raw = await req.body()
+    except ClientDisconnect:
+        # 앱이 본문을 다 보내기 전에 종료됐다. 오프라인·접속 종료는 하트비트 시간 초과로
+        # 정리 스케줄러가 처리하므로 여기서는 조용히 끝낸다(서버창 traceback 방지).
+        return {"ok": False}
+    token = _extract_token(raw)
     if not token:
         return {"ok": False}
 
