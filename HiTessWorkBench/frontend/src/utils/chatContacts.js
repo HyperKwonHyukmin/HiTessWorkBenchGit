@@ -26,16 +26,41 @@ export function statusDotClass(status) {
   return 'bg-slate-300';
 }
 
-/** 'HH:MM' 로컬 시각. 빈 값·잘못된 값은 빈 문자열. */
-export function formatChatTime(iso) {
-  if (!iso) return '';
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function parseChatDate(iso) {
+  if (!iso) return null;
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  try {
-    return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** 말풍선용 'YYYY.MM.DD HH:MM'. 언제 온 메시지인지 날짜까지 바로 보이게 한다. */
+export function formatChatDateTime(iso) {
+  const d = parseChatDate(iso);
+  if (!d) return '';
+  return `${d.getFullYear()}.${pad2(d.getMonth() + 1)}.${pad2(d.getDate())} `
+    + `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** 목록용 마지막 시각 — 오늘이면 'HH:MM', 아니면 'YYYY.MM.DD'. 좁은 칸에 맞춘 짧은 형태. */
+export function formatChatListTime(iso, now = new Date()) {
+  const d = parseChatDate(iso);
+  if (!d) return '';
+  const sameDay = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+  if (sameDay) return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return `${d.getFullYear()}.${pad2(d.getMonth() + 1)}.${pad2(d.getDate())}`;
+}
+
+/** 이름 옆 보조 표기 '부서 · 직책'. 동명이인을 가린다. 빈 항목은 건너뛴다. */
+export function formatChatAffiliation(department, position) {
+  return [department, position]
+    .map((v) => (v == null ? '' : String(v).trim()))
+    .filter(Boolean)
+    .join(' · ');
 }
 
 /**
@@ -63,6 +88,7 @@ export function buildChatSections(contacts = [], threads = []) {
         other_id: c.employee_id,
         name: c.name || c.employee_id,
         department: c.department || '',
+        position: c.position || '',
         status: c.status || 'offline',
         last_message: t?.last_message || '',
         last_at: t?.last_at || null,
@@ -78,7 +104,8 @@ export function buildChatSections(contacts = [], threads = []) {
     .map((t) => ({
       other_id: t.other_id,
       name: t.other_name || t.other_id,
-      department: '',
+      department: t.other_department || '',
+      position: t.other_position || '',
       status: null, // 상태 출처는 contacts 뿐 → 점·라벨을 생략하라는 신호
       last_message: t.last_message || '',
       last_at: t.last_at || null,

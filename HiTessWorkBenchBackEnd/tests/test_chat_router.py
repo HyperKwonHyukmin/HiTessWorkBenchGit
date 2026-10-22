@@ -79,6 +79,28 @@ def test_threads_lists_conversation_with_unread(admin_client, make_user):
     assert t["last_message"] == "there"
 
 
+def test_threads_and_conversation_include_department_and_position(admin_client, make_user):
+    """동명이인을 가리도록 대화 목록·대화창 응답에 상대의 부서·직책이 함께 온다."""
+    make_user("USER001", name="홍길동", department="구조시스템연구실", position="책임연구원")
+    admin_client.post("/api/chat/send", json={"recipient_id": "USER001", "body": "hi"})
+
+    t = admin_client.get("/api/chat/threads").json()["threads"][0]
+    assert t["other_department"] == "구조시스템연구실"
+    assert t["other_position"] == "책임연구원"
+
+    conv = admin_client.get("/api/chat/conversation/USER001").json()
+    assert conv["other_department"] == "구조시스템연구실"
+    assert conv["other_position"] == "책임연구원"
+
+
+def test_contacts_include_position(admin_client, make_user):
+    """관리자 로스터에도 직책이 온다."""
+    make_user("ADMIN002", name="김관리", is_admin=True, position="선임연구원")
+
+    item = admin_client.get("/api/chat/contacts").json()["items"][0]
+    assert item["position"] == "선임연구원"
+
+
 def test_unread_cleared_after_reading_conversation(admin_client, make_user):
     """대화를 열람하면 해당 상대의 미읽음이 0 이 된다."""
     make_user("USER001")
@@ -284,7 +306,7 @@ def test_contacts_never_exposes_sensitive_presence_fields(admin_client, make_use
     _act_as("USER001")
     r = admin_client.get("/api/chat/contacts")
     item = r.json()["items"][0]
-    assert set(item.keys()) == {"employee_id", "name", "department", "status", "is_admin"}
+    assert set(item.keys()) == {"employee_id", "name", "department", "position", "status", "is_admin"}
     # 값 단위로도 확인 — 필드명을 바꿔 우회하는 회귀까지 잡는다.
     body = r.text
     assert "10.1.2.3" not in body

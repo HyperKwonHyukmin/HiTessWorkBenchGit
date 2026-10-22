@@ -36,6 +36,16 @@ def _user(db: Session, employee_id: str):
     )
 
 
+def _other_profile(other) -> dict:
+    """대화 상대 표시 정보. 동명이인을 가리도록 부서·직책을 이름과 함께 준다."""
+    return {
+        "other_name": other.name if other else None,
+        "other_department": other.department if other else None,
+        "other_position": other.position if other else None,
+        "other_is_admin": bool(other.is_admin) if other else False,
+    }
+
+
 def _visible_to(m: "models.ChatMessage", me: str) -> bool:
     """'내게서만 삭제'를 반영해 이 메시지가 me 의 화면에 보여야 하는지 판정한다."""
     if m.sender_id == me and m.hidden_by_sender:
@@ -116,6 +126,7 @@ def get_contacts(
             "employee_id": user.employee_id,
             "name": user.name,
             "department": user.department,
+            "position": user.position,
             "status": presence_status(presence, now),
             "is_admin": True,
         }
@@ -183,8 +194,7 @@ def get_conversation(
     other = _user(db, other_id)
     return {
         "other_id": other_id,
-        "other_name": other.name if other else None,
-        "other_is_admin": bool(other.is_admin) if other else False,
+        **_other_profile(other),
         "messages": [_serialize(m, me) for m in msgs],
     }
 
@@ -225,9 +235,7 @@ def get_threads(
     result = []
     total_unread = 0
     for other_id, t in threads.items():
-        other = _user(db, other_id)
-        t["other_name"] = other.name if other else None
-        t["other_is_admin"] = bool(other.is_admin) if other else False
+        t.update(_other_profile(_user(db, other_id)))
         total_unread += t["unread"]
         result.append(t)
 

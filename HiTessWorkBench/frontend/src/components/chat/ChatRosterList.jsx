@@ -6,7 +6,12 @@
  */
 import React from 'react';
 import { Trash2 } from 'lucide-react';
-import { formatChatTime, statusDotClass, statusLabel } from '../../utils/chatContacts';
+import {
+  formatChatAffiliation,
+  formatChatListTime,
+  statusDotClass,
+  statusLabel,
+} from '../../utils/chatContacts';
 
 function Avatar({ name, id }) {
   const label = (name || id || '?').trim().charAt(0).toUpperCase();
@@ -20,6 +25,7 @@ function Avatar({ name, id }) {
 function Row({ row, onPick, onDelete }) {
   // 대화 이력이 없는 관리자에게는 삭제할 대화가 없다 → 삭제 버튼을 숨긴다.
   const hasHistory = !!row.last_at;
+  const affiliation = formatChatAffiliation(row.department, row.position);
   return (
     <div className="group/row flex items-center gap-2 px-3 py-3 hover:bg-slate-50 border-b border-slate-100">
       <button
@@ -30,7 +36,12 @@ function Row({ row, onPick, onDelete }) {
         <Avatar name={row.name} id={row.other_id} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-sm text-slate-700 truncate">{row.name}</span>
+            <span className="font-bold text-sm text-slate-700 shrink-0 max-w-[45%] truncate">{row.name}</span>
+            {affiliation && (
+              <span className="text-[11px] text-slate-500 truncate min-w-0" title={affiliation}>
+                {affiliation}
+              </span>
+            )}
             {row.status && (
               <span className="inline-flex items-center gap-1 shrink-0 text-[10px] text-slate-500">
                 <span
@@ -42,12 +53,12 @@ function Row({ row, onPick, onDelete }) {
             )}
             {hasHistory && (
               <span className="text-[10px] text-slate-400 ml-auto shrink-0">
-                {formatChatTime(row.last_at)}
+                {formatChatListTime(row.last_at)}
               </span>
             )}
           </div>
           <div className="text-xs text-slate-500 truncate">
-            {row.last_message || row.department || '대화를 시작해 보세요.'}
+            {row.last_message || '대화를 시작해 보세요.'}
           </div>
         </div>
       </button>

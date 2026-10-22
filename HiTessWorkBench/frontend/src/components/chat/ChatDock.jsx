@@ -26,7 +26,8 @@ import {
 import ChatRosterList from './ChatRosterList';
 import {
   buildChatSections,
-  formatChatTime,
+  formatChatAffiliation,
+  formatChatDateTime,
   statusDotClass,
   statusLabel,
 } from '../../utils/chatContacts';
@@ -74,17 +75,37 @@ export default function ChatDock({
     onOpenChange?.(nextOpen);
   }, [isControlled, onOpenChange]);
 
+  // 대화 응답의 상대 이름·부서·직책으로 헤더를 채운다. 외부 이벤트(User Management)로
+  // 열면 이름만 알고 들어오므로 서버 값이 기준이다. 그 사이 다른 대화로 옮겼으면 건드리지 않는다.
+  const applyProfile = useCallback((otherId, data) => {
+    if (!data) return;
+    setActiveOther((prev) => (prev && prev.id === otherId
+      ? {
+        ...prev,
+        name: data.other_name || prev.name,
+        department: data.other_department || '',
+        position: data.other_position || '',
+      }
+      : prev));
+  }, []);
+
   const openConversation = useCallback(async (other) => {
-    setActiveOther({ id: other.id, name: other.name });
+    setActiveOther({
+      id: other.id,
+      name: other.name,
+      department: other.department || '',
+      position: other.position || '',
+    });
     setDockOpen(true);
     setMessages([]);
     try {
       const res = await getChatConversation(other.id);
       setMessages(res.data.messages || []);
+      applyProfile(other.id, res.data);
     } catch {
       // 조회 실패는 조용히 무시(다음 폴링에서 재시도).
     }
-  }, [setDockOpen]);
+  }, [setDockOpen, applyProfile]);
 
   // 폴링 effect 안에서 최신 openConversation/setDockOpen 을 쓰기 위한 ref.
   // deps 에 직접 넣으면 부모가 넘기는 인라인 onOpenChange 때문에 매 렌더마다
@@ -133,6 +154,8 @@ export default function ChatDock({
               openConversationRef.current({
                 id: newest.other_id,
                 name: newest.other_name,
+                department: newest.other_department,
+                position: newest.other_position,
               });
             }
           }
@@ -270,6 +293,9 @@ export default function ChatDock({
   const activeStatus = activeOther
     ? (contacts.find((c) => c.employee_id === activeOther.id)?.status || null)
     : null;
+  const activeAffiliation = activeOther
+    ? formatChatAffiliation(activeOther.department, activeOther.position)
+    : '';
 
   // 도크는 로그인한 모든 사용자에게 노출한다 — 사용자가 관리자에게 먼저 문의할 수 있어야
   // 하므로, '받은 대화가 있을 때만' 이라는 기존 조건은 진입점 자체를 없애 버린다.
@@ -321,9 +347,16 @@ export default function ChatDock({
             >
               <ChevronLeft size={20} />
             </button>
-            <span className="font-bold text-sm truncate">
-              {activeOther.name || activeOther.id}
-            </span>
+            <div className="min-w-0 flex flex-col leading-tight">
+              <span className="font-bold text-sm truncate">
+                {activeOther.name || activeOther.id}
+              </span>
+              {activeAffiliation && (
+                <span className="text-[11px] text-white/75 truncate" title={activeAffiliation}>
+                  {activeAffiliation}
+                </span>
+              )}
+            </div>
             {activeStatus && (
               <span className="inline-flex items-center gap-1 shrink-0 text-[10px] text-white/70">
                 <span
@@ -395,7 +428,7 @@ export default function ChatDock({
                     <div
                       className={`mt-1 text-[10px] ${m.mine ? 'text-white/60' : 'text-slate-400'}`}
                     >
-                      {formatChatTime(m.created_at)}
+                      {formatChatDateTime(m.created_at)}
                     </div>
                   </div>
                 </div>
@@ -428,7 +461,12 @@ export default function ChatDock({
         <ChatRosterList
           sections={sections}
           error={contactsError}
-          onPick={(row) => openConversation({ id: row.other_id, name: row.name })}
+          onPick={(row) => openConversation({
+            id: row.other_id,
+            name: row.name,
+            department: row.department,
+            position: row.position,
+          })}
           onDelete={(row) => setConfirmDelete({ id: row.other_id, name: row.name })}
         />
       )}

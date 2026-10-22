@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
   buildChatSections,
-  formatChatTime,
+  formatChatAffiliation,
+  formatChatDateTime,
+  formatChatListTime,
   sortRoster,
   statusDotClass,
   statusLabel,
@@ -95,8 +97,35 @@ test('statusDotClass 는 상태별로 다른 색을 주고 기본값은 회색�
   assert.equal(statusDotClass(undefined), 'bg-slate-300');
 });
 
-test('formatChatTime 은 빈 값·잘못된 값에 빈 문자열을 준다', () => {
-  assert.equal(formatChatTime(null), '');
-  assert.equal(formatChatTime(''), '');
-  assert.equal(formatChatTime('not-a-date'), '');
+test('formatChatDateTime 은 연도·날짜·시각을 함께 주고 잘못된 값은 빈 문자열이다', () => {
+  // 서버는 시간대 없는 로컬 ISO 를 준다 → 로컬 시각 그대로 읽힌다.
+  assert.equal(formatChatDateTime('2026-10-23T08:05:00'), '2026.10.23 08:05');
+  assert.equal(formatChatDateTime(null), '');
+  assert.equal(formatChatDateTime(''), '');
+  assert.equal(formatChatDateTime('not-a-date'), '');
+});
+
+test('formatChatListTime 은 오늘이면 시각, 아니면 연도 포함 날짜를 준다', () => {
+  const now = new Date(2026, 9, 23, 15, 0);
+  assert.equal(formatChatListTime('2026-10-23T09:07:00', now), '09:07');
+  assert.equal(formatChatListTime('2026-10-22T23:59:00', now), '2026.10.22');
+  assert.equal(formatChatListTime('2025-10-23T09:07:00', now), '2025.10.23');
+  assert.equal(formatChatListTime(null, now), '');
+});
+
+test('formatChatAffiliation 은 부서·직책을 잇고 빈 항목은 건너뛴다', () => {
+  assert.equal(formatChatAffiliation('구조시스템연구실', '책임연구원'), '구조시스템연구실 · 책임연구원');
+  assert.equal(formatChatAffiliation('구조시스템연구실', null), '구조시스템연구실');
+  assert.equal(formatChatAffiliation('', ' 선임연구원 '), '선임연구원');
+  assert.equal(formatChatAffiliation(null, undefined), '');
+});
+
+test('buildChatSections 는 로스터·기타 대화 모두 부서·직책을 싣는다', () => {
+  const { roster, others } = buildChatSections(
+    [{ employee_id: 'A1', name: '가', department: '구조해석팀', position: '책임', status: 'online' }],
+    [{ other_id: 'U9', other_name: '홍길동', other_department: '설계팀', other_position: '선임' }],
+  );
+  assert.equal(roster[0].position, '책임');
+  assert.equal(others[0].department, '설계팀');
+  assert.equal(others[0].position, '선임');
 });
