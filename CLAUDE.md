@@ -50,6 +50,18 @@ npm run dev
 npm run dist
 ```
 
+### 커밋 전 점검 — 테스트·빌드 통과로 끝내지 않는다
+
+v1.5.8 에서 결함 6건이 새어 나갔고 3건을 사용자가 먼저 찾았다(MySQL 정렬 버퍼 500 · lucide `Map` 아이콘이 전역 `Map` 을 가린 크래시 · 재시작 안 한 라우터 404).
+백엔드 테스트는 **SQLite** 라 MySQL 고유 실패를 못 잡고, 프론트는 컴포넌트 테스트가 없다. 그래서 커밋 직전에:
+1. 백엔드 테스트 + `npm run build` + `node --test src/utils/*.test.js`. 그 위에 **변경이 닿는 화면을 나열하고 그 화면이 부르는 API 를 실제로 1회씩 호출**한다.
+2. DB 모델 변경 시 — `schema_bootstrap` 멱등 보강, 그 테이블을 `ORDER BY` 하는 목록 쿼리에 JSON/TEXT 가 끼는지, 목록 API 를 작은·큰 limit 로 두 번 호출.
+3. 새 라우터 — `main.py` 등록 + 실제 재시작 후 200, 필요하면 `GUARDED_ROUTES` 등록.
+4. 프론트 — 아이콘 이름이 JS 내장(`Map`/`Set`/`Image`)과 겹치지 않는지, 서버 실패 때 로컬 값을 덮어쓰지 않는지.
+5. 커밋 메시지 끝에 배포 영향 한 줄(`git pull + 재시작` / `프론트 재배포` / `InHouse 수동 교체 <파일>` / `없음`).
+6. 운영 오류는 추측하지 말고 traceback 부터 확보한다.
+상세 계획: `docs/operations/regression-prevention-master-plan.md`.
+
 ## 아키텍처
 
 ```
@@ -63,6 +75,7 @@ npm run dist
 - **백엔드 URL**: `HiTessWorkBench/frontend/src/config.js`의 `DEFAULT_API_BASE_URL` — 기본값 `http://10.133.122.70:9091`. 사용자가 앱 내에서 서버 주소를 변경하면 `localStorage`의 `'server_url'` 키에 저장되며 이 값이 우선 사용됨(`setApiBaseUrl()` 함수로 런타임 변경 가능).
   - ⚠️ **`config.js`의 `DEFAULT_API_BASE_URL` 변경은 항상 커밋에서 제외할 것.** 이 값은 개발자가 로컬 백엔드(`10.133.122.70` '내 컴퓨터')와 팀 서버(`10.14.42.145` '서버 컴퓨터') 사이를 토글하는 **로컬 전용 변경**이다. 커밋하면 배포 빌드의 기본 백엔드가 개발자 개인 PC로 바뀌어 팀/릴리즈가 깨진다. `/git:commit` 등 모든 커밋 작업에서 `config.js`는 스테이징하지 말고 로컬 변경으로 남겨둔다.
   - **WorkBench exe 릴리스 = `/wb-release`** (2026-10-19, `.claude/commands/wb-release.md`). `scripts/release.ps1 -Bump -BuildOnly` 가 버전 4곳을 올리고, config.js 가 어느 쪽이든 **무조건 145 줄 활성**으로 맞춰 빌드한 뒤 번들에 70 주소가 없는지 검사하고 빌드 전 상태로 되돌린다. 버전 커밋·푸시는 빌드와 동시에 진행한다.
+    버전만 올릴 때는 `pwsh scripts/check-versions.ps1`(인자 없음 = patch+1 **후 바로 커밋**, `-SetVersion X.Y.Z`, 확인만은 `-Check`). 4곳을 손으로 고치지 말 것.
     ⚠ 커밋 훅은 Bash 명령 문자열(커밋 메시지 포함)에 `config.js` 가 들어 있기만 해도 막는다 — 메시지는 파일로 넘기고 config.js 확인은 Grep 도구로.
 - 🚫 **`Darkmode.js/` 는 영구적으로 커밋하지 않는다 (사용자 지시).** 저장소 루트의 이 폴더는 **자체 `.git/` 를 가진 외부 라이브러리 클론**(50파일·1.3MB)이다. `git add -A` 로 넣으면 내부 파일이 아니라 **임베디드 저장소(gitlink) 한 줄**만 기록돼 다른 사람이 clone 하면 **빈 폴더가 되는 깨진 엔트리**가 된다. `.gitignore` 에 등재해 뒀으니 어떤 커밋 작업에서도 되살리지 말 것.
 - **백엔드 개발 서버 포트**: `9091` (uvicorn 실행 시 `--port 9091` 사용).
@@ -724,7 +737,7 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 | `routers/ai.py` | `/api/ai` | 채팅, 인덱싱, 문서 목록 |
 | `routers/davit.py` | `/api/davit` | Mast Post / Jib Rest 다빗 구조 계산 |
 | `routers/column_buckling.py` | (별도 프리픽스) | AISC 기둥 좌굴 하중 계산 |
-| `routers/chat.py` | `/api/chat` | 관리자↔사용자 1:1 DM (폴링 기반, WebSocket 없음). `GET /contacts` 는 대화 가능한 활성 관리자 + 접속 상태(online/idle/offline)를 필드 화이트리스트로 반환 — 사용자가 먼저 대화를 걸 수 있는 진입점 |
+| `routers/chat.py` | `/api/chat` | 관리자↔사용자 1:1 DM (폴링 기반, WebSocket 없음). `GET /contacts` 는 대화 가능한 활성 관리자 + 접속 상태(online/idle/offline)를 필드 화이트리스트로 반환 — 사용자가 먼저 대화를 걸 수 있는 진입점. 동명이인 구분용으로 contacts `department`·`position`, threads·conversation `other_department`·`other_position` 을 준다 → 화면은 이름 옆 `부서 · 직책`, 말풍선 `YYYY.MM.DD HH:MM`, 목록 시각은 오늘이면 시각·아니면 날짜(`utils/chatContacts.js`, 2026-10-23) |
 | `routers/app_settings.py` | `/api/app-settings`, `/api/admin/app-settings` | App별 서비스 상태·점검·표시 메타 오버라이드 |
 | `routers/admin_projects.py` | `/api/admin/projects` | 관리자 All Projects — 전체 이력·작업 폴더 파일 목록·LogBook 보내기 |
 
@@ -743,7 +756,6 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 | `'New Analysis'` / `'File-Based Apps'` | `analysis/NewAnalysis.jsx` | 파일 업로드 기반 해석 선택 |
 | `'Truss Analysis'` | `analysis/TrussAnalysis.jsx` | CSV 업로드 + 3D 모델 뷰어 |
 | `'Truss Structural Assessment'` | `analysis/TrussAssessment.jsx` | BDF 업로드 + 구조 안정성 평가 |
-| `'HiTess ModelFlow'` | `analysis/HiTessModelFlow.jsx` | CSV → BDF → Nastran 전체 FEM 파이프라인 (개발 중) |
 | `'BDF Scanner'` | `analysis/BdfScanner.jsx` | BDF 유효성 검증 + 선택적 Nastran 해석 |
 
 **Interactive / Parametric 앱**
