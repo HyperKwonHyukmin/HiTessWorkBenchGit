@@ -45,6 +45,7 @@ from .routers import (
     section_property,
     support,
     system,
+    updates,
     users,
     viewers,
 )
@@ -234,6 +235,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(preferences.router)
     application.include_router(logbook_link.router)
     application.include_router(admin_projects.router)
+    application.include_router(updates.router)
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     application.mount(

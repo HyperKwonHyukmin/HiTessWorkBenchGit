@@ -646,6 +646,18 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 - 관리 UI: `Administration > App Settings`(전체 표) + 앱 카드/행의 톱니바퀴(관리자에게만 노출) → `components/admin/AppSettingsModal.jsx`.
 - 설정 캐시 TTL 5초(쓰기 시 즉시 invalidate) + 프론트 60초 폴링 → 다른 관리자의 변경이 최대 1분 내 반영.
 
+### 업데이트 이력 — 관리자 Update History · 솔버별 개발 이력 (2026-10-22)
+
+- **관리자 `Update History`**(ADMINISTRATION 메뉴, `pages/Administration/UpdateHistory.jsx`) — 내용은 백엔드 `app/changelog/changelog.json`
+  (`GET /api/admin/updates`, `require_admin`, 요청마다 다시 읽음). **json 만 고쳐 서버에 올리면 exe 재배포·재시작 없이 바뀐다.**
+  항목 = `{date, version?, kind(기능|개선|수정|정리|운영), title, summary, status?(남은 확인), screen?, points?}`, 최신이 맨 앞, 화면 문구에 em dash 금지
+  (`tests/test_admin_updates.py` 가 잡는다). 기능을 릴리스하면 여기에 한 줄 더한다.
+- LogBook 46 처럼 서버가 주는 독립 HTML(`/updates`)로 만들지 않았다(사용자 결정) — WorkBench 화면은 `file://` Electron 이라 서버 페이지가
+  앱 로그인 토큰을 못 읽고, 브라우저 로그인 폼은 관리자 게이트를 우회하게 된다.
+- **솔버별 개발 이력**(`ChangelogModal` + `constants/changelog.js`)과 같은 규칙을 `utils/updateHistory.js`(+테스트)로 공유한다:
+  '새 항목' = 이 PC 에서 지난번에 연 맨 위 항목보다 위(localStorage `wb_admin_updates_seen` · `wb_changelog_seen:<programKey>`), 처음 연 PC 는 새 항목 없음.
+  분류는 한글 중립 배지(기능·개선·수정), `break` 만 주의 배지('사용 방식 변경').
+
 ### All Projects → Hi-TESS LogBook 보내기 (2026-10-13)
 
 관리자가 `ADMINISTRATION > All Projects` 에서 **모든 사용자의 해석 기록**(My Projects 와 같은 기준 — 샘플·권상 세부 검토 제외)을 보고,
@@ -668,6 +680,7 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   ⚠ 변환기(`app/services/bdf_preview/` deck·fields·coords·model·lbm)와 엔진·계산(`frontend/src/components/bdfPreview/lb/`)은
   **LogBook 무수정 사본**이다(lbm 형식 v2). 여기서 고치지 말고 LogBook 에서 고친 뒤 다시 복사한다. WorkBench 코드는 `service.py`·`useBdfPreview.js`·`BdfPreviewDialog.jsx` 뿐.
   이 때문에 **WorkBench three 를 LogBook 과 같은 `~0.184.0` 으로 올렸다**(0.155 → 0.184, 2026-10-21). r163 부터 WebGL1 이 빠져 WebGL2 가 없는 PC 에서는 기존 3D 화면도 안 뜬다.
+  배포(2026-10-21): v1.6.22(`0f729a1`·`cd2d5c1`). 145 ⟳ Update·exe 배포는 사용자. ⚠ 미리보기 화면과 three 업그레이드 뒤 기존 3D 화면(Truss·Assessment·My Projects BDF·이중관 뷰어)은 **눈으로 확인 안 함**.
 - ⚠ 작업 폴더에 `nul` 파일이 생기는 해석이 있다 — 만드는 쪽은 WorkBench 밖의 레거시 해석 엔진(.exe, `Cmb.Cli`·Nastran 임시 파일,
   d33e9fd·e25c20c 기록)이라 이 저장소에서 근원을 막을 수 없다. Python 3.13+ 에서 이 경로가 `\\.\nul` 장치로 바뀌어 목록 전체가 500 이었다
   → 목록에서 예약 이름(nul·con·aux·prn·com/lpt)을 뺀다(1ee564c, 2026-10-19).
