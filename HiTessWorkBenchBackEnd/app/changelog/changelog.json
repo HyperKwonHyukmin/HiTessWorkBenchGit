@@ -1,5 +1,5 @@
 {
-  "_comment": "관리자 '업데이트 이력'(Administration > Update History)의 내용. 새 항목은 items 맨 앞에. kind = 기능|개선|수정|정리|운영. status = 아직 확인·반영이 남은 것(없으면 뺀다). 화면 문구에 em dash 를 쓰지 않는다. 고치면 백엔드 재시작 없이 다음 조회부터 반영된다.",
+  "_comment": "관리자 '업데이트 이력'(Administration > Update History)의 내용. 2026년 10월부터 기록. 새 항목은 items 맨 앞에. kind = 기능|개선|수정|정리|운영. version = 그 변경이 처음 실린 릴리스. status = 아직 확인·반영이 남은 것(없으면 뺀다). 화면 문구에 em dash 를 쓰지 않는다. 고치면 백엔드 재시작 없이 다음 조회부터 반영된다(145 는 Server Manager Update 로 git pull).",
   "items": [
     {
       "date": "2026-10-22",
@@ -69,14 +69,18 @@
       "version": "1.6.18",
       "kind": "운영",
       "title": "exe 릴리스 절차를 명령 하나로",
-      "summary": "버전 올리기, 빌드, 배포본의 서버 주소 검사, 버전 커밋을 한 번에 합니다. 앱 기능 변경은 없습니다."
+      "summary": "버전 올리기, 빌드, 배포본의 서버 주소 검사, 버전 커밋을 한 번에 합니다. 앱 기능 변경은 없습니다.",
+      "points": [
+        "개발 PC 의 서버 주소 설정과 상관없이 배포 exe 는 항상 서버(145)에 접속",
+        "빌드와 버전 커밋·푸시를 동시에 진행"
+      ]
     },
     {
       "date": "2026-10-19",
       "version": "1.6.17",
       "kind": "수정",
-      "title": "All Projects 목록이 열리지 않던 문제 수정",
-      "summary": "작업 폴더에 nul 같은 예약 이름 파일이 있으면 목록 전체가 오류(500)로 끝났습니다. 그런 파일은 목록에서 뺍니다.",
+      "title": "All Projects 파일 목록이 열리지 않던 문제 수정",
+      "summary": "작업 폴더에 nul 같은 예약 이름 파일이 있으면 파일 목록 전체가 오류(500)로 끝났습니다. 그런 파일은 목록에서 뺍니다.",
       "screen": "All Projects"
     },
     {
@@ -101,29 +105,74 @@
     },
     {
       "date": "2026-10-19",
+      "version": "1.6.16",
+      "kind": "수정",
+      "title": "외부 프로그램 로그인이 회사명 표기 차이로 실패하던 문제 수정",
+      "summary": "PLM 갱신으로 회사명 표기가 바뀐 뒤 HiTESS Beam 등 외부 프로그램 로그인이 모두 '미등록'으로 실패했습니다. 공백·㈜·(주) 차이를 무시하고 비교합니다."
+    },
+    {
+      "date": "2026-10-19",
       "version": "1.6.14",
       "kind": "정리",
       "title": "Model Library 를 LogBook 으로 옮김",
-      "summary": "모델 보관은 Hi-TESS LogBook 에서 합니다. 대시보드에서 LogBook 을 열고, User Management 에 LogBook 등급 열을 더했습니다."
+      "summary": "모델 등록·검색·비교는 Hi-TESS LogBook 에서 합니다. WorkBench 의 Model Library 화면과 관련 기능을 뺐습니다."
+    },
+    {
+      "date": "2026-10-19",
+      "version": "1.6.14",
+      "kind": "기능",
+      "title": "대시보드에서 Hi-TESS LogBook 열기",
+      "summary": "대시보드에서 LogBook 을 바로 열고, User Management 에서 사용자별 LogBook 등급을 봅니다.",
+      "screen": "Dashboard"
+    },
+    {
+      "date": "2026-10-15",
+      "version": "1.6.14",
+      "kind": "기능",
+      "title": "사용자 정보를 사내 PLM 에서 자동 갱신",
+      "summary": "이름·회사·부서·직책·메일을 주기적으로, 또는 버튼으로 PLM 에서 다시 읽어 옵니다.",
+      "screen": "User Management"
     },
     {
       "date": "2026-10-15",
       "version": "1.6.12",
-      "kind": "기능",
-      "title": "사용자 정보를 사내 PLM 에서 자동 갱신",
-      "summary": "이름·회사·부서·직책·메일을 주기적으로, 또는 버튼으로 PLM 에서 다시 읽어 옵니다.",
-      "screen": "User Management",
+      "kind": "수정",
+      "title": "PLM 서버 접속 실패 수정",
+      "summary": "사내 PLM 서버의 오래된 인증 방식 때문에 접속하지 못했습니다. 서버에 Oracle Client 경로를 지정하면 그 방식으로 접속합니다.",
       "points": [
-        "메일 주소가 비어 있는 사용자를 일괄로 채우는 스크립트",
-        "User Management 에 메일 표시와 갱신 버튼"
+        "서버 설정 PLM_ORACLE_LIB_DIR. 지정하지 않으면 예전 방식 그대로"
       ]
+    },
+    {
+      "date": "2026-10-15",
+      "version": "1.6.11",
+      "kind": "기능",
+      "title": "User Management 에 메일 표시와 갱신 버튼",
+      "summary": "사용자 메일 주소를 보고 버튼으로 다시 채웁니다. 비어 있는 메일을 한 번에 채우는 스크립트도 더했습니다.",
+      "screen": "User Management"
+    },
+    {
+      "date": "2026-10-14",
+      "version": "1.6.10",
+      "kind": "기능",
+      "title": "사내 PLM 에서 사번으로 사용자 메일 주소 채우기",
+      "summary": "가입·로그인·관리자 작업 때 비어 있는 메일 주소를 PLM 에서 찾아 채웁니다."
+    },
+    {
+      "date": "2026-10-14",
+      "version": "1.6.10",
+      "kind": "개선",
+      "title": "외부 App 등록 거절 사유를 창 안에 바로 표시",
+      "summary": "주소 이름이 겹치거나 예약된 이름이면 입력하는 즉시 어느 이름이 누구와 겹치는지 알려 줍니다.",
+      "screen": "App Settings"
     },
     {
       "date": "2026-10-13",
       "version": "1.6.9",
       "kind": "개선",
-      "title": "Unit 권상 보고서 파일명에 리비전 표기",
-      "summary": "같은 모델의 보고서를 리비전별로 구분해 저장할 수 있습니다. 입력 폼도 정리했습니다."
+      "title": "App Settings 에 외부 App 주소 이름 표시",
+      "summary": "접속 IP·Port 아래에 주소 이름을 보여 주고, 새 App 등록 창에 이미 쓰는 이름 목록을 보여 줍니다.",
+      "screen": "App Settings"
     },
     {
       "date": "2026-10-13",
@@ -132,6 +181,20 @@
       "title": "관리자 All Projects",
       "summary": "모든 사용자의 해석 기록을 보고, 작업 폴더의 파일을 받거나 체크한 파일을 Hi-TESS LogBook 으로 보냅니다.",
       "screen": "All Projects"
+    },
+    {
+      "date": "2026-10-13",
+      "version": "1.6.8",
+      "kind": "개선",
+      "title": "Unit 권상 보고서 파일명에 리비전 표기",
+      "summary": "같은 모델의 보고서를 리비전별로 구분해 저장할 수 있습니다. 입력 폼도 정리했습니다."
+    },
+    {
+      "date": "2026-10-13",
+      "version": "1.6.8",
+      "kind": "개선",
+      "title": "선체 가속도 계산 실패 원인 표시",
+      "summary": "DRM PDF, 표·주요 치수 미검출, LC 행 누락 같은 입력 문제를 화면에 알려 주고, 계산에서 뺀 LC 를 사유와 함께 보여 줍니다."
     },
     {
       "date": "2026-10-13",
@@ -162,13 +225,15 @@
       "screen": "HiTESS Model Builder"
     },
     {
-      "date": "2026-10-02",
-      "kind": "운영",
-      "title": "해석 오류 유형 기록",
-      "summary": "Nastran FATAL 과 엔진 실패를 유형별로 쌓고, 처음 보는 유형만 입력 BDF 를 보관합니다. 반복 오류를 코드로 막는 근거 자료입니다."
+      "date": "2026-10-12",
+      "version": "1.6.4",
+      "kind": "개선",
+      "title": "업로드 파일명이 너무 길 때 안내",
+      "summary": "서버 저장 경로가 너무 길면 오류 대신 파일명을 얼마나 줄여야 하는지 알려 줍니다. 선체 가속도 화면은 실패 사유와 계산에서 뺀 LC 를 보여 줍니다."
     },
     {
       "date": "2026-10-02",
+      "version": "1.6.3",
       "kind": "기능",
       "title": "Model Builder·GMU 권상 작업 탭",
       "summary": "한 화면에서 모델 4개까지 해석 과정을 동시에 진행합니다. 탭마다 Studio 창과 Job Center 기록이 따로입니다.",
@@ -176,28 +241,81 @@
     },
     {
       "date": "2026-10-02",
+      "version": "1.6.3",
+      "kind": "수정",
+      "title": "BEGIN BULK 가 없는 BDF 의 권상 구조 해석 실패 수정",
+      "summary": "검증 단계에서 BDF 구간 경계 문제를 찾아 알리고, 확인을 받아 수정본을 만들어 다시 검증합니다. 구조 해석 실패 시 원인(FATAL 코드)을 보여 줍니다.",
+      "screen": "Group & Module Unit 권상 구조 해석"
+    },
+    {
+      "date": "2026-10-02",
+      "version": "1.6.3",
+      "kind": "운영",
+      "title": "해석 오류 유형 기록",
+      "summary": "Nastran FATAL 과 엔진 실패를 유형별로 쌓고, 처음 보는 유형만 입력 BDF 를 보관합니다. 반복 오류를 코드로 막는 근거 자료입니다."
+    },
+    {
+      "date": "2026-10-02",
+      "version": "1.6.2",
       "kind": "개선",
       "title": "파일 기반 해석 앱 공통 틀",
       "summary": "Model Builder, GMU 권상, Truss Model Builder, Truss Assessment 가 같은 단계·판정·다음 행동 배치를 씁니다.",
       "points": [
         "판정은 통과 / 검토 필요 / 실패 셋 중 하나",
-        "해석 재실행 때 옵션만 바꿔 다시 실행"
+        "첫 화면에 진행 순서와 이 앱의 최근 실행 5건"
       ]
     },
     {
+      "date": "2026-10-02",
+      "version": "1.6.2",
+      "kind": "기능",
+      "title": "해석 재실행 때 옵션만 바꿔 다시 실행",
+      "summary": "입력 파일을 다시 올리지 않고 옵션을 바꿔 같은 입력으로 다시 실행합니다(현재 Model Builder)."
+    },
+    {
       "date": "2026-10-01",
+      "version": "1.6.1",
       "kind": "기능",
       "title": "대시보드에서 넘긴 파일로 해석 앱 자동 실행",
       "summary": "대시보드 '새 해석 시작'에 놓은 파일을 추천 앱으로 넘기고, 실행 준비가 되면 바로 실행합니다.",
       "screen": "Dashboard"
     },
     {
-      "date": "2026-09-30",
-      "version": "1.5.15",
+      "date": "2026-10-01",
+      "version": "1.6.1",
       "kind": "개선",
-      "title": "대시보드 개편: 새 해석 시작과 내 작업 중심",
-      "summary": "첫 화면을 '새 해석 시작'과 '내 작업' 위주로 바꾸고, 확인할 실패를 따로 모아 보입니다.",
+      "title": "Studio 창을 최대화 상태로 열기",
+      "summary": "새로 열 때와 다시 불러올 때 모두 최대화합니다. '이전 크기로' 복원하면 WorkBench 와 나란히 볼 수 있는 크기로 돌아갑니다."
+    },
+    {
+      "date": "2026-10-01",
+      "version": "1.6.1",
+      "kind": "개선",
+      "title": "Model Builder Mesh size 기본값 500mm",
+      "summary": "Model Builder 의 Mesh size 기본값을 500mm 로 바꿨습니다.",
+      "screen": "HiTESS Model Builder"
+    },
+    {
+      "date": "2026-10-01",
+      "version": "1.6.1",
+      "kind": "개선",
+      "title": "대시보드 '내 작업' 묶음 기준 통일과 진행 표시 정리",
+      "summary": "연속 실행 묶음·판정 칩·확인할 실패 기준을 하나로 맞추고, 해석 앱의 진행 바·수치·판정 배지 움직임을 공통 부품으로 바꿨습니다.",
       "screen": "Dashboard"
+    },
+    {
+      "date": "2026-10-01",
+      "version": "1.6.1",
+      "kind": "운영",
+      "title": "Model Builder Studio 0.0.90 · Module Unit Studio 0.0.165 반영",
+      "summary": "WorkBench 가 여는 두 Studio 의 버전을 새 배포본에 맞췄습니다."
+    },
+    {
+      "date": "2026-10-01",
+      "version": "1.6.0",
+      "kind": "수정",
+      "title": "권상 결과 레포트의 Trolley 분할 훅 반력 수정",
+      "summary": "Trolley 4점 그룹이 훅 2개로 나뉠 때 뒤 훅(G32)이 표에서 잘리고 반력이 한 훅 값만 남았습니다. 원래 그룹 한 블록에 wire 4개와 두 훅 반력의 합을 적습니다."
     }
   ]
 }
