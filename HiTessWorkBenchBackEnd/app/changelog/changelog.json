@@ -1,54 +1,27 @@
 {
-  "_comment": "관리자 '업데이트 이력'(Administration > Update History)의 내용. 2026년 10월부터 기록. 새 항목은 items 맨 앞에. kind = 기능|개선|수정|정리|운영. version = 그 변경이 처음 실린 릴리스. requester = 그 기능을 요청한 사람 '이름 직급'(있을 때만, 예: 김도현 선임). 화면 문구에 em dash 를 쓰지 않는다. 고치면 백엔드 재시작 없이 다음 조회부터 반영된다(145 는 Server Manager Update 로 git pull).",
+  "_comment": "관리자 '업데이트 이력'(Administration > Update History)의 내용. 2026년 10월부터 기록. 새 항목은 items 맨 앞에. 큰 범주로 쓴다: 항목 하나 = 주간 보고 한 줄 수준의 기능·문제 영역, 작은 수정·기본값·문구는 관련 항목의 points 에 합친다. 같은 기능이 나중에 보강되면 처음 항목의 points 에 (버전)과 함께 더한다. kind = 기능|개선|수정|정리|운영. version = 처음 실린 릴리스. requester = 그 기능을 요청한 사람 '이름 직급'(있을 때만, 예: 김도현 선임). 화면 문구에 em dash 를 쓰지 않는다. 고치면 백엔드 재시작 없이 다음 조회부터 반영된다(145 는 Server Manager Update 로 git pull).",
   "items": [
-    {
-      "date": "2026-10-22",
-      "version": "1.6.25",
-      "kind": "개선",
-      "title": "업데이트 이력을 전체로 이어 보거나 해·달을 골라 보기",
-      "summary": "처음에는 전체 이력을 달 제목으로 나눠 이어 보여 주고, 기간 줄에서 최근 7일·30일, 해, 달을 골라 볼 수 있습니다.",
-      "screen": "Update History",
-      "points": [
-        "첫 줄: 전체 · 최근 7일 · 최근 30일 · 해, 둘째 줄: 그 해의 달",
-        "단추마다 건수, 항목이 없는 기간은 누를 수 없음",
-        "고른 기간 밖에 맞는 항목이 있으면 '전체에서 보기'",
-        "항목에 요청자 표시(찾기 대상), '거르기 지우기'를 '필터 초기화'로",
-        "'확인 남음만' 필터와 상태 배지를 없앰"
-      ]
-    },
-    {
-      "date": "2026-10-22",
-      "version": "1.6.24",
-      "kind": "개선",
-      "title": "업데이트 이력을 달별로 나눠 보기",
-      "summary": "목록 위 달 탭으로 한 달씩 봅니다. 처음에는 가장 최근 달이 보이고, '전체 기간'으로 모두 볼 수 있습니다.",
-      "screen": "Update History",
-      "points": [
-        "찾는 항목이 다른 달에 있으면 '전체 기간에서 보기'로 바로 이동"
-      ]
-    },
     {
       "date": "2026-10-22",
       "version": "1.6.23",
       "kind": "기능",
-      "title": "관리자 업데이트 이력과 솔버별 개발 이력 정리",
-      "summary": "WorkBench 에 더해지고 바뀐 것을 관리자 메뉴에서 최근 것부터 봅니다. 서버 json 만 고치면 바로 반영됩니다.",
+      "title": "관리자 업데이트 이력",
+      "summary": "WorkBench 에 더해지고 바뀐 것을 관리자 메뉴에서 봅니다. 서버 json 만 고치면 exe 재배포 없이 바로 반영됩니다.",
       "screen": "Update History",
       "points": [
-        "지난번에 본 뒤 더해진 항목에 '새 항목' 표시, 분류·찾기 필터",
-        "솔버별 개발 이력 모달도 같은 '새 항목' 규칙과 한글 분류로 바꿈"
+        "전체를 달별로 이어 보거나, 최근 7일·30일·해·달을 골라 보기(1.6.25)",
+        "지난번에 본 뒤 더해진 항목에 '새 항목' 표시, 분류·찾기·요청자 표시",
+        "솔버별 개발 이력 모달도 같은 '새 항목' 규칙과 한글 분류로 정리"
       ]
     },
     {
       "date": "2026-10-21",
       "version": "1.6.22",
       "kind": "기능",
-      "title": "All Projects 에서 BDF 모델을 3D 로 미리보기",
-      "summary": "LogBook 으로 보내기 전에 작업 폴더의 BDF 모델을 3D 로 확인합니다.",
+      "title": "All Projects 에서 BDF 모델 3D 미리보기",
+      "summary": "LogBook 으로 보내기 전에 작업 폴더의 BDF 모델을 3D 로 확인하고, 보낼 파일을 뷰어 안에서 바로 고릅니다.",
       "screen": "All Projects",
       "points": [
-        "파일 행의 3D 버튼, 또는 체크한 BDF 를 한 번에 열기",
-        "뷰어 안에서 LogBook 으로 보낼 파일에 넣을지 바로 고름",
         "3D 라이브러리(three)를 0.184 로 올림. WebGL2 가 없는 PC 에서는 3D 화면이 뜨지 않음"
       ]
     },
@@ -57,201 +30,97 @@
       "version": "1.6.21",
       "kind": "기능",
       "title": "사용 기록: 접속 이력과 화면 오류 수집",
-      "summary": "로그인부터 앱을 닫을 때까지의 접속 시간과 화면 오류를 기간 제한 없이 남깁니다.",
+      "summary": "로그인부터 앱을 닫을 때까지의 접속·활동 시간, 머문 화면, 화면 오류와 앱 비정상 종료를 기간 제한 없이 남깁니다.",
       "screen": "User Management",
       "points": [
-        "User Management '접속 이력'에서 사용자별 접속·활동 시간과 머문 화면",
-        "화면 오류와 앱 비정상 종료를 서버에 기록(PC 정보·비정상 종료 수집은 1.6.21 exe 부터)",
-        "해석 종료 시각을 기록(화면 표시는 하지 않음)",
-        "강제 로그아웃도 감사 기록에 남김"
+        "User Management '접속 이력'에서 사용자별로 확인",
+        "PC 정보·비정상 종료 수집은 1.6.21 exe 부터",
+        "해석 종료 시각과 강제 로그아웃도 기록"
       ]
     },
     {
       "date": "2026-10-20",
       "version": "1.6.20",
       "kind": "기능",
-      "title": "Model Builder 호선 입력: BDF 첫 줄에 호선 주석",
-      "summary": "호선을 BDF 첫 줄에 남겨, 권상 BDF 를 LogBook 으로 보낼 때 호선을 알아낼 수 있게 합니다.",
+      "title": "Model Builder 호선 입력",
+      "summary": "호선을 BDF 첫 줄에 남겨, 권상 BDF 를 LogBook 으로 보낼 때 호선을 알아낼 수 있게 합니다. 비우면 CSV 파일명 앞 4자리를 씁니다.",
       "screen": "HiTESS Model Builder",
       "points": [
-        "옵션의 '호선' 칸. 비우면 CSV 파일명 앞 4자리를 씀",
-        "호선을 모르는 옛 엔진이면 호선 없이 그대로 실행(주석은 엔진 Cmb.Cli·nastran_bridge 교체 후부터 남음)"
+        "호선 주석은 엔진 Cmb.Cli·nastran_bridge 교체 후부터 남음. 옛 엔진이면 호선 없이 그대로 실행"
       ]
-    },
-    {
-      "date": "2026-10-19",
-      "version": "1.6.19",
-      "kind": "기능",
-      "title": "All Projects 에 'LogBook 보낸 것만' 필터",
-      "summary": "LogBook 으로 보낸 해석 기록만 골라 봅니다. 실패한 시도만 있는 기록은 빠집니다.",
-      "screen": "All Projects"
-    },
-    {
-      "date": "2026-10-19",
-      "version": "1.6.18",
-      "kind": "운영",
-      "title": "exe 릴리스 절차를 명령 하나로",
-      "summary": "버전 올리기, 빌드, 배포본의 서버 주소 검사, 버전 커밋을 한 번에 합니다. 앱 기능 변경은 없습니다.",
-      "points": [
-        "개발 PC 의 서버 주소 설정과 상관없이 배포 exe 는 항상 서버(145)에 접속",
-        "빌드와 버전 커밋·푸시를 동시에 진행"
-      ]
-    },
-    {
-      "date": "2026-10-19",
-      "version": "1.6.17",
-      "kind": "수정",
-      "title": "All Projects 파일 목록이 열리지 않던 문제 수정",
-      "summary": "작업 폴더에 nul 같은 예약 이름 파일이 있으면 파일 목록 전체가 오류(500)로 끝났습니다. 그런 파일은 목록에서 뺍니다.",
-      "screen": "All Projects"
-    },
-    {
-      "date": "2026-10-19",
-      "version": "1.6.17",
-      "kind": "개선",
-      "title": "LogBook 보내기에 해석 여권을 함께 싣기",
-      "summary": "보낸 산출물이 WorkBench 결과와 같은지 LogBook 자료 화면에서 확인할 수 있게 합니다.",
-      "points": [
-        "서버 설정 LOGBOOK_SEND_PASSPORT=1 일 때만 실음"
-      ]
-    },
-    {
-      "date": "2026-10-19",
-      "version": "1.6.16",
-      "kind": "수정",
-      "title": "한글 입력 중 Enter 오작동 수정",
-      "summary": "글자 조합을 확정하는 Enter 가 전송·저장까지 실행해 마지막 글자가 두 번 보내지거나 빠지던 문제입니다.",
-      "points": [
-        "채팅, 명령 팔레트, App Settings 편집칸"
-      ]
-    },
-    {
-      "date": "2026-10-19",
-      "version": "1.6.16",
-      "kind": "수정",
-      "title": "외부 프로그램 로그인이 회사명 표기 차이로 실패하던 문제 수정",
-      "summary": "PLM 갱신으로 회사명 표기가 바뀐 뒤 HiTESS Beam 등 외부 프로그램 로그인이 모두 '미등록'으로 실패했습니다. 공백·㈜·(주) 차이를 무시하고 비교합니다."
-    },
-    {
-      "date": "2026-10-19",
-      "version": "1.6.14",
-      "kind": "정리",
-      "title": "Model Library 를 LogBook 으로 옮김",
-      "summary": "모델 등록·검색·비교는 Hi-TESS LogBook 에서 합니다. WorkBench 의 Model Library 화면과 관련 기능을 뺐습니다."
-    },
-    {
-      "date": "2026-10-19",
-      "version": "1.6.14",
-      "kind": "기능",
-      "title": "대시보드에서 Hi-TESS LogBook 열기",
-      "summary": "대시보드에서 LogBook 을 바로 열고, User Management 에서 사용자별 LogBook 등급을 봅니다.",
-      "screen": "Dashboard"
-    },
-    {
-      "date": "2026-10-15",
-      "version": "1.6.14",
-      "kind": "기능",
-      "title": "사용자 정보를 사내 PLM 에서 자동 갱신",
-      "summary": "이름·회사·부서·직책·메일을 주기적으로, 또는 버튼으로 PLM 에서 다시 읽어 옵니다.",
-      "screen": "User Management"
-    },
-    {
-      "date": "2026-10-15",
-      "version": "1.6.12",
-      "kind": "수정",
-      "title": "PLM 서버 접속 실패 수정",
-      "summary": "사내 PLM 서버의 오래된 인증 방식 때문에 접속하지 못했습니다. 서버에 Oracle Client 경로를 지정하면 그 방식으로 접속합니다.",
-      "points": [
-        "서버 설정 PLM_ORACLE_LIB_DIR. 지정하지 않으면 예전 방식 그대로"
-      ]
-    },
-    {
-      "date": "2026-10-15",
-      "version": "1.6.11",
-      "kind": "기능",
-      "title": "User Management 에 메일 표시와 갱신 버튼",
-      "summary": "사용자 메일 주소를 보고 버튼으로 다시 채웁니다. 비어 있는 메일을 한 번에 채우는 스크립트도 더했습니다.",
-      "screen": "User Management"
     },
     {
       "date": "2026-10-14",
       "version": "1.6.10",
       "kind": "기능",
-      "title": "사내 PLM 에서 사번으로 사용자 메일 주소 채우기",
-      "summary": "가입·로그인·관리자 작업 때 비어 있는 메일 주소를 PLM 에서 찾아 채웁니다."
-    },
-    {
-      "date": "2026-10-14",
-      "version": "1.6.10",
-      "kind": "개선",
-      "title": "외부 App 등록 거절 사유를 창 안에 바로 표시",
-      "summary": "주소 이름이 겹치거나 예약된 이름이면 입력하는 즉시 어느 이름이 누구와 겹치는지 알려 줍니다.",
-      "screen": "App Settings"
-    },
-    {
-      "date": "2026-10-13",
-      "version": "1.6.9",
-      "kind": "개선",
-      "title": "App Settings 에 외부 App 주소 이름 표시",
-      "summary": "접속 IP·Port 아래에 주소 이름을 보여 주고, 새 App 등록 창에 이미 쓰는 이름 목록을 보여 줍니다.",
-      "screen": "App Settings"
+      "title": "사내 PLM 과 사용자 정보 연동",
+      "summary": "사번으로 PLM 에서 메일·이름·회사·부서·직책을 읽어 사용자 정보를 채우고 주기적으로 갱신합니다.",
+      "screen": "User Management",
+      "points": [
+        "User Management 에 메일 표시와 갱신 버튼, 일괄 채우기 스크립트(1.6.11)",
+        "PLM 서버의 오래된 인증 방식 대응(1.6.12)",
+        "이름·회사·부서·직책·메일 주기 갱신(1.6.14)",
+        "갱신으로 회사명 표기가 바뀌어 외부 프로그램 로그인이 실패하던 문제 수정(1.6.16)"
+      ]
     },
     {
       "date": "2026-10-13",
       "version": "1.6.8",
       "kind": "기능",
-      "title": "관리자 All Projects",
+      "title": "관리자 All Projects 와 LogBook 보내기",
       "summary": "모든 사용자의 해석 기록을 보고, 작업 폴더의 파일을 받거나 체크한 파일을 Hi-TESS LogBook 으로 보냅니다.",
-      "screen": "All Projects"
+      "screen": "All Projects",
+      "points": [
+        "보낸 산출물이 WorkBench 결과와 같은지 LogBook 에서 확인하도록 해석 여권을 함께 실음(1.6.17)",
+        "작업 폴더의 예약 이름 파일 때문에 파일 목록이 열리지 않던 문제 수정(1.6.17)",
+        "'LogBook 보낸 것만' 필터(1.6.19)"
+      ]
     },
     {
       "date": "2026-10-13",
-      "version": "1.6.8",
-      "kind": "개선",
-      "title": "Unit 권상 보고서 파일명에 리비전 표기",
-      "summary": "같은 모델의 보고서를 리비전별로 구분해 저장할 수 있습니다. 입력 폼도 정리했습니다."
-    },
-    {
-      "date": "2026-10-13",
-      "version": "1.6.8",
-      "kind": "개선",
-      "title": "선체 가속도 계산 실패 원인 표시",
-      "summary": "DRM PDF, 표·주요 치수 미검출, LC 행 누락 같은 입력 문제를 화면에 알려 주고, 계산에서 뺀 LC 를 사유와 함께 보여 줍니다."
-    },
-    {
-      "date": "2026-10-13",
-      "version": "1.6.7",
+      "version": "1.6.5",
       "kind": "기능",
-      "title": "App Settings 에서 외부 App 등록과 카드 꾸미기",
-      "summary": "코드를 고치지 않고 외부 App 의 입구를 만들고, 기존 App 의 카드 분류와 그림을 바꿉니다.",
+      "title": "App Settings 에서 외부 App 등록",
+      "summary": "코드를 고치지 않고 외부 App 의 입구(IP·Port·분류·그림)를 만들고, 기존 App 의 카드 분류와 그림을 바꿉니다.",
       "screen": "App Settings",
       "points": [
-        "Heavy Block Lifting 을 WorkBench 프록시로 연결(1.6.5)",
-        "외부 App 의 IP·Port·분류·그림 등록(1.6.6)",
-        "기존 App 의 카드 분류·그림 변경(1.6.7)"
+        "Heavy Block Lifting 을 WorkBench 프록시로 연결",
+        "주소 이름 표시, 이름이 겹치거나 예약된 경우 입력 즉시 안내(1.6.9~1.6.10)"
       ]
     },
     {
       "date": "2026-10-12",
       "version": "1.6.4",
       "kind": "기능",
-      "title": "Hi-TESS LogBook 연동: 모델 가져오기와 로그아웃 동기화",
-      "summary": "해석 앱에서 LogBook 의 모델을 바로 가져오고, WorkBench 에서 로그아웃하면 LogBook 도 함께 로그아웃됩니다."
+      "title": "Hi-TESS LogBook 연동",
+      "summary": "해석 앱에서 LogBook 의 모델을 바로 가져오고, 로그아웃을 함께 맞춥니다. 모델 보관·검색은 LogBook 으로 옮겼습니다.",
+      "points": [
+        "대시보드에서 LogBook 열기, User Management 에 LogBook 등급 열(1.6.14)",
+        "WorkBench 의 Model Library 를 없애고 LogBook 으로 이전(1.6.14)"
+      ]
     },
     {
       "date": "2026-10-12",
       "version": "1.6.4",
       "kind": "개선",
-      "title": "Model Builder 해석 실행이 편집 적용과 같은 경로를 씀",
-      "summary": "Studio 에서 편집한 모델과 Analysis 탭에서 해석하는 모델이 같아지도록 맞췄습니다.",
-      "screen": "HiTESS Model Builder"
+      "title": "Model Builder 편집과 해석 결과 일치",
+      "summary": "Studio 에서 편집한 모델과 Analysis 탭에서 해석하는 모델이 같아지도록, 해석 실행도 편집 적용과 같은 경로를 씁니다.",
+      "screen": "HiTESS Model Builder",
+      "points": [
+        "Mesh size 기본값 500mm(1.6.1)"
+      ]
     },
     {
       "date": "2026-10-12",
       "version": "1.6.4",
       "kind": "개선",
-      "title": "업로드 파일명이 너무 길 때 안내",
-      "summary": "서버 저장 경로가 너무 길면 오류 대신 파일명을 얼마나 줄여야 하는지 알려 줍니다. 선체 가속도 화면은 실패 사유와 계산에서 뺀 LC 를 보여 줍니다."
+      "title": "오류 안내와 입력 처리 보강",
+      "summary": "실패했을 때 무엇을 고쳐야 하는지 화면에서 바로 알 수 있게 했습니다.",
+      "points": [
+        "업로드 파일명이 너무 길면 줄일 길이를 안내",
+        "선체 가속도 계산 실패 원인과 계산에서 뺀 LC 사유 표시(1.6.8)",
+        "한글 입력 중 Enter 가 전송·저장까지 실행하던 문제 수정(1.6.16)"
+      ]
     },
     {
       "date": "2026-10-02",
@@ -259,15 +128,10 @@
       "kind": "기능",
       "title": "Model Builder·GMU 권상 작업 탭",
       "summary": "한 화면에서 모델 4개까지 해석 과정을 동시에 진행합니다. 탭마다 Studio 창과 Job Center 기록이 따로입니다.",
-      "screen": "HiTESS Model Builder"
-    },
-    {
-      "date": "2026-10-02",
-      "version": "1.6.3",
-      "kind": "수정",
-      "title": "BEGIN BULK 가 없는 BDF 의 권상 구조 해석 실패 수정",
-      "summary": "검증 단계에서 BDF 구간 경계 문제를 찾아 알리고, 확인을 받아 수정본을 만들어 다시 검증합니다. 구조 해석 실패 시 원인(FATAL 코드)을 보여 줍니다.",
-      "screen": "Group & Module Unit 권상 구조 해석"
+      "screen": "HiTESS Model Builder",
+      "points": [
+        "Studio 창을 최대화 상태로 열기(1.6.1)"
+      ]
     },
     {
       "date": "2026-10-02",
@@ -281,63 +145,35 @@
       "version": "1.6.2",
       "kind": "개선",
       "title": "파일 기반 해석 앱 공통 틀",
-      "summary": "Model Builder, GMU 권상, Truss Model Builder, Truss Assessment 가 같은 단계·판정·다음 행동 배치를 씁니다.",
+      "summary": "Model Builder, GMU 권상, Truss Model Builder, Truss Assessment 가 같은 단계·판정(통과 / 검토 필요 / 실패)·다음 행동 배치를 씁니다.",
       "points": [
-        "판정은 통과 / 검토 필요 / 실패 셋 중 하나",
-        "첫 화면에 진행 순서와 이 앱의 최근 실행 5건"
+        "첫 화면에 진행 순서와 이 앱의 최근 실행 5건",
+        "입력을 다시 올리지 않고 옵션만 바꿔 재실행(Model Builder)"
       ]
     },
     {
-      "date": "2026-10-02",
-      "version": "1.6.2",
-      "kind": "기능",
-      "title": "해석 재실행 때 옵션만 바꿔 다시 실행",
-      "summary": "입력 파일을 다시 올리지 않고 옵션을 바꿔 같은 입력으로 다시 실행합니다(현재 Model Builder)."
-    },
-    {
       "date": "2026-10-01",
       "version": "1.6.1",
-      "kind": "기능",
-      "title": "대시보드에서 넘긴 파일로 해석 앱 자동 실행",
+      "kind": "개선",
+      "title": "대시보드에서 바로 해석 시작",
       "summary": "대시보드 '새 해석 시작'에 놓은 파일을 추천 앱으로 넘기고, 실행 준비가 되면 바로 실행합니다.",
-      "screen": "Dashboard"
-    },
-    {
-      "date": "2026-10-01",
-      "version": "1.6.1",
-      "kind": "개선",
-      "title": "Studio 창을 최대화 상태로 열기",
-      "summary": "새로 열 때와 다시 불러올 때 모두 최대화합니다. '이전 크기로' 복원하면 WorkBench 와 나란히 볼 수 있는 크기로 돌아갑니다."
-    },
-    {
-      "date": "2026-10-01",
-      "version": "1.6.1",
-      "kind": "개선",
-      "title": "Model Builder Mesh size 기본값 500mm",
-      "summary": "Model Builder 의 Mesh size 기본값을 500mm 로 바꿨습니다.",
-      "screen": "HiTESS Model Builder"
-    },
-    {
-      "date": "2026-10-01",
-      "version": "1.6.1",
-      "kind": "개선",
-      "title": "대시보드 '내 작업' 묶음 기준 통일과 진행 표시 정리",
-      "summary": "연속 실행 묶음·판정 칩·확인할 실패 기준을 하나로 맞추고, 해석 앱의 진행 바·수치·판정 배지 움직임을 공통 부품으로 바꿨습니다.",
-      "screen": "Dashboard"
-    },
-    {
-      "date": "2026-10-01",
-      "version": "1.6.1",
-      "kind": "운영",
-      "title": "Model Builder Studio 0.0.90 · Module Unit Studio 0.0.165 반영",
-      "summary": "WorkBench 가 여는 두 Studio 의 버전을 새 배포본에 맞췄습니다."
+      "screen": "Dashboard",
+      "points": [
+        "'내 작업' 연속 실행 묶음·판정 칩·확인할 실패 기준 통일"
+      ]
     },
     {
       "date": "2026-10-01",
       "version": "1.6.0",
       "kind": "수정",
-      "title": "권상 결과 레포트의 Trolley 분할 훅 반력 수정",
-      "summary": "Trolley 4점 그룹이 훅 2개로 나뉠 때 뒤 훅(G32)이 표에서 잘리고 반력이 한 훅 값만 남았습니다. 원래 그룹 한 블록에 wire 4개와 두 훅 반력의 합을 적습니다."
+      "title": "GMU 권상 구조 해석·보고서 안정화",
+      "summary": "권상 구조 해석이 실패하거나 보고서 값이 빠지던 문제를 고쳤습니다.",
+      "screen": "Group & Module Unit 권상 구조 해석",
+      "points": [
+        "결과 레포트에서 Trolley 분할 훅(G31·G32) 반력을 합력으로 표기",
+        "BEGIN BULK 가 없는 BDF 를 검증 단계에서 찾아 자동 수정, 구조 해석 실패 시 원인(FATAL 코드) 표시(1.6.3)",
+        "Unit 권상 보고서 파일명에 리비전 표기(1.6.8)"
+      ]
     }
   ]
 }
