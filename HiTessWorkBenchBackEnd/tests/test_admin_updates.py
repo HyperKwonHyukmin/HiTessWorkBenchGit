@@ -34,6 +34,8 @@ def test_data_shape():
         if "version" in i:
             assert re.fullmatch(r"\d+\.\d+\.\d+", i["version"]), i["title"]
         assert isinstance(i.get("points", []), list)
+        if "requester" in i:
+            assert isinstance(i["requester"], str) and i["requester"].strip(), i["title"]
 
 
 def test_newest_first():
@@ -44,7 +46,8 @@ def test_newest_first():
 def test_no_em_dash_in_shown_text():
     """화면 문구에 em dash 를 쓰지 않는다(LogBook 업데이트 이력과 같은 기준)."""
     for i in load_items():
-        shown = [i["title"], i["summary"], i.get("status") or "", i.get("screen") or ""] + i.get("points", [])
+        shown = [i["title"], i["summary"], i.get("status") or "", i.get("screen") or "",
+                 i.get("requester") or ""] + i.get("points", [])
         assert not any("—" in t for t in shown), i["title"]
 
 

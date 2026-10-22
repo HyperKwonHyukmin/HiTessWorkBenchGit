@@ -11,12 +11,34 @@ import FeedbackState from '../../components/ui/FeedbackState';
 import { getAdminUpdates } from '../../api/adminUpdates';
 import { useNavigation } from '../../contexts/NavigationContext';
 import {
-  UPDATE_KINDS, groupByMonth, itemKey, listMonths, matchesUpdate, newIndexes, readSeen, splitHits, writeSeen,
+  RECENT_PERIODS, UPDATE_KINDS, groupByMonth, itemKey, listMonths, listYears, matchesUpdate, newIndexes, readSeen,
+  splitHits, viewYearFor, writeSeen,
 } from '../../utils/updateHistory';
 
 const SEEN_KEY = 'wb_admin_updates_seen';
 const MENU = 'Update History';
-const ALL_MONTHS = 'all';
+
+/** 기간 단추 — 건수가 0 이면 눌러도 빈 화면이라 막는다(지금 고른 것은 풀 수 있게 둔다). */
+function PeriodButton({ label, count, active, onClick }) {
+  const disabled = count === 0 && !active;
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onClick}
+      className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
+        active
+          ? 'border-blue-300 bg-blue-50 text-brand-blue'
+          : disabled
+            ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400'
+            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+      }`}
+    >
+      {label} <span className="ml-0.5 font-mono font-normal text-slate-500">{count}</span>
+    </button>
+  );
+}
 
 function Hits({ text, q }) {
   return splitHits(text, q).map((part, i) => (part.hit
@@ -55,9 +77,10 @@ function UpdateItem({ it, isNew, showDate, isFirst, isLast, q }) {
             {it.points.map((p) => <li key={p}><Hits text={p} q={q} /></li>)}
           </ul>
         )}
-        {(it.version || it.screen) && (
+        {(it.version || it.screen || it.requester) && (
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
             {it.version && <span className="font-mono">v{it.version}</span>}
+            {it.requester && <span>요청 <Hits text={it.requester} q={q} /></span>}
             {it.screen && <span>화면: {it.screen}</span>}
           </div>
         )}
@@ -75,8 +98,9 @@ export default function UpdateHistory() {
   const [kind, setKind] = useState('');
   const [q, setQ] = useState('');
   const [pending, setPending] = useState(false);
-  // 고른 달 — null 이면 아직 안 골랐다(가장 최근 달을 보인다), ALL_MONTHS 면 전체 기간.
-  const [monthPick, setMonthPick] = useState(null);
+  // 기간 — ''(전체, 기본: 처음부터 끝까지 이어 보기) | 'd7'·'d30' | 'YYYY' | 'YYYY-MM'
+  const [periodPick, setPeriodPick] = useState('');
+  const [lastYear, setLastYear] = useState('');   // 둘째 단(달)에 마지막으로 보인 해
   const inputRef = useRef(null);
 
   const load = useCallback(async (signal) => {
@@ -120,29 +144,36 @@ export default function UpdateHistory() {
   }, [currentMenu]);
 
   const months = useMemo(() => listMonths(items), [items]);
-  // 고른 달이 새로 고침 뒤 목록에서 사라졌으면 가장 최근 달로 돌아간다.
-  const month = monthPick === ALL_MONTHS ? ''
-    : months.some((m) => m.month === monthPick) ? monthPick : (months[0]?.month || '');
+  const years = useMemo(() => listYears(items), [items]);
+  // 고른 해·달이 새로 고침 뒤 목록에서 사라졌으면 전체로 돌아간다.
+  const period = !periodPick || RECENT_PERIODS[periodPick] || years.includes(periodPick)
+    || months.some((m) => m.month === periodPick) ? periodPick : '';
+  const viewYear = viewYearFor(period, lastYear, years);
+  const yearMonths = months.filter((m) => m.month.startsWith(viewYear)).reverse();   // 1월 → 12월
+  const choosePeriod = (p) => {
+    setPeriodPick(p);
+    if (p && !RECENT_PERIODS[p]) setLastYear(p.slice(0, 4));
+  };
 
   const rows = useMemo(
-    () => items.map((it, index) => ({ it, index })).filter(({ it }) => matchesUpdate(it, { month, kind, q, pending })),
-    [items, month, kind, q, pending],
+    () => items.map((it, index) => ({ it, index })).filter(({ it }) => matchesUpdate(it, { period, kind, q, pending })),
+    [items, period, kind, q, pending],
   );
   const groups = useMemo(() => groupByMonth(rows), [rows]);
-  // 달 탭의 건수는 '분류·찾기·확인 남음'을, 분류 버튼의 건수는 '달·찾기·확인 남음'을 반영한다.
-  const monthCounts = useMemo(() => {
+  // 기간 단추의 건수는 '분류·찾기·확인 남음'을, 분류 버튼의 건수는 '기간·찾기·확인 남음'을 반영한다.
+  const periodCount = useMemo(() => {
     const base = items.filter((it) => matchesUpdate(it, { kind, q, pending }));
-    return { all: base.length, ...Object.fromEntries(months.map((m) => [m.month, base.filter((it) => it.date?.startsWith(m.month)).length])) };
-  }, [items, months, kind, q, pending]);
+    return (p) => base.filter((it) => matchesUpdate(it, { period: p })).length;
+  }, [items, kind, q, pending]);
   const kindCounts = useMemo(() => {
-    const base = items.filter((it) => matchesUpdate(it, { month, q, pending }));
+    const base = items.filter((it) => matchesUpdate(it, { period, q, pending }));
     return Object.fromEntries(['', ...UPDATE_KINDS].map((k) => [k, k ? base.filter((it) => it.kind === k).length : base.length]));
-  }, [items, month, q, pending]);
+  }, [items, period, q, pending]);
   const kinds = UPDATE_KINDS.filter((k) => items.some((it) => it.kind === k));
-  const pendingCount = items.filter((it) => matchesUpdate(it, { month }) && it.status).length;
-  const filtering = Boolean(kind || pending || q.trim());
-  const elsewhere = month && filtering ? monthCounts.all - rows.length : 0;   // 다른 달에 맞는 항목
-  const clearFilters = () => { setKind(''); setQ(''); setPending(false); inputRef.current?.focus(); };
+  const pendingCount = items.filter((it) => matchesUpdate(it, { period }) && it.status).length;
+  const filtering = Boolean(period || kind || pending || q.trim());
+  const elsewhere = period ? periodCount('') - rows.length : 0;   // 고른 기간 밖에 맞는 항목
+  const clearFilters = () => { setKind(''); setQ(''); setPending(false); setPeriodPick(''); inputRef.current?.focus(); };
 
   return (
     <div className="mx-auto max-w-4xl pb-28">
@@ -183,29 +214,6 @@ export default function UpdateHistory() {
             {fresh.size > 0 && <> · <strong className="font-semibold text-slate-800">지난번에 본 뒤 새 항목 {fresh.size}건</strong></>}
           </p>
 
-          <div role="group" aria-label="달" className="-mx-1 mb-3 flex gap-1 overflow-x-auto border-b border-slate-200 px-1">
-            {[...months, { month: ALL_MONTHS, label: '전체 기간' }].map((m) => {
-              const active = m.month === ALL_MONTHS ? month === '' : month === m.month;
-              return (
-                <button
-                  key={m.month}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => setMonthPick(m.month)}
-                  className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-sm transition-colors ${
-                    active
-                      ? 'border-brand-blue font-bold text-brand-blue'
-                      : 'border-transparent font-medium text-slate-600 hover:border-slate-300 hover:text-slate-800'
-                  }`}
-                >
-                  {m.label}
-                  <span className="ml-1.5 font-mono text-xs font-normal text-slate-500">
-                    {m.month === ALL_MONTHS ? monthCounts.all : monthCounts[m.month] ?? 0}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <label className="relative min-w-[14rem] flex-1">
@@ -217,7 +225,7 @@ export default function UpdateHistory() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.preventDefault(); clearFilters(); } }}
-                placeholder="제목·설명·버전·화면으로 찾기"
+                placeholder="제목·설명·버전·화면·요청자로 찾기"
                 autoComplete="off"
                 className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-9 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
               />
@@ -246,18 +254,47 @@ export default function UpdateHistory() {
             )}
           </div>
 
+          {/* 기간 두 단 — 첫 단: 전체 · 최근 7일 · 최근 30일 | 해, 둘째 단: 보고 있는 해의 달 */}
+          <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+            <div role="group" aria-label="기간" className="flex flex-wrap items-center gap-1.5">
+              <span className="w-12 shrink-0 text-xs font-semibold text-slate-600">기간</span>
+              <PeriodButton label="전체" count={periodCount('')} active={period === ''} onClick={() => choosePeriod('')} />
+              {Object.entries(RECENT_PERIODS).map(([p, r]) => (
+                <PeriodButton key={p} label={r.label} count={periodCount(p)} active={period === p} onClick={() => choosePeriod(p)} />
+              ))}
+              <span className="mx-1 h-4 w-px bg-slate-200" aria-hidden="true" />
+              {years.map((y) => (
+                <PeriodButton key={y} label={`${y}년`} count={periodCount(y)} active={period === y} onClick={() => choosePeriod(y)} />
+              ))}
+            </div>
+            {viewYear && (
+              <div role="group" aria-label={`${viewYear}년의 달`} className="flex flex-wrap items-center gap-1.5">
+                <span className="w-12 shrink-0 text-xs font-semibold text-slate-600">{viewYear}년</span>
+                {yearMonths.map((m) => (
+                  <PeriodButton
+                    key={m.month}
+                    label={`${Number(m.month.slice(5))}월`}
+                    count={periodCount(m.month)}
+                    active={period === m.month}
+                    onClick={() => choosePeriod(m.month)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
           <p role="status" className="mt-2 min-h-[1.25rem] text-xs text-slate-500">
             {filtering && (
               <>
                 {rows.length}건 ·{' '}
                 <button type="button" onClick={clearFilters} className="text-blue-600 underline underline-offset-2 hover:no-underline">
-                  거르기 지우기
+                  필터 초기화
                 </button>
                 {elsewhere > 0 && (
                   <>
-                    {' · '}다른 달에 {elsewhere}건 더{' '}
-                    <button type="button" onClick={() => setMonthPick(ALL_MONTHS)} className="text-blue-600 underline underline-offset-2 hover:no-underline">
-                      전체 기간에서 보기
+                    {' · '}고른 기간 밖에 {elsewhere}건 더{' '}
+                    <button type="button" onClick={() => choosePeriod('')} className="text-blue-600 underline underline-offset-2 hover:no-underline">
+                      전체에서 보기
                     </button>
                   </>
                 )}
@@ -269,28 +306,25 @@ export default function UpdateHistory() {
             <FeedbackState
               icon={SearchX}
               title="맞는 항목이 없습니다"
-              message={elsewhere > 0 ? `이 달에는 없고, 다른 달에 ${elsewhere}건 있습니다.` : '찾는 글자나 분류를 바꿔 보세요.'}
+              message={elsewhere > 0 ? `고른 기간에는 없고, 다른 기간에 ${elsewhere}건 있습니다.` : '찾는 글자·분류·기간을 바꿔 보세요.'}
               compact
             >
               <div className="flex flex-wrap justify-center gap-2">
                 {elsewhere > 0 && (
-                  <button type="button" onClick={() => setMonthPick(ALL_MONTHS)} className="rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-blue-dark">
-                    전체 기간에서 보기
+                  <button type="button" onClick={() => choosePeriod('')} className="rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-blue-dark">
+                    전체에서 보기
                   </button>
                 )}
                 <button type="button" onClick={clearFilters} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                  거르기 지우기
+                  필터 초기화
                 </button>
               </div>
             </FeedbackState>
           ) : groups.map((g) => (
-            <section key={g.month || 'none'} aria-label={g.label} className="mt-2">
-              {/* 한 달만 볼 때는 위 달 탭이 제목 역할을 한다 — 전체 기간일 때만 달 제목 */}
-              {!month && (
-                <h2 className="mt-4 text-sm font-bold text-slate-800">
-                  {g.label} <span className="ml-1 text-xs font-normal text-slate-500">{g.rows.length}건</span>
-                </h2>
-              )}
+            <section key={g.month || 'none'} aria-label={g.label} className="mt-4">
+              <h2 className="text-sm font-bold text-slate-800">
+                {g.label} <span className="ml-1 text-xs font-normal text-slate-500">{g.rows.length}건</span>
+              </h2>
               <ol>
                 {g.rows.map(({ it, index }, i) => (
                   <UpdateItem

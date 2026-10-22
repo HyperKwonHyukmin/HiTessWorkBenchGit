@@ -650,10 +650,15 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 
 - **관리자 `Update History`**(ADMINISTRATION 메뉴, `pages/Administration/UpdateHistory.jsx`) — 내용은 백엔드 `app/changelog/changelog.json`
   (`GET /api/admin/updates`, `require_admin`, 요청마다 다시 읽음). **json 만 고쳐 서버에 올리면 exe 재배포·재시작 없이 바뀐다.**
-  항목 = `{date, version?, kind(기능|개선|수정|정리|운영), title, summary, status?(남은 확인), screen?, points?}`, 최신이 맨 앞, 화면 문구에 em dash 금지
-  (`tests/test_admin_updates.py` 가 잡는다). 기능을 릴리스하면 여기에 한 줄 더한다.
-  **2026년 10월부터 기록**한다(사용자 결정). version 은 그 변경이 처음 실린 릴리스, 테스트·문서만 바뀐 커밋은 넣지 않는다.
-  화면은 **달 탭**(최근 달이 기본, '전체 기간' 따로)으로 나눠 보고, 거르기에 맞는 항목이 다른 달에 있으면 '전체 기간에서 보기'를 띄운다.
+  항목 = `{date, version?, kind(기능|개선|수정|정리|운영), title, summary, status?(남은 확인), screen?, requester?('이름 직급'), points?}`,
+  최신이 맨 앞, 화면 문구에 em dash 금지(`tests/test_admin_updates.py` 가 잡는다). 기능을 릴리스하면 여기에 한 줄 더한다.
+  **2026년 10월부터 기록**한다(사용자 결정). version 은 그 변경이 처음 실린 릴리스.
+- ★ **"업데이트 이력 작성해" = `git log` 를 보고 `changelog.json` 만 고친다**(사용자 지시, LogBook 과 같은 규칙). 기능 단위로 묶고 작은 수정은 그 기능에 합친다,
+  문서·데모·발표자료·테스트만 바뀐 커밋은 뺀다, 날짜는 실제 커밋일, 요청한 사람이 있으면 `requester`. 커밋·푸시까지 하고 145 Server Manager ⟳ Update 로 반영(exe 재배포 불필요).
+- 화면 문구는 LogBook 과 맞춘다: 여러 조건을 한 번에 푸는 단추 = **필터 초기화**, 요청자는 정보 줄에 `요청 <이름 직급>`(찾기 대상).
+  화면의 기간 필터는 **LogBook 46 과 같은 두 단**이다(LogBook `9f3ac8a` 참조): 첫 단 `전체 · 최근 7일 · 최근 30일 | 해`, 둘째 단 = 보고 있는 해의 달.
+  기본은 **전체**(처음부터 끝까지 달 제목으로 나눠 이어 보기). 단추마다 건수, 0건은 막음. 고른 기간 밖에 맞는 항목이 있으면 '전체에서 보기'.
+  규칙(`inPeriod`·`listYears`·`viewYearFor`)은 `utils/updateHistory.js`. LogBook 의 `?period=` 주소 공유는 앱 안 화면이라 넣지 않았다.
 - LogBook 46 처럼 서버가 주는 독립 HTML(`/updates`)로 만들지 않았다(사용자 결정) — WorkBench 화면은 `file://` Electron 이라 서버 페이지가
   앱 로그인 토큰을 못 읽고, 브라우저 로그인 폼은 관리자 게이트를 우회하게 된다.
 - **솔버별 개발 이력**(`ChangelogModal` + `constants/changelog.js`)과 같은 규칙을 `utils/updateHistory.js`(+테스트)로 공유한다:

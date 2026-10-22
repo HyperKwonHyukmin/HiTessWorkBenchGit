@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  groupByMonth, itemKey, listMonths, matchesUpdate, monthLabel, newIndexes, splitHits,
+  groupByMonth, inPeriod, itemKey, listMonths, listYears, matchesUpdate, monthLabel, newIndexes, splitHits,
+  viewYearFor,
 } from './updateHistory.js';
 import { CHANGELOG, CHANGELOG_TYPE_META, changelogKey } from '../constants/changelog.js';
 
@@ -25,7 +26,9 @@ test('본 항목이 목록에서 빠졌으면 날짜로 판단', () => {
   assert.deepEqual([...newIndexes(items, '2026-10-01|9.9.9|없어짐')], [0, 1]);
 });
 
-test('거르기: 분류·확인 남음·찾기(세부 줄·버전 포함)', () => {
+test('필터: 분류·확인 남음·찾기(세부 줄·버전·요청자 포함)', () => {
+  assert.equal(matchesUpdate({ ...items[0], requester: '김도현 선임' }, { q: '김도현' }), true);
+  assert.equal(matchesUpdate(items[0], { q: '김도현' }), false);
   assert.equal(items.filter((it) => matchesUpdate(it, { kind: '수정' })).length, 1);
   assert.equal(items.filter((it) => matchesUpdate(it, { pending: true })).length, 1);
   assert.equal(items.filter((it) => matchesUpdate(it, { q: '내 작업' })).length, 1);
@@ -33,14 +36,36 @@ test('거르기: 분류·확인 남음·찾기(세부 줄·버전 포함)', () =
   assert.equal(items.filter((it) => matchesUpdate(it, {})).length, 3);
 });
 
-test('달 목록은 최근 달 먼저, 건수와 함께 · 달로 거르기', () => {
+test('달·해 목록은 최근 것 먼저, 건수와 함께', () => {
   assert.deepEqual(listMonths(items), [
     { month: '2026-10', label: '2026년 10월', count: 2 },
     { month: '2026-09', label: '2026년 9월', count: 1 },
   ]);
-  assert.equal(items.filter((it) => matchesUpdate(it, { month: '2026-09' })).length, 1);
-  assert.equal(items.filter((it) => matchesUpdate(it, { month: '2026-10', kind: '수정' })).length, 1);
   assert.deepEqual(listMonths([]), []);
+  assert.deepEqual(listYears([...items, { date: '2025-12-31' }]), ['2026', '2025']);
+});
+
+test('기간 필터: 전체·해·달·최근 7일/30일(오늘 포함)', () => {
+  const today = new Date(2026, 9, 22);   // 2026-10-22
+  const count = (period) => items.filter((it) => matchesUpdate(it, { period, today })).length;
+  assert.equal(count(''), 3);
+  assert.equal(count('2026'), 3);
+  assert.equal(count('2025'), 0);
+  assert.equal(count('2026-09'), 1);
+  assert.equal(count('d7'), 2);   // 10-16 ~ 10-22
+  assert.equal(count('d30'), 3);  // 09-23 ~ 10-22
+  assert.equal(inPeriod({ date: '2026-10-16' }, 'd7', today), true);
+  assert.equal(inPeriod({ date: '2026-10-15' }, 'd7', today), false);
+  assert.equal(items.filter((it) => matchesUpdate(it, { period: '2026-10', kind: '수정' })).length, 1);
+});
+
+test('둘째 단의 해: 고른 해·달의 해 > 마지막으로 본 해 > 가장 최근 해', () => {
+  const years = ['2026', '2025'];
+  assert.equal(viewYearFor('2025-03', '2026', years), '2025');
+  assert.equal(viewYearFor('2025', '2026', years), '2025');
+  assert.equal(viewYearFor('d7', '2025', years), '2025');
+  assert.equal(viewYearFor('', '', years), '2026');
+  assert.equal(viewYearFor('', '1999', years), '2026');
 });
 
 test('달 묶음은 순서를 지킨다', () => {

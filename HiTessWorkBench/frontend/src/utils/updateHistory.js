@@ -28,15 +28,40 @@ export function newIndexes(items, seen, keyFn = itemKey) {
   return fresh;
 }
 
-/** 달·찾기 글자·분류·확인 남음 거르기. month = 'YYYY-MM'(빈 값이면 전체 기간). */
-export function matchesUpdate(it, { month = '', kind = '', q = '', pending = false } = {}) {
-  if (month && (it.date || '').slice(0, 7) !== month) return false;
+/** 최근 기간 단추(LogBook 46 과 같은 구성). 최근 7일 = 오늘 포함 7일. */
+export const RECENT_PERIODS = {
+  d7: { days: 7, label: '최근 7일' },
+  d30: { days: 30, label: '최근 30일' },
+};
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const localDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+/**
+ * 기간 = ''(전체) | 'd7'·'d30'(최근, 이 PC 날짜 기준) | 'YYYY'(해) | 'YYYY-MM'(달).
+ * today 는 테스트용(기본 지금).
+ */
+export function inPeriod(it, period, today = new Date()) {
+  if (!period) return true;
+  const date = it?.date || '';
+  const recent = RECENT_PERIODS[period];
+  if (recent) {
+    const from = new Date(today);
+    from.setDate(from.getDate() - (recent.days - 1));
+    return date >= localDate(from) && date <= localDate(today);
+  }
+  return period.length === 4 ? date.slice(0, 4) === period : date.slice(0, 7) === period;
+}
+
+/** 기간·찾기 글자·분류·확인 남음 필터. 찾기는 제목·설명·버전·상태·화면·날짜·분류·요청자·세부 줄. */
+export function matchesUpdate(it, { period = '', today, kind = '', q = '', pending = false } = {}) {
+  if (!inPeriod(it, period, today)) return false;
   if (kind && it.kind !== kind) return false;
   if (pending && !it.status) return false;
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
   return [it.title, it.summary, it.version ? `v${it.version}` : '', it.status, it.screen, it.date, it.kind,
-    ...(it.points || [])].join(' ').toLowerCase().includes(needle);
+    it.requester, ...(it.points || [])].join(' ').toLowerCase().includes(needle);
 }
 
 export function monthLabel(ym) {
@@ -52,6 +77,17 @@ export function listMonths(items) {
     if (month) counts.set(month, (counts.get(month) || 0) + 1);
   });
   return [...counts.keys()].sort().reverse().map((month) => ({ month, label: monthLabel(month), count: counts.get(month) }));
+}
+
+/** 기록이 있는 해(최근 해 먼저) — ['2026', '2025']. */
+export function listYears(items) {
+  return [...new Set(listMonths(items).map((m) => m.month.slice(0, 4)))];
+}
+
+/** 둘째 단에 보일 해 — 해·달을 골랐으면 그 해, 아니면 마지막으로 본 해(없으면 가장 최근 해). */
+export function viewYearFor(period, lastYear, years) {
+  if (period && !RECENT_PERIODS[period]) return period.slice(0, 4);
+  return years.includes(lastYear) ? lastYear : (years[0] || '');
 }
 
 /** [{ month:'2026-10', label:'2026년 10월', rows:[{ it, index }] }] — 들어온 순서(최신 먼저)를 유지한다. */
