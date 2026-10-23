@@ -217,7 +217,8 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   WorkBench 진단 카드도 같은 오해를 막는다(`utils/modelValidation.js` `describeElementOrigin`): 번호 옆 '(02 ElementSplit 결과 기준 번호)',
   '01 Preprocess에는 없는 번호입니다. 원래 요소는 E81이고, 부재 교차점에서 분할되어 생겼습니다 (N2384에서 E81·E2101 교차)', 진단 CSV 에 '원래 요소' 열.
   첫 단계 JSON 을 한 번 더 읽어 요소 번호 집합을 만든다(실패하면 그 줄만 빠짐).
-  배포(2026-10-23): zip 은 로컬·UNC 반영, 핀 동기화. **145 StudioProgram 수동 복사·프론트 재배포·커밋은 사용자 몫, 화면은 눈으로 확인 안 함.**
+  배포(2026-10-23): zip 은 로컬·UNC 반영, 핀 동기화, WorkBench v1.6.27(`d8b2d2c`) exe 빌드. **145 StudioProgram zip 수동 복사(exe 보다 먼저)·exe 배포는 사용자 몫,
+  두 Studio 저장소(찾기 파일·package.json) 미커밋, 화면은 눈으로 확인 안 함.**
 
 #### 독립 그룹 자동 연결 (Edit › 자동 연결, 0.0.150)
 
