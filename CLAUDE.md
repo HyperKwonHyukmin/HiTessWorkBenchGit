@@ -737,7 +737,7 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 | `routers/ai.py` | `/api/ai` | 채팅, 인덱싱, 문서 목록 |
 | `routers/davit.py` | `/api/davit` | Mast Post / Jib Rest 다빗 구조 계산 |
 | `routers/column_buckling.py` | (별도 프리픽스) | AISC 기둥 좌굴 하중 계산 |
-| `routers/chat.py` | `/api/chat` | 관리자↔사용자 1:1 DM (폴링 기반, WebSocket 없음). `GET /contacts` 는 대화 가능한 활성 관리자 + 접속 상태(online/idle/offline)를 필드 화이트리스트로 반환 — 사용자가 먼저 대화를 걸 수 있는 진입점. 동명이인 구분용으로 contacts `department`·`position`, threads·conversation `other_department`·`other_position` 을 준다 → 화면은 이름 옆 `부서 · 직책`, 말풍선 `YYYY.MM.DD HH:MM`, 목록 시각은 오늘이면 시각·아니면 날짜(`utils/chatContacts.js`, 2026-10-23) |
+| `routers/chat.py` | `/api/chat` | 관리자↔사용자 1:1 DM (폴링 기반, WebSocket 없음). `GET /contacts` 는 대화 가능한 활성 관리자 + 접속 상태(online/idle/offline)를 필드 화이트리스트로 반환 — 사용자가 먼저 대화를 걸 수 있는 진입점. 동명이인 구분용으로 contacts `department`·`position`, threads·conversation `other_department`·`other_position` 을 준다 → 화면은 이름 옆 `부서 · 직책`, 말풍선 `YYYY.MM.DD HH:MM`, 목록 시각은 오늘이면 시각·아니면 날짜(`utils/chatContacts.js`, 2026-10-23, v1.6.26 릴리스 — 채팅 화면은 눈으로 확인 안 함) |
 | `routers/app_settings.py` | `/api/app-settings`, `/api/admin/app-settings` | App별 서비스 상태·점검·표시 메타 오버라이드 |
 | `routers/admin_projects.py` | `/api/admin/projects` | 관리자 All Projects — 전체 이력·작업 폴더 파일 목록·LogBook 보내기 |
 
