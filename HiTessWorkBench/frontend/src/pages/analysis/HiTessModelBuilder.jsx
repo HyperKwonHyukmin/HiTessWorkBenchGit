@@ -44,7 +44,7 @@ import {
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.0.96';
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.97';
 
 // 단계 이름은 '도구'가 아니라 엔지니어가 할 일로 쓴다(Studio 는 2단계에서 쓰는 도구).
 // 상태는 실제 사건으로만 바뀐다 — 1: 실행 성공, 2: 판정 통과·검토 확인·편집 적용, 3: BDF 받기·후속 해석 전달.
@@ -1388,7 +1388,7 @@ function StageTrack({ stages, selectedKey, onSelect }) {
           );
         })}
       </div>
-      <p className="mt-2 text-center text-[11px] text-slate-600">단계를 누르면 아래에 그 단계의 변화량이 나옵니다 (왼쪽 1단계 → 오른쪽 최종).</p>
+      <p className="mt-2 text-center text-[11px] text-slate-600">단계를 누르면 아래에 그 단계의 변화량이 나옵니다 (왼쪽 1단계 → 오른쪽 최종). 에러 수는 그 단계를 거친 결과 모델에서 발견한 오류입니다.</p>
     </div>
   );
 }
@@ -1481,13 +1481,20 @@ function ValidationDiagnosticList({ stage }) {
   const records = (stage.diagnosticDetails ?? []).filter(d => String(d.severity).toLowerCase() === 'error' || d.code === 'EMPTY_RIGID_EXCLUDED');
   const failed = stage.diagnostics?.error > 0;
   if (!failed && !records.length) return null;
+  const stageLabel = `${String(stage.stageIndex ?? '').padStart(2, '0')} ${stage.stageName}`;
+  const firstLabel = stage.firstStageName ? `01 ${stage.firstStageName}` : '01 단계';
+  const hasNewIds = records.some(d => d.origin);
   return (
     <section aria-label="검증 오류 원인과 조치" className="space-y-3 text-xs">
       <div className="flex items-center justify-between gap-2">
         <p className={`font-bold ${failed ? 'text-red-700' : 'text-amber-800'}`}>{failed ? '검증 실패 — 수정 후 재검증이 필요합니다' : `자동 제외 기록 ${records.length}건`}</p>
-        {records.length > 0 && <button type="button" className="text-blue-700 underline shrink-0" onClick={() => downloadDiagnostics(records, `HiTESS_${stage.stageName}_진단`)}>진단 CSV 저장</button>}
+        {records.length > 0 && <button type="button" className="text-blue-700 underline shrink-0" onClick={() => downloadDiagnostics(records, `HiTESS_${stage.stageName}_진단`, { stageName: stageLabel, firstStageName: firstLabel })}>진단 CSV 저장</button>}
       </div>
       <p className="text-slate-600">{failed ? '생성된 단계 모델은 오류 확인용입니다. 오류가 해결된 최종 모델로 해석을 진행하세요.' : '연결 조건을 제공하지 않는 빈 RBE2만 제외했으며 나머지 모델은 보존했습니다.'}</p>
+      {failed && <p className="text-slate-700">
+        아래 오류는 <b>{stageLabel} 단계를 거친 결과 모델</b>에서 발견했고, 요소 번호도 그 결과 기준입니다.
+        {hasNewIds && <> 분할로 새로 생긴 번호는 {firstLabel}에 없으니, 앞 단계에서는 <b>원래 요소</b> 번호로 찾으세요.</>}
+      </p>}
       {stage.diagnosticLoadError && <p role="alert" className="text-red-700">{stage.diagnosticLoadError}</p>}
       {!stage.diagnosticLoadError && failed && records.length === 0 && <p className="text-red-700">오류 개수는 기록됐지만 상세 진단이 없습니다. Studio 또는 실행 로그에서 확인하세요.</p>}
       {records.map((d, i) => {
@@ -1495,8 +1502,16 @@ function ValidationDiagnosticList({ stage }) {
         const excluded = d.code === 'EMPTY_RIGID_EXCLUDED';
         return <div key={i} className={`space-y-1 break-words rounded-lg border px-3 py-2 ${excluded ? 'border-amber-200 bg-amber-50/50' : 'border-red-200 bg-red-50/50'}`}>
           <p className={`font-bold ${excluded ? 'text-amber-800' : 'text-red-700'}`}>{g.title} · {d.code}</p>
-          <p className="font-mono text-slate-700">{d.elemId != null && `요소/RBE ${d.elemId} `}{d.nodeId != null && `노드 N${d.nodeId}`}</p>
-          {d.sourceName && <p className="text-slate-700">입력 이름: {d.sourceName}</p>}
+          <p className="font-mono text-slate-700">{d.elemId != null && `요소/RBE ${d.elemId} `}{d.nodeId != null && `노드 N${d.nodeId}`}{d.elemId != null && <span className="font-sans text-slate-500"> ({stageLabel} 결과 기준 번호)</span>}</p>
+          {d.origin && (
+            <p className="text-slate-800">
+              {firstLabel}에는 없는 번호입니다.{' '}
+              {d.origin.ancestorId != null
+                ? <>원래 요소는 <b className="font-mono">E{d.origin.ancestorId}</b>{d.origin.reason && <>이고, {d.origin.reason}되어 생겼습니다</>}{d.origin.splitNote && <> ({d.origin.splitNote})</>}.</>
+                : <>{firstLabel}의 원래 요소를 찾지 못했습니다. Studio에서 이 단계를 선택해 확인하세요.</>}
+            </p>
+          )}
+          {d.sourceName && <p className="text-slate-700">입력 이름: {d.sourceName}{d.origin?.ancestorId != null && <span className="text-slate-500"> (CSV 원래 부재 이름)</span>}</p>}
           {d.positionMm && <p className="text-slate-700">위치 XYZ(mm): {d.positionMm.map(v => Number(v).toFixed(1)).join(', ')}</p>}
           <p className="text-slate-700">{g.cause}</p>
           <p className="text-slate-700">조치: {g.action}</p>
@@ -2155,6 +2170,18 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
     fetchJson(bdfResult.summaryPath)
       .then(async d => {
         const folder = bdfResult.summaryPath.replace(/[^\\/]+$/, '');
+        // 진단 번호는 그 단계 결과 기준이다. 뒤 단계에서 분할로 생긴 번호가 01 에 없다는 오해를 막으려고
+        // 첫 단계 요소 번호를 한 번만 읽어 '01 의 원래 요소'를 함께 보여 준다(실패하면 원래 요소 줄만 빠진다).
+        const firstStage = d.stages?.[0];
+        const safeFile = (f) => f && !/[\\/]/.test(f) && !f.includes('..');
+        let firstIdsPromise = null;
+        const firstElementIds = () => {
+          if (!safeFile(firstStage?.jsonFile)) return Promise.resolve(null);
+          firstIdsPromise ??= fetchJson(folder + firstStage.jsonFile)
+            .then(p => new Set((p.elements ?? []).map(e => e.id)))
+            .catch(() => null);
+          return firstIdsPromise;
+        };
         const stages = await Promise.all((d.stages ?? []).map(async stage => {
           if (!(stage.diagnostics?.error > 0) && !(stage.stageName === 'Validation' && stage.diagnostics?.warning > 0)) return stage;
           if (!stage.jsonFile || /[\\/]/.test(stage.jsonFile) || stage.jsonFile.includes('..')) {
@@ -2162,7 +2189,9 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
           }
           try {
             const phase = await fetchJson(folder + stage.jsonFile);
-            return { ...stage, diagnosticDetails: (phase.diagnostics ?? []).map(item => enrichDiagnostic(item, phase)) };
+            const firstIds = stage === firstStage ? null : await firstElementIds();
+            return { ...stage, firstStageName: firstStage?.stageName,
+              diagnosticDetails: (phase.diagnostics ?? []).map(item => enrichDiagnostic(item, phase, firstIds)) };
           } catch (e) {
             return { ...stage, diagnosticLoadError: `상세 진단을 불러오지 못했습니다: ${e.message}. Studio에서 해당 단계를 확인하세요.` };
           }

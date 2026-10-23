@@ -20,20 +20,71 @@ export function describeDiagnostic(d) {
   ]
   return { title, cause, action }
 }
-export function enrichDiagnostic(d, model) {
+// 엔진 trace 의 하위 단계 이름 → 사람이 읽는 분할 사유
+const SPLIT_REASON = {
+  Intersection: '부재 교차점에서 분할',
+  SplitByExistingNodes: '기존 노드 위치에서 분할',
+  Meshing: '메시 크기로 분할',
+  FinalMeshSize: '최종 메시 크기로 분할',
+}
+const LINEAGE_ACTIONS = new Set(['ElementSplit', 'ElementCreated'])
+
+// 진단 번호는 '그 단계 결과 모델' 기준이라, 뒤 단계에서 분할로 생긴 번호는 첫 단계(01)에 없다.
+// parentElemId 체인(목록에 없는 중간 번호는 trace)을 따라 첫 단계에 있는 원래 요소를 찾는다.
+// 반환: null(첫 단계에 그대로 있음·판단 불가) | { ancestorId, reason, splitNote }
+export function describeElementOrigin(id, model, firstElementIds) {
+  if (id == null || !firstElementIds || firstElementIds.has(id)) return null
+  const byId = new Map((model.elements ?? []).map(e => [e.id, e]))
+  const traceParent = new Map()
+  for (const t of model.trace ?? []) {
+    if (LINEAGE_ACTIONS.has(t.action) && t.relatedElemId != null && t.relatedElemId !== t.elemId && !traceParent.has(t.elemId)) traceParent.set(t.elemId, t)
+  }
+  const step = traceParent.get(id) ?? null
+  const seen = new Set([id])
+  let cur = id
+  while (!firstElementIds.has(cur)) {
+    const p = byId.get(cur)?.parentElemId
+    const next = p != null && p !== cur ? p : traceParent.get(cur)?.relatedElemId
+    if (next == null || seen.has(next)) return { ancestorId: null, reason: SPLIT_REASON[step?.stage] ?? null, splitNote: null }
+    seen.add(next)
+    cur = next
+  }
+  // 분할점이 생긴 사유(예: 'intersection of E81↔E2101')는 새 끝 노드의 NodeCreated 기록에 있다
+  const el = byId.get(id)
+  // 교차점 노드는 짝 부재 쪽(relatedElemId)으로 기록되기도 해서 메모의 부재 번호로도 맞춘다
+  const mentions = (note) => new RegExp(`(^|[^\\d])E${cur}(?!\\d)`).test(note ?? '')
+  const nodeNote = (model.trace ?? []).find(t => t.action === 'NodeCreated'
+    && (t.nodeId === el?.startNode || t.nodeId === el?.endNode)
+    && (t.relatedElemId === cur || mentions(t.note)))
+  const pair = nodeNote?.note?.match(/^intersection of (E\d+)↔(E\d+)$/)
+  const splitNote = pair ? `N${nodeNote.nodeId}에서 ${pair[1]}·${pair[2]} 교차` : null
+  return { ancestorId: cur, reason: SPLIT_REASON[step?.stage] ?? (step ? '분할' : null), splitNote }
+}
+
+export function enrichDiagnostic(d, model, firstElementIds = null) {
   const rigidCheck = d.code === 'EMPTY_RIGID' || d.code?.startsWith('RBE2_') || d.code?.startsWith('BOX_UBOLT_')
   const id = d.elemId ?? d.elementId
   const entity = (rigidCheck ? model.rigids : model.elements)?.find(e => e.id === id)
   const node = model.nodeMap?.get(d.nodeId) ?? model.nodes?.find(n => n.id === d.nodeId)
   const recordedSource = d.code === 'EMPTY_RIGID_EXCLUDED' ? d.message?.match(/SourceName=([^;]*);/)?.[1] : null
   return { ...d, sourceName: entity?.sourceName ?? d.sourceName ?? recordedSource ?? '',
-    positionMm: node ? [node.x, node.y, node.z] : d.positionMm }
+    positionMm: node ? [node.x, node.y, node.z] : d.positionMm,
+    origin: !rigidCheck && entity ? describeElementOrigin(id, model, firstElementIds) : null }
 }
-export function downloadDiagnostics(diagnostics, name = 'HiTESS_Validation') {
-  const rows = [['등급', '코드', '요소/RBE 번호', '노드 번호', '입력 이름', '좌표(mm)', '원인', '조치', '원문'],
+
+// 진단 카드·CSV 공용 문구: 'E3204 는 01 Preprocess 에 없는 번호 — 원래 요소 E81, 부재 교차점에서 분할(N2384 에서 E81 와 E2101 교차)'
+export function originText(origin, firstStageName = '01 단계') {
+  if (!origin) return ''
+  const head = origin.ancestorId != null ? `${firstStageName}의 원래 요소 E${origin.ancestorId}` : `${firstStageName}에서 원래 요소를 찾지 못함`
+  const why = [origin.reason, origin.splitNote && `(${origin.splitNote})`].filter(Boolean).join(' ')
+  return why ? `${head} · ${why}` : head
+}
+export function downloadDiagnostics(diagnostics, name = 'HiTESS_Validation', { stageName = '', firstStageName = '01 단계' } = {}) {
+  const idHeader = stageName ? `요소/RBE 번호(${stageName} 결과 기준)` : '요소/RBE 번호'
+  const rows = [['등급', '코드', idHeader, '노드 번호', '입력 이름', '좌표(mm)', `${firstStageName} 기준 원래 요소`, '원인', '조치', '원문'],
     ...diagnostics.map(d => {
       const g = describeDiagnostic(d)
-      return [d.severity, d.code, d.elemId ?? d.elementId, d.nodeId, d.sourceName, d.positionMm?.join(', '), g.cause, g.action, d.message]
+      return [d.severity, d.code, d.elemId ?? d.elementId, d.nodeId, d.sourceName, d.positionMm?.join(', '), originText(d.origin, firstStageName), g.cause, g.action, d.message]
     })]
   const csv = '\uFEFF' + rows.map(row => row.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\r\n')
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
