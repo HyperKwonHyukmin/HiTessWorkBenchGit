@@ -56,6 +56,25 @@ pyNastran 1.3.4, Python 3.8.8).
 - `InHouseProgram/DoublePipe/HiTessAdapter/report_template.bin`
 - (엔진 갱신 시) `InHouseProgram/DoublePipe/Piping Stress Analysis for all load cases/` 전체
 
+⚠ 서버에서 엔진 `.py` 만 바꾸면 **반영되지 않는다** — 엔진 코드는 빌드 때 exe 안에 묶인다.
+`Piping Stress Analyiss for selected load cases/` 폴더는 백엔드가 참조하지 않는다(2026-10-23 확인).
+
+## 소스 직접 실행 모드 (계획, 2026-10-23)
+
+엔진 개발자가 `.py` 를 자주 고쳐 "145 에서 파일만 바꾸면 다음 해석부터 반영"이 필요해지면 진행한다.
+어댑터는 이미 비-frozen 실행을 지원한다(`engine.ensure_engine_on_path`).
+
+1. 145 에 엔진 전용 Python 3.8 + 위 검증 버전 패키지 설치(1회). 사내망 pip 가능 여부부터 확인.
+2. 백엔드 스위치: `.env` `DOUBLEPIPE_PSA_PYTHON=<python.exe>` 이면 `python -m hitess_adapter.psa_main <같은 인자>`,
+   없으면 기존 exe(롤백 = 그 줄 삭제).
+3. `patches.py` 를 실행 시점에 적용: 엔진 폴더를 임시 사본으로 복사·패치(엔진 파일 mtime 기준 캐시).
+   앵커 불일치면 "어댑터 패치 불일치" 사유로 해석 실패 — 조용히 틀린 결과를 내지 않는다.
+4. 같은 CSV 로 exe ↔ 소스 실행 결과(보고서·결과 파일) 비교, 145 디스크의 `.py` 가 DRM 으로 깨지지 않는지 확인.
+5. 이 README 와 `CLAUDE.md` 이중관 절 갱신.
+
+대가: 145 에 Python 환경을 하나 더 관리, 패치 불일치를 빌드가 아니라 실행 때 알게 됨
+(그래서 엔진 수정 후 70 에서 `pytest tests/test_doublepipe_adapter.py` 를 권장).
+
 ## Tier-2 패치를 늘리기 전에
 
 `patches.py` 항목이 늘어날수록 엔진과의 결합이 강해진다. 새 항목을 넣기 전에

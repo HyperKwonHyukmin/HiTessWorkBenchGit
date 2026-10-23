@@ -210,6 +210,14 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
 - ⚠ ModuleUnit 뷰포트의 `focusEntity` API 는 회전 중심 고정 정책상 no-op 이고, **`source:'find'` 선택만** 카메라·회전 중심을 옮긴다.
   이 예외를 넓히면 결과 행 클릭이 카메라를 흔든다.
 - 가서포트 Element 는 해석 스냅숏(`resultElements`)을 `extraElements` 로 넘겨 찾는다(원본 → 스냅숏 순).
+- **다른 단계에만 있는 Element (ModelBuilder 0.0.97 · ModuleUnit 0.0.170, 2026-10-23)** — Find 는 활성 뷰포트 **단계 안에서만** 찾는다.
+  진단 CSV(예: `HiTESS_ElementSplit_진단.csv` 의 SHORT_ELEMENT E3204)는 02 ElementSplit 에서 **분할로 생긴 번호**라 01 단계에선 "없음"이었다.
+  이제 `traceElementAcrossStages()` 가 가장 가까운 단계에서 찾고 `parentElemId` 체인(목록에 없는 중간 번호는 그 단계 `trace` 의 `ElementSplit`/`ElementCreated`)으로
+  현재 단계의 원래 요소를 잇는다 → 찾기 바에 [이 단계의 E81 보기] / [ElementSplit 단계로 이동]. 06 Validation 메시 조각은 원래 요소가 이미 쪼개져 '단계로 이동'만 된다.
+  WorkBench 진단 카드도 같은 오해를 막는다(`utils/modelValidation.js` `describeElementOrigin`): 번호 옆 '(02 ElementSplit 결과 기준 번호)',
+  '01 Preprocess에는 없는 번호입니다. 원래 요소는 E81이고, 부재 교차점에서 분할되어 생겼습니다 (N2384에서 E81·E2101 교차)', 진단 CSV 에 '원래 요소' 열.
+  첫 단계 JSON 을 한 번 더 읽어 요소 번호 집합을 만든다(실패하면 그 줄만 빠짐).
+  배포(2026-10-23): zip 은 로컬·UNC 반영, 핀 동기화. **145 StudioProgram 수동 복사·프론트 재배포·커밋은 사용자 몫, 화면은 눈으로 확인 안 함.**
 
 #### 독립 그룹 자동 연결 (Edit › 자동 연결, 0.0.150)
 
@@ -480,6 +488,14 @@ Mooring Fitting Assessment(연결 메뉴 = "Mooring Fitting Assessment", viewer 
   (엔진 의존성 설치된 Python 3.8 환경 필요) → ④ 서버(145) 수동 복사 + 백엔드 재시작.
 - ⚠️ 엔진 폴더의 `Report for PSA.xlsx` 는 dev PC 에서 **DRM 암호화(HHIDRMC, +4096B)된 상태**로 존재한다.
   `prep.py` 가 PK 검사로 걸러 `HiTessAdapter/report_template.bin`(PK 정상 사본)으로 폴백한다.
+- ⚠️ **엔진 `.py` 만 서버에서 바꿔서는 반영되지 않는다** (2026-10-23 확인). 백엔드는 PyInstaller exe
+  (`HiTessAdapter/PSA_AllLoadCases.exe`)를 실행하므로 코드가 빌드 때 exe 안에 묶인다 — 수정은 위 '새 엔진 수령 절차'
+  ②~④ 를 거쳐야 한다. 또 `Piping Stress Analyiss for selected load cases/` 폴더는 **백엔드가 참조하지 않는다**
+  (탐색 폴더 = `HiTessAdapter` → `...for all load cases`). 엔진을 고칠 곳은 `...for all load cases/` 다.
+  - 다음 단계(계획): 엔진 개발자가 `.py` 를 자주 고치면 **소스 직접 실행 모드**로 바꾼다 — 145 에 엔진 전용 Python 3.8+패키지,
+    `.env` `DOUBLEPIPE_PSA_PYTHON` 이 있으면 `python -m hitess_adapter.psa_main`(없으면 exe — 롤백 스위치),
+    `patches.py` 는 실행 때 엔진 임시 사본(엔진 mtime 캐시)에 적용·앵커 불일치는 사유 있는 실패, exe 결과와 비교 검증 + 145 DRM 확인.
+    첫 확인 = 145 에서 pip 설치 가능 여부. 상세: 어댑터 `README.md` '소스 직접 실행 모드(계획)'.
 
 ### Truss Structural Assessment — 허용응력 Property ID 테이블은 두 곳에서 참조된다 ★수정 시 동기화 필수
 
