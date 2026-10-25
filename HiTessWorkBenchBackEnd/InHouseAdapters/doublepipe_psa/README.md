@@ -56,24 +56,26 @@ pyNastran 1.3.4, Python 3.8.8).
 - `InHouseProgram/DoublePipe/HiTessAdapter/report_template.bin`
 - (엔진 갱신 시) `InHouseProgram/DoublePipe/Piping Stress Analysis for all load cases/` 전체
 
-⚠ 서버에서 엔진 `.py` 만 바꾸면 **반영되지 않는다** — 엔진 코드는 빌드 때 exe 안에 묶인다.
+⚠ exe 모드에서는 서버에서 엔진 `.py` 만 바꾸면 **반영되지 않는다** — 엔진 코드는 빌드 때 exe 안에 묶인다.
+`.py` 수정을 바로 반영하려면 아래 소스 직접 실행 모드를 켠다.
 `Piping Stress Analyiss for selected load cases/` 폴더는 백엔드가 참조하지 않는다(2026-10-23 확인).
 
-## 소스 직접 실행 모드 (계획, 2026-10-23)
+## 소스 직접 실행 모드 (2026-10-26)
 
-엔진 개발자가 `.py` 를 자주 고쳐 "145 에서 파일만 바꾸면 다음 해석부터 반영"이 필요해지면 진행한다.
-어댑터는 이미 비-frozen 실행을 지원한다(`engine.ensure_engine_on_path`).
+`.env` 에 `DOUBLEPIPE_PSA_PYTHON=<python.exe>` 를 두면 백엔드가 exe 대신
+`python -u psa_entry.py <csv> [--load-cases ...]` 로 실행한다. 엔진 개발자가
+`Piping Stress Analysis for all load cases/` 의 `.py` 를 바꾸면 **다음 해석부터 반영**된다(재빌드·재시작 없음).
 
-1. 145 에 엔진 전용 Python 3.8 + 위 검증 버전 패키지 설치(1회). 사내망 pip 가능 여부부터 확인.
-2. 백엔드 스위치: `.env` `DOUBLEPIPE_PSA_PYTHON=<python.exe>` 이면 `python -m hitess_adapter.psa_main <같은 인자>`,
-   없으면 기존 exe(롤백 = 그 줄 삭제).
-3. `patches.py` 를 실행 시점에 적용: 엔진 폴더를 임시 사본으로 복사·패치(엔진 파일 mtime 기준 캐시).
-   앵커 불일치면 "어댑터 패치 불일치" 사유로 해석 실패 — 조용히 틀린 결과를 내지 않는다.
-4. 같은 CSV 로 exe ↔ 소스 실행 결과(보고서·결과 파일) 비교, 145 디스크의 `.py` 가 DRM 으로 깨지지 않는지 확인.
-5. 이 README 와 `CLAUDE.md` 이중관 절 갱신.
-
-대가: 145 에 Python 환경을 하나 더 관리, 패치 불일치를 빌드가 아니라 실행 때 알게 됨
-(그래서 엔진 수정 후 70 에서 `pytest tests/test_doublepipe_adapter.py` 를 권장).
+- 실행할 때 `hitess_adapter/runtime.py` 가 엔진 사본을 `build/runtime/<지문>/` 에 만들고 `patches.py` 를 적용한다.
+  지문 = 엔진 파일 목록·크기·수정 시각 + patches.py 내용. 엔진이 그대로면 사본을 다시 만들지 않는다.
+- 패치 앵커가 안 맞으면 해석이 **종료 코드 3 + "[어댑터 패치 불일치]"** 로 실패한다(조용히 패치 없는 엔진으로 돌지 않음).
+  엔진을 고친 뒤에는 70 에서 `pytest tests/test_doublepipe_adapter.py tests/test_doublepipe_source_mode.py` 를 먼저 돌릴 것.
+- 값이 있는데 파일이 없으면 exe 로 몰래 돌지 않고 503. 줄을 지우고 백엔드를 재시작하면 exe 로 돌아간다.
+- Python 은 3.8 + 위 '새 엔진을 받았을 때'의 검증 버전 패키지. 70 은 `.venv38`(git 미추적)에 있다.
+  venv 는 기반 Python 경로를 참조하므로 폴더째 복사해서는 다른 PC 에서 안 돈다 — 145 에는 따로 설치한다.
+- 서식 템플릿은 exe 와 같이 백엔드가 job 폴더에 넣고, DRM 폴백은 `build/` → `HiTessAdapter/report_template.bin` 을 본다.
+- 고유진동 해석(`Run_ModalAnalysis.exe`)은 어댑터를 거치지 않는 연구원 원본 exe 라 이 모드와 무관하다.
+- 확인 상태(2026-10-26): 70 에서 `.venv38` 로 inp 생성까지 실측, Abaqus 가 없어 해석·보고서는 확인 안 함. 145 미적용.
 
 ## Tier-2 패치를 늘리기 전에
 

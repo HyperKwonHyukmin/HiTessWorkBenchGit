@@ -135,6 +135,8 @@ def test_drm_shim_falls_back_to_bundled_template(drm_shim, tmp_path, monkeypatch
 def test_drm_shim_reports_when_no_bundle(drm_shim, tmp_path, monkeypatch, capsys):
     """번들 사본조차 없으면 경고를 남기고 원래 예외가 올라가야 한다(조용한 성공 금지)."""
     monkeypatch.chdir(tmp_path)
+    # 이 PC 의 build/·HiTessAdapter/ 에 있는 실제 사본이 끼지 않게 한다.
+    monkeypatch.setattr(openpyxl_drm, "_source_mode_candidates", lambda: [])
     (tmp_path / "Report for PSA.xlsx").write_bytes(b"HHIDRMC" + b"\x00" * 128)
     with pytest.raises(Exception):
         openpyxl.load_workbook("Report for PSA.xlsx")

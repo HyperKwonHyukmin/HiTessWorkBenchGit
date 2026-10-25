@@ -45,7 +45,19 @@ def _bundled_candidates():
         pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         candidates.append(os.path.join(pkg_root, BUNDLED_TEMPLATE_NAME))
     candidates.append(os.path.join(os.getcwd(), BUNDLED_TEMPLATE_NAME))
+    if not getattr(sys, "frozen", False):
+        candidates.extend(_source_mode_candidates())
     return candidates
+
+
+def _source_mode_candidates():
+    """소스 실행 모드(exe 아님)의 추가 후보: 빌드 산출물(build/) → 백엔드 배포 폴더(HiTessAdapter/)."""
+    adapter_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    backend_dir = os.path.dirname(os.path.dirname(adapter_root))
+    return [
+        os.path.join(adapter_root, "build", BUNDLED_TEMPLATE_NAME),
+        os.path.join(backend_dir, "InHouseProgram", "DoublePipe", "HiTessAdapter", BUNDLED_TEMPLATE_NAME),
+    ]
 
 
 def _read_if_zip(path):

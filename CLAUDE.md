@@ -489,14 +489,14 @@ Mooring Fitting Assessment(연결 메뉴 = "Mooring Fitting Assessment", viewer 
   (엔진 의존성 설치된 Python 3.8 환경 필요) → ④ 서버(145) 수동 복사 + 백엔드 재시작.
 - ⚠️ 엔진 폴더의 `Report for PSA.xlsx` 는 dev PC 에서 **DRM 암호화(HHIDRMC, +4096B)된 상태**로 존재한다.
   `prep.py` 가 PK 검사로 걸러 `HiTessAdapter/report_template.bin`(PK 정상 사본)으로 폴백한다.
-- ⚠️ **엔진 `.py` 만 서버에서 바꿔서는 반영되지 않는다** (2026-10-23 확인). 백엔드는 PyInstaller exe
-  (`HiTessAdapter/PSA_AllLoadCases.exe`)를 실행하므로 코드가 빌드 때 exe 안에 묶인다 — 수정은 위 '새 엔진 수령 절차'
-  ②~④ 를 거쳐야 한다. 또 `Piping Stress Analyiss for selected load cases/` 폴더는 **백엔드가 참조하지 않는다**
-  (탐색 폴더 = `HiTessAdapter` → `...for all load cases`). 엔진을 고칠 곳은 `...for all load cases/` 다.
-  - 다음 단계(계획): 엔진 개발자가 `.py` 를 자주 고치면 **소스 직접 실행 모드**로 바꾼다 — 145 에 엔진 전용 Python 3.8+패키지,
-    `.env` `DOUBLEPIPE_PSA_PYTHON` 이 있으면 `python -m hitess_adapter.psa_main`(없으면 exe — 롤백 스위치),
-    `patches.py` 는 실행 때 엔진 임시 사본(엔진 mtime 캐시)에 적용·앵커 불일치는 사유 있는 실패, exe 결과와 비교 검증 + 145 DRM 확인.
-    첫 확인 = 145 에서 pip 설치 가능 여부. 상세: 어댑터 `README.md` '소스 직접 실행 모드(계획)'.
+- ⚠️ **exe 모드에서는 엔진 `.py` 만 서버에서 바꿔서는 반영되지 않는다** (2026-10-23 확인). 코드가 빌드 때
+  `HiTessAdapter/PSA_AllLoadCases.exe` 안에 묶인다 — 위 '새 엔진 수령 절차' ②~④ 를 거쳐야 한다.
+  `Piping Stress Analyiss for selected load cases/` 폴더는 **백엔드가 참조하지 않는다** — 엔진을 고칠 곳은 `...for all load cases/` 다.
+- **소스 직접 실행 모드 (2026-10-26)** — `.env` `DOUBLEPIPE_PSA_PYTHON=<엔진 의존성 있는 Python 3.8>` 이면 exe 대신
+  `python -u InHouseAdapters/doublepipe_psa/psa_entry.py` 로 돌아 **엔진 `.py` 수정이 다음 해석부터 반영**된다(재빌드·재시작 없음).
+  어댑터 `runtime.py` 가 실행 때 엔진 사본(`build/runtime/<지문>`)에 `patches.py` 를 적용하고, 앵커 불일치면 종료 코드 3 으로 실패한다.
+  줄을 지우면 exe 로 롤백, 경로가 틀리면 503(조용히 exe 로 돌지 않음). 상세: 어댑터 `README.md` '소스 직접 실행 모드'.
+  확인 상태: 70 `.venv38` 로 inp 생성까지만 실측(Abaqus 없음), **145 는 Python 3.8 환경 설치 + `.env` + 재시작 전**.
 
 ### Truss Structural Assessment — 허용응력 Property ID 테이블은 두 곳에서 참조된다 ★수정 시 동기화 필수
 

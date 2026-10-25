@@ -9,8 +9,8 @@ PSA_AllLoadCases.exe 는 원본 Main.py(+scipy·pyNastran·numpy·openpyxl)를 P
     PSA_AllLoadCases.exe <csv_path>
 
 ⚠️ scipy·pyNastran·numpy·openpyxl 은 exe 안에 이미 번들되어 있어 실행 컴퓨터에 별도 파이썬
-   환경을 준비할 필요가 없다(DOUBLEPIPE_PSA_PYTHON 등 환경변수 불필요, 2026-07 exe 전환 이전
-   방식). 다만 Abaqus(외부 CAE 솔버)만은 여전히 그 컴퓨터에 설치되어 PATH 의 `abaqus` 명령으로
+   환경을 준비할 필요가 없다. 단 .env 에 DOUBLEPIPE_PSA_PYTHON 을 두면 exe 대신 엔진 소스를
+   그 Python 으로 직접 실행한다(소스 직접 실행 모드, 2026-10-26 — 엔진 .py 수정이 바로 반영). 다만 Abaqus(외부 CAE 솔버)만은 여전히 그 컴퓨터에 설치되어 PATH 의 `abaqus` 명령으로
    실행 가능해야 한다 — exe 는 파이썬 의존성만 해결하며 Abaqus 자체를 대체하지 않는다.
    - Abaqus 가 백엔드 프로세스 PATH 에 없으면(서비스로 기동/PATH 등록 이전에 뜬 셸 등)
      _build_subprocess_env 가 흔한 설치 경로나 환경변수 ABAQUS_COMMANDS_DIR 로 런처 폴더를
@@ -52,6 +52,14 @@ _PSA_DIR = os.path.join(_DOUBLEPIPE_DIR, "HiTessAdapter")
 # 구 배치(엔진 폴더 안에 exe·템플릿이 있던 시절) 폴백 — 서버가 아직 이행 전이어도 무중단.
 _PSA_LEGACY_DIR = os.path.join(_DOUBLEPIPE_DIR, "Piping Stress Analysis for all load cases")
 _PSA_EXE_NAME = "PSA_AllLoadCases.exe"
+# ── 소스 직접 실행 모드 (2026-10-26) ─────────────────────────────────────
+# .env 에 DOUBLEPIPE_PSA_PYTHON=<엔진 의존성이 설치된 python.exe> 가 있으면 exe 대신
+#   python -u InHouseAdapters/doublepipe_psa/psa_entry.py <csv> [--load-cases ...]
+# 로 실행한다. 엔진 개발자가 엔진 폴더의 .py 만 고쳐도 다음 해석부터 반영된다(재빌드·재시작 불필요).
+# 어댑터가 실행 때 엔진 사본을 만들어 patches.py 를 적용한다(hitess_adapter/runtime.py).
+# 그 줄을 지우면 기존 exe 실행으로 돌아간다. 값이 있는데 파일이 없으면 exe 로 몰래 돌지 않고 503.
+_PSA_PYTHON_ENV = "DOUBLEPIPE_PSA_PYTHON"
+_PSA_SOURCE_ENTRY = os.path.join(_BACKEND_DIR, "InHouseAdapters", "doublepipe_psa", "psa_entry.py")
 # ── 고유진동(Normal Mode) 해석 프로그램 ───────────────────────────────────
 # Run_ModalAnalysis.exe 는 같은 AbaqusModelCreatorPKG 로 *FREQUENCY 스텝 inp 를 만들고 Abaqus 를
 # 1회 실행한 뒤 .dat 의 EIGENVALUE OUTPUT 표에서 고유진동수(Hz)를 뽑는다(마찰 반복 없음).
@@ -86,6 +94,25 @@ def _resolve_psa_exe() -> "str | None":
         if os.path.isfile(candidate):
             return candidate
     return None
+
+
+def _resolve_psa_source_command() -> "list | None":
+    """소스 직접 실행 모드의 명령 앞부분([python, -u, psa_entry.py]). 모드가 꺼져 있으면 None."""
+    python = os.environ.get(_PSA_PYTHON_ENV, "").strip().strip('"')
+    if not python:
+        return None
+    if not os.path.isfile(python):
+        raise HTTPException(
+            status_code=503,
+            detail=f"PSA 소스 실행용 Python({_PSA_PYTHON_ENV}={python})을 찾을 수 없습니다. 서버 관리자에게 문의하세요.",
+        )
+    if not os.path.isfile(_PSA_SOURCE_ENTRY):
+        raise HTTPException(
+            status_code=503,
+            detail=f"PSA 어댑터 진입 파일({_PSA_SOURCE_ENTRY})이 없습니다. 서버 관리자에게 문의하세요.",
+        )
+    # -u: 파이프로 실행하면 stdout 이 블록 버퍼링돼 진행 로그가 끝날 때 몰려 나온다.
+    return [python, "-u", _PSA_SOURCE_ENTRY]
 
 
 def _resolve_modal_exe() -> "str | None":
@@ -359,6 +386,7 @@ def _launch_job(csv_path: str, employee_id: str, kind: str = "psa", load_cases=N
     ★ 두 종류 모두 같은 Abaqus 라이센스 슬롯(_active_job_id)을 공유한다.
     """
     is_modal = kind == "modal"
+    source_command = None  # 고유진동 해석은 연구원 원본 exe 라 소스 실행 모드가 없다.
     if is_modal:
         exe_path = _resolve_modal_exe()
         if exe_path is None:
@@ -367,8 +395,9 @@ def _launch_job(csv_path: str, employee_id: str, kind: str = "psa", load_cases=N
                 detail=f"고유진동 해석 프로그램({_MODAL_EXE_NAME})을 찾을 수 없습니다. 서버 관리자에게 문의하세요.",
             )
     else:
-        exe_path = _resolve_psa_exe()
-        if exe_path is None:
+        source_command = _resolve_psa_source_command()
+        exe_path = None if source_command else _resolve_psa_exe()
+        if source_command is None and exe_path is None:
             raise HTTPException(status_code=503, detail=f"PSA 해석 프로그램({_PSA_EXE_NAME})을 찾을 수 없습니다. 서버 관리자에게 문의하세요.")
 
     # ⚠️ cwd 는 반드시 CSV 가 있는 폴더(job_dir)여야 한다 — Main.py 내부의 write_LC()/
@@ -390,7 +419,7 @@ def _launch_job(csv_path: str, employee_id: str, kind: str = "psa", load_cases=N
             "--min-freq", str(modal_min_freq),
         ]
     else:
-        command = [exe_path, csv_path]
+        command = (source_command or [exe_path]) + [csv_path]
         # 선택 Load Case 지정 시에만 --load-cases 를 붙인다(미지정=엔진 기본 전체 29개).
         if load_cases:
             command += ["--load-cases", ",".join(load_cases)]
@@ -409,6 +438,8 @@ def _launch_job(csv_path: str, employee_id: str, kind: str = "psa", load_cases=N
         "returncode": None,
         "csvPath": csv_path,
         "command": " ".join(f'"{c}"' if " " in c else c for c in command),
+        # True = 소스 직접 실행(DOUBLEPIPE_PSA_PYTHON) / False = exe.
+        "sourceMode": bool(source_command),
         "logs": [],
         # 고유진동 해석은 xlsx 보고서를 만들지 않는다 — 결과는 NaturalFrequencies.txt 이며
         # _finish 가 파싱해 job["modes"] 로 실어 준다.
@@ -788,6 +819,13 @@ def _run_pipeline(job_id: str, command: list, cwd: str, kind: str = "psa"):
     if not is_modal:
         _stage_report_template(cwd, job_id)
     env = _build_subprocess_env(job_id)
+    with _jobs_lock:
+        source_mode = bool((_jobs.get(job_id) or {}).get("sourceMode"))
+    if source_mode:
+        # 백엔드 venv 의 PYTHONPATH/PYTHONHOME 이 엔진용 Python 에 섞이지 않게 한다.
+        env.pop("PYTHONPATH", None)
+        env.pop("PYTHONHOME", None)
+        _append_log(job_id, "[환경] 소스 직접 실행 모드 — 엔진 폴더의 .py 를 그대로 실행합니다.")
     child_encoding = _child_output_encoding(kind)
     # 취소가 thread.start 직후, Popen 직전에 도착한 경우 프로세스를 만들지 않는다.
     with _jobs_lock:
@@ -1120,7 +1158,14 @@ def _finish(job_id: str, status: str, returncode: int, report_ready: bool = Fals
         exe_label = _MODAL_EXE_NAME if job.get("kind") == "modal" else _PSA_EXE_NAME
         if status == "failed":
             joined = "\n".join(job["logs"])
-            if "No module named" in joined:
+            if "No module named" in joined and job.get("sourceMode"):
+                # 소스 직접 실행 모드 — 지정한 Python 에 엔진 패키지가 빠진 경우(설치 직후 흔함).
+                job["diagnostic"] = "solver_env_missing"
+                job["logs"].append(
+                    f"[안내] {_PSA_PYTHON_ENV} 로 지정한 Python 에 엔진 패키지(numpy·scipy·openpyxl·"
+                    "matplotlib·pyNastran)가 빠져 있습니다 — 서버 관리자에게 문의하세요."
+                )
+            elif "No module named" in joined:
                 # exe 에 scipy/pyNastran/numpy/openpyxl 이 번들되어 있어 정상적으론 발생하지 않아야
                 # 함 — 발생하면 exe 자체가 손상/구버전일 가능성이 높다.
                 job["diagnostic"] = "solver_env_missing"
