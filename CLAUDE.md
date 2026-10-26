@@ -645,7 +645,11 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 - 백엔드 `routers/videos.py`: `GET /api/videos`(목록) → `POST /api/videos/{id}/ticket`(로그인 사용자에게 3시간짜리 서명 표 + 워터마크 '이름 사번', 시청 기록 `VIDEO_PLAY`)
   → `GET /api/videos/stream/{id}?t=`(Range 지원). **`/static/videos` 공개 경로는 없앴다** — 되살리지 말 것(`test_database_lifecycle` 이 잡는다).
   표의 비밀값은 프로세스마다 새로 만들어 재시작하면 재생 중이던 창은 다시 열어야 한다.
-- 영상 추가 = 서버 `HiTessWorkBenchBackEnd/Videos/`(git 미추적)에 mp4 + 같은 폴더 `videos.json`(`[{file,title,subtitle}]`, 순서=목록 순서). 재시작 불필요.
+- 영상 추가 = 서버 `HiTessWorkBenchBackEnd/Videos/`(git 미추적)에 mp4 + 같은 폴더 `videos.json`(`[{file,category,title,subtitle}]`, 순서=목록 순서). 재시작 불필요.
+  **목록 화면은 category 별 묶음**(2026-10-26 오후, 분류 = HiTESS 소개 · 구조 해석 · 생산 지원 자동화) — 묶음 제목에 편수·전체 길이, 행마다 제목·설명·재생 시간.
+  재생 시간은 서버가 mp4 `moov/mvhd` 에서 읽는다(`_mp4_duration`, 못 읽으면 표시 안 함). 묶기·시간 표기 = `utils/videoCatalog.js`(+테스트).
+  `videos.json` 이 없으면 파일명에서 `HiTESS-`·`_` 를 걷은 제목 + '기타 영상' 한 묶음이 된다 — 145 에서 파일명 제목이 보이면 `videos.json` 이 안 들어간 것이다.
+  ⚠ 이 목록 개편(백엔드 `videos.py`·프론트 `dashboardShared.jsx`·`videoCatalog.js`)은 **미커밋**이고 v1.6.29 exe 에는 없다.
 - Electron `electron/video-window.js`: 영상 전용 창에만 `setContentProtection(true)`(캡처·녹화·화면 공유에 검게 나감), 메모리 세션에서 다운로드 취소,
   새 창·이동 금지, 패키징본 개발자 도구 끔, 영상 위 떠다니는 워터마크, 전체 화면은 영상+워터마크 무대째로. ⚠ 본체 창에는 걸지 않는다(Teams 원격 지원 화면이 검게 나감).
   휴대폰 촬영·가상머신·캡처보드는 못 막는다 — 워터마크는 그때 누구 화면인지 남기려는 것이다.
