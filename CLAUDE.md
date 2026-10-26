@@ -496,7 +496,12 @@ Mooring Fitting Assessment(연결 메뉴 = "Mooring Fitting Assessment", viewer 
   `python -u InHouseAdapters/doublepipe_psa/psa_entry.py` 로 돌아 **엔진 `.py` 수정이 다음 해석부터 반영**된다(재빌드·재시작 없음).
   어댑터 `runtime.py` 가 실행 때 엔진 사본(`build/runtime/<지문>`)에 `patches.py` 를 적용하고, 앵커 불일치면 종료 코드 3 으로 실패한다.
   줄을 지우면 exe 로 롤백, 경로가 틀리면 503(조용히 exe 로 돌지 않음). 상세: 어댑터 `README.md` '소스 직접 실행 모드'.
-  확인 상태: 70 `.venv38` 로 inp 생성까지만 실측(Abaqus 없음), **145 는 Python 3.8 환경 설치 + `.env` + 재시작 전**.
+  145 용 Python 은 **휴대용 폴더 `PSA_Python38`**(70 의 Python 3.8.10 설치 폴더 + `.venv38` site-packages, PyInstaller 제외, 274MB)을
+  `InHouseProgram/DoublePipe/PSA_Python38/` 에 폴더째 복사해 쓴다(145 에서 설치·pip 불필요, zip 은 DRM 이 암호화하므로 폴더째).
+  70 원본: `outputs/PSA_Python38/`(git 미추적). 다시 만들 때도 같은 방식으로 한다.
+  배포 상태(2026-10-26): v1.6.28(`c203a7d` 기능 · `e9e3024` 버전) 푸시·exe 빌드. 70 은 휴대용 Python 으로 inp 생성까지만 실측(Abaqus 없음).
+  **145 는 미적용** — PSA_Python38·교체한 `FuelLine_Making_LoadCase.py` 복사 → ⟳ Update → `.env` 한 줄 → 재시작 → 해석 1회로
+  `[환경] 소스 직접 실행 모드` 로그·Abaqus 해석·보고서·DRM(복사된 `.py`) 확인이 남았다.
 
 ### Truss Structural Assessment — 허용응력 Property ID 테이블은 두 곳에서 참조된다 ★수정 시 동기화 필수
 
