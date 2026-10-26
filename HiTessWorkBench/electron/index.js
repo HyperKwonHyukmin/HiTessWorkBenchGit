@@ -14,6 +14,7 @@ const { responseHeadersWithWorkbenchCsp } = require("./response-security");
 const logbookBridge = require("./logbook-bridge");
 const { externalAppBinding, redirectIntoExternalApp } = require("./external-app-paths");
 const clientTelemetry = require("./client-telemetry");
+const { registerVideoWindow } = require("./video-window");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
 // 다이얼로그 제목으로 사용됨. 미설정 시 개발 모드 기본값 'electron-app' 이 노출되므로,
@@ -125,6 +126,8 @@ function createWindow() {
       if (externalWin && !externalWin.isDestroyed()) externalWin.close();
     }
     appWindows.clear();
+    // 영상 창도 닫는다 — 남으면 앱이 종료되지 않고 워터마크(앞사람 이름)가 화면에 남는다
+    videoWindowControl.closeVideoWindow();
   });
 }
 
@@ -318,6 +321,13 @@ ipcMain.handle("open-app-window", async (_e, payload = {}) => {
     if (!win.isDestroyed() && !win.isVisible()) win.show();
   }
   return { ok: true, cacheCleared: Boolean(clearCache) };
+});
+
+// HiTESS 소개 영상 전용 창(녹화 방지·다운로드 차단·워터마크) — video-window.js
+const videoWindowControl = registerVideoWindow({
+  app, BrowserWindow, ipcMain, session, screen,
+  getMainWindow: () => mainWindow,
+  iconPath: path.join(__dirname, "icon.ico"),
 });
 
 // 외부 앱 창 닫기 — WorkBench 로그아웃 때 Hi-TESS LogBook 창을 닫는 데 쓴다. payload = { windowKey }

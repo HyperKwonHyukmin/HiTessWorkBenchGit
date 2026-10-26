@@ -47,6 +47,7 @@ from .routers import (
     system,
     updates,
     users,
+    videos,
     viewers,
 )
 from .schema_bootstrap import run_schema_bootstrap
@@ -236,6 +237,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(logbook_link.router)
     application.include_router(admin_projects.router)
     application.include_router(updates.router)
+    application.include_router(videos.router)
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     application.mount(
@@ -243,11 +245,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
         StaticFiles(directory=os.path.join(backend_dir, "InHouseProgram", "D_TypeLugCalculation")),
         name="d-type-lug-static",
     )
-    application.mount(
-        "/static/videos",
-        StaticFiles(directory=os.path.join(backend_dir, "Videos")),
-        name="videos-static",
-    )
+    # 영상은 더 이상 정적 공개하지 않는다 — 로그인 표(ticket)가 있어야 받는 /api/videos 스트리밍(routers/videos.py).
     application.add_api_route("/", health_check, methods=["GET"])
     return application
 

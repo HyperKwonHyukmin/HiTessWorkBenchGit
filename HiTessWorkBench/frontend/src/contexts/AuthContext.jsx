@@ -59,6 +59,8 @@ export function AuthProvider({ children }) {
     // Hi-TESS LogBook 창도 닫는다(LogBook 세션 폐기는 백엔드 로그아웃이 알린다). 실패는 무시.
     try {
       window.electron?.invoke?.('close-app-window', { windowKey: 'hitess-logbook' })?.catch?.(() => {});
+      // 영상 창의 워터마크는 로그인한 사람 기준이라 로그아웃 때 같이 닫는다
+      window.electron?.invoke?.('video:close')?.catch?.(() => {});
     } catch { /* Electron 아님 · 이미 닫힘 */ }
     setUser(null);
     setSessionToken('');

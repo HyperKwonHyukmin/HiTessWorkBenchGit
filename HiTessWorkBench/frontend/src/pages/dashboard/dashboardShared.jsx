@@ -6,9 +6,10 @@ import React, { Fragment, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Dialog, Transition } from '@headlessui/react';
 import {
-  ChevronRight, Clock, Layers, Map, Maximize2, Megaphone, Pin, Play, Rocket, Server, Sparkles, Wrench, X,
+  ChevronRight, Clock, Layers, Loader2, Map, Maximize2, Megaphone, Pin, Play, Rocket, Server, Sparkles, Wrench, X,
 } from 'lucide-react';
 import { getNotices } from '../../api/admin';
+import { getVideos, issueVideoTicket } from '../../api/videos';
 import { API_BASE_URL } from '../../config';
 import { useAppCatalogue } from '../../contexts/DashboardContext';
 import { NOTICE_TYPE_STYLE } from '../../components/modals/noticeTypeStyle';
@@ -41,45 +42,56 @@ export const DashboardSectionTitle = ({ icon: Icon, title, accent = 'service', c
   </div>
 );
 
-const PROMOTION_VIDEOS = [
-  {
-    id: 'workbench',
-    title: 'HiTESS WorkBench',
-    subtitle: '차세대 조선해양 구조 해석 플랫폼',
-    filename: 'HiTESS Workbench.mp4',
-  },
-  {
-    id: 'digital-engineering',
-    title: 'HiTESS 설계와 디지털 엔지니어링의 연결',
-    subtitle: '설계 데이터와 디지털 엔지니어링 업무 흐름 소개',
-    filename: 'HiTESS 설계와 디지털 엔지니어링의 연결.mp4',
-  },
-];
+// HiTESS Story — 영상은 저작권 보호를 위해 WorkBench 의 영상 전용 창(녹화 방지·다운로드 차단·워터마크)에서만 재생한다.
+// 목록은 서버(`GET /api/videos`, 서버 Videos 폴더 + videos.json)가 정하고, 누르면 재생 표를 받아 Electron 에 창을 연다.
+// 브라우저(개발 서버)나 옛 exe 에서는 재생하지 않고 안내만 한다 — 그래야 보호 없는 재생 경로가 생기지 않는다.
+const VIDEO_UNSUPPORTED_MESSAGE = '영상은 최신 WorkBench 앱에서만 볼 수 있습니다. WorkBench 를 업데이트한 뒤 다시 열어 주세요.';
 
-const buildPromotionVideoUrl = (filename) => (
-  `${API_BASE_URL}/static/videos/${encodeURIComponent(filename)}`
-);
-
-// HiTESS Story 선택 및 플레이어 모달
-// — 모달이 열릴 때만 <video>를 DOM에 마운트하여 백그라운드 디코딩/네트워크 낭비를 방지한다.
-// — crossOrigin 속성 미설정: 미디어 스트리밍은 CORS 헤더 없이도 동작하며,
-//   crossOrigin을 켜면 오히려 CORS 헤더를 요구해 재생이 깨진다.
 export const VideoPlayerModal = ({ isOpen, onClose }) => {
-  const videoRef = useRef(null);
-  const [selectedVideo, setSelectedVideo] = useState(null);
+  const [videos, setVideos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [openingId, setOpeningId] = useState(null);
 
   useEffect(() => {
-    if (!isOpen) {
-      const video = videoRef.current;
-      if (video) {
-        video.pause();
-        video.currentTime = 0;
-      }
-      setSelectedVideo(null);
-    }
+    if (!isOpen) return undefined;
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    getVideos()
+      .then(res => { if (!cancelled) setVideos(Array.isArray(res.data) ? res.data : []); })
+      .catch(() => { if (!cancelled) setError('영상 목록을 불러오지 못했습니다. 서버 연결을 확인해 주세요.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [isOpen]);
 
-  const videoUrl = selectedVideo ? buildPromotionVideoUrl(selectedVideo.filename) : '';
+  const playVideo = async (video) => {
+    if (openingId) return;
+    if (!window.electron?.invoke) {
+      setError(VIDEO_UNSUPPORTED_MESSAGE);
+      return;
+    }
+    setOpeningId(video.id);
+    setError('');
+    try {
+      const { data } = await issueVideoTicket(video.id);
+      const result = await window.electron.invoke('video:open', {
+        apiBase: API_BASE_URL,
+        streamPath: data.streamPath,
+        title: data.title,
+        subtitle: data.subtitle,
+        watermark: data.watermark,
+      });
+      // 옛 exe 의 preload 는 모르는 채널에 null 을 돌려준다
+      if (!result) setError(VIDEO_UNSUPPORTED_MESSAGE);
+      else if (!result.ok) setError(result.error || '영상 창을 열지 못했습니다.');
+      else onClose();
+    } catch (e) {
+      setError(e?.response?.data?.detail || '영상을 열지 못했습니다. 서버 연결을 확인해 주세요.');
+    } finally {
+      setOpeningId(null);
+    }
+  };
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -99,9 +111,7 @@ export const VideoPlayerModal = ({ isOpen, onClose }) => {
             enter="ease-out duration-250" enterFrom="opacity-0 scale-95 translate-y-4" enterTo="opacity-100 scale-100 translate-y-0"
             leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel
-              className="w-full max-w-4xl bg-[#001a3d] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-            >
+            <Dialog.Panel className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-[#001a3d] shadow-2xl">
               {/* 모달 헤더 */}
               <div
                 className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 shrink-0"
@@ -112,12 +122,8 @@ export const VideoPlayerModal = ({ isOpen, onClose }) => {
                     <Play size={16} className="text-blue-200" fill="currentColor" />
                   </div>
                   <div>
-                    <Dialog.Title className="text-white font-bold text-sm leading-tight">
-                      {selectedVideo ? selectedVideo.title : 'HiTESS Story'}
-                    </Dialog.Title>
-                    <p className="text-slate-300 text-[11px]">
-                      {selectedVideo ? selectedVideo.subtitle : '재생할 영상을 선택하세요'}
-                    </p>
+                    <Dialog.Title className="text-white font-bold text-sm leading-tight">HiTESS Story</Dialog.Title>
+                    <p className="text-slate-300 text-[11px]">영상은 WorkBench 영상 창에서 재생됩니다 · 화면 녹화·캡처가 차단되고 시청자 이름이 표시됩니다</p>
                   </div>
                 </div>
                 <button
@@ -129,60 +135,42 @@ export const VideoPlayerModal = ({ isOpen, onClose }) => {
                 </button>
               </div>
 
-              {selectedVideo ? (
-                <>
-                  <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.04] px-5 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedVideo(null)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-blue-100 hover:bg-white/15 hover:text-white transition-colors cursor-pointer"
-                    >
-                      <ChevronRight size={14} className="rotate-180" />
-                      영상 목록
-                    </button>
-                    <span className="truncate text-[11px] font-semibold text-slate-300">{selectedVideo.filename}</span>
-                  </div>
-
-                  {/* 16:9 비율 영상 컨테이너 */}
-                  {/* isOpen이 true일 때만 <video>를 마운트 — 닫힌 상태에서 네트워크 요청 없음 */}
-                  <div className="relative w-full bg-black" style={{ paddingBottom: '56.25%' }}>
-                    {isOpen && (
-                      <video
-                        ref={videoRef}
-                        src={videoUrl}
-                        controls
-                        autoPlay
-                        className="absolute inset-0 w-full h-full"
-                        style={{ display: 'block' }}
-                      />
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="grid gap-3 bg-slate-950/45 p-5 sm:grid-cols-2">
-                  {PROMOTION_VIDEOS.map((video) => (
-                    <button
-                      key={video.id}
-                      type="button"
-                      onClick={() => setSelectedVideo(video)}
-                      className="group flex min-h-32 items-start justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.07] p-4 text-left transition-colors hover:border-blue-300/50 hover:bg-white/[0.11] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 cursor-pointer"
-                    >
-                      <span className="min-w-0">
-                        <span className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-400/15 text-blue-200 ring-1 ring-blue-200/20">
-                          <Play size={16} fill="currentColor" />
-                        </span>
-                        <span className="block text-sm font-extrabold leading-snug text-white">
-                          {video.title}
-                        </span>
-                        <span className="mt-1.5 block text-xs font-medium leading-relaxed text-slate-300">
-                          {video.subtitle}
-                        </span>
-                      </span>
-                      <ChevronRight size={18} className="mt-1 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-200" />
-                    </button>
-                  ))}
-                </div>
+              {error && (
+                <p role="alert" className="border-b border-white/10 bg-red-500/15 px-5 py-2.5 text-xs font-semibold text-red-100">{error}</p>
               )}
+
+              <div className="overflow-y-auto bg-slate-950/45 p-5">
+                {loading ? (
+                  <p className="flex items-center justify-center gap-2 py-10 text-sm text-slate-300">
+                    <Loader2 size={16} className="animate-spin" /> 영상 목록을 불러오는 중
+                  </p>
+                ) : videos.length === 0 ? (
+                  !error && <p className="py-10 text-center text-sm text-slate-300">등록된 영상이 없습니다.</p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {videos.map((video) => (
+                      <button
+                        key={video.id}
+                        type="button"
+                        onClick={() => playVideo(video)}
+                        disabled={Boolean(openingId)}
+                        className="group flex min-h-28 items-start justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.07] p-4 text-left transition-colors hover:border-blue-300/50 hover:bg-white/[0.11] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
+                      >
+                        <span className="min-w-0">
+                          <span className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-400/15 text-blue-200 ring-1 ring-blue-200/20">
+                            {openingId === video.id ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} fill="currentColor" />}
+                          </span>
+                          <span className="block text-sm font-extrabold leading-snug text-white">{video.title}</span>
+                          {video.subtitle && (
+                            <span className="mt-1.5 block text-xs font-medium leading-relaxed text-slate-300">{video.subtitle}</span>
+                          )}
+                        </span>
+                        <ChevronRight size={18} className="mt-1 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-200" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </Dialog.Panel>
           </Transition.Child>
         </div>

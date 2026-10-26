@@ -158,5 +158,7 @@ def test_create_app_preserves_critical_route_and_mount_contracts():
         "/api/system/capabilities",
         "/api/presentations/hitess-launch-deck",
         "/static/inhouse/d-type-lug",
-        "/static/videos",
+        "/api/videos/stream/{video_id}",
     }.issubset(paths)
+    # 영상은 로그인 표가 있어야 받는다 — 공개 정적 경로가 되살아나면 안 된다
+    assert "/static/videos" not in paths

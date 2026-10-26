@@ -566,6 +566,9 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 - **내 작업 목록 규칙**은 `utils/dashboardResults.js`(+테스트)에 있다: 같은 앱·같은 입력의 **연속** 실행은 한 줄로 묶고(실패는 안 묶음),
   판정 칩은 결과에 판정 값이 실제로 있는 앱만(Mooring `summary.ok`, 권상 `step1/2_status`, Column Buckling, Carling) 읽는다.
   '확인할 실패' = 최근 7일 실패 중 이후 같은 앱이 성공하지 않은 것 — 상단 칩과 큰 실패 카드가 같은 기준이다.
+  **본 실패는 내린다(2026-10-26)**: 큰 카드의 '확인'·'상세·로그'·'같은 앱에서 새로 시작' 또는 상단 칩(실패 목록 이동)을 누르면 그 실패 id 를
+  localStorage `workbench:dashboard-ack-failures:<사번>`(최근 200개)에 넣고 칩·큰 카드에서 뺀다 — 목록에는 한 줄 '실패' 표기로만 남는다(사용자 요청: 인지한 뒤엔 눈에 띄지 않게).
+  PC별 기록이라 다른 PC 에서는 다시 큰 카드로 보인다(서버 저장은 과하다고 판단).
   ⚠ 새 앱이 판정 값을 내면 `resultHighlight()` 에 한 줄 추가할 것(없으면 칩이 안 뜰 뿐 깨지진 않는다).
 - **월별 건수**(`/analysis/stats/monthly`)는 이력 목록과 같은 기준(샘플·권상 세부 검토 제외)이다. 예전 값(세부 검토 포함)과 비교하지 말 것.
 - **버전 체크**는 서버 버전이 **더 높을 때만** 업데이트를 요구한다(`utils/versionCompare.js`, App.jsx·LoginScreen 공통) — exe 를 서버보다 먼저 배포해도 새 클라이언트가 막히지 않는다.
@@ -637,6 +640,18 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 같이 써서 다음 작업 F06 을 가져가는 오귀속이 실측됐다).
 운영(145) 기록은 70 에서 `scripts/pull_diagnostics.py`(관리자 사번 로그인, 로그아웃 안 함 — 로그아웃 API 가 외부 앱 세션을 끊는다)로 가져오고 대응 후 `mark` 로 handled 표시.
 ⚠ 새 Nastran 실행 경로가 `mark_complete` 를 안 거치면 `schedule_collection(job_id, …, extra_dirs=[산출 폴더])` 를 직접 부를 것(편집 적용이 그 예). 테스트는 conftest 가 `HITESS_DIAGNOSTICS=0` 으로 끈다.
+
+**HiTESS Story 영상 — 보호 재생 (2026-10-26)** — 저작권 때문에 영상 파일을 넘기지 않고 WorkBench 안에서만 보게 한다.
+- 백엔드 `routers/videos.py`: `GET /api/videos`(목록) → `POST /api/videos/{id}/ticket`(로그인 사용자에게 3시간짜리 서명 표 + 워터마크 '이름 사번', 시청 기록 `VIDEO_PLAY`)
+  → `GET /api/videos/stream/{id}?t=`(Range 지원). **`/static/videos` 공개 경로는 없앴다** — 되살리지 말 것(`test_database_lifecycle` 이 잡는다).
+  표의 비밀값은 프로세스마다 새로 만들어 재시작하면 재생 중이던 창은 다시 열어야 한다.
+- 영상 추가 = 서버 `HiTessWorkBenchBackEnd/Videos/`(git 미추적)에 mp4 + 같은 폴더 `videos.json`(`[{file,title,subtitle}]`, 순서=목록 순서). 재시작 불필요.
+- Electron `electron/video-window.js`: 영상 전용 창에만 `setContentProtection(true)`(캡처·녹화·화면 공유에 검게 나감), 메모리 세션에서 다운로드 취소,
+  새 창·이동 금지, 패키징본 개발자 도구 끔, 영상 위 떠다니는 워터마크, 전체 화면은 영상+워터마크 무대째로. ⚠ 본체 창에는 걸지 않는다(Teams 원격 지원 화면이 검게 나감).
+  휴대폰 촬영·가상머신·캡처보드는 못 막는다 — 워터마크는 그때 누구 화면인지 남기려는 것이다.
+- 브라우저·옛 exe 에서는 재생하지 않고 '최신 WorkBench 앱에서만' 안내만 한다(보호 없는 재생 경로를 만들지 않으려고). 로그아웃 때 영상 창도 닫는다.
+- 상태(2026-10-26): 커밋·릴리스에 포함(백엔드 1760 통과, Electron 검증 3건, 독립 리뷰 반영 — 영상 응답도 Content-Length 없이 chunked, 본체 종료 시 영상 창 닫기). 영상 창·캡처 차단은 **눈으로 확인 안 함**.
+  배포 순서 = **새 exe 먼저**(서버를 먼저 올리면 옛 exe 의 영상이 404) → 145 `Videos\` 에 mp4 10개 + `videos.json` 수동 복사 → ⟳ Update.
 
 **사용 기록 — 접속 이력·화면 오류·해석 소요시간 (2026-10-20)** — `activity_logs` 는 30일 뒤 지워지고 `user_presence` 는 현재값뿐이라, 장기 기록을 따로 둔다.
 - **접속 이력 `access_sessions`**(기간 제한 없음): 로그인~앱 닫기 1행. 하트비트(45초)마다 `services/access_session_service.record_heartbeat` 가

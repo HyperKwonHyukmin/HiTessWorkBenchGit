@@ -80,6 +80,9 @@ const VALID_INVOKE_CHANNELS  = [
   'open-app-window',
   // 외부 앱 창 닫기(WorkBench 로그아웃 때 Hi-TESS LogBook 창)
   'close-app-window',
+  // HiTESS 소개 영상 전용 창(녹화 방지) 열기·로그아웃 때 닫기
+  'video:open',
+  'video:close',
 ];
 
 contextBridge.exposeInMainWorld("electron", {
