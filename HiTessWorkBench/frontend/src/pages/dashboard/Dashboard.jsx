@@ -15,7 +15,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { EASE_OUT } from '../../components/ui/motion';
 import {
-  Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Compass, HelpCircle,
+  Activity, AlertTriangle, BarChart3, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Compass, HelpCircle,
   FileUp, History, Loader2, Map as MapIcon, Newspaper, Play, RotateCcw,
   Server, Star, TrendingUp, Trophy, X, XCircle, Layers,
 } from 'lucide-react';
@@ -36,7 +36,7 @@ import { isTerminalJobStatus } from '../../utils/globalJobs';
 import { FILE_HANDOFF_MENUS, offerDashboardFiles } from '../../utils/dashboardFileHandoff';
 import { canOpenResult, offerResultReentry, reentryMenuForProgram } from '../../utils/resultReentry';
 import {
-  FAILED_STATUSES, groupConsecutiveRuns, inputFileLabel, resultHighlight, unresolvedFailures,
+  FAILED_STATUSES, addAcknowledgedFailures, groupConsecutiveRuns, inputFileLabel, resultHighlight, unresolvedFailures,
 } from '../../utils/dashboardResults';
 import { CardArt, resolveCardArt } from '../../components/ui/cardArt';
 import {
@@ -54,6 +54,8 @@ const QUICK_APP_COUNT = 6; // 한 번에 보이는 타일 수(2줄). 즐겨찾�
 const QUICK_TAB_KEY = 'workbench:dashboard-quick-tab';
 const RECENT_RESULT_COUNT = 8;
 const PINNED_FAILURE_MAX = 3;
+// 사용자가 이미 본 실패 id(사번별). 본 실패는 큰 빨간 카드·칩에서 빠지고 한 줄 '실패' 표기만 남는다.
+const ACK_FAILURES_KEY_PREFIX = 'workbench:dashboard-ack-failures:';
 // My Projects 가 마운트 시 읽어 상태 필터를 미리 건다(7일 실패 칩 → 실패만 보기)
 const MY_PROJECTS_STATUS_FILTER_KEY = 'workbench:my-projects-status-filter';
 const HISTORY_FETCH = 30;
@@ -752,8 +754,9 @@ const ResultGroupRow = ({ group, expanded, onToggle, onDetail }) => {
   );
 };
 
-/** 실패 행 — 묶지 않는다. 사유 한 줄과 '같은 앱에서 새로 시작'·'상세·로그' 동작을 붙인다. */
-const FailedResultRow = ({ project, onDetail, onRestart }) => {
+/** 실패 행 — 묶지 않는다. 사유 한 줄과 '확인'·'같은 앱에서 새로 시작'·'상세·로그' 동작을 붙인다.
+ *  셋 중 무엇을 눌러도 본 실패가 되어 위 고정 카드에서 내려간다(최근 목록 안이면 한 줄 '실패' 행으로 남는다). */
+const FailedResultRow = ({ project, onDetail, onRestart, onAcknowledge }) => {
   const status = statusOf(project);
   const Icon = status.icon;
   const appTitle = getDisplayProgramName(project.program_name);
@@ -783,6 +786,15 @@ const FailedResultRow = ({ project, onDetail, onRestart }) => {
         {when}
       </div>
       <div className="mt-2 flex justify-end gap-1.5">
+        {/* 확인 = 이 실패를 봤다. 큰 카드에서 내려 목록의 한 줄 '실패' 표기로만 남긴다 */}
+        <button
+          type="button"
+          onClick={onAcknowledge}
+          title="확인한 실패는 위 고정 카드에서 내려갑니다(기록은 My Projects 에 그대로)"
+          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:bg-white hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+        >
+          <Check size={13} /> 확인
+        </button>
         <button
           type="button"
           onClick={onRestart}
@@ -945,6 +957,7 @@ export default function Dashboard() {
 
   const [history, setHistory] = useState([]);
   const [recentFailures, setRecentFailures] = useState([]); // 최근 7일 Failed·Interrupted
+  const [ackFailureIds, setAckFailureIds] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState(null);
   const [historyToken, setHistoryToken] = useState(0);
@@ -975,6 +988,23 @@ export default function Dashboard() {
   const [notice, setNotice] = useState(null);
 
   // ── 데이터 ─────────────────────────────────────────────
+  // 본 실패 목록은 이 PC·이 사번 기준(localStorage). 읽지 못하면 전부 '확인할 실패' 로 보일 뿐 깨지진 않는다.
+  useEffect(() => {
+    if (!employeeId) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(ACK_FAILURES_KEY_PREFIX + employeeId) || '[]');
+      setAckFailureIds(Array.isArray(saved) ? saved : []);
+    } catch { setAckFailureIds([]); }
+  }, [employeeId]);
+  const acknowledgeFailures = useCallback((ids) => {
+    if (!ids?.length) return;
+    setAckFailureIds(prev => {
+      const next = addAcknowledgedFailures(prev, ids);
+      try { localStorage.setItem(ACK_FAILURES_KEY_PREFIX + employeeId, JSON.stringify(next)); } catch { /* 이번 화면에서만 유지 */ }
+      return next;
+    });
+  }, [employeeId]);
+
   useEffect(() => {
     if (!employeeId) return undefined;
     let cancelled = false;
@@ -1172,7 +1202,8 @@ export default function Dashboard() {
   }, [finishedKey]);
   // 확인할 실패 = 최근 7일 실패 중 그 뒤로 같은 앱이 아직 성공하지 않은 것.
   // 다시 돌려 성공했다면 이미 처리한 실패다. 상단 칩과 목록 맨 위 고정이 같은 기준을 쓴다.
-  const openFailures = unresolvedFailures(recentFailures, history);
+  // 상세·로그를 열었거나 새로 시작했거나 '확인' 을 누른 실패(= 사용자가 본 실패)도 뺀다.
+  const openFailures = unresolvedFailures(recentFailures, history, ackFailureIds);
   const pinnedFailures = openFailures.slice(0, PINNED_FAILURE_MAX);
   const pinnedIds = new Set(pinnedFailures.map(p => p.id));
   // 고정 실패는 각자 한 줄, 나머지는 같은 앱·같은 입력의 연속 실행을 묶는다. 개수 제한은 '줄' 기준.
@@ -1181,6 +1212,8 @@ export default function Dashboard() {
     ...groupConsecutiveRuns(history.filter(p => !pinnedIds.has(p.id)), inputFileLabel),
   ].slice(0, RECENT_RESULT_COUNT);
   const openFailedProjects = () => {
+    // 실패 목록을 보러 가면 지금 떠 있는 실패는 본 것으로 친다
+    acknowledgeFailures(openFailures.map(f => f.id));
     try { sessionStorage.setItem(MY_PROJECTS_STATUS_FILTER_KEY, JSON.stringify({ value: 'Failed', at: Date.now() })); } catch { /* 필터 없이 이동 */ }
     setCurrentMenu('My Projects');
   };
@@ -1432,8 +1465,9 @@ export default function Dashboard() {
                   <FailedResultRow
                     key={group.id}
                     project={group.head}
-                    onDetail={() => openProjectDetail(group.head)}
-                    onRestart={() => openProgram(group.head.program_name)}
+                    onDetail={() => { acknowledgeFailures([group.head.id]); openProjectDetail(group.head); }}
+                    onRestart={() => { acknowledgeFailures([group.head.id]); openProgram(group.head.program_name); }}
+                    onAcknowledge={() => acknowledgeFailures([group.head.id])}
                   />
                 ) : (
                   <ResultGroupRow

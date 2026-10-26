@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { groupConsecutiveRuns, resultHighlight, unresolvedFailures } from './dashboardResults.js';
+import { addAcknowledgedFailures, groupConsecutiveRuns, resultHighlight, unresolvedFailures } from './dashboardResults.js';
 
 const run = (id, program, input, status = 'Success', created = `2026-09-30T0${id}:00:00`) => ({
   id, program_name: program, input, status, created_at: created,
@@ -59,4 +59,16 @@ test('unresolvedFailures — 그 뒤로 같은 앱이 성공한 실패는 뺀다
   const failures = [run(1, 'MB', 'a', 'Failed', '2026-09-29T10:00:00'), run(2, 'GMU', 'b', 'Failed', '2026-09-29T11:00:00')];
   const history = [run(3, 'MB', 'a', 'Success', '2026-09-30T10:00:00')];
   assert.deepEqual(unresolvedFailures(failures, history).map(f => f.id), [2]);
+});
+
+test('unresolvedFailures — 사용자가 확인한 실패는 뺀다', () => {
+  const failures = [run(1, 'MB', 'a', 'Failed', '2026-09-29T10:00:00'), run(2, 'GMU', 'b', 'Failed', '2026-09-29T11:00:00')];
+  assert.deepEqual(unresolvedFailures(failures, [], [1]).map(f => f.id), [2]);
+  assert.deepEqual(unresolvedFailures(failures, []).map(f => f.id), [1, 2]);
+});
+
+test('addAcknowledgedFailures — 중복 없이 뒤에 더하고 상한을 넘으면 오래된 것부터 버린다', () => {
+  assert.deepEqual(addAcknowledgedFailures([1, 2], [2, 3]), [1, 2, 3]);
+  assert.deepEqual(addAcknowledgedFailures([1, 2, 3], [4], 3), [2, 3, 4]);
+  assert.deepEqual(addAcknowledgedFailures(null, [5]), [5]);
 });

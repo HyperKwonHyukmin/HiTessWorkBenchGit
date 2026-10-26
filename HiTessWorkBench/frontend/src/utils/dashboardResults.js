@@ -121,8 +121,20 @@ export function resultHighlight(record) {
  * 다시 돌려 성공했다면 이미 처리한 실패다. 상단 칩과 목록 고정이 같은 기준을 쓴다
  * (예전엔 칩은 7일 실패 전부, 목록은 이 기준이라 '실패 1' 이 떠 있는데 목록엔 없었다).
  */
-export function unresolvedFailures(failures, history) {
-  return (failures || []).filter(f => !(history || []).some(h =>
+export function unresolvedFailures(failures, history, acknowledgedIds) {
+  const acknowledged = new Set(acknowledgedIds || []);
+  return (failures || []).filter(f => !acknowledged.has(f.id) && !(history || []).some(h =>
     h.program_name === f.program_name && h.status === 'Success'
     && Date.parse(h.created_at) > Date.parse(f.created_at)));
+}
+
+/**
+ * 사용자가 이미 본 실패 id 목록에 더한다(상세·로그를 열었거나, 새로 시작했거나, '확인' 을 눌렀을 때).
+ * 본 실패는 큰 빨간 카드·상단 칩에서 빠지고 목록의 한 줄 '실패' 표기로만 남는다.
+ * 최근 것만 max 개 보관 — 실패 조회 범위가 7일이라 오래된 id 는 더 쓸 일이 없다.
+ */
+export function addAcknowledgedFailures(current, ids, max = 200) {
+  const next = (current || []).filter(id => !(ids || []).includes(id));
+  next.push(...(ids || []));
+  return next.slice(-max);
 }
