@@ -1093,7 +1093,13 @@ export default function DoublePipeFuelLineAssessment() {
       link.remove();
       URL.revokeObjectURL(url);
       addLog('Report for PSA.xlsx 를 다운로드했습니다.', 'success');
-    } catch {
+    } catch (e) {
+      // 409 = 갓 만든 보고서를 DRM 이 감싸는 동안 잠겨 있음 — 몇 초 뒤 다시 누르면 받아진다
+      if (e?.response?.status === 409) {
+        addLog('보고서 파일을 아직 쓰는 중입니다. 몇 초 뒤 다시 받아 주세요.', 'warning');
+        showToast('보고서를 아직 쓰는 중입니다. 몇 초 뒤 다시 받아 주세요.', 'info');
+        return;
+      }
       addLog('보고서(xlsx) 다운로드에 실패했습니다.', 'error');
       showToast('보고서 다운로드에 실패했습니다. 서버 연결을 확인하세요.', 'error');
     } finally {

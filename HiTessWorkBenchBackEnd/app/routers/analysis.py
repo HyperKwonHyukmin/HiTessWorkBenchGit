@@ -913,16 +913,40 @@ def download_file(filepath: str, req: Request, db: Session = Depends(database.ge
     """
     decoded_path = _normalize_userconnection_path(filepath)
     assert_current_user_can_access_path(decoded_path, employee_id, db, _ALLOWED_DOWNLOAD_BASE)
-    if not os.path.exists(decoded_path):
+    # 폴더도 404 — Windows 에서 폴더를 open() 하면 PermissionError 라 아래 '쓰는 중' 409 로 잘못 나간다
+    if not os.path.isfile(decoded_path):
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
     filename = os.path.basename(decoded_path)
+    # FileResponse 는 Content-Length 를 디스크 크기(stat)로 보낸다. 회사 DRM 이 해석 산출물(xlsx 등)을 +4096B 로
+    # 감싸면 이 프로세스의 read() 바이트 수와 stat 이 달라 Chromium 이 ERR_CONTENT_LENGTH_MISMATCH 로 끊고,
+    # 화면에는 'Network Error' 만 보인다(2026-10-26 이중관 보고서 다운로드 실패). 길이를 단정하지 않고 읽은 만큼 보낸다.
+    # 갓 만든 산출물은 DRM 이 감싸는 몇 초 동안 잠겨 있을 수 있다 — 응답을 시작하기 전에 열어 보고, 못 열면
+    # CORS 헤더 없는 500(화면엔 또 'Network Error') 대신 다시 시도하라는 409 를 준다.
+    try:
+        handle = open(decoded_path, "rb")
+    except PermissionError:
+        raise HTTPException(status_code=409, detail="파일을 아직 쓰는 중입니다. 몇 초 뒤 다시 받아 주세요.")
+    # 실제로 열린 뒤에만 기록한다(409 로 다시 누를 때마다 쌓이지 않게)
     log_activity(
         db, "FILE_DOWNLOAD",
         employee_id=employee_id,
         action_detail={"filename": filename, "filepath": filepath},
         ip_address=req.client.host if req.client else None,
     )
-    return FileResponse(path=decoded_path, filename=filename, media_type='application/octet-stream')
+    return StreamingResponse(
+        _iter_download_file(handle),
+        media_type='application/octet-stream',
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{urllib.parse.quote(filename)}"},
+    )
+
+
+def _iter_download_file(handle, chunk_size: int = 1024 * 1024):
+    with handle:
+        while True:
+            chunk = handle.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
 
 
 @router.get("/download/program/{filename}")
