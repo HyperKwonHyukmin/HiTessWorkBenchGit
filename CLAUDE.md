@@ -502,6 +502,11 @@ Mooring Fitting Assessment(연결 메뉴 = "Mooring Fitting Assessment", viewer 
   배포 상태(2026-10-26): v1.6.28(`c203a7d` 기능 · `e9e3024` 버전) 푸시·exe 빌드. 70 은 휴대용 Python 으로 inp 생성까지만 실측(Abaqus 없음).
   **145 는 미적용** — PSA_Python38·교체한 `FuelLine_Making_LoadCase.py` 복사 → ⟳ Update → `.env` 한 줄 → 재시작 → 해석 1회로
   `[환경] 소스 직접 실행 모드` 로그·Abaqus 해석·보고서·DRM(복사된 `.py`) 확인이 남았다.
+- **보고서 다운로드 'Network Error' (2026-10-26, `095ce51`)** — 145 에서 소스 모드로 돌린 해석의 `Report for PSA.xlsx` 받기가 화면에 `Network Error` 만 남기고 실패했다.
+  145 작업 폴더의 보고서는 **DRM 에 감싸져 있었고(`HHIDRMC`) 같은 폴더의 csv·inp·txt·odb 는 평문** — DRM 이 xlsx 만 감싼다.
+  `FileResponse` 가 Content-Length 를 stat 크기로 약속해 실제 바이트와 어긋난 것으로 보고 `/api/download` 를 **길이 없는 chunked 전송**으로 바꿨다
+  (잠긴 파일 409 · 폴더 404 · 기록은 열린 뒤). **145 반영(⟳ Update) 후 실제로 풀리는지 확인 안 함.**
+  exe 모드 때도 보고서가 감싸졌는지(= 소스 모드 전환 탓인지)는 미확정 — 오늘 이전 145 이중관 작업 폴더의 xlsx 머리가 `PK` 면 소스 모드(python.exe 저장) 탓이다.
 
 ### Truss Structural Assessment — 허용응력 Property ID 테이블은 두 곳에서 참조된다 ★수정 시 동기화 필수
 
