@@ -83,6 +83,7 @@ v1.5.8 에서 결함 6건이 새어 나갔고 3건을 사용자가 먼저 찾았
 - **데이터베이스**: MySQL `localhost:3306/hitessworkbench`, 접속 정보는 `HiTessWorkBenchBackEnd/app/database.py`. SQLAlchemy로 서버 시작 시 테이블 자동 생성.
 - **Electron 환경 감지**: `electron/index.js`의 `app.isPackaged` 여부로 개발/프로덕션 로드 경로 분기.
   - ⚠ **배포 exe 의 Electron 버전 ≠ 개발 모드 (2026-10-19 확인)**: `package.json` 은 `electron ^36.3.2` 인데 루트 `node_modules/electron` 이 **26.0.0** 이라 exe 는 Electron 26(Chromium 116)으로 빌드된다(`dist_electron/builder-effective-config.yaml` `electronVersion`). 개발 모드(`electron/node_modules`)는 40. 화면·웹 기능 확인은 exe 기준으로 하고, 버전을 맞출 때는 루트에서 electron 을 다시 설치한다.
+  - **번들 보안 점검 (2026-10-27)**: `app.asar`(배포 번들)를 풀어 리버스 엔지니어링 노출을 점검한 결과 **비밀값·엔진 바이너리·DB 접속정보·원본 소스맵(.map)·dev 주소(70) 모두 미유출**이었다. 토큰은 전부 런타임 세션 토큰이고, 영상 티켓 서명키·해석 엔진·DB 는 서버(145)에만 있다 — "가치는 서버, 클라이언트는 열려 있다" 전략이 코드에서 지켜지는 것을 확인. 유일한 위생 문제는 `.test.js` 7개가 번들에 실리던 것 → `package.json` `build.files` 에 `!electron/**/*.test.js`·`!electron/**/*.spec.js` 제외 추가(**미커밋, 다음 exe 빌드부터 효력** — v1.6.29 번들에는 아직 테스트 파일이 있음).
 - ⚠️ **InHouse 프로그램 배포 규칙 (개발 위치 ≠ 실사용 위치)**: 해석 실행 파일·스크립트의 **코드 작업은 `C:\Coding\WorkBenchSubModule\<Program>\`**(예: `Nastran_bridge`, `MooringFitting`)에서 하더라도, **WorkBench 백엔드가 실제로 실행·import 하는 최종본은 반드시 `HiTessWorkBenchBackEnd/InHouseProgram/<Program>/`로 복사**해야 한다.
   - 운영 서버(145)에는 `WorkBenchSubModule/`이 없고 `InHouseProgram/`은 git 미추적이라, SubModule만 고치면 **dev에서는 되고 서버에서 깨진다**(실례: `rbe2_fixed_lines` 누락 → mooring solve HTTP 500). InHouse 관련 작업 보고에는 **"`git pull`만으로 끝나는지 / 서버 수동 교체 파일 목록 + 재시작 필요"를 항상 구분해 명시**한다.
   - 폴더명: `InHouseProgram`은 camelCase(`NastranBridge`), SubModule은 underscore 혼용(`Nastran_bridge`). `analysis.py`의 nastran_bridge 탐색은 `InHouseProgram/Nastran_bridge` → `WorkBenchSubModule/Nastran_bridge` → `InHouseProgram/NastranBridge` 순 + `NASTRAN_BRIDGE_DIR` override.
@@ -136,6 +137,84 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
 일반 RBE 종속 중복 = 오류, 회전은 노드 추가·무게중심 RBE 보다 먼저. 상세·지원 표: Studio `docs/edit-intent-spec.md` 맨 앞 '현재 계약'.
 계약 테스트 `tests/test_modelbuilder_edit_contract.py` 가 C# 엔진 ↔ bridge 산출 모델을 비교한다(새 빌드 검증 시 `CMB_CLI_EXE`·`NASTRAN_BRIDGE_PY` 로 지정).
 ⚠ 새 intent kind 를 만들면 Studio·C#·bridge·계약 테스트를 함께 고칠 것.
+
+**장비 COG 위치 오류 `EQUIPMENT_COG_FAR` (2026-10-27)** — 장비 CSV 의 `cog` 가 잘못 나오면(실례 3529_m04 `=30137/754429` 715 kg, X 만 50 m 어긋남)
+엔진이 그 좌표에 COG 노드를 만들고 부착점과 RBE2 로 묶어, Studio 에 모델 밖으로 길게 뻗은 RBE 가 생긴다. 같은 오류가 `3592_m10`(`=21945/1855177` 153 m)에도 있다.
+- 엔진 `FinalValidationStage.CheckEquipmentCogDistance`: 장비 RBE 의 COG ↔ 가장 가까운 부착점 > **5 m** 면 **Warning**(모델은 그대로).
+  기준 근거: 리뷰 모델 장비 80행 중 정상은 ≤1.4 m, 오류는 47~153 m. 질량 0 장비는 엔진이 RBE 를 만들지 않아 대상이 아니다.
+  ⚠ 최종 JSON(`<designName>.json`, Studio 의 '07 Final')의 진단은 모델 상태로 **다시 계산**해 단계 경고가 빠진다 —
+  Studio 는 Final 을 기본으로 열고 편집하므로 `CliCommands` 가 이 경고만 Final 에 이어 붙인다(`EquipmentCogFarOutputTests`).
+  사용자가 꼭 봐야 할 단계 경고를 새로 만들면 같은 자리에 추가할 것.
+  메시지 키 `SourceName=…; distance=…mm; massKg=…; cog=(x, y, z)mm` 를 `utils/modelValidation.js` `parseEquipmentCogFar`(WorkBench·Studio 사본)가 읽는다.
+- WorkBench: 판정 '검토 필요'(`equipment-cog-far`, 편집 모델에 그 장비 RBE 가 sourceName 으로 남아 있을 때만) + 진단 카드.
+- Studio(0.0.98, 핀 동기화): 뷰포트 상단 알림 · 그 RBE/COG 노드/장비 질량에 마우스를 올리면 말풍선 · 클릭하면 카드의 [삭제…] → 확인창 →
+  `deleteRigid { removeMass: true }`(RBE + COG 노드 장비 질량 + 고립 COG 노드 제거). Model Check 진단 목록 '입력값 오류' 필터에도 [삭제…].
+  바른 수정은 CSV cog 를 고치는 것이라 확인창에 질량이 함께 빠진다고 알린다.
+
+**CSV 추적 — 빈 공간이 CSV 의 어느 줄 때문인가 (Studio 0.0.101, 2026-10-27)** — 레이어 'CSV 추적'(기본 켬), 엔진 변경 없음.
+⚠ **"제외된 행 = 빈 공간" 이 아니다.** 3542_35320 의 길이 0 TEE 7건(pos=apos=lpos=p3Pos 한 점)은 앞뒤 직관이 교차부를 이미 채워
+빈 공간의 원인이 아니었고, 실제 빈 공간(N74↔N173, 270 mm)은 CSV 에 **행이 아예 없는** 구간(14행 OD 318.5 끝 → 15행 FLAN → 94행 OD 508 시작)이었다.
+없는 행은 그릴 수 없으므로 **끊긴 양 끝이 CSV 몇 번째 줄에서 끝나는지**를 보여 주는 것이 중심이다.
+- ① 끊긴 배관 `data/pipeGaps.js`: 배관 끝(연결 1 + RBE 없음) 두 개가 1.5 m 안에서 **서로를 향할 때만**(바깥 방향 30° 이내, 벤트·드레인 오인 방지),
+  서로 가장 가까운 짝 하나. 양 끝 CSV 행 = 요소 sourceName ↔ 감사 name 중 끝 좌표에 가장 가까운 줄, 사이 행 = 두 끝 상자 안 좌표.
+  편집 미리보기에서 addRigid 로 그 끝을 이으면 표시를 거둔다. 실모델 3542_35320 에서 정확히 1곳.
+- ② 제외 행 상자 `data/excludedRowGhosts.js`: 영역 = CSV `wvol` → 없으면 좌표 칸 범위(60 mm 미만은 픽용 확대). 정상 제외(질량 0 장비 등)는 빼고,
+  **모델 부재가 지나가는 상자도 뺀다**(`ghostsOutsideModel`). 사유 문구는 WorkBench `REASON_LABELS` 사본. 회전 편집이 있으면 ②만 숨김(CSV 좌표와 어긋남).
+- 표시 `three/ExcludedGhostOverlay.js`(`buildCsvTraceOverlay`) · 말풍선 `components/ExcludedRowTooltip.jsx` — 모델 부재가 안 잡히는 자리에서만 픽, 클릭 고정.
+- **CSV 탭 (Studio 0.0.104, 2026-10-27)** — 하단 도크에 숨어 있던 변환 감사를 상단 탭으로 올렸다(사용자 요청: 잘 안 보이고 CSV 모양이 아님).
+  배치 = 상단 `CSV ⚠n`(모델에 없는 행 수) → 왼쪽 `panels/CsvPanel`(파일별 요약·선택한 행의 원문 칸 전부·[3D에서 보기]·[원문 줄 복사]) |
+  가운데 위 3D / 아래 `csv/CsvSheet`(하단 도크 자리, 위 경계로 높이 조절 — 비율 localStorage). 시트는 **CSV 칸·줄 순서 그대로**,
+  왼쪽 줄·상태·name / 오른쪽 '모델 대응' 고정, 좌표는 숫자만(원문은 패널·툴팁), 보이는 행만 그림. 행 클릭·Enter = 강조 + 카메라, ↑↓ = 강조만,
+  3D 부재 클릭 → 그 행으로(사용자 선택·카메라 유지). 대응 기준 = 활성 뷰포트 단계. [닫기]·Esc(0.0.105) = 들어오기 직전 탭(`modeBeforeCsv`)으로 돌아가 3D 원래 크기 + CSV 행 강조 해제. 자료 = `hooks/useCsvData`(모듈 캐시) + `data/csvSheet.js`(+test),
+  상태 = `store/useCsvSheetStore`(`openCsvRow`·`openCsvTab` — 알림·말풍선·Model Check 진입점). 하단 도크 '변환 감사' 는 요약 + 이동 버튼만 남겼다.
+  `InputAuditPanel.jsx` 는 이제 어디서도 쓰지 않는다(옛 `BottomReviewDock.jsx` 만 참조 — 둘 다 정리 후보).
+- ⚠ **1점 TEE 는 '제외' 오류로 유지한다 (사용자 결정 2026-10-27)** — CSV 의 TEE 는 두 형식이 섞여 나온다: 3점 TEE(apos·pos·lpos·p3Pos 가 따로,
+  엔진이 직관 2 + 분기 1 로 모델링)와 **1점 TEE**(네 좌표가 교차 중심 한 점 → `zero_length_pipe` 제외). 1점 TEE 는 앞뒤·분기 배관 행이 그 점에서
+  직접 이어져 모델이 끊기지 않고 질량도 0 이지만(리뷰 모델 36개 중 35개가 배관 끝 3개 이상 만남), **CAD 쪽 모델링 방식의 문제라 사용자에게 알려야 하는
+  항목**이다. '접합점' 같은 정상 분류로 바꾸거나 문제 건수에서 빼지 말 것(그 제안을 사용자가 거부했다).
+- **CSV 행 ↔ 모델 대응 (Studio 0.0.102)** — `data/csvRowMapping.js` `mapCsvRows`. ⚠ **이름만으로 맞추지 말 것**:
+  CSV 는 한 부품을 여러 줄이 같은 name 으로 쓴다(3542 는 127행 중 44행). 예전 표는 제외된 TEE 줄이 옆 줄 TUBI 부재를 `E×1` 로 가리켰다.
+  규칙: 직선 행 = 시작–끝 직선 위(수직 ≤50 mm)에서 구간이 겹치는 부재(엔진이 끝을 늘여도 맞음) · 곡관 = 시작·끝·p3Pos 범위에 한쪽 끝 ·
+  그 밖 = 같은 이름 질량점/RBE(행 좌표 1 m 안) · U-bolt 는 150 mm 안 다른 이름 U-bolt RBE 를 '추정'으로 · 없으면 첫 단계 trace
+  `ElementSkipped` 문구('질량 8.2kg 누락: CoG 10mm 내 유효 부착 노드 없음') → 첫 단계엔 있었으면 '엔진 처리 중 지워짐' → '대응 없음'.
+  제외 행은 그 자리(wvol)를 채우는 다른 행을 '이 자리에는 22행 TUBI 부재가 있음' 으로 알린다. 행 클릭은 `pickedEntity.sourceName` 에
+  `elementIds·massIds·rigidIds·box·csvLine·mapLabel` 을 실어 **그 번호만** 강조·포커스하고, 모델에 없으면 그 자리에 점선 상자.
+  실측: 3542 → 부재 72·질량점 33·RBE 10·제외 9·지워짐 3 / 3529 → 부재 491·질량점 96·RBE 145·제외 21·지워짐 8·엔진이 뺀 장비 5.
+- **장비 질량 누락 → 입력 감사 `error` / `equipment_mass_not_attached` (엔진, 2026-10-27)** — 질량이 있는데 부착 노드를 못 찾으면
+  (`BuildEquips`: interPos 10 mm 안 노드 없음, 또는 interPos 없이 CoG 10 mm 안 노드 없음) 엔진이 질량을 뺀다. 예전엔 trace 에만 남고
+  입력 감사는 'converted' 라 WorkBench 판정이 못 잡았다(3529_m04 5행 84.2 kg). 이제 `FeModel.DroppedEquipment` → `InputAuditJson.Build(…, droppedEquipment)`
+  가 그 행(같은 name 의 첫 converted 장비 행)을 error 로 바꾸고, 판정 `massBearingExclusions` 가 그대로 '검토 필요' 로 잡는다. 사유 문구는
+  WorkBench `REASON_LABELS`·Studio `excludedRowGhosts.REASON_LABELS` 사본('장비 부착 노드 없음 — 질량 누락'). 테스트 `EquipmentMassDroppedAuditTests`.
+- 남은 후보: 3D 부재 클릭 → 정보 패널에 CSV 줄 표시·표 해당 행으로 이동(CSV 탭에서는 이미 됨, 다른 탭에서도 할지).
+- **배포·커밋 상태 (2026-10-27 세션 끝)** — 로컬(70)만 반영: InHouse `Cmb.Cli.exe`(sha256 04ae662a…, 백업 `.bak_20261027_before_cogfar`)·
+  `NastranBridge/nastran_bridge.py`(백업 동일 접미사)·StudioProgram `model-studio-0.0.105`(로컬·UNC)·핀 0.0.105. **145 미반영**
+  (zip 0.0.105 → exe·bridge 수동 교체 → WorkBench 프론트 재배포, 백엔드 재시작 불필요). **3개 저장소 미커밋** — WorkBench·ModelBuilderStudio·
+  HiTessModelBuilder(원격 없음). `WorkBenchSubModule/Nastran_bridge` 는 git 저장소가 아니다(InHouse 사본이 실사용본, 같은 날 BAILOUT 제외까지 반영). 커밋 전 `hitess-code-reviewer` 미실행. Studio 화면은 사용자가 일부 확인(COG 말풍선·CSV 탭), 나머지는 눈으로 확인 안 함.
+
+**RBE 노드 공유 규칙 — 추적 결과와 다음 작업 (2026-10-27)** — 사용자 고민: 간격 메움 RBE(엔진 FREE_END·GROUP_CONNECT·LOOP_CLOSE, 대부분 ≤170 mm)가 촘촘해
+COG 노드 + 질량을 두고 주변 부재에 RBE 로 묶기가 어렵다(3529_m04 구조 노드 677 중 370개(55%)가 이미 RBE 에 걸림, 그중 cm=123456 274개 · U-bolt 부분 cm 96개).
+- Nastran 실측(MSC 2013): **금지는 종속 중복뿐**(FATAL 5289 "DEPENDENT DOF … ON MORE THAN ONE MPC OR RIGID ELEMENT"), 사슬(종속 → 다른 RBE 의 독립)은 정상 해석.
+- 프로젝트는 더 엄격한 **"한 노드 = RBE 하나"** 를 지킨다: 엔진 `RigidSharedNodeMergeStage`(Union-Find 병합, cm 합집합) · bridge `add_rigid_from_params`/`normalize_rigid_node_sharing`(흡수 병합) ·
+  Studio '병합 연결'(`computeRigidMerge`). 반면 **C# `ApplyAddRigid` 는 점유 종속을 조용히 빼고 사슬은 그대로**, Studio 점유 검사(`collectOccupiedRbeNodes`)도 종속만 본다
+  → 사슬 모양 RBE 가 **C# 경로=사슬, bridge 경로=병합** 으로 갈린다(편집 정합성 계약 위반, 미수정).
+- 무게중심 RBE(`connectRigidCentroid`)는 RBE 멤버(독립+종속)를 전부 빼서(`collectRbeMemberNodes`) 위 모델에서 고른 노드 절반 이상이 빠진다.
+- **추가 실측 (같은 날 FE 평가)**: RBE2 종속 노드를 **RBE3 독립 노드로 쓰는 것은 정상**(RBE3 종속은 COG 하나라 중복 없음). RBE3 독립 2점은 특이(FATAL 2038) —
+  한 직선 위에 있지 않은 3점 이상 필요. 같은 1 t 질량에서 RBE2 스파이더는 연결점 사이 보를 강체로 만들어 처짐이 RBE3 대비 약 41% 작았다(연결점 하나 다름, 경향 비교).
+  3529 U-bolt 111개 중 15개가 cm=123456 인데 공유 병합 흔적 0 — 의도(BOX 등) 미확인.
+- **다음 작업(사용자 확인 대기)** — 방향을 바꿨다: 무게중심 RBE 에 **RBE2(단단한 장비) / RBE3(질량 분배) 선택지**를 두는 것이 1순위
+  (강성 왜곡과 'RBE 에 걸린 노드에 묶기 어려움'을 함께 해결, Studio·C#·bridge·계약 테스트 동시 수정, 새 intent 또는 addRigid 확장).
+  RBE2 를 고를 때만 cm=123456 RBE **흡수**(deleteRigid + 합친 종속, 같은 batchId, U-bolt 제외), 일반 연결의 사슬도 흡수로 맞춰 C#/bridge 어긋남 해소.
+  그다음 구조 CSV `weld`·`stru` 칸이 실제 연결 근거인지 조사(근거 없는 근접 연결 = '추정 연결' 표시), 대표 모델 cm 123456 ↔ 123 민감도 해석.
+  검증: 계약 테스트 + 실제 Nastran. 시험 BDF 는 세션 스크래치패드에만 있었다(필요하면 다시 작성).
+- **다른 Studio 로 넓힐지 검토 (2026-10-28)** — 10-27 MB 기능(CSV 탭·제외 행 상자·끊긴 배관·COG 경고·deleteRigid removeMass)은
+  "입력 = CSV + 엔진 행별 변환 감사" 전제라 **MB 전용으로 둔다**(MU·SP 는 BDF 입력, Plate 는 직접 모델링, Mooring 은 행↔요소 대응이 없고 DIAGNOSIS.json 이 빠진 행을 알림).
+  후보 2가지만 남겼다: ① MU·SP Model Check 에 'RBE 독립–종속 거리 > 5 m' 기하 경고(MB 가 만든 잘못된 장비 RBE 가 BDF 로 넘어오는 경우, 삭제 intent 없이 경고만)
+  ② RBE 공유 규칙·무게중심 RBE2/RBE3 는 **MB 에서 확정한 뒤** MU·SP 로 이식(중복 방지 `collectDependentNodes` 가 MU=SP, MB 는 이미 갈라짐).
+  MU·SP 의 `InputAuditPanel`·`AuditTab`(MB 사본)은 BDF 입력에서 늘 비어 정리 후보. Studio 목록은 메모리 `reference_all_studios`.
+- 공유 설명 페이지(비공개, Share 필요): FE 평가 https://claude.ai/artifact/81RNFK7nSMSaSSy1eEBbYG ·
+  'RBE 로 잇는 이유'(문의 응대용, 3529 간격 67~114 mm vs 부재 길이 중앙 378 mm) https://claude.ai/artifact/AKo9Y5qkwqWx6fzRbtH1QD
+- **새로 받은 문제(미착수)**: 앵글(L) 부재가 다리 방향이 뒤집혀 보이는 경우를 바르게 표시. 확인할 것 = 화면이 Patran 등에서 연 BDF 인지(그러면 BDF 방향 벡터 문제 → 엔진),
+  모델·부재 name. 구조 CSV `ori` ↔ 엔진 `BeamOrientation.Resolve`(평행일 때만 기본 규칙) ↔ BDF v 벡터 비교로 원인을 가른다.
 
 **호선 주석 (2026-10-20)** — Model Builder BDF **첫 줄**에 `$ HiTessModelBuilder: HullNo=3454` 를 남긴다(해석 무관).
 권상(GMU)에 올라온 BDF 를 LogBook 으로 보낼 때 호선을 알아내는 통로다. 입력은 **선택**: Model Builder 옵션의 '호선' 칸 →
@@ -594,6 +673,18 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
   **새 작업 폴더에 같은 파일명의 수정본**을 만들고 검증 작업을 띄운다(원본 불변, 고치지 않은 줄은 latin-1 로 바이트 그대로). 이후 '다시 검증' 입력은 수정본(`handoffBdfPath`)이다.
   실례: `3542_m09.bdf` 는 BEGIN BULK 가 없어 검증은 통과했는데 Wire 포함 구조 해석에서 Nastran FATAL 9994/300 — nastran_bridge `bulk_start_index` 도 함께 고쳐 이제는 그대로 둬도 해석된다.
   새 검사 규칙은 이 모듈에 추가하고, 오탐 확인은 `userConnection/**/*.bdf` 전수 스캔으로 할 것(도입 시 925개 중 오탐 0).
+  **PARAM BAILOUT 은 사용자에게 주는 권상 BDF 에 넣지 않는다 (2026-10-27, 사용자 요청)** — BAILOUT 은 mechanism(연결이 끊긴 부분)이 남아도 계속 풀게 한다.
+  실측: 3454-35020 권상 BDF 가 BAILOUT 으로 '정상 종료'했지만 최대 변위 1.27e13 mm(검증 BDF 6.3e12 mm), 빼면 FATAL 9050.
+  정상 모델 3496·3542 는 있든 없든 결과가 같았다(검증·Wire 해석 모두 백엔드 실제 경로로 확인). 그래서:
+  ① Wire 포함 BDF(bridge `build_lifting_bdf` = 다운로드·해석 공용 최종본)의 안정화 PARAM 은 **AUTOSPC 만**,
+  입력에서 온 PARAM BAILOUT(Case Control·Bulk, 자유·고정·큰 필드)도 지운다(`param_name`/`bdf_param_name` 같은 규칙, 메타 `removedInputBailout`).
+  ⚠ **검증 BDF(`_ensure_validation_stabilization_params`, `_validation.bdf`)는 BAILOUT 을 유지한다**(리뷰 후 되돌림, 사용자 확인 2026-10-28) —
+  검증은 최저 Z 노드만 임시 구속해 떨어진 소그룹이 mechanism 이 되므로, 빼면 FATAL 9050 '실패' 로 끝나 그 소그룹을 고치는 Studio 에 못 들어간다.
+  검증 변위는 판정에 쓰지 않고, `_validation.bdf` 는 다운로드 목록(`lifting_artifacts.ARTIFACT_SPECS`)에 없다. 두 곳을 같은 정책으로 '통일'하지 말 것.
+  ② 입력에 있으면 덱 검사 경고 `bailout_param`(자동 수정 아님) → 판정 '검토 필요' + 단계 힌트 '통과 · PARAM BAILOUT 제외'.
+  ③ `unit_structural_service._FATAL_HINTS` 9050 = 연결 끊김/구속 부족(Studio Model Check 안내), 2101 = RBE 종속 자유도에 SPC(UM·US, 실측),
+  5289 = 종속 중복(예전 2101 문구가 틀렸었다). 해상 운송(`module_ocean_bdf`)은 BAILOUT 을 유지하고 피벗비 점검(`trustworthy`)으로 거른다 — 범위 밖.
+  ⚠ 입력 BDF 의 `PARAM MAXRATIO 1.0+15`(예: 3542_m09)도 피벗비 검사를 사실상 끄는 설정이다 — 아직 손대지 않았다.
   구조 해석 실패 시 job.message 는 고정 문구가 아니라 원인이다(`unit_structural_service.describe_f06_fatal` — FATAL 건수·코드·첫 메시지). Studio 는 이 문구를 '실행 실패' 옆에 보여 준다.
   단계 상태는 저장하지 않고 사건(검증 결과·Studio 열기·`viewer:unit-structural-completed`·산출물/보고서 받기 = `ResultArtifactsCard onDownloaded`)에서 매번 계산한다.
 - **첫 화면(입력 전)은 `runFrame/RunStartPanel`** — 진행 순서(단계별 하는 일) + 이 앱의 내 최근 실행 5건(`program_name` 필터, '결과 열기' = 페이지의 `applyResultReentry`,
