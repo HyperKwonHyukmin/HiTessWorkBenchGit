@@ -310,7 +310,9 @@ def test_engine_matches_studio_preview_for_move_and_add_element(tmp_path):
         pytest.skip("노드 이동·부재 추가 이전 엔진")
     meta = base["meta"]
     next_eid = max(x["id"] for k in ("elements", "rigids", "pointMasses") for x in base[k]) + 1
-    next_pid = max(p["id"] for p in base["properties"]) + 1
+    # 새 구조 단면은 구조 구간(배관 PID·101 미만) 안 — 전체 최대 + 1 은 배관 구간이라 엔진이 65 로 거부한다(2026-10-29)
+    pipe_pids = {e["propertyId"] for e in base["elements"] if e["category"] == "Pipe"}
+    next_pid = max(p["id"] for p in base["properties"] if p["id"] < min([101, *pipe_pids])) + 1
     mid = base["materials"][0]["id"]
     ok = {"status": "ok", "warnings": [], "errors": []}
     intents = [
@@ -351,3 +353,56 @@ def test_engine_matches_studio_preview_for_move_and_add_element(tmp_path):
     assert 4 in engine_nodes                      # E2 를 지워도 새 부재가 쓴다
     bdf = (tmp_path / "edited" / f"{BASE}.bdf").read_text(encoding="utf-8")
     assert re.search(rf"(?m)^PBEAML\s+{next_pid}\s+{mid}\s+L", bdf)
+
+
+@pytest.mark.skipif(not CMB_EXE.is_file(), reason="Cmb.Cli.exe 없음")
+@pytest.mark.skipif(shutil.which("node") is None or not PREVIEW_SCRIPT.is_file(), reason="node 또는 Studio 미리보기 스크립트 없음")
+def test_engine_matches_studio_preview_for_change_section(tmp_path):
+    """단면 변경(2026-10-29) — 원본 부재 changeSection(기존 PID · 새 PBEAML) + 추가 부재의 새 단면을 섞어도 부재별 PID 가 같다."""
+    for name in (f"{BASE}.json", f"{BASE}.bdf"):
+        shutil.copy2(FIXTURE / name, tmp_path / name)
+    base = json.loads((tmp_path / f"{BASE}.json").read_text(encoding="utf-8"))
+    if not _engine_knows(tmp_path, "changeSection", {"elementIds": [2], "propertyId": 5}):
+        pytest.skip("단면 변경 이전 엔진")
+    meta = base["meta"]
+    next_eid = max(x["id"] for k in ("elements", "rigids", "pointMasses") for x in base[k]) + 1
+    # Studio suggestNextPropertyId 와 같은 기준 — 구조 구간(배관 PID·101 미만) 안 최대 + 1
+    pipe_pids = {e["propertyId"] for e in base["elements"] if e["category"] == "Pipe"}
+    new_pid = max(p["id"] for p in base["properties"] if p["id"] < min([101, *pipe_pids])) + 1
+    mid = base["materials"][0]["id"]
+    ok = {"status": "ok", "warnings": [], "errors": []}
+    intents = [
+        {"id": "el", "kind": "addElement", "params": {"elementId": next_eid, "startNode": 4, "endNode": 9, "propertyId": new_pid + 1,
+                                                      "newProperty": {"id": new_pid + 1, "kind": "L", "dims": [90.0, 90.0, 10.0, 10.0], "materialId": mid}}},
+        {"id": "cs1", "kind": "changeSection", "params": {"elementIds": [2, 21], "propertyId": 5}},
+        {"id": "cs2", "kind": "changeSection", "params": {"elementIds": [22, 25], "propertyId": new_pid,
+                                                         "newProperty": {"id": new_pid, "kind": "L", "dims": [130.0, 130.0, 12.0, 12.0], "materialId": mid}}},
+        {"id": "del", "kind": "deleteElements", "params": {"elementIds": [26], "removeOrphanNodes": True}},
+    ]
+    doc = {"schemaVersion": "1.0",
+           "stageRef": {"phase": meta["phase"], "stageName": meta["stageName"], "sourceTimestamp": meta["timestamp"]},
+           "createdAt": "2026-10-29T00:00:00Z", "createdBy": "contract-test",
+           "intents": [{**i, "validation": ok} for i in intents]}
+    edit_path = tmp_path / f"{BASE}_edit.json"
+    edit_path.write_text(json.dumps(doc), encoding="utf-8")
+
+    proc = subprocess.run([str(CMB_EXE), "apply-edit-intent", str(tmp_path)], cwd=tmp_path, capture_output=True, timeout=300)
+    assert proc.returncode == 0, proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
+    engine = json.loads((tmp_path / "edited" / f"{BASE}.json").read_text(encoding="utf-8"))
+    pv = subprocess.run(["node", str(PREVIEW_SCRIPT), str(tmp_path / f"{BASE}.json"), str(edit_path)],
+                        cwd=STUDIO_DIR, capture_output=True, timeout=120)
+    assert pv.returncode == 0, pv.stderr.decode("utf-8", "replace")
+    preview = json.loads(pv.stdout.decode("utf-8"))
+
+    assert sorted(e["id"] for e in engine["elements"]) == preview["elementIds"]
+    assert {str(e["id"]): e["propertyId"] for e in engine["elements"]} == preview["elementPropertyIds"]
+    by_id = {e["id"]: e for e in engine["elements"]}
+    base_by_id = {e["id"]: e for e in base["elements"]}
+    assert by_id[2]["propertyId"] == 5 and by_id[21]["propertyId"] == 5
+    assert by_id[22]["propertyId"] == new_pid and by_id[25]["propertyId"] == new_pid
+    assert by_id[next_eid]["propertyId"] == new_pid + 1
+    assert by_id[8]["propertyId"] == base_by_id[8]["propertyId"]                  # 배관은 그대로
+    assert by_id[22].get("orientation") == base_by_id[22].get("orientation")      # 방향 벡터 유지
+    bdf = (tmp_path / "edited" / f"{BASE}.bdf").read_text(encoding="utf-8")
+    assert re.search(rf"(?m)^PBEAML\s+{new_pid}\s+{mid}\s+L", bdf)
+    assert re.search(rf"(?m)^PBEAML\s+{new_pid + 1}\s+{mid}\s+L", bdf)

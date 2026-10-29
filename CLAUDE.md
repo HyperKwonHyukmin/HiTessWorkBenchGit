@@ -161,9 +161,9 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
   그룹 삭제 시 그 노드를 쓰는 `addElement` 도 함께 취소·대화상자 한글 조합 Enter) · 0.0.123 **부재 단면 변경**(`changeSection`, 상세 Studio `docs/edit-intent-spec.md` 진행 단계) ·
   0.0.124 단면 변경 패널 기본값이 고른 부재의 지금 단면이면 '이미 단면 P19' 가 뜨던 것 수정 · **0.1.0**(같은 내용, 사용자 지시로 번호만) = **릴리스 표 0.1.0**(`42108bb`, UNC 업로드·검증됨) · 핀 0.1.0(표시용).
   InHouse `Cmb.Cli.exe` 70 교체(sha256 c9bb1e11…, changeSection + 새 PID 가 base BDF `PipePidBase` 이상이면 65, 백업 `.bak_20261029_before_change_section`).
-  ⚠ **145 남은 일(순서)**: InHouse `Cmb.Cli.exe` 교체 → ⟳ Update(표 0.1.0 반영, 재시작 불필요). exe 가 옛것이면 0.1.0 의 단면 변경·삭제·노드 이동·부재 추가가 실패한다.
+  **145 반영 완료**(사용자, 2026-10-29): InHouse `Cmb.Cli.exe` 교체 + ⟳ Update(표 0.1.0). exe 가 옛것이면 0.1.0 의 단면 변경·삭제·노드 이동·부재 추가가 실패한다.
   릴리스 표는 git 이라 `/studio-release` 후 145 ⟳ Update 가 늘 필요하다(사용자 확인, 2026-10-29 — 자동 pull·UNC 표는 하지 않기로). `/studio-release` 보고 첫 줄에 그 문장을 넣게 바꿨다.
-  WorkBench 1.6.30(`83fef8b`) 릴리스·푸시. **145 남은 일**: InHouse `Cmb.Cli.exe`·`nastran_bridge.py` 수동 교체(옛 exe 면 Studio 새 편집 kind 실패) → ⟳ Update + 재시작(viewers.py 변경 1회) → manifest `channel release`·버전 확인 → 1.6.30 exe 배포.
+  WorkBench 1.6.30(`83fef8b`) 릴리스·푸시. 145 반영(InHouse 교체·⟳ Update·재시작)은 사용자가 마침(2026-10-29).
 - **도움말·셸 정리 (2026-10-29, 0.0.117~0.0.119)** — Studio 안 사용자 가이드: 상단 `도움말`(따라하기 7개 · F1 버튼 설명 모드 · 기능 찾기 · 단축키 · 용어),
   원본은 Studio `src/data/helpContent.js` 한 곳(버튼·구역 `data-help`, 테스트가 누락을 잡음). `/design` 검토(27/40) 후 사용자 결정으로 셸 규칙을 정함 —
   보이기 설정은 오른쪽 '표시' 도크 한 곳(9-11 Model 탭 배치를 되돌림) · Model Check = 보기·제안, 그룹 삭제는 Edit · 탭 푸터 = 다음 행동 1개 ·
@@ -179,8 +179,8 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
   Module Unit Studio 를 별도 저장소로 옮기는 건 사용자가 나중에 한다(ModuleUnitStudio 로컬 커밋 2개 미푸시).
   리뷰에서 '고치면 좋음'으로 남긴 엔진 항목: 과학 표기 양수 지수 부호 빠짐(`BdfField.FormatPrecise`, 1e6 이상) · `edited/` 교체 실패 시 옛 결과 유실 · 옛 무게중심 intent null 예외.
 - **남은 일**: 화면 눈으로 확인 안 함(0.0.113~0.0.116 편집 도구, 0.0.117~0.0.119 도움말·셸 정리·아래쪽 패널은 사용자 확인 중) ·
-  3529_m04 실모델 미확인(이 PC 에 없음) · 미커밋(2026-10-29 세션 끝): ModelBuilderStudio 단면 변경·0.1.0, HiTessModelBuilder changeSection, WorkBench 계약 테스트·핀·`.claude/commands/studio-release.md`
-  (커밋 전 독립 리뷰는 마침 — 막아야 함 0) · 0.0.122~0.1.0 화면 눈으로 확인 안 함 · 단면 변경의 '기존 PBEAML 복사 후 치수 수정' 미구현(카탈로그 = L 만) ·
+  3529_m04 실모델 미확인(이 PC 에 없음) · 단면 변경 커밋·푸시(2026-10-29): Studio `a4da5e5`(model-studio 브랜치) · 엔진 `959493f` · WorkBench 계약 테스트·핀·`studio-release.md`
+  (커밋 전 독립 리뷰 마침 — 막아야 함 0) · 0.0.122~0.1.0 화면 눈으로 확인 안 함 · 단면 변경의 '기존 PBEAML 복사 후 치수 수정' 미구현(카탈로그 = L 만) ·
   계획의 나머지(질량 값 수정·RBE 종속 수정·질량 추가, 하류: BDF 편집 요약 주석·CSV 탭 '편집으로 삭제됨'·
   판정 재계산) · 질량 요약 오버레이가 편집을 반영하지 않음(기존 한계).
 
