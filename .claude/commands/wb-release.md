@@ -26,6 +26,15 @@ pwsh -NoProfile -File scripts/release.ps1 -SetVersion X.Y.Z -BuildOnly -Yes   # 
 - 빌드가 끝나면 끝 줄의 `RELEASE_EXE=`·`RELEASE_VERSION=` 을 읽는다. 실패하면(종료 코드 ≠ 0) 오류 줄을 그대로 보고한다 —
   버전 커밋은 이미 올라가 있으니 원인을 고친 뒤 `-Bump` 없이 `-BuildOnly -Yes` 로 같은 버전 exe 만 다시 만든다.
 
+## 2-1. Studio 릴리스 표 — 145 가 모든 Studio 의 최신본을 쓰게 (2026-10-29)
+```
+python scripts/studio_release.py --all
+```
+- 운영(145) 백엔드는 `HiTessWorkBenchBackEnd/app/studio_release.json` 에 적힌 Studio 버전만 내준다(`viewers.py`). 개발 PC(70)는 `.env` `STUDIO_CHANNEL=dev` 라 표와 무관.
+- 이 명령이 표를 UNC 의 최신 정상 zip 으로 맞춘다. 바뀐 줄(`model-studio 0.0.119 → 0.0.120`)을 보고 커밋 메시지·보고에 적는다. `CHANGED=0` 이면 표 그대로.
+- '(70 로컬 StudioProgram 에는 없음)' 표시는 정보일 뿐이다(145 는 UNC 에서도 찾는다).
+- 한 Studio 만 열 때(exe 릴리스 없이)는 `/studio-release`.
+
 ## 3. 커밋 메시지
 지난 릴리스 커밋 이후 커밋 제목을 모은다: `git log --format=%s <지난 '🔖 release:' 커밋>..HEAD`.
 ```
@@ -33,15 +42,17 @@ pwsh -NoProfile -File scripts/release.ps1 -SetVersion X.Y.Z -BuildOnly -Yes   # 
 
 - <지난 버전> 이후: <기능·수정 요약, 커밋 7자리>
 - 버전 <지난 버전> → X.Y.Z(앱·프런트·Electron·서버)
+- Studio 릴리스: <2-1 에서 바뀐 줄, 없으면 '변경 없음'>
 
 Co-Authored-By: (이 세션의 attribution 줄)
 ```
 - 테스트·문서만 바뀐 커밋은 요약에서 빼거나 한 줄로 묶는다. 한국어.
 
 ## 4. 커밋·푸시
-- `git add` 는 **버전 4파일만**. `config.js`·`Darkmode.js`·다른 세션 파일은 넣지 않는다(커밋 훅도 막는다).
+- `git add` 는 **버전 4파일 + `HiTessWorkBenchBackEnd/app/studio_release.json`(2-1 에서 바뀌었으면)만**. `config.js`·`Darkmode.js`·다른 세션 파일은 넣지 않는다(커밋 훅도 막는다).
   ⚠ 훅은 Bash 명령 문자열에 `config.js` 가 들어 있기만 해도 막는다 — config.js 확인은 Grep 도구로 따로 하고 `git add` 명령에 섞지 않는다.
-- 커밋 전 `git diff --cached --stat` 이 4파일·각 1줄인지 확인 → 커밋 → `git push`.
+- 커밋 전 `git diff --cached --stat` 이 4파일·각 1줄(+ 릴리스 표)인지 확인 → 커밋 → `git push`.
+- 145 보고: 릴리스 표가 바뀌었으면 **Server Manager ⟳ Update(git pull)만으로 Studio 가 바뀐다**(재시작 불필요).
 
 ## 5. 보고 (짧게)
 - 커밋 7자리, 버전, exe 경로·크기

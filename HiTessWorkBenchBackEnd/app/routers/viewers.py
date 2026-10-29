@@ -13,6 +13,16 @@ zip 검색 디렉터리 우선순위 (먼저 발견되는 곳 사용):
   2) VIEWER_DIR   — 단일 경로 (레거시 호환)
   3) <백엔드>/StudioProgram/   — 백엔드 옆 로컬 폴더 (운영 표준)
   4) 사내 storage UNC          — 개발 환경 기본값
+
+릴리스 표 (2026-10-29) — 개발(70)과 운영(145)이 같은 UNC 폴더를 본다. 145 로컬 StudioProgram 에 그 Studio zip 이
+없으면 UNC 최고 버전이 그대로 나가(실측: 70 이 UNC 에 올린 model-studio 0.0.120 을 145 가 바로 내줌) 베타가 사용자에게
+나갔다. 그래서 '올리기(배포)' 와 '사용자에게 열기(릴리스)' 를 나눈다:
+  - `app/studio_release.json` 의 `studios` 에 적힌 Studio 는 **그 버전만** 내준다(모든 후보 폴더에서 그 파일을 찾는다).
+    그 버전 zip 이 없으면 최고 버전으로 넘어가지 않고 404 — 조용히 베타가 나가지 않게.
+  - 표에 없는 Studio 는 예전처럼 최고 버전.
+  - `.env` `STUDIO_CHANNEL=dev`(개발 PC 70) 면 표를 무시하고 최고 버전.
+  - 표는 요청마다 다시 읽는다 — 표만 바꾸면 git pull 로 끝나고 재시작이 필요 없다.
+  - 표를 고치는 곳: `/wb-release`(모든 Studio 최신) · `/studio-release <id>`(한 Studio 만), 둘 다 `scripts/studio_release.py`.
 """
 import hashlib
 import json
@@ -87,13 +97,48 @@ def _is_valid_zip_with_manifest(zip_path: str) -> bool:
         return False
 
 
-def _find_zip(viewer_id: str) -> str | None:
-    """viewer_id 로 시작하는 zip 파일 중 가장 최신 *정상* 버전을 반환한다.
+_RELEASE_FILE = os.path.join(_BACKEND_ROOT, "app", "studio_release.json")
 
-    여러 후보 디렉터리를 순서대로 탐색하며, 각 디렉터리 내에서는
+
+def _studio_channel() -> str:
+    """'dev' = 릴리스 표 무시(개발 PC), 그 밖(기본) = 'release'."""
+    return "dev" if os.environ.get("STUDIO_CHANNEL", "").strip().lower() == "dev" else "release"
+
+
+def _released_version(viewer_id: str) -> str | None:
+    """릴리스 표에 적힌 이 Studio 의 버전. dev 채널·표 없음·항목 없음이면 None(= 최고 버전)."""
+    if _studio_channel() == "dev":
+        return None
+    path = os.environ.get("STUDIO_RELEASE_FILE") or _RELEASE_FILE
+    try:
+        with open(path, encoding="utf-8") as f:
+            table = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        # 표가 깨졌으면 최고 버전으로 넘어가지 않는다 — 베타가 나가는 것보다 오류가 낫다.
+        logger.error("[viewers] 릴리스 표를 읽지 못함(%s): %s", path, e)
+        raise HTTPException(status_code=500, detail=f"studio_release.json 을 읽지 못했습니다: {e}")
+    ver = (table.get("studios") or {}).get(viewer_id)
+    return str(ver).strip() if ver else None
+
+
+def _find_zip(viewer_id: str) -> str | None:
+    """viewer_id 의 zip 을 고른다 — 릴리스 표에 버전이 있으면 그 버전, 없으면 최신 *정상* 버전.
+
+    최신 버전 모드: 여러 후보 디렉터리를 순서대로 탐색하며, 각 디렉터리 내에서는
     버전 내림차순으로 zip 무결성을 검사해 첫 정상 zip 을 반환한다.
     최상위 버전이 손상된 경우(EOCD 깨짐 등) 자동으로 다음 버전으로 폴백한다.
     """
+    pinned = _released_version(viewer_id)
+    if pinned:
+        name = f"{viewer_id}-{pinned}.zip"
+        for d in _candidate_dirs():
+            full = os.path.join(d, name)
+            if os.path.isfile(full) and _is_valid_zip_with_manifest(full):
+                return full
+        logger.error("[viewers] 릴리스 표 버전 zip 없음 — %s (후보 폴더 전체)", name)
+        return None
     for d in _candidate_dirs():
         if not os.path.isdir(d):
             continue
@@ -196,13 +241,18 @@ def get_viewer_manifest(viewer_id: str):
     Workbench 는 이 정보로 다운로드 진행률/무결성 검증을 처리한다.
     """
     zip_path = _find_zip(viewer_id)
+    pinned = _released_version(viewer_id)
     if not zip_path:
         diag = _diagnostic_search(viewer_id)
-        logger.error("[viewers] manifest 404 — viewer_id=%s, searched=%s", viewer_id, diag)
+        logger.error("[viewers] manifest 404 — viewer_id=%s, pinned=%s, searched=%s", viewer_id, pinned, diag)
         raise HTTPException(
             status_code=404,
             detail={
-                "message": f"viewer not found: {viewer_id}",
+                "message": (
+                    f"릴리스 표의 {viewer_id} {pinned} zip 이 없습니다 — StudioProgram 에 그 버전을 두거나 표를 고치세요."
+                    if pinned else f"viewer not found: {viewer_id}"
+                ),
+                "releasedVersion": pinned,
                 "searched": diag,
                 "hint": (
                     "백엔드가 viewer zip 을 못 찾음. 운영 환경에선 "
@@ -229,6 +279,9 @@ def get_viewer_manifest(viewer_id: str):
         "sha256": hashlib.sha256(data).hexdigest(),
         "size": len(data),
         "fileName": os.path.basename(zip_path),
+        # 어느 기준으로 고른 버전인지 — 'release'+releasedVersion = 릴리스 표, 그 밖 = 최고 버전.
+        "channel": _studio_channel(),
+        "releasedVersion": pinned,
     }
     if is_unc:
         # DRM/프록시가 HTTP 다운로드를 변조하는 환경에서 사용자 PC 가 직접 fs.copyFile 가능
