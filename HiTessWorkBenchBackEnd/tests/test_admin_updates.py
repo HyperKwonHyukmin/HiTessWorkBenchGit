@@ -1,6 +1,7 @@
 """관리자 업데이트 이력(`/api/admin/updates`) — 권한·데이터 모양·화면 문구 규칙."""
 import json
 import re
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +10,7 @@ from app.main import app
 from app.routers.updates import DATA, load_items
 
 KINDS = {"기능", "개선", "수정", "정리", "운영"}
+RELEASE_TABLE = Path(__file__).resolve().parents[1] / "app" / "studio_release.json"
 
 
 def test_requires_login():
@@ -36,6 +38,16 @@ def test_data_shape():
         assert isinstance(i.get("points", []), list)
         if "requester" in i:
             assert isinstance(i["requester"], str) and i["requester"].strip(), i["title"]
+
+
+def test_studio_items_name_a_released_studio():
+    """Studio 항목(`studio` = viewer id)은 릴리스 표에 있는 Studio 이고, version 은 그 Studio 버전이다."""
+    studios = json.loads(RELEASE_TABLE.read_text(encoding="utf-8"))["studios"]
+    for i in load_items():
+        if "studio" not in i:
+            continue
+        assert i["studio"] in studios, f"{i['title']}: 모르는 Studio {i['studio']}"
+        assert "version" in i, f"{i['title']}: Studio 항목은 그 Studio 버전을 적는다"
 
 
 def test_newest_first():

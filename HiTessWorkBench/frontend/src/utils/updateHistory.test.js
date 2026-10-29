@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  groupByMonth, inPeriod, itemKey, listMonths, listYears, matchesUpdate, monthLabel, newIndexes, splitHits,
-  viewYearFor,
+  groupByMonth, inPeriod, itemKey, listMonths, listStudios, listYears, matchesUpdate, monthLabel, newIndexes, splitHits,
+  studioLabel, viewYearFor,
 } from './updateHistory.js';
 import { CHANGELOG, CHANGELOG_TYPE_META, changelogKey } from '../constants/changelog.js';
 
@@ -33,6 +33,23 @@ test('필터: 분류·찾기(세부 줄·버전·요청자 포함)', () => {
   assert.equal(items.filter((it) => matchesUpdate(it, { q: '내 작업' })).length, 1);
   assert.equal(items.filter((it) => matchesUpdate(it, { q: 'v1.6.22' })).length, 1);
   assert.equal(items.filter((it) => matchesUpdate(it, {})).length, 3);
+});
+
+test('대상 필터: 전체·WorkBench 본체·Studio, 찾기는 Studio 이름도', () => {
+  const list = [
+    ...items,
+    { date: '2026-10-29', version: '0.1.0', studio: 'model-studio', kind: '기능', title: 'D', summary: '단면 변경' },
+    { date: '2026-10-28', version: '0.0.174', studio: 'module-unit-studio', kind: '기능', title: 'E', summary: 'RBE' },
+  ];
+  const count = (target) => list.filter((it) => matchesUpdate(it, { target })).length;
+  assert.equal(count(''), 5);
+  assert.equal(count('workbench'), 3);
+  assert.equal(count('model-studio'), 1);
+  assert.equal(count('plate-studio'), 0);
+  assert.equal(list.filter((it) => matchesUpdate(it, { q: 'model builder studio' })).length, 1);
+  assert.deepEqual(listStudios([list[4], list[3], list[0]]), ['model-studio', 'module-unit-studio']);
+  assert.equal(studioLabel('model-studio'), 'Model Builder Studio');
+  assert.equal(studioLabel('new-studio'), 'new-studio');
 });
 
 test('달·해 목록은 최근 것 먼저, 건수와 함께', () => {

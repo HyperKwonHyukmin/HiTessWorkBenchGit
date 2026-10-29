@@ -42,8 +42,17 @@ python scripts/studio_release.py <viewer-id> --version X.Y.Z            # 지정
 - 145 는 표의 버전을 서버 로컬 `StudioProgram\` → UNC 순으로 찾고, 어디에도 없으면 그 Studio 가 404 다(이전 버전으로 넘어가지 않음).
   UNC 가 끊길 때를 대비하려면 145 로컬 `StudioProgram\` 에도 같은 zip 을 복사해 두라고 보고에 적는다.
 
-## 4. 커밋·푸시
-- `git add HiTessWorkBenchBackEnd/app/studio_release.json` **만**. 다른 변경은 섞지 않는다.
+## 4. 개발 이력 적기 (Update History)
+Studio 개발 이력은 따로 파일을 두지 않고 관리자 화면 Update History 의 원본 `HiTessWorkBenchBackEnd/app/changelog/changelog.json` 에 적는다(2026-10-29 결정 — 솔버별 이력처럼 적을 곳이 흩어지면 멈춘다).
+**공개할 때만** 적는다 — 70 로컬 빌드(`/deploy`)마다 적지 않는다.
+- 범위 = 표의 이전 버전 → 새 버전 사이. 그 Studio 저장소 `git log` 에서 두 버전 커밋 사이를 본다(MB = `ModelBuilderStudio` `model-studio` 브랜치).
+- `items` 맨 앞에 한 항목: `{date(공개일), version(Studio 새 버전), studio(viewer id), kind, title, summary, points?}`.
+  title 은 `<Studio 이름> <주 변화>`. 중간 버전의 작은 수정은 points 에 `(0.0.122)` 처럼 버전을 붙여 합친다. 145 exe 교체가 함께 필요하면 points 에 한 줄.
+- 사용자가 체감할 변화로 쓴다(내부 파일명·함수명 금지), em dash 금지. 롤백이면 적지 않는다.
+- 확인: `pytest tests/test_admin_updates.py -q`(HiTessWorkBenchBackEnd/ 에서).
+
+## 5. 커밋·푸시
+- `git add HiTessWorkBenchBackEnd/app/studio_release.json HiTessWorkBenchBackEnd/app/changelog/changelog.json` **만**. 다른 변경은 섞지 않는다.
 - `git diff --cached --stat` 확인 → 커밋 → `git push`. 메시지(파일로 넘긴다):
 ```
 🚀 studio-release: <viewer-id> <이전> → <새 버전>
@@ -54,10 +63,10 @@ python scripts/studio_release.py <viewer-id> --version X.Y.Z            # 지정
 Co-Authored-By: (이 세션의 attribution 줄)
 ```
 
-## 5. 보고 (짧게)
+## 6. 보고 (짧게)
 - **보고 첫 줄은 항상 이 문장(굵게)**: "**아직 145 에 안 열렸습니다 — 145 Server Manager 에서 ⟳ Update(git pull) 해야 공개됩니다(재시작 불필요).**"
   145 백엔드는 git 의 `studio_release.json` 을 읽으므로, 푸시만으로는 옛 버전이 그대로 뜬다(2026-10-29 사용자가 0.0.121 이 계속 보인다고 물음).
   1단계에서 145 exe 교체가 필요하다고 판단했으면 바로 다음 줄에 "그 전에 145 InHouse `<exe>` 교체"를 순서대로 적는다.
-- 커밋 7자리, 바뀐 Studio·버전, UNC 업로드 여부(검증 결과)
+- 커밋 7자리, 바뀐 Studio·버전, UNC 업로드 여부(검증 결과), Update History 에 적은 항목 제목
 - ⟳ Update 하면 다음에 Studio 를 여는 사용자부터 새 버전을 받는다(설치본과 버전이 다르면 자동 재설치 — 롤백도 같은 길).
 - 롤백: `/studio-release <viewer-id> <이전 버전>`(이전 버전은 이미 UNC 에 있다).

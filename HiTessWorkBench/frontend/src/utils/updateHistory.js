@@ -6,7 +6,35 @@
 
 export const UPDATE_KINDS = ['기능', '개선', '수정', '정리', '운영'];
 
-export const itemKey = (it) => [it?.date || '', it?.version || '', it?.title || ''].join('|');
+/**
+ * Studio 항목의 대상(changelog.json `studio` = viewer id). 칸이 없으면 WorkBench 본체 항목이다.
+ * Studio 항목의 version 은 그 Studio 버전이며, /studio-release 로 145 에 공개할 때 적는다.
+ */
+export const STUDIO_LABELS = {
+  'model-studio': 'Model Builder Studio',
+  'module-unit-studio': 'Module Unit Studio',
+  'side-passage-studio': 'Side Passage Studio',
+  'mooring-fitting-studio': 'Mooring Fitting Studio',
+  'plate-studio': 'Plate Studio',
+};
+
+/** 대상 필터 값 — '' 전체 · 'workbench' 본체만 · viewer id. */
+export const WORKBENCH_TARGET = 'workbench';
+
+export const studioLabel = (id) => STUDIO_LABELS[id] || id || '';
+
+export function inTarget(it, target) {
+  if (!target) return true;
+  return target === WORKBENCH_TARGET ? !it?.studio : it?.studio === target;
+}
+
+/** 목록에 있는 Studio(라벨 표 순서) — ['model-studio', …]. 표에 없는 id 는 뒤에. */
+export function listStudios(items) {
+  const ids = new Set((items || []).map((it) => it?.studio).filter(Boolean));
+  return [...Object.keys(STUDIO_LABELS).filter((id) => ids.has(id)), ...[...ids].filter((id) => !STUDIO_LABELS[id])];
+}
+
+export const itemKey =(it) => [it?.date || '', it?.version || '', it?.title || ''].join('|');
 
 export function readSeen(storageKey) {
   try { return localStorage.getItem(storageKey) || ''; } catch { return ''; }
@@ -53,14 +81,16 @@ export function inPeriod(it, period, today = new Date()) {
   return period.length === 4 ? date.slice(0, 4) === period : date.slice(0, 7) === period;
 }
 
-/** 기간·찾기 글자·분류 필터. 찾기는 제목·설명·버전·화면·날짜·분류·요청자·세부 줄. */
-export function matchesUpdate(it, { period = '', today, kind = '', q = '' } = {}) {
+/** 기간·대상·찾기 글자·분류 필터. 찾기는 제목·설명·버전·화면·날짜·분류·요청자·Studio 이름·세부 줄. */
+export function matchesUpdate(it, { period = '', today, target = '', kind = '', q = '' } = {}) {
   if (!inPeriod(it, period, today)) return false;
+  if (!inTarget(it, target)) return false;
   if (kind && it.kind !== kind) return false;
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
   return [it.title, it.summary, it.version ? `v${it.version}` : '', it.screen, it.date, it.kind,
-    it.requester, ...(it.points || [])].join(' ').toLowerCase().includes(needle);
+    it.requester, it.studio ? `${it.studio} ${studioLabel(it.studio)}` : '', ...(it.points || [])]
+    .join(' ').toLowerCase().includes(needle);
 }
 
 export function monthLabel(ym) {

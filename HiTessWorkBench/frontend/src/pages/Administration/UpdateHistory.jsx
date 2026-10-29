@@ -11,8 +11,8 @@ import FeedbackState from '../../components/ui/FeedbackState';
 import { getAdminUpdates } from '../../api/adminUpdates';
 import { useNavigation } from '../../contexts/NavigationContext';
 import {
-  RECENT_PERIODS, UPDATE_KINDS, groupByMonth, itemKey, listMonths, listYears, matchesUpdate, newIndexes, readSeen,
-  splitHits, viewYearFor, writeSeen,
+  RECENT_PERIODS, UPDATE_KINDS, WORKBENCH_TARGET, groupByMonth, itemKey, listMonths, listStudios, listYears,
+  matchesUpdate, newIndexes, readSeen, splitHits, studioLabel, viewYearFor, writeSeen,
 } from '../../utils/updateHistory';
 
 const SEEN_KEY = 'wb_admin_updates_seen';
@@ -68,6 +68,7 @@ function UpdateItem({ it, isNew, showDate, isFirst, isLast, q }) {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-sm font-bold text-slate-800"><Hits text={it.title} q={q} /></span>
           {isNew && <Badge variant="notify" size="sm">새 항목</Badge>}
+          {it.studio && <Badge variant="neutral" size="sm">{studioLabel(it.studio)}</Badge>}
           <Badge variant="neutral" size="sm">{it.kind}</Badge>
         </div>
         {it.summary && <p className="mt-1 text-sm leading-relaxed text-slate-700"><Hits text={it.summary} q={q} /></p>}
@@ -78,7 +79,7 @@ function UpdateItem({ it, isNew, showDate, isFirst, isLast, q }) {
         )}
         {(it.version || it.screen || it.requester) && (
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-            {it.version && <span className="font-mono">v{it.version}</span>}
+            {it.version && <span className="font-mono">{it.studio ? 'Studio ' : ''}v{it.version}</span>}
             {it.requester && <span>요청 <Hits text={it.requester} q={q} /></span>}
             {it.screen && <span>화면: {it.screen}</span>}
           </div>
@@ -95,6 +96,7 @@ export default function UpdateHistory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [kind, setKind] = useState('');
+  const [targetPick, setTargetPick] = useState('');   // '' 전체 · 'workbench' 본체만 · Studio viewer id
   const [q, setQ] = useState('');
   // 기간 — ''(전체, 기본: 처음부터 끝까지 이어 보기) | 'd7'·'d30' | 'YYYY' | 'YYYY-MM'
   const [periodPick, setPeriodPick] = useState('');
@@ -153,31 +155,41 @@ export default function UpdateHistory() {
     if (p && !RECENT_PERIODS[p]) setLastYear(p.slice(0, 4));
   };
 
+  const studios = useMemo(() => listStudios(items), [items]);
+  // 고른 Studio 가 새로 고침 뒤 목록에서 사라졌으면 전체로 돌아간다.
+  const target = !targetPick || targetPick === WORKBENCH_TARGET || studios.includes(targetPick) ? targetPick : '';
+
   const rows = useMemo(
-    () => items.map((it, index) => ({ it, index })).filter(({ it }) => matchesUpdate(it, { period, kind, q })),
-    [items, period, kind, q],
+    () => items.map((it, index) => ({ it, index })).filter(({ it }) => matchesUpdate(it, { period, target, kind, q })),
+    [items, period, target, kind, q],
   );
   const groups = useMemo(() => groupByMonth(rows), [rows]);
-  // 기간 단추의 건수는 '분류·찾기'를, 분류 버튼의 건수는 '기간·찾기'를 반영한다.
+  // 단추마다 건수는 자기 칸을 뺀 나머지 필터(기간·대상·분류·찾기)를 반영한다.
   const periodCount = useMemo(() => {
-    const base = items.filter((it) => matchesUpdate(it, { kind, q }));
+    const base = items.filter((it) => matchesUpdate(it, { target, kind, q }));
     return (p) => base.filter((it) => matchesUpdate(it, { period: p })).length;
-  }, [items, kind, q]);
+  }, [items, target, kind, q]);
+  const targetCount = useMemo(() => {
+    const base = items.filter((it) => matchesUpdate(it, { period, kind, q }));
+    return (t) => base.filter((it) => matchesUpdate(it, { target: t })).length;
+  }, [items, period, kind, q]);
   const kindCounts = useMemo(() => {
-    const base = items.filter((it) => matchesUpdate(it, { period, q }));
+    const base = items.filter((it) => matchesUpdate(it, { period, target, q }));
     return Object.fromEntries(['', ...UPDATE_KINDS].map((k) => [k, k ? base.filter((it) => it.kind === k).length : base.length]));
-  }, [items, period, q]);
+  }, [items, period, target, q]);
   const kinds = UPDATE_KINDS.filter((k) => items.some((it) => it.kind === k));
-  const filtering = Boolean(period || kind || q.trim());
+  const filtering = Boolean(period || target || kind || q.trim());
   const elsewhere = period ? periodCount('') - rows.length : 0;   // 고른 기간 밖에 맞는 항목
-  const clearFilters = () => { setKind(''); setQ(''); setPeriodPick(''); inputRef.current?.focus(); };
+  const clearFilters = () => {
+    setKind(''); setQ(''); setPeriodPick(''); setTargetPick(''); inputRef.current?.focus();
+  };
 
   return (
     <div className="mx-auto max-w-4xl pb-28">
       <PageHeader
         title="Update History"
         icon={History}
-        subtitle="WorkBench 에 더해지고 바뀐 것을 최근 것부터 보여 줍니다."
+        subtitle="WorkBench 와 Studio 에 더해지고 바뀐 것을 최근 것부터 보여 줍니다."
         accentColor="violet"
         actions={(
           <button
@@ -221,7 +233,7 @@ export default function UpdateHistory() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.preventDefault(); clearFilters(); } }}
-                placeholder="제목·설명·버전·화면·요청자로 찾기"
+                placeholder="제목·설명·버전·화면·요청자·Studio로 찾기"
                 autoComplete="off"
                 className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-9 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
               />
@@ -244,8 +256,24 @@ export default function UpdateHistory() {
             </div>
           </div>
 
-          {/* 기간 두 단 — 첫 단: 전체 · 최근 7일 · 최근 30일 | 해, 둘째 단: 보고 있는 해의 달 */}
+          {/* 대상 한 단(Studio 항목이 있을 때만) + 기간 두 단 — 첫 단: 전체 · 최근 7일 · 최근 30일 | 해, 둘째 단: 보고 있는 해의 달 */}
           <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+            {studios.length > 0 && (
+              <div role="group" aria-label="대상" className="flex flex-wrap items-center gap-1.5">
+                <span className="w-12 shrink-0 text-xs font-semibold text-slate-600">대상</span>
+                <PeriodButton label="전체" count={targetCount('')} active={target === ''} onClick={() => setTargetPick('')} />
+                <PeriodButton
+                  label="WorkBench"
+                  count={targetCount(WORKBENCH_TARGET)}
+                  active={target === WORKBENCH_TARGET}
+                  onClick={() => setTargetPick(WORKBENCH_TARGET)}
+                />
+                <span className="mx-1 h-4 w-px bg-slate-200" aria-hidden="true" />
+                {studios.map((id) => (
+                  <PeriodButton key={id} label={studioLabel(id)} count={targetCount(id)} active={target === id} onClick={() => setTargetPick(id)} />
+                ))}
+              </div>
+            )}
             <div role="group" aria-label="기간" className="flex flex-wrap items-center gap-1.5">
               <span className="w-12 shrink-0 text-xs font-semibold text-slate-600">기간</span>
               <PeriodButton label="전체" count={periodCount('')} active={period === ''} onClick={() => choosePeriod('')} />
