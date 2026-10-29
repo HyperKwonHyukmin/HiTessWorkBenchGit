@@ -151,7 +151,9 @@ C# ↔ bridge 비교 2건을 독립 기준으로 남겼다(bridge 는 Mooring·S
 결정 전체·진행 단계: Studio `docs/edit-intent-spec.md` 맨 앞 '기본 모델 편집 기능 계획'.
 상태(2026-10-28 세션 끝) — 세부·버전별 경과는 Studio `docs/edit-intent-spec.md` 진행 단계 ①②.
 - **완료(코드)**: ① C# 이 `deleteRigid`·`addNode` 직접 적용. ② `deleteElements`·`deleteMasses`·`deleteOrphanNodes`.
-  ③④에서 앞당김(사용자 결정) `moveNodes`·`addElement`, ③ `changeSection`. fallback 제거(2026-10-29) — `BRIDGE_ONLY/KNOWN_INTENT_KINDS` 없음,
+  ③④에서 앞당김(사용자 결정) `moveNodes`·`addElement`, ③ `changeSection`, ③④ `changeMasses`·`addMasses`(2026-10-29, 상세 Studio spec — **70 로컬만**: model-studio 0.1.1·핀 0.1.1 ·
+  InHouse `Cmb.Cli.exe` sha256 8055258d…(백업 `.bak_20261029_before_mass_edits`). ⚠ 145: exe 교체 **먼저** → `/studio-release model-studio`
+  (옛 exe 면 질량 편집이 `unsupported intent kind` 로 실패 — bridge fallback 없음). 화면 눈으로 확인 안 함). fallback 제거(2026-10-29) — `BRIDGE_ONLY/KNOWN_INTENT_KINDS` 없음,
   옛 엔진이면 '엔진 교체 필요' 로 실패(`test_modelbuilder_edit_fallback_guard.py`).
 - **화면**: 편집 작업의 단일 진입점 = 뷰포트 왼쪽 도구 막대 `EditToolPalette`(노드·부재·질량·RBE·정리). 왼쪽 패널 = 선택 필터·수정 내역,
   아래 선택 바 = 선택 수·해제·목록. 형상 편집은 파생 모델(`data/geometryEdits.js`)로 편집 대상 뷰포트에만 그린다(원본 StageData 불변).
@@ -181,7 +183,7 @@ C# ↔ bridge 비교 2건을 독립 기준으로 남겼다(bridge 는 Mooring·S
 - **남은 일**: 화면 눈으로 확인 안 함(0.0.113~0.0.116 편집 도구, 0.0.117~0.0.119 도움말·셸 정리·아래쪽 패널은 사용자 확인 중) ·
   3529_m04 실모델 미확인(이 PC 에 없음) · 단면 변경 커밋·푸시(2026-10-29): Studio `a4da5e5`(model-studio 브랜치) · 엔진 `959493f` · WorkBench 계약 테스트·핀·`studio-release.md`
   (커밋 전 독립 리뷰 마침 — 막아야 함 0) · 0.0.122~0.1.0 화면 눈으로 확인 안 함 · 단면 변경의 '기존 PBEAML 복사 후 치수 수정' 미구현(카탈로그 = L 만) ·
-  계획의 나머지(질량 값 수정·RBE 종속 수정·질량 추가, 하류: BDF 편집 요약 주석·CSV 탭 '편집으로 삭제됨'·
+  계획의 나머지(RBE 종속 수정, 하류: BDF 편집 요약 주석·CSV 탭 '편집으로 삭제됨'·
   판정 재계산) · 질량 요약 오버레이가 편집을 반영하지 않음(기존 한계).
 
 **장비 COG 위치 오류 `EQUIPMENT_COG_FAR` (2026-10-27)** — 장비 CSV 의 `cog` 가 잘못 나오면(실례 3529_m04 `=30137/754429` 715 kg, X 만 50 m 어긋남)

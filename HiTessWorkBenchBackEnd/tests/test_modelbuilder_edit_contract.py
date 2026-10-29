@@ -404,3 +404,55 @@ def test_engine_matches_studio_preview_for_change_section(tmp_path):
     bdf = (tmp_path / "edited" / f"{BASE}.bdf").read_text(encoding="utf-8")
     assert re.search(rf"(?m)^PBEAML\s+{new_pid}\s+{mid}\s+L", bdf)
     assert re.search(rf"(?m)^PBEAML\s+{new_pid + 1}\s+{mid}\s+L", bdf)
+
+
+@pytest.mark.skipif(not CMB_EXE.is_file(), reason="Cmb.Cli.exe 없음")
+@pytest.mark.skipif(shutil.which("node") is None or not PREVIEW_SCRIPT.is_file(), reason="node 또는 Studio 미리보기 스크립트 없음")
+def test_engine_matches_studio_preview_for_mass_edits(tmp_path):
+    """질량 편집(2026-10-29) — addMasses(원본·새 노드) + changeMasses + deleteMasses 를 무게중심 RBE 와 섞어도 질량 (노드, ton) 이 같다."""
+    for name in (f"{BASE}.json", f"{BASE}.bdf"):
+        shutil.copy2(FIXTURE / name, tmp_path / name)
+    base = json.loads((tmp_path / f"{BASE}.json").read_text(encoding="utf-8"))
+    if not _engine_knows(tmp_path, "changeMasses", {"changes": [{"massId": 14, "mass": 0.5}]}):
+        pytest.skip("질량 편집 이전 엔진")
+    meta = base["meta"]
+    next_eid = max(x["id"] for k in ("elements", "rigids", "pointMasses") for x in base[k]) + 1
+    ok = {"status": "ok", "warnings": [], "errors": []}
+    # 무게중심 RBE 를 질량 추가보다 먼저 기록 — 엔진이 RBE 에 Studio 가 정한 질량 번호를 주면 안 된다.
+    intents = [
+        {"id": "cog", "kind": "addRigid", "params": {"independentNode": None, "dependentNodes": CENTROID_DEPS,
+                                                     "createIndependentAtCentroid": True, "cm": "123456"}},
+        {"id": "node", "kind": "addNode", "params": {"nodeId": 900, "x": 90100.0, "y": 4900.0, "z": 38700.0}},
+        {"id": "rbe", "kind": "addRigid", "params": {"independentNode": 900, "dependentNodes": [1], "cm": "123456"}},
+        {"id": "add", "kind": "addMasses", "params": {"masses": [
+            {"massId": next_eid, "nodeId": 4, "mass": 0.8},
+            {"massId": next_eid + 1, "nodeId": 900, "mass": 1.25}]}},
+        {"id": "chg", "kind": "changeMasses", "params": {"changes": [{"massId": 14, "mass": 0.5}]}},
+        {"id": "del", "kind": "deleteMasses", "params": {"massIds": [16]}},
+    ]
+    doc = {"schemaVersion": "1.0",
+           "stageRef": {"phase": meta["phase"], "stageName": meta["stageName"], "sourceTimestamp": meta["timestamp"]},
+           "createdAt": "2026-10-29T00:00:00Z", "createdBy": "contract-test",
+           "intents": [{**i, "validation": ok} for i in intents]}
+    edit_path = tmp_path / f"{BASE}_edit.json"
+    edit_path.write_text(json.dumps(doc), encoding="utf-8")
+
+    proc = subprocess.run([str(CMB_EXE), "apply-edit-intent", str(tmp_path)], cwd=tmp_path, capture_output=True, timeout=300)
+    assert proc.returncode == 0, proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
+    engine = json.loads((tmp_path / "edited" / f"{BASE}.json").read_text(encoding="utf-8"))
+    pv = subprocess.run(["node", str(PREVIEW_SCRIPT), str(tmp_path / f"{BASE}.json"), str(edit_path)],
+                        cwd=STUDIO_DIR, capture_output=True, timeout=120)
+    assert pv.returncode == 0, pv.stderr.decode("utf-8", "replace")
+    preview = json.loads(pv.stdout.decode("utf-8"))
+
+    engine_masses = {str(pm["id"]): [pm["nodeId"], pytest.approx(pm["mass"])] for pm in engine.get("pointMasses", [])}
+    assert engine_masses == preview["masses"]
+    assert sorted(int(k) for k in engine_masses) == preview["massIds"]
+    # 기대 결과 자체도 고정한다(두 쪽이 같이 틀리는 것 방지)
+    assert preview["masses"] == {"14": [22, 0.5], str(next_eid): [4, 0.8], str(next_eid + 1): [900, 1.25]}
+    assert not {next_eid, next_eid + 1} & {r["id"] for r in engine["rigids"]}   # 무게중심 RBE 가 질량 번호를 가져가지 않았다
+    assert 26 in {n["id"] for n in engine["nodes"]}                            # 질량만 지움 — 요소에 걸린 노드
+    bdf = (tmp_path / "edited" / f"{BASE}.bdf").read_text(encoding="utf-8")
+    assert re.search(rf"(?m)^CONM2\s+{next_eid}\s+4\s", bdf)
+    assert re.search(rf"(?m)^CONM2\s+{next_eid + 1}\s+900\s", bdf)
+    assert not re.search(r"(?m)^CONM2\s+16\s", bdf)
