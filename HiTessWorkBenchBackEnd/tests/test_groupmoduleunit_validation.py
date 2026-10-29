@@ -46,3 +46,18 @@ def test_referenced_but_isolated_grid_still_blocks_validation():
         row["severity"] == "error" and row["fieldName"] == "graph"
         for row in result["validationResults"]
     )
+
+
+
+def test_validation_keeps_bailout_so_disconnected_models_reach_studio(tmp_path):
+    """검증 BDF 는 BAILOUT 유지 — 최저 Z 만 구속하는 검증에서 떨어진 소그룹이 9050 으로 '실패' 해 Studio 로 못 가는 것을 막는다.
+    BAILOUT 제외는 Wire 구조 해석(bridge build_lifting_bdf)에만 적용한다."""
+    import json
+    from app.services.groupmoduleunit_service import _ensure_validation_stabilization_params
+
+    bdf = tmp_path / "m_validation.bdf"
+    bdf.write_text("SOL 101\nCEND\nBEGIN BULK\nGRID,1,,0.,0.,0.\nENDDATA\n", encoding="utf-8")
+    js = tmp_path / "m_validation.json"
+    js.write_text(json.dumps({"validation": {}}), encoding="utf-8")
+    added = _ensure_validation_stabilization_params(str(bdf), str(js))
+    assert added == ["PARAM,AUTOSPC,YES", "PARAM,BAILOUT,-1"]

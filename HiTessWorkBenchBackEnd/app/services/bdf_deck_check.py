@@ -83,6 +83,27 @@ def _line_numbers_text(indexes: List[int], limit: int = 5) -> str:
     return shown + (f" 외 {len(indexes) - limit}줄" if len(indexes) > limit else "")
 
 
+def param_name(line: str) -> str | None:
+    """PARAM 카드면 파라미터 이름(대문자), 아니면 None. 자유 필드('PARAM,BAILOUT,-1')·고정 필드('PARAM   BAILOUT -1') 모두."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("$") or _first_token(stripped) != "PARAM":
+        return None
+    if "," in stripped.split("$", 1)[0]:
+        parts = stripped.split(",")
+        return parts[1].strip().upper() if len(parts) > 1 and parts[1].strip() else None
+    body = line.rstrip("\r\n")
+    field = body[8:16].strip() if len(body) > 8 else ""
+    if not field:
+        tokens = stripped.split()
+        field = tokens[1] if len(tokens) > 1 else ""
+    return field.upper() or None
+
+
+def bailout_param_lines(lines: List[str]) -> List[int]:
+    """PARAM BAILOUT 카드의 줄 인덱스(0부터). Case Control·Bulk 어디에 있든 찾는다(PARAM 은 두 구간 모두 허용)."""
+    return [i for i, line in enumerate(lines) if param_name(line) == "BAILOUT"]
+
+
 def inspect_deck_lines(lines: List[str]) -> List[Dict[str, Any]]:
     """구간 경계 문제 목록. 각 항목은 자동 수정 가능(fixable) 여부와 무엇을 고치는지(fix)를 함께 준다."""
     issues: List[Dict[str, Any]] = []
@@ -114,6 +135,26 @@ def inspect_deck_lines(lines: List[str]) -> List[Dict[str, Any]]:
                 "fixable": True,
                 "fix": f"해당 {len(misplaced)}줄을 지웁니다(앞쪽 해석 설정 구간은 그대로 둡니다).",
             })
+
+    # PARAM BAILOUT — mechanism(연결이 끊긴 부분)이 남아도 멈추지 않고 계속 풀게 한다. 사용자에게 주는
+    # Wire 포함 권상 BDF 는 이 카드를 빼고 푼다. ⚠ 검증 BDF(_validation.bdf)는 BAILOUT 을 유지한다 — 떨어진 소그룹을
+    # Studio 에서 고칠 수 있게(groupmoduleunit_service 참고, 사용자 확인 2026-10-28). 두 곳을 '통일'하지 말 것.
+    # 사용자가 원본 BDF 의 설정이 권상 해석에서 무시된다는 것을 알도록 알린다.
+    # 실측(2026-10-27): 3454-35020 권상 BDF 는 BAILOUT 으로 '정상 종료'했지만 최대 변위 1.27e13 mm 였고,
+    # 빼면 FATAL 9050 으로 멈췄다. 정상 모델(3496·3542)은 있든 없든 결과가 같았다.
+    bailout = bailout_param_lines(lines)
+    if bailout:
+        issues.append({
+            "code": "bailout_param",
+            "severity": "warning",
+            "title": "입력 BDF 의 PARAM BAILOUT 은 권상 해석에서 제외합니다 — 연결이 끊긴 부분이 있으면 오류로 알립니다",
+            "detail": (f"입력 BDF 의 PARAM BAILOUT({_line_numbers_text(bailout)}번째 줄)은 연결이 끊긴 부분(mechanism)이 "
+                       "있어도 해석을 계속하게 해 결과를 믿을 수 없게 만듭니다. 권상 해석에서는 이 카드를 제외하고 풉니다. "
+                       "연결이 끊긴 부분이 있으면 해석이 오류(FATAL 9050)로 알립니다."),
+            "lines": [i + 1 for i in bailout],
+            "fixable": False,
+            "fix": "",
+        })
     return issues
 
 

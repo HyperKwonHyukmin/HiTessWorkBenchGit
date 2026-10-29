@@ -35,7 +35,7 @@ import {
 } from '../../utils/logbookLink';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.170';
+const MODULE_STUDIO_VERSION = '0.0.174';
 // 다른 App 이 넘긴 BDF 는 fresh-entry 재마운트가 끝난 뒤 살아남은 인스턴스에만 적용한다.
 const HANDOFF_APPLY_DELAY_MS = 60;
 const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
@@ -851,7 +851,15 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
     if (def.id === 'input') {
       if (validating) return { ...def, status: 'running', hint: '검증 중' };
       if (validationVerdict.level === 'fail') return { ...def, status: 'error', hint: '검증 실패' };
-      if (validationVerdict.level === 'review') return { ...def, status: 'review', hint: deckFixes.length > 0 ? '통과 · BDF 형식 수정 가능' : '통과 · 분리 그룹 있음' };
+      if (validationVerdict.level === 'review') {
+        // 힌트는 실제 사유에서 — 예전엔 '수정 가능' 이 아니면 무조건 '분리 그룹 있음' 이라 BAILOUT 제외 등 다른 사유에서 틀렸다.
+        const codes = new Set(validationVerdict.reasons.map(r => r.code));
+        const hint = deckFixes.length > 0 ? '통과 · BDF 형식 수정 가능'
+          : codes.has('disconnected') ? '통과 · 분리 그룹 있음'
+          : codes.has('deck-bailout_param') ? '통과 · PARAM BAILOUT 제외'
+          : '통과 · 확인할 항목 있음';
+        return { ...def, status: 'review', hint };
+      }
       if (validationVerdict.level === 'pass') return { ...def, status: 'done', hint: '검증 통과' };
       return { ...def, status: 'wait' };
     }

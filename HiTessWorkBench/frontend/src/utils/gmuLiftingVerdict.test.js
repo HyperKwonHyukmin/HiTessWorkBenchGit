@@ -66,3 +66,14 @@ test('경고 등급 BDF 형식 문제(BEGIN BULK 누락)는 통과가 아니라 
   assert.equal(v.level, 'review');
   assert.deepEqual(v.reasons.map(r => r.code), ['deck-missing_begin_bulk', 'disconnected']);
 });
+
+test('입력 BDF 의 PARAM BAILOUT 은 검토 필요 사유로 알린다(권상 해석에서 제외)', () => {
+  const step1Data = { status: 'warning', summary: { totalErrors: 0, totalWarnings: 1 }, parsingSummary: {},
+    deckIssues: [{ code: 'bailout_param', severity: 'warning', fixable: false,
+      title: '입력 BDF 의 PARAM BAILOUT 은 권상 해석에서 제외합니다 — 연결이 끊긴 부분이 있으면 오류로 알립니다' }] };
+  const v = computeGmuVerdict({ step1Data });
+  assert.equal(v.level, 'review');
+  assert.equal(v.reasons[0].code, 'deck-bailout_param');
+  assert.match(v.reasons[0].text, /PARAM BAILOUT/);
+  assert.doesNotMatch(v.reasons[0].text, /자동 수정/);
+});

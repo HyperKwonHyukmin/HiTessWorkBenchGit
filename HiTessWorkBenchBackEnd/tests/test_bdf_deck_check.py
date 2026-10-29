@@ -104,3 +104,32 @@ def test_merge_into_step1_counts_and_status():
     clean = {"status": "pass", "summary": {}, "validationResults": []}
     merge_into_step1(clean, [])
     assert clean["status"] == "pass" and clean["deckIssues"] == []
+
+
+# ── PARAM BAILOUT (2026-10-27) ─────────────────────────────────────────────
+# BAILOUT 은 mechanism 이 남아도 계속 풀게 한다. 실측: 3454-35020 권상 BDF 가 BAILOUT 으로 '정상 종료'했지만
+# 최대 변위 1.27e13 mm 였고, 빼면 FATAL 9050. 권상 해석에서는 제외하고 사용자에게 알린다.
+BAILOUT_DECK = [
+    "SOL 101\n",
+    "CEND\n",
+    "PARAM,BAILOUT,-1\n",
+    "BEGIN BULK\n",
+    "PARAM,POST,-1\n",
+    "PARAM   BAILOUT -1\n",
+    "GRID,10,,0.,0.,0.\n",
+    "ENDDATA\n",
+]
+
+
+def test_bailout_param_is_reported_wherever_and_however_written():
+    issues = inspect_deck_lines(BAILOUT_DECK)
+    bail = [i for i in issues if i["code"] == "bailout_param"]
+    assert len(bail) == 1
+    assert bail[0]["severity"] == "warning"
+    assert bail[0]["fixable"] is False
+    assert bail[0]["lines"] == [3, 6]
+    assert "제외" in bail[0]["detail"]
+
+
+def test_no_bailout_no_issue():
+    assert not [i for i in inspect_deck_lines(NO_BEGIN_BULK) if i["code"] == "bailout_param"]

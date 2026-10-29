@@ -459,7 +459,13 @@ def _ensure_validation_stabilization_params(
     validation_bdf_path: str,
     validation_json_path: str,
 ) -> List[str]:
-    """Inject temporary solver-stabilization PARAMs into validation BDF only."""
+    """검증 BDF 에만 안정화 PARAM(AUTOSPC + BAILOUT)을 넣는다 — 사용자에게 주는 BDF 에는 실리지 않는다.
+
+    검증은 최저 Z 노드만 임시 구속해서, 떨어진 소그룹이 mechanism 이 된다. BAILOUT 을 빼면 FATAL 9050 →
+    '실패' 로 끝나 그 소그룹을 고치는 곳(Studio 자동 연결)에 들어가지 못한다. 검증 변위는 판정에 쓰지 않는다.
+    결과를 쓰는 Wire 구조 해석(bridge build_lifting_bdf)은 반대로 BAILOUT 을 넣지 않고 입력의 것도 지운다
+    (2026-10-27 실측: 3454-35020 이 BAILOUT 으로 '정상 종료' 했지만 변위 1.27e13 mm, 빼면 FATAL 9050).
+    """
     required = ["PARAM,AUTOSPC,YES", "PARAM,BAILOUT,-1"]
     with open(validation_bdf_path, "r", encoding="utf-8", errors="replace") as f:
         lines = f.read().splitlines()
@@ -490,7 +496,8 @@ def _ensure_validation_stabilization_params(
     validation["temporaryStabilizationParams"] = {
         "cards": missing,
         "validationOnly": True,
-        "reason": "Prevent validation-run mechanism fatal 9050; not carried into downstream analysis.",
+        "reason": "Prevent validation-run mechanism fatal 9050 so disconnected groups reach Studio; "
+                  "not carried into downstream analysis (Wire lifting BDF uses AUTOSPC only, no BAILOUT).",
     }
     payload["validation"] = validation
     with open(validation_json_path, "w", encoding="utf-8") as f:
