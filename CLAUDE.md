@@ -89,6 +89,12 @@ v1.5.8 에서 결함 6건이 새어 나갔고 3건을 사용자가 먼저 찾았
   - 폴더명: `InHouseProgram`은 camelCase(`NastranBridge`), SubModule은 underscore 혼용(`Nastran_bridge`). `analysis.py`의 nastran_bridge 탐색은 `InHouseProgram/Nastran_bridge` → `WorkBenchSubModule/Nastran_bridge` → `InHouseProgram/NastranBridge` 순 + `NASTRAN_BRIDGE_DIR` override.
 - 📦 **배포 절차(Studio zip 2곳 복사·버전 확인·버전 핀 동기화, 엔진 exe 빌드·교체, 서버 보고 형식)는 전역 `/deploy` 스킬에 있다.** "배포해" 요청 시 그 스킬을 따른다. 전역 훅(`~/.claude/hooks/workbench_guard.js`)이 config.js 커밋을 차단하고 InHouseProgram/StudioProgram 변경 시 서버 반영을 알린다.
   - "zip 빌드해서 저장해" = 모든 Studio(Model Builder·Mooring Fitting·Module Unit·Plate Analysis 등) zip 을 백엔드-로컬 `HiTessWorkBenchBackEnd\StudioProgram\` 과 UNC `...\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram` 두 곳에 둔다(전체 경로·복사 명령은 `/deploy` 스킬 `studio.md`). 대괄호 때문에 PowerShell 은 `Copy-Item -LiteralPath`. 버전은 각 studio 의 `package.json` 한 곳만 올린다(2026-10-19 전역 규칙에서 옮김).
+  - ⚠ **Studio 배포(올리기)와 릴리스(145 사용자에게 열기)는 다르다 (2026-10-29)** — 70·145 가 같은 UNC 를 봐서 올린 베타가 145 에 바로 나가던 문제를 막았다.
+    145 백엔드는 `HiTessWorkBenchBackEnd/app/studio_release.json`(`studios` = viewer id → 버전, 모든 Studio)에 적힌 버전만 내주고(`viewers.py`, 요청마다 읽음),
+    70 은 `.env` `STUDIO_CHANNEL=dev`(git 미추적, **145 에는 넣지 말 것**)라 늘 최고 버전. 표 갱신 = `scripts/studio_release.py` —
+    `/wb-release` 가 모든 Studio 를 UNC 최신으로, `/studio-release <id> [버전]` 이 WorkBench 버전과 무관하게 한 Studio 만(롤백 포함). 반영 = 커밋·푸시 + 145 ⟳ Update(재시작 불필요).
+    표의 버전 zip 이 어느 후보 폴더에도 없으면 최고 버전으로 넘어가지 않고 404. 프론트 핀(`MODEL_BUILDER_STUDIO_VERSION` 등)은 이제 표시용 기본값일 뿐 받는 버전을 정하지 않는다.
+    테스트 `tests/test_viewers_release.py`.
 
 ### Model Builder Studio — 2개 구성요소(엔진 / 스튜디오)와 배포 흐름 ★작업 전 필독
 
@@ -137,6 +143,31 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
 일반 RBE 종속 중복 = 오류, 회전은 노드 추가·무게중심 RBE 보다 먼저. 상세·지원 표: Studio `docs/edit-intent-spec.md` 맨 앞 '현재 계약'.
 계약 테스트 `tests/test_modelbuilder_edit_contract.py` 가 C# 엔진 ↔ bridge 산출 모델을 비교한다(새 빌드 검증 시 `CMB_CLI_EXE`·`NASTRAN_BRIDGE_PY` 로 지정).
 ⚠ 새 intent kind 를 만들면 Studio·C#·bridge·계약 테스트를 함께 고칠 것.
+
+**기본 모델 편집 기능 (2026-10-28 결정, 진행 중)** — 요소 삭제·추가, 노드 이동, 단면 변경, 질량 추가·수정·삭제, RBE 수정 등 9개.
+⚠ 이 작업에서 **MB 경로 엔진을 C# 하나로 통일**한다(`deleteRigid`·`addNode` C# 이식 → MB 의 bridge fallback 제거, 계약 테스트 = C# ↔ Studio 미리보기).
+완료 후 위 '새 kind = 4곳 동시 수정' 규칙은 'Studio·C#·계약 테스트 3곳'으로 바뀐다. 결정 전체·진행 단계: Studio `docs/edit-intent-spec.md` 맨 앞 '기본 모델 편집 기능 계획'.
+상태(2026-10-28 세션 끝) — 세부·버전별 경과는 Studio `docs/edit-intent-spec.md` 진행 단계 ①②.
+- **완료(코드)**: ① C# 이 `deleteRigid`·`addNode` 직접 적용. ② `deleteElements`·`deleteMasses`·`deleteOrphanNodes`.
+  ③④에서 앞당김(사용자 결정) `moveNodes`·`addElement`. 새 kind 는 C# 전용 — bridge 가 모르는 kind 가 섞이면 fallback 하지 않고 실패
+  (`BRIDGE_KNOWN_INTENT_KINDS`). `BRIDGE_ONLY_INTENT_KINDS` fallback 은 옛 exe 호환용(145 exe 교체 후 제거). 새 kind 는 그 목록에 넣지 말 것.
+- **화면**: 편집 작업의 단일 진입점 = 뷰포트 왼쪽 도구 막대 `EditToolPalette`(노드·부재·질량·RBE·정리). 왼쪽 패널 = 선택 필터·수정 내역,
+  아래 선택 바 = 선택 수·해제·목록. 형상 편집은 파생 모델(`data/geometryEdits.js`)로 편집 대상 뷰포트에만 그린다(원본 StageData 불변).
+- **계약 테스트** = C# ↔ Studio 미리보기(`scripts/previewEditedModel.mjs`, node 필요) — `test_modelbuilder_edit_contract.py`. 옛 exe 면 해당 테스트는 건너뛴다.
+- **배포(로컬 70만)**: InHouse `Cmb.Cli.exe`(sha256 12f1f3aa…, 백업 `.bak_20261028_before_delete_edits`·`.bak_20261028_before_move_add`) ·
+  `model-studio-0.0.119`(로컬·UNC — 0.0.115 새 부재 삭제 시 새 노드도 정리, 0.0.116 '삭제' 먼저 → 부재·질량점 클릭 고르기 도구, 0.0.117~0.0.119 아래 '도움말·셸 정리') · 핀 0.0.119. **145 미반영**(zip 복사 → exe 교체 → 백엔드 git pull + 재시작 → 프론트 재배포).
+- **도움말·셸 정리 (2026-10-29, 0.0.117~0.0.119)** — Studio 안 사용자 가이드: 상단 `도움말`(따라하기 7개 · F1 버튼 설명 모드 · 기능 찾기 · 단축키 · 용어),
+  원본은 Studio `src/data/helpContent.js` 한 곳(버튼·구역 `data-help`, 테스트가 누락을 잡음). `/design` 검토(27/40) 후 사용자 결정으로 셸 규칙을 정함 —
+  보이기 설정은 오른쪽 '표시' 도크 한 곳(9-11 Model 탭 배치를 되돌림) · Model Check = 보기·제안, 그룹 삭제는 Edit · 탭 푸터 = 다음 행동 1개 ·
+  노드·부재 입력 창 = 뷰포트 아래 비모달 패널(3D 클릭이 주황 칸에 바로 들어감) · 노드 중점 생성 · 직교 카메라 near 음수(확대 시 모델 잘림 수정) · CSV '모델 없음' 행 점선 상자.
+  규칙·남은 것·**Module Unit Studio 로 넓힐 목록** = Studio `apps/model-studio/docs/shell-conventions.md`(MB 개선을 마친 뒤 사용자가 확산 요청 예정).
+  **작업 패널 통일(2026-10-29 적용, 미배포)**: 노드·부재·삭제·RBE·고립 노드 정리가 모두 같은 아래쪽 패널(`components/edit/WorkPanelFrame.jsx`) —
+  모드 표시(삭제 = 빨간 테두리) · 대상 칸 · 옵션 · 주 버튼 하나 · Esc. 패널이 열린 동안 3D 클릭 = 대상 넣기/빼기(스토어 `pickTool` 이 패널 열림과 함께 움직임).
+  사용자 결정: 적용 후 패널 유지 · 삭제 확인 모달 없음(Ctrl+Z, 패널이 끊김·함께 지워질 노드를 미리 보임). 선택 바 [삭제 Del] [RBE로 묶기 Enter] 로 단축키 안내.
+  규칙 원본 = Studio `docs/shell-conventions.md` 11번.
+- **남은 일**: 3개 저장소 미커밋(커밋 전 `hitess-code-reviewer` 1회) · 화면 눈으로 확인 안 함(0.0.113~0.0.116 편집 도구, 0.0.117~0.0.119 도움말·셸 정리·아래쪽 패널은 사용자 확인 중) ·
+  3529_m04 실모델 미확인(이 PC 에 없음) · 계획의 나머지(단면 변경·질량 값 수정·RBE 종속 수정·질량 추가, 하류: BDF 편집 요약 주석·CSV 탭 '편집으로 삭제됨'·
+  판정 재계산) · 질량 요약 오버레이가 편집을 반영하지 않음(기존 한계).
 
 **장비 COG 위치 오류 `EQUIPMENT_COG_FAR` (2026-10-27)** — 장비 CSV 의 `cog` 가 잘못 나오면(실례 3529_m04 `=30137/754429` 715 kg, X 만 50 m 어긋남)
 엔진이 그 좌표에 COG 노드를 만들고 부착점과 RBE2 로 묶어, Studio 에 모델 밖으로 길게 뻗은 RBE 가 생긴다. 같은 오류가 `3592_m10`(`=21945/1855177` 153 m)에도 있다.
@@ -215,6 +246,14 @@ COG 노드 + 질량을 두고 주변 부재에 RBE 로 묶기가 어렵다(3529_
   'RBE 로 잇는 이유'(문의 응대용, 3529 간격 67~114 mm vs 부재 길이 중앙 378 mm) https://claude.ai/artifact/AKo9Y5qkwqWx6fzRbtH1QD
 - **새로 받은 문제(미착수)**: 앵글(L) 부재가 다리 방향이 뒤집혀 보이는 경우를 바르게 표시. 확인할 것 = 화면이 Patran 등에서 연 BDF 인지(그러면 BDF 방향 벡터 문제 → 엔진),
   모델·부재 name. 구조 CSV `ori` ↔ 엔진 `BeamOrientation.Resolve`(평행일 때만 기본 규칙) ↔ BDF v 벡터 비교로 원인을 가른다.
+
+**Aveva Marine 연동 독립 클라이언트 (2026-10-28 계획, 미착수)** — AM 버튼 → `HiTessMB.exe <사번> <csv…>` → 서버 빌드 → Studio 까지 한 번에.
+계획서 `docs/plans/2026-10-28-aveva-marine-model-builder-client.md`(결정표 D1~D6). 확정: 보고서는 2차(1차 = 모델 확인·편집·해석·결과·편집 BDF 저장).
+확정(같은 날): 대상은 WorkBench 를 안 쓰는 AM 사용자라 **별도 클라이언트**(WorkBench 명령줄 모드 아님), AM 으로 돌려보내는 정보 없음(단방향).
+호출 규약 `HiTessMB.exe <사번> --hull-no <호선> --stru <CSV> [--pipe] [--equip]` — 호선 필수·선종 없음·사번 형식 `^[A-Z]\d{5,7}$`.
+미가입 사번(로그인 404)은 **웹 가입 페이지**(`<서버>/signup`, 기존 `POST /api/register` 사용, 관리자 승인 유지)를 자동으로 연다.
+AM 개발팀 전달본 = UNC `[개인 자료]\권혁민 책임연구원\UnLock\HiTESS_ModelBuilder_AM연동_요청.docx`(같은 폴더 PDF 는 옛 내용).
+Studio 는 `window.workbenchAPI` 만 보므로 클라이언트가 같은 API 를 주면 Studio 무수정 — 단 `finalizeEditedModel` 은 지금 `HiTessModelBuilder.jsx` 에 묶여 있어 이식 필요.
 
 **호선 주석 (2026-10-20)** — Model Builder BDF **첫 줄**에 `$ HiTessModelBuilder: HullNo=3454` 를 남긴다(해석 무관).
 권상(GMU)에 올라온 BDF 를 LogBook 으로 보낼 때 호선을 알아내는 통로다. 입력은 **선택**: Model Builder 옵션의 '호선' 칸 →
@@ -315,6 +354,20 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   "실제 반영은 Hoist 탭 자세안정성 평가 실행 시점"을 알린다(적용된 RBE 는 `AddRigidPreview` 노란 점선으로 보인다).
 - 실측(주 구조 3,657 요소 + 소그룹 80/78/48/14/1): 후보 8건, 거리 190~211mm, 타깃 L·Rod.
   건너뜀 = 반경 밖 10 · 이미 RBE 20 · 소그룹 내부 노드 161.
+
+#### 중심점 RBE + 집중질량 (Edit › RBE 생성, 0.0.171, 2026-10-28)
+
+SidePassageStudio 의 Point Mass RBE 를 옮겼다(노드 3개 이상 → 평균점에 새 GRID + RBE2 + 선택 CONM2(ton)). 상세·결정표: `ModuleUnitStudio/docs/centroid-rigid-mass-0.0.171.md`.
+- intent 는 SP 와 같은 `addRigid { createIndependentAtCentroid, independentCoord, mass }`. **기본 위치는 산술 평균**(SP·bridge 기본 = 경계상자 중심)이라 값을 항상 `independentCoord` 에 박는다.
+- 백엔드·bridge 무수정 — `_edited.json` 에 GRID·RBE2·CONM2 가 들어가 권상 해석·Wire BDF 다운로드·Save 탭 BDF 에 모두 반영된다(실모델 Nastran 확인, 하중 +5 t 정확).
+- ⚠ 자세안정성 엔진은 `_edited.json` pointMasses 를 안 읽는다 → Studio 가 `_posture.json` 질량·COG 에 편집 질량을 더한다(`withEditedMasses`, `massSource …+editedPointMass`).
+  질량 패널·하중 조건·COG 마커·권상 후보도 같은 함수. 평가 결과에서 온 COG 에는 다시 더하지 말 것.
+- 이미 RBE 에 걸린 노드(독립·종속)는 종속에서 뺀다. RBE2/RBE3 선택은 MB 확정 후 이식(위 'RBE 노드 공유 규칙').
+- ⚠ `_posture.json` 에 편집 전 `baseTotalMassTon`·`baseCenterOfGravityMm` 을 함께 싣는다 — Studio 가 폴더의 posture/stability JSON 을 질량 요약으로 다시 읽을 때 이중 합산 방지.
+- 화면(사용자 지적 반영, 0.0.172~0.0.174): 연결선 노란 실선, 중심점은 화면 고정 크기 점(월드 크기 구·상자는 확대 시 주변을 덮음),
+  회전 중심(`applyCogPivot`)에는 편집 질량을 넣지 않음(넣으면 RBE 만들 때마다 카메라가 튐), Shift 다중 선택은 노드 번호 라벨 없이 편집 패널에 번호 나열.
+- 배포 상태(2026-10-28 세션 끝): zip **0.0.174** 로컬·UNC + 핀 동기화. **145 미반영**(zip 수동 복사 → WorkBench 프론트 재배포, 백엔드 재시작 불필요).
+  ModuleUnitStudio·WorkBench 핀·이 문서 **미커밋**. 독립 리뷰 1회(막아야 함 1건 수정) 후 0.0.172~174 화면 수정은 리뷰 안 함. 사용자가 화면을 보고 만족 확인(최종 0.0.174 의 라벨 변경은 눈으로 확인 안 함).
 
 #### 가서포트 단면 3종 + 가서포트 CSV 내보내기 (Edit › 가서포트, 0.0.151)
 
