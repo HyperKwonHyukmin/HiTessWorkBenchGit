@@ -1,7 +1,7 @@
-"""옛 엔진 + bridge 가 모르는 편집이 섞이면 fallback 하지 않는다(2026-10-28 기본 모델 편집 ②단계).
+"""옛 엔진이 편집을 모르면 실패하고 교체를 안내한다 — MB 경로 bridge fallback 제거(2026-10-29).
 
-nastran_bridge 는 모르는 kind 를 경고만 남기고 건너뛴다. 서버 엔진이 옛 빌드인 채로 '요소 삭제 + COG RBE 삭제'
-를 적용하면 예전 규칙(deleteRigid 가 있으면 bridge fallback)으로는 요소 삭제가 빠진 BDF 가 '성공' 으로 나갔다.
+예전엔 옛 엔진이 deleteRigid·addNode 를 몰라 exit 65 를 내면 nastran_bridge 가 전체 편집을 대신 적용했다.
+145 엔진 교체 후 fallback 을 걷어냈다 — 이제 어떤 kind 든 편집 BDF 를 만들지 않고 실패한다.
 """
 import json
 import subprocess
@@ -27,21 +27,21 @@ def old_engine(monkeypatch):
     def fake_run(cmd, **kwargs):
         return SimpleNamespace(returncode=65, stdout=b"", stderr="[오류] apply failed: unsupported intent kind: x".encode("utf-8"))
     monkeypatch.setattr(subprocess, "run", fake_run)
-    calls = []
-    monkeypatch.setattr(mf, "_apply_edit_with_nastran_bridge", lambda *a, **k: calls.append(a) or ({"edited_bdf_path": "x"}, "bridge"))
-    return calls
 
 
-def test_unknown_kind_blocks_bridge_fallback(tmp_path, old_engine):
-    edit, exe = _write_edit(tmp_path, ["deleteRigid", "deleteElements"])
+@pytest.mark.parametrize("kinds", [["deleteRigid", "addRigid"], ["deleteRigid", "deleteElements"]])
+def test_old_engine_fails_with_replace_notice(tmp_path, old_engine, kinds):
+    edit, exe = _write_edit(tmp_path, kinds)
+    status, log, edited = mf.apply_edit_intents(str(tmp_path), exe, edit)
+    assert status == "Failed"
+    assert "엔진을 새 빌드로 교체" in log
+    assert edited == {}
+    assert not (tmp_path / "edited").exists()      # bridge 로 대신 만들지 않았다
+
+
+def test_other_engine_failure_has_no_replace_notice(tmp_path, monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: SimpleNamespace(returncode=65, stdout=b"", stderr=b"[error] node 5 missing"))
+    edit, exe = _write_edit(tmp_path, ["addRigid"])
     status, log, _ = mf.apply_edit_intents(str(tmp_path), exe, edit)
     assert status == "Failed"
-    assert "deleteElements" in log and "엔진을 새 빌드로 교체" in log
-    assert old_engine == []          # bridge 를 부르지 않았다
-
-
-def test_bridge_only_kinds_still_fall_back(tmp_path, old_engine):
-    edit, exe = _write_edit(tmp_path, ["deleteRigid", "addRigid"])
-    status, log, _ = mf.apply_edit_intents(str(tmp_path), exe, edit)
-    assert status == "Success"
-    assert len(old_engine) == 1
+    assert "[Exit code: 65]" in log and "교체" not in log

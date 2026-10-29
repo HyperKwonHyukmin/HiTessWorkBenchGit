@@ -126,33 +126,33 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
 2. **편집 적용** — `task_execute_apply_edit` (apply-edit 엔드포인트)
    - 스튜디오가 편집 결과를 output_dir 에 `*_edit.json`(intents)으로 기록.
    - 기본 경로: `Cmb.Cli.exe apply-edit-intent <output_dir> [--strict]` → `edited/` 에 `<base>.bdf` + `<base>.json` + `apply-trace.json`. exit **0=성공, 2=intents 빔, 64/65/70=실패**.
-   - ★ **Python fallback**: exit==65 + intents 에 `deleteRigid` 포함 + 로그에 `unsupported intent kind` 면 → `InHouseProgram/NastranBridge/nastran_bridge.py` 의 `write_edited_model_outputs()` 로 edited BDF/JSON 생성(Cmb.Cli 가 모르는 신규 intent 를 Python 이 처리).
+   - **엔진 하나만 적용한다** — 예전 Python fallback(exit 65 면 `nastran_bridge.py` 가 대신 적용)은 2026-10-29 걷어냈다. 엔진이 모르는 kind 면(`unsupported intent kind`) 실패하고 '엔진 교체 필요' 를 남긴다.
    - 후속 체인: `run_nastran` → `nastran.exe <bdf> scr=yes old=no batch=no` (f06/op2/log) → `parse_f06` → `F06Parser.Console.exe <f06> --output-dir` (`_results.json` + `_SC*_*.csv`). F06 의 `*** USER/SYSTEM FATAL|ERROR` 는 `scan_f06_diagnostics` 가 별도 수집.
 
-**런타임에 필요한 InHouse 프로그램 4종 (Cmb.Cli 1개가 아니다 — 모두 서버(145) 수동 반영 대상)**
+**런타임에 필요한 InHouse 프로그램 3종 (Cmb.Cli 1개가 아니다 — 모두 서버(145) 수동 반영 대상)**
 
 | 경로 | 역할 |
 |------|------|
-| `InHouseProgram/HiTessModeBuilder/Cmb.Cli.exe` | 엔진 (build-full + apply-edit-intent **기본** 경로) |
-| `InHouseProgram/NastranBridge/nastran_bridge.py` | deleteRigid 등 **미지원 intent 의 Python fallback** (편집 BDF 포맷 fix 가 사는 곳) |
+| `InHouseProgram/HiTessModeBuilder/Cmb.Cli.exe` | 엔진 (build-full + apply-edit-intent, MB 편집의 **유일한** 적용 경로) |
 | `InHouseProgram/F06Parser/F06Parser.Console.exe` | F06 → 결과 JSON(`_results.json`)/CSV 파서 |
 | 외부 MSC `nastran.exe` (`C:\MSC.Software\MSC_Nastran\20131\bin`, `--nastran-path` override) | 해석기. InHouse 아님 — 서버에 **MSC 설치** 필요 |
 
-**편집 정합성 계약 (2026-10-02)** — 같은 편집 intent 를 Studio 미리보기·C# 엔진·nastran_bridge·Analysis 탭 해석 실행이 같은 모델로 만들어야 한다.
+**편집 정합성 계약 (2026-10-02)** — 같은 편집 intent 를 Studio 미리보기·C# 엔진·Analysis 탭 해석 실행이 같은 모델로 만들어야 한다.
 해석 실행(`modelbuilder_solve_service`)도 이제 Studio 가 보낸 `edits.intent_document` + `base_name` 으로 **편집 적용과 같은 함수**
-`hitess_modelflow_service.apply_edit_intents`(엔진 → bridge fallback)를 거쳐 편집 BDF 를 만든다(예전 삭제·RBE 추가 직접 반영 경로는 옛 Studio 호환용).
+`hitess_modelflow_service.apply_edit_intents`(C# 엔진)를 거쳐 편집 BDF 를 만든다(예전 삭제·RBE 추가 직접 반영 경로는 옛 Studio 호환용).
 엔진마다 규칙을 맞추는 대신 Studio 가 결정값을 intent 에 박는다 — 회전 `pivot`, 무게중심 RBE 의 미리 거른 종속 + `independentCoord`(산술 평균),
 일반 RBE 종속 중복 = 오류, 회전은 노드 추가·무게중심 RBE 보다 먼저. 상세·지원 표: Studio `docs/edit-intent-spec.md` 맨 앞 '현재 계약'.
-계약 테스트 `tests/test_modelbuilder_edit_contract.py` 가 C# 엔진 ↔ bridge 산출 모델을 비교한다(새 빌드 검증 시 `CMB_CLI_EXE`·`NASTRAN_BRIDGE_PY` 로 지정).
-⚠ 새 intent kind 를 만들면 Studio·C#·bridge·계약 테스트를 함께 고칠 것.
+계약 테스트 `tests/test_modelbuilder_edit_contract.py` — 새 kind 는 C# ↔ Studio 미리보기(`scripts/previewEditedModel.mjs`), 옛 kind(회전·무게중심 RBE·유체 비움)는
+C# ↔ bridge 비교 2건을 독립 기준으로 남겼다(bridge 는 Mooring·SP 편집 엔진). 새 빌드 검증 시 `CMB_CLI_EXE`·`NASTRAN_BRIDGE_PY` 로 지정.
+⚠ 새 intent kind 를 만들면 **Studio·C#·계약 테스트 3곳**을 함께 고칠 것(MB 경로 bridge fallback 은 2026-10-29 제거 — bridge 는 고치지 않는다).
 
 **기본 모델 편집 기능 (2026-10-28 결정, 진행 중)** — 요소 삭제·추가, 노드 이동, 단면 변경, 질량 추가·수정·삭제, RBE 수정 등 9개.
-⚠ 이 작업에서 **MB 경로 엔진을 C# 하나로 통일**한다(`deleteRigid`·`addNode` C# 이식 → MB 의 bridge fallback 제거, 계약 테스트 = C# ↔ Studio 미리보기).
-완료 후 위 '새 kind = 4곳 동시 수정' 규칙은 'Studio·C#·계약 테스트 3곳'으로 바뀐다. 결정 전체·진행 단계: Studio `docs/edit-intent-spec.md` 맨 앞 '기본 모델 편집 기능 계획'.
+이 작업에서 **MB 경로 엔진을 C# 하나로 통일**했다(`deleteRigid`·`addNode` C# 이식 → 145 exe 교체 뒤 MB 의 bridge fallback 제거, 2026-10-29).
+결정 전체·진행 단계: Studio `docs/edit-intent-spec.md` 맨 앞 '기본 모델 편집 기능 계획'.
 상태(2026-10-28 세션 끝) — 세부·버전별 경과는 Studio `docs/edit-intent-spec.md` 진행 단계 ①②.
 - **완료(코드)**: ① C# 이 `deleteRigid`·`addNode` 직접 적용. ② `deleteElements`·`deleteMasses`·`deleteOrphanNodes`.
-  ③④에서 앞당김(사용자 결정) `moveNodes`·`addElement`. 새 kind 는 C# 전용 — bridge 가 모르는 kind 가 섞이면 fallback 하지 않고 실패
-  (`BRIDGE_KNOWN_INTENT_KINDS`). `BRIDGE_ONLY_INTENT_KINDS` fallback 은 옛 exe 호환용(145 exe 교체 후 제거). 새 kind 는 그 목록에 넣지 말 것.
+  ③④에서 앞당김(사용자 결정) `moveNodes`·`addElement`, ③ `changeSection`. fallback 제거(2026-10-29) — `BRIDGE_ONLY/KNOWN_INTENT_KINDS` 없음,
+  옛 엔진이면 '엔진 교체 필요' 로 실패(`test_modelbuilder_edit_fallback_guard.py`).
 - **화면**: 편집 작업의 단일 진입점 = 뷰포트 왼쪽 도구 막대 `EditToolPalette`(노드·부재·질량·RBE·정리). 왼쪽 패널 = 선택 필터·수정 내역,
   아래 선택 바 = 선택 수·해제·목록. 형상 편집은 파생 모델(`data/geometryEdits.js`)로 편집 대상 뷰포트에만 그린다(원본 StageData 불변).
 - **계약 테스트** = C# ↔ Studio 미리보기(`scripts/previewEditedModel.mjs`, node 필요) — `test_modelbuilder_edit_contract.py`. 옛 exe 면 해당 테스트는 건너뛴다.
@@ -274,20 +274,19 @@ Studio 는 `window.workbenchAPI` 만 보므로 클라이언트가 같은 API 를
 권상(GMU)에 올라온 BDF 를 LogBook 으로 보낼 때 호선을 알아내는 통로다. 입력은 **선택**: Model Builder 옵션의 '호선' 칸 →
 비우면 CSV 파일명 앞 4자리(`^\d{4}` 뒤에 `-`/`_`, `5PPP_-…` 같은 예외는 제안 없음) → 둘 다 없으면 주석 없음.
 - 경로: 프론트 `hull_no` → `task_execute_modelflow`(`input_info.hull_no`/`hull_no_source`=user|filename) → `Cmb.Cli build-full --hull-no`
-  → BDF 주석 + JSON `meta.hullNo` → `apply-edit-intent`·bridge fallback·bridge `lift-run`(Wire BDF)이 다시 쓴다.
+  → BDF 주석 + JSON `meta.hullNo` → `apply-edit-intent`·bridge `lift-run`(Wire BDF)이 다시 쓴다.
   GMU 검증은 `hull_no.resolve_bdf_hull_no`(주석 → 파일명)로 `input_info.hull_no`/`hull_no_source`=comment|filename 을 남긴다.
 - 정규화 규칙(대문자, 영문·숫자·`-`·`_` 20자)은 C# `FeModel.NormalizeHullNo` · bridge `normalize_hull_no` · `app/services/hull_no.py` ·
   프론트 `utils/hullNo.js` 가 같아야 한다.
 - ⚠ 옛 `Cmb.Cli.exe` 는 `--hull-no` 를 모르면 인자 오류로 실패한다 → 백엔드는 `engine_supports_hull_no()`(`--help` 확인, exe mtime 캐시)로
   지원할 때만 넘긴다. 그래서 서버에서 백엔드·엔진 반영 순서가 바뀌어도 깨지지 않는다(엔진 교체 전에는 경고만 로그에 남음).
-- 계약 테스트 `test_engine_and_bridge_keep_hull_no` 가 두 편집 경로 모두 첫 줄 주석을 확인한다(호선 이전 엔진이면 skip).
+- 계약 테스트 `test_engine_keeps_hull_no` 가 편집 BDF 첫 줄 주석을 확인한다(호선 이전 엔진이면 skip).
 - 배포 상태(2026-10-20): 백엔드·프론트는 v1.6.20 으로 릴리스됨. **엔진 `Cmb.Cli.exe`·`nastran_bridge.py` 는 아직 InHouseProgram(70·145) 미교체** —
   소스는 `WorkBenchSubModule\HiTessModelBuilder`(미커밋)·`WorkBenchSubModule\Nastran_bridge\nastran_bridge.py`. 교체 전까지 BDF 에 주석이 안 남는다.
   권상 Wire 포함 BDF(lift-run)의 호선 주석은 단위 테스트만 했고 실제 권상 해석으로는 확인 안 함.
 
 **⚠️ 교정/함정 (이번 재검토에서 발견)**
-- **nastran_bridge 폴더명 불일치(잠재 `FileNotFoundError`)**: `hitess_modelflow_service.py` 의 `_load_nastran_bridge_module()` 은 **오직 `InHouseProgram/NastranBridge`(camelCase) 하드코딩, 폴백 없음**. 반면 `analysis.py` 는 `InHouseProgram/Nastran_bridge`(**underscore**)를 1순위로 본다. → nastran_bridge.py 를 **underscore 폴더에만** 두면 modelflow 의 deleteRigid 폴백이 깨진다. **둘 다 만족하려면 `NastranBridge`(camelCase)에 둘 것**(또는 양쪽 복사). [이상적으론 modelflow service 도 analysis.py 처럼 다중 후보 탐색으로 통일 권장.]
-- **편집 BDF 포맷 fix 의 적용 범위**: `nastran_bridge.py` 의 BDF 포맷 수정은 **fallback(deleteRigid) 경로에만** 효력. ModelBuilder 일반 편집의 기본 BDF writer 는 **C# `Cmb.Cli.exe`** 다. 깨진 BDF 가 Cmb.Cli 산출물이면 **C# 엔진 쪽도 같은 수정 필요**. (단 Mooring/SidePassage 스튜디오의 apply-edit 는 `analysis.py` 가 nastran_bridge 를 **기본 경로로** 직접 호출 → 그쪽 BDF 는 이 Python fix 로 완결.)
+- **편집 BDF 포맷 fix 의 적용 범위**: `nastran_bridge.py` 의 BDF 포맷 수정은 ModelBuilder 편집에 **효력이 없다**(MB 편집 BDF writer 는 C# `Cmb.Cli.exe` 하나, 2026-10-29 fallback 제거). MB 편집 BDF 가 깨지면 C# 엔진을 고친다. Mooring/SidePassage 스튜디오의 apply-edit 는 `analysis.py` 가 nastran_bridge 를 **기본 경로로** 직접 호출 → 그쪽 BDF 는 Python fix 로 완결.
 
 ### Module Unit Studio
 

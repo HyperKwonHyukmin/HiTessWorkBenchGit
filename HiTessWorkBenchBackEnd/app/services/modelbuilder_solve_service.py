@@ -75,7 +75,7 @@ def build_edited_source_bdf(source_bdf_path: str, solve_dir: str, edits: dict, j
 
     edits = { intent_document: serializeIntents 결과, base_name: 마지막 단계 파일명(확장자 없음) }.
     work_dir(빌드 산출 폴더)의 <base>.json/.bdf 를 solve_dir/edit_apply/ 로 복사하고 <base>_edit.json 을
-    써서 hitess_modelflow_service.apply_edit_intents(엔진 → bridge fallback)로 편집 BDF 를 만든다.
+    써서 hitess_modelflow_service.apply_edit_intents(C# 엔진, 2026-10-29 bridge fallback 제거)로 편집 BDF 를 만든다.
     예전 경로(삭제·RBE 추가만 BDF 텍스트에 직접 반영)는 노드 추가·회전·유체 비움을 빠뜨려
     Studio 화면과 다른 모델로 해석됐다(2026-10-02 정합성 검토).
 

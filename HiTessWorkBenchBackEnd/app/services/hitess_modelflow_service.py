@@ -15,15 +15,12 @@ viewer 는 이 경로를 initialFolder 로 받아 phase JSON 일괄 자동 로�
   hull_no              → --hull-no <호선>  (비우면 CSV 파일명 앞 4자리. 엔진이 지원할 때만)
 """
 import glob
-import importlib.util
 import json
 import logging
 import os
 import re
-import shutil
 import subprocess
 from datetime import datetime
-from pathlib import Path
 
 from .analysis_runner import (
     CANCELLED_MESSAGE,
@@ -380,107 +377,6 @@ def detect_edited_artifacts(output_dir: str) -> dict:
     return result
 
 
-# 옛 Cmb.Cli.exe(2026-10-28 이전 빌드)가 모르던 intent 종류 — 옛 엔진이 exit 65 를 내면 nastran_bridge 가
-# 대신 적용한다. 새 엔진은 두 kind 를 직접 적용하므로 이 fallback 은 걸리지 않는다(MB 경로 엔진 단일화).
-# 서버(145)의 exe 를 새 빌드로 바꾼 뒤에는 지워도 된다 — 백엔드가 exe 보다 먼저 배포돼도 깨지지 않게 남겨 둔 것이다.
-# ⚠ 앞으로 만드는 새 kind 는 여기에 넣지 말 것(bridge 는 그 kind 를 모른다 — C# 에 구현한다).
-BRIDGE_ONLY_INTENT_KINDS = ("deleteRigid", "addNode")
-# nastran_bridge 가 실제로 적용할 줄 아는 kind. 이 밖의 kind(요소·질량 삭제 등 2026-10-28 이후 C# 전용)는 bridge 가
-# 경고만 남기고 건너뛰므로, 하나라도 섞여 있으면 fallback 하지 않고 실패시킨다 — 삭제가 빠진 BDF 가 '성공' 으로
-# 나가는 것보다 "엔진 교체 필요" 로 멈추는 편이 안전하다.
-BRIDGE_KNOWN_INTENT_KINDS = frozenset({
-    "deleteGroup", "deleteRigid", "addNode", "addRigid", "emptyPipeFluid", "rotateModel",
-    "duplicateElement", "changeElementProperty", "editRigidDependents",
-})
-
-
-def _edit_json_kinds(edit_json_path: str | None) -> set[str]:
-    """*_edit.json 에 들어 있는 intent kind 집합 (읽기 실패 시 빈 집합)."""
-    if not edit_json_path or not os.path.isfile(edit_json_path):
-        return set()
-    try:
-        with open(edit_json_path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        return {
-            intent.get("kind")
-            for intent in data.get("intents", [])
-            if isinstance(intent, dict) and intent.get("kind")
-        }
-    except Exception:
-        return set()
-
-
-def _load_nastran_bridge_module():
-    backend_dir = Path(__file__).resolve().parents[2]
-    bridge_path = backend_dir / "InHouseProgram" / "NastranBridge" / "nastran_bridge.py"
-    if not bridge_path.is_file():
-        raise FileNotFoundError(f"nastran_bridge.py 없음: {bridge_path}")
-    spec = importlib.util.spec_from_file_location("hitess_nastran_bridge", bridge_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"nastran_bridge.py 로드 실패: {bridge_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _apply_edit_with_nastran_bridge(output_dir: str, edit_json_path: str) -> tuple[dict, str]:
-    """Cmb.Cli.exe가 모르는 신규 intent(deleteRigid·addNode 등)를 Python bridge로 적용한다."""
-    nb = _load_nastran_bridge_module()
-    edit_path = Path(edit_json_path)
-    stem = edit_path.stem[:-5] if edit_path.stem.lower().endswith("_edit") else edit_path.stem + "_final"
-    edited_dir = Path(output_dir) / "edited"
-    if edited_dir.exists():
-        shutil.rmtree(edited_dir)
-    edited_dir.mkdir(parents=True, exist_ok=True)
-
-    output_json_path = edited_dir / f"{stem}.json"
-    output_bdf_path = edited_dir / f"{stem}.bdf"
-    result = nb.write_edited_model_outputs(edit_path, output_json_path, output_bdf_path)
-
-    edit_data = json.loads(edit_path.read_text(encoding="utf-8"))
-    summary = result.get("summary", {})
-    operations = []
-    for rigid_id in summary.get("addedRigids", []) or []:
-        operations.append({
-            "code": "RIGID_ADDED",
-            "level": "info",
-            "kind": "addRigid",
-            "details": f"RBE2 {rigid_id} created",
-        })
-    deleted_rigids = (summary.get("deleted") or {}).get("rigids", 0)
-    if deleted_rigids:
-        operations.append({
-            "code": "RIGID_DELETED",
-            "level": "info",
-            "kind": "deleteRigid",
-            "details": f"{deleted_rigids} RBE2 deleted",
-        })
-    trace = {
-        "schemaVersion": "1.0",
-        "appliedAt": datetime.now().isoformat(),
-        "intentFile": edit_path.name,
-        "baseStage": stem,
-        "intents": edit_data.get("intents", []),
-        "operations": operations,
-        "summary": summary,
-        "fallback": "nastran_bridge",
-    }
-    (edited_dir / "apply-trace.json").write_text(
-        json.dumps(trace, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-    edited = detect_edited_artifacts(output_dir)
-    log = (
-        "[nastran_bridge fallback]\n"
-        f"edit={edit_path}\n"
-        f"json={output_json_path}\n"
-        f"bdf={output_bdf_path}\n"
-        f"summary={json.dumps(summary, ensure_ascii=False)}"
-    )
-    return edited, log
-
-
 _DEFAULT_NASTRAN_PATH = r"C:\MSC.Software\MSC_Nastran\20131\bin\nastran.exe"
 
 # Nastran F06 의 표준 진단 마커. *** USER FATAL / *** USER ERROR / *** SYSTEM FATAL ...
@@ -596,8 +492,8 @@ def apply_edit_intents(
 ) -> tuple[str, str, dict]:
     """output_dir 의 *_edit.json 을 적용해 edited/ 에 편집 BDF·JSON 을 만든다. (status, log, edited)
 
-    엔진(Cmb.Cli apply-edit-intent)이 적용한다. 옛 엔진이 BRIDGE_ONLY_INTENT_KINDS 를 몰라 거부할 때만
-    nastran_bridge 가 **전체 intent** 를 대신 적용한다(호환용).
+    엔진(Cmb.Cli apply-edit-intent) 하나만 적용한다 — MB 경로의 nastran_bridge fallback 은 145 엔진 교체 후
+    걷어냈다(2026-10-29). 엔진이 모르는 kind 면 exit 65 로 실패하고 "엔진 교체 필요" 를 남긴다.
     'Studio → 편집 적용(finalize)' 과 'Analysis 탭 해석 실행' 이 이 함수 하나를 공유한다 — 같은 편집이
     두 경로에서 다른 모델이 되던 문제(2026-10-02 정합성 검토) 때문이다.
     """
@@ -636,43 +532,13 @@ def apply_edit_intents(
             status_msg = "Failed"
             engine_output += "\n[오류] 적용할 편집 내역이 없습니다 (intents 비어있음)."
         else:
-            kinds = _edit_json_kinds(edit_json_path)
-            bridge_only = sorted(kinds.intersection(BRIDGE_ONLY_INTENT_KINDS))
-            bridge_unknown = sorted(kinds - BRIDGE_KNOWN_INTENT_KINDS)
-            engine_too_old = result.returncode == 65 and "unsupported intent kind" in engine_output
-            can_bridge_fallback = engine_too_old and bool(bridge_only) and not bridge_unknown
-            if engine_too_old and bridge_unknown:
-                status_msg = "Failed"
+            status_msg = "Failed"
+            engine_output += f"\n[Exit code: {result.returncode}]"
+            if result.returncode == 65 and "unsupported intent kind" in engine_output:
                 engine_output += (
-                    f"\n[Exit code: {result.returncode}]"
-                    f"\n[오류] 서버의 Model Builder 엔진(Cmb.Cli.exe)이 이 편집({', '.join(bridge_unknown)})을 모릅니다 — "
+                    "\n[오류] 서버의 Model Builder 엔진(Cmb.Cli.exe)이 이 편집을 모릅니다 — "
                     "엔진을 새 빌드로 교체해야 합니다(편집 BDF 를 만들지 않았습니다)."
                 )
-            elif can_bridge_fallback:
-                logger.warning(
-                    "[apply-edit] Cmb.Cli.exe가 %s 를 지원하지 않아 nastran_bridge fallback 적용",
-                    ", ".join(bridge_only),
-                )
-                try:
-                    edited, fallback_log = _apply_edit_with_nastran_bridge(output_dir, edit_json_path)
-                    engine_output += (
-                        f"\n[Exit code: {result.returncode}]"
-                        f"\n[호환 처리] Cmb.Cli.exe {', '.join(bridge_only)} 미지원 → nastran_bridge로 편집 BDF 생성.\n"
-                        f"{fallback_log}"
-                    )
-                    if not edited.get("edited_bdf_path"):
-                        status_msg = "Failed"
-                        engine_output += "\n[오류] nastran_bridge fallback 후 edited/ 폴더에 BDF 산출물이 없습니다."
-                except Exception as fallback_error:
-                    status_msg = "Failed"
-                    logger.exception("[apply-edit] nastran_bridge fallback 실패")
-                    engine_output += (
-                        f"\n[Exit code: {result.returncode}]"
-                        f"\n[오류] nastran_bridge fallback 실패: {fallback_error}"
-                    )
-            else:
-                status_msg = "Failed"
-                engine_output += f"\n[Exit code: {result.returncode}]"
     except subprocess.TimeoutExpired:
         status_msg = "Failed"
         engine_output += "\napply-edit-intent 실행 시간 초과 (10분)."

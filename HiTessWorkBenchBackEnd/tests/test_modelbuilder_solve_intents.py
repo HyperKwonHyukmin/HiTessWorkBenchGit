@@ -2,9 +2,8 @@
 
 배경(2026-10-02 정합성 검토): 해석 실행은 삭제·RBE 추가만 BDF 텍스트에 직접 반영해 노드 추가·회전·유체 비움·
 무게중심 RBE 가 빠졌고, 무게중심 RBE 가 있으면 independent_node=null 로 요청 전체가 422 였다.
-엔진 exe 가 없으면 엔진 경로 테스트는 건너뛴다(CMB_CLI_EXE / NASTRAN_BRIDGE_PY 로 새 빌드 지정 가능).
+엔진 exe 가 없으면 엔진 경로 테스트는 건너뛴다(CMB_CLI_EXE 로 새 빌드 지정 가능).
 """
-import importlib.util
 import json
 import os
 import shutil
@@ -13,14 +12,12 @@ from pathlib import Path
 import pytest
 
 from app.routers.analysis import ModelBuilderSolveRequest
-from app.services import hitess_modelflow_service as mf
 from app.services import modelbuilder_solve_service as solve
 
 BACKEND = Path(__file__).resolve().parents[1]
 FIXTURE = BACKEND / "tests" / "fixtures" / "modelbuilder_edit_contract"
 BASE = "06_Validation"
 CMB_EXE = Path(os.environ.get("CMB_CLI_EXE") or solve._CMB_EXE)
-BRIDGE_PY = os.environ.get("NASTRAN_BRIDGE_PY")
 OK = {"status": "ok", "warnings": [], "errors": []}
 
 
@@ -29,13 +26,6 @@ def work(tmp_path, monkeypatch):
     for name in (f"{BASE}.json", f"{BASE}.bdf"):
         shutil.copy2(FIXTURE / name, tmp_path / name)
     monkeypatch.setattr(solve, "_CMB_EXE", str(CMB_EXE))
-    if BRIDGE_PY:
-        def load():
-            spec = importlib.util.spec_from_file_location("solve_test_bridge", BRIDGE_PY)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            return module
-        monkeypatch.setattr(mf, "_load_nastran_bridge_module", load)
     (tmp_path / "solve").mkdir()
     return tmp_path
 

@@ -4,6 +4,10 @@
 적용했지만(회전 pivot, 무게중심 공식, 종속 중복 처리 등) 각자 단위 테스트만 통과해 드러나지 않았다.
 이 테스트가 두 엔진의 산출 모델(노드 좌표·요소·RBE·재질·질량)을 직접 비교한다.
 
+2026-10-29 MB 경로의 bridge fallback 을 걷어내 MB 편집은 C# 엔진 하나가 적용한다. 아래 C# ↔ bridge 비교 2건은
+옛 kind(회전·무게중심 RBE·유체 비움 등)의 독립 기준으로 남겼다 — bridge 는 Mooring·SP 의 편집 엔진이고,
+Studio 미리보기 스크립트는 회전·재질을 다루지 않는다. 새 kind 는 C# ↔ Studio 미리보기로만 비교한다.
+
 편집은 Studio 가 만드는 모양 그대로다: 회전에는 pivot, 무게중심 RBE 에는 미리 거른 종속 노드와
 independentCoord(회전된 좌표계의 산술 평균)가 들어 있다.
 
@@ -175,8 +179,8 @@ HULL_COMMENT = "$ HiTessModelBuilder: HullNo=3454"
 
 @pytest.mark.skipif(not CMB_EXE.is_file(), reason="Cmb.Cli.exe 없음")
 @pytest.mark.parametrize("hull_in", ["json", "bdf"])
-def test_engine_and_bridge_keep_hull_no(tmp_path, hull_in):
-    """편집 적용 두 경로(엔진 기본 · bridge fallback) 모두 호선 주석을 편집 BDF 첫 줄에 다시 쓴다(2026-10-20).
+def test_engine_keeps_hull_no(tmp_path, hull_in):
+    """편집 적용이 호선 주석을 편집 BDF 첫 줄에 다시 쓴다(2026-10-20). MB 경로 bridge fallback 은 2026-10-29 제거.
 
     hull_in='json' = 이 기능 이후 빌드(meta.hullNo 가 원본) / 'bdf' = base JSON 에 없고 base BDF 주석에만 있는 경우.
     엔진이 호선 기능 이전 빌드면(--hull-no 미지원) 건너뛴다.
@@ -198,12 +202,6 @@ def test_engine_and_bridge_keep_hull_no(tmp_path, hull_in):
     assert engine_json["meta"]["hullNo"] == "3454"
     engine_bdf = (tmp_path / "edited" / f"{BASE}.bdf").read_text(encoding="utf-8")
     assert engine_bdf.splitlines()[0] == HULL_COMMENT
-
-    if hull_in == "json":   # bridge fallback 은 base JSON 만 본다
-        bridge_json = _run_bridge(tmp_path)
-        assert bridge_json["meta"]["hullNo"] == "3454"
-        bridge_bdf = (tmp_path / "bridge" / f"{BASE}.bdf").read_text(encoding="utf-8")
-        assert bridge_bdf.splitlines()[0] == HULL_COMMENT
 
 
 # ── C# ↔ Studio 미리보기 (2026-10-28 기본 모델 편집 ②단계) ─────────────────────────────
