@@ -20,7 +20,9 @@
     },
     "files": [
       "electron/**/*",
-      "frontend/dist/**/*"
+      "frontend/dist/**/*",
+      "!electron/**/*.test.js",
+      "!electron/**/*.spec.js"
     ],
     "win": {
       "target": "portable",
