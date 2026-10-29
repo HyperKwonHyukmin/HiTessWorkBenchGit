@@ -157,13 +157,14 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
   아래 선택 바 = 선택 수·해제·목록. 형상 편집은 파생 모델(`data/geometryEdits.js`)로 편집 대상 뷰포트에만 그린다(원본 StageData 불변).
 - **계약 테스트** = C# ↔ Studio 미리보기(`scripts/previewEditedModel.mjs`, node 필요) — `test_modelbuilder_edit_contract.py`. 옛 exe 면 해당 테스트는 건너뛴다.
 - **배포(로컬 70만)**: InHouse `Cmb.Cli.exe`(sha256 12f1f3aa…, 백업 `.bak_20261028_before_delete_edits`·`.bak_20261028_before_move_add`) ·
-  `model-studio-0.0.119`(로컬·UNC — 0.0.115 새 부재 삭제 시 새 노드도 정리, 0.0.116 '삭제' 먼저 → 부재·질량점 클릭 고르기 도구, 0.0.117~0.0.119 아래 '도움말·셸 정리') · 핀 0.0.119. **145 미반영**(zip 복사 → exe 교체 → 백엔드 git pull + 재시작 → 프론트 재배포).
+  `model-studio-0.0.121`(로컬·UNC, **릴리스 표 0.0.121 = 145 공개**(`d27df93`, 2026-10-29) — 0.0.115 새 부재 삭제 시 새 노드도 정리, 0.0.116 '삭제' 먼저 → 고르기 도구, 0.0.117~0.0.119 '도움말·셸 정리', 0.0.120 작업 패널 통일, 0.0.121 좌하단 버전 표시) · 핀 0.0.120(표시용).
+  WorkBench 1.6.30(`83fef8b`) 릴리스·푸시. **145 남은 일**: InHouse `Cmb.Cli.exe`·`nastran_bridge.py` 수동 교체(옛 exe 면 Studio 새 편집 kind 실패) → ⟳ Update + 재시작(viewers.py 변경 1회) → manifest `channel release`·버전 확인 → 1.6.30 exe 배포.
 - **도움말·셸 정리 (2026-10-29, 0.0.117~0.0.119)** — Studio 안 사용자 가이드: 상단 `도움말`(따라하기 7개 · F1 버튼 설명 모드 · 기능 찾기 · 단축키 · 용어),
   원본은 Studio `src/data/helpContent.js` 한 곳(버튼·구역 `data-help`, 테스트가 누락을 잡음). `/design` 검토(27/40) 후 사용자 결정으로 셸 규칙을 정함 —
   보이기 설정은 오른쪽 '표시' 도크 한 곳(9-11 Model 탭 배치를 되돌림) · Model Check = 보기·제안, 그룹 삭제는 Edit · 탭 푸터 = 다음 행동 1개 ·
   노드·부재 입력 창 = 뷰포트 아래 비모달 패널(3D 클릭이 주황 칸에 바로 들어감) · 노드 중점 생성 · 직교 카메라 near 음수(확대 시 모델 잘림 수정) · CSV '모델 없음' 행 점선 상자.
   규칙·남은 것·**Module Unit Studio 로 넓힐 목록** = Studio `apps/model-studio/docs/shell-conventions.md`(MB 개선을 마친 뒤 사용자가 확산 요청 예정).
-  **작업 패널 통일(2026-10-29 적용, 미배포)**: 노드·부재·삭제·RBE·고립 노드 정리가 모두 같은 아래쪽 패널(`components/edit/WorkPanelFrame.jsx`) —
+  **작업 패널 통일(2026-10-29, 0.0.120~)**: 노드·부재·삭제·RBE·고립 노드 정리가 모두 같은 아래쪽 패널(`components/edit/WorkPanelFrame.jsx`) —
   모드 표시(삭제 = 빨간 테두리) · 대상 칸 · 옵션 · 주 버튼 하나 · Esc. 패널이 열린 동안 3D 클릭 = 대상 넣기/빼기(스토어 `pickTool` 이 패널 열림과 함께 움직임).
   사용자 결정: 적용 후 패널 유지 · 삭제 확인 모달 없음(Ctrl+Z, 패널이 끊김·함께 지워질 노드를 미리 보임). 선택 바 [삭제 Del] [RBE로 묶기 Enter] 로 단축키 안내.
   규칙 원본 = Studio `docs/shell-conventions.md` 11번.
