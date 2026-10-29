@@ -157,7 +157,8 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
   아래 선택 바 = 선택 수·해제·목록. 형상 편집은 파생 모델(`data/geometryEdits.js`)로 편집 대상 뷰포트에만 그린다(원본 StageData 불변).
 - **계약 테스트** = C# ↔ Studio 미리보기(`scripts/previewEditedModel.mjs`, node 필요) — `test_modelbuilder_edit_contract.py`. 옛 exe 면 해당 테스트는 건너뛴다.
 - **배포(로컬 70만)**: InHouse `Cmb.Cli.exe`(sha256 12f1f3aa…, 백업 `.bak_20261028_before_delete_edits`·`.bak_20261028_before_move_add`) ·
-  `model-studio-0.0.121`(로컬·UNC, **릴리스 표 0.0.121 = 145 공개**(`d27df93`, 2026-10-29) — 0.0.115 새 부재 삭제 시 새 노드도 정리, 0.0.116 '삭제' 먼저 → 고르기 도구, 0.0.117~0.0.119 '도움말·셸 정리', 0.0.120 작업 패널 통일, 0.0.121 좌하단 버전 표시) · 핀 0.0.120(표시용).
+  `model-studio-0.0.121`(로컬·UNC, **릴리스 표 0.0.121 = 145 공개**(`d27df93`, 2026-10-29) — 0.0.115 새 부재 삭제 시 새 노드도 정리, 0.0.116 '삭제' 먼저 → 고르기 도구, 0.0.117~0.0.119 '도움말·셸 정리', 0.0.120 작업 패널 통일, 0.0.121 좌하단 버전 표시) · **0.0.122 는 70 로컬만**(2026-10-29, 커밋 전 독립 리뷰 반영 — 새 구조 단면 PID 를 배관 구간(≥101) 밖에서 고름 `suggestNextPropertyId`·
+  그룹 삭제 시 그 노드를 쓰는 `addElement` 도 함께 취소·대화상자 한글 조합 Enter, 145 공개는 `/studio-release model-studio`) · 핀 0.0.122(표시용).
   WorkBench 1.6.30(`83fef8b`) 릴리스·푸시. **145 남은 일**: InHouse `Cmb.Cli.exe`·`nastran_bridge.py` 수동 교체(옛 exe 면 Studio 새 편집 kind 실패) → ⟳ Update + 재시작(viewers.py 변경 1회) → manifest `channel release`·버전 확인 → 1.6.30 exe 배포.
 - **도움말·셸 정리 (2026-10-29, 0.0.117~0.0.119)** — Studio 안 사용자 가이드: 상단 `도움말`(따라하기 7개 · F1 버튼 설명 모드 · 기능 찾기 · 단축키 · 용어),
   원본은 Studio `src/data/helpContent.js` 한 곳(버튼·구역 `data-help`, 테스트가 누락을 잡음). `/design` 검토(27/40) 후 사용자 결정으로 셸 규칙을 정함 —
@@ -168,7 +169,12 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
   모드 표시(삭제 = 빨간 테두리) · 대상 칸 · 옵션 · 주 버튼 하나 · Esc. 패널이 열린 동안 3D 클릭 = 대상 넣기/빼기(스토어 `pickTool` 이 패널 열림과 함께 움직임).
   사용자 결정: 적용 후 패널 유지 · 삭제 확인 모달 없음(Ctrl+Z, 패널이 끊김·함께 지워질 노드를 미리 보임). 선택 바 [삭제 Del] [RBE로 묶기 Enter] 로 단축키 안내.
   규칙 원본 = Studio `docs/shell-conventions.md` 11번.
-- **남은 일**: 3개 저장소 미커밋(커밋 전 `hitess-code-reviewer` 1회) · 화면 눈으로 확인 안 함(0.0.113~0.0.116 편집 도구, 0.0.117~0.0.119 도움말·셸 정리·아래쪽 패널은 사용자 확인 중) ·
+- **git (2026-10-29 커밋·푸시)**: 엔진 → `HiTessModelBuilder.git` `main`(`ecfe841`, 옛 엔진 이력은 `-s ours` 병합으로 보존) ·
+  Studio → `ModelBuilerStudio.git`(Private, 옛 이름 ClaudeModelBuilerViewer) **`model-studio` 브랜치**(`c0fa8db`). 그 저장소 `master` 는 **Module Unit Studio** 라
+  GitHub 의 'model-studio → master' PR 제안을 누르지 말 것. ModelBuilderStudio 로컬 `master` 가 `origin/model-studio` 추적(`push.default upstream`, PC 마다 설정).
+  Module Unit Studio 를 별도 저장소로 옮기는 건 사용자가 나중에 한다(ModuleUnitStudio 로컬 커밋 2개 미푸시).
+  리뷰에서 '고치면 좋음'으로 남긴 엔진 항목: 과학 표기 양수 지수 부호 빠짐(`BdfField.FormatPrecise`, 1e6 이상) · `edited/` 교체 실패 시 옛 결과 유실 · 옛 무게중심 intent null 예외.
+- **남은 일**: 화면 눈으로 확인 안 함(0.0.113~0.0.116 편집 도구, 0.0.117~0.0.119 도움말·셸 정리·아래쪽 패널은 사용자 확인 중) ·
   3529_m04 실모델 미확인(이 PC 에 없음) · 계획의 나머지(단면 변경·질량 값 수정·RBE 종속 수정·질량 추가, 하류: BDF 편집 요약 주석·CSV 탭 '편집으로 삭제됨'·
   판정 재계산) · 질량 요약 오버레이가 편집을 반영하지 않음(기존 한계).
 
@@ -223,7 +229,7 @@ Model Builder Studio는 **별개의 두 프로젝트**로 구성된다. 작업 �
 - **배포·커밋 상태 (2026-10-27 세션 끝)** — 로컬(70)만 반영: InHouse `Cmb.Cli.exe`(sha256 04ae662a…, 백업 `.bak_20261027_before_cogfar`)·
   `NastranBridge/nastran_bridge.py`(백업 동일 접미사)·StudioProgram `model-studio-0.0.105`(로컬·UNC)·핀 0.0.105. **145 미반영**
   (zip 0.0.105 → exe·bridge 수동 교체 → WorkBench 프론트 재배포, 백엔드 재시작 불필요). **3개 저장소 미커밋** — WorkBench·ModelBuilderStudio·
-  HiTessModelBuilder(원격 없음). `WorkBenchSubModule/Nastran_bridge` 는 git 저장소가 아니다(InHouse 사본이 실사용본, 같은 날 BAILOUT 제외까지 반영). 커밋 전 `hitess-code-reviewer` 미실행. Studio 화면은 사용자가 일부 확인(COG 말풍선·CSV 탭), 나머지는 눈으로 확인 안 함.
+  HiTessModelBuilder(→ 2026-10-29 커밋·푸시, 위 'git' 줄). `WorkBenchSubModule/Nastran_bridge` 는 git 저장소가 아니다(InHouse 사본이 실사용본, 같은 날 BAILOUT 제외까지 반영). 커밋 전 `hitess-code-reviewer` 미실행. Studio 화면은 사용자가 일부 확인(COG 말풍선·CSV 탭), 나머지는 눈으로 확인 안 함.
 
 **RBE 노드 공유 규칙 — 추적 결과와 다음 작업 (2026-10-27)** — 사용자 고민: 간격 메움 RBE(엔진 FREE_END·GROUP_CONNECT·LOOP_CLOSE, 대부분 ≤170 mm)가 촘촘해
 COG 노드 + 질량을 두고 주변 부재에 RBE 로 묶기가 어렵다(3529_m04 구조 노드 677 중 370개(55%)가 이미 RBE 에 걸림, 그중 cm=123456 274개 · U-bolt 부분 cm 96개).
