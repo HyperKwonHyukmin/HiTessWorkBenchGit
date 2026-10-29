@@ -182,7 +182,10 @@ C# ↔ bridge 비교 2건을 독립 기준으로 남겼다(bridge 는 Mooring·S
   리뷰에서 '고치면 좋음'으로 남긴 엔진 항목: 과학 표기 양수 지수 부호 빠짐(`BdfField.FormatPrecise`, 1e6 이상) · `edited/` 교체 실패 시 옛 결과 유실 · 옛 무게중심 intent null 예외.
 - **남은 일**: 화면 눈으로 확인 안 함(0.0.113~0.0.116 편집 도구, 0.0.117~0.0.119 도움말·셸 정리·아래쪽 패널은 사용자 확인 중) ·
   3529_m04 실모델 미확인(이 PC 에 없음) · 단면 변경 커밋·푸시(2026-10-29): Studio `a4da5e5`(model-studio 브랜치) · 엔진 `959493f` · WorkBench 계약 테스트·핀·`studio-release.md`
-  (커밋 전 독립 리뷰 마침 — 막아야 함 0) · 0.0.122~0.1.0 화면 눈으로 확인 안 함 · 단면 변경의 '기존 PBEAML 복사 후 치수 수정' 미구현(카탈로그 = L 만) ·
+  (커밋 전 독립 리뷰 마침 — 막아야 함 0) · 0.0.122~0.1.3 화면 눈으로 확인 안 함(0.1.1~0.1.3 질량 추가·값 수정은 사용자 확인 중) ·
+  **145 남은 일(2026-10-29 세션 끝)**: `git pull` + 재시작 1회(`dd8f576` fallback 제거) → InHouse `Cmb.Cli.exe`(sha256 8055258d…) 교체 →
+  `/studio-release model-studio`(0.1.3) → ⟳ Update. 커밋: 엔진 `2216d6a` · Studio `dbe878e`·`556a1c4` · WorkBench `dd8f576`·`8b165ab`·`8c3f651` ·
+  단면 변경의 '기존 PBEAML 복사 후 치수 수정' 미구현(카탈로그 = L 만) ·
   계획의 나머지(RBE 종속 수정, 하류: BDF 편집 요약 주석·CSV 탭 '편집으로 삭제됨'·
   판정 재계산) · 질량 요약 오버레이가 편집을 반영하지 않음(기존 한계).
 
@@ -293,6 +296,10 @@ Studio 는 `window.workbenchAPI` 만 보므로 클라이언트가 같은 API 를
 ### Module Unit Studio
 
 viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구조 해석".
+- ★ **MU Studio 개선 요청을 받으면 먼저 `ModuleUnitStudio/docs/plans/2026-10-29-mb-features-to-mu.md` 를 본다** (2026-10-29 사용자 지시).
+  MB Studio 의 셸 규칙·편집 작업 패널·도움말·기본 모델 편집을 MU 로 넓히는 단계(0 저장소 정리 → 1 셸 → 2 편집 바탕 → 3 편집 기능 → 4 도움말)와 결정 대기 항목이 있다.
+  요청이 그 항목과 겹치면 MB 구현을 기준으로 맞추고 문서의 '진행 상태' 표를 갱신한다.
+  ⚠ MU 는 Studio 가 JS 로 편집을 적용해 `_edited.json` 을 올린다(`buildEditedStageJson`) — MB 처럼 C#·bridge 에 새 kind 를 넣는 작업이 아니다.
 - ⭐ **버전 정책 (사용자 지시, 무조건):** Module Unit 코드를 고치면(스튜디오든 엔진 `ModuleUnitAnalysis`든) **항상 `module-unit-studio` 버전 bump → zip 재배포 → `GroupModuleUnitLiftingAnalysis.jsx` 의 `MODULE_STUDIO_VERSION` 동기화**를 세트로 한다. 핀이 어긋나면 새 스튜디오가 뜨지 않는다. 절차는 `/deploy` 스킬.
 
 #### 화면 배율 대응 — 셸을 `transform: scale()` 로 키우지 말 것 (0.0.148, 2026-09-09)
