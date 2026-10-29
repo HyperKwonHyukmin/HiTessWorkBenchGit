@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { getNotices } from '../../api/admin';
 import { getVideos, issueVideoTicket } from '../../api/videos';
+import { formatDuration, formatTotalMinutes, groupVideos } from '../../utils/videoCatalog';
 import { API_BASE_URL } from '../../config';
 import { useAppCatalogue } from '../../contexts/DashboardContext';
 import { NOTICE_TYPE_STYLE } from '../../components/modals/noticeTypeStyle';
@@ -123,7 +124,9 @@ export const VideoPlayerModal = ({ isOpen, onClose }) => {
                   </div>
                   <div>
                     <Dialog.Title className="text-white font-bold text-sm leading-tight">HiTESS Story</Dialog.Title>
-                    <p className="text-slate-300 text-[11px]">영상은 WorkBench 영상 창에서 재생됩니다 · 화면 녹화·캡처가 차단되고 시청자 이름이 표시됩니다</p>
+                    <p className="text-slate-300 text-[11px]">
+                      {videos.length > 0 ? `영상 ${videos.length}편 · ` : ''}WorkBench 영상 창에서 재생 · 녹화·캡처 차단, 시청자 이름 표시
+                    </p>
                   </div>
                 </div>
                 <button
@@ -147,26 +150,42 @@ export const VideoPlayerModal = ({ isOpen, onClose }) => {
                 ) : videos.length === 0 ? (
                   !error && <p className="py-10 text-center text-sm text-slate-300">등록된 영상이 없습니다.</p>
                 ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {videos.map((video) => (
-                      <button
-                        key={video.id}
-                        type="button"
-                        onClick={() => playVideo(video)}
-                        disabled={Boolean(openingId)}
-                        className="group flex min-h-28 items-start justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.07] p-4 text-left transition-colors hover:border-blue-300/50 hover:bg-white/[0.11] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
-                      >
-                        <span className="min-w-0">
-                          <span className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-400/15 text-blue-200 ring-1 ring-blue-200/20">
-                            {openingId === video.id ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} fill="currentColor" />}
+                  // 분류별 묶음 — 제목 줄(분류 · 편수 · 전체 길이) 아래 한 줄짜리 행. 큰 카드 10장을 늘어놓으면 무엇이 있는지 한눈에 안 들어온다.
+                  <div className="space-y-6">
+                    {groupVideos(videos).map((group) => (
+                      <section key={group.label} aria-label={group.label}>
+                        <h3 className="mb-2 flex items-baseline gap-2 px-1">
+                          <span className="text-sm font-extrabold text-white">{group.label}</span>
+                          <span className="text-xs font-medium text-slate-400">
+                            {group.videos.length}편{formatTotalMinutes(group.videos) && ` · ${formatTotalMinutes(group.videos)}`}
                           </span>
-                          <span className="block text-sm font-extrabold leading-snug text-white">{video.title}</span>
-                          {video.subtitle && (
-                            <span className="mt-1.5 block text-xs font-medium leading-relaxed text-slate-300">{video.subtitle}</span>
-                          )}
-                        </span>
-                        <ChevronRight size={18} className="mt-1 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-200" />
-                      </button>
+                        </h3>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {group.videos.map((video) => (
+                            <button
+                              key={video.id}
+                              type="button"
+                              onClick={() => playVideo(video)}
+                              disabled={Boolean(openingId)}
+                              title={video.subtitle ? `${video.title}\n${video.subtitle}` : video.title}
+                              className="group flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2.5 text-left transition-colors hover:border-blue-300/50 hover:bg-white/[0.11] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
+                            >
+                              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-400/15 text-blue-200 ring-1 ring-blue-200/20 transition-colors group-hover:bg-blue-400/30 group-hover:text-white">
+                                {openingId === video.id ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} fill="currentColor" />}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-bold text-white">{video.title}</span>
+                                {video.subtitle && (
+                                  <span className="mt-0.5 block truncate text-xs text-slate-300">{video.subtitle}</span>
+                                )}
+                              </span>
+                              {formatDuration(video.durationSeconds) && (
+                                <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-400">{formatDuration(video.durationSeconds)}</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
                     ))}
                   </div>
                 )}

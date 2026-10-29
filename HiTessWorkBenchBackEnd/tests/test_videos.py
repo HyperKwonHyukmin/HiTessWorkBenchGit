@@ -97,3 +97,26 @@ def test_stream_does_not_promise_content_length(admin_client, video_dir):
     res = admin_client.get(ticket["streamPath"], headers={"Range": "bytes=0-9"})
     assert res.status_code == 206
     assert "content-length" not in res.headers  # stat 과 실제 바이트가 달라도 끊기지 않게
+
+
+def _mp4_with_duration(seconds: int, scale: int = 1000) -> bytes:
+    """ftyp + moov/mvhd(v0) 만 있는 최소 mp4."""
+    import struct
+    mvhd_body = bytes(4) + struct.pack(">IIII", 0, 0, scale, seconds * scale) + bytes(80)
+    mvhd = struct.pack(">I4s", 8 + len(mvhd_body), b"mvhd") + mvhd_body
+    moov = struct.pack(">I4s", 8 + len(mvhd), b"moov") + mvhd
+    ftyp = struct.pack(">I4s", 16, b"ftyp") + b"isom" + bytes(4)
+    return ftyp + moov
+
+
+def test_list_gives_category_duration_and_clean_filename_title(admin_client, video_dir):
+    (video_dir / "HiTESS_ModuleUnit.mp4").write_bytes(_mp4_with_duration(90))
+    manifest = json.loads((video_dir / videos.MANIFEST_NAME).read_text(encoding="utf-8"))
+    manifest[0]["category"] = "소개"
+    (video_dir / videos.MANIFEST_NAME).write_text(json.dumps(manifest), encoding="utf-8")
+
+    items = {i["title"]: i for i in admin_client.get("/api/videos").json()}
+    assert items["비 영상"]["category"] == "소개"
+    assert items["비 영상"]["durationSeconds"] is None  # mp4 머리가 없으면 모른다
+    assert items["ModuleUnit"]["category"] == ""  # videos.json 에 없으면 파일명에서 'HiTESS_' 를 걷는다
+    assert items["ModuleUnit"]["durationSeconds"] == 90.0

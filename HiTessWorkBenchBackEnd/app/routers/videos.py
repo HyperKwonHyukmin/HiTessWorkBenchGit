@@ -13,7 +13,9 @@ mp4 를 통째로 받을 수 있었다. 이제는:
 이 라우터는 '주소를 알아도 로그인 없이는 못 받는다' 까지만 책임진다.
 
 영상 추가: 서버의 `Videos/` 폴더에 mp4 를 넣고, 제목을 바꾸려면 같은 폴더 `videos.json` 에
-`[{"file": "...mp4", "title": "...", "subtitle": "..."}]` 를 적는다(목록 순서도 이 순서). 재시작 불필요.
+`[{"file": "...mp4", "title": "...", "subtitle": "...", "category": "..."}]` 를 적는다(목록 순서도 이 순서). 재시작 불필요.
+화면은 category 별로 묶어 보인다(category 순서 = 처음 나온 순서). 없으면 '기타 영상'.
+videos.json 이 없는 영상은 파일명에서 'HiTESS-'·'_' 를 걷어 제목으로 쓴다.
 """
 
 import hashlib
@@ -22,6 +24,7 @@ import json
 import logging
 import re
 import secrets
+import struct
 import time
 from pathlib import Path
 
@@ -50,6 +53,68 @@ _RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 def _video_id(filename: str) -> str:
     return hashlib.sha1(filename.encode("utf-8")).hexdigest()[:12]
+
+
+_FILE_PREFIX_RE = re.compile(r"^HiTESS[\s_-]+", re.IGNORECASE)
+_duration_cache: dict[tuple[str, int, int], float | None] = {}
+
+
+def _title_from_filename(name: str) -> str:
+    """videos.json 에 없는 영상의 제목 — 'HiTESS_ModuleUnit.mp4' → 'ModuleUnit'."""
+    stem = _FILE_PREFIX_RE.sub("", Path(name).stem).replace("_", " ").strip()
+    return stem or Path(name).stem
+
+
+def _iter_boxes(f, start: int, end: int):
+    pos = start
+    while pos + 8 <= end:
+        f.seek(pos)
+        head = f.read(8)
+        if len(head) < 8:
+            return
+        size, kind = struct.unpack(">I4s", head)
+        header = 8
+        if size == 1:
+            size = struct.unpack(">Q", f.read(8))[0]
+            header = 16
+        elif size == 0:
+            size = end - pos
+        if size < header:
+            return
+        yield kind, pos + header, pos + size
+        pos += size
+
+
+def _mp4_duration(path: Path) -> float | None:
+    """mp4 의 moov/mvhd 에서 재생 시간(초)을 읽는다. 못 읽으면 None(DRM 에 감싸진 파일 등)."""
+    try:
+        stat = path.stat()
+        key = (str(path), stat.st_size, stat.st_mtime_ns)
+        if key in _duration_cache:
+            return _duration_cache[key]
+        duration = None
+        with path.open("rb") as f:
+            for kind, body, end in _iter_boxes(f, 0, stat.st_size):
+                if kind != b"moov":
+                    continue
+                for sub, sbody, _send in _iter_boxes(f, body, end):
+                    if sub != b"mvhd":
+                        continue
+                    f.seek(sbody)
+                    version = f.read(1)[0]
+                    f.read(3)
+                    if version == 1:
+                        _c, _m, scale, length = struct.unpack(">QQIQ", f.read(28))
+                    else:
+                        _c, _m, scale, length = struct.unpack(">IIII", f.read(16))
+                    if scale:
+                        duration = round(length / scale, 1)
+                    break
+                break
+        _duration_cache[key] = duration
+        return duration
+    except (OSError, struct.error, IndexError):
+        return None
 
 
 def _load_manifest() -> list[dict]:
@@ -81,12 +146,13 @@ def list_videos() -> list[dict]:
         items.append({
             "id": _video_id(name),
             "file": name,
-            "title": str(entry.get("title") or Path(name).stem),
+            "title": str(entry.get("title") or _title_from_filename(name)),
             "subtitle": str(entry.get("subtitle") or ""),
+            "category": str(entry.get("category") or ""),
         })
     for name in files:
         if name not in seen:
-            items.append({"id": _video_id(name), "file": name, "title": Path(name).stem, "subtitle": ""})
+            items.append({"id": _video_id(name), "file": name, "title": _title_from_filename(name), "subtitle": "", "category": ""})
     return items
 
 
@@ -154,7 +220,16 @@ def _iter_file(path: Path, start: int, end: int):
 
 @router.get("")
 def get_videos(_employee_id: str = Depends(require_auth)):
-    return [{"id": v["id"], "title": v["title"], "subtitle": v["subtitle"]} for v in list_videos()]
+    return [
+        {
+            "id": v["id"],
+            "title": v["title"],
+            "subtitle": v["subtitle"],
+            "category": v["category"],
+            "durationSeconds": _mp4_duration(VIDEO_DIR / v["file"]),
+        }
+        for v in list_videos()
+    ]
 
 
 @router.post("/{video_id}/ticket")
