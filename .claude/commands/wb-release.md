@@ -27,6 +27,8 @@ pwsh -NoProfile -File scripts/release.ps1 -SetVersion X.Y.Z -BuildOnly -Yes   # 
   버전 커밋은 이미 올라가 있으니 원인을 고친 뒤 `-Bump` 없이 `-BuildOnly -Yes` 로 같은 버전 exe 만 다시 만든다.
 
 ## 2-1. Studio 릴리스 표 — 145 가 모든 Studio 의 최신본을 쓰게 (2026-10-29)
+- `/deploy` 는 70 로컬에만 올리므로, 먼저 Studio 마다 **70 로컬 `StudioProgram\` 최고 버전이 UNC 에 없으면** `/studio-release` 2단계
+  (출처 release 폴더 → UNC robocopy + `verify-studio-zips.ps1`)로 올린다. 표는 그다음:
 ```
 python scripts/studio_release.py --all
 ```

@@ -90,6 +90,8 @@ v1.5.8 에서 결함 6건이 새어 나갔고 3건을 사용자가 먼저 찾았
 - 📦 **배포 절차(Studio zip 2곳 복사·버전 확인·버전 핀 동기화, 엔진 exe 빌드·교체, 서버 보고 형식)는 전역 `/deploy` 스킬에 있다.** "배포해" 요청 시 그 스킬을 따른다. 전역 훅(`~/.claude/hooks/workbench_guard.js`)이 config.js 커밋을 차단하고 InHouseProgram/StudioProgram 변경 시 서버 반영을 알린다.
   - "zip 빌드해서 저장해" = 모든 Studio(Model Builder·Mooring Fitting·Module Unit·Plate Analysis 등) zip 을 백엔드-로컬 `HiTessWorkBenchBackEnd\StudioProgram\` 과 UNC `...\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram` 두 곳에 둔다(전체 경로·복사 명령은 `/deploy` 스킬 `studio.md`). 대괄호 때문에 PowerShell 은 `Copy-Item -LiteralPath`. 버전은 각 studio 의 `package.json` 한 곳만 올린다(2026-10-19 전역 규칙에서 옮김).
   - ⚠ **Studio 배포(올리기)와 릴리스(145 사용자에게 열기)는 다르다 (2026-10-29)** — 70·145 가 같은 UNC 를 봐서 올린 베타가 145 에 바로 나가던 문제를 막았다.
+    역할: "배포해" = **70 로컬 `StudioProgram\` 에만**(70 테스트) · `/studio-release` = 출처 release 폴더 → **UNC 업로드** + 표 갱신(145 공개).
+    UNC 에 먼저 올리지 않으므로 145 가 옛 백엔드여도 베타가 새지 않는다(위 "zip 빌드해서 저장해 = 두 곳" 은 이 규칙으로 바뀜).
     145 백엔드는 `HiTessWorkBenchBackEnd/app/studio_release.json`(`studios` = viewer id → 버전, 모든 Studio)에 적힌 버전만 내주고(`viewers.py`, 요청마다 읽음),
     70 은 `.env` `STUDIO_CHANNEL=dev`(git 미추적, **145 에는 넣지 말 것**)라 늘 최고 버전. 표 갱신 = `scripts/studio_release.py` —
     `/wb-release` 가 모든 Studio 를 UNC 최신으로, `/studio-release <id> [버전]` 이 WorkBench 버전과 무관하게 한 Studio 만(롤백 포함). 반영 = 커밋·푸시 + 145 ⟳ Update(재시작 불필요).
