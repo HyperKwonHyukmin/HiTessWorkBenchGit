@@ -44,7 +44,7 @@ import {
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.1.1';
+const MODEL_BUILDER_STUDIO_VERSION = '0.1.3';
 
 // 단계 이름은 '도구'가 아니라 엔지니어가 할 일로 쓴다(Studio 는 2단계에서 쓰는 도구).
 // 상태는 실제 사건으로만 바뀐다 — 1: 실행 성공, 2: 판정 통과·검토 확인·편집 적용, 3: BDF 받기·후속 해석 전달.

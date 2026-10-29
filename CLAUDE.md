@@ -151,7 +151,7 @@ C# ↔ bridge 비교 2건을 독립 기준으로 남겼다(bridge 는 Mooring·S
 결정 전체·진행 단계: Studio `docs/edit-intent-spec.md` 맨 앞 '기본 모델 편집 기능 계획'.
 상태(2026-10-28 세션 끝) — 세부·버전별 경과는 Studio `docs/edit-intent-spec.md` 진행 단계 ①②.
 - **완료(코드)**: ① C# 이 `deleteRigid`·`addNode` 직접 적용. ② `deleteElements`·`deleteMasses`·`deleteOrphanNodes`.
-  ③④에서 앞당김(사용자 결정) `moveNodes`·`addElement`, ③ `changeSection`, ③④ `changeMasses`·`addMasses`(2026-10-29, 상세 Studio spec — **70 로컬만**: model-studio 0.1.1·핀 0.1.1 ·
+  ③④에서 앞당김(사용자 결정) `moveNodes`·`addElement`, ③ `changeSection`, ③④ `changeMasses`·`addMasses`(2026-10-29, 상세 Studio spec — **70 로컬만**: model-studio 0.1.3(0.1.2~0.1.3 = 값 수정 클릭 = 바꿔 선택·지금 값 미리 채움·다른 도구로 가면 앞 창 닫고 선택 비움)·핀 0.1.3 ·
   InHouse `Cmb.Cli.exe` sha256 8055258d…(백업 `.bak_20261029_before_mass_edits`). ⚠ 145: exe 교체 **먼저** → `/studio-release model-studio`
   (옛 exe 면 질량 편집이 `unsupported intent kind` 로 실패 — bridge fallback 없음). 화면 눈으로 확인 안 함). fallback 제거(2026-10-29) — `BRIDGE_ONLY/KNOWN_INTENT_KINDS` 없음,
   옛 엔진이면 '엔진 교체 필요' 로 실패(`test_modelbuilder_edit_fallback_guard.py`).
