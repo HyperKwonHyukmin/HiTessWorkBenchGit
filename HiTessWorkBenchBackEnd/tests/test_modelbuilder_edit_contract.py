@@ -15,6 +15,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -124,6 +125,51 @@ def test_engine_and_bridge_produce_same_model(tmp_path):
     assert engine["masses"] == bridge["masses"]
 
 
+@pytest.mark.skipif(not CMB_EXE.is_file(), reason="Cmb.Cli.exe 없음")
+def test_engine_applies_delete_rigid_and_add_node_like_bridge(tmp_path):
+    """deleteRigid(removeMass)·addNode 를 엔진이 직접 적용해도 bridge 와 같은 모델인가(2026-10-28 엔진 단일화).
+
+    예전엔 이 두 kind 가 섞이면 엔진이 exit 65 를 내고 bridge 가 전체를 대신 적용했다.
+    addRigid 를 addNode 보다 앞에 기록해도 노드가 먼저 생겨야 한다. 옛 엔진(두 kind 미지원)이면 건너뛴다.
+    """
+    for name in (f"{BASE}.json", f"{BASE}.bdf"):
+        shutil.copy2(FIXTURE / name, tmp_path / name)
+    base = json.loads((tmp_path / f"{BASE}.json").read_text(encoding="utf-8"))
+    ok = {"status": "ok", "warnings": [], "errors": []}
+    meta = base["meta"]
+    doc = {
+        "schemaVersion": "1.0",
+        "stageRef": {"phase": meta["phase"], "stageName": meta["stageName"], "sourceTimestamp": meta["timestamp"]},
+        "createdAt": "2026-10-28T00:00:00Z",
+        "createdBy": "contract-test",
+        "intents": [
+            {"id": "rot", "kind": "rotateModel", "params": {"axis": "Z", "angleDeg": ANGLE, "pivot": PIVOT}, "validation": ok},
+            {"id": "rbe", "kind": "addRigid", "params": {"independentNode": 900, "dependentNodes": [1], "cm": "123456"}, "validation": ok},
+            {"id": "node", "kind": "addNode", "params": {"nodeId": 900, "x": 90100.0, "y": 4900.0, "z": 38700.0}, "validation": ok},
+            {"id": "cogfar", "kind": "deleteRigid", "params": {"rigidId": 13, "reason": "equipmentCogFar", "removeMass": True}, "validation": ok},
+        ],
+    }
+    (tmp_path / f"{BASE}_edit.json").write_text(json.dumps(doc), encoding="utf-8")
+
+    if not _engine_knows(tmp_path, "addNode", {"nodeId": 901, "x": 0.0, "y": 0.0, "z": 0.0}):
+        pytest.skip("deleteRigid·addNode 이전 엔진")
+    proc = subprocess.run([str(CMB_EXE), "apply-edit-intent", str(tmp_path)], cwd=tmp_path, capture_output=True, timeout=300)
+    log = proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
+    assert proc.returncode == 0, log
+    engine = _summary(json.loads((tmp_path / "edited" / f"{BASE}.json").read_text(encoding="utf-8")))
+    bridge = _summary(_run_bridge(tmp_path))
+
+    assert engine["nodes"].keys() == bridge["nodes"].keys()
+    for nid in engine["nodes"]:
+        assert engine["nodes"][nid] == pytest.approx(bridge["nodes"][nid], abs=1e-3), f"node {nid}"
+    assert engine["nodes"][900] == pytest.approx((90100.0, 4900.0, 38700.0))   # 회전된 좌표계로 기록 → 다시 돌리지 않음
+    assert 22 not in engine["nodes"]                                          # 질량·RBE 빠진 COG 노드 정리
+    assert engine["elements"] == bridge["elements"]
+    assert engine["rigids"] == bridge["rigids"]
+    assert engine["masses"] == bridge["masses"]
+    assert all(node != 22 for node, _ in engine["masses"])
+
+
 HULL_COMMENT = "$ HiTessModelBuilder: HullNo=3454"
 
 
@@ -158,3 +204,150 @@ def test_engine_and_bridge_keep_hull_no(tmp_path, hull_in):
         assert bridge_json["meta"]["hullNo"] == "3454"
         bridge_bdf = (tmp_path / "bridge" / f"{BASE}.bdf").read_text(encoding="utf-8")
         assert bridge_bdf.splitlines()[0] == HULL_COMMENT
+
+
+# ── C# ↔ Studio 미리보기 (2026-10-28 기본 모델 편집 ②단계) ─────────────────────────────
+# MB 경로 엔진을 C# 하나로 통일하면서 계약 비교 대상이 bridge 에서 Studio 미리보기(computeDeleteMask)로 바뀐다.
+# 미리보기는 Studio 저장소의 scripts/previewEditedModel.mjs 로 돌린다(node + Studio node_modules 필요).
+STUDIO_DIR = Path(os.environ.get("MB_STUDIO_DIR")
+                  or BACKEND.parents[1] / "WorkBenchSubModule" / "ModelBuilderStudio" / "apps" / "model-studio")
+PREVIEW_SCRIPT = STUDIO_DIR / "scripts" / "previewEditedModel.mjs"
+
+
+def _delete_edit_intents(reverse=False):
+    ok = {"status": "ok", "warnings": [], "errors": []}
+    intents = [
+        {"id": "grp", "kind": "deleteGroup", "params": {"groupId": 4, "memberNodeCount": 2}},
+        {"id": "els", "kind": "deleteElements", "params": {"elementIds": [2, 25], "removeOrphanNodes": True}},
+        {"id": "mass", "kind": "deleteMasses", "params": {"massIds": [16]}},
+        {"id": "rbedel", "kind": "deleteRigid", "params": {"rigidId": 13}},
+        {"id": "orph", "kind": "deleteOrphanNodes", "params": {"nodeIds": [6, 7, 8, 22]}},
+        {"id": "rbe", "kind": "addRigid", "params": {"independentNode": 4, "dependentNodes": [9], "cm": "123456"}},
+        {"id": "node", "kind": "addNode", "params": {"nodeId": 900, "x": 90100.0, "y": 4900.0, "z": 38700.0}},
+        {"id": "rbe2", "kind": "addRigid", "params": {"independentNode": 900, "dependentNodes": [1], "cm": "123456"}},
+    ]
+    if reverse:
+        intents = intents[::-1]
+    return [{**i, "validation": ok} for i in intents]
+
+
+def _engine_knows(tmp_path, kind, params):
+    """엔진이 그 kind 를 아는지 한 건짜리 편집으로 확인한다 — 옛 엔진은 다른 검증에서 먼저 실패해 메시지로는 못 가른다."""
+    probe = tmp_path / "probe"
+    probe.mkdir()
+    for name in (f"{BASE}.json", f"{BASE}.bdf"):
+        shutil.copy2(FIXTURE / name, probe / name)
+    meta = json.loads((probe / f"{BASE}.json").read_text(encoding="utf-8"))["meta"]
+    (probe / f"{BASE}_edit.json").write_text(json.dumps({
+        "schemaVersion": "1.0",
+        "stageRef": {"phase": meta["phase"], "stageName": meta["stageName"], "sourceTimestamp": meta["timestamp"]},
+        "intents": [{"id": "p", "kind": kind, "params": params, "validation": {"status": "ok", "warnings": [], "errors": []}}],
+    }), encoding="utf-8")
+    proc = subprocess.run([str(CMB_EXE), "apply-edit-intent", str(probe)], cwd=probe, capture_output=True, timeout=120)
+    return b"unsupported intent kind" not in proc.stdout + proc.stderr
+
+
+@pytest.mark.skipif(not CMB_EXE.is_file(), reason="Cmb.Cli.exe 없음")
+@pytest.mark.skipif(shutil.which("node") is None or not PREVIEW_SCRIPT.is_file(), reason="node 또는 Studio 미리보기 스크립트 없음")
+@pytest.mark.parametrize("reverse", [False, True], ids=["recorded", "reversed"])
+def test_engine_matches_studio_preview_for_delete_edits(tmp_path, reverse):
+    """요소·질량 삭제·고립 노드 정리를 섞어도 C# 산출 모델 = Studio 미리보기(기록 순서와 무관)."""
+    for name in (f"{BASE}.json", f"{BASE}.bdf"):
+        shutil.copy2(FIXTURE / name, tmp_path / name)
+    base = json.loads((tmp_path / f"{BASE}.json").read_text(encoding="utf-8"))
+    meta = base["meta"]
+    doc = {
+        "schemaVersion": "1.0",
+        "stageRef": {"phase": meta["phase"], "stageName": meta["stageName"], "sourceTimestamp": meta["timestamp"]},
+        "createdAt": "2026-10-28T00:00:00Z",
+        "createdBy": "contract-test",
+        "intents": _delete_edit_intents(reverse),
+    }
+    edit_path = tmp_path / f"{BASE}_edit.json"
+    edit_path.write_text(json.dumps(doc), encoding="utf-8")
+
+    if not _engine_knows(tmp_path, "deleteOrphanNodes", {"nodeIds": [4]}):
+        pytest.skip("삭제 3종 이전 엔진")
+    proc = subprocess.run([str(CMB_EXE), "apply-edit-intent", str(tmp_path)], cwd=tmp_path, capture_output=True, timeout=300)
+    log = proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
+    assert proc.returncode == 0, log
+    engine = json.loads((tmp_path / "edited" / f"{BASE}.json").read_text(encoding="utf-8"))
+
+    pv = subprocess.run(["node", str(PREVIEW_SCRIPT), str(tmp_path / f"{BASE}.json"), str(edit_path)],
+                        cwd=STUDIO_DIR, capture_output=True, timeout=120)
+    assert pv.returncode == 0, pv.stderr.decode("utf-8", "replace")
+    preview = json.loads(pv.stdout.decode("utf-8"))
+
+    base_nodes = {n["id"] for n in base["nodes"]} | {900}
+    engine_nodes = {n["id"] for n in engine["nodes"]}
+    assert sorted(engine_nodes & base_nodes) == preview["nodeIds"]
+    assert len(engine_nodes - base_nodes) == preview["centroidRigidCount"]   # 무게중심 RBE 가 만든 노드만 남는다
+    assert sorted(e["id"] for e in engine["elements"]) == preview["elementIds"]
+
+    base_masses = {pm["id"] for pm in base.get("pointMasses", [])}
+    assert sorted(pm["id"] for pm in engine.get("pointMasses", []) if pm["id"] in base_masses) == preview["massIds"]
+
+    base_rigids = {r["id"]: r["independentNode"] for r in base["rigids"]}
+    kept = sorted(r["id"] for r in engine["rigids"] if base_rigids.get(r["id"]) == r["independentNode"])
+    assert kept == preview["baseRigidIds"]
+    assert len(engine["rigids"]) - len(kept) == preview["addedRigidCount"]
+
+    # 이 편집에서 기대하는 결과 자체도 고정한다(두 쪽이 같이 틀리는 것 방지).
+    assert 4 in engine_nodes            # E2 를 지워도 새 RBE 가 쓴다
+    assert 26 in engine_nodes           # 질량만 지움 — 요소에 걸린 노드
+    assert 22 in engine_nodes           # RBE 13 을 지워도 질량 M14 가 붙어 있어 고립이 아니다
+    assert 11 not in engine_nodes and 12 not in engine_nodes   # 그룹 4 삭제
+
+
+@pytest.mark.skipif(not CMB_EXE.is_file(), reason="Cmb.Cli.exe 없음")
+@pytest.mark.skipif(shutil.which("node") is None or not PREVIEW_SCRIPT.is_file(), reason="node 또는 Studio 미리보기 스크립트 없음")
+def test_engine_matches_studio_preview_for_move_and_add_element(tmp_path):
+    """노드 이동·부재 추가(새 단면 포함)를 무게중심 RBE·요소 삭제와 섞어도 C# 산출 모델 = Studio 미리보기."""
+    for name in (f"{BASE}.json", f"{BASE}.bdf"):
+        shutil.copy2(FIXTURE / name, tmp_path / name)
+    base = json.loads((tmp_path / f"{BASE}.json").read_text(encoding="utf-8"))
+    if not _engine_knows(tmp_path, "addElement", {"elementId": 90001, "startNode": 4, "endNode": 9, "propertyId": base["elements"][0]["propertyId"]}):
+        pytest.skip("노드 이동·부재 추가 이전 엔진")
+    meta = base["meta"]
+    next_eid = max(x["id"] for k in ("elements", "rigids", "pointMasses") for x in base[k]) + 1
+    next_pid = max(p["id"] for p in base["properties"]) + 1
+    mid = base["materials"][0]["id"]
+    ok = {"status": "ok", "warnings": [], "errors": []}
+    intents = [
+        {"id": "cog", "kind": "addRigid", "params": {"independentNode": None, "dependentNodes": CENTROID_DEPS,
+                                                     "createIndependentAtCentroid": True, "cm": "123456"}},
+        {"id": "mv", "kind": "moveNodes", "params": {"moves": [{"nodeId": 4, "x": 90050.0, "y": 4950.0, "z": 38650.0}]}},
+        {"id": "del", "kind": "deleteElements", "params": {"elementIds": [2], "removeOrphanNodes": True}},
+        {"id": "el1", "kind": "addElement", "params": {"elementId": next_eid, "startNode": 4, "endNode": 9,
+                                                       "propertyId": base["elements"][0]["propertyId"]}},
+        {"id": "el2", "kind": "addElement", "params": {"elementId": next_eid + 1, "startNode": 9, "endNode": 13,
+                                                       "propertyId": next_pid,
+                                                       "newProperty": {"id": next_pid, "kind": "L", "dims": [75.0, 75.0, 9.0, 9.0], "materialId": mid}}},
+    ]
+    doc = {"schemaVersion": "1.0",
+           "stageRef": {"phase": meta["phase"], "stageName": meta["stageName"], "sourceTimestamp": meta["timestamp"]},
+           "createdAt": "2026-10-28T00:00:00Z", "createdBy": "contract-test",
+           "intents": [{**i, "validation": ok} for i in intents]}
+    edit_path = tmp_path / f"{BASE}_edit.json"
+    edit_path.write_text(json.dumps(doc), encoding="utf-8")
+
+    proc = subprocess.run([str(CMB_EXE), "apply-edit-intent", str(tmp_path)], cwd=tmp_path, capture_output=True, timeout=300)
+    assert proc.returncode == 0, proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
+    engine = json.loads((tmp_path / "edited" / f"{BASE}.json").read_text(encoding="utf-8"))
+    pv = subprocess.run(["node", str(PREVIEW_SCRIPT), str(tmp_path / f"{BASE}.json"), str(edit_path)],
+                        cwd=STUDIO_DIR, capture_output=True, timeout=120)
+    assert pv.returncode == 0, pv.stderr.decode("utf-8", "replace")
+    preview = json.loads(pv.stdout.decode("utf-8"))
+
+    base_nodes = {n["id"] for n in base["nodes"]}
+    engine_nodes = {n["id"]: (n["x"], n["y"], n["z"]) for n in engine["nodes"]}
+    assert sorted(set(engine_nodes) & base_nodes) == preview["nodeIds"]
+    assert sorted(e["id"] for e in engine["elements"]) == preview["elementIds"]
+    for nid, xyz in preview["movedNodes"].items():
+        assert engine_nodes[int(nid)] == pytest.approx(tuple(xyz))
+    # 엔진이 무게중심 RBE 에 Studio 번호를 주지 않았다(addElement 가 먼저 적용)
+    assert {next_eid, next_eid + 1} <= {e["id"] for e in engine["elements"]}
+    assert not {next_eid, next_eid + 1} & {r["id"] for r in engine["rigids"]}
+    assert 4 in engine_nodes                      # E2 를 지워도 새 부재가 쓴다
+    bdf = (tmp_path / "edited" / f"{BASE}.bdf").read_text(encoding="utf-8")
+    assert re.search(rf"(?m)^PBEAML\s+{next_pid}\s+{mid}\s+L", bdf)

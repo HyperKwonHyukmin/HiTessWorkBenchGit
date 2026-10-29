@@ -11,6 +11,8 @@
 //   통과      — 그 밖. 자유단·경고 수는 정상 모델에서도 많이 나와 판정에 쓰지 않는다
 //               (경고 대부분은 동일 이름 중복이다).
 
+import { parseEquipmentCogFar } from './modelValidation.js';
+
 // 제외되어도 총중량이 줄지 않는 사유 — 질량이 원래 0 이거나 길이가 0 인 행.
 // zero_length_pipe 는 질량을 가진 경우가 있어(별도 *_without_mass 코드가 있다) 여기 넣지 않는다.
 const MASSLESS_REASONS = new Set([
@@ -108,6 +110,20 @@ export function computeModelBuilderVerdict({ jobStatus, summary, audit, editedSt
     });
   }
 
+  const cogFar = equipmentCogFarIssues(final, editedStage);
+  if (cogFar.length > 0) {
+    const shown = cogFar.slice(0, 2).map(p => {
+      const dist = p.distanceMm != null ? `${(p.distanceMm / 1000).toFixed(1)} m` : '수십 m';
+      const mass = p.massKg != null ? `, 질량 ${p.massKg.toLocaleString()} kg` : '';
+      return `${p.sourceName || `RBE ${p.rigidId}`}(부착점에서 ${dist}${mass})`;
+    }).join(', ');
+    const more = cogFar.length > 2 ? ` 외 ${cogFar.length - 2}건` : '';
+    reasons.push({
+      code: 'equipment-cog-far',
+      text: `장비 무게중심(COG)이 부착점에서 너무 멉니다: ${shown}${more}. 장비 CSV의 cog 값 오류입니다 — CSV를 고쳐 다시 실행하거나 Studio에서 해당 RBE를 확인·삭제하세요.`,
+    });
+  }
+
   const health = editedStage?.health ?? final?.health ?? {};
   const groups = health.disconnectedGroupCount ?? 0;
   if (groups > 0) {
@@ -126,6 +142,18 @@ export function computeModelBuilderVerdict({ jobStatus, summary, audit, editedSt
 
   if (reasons.length > 0) return { level: 'review', title: '검토 필요', reasons, basis };
   return { level: 'pass', title: '통과', reasons: [], basis };
+}
+
+// 최종 단계의 EQUIPMENT_COG_FAR 진단. 편집 모델이 있으면 그 장비 RBE 가 아직 남은 것만 —
+// Studio 에서 지웠으면 사유가 풀린다. 편집 경로마다 RBE 번호가 바뀔 수 있어 장비 이름(sourceName)으로 맞춘다.
+function equipmentCogFarIssues(final, editedStage) {
+  const details = Array.isArray(final?.diagnosticDetails) ? final.diagnosticDetails : [];
+  const issues = details.map(parseEquipmentCogFar).filter(Boolean);
+  const editedRigids = Array.isArray(editedStage?.rigids) ? editedStage.rigids : null;
+  if (!editedRigids) return issues;
+  return issues.filter(p => editedRigids.some(r => (p.sourceName
+    ? r?.sourceName === p.sourceName && String(r?.remark ?? '').toUpperCase() === 'EQUIPMENT'
+    : r?.id === p.rigidId)));
 }
 
 function stageLabel(stage) {

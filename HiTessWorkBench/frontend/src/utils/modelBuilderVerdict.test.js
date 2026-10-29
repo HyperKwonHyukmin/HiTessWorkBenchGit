@@ -68,3 +68,38 @@ test('실행 실패·중단은 실패, 자료가 없으면 판정 보류', () =>
   assert.equal(computeModelBuilderVerdict({ jobStatus: 'Success' }).level, null);
   assert.equal(computeModelBuilderVerdict().level, null);
 });
+
+// 3529_m04 실측: 장비 =30137/754429 cog 가 부착점에서 49.6m (CSV cog X 오류)
+const cogFar = {
+  severity: 'warning', code: 'EQUIPMENT_COG_FAR', elemId: 911, nodeId: 1028,
+  message: 'Equipment rigid 911 (COG N1028) is 49554mm from its nearest attachment; SourceName==30137/754429; distance=49554mm; massKg=715; cog=(61449, -2916, 33057)mm. Check the cog value in the equipment CSV.',
+};
+const withDetails = (final, details) => ({ ...final, diagnosticDetails: details });
+
+test('장비 COG 가 부착점에서 멀면 검토 필요 — 장비 이름·거리·질량을 알린다', () => {
+  const v = computeModelBuilderVerdict({ jobStatus: 'Success', summary: summaryOf(withDetails(stage(), [cogFar])) });
+  assert.equal(v.level, 'review');
+  const r = v.reasons.find(x => x.code === 'equipment-cog-far');
+  assert.ok(r);
+  assert.match(r.text, /=30137\/754429/);
+  assert.match(r.text, /49\.6 m/);
+  assert.match(r.text, /715 kg/);
+});
+
+test('편집 모델에서 그 장비 RBE 를 지웠으면 COG 사유는 사라진다', () => {
+  const summary = summaryOf(withDetails(stage(), [cogFar]));
+  const kept = computeModelBuilderVerdict({ jobStatus: 'Success', summary,
+    editedStage: { health: {}, diagnostics: {}, rigids: [{ id: 911, remark: 'EQUIPMENT', sourceName: '=30137/754429' }] } });
+  assert.ok(kept.reasons.some(x => x.code === 'equipment-cog-far'));
+  const removed = computeModelBuilderVerdict({ jobStatus: 'Success', summary,
+    editedStage: { health: {}, diagnostics: {}, rigids: [{ id: 5, remark: 'UBOLT' }] } });
+  assert.equal(removed.level, 'pass');
+});
+
+test('엔진이 부착 노드를 못 찾아 뺀 장비 질량은 검토 필요 (3529_m04 =21945/1865951 8.2 kg)', () => {
+  const audit = { rowAudit: [row('Equipment', 'error', 'equipment_mass_not_attached', '8.2')] };
+  const v = computeModelBuilderVerdict({ jobStatus: 'Success', summary: summaryOf(stage()), audit });
+  assert.equal(v.level, 'review');
+  assert.equal(v.reasons[0].code, 'mass-excluded');
+  assert.match(v.reasons[0].text, /장비 1건/);
+});

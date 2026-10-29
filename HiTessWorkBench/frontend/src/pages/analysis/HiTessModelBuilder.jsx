@@ -27,7 +27,7 @@ import PreflightIssueCenter from '../../components/analysis/PreflightIssueCenter
 import CsvPreviewPanel from '../../components/analysis/CsvPreviewPanel';
 import { readCsvFileRows } from '../../utils/csvPreview';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
-import { describeDiagnostic, downloadDiagnostics, enrichDiagnostic } from '../../utils/modelValidation';
+import { describeDiagnostic, downloadDiagnostics, enrichDiagnostic, parseEquipmentCogFar } from '../../utils/modelValidation';
 import { peekDashboardFiles, useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 import {
   MAX_MODEL_BUILDER_WORKSPACES, canAddWorkspace, closeWorkspace, findWorkspaceByOutputDir,
@@ -44,7 +44,7 @@ import {
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.0.97';
+const MODEL_BUILDER_STUDIO_VERSION = '0.0.120';
 
 // 단계 이름은 '도구'가 아니라 엔지니어가 할 일로 쓴다(Studio 는 2단계에서 쓰는 도구).
 // 상태는 실제 사건으로만 바뀐다 — 1: 실행 성공, 2: 판정 통과·검토 확인·편집 적용, 3: BDF 받기·후속 해석 전달.
@@ -64,6 +64,7 @@ const REASON_LABELS = {
   unsupported_structure_section:  '미지원 구조 단면',
   zero_mass_attachment:           '질량 0 부착물',
   zero_mass_equipment:            '질량 0 장비',
+  equipment_mass_not_attached:    '장비 부착 노드 없음 — 질량 누락',
   ambiguousDuplicateSourceName:   '동일 sourceName 중복',
   parse_failed:                   '파싱 실패',
   parseFailed:                    '파싱 실패',
@@ -198,6 +199,8 @@ function buildEditedModelCheckStage(editedSummary) {
     delta: {},
     connectivity: connectivity ?? {},
     health,
+    // 판정이 '원본에서 경고된 장비 RBE 가 편집 후에도 남았는가'를 볼 때 쓴다(modelBuilderVerdict).
+    rigids: Array.isArray(e.rigids) ? e.rigids : null,
     diagnostics: {
       error: diagnostics.error ?? diagnostics.errors ?? 0,
       warning: diagnostics.warning ?? diagnostics.warnings ?? 0,
@@ -1477,8 +1480,13 @@ function StageSummaryDetail({ summary, audit }) {
   );
 }
 
+const NOTABLE_WARNING_CODES = new Set(['EMPTY_RIGID_EXCLUDED', 'EQUIPMENT_COG_FAR']);
+
 function ValidationDiagnosticList({ stage }) {
-  const records = (stage.diagnosticDetails ?? []).filter(d => String(d.severity).toLowerCase() === 'error' || d.code === 'EMPTY_RIGID_EXCLUDED');
+  // 에러 + 사용자가 알아야 하는 경고(빈 RBE2 자동 제외, 장비 COG 위치 오류). 나머지 경고는 수가 많아 Studio 에서 본다.
+  const records = (stage.diagnosticDetails ?? []).filter(d => String(d.severity).toLowerCase() === 'error' || NOTABLE_WARNING_CODES.has(d.code));
+  const cogFarCount = records.filter(d => d.code === 'EQUIPMENT_COG_FAR').length;
+  const excludedCount = records.filter(d => d.code === 'EMPTY_RIGID_EXCLUDED').length;
   const failed = stage.diagnostics?.error > 0;
   if (!failed && !records.length) return null;
   const stageLabel = `${String(stage.stageIndex ?? '').padStart(2, '0')} ${stage.stageName}`;
@@ -1487,10 +1495,10 @@ function ValidationDiagnosticList({ stage }) {
   return (
     <section aria-label="검증 오류 원인과 조치" className="space-y-3 text-xs">
       <div className="flex items-center justify-between gap-2">
-        <p className={`font-bold ${failed ? 'text-red-700' : 'text-amber-800'}`}>{failed ? '검증 실패 — 수정 후 재검증이 필요합니다' : `자동 제외 기록 ${records.length}건`}</p>
+        <p className={`font-bold ${failed ? 'text-red-700' : 'text-amber-800'}`}>{failed ? '검증 실패 — 수정 후 재검증이 필요합니다' : [cogFarCount > 0 && `입력값 오류 의심 ${cogFarCount}건`, excludedCount > 0 && `자동 제외 기록 ${excludedCount}건`].filter(Boolean).join(' · ')}</p>
         {records.length > 0 && <button type="button" className="text-blue-700 underline shrink-0" onClick={() => downloadDiagnostics(records, `HiTESS_${stage.stageName}_진단`, { stageName: stageLabel, firstStageName: firstLabel })}>진단 CSV 저장</button>}
       </div>
-      <p className="text-slate-600">{failed ? '생성된 단계 모델은 오류 확인용입니다. 오류가 해결된 최종 모델로 해석을 진행하세요.' : '연결 조건을 제공하지 않는 빈 RBE2만 제외했으며 나머지 모델은 보존했습니다.'}</p>
+      <p className="text-slate-600">{failed ? '생성된 단계 모델은 오류 확인용입니다. 오류가 해결된 최종 모델로 해석을 진행하세요.' : cogFarCount > 0 ? '모델은 입력값 그대로 만들었습니다. 아래 항목은 CSV 값이 잘못된 것으로 보여 해석 전에 확인해야 합니다.' : '연결 조건을 제공하지 않는 빈 RBE2만 제외했으며 나머지 모델은 보존했습니다.'}</p>
       {failed && <p className="text-slate-700">
         아래 오류는 <b>{stageLabel} 단계를 거친 결과 모델</b>에서 발견했고, 요소 번호도 그 결과 기준입니다.
         {hasNewIds && <> 분할로 새로 생긴 번호는 {firstLabel}에 없으니, 앞 단계에서는 <b>원래 요소</b> 번호로 찾으세요.</>}
@@ -1499,7 +1507,8 @@ function ValidationDiagnosticList({ stage }) {
       {!stage.diagnosticLoadError && failed && records.length === 0 && <p className="text-red-700">오류 개수는 기록됐지만 상세 진단이 없습니다. Studio 또는 실행 로그에서 확인하세요.</p>}
       {records.map((d, i) => {
         const g = describeDiagnostic(d);
-        const excluded = d.code === 'EMPTY_RIGID_EXCLUDED';
+        const excluded = NOTABLE_WARNING_CODES.has(d.code);
+        const cogFar = parseEquipmentCogFar(d);
         return <div key={i} className={`space-y-1 break-words rounded-lg border px-3 py-2 ${excluded ? 'border-amber-200 bg-amber-50/50' : 'border-red-200 bg-red-50/50'}`}>
           <p className={`font-bold ${excluded ? 'text-amber-800' : 'text-red-700'}`}>{g.title} · {d.code}</p>
           <p className="font-mono text-slate-700">{d.elemId != null && `요소/RBE ${d.elemId} `}{d.nodeId != null && `노드 N${d.nodeId}`}{d.elemId != null && <span className="font-sans text-slate-500"> ({stageLabel} 결과 기준 번호)</span>}</p>
@@ -1513,6 +1522,7 @@ function ValidationDiagnosticList({ stage }) {
           )}
           {d.sourceName && <p className="text-slate-700">입력 이름: {d.sourceName}{d.origin?.ancestorId != null && <span className="text-slate-500"> (CSV 원래 부재 이름)</span>}</p>}
           {d.positionMm && <p className="text-slate-700">위치 XYZ(mm): {d.positionMm.map(v => Number(v).toFixed(1)).join(', ')}</p>}
+          {cogFar && <p className="text-slate-800">COG가 가장 가까운 부착점에서 <b>{cogFar.distanceMm != null ? `${(cogFar.distanceMm / 1000).toFixed(1)} m` : '수십 m'}</b> 떨어져 있습니다{cogFar.massKg != null && <> · 장비 질량 <b>{cogFar.massKg.toLocaleString()} kg</b></>}{cogFar.cogMm && <> · CSV cog ({cogFar.cogMm.join(', ')})</>}</p>}
           <p className="text-slate-700">{g.cause}</p>
           <p className="text-slate-700">조치: {g.action}</p>
           <details className="text-slate-600"><summary className="cursor-pointer">엔진 원문</summary>{d.message}</details>

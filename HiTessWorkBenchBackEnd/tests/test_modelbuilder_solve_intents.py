@@ -71,8 +71,9 @@ def test_engine_path_applies_group_delete(work):
     assert 13 in _grids(text)
 
 
-@pytest.mark.skipif(not CMB_EXE.is_file() or not BRIDGE_PY, reason="새 엔진·bridge 경로(CMB_CLI_EXE, NASTRAN_BRIDGE_PY) 필요")
-def test_bridge_fallback_keeps_rotation_and_added_node(work):
+@pytest.mark.skipif(not CMB_EXE.is_file(), reason="Cmb.Cli.exe 없음")
+def test_rotation_and_added_node_survive_edit_apply(work):
+    # 2026-10-28 부터 엔진이 addNode 를 직접 적용한다(옛 엔진이면 bridge fallback). 어느 경로든 결과가 같아야 한다.
     doc = _doc([
         {"kind": "rotateModel", "params": {"axis": "Z", "angleDeg": 90, "pivot": {"x": 0, "y": 0, "z": 0}}},
         {"kind": "addNode", "params": {"nodeId": 500, "x": 1.0, "y": 2.0, "z": 3.0}},
@@ -80,7 +81,6 @@ def test_bridge_fallback_keeps_rotation_and_added_node(work):
     ])
     text, log = solve.build_edited_source_bdf(str(work / f"{BASE}.bdf"), str(work / "solve"),
                                               {"intent_document": doc, "base_name": BASE})
-    assert "nastran_bridge" in log                      # 엔진이 addNode 를 몰라 bridge 가 적용
     assert 500 in _grids(text)
     edited = json.loads(next((work / "solve" / "edit_apply" / "edited").glob("*.json")).read_text(encoding="utf-8"))
     nodes = {n["id"]: n for n in edited["nodes"]}

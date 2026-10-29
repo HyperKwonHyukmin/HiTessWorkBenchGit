@@ -10,7 +10,24 @@ const GUIDANCE = {
   ID_OVERFLOW: ['BDF 번호 범위 초과', '모델 번호가 BDF small-field 형식의 허용 범위를 초과했습니다.', '모델 번호 재정렬 또는 출력 형식 변경이 필요합니다. 진단 파일과 입력을 엔진 담당자에게 전달하세요.'],
   MISSING_NODE: ['참조 노드 누락', '요소가 모델에 존재하지 않는 노드를 참조합니다.', '대상 요소와 삭제·병합 내역을 확인하고 연결을 수정한 뒤 재검증하세요.'],
   FREE_END_NODE: ['자유단 노드', '노드가 한 요소에만 연결되어 있습니다. 실제 자유단일 수도 있습니다.', '의도된 자유단인지 도면과 비교하세요. 누락된 연결일 때만 수정하고 재검증하세요.'],
+  EQUIPMENT_COG_FAR: ['장비 무게중심(COG) 위치 오류', '장비 CSV의 cog 좌표가 부착점에서 수십 m 떨어져 있어, 장비 질량이 엉뚱한 위치에 강체(RBE2)로 매달렸습니다. 3D에서 모델 밖으로 길게 뻗은 RBE가 이것입니다.', '설계 데이터의 장비 cog 값을 바로잡아 CSV를 다시 받아 실행하는 것이 바른 수정입니다. 당장 진행하려면 Studio에서 이 RBE에 마우스를 올려 [삭제]를 누르세요 — RBE와 장비 질량이 함께 빠집니다.'],
   SHORT_ELEMENT: ['짧은 요소', '요소 길이가 검증 기준보다 짧습니다.', '좌표·메시 크기와 주변 연결을 확인하고 필요한 경우 메시를 조정하세요.'],
+}
+// EQUIPMENT_COG_FAR(엔진 FinalValidation) 메시지 해석 — WorkBench 판정·Studio 말풍선·삭제 확인이 같이 쓴다.
+// 메시지 예: 'Equipment rigid 911 (COG N1028) is 49554mm …; SourceName==30137/754429; distance=49554mm; massKg=715; cog=(61449, -2916, 33057)mm. …'
+export function parseEquipmentCogFar(d) {
+  if (d?.code !== 'EQUIPMENT_COG_FAR') return null
+  const msg = d.message ?? ''
+  const num = (re) => { const m = msg.match(re); return m ? Number(m[1]) : null }
+  const cog = msg.match(/cog=\((-?[\d.]+),\s*(-?[\d.]+),\s*(-?[\d.]+)\)mm/)
+  return {
+    rigidId: d.elemId ?? d.elementId ?? num(/rigid (\d+)/),
+    cogNodeId: d.nodeId ?? num(/COG N(\d+)/),
+    sourceName: msg.match(/SourceName=([^;]*);/)?.[1] ?? '',
+    distanceMm: num(/distance=(-?[\d.]+)mm/),
+    massKg: num(/massKg=(-?[\d.]+)/),
+    cogMm: cog ? [Number(cog[1]), Number(cog[2]), Number(cog[3])] : null,
+  }
 }
 export function describeDiagnostic(d) {
   const [title, cause, action] = GUIDANCE[d.code] ?? [
@@ -62,7 +79,7 @@ export function describeElementOrigin(id, model, firstElementIds) {
 }
 
 export function enrichDiagnostic(d, model, firstElementIds = null) {
-  const rigidCheck = d.code === 'EMPTY_RIGID' || d.code?.startsWith('RBE2_') || d.code?.startsWith('BOX_UBOLT_')
+  const rigidCheck = d.code === 'EMPTY_RIGID' || d.code?.startsWith('RBE2_') || d.code?.startsWith('BOX_UBOLT_') || d.code === 'EQUIPMENT_COG_FAR'
   const id = d.elemId ?? d.elementId
   const entity = (rigidCheck ? model.rigids : model.elements)?.find(e => e.id === id)
   const node = model.nodeMap?.get(d.nodeId) ?? model.nodes?.find(n => n.id === d.nodeId)
