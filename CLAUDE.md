@@ -714,6 +714,10 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 **대시보드(2026-09-30 개편, 되돌리기 기준 태그 `dashboard-v1-backup`)**: `pages/dashboard/Dashboard.jsx` = 인사 줄(실행 중·확인할 실패·서버 칩 + '자료' 메뉴) →
 공지 한 줄 → **새 해석 시작 | 내 작업**(5:7) → **내 월별 실행 | 많이 쓰는 앱**(5:7, 위아래 경계를 맞춘 같은 격자).
 공지 줄·로드맵/소개/영상 모달·섹션 제목은 `dashboardShared.jsx`. 실패 사유는 DB `analysis.job_message`(job_manager 가 마지막 진행 메시지를 기록)를 쓴다.
+- **실패 사유 규칙(2026-10-29)** = `utils/dashboardResults.js` `failureReason`(+테스트) — 진행 문구('…중...'·'45%')는 원인으로 쓰지 않고(결과 오류 → 없으면 '마지막 메시지:'),
+  '해석 실패'·'Analysis Failed' 같은 일반 문구는 `result_info` 의 구체적 오류를 먼저 쓴다. 한 칸 배치(xl 미만·고배율)에서 확인할 실패가 있으면 '내 작업'을 '새 해석 시작' 위로 올린다.
+  같은 날 `/design` 다듬기: 보조 글자 11px·slate-500, 공지 줄 버튼 분리(버튼 안 버튼 제거), 탭·메뉴의 미완성 ARIA 역할 제거, lucide `Map` → `MapIcon`.
+  **2026-10-30 커밋(독립 리뷰 막아야 함 0, 진행 문구 `(n/m)`·진행률 % 정규식 보강) · 화면 눈으로 확인 안 함**. 남은 후보(사용자가 이번에 고르지 않음): 실패 → 같은 입력으로 다시 열기, '진행 중 N' 중복·누적 성공률·장식 효과 덜어내기. 비평 기록 `.impeccable/critique/*dashboard-jsx*`(26/40).
 - **파일 전달**: '새 해석 시작'에 놓은 파일 → 추천 앱을 고르면 `utils/dashboardFileHandoff.js` 가 파일을 들고 이동하고, 앱 페이지의
   `useDashboardFileHandoff`(1개) / `useDashboardFilesHandoff`(여러 개)가 **그 페이지의 기존 업로드 처리 함수**에 태운다.
   ⚠ 새 파일 입력 앱을 만들면 페이지에 훅을 붙이고 `FILE_HANDOFF_MENUS` 에 메뉴명을 등록할 것(미등록 앱은 추천 목록에 '다시 선택').

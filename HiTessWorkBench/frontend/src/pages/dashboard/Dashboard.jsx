@@ -36,7 +36,7 @@ import { isTerminalJobStatus } from '../../utils/globalJobs';
 import { FILE_HANDOFF_MENUS, offerDashboardFiles } from '../../utils/dashboardFileHandoff';
 import { canOpenResult, offerResultReentry, reentryMenuForProgram } from '../../utils/resultReentry';
 import {
-  FAILED_STATUSES, addAcknowledgedFailures, groupConsecutiveRuns, inputFileLabel, resultHighlight, unresolvedFailures,
+  FAILED_STATUSES, addAcknowledgedFailures, failureReason, groupConsecutiveRuns, inputFileLabel, resultHighlight, unresolvedFailures,
 } from '../../utils/dashboardResults';
 import { CardArt, resolveCardArt } from '../../components/ui/cardArt';
 import {
@@ -95,28 +95,6 @@ const formatElapsed = (startedAt) => {
   if (!startedAt || sec > 86400) return '';
   const m = Math.floor(sec / 60);
   return m > 0 ? `${m}분 ${sec % 60}초` : `${sec}초`;
-};
-
-/**
- * 실패 레코드에서 사유 한 줄을 찾는다.
- * 1순위 job_message — job_manager 가 모든 해석의 마지막 진행 메시지를 DB 에 남긴다(실측 실패 627건 중 575건).
- * 없으면 result_info 의 error/diagnostic 류 필드.
- */
-const failureReason = (record) => {
-  const jobMessage = typeof record?.job_message === 'string' ? record.job_message.trim() : '';
-  if (jobMessage) return jobMessage.split('\n')[0].slice(0, 140);
-  let info = record?.result_info;
-  if (typeof info === 'string') {
-    try { info = JSON.parse(info); } catch { return null; }
-  }
-  if (!info || typeof info !== 'object') return null;
-  const diag = info.diagnostic;
-  const candidates = [
-    info.error, info.error_message, info.message, info.detail, info.reason,
-    typeof diag === 'string' ? diag : diag?.message || diag?.summary || diag?.error,
-  ];
-  const hit = candidates.find(v => typeof v === 'string' && v.trim());
-  return hit ? hit.trim().split('\n')[0].slice(0, 140) : null;
 };
 
 /** 카드 공통 틀. 색 띠 같은 장식 없이 테두리·그림자만 — 섹션의 색은 제목 아이콘 칩 하나가 맡는다. */
@@ -187,21 +165,19 @@ const ResourceMenu = ({ onGuide, onUserGuide, onIntro, onRoadmap, onVideo, onNew
         type="button"
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
-        aria-haspopup="menu"
         className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-xs font-bold text-white transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
         <HelpCircle size={14} /> 도움말·자료
         <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div role="menu" className="absolute right-0 z-30 mt-1.5 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+        <div className="absolute right-0 z-30 mt-1.5 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
           {groups.map((items, gi) => (
-            <div key={gi} role="group" className={gi > 0 ? 'mt-1 border-t border-slate-100 pt-1' : undefined}>
+            <div key={gi} className={gi > 0 ? 'mt-1 border-t border-slate-100 pt-1' : undefined}>
               {items.map(({ icon: Icon, label, onClick }) => (
                 <button
                   key={label}
                   type="button"
-                  role="menuitem"
                   onClick={() => { setOpen(false); onClick(); }}
                   className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 focus:bg-slate-50 focus:outline-none"
                 >
@@ -358,7 +334,7 @@ const DropZone = ({ catalogue, isBlocked, onOpenApp, onActiveChange }) => {
             <p className="truncate text-sm font-bold text-slate-800" title={dropped.names.join(', ')}>
               {dropped.names[0]}{dropped.names.length > 1 && <span className="font-medium text-slate-500"> 외 {dropped.names.length - 1}개</span>}
             </p>
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-slate-600" aria-live="polite">
               {formatText} · 이 파일로 할 수 있는 해석 <b className="tabular-nums text-blue-700">{matches.length}</b>개
             </p>
           </div>
@@ -404,7 +380,7 @@ const DropZone = ({ catalogue, isBlocked, onOpenApp, onActiveChange }) => {
                     className="group flex min-h-[46px] w-full items-center gap-3 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-left transition-[border-color,box-shadow] hover:border-blue-400 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                   >
                     <span
-                      className={`relative h-9 w-12 shrink-0 overflow-hidden rounded-md bg-gradient-to-b ring-1 ring-inset ring-slate-200 ${tone.band} to-white`}
+                      className={`relative h-9 w-12 shrink-0 overflow-hidden rounded-md ring-1 ring-inset ring-slate-200`}
                       style={{ backgroundImage: `radial-gradient(circle, ${tone.dot} 1px, transparent 1.2px)`, backgroundSize: '8px 8px' }}
                       aria-hidden="true"
                     >
@@ -493,15 +469,14 @@ const QUICK_TABS = [
 
 /** '즐겨찾기 | 최근 사용' 세그먼트 탭 — 지금 보이는 타일이 어느 목록인지 이름으로 드러낸다 */
 const QuickTabs = ({ active, onSelect, favoriteCount }) => (
-  <div role="tablist" aria-label="앱 바로가기" className="inline-flex rounded-lg bg-slate-100 p-0.5">
+  <div role="group" aria-label="앱 바로가기 목록" className="inline-flex rounded-lg bg-slate-100 p-0.5">
     {QUICK_TABS.map(({ key, label, icon: Icon }) => {
       const selected = active === key;
       return (
         <button
           key={key}
           type="button"
-          role="tab"
-          aria-selected={selected}
+          aria-pressed={selected}
           onClick={() => onSelect(key)}
           className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
             selected ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
@@ -510,7 +485,7 @@ const QuickTabs = ({ active, onSelect, favoriteCount }) => (
           <Icon size={12} className={selected && key === 'favorites' ? 'text-amber-400' : undefined} fill={selected && key === 'favorites' ? 'currentColor' : 'none'} />
           {label}
           {key === 'favorites' && favoriteCount > 0 && (
-            <span className={`rounded px-1 text-[10px] tabular-nums ${selected ? 'bg-amber-50 text-amber-700' : 'bg-slate-200 text-slate-500'}`}>{favoriteCount}</span>
+            <span className={`rounded px-1 text-[11px] tabular-nums ${selected ? 'bg-amber-50 text-amber-700' : 'bg-slate-200 text-slate-500'}`}>{favoriteCount}</span>
           )}
         </button>
       );
@@ -525,10 +500,10 @@ const QuickEmpty = ({ children }) => (
 // 앱 타일의 도면 띠 — 앱 카탈로그 카드(ui/AppCard)와 같은 문법(모눈 + 구조 선화)을 작게 줄인 것.
 // 모드 색은 카탈로그와 같다(File=blue · Interactive=violet · Parametric=emerald · Productivity=amber).
 const TILE_BAND = {
-  File: { band: 'from-blue-50/80', dot: '#c9d8f4', art: 'text-blue-300 group-hover:text-blue-600', tag: 'text-blue-800' },
-  Interactive: { band: 'from-violet-50/80', dot: '#ddd3f7', art: 'text-violet-300 group-hover:text-violet-600', tag: 'text-violet-800' },
-  Parametric: { band: 'from-emerald-50/80', dot: '#c6ead9', art: 'text-emerald-300 group-hover:text-emerald-600', tag: 'text-emerald-800' },
-  Productivity: { band: 'from-amber-50/80', dot: '#f1dfb5', art: 'text-amber-300 group-hover:text-amber-600', tag: 'text-amber-800' },
+  File: { dot: '#c9d8f4', art: 'text-blue-300 group-hover:text-blue-600', tag: 'text-blue-800' },
+  Interactive: { dot: '#ddd3f7', art: 'text-violet-300 group-hover:text-violet-600', tag: 'text-violet-800' },
+  Parametric: { dot: '#c6ead9', art: 'text-emerald-300 group-hover:text-emerald-600', tag: 'text-emerald-800' },
+  Productivity: { dot: '#f1dfb5', art: 'text-amber-300 group-hover:text-amber-600', tag: 'text-amber-800' },
 };
 
 const QuickAppTile = ({ app, meta, isFavorite, onOpen, onToggleFavorite, index = 0 }) => {
@@ -537,7 +512,7 @@ const QuickAppTile = ({ app, meta, isFavorite, onOpen, onToggleFavorite, index =
   return (
     <div className="group relative flex min-h-[112px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-px hover:border-blue-300 hover:shadow-md motion-reduce:transform-none">
       <div
-        className={`relative h-9 shrink-0 border-b border-slate-100 bg-gradient-to-b ${tone.band} to-white`}
+        className={`relative h-9 shrink-0 border-b border-slate-100`}
         style={{ backgroundImage: `radial-gradient(circle, ${tone.dot} 1px, transparent 1.2px)`, backgroundSize: '10px 10px' }}
       >
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white via-white/70 to-transparent" aria-hidden="true" />
@@ -550,7 +525,7 @@ const QuickAppTile = ({ app, meta, isFavorite, onOpen, onToggleFavorite, index =
         )}
         {/* 분류 이름(없으면 모드) — 선화와 짝이라 어떤 그림인지 말해 준다 */}
         {/* 흰 바탕 이름표 — 좁은 타일(1366 폭 3열)에서 선화가 글자 밑으로 들어와도 읽힌다 */}
-        <span className={`absolute left-2.5 top-1/2 z-[1] max-w-[62%] -translate-y-1/2 truncate rounded-full bg-white/90 px-1.5 py-px text-[10.5px] font-bold ${tone.tag}`}>
+        <span className={`absolute left-2.5 top-1/2 z-[1] max-w-[62%] -translate-y-1/2 truncate rounded-full bg-white/90 px-1.5 py-px text-[11px] font-bold ${tone.tag}`}>
           {app.category || MODE_LABEL[app.mode] || app.mode}
         </span>
       </div>
@@ -778,7 +753,9 @@ const FailedResultRow = ({ project, onDetail, onRestart, onAcknowledge }) => {
             <span className="min-w-0 flex-1 truncate text-xs text-slate-500" title={project.project_name}>{subtitle}</span>
           </div>
           {reason ? (
-            <p className="mt-1 text-xs font-medium text-red-800">사유: {reason}</p>
+            <p className="mt-1 text-xs font-medium text-red-800" title={reason.kind === 'last' ? '실패 원인이 따로 기록되지 않아 작업이 마지막으로 남긴 메시지를 보입니다' : undefined}>
+              {reason.kind === 'last' ? '마지막 메시지' : '사유'}: {reason.text}
+            </p>
           ) : (
             <p className="mt-1 text-xs text-slate-600">실패 사유가 기록되지 않았습니다 — 상세에서 로그를 확인하세요.</p>
           )}
@@ -823,7 +800,7 @@ const ReferenceLabel = ({ icon: Icon, children, meta }) => (
   <p className="mb-3 flex items-center gap-1.5 text-xs font-bold text-slate-600">
     {Icon && <Icon size={13} className="text-slate-400" aria-hidden="true" />}
     {children}
-    {meta && <span className="font-medium text-slate-400">· {meta}</span>}
+    {meta && <span className="font-medium text-slate-500">· {meta}</span>}
   </p>
 );
 
@@ -875,7 +852,7 @@ const MonthlyTrendStrip = ({ months, loading, successRate }) => {
                     }}
                   />
                 </div>
-                <span className={`text-[10px] leading-none ${isCurrent ? 'font-bold text-brand-blue' : 'text-slate-400'}`}>
+                <span className={`text-[11px] leading-none ${isCurrent ? 'font-bold text-brand-blue' : 'text-slate-500'}`}>
                   {loading ? '' : m.label}
                 </span>
               </div>
@@ -916,7 +893,7 @@ const PopularStrip = ({ rows, loading, onOpen }) => {
                 onClick={() => onOpen(item.program_name)}
                 className="group flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               >
-                <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold tabular-nums ${RANK_STYLE[i] || 'bg-slate-100 text-slate-500'}`}>
+                <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold tabular-nums ${RANK_STYLE[i] || 'bg-slate-100 text-slate-500'}`}>
                   {i + 1}
                 </span>
                 <span className="min-w-0 flex-1">
@@ -1314,7 +1291,8 @@ export default function Dashboard() {
 
       {showGuide && <DashboardGuide onClose={closeGuide} onUserGuide={() => setCurrentMenu('User Guide')} />}
 
-      {/* ── 새 해석 시작 | 내 작업 — 아래 줄과 같은 5 : 7 격자 ── */}
+      {/* ── 새 해석 시작 | 내 작업 — 아래 줄과 같은 5 : 7 격자 ──
+          좁은 창(한 칸 배치)에서 확인할 실패가 있으면 '내 작업'을 위로 올린다 — 실패 카드가 첫 화면 밖으로 밀리지 않게 */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
         <div className="flex flex-col xl:col-span-5">
           <SectionHeader
@@ -1419,7 +1397,7 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        <div className="flex flex-col xl:col-span-7">
+        <div className={`flex flex-col xl:col-span-7 ${pinnedFailures.length > 0 ? 'order-first xl:order-none' : ''}`}>
           <SectionHeader
             icon={History}
             title="내 작업"

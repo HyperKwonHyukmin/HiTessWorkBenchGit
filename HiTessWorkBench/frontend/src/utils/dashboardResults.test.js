@@ -72,3 +72,20 @@ test('addAcknowledgedFailures — 중복 없이 뒤에 더하고 상한을 넘�
   assert.deepEqual(addAcknowledgedFailures([1, 2, 3], [4], 3), [2, 3, 4]);
   assert.deepEqual(addAcknowledgedFailures(null, [5]), [5]);
 });
+
+test('실패 사유 — 진행 문구는 원인으로 쓰지 않는다', async () => {
+  const { failureReason } = await import('./dashboardResults.js');
+  assert.deepEqual(failureReason({ job_message: 'Nastran 해석 실행 중...' }), { text: 'Nastran 해석 실행 중...', kind: 'last' });
+  assert.deepEqual(failureReason({ job_message: '진행 45%', result_info: { error: 'FATAL 9050' } }), { text: 'FATAL 9050', kind: 'reason' });
+  assert.deepEqual(failureReason({ job_message: '해석 실패', result_info: { error: 'f06 없음' } }), { text: 'f06 없음', kind: 'reason' });
+  assert.deepEqual(failureReason({ job_message: 'Analysis Failed', result_info: '{"diagnostic":{"message":"BDF 오류"}}' }), { text: 'BDF 오류', kind: 'reason' });
+  assert.deepEqual(failureReason({ job_message: '해석 실패' }), { text: '해석 실패', kind: 'reason' });
+  assert.deepEqual(failureReason({ job_message: 'Nastran 해석 중 FATAL 오류가 발생했습니다. 경계조건/하중을 확인하세요.' }).kind, 'reason');
+  assert.deepEqual(failureReason({ job_message: '서버 재시작으로 작업 상태가 중단되었습니다.' }).kind, 'reason');
+  // 번호가 붙은 진행 문구(Model Builder 편집 적용)도 원인이 아니다
+  assert.equal(failureReason({ job_message: '편집 적용 중 (1/3)...' }).kind, 'last');
+  assert.equal(failureReason({ job_message: 'F06 결과 파싱 중 (3/3)...' }).kind, 'last');
+  // %가 든 진짜 원인은 그대로 사유
+  assert.equal(failureReason({ job_message: '디스크 사용률 98% 로 저장 실패' }).kind, 'reason');
+  assert.equal(failureReason({}), null);
+});

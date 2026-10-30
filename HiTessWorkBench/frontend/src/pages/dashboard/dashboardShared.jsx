@@ -6,7 +6,7 @@ import React, { Fragment, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Dialog, Transition } from '@headlessui/react';
 import {
-  ChevronRight, Clock, Layers, Loader2, Map, Maximize2, Megaphone, Pin, Play, Rocket, Server, Sparkles, Wrench, X,
+  ChevronRight, Clock, Layers, Loader2, Map as MapIcon, Maximize2, Megaphone, Pin, Play, Rocket, Server, Sparkles, Wrench, X,
 } from 'lucide-react';
 import { getNotices } from '../../api/admin';
 import { getVideos, issueVideoTicket } from '../../api/videos';
@@ -269,20 +269,20 @@ export const NoticeStrip = ({ onOpenDetail, onOpenList, newWithinDays = null, pi
 
   return (
     <motion.div
-      onClick={handleOpenCurrent}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpenCurrent(); }
-      }}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: 'easeOut' }}
       whileHover={{ y: -1 }}
-      className="relative bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors cursor-pointer overflow-hidden group"
+      className="relative bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors overflow-hidden group"
     >
       {/* 좌측 컬러 스트라이프·글로우 제거 — 아이콘·타입 칩으로 구분 */}
       <div className="relative flex items-center gap-2.5 px-3.5 py-2">
+        {/* 공지 열기 버튼과 전체보기 버튼을 나란히 둔다(버튼 안에 버튼을 넣지 않음) */}
+        <button
+          type="button"
+          onClick={handleOpenCurrent}
+          className="flex flex-1 min-w-0 items-center gap-2.5 rounded-md text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
         {/* 좌측 라벨 + NEW 배지 */}
         <div className="flex items-center gap-1.5 shrink-0">
           <div className="relative">
@@ -301,7 +301,7 @@ export const NoticeStrip = ({ onOpenDetail, onOpenList, newWithinDays = null, pi
             <motion.span
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              className="inline-flex items-center gap-1 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-100"
+              className="inline-flex items-center gap-1 text-[11px] font-extrabold px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-100"
             >
               <Sparkles size={9} />
               NEW {unreadCount}
@@ -314,7 +314,7 @@ export const NoticeStrip = ({ onOpenDetail, onOpenList, newWithinDays = null, pi
 
         {/* 본문 (회전) */}
         <div className="flex-1 min-w-0 flex items-center gap-2 overflow-hidden">
-          <span className={`shrink-0 inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded border ${style.chip}`}>
+          <span className={`shrink-0 inline-flex items-center gap-0.5 text-[11px] font-bold px-1.5 py-0.5 rounded border ${style.chip}`}>
             {current.is_pinned && <Pin size={9} className="-mt-px" />}
             {style.label}
           </span>
@@ -329,11 +329,12 @@ export const NoticeStrip = ({ onOpenDetail, onOpenList, newWithinDays = null, pi
             <span className="text-xs font-semibold text-slate-700 truncate group-hover:text-blue-600 transition-colors">
               {current.title || '(제목 없음)'}
             </span>
-            <span className="text-[10px] text-slate-500 shrink-0 hidden sm:inline">
+            <span className="text-[11px] text-slate-500 shrink-0 hidden sm:inline">
               {formatRelative(current.created_at)}
             </span>
           </motion.div>
         </div>
+        </button>
 
         {/* 우측 CTA */}
         <div className="flex items-center gap-2 shrink-0">
@@ -341,7 +342,8 @@ export const NoticeStrip = ({ onOpenDetail, onOpenList, newWithinDays = null, pi
             type="button"
             onClick={handleOpenAll}
             title="전체 공지 목록으로 이동"
-            className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-blue-600 px-2 py-1 rounded-md hover:bg-blue-50 transition-colors cursor-pointer"
+            aria-label="전체 공지 목록으로 이동"
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-blue-600 px-2 py-1.5 rounded-md hover:bg-blue-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             <span className="hidden md:inline">전체보기</span>
             <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
@@ -416,11 +418,11 @@ export const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
             <div className="bg-brand-blue px-5 py-4 flex justify-between items-center text-white shrink-0">
               <div>
                 <Dialog.Title className="font-bold text-lg flex items-center gap-2">
-                  <Map size={20} className="text-blue-300"/> HiTESS 워크벤치 로드맵
+                  <MapIcon size={20} className="text-blue-300"/> HiTESS 워크벤치 로드맵
                 </Dialog.Title>
                 <p className="text-xs text-blue-100 mt-1">업무 유형, 서비스 상태, 앱 목적을 한 번에 훑어볼 수 있는 전체 지도입니다.</p>
               </div>
-              <button onClick={onClose} className="inline-flex items-center justify-center min-w-10 min-h-10 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"><X size={20}/></button>
+              <button type="button" onClick={onClose} aria-label="로드맵 닫기" className="inline-flex items-center justify-center min-w-10 min-h-10 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"><X size={20}/></button>
             </div>
 
             {/* 읽는 순서: 전체 요약 → 상태 범례 → 업무 유형 바로가기 */}
@@ -470,7 +472,7 @@ export const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
                             <span className="font-bold text-[11px] truncate">{info.title}</span>
                             <span className="text-[11px] font-black">{apps.length}</span>
                           </div>
-                          <p className="mt-1 text-[10px] font-semibold opacity-80">운영 {activeCount} · 개발 {developingCount}</p>
+                          <p className="mt-1 text-[11px] font-semibold opacity-80">운영 {activeCount} · 개발 {developingCount}</p>
                         </a>
                       ))}
                     </div>
@@ -498,19 +500,19 @@ export const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="text-sm font-extrabold text-slate-800">{modeInfo.title}</h3>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${modeInfo.cls}`}>
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${modeInfo.cls}`}>
                             {modeInfo.label}
                           </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-white text-slate-500 border-slate-200">
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border bg-white text-slate-500 border-slate-200">
                             앱 {apps.length}개 · 카테고리 {categories.size}
                           </span>
                         </div>
                         <p className="mt-1 text-xs leading-relaxed text-slate-600">{modeInfo.summary}</p>
                       </div>
                       <div className="flex gap-1.5 shrink-0">
-                        <span className="px-2 py-1 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">서비스 {activeCount}</span>
+                        <span className="px-2 py-1 text-[11px] font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">서비스 {activeCount}</span>
                         {developingCount > 0 && (
-                          <span className="px-2 py-1 text-[10px] font-bold rounded-full bg-slate-50 text-slate-500 border border-slate-200">개발 {developingCount}</span>
+                          <span className="px-2 py-1 text-[11px] font-bold rounded-full bg-slate-50 text-slate-500 border border-slate-200">개발 {developingCount}</span>
                         )}
                       </div>
                     </div>
@@ -552,7 +554,7 @@ export const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 mb-1">
                                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ROADMAP_STATUS_DOT[status] || ROADMAP_STATUS_DOT.Planned}`} />
-                                  <span className="text-[10px] font-bold text-slate-500 truncate">{app.category}</span>
+                                  <span className="text-[11px] font-bold text-slate-500 truncate">{app.category}</span>
                                 </div>
                                 <h4 className="font-bold text-slate-800 text-[13px] leading-snug line-clamp-2">{app.title}</h4>
                               </div>
@@ -563,17 +565,17 @@ export const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
                             </p>
 
                             <div className="relative mt-3 flex flex-wrap items-center gap-1.5">
-                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${ROADMAP_STATUS_BADGE[status] || ROADMAP_STATUS_BADGE.Planned}`}>
+                              <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded border ${ROADMAP_STATUS_BADGE[status] || ROADMAP_STATUS_BADGE.Planned}`}>
                                 <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
                                 {statusStyle.label}
                               </span>
                               {canNavigate && (
-                                <span className="text-[10px] text-blue-600 font-bold bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                <span className="text-[11px] text-blue-600 font-bold bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
                                   바로가기
                                 </span>
                               )}
                               {(app.relatedApps?.length > 0 || app.acceptsTransferFrom?.length > 0) && (
-                                <span className="text-[10px] text-indigo-500 font-bold bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">
+                                <span className="text-[11px] text-indigo-600 font-bold bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">
                                   연계
                                 </span>
                               )}
@@ -582,13 +584,13 @@ export const RoadmapModal = ({ isOpen, onClose, onSelectApp }) => {
                             <div className="relative mt-2 flex items-center justify-between gap-2">
                               <div className="flex flex-wrap gap-1 overflow-hidden">
                                 {(app.tags || []).slice(0, 3).map(tag => (
-                                  <span key={tag} className="text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">
+                                  <span key={tag} className="text-[11px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">
                                     {tag}
                                   </span>
                                 ))}
                               </div>
                               {app.contributor && (
-                                <span className="text-[10px] font-bold text-slate-500 shrink-0">{app.contributor}</span>
+                                <span className="text-[11px] font-bold text-slate-500 shrink-0">{app.contributor}</span>
                               )}
                             </div>
                           </button>

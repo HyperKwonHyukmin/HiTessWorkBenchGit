@@ -138,3 +138,42 @@ export function addAcknowledgedFailures(current, ids, max = 200) {
   next.push(...(ids || []));
   return next.slice(-max);
 }
+
+// 진행 중에 남는 문구(“Nastran 실행 중...”, “편집 적용 중 (1/3)...”, “진행 45%”) — 실패한 뒤에도 남아 있으면 원인이 아니다.
+// %는 진행률만 있는 짧은 문구만 — “디스크 사용률 98% 로 저장 실패” 같은 진짜 원인은 거르지 않는다.
+const PROGRESS_MESSAGE = /(중\s*(\(\d+\/\d+\))?\s*(\.{2,}|…)?\s*$|^\D{0,10}\d+\s*%$|^(시작|대기|준비)|업로드 완료|시작합니다)/;
+// 원인을 말하지 않는 일반 실패 문구(“해석 실패”, “Analysis Failed”) — 결과에 구체적 오류가 있으면 그쪽을 쓴다
+const GENERIC_FAILURE = /^(.{0,20}\s)?(실패|failed)\.?$|^analysis failed\.?$/i;
+
+const firstLine = (v) => v.trim().split('\n')[0].trim().slice(0, 140);
+
+function resultInfoError(record) {
+  let info = record?.result_info;
+  if (typeof info === 'string') {
+    try { info = JSON.parse(info); } catch { return null; }
+  }
+  if (!info || typeof info !== 'object') return null;
+  const diag = info.diagnostic;
+  const candidates = [
+    info.error, info.error_message, info.message, info.detail, info.reason,
+    typeof diag === 'string' ? diag : diag?.message || diag?.summary || diag?.error,
+  ];
+  const hit = candidates.find(v => typeof v === 'string' && v.trim());
+  return hit ? firstLine(hit) : null;
+}
+
+/**
+ * 실패 레코드에서 사유 한 줄을 찾는다. { text, kind } — kind: 'reason'(원인) | 'last'(마지막 메시지일 뿐).
+ * job_message 는 job_manager 가 남긴 '마지막 진행 메시지'라 실패 문구가 아닐 수 있다.
+ * 진행 문구면 원인으로 쓰지 않고, 일반 실패 문구면 결과의 구체적 오류를 먼저 쓴다.
+ */
+export function failureReason(record) {
+  const raw = typeof record?.job_message === 'string' ? firstLine(record.job_message) : '';
+  const infoError = resultInfoError(record);
+  if (raw && PROGRESS_MESSAGE.test(raw)) {
+    return infoError ? { text: infoError, kind: 'reason' } : { text: raw, kind: 'last' };
+  }
+  if (raw && GENERIC_FAILURE.test(raw) && infoError) return { text: infoError, kind: 'reason' };
+  if (raw) return { text: raw, kind: 'reason' };
+  return infoError ? { text: infoError, kind: 'reason' } : null;
+}
