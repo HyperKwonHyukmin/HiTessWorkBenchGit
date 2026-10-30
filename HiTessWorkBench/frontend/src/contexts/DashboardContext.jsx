@@ -95,7 +95,8 @@ const APP_REGISTRY_OVERRIDES = {
   },
   "HiTESS Model Builder": {
     menuName: "HiTESS Model Builder",
-    programNames: ["HiTessModelBuilder", "ModelBuilderAnalysis", "HiTESS Model Builder"],
+    // AmToModelBuilder = AM 연동 클라이언트(HiTessMB.exe)가 띄운 빌드 — Model Builder 사용량으로 함께 센다.
+    programNames: ["HiTessModelBuilder", "ModelBuilderAnalysis", "AmToModelBuilder", "HiTESS Model Builder"],
     communityKey: "hitess-model-builder",
     apiEndpoint: "/api/analysis/modelflow/request",
     supportsRerun: true,

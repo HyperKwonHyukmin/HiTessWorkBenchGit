@@ -129,8 +129,14 @@ def task_execute_modelflow(
     mesh_size_structure: float | None = None,
     mesh_size_pipe: float | None = None,
     hull_no: str | None = None,
+    program_name: str = "HiTessModelBuilder",
 ):
-    """Cmb.Cli build-full 백그라운드 실행 작업."""
+    """Cmb.Cli build-full 백그라운드 실행 작업.
+
+    program_name 은 analysis 기록 이름 — AM 연동 접수(`/api/am/submissions`)는 'AmToModelBuilder' 로 남긴다.
+    관리자 사용량 보고서에서는 따로 보이고, 화면의 앱별 집계는 HiTESS Model Builder 에 합쳐진다(DashboardContext programNames).
+    같은 빌드를 두 번 세지 않도록 AM 접수는 이 기록 하나만 남긴다.
+    """
     mark_running(job_id, "Model Builder 실행 준비...", progress=10)
 
     # 호선 — 사용자가 적은 값이 우선, 없으면 CSV 파일명 앞 4자리. 둘 다 없으면 BDF 에 남기지 않는다(필수 아님).
@@ -276,8 +282,8 @@ def task_execute_modelflow(
     # modelflow 는 project 응답에서 input_info/result_info 를 제외하는 기존 동작 보존.
     project_data, db_err = record_analysis(
         job_id=job_id,
-        project_name=f"HiTessModelBuilder_{timestamp}",
-        program_name="HiTessModelBuilder",
+        project_name=f"{program_name}_{timestamp}",
+        program_name=program_name,
         employee_id=employee_id,
         status=status_msg,
         input_info=input_data,

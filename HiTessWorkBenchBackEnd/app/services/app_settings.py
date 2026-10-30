@@ -46,6 +46,8 @@ GUARDED_ROUTES: tuple[tuple[str, str], ...] = (
     ("/api/analysis/truss/request", "Truss Model Builder"),
     ("/api/analysis/assessment/request", "Truss Structural Assessment"),
     ("/api/analysis/modelflow/", "HiTESS Model Builder"),
+    # AM 연동 클라이언트(HiTessMB.exe) 전용 — Model Builder 를 점검 중으로 내리면 AM 접수도 막힌다.
+    ("/api/am/", "HiTESS Model Builder"),
     ("/api/analysis/hpscr/", "HP-SCR 배관응력 해석"),
     ("/api/doublepipe/", "이중관 구조 연료배관 해석"),
     # GMU 는 세 갈래 엔드포인트(빌드·자세 안정성·단위 구조해석)를 함께 쓴다.

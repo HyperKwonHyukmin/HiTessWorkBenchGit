@@ -20,6 +20,7 @@ from . import database, models
 from .routers import (
     activity,
     admin_projects,
+    am_intake,
     analysis,
     app_settings,
     auth,
@@ -238,6 +239,8 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(admin_projects.router)
     application.include_router(updates.router)
     application.include_router(videos.router)
+    application.include_router(am_intake.router)
+    application.include_router(am_intake.page_router)
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     application.mount(

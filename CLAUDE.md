@@ -267,8 +267,14 @@ COG 노드 + 질량을 두고 주변 부재에 RBE 로 묶기가 어렵다(3529_
 - **새로 받은 문제(미착수)**: 앵글(L) 부재가 다리 방향이 뒤집혀 보이는 경우를 바르게 표시. 확인할 것 = 화면이 Patran 등에서 연 BDF 인지(그러면 BDF 방향 벡터 문제 → 엔진),
   모델·부재 name. 구조 CSV `ori` ↔ 엔진 `BeamOrientation.Resolve`(평행일 때만 기본 규칙) ↔ BDF v 벡터 비교로 원인을 가른다.
 
-**Aveva Marine 연동 독립 클라이언트 (2026-10-28 계획, 미착수)** — AM 버튼 → `HiTessMB.exe <사번> <csv…>` → 서버 빌드 → Studio 까지 한 번에.
-계획서 `docs/plans/2026-10-28-aveva-marine-model-builder-client.md`(결정표 D1~D6). 확정: 보고서는 2차(1차 = 모델 확인·편집·해석·결과·편집 BDF 저장).
+**Aveva Marine 연동 독립 클라이언트 (2026-10-30 구현, 70 에서 끝까지 동작)** — AM 버튼 → `HiTessMB.exe` → 서버 빌드 → 실행기 → Studio 까지 한 번에(실측 약 20초).
+계획서 `docs/plans/2026-10-28-aveva-marine-model-builder-client.md`(배경·결정표 D1~D6) · **구현 `docs/plans/2026-10-30-am-client-implementation-plan.md`(이것이 우선, 진행 상태 표)**.
+구성 3개 — WorkBench 와 완전 별개(사용자 PC 에 WorkBench 불필요):
+- 클라이언트 `C:\Coding\WorkBenchSubModule\HiTessMBClient\`(.NET 4.8, 별도 git) — 접수 후 실행기를 받아 띄우고 끝. 종료 코드 0·2~8(README).
+- 서버 `app/routers/am_intake.py` `POST /api/am/submissions` — CSV 검사(sha256·인코딩·종류·행 수, DRM 검사 없음 — CSV 는 DRM 대상 아님) 통과 시 `task_execute_modelflow(program_name="AmToModelBuilder")` 로 빌드하고 `job_id` 반환.
+  **AM 호출 1번 = analysis 기록 1건**(program_name·source `AmToModelBuilder`, 검사 실패는 Failed 1건) — 이중 집계 금지. 폴더 `<ts>_<사번>_AmToModelBuilder`. 같은 파일의 `GET /signup` = 미가입 사번 가입 페이지(`app/static/signup/signup.html`, 선택지는 RegisterModal 사본 — 테스트가 잡음).
+- 실행기 `AmLauncher/`(Electron 40, viewer id `mb-launcher`, `build.ps1` → `StudioProgram\mb-launcher-<ver>.zip`) — WorkBench electron 코드 **사본**(원본 위치 주석, 공용 모듈화는 별도 작업). ⚠ `--server=URL` 처럼 `=` 로 붙여 넘길 것(Electron 이 URL 모양 인자 뒤 인자가 있으면 실행하지 않음) · 이름을 바꾼 exe 는 사내 보안 때문에 `no-sandbox` 로 띄운다(외부 페이지 이동·새 창 차단).
+확정: 보고서는 2차(1차 = 모델 확인·편집·해석·결과·편집 BDF 저장).
 확정(같은 날): 대상은 WorkBench 를 안 쓰는 AM 사용자라 **별도 클라이언트**(WorkBench 명령줄 모드 아님), AM 으로 돌려보내는 정보 없음(단방향).
 호출 규약 `HiTessMB.exe <사번> --hull-no <호선> --stru <CSV> [--pipe] [--equip]` — 호선 필수·선종 없음·사번 형식 `^[A-Z]\d{5,7}$`.
 미가입 사번(로그인 404)은 **웹 가입 페이지**(`<서버>/signup`, 기존 `POST /api/register` 사용, 관리자 승인 유지)를 자동으로 연다.

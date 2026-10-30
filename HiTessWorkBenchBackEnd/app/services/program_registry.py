@@ -164,6 +164,17 @@ PROGRAM_SPECS: Final[tuple[ProgramSpec, ...]] = (
         input_keys=("stru_csv", "pipe_csv", "equip_csv"),
         statistics_group="hitess-model-builder",
     ),
+    # Aveva Marine 연동 클라이언트(HiTessMB.exe) → 서버 Model Builder 빌드. AM 호출 1번 = 이 기록 1건.
+    # AvevaMarineIntake 는 2026-10-30 시험 중에만 쓴 옛 이름(70 dev 기록 호환).
+    _spec(
+        "am-to-model-builder", "AmToModelBuilder", "AvevaMarineIntake",
+        capabilities=("file-analysis", "rerun", "passport"),
+        # My Projects 에서 MB 앱으로 보이고 재실행 버튼이 뜬다 — 입력 키가 같아 MB 재실행 어댑터를 그대로 쓴다
+        # (재실행 기록은 WorkBench 에서 돌린 것이라 HiTessModelBuilder 로 남는다).
+        rerun_adapter="model-builder",
+        input_keys=("stru_csv", "pipe_csv", "equip_csv"),
+        statistics_group="am-to-model-builder",
+    ),
     # Likewise this record represents the solver phase of Model Builder.
     _spec(
         "model-builder-analysis", "ModelBuilderAnalysis",
