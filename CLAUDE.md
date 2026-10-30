@@ -267,7 +267,8 @@ COG 노드 + 질량을 두고 주변 부재에 RBE 로 묶기가 어렵다(3529_
 - **새로 받은 문제(미착수)**: 앵글(L) 부재가 다리 방향이 뒤집혀 보이는 경우를 바르게 표시. 확인할 것 = 화면이 Patran 등에서 연 BDF 인지(그러면 BDF 방향 벡터 문제 → 엔진),
   모델·부재 name. 구조 CSV `ori` ↔ 엔진 `BeamOrientation.Resolve`(평행일 때만 기본 규칙) ↔ BDF v 벡터 비교로 원인을 가른다.
 
-**Aveva Marine 연동 독립 클라이언트 (2026-10-30 구현, 70 에서 끝까지 동작)** — AM 버튼 → `HiTessMB.exe` → 서버 빌드 → 실행기 → Studio 까지 한 번에(실측 약 20초).
+**Aveva Marine 연동 독립 클라이언트 (2026-10-30 구현, 145 반영 — 접수·전체 흐름 통과, Studio 안 편집·해석·저장 클릭 시험 남음)** — AM 버튼 → `HiTessMB.exe` → 서버 빌드 → 실행기 → Studio 까지 한 번에(실측 약 20초).
+145 의 실행기 zip = 145 로컬 `StudioProgram\mb-launcher-0.1.0.zip`(릴리스 표에 없음 → 최고 버전). 70 로컬 zip 은 DRM 암호문이라 그대로 복사하면 깨진다 — 새 버전은 `AmLauncher\build.ps1 -OutDir <UNC>` 후 `verify-studio-zips.ps1 -ViewerId mb-launcher`.
 계획서 `docs/plans/2026-10-28-aveva-marine-model-builder-client.md`(배경·결정표 D1~D6) · **구현 `docs/plans/2026-10-30-am-client-implementation-plan.md`(이것이 우선, 진행 상태 표)**.
 구성 3개 — WorkBench 와 완전 별개(사용자 PC 에 WorkBench 불필요):
 - 클라이언트 `C:\Coding\WorkBenchSubModule\HiTessMBClient\`(.NET 4.8, 별도 git) — 접수 후 실행기를 받아 띄우고 끝. 종료 코드 0·2~8(README).

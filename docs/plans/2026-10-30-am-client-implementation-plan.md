@@ -117,7 +117,11 @@ HiTessMB.exe <사번> --hull-no <호선> --stru <CSV> [--pipe <CSV>] [--equip <C
   가입 페이지 `GET /signup` + 클라이언트가 로그인 404 때 브라우저로 염. 70 전체 흐름 실측: 클라이언트 실행 → 약 20초 뒤 Studio 에 3454 모델(사용자가 화면 확인).
 - 실행통제 실측: `%LOCALAPPDATA%` 에서 내려받은 Electron exe 실행 가능. 단 이름을 바꾸면 Chromium 샌드박스 하위 프로세스가 막혀 `no-sandbox` 사용(보안팀 exe 등록 문의 후보).
 - 공용 모듈화는 하지 않았다 — WorkBench `index.js` 를 쪼개면 exe 재빌드·화면 확인 위험이 WorkBench 에 생겨서. 사본마다 원본 위치 주석.
-- 남은 것: Studio 안 '해석 실행'·'모델 저장' 클릭 시험, 145 반영(아래), AM 개발팀에 `dist\` 전달, 보고서(2차).
+- **145 반영·시험(2026-10-30)**: WorkBench 1.6.31(`36c8d21`) + `01e7600` pull·재시작, `mb-launcher-0.1.0.zip` 145 로컬 StudioProgram(사용자 복사, 145 manifest·다운로드 sha256 원본 일치 검증).
+  테스트 순서 1~3 통과 — 접수만(#7561, 빌드 Success, `--server` 없이 145) · 전체 흐름(145 에서 실행기 받아 설치 15초 → Studio 열림, 사용자 확인).
+- 남은 것(테스트 순서 4~7): ④ Studio 안 편집 → Analysis 해석 실행 → 모델 저장(편집 BDF) 클릭 시험 ⑤ 미가입 사번 → 145 가입 페이지
+  ⑥ 다른 PC 에서 `dist\` 실행(실행 통제·no-sandbox) ⑦ 145 통계에 `AmToModelBuilder`. 그 뒤 AM 개발팀에 `dist\` 전달. 보고서(2차).
+  클라이언트 저장소는 원격 없음(GitHub 비공개 저장소 만들면 연결).
 - 145 반영: `git pull` + 백엔드 재시작(새 라우터) → 145 `StudioProgram\` 에 `mb-launcher-<ver>.zip` 복사 → 145 `studio_release.json` 에 `mb-launcher` 를 넣지 않으면 최고 버전이 나간다.
 - 알려진 부작용: 클라이언트의 `/api/login` 이 그 사용자의 WorkBench 접속 이력 행을 'relogin' 으로 닫는다(토큰은 따로라 WorkBench 는 안 끊김).
 
