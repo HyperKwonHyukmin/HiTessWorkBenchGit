@@ -119,6 +119,8 @@ HiTessMB.exe <사번> --hull-no <호선> --stru <CSV> [--pipe <CSV>] [--equip <C
 - 공용 모듈화는 하지 않았다 — WorkBench `index.js` 를 쪼개면 exe 재빌드·화면 확인 위험이 WorkBench 에 생겨서. 사본마다 원본 위치 주석.
 - **145 반영·시험(2026-10-30)**: WorkBench 1.6.31(`36c8d21`) + `01e7600` pull·재시작, `mb-launcher-0.1.0.zip` 145 로컬 StudioProgram(사용자 복사, 145 manifest·다운로드 sha256 원본 일치 검증).
   테스트 순서 1~3 통과 — 접수만(#7561, 빌드 Success, `--server` 없이 145) · 전체 흐름(145 에서 실행기 받아 설치 15초 → Studio 열림, 사용자 확인).
+- 실행기 0.1.1(`d0f2c81`): WorkBench 아이콘(창·exe, rcedit) · `--smoke` 를 사용자 실행기와 분리(데이터 폴더·잠금 따로 — smoke 종료가 사용자 Studio 창을 닫은 사고 후).
+  145 에 0.1.1 반영, 사용자가 아이콘 확인. 실행기는 Studio 릴리스 표에 없어 145 `StudioProgram\` 에 두는 순간 공개된다(올리기·공개 분리가 필요하면 표에 추가).
 - 남은 것(테스트 순서 4~7): ④ Studio 안 편집 → Analysis 해석 실행 → 모델 저장(편집 BDF) 클릭 시험 ⑤ 미가입 사번 → 145 가입 페이지
   ⑥ 다른 PC 에서 `dist\` 실행(실행 통제·no-sandbox) ⑦ 145 통계에 `AmToModelBuilder`. 그 뒤 AM 개발팀에 `dist\` 전달. 보고서(2차).
   클라이언트 저장소는 원격 없음(GitHub 비공개 저장소 만들면 연결).
