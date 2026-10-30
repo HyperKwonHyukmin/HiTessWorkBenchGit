@@ -37,3 +37,28 @@ test('returns each axis maximum with its own loading condition', () => {
     z: { value: 6, conditionNo: 2 },
   });
 });
+
+import {
+  EMPTY_MANUAL_DIMENSIONS,
+  buildManualDimensionsPayload,
+  isManualDimensionsComplete,
+  prefillManualDimensions,
+} from './hullAcceleration.js';
+
+test('manual dimensions payload keeps only positive numbers', () => {
+  assert.equal(buildManualDimensionsPayload(EMPTY_MANUAL_DIMENSIONS), null);
+  assert.deepEqual(
+    buildManualDimensionsPayload({ length: '235.45', breadth: '0', depth: 'abc', scantling_draft: '12.4' }),
+    { length: 235.45, scantling_draft: 12.4 },
+  );
+});
+
+test('prefill keeps user input and fills blanks from PDF values only', () => {
+  const next = prefillManualDimensions(
+    { ...EMPTY_MANUAL_DIMENSIONS, depth: '24' },
+    { lbp: 235.45, breadth: 32.25, depth: 23.85 },
+  );
+  assert.deepEqual(next, { length: '235.45', breadth: '32.25', depth: '24', scantling_draft: '' });
+  assert.equal(isManualDimensionsComplete(next), false);
+  assert.equal(isManualDimensionsComplete({ ...next, scantling_draft: '12.4' }), true);
+});

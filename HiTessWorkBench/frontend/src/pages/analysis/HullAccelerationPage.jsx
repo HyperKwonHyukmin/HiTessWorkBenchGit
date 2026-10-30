@@ -16,7 +16,15 @@ import ProgressBar from '../../components/ui/ProgressBar';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import AppUsageStatsButton from '../../components/analysis/AppUsageStatsButton';
 import { buildFormData } from '../../utils/fileHelper';
-import { buildFilteredEnvelope, getConditionNumbersFromRules, getRuleAxisMaxima } from '../../utils/hullAcceleration';
+import {
+  EMPTY_MANUAL_DIMENSIONS,
+  buildFilteredEnvelope,
+  buildManualDimensionsPayload,
+  getConditionNumbersFromRules,
+  getRuleAxisMaxima,
+  isManualDimensionsComplete,
+  prefillManualDimensions,
+} from '../../utils/hullAcceleration';
 import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 
 // 배너 배경 선화 — 카탈로그 카드와 같은 그림(분류 'Hull Accel' 기본값, utils/cardArt.js)
@@ -92,6 +100,14 @@ const PARTICULAR_FIELDS = [
   ['scantling_cb', 'Summer Cb', '-'],
   ['design_cb', 'Design Cb', '-'],
   ['lightship_weight', 'Lightship', 't'],
+];
+
+// 엔진이 PDF 에서 주요 치수를 못 읽었거나 값이 이상할 때 직접 입력받는 칸(키 = 엔진 manual_dimensions)
+const MANUAL_DIMENSION_FIELDS = [
+  ['length', 'LBP (Length B.P.)', 'm'],
+  ['breadth', 'Breadth', 'm'],
+  ['depth', 'Depth', 'm'],
+  ['scantling_draft', 'Scantling draft', 'm'],
 ];
 
 const RESULT_INPUT_FIELDS = [
@@ -220,6 +236,8 @@ export default function HullAccelerationPage() {
   const [activeRuleTab, setActiveRuleTab] = useState('envelope');
   // PDF 에서 Cb 미검출 시 사용자가 직접 입력하는 Scantling Cb (빈 문자열 = 미입력 → 미검출 분기).
   const [manualCb, setManualCb] = useState('');
+  // PDF 에서 주요 치수(LBP/B/D/Tsc) 미검출·이상 시 사용자가 직접 입력하는 값(빈 칸 = PDF 값 사용).
+  const [manualDims, setManualDims] = useState(EMPTY_MANUAL_DIMENSIONS);
 
   // 샘플 TS PDF 미리보기 모달 (서버 렌더 base64 PNG 리스트). 페이지 상태로는 보존하지 않는다.
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -275,7 +293,12 @@ export default function HullAccelerationPage() {
         setActiveLoadingTableIndex(0);
         setActiveRuleTab('envelope');
         setSelectedLcNumbers(getConditionNumbersFromRules(parsed.rules));
-        if (parsed.cb_missing) {
+        if (parsed.dimensions_missing) {
+          // 주요 치수가 없거나 이상해 계산이 보류됨 → 결과창의 직접 입력 칸(PDF 에서 읽은 값으로 미리 채움)으로 재계산 유도.
+          setManualDims((prev) => prefillManualDimensions(prev, parsed.ship_particulars?.values));
+          addLog(`[주의] ${parsed.dimension_issue} 주요 치수를 입력하고 재계산하세요.`, 'warning');
+          showToast('PDF에서 주요 치수를 확인하지 못했습니다. 결과 화면에서 직접 입력해 주세요.', 'warning');
+        } else if (parsed.cb_missing) {
           // PDF 에 Cb 가 없어 계산이 보류됨 → 결과창의 수동 입력 프롬프트로 재계산 유도.
           setManualCb((prev) => (prev !== '' ? prev : String(DEFAULT_CONSTANTS.scantling_cb)));
           addLog('[주의] PDF에서 Cb(Scantling)를 찾지 못했습니다. Cb를 입력하고 재계산하세요.', 'warning');
@@ -285,6 +308,9 @@ export default function HullAccelerationPage() {
           addLog(`[OK] ${parsed.table_count}개 표 / 페이지 ${parsed.matched_pages.join(', ')} 추출됨.`, 'success');
           if (parsed.cb_source === 'manual') {
             addLog(`[Cb] PDF 미검출 → 수동 입력값 Cb=${fmt(parsed.ship_constants?.scantling_cb, 4)} 사용.`, 'info');
+          }
+          if (parsed.manual_dimension_keys?.length) {
+            addLog(`[제원] 직접 입력값 사용: ${parsed.manual_dimension_keys.join(', ')}`, 'info');
           }
         }
       } catch {
@@ -353,6 +379,7 @@ export default function HullAccelerationPage() {
     setActiveLoadingTableIndex(0);
     setSelectedLcNumbers(null);
     setManualCb(''); // 새 PDF 는 Cb 자동 검출부터 다시 시도
+    setManualDims(EMPTY_MANUAL_DIMENSIONS); // 주요 치수도 PDF 자동 추출부터 다시
     setLogs([{ time: new Date().toLocaleTimeString(), message: `[FILE] ${file.name} 선택됨.`, type: 'info' }]);
   };
 
@@ -368,7 +395,7 @@ export default function HullAccelerationPage() {
 
   // 전송용 상수 페이로드. 사용자가 Cb 를 직접 입력한 경우에만 manual_scantling_cb 를 실어
   // 보내 백엔드의 'PDF 우선, 없으면 수동' Cb 결정 로직을 태운다(미입력이면 키 자체를 보내지 않음).
-  const buildConstantsPayload = () => {
+  const buildConstantsPayload = ({ includeManualDimensions = true } = {}) => {
     const payload = toPayloadConstants(constants);
     // 엔진(BV/IGC/LR 공식)은 속도를 Knot 단위로 받는다. Knot 입력은 그대로 전달하고,
     // m/s 로 입력한 경우에만 Knot 으로 환산해 보낸다.
@@ -382,6 +409,11 @@ export default function HullAccelerationPage() {
     }
     const n = Number(manualCb);
     if (manualCb !== '' && Number.isFinite(n)) payload.manual_scantling_cb = n;
+    // 화면 기본 상수(lbp/breadth…)는 엔진이 쓰지 않는다. 직접 입력한 주요 치수만 manual_dimensions 로 보낸다.
+    const dims = includeManualDimensions ? buildManualDimensionsPayload(manualDims) : null;
+    if (dims) payload.manual_dimensions = dims;
+    // 이 화면은 주요 치수 직접 입력 칸이 있다 → 엔진이 실패 대신 '치수 입력 필요' 결과를 돌려준다.
+    payload.manual_dimensions_supported = true;
     return payload;
   };
 
@@ -433,9 +465,13 @@ export default function HullAccelerationPage() {
   useDashboardAutoRun(PAGE_KEY, (!isRunning && pdfFile) || null, runExtraction);
 
   // 업로드 없이 서버 내장 샘플 PDF 로 바로 실행한다. 현재 입력된 상수/위치(X·Y·Z)를 그대로 사용.
-  const runSample = async () => {
+  // options.keepManualDimensions: 샘플 결과창의 '재계산'일 때만 true. 샘플 버튼(onClick 이벤트가 들어옴)으로
+  // 새로 실행하면 앞 PDF 에서 입력한 주요 치수가 샘플 선박에 실리지 않게 비운다(직접 입력값이 PDF 값보다 우선).
+  const runSample = async (options) => {
     if (isRunning) return;
     if (!validateCalculationInputs()) return;
+    const keepManualDimensions = options?.keepManualDimensions === true;
+    if (!keepManualDimensions) setManualDims(EMPTY_MANUAL_DIMENSIONS);
     setIsRunning(true);
     setProgress(0);
     setStatusMessage('샘플 파일 준비 중...');
@@ -449,7 +485,7 @@ export default function HullAccelerationPage() {
     const formData = buildFormData({
       employee_id: employeeId,
       source: 'Workbench',
-      constants: JSON.stringify(buildConstantsPayload()),
+      constants: JSON.stringify(buildConstantsPayload({ includeManualDimensions: keepManualDimensions })),
     });
     try {
       const res = await requestHullAccelerationSample(formData);
@@ -473,7 +509,18 @@ export default function HullAccelerationPage() {
     }
     addLog(`[재계산] 수동 입력 Cb=${n} 로 다시 계산합니다.`, 'info');
     if (pdfFile) runExtraction();
-    else runSample();
+    else runSample({ keepManualDimensions: true });
+  };
+
+  // 주요 치수 미검출·이상 결과창에서 사용자가 입력한 LBP/B/D/Tsc 로 동일 PDF 를 재계산한다.
+  const recalcWithManualDimensions = () => {
+    if (!isManualDimensionsComplete(manualDims)) {
+      showToast('LBP·Breadth·Depth·Scantling draft 를 모두 0보다 큰 값으로 입력하세요.', 'warning');
+      return;
+    }
+    addLog(`[재계산] 직접 입력한 주요 치수로 다시 계산합니다. (${JSON.stringify(buildManualDimensionsPayload(manualDims))})`, 'info');
+    if (pdfFile) runExtraction();
+    else runSample({ keepManualDimensions: true });
   };
 
   // 업로드/실행 없이 샘플 TS PDF 의 핵심 페이지(표지·제원·Summary)를 모달로 미리 본다.
@@ -508,6 +555,7 @@ export default function HullAccelerationPage() {
     setRuleLengthMode(RULE_LENGTH_MODES.LBP);
     setSelectedLcNumbers(null);
     setManualCb('');
+    setManualDims(EMPTY_MANUAL_DIMENSIONS);
     setIsDragOver(false);
     if (fileInputRef.current) fileInputRef.current.value = ''; // 같은 파일 재선택 허용
     clearAnalysisPageState?.(PAGE_KEY);
@@ -996,6 +1044,74 @@ export default function HullAccelerationPage() {
 
               {/* 스크롤 가능한 결과 본문 */}
               <div className="flex-1 overflow-auto space-y-5 min-h-0 pr-0.5 reveal-stagger">
+
+                {/* ── 주요 치수 미검출·이상 → 직접 입력 후 재계산 프롬프트 ── */}
+                {resultData.dimensions_missing && (
+                  <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 shadow-sm overflow-hidden">
+                    <div className="flex items-center gap-2 px-5 py-3 bg-amber-100/70 border-b border-amber-200">
+                      <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                      <span className="text-sm font-bold text-amber-800">주요 치수를 확인해 주세요</span>
+                    </div>
+                    <div className="p-5 space-y-3">
+                      <p className="text-xs text-amber-900 leading-5">{resultData.dimension_issue}</p>
+                      <p className="text-xs text-amber-800 leading-5">
+                        도면의 Principal dimensions 값을 확인해 아래에 입력한 뒤
+                        <span className="font-semibold"> 이 치수로 재계산</span>을 누르면 동일 PDF로 다시 계산합니다.
+                        PDF에서 읽은 값은 미리 채워 두었습니다.
+                      </p>
+                      <div className="flex flex-wrap items-end gap-3">
+                        {MANUAL_DIMENSION_FIELDS.map(([key, label, unit]) => (
+                          <label key={key} className="block">
+                            <span className="block text-[11px] font-semibold text-amber-800 mb-1">{label} ({unit})</span>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              value={manualDims[key]}
+                              onChange={(e) => setManualDims((prev) => ({ ...prev, [key]: e.target.value }))}
+                              onKeyDown={(e) => {
+                                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                                if (e.key === 'Enter') recalcWithManualDimensions();
+                              }}
+                              className="w-36 h-9 px-3 rounded-lg border border-amber-300 bg-white text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                            />
+                          </label>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={recalcWithManualDimensions}
+                          disabled={isRunning}
+                          className={`inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-sm font-bold transition-colors ${
+                            isRunning
+                              ? 'bg-amber-200 text-amber-500 cursor-not-allowed'
+                              : 'bg-amber-600 text-white hover:bg-amber-700 cursor-pointer'
+                          }`}
+                        >
+                          <Play size={14} />
+                          이 치수로 재계산
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── 주요 치수 직접 입력값 사용 안내 ── */}
+                {!resultData.dimensions_missing && resultData.manual_dimension_keys?.length > 0 && (
+                  <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-2">
+                    <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                    <span className="text-[11px] font-semibold text-amber-800">
+                      직접 입력한 주요 치수로 계산했습니다:{' '}
+                      <span className="font-black">
+                        {MANUAL_DIMENSION_FIELDS
+                          .filter(([key]) => resultData.manual_dimension_keys.includes(key))
+                          // ship_constants.length 는 Rule Length(직접 입력 모드면 그 값)라 LBP 는 lbp 로 읽는다
+                          .map(([key, label]) => `${label} ${fmt(resultData.ship_constants?.[key === 'length' ? 'lbp' : key], 2)} m`)
+                          .join(' · ')}
+                      </span>
+                      . 아래 'PDF 자동 추출' 칸은 PDF에서 읽은 값입니다.
+                    </span>
+                  </div>
+                )}
 
                 {/* ── Cb 미검출 → 수동 입력 후 재계산 프롬프트 ── */}
                 {resultData.cb_missing && (
