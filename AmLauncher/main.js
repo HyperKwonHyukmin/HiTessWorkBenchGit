@@ -15,7 +15,11 @@ const { app, dialog, shell } = require("electron");
 // ── 폴더 — app ready 와 단일 인스턴스 잠금보다 먼저 정해야 한다(잠금도 userData 를 쓴다) ──
 const LOCAL_APPDATA = process.env.LOCALAPPDATA || path.join(app.getPath("home"), "AppData", "Local");
 const ROOT_DIR = path.join(LOCAL_APPDATA, "HiTESS", "MBLauncher");
-const DATA_DIR = path.join(ROOT_DIR, "data");
+// smoke(자동 점검)는 사용자 실행기와 완전히 떨어져 돈다 — 데이터 폴더를 따로 쓰고 단일 인스턴스 잠금도 잡지 않는다.
+// 2026-10-30: 같은 잠금을 쓰다 smoke 요청이 사용자가 쓰던 실행기로 넘어가, smoke 종료가 사용자의 Studio 창까지 닫았다.
+// 전제: smoke 는 한 번에 하나만 돌린다(동시에 돌리면 smoke-data 를 같이 써 프로필·설치가 겹친다).
+const IS_SMOKE = process.argv.includes("--smoke");
+const DATA_DIR = path.join(ROOT_DIR, IS_SMOKE ? "smoke-data" : "data");
 const LOG_DIR = path.join(ROOT_DIR, "logs");
 const RESULTS_DIR = path.join(DATA_DIR, "results");
 const VIEWERS_DIR = path.join(DATA_DIR, "viewers");
@@ -50,7 +54,7 @@ const log = createLogger(LOG_DIR);
 
 // second-instance 의 commandLine 은 Chromium 이 스위치를 앞으로 모으고 값을 뒤로 보내 순서가 깨진다
 // (2026-10-30 실측: "--employee --job … A476854 <job>"). 그래서 원래 argv 를 additionalData 로 함께 넘긴다.
-const gotLock = app.requestSingleInstanceLock({ argv: process.argv.slice(1) });
+const gotLock = IS_SMOKE ? true : app.requestSingleInstanceLock({ argv: process.argv.slice(1) });
 if (!gotLock) {
   log.info(`이미 실행 중 — 인자를 기존 실행기로 넘기고 종료: ${process.argv.slice(1).join(" ")}`);
   app.quit();

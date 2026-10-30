@@ -1,7 +1,7 @@
 {
   "name": "hitess-mb-launcher",
   "productName": "HiTESS MB 실행기",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AM 연동용 Model Builder Studio 실행기 — 빌드 진행 표시 · 결과 받기 · Studio 설치 · Studio 창",
   "main": "main.js",
   "private": true,

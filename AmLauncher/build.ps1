@@ -42,6 +42,25 @@ New-Item -ItemType Directory -Force -Path $staging | Out-Null
 Copy-Item -Path (Join-Path $ElectronDist "*") -Destination $staging -Recurse -Force
 
 Rename-Item -LiteralPath (Join-Path $staging "electron.exe") -NewName "HiTessMBLauncher.exe"
+
+# exe 파일 아이콘·설명을 WorkBench 것으로 — 그대로 두면 탐색기·작업 표시줄에 Electron 아이콘이 뜬다.
+# rcedit 는 electron-builder 가 받아 둔 캐시의 것을 쓴다(사내망에서 새로 받기 어려움). 없으면 경고만 하고 계속한다.
+$rcedit = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA "electron-builder\Cache\winCodeSign") -Recurse -Filter "rcedit-x64.exe" -ErrorAction SilentlyContinue |
+  Select-Object -First 1 -ExpandProperty FullName
+$icon = Join-Path $here "assets\icon.ico"
+if ($rcedit) {
+  & $rcedit (Join-Path $staging "HiTessMBLauncher.exe") `
+    --set-icon $icon `
+    --set-version-string "ProductName" "HiTESS Model Builder" `
+    --set-version-string "FileDescription" "HiTESS Model Builder 실행기" `
+    --set-version-string "CompanyName" "HiTESS" `
+    --set-version-string "OriginalFilename" "HiTessMBLauncher.exe" `
+    --set-file-version $version --set-product-version $version
+  if ($LASTEXITCODE -ne 0) { throw "rcedit 실패(종료 코드 $LASTEXITCODE)" }
+  Write-Host "exe 아이콘·설명: $icon"
+} else {
+  Write-Warning "rcedit-x64.exe 를 찾지 못해 exe 아이콘은 Electron 기본값으로 남습니다(창 아이콘은 그대로 적용)."
+}
 Get-ChildItem -LiteralPath (Join-Path $staging "locales") -File |
   Where-Object { $_.Name -ne "ko.pak" -and $_.Name -ne "en-US.pak" } |
   Remove-Item -Force
@@ -52,14 +71,14 @@ if (Test-Path -LiteralPath $defaultApp) { Remove-Item -LiteralPath $defaultApp -
 $appDir = Join-Path $staging "resources\app"
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
 foreach ($f in @("package.json", "main.js")) { Copy-Item -LiteralPath (Join-Path $here $f) -Destination $appDir }
-foreach ($d in @("lib", "preload", "ui")) { Copy-Item -LiteralPath (Join-Path $here $d) -Destination $appDir -Recurse }
+foreach ($d in @("lib", "preload", "ui", "assets")) { Copy-Item -LiteralPath (Join-Path $here $d) -Destination $appDir -Recurse }
 # 단위 테스트 파일은 배포본에 싣지 않는다
 # (-Include 는 -LiteralPath 와 함께 쓰면 5.1 에서 거르지 않고 전부 잡는다 — Where-Object 로 거른다)
 Get-ChildItem -LiteralPath $appDir -Recurse -File |
   Where-Object { $_.Name -like "*.test.js" -or $_.Name -like "*.spec.js" } |
   Remove-Item -Force
 # 앱 코드가 빠지면 Electron 기본 화면이 뜨므로 여기서 막는다
-foreach ($must in @("package.json", "main.js", "lib\studio-host.js", "preload\studio-preload.js", "ui\progress.html")) {
+foreach ($must in @("package.json", "main.js", "lib\studio-host.js", "preload\studio-preload.js", "ui\progress.html", "assets\icon.ico")) {
   if (-not (Test-Path -LiteralPath (Join-Path $appDir $must))) { throw "배포본에 $must 가 없습니다." }
 }
 

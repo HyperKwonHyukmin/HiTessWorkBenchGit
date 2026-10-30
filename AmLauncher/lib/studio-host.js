@@ -232,6 +232,7 @@ function openStudio({ flow, viewerDir, viewerId, initialFolder, outputDir, windo
     backgroundColor: "#0d0d1a",
     autoHideMenuBar: true,
     title: windowTitle,
+    icon: path.join(__dirname, "..", "assets", "icon.ico"),
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "studio-preload.js"),
       contextIsolation: true,

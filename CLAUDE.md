@@ -268,7 +268,8 @@ COG 노드 + 질량을 두고 주변 부재에 RBE 로 묶기가 어렵다(3529_
   모델·부재 name. 구조 CSV `ori` ↔ 엔진 `BeamOrientation.Resolve`(평행일 때만 기본 규칙) ↔ BDF v 벡터 비교로 원인을 가른다.
 
 **Aveva Marine 연동 독립 클라이언트 (2026-10-30 구현, 145 반영 — 접수·전체 흐름 통과, Studio 안 편집·해석·저장 클릭 시험 남음)** — AM 버튼 → `HiTessMB.exe` → 서버 빌드 → 실행기 → Studio 까지 한 번에(실측 약 20초).
-145 의 실행기 zip = 145 로컬 `StudioProgram\mb-launcher-0.1.0.zip`(릴리스 표에 없음 → 최고 버전). 70 로컬 zip 은 DRM 암호문이라 그대로 복사하면 깨진다 — 새 버전은 `AmLauncher\build.ps1 -OutDir <UNC>` 후 `verify-studio-zips.ps1 -ViewerId mb-launcher`.
+145 의 실행기 zip = 145 로컬 `StudioProgram\mb-launcher-<ver>.zip`(릴리스 표에 없음 → 최고 버전, 0.1.0 반영 · 0.1.1 = WorkBench 아이콘·smoke 분리, 145 복사는 사용자).
+실행기 버전을 올리면 설치된 PC 도 다음 실행 때 새로 받는다. ⚠ `--smoke` 는 데이터 폴더(`MBLauncher\smoke-data`)·단일 인스턴스 잠금을 따로 쓴다 — 같은 잠금이면 smoke 종료가 사용자 Studio 창을 닫는다(2026-10-30 실제로 일어남). 70 로컬 zip 은 DRM 암호문이라 그대로 복사하면 깨진다 — 새 버전은 `AmLauncher\build.ps1 -OutDir <UNC>` 후 `verify-studio-zips.ps1 -ViewerId mb-launcher`.
 계획서 `docs/plans/2026-10-28-aveva-marine-model-builder-client.md`(배경·결정표 D1~D6) · **구현 `docs/plans/2026-10-30-am-client-implementation-plan.md`(이것이 우선, 진행 상태 표)**.
 구성 3개 — WorkBench 와 완전 별개(사용자 PC 에 WorkBench 불필요):
 - 클라이언트 `C:\Coding\WorkBenchSubModule\HiTessMBClient\`(.NET 4.8, 별도 git) — 접수 후 실행기를 받아 띄우고 끝. 종료 코드 0·2~8(README).

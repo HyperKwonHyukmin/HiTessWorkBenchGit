@@ -3,6 +3,9 @@
 "use strict";
 
 const path = require("path");
+
+// 창·작업 표시줄 아이콘 = WorkBench 아이콘 사본(assets/icon.ico). 없으면 Electron 기본 아이콘이 뜬다.
+const APP_ICON = path.join(__dirname, "..", "assets", "icon.ico");
 const { BrowserWindow, ipcMain } = require("electron");
 
 const byWebContents = new Map(); // webContents.id → ProgressWindow
@@ -43,6 +46,7 @@ class ProgressWindow {
       autoHideMenuBar: true,
       backgroundColor: "#FFFFFF",
       title: "HiTESS Model Builder",
+      icon: APP_ICON,
       webPreferences: {
         preload: path.join(__dirname, "..", "preload", "progress-preload.js"),
         contextIsolation: true,
