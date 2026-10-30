@@ -30,8 +30,11 @@ def _make_work_dir(employee_id: str) -> tuple[str, str]:
     return work_dir, timestamp
 
 
-def run_d_type_lug(inputs: dict, employee_id: str) -> dict:
-    """D-Type Lug 강도 계산을 수행하고 JSON 입출력 이력을 저장합니다."""
+def run_d_type_lug(inputs: dict, employee_id: str, bracket_type: str | None = None) -> dict:
+    """D-Type Lug 강도 계산을 수행하고 JSON 입출력 이력을 저장합니다.
+
+    bracket_type 은 엔진 입력(input.json)에 넣지 않는다 — 엔진은 세 형식을 모두 계산한다.
+    """
     if not os.path.exists(_EXE_PATH):
         logger.error("D_TypeLugCalculation.exe not found at: %s", _EXE_PATH)
         raise HTTPException(
@@ -91,7 +94,7 @@ def run_d_type_lug(inputs: dict, employee_id: str) -> dict:
             program_name="D Type Lug Assessment",
             employee_id=employee_id,
             status="Success",
-            input_info=inputs,
+            input_info={**inputs, "bracket_type": bracket_type} if bracket_type else inputs,
             result_info={
                 "input_json": input_path,
                 "output_json": output_path,

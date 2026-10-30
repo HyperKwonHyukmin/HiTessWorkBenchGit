@@ -220,7 +220,7 @@ const API_LIST = [
       geometry: {
         l1: 850, l2: 200, h1: 365, h2: 190, h3: 190, h4: 115, h5: 74,
         t1: 32, t2: 32, t3: 34, r1: 150, r2: 44, pin_radius: 41.5,
-        d1: 66, d2: 151, d3: 105, w1: 6, w2: 8, w1_prime: 12, w2_prime: 0,
+        d1: 66, d2: 151, d3: 105, w1: 6, w2: 8, w1_prime: 0, w2_prime: 0,
       },
       material: { yield_base_MPa: 235, yield_weld_MPa: 291.7647058823529 },
       employee_id: "20001234",

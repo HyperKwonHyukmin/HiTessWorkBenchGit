@@ -1,8 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import {
-  AlertCircle, Calculator, Download,
-  Loader2, Ruler, ShieldCheck, TableProperties
+  AlertCircle, Calculator, Download, Loader2, Maximize2, RotateCcw, TableProperties, X,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import SolverCredit from '../../components/ui/SolverCredit';
@@ -11,15 +10,24 @@ import { API_BASE_URL } from '../../config';
 import { formatFixed as fmt } from '../../utils/formatting';
 import dTypeLugRef1 from '../../assets/images/D_typeLug1.png';
 import dTypeLugRef2 from '../../assets/images/D_typeLug2.png';
-import dTypeLugRef3 from '../../assets/images/D_typeLug3.png';
+import bracket4EA from '../../assets/images/D_typeLug_4EA.png';
+import bracket2EAOpposite from '../../assets/images/D_typeLug_2EA_OS.png';
+import bracket2EASame from '../../assets/images/D_typeLug_2EA_SS.png';
 import AnalysisPageBanner from '../../components/analysis/AnalysisPageBanner';
 import { downloadJson } from '../../utils/fileHelper';
 import ReferenceFormulaTabs from '../../components/ui/ReferenceFormulaTabs';
 import VerdictBadge from '../../components/ui/VerdictBadge';
 import CalcInputField from '../../components/ui/CalcInputField';
+import { VerdictHeader, KeyFigures } from '../../components/analysis/runFrame';
 import { useDraftAutosave } from '../../hooks/useDraftAutosave';
 import DraftAutosavePill from '../../components/platform/DraftAutosavePill';
+import {
+  BRACKETS, DEFAULT_BRACKET, SECTIONS, bracketLabel, caseLabel, fieldError,
+  governingCaseBySection, rowMaxUsage, sanitizeDraftInputs, toPayload, weldError,
+} from '../../utils/dTypeLug';
 
+// 기본값 = Excel 원본 값. 단 W1'(Excel 12)·W2' 는 0 고정이라 입력에 없다(utils/dTypeLug FIXED_GEOMETRY) —
+// 그래서 이 기본값의 E 단면 결과는 Excel 과 다르다.
 const DEFAULT_INPUT = {
   load: { force_N: '1000000' },
   geometry: {
@@ -30,7 +38,6 @@ const DEFAULT_INPUT = {
     pin_radius: '41.5',
     d1: '66', d2: '151', d3: '105',
     w1: '6', w2: '8',
-    w1_prime: '12', w2_prime: '0',
   },
   material: {
     yield_base_MPa: '235',
@@ -38,112 +45,196 @@ const DEFAULT_INPUT = {
   },
 };
 
-const BRACKET_LABELS = {
-  bracket_4EA: 'Bracket 4EA',
-  bracket_2EA_double: 'Bracket 2EA Double',
-  bracket_2EA_single: 'Bracket 2EA Single',
+const BRACKET_FIGURES = {
+  bracket_4EA: bracket4EA,
+  bracket_2EA_double: bracket2EAOpposite,
+  bracket_2EA_single: bracket2EASame,
 };
 
-const caseLabel = (index) => Number.isFinite(Number(index)) ? Number(index) + 1 : '-';
-
+// 두 그림을 가로세로 비율대로 나눠 같은 높이로 맞춘다(Ref1 1378×796, Ref2 1278×522).
 const REFERENCE_IMAGES = [
-  { src: dTypeLugRef1, label: 'Reference 1' },
-  { src: dTypeLugRef2, label: 'Reference 2' },
-  { src: dTypeLugRef3, label: 'Reference 3' },
+  { src: dTypeLugRef1, label: 'Reference 1 · 검토 단면 A~E 위치', ratio: 1.73 },
+  { src: dTypeLugRef2, label: 'Reference 2 · 치수 기호', ratio: 2.45 },
 ];
 
 const GEOMETRY_GROUPS = [
-  { title: 'Length / Height', fields: [['l1', 'L1'], ['l2', 'L2'], ['h1', 'H1'], ['h2', 'H2'], ['h3', 'H3'], ['h4', 'H4'], ['h5', 'H5']] },
-  { title: 'Plate / Radius', fields: [['t1', 'T1'], ['t2', 'T2'], ['t3', 'T3'], ['r1', 'R1'], ['r2', 'R2'], ['pin_radius', 'Pin R']] },
-  { title: 'Diameter / Weld', fields: [['d1', 'D1'], ['d2', 'D2'], ['d3', 'D3'], ['w1', 'W1'], ['w2', 'W2'], ['w1_prime', "W1'"], ['w2_prime', "W2'"]] },
+  { title: '길이 · 높이', fields: [['l1', 'L1'], ['l2', 'L2'], ['h1', 'H1'], ['h2', 'H2'], ['h3', 'H3'], ['h4', 'H4'], ['h5', 'H5']] },
+  { title: '판 두께 · 반경', fields: [['t1', 'T1'], ['t2', 'T2'], ['t3', 'T3'], ['r1', 'R1'], ['r2', 'R2'], ['pin_radius', 'Pin R']] },
+  { title: '지름 · 용접', fields: [['d1', 'D1'], ['d2', 'D2'], ['d3', 'D3'], ['w1', 'W1'], ['w2', 'W2']], note: "W1'·W2'는 0으로 고정합니다." },
 ];
 
-const toNumberPayload = (inputs) => ({
-  load: Object.fromEntries(Object.entries(inputs.load).map(([k, v]) => [k, Number(v)])),
-  geometry: Object.fromEntries(Object.entries(inputs.geometry).map(([k, v]) => [k, Number(v)])),
-  material: Object.fromEntries(Object.entries(inputs.material).map(([k, v]) => [k, Number(v)])),
-});
+const MATERIAL_FIELDS = [
+  ['yield_base_MPa', '모재 항복응력'],
+  ['yield_weld_MPa', '용접부 기준응력'],
+];
 
-// 공용 CalcInputField 위임 (size=sm, DTypeLug 기본값 unit='mm'/min=0 보존).
-const InputField = (props) => <CalcInputField size="sm" unit="mm" min={0} {...props} />;
+const InputField = (props) => <CalcInputField size="sm" unit="mm" min={0} rangeHint={false} {...props} />;
 
-// 판정 배지는 공용 VerdictBadge 사용 — 기존 StatusBadge 는 OK/NG 모두 ShieldCheck 단일 아이콘이라
-// 색맹 사용자에게 색 외 구분이 없었다(아이콘이 CheckCircle2/XCircle 로 바뀌도록 교정).
+const usageTone = (v) => (Number(v) > 1 ? 'text-red-700 font-bold' : 'text-slate-800');
 
-const ResultMetric = ({ label, value, unit, danger }) => (
-  <div className={`border rounded-xl px-4 py-3 ${danger ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}>
-    <p className={`text-[10px] font-bold uppercase tracking-wide ${danger ? 'text-red-400' : 'text-emerald-500'}`}>{label}</p>
-    <p className={`text-lg font-extrabold mt-0.5 ${danger ? 'text-red-700' : 'text-emerald-700'}`}>
-      {value} <span className="text-xs font-medium opacity-70">{unit}</span>
-    </p>
-  </div>
-);
+function ImageLightbox({ image, onClose }) {
+  useEffect(() => {
+    if (!image) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [image, onClose]);
+  if (!image) return null;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={image.label}
+      className="fixed inset-0 z-[300] flex flex-col items-center justify-center gap-3 bg-slate-900/85 p-6"
+      onClick={onClose}
+    >
+      <img
+        src={image.src}
+        alt={image.label}
+        className="max-h-[85vh] max-w-[95vw] rounded-lg bg-white object-contain p-4"
+        onClick={(e) => e.stopPropagation()}
+      />
+      <div className="flex items-center gap-3 text-sm text-white">
+        <span className="font-semibold">{image.label}</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex items-center gap-1 rounded-md border border-white/40 px-2.5 py-1 font-semibold hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+        >
+          <X size={14} aria-hidden="true" /> 닫기 (Esc)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BracketPicker({ value, onChange }) {
+  return (
+    <fieldset>
+      <legend className="mb-2 text-sm font-semibold text-slate-800">Bracket 형식</legend>
+      <div role="radiogroup" aria-label="Bracket 형식" className="grid grid-cols-3 gap-2">
+        {BRACKETS.map(b => {
+          const selected = value === b.key;
+          return (
+            <button
+              key={b.key}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange(b.key)}
+              className={`rounded-lg border px-2 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40 ${
+                selected
+                  ? 'border-brand-blue bg-blue-50 text-brand-blue'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <span className="block text-sm font-bold">{b.name}</span>
+              <span className={`block text-xs ${selected ? 'text-brand-blue' : 'text-slate-500'}`}>{b.side}</span>
+            </button>
+          );
+        })}
+      </div>
+      <figure className="mt-3 rounded-lg border border-slate-200 bg-white p-2">
+        <img
+          src={BRACKET_FIGURES[value]}
+          alt={`${bracketLabel(value)} E 단면 용접부 배치`}
+          className="mx-auto h-44 w-full object-contain"
+        />
+        <figcaption className="mt-1 text-center text-xs text-slate-600">
+          {bracketLabel(value)} · E 단면(용접부) 배치
+        </figcaption>
+      </figure>
+    </fieldset>
+  );
+}
 
 export default function DTypeLugAssessment() {
   const { employeeId } = useAuth();
   const { setCurrentMenu } = useNavigation();
   const [inputs, setInputs] = useState(DEFAULT_INPUT);
   const [result, setResult] = useState(null);
+  const [calculatedKey, setCalculatedKey] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedBracket, setSelectedBracket] = useState('bracket_4EA');
-  const [selectedCaseIndex, setSelectedCaseIndex] = useState(null);
+  const [selectedBracket, setSelectedBracket] = useState(DEFAULT_BRACKET);
+  const [valueMode, setValueMode] = useState('usage');
+  const [zoomImage, setZoomImage] = useState(null);
   const draftValue = useMemo(() => ({ inputs, selectedBracket }), [inputs, selectedBracket]);
   const autosave = useDraftAutosave('d-type-lug-assessment', draftValue);
 
   const restoreDraft = () => autosave.restoreDraft((draft) => {
-    setInputs(draft.inputs ?? DEFAULT_INPUT);
-    setSelectedBracket(draft.selectedBracket ?? 'bracket_4EA');
+    setInputs(sanitizeDraftInputs(draft.inputs, DEFAULT_INPUT));
+    setSelectedBracket(BRACKETS.some(b => b.key === draft.selectedBracket) ? draft.selectedBracket : DEFAULT_BRACKET);
     setResult(null);
     setError(null);
-    setSelectedCaseIndex(null);
   });
 
   const setField = (section, key) => (value) => {
-    setInputs(prev => ({
-      ...prev,
-      [section]: { ...prev[section], [key]: value },
-    }));
+    setInputs(prev => ({ ...prev, [section]: { ...prev[section], [key]: value } }));
   };
 
-  const payload = toNumberPayload(inputs);
-  const isValid =
-    payload.load.force_N > 0 &&
-    payload.material.yield_base_MPa > 0 &&
-    payload.material.yield_weld_MPa > 0 &&
-    Object.values(payload.geometry).every(v => Number.isFinite(v) && v >= 0);
+  const errors = useMemo(() => {
+    const out = {};
+    const check = (section, key, label, opts) => {
+      const msg = fieldError(inputs[section][key], opts);
+      if (msg) out[`${section}.${key}`] = { label, msg };
+    };
+    check('load', 'force_N', 'Force', { positive: true });
+    GEOMETRY_GROUPS.forEach(g => g.fields.forEach(([key, label]) => check('geometry', key, label)));
+    MATERIAL_FIELDS.forEach(([key, label]) => check('material', key, label, { positive: true }));
+    const weld = weldError(inputs.geometry);
+    if (weld && !out['geometry.w1'] && !out['geometry.w2']) {
+      out['geometry.w1'] = { label: 'W1', msg: weld };
+      out['geometry.w2'] = { label: 'W2', msg: weld };
+    }
+    return out;
+  }, [inputs]);
+  const invalidLabels = Object.values(errors).map(e => e.label);
+  const isValid = invalidLabels.length === 0;
+  const errorOf = (section, key) => errors[`${section}.${key}`]?.msg;
+
+  const payload = useMemo(() => toPayload(inputs), [inputs]);
+  const payloadKey = JSON.stringify(payload);
+  const isStale = result != null && calculatedKey !== payloadKey;
+  const isDefault = JSON.stringify(inputs) === JSON.stringify(DEFAULT_INPUT);
 
   const handleCalculate = async () => {
-    if (!isValid) return;
+    if (!isValid || isLoading) return;
     setIsLoading(true);
     setError(null);
-    setResult(null);
-    setSelectedCaseIndex(null);
     try {
       const res = await axios.post(`${API_BASE_URL}/api/d-type-lug/calculate`, {
         ...payload,
+        bracket_type: selectedBracket,
         employee_id: employeeId || 'unknown',
       });
       setResult(res.data);
+      setCalculatedKey(payloadKey);
     } catch (e) {
-      setError(e.response?.data?.detail ?? '계산 중 오류가 발생했습니다. 서버 연결 상태를 확인하세요.');
+      const detail = e.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : '서버에 연결하지 못했습니다. 네트워크와 서버 주소를 확인한 뒤 다시 계산하세요.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const resultEntries = Object.entries(result?.results || {});
+  const angleOf = (index) => result?.angle_cases?.find(a => a.index === index);
   const selectedData = result?.results?.[selectedBracket];
   const selectedAngles = selectedData?.per_angle || [];
   const governing = selectedData?.max_usage_factor || {};
-  const governingAngle = result?.angle_cases?.find(a => a.index === governing.governing_angle_index);
-  const activeCaseIndex = selectedCaseIndex ?? governing.governing_angle_index ?? selectedAngles[0]?.index;
+  const governingAngle = angleOf(governing.governing_angle_index);
+  const sectionGoverning = useMemo(() => governingCaseBySection(selectedAngles), [selectedAngles]);
+  const overall = Number(governing.overall);
+  const passed = Number.isFinite(overall) && overall <= 1;
+  const otherBrackets = BRACKETS.filter(b => b.key !== selectedBracket && result?.results?.[b.key]);
+
+  const angleText = (a) => (a ? `α ${a.alpha_deg}° · β ${a.beta_deg}°` : '');
 
   return (
     <div className="max-w-7xl mx-auto pb-16 animate-fade-in-up">
       <AnalysisPageBanner
         title="D Type Lug Assessment"
-        subtitle="Excel 기본값 기준 D-Type 러그의 브라켓 타입별 각도 케이스 사용률을 계산합니다."
+        subtitle="Bracket 형식과 치수를 넣으면 12개 하중 각도 케이스에서 단면 A~E의 사용률을 계산합니다."
         icon={TableProperties}
         guideTitle="[파라메트릭] D Type Lug Assessment"
         onBack={() => setCurrentMenu('Parametric Apps')}
@@ -157,326 +248,360 @@ export default function DTypeLugAssessment() {
         <DraftAutosavePill autosave={autosave} onRestore={restoreDraft} />
       </div>
 
-      <ReferenceFormulaTabs accent="emerald">
+      <ReferenceFormulaTabs>
         {(activeInfoTab) => activeInfoTab === 'image' ? (
-          <div className="border-t border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            {REFERENCE_IMAGES.map(image => (
-              <div key={image.src} className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-                <img src={image.src} alt={image.label} loading="lazy" decoding="async" className="w-full h-52 object-contain rounded-lg bg-white" />
-                <p className="text-[11px] text-slate-400 font-bold mt-2 text-center">{image.label}</p>
-              </div>
-            ))}
+          <div className="p-5">
+            <div
+              className="grid grid-cols-1 gap-4 lg:[grid-template-columns:var(--ref-cols)]"
+              style={{ '--ref-cols': REFERENCE_IMAGES.map(i => `${i.ratio}fr`).join(' ') }}
+            >
+              {REFERENCE_IMAGES.map(image => (
+                <figure key={image.src} className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setZoomImage(image)}
+                    className="group relative block w-full overflow-hidden rounded-lg border border-slate-200 bg-white p-2 transition-colors hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40"
+                    aria-label={`${image.label} 크게 보기`}
+                  >
+                    <img
+                      src={image.src}
+                      alt={image.label}
+                      decoding="async"
+                      className="block h-auto w-full object-contain"
+                      style={{ aspectRatio: image.ratio }}
+                    />
+                    <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-slate-900/70 px-2 py-1 text-xs font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                      <Maximize2 size={12} aria-hidden="true" /> 크게 보기
+                    </span>
+                  </button>
+                  <figcaption className="mt-1.5 text-center text-xs text-slate-600">{image.label}</figcaption>
+                </figure>
+              ))}
+            </div>
           </div>
         ) : (
-          <div className="border-t border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
-            {[
-              ['각도 케이스', 'α = 0, 30, 45, 60, 75, 90°\nβ = 0, 15°\n총 12개 케이스'],
-              ['검토 단면', 'A: Pin 전단\nB: Pin Bearing\nC: Lug Plate\nD: Base Plate\nE: Weld'],
-              ['판정 기준', '사용률(Usage Factor) = 등가응력 / 허용응력\n1.0 이하이면 OK, 1.0 초과이면 NG'],
-            ].map(([title, text]) => (
-              <div key={title}>
-                <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">{title}</p>
-                <div className="bg-slate-50 rounded-lg px-3 py-3">
-                  <p className="font-mono text-slate-700 font-bold text-xs whitespace-pre-line leading-relaxed">{text}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          <dl className="grid grid-cols-1 gap-6 p-5 text-sm md:grid-cols-3">
+            <div>
+              <dt className="mb-1.5 font-semibold text-slate-800">각도 케이스</dt>
+              <dd className="leading-relaxed text-slate-700">
+                α = 0, 30, 45, 60, 75, 90°<br />β = 0, 15°<br />총 12개 케이스
+              </dd>
+            </div>
+            <div>
+              <dt className="mb-1.5 font-semibold text-slate-800">검토 단면</dt>
+              <dd className="leading-relaxed text-slate-700">
+                {SECTIONS.map(s => <span key={s.key} className="block">{s.key} · {s.name}</span>)}
+              </dd>
+            </div>
+            <div>
+              <dt className="mb-1.5 font-semibold text-slate-800">판정 기준</dt>
+              <dd className="leading-relaxed text-slate-700">
+                사용률 = 등가응력 / 허용응력<br />1.0 이하이면 통과, 넘으면 실패
+              </dd>
+            </div>
+          </dl>
         )}
       </ReferenceFormulaTabs>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[520px_1fr] gap-6 items-start">
-        <div className="space-y-4">
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-6 py-3 flex items-center gap-2">
-              <Ruler size={14} className="text-white" />
-              <h2 className="text-xs font-bold text-white uppercase tracking-wider">입력 조건</h2>
-            </div>
-            <div className="p-5 space-y-4">
-              <InputField label="Force" value={inputs.load.force_N} onChange={setField('load', 'force_N')} unit="N" min={1} />
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[440px_1fr]">
+        {/* 입력 */}
+        <section className="rounded-xl border border-slate-200 bg-white" aria-labelledby="dlug-input-title">
+          <header className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+            <h2 id="dlug-input-title" className="text-base font-bold text-slate-900">입력</h2>
+            <button
+              type="button"
+              onClick={() => setInputs(DEFAULT_INPUT)}
+              disabled={isDefault}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-default disabled:text-slate-400 disabled:hover:bg-transparent"
+            >
+              <RotateCcw size={12} aria-hidden="true" /> 기본값으로
+            </button>
+          </header>
 
-              {GEOMETRY_GROUPS.map(group => (
-                <div key={group.title}>
-                  <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-2">{group.title}</p>
-                  <div className="grid grid-cols-3 gap-2.5">
-                    {group.fields.map(([key, label]) => (
-                      <InputField
-                        key={key}
-                        label={label}
-                        value={inputs.geometry[key]}
-                        onChange={setField('geometry', key)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
+          <div className="space-y-5 p-5">
+            <BracketPicker value={selectedBracket} onChange={setSelectedBracket} />
 
-              <div>
-                <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-2">Material</p>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <InputField label="Base Yield" value={inputs.material.yield_base_MPa} onChange={setField('material', 'yield_base_MPa')} unit="MPa" min={1} />
-                  <InputField label="Weld Yield" value={inputs.material.yield_weld_MPa} onChange={setField('material', 'yield_weld_MPa')} unit="MPa" min={1} />
+            <InputField
+              label="Force"
+              value={inputs.load.force_N}
+              onChange={setField('load', 'force_N')}
+              unit="N"
+              min={1}
+              error={errorOf('load', 'force_N')}
+            />
+
+            {GEOMETRY_GROUPS.map(group => (
+              <fieldset key={group.title} className="border-t border-slate-100 pt-4">
+                <legend className="mb-2 pr-2 text-sm font-semibold text-slate-800">{group.title}</legend>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {group.fields.map(([key, label]) => (
+                    <InputField
+                      key={key}
+                      label={label}
+                      value={inputs.geometry[key]}
+                      onChange={setField('geometry', key)}
+                      error={errorOf('geometry', key)}
+                    />
+                  ))}
                 </div>
+                {group.note && <p className="mt-2 text-xs text-slate-600">{group.note}</p>}
+              </fieldset>
+            ))}
+
+            <fieldset className="border-t border-slate-100 pt-4">
+              <legend className="mb-2 pr-2 text-sm font-semibold text-slate-800">재료</legend>
+              <div className="grid grid-cols-2 gap-2.5">
+                {MATERIAL_FIELDS.map(([key, label]) => (
+                  <InputField
+                    key={key}
+                    label={label}
+                    value={inputs.material[key]}
+                    onChange={setField('material', key)}
+                    unit="MPa"
+                    min={1}
+                    error={errorOf('material', key)}
+                  />
+                ))}
               </div>
+            </fieldset>
 
+            <div>
               <button
+                type="button"
                 onClick={handleCalculate}
                 disabled={!isValid || isLoading}
-                className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
-                  isValid && !isLoading
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-200 cursor-pointer'
-                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                }`}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-blue py-3 text-sm font-bold text-white transition-colors hover:bg-[#003366] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
               >
                 {isLoading
-                  ? <><Loader2 size={18} className="animate-spin" /> 계산 중...</>
-                  : <><Calculator size={18} /> Calculate</>}
+                  ? <><Loader2 size={16} className="animate-spin" aria-hidden="true" /> 계산 중</>
+                  : <><Calculator size={16} aria-hidden="true" /> {result ? '다시 계산' : '계산'}</>}
               </button>
+              {!isValid && (
+                <p className="mt-2 text-xs text-red-700" role="status">
+                  입력값을 확인하세요: {invalidLabels.join(', ')}
+                </p>
+              )}
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="space-y-5">
-          {!result && !error && !isLoading && (
-            <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-16 flex flex-col items-center text-slate-400 text-center">
-              <div className="p-5 bg-slate-50 rounded-full mb-4">
-                <TableProperties size={40} className="opacity-20" />
-              </div>
-              <p className="font-bold text-slate-500">Excel 기본 입력값을 확인하고 Calculate를 실행하세요.</p>
-              <p className="text-sm mt-1">계산 결과는 브라켓 타입별 최대 사용률과 각도별 상세값으로 표시됩니다.</p>
-            </div>
-          )}
-
-          {isLoading && (
-            <div className="bg-white border border-gray-200 rounded-2xl p-16 flex flex-col items-center text-slate-400">
-              <Loader2 size={40} className="animate-spin text-emerald-500 mb-4" />
-              <p className="font-bold text-slate-600">D-Type Lug 강도를 계산하는 중입니다...</p>
+        {/* 결과 */}
+        <section className="min-w-0 space-y-4" aria-label="결과" aria-busy={isLoading}>
+          {!result && !error && (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+              {isLoading ? (
+                <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <Loader2 size={16} className="animate-spin" aria-hidden="true" /> 12개 각도 케이스를 계산하는 중입니다
+                </p>
+              ) : (
+                <>
+                  <p className="font-semibold text-slate-800">형식과 치수를 확인한 뒤 계산을 누르세요.</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {bracketLabel(selectedBracket)}의 판정, 단면 A~E 최대 사용률, 각도 케이스별 값이 여기에 나옵니다.
+                  </p>
+                </>
+              )}
             </div>
           )}
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-6 flex items-start gap-4">
-              <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={22} />
-              <div>
-                <p className="font-bold text-red-700">계산 실패</p>
-                <p className="text-sm text-red-600 mt-1">{error}</p>
+            <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3.5" role="alert">
+              <AlertCircle size={20} className="mt-0.5 shrink-0 text-red-600" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="font-bold text-red-800">계산하지 못했습니다</p>
+                <p className="mt-0.5 break-words text-sm text-red-900">{error}</p>
               </div>
             </div>
           )}
 
-          {result && (
+          {result && selectedData && (
             <>
-              <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-5 py-3 flex items-center gap-3">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">다운로드</span>
-                <button
-                  onClick={() => downloadJson(result, 'd_type_lug_result.json')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg transition-colors cursor-pointer"
-                >
-                  <Download size={13} /> 결과 JSON
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {resultEntries.map(([name, data]) => {
-                  const max = data.max_usage_factor || {};
-                  const danger = Number(max.overall) > 1;
-                  return (
-                    <button
-                      key={name}
-                      onClick={() => setSelectedBracket(name)}
-                      className={`text-left rounded-2xl border p-4 transition-all cursor-pointer ${
-                        selectedBracket === name
-                          ? 'bg-emerald-50 border-emerald-300 shadow-sm'
-                          : 'bg-white border-gray-200 hover:border-emerald-200'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-extrabold text-slate-700">{BRACKET_LABELS[name] || name}</p>
-                        <VerdictBadge ok={Number(max.overall) <= 1} />
-                      </div>
-                      <p className={`text-3xl font-extrabold mt-3 ${danger ? 'text-red-600' : 'text-emerald-700'}`}>
-                        {fmt(max.overall, 2)}
-                      </p>
-                      <p className="text-[11px] text-slate-400 mt-1">
-                        Governing: Section {max.governing_section || '-'} / Case {caseLabel(max.governing_angle_index)}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {selectedData && (
-                <div className="space-y-4">
-                  <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
-                        <ShieldCheck size={16} className="text-emerald-500" /> 최대 사용률
-                      </h3>
-                      <span className="text-xs font-bold text-slate-400">{BRACKET_LABELS[selectedBracket]}</span>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-                      {['A', 'B', 'C', 'D', 'E', 'overall'].map(section => (
-                        <ResultMetric
-                          key={section}
-                          label={section === 'overall' ? 'Overall Usage' : `Section ${section}`}
-                          value={fmt(governing[section], 2)}
-                          unit="Usage Factor"
-                          danger={Number(governing[section]) > 1}
-                        />
-                      ))}
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-3">
-                      Governing angle: α {governingAngle?.alpha_deg ?? '-'}° / β {governingAngle?.beta_deg ?? '-'}° / Case {caseLabel(governing.governing_angle_index)}
-                    </p>
-                  </div>
-
-                  <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-                    <div className="bg-gradient-to-r from-slate-700 to-slate-600 px-6 py-3">
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">각도 케이스별 상세 결과</h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-gray-100">
-                            <th className="px-4 py-3 font-bold text-center">Case</th>
-                            <th className="px-4 py-3 font-bold text-center">Alpha</th>
-                            <th className="px-4 py-3 font-bold text-center">Beta</th>
-                            {['A', 'B', 'C', 'D', 'E'].map(section => (
-                              <th key={section} className="px-4 py-3 font-bold text-right">Usage {section}</th>
-                            ))}
-                            <th className="px-4 py-3 font-bold text-center">Max</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                          {selectedAngles.map(row => {
-                            const angle = result.angle_cases?.find(a => a.index === row.index);
-                            const uf = row.usage_factor || {};
-                            const maxUf = Math.max(...['A', 'B', 'C', 'D', 'E'].map(k => Number(uf[k] || 0)));
-                            return (
-                              <tr key={row.index} className="hover:bg-emerald-50/30">
-                                <td className="px-4 py-3 text-center font-bold text-slate-600">
-                                  <button
-                                    onClick={() => setSelectedCaseIndex(row.index)}
-                                    className={`w-8 h-8 rounded-lg font-bold transition-colors cursor-pointer ${
-                                      activeCaseIndex === row.index
-                                        ? 'bg-emerald-600 text-white'
-                                        : 'bg-slate-100 text-slate-600 hover:bg-emerald-100 hover:text-emerald-700'
-                                    }`}
-                                  >
-                                    {caseLabel(row.index)}
-                                  </button>
-                                </td>
-                                <td className="px-4 py-3 text-center text-slate-500">{angle?.alpha_deg ?? '-'}</td>
-                                <td className="px-4 py-3 text-center text-slate-500">{angle?.beta_deg ?? '-'}</td>
-                                {['A', 'B', 'C', 'D', 'E'].map(section => (
-                                  <td key={section} className={`px-4 py-3 text-right font-bold ${Number(uf[section]) > 1 ? 'text-red-600' : 'text-slate-700'}`}>
-                                    {fmt(uf[section], 2)}
-                                  </td>
-                                ))}
-                                <td className="px-4 py-3 text-center"><VerdictBadge ok={Number(maxUf) <= 1} /></td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="px-6 py-3 bg-slate-50 border-t border-gray-100 text-[11px] text-slate-400">
-                      * Usage Factor는 등가응력을 허용응력으로 나눈 사용률입니다. 1.0 이하이면 OK입니다.
-                    </div>
-                  </div>
-
-                  {selectedAngles.length > 0 && (
-                    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-                      <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-6 py-3 flex items-center justify-between">
-                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Analysis 응력 상세</h3>
-                        <span className="text-xs font-bold text-emerald-100">
-                          {BRACKET_LABELS[selectedBracket]}
-                        </span>
-                      </div>
-                      <div className="p-5 space-y-5">
-                        <div>
-                          <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">등가응력</p>
-                          <div className="overflow-auto border border-slate-100 rounded-xl max-h-[440px]">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-100">
-                                  <th className="px-4 py-3 font-bold text-center">Case</th>
-                                  <th className="px-4 py-3 font-bold text-center">Alpha</th>
-                                  <th className="px-4 py-3 font-bold text-center">Beta</th>
-                                  {['A', 'B', 'C', 'D', 'E'].map(section => (
-                                    <th key={section} className="px-4 py-3 font-bold text-right">Eq. {section}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-50">
-                                {selectedAngles.map(row => {
-                                  const angle = result.angle_cases?.find(a => a.index === row.index);
-                                  const eq = row.equivalent_stress || {};
-                                  return (
-                                    <tr key={row.index} className="hover:bg-emerald-50/30">
-                                      <td className="px-4 py-3 text-center font-bold text-slate-700">{caseLabel(row.index)}</td>
-                                      <td className="px-4 py-3 text-center text-slate-500">{angle?.alpha_deg ?? '-'}</td>
-                                      <td className="px-4 py-3 text-center text-slate-500">{angle?.beta_deg ?? '-'}</td>
-                                      {['A', 'B', 'C', 'D', 'E'].map(section => (
-                                        <td key={section} className={`px-4 py-3 text-right font-bold ${Number(row.usage_factor?.[section]) > 1 ? 'text-red-600' : 'text-slate-700'}`}>
-                                          {fmt(eq[section], 2)}
-                                        </td>
-                                      ))}
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest mb-3">Analysis Components</p>
-                          <div className="overflow-auto border border-slate-100 rounded-xl max-h-[520px]">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-100">
-                                  <th className="px-4 py-3 font-bold text-center">Case</th>
-                                  <th className="px-4 py-3 font-bold text-center">Alpha</th>
-                                  <th className="px-4 py-3 font-bold text-center">Beta</th>
-                                  <th className="px-4 py-3 font-bold text-center">Section</th>
-                                  <th className="px-4 py-3 font-bold text-right">Shear</th>
-                                  <th className="px-4 py-3 font-bold text-right">Normal</th>
-                                  <th className="px-4 py-3 font-bold text-right">Bearing</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-50">
-                                {selectedAngles.flatMap(row => {
-                                  const angle = result.angle_cases?.find(a => a.index === row.index);
-                                  return ['A', 'B', 'C', 'D', 'E'].map(section => {
-                                    const analysis = row.analysis?.[section] || {};
-                                    return (
-                                      <tr key={`${row.index}-${section}`} className="hover:bg-emerald-50/30">
-                                        <td className="px-4 py-3 text-center font-bold text-slate-700">{caseLabel(row.index)}</td>
-                                        <td className="px-4 py-3 text-center text-slate-500">{angle?.alpha_deg ?? '-'}</td>
-                                        <td className="px-4 py-3 text-center text-slate-500">{angle?.beta_deg ?? '-'}</td>
-                                        <td className="px-4 py-3 text-center font-bold text-slate-700">{section}</td>
-                                        <td className="px-4 py-3 text-right font-bold text-slate-700">{analysis.shear != null ? fmt(analysis.shear, 2) : '-'}</td>
-                                        <td className="px-4 py-3 text-right font-bold text-slate-700">{analysis.normal != null ? fmt(analysis.normal, 2) : '-'}</td>
-                                        <td className="px-4 py-3 text-right font-bold text-slate-700">{analysis.bearing != null ? fmt(analysis.bearing, 2) : '-'}</td>
-                                      </tr>
-                                    );
-                                  });
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                          <p className="text-[11px] text-slate-400 mt-2">단위: MPa. 전체 각도 케이스의 Section A~E별 Analysis 응력을 표시하며, 해당하지 않는 항목은 '-'로 표시됩니다.</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+              {isStale && (
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900" role="status">
+                  <AlertCircle size={16} className="shrink-0 text-amber-600" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">입력이 바뀌었습니다. 아래 결과는 이전 입력으로 계산한 값입니다.</span>
+                  <button
+                    type="button"
+                    onClick={handleCalculate}
+                    disabled={!isValid || isLoading}
+                    className="rounded-md bg-amber-600 px-3 py-1 text-xs font-bold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-amber-300"
+                  >
+                    다시 계산
+                  </button>
                 </div>
               )}
+
+              <VerdictHeader
+                level={passed ? 'pass' : 'fail'}
+                title={passed ? '통과' : '실패'}
+                summary={`${bracketLabel(selectedBracket)} · 최대 사용률 ${fmt(governing.overall, 2)} (Section ${governing.governing_section || '-'}, Case ${caseLabel(governing.governing_angle_index)}${governingAngle ? ` · ${angleText(governingAngle)}` : ''})`}
+                meta={(
+                  <button
+                    type="button"
+                    onClick={() => downloadJson(result, 'd_type_lug_result.json')}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    <Download size={12} aria-hidden="true" /> 결과 JSON
+                  </button>
+                )}
+              />
+
+              {otherBrackets.length > 0 && (
+                <p className="flex flex-wrap items-center gap-x-1 gap-y-1 px-1 text-sm text-slate-600">
+                  <span>다른 형식:</span>
+                  {otherBrackets.map((b, i) => {
+                    const v = result.results[b.key]?.max_usage_factor?.overall;
+                    return (
+                      <React.Fragment key={b.key}>
+                        {i > 0 && <span aria-hidden="true">·</span>}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBracket(b.key)}
+                          className="rounded px-1 font-semibold text-slate-800 underline decoration-slate-300 underline-offset-2 hover:decoration-slate-600"
+                          title="이 형식의 결과 보기"
+                        >
+                          {bracketLabel(b.key).replace('Bracket ', '')} <span className={`tabular-nums ${Number(v) > 1 ? 'text-red-700' : ''}`}>{fmt(v, 2)}</span>
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+                </p>
+              )}
+
+              <KeyFigures
+                items={[
+                  ...SECTIONS.map(s => {
+                    const g = sectionGoverning[s.key];
+                    return {
+                      key: s.key,
+                      label: `${s.key} · ${s.name}`,
+                      value: fmt(governing[s.key], 2),
+                      tone: Number(governing[s.key]) > 1 ? 'bad' : 'default',
+                      sub: g ? `Case ${caseLabel(g.index)} · ${angleText(angleOf(g.index))}` : '-',
+                    };
+                  }),
+                  {
+                    key: 'overall',
+                    label: '최대',
+                    value: fmt(governing.overall, 2),
+                    tone: passed ? 'default' : 'bad',
+                    sub: `Section ${governing.governing_section || '-'}`,
+                  },
+                ]}
+                caption="사용률(Usage Factor) = 등가응력 / 허용응력. 1.0 이하이면 통과."
+              />
+
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+                  <h3 className="text-sm font-bold text-slate-900">각도 케이스별 결과</h3>
+                  <div role="radiogroup" aria-label="표시 값" className="inline-flex rounded-lg border border-slate-200 p-0.5">
+                    {[['usage', '사용률'], ['stress', '등가응력 (MPa)']].map(([key, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        role="radio"
+                        aria-checked={valueMode === key}
+                        onClick={() => setValueMode(key)}
+                        className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
+                          valueMode === key ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm tabular-nums">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
+                        <th scope="col" className="px-3 py-2 text-center">Case</th>
+                        <th scope="col" className="px-3 py-2 text-center">α</th>
+                        <th scope="col" className="px-3 py-2 text-center">β</th>
+                        {SECTIONS.map(s => <th key={s.key} scope="col" className="px-3 py-2 text-right">{s.key}</th>)}
+                        <th scope="col" className="px-3 py-2 text-center">판정</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selectedAngles.map(row => {
+                        const angle = angleOf(row.index);
+                        const isGov = row.index === governing.governing_angle_index;
+                        const maxUf = rowMaxUsage(row);
+                        const values = valueMode === 'usage' ? row.usage_factor : row.equivalent_stress;
+                        return (
+                          <tr key={row.index} className={isGov ? 'bg-slate-100' : undefined}>
+                            <th scope="row" className="px-3 py-2 text-center font-semibold text-slate-800">
+                              {caseLabel(row.index)}
+                              {isGov && <span className="ml-1.5 rounded bg-brand-blue px-1.5 py-0.5 text-[11px] font-semibold text-white">지배</span>}
+                            </th>
+                            <td className="px-3 py-2 text-center text-slate-700">{angle?.alpha_deg ?? '-'}°</td>
+                            <td className="px-3 py-2 text-center text-slate-700">{angle?.beta_deg ?? '-'}°</td>
+                            {SECTIONS.map(s => (
+                              <td key={s.key} className={`px-3 py-2 text-right ${usageTone(row.usage_factor?.[s.key])}`}>
+                                {fmt(values?.[s.key], valueMode === 'usage' ? 2 : 1)}
+                              </td>
+                            ))}
+                            <td className="px-3 py-2 text-center">
+                              {maxUf != null ? <VerdictBadge ok={maxUf <= 1} okLabel="통과" ngLabel="실패" animate={false} /> : '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="border-t border-slate-100 bg-slate-50 px-4 py-1.5 text-xs text-slate-600">
+                  {valueMode === 'usage'
+                    ? '빨간 굵은 글씨는 사용률 1.0 초과.'
+                    : '등가응력 단위 MPa. 빨간 굵은 글씨는 그 단면의 사용률이 1.0 초과.'}
+                </p>
+              </div>
+
+              <details className="group overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <summary className="cursor-pointer list-none px-4 py-2.5 text-sm font-bold text-slate-900 hover:bg-slate-50">
+                  <span className="mr-1.5 inline-block text-slate-500 transition-transform group-open:rotate-90" aria-hidden="true">›</span>
+                  단면별 응력 성분 <span className="font-normal text-slate-600">전단 · 수직 · 지압, MPa</span>
+                </summary>
+                <div className="max-h-[520px] overflow-auto border-t border-slate-100">
+                  <table className="w-full text-sm tabular-nums">
+                    <thead className="sticky top-0">
+                      <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
+                        <th scope="col" className="px-3 py-2 text-center">Case</th>
+                        <th scope="col" className="px-3 py-2 text-center">α / β</th>
+                        <th scope="col" className="px-3 py-2 text-center">단면</th>
+                        <th scope="col" className="px-3 py-2 text-right">전단</th>
+                        <th scope="col" className="px-3 py-2 text-right">수직</th>
+                        <th scope="col" className="px-3 py-2 text-right">지압</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedAngles.flatMap(row => {
+                        const angle = angleOf(row.index);
+                        return SECTIONS.map((s, i) => {
+                          const a = row.analysis?.[s.key] || {};
+                          return (
+                            <tr key={`${row.index}-${s.key}`} className={i === 0 ? 'border-t border-slate-200' : ''}>
+                              <td className="px-3 py-1.5 text-center font-semibold text-slate-800">{i === 0 ? caseLabel(row.index) : ''}</td>
+                              <td className="px-3 py-1.5 text-center text-slate-700">{i === 0 && angle ? `${angle.alpha_deg}° / ${angle.beta_deg}°` : ''}</td>
+                              <td className="px-3 py-1.5 text-center text-slate-800">{s.key}</td>
+                              <td className="px-3 py-1.5 text-right text-slate-800">{a.shear != null ? fmt(a.shear, 2) : '-'}</td>
+                              <td className="px-3 py-1.5 text-right text-slate-800">{a.normal != null ? fmt(a.normal, 2) : '-'}</td>
+                              <td className="px-3 py-1.5 text-right text-slate-800">{a.bearing != null ? fmt(a.bearing, 2) : '-'}</td>
+                            </tr>
+                          );
+                        });
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="border-t border-slate-100 bg-slate-50 px-4 py-1.5 text-xs text-slate-600">해당하지 않는 성분은 '-'로 표시합니다.</p>
+              </details>
             </>
           )}
-        </div>
+        </section>
       </div>
 
+      <ImageLightbox image={zoomImage} onClose={() => setZoomImage(null)} />
       <SolverCredit contributor="김연태" />
     </div>
   );
