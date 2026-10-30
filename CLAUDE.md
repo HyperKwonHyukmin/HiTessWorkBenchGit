@@ -680,6 +680,19 @@ Mooring Fitting Assessment(연결 메뉴 = "Mooring Fitting Assessment", viewer 
 - 검사는 **CBAR 가 참조하는 PID** 기준이다. PBAR/PBARL 카드 기준으로 바꾸지 말 것 — 정상 참조 모델 `3321_2tk_moving_04.bdf` 에는 어떤 CBAR 도 쓰지 않는 PBARL 37/38/39 가 카드로만 존재해서 카드 기준이면 **정상 모델이 차단된다.**
 - 방어선 2겹(둘 다 백엔드, `git pull` 로 서버 반영): ① `preflight_property_ids()` — 업로드 직후 차단(전량 미매핑) 또는 경고(부분 미매핑, 해석은 진행). ② `_count_element_rows()` — 엔진이 exit 0 + JSON 까지 냈는데 부재평가가 0 행이면 Success 를 Failed 로 뒤집는다.
 
+### D Type Lug Assessment — Bracket 형식 선택 · W1'·W2' 0 고정 (2026-10-30, v1.6.32)
+
+엔진 = `WorkBenchSubModule/D_TypeLugCalculation`(Python, 별도 git, 기여 김연태) → `InHouseProgram/D_TypeLugCalculation/D_TypeLugCalculation.exe`(git 미추적). 엔진은 **세 형식을 한 번에** 계산한다.
+- 화면(`pages/analysis/DTypeLugAssessment.jsx`, 규칙 `utils/dTypeLug.js`+테스트): 입력 맨 위 형식 선택 → E 단면 그림 교체, 결과는 고른 형식 기준(다른 두 형식은 한 줄 비교, 바꿔도 재계산 없음).
+  형식 대응: 4EA = `bracket_4EA` · **2EA Opposite side = `bracket_2EA_double`**(양면, 대칭) · **2EA Same side = `bracket_2EA_single`**(단면, 비대칭). 그림 원본 = 엔진 저장소 `Figure/`.
+- ⚠ **W1'·W2' 는 입력 칸 없이 항상 0 을 보낸다(사용자 결정).** 엔진 목두께 = (W+W')/√2 라 Excel 기본값(W1'=12)과 E 단면 결과가 다르다 —
+  기본값에서 4EA 0.60→0.98, 2EA Opposite 0.89→**1.47 실패**, Same 0.87→**1.42 실패**(나머지 단면·입력은 같음, exe 로 확인). 그래서 단추 이름이 '기본값으로'('Excel' 을 뺌).
+  W1·W2 가 둘 다 0 이면 엔진이 0 으로 나누므로 화면(`weldError`)과 라우터(422)가 막는다.
+- 요청의 `bracket_type`(선택값) 은 `input_info` 에만 기록하고 엔진 입력(input.json)에는 넣지 않는다(`test_d_type_lug_bracket_type.py`).
+- 헤더는 다른 Parametric 앱과 같은 에메랄드 그라데이션, 안쪽 강조(계산 버튼·형식 선택·'지배')는 Trust Blue(사용자 결정 — 판정 초록과 구분).
+- 상태: 커밋 `d1aab40` · 릴리스 1.6.32(`a436e0a`) 푸시·exe 빌드. **145 ⟳ Update + 재시작**(라우터 스키마) · exe 배포는 사용자. 화면은 눈으로 확인 안 함.
+  남은 후보: 입력 프리셋(`PresetPicker`)·배치 실행(2026-09-18 계획의 후속) 미부착.
+
 ### 프론트엔드 내비게이션 구조
 
 React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)를 사용합니다. `useReducer` 기반으로 `history[]` 배열과 `currentIndex`를 원자적으로 관리합니다. 페이지 컴포넌트에서 `useNavigation()` 훅으로 `setCurrentMenu(name)`, `goBack()`, `goForward()` 등에 접근합니다(이전의 props drilling 방식 제거). 전체 라우팅 분기는 `App.jsx:renderPage()`의 switch문에 있습니다.
