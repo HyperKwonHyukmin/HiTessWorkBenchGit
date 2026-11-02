@@ -313,7 +313,12 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
 #### MB 와 사용법 통일 (0.0.175~0.0.179, 2026-11-02)
 
 셸 규칙·선택·작업 패널·도구 막대·도움말과 편집(삭제·질량·단면·부재·노드)을 MB 와 같은 사용법으로 맞췄다. 사용자 지시: **두 Studio 의 사용 방법은 일관돼야 한다.**
-상세·결정·남은 일 = `ModuleUnitStudio/docs/plans/2026-10-29-mb-features-to-mu.md`. 커밋 `134ef8f`~. 70 로컬만(145 공개 = `/studio-release module-unit-studio`, InHouse 교체 없음). 화면은 0.0.178·0.0.179 에서 Chrome 으로 일부 확인(도구 막대·패널 적용·3D 클릭·Shift+드래그). 패널이 열린 동안 3D 로 대상 고르기·가서포트 실제 설치·WorkBench 앱 안 실행·Nastran 은 확인 안 함.
+상세·결정·남은 일 = `ModuleUnitStudio/docs/plans/2026-10-29-mb-features-to-mu.md`. 커밋 `134ef8f`~. 릴리스 표 **0.0.180**(`251812a`, 2026-11-02, UNC 업로드·검증됨) — 145 ⟳ Update 는 사용자 몫, InHouse 교체 없음. 화면은 Chrome + `workbenchAPI` 대역(샘플의 실제 엔진·Nastran 결과)으로 편집 전 작업·패널 3D 고르기·가서포트 설치·평가·해석 버튼까지 실행했다. WorkBench 앱 안 실행·수정 뒤 실제 Nastran 재해석은 확인 안 함.
+- ⚠ **유체 제외 intent 는 메모리 밀도와 짝이다 (0.0.180, 2026-11-02)** — 회전처럼 보호한다(`STATE_BOUND_INTENTS`: 전체 초기화·Ctrl+Z·수정 내역으로 안 지워짐, Hoist 복원은 `removeIntent(id, { force: true })`). 전에는 기록만 지워져 화면·자세안정성은 유체 제외, 구조 해석은 원본 BDF(유체 포함, 샘플 6.99 t ↔ 11.93 t)로 갈라졌다(0.0.174 부터 있던 문제).
+  평가·추천에서 `_edited.json` 을 올리면 `editedModelUploaded` 를 세워 내역이 비어도 해석 전에 다시 올린다.
+  **남은 문제**: 서버 `<stem>_edited.json` 은 지우는 곳이 없어, Studio 를 다시 열어 편집 0건이면 이전 세션 파일이 구조 해석에 쓰일 수 있다(코드 경로만 확인, 재현 안 함. 고치려면 백엔드 호출 필요). MB 유체 항목도 같은 구조인지 조사 안 함.
+- 사용 설명서 = `outputs/MB-manual`·`outputs/MU-manual`(git 미추적). **문서 버전은 Studio 버전과 별개**(사용자 지시, 2026-11-02) — 개선할 때마다 `outputs/manual-tools` 의 `node make.mjs <MB|MU> --bump "변경 내용" [--studio X]` 로 올린다.
+- ⚠ `/studio-release` 의 출처 `release` zip 도 DRM 에 감싸질 수 있다(크기 +4096, `HHIDRMC`, 검증 `MISMATCH CORRUPT`, 0.0.180 실례). `dist` 를 메모리에서 묶어 UNC 에 직접 쓴다(`outputs/MU-manual/source/zip_to_unc.mjs`).
 - Hoist 탭은 그대로 Shift+클릭 = 권상점, Edit 탭은 MB 규칙(클릭 = 하나, Shift = 넣기/빼기, Shift+드래그 = 사각형).
 - ⚠ 뷰포트의 `stageData` 는 파생 모델(`data/nodeEdits.js`)일 수 있다. 질량 기준값은 `baseStage()` 원본으로 낼 것 — 파생으로 내면 증감이 두 번 들어간다.
 - ⚠ 커밋 전 eslint 를 돌릴 것 — 렌더 시험·빌드가 통과해도 no-undef 로 화면이 터지는 것을 eslint 만 잡았다.
