@@ -310,6 +310,15 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   ⚠ MU 는 Studio 가 JS 로 편집을 적용해 `_edited.json` 을 올린다(`buildEditedStageJson`) — MB 처럼 C#·bridge 에 새 kind 를 넣는 작업이 아니다.
 - ⭐ **버전 정책 (사용자 지시, 무조건):** Module Unit 코드를 고치면(스튜디오든 엔진 `ModuleUnitAnalysis`든) **항상 `module-unit-studio` 버전 bump → zip 재배포 → `GroupModuleUnitLiftingAnalysis.jsx` 의 `MODULE_STUDIO_VERSION` 동기화**를 세트로 한다. 핀이 어긋나면 새 스튜디오가 뜨지 않는다. 절차는 `/deploy` 스킬.
 
+#### MB 와 사용법 통일 (0.0.175~0.0.179, 2026-11-02)
+
+셸 규칙·선택·작업 패널·도구 막대·도움말과 편집(삭제·질량·단면·부재·노드)을 MB 와 같은 사용법으로 맞췄다. 사용자 지시: **두 Studio 의 사용 방법은 일관돼야 한다.**
+상세·결정·남은 일 = `ModuleUnitStudio/docs/plans/2026-10-29-mb-features-to-mu.md`. 커밋 `134ef8f`~. 70 로컬만(145 공개 = `/studio-release module-unit-studio`, InHouse 교체 없음). 화면은 0.0.178·0.0.179 에서 Chrome 으로 일부 확인(도구 막대·패널 적용·3D 클릭·Shift+드래그). 패널이 열린 동안 3D 로 대상 고르기·가서포트 실제 설치·WorkBench 앱 안 실행·Nastran 은 확인 안 함.
+- Hoist 탭은 그대로 Shift+클릭 = 권상점, Edit 탭은 MB 규칙(클릭 = 하나, Shift = 넣기/빼기, Shift+드래그 = 사각형).
+- ⚠ 뷰포트의 `stageData` 는 파생 모델(`data/nodeEdits.js`)일 수 있다. 질량 기준값은 `baseStage()` 원본으로 낼 것 — 파생으로 내면 증감이 두 번 들어간다.
+- ⚠ 커밋 전 eslint 를 돌릴 것 — 렌더 시험·빌드가 통과해도 no-undef 로 화면이 터지는 것을 eslint 만 잡았다.
+- 지운 부재·그룹·질량, 질량·단면·부재·노드 편집은 자세안정성 입력 질량에 반영된다(엔진은 `_edited.json` 을 질량에 쓰지 않는다).
+
 #### 화면 배율 대응 — 셸을 `transform: scale()` 로 키우지 말 것 (0.0.148, 2026-09-09)
 
 0.0.147 에 "1920×1080 을 논리 작업면으로 고정하고 셸 전체를 균일 확대"하는 발표 모드
@@ -433,7 +442,8 @@ SidePassageStudio 의 Point Mass RBE 를 옮겼다(노드 3개 이상 → 평균
   - ⚠ `ori` 는 국부축 **기준 벡터**(엔진이 직교화)라 축 단위벡터를 쓰되 **수직 부재(|dz|>0.9)에서는
     [1,0,0]** 으로 갈아탄다 — `0 0 1` 고정이면 축과 평행해 퇴화한다.
   - 저장 경로는 편집 의도 JSON 과 같은 `saveTextFile()` 3단 폴백(폴더 → 파일 선택 → 다운로드).
-- **가서포트 PBEAML 의 PID 는 기존 최대값+1 을 유지한다** (2026-09-17 사용자 결정). 레거시
+- **가서포트 PBEAML 의 PID 는 구조 구간 안 다음 번호다** (`suggestNextPropertyId`, 2026-11-02 MB 와 맞춤 — 예전 2026-09-17 결정 '최대값+1' 은
+  배관 구간(≥101)으로 넘어가 보고서가 배관색으로 칠해 바꿨다). 레거시
   `BdfToCsv.py` 의 매직넘버 **PID 1000** 을 예약하지 않는다 — 기존 모델이 이미 그 번호를 쓰고
   있을 수 있고(실제로 `3370_M04.bdf` 의 1000 번이 그 모델의 가서포트다), 단면 3종이라 가서포트
   PBEAML 이 최대 3장이라 단일 번호로는 담기지도 않는다. 가서포트 식별은 요소의
