@@ -6,7 +6,6 @@ const FIELDS = [
   ['hullNo', '호선 (HULL NO.)', 'text'],
   ['unitNo', '유닛 (UNIT NO.)', 'text'],
   ['jigLimitTon', '지그 기준 (ton)', 'number'],
-  ['yieldStrengthMpa', '항복강도 (MPa)', 'number'],
 ];
 
 // 출력 형식. PDF 는 백엔드가 만든 xlsx 를 서버 Excel 로 인쇄해 변환한다(라우터 format=pdf).
@@ -159,7 +158,7 @@ export default function UnitLiftingReportDialog({
             </div>
           </div>
           <p className="col-span-2 text-[11px] text-slate-400 leading-relaxed">
-            호선·유닛은 BDF 파일명에서 자동 추출됩니다. 허용응력 = 항복강도 × 0.8이며,
+            호선·유닛은 BDF 파일명에서 자동 추출됩니다. 허용응력은 구조 해석에 입력한 값을 쓰고,
             지그 기준은 와이어 장력(ton) 판정에 쓰입니다.
             {kind === 'detail'
               ? ' 상세 레포트는 입력·가정·전 결과를 담은 다장 문서입니다.'
