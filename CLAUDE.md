@@ -76,6 +76,7 @@ v1.5.8 에서 결함 6건이 새어 나갔고 3건을 사용자가 먼저 찾았
 - **백엔드 URL**: `HiTessWorkBench/frontend/src/config.js`의 `DEFAULT_API_BASE_URL` — 기본값 `http://10.133.122.70:9091`. 사용자가 앱 내에서 서버 주소를 변경하면 `localStorage`의 `'server_url'` 키에 저장되며 이 값이 우선 사용됨(`setApiBaseUrl()` 함수로 런타임 변경 가능).
   - ⚠️ **`config.js`의 `DEFAULT_API_BASE_URL` 변경은 항상 커밋에서 제외할 것.** 이 값은 개발자가 로컬 백엔드(`10.133.122.70` '내 컴퓨터')와 팀 서버(`10.14.42.145` '서버 컴퓨터') 사이를 토글하는 **로컬 전용 변경**이다. 커밋하면 배포 빌드의 기본 백엔드가 개발자 개인 PC로 바뀌어 팀/릴리즈가 깨진다. `/git:commit` 등 모든 커밋 작업에서 `config.js`는 스테이징하지 말고 로컬 변경으로 남겨둔다.
   - **WorkBench exe 릴리스 = `/wb-release`** (2026-10-19, `.claude/commands/wb-release.md`). `scripts/release.ps1 -Bump -BuildOnly` 가 버전 4곳을 올리고, config.js 가 어느 쪽이든 **무조건 145 줄 활성**으로 맞춰 빌드한 뒤 번들에 70 주소가 없는지 검사하고 빌드 전 상태로 되돌린다. 버전 커밋·푸시는 빌드와 동시에 진행한다.
+    **2026-11 부터 1.7.x**(사용자 지시 '11월이라 버전 네이밍 변경' — 1.6.33 은 빌드만 하고 같은 내용을 1.7.0 으로 배포). 달이 바뀔 때 minor 를 올리는지는 다음 달에 사용자에게 확인.
     버전만 올릴 때는 `pwsh scripts/check-versions.ps1`(인자 없음 = patch+1 **후 바로 커밋**, `-SetVersion X.Y.Z`, 확인만은 `-Check`). 4곳을 손으로 고치지 말 것.
     ⚠ 커밋 훅은 Bash 명령 문자열(커밋 메시지 포함)에 `config.js` 가 들어 있기만 해도 막는다 — 메시지는 파일로 넘기고 config.js 확인은 Grep 도구로.
 - 🚫 **`Darkmode.js/` 는 영구적으로 커밋하지 않는다 (사용자 지시).** 저장소 루트의 이 폴더는 **자체 `.git/` 를 가진 외부 라이브러리 클론**(50파일·1.3MB)이다. `git add -A` 로 넣으면 내부 파일이 아니라 **임베디드 저장소(gitlink) 한 줄**만 기록돼 다른 사람이 clone 하면 **빈 폴더가 되는 깨진 엔트리**가 된다. `.gitignore` 에 등재해 뒀으니 어떤 커밋 작업에서도 되살리지 말 것.
@@ -773,7 +774,8 @@ Block Weld·Independent Tank·Heavy Block Lifting·App Settings 등록 App 은 �
 ⚠ 쓰기 요청 출처 확인이 생겨 Origin 없는 POST 는 프록시가 403 — 테스트에서 쓰기 요청을 보낼 때 `Origin: http://testserver` 를 붙일 것. 반영 = 145 `git pull` + 재시작(키 파일은 처음 요청 때 자동 생성).
 모든 외부 App(코드 3개 + 등록 App)이 같은 `_proxy_request` 를 지나 따로 할 일 없음(`test_every_external_app_gets_its_own_audience`). 70 반영·사용자가 Block Weld 연결 상태 확인(2026-11-03).
 **외부 개발자 전달본 = `RecordMD/2026-11-03-external-app-integration-handoff.md`**(현재 작동 체계 + 검증 예제, 예제는 계획서 코드 블록을 그대로 옮겨 재실행 확인). 계획서는 내부 기록용.
-남은 일: 70 에서 Block Weld 쓰기 동작(저장·계산) 확인 → `hitess-code-reviewer` → 변경 파일 10개만 커밋(CLAUDE.md 는 다른 작업과 섞여 따로) → 145 → 반영일을 정해 전달본 송부. 외부 App 쪽 검증 코드는 각 개발자 몫.
+커밋 `87322fd`(독립 리뷰 막아야 함 0) · **WorkBench 1.7.0 에 포함**(2026-11-03 빌드·푸시, 145 미반영).
+남은 일: 145 반영(⟳ Update + 재시작) 후 Block Weld 를 열어 145 `.secrets/` 키 생성·쓰기 동작(저장·계산) 403 없음 확인 → 반영일을 적어 전달본 송부. 외부 App 쪽 검증 코드는 각 개발자 몫.
 개정 2(같은 날): 45번 Cookie Manager(`HanByul/45_Cookie_Manager`, 별도 로그인 플랫폼 + 서버 간 세션 확인)는 운영에 세우지 않고(HTTP 거부·로그인 이중화·앱 포트 노출) 모듈 쪽 구조만 쓴다 —
 claims 이름을 그 사용자 정보(`employee_id`·`display_name`·`role`·`modules`)와 맞춤, CSRF 는 게이트웨이 Origin 확인, .NET 은 NuGet 없는 RS256 검증 예제(Python·.NET 예제 실행 확인) — 개발자 안내문 `utils/externalAppDeveloperNotes.js` 도 구현 때 함께 바꾼다.
 
