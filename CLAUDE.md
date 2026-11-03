@@ -179,7 +179,8 @@ C# ↔ bridge 비교 2건을 독립 기준으로 남겼다(bridge 는 Mooring·S
 - **git (2026-10-29 커밋·푸시)**: 엔진 → `HiTessModelBuilder.git` `main`(`ecfe841`, 옛 엔진 이력은 `-s ours` 병합으로 보존) ·
   Studio → `ModelBuilerStudio.git`(Private, 옛 이름 ClaudeModelBuilerViewer) **`model-studio` 브랜치**(`c0fa8db`). 그 저장소 `master` 는 **Module Unit Studio** 라
   GitHub 의 'model-studio → master' PR 제안을 누르지 말 것. ModelBuilderStudio 로컬 `master` 가 `origin/model-studio` 추적(`push.default upstream`, PC 마다 설정).
-  Module Unit Studio 를 별도 저장소로 옮기는 건 사용자가 나중에 한다(ModuleUnitStudio 로컬 커밋 2개 미푸시).
+  **Module Unit Studio 는 2026-11-03 별도 저장소 `ModuleUnitStudio.git`(Private, `master`)로 옮겼다** — 로컬 옛 원격은 `legacy`. `ModelBuilerStudio.git` 의 `master` 에 옛 MU 코드가 남아 있다(정리는 사용자 결정).
+  세 저장소에 시험용 샘플: 엔진 `csv/`·`samples/`(기존) · MB Studio `samples/3454-35020-A505080` · MU Studio `samples/3496-35210-A508372`. ⚠ 엔진 저장소 `HiTessModelBuilder.git` 은 **Public** 이라 사내 CSV 가 공개돼 있다(2026-11-03 확인, Private 전환 권함).
   리뷰에서 '고치면 좋음'으로 남긴 엔진 항목: 과학 표기 양수 지수 부호 빠짐(`BdfField.FormatPrecise`, 1e6 이상) · `edited/` 교체 실패 시 옛 결과 유실 · 옛 무게중심 intent null 예외.
 - **남은 일**: 화면 눈으로 확인 안 함(0.0.113~0.0.116 편집 도구, 0.0.117~0.0.119 도움말·셸 정리·아래쪽 패널은 사용자 확인 중) ·
   3529_m04 실모델 미확인(이 PC 에 없음) · 단면 변경 커밋·푸시(2026-10-29): Studio `a4da5e5`(model-studio 브랜치) · 엔진 `959493f` · WorkBench 계약 테스트·핀·`studio-release.md`
