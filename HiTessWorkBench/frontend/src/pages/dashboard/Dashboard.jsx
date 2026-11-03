@@ -35,6 +35,9 @@ import { POLLING_POLICY } from '../../hooks/pollingPolicy';
 import { isTerminalJobStatus } from '../../utils/globalJobs';
 import { FILE_HANDOFF_MENUS, offerDashboardFiles } from '../../utils/dashboardFileHandoff';
 import { canOpenResult, offerResultReentry, reentryMenuForProgram } from '../../utils/resultReentry';
+import { modelWallGroups } from '../../utils/modelThumbnails';
+import { useAppPreviewClips, usePreviewHover } from '../../hooks/useAppPreviewClips';
+import ModelWall from './ModelWall';
 import {
   FAILED_STATUSES, addAcknowledgedFailures, failureReason, groupConsecutiveRuns, inputFileLabel, resultHighlight, unresolvedFailures,
 } from '../../utils/dashboardResults';
@@ -53,6 +56,7 @@ const OPEN_PROJECT_DETAIL_KEY = 'workbench:open-project-detail';
 const QUICK_APP_COUNT = 6; // 한 번에 보이는 타일 수(2줄). 즐겨찾기는 '더 보기'로 나머지를 펼친다.
 const QUICK_TAB_KEY = 'workbench:dashboard-quick-tab';
 const RECENT_RESULT_COUNT = 8;
+const WORK_VIEW_KEY = 'workbench:dashboard-work-view';
 const PINNED_FAILURE_MAX = 3;
 // 사용자가 이미 본 실패 id(사번별). 본 실패는 큰 빨간 카드·칩에서 빠지고 한 줄 '실패' 표기만 남는다.
 const ACK_FAILURES_KEY_PREFIX = 'workbench:dashboard-ack-failures:';
@@ -506,11 +510,12 @@ const TILE_BAND = {
   Productivity: { dot: '#f1dfb5', art: 'text-amber-300 group-hover:text-amber-600', tag: 'text-amber-800' },
 };
 
-const QuickAppTile = ({ app, meta, isFavorite, onOpen, onToggleFavorite, index = 0 }) => {
+const QuickAppTile = ({ app, meta, isFavorite, onOpen, onToggleFavorite, index = 0, previewSrc }) => {
   const tone = TILE_BAND[app.mode] || TILE_BAND.File;
   const artName = resolveCardArt(app);
+  const { playing, hoverProps, stop } = usePreviewHover(previewSrc);
   return (
-    <div className="group relative flex min-h-[112px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-px hover:border-blue-300 hover:shadow-md motion-reduce:transform-none">
+    <div {...hoverProps} className="group relative flex min-h-[112px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-px hover:border-blue-300 hover:shadow-md motion-reduce:transform-none">
       <div
         className={`relative h-9 shrink-0 border-b border-slate-100`}
         style={{ backgroundImage: `radial-gradient(circle, ${tone.dot} 1px, transparent 1.2px)`, backgroundSize: '10px 10px' }}
@@ -533,6 +538,19 @@ const QuickAppTile = ({ app, meta, isFavorite, onOpen, onToggleFavorite, index =
         <h3 className="line-clamp-2 break-keep text-[13px] font-bold leading-snug text-slate-800" title={app.title}>{app.title}</h3>
         {meta && <p className="mt-auto pt-1 text-[11px] font-semibold text-slate-500">{meta}</p>}
       </div>
+      {playing && (
+        <video
+          src={previewSrc}
+          autoPlay
+          muted
+          loop
+          playsInline
+          disablePictureInPicture
+          aria-hidden="true"
+          onError={stop}
+          className="pointer-events-none absolute inset-0 z-[5] h-full w-full bg-slate-900 object-cover"
+        />
+      )}
       {/* 카드 전체 진입 버튼과 별 버튼은 형제(중첩 아님) */}
       <button
         type="button"
@@ -791,6 +809,27 @@ const FailedResultRow = ({ project, onDetail, onRestart, onAcknowledge }) => {
   );
 };
 
+const WORK_VIEWS = [['list', '목록'], ['wall', '3D 보기']];
+
+/** 내 작업 보기 전환 — 고른 보기는 이 PC 에 남는다. */
+const WorkViewSwitch = ({ value, onChange }) => (
+  <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+    {WORK_VIEWS.map(([id, label]) => (
+      <button
+        key={id}
+        type="button"
+        aria-pressed={value === id}
+        onClick={() => onChange(id)}
+        className={`rounded-md px-2 py-1 text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
+          value === id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+        }`}
+      >
+        {label}
+      </button>
+    ))}
+  </div>
+);
+
 // ─────────────────────────────────────────────────────────────── 하단 참고 지표
 // 위 두 카드(새 해석 시작·내 작업)는 '일하는 곳', 여기는 '흘끗 보는 곳'이다.
 // 그림자·그라데이션 띠·큰 섹션 제목 없이 반투명 흰 띠 하나에 담아 한 단계 물러나 보이게 하고,
@@ -922,6 +961,10 @@ const PopularStrip = ({ rows, loading, onOpen }) => {
 // ─────────────────────────────────────────────────────────────── 페이지
 
 export default function Dashboard() {
+  const previewSrc = useAppPreviewClips();
+  const [workView, setWorkView] = useState(() => {
+    try { return localStorage.getItem(WORK_VIEW_KEY) === 'wall' ? 'wall' : 'list'; } catch { return 'list'; }
+  });
   const { showToast } = useToast();
   const { employeeId, user } = useAuth();
   const { setCurrentMenu } = useNavigation();
@@ -1188,6 +1231,17 @@ export default function Dashboard() {
     ...pinnedFailures.map(p => ({ id: p.id, head: p, runs: [p] })),
     ...groupConsecutiveRuns(history.filter(p => !pinnedIds.has(p.id)), inputFileLabel),
   ].slice(0, RECENT_RESULT_COUNT);
+  const wallGroups = modelWallGroups(groupConsecutiveRuns(history, inputFileLabel), RECENT_RESULT_COUNT);
+  const describeWallGroup = ({ head }) => ({
+    title: getDisplayProgramName(head.program_name),
+    subtitle: inputFileLabel(head) || head.project_name || '이름 없는 프로젝트',
+    chip: <HighlightChip highlight={resultHighlight(head)} />,
+    time: formatRelative(head.created_at),
+  });
+  const changeWorkView = (view) => {
+    setWorkView(view);
+    try { localStorage.setItem(WORK_VIEW_KEY, view); } catch { /* 이번 화면에서만 바뀐다 */ }
+  };
   const openFailedProjects = () => {
     // 실패 목록을 보러 가면 지금 떠 있는 실패는 본 것으로 친다
     acknowledgeFailures(openFailures.map(f => f.id));
@@ -1366,6 +1420,7 @@ export default function Dashboard() {
                               isFavorite
                               onOpen={() => openApp(app.title)}
                               onToggleFavorite={() => toggleFavorite(favoriteStoredByTitle[app.title] ?? app.title)}
+                              previewSrc={previewSrc(app.title)}
                             />
                           ))}
                         </div>
@@ -1388,6 +1443,7 @@ export default function Dashboard() {
                         isFavorite={stored !== undefined}
                         onOpen={() => openApp(app.title)}
                         onToggleFavorite={() => toggleFavorite(stored ?? app.title)}
+                        previewSrc={previewSrc(app.title)}
                       />
                     );
                   })}
@@ -1403,7 +1459,12 @@ export default function Dashboard() {
             title="내 작업"
             accent="history"
             meta={liveJobs.length > 0 ? `진행 중 ${liveJobs.length}` : null}
-            action={<LinkButton onClick={() => setCurrentMenu('My Projects')}>전체 이력</LinkButton>}
+            action={(
+              <div className="flex items-center gap-2">
+                <WorkViewSwitch value={workView} onChange={changeWorkView} />
+                <LinkButton onClick={() => setCurrentMenu('My Projects')}>전체 이력</LinkButton>
+              </div>
+            )}
           />
           <Card className="flex-1 p-3">
             {liveRows.length > 0 && <p className="px-1 pb-1.5 pt-1 text-xs font-bold text-slate-500">진행 중</p>}
@@ -1434,6 +1495,24 @@ export default function Dashboard() {
               <p className="rounded-xl border border-dashed border-slate-200 px-3 py-8 text-center text-sm text-slate-500">
                 아직 실행한 해석이 없습니다. 왼쪽에서 입력 파일로 새 해석을 시작하세요.
               </p>
+            ) : workView === 'wall' ? (
+              <>
+                {/* 벽 보기에서도 확인할 실패는 큰 카드로 남긴다 — 보기를 바꿨다고 실패를 놓치면 안 된다 */}
+                {pinnedFailures.length > 0 && (
+                  <ul className="mb-2 space-y-1">
+                    {pinnedFailures.map(project => (
+                      <FailedResultRow
+                        key={project.id}
+                        project={project}
+                        onDetail={() => { acknowledgeFailures([project.id]); openProjectDetail(project); }}
+                        onRestart={() => { acknowledgeFailures([project.id]); openProgram(project.program_name); }}
+                        onAcknowledge={() => acknowledgeFailures([project.id])}
+                      />
+                    ))}
+                  </ul>
+                )}
+                <ModelWall groups={wallGroups} describe={describeWallGroup} onDetail={openProjectDetail} />
+              </>
             ) : (
               <ul className="space-y-1">
                 <AnimatePresence initial={false}>

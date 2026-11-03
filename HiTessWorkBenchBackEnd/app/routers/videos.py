@@ -12,6 +12,10 @@ mp4 를 통째로 받을 수 있었다. 이제는:
 녹화 방지·다운로드 차단·워터마크는 WorkBench(Electron) 영상 전용 창이 맡는다(`electron/video-window.js`).
 이 라우터는 '주소를 알아도 로그인 없이는 못 받는다' 까지만 책임진다.
 
+앱 카드 미리보기: `Videos/previews/` 의 짧은 무음 클립과 `previews.json`({앱 title: 파일명}).
+표는 `GET /api/videos/previews` 가 한꺼번에 주고 시청 기록을 남기지 않는다 — 카드에 마우스만 올려도
+재생되므로 VIDEO_PLAY 에 넣으면 시청 통계가 오염된다. 하위 폴더라 Story 영상 목록에는 뜨지 않는다.
+
 영상 추가: 서버의 `Videos/` 폴더에 mp4 를 넣고, 제목을 바꾸려면 같은 폴더 `videos.json` 에
 `[{"file": "...mp4", "title": "...", "subtitle": "...", "category": "..."}]` 를 적는다(목록 순서도 이 순서). 재시작 불필요.
 화면은 category 별로 묶어 보인다(category 순서 = 처음 나온 순서). 없으면 '기타 영상'.
@@ -42,6 +46,8 @@ router = APIRouter(prefix="/api/videos", tags=["videos"])
 
 VIDEO_DIR = Path(__file__).resolve().parent.parent.parent / "Videos"
 MANIFEST_NAME = "videos.json"
+PREVIEW_DIR = VIDEO_DIR / "previews"
+PREVIEW_MANIFEST_NAME = "previews.json"
 TICKET_TTL_SECONDS = 3 * 60 * 60  # 긴 영상 + 일시정지 여유. 만료 뒤에는 창을 다시 열면 된다.
 CHUNK_SIZE = 1024 * 1024
 # 회사 DRM 이 감싼 파일 머리 — 감지되면 경고 로그만 남긴다.
@@ -218,6 +224,63 @@ def _iter_file(path: Path, start: int, end: int):
             yield chunk
 
 
+def _load_previews() -> dict[str, str]:
+    """{앱 title: 파일명} — 폴더에 실제로 있는 파일만."""
+    try:
+        data = json.loads((PREVIEW_DIR / PREVIEW_MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): v for k, v in data.items() if isinstance(v, str) and (PREVIEW_DIR / Path(v).name).is_file()}
+
+
+def _stream_response(path: Path, request: Request, cache_control: str) -> StreamingResponse:
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": cache_control,
+        "Content-Disposition": "inline",
+        "X-Content-Type-Options": "nosniff",
+    }
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(len(DRM_MAGIC))
+        size = path.stat().st_size
+    except OSError:
+        raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
+    if head == DRM_MAGIC:
+        # mp4 는 보통 DRM 대상이 아니다(70 실측 10개 모두 평문). 감싸졌다면 재생이 안 되니 원인을 로그로 남긴다.
+        logger.warning("영상 파일이 DRM 에 감싸져 있습니다(재생 불가 가능): %s", path)
+
+    # Content-Length 는 싣지 않는다(chunked) — DRM 등으로 stat 과 실제 읽은 바이트가 다르면
+    # Chromium 이 ERR_CONTENT_LENGTH_MISMATCH 로 끊는다(/api/download 095ce51 과 같은 이유).
+    span = _parse_range(request.headers.get("range"), size)
+    start, end = span or (0, size - 1)
+    if span:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    return StreamingResponse(_iter_file(path, start, end), status_code=206 if span else 200, media_type="video/mp4", headers=headers)
+
+
+@router.get("/previews")
+def get_previews(employee_id: str = Depends(require_auth)):
+    """앱 카드 미리보기 재생 주소 — {앱 title: streamPath}."""
+    result = {}
+    for title, file in _load_previews().items():
+        preview_id = _video_id(f"preview/{file}")
+        result[title] = f"/api/videos/preview-stream/{preview_id}?t={make_ticket(preview_id, employee_id)}"
+    return result
+
+
+@router.get("/preview-stream/{preview_id}")
+def stream_preview(preview_id: str, request: Request, t: str = ""):
+    verify_ticket(preview_id, t)
+    for file in _load_previews().values():
+        if _video_id(f"preview/{file}") == preview_id:
+            # 표가 주소에 들어 있어 다른 사용자와 캐시가 섞이지 않는다. 마우스를 다시 올릴 때 바로 재생되게 한다.
+            return _stream_response(PREVIEW_DIR / Path(file).name, request, "private, max-age=3600")
+    raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
+
+
 @router.get("")
 def get_videos(_employee_id: str = Depends(require_auth)):
     return [
@@ -261,27 +324,4 @@ def issue_ticket(
 @router.get("/stream/{video_id}")
 def stream_video(video_id: str, request: Request, t: str = ""):
     verify_ticket(video_id, t)
-    path = VIDEO_DIR / _find_video(video_id)["file"]
-    headers = {
-        "Accept-Ranges": "bytes",
-        "Cache-Control": "no-store",
-        "Content-Disposition": "inline",
-        "X-Content-Type-Options": "nosniff",
-    }
-    try:
-        with open(path, "rb") as handle:
-            head = handle.read(len(DRM_MAGIC))
-        size = path.stat().st_size
-    except OSError:
-        raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
-    if head == DRM_MAGIC:
-        # mp4 는 보통 DRM 대상이 아니다(70 실측 10개 모두 평문). 감싸졌다면 재생이 안 되니 원인을 로그로 남긴다.
-        logger.warning("영상 파일이 DRM 에 감싸져 있습니다(재생 불가 가능): %s", path)
-
-    # Content-Length 는 싣지 않는다(chunked) — DRM 등으로 stat 과 실제 읽은 바이트가 다르면
-    # Chromium 이 ERR_CONTENT_LENGTH_MISMATCH 로 끊는다(/api/download 095ce51 과 같은 이유).
-    span = _parse_range(request.headers.get("range"), size)
-    start, end = span or (0, size - 1)
-    if span:
-        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
-    return StreamingResponse(_iter_file(path, start, end), status_code=206 if span else 200, media_type="video/mp4", headers=headers)
+    return _stream_response(VIDEO_DIR / _find_video(video_id)["file"], request, "no-store")

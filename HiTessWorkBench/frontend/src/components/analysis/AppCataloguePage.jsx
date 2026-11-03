@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, Clock, LayoutGrid, List, Search, Star, X } from 'lucide-react';
 import { findAppByAnyName, getAppMenuName, useAnalysisPageState, useAppCatalogue, useFavorites } from '../../contexts/DashboardContext';
 import { useRecentActivity } from '../../contexts/RecentActivityContext';
+import { useAppPreviewClips } from '../../hooks/useAppPreviewClips';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { isAdmin as getIsAdmin } from '../../utils/auth';
@@ -245,6 +246,8 @@ export default function AppCataloguePage({
     setCurrentMenu(menuName);
   }, [catalogue, clearAnalysisPageState, getBlock, setAssessmentPageState, setCurrentMenu, showToast]);
 
+  const previewSrc = useAppPreviewClips();
+
   const makeAppProps = useCallback((item) => {
     const IconComponent = item.icon;
     const isRestricted = !isAdmin && Boolean(getBlock(item));
@@ -285,6 +288,7 @@ export default function AppCataloguePage({
             {...makeAppProps(item)}
             link={buildLink(item, catalogue)}
             lastUsedAt={lastUsedAt[item.title]}
+            previewSrc={previewSrc(item.title)}
           />
         ))}
       </div>

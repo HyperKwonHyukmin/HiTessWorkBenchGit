@@ -22,6 +22,7 @@ import os
 import subprocess
 from typing import Any, Dict, Optional
 
+from .f06_location import describe_problem_nodes
 from .. import database, models
 from .analysis_runner import (
     CANCELLED_MESSAGE,
@@ -356,7 +357,7 @@ def task_execute_unit_structural(
             result_payload = json.load(f)
 
         if result_payload.get("meta", {}).get("hasFatal"):
-            failure_reason = describe_f06_fatal(result_payload)
+            failure_reason = describe_f06_fatal(result_payload) + describe_problem_nodes(lifting_f06)
             engine_output += f"\n[Error] {failure_reason}"
             status_msg = "Failed"
 

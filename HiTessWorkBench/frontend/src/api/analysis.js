@@ -14,6 +14,14 @@ const postAnalysisRequest = (url, formData, programName) =>
     return res;
   });
 
+/** 내 작업의 모델 BDF → model.lbm(대시보드 모델 벽 썸네일) */
+export const getAnalysisModelPreview = (analysisId) =>
+  axios.get(`${API_BASE_URL}/api/analysis/${analysisId}/model-preview`, {
+    responseType: 'arraybuffer',
+    timeout: 60000,
+    headers: getAuthHeaders(),
+  });
+
 /** 사용자 해석 이력 조회 */
 export const getAnalysisHistory = (employeeId, skip = 0, limit = 50, filters = {}) =>
   axios.get(`${API_BASE_URL}/api/analysis/history/${employeeId}`, {

@@ -85,6 +85,27 @@ def build_preview(root: str, rel_path: str, *, max_bytes: int = MAX_PREVIEW_BYTE
     return out
 
 
+# 해석 기록에서 '이 작업의 모델' BDF 를 찾는 순서. 권상 계열은 입력 BDF, Model Builder 는 산출 BDF 다.
+_MODEL_BDF_KEYS = (("result_info", "bdf"), ("result_info", "bdf_path"), ("input_info", "bdf_model"),
+                   ("input_info", "bdf"), ("input_info", "bdf_path"))
+_MODEL_BDF_SUFFIXES = (".bdf", ".dat", ".nas")
+
+
+def find_model_bdf(result_info, input_info, base_dir: str) -> str | None:
+    """기록에 적힌 BDF 중 base_dir 안에 실제로 있는 첫 파일의 실제 경로. 경로는 서버 기록에서만 고른다."""
+    sources = {"result_info": result_info, "input_info": input_info}
+    base = os.path.realpath(base_dir)
+    for source, key in _MODEL_BDF_KEYS:
+        info = sources[source]
+        value = info.get(key) if isinstance(info, dict) else None
+        if not isinstance(value, str) or not value.lower().endswith(_MODEL_BDF_SUFFIXES):
+            continue
+        real = os.path.realpath(value)
+        if real.startswith(base + os.sep) and os.path.isfile(real):
+            return real
+    return None
+
+
 def clear_cache() -> None:
     with _lock:
         _cache.clear()

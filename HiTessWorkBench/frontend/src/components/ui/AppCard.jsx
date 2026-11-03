@@ -3,6 +3,7 @@ import { ArrowRight, Lock, Settings2, Star } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import { CardArt, resolveCardArt } from './cardArt';
 import { formatNotificationTime } from '../../utils/notificationLink';
+import { usePreviewHover } from '../../hooks/useAppPreviewClips';
 
 // --- 정적 클래스 맵 (Tailwind JIT 호환을 위해 동적 생성 금지) ---
 // 모드 시그니처 색(File=blue · Interactive=violet · Parametric=emerald · Productivity=amber).
@@ -103,6 +104,8 @@ export default function AppCard({
   onStart,
   // 관리자에게만 전달된다 — 넘어오면 카드에 App 설정(톱니바퀴) 버튼이 붙는다.
   onSettings,
+  // 마우스를 올렸을 때 재생할 무음 클립 주소. 없으면 카드는 그대로다.
+  previewSrc,
 }) {
   const {
     title = '',
@@ -117,9 +120,11 @@ export default function AppCard({
   const accent = ACCENT[accentColor] ?? ACCENT.blue;
   const lastUsed = lastUsedAt ? formatNotificationTime(lastUsedAt) : '';
   const artName = resolveCardArt(app);
+  const { playing, hoverProps, stop } = usePreviewHover(previewSrc);
 
   return (
     <article
+      {...hoverProps}
       className={[
         'group relative flex h-full flex-col overflow-hidden rounded-[14px] border border-slate-200 bg-white',
         'shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_24px_-16px_rgba(0,37,84,0.22)]',
@@ -136,6 +141,20 @@ export default function AppCard({
         aria-label={isRestricted ? `${title} (관리자 전용)` : `${title} 열기`}
         className="absolute inset-0 z-10 cursor-pointer rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
       />
+
+      {playing && (
+        <video
+          src={previewSrc}
+          autoPlay
+          muted
+          loop
+          playsInline
+          disablePictureInPicture
+          aria-hidden="true"
+          onError={stop}
+          className="pointer-events-none absolute inset-x-0 top-0 z-[5] aspect-video w-full bg-slate-900 object-cover"
+        />
+      )}
 
       {/* ── 도면 띠 ── */}
       <div

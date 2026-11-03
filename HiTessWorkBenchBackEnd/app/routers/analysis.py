@@ -78,6 +78,7 @@ from ._intake import (
 )
 from ..services.analysis_runner import get_backend_dir
 from ..services.analysis_passport import build_analysis_passport
+from ..services.bdf_preview import service as bdf_preview
 from ..services.program_registry import (
     internal_substep_programs,
     resolve_program,
@@ -1835,6 +1836,30 @@ def get_analysis_passport(
         raise HTTPException(status_code=404, detail="Analysis record not found")
     assert_current_user_can_access_owner(record.employee_id, current_user, db)
     return build_analysis_passport(record, user_connection_base=_USER_CONNECTION_DIR)
+
+
+@router.get("/analysis/{analysis_id}/model-preview")
+def get_analysis_model_preview(
+    analysis_id: int,
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
+    """내 작업의 모델 BDF → model.lbm(gzip). 대시보드 '모델 벽' 썸네일용, 그림은 브라우저가 그린다."""
+    record = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Analysis record not found")
+    assert_current_user_can_access_owner(record.employee_id, current_user, db)
+    bdf = bdf_preview.find_model_bdf(record.result_info, record.input_info, _USER_CONNECTION_DIR)
+    if not bdf:
+        raise HTTPException(status_code=404, detail="이 작업에는 3D 로 볼 BDF 가 없습니다.")
+    try:
+        out = bdf_preview.build_preview(os.path.dirname(bdf), os.path.basename(bdf))
+    except bdf_preview.PreviewError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    return Response(content=out["lbm"], media_type="application/octet-stream", headers={
+        "Content-Encoding": "gzip",
+        "Cache-Control": "no-store",
+    })
 
 
 class RetentionUpdateRequest(BaseModel):
