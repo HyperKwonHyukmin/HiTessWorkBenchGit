@@ -19,7 +19,7 @@ from starlette.responses import JSONResponse, RedirectResponse, Response, Stream
 from app import database, models
 from app.dependencies import require_auth
 from app.services import app_settings as app_settings_service
-from app.services import external_app_registry
+from app.services import external_app_identity, external_app_registry
 from app.services.external_app_access import (
     GRANT_TTL_SECONDS,
     SESSION_TTL_SECONDS,
@@ -29,6 +29,8 @@ from app.services.external_app_access import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/external-apps", tags=["external-apps"])
+# 외부 App 이 서명 검증에 쓰는 공개키. /external-apps/{slug} 와 겹치지 않게 별도 접두사.
+jwks_router = APIRouter(prefix="/api/external-apps", tags=["external-apps"])
 
 BLOCK_WELD_UPSTREAM = "http://10.14.42.145:31880/"
 BLOCK_WELD_PROXY_PATH = "/external-apps/block-weld"
@@ -48,6 +50,9 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 WORKBENCH_CREDENTIAL_HEADERS = {"authorization"}
+# 게이트웨이만 붙이는 신원 헤더 접두사. 브라우저가 보낸 같은 이름은 지운다(위조 방지).
+IDENTITY_HEADER_PREFIX = "x-hitess-"
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 RESERVED_QUERY_PARAMETERS = {"__wb_grant"}
 EXTERNAL_PROXY_MAX_BODY_BYTES = 25 * 1024 * 1024
 # 외부 앱이 요청 하나에 응답해야 하는 시간(App Settings 등록 창의 개발자 안내와 같은 값).
@@ -277,6 +282,7 @@ def _filter_headers(headers, *, strip_credentials: bool = False):
         if key.lower() not in blocked
         and key.lower() != "forwarded"
         and not key.lower().startswith("x-forwarded-")
+        and not key.lower().startswith(IDENTITY_HEADER_PREFIX)
     }
 
 
@@ -564,20 +570,31 @@ def _build_target_url(config: ExternalAppProxy, path: str, request: Request) -> 
     return target_url
 
 
-def _employee_is_active(employee_id: str) -> bool:
-    """Revalidate browser-cookie identity against the current account state."""
+def _employee_profile(employee_id: str) -> dict | None:
+    """Revalidate browser-cookie identity against the current account state.
+
+    활성 계정이면 외부 App 신원 토큰에 실을 정보를, 없거나 비활성이면 None 을 돌려준다.
+    """
 
     db = database.SessionLocal()
     try:
         user = db.query(models.User).filter(
             models.User.employee_id == employee_id
         ).first()
-        return bool(user and user.is_active)
+        if not (user and user.is_active):
+            return None
+        return {
+            "employee_id": user.employee_id,
+            "name": user.name,
+            "department": user.department,
+            "company": user.company,
+            "is_admin": bool(user.is_admin),
+        }
     finally:
         db.close()
 
 
-async def _require_browser_session(request: Request, config: ExternalAppProxy) -> str:
+async def _require_browser_session(request: Request, config: ExternalAppProxy) -> dict:
     token = request.cookies.get(config.cookie_name)
     session = external_app_access_store.get_session(token, config.key)
     if session is None:
@@ -585,13 +602,43 @@ async def _require_browser_session(request: Request, config: ExternalAppProxy) -
             status_code=401,
             detail="외부 앱 세션이 없거나 만료되었습니다. WorkBench에서 다시 실행해주세요.",
         )
-    if not await run_in_threadpool(_employee_is_active, session.employee_id):
+    profile = await run_in_threadpool(_employee_profile, session.employee_id)
+    if profile is None:
         external_app_access_store.revoke_employee(session.employee_id)
         raise HTTPException(
             status_code=401,
             detail="사용자 계정이 비활성화되어 외부 앱 세션이 종료되었습니다.",
         )
-    return session.employee_id
+    return profile
+
+
+def _assert_same_origin_write(request: Request) -> None:
+    """쓰기 요청은 WorkBench 와 같은 출처에서 온 것만 넘긴다(외부 App 대신 CSRF 를 막는다).
+
+    Chromium(Electron 창 포함)은 같은 출처의 POST·PUT·PATCH·DELETE 에도 Origin 을 보낸다.
+    Origin 이 없을 때만 Referer 로 판단하고, 'null'(불투명 출처)은 거부한다.
+    """
+
+    if request.method.upper() in SAFE_METHODS:
+        return
+    source = request.headers.get("origin")
+    if not source:
+        source = request.headers.get("referer")
+    if source and source != "null":
+        parsed = urlparse(source)
+        host = request.headers.get("host", "")
+        if parsed.scheme == request.url.scheme and parsed.netloc.lower() == host.lower():
+            return
+    raise HTTPException(
+        status_code=403,
+        detail="외부 앱 쓰기 요청의 출처를 확인할 수 없습니다. WorkBench 창에서 다시 시도해주세요.",
+    )
+
+
+def _assertion_audience(config: ExternalAppProxy) -> str:
+    """토큰 aud = 코드 App 은 키(block-weld 등), 등록 App 은 slug."""
+
+    return config.key.removeprefix("registered:")
 
 
 def _assert_path_employee(path: str, employee_id: str) -> None:
@@ -685,8 +732,9 @@ def _exchange_bootstrap(request: Request, config: ExternalAppProxy, grant_token:
 
 
 async def _proxy_request(request: Request, config: ExternalAppProxy, path: str = ""):
-    employee_id = await _require_browser_session(request, config)
-    _assert_path_employee(path, employee_id)
+    profile = await _require_browser_session(request, config)
+    _assert_path_employee(path, profile["employee_id"])
+    _assert_same_origin_write(request)
     config = await _effective_config(config)
     target_url = _build_target_url(config, path, request)
     proxy_origin = str(request.base_url).rstrip("/")
@@ -701,6 +749,16 @@ async def _proxy_request(request: Request, config: ExternalAppProxy, path: str =
     else:
         headers.pop("cookie", None)
     headers["host"] = urlparse(config.upstream).netloc
+    try:
+        headers[external_app_identity.ASSERTION_HEADER] = await run_in_threadpool(
+            external_app_identity.issue_assertion, _assertion_audience(config), profile
+        )
+    except (OSError, ValueError) as exc:
+        logger.exception("외부 App 신원 서명 실패: %s", config.key)
+        raise HTTPException(
+            status_code=503,
+            detail="외부 앱 사용자 확인 정보를 만들지 못했습니다. 관리자에게 알려주세요.",
+        ) from exc
     client = config.get_client()
     body = await _read_limited_request_body(request)
 
@@ -781,6 +839,13 @@ async def _proxy_health(config: ExternalAppProxy):
         )
     finally:
         await upstream.aclose()
+
+
+@jwks_router.get("/jwks")
+async def external_app_jwks():
+    """외부 App 이 X-HiTESS-Assertion 서명을 검증할 공개키(인증 없음)."""
+    signer = await run_in_threadpool(external_app_identity.get_signer)
+    return JSONResponse(signer.jwks(), headers={"Cache-Control": "public, max-age=3600"})
 
 
 async def _proxy_block_weld(request: Request, path: str = ""):

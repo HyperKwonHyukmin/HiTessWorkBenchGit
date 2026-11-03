@@ -8,6 +8,12 @@ os.environ.setdefault("WORKBENCH_DISABLE_CRASH_DIAGNOSTICS", "1")
 os.environ.setdefault("WORKBENCH_DISABLE_RUNTIME_SERVICES", "1")
 # 작업 종료 시 오류 유형 수집(nastran_diagnostics) — 수많은 mark_complete 테스트가 스레드를 띄우지 않게 끈다.
 os.environ.setdefault("HITESS_DIAGNOSTICS", "0")
+# 외부 App 신원 서명 키 — 테스트가 저장소의 .secrets/ 에 실제 키를 만들지 않게 임시 폴더로 돌린다.
+import tempfile as _tempfile
+os.environ.setdefault(
+    "EXTERNAL_APP_SIGNING_KEY_PATH",
+    os.path.join(_tempfile.mkdtemp(prefix="wb-test-keys-"), "external_app_signing_key.pem"),
+)
 
 import pytest
 from datetime import datetime

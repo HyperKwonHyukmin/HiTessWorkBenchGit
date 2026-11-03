@@ -13,6 +13,20 @@ from app.routers import external_apps
 from app.services.external_app_access import ExternalAppAccessStore
 
 
+def _active_profile(employee_id: str) -> dict:
+    return {
+        "employee_id": employee_id,
+        "name": "사용자",
+        "department": "구조시스템연구실",
+        "company": "HHI",
+        "is_admin": False,
+    }
+
+
+# TestClient 의 기본 주소. 쓰기 요청은 게이트웨이가 같은 출처인지 확인한다.
+SAME_ORIGIN = {"Origin": "http://testserver"}
+
+
 class MutableClock:
     def __init__(self, value: float = 100.0):
         self.value = value
@@ -30,7 +44,7 @@ def proxy_harness(monkeypatch):
         session_ttl_seconds=60,
     )
     monkeypatch.setattr(external_apps, "external_app_access_store", store)
-    monkeypatch.setattr(external_apps, "_employee_is_active", lambda _employee_id: True)
+    monkeypatch.setattr(external_apps, "_employee_profile", _active_profile)
     # App Settings 의 IP·Port 오버라이드(app_key → setting dict). 기본은 없음.
     upstream_overrides: dict = {}
     monkeypatch.setattr(
@@ -154,11 +168,19 @@ def test_external_cookie_identity_is_revalidated_from_database(
     ))
     db_session.commit()
 
-    assert external_apps._employee_is_active("A000001") is True
+    profile = external_apps._employee_profile("A000001")
+    assert profile == {
+        "employee_id": "A000001",
+        "name": "사용자",
+        "department": None,
+        "company": "HHI",
+        "is_admin": False,
+    }
     user = db_session.query(models.User).filter_by(employee_id="A000001").one()
     user.is_active = False
     db_session.commit()
-    assert external_apps._employee_is_active("A000001") is False
+    assert external_apps._employee_profile("A000001") is None
+    assert external_apps._employee_profile("A999999") is None
 
 
 def test_proxy_and_bootstrap_reject_unauthenticated_requests():
@@ -272,6 +294,7 @@ def test_cookie_authorizes_assets_and_mutations_without_forwarding_credentials(
                 "Authorization": "Bearer must-not-reach-upstream",
                 "Cookie": browser_cookies,
                 "Content-Type": "application/json",
+                **SAME_ORIGIN,
                 "Forwarded": "for=192.0.2.1;host=evil.example",
                 "X-Forwarded-For": "192.0.2.2",
                 "X-Forwarded-Host": "evil.example",
@@ -335,6 +358,7 @@ def test_proxy_rejects_oversized_request_body_before_upstream(
         response = client.post(
             "/external-apps/block-weld/api/save",
             content=b"12345",
+            headers=SAME_ORIGIN,
         )
 
     assert response.status_code == 413
@@ -353,7 +377,7 @@ def test_inactive_account_revokes_browser_session(
         assert exchange.status_code == 303
         token = client.cookies.get("wb_ext_block_weld")
 
-        monkeypatch.setattr(external_apps, "_employee_is_active", lambda _employee_id: False)
+        monkeypatch.setattr(external_apps, "_employee_profile", lambda _employee_id: None)
         response = client.get("/external-apps/block-weld/app.js")
 
     assert response.status_code == 401
@@ -381,11 +405,15 @@ def test_browser_session_revalidation_runs_outside_event_loop(
 
     assert response.status_code == 200
     assert len(captured["block-weld"]) == 1
-    # 계정 재검증과 App Settings 주소 조회 모두 DB 를 읽으므로 이벤트 루프 밖에서 돈다.
-    assert calls == [
-        (external_apps._employee_is_active, ("USER001",)),
-        (external_apps._load_app_setting, ("Block Weld Assessment",)),
+    # 계정 재검증과 App Settings 주소 조회는 DB 를, 신원 서명은 키 파일·RSA 연산을 쓰므로 이벤트 루프 밖에서 돈다.
+    assert [func for func, _args in calls] == [
+        external_apps._employee_profile,
+        external_apps._load_app_setting,
+        external_apps.external_app_identity.issue_assertion,
     ]
+    assert calls[0][1] == ("USER001",)
+    assert calls[1][1] == ("Block Weld Assessment",)
+    assert calls[2][1][0] == "block-weld"
 
 
 def test_cookie_filter_is_fail_closed_and_preserves_valid_quoted_values():

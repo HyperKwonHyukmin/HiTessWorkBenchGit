@@ -21,6 +21,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { CATEGORY_ART } from '../../utils/cardArt';
 import { suggestSlug, validateRegisteredAppForm } from '../../utils/externalEndpoint';
 import { buildDeveloperNotes, developerNotesText } from '../../utils/externalAppDeveloperNotes';
+import { API_BASE_URL } from '../../config';
 
 const MODE_OPTIONS = [
   { value: 'Interactive', label: 'Interactive Apps' },
@@ -138,6 +139,7 @@ export default function RegisteredAppEditorModal({
     slug: form.slug.trim(),
     host: errors.endpoint ? '' : form.host.trim(),
     port: errors.endpoint ? '' : form.port,
+    server: API_BASE_URL,
   };
   const developerNotes = buildDeveloperNotes(noteInput);
 

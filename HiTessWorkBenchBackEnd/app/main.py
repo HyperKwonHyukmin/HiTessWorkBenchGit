@@ -218,6 +218,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(column_buckling.router)
     application.include_router(hole_calculation.router)
     application.include_router(d_type_lug.router)
+    application.include_router(external_apps.jwks_router)
     application.include_router(external_apps.router)
     application.include_router(carling.router)
     application.include_router(hitessbeam.router)  # [TEMP] HiTessBeam 임시 라우터

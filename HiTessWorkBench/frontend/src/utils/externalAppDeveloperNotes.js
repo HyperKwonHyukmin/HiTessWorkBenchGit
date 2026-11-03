@@ -6,27 +6,33 @@
  */
 
 /**
- * @param {{host?: string, port?: string|number, slug?: string}} app
+ * @param {{host?: string, port?: string|number, slug?: string, server?: string}} app
+ *   server = WorkBench 백엔드 주소(공개키 주소를 알려 주는 데 쓴다)
  * @returns {Array<{heading: string, items: string[]}>}
  */
-export function buildDeveloperNotes({ host, port, slug } = {}) {
+export function buildDeveloperNotes({ host, port, slug, server } = {}) {
   const address = host && port ? `http://${String(host).trim()}:${port}` : 'http://<IP>:<Port>';
   const entry = slug ? `/external-apps/${slug}` : '/external-apps/<주소 이름>';
+  const audience = slug || '<주소 이름>';
+  const jwks = `${server ? String(server).trim().replace(/\/+$/, '') : 'http://<WorkBench 서버>'}/api/external-apps/jwks`;
   return [
     {
       heading: '주소와 사용자',
       items: [
-        `사용자는 ${address}/<사번> 으로 들어옵니다(예: /A123456). 로그인한 사람의 사번은 주소의 첫 칸에서 읽으세요.`,
-        `연결 상태 확인을 위해 WorkBench 가 ${address}/ 를 GET 으로 부릅니다. 500 미만으로 응답하게 두세요.`,
+        `사용자는 ${address}/<사번> 으로 들어옵니다(예: /A123456).`,
+        "로그인한 사람은 요청 헤더 'X-HiTESS-Assertion'(서명된 JWT)으로 확인하세요. 주소의 사번은 이 토큰의 employee_id 와 같은지만 봅니다.",
+        `연결 상태 확인을 위해 WorkBench 가 ${address}/ 를 GET 으로 부릅니다(토큰 없음). 500 미만으로 응답하게 두세요(401 은 괜찮음).`,
         '주소는 http 로 엽니다(https 아님).',
       ],
     },
     {
       heading: '로그인·보안',
       items: [
-        'WorkBench 가 로그인과 계정 상태를 확인한 뒤에만 요청을 넘깁니다. 다른 사람 사번 주소는 WorkBench 가 막습니다.',
-        'WorkBench 로그인 토큰·쿠키는 외부 앱으로 넘어가지 않습니다.',
-        `${address} 로 직접 들어오면 이 확인을 거치지 않습니다. 서버 방화벽에서 WorkBench 서버만 접속하게 막아 두세요.`,
+        `토큰 검증: 알고리즘 RS256 만 허용, 공개키 ${jwks}, iss = hitess-workbench, aud = ${audience}, 만료 60초(여유 30초).`,
+        '토큰이 없거나 검증에 실패하면 401 로 응답하세요. 그러면 WorkBench 를 거치지 않은 직접 접속이 막힙니다.',
+        '토큰에는 employee_id·display_name·department·company·role(admin/member) 이 들어 있습니다. 토큰을 저장하거나 로그에 남기지 마세요.',
+        'WorkBench 로그인 토큰·쿠키는 외부 앱으로 넘어가지 않습니다. 쓰기 요청(POST 등)은 WorkBench 가 출처를 확인한 뒤에만 넘깁니다.',
+        '검증 예제(Python·Node·.NET)는 WorkBench 담당에게 받는 계획서 4절에 있습니다.',
       ],
     },
     {

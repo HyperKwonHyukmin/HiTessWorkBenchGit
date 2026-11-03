@@ -56,6 +56,8 @@ release/
 .env.dev
 .env.test
 .env.prod
+# 외부 App 신원 서명 개인키(external_app_identity.py 가 처음 쓸 때 만든다)
+.secrets/
 
 # ===== Logs & Databases =====
 *.log
