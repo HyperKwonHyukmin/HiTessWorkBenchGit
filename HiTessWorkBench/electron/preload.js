@@ -61,6 +61,7 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:runMooringStructural',
   'viewer:runModelBuilderSolve',
   'viewer:exportMooringBdf',
+  'viewer:downloadMooringOp2',
   'viewer:saveMooringReportFigures',
   'viewer:generateMooringReport',
   'viewer:buildMooringReportPlan',
@@ -165,6 +166,9 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // payload = { intents: Array }, 반환 = { ok, savedPath, summary } | { ok:false, canceled?, error }
   exportMooringBdf: (opts) =>
     ipcRenderer.invoke('viewer:exportMooringBdf', opts),
+  // MooringFittingStudio Save 탭 "결과 OP2" → 사용자 PC 저장
+  downloadMooringOp2: () =>
+    ipcRenderer.invoke('viewer:downloadMooringOp2'),
 
   // Studio 가 찍은 보고서 그림(PNG base64)을 서버 out/figures_studio 에 저장
   saveMooringReportFigures: (opts) =>

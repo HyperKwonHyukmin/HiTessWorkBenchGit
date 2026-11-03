@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 
 from .analysis_runner import (
     mark_complete,
@@ -11,6 +12,7 @@ from .analysis_runner import (
     record_analysis,
     update_progress,
 )
+from .f06_location import describe_problem_nodes
 from .mooring_diagnosis import diagnose
 
 logger = logging.getLogger(__name__)
@@ -142,6 +144,21 @@ def _decode_engine_output(raw: bytes) -> str:
             continue
     # 둘 다 실패하면 손실을 감수하고 복원 (로그가 통째로 사라지는 것보다 낫다)
     return raw.decode("utf-8", errors="replace")
+
+def clean_load_rows(rows: list[dict]) -> list[dict]:
+    """하중표(Report_LoadCalculation_*.csv) 행 중 실제 하중 행만 남긴다.
+
+    옛 엔진은 MF 표 끝에 계산 방법 부록을 붙였다 — DictReader 가 그 글을 행으로 읽어 Studio 에
+    유령 하중 케이스('0')와 잡행이 생겼다(2026-11-03). LoadCaseID 가 양의 정수이거나,
+    해석에서 뺀 0 하중 케이스 표시 "-" 인 행만 남긴다.
+    """
+    out = []
+    for r in rows:
+        lc = str(r.get("LoadCaseID") or "").strip()
+        if lc == "-" or (lc.isdigit() and int(lc) > 0):
+            out.append(r)
+    return out
+
 
 def collect_artifacts(out_dir: str, work_dir: str) -> dict:
     """
@@ -362,6 +379,53 @@ def task_execute_mooring_fitting(
 # 전단 허용 = 정응력 허용 × SHEAR_FACTOR (0.6·σy/γM = AISC Fv). σy 315 → 전단 허용 189.
 SHEAR_ALLOW_FACTOR = 0.6
 
+# 일반 강재가 이 항복강도면 만족할 때 '재질 변경 필요'로 본다(AH32).
+MATERIAL_CHANGE_YIELD = 315.0
+
+# 부재 집계는 판정이 나쁜 LC 를 먼저 본다. 면별 등급이 다르면 Usage 최대 LC 가 최악 판정이 아닐 수 있다.
+# 엔진 ReportStressEvaluator.Envelope 와 같은 순서 — 한쪽을 고치면 양쪽 다.
+VERDICT_SEVERITY = {"OK": 0, "MATERIAL_CHANGE": 1, "NOT_OK": 2}
+
+
+def _member_usage(sigma_n: float, tau: float, yield_mpa: float, gamma_m: float) -> float:
+    allow_n = yield_mpa / gamma_m
+    return max(sigma_n / allow_n, tau / (allow_n * SHEAR_ALLOW_FACTOR))
+
+
+def judge_member(sigma_n: float, tau: float, yield_mpa: float, gamma_m: float) -> str:
+    """부재 판정 3단계. 엔진 SteelGrade.Judge 와 같은 규칙 — 한쪽을 고치면 양쪽 다 고칠 것.
+
+    재질 변경으로 풀리는 경우는 일반 강재가 315 기준을 만족할 때뿐이다.
+    315 부재를 355 로 올려야 하는 경우는 NOT OK 다(사용자 결정 2026-11-03).
+    """
+    if _member_usage(sigma_n, tau, yield_mpa, gamma_m) <= 1.0:
+        return "OK"
+    if yield_mpa < MATERIAL_CHANGE_YIELD \
+            and _member_usage(sigma_n, tau, MATERIAL_CHANGE_YIELD, gamma_m) <= 1.0:
+        return "MATERIAL_CHANGE"
+    return "NOT_OK"
+
+
+def _fiber_usage(top: float, bottom: float, tau: float, plate_yield: float, stiff_yield: float,
+                 gamma_m: float) -> float:
+    return max(abs(top) / (plate_yield / gamma_m), abs(bottom) / (stiff_yield / gamma_m),
+               tau / (stiff_yield / gamma_m * SHEAR_ALLOW_FACTOR))
+
+
+def judge_member_fibers(top: float, bottom: float, tau: float, plate_yield: float, stiff_yield: float,
+                        gamma_m: float) -> str:
+    """면별 판정 — 상면(갑판)은 부착판 등급, 하면·전단은 보강재 등급. 엔진 SteelGrade.JudgeFibers 와 같다.
+
+    재질 변경 = 315 미만인 면만 315 로 올려 만족하는 경우(2026-11-03 사용자 결정, 계산서 관행).
+    """
+    if _fiber_usage(top, bottom, tau, plate_yield, stiff_yield, gamma_m) <= 1.0:
+        return "OK"
+    if (plate_yield < MATERIAL_CHANGE_YIELD or stiff_yield < MATERIAL_CHANGE_YIELD) and _fiber_usage(
+            top, bottom, tau, max(plate_yield, MATERIAL_CHANGE_YIELD), max(stiff_yield, MATERIAL_CHANGE_YIELD),
+            gamma_m) <= 1.0:
+        return "MATERIAL_CHANGE"
+    return "NOT_OK"
+
 
 def recompute_sigma_ny(payload: dict) -> dict:
     """
@@ -384,8 +448,12 @@ def recompute_sigma_ny(payload: dict) -> dict:
     생긴 약축 굽힘은 실제 파괴 모드가 아니다. 보고서(ReportStressEvaluator)와 같은 기준이라
     두 값이 일치해야 한다.
 
-    exe 가 sigmaNStrong 을 실어 보내면 그 값을 그대로 쓴다(exe 가 최악 station 을 고른다).
+    exe 가 sigmaNStrong 을 실어 보내면 그 값을 그대로 쓴다(exe 가 최악 station·상하면을 고른다).
     구버전 결과 JSON 에는 그 필드가 없으므로 성분에서 |σNx + σMz| 로 되계산한다.
+
+    허용응력은 부재별이다 — exe 가 element 마다 yieldMPa(MEMBER_MATERIAL.json 기준)를 싣는다.
+    그 값이 없는 구버전 결과만 payload 의 일괄 값으로 평가한다.
+    element 에 verdict(OK / MATERIAL_CHANGE / NOT_OK)를 붙이고, ok 는 verdict == OK 다.
     """
     ys = payload.get("yieldStress") or 315.0
     gm = payload.get("gammaM") or 1.0
@@ -407,7 +475,8 @@ def recompute_sigma_ny(payload: dict) -> dict:
             return 0.0
 
     g_max_n = g_max_t = g_max_u = 0.0
-    overall_ok = True
+    worst_by_member = {}   # element id -> (판정 심각도, usage, verdict)
+    unknown_grades = set()
     for case in payload.get("cases", []):
         c_max_n = c_max_t = c_max_u = 0.0
         for e in case.get("elements", []):
@@ -421,21 +490,41 @@ def recompute_sigma_ny(payload: dict) -> dict:
             else:
                 sigma_n = abs(_signed(e.get("nx")) + _signed(e.get("mz")))
             tau = max(qy, qz, mx)               # 최대 전단 성분
-            u_n = sigma_n / allow_n if allow_n else 0.0
-            u_t = tau / allow_t if allow_t else 0.0
+            member_yield = e.get("yieldMPa") or None
+            plate_yield = e.get("plateYieldMPa") or None
+            if member_yield and plate_yield and e.get("sigmaNTop") is not None and e.get("sigmaNBottom") is not None:
+                # 면별 판정(엔진 1.1 재질표) — 상면(갑판)은 부착판 등급, 하면·전단은 보강재 등급.
+                top, bottom = _abs(e.get("sigmaNTop")), _abs(e.get("sigmaNBottom"))
+                top_governs = top / plate_yield > bottom / member_yield
+                sigma_n = top if top_governs else bottom
+                elem_allow_n = (plate_yield if top_governs else member_yield) / gm
+                elem_allow_t = member_yield / gm * SHEAR_ALLOW_FACTOR
+                verdict = judge_member_fibers(top, bottom, tau, plate_yield, member_yield, gm)
+                e["governingFiber"] = "top" if top_governs else "bottom"
+            else:
+                elem_allow_n = member_yield / gm if member_yield else allow_n
+                elem_allow_t = elem_allow_n * SHEAR_ALLOW_FACTOR
+                verdict = judge_member(sigma_n, tau, member_yield or allow_n * gm, gm)
+            u_n = sigma_n / elem_allow_n if elem_allow_n else 0.0
+            u_t = tau / elem_allow_t if elem_allow_t else 0.0
             usage = max(u_n, u_t)
-            ok = usage <= 1.0
             e["sigmaN"] = round(sigma_n, 2)
             e["tau"] = round(tau, 2)
+            e["allowable"] = round(elem_allow_n, 2)
+            e["allowableShear"] = round(elem_allow_t, 2)
             e["usageNormal"] = round(u_n, 4)
             e["usageShear"] = round(u_t, 4)
             e["usage"] = round(usage, 4)
-            e["ok"] = ok
+            e["verdict"] = verdict
+            e["ok"] = verdict == "OK"
             # 하위호환(3D 색·기존 소비 필드) — 정응력으로 채움
             e["combined"] = round(sigma_n, 2)
             e["vonMises"] = round(sigma_n, 2)
-            if not ok:
-                overall_ok = False
+            rank = (VERDICT_SEVERITY[verdict], usage)
+            if rank >= worst_by_member.get(e.get("id"), (-1, -1.0, ""))[:2]:
+                worst_by_member[e.get("id")] = (*rank, verdict)
+            if e.get("gradeKnown") is False:
+                unknown_grades.add(e.get("id"))
             c_max_n = max(c_max_n, sigma_n)
             c_max_t = max(c_max_t, tau)
             c_max_u = max(c_max_u, usage)
@@ -454,8 +543,24 @@ def recompute_sigma_ny(payload: dict) -> dict:
     payload["globalMax"] = round(g_max_n, 2)
     payload["globalMaxShear"] = round(g_max_t, 2)
     payload["globalMaxUsage"] = round(g_max_u, 4)
-    payload["ok"] = overall_ok and (g_max_u <= 1.0)
+    counts = {"OK": 0, "MATERIAL_CHANGE": 0, "NOT_OK": 0}
+    for _, _, verdict in worst_by_member.values():
+        counts[verdict] += 1
+    payload["verdictCounts"] = counts
+    payload["unknownGradeCount"] = len(unknown_grades)
+    payload["ok"] = counts["MATERIAL_CHANGE"] == 0 and counts["NOT_OK"] == 0
     return payload
+
+
+def _solve_failure_message(engine_output: str, f06_path: str, started_at: float) -> str:
+    """Studio 가 보는 실패 문구 — 첫 줄에 위치 후보 절점, 다음 줄부터 엔진의 '• 원인·조치'.
+
+    엔진이 Nastran 까지 가지 못했으면 이전 실행의 F06 이 남아 있으므로 이번 실행분만 읽는다.
+    """
+    fresh = os.path.isfile(f06_path) and os.path.getmtime(f06_path) >= started_at
+    head = "Mooring 구조해석 실패" + (describe_problem_nodes(f06_path) if fresh else "")
+    guides = [line.strip() for line in (engine_output or "").splitlines() if line.strip().startswith("•")]
+    return "\n".join([head, *guides])
 
 
 def task_solve_mooring_fitting(
@@ -486,6 +591,7 @@ def task_solve_mooring_fitting(
     status_msg = "Success"
     engine_output = ""
     result_data = {}
+    started_at = time.time()
 
     try:
         if not os.path.exists(exe_path):
@@ -577,10 +683,13 @@ def task_solve_mooring_fitting(
         status_msg = "Failed"
         engine_output += f"\nDB Error: {db_err}"
 
+    # 성공이면 F06(수십 MB)을 훑을 이유가 없다 — 실패 문구는 실패 때만 만든다.
+    failure_message = "Mooring 구조해석 실패" if status_msg == "Success" else _solve_failure_message(
+        engine_output, os.path.splitext(bdf_path)[0] + ".f06", started_at)
     mark_complete(
         job_id, status_msg, engine_output, project_data,
         success_message="Mooring 구조해석 완료",
-        failure_message="Mooring 구조해석 실패",
+        failure_message=failure_message,
     )
 
 

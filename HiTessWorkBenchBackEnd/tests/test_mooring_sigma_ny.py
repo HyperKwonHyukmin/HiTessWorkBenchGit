@@ -13,6 +13,8 @@ DNV 3D Beam(Nauticus Hull)의 Sig-Ny 를 그대로 옮긴 것이다. 다만 두 
 
 보고서(ReportStressEvaluator)와 같은 기준이어야 화면과 보고서의 Usage 가 일치한다.
 """
+import pytest
+
 from app.services.mooring_fitting_service import recompute_sigma_ny
 
 
@@ -50,6 +52,67 @@ def test_weak_axis_bending_never_governs():
             == huge["cases"][0]["elements"][0]["usage"])
 
 
+def _member(sigma, tau=0.0, yield_mpa=235.0, grade="A", known=True):
+    return {
+        "yieldStress": 315.0, "gammaM": 1.0,
+        "cases": [{"subcaseId": 1, "loadSetId": 1001, "elements": [{
+            "id": 1, "nx": 0, "my": 0, "mz": 0, "mx": 0, "qy": tau, "qz": 0,
+            "sigmaNStrong": sigma, "yieldMPa": yield_mpa, "grade": grade, "gradeKnown": known,
+        }]}],
+    }
+
+
+@pytest.mark.parametrize("sigma,tau,yield_mpa,expected", [
+    (200, 0, 235, "OK"),
+    (235, 0, 235, "OK"),                 # 정확히 한계면 통과
+    (250, 0, 235, "MATERIAL_CHANGE"),    # mild 가 315 기준이면 만족
+    (315, 0, 235, "MATERIAL_CHANGE"),
+    (316, 0, 235, "NOT_OK"),
+    (0, 150, 235, "MATERIAL_CHANGE"),    # 전단 허용 141 초과, 189 이내
+    (0, 190, 235, "NOT_OK"),
+    (320, 0, 315, "NOT_OK"),             # 315 -> 355 변경은 NOT OK (사용자 결정)
+    (320, 0, 355, "OK"),
+])
+def test_member_verdict_matches_engine_rule(sigma, tau, yield_mpa, expected):
+    """엔진 SteelGrade.Judge(MemberMaterialTests.Judge_ThreeLevels)와 같은 표다."""
+    p = recompute_sigma_ny(_member(sigma, tau, yield_mpa))
+    assert p["cases"][0]["elements"][0]["verdict"] == expected
+
+
+def test_usage_uses_members_own_yield_not_payload_default():
+    e = recompute_sigma_ny(_member(235.0))["cases"][0]["elements"][0]
+    assert e["usage"] == 1.0              # 315 일괄이면 0.746 이었다
+    assert e["allowable"] == 235.0
+    assert e["allowableShear"] == 141.0
+
+
+def test_material_change_is_not_ok_overall_and_counted_per_member():
+    p = recompute_sigma_ny(_member(250.0))
+    assert p["cases"][0]["elements"][0]["ok"] is False
+    assert p["ok"] is False
+    assert p["verdictCounts"] == {"OK": 0, "MATERIAL_CHANGE": 1, "NOT_OK": 0}
+
+
+def test_counts_use_worst_load_case_of_each_member():
+    p = _member(100.0)
+    p["cases"].append({"subcaseId": 2, "loadSetId": 1002, "elements": [
+        dict(p["cases"][0]["elements"][0], sigmaNStrong=400.0)]})
+    assert recompute_sigma_ny(p)["verdictCounts"] == {"OK": 0, "MATERIAL_CHANGE": 0, "NOT_OK": 1}
+
+
+def test_unknown_grade_members_are_counted():
+    p = recompute_sigma_ny(_member(10.0, grade="", known=False))
+    assert p["unknownGradeCount"] == 1
+
+
+def test_old_result_without_member_yield_uses_uniform_allowable():
+    """재질표 이전 결과 - 예전처럼 일괄 항복강도로 평가하고 판정만 붙인다."""
+    p = recompute_sigma_ny(_payload(sigmaNStrong=157.5))
+    e = p["cases"][0]["elements"][0]
+    assert e["usage"] == 0.5
+    assert e["verdict"] == "OK"
+
+
 def test_strong_axis_bending_does_govern():
     """반대로 강축 굽힘은 판정을 직접 움직인다 — 종전 기준이면 이 값이 무시됐다."""
     p = recompute_sigma_ny(_payload(nx=15, mz=300))
@@ -79,3 +142,38 @@ def test_allowable_is_yield_over_gamma():
     assert p["allowable"] == 315.0
     assert p["cases"][0]["elements"][0]["usage"] == 1.0
     assert p["cases"][0]["elements"][0]["ok"] is True
+
+
+def test_per_fiber_grades_match_engine_rule():
+    """면별 판정(2026-11-03): AH 보강재 + A 갑판. 하면 300 MPa 는 보강재 315 기준 OK(예전 규칙은 235 로 실패)."""
+    from app.services.mooring_fitting_service import judge_member_fibers, recompute_sigma_ny
+    assert judge_member_fibers(200, 300, 100, 235, 315, 1.0) == "OK"
+    assert judge_member_fibers(250, 100, 0, 235, 315, 1.0) == "MATERIAL_CHANGE"
+    assert judge_member_fibers(100, 320, 0, 235, 315, 1.0) == "NOT_OK"
+    payload = {"yieldStress": 315, "gammaM": 1.0, "cases": [{"elements": [
+        {"id": 1, "sigmaNStrong": 300, "sigmaNTop": -200, "sigmaNBottom": 300, "qy": 10,
+         "yieldMPa": 315, "plateYieldMPa": 235},
+        {"id": 2, "sigmaNStrong": 250, "sigmaNTop": 250, "sigmaNBottom": -100,
+         "yieldMPa": 315, "plateYieldMPa": 235},
+    ]}]}
+    out = recompute_sigma_ny(payload)["cases"][0]["elements"]
+    assert out[0]["verdict"] == "OK" and out[0]["governingFiber"] == "bottom" and out[0]["allowable"] == 315
+    assert out[1]["verdict"] == "MATERIAL_CHANGE" and out[1]["governingFiber"] == "top" and out[1]["allowable"] == 235
+
+
+def test_member_count_takes_worst_verdict_not_largest_usage():
+    """면별 등급이 다르면 Usage 최대 LC 와 판정 최악 LC 가 다를 수 있다(커밋 전 리뷰 2026-11-03).
+
+    A 갑판(235) + AH32 보강재(315):
+      LC1 상면 280 → Usage 1.19, 갑판만 315 로 올리면 만족 → 재질 변경
+      LC2 하면 340 → Usage 1.08, 보강재가 이미 315 → NOT OK
+    부재 집계는 NOT OK 여야 한다(Usage 가 큰 LC1 을 따르면 '등급만 올리면 된다' 로 잘못 안내).
+    """
+    elem = {"id": 7, "qy": 0, "yieldMPa": 315, "plateYieldMPa": 235}
+    payload = {"yieldStress": 315, "gammaM": 1.0, "cases": [
+        {"subcaseId": 1, "elements": [dict(elem, sigmaNStrong=280, sigmaNTop=280, sigmaNBottom=0)]},
+        {"subcaseId": 2, "elements": [dict(elem, sigmaNStrong=340, sigmaNTop=0, sigmaNBottom=340)]},
+    ]}
+    out = recompute_sigma_ny(payload)
+    assert [c["elements"][0]["verdict"] for c in out["cases"]] == ["MATERIAL_CHANGE", "NOT_OK"]
+    assert out["verdictCounts"] == {"OK": 0, "MATERIAL_CHANGE": 0, "NOT_OK": 1}

@@ -57,6 +57,15 @@ def _case_findings(evidence: dict, equilibrium: dict | None, f06: dict | None) -
             hint="CSV_Parse_Skips.csv 에서 행 번호와 사유를 확인하세요.",
         ))
 
+    duplicate_rows = case_facts.get("duplicateRows") or 0
+    if duplicate_rows > 0:
+        findings.append(_finding(
+            "INPUT_ROW_DUPLICATE", CONFIDENCE_CONFIRMED,
+            f"입력 CSV 에 다른 행과 모든 칸이 같은 부재 행이 {duplicate_rows}개 있어 뺐습니다. "
+            "같은 부재가 두 번 들어가 강성이 2배가 되는 것을 막으려고 앞 행만 모델에 넣었습니다.",
+            hint="CAD 출력에서 같은 부재가 두 번 나온 것인지 확인하세요. 구조 CSV 표에서 '중복 행'으로 보입니다.",
+        ))
+
     mf_input = case_facts.get("mfInputCount") or 0
     force_load = case_facts.get("forceLoadCount") or 0
     if mf_input > 0 and force_load == 0:

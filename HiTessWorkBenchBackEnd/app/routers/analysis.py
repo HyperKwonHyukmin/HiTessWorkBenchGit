@@ -36,6 +36,10 @@ from ..services.bdfscanner_service import task_execute_bdfscanner
 from ..services.hpscr_service import task_execute_hpscr
 from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
 from ..services.bdf_deck_check import apply_deck_fixes_lines, read_deck_lines
+from ..services.mooring_row_edit import (
+    EVIDENCE_FILE, annotate_row_sections, apply_row_edits, is_row_edit, read_csv_lines, read_csv_rows,
+    write_grade_overrides,
+)
 from ..services.unit_structural_service import (
     build_lifting_bdf,
     find_lifting_op2,
@@ -60,6 +64,7 @@ from ..services.mooring_fitting_service import (
     ReportEngineError,
     build_report,
     build_report_plan,
+    clean_load_rows,
     task_execute_mooring_fitting,
     task_solve_mooring_fitting,
 )
@@ -4005,7 +4010,11 @@ _ELEM_NAME_MATCH_TOL_MM = 25.0
 
 
 def _build_mooring_element_names(out_dir: str, stage07_data: dict) -> dict:
-    """STAGE_00.initial.json 의 원본 부재(소스 CSV 행)에 최종 element 를 기하 매칭한다.
+    """최종 element → 원본 부재(CSV 행) + 재질.
+
+    엔진의 출신 기록(MODEL_EVIDENCE.json)을 먼저 쓴다. 엔진이 분할 조각까지 추적한 값이라
+    같은 위치에 겹친 부재도 제 행을 찾는다. 아래 기하 매칭은 좌표만 보므로 겹친 부재가
+    서로 다른 행이어도 첫 행으로 몰린다 — 증거 파일이 없는 옛 결과에서만 쓴다.
 
     초기 FE 모델(STAGE_00.initial.json)의 각 element 는 source.id(=CSV B열 고유명),
     source.lineNumber(=CSV 행번호), source.kind, feCoords(끝점 선분)를 보유한다.
@@ -4014,8 +4023,62 @@ def _build_mooring_element_names(out_dir: str, stage07_data: dict) -> dict:
     조각까지 모두 원본 부재명을 회수(LINEAGE derivatives 만으로는 미추적되는 부분 포함).
     어느 원본 선분과도 떨어진 연결부(ExtendToBBoxIntersect 등)는 매칭에서 제외된다.
 
-    반환: { "<EID>": {"name": str, "line": int|None, "kind": str|None} }
+    반환: { "<EID>": {"name": str, "line": int|None, "kind": str|None,
+                      "grade": str, "yieldMPa": float, "gradeKnown": bool} }
     """
+    import json as _json
+
+    out = _element_names_from_evidence(out_dir)
+    if out is None:
+        out = _element_names_from_geometry(out_dir, stage07_data)
+
+    # 재질은 CSV 행 대응과 별개로 전 부재에 있다(엔진이 만든 부재는 등급 미확인).
+    material_path = os.path.join(out_dir, "MEMBER_MATERIAL.json")
+    if os.path.isfile(material_path):
+        try:
+            with open(material_path, "r", encoding="utf-8") as fh:
+                members = _json.load(fh).get("elements") or {}
+            for eid, m in members.items():
+                out.setdefault(eid, {}).update({
+                    "grade": m.get("grade"),
+                    "yieldMPa": m.get("yieldMPa"),
+                    "gradeKnown": m.get("known"),
+                })
+        except Exception as exc:
+            logger.warning("[mooring viewer-zip] MEMBER_MATERIAL.json 파싱 실패: %s", exc)
+    return out
+
+
+def _element_names_from_evidence(out_dir: str) -> dict | None:
+    """MODEL_EVIDENCE.json 의 출신 기록으로 부재명을 만든다. 파일이 없거나 깨졌으면 None."""
+    import json as _json
+
+    path = os.path.join(out_dir, "MODEL_EVIDENCE.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            elements = _json.load(fh).get("elements") or []
+    except Exception as exc:
+        logger.warning("[mooring viewer-zip] MODEL_EVIDENCE.json 파싱 실패: %s", exc)
+        return None
+
+    out = {}
+    for el in elements:
+        origin = el.get("origin") or {}
+        if origin.get("kind") != "derived" or not origin.get("rawId"):
+            continue   # 엔진이 만든 부재는 대응 행이 없다 — 억지로 붙이지 않는다
+        entry = {"name": str(origin["rawId"])}
+        if origin.get("csvLine"):
+            entry["line"] = origin["csvLine"]
+        if origin.get("rawKind"):
+            entry["kind"] = origin["rawKind"]
+        out[str(el.get("elementId"))] = entry
+    return out
+
+
+def _element_names_from_geometry(out_dir: str, stage07_data: dict) -> dict:
+    """옛 결과용 — 최종 element 양 끝점이 놓인 원본 선분으로 부재명을 찾는다."""
     import json as _json
 
     init_path = os.path.join(out_dir, "STAGE_00.initial.json")
@@ -4173,7 +4236,7 @@ def get_mooring_fitting_viewer_zip(
             if not os.path.isfile(csv_path):
                 logger.info("[mooring viewer-zip] CSV 없음, 스킵: %s", csv_path)
                 continue
-            rows = _read_csv_rows(csv_path)
+            rows = clean_load_rows(_read_csv_rows(csv_path))
             payload = {"source": csv_name, "rows": rows}
             # MF 하중에만 안전계수 노출: 리포트 SF 컬럼의 첫 유효 데이터행 값을 top-level 로 끌어올린다.
             # (Studio MF Loads 배지가 payload.safetyFactor 를 우선 읽고, 없으면 rows[].SF 로 폴백).
@@ -4231,6 +4294,19 @@ def get_mooring_fitting_viewer_zip(
         except Exception as exc:
             logger.warning("[mooring viewer-zip] element_names 생성 실패(스킵): %s", exc)
 
+        # csv_rows.json — Studio 행 편집 칸과 '바뀐 행 CSV' 의 원문.
+        # 행 편집은 출신 기록이 있어야 하므로 옛 결과에는 넣지 않는다(편집 구역이 안 뜬다).
+        try:
+            if stage07_data is not None and os.path.isfile(os.path.join(abs_dir, EVIDENCE_FILE)):
+                case_dir = os.path.dirname(os.path.normpath(abs_dir))
+                rows = read_csv_rows(case_dir)
+                annotate_row_sections(rows, abs_dir, stage07_data)
+                # lines = 원문 전체(머리글·MF 줄 포함) — '구조 CSV' 표가 엑셀과 같은 행 번호로 보인다.
+                zf.writestr("csv_rows.json", _json.dumps(
+                    {"rows": rows, "lines": read_csv_lines(case_dir)}, ensure_ascii=False))
+        except OSError as exc:
+            logger.warning("[mooring viewer-zip] 구조 CSV 읽기 실패(스킵): %s", exc)
+
     body = buf.getvalue()
     if not body:
         raise HTTPException(status_code=500, detail="zip 이 비어 있음 — BDF 파일을 확인하세요")
@@ -4284,7 +4360,6 @@ async def apply_mooring_fitting_edit(
     if not os.path.isfile(bdf_path):
         raise HTTPException(status_code=404, detail=f"원본 BDF 없음: {bdf_path}")
 
-    import copy as _copy
     from pathlib import Path as _Path
 
     try:
@@ -4292,18 +4367,13 @@ async def apply_mooring_fitting_edit(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"BDF 변환 실패: {e}")
 
-    edited = base_data
-    summary = {"applied": 0}
-    if intents:
-        try:
-            edited, summary = _nb.apply_edit_json(
-                _copy.deepcopy(base_data), {"schemaVersion": "1.0", "intents": intents}
-            )
-        except SystemExit as e:
-            raise HTTPException(status_code=400, detail=f"편집 적용 실패: {e}")
-        except Exception as e:
-            logger.exception("[mooring apply-edit] apply_edit_json 실패")
-            raise HTTPException(status_code=500, detail=f"편집 적용 실패: {e}")
+    try:
+        edited, summary, _grades = _apply_mooring_edits(base_data, intents, abs_folder)
+    except (SystemExit, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"편집 적용 실패: {e}")
+    except Exception as e:
+        logger.exception("[mooring apply-edit] 편집 적용 실패")
+        raise HTTPException(status_code=500, detail=f"편집 적용 실패: {e}")
 
     try:
         original_text = _Path(bdf_path).read_text(encoding="utf-8", errors="replace")
@@ -4584,6 +4654,7 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
     out: list[str] = []
     orig_elem_blocks: dict[int, list[str]] = {}   # 원본 element 블록(EID→블록) — 보강 복제 시 그대로 복사
     orig_node_ids: set[int] = set()               # 원본 GRID id — 편집으로 추가된 신규 노드(중심노드) 판별용
+    orig_prop_ids: set[int] = set()               # 원본 PBEAML id — 행 편집으로 생긴 새 단면 판별용
     # 편집 모델의 element(EID→dict) — 생존 element 의 PID 변경(changeElementProperty)을 deck 에 패치하기 위함.
     edited_elems_by_id = {
         as_int(e.get("id")): e
@@ -4630,6 +4701,10 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
                         continue
                 out.extend(block)
             continue
+        if name == "PBEAML":
+            pid = as_int(field(line, 1))
+            if pid is not None:
+                orig_prop_ids.add(pid)
         if name == "GRID":
             nid = as_int(field(line, 1))
             if nid is not None:
@@ -4660,6 +4735,15 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
             _nb.as_float(node.get("y"), 0.0),
             _nb.as_float(node.get("z"), 0.0),
         ))
+
+    # CSV 행 편집으로 생긴 단면. 원본 deck 과 같은 고정필드 양식(치수 뒤 NSM 0).
+    for prop in (edited.get("properties") or []):
+        pid = as_int(prop.get("id"))
+        if pid is None or pid in orig_prop_ids or str(prop.get("card") or "").upper() != "PBEAML":
+            continue
+        out.append(_nb.bdf_line_fixed("PBEAML", pid, as_int(prop.get("materialId")), "",
+                                      _nb.property_kind_to_bdf(prop.get("kind"))))
+        out.append(_nb.bdf_line_fixed("", *[_nb.as_float(v, 0.0) for v in prop.get("dims") or []], 0.0))
 
     # 편집으로 추가된 보강 element(원본 BDF 라인 없음) — reinforceOf 원본 블록을 새 EID 로 복제 출력.
     # 원본 블록을 통째로 복사하므로 PID/방향/offset/pin 등 모든 필드가 원본과 동일(=참된 이중부재).
@@ -4701,6 +4785,34 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
         out.extend(_nb.rbe2_fixed_lines(rid, indep, cm, deps))
 
     return "\n".join([*header, *out, "ENDDATA"]) + "\n"
+
+
+def _apply_mooring_edits(base_data: dict, intents: list, out_dir: str) -> tuple[dict, dict, dict]:
+    """편집 intent 적용. 모델 편집은 nastran_bridge, CSV 행 편집은 mooring_row_edit 가 맡는다.
+
+    행 편집은 삭제·보강이 끝난 모델에 적용해야 남은 부재만 고친다.
+    반환: (편집 모델, 요약, 등급 덮어쓰기). 입력 오류는 SystemExit/ValueError.
+    """
+    import copy as _copy
+
+    row_edits = [i for i in intents if is_row_edit(i)]
+    model_edits = [i for i in intents if not is_row_edit(i)]
+
+    edited, summary = base_data, {"applied": 0}
+    if model_edits:
+        edited, summary = _nb.apply_edit_json(
+            _copy.deepcopy(base_data), {"schemaVersion": "1.0", "intents": model_edits}
+        )
+    if not row_edits:
+        return edited, summary, {}
+
+    if edited is base_data:
+        edited = _copy.deepcopy(base_data)
+    row_summary = apply_row_edits(edited, row_edits, out_dir)
+    summary["applied"] = summary.get("applied", 0) + row_summary["rows"]
+    summary["csvRows"] = row_summary["rows"]
+    summary["csvRowSkippedElements"] = row_summary["skippedElements"]
+    return edited, summary, row_summary["gradeOverrides"]
 
 
 @router.post("/analysis/mooring-fitting/solve")
@@ -4758,7 +4870,6 @@ async def solve_mooring_fitting(
     if not os.path.isfile(bdf_path):
         raise HTTPException(status_code=404, detail=f"원본 BDF 없음: {bdf_path}")
 
-    import copy as _copy
     import json as _json
     import time as _time
     from pathlib import Path as _Path
@@ -4768,18 +4879,13 @@ async def solve_mooring_fitting(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"BDF 변환 실패: {e}")
 
-    edited = base_data
-    edit_summary = {"applied": 0}
-    if intents:
-        try:
-            edited, edit_summary = _nb.apply_edit_json(
-                _copy.deepcopy(base_data), {"schemaVersion": "1.0", "intents": intents}
-            )
-        except SystemExit as e:
-            raise HTTPException(status_code=400, detail=f"편집 적용 실패: {e}")
-        except Exception as e:
-            logger.exception("[mooring solve] apply_edit_json 실패")
-            raise HTTPException(status_code=500, detail=f"편집 적용 실패: {e}")
+    try:
+        edited, edit_summary, grade_overrides = _apply_mooring_edits(base_data, intents, abs_dir)
+    except (SystemExit, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"편집 적용 실패: {e}")
+    except Exception as e:
+        logger.exception("[mooring solve] 편집 적용 실패")
+        raise HTTPException(status_code=500, detail=f"편집 적용 실패: {e}")
 
     try:
         original_text = _Path(bdf_path).read_text(encoding="utf-8", errors="replace")
@@ -4794,8 +4900,12 @@ async def solve_mooring_fitting(
     try:
         _Path(solve_bdf_path).write_text(solve_bdf_text, encoding="utf-8")
         _Path(solve_model_path).write_text(_json.dumps(edited, ensure_ascii=False), encoding="utf-8")
+        write_grade_overrides(solve_bdf_path, grade_overrides)
         if os.path.isfile(result_json_path):
             os.remove(result_json_path)   # stale 결과 제거
+        stale_op2 = os.path.join(abs_dir, "mooring_solve.op2")
+        if os.path.isfile(stale_op2):
+            os.remove(stale_op2)          # 이번 해석이 실패하면 이전 OP2 가 받아지지 않게
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"solve 입력 저장 실패: {e}")
 
@@ -4813,6 +4923,19 @@ async def solve_mooring_fitting(
                 job_id, len(intents), edit_summary.get("applied", 0), yield_strength, gamma_m)
     return {"job_id": job_id, "editSummary": edit_summary,
             "assessment": {"yieldStrength": yield_strength, "gammaM": gamma_m}}
+
+
+@router.get("/analysis/mooring-fitting/op2")
+def download_mooring_op2(
+    output_dir: str,
+    current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """마지막 Studio 구조해석의 OP2 를 내려준다(BDF 의 PARAM,POST,-1 산출물)."""
+    case_dir = _mooring_case_dir(output_dir, current_user, db)
+    op2_path = os.path.join(case_dir, "out", "mooring_solve.op2")
+    data = _read_userconnection_file(op2_path, current_user, db, "OP2")
+    return _attachment_response(data, "mooring_solve.op2", "application/octet-stream")
 
 
 # ==================== Mooring Fitting — 보고서 ====================

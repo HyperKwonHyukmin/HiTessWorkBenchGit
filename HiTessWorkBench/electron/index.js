@@ -2787,6 +2787,37 @@ ipcMain.handle("viewer:downloadLiftingBdf", async (event, payload) => {
   }
 });
 
+// MooringFittingStudio Save 탭 "결과 OP2" → 마지막 구조 해석의 OP2 를 사용자 PC 에 저장.
+ipcMain.handle("viewer:downloadMooringOp2", async (event) => {
+  try {
+    const session = sessionFromEvent(event);
+    if (!session) return noSessionError();
+    if (!session.outputDir) {
+      return { ok: false, error: "서버측 output_dir 가 없습니다. WorkBench 에서 해석을 완료하고 Studio 를 다시 여세요." };
+    }
+    const runtimeConfig = await getWorkbenchRuntimeConfig(session);
+    if (!runtimeConfig.employeeId) {
+      return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+    }
+    const { res } = await fetchWithSessionRefresh(
+      `${runtimeConfig.serverUrl}/api/analysis/mooring-fitting/op2?output_dir=${encodeURIComponent(session.outputDir)}`,
+      { method: "GET" },
+      runtimeConfig,
+    );
+    if (!res.ok) {
+      const detail = await readBackendError(res);
+      return { ok: false, error: `OP2 다운로드 실패: ${res.status}${detail ? ` - ${detail}` : ""}` };
+    }
+    return await saveUnitStructuralDownload(session, res, {
+      title: "구조 해석 결과 OP2 저장",
+      fallbackName: "mooring_solve.op2",
+      filter: { name: "Nastran OP2", extensions: ["op2"] },
+    });
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 // ModuleUnitStudio Analysis·Save 탭 "OP2 다운로드" — 위 BDF 를 Nastran 이 푼 결과 OP2.
 // payload = { analysisId }
 ipcMain.handle("viewer:downloadUnitOp2", async (event, payload) => {
