@@ -2,9 +2,9 @@
   "studios": {
     "model-studio": "0.1.3",
     "module-unit-studio": "0.0.182",
-    "mooring-fitting-studio": "0.1.86",
+    "mooring-fitting-studio": "0.1.87",
     "plate-studio": "0.2.2",
     "side-passage-studio": "0.3.23"
   },
-  "updatedAt": "2026-11-03"
+  "updatedAt": "2026-11-04"
 }
