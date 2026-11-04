@@ -1,4 +1,6 @@
-// 서버 API 클라이언트 — 작업(흐름)마다 하나. 사번 로그인 토큰을 들고 다니고 401 이면 한 번 다시 로그인한다.
+// 서버 API 클라이언트 — 작업(흐름)마다 하나. 로그인 토큰을 들고 다니고 401 이면 한 번 다시 로그인한다.
+// 토큰은 HiTessMB 가 넘긴 것(adoptToken)이 우선이고, 없으면 사번 로그인(login). 서버가 사내 AD 로그인이면
+// 사번 로그인은 401 password_required 로 실패한다(2026-11-04).
 //
 // WorkBench electron/index.js 의 getWorkbenchRuntimeConfig / refreshWorkbenchSession /
 // fetchWithSessionRefresh / readBackendError 에서 옮김. WorkBench 는 토큰을 메인 창 localStorage 에서
@@ -56,6 +58,8 @@ class ServerClient {
       const msg = res.status === 404 ? `가입되지 않은 사번입니다(${this.employeeId}). HiTESS WorkBench 가입 후 관리자 승인을 받으세요.`
         : res.status === 403 ? `관리자 승인 대기 중인 사번입니다(${this.employeeId}).`
         : res.status === 503 ? "서버 점검 중입니다. 잠시 뒤 다시 시도하세요."
+        // 서버가 사내 AD 로그인(AUTH_MODE=ad) — 실행기는 비밀번호가 없어 HiTessMB 가 넘긴 토큰으로만 들어간다.
+        : res.status === 401 && detail === "password_required" ? "로그인 세션이 없거나 만료되었습니다. AM 에서 HiTESS Model Builder 를 다시 실행해 주세요."
         : `로그인 실패: HTTP ${res.status}${detail ? ` - ${detail}` : ""}`;
       throw new LoginError(res.status, msg);
     }
@@ -67,6 +71,36 @@ class ServerClient {
     this.user = user;
     this.log.info(`로그인 성공: ${user.employee_id} ${user.name || ""}`);
     return user;
+  }
+
+  /**
+   * HiTessMB 가 넘긴 토큰을 쓴다(환경 변수 HITESS_WB_TOKEN). 서버가 AD 로그인이면 이것이 유일한 입구다.
+   * 토큰이 살아 있고 실행 인자의 사번 것인지 GET /api/session/context 로 확인한다 — 남의 토큰으로 남의 작업을 열지 않게.
+   */
+  async adoptToken(token) {
+    this.token = String(token || "");
+    let res;
+    try {
+      res = await fetch(this.url("/api/session/context"), { headers: this.authHeaders() });
+    } catch (e) {
+      this.token = "";
+      throw new LoginError(0, `서버(${this.serverUrl})에 연결하지 못했습니다: ${e?.cause?.message || e.message}`);
+    }
+    if (!res.ok) {
+      this.token = "";
+      throw new LoginError(res.status, res.status === 401
+        ? "넘겨받은 로그인 정보가 만료되었습니다. AM 에서 HiTESS Model Builder 를 다시 실행해 주세요."
+        : `로그인 확인 실패: HTTP ${res.status}`);
+    }
+    const body = await res.json().catch(() => ({}));
+    const owner = String(body?.employee_id || "").toUpperCase();
+    if (owner !== String(this.employeeId).toUpperCase()) {
+      this.token = "";
+      throw new LoginError(403, `넘겨받은 로그인 정보의 사번(${owner || "-"})이 실행 사번(${this.employeeId})과 다릅니다.`);
+    }
+    this.user = { employee_id: owner };
+    this.log.info(`넘겨받은 로그인 정보 사용: ${owner}`);
+    return this.user;
   }
 
   authHeaders(extra = {}) {
@@ -86,7 +120,14 @@ class ServerClient {
     let res = await fetch(url, build());
     if (res.status !== 401) return res;
     this.log.warn(`401 → 다시 로그인: ${url}`);
-    try { await this.login(); } catch (e) { this.log.error(`재로그인 실패: ${e.message}`); return res; }
+    try {
+      await this.login();
+    } catch (e) {
+      this.log.error(`재로그인 실패: ${e.message}`);
+      // 401 = 다시 들어갈 방법이 없다(AD 서버 + 넘겨받은 토큰 만료). 'HTTP 401' 대신 'AM 에서 다시 실행' 안내를 그대로 올린다.
+      if (e instanceof LoginError && e.status === 401) throw e;
+      return res;
+    }
     res = await fetch(url, build());
     return res;
   }

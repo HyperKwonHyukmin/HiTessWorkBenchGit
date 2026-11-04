@@ -52,9 +52,15 @@ const { createLogger } = require("./lib/logger");
 const { parseArgs } = require("./lib/args");
 const log = createLogger(LOG_DIR);
 
+// HiTessMB 가 넘긴 로그인 토큰(LauncherStarter.TokenEnvVar). 읽고 바로 지운다 — Studio 창 등 자식 프로세스에 물려주지 않게.
+// 명령줄로 받지 않는 이유: 명령줄은 로그·작업 관리자에 그대로 남는다.
+const LAUNCH_TOKEN = String(process.env.HITESS_WB_TOKEN || "");
+delete process.env.HITESS_WB_TOKEN;
+
 // second-instance 의 commandLine 은 Chromium 이 스위치를 앞으로 모으고 값을 뒤로 보내 순서가 깨진다
 // (2026-10-30 실측: "--employee --job … A476854 <job>"). 그래서 원래 argv 를 additionalData 로 함께 넘긴다.
-const gotLock = IS_SMOKE ? true : app.requestSingleInstanceLock({ argv: process.argv.slice(1) });
+// 토큰도 같은 길로 넘긴다 — 이미 떠 있는 실행기는 새 프로세스의 환경 변수를 볼 수 없다.
+const gotLock = IS_SMOKE ? true : app.requestSingleInstanceLock({ argv: process.argv.slice(1), token: LAUNCH_TOKEN });
 if (!gotLock) {
   log.info(`이미 실행 중 — 인자를 기존 실행기로 넘기고 종료: ${process.argv.slice(1).join(" ")}`);
   app.quit();
@@ -89,8 +95,9 @@ const EDIT_STEPS = [
 ];
 
 class Flow {
-  constructor(args) {
+  constructor(args, launchToken = "") {
     this.args = args;
+    this.launchToken = launchToken;
     this.log = log.child(`job ${args.job.slice(0, 8)}`);
     this.client = new ServerClient({ serverUrl: args.server, employeeId: args.employee, log: this.log });
     this.outputDir = null;   // 서버 경로(solve·편집 확정에 씀)
@@ -170,7 +177,10 @@ class Flow {
     // 1) 로그인
     this.step("login", "active");
     try {
-      const user = await this.client.login();
+      const user = this.launchToken
+        ? await this.client.adoptToken(this.launchToken)
+        : await this.client.login();
+      this.launchToken = "";
       this.step("login", "done", user?.name ? `${user.name} (${user.employee_id})` : user?.employee_id);
     } catch (e) {
       this.fail("login", e instanceof LoginError ? e : new Error(`로그인 실패: ${e.message}`));
@@ -469,7 +479,7 @@ class Flow {
   }
 }
 
-function startFlow(argv, source) {
+function startFlow(argv, source, launchToken = "") {
   let args;
   try {
     args = parseArgs(argv);
@@ -484,7 +494,7 @@ function startFlow(argv, source) {
       actions: [{ id: "logs", label: "로그 폴더 열기" }, { id: "close", label: "닫기", primary: true }] });
     return;
   }
-  const flow = new Flow(args);
+  const flow = new Flow(args, launchToken);
   if (args.smoke) {
     setTimeout(() => { flow.log.error("smoke 전체 시간 초과"); flow.finishSmoke({ stage: "timeout", error: "smoke 시간 초과(30분)" }); }, SMOKE_TIMEOUT_MS).unref?.();
   }
@@ -494,7 +504,7 @@ function startFlow(argv, source) {
 app.on("second-instance", (_event, commandLine, _cwd, additionalData) => {
   const argv = Array.isArray(additionalData?.argv) ? additionalData.argv.map(String) : commandLine.slice(1);
   log.info(`second-instance: ${argv.join(" ")}`);
-  startFlow(argv, "second-instance");
+  startFlow(argv, "second-instance", typeof additionalData?.token === "string" ? additionalData.token : "");
 });
 
 app.on("window-all-closed", () => {
@@ -509,5 +519,5 @@ process.on("unhandledRejection", (e) => log.error(`unhandledRejection: ${e?.stac
 app.whenReady().then(() => {
   log.info(`실행기 v${app.getVersion()} (Electron ${process.versions.electron}) 시작 — ${app.getPath("exe")}`);
   registerStudioIpc(log);
-  startFlow(process.argv.slice(1), "first");
+  startFlow(process.argv.slice(1), "first", LAUNCH_TOKEN);
 });

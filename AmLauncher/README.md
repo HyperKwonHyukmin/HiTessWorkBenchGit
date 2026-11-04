@@ -8,7 +8,12 @@ Aveva Marine(AM) 연동용 **Model Builder Studio 호스트**. AM 클라이언�
 
 ## 하는 일
 
-1. 로그인 — `POST /api/login {employee_id}` → token. 401 이면 한 번 다시 로그인. **로그아웃은 부르지 않는다**(같은 사번의 다른 앱 세션을 끊을 수 있음).
+1. 로그인 — HiTessMB 가 환경 변수 `HITESS_WB_TOKEN` 으로 토큰을 넘겼으면 그 토큰을 쓴다(0.1.2, 2026-11-04). `GET /api/session/context` 로
+   살아 있는지와 **실행 사번과 같은지** 확인하고, 다르면 거부한다. 환경 변수는 읽자마자 지운다(Studio 창 등 자식 프로세스에 안 물려줌).
+   이미 떠 있는 실행기로 넘어갈 때는 `requestSingleInstanceLock` 의 additionalData(`{argv, token}`)로 넘긴다.
+   토큰이 없으면 예전처럼 `POST /api/login {employee_id}`. 서버가 AD 로그인이면 이 경로는 401 `password_required` → 'AM 에서 다시 실행' 안내.
+   401 이면 한 번 다시 로그인(AD 서버에서는 실패 → 같은 안내). **로그아웃은 부르지 않는다**(같은 사번의 다른 앱 세션을 끊을 수 있음).
+   시험 `node --test lib/server-client.test.js`(build.ps1 이 *.test.js 를 zip 에서 뺀다).
 2. 모델 생성 진행 — `GET /api/analysis/status/{job}` 1.5초 폴링(최대 25분). 완료 응답 **최상위** `output_dir` 를 서버 경로로 보관.
    빌드가 실패해도 `output_dir` 가 있으면 [Studio 에서 진단 보기] 로 단계별 JSON 을 열 수 있다.
 3. 결과 받기 — `GET /api/analysis/modelflow/result-zip?output_dir=` → `data\results\<job_id>` 에 풂(Studio 의 initialFolder).
