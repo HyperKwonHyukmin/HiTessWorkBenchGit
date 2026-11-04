@@ -406,6 +406,8 @@ def test_export_gmu_adds_lifting_files_automatically(switchable_client, db_sessi
         "9999_m01_lifting.bdf": b"SOL 101\nCEND\nTITLE = HiTessWorkBench Lifting Analysis\n",
         "9999_m01_lifting_meta.json": b"{}",
         "9999_m01_lifting.f06": b"F06",
+        "lifting_reviews/53f6aaee/03_9999_m01_lifting.bdf": b"review",        # Studio 검토 중간본 — 자동으로 넣지 않는다
+        "lifting_reviews/53f6aaee/04_9999_m01_lifting_meta.json": b"{}",
     })
     _analysis(db_session, program="UnitStructuralAnalysis", created_at=datetime(2026, 10, 1, 10),
               input_info={"parent_analysis_id": parent.id},

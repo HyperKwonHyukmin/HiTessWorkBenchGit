@@ -209,9 +209,11 @@ LIFTING_SUFFIXES = ("_lifting.bdf", "_lifting_meta.json", "_posture.json")
 
 
 def lifting_paths(resolved: dict) -> list[str]:
-    """작업 폴더(부모 + Unit 구조 해석 자식)의 Wire 모델·권상 위치 JSON 경로. DRM 파일은 뺀다(LogBook 이 받지 않는다)."""
+    """작업 폴더(부모 + Unit 구조 해석 자식) 바로 아래의 Wire 모델·권상 위치 JSON(최종본) 경로.
+    하위 폴더(`lifting_reviews/<해시>/03_…` 등 Studio 검토 때마다 남는 중간본)는 자동으로 더하지 않는다 — 같은 Wire 모델이
+    여러 벌 LogBook 에 들어갔다(2026-11-04). 관리자가 직접 고른 파일은 그대로 보낸다. DRM 파일은 뺀다(LogBook 이 받지 않는다)."""
     return [f["path"] for f in list_files(resolved)["files"]
-            if f["rel"].lower().endswith(LIFTING_SUFFIXES) and not f["drm"]]
+            if "/" not in f["rel"] and f["rel"].lower().endswith(LIFTING_SUFFIXES) and not f["drm"]]
 
 
 def with_lifting(program: str, resolved: dict, requested: list[str]) -> tuple[list[str], list[str]]:
