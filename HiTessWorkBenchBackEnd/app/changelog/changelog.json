@@ -2,6 +2,21 @@
   "_comment": "관리자 '업데이트 이력'(Administration > Update History)의 내용. 2026년 10월부터 기록. 새 항목은 items 맨 앞에. 큰 범주로 쓴다: 항목 하나 = 주간 보고 한 줄 수준의 기능·문제 영역, 작은 수정·기본값·문구는 관련 항목의 points 에 합친다. 같은 기능이 나중에 보강되면 처음 항목의 points 에 (버전)과 함께 더한다. kind = 기능|개선|수정|정리|운영. version = 처음 실린 릴리스. requester = 그 기능을 요청한 사람 '이름 직급'(있을 때만, 예: 김도현 선임). 화면 문구에 em dash 를 쓰지 않는다. 고치면 백엔드 재시작 없이 다음 조회부터 반영된다(145 는 Server Manager Update 로 git pull). Studio 항목은 studio = viewer id(studio_release.json 의 키), version = 그 Studio 버전으로 적고 /studio-release 로 145 에 공개할 때 쓴다(70 로컬 빌드마다 쓰지 않는다). 공개한 버전 사이에 바뀐 것을 한 항목으로 묶는다.",
   "items": [
     {
+      "date": "2026-11-04",
+      "version": "0.0.183",
+      "studio": "module-unit-studio",
+      "kind": "기능",
+      "title": "Module Unit Studio 다른 Unit 권상 배치 참조",
+      "summary": "Hoist 탭에서 LogBook 에 확정된 다른 Unit 의 권상 모델을 찾아 Wire 를 어떻게 걸었는지 평면 그림으로 봅니다.",
+      "points": [
+        "지금 모델과 평면 크기가 가까운 순으로 보이고, 90도 돌아간 모델도 같은 크기로 봅니다",
+        "고르면 훅 위치, lug 위치, Wire 를 평면도와 같은 방향으로 그리고 훅별 Wire 길이, 슬링각, lug 간격을 표로 보입니다",
+        "보기 전용입니다. 다른 모델의 노드 번호를 지금 모델에 적용하지 않습니다",
+        "보이는 범위는 LogBook 권한과 같습니다",
+        "새 WorkBench exe 와 LogBook 갱신이 있어야 동작합니다. 옛 exe 에서는 업데이트 안내만 보입니다"
+      ]
+    },
+    {
       "date": "2026-11-03",
       "version": "0.1.86",
       "studio": "mooring-fitting-studio",
