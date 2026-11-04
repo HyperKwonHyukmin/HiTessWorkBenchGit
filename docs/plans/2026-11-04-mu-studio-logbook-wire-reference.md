@@ -11,6 +11,9 @@
 - Electron: `viewer:searchLiftingRefs` · `viewer:getLiftingRef`(preload `searchLiftingReferences` · `getLiftingReference`) — **exe 재빌드 필요**.
 - MU Studio 0.0.183(70 로컬 zip, 핀 동기화): Hoist 탭 STEP 2 아래 '다른 Unit 권상 참조'(`LiftingReferenceSection.jsx`, `data/liftingReference.js`+테스트).
   화면은 Chrome 헤드리스 + `workbenchAPI` 대역(실제 3496 요약)으로 확인. WorkBench 앱 안 실행·실제 LogBook 연결은 확인 안 함.
+- 커밋(2026-11-04): LogBook `43f0540` · WorkBench `63c2165` · MU `6311d7a` · 릴리스 표 0.0.183 `8460c44`(UNC 업로드·검증, 푸시는 사용자).
+  독립 리뷰 반영 — LogBook 목록 정렬은 id·날짜만(MySQL 1038), 변환 안 된 파일은 변환 작업까지 등록, 동시 요청 충돌 처리, 요청당 새로 읽기 5개, 확정 전 자료는 상세도 404 · Studio 늦은 응답 무시.
+- 남은 일: 145 LogBook·백엔드 반영 → 새 exe(`/wb-release`) → 앱 안에서 목록·카드 1회 확인 · 145 Wire 모델 건수 확인(적어도 기능은 유지 — 사용자: Wire 자료를 늘릴 예정).
 
 ## 1. 목적
 

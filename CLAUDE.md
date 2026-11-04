@@ -326,6 +326,14 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
 - ⚠ 커밋 전 eslint 를 돌릴 것 — 렌더 시험·빌드가 통과해도 no-undef 로 화면이 터지는 것을 eslint 만 잡았다.
 - 지운 부재·그룹·질량, 질량·단면·부재·노드 편집은 자세안정성 입력 질량에 반영된다(엔진은 `_edited.json` 을 질량에 쓰지 않는다).
 
+#### 다른 Unit 권상 Wire 참조 (Hoist 탭, 0.0.183, 2026-11-04)
+
+Hoist 탭 STEP 2 아래 '다른 Unit 권상 참조' — LogBook 에 확정된 Wire 모델(`_lifting.bdf`)의 훅·lug·Wire 길이·슬링각을 평면 그림 카드로 본다(**보기 전용**, 노드 번호를 지금 모델에 적용하지 않는다).
+경로 = Studio `host.searchLiftingReferences`·`getLiftingReference` → Electron `viewer:searchLiftingRefs`·`viewer:getLiftingRef` → 백엔드 `GET /api/logbook/lifting-refs[/{id}]`(`logbook_link.py`, as = 로그인 사번) → LogBook `/api/integration/lifting-refs*`(LogBook 계획 50).
+요약은 LogBook 이 BDF 구조로 만든다(apex = 병진 123 구속 + CROD 에만 쓰임) — JSON(`_lifting_meta.json`)에 기대지 않아 옛 자료도 찾는다. 계획·상태: `docs/plans/2026-11-04-mu-studio-logbook-wire-reference.md`.
+상태(2026-11-04): 커밋 LogBook `43f0540` · WorkBench `63c2165` · MU `6311d7a` · 릴리스 표 0.0.183 `8460c44`(**미푸시, 사용자가 WorkBench 와 함께 푸시**). UNC 업로드·검증됨.
+동작하려면 145 LogBook `git pull`+재시작(먼저) → WorkBench 백엔드 ⟳ Update+재시작 → **새 exe**(Electron IPC). 옛 exe 는 '업데이트 안내'만. WorkBench 앱 안 실행·실제 LogBook 연결은 확인 안 함.
+
 #### 화면 배율 대응 — 셸을 `transform: scale()` 로 키우지 말 것 (0.0.148, 2026-09-09)
 
 0.0.147 에 "1920×1080 을 논리 작업면으로 고정하고 셸 전체를 균일 확대"하는 발표 모드
@@ -1003,8 +1011,15 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   응답 detail: `password_required`·`invalid_credentials`·`account_locked`·`password_expired`·`account_disabled`(401) · `too_many_attempts`(429) · `auth_unavailable`(502). 화면 문구 = `LoginScreen.jsx` `AD_LOGIN_MESSAGES`.
 - 로그인 방식 조회 `GET /api/login/options` → `{auth_mode}`(`/api/version` 은 키 하나 계약이라 건드리지 않음). 프론트 `getLoginOptions` 가 옛 서버(404)면 사번만.
 - 테스트 `tests/test_ad_login.py`(AD 대역). 실제 AD 확인(2026-11-04, 70): 사번만 → 401 password_required, 없는 계정 틀린 비번 → 401 invalid_credentials. 맞는 비밀번호 → 사용자가 개발 WorkBench 로그인 화면에서 직접 입력해 로그인 성공 확인(같은 날).
-- ⚠ **스위치를 켜기 전에 반드시**: ① 새 WorkBench exe 배포(비밀번호 칸) ② AM 연동 2단계 — `HiTessMBClient` `Submitter.cs` LoginAsync·`AmLauncher` `server-client.js` login 이
-  사번만으로 무인 로그인한다(사용자 결정 2026-11-04: 2단계로 비밀번호 입력 추가 후 켬) ③ 145 `pip install -r requirements.txt`(`ldap3`) + 145 에서 AD 636 접속 확인(70 만 확인함).
+- **AM 연동 2단계 (2026-11-04 구현)**: `HiTessMB.exe` **0.2.0**(`HiTessMBClient`, 별도 git)이 AD 서버면 비밀번호 창(최대 3회, 종료 코드 9)을 띄우고,
+  받은 토큰을 **환경 변수 `HITESS_WB_TOKEN`** 으로 실행기에 넘긴다. 실행기 `mb-launcher` **0.1.2**(`AmLauncher/`)가 그 토큰을 `GET /api/session/context` 로
+  확인(같은 사번만)해 쓰고, 이미 떠 있는 실행기에는 single-instance additionalData 로 넘긴다. 토큰이 없으면 예전 사번 로그인(스위치 꺼진 서버에서는 그대로 동작).
+  실사용 확인(2026-11-04, 70 AD 모드): 비밀번호 창 → `로그인 200 (AD)` → 접수 #3207 → 실행기 0.1.2 `넘겨받은 로그인 정보 사용` → Studio 3454 열림(사용자 확인).
+  같은 시험에서 기존 결함 2건이 드러나 고쳤다 — 작은따옴표 경로(cmd)에서 .NET `NotSupportedException` 으로 로그 없이 종료 → 인자 오류(종료 코드 2),
+  실행기 폴더 이름 바꾸기가 방금 푼 파일을 보안 검사가 잡아 '액세스 거부' → 최대 9회·약 21초 재시도(재시도 경로는 실제로 타 보지 못함, 빌드만 확인).
+  상세: 각 README. ⚠ 배포 순서 = 145 `StudioProgram\mb-launcher-0.1.2.zip`(UNC 경로로 `AmLauncher\build.ps1 -OutDir` — 70 로컬 zip 은 DRM 암호문) → 새 `HiTessMB.exe` 배포 → 스위치.
+- ⚠ **스위치를 켜기 전에 반드시**: ① 새 WorkBench exe(1.7.1, 비밀번호 칸) 배포 ② 위 AM 연동 두 프로그램 배포
+  ③ 145 `pip install -r requirements.txt`(`ldap3`) + 145 에서 AD 636 접속 확인(70 만 확인함).
   Electron `refreshWorkbenchSession`(401 때 사번만 재로그인)은 고치지 않았다 — AD 모드에선 실패하고, 본체 화면 하트비트 401 → `App.jsx` 인터셉터가 로그인 화면으로 보낸다.
   `check_user`(토큰 안 줌)·`hitessbeam` 익명 업로드는 이번 범위 밖. 켤 때 hitess-core 로그인 계약 문서(`docs/20-phase2-identity.md`)도 갱신.
 
