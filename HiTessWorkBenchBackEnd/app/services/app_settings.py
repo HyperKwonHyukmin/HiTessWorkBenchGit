@@ -15,6 +15,7 @@ API 를 직접 호출하는 우회를 차단한다(프론트 차단만으로는 
 """
 from __future__ import annotations
 
+import ipaddress
 import re
 import threading
 import time
@@ -46,6 +47,8 @@ GUARDED_ROUTES: tuple[tuple[str, str], ...] = (
     ("/api/analysis/truss/request", "Truss Model Builder"),
     ("/api/analysis/assessment/request", "Truss Structural Assessment"),
     ("/api/analysis/modelflow/", "HiTESS Model Builder"),
+    # modelflow/ 접두사와 철자가 달라 별도 등록(MB 편집 해석 실행 경로).
+    ("/api/analysis/modelbuilder/solve", "HiTESS Model Builder"),
     # AM 연동 클라이언트(HiTessMB.exe) 전용 — Model Builder 를 점검 중으로 내리면 AM 접수도 막힌다.
     ("/api/am/", "HiTESS Model Builder"),
     ("/api/analysis/hpscr/", "HP-SCR 배관응력 해석"),
@@ -54,6 +57,9 @@ GUARDED_ROUTES: tuple[tuple[str, str], ...] = (
     ("/api/analysis/groupmoduleunit/", "Group & Module Unit 권상 구조 해석"),
     ("/api/analysis/module-stability/", "Group & Module Unit 권상 구조 해석"),
     ("/api/analysis/unit-structural/", "Group & Module Unit 권상 구조 해석"),
+    # groupmoduleunit/ 접두사로 안 잡히는 GMU 전용 경로(Module Unit Save, COG 계산).
+    ("/api/analysis/module-unit/export-bdf", "Group & Module Unit 권상 구조 해석"),
+    ("/api/analysis/groupmodule/cog", "Group & Module Unit 권상 구조 해석"),
     ("/api/analysis/sidepassage/", "Side Passage Assessment"),
     # 이 앱의 1단계 검증은 /api/analysis/groupmoduleunit/request 를 재사용하므로 GMU 게이트에 함께 걸린다.
     # 여기 등록분은 이 앱 전용 엔드포인트(샘플 실행, 3단계 structural-run)를 막는다.
@@ -151,6 +157,23 @@ def is_valid_external_host(host: str) -> bool:
     return bool(_EXTERNAL_HOST_RE.fullmatch(host or ""))
 
 
+def _is_blocked_external_host(host: str) -> bool:
+    """loopback·link-local·unspecified·localhost 는 프록시 대상에서 막는다.
+
+    관리자 오버라이드(external_host)가 프록시를 서버 자신이나 내부 포트
+    (MySQL 3306·Ollama 11434 등)로 돌리는 SSRF 피벗을 차단한다. 사내 DNS
+    이름은 IP 가 아니므로 그대로 통과한다(코드 기본 대상은 사내 10.x 라 영향 없음).
+    """
+    h = (host or "").strip().lower()
+    if not h or h == "localhost":
+        return True
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_link_local or ip.is_unspecified
+
+
 def is_valid_external_port(port) -> bool:
     return isinstance(port, int) and not isinstance(port, bool) and 1 <= port <= 65535
 
@@ -165,7 +188,11 @@ def effective_external_endpoint(default_upstream: str, setting: dict | None) -> 
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     if setting:
         override_host = (setting.get("external_host") or "").strip()
-        if override_host and is_valid_external_host(override_host):
+        if (
+            override_host
+            and is_valid_external_host(override_host)
+            and not _is_blocked_external_host(override_host)
+        ):
             host = override_host
         override_port = setting.get("external_port")
         if is_valid_external_port(override_port):

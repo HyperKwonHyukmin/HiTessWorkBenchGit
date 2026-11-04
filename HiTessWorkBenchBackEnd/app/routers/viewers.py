@@ -123,6 +123,11 @@ def _released_version(viewer_id: str) -> str | None:
     return str(ver).strip() if ver else None
 
 
+# viewer_id 는 파일명·경로 세그먼트로 쓰이므로 영숫자·'-'·'_' 만 허용한다.
+# 백슬래시(%5C 로 디코딩되는)·'..'·슬래시가 섞이면 후보 폴더 밖의 zip 을 가리킬 수 있다.
+_VIEWER_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
 def _find_zip(viewer_id: str) -> str | None:
     """viewer_id 의 zip 을 고른다 — 릴리스 표에 버전이 있으면 그 버전, 없으면 최신 *정상* 버전.
 
@@ -130,6 +135,9 @@ def _find_zip(viewer_id: str) -> str | None:
     버전 내림차순으로 zip 무결성을 검사해 첫 정상 zip 을 반환한다.
     최상위 버전이 손상된 경우(EOCD 깨짐 등) 자동으로 다음 버전으로 폴백한다.
     """
+    if not _VIEWER_ID_RE.fullmatch(viewer_id or ""):
+        logger.warning("[viewers] 허용되지 않는 viewer_id — %r", viewer_id)
+        return None
     pinned = _released_version(viewer_id)
     if pinned:
         name = f"{viewer_id}-{pinned}.zip"
