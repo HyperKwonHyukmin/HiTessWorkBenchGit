@@ -52,6 +52,8 @@ test('묶음 이름 기본값은 서버 기본값과 같은 모양', () => {
 test('보낸 결과 요약', () => {
   assert.match(describeExportResult({ state: 'staged', file_count: 3, blocked: [], rejected: [{}] }), /3개 파일, DRM 파일 1개 제외/);
   assert.match(describeExportResult({ state: 'blocked', file_count: 0, blocked: [{}], rejected: [] }), /이미 LogBook 에 있어/);
+  assert.match(describeExportResult({ state: 'staged', file_count: 4, auto_added: ['a_lifting.bdf', 'a_posture.json'] }),
+    /4개 파일, 권상 Wire 파일 2개 자동 포함/);   // LogBook 49
 });
 
 test('isPreviewableBdf: BDF 계열 확장자만, DRM 은 제외', () => {

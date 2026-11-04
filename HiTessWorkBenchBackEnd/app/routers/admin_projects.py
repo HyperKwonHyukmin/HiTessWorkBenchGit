@@ -206,8 +206,13 @@ def export_to_logbook(
     admin_id: str = Depends(require_admin),
 ):
     record = _record_or_404(db, analysis_id)
+    resolved = _resolved(db, record)
+    # LogBook 49 — 권상 해석은 Wire 모델(_lifting.bdf)·권상 위치 JSON 을 고르지 않았어도 함께 보낸다(한 자료로 묶인다)
+    paths, auto_added = svc.with_lifting(record.program_name, resolved, payload.paths)
+    if len(paths) > svc.MAX_EXPORT_FILES:
+        raise HTTPException(status_code=422, detail=f"한 번에 보낼 수 있는 파일 수({svc.MAX_EXPORT_FILES}개)를 넘었습니다.")
     try:
-        picked = svc.select_paths(_resolved(db, record), payload.paths)
+        picked = svc.select_paths(resolved, paths)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     total = sum(os.path.getsize(p) for p, _f, _r in picked)
@@ -249,5 +254,5 @@ def export_to_logbook(
     db.commit()
     log_activity(db, "LOGBOOK_EXPORT", employee_id=admin_id, ip_address=ip,
                  action_detail={"analysis_id": record.id, "batch_key": result["key"], "state": result["state"],
-                                "files": result["file_count"]})
-    return {**result, "export_id": row.id, "title": title}
+                                "files": result["file_count"], "auto_added": auto_added})
+    return {**result, "export_id": row.id, "title": title, "auto_added": auto_added}

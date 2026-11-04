@@ -395,3 +395,41 @@ def test_files_one_bad_path_does_not_fail_listing(switchable_client, db_session,
     assert r.status_code == 200, r.text
     rels = [f["rel"] for f in r.json()["files"]]
     assert "9999_m01.bdf" in rels and not any(x.endswith("step1.json") for x in rels)
+
+
+def test_export_gmu_adds_lifting_files_automatically(switchable_client, db_session, user_conn, enabled, fake_lb):
+    """LogBook 49 — 권상 해석은 Wire 모델(_lifting.bdf)·권상 위치 JSON 을 고르지 않아도 함께 보낸다."""
+    fake = fake_lb()
+    parent = _gmu(db_session, user_conn)
+    _work(user_conn, "20261001_090000_EMP001_GroupModuleUnit", {"9999_m01_posture.json": b"{}"})
+    child_root = _work(user_conn, "20261001_100000_EMP001_UnitStructural", {
+        "9999_m01_lifting.bdf": b"SOL 101\nCEND\nTITLE = HiTessWorkBench Lifting Analysis\n",
+        "9999_m01_lifting_meta.json": b"{}",
+        "9999_m01_lifting.f06": b"F06",
+    })
+    _analysis(db_session, program="UnitStructuralAnalysis", created_at=datetime(2026, 10, 1, 10),
+              input_info={"parent_analysis_id": parent.id},
+              result_info={"liftingBdf": str(child_root / "9999_m01_lifting.bdf")})
+    model = next(p for p in _paths(switchable_client, parent.id) if p.endswith("9999_m01.bdf"))
+    r = switchable_client.post(f"/api/admin/projects/{parent.id}/logbook", json={"paths": [model]})
+    assert r.status_code == 200, r.text
+    assert sorted(r.json()["auto_added"]) == ["9999_m01_lifting.bdf", "9999_m01_lifting_meta.json", "9999_m01_posture.json"]
+    assert set(fake.chunks) == {"20261001_090000_EMP001_GroupModuleUnit/9999_m01.bdf",
+                                "20261001_090000_EMP001_GroupModuleUnit/9999_m01_posture.json",
+                                "20261001_100000_EMP001_UnitStructural/9999_m01_lifting.bdf",
+                                "20261001_100000_EMP001_UnitStructural/9999_m01_lifting_meta.json"}
+
+    # 이미 골랐으면 두 번 넣지 않는다
+    fake_lb()
+    wire = next(p for p in _paths(switchable_client, parent.id) if p.endswith("_lifting.bdf"))
+    r = switchable_client.post(f"/api/admin/projects/{parent.id}/logbook", json={"paths": [model, wire]})
+    assert "9999_m01_lifting.bdf" not in r.json()["auto_added"]
+
+
+def test_export_non_lifting_program_adds_nothing(switchable_client, db_session, user_conn, enabled, fake_lb):
+    fake_lb()
+    root = _work(user_conn, "20261001_090000_EMP001_TrussAssessment", {"t.bdf": b"x", "x_lifting.bdf": b"y"})
+    a = _analysis(db_session, program="TrussAssessment", input_info={"bdf": str(root / "t.bdf")})
+    model = next(p for p in _paths(switchable_client, a.id) if p.endswith("t.bdf"))
+    r = switchable_client.post(f"/api/admin/projects/{a.id}/logbook", json={"paths": [model]})
+    assert r.status_code == 200 and r.json()["auto_added"] == [] and r.json()["file_count"] == 1

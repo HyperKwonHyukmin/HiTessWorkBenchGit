@@ -73,6 +73,8 @@ export function defaultExportTitle(project) {
 export function describeExportResult(result) {
   if (!result) return '';
   const parts = [`${result.file_count ?? 0}개 파일`];
+  // LogBook 49 — 권상 해석은 Wire 모델·권상 위치 JSON 을 서버가 자동으로 더한다
+  if (result.auto_added?.length) parts.push(`권상 Wire 파일 ${result.auto_added.length}개 자동 포함`);
   if (result.blocked?.length) parts.push(`이미 LogBook 에 있는 BDF ${result.blocked.length}개 제외`);
   if (result.rejected?.length) parts.push(`DRM 파일 ${result.rejected.length}개 제외`);
   if (result.state === 'blocked') return `모든 파일이 이미 LogBook 에 있어 새 묶음을 만들지 않았습니다 (${parts.slice(1).join(', ')}).`;

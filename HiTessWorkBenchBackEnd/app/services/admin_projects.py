@@ -202,6 +202,31 @@ def list_files(resolved: dict) -> dict:
     }
 
 
+# LogBook 49 — 권상(Module Unit) 해석은 Wire 를 설치한 모델과 권상 위치 JSON 을 늘 함께 보낸다.
+# 나중에 Module Unit Studio 등에서 이전 실적의 권상 위치(lug·apex·wire)를 찾으려면 모델만으로는 모자란다.
+LIFTING_PROGRAMS = ("GroupModuleUnit", "SidePassage")
+LIFTING_SUFFIXES = ("_lifting.bdf", "_lifting_meta.json", "_posture.json")
+
+
+def lifting_paths(resolved: dict) -> list[str]:
+    """작업 폴더(부모 + Unit 구조 해석 자식)의 Wire 모델·권상 위치 JSON 경로. DRM 파일은 뺀다(LogBook 이 받지 않는다)."""
+    return [f["path"] for f in list_files(resolved)["files"]
+            if f["rel"].lower().endswith(LIFTING_SUFFIXES) and not f["drm"]]
+
+
+def with_lifting(program: str, resolved: dict, requested: list[str]) -> tuple[list[str], list[str]]:
+    """권상 해석이면 고르지 않은 Wire 파일을 더한다 → (보낼 경로, 자동으로 더한 파일 이름)."""
+    if program not in LIFTING_PROGRAMS:
+        return list(requested), []
+    chosen = {os.path.normcase(os.path.realpath(os.path.abspath(p))) for p in requested if isinstance(p, str) and p}
+    out, added = list(requested), []
+    for p in lifting_paths(resolved):
+        if os.path.normcase(os.path.realpath(p)) not in chosen:
+            out.append(p)
+            added.append(os.path.basename(p))
+    return out, added
+
+
 def select_paths(resolved: dict, requested: list[str]) -> list[tuple[str, str, str]]:
     """요청 경로를 작업 폴더 안의 실제 파일로 확인한다 → [(절대 경로, 폴더 이름, 폴더 기준 posix 상대 경로)].
     폴더 밖·없는 파일·중복은 ValueError(사유)."""
