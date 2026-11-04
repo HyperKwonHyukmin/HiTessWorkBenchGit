@@ -1,11 +1,13 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class LoginRequest(BaseModel):
     employee_id: str
+    # AUTH_MODE=ad 일 때만 쓴다(사내 AD 비밀번호). SecretStr 라 로그·오류 응답에 값이 찍히지 않는다.
+    password: Optional[SecretStr] = None
 
 
 class UserCreate(BaseModel):

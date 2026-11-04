@@ -1,19 +1,33 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { User, ArrowRight, ShieldCheck, AlertCircle, Clock, WifiOff, DownloadCloud, AlertTriangle, Construction, RefreshCw, Settings, Server } from 'lucide-react';
+import { User, KeyRound, ArrowRight, ShieldCheck, AlertCircle, Clock, WifiOff, DownloadCloud, AlertTriangle, Construction, RefreshCw, Settings, Server } from 'lucide-react';
 import RegisterModal from '../../components/modals/RegisterModal';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { checkVersion, login } from '../../api/auth';
+import { checkVersion, getLoginOptions, login } from '../../api/auth';
 import { SAVED_EMPLOYEE_ID_KEY, useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL, DEFAULT_API_BASE_URL, setApiBaseUrl } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
 import { isServerVersionNewer } from '../../utils/versionCompare';
-const structureBgUrl = "https://images.unsplash.com/photo-1553653841-453082536a9d?q=80&w=1000&auto=format&fit=crop";
+// 서버 ad_auth.AdResult 값 → 화면 문구. 사번이 맞는지 틀렸는지는 따로 알려 주지 않는다.
+const AD_LOGIN_MESSAGES = {
+  password_required: '회사 PC 로그인 비밀번호를 입력하세요.',
+  invalid_credentials: '사번 또는 비밀번호가 맞지 않습니다.',
+  account_locked: '회사 계정이 잠겼습니다. IT 지원팀에 잠금 해제를 요청하세요.',
+  password_expired: '회사 PC 비밀번호가 만료되었습니다. Windows 에서 비밀번호를 바꾼 뒤 다시 로그인하세요.',
+  account_disabled: '사용할 수 없는 회사 계정입니다. IT 지원팀에 문의하세요.',
+  too_many_attempts: '로그인 시도가 너무 많습니다. 15분 뒤에 다시 시도하세요.',
+  auth_unavailable: '사내 계정 서버에 연결하지 못했습니다. 잠시 뒤 다시 시도하세요.',
+};
+
+const structureBgUrl ="https://images.unsplash.com/photo-1553653841-453082536a9d?q=80&w=1000&auto=format&fit=crop";
 
 export default function LoginScreen({ onLoginSuccess }) {
   const { login: authLogin } = useAuth();
   const [employeeId, setEmployeeId] = useState('');
+  // AD 모드일 때만 쓰는 회사 PC 비밀번호. 저장하지 않고 로그인이 끝나면 비운다.
+  const [password, setPassword] = useState('');
+  const [authMode, setAuthMode] = useState('employee_id');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   
@@ -49,6 +63,7 @@ export default function LoginScreen({ onLoginSuccess }) {
       if (needsUpdate) {
         console.warn(`Version Mismatch! Client: ${CLIENT_VERSION}, Server: ${fetchedServerVersion}`);
       }
+      setAuthMode(await getLoginOptions());
       return true;
     } catch (error) {
       console.error("Server Check Failed:", error);
@@ -118,7 +133,8 @@ export default function LoginScreen({ onLoginSuccess }) {
     setErrorMsg('');
 
     try {
-      const response = await login(employeeId);
+      const response = await login(employeeId, authMode === 'ad' ? password : undefined);
+      setPassword('');
 
       // AuthContext 가 localStorage 4개 키 (user/session_token/user_login_at/user_last_active)
       // 일괄 세팅 + state 갱신을 캡슐화한다.
@@ -140,9 +156,16 @@ export default function LoginScreen({ onLoginSuccess }) {
           setErrorMsg("서버 응답이 없습니다.");
         }
       } else {
-        if (error.response.status === 404) {
+        const detail = error.response.data?.detail;
+        if (error.response.status === 401 || error.response.status === 429 || error.response.status === 502) {
+          setPassword('');
+          // 방식 조회(/api/login/options)가 순간 실패해 칸이 숨었어도 서버가 비밀번호를 요구하면 칸을 연다.
+          if (detail === 'password_required') setAuthMode('ad');
+          setErrorMsg(AD_LOGIN_MESSAGES[detail] || `로그인 오류: ${error.response.status}`);
+        }
+        else if (error.response.status === 404) {
           setErrorMsg("등록되지 않은 사번입니다.");
-        } 
+        }
         else if (error.response.status === 403) {
           setErrorMsg("PENDING_APPROVAL");
         }
@@ -299,7 +322,9 @@ export default function LoginScreen({ onLoginSuccess }) {
             <>
               <div className="text-center lg:text-left">
                 <h2 className="whitespace-nowrap text-2xl sm:text-3xl font-bold text-slate-800">Hi-TESS Workbench Access</h2>
-                <p className="mt-2 text-sm text-slate-500 font-medium">사번을 입력하여 접속하십시오.</p>
+                <p className="mt-2 text-sm text-slate-500 font-medium">
+                  {authMode === 'ad' ? '사번과 회사 PC 로그인 비밀번호를 입력하십시오.' : '사번을 입력하여 접속하십시오.'}
+                </p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
@@ -394,6 +419,25 @@ export default function LoginScreen({ onLoginSuccess }) {
                       />
                     </div>
                   </div>
+                  {authMode === 'ad' && (
+                    <div>
+                      <label htmlFor="login-password" className="block text-xs font-bold text-brand-blue uppercase mb-2">비밀번호</label>
+                      <div className="relative group z-10">
+                        <KeyRound className="absolute left-3 top-3.5 h-5 w-5 text-slate-400 group-focus-within:text-brand-green transition-colors z-20" />
+                        <input
+                          id="login-password"
+                          type="password"
+                          required
+                          autoComplete="current-password"
+                          className="block w-full pl-10 pr-3 py-4 border-2 border-slate-200 rounded-lg focus:border-brand-green focus:ring-0 outline-none transition-all text-slate-800 text-lg font-medium placeholder:text-base placeholder:font-normal relative z-10 bg-transparent"
+                          placeholder="회사 PC 로그인 비밀번호"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-slate-500">회사 Windows 로그인과 같은 비밀번호입니다. WorkBench 는 비밀번호를 저장하지 않습니다.</p>
+                    </div>
+                  )}
                 </div>
 
                 <button

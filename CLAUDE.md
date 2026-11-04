@@ -992,6 +992,22 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 - 세션은 `localStorage`의 `'user'` 키에 저장되고 props/context로 전달. JWT 없음.
 - `User` 모델의 `is_admin` 플래그로 관리자 페이지 접근 제어.
 
+**사내 AD 로그인 (2026-11-04, 1단계 구현·미커밋, 스위치 꺼짐)** — 보안 테스트(`HanByul/99_Security_Test_Re`)가 `POST /api/login {employee_id}` 만으로 토큰을 받아
+외부 App 을 브라우저로 열었다. 원인은 세션 설계가 아니라 **인증 부재**(사번은 비밀이 아님, 9091 은 전사 개방). 그래서 `.env` `AUTH_MODE=ad` 이면 `/api/login` 이
+사번 + 회사 PC(AD) 비밀번호를 요구한다. 비우면 예전 계약 그대로(`test_auth_contract.py`).
+- 서버 `app/services/ad_auth.py`: ldaps `HHIWVRA06.HHI.co.kr:636`, bind `HHI\<사번 소문자>`(AD 계정명 = 사번 확인). 비밀번호는 저장·기록 안 함(`schemas.LoginRequest.password` = `SecretStr`).
+  ⚠ 사내 AD 인증서가 **RSA 1024** 라 OpenSSL 기본이 거부한다 → 검증·이름 확인은 켠 채 `SECLEVEL=1`(`.env` `AD_LDAP_TLS_SECLEVEL`). 빈 비밀번호는 AD 에 보내지 않는다(익명 bind 함정).
+  틀린 시도는 **AD 에 묻기 전에** 사번별 15분 4회·IP별 20회로 끊는다(429) — AD 잠금이 직원 회사 PC 계정까지 잠그기 때문. AD 확인을 DB 사번 조회보다 먼저 해 '등록된 사번인지' 를 흘리지 않는다.
+  ⚠ 횟수는 **프로세스 메모리**에 센다 — 145 는 `server_manager.py` 가 uvicorn 을 워커 1개로 띄워 맞다. `--workers N` 으로 바꾸면 제한이 N배로 느슨해져 AD 잠금 기준을 넘으니 그때는 DB 로 옮긴다.
+  반대로 남이 내 사번으로 4번 틀리면 나도 15분 WorkBench 에 못 들어온다(회사 계정 잠금을 막으려고 감수한 절충 — 문의 오면 이 설명).
+  응답 detail: `password_required`·`invalid_credentials`·`account_locked`·`password_expired`·`account_disabled`(401) · `too_many_attempts`(429) · `auth_unavailable`(502). 화면 문구 = `LoginScreen.jsx` `AD_LOGIN_MESSAGES`.
+- 로그인 방식 조회 `GET /api/login/options` → `{auth_mode}`(`/api/version` 은 키 하나 계약이라 건드리지 않음). 프론트 `getLoginOptions` 가 옛 서버(404)면 사번만.
+- 테스트 `tests/test_ad_login.py`(AD 대역). 실제 AD 확인(2026-11-04, 70): 사번만 → 401 password_required, 없는 계정 틀린 비번 → 401 invalid_credentials. 맞는 비밀번호 → 사용자가 개발 WorkBench 로그인 화면에서 직접 입력해 로그인 성공 확인(같은 날).
+- ⚠ **스위치를 켜기 전에 반드시**: ① 새 WorkBench exe 배포(비밀번호 칸) ② AM 연동 2단계 — `HiTessMBClient` `Submitter.cs` LoginAsync·`AmLauncher` `server-client.js` login 이
+  사번만으로 무인 로그인한다(사용자 결정 2026-11-04: 2단계로 비밀번호 입력 추가 후 켬) ③ 145 `pip install -r requirements.txt`(`ldap3`) + 145 에서 AD 636 접속 확인(70 만 확인함).
+  Electron `refreshWorkbenchSession`(401 때 사번만 재로그인)은 고치지 않았다 — AD 모드에선 실패하고, 본체 화면 하트비트 401 → `App.jsx` 인터셉터가 로그인 화면으로 보낸다.
+  `check_user`(토큰 안 줌)·`hitessbeam` 익명 업로드는 이번 범위 밖. 켤 때 hitess-core 로그인 계약 문서(`docs/20-phase2-identity.md`)도 갱신.
+
 ### App Settings — App별 서비스 상태·접근 통제 ★API가 403이면 여기부터 확인
 
 관리자가 App을 **개발 중 / 출시 예정 / 점검 중**으로 내리면 해당 App의 화면 진입과 **해석 요청 API가 서버에서 403으로 거부**된다. 원인 불명의 403을 만나면 `app_settings` 테이블부터 볼 것.

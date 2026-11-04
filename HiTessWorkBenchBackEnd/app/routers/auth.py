@@ -12,6 +12,7 @@ from ..sessions import session_store
 from ..dependencies import require_auth
 from ..services import access_session_service
 from ..services.activity_service import log_activity
+from ..services.ad_auth import AdResult, auth_mode, login_attempt_limiter, verify_ad_password
 from ..services.external_app_access import external_app_access_store
 from ..services.logbook_integration import notify_logbook_logout
 from ..services.plm_user_directory import fetch_plm_email
@@ -61,10 +62,45 @@ def check_user(req: CheckUserRequest, db: Session = Depends(database.get_db)):
     }
 
 
+@router.get("/login/options")
+def login_options():
+  """로그인 화면이 비밀번호 칸을 보일지 정한다. 인증 없음·DB 안 씀(서버 주소 확인 직후 부른다)."""
+  return {"auth_mode": auth_mode()}
+
+
+def _verify_ad_login(db: Session, employee_id: str, password, ip: Optional[str]) -> None:
+  """AUTH_MODE=ad — 사번·비밀번호를 AD 로 확인한다. 실패면 HTTPException.
+
+  DB 사번 조회보다 먼저 한다: 비밀번호가 틀린 요청에는 '등록된 사번인지' 도 알려 주지 않는다.
+  """
+  secret = password.get_secret_value() if password is not None else ""
+  if not secret.strip():
+    # 옛 클라이언트(비밀번호 칸 없음)·Electron 자동 재로그인. AD 에 묻지 않으니 횟수에 넣지 않는다.
+    log_activity(db, "LOGIN", employee_id=employee_id, action_detail={"reason": "password_required"}, status="failure", ip_address=ip)
+    raise HTTPException(status_code=401, detail="password_required")
+  if login_attempt_limiter.is_blocked(employee_id, ip):
+    log_activity(db, "LOGIN", employee_id=employee_id, action_detail={"reason": "too_many_attempts"}, status="failure", ip_address=ip)
+    raise HTTPException(status_code=429, detail="too_many_attempts")
+
+  result = verify_ad_password(employee_id, secret)
+  if result is AdResult.OK:
+    login_attempt_limiter.reset(employee_id)
+    return
+  if result is AdResult.UNAVAILABLE:
+    log_activity(db, "LOGIN", employee_id=employee_id, action_detail={"reason": "auth_unavailable"}, status="failure", ip_address=ip)
+    raise HTTPException(status_code=502, detail="auth_unavailable")
+  login_attempt_limiter.record_failure(employee_id, ip)
+  log_activity(db, "LOGIN", employee_id=employee_id, action_detail={"reason": result.value}, status="failure", ip_address=ip)
+  raise HTTPException(status_code=401, detail=result.value)
+
+
 @router.post("/login", response_model=schemas.UserResponse)
 def login(request: schemas.LoginRequest, req: Request, db: Session = Depends(database.get_db)):
-  employee_id = request.employee_id.upper()
+  employee_id = request.employee_id.strip().upper()
   ip = req.client.host if req.client else None
+
+  if auth_mode() == "ad":
+    _verify_ad_login(db, employee_id, request.password, ip)
 
   user = db.query(models.User).filter(models.User.employee_id == employee_id).first()
   if not user:

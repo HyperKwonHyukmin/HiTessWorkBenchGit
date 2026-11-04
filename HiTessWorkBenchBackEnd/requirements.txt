@@ -34,3 +34,6 @@ pywin32==312
 # 사내 PLM(HIPLM.VT_PLM_USER) 메일 주소 조회 — thin mode 라 Oracle Instant Client 불필요.
 # .env 에 PLM_ORACLE_DSN/USER/PASSWORD 가 비어 있으면 조용히 비활성 상태로 돈다.
 oracledb==2.5.1
+
+# 사내 AD(LDAP) 로그인 확인 — .env AUTH_MODE=ad 일 때만 쓴다(app/services/ad_auth.py).
+ldap3==2.9.1

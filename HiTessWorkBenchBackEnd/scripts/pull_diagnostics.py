@@ -57,10 +57,23 @@ class Client:
         return payload if raw else json.loads(payload.decode("utf-8"))
 
     def _login(self, employee: str) -> str:
-        user = self._request("POST", "/api/login", {"employee_id": employee})
+        body = {"employee_id": employee}
+        if self._login_mode() == "ad":
+            # 서버가 AD 로그인이면 회사 PC 비밀번호를 터미널에서 묻는다(화면에 안 보이고 저장하지 않는다).
+            import getpass
+            body["password"] = getpass.getpass(f"{employee} 회사 PC 비밀번호: ")
+        user = self._request("POST", "/api/login", body)
         if not user.get("is_admin"):
             raise SystemExit(f"{employee} 는 관리자가 아닙니다 — 오류 유형 기록은 관리자만 볼 수 있습니다.")
         return user["token"]
+
+    def _login_mode(self) -> str:
+        """서버 로그인 방식. 옛 서버(경로 없음)면 사번만."""
+        try:
+            with urllib.request.urlopen(self.server + "/api/login/options", timeout=10) as res:
+                return json.loads(res.read().decode("utf-8")).get("auth_mode") or "employee_id"
+        except (OSError, ValueError):   # URLError·시간 초과(TimeoutError) 모두 OSError
+            return "employee_id"
 
     def get(self, path: str, **params):
         query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
