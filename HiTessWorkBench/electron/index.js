@@ -2787,6 +2787,65 @@ ipcMain.handle("viewer:downloadLiftingBdf", async (event, payload) => {
   }
 });
 
+// ModuleUnitStudio Hoist 탭 — LogBook 의 다른 Unit 권상 Wire 배치 참조(보기 전용).
+// 백엔드 /api/logbook/lifting-refs 가 LogBook 서버 간 API 로 중계한다(보이는 범위 = LogBook 권한).
+const LIFTING_REF_ERRORS = {
+  logbook_integration_disabled: "LogBook 연동이 꺼져 있습니다(서버 설정).",
+  logbook_lifting_refs_unsupported: "LogBook 서버가 이 기능을 아직 모릅니다. LogBook 을 최신으로 갱신해야 합니다.",
+  logbook_unreachable: "LogBook 서버에 연결하지 못했습니다.",
+  logbook_file_not_found: "LogBook 에서 찾을 수 없거나 볼 권한이 없습니다.",
+  logbook_not_wire_model: "Wire 배치를 읽을 수 있는 권상 모델이 아닙니다.",
+  logbook_wb_unavailable: "LogBook 이 WorkBench 사용자 정보를 확인하지 못했습니다. 잠시 뒤 다시 시도하세요.",
+};
+
+async function fetchLiftingRefs(event, path) {
+  const session = sessionFromEvent(event);
+  if (!session) return noSessionError();
+  const runtimeConfig = await getWorkbenchRuntimeConfig(session);
+  if (!runtimeConfig.employeeId) {
+    return { ok: false, error: "사용자 정보가 없습니다 (로그인 필요)." };
+  }
+  const { res } = await fetchWithSessionRefresh(`${runtimeConfig.serverUrl}${path}`, { method: "GET" }, runtimeConfig);
+  if (!res.ok) {
+    const detail = await readBackendError(res);
+    const known = Object.keys(LIFTING_REF_ERRORS).find((k) => detail && detail.includes(k));
+    if (known) return { ok: false, error: LIFTING_REF_ERRORS[known] };
+    const hint = res.status === 404 || res.status === 405
+      ? ` - 서버(${runtimeConfig.serverUrl})가 최신 WorkBench 백엔드인지 확인하세요.`
+      : "";
+    return { ok: false, error: `권상 참조 조회 실패: ${res.status}${detail ? ` - ${detail}` : ""}${hint}` };
+  }
+  return { ok: true, body: await res.json() };
+}
+
+ipcMain.handle("viewer:searchLiftingRefs", async (event, payload) => {
+  try {
+    const params = new URLSearchParams();
+    const q = String(payload?.q ?? "").trim();
+    const hull = String(payload?.hullNo ?? "").trim();
+    if (q) params.set("q", q.slice(0, 100));
+    if (hull) params.set("hull", hull.slice(0, 8));
+    params.set("limit", String(Math.min(Math.max(Number(payload?.limit) || 50, 1), 200)));
+    params.set("offset", String(Math.max(Number(payload?.offset) || 0, 0)));
+    const out = await fetchLiftingRefs(event, `/api/logbook/lifting-refs?${params}`);
+    if (!out.ok) return out;
+    return { ok: true, total: out.body.total ?? 0, items: Array.isArray(out.body.items) ? out.body.items : [] };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
+ipcMain.handle("viewer:getLiftingRef", async (event, payload) => {
+  try {
+    const fileId = Number(payload?.fileId);
+    if (!Number.isInteger(fileId) || fileId <= 0) return { ok: false, error: "fileId 가 올바르지 않습니다." };
+    const out = await fetchLiftingRefs(event, `/api/logbook/lifting-refs/${fileId}`);
+    return out.ok ? { ok: true, item: out.body } : out;
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 // MooringFittingStudio Save 탭 "결과 OP2" → 마지막 구조 해석의 OP2 를 사용자 PC 에 저장.
 ipcMain.handle("viewer:downloadMooringOp2", async (event) => {
   try {

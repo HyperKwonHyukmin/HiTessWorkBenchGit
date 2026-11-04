@@ -335,3 +335,67 @@ def logbook_levels(_admin: str = Depends(require_admin)):
         if isinstance(eid, str) and lv in (1, 2, 3):
             out[eid.strip().upper()] = {"level": lv, "last_login": row.get("last_login") if isinstance(row, dict) else None}
     return {"labels": labels if isinstance(labels, dict) else LEVEL_LABELS_FALLBACK, "levels": out}
+
+
+# ── 다른 Unit 권상 Wire 배치 참조 (Module Unit Studio) ──────────────────────────
+# 계획: docs/plans/2026-11-04-mu-studio-logbook-wire-reference.md. Studio → Electron IPC → 여기 → LB integration.
+# 보이는 범위는 LB 권한 그대로(`as` = 로그인 사번). GET 이라 App Settings 게이트 대상이 아니다.
+
+LIFTING_REFS_TIMEOUT_SECONDS = 30.0   # 목록 첫 요청은 LB 가 요약이 없는 BDF 를 읽어 채운다(최대 30개)
+
+
+def _lifting_refs_get(path: str, params: dict, secret: str) -> dict:
+    url = f"{lb.internal_url()}/api/integration/{path}"
+    try:
+        with httpx.Client(timeout=LIFTING_REFS_TIMEOUT_SECONDS, transport=_http_transport) as client:
+            resp = client.get(url, params=params, headers={lb.INTEGRATION_HEADER: secret})
+    except httpx.HTTPError as exc:
+        logger.warning("LogBook 권상 참조 연결 실패: %s", exc)
+        raise HTTPException(status_code=502, detail="logbook_unreachable") from exc
+    if resp.status_code == 200:
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail="logbook_unreachable") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=502, detail="logbook_unreachable")
+        return body
+    detail, _message = _lb_error_body(resp)
+    if resp.status_code == 404:
+        # LB 가 판단한 404 는 detail 이 있다(사번·파일 없음). 경로 자체가 없으면(옛 LogBook) 'Not Found'
+        if detail in ("file_not_found", "file_missing"):
+            raise HTTPException(status_code=404, detail="logbook_file_not_found")
+        raise HTTPException(status_code=501, detail="logbook_lifting_refs_unsupported")
+    if resp.status_code == 415:
+        raise HTTPException(status_code=415, detail="logbook_not_wire_model")
+    if resp.status_code == 503:
+        raise HTTPException(status_code=503, detail="logbook_wb_unavailable")
+    logger.warning("LogBook 권상 참조 실패: HTTP %s (%s)", resp.status_code, path)
+    raise HTTPException(status_code=502, detail="logbook_unreachable")
+
+
+@router.get("/lifting-refs")
+def logbook_lifting_refs(
+    q: Optional[str] = None,
+    hull: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    employee_id: str = Depends(require_auth),
+):
+    """LogBook 확정 자료의 권상 Wire 모델 목록(요약, 평면 선분 제외)."""
+    secret = _require_enabled()
+    params: dict = {"as": employee_id, "limit": max(1, min(int(limit), 200)), "offset": max(0, int(offset))}
+    if q and q.strip():
+        params["q"] = q.strip()[:100]
+    if hull and hull.strip():
+        params["hull"] = hull.strip()[:8]
+    return _lifting_refs_get("lifting-refs", params, secret)
+
+
+@router.get("/lifting-refs/{file_id}")
+def logbook_lifting_ref(file_id: int, employee_id: str = Depends(require_auth)):
+    """한 Wire 모델의 전체 요약(평면 선분 포함)."""
+    secret = _require_enabled()
+    if file_id <= 0:
+        raise HTTPException(status_code=400, detail="logbook_invalid_file_id")
+    return _lifting_refs_get(f"lifting-refs/{int(file_id)}", {"as": employee_id}, secret)

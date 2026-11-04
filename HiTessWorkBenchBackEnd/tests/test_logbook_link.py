@@ -414,3 +414,49 @@ def test_levels_errors(admin_client, enabled, monkeypatch):
     assert r.status_code == 502 and r.json()["detail"] == "logbook_unreachable"
     monkeypatch.delenv("LOGBOOK_INTEGRATION_SECRET", raising=False)
     assert admin_client.get("/api/logbook/levels", headers=_auth()).status_code == 503
+
+
+# ── lifting-refs (Module Unit Studio 권상 참조) ─────────────────────────────────
+
+def test_lifting_refs_proxies_with_employee(admin_client, enabled, monkeypatch):
+    seen = {}
+
+    def handler(request):
+        seen["url"] = urlparse(str(request.url))
+        seen["secret"] = request.headers.get("X-HiTESS-Integration")
+        return httpx.Response(200, json={"total": 1, "items": [{"fileId": 7, "summaryState": "done"}]})
+
+    _mock_logbook(monkeypatch, handler)
+    r = admin_client.get("/api/logbook/lifting-refs?q=%20m04%20&hull=3496&limit=999", headers=_auth())
+    assert r.status_code == 200, r.text
+    assert r.json()["items"][0]["fileId"] == 7
+    assert seen["url"].path == "/api/integration/lifting-refs" and seen["secret"] == SECRET
+    qs = parse_qs(seen["url"].query)
+    assert qs["q"] == ["m04"] and qs["hull"] == ["3496"] and qs["limit"] == ["200"]
+    assert qs["as"][0]   # 로그인 사번을 붙인다(브라우저 값이 아니라 토큰의 사번)
+
+
+def test_lifting_ref_detail_and_errors(admin_client, enabled, monkeypatch):
+    responses = {
+        "/api/integration/lifting-refs/1": httpx.Response(200, json={"fileId": 1, "summary": {"planSegments": []}}),
+        "/api/integration/lifting-refs/2": httpx.Response(415, json={"detail": "not_wire_model"}),
+        "/api/integration/lifting-refs/3": httpx.Response(404, json={"detail": "file_not_found"}),
+        "/api/integration/lifting-refs/4": httpx.Response(404, json={"detail": "Not Found"}),   # 옛 LogBook
+    }
+    _mock_logbook(monkeypatch, lambda request: responses[request.url.path])
+    assert admin_client.get("/api/logbook/lifting-refs/1", headers=_auth()).json()["fileId"] == 1
+    for fid, status, detail in ((2, 415, "logbook_not_wire_model"), (3, 404, "logbook_file_not_found"),
+                                (4, 501, "logbook_lifting_refs_unsupported")):
+        r = admin_client.get(f"/api/logbook/lifting-refs/{fid}", headers=_auth())
+        assert (r.status_code, r.json()["detail"]) == (status, detail)
+
+
+def test_lifting_refs_unreachable_and_disabled(admin_client, enabled, monkeypatch):
+    def refused(request):
+        raise httpx.ConnectError("refused", request=request)
+
+    _mock_logbook(monkeypatch, refused)
+    assert admin_client.get("/api/logbook/lifting-refs", headers=_auth()).status_code == 502
+    monkeypatch.delenv("LOGBOOK_INTEGRATION_SECRET", raising=False)
+    assert admin_client.get("/api/logbook/lifting-refs", headers=_auth()).status_code == 503
+

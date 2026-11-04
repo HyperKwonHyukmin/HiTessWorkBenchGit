@@ -69,6 +69,8 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:exportUnitBdf',
   'viewer:downloadLiftingBdf',
   'viewer:downloadUnitOp2',
+  'viewer:searchLiftingRefs',
+  'viewer:getLiftingRef',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
   'viewer:checkPathAccess',
   'viewer:fetchResultDir',
@@ -200,6 +202,13 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // ModuleUnitStudio Analysis·Save 탭 — 구조 해석 결과 OP2 저장. payload = { analysisId }
   downloadUnitOp2: (opts) =>
     ipcRenderer.invoke('viewer:downloadUnitOp2', opts),
+  // ModuleUnitStudio Hoist 탭 — LogBook 에 있는 다른 Unit 의 권상 Wire 배치 찾기(보기 전용).
+  // payload = { q?, hullNo?, limit?, offset? } → { ok, total, items } | { ok:false, error }
+  searchLiftingReferences: (opts) =>
+    ipcRenderer.invoke('viewer:searchLiftingRefs', opts),
+  // payload = { fileId } → { ok, item } (item.summary.planSegments 포함) | { ok:false, error }
+  getLiftingReference: (opts) =>
+    ipcRenderer.invoke('viewer:getLiftingRef', opts),
   onMooringStructuralProgress: (callback) => {
     const listener = (_, data) => callback(data);
     ipcRenderer.on('viewer:mooring-structural-progress', listener);
