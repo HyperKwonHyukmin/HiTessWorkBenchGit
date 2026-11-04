@@ -49,6 +49,19 @@ test('CSV 파싱 실패 행은 검토 필요이고 같은 사실의 INPUT_ROW_DR
   assert.deepEqual(v.reasons.map(r => r.code), ['csv-parse-failed']);
 });
 
+test('중복 행은 파싱 실패로 세지 않고, 중복 진단(확정)이 검토 필요를 맡는다', () => {
+  const dup = { kind: 'Structure', rowType: 'DuplicateRow', disposition: 'Duplicate', lineNumber: 7, reason: '2행과 모든 칸이 같은 행' };
+  const raw = { ...okRaw, skips: [...okRaw.skips, dup] };
+  const a = summarizeMooringRawAudit(raw);
+  assert.equal(a.summary.parseFailedRows, 0);
+  assert.equal(a.summary.ignoredRows, 2);
+  assert.equal(a.summary.ignoredByReason['중복 행 — 앞 행과 모든 칸이 같아 앞 행만 모델에 넣음'], 1);
+  const diagnosis = { findings: [{ code: 'INPUT_ROW_DUPLICATE', confidence: '확정', message: '중복 행 1개를 뺐습니다.' }] };
+  const v = computeMooringVerdict({ ...success, rawJson: raw, diagnosis });
+  assert.equal(v.level, 'review');
+  assert.deepEqual(v.reasons.map(r => r.text), ['중복 행 1개를 뺐습니다.']);
+});
+
 test('하중 없음 진단(확정)은 실패, 참고 진단은 판정 미반영', () => {
   const fail = computeMooringVerdict({ ...success, diagnosis: { findings: [{ code: 'LOAD_NONE', confidence: '확정', message: 'MF 하중 입력이 0건' }] } });
   assert.equal(fail.level, 'fail');
@@ -77,6 +90,36 @@ test('구조해석 요약이 있으면 그것이 판정 — 대시보드 OK/NG �
   assert.equal(ng.level, 'fail');
   assert.equal(ng.basis, 'solve');
   assert.equal(computeMooringVerdict({ solveSummary: { ok: false, verdictCounts: { NOT_OK: 0, MATERIAL_CHANGE: 3 } } }).level, 'review');
+});
+
+test('하중 없는 모델(LOAD_NONE 확정)은 해석이 전부 OK 여도 실패 — 응력 0 을 통과로 보고하지 않는다', () => {
+  const diagnosis = { findings: [{ code: 'LOAD_NONE', confidence: '확정', message: 'MF 하중 입력이 0건' }] };
+  const allOk = { ok: true, globalMaxUsage: 0, verdictCounts: { OK: 120, MATERIAL_CHANGE: 0, NOT_OK: 0 } };
+  const v = computeMooringVerdict({ ...success, diagnosis, solveSummary: allOk });
+  assert.equal(v.level, 'fail');
+  assert.equal(v.title, '모델 검증 실패');
+  assert.equal(v.basis, 'solve');
+  assert.deepEqual(v.reasons.map(r => r.code), ['diag-LOAD_NONE-0', 'solve-untrusted']);
+});
+
+test('모델 검토 항목은 해석이 전부 OK 여도 남는다 — 더 나쁜 쪽이 판정', () => {
+  const raw = { ...okRaw, skips: [...okRaw.skips, { kind: 'Structure', rowType: 'MF', reason: 'bad number', lineNumber: 5 }] };
+  const allOk = { ok: true, verdictCounts: { OK: 10, MATERIAL_CHANGE: 0, NOT_OK: 0 } };
+  const v = computeMooringVerdict({ ...success, rawJson: raw, solveSummary: allOk });
+  assert.equal(v.level, 'review');
+  assert.deepEqual(v.reasons.map(r => r.code), ['csv-parse-failed']);
+  // 해석 불합격이면 모델 검토 항목이 있어도 불합격이고, 해석 사유가 먼저다
+  const ng = computeMooringVerdict({ ...success, rawJson: raw, solveSummary: { ok: false, verdictCounts: { NOT_OK: 2 } } });
+  assert.equal(ng.level, 'fail');
+  assert.equal(ng.title, '구조 판정 불합격');
+  assert.deepEqual(ng.reasons.map(r => r.code), ['solve-not-ok', 'csv-parse-failed']);
+});
+
+test('등급 미확인 부재(235 가정)가 있으면 해석이 전부 OK 여도 검토 필요', () => {
+  const v = computeMooringVerdict({ ...success, solveSummary: { ok: true, unknownGradeCount: 3, verdictCounts: { OK: 10, NOT_OK: 0 } } });
+  assert.equal(v.level, 'review');
+  assert.deepEqual(v.reasons.map(r => r.code), ['solve-unknown-grade']);
+  assert.equal(computeMooringVerdict({ ...success, solveSummary: { ok: true, verdictCounts: { OK: 10 } } }).level, 'pass');
 });
 
 test('CSV 감사 요약 — 변환·제외·경고·실패 수', () => {

@@ -24,7 +24,8 @@
  *     · 최종 검증 warning > 0
  *     · 진단 '확정'·'유력' 중 위 실패 코드가 아닌 것(INPUT_ROW_DROPPED 는 CSV 파싱 실패와 같은 사실이라 그쪽이 있으면 뺀다)
  *     · 검증 JSON 을 읽지 못함(판정 근거 없음)
- *     · 구조해석 요약: verdictCounts.MATERIAL_CHANGE > 0 (재질만 바꾸면 만족)
+ *     · 구조해석 요약: verdictCounts.MATERIAL_CHANGE > 0 (재질만 바꾸면 만족), unknownGradeCount > 0 (등급 미확인 → 235 가정)
+ *   구조해석 요약이 있으면 위 모델 항목과 해석 항목 중 더 나쁜 쪽이 판정이다(모델 실패면 해석 결과는 쓰지 않는다).
  *   판정 미반영(숨기지 않고 화면 KeyFigures 에 '판정 미반영'으로 보인다)
  *     · 빈 LOADCASE 경고 행(헤더/dummy — 엔진도 변환 실패로 보지 않는다), 제외(SKIP) 행
  *     · 진단 '참고'
@@ -60,13 +61,17 @@ const isIntentionalSkip = (skip) =>
     || skip?.rowType === 'Skipped'
     || isMetadataSkip(skip)
   );
-const isIgnoredSkip = (skip) => isTrivialSkip(skip) || isIntentionalSkip(skip);
+// 통째로 복사된 부재 행 — 엔진이 앞 행만 모델에 넣었다(Disposition "Duplicate"). 그 부재는 모델에 있으므로
+// 파싱 실패로 세지 않는다. 사용자 확인은 진단 INPUT_ROW_DUPLICATE(확정)가 '검토 필요'로 맡는다.
+const isDuplicateSkip = (skip) => skip?.rowType === 'DuplicateRow' || String(skip?.disposition || '').toLowerCase() === 'duplicate';
+const isIgnoredSkip = (skip) => isTrivialSkip(skip) || isIntentionalSkip(skip) || isDuplicateSkip(skip);
 const isFailureSkip = (skip) => !isIgnoredSkip(skip) && !isWarningSkip(skip);
 
 function summarizeSkipReason(skip) {
   if (isWarningSkip(skip)) return '빈 LOADCASE (헤더/dummy, 변환 제외)';
   if (isMetadataSkip(skip)) return 'CORROSION / MAIN GIRDER SIZE 메타데이터 행';
   if (isIntentionalSkip(skip)) return 'SKIP 처리된 CSV 행';
+  if (isDuplicateSkip(skip)) return '중복 행 — 앞 행과 모든 칸이 같아 앞 행만 모델에 넣음';
   return skip.reason || skip.rowType || 'Unknown';
 }
 
@@ -199,6 +204,30 @@ function capReasons(reasons) {
   return [...head, { code: 'more', text: `그 밖에 ${reasons.length - head.length}건 — 아래 단계 본문에서 확인하세요` }];
 }
 
+const LEVEL_RANK = { pass: 0, review: 1, fail: 2 };
+
+/** 구조해석 요약만 본 판정(reasons 는 자르지 않는다). */
+function computeSolveVerdict(solveSummary) {
+  const vc = solveSummary.verdictCounts || null;
+  const usage = Number.isFinite(Number(solveSummary.globalMaxUsage)) ? Number(solveSummary.globalMaxUsage) : null;
+  const usageText = usage != null ? ` (최대 활용도 ${usage.toFixed(2)})` : '';
+  if ((vc && num(vc.NOT_OK) > 0) || (!vc && solveSummary.ok === false)) {
+    return {
+      level: 'fail', title: '구조 판정 불합격',
+      reasons: [{ code: 'solve-not-ok', text: vc ? `허용 응력을 넘는 부재 ${num(vc.NOT_OK)}개${usageText}` : `허용 응력을 넘는 부재가 있습니다${usageText}` }],
+    };
+  }
+  const reviews = [];
+  if (vc && num(vc.MATERIAL_CHANGE) > 0) {
+    reviews.push({ code: 'solve-material-change', text: `재질을 바꾸면 만족하는 부재 ${num(vc.MATERIAL_CHANGE)}개${usageText}` });
+  }
+  if (num(solveSummary.unknownGradeCount) > 0) {
+    reviews.push({ code: 'solve-unknown-grade', text: `강재 등급을 알 수 없어 235 MPa 로 가정한 부재 ${num(solveSummary.unknownGradeCount)}개` });
+  }
+  if (reviews.length > 0) return { level: 'review', title: '검토 필요', reasons: reviews };
+  return { level: 'pass', title: '구조 판정 통과', reasons: [] };
+}
+
 /**
  * @param {object} p
  * @param {'idle'|'running'|'success'|'failed'} [p.jobState]
@@ -209,33 +238,40 @@ function capReasons(reasons) {
  * @param {object}  [p.diagnosis]       DIAGNOSIS.json
  * @param {boolean} [p.artifactsLoading]
  * @param {string}  [p.artifactsError]  검증 JSON 읽기 실패 문구
- * @param {object}  [p.solveSummary]    구조해석 요약(있으면 이쪽이 판정 기준)
+ * @param {object}  [p.solveSummary]    구조해석 요약
+ *
+ * 구조해석 요약이 있으면 basis='solve' 이고, 판정은 모델 판정과 해석 판정 중 **더 나쁜 쪽**이다(2026-11-04).
+ * 예전엔 요약이 있으면 해석 판정만 봐서, 하중이 없는 모델(LOAD_NONE — 응력 0 이라 전부 OK)도 '구조 판정 통과' 가 됐다.
+ * 모델 판정이 실패면 해석 결과는 그 모델 기준이라 믿을 수 없으므로 모델 실패를 그대로 보인다.
  */
-export function computeMooringVerdict({
+export function computeMooringVerdict(p = {}) {
+  const build = computeBuildVerdict(p);
+  const { solveSummary = null } = p;
+  if (!(solveSummary && (typeof solveSummary.ok === 'boolean' || solveSummary.verdictCounts))) {
+    return { ...build, reasons: capReasons(build.reasons) };
+  }
+  const solve = computeSolveVerdict(solveSummary);
+  if (!build.level) return { ...solve, basis: 'solve', reasons: capReasons(solve.reasons) };
+  if (build.level === 'fail') {
+    return {
+      level: 'fail', title: build.title, basis: 'solve',
+      reasons: capReasons([
+        ...build.reasons,
+        { code: 'solve-untrusted', text: '구조해석 결과는 이 모델 기준이라 판정에 쓰지 않았습니다 — 모델 오류를 먼저 고치세요' },
+      ]),
+    };
+  }
+  const level = LEVEL_RANK[solve.level] >= LEVEL_RANK[build.level] ? solve.level : build.level;
+  const title = level === 'fail' ? solve.title : level === 'review' ? '검토 필요' : '구조 판정 통과';
+  return { level, title, basis: 'solve', reasons: capReasons([...solve.reasons, ...build.reasons]) };
+}
+
+/** 모델 생성(build-full) 판정. reasons 는 자르지 않는다(합친 뒤 computeMooringVerdict 가 자른다). */
+function computeBuildVerdict({
   jobState = 'idle', jobMessage = '', result = null, rawJson = null, validationJson = null,
-  diagnosis = null, artifactsLoading = false, artifactsError = null, solveSummary = null,
+  diagnosis = null, artifactsLoading = false, artifactsError = null,
 } = {}) {
   const none = { level: null, title: '', reasons: [], basis: null };
-
-  // ── 구조해석 요약이 있으면 그것이 최종 판정이다 ──
-  if (solveSummary && (typeof solveSummary.ok === 'boolean' || solveSummary.verdictCounts)) {
-    const vc = solveSummary.verdictCounts || null;
-    const usage = Number.isFinite(Number(solveSummary.globalMaxUsage)) ? Number(solveSummary.globalMaxUsage) : null;
-    const usageText = usage != null ? ` (최대 활용도 ${usage.toFixed(2)})` : '';
-    if ((vc && num(vc.NOT_OK) > 0) || (!vc && solveSummary.ok === false)) {
-      return {
-        level: 'fail', title: '구조 판정 불합격', basis: 'solve',
-        reasons: [{ code: 'solve-not-ok', text: vc ? `허용 응력을 넘는 부재 ${num(vc.NOT_OK)}개${usageText}` : `허용 응력을 넘는 부재가 있습니다${usageText}` }],
-      };
-    }
-    if (vc && num(vc.MATERIAL_CHANGE) > 0) {
-      return {
-        level: 'review', title: '검토 필요', basis: 'solve',
-        reasons: [{ code: 'solve-material-change', text: `재질을 바꾸면 만족하는 부재 ${num(vc.MATERIAL_CHANGE)}개${usageText}` }],
-      };
-    }
-    return { level: 'pass', title: '구조 판정 통과', basis: 'solve', reasons: [] };
-  }
 
   if (jobState === 'idle' || jobState === 'running') return none;
 
@@ -296,10 +332,10 @@ export function computeMooringVerdict({
   });
 
   if (fails.length > 0) {
-    return { level: 'fail', title: '모델 검증 실패', basis: 'build', reasons: capReasons([...fails, ...reviews]) };
+    return { level: 'fail', title: '모델 검증 실패', basis: 'build', reasons: [...fails, ...reviews] };
   }
   if (reviews.length > 0) {
-    return { level: 'review', title: '검토 필요', basis: 'build', reasons: capReasons(reviews) };
+    return { level: 'review', title: '검토 필요', basis: 'build', reasons: reviews };
   }
   return { level: 'pass', title: '모델 생성 통과', basis: 'build', reasons: [] };
 }

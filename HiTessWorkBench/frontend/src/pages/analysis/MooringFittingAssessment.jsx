@@ -36,6 +36,9 @@ const DEFAULT_MF_SF = 1.25;
 const API_ENDPOINT = '/api/analysis/mooring-fitting/request';
 const STATUS_ENDPOINT = (jobId) => `/api/analysis/status/${jobId}`;
 const DOWNLOAD_ENDPOINT = (path) => `/api/download?filepath=${encodeURIComponent(path)}`;
+const SOLVE_SUMMARY_ENDPOINT = (dir) => `/api/analysis/mooring-fitting/solve-summary?output_dir=${encodeURIComponent(dir)}`;
+// Studio 구조해석은 Studio 창에서 끝나 이 페이지에 알림이 없다 — 이 페이지를 보는 동안 이 간격으로 마지막 해석 요약을 다시 읽는다.
+const SOLVE_SUMMARY_POLL_MS = 15000;
 
 /* ──────────────────────────────────────────────────────────────────────────
    단계 — 상태는 저장하지 않고 '사건'(실행 결과·Studio 열림·파일 받음)에서 매 렌더 계산한다
@@ -1187,10 +1190,49 @@ export default function MooringFittingAssessment() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess, result?.raw_json, result?.validation_json, result?.diagnosis_json, result?._artifacts_missing]);
 
+  /* ── 마지막 Studio 구조해석 요약 ─────────────────────────────────────── */
+  // 서버의 out/ 폴더에서 읽는다(해석이 없거나 마지막 해석이 실패했으면 null). 해석 시각이 바뀌면
+  // 원인 진단(DIAGNOSIS.json — 해석 뒤 부재별 진단이 더해진다)도 다시 읽는다.
+  const [solveSummary, setSolveSummary] = useState(null);
+  const solvedAtRef = useRef(null);
+  // 결과 폴더가 바뀔 때만 비운다 — 메뉴를 떠났다 돌아올 때 비우면 그사이 끝난 해석의 진단을 다시 읽지 않는다.
+  useEffect(() => {
+    setSolveSummary(null);
+    solvedAtRef.current = null;
+  }, [isSuccess, outDir, artifactsMissing]);
+  useEffect(() => {
+    if (!isSuccess || !outDir || artifactsMissing) return undefined;
+    let cancelled = false;
+    const load = async () => {
+      if (currentMenu !== MENU_NAME || document.visibilityState === 'hidden') return;
+      try {
+        const res = await fetch(`${API_BASE_URL}${SOLVE_SUMMARY_ENDPOINT(outDir)}`, { headers: getAuthHeaders() });
+        if (!res.ok || cancelled) return; // 옛 서버(404)·일시 오류 — 모델 생성 판정을 그대로 둔다
+        const summary = (await res.json())?.summary ?? null;
+        if (cancelled) return;
+        setSolveSummary(summary);
+        const solvedAt = summary?.solvedAt ?? null;
+        if (solvedAt !== solvedAtRef.current) {
+          const first = solvedAtRef.current === null;
+          solvedAtRef.current = solvedAt;
+          if (!first && result?.diagnosis_json) {
+            fetchArtifactJson(result.diagnosis_json)
+              .then(diagnosis => { if (!cancelled) setArtifactJson(prev => ({ ...prev, diagnosis })); })
+              .catch(() => {});
+          }
+        }
+      } catch { /* 네트워크 일시 오류 — 다음 주기에 다시 */ }
+    };
+    load();
+    const timer = setInterval(load, SOLVE_SUMMARY_POLL_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuccess, outDir, artifactsMissing, currentMenu]);
+
   /* ── 판정 ──────────────────────────────────────────────────────────── */
   const audit = useMemo(() => summarizeMooringRawAudit(artifactJson.raw), [artifactJson.raw]);
   const engineAlerts = useMemo(() => extractEngineAlerts(engineLog), [engineLog]);
-  const verdict = computeMooringVerdict({
+  const verdictInput = {
     jobState: isRunning ? 'running' : isSuccess ? 'success' : isFailed ? 'failed' : 'idle',
     jobMessage: jobStatus?.message,
     result,
@@ -1199,39 +1241,48 @@ export default function MooringFittingAssessment() {
     diagnosis: artifactJson.diagnosis,
     artifactsLoading: isSuccess && !artifactsMissing && !artifactJson.loaded,
     artifactsError: artifactJson.error,
-  });
-  const verdictOk = !!verdict.level && verdict.level !== 'fail';
+  };
+  // 모델 생성 판정(1단계·단계 이동 기준)과, 구조해석이 있으면 그 결과로 바뀌는 최종 판정(판정 머리)을 나눈다.
+  const buildVerdict = computeMooringVerdict(verdictInput);
+  const verdict = isSuccess && solveSummary ? computeMooringVerdict({ ...verdictInput, solveSummary }) : buildVerdict;
+  const verdictOk = !!buildVerdict.level && buildVerdict.level !== 'fail';
   const studioReady = isSuccess && !!outDir && !artifactsMissing;
 
   // 실행이 끝나 판정이 나오면 판정 화면(Studio 단계)으로 — 실패면 입력 단계에 남는다
   useEffect(() => {
-    if (!pendingAdvanceRef.current || !verdict.level) return;
+    if (!pendingAdvanceRef.current || !buildVerdict.level) return;
     pendingAdvanceRef.current = false;
-    setActiveIdx(verdict.level === 'fail' ? STEP_INDEX.input : STEP_INDEX.studio);
-  }, [verdict.level]);
+    setActiveIdx(buildVerdict.level === 'fail' ? STEP_INDEX.input : STEP_INDEX.studio);
+  }, [buildVerdict.level]);
 
   const displaySteps = STEP_DEFS.map((def) => {
     if (def.id === 'input') {
       if (isRunning) return { ...def, status: 'running', hint: '실행 중' };
-      if (verdict.level === 'fail') return { ...def, status: 'error', hint: isFailed || artifactsMissing ? '실행 실패' : '모델 검증 실패' };
-      if (verdict.level === 'review') return { ...def, status: 'review', hint: '통과 · 확인할 항목 있음' };
-      if (verdict.level === 'pass') return { ...def, status: 'done', hint: '검증 통과' };
+      if (buildVerdict.level === 'fail') return { ...def, status: 'error', hint: isFailed || artifactsMissing ? '실행 실패' : '모델 검증 실패' };
+      if (buildVerdict.level === 'review') return { ...def, status: 'review', hint: '통과 · 확인할 항목 있음' };
+      if (buildVerdict.level === 'pass') return { ...def, status: 'done', hint: '검증 통과' };
       return { ...def, status: 'wait' };
     }
     if (def.id === 'studio') {
       if (!studioReady) return { ...def, status: 'wait' };
+      if (verdict.basis === 'solve') {
+        const hint = `구조해석 완료 · ${verdict.title}`;
+        if (verdict.level === 'fail') return { ...def, status: 'error', hint };
+        if (verdict.level === 'review') return { ...def, status: 'review', hint };
+        return { ...def, status: 'done', hint };
+      }
       if (studioOpened) return { ...def, status: 'done', hint: 'Studio 열림' };
       return { ...def, status: 'wait', hint: 'Studio 열기 전' };
     }
     if (!studioReady) return { ...def, status: 'wait' };
     if (delivered) return { ...def, status: 'done', hint: '보고서·파일 받음' };
-    if (verdict.level === 'fail') return { ...def, status: 'error', hint: '최종 검증 오류' };
+    if (buildVerdict.level === 'fail') return { ...def, status: 'error', hint: '최종 검증 오류' };
     return { ...def, status: 'wait', hint: '보고서 대기' };
   });
   const activeStep = displaySteps[activeIdx] ?? displaySteps[0];
 
   const inputItems = [
-    { key: 'structure', label: 'Structure', fileName: inputName, state: verdict.level === 'fail' ? 'error' : verdict.level === 'review' ? 'warn' : 'ok' },
+    { key: 'structure', label: 'Structure', fileName: inputName, state: buildVerdict.level === 'fail' ? 'error' : buildVerdict.level === 'review' ? 'warn' : 'ok' },
     { key: 'load', label: 'Load', fileName: loadFile?.name || fileBaseName(projectInput.load_csv) || null, state: 'ok' },
   ];
 
@@ -1316,12 +1367,20 @@ export default function MooringFittingAssessment() {
     return null; // 결과 단계 — 보고서·파일 버튼은 본문에 있다
   })();
 
-  const verdictSummary = verdict.level === 'pass'
+  const vc = solveSummary?.verdictCounts;
+  const verdictSummary = verdict.basis === 'solve'
+    ? (vc ? `OK ${vc.OK ?? 0} · 재질 변경 ${vc.MATERIAL_CHANGE ?? 0} · NOT OK ${vc.NOT_OK ?? 0}` : null)
+    : verdict.level === 'pass'
     ? 'CSV 파싱 실패 0 · 최종 검증 오류 0 · 경고 0'
     : verdict.level === 'review'
       ? '모델은 만들어졌습니다. 아래 항목을 확인한 뒤 진행하세요.'
       : null;
-  const verdictMeta = verdict.basis === 'build' ? '모델 생성(build-full) 기준 · 구조해석 전' : null;
+  const solvedAtText = solveSummary?.solvedAt
+    ? new Date(solveSummary.solvedAt * 1000).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '';
+  const verdictMeta = verdict.basis === 'build'
+    ? '모델 생성(build-full) 기준 · 구조해석 전'
+    : verdict.basis === 'solve' ? `Studio 구조해석 결과 기준${solvedAtText ? ` · ${solvedAtText}` : ''}` : null;
 
   // 첫 화면(입력 단계 · 아직 아무것도 돌리지 않음) — 두 칸 높이를 맞추고 아래를 진행 순서·최근 실행으로 채운다.
   const isStartScreen = activeStep.id === 'input' && !jobStatus;

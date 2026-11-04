@@ -64,7 +64,9 @@ from ..services.mooring_fitting_service import (
     ReportEngineError,
     build_report,
     build_report_plan,
+    SOLVE_SUMMARY_FILE,
     clean_load_rows,
+    read_solve_summary,
     task_execute_mooring_fitting,
     task_solve_mooring_fitting,
 )
@@ -4901,8 +4903,9 @@ async def solve_mooring_fitting(
         _Path(solve_bdf_path).write_text(solve_bdf_text, encoding="utf-8")
         _Path(solve_model_path).write_text(_json.dumps(edited, ensure_ascii=False), encoding="utf-8")
         write_grade_overrides(solve_bdf_path, grade_overrides)
-        if os.path.isfile(result_json_path):
-            os.remove(result_json_path)   # stale 결과 제거
+        for stale in (result_json_path, os.path.join(abs_dir, SOLVE_SUMMARY_FILE)):
+            if os.path.isfile(stale):
+                os.remove(stale)          # stale 결과·요약 제거(이번 해석이 실패하면 WorkBench 판정이 옛 결과를 쓰지 않게)
         stale_op2 = os.path.join(abs_dir, "mooring_solve.op2")
         if os.path.isfile(stale_op2):
             os.remove(stale_op2)          # 이번 해석이 실패하면 이전 OP2 가 받아지지 않게
@@ -4923,6 +4926,25 @@ async def solve_mooring_fitting(
                 job_id, len(intents), edit_summary.get("applied", 0), yield_strength, gamma_m)
     return {"job_id": job_id, "editSummary": edit_summary,
             "assessment": {"yieldStrength": yield_strength, "gammaM": gamma_m}}
+
+
+@router.get("/analysis/mooring-fitting/solve-summary")
+def mooring_solve_summary(
+    output_dir: str,
+    current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """마지막 Studio 구조해석 요약 — WorkBench 판정이 해석 결과 기준으로 바뀌게 한다. 해석이 없으면 summary=None."""
+    try:
+        abs_dir = _validate_userconnection_path(output_dir)
+        assert_current_user_can_access_path(abs_dir, current_user, db, _ALLOWED_DOWNLOAD_BASE)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"경로 검증 실패: {e}")
+    if not os.path.isdir(abs_dir):
+        raise HTTPException(status_code=404, detail=f"output_dir 없음: {abs_dir}")
+    return {"summary": read_solve_summary(abs_dir)}
 
 
 @router.get("/analysis/mooring-fitting/op2")

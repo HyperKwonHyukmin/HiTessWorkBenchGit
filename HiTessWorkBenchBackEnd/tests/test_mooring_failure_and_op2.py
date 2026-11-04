@@ -72,6 +72,15 @@ def test_op2_route_404_before_solve(db_session, monkeypatch, tmp_path):
     assert res.status_code == 404
 
 
+def test_solve_summary_route(db_session, monkeypatch, tmp_path):
+    client, out_dir = _client(db_session, monkeypatch, tmp_path)
+    assert client.get("/api/analysis/mooring-fitting/solve-summary", params={"output_dir": str(out_dir)}).json() == {"summary": None}
+    (out_dir / "mooring_solve.result.json").write_text('{"verdictCounts": {"OK": 2, "MATERIAL_CHANGE": 0, "NOT_OK": 1}, "ok": false}', encoding="utf-8")
+    res = client.get("/api/analysis/mooring-fitting/solve-summary", params={"output_dir": str(out_dir)})
+    assert res.status_code == 200
+    assert res.json()["summary"]["verdictCounts"]["NOT_OK"] == 1
+
+
 def test_clean_load_rows_drops_appendix_text_and_keeps_excluded_cases():
     """옛 엔진 MF 표 끝 부록이 행으로 읽혀 유령 케이스 '0' 이 생겼다(2026-11-03)."""
     from app.services.mooring_fitting_service import clean_load_rows

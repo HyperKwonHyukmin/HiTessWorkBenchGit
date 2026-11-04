@@ -27,6 +27,10 @@ SOLVE_TIMEOUT_SECONDS = 1800
 # 그래도 첫 실행은 figures 를 전부 그리므로 여유를 둔다.
 REPORT_TIMEOUT_SECONDS = 300
 
+# 마지막 Studio 구조해석의 요약(판정 건수·최대 Usage). 결과 JSON(수십 MB) 대신 WorkBench 판정이 읽는다.
+SOLVE_RESULT_FILE = "mooring_solve.result.json"
+SOLVE_SUMMARY_FILE = "mooring_solve.summary.json"
+
 # 계류 의장품(MF) 하중 규정 안전계수. 엔진 BuildFullCommand.DefaultMfSafetyFactor 와 같은 값이며,
 # 라우터가 값을 주지 않았을 때 1.0(미적용)으로 떨어지지 않게 하는 두 번째 방어선이다.
 MF_SAFETY_FACTOR_CODE = 1.25
@@ -552,6 +556,46 @@ def recompute_sigma_ny(payload: dict) -> dict:
     return payload
 
 
+_summary_cache: dict[str, tuple[float, dict]] = {}
+
+
+def read_solve_summary(out_dir: str) -> dict | None:
+    """out/ 폴더의 마지막 구조해석 요약. 해석이 없거나 마지막 해석이 실패했으면(결과 JSON 없음) None.
+
+    요약 파일이 결과 JSON 보다 오래됐거나 없으면(요약 파일 이전 결과) 결과 JSON 을 한 번 읽고 mtime 으로 캐시한다.
+    """
+    result_path = os.path.join(out_dir, SOLVE_RESULT_FILE)
+    if not os.path.isfile(result_path):
+        return None
+    result_mtime = os.path.getmtime(result_path)
+    summary_path = os.path.join(out_dir, SOLVE_SUMMARY_FILE)
+    if os.path.isfile(summary_path) and os.path.getmtime(summary_path) >= result_mtime:
+        try:
+            with open(summary_path, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            pass
+    cached = _summary_cache.get(result_path)
+    if cached and cached[0] == result_mtime:
+        return cached[1]
+    try:
+        with open(result_path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    summary = {
+        "verdictCounts": payload.get("verdictCounts"),
+        "unknownGradeCount": payload.get("unknownGradeCount"),
+        "globalMaxUsage": payload.get("globalMaxUsage"),
+        "ok": payload.get("ok"),
+        "caseCount": payload.get("caseCount"),
+        "gammaM": payload.get("gammaM"),
+        "solvedAt": result_mtime,
+    }
+    _summary_cache[result_path] = (result_mtime, summary)
+    return summary
+
+
 def _solve_failure_message(engine_output: str, f06_path: str, started_at: float) -> str:
     """Studio 가 보는 실패 문구 — 첫 줄에 위치 후보 절점, 다음 줄부터 엔진의 '• 원인·조치'.
 
@@ -633,6 +677,8 @@ def task_solve_mooring_fitting(
                 except Exception as rexc:
                     logger.warning("[MooringSolve] σNy 재계산 실패(원본 유지): %s", rexc)
                 summary = {
+                    "verdictCounts": payload.get("verdictCounts"),
+                    "unknownGradeCount": payload.get("unknownGradeCount"),
                     "quantity": payload.get("quantity"),
                     "unit": payload.get("unit"),
                     "globalMax": payload.get("globalMax"),
@@ -647,6 +693,12 @@ def task_solve_mooring_fitting(
                 }
             except Exception as exc:
                 logger.warning("[MooringSolve] 결과 요약 파싱 실패: %s", exc)
+            if summary is not None:
+                try:
+                    with open(os.path.join(work_dir, SOLVE_SUMMARY_FILE), "w", encoding="utf-8") as fh:
+                        json.dump({**summary, "solvedAt": time.time()}, fh, ensure_ascii=False)
+                except OSError as exc:
+                    logger.warning("[MooringSolve] 요약 파일 저장 실패: %s", exc)
             diagnosis_path = write_diagnosis_file(work_dir, result_json_path)
             result_data = {"nastranResultJson": result_json_path, "summary": summary}
             if diagnosis_path:
@@ -732,6 +784,22 @@ def _run_report_verb(cmd: list[str], case_dir: str, verb: str) -> str:
     return log
 
 
+def csv_header_hull(case_dir: str) -> str:
+    """구조 CSV 첫 줄 '//<호선>,<도면번호>,<날짜>' 의 호선. 없거나 형식이 다르면 ''.
+
+    엔진은 이 값을 읽기만 하고 표제에 쓰지 않아(표제 = --hull 인자) 선번을 비우면 Hull No. 가 '-' 였다.
+    """
+    path = os.path.join(case_dir, "MooringFittingData.csv")
+    try:
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as fh:
+            first = fh.readline().strip()
+    except OSError:
+        return ""
+    if not first.startswith("//"):
+        return ""
+    return first[2:].split(",")[0].strip()
+
+
 def build_report(
     case_dir: str,
     exe_path: str,
@@ -767,6 +835,7 @@ def build_report(
     if figures_dir and os.path.isdir(figures_dir):
         cmd.append(f"--figures={figures_dir}")
 
+    hull_no = (hull_no or "").strip() or csv_header_hull(case_dir)   # 선번을 비우면 입력 CSV 머리글의 호선
     for flag, value in (("hull", hull_no), ("dwg", dwg_no), ("date", report_date),
                         ("title", title), ("fitting", fitting)):
         if value and value.strip():
