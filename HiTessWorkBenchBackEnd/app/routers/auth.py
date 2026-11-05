@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
-from fastapi import Request
+from fastapi import Request, Response
 from .. import models, schemas, database
 from ..state import server_state
 from ..sessions import session_store
@@ -16,6 +16,9 @@ from ..services.ad_auth import AdResult, auth_mode, login_attempt_limiter, verif
 from ..services.external_app_access import external_app_access_store
 from ..services.logbook_integration import notify_logbook_logout
 from ..services.plm_user_directory import fetch_plm_email
+from ..services.windows_auth import (
+    employee_id_from_account, negotiate_sessions, ntlm_claimed_account, windows_login_enabled,
+)
 
 router = APIRouter(prefix="/api", tags=["auth"])
 member_router = APIRouter(prefix="/member", tags=["member"])
@@ -65,7 +68,7 @@ def check_user(req: CheckUserRequest, db: Session = Depends(database.get_db)):
 @router.get("/login/options")
 def login_options():
   """로그인 화면이 비밀번호 칸을 보일지 정한다. 인증 없음·DB 안 씀(서버 주소 확인 직후 부른다)."""
-  return {"auth_mode": auth_mode()}
+  return {"auth_mode": auth_mode(), "windows_login": windows_login_enabled()}
 
 
 def _verify_ad_login(db: Session, employee_id: str, password, ip: Optional[str]) -> None:
@@ -102,6 +105,77 @@ def login(request: schemas.LoginRequest, req: Request, db: Session = Depends(dat
   if auth_mode() == "ad":
     _verify_ad_login(db, employee_id, request.password, ip)
 
+  return _complete_login(db, employee_id, ip)
+
+
+def _windows_unknown_key(ip: Optional[str]) -> str:
+  """누구인지 모르는 실패(Kerberos·모양이 틀린 토큰)는 IP 마다 따로 센다 — 공용 키로 세면 몇 번에 모두가 막힌다."""
+  return f"windows-ip:{ip}"
+
+
+@router.post("/login/windows", response_model=schemas.UserResponse)
+def login_windows(req: Request, response: Response, employee_id: Optional[str] = None,
+                  db: Session = Depends(database.get_db)):
+  """회사 PC 계정 자동 로그인(Windows 통합 인증). 비밀번호를 받지 않는다 — services/windows_auth.py.
+
+  401 + `WWW-Authenticate: Negotiate` 로 시작해 Windows(Electron·.NET)가 토큰을 보내게 한다.
+  NTLM 은 같은 연결에서 한 번 더 오간다.
+
+  쿼리 `employee_id` = 화면에 입력한(또는 AM 이 넘긴) 사번. 있으면 Windows 계정과 같을 때만 세션을 만든다 —
+  다른 사람 PC 에서 그 PC 주인 이름으로 로그인 처리(접속 이력·로그인 횟수)가 일어나지 않게.
+  본문이 아니라 쿼리인 이유: Electron 40 은 본문이 있으면 NTLM 3번째 메시지를 보내지 않고 멈췄다(2026-11-05 실측).
+  """
+  if not windows_login_enabled():
+    raise HTTPException(status_code=404, detail="windows_login_disabled")
+  ip = req.client.host if req.client else None
+  conn_key = (ip, req.client.port if req.client else None)
+  authorization = req.headers.get("authorization", "")
+  expected = (employee_id or "").strip().upper()
+
+  # NTLM 응답은 도메인 컨트롤러로 가서 틀리면 그 직원 계정의 실패 횟수를 올린다(계정 잠금).
+  # 비밀번호 로그인과 같은 제한(사번별·IP 별)을 **묻기 전에** 건다 — 두 경로를 합쳐 센다.
+  claimed = employee_id_from_account(ntlm_claimed_account(authorization) or "") or _windows_unknown_key(ip)
+  if authorization and login_attempt_limiter.is_blocked(claimed, ip):
+    log_activity(db, "LOGIN", employee_id=None if claimed.startswith("windows-ip:") else claimed,
+                 action_detail={"method": "windows", "reason": "too_many_attempts"}, status="failure", ip_address=ip)
+    raise HTTPException(status_code=429, detail="too_many_attempts")
+
+  step = negotiate_sessions.step(conn_key, authorization)
+  if step.kind in ("challenge", "continue"):
+    header = f"Negotiate {step.out_token}" if step.out_token else "Negotiate"
+    raise HTTPException(status_code=401, detail="negotiate", headers={"WWW-Authenticate": header})
+  if step.kind == "error":
+    login_attempt_limiter.record_failure(claimed, ip)
+    # WWW-Authenticate 를 다시 주지 않는다 — 주면 클라이언트가 같은 실패를 되풀이한다.
+    log_activity(db, "LOGIN", employee_id=None if claimed.startswith("windows-ip:") else claimed,
+                 action_detail={"method": "windows", "reason": "windows_auth_failed",
+                                "mechanism": step.mechanism, "error": step.error},
+                 status="failure", ip_address=ip)
+    raise HTTPException(status_code=401, detail="windows_auth_failed")
+
+  employee_id = employee_id_from_account(step.account)
+  if not employee_id:
+    # 로컬 계정·다른 도메인·사번이 아닌 공용 계정. 계정 이름은 그 PC 사용자 자신의 것이라 기록해도 된다.
+    log_activity(db, "LOGIN", action_detail={"method": "windows", "reason": "account_not_employee",
+                                             "account": step.account[:64]},
+                 status="failure", ip_address=ip)
+    raise HTTPException(status_code=403, detail="windows_account_not_employee")
+  login_attempt_limiter.reset(employee_id)
+  if expected and expected != employee_id:
+    # 본인 확인은 됐지만 입력한 사번의 주인이 아니다 — 세션을 만들지 않고 비밀번호로 넘긴다.
+    log_activity(db, "LOGIN", employee_id=expected,
+                 action_detail={"method": "windows", "reason": "account_mismatch", "windows_account": employee_id},
+                 status="failure", ip_address=ip)
+    raise HTTPException(status_code=403, detail="windows_account_mismatch")
+
+  if step.out_token:  # Kerberos 상호 인증 — 클라이언트가 서버를 확인할 수 있게 돌려준다
+    response.headers["WWW-Authenticate"] = f"Negotiate {step.out_token}"
+  return _complete_login(db, employee_id, ip, method="windows", mechanism=step.mechanism)
+
+
+def _complete_login(db: Session, employee_id: str, ip: Optional[str], method: str = "password",
+                    mechanism: str = "") -> schemas.UserResponse:
+  """본인 확인이 끝난 사번으로 세션을 발급한다(사번 로그인·AD 비밀번호·Windows 자동 로그인 공통)."""
   user = db.query(models.User).filter(models.User.employee_id == employee_id).first()
   if not user:
     log_activity(db, "LOGIN", employee_id=employee_id, action_detail={"reason": "not_found"}, status="failure", ip_address=ip)
@@ -140,7 +214,8 @@ def login(request: schemas.LoginRequest, req: Request, db: Session = Depends(dat
     db.commit()
   db.refresh(user)
 
-  log_activity(db, "LOGIN", employee_id=employee_id, status="success", ip_address=ip)
+  log_activity(db, "LOGIN", employee_id=employee_id, status="success", ip_address=ip,
+               action_detail={"method": method, "mechanism": mechanism} if method == "windows" else None)
 
   # 로그인은 '최근 접속'의 기준점이다. 이전 presence 행을 제거해, 로그인 후 첫 하트비트가
   # 새 행(session_started=지금)을 만들어 접속 지속 시간이 로그인 시점부터 다시 시작되게 한다.

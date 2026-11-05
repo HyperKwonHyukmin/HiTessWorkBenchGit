@@ -10,7 +10,8 @@
 
 const fs = require("fs");
 const path = require("path");
-const { app, dialog, shell } = require("electron");
+const { app, dialog, shell, net, session } = require("electron");
+const { requestWindowsLogin } = require("./lib/windows-login");
 
 // ── 폴더 — app ready 와 단일 인스턴스 잠금보다 먼저 정해야 한다(잠금도 userData 를 쓴다) ──
 const LOCAL_APPDATA = process.env.LOCALAPPDATA || path.join(app.getPath("home"), "AppData", "Local");
@@ -99,7 +100,11 @@ class Flow {
     this.args = args;
     this.launchToken = launchToken;
     this.log = log.child(`job ${args.job.slice(0, 8)}`);
-    this.client = new ServerClient({ serverUrl: args.server, employeeId: args.employee, log: this.log });
+    this.client = new ServerClient({
+      serverUrl: args.server, employeeId: args.employee, log: this.log,
+      // 실행 사번을 같이 보낸다 — Windows 계정이 다르면 서버가 세션을 만들지 않는다(403 windows_account_mismatch)
+      windowsLogin: () => requestWindowsLogin({ net, session, serverUrl: args.server, employeeId: args.employee }),
+    });
     this.outputDir = null;   // 서버 경로(solve·편집 확정에 씀)
     this.localDir = null;    // 사용자 PC 로 받은 결과 폴더(Studio initialFolder)
     this.bdfPath = null;     // 서버 원본 최종 BDF

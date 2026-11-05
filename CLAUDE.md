@@ -1000,7 +1000,10 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 - 세션은 `localStorage`의 `'user'` 키에 저장되고 props/context로 전달. JWT 없음.
 - `User` 모델의 `is_admin` 플래그로 관리자 페이지 접근 제어.
 
-**사내 AD 로그인 (2026-11-04, 1단계 구현·미커밋, 스위치 꺼짐)** — 보안 테스트(`HanByul/99_Security_Test_Re`)가 `POST /api/login {employee_id}` 만으로 토큰을 받아
+**사내 AD 로그인 (2026-11-04 — ★145 운영 켜짐: `.env` `AUTH_MODE=ad`, WorkBench 1.7.1 · mb-launcher 0.1.2 반영)**
+145 확인(같은 날): `/api/login/options` → `ad`, 사번만 `POST /api/login` → 401 `password_required`(보안 테스트 1단계 차단), 사용자가 1.7.1 로 로그인 성공.
+되돌리기 = 145 `.env` 의 그 줄 삭제 + Server Manager 재시작(⟳ Update 만으로는 `.env` 를 다시 읽지 않는다).
+남은 일: AM 사용자 PC 에 `HiTessMB.exe` 0.2.0 배포(옛 0.1.0 은 AD 서버에서 로그인 못 함) · AM 개발팀에 종료 코드 9 알림 · hitess-core 로그인 계약 문서 갱신 · `HiTessMBClient` 원격 저장소 없음(이 PC 에만 있음). — 보안 테스트(`HanByul/99_Security_Test_Re`)가 `POST /api/login {employee_id}` 만으로 토큰을 받아
 외부 App 을 브라우저로 열었다. 원인은 세션 설계가 아니라 **인증 부재**(사번은 비밀이 아님, 9091 은 전사 개방). 그래서 `.env` `AUTH_MODE=ad` 이면 `/api/login` 이
 사번 + 회사 PC(AD) 비밀번호를 요구한다. 비우면 예전 계약 그대로(`test_auth_contract.py`).
 - 서버 `app/services/ad_auth.py`: ldaps `HHIWVRA06.HHI.co.kr:636`, bind `HHI\<사번 소문자>`(AD 계정명 = 사번 확인). 비밀번호는 저장·기록 안 함(`schemas.LoginRequest.password` = `SecretStr`).
@@ -1018,6 +1021,20 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   같은 시험에서 기존 결함 2건이 드러나 고쳤다 — 작은따옴표 경로(cmd)에서 .NET `NotSupportedException` 으로 로그 없이 종료 → 인자 오류(종료 코드 2),
   실행기 폴더 이름 바꾸기가 방금 푼 파일을 보안 검사가 잡아 '액세스 거부' → 최대 9회·약 21초 재시도(재시도 경로는 실제로 타 보지 못함, 빌드만 확인).
   상세: 각 README. ⚠ 배포 순서 = 145 `StudioProgram\mb-launcher-0.1.2.zip`(UNC 경로로 `AmLauncher\build.ps1 -OutDir` — 70 로컬 zip 은 DRM 암호문) → 새 `HiTessMB.exe` 배포 → 스위치.
+- **회사 PC 계정 자동 로그인 (2026-11-05 구현, 미커밋·미배포)** — 계획·0단계 시험 = `RecordMD/2026-11-05-https-certificate-pinning-plan.md`.
+  `POST /api/login/windows`(Windows 통합 인증 Negotiate, `services/windows_auth.py`): 비밀번호·사번을 받지 않고 Windows 가 만든 토큰을 SSPI(pywin32 `sspi`)로 확인해
+  `HHI\<사번>` 에서 사번을 얻는다 → 기존 세션 발급(`auth._complete_login`). NTLM 은 같은 연결에서 두 번 오가서 연결(IP+포트)별 상태를 30초 든다.
+  `AUTH_MODE=ad` 면 저절로 켜지고 `AD_WINDOWS_LOGIN=0` 으로 끈다. `/api/login/options` 에 `windows_login` 이 붙었다.
+  클라이언트: WorkBench Electron main `electron/windows-login.js`(화면 axios 는 교차 출처라 HTTP 인증이 안 실림 → IPC `auth:windowsLogin`) · 로그인 화면 '회사 PC 계정으로 로그인' + 화면이 뜨면 1회 자동(직접 로그아웃한 뒤엔 앱을 다시 켤 때까지 안 함) ·
+  Studio 세션 갱신 `refreshWorkbenchSession` 도 먼저 자동 로그인(같은 사번만) · HiTessMB 0.3.0(`UseDefaultCredentials`, 사번 다르면 비밀번호 창) · mb-launcher 0.1.3(`lib/windows-login.js` 사본).
+  실측(70): 145 → 70·70 → 145 시험 서버 모두 성공(IP = NTLM, FQDN = Kerberos), Electron 26 `net.request`·.NET 4.8 이 스스로 Negotiate 처리. 145 는 도메인 가입 PC(로컬 계정 `CF40Admin` 으로 돌아도 도메인 계정 확인됨).
+  화면(사용자 결정 2026-11-05): 별도 버튼·'회사 PC 계정' 문구 없음 — 사번 칸 + ACCESS 만, 누르면 Windows 계정으로 확인하고 안 되면 그때 비밀번호 칸.
+  **쿼리 `?employee_id=` 로 입력 사번을 보내고, 서버가 Windows 계정과 다르면 세션을 만들기 전에 403 `windows_account_mismatch`**
+  (커밋 전 리뷰 — 남의 PC 에서 그 PC 주인 이름으로 로그인 처리·미가입 오판이 일어났다). ⚠ 본문(JSON)으로 보내면 **Electron 40 이 NTLM 3번째 메시지를 보내지 않고 멈춘다**(실측, 26 은 정상) — 본문을 싣지 말 것.
+  NTLM 3번째 메시지에 평문으로 든 사용자 이름(`ntlm_claimed_account`)으로 **SSPI 에 묻기 전에** 비밀번호 로그인과 같은 횟수 제한(사번 15분 4회·IP 20회, 두 경로 합산)을 건다 — 없으면 이 경로로 직원 계정을 잠글 수 있다. 누군지 모르는 실패는 IP 별 키(`windows-ip:<ip>`).
+  Electron IPC 는 본창만 받고(`event.sender`), Windows 자격 증명은 사내 주소(사설 IPv4·`*.hhi.co.kr`)로만 보낸다(`isInternalHost`).
+  개발 앱에서 한 번 15초 시간 초과가 났다 — 원인 미확정(본문 문제 이전 코드에서도 1회 발생). 실패해도 ACCESS 재시도 → 비밀번호 칸으로 막히지 않는다.
+  남은 일: 70 개발 서버 AD 모드로 실제 로그인 확인 → 커밋 → exe(1.7.2)·실행기 zip·HiTessMB 배포. 비밀번호 로그인은 예비로 유지.
 - ⚠ **스위치를 켜기 전에 반드시**: ① 새 WorkBench exe(1.7.1, 비밀번호 칸) 배포 ② 위 AM 연동 두 프로그램 배포
   ③ 145 `pip install -r requirements.txt`(`ldap3`) + 145 에서 AD 636 접속 확인(70 만 확인함).
   Electron `refreshWorkbenchSession`(401 때 사번만 재로그인)은 고치지 않았다 — AD 모드에선 실패하고, 본체 화면 하트비트 401 → `App.jsx` 인터셉터가 로그인 화면으로 보낸다.

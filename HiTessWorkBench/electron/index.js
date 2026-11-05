@@ -15,6 +15,7 @@ const logbookBridge = require("./logbook-bridge");
 const { externalAppBinding, redirectIntoExternalApp } = require("./external-app-paths");
 const clientTelemetry = require("./client-telemetry");
 const { registerVideoWindow } = require("./video-window");
+const { requestWindowsLogin } = require("./windows-login");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
 // 다이얼로그 제목으로 사용됨. 미설정 시 개발 모드 기본값 'electron-app' 이 노출되므로,
@@ -1382,17 +1383,40 @@ async function getWorkbenchRuntimeConfig(session = null) {
   }
 }
 
+// 회사 PC 계정 자동 로그인 — 화면(LoginScreen)이 부른다. 비밀번호·사번을 넘기지 않는다.
+// payload = { serverUrl, employeeId } — employeeId 가 Windows 계정과 다르면 서버가 403 windows_account_mismatch.
+ipcMain.handle("auth:windowsLogin", async (event, payload) => {
+  // 본창 로그인 화면만 부를 수 있다 — 같은 preload 를 쓰는 Studio 창이 세션 토큰을 받아 가지 못하게.
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    return { ok: false, status: 0, detail: "forbidden" };
+  }
+  const serverUrl = payload?.serverUrl;
+  const result = await requestWindowsLogin({
+    net, session, serverUrl, employeeId: payload?.employeeId || "", log: (m) => console.log(m),
+  });
+  // 토큰은 남기지 않는다 — 상태·사유·사번만.
+  console.log(`[windows-login] ${serverUrl} → ${result.status} ${result.ok ? result.data.employee_id : result.detail}`);
+  return result;
+});
+
 async function refreshWorkbenchSession(serverUrl, employeeId) {
   if (!mainWindow || mainWindow.isDestroyed() || !employeeId) return "";
 
-  const res = await fetch(`${serverUrl}/api/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ employee_id: employeeId }),
-  });
-  if (!res.ok) return "";
-
-  const body = await res.json();
+  // AD 서버는 사번만 재로그인을 거부한다(401 password_required) — 회사 PC 계정으로 먼저 다시 받는다.
+  // 같은 사번일 때만 쓴다: 다른 Windows 계정이면 WorkBench 에 로그인한 사람을 바꾸지 않는다.
+  let body = null;
+  const sso = await requestWindowsLogin({ net, session, serverUrl, employeeId });
+  if (sso.ok && String(sso.data.employee_id || "").toUpperCase() === String(employeeId).toUpperCase()) {
+    body = sso.data;
+  } else {
+    const res = await fetch(`${serverUrl}/api/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employee_id: employeeId }),
+    });
+    if (!res.ok) return "";
+    body = await res.json();
+  }
   const nextToken = String(body?.token || "");
   if (!nextToken) return "";
 

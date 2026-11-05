@@ -31,18 +31,48 @@ class ServerClient {
   /**
    * @param {{serverUrl:string, employeeId:string, log:any}} opts
    */
-  constructor({ serverUrl, employeeId, log }) {
+  constructor({ serverUrl, employeeId, log, windowsLogin = null }) {
     this.serverUrl = String(serverUrl).replace(/\/$/, "");
     this.employeeId = employeeId;
     this.log = log;
+    // 회사 PC 계정 자동 로그인(lib/windows-login.js) — () => Promise<{ok, status, data|detail}>. 없으면 사번 로그인만.
+    this.windowsLogin = windowsLogin;
     this.token = "";
     this.user = null;
   }
 
   url(p) { return `${this.serverUrl}${p}`; }
 
-  /** POST /api/login {employee_id} → token. 실패 사유를 사용자 문구로 바꿔 던진다. */
+  /** 회사 PC 계정으로 다시 받는다. 같은 사번일 때만 쓴다(남의 이름으로 작업하지 않게). 못 쓰면 null. */
+  async tryWindowsLogin() {
+    if (!this.windowsLogin) return null;
+    let r;
+    try { r = await this.windowsLogin(); } catch { return null; }
+    if (!r?.ok) {
+      if (r && r.status !== 404) this.log.warn(`회사 PC 계정 로그인 안 됨: HTTP ${r.status} ${r.detail || ""}`);
+      return null;
+    }
+    const who = String(r.data.employee_id || "").toUpperCase();
+    if (who !== String(this.employeeId).toUpperCase()) {
+      this.log.warn(`회사 PC 계정(${who}) ≠ 실행 사번(${this.employeeId}) — 사용하지 않음`);
+      return null;
+    }
+    this.token = String(r.data.token);
+    const user = { ...r.data };
+    delete user.token;
+    this.user = user;
+    this.log.info(`회사 PC 계정 로그인 성공: ${user.employee_id} ${user.name || ""}`);
+    return user;
+  }
+
+  /**
+   * 회사 PC 계정 자동 로그인 → 안 되면 POST /api/login {employee_id}.
+   * AD 서버에서는 사번 로그인이 401 password_required 라, 자동 로그인이 넘겨받은 토큰 만료 뒤 유일한 재로그인 길이다.
+   * 실패 사유를 사용자 문구로 바꿔 던진다.
+   */
   async login() {
+    const ssoUser = await this.tryWindowsLogin();
+    if (ssoUser) return ssoUser;
     let res;
     try {
       res = await fetch(this.url("/api/login"), {

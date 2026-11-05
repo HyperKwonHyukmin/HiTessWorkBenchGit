@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User, KeyRound, ArrowRight, ShieldCheck, AlertCircle, Clock, WifiOff, DownloadCloud, AlertTriangle, Construction, RefreshCw, Settings, Server } from 'lucide-react';
 import RegisterModal from '../../components/modals/RegisterModal';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { checkVersion, getLoginOptions, login } from '../../api/auth';
-import { SAVED_EMPLOYEE_ID_KEY, useAuth } from '../../contexts/AuthContext';
+import { checkVersion, getLoginOptions, login, windowsLogin } from '../../api/auth';
+import { SAVED_EMPLOYEE_ID_KEY, WINDOWS_AUTO_LOGIN_OFF_KEY, useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL, DEFAULT_API_BASE_URL, setApiBaseUrl } from '../../config';
 import { version as CLIENT_VERSION } from '../../../package.json';
 import { isServerVersionNewer } from '../../utils/versionCompare';
@@ -18,6 +18,14 @@ const AD_LOGIN_MESSAGES = {
   account_disabled: '사용할 수 없는 회사 계정입니다. IT 지원팀에 문의하세요.',
   too_many_attempts: '로그인 시도가 너무 많습니다. 15분 뒤에 다시 시도하세요.',
   auth_unavailable: '사내 계정 서버에 연결하지 못했습니다. 잠시 뒤 다시 시도하세요.',
+  // Windows 계정 로그인(/api/login/windows)이 안 될 때 — 비밀번호 칸을 연다
+  windows_auth_failed: 'Windows 계정으로 확인하지 못했습니다. 비밀번호를 입력하세요.',
+  windows_account_not_employee: '이 PC 의 Windows 계정이 사번 계정이 아닙니다. 비밀번호를 입력하세요.',
+  windows_account_mismatch: '입력한 사번이 이 PC 의 Windows 계정과 다릅니다. 비밀번호를 입력하세요.',
+};
+
+const isAutoLoginOff = () => {
+  try { return sessionStorage.getItem(WINDOWS_AUTO_LOGIN_OFF_KEY) === '1'; } catch { return false; }
 };
 
 const structureBgUrl ="https://images.unsplash.com/photo-1553653841-453082536a9d?q=80&w=1000&auto=format&fit=crop";
@@ -28,6 +36,13 @@ export default function LoginScreen({ onLoginSuccess }) {
   // AD 모드일 때만 쓰는 회사 PC 비밀번호. 저장하지 않고 로그인이 끝나면 비운다.
   const [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState('employee_id');
+  // 서버가 회사 PC 계정 자동 로그인을 받고, 이 앱(Electron)이 부를 수 있을 때만 true
+  const [windowsLoginAvailable, setWindowsLoginAvailable] = useState(false);
+  const [isWindowsLoading, setIsWindowsLoading] = useState(false);
+  // Windows 계정 확인이 안 됐을 때만 비밀번호 칸을 보인다
+  const [needPassword, setNeedPassword] = useState(false);
+  const showPassword = authMode === 'ad' && (!windowsLoginAvailable || needPassword);
+  const autoWindowsTried = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   
@@ -63,7 +78,9 @@ export default function LoginScreen({ onLoginSuccess }) {
       if (needsUpdate) {
         console.warn(`Version Mismatch! Client: ${CLIENT_VERSION}, Server: ${fetchedServerVersion}`);
       }
-      setAuthMode(await getLoginOptions());
+      const options = await getLoginOptions();
+      setAuthMode(options.authMode);
+      setWindowsLoginAvailable(options.windowsLogin && !!window.electron?.invoke);
       return true;
     } catch (error) {
       console.error("Server Check Failed:", error);
@@ -127,7 +144,13 @@ export default function LoginScreen({ onLoginSuccess }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isVersionMismatch) return; 
+    if (isVersionMismatch) return;
+
+    // 비밀번호 칸이 아직 없으면 먼저 Windows 계정으로 확인한다 — 안 되면 그때 비밀번호 칸을 연다.
+    if (windowsLoginAvailable && !needPassword) {
+      await handleWindowsLogin({ expectedId: employeeId });
+      return;
+    }
 
     setIsLoading(true);
     setErrorMsg('');
@@ -135,17 +158,10 @@ export default function LoginScreen({ onLoginSuccess }) {
     try {
       const response = await login(employeeId, authMode === 'ad' ? password : undefined);
       setPassword('');
-
-      // AuthContext 가 localStorage 4개 키 (user/session_token/user_login_at/user_last_active)
-      // 일괄 세팅 + state 갱신을 캡슐화한다.
-      const { token, ...userObj } = response.data;
-      authLogin(userObj, token);
-      localStorage.setItem(SAVED_EMPLOYEE_ID_KEY, userObj.employee_id || employeeId.trim());
-      onLoginSuccess();
-
+      finishLogin(response.data);
     } catch (error) {
       console.error('Login Error:', error);
-      
+
       if (!error.response) {
         try {
           await checkVersion();
@@ -156,30 +172,94 @@ export default function LoginScreen({ onLoginSuccess }) {
           setErrorMsg("서버 응답이 없습니다.");
         }
       } else {
-        const detail = error.response.data?.detail;
-        if (error.response.status === 401 || error.response.status === 429 || error.response.status === 502) {
-          setPassword('');
-          // 방식 조회(/api/login/options)가 순간 실패해 칸이 숨었어도 서버가 비밀번호를 요구하면 칸을 연다.
-          if (detail === 'password_required') setAuthMode('ad');
-          setErrorMsg(AD_LOGIN_MESSAGES[detail] || `로그인 오류: ${error.response.status}`);
-        }
-        else if (error.response.status === 404) {
-          setErrorMsg("등록되지 않은 사번입니다.");
-        }
-        else if (error.response.status === 403) {
-          setErrorMsg("PENDING_APPROVAL");
-        }
-        else if (error.response.status === 503) {
-          setErrorMsg("MAINTENANCE_MODE");
-        }
-        else {
-          setErrorMsg(`로그인 오류: ${error.response.status}`);
-        }
+        showLoginError(error.response.status, error.response.data?.detail);
       }
     } finally {
       setIsLoading(false);
     }
   };
+
+  // AuthContext 가 localStorage 4개 키 (user/session_token/user_login_at/user_last_active)
+  // 일괄 세팅 + state 갱신을 캡슐화한다.
+  const finishLogin = (data) => {
+    const { token, ...userObj } = data;
+    authLogin(userObj, token);
+    localStorage.setItem(SAVED_EMPLOYEE_ID_KEY, userObj.employee_id || employeeId.trim());
+    onLoginSuccess();
+  };
+
+  const showLoginError = (status, detail) => {
+    if (status === 401 || status === 429 || status === 502) {
+      setPassword('');
+      // 방식 조회(/api/login/options)가 순간 실패해 칸이 숨었어도 서버가 비밀번호를 요구하면 칸을 연다.
+      if (detail === 'password_required') setAuthMode('ad');
+      setErrorMsg(AD_LOGIN_MESSAGES[detail] || `로그인 오류: ${status}`);
+    } else if (status === 404) {
+      setErrorMsg("등록되지 않은 사번입니다.");
+    } else if (status === 403) {
+      setErrorMsg("PENDING_APPROVAL");
+    } else if (status === 503) {
+      setErrorMsg("MAINTENANCE_MODE");
+    } else {
+      setErrorMsg(`로그인 오류: ${status}`);
+    }
+  };
+
+  // Windows 계정으로 로그인(서버 /api/login/windows). 입력(또는 저장)된 사번과 Windows 계정이 같을 때만 들어간다.
+  // auto = 화면이 뜰 때 한 번 저절로 — 안 되면 조용히 넘긴다(사용자가 ACCESS 를 누르면 다시 시도).
+  // 직접 누른 시도가 안 되면 비밀번호 칸을 연다.
+  const handleWindowsLogin = async ({ auto = false, expectedId = '' } = {}) => {
+    if (isVersionMismatch || isWindowsLoading) return;
+    setIsWindowsLoading(true);
+    if (!auto) setErrorMsg('');
+    const askPassword = (message) => {
+      if (auto) return;
+      setNeedPassword(true);
+      setErrorMsg(message);
+    };
+    const target = String(expectedId || '').trim().toUpperCase();
+    try {
+      // 사번을 같이 보낸다 — 서버가 Windows 계정과 다르면 세션을 만들기 전에 거절한다(windows_account_mismatch)
+      const result = await windowsLogin(target);
+      console.info('[windows-login] 결과', { auto, status: result?.status, detail: result?.detail, ok: result?.ok });
+      // 옛 exe·브라우저·서버에서 꺼짐·사내 주소 아님 → 비밀번호 칸
+      if (!result || ['windows_login_disabled', 'invalid_server_url', 'forbidden'].includes(result.detail)) {
+        setWindowsLoginAvailable(false);
+        return;
+      }
+      if (result.ok) {
+        const who = String(result.data.employee_id || '').toUpperCase();
+        if (target && who !== target) { // 서버가 대조하지만 옛 서버에 대비해 한 번 더
+          askPassword(AD_LOGIN_MESSAGES.windows_account_mismatch);
+          return;
+        }
+        finishLogin(result.data);
+        return;
+      }
+      // 자동 시도는 성공이 아니면 조용히 둔다 — 저장된 사번이 없을 때 서버의 미가입·승인 대기는
+      // 이 PC 의 Windows 계정 이야기라 화면에 띄우면 엉뚱한 사람 결과로 보인다.
+      if (auto) return;
+      if (result.status === 0) { askPassword('Windows 계정 확인이 늦어지고 있습니다. 비밀번호를 입력하세요.'); return; }
+      if (['windows_auth_failed', 'windows_account_not_employee', 'windows_account_mismatch'].includes(result.detail)) {
+        askPassword(AD_LOGIN_MESSAGES[result.detail]);
+        return;
+      }
+      // 여기 오는 404·403·503 은 입력한 사번 본인의 결과다(서버가 사번 대조를 통과시킨 뒤라서)
+      showLoginError(result.status, result.detail);
+    } finally {
+      setIsWindowsLoading(false);
+    }
+  };
+
+  // 화면이 뜨면 한 번 자동 시도 — 직접 로그아웃한 뒤에는 하지 않는다(다른 계정으로 바꿀 수 있게).
+  // 저장된 사번이 있으면 그 사번일 때만 들어간다(공용 PC 에서 다른 사람으로 들어가지 않게).
+  useEffect(() => {
+    if (!windowsLoginAvailable || isServerLive !== true || isVersionMismatch) return;
+    if (autoWindowsTried.current || isAutoLoginOff()) return;
+    autoWindowsTried.current = true;
+    handleWindowsLogin({ auto: true, expectedId: localStorage.getItem(SAVED_EMPLOYEE_ID_KEY) || '' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [windowsLoginAvailable, isServerLive, isVersionMismatch]);
 
   return (
     <div className="flex min-h-screen w-full bg-brand-gray font-sans overflow-hidden relative">
@@ -323,7 +403,7 @@ export default function LoginScreen({ onLoginSuccess }) {
               <div className="text-center lg:text-left">
                 <h2 className="whitespace-nowrap text-2xl sm:text-3xl font-bold text-slate-800">Hi-TESS Workbench Access</h2>
                 <p className="mt-2 text-sm text-slate-500 font-medium">
-                  {authMode === 'ad' ? '사번과 회사 PC 로그인 비밀번호를 입력하십시오.' : '사번을 입력하여 접속하십시오.'}
+                  {showPassword ? '사번과 회사 PC 로그인 비밀번호를 입력하십시오.' : '사번을 입력하여 접속하십시오.'}
                 </p>
               </div>
 
@@ -419,7 +499,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                       />
                     </div>
                   </div>
-                  {authMode === 'ad' && (
+                  {showPassword && (
                     <div>
                       <label htmlFor="login-password" className="block text-xs font-bold text-brand-blue uppercase mb-2">비밀번호</label>
                       <div className="relative group z-10">
@@ -442,12 +522,12 @@ export default function LoginScreen({ onLoginSuccess }) {
 
                 <button
                   type="submit"
-                  disabled={isLoading || isServerLive !== true}
+                  disabled={isLoading || isWindowsLoading || isServerLive !== true}
                   className={`w-full flex justify-center items-center py-4 px-4 text-sm font-bold rounded-lg text-white shadow-md transition-all transform hover:-translate-y-1 mt-4 cursor-pointer relative z-10 ${
-                    isLoading || isServerLive !== true ? 'bg-gray-400 cursor-not-allowed hover:transform-none' : 'bg-brand-green hover:shadow-lg'
+                    isLoading || isWindowsLoading || isServerLive !== true ? 'bg-gray-400 cursor-not-allowed hover:transform-none' : 'bg-brand-green hover:shadow-lg'
                   }`}
                 >
-                  {isLoading ? (
+                  {isLoading || isWindowsLoading ? (
                     <span className="flex items-center"><span className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>Checking Info...</span>
                   ) : (
                     <span className="flex items-center text-base tracking-widest">ACCESS WORKBENCH <ArrowRight className="ml-2 h-5 w-5" /></span>

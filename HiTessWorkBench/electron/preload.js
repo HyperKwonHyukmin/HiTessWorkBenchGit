@@ -39,6 +39,8 @@ const VALID_INVOKE_CHANNELS  = [
   // 사용 기록: PC 정보(접속 이력) · 화면이 죽었을 때 보관한 크래시 꺼내기
   'app:client-info',
   'app:take-client-errors',
+  // 회사 PC 계정 자동 로그인(Windows 통합 인증)
+  'auth:windowsLogin',
   // viewer 라이프사이클
   'viewer:check-installed',
   'viewer:install',

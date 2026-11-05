@@ -13,6 +13,9 @@ Aveva Marine(AM) 연동용 **Model Builder Studio 호스트**. AM 클라이언�
    이미 떠 있는 실행기로 넘어갈 때는 `requestSingleInstanceLock` 의 additionalData(`{argv, token}`)로 넘긴다.
    토큰이 없으면 예전처럼 `POST /api/login {employee_id}`. 서버가 AD 로그인이면 이 경로는 401 `password_required` → 'AM 에서 다시 실행' 안내.
    401 이면 한 번 다시 로그인(AD 서버에서는 실패 → 같은 안내). **로그아웃은 부르지 않는다**(같은 사번의 다른 앱 세션을 끊을 수 있음).
+   0.1.3(2026-11-05): 사번 로그인 앞에 **회사 PC 계정 자동 로그인**(`POST /api/login/windows`, `lib/windows-login.js` = WorkBench
+   `electron/windows-login.js` 사본)을 먼저 해 본다 — 넘겨받은 토큰이 만료된 뒤(8시간)에도 AD 서버에서 다시 들어간다.
+   계정 사번이 실행 사번과 다르면 쓰지 않는다.
    시험 `node --test lib/server-client.test.js`(build.ps1 이 *.test.js 를 zip 에서 뺀다).
 2. 모델 생성 진행 — `GET /api/analysis/status/{job}` 1.5초 폴링(최대 25분). 완료 응답 **최상위** `output_dir` 를 서버 경로로 보관.
    빌드가 실패해도 `output_dir` 가 있으면 [Studio 에서 진단 보기] 로 단계별 JSON 을 열 수 있다.

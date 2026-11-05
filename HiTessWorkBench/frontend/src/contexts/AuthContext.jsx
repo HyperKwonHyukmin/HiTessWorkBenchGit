@@ -16,6 +16,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 
 const AuthContext = createContext(null);
 export const SAVED_EMPLOYEE_ID_KEY = 'savedEmployeeId';
+export const WINDOWS_AUTO_LOGIN_OFF_KEY = 'wb_windows_auto_login_off';
 
 const parseUser = (raw) => {
   if (!raw) return null;
@@ -54,7 +55,12 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('user_login_at');
     localStorage.removeItem('user_last_active');
     localStorage.removeItem('session_token');
-    if (forgetEmployeeId) localStorage.removeItem(SAVED_EMPLOYEE_ID_KEY);
+    if (forgetEmployeeId) {
+      localStorage.removeItem(SAVED_EMPLOYEE_ID_KEY);
+      // 직접 로그아웃했으면 앱을 다시 켤 때까지 회사 PC 계정 자동 로그인을 하지 않는다
+      // (바로 다시 들어가 버리면 다른 계정으로 바꿀 수 없다). sessionStorage 라 앱을 닫으면 풀린다.
+      sessionStorage.setItem(WINDOWS_AUTO_LOGIN_OFF_KEY, '1');
+    }
     sessionStorage.removeItem('admin_gate_unlocked');
     // Hi-TESS LogBook 창도 닫는다(LogBook 세션 폐기는 백엔드 로그아웃이 알린다). 실패는 무시.
     try {

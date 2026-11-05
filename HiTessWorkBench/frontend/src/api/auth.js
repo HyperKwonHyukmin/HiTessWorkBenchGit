@@ -23,13 +23,32 @@ export const checkVersion = async ({ retries = 2, timeout = 8000 } = {}) => {
   throw lastError;
 };
 
-/** 로그인 방식 — 'ad'(사번 + 회사 PC 비밀번호) | 'employee_id'(사번만). 옛 서버(404)면 사번만. */
+/**
+ * 로그인 방식.
+ * authMode — 'ad'(사번 + 회사 PC 비밀번호) | 'employee_id'(사번만). 옛 서버(404)면 사번만.
+ * windowsLogin — 서버가 회사 PC 계정 자동 로그인을 받는지(2026-11-05 이후 서버만 true).
+ */
 export const getLoginOptions = async () => {
   try {
     const { data } = await axios.get(`${API_BASE_URL}/api/login/options`, { timeout: 5000 });
-    return data?.auth_mode === 'ad' ? 'ad' : 'employee_id';
+    const authMode = data?.auth_mode === 'ad' ? 'ad' : 'employee_id';
+    return { authMode, windowsLogin: authMode === 'ad' && data?.windows_login === true };
   } catch {
-    return 'employee_id';
+    return { authMode: 'employee_id', windowsLogin: false };
+  }
+};
+
+/**
+ * 회사 PC 계정 자동 로그인 — Electron main 이 Windows 통합 인증으로 부른다(electron/windows-login.js).
+ * 결과 { ok, status, data | detail }. 브라우저·옛 exe 는 null(지원 안 함).
+ */
+export const windowsLogin = async (employeeId = '') => {
+  if (!window.electron?.invoke) return null;
+  try {
+    // employeeId 를 주면 서버가 Windows 계정과 같을 때만 세션을 만든다(다르면 403 windows_account_mismatch)
+    return await window.electron.invoke('auth:windowsLogin', { serverUrl: API_BASE_URL, employeeId });
+  } catch {
+    return null; // 옛 exe — preload 에 채널이 없다
   }
 };
 

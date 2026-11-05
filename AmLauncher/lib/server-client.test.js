@@ -67,3 +67,48 @@ test("토큰이 없으면 예전처럼 사번 로그인", async () => {
   assert.equal(c.token, "t2");
   assert.deepEqual(calls[0].body, { employee_id: "A123456" });
 });
+
+
+// ── 회사 PC 계정 자동 로그인(2026-11-05) ──
+function ssoClient(result) {
+  return new ServerClient({ serverUrl: "http://srv:9091/", employeeId: "A123456", log: quiet,
+    windowsLogin: async () => result });
+}
+
+test("자동 로그인이 같은 사번이면 /api/login 을 부르지 않는다", async () => {
+  globalThis.fetch = async (url) => { calls.push(url); return respond(401, { detail: "password_required" }); };
+  const c = ssoClient({ ok: true, status: 200, data: { token: "sso-tok", employee_id: "a123456", name: "홍길동" } });
+  const user = await c.login();
+  assert.equal(user.employee_id, "a123456");
+  assert.equal(c.token, "sso-tok");
+  assert.equal(calls.length, 0);
+});
+
+test("자동 로그인 계정이 실행 사번과 다르면 쓰지 않고 사번 로그인으로", async () => {
+  globalThis.fetch = async (url) => { calls.push(url); return respond(401, { detail: "password_required" }); };
+  const c = ssoClient({ ok: true, status: 200, data: { token: "other", employee_id: "B999999" } });
+  await assert.rejects(c.login(), (e) => e.status === 401 && /다시 실행/.test(e.message));
+  assert.notEqual(c.token, "other");
+  assert.deepEqual(calls, ["http://srv:9091/api/login"]);
+});
+
+test("자동 로그인이 꺼진 서버(404)면 예전 사번 로그인", async () => {
+  globalThis.fetch = async () => respond(200, { token: "old-tok", employee_id: "A123456" });
+  const c = ssoClient({ ok: false, status: 404, detail: "windows_login_disabled" });
+  await c.login();
+  assert.equal(c.token, "old-tok");
+});
+
+test("401 재시도 때도 자동 로그인으로 다시 받는다", async () => {
+  let n = 0;
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, auth: opts?.headers?.Authorization });
+    n += 1;
+    return n === 1 ? respond(401, {}) : respond(200, { ok: true });
+  };
+  const c = ssoClient({ ok: true, status: 200, data: { token: "fresh", employee_id: "A123456" } });
+  c.token = "expired";
+  const res = await c.fetchAuthed("/api/x", { method: "GET" });
+  assert.equal(res.status, 200);
+  assert.equal(calls[1].auth, "Bearer fresh");
+});
