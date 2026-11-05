@@ -58,6 +58,7 @@ from .services.cleanup_service import (
     start_cleanup_scheduler,
 )
 from .services.app_settings_gate import install_app_availability_guard
+from .services.https_listener import https_listener
 from .services.job_manager import shutdown_job_manager, start_job_manager
 from .services.user_directory_sync import (
     shutdown_user_directory_sync_scheduler,
@@ -141,10 +142,13 @@ def build_lifespan(
                 cleanup_started = start_cleanup_scheduler()
                 # 주기 PLM 리프레시 — 매주 월요일 03:00 KST
                 plm_sync_started = start_user_directory_sync_scheduler()
+                # .env HTTPS_PORT 가 있으면 같은 프로세스에서 HTTPS 도 연다(없거나 실패하면 HTTP 만)
+                await https_listener.start(app)
 
             app.state.startup_complete = should_initialize
             yield
         finally:
+            await https_listener.stop()
             try:
                 await external_apps.close_block_weld_client()
             finally:
