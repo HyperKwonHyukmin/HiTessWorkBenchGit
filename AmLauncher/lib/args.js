@@ -12,6 +12,8 @@
 //     --server http://host:9091 를 맨 마지막 인자로
 "use strict";
 
+const { secureServerUrl } = require("./server-pins");
+
 const EMPLOYEE_RE = /^[A-Za-z]\d{5,7}$/;
 // job_id 는 서버가 만든 uuid. 폴더 이름으로도 쓰므로 안전한 글자만 허용한다.
 const JOB_RE = /^[A-Za-z0-9_-]{1,80}$/;
@@ -56,7 +58,8 @@ function parseArgs(argv) {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("--server 는 http:// 또는 https:// 로 시작해야 합니다.");
   }
-  out.server = `${url.protocol}//${url.host}`;
+  // 옛 HiTessMB(0.3.0 이하)는 145 평문 9091 을 넘긴다 → HTTPS 9443 으로(인증서 고정은 lib/server-pins.js)
+  out.server = secureServerUrl(`${url.protocol}//${url.host}`);
 
   if (!out.employee) throw new Error("--employee 가 없습니다.");
   if (!EMPLOYEE_RE.test(out.employee)) throw new Error(`사번 형식이 잘못됐습니다: ${out.employee}`);

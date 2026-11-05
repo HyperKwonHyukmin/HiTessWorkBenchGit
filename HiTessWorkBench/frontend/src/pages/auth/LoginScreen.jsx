@@ -7,6 +7,7 @@ import Input from '../../components/ui/Input';
 import { checkVersion, getLoginOptions, login, windowsLogin } from '../../api/auth';
 import { SAVED_EMPLOYEE_ID_KEY, WINDOWS_AUTO_LOGIN_OFF_KEY, useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL, DEFAULT_API_BASE_URL, setApiBaseUrl } from '../../config';
+import { MANUAL_SERVER_URL_KEY } from '../../utils/secureServerUrl';
 import { version as CLIENT_VERSION } from '../../../package.json';
 import { isServerVersionNewer } from '../../utils/versionCompare';
 // 서버 ad_auth.AdResult 값 → 화면 문구. 사번이 맞는지 틀렸는지는 따로 알려 주지 않는다.
@@ -112,6 +113,8 @@ export default function LoginScreen({ onLoginSuccess }) {
     }
     setServerSettingsError('');
     setApiBaseUrl(candidate);
+    // 직접 넣은 주소는 시작 때 HTTPS 로 바꾸지 않는다(145 HTTPS 장애 때 평문으로 되돌리는 비상구)
+    try { localStorage.setItem(MANUAL_SERVER_URL_KEY, '1'); } catch { /* 무시 */ }
     setCurrentServerUrl(candidate);
     setIsServerSettingsOpen(false);
     setIsServerLive(null);
@@ -592,7 +595,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                 setServerUrlInput(event.target.value);
                 setServerSettingsError('');
               }}
-              placeholder="http://10.14.42.145:9091"
+              placeholder="https://10.14.42.145:9443"
               error={serverSettingsError}
               className="font-mono"
               autoFocus

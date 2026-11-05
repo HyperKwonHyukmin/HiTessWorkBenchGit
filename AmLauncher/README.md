@@ -16,6 +16,11 @@ Aveva Marine(AM) 연동용 **Model Builder Studio 호스트**. AM 클라이언�
    0.1.3(2026-11-05): 사번 로그인 앞에 **회사 PC 계정 자동 로그인**(`POST /api/login/windows`, `lib/windows-login.js` = WorkBench
    `electron/windows-login.js` 사본)을 먼저 해 본다 — 넘겨받은 토큰이 만료된 뒤(8시간)에도 AD 서버에서 다시 들어간다.
    계정 사번이 실행 사번과 다르면 쓰지 않는다.
+   0.1.4(2026-11-05): **서버 인증서 고정** — `lib/server-pins.js`(WorkBench `electron/server-pins.js` 사본). 145 HTTPS(9443)의
+   자체 인증서 공개키 지문(지금·예비 2개)이 같을 때만 연결하고, 145 주소에 다른 인증서가 오면 거부한다(중간자 차단).
+   옛 HiTessMB 가 넘기는 `http://10.14.42.145:9091` 은 `https://10.14.42.145:9443` 으로 바꿔 쓴다(`lib/args.js`).
+   서버 요청은 Node fetch 가 아니라 `net.fetch`(Chromium, 고정 검사를 거침)로 보낸다(`ServerClient` 의 `fetchImpl`).
+   개발 실행(`electron .`)만 개발 PC 시험 인증서도 받는다. 시험 `node --test lib/*.test.js`.
    시험 `node --test lib/server-client.test.js`(build.ps1 이 *.test.js 를 zip 에서 뺀다).
 2. 모델 생성 진행 — `GET /api/analysis/status/{job}` 1.5초 폴링(최대 25분). 완료 응답 **최상위** `output_dir` 를 서버 경로로 보관.
    빌드가 실패해도 `output_dir` 가 있으면 [Studio 에서 진단 보기] 로 단계별 JSON 을 열 수 있다.
@@ -105,6 +110,7 @@ Studio 호스트 기능을 바꾸면 아래 두 곳을 같이 고칠 것.
 | `lib/studio-host.js` `runModelBuilderSolve` | `electron/index.js` `viewer:runModelBuilderSolve` |
 | `lib/studio-host.js` `viewer:finalizeEditedModel` + `lib/finalize.js` | `electron/index.js` `viewer:finalizeEditedModel` → `HiTessModelBuilder.jsx` `modelflow:finalize-edit-request` 리스너·`startApplyEditJob`·`pollEditJobInBackground`·`refreshEditStatus` |
 | `lib/server-client.js` | `electron/index.js` `getWorkbenchRuntimeConfig`·`refreshWorkbenchSession`·`fetchWithSessionRefresh`·`readBackendError` |
+| `lib/server-pins.js` | `HiTessWorkBench/electron/server-pins.js` (그대로, 지문·주소 포함) |
 | `preload/studio-preload.js` | `electron/preload.js` 의 `workbenchAPI` 중 model-studio 가 쓰는 6개 |
 
 WorkBench 와 다른 점: 결과 폴더는 서버와 같은 PC 여도 **항상** result-zip 으로 받고(편집 확정은 항상 upload-edit),

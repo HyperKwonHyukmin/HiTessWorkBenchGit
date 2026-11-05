@@ -51,6 +51,7 @@ app.setAppUserModelId("HiTESS.MBLauncher");
 
 const { createLogger } = require("./lib/logger");
 const { parseArgs } = require("./lib/args");
+const { installCertificatePinning, serverFetch, DEV_PINS } = require("./lib/server-pins");
 const log = createLogger(LOG_DIR);
 
 // HiTessMB 가 넘긴 로그인 토큰(LauncherStarter.TokenEnvVar). 읽고 바로 지운다 — Studio 창 등 자식 프로세스에 물려주지 않게.
@@ -104,6 +105,7 @@ class Flow {
       serverUrl: args.server, employeeId: args.employee, log: this.log,
       // 실행 사번을 같이 보낸다 — Windows 계정이 다르면 서버가 세션을 만들지 않는다(403 windows_account_mismatch)
       windowsLogin: () => requestWindowsLogin({ net, session, serverUrl: args.server, employeeId: args.employee }),
+      fetchImpl: (url, init) => serverFetch(net, url, init),
     });
     this.outputDir = null;   // 서버 경로(solve·편집 확정에 씀)
     this.localDir = null;    // 사용자 PC 로 받은 결과 폴더(Studio initialFolder)
@@ -522,6 +524,8 @@ process.on("uncaughtException", (e) => log.error(`uncaughtException: ${e?.stack 
 process.on("unhandledRejection", (e) => log.error(`unhandledRejection: ${e?.stack || e}`));
 
 app.whenReady().then(() => {
+  // 서버 인증서 고정 — 첫 요청보다 먼저(Chromium 이 세션별로 검사 결과를 기억한다). 개발 실행만 개발 PC 인증서도 받는다.
+  installCertificatePinning({ app, session, extraPins: app.isPackaged ? [] : DEV_PINS, log: (m) => log.warn(m) });
   log.info(`실행기 v${app.getVersion()} (Electron ${process.versions.electron}) 시작 — ${app.getPath("exe")}`);
   registerStudioIpc(log);
   startFlow(process.argv.slice(1), "first", LAUNCH_TOKEN);

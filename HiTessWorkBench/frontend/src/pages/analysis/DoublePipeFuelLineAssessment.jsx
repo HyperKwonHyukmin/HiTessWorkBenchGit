@@ -101,8 +101,9 @@ function getModeShapeUrlOverride() {
 // (뷰어 폴더의 .streamlit/config.toml 에서 읽으므로 연구원이 바꿔도 따라간다).
 function getModeShapeHost() {
   try {
+    // 뷰어(Streamlit)는 평문 http 다 — 백엔드가 HTTPS(9443)여도 프로토콜을 따라가지 않는다.
     const base = new URL(API_BASE_URL);
-    return `${base.protocol}//${base.hostname}`;
+    return `http://${base.hostname}`;
   } catch {
     return 'http://localhost';
   }

@@ -1035,6 +1035,13 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   Electron IPC 는 본창만 받고(`event.sender`), Windows 자격 증명은 사내 주소(사설 IPv4·`*.hhi.co.kr`)로만 보낸다(`isInternalHost`).
   개발 앱에서 한 번 15초 시간 초과가 났다 — 원인 미확정(본문 문제 이전 코드에서도 1회 발생). 실패해도 ACCESS 재시도 → 비밀번호 칸으로 막히지 않는다.
   남은 일: 70 개발 서버 AD 모드로 실제 로그인 확인 → 커밋 → exe(1.7.2)·실행기 zip·HiTessMB 배포. 비밀번호 로그인은 예비로 유지.
+- **HTTPS + 인증서 고정 (2026-11-05, 통합 계획 2·3단계)** — 2단계 `0823543`: 같은 프로세스가 9091 옆에 9443 HTTPS(`services/https_listener.py`, `.env` `HTTPS_PORT`, 인증서 `scripts/make_tls_cert.py` — 145 에서 실행, 키는 `.secrets/tls/`).
+  3단계(미커밋): 앱이 145 인증서의 공개키 지문(지금 `y5rO…`·예비 `u1mZ…`)이 같을 때만 연결 — **원본 `electron/server-pins.js`**, 사본 `AmLauncher/lib/server-pins.js`·HiTessMB `src/ServerPins.cs`·프론트 `utils/secureServerUrl.js`(주소 바꾸기만). 지문·주소를 바꾸면 네 곳 다.
+  규칙: 지문 일치 = 통과 · 145 주소인데 불일치 = 거부(회사가 믿는 Somansa 인증서여도) · 그 밖 = 기본 검사. 개발 실행만 70 시험 지문(`DEV_PINS`)도 받는다.
+  ⚠ Electron main 의 Node `fetch`·`https.get` 은 고정 검사를 거치지 않는다 → 서버 요청은 `serverFetch`(net.fetch)·`net.request` 로만. 검사 함수는 첫 요청 전에 건다(Chromium 이 세션별로 결과를 기억).
+  화면은 시작 때(`secureServerBootstrap.js`) 저장된 `http://10.14.42.145:9091` 을 `https://…:9443` 으로 바꾼다. 사용자가 서버 설정에 직접 넣은 주소(`wb_server_url_manual`)는 그대로 — 145 HTTPS 장애 때 평문으로 되돌리는 비상구.
+  이중관 Mode Shape 뷰어·HiTessMB 가입 페이지(브라우저)는 평문 그대로. 버전: 실행기 0.1.4 · HiTessMB 0.4.0. 실측(70:9443): 개발 앱 로그인·내 작업·Studio, Electron 26·40 Windows 로그인·FormData·자체 업데이트 다운로드, HiTessMB 지문 있음/없음.
+  ⚠ **배포 순서**: 145 HTTPS 켜기(인증서 → `.env HTTPS_PORT=9443` → 재시작 → 방화벽 9443 → 다른 PC 에서 확인) → 145 `mb-launcher-0.1.4.zip` → WorkBench exe → HiTessMB 0.4.0(0.1.3 실행기는 HTTPS 를 못 받는다). 새 exe 를 한 번 켠 PC 는 옛 exe 로 되돌리면 접속 못 한다(저장 주소가 https).
 - ⚠ **스위치를 켜기 전에 반드시**: ① 새 WorkBench exe(1.7.1, 비밀번호 칸) 배포 ② 위 AM 연동 두 프로그램 배포
   ③ 145 `pip install -r requirements.txt`(`ldap3`) + 145 에서 AD 636 접속 확인(70 만 확인함).
   Electron `refreshWorkbenchSession`(401 때 사번만 재로그인)은 고치지 않았다 — AD 모드에선 실패하고, 본체 화면 하트비트 401 → `App.jsx` 인터셉터가 로그인 화면으로 보낸다.

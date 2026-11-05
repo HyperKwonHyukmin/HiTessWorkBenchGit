@@ -16,6 +16,7 @@ const { externalAppBinding, redirectIntoExternalApp } = require("./external-app-
 const clientTelemetry = require("./client-telemetry");
 const { registerVideoWindow } = require("./video-window");
 const { requestWindowsLogin } = require("./windows-login");
+const { installCertificatePinning, serverFetch, secureServerUrl, DEV_PINS } = require("./server-pins");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
 // 다이얼로그 제목으로 사용됨. 미설정 시 개발 모드 기본값 'electron-app' 이 노출되므로,
@@ -570,25 +571,44 @@ ipcMain.handle("start-self-update", (event, payload) => {
     // 항상 temp 폴더에 저장 — 쓰기 권한 문제 없음
     let tmpPath = path.join(os.tmpdir(), "HiTESS-WorkBench-update.exe");
 
-    const protocol = url.startsWith("https") ? https : http;
-    const request = protocol.get(url, { headers }, (response) => {
+    // net.request(Chromium) — 145 HTTPS 자체 인증서는 인증서 고정 검사(server-pins.js)를 거쳐야 받아진다.
+    // Node https.get 은 그 검사를 거치지 않아 자체 인증서를 거부한다(그러면 다음 버전 자동 업데이트가 막힌다).
+    const request = net.request({ url, method: "GET", redirect: "follow", useSessionCookies: false });
+    for (const [k, v] of Object.entries(headers || {})) {
+      try { request.setHeader(k, String(v)); } catch {}
+    }
+    // 120초 동안 받는 것이 없으면 끊는다(예전 Node request.setTimeout 과 같은 뜻).
+    let idleTimer = null;
+    const touch = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        try { request.abort(); } catch {}
+        try { fs.unlinkSync(tmpPath); } catch {}
+        reject(new Error("다운로드 타임아웃 (120초)"));
+      }, 120000);
+    };
+    const firstHeader = (v) => (Array.isArray(v) ? v[0] : v) || "";
+    touch();
+    request.on("response", (response) => {
       if (response.statusCode !== 200) {
+        clearTimeout(idleTimer);
         reject(new Error(`서버 오류: HTTP ${response.statusCode}`));
         return;
       }
 
       // 서버가 보내는 실제 파일명 사용 (예: HiTESS-WorkBench-v0.0.15.exe)
-      const disposition = response.headers["content-disposition"] || "";
+      const disposition = firstHeader(response.headers["content-disposition"]);
       const nameMatch = disposition.match(/filename="?([^";\r\n]+)"?/i);
       if (nameMatch) tmpPath = path.join(os.tmpdir(), nameMatch[1].trim());
 
       try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
 
-      const total = parseInt(response.headers["content-length"] || "0", 10);
+      const total = parseInt(firstHeader(response.headers["content-length"]) || "0", 10);
       let received = 0;
       const fileStream = fs.createWriteStream(tmpPath);
 
       response.on("data", (chunk) => {
+        touch();
         received += chunk.length;
         fileStream.write(chunk);
         const progress = total > 0 ? Math.round((received / total) * 100) : -1;
@@ -597,6 +617,7 @@ ipcMain.handle("start-self-update", (event, payload) => {
       });
 
       response.on("end", () => {
+        clearTimeout(idleTimer);
         fileStream.end();
         fileStream.on("finish", () => {
           // 파일이 실제로 존재하는지 확인
@@ -639,22 +660,19 @@ ipcMain.handle("start-self-update", (event, payload) => {
       });
 
       response.on("error", (err) => {
+        clearTimeout(idleTimer);
         fileStream.destroy();
         try { fs.unlinkSync(tmpPath); } catch {}
-        reject(err);
+        reject(err instanceof Error ? err : new Error(String(err)));
       });
     });
 
-    request.setTimeout(120000, () => {
-      request.destroy();
-      try { fs.unlinkSync(tmpPath); } catch {}
-      reject(new Error("다운로드 타임아웃 (120초)"));
-    });
-
     request.on("error", (err) => {
+      clearTimeout(idleTimer);
       try { fs.unlinkSync(tmpPath); } catch {}
       reject(err);
     });
+    request.end();
   });
 });
 
@@ -1346,13 +1364,13 @@ const _pendingFinalizeReqs = new Map();   // requestId → resolve
 // The viewer IPC bridge runs in Electron main process and cannot import the
 // frontend module, so it needs the same fallback here for users who have not
 // saved a custom server_url in localStorage.
-const DEFAULT_BACKEND_BASE_URL = "http://10.14.42.145:9091";
+const DEFAULT_BACKEND_BASE_URL = secureServerUrl("http://10.14.42.145:9091"); // = https://10.14.42.145:9443
 
 // session 을 넘기면 그 Studio 가 오픈될 때 전달받은 serverUrl 을 fallback 으로 쓴다.
 // (Studio 마다 다른 백엔드를 볼 수 있으므로 전역 하나로 두지 않는다.)
 async function getWorkbenchRuntimeConfig(session = null) {
   const sessionServerUrl = session?.serverUrl || null;
-  const defaultServerUrl = sessionServerUrl || DEFAULT_BACKEND_BASE_URL;
+  const defaultServerUrl = secureServerUrl(sessionServerUrl || DEFAULT_BACKEND_BASE_URL);
   const fallback = { serverUrl: defaultServerUrl, token: "", employeeId: "" };
   if (!mainWindow || mainWindow.isDestroyed()) return fallback;
 
@@ -1373,7 +1391,10 @@ async function getWorkbenchRuntimeConfig(session = null) {
     `, true);
     const cfg = JSON.parse(raw || "{}");
     return {
-      serverUrl: String(cfg.serverUrl || sessionServerUrl || DEFAULT_BACKEND_BASE_URL).replace(/\/$/, ""),
+      // 화면이 저장한 server_url 은 그대로 쓴다(시작 때 화면이 이미 HTTPS 로 바꿨고, 사용자가 직접 넣은 평문 주소는 비상 되돌리기라 존중).
+      serverUrl: cfg.serverUrl
+        ? String(cfg.serverUrl).replace(/\/$/, "")
+        : secureServerUrl(String(sessionServerUrl || DEFAULT_BACKEND_BASE_URL)),
       token: String(cfg.token || ""),
       employeeId: String(cfg.employeeId || ""),
     };
@@ -1409,7 +1430,7 @@ async function refreshWorkbenchSession(serverUrl, employeeId) {
   if (sso.ok && String(sso.data.employee_id || "").toUpperCase() === String(employeeId).toUpperCase()) {
     body = sso.data;
   } else {
-    const res = await fetch(`${serverUrl}/api/login`, {
+    const res = await serverFetch(net, `${serverUrl}/api/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ employee_id: employeeId }),
@@ -1448,13 +1469,13 @@ async function fetchWithSessionRefresh(url, optionsOrFactory = {}, runtimeConfig
     return { ...options, headers };
   };
 
-  let res = await fetch(url, makeOptions(cfg.token));
+  let res = await serverFetch(net, url, makeOptions(cfg.token));
   if (res.status !== 401) return { res, token: cfg.token };
 
   const nextToken = await refreshWorkbenchSession(cfg.serverUrl, cfg.employeeId);
   if (!nextToken) return { res, token: cfg.token };
 
-  res = await fetch(url, makeOptions(nextToken));
+  res = await serverFetch(net, url, makeOptions(nextToken));
   return { res, token: nextToken };
 }
 
@@ -1856,7 +1877,7 @@ ipcMain.handle("viewer:runUnitStructural", async (event, payload) => {
     // SOL 101 + 모델 크기 고려해 30분 (1.5s × 1200) 폴링
     for (let i = 0; i < 1200; i++) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      const statusRes = await fetch(`${serverUrl}/api/analysis/status/${jobId}`, {
+      const statusRes = await serverFetch(net, `${serverUrl}/api/analysis/status/${jobId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!statusRes.ok) continue;
@@ -2059,7 +2080,7 @@ ipcMain.handle("viewer:runPlateStructural", async (event, payload) => {
     // SOL 101 + 모델 크기 고려해 30분 (1.5s × 1200) 폴링
     for (let i = 0; i < 1200; i++) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      const statusRes = await fetch(`${serverUrl}/api/analysis/status/${jobId}`, {
+      const statusRes = await serverFetch(net, `${serverUrl}/api/analysis/status/${jobId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!statusRes.ok) continue;
@@ -2174,7 +2195,7 @@ ipcMain.handle("viewer:runMooringStructural", async (event, payload) => {
     // SOL 101 + 다중 SUBCASE 고려해 30분 (1.5s × 1200) 폴링
     for (let i = 0; i < 1200; i++) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      const statusRes = await fetch(`${serverUrl}/api/analysis/status/${jobId}`, {
+      const statusRes = await serverFetch(net, `${serverUrl}/api/analysis/status/${jobId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!statusRes.ok) continue;
@@ -2310,7 +2331,7 @@ ipcMain.handle("viewer:runModelBuilderSolve", async (event, payload) => {
     // SOL 101 + 다중 SUBCASE 고려해 30분 (1.5s × 1200) 폴링
     for (let i = 0; i < 1200; i++) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      const statusRes = await fetch(`${serverUrl}/api/analysis/status/${jobId}`, {
+      const statusRes = await serverFetch(net, `${serverUrl}/api/analysis/status/${jobId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!statusRes.ok) continue;
@@ -2935,6 +2956,12 @@ ipcMain.handle("viewer:downloadUnitOp2", async (event, payload) => {
 });
 
 app.whenReady().then(() => {
+  // 서버 인증서 고정 — 첫 요청보다 먼저 건다(Chromium 이 세션별로 검사 결과를 기억한다).
+  // 개발 실행(npm run dev)만 개발 PC 시험용 인증서도 받는다.
+  installCertificatePinning({
+    app, session, extraPins: app.isPackaged ? [] : DEV_PINS, log: (m) => console.warn(m),
+  });
+
   // Windows 토스트(렌더러 new Notification())가 앱을 식별하도록 AUMID 를 고정한다.
   // package.json build.appId 와 같은 값이어야 설치본·포터블 모두 같은 앱으로 묶인다.
   app.setAppUserModelId('com.hitess.workbench');

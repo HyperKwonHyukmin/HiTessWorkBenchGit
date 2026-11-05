@@ -1,3 +1,4 @@
+import './secureServerBootstrap' // 첫 줄 — 145 평문 주소를 HTTPS 로(API 모듈보다 먼저)
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MotionConfig } from 'framer-motion'

@@ -31,12 +31,14 @@ class ServerClient {
   /**
    * @param {{serverUrl:string, employeeId:string, log:any}} opts
    */
-  constructor({ serverUrl, employeeId, log, windowsLogin = null }) {
+  constructor({ serverUrl, employeeId, log, windowsLogin = null, fetchImpl = null }) {
     this.serverUrl = String(serverUrl).replace(/\/$/, "");
     this.employeeId = employeeId;
     this.log = log;
     // 회사 PC 계정 자동 로그인(lib/windows-login.js) — () => Promise<{ok, status, data|detail}>. 없으면 사번 로그인만.
     this.windowsLogin = windowsLogin;
+    // https 는 인증서 고정 검사를 거치는 net.fetch 로(main 이 lib/server-pins.js serverFetch 를 넘긴다). 시험은 대역.
+    this.fetchImpl = fetchImpl || ((url, init) => fetch(url, init));
     this.token = "";
     this.user = null;
   }
@@ -75,7 +77,7 @@ class ServerClient {
     if (ssoUser) return ssoUser;
     let res;
     try {
-      res = await fetch(this.url("/api/login"), {
+      res = await this.fetchImpl(this.url("/api/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employee_id: this.employeeId }),
@@ -111,7 +113,7 @@ class ServerClient {
     this.token = String(token || "");
     let res;
     try {
-      res = await fetch(this.url("/api/session/context"), { headers: this.authHeaders() });
+      res = await this.fetchImpl(this.url("/api/session/context"), { headers: this.authHeaders() });
     } catch (e) {
       this.token = "";
       throw new LoginError(0, `서버(${this.serverUrl})에 연결하지 못했습니다: ${e?.cause?.message || e.message}`);
@@ -147,7 +149,7 @@ class ServerClient {
       const options = typeof optionsOrFactory === "function" ? optionsOrFactory() : optionsOrFactory;
       return { ...options, headers: this.authHeaders(options.headers || {}) };
     };
-    let res = await fetch(url, build());
+    let res = await this.fetchImpl(url, build());
     if (res.status !== 401) return res;
     this.log.warn(`401 → 다시 로그인: ${url}`);
     try {
@@ -158,7 +160,7 @@ class ServerClient {
       if (e instanceof LoginError && e.status === 401) throw e;
       return res;
     }
-    res = await fetch(url, build());
+    res = await this.fetchImpl(url, build());
     return res;
   }
 

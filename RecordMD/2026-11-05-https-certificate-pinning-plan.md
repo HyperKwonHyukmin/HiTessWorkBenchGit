@@ -68,7 +68,7 @@ FQDN 으로 불러도 NTLM 이 됐다 — 서버가 일반 사용자 계정으�
 - TLS 지문 다름 → DLP 가 가로챔 → 인증서 고정 보류(보안팀에 145 예외 요청 필요), 자동 로그인만 진행
 
 ### 1단계 — 자동 로그인 구현 (작업 작고 효과 큼 → 먼저)
-상태(2026-11-05): **코드 완료·미커밋**. 서버 `POST /api/login/windows`(`services/windows_auth.py`) · WorkBench Electron `electron/windows-login.js` + 로그인 화면 ·
+상태(2026-11-05): **커밋 `ca3e1c4`**(HiTessMB `ef8f22c`), 미배포. 서버 `POST /api/login/windows`(`services/windows_auth.py`) · WorkBench Electron `electron/windows-login.js` + 로그인 화면 ·
 HiTessMB 0.3.0 · mb-launcher 0.1.3. 시험 서버(uvicorn + 실제 SSPI)에서 Electron 26 `net.request`·.NET 4.8·HiTessMB exe 모두 비밀번호 없이 로그인 확인.
 남음: 70 개발 서버 AD 모드로 앱 화면에서 실제 로그인 확인 → 배포.
 - 서버: `POST /api/login/windows`(또는 기존 login 확장) — Negotiate 성공 → 계정 `HHI\<사번>` 에서 사번을 얻어 기존 세션 발급 흐름. 도메인은 `HHI` 만 허용. 기존 사번 + 비밀번호 로그인은 예비로 유지.
@@ -77,7 +77,7 @@ HiTessMB 0.3.0 · mb-launcher 0.1.3. 시험 서버(uvicorn + 실제 SSPI)에서 
 - 1단계 뒤에도 토큰은 평문 — 2단계가 필요한 이유.
 
 ### 2단계 — 인증서 만들기 + 145 HTTPS 병행 (9091 그대로)
-상태(2026-11-05): **코드 완료·미커밋**. `app/services/https_listener.py` — 앱 lifespan 이 같은 app 으로 두 번째 uvicorn Server(TLS, lifespan 끔)를 돌린다.
+상태(2026-11-05): **커밋 `0823543`**, 미배포. 70 실측 = 9443 TLS 1.3·지문 일치·HTTPS 위 Windows 로그인 200. `app/services/https_listener.py` — 앱 lifespan 이 같은 app 으로 두 번째 uvicorn Server(TLS, lifespan 끔)를 돌린다.
 서버 관리자 실행 명령은 그대로(관리자 프로그램 재시작 불필요). `.env` `HTTPS_PORT` 없으면 지금과 같고, 인증서 없음·깨짐·포트 사용 중이면 HTTPS 만 건너뛴다.
 인증서 = `scripts/make_tls_cert.py`(145 에서 실행, RSA 2048·5년, 지금 키 + 예비 키, 끝에 고정값 출력, 덮어쓰기는 `--force`, 교체는 `--from-backup`).
 실측: 바깥 HTTP uvicorn 안에서 HTTPS 가 같이 열려 응답하고, 종료 때 포트가 풀림. 테스트 `tests/test_https_listener.py` 8건.
@@ -89,6 +89,8 @@ HiTessMB 0.3.0 · mb-launcher 0.1.3. 시험 서버(uvicorn + 실제 SSPI)에서 
 - 기본 주소 `https://10.14.42.145:9443`, 지문 2개 내장. 안 맞으면 멈춘다(HTTP 로 되돌아가지 않음 = 내려가기 공격 방지).
 - 저장된 `server_url` 이 145 http 면 https 로 바꿔 저장.
 - 배포 순서는 AD 때와 같다(실행기 zip → HiTessMB → WorkBench exe). 1단계와 한 번에 묶어 배포할 수도 있다.
+- 상태(2026-11-05): 구현·70 실측 완료, 미커밋. 145 지문 = 지금 `y5rOaChW9frcyuJTf9rulsY0IyxPTmPfNeaNkpHZwCk=` · 예비 `u1mZtu+qFaU7wUx16vhHgvJAZP/QKJJ5L+GMxh26f9g=`(145 키 첫 줄 PEM 확인 — DRM 안 감쌈).
+  배포 순서는 실제로는 **145 HTTPS 켜기 → 실행기 0.1.4 zip → WorkBench exe → HiTessMB 0.4.0**(새 HiTessMB 는 https 를 넘겨 0.1.3 실행기가 받지 못함). 직접 입력한 서버 주소는 바꾸지 않는 비상구를 두었다.
 
 ### 4단계 — 9091 에서 로그인 거부 + 남은 HTTP 정리
 - 새 exe 가 퍼진 뒤 로그인은 HTTPS 수신에서만(`.env` 스위치). 9091 `POST /api/login` 은 "앱 업데이트 필요".
