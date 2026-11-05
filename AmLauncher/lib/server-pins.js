@@ -33,8 +33,10 @@ const SECURE_UPGRADES = [
   ["http://hhipw170658.hdshipgroup.hhi.co.kr:9091", "https://hhipw170658.hdshipgroup.hhi.co.kr:9443"],
 ];
 
+// 9443 은 HTTPS 전용 포트 — http://…:9443 은 늘 잘못 친 주소라 https 로 고친다.
 function secureServerUrl(url) {
-  const s = String(url || "").trim().replace(/\/+$/, "");
+  let s = String(url || "").trim().replace(/\/+$/, "");
+  if (/^http:\/\/[^/]+:9443(\/|$)/i.test(s)) s = "https://" + s.slice("http://".length);
   const lower = s.toLowerCase();
   for (const [from, to] of SECURE_UPGRADES) {
     if (lower === from || lower.startsWith(from + "/")) return to + s.slice(from.length);

@@ -59,6 +59,8 @@ test("옛 145 평문 주소는 HTTPS 로, 나머지는 그대로", () => {
   assert.equal(pins.secureServerUrl("http://10.14.42.145:9091/api/x"), "https://10.14.42.145:9443/api/x");
   assert.equal(pins.secureServerUrl("http://10.14.42.145:9095"), "http://10.14.42.145:9095");
   assert.equal(pins.secureServerUrl("https://10.14.42.145:9443"), "https://10.14.42.145:9443");
+  assert.equal(pins.secureServerUrl("http://10.133.122.70:9443/"), "https://10.133.122.70:9443"); // 9443 은 https 전용
+  assert.equal(pins.secureServerUrl("http://10.133.122.70:94430"), "http://10.133.122.70:94430");
 });
 
 test("serverFetch — http 는 Node fetch, https 는 net.fetch 에 FormData 를 바이트로 바꿔 넘긴다", async () => {

@@ -7,7 +7,7 @@ import Input from '../../components/ui/Input';
 import { checkVersion, getLoginOptions, login, windowsLogin } from '../../api/auth';
 import { SAVED_EMPLOYEE_ID_KEY, WINDOWS_AUTO_LOGIN_OFF_KEY, useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL, DEFAULT_API_BASE_URL, setApiBaseUrl } from '../../config';
-import { MANUAL_SERVER_URL_KEY } from '../../utils/secureServerUrl';
+import { MANUAL_SERVER_URL_KEY, fixPlainHttpsPort } from '../../utils/secureServerUrl';
 import { version as CLIENT_VERSION } from '../../../package.json';
 import { isServerVersionNewer } from '../../utils/versionCompare';
 // 서버 ad_auth.AdResult 값 → 화면 문구. 사번이 맞는지 틀렸는지는 따로 알려 주지 않는다.
@@ -103,7 +103,7 @@ export default function LoginScreen({ onLoginSuccess }) {
   }, []);
 
   const applyServerUrl = async () => {
-    const candidate = serverUrlInput.trim().replace(/\/$/, '');
+    const candidate = fixPlainHttpsPort(serverUrlInput);
     try {
       const parsed = new URL(candidate);
       if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('invalid protocol');

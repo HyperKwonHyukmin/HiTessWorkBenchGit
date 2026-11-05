@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import { AlertTriangle, LogOut, User, Search, ChevronLeft, ChevronRight, Server, Monitor } from 'lucide-react';
 import { API_BASE_URL, setApiBaseUrl } from '../../config';
-import { MANUAL_SERVER_URL_KEY } from '../../utils/secureServerUrl';
+import { MANUAL_SERVER_URL_KEY, fixPlainHttpsPort } from '../../utils/secureServerUrl';
 import { version as CLIENT_VERSION } from '../../../package.json';
 import { useServerHealth } from '../../hooks/useServerStatus';
 import { useRemoteSessions } from '../../hooks/useRemoteSessions';
@@ -379,8 +379,9 @@ export default function Layout({
               size="md"
               onClick={() => {
                 if (serverUrlInput.trim()) {
-                  setApiBaseUrl(serverUrlInput);
-                  setCurrentServerUrl(serverUrlInput);
+                  const nextUrl = fixPlainHttpsPort(serverUrlInput);
+                  setApiBaseUrl(nextUrl);
+                  setCurrentServerUrl(nextUrl);
                   // 직접 넣은 주소는 시작 때 HTTPS 로 바꾸지 않는다(145 HTTPS 장애 때 평문으로 되돌리는 비상구)
                   try { localStorage.setItem(MANUAL_SERVER_URL_KEY, '1'); } catch { /* 무시 */ }
                   setIsServerModalOpen(false);

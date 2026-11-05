@@ -14,3 +14,7 @@ test("다른 주소·이미 https 는 그대로", () => {
   assert.equal(parseArgs(["--server=https://10.14.42.145:9443", ...base]).server, "https://10.14.42.145:9443");
   assert.equal(parseArgs(["--server=http://10.133.122.70:9091", ...base]).server, "http://10.133.122.70:9091");
 });
+
+test("http://…:9443 오타는 https 로", () => {
+  assert.equal(parseArgs(["--server=http://10.133.122.70:9443", ...base]).server, "https://10.133.122.70:9443");
+});
