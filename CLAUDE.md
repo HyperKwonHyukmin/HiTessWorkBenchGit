@@ -1021,7 +1021,7 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   같은 시험에서 기존 결함 2건이 드러나 고쳤다 — 작은따옴표 경로(cmd)에서 .NET `NotSupportedException` 으로 로그 없이 종료 → 인자 오류(종료 코드 2),
   실행기 폴더 이름 바꾸기가 방금 푼 파일을 보안 검사가 잡아 '액세스 거부' → 최대 9회·약 21초 재시도(재시도 경로는 실제로 타 보지 못함, 빌드만 확인).
   상세: 각 README. ⚠ 배포 순서 = 145 `StudioProgram\mb-launcher-0.1.2.zip`(UNC 경로로 `AmLauncher\build.ps1 -OutDir` — 70 로컬 zip 은 DRM 암호문) → 새 `HiTessMB.exe` 배포 → 스위치.
-- **회사 PC 계정 자동 로그인 (2026-11-05 구현, 미커밋·미배포)** — 계획·0단계 시험 = `RecordMD/2026-11-05-https-certificate-pinning-plan.md`.
+- **회사 PC 계정 자동 로그인 (2026-11-05, `ca3e1c4`, WorkBench 1.7.2 에 포함)** — 계획·0단계 시험 = `RecordMD/2026-11-05-https-certificate-pinning-plan.md`.
   `POST /api/login/windows`(Windows 통합 인증 Negotiate, `services/windows_auth.py`): 비밀번호·사번을 받지 않고 Windows 가 만든 토큰을 SSPI(pywin32 `sspi`)로 확인해
   `HHI\<사번>` 에서 사번을 얻는다 → 기존 세션 발급(`auth._complete_login`). NTLM 은 같은 연결에서 두 번 오가서 연결(IP+포트)별 상태를 30초 든다.
   `AUTH_MODE=ad` 면 저절로 켜지고 `AD_WINDOWS_LOGIN=0` 으로 끈다. `/api/login/options` 에 `windows_login` 이 붙었다.
@@ -1034,13 +1034,16 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   NTLM 3번째 메시지에 평문으로 든 사용자 이름(`ntlm_claimed_account`)으로 **SSPI 에 묻기 전에** 비밀번호 로그인과 같은 횟수 제한(사번 15분 4회·IP 20회, 두 경로 합산)을 건다 — 없으면 이 경로로 직원 계정을 잠글 수 있다. 누군지 모르는 실패는 IP 별 키(`windows-ip:<ip>`).
   Electron IPC 는 본창만 받고(`event.sender`), Windows 자격 증명은 사내 주소(사설 IPv4·`*.hhi.co.kr`)로만 보낸다(`isInternalHost`).
   개발 앱에서 한 번 15초 시간 초과가 났다 — 원인 미확정(본문 문제 이전 코드에서도 1회 발생). 실패해도 ACCESS 재시도 → 비밀번호 칸으로 막히지 않는다.
-  남은 일: 70 개발 서버 AD 모드로 실제 로그인 확인 → 커밋 → exe(1.7.2)·실행기 zip·HiTessMB 배포. 비밀번호 로그인은 예비로 유지.
+  70 AD 모드 실제 로그인 확인함. 비밀번호 로그인은 예비로 유지.
 - **HTTPS + 인증서 고정 (2026-11-05, 통합 계획 2·3단계)** — 2단계 `0823543`: 같은 프로세스가 9091 옆에 9443 HTTPS(`services/https_listener.py`, `.env` `HTTPS_PORT`, 인증서 `scripts/make_tls_cert.py` — 145 에서 실행, 키는 `.secrets/tls/`).
-  3단계(미커밋): 앱이 145 인증서의 공개키 지문(지금 `y5rO…`·예비 `u1mZ…`)이 같을 때만 연결 — **원본 `electron/server-pins.js`**, 사본 `AmLauncher/lib/server-pins.js`·HiTessMB `src/ServerPins.cs`·프론트 `utils/secureServerUrl.js`(주소 바꾸기만). 지문·주소를 바꾸면 네 곳 다.
+  3단계(`9a14ec7`·`881eeb3`, 릴리스 1.7.2 `6045358`): 앱이 145 인증서의 공개키 지문(지금 `y5rO…`·예비 `u1mZ…`)이 같을 때만 연결 — **원본 `electron/server-pins.js`**, 사본 `AmLauncher/lib/server-pins.js`·HiTessMB `src/ServerPins.cs`·프론트 `utils/secureServerUrl.js`(주소 바꾸기만). 지문·주소를 바꾸면 네 곳 다.
   규칙: 지문 일치 = 통과 · 145 주소인데 불일치 = 거부(회사가 믿는 Somansa 인증서여도) · 그 밖 = 기본 검사. 개발 실행만 70 시험 지문(`DEV_PINS`)도 받는다.
   ⚠ Electron main 의 Node `fetch`·`https.get` 은 고정 검사를 거치지 않는다 → 서버 요청은 `serverFetch`(net.fetch)·`net.request` 로만. 검사 함수는 첫 요청 전에 건다(Chromium 이 세션별로 결과를 기억).
   화면은 시작 때(`secureServerBootstrap.js`) 저장된 `http://10.14.42.145:9091` 을 `https://…:9443` 으로 바꾼다. 사용자가 서버 설정에 직접 넣은 주소(`wb_server_url_manual`)는 그대로 — 145 HTTPS 장애 때 평문으로 되돌리는 비상구.
   이중관 Mode Shape 뷰어·HiTessMB 가입 페이지(브라우저)는 평문 그대로. 버전: 실행기 0.1.4 · HiTessMB 0.4.0. 실측(70:9443): 개발 앱 로그인·내 작업·Studio, Electron 26·40 Windows 로그인·FormData·자체 업데이트 다운로드, HiTessMB 지문 있음/없음.
+  **상태(2026-11-05 세션 끝)**: 145 HTTPS 켜짐(`.env HTTPS_PORT=9443`, 70 에서 지문 일치·앱 코드로 Windows 로그인 200) · 145 `StudioProgram\mb-launcher-0.1.4.zip` 복사됨 · exe 1.7.2 빌드·푸시(`dist_electron\HiTESS-WorkBench-v1.7.2.exe`).
+  남은 일: exe 1.7.2 배포 → 145 ⟳ Update + 재시작(서버 버전 1.7.2) · HiTessMB 0.4.0(`cab9bf7`, 원격 없음) AM PC 배포 · 외부 App 저장·계산 확인(화면 열림만 확인) · 외부 개발자에게 `RecordMD/2026-11-05-external-app-https-pinning-handoff.md`(+11-03 문서) 전달 · 70 `.env` 시험 줄(`AUTH_MODE=ad`·`HTTPS_PORT=9443`) 정리 · 4단계(9091 로그인 거부)는 1.7.2 가 퍼진 뒤.
+  릴리스 스크립트는 로컬 145 줄이 `https://10.14.42.145:9443`·`http://…:9091` 어느 쪽이든 받는다(`2266080`). `http://…:9443` 은 네 사본 모두 https 로 고친다(`881eeb3`).
   ⚠ **배포 순서**: 145 HTTPS 켜기(인증서 → `.env HTTPS_PORT=9443` → 재시작 → 방화벽 9443 → 다른 PC 에서 확인) → 145 `mb-launcher-0.1.4.zip` → WorkBench exe → HiTessMB 0.4.0(0.1.3 실행기는 HTTPS 를 못 받는다). 새 exe 를 한 번 켠 PC 는 옛 exe 로 되돌리면 접속 못 한다(저장 주소가 https).
 - ⚠ **스위치를 켜기 전에 반드시**: ① 새 WorkBench exe(1.7.1, 비밀번호 칸) 배포 ② 위 AM 연동 두 프로그램 배포
   ③ 145 `pip install -r requirements.txt`(`ldap3`) + 145 에서 AD 636 접속 확인(70 만 확인함).

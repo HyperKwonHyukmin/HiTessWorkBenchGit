@@ -1,6 +1,6 @@
 # AD 자동 로그인 + HTTPS 인증서 고정 — 통합 계획 (보안팀 협조 없이)
 
-작성 2026-11-05 · 상태: **0단계(가능성 시험) 진행 중** · 선행: 사내 AD 로그인(2026-11-04 145 운영 켜짐)
+작성 2026-11-05 · 상태: **1~3단계 완료·릴리스(1.7.2), 145 HTTPS 켜짐 — 배포 대기, 4단계 남음** · 선행: 사내 AD 로그인(2026-11-04 145 운영 켜짐)
 결정(사용자, 2026-11-05): 자동 로그인(Windows 통합 인증)과 HTTPS + 인증서 고정을 **함께** 한다. 비밀번호 입력 칸은 예비로 남긴다.
 
 ## 1. 왜 하나
@@ -89,7 +89,7 @@ HiTessMB 0.3.0 · mb-launcher 0.1.3. 시험 서버(uvicorn + 실제 SSPI)에서 
 - 기본 주소 `https://10.14.42.145:9443`, 지문 2개 내장. 안 맞으면 멈춘다(HTTP 로 되돌아가지 않음 = 내려가기 공격 방지).
 - 저장된 `server_url` 이 145 http 면 https 로 바꿔 저장.
 - 배포 순서는 AD 때와 같다(실행기 zip → HiTessMB → WorkBench exe). 1단계와 한 번에 묶어 배포할 수도 있다.
-- 상태(2026-11-05): 구현·70 실측 완료, 미커밋. 145 지문 = 지금 `y5rOaChW9frcyuJTf9rulsY0IyxPTmPfNeaNkpHZwCk=` · 예비 `u1mZtu+qFaU7wUx16vhHgvJAZP/QKJJ5L+GMxh26f9g=`(145 키 첫 줄 PEM 확인 — DRM 안 감쌈).
+- 상태(2026-11-05): 커밋 `9a14ec7`·`881eeb3`(HiTessMB `d075208`·`cab9bf7`), 릴리스 1.7.2 `6045358`. 145 HTTPS 켜짐·실행기 0.1.4 145 반영. 외부 개발자 안내 `2026-11-05-external-app-https-pinning-handoff.md`. 145 지문 = 지금 `y5rOaChW9frcyuJTf9rulsY0IyxPTmPfNeaNkpHZwCk=` · 예비 `u1mZtu+qFaU7wUx16vhHgvJAZP/QKJJ5L+GMxh26f9g=`(145 키 첫 줄 PEM 확인 — DRM 안 감쌈).
   배포 순서는 실제로는 **145 HTTPS 켜기 → 실행기 0.1.4 zip → WorkBench exe → HiTessMB 0.4.0**(새 HiTessMB 는 https 를 넘겨 0.1.3 실행기가 받지 못함). 직접 입력한 서버 주소는 바꾸지 않는 비상구를 두었다.
 
 ### 4단계 — 9091 에서 로그인 거부 + 남은 HTTP 정리
