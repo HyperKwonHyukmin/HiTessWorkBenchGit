@@ -151,7 +151,9 @@ Step "4/8" "Frontend build$(if ($SkipBuild) { ' (건너뜀)' })"
 $frontendDir = Join-Path $ROOT "HiTessWorkBench\frontend"
 $configPath  = Join-Path $frontendDir "src\config.js"
 $DEV_URL     = "http://10.133.122.70:9091"
-$SRV_URL     = "http://10.14.42.145:9091"
+# 145 줄은 HTTPS(2026-11-05 인증서 고정) 또는 옛 평문 — 둘 다 받는다. 옛 평문이면 앱이 시작 때 HTTPS 로 바꾼다(secureServerBootstrap).
+$SRV_URLS    = @("https://10.14.42.145:9443", "http://10.14.42.145:9091")
+$SRV_URL     = $SRV_URLS[0]
 if ($SkipBuild) {
     $indexHtml = Join-Path $frontendDir "dist\index.html"
     if (-not (Test-Path $indexHtml)) { ERR "dist/index.html 없음. -SkipBuild 없이 재실행하세요."; exit 1 }
@@ -164,6 +166,8 @@ if ($SkipBuild) {
         # config.js 는 지금 어느 쪽이 활성이든 무조건 '개발 PC 줄 주석 + 서버 PC 줄 활성' 으로 맞춰 빌드한다.
         # 주석 기호 띄어쓰기·앞 공백이 달라도 잡는다(예전엔 정확한 모양일 때만 바꾸고 나머지는 '이미 서버'로 넘겼다).
         $configOriginal = Get-Content $configPath -Raw
+        $SRV_URL = $SRV_URLS | Where-Object { $configOriginal -match "const DEFAULT_API_BASE_URL\s*=\s*`"$([regex]::Escape($_))`"" } | Select-Object -First 1
+        if (-not $SRV_URL) { $SRV_URL = $SRV_URLS[0] }
         $devLine = "(?m)^[ \t]*(?://[ \t]*)?const DEFAULT_API_BASE_URL\s*=\s*`"$([regex]::Escape($DEV_URL))`""
         $srvLine = "(?m)^[ \t]*(?://[ \t]*)?const DEFAULT_API_BASE_URL\s*=\s*`"$([regex]::Escape($SRV_URL))`""
         if ($configOriginal -notmatch $srvLine) { ERR "config.js 에 서버 PC 주소 줄($SRV_URL)이 없습니다."; exit 1 }
