@@ -2,6 +2,16 @@
 
 작성 2026-11-06 · 상태: **구현됨·미커밋(2026-11-06, '구현 상태')**
 
+## 후속 (2026-11-06 오후, 사용자 결정) — 실적 창 하나 · 카드 결과 요약 · '내 모델'
+
+- **실적 창은 하나**: Electron 창 키를 `logbook-lifting-ref` 로 고정 → 다른 실적을 열면 같은 창이 바뀐다. 제목 `[실적 · 읽기 전용] <이름>`.
+  내 모델과 헷갈리지 않게(사용자 조건) Studio 실적 창에 노란 테두리 + 띠 맨 앞 `실적 보기 (내 모델 아님)`, 내 창에는 '노란 테두리 실적 창에 열었습니다 — 이 창은 내 모델 그대로' 안내.
+  같은 창에서 모델을 바꿔치기하는 안은 버렸다(Studio 저장소가 창마다 하나라 사용자 편집·결과를 덮을 위험).
+- **카드 결과 요약**: LogBook 상세가 `resultBrief`(결과 JSON 의 summary·warnings·meta·허용응력)를 싣고, Studio `referenceBriefLine` 이 결과 화면과 같은 판정 규칙으로 한 줄을 만든다.
+- **'내 모델' 탭**: All Projects 로 보낸 자료(묶음에 WB 해석 번호) 중 실행자(origin.owner)·올린 사람·담당자가 나인 실적. LogBook `lifting-refs?mine=true` → 응답 `mine: true`
+  (없으면 옛 서버 → Studio 가 막고 '서버 업데이트 필요'). exe 표식 `liftingReferenceFeatures` 가 없으면(옛 exe) 탭을 막는다.
+- 반영 순서: LogBook `git pull`+재시작 → WorkBench 백엔드 ⟳ Update+재시작 → 새 exe → `/studio-release module-unit-studio`(0.0.192).
+
 ## 구현 상태 (2026-11-06)
 
 - 짝 보증은 묶음 표(5절) 대신 **LogBook 이 같은 자료·같은 폴더·같은 stem 으로 찾는다**(사용자: WorkBench 결과는 전체를 다시 보낸다 → 한 번에 같은 폴더에서 온 파일). 묶음 표는 만들지 않았다.

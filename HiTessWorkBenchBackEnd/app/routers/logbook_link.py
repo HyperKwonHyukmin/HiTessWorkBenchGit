@@ -386,15 +386,18 @@ def logbook_lifting_refs(
     hull: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
+    mine: bool = False,
     employee_id: str = Depends(require_auth),
 ):
-    """LogBook 확정 자료의 권상 Wire 모델 목록(요약, 평면 선분 제외)."""
+    """LogBook 확정 자료의 권상 Wire 모델 목록(요약, 평면 선분 제외). mine = All Projects 로 보낸 것 중 내가 실행·담당·올린 것."""
     secret = _require_enabled()
     params: dict = {"as": employee_id, "limit": max(1, min(int(limit), 200)), "offset": max(0, int(offset))}
     if q and q.strip():
         params["q"] = q.strip()[:100]
     if hull and hull.strip():
         params["hull"] = hull.strip()[:8]
+    if mine:
+        params["mine"] = "true"
     return _lifting_refs_get("lifting-refs", params, secret)
 
 

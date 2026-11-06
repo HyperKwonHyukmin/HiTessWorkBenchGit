@@ -207,9 +207,12 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   downloadUnitOp2: (opts) =>
     ipcRenderer.invoke('viewer:downloadUnitOp2', opts),
   // ModuleUnitStudio Hoist 탭 — LogBook 에 있는 다른 Unit 의 권상 Wire 배치 찾기(보기 전용).
-  // payload = { q?, hullNo?, limit?, offset? } → { ok, total, items } | { ok:false, error }
+  // payload = { q?, hullNo?, limit?, offset?, mine? } → { ok, total, items } | { ok:false, error }
   searchLiftingReferences: (opts) =>
     ipcRenderer.invoke('viewer:searchLiftingRefs', opts),
+  // 이 exe 가 지원하는 실적 기능(2026-11-06, 1.7.9~) — mine = '내 모델' 조건, singleWindow = 실적 창 하나 재사용.
+  // 옛 exe 에는 없다 → Studio 는 '내 모델' 탭을 막고 업데이트를 안내한다(옛 exe 는 mine 을 버려 전체가 나온다).
+  liftingReferenceFeatures: { mine: true, singleWindow: true },
   // payload = { fileId } → { ok, item } (item.summary.planSegments 포함) | { ok:false, error }
   getLiftingReference: (opts) =>
     ipcRenderer.invoke('viewer:getLiftingRef', opts),

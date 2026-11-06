@@ -434,6 +434,11 @@ def test_lifting_refs_proxies_with_employee(admin_client, enabled, monkeypatch):
     qs = parse_qs(seen["url"].query)
     assert qs["q"] == ["m04"] and qs["hull"] == ["3496"] and qs["limit"] == ["200"]
     assert qs["as"][0]   # 로그인 사번을 붙인다(브라우저 값이 아니라 토큰의 사번)
+    assert "mine" not in qs   # 기본은 전체
+
+    # '내 모델' — LogBook 에 mine=true 로 넘긴다
+    admin_client.get("/api/logbook/lifting-refs?mine=true", headers=_auth())
+    assert parse_qs(seen["url"].query)["mine"] == ["true"]
 
 
 def test_lifting_ref_detail_and_errors(admin_client, enabled, monkeypatch):

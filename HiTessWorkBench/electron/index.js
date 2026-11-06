@@ -2879,11 +2879,17 @@ ipcMain.handle("viewer:searchLiftingRefs", async (event, payload) => {
     const hull = String(payload?.hullNo ?? "").trim();
     if (q) params.set("q", q.slice(0, 100));
     if (hull) params.set("hull", hull.slice(0, 8));
+    // '내 모델' — All Projects 로 보낸 것 중 내가 실행·담당·올린 실적만(2026-11-06)
+    if (payload?.mine === true) params.set("mine", "true");
     params.set("limit", String(Math.min(Math.max(Number(payload?.limit) || 50, 1), 200)));
     params.set("offset", String(Math.max(Number(payload?.offset) || 0, 0)));
     const out = await fetchLiftingRefs(event, `/api/logbook/lifting-refs?${params}`);
     if (!out.ok) return out;
-    return { ok: true, total: out.body.total ?? 0, items: Array.isArray(out.body.items) ? out.body.items : [] };
+    return {
+      ok: true, total: out.body.total ?? 0, items: Array.isArray(out.body.items) ? out.body.items : [],
+      // LogBook 이 '내 모델' 조건을 실제로 적용했을 때만 true(옛 서버는 mine 을 버리고 전체를 준다)
+      mine: out.body.mine === true,
+    };
   } catch (e) {
     return { ok: false, error: e?.message || "예외 발생" };
   }
@@ -2901,6 +2907,7 @@ ipcMain.handle("viewer:getLiftingRef", async (event, payload) => {
 });
 
 // Hoist 탭 실적 → "결과 화면으로 열기" — 실적과 함께 보낸 구조 해석 결과를 별도 Module Unit Studio 창(읽기 전용)으로 연다.
+// 실적 창은 하나 — 이미 떠 있으면 openViewerSession 이 그 창의 컨텍스트를 바꾸고 다시 읽는다.
 // 계획: docs/plans/2026-11-06-mu-lifting-reference-stress-check.md. 모델 JSON 은 임시 폴더에 써서 initialFolder 로 넘기고
 // (Studio 는 폴더의 JSON 을 단계로 읽는다), 결과 JSON 은 세션에 실어 viewer:getReferenceContext 로 준다.
 // 이 창은 parentAnalysisId 가 없어 해석·업로드 IPC 가 거부된다.
@@ -2926,8 +2933,10 @@ ipcMain.handle("viewer:openLiftingRefResult", async (event, payload) => {
       viewerId: caller?.viewerId || "module-unit-studio",
       initialFolder: dir,
       serverUrl: caller?.serverUrl || null,
-      sourceKey: `logbook-lifting-ref:${fileId}`,
-      windowTitle: `실적 보기 · ${label}`,
+      // 실적 창은 하나만 쓴다(2026-11-06) — 다른 실적을 열면 같은 창의 내용이 바뀐다(창이 쌓이지 않게).
+      // 제목 앞머리로 내 모델 창과 구분한다(작업표시줄에서 앞부분만 보인다).
+      sourceKey: "logbook-lifting-ref",
+      windowTitle: `[실적 · 읽기 전용] ${label}`,
     }, {
       reference: {
         fileId, name: body.name || null, title: payload?.title || null,
