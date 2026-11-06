@@ -347,6 +347,13 @@ Hoist 탭 STEP 2 아래 '다른 Unit 권상 참조' — LogBook 에 확정된 Wi
 - 결과 세트 없이 Wire 모델만 보관된 실적은 '결과 없음' 한 줄. 2026-11-06 기준 LogBook 확정 실적 E000078 은 결과 없음(사용자가 WorkBench 결과를 전체 다시 보내기로 함).
 - 계획·상태: `docs/plans/2026-11-06-mu-lifting-reference-stress-check.md`. 145 반영 확인(2026-11-06): 서버 1.7.4 · Studio 0.0.190 공개 · LogBook 결과 라우트 있음.
   WorkBench 앱 안에서 실적 창을 실제로 연 적은 없다(헤드리스 Chrome + 실제 3496 결과로만 확인).
+- **후속 (2026-11-06 오후, 사용자 결정) — 상세·근거는 계획 문서 '후속' 단락**:
+  - **열람 범위**: 권상 참조(목록·상세·결과)는 LogBook 레벨과 무관(LV1 포함)하게 확정 Wire 모델 전부, 차단(blocked)만 뺀다. LogBook 화면·BDF 받기 권한은 그대로(LogBook `lifting_refs.reference_visible*`). 결과 보기가 LV1 에게 모델 JSON 을 보이는 것도 사용자 확인.
+  - **'내 모델' 탭** = All Projects 로 보낸 자료 중 실행자(origin.owner)·올린 사람·담당자가 나. LogBook `?mine=true` → 응답 `mine: true`(없으면 옛 서버 → Studio 가 막음), exe 표식 `liftingReferenceFeatures`(없으면 옛 exe → 탭 막음).
+  - **결과는 같은 창에서**: 실적 3D 칸 [3D | 응력 | 평면 그림] — Electron `viewer:getLiftingRefResult`(1.7.10~) → Studio `referenceStressScene`. 초과 구역 확대(구역별 빨간 상자, ‹ ›). 새 창은 '결과 표까지 보기' 보조 링크, 창은 하나만 재사용(노란 테두리·`[실적 · 읽기 전용]` 제목).
+    같은 창에서 내 모델과 바꿔치기하는 안은 버렸다(Studio 저장소가 창마다 하나라 사용자 편집·결과를 덮는다).
+  - ⚠ 굵은 선(LineMaterial) 꼭짓점 색은 **선형**으로 넣는다(`utils/srgbToLinear.js`) — sRGB 그대로면 두 번 밝아져 초과 빨강이 분홍이 된다(실측).
+  - 상태: Studio 0.0.197 · WorkBench 1.7.10 · LogBook `9d5a669` 커밋·푸시, 릴리스 표 0.0.197(`1dd61aa`). 145 반영(LogBook pull+재시작 → ⟳ Update+재시작 → 1.7.10 exe)은 사용자 몫. 실제 Studio 화면 안 버튼은 눈으로 확인 안 함.
 
 #### 화면 배율 대응 — 셸을 `transform: scale()` 로 키우지 말 것 (0.0.148, 2026-09-09)
 
@@ -1122,6 +1129,7 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   LogBook 에는 **보낸 관리자 이름의 '정리 대기' 묶음**이 생기고 정리·확정은 LogBook 에서 한다. 계약 원본: LogBook 저장소
   `docs/plans/2026-10-08-logbook-18-workbench-link.md` 9절. 보낸 기록은 `logbook_exports`(실패도 남긴다).
   목록의 'LogBook 보낸 것만' 토글(`GET /api/admin/projects?logbook=sent`, 2026-10-19 v1.6.19)은 'N번 보냄' 표시와 같은 기준 — failed 만 있는 기록 제외, blocked 포함.
+  **App 필터 = App 한 줄(2026-11-06, 1.7.8)**: 내부 키가 여러 개인 App(예: HiTESS Model Builder 4개)은 한 줄로 합치고 `program_names`(`|` 구분)로 묻는다, 키가 하나면 예전 `program_name`(`utils/programFilterOptions.js`). 드롭다운은 공용 `components/ui/FilterListbox.jsx`(headlessui) — 다른 목록 화면 필터도 이것으로.
 - LogBook 이 받지 않는 것: 이미 LogBook 에 있는 것과 **완전 동일한 BDF**(blocked), 회사 **DRM 암호문**(`HHIDRMC` 머리, rejected). 둘 다 화면에 그대로 보인다.
   ⚠ 개발 PC 는 DRM 에이전트가 python 의 읽기를 가로채 `HHIDRMC` 흉내 파일을 0바이트로 돌려준다(실측) — DRM 거절 확인은 단위 테스트로 한다.
 - ⚠ 배포 순서: **LogBook 을 먼저** `git pull` + 재시작. 옛 LogBook 이면 WB 가 404 를 받아 "보내기 기능이 없거나 연동이 꺼져 있습니다" 로 알린다.
