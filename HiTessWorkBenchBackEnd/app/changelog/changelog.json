@@ -3,6 +3,18 @@
   "items": [
     {
       "date": "2026-11-06",
+      "version": "1.7.7",
+      "kind": "개선",
+      "title": "Model Builder와 Module Unit 권상에서 호선을 못 찾으면 실행 전에 확인",
+      "summary": "CSV 파일명(Model Builder) 또는 BDF 호선 주석과 파일명(Module Unit 권상)에서 호선을 찾지 못하면 실행 전에 호선을 입력할지 묻습니다. 호선이 있으면 나중에 Unit 권상에서 호선으로 모델을 찾아 참조로 쓸 수 있습니다.",
+      "points": [
+        "창에서 바로 호선을 적고 진행하거나, 호선 없이 진행할 수 있습니다",
+        "같은 입력으로 호선 없이 진행을 골랐으면 다시 묻지 않습니다",
+        "Module Unit 권상에서 적은 호선은 다시 검증, BDF 자동 수정, 결과 다시 열기에도 이어집니다"
+      ]
+    },
+    {
+      "date": "2026-11-06",
       "version": "1.7.4",
       "kind": "기능",
       "title": "All Projects 에서 권상 해석 여러 건을 LogBook 으로 한 번에 보내기",
