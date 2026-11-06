@@ -567,3 +567,17 @@ def test_bulk_plan_same_name_other_user_is_not_older_run(switchable_client, db_s
                   created_at=datetime(2026, 10, 5))
     items = switchable_client.post("/api/admin/projects/logbook/plan", json={"ids": [a.id, b.id]}).json()["items"]
     assert all(it["ok"] and "olderRunOf" not in it for it in items)
+
+
+def test_bulk_plan_sends_model_without_wire_and_keeps_wire_run(switchable_client, db_session, user_conn):
+    """Wire 모델이 없는(구조 해석 전) 기록도 원본 모델만 보낸다. 같은 모델이면 더 최근이어도 Wire 있는 실행을 남긴다."""
+    wire = _lifting_run(db_session, user_conn, "20261006_090000_EMP001_GroupModuleUnit", "3600_m01", created=datetime(2026, 10, 6))
+    root = _work(user_conn, "20261007_090000_EMP001_GroupModuleUnit", {"3600_m01.bdf": b"SOL 101\n", "step1.json": b"{}"})
+    bare = _analysis(db_session, input_info={"bdf_model": str(root / "3600_m01.bdf")}, created_at=datetime(2026, 10, 7))
+    items = {it["id"]: it for it in switchable_client.post(
+        "/api/admin/projects/logbook/plan", json={"ids": [wire.id, bare.id]}).json()["items"]}
+    b = items[bare.id]
+    assert b["ok"] and b["hasWire"] is False and b["title"] == f"3600_m01 권상(Wire 없음) · WB #{bare.id}"
+    assert [f["path"].replace("\\", "/").rsplit("/", 1)[-1] for f in b["files"]] == ["3600_m01.bdf"]
+    assert b["olderRunOf"] == wire.id and "olderRunOf" not in items[wire.id]
+    assert items[wire.id]["hasWire"] is True

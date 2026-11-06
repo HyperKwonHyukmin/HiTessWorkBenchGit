@@ -297,18 +297,20 @@ def _bulk_hull(record, model_path: str | None) -> str | None:
     return hull_service.normalize_hull_no(info.get("hull_no")) or hull_service.suggest_hull_no_from_filename(model_path)
 
 
-def bulk_title(record, model_path: str | None) -> str:
-    """묶음 이름 — '<호선> <모델 이름> 권상 · WB #<id>'. LogBook 정리 대기 목록에서 Unit 을 구분하게."""
+def bulk_title(record, model_path: str | None, *, has_wire: bool = True) -> str:
+    """묶음 이름 — '<호선> <모델 이름> 권상 · WB #<id>'(Wire 없으면 '권상(Wire 없음)'). LogBook 정리 대기 목록에서 Unit·종류를 구분하게."""
     stem = os.path.splitext(os.path.basename(model_path))[0] if model_path else (record.project_name or record.program_name)
     hull = _bulk_hull(record, model_path)
     label = f"{hull} {stem}" if hull and not stem.upper().startswith(hull) else stem
-    return f"{label} 권상 · WB #{record.id}"[:200]
+    kind = "권상" if has_wire else "권상(Wire 없음)"
+    return f"{label} {kind} · WB #{record.id}"[:200]
 
 
 def bulk_plan_item(record, resolved: dict, files_available: bool) -> dict:
-    """기록 1건의 보내기 계획 → {id, ok, reason, title, model, files:[{path,size}], totalBytes, hasResult, warnings}."""
+    """기록 1건의 보내기 계획 → {id, ok, reason, title, model, files:[{path,size}], totalBytes, hasWire, hasResult, warnings}.
+    Wire 모델이 없는(구조 해석 전) 기록도 원본 모델만 보낸다 — LogBook 에서 Wire 유무를 보고 정리한다(2026-11-06 사용자 요청)."""
     base = {"id": record.id, "ok": False, "reason": None, "title": None, "model": None,
-            "files": [], "totalBytes": 0, "hasResult": False, "warnings": []}
+            "files": [], "totalBytes": 0, "hasWire": False, "hasResult": False, "warnings": []}
     if record.program_name not in LIFTING_PROGRAMS:
         return {**base, "reason": "권상 해석이 아닙니다"}
     if record.status != "Success":
@@ -317,12 +319,14 @@ def bulk_plan_item(record, resolved: dict, files_available: bool) -> dict:
         return {**base, "reason": "파일 보관 기간이 지났습니다"}
     listing = list_files(resolved)
     rec = lifting_recommendation(record.program_name, listing) or {"wire": [], "result": [], "missing": []}
-    if not rec["wire"]:
-        return {**base, "reason": "Wire 모델이 없습니다(구조 해석 전)"}
+    has_wire = bool(rec["wire"])
     sizes = {f["path"]: f["size"] for f in listing["files"]}
     models_ = [f["path"] for f in listing["files"]
                if f["role"] == "input" and "/" not in f["rel"] and not f["drm"] and f["rel"].lower().endswith(_BDF_EXTS)]
     model = models_[0] if models_ else None
+    if not has_wire and not model:
+        return {**base, "reason": "보낼 모델이 없습니다(Wire 모델·원본 BDF 모두 없음)"}
+    warnings = list(rec["missing"]) if has_wire else ["Wire 모델 없음 — 구조 해석 전 원본 모델만 보냅니다", *rec["missing"]]
     paths = list(dict.fromkeys(([model] if model else []) + rec["wire"] + rec["result"]))
     total = sum(sizes.get(p, 0) for p in paths)
     # 1건 보내기 API 의 한도를 미리 본다 — 넘으면 보낼 때 422/413 으로 실패한다
@@ -331,11 +335,11 @@ def bulk_plan_item(record, resolved: dict, files_available: bool) -> dict:
     # 옛 실행 판정 키 — 파일 이름만 보면 다른 사용자·호선의 같은 이름(M05.bdf 등)이 한 모델로 묶인다
     run_key = "|".join([str(record.employee_id or "").upper(), _bulk_hull(record, model) or "",
                         os.path.basename(model).lower()]) if model else None
-    return {**base, "ok": True, "runKey": run_key, "title": bulk_title(record, model), "model": os.path.basename(model) if model else None,
+    return {**base, "ok": True, "runKey": run_key, "hasWire": has_wire, "title": bulk_title(record, model, has_wire=has_wire), "model": os.path.basename(model) if model else None,
             "files": [{"path": p, "size": sizes.get(p, 0)} for p in paths],
             "totalBytes": total,
             "hasResult": any(p.lower().endswith(LIFTING_RESULT_SUFFIX.lower()) for p in rec["result"]),
-            "warnings": rec["missing"]}
+            "warnings": warnings}
 
 
 def mark_older_runs(items: list[dict], created: dict[int, object]) -> None:
@@ -346,7 +350,10 @@ def mark_older_runs(items: list[dict], created: dict[int, object]) -> None:
         if it["ok"] and it.get("runKey"):
             groups.setdefault(it["runKey"], []).append(it)
     for group in groups.values():
-        group.sort(key=lambda it: (created.get(it["id"]) is not None, created.get(it["id"]) or 0, it["id"]), reverse=True)
+        # Wire 모델이 있는 실행 중 가장 최근 것을 남긴다 — 검증만 다시 한 새 기록이 Wire 실적을 밀어내지 않게.
+        # '결과 있음' 은 앞세우지 않는다: 모델을 고쳐 다시 돌린 새 실행(결과 전)이 옛 모델의 결과 실행에 밀리면 옛 판이 실적이 된다.
+        group.sort(key=lambda it: (bool(it.get("hasWire")),
+                                   created.get(it["id"]) is not None, created.get(it["id"]) or 0, it["id"]), reverse=True)
         for it in group[1:]:
             it["olderRunOf"] = group[0]["id"]
 

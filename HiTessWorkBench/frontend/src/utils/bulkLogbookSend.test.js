@@ -6,8 +6,8 @@ import {
 } from './bulkLogbookSend.js';
 
 const items = [
-  { id: 1, ok: true, totalBytes: 100, hasResult: true },
-  { id: 2, ok: true, totalBytes: 50, hasResult: false },
+  { id: 1, ok: true, totalBytes: 100, hasWire: true, hasResult: true },
+  { id: 2, ok: true, totalBytes: 50, hasWire: false, hasResult: false },
   { id: 3, ok: true, totalBytes: 70, hasResult: true, olderRunOf: 1 },
   { id: 4, ok: false, reason: '파일 보관 기간이 지났습니다' },
 ];
@@ -23,7 +23,7 @@ test('처음 체크 — 보낼 수 있고 옛 실행이 아닌 것만', () => {
 });
 
 test('요약 — 체크한 것만 센다', () => {
-  assert.deepEqual(summarizePlan(items, new Set([1, 2, 4])), { count: 2, bytes: 150, withResult: 1, blocked: 1 });
+  assert.deepEqual(summarizePlan(items, new Set([1, 2, 4])), { count: 2, bytes: 150, withResult: 1, withoutWire: 1, blocked: 1 });
 });
 
 test('보내기 결과 한 줄', () => {

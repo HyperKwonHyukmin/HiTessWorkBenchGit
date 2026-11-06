@@ -44,7 +44,7 @@ export const exportProjectToLogbook = (analysisId, { paths, title, note }) =>
 
 /**
  * 여러 건 보내기 미리 보기 — 기록마다 보낼 파일(입력 BDF + Wire 세트 + 결과 세트)·묶음 이름·경고·못 보내는 사유.
- * 반환 data = { items: [{ id, ok, reason, title, model, files:[{path,size}], totalBytes, hasResult, warnings, olderRunOf? }] }
+ * 반환 data = { items: [{ id, ok, reason, title, model, files:[{path,size}], totalBytes, hasWire, hasResult, warnings, olderRunOf? }] }
  */
 export const planBulkLogbookExport = (ids) =>
   axios.post(`${API_BASE_URL}/api/admin/projects/logbook/plan`, { ids }, { headers: getAuthHeaders(), timeout: 5 * 60 * 1000 });

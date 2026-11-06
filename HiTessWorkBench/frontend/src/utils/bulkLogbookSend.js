@@ -3,7 +3,8 @@
  * 계획: docs/plans/2026-11-06-all-projects-bulk-logbook-send.md
  *
  * 서버 미리 보기(`POST /api/admin/projects/logbook/plan`)의 항목 =
- *   { id, ok, reason, title, model, files:[{path,size}], totalBytes, hasResult, warnings, olderRunOf? }
+ *   { id, ok, reason, title, model, files:[{path,size}], totalBytes, hasWire, hasResult, warnings, olderRunOf? }
+ *   hasWire=false = 구조 해석 전(검증만) 기록 — 원본 모델만 보낸다.
  * 보내기는 기록마다 기존 `POST /api/admin/projects/{id}/logbook` 를 차례로 부른다.
  */
 
@@ -27,13 +28,15 @@ export function summarizePlan(items = [], checked = new Set()) {
   let count = 0;
   let bytes = 0;
   let withResult = 0;
+  let withoutWire = 0;
   for (const it of items) {
     if (!it.ok || !checked.has(it.id)) continue;
     count += 1;
     bytes += Number(it.totalBytes) || 0;
     if (it.hasResult) withResult += 1;
+    if (it.hasWire === false) withoutWire += 1;
   }
-  return { count, bytes, withResult, blocked: items.filter(it => !it.ok).length };
+  return { count, bytes, withResult, withoutWire, blocked: items.filter(it => !it.ok).length };
 }
 
 /** 보내기 결과 한 줄 — 서버 응답(data) 또는 오류(error). 상태: sent | duplicate | failed */

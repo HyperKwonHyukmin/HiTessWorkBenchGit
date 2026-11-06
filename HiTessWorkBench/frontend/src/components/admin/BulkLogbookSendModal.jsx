@@ -106,7 +106,7 @@ export default function BulkLogbookSendModal({ ids, onClose, onDone }) {
           <p className="text-xs text-slate-600">
             {sending || finished
               ? <>진행 <span className="font-bold text-slate-800">{progress.done} / {progress.total}</span></>
-              : <>보낼 기록 <span className="font-bold text-slate-800">{summary.count}</span>건 · {formatBytes(summary.bytes)} · 결과 세트 있음 {summary.withResult}건</>}
+              : <>보낼 기록 <span className="font-bold text-slate-800">{summary.count}</span>건 · {formatBytes(summary.bytes)} · 결과 세트 있음 {summary.withResult}건 · Wire 없음 {summary.withoutWire}건</>}
           </p>
           <div className="ml-auto flex gap-2">
             {sending ? (
@@ -126,7 +126,7 @@ export default function BulkLogbookSendModal({ ids, onClose, onDone }) {
     >
       <div className="space-y-3 p-6">
         <p className="text-xs leading-relaxed text-slate-600">
-          기록마다 <b>입력 BDF + Wire 모델 세트 + 구조 해석 결과 세트</b>를 LogBook <b>정리 대기</b> 묶음 하나로 보냅니다(기록끼리 합치지 않음).
+          기록마다 <b>입력 BDF + Wire 모델 세트 + 구조 해석 결과 세트</b>(구조 해석 전이면 원본 모델만)를 LogBook <b>정리 대기</b> 묶음 하나로 보냅니다(기록끼리 합치지 않음).
           같은 모델을 여러 번 돌린 기록은 가장 최근 것만 체크해 두었습니다. 확정은 LogBook 에서 합니다.
         </p>
         {loading && <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400" size={24} /></div>}
@@ -139,6 +139,7 @@ export default function BulkLogbookSendModal({ ids, onClose, onDone }) {
                   <th className="w-8 px-3 py-2" />
                   <th className="px-3 py-2">묶음 이름</th>
                   <th className="px-3 py-2">파일</th>
+                  <th className="px-3 py-2">Wire</th>
                   <th className="px-3 py-2">결과 세트</th>
                   <th className="px-3 py-2">확인할 것 · 결과</th>
                 </tr>
@@ -168,7 +169,12 @@ export default function BulkLogbookSendModal({ ids, onClose, onDone }) {
                         {it.ok ? `${it.files.length}개 · ${formatBytes(it.totalBytes)}` : '-'}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2">
-                        {it.ok ? (it.hasResult ? <span className="text-emerald-700">있음</span> : <span className="text-slate-500">없음(Wire 모델만)</span>) : '-'}
+                        {/* 옛 서버 응답에는 hasWire 가 없다 — 모르면 '-'(Wire 가 있는 기록을 '없음' 으로 보이지 않게) */}
+                        {it.ok && it.hasWire === true ? <span className="text-emerald-700">있음</span>
+                          : it.ok && it.hasWire === false ? <span className="text-amber-700">없음(원본 모델만)</span> : '-'}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {it.ok ? (it.hasResult ? <span className="text-emerald-700">있음</span> : <span className="text-slate-500">없음</span>) : '-'}
                       </td>
                       <td className="px-3 py-2">
                         {outcome ? (
