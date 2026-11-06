@@ -5,7 +5,7 @@ import { getAuthHeaders } from '../utils/auth';
 /**
  * 관리자 All Projects — 모든 사용자의 해석 이력(My Projects 와 같은 기준: 샘플·세부 검토 제외).
  * filters = { search, program_name, status, employee_id, date_from, date_to, file_status: 'available'|'expired',
- *             logbook: 'sent'(LogBook 으로 보낸 기록만) }
+ *             logbook: 'sent'(LogBook 으로 보낸 기록만) | 'unsent'(보낸 적 없는 기록 — 실패만 있는 것 포함) }
  * 반환 data = { total, items: [...My Projects 행 + userName·department·logbook], programs: [App 이름] }
  */
 export const getAdminProjects = (skip = 0, limit = 20, filters = {}) =>
@@ -41,3 +41,10 @@ export const exportProjectToLogbook = (analysisId, { paths, title, note }) =>
     { paths, title: title || null, note: note || null },
     { headers: getAuthHeaders(), timeout: 30 * 60 * 1000 },
   );
+
+/**
+ * 여러 건 보내기 미리 보기 — 기록마다 보낼 파일(입력 BDF + Wire 세트 + 결과 세트)·묶음 이름·경고·못 보내는 사유.
+ * 반환 data = { items: [{ id, ok, reason, title, model, files:[{path,size}], totalBytes, hasResult, warnings, olderRunOf? }] }
+ */
+export const planBulkLogbookExport = (ids) =>
+  axios.post(`${API_BASE_URL}/api/admin/projects/logbook/plan`, { ids }, { headers: getAuthHeaders(), timeout: 5 * 60 * 1000 });

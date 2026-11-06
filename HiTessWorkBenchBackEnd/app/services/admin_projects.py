@@ -285,6 +285,72 @@ def lifting_recommendation(program: str, listing: dict) -> dict | None:
     return {"wire": wire, "result": result, "missing": missing}
 
 
+# 2026-11-06 — 여러 건 보내기(All Projects '여러 건 보내기'). 기록마다 보낼 파일을 규칙 하나로 정한다:
+# 입력 BDF(작업 폴더 바로 아래 input 역할 BDF) + Wire 세트 + 결과 세트. 계획: docs/plans/2026-11-06-all-projects-bulk-logbook-send.md
+MAX_BULK_PLAN = 50
+_BDF_EXTS = (".bdf", ".dat", ".nas", ".blk", ".bulk")
+
+
+def _bulk_hull(record, model_path: str | None) -> str | None:
+    from . import hull_no as hull_service
+    info = record.input_info if isinstance(record.input_info, dict) else {}
+    return hull_service.normalize_hull_no(info.get("hull_no")) or hull_service.suggest_hull_no_from_filename(model_path)
+
+
+def bulk_title(record, model_path: str | None) -> str:
+    """묶음 이름 — '<호선> <모델 이름> 권상 · WB #<id>'. LogBook 정리 대기 목록에서 Unit 을 구분하게."""
+    stem = os.path.splitext(os.path.basename(model_path))[0] if model_path else (record.project_name or record.program_name)
+    hull = _bulk_hull(record, model_path)
+    label = f"{hull} {stem}" if hull and not stem.upper().startswith(hull) else stem
+    return f"{label} 권상 · WB #{record.id}"[:200]
+
+
+def bulk_plan_item(record, resolved: dict, files_available: bool) -> dict:
+    """기록 1건의 보내기 계획 → {id, ok, reason, title, model, files:[{path,size}], totalBytes, hasResult, warnings}."""
+    base = {"id": record.id, "ok": False, "reason": None, "title": None, "model": None,
+            "files": [], "totalBytes": 0, "hasResult": False, "warnings": []}
+    if record.program_name not in LIFTING_PROGRAMS:
+        return {**base, "reason": "권상 해석이 아닙니다"}
+    if record.status != "Success":
+        return {**base, "reason": "성공하지 않은 해석입니다"}
+    if not files_available:
+        return {**base, "reason": "파일 보관 기간이 지났습니다"}
+    listing = list_files(resolved)
+    rec = lifting_recommendation(record.program_name, listing) or {"wire": [], "result": [], "missing": []}
+    if not rec["wire"]:
+        return {**base, "reason": "Wire 모델이 없습니다(구조 해석 전)"}
+    sizes = {f["path"]: f["size"] for f in listing["files"]}
+    models_ = [f["path"] for f in listing["files"]
+               if f["role"] == "input" and "/" not in f["rel"] and not f["drm"] and f["rel"].lower().endswith(_BDF_EXTS)]
+    model = models_[0] if models_ else None
+    paths = list(dict.fromkeys(([model] if model else []) + rec["wire"] + rec["result"]))
+    total = sum(sizes.get(p, 0) for p in paths)
+    # 1건 보내기 API 의 한도를 미리 본다 — 넘으면 보낼 때 422/413 으로 실패한다
+    if len(paths) > MAX_EXPORT_FILES or total > MAX_EXPORT_BYTES:
+        return {**base, "reason": "한 번에 보낼 수 있는 파일 수·크기를 넘습니다(상세 창에서 골라 보내세요)"}
+    # 옛 실행 판정 키 — 파일 이름만 보면 다른 사용자·호선의 같은 이름(M05.bdf 등)이 한 모델로 묶인다
+    run_key = "|".join([str(record.employee_id or "").upper(), _bulk_hull(record, model) or "",
+                        os.path.basename(model).lower()]) if model else None
+    return {**base, "ok": True, "runKey": run_key, "title": bulk_title(record, model), "model": os.path.basename(model) if model else None,
+            "files": [{"path": p, "size": sizes.get(p, 0)} for p in paths],
+            "totalBytes": total,
+            "hasResult": any(p.lower().endswith(LIFTING_RESULT_SUFFIX.lower()) for p in rec["result"]),
+            "warnings": rec["missing"]}
+
+
+def mark_older_runs(items: list[dict], created: dict[int, object]) -> None:
+    """같은 사용자·호선·입력 BDF 이름(runKey)을 여러 번 돌린 기록 — 가장 최근 1건만 두고 나머지에 olderRunOf(최신 id)를 단다(화면이 체크 해제).
+    실행마다 Wire·결과 JSON 이 달라 모두 보내면 LogBook 에 같은 모델 자료가 여러 개 생긴다."""
+    groups: dict[str, list[dict]] = {}
+    for it in items:
+        if it["ok"] and it.get("runKey"):
+            groups.setdefault(it["runKey"], []).append(it)
+    for group in groups.values():
+        group.sort(key=lambda it: (created.get(it["id"]) is not None, created.get(it["id"]) or 0, it["id"]), reverse=True)
+        for it in group[1:]:
+            it["olderRunOf"] = group[0]["id"]
+
+
 def select_paths(resolved: dict, requested: list[str]) -> list[tuple[str, str, str]]:
     """요청 경로를 작업 폴더 안의 실제 파일로 확인한다 → [(절대 경로, 폴더 이름, 폴더 기준 posix 상대 경로)].
     폴더 밖·없는 파일·중복은 ValueError(사유)."""

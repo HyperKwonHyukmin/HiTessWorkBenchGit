@@ -501,3 +501,69 @@ def test_files_lifting_set_warns_model_changed_after_result_and_drm(switchable_c
     a = _analysis(db_session, input_info={"bdf_model": str(drm_root / "8888_m01_lifting.bdf")})
     rec = switchable_client.get(f"/api/admin/projects/{a.id}/files").json()["liftingSet"]
     assert rec["missing"] == ["8888_m01_lifting_nastranResult.json 이 DRM 으로 암호화됨"]
+
+
+# ── 여러 건 보내기 (2026-11-06) ────────────────────────────────────────────────
+
+def _lifting_run(db, base, folder, stem, *, created, result=True, hull=None):
+    files = {f"{stem}.bdf": b"SOL 101\nCEND\nBEGIN BULK\nENDDATA\n", f"{stem}_lifting.bdf": b"SOL 101\n",
+             f"{stem}_lifting_meta.json": b"{}", f"{stem}_posture.json": b"{}"}
+    if result:
+        files.update({f"{stem}_lifting_nastranResult.json": b"{}", f"{stem}.json": b"{}", f"{stem.lower()}_lifting.f06": b"F06"})
+    root = _work(base, folder, files)
+    info = {"bdf_model": str(root / f"{stem}.bdf")}
+    if hull:
+        info["hull_no"] = hull
+    return _analysis(db, input_info=info, created_at=created)
+
+
+def test_bulk_plan_picks_set_and_marks_older_runs(switchable_client, db_session, user_conn):
+    old = _lifting_run(db_session, user_conn, "20261001_090000_EMP001_GroupModuleUnit", "3496_m04", created=datetime(2026, 10, 1))
+    new = _lifting_run(db_session, user_conn, "20261002_090000_EMP001_GroupModuleUnit", "3496_m04", created=datetime(2026, 10, 2))
+    bare = _lifting_run(db_session, user_conn, "20261003_090000_EMP001_GroupModuleUnit", "M05", created=datetime(2026, 10, 3),
+                        result=False, hull="3542")
+    truss = _analysis(db_session, program="TrussAssessment")
+    r = switchable_client.post("/api/admin/projects/logbook/plan", json={"ids": [old.id, new.id, bare.id, truss.id, 999999]})
+    assert r.status_code == 200, r.text
+    items = {it["id"]: it for it in r.json()["items"]}
+    n = items[new.id]
+    assert n["ok"] and n["hasResult"] and "olderRunOf" not in n
+    assert sorted(f["path"].replace("\\", "/").rsplit("/", 1)[-1] for f in n["files"]) == sorted([
+        "3496_m04.bdf", "3496_m04_lifting.bdf", "3496_m04_lifting_meta.json", "3496_m04_posture.json",
+        "3496_m04_lifting_nastranResult.json", "3496_m04_lifting.f06", "3496_m04.json"])
+    assert n["title"] == f"3496_m04 권상 · WB #{new.id}"          # 모델 이름이 이미 호선으로 시작하면 덧붙이지 않는다
+    assert items[old.id]["olderRunOf"] == new.id
+    b = items[bare.id]
+    assert b["ok"] and not b["hasResult"] and b["title"] == f"3542 M05 권상 · WB #{bare.id}"
+    assert "구조 해석 결과 JSON 없음" in b["warnings"]
+    assert items[truss.id]["reason"] == "권상 해석이 아닙니다"
+    assert not items[999999]["ok"]
+
+
+def test_bulk_plan_rejects_expired_and_requires_admin(switchable_client, db_session, user_conn):
+    gone = _analysis(db_session, input_info={"bdf_model": str(user_conn / "20260901_090000_EMP001_GroupModuleUnit" / "x.bdf")})
+    item = switchable_client.post("/api/admin/projects/logbook/plan", json={"ids": [gone.id]}).json()["items"][0]
+    assert item["reason"] == "파일 보관 기간이 지났습니다"
+    assert switchable_client.post("/api/admin/projects/logbook/plan", json={"ids": list(range(1, 60))}).status_code == 422
+
+
+def test_list_filter_unsent(switchable_client, db_session, user_conn):
+    sent = _gmu(db_session, user_conn)
+    failed = _analysis(db_session, project="실패만")
+    fresh = _analysis(db_session, project="안 보냄")
+    db_session.add_all([models.LogbookExport(analysis_id=sent.id, sent_by="ADMIN", title="t", state="staged", created_at=datetime.now()),
+                        models.LogbookExport(analysis_id=failed.id, sent_by="ADMIN", title="t", state="failed", created_at=datetime.now())])
+    db_session.commit()
+    ids = {it["id"] for it in switchable_client.get("/api/admin/projects?logbook=unsent&limit=200").json()["items"]}
+    assert fresh.id in ids and failed.id in ids and sent.id not in ids
+
+
+def test_bulk_plan_same_name_other_user_is_not_older_run(switchable_client, db_session, user_conn):
+    """다른 사용자·호선이 같은 이름의 BDF(M05.bdf)를 써도 같은 모델의 옛 실행으로 묶지 않는다."""
+    a = _lifting_run(db_session, user_conn, "20261004_090000_EMP001_GroupModuleUnit", "M05", created=datetime(2026, 10, 4), hull="3542")
+    b_root = _work(user_conn, "20261005_090000_EMP002_GroupModuleUnit", {
+        "M05.bdf": b"SOL 101\n", "M05_lifting.bdf": b"SOL 101\n", "M05_lifting_meta.json": b"{}"})
+    b = _analysis(db_session, eid="EMP002", input_info={"bdf_model": str(b_root / "M05.bdf"), "hull_no": "3600"},
+                  created_at=datetime(2026, 10, 5))
+    items = switchable_client.post("/api/admin/projects/logbook/plan", json={"ids": [a.id, b.id]}).json()["items"]
+    assert all(it["ok"] and "olderRunOf" not in it for it in items)

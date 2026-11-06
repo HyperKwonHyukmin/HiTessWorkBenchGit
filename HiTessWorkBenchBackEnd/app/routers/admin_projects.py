@@ -73,10 +73,11 @@ def list_projects(
     q = analysis_router._apply_analysis_filters(
         q, program_name=program_name, status=status, date_from=date_from, date_to=date_to,
     )
-    if logbook == "sent":
-        # 목록의 'N번 보냄' 표시(_export_summary)와 같은 기준 — 실패한 시도만 있는 기록은 빼고 blocked 는 포함
+    if logbook in ("sent", "unsent"):
+        # 목록의 'N번 보냄' 표시(_export_summary)와 같은 기준 — 실패한 시도만 있는 기록은 빼고 blocked 는 포함.
+        # unsent = 그 반대(여러 건 보내기의 기본 필터 — 실패만 있는 기록은 안 보낸 것으로 본다)
         sent_ids = db.query(models.LogbookExport.analysis_id).filter(models.LogbookExport.state != "failed")
-        q = q.filter(models.Analysis.id.in_(sent_ids))
+        q = q.filter(models.Analysis.id.in_(sent_ids) if logbook == "sent" else models.Analysis.id.notin_(sent_ids))
     users = db.query(models.User).all()
     users_by_eid = {analysis_router._norm_eid(u.employee_id): u for u in users}
     if employee_id and employee_id.strip():
@@ -199,6 +200,33 @@ class LogbookExportRequest(BaseModel):
     paths: list[str] = Field(min_length=1, max_length=svc.MAX_EXPORT_FILES)
     title: Optional[str] = Field(default=None, max_length=200)
     note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class BulkPlanRequest(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=svc.MAX_BULK_PLAN)
+
+
+@router.post("/logbook/plan")
+def bulk_logbook_plan(
+    payload: BulkPlanRequest,
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
+):
+    """여러 건 보내기 미리 보기 — 기록마다 보낼 파일(입력 BDF + Wire 세트 + 결과 세트)·묶음 이름·경고·못 보내는 사유.
+    실제 보내기는 화면이 기록마다 `POST /{id}/logbook` 을 차례로 부른다(행마다 결과·감사 기록이 지금과 같게 남는다).
+    계획: docs/plans/2026-11-06-all-projects-bulk-logbook-send.md"""
+    ids = list(dict.fromkeys(payload.ids))
+    records = {r.id: r for r in _base_query(db).filter(models.Analysis.id.in_(ids)).all()}
+    items, created = [], {}
+    for aid in ids:
+        record = records.get(aid)
+        if record is None:
+            items.append({"id": aid, "ok": False, "reason": "해석 기록을 찾을 수 없습니다", "files": [], "warnings": []})
+            continue
+        created[aid] = record.created_at
+        items.append(svc.bulk_plan_item(record, _resolved(db, record), analysis_router._files_available(record)))
+    svc.mark_older_runs(items, created)
+    return {"items": items}
 
 
 @router.post("/{analysis_id}/logbook")
