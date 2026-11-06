@@ -74,6 +74,7 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:searchLiftingRefs',
   'viewer:getLiftingRef',
   'viewer:openLiftingRefResult',
+  'viewer:getLiftingRefResult',
   'viewer:getReferenceContext',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
   'viewer:checkPathAccess',
@@ -210,9 +211,9 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // payload = { q?, hullNo?, limit?, offset?, mine? } → { ok, total, items } | { ok:false, error }
   searchLiftingReferences: (opts) =>
     ipcRenderer.invoke('viewer:searchLiftingRefs', opts),
-  // 이 exe 가 지원하는 실적 기능(2026-11-06, 1.7.9~) — mine = '내 모델' 조건, singleWindow = 실적 창 하나 재사용.
+  // 이 exe 가 지원하는 실적 기능 — mine = '내 모델' 조건, singleWindow = 실적 창 하나 재사용(1.7.9~), inlineResult = 같은 창 응력 보기(1.7.10~).
   // 옛 exe 에는 없다 → Studio 는 '내 모델' 탭을 막고 업데이트를 안내한다(옛 exe 는 mine 을 버려 전체가 나온다).
-  liftingReferenceFeatures: { mine: true, singleWindow: true },
+  liftingReferenceFeatures: { mine: true, singleWindow: true, inlineResult: true },
   // payload = { fileId } → { ok, item } (item.summary.planSegments 포함) | { ok:false, error }
   getLiftingReference: (opts) =>
     ipcRenderer.invoke('viewer:getLiftingRef', opts),
@@ -220,6 +221,9 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // payload = { fileId, title?, hullNos? } → { ok } | { ok:false, error }
   openLiftingReferenceResult: (opts) =>
     ipcRenderer.invoke('viewer:openLiftingRefResult', opts),
+  // 실적 결과를 지금 창 안에서 그리도록 결과·모델 JSON 을 받는다. payload = { fileId } → { ok, result, model, files }
+  getLiftingReferenceResult: (opts) =>
+    ipcRenderer.invoke('viewer:getLiftingRefResult', opts),
   // 이 창이 실적 보기 창이면 { fileId, name, title, hullNos, files, result }, 아니면 null
   getReferenceContext: () => ipcRenderer.invoke('viewer:getReferenceContext'),
   onMooringStructuralProgress: (callback) => {

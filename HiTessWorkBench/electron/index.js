@@ -2951,6 +2951,24 @@ ipcMain.handle("viewer:openLiftingRefResult", async (event, payload) => {
 
 ipcMain.handle("viewer:getReferenceContext", (event) => sessionFromEvent(event)?.reference || null);
 
+// 실적 결과를 지금 Studio 창 안(실적 '응력' 보기)에서 그리도록 결과·모델 JSON 을 넘긴다(2026-11-06, 새 창 없이).
+// 편집·해석 경로와 닿지 않는 보기 전용 자료다. 반환 = { ok, result, model, files } | { ok:false, error }
+ipcMain.handle("viewer:getLiftingRefResult", async (event, payload) => {
+  try {
+    const fileId = Number(payload?.fileId);
+    if (!Number.isInteger(fileId) || fileId <= 0) return { ok: false, error: "fileId 가 올바르지 않습니다." };
+    const out = await fetchLiftingRefs(event, `/api/logbook/lifting-refs/${fileId}/result`);
+    if (!out.ok) return out;
+    const body = out.body || {};
+    if (!body.model || typeof body.model !== "object" || !body.result || typeof body.result !== "object") {
+      return { ok: false, error: "실적 결과 형식이 올바르지 않습니다." };
+    }
+    return { ok: true, result: body.result, model: body.model, files: body.files || {} };
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 // MooringFittingStudio Save 탭 "결과 OP2" → 마지막 구조 해석의 OP2 를 사용자 PC 에 저장.
 ipcMain.handle("viewer:downloadMooringOp2", async (event) => {
   try {

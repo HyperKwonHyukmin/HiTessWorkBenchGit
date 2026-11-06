@@ -11,6 +11,11 @@
 - **'내 모델' 탭**: All Projects 로 보낸 자료(묶음에 WB 해석 번호) 중 실행자(origin.owner)·올린 사람·담당자가 나인 실적. LogBook `lifting-refs?mine=true` → 응답 `mine: true`
   (없으면 옛 서버 → Studio 가 막고 '서버 업데이트 필요'). exe 표식 `liftingReferenceFeatures` 가 없으면(옛 exe) 탭을 막는다.
 - 반영 순서: LogBook `git pull`+재시작 → WorkBench 백엔드 ⟳ Update+재시작 → 새 exe → `/studio-release module-unit-studio`(0.0.192).
+- **같은 창 응력 보기 (0.0.194 · exe 1.7.10~, 사용자 결정 '새 창보다 같은 창')**: 실적 상세의 3D 칸에 [3D | 응력 | 평면 그림].
+  응력 = 실적 결과의 부재 활용도 색(결과 화면과 같은 `utilizationColor`, 엔진 초과 판정 우선), 85% 이상·초과 부재는 굵게 맨 위에, 범례·활용도 상위 5개.
+  자료 = Electron `viewer:getLiftingRefResult`(결과·모델 JSON 을 지금 창에 넘김, 새 창 없음) → Studio `data/referenceStressScene.js`(실적 3D 와 같은 중심 좌표).
+  내 모델 저장소(stage·편집·결과)와 따로 노는 작은 캔버스라 내 작업을 덮지 않는다. 결과 표·변위는 '결과 표까지 보기(새 창)' 보조 링크로 남겼다.
+  실측(3496): 부재 2,679 모두 결과와 짝, 최대 활용도 1.98(E2552).
 
 ## 구현 상태 (2026-11-06)
 
