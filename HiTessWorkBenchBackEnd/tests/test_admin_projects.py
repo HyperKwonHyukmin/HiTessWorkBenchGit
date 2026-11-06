@@ -93,6 +93,10 @@ def test_list_all_users_and_filters(switchable_client, db_session, user_conn):
     # 사번(대소문자 무시)·App·파일 상태
     assert switchable_client.get("/api/admin/projects", params={"employee_id": "emp001"}).json()["total"] == 1
     assert switchable_client.get("/api/admin/projects", params={"program_name": "TrussAssessment"}).json()["total"] == 1
+    # 한 App 의 여러 내부 키('|' 구분) — 화면이 App 한 줄로 합쳐 보낸다
+    multi = {"program_names": "TrussAssessment|GroupModuleUnit"}
+    assert switchable_client.get("/api/admin/projects", params=multi).json()["total"] == 2
+    assert switchable_client.get("/api/admin/projects", params={"program_names": "|TrussAssessment|"}).json()["total"] == 1
     avail = switchable_client.get("/api/admin/projects", params={"file_status": "available"}).json()
     assert [i["program_name"] for i in avail["items"]] == ["GroupModuleUnit"]
     assert switchable_client.get("/api/admin/projects", params={"file_status": "expired"}).json()["total"] == 1

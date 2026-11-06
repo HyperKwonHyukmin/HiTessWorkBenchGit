@@ -60,6 +60,8 @@ def list_projects(
     limit: int = Query(20, ge=1, le=200),
     search: Optional[str] = Query(None),
     program_name: Optional[str] = Query(None),
+    # 한 App 이 내부 키를 여러 개 쓸 때(예: HiTessModelBuilder·AmToModelBuilder) 화면이 '|' 로 이어 보낸다
+    program_names: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     employee_id: Optional[str] = Query(None),
     date_from: Optional[_date] = Query(None),
@@ -73,6 +75,9 @@ def list_projects(
     q = analysis_router._apply_analysis_filters(
         q, program_name=program_name, status=status, date_from=date_from, date_to=date_to,
     )
+    name_keys = [k.strip() for k in (program_names or "").split("|") if k.strip()]
+    if name_keys:
+        q = q.filter(models.Analysis.program_name.in_(name_keys))
     if logbook in ("sent", "unsent"):
         # 목록의 'N번 보냄' 표시(_export_summary)와 같은 기준 — 실패한 시도만 있는 기록은 빼고 blocked 는 포함.
         # unsent = 그 반대(여러 건 보내기의 기본 필터 — 실패만 있는 기록은 안 보낸 것으로 본다)
