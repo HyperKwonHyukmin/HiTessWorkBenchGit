@@ -46,7 +46,7 @@ def read_hull_no_from_bdf(path: Optional[str]) -> Optional[str]:
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             for line in fh:
-                if "HullNo" not in line:
+                if "hullno" not in line.lower():   # 화면(utils/hullNo.js)과 같게 대소문자 무시
                     continue
                 match = HULL_NO_COMMENT_RE.match(line)
                 if match:
@@ -56,8 +56,12 @@ def read_hull_no_from_bdf(path: Optional[str]) -> Optional[str]:
     return None
 
 
-def resolve_bdf_hull_no(path: Optional[str]) -> tuple[Optional[str], Optional[str]]:
-    """BDF 의 호선과 출처를 돌려준다 — 주석('comment') → 파일명 앞 4자리('filename') → (None, None)."""
+def resolve_bdf_hull_no(path: Optional[str], user_hull_no: object = None) -> tuple[Optional[str], Optional[str]]:
+    """BDF 의 호선과 출처를 돌려준다 — 사용자가 적은 값('user', GMU 검증 전 확인 창) → 주석('comment')
+    → 파일명 앞 4자리('filename') → (None, None)."""
+    user = normalize_hull_no(user_hull_no)
+    if user:
+        return user, "user"
     hull_no = read_hull_no_from_bdf(path)
     if hull_no:
         return hull_no, "comment"

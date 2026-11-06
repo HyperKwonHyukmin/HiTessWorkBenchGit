@@ -2416,6 +2416,8 @@ def rerun_analysis(
             task_execute_groupmoduleunit,
             bdf_path, work_dir, current_user, timestamp, source,
             _rerun_bool(info.get("use_nastran"), False), program_name,
+            # 사용자가 검증 전 확인 창에 적은 호선은 이어받는다(주석·파일명 호선은 다시 계산)
+            info.get("hull_no") if info.get("hull_no_source") == "user" else None,
             queue_message="재실행 대기 중...",
             owned_work_dir=work_dir,
         )
@@ -3029,10 +3031,12 @@ async def request_groupmoduleunit(
         employee_id: str = Form(...),
         use_nastran: bool = Form(False),
         source: str = Form("Workbench"),
+        hull_no: Optional[str] = Form(None),
         current_user: str = Depends(require_auth)
 ):
     """
     Group & Module Unit 권상 구조 해석 — Step1 BDF 입력 검증.
+    hull_no(선택) = 검증 전 확인 창에서 적은 호선. 비우면 BDF 주석 → 파일명 앞 4자리.
     NastranBridge (`nastran_bridge.py`) 로 BDF 모델 JSON 을 산출하고
     프론트 ValidationStepLog 가 기대하는 step1 schema 로 변환한다.
     use_nastran=True 인 경우 추후 단계에서 validate-run 으로 F06 검증까지 확장한다.
@@ -3043,7 +3047,7 @@ async def request_groupmoduleunit(
     bdf_path = await save_upload(bdf_file, work_dir, error_prefix="파일 저장 오류")
     job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
-        bdf_path, work_dir, employee_id, timestamp, source, use_nastran, program_name,
+        bdf_path, work_dir, employee_id, timestamp, source, use_nastran, program_name, hull_no,
         owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
@@ -3172,6 +3176,7 @@ async def request_groupmoduleunit_from_path(
         employee_id: str = Form(...),
         use_nastran: bool = Form(False),
         source: str = Form("Workbench"),
+        hull_no: Optional[str] = Form(None),
         db: Session = Depends(database.get_db),
         current_user: str = Depends(require_auth)
 ):
@@ -3198,7 +3203,7 @@ async def request_groupmoduleunit_from_path(
 
     job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
-        bdf_path, work_dir, employee_id, timestamp, source, use_nastran, program_name,
+        bdf_path, work_dir, employee_id, timestamp, source, use_nastran, program_name, hull_no,
         owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
@@ -3252,6 +3257,8 @@ def fix_groupmoduleunit_deck(
     job_id = submit_analysis_job(
         task_execute_groupmoduleunit,
         fixed_path, work_dir, payload.employee_id, timestamp, source, payload.use_nastran, record.program_name,
+        # 사용자가 적은 호선은 수정본 검증에도 이어받는다
+        (record.input_info or {}).get("hull_no") if (record.input_info or {}).get("hull_no_source") == "user" else None,
         owned_work_dir=work_dir,
     )
     return {"job_id": job_id, "fixedPath": fixed_path, "applied": applied}

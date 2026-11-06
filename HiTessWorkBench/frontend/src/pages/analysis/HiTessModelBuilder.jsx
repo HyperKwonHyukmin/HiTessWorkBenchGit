@@ -12,7 +12,8 @@ import {
   RunStartPanel, WorkspaceTabBar, WorkspaceFrame, useWorkspaceStore,
 } from '../../components/analysis/runFrame';
 import { computeModelBuilderVerdict } from '../../utils/modelBuilderVerdict';
-import { HULL_NO_MAX_LENGTH, sanitizeHullInput, suggestHullNo } from '../../utils/hullNo';
+import { HULL_NO_MAX_LENGTH, needsHullPrompt, sanitizeHullInput, suggestHullNo } from '../../utils/hullNo';
+import HullPromptDialog from '../../components/analysis/HullPromptDialog';
 import { peekResultReentry, useResultReentry } from '../../utils/resultReentry';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard, ANALYSIS_DATA } from '../../contexts/DashboardContext';
@@ -2031,6 +2032,16 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
     equiFile?.name ?? serverInputs?.equip,
   ]);
   const [rerunBusy, setRerunBusy] = useState(false);
+  // 실행 전 호선 확인(2026-11-06 사용자 요청) — 적은 값·파일명 제안이 모두 없으면 한 번 묻는다. 같은 입력으로 '호선 없이 진행' 을
+  // 골랐으면 다시 묻지 않는다(inputKey). 막지 않는다 — 건너뛰면 지금처럼 호선 주석 없이 만든다.
+  const [hullPromptAction, setHullPromptAction] = useState(null);
+  const hullSkipKeyRef = useRef(null);
+  const hullInputKey = [struFile?.name ?? serverInputs?.stru, pipeFile?.name ?? serverInputs?.pipe, equiFile?.name ?? serverInputs?.equip]
+    .filter(Boolean).join('|');
+  const withHullCheck = (action) => () => {
+    if (!needsHullPrompt({ hullNo, hullSuggestion, inputKey: hullInputKey, skippedKey: hullSkipKeyRef.current })) return action();
+    setHullPromptAction(() => action);
+  };
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [bdfResult,  setBdfResult]  = useState(saved?.bdfResult ?? null);
   const [engineLog,  setEngineLog]  = useState(saved?.engineLog ?? null);
@@ -2430,7 +2441,8 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
   };
 
   /* ── 실행 ──────────────────────────────────────────────────────────── */
-  const handleRunModelBuilder = async () => {
+  const handleRunModelBuilder = async (hullOverride) => {
+    const hullValue = typeof hullOverride === 'string' ? hullOverride : hullNo;
     // Structural 또는 Piping CSV 중 하나만 있어도 실행 가능(횡방향/배관 단독 모델 지원).
     if (!struFile && !pipeFile) { showToast('Structural 또는 Piping CSV 파일이 필요합니다.', 'warning'); return; }
     const isHardError = (e) => e && !e.startsWith('__warn__');
@@ -2447,7 +2459,7 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
     formData.append('mesh_size',      String(parseInt(meshSize, 10) || Number(DEFAULT_MESH_SIZE_MM)));
     formData.append('ubolt_full_fix', String(!!uboltFullFix));
     formData.append('run_nastran',    String(!!useNastran));
-    if (hullNo) formData.append('hull_no', hullNo);
+    if (hullValue) formData.append('hull_no', hullValue);
 
     beginRun('파일 전송 중…', !!useNastran);
     setServerInputs(null);
@@ -2492,8 +2504,9 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
 
   // 같은 입력 CSV 로 옵션만 바꿔 다시 실행. 브라우저에 파일이 있으면 그대로 다시 올리고,
   // 결과를 다시 연 경우처럼 파일이 없으면 서버에 남은 원본 CSV 로 재실행한다(POST /analysis/{id}/rerun).
-  const handleRerunSameInputs = async () => {
-    if (struFile || pipeFile) { handleRunModelBuilder(); return; }
+  const handleRerunSameInputs = async (hullOverride) => {
+    const hullValue = typeof hullOverride === 'string' ? hullOverride : hullNo;
+    if (struFile || pipeFile) { handleRunModelBuilder(hullValue); return; }
     if (!sourceAnalysisId) {
       showToast('다시 실행할 입력 파일이 없습니다. CSV 를 올려 주세요.', 'warning');
       return;
@@ -2505,7 +2518,7 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
     try {
       const res = await rerunAnalysisProject(sourceAnalysisId, {
         mesh_size: mesh, ubolt_full_fix: !!uboltFullFix, run_nastran: !!useNastran,
-        hull_no: hullNo,   // 빈 값 = 파일명 제안으로 다시 계산
+        hull_no: hullValue,   // 빈 값 = 파일명 제안으로 다시 계산
       });
       const jobId = res.data?.job_id;
       if (!jobId) throw new Error('작업 ID 를 받지 못했습니다.');
@@ -3143,7 +3156,7 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
   useDashboardAutoRun(
     'HiTESS Model Builder',
     (handoffAssigned && (struFile || pipeFile) && !isRunning && !hasRunOnce && !hasPreflightErrors && handoffAssigned) || null,
-    handleRunModelBuilder,
+    withHullCheck(handleRunModelBuilder),
     acceptsEntry,
   );
 
@@ -3214,9 +3227,9 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
   const canRerun = !isRunning && !rerunBusy && meshValid
     && (hasLocalInputs ? !hasPreflightErrors : !!sourceAnalysisId);
   const runAction = !hasRunOnce
-    ? { label: 'Model Builder 실행', icon: ChevronsRight, onClick: handleRunModelBuilder, enabled: canRunFresh,
+    ? { label: 'Model Builder 실행', icon: ChevronsRight, onClick: withHullCheck(handleRunModelBuilder), enabled: canRunFresh,
         title: hasPreflightErrors ? '입력 점검 오류를 먼저 해결하세요.' : undefined }
-    : { label: '옵션 바꿔 다시 실행', icon: RefreshCw, onClick: handleRerunSameInputs, enabled: canRerun,
+    : { label: '옵션 바꿔 다시 실행', icon: RefreshCw, onClick: withHullCheck(handleRerunSameInputs), enabled: canRerun,
         title: hasLocalInputs ? '올려 둔 CSV 로 현재 옵션을 적용해 다시 만듭니다.' : '서버에 남아 있는 지난 입력 CSV 로 현재 옵션을 적용해 다시 만듭니다.' };
 
   // Ctrl+Enter = 실행 버튼. 입력 칸에 커서가 있어도 동작한다(Mesh size 를 고치고 바로 실행).
@@ -3318,6 +3331,12 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
           )}
 
           <div className="h-px bg-slate-100" />
+          <HullPromptDialog
+            isOpen={!!hullPromptAction}
+            onClose={() => setHullPromptAction(null)}
+            onSubmit={(hull) => { const run = hullPromptAction; setHullNo(hull); setHullPromptAction(null); run?.(hull); }}
+            onSkip={() => { const run = hullPromptAction; hullSkipKeyRef.current = hullInputKey; setHullPromptAction(null); run?.(); }}
+          />
           <OptionsPanel
             hullNo={hullNo} setHullNo={setHullNo} hullSuggestion={hullSuggestion}
             meshSize={meshSize} setMeshSize={setMeshSize}

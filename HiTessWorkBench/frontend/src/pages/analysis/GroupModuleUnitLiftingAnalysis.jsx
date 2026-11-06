@@ -23,6 +23,8 @@ import {
 } from '../../components/analysis/runFrame';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 import { peekDashboardFiles, useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
+import { HULL_PROMPT_MESSAGE_BDF, needsHullPrompt, readHullNoFromBdfText, suggestHullNoFromFilename } from '../../utils/hullNo';
+import HullPromptDialog from '../../components/analysis/HullPromptDialog';
 import { peekResultReentry, useResultReentry } from '../../utils/resultReentry';
 import {
   gmuWorkspaceKit, gmuWorkspaceLabel, gmuWorkspaceStatus, gmuWorkspaceTitle,
@@ -612,9 +614,39 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
     setActiveIdx(0);
   };
 
+  // ── 검증 전 호선 확인(2026-11-06 사용자 요청) ─────────────────
+  // 올린 BDF 의 Model Builder 호선 주석·파일명 모두에서 호선을 못 찾으면 한 번 묻는다(막지 않음, 건너뛰면 지금처럼).
+  // 다른 App 에서 넘어온 서버 BDF(handoffBdfPath)는 읽을 수 없고 Model Builder 가 이미 물었으므로 묻지 않는다.
+  const [userHullNo, setUserHullNo] = useState('');
+  const [hullPromptAction, setHullPromptAction] = useState(null);
+  const hullSkipKeyRef = useRef(null);
+  const bdfInputKey = bdfFile ? `${bdfFile.name}|${bdfFile.size}|${bdfFile.lastModified}` : '';
+  // 새 로컬 BDF 를 고를 때만 지운다 — 검증 뒤 서버 경로(자동 수정본·같은 모델 다시 검증)로 바뀔 때는 적은 호선을 이어 쓴다
+  useEffect(() => { if (bdfInputKey) setUserHullNo(''); }, [bdfInputKey]);
+  // BDF 를 읽는 동안(await) 버튼이 열려 있어 두 번 눌러도 검증이 두 번 접수되지 않게
+  const hullCheckingRef = useRef(false);
+  const withHullCheck = (action) => async () => {
+    if (handoffBdfPath || !bdfFile) return action();
+    if (hullCheckingRef.current) return false;
+    hullCheckingRef.current = true;
+    try {
+      let found = suggestHullNoFromFilename(bdfFile.name);
+      if (!found) {
+        try { found = readHullNoFromBdfText(await bdfFile.slice(0, 256 * 1024).text()); } catch { found = null; }
+      }
+      if (!needsHullPrompt({ hullNo: userHullNo, hullSuggestion: found, inputKey: bdfInputKey, skippedKey: hullSkipKeyRef.current })) {
+        return action();
+      }
+      setHullPromptAction(() => action);
+      return false;
+    } finally {
+      hullCheckingRef.current = false;
+    }
+  };
+
   // ── BDF 검증 ─────────────────────────────────────────────
   /** 검증 요청을 보낸다. 요청이 접수되면 true(LogBook 가져오기가 결과 회신에 쓴다). */
-  const handleValidate = async () => {
+  const handleValidate = async (hullOverride) => {
     if (!bdfFile && !handoffBdfPath) return false;
     beginValidation('서버 요청 중...');
     try {
@@ -625,6 +657,9 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
       formData.append('employee_id', employeeId);
       formData.append('use_nastran', String(useNastran));
       formData.append('source', 'Workbench');
+      // 검증 전 확인 창에서 적은 호선(없으면 서버가 BDF 주석 → 파일명으로 정한다)
+      const hullValue = typeof hullOverride === 'string' ? hullOverride : userHullNo;
+      if (hullValue) formData.append('hull_no', hullValue);
 
       let res;
       if (handoffBdfPath) {
@@ -681,7 +716,7 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
   };
 
   // 대시보드에서 넘겨받은 파일로 입력이 갖춰지면 실행까지 바로 이어간다
-  useDashboardAutoRun(GMU_MENU_NAME, (!validating && bdfFile) || null, handleValidate, acceptsEntry);
+  useDashboardAutoRun(GMU_MENU_NAME, (!validating && bdfFile) || null, withHullCheck(handleValidate), acceptsEntry);
 
   // ── Hi-TESS LogBook 에서 보낸 모델 받기 ─────────────────────────
   // 페이지가 작업 번호(slot)로 이 탭을 골라 서버로 가져온 뒤(logbookDelivery) 여기서 입력을 바꾸고
@@ -761,6 +796,7 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
   // ── 새 입력으로 시작 ─────────────────────────────────────
   const handleReset = () => {
     if (validJobId) clearGlobalJob?.(validJobId);
+    setUserHullNo('');
     setBdfFile(null);
     setHandoffSource(null);
     setHandoffBdfPath(null);
@@ -789,6 +825,7 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
       if (!info.bdf) throw new Error('이 기록에는 검증한 BDF 정보가 없습니다.');
 
       handleReset();
+      setUserHullNo(rec.input_info?.hull_no_source === 'user' ? (rec.input_info.hull_no || '') : '');
       setUseNastran(!!(rec.input_info?.use_nastran ?? info.use_nastran));
       setHandoffSource('지난 결과');
       setHandoffBdfPath(info.bdf);
@@ -829,6 +866,8 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
     const bdfModel = record?.input_info?.bdf_model;
     if (!bdfModel) { showToast('이 실행에는 불러올 BDF 정보가 없습니다.', 'warning'); return; }
     handleReset();
+    // 그 실행에서 사용자가 적은 호선은 다시 검증할 때도 보낸다(주석·파일명 호선은 서버가 다시 찾는다)
+    setUserHullNo(record.input_info?.hull_no_source === 'user' ? (record.input_info.hull_no || '') : '');
     setUseNastran(!!record.input_info?.use_nastran);
     setHandoffSource('최근 실행');
     setHandoffBdfPath(bdfModel);
@@ -889,7 +928,7 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
   const runAction = {
     label: hasValidation || validFailed ? 'BDF 다시 검증' : 'BDF 검증 실행',
     icon: hasValidation || validFailed ? RefreshCw : ChevronsRight,
-    onClick: handleValidate,
+    onClick: withHullCheck(handleValidate),
     enabled: hasInput && !validating,
     title: hasValidation ? '같은 BDF 를 지금 설정으로 다시 검증합니다. Studio 결과는 지워집니다.' : undefined,
   };
@@ -991,6 +1030,13 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
   // 페이지 머리(배너·작업 탭 바)는 GroupModuleUnitLiftingAnalysis 가 그린다. 여기는 작업 화면 본문만.
   return (
     <>
+      <HullPromptDialog
+        isOpen={!!hullPromptAction}
+        message={HULL_PROMPT_MESSAGE_BDF}
+        onClose={() => setHullPromptAction(null)}
+        onSubmit={(hull) => { const run = hullPromptAction; setUserHullNo(hull); setHullPromptAction(null); run?.(hull); }}
+        onSkip={() => { const run = hullPromptAction; hullSkipKeyRef.current = bdfInputKey; setHullPromptAction(null); run?.(); }}
+      />
       <div className="flex flex-col items-stretch gap-5 px-1 xl:flex-row">
 
         {/* ── 왼쪽 레일: 단계 · 입력 요약 · 옵션 · 실행 ── */}

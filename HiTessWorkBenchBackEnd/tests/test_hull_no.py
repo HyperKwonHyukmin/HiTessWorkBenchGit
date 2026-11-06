@@ -100,3 +100,21 @@ def test_modelflow_old_engine_skips_flag_and_warns(tmp_path):
     assert "--hull-no" not in cmd
     assert info["hull_no_written"] is False
     assert "호선 기록을 지원하지 않아" in complete.call_args.args[2]
+
+
+def test_resolve_prefers_user_value(tmp_path):
+    """GMU 검증 전 확인 창에서 적은 호선이 BDF 주석·파일명보다 앞선다. 형식이 틀리면 무시한다."""
+    from app.services.hull_no import resolve_bdf_hull_no
+    bdf = tmp_path / "3454-35020_m01.bdf"
+    bdf.write_text("$ HiTessModelBuilder: HullNo=3454\nSOL 101\n", encoding="utf-8")
+    assert resolve_bdf_hull_no(str(bdf), " 3600 ") == ("3600", "user")
+    assert resolve_bdf_hull_no(str(bdf), "33 00") == ("3454", "comment")
+    assert resolve_bdf_hull_no(str(bdf), None) == ("3454", "comment")
+
+
+def test_read_comment_case_insensitive(tmp_path):
+    """손으로 고친 소문자 주석도 화면과 같게 읽는다."""
+    from app.services.hull_no import read_hull_no_from_bdf
+    bdf = tmp_path / "x.bdf"
+    bdf.write_text("$ hitessmodelbuilder: hullno = 3542a\nSOL 101\n", encoding="utf-8")
+    assert read_hull_no_from_bdf(str(bdf)) == "3542A"

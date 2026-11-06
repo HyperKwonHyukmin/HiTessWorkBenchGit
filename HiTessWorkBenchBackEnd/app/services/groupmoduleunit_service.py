@@ -721,8 +721,10 @@ def task_execute_groupmoduleunit(
     source: str,
     use_nastran: bool,
     program_name: str = "GroupModuleUnit",
+    user_hull_no: str | None = None,
 ):
-    """nastran_bridge.py 로 Step1 파싱 검증과 선택적 Step2 Nastran 검증을 수행한다."""
+    """nastran_bridge.py 로 Step1 파싱 검증과 선택적 Step2 Nastran 검증을 수행한다.
+    user_hull_no = 검증 전 확인 창에서 사용자가 적은 호선(없으면 BDF 주석 → 파일명)."""
     mark_running(job_id, "NastranBridge 초기화 중...", progress=10)
 
     status_msg = "Success"
@@ -882,8 +884,8 @@ def task_execute_groupmoduleunit(
 
     update_progress(job_id, 95, "데이터베이스 저장 중...")
 
-    # 호선 — Model Builder BDF 의 'HullNo' 주석 → 파일명 앞 4자리 순. LogBook 보내기 등이 이 값을 읽는다.
-    hull_no, hull_no_source = resolve_bdf_hull_no(bdf_path)
+    # 호선 — 사용자가 적은 값 → Model Builder BDF 의 'HullNo' 주석 → 파일명 앞 4자리 순. LogBook 보내기 등이 이 값을 읽는다.
+    hull_no, hull_no_source = resolve_bdf_hull_no(bdf_path, user_hull_no)
 
     project_data, db_err = record_analysis(
         job_id=job_id,
@@ -893,7 +895,7 @@ def task_execute_groupmoduleunit(
         status=status_msg,
         input_info={
             "bdf_model": bdf_path, "use_nastran": use_nastran,
-            "hull_no": hull_no, "hull_no_source": hull_no_source,   # "comment" | "filename" | None
+            "hull_no": hull_no, "hull_no_source": hull_no_source,   # "user" | "comment" | "filename" | None
         },
         # F06 부분 결과 등을 위해 status 무관 result_data 저장 (기존 동작 보존)
         result_info=result_data if result_data else None,

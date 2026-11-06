@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { sanitizeHullInput, suggestHullNo, suggestHullNoFromFilename } from './hullNo.js';
+import { needsHullPrompt, readHullNoFromBdfText, sanitizeHullInput, suggestHullNo, suggestHullNoFromFilename } from './hullNo.js';
 
 test('파일명 앞 4자리 숫자만 호선으로 제안한다 (백엔드 hull_no.py 와 같은 규칙)', () => {
   assert.equal(suggestHullNoFromFilename('3454-35020-struData-A505080_20251021.csv'), '3454');
@@ -22,4 +22,20 @@ test('입력값은 허용 문자만 남기고 대문자·20자로 자른다', ()
   assert.equal(sanitizeHullInput('34$5 4\n'), '3454');
   assert.equal(sanitizeHullInput('호선3454'), '3454');
   assert.equal(sanitizeHullInput('x'.repeat(30)).length, 20);
+});
+
+test('호선 확인 창 — 값·제안이 없고 같은 입력으로 건너뛴 적이 없을 때만', () => {
+  assert.equal(needsHullPrompt({ hullNo: '', hullSuggestion: null, inputKey: 'a.csv', skippedKey: null }), true);
+  assert.equal(needsHullPrompt({ hullNo: '3454', hullSuggestion: null, inputKey: 'a.csv' }), false);
+  assert.equal(needsHullPrompt({ hullNo: '', hullSuggestion: '3454', inputKey: 'a.csv' }), false);
+  assert.equal(needsHullPrompt({ hullNo: '', hullSuggestion: null, inputKey: 'a.csv', skippedKey: 'a.csv' }), false);
+  assert.equal(needsHullPrompt({ hullNo: '', hullSuggestion: null, inputKey: 'b.csv', skippedKey: 'a.csv' }), true);
+  assert.equal(needsHullPrompt({ hullNo: '  ', hullSuggestion: null, inputKey: 'a.csv' }), true);
+});
+
+test('BDF 앞부분에서 Model Builder 호선 주석 읽기', () => {
+  assert.equal(readHullNoFromBdfText('$ HiTessModelBuilder: HullNo=3454\nSOL 101\n'), '3454');
+  assert.equal(readHullNoFromBdfText('SOL 101\n$ hitessmodelbuilder: hullno = 3542a\n'), '3542A');
+  assert.equal(readHullNoFromBdfText('SOL 101\nCEND\n'), null);
+  assert.equal(readHullNoFromBdfText('$ HiTessModelBuilder: HullNo=33#00\n'), null);
 });
