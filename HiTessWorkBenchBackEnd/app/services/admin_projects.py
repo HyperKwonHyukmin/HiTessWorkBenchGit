@@ -229,6 +229,62 @@ def with_lifting(program: str, resolved: dict, requested: list[str]) -> tuple[li
     return out, added
 
 
+# 2026-11-06 — Wire 모델을 보낼 때 함께 보내기를 권하는 구조 해석 결과 세트. 나중에 Studio 가 실적을 부르면
+# 'Unit 구조 해석 결과 화면' 그대로 띄우려면 결과 JSON 과 그 결과를 낸 모델 JSON 이 함께 있어야 한다(Studio 는 BDF·F06 을 못 읽는다).
+# F06 은 원본 증거이자 허용응력을 바꿔 다시 판정할 때 쓴다. 강제로 더하지 않고 화면이 미리 체크만 한다(관리자가 뺄 수 있다).
+# 계획: docs/plans/2026-11-06-mu-lifting-reference-stress-check.md
+LIFTING_RESULT_SUFFIX = "_lifting_nastranResult.json"
+
+
+def _mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
+def lifting_recommendation(program: str, listing: dict) -> dict | None:
+    """권상 해석이면 함께 보내기를 권하는 파일 → {wire: [경로], result: [경로], missing: [사유]}. 권상 해석이 아니면 None.
+    대상은 폴더 바로 아래 파일만(`lifting_paths` 와 같은 기준). 결과 세트는 결과 JSON 이 있는 stem 마다
+    결과 JSON + `<stem>_lifting.f06`(Nastran 이 소문자로 씀) + 해석에 쓴 모델 JSON(`<stem>_edited.json`, 없으면 `<stem>.json`
+    — unit_structural_service 가 Wire BDF 를 만들 때와 같은 우선순위)."""
+    if program not in LIFTING_PROGRAMS:
+        return None
+    top_all = [f for f in listing.get("files", []) if "/" not in f["rel"]]
+    top = [f for f in top_all if not f["drm"]]
+    by_name = {(f["folder"], f["rel"].lower()): f["path"] for f in top}
+    wire = [f["path"] for f in top if f["rel"].lower().endswith(LIFTING_SUFFIXES)]
+    result: list[str] = []
+    missing: list[str] = []
+    # DRM 에 감싸진 결과 JSON 은 LogBook 이 받지 않는다 — '결과 없음' 이 아니라 DRM 이라고 알린다
+    for f in top_all:
+        if f["drm"] and f["rel"].lower().endswith(LIFTING_RESULT_SUFFIX.lower()):
+            missing.append(f"{f['rel']} 이 DRM 으로 암호화됨")
+    for f in top:
+        name = f["rel"].lower()
+        if not name.endswith(LIFTING_RESULT_SUFFIX.lower()):
+            continue
+        stem = name[: -len(LIFTING_RESULT_SUFFIX)]
+        result.append(f["path"])
+        f06 = by_name.get((f["folder"], f"{stem}_lifting.f06"))
+        model = by_name.get((f["folder"], f"{stem}_edited.json")) or by_name.get((f["folder"], f"{stem}.json"))
+        if f06:
+            result.append(f06)
+        else:
+            missing.append(f"{f['rel']} 의 F06 없음")
+        if model:
+            result.append(model)
+            # 구조 해석 뒤 Studio 에서 더 편집하고 자세안정성만 다시 돌리면 _edited.json 만 새것이 된다 —
+            # 결과(elementId)와 모델이 어긋나 실적 보기에서 색이 빠진다. 보내기 전에 알린다.
+            if _mtime(model) > _mtime(f["path"]) + 1:
+                missing.append(f"{os.path.basename(model)} 이 구조 해석 뒤에 바뀜 — 결과와 모델이 어긋날 수 있으니 구조 해석을 다시 돌린 뒤 보내세요")
+        else:
+            missing.append(f"{f['rel']} 의 모델 JSON 없음")
+    if wire and not any(p.lower().endswith(LIFTING_RESULT_SUFFIX.lower()) for p in result)             and not any("DRM" in m for m in missing):
+        missing.append("구조 해석 결과 JSON 없음")
+    return {"wire": wire, "result": result, "missing": missing}
+
+
 def select_paths(resolved: dict, requested: list[str]) -> list[tuple[str, str, str]]:
     """요청 경로를 작업 폴더 안의 실제 파일로 확인한다 → [(절대 경로, 폴더 이름, 폴더 기준 posix 상대 경로)].
     폴더 밖·없는 파일·중복은 ValueError(사유)."""

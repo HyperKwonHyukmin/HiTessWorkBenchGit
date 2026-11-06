@@ -435,3 +435,69 @@ def test_export_non_lifting_program_adds_nothing(switchable_client, db_session, 
     model = next(p for p in _paths(switchable_client, a.id) if p.endswith("t.bdf"))
     r = switchable_client.post(f"/api/admin/projects/{a.id}/logbook", json={"paths": [model]})
     assert r.status_code == 200 and r.json()["auto_added"] == [] and r.json()["file_count"] == 1
+
+
+def test_files_recommend_lifting_result_set(switchable_client, db_session, user_conn):
+    """2026-11-06 — 권상 해석 목록은 Wire 모델 + 구조 해석 결과 세트(결과 JSON·F06·해석에 쓴 모델 JSON)를 권한다."""
+    parent = _gmu(db_session, user_conn)
+    _work(user_conn, "20261001_090000_EMP001_GroupModuleUnit", {
+        "9999_M01.json": b"{}",                              # 원본 모델 JSON — 편집본이 있으면 권하지 않는다
+        "9999_M01_edited.json": b"{}",
+        "9999_M01_lifting.bdf": b"SOL 101\n",
+        "9999_M01_lifting_meta.json": b"{}",
+        "9999_M01_posture.json": b"{}",
+        "9999_M01_lifting_nastranResult.json": b"{}",
+        "9999_m01_lifting.f06": b"F06",                      # Nastran 은 소문자로 쓴다
+        "9999_m01_lifting.op2": b"OP2",                      # 읽는 곳이 없어 권하지 않는다
+        "lifting_reviews/53f6aaee/9999_M01_lifting_nastranResult.json": b"{}",  # 중간본 — 권하지 않는다
+    })
+    r = switchable_client.get(f"/api/admin/projects/{parent.id}/files")
+    assert r.status_code == 200, r.text
+    rec = r.json()["liftingSet"]
+    names = lambda paths: sorted(p.replace("\\", "/").rsplit("/", 1)[-1] for p in paths)
+    assert names(rec["wire"]) == ["9999_M01_lifting.bdf", "9999_M01_lifting_meta.json", "9999_M01_posture.json"]
+    assert names(rec["result"]) == ["9999_M01_edited.json", "9999_M01_lifting_nastranResult.json", "9999_m01_lifting.f06"]
+    assert rec["missing"] == []
+
+
+def test_files_lifting_set_reports_missing_result(switchable_client, db_session, user_conn):
+    parent = _gmu(db_session, user_conn)
+    _work(user_conn, "20261001_090000_EMP001_GroupModuleUnit", {"9999_m01_lifting.bdf": b"SOL 101\n"})
+    rec = switchable_client.get(f"/api/admin/projects/{parent.id}/files").json()["liftingSet"]
+    assert rec["result"] == [] and rec["missing"] == ["구조 해석 결과 JSON 없음"]
+
+
+def test_files_lifting_set_falls_back_to_original_model_json(switchable_client, db_session, user_conn):
+    parent = _gmu(db_session, user_conn)
+    _work(user_conn, "20261001_090000_EMP001_GroupModuleUnit", {
+        "9999_m01.json": b"{}", "9999_m01_lifting_nastranResult.json": b"{}",
+    })
+    rec = switchable_client.get(f"/api/admin/projects/{parent.id}/files").json()["liftingSet"]
+    assert sorted(p.replace("\\", "/").rsplit("/", 1)[-1] for p in rec["result"]) == [
+        "9999_m01.json", "9999_m01_lifting_nastranResult.json"]
+    assert rec["missing"] == ["9999_m01_lifting_nastranResult.json 의 F06 없음"]
+
+
+def test_files_non_lifting_program_has_no_lifting_set(switchable_client, db_session, user_conn):
+    root = _work(user_conn, "20261001_090000_EMP001_TrussAssessment", {"t.bdf": b"x"})
+    a = _analysis(db_session, program="TrussAssessment", input_info={"bdf": str(root / "t.bdf")})
+    assert "liftingSet" not in switchable_client.get(f"/api/admin/projects/{a.id}/files").json()
+
+
+def test_files_lifting_set_warns_model_changed_after_result_and_drm(switchable_client, db_session, user_conn):
+    import os as _os
+    parent = _gmu(db_session, user_conn)
+    root = _work(user_conn, "20261001_090000_EMP001_GroupModuleUnit", {
+        "9999_m01_lifting_nastranResult.json": b"{}", "9999_m01_edited.json": b"{}", "9999_m01_lifting.f06": b"F06",
+    })
+    t = _os.path.getmtime(root / "9999_m01_lifting_nastranResult.json")
+    _os.utime(root / "9999_m01_edited.json", (t + 60, t + 60))     # 해석 뒤 편집본만 새로 씀
+    rec = switchable_client.get(f"/api/admin/projects/{parent.id}/files").json()["liftingSet"]
+    assert any("구조 해석 뒤에 바뀜" in m for m in rec["missing"])
+
+    drm_root = _work(user_conn, "20261002_090000_EMP001_GroupModuleUnit", {
+        "8888_m01_lifting.bdf": b"SOL 101\n", "8888_m01_lifting_nastranResult.json": svc.DRM_MAGIC + b"x",
+    })
+    a = _analysis(db_session, input_info={"bdf_model": str(drm_root / "8888_m01_lifting.bdf")})
+    rec = switchable_client.get(f"/api/admin/projects/{a.id}/files").json()["liftingSet"]
+    assert rec["missing"] == ["8888_m01_lifting_nastranResult.json 이 DRM 으로 암호화됨"]

@@ -1054,7 +1054,10 @@ ipcMain.handle("viewer:readLocalFile", async (_e, payload) => {
 });
 
 // 3) 풀스크린 보조 BrowserWindow 로 viewer 오픈
-ipcMain.handle("viewer:open", async (_e, payload) => {
+ipcMain.handle("viewer:open", (_e, payload) => openViewerSession(payload));
+
+// viewer:open 본체. extra = 세션에 더 실을 값(예: 권상 실적 보기의 reference) — 렌더러 payload 로는 못 넣는다.
+async function openViewerSession(payload, extra = {}) {
   const {
     viewerId, initialFolder, parentAnalysisId, serverUrl, outputDir, sidePassageBdfName, sourceKey,
     windowTitle: requestedTitle,
@@ -1092,6 +1095,9 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
     // 이 창이 보고 있는 '원본 모델' 식별자(서버측 산출 폴더 또는 BDF 경로).
     // viewer:notifySourceUpdated 가 이 값과 비교해 모델이 갈아엎혔는지 판정한다.
     sourceKey: typeof sourceKey === "string" && sourceKey.trim() ? sourceKey.trim() : null,
+    // 권상 실적 보기 창이면 { fileId, name, title, hullNos, files, result } — viewer:getReferenceContext 가 돌려준다.
+    // 이 창은 parentAnalysisId 가 없어 해석·업로드 IPC 가 모두 거부된다(읽기 전용).
+    reference: extra.reference || null,
   };
 
   // 어느 모델을 보고 있는지 창 제목으로 식별 가능하게 한다 — Studio 를 여러 개 띄웠을 때
@@ -1211,7 +1217,7 @@ ipcMain.handle("viewer:open", async (_e, payload) => {
     });
   }
   return { ok: true };
-});
+}
 
 // ── Studio 원본 모델 갱신 알림 ────────────────────────────────────────────
 // WorkBench 가 모델을 다시 만들면, 그 모델을 입력으로 이미 열려 있는 Studio 는 옛 모델을
@@ -2841,6 +2847,9 @@ const LIFTING_REF_ERRORS = {
   logbook_file_not_found: "LogBook 에서 찾을 수 없거나 볼 권한이 없습니다.",
   logbook_not_wire_model: "Wire 배치를 읽을 수 있는 권상 모델이 아닙니다.",
   logbook_wb_unavailable: "LogBook 이 WorkBench 사용자 정보를 확인하지 못했습니다. 잠시 뒤 다시 시도하세요.",
+  logbook_no_result: "이 실적에는 구조 해석 결과가 함께 오지 않았습니다(Wire 모델만 보관).",
+  logbook_result_unreadable: "LogBook 에 있는 실적 결과 파일을 읽지 못했습니다(DRM·형식 오류).",
+  logbook_storage_unreachable: "LogBook 저장소(공유 폴더)에 연결하지 못했습니다. 잠시 뒤 다시 시도하세요.",
 };
 
 async function fetchLiftingRefs(event, path) {
@@ -2890,6 +2899,48 @@ ipcMain.handle("viewer:getLiftingRef", async (event, payload) => {
     return { ok: false, error: e?.message || "예외 발생" };
   }
 });
+
+// Hoist 탭 실적 → "결과 화면으로 열기" — 실적과 함께 보낸 구조 해석 결과를 별도 Module Unit Studio 창(읽기 전용)으로 연다.
+// 계획: docs/plans/2026-11-06-mu-lifting-reference-stress-check.md. 모델 JSON 은 임시 폴더에 써서 initialFolder 로 넘기고
+// (Studio 는 폴더의 JSON 을 단계로 읽는다), 결과 JSON 은 세션에 실어 viewer:getReferenceContext 로 준다.
+// 이 창은 parentAnalysisId 가 없어 해석·업로드 IPC 가 거부된다.
+ipcMain.handle("viewer:openLiftingRefResult", async (event, payload) => {
+  try {
+    const fileId = Number(payload?.fileId);
+    if (!Number.isInteger(fileId) || fileId <= 0) return { ok: false, error: "fileId 가 올바르지 않습니다." };
+    const out = await fetchLiftingRefs(event, `/api/logbook/lifting-refs/${fileId}/result`);
+    if (!out.ok) return out;
+    const body = out.body || {};
+    if (!body.model || typeof body.model !== "object" || !body.result || typeof body.result !== "object") {
+      return { ok: false, error: "실적 결과 형식이 올바르지 않습니다." };
+    }
+    const dir = path.join(app.getPath("temp"), "hitess-lifting-ref", String(fileId));
+    await fs.promises.rm(dir, { recursive: true, force: true });
+    await fs.promises.mkdir(dir, { recursive: true });
+    const modelName = path.basename(String(body.files?.model?.name || "model.json")).replace(/[^\w.\-]/g, "_");
+    await fs.promises.writeFile(path.join(dir, modelName.toLowerCase().endsWith(".json") ? modelName : `${modelName}.json`),
+      JSON.stringify(body.model), "utf8");
+    const caller = sessionFromEvent(event);
+    const label = String(payload?.title || body.name || `실적 ${fileId}`).slice(0, 120);
+    return await openViewerSession({
+      viewerId: caller?.viewerId || "module-unit-studio",
+      initialFolder: dir,
+      serverUrl: caller?.serverUrl || null,
+      sourceKey: `logbook-lifting-ref:${fileId}`,
+      windowTitle: `실적 보기 · ${label}`,
+    }, {
+      reference: {
+        fileId, name: body.name || null, title: payload?.title || null,
+        hullNos: Array.isArray(payload?.hullNos) ? payload.hullNos.slice(0, 10) : [],
+        files: body.files || {}, result: body.result,
+      },
+    });
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
+ipcMain.handle("viewer:getReferenceContext", (event) => sessionFromEvent(event)?.reference || null);
 
 // MooringFittingStudio Save 탭 "결과 OP2" → 마지막 구조 해석의 OP2 를 사용자 PC 에 저장.
 ipcMain.handle("viewer:downloadMooringOp2", async (event) => {

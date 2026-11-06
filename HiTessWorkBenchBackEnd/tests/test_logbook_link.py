@@ -460,3 +460,26 @@ def test_lifting_refs_unreachable_and_disabled(admin_client, enabled, monkeypatc
     monkeypatch.delenv("LOGBOOK_INTEGRATION_SECRET", raising=False)
     assert admin_client.get("/api/logbook/lifting-refs", headers=_auth()).status_code == 503
 
+
+
+def test_lifting_ref_result_proxies_and_errors(admin_client, enabled, monkeypatch):
+    """2026-11-06 — 실적의 구조 해석 결과 세트(결과 JSON + 모델 JSON) 중계."""
+    seen = {}
+
+    def handler(request):
+        seen.setdefault("as", parse_qs(urlparse(str(request.url)).query).get("as", [None])[0])
+        return {
+            "/api/integration/lifting-refs/1/result": httpx.Response(200, json={"fileId": 1, "result": {"members": []}, "model": {"nodes": []}}),
+            "/api/integration/lifting-refs/2/result": httpx.Response(404, json={"detail": "no_result"}),
+            "/api/integration/lifting-refs/3/result": httpx.Response(422, json={"detail": "drm"}),
+            "/api/integration/lifting-refs/4/result": httpx.Response(404, json={"detail": "Not Found"}),   # 옛 LogBook
+            "/api/integration/lifting-refs/5/result": httpx.Response(503, json={"detail": "storage_unreachable"}),
+        }[request.url.path]
+
+    _mock_logbook(monkeypatch, handler)
+    body = admin_client.get("/api/logbook/lifting-refs/1/result", headers=_auth()).json()
+    assert body["model"] == {"nodes": []} and seen["as"]
+    for fid, status, detail in ((2, 404, "logbook_no_result"), (3, 422, "logbook_result_unreadable:drm"),
+                                (4, 501, "logbook_lifting_refs_unsupported"), (5, 503, "logbook_storage_unreachable")):
+        r = admin_client.get(f"/api/logbook/lifting-refs/{fid}/result", headers=_auth())
+        assert (r.status_code, r.json()["detail"]) == (status, detail)

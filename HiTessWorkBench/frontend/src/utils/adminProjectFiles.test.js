@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   defaultExportTitle,
+  describeLiftingSet,
+  liftingSetPaths,
   describeExportResult,
   formatBytes,
   formatShortDateTime,
@@ -63,4 +65,19 @@ test('isPreviewableBdf: BDF 계열 확장자만, DRM 은 제외', () => {
   assert.equal(isPreviewableBdf({ rel: 'model.f06' }), false);
   assert.equal(isPreviewableBdf({ rel: 'model.bdf.bak' }), false);
   assert.equal(isPreviewableBdf(null), false);
+});
+
+test('liftingSetPaths — Wire 모델 + 결과 세트, 중복 없이', () => {
+  assert.deepEqual(liftingSetPaths(null), []);
+  assert.deepEqual(
+    liftingSetPaths({ wire: ['a_lifting.bdf', 'a_lifting_meta.json'], result: ['a_lifting_nastranResult.json', 'a_lifting.bdf'] }),
+    ['a_lifting.bdf', 'a_lifting_meta.json', 'a_lifting_nastranResult.json'],
+  );
+});
+
+test('describeLiftingSet — Wire 없으면 안내 없음, 결과 없으면 경고', () => {
+  assert.equal(describeLiftingSet(undefined), '');
+  assert.equal(describeLiftingSet({ wire: [], result: [], missing: [] }), '');
+  assert.match(describeLiftingSet({ wire: ['x'], result: [], missing: [] }), /결과 화면을 열 수 없습니다/);
+  assert.match(describeLiftingSet({ wire: ['x'], result: ['y'], missing: [] }), /미리 체크/);
 });

@@ -16,8 +16,8 @@ import { exportProjectToLogbook, getAdminProjectFiles } from '../../api/adminPro
 import { downloadFileBlob } from '../../api/analysis';
 import { downloadBlob } from '../../utils/fileHelper';
 import {
-  defaultExportTitle, describeExportResult, formatBytes, formatShortDateTime, groupFilesByRole,
-  isPreviewableBdf, summarizeSelection,
+  defaultExportTitle, describeExportResult, describeLiftingSet, formatBytes, formatShortDateTime, groupFilesByRole,
+  isPreviewableBdf, liftingSetPaths, summarizeSelection,
 } from '../../utils/adminProjectFiles';
 import BdfPreviewDialog from '../bdfPreview/BdfPreviewDialog';
 import { useLogbookLauncher } from '../analysis/runFrame/LogbookImportButton';
@@ -129,7 +129,8 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
       const { data } = await getAdminProjectFiles(project.id);
       setListing(data);
       // 처음에는 아무것도 체크하지 않는다 — 보낼 파일은 관리자가 직접 고른다.
-      setSelected(new Set());
+      // 단 권상 해석은 Wire 모델 + 구조 해석 결과 세트를 미리 체크한다(권장, 관리자가 뺄 수 있다 — 2026-11-06).
+      setSelected(new Set(liftingSetPaths(data?.liftingSet)));
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || '파일 목록을 불러오지 못했습니다.');
     } finally {
@@ -210,6 +211,11 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
   };
 
   const exports = listing?.exports || [];
+  const liftingSet = listing?.liftingSet;
+  const liftingSetNote = describeLiftingSet(liftingSet);
+  const liftingSetList = useMemo(() => liftingSetPaths(liftingSet), [liftingSet]);
+  const liftingSetAllChecked = liftingSetList.length > 0 && liftingSetList.every(p => selected.has(p));
+  const checkLiftingSet = () => setSelected(prev => new Set([...prev, ...liftingSetList]));
 
   return (
     <Modal
@@ -322,6 +328,27 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
               체크한 파일이 내 이름의 LogBook <b>정리 대기</b> 묶음으로 들어가고, 보내면 LogBook 창이 바로 열립니다. 제목·호선 정리와 확정은 LogBook 에서 합니다.
               LogBook 에 이미 있는 것과 똑같은 BDF 와 회사 DRM 으로 암호화된 파일은 받지 않습니다.
             </p>
+            {liftingSetNote && (
+              <div className={`mb-3 rounded-lg border px-3 py-2 text-xs leading-relaxed ${
+                liftingSet.result?.length ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-amber-200 bg-amber-50 text-amber-800'
+              }`}>
+                <p>
+                  <b>권상 Wire 모델 세트</b> · {liftingSetNote}
+                </p>
+                {liftingSet.missing?.length > 0 && liftingSet.result?.length > 0 && (
+                  <p className="mt-1 text-amber-800">빠진 파일: {liftingSet.missing.join(', ')}</p>
+                )}
+                {liftingSet.result?.length > 0 && !liftingSetAllChecked && (
+                  <button
+                    type="button"
+                    onClick={checkLiftingSet}
+                    className="mt-1.5 rounded-md border border-blue-300 bg-white px-2 py-1 text-[11px] font-bold text-blue-800 hover:bg-blue-100"
+                  >
+                    세트 다시 체크 ({liftingSetList.length}개)
+                  </button>
+                )}
+              </div>
+            )}
             <div className="grid gap-3 md:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-[11px] font-bold text-slate-600">묶음 이름</span>

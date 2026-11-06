@@ -73,6 +73,8 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:downloadUnitOp2',
   'viewer:searchLiftingRefs',
   'viewer:getLiftingRef',
+  'viewer:openLiftingRefResult',
+  'viewer:getReferenceContext',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
   'viewer:checkPathAccess',
   'viewer:fetchResultDir',
@@ -211,6 +213,12 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
   // payload = { fileId } → { ok, item } (item.summary.planSegments 포함) | { ok:false, error }
   getLiftingReference: (opts) =>
     ipcRenderer.invoke('viewer:getLiftingRef', opts),
+  // 실적과 함께 온 구조 해석 결과를 별도 Studio 창(읽기 전용 '실적 보기')으로 연다.
+  // payload = { fileId, title?, hullNos? } → { ok } | { ok:false, error }
+  openLiftingReferenceResult: (opts) =>
+    ipcRenderer.invoke('viewer:openLiftingRefResult', opts),
+  // 이 창이 실적 보기 창이면 { fileId, name, title, hullNos, files, result }, 아니면 null
+  getReferenceContext: () => ipcRenderer.invoke('viewer:getReferenceContext'),
   onMooringStructuralProgress: (callback) => {
     const listener = (_, data) => callback(data);
     ipcRenderer.on('viewer:mooring-structural-progress', listener);

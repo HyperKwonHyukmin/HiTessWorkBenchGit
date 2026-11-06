@@ -81,6 +81,24 @@ export function describeExportResult(result) {
   return `LogBook 정리 대기로 보냈습니다 — ${parts.join(', ')}.`;
 }
 
+/**
+ * 권상 해석의 권장 세트(서버 `liftingSet` = { wire, result, missing }) → 미리 체크할 경로 목록.
+ * Wire 모델(BDF·meta·posture) + 구조 해석 결과(결과 JSON·F06·모델 JSON). 세트가 없으면 [].
+ */
+export function liftingSetPaths(liftingSet) {
+  if (!liftingSet) return [];
+  return [...new Set([...(liftingSet.wire || []), ...(liftingSet.result || [])])];
+}
+
+/** 권장 세트 안내 한 줄. Wire 모델이 없으면 '' (안내하지 않음). */
+export function describeLiftingSet(liftingSet) {
+  if (!liftingSet?.wire?.length) return '';
+  if (!liftingSet.result?.length) {
+    return 'Wire 모델만 있고 구조 해석 결과가 없습니다. 이대로 보내면 나중에 Studio 에서 실적의 결과 화면을 열 수 없습니다.';
+  }
+  return 'Wire 모델과 구조 해석 결과(결과 JSON · 모델 JSON · F06)를 함께 보내기를 권합니다. Studio 에서 실적을 부를 때 결과 화면을 띄우는 데 씁니다. 미리 체크해 두었습니다.';
+}
+
 /** 3D 미리보기가 되는 BDF 인가 — 백엔드 admin_projects.PREVIEW_SUFFIXES 와 같아야 한다. DRM 파일은 서버가 못 읽는다. */
 export const PREVIEW_SUFFIXES = ['.bdf', '.dat', '.nas', '.blk', '.bulk'];
 

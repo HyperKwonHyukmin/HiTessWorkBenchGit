@@ -155,6 +155,10 @@ def project_files(
     record = _record_or_404(db, analysis_id)
     listing = svc.list_files(_resolved(db, record))
     listing["exports"] = _export_rows(db, analysis_id)
+    # 권상 해석이면 Wire 모델 + 구조 해석 결과 세트를 함께 보내도록 권한다(화면이 미리 체크) — 아니면 키 없음
+    recommended = svc.lifting_recommendation(record.program_name, listing)
+    if recommended is not None:
+        listing["liftingSet"] = recommended
     return listing
 
 

@@ -365,9 +365,15 @@ def _lifting_refs_get(path: str, params: dict, secret: str) -> dict:
         # LB 가 판단한 404 는 detail 이 있다(사번·파일 없음). 경로 자체가 없으면(옛 LogBook) 'Not Found'
         if detail in ("file_not_found", "file_missing"):
             raise HTTPException(status_code=404, detail="logbook_file_not_found")
+        if detail == "no_result":   # 결과 세트 없이 Wire 모델만 보낸 실적
+            raise HTTPException(status_code=404, detail="logbook_no_result")
         raise HTTPException(status_code=501, detail="logbook_lifting_refs_unsupported")
     if resp.status_code == 415:
         raise HTTPException(status_code=415, detail="logbook_not_wire_model")
+    if resp.status_code == 422 and isinstance(detail, str):   # 결과 세트를 읽지 못함(drm·bad_json·too_large·file_missing)
+        raise HTTPException(status_code=422, detail=f"logbook_result_unreadable:{detail[:40]}")
+    if resp.status_code == 503 and detail == "storage_unreachable":
+        raise HTTPException(status_code=503, detail="logbook_storage_unreachable")
     if resp.status_code == 503:
         raise HTTPException(status_code=503, detail="logbook_wb_unavailable")
     logger.warning("LogBook 권상 참조 실패: HTTP %s (%s)", resp.status_code, path)
@@ -399,3 +405,13 @@ def logbook_lifting_ref(file_id: int, employee_id: str = Depends(require_auth)):
     if file_id <= 0:
         raise HTTPException(status_code=400, detail="logbook_invalid_file_id")
     return _lifting_refs_get(f"lifting-refs/{int(file_id)}", {"as": employee_id}, secret)
+
+
+@router.get("/lifting-refs/{file_id}/result")
+def logbook_lifting_ref_result(file_id: int, employee_id: str = Depends(require_auth)):
+    """실적과 함께 보낸 구조 해석 결과(결과 JSON + 해석에 쓴 모델 JSON) — Studio 가 '실적 보기' 창에서 결과 화면을 그린다.
+    계획: docs/plans/2026-11-06-mu-lifting-reference-stress-check.md. 옛 LogBook(라우트 없음) → 501."""
+    secret = _require_enabled()
+    if file_id <= 0:
+        raise HTTPException(status_code=400, detail="logbook_invalid_file_id")
+    return _lifting_refs_get(f"lifting-refs/{int(file_id)}/result", {"as": employee_id}, secret)
