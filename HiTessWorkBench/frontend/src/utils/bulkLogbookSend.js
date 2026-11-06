@@ -23,6 +23,20 @@ export function initialPlanChecks(items = []) {
   return new Set(items.filter(it => it.ok && !it.olderRunOf).map(it => it.id));
 }
 
+/**
+ * 행 아래 '확인할 것' 한 줄 — 옛 실행 표시 + 서버 경고. 'Wire 모델 없음' 경고는 구성 칸('Wire 없음')과 겹쳐 뺀다.
+ */
+export function planNotes(it) {
+  if (!it?.ok) return [];
+  const notes = it.olderRunOf ? [`같은 모델의 옛 실행 · 최신 #${it.olderRunOf}`] : [];
+  for (const w of it.warnings || []) {
+    // 구성 칸이 이미 'Wire 없음' 을 말하는 행에서만 뺀다(서버 문구 admin_projects.bulk_plan_item 과 맞춤)
+    if (it.hasWire === false && String(w).startsWith('Wire 모델 없음')) continue;
+    notes.push(w);
+  }
+  return notes;
+}
+
 /** 미리 보기 표 위 한 줄 요약 */
 export function summarizePlan(items = [], checked = new Set()) {
   let count = 0;

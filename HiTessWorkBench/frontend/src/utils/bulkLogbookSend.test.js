@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  describeSendOutcome, initialPlanChecks, isBulkLiftingProgram, summarizePlan,
+  describeSendOutcome, initialPlanChecks, isBulkLiftingProgram, planNotes, summarizePlan,
 } from './bulkLogbookSend.js';
 
 const items = [
@@ -32,4 +32,11 @@ test('보내기 결과 한 줄', () => {
   assert.equal(describeSendOutcome({ data: { state: 'blocked' } }).state, 'duplicate');
   assert.deepEqual(describeSendOutcome({ error: { response: { data: { detail: 'LogBook 연동이 꺼져 있습니다' } } } }),
     { state: 'failed', text: 'LogBook 연동이 꺼져 있습니다' });
+});
+
+test('확인할 것 — 옛 실행 + 경고, Wire 없음 경고는 구성 칸과 겹쳐 뺀다', () => {
+  assert.deepEqual(planNotes({ ok: true, hasWire: false, olderRunOf: 7842, warnings: ['Wire 모델 없음 — 구조 해석 전 원본 모델만 보냅니다'] }),
+    ['같은 모델의 옛 실행 · 최신 #7842']);
+  assert.deepEqual(planNotes({ ok: true, warnings: ['x 의 F06 없음'] }), ['x 의 F06 없음']);
+  assert.deepEqual(planNotes({ ok: false, warnings: ['x'] }), []);
 });

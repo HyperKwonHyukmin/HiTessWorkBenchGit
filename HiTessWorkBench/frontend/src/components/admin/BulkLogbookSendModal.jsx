@@ -10,7 +10,7 @@ import Button from '../ui/Button';
 import { useToast } from '../../contexts/ToastContext';
 import { exportProjectToLogbook, planBulkLogbookExport } from '../../api/adminProjects';
 import { formatBytes } from '../../utils/adminProjectFiles';
-import { describeSendOutcome, initialPlanChecks, summarizePlan } from '../../utils/bulkLogbookSend';
+import { describeSendOutcome, initialPlanChecks, planNotes, summarizePlan } from '../../utils/bulkLogbookSend';
 import { useLogbookLauncher } from '../analysis/runFrame/LogbookImportButton';
 
 const OUTCOME_STYLE = {
@@ -100,7 +100,7 @@ export default function BulkLogbookSendModal({ ids, onClose, onDone }) {
       isOpen={isOpen}
       onClose={sending ? () => {} : onClose}
       title="LogBook 으로 여러 건 보내기"
-      size="xl"
+      size="full"
       footer={
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-xs text-slate-600">
@@ -132,65 +132,70 @@ export default function BulkLogbookSendModal({ ids, onClose, onDone }) {
         {loading && <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400" size={24} /></div>}
         {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         {plan && (
-          <div className="max-h-[52vh] overflow-y-auto rounded-xl border border-slate-200">
-            <table className="w-full text-left text-xs">
-              <thead className="sticky top-0 border-b border-slate-200 bg-slate-50 font-bold text-slate-600">
+          // 칸 4개 고정 폭(가로 스크롤 없음) — 확인할 것·보내기 결과는 묶음 이름 아래 줄에 둔다(2026-11-06 사용자 지적: 좁은 칸에 한 글자씩 접혀 행이 길어짐)
+          <div className="max-h-[58vh] overflow-y-auto rounded-xl border border-slate-200">
+            <table className="w-full table-fixed text-left text-xs">
+              <colgroup>
+                <col className="w-10" />
+                <col />
+                <col className="w-32" />
+                <col className="w-44" />
+              </colgroup>
+              <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 font-bold text-slate-600">
                 <tr>
-                  <th className="w-8 px-3 py-2" />
-                  <th className="px-3 py-2">묶음 이름</th>
+                  <th className="px-3 py-2"><span className="sr-only">선택</span></th>
+                  <th className="px-3 py-2">묶음 이름 · 확인할 것</th>
                   <th className="px-3 py-2">파일</th>
-                  <th className="px-3 py-2">Wire</th>
-                  <th className="px-3 py-2">결과 세트</th>
-                  <th className="px-3 py-2">확인할 것 · 결과</th>
+                  <th className="px-3 py-2">구성</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {items.map(it => {
                   const outcome = outcomes[it.id];
                   const style = OUTCOME_STYLE[outcome?.state];
-                  const warn = it.ok && (it.warnings?.length > 0 || it.olderRunOf);
+                  const notes = planNotes(it);
                   return (
-                    <tr key={it.id} className={!it.ok ? 'bg-slate-50 text-slate-500' : warn ? 'bg-amber-50/60' : ''}>
-                      <td className="px-3 py-2">
+                    <tr key={it.id} className={!it.ok ? 'bg-slate-50 text-slate-500' : notes.length ? 'bg-amber-50/60' : ''}>
+                      <td className="px-3 py-2 align-top">
                         <input
                           type="checkbox"
                           checked={checked.has(it.id)}
                           disabled={!it.ok || sending || finished || isDone(it.id)}
                           onChange={() => toggle(it.id)}
                           aria-label={`#${it.id} 보내기 선택`}
-                          className="h-4 w-4 cursor-pointer accent-blue-600 disabled:cursor-not-allowed"
+                          className="mt-0.5 h-4 w-4 cursor-pointer accent-blue-600 disabled:cursor-not-allowed"
                         />
                       </td>
-                      <td className="max-w-[18rem] px-3 py-2">
-                        <span className="block font-mono text-[11px] text-slate-500">#{it.id}</span>
-                        <span className="block truncate font-semibold text-slate-800" title={it.title || ''}>{it.title || '-'}</span>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-600">
-                        {it.ok ? `${it.files.length}개 · ${formatBytes(it.totalBytes)}` : '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        {/* 옛 서버 응답에는 hasWire 가 없다 — 모르면 '-'(Wire 가 있는 기록을 '없음' 으로 보이지 않게) */}
-                        {it.ok && it.hasWire === true ? <span className="text-emerald-700">있음</span>
-                          : it.ok && it.hasWire === false ? <span className="text-amber-700">없음(원본 모델만)</span> : '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        {it.ok ? (it.hasResult ? <span className="text-emerald-700">있음</span> : <span className="text-slate-500">없음</span>) : '-'}
-                      </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex min-w-0 items-baseline gap-2">
+                          <span className="shrink-0 font-mono text-[11px] text-slate-500">#{it.id}</span>
+                          <span className="truncate font-semibold text-slate-800" title={it.title || ''}>{it.title || '-'}</span>
+                        </div>
                         {outcome ? (
-                          <span className={`inline-flex items-center gap-1 ${style?.cls || 'text-slate-600'}`}>
+                          <p className={`mt-0.5 inline-flex items-center gap-1 ${style?.cls || 'text-slate-600'}`}>
                             {outcome.state === 'running'
                               ? <Loader2 size={12} className="animate-spin" aria-hidden="true" />
                               : style && <style.Icon size={12} aria-hidden="true" />}
                             {outcome.text}
-                          </span>
+                          </p>
                         ) : !it.ok ? (
-                          <span>{it.reason}</span>
-                        ) : (
-                          <span className="text-amber-800">
-                            {[it.olderRunOf ? `같은 모델의 옛 실행(최신 #${it.olderRunOf})` : null, ...(it.warnings || [])].filter(Boolean).join(' · ')}
-                          </span>
+                          <p className="mt-0.5 text-slate-600">{it.reason}</p>
+                        ) : notes.length > 0 && (
+                          <p className="mt-0.5 text-amber-800">{notes.join(' · ')}</p>
                         )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 align-top tabular-nums text-slate-600">
+                        {it.ok ? `${it.files.length}개 · ${formatBytes(it.totalBytes)}` : '-'}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        {it.ok ? (
+                          <div className="flex flex-wrap gap-1">
+                            {/* 옛 서버 응답에는 hasWire 가 없다 — 모르면 표시하지 않는다(Wire 가 있는 기록을 '없음' 으로 보이지 않게) */}
+                            {it.hasWire === true && <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">Wire</span>}
+                            {it.hasWire === false && <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">Wire 없음</span>}
+                            {it.hasResult && <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">결과</span>}
+                          </div>
+                        ) : '-'}
                       </td>
                     </tr>
                   );
