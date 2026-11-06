@@ -270,7 +270,7 @@ COG 노드 + 질량을 두고 주변 부재에 RBE 로 묶기가 어렵다(3529_
   모델·부재 name. 구조 CSV `ori` ↔ 엔진 `BeamOrientation.Resolve`(평행일 때만 기본 규칙) ↔ BDF v 벡터 비교로 원인을 가른다.
 
 **Aveva Marine 연동 독립 클라이언트 (2026-10-30 구현, 145 반영 — 접수·전체 흐름 통과, Studio 안 편집·해석·저장 클릭 시험 남음)** — AM 버튼 → `HiTessMB.exe` → 서버 빌드 → 실행기 → Studio 까지 한 번에(실측 약 20초).
-145 의 실행기 zip = 145 로컬 `StudioProgram\mb-launcher-<ver>.zip`(릴리스 표에 없음 → 최고 버전, 145 = 0.1.1(WorkBench 아이콘·smoke 분리, 2026-10-30 사용자 반영·아이콘 확인), 복사는 사용자).
+145 의 실행기 zip = 145 로컬 `StudioProgram\mb-launcher-<ver>.zip`(릴리스 표에 없음 → 최고 버전 — ⚠ `scripts/studio_release.py --all` 이 UNC 의 mb-launcher 를 표에 넣으려 한다(2026-11-06, 세 번 되돌림). `/wb-release` 때 그 줄은 빼고 커밋할 것, 145 = 0.1.1(WorkBench 아이콘·smoke 분리, 2026-10-30 사용자 반영·아이콘 확인), 복사는 사용자).
 실행기 버전을 올리면 설치된 PC 도 다음 실행 때 새로 받는다. ⚠ `--smoke` 는 데이터 폴더(`MBLauncher\smoke-data`)·단일 인스턴스 잠금을 따로 쓴다 — 같은 잠금이면 smoke 종료가 사용자 Studio 창을 닫는다(2026-10-30 실제로 일어남). 70 로컬 zip 은 DRM 암호문이라 그대로 복사하면 깨진다 — 새 버전은 `AmLauncher\build.ps1 -OutDir <UNC>` 후 `verify-studio-zips.ps1 -ViewerId mb-launcher`.
 계획서 `docs/plans/2026-10-28-aveva-marine-model-builder-client.md`(배경·결정표 D1~D6) · **구현 `docs/plans/2026-10-30-am-client-implementation-plan.md`(이것이 우선, 진행 상태 표)**.
 구성 3개 — WorkBench 와 완전 별개(사용자 PC 에 WorkBench 불필요):
@@ -288,6 +288,10 @@ Studio 는 `window.workbenchAPI` 만 보므로 클라이언트가 같은 API 를
 **호선 주석 (2026-10-20)** — Model Builder BDF **첫 줄**에 `$ HiTessModelBuilder: HullNo=3454` 를 남긴다(해석 무관).
 권상(GMU)에 올라온 BDF 를 LogBook 으로 보낼 때 호선을 알아내는 통로다. 입력은 **선택**: Model Builder 옵션의 '호선' 칸 →
 비우면 CSV 파일명 앞 4자리(`^\d{4}` 뒤에 `-`/`_`, `5PPP_-…` 같은 예외는 제안 없음) → 둘 다 없으면 주석 없음.
+**실행 전 호선 확인 창 (2026-11-06, 1.7.7)** — Model Builder(칸·CSV 파일명)와 GMU 권상(BDF 호선 주석·파일명)에서 호선을 못 찾으면 실행·검증 버튼(Ctrl+Enter·대시보드 자동 실행 포함) 때
+`HullPromptDialog` 가 한 번 묻는다 — 창에서 적고 진행 / '호선 없이 진행'(막지 않음, 같은 입력이면 다시 안 물음). 규칙·문구 `utils/hullNo.js`(`needsHullPrompt`·`readHullNoFromBdfText`).
+GMU 검증 라우트 2개가 `hull_no` Form 을 받아 `input_info.hull_no_source = user` 로 남기고 재실행·deck-fix·다시 검증·결과 다시 열기·최근 입력에서 이어받는다. 다른 App 에서 넘어온 서버 BDF 는 묻지 않는다.
+서버 호선 주석 읽기는 대소문자 무시(화면과 같게). ⚠ 서버를 먼저 반영할 것 — 옛 서버는 화면이 보낸 호선을 조용히 버린다.
 - 경로: 프론트 `hull_no` → `task_execute_modelflow`(`input_info.hull_no`/`hull_no_source`=user|filename) → `Cmb.Cli build-full --hull-no`
   → BDF 주석 + JSON `meta.hullNo` → `apply-edit-intent`·bridge `lift-run`(Wire BDF)이 다시 쓴다.
   GMU 검증은 `hull_no.resolve_bdf_hull_no`(주석 → 파일명)로 `input_info.hull_no`/`hull_no_source`=comment|filename 을 남긴다.
@@ -333,6 +337,16 @@ Hoist 탭 STEP 2 아래 '다른 Unit 권상 참조' — LogBook 에 확정된 Wi
 요약은 LogBook 이 BDF 구조로 만든다(apex = 병진 123 구속 + CROD 에만 쓰임) — JSON(`_lifting_meta.json`)에 기대지 않아 옛 자료도 찾는다. 계획·상태: `docs/plans/2026-11-04-mu-studio-logbook-wire-reference.md`.
 상태(2026-11-04): 커밋 LogBook `43f0540` · WorkBench `63c2165` · MU `6311d7a` · 릴리스 표 0.0.183 `8460c44`(**미푸시, 사용자가 WorkBench 와 함께 푸시**). UNC 업로드·검증됨.
 동작하려면 145 LogBook `git pull`+재시작(먼저) → WorkBench 백엔드 ⟳ Update+재시작 → **새 exe**(Electron IPC). 옛 exe 는 '업데이트 안내'만. WorkBench 앱 안 실행·실제 LogBook 연결은 확인 안 함.
+
+**실적의 구조 해석 결과 보기 (0.0.190 · WorkBench 1.7.3 · LogBook 59, 2026-11-06)** — 실적 상세의 [해석 결과 화면으로 열기] → **별도 MU Studio 창, 읽기 전용 '실적 보기'**
+(탭 Model·Model Check·Analysis 만, 상단 띠, 판정·숫자 패널 `ReferenceAnalysisPanel`, 3D 응력 색·결과 표는 보통 결과 화면 그대로, 전체 초기화 숨김).
+- 재해석하지 않는다 — WorkBench 가 **Wire 모델과 함께 보낸 결과 세트**(결과 JSON + 해석에 쓴 모델 JSON(`_edited.json`, 없으면 `<stem>.json`) + F06)를 LogBook 이
+  **같은 자료·같은 폴더·같은 stem**(대소문자 무시)으로 짝지어 `GET /api/integration/lifting-refs/{id}/result` 로 내준다(F06 내용은 안 줌). Studio 는 BDF·F06 을 못 읽어 모델 JSON 이 꼭 필요하다.
+- Electron `viewer:openLiftingRefResult`(모델 JSON → `%TEMP%/hitess-lifting-ref/<id>/`, 결과는 세션 `reference`) · `viewer:getReferenceContext`. `viewer:open` 본체는 `openViewerSession(payload, extra)`.
+  실적 창은 `parentAnalysisId` 가 없어 해석·업로드 IPC 가 거부된다. 판정은 `structuralVerdict`(FATAL 이면 실패, 문구는 실제 원인만 `referenceVerdictLabel`).
+- 결과 세트 없이 Wire 모델만 보관된 실적은 '결과 없음' 한 줄. 2026-11-06 기준 LogBook 확정 실적 E000078 은 결과 없음(사용자가 WorkBench 결과를 전체 다시 보내기로 함).
+- 계획·상태: `docs/plans/2026-11-06-mu-lifting-reference-stress-check.md`. 145 반영 확인(2026-11-06): 서버 1.7.4 · Studio 0.0.190 공개 · LogBook 결과 라우트 있음.
+  WorkBench 앱 안에서 실적 창을 실제로 연 적은 없다(헤드리스 Chrome + 실제 3496 결과로만 확인).
 
 #### 화면 배율 대응 — 셸을 `transform: scale()` 로 키우지 말 것 (0.0.148, 2026-09-09)
 
@@ -1113,6 +1127,13 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 - ⚠ 배포 순서: **LogBook 을 먼저** `git pull` + 재시작. 옛 LogBook 이면 WB 가 404 를 받아 "보내기 기능이 없거나 연동이 꺼져 있습니다" 로 알린다.
 - 해석 여권 함께 싣기(Hi-TESS Core 1단계, 2026-10-19): `.env` `LOGBOOK_SEND_PASSPORT=1` 이면 `origin.passport`(검증된 산출물 sha256)를 싣고,
   LogBook 자료 화면이 'WB 산출물과 같음'을 보인다. 비우면 예전 본문. 두 플랫폼 연동 약속은 `hitess-core` 저장소 — 바꾸기 전에 먼저 본다.
+- **권상 결과 세트 권장 (2026-11-06, 1.7.3)** — 권상 해석 상세를 열면 Wire 모델(`_lifting.bdf`·meta·posture) + 구조 해석 결과(결과 JSON·해석에 쓴 모델 JSON·F06)를
+  미리 체크하고 안내한다(`admin_projects.lifting_recommendation` → 파일 목록 응답 `liftingSet`). 강제 첨부는 예전 Wire 3종만. 해석 뒤 모델 JSON 만 바뀌었거나 결과 JSON 이 DRM 이면 경고.
+- **여러 건 보내기 (2026-11-06, 1.7.4~1.7.6)** — App = 권상(GroupModuleUnit·SidePassage)이면 [여러 건 보내기] → 선택 모드('LogBook 안 보낸 것만' `logbook=unsent`·해석 완료·파일 보관 중, 최대 50)
+  → `POST /api/admin/projects/logbook/plan`(기록마다 입력 BDF + Wire 세트 + 결과 세트, 묶음 이름 `<호선> <모델> 권상 · WB #id`) → 화면이 기존 1건 보내기를 **차례로** 부른다(새 작업 대기열 없음).
+  해석 1건 = LogBook 묶음 1개(합치지 않음). **Wire 없는(검증만 한) 기록도 원본 모델만** 보낸다(`… 권상(Wire 없음)`). 같은 사용자·호선·BDF 이름의 여러 실행은 **Wire 있는 실행 중 최근 1건**만 체크(결과 유무는 앞세우지 않음 — 고친 모델의 새 실행이 옛 판 결과에 밀리지 않게).
+  멈춘 뒤 이어 보내도 보낸 기록은 다시 안 보낸다. LogBook 정리 대기 카드 머리에 'Wire 없음 / Wire 포함 / Wire · 결과 포함'(LogBook `lifting.brief.has_result`).
+  계획: `docs/plans/2026-11-06-all-projects-bulk-logbook-send.md`. 70 DB 는 권상 기록 대부분이 30일 지나 보낼 수 없었다 — 145 도 만료 전에 보내야 한다. 실제 LogBook 보내기·화면(눈)은 확인 안 함(미리 보기 창은 헤드리스 캡처로 확인).
 - **BDF 3D 미리보기(2026-10-21)** — 보내기 전에 모델을 본다. 파일 행의 3D 버튼 / 체크한 BDF '선택한 BDF 3D 보기' → `BdfPreviewDialog`
   (중첩 headlessui Dialog — 부모 모달이 바깥 클릭으로 닫히지 않게). 뷰어 안 'LogBook 으로 보낼 파일에 포함' 이 부모 체크와 같은 상태다.
   `GET /api/admin/projects/{id}/model-preview?path=` 가 BDF → `model.lbm`(gzip, `Content-Encoding: gzip`)을 메모리에서 만든다(디스크 안 씀 — DRM).
