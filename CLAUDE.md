@@ -1131,6 +1131,9 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
 - 작업 원본·그림 준비 = `outputs/newsletter-2026-11/`(git 미추적). 대시보드 '자료 › News Letter'(PDF·PNG 아카이브, `routers/newsletters.py`, UNC)와는 별개다.
 - 11월호 내용 결정(사용자): 가입자 200명 돌파(사용자가 준 숫자) · HiTESS Story 영상 10편 강조 · 새 앱 = Independent Tank·Heavy Block Lifting(김한별 책임연구원)·선체 가속도(정병훈 책임연구원) + 중량물 권상 시뮬레이터 '개발 예고' ·
   Studio 설명서 · 더 편해진 Workbench. BCC·D Type Lug·로그인 방식은 뺐다. 사람 이름 뒤에 직책. 테스트 `tests/test_newsletter_web.py`(저장소의 실제 호와 그림 경로까지 확인).
+- 커밋 `0afa1bc`(뉴스레터) · `6f8ed6f`(아래). 145 반영 = ⟳ Update + **재시작**, 반영 뒤 다른 PC 브라우저로 글꼴·그림이 보이는지(git 이 받은 파일의 DRM 여부) 확인 남음.
+- **API 설명서 화면(`/docs`·`/redoc`·`/openapi.json`)은 기본으로 꺼져 있다**(2026-11-10, 사용자 결정) — 9091 은 전사 개방이라 로그인 없이 API 전체 목록이 보였다.
+  개발 PC 에서 쓰려면 `.env` `API_DOCS=1` + 재시작(`main.py create_app`, 테스트 `test_api_docs_switch.py`). 이 경로를 쓰는 코드는 없다.
 
 ### App Settings — App별 서비스 상태·접근 통제 ★API가 403이면 여기부터 확인
 
