@@ -1095,6 +1095,14 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   Electron `refreshWorkbenchSession`(401 때 사번만 재로그인)은 고치지 않았다 — AD 모드에선 실패하고, 본체 화면 하트비트 401 → `App.jsx` 인터셉터가 로그인 화면으로 보낸다.
   `check_user`(토큰 안 줌)·`hitessbeam` 익명 업로드는 이번 범위 밖. 켤 때 hitess-core 로그인 계약 문서(`docs/20-phase2-identity.md`)도 갱신.
 
+### 가입자 단체 메일 (2026-11-09, WorkBench 1.7.13)
+
+User Management 버튼 줄의 **'메일 주소 복사'** — 승인(is_active) 사용자 전원(검색·필터 무관)의 `users.email` 을 `; ` 로 이어 복사한다.
+Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신 방지). 그룹·배포 목록은 만들지 않기로 했다 — 200명대는 Exchange 기본 한도(1통 500명) 안이고 DL 은 신청·수동 유지가 든다.
+주소가 없거나 모양이 틀린 사람은 토스트로 이름을 알린다(PLM 미등록·협력사 X 사번 — 메일은 PLM 백필, 메모리 `reference_plm_user_directory`). 규칙 `utils/userMailList.js`(+테스트), 프론트만(`027dfec`).
+회사 한도를 낮춰 뒀는지는 미확인(넘으면 반송으로 알 수 있음). 1.7.13 exe(`ddf4633`) 배포·145 ⟳ Update+재시작(VMDC 자동 로그인 `1888654` 포함)은 사용자 몫, 버튼은 눈으로 확인 안 함.
+⚠ 미추적 `Postman_Console/Program.cs` 에 메일 계정 비밀번호가 평문으로 있다 — 커밋하지 말 것.
+
 ### App Settings — App별 서비스 상태·접근 통제 ★API가 403이면 여기부터 확인
 
 관리자가 App을 **개발 중 / 출시 예정 / 점검 중**으로 내리면 해당 App의 화면 진입과 **해석 요청 API가 서버에서 403으로 거부**된다. 원인 불명의 403을 만나면 `app_settings` 테이블부터 볼 것.
