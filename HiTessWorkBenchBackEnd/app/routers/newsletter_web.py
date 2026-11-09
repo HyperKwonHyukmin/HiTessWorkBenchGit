@@ -100,7 +100,7 @@ def latest_issue():
     return RedirectResponse(issues[0]["url"], status_code=307, headers=_NO_CACHE)
 
 
-@router.api_route("/newsletter/issues.json", methods=["GET", "HEAD"])
+@router.api_route("/newsletter/issues.json", methods=["GET", "HEAD"], include_in_schema=False)
 def issues_json():
     return JSONResponse({"issues": list_issues()}, headers=_NO_CACHE)
 

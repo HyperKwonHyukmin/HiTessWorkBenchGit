@@ -186,7 +186,15 @@ def health_check():
 
 def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     """기존 middleware/router/static 구성을 보존하는 application factory."""
-    application = FastAPI(lifespan=lifespan_handler)
+    # API 설명서 화면(/docs·/redoc·/openapi.json)은 기본으로 끈다 — 9091 은 전사에 열려 있어
+    # 로그인 없이 서버 API 전체 목록이 보였다(2026-11-10). 개발 PC 는 .env API_DOCS=1 로 켠다.
+    docs_on = os.getenv("API_DOCS", "").strip().lower() in ("1", "true", "yes", "on")
+    application = FastAPI(
+        lifespan=lifespan_handler,
+        docs_url="/docs" if docs_on else None,
+        redoc_url="/redoc" if docs_on else None,
+        openapi_url="/openapi.json" if docs_on else None,
+    )
     application.state.startup_complete = False
     application.state.schema_ready = False
     application.state.session_factory = database.SessionLocal
