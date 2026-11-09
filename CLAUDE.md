@@ -191,6 +191,16 @@ C# ↔ bridge 비교 2건을 독립 기준으로 남겼다(bridge 는 Mooring·S
   계획의 나머지(RBE 종속 수정, 하류: BDF 편집 요약 주석·CSV 탭 '편집으로 삭제됨'·
   판정 재계산) · 질량 요약 오버레이가 편집을 반영하지 않음(기존 한계).
 
+**Analysis 탭 재설계 (2026-11-09~10, Studio 0.1.5~0.1.8, 릴리스 표 0.1.8 `4ed1896`)** — 초보자가 따라 하도록 ① 고정 ② 힘 ③ 중력 → 푸터 [해석 실행] → 결과.
+Load Case 단계 없음(스토어 `effectiveLoadCases`: 기본 '모두 한 번에', 접힌 '해석 케이스'에서 '하중마다 따로'). 고정·힘은 Edit 와 같은 아래쪽 작업 패널(`panels/analysis/AnalysisWorkPanels.jsx`, 확인 창 없음).
+사용자 결정: 힘 단위 N · 중력(자중) 기본 꺼짐. 서버로 보내는 형식은 그대로. 규칙·결정 원본 = Studio `docs/shell-conventions.md` 12번.
+- 확정한 항목만 실행·페이로드에 넣는다(`committedInputs` — 고르기만 한 항목이 해석에 들어가던 리뷰 '막아야 함').
+- 0.1.6: **노드 클릭이 고정·힘에 안 들어가던 결함(0.1.4 부터)** — ThreeViewport 클릭 처리기가 첫 렌더의 `onPick` 을 굳혀 Model 탭에서 연 모델은 Analysis 에서도 일반 선택이 됐다 → `onPickRef`.
+- 0.1.7: 자동 변형 배율이 늘 ×1 — `modelDiagonalMm` 이 실제 bbox 모양(`minX…`)을 못 읽었다(테스트 가짜 bbox 도 틀린 모양이었다). 경계조건·힘 표식은 모델 대각선 비례(`overlaySizes`, 예전 값이 상한).
+- 0.1.8: 힘 화살표 꼬리에 크기 라벨(`collectForceLabels`, 노드 12개 넘으면 첫 노드에 '× N').
+- 상태: 145 ⟳ Update 는 사용자 몫. WorkBench 앱 안 화면·실제 Nastran 해석은 눈으로 확인 안 함(헤드리스 Chrome 실제 클릭·캡처까지).
+  ⚠ 2026-11-09 저장 중 `AnalysisInputOverlay.js`·테스트가 통째로 NUL 바이트가 된 일이 있었다(원인 미상, 커밋본으로 복구) — 이상하면 `tr -d '\000'` 로 먼저 본다.
+
 **장비 COG 위치 오류 `EQUIPMENT_COG_FAR` (2026-10-27)** — 장비 CSV 의 `cog` 가 잘못 나오면(실례 3529_m04 `=30137/754429` 715 kg, X 만 50 m 어긋남)
 엔진이 그 좌표에 COG 노드를 만들고 부착점과 RBE2 로 묶어, Studio 에 모델 밖으로 길게 뻗은 RBE 가 생긴다. 같은 오류가 `3592_m10`(`=21945/1855177` 153 m)에도 있다.
 - 엔진 `FinalValidationStage.CheckEquipmentCogDistance`: 장비 RBE 의 COG ↔ 가장 가까운 부착점 > **5 m** 면 **Warning**(모델은 그대로).
@@ -345,6 +355,9 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
 - ⚠ 뷰포트의 `stageData` 는 파생 모델(`data/nodeEdits.js`)일 수 있다. 질량 기준값은 `baseStage()` 원본으로 낼 것 — 파생으로 내면 증감이 두 번 들어간다.
 - ⚠ 커밋 전 eslint 를 돌릴 것 — 렌더 시험·빌드가 통과해도 no-undef 로 화면이 터지는 것을 eslint 만 잡았다.
 - 지운 부재·그룹·질량, 질량·단면·부재·노드 편집은 자세안정성 입력 질량에 반영된다(엔진은 `_edited.json` 을 질량에 쓰지 않는다).
+- **원본 RBE 수정·삭제 (0.0.202, 2026-11-10, 릴리스 표 `cbe3180`)** — 도구 막대 RBE › 수정 · 삭제. intent `deleteRigid`(MB 와 같은 kind)·`editRigidDependents`(Mooring 과 같은 kind).
+  ⚠ 두 편집은 **파생 모델(`nodeEdits.applyNodeEdits`)의 `rigids`** 에 들어간다 — 편집과 함께 RBE 를 읽는 새 코드는 원본 `stage.rigids` 가 아니라 `mask.stage`·`applyNodeEdits` 를 볼 것.
+  수정 내역 중간 삭제로 종속이 겹치면 뒤쪽 RBE 편집을 함께 취소한다. 상세·결정 = MU 계획 문서 '원본 RBE 수정·삭제'.
 
 #### 다른 Unit 권상 Wire 참조 (Hoist 탭, 0.0.183, 2026-11-04)
 
@@ -1107,6 +1120,17 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
 컬럼은 `schema_bootstrap` 이 붙인다(70 MySQL 두 번 실행 확인). 반영 = 145 ⟳ Update + **재시작**(컬럼) + 새 exe. 옛 exe 로 정보 수정해도 email 을 안 보내 표시는 안 바뀐다. ⚠ 서버를 먼저 — 옛 서버는 새 exe 가 보낸 email 을 조용히 버린다.
 회사 한도를 낮춰 뒀는지는 미확인(넘으면 반송으로 알 수 있음). 1.7.13 exe(`ddf4633`) 배포·145 ⟳ Update+재시작(VMDC 자동 로그인 `1888654` 포함)은 사용자 몫, 버튼은 눈으로 확인 안 함.
 ⚠ 미추적 `Postman_Console/Program.cs` 에 메일 계정 비밀번호가 평문으로 있다 — 커밋하지 말 것.
+
+### 웹 뉴스레터 — 로그인 없이 여는 공개 페이지 (2026-11-09, 26년 11월호 = 통합 3호)
+
+주소 `http://10.14.42.145:9091/newsletter` → 최신 호로 이동(307). 사내 누구나 브라우저로 연다(인증 없음, 메일 본문에는 이 링크).
+- 라우터 `app/routers/newsletter_web.py`: `/newsletter` · `/newsletter/issues.json`(호 목록, 최신이 앞 — **다음 작업: 페이지 왼쪽 '지난 호' 목록이 이것을 쓴다**) ·
+  `/newsletter/{호}/`(index.html) · `/newsletter/{호}/{그림·글꼴}`(확장자 허용 표만, 경로 탈출 404, read() 바이트 + DRM 머리면 500).
+- 호 = `HiTessWorkBenchBackEnd/NewsLetterWeb/<YYYY-MM>[-n]/`(**git 추적** → 145 `git pull` 만으로 반영, 재시작 불필요) — `index.html` · `issue.json`(title·number·date·summary) · `img/` · `fonts/`(SUIT 자체 포함).
+  새 호 = 폴더 하나 추가, 가장 큰 id 가 최신. 그림 경로는 상대(`img/…`)라 호 주소 끝 `/` 가 필요하다(없으면 붙여 이동).
+- 작업 원본·그림 준비 = `outputs/newsletter-2026-11/`(git 미추적). 대시보드 '자료 › News Letter'(PDF·PNG 아카이브, `routers/newsletters.py`, UNC)와는 별개다.
+- 11월호 내용 결정(사용자): 가입자 200명 돌파(사용자가 준 숫자) · HiTESS Story 영상 10편 강조 · 새 앱 = Independent Tank·Heavy Block Lifting(김한별 책임연구원)·선체 가속도(정병훈 책임연구원) + 중량물 권상 시뮬레이터 '개발 예고' ·
+  Studio 설명서 · 더 편해진 Workbench. BCC·D Type Lug·로그인 방식은 뺐다. 사람 이름 뒤에 직책. 테스트 `tests/test_newsletter_web.py`(저장소의 실제 호와 그림 경로까지 확인).
 
 ### App Settings — App별 서비스 상태·접근 통제 ★API가 403이면 여기부터 확인
 
