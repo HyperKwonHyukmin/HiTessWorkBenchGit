@@ -1074,6 +1074,11 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   70 AD 모드 실제 로그인 확인함. 비밀번호 로그인은 예비로 유지.
   **보안 재시험(2026-11-05, 145:9443, `HanByul/Open-ModuleTest-InBrowser`)**: 남의 사번 `?employee_id=` → 403 `windows_account_mismatch` · 사번만 `/api/login`(9443·9091) → 401 · 토큰 없는 `__wb_bootstrap` → 401.
   본인 AD 계정으로 로그인한 Windows 세션에서 본인 사번이면 통과해 외부 App 을 브라우저로도 열 수 있다 — 앱과 같은 권한이라 취약점으로 보지 않음(사용자 확인). 시험 사번은 동료 대신 없는 계정 `Z999998`(실패 횟수가 동료 계정에 쌓이지 않게).
+  **VMDC(가상 PC) 계정 (2026-11-09)** — AM 사용자 A453013 이 HiTessMB 0.4.0 에서 계속 비밀번호 창을 봤다. 145 활동 로그 = `account_not_employee`·`account: VMDC\A453013`(IP 10.14.45.74).
+  145 가 트러스트로 인증까지 마친 뒤 도메인이 HHI 가 아니라 거절한 것이고, 비밀번호 창은 HHI 비밀번호를 묻기 때문에 VMDC 사용자에게 맞지 않는다.
+  → `.env` `AD_WINDOWS_DOMAINS=HHI,VMDC`(`AD_NETBIOS_DOMAIN` 은 늘 포함 — 리뷰 반영)로 자동 로그인이 받을 도메인을 넓혔다(`windows_auth.windows_domains`). 비밀번호 로그인(LDAP bind)은 그대로 HHI.
+  ⚠ 넣는 도메인은 **계정 이름 = 본인 사번** 이 보장되는 곳만(VMDC 는 IT 확인 권장). 클라이언트 재배포 불필요 — 145 `git pull` + `.env` 한 줄 + 재시작.
+  같은 날 로그에 AM 이 CSV 인자 없이 HiTessMB 를 부른 기록(인자 오류) 3건 — AM 쪽 호출 문제.
 - **HTTPS + 인증서 고정 (2026-11-05, 통합 계획 2·3단계)** — 2단계 `0823543`: 같은 프로세스가 9091 옆에 9443 HTTPS(`services/https_listener.py`, `.env` `HTTPS_PORT`, 인증서 `scripts/make_tls_cert.py` — 145 에서 실행, 키는 `.secrets/tls/`).
   3단계(`9a14ec7`·`881eeb3`, 릴리스 1.7.2 `6045358`): 앱이 145 인증서의 공개키 지문(지금 `y5rO…`·예비 `u1mZ…`)이 같을 때만 연결 — **원본 `electron/server-pins.js`**, 사본 `AmLauncher/lib/server-pins.js`·HiTessMB `src/ServerPins.cs`·프론트 `utils/secureServerUrl.js`(주소 바꾸기만). 지문·주소를 바꾸면 네 곳 다.
   규칙: 지문 일치 = 통과 · 145 주소인데 불일치 = 거부(회사가 믿는 Somansa 인증서여도) · 그 밖 = 기본 검사. 개발 실행만 70 시험 지문(`DEV_PINS`)도 받는다.

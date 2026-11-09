@@ -57,6 +57,8 @@ def client(db_session, monkeypatch):
     monkeypatch.setitem(server_state, "maintenance_mode", False)
     monkeypatch.setenv("AUTH_MODE", "ad")
     monkeypatch.delenv("AD_WINDOWS_LOGIN", raising=False)
+    monkeypatch.delenv("AD_WINDOWS_DOMAINS", raising=False)
+    monkeypatch.delenv("AD_NETBIOS_DOMAIN", raising=False)
     monkeypatch.setattr(windows_auth, "_sspi_available", lambda: True)
     fake = NegotiateSessions(server_auth_factory=FakeServerAuth, account_name=lambda sa: sa.account)
     monkeypatch.setattr(auth, "negotiate_sessions", fake)
@@ -128,6 +130,52 @@ def test_local_account_is_refused(client, db_session, monkeypatch):
     res = client.post("/api/login/windows", headers=_negotiate(KERBEROS))
     assert res.status_code == 403
     assert res.json()["detail"] == "windows_account_not_employee"
+
+
+def test_vmdc_account_refused_by_default(client, db_session, monkeypatch):
+    """VMDC(가상 PC) 계정은 설정 없이는 받지 않는다 — 2026-11-09 운영 기록 'VMDC\\A453013' 그대로."""
+    _user(db_session)
+    monkeypatch.setattr(FakeServerAuth, "account", "VMDC\\A123456")
+    res = client.post("/api/login/windows", headers=_negotiate(KERBEROS))
+    assert res.status_code == 403
+    assert res.json()["detail"] == "windows_account_not_employee"
+
+
+def test_vmdc_account_accepted_when_listed(client, db_session, monkeypatch):
+    _user(db_session)
+    monkeypatch.setenv("AD_WINDOWS_DOMAINS", "HHI, vmdc")
+    monkeypatch.setattr(FakeServerAuth, "account", "VMDC\\a123456")
+    res = client.post("/api/login/windows?employee_id=A123456", headers=_negotiate(KERBEROS))
+    assert res.status_code == 200, res.text
+    assert res.json()["employee_id"] == "A123456"
+    # HHI 계정도 계속 받는다
+    monkeypatch.setattr(FakeServerAuth, "account", "HHI\\A123456")
+    assert client.post("/api/login/windows", headers=_negotiate(KERBEROS)).status_code == 200
+
+
+def test_vmdc_listed_still_checks_expected_employee(client, db_session, monkeypatch):
+    """도메인을 넓혀도 사번이 다르면 세션을 만들지 않는다(남의 이름으로 접수 방지)."""
+    _user(db_session)
+    _user(db_session, employee_id="A999999")
+    monkeypatch.setenv("AD_WINDOWS_DOMAINS", "HHI,VMDC")
+    monkeypatch.setattr(FakeServerAuth, "account", "VMDC\\A123456")
+    res = client.post("/api/login/windows?employee_id=A999999", headers=_negotiate(KERBEROS))
+    assert res.status_code == 403
+    assert res.json()["detail"] == "windows_account_mismatch"
+
+
+def test_windows_domains_do_not_change_password_login_domain(monkeypatch):
+    """비밀번호 로그인(LDAP bind)은 목록과 무관하게 AD_NETBIOS_DOMAIN(기본 HHI) 하나로만 확인한다."""
+    from app.services.ad_auth import _settings
+    monkeypatch.delenv("AD_NETBIOS_DOMAIN", raising=False)
+    monkeypatch.setenv("AD_WINDOWS_DOMAINS", "HHI,VMDC")
+    assert _settings().domain == "HHI"
+    assert windows_auth.windows_domains() == frozenset({"HHI", "VMDC"})
+    monkeypatch.setenv("AD_WINDOWS_DOMAINS", " ")
+    assert windows_auth.windows_domains() == frozenset({"HHI"})
+    # HHI 를 빠뜨려 적어도 기본 도메인은 계속 받는다
+    monkeypatch.setenv("AD_WINDOWS_DOMAINS", "VMDC")
+    assert windows_auth.windows_domains() == frozenset({"HHI", "VMDC"})
 
 
 def test_unregistered_and_pending_users_follow_login_contract(client, db_session):

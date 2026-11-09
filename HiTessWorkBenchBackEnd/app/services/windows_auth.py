@@ -14,7 +14,7 @@ PC 이고, 로컬 계정으로 도는 서버 프로그램도 도메인 계정을
   사번 + 비밀번호 로그인은 예비로 그대로 둔다(공용 PC·다른 계정).
 - **NTLM 은 한 TCP 연결에서 두 번 오간다**(협상 → 도전 → 응답). 그래서 진행 중인 SSPI 상태를
   연결(클라이언트 IP + 포트)마다 잠깐(30초) 들고 있는다. Kerberos 는 한 번에 끝난다.
-- 받는 계정은 설정된 도메인(``AD_NETBIOS_DOMAIN``, 기본 ``HHI``)의 사번 모양 이름뿐이다.
+- 받는 계정은 설정된 도메인(``AD_WINDOWS_DOMAINS``, 비우면 ``AD_NETBIOS_DOMAIN`` 기본 ``HHI``)의 사번 모양 이름뿐이다.
 - 토큰·계정 외의 값은 기록하지 않는다.
 """
 from __future__ import annotations
@@ -169,11 +169,26 @@ def ntlm_claimed_account(authorization: str) -> Optional[str]:
     return f"{domain}\\{user}" if user else None
 
 
+def windows_domains() -> frozenset:
+    """자동 로그인에서 받는 도메인 = ``AD_NETBIOS_DOMAIN``(기본 HHI) + ``AD_WINDOWS_DOMAINS``(쉼표, 예 ``VMDC``).
+
+    왜(2026-11-09): VMDC(가상 PC)에서는 Windows 계정이 ``VMDC\\<사번>`` 이다. 145(HHI)가 트러스트로 이 계정을
+    확인까지 마쳤는데 도메인이 HHI 가 아니라고 거절해(``account_not_employee``) 비밀번호 창이 떴다.
+    넣는 도메인은 **계정 이름 = 본인 사번** 이 보장되는 곳만 — 아니면 남의 사번으로 로그인된다.
+    비밀번호 로그인(ad_auth)은 이 목록과 무관하게 ``AD_NETBIOS_DOMAIN`` 으로만 확인한다.
+    """
+    raw = os.getenv("AD_WINDOWS_DOMAINS") or ""
+    names = {d.strip().upper() for d in raw.split(",") if d.strip()}
+    # 기본 도메인은 늘 포함 — 목록에 HHI 를 빠뜨려도 일반 PC 자동 로그인이 멈추지 않게.
+    names.add(_settings().domain.upper())
+    return frozenset(names)
+
+
 def employee_id_from_account(account: str, domain: Optional[str] = None) -> Optional[str]:
-    """'HHI\\a476854' → 'A476854'. 다른 도메인·로컬 계정·사번 모양이 아니면 None."""
-    expected = (domain or _settings().domain).upper()
+    """'HHI\\a476854' → 'A476854'. 받는 도메인(``windows_domains``)이 아니거나 로컬 계정·사번 모양이 아니면 None."""
+    allowed = frozenset([domain.upper()]) if domain else windows_domains()
     dom, sep, name = (account or "").partition("\\")
-    if not sep or dom.strip().upper() != expected:
+    if not sep or dom.strip().upper() not in allowed:
         return None
     employee_id = name.strip().upper()
     return employee_id if _EMPLOYEE_ID.fullmatch(employee_id) else None
