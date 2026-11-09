@@ -2,7 +2,17 @@
 // 승인된(is_active) 사용자만, 주소는 대소문자 무시로 한 번만, Outlook 숨은 참조(BCC) 칸에 붙도록 '; ' 로 잇는다.
 // 주소가 없거나 모양이 틀린 승인 사용자는 따로 돌려줘 화면이 알린다(PLM 미등록·협력사 계정 등).
 
+// 백엔드 routers/users.py _MANUAL_EMAIL_PATTERN 과 같은 규칙 — 한쪽을 고치면 양쪽 다.
 const EMAIL_PATTERN = /^[^\s@;,<>]+@[^\s@;,<>]+\.[^\s@;,<>]+$/;
+
+export function isValidEmail(value) {
+  return EMAIL_PATTERN.test(String(value || '').trim());
+}
+
+// '메일 없음' 필터 — 승인 사용자 중 쓸 수 있는 주소가 없는 사람(단체 메일에서 빠지는 사람).
+export function needsManualEmail(user) {
+  return Boolean(user && user.is_active && !isValidEmail(user.email));
+}
 
 export function buildActiveMailList(users) {
   const seen = new Set();

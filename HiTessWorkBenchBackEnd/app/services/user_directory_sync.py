@@ -96,6 +96,9 @@ def apply_plm_profile(
     for field_name in MUTABLE_FIELDS:
         if field_name not in profile:
             continue
+        # 관리자가 손으로 넣은 메일은 PLM 값으로 덮지 않는다(2026-11-09 사용자 요청).
+        if field_name == "email" and getattr(user, "email_manual", False):
+            continue
         new_value = profile.get(field_name)
         if new_value is None:
             continue

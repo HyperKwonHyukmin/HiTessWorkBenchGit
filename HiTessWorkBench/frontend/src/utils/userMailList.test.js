@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildActiveMailList, describeMissing } from './userMailList.js';
+import { buildActiveMailList, describeMissing, isValidEmail, needsManualEmail } from './userMailList.js';
+
+test('needsManualEmail 은 승인 사용자 중 주소가 없거나 틀린 사람만', () => {
+  assert.equal(needsManualEmail({ is_active: true, email: null }), true);
+  assert.equal(needsManualEmail({ is_active: true, email: 'x@hhi' }), true);
+  assert.equal(needsManualEmail({ is_active: true, email: 'x@hhi.co.kr' }), false);
+  assert.equal(needsManualEmail({ is_active: false, email: null }), false);
+  assert.equal(isValidEmail(' a@b.co '), true);
+});
 
 test('승인 사용자만, 중복 주소는 한 번만, 세미콜론으로 잇는다', () => {
   const r = buildActiveMailList([

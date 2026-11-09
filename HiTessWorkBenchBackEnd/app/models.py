@@ -29,6 +29,9 @@ class User(Base):
   # 사내 PLM(HIPLM.VT_PLM_USER)에서 사번으로 조회해 백필한다. 사용자가 가입 폼에서
   # 입력하지 않으며, 조회 실패/미등록 사번이면 NULL 로 둔다.
   email = Column(String(255), nullable=True)
+  # 관리자가 User Management 에서 손으로 넣은 메일이면 True — PLM 갱신(수동·주기)이 email 을 덮지 않는다.
+  # 메일을 비우면 False 로 돌아가 다음 PLM 갱신이 다시 채운다(2026-11-09).
+  email_manual = Column(Boolean, default=False)
   is_active = Column(Boolean, default=False)
   is_admin = Column(Boolean, default=False)
   # 개발자 권한 — 해석 통계에서 자동 제외 (테스트성 실행으로 통계 왜곡 방지)

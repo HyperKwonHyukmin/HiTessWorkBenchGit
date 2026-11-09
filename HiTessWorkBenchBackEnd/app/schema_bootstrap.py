@@ -68,6 +68,8 @@ def ensure_user_columns(*, engine=None) -> None:
         # 사내 PLM(HIPLM.VT_PLM_USER)에서 사번으로 백필하는 메일 주소. 기존 운영 DB 에는
         # 없어서 조회·직렬화 단계에서 500 이 나지 않도록 서버 기동 시 보강한다.
         "email": "ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL",
+        # 관리자가 손으로 넣은 메일 표시 — PLM 갱신이 email 을 덮지 않게 한다(2026-11-09).
+        "email_manual": "ALTER TABLE users ADD COLUMN email_manual BOOL DEFAULT FALSE",
     }, engine=engine)
 
 

@@ -17,7 +17,7 @@ import { getOnlineUsers, forceLogoutUser } from '../../api/presence';
 import { getLogbookLevels } from '../../api/logbook';
 import { logbookLevelOf, logbookErrorMessage } from '../../utils/logbookLink';
 import { getEmployeeId } from '../../utils/auth';
-import { buildActiveMailList, describeMissing } from '../../utils/userMailList';
+import { buildActiveMailList, describeMissing, isValidEmail, needsManualEmail } from '../../utils/userMailList';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import AccessHistoryPanel from '../../components/admin/AccessHistoryPanel';
@@ -431,7 +431,7 @@ export default function UserManagement() {
     }
     const base = `승인 사용자 ${count}명의 메일 주소를 복사했습니다. Outlook 숨은 참조(BCC)에 붙여 넣으세요.`;
     if (missing.length) {
-      showToast(`${base} 메일 없음 ${missing.length}명: ${describeMissing(missing)}`, 'warning', 9000);
+      showToast(`${base} 메일 없음 ${missing.length}명: ${describeMissing(missing)} — '메일 없음' 필터에서 직접 넣을 수 있습니다.`, 'warning', 9000);
     } else {
       showToast(base, 'success');
     }
@@ -638,13 +638,21 @@ export default function UserManagement() {
 
   const handleEditSave = async (e) => {
     e.preventDefault();
+    const email = String(editingUser?.email || '').trim();
+    // 처음 값(PLM 이 넣은 모양 틀린 주소 포함)을 그대로 두면 검사하지 않는다 — 다른 칸만 고치는 저장이 막히지 않게.
+    const originalEmail = String(users.find(u => u.id === editingUser?.id)?.email || '').trim();
+    if (email && email !== originalEmail && !isValidEmail(email)) {
+      showToast('메일 주소 모양이 올바르지 않습니다.', 'warning');
+      return;
+    }
     try {
       const { id, name, company, department, position } = editingUser;
-      await updateUser(id, { name, company, department, position });
+      await updateUser(id, { name, company, department, position, email });
       setIsEditModalOpen(false);
       fetchUsers();
     } catch (error) {
-      showToast('사용자 정보 수정에 실패했습니다.', 'error');
+      if (error?.response?.data?.detail === 'invalid_email') showToast('메일 주소 모양이 올바르지 않습니다.', 'warning');
+      else showToast('사용자 정보 수정에 실패했습니다.', 'error');
     }
   };
 
@@ -701,6 +709,7 @@ export default function UserManagement() {
     if (!matchesSearch) return false;
     if (filterMode === 'active') return user.is_active;
     if (filterMode === 'admin')  return user.is_admin;
+    if (filterMode === 'noMail') return needsManualEmail(user);
     return true; // 'all'
   }), [users, searchTerm, filterMode]);
 
@@ -785,6 +794,8 @@ export default function UserManagement() {
     { key: 'all',    label: '전체',  count: totalUsers,  cls: 'bg-slate-800 text-white' },
     { key: 'active', label: 'Active', count: totalUsers - pendingUsers, cls: 'bg-emerald-600 text-white' },
     { key: 'admin',  label: 'Admin',  count: adminUsers,  cls: 'bg-red-600 text-white' },
+    // 단체 메일에서 빠지는 승인 사용자 — 정보 수정에서 메일을 손으로 넣는다.
+    { key: 'noMail', label: '메일 없음', count: users.filter(needsManualEmail).length, cls: 'bg-amber-600 text-white' },
   ];
 
   return (
@@ -1371,9 +1382,21 @@ export default function UserManagement() {
                     <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
                       <Mail size={11} className="text-slate-400"/>
                       {user.email ? (
-                        <span className="font-mono" title={user.email}>{user.email}</span>
+                        <>
+                          <span className="font-mono" title={user.email}>{user.email}</span>
+                          {user.email_manual && (
+                            <span className="px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-bold" title="관리자가 손으로 넣은 메일 — PLM 정보 갱신이 덮지 않습니다">수동</span>
+                          )}
+                        </>
                       ) : (
-                        <span className="text-slate-400 italic">메일 없음</span>
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(user)}
+                          className="text-amber-700 underline decoration-dotted underline-offset-2 hover:text-amber-900 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 rounded"
+                          title="정보 수정에서 메일을 직접 넣습니다"
+                        >
+                          메일 없음 · 넣기
+                        </button>
                       )}
                     </p>
                   </td>
@@ -1613,6 +1636,25 @@ export default function UserManagement() {
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1"><Briefcase size={14}/> 직급</label>
                   <input type="text" required value={editingUser?.position || ''} onChange={e => setEditingUser({...editingUser, position: e.target.value})} className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-slate-800 focus:border-blue-500 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                    <Mail size={14}/> 메일
+                    {editingUser?.email_manual && <span className="ml-1 px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">수동</span>}
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="email"
+                    value={editingUser?.email || ''}
+                    onChange={e => setEditingUser({...editingUser, email: e.target.value})}
+                    placeholder="name@hhi.co.kr"
+                    className={`w-full p-2.5 bg-white border rounded-lg text-slate-800 font-mono text-sm outline-none ${
+                      editingUser?.email && !isValidEmail(editingUser.email) ? 'border-red-400 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
+                    }`}
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    직접 넣거나 바꾼 메일은 PLM 정보 갱신이 덮지 않습니다. 비우면 다음 PLM 갱신이 다시 채웁니다.
+                  </p>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-4">

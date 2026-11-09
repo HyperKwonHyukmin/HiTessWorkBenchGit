@@ -1,4 +1,7 @@
 """사용자 관리 API 라우터."""
+import re
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -62,6 +65,7 @@ def get_users(
             "department": u.department,
             "position": u.position,
             "email": getattr(u, "email", None),
+            "email_manual": bool(getattr(u, "email_manual", False)),
             "is_active": u.is_active,
             "is_admin": u.is_admin,
             "is_developer": bool(getattr(u, "is_developer", False)),
@@ -159,6 +163,19 @@ def sync_all_users_plm(
 
 # is_admin / is_developer 는 관리자만 변경 가능 (PUT 시 화이트리스트 분리)
 _USER_ALLOWED_FIELDS = {"name", "company", "department", "position", "is_active"}
+
+# 손으로 넣는 메일 검사 — 프론트 utils/userMailList.js 의 EMAIL_PATTERN 과 같은 규칙(; , < > 공백 금지).
+_MANUAL_EMAIL_PATTERN = re.compile(r"^[^\s@;,<>]+@[^\s@;,<>]+\.[^\s@;,<>]+$")
+
+
+def _normalize_manual_email(value) -> Optional[str]:
+    """빈 값이면 None(수동 해제), 모양이 틀리면 422."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if len(text) > 255 or not _MANUAL_EMAIL_PATTERN.match(text):
+        raise HTTPException(status_code=422, detail="invalid_email")
+    return text
 _ADMIN_ALLOWED_FIELDS = {"is_admin", "is_developer"}
 
 @router.put("/users/{user_id}")
@@ -171,6 +188,14 @@ def update_user(
 ):
     user = get_or_404(db, models.User, user_id, _USER_NOT_FOUND)
     before_active = bool(user.is_active)
+    # 메일은 관리자가 손으로 넣는 값이다 — 바뀌었을 때만 email_manual 을 세워 PLM 갱신이 덮지 않게 하고,
+    # 비우면 해제해 다음 PLM 갱신이 다시 채운다. 같은 값을 그대로 보내면(정보 수정 저장) 표시는 그대로.
+    # PLM 이 넣은 옛 값이 모양이 틀려도, 그대로 다시 보내면 검사하지 않는다(다른 칸만 고치는 저장이 막히지 않게).
+    if "email" in update_data and str(update_data.get("email") or "").strip() != (user.email or "").strip():
+        new_email = _normalize_manual_email(update_data.get("email"))
+        if new_email != (user.email or None):
+            user.email = new_email
+            user.email_manual = new_email is not None
     # update_data 는 임의 dict 이므로 화이트리스트 외 필드는 무시 (임의 컬럼 주입 차단).
     for key, value in update_data.items():
         if key in _USER_ALLOWED_FIELDS | _ADMIN_ALLOWED_FIELDS:

@@ -202,3 +202,82 @@ def test_admin_sync_plm_all_503_when_plm_not_configured(admin_client, db_session
     resp = admin_client.post("/api/users/sync-plm-all")
     assert resp.status_code == 503
     assert resp.json()["detail"] == "plm_not_configured"
+
+
+# --- 관리자가 손으로 넣은 메일(email_manual) — 2026-11-09 -----------------------
+
+
+def test_apply_plm_profile_keeps_manual_email():
+    user = models.User(employee_id="A1", name="홍", company="HHI",
+                       email="manual@hhi.co.kr", email_manual=True)
+    changes = apply_plm_profile(user, _profile(email="plm@hhi.co.kr", name="홍길동"))
+    assert user.email == "manual@hhi.co.kr"
+    assert "email" not in changes
+    assert user.name == "홍길동"  # 다른 필드는 그대로 반영
+
+
+def test_manual_email_survives_sync_all(admin_client, db_session, monkeypatch):
+    _plm_env(monkeypatch)
+    _seed_users(db_session)
+    target = db_session.query(models.User).filter_by(employee_id="A10003").one()
+
+    resp = admin_client.put(f"/api/users/{target.id}", json={"email": " byeong@hhi.co.kr "})
+    assert resp.status_code == 200, resp.text
+    db_session.refresh(target)
+    assert target.email == "byeong@hhi.co.kr"
+    assert target.email_manual is True
+
+    plm_user_directory.set_fetcher(lambda eid: _profile(email="other@hhi.co.kr") if eid == "A10003" else None)
+    try:
+        assert admin_client.post("/api/users/sync-plm-all").status_code == 200
+    finally:
+        plm_user_directory.set_fetcher(None)
+    db_session.refresh(target)
+    assert target.email == "byeong@hhi.co.kr"
+
+    listed = {u["employee_id"]: u for u in admin_client.get("/api/users").json()}
+    assert listed["A10003"]["email_manual"] is True
+
+
+def test_same_email_resave_does_not_mark_manual(admin_client, db_session):
+    _seed_users(db_session)
+    user = db_session.query(models.User).filter_by(employee_id="A10002").one()
+    current = user.email
+    resp = admin_client.put(f"/api/users/{user.id}", json={"name": "을", "email": current})
+    assert resp.status_code == 200, resp.text
+    db_session.refresh(user)
+    assert not user.email_manual
+
+
+def test_clearing_manual_email_releases_flag(admin_client, db_session):
+    _seed_users(db_session)
+    user = db_session.query(models.User).filter_by(employee_id="A10003").one()
+    admin_client.put(f"/api/users/{user.id}", json={"email": "x@hhi.co.kr"})
+    resp = admin_client.put(f"/api/users/{user.id}", json={"email": ""})
+    assert resp.status_code == 200, resp.text
+    db_session.refresh(user)
+    assert user.email is None
+    assert user.email_manual is False
+
+
+@pytest.mark.parametrize("bad", ["not-mail", "a@b", "a;b@hhi.co.kr", "a b@hhi.co.kr"])
+def test_invalid_manual_email_rejected(admin_client, db_session, bad):
+    _seed_users(db_session)
+    user = db_session.query(models.User).filter_by(employee_id="A10003").one()
+    resp = admin_client.put(f"/api/users/{user.id}", json={"email": bad})
+    assert resp.status_code == 422
+    db_session.refresh(user)
+    assert user.email is None
+
+
+def test_resave_with_bad_plm_email_still_saves_other_fields(admin_client, db_session):
+    _seed_users(db_session)
+    user = db_session.query(models.User).filter_by(employee_id="A10003").one()
+    user.email = "x@hhi"  # PLM 이 넣은 모양 틀린 값
+    db_session.commit()
+    resp = admin_client.put(f"/api/users/{user.id}", json={"position": "책임", "email": "x@hhi"})
+    assert resp.status_code == 200, resp.text
+    db_session.refresh(user)
+    assert user.position == "책임"
+    assert user.email == "x@hhi"
+    assert not user.email_manual
