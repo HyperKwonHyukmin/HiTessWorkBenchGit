@@ -17,6 +17,7 @@ import { getOnlineUsers, forceLogoutUser } from '../../api/presence';
 import { getLogbookLevels } from '../../api/logbook';
 import { logbookLevelOf, logbookErrorMessage } from '../../utils/logbookLink';
 import { getEmployeeId } from '../../utils/auth';
+import { buildActiveMailList, describeMissing } from '../../utils/userMailList';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import AccessHistoryPanel from '../../components/admin/AccessHistoryPanel';
@@ -407,6 +408,32 @@ export default function UserManagement() {
       else showToast('전체 PLM 정보 갱신에 실패했습니다.', 'error');
     } finally {
       setSyncingAllPlm(false);
+    }
+  };
+
+  // 단체 메일용 — 승인된 전체 사용자(검색·필터와 무관)의 메일 주소를 '; ' 로 이어 복사한다.
+  // Outlook 숨은 참조(BCC) 칸에 붙여 넣는 용도. 주소가 없는 사용자는 토스트로 알린다.
+  const handleCopyMailList = async () => {
+    if (!users.length) {
+      showToast('사용자 목록을 아직 불러오지 못했습니다. 새로고침 후 다시 눌러 주세요.', 'warning');
+      return;
+    }
+    const { text, count, missing } = buildActiveMailList(users);
+    if (count === 0) {
+      showToast('복사할 메일 주소가 없습니다. 전체 PLM 정보 갱신을 먼저 해 보세요.', 'warning');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      showToast('클립보드에 복사하지 못했습니다.', 'error');
+      return;
+    }
+    const base = `승인 사용자 ${count}명의 메일 주소를 복사했습니다. Outlook 숨은 참조(BCC)에 붙여 넣으세요.`;
+    if (missing.length) {
+      showToast(`${base} 메일 없음 ${missing.length}명: ${describeMissing(missing)}`, 'warning', 9000);
+    } else {
+      showToast(base, 'success');
     }
   };
 
@@ -1186,6 +1213,13 @@ export default function UserManagement() {
             title="현재 목록(검색·필터·정렬 반영)을 CSV로 내보내기"
           >
             <FileDown size={14}/> 명부 CSV
+          </button>
+          <button
+            onClick={handleCopyMailList}
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-50 transition-colors shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1"
+            title="승인된 전체 사용자(검색·필터 무관)의 메일 주소를 ; 로 이어 복사 — Outlook 숨은 참조(BCC)에 붙여 넣기"
+          >
+            <Mail size={14}/> 메일 주소 복사
           </button>
           <button
             onClick={handleSyncAllPlm}
