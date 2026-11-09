@@ -3,6 +3,17 @@
   "items": [
     {
       "date": "2026-11-09",
+      "version": "0.1.6",
+      "studio": "model-studio",
+      "kind": "수정",
+      "title": "Model Builder Studio Analysis 탭에서 노드 클릭으로 고정·힘을 고르지 못하던 문제 수정",
+      "summary": "모델을 Model 탭에서 연 뒤 Analysis 탭으로 가면, 고정·힘 작업 패널이 열려 있어도 노드를 클릭하면 부재만 강조되고 노드가 들어가지 않던 문제를 고쳤습니다.",
+      "points": [
+        "이제 클릭하면 노드가 들어가고, 같은 노드를 다시 클릭하면 빠집니다. Shift+드래그 사각형 선택은 원래대로 동작합니다"
+      ]
+    },
+    {
+      "date": "2026-11-09",
       "version": "0.1.5",
       "studio": "model-studio",
       "kind": "개선",
