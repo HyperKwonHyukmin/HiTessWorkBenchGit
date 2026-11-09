@@ -32,3 +32,8 @@ test('leaves iframe documents inside the main window with their own headers', ()
   );
   assert.ok(scriptHeaders['Content-Security-Policy']);
 });
+
+test('allows data: fonts so the Studio manual modal keeps its fonts', () => {
+  const headers = responseHeadersWithWorkbenchCsp({ webContentsId: 10, responseHeaders: {} }, 10);
+  assert.match(headers['Content-Security-Policy'][0], /font-src 'self' data:/);
+});

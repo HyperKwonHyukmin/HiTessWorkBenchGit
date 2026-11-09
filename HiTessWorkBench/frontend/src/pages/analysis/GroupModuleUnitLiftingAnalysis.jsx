@@ -32,12 +32,13 @@ import {
 } from '../../utils/gmuLiftingWorkspaces';
 import { buildStructuralResult, computeGmuVerdict } from '../../utils/gmuLiftingVerdict';
 import { importFromLogbook } from '../../api/logbook';
+import StudioManualButton from '../../components/ui/StudioManualButton';
 import {
   LOGBOOK_SOURCE, LOGBOOK_TARGET_GMU, LOGBOOK_IMPORT_TARGET, decideLogbookPick, isLogbookPickFor, logbookErrorMessage,
 } from '../../utils/logbookLink';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.197';
+const MODULE_STUDIO_VERSION = '0.0.199';
 // 다른 App 이 넘긴 BDF 는 fresh-entry 재마운트가 끝난 뒤 살아남은 인스턴스에만 적용한다.
 const HANDOFF_APPLY_DELAY_MS = 60;
 const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
@@ -1423,6 +1424,7 @@ export default function GroupModuleUnitLiftingAnalysis() {
         subtitle="Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다."
         icon={UploadCloud}
         htmlGuide="posture-stability"
+        actions={<StudioManualButton manualId="module-unit" />}
         onBack={() => setCurrentMenu('File-Based Apps')}
       />
 

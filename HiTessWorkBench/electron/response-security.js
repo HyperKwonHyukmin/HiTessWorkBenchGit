@@ -3,6 +3,8 @@ const WORKBENCH_CSP =
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
   "style-src 'self' 'unsafe-inline'; " +
   "img-src 'self' data: blob: https:; " +
+  // Studio 사용 설명서 모달(srcdoc)은 글꼴을 data: 로 싣는다 — 없으면 default-src 를 따라 막혀 시스템 글꼴로 보인다
+  "font-src 'self' data:; " +
   "connect-src 'self' http: https: ws: wss:;";
 
 function responseHeadersWithWorkbenchCsp(details, mainWebContentsId) {

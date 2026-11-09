@@ -89,10 +89,10 @@ v1.5.8 에서 결함 6건이 새어 나갔고 3건을 사용자가 먼저 찾았
   - 운영 서버(145)에는 `WorkBenchSubModule/`이 없고 `InHouseProgram/`은 git 미추적이라, SubModule만 고치면 **dev에서는 되고 서버에서 깨진다**(실례: `rbe2_fixed_lines` 누락 → mooring solve HTTP 500). InHouse 관련 작업 보고에는 **"`git pull`만으로 끝나는지 / 서버 수동 교체 파일 목록 + 재시작 필요"를 항상 구분해 명시**한다.
   - 폴더명: `InHouseProgram`은 camelCase(`NastranBridge`), SubModule은 underscore 혼용(`Nastran_bridge`). `analysis.py`의 nastran_bridge 탐색은 `InHouseProgram/Nastran_bridge` → `WorkBenchSubModule/Nastran_bridge` → `InHouseProgram/NastranBridge` 순 + `NASTRAN_BRIDGE_DIR` override.
 - 📦 **배포 절차(Studio zip 2곳 복사·버전 확인·버전 핀 동기화, 엔진 exe 빌드·교체, 서버 보고 형식)는 전역 `/deploy` 스킬에 있다.** "배포해" 요청 시 그 스킬을 따른다. 전역 훅(`~/.claude/hooks/workbench_guard.js`)이 config.js 커밋을 차단하고 InHouseProgram/StudioProgram 변경 시 서버 반영을 알린다.
-  - "zip 빌드해서 저장해" = 모든 Studio(Model Builder·Mooring Fitting·Module Unit·Plate Analysis 등) zip 을 백엔드-로컬 `HiTessWorkBenchBackEnd\StudioProgram\` 과 UNC `...\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram` 두 곳에 둔다(전체 경로·복사 명령은 `/deploy` 스킬 `studio.md`). 대괄호 때문에 PowerShell 은 `Copy-Item -LiteralPath`. 버전은 각 studio 의 `package.json` 한 곳만 올린다(2026-10-19 전역 규칙에서 옮김).
+  - Studio zip 경로 = 백엔드-로컬 `HiTessWorkBenchBackEnd\StudioProgram\` · UNC `...\[개인 자료]\권혁민 책임연구원\HiTessWorkBench\StudioProgram`(전체 경로·복사 명령은 `/deploy` 스킬 `studio.md`). 대괄호 때문에 PowerShell 은 `Copy-Item -LiteralPath`. 버전은 각 studio 의 `package.json` 한 곳만 올린다.
   - ⚠ **Studio 배포(올리기)와 릴리스(145 사용자에게 열기)는 다르다 (2026-10-29)** — 70·145 가 같은 UNC 를 봐서 올린 베타가 145 에 바로 나가던 문제를 막았다.
     역할: "배포해" = **70 로컬 `StudioProgram\` 에만**(70 테스트) · `/studio-release` = 출처 release 폴더 → **UNC 업로드** + 표 갱신(145 공개).
-    UNC 에 먼저 올리지 않으므로 145 가 옛 백엔드여도 베타가 새지 않는다(위 "zip 빌드해서 저장해 = 두 곳" 은 이 규칙으로 바뀜).
+    UNC 에 먼저 올리지 않으므로 145 가 옛 백엔드여도 베타가 새지 않는다. "zip 빌드해서 저장해" 도 "배포해" 와 같다(70 로컬만).
     145 백엔드는 `HiTessWorkBenchBackEnd/app/studio_release.json`(`studios` = viewer id → 버전, 모든 Studio)에 적힌 버전만 내주고(`viewers.py`, 요청마다 읽음),
     70 은 `.env` `STUDIO_CHANNEL=dev`(git 미추적, **145 에는 넣지 말 것**)라 늘 최고 버전. 표 갱신 = `scripts/studio_release.py` —
     `/wb-release` 가 모든 Studio 를 UNC 최신으로, `/studio-release <id> [버전]` 이 WorkBench 버전과 무관하게 한 Studio 만(롤백 포함). 반영 = 커밋·푸시 + 145 ⟳ Update(재시작 불필요).
@@ -314,7 +314,7 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   MB Studio 의 셸 규칙·편집 작업 패널·도움말·기본 모델 편집을 MU 로 넓히는 단계(0 저장소 정리 → 1 셸 → 2 편집 바탕 → 3 편집 기능 → 4 도움말)와 결정 대기 항목이 있다.
   요청이 그 항목과 겹치면 MB 구현을 기준으로 맞추고 문서의 '진행 상태' 표를 갱신한다.
   ⚠ MU 는 Studio 가 JS 로 편집을 적용해 `_edited.json` 을 올린다(`buildEditedStageJson`) — MB 처럼 C#·bridge 에 새 kind 를 넣는 작업이 아니다.
-- ⭐ **버전 정책 (사용자 지시, 무조건):** Module Unit 코드를 고치면(스튜디오든 엔진 `ModuleUnitAnalysis`든) **항상 `module-unit-studio` 버전 bump → zip 재배포 → `GroupModuleUnitLiftingAnalysis.jsx` 의 `MODULE_STUDIO_VERSION` 동기화**를 세트로 한다. 핀이 어긋나면 새 스튜디오가 뜨지 않는다. 절차는 `/deploy` 스킬.
+- ⭐ **버전 정책 (사용자 지시, 무조건):** Module Unit 코드를 고치면(스튜디오든 엔진 `ModuleUnitAnalysis`든) **항상 `module-unit-studio` 버전 bump → zip 재배포 → `GroupModuleUnitLiftingAnalysis.jsx` 의 `MODULE_STUDIO_VERSION` 동기화**를 세트로 한다. 핀은 표시용 기본값이고 받는 버전은 릴리스 표(`studio_release.json`)가 정한다(2026-10-29) — 그래도 화면 표시가 어긋나지 않게 같이 올린다. 절차는 `/deploy` 스킬.
 
 #### MB 와 사용법 통일 (0.0.175~0.0.179, 2026-11-02)
 
@@ -324,6 +324,11 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   평가·추천에서 `_edited.json` 을 올리면 `editedModelUploaded` 를 세워 내역이 비어도 해석 전에 다시 올린다.
   **남은 문제**: 서버 `<stem>_edited.json` 은 지우는 곳이 없어, Studio 를 다시 열어 편집 0건이면 이전 세션 파일이 구조 해석에 쓰일 수 있다(코드 경로만 확인, 재현 안 함. 고치려면 백엔드 호출 필요). MB 유체 항목도 같은 구조인지 조사 안 함.
 - 사용 설명서 = `outputs/MB-manual`·`outputs/MU-manual`(git 미추적). **문서 버전은 Studio 버전과 별개**(사용자 지시, 2026-11-02) — 개선할 때마다 `outputs/manual-tools` 의 `node make.mjs <MB|MU> --bump "변경 내용" [--studio X]` 로 올린다.
+  **MU 설명서 사용자 제공 (2026-11-09, 사용자 결정: 모달 포함 · git 에 넣음)** — `make.mjs` 가 PDF + 웹판(한 파일 HTML)을 만들고 `publish.py MU` 가
+  ① 백엔드 `Manuals/module-unit/`(manual.html · **manual.pdf.gz** · manual.json, git 추적) → `routers/manuals.py`(`/api/manuals/{id}`, `/web`, `/pdf`, 로그인 필요) →
+  GMU 페이지 배너 'Studio 사용 설명서'(`components/ui/StudioManualButton.jsx`, 모달 iframe srcDoc + PDF 받기) ② Studio `public/manual/index.html` →
+  도움말 '사용 설명서' 탭(지금 탭 쪽으로, `data/manualSections.js`) · 탭 `?` 팝오버 링크. 설명서를 고치면 publish 뒤 **Studio 버전 bump·배포**가 따라야 Studio 안 설명서가 바뀐다.
+  ⚠ PDF 를 평문으로 git 에 넣으면 안 된다 — 이름을 .bin 으로 바꿔도 DRM 이 1분 안에 내용(PDF)을 보고 다시 감싼다(실측). gzip 은 감싸지지 않아 `.pdf.gz` 로 두고 서버가 푼다(`test_repo_manual_is_plain_pdf`).
 - ⚠ `/studio-release` 의 출처 `release` zip 도 DRM 에 감싸질 수 있다(크기 +4096, `HHIDRMC`, 검증 `MISMATCH CORRUPT`, 0.0.180 실례). `dist` 를 메모리에서 묶어 UNC 에 직접 쓴다(`outputs/MU-manual/source/zip_to_unc.mjs`).
 - Hoist 탭은 그대로 Shift+클릭 = 권상점, Edit 탭은 MB 규칙(클릭 = 하나, Shift = 넣기/빼기, Shift+드래그 = 사각형).
 - ⚠ 뷰포트의 `stageData` 는 파생 모델(`data/nodeEdits.js`)일 수 있다. 질량 기준값은 `baseStage()` 원본으로 낼 것 — 파생으로 내면 증감이 두 번 들어간다.
@@ -811,7 +816,7 @@ Block Weld·Independent Tank·Heavy Block Lifting·App Settings 등록 App 은 �
 개정 2(같은 날): 45번 Cookie Manager(`HanByul/45_Cookie_Manager`, 별도 로그인 플랫폼 + 서버 간 세션 확인)는 운영에 세우지 않고(HTTP 거부·로그인 이중화·앱 포트 노출) 모듈 쪽 구조만 쓴다 —
 claims 이름을 그 사용자 정보(`employee_id`·`display_name`·`role`·`modules`)와 맞춤, CSRF 는 게이트웨이 Origin 확인, .NET 은 NuGet 없는 RS256 검증 예제(Python·.NET 예제 실행 확인) — 개발자 안내문 `utils/externalAppDeveloperNotes.js` 도 구현 때 함께 바꾼다.
 
-**보안 점검 (2026-11-04, 읽기 전용 — 코드 변경 없음)** — 위 772행 "실제 열림 여부 미확인" 중 **무인증 직접 접근·경로 첫 칸 사번 위장은 닫힘 확인**:
+**보안 점검 (2026-11-04, 읽기 전용 — 코드 변경 없음)** — 위 '외부 웹 App 프록시' 절의 "실제 열림 여부 미확인" 중 **무인증 직접 접근·경로 첫 칸 사번 위장은 닫힘 확인**:
 업스트림에 직접 붙어도 `/`·`/A<사번>` 모두 **401 `SESSION_INVALID`**(앱이 유효 WorkBench 세션을 요구, 경로 칸을 신뢰 안 함). 참조 검증기 `outputs/external-app-assertion-testkit/sample_app.py` 는
 `algorithms=["RS256"]`+`require=[iss,aud,sub,iat,exp]`+aud·iss 핀+JWKS kid 조회로 alg:none·RS/HS 혼동·kid 주입·unknown-key·tampered·expired·wrong-aud/iss·no-exp **7종 거부** — 토큰 위조 경로는 견고.
 - **남은 결함은 암호화가 아니라 전송/배포** (WorkBench.exe 무관, exe 재빌드 불필요): JWKS(`9091/api/external-apps/jwks`)·게이트웨이→App 이 **평문 HTTP**(`external_apps.py` 35~39행 `http://10.14.42.145:318xx`).
