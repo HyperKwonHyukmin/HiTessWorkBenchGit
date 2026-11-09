@@ -327,7 +327,13 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   **MU 설명서 사용자 제공 (2026-11-09, 사용자 결정: 모달 포함 · git 에 넣음)** — `make.mjs` 가 PDF + 웹판(한 파일 HTML)을 만들고 `publish.py MU` 가
   ① 백엔드 `Manuals/module-unit/`(manual.html · **manual.pdf.gz** · manual.json, git 추적) → `routers/manuals.py`(`/api/manuals/{id}`, `/web`, `/pdf`, 로그인 필요) →
   GMU 페이지 배너 'Studio 사용 설명서'(`components/ui/StudioManualButton.jsx`, 모달 iframe srcDoc + PDF 받기) ② Studio `public/manual/index.html` →
-  도움말 '사용 설명서' 탭(지금 탭 쪽으로, `data/manualSections.js`) · 탭 `?` 팝오버 링크. 설명서를 고치면 publish 뒤 **Studio 버전 bump·배포**가 따라야 Studio 안 설명서가 바뀐다.
+  **상단 탭 줄 바로 뒤 '설명서' 버튼(초록) → 3D 옆 오른쪽 패널** `components/help/ManualDock.jsx`(0.0.200~0.0.201, 2026-11-09 사용자 결정 —
+  도움말 메뉴 안 모달은 숨어 있고 화면을 다 가려 버렸다. 오른쪽 끝 버튼도 못 찾아 탭 뒤로 옮김). 탭 따라가기(기본 켬)·목차/지금 탭·폭 끌기(localStorage),
+  쪽 이동은 iframe 을 다시 읽지 않고 `postMessage({manualSection})`(`data/manualSections.js`). 탭 `?` 팝오버·도움말 메뉴도 이 패널을 연다(도움말 창의 설명서 탭은 없앰).
+  웹판은 폭 ≤760px 에서 A4 틀을 풀고 글을 다시 흘린다(`web_build.py` `@media`, 표지 숨김 — 넓은 WorkBench 모달은 그대로). 별도 창은 모니터 2대일 때만 이득이라 보류(exe 변경 필요).
+  설명서를 고치면 publish 뒤 **Studio 버전 bump·배포**가 따라야 Studio 안 설명서가 바뀐다.
+  상태(2026-11-09): MU `a76b250` · 릴리스 표 0.0.201(`352db9d`) · WorkBench 1.7.11 exe(`048a358`, GMU 설명서 버튼·CSP 글꼴) 빌드. 145 ⟳ Update+재시작·exe 배포는 사용자 몫,
+  WorkBench 앱 안 Studio 창·Electron PDF 저장 대화상자는 눈으로 확인 안 함. 다음 후보: 실적 '크게 보기' 패널과 함께 열면 서로 폭을 몰라 3D 가 좁아짐 · 패널 단추 data-help.
   ⚠ PDF 를 평문으로 git 에 넣으면 안 된다 — 이름을 .bin 으로 바꿔도 DRM 이 1분 안에 내용(PDF)을 보고 다시 감싼다(실측). gzip 은 감싸지지 않아 `.pdf.gz` 로 두고 서버가 푼다(`test_repo_manual_is_plain_pdf`).
 - ⚠ `/studio-release` 의 출처 `release` zip 도 DRM 에 감싸질 수 있다(크기 +4096, `HHIDRMC`, 검증 `MISMATCH CORRUPT`, 0.0.180 실례). `dist` 를 메모리에서 묶어 UNC 에 직접 쓴다(`outputs/MU-manual/source/zip_to_unc.mjs`).
 - Hoist 탭은 그대로 Shift+클릭 = 권상점, Edit 탭은 MB 규칙(클릭 = 하나, Shift = 넣기/빼기, Shift+드래그 = 사각형).
