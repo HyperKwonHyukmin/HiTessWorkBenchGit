@@ -38,6 +38,7 @@ from .routers import (
     manuals,
     module_ocean_transport,
     newsletters,
+    newsletter_web,
     notifications,
     diagnostics,
     preferences,
@@ -231,6 +232,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(activity.router)
     application.include_router(viewers.router)
     application.include_router(newsletters.router)
+    application.include_router(newsletter_web.router)
     application.include_router(presentations.router)
     application.include_router(presence.router)
     application.include_router(chat.router)
