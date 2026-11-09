@@ -21,6 +21,7 @@ import { buildActiveMailList, describeMissing, isValidEmail, needsManualEmail } 
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import AccessHistoryPanel from '../../components/admin/AccessHistoryPanel';
+import BulkEmailModal from '../../components/admin/BulkEmailModal';
 import UserStatisticsModal from '../../components/modals/UserStatisticsModal';
 import { useToast } from '../../contexts/ToastContext';
 import { ACTION_TYPE_LABELS, ACTION_TYPE_COLORS } from '../../constants/activityLog';
@@ -175,6 +176,7 @@ export default function UserManagement() {
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [isBulkEmailOpen, setIsBulkEmailOpen] = useState(false);   // 메일 한 번에 넣기 창
   const [confirmDeleteTarget, setConfirmDeleteTarget] = useState(null);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   const [activityUser, setActivityUser] = useState(null);
@@ -431,7 +433,7 @@ export default function UserManagement() {
     }
     const base = `승인 사용자 ${count}명의 메일 주소를 복사했습니다. Outlook 숨은 참조(BCC)에 붙여 넣으세요.`;
     if (missing.length) {
-      showToast(`${base} 메일 없음 ${missing.length}명: ${describeMissing(missing)} — '메일 없음' 필터에서 직접 넣을 수 있습니다.`, 'warning', 9000);
+      showToast(`${base} 메일 없음 ${missing.length}명: ${describeMissing(missing)} — '메일 없는 ${missing.length}명 넣기'에서 한 번에 넣을 수 있습니다.`, 'warning', 9000);
     } else {
       showToast(base, 'success');
     }
@@ -661,6 +663,7 @@ export default function UserManagement() {
   const pendingList  = useMemo(() => users.filter(u => !u.is_active), [users]);
   const pendingUsers = pendingList.length;
   const adminUsers   = users.filter(u => u.is_admin).length;
+  const noMailCount  = useMemo(() => users.filter(needsManualEmail).length, [users]);
 
   // 개별 승인 등으로 대기 목록에서 빠진 사용자는 선택 집합에서도 제거한다.
   useEffect(() => {
@@ -795,7 +798,7 @@ export default function UserManagement() {
     { key: 'active', label: 'Active', count: totalUsers - pendingUsers, cls: 'bg-emerald-600 text-white' },
     { key: 'admin',  label: 'Admin',  count: adminUsers,  cls: 'bg-red-600 text-white' },
     // 단체 메일에서 빠지는 승인 사용자 — 정보 수정에서 메일을 손으로 넣는다.
-    { key: 'noMail', label: '메일 없음', count: users.filter(needsManualEmail).length, cls: 'bg-amber-600 text-white' },
+    { key: 'noMail', label: '메일 없음', count: noMailCount, cls: 'bg-amber-600 text-white' },
   ];
 
   return (
@@ -1232,6 +1235,15 @@ export default function UserManagement() {
           >
             <Mail size={14}/> 메일 주소 복사
           </button>
+          {noMailCount > 0 && (
+            <button
+              onClick={() => setIsBulkEmailOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-300 text-amber-800 font-bold text-sm rounded-lg hover:bg-amber-100 transition-colors shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-1"
+              title="메일이 없는 승인 사용자만 모아 한 번에 넣기"
+            >
+              <Edit2 size={14}/> 메일 없는 {noMailCount}명 넣기
+            </button>
+          )}
           <button
             onClick={handleSyncAllPlm}
             disabled={syncingAllPlm}
@@ -1562,6 +1574,15 @@ export default function UserManagement() {
           </div>
         )}
       </div>
+
+      {/* 메일 한 번에 넣기 — PLM 에서 메일을 못 찾은 승인 사용자만 모아 입력 */}
+      <BulkEmailModal
+        isOpen={isBulkEmailOpen}
+        onClose={() => setIsBulkEmailOpen(false)}
+        users={users}
+        onSaved={fetchUsers}
+        showToast={showToast}
+      />
 
       {/* 권한 토글 확인 (관리자/개발자) */}
       <ConfirmDialog

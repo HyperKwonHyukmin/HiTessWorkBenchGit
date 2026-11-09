@@ -1,6 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildActiveMailList, describeMissing, isValidEmail, needsManualEmail } from './userMailList.js';
+import {
+  buildActiveMailList, describeMissing, isValidEmail, needsManualEmail, planBulkEmail, missingRosterText,
+} from './userMailList.js';
+
+test('planBulkEmail 은 빈 칸을 건너뛰고 틀린 값을 따로 모은다', () => {
+  const users = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+  const r = planBulkEmail(users, { 1: ' a@hhi.co.kr ', 2: '', 3: 'bad', 9: 'x@y.z' });
+  assert.deepEqual(r.toSave, [{ id: 1, email: 'a@hhi.co.kr' }]);
+  assert.deepEqual(r.invalidIds, [3]);
+  assert.equal(r.empty, 2);
+});
+
+test('missingRosterText 는 탭으로 이은 줄', () => {
+  assert.equal(
+    missingRosterText([{ name: '홍', employee_id: 'A1', company: 'HHI', department: '팀', position: '책임' }, { employee_id: 'X2' }]),
+    '홍\tA1\tHHI\t팀\t책임\n\tX2\t\t\t',
+  );
+});
 
 test('needsManualEmail 은 승인 사용자 중 주소가 없거나 틀린 사람만', () => {
   assert.equal(needsManualEmail({ is_active: true, email: null }), true);

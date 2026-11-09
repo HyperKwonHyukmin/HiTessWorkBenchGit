@@ -44,6 +44,28 @@ export function buildActiveMailList(users) {
   };
 }
 
+// '메일 한 번에 넣기' 창 — 칸에 적은 값({id: 문자열})을 저장할 것·틀린 것·빈 칸으로 나눈다.
+// 빈 칸은 건너뛴다(못 찾은 사람은 비워 두고 아는 사람만 저장).
+export function planBulkEmail(users, inputs) {
+  const toSave = [];
+  const invalidIds = [];
+  let empty = 0;
+  for (const user of users || []) {
+    const value = String((inputs || {})[user.id] || '').trim();
+    if (!value) { empty += 1; continue; }
+    if (!isValidEmail(value)) { invalidIds.push(user.id); continue; }
+    toSave.push({ id: user.id, email: value });
+  }
+  return { toSave, invalidIds, empty };
+}
+
+// 주소록에서 찾기 쉽게 — 이름·사번·부서를 탭으로 이은 줄(엑셀·메모장에 붙여도 칸이 맞음).
+export function missingRosterText(users) {
+  return (users || [])
+    .map((u) => [u.name || '', u.employee_id || '', u.company || '', u.department || '', u.position || ''].join('\t'))
+    .join('\n');
+}
+
 // 토스트용 짧은 이름 목록 — 앞의 몇 명만 보이고 나머지는 '외 N명'.
 export function describeMissing(missing, limit = 5) {
   const names = (missing || []).map((u) => u.name || u.employee_id || '?');

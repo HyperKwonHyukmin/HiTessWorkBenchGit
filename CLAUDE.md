@@ -1102,6 +1102,7 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
 주소가 없거나 모양이 틀린 사람은 토스트로 이름을 알린다(PLM 미등록·협력사 X 사번 — 메일은 PLM 백필, 메모리 `reference_plm_user_directory`). 규칙 `utils/userMailList.js`(+테스트), 프론트만(`027dfec`).
 **메일 손으로 넣기 (2026-11-09, 미커밋)** — 필터 칩 '메일 없음'(승인 사용자 중 쓸 주소 없음) · 행의 '메일 없음 · 넣기' → 정보 수정 창 '메일' 칸.
 `PUT /api/users/{id}` 에 `email` 이 오면 **값이 바뀐 때만** `users.email_manual` 을 세운다(비우면 해제 → 다음 PLM 갱신이 다시 채움, 모양 틀리면 422 `invalid_email`).
+**한 번에 넣기**(같은 날, 미커밋): 버튼 '메일 없는 N명 넣기' → `components/admin/BulkEmailModal.jsx` — 그 사람들만 표로 모아 줄마다 메일 칸, 빈 칸은 건너뛰고 아는 사람만 저장(사람마다 같은 PUT), 저장된 줄은 빠지고 실패 줄은 남음, '이름 목록 복사'(탭 구분, 주소록 찾기용). 서버 변경 없음.
 `user_directory_sync.apply_plm_profile` 이 `email_manual` 인 사람의 email 은 건너뛴다(전체·단건·주기 갱신 공통, 다른 필드는 반영). 목록에 '수동' 배지. 주소 규칙은 백엔드 `_MANUAL_EMAIL_PATTERN` ↔ 프론트 `EMAIL_PATTERN` 사본.
 컬럼은 `schema_bootstrap` 이 붙인다(70 MySQL 두 번 실행 확인). 반영 = 145 ⟳ Update + **재시작**(컬럼) + 새 exe. 옛 exe 로 정보 수정해도 email 을 안 보내 표시는 안 바뀐다. ⚠ 서버를 먼저 — 옛 서버는 새 exe 가 보낸 email 을 조용히 버린다.
 회사 한도를 낮춰 뒀는지는 미확인(넘으면 반송으로 알 수 있음). 1.7.13 exe(`ddf4633`) 배포·145 ⟳ Update+재시작(VMDC 자동 로그인 `1888654` 포함)은 사용자 몫, 버튼은 눈으로 확인 안 함.
