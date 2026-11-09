@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import subprocess
+import time
 from typing import Any, Dict, Optional
 
 from .f06_location import describe_problem_nodes
@@ -51,6 +52,41 @@ def _resolve_nastran_exe() -> Optional[str]:
     if os.path.exists(_DEFAULT_NASTRAN_EXE):
         return _DEFAULT_NASTRAN_EXE
     return None
+
+
+def bridge_env() -> Dict[str, str]:
+    """nastran_bridge 자식 프로세스 환경 — 출력을 UTF-8 로 둔다.
+
+    파이프로 띄운 Windows Python 의 표준 출력은 cp949 라, 브리지가 '—' 같은 cp949 에 없는 글자를 print 하면
+    결과 파일을 다 쓴 뒤에도 UnicodeEncodeError 로 종료 코드 1 을 낸다(2026-11-10 145 실례). _decode_completed 는 UTF-8 을 먼저 읽는다.
+    """
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
+def load_lift_result(proc: subprocess.CompletedProcess, result_json: str, log: str, not_before: float):
+    """lift-result 결과 JSON 을 읽는다 → (payload, note).
+
+    브리지가 결과 JSON 을 다 쓴 뒤 출력 단계에서 죽은 경우(종료 코드 ≠ 0)에도, 이번 실행이 쓴(not_before 이후) 온전한 JSON 이면 그대로 쓴다 —
+    종료 코드만 보고 끝내면 F06 FATAL 원인·위치 후보 절점 안내가 빠지고 'exit code 1' 만 남는다. note 는 그때 엔진 로그에 남길 한 줄.
+    """
+    failed = proc.returncode != 0
+    exists = os.path.exists(result_json)
+    if failed and not (exists and os.path.getmtime(result_json) >= not_before - 1):
+        raise RuntimeError(f"lift-result exit code {proc.returncode}. 로그:\n{log.strip()[-4000:]}")
+    if not exists:
+        raise RuntimeError(f"nastranResult JSON 이 생성되지 않았습니다: {result_json}")
+    try:
+        with open(result_json, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, ValueError) as exc:
+        if failed:
+            raise RuntimeError(f"lift-result exit code {proc.returncode}. 로그:\n{log.strip()[-4000:]}") from exc
+        raise
+    note = (f"[Warning] lift-result exit code {proc.returncode} — 결과 JSON 은 이번 실행에서 써져 그대로 사용"
+            if failed else "")
+    return payload, note
 
 
 def _decode_completed(proc: subprocess.CompletedProcess) -> str:
@@ -143,7 +179,7 @@ def build_lifting_bdf(
         if job_id and is_cancel_requested(job_id):
             raise JobCancelledError(CANCELLED_MESSAGE)
         apply_proc = subprocess.run(
-            apply_args, cwd=bdf_dir,
+            apply_args, cwd=bdf_dir, env=bridge_env(),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
         )
         engine_output += "\n[apply-edit]\n" + _decode_completed(apply_proc)
@@ -175,7 +211,7 @@ def build_lifting_bdf(
     if job_id and is_cancel_requested(job_id):
         raise JobCancelledError(CANCELLED_MESSAGE)
     prepare = subprocess.run(
-        prepare_args, cwd=bdf_dir,
+        prepare_args, cwd=bdf_dir, env=bridge_env(),
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300,
     )
     prepare_log = _decode_completed(prepare)
@@ -340,21 +376,16 @@ def task_execute_unit_structural(
         # (subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.)
         if is_cancel_requested(job_id):
             raise JobCancelledError(CANCELLED_MESSAGE)
+        result_started = time.time()
         rmap = subprocess.run(
-            result_args, cwd=bdf_dir,
+            result_args, cwd=bdf_dir, env=bridge_env(),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300,
         )
         rmap_log = _decode_completed(rmap)
         engine_output += "\n" + rmap_log
-        if rmap.returncode != 0:
-            raise RuntimeError(
-                f"lift-result exit code {rmap.returncode}. 로그:\n{rmap_log.strip()[-4000:]}"
-            )
-        if not os.path.exists(result_json):
-            raise RuntimeError(f"nastranResult JSON 이 생성되지 않았습니다: {result_json}")
-
-        with open(result_json, "r", encoding="utf-8") as f:
-            result_payload = json.load(f)
+        result_payload, result_note = load_lift_result(rmap, result_json, rmap_log, result_started)
+        if result_note:
+            engine_output += "\n" + result_note
 
         if result_payload.get("meta", {}).get("hasFatal"):
             failure_reason = describe_f06_fatal(result_payload) + describe_problem_nodes(lifting_f06)
