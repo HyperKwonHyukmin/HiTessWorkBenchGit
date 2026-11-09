@@ -8,7 +8,8 @@
 // - 그 밖의 주소: Chromium 기본 검사 그대로.
 // 고정값은 공개 정보다. 145 에서 `python scripts/make_tls_cert.py --pins` 로 다시 볼 수 있다.
 // ⚠ 사본: AmLauncher/lib/server-pins.js · HiTessMBClient/src/ServerPins.cs · frontend/src/utils/secureServerUrl.js(주소 바꾸기만).
-//   지문·주소를 바꾸면 네 곳 다.
+//   지문을 바꾸면 네 곳 다. 주소표(SECURE_UPGRADES)는 일부러 9443 유지(2026-11-10 사용자 결정) — WorkBench 본체만
+//   같은 포트 HTTPS(9091)로 옮겼다. 145 는 9443 을 계속 열어 둔다. 이 표를 9091 로 '맞추지' 말 것.
 
 const crypto = require("crypto");
 

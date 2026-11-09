@@ -50,7 +50,10 @@ else:
 
 LATEST_CLIENT_DIR = Path(os.environ.get("LATEST_CLIENT_DIR", str(BASE_DIR / "LastestVersionProgram")))
 
-SERVER_CMD = [PYTHON, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9091"]
+# --http: 9091 한 포트에서 평문과 HTTPS 를 함께 받는다(app/services/port_mux.py, 2026-11-10 — 9091 만 열린 계열사 위치).
+# ⚠ 서버 관리자가 이미 떠 있으면 ⟳ Update 로는 이 줄이 반영되지 않는다(메모리의 옛 명령으로 재시작) — 관리자 창을 닫고 다시 연다.
+SERVER_CMD = [PYTHON, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9091",
+              "--http", "app.services.port_mux:MuxHTTPProtocol"]
 
 # ── 자동 재시작(크래시 루프 방어) 파라미터 ──
 # 사용자가 Stop 을 누르지 않았는데 서버가 죽으면(=크래시) 자동으로 다시 띄운다.

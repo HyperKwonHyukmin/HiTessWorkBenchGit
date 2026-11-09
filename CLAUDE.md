@@ -1100,6 +1100,15 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   화면은 시작 때(`secureServerBootstrap.js`) 저장된 `http://10.14.42.145:9091` 을 `https://…:9443` 으로 바꾼다. 사용자가 서버 설정에 직접 넣은 주소(`wb_server_url_manual`)는 그대로 — 145 HTTPS 장애 때 평문으로 되돌리는 비상구.
   이중관 Mode Shape 뷰어·HiTessMB 가입 페이지(브라우저)는 평문 그대로. 버전: 실행기 0.1.4 · HiTessMB 0.4.0. 실측(70:9443): 개발 앱 로그인·내 작업·Studio, Electron 26·40 Windows 로그인·FormData·자체 업데이트 다운로드, HiTessMB 지문 있음/없음.
   **상태(2026-11-05 세션 끝)**: 145 HTTPS 켜짐(`.env HTTPS_PORT=9443`, 70 에서 지문 일치·앱 코드로 Windows 로그인 200) · 145 `StudioProgram\mb-launcher-0.1.4.zip` 복사됨 · exe 1.7.2 빌드·푸시(`dist_electron\HiTESS-WorkBench-v1.7.2.exe`).
+  **같은 포트 HTTPS (2026-11-10, 1.7.16)** — 계열사 다른 위치가 보안 정책으로 145 의 **9091 만** 방화벽을 열어 둬, 1.7.2~ 앱이 9443 에 못 붙었다
+  (로그인 화면 '서버 연결을 복구해야…', AD 와 무관 — 버전 확인 단계에서 실패). 사용자 결정: 수동 주소 변경은 번거로워 안 하고, **9091 이 평문과 HTTPS 를 함께 받게** 한다.
+  `app/services/port_mux.py` `MuxHTTPProtocol` — 연결의 첫 바이트가 0x16(TLS)이면 그 자리에서 asyncio `SSLProtocol` 로 바꾸고 받은 바이트를 넘긴다(scheme=https·접속 IP 그대로), 아니면 uvicorn 기본 처리.
+  켜짐 = `server_manager.py` `SERVER_CMD` 의 `--http app.services.port_mux:MuxHTTPProtocol` + `.env HTTPS_PORT`(같은 인증서), 끔 = `HTTP_PORT_TLS=0`. ⚠ `asyncio.sslproto` 내부 API — 파이썬을 올리면 `tests/test_port_mux.py` 로 확인.
+  앱 주소표(`electron/server-pins.js`·`utils/secureServerUrl.js`): `http://…145:9091` 과 1.7.2~1.7.15 가 저장한 `https://…145:9443` → **`https://…145:9091`**. 인증서 고정은 그대로(호스트 기준).
+  9443 은 옛 exe·실행기(AmLauncher)·HiTessMB 용으로 계속 연다 — 그 둘은 9443 그대로(사용자 결정: 외부 쪽은 안 바꿈). 직접 넣은 주소(수동)는 바꾸지 않는다.
+  ⚠ **반영 순서**: 145 `git pull` → **서버 관리자 창을 닫고 다시 열기**(⟳ Update 는 메모리의 옛 `SERVER_CMD` 로 재시작해 `--http` 가 안 붙는다) → 다른 PC 에서 `curl -k https://10.14.42.145:9091/api/version` 확인 → 새 exe 배포.
+  서버보다 exe 가 먼저 나가면 **모든 사용자가 접속 못 한다**. 계열사 사용자는 지금 접속이 안 돼 자동 업데이트를 못 받으니 새 exe 를 따로 전달해야 한다.
+  확인: 실제 uvicorn(시험·명령줄)에서 평문·TLS·keep-alive·3MB 업로드·깨진 TLS 뒤 회복, 헤드리스 Chrome 이 같은 포트 HTTPS 로 받음. Electron 앱·145 실서버·계열사 PC 에서는 확인 안 함.
   남은 일: exe 1.7.2 배포 → 145 ⟳ Update + 재시작(서버 버전 1.7.2) · HiTessMB 0.4.0(`cab9bf7`, 원격 없음) AM PC 배포 · 외부 App 저장·계산 확인(화면 열림만 확인) · 외부 개발자에게 `RecordMD/2026-11-05-external-app-https-pinning-handoff.md`(+11-03 문서) 전달 · 70 `.env` 시험 줄(`AUTH_MODE=ad`·`HTTPS_PORT=9443`) 정리 · 4단계(9091 로그인 거부)는 1.7.2 가 퍼진 뒤.
   릴리스 스크립트는 로컬 145 줄이 `https://10.14.42.145:9443`·`http://…:9091` 어느 쪽이든 받는다(`2266080`). `http://…:9443` 은 네 사본 모두 https 로 고친다(`881eeb3`).
   ⚠ **배포 순서**: 145 HTTPS 켜기(인증서 → `.env HTTPS_PORT=9443` → 재시작 → 방화벽 9443 → 다른 PC 에서 확인) → 145 `mb-launcher-0.1.4.zip` → WorkBench exe → HiTessMB 0.4.0(0.1.3 실행기는 HTTPS 를 못 받는다). 새 exe 를 한 번 켠 PC 는 옛 exe 로 되돌리면 접속 못 한다(저장 주소가 https).

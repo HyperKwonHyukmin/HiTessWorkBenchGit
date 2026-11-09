@@ -54,11 +54,14 @@ test("운영 지문 2개(지금·예비)와 개발 지문은 서로 다르고 sh
   for (const p of all) assert.equal(Buffer.from(p, "base64").length, 32);
 });
 
-test("옛 145 평문 주소는 HTTPS 로, 나머지는 그대로", () => {
-  assert.equal(pins.secureServerUrl("http://10.14.42.145:9091/"), "https://10.14.42.145:9443");
-  assert.equal(pins.secureServerUrl("http://10.14.42.145:9091/api/x"), "https://10.14.42.145:9443/api/x");
+test("옛 145 주소(평문 9091·HTTPS 9443)는 같은 포트 HTTPS 9091 로, 나머지는 그대로", () => {
+  assert.equal(pins.secureServerUrl("http://10.14.42.145:9091/"), "https://10.14.42.145:9091");
+  assert.equal(pins.secureServerUrl("http://10.14.42.145:9091/api/x"), "https://10.14.42.145:9091/api/x");
   assert.equal(pins.secureServerUrl("http://10.14.42.145:9095"), "http://10.14.42.145:9095");
-  assert.equal(pins.secureServerUrl("https://10.14.42.145:9443"), "https://10.14.42.145:9443");
+  assert.equal(pins.secureServerUrl("https://10.14.42.145:9443"), "https://10.14.42.145:9091");
+  assert.equal(pins.secureServerUrl("http://10.14.42.145:9443"), "https://10.14.42.145:9091"); // 오타 고친 뒤 9091 로
+  assert.equal(pins.secureServerUrl("https://10.14.42.145:9091"), "https://10.14.42.145:9091");
+  assert.equal(pins.secureServerUrl("https://HHIPW170658.hdshipgroup.hhi.co.kr:9443"), "https://hhipw170658.hdshipgroup.hhi.co.kr:9091");
   assert.equal(pins.secureServerUrl("http://10.133.122.70:9443/"), "https://10.133.122.70:9443"); // 9443 은 https 전용
   assert.equal(pins.secureServerUrl("http://10.133.122.70:94430"), "http://10.133.122.70:94430");
 });

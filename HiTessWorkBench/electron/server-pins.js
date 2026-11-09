@@ -1,13 +1,13 @@
 // 서버 인증서 고정(통합 계획 3단계, RecordMD/2026-11-05-https-certificate-pinning-plan.md).
 //
-// 145 HTTPS(9443)는 자체 인증서라 회사 PC 가 믿는 인증서 목록에 없다. 대신 앱이 그 인증서의
+// 145 HTTPS(9091 같은 포트, 옛 9443)는 자체 인증서라 회사 PC 가 믿는 인증서 목록에 없다. 대신 앱이 그 인증서의
 // 공개키 지문(SPKI sha256, base64)을 들고 있다가 같을 때만 연결한다.
 // - 지문이 맞으면: 인증서 체인·이름과 상관없이 통과(우리 키를 가진 서버다).
 // - 145 주소인데 지문이 다르면: 거부. 회사 PC 가 믿는 인증서(Somansa 등)를 내밀어도 막는다 = 중간자 차단.
 // - 그 밖의 주소: Chromium 기본 검사 그대로.
 // 고정값은 공개 정보다. 145 에서 `python scripts/make_tls_cert.py --pins` 로 다시 볼 수 있다.
 // ⚠ 사본: AmLauncher/lib/server-pins.js · HiTessMBClient/src/ServerPins.cs · frontend/src/utils/secureServerUrl.js(주소 바꾸기만).
-//   지문·주소를 바꾸면 네 곳 다.
+//   지문을 바꾸면 네 곳 다. 주소 표(SECURE_UPGRADES)는 2026-11-10 부터 이 파일과 프론트 사본만 9091 — 실행기·HiTessMB 는 9443 유지.
 
 const crypto = require("crypto");
 
@@ -26,10 +26,15 @@ const DEV_PINS = [
 // 이 주소로는 지문이 맞는 인증서만 받는다(소문자).
 const PINNED_HOSTS = ["10.14.42.145", "hhipw170658.hdshipgroup.hhi.co.kr"];
 
-// 옛 평문 주소 → HTTPS 주소. 저장된 server_url·명령줄 인자가 옛 주소여도 HTTPS 로 간다.
+// 옛 주소 → HTTPS 주소. 저장된 server_url·명령줄 인자가 옛 주소여도 HTTPS 로 간다.
+// 2026-11-10: HTTPS 를 9443 이 아니라 **9091 같은 포트**로 받는다(백엔드 app/services/port_mux.py) —
+// 9091 만 방화벽이 열린 계열사 위치 때문. 1.7.2~1.7.15 가 저장해 둔 https://…:9443 도 9091 로 옮긴다.
+// 145 의 9443 은 옛 exe·실행기(AmLauncher)·HiTessMB 를 위해 그대로 열어 둔다(그 둘은 9443 그대로 — 사용자 결정).
 const SECURE_UPGRADES = [
-  ["http://10.14.42.145:9091", "https://10.14.42.145:9443"],
-  ["http://hhipw170658.hdshipgroup.hhi.co.kr:9091", "https://hhipw170658.hdshipgroup.hhi.co.kr:9443"],
+  ["http://10.14.42.145:9091", "https://10.14.42.145:9091"],
+  ["https://10.14.42.145:9443", "https://10.14.42.145:9091"],
+  ["http://hhipw170658.hdshipgroup.hhi.co.kr:9091", "https://hhipw170658.hdshipgroup.hhi.co.kr:9091"],
+  ["https://hhipw170658.hdshipgroup.hhi.co.kr:9443", "https://hhipw170658.hdshipgroup.hhi.co.kr:9091"],
 ];
 
 // 9443 은 HTTPS 전용 포트 — http://…:9443 은 늘 잘못 친 주소라 https 로 고친다.

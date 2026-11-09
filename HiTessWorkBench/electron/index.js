@@ -1370,7 +1370,7 @@ const _pendingFinalizeReqs = new Map();   // requestId → resolve
 // The viewer IPC bridge runs in Electron main process and cannot import the
 // frontend module, so it needs the same fallback here for users who have not
 // saved a custom server_url in localStorage.
-const DEFAULT_BACKEND_BASE_URL = secureServerUrl("http://10.14.42.145:9091"); // = https://10.14.42.145:9443
+const DEFAULT_BACKEND_BASE_URL = secureServerUrl("http://10.14.42.145:9091"); // = https://10.14.42.145:9091 (같은 포트 HTTPS)
 
 // session 을 넘기면 그 Studio 가 오픈될 때 전달받은 serverUrl 을 fallback 으로 쓴다.
 // (Studio 마다 다른 백엔드를 볼 수 있으므로 전역 하나로 두지 않는다.)

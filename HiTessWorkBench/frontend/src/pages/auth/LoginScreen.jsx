@@ -595,7 +595,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                 setServerUrlInput(event.target.value);
                 setServerSettingsError('');
               }}
-              placeholder="https://10.14.42.145:9443"
+              placeholder="https://10.14.42.145:9091"
               error={serverSettingsError}
               className="font-mono"
               autoFocus
