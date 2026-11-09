@@ -2,6 +2,17 @@
   "_comment": "관리자 '업데이트 이력'(Administration > Update History)의 내용. 2026년 10월부터 기록. 새 항목은 items 맨 앞에. 큰 범주로 쓴다: 항목 하나 = 주간 보고 한 줄 수준의 기능·문제 영역, 작은 수정·기본값·문구는 관련 항목의 points 에 합친다. 같은 기능이 나중에 보강되면 처음 항목의 points 에 (버전)과 함께 더한다. kind = 기능|개선|수정|정리|운영. version = 처음 실린 릴리스. requester = 그 기능을 요청한 사람 '이름 직급'(있을 때만, 예: 김도현 선임). 화면 문구에 em dash 를 쓰지 않는다. 고치면 백엔드 재시작 없이 다음 조회부터 반영된다(145 는 Server Manager Update 로 git pull). Studio 항목은 studio = viewer id(studio_release.json 의 키), version = 그 Studio 버전으로 적고 /studio-release 로 145 에 공개할 때 쓴다(70 로컬 빌드마다 쓰지 않는다). 공개한 버전 사이에 바뀐 것을 한 항목으로 묶는다.",
   "items": [
     {
+      "date": "2026-11-10",
+      "version": "0.1.8",
+      "studio": "model-studio",
+      "kind": "개선",
+      "title": "Model Builder Studio 3D 화면에 힘 크기 표시",
+      "summary": "Analysis 탭에서 힘을 넣으면 3D 화살표 꼬리 옆에 노드 하나에 걸리는 힘의 크기(예: 1,000 N)가 함께 보입니다.",
+      "points": [
+        "한 힘에 고른 노드가 12개를 넘으면 첫 노드에만 '1,000 N × 40'처럼 한 번 표시해 화면이 글자로 덮이지 않게 했습니다"
+      ]
+    },
+    {
       "date": "2026-11-09",
       "version": "0.1.7",
       "studio": "model-studio",
