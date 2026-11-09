@@ -334,6 +334,11 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   설명서를 고치면 publish 뒤 **Studio 버전 bump·배포**가 따라야 Studio 안 설명서가 바뀐다.
   상태(2026-11-09): MU `a76b250` · 릴리스 표 0.0.201(`352db9d`) · WorkBench 1.7.11 exe(`048a358`, GMU 설명서 버튼·CSP 글꼴) 빌드. 145 ⟳ Update+재시작·exe 배포는 사용자 몫,
   WorkBench 앱 안 Studio 창·Electron PDF 저장 대화상자는 눈으로 확인 안 함. 다음 후보: 실적 '크게 보기' 패널과 함께 열면 서로 폭을 몰라 3D 가 좁아짐 · 패널 단추 data-help.
+  **MB 도 같은 방식 (2026-11-09, 사용자 지시 'MU 와 동일하게')** — `publish.py MB` → 백엔드 `Manuals/model-builder/` + Studio `apps/model-studio/public/manual/`,
+  HiTESS Model Builder 배너 버튼(`manualId="model-builder"`) · Studio 0.1.4 `ManualDock`(MU 사본, 색만 `palette(theme)` — MB 는 밝은/어두운 화면) · 쪽 대응 `data/manualSections.js`(탭 csv → `csv`).
+  설명서 문서 버전 02(기준 0.1.4): 코드 대조 검토로 Ctrl+드래그 = 선택 빼기·`RBE 만들기 (노드 N개)`·정보 도크 자동 열림을 바로잡음. 전체 화면 그림은 캡처 원본 모델이 없어 새 버튼 조각만 합성(원본 `source/probe/overview_v01.png`).
+  설명서 패널로 3D 가 좁아지면 뷰포트 위 CSV·COG 알림이 세로로 깨지던 것 수정(`ThreeViewport` 알림 최소 360px). 다시 찍기 = `MB-manual/source/caps_manual.mjs`(5199 dev 서버 + `MB_MODEL=<상대 경로>`, 저장소 샘플 3454).
+  상태: Studio `29d82d8` · WorkBench `87e4ea5`(설명서·버튼) · 릴리스 표 0.1.4(`467316d`) · WorkBench 1.7.12 exe(`5ea7430`) 빌드. 145 ⟳ Update·exe 배포는 사용자 몫, Electron 앱 안 화면은 눈으로 확인 안 함.
   ⚠ PDF 를 평문으로 git 에 넣으면 안 된다 — 이름을 .bin 으로 바꿔도 DRM 이 1분 안에 내용(PDF)을 보고 다시 감싼다(실측). gzip 은 감싸지지 않아 `.pdf.gz` 로 두고 서버가 푼다(`test_repo_manual_is_plain_pdf`).
 - ⚠ `/studio-release` 의 출처 `release` zip 도 DRM 에 감싸질 수 있다(크기 +4096, `HHIDRMC`, 검증 `MISMATCH CORRUPT`, 0.0.180 실례). `dist` 를 메모리에서 묶어 UNC 에 직접 쓴다(`outputs/MU-manual/source/zip_to_unc.mjs`).
 - Hoist 탭은 그대로 Shift+클릭 = 권상점, Edit 탭은 MB 규칙(클릭 = 하나, Shift = 넣기/빼기, Shift+드래그 = 사각형).
