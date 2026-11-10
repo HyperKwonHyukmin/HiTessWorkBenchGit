@@ -1,7 +1,7 @@
 {
   "studios": {
     "model-studio": "0.1.8",
-    "module-unit-studio": "0.0.203",
+    "module-unit-studio": "0.0.204",
     "mooring-fitting-studio": "0.1.87",
     "plate-studio": "0.2.2",
     "side-passage-studio": "0.3.23"
