@@ -172,6 +172,15 @@ kbd{font-family:inherit;font-size:.86em;font-weight:700;padding:1px 7px;border:1
 .colophon b{color:var(--ink)}
 
 /* 좁은 화면 */
+/* 이번 호 1분 영상(2026-11) — 제호 바로 아래 */
+.reel{background:var(--cinema);color:var(--cinema-ink);padding:36px 0 40px}
+.reel-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px 24px;flex-wrap:wrap;margin-bottom:16px}
+.reel-head h2{margin:0;color:#fff;font-size:clamp(1.25rem,2.4vw,1.6rem);font-weight:800;letter-spacing:-0.02em}
+.reel-head h2 em{font-style:normal;color:var(--green-on-dark)}
+.reel-head p{margin:0;font-size:14.5px;color:var(--cinema-dim)}
+.reel-frame{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#000;border:1px solid var(--cinema-line);box-shadow:0 24px 48px -28px rgba(0,0,0,.7)}
+.reel-frame video{display:block;width:100%;height:100%;object-fit:contain;background:#000}
+
 @media (max-width:960px){
   .lead{grid-template-columns:1fr;gap:40px}
   .cinema-top,.feature{grid-template-columns:1fr}
@@ -209,6 +218,7 @@ kbd{font-family:inherit;font-size:.86em;font-weight:700;padding:1px 7px;border:1
 @media print{
   body{background:#fff}.sheet{box-shadow:none}
   .story,.manual,.feat,.step,.vid{break-inside:avoid}
+  .reel{display:none}
 }
 </style>
 </head>
@@ -233,6 +243,23 @@ kbd{font-family:inherit;font-size:.86em;font-weight:700;padding:1px 7px;border:1
     <span>Hi-TESS Workbench 공식 소식지</span>
   </div>
 </header>
+
+<!-- 이번 호 1분 영상 -->
+<section class="reel" id="reel" aria-labelledby="reel-h">
+  <div class="wrap">
+    <div class="reel-head">
+      <h2 id="reel-h">이번 호를 <em>1분 영상</em>으로</h2>
+      <p>소리와 자막이 함께 나옵니다 · 아래에서 글로도 읽을 수 있습니다</p>
+    </div>
+    <div class="reel-frame">
+      <video controls playsinline preload="metadata" poster="media/workbench-news-poster.jpg" width="1920" height="1080"
+             aria-label="Workbench News 26년 11월호 1분 영상: 가입자 200명 돌파, HiTESS Story 영상 10편, 새로 쓸 수 있는 앱, Studio 사용 설명서, 더 편해진 Workbench">
+        <source src="media/workbench-news.mp4" type="video/mp4">
+        이 브라우저에서는 영상을 재생할 수 없습니다. 아래 글로 이번 호 소식을 읽어 주세요.
+      </video>
+    </div>
+  </div>
+</section>
 
 <main>
 

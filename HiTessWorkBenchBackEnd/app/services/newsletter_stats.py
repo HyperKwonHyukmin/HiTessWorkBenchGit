@@ -23,7 +23,8 @@ from app.services.program_registry import internal_substep_programs
 logger = logging.getLogger(__name__)
 
 DEFAULT_VIEWERS = "A476854"
-SECTION_IDS = ("lead", "story", "apps", "manuals", "easier")
+# video·video_end 는 화면 구역이 아니라 페이지 맨 위 1분 영상(2026-11~)을 재생함·끝까지 봄 — 측정 스크립트가 재생 사건으로 넣는다.
+SECTION_IDS = ("video", "video_end", "lead", "story", "apps", "manuals", "easier")
 MAX_DWELL_PER_BEACON = 1800      # 한 번에 받는 머문 시간 상한(초) — 창을 띄워 두고 자리를 비운 경우
 MAX_DWELL_PER_DAY = 6 * 3600
 COMPARE_DAYS = 14
@@ -109,6 +110,10 @@ TRACKER_SCRIPT = """<script>
     var io = new IntersectionObserver(function(es){ es.forEach(function(e){ if (e.isIntersecting) mark(e.target); }); }, { threshold: 0.25 });
     document.querySelectorAll('section').forEach(function(s){ io.observe(s); });
   }
+  document.querySelectorAll('video').forEach(function(v){
+    v.addEventListener('play', function(){ shown.video = 1; });
+    v.addEventListener('ended', function(){ shown.video_end = 1; });
+  });
   function flush(){
     if (visibleSince) { pending += (Date.now() - visibleSince) / 1000; visibleSince = 0; }
     depth();

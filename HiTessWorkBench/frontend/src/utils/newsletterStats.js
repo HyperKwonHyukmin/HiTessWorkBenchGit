@@ -1,6 +1,8 @@
 // 웹 뉴스레터 통계 화면 규칙(2026-11-10) — 백엔드 services/newsletter_stats.py 의 응답을 사람이 읽는 값으로.
 
 export const SECTION_LABELS = {
+  video: '1분 영상 재생',
+  video_end: '1분 영상 끝까지',
   lead: '첫머리(가입자 소식)',
   story: 'HiTESS Story 영상',
   apps: '새로 쓸 수 있는 앱',

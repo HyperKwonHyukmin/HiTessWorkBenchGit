@@ -1175,6 +1175,10 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
 - 작업 원본·그림 준비 = `outputs/newsletter-2026-11/`(git 미추적). 대시보드 '자료 › News Letter'(PDF·PNG 아카이브, `routers/newsletters.py`, UNC)와는 별개다.
 - 11월호 내용 결정(사용자): 가입자 200명 돌파(사용자가 준 숫자) · HiTESS Story 영상 10편 강조 · 새 앱 = Independent Tank·Heavy Block Lifting(김한별 책임연구원)·선체 가속도(정병훈 책임연구원) + 중량물 권상 시뮬레이터 '개발 예고' ·
   Studio 설명서 · 더 편해진 Workbench. BCC·D Type Lug·로그인 방식은 뺐다. 사람 이름 뒤에 직책. 테스트 `tests/test_newsletter_web.py`(저장소의 실제 호와 그림 경로까지 확인).
+- **1분 영상판 (2026-11-10, 사용자 지시 '페이지에 영상을 넣고 아래는 지금처럼')** — 제호 바로 아래 `section.reel`(id `reel`) 에 `media/workbench-news.mp4`(10 MB, 자막 박음 — vtt 를 붙이면 두 번 나옴) + `media/workbench-news-poster.jpg`.
+  라우터가 `.mp4` 를 내주고 **Range(206) 를 받는다**(없으면 넘겨 보기가 안 됨). 통계 구획에 `video`(재생함)·`video_end`(끝까지 봄)가 붙었다 — 화면 구역이 아니라 측정 스크립트가 재생 사건으로 넣는다(맨 위라 '보였다'는 늘 100%).
+  제작 = `outputs/workbench-news-2026-11/`(git 미추적): `script.py`(대본, say=발음용·sub=자막) → `tts.py`(edge-tts SunHi, 문장별 mp3 + 낱말 시각, 전용 `venv`) → `build.py all`(Pillow 모션그래픽 + ffmpeg, 약 30초). 낱말 시각으로 화면 강조를 말에 맞춘다.
+  ⚠ edge-tts 는 공식 API 가 아니라 막힐 수 있다(대안: Azure 같은 목소리 유료 · Windows Heami 무료·기계음). 선체 가속도 카드의 배 그림은 연출(실제 앱 화면 아님). 다음 호는 대본과 장면 함수를 새로 쓴다.
 - **조회 통계 (2026-11-10, 사용자 지시 '나만 보게')** — `services/newsletter_stats.py`. 호 페이지 GET 마다 `newsletter_views`(호 × 방문자 × 날짜 한 행, 기간 제한 없음)에 기록하고,
   서버가 보낼 때 측정 스크립트를 `</body>` 앞에 끼워 넣는다(HTML 원본은 그대로) → 화면을 떠날 때 `POST /newsletter/{호}/beacon` 으로 읽은 깊이·보인 시간·본 구획(lead·story·apps·manuals·easier).
   방문자 = IP 해시(되돌릴 수 있어 익명 보장 아님, 사람 수가 아니라 PC 수). 기록 실패는 삼켜 페이지는 늘 열린다. 열람 행이 없으면 beacon 은 무시.

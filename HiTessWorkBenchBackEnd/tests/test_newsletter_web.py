@@ -87,7 +87,7 @@ def test_repo_issue_is_served():
     page = client.get(issues[0]["url"])
     assert page.status_code == 200
     import re
-    refs = set(re.findall(r'(?:src|url)\(?=?"((?:img|fonts)/[^"]+)"', page.text))
+    refs = set(re.findall(r'(?:src|url|poster)\(?=?"((?:img|fonts|media)/[^"]+)"', page.text))
     assert refs
     for ref in refs:
         res = client.get(issues[0]["url"] + ref)
@@ -110,3 +110,24 @@ def test_head_requests_for_link_checkers(web_dir):
     assert client.head("/newsletter", follow_redirects=False).status_code == 307
     assert client.head("/newsletter/2026-11/").status_code == 200
     assert client.head("/newsletter/2026-11/img/a.jpg").status_code == 200
+
+
+def test_video_range_requests(web_dir):
+    """영상은 구간 요청(Range)을 받아야 브라우저에서 넘겨 볼 수 있다(2026-11 1분 영상)."""
+    body = bytes(range(256)) * 4
+    (web_dir / "2026-11" / "media").mkdir()
+    (web_dir / "2026-11" / "media" / "v.mp4").write_bytes(body)
+    client = TestClient(app)
+    url = "/newsletter/2026-11/media/v.mp4"
+    full = client.get(url)
+    assert full.status_code == 200 and full.content == body
+    assert full.headers["content-type"] == "video/mp4" and full.headers["accept-ranges"] == "bytes"
+    part = client.get(url, headers={"Range": "bytes=10-19"})
+    assert part.status_code == 206 and part.content == body[10:20]
+    assert part.headers["content-range"] == f"bytes 10-19/{len(body)}"
+    open_end = client.get(url, headers={"Range": "bytes=1000-"})
+    assert open_end.status_code == 206 and open_end.content == body[1000:]
+    tail = client.get(url, headers={"Range": "bytes=-24"})
+    assert tail.status_code == 206 and tail.content == body[-24:]
+    bad = client.get(url, headers={"Range": f"bytes={len(body)}-"})
+    assert bad.status_code == 416 and bad.headers["content-range"] == f"bytes */{len(body)}"

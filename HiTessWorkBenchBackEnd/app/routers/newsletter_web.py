@@ -4,12 +4,12 @@
   GET /newsletter                 → 최신 호로 이동(307)
   GET /newsletter/issues.json     → 호 목록(최신이 앞) — 나중에 페이지 왼쪽 '지난 호' 목록이 쓴다
   GET /newsletter/{호}/           → 그 호의 index.html
-  GET /newsletter/{호}/{파일}     → 그 호의 그림·글꼴
+  GET /newsletter/{호}/{파일}     → 그 호의 그림·글꼴·영상(mp4 는 Range 요청을 받는다 — 영상 넘겨 보기)
   POST /newsletter/{호}/beacon    → 페이지 측정 스크립트가 보내는 읽은 깊이·머문 시간(로그인 없음)
   GET /api/admin/newsletter-stats → 호별 조회 통계(지정한 사번만 — services/newsletter_stats.py)
 
 호 폴더 = `NewsLetterWeb/<YYYY-MM>[-n]/` (git 추적 — 145 는 git pull 로 반영)
-  index.html · issue.json(title·number·date·summary) · img/ · fonts/
+  index.html · issue.json(title·number·date·summary) · img/ · fonts/ · media/(영상, 2026-11 부터)
 새 호를 내려면 폴더 하나를 더하면 된다. 가장 큰 호 id 가 최신이다.
 
 대시보드 '자료 › News Letter'(PDF·PNG, routers/newsletters.py) 와는 별개다 — 그쪽은 앱 안 아카이브.
@@ -38,7 +38,9 @@ _ASSET_TYPES = {
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp",
     ".svg": "image/svg+xml", ".gif": "image/gif",
     ".woff2": "font/woff2", ".woff": "font/woff", ".css": "text/css; charset=utf-8",
+    ".mp4": "video/mp4",
 }
+_RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 _DRM_MAGIC = b"HHIDRMC"
 _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _NOT_FOUND = "뉴스레터를 찾을 수 없습니다."
@@ -166,7 +168,7 @@ def newsletter_stats_view(employee_id: str = Depends(require_auth), db: Session 
 
 
 @router.api_route("/newsletter/{issue}/{asset_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
-def issue_asset(issue: str, asset_path: str):
+def issue_asset(issue: str, asset_path: str, request: Request):
     folder = _issue_dir(issue).resolve()
     target = (folder / asset_path).resolve()
     if folder not in target.parents or not target.is_file():
@@ -174,5 +176,21 @@ def issue_asset(issue: str, asset_path: str):
     media_type = _ASSET_TYPES.get(target.suffix.lower())
     if media_type is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
-    return Response(_read(target), media_type=media_type, headers={"Cache-Control": "public, max-age=86400"})
+    data = _read(target)
+    headers = {"Cache-Control": "public, max-age=86400"}
+    if media_type.startswith("video/"):
+        # 영상은 구간 요청(Range)을 받아야 브라우저가 뒤로 넘겨 볼 수 있다. 길이는 read() 한 바이트 기준이라 DRM 크기 함정과 무관.
+        headers["Accept-Ranges"] = "bytes"
+        rng = _RANGE_RE.match(request.headers.get("range", "").strip())
+        if rng and (rng.group(1) or rng.group(2)):
+            size = len(data)
+            if rng.group(1):
+                start = int(rng.group(1)); end = min(int(rng.group(2)) if rng.group(2) else size - 1, size - 1)
+            else:  # bytes=-N (끝에서 N 바이트)
+                start = max(0, size - int(rng.group(2))); end = size - 1
+            if start >= size or start > end:
+                return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+            headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+            return Response(data[start:end + 1], status_code=206, media_type=media_type, headers=headers)
+    return Response(data, media_type=media_type, headers=headers)
 
