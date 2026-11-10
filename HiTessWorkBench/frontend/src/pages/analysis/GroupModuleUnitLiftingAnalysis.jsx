@@ -30,6 +30,7 @@ import {
   gmuWorkspaceKit, gmuWorkspaceLabel, gmuWorkspaceStatus, gmuWorkspaceTitle,
   isGmuWorkspaceIdle, isGmuWorkspaceRunning, isOwnStructuralEvent, normalizePath,
 } from '../../utils/gmuLiftingWorkspaces';
+import { abnormalExitText } from '../../utils/abnormalExit.js';
 import { buildStructuralResult, computeGmuVerdict } from '../../utils/gmuLiftingVerdict';
 import { importFromLogbook } from '../../api/logbook';
 import StudioManualButton from '../../components/ui/StudioManualButton';
@@ -38,7 +39,7 @@ import {
 } from '../../utils/logbookLink';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.205';
+const MODULE_STUDIO_VERSION = '0.0.208';
 // 다른 App 이 넘긴 BDF 는 fresh-entry 재마운트가 끝난 뒤 살아남은 인스턴스에만 적용한다.
 const HANDOFF_APPLY_DELAY_MS = 60;
 const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
@@ -359,7 +360,9 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
       setValidJobId(null);
       setValidFailed(true);
       setEngineLog(errData?.engine_log || errData?.message || null);
-      showToast(errData?.timeout ? '검증 시간 초과' : 'BDF 검증 실패', 'error');
+      showToast(errData?.timeout ? '검증 시간 초과'
+        : abnormalExitText(errData?.engine_log || errData?.message) ? 'BDF 검증 프로그램이 비정상 종료했습니다 — 다시 시도해 주세요'
+        : 'BDF 검증 실패', 'error');
     },
   });
 
@@ -879,11 +882,12 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
   const hasValidation = !!step1Data;
   const verdict = computeGmuVerdict({
     jobFailed: validFailed && !step1Data,
+    jobLog: engineLog,
     step1Data,
     step2Data: validatedWithNastran ? step2Data : null,
     structural: analysisResult,
   });
-  const validationVerdict = computeGmuVerdict({ step1Data, step2Data: validatedWithNastran ? step2Data : null, jobFailed: validFailed && !step1Data });
+  const validationVerdict = computeGmuVerdict({ step1Data, step2Data: validatedWithNastran ? step2Data : null, jobFailed: validFailed && !step1Data, jobLog: engineLog });
   const validationOk = !!validationVerdict.level && validationVerdict.level !== 'fail';
   const structuralLevel = analysisResult ? verdict.level : null;
 

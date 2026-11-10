@@ -25,6 +25,7 @@ from typing import Any, Dict, Optional
 
 from .f06_location import describe_problem_nodes
 from .. import database, models
+from .exit_codes import abnormal_exit_message, is_abnormal_exit
 from .analysis_runner import (
     CANCELLED_MESSAGE,
     JobCancelledError,
@@ -184,6 +185,12 @@ def build_lifting_bdf(
         )
         engine_output += "\n[apply-edit]\n" + _decode_completed(apply_proc)
         if apply_proc.returncode != 0:
+            # Windows 예외로 죽었으면(예: DRM 이 파이썬을 끊음) 편집 내용 탓이 아니다 — 원인을 바꿔 말한다.
+            if is_abnormal_exit(apply_proc.returncode):
+                raise RuntimeError(
+                    f"Studio 편집 적용 실패 (exit={apply_proc.returncode}). "
+                    + abnormal_exit_message(apply_proc.returncode, "편집 BDF 를 만드는 프로그램")
+                )
             raise RuntimeError(
                 f"Studio 편집 적용 실패 (exit={apply_proc.returncode}). "
                 f"_edited.json 을 BDF 로 변환할 수 없습니다."

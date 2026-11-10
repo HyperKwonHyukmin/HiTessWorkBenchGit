@@ -1,3 +1,4 @@
+import { abnormalExitText } from './abnormalExit.js';
 /**
  * Group & Module Unit 권상 구조 해석 — 판정(통과 / 검토 필요 / 실패).
  *
@@ -40,12 +41,13 @@ const warningText = (w) => (typeof w === 'string' ? w : w?.message ?? w?.text ??
 /**
  * @param {object} p
  * @param {boolean} [p.jobFailed]   BDF 검증 작업 자체가 실패(요청 오류·시간 초과·결과 없음)
+ * @param {string}  [p.jobLog]      그 실패의 엔진 로그·메시지 — 프로그램이 Windows 예외로 죽었으면 원인을 실행 환경으로 말한다
  * @param {object}  [p.step1Data]   JSON_Validation
  * @param {object}  [p.step2Data]   JSON_F06Summary (Nastran 검증을 켰을 때)
  * @param {object}  [p.structural]  구조 해석 결과(buildStructuralResult 모양, 또는 { status:'ERROR', error })
  * @returns {{ level: 'pass'|'review'|'fail'|null, title: string, reasons: {code,text}[], basis: 'validation'|'structural'|null }}
  */
-export function computeGmuVerdict({ jobFailed = false, step1Data = null, step2Data = null, structural = null } = {}) {
+export function computeGmuVerdict({ jobFailed = false, jobLog = null, step1Data = null, step2Data = null, structural = null } = {}) {
   if (structural) {
     if (structural.status === 'ERROR') {
       return { level: 'fail', title: '구조 해석 실패', basis: 'structural',
@@ -69,6 +71,12 @@ export function computeGmuVerdict({ jobFailed = false, step1Data = null, step2Da
   }
 
   if (jobFailed) {
+    // 검증 프로그램이 비정상 종료(예: 0xC0000005)면 BDF 탓이 아니다 — 'BDF 형식을 확인하세요' 로 보내지 않는다(2026-11-10).
+    const crash = abnormalExitText(jobLog, 'BDF 검증 프로그램');
+    if (crash) {
+      return { level: 'fail', title: 'BDF 검증 실패 — 프로그램 비정상 종료', basis: 'validation',
+        reasons: [{ code: 'job-crashed', text: crash }] };
+    }
     return { level: 'fail', title: 'BDF 검증 실패', basis: 'validation',
       reasons: [{ code: 'job-failed', text: '검증 작업이 끝나지 못했습니다. BDF 형식을 확인한 뒤 다시 검증하세요.' }] };
   }

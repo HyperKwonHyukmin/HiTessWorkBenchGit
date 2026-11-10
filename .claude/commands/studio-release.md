@@ -70,3 +70,6 @@ Co-Authored-By: (이 세션의 attribution 줄)
 - 커밋 7자리, 바뀐 Studio·버전, UNC 업로드 여부(검증 결과), Update History 에 적은 항목 제목
 - ⟳ Update 하면 다음에 Studio 를 여는 사용자부터 새 버전을 받는다(설치본과 버전이 다르면 자동 재설치 — 롤백도 같은 길).
 - 롤백: `/studio-release <viewer-id> <이전 버전>`(이전 버전은 이미 UNC 에 있다).
+- **짝 Studio 안내 (2026-11-10)**: 공개한 Studio 가 `scripts/studio_pair.json` 의 묶음에 들어 있으면(지금 `model-studio` ↔ `module-unit-studio`)
+  `python scripts/studio_pair.py` 를 돌리고 `docs/standards/studio-pair-sync.md` 대장의 보류 수를 세어 보고 끝에 한 줄:
+  "짝 Studio 싱크: 보류 N건 · 바뀐 짝 M개 — 옮기려면 `/studio-sync`". 공개 직후가 옮길 시점이다(0건이면 줄을 뺀다). 여기서 옮기지는 않는다.

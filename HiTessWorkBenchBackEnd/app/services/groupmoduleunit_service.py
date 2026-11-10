@@ -34,6 +34,7 @@ from .analysis_runner import (
     update_progress,
 )
 from .bdf_deck_check import inspect_deck, merge_into_step1
+from .exit_codes import abnormal_exit_message, is_abnormal_exit
 from .hull_no import resolve_bdf_hull_no
 
 logger = logging.getLogger(__name__)
@@ -730,6 +731,7 @@ def task_execute_groupmoduleunit(
     status_msg = "Success"
     engine_output = ""
     result_data: Dict[str, Any] = {}
+    abnormal_exit: int | None = None   # 엔진이 Windows 예외로 죽은 종료 코드(있으면 실패 문구를 바꾼다)
 
     bridge_script = get_nastran_bridge_script_path()
 
@@ -770,6 +772,9 @@ def task_execute_groupmoduleunit(
             engine_output += f"\n[stderr] {stderr_text.strip()}"
         if result.returncode != 0:
             engine_output += f"\n[Exit code: {result.returncode}]"
+            if is_abnormal_exit(result.returncode):
+                # 모델 JSON 까지 써 놓고 종료 순간 죽은 경우가 있었다(DRM, 2026-11-10) — BDF 탓으로 말하지 않는다.
+                abnormal_exit = result.returncode
             raise RuntimeError(
                 f"nastran_bridge exit code {result.returncode}. stderr:\n{stderr_text.strip()[-4000:]}"
             )
@@ -881,6 +886,8 @@ def task_execute_groupmoduleunit(
     # 서버 재시작 시 사라지므로, 재시작/시간경과 후에도 원인 추적이 가능하도록 마지막 8KB 를 남긴다.
     if status_msg == "Failed":
         result_data["engineLog"] = engine_output[-8000:]
+        if abnormal_exit is not None:
+            result_data["abnormalExit"] = abnormal_exit & 0xFFFFFFFF
 
     update_progress(job_id, 95, "데이터베이스 저장 중...")
 
@@ -908,5 +915,6 @@ def task_execute_groupmoduleunit(
     mark_complete(
         job_id, status_msg, engine_output, project_data,
         success_message="BDF 검증 완료",
-        failure_message="BDF 검증 실패",
+        failure_message=(abnormal_exit_message(abnormal_exit, "BDF 검증 프로그램")
+                         if abnormal_exit is not None else "BDF 검증 실패"),
     )

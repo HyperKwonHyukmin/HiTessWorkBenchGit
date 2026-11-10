@@ -919,7 +919,7 @@ export default function UserManagement() {
                           <button
                             type="button"
                             onClick={() => window.dispatchEvent(new CustomEvent('workbench:open-chat', { detail: { employeeId: u.employee_id, name: u.name } }))}
-                            className="rounded-lg p-1.5 text-slate-300 hover:bg-blue-50 hover:text-blue-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                            className="rounded-lg p-1.5 text-slate-500 hover:bg-blue-50 hover:text-blue-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                             title="대화"
                             aria-label={`${u.name || u.employee_id} 에게 메시지 보내기`}
                           >
@@ -928,7 +928,7 @@ export default function UserManagement() {
                           <button
                             type="button"
                             onClick={() => setForceLogoutCandidate(u)}
-                            className="rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                            className="rounded-lg p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                             title="강제 로그아웃"
                             aria-label={`${u.name || u.employee_id} 강제 로그아웃`}
                           >
@@ -1557,23 +1557,23 @@ export default function UserManagement() {
                   {/* 수정 및 삭제 버튼 */}
                   <td className="py-3 px-6 text-center">
                     <div className="flex items-center justify-center gap-2">
-                      <button onClick={() => openActivityModal(user)} className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400" title="활동 로그">
+                      <button onClick={() => openActivityModal(user)} className="p-2 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400" title="활동 로그">
                         <ClipboardList size={18}/>
                       </button>
                       <button
                         onClick={() => handleSyncPlm(user)}
                         disabled={syncingPlmIds.has(user.id) || syncingAllPlm}
-                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50 disabled:cursor-wait"
+                        className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50 disabled:cursor-wait"
                         title="PLM 에서 정보 갱신 (이름·회사·부서·직책·메일)"
                       >
                         {syncingPlmIds.has(user.id)
                           ? <Loader2 size={18} className="animate-spin"/>
                           : <Mail size={18}/>}
                       </button>
-                      <button onClick={() => openEditModal(user)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" title="정보 수정">
+                      <button onClick={() => openEditModal(user)} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" title="정보 수정">
                         <Edit2 size={18}/>
                       </button>
-                      <button onClick={() => setConfirmDeleteTarget(user)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400" title="계정 삭제">
+                      <button onClick={() => setConfirmDeleteTarget(user)} className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400" title="계정 삭제">
                         <Trash2 size={18}/>
                       </button>
                     </div>

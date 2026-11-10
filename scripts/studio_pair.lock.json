@@ -1,0 +1,359 @@
+{
+  "_doc": "studio_pair.py 가 쓰는 파일 — 지켜보는 짝을 마지막으로 살펴본 때의 내용 지문. 손으로 고치지 않는다.",
+  "watch": {
+    "mb-mu": {
+      "App.jsx": {
+        "model-studio": "8c15564aed78fd56",
+        "module-unit-studio": "ca7838e910672051"
+      },
+      "components/AddRigidDialog.jsx": {
+        "model-studio": "6cb52f550a86fa82",
+        "module-unit-studio": "2b1606f93c398c14"
+      },
+      "components/ConflictSummary.jsx": {
+        "model-studio": "af5296906f742f53",
+        "module-unit-studio": "9f709fd34dcd1fed"
+      },
+      "components/DeleteSelectionDialog.jsx": {
+        "model-studio": "e7bd3fefaf93122b",
+        "module-unit-studio": "8b7ac3e9a2f0f68a"
+      },
+      "components/EditPanel.jsx": {
+        "model-studio": "fbce31a14d737eec",
+        "module-unit-studio": "78ed3dd33ad0cfb9"
+      },
+      "components/EditToolPalette.jsx": {
+        "model-studio": "ca5332742867f044",
+        "module-unit-studio": "ff2fbff2943e9a98"
+      },
+      "components/InputAuditPanel.jsx": {
+        "model-studio": "8a252b8174c5d677",
+        "module-unit-studio": "a1750623aa84e99c"
+      },
+      "components/InspectorPanel.jsx": {
+        "model-studio": "bdff4d120e0c93a9",
+        "module-unit-studio": "b4d0f60b10623d81"
+      },
+      "components/LayerPanel.jsx": {
+        "model-studio": "499ce4dcee012a51",
+        "module-unit-studio": "c493106847532746"
+      },
+      "components/LeftDock.jsx": {
+        "model-studio": "45f1f56b68677f43",
+        "module-unit-studio": "fa739e15caabfa22"
+      },
+      "components/MassEditPanel.jsx": {
+        "model-studio": "6c9a977bf230b649",
+        "module-unit-studio": "29f2a217d038a187"
+      },
+      "components/MassSummaryOverlay.jsx": {
+        "model-studio": "0041968a83ce2409",
+        "module-unit-studio": "4bf1b2aff4307816"
+      },
+      "components/PickTooltip.jsx": {
+        "model-studio": "37e318b894ad9658",
+        "module-unit-studio": "a020a9706d808316"
+      },
+      "components/RotateModelDialog.jsx": {
+        "model-studio": "66859af4da0c313e",
+        "module-unit-studio": "3c3116212c00f4e1"
+      },
+      "components/SectionChangePanel.jsx": {
+        "model-studio": "ceadc5bdb652eabf",
+        "module-unit-studio": "c871be4db772a0be"
+      },
+      "components/Sidebar.jsx": {
+        "model-studio": "e4683b6d14ebe94a",
+        "module-unit-studio": "74259f4b2d94a921"
+      },
+      "components/ThreeViewport.jsx": {
+        "model-studio": "4b194584ca84511f",
+        "module-unit-studio": "2c80678e69b2aef0"
+      },
+      "components/TopMenuBar.jsx": {
+        "model-studio": "787e2c6c531a38a5",
+        "module-unit-studio": "7336e98f32b56b2b"
+      },
+      "components/ViewportContainer.jsx": {
+        "model-studio": "84d8c6dc154734fc",
+        "module-unit-studio": "9c93b7c4659a63bb"
+      },
+      "components/ViewportNotices.jsx": {
+        "model-studio": "5f4ff0d78b96d1c4",
+        "module-unit-studio": "b14abdeef57fd6d3"
+      },
+      "components/dock/AuditTab.jsx": {
+        "model-studio": "5e308cede7cc9345",
+        "module-unit-studio": "d202c05ebe3beb5a"
+      },
+      "components/dock/MessagesTab.jsx": {
+        "model-studio": "fbf82218bce98871",
+        "module-unit-studio": "c052e03d034a1ea4"
+      },
+      "components/edit/WorkPanelFrame.jsx": {
+        "model-studio": "3a30193aadff5440",
+        "module-unit-studio": "9432808ac719183a"
+      },
+      "components/edit/textEntry.js": {
+        "model-studio": "5643c3d19678a1b1",
+        "module-unit-studio": "0bdc3b22cb67b69d"
+      },
+      "components/edit/useSectionPick.js": {
+        "model-studio": "5dc0e0ab9947c51a",
+        "module-unit-studio": "58ea50f3f4d790a0"
+      },
+      "components/help/GuideRunner.jsx": {
+        "model-studio": "7726113339e909d3",
+        "module-unit-studio": "d7e455832215d699"
+      },
+      "components/help/HelpCenter.jsx": {
+        "model-studio": "d17312389f535cce",
+        "module-unit-studio": "275e1596764aebcd"
+      },
+      "components/help/HelpModeLayer.jsx": {
+        "model-studio": "e3aa591e7bc48472",
+        "module-unit-studio": "4ebc1cbd71984d4f"
+      },
+      "components/help/HelpTopicBody.jsx": {
+        "model-studio": "bcc729c941e88f15",
+        "module-unit-studio": "e19ca32831d18cd0"
+      },
+      "components/help/ManualDock.jsx": {
+        "model-studio": "1412693d703a1fd7",
+        "module-unit-studio": "74276295bfed2029"
+      },
+      "components/panels/DisplaySections.jsx": {
+        "model-studio": "9388af35fcae6b1b",
+        "module-unit-studio": "e6b40ee32c1e1872"
+      },
+      "components/panels/EditPanelDock.jsx": {
+        "model-studio": "072383855c9b5e4e",
+        "module-unit-studio": "fe1ddf3fc7b6e70a"
+      },
+      "components/panels/GroupAutoConnectSection.jsx": {
+        "model-studio": "898de6afb491e71b",
+        "module-unit-studio": "b46ed7c702ec570f"
+      },
+      "components/panels/ModelPanel.jsx": {
+        "model-studio": "2cb44ea04bf6be40",
+        "module-unit-studio": "9eee79e4d779fe67"
+      },
+      "components/panels/ModelTransformSection.jsx": {
+        "model-studio": "defa1f03083d2b00",
+        "module-unit-studio": "706937a0adce3837"
+      },
+      "components/panels/SavePanel.jsx": {
+        "model-studio": "4a6cfc7c7c5ae3b8",
+        "module-unit-studio": "71e8a454ff79cf0b"
+      },
+      "components/shell/BottomDock.jsx": {
+        "model-studio": "806ef777ab408eb0",
+        "module-unit-studio": "7deb1d087d042090"
+      },
+      "components/shell/EditSelectionBar.jsx": {
+        "model-studio": "b7c9c70bd50cd6bf",
+        "module-unit-studio": "ae0907719322a0e4"
+      },
+      "components/shell/RightDock.jsx": {
+        "model-studio": "08ce6097a553e24b",
+        "module-unit-studio": "179e214f8403afda"
+      },
+      "components/shell/TabPanel.jsx": {
+        "model-studio": "70254bac6723d643",
+        "module-unit-studio": "582402fc9408e416"
+      },
+      "components/shell/ViewportHintBar.jsx": {
+        "model-studio": "ef527d836bdb2ed2",
+        "module-unit-studio": "5cf7ef7607347327"
+      },
+      "data/EditIntent.js": {
+        "model-studio": "9025d86c780da8cd",
+        "module-unit-studio": "f8b8f2573e5ea0f8"
+      },
+      "data/EditIntent.test.js": {
+        "model-studio": "9b0bbd3e41c17746",
+        "module-unit-studio": "f4912686d8be8c7a"
+      },
+      "data/StageData.js": {
+        "model-studio": "11e3823c0609ea08",
+        "module-unit-studio": "67b8897c086b6a15"
+      },
+      "data/StageData.test.js": {
+        "model-studio": "9614d92da9497a85",
+        "module-unit-studio": "82693bdb928e43e7"
+      },
+      "data/StageSummaryData.js": {
+        "model-studio": "1522e8a9fc7d0fba",
+        "module-unit-studio": "263ba23df62a087d"
+      },
+      "data/applyEditIntents.js": {
+        "model-studio": "889df6b73c571a8a",
+        "module-unit-studio": "c328678075fce04c"
+      },
+      "data/applyEditIntents.test.js": {
+        "model-studio": "43a2567fd8028900",
+        "module-unit-studio": "e9d93501247ca7b2"
+      },
+      "data/fileLoader.js": {
+        "model-studio": "4b700cfde7d7ef27",
+        "module-unit-studio": "1a47dff3fe938871"
+      },
+      "data/fileLoader.test.js": {
+        "model-studio": "d9c26e27c558f4c7",
+        "module-unit-studio": "262551eee134b95a"
+      },
+      "data/helpContent.test.js": {
+        "model-studio": "72834f9c5f9d0b72",
+        "module-unit-studio": "46c4409732577405"
+      },
+      "data/manualSections.js": {
+        "model-studio": "4756c16a4113b959",
+        "module-unit-studio": "35d00366d8eea06e"
+      },
+      "data/manualSections.test.js": {
+        "model-studio": "e9d77b18fdca287e",
+        "module-unit-studio": "aa1c2c7f33fdf3e9"
+      },
+      "data/massEdit.test.js": {
+        "model-studio": "55b0fd2e1427fb41",
+        "module-unit-studio": "3409d55ef976c848"
+      },
+      "data/pipeFluid.js": {
+        "model-studio": "069a28fc6df892ba",
+        "module-unit-studio": "9b9f295237204ff2"
+      },
+      "data/pipeFluid.test.js": {
+        "model-studio": "8d78e0ffc2a1b070",
+        "module-unit-studio": "ae42677c81a5e254"
+      },
+      "data/sectionChoices.js": {
+        "model-studio": "1a876cdf31818ed0",
+        "module-unit-studio": "df904fccf7dabf79"
+      },
+      "data/sectionTargets.js": {
+        "model-studio": "01f70af0fdec0dc6",
+        "module-unit-studio": "f1b486c083223898"
+      },
+      "host/host.js": {
+        "model-studio": "bbed22f2122a6f08",
+        "module-unit-studio": "b8d0c475bb62c5bd"
+      },
+      "host/host.test.js": {
+        "model-studio": "e16747be9f146aea",
+        "module-unit-studio": "ce8ff0938b2ad718"
+      },
+      "index.css": {
+        "model-studio": "c36a6d6f62053b55",
+        "module-unit-studio": "9b6b448057b3d4fb"
+      },
+      "main.jsx": {
+        "model-studio": "dd4004b395359576",
+        "module-unit-studio": "143cd7859c0fec24"
+      },
+      "store/useEditStore.js": {
+        "model-studio": "cea6d6cd38c9795d",
+        "module-unit-studio": "ad141a9572a6caf6"
+      },
+      "store/useEditStore.test.js": {
+        "model-studio": "7e9e38e2843be0af",
+        "module-unit-studio": "9e98bb96fdd4a54d"
+      },
+      "store/useErrorLogStore.js": {
+        "model-studio": "9589a650316f6433",
+        "module-unit-studio": "a76beb1e5ba7fdd1"
+      },
+      "store/useHelpStore.js": {
+        "model-studio": "f4894d06559d59b1",
+        "module-unit-studio": "657cad5b7695732b"
+      },
+      "store/useStageStore.js": {
+        "model-studio": "2658d532d04ffcea",
+        "module-unit-studio": "5c573cb8593e027f"
+      },
+      "store/useStageStore.test.js": {
+        "model-studio": "a45fe8162bb2c92e",
+        "module-unit-studio": "caec815240d0eec2"
+      },
+      "store/useViewerStore.js": {
+        "model-studio": "6ef7bf8c67f07bd4",
+        "module-unit-studio": "82f8113df13efcc8"
+      },
+      "three/AddRigidPreview.js": {
+        "model-studio": "1ba55f3030249296",
+        "module-unit-studio": "6240adc9a378d001"
+      },
+      "three/BeamMesh.js": {
+        "model-studio": "534aebae81e5ca3d",
+        "module-unit-studio": "6447098140a42654"
+      },
+      "three/BeamMesh3D.js": {
+        "model-studio": "7555ecd4b8b172d5",
+        "module-unit-studio": "efa59cf5391c2922"
+      },
+      "three/CenterOfGravityMarker.js": {
+        "model-studio": "88f2f518156dd60a",
+        "module-unit-studio": "c2867494c8cd0564"
+      },
+      "three/EntityBuilders.test.js": {
+        "model-studio": "9ef9ec8f74ae3896",
+        "module-unit-studio": "11e3c36b64d7fdfc"
+      },
+      "three/GroupVisibility.js": {
+        "model-studio": "8d2614802566ca21",
+        "module-unit-studio": "3dc147a18a2df92f"
+      },
+      "three/NodePoints.js": {
+        "model-studio": "998d35aac5796d99",
+        "module-unit-studio": "0647209be8bdc7aa"
+      },
+      "three/RigidMesh.js": {
+        "model-studio": "de22ebf4708b6621",
+        "module-unit-studio": "29494cd95eac4ca6"
+      },
+      "three/SceneBuilder.js": {
+        "model-studio": "3ca47c2a299f12e3",
+        "module-unit-studio": "f2b563a6c6807ec4"
+      },
+      "three/SelectionHighlight.js": {
+        "model-studio": "8fda3e6e7fe323fb",
+        "module-unit-studio": "78734a566ee507bd"
+      },
+      "three/UboltDofLabels.js": {
+        "model-studio": "2bf45c5594e65c1d",
+        "module-unit-studio": "fda3e789b581b1ed"
+      },
+      "three/UboltMarkers.js": {
+        "model-studio": "c96713132cb36bd0",
+        "module-unit-studio": "9e252a733b6c3e96"
+      },
+      "three/applyDeleteMask.js": {
+        "model-studio": "9a6e9a90e566884d",
+        "module-unit-studio": "eb57a6064174e663"
+      },
+      "three/orthoPan.js": {
+        "model-studio": "fbb5f6c2a38c758f",
+        "module-unit-studio": "dbc2f82d619a6955"
+      },
+      "three/screenSpaceMaterial.js": {
+        "model-studio": "33bf789e051fb20d",
+        "module-unit-studio": "d233f915ef9f91db"
+      },
+      "utils/colors.js": {
+        "model-studio": "8eef4e706d007adf",
+        "module-unit-studio": "bf05ee052853a8d7"
+      },
+      "utils/groupPalette.js": {
+        "model-studio": "7fb5d390a7fe3978",
+        "module-unit-studio": "519b79503b3fd4d3"
+      },
+      "utils/layerDefs.js": {
+        "model-studio": "dcac481b79e6bfb9",
+        "module-unit-studio": "8109d90f580156ae"
+      },
+      "utils/theme.js": {
+        "model-studio": "3441db8ec9607416",
+        "module-unit-studio": "907c220754b62c66"
+      }
+    }
+  }
+}

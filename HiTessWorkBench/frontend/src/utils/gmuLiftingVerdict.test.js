@@ -77,3 +77,12 @@ test('입력 BDF 의 PARAM BAILOUT 은 검토 필요 사유로 알린다(권상 
   assert.match(v.reasons[0].text, /PARAM BAILOUT/);
   assert.doesNotMatch(v.reasons[0].text, /자동 수정/);
 });
+
+test('검증 프로그램이 Windows 예외로 죽으면 BDF 형식 탓으로 말하지 않는다', () => {
+  const v = computeGmuVerdict({ jobFailed: true, jobLog: 'Wrote x.json\n[Exit code: 3221225477]\n[Error] nastran_bridge exit code 3221225477.' });
+  assert.equal(v.level, 'fail');
+  assert.equal(v.reasons[0].code, 'job-crashed');
+  assert.doesNotMatch(v.reasons[0].text, /BDF 형식/);
+  // 보통 실패는 예전 문구 그대로
+  assert.equal(computeGmuVerdict({ jobFailed: true, jobLog: '[Exit code: 1]' }).reasons[0].code, 'job-failed');
+});

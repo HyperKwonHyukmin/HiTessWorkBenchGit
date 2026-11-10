@@ -1,0 +1,48 @@
+{
+  "_doc": "짝 Studio 싱크 규칙 — scripts/studio_pair.py 가 읽는다. studios = 검사할 수 있는 Studio(소스 위치는 WorkBenchSubModule 기준), groups = 서로 맞춰 가는 묶음. same = 내용이 같아야 하는 파일, watch = 달라도 되지만 한쪽이 바뀌면 알릴 짝('auto' = 묶음의 모든 Studio 에 같은 경로로 있는 나머지 파일 전부), watch_also = auto 에 더할 짝(경로가 Studio 마다 다를 때), ignore = 경로는 같지만 일부러 따로 가는 파일과 그 이유. 한 줄은 \"경로\" · {\"path\", \"also\": [다른 Studio id]} · {\"paths\": {Studio id: 경로}} 셋 중 하나. 새 묶음을 만들 때는 `--scan <id> <id>` 로 먼저 훑는다.",
+  "extensions": [".js", ".jsx", ".mjs", ".css"],
+  "studios": {
+    "model-studio": { "label": "MB", "name": "Model Builder Studio", "src": "ModelBuilderStudio/apps/model-studio/src" },
+    "module-unit-studio": { "label": "MU", "name": "Module Unit Studio", "src": "ModuleUnitStudio/apps/module-unit-studio/src" },
+    "side-passage-studio": { "label": "SP", "name": "Side Passage Studio", "src": "SidePassageStudio/apps/side-passage-studio/src" },
+    "plate-studio": { "label": "PL", "name": "Plate Studio", "src": "PlateAnalysisStudio/apps/plate-studio/src" },
+    "mooring-fitting-studio": { "label": "MF", "name": "Mooring Fitting Studio", "src": "MooringFittingStudio/src" }
+  },
+  "groups": [
+    {
+      "id": "mb-mu",
+      "note": "Model Builder Studio 와 Module Unit Studio 는 한 쌍이다(사용법을 같게 유지, 2026-11-02 사용자 지시).",
+      "members": ["model-studio", "module-unit-studio"],
+      "same": [
+        "components/FindBar.jsx",
+        "components/edit/SectionPicker.jsx",
+        "data/InputAuditData.js",
+        "data/InputAuditData.test.js",
+        "data/applyFinalGroupMapping.js",
+        { "path": "data/findEntity.js", "also": ["mooring-fitting-studio"] },
+        "data/findEntity.test.js",
+        "data/groupAutoConnect.js",
+        "data/groupAutoConnect.test.js",
+        "data/stageDiff.js",
+        "data/stageDiff.test.js",
+        "hooks/useCameraSync.js",
+        "three/BeamMesh.test.js",
+        "three/BoundaryMarkers.js",
+        "three/BrokenRbeHighlight.js",
+        "three/DiagnosticOverlay.js",
+        "three/GroupConnectPreview.js",
+        "three/MassMarkers.js",
+        "three/WeldMarkers.js",
+        "three/WorldAxes.js"
+      ],
+      "watch": "auto",
+      "watch_also": [
+        { "paths": { "model-studio": "components/panels/GroupAutoConnectSection.jsx", "module-unit-studio": "components/GroupAutoConnectSection.jsx" } },
+        { "paths": { "model-studio": "components/panels/ModelTransformSection.jsx", "module-unit-studio": "components/ModelTransformSection.jsx" } }
+      ],
+      "ignore": {
+        "data/helpContent.js": "Studio 마다 내용이 다른 도움말 글(구조는 data/helpContent.test.js 가 지킨다)"
+      }
+    }
+  ]
+}
