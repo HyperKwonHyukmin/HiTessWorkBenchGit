@@ -25,6 +25,12 @@ HiTessWorkBenchBackEnd/WorkBenchEnv/Scripts/activate
 # 개발 서버 실행 (HiTessWorkBenchBackEnd/ 에서)
 uvicorn app.main:app --host 0.0.0.0 --port 9091 --reload
 
+# 70 개발 PC 바로 실행 (2026-11-10, 미커밋 · 바탕화면 바로가기 3개)
+#   Dev_All_70.bat                       = 백엔드 + 클라이언트를 각자 새 창으로
+#   HiTessWorkBenchBackEnd/Dev_Server_70.bat = 백엔드만(9091 이 이미 떠 있으면 그 uvicorn 트리를 끌지 묻는다, 보조 scripts_dev_find_9091.ps1)
+#   HiTessWorkBench/Dev_Client_70.bat    = npm run dev 만(5173 이 이미 떠 있으면 묻는다)
+#   ⚠ PyCharm 터미널에서 백엔드를 띄우지 말 것 — 백엔드가 부르는 파이썬이 DRM(HIDRMH.DLL)에서 0xC0000005 로 죽는다(전역 CLAUDE.md '이 PC 환경').
+
 # 의존성 설치
 pip install -r requirements.txt
 ```
@@ -200,6 +206,28 @@ Load Case 단계 없음(스토어 `effectiveLoadCases`: 기본 '모두 한 번�
 - 0.1.8: 힘 화살표 꼬리에 크기 라벨(`collectForceLabels`, 노드 12개 넘으면 첫 노드에 '× N').
 - 상태: 145 ⟳ Update 는 사용자 몫. WorkBench 앱 안 화면·실제 Nastran 해석은 눈으로 확인 안 함(헤드리스 Chrome 실제 클릭·캡처까지).
   ⚠ 2026-11-09 저장 중 `AnalysisInputOverlay.js`·테스트가 통째로 NUL 바이트가 된 일이 있었다(원인 미상, 커밋본으로 복구) — 이상하면 `tr -d '\000'` 로 먼저 본다.
+
+**3D 위 자리 규칙·다크 전용 (2026-11-10, Studio 0.1.9 · MU 0.0.208, 릴리스 표 `b316b43` = 145 공개(⟳ Update 는 사용자 몫) · 두 Studio 저장소 코드는 미커밋)** — `/design` 전체 검토(25/40, 화면 실측) 후 사용자 결정 4건.
+규칙·남은 P2 원본 = Studio `docs/shell-conventions.md` 13번, 진단 기록 = Studio `.impeccable/critique/2026-11-10T01-56-01Z__src-app-jsx.md`.
+- **다크 전용** — 테마 단추 삭제, `palette()` 는 인자를 무시(MU·Mooring 과 같음). 컴포넌트의 `theme === 'light'` 분기는 타지 않는 옛 코드.
+- **알림 = 칩**(`components/ViewportNotices.jsx`, 뷰 도구줄 아래 줄) — 분리 그룹(Model 탭, [Model Check 에서 잇기]) > 장비 COG > CSV 빈 자리. 위쪽 가운데 띠는 없앴다.
+  화면의 CSV 문제 수는 '모델에 없는 행'(탭 배지 = 아래 도크 머리) 하나, 칩은 '곳'을 센다.
+- **작업 패널은 뷰포트 그릇 안**(`WorkPanelFrame` 이 `data-viewport-root` 로 portal) — 떠 있는 동안 조작 안내줄 숨김. 범례는 늘 bottom 46.
+- **색** — 편집 선택 = 흰색 + 어두운 외곽, 그룹 1(본 구조) = 회청색(그룹은 요소 수 내림차순이라 1번이 본 구조). 주황은 편집 도구에만.
+- Model Check 는 떨어진 그룹이 있으면 '자동 연결'이 그룹 목록 위. '표시' 도크 자동 펼침은 창 폭 1400px 이상만. `EDIT MODE` 배지·Analysis 위쪽 안내줄·`InputAuditPanel.jsx`·`BottomReviewDock.jsx` 삭제.
+- 상태: zip 0.1.9 = 70 로컬·UNC(검증 MATCH) · 핀 0.1.9 · 릴리스 표 0.1.9(`b316b43`, Update History 항목 포함). Studio 저장소·WorkBench 핀·이 문서는 미커밋, 커밋 전 독립 리뷰 미실행.
+  헤드리스 Chrome 세 폭(1600·1280·1024)에서 겹침 측정까지 — WorkBench 앱 안 화면·Analysis 노드 클릭 흐름은 눈으로 확인 안 함.
+- **MU 에도 옮김 (같은 날, `/studio-sync`, MU 0.0.206~0.0.208 · 릴리스 표 0.0.208 `b316b43` · Studio 저장소 미커밋·핀 0.0.208)** — 싱크 대장 9~12·14·15번 도입함, 13번 해당 없음.
+  0.0.207~0.0.208 = **그룹 목록을 MB 모양으로**(사용자 요청 '모델 빌더 스타일로 다') — Model Check·Edit 둘 다 [전체 표시] [전체 숨김] + 색 카드 한 줄, Edit 는 오른쪽 휴지통.
+  MU 의 '그룹 관리' 상자(기준 전환·확인·단독·그룹 새로고침)는 없앴다 — 되살리지 말 것. 부재 종류(구조·배관) 삭제만 목록 아래 '부재 종류로 지우기'로 남김. Edit 구역 이름 = '그룹'.
+  옮긴 것 = 편집 선택 흰색(부재 굵기는 화면 픽셀 기준) · 그룹 1 회청색 · 작업 패널을 뷰포트 그릇 안으로 · 분리 그룹 칩(MU `components/ViewportNotices.jsx`, Model 탭, 막지 않음) ·
+  Model Check 자동 연결을 그룹 목록 위·펼친 채 · '표시' 도크 자동 펼침 1400px 이상 · 뷰포트 머리 `N: E:` 삭제. 상세 = MU `docs/plans/2026-10-29-mb-features-to-mu.md` '3D 위 자리·선택색'.
+  확인: MU 테스트 1010건·빌드 통과(lint 는 예전부터 있던 15건 그대로), MB 샘플 3454(그룹 9개)를 넣은 헤드리스 캡처. WorkBench 앱 안 화면은 눈으로 확인 안 함.
+  ⚠ MU 그룹 줄을 누르는 것은 **숨김**이고 해석 모델에서 빠지지 않는다 — 지우려면 Edit 탭 오른쪽 휴지통(2026-11-10 사용자가 숨김을 삭제로 알고 해석해 FATAL 9050, 3469 M02 그룹 2).
+- **프로그램 비정상 종료 문구 (2026-11-10, 미커밋)** — 외부 프로그램이 Windows 예외(종료 코드 ≥ 0xC0000000, 예 3221225477 = 0xC0000005)로 죽으면
+  '입력 모델 문제가 아니라 실행 환경 문제' 로 안내한다. 판정·문구 원본 = 백엔드 `app/services/exit_codes.py` ↔ 프론트 `utils/abnormalExit.js`(사본, +테스트).
+  적용 = 권상 BDF 검증(`groupmoduleunit_service`, 결과에 `abnormalExit`) · 구조 해석 편집 적용(`unit_structural_service`) · GMU 판정 카드(`gmuLiftingVerdict` `jobLog`)·알림. 다른 앱의 실패 경로는 아직 예전 문구.
+  반영 = 145 `git pull + 재시작`(백엔드) · 판정 카드·알림은 다음 exe. 프론트 lint 는 `@eslint/js` 미설치로 못 돌림.
 
 **장비 COG 위치 오류 `EQUIPMENT_COG_FAR` (2026-10-27)** — 장비 CSV 의 `cog` 가 잘못 나오면(실례 3529_m04 `=30137/754429` 715 kg, X 만 50 m 어긋남)
 엔진이 그 좌표에 COG 노드를 만들고 부착점과 RBE2 로 묶어, Studio 에 모델 밖으로 길게 뻗은 RBE 가 생긴다. 같은 오류가 `3592_m10`(`=21945/1855177` 153 m)에도 있다.
