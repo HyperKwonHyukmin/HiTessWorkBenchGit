@@ -38,6 +38,7 @@ const ADMIN_MENU_ITEMS = [
   { menu: 'App Settings',        label: 'App Settings' },
   { menu: 'API Apps',            label: 'API Apps' },
   { menu: 'Update History',      label: 'Update History' },
+  { menu: 'Development History', label: 'Development History' },
 ];
 
 /** 서버 동기화 상태 배지 — PreferencesContext.status(idle|loading|ready|offline). */

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hi-TESS 개발 연대기</title>
+<style>
+/* Hi-TESS 개발 연대기 — 로그인 없이 여는 공개 페이지(/history). 백엔드 routers/history_web.py 가 이 폴더를 내준다.
+   레이아웃: ① 한 장 그래프(전체 흐름) ② 용어 풀이 ③ 월별 기록(시기 → 달 → 변화·앱, 최근이 위).
+   숫자는 data.auto.js(scripts/history_build.py), 내용은 data.events.js 에서 온다 — 이 파일은 그리기만 한다.
+   WorkBench 관리자 화면(Development History)은 ?embed=1 로 넣어 보여 준다(머리 띠를 줄이고 높이를 알려 준다). */
+@font-face{font-family:"SUIT";src:url("fonts/SUIT-Variable.woff2") format("woff2");font-weight:100 900;font-display:swap}
+:root{
+  --navy:#002554; --navy-2:#1d4f91; --navy-3:#a9c1e6; --navy-tint:#eef3fa;
+  --paper:#f8f9fc; --white:#ffffff;
+  --ink:#1e293b; --ink-2:#334155; --muted:#566273; --line:#e2e8f0; --line-2:#eef1f6;
+  --file:#2563eb; --int:#7c3aed; --par:#047857; --pro:#b45309;
+  --spark:#00c853;
+  --font:"SUIT","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+}
+*{box-sizing:border-box}
+html{color-scheme:light;scroll-behavior:smooth;scroll-padding-top:16px}
+body{margin:0;background:var(--paper);color:var(--ink-2);font-family:var(--font);font-size:15.5px;line-height:1.7;
+  word-break:keep-all;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
+::selection{background:var(--navy);color:#fff}
+h1,h2,h3{margin:0;color:var(--ink);text-wrap:balance;line-height:1.3}
+p,ul,ol,dl{margin:0}
+ul,ol{padding:0;list-style:none}
+a{color:inherit}
+.num{font-variant-numeric:tabular-nums}
+.wrap{max-width:1160px;margin:0 auto;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
+
+/* 머리 */
+.masthead{background:var(--navy);color:#fff;padding-block:34px 0}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:13.5px;color:#c9d7ec;margin-bottom:14px}
+.brand b{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:6px;background:var(--spark);color:var(--navy);font-weight:900;font-size:14px}
+.masthead h1{color:#fff;font-size:32px;font-weight:800;letter-spacing:-.02em}
+.masthead .sub{color:#c9d7ec;margin-top:8px;max-width:64ch}
+.meta{display:flex;flex-wrap:wrap;gap:6px 22px;margin-top:16px;font-size:14px;color:#c9d7ec}
+.meta b{color:#fff;font-weight:700;font-variant-numeric:tabular-nums}
+.jump{display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:22px;border-top:1px solid rgba(255,255,255,.16);padding-block:10px}
+.jump a{font-size:14px;font-weight:600;color:#dbe6f5;text-decoration:none;padding:6px 12px;border-radius:8px}
+.jump a:hover{background:rgba(255,255,255,.12);color:#fff}
+.embed .masthead{background:none;color:var(--ink-2);padding-block:18px 0}
+.embed .brand,.embed .masthead h1,.embed .masthead .sub{display:none}
+.embed .meta{margin-top:0;color:var(--muted)}
+.embed .meta b{color:var(--ink)}
+.embed .jump{border-top:0;margin-top:8px;padding-block:0}
+.embed .jump a{color:var(--navy-2);padding-inline:10px;margin-left:-10px}
+.embed .jump a:hover{background:var(--navy-tint);color:var(--navy)}
+
+main{padding-bottom:88px}
+section{margin-top:60px}
+.embed section:first-child{margin-top:28px}
+.sh{margin-bottom:18px}
+.sh h2{font-size:22px;font-weight:800;letter-spacing:-.01em}
+.sh p{color:var(--muted);font-size:14.5px;margin-top:4px;max-width:74ch}
+
+/* 그래프 */
+.chron{background:var(--white);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(15,23,42,.05);padding:22px 22px 16px;position:relative}
+.chron-scroll{overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:#c9d6e8 transparent;border-radius:6px}
+#chart{display:block;min-width:1040px;width:100%;height:auto;font-family:var(--font);touch-action:pan-x pan-y}
+#chart text{fill:var(--muted);font-size:13px}
+#chart .row{fill:var(--ink);font-size:13.5px;font-weight:700}
+#chart .mo{fill:var(--ink-2);font-weight:600}
+#chart .ph{fill:var(--navy);font-size:13.5px;font-weight:700}
+#chart .ver{fill:var(--navy);font-weight:700;font-size:12.5px}
+#chart .flag{fill:#fff;font-size:13.5px;font-weight:700}
+.swipe{display:none;font-size:13px;color:var(--muted);margin-bottom:8px}
+.chron.scrolls .swipe{display:block}
+.key{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:13.5px;color:var(--muted)}
+.chron .key{padding-top:14px;margin-top:10px;border-top:1px solid var(--line-2)}
+.key span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:11px;height:11px;border-radius:2px;display:inline-block}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+.flagkey{display:inline-block;width:22px;height:11px;border-radius:6px;background:var(--navy)}
+.key .sep{width:1px;height:14px;background:var(--line);align-self:center}
+.notes{font-size:13.5px;color:var(--muted);margin-top:10px;max-width:96ch}
+.tip{position:absolute;top:16px;pointer-events:none;background:var(--ink);color:#fff;border-radius:8px;padding:11px 13px;font-size:13.5px;line-height:1.55;width:272px;box-shadow:0 8px 24px rgba(15,23,42,.18);z-index:4}
+.tip[hidden]{display:none}
+.tip h4{margin:0 0 5px;font-size:14px;color:#fff}
+.tip .r{display:flex;justify-content:space-between;gap:12px;color:#cbd5e1}
+.tip .r b{color:#fff;font-variant-numeric:tabular-nums}
+.tip ul{margin-top:7px;padding-top:7px;border-top:1px solid #475569;color:#e2e8f0;display:flex;flex-direction:column;gap:2px}
+.tip li.big{color:#fff;font-weight:700}
+.tip li.big::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--spark);margin-right:7px}
+
+/* 용어 풀이 */
+.terms{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 36px;border-top:2px solid var(--navy)}
+.terms div{padding:13px 0 15px;border-bottom:1px solid var(--line)}
+.terms dt{font-weight:800;color:var(--ink);font-size:15px}
+.terms dd{margin:2px 0 0;font-size:14.5px;color:var(--ink-2);line-height:1.6}
+
+/* 월별 기록 */
+.ledger{background:var(--white);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(15,23,42,.05);overflow:hidden}
+.cols{display:grid;grid-template-columns:150px minmax(0,1fr) minmax(0,1.05fr);column-gap:36px;padding-inline:26px}
+.lhead{font-size:13.5px;font-weight:700;color:var(--muted);padding-block:14px;border-bottom:1px solid var(--line);align-items:center}
+.lhead .key{font-weight:500;gap:6px 14px;font-size:13px;flex-wrap:nowrap;white-space:nowrap}
+.lhead .apphead{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;justify-content:space-between}
+.phase{background:var(--navy-tint);padding-block:14px;align-items:baseline;border-top:1px solid var(--line);scroll-margin-top:12px}
+.lhead + .phase{border-top:0}
+.phase h3{font-size:17px;font-weight:800;color:var(--navy)}
+.phase .when{font-size:13.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.phase p{grid-column:2 / 4;font-size:14.5px;color:var(--ink-2)}
+.month{padding-block:20px;border-top:1px solid var(--line-2)}
+.phase + .month{border-top:0}
+.month .m{display:flex;flex-direction:column;gap:2px}
+.month .m strong{font-size:20px;font-weight:800;color:var(--ink);line-height:1.3}
+.month .m span{font-size:13.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.month li{display:grid;gap:10px;align-items:baseline;font-size:14.5px;line-height:1.5;padding-block:4px}
+.month .d{color:var(--muted);font-variant-numeric:tabular-nums;font-size:13.5px}
+.chg li{grid-template-columns:44px minmax(0,1fr)}
+.chg li.big{background:var(--navy);color:#fff;font-weight:700;border-radius:8px;margin:5px -12px;padding:9px 12px}
+.chg li.big .d{color:#c9d7ec}
+.app li{grid-template-columns:44px 10px minmax(0,1fr) auto}
+.app .dot{width:8px;height:8px;transform:translateY(-1px)}
+.app .n{color:var(--ink);font-weight:700;display:block}
+.app .desc{display:block;font-size:13.5px;color:var(--muted);line-height:1.45}
+.app .who{font-size:13.5px;color:var(--muted);white-space:nowrap}
+.app .who.mate{color:var(--navy-2);font-weight:700}
+.none{font-size:14.5px;color:var(--muted);padding-block:4px}
+.lfoot{padding:14px 26px;border-top:1px solid var(--line);font-size:14.5px;color:var(--ink-2)}
+.colname{display:none}
+
+.src{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);font-size:13.5px;color:var(--muted);display:flex;flex-direction:column;gap:5px}
+.src p{max-width:96ch}
+.fail{padding:28px 26px;font-size:15px;color:var(--ink-2)}
+
+@media (max-width:1000px){.terms{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:860px){
+  .cols{grid-template-columns:1fr;row-gap:10px;padding-inline:18px}
+  .lhead > span:not(.apphead){display:none}
+  .lhead .apphead > span:first-child{display:none}
+  .lhead .key{flex-wrap:wrap;white-space:normal}
+  .phase p{grid-column:auto}
+  .month .m{flex-direction:row;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .colname{display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:2px}
+  .lfoot{padding-inline:18px}
+  .masthead h1{font-size:27px}
+  .chron{padding:16px 14px 12px}
+}
+@media (max-width:560px){.terms{grid-template-columns:1fr}}
+:focus-visible{outline:2px solid var(--file);outline-offset:2px}
+.masthead :focus-visible{outline-color:#fff}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <div class="brand"><b>H</b>Hi-TESS WorkBench</div>
+    <h1>Hi-TESS 개발 연대기</h1>
+    <p class="sub">구조 해석 도구를 한곳에 모은 사내 프로그램 Hi-TESS WorkBench가 처음부터 지금까지 어떤 순서로 만들어졌는지 기록합니다.</p>
+    <div class="meta" id="meta"></div>
+    <nav class="jump" aria-label="페이지 안 이동">
+      <a href="#flow">전체 흐름</a><a href="#terms">용어 풀이</a><a href="#ledger-sec">월별 기록</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section id="flow">
+  <div class="sh"><h2>전체 흐름</h2><p>왼쪽이 과거, 오른쪽이 최근입니다. 막대 하나가 한 주 동안 코드를 고친 횟수이고, 점 하나가 새로 들어온 앱 하나입니다. 그래프에 마우스를 올리거나 손가락으로 누르면 그 주에 있었던 일이 나옵니다. 같은 내용이 아래 월별 기록에 글로 있습니다.</p></div>
+  <div class="chron" id="chron">
+    <p class="swipe">그래프가 화면보다 넓습니다. 옆으로 밀면 최근 쪽이 보입니다.</p>
+    <div class="chron-scroll" id="scroller" tabindex="0" role="group" aria-label="개발 연대기 그래프. 왼쪽·오른쪽 화살표 키로 한 주씩 옮겨 볼 수 있습니다.">
+      <svg id="chart" role="img" aria-label="2026년 3월부터 지금까지 주간 코드 수정 횟수, 새로 들어온 앱, 큰 변화를 한 시간축에 그린 그래프. 같은 내용이 아래 월별 기록에 있습니다."></svg>
+    </div>
+    <div class="tip" id="tip" hidden></div>
+    <div class="key">
+      <span><i class="sw" style="background:var(--navy)"></i>WorkBench</span>
+      <span><i class="sw" style="background:var(--navy-2)"></i>3D 편집 도구·계산 프로그램</span>
+      <span><i class="sw" style="background:var(--navy-3);box-shadow:inset 0 0 0 1px var(--navy-2)"></i>LogBook</span>
+      <i class="sep"></i>
+      <span><i class="dot" style="background:var(--file)"></i>파일을 올려 해석하는 앱</span>
+      <span><i class="dot" style="background:var(--int)"></i>화면에서 직접 다루는 앱</span>
+      <span><i class="dot" style="background:var(--par)"></i>값을 넣어 계산하는 앱</span>
+      <span><i class="dot" style="background:var(--pro)"></i>보조 도구</span>
+      <span><i class="flagkey"></i>큰 변화</span>
+    </div>
+    <p class="notes">맨 위 시기 띠를 누르면 그 시기의 월별 기록으로 갑니다. 8월 첫 두 주와 10월 첫 주의 빈 칸은 휴가·연휴입니다. 3D 편집 도구와 계산 프로그램은 여러 날 작업을 한 번에 저장한 경우가 있어 막대가 실제보다 들쭉날쭉합니다.</p>
+  </div>
+</section>
+
+<section id="terms">
+  <div class="sh"><h2>용어 풀이</h2></div>
+  <dl class="terms">
+    <div><dt>Hi-TESS WorkBench</dt><dd>여러 구조 해석 도구를 한 화면에 모은 사내 프로그램입니다.</dd></div>
+    <div><dt>앱</dt><dd>WorkBench 안에 들어 있는 해석·계산 도구 하나하나를 말합니다.</dd></div>
+    <div><dt>3D 편집 도구 (Studio)</dt><dd>해석 모델을 3D로 보면서 고치는 별도 창. 앱에서 버튼을 누르면 열립니다.</dd></div>
+    <div><dt>계산 프로그램</dt><dd>화면 뒤에서 실제 계산을 하는 프로그램. '해석 엔진'이라고도 합니다.</dd></div>
+    <div><dt>LogBook</dt><dd>해석 모델과 결과를 모아 보관하는 별도 프로그램. WorkBench와 연결되어 있습니다.</dd></div>
+    <div><dt>코드 수정 횟수</dt><dd>코드를 고쳐서 저장한 횟수(커밋). 많을수록 그 기간에 손을 많이 댔다는 뜻입니다.</dd></div>
+  </dl>
+</section>
+
+<section id="ledger-sec">
+  <div class="sh"><h2>월별 기록</h2><p>최근 달이 위에 있습니다. 달마다 무엇이 바뀌었고 어떤 앱이 새로 들어왔는지 적었습니다. 남색으로 칠한 줄이 큰 변화입니다. 앱 날짜는 WorkBench에 처음 올라온 날이고, 만든 사람 이름이 굵은 남색이면 주 개발자(<span id="leadname"></span>)가 아닌 다른 연구원이 만든 앱입니다.</p></div>
+  <div class="ledger" id="ledger"></div>
+</section>
+
+<footer class="src">
+  <p id="srcline"></p>
+  <p>만든 사람·문의: 구조시스템연구실 권혁민 책임연구원</p>
+</footer>
+
+</main>
+
+<script src="data.auto.js"></script>
+<script src="data.events.js"></script>
+<script>
+(function(){
+const A=window.HISTORY_AUTO,E=window.HISTORY_EVENTS;
+const embed=new URLSearchParams(location.search).has('embed');
+if(embed)document.documentElement.classList.add('embed');
+if(!A||!E){
+  document.getElementById('ledger').innerHTML='<p class="fail">자료를 불러오지 못해 그래프와 기록을 그릴 수 없습니다. 잠시 뒤 새로 고침을 눌러 주세요. 계속 이러면 아래 문의처로 알려 주세요.</p>';
+  document.getElementById('chron').hidden=true;return}
+const C={file:'#2563eb',int:'#7c3aed',par:'#047857',pro:'#b45309'};
+const KIND={file:'파일을 올려 해석하는 앱',int:'화면에서 직접 다루는 앱',par:'값을 넣어 계산하는 앱',pro:'보조 도구'};
+const KIND_SHORT={file:'파일 해석',int:'직접 조작',par:'값 계산',pro:'보조 도구'};
+const day=s=>new Date(s+'T00:00:00');
+const md=s=>s.slice(5).replace('-','.');
+const dots=s=>s.replace(/-/g,'.');
+const START=day(A.start),WEEKS=A.weeks.wb.length,TODAY=A.generated;
+const sum=o=>Object.values(o||{}).reduce((a,b)=>a+b,0);
+
+/* 머리 숫자 */
+const total=sum(A.totals),days=Math.round((day(TODAY)-day(A.first))/864e5)+1;
+const mates=E.apps.filter(a=>a[3]!==E.lead),mateN=new Set(mates.map(a=>a[3])).size;
+document.getElementById('meta').innerHTML=
+ `<span><b>${dots(A.first)}</b> 개발 시작</span><span><b>${days}일</b>째</span><span>코드 수정 <b>${total.toLocaleString()}회</b></span><span>앱 <b>${E.apps.length}개</b></span><span>현재 버전 <b>${A.latest}</b></span><span>${dots(TODAY)} 기준</span>`;
+document.getElementById('leadname').textContent=E.lead;
+document.getElementById('srcline').textContent=
+ `자료: 코드 수정 기록(WorkBench ${A.totals.wb.toLocaleString()}회 · 3D 편집 도구와 계산 프로그램 ${A.totals.sub.toLocaleString()}회 · LogBook ${A.totals.logbook.toLocaleString()}회), 업데이트 내역, 앱 목록. ${dots(TODAY)} 기준.`;
+
+/* ── 그래프 ── */
+const NS='http://www.w3.org/2000/svg',svg=document.getElementById('chart');
+const mk=(t,a,txt)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(txt!=null)e.textContent=txt;svg.appendChild(e);return e};
+const W=1160,X0=132,X1=1112,DAY=(X1-X0)/(WEEKS*7);
+const dx=s=>X0+((day(s)-START)/864e5)*DAY, wx=i=>X0+i*7*DAY;
+const endDate=new Date(START.getTime()+WEEKS*7*864e5);
+const S=[['wb','#002554','WorkBench'],['sub','#1d4f91','3D 편집 도구·계산 프로그램'],['logbook','#a9c1e6','LogBook','#1d4f91']];   // 넷째 값 = 테두리(옅은 색이 흰 바탕에서도 보이게)
+
+const yMo=15,yPh=28,hPh=28,hBar=170;
+// 큰 변화 깃발: 막대 위 띠에 이름표를 세우고 아래로 선을 내린다. 겹치면 윗줄로.
+const tw=s=>[...s].reduce((a,c)=>a+(c.charCodeAt(0)>255?11.4:7.4),0)+26;
+const flags=[],frows=[];
+E.changes.filter(c=>c[2]).forEach(([d,n])=>{const label=n.split(' — ')[0],x=dx(d),w=tw(label);
+  const a=Math.min(Math.max(x-w/2,X0),W-4-w);let r=0;
+  while(frows[r]&&frows[r].some(([p,q])=>a<q+8&&a+w>p-8))r++;(frows[r]=frows[r]||[]).push([a,a+w]);flags.push({x,a,w,r,label})});
+const nF=Math.max(1,frows.length),yFlag=yPh+hPh+14,yTop=yFlag+nF*29+12,yBase=yTop+hBar;
+const stackMax=Math.max(...A.weeks.wb.map((_,i)=>S.reduce((a,[k])=>a+A.weeks[k][i],0)));
+const yMax=Math.max(50,Math.ceil(stackMax/50)*50);
+
+// 달 구분선·이름 (높이는 뒤에서 맞춘다). 해가 바뀌는 1월에는 해를 함께 적는다.
+mk('text',{x:0,y:yMo,class:'row'},`${START.getFullYear()}년`);
+const mlines=[];
+for(let d=new Date(START.getFullYear(),START.getMonth(),1);d<endDate;d=new Date(d.getFullYear(),d.getMonth()+1,1)){
+  const x=Math.max(X0,X0+((d-START)/864e5)*DAY);
+  if(d>START)mlines.push(mk('line',{x1:x,x2:x,y1:yPh+hPh+6,y2:0,stroke:'#eef1f6'}));
+  mk('text',{x:x+(d>START?6:0),y:yMo,class:'mo'},(d.getMonth()===0&&d>START?`${d.getFullYear()}년 `:'')+`${d.getMonth()+1}월`)}
+
+// 시기 띠
+const bands=E.phases.map(([n,a,b],i)=>{const x=Math.max(X0,dx(a)),x2=b?dx(b)+DAY:X1;
+  mk('rect',{x,y:yPh,width:Math.max(8,x2-x-2),height:hPh,rx:5,fill:i%2?'#eef3fa':'#dfe8f5'});
+  mk('text',{x:x+9,y:yPh+19,class:'ph'},n);return [x,x2,i]});
+mk('text',{x:0,y:yPh+19,class:'row'},'시기');
+
+// 주간 코드 수정 (쌓은 막대)
+mk('text',{x:0,y:yTop+11,class:'row'},'주간 코드 수정');
+for(let v=0;v<=yMax;v+=50){const y=yBase-v/yMax*hBar;
+  mk('line',{x1:X0,x2:X1,y1:y,y2:y,stroke:v?'#eef1f6':'#cbd5e1'});
+  if(v)mk('text',{x:X0-8,y:y+4.5,'text-anchor':'end'},v===yMax?`${v}회`:v)}
+mk('text',{x:0,y:yFlag+16,class:'row'},'큰 변화');
+flags.forEach(f=>{const y=yFlag+(nF-1-f.r)*29;
+  mk('line',{x1:f.x,x2:f.x,y1:y+24,y2:yBase,stroke:'#002554','stroke-width':1.5,'stroke-dasharray':'2 3',opacity:.55});
+  mk('rect',{x:f.a,y,width:f.w,height:24,rx:12,fill:'#002554'});
+  mk('text',{x:f.a+f.w/2,y:y+17,'text-anchor':'middle',class:'flag'},f.label)});
+const bw=7*DAY-4;
+for(let i=0;i<WEEKS;i++){let acc=0;S.forEach(([k,c,,line])=>{const v=A.weeks[k][i];if(!v)return;
+  const h=v/yMax*hBar,r=mk('rect',{x:wx(i)+2,y:yBase-acc-h,width:bw,height:Math.max(1,h-(acc?2:0)),rx:1.5,fill:c});
+  if(line){r.setAttribute('stroke',line);r.setAttribute('stroke-width',1)}acc+=h})}
+
+// 버전 눈금 (가까우면 둘째 줄로)
+const yVer=yBase+19;mk('text',{x:0,y:yVer+1,class:'row'},'버전');
+let lastVx=-99,lastRow=0;
+A.versions.forEach(([v,d])=>{const x=dx(d);const row=(x-lastVx<40&&lastRow===0)?1:0;lastVx=x;lastRow=row;
+  mk('line',{x1:x,x2:x,y1:yBase,y2:yBase+5+row*17,stroke:'#002554','stroke-width':1.5});
+  mk('text',{x,y:yVer+row*17,'text-anchor':'middle',class:'ver'},v)});
+
+// 새 앱 (같은 자리면 위로 쌓는다)
+const occupied={},placed=[];
+E.apps.forEach(a=>{const x=dx(a[0]);const k=Math.round((x-X0)/13);let l=0;
+  while(occupied[k+'/'+l]||occupied[(k-1)+'/'+l]||occupied[(k+1)+'/'+l])l++;occupied[k+'/'+l]=1;placed.push([x,l,a])});
+const maxL=Math.max(0,...placed.map(p=>p[1]));
+const yAppTop=yVer+36,yApp=yAppTop+maxL*13+8;
+mk('text',{x:0,y:yApp+4,class:'row'},'새 앱');
+mk('line',{x1:X0,x2:X1,y1:yApp+10,y2:yApp+10,stroke:'#e2e8f0'});
+placed.forEach(([x,l,a])=>mk('circle',{cx:x,cy:yApp-l*13,r:5,fill:C[a[2]],stroke:'#fff','stroke-width':1.5}));
+const H=yApp+22;
+svg.setAttribute('viewBox',`0 0 ${W} ${H}`);mlines.forEach(l=>l.setAttribute('y2',H));
+
+// 그 주의 기록 — 마우스·손가락·키보드(←/→) 공통
+const cursor=mk('rect',{x:0,y:yPh,width:7*DAY,height:H-yPh,fill:'#002554',opacity:0,'pointer-events':'none'});
+const hit=mk('rect',{x:X0,y:0,width:X1-X0,height:H,fill:'transparent'});
+const tip=document.getElementById('tip'),box=document.getElementById('chron'),scroller=document.getElementById('scroller');
+const f=d=>`${d.getMonth()+1}.${String(d.getDate()).padStart(2,'0')}`;
+let cur=-1;
+function showWeek(i){
+  if(i<0||i>=WEEKS)return hide();cur=i;
+  cursor.setAttribute('x',wx(i));cursor.setAttribute('opacity',.07);
+  const a=new Date(START.getTime()+i*7*864e5),b=new Date(a.getTime()+7*864e5-1);
+  const inW=s=>{const d=day(s);return d>=a&&d<=b};
+  const chg=E.changes.filter(c=>inW(c[0]));
+  const items=[...chg.filter(c=>c[2]).map(c=>`<li class="big">${c[1].split(' — ')[0]}</li>`),
+    ...A.versions.filter(v=>inW(v[1])).map(v=>`<li>버전 ${v[0]} 시작</li>`),
+    ...chg.filter(c=>!c[2]).map(c=>`<li>${c[1].split(' — ')[0]}</li>`),
+    ...E.apps.filter(x=>inW(x[0])).map(x=>`<li>새 앱 · ${x[1]}</li>`)];
+  // 아직 시작하지 않은 계열(예: 9월 전의 LogBook)은 줄을 내지 않는다
+  let h=`<h4>${f(a)} ~ ${f(b)}</h4>`+S.filter(([k])=>A.weeks[k].some(v=>v>0)&&i>=A.weeks[k].findIndex(v=>v>0))
+    .map(([k,,n])=>`<div class="r"><span>${n}</span><b>${A.weeks[k][i]}회</b></div>`).join('');
+  if(items.length)h+=`<ul>${items.join('')}</ul>`;
+  tip.innerHTML=h;tip.hidden=false;
+  // 말풍선은 그 주 막대 옆에. 오른쪽이 모자라면 왼쪽으로.
+  const sr=svg.getBoundingClientRect(),br=box.getBoundingClientRect(),k=sr.width/W;
+  const colL=sr.left-br.left+wx(i)*k,colR=colL+7*DAY*k;
+  let left=colR+12;if(left+284>br.width)left=colL-284;
+  tip.style.left=Math.min(Math.max(8,left),Math.max(8,br.width-280))+'px'}
+function hide(){tip.hidden=true;cursor.setAttribute('opacity',0);cur=-1}
+function at(ev){const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse())}
+const bandAt=p=>p.y>=yPh&&p.y<=yPh+hPh?bands.find(([x,x2])=>p.x>=x&&p.x<=x2):null;
+hit.addEventListener('pointermove',ev=>{const p=at(ev);hit.style.cursor=bandAt(p)?'pointer':'default';showWeek(Math.floor((p.x-X0)/(7*DAY)))});
+hit.addEventListener('pointerdown',ev=>showWeek(Math.floor((at(ev).x-X0)/(7*DAY))));
+hit.addEventListener('pointerleave',ev=>{if(ev.pointerType==='mouse')hide()});
+hit.addEventListener('click',ev=>{const b=bandAt(at(ev));if(b)document.getElementById('phase-'+b[2])?.scrollIntoView({block:'start'})});
+scroller.addEventListener('keydown',ev=>{
+  if(ev.key==='ArrowRight'||ev.key==='ArrowLeft'){ev.preventDefault();
+    const i=cur<0?WEEKS-1:Math.min(WEEKS-1,Math.max(0,cur+(ev.key==='ArrowRight'?1:-1)));showWeek(i);
+    const k=svg.getBoundingClientRect().width/W,x=wx(i)*k;   // 고른 주가 보이게 가로 스크롤
+    if(x<scroller.scrollLeft+40)scroller.scrollLeft=x-40;else if(x>scroller.scrollLeft+scroller.clientWidth-80)scroller.scrollLeft=x-scroller.clientWidth+80}
+  else if(ev.key==='Escape')hide()});
+scroller.addEventListener('blur',hide);
+// 그래프가 화면보다 넓으면 안내를 띄우고 최근 쪽(오른쪽)부터 보여 준다
+const fit=()=>box.classList.toggle('scrolls',scroller.scrollWidth>scroller.clientWidth+4);
+fit();if(box.classList.contains('scrolls'))scroller.scrollLeft=scroller.scrollWidth;
+window.addEventListener('resize',fit);
+
+/* ── 월별 기록 ── */
+const months=[];for(let d=new Date(START.getFullYear(),START.getMonth(),1);d<=day(TODAY);d=new Date(d.getFullYear(),d.getMonth()+1,1))
+  months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+// 최근이 위로: 시기 → 달 → 항목 모두 날짜 역순
+const desc0=(p,q)=>p[0]<q[0]?1:p[0]>q[0]?-1:0;
+const kindKey=Object.keys(KIND).map(k=>`<span><i class="dot" style="background:${C[k]}"></i>${KIND_SHORT[k]}</span>`).join('');
+let html=`<div class="cols lhead"><span>달</span><span>주요 변화</span><span class="apphead"><span>새로 들어온 앱</span><span class="key">${kindKey}</span></span></div>`;
+E.phases.map((p,i)=>[p,i]).reverse().forEach(([[n,a,b,desc],pi])=>{
+  const mine=months.filter(m=>m>=a.slice(0,7)&&m<=(b||TODAY).slice(0,7)).reverse();
+  html+=`<div class="cols phase" id="phase-${pi}"><div><h3>${n}</h3><span class="when">${md(a)} ~ ${b?md(b):'진행 중'}</span></div><p>${desc}</p></div>`;
+  mine.forEach(m=>{
+    const chg=E.changes.filter(c=>c[0].startsWith(m)).sort(desc0),apps=E.apps.filter(x=>x[0].startsWith(m)).sort(desc0);
+    const v=A.monthVersions[m];const ver=v?(v[0]===v[1]?`버전 ${v[0]}`:`버전 ${v[0]} ~ ${v[1]}`):'';
+    html+=`<div class="cols month"><div class="m"><strong>${+m.slice(5)}월</strong><span>코드 수정 ${sum(A.months[m]).toLocaleString()}회</span>${ver?`<span>${ver}</span>`:''}</div>`
+      +`<div><span class="colname">주요 변화</span>${chg.length?`<ul class="chg">${chg.map(c=>`<li${c[2]?' class="big"':''}><span class="d">${md(c[0])}</span><span>${c[1].replace(' — ',': ')}</span></li>`).join('')}</ul>`:'<p class="none">적어 둔 변화가 없습니다</p>'}</div>`
+      +`<div><span class="colname">새로 들어온 앱</span>${apps.length?`<ol class="app">${apps.map(x=>`<li><span class="d">${md(x[0])}</span><i class="dot" style="background:${C[x[2]]}" title="${KIND[x[2]]}"></i><span><span class="n">${x[1]}</span>${x[4]?`<span class="desc">${x[4]}</span>`:''}</span><span class="who${x[3]===E.lead?'':' mate'}">${x[3]}</span></li>`).join('')}</ol>`:'<p class="none">새로 들어온 앱이 없습니다</p>'}</div></div>`})});
+html+=`<div class="lfoot">앱 <b class="num">${E.apps.length}</b>개 가운데 <b class="num">${mates.length}</b>개는 ${E.lead} 외 연구원 ${mateN}명이 만든 앱입니다.</div>`;
+document.getElementById('ledger').innerHTML=html;
+
+/* 다른 화면(WorkBench 관리자 페이지)에 넣어 보여 줄 때: 제 높이를 알려 주어 스크롤이 두 겹이 되지 않게 한다 */
+if(embed&&window.parent!==window){
+  // body 높이를 보낸다 — documentElement.scrollHeight 는 iframe 높이보다 작아지지 않아, 창을 넓혀 페이지가 짧아져도 줄지 않는다
+  const post=()=>window.parent.postMessage({hitessHistoryHeight:Math.ceil(document.body.getBoundingClientRect().height)},'*');
+  post();window.addEventListener('load',post);
+  if(window.ResizeObserver)new ResizeObserver(post).observe(document.body);else window.addEventListener('resize',post)}
+})();
+</script>
+</body>
+</html>

@@ -21,6 +21,7 @@ import {
   Download,
   MessagesSquare,
   History,
+  Milestone,
 } from 'lucide-react';
 import { findCatalogueAppByMenu } from '../../contexts/DashboardContext';
 
@@ -79,6 +80,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate,
           { icon: SlidersHorizontal, label: "App Settings" },
           { icon: Webhook, label: "API Apps" },
           { icon: History, label: "Update History" },
+          { icon: Milestone, label: "Development History" },
         ]
       });
     }

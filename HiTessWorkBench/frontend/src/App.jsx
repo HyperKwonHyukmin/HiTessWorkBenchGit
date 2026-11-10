@@ -52,6 +52,7 @@ const SystemSettings = lazy(() => import('./pages/Administration/SystemSettings'
 const AnalysisManagement = lazy(() => import('./pages/Administration/AnalysisManagement'));
 const AllProjects = lazy(() => import('./pages/Administration/AllProjects'));
 const UpdateHistory = lazy(() => import('./pages/Administration/UpdateHistory'));
+const DevelopmentHistory = lazy(() => import('./pages/Administration/DevelopmentHistory'));
 const UsageReports = lazy(() => import('./pages/Administration/UsageReports'));
 const AppCommunityManagement = lazy(() => import('./pages/Administration/AppCommunityManagement'));
 const AppSettings = lazy(() => import('./pages/Administration/AppSettings'));
@@ -180,7 +181,7 @@ function AppInner() {
       'Notice & Updates', 'User Guide',
       // 관리자 메뉴는 위에서 걸러졌음
       'User Management', 'Analysis Management', 'All Projects', 'System Management', 'Usage Reports',
-      'App Community', 'App Settings', 'API Apps', 'Update History',
+      'App Community', 'App Settings', 'API Apps', 'Update History', 'Development History',
     ]);
     if (KNOWN.has(landing)) resetNavigation(landing);
   }, [
@@ -617,6 +618,7 @@ function AppInner() {
       case 'Plate Structure Analysis': return <PlateStructureAnalysis />;
       case 'API Apps': return <ApiApps />;
       case 'Update History': return <UpdateHistory />;
+      case 'Development History': return <DevelopmentHistory />;
       case 'Component Wizard':
       case 'Simple Beam Assessment':
       case 'Simple Beam Analyzer': return <SimpleBeamAssessmentPage />;

@@ -62,6 +62,9 @@ def test_bad_paths_are_404(web_dir):
         "/newsletter/2026-11/img/none.jpg",
         "/newsletter/2026-11/..%2Foutside.jpg",
         "/newsletter/2026-11/..%5Coutside.jpg",
+        "/newsletter/2026-11//localhost/none/x.jpg",          # UNC 경로 — 서버가 그 호스트로 접속하면 안 된다
+        "/newsletter/2026-11/%5C%5Clocalhost%5Cnone%5Cx.jpg",
+        "/newsletter/2026-11/C:%5Cx.jpg",
     ):
         assert client.get(path).status_code == 404, path
 

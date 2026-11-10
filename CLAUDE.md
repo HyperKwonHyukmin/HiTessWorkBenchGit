@@ -1221,6 +1221,24 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
 - **API 설명서 화면(`/docs`·`/redoc`·`/openapi.json`)은 기본으로 꺼져 있다**(2026-11-10, 사용자 결정) — 9091 은 전사 개방이라 로그인 없이 API 전체 목록이 보였다.
   개발 PC 에서 쓰려면 `.env` `API_DOCS=1` + 재시작(`main.py create_app`, 테스트 `test_api_docs_switch.py`). 이 경로를 쓰는 코드는 없다.
 
+### Hi-TESS 개발 연대기 — 로그인 없이 여는 공개 페이지 `/history` (2026-11-10)
+
+주소 `http://10.14.42.145:9091/history` — 처음부터 지금까지 어떤 순서로 만들어졌는지(한 장 그래프 + 용어 풀이 + 월별 기록, 최근이 위). 해석·평가 문단('기록에서 읽히는 것')은 사용자가 필요 없다고 해 뺐다 — 되살리지 말 것. 팀원·타 부서 공유용이라 **프로젝트를 모르는 사람도 읽을 수 있는 말로** 쓴다(사용자 지시).
+- 라우터 `app/routers/history_web.py`(웹 뉴스레터와 같은 방식 — 인증 없음, 허용 확장자 표, read() 바이트 + DRM 머리면 500, `/history` → `/history/` 307).
+- 폴더 `HiTessWorkBenchBackEnd/HistoryWeb/`(**git 추적** → 145 `git pull` 로 내용 반영): `index.html`(그리기만) · `data.events.js`(사람이 쓰는 내용 — 시기·앱 등장·주요 변화, 큰 변화는 줄 끝 `true`) ·
+  `data.auto.js`(숫자 — **`python -X utf8 scripts/history_build.py`** 가 WorkBench·WorkBenchSubModule·Logbook git 기록에서 뽑는다. 70 에서만 실행, 145 에는 하위 저장소가 없다) · `fonts/`.
+  새 일이 생기면 `data.events.js` 에 한 줄 + 스크립트 실행 + 커밋.
+- 앱 안: `Administration > Development History`(`pages/Administration/DevelopmentHistory.jsx`) 가 같은 페이지를 `?embed=1` iframe 으로 넣는다(머리 띠 축소 · 페이지가 postMessage 로 제 높이를 알려 스크롤 한 겹).
+  '주소 복사'·'브라우저로 열기' 의 주소는 `utils/publicPageUrl.js`(+테스트) — 앱이 쓰는 https(자체 인증서)를 브라우저용 `http://…:9091` 로 바꾼다. 관리자 메뉴 등록 5곳 = `adminMenus.js`·`Sidebar.jsx`·`App.jsx`·`Layout.jsx`·`MySettings.jsx`.
+- 공개 페이지라 내부 주소·계정·보안 세부(예: 옛 로그인 방식)는 적지 않는다. 동료 이름은 앱 만든 사람으로 나온다.
+- ⚠ 로그인 없는 파일 경로(`/history/{파일}`·`/newsletter/{호}/{파일}`)는 `resolve()` 전에 경로 모양(`_SAFE_ASSET_RE` — 이름 글자와 `/` 만)부터 거른다.
+  `//호스트/공유/x.js` 같은 UNC 경로가 오면 404 를 내기 전에 서버가 그 호스트로 접속했다(커밋 전 리뷰 '막아야 함', 뉴스레터 라우터도 함께 고침). 공개 파일 경로를 새로 만들면 같은 검사를 넣을 것.
+- 디자인 평가(2026-11-10, 독립 리뷰 2건 19/32): 낱말 중간 줄바꿈·그래프 글자 크기·키보드/터치 접근·앱 이름 풀이·용어 통일('코드 수정 횟수') 반영.
+  **사용자 결정 대기**: 사용 쪽 숫자(가입자·월별 실행 수)를 넣을지.
+- 반영 = 145 `git pull + 재시작`(새 라우터) → 공개 주소 동작 · 관리자 메뉴는 다음 exe. 테스트 `tests/test_history_web.py`.
+  ⚠ 70 서버가 꺼져 있어 **실제 서버 호출·앱 안 iframe 화면은 확인 안 함**(TestClient·빌드·헤드리스 캡처까지).
+  앱 안에서 볼 것: 끼워 넣은 화면의 '월별 기록' 이동·시기 띠 클릭이 바깥 스크롤을 움직이는지(exe = Electron 26).
+
 ### App Settings — App별 서비스 상태·접근 통제 ★API가 403이면 여기부터 확인
 
 관리자가 App을 **개발 중 / 출시 예정 / 점검 중**으로 내리면 해당 App의 화면 진입과 **해석 요청 API가 서버에서 403으로 거부**된다. 원인 불명의 403을 만나면 `app_settings` 테이블부터 볼 것.

@@ -116,6 +116,7 @@ export default function Layout({
       { label: 'Usage Reports', menu: 'Usage Reports' },
       { label: 'API Apps', menu: 'API Apps' },
       { label: 'Update History', menu: 'Update History', keywords: '업데이트 이력 변경 내역 릴리스 새 기능' },
+      { label: 'Development History', menu: 'Development History', keywords: '개발 연대기 히스토리 역사 타임라인 앱 등장' },
     ] : []),
   ], [userInfo.is_admin]);
 

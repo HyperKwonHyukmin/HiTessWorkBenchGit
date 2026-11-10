@@ -40,6 +40,8 @@ _ASSET_TYPES = {
     ".woff2": "font/woff2", ".woff": "font/woff", ".css": "text/css; charset=utf-8",
     ".mp4": "video/mp4",
 }
+# 파일 경로는 이름 글자와 / 만 받는다 — `//호스트/공유/x.jpg` 같은 UNC 경로가 resolve() 에서 서버를 그 호스트로 접속시키지 않게(2026-11-10 리뷰).
+_SAFE_ASSET_RE = re.compile(r"^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$")
 _RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 _DRM_MAGIC = b"HHIDRMC"
 _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -169,6 +171,8 @@ def newsletter_stats_view(employee_id: str = Depends(require_auth), db: Session 
 
 @router.api_route("/newsletter/{issue}/{asset_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
 def issue_asset(issue: str, asset_path: str, request: Request):
+    if not _SAFE_ASSET_RE.match(asset_path or ""):
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     folder = _issue_dir(issue).resolve()
     target = (folder / asset_path).resolve()
     if folder not in target.parents or not target.is_file():

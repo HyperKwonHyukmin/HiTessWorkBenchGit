@@ -16,6 +16,7 @@ export const ADMIN_MENUS = new Set([
   'App Settings',
   'API Apps',
   'Update History',
+  'Development History',
 ]);
 
 export const isAdminMenu = (menu) => ADMIN_MENUS.has(menu);
