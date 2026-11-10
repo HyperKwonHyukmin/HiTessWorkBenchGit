@@ -12,6 +12,7 @@ import ExportXlsxButton from '../../components/admin/reports/ExportXlsxButton';
 import ExportPngButton from '../../components/admin/reports/ExportPngButton';
 import ReportPrintView from '../../components/admin/reports/ReportPrintView';
 import PageHeader from '../../components/ui/PageHeader';
+import NewsletterStatsPanel from '../../components/admin/reports/NewsletterStatsPanel';
 
 function defaultDateFor(period) {
   const d = new Date();
@@ -139,6 +140,9 @@ export default function UsageReports() {
           <ReportDepartmentChart departments={data.departments} />
         </div>
       )}
+
+      {/* 웹 뉴스레터 조회 — 지정한 사번에게만 보인다(아니면 컴포넌트가 아무것도 그리지 않음) */}
+      <NewsletterStatsPanel />
 
       {/* PNG 캡처 전용 off-screen print view */}
       {data && !isEmpty && !error && (

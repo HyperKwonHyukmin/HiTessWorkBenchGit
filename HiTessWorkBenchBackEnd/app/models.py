@@ -423,3 +423,24 @@ class LogbookExport(Base):
   rejected = Column(JSON, nullable=True)  # DRM 등으로 보내지 못한 파일
   error = Column(Text, nullable=True)
   created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class NewsletterView(Base):
+  """웹 뉴스레터 조회 기록(2026-11-10). 공개 페이지라 로그인 정보가 없다 — 방문자는 IP 해시로만 센다.
+
+  한 행 = 한 호 × 한 방문자(IP 해시) × 하루. 새로고침은 views 만 올린다.
+  max_depth(%)·dwell_seconds·sections 는 페이지의 측정 스크립트가 떠날 때 보내는 값으로 채운다.
+  activity_logs(30일 삭제)와 달리 기간 제한 없이 남긴다 — 호끼리 비교하려고.
+  """
+  __tablename__ = "newsletter_views"
+  __table_args__ = (UniqueConstraint("issue", "visitor", "day", name="uq_newsletter_view"),)
+  id = Column(Integer, primary_key=True, index=True)
+  issue = Column(String(32), index=True, nullable=False)
+  visitor = Column(String(32), nullable=False)      # sha256("newsletter:"+IP) 앞 16자
+  day = Column(String(10), index=True, nullable=False)  # YYYY-MM-DD (서버 지역 시간)
+  views = Column(Integer, default=1, nullable=False)
+  max_depth = Column(Integer, default=0, nullable=False)
+  dwell_seconds = Column(Integer, default=0, nullable=False)
+  sections = Column(JSON, nullable=True)            # 화면에 들어온 구획 id 목록
+  first_at = Column(DateTime, default=datetime.now)
+  last_at = Column(DateTime, default=datetime.now)

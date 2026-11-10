@@ -75,3 +75,11 @@ export async function downloadAnalysisReport({ analysisId, programName }) {
   a.click();
   URL.revokeObjectURL(blobUrl);
 }
+
+/**
+ * 웹 뉴스레터 조회 통계 — 지정한 사번만 200, 나머지는 403(화면이 칸을 숨긴다).
+ * @param {{ signal?: AbortSignal }} [opts]
+ */
+export function getNewsletterStats({ signal } = {}) {
+  return axios.get(`${API_BASE_URL}/api/admin/newsletter-stats`, { headers: getAuthHeaders(), signal });
+}

@@ -5,6 +5,8 @@
   GET /newsletter/issues.json     → 호 목록(최신이 앞) — 나중에 페이지 왼쪽 '지난 호' 목록이 쓴다
   GET /newsletter/{호}/           → 그 호의 index.html
   GET /newsletter/{호}/{파일}     → 그 호의 그림·글꼴
+  POST /newsletter/{호}/beacon    → 페이지 측정 스크립트가 보내는 읽은 깊이·머문 시간(로그인 없음)
+  GET /api/admin/newsletter-stats → 호별 조회 통계(지정한 사번만 — services/newsletter_stats.py)
 
 호 폴더 = `NewsLetterWeb/<YYYY-MM>[-n]/` (git 추적 — 145 는 git pull 로 반영)
   index.html · issue.json(title·number·date·summary) · img/ · fonts/
@@ -17,8 +19,14 @@ import json
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from sqlalchemy.orm import Session
+
+from app import database
+from app.dependencies import require_auth
+from app.services import newsletter_stats
 
 router = APIRouter(tags=["newsletter-web"])
 
@@ -32,6 +40,7 @@ _ASSET_TYPES = {
     ".woff2": "font/woff2", ".woff": "font/woff", ".css": "text/css; charset=utf-8",
 }
 _DRM_MAGIC = b"HHIDRMC"
+_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _NOT_FOUND = "뉴스레터를 찾을 수 없습니다."
 
 
@@ -82,6 +91,7 @@ def list_issues() -> list[dict]:
             "number": meta.get("number"),
             "date": meta.get("date") or folder.name[:7],
             "summary": meta.get("summary"),
+            "sentDate": meta.get("sentDate") if _DAY_RE.match(str(meta.get("sentDate") or "")) else None,
             "url": f"/newsletter/{folder.name}/",
         })
     issues.sort(key=lambda item: _issue_sort_key(item["id"]), reverse=True)
@@ -112,10 +122,47 @@ def issue_without_slash(issue: str):
     return RedirectResponse(f"/newsletter/{issue}/", status_code=307)
 
 
+def _client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
 @router.api_route("/newsletter/{issue}/", methods=["GET", "HEAD"], include_in_schema=False)
-def issue_page(issue: str):
+def issue_page(issue: str, request: Request, db: Session = Depends(database.get_db)):
     folder = _issue_dir(issue)
-    return HTMLResponse(_read(folder / "index.html"), headers=_NO_CACHE)
+    html = _read(folder / "index.html")
+    if request.method == "GET":
+        # 조회 기록 + 측정 스크립트(2026-11-10). 기록이 실패해도 페이지는 그대로 나간다.
+        newsletter_stats.record_view(db, issue, _client_ip(request))
+        html = newsletter_stats.inject_tracker(html)
+    return HTMLResponse(html, headers=_NO_CACHE)
+
+
+@router.post("/newsletter/{issue}/beacon", include_in_schema=False)
+async def issue_beacon(issue: str, request: Request, db: Session = Depends(database.get_db)):
+    _issue_dir(issue)
+    try:
+        body = await request.body()
+        payload = json.loads(body[:4096] or b"{}")
+    except (ValueError, UnicodeDecodeError):
+        payload = {}
+    # 동기 DB 작업은 스레드에서 — async 함수 안에서 바로 부르면 DB 가 느릴 때 9091 전체가 멈춘다(리뷰 반영).
+    await run_in_threadpool(newsletter_stats.record_beacon, db, issue, _client_ip(request), payload)
+    return Response(status_code=204)
+
+
+@router.get("/api/admin/newsletter-stats", include_in_schema=False)
+def newsletter_stats_view(employee_id: str = Depends(require_auth), db: Session = Depends(database.get_db)):
+    """호별 조회 통계 — 사용자 지시로 지정한 사번만(NEWSLETTER_STATS_VIEWERS, 기본 A476854).
+    다른 사람에게는 403 대신 200 {allowed:false} — 화면 네트워크 진단이 403 을 '권한 없음' 경고로 쌓지 않게(리뷰 반영)."""
+    if (employee_id or "").upper() not in newsletter_stats.stats_viewers():
+        return {"allowed": False}
+    issues_meta = list_issues()
+    data = newsletter_stats.build_stats(db, {i["id"]: i["sentDate"] for i in issues_meta if i.get("sentDate")})
+    data["allowed"] = True
+    titles = {i["id"]: i["title"] for i in issues_meta}
+    for item in data["issues"]:
+        item["title"] = titles.get(item["issue"], item["issue"])
+    return data
 
 
 @router.api_route("/newsletter/{issue}/{asset_path:path}", methods=["GET", "HEAD"], include_in_schema=False)

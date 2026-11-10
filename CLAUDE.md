@@ -1140,6 +1140,15 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
 - 작업 원본·그림 준비 = `outputs/newsletter-2026-11/`(git 미추적). 대시보드 '자료 › News Letter'(PDF·PNG 아카이브, `routers/newsletters.py`, UNC)와는 별개다.
 - 11월호 내용 결정(사용자): 가입자 200명 돌파(사용자가 준 숫자) · HiTESS Story 영상 10편 강조 · 새 앱 = Independent Tank·Heavy Block Lifting(김한별 책임연구원)·선체 가속도(정병훈 책임연구원) + 중량물 권상 시뮬레이터 '개발 예고' ·
   Studio 설명서 · 더 편해진 Workbench. BCC·D Type Lug·로그인 방식은 뺐다. 사람 이름 뒤에 직책. 테스트 `tests/test_newsletter_web.py`(저장소의 실제 호와 그림 경로까지 확인).
+- **조회 통계 (2026-11-10, 사용자 지시 '나만 보게')** — `services/newsletter_stats.py`. 호 페이지 GET 마다 `newsletter_views`(호 × 방문자 × 날짜 한 행, 기간 제한 없음)에 기록하고,
+  서버가 보낼 때 측정 스크립트를 `</body>` 앞에 끼워 넣는다(HTML 원본은 그대로) → 화면을 떠날 때 `POST /newsletter/{호}/beacon` 으로 읽은 깊이·보인 시간·본 구획(lead·story·apps·manuals·easier).
+  방문자 = IP 해시(되돌릴 수 있어 익명 보장 아님, 사람 수가 아니라 PC 수). 기록 실패는 삼켜 페이지는 늘 열린다. 열람 행이 없으면 beacon 은 무시.
+  통계 `GET /api/admin/newsletter-stats` = `.env` `NEWSLETTER_STATS_VIEWERS`(기본 `A476854`) 사번만, 다른 사람은 **200 `{allowed:false}`**(403 이면 화면 네트워크 진단이 경고를 쌓는다).
+  화면 = Usage Reports 맨 아래 `NewsletterStatsPanel`(allowed 일 때만 그림): 조회수·방문 PC·읽은 깊이·머문 시간·날짜별·구획 도달·**발송 전후 14일**(신규 가입·접속 사용자·해석 실행(월별 건수와 같은 기준)·영상 재생).
+  발송 기준일 = 호 `issue.json` `sentDate`(YYYY-MM-DD) → 없으면 첫 조회일 — ⚠ 미리 열어 본 날이 잡히므로 **메일을 보낸 날 sentDate 를 적을 것**. 영상 재생은 activity_logs 라 30일 뒤 지워진다.
+  반영 = 서버(git pull + 재시작, 새 테이블은 시작 때 생성)만으로 수집 시작, 화면 칸은 새 exe 부터. 테스트 `tests/test_newsletter_stats.py` · `utils/newsletterStats.test.js`.
+  상태(2026-11-10): 커밋·1.7.16 에 포함(코드 9파일), 독립 리뷰 2회 막아야 함 0(두 번째 리뷰의 비콘 이벤트 루프 막힘 → `run_in_threadpool` 반영), 백엔드 2053 통과. 같은 IP 첫 동시 조회 1건 누락(유니크 충돌)은 통계라 그대로 둠.
+  남은 일: 145 ⟳ Update+재시작 → 메일 발송일에 11월호 `sentDate` → 발송 메일(Outlook 초안은 만들어 둠). 통계 칸 화면은 눈으로 확인 안 함.
 - 커밋 `0afa1bc`(뉴스레터) · `6f8ed6f`(아래). 145 반영 = ⟳ Update + **재시작**, 반영 뒤 다른 PC 브라우저로 글꼴·그림이 보이는지(git 이 받은 파일의 DRM 여부) 확인 남음.
 - **API 설명서 화면(`/docs`·`/redoc`·`/openapi.json`)은 기본으로 꺼져 있다**(2026-11-10, 사용자 결정) — 9091 은 전사 개방이라 로그인 없이 API 전체 목록이 보였다.
   개발 PC 에서 쓰려면 `.env` `API_DOCS=1` + 재시작(`main.py create_app`, 테스트 `test_api_docs_switch.py`). 이 경로를 쓰는 코드는 없다.
