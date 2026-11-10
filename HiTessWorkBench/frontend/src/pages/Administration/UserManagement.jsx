@@ -413,16 +413,22 @@ export default function UserManagement() {
     }
   };
 
-  // 단체 메일용 — 승인된 전체 사용자(검색·필터와 무관)의 메일 주소를 '; ' 로 이어 복사한다.
-  // Outlook 숨은 참조(BCC) 칸에 붙여 넣는 용도. 주소가 없는 사용자는 토스트로 알린다.
+  // 단체 메일용 — 지금 목록(검색·필터 반영)에 보이는 승인 사용자의 메일 주소를 '; ' 로 이어 복사한다.
+  // 검색·필터가 없으면 승인 사용자 전원. Outlook 숨은 참조(BCC) 칸에 붙여 넣는 용도. 주소가 없는 사용자는 토스트로 알린다.
   const handleCopyMailList = async () => {
     if (!users.length) {
       showToast('사용자 목록을 아직 불러오지 못했습니다. 새로고침 후 다시 눌러 주세요.', 'warning');
       return;
     }
-    const { text, count, missing } = buildActiveMailList(users);
+    const narrowed = filteredUsers.length !== users.length;
+    const { text, count, missing } = buildActiveMailList(filteredUsers);
     if (count === 0) {
-      showToast('복사할 메일 주소가 없습니다. 전체 PLM 정보 갱신을 먼저 해 보세요.', 'warning');
+      showToast(
+        narrowed
+          ? '지금 목록에 복사할 메일 주소가 없습니다. 검색·필터를 확인해 주세요.'
+          : '복사할 메일 주소가 없습니다. 전체 PLM 정보 갱신을 먼저 해 보세요.',
+        'warning',
+      );
       return;
     }
     try {
@@ -431,9 +437,9 @@ export default function UserManagement() {
       showToast('클립보드에 복사하지 못했습니다.', 'error');
       return;
     }
-    const base = `승인 사용자 ${count}명의 메일 주소를 복사했습니다. Outlook 숨은 참조(BCC)에 붙여 넣으세요.`;
+    const base = `${narrowed ? '지금 목록의 ' : ''}승인 사용자 ${count}명의 메일 주소를 복사했습니다. Outlook 숨은 참조(BCC)에 붙여 넣으세요.`;
     if (missing.length) {
-      showToast(`${base} 메일 없음 ${missing.length}명: ${describeMissing(missing)} — '메일 없는 ${missing.length}명 넣기'에서 한 번에 넣을 수 있습니다.`, 'warning', 9000);
+      showToast(`${base} 메일 없음 ${missing.length}명: ${describeMissing(missing)} — '메일 없는 ${narrowed ? '' : `${missing.length}명 `}넣기'에서 한 번에 넣을 수 있습니다.`, 'warning', 9000);
     } else {
       showToast(base, 'success');
     }
@@ -1231,7 +1237,7 @@ export default function UserManagement() {
           <button
             onClick={handleCopyMailList}
             className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-50 transition-colors shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1"
-            title="승인된 전체 사용자(검색·필터 무관)의 메일 주소를 ; 로 이어 복사 — Outlook 숨은 참조(BCC)에 붙여 넣기"
+            title="현재 목록(검색·필터 반영)의 승인 사용자 메일 주소를 ; 로 이어 복사 — Outlook 숨은 참조(BCC)에 붙여 넣기"
           >
             <Mail size={14}/> 메일 주소 복사
           </button>
