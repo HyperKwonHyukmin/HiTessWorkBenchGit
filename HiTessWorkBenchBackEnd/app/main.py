@@ -29,6 +29,7 @@ from .routers import (
     column_buckling,
     d_type_lug,
     davit,
+    device_login,
     doublepipe,
     external_app_registry,
     external_apps,
@@ -223,6 +224,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
 
     application.include_router(auth.router)
     application.include_router(auth.member_router)
+    application.include_router(device_login.router)
     application.include_router(users.router)
     application.include_router(analysis.router)
     application.include_router(system.router)

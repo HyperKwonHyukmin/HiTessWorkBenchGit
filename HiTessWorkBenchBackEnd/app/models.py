@@ -425,6 +425,35 @@ class LogbookExport(Base):
   created_at = Column(DateTime, default=datetime.now, index=True)
 
 
+class TrustedDevice(Base):
+  """등록한 PC — 회사 도메인에 없는 계열사 PC 의 비밀번호 없는 로그인(2026-11-10, services/device_login.py).
+
+  public_key = 앱이 만든 Ed25519 공개 열쇠(base64). 비밀 열쇠는 그 PC 에만 있다.
+  status: pending(관리자 승인 대기) → approved | rejected, approved → revoked(관리자 해지).
+  hostname·os_user 는 앱이 알려 준 값이라 확인된 정보가 아니다 — 관리자가 판단할 때 참고만 한다.
+  """
+  __tablename__ = "trusted_devices"
+  id = Column(Integer, primary_key=True, index=True)
+  employee_id = Column(String(50), index=True, nullable=False)
+  public_key = Column(String(64), unique=True, nullable=False)
+  status = Column(String(16), index=True, nullable=False, default="pending")
+  hostname = Column(String(100), nullable=True)
+  os_user = Column(String(100), nullable=True)
+  ip_address = Column(String(64), nullable=True)
+  requested_at = Column(DateTime, default=datetime.now, nullable=False)
+  decided_at = Column(DateTime, nullable=True)
+  decided_by = Column(String(50), nullable=True)
+  last_used_at = Column(DateTime, nullable=True)
+  use_count = Column(Integer, default=0, nullable=False)
+  # 확인 방법: email(직원 회사 메일로 받은 코드를 직접 입력) | admin(메일이 없거나 발송 실패 → 관리자가 확인 코드로 승인)
+  verify_method = Column(String(16), nullable=False, default="admin")
+  email_code_hash = Column(String(64), nullable=True)      # sha256(device_id:code) — 코드 자체는 저장하지 않는다
+  email_code_expires_at = Column(DateTime, nullable=True)
+  email_code_attempts = Column(Integer, default=0, nullable=False)
+  email_sent_at = Column(DateTime, nullable=True)
+  email_sent_count = Column(Integer, default=0, nullable=False)
+
+
 class NewsletterView(Base):
   """웹 뉴스레터 조회 기록(2026-11-10). 공개 페이지라 로그인 정보가 없다 — 방문자는 IP 해시로만 센다.
 

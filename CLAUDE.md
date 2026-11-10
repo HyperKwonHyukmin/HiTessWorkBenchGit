@@ -1097,6 +1097,28 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   ⚠ 넣는 도메인은 **계정 이름 = 본인 사번** 이 보장되는 곳만(VMDC 는 IT 확인 권장, 아직 안 함). 클라이언트 재배포 불필요 — 145 `git pull` + `.env` 한 줄 + 재시작.
   상태: `1888654` 푸시 · **145 반영(`.env AD_WINDOWS_DOMAINS=VMDC`) 후 VMDC 사용자 자동 로그인 동작 확인**(사용자, 같은 날).
   같은 날 로그에 AM 이 CSV 인자 없이 HiTessMB 를 부른 기록(인자 오류) 3건 — AM 쪽 호출 문제.
+  **계열사 PC = 등록한 PC 로그인 (2026-11-10, 미커밋)** — 계열사 직원 PC 는 도메인에 가입하지 않은 **로컬 계정**이다(`whoami` = `a590063\a590063`, A590063·A540031 확인).
+  그래서 Windows 자동 로그인은 원리상 안 되고(`windows_auth_failed`), 비밀번호 칸이 떴다. 비밀번호 로그인 자체는 HHI AD 로 된다(A590063 성공 확인).
+  사용자 결정: **회사 Windows 비밀번호를 계열사 직원에게 입력하게 하지 않는다**(보안 이슈로 주목받을 수 있음) · **본사(도메인) PC 는 지금 그대로**.
+  → 앱이 PC 마다 Ed25519 열쇠를 만들어 비밀 열쇠는 safeStorage(DPAPI, Windows 사용자 단위)로 잠가 두고, 관리자가 한 번 승인하면 이후 서명으로 들어온다.
+  - 판별: Electron `electron/device-login.js` `isLocalAccount` = `USERDOMAIN == COMPUTERNAME`. 이 PC 는 Windows 자동 로그인을 시도하지 않고 비밀번호 칸도 없다(`utils/deviceLogin.js` `isDeviceMode`).
+  - 서버 `services/device_login.py` · `routers/device_login.py`(`/api/login/device/enroll|challenge`, `/api/login/device`, 관리자 `/api/admin/devices[/{id}/approve|reject|revoke]`), 표 `trusted_devices`(create_all).
+    서명 글 = `hitess-device-login:<device_id>:<nonce>`(nonce 60초·한 번), 앱은 이 머리의 글만 서명한다. 상태(대기·해지)는 서명이 맞은 뒤에만 알려 준다. 90일 안 쓰면 만료.
+    ⚠ 문제는 **nonce 값으로** 찾는다(기기 번호로 하나만 들면 남이 같은 번호로 문제를 받아 정상 PC 의 문제를 덮어써 401 → 앱이 승인된 열쇠를 지웠다, 커밋 전 리뷰 '막아야 함').
+    낡은 문제 = 409 `challenge_stale`, 서명 불일치 = 401. 앱은 401·409 에 새 문제로 한 번 더 시도한 뒤에만 열쇠를 버린다. 사용자 삭제 시 그 사번 PC 등록도 해지.
+    **기본 확인 = 회사 메일 코드**(사용자 결정 2026-11-10: 관리자가 직원에게 코드를 묻지 않게) — 등록 요청 때 `users.email` 로 6자리 코드를 보내고(`services/mailer.py`, `.env` `SMTP_HOST`·`SMTP_PORT`·`SMTP_FROM`·`SMTP_USER`·`SMTP_PASSWORD`·`SMTP_STARTTLS`),
+    직원이 앱에 입력하면 바로 승인(`/api/login/device/verify`, 10분·5회 틀리면 무효, `/resend` 60초·5통). 확인·다시 보내기도 그 PC 열쇠 서명(`hitess-device-login:verify|resend:<id>:<nonce>`)이 필요하다.
+    메일이 없거나 SMTP 설정이 없거나 발송 실패면 **관리자 승인**으로 넘어간다 — 확인 코드(공개 열쇠 지문 `XXX-XXX`)를 관리자가 이미 아는 연락처로 직원에게 물어 적어야 승인(`confirm_code_mismatch`).
+    두 번째 커밋 전 리뷰 반영: 틀린 횟수는 비교 전에 한 줄 UPDATE 로 올린다(읽고 더하면 동시 요청에서 유실 → 5회 제한 우회, '막아야 함' — MySQL 동시 20건 = 틀림 5·잠김 15 확인) · 확인 요청 IP당 시간 60회 ·
+    대기 요청 24시간 만료(남이 대기 3건을 채워 본인 등록 막기 방지) · 메일 본문 PC 이름은 NetBIOS 모양만(`safe_hostname`) + 요청 IP · 메일 방식 화면에도 관리자용 확인 코드 작게 · STARTTLS 인증서 확인.
+    남긴 것: 등록 요청 응답이 사번 가입 여부·메일 앞 2자를 드러냄(`/check_user` 와 같은 수준이라 그대로), 계정이 있는데 STARTTLS 를 안 켜면 SMTP AUTH 가 평문(사내망).
+    SMTP: 사내 메일 서버 `exmail.hhi.co.kr:25` 는 `AUTH LOGIN` 만 받고 **STARTTLS 미지원**(`SMTP_STARTTLS` 넣지 말 것 — 계정은 사내망 평문, 기존 `Postman_Console` 과 같음).
+    계정·보내는 주소는 `Postman_Console/Program.cs` 의 발송 계정(21·22·25행)을 사용자가 70 `.env` 에 넣음(2026-11-10). **70 실제 발송 확인**: 본인 메일(`@hd.com`)로 코드 수신 → 코드 입력 승인 → 로그인 토큰까지 통과.
+    145 는 `.env` 에 같은 SMTP 줄 + 145 에서 25번 접속 확인이 남았다. 계열사 직원 메일함 도착은 확인 안 함.
+  - 화면: 로그인 화면 '이 PC 등록 요청' → (메일) 6자리 코드 칸·코드 다시 보내기 / (관리자) 확인 코드 표시 + 15초마다 확인, 승인되면 저절로 들어감. 관리자 = User Management 'PC 등록 [대기 N]'(`TrustedDevicesModal`). 활동 로그 `DEVICE_ENROLL/APPROVE/REJECT/REVOKE`, 로그인 기록 `method: device`.
+  - 끄기 `.env DEVICE_LOGIN=0`(AD 모드에서만 켜짐). 반영 = 145 ⟳ Update + 재시작(새 표) + **새 exe**(Electron IPC `device:info`·`device:op`). 옛 exe 는 예전처럼 비밀번호 칸.
+  - 확인: 서버 시험 + 70 MySQL 임시 서버로 등록~승인~서명 로그인~해지 실제 호출, Electron 26 에서 만든 서명을 서버가 검증. **로그인 화면·관리 창은 눈으로 확인 안 함**, 실제 계열사 PC 시험 안 함.
+  - 범위 밖: Studio 세션 갱신(`refreshWorkbenchSession`)은 등록 PC 로 재로그인하지 않는다(만료 시 본창 로그인 화면으로 — 거기서 자동으로 들어감). AM 실행기·HiTessMB 는 미적용.
 - **HTTPS + 인증서 고정 (2026-11-05, 통합 계획 2·3단계)** — 2단계 `0823543`: 같은 프로세스가 9091 옆에 9443 HTTPS(`services/https_listener.py`, `.env` `HTTPS_PORT`, 인증서 `scripts/make_tls_cert.py` — 145 에서 실행, 키는 `.secrets/tls/`).
   3단계(`9a14ec7`·`881eeb3`, 릴리스 1.7.2 `6045358`): 앱이 145 인증서의 공개키 지문(지금 `y5rO…`·예비 `u1mZ…`)이 같을 때만 연결 — **원본 `electron/server-pins.js`**, 사본 `AmLauncher/lib/server-pins.js`·HiTessMB `src/ServerPins.cs`·프론트 `utils/secureServerUrl.js`(주소 바꾸기만). 지문·주소를 바꾸면 네 곳 다.
   규칙: 지문 일치 = 통과 · 145 주소인데 불일치 = 거부(회사가 믿는 Somansa 인증서여도) · 그 밖 = 기본 검사. 개발 실행만 70 시험 지문(`DEV_PINS`)도 받는다.

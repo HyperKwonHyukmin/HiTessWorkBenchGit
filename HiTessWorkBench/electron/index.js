@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, ipcMain, shell, session, dialog, net } = require("electron");
+const { app, BrowserWindow, screen, ipcMain, shell, session, dialog, net, safeStorage } = require("electron");
 const path    = require("path");
 const fs      = require("fs");
 const http    = require("http");
@@ -16,6 +16,7 @@ const { externalAppBinding, redirectIntoExternalApp } = require("./external-app-
 const clientTelemetry = require("./client-telemetry");
 const { registerVideoWindow } = require("./video-window");
 const { requestWindowsLogin } = require("./windows-login");
+const deviceLogin = require("./device-login");
 const { installCertificatePinning, serverFetch, secureServerUrl, DEV_PINS } = require("./server-pins");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
@@ -1424,6 +1425,47 @@ ipcMain.handle("auth:windowsLogin", async (event, payload) => {
   // 토큰은 남기지 않는다 — 상태·사유·사번만.
   console.log(`[windows-login] ${serverUrl} → ${result.status} ${result.ok ? result.data.employee_id : result.detail}`);
   return result;
+});
+
+// 등록한 PC 로그인(계열사 PC, 2026-11-10) — electron/device-login.js. 열쇠만 다루고 서버 요청은 화면이 한다.
+// 본창 로그인 화면만 부를 수 있다(같은 preload 를 쓰는 Studio 창이 이 PC 열쇠로 서명하지 못하게).
+let deviceKeys = null;
+function getDeviceKeys() {
+  if (!deviceKeys) {
+    deviceKeys = deviceLogin.createDeviceKeys({
+      filePath: path.join(app.getPath("userData"), deviceLogin.STORE_FILE), safeStorage,
+    });
+  }
+  return deviceKeys;
+}
+function fromMainWindow(event) {
+  return !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents;
+}
+ipcMain.handle("device:info", (event) => {
+  if (!fromMainWindow(event)) return { supported: false };
+  const info = clientTelemetry.clientInfo();
+  return {
+    supported: process.platform === "win32" && getDeviceKeys().available(),
+    localAccount: deviceLogin.isLocalAccount(),
+    hostname: info.hostname,
+    osUser: info.os_user,
+  };
+});
+ipcMain.handle("device:op", (event, payload) => {
+  if (!fromMainWindow(event)) return { error: "forbidden" };
+  const { op, serverUrl, employeeId } = payload || {};
+  try {
+    const keys = getDeviceKeys();
+    if (op === "peek") return keys.peek(serverUrl, employeeId) || {};
+    if (op === "ensure") return keys.ensureKey(serverUrl, employeeId);
+    if (op === "setId") return { ok: keys.setDeviceId(serverUrl, employeeId, payload.deviceId) };
+    if (op === "forget") return { ok: keys.forget(serverUrl, employeeId) };
+    if (op === "sign") return keys.sign(serverUrl, employeeId, payload.message);
+    return { error: "unknown_op" };
+  } catch (e) {
+    console.warn("[device-login]", op, e?.message || e);
+    return { error: "failed" };
+  }
 });
 
 async function refreshWorkbenchSession(serverUrl, employeeId) {

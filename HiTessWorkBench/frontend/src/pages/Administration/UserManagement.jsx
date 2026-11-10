@@ -9,9 +9,9 @@ import {
   UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
   Download, BarChart3, ChevronRight, Code2, ArrowUpDown, Radio, MapPin, Globe, Timer,
   LogOut, Layers, MessageCircle, ChevronDown, UserX, FileDown, ArrowUp, ArrowDown,
-  Mail, Loader2, BookOpen
+  Mail, Loader2, BookOpen, Laptop
 } from 'lucide-react';
-import { getUsers, updateUser, deleteUser, syncUserPlm, syncAllUsersPlm } from '../../api/admin';
+import { getUsers, updateUser, deleteUser, syncUserPlm, syncAllUsersPlm, getTrustedDevices } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
 import { getOnlineUsers, forceLogoutUser } from '../../api/presence';
 import { getLogbookLevels } from '../../api/logbook';
@@ -22,6 +22,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import AccessHistoryPanel from '../../components/admin/AccessHistoryPanel';
 import BulkEmailModal from '../../components/admin/BulkEmailModal';
+import TrustedDevicesModal from '../../components/admin/TrustedDevicesModal';
 import UserStatisticsModal from '../../components/modals/UserStatisticsModal';
 import { useToast } from '../../contexts/ToastContext';
 import { ACTION_TYPE_LABELS, ACTION_TYPE_COLORS } from '../../constants/activityLog';
@@ -177,6 +178,9 @@ export default function UserManagement() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [isBulkEmailOpen, setIsBulkEmailOpen] = useState(false);   // 메일 한 번에 넣기 창
+  // PC 등록(회사 도메인에 없는 계열사 PC) 창 · 승인 대기 수. null = 옛 서버(목록 API 없음) → 버튼 숨김
+  const [isDevicesOpen, setIsDevicesOpen] = useState(false);
+  const [devicePending, setDevicePending] = useState(null);
   const [confirmDeleteTarget, setConfirmDeleteTarget] = useState(null);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   const [activityUser, setActivityUser] = useState(null);
@@ -242,9 +246,19 @@ export default function UserManagement() {
     }
   };
 
+  const fetchDevicePending = async () => {
+    try {
+      const { data } = await getTrustedDevices();
+      setDevicePending(data.pending || 0);
+    } catch {
+      setDevicePending(null);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
     fetchLogbookLevels();
+    fetchDevicePending();
   }, []);
 
   // 접속 현황 자동 갱신 (15초)
@@ -1234,6 +1248,19 @@ export default function UserManagement() {
           >
             <FileDown size={14}/> 명부 CSV
           </button>
+          {devicePending !== null && (
+            <button
+              onClick={() => setIsDevicesOpen(true)}
+              className={`flex items-center gap-2 px-3 py-2 font-bold text-sm rounded-lg transition-colors shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 ${
+                devicePending > 0
+                  ? 'bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+              title="회사 도메인에 없는 PC(계열사)의 등록 요청 승인·해지"
+            >
+              <Laptop size={14}/> PC 등록{devicePending > 0 ? ` 대기 ${devicePending}` : ''}
+            </button>
+          )}
           <button
             onClick={handleCopyMailList}
             className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-50 transition-colors shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1"
@@ -1580,6 +1607,14 @@ export default function UserManagement() {
           </div>
         )}
       </div>
+
+      {/* PC 등록 — 회사 도메인에 없는 계열사 PC 의 등록 요청 승인·해지 */}
+      <TrustedDevicesModal
+        isOpen={isDevicesOpen}
+        onClose={() => setIsDevicesOpen(false)}
+        onChanged={fetchDevicePending}
+        showToast={showToast}
+      />
 
       {/* 메일 한 번에 넣기 — PLM 에서 메일을 못 찾은 승인 사용자만 모아 입력 */}
       <BulkEmailModal

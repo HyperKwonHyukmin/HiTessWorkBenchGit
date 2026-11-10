@@ -1,5 +1,6 @@
 """사용자 관리 API 라우터."""
 import re
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -237,6 +238,12 @@ def delete_user(
     db.query(models.UserSession).filter(
         models.UserSession.employee_id == target_employee_id
     ).delete(synchronize_session=False)
+    # 등록한 PC(계열사) 도 해지 — 같은 사번으로 다시 가입하면 옛 PC 열쇠로 바로 들어오지 않게.
+    db.query(models.TrustedDevice).filter(
+        models.TrustedDevice.employee_id == target_employee_id,
+        models.TrustedDevice.status.in_(("pending", "approved")),
+    ).update({"status": "revoked", "decided_at": datetime.now(), "decided_by": current_admin},
+             synchronize_session=False)
     db.delete(user)
     db.commit()
     external_app_access_store.revoke_employee(target_employee_id)

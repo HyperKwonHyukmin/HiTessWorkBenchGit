@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { User, KeyRound, ArrowRight, ShieldCheck, AlertCircle, Clock, WifiOff, DownloadCloud, AlertTriangle, Construction, RefreshCw, Settings, Server } from 'lucide-react';
+import { User, KeyRound, ArrowRight, ShieldCheck, AlertCircle, Clock, WifiOff, DownloadCloud, AlertTriangle, Construction, RefreshCw, Settings, Server, Laptop } from 'lucide-react';
 import RegisterModal from '../../components/modals/RegisterModal';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { checkVersion, getLoginOptions, login, windowsLogin } from '../../api/auth';
+import { checkVersion, getLoginOptions, login, windowsLogin, getDeviceInfo, enrollDevice, deviceLogin, forgetDevice, verifyDeviceCode, resendDeviceCode } from '../../api/auth';
+import { isDeviceMode, deviceErrorState, DEVICE_STATE_TEXT, EMAIL_CODE_MESSAGES, cleanEmailCode } from '../../utils/deviceLogin';
 import { SAVED_EMPLOYEE_ID_KEY, WINDOWS_AUTO_LOGIN_OFF_KEY, useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL, DEFAULT_API_BASE_URL, setApiBaseUrl } from '../../config';
 import { MANUAL_SERVER_URL_KEY, fixPlainHttpsPort } from '../../utils/secureServerUrl';
@@ -42,7 +43,18 @@ export default function LoginScreen({ onLoginSuccess }) {
   const [isWindowsLoading, setIsWindowsLoading] = useState(false);
   // Windows 계정 확인이 안 됐을 때만 비밀번호 칸을 보인다
   const [needPassword, setNeedPassword] = useState(false);
-  const showPassword = authMode === 'ad' && (!windowsLoginAvailable || needPassword);
+  // 등록한 PC 로그인(회사 도메인에 없는 계열사 PC, 2026-11-10) — 이 PC 는 비밀번호 칸을 보이지 않는다(사용자 결정)
+  const [serverDeviceLogin, setServerDeviceLogin] = useState(false);
+  const [deviceInfo, setDeviceInfo] = useState(null);
+  const [deviceState, setDeviceState] = useState(null); // { state, code, verify, emailHint }
+  const [emailCode, setEmailCode] = useState('');           // 회사 메일로 받은 6자리
+  const deviceMode = isDeviceMode({ authMode, serverDeviceLogin, deviceInfo });
+  const autoDeviceTried = useRef(false);
+  // 메일 코드 방식 대기 중인가 · 지금 보일 안내 문구
+  const emailPending = deviceState?.state === 'pending' && deviceState?.verify === 'email';
+  const deviceText = deviceState ? DEVICE_STATE_TEXT[emailPending ? 'pendingEmail' : deviceState.state] : null;
+  const deviceBusy = useRef(false); // 등록한 PC 로그인 한 번에 하나만(수동 시도와 15초 재확인이 겹치지 않게)
+  const showPassword = authMode === 'ad' && !deviceMode && (!windowsLoginAvailable || needPassword);
   const autoWindowsTried = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -80,8 +92,13 @@ export default function LoginScreen({ onLoginSuccess }) {
         console.warn(`Version Mismatch! Client: ${CLIENT_VERSION}, Server: ${fetchedServerVersion}`);
       }
       const options = await getLoginOptions();
+      const info = options.deviceLogin ? await getDeviceInfo() : null;
+      const onDevicePc = isDeviceMode({ authMode: options.authMode, serverDeviceLogin: options.deviceLogin, deviceInfo: info });
       setAuthMode(options.authMode);
-      setWindowsLoginAvailable(options.windowsLogin && !!window.electron?.invoke);
+      setServerDeviceLogin(options.deviceLogin);
+      setDeviceInfo(info);
+      // 도메인에 없는 PC 는 Windows 자동 로그인이 될 수 없다 — 시도하지 않는다(서버에 실패 기록만 쌓인다)
+      setWindowsLoginAvailable(options.windowsLogin && !!window.electron?.invoke && !onDevicePc);
       return true;
     } catch (error) {
       console.error("Server Check Failed:", error);
@@ -143,11 +160,23 @@ export default function LoginScreen({ onLoginSuccess }) {
 
   const handleInputChange = (e) => {
     setEmployeeId(e.target.value);
+    setDeviceState(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isVersionMismatch) return;
+
+    // 메일 코드를 넣고 ACCESS 를 누른 경우 — 코드 확인부터
+    if (deviceMode && emailPending && emailCode.length === 6) {
+      await handleDeviceVerify();
+      return;
+    }
+    // 회사 도메인에 없는 PC(계열사) — 등록한 PC 열쇠로만 들어온다(비밀번호를 묻지 않는다)
+    if (deviceMode) {
+      await handleDeviceLogin({ expectedId: employeeId });
+      return;
+    }
 
     // 비밀번호 칸이 아직 없으면 먼저 Windows 계정으로 확인한다 — 안 되면 그때 비밀번호 칸을 연다.
     if (windowsLoginAvailable && !needPassword) {
@@ -253,6 +282,159 @@ export default function LoginScreen({ onLoginSuccess }) {
       setIsWindowsLoading(false);
     }
   };
+
+  // 대기 화면 상태 — 메일 코드 방식이면 코드 입력 칸, 관리자 방식이면 확인 코드 표시
+  const pendingState = (r) => ({
+    state: 'pending',
+    verify: r?.verify === 'email' ? 'email' : 'admin',
+    emailHint: r?.emailHint || '',
+    code: r?.code || '',
+  });
+
+  // 등록한 PC 로 로그인. auto = 화면이 뜰 때 한 번(실패해도 조용히), quiet = 승인 대기 중 15초마다 다시 확인.
+  const handleDeviceLogin = async ({ expectedId = '', auto = false, quiet = false } = {}) => {
+    const target = String(expectedId || '').trim().toUpperCase();
+    if (!/^[A-Z]\d{5,7}$/.test(target)) {
+      if (!auto && !quiet) setErrorMsg('사번을 바르게 입력하세요.');
+      return;
+    }
+    if (deviceBusy.current) return;
+    deviceBusy.current = true;
+    if (!quiet) { setIsLoading(true); setErrorMsg(''); }
+    try {
+      const result = await deviceLogin(target);
+      if (result.ok) {
+        setDeviceState(null);
+        finishLogin(result.data);
+        return;
+      }
+      if (!result.registered) {
+        if (!auto) setDeviceState({ state: 'unregistered' });
+        return;
+      }
+      const mapped = deviceErrorState(result.status, result.detail);
+      if (mapped.forget) await forgetDevice(target);
+      if (mapped.state === 'pending') {
+        if (quiet) return; // 이미 대기 화면이다
+        // 확인 방법·코드는 같은 열쇠로 다시 요청해 받는다(서버가 같은 기기를 돌려주고 메일은 다시 보내지 않는다)
+        const enrolled = await enrollDevice(target, deviceInfo);
+        setDeviceState(pendingState(enrolled));
+        return;
+      }
+      if (mapped.state === 'disabled') { setServerDeviceLogin(false); return; }
+      if (mapped.state === 'error') {
+        if (auto || quiet) return;
+        if (result.status === 0) setErrorMsg('서버 응답이 없습니다. 잠시 뒤 다시 시도하세요.');
+        else showLoginError(result.status, result.detail);
+        return;
+      }
+      if (auto && mapped.state === 'unregistered') return;
+      setDeviceState({ state: mapped.state });
+    } finally {
+      deviceBusy.current = false;
+      if (!quiet) setIsLoading(false);
+    }
+  };
+
+  // 이 PC 등록 요청 — 관리자가 화면의 확인 코드를 직원에게 물어 같을 때만 승인한다.
+  const handleDeviceEnroll = async () => {
+    const target = employeeId.trim().toUpperCase();
+    if (!/^[A-Z]\d{5,7}$/.test(target)) { setErrorMsg('사번을 먼저 바르게 입력하세요.'); return; }
+    setIsLoading(true);
+    setErrorMsg('');
+    let approved = false;
+    try {
+      let result = await enrollDevice(target, deviceInfo);
+      // 해지·거절된 열쇠였다 — enrollDevice 가 열쇠를 버렸으니 새 열쇠로 한 번 더
+      if (!result.ok && result.status === 409) result = await enrollDevice(target, deviceInfo);
+      if (result.ok) {
+        if (result.status === 'approved') approved = true;
+        else {
+          setEmailCode('');
+          setDeviceState(pendingState(result));
+          if (result.mailFailed) setErrorMsg('회사 메일 발송에 실패해 관리자 승인으로 바뀌었습니다.');
+        }
+        return;
+      }
+      if (result.status === 429) {
+        setErrorMsg(result.detail === 'too_many_pending'
+          ? '승인을 기다리는 요청이 이미 여럿 있습니다. 관리자에게 문의하세요.'
+          : '요청이 너무 많습니다. 잠시 뒤 다시 시도하세요.');
+      } else if (result.status === 0) {
+        setErrorMsg(result.detail === 'unavailable'
+          ? '이 PC 에서는 등록 열쇠를 안전하게 저장할 수 없습니다. 관리자에게 문의하세요.'
+          : '서버 응답이 없습니다. 잠시 뒤 다시 시도하세요.');
+      } else {
+        showLoginError(result.status, result.detail);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+    if (approved) await handleDeviceLogin({ expectedId: target });
+  };
+
+  // 메일로 받은 코드 확인 → 승인되면 바로 로그인
+  const handleDeviceVerify = async () => {
+    const target = employeeId.trim().toUpperCase();
+    const code = cleanEmailCode(emailCode);
+    if (code.length !== 6) { setErrorMsg('메일의 6자리 코드를 입력하세요.'); return; }
+    setIsLoading(true);
+    setErrorMsg('');
+    let approved = false;
+    try {
+      const result = await verifyDeviceCode(target, code);
+      if (result.ok || result.detail === 'device_approved') approved = true;
+      else if (result.status === 0) setErrorMsg('서버 응답이 없습니다. 잠시 뒤 다시 시도하세요.');
+      else if (result.detail === 'challenge_stale') setErrorMsg('잠시 뒤 다시 눌러 주세요.');
+      else setErrorMsg(EMAIL_CODE_MESSAGES[result.detail] || `확인하지 못했습니다(${result.detail || result.status}).`);
+    } finally {
+      setIsLoading(false);
+    }
+    if (approved) { setEmailCode(''); await handleDeviceLogin({ expectedId: target }); }
+  };
+
+  const handleDeviceResend = async () => {
+    const target = employeeId.trim().toUpperCase();
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      const result = await resendDeviceCode(target);
+      if (result.ok) {
+        setEmailCode('');
+        setDeviceState(pendingState({
+          verify: result.data.verify, emailHint: result.data.email_hint, code: result.data.confirm_code,
+        }));
+        setErrorMsg(result.data.mail_failed
+          ? '회사 메일 발송에 실패해 관리자 승인으로 바뀌었습니다.'
+          : '');
+      } else if (result.status === 0) {
+        setErrorMsg('서버 응답이 없습니다. 잠시 뒤 다시 시도하세요.');
+      } else {
+        setErrorMsg(EMAIL_CODE_MESSAGES[result.detail] || `보내지 못했습니다(${result.detail || result.status}).`);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 관리자 승인 대기 중이면 15초마다 다시 확인 — 승인되면 저절로 들어간다(메일 코드 방식은 직원이 직접 입력)
+  useEffect(() => {
+    if (deviceState?.state !== 'pending' || deviceState?.verify === 'email') return undefined;
+    const target = employeeId.trim().toUpperCase();
+    const timer = setInterval(() => { handleDeviceLogin({ expectedId: target, quiet: true }); }, 15000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceState?.state, deviceState?.verify, employeeId]);
+
+  // 등록한 PC 는 화면이 뜨면 저장된 사번으로 한 번 자동 로그인(직접 로그아웃한 뒤에는 하지 않는다)
+  useEffect(() => {
+    if (!deviceMode || isServerLive !== true || isVersionMismatch) return;
+    if (autoDeviceTried.current || isAutoLoginOff()) return;
+    autoDeviceTried.current = true;
+    const saved = localStorage.getItem(SAVED_EMPLOYEE_ID_KEY) || '';
+    if (saved) handleDeviceLogin({ auto: true, expectedId: saved });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceMode, isServerLive, isVersionMismatch]);
 
   // 화면이 뜨면 한 번 자동 시도 — 직접 로그아웃한 뒤에는 하지 않는다(다른 계정으로 바꿀 수 있게).
   // 저장된 사번이 있으면 그 사번일 때만 들어간다(공용 PC 에서 다른 사람으로 들어가지 않게).
@@ -482,6 +664,69 @@ export default function LoginScreen({ onLoginSuccess }) {
                           신규 회원가입 진행하기
                         </button>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {deviceMode && deviceText && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4" role="status">
+                    <div className="flex items-start gap-3">
+                      <Laptop size={19} className="mt-0.5 shrink-0 text-brand-blue" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-slate-800">{deviceText.title}</p>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                          {deviceText.body}
+                          {emailPending && deviceState.emailHint ? ` (받는 메일: ${deviceState.emailHint})` : ''}
+                        </p>
+                        {emailPending && (
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              aria-label="메일로 받은 6자리 코드"
+                              placeholder="6자리 코드"
+                              value={emailCode}
+                              onChange={(e) => setEmailCode(cleanEmailCode(e.target.value))}
+                              onKeyDown={(e) => {
+                                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                                if (e.key === 'Enter') { e.preventDefault(); handleDeviceVerify(); }
+                              }}
+                              disabled={isLoading}
+                              className="w-36 rounded-lg border-2 border-slate-200 bg-white px-3 py-2 font-mono text-lg tracking-[0.3em] text-slate-800 outline-none focus:border-brand-green"
+                            />
+                            <Button type="button" variant="primary" size="sm" isLoading={isLoading}
+                              disabled={emailCode.length !== 6} onClick={handleDeviceVerify}>
+                              확인
+                            </Button>
+                            <button type="button" onClick={handleDeviceResend} disabled={isLoading}
+                              className="text-xs font-bold text-brand-blue hover:underline disabled:cursor-wait disabled:opacity-60">
+                              코드 다시 보내기
+                            </button>
+                          </div>
+                        )}
+                        {deviceState.state === 'pending' && !emailPending && deviceState.code && (
+                          <p className="mt-3 font-mono text-2xl font-bold tracking-widest text-brand-blue">{deviceState.code}</p>
+                        )}
+                        {deviceState.state === 'pending' && (
+                          <p className="mt-2 text-[11px] text-slate-500">
+                            PC 이름 {deviceInfo?.hostname || '-'}
+                            {emailPending ? ' · 메일이 안 보이면 스팸함도 확인하세요.' : ' · 15초마다 승인 여부를 확인합니다.'}
+                          </p>
+                        )}
+                        {emailPending && deviceState.code && (
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            메일이 끝내 오지 않으면 WorkBench 관리자에게 이 확인 코드를 알려 주세요: <span className="font-mono font-bold text-slate-700">{deviceState.code}</span>
+                          </p>
+                        )}
+                        {deviceText.action && (
+                          <div className="mt-3">
+                            <Button type="button" variant="primary" size="sm" isLoading={isLoading} onClick={handleDeviceEnroll}>
+                              {deviceText.action}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

@@ -25,6 +25,11 @@ export const ACTION_TYPE_LABELS = {
   LOGBOOK_EXPORT: 'LogBook 보내기',
   FORCE_LOGOUT: '강제 로그아웃',
   CLIENT_ERROR: '화면 오류',
+  // 등록한 PC(회사 도메인에 없는 계열사 PC, 2026-11-10)
+  DEVICE_ENROLL: 'PC 등록 요청',
+  DEVICE_APPROVE: 'PC 등록 승인',
+  DEVICE_REJECT: 'PC 등록 거절',
+  DEVICE_REVOKE: 'PC 등록 해지',
 };
 
 export const ACTION_TYPE_COLORS = {
@@ -51,4 +56,8 @@ export const ACTION_TYPE_COLORS = {
   LOGBOOK_EXPORT: 'bg-indigo-100 text-indigo-700',
   FORCE_LOGOUT: 'bg-orange-100 text-orange-700',
   CLIENT_ERROR: 'bg-red-100 text-red-700',
+  DEVICE_ENROLL: 'bg-amber-100 text-amber-700',
+  DEVICE_APPROVE: 'bg-emerald-100 text-emerald-700',
+  DEVICE_REJECT: 'bg-slate-100 text-slate-600',
+  DEVICE_REVOKE: 'bg-orange-100 text-orange-700',
 };

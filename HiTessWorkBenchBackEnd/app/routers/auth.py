@@ -16,6 +16,7 @@ from ..services.ad_auth import AdResult, auth_mode, login_attempt_limiter, verif
 from ..services.external_app_access import external_app_access_store
 from ..services.logbook_integration import notify_logbook_logout
 from ..services.plm_user_directory import fetch_plm_email
+from ..services.device_login import device_login_enabled
 from ..services.windows_auth import (
     employee_id_from_account, negotiate_sessions, ntlm_claimed_account, windows_login_enabled,
 )
@@ -68,7 +69,9 @@ def check_user(req: CheckUserRequest, db: Session = Depends(database.get_db)):
 @router.get("/login/options")
 def login_options():
   """로그인 화면이 비밀번호 칸을 보일지 정한다. 인증 없음·DB 안 씀(서버 주소 확인 직후 부른다)."""
-  return {"auth_mode": auth_mode(), "windows_login": windows_login_enabled()}
+  return {"auth_mode": auth_mode(), "windows_login": windows_login_enabled(),
+          # 회사 도메인에 없는 PC(계열사)의 등록한 PC 로그인 — routers/device_login.py
+          "device_login": device_login_enabled()}
 
 
 def _verify_ad_login(db: Session, employee_id: str, password, ip: Optional[str]) -> None:
@@ -215,7 +218,7 @@ def _complete_login(db: Session, employee_id: str, ip: Optional[str], method: st
   db.refresh(user)
 
   log_activity(db, "LOGIN", employee_id=employee_id, status="success", ip_address=ip,
-               action_detail={"method": method, "mechanism": mechanism} if method == "windows" else None)
+               action_detail={"method": method, "mechanism": mechanism} if method != "password" else None)
 
   # 로그인은 '최근 접속'의 기준점이다. 이전 presence 행을 제거해, 로그인 후 첫 하트비트가
   # 새 행(session_started=지금)을 만들어 접속 지속 시간이 로그인 시점부터 다시 시작되게 한다.

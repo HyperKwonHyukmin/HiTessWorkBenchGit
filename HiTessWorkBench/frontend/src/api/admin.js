@@ -152,3 +152,14 @@ export const getNoticeReadReport = (noticeId) =>
 /** 관리자 게이트 비밀번호 검증 */
 export const verifyAdminGate = (password) =>
   axios.post(`${API_BASE_URL}/api/admin/verify-gate`, { password }, { headers: getAuthHeaders() });
+
+// ==================== 등록한 PC (회사 도메인에 없는 계열사 PC, 2026-11-10) ====================
+
+/** 등록 요청·승인된 PC 목록. status 없으면 대기 + 승인, 'all' 이면 전부. 응답 { items, pending } */
+export const getTrustedDevices = (status) =>
+  axios.get(`${API_BASE_URL}/api/admin/devices`, { params: status ? { status } : {}, headers: getAuthHeaders() });
+
+/** action = approve(확인 코드 필요) | reject | revoke */
+export const decideTrustedDevice = (deviceId, action, confirmCode) =>
+  axios.post(`${API_BASE_URL}/api/admin/devices/${deviceId}/${action}`,
+    action === 'approve' ? { confirm_code: confirmCode } : {}, { headers: getAuthHeaders() });

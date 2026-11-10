@@ -71,9 +71,9 @@ def _login(client, password=None, employee_id="A123456"):
 def test_options_reports_mode(client, monkeypatch):
     from app.services import windows_auth
     monkeypatch.setattr(windows_auth, "_sspi_available", lambda: True)
-    assert client.get("/api/login/options").json() == {"auth_mode": "ad", "windows_login": True}
+    assert client.get("/api/login/options").json() == {"auth_mode": "ad", "windows_login": True, "device_login": True}
     monkeypatch.delenv("AUTH_MODE")
-    assert client.get("/api/login/options").json() == {"auth_mode": "employee_id", "windows_login": False}
+    assert client.get("/api/login/options").json() == {"auth_mode": "employee_id", "windows_login": False, "device_login": False}
 
 
 def test_employee_id_only_login_is_refused(client, db_session, fake_ad):

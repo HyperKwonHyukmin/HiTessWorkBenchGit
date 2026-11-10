@@ -41,6 +41,9 @@ const VALID_INVOKE_CHANNELS  = [
   'app:take-client-errors',
   // 회사 PC 계정 자동 로그인(Windows 통합 인증)
   'auth:windowsLogin',
+  // 등록한 PC 로그인(회사 도메인에 없는 계열사 PC) — 열쇠 만들기·서명
+  'device:info',
+  'device:op',
   // viewer 라이프사이클
   'viewer:check-installed',
   'viewer:install',
