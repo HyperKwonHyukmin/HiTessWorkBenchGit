@@ -34,6 +34,8 @@ _DISK_ANCHOR = (
 )
 
 router = APIRouter(prefix="/api", tags=["system"])
+# 접두사 없는 공개 주소 — 메일·공지에 그대로 붙이는 짧은 내려받기 링크(`/download`)
+public_router = APIRouter(tags=["system"])
 
 
 @router.get("/version")
@@ -175,6 +177,20 @@ def download_client(
   자가 업데이트(구버전 클라이언트가 헤더 없이 호출하는 케이스 포함) 호환을 위해
   인증을 강제하지 않는다. 토큰이 있으면 활동 로그에 employee_id를 기록한다.
   """
+  return _serve_latest_client(req, db, authorization, "client_update")
+
+
+@public_router.get("/download")
+def download_latest_client_link(req: Request, db: Session = Depends(database.get_db)):
+  """메일·공지용 짧은 주소 `http://<서버>:9091/download` — 브라우저에서 누르면 최신 exe 를 바로 받는다(2026-11-10).
+
+  왜: 옛 exe(1.7.2~1.7.15)는 9443 으로만 붙어 9091 만 열린 계열사 위치에서 자동 업데이트 창이 안 뜬다.
+  /api/download/client 와 같은 파일(LastestVersionProgram 의 최신 exe)을 주고, 활동 로그 type 만 'direct_link' 로 나눈다.
+  """
+  return _serve_latest_client(req, db, None, "direct_link")
+
+
+def _serve_latest_client(req: Request, db: Session, authorization, kind: str):
   if not LATEST_CLIENT_DIR.exists():
     raise HTTPException(status_code=404, detail="클라이언트 폴더를 찾을 수 없습니다.")
 
@@ -195,7 +211,7 @@ def download_client(
   log_activity(
     db, "PROGRAM_DOWNLOAD",
     employee_id=employee_id,
-    action_detail={"filename": latest_exe.name, "type": "client_update"},
+    action_detail={"filename": latest_exe.name, "type": kind},
     ip_address=req.client.host if req.client else None,
   )
   return FileResponse(

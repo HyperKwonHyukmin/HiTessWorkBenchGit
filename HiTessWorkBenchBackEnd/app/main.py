@@ -228,6 +228,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(users.router)
     application.include_router(analysis.router)
     application.include_router(system.router)
+    application.include_router(system.public_router)
     application.include_router(support.router)
     application.include_router(davit.router)
     application.include_router(doublepipe.router)
