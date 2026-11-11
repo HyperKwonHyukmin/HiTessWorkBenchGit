@@ -424,7 +424,12 @@
    "swl_t": 16.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": true,
+   "engine": {
+    "template": "lapping_lug",
+    "review": 6,
+    "mismatch": []
+   }
   },
   {
    "code": "L-25",
