@@ -323,6 +323,13 @@ COG 노드 + 질량을 두고 주변 부재에 RBE 로 묶기가 어렵다(3529_
 AM 개발팀 전달본 = UNC `[개인 자료]\권혁민 책임연구원\UnLock\HiTESS_ModelBuilder_AM연동_요청.docx`(같은 폴더 PDF 는 옛 내용).
 Studio 는 `window.workbenchAPI` 만 보므로 클라이언트가 같은 API 를 주면 Studio 무수정 — 단 `finalizeEditedModel` 은 지금 `HiTessModelBuilder.jsx` 에 묶여 있어 이식 필요.
 
+**입력 CSV 보관 (2026-11-12, `7b7c3db`)** — 작업 폴더는 30일 뒤 지워지므로 MB 입력 CSV 를 `HiTessWorkBenchBackEnd/DataStorage/ModelBuilderCsv/<호선>/` 에 모은다(git·30일 정리 대상 아님, `MB_CSV_ARCHIVE_DIR` 로 변경).
+`app/services/mb_csv_archive.py` — 내용(sha256)이 같으면 한 번만 저장, 같은 이름·다른 내용은 저장하지 않음(먼저 본 것 하나만 — 사용자 결정 2026-11-12, manifest 에 `stored_path` 빈 줄), `manifest.csv` 에 본 자리마다 한 줄(원래 폴더·사번·실행 시각·종류), DRM 암호문은 건너뜀.
+새 실행 = `task_execute_modelflow` 첫머리(MB·AM 연동 공통, 실패해도 모델 생성 계속) · 이미 쌓인 것 = `scripts/collect_mb_csv.py [--dry-run]`(다시 돌려도 안전). 끄기 `MB_CSV_ARCHIVE=0`(테스트 conftest 가 끔). 시험 `tests/test_mb_csv_archive.py`.
+70 실측: 작업 폴더 30개 CSV 81개 → 내용 9개. 같은 파일명 규칙 = `a21574f`.
+145 반영·첫 수집 완료(2026-11-12, dry-run 683개 → 실제 실행 사용자 확인). 이후는 자동 보관이라 스크립트는 1회용(재시작 안 한 동안 빠진 것·보관 폴더 재구성 때만 다시).
+남은 확인: 145 보관 사본이 DRM 에 감싸지지 않았는지(메모장으로 열어 보기) · 145 실제 저장 건수.
+
 **호선 주석 (2026-10-20)** — Model Builder BDF **첫 줄**에 `$ HiTessModelBuilder: HullNo=3454` 를 남긴다(해석 무관).
 권상(GMU)에 올라온 BDF 를 LogBook 으로 보낼 때 호선을 알아내는 통로다. 입력은 **선택**: Model Builder 옵션의 '호선' 칸 →
 비우면 CSV 파일명 앞 4자리(`^\d{4}` 뒤에 `-`/`_`, `5PPP_-…` 같은 예외는 제안 없음) → 둘 다 없으면 주석 없음.
