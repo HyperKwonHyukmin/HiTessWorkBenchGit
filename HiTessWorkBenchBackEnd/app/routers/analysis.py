@@ -23,6 +23,7 @@ from sqlalchemy import func, or_
 from fastapi import APIRouter, Body, Depends, HTTPException, File, UploadFile, Form, Query, Request
 from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
 from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from .. import models, database
 from ..services.job_manager import TERMINAL_STATUSES, JobMetadata, job_status_store
@@ -75,6 +76,7 @@ from ..services.drawing_to_analysis_service import (
     task_execute_drawing_image_to_analysis,
     task_execute_drawing_rebuild,
     task_execute_drawing_solve,
+    apply_lugshell_edits,
 )
 from ..services.modelbuilder_solve_service import task_execute_modelbuilder_solve
 from ._intake import (
@@ -1115,23 +1117,31 @@ async def request_drawing_to_analysis(
     mesh_size: float = Form(10.0),
     source: str = Form("Workbench"),
     mode: Optional[str] = Form(None),
+    page: Optional[int] = Form(None),
     current_user: str = Depends(require_auth),
 ):
     """DrawingToAnalysis 작업을 요청받아 PDF를 저장하고 BDF 변환 작업을 실행합니다.
 
-    mode 미지정 시 파일명 prefix 로 자동 분기 (Lug_* → 'lug', BlockSupport_* → 'support', ...).
+    mode 미지정 시 파일명으로 자동 분기. support 는 SU-145 이름일 때만(그 밖은 'lug' 로 바꿔 응답 mode 에 싣는다).
+    page: 새 러그 엔진(lugshell)이 읽을 쪽 번호(1부터, 표준집처럼 여러 쪽 PDF). 옛 엔진·support 는 무시.
     """
     _verify_employee_self(employee_id, current_user)
+    if page is not None and page < 1:
+        raise HTTPException(status_code=400, detail="쪽 번호는 1 이상이어야 합니다.")
     fname = pdf_file.filename or ""
     if not fname.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다.")
 
-    # mode 자동 결정
+    # mode 결정 — 화면이 보낸 값이 있어도 support 는 SU-145 이름일 때만(옛 엔진은 도면을 안 읽고 SU-145 모델을 낸다)
+    from ..services import drawing_book
     if mode:
         resolved_mode = mode.lower()
+        if resolved_mode not in ("lug", "support"):
+            raise HTTPException(status_code=400, detail=f"알 수 없는 mode: {mode}")
+        if resolved_mode == "support" and not drawing_book.support_engine_allowed_for_name(fname):
+            resolved_mode = "lug"
     else:
-        category, _ = _categorize_catalogue_filename(fname)
-        resolved_mode = _resolve_drawing_mode(category)
+        resolved_mode = _resolve_drawing_mode(fname)
 
     work_dir, timestamp = make_work_dir(employee_id, "DrawingToAnalysis")
     pdf_path = await save_upload(pdf_file, work_dir, error_prefix="PDF 저장 오류")
@@ -1141,7 +1151,7 @@ async def request_drawing_to_analysis(
 
     job_id = submit_analysis_job(
         task_execute_drawing_to_analysis,
-        pdf_path, work_dir, exe_path, employee_id, timestamp, source, mesh_size, resolved_mode,
+        pdf_path, work_dir, exe_path, employee_id, timestamp, source, mesh_size, resolved_mode, page,
         queue_message="변환 대기 중...",
         owned_work_dir=work_dir,
     )
@@ -1246,14 +1256,17 @@ def _categorize_catalogue_filename(filename: str) -> tuple[str, str]:
     return 'Other', stem
 
 
-def _resolve_drawing_mode(category_or_filename: str) -> str:
-    """카테고리 또는 파일명에서 DrawingToAnalysis 엔진 모드를 결정한다.
+def _resolve_drawing_mode(filename: str) -> str:
+    """파일 이름에서 DrawingToAnalysis 엔진 모드를 결정한다(카테고리만이 아니라 전체 이름을 넘길 것).
 
-    'BlockSupport', 'Support', 'BS_*'  → 'support'
-    그 외 (Lug 포함)                   → 'lug'
+    'support'·'BS_' 이름이면서 SU-145 인 도면 → 'support' (옛 엔진이 실제로 맞는 유일한 도면)
+    그 외 (다른 BLOCK SUPPORT 포함)          → 'lug' (새 러그 엔진 — 모르는 도면이면 '지원 안 함' 으로 정직하게 끝난다)
+    프론트 `utils/drawingMode.js` 가 같은 규칙의 사본이다.
     """
-    c = (category_or_filename or "").lower()
-    if "support" in c or c.startswith("bs_") or c.startswith("bs.") or c == "bs":
+    from ..services import drawing_book
+    c = os.path.basename(filename or "").lower()
+    looks_support = "support" in c or c.startswith("bs_") or c.startswith("bs.") or c == "bs"
+    if looks_support and drawing_book.support_engine_allowed_for_name(c):
         return "support"
     return "lug"
 
@@ -1373,14 +1386,14 @@ async def run_drawing_catalogue(
     """카탈로그 PDF로 BDF 변환 작업을 큐에 등록한다.
 
     카테고리(파일명 prefix)에 따라 자동으로 mode를 결정한다:
-      Lug_*           → mode='lug'        (exe all)
-      BlockSupport_*  → mode='support'    (exe support all)
+      Lug_*                   → mode='lug'
+      BlockSupport_SU_145     → mode='support' (SU-145 만 — 다른 BlockSupport_* 는 새 러그 엔진)
     """
     _verify_employee_self(employee_id, current_user)
     src_path = _resolve_catalogue_pdf(filename)
     safe_name = os.path.basename(src_path)
     category, _ = _categorize_catalogue_filename(safe_name)
-    resolved_mode = _resolve_drawing_mode(category)
+    resolved_mode = _resolve_drawing_mode(safe_name)
 
     work_dir, timestamp = make_work_dir(employee_id, "DrawingToAnalysis")
     pdf_path = os.path.join(work_dir, safe_name)
@@ -1399,6 +1412,84 @@ async def run_drawing_catalogue(
         owned_work_dir=work_dir,
     )
     return {"job_id": job_id, "filename": safe_name, "mode": resolved_mode, "category": category}
+
+
+# -------------------- 치공구표준집 찾기 (색인·썸네일·쪽 바로 변환) --------------------
+# 계획 docs/plans/2026-11-11-drawing-catalogue-search.md 1단계. 로직은 services/drawing_book.py.
+
+@router.get("/analysis/drawing-to-analysis/book")
+async def get_drawing_book(current_user: str = Depends(require_auth)):
+    """치공구표준집 색인(155종) + 도면집 파일 상태. 작아서 한 번에 주고 화면이 거른다."""
+    from ..services import drawing_book
+    try:
+        idx = drawing_book.load_index()
+    except (OSError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"치공구표준집 색인을 읽지 못했습니다: {e}")
+    # 도면집을 쓸 수 없으면 매번 파일 전체를 읽고 sha256 을 잰다 — 요청 처리 루프를 잡지 않게 스레드에서
+    return {**idx, "status": await run_in_threadpool(drawing_book.book_status)}
+
+
+@router.get("/analysis/drawing-to-analysis/book/{pdf_page}/thumb")
+async def get_drawing_book_thumb(
+    pdf_page: int,
+    size: str = Query("small"),
+    current_user: str = Depends(require_auth),
+):
+    """도면집 한 쪽 PNG(size = small | large). 그때 그려 메모리에 둔다."""
+    from ..services import drawing_book
+    if drawing_book.find_item(pdf_page) is None:
+        raise HTTPException(status_code=404, detail="색인에 없는 쪽입니다.")
+    try:
+        png = await run_in_threadpool(drawing_book.render_thumb, pdf_page, size)
+    except drawing_book.BookUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@router.post("/analysis/drawing-to-analysis/book/{pdf_page}/run")
+async def run_drawing_book_page(
+    pdf_page: int,
+    employee_id: str = Form(...),
+    mesh_size: float = Form(10.0),
+    source: str = Form("Workbench-Book"),
+    current_user: str = Depends(require_auth),
+):
+    """서버의 도면집에서 그 쪽만 잘라 변환 작업을 띄운다(파일 올리기·쪽 번호 입력 없음).
+
+    해석 대상이 아닌 부재(반목·샤클)는 400. 새 엔진이 모르는 모양이면 변환 작업이 '지원 안 함' 으로 끝난다.
+    """
+    from ..services import drawing_book
+    _verify_employee_self(employee_id, current_user)
+    item = drawing_book.find_item(pdf_page)
+    if item is None:
+        raise HTTPException(status_code=404, detail="색인에 없는 쪽입니다.")
+    if not item.get("analysable", True):
+        raise HTTPException(status_code=400, detail=f"{item['code']} ({item['name']}) 은 해석 대상이 아닙니다.")
+    mode = drawing_book.engine_mode_for(item)
+
+    work_dir, timestamp = make_work_dir(employee_id, "DrawingToAnalysis")
+    pdf_path = os.path.join(work_dir, drawing_book.safe_stem(item) + ".pdf")
+    try:
+        await run_in_threadpool(drawing_book.extract_page_pdf, pdf_page, pdf_path)
+    except drawing_book.BookUnavailable as e:
+        _cleanup_owned_workspace(work_dir, employee_id)
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:  # noqa: BLE001 — PyMuPDF 의 FileDataError 등도 빈 작업 폴더를 남기지 않게
+        _cleanup_owned_workspace(work_dir, employee_id)
+        raise HTTPException(status_code=500, detail=f"도면 쪽을 꺼내지 못했습니다: {e}")
+
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "DrawingToAnalysis", "DrawingToAnalysis.exe"
+    ))
+    job_id = submit_analysis_job(
+        task_execute_drawing_to_analysis,
+        pdf_path, work_dir, exe_path, employee_id, timestamp, source, mesh_size, mode, 1,
+        queue_message="변환 대기 중...",
+        owned_work_dir=work_dir,
+    )
+    return {"job_id": job_id, "mode": mode, "item": item}
 
 
 # -------------------- 도면 → 모델 재구축 (파라미터 편집) --------------------
@@ -1484,6 +1575,93 @@ async def rebuild_drawing_model(
     }
 
 
+class LugshellRedoRequest(BaseModel):
+    """새 러그 엔진 결과에서 하중 값(SWL·DAF·각도·핀 지름)을 고쳐 다시 만들기."""
+    employee_id: str
+    work_dir: str          # 직전 결과 폴더 (lug_design.json 이 있는 곳)
+    edits: dict            # {swl_t?, daf?, pin_d?, cases?: [{id, alpha_deg?, beta_deg?}]}
+    source: str = "Workbench-LugshellRedo"
+
+
+@router.post("/analysis/drawing-to-analysis/lugshell-redo")
+async def redo_lugshell_with_edits(
+    payload: LugshellRedoRequest,
+    db: Session = Depends(database.get_db),
+    current_user: str = Depends(require_auth),
+):
+    """직전 결과의 설계 JSON 에 고친 값을 넣고 메시·BDF·수계산만 다시 만든다 (도면은 다시 읽지 않음).
+
+    결과 폴더: <처음 변환 폴더>/rebuild_<timestamp>/ (기존 재구축과 같은 규칙, 다시 고쳐도 한 단계만 깊어짐).
+    """
+    _verify_employee_self(payload.employee_id, current_user)
+    prev_dir = os.path.abspath(payload.work_dir or "")
+    if not _is_within_dir(_USER_CONNECTION_DIR, prev_dir):
+        raise HTTPException(status_code=400, detail="허용되지 않은 work_dir 입니다.")
+    assert_current_user_can_access_path(prev_dir, current_user, db, _USER_CONNECTION_DIR)
+    design_src = os.path.join(prev_dir, "lug_design.json")
+    if not os.path.isfile(design_src):
+        raise HTTPException(status_code=404, detail="직전 결과에 lug_design.json 이 없습니다 (새 러그 엔진 결과만 고칠 수 있음).")
+    try:
+        with open(design_src, "r", encoding="utf-8") as fh:
+            design = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"설계 JSON 을 읽지 못했습니다: {e}")
+    try:
+        edited, changed = apply_lugshell_edits(design, payload.edits or {})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # 고친 기록은 이어서 쌓는다 (다시 만든 결과에서 또 고치면 앞의 기록 + 이번 기록)
+    history: list = []
+    try:
+        with open(os.path.join(prev_dir, "lug_user_edits.json"), "r", encoding="utf-8") as fh:
+            history = list(json.load(fh).get("edits") or [])
+    except (OSError, ValueError, AttributeError):
+        history = []
+    history += [{**c, "at": datetime.now().isoformat(timespec="seconds"), "by": payload.employee_id} for c in changed]
+
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "DrawingToAnalysis", "DrawingToAnalysis.exe"
+    ))
+    # 옛 엔진(--design 모름)이면 작업을 띄우기 전에 알린다 — 띄운 뒤 실패하면 화면의 직전 모델이 비워지고 원인 문구가 도면 쪽을 가리켰다
+    from ..services.drawing_to_analysis_service import (
+        FAIL_LUGSHELL_DESIGN_UNSUPPORTED, engine_supports_lugshell_design,
+    )
+    if not await run_in_threadpool(engine_supports_lugshell_design, exe_path):
+        raise HTTPException(status_code=409, detail=FAIL_LUGSHELL_DESIGN_UNSUPPORTED)
+
+    base_dir = os.path.dirname(prev_dir) if os.path.basename(prev_dir).startswith("rebuild_") else prev_dir
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    try:
+        # 같은 초에 두 번 눌러도 직전 결과를 덮어쓰지 않게 늘 새 폴더 (2026-11-11 시험에서 덮어씀 확인)
+        redo_dir = os.path.join(base_dir, f"rebuild_{timestamp}")
+        n = 1
+        while True:
+            try:
+                os.makedirs(redo_dir, exist_ok=False)
+                break
+            except FileExistsError:
+                n += 1
+                redo_dir = os.path.join(base_dir, f"rebuild_{timestamp}_{n}")
+        design_path = os.path.join(redo_dir, "lug_design.json")
+        with open(design_path, "w", encoding="utf-8") as fh:
+            json.dump(edited, fh, ensure_ascii=False, indent=2)
+        with open(os.path.join(redo_dir, "lug_user_edits.json"), "w", encoding="utf-8") as fh:
+            json.dump({"edits": history}, fh, ensure_ascii=False, indent=2)
+        trace_src = os.path.join(prev_dir, "lug_trace.json")
+        if os.path.isfile(trace_src):  # 값별 출처는 도면에서 읽은 그대로 — 고친 값은 review·meta.user_edits 에 있다
+            shutil.copyfile(trace_src, os.path.join(redo_dir, "lug_trace.json"))
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"다시 만들기 폴더 준비 실패: {e}")
+
+    pdf_path = _find_pdf_in_dir(base_dir) or ""
+    job_id = submit_analysis_job(
+        task_execute_drawing_to_analysis,
+        pdf_path, redo_dir, exe_path, payload.employee_id, timestamp, payload.source, 10.0, "lug", None, design_path,
+        queue_message="고친 값으로 다시 만들기 대기 중...",
+    )
+    return {"job_id": job_id, "work_dir": redo_dir, "parent_dir": base_dir, "user_edits": history}
+
+
 # -------------------- 구조 해석 (하중/경계조건 → Nastran) --------------------
 
 class DrawingLoadSet(BaseModel):
@@ -1550,6 +1728,7 @@ class DrawingSolveRequest(BaseModel):
     hole_rbe: Optional[DrawingHoleRbe] = None
     rbe3_sets: list[DrawingRbe3Set] = []
     load_cases: list[DrawingLoadCase] = []
+    use_model_loads: bool = False  # True = BDF 의 하중 케이스·경계 그대로 해석 (새 러그 엔진 결과)
     source: str = "Workbench-Solve"
 
 
@@ -1585,7 +1764,8 @@ async def solve_drawing_model(
     # ── 하중/경계조건 검증 ──────────────────────────────────────
     # load_cases 가 bcs/loads 를 인덱스로 참조하므로 배열을 필터링하지 않고 그대로 전달한다
     # (빈 세트는 _build_solved_bdf 가 스킵). 단, 유효 경계조건이 하나도 없으면 거부.
-    if not any(b.nodes for b in payload.bcs):
+    # use_model_loads 면 BDF 안의 하중·경계를 쓰므로 화면 입력이 없어도 된다.
+    if not payload.use_model_loads and not any(b.nodes for b in payload.bcs):
         raise HTTPException(status_code=400, detail="경계조건(구속) 세트를 최소 1개 이상 지정하세요.")
     bcs = [b.model_dump() for b in payload.bcs]
     loads = [l.model_dump() for l in payload.loads]
@@ -1608,7 +1788,7 @@ async def solve_drawing_model(
     job_id = submit_analysis_job(
         task_execute_drawing_solve,
         solve_dir, bdf_path, payload.employee_id, timestamp, payload.source,
-        mode, loads, bcs, hole_rbe, load_cases, rbe3_sets,
+        mode, loads, bcs, hole_rbe, load_cases, rbe3_sets, payload.use_model_loads,
         queue_message="구조 해석 대기 중...",
     )
     return {
@@ -3479,6 +3659,7 @@ def download_unit_structural_op2(
     # Nastran 이 소문자로 쓴 이름 대신 BDF 와 같은 대소문자로 내려준다.
     bdf_name = os.path.basename(info.get("liftingBdf") or op2_path)
     return _attachment_response(data, os.path.splitext(bdf_name)[0] + ".op2", "application/octet-stream")
+
 
 @router.post("/analysis/unit-structural/request")
 async def request_unit_structural(

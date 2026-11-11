@@ -8,25 +8,22 @@ import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
-import { requestDrawingToAnalysis, requestDrawingImageToAnalysis, downloadFileBlob, downloadFileText, runDrawingCatalogue, solveDrawingModel } from '../../api/analysis';
+import { requestDrawingToAnalysis, requestDrawingImageToAnalysis, downloadFileBlob, downloadFileText, runDrawingCatalogue, solveDrawingModel, redoLugshellWithEdits, runDrawingBookPage } from '../../api/analysis';
 import ShellModelViewer from '../../components/analysis/ShellModelViewer';
 import DrawingCatalogueModal from '../../components/analysis/DrawingCatalogueModal';
 import DrawingParamsPanel from '../../components/analysis/DrawingParamsPanel';
 import DrawingLoadBcPanel from '../../components/analysis/DrawingLoadBcPanel';
 import SolveResultsPanel from '../../components/analysis/SolveResultsPanel';
+import LugshellReviewPanel from '../../components/analysis/LugshellReviewPanel';
+import { lugshellLoadArrows } from '../../utils/lugshellEdits';
 import lugExampleImageDataUrl from '../../assets/images/drawing-to-analysis-lug-example.png?inline';
 import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 import ProgressBar from '../../components/ui/ProgressBar';
+import { resolveDrawingMode } from '../../utils/drawingMode';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 
 const LUG_EXAMPLE_FILENAME = 'lug_test.png';
 
-/** 파일명 / 카테고리에서 lug/support 모드 결정 — 백엔드 분류 규칙과 동일 */
-const resolveDrawingMode = (categoryOrFilename) => {
-  const s = String(categoryOrFilename || '').toLowerCase();
-  if (s.includes('support') || s.startsWith('bs_') || s.startsWith('bs.') || s === 'bs') return 'support';
-  return 'lug';
-};
 
 /** mode 별 기본 mesh size — Support 는 30, Lug 는 10 */
 const defaultMeshSize = (mode) => (mode === 'support' ? 30.0 : 10.0);
@@ -163,6 +160,7 @@ export default function DrawingToAnalysis() {
   const [imagePreviewUrl, setImagePreviewUrl] = useState('');
   const [resultImageUrl, setResultImageUrl] = useState('');
   const [imageReferenceLength, setImageReferenceLength] = useState(savedPageState.imageReferenceLength ?? '');
+  const [pdfPage, setPdfPage] = useState(savedPageState.pdfPage ?? 1); // 여러 쪽 PDF 에서 읽을 쪽 (새 러그 엔진)
   const [isDragOver, setIsDragOver] = useState(false);
   const [resultInfo, setResultInfo] = useState(savedPageState.resultInfo ?? null);
   const [analysisDbId, setAnalysisDbId] = useState(savedPageState.analysisDbId ?? null);
@@ -191,6 +189,7 @@ export default function DrawingToAnalysis() {
   const [resultSubcaseIdx, setResultSubcaseIdx] = useState(savedPageState.resultSubcaseIdx ?? 0);
   const [resultField, setResultField]     = useState(savedPageState.resultField ?? 'disp');   // 'disp' | 'vm' 컨투어 필드
   const currentJobKind = useRef('convert'); // 'convert' | 'rebuild' | 'solve'
+  const redoRestoreRef = useRef(null);       // 고친 값으로 다시 만들기 직전 결과 — 실패하면 화면을 이것으로 되돌린다
 
   const clearLoadBc = () => {
     setSelectionMode('none');
@@ -234,6 +233,7 @@ export default function DrawingToAnalysis() {
       }
 
       // ── 변환 / 재구축 결과 ──
+      redoRestoreRef.current = null;
       setStatusMessage('변환 완료');
       setFailureReason('');
       if (project?.result_info) {
@@ -244,6 +244,23 @@ export default function DrawingToAnalysis() {
     onError: (errData) => {
       const engineLog = errData?.engine_log || '';
       const project   = errData?.project;
+
+      // ── 고친 값으로 다시 만들기 실패: 직전 모델로 돌아간다(디스크의 직전 결과는 그대로라 화면만 되돌리면 된다) ──
+      const restore = redoRestoreRef.current;
+      redoRestoreRef.current = null;
+      if (restore && currentJobKind.current === 'rebuild') {
+        const first = engineLog.split('\n').find((l) => l.trim()) || '다시 만들기에 실패했습니다.';
+        const reason = first.replace(/^🚫\s*변환\s*실패\s*—\s*/, '');
+        engineLog.split('\n').forEach((line) => {
+          const t = line.trim(); if (!t) return;
+          addLog(t, /\[error\]|🚫|failed/i.test(t) ? 'error' : /warning/i.test(t) ? 'warning' : 'info');
+        });
+        addLog('[REDO] 실패 — 고치기 전 모델로 돌아갑니다.', 'warning');
+        setResultInfo(restore.resultInfo);
+        setAnalysisDbId(restore.analysisDbId);
+        showToast(`다시 만들기 실패: ${reason} (고치기 전 모델로 돌아갑니다)`, 'error');
+        return;
+      }
 
       // ── 구조 해석(solve) 실패: 모델 뷰 유지, 토스트 Notice ──
       if (currentJobKind.current === 'solve') {
@@ -297,14 +314,14 @@ export default function DrawingToAnalysis() {
 
   useEffect(() => {
     dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, {
-      inputMode, pdfFile, imageFile, imageReferenceLength,
+      inputMode, pdfFile, imageFile, imageReferenceLength, pdfPage,
       resultInfo, analysisDbId, modelData, modelLoadError, failureReason,
       paramsJson, modelMode, highlightedParam, activeTab, selectionMode, selection,
       loadSets, bcSets, holeRbe, rbe3Sets, loadCases, solveResult, solveError,
       solveResultsJson, resultSubcaseIdx, resultField,
     });
   }, [
-    inputMode, pdfFile, imageFile, imageReferenceLength,
+    inputMode, pdfFile, imageFile, imageReferenceLength, pdfPage,
     resultInfo, analysisDbId, modelData, modelLoadError, failureReason,
     paramsJson, modelMode, highlightedParam, activeTab, selectionMode, selection,
     loadSets, bcSets, holeRbe, rbe3Sets, loadCases, solveResult, solveError,
@@ -374,6 +391,7 @@ export default function DrawingToAnalysis() {
     }
     const mode = resolveDrawingMode(file.name);
     setPdfFile(file);
+    setPdfPage(1);   // 앞 PDF 의 쪽 번호가 남으면 1쪽짜리 새 파일이 '쪽 범위 밖' 으로 실패한다
     setResultInfo(null);
     setAnalysisDbId(null);
     setModelData(null);
@@ -511,10 +529,12 @@ export default function DrawingToAnalysis() {
     formData.append('mesh_size', String(meshSize));
     formData.append('source', 'Workbench');
     formData.append('mode', mode);
+    formData.append('page', String(pdfPage || 1));
 
     try {
       currentJobKind.current = 'convert';
       const res = await requestDrawingToAnalysis(formData);
+      if (res.data?.mode && res.data.mode !== mode) setModelMode(res.data.mode);   // 모드는 서버 판정이 기준
       const jobId = res.data.job_id;
       addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
       startJob(jobId, 'DrawingToAnalysis');
@@ -533,7 +553,7 @@ export default function DrawingToAnalysis() {
   /** 카탈로그 모달에서 PDF 선택 → 카탈로그 변환 API 호출 */
   const handleCatalogueSelect = async (filename, category) => {
     if (!filename || isRunning) return;
-    const mode = resolveDrawingMode(category || filename);
+    const mode = resolveDrawingMode(filename);   // 전체 이름으로 — SU-145 여부는 카테고리(첫 토큰)에 없다
     const meshSize = defaultMeshSize(mode);
     setPdfFile(null);
     setResultInfo(null);
@@ -556,6 +576,7 @@ export default function DrawingToAnalysis() {
     try {
       currentJobKind.current = 'convert';
       const res = await runDrawingCatalogue(filename, { employeeId, meshSize });
+      if (res.data?.mode && res.data.mode !== mode) setModelMode(res.data.mode);
       const jobId = res.data.job_id;
       addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${jobId})`, 'success');
       startJob(jobId, 'DrawingToAnalysis');
@@ -565,6 +586,46 @@ export default function DrawingToAnalysis() {
       setIsRunning(false);
       addLog(`서버 요청 실패: ${msg}`, 'error');
       showToast(`카탈로그 변환 요청 실패: ${msg}`, 'error');
+    }
+  };
+
+  /** 치공구표준집에서 고른 쪽 → 서버가 그 쪽을 잘라 변환 (파일 올리기·쪽 번호 입력 없음) */
+  const handleBookPageSelect = async (item) => {
+    if (!item || isRunning) return;
+    // 미리 보는 값 — 실제 모드는 서버 응답(res.data.mode, drawing_book.engine_mode_for: SU-145 만 support)
+    const mode = item.aliases?.[0] === 'SU-145' ? 'support' : 'lug';
+    const meshSize = defaultMeshSize(mode);
+    setPdfFile(null);
+    setResultInfo(null);
+    setAnalysisDbId(null);
+    setModelData(null);
+    setModelLoadError('');
+    setFailureReason('');
+    setParamsJson(null);
+    setModelMode(mode);
+    clearLoadBc();
+    setLogs([{
+      time: new Date().toLocaleTimeString(),
+      message: `[치공구표준집] ${item.code} (${item.name}) · 도면 ${item.bookPage}쪽 선택됨. (mode=${mode})`,
+      type: 'info',
+    }]);
+    setIsRunning(true);
+    setProgress(0);
+    setStatusMessage('서버 요청 중...');
+    try {
+      currentJobKind.current = 'convert';
+      const res = await runDrawingBookPage(item.pdfPage, { employeeId, meshSize });
+      if (res.data?.mode && res.data.mode !== mode) setModelMode(res.data.mode);   // 모드는 서버 판정이 기준
+      addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${res.data.job_id})`, 'success');
+      startJob(res.data.job_id, 'DrawingToAnalysis');
+    } catch (err) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      const msg = status === 404 && !detail ? '서버가 아직 치공구표준집 찾기를 모릅니다(서버 업데이트 필요).'
+        : (typeof detail === 'string' ? detail : (err?.message || '요청 실패'));
+      setIsRunning(false);
+      addLog(`서버 요청 실패: ${msg}`, 'error');
+      showToast(`치공구표준집 변환 요청 실패: ${msg}`, 'error');
     }
   };
 
@@ -604,9 +665,10 @@ export default function DrawingToAnalysis() {
         // Lug: PDF LUG는 기존 엔진 프레임 때문에 Y↔Z만 스왑한다.
         // 이미지 LUG는 BDF 자체가 X=전체 높이(H), Y=폭(W), Z=0 프레임으로 생성되므로
         // 여기서 추가 회전하면 설계 파라미터/하이라이트 좌표와 어긋난다.
+        // 새 러그 엔진(lugshell) 모델은 처음부터 X-Z 평면(위 = 당기는 방향)이라 바꾸지 않는다.
         if (modelMode === 'lug' && Array.isArray(parsed.nodes)) {
           const isImageResult = Boolean(resultInfo?.input_image || resultInfo?.detected_geometry_json || resultInfo?.source_kind === 'image');
-          if (!isImageResult) parsed.nodes = parsed.nodes.map(swapYZpoint);
+          if (!isImageResult && resultInfo?.engine !== 'lugshell') parsed.nodes = parsed.nodes.map(swapYZpoint);
         }
         setModelData(parsed);
       } catch (error) {
@@ -615,7 +677,7 @@ export default function DrawingToAnalysis() {
       }
     };
     loadModelJson();
-  }, [resultInfo?.model_json, resultInfo?.input_image, resultInfo?.detected_geometry_json, modelMode]);
+  }, [resultInfo?.model_json, resultInfo?.input_image, resultInfo?.detected_geometry_json, resultInfo?.engine, modelMode]);
 
   // 설계 파라미터 JSON 자동 로드 (변환/재구축 완료 시)
   useEffect(() => {
@@ -817,6 +879,19 @@ export default function DrawingToAnalysis() {
 
   const hasResults = !!resultView;
 
+  // 새 러그 엔진: 핀 하중 화살표 (입력 중인 값으로 바로 움직임, 결과를 보는 중이면 그 SUBCASE 만 진하게)
+  const [lugshellForm, setLugshellForm] = useState(null);
+  // 새 결과가 오면 앞 결과의 입력값을 버린다 (null = 요약의 지금 값으로 그림)
+  useEffect(() => { setLugshellForm(null); }, [resultInfo?.lugshell]);
+  const pinLoads = useMemo(() => {
+    const s = resultInfo?.engine === 'lugshell' ? resultInfo?.lugshell : null;
+    const arrows = lugshellLoadArrows(s, lugshellForm);
+    if (!arrows.length) return null;
+    const [x, y, z] = s.pin_center;
+    const holeR = Number(s.hole_d) > 0 ? Number(s.hole_d) / 2 : 0;
+    return { center: { x, y, z }, holeR, arrows, activeIndex: hasResults ? resultView.idx : null };
+  }, [resultInfo?.engine, resultInfo?.lugshell, lugshellForm, hasResults, resultView?.idx]);
+
   /** 해석 대상 BDF 가 위치한 폴더 (solve 결과는 그 하위 solve_<ts>/ 에 저장) */
   const solveWorkDir = useMemo(() => {
     const bdf = resultInfo?.bdf;
@@ -899,6 +974,71 @@ export default function DrawingToAnalysis() {
     }
   };
 
+  /** 새 러그 엔진 결과 해석 — BDF 안의 하중 케이스(SWL·DAF·각도)·lap 구역 고정을 그대로 Nastran 실행 */
+  const handleSolveModelLoads = async () => {
+    if (isRunning) return;
+    if (!resultInfo?.bdf || !solveWorkDir) {
+      showToast('먼저 PDF → 모델 변환을 완료하세요.', 'error');
+      return;
+    }
+    setSolveResult(null);
+    setSolveError('');
+    setSolveResultsJson(null);
+    setResultSubcaseIdx(0);
+    setIsRunning(true);
+    setProgress(0);
+    setStatusMessage('구조 해석 요청 중...');
+    const lcs = resultInfo?.lugshell?.load_cases || [];
+    addLog(`[SOLVE] 모델 하중 그대로 Nastran 해석 요청 (하중 케이스 ${lcs.length || '?'}개: ${lcs.join(', ')})`, 'info');
+    try {
+      currentJobKind.current = 'solve';
+      const res = await solveDrawingModel({
+        employeeId,
+        workDir: solveWorkDir,
+        bdfPath: resultInfo.bdf,
+        mode: modelMode,
+        useModelLoads: true,
+      });
+      addLog(`[SOLVE] 해석 작업 큐 등록 완료. (Job ID: ${res.data.job_id})`, 'success');
+      startJob(res.data.job_id, PAGE_KEY);
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : (err?.message || '해석 요청 실패');
+      setIsRunning(false);
+      addLog(`구조 해석 요청 실패: ${msg}`, 'error');
+      showToast(`구조 해석 요청 실패: ${msg}`, 'error');
+    }
+  };
+
+  /** 새 러그 엔진 '하중 값 고치기' → 고친 설계 JSON 으로 메시·BDF·수계산 다시 만들기 (도면은 다시 읽지 않음).
+   *  결과는 변환과 같은 흐름(onComplete)으로 들어와 3D·확인 항목이 새 값으로 바뀐다. 이전 해석 결과는 지운다. */
+  const handleLugshellRedo = async (edits) => {
+    if (isRunning || !edits) return;
+    const prevDir = (resultInfo?.design_json || '').replace(/[\\/][^\\/]+$/, '');
+    if (!prevDir) {
+      showToast('설계 JSON 경로를 찾지 못했습니다. 도면을 다시 변환하세요.', 'error');
+      return;
+    }
+    addLog(`[REDO] 고친 값으로 다시 만들기 요청: ${JSON.stringify(edits)}`, 'info');
+    try {
+      const res = await redoLugshellWithEdits({ employeeId, workDir: prevDir, edits });
+      redoRestoreRef.current = { resultInfo, analysisDbId };   // 실패하면 이 모델로 돌아간다
+      handleRebuildStarted(res.data.job_id);
+      setSolveResult(null);
+      setSolveError('');
+      setSolveResultsJson(null);
+      setResultSubcaseIdx(0);
+    } catch (err) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      const msg = status === 404 && !detail
+        ? '서버가 이 기능을 아직 모릅니다(서버 업데이트 필요).'
+        : (typeof detail === 'string' ? detail : (err?.message || '다시 만들기 요청 실패'));
+      addLog(`다시 만들기 요청 실패: ${msg}`, 'error');
+      showToast(`다시 만들기 요청 실패: ${msg}`, 'error');
+    }
+  };
+
   /** Support 재구축에 필요한 원본 PDF 경로
    *  → 백엔드가 work_dir(=재구축의 parent) 안에서 자동 탐색하므로 frontend 는 null 만 보낸다.
    */
@@ -914,11 +1054,13 @@ export default function DrawingToAnalysis() {
     if (!probe) return null;
     let dir = probe.replace(/[\\/][^\\/]+$/, '');
     // 끝이 /rebuild_<timestamp> 이면 한 단계 위로
-    dir = dir.replace(/[\\/]rebuild_\d{8}_\d{6}$/, '');
+    dir = dir.replace(/[\\/]rebuild_\d{8}_\d{6}(?:_\d+)?$/, '');
     return dir;
   }, [resultInfo?.bdf, resultInfo?.params_json, resultInfo?.diagnostic_json]);
 
   const isImageResult = Boolean(resultInfo?.input_image || resultInfo?.detected_geometry_json || resultInfo?.source_kind === 'image');
+  // 새 러그 엔진(LugShell) 결과: 설계 파라미터 편집·하중/경계 입력 대신 '확인 항목'과 '모델 하중으로 해석'
+  const isLugshell = resultInfo?.engine === 'lugshell';
   const referenceImageUrl = imagePreviewUrl || resultImageUrl;
 
   return (
@@ -960,8 +1102,8 @@ export default function DrawingToAnalysis() {
         <Info size={14} className="text-blue-500 shrink-0 mt-0.5" />
         <p className="text-[11px] text-blue-700 leading-relaxed">
           <span className="font-bold">지원 범위</span>
-          {' — '}LUG 및 Block Support 벡터 PDF를 rule-based 파이프라인으로 파싱하고, JPG/PNG LUG 이미지는 반자동 seed 파라미터로 shell BDF를 생성합니다.
-          DRM 적용 PDF는 지원하지 않습니다.
+          {' — '}LUG 도면은 치공구표준집 L형(lap) 러그를 자동으로 읽어 하중 케이스까지 만듭니다(여러 쪽 PDF는 쪽 번호 지정).
+          파일 이름에 'support'와 'SU-145'가 함께 들어간 PDF만 Block Support(SU-145 전용)로, JPG/PNG는 반자동 LUG 이미지로 처리합니다. DRM 적용 PDF는 지원하지 않습니다.
         </p>
       </div>
 
@@ -999,20 +1141,17 @@ export default function DrawingToAnalysis() {
             {inputMode === 'pdf' ? (
               <>
                 <div className="px-4 pt-4 pb-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
-                    <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">샘플 카탈로그</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-relaxed mb-2.5 pl-3.5">
-                    서버에 등록된 표준 도면 PDF를 선택해 바로 변환합니다.
+                  <div className="text-[12px] font-bold text-slate-800 mb-0.5">치공구표준집에서 찾기</div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed mb-2.5">
+                    표준 부재 155종을 기호·명칭·러그 형식과 하중으로 찾아, 고른 도면을 바로 변환합니다.
                   </p>
                   <button
                     type="button"
                     onClick={() => setCatalogueOpen(true)}
                     disabled={isRunning}
-                    className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-violet-200 bg-violet-50 hover:bg-violet-100 disabled:opacity-50 disabled:cursor-not-allowed text-violet-700 text-xs font-bold transition-colors cursor-pointer"
+                    className="w-full flex items-center justify-center gap-2 h-9 rounded-lg border border-[#002554]/30 bg-white hover:bg-[#002554]/5 disabled:opacity-50 disabled:cursor-not-allowed text-[#002554] text-[12px] font-bold transition-colors cursor-pointer"
                   >
-                    <FileSearch size={13} /> 카탈로그 열기
+                    <FileSearch size={13} /> 도면 찾기
                   </button>
                 </div>
 
@@ -1066,6 +1205,19 @@ export default function DrawingToAnalysis() {
                       파일 제거
                     </button>
                   )}
+                  {/* 쪽 번호: 표준집처럼 여러 쪽 PDF 에서 읽을 쪽 (새 러그 엔진, Block Support 는 무시) */}
+                  <label className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                    <span className="font-semibold">도면 쪽 번호</span>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={pdfPage}
+                      onChange={(e) => setPdfPage(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+                      disabled={isRunning}
+                      className="w-20 px-2 py-1 rounded-lg border border-slate-200 text-right font-mono text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+                    />
+                  </label>
                 </div>
               </>
             ) : (
@@ -1248,8 +1400,27 @@ export default function DrawingToAnalysis() {
             </div>
           )}
 
-          {/* 설계 파라미터 / 하중·경계조건 탭 — 모델이 있을 때만 노출 */}
-          {modelData && (
+          {/* 새 러그 엔진 결과: 확인 항목 + 모델 하중으로 해석 (파라미터 편집·하중 입력 탭 없음) */}
+          {modelData && isLugshell && (
+            <>
+              <LugshellReviewPanel
+                summary={resultInfo?.lugshell}
+                resultInfo={resultInfo}
+                onDownload={downloadResult}
+                onRedo={handleLugshellRedo}
+                onSolve={handleSolveModelLoads}
+                onFormChange={setLugshellForm}
+                busy={isRunning}
+              />
+              {/* 해석 버튼은 패널 안(고친 값이 있으면 '다시 만들기'로 바뀜). sticky 로 두면 아래 결과 상자를 가렸다(2026-11-11) */}
+              {(solveResult || solveError) && (
+                <SolveResultStrip result={solveResult} error={solveError} onDownload={downloadResult} />
+              )}
+            </>
+          )}
+
+          {/* 설계 파라미터 / 하중·경계조건 탭 — 모델이 있을 때만 노출 (옛 엔진) */}
+          {modelData && !isLugshell && (
             <>
               <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
                 <button
@@ -1394,7 +1565,9 @@ export default function DrawingToAnalysis() {
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {modelData
-                        ? `Shell 요소 모델 렌더링 완료 — 좌측 파라미터 편집 후 재구축 가능`
+                        ? (isLugshell
+                          ? 'Shell 요소 모델 렌더링 완료 — 좌측 확인 항목을 본 뒤 모델 하중으로 해석'
+                          : 'Shell 요소 모델 렌더링 완료 — 좌측 파라미터 편집 후 재구축 가능')
                         : '모델 JSON을 불러오는 중입니다...'}
                     </p>
                   </div>
@@ -1432,7 +1605,8 @@ export default function DrawingToAnalysis() {
                     bcSets={bcSets}
                     holeRbe={holeRbe}
                     rbe3Sets={rbe3Sets}
-                    swapYZ={modelMode === 'lug' && !isImageResult}
+                    pinLoads={pinLoads}
+                    swapYZ={modelMode === 'lug' && !isImageResult && !isLugshell}
                     resultField={hasResults ? resultField : 'none'}
                     elementValues={resultView?.elementValues || null}
                     valueRange={resultView?.valueRange || null}
@@ -1520,6 +1694,8 @@ export default function DrawingToAnalysis() {
         isOpen={catalogueOpen}
         onClose={() => setCatalogueOpen(false)}
         onSelect={handleCatalogueSelect}
+        onSelectBookPage={handleBookPageSelect}
+        running={isRunning}
       />
     </div>
   );
@@ -1618,35 +1794,36 @@ function SolveResultStrip({ result, error, onDownload }) {
   const fileBtns = entries.filter(([k]) => ['f06', 'op2', 'log', 'diagnostic_json'].includes(k));
   const ok = !error;
   return (
-    <div className={`rounded-2xl border shadow-sm overflow-hidden ${ok ? 'border-indigo-200' : 'border-rose-200'}`}>
-      <div className={`px-3 py-2 flex items-center gap-2 ${ok ? 'bg-indigo-50' : 'bg-rose-50'}`}>
-        {ok ? <FileCheck2 size={14} className="text-indigo-600" /> : <XCircle size={14} className="text-rose-600" />}
-        <span className={`text-[11px] font-bold ${ok ? 'text-indigo-700' : 'text-rose-700'}`}>
-          {ok ? 'Nastran 해석 완료' : '구조 해석 실패'}
+    <div className={`rounded-xl border bg-white px-4 py-3 space-y-1.5 ${ok ? 'border-slate-200' : 'border-rose-300'}`}>
+      <div className="flex items-center gap-1.5">
+        {ok ? <FileCheck2 size={14} className="text-emerald-700" /> : <XCircle size={14} className="text-rose-700" />}
+        <span className={`text-[12px] font-bold ${ok ? 'text-slate-800' : 'text-rose-800'}`}>
+          {ok ? '해석 완료' : '구조 해석 실패'}
         </span>
       </div>
-      <div className="p-3 space-y-2">
-        {error && <p className="text-[11px] text-rose-600 leading-snug">{error}</p>}
-        {fileBtns.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {fileBtns.map(([key, path]) => (
+      {error && <p className="text-[12px] text-rose-800 leading-snug">{error}</p>}
+      {ok && (
+        <p className="text-[11px] text-slate-600 leading-snug">
+          변위·응력은 오른쪽 3D 화면과 아래 결과 표에서 봅니다(SUBCASE = 하중 케이스).
+        </p>
+      )}
+      {fileBtns.length > 0 && (
+        <p className="text-[11px] text-slate-500">
+          파일 받기:{' '}
+          {fileBtns.map(([key, path], i) => (
+            <span key={key}>
+              {i > 0 && <span className="text-slate-300"> · </span>}
               <button
-                key={key}
                 type="button"
                 onClick={() => onDownload(path)}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-[10px] font-bold transition-colors"
+                className="text-slate-700 underline underline-offset-2 hover:text-[#002554]"
               >
-                <Download size={11} /> {key === 'diagnostic_json' ? 'diagnostic' : key.toUpperCase()}
+                {key === 'diagnostic_json' ? '진단 정보' : key.toUpperCase()}
               </button>
-            ))}
-          </div>
-        )}
-        {ok && (
-          <p className="text-[10px] text-slate-400 leading-snug">
-            결과 해석(응력/변위 시각화)은 다음 단계에서 제공될 예정입니다. 지금은 f06/op2 파일로 확인하세요.
-          </p>
-        )}
-      </div>
+            </span>
+          ))}
+        </p>
+      )}
     </div>
   );
 }
@@ -1707,7 +1884,7 @@ function FailurePanel({ reason, resultEntries, analysisDbId, onDownload, onReset
               <span><b>스캔 이미지 PDF</b>는 지원하지 않습니다. 원본 CAD에서 출력된 <b>벡터 형식</b> PDF를 사용하세요.</span>
             </li>
             <li className="flex gap-2"><span className="text-amber-500">③</span>
-              <span>현재 지원되는 <b>LUG 표준 도면</b> 형식인지 확인하세요. (사각/원형 LUG)</span>
+              <span>현재 자동 인식하는 <b>치공구표준집 L형(lap) 러그</b> 도면인지, 여러 쪽 PDF라면 <b>쪽 번호</b>가 맞는지 확인하세요.</span>
             </li>
             <li className="flex gap-2"><span className="text-amber-500">④</span>
               <span>위 항목으로 해결이 안 되면 <b>diagnostic.json</b>을 다운로드하여 관리자에게 전달하세요.</span>
@@ -1715,10 +1892,6 @@ function FailurePanel({ reason, resultEntries, analysisDbId, onDownload, onReset
           </ul>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">자세한 로그</p>
-          <p className="text-xs text-slate-600">좌측 패널의 실행 로그에서 단계별 진행 상황과 에러 원인을 확인할 수 있습니다.</p>
-        </div>
       </div>
     </div>
   );

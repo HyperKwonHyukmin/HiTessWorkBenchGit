@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { listDrawingCatalogue, drawingCataloguePreviewUrl } from '../../api/analysis';
 import { getAuthHeaders } from '../../utils/auth';
+import DrawingBookPanel from './DrawingBookPanel';
 
 const formatBytes = (b) => {
   if (!b) return '0 B';
@@ -54,7 +55,9 @@ const paletteOf = (name) => {
   return CATEGORY_PALETTE[h % CATEGORY_PALETTE.length];
 };
 
-export default function DrawingCatalogueModal({ isOpen, onClose, onSelect }) {
+export default function DrawingCatalogueModal({ isOpen, onClose, onSelect, onSelectBookPage, running = false }) {
+  // 탭: 'book' = 치공구표준집 찾기(기본, 2026-11-11) · 'files' = 예전 업로드 카탈로그(PdfCatalogue 폴더)
+  const [tab, setTab] = useState('book');
   // 데이터
   const [items, setItems]           = useState([]);
   const [categories, setCategories] = useState([]);
@@ -167,16 +170,16 @@ export default function DrawingCatalogueModal({ isOpen, onClose, onSelect }) {
     if (!isOpen) return undefined;
     const onKey = (e) => {
       if (e.key === 'Escape') {
-        if (stage === 'pdfs') setStage('categories');
+        if (tab === 'files' && stage === 'pdfs') setStage('categories');
         else onClose?.();
-      } else if (stage === 'pdfs') {
+      } else if (tab === 'files' && stage === 'pdfs') {
         if (e.key === 'ArrowLeft')  setIdx((p) => Math.max(0, p - 1));
         if (e.key === 'ArrowRight') setIdx((p) => Math.min(filteredItems.length - 1, p + 1));
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, stage, filteredItems.length, onClose]);
+  }, [isOpen, tab, stage, filteredItems.length, onClose]);
 
   const handleSelect = () => {
     if (!current) return;
@@ -208,53 +211,79 @@ export default function DrawingCatalogueModal({ isOpen, onClose, onSelect }) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        className={`w-full bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col
+          ${tab === 'book' ? 'max-w-7xl h-[90vh]' : 'max-w-5xl max-h-[92vh]'}`}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-label="도면 찾기"
       >
-        {/* ── 헤더 ─────────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-violet-700 to-violet-600 text-white shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            {stage === 'pdfs' && (
-              <button
-                type="button"
-                onClick={() => { setStage('categories'); setSelCat(''); setSearch(''); }}
-                title="카테고리로 돌아가기 (ESC)"
-                className="p-1.5 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
-              >
-                <ArrowLeft size={16} />
-              </button>
-            )}
-            <FileSearch size={18} />
-            <h2 className="text-sm font-bold tracking-tight truncate">
-              {stage === 'categories'
-                ? '도면 PDF 카탈로그 — 카테고리 선택'
-                : <>도면 카탈로그 — <span className="text-violet-100">{formatCategoryName(selectedCat)}</span></>}
+        {/* ── 헤더: 제목 + 탭 ─────────────────────────────── */}
+        <div className="flex items-center justify-between px-4 h-12 border-b border-slate-200 shrink-0">
+          <div className="flex items-center gap-4 min-w-0 h-full">
+            <h2 className="text-[14px] font-bold text-slate-900 flex items-center gap-1.5 shrink-0">
+              <FileSearch size={16} className="text-[#002554]" /> 도면 찾기
             </h2>
-            {stage === 'pdfs' && total > 0 && (
-              <span className="ml-2 text-[11px] font-mono px-2 py-0.5 rounded-full bg-white/15 border border-white/20">
-                {idx + 1} / {total}
-              </span>
+            <div className="flex h-full" role="tablist">
+              {[['book', '치공구표준집'], ['files', '업로드 카탈로그']].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === id}
+                  onClick={() => setTab(id)}
+                  className={`px-3 h-full text-[13px] border-b-2 -mb-px
+                    ${tab === id ? 'border-[#002554] text-[#002554] font-bold' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {tab === 'files' && stage === 'pdfs' && (
+              <div className="flex items-center gap-1.5 min-w-0 text-[12px] text-slate-600">
+                <button
+                  type="button"
+                  onClick={() => { setStage('categories'); setSelCat(''); setSearch(''); }}
+                  title="카테고리로 돌아가기 (ESC)"
+                  className="p-1 rounded hover:bg-slate-100"
+                >
+                  <ArrowLeft size={14} />
+                </button>
+                <span className="truncate">{formatCategoryName(selectedCat)}</span>
+                {total > 0 && <span className="font-mono text-slate-500">{idx + 1} / {total}</span>}
+              </div>
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={loadCatalogue}
-              title="새로고침"
-              className="p-1.5 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
-            >
-              <RefreshCw size={14} />
-            </button>
+            {tab === 'files' && (
+              <button
+                type="button"
+                onClick={loadCatalogue}
+                title="새로고침"
+                className="p-1.5 rounded hover:bg-slate-100 text-slate-600"
+              >
+                <RefreshCw size={14} />
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}
               title="닫기 (ESC)"
-              className="p-1.5 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
+              aria-label="닫기"
+              className="p-1.5 rounded hover:bg-slate-100 text-slate-600"
             >
               <X size={16} />
             </button>
           </div>
         </div>
+
+        {tab === 'book' ? (
+          <div className="flex-1 min-h-0">
+            <DrawingBookPanel
+              running={running}
+              onRun={(item) => { onSelectBookPage?.(item); onClose?.(); }}
+            />
+          </div>
+        ) : (<>
 
         {/* ── PDF 뷰 상단 도구바 ───────────────────────────── */}
         {stage === 'pdfs' && (
@@ -274,7 +303,7 @@ export default function DrawingCatalogueModal({ isOpen, onClose, onSelect }) {
               <button
                 type="button"
                 onClick={() => setSearch('')}
-                className="text-[11px] text-slate-500 hover:text-rose-500 font-bold px-2 py-1 rounded-md hover:bg-rose-50 transition-colors cursor-pointer"
+                className="text-[11px] text-slate-600 hover:text-slate-900 font-bold px-2 py-1 rounded-md hover:bg-slate-200 transition-colors cursor-pointer"
               >
                 지우기
               </button>
@@ -336,6 +365,7 @@ export default function DrawingCatalogueModal({ isOpen, onClose, onSelect }) {
             <span className="font-mono">{formatCategoryName(selectedCat)} · {total}개</span>
           )}
         </div>
+        </>)}
       </div>
     </div>
   );

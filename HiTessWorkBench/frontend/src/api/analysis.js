@@ -111,6 +111,27 @@ export const uploadDrawingPdf = (file) => {
   });
 };
 
+/** DrawingToAnalysis — 치공구표준집 색인(155종) + 도면집 상태 { items, groups, lugUsage, book, status } */
+export const getDrawingBook = () =>
+  axios.get(`${API_BASE_URL}/api/analysis/drawing-to-analysis/book`, { headers: getAuthHeaders() });
+
+/** DrawingToAnalysis — 치공구표준집 한 쪽 PNG 주소 (size = 'small' | 'large', 로그인 머리글을 붙여 fetch 할 것) */
+export const drawingBookThumbUrl = (pdfPage, size = 'small') =>
+  `${API_BASE_URL}/api/analysis/drawing-to-analysis/book/${encodeURIComponent(pdfPage)}/thumb?size=${size}`;
+
+/** DrawingToAnalysis — 치공구표준집 그 쪽으로 바로 변환 (서버가 쪽을 잘라 변환 작업을 띄움) */
+export const runDrawingBookPage = (pdfPage, { employeeId, meshSize = 10.0 }) => {
+  const fd = new FormData();
+  fd.append('employee_id', employeeId);
+  fd.append('mesh_size', String(meshSize));
+  fd.append('source', 'Workbench-Book');
+  return axios.post(
+    `${API_BASE_URL}/api/analysis/drawing-to-analysis/book/${encodeURIComponent(pdfPage)}/run`,
+    fd,
+    { headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' } },
+  );
+};
+
 /** DrawingToAnalysis — 카탈로그 PDF 목록 조회 */
 export const listDrawingCatalogue = () =>
   axios.get(`${API_BASE_URL}/api/analysis/drawing-to-analysis/catalogue`, {
@@ -149,11 +170,22 @@ export const rebuildDrawingModel = ({ employeeId, workDir, mode, params, origina
     { headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } },
   );
 
+/** DrawingToAnalysis — 새 러그 엔진 결과의 하중 값(SWL·DAF·각도·핀 지름)을 고쳐 메시·BDF·수계산 다시 만들기
+ *  edits: { swl_t?, daf?, pin_d?, cases?: [{ id, alpha_deg?, beta_deg? }] }  (utils/lugshellEdits.diffLugshellEdits)
+ *  workDir = 직전 결과 폴더(lug_design.json 이 있는 곳). 옛 서버는 404.
+ */
+export const redoLugshellWithEdits = ({ employeeId, workDir, edits }) =>
+  axios.post(
+    `${API_BASE_URL}/api/analysis/drawing-to-analysis/lugshell-redo`,
+    { employee_id: employeeId, work_dir: workDir, edits, source: 'Workbench-LugshellRedo' },
+    { headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } },
+  );
+
 /** DrawingToAnalysis — 하중/경계조건을 BDF 에 반영해 Nastran 해석 실행
  *  loads: [{ nodes:[id...], fx, fy, fz }]   (N)
  *  bcs:   [{ nodes:[id...], dof:'123456' }]
  */
-export const solveDrawingModel = ({ employeeId, workDir, bdfPath, mode, loads, bcs, holeRbe = null, rbe3Sets = [], loadCases = [] }) =>
+export const solveDrawingModel = ({ employeeId, workDir, bdfPath, mode, loads = [], bcs = [], holeRbe = null, rbe3Sets = [], loadCases = [], useModelLoads = false }) =>
   axios.post(
     `${API_BASE_URL}/api/analysis/drawing-to-analysis/solve`,
     {
@@ -166,6 +198,8 @@ export const solveDrawingModel = ({ employeeId, workDir, bdfPath, mode, loads, b
       hole_rbe: holeRbe,   // { center:{x,y,z}, ring_node_ids:[id], fx, fy, fz } | null
       rbe3_sets: rbe3Sets, // [{ ref_id, center:{x,y,z}, node_ids:[id] }] — Area 하중분배
       load_cases: loadCases, // [{ name, bc_ids:[idx], load_ids:[idx], include_rbe }]
+      // true = BDF 안의 하중 케이스·경계(새 러그 엔진 결과)를 그대로 해석. 옛 서버는 이 키를 무시하고 bcs 없음으로 400
+      use_model_loads: useModelLoads,
       source: 'Workbench-Solve',
     },
     { headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } },

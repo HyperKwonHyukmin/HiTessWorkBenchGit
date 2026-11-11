@@ -18,6 +18,8 @@ import traceback
 from datetime import datetime
 from typing import Optional
 
+from .exit_codes import is_abnormal_exit
+
 from .analysis_runner import (
     CANCELLED_MESSAGE,
     JobCancelledError,
@@ -267,6 +269,287 @@ def _write_diagnostic(work_dir: str, payload: dict) -> Optional[str]:
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# 새 러그 엔진 (LugShell, 2026-11-10) — DrawingToAnalysis.exe 'lugshell' 명령
+# ──────────────────────────────────────────────────────────────────────────
+# 선 글자 인식 + 템플릿(lapping_lug) → 설계 JSON(review[]) → gmsh 메시·BDF(하중 케이스·lap 구역 고정 포함) → 수계산.
+# 엔진 소스: WorkBenchSubModule/DrawingToAnalysis (lugshell/ subtree). 옛 exe 는 이 명령을 몰라 옛 경로(`all`)로 간다.
+
+LUGSHELL_FILES = {
+    "lug_model.bdf": "bdf",
+    "mesh_preview.png": "preview_png",
+    "lug_design.json": "design_json",
+    "lug_trace.json": "trace_json",
+    "lug_handcalc.json": "handcalc_json",
+    "lug_report.json": "report_json",
+}
+FAIL_LUGSHELL_UNSUPPORTED = (
+    "지원하지 않는 러그 도면 형식입니다. 현재는 치공구표준집 L형(lap) 러그만 자동 인식합니다."
+)
+FAIL_LUGSHELL_MODEL = "도면은 읽었지만 해석 모델 검증에 실패했습니다. lug_report.json 을 확인하세요."
+
+# 엔진이 stdout 에 남기는 실제 사유 줄 (예: '추출 실패: 축척을 정할 수 없음 (…)')
+_LUGSHELL_REASON_RE = re.compile(r"^\s*(추출 실패|모델 검증 실패|검증 실패)\s*[:：]\s*(.+?)\s*$", re.M)
+
+
+def lugshell_failure_reason(base: str, stdout_text: str) -> str:
+    """분류 문구 뒤에 엔진이 말한 실제 사유를 붙인다 — 사유는 diagnostic.json 안에만 있으면 사용자가 못 본다.
+
+    '추출 실패: …' 줄이 있으면 그 사유, 없으면 '[lugshell] … 검사 실패' 바로 앞의 검사기 출력(예: '핀 지름 65 ≥ 구멍 지름 61.0').
+    """
+    text = stdout_text or ""
+    m = _LUGSHELL_REASON_RE.search(text)
+    if m:
+        return f"{base} (엔진: {m.group(2)})"
+    lines = [ln.strip() for ln in text.splitlines()]
+    for i, ln in enumerate(lines):
+        if ln.startswith("[lugshell]") and "검사 실패" in ln:
+            detail = [x for x in lines[:i] if x and not x.startswith("[lugshell]")]
+            if detail:
+                return f"{base} (엔진: {detail[-1]})"
+    return base
+
+
+# 사용자가 고칠 수 있는 하중 항목과 범위 — 화면(utils/lugshellEdits.js)과 같아야 한다
+LUGSHELL_EDIT_LIMITS = {
+    "swl_t": (0.1, 2000.0),
+    "daf": (1.0, 5.0),
+    "alpha_deg": (-90.0, 90.0),
+    "beta_deg": (-90.0, 90.0),
+}
+
+
+def apply_lugshell_edits(design: dict, edits: dict) -> tuple[dict, list[dict]]:
+    """도면에서 읽은 설계 JSON 에 사용자가 고친 하중 값을 넣은 (새 dict, 고친 목록) 을 돌려준다 (원본 불변).
+
+    edits = {swl_t?, daf?, pin_d?, cases?: [{id, alpha_deg?, beta_deg?}]}. 범위 밖이면 ValueError.
+    고친 항목은 review[] 의 그 줄을 status='user_fixed'(엔진 스키마 값) 로 바꾸고 원래 값을 note 에 남긴다 — 결과가 도면값인지
+    사용자가 고친 값인지 구분하려는 것이다. 엔진 스키마가 meta 에 다른 칸을 받지 않으므로 고친 목록은 따로 돌려준다
+    (라우트가 lug_user_edits.json 에 남김).
+    """
+    import copy
+
+    d = copy.deepcopy(design)
+    lcs = d.get("load_cases") or []
+    pin = d.get("pin") or {}
+    changed: list[dict] = []
+
+    def num(name, value):
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{name}: 숫자가 아닙니다 ({value!r})")
+        lo, hi = LUGSHELL_EDIT_LIMITS[name]
+        if not (lo <= v <= hi):
+            raise ValueError(f"{name}: {lo:g}~{hi:g} 범위여야 합니다 ({v:g})")
+        return v
+
+    def fmt(v):
+        return f"{v:g}" if isinstance(v, (int, float)) else str(v)
+
+    for key in ("swl_t", "daf"):
+        if edits.get(key) is None:
+            continue
+        v = num(key, edits[key])
+        old = lcs[0].get(key) if lcs else None
+        if old is None or abs(float(old) - v) > 1e-9:
+            for lc in lcs:
+                lc[key] = v
+            changed.append({"item": key, "old": old, "new": v})
+
+    if edits.get("pin_d") is not None:
+        try:
+            v = float(edits["pin_d"])
+        except (TypeError, ValueError):
+            raise ValueError(f"pin_d: 숫자가 아닙니다 ({edits['pin_d']!r})")
+        hole = float(pin.get("hole_d") or 0)
+        if not (0 < v < hole):
+            raise ValueError(f"pin_d: 0보다 크고 구멍 지름 {hole:g} 보다 작아야 합니다 ({v:g})")
+        if abs(float(pin.get("pin_d") or 0) - v) > 1e-9:
+            changed.append({"item": "pin_d", "old": pin.get("pin_d"), "new": v})
+            pin["pin_d"] = v
+
+    by_id = {lc.get("id"): lc for lc in lcs}
+    angle_changed = []
+    for c in edits.get("cases") or []:
+        lc = by_id.get(c.get("id"))
+        if lc is None:
+            raise ValueError(f"없는 하중 케이스: {c.get('id')!r}")
+        for key in ("alpha_deg", "beta_deg"):
+            if c.get(key) is None:
+                continue
+            v = num(key, c[key])
+            if abs(float(lc.get(key) or 0) - v) > 1e-9:
+                angle_changed.append(f"{lc['id']} {'α' if key == 'alpha_deg' else 'β'} {fmt(lc.get(key))}→{fmt(v)}")
+                lc[key] = v
+    if angle_changed:
+        changed.append({"item": "load_angles", "old": None, "new": ", ".join(angle_changed)})
+
+    if changed:
+        notes = {
+            "swl_t": lambda c: f"swl_t: 사용자 입력 {fmt(c['new'])} t (도면 {fmt(c['old'])} t)",
+            "daf": lambda c: f"daf: 사용자 입력 {fmt(c['new'])} (이전 {fmt(c['old'])})",
+            "pin_d": lambda c: f"pin_d: 사용자 입력 {fmt(c['new'])} (이전 {fmt(c['old'])})",
+            "load_angles": lambda c: f"load_angles: 사용자 입력 — {c['new']}",
+        }
+        review = d.get("review") or []
+        for c in changed:
+            prefix = c["item"] + ":"
+            note = notes[c["item"]](c)
+            hit = next((r for r in review if str(r.get("note", "")).startswith(prefix)), None)
+            if hit is not None:
+                hit["status"] = "user_fixed"
+                hit["note"] = note
+            else:
+                review.append({"path": "/load_cases" if c["item"] != "pin_d" else "/pin",
+                               "status": "user_fixed", "from_text": None, "from_geometry": None, "note": note})
+        d["review"] = review
+    return d, changed
+
+
+def bridge_model_json_usable(returncode, json_path: str) -> bool:
+    """bridge(3D 뷰어용 모델 JSON)의 결과를 쓸 수 있는가.
+
+    정상 종료면 파일이 있으면 된다. Windows 예외로 죽었으면(이 PC 의 DRM 모듈 HIDRMH.DLL 이 파이썬을
+    '일을 다 하고 종료하는 순간' 0xC0000005 로 끊는 일이 있다 — 2026-11-11 엑셀도 같은 모듈에서 죽음)
+    JSON 이 끝까지 읽히고 절점·요소가 있을 때만 받는다. 이 JSON 은 3D 표시용이라 해석 결과에 쓰지 않는다.
+    보통 실패(1 등)는 그대로 실패.
+    """
+    if not os.path.isfile(json_path):
+        return False
+    if returncode == 0:
+        return True
+    if not is_abnormal_exit(returncode):
+        return False
+    try:
+        with open(json_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and bool(data.get("nodes")) and bool(data.get("elements"))
+
+
+def _bridge_json_note(returncode) -> Optional[str]:
+    """비정상 종료였지만 JSON 을 받았을 때 엔진 로그에 남길 한 줄."""
+    if returncode == 0:
+        return None
+    return (f"[Warning] NastranBridge 가 끝나는 순간 비정상 종료했지만(exit={returncode}) "
+            "모델 JSON 은 끝까지 저장돼 있어 그대로 씁니다 (회사 DRM 모듈 충돌로 추정).")
+
+
+_lugshell_support_cache: dict = {}
+
+
+def engine_supports_lugshell(exe_path: str) -> bool:
+    """exe 가 'lugshell' 명령을 아는지 (--help 출력). exe 수정 시각 기준으로 기억한다.
+
+    서버(145)에서 백엔드와 InHouse exe 반영 순서가 바뀌어도 깨지지 않게 하려는 것 (옛 exe → 옛 경로).
+    """
+    try:
+        key = (os.path.abspath(exe_path), os.path.getmtime(exe_path))
+    except OSError:
+        return False
+    if key not in _lugshell_support_cache:
+        try:
+            r = subprocess.run([exe_path, "--help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+            blob = (r.stdout or b"").decode("utf-8", "replace") + (r.stderr or b"").decode("utf-8", "replace")
+            _lugshell_support_cache[key] = "lugshell" in blob
+        except Exception as e:  # noqa: BLE001 — 확인 실패는 옛 경로로
+            logger.warning("lugshell 지원 확인 실패: %s", e)
+            _lugshell_support_cache[key] = False
+    return _lugshell_support_cache[key]
+
+
+_lugshell_design_cache: dict = {}
+
+
+def engine_supports_lugshell_design(exe_path: str) -> bool:
+    """exe 의 lugshell 명령이 --design(고친 설계 JSON 으로 다시 만들기, 2026-11-11~)을 아는지."""
+    try:
+        key = (os.path.abspath(exe_path), os.path.getmtime(exe_path))
+    except OSError:
+        return False
+    if key not in _lugshell_design_cache:
+        try:
+            r = subprocess.run([exe_path, "lugshell", "--help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               timeout=120)
+            blob = (r.stdout or b"").decode("utf-8", "replace") + (r.stderr or b"").decode("utf-8", "replace")
+            _lugshell_design_cache[key] = "--design" in blob
+        except Exception as e:  # noqa: BLE001
+            logger.warning("lugshell --design 지원 확인 실패: %s", e)
+            _lugshell_design_cache[key] = False
+    return _lugshell_design_cache[key]
+
+
+FAIL_LUGSHELL_DESIGN_UNSUPPORTED = (
+    "서버의 DrawingToAnalysis 엔진이 옛 버전이라 고친 값으로 다시 만들 수 없습니다. 관리자에게 엔진 교체를 요청하세요."
+)
+
+
+def lugshell_summary(design_json_path: str, handcalc_json_path: Optional[str]) -> dict:
+    """화면에 바로 보일 요약: 확인 필요 항목(review)·핵심 치수·수계산 최대 UC. 파일이 없으면 빈 dict."""
+    out: dict = {}
+    try:
+        with open(design_json_path, "r", encoding="utf-8") as fh:
+            d = json.load(fh)
+        main = next((p for p in d.get("plates", []) if p.get("role") == "main"), {})
+        lc = (d.get("load_cases") or [{}])[0]
+        out = {
+            "template": d.get("meta", {}).get("template"),
+            "scale": d.get("meta", {}).get("source", {}).get("scale"),
+            "review": d.get("review", []),
+            "thickness": main.get("t"),
+            "material": (d.get("materials") or [{}])[0].get("id"),
+            "hole_d": d.get("pin", {}).get("hole_d"),
+            "swl_t": lc.get("swl_t"),
+            "load_cases": [c.get("id") for c in d.get("load_cases", [])],
+            # 화면 '하중 값 고치기' 입력칸의 지금 값
+            "cases": [{k: c.get(k) for k in ("id", "swl_t", "daf", "alpha_deg", "beta_deg")}
+                      for c in d.get("load_cases", [])],
+            "pin_d": d.get("pin", {}).get("pin_d"),
+            # 3D 하중 화살표 위치 (모델 좌표 = 설계 JSON 전역 좌표, mm) · 하중 크기 = SWL×1000×g×DAF
+            "pin_center": d.get("pin", {}).get("center"),
+            "g": d.get("analysis", {}).get("g", 9.81),
+        }
+    except Exception as e:  # noqa: BLE001
+        logger.warning("설계 JSON 요약 실패: %s", e)
+        return {}
+    if handcalc_json_path:
+        try:
+            with open(handcalc_json_path, "r", encoding="utf-8") as fh:
+                h = json.load(fh)
+            rows = [(k["uc"], k["check"], c["id"]) for c in h.get("cases", []) for k in c.get("checks", [])]
+            if rows:
+                uc, check, case = max(rows)
+                out["handcalc_max"] = {"uc": round(uc, 3), "check": check, "case": case,
+                                       "criteria": h.get("criteria", {}).get("name")}
+        except Exception as e:  # noqa: BLE001
+            logger.warning("수계산 요약 실패: %s", e)
+    return out
+
+
+_OUTPUT_REQUEST_RE = re.compile(r"^\s*(DISPLACEMENT|STRESS|STRAIN|SPCFORCES|OLOAD|FORCE)\s*(\(|=)", re.I)
+
+
+def with_print_outputs(bdf_text: str) -> str:
+    """BDF 의 하중·경계·SUBCASE 는 그대로 두고 출력 요청만 F06 인쇄로 바꾼다 (use_model_loads 해석).
+
+    결과 추출(nastran_bridge F06 파서)이 인쇄된 변위·요소 중심 응력을 읽으므로 _build_case_control 과 같은
+    3줄(DISPLACEMENT/STRESS/SPCFORCES (PLOT,PRINT))로 맞춘다. CORNER 응력 요청은 빠진다.
+    """
+    case_lines, bulk_lines = _split_case_bulk(bdf_text)
+    if not case_lines:
+        return bdf_text
+    out = []
+    for ln in case_lines:
+        if _OUTPUT_REQUEST_RE.match(ln):
+            continue
+        out.append(ln)
+        if ln.strip().upper() == "CEND":
+            out += ["DISPLACEMENT(PLOT,PRINT) = ALL", "STRESS(PLOT,PRINT) = ALL", "SPCFORCES(PLOT,PRINT) = ALL"]
+    return "\n".join(out + bulk_lines) + "\n"
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # 메인 태스크
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -280,10 +563,19 @@ def task_execute_drawing_to_analysis(
     source: str,
     mesh_size: float = 10.0,
     mode: str = "lug",
+    page: Optional[int] = None,
+    design_path: Optional[str] = None,
 ):
     """DrawingToAnalysis.exe를 호출하여 업로드 PDF와 같은 폴더에 BDF를 생성한다.
 
-    mode='lug'    → `exe all --pdf ... --out-dir ... --mesh-size ...`
+    design_path 가 있으면(새 러그 엔진 '이 값으로 다시 만들기') PDF 를 읽지 않고
+    `exe lugshell --design <work_dir/lug_design.json> --out-dir <work_dir>` 로 메시·BDF·수계산만 다시 만든다.
+    pdf_path 는 기록용(원래 도면)이다.
+
+    mode='lug'    → exe 가 'lugshell' 을 알면(2026-11-10~) `exe lugshell --pdf ... --out-dir ... --page N --src-name <원래 이름>`
+                    출력: LUGSHELL_FILES (lug_model.bdf · lug_design.json · lug_trace.json · lug_handcalc.json …),
+                          result_info.engine = 'lugshell', result_info.lugshell = 요약(review·수계산 최대 UC)
+                    옛 exe 면 `exe all --pdf ... --out-dir ... --mesh-size ...`
                     출력: lug_model.bdf / lug_params.json / mesh.json / mesh_preview.png / vectors.json
     mode='support'→ `exe support all --pdf ... --out-dir ... --mesh-size ... [--page N]`
                     출력: support_model.bdf / support_params.json / support_mesh.json /
@@ -295,6 +587,7 @@ def task_execute_drawing_to_analysis(
 
     mark_running(job_id, "DrawingToAnalysis 초기화 중...", progress=5)
 
+    engine = "legacy"
     status_msg = "Success"
     engine_output_parts: list[str] = []
     result_data: dict = {}
@@ -332,54 +625,77 @@ def task_execute_drawing_to_analysis(
             engine_output_parts.append(f"[Error] 실행 파일을 찾을 수 없습니다: {resolved_exe}")
             raise RuntimeError(user_reason)
 
-        # ── Step 2: PDF 사전 검증 ──────────────────────────────
-        update_progress(job_id, 15, "PDF 사전 검증 중 (DRM/암호화 확인)...")
-        validation = _validate_pdf(pdf_path)
-        step("validate_pdf", **validation)
-        if not validation["ok"]:
-            status_msg = "Failed"
-            user_reason = validation["reason"] or FAIL_NOT_PDF
-            engine_output_parts.append(f"[검증 실패] {user_reason}")
-            if validation.get("open_error"):
-                engine_output_parts.append(f"[PDF Open Error] {validation['open_error']}")
-            raise RuntimeError(user_reason)
-
-        # ── Step 3: PDF 정규화 ────────────────────────────────
-        update_progress(job_id, 25, "PDF 정규화 중 (DRM 잔재 정리)...")
-        normalized_dir = os.path.join(tempfile.gettempdir(), "workbench_drawing_to_analysis", job_id)
-        os.makedirs(normalized_dir, exist_ok=True)
-        normalized_path = os.path.join(normalized_dir, "input_pdf_for_engine.pdfdata")
-        norm = _normalize_pdf(pdf_path, normalized_path)
-        step("normalize_pdf", **norm)
-        engine_pdf_path = norm["out_path"]
-        if not norm["ok"] and norm.get("error"):
-            engine_output_parts.append(
-                f"[Warning] PDF 정규화 실패, 원본 PDF로 진행합니다: {norm['error']}"
-            )
-
-        # ── Step 4: Engine 실행 ───────────────────────────────
-        if mode == "support":
-            update_progress(job_id, 40, "PDF 벡터 추출 및 Block Support 파라미터 추정 중...")
-            # support 모드 기본 page=2지만 PDF가 단일 페이지면 1로 강제
-            page_count = validation.get("page_count") or 1
-            page_arg = "1" if page_count <= 1 else "2"
-            cmd_args = [
-                resolved_exe,
-                "support", "all",
-                "--pdf", engine_pdf_path,
-                "--out-dir", work_dir,
-                "--mesh-size", str(mesh_size),
-                "--page", page_arg,
-            ]
+        if design_path:
+            # 고친 설계 JSON 으로 다시 만들기 (새 러그 엔진) — PDF 검증·정규화 없이 바로 엔진
+            if not engine_supports_lugshell_design(resolved_exe):
+                status_msg = "Failed"
+                user_reason = FAIL_LUGSHELL_DESIGN_UNSUPPORTED
+                engine_output_parts.append("[Error] " + FAIL_LUGSHELL_DESIGN_UNSUPPORTED)
+                raise RuntimeError(user_reason)
+            engine = "lugshell"
+            mode = "lug"
+            update_progress(job_id, 40, "고친 값으로 LUG 모델·수계산 다시 만드는 중...")
+            cmd_args = [resolved_exe, "lugshell", "--design", design_path, "--out-dir", work_dir]
         else:
-            update_progress(job_id, 40, "PDF 벡터 추출 및 LUG 파라미터 추정 중...")
-            cmd_args = [
-                resolved_exe,
-                "all",
-                "--pdf", engine_pdf_path,
-                "--out-dir", work_dir,
-                "--mesh-size", str(mesh_size),
-            ]
+            # ── Step 2: PDF 사전 검증 ──────────────────────────────
+            update_progress(job_id, 15, "PDF 사전 검증 중 (DRM/암호화 확인)...")
+            validation = _validate_pdf(pdf_path)
+            step("validate_pdf", **validation)
+            if not validation["ok"]:
+                status_msg = "Failed"
+                user_reason = validation["reason"] or FAIL_NOT_PDF
+                engine_output_parts.append(f"[검증 실패] {user_reason}")
+                if validation.get("open_error"):
+                    engine_output_parts.append(f"[PDF Open Error] {validation['open_error']}")
+                raise RuntimeError(user_reason)
+
+            # ── Step 3: PDF 정규화 ────────────────────────────────
+            update_progress(job_id, 25, "PDF 정규화 중 (DRM 잔재 정리)...")
+            normalized_dir = os.path.join(tempfile.gettempdir(), "workbench_drawing_to_analysis", job_id)
+            os.makedirs(normalized_dir, exist_ok=True)
+            normalized_path = os.path.join(normalized_dir, "input_pdf_for_engine.pdfdata")
+            norm = _normalize_pdf(pdf_path, normalized_path)
+            step("normalize_pdf", **norm)
+            engine_pdf_path = norm["out_path"]
+            if not norm["ok"] and norm.get("error"):
+                engine_output_parts.append(
+                    f"[Warning] PDF 정규화 실패, 원본 PDF로 진행합니다: {norm['error']}"
+                )
+
+            # ── Step 4: Engine 실행 ───────────────────────────────
+            if mode == "support":
+                update_progress(job_id, 40, "PDF 벡터 추출 및 Block Support 파라미터 추정 중...")
+                # support 모드 기본 page=2지만 PDF가 단일 페이지면 1로 강제
+                page_count = validation.get("page_count") or 1
+                page_arg = "1" if page_count <= 1 else "2"
+                cmd_args = [
+                    resolved_exe,
+                    "support", "all",
+                    "--pdf", engine_pdf_path,
+                    "--out-dir", work_dir,
+                    "--mesh-size", str(mesh_size),
+                    "--page", page_arg,
+                ]
+            elif engine_supports_lugshell(resolved_exe):
+                engine = "lugshell"
+                update_progress(job_id, 40, "도면 치수 인식·LUG 모델·수계산 중 (새 엔진)...")
+                cmd_args = [
+                    resolved_exe,
+                    "lugshell",
+                    "--pdf", engine_pdf_path,
+                    "--out-dir", work_dir,
+                    "--page", str(page or 1),
+                    "--src-name", os.path.basename(pdf_path),
+                ]
+            else:
+                update_progress(job_id, 40, "PDF 벡터 추출 및 LUG 파라미터 추정 중...")
+                cmd_args = [
+                    resolved_exe,
+                    "all",
+                    "--pdf", engine_pdf_path,
+                    "--out-dir", work_dir,
+                    "--mesh-size", str(mesh_size),
+                ]
         step("engine_invoke", cmd=cmd_args, mode=mode)
 
         # 사용자가 이미 취소를 요청했으면 엔진을 띄우지 않는다.
@@ -423,6 +739,9 @@ def task_execute_drawing_to_analysis(
             status_msg = "Failed"
             engine_output_parts.append(f"[Exit code: {result.returncode}]")
             classified = _classify_engine_failure(stdout_text, stderr_text, result.returncode)
+            if engine == "lugshell" and result.returncode in (2, 3):
+                classified = lugshell_failure_reason(
+                    FAIL_LUGSHELL_UNSUPPORTED if result.returncode == 2 else FAIL_LUGSHELL_MODEL, stdout_text)
             user_reason = classified or FAIL_NO_BDF
 
         # ── Step 5: 결과 파일 수집 ────────────────────────────
@@ -435,6 +754,8 @@ def task_execute_drawing_to_analysis(
                 "support_mesh.json":         "mesh_json",
                 "vectors.json":              "vectors_json",
             }
+        elif engine == "lugshell":
+            expected_files = dict(LUGSHELL_FILES)
         else:
             expected_files = {
                 "lug_model.bdf":    "bdf",
@@ -447,6 +768,10 @@ def task_execute_drawing_to_analysis(
             path = os.path.join(work_dir, filename)
             if os.path.isfile(path):
                 result_data[key] = path
+        if engine == "lugshell":
+            result_data["engine"] = "lugshell"
+            if result_data.get("design_json"):  # 실패해도 설계 JSON 이 있으면 확인 항목을 보여 준다
+                result_data["lugshell"] = lugshell_summary(result_data["design_json"], result_data.get("handcalc_json"))
 
         if "bdf" not in result_data:
             try:
@@ -499,8 +824,11 @@ def task_execute_drawing_to_analysis(
                         engine_output_parts.append(f"[NastranBridge] {bridge_stdout.strip()}")
                     if bridge_stderr.strip():
                         engine_output_parts.append(f"[NastranBridge stderr] {bridge_stderr.strip()}")
-                    if bridge_result.returncode == 0 and os.path.isfile(bridge_json_path):
+                    if bridge_model_json_usable(bridge_result.returncode, bridge_json_path):
                         result_data["model_json"] = bridge_json_path
+                        note = _bridge_json_note(bridge_result.returncode)
+                        if note:
+                            engine_output_parts.append(note)
                     else:
                         engine_output_parts.append(
                             f"[Warning] NastranBridge 모델 JSON 생성 실패 (exit={bridge_result.returncode})."
@@ -550,7 +878,8 @@ def task_execute_drawing_to_analysis(
         program_name="DrawingToAnalysis",
         employee_id=employee_id,
         status=status_msg,
-        input_info={"pdf": pdf_path, "mesh_size": mesh_size},
+        input_info={"pdf": pdf_path, "mesh_size": mesh_size, "page": page, "engine": engine,
+                    **({"design": design_path} if design_path else {})},
         result_info=result_data if result_data else None,
         source=source,
     )
@@ -812,8 +1141,11 @@ def task_execute_drawing_rebuild(
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180,
                     )
                     step("bridge_done", returncode=bridge_result.returncode)
-                    if bridge_result.returncode == 0 and os.path.isfile(bridge_json_path):
+                    if bridge_model_json_usable(bridge_result.returncode, bridge_json_path):
                         result_data["model_json"] = bridge_json_path
+                        note = _bridge_json_note(bridge_result.returncode)
+                        if note:
+                            engine_output_parts.append(note)
                 except Exception as bridge_err:
                     step("bridge_error", error=str(bridge_err))
 
@@ -1376,8 +1708,11 @@ def task_execute_drawing_image_to_analysis(
                         timeout=180,
                     )
                     step("bridge_done", returncode=bridge_result.returncode)
-                    if bridge_result.returncode == 0 and os.path.isfile(bridge_json_path):
+                    if bridge_model_json_usable(bridge_result.returncode, bridge_json_path):
                         result_data["model_json"] = bridge_json_path
+                        note = _bridge_json_note(bridge_result.returncode)
+                        if note:
+                            engine_output_parts.append(note)
                 except Exception as bridge_err:
                     step("bridge_error", error=str(bridge_err))
                     engine_output_parts.append(f"[Warning] NastranBridge 실행 중 오류: {bridge_err}")
@@ -2343,8 +2678,12 @@ def task_execute_drawing_solve(
     hole_rbe: Optional[dict] = None,
     load_cases: Optional[list] = None,
     rbe3_sets: Optional[list] = None,
+    use_model_loads: bool = False,
 ):
     """사용자 정의 하중/경계조건을 BDF 에 주입한 뒤 Nastran(SOL 101) 해석 실행.
+
+    use_model_loads=True (새 러그 엔진 결과): BDF 의 하중 케이스·경계를 그대로 두고 출력 요청만 F06 인쇄로
+    바꿔 실행한다 (with_print_outputs). 도면 근거(SWL·DAF·각도)로 만든 하중을 화면 입력으로 덮지 않기 위해.
 
     동작:
       1. source_bdf_path(변환/재구축 결과 BDF) 읽기
@@ -2375,6 +2714,7 @@ def task_execute_drawing_solve(
             "has_hole_rbe":    bool(hole_rbe),
             "rbe3_set_count":  len(rbe3_sets or []),
             "load_case_count": len(load_cases or []),
+            "use_model_loads": use_model_loads,
         },
         "loads": loads,
         "bcs":   bcs,
@@ -2404,13 +2744,20 @@ def task_execute_drawing_solve(
         with open(source_bdf_path, "r", encoding="utf-8", errors="replace") as fh:
             src_text = fh.read()
 
-        if not bcs:
+        if use_model_loads:
+            # 새 러그 엔진 BDF: 하중 케이스·lap 구역 고정을 그대로, 출력 요청만 F06 인쇄로
+            solved_text = with_print_outputs(src_text)
+            n_sub = len(re.findall(r"^\s*SUBCASE\b", solved_text, re.M | re.I))
+            build_meta = {"subcases": [{"label": f"모델 하중 케이스 {i + 1}", "spc": "model", "load": "model"}
+                                       for i in range(max(n_sub, 1))],
+                          "spc_sids": [], "load_sids": [], "warnings": []}
+        elif not bcs:
             status_msg = "Failed"
             user_reason = "경계조건이 하나도 없습니다. 최소 1개 이상의 구속 세트를 지정하세요."
             engine_output_parts.append("[Error] " + user_reason)
             raise RuntimeError(user_reason)
-
-        solved_text, build_meta = _build_solved_bdf(src_text, bcs, loads, hole_rbe, load_cases, rbe3_sets)
+        else:
+            solved_text, build_meta = _build_solved_bdf(src_text, bcs, loads, hole_rbe, load_cases, rbe3_sets)
         step("build_bdf",
              subcases=len(build_meta["subcases"]),
              spc_sids=len(build_meta["spc_sids"]),

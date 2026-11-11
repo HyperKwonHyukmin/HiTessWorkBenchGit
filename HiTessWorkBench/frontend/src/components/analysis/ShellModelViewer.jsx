@@ -157,6 +157,59 @@ function makeTextPillSprite(text, fgColor, bgColor) {
   return sprite;
 }
 
+/** 글자 길이에 맞춘 라벨 스프라이트 (핀 하중 라벨처럼 긴 글). 반환 = { sprite, aspect(가로/세로) }. */
+function makeFitPillSprite(text, fgColor, bgColor) {
+  const font = '600 30px Inter, SUIT, "Malgun Gothic", sans-serif';
+  const probe = document.createElement('canvas').getContext('2d');
+  probe.font = font;
+  const h = 52;
+  const w = Math.ceil(probe.measureText(text).width) + 28;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const r = 10;
+  ctx.fillStyle = bgColor;
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.arcTo(w, 0, w, h, r);
+  ctx.arcTo(w, h, 0, h, r);
+  ctx.arcTo(0, h, 0, 0, r);
+  ctx.arcTo(0, 0, w, 0, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = fgColor;
+  ctx.font = font;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, w / 2, h / 2 + 1);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sprite.renderOrder = 1001;
+  return { sprite, aspect: w / h };
+}
+
+/** 핀 하중 화살표 색 = DESIGN.md warning(#f59e0b). 하중은 흔히 노랑·주황으로 그린다. */
+const LOAD_ARROW_COLOR = 0xf59e0b;
+
+/** 얇은 하중 화살표 — base 에서 dir 쪽으로 len. 몸통은 가늘고 촉은 짧게(굵은 입체 화살표는 모델을 덮었다, 2026-11-11). */
+function buildLoadArrow(dir, base, len, color, opacity = 1) {
+  const g = new THREE.Group();
+  const headLen = len * 0.14;
+  const shaftLen = len - headLen;
+  const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(len * 0.016, len * 0.016, shaftLen, 10), mat);
+  shaft.position.y = shaftLen / 2;
+  const head = new THREE.Mesh(new THREE.ConeGeometry(len * 0.045, headLen, 20), mat);
+  head.position.y = shaftLen + headLen / 2;
+  g.add(shaft, head);
+  g.position.copy(base);
+  g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  g.traverse((o) => { if (o.isMesh) o.renderOrder = 999; });
+  return g;
+}
+
 /** 입체 화살표(원기둥 shaft + 원뿔 head). dir 방향, 화살촉 끝이 tip 에 오도록 배치. */
 function buildForceArrow(dir, tip, len, color) {
   const g = new THREE.Group();
@@ -573,6 +626,7 @@ export default function ShellModelViewer({
   bcSets = null,                   // [{ nodes:[id], dof }]         글리프 렌더
   holeRbe = null,                  // { center:{x,y,z}, ringNodeIds:[id], fx, fy, fz }  RBE2 시각화
   rbe3Sets = null,                 // [{ refId, center:{x,y,z}, nodeIds:[id] }]  RBE3 시각화
+  pinLoads = null,                 // 새 러그 엔진 핀 하중 { center:{x,y,z}, arrows:[{dir,label,edited,index}], activeIndex }
   swapYZ = false,                  // 표시 데이터가 Y↔Z 스왑된 프레임인지 (Lug)
   // ── 결과 컨투어 (선택적) ──
   resultField = 'none',            // 'none' | 'disp' | 'vm'
@@ -1171,10 +1225,14 @@ export default function ShellModelViewer({
     if (!api) return;
     const group = api.scene.getObjectByName('loadBcGlyphs');
     if (!group) return;
+    // 화살표(Group 안 shaft·head)·라벨 텍스처까지 비운다 — 핀 하중은 입력할 때마다 다시 그려진다
     while (group.children.length) {
       const cc = group.children.pop();
-      cc.geometry?.dispose?.();
-      cc.material?.dispose?.();
+      cc.traverse((o) => {
+        o.geometry?.dispose?.();
+        o.material?.map?.dispose?.();
+        o.material?.dispose?.();
+      });
     }
     const posById = new Map(nodePositionsRef.current.map((n) => [n.id, n]));
     const maxDim = boundsRef.current?.maxDim || 200;
@@ -1289,7 +1347,43 @@ export default function ShellModelViewer({
       cs.renderOrder = 1000;
       group.add(cs);
     });
-  }, [loadSets, bcSets, holeRbe, rbe3Sets]);
+
+    // ── 새 러그 엔진 핀 하중: 구멍 가장자리(핀이 누르는 자리)에서 당기는 방향으로 가는 얇은 화살표 ──
+    // 결과를 보는 중이면(activeIndex) 그 SUBCASE 만 주황, 나머지는 흐린 회색.
+    // 방향이 거의 같은 케이스(예: LC1 축방향 ↔ LC3 면외 5°)는 라벨이 겹치므로 하나로 합친다.
+    if (pinLoads?.center && (pinLoads.arrows || []).length) {
+      const c = new THREE.Vector3(pinLoads.center.x, pinLoads.center.y, pinLoads.center.z);
+      const holeR = Number(pinLoads.holeR) || 0;
+      const len = maxDim * 0.3;
+      const active = pinLoads.activeIndex;
+      const hasActive = active !== null && active !== undefined;
+      const items = pinLoads.arrows
+        .map((a) => ({ ...a, v: new THREE.Vector3(a.dir[0], a.dir[1], a.dir[2]) }))
+        .filter((a) => a.v.lengthSq() > 1e-12)
+        .map((a) => ({ ...a, v: a.v.normalize(), dim: hasActive && a.index !== active }));
+      // 흐린 것부터 그려 진한 화살표가 위에 오게
+      [...items].sort((p, q) => Number(q.dim) - Number(p.dim)).forEach((a) => {
+        const base = c.clone().addScaledVector(a.v, holeR);
+        group.add(buildLoadArrow(a.v, base, len, a.dim ? 0x94a3b8 : LOAD_ARROW_COLOR, a.dim ? 0.4 : 1));
+      });
+      const groups = [];
+      items.forEach((a) => {
+        const g = groups.find((gr) => gr[0].v.angleTo(a.v) < THREE.MathUtils.degToRad(12));
+        if (g) g.push(a); else groups.push([a]);
+      });
+      groups.forEach((gr) => {
+        const lead = gr.find((a) => !a.dim) || gr[0];
+        const dim = gr.every((a) => a.dim);
+        const text = gr.map((a) => (a.edited ? `${a.tag} (고침)` : a.tag)).join('  /  ');
+        const { sprite, aspect } = makeFitPillSprite(text, dim ? '#cbd5e1' : '#fde68a', dim ? 'rgba(15,23,42,0.55)' : 'rgba(15,23,42,0.82)');
+        const h = maxDim * 0.028;
+        sprite.scale.set(h * aspect, h, 1);
+        sprite.center.set(0.5, 0); // 라벨 아래 가운데를 화살표 끝 바로 위에 둔다
+        sprite.position.copy(c.clone().addScaledVector(lead.v, holeR + len + maxDim * 0.012));
+        group.add(sprite);
+      });
+    }
+  }, [loadSets, bcSets, holeRbe, rbe3Sets, pinLoads, modelData]);
 
   /* ── 카메라 프리셋 ─────────────────────────────────────────────── */
   const setCameraView = useCallback((preset) => {

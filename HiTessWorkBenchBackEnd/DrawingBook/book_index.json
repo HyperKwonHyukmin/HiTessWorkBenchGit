@@ -1,0 +1,2783 @@
+{
+ "schema": "hitess.drawing_book_index.v1",
+ "book": {
+  "title": "치공구표준집 (FINAL, 2018.12.3)",
+  "file": "'18 치공구표준집(FINAL)(2018.12.3) - 복사본.pdf",
+  "sha256": "70c7525d0455229132fe14b78d5bb4d1743255251609ca3b90762f03ec684bd2",
+  "pdfPages": 166,
+  "pageOffset": 11
+ },
+ "generated": "2026-11-11",
+ "engineChecked": true,
+ "groups": [
+  {
+   "id": "lug",
+   "label": "LIFTING LUG",
+   "fromPage": 1,
+   "toPage": 46
+  },
+  {
+   "id": "rigging",
+   "label": "LIFTING 기자재",
+   "fromPage": 47,
+   "toPage": 55
+  },
+  {
+   "id": "support_bracket",
+   "label": "지주 BRACKET·PIPE 지주",
+   "fromPage": 56,
+   "toPage": 71
+  },
+  {
+   "id": "erection_piece",
+   "label": "탑재용 PIECE",
+   "fromPage": 72,
+   "toPage": 96
+  },
+  {
+   "id": "beam",
+   "label": "운반·보강 BEAM",
+   "fromPage": 97,
+   "toPage": 106
+  },
+  {
+   "id": "block_support",
+   "label": "BLOCK SUPPORT·TOWER",
+   "fromPage": 107,
+   "toPage": 126
+  },
+  {
+   "id": "dunnage",
+   "label": "반목(콘크리트·목재·플라스틱)",
+   "fromPage": 127,
+   "toPage": 155
+  }
+ ],
+ "lugUsage": {
+  "D": "수직 LIFTING 및 T/O 보조",
+  "T": "T/O 전용",
+  "A": "T/O 전용(곡부)",
+  "L": "LAPPING 취부",
+  "B": "STIFF SIDE 취부"
+ },
+ "items": [
+  {
+   "code": "D-2, D-2A, D-2P",
+   "aliases": [
+    "D-2",
+    "D-2A",
+    "D-2P"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 1,
+   "pdfPage": 12,
+   "family": "D",
+   "usage": "수직 LIFTING 및 T/O 보조",
+   "swl_t": 2.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-5, D-5A, D-5P",
+   "aliases": [
+    "D-5",
+    "D-5A",
+    "D-5P"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 2,
+   "pdfPage": 13,
+   "family": "D",
+   "usage": "수직 LIFTING 및 T/O 보조",
+   "swl_t": 5.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-8, D-8A, D-8P",
+   "aliases": [
+    "D-8",
+    "D-8A",
+    "D-8P"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 3,
+   "pdfPage": 14,
+   "family": "D",
+   "usage": "수직 LIFTING 및 T/O 보조",
+   "swl_t": 8.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-16",
+   "aliases": [
+    "D-16"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 4,
+   "pdfPage": 15,
+   "family": "D",
+   "usage": "수직 LIFTING 및 T/O 보조",
+   "swl_t": 16.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-25",
+   "aliases": [
+    "D-25"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 5,
+   "pdfPage": 16,
+   "family": "D",
+   "usage": "수직 LIFTING 및 T/O 보조",
+   "swl_t": 25.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-35",
+   "aliases": [
+    "D-35"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 6,
+   "pdfPage": 17,
+   "family": "D",
+   "usage": "수직 LIFTING 및 T/O 보조",
+   "swl_t": 35.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-50",
+   "aliases": [
+    "D-50"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 7,
+   "pdfPage": 18,
+   "family": "D",
+   "usage": "수직 LIFTING 및 T/O 보조",
+   "swl_t": 50.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-75",
+   "aliases": [
+    "D-75"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 8,
+   "pdfPage": 19,
+   "family": "D",
+   "usage": "수직 LIFTING 및 T/O 보조",
+   "swl_t": 75.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-85",
+   "aliases": [
+    "D-85"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 9,
+   "pdfPage": 20,
+   "family": "D",
+   "usage": "수직 LIFTING 및 T/O 보조",
+   "swl_t": 85.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-100",
+   "aliases": [
+    "D-100"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 10,
+   "pdfPage": 21,
+   "family": "D",
+   "usage": "수직 LIFTING 및 T/O 보조",
+   "swl_t": 100.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "T-5, T-5A",
+   "aliases": [
+    "T-5",
+    "T-5A"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 11,
+   "pdfPage": 22,
+   "family": "T",
+   "usage": "T/O 전용",
+   "swl_t": 5.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "T-10, T-10A",
+   "aliases": [
+    "T-10",
+    "T-10A"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 12,
+   "pdfPage": 23,
+   "family": "T",
+   "usage": "T/O 전용",
+   "swl_t": 10.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "T-15",
+   "aliases": [
+    "T-15"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 13,
+   "pdfPage": 24,
+   "family": "T",
+   "usage": "T/O 전용",
+   "swl_t": 15.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "T-20",
+   "aliases": [
+    "T-20"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 14,
+   "pdfPage": 25,
+   "family": "T",
+   "usage": "T/O 전용",
+   "swl_t": 20.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "T-30",
+   "aliases": [
+    "T-30"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 15,
+   "pdfPage": 26,
+   "family": "T",
+   "usage": "T/O 전용",
+   "swl_t": 30.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "T-40",
+   "aliases": [
+    "T-40"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 16,
+   "pdfPage": 27,
+   "family": "T",
+   "usage": "T/O 전용",
+   "swl_t": 40.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "T-50",
+   "aliases": [
+    "T-50"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 17,
+   "pdfPage": 28,
+   "family": "T",
+   "usage": "T/O 전용",
+   "swl_t": 50.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "TD-30",
+   "aliases": [
+    "TD-30"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 18,
+   "pdfPage": 29,
+   "family": "TD",
+   "usage": null,
+   "swl_t": 30.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "TD-40",
+   "aliases": [
+    "TD-40"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 19,
+   "pdfPage": 30,
+   "family": "TD",
+   "usage": null,
+   "swl_t": 40.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "TD-50",
+   "aliases": [
+    "TD-50"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 20,
+   "pdfPage": 31,
+   "family": "TD",
+   "usage": null,
+   "swl_t": 50.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "L-16",
+   "aliases": [
+    "L-16"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 21,
+   "pdfPage": 32,
+   "family": "L",
+   "usage": "LAPPING 취부",
+   "swl_t": 16.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "L-25",
+   "aliases": [
+    "L-25"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 22,
+   "pdfPage": 33,
+   "family": "L",
+   "usage": "LAPPING 취부",
+   "swl_t": 25.0,
+   "analysable": true,
+   "note": null,
+   "convertible": true,
+   "engine": {
+    "template": "lapping_lug",
+    "review": 6,
+    "mismatch": []
+   }
+  },
+  {
+   "code": "L-30",
+   "aliases": [
+    "L-30"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 23,
+   "pdfPage": 34,
+   "family": "L",
+   "usage": "LAPPING 취부",
+   "swl_t": 30.0,
+   "analysable": true,
+   "note": null,
+   "convertible": true,
+   "engine": {
+    "template": "lapping_lug",
+    "review": 6,
+    "mismatch": []
+   }
+  },
+  {
+   "code": "L-40",
+   "aliases": [
+    "L-40"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 24,
+   "pdfPage": 35,
+   "family": "L",
+   "usage": "LAPPING 취부",
+   "swl_t": 40.0,
+   "analysable": true,
+   "note": null,
+   "convertible": true,
+   "engine": {
+    "template": "lapping_lug",
+    "review": 9,
+    "mismatch": [
+     "arc_R",
+     "height",
+     "outline_shape"
+    ]
+   }
+  },
+  {
+   "code": "L-50",
+   "aliases": [
+    "L-50"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 25,
+   "pdfPage": 36,
+   "family": "L",
+   "usage": "LAPPING 취부",
+   "swl_t": 50.0,
+   "analysable": true,
+   "note": null,
+   "convertible": true,
+   "engine": {
+    "template": "lapping_lug",
+    "review": 7,
+    "mismatch": []
+   }
+  },
+  {
+   "code": "A-15",
+   "aliases": [
+    "A-15"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 26,
+   "pdfPage": 37,
+   "family": "A",
+   "usage": "T/O 전용(곡부)",
+   "swl_t": 15.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "A-20",
+   "aliases": [
+    "A-20"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 27,
+   "pdfPage": 38,
+   "family": "A",
+   "usage": "T/O 전용(곡부)",
+   "swl_t": 20.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "A-30, 30E, 30F",
+   "aliases": [
+    "A-30",
+    "A-30E",
+    "A-30F"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 28,
+   "pdfPage": 39,
+   "family": "A",
+   "usage": "T/O 전용(곡부)",
+   "swl_t": 30.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "A-40, 40E, 40F",
+   "aliases": [
+    "A-40",
+    "A-40E",
+    "A-40F"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 29,
+   "pdfPage": 40,
+   "family": "A",
+   "usage": "T/O 전용(곡부)",
+   "swl_t": 40.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "A-50, 50E, 50F",
+   "aliases": [
+    "A-50",
+    "A-50E",
+    "A-50F"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 30,
+   "pdfPage": 41,
+   "family": "A",
+   "usage": "T/O 전용(곡부)",
+   "swl_t": 50.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "B-5, B-5A",
+   "aliases": [
+    "B-5",
+    "B-5A"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 31,
+   "pdfPage": 42,
+   "family": "B",
+   "usage": "STIFF SIDE 취부",
+   "swl_t": 5.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "B-10, B-10A",
+   "aliases": [
+    "B-10",
+    "B-10A"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 32,
+   "pdfPage": 43,
+   "family": "B",
+   "usage": "STIFF SIDE 취부",
+   "swl_t": 10.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "B-15",
+   "aliases": [
+    "B-15"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 33,
+   "pdfPage": 44,
+   "family": "B",
+   "usage": "STIFF SIDE 취부",
+   "swl_t": 15.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "B-20",
+   "aliases": [
+    "B-20"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 34,
+   "pdfPage": 45,
+   "family": "B",
+   "usage": "STIFF SIDE 취부",
+   "swl_t": 20.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "B-25",
+   "aliases": [
+    "B-25"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 35,
+   "pdfPage": 46,
+   "family": "B",
+   "usage": "STIFF SIDE 취부",
+   "swl_t": 25.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "E-5",
+   "aliases": [
+    "E-5"
+   ],
+   "name": "LIFTING LUG",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 36,
+   "pdfPage": 47,
+   "family": "E",
+   "usage": null,
+   "swl_t": 5.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-25-25R",
+   "aliases": [
+    "D-25-25R"
+   ],
+   "name": "곡가공 LUG (D-25)",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 37,
+   "pdfPage": 48,
+   "family": "D-R",
+   "usage": null,
+   "swl_t": 25.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-35-55R, -35R, -25R",
+   "aliases": [
+    "D-35-55R",
+    "D-35-35R",
+    "D-35-25R"
+   ],
+   "name": "곡가공 LUG (D-35)",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 38,
+   "pdfPage": 49,
+   "family": "D-R",
+   "usage": null,
+   "swl_t": 35.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-50-55R, -35R, -25R",
+   "aliases": [
+    "D-50-55R",
+    "D-50-35R",
+    "D-50-25R"
+   ],
+   "name": "곡가공 LUG (D-50)",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 39,
+   "pdfPage": 50,
+   "family": "D-R",
+   "usage": null,
+   "swl_t": 50.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-75-55R, -35R, -25R",
+   "aliases": [
+    "D-75-55R",
+    "D-75-35R",
+    "D-75-25R"
+   ],
+   "name": "곡가공 LUG (D-75)",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 40,
+   "pdfPage": 51,
+   "family": "D-R",
+   "usage": null,
+   "swl_t": 75.0,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "RB1 ~ RB6",
+   "aliases": [
+    "RB1",
+    "RB2",
+    "RB3",
+    "RB4",
+    "RB5",
+    "RB6"
+   ],
+   "name": "LUG ROUND TYPE SIDE BRACKET",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 41,
+   "pdfPage": 52,
+   "family": "BKT",
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "RB-35",
+   "aliases": [
+    "RB-35"
+   ],
+   "name": "LIFTING 구조보강 BKT",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 42,
+   "pdfPage": 53,
+   "family": "BKT",
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "D-16S, 25S, 35S, 50S, 75S",
+   "aliases": [
+    "D-16S",
+    "D-25S",
+    "D-35S",
+    "D-50S",
+    "D-75S"
+   ],
+   "name": "LUG 지지용 BRAKET",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 43,
+   "pdfPage": 54,
+   "family": "BKT",
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "T-15S, 20S, 30S, 40S, 50S",
+   "aliases": [
+    "T-15S",
+    "T-20S",
+    "T-30S",
+    "T-40S",
+    "T-50S"
+   ],
+   "name": "지지용 BRACKET",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 44,
+   "pdfPage": 55,
+   "family": "BKT",
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "LDP1 ~ LDP4",
+   "aliases": [
+    "LDP1",
+    "LDP2",
+    "LDP3",
+    "LDP4"
+   ],
+   "name": "LIFTING DOUBLE PLATE",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 45,
+   "pdfPage": 56,
+   "family": "BKT",
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "LDP12, 16, 17, 25",
+   "aliases": [
+    "LDP12",
+    "LDP16",
+    "LDP17",
+    "LDP25"
+   ],
+   "name": "U-SHACKLE 전용 L/HOLE보강 D/PLATE",
+   "group": "lug",
+   "groupLabel": "LIFTING LUG",
+   "bookPage": 46,
+   "pdfPage": 57,
+   "family": "BKT",
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SH-12, -16, -17, -25",
+   "aliases": [
+    "SH-12",
+    "SH-16",
+    "SH-17",
+    "SH-25"
+   ],
+   "name": "U-SHACKLE",
+   "group": "rigging",
+   "groupLabel": "LIFTING 기자재",
+   "bookPage": 47,
+   "pdfPage": 58,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "SC-10, SC-10A",
+   "aliases": [
+    "SC-10",
+    "SC-10A"
+   ],
+   "name": "LIFTING 용 치구",
+   "group": "rigging",
+   "groupLabel": "LIFTING 기자재",
+   "bookPage": 48,
+   "pdfPage": 59,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SC-15, SC-15A",
+   "aliases": [
+    "SC-15",
+    "SC-15A"
+   ],
+   "name": "LIFTING 용 치구",
+   "group": "rigging",
+   "groupLabel": "LIFTING 기자재",
+   "bookPage": 49,
+   "pdfPage": 60,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SC-20, SC-20A",
+   "aliases": [
+    "SC-20",
+    "SC-20A"
+   ],
+   "name": "LIFTING 용 치구",
+   "group": "rigging",
+   "groupLabel": "LIFTING 기자재",
+   "bookPage": 50,
+   "pdfPage": 61,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "LC-15, LC-15A",
+   "aliases": [
+    "LC-15",
+    "LC-15A"
+   ],
+   "name": "LIFTING 용 치구",
+   "group": "rigging",
+   "groupLabel": "LIFTING 기자재",
+   "bookPage": 51,
+   "pdfPage": 62,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "LDP-50, LDP-75",
+   "aliases": [
+    "LDP-50",
+    "LDP-75"
+   ],
+   "name": "L/HOLE DOUBLE PLATE(SC-TYPE 전용)",
+   "group": "rigging",
+   "groupLabel": "LIFTING 기자재",
+   "bookPage": 52,
+   "pdfPage": 63,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PP5, PP10",
+   "aliases": [
+    "PP5",
+    "PP10"
+   ],
+   "name": "PIPE PROTECTOR (LUG용)",
+   "group": "rigging",
+   "groupLabel": "LIFTING 기자재",
+   "bookPage": 53,
+   "pdfPage": 64,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PP50, PP100",
+   "aliases": [
+    "PP50",
+    "PP100"
+   ],
+   "name": "PIPE PROTECTOR (H/COAMING 용)",
+   "group": "rigging",
+   "groupLabel": "LIFTING 기자재",
+   "bookPage": 54,
+   "pdfPage": 65,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "LO-0053",
+   "aliases": [
+    "LO-0053"
+   ],
+   "name": "다점체결 LIFTING 장비",
+   "group": "rigging",
+   "groupLabel": "LIFTING 기자재",
+   "bookPage": 55,
+   "pdfPage": 66,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SB1",
+   "aliases": [
+    "SB1"
+   ],
+   "name": "지주 BRAKET",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 56,
+   "pdfPage": 67,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SBA",
+   "aliases": [
+    "SBA"
+   ],
+   "name": "지주 BRAKET",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 57,
+   "pdfPage": 68,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SBB",
+   "aliases": [
+    "SBB"
+   ],
+   "name": "지주 BRAKET",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 58,
+   "pdfPage": 69,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SBC",
+   "aliases": [
+    "SBC"
+   ],
+   "name": "지주 BRAKET",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 59,
+   "pdfPage": 70,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SB1-50",
+   "aliases": [
+    "SB1-50"
+   ],
+   "name": "지주 BRAKET",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 60,
+   "pdfPage": 71,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SBA-50",
+   "aliases": [
+    "SBA-50"
+   ],
+   "name": "지주 BRAKET",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 61,
+   "pdfPage": 72,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SBB-50",
+   "aliases": [
+    "SBB-50"
+   ],
+   "name": "지주 BRAKET",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 62,
+   "pdfPage": 73,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SBC-50",
+   "aliases": [
+    "SBC-50"
+   ],
+   "name": "지주 BRAKET",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 63,
+   "pdfPage": 74,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "TB1",
+   "aliases": [
+    "TB1"
+   ],
+   "name": "TOWER BRAKET",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 64,
+   "pdfPage": 75,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "TB2",
+   "aliases": [
+    "TB2"
+   ],
+   "name": "TOWER BRAKET",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 65,
+   "pdfPage": 76,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "TB3",
+   "aliases": [
+    "TB3"
+   ],
+   "name": "TOWER BRAKET",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 66,
+   "pdfPage": 77,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PS1",
+   "aliases": [
+    "PS1"
+   ],
+   "name": "PIPE 지주 250A(#60, SPPS)",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 67,
+   "pdfPage": 78,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PS2",
+   "aliases": [
+    "PS2"
+   ],
+   "name": "PIPE 지주 400A(#40, SPPS)",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 68,
+   "pdfPage": 79,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PS3",
+   "aliases": [
+    "PS3"
+   ],
+   "name": "PIPE 지주 400A(#60, SPPS)",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 69,
+   "pdfPage": 80,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PS8",
+   "aliases": [
+    "PS8"
+   ],
+   "name": "TOWER용 PIPE SUPPORT",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 70,
+   "pdfPage": 81,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI - 040",
+   "aliases": [
+    "PI-040"
+   ],
+   "name": "지주하부 고임 PIECE",
+   "group": "support_bracket",
+   "groupLabel": "지주 BRACKET·PIPE 지주",
+   "bookPage": 71,
+   "pdfPage": 82,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-011",
+   "aliases": [
+    "PI-011"
+   ],
+   "name": "GUIDE PIECE (1YARD 용)",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 72,
+   "pdfPage": 83,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-012",
+   "aliases": [
+    "PI-012"
+   ],
+   "name": "T형 PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 73,
+   "pdfPage": 84,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-013",
+   "aliases": [
+    "PI-013"
+   ],
+   "name": "LEVEL 조정 PIECE (STRONG BACK)",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 74,
+   "pdfPage": 85,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-0194",
+   "aliases": [
+    "PI-0194"
+   ],
+   "name": "안전발판",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 75,
+   "pdfPage": 86,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-034",
+   "aliases": [
+    "PI-034"
+   ],
+   "name": "고임 PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 76,
+   "pdfPage": 87,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-035",
+   "aliases": [
+    "PI-035"
+   ],
+   "name": "POWER PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 77,
+   "pdfPage": 88,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-035A",
+   "aliases": [
+    "PI-035A"
+   ],
+   "name": "POWER PIECE (OVER HEAD용)",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 78,
+   "pdfPage": 89,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-036A, PI-036B",
+   "aliases": [
+    "PI-036A",
+    "PI-036B"
+   ],
+   "name": "GUIDE PIECE (LNG TANK용)",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 79,
+   "pdfPage": 90,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-039",
+   "aliases": [
+    "PI-039"
+   ],
+   "name": "C형 PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 80,
+   "pdfPage": 91,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-045",
+   "aliases": [
+    "PI-045"
+   ],
+   "name": "OPENING BLOCK 탑재용 PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 81,
+   "pdfPage": 92,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "AS-02",
+   "aliases": [
+    "AS-02"
+   ],
+   "name": "P.E탑재 BLOCK LASHING 용 치구 (LG-1)",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 82,
+   "pdfPage": 93,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "AS-03",
+   "aliases": [
+    "AS-03"
+   ],
+   "name": "P.E탑재 BLOCK LASHING 용 치구 (LG-2)",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 83,
+   "pdfPage": 94,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "AS-07",
+   "aliases": [
+    "AS-07"
+   ],
+   "name": "탑재용 GUIDE PIECE (2YARD 용)",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 84,
+   "pdfPage": 95,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "AS - 08",
+   "aliases": [
+    "AS-08"
+   ],
+   "name": "LASHING 용 EYE PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 85,
+   "pdfPage": 96,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "AS - 010",
+   "aliases": [
+    "AS-010"
+   ],
+   "name": "LASHING 용 EYE PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 86,
+   "pdfPage": 97,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "AS - 011",
+   "aliases": [
+    "AS-011"
+   ],
+   "name": "LASHING 용 PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 87,
+   "pdfPage": 98,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "AS - 012",
+   "aliases": [
+    "AS-012"
+   ],
+   "name": "LPG TANK 해상운송 LASHING PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 88,
+   "pdfPage": 99,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI - 042, PI - 043",
+   "aliases": [
+    "PI-042",
+    "PI-043"
+   ],
+   "name": "운반 SUPPORT 보강 BKT",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 89,
+   "pdfPage": 100,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI - P1",
+   "aliases": [
+    "PI-P1"
+   ],
+   "name": "미끄럼 방지 PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 90,
+   "pdfPage": 101,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "LO-0050",
+   "aliases": [
+    "LO-0050"
+   ],
+   "name": "UPPER DECK 처짐 방지용 치구",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 91,
+   "pdfPage": 102,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "TBB",
+   "aliases": [
+    "TBB"
+   ],
+   "name": "LNG TRUNK DECK STOCK SUPPORT BKT",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 92,
+   "pdfPage": 103,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "TBB1",
+   "aliases": [
+    "TBB1"
+   ],
+   "name": "LNG TRUNK DECK STOCK SUPPORT BKT",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 93,
+   "pdfPage": 104,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "TBP",
+   "aliases": [
+    "TBP"
+   ],
+   "name": "LNG TRUNK DECK STOCK SUPPORT",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 94,
+   "pdfPage": 105,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-0183",
+   "aliases": [
+    "PI-0183"
+   ],
+   "name": "LNG TRUNK DECK용 GUIDE PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 95,
+   "pdfPage": 106,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "PI-0184",
+   "aliases": [
+    "PI-0184"
+   ],
+   "name": "LNG TRUNK DECK용 GUIDE PIECE",
+   "group": "erection_piece",
+   "groupLabel": "탑재용 PIECE",
+   "bookPage": 96,
+   "pdfPage": 107,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "BE-A1",
+   "aliases": [
+    "BE-A1"
+   ],
+   "name": "운반용 BEAM",
+   "group": "beam",
+   "groupLabel": "운반·보강 BEAM",
+   "bookPage": 97,
+   "pdfPage": 108,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "BE-A2",
+   "aliases": [
+    "BE-A2"
+   ],
+   "name": "운반용 BEAM",
+   "group": "beam",
+   "groupLabel": "운반·보강 BEAM",
+   "bookPage": 98,
+   "pdfPage": 109,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "BE-01",
+   "aliases": [
+    "BE-01"
+   ],
+   "name": "운반용 BEAM",
+   "group": "beam",
+   "groupLabel": "운반·보강 BEAM",
+   "bookPage": 99,
+   "pdfPage": 110,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "BE-02",
+   "aliases": [
+    "BE-02"
+   ],
+   "name": "운반용 BEAM",
+   "group": "beam",
+   "groupLabel": "운반·보강 BEAM",
+   "bookPage": 100,
+   "pdfPage": 111,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "BE-A09",
+   "aliases": [
+    "BE-A09"
+   ],
+   "name": "운반용 BEAM",
+   "group": "beam",
+   "groupLabel": "운반·보강 BEAM",
+   "bookPage": 101,
+   "pdfPage": 112,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "BE-A10, -A11",
+   "aliases": [
+    "BE-A10",
+    "BE-A11"
+   ],
+   "name": "운반용 TRESTLE",
+   "group": "beam",
+   "groupLabel": "운반·보강 BEAM",
+   "bookPage": 102,
+   "pdfPage": 113,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "BE-A12",
+   "aliases": [
+    "BE-A12"
+   ],
+   "name": "주판 이동용 TRESTILE",
+   "group": "beam",
+   "groupLabel": "운반·보강 BEAM",
+   "bookPage": 103,
+   "pdfPage": 114,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "BE-A13",
+   "aliases": [
+    "BE-A13"
+   ],
+   "name": "주판 이동용 TRESTILE",
+   "group": "beam",
+   "groupLabel": "운반·보강 BEAM",
+   "bookPage": 104,
+   "pdfPage": 115,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "BE-A14",
+   "aliases": [
+    "BE-A14"
+   ],
+   "name": "주판 이동용 TRESTILE",
+   "group": "beam",
+   "groupLabel": "운반·보강 BEAM",
+   "bookPage": 105,
+   "pdfPage": 116,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "BE-A15",
+   "aliases": [
+    "BE-A15"
+   ],
+   "name": "주판 이동용 TRESTILE",
+   "group": "beam",
+   "groupLabel": "운반·보강 BEAM",
+   "bookPage": 106,
+   "pdfPage": 117,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SU-A1",
+   "aliases": [
+    "SU-A1"
+   ],
+   "name": "BLOCK SUPPORT(A1 - TYPE)",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 107,
+   "pdfPage": 118,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SU-A2",
+   "aliases": [
+    "SU-A2"
+   ],
+   "name": "BLOCK SUPPORT(A2 - TYPE)",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 108,
+   "pdfPage": 119,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SU-A7",
+   "aliases": [
+    "SU-A7"
+   ],
+   "name": "BLOCK SUPPORT",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 109,
+   "pdfPage": 120,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SU-A8",
+   "aliases": [
+    "SU-A8"
+   ],
+   "name": "BLOCK SUPPORT",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 110,
+   "pdfPage": 121,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SU-010",
+   "aliases": [
+    "SU-010"
+   ],
+   "name": "BLOCK SUPPORT(DOCK 전용)",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 111,
+   "pdfPage": 122,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SU-011",
+   "aliases": [
+    "SU-011"
+   ],
+   "name": "BLOCK SUPPORT(신형)",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 112,
+   "pdfPage": 123,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SU-012",
+   "aliases": [
+    "SU-012"
+   ],
+   "name": "BLOCK SUPPORT(개조형)",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 113,
+   "pdfPage": 124,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SU-145",
+   "aliases": [
+    "SU-145"
+   ],
+   "name": "BLOCK SUPPORT",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 114,
+   "pdfPage": 125,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SJ - 1A, SJ - 1B",
+   "aliases": [
+    "SJ-1A",
+    "SJ-1B"
+   ],
+   "name": "SCREW JACK (1YARD 용)",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 115,
+   "pdfPage": 126,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "3T-S/S, 4T-S/S, 5T-S/S",
+   "aliases": [
+    "3T-S/S",
+    "4T-S/S",
+    "5T-S/S"
+   ],
+   "name": "SCREW TOWER (1YARD 용)",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 116,
+   "pdfPage": 127,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "SJ-2A, SJ-2B",
+   "aliases": [
+    "SJ-2A",
+    "SJ-2B"
+   ],
+   "name": "SCREW JACK (2YARD 용)",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 117,
+   "pdfPage": 128,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "4T-S/T, 6T-S/T",
+   "aliases": [
+    "4T-S/T",
+    "6T-S/T"
+   ],
+   "name": "SCREW TOWER (2YARD 용)",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 118,
+   "pdfPage": 129,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "EXP - 1",
+   "aliases": [
+    "EXP-1"
+   ],
+   "name": "EXTENSION PIPE (2YARD 용)",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 119,
+   "pdfPage": 130,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "1.5PT, 1.8PT, 2PT",
+   "aliases": [
+    "1.5PT",
+    "1.8PT",
+    "2PT"
+   ],
+   "name": "PIPE 지주 높이보정 TOWER",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 120,
+   "pdfPage": 131,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "2T",
+   "aliases": [
+    "2T"
+   ],
+   "name": "2M TOWER",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 121,
+   "pdfPage": 132,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "3T, 4T",
+   "aliases": [
+    "3T",
+    "4T"
+   ],
+   "name": "3M, 4M TOWER",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 122,
+   "pdfPage": 133,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "3.5T",
+   "aliases": [
+    "3.5T"
+   ],
+   "name": "3.5M TOWER",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 123,
+   "pdfPage": 134,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "5T",
+   "aliases": [
+    "5T"
+   ],
+   "name": "5M TOWER",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 124,
+   "pdfPage": 135,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "6T, 7T",
+   "aliases": [
+    "6T",
+    "7T"
+   ],
+   "name": "6M, 7M TOWER",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 125,
+   "pdfPage": 136,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "7.2MB/T",
+   "aliases": [
+    "7.2MB/T"
+   ],
+   "name": "7.2M BEAM TOWER",
+   "group": "block_support",
+   "groupLabel": "BLOCK SUPPORT·TOWER",
+   "bookPage": 126,
+   "pdfPage": 137,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "NCB - 1",
+   "aliases": [
+    "NCB-1"
+   ],
+   "name": "콘크리트 반목 (DOCK용)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 127,
+   "pdfPage": 138,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NCB - 2",
+   "aliases": [
+    "NCB-2"
+   ],
+   "name": "콘크리트 반기 (DOCK용)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 128,
+   "pdfPage": 139,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NCB - 3",
+   "aliases": [
+    "NCB-3"
+   ],
+   "name": "콘크리트 반기 (DOCK용)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 129,
+   "pdfPage": 140,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "RSB",
+   "aliases": [
+    "RSB"
+   ],
+   "name": "콘크리트 반목 (4~6DOCK 용)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 130,
+   "pdfPage": 141,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NWB - 1",
+   "aliases": [
+    "NWB-1"
+   ],
+   "name": "목재반목 (DOCK)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 131,
+   "pdfPage": 142,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NWB - 2",
+   "aliases": [
+    "NWB-2"
+   ],
+   "name": "목재반목 (DOCK)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 132,
+   "pdfPage": 143,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NWB - 3",
+   "aliases": [
+    "NWB-3"
+   ],
+   "name": "SUPPORT WOODEN 반목",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 133,
+   "pdfPage": 144,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NWB - 4",
+   "aliases": [
+    "NWB-4"
+   ],
+   "name": "목재반목(탑재지주 설치용)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 134,
+   "pdfPage": 145,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NAW - 1, 2, 3, 4",
+   "aliases": [
+    "NAW-1",
+    "NAW-2",
+    "NAW-3",
+    "NAW-4"
+   ],
+   "name": "목재반목 (DOCK)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 135,
+   "pdfPage": 146,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NAW - 5, 6",
+   "aliases": [
+    "NAW-5",
+    "NAW-6"
+   ],
+   "name": "SUPPORT WOODEN 반목",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 136,
+   "pdfPage": 147,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "RW - 1",
+   "aliases": [
+    "RW-1"
+   ],
+   "name": "WOODEN 반목 (조립식)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 137,
+   "pdfPage": 148,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "RW - 2",
+   "aliases": [
+    "RW-2"
+   ],
+   "name": "WOODEN 반목 (조립식)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 138,
+   "pdfPage": 149,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "WSP - 1, -2",
+   "aliases": [
+    "WSP-1",
+    "WSP-2"
+   ],
+   "name": "반목용 STEEL PLATE",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 139,
+   "pdfPage": 150,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NHB - 1, -2",
+   "aliases": [
+    "NHB-1",
+    "NHB-2"
+   ],
+   "name": "LINER BOARD",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 140,
+   "pdfPage": 151,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NHB - 3",
+   "aliases": [
+    "NHB-3"
+   ],
+   "name": "LINER BOARD",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 141,
+   "pdfPage": 152,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NF - 1, 2, 3, 4, 5",
+   "aliases": [
+    "NF-1",
+    "NF-2",
+    "NF-3",
+    "NF-4",
+    "NF-5"
+   ],
+   "name": "반목 FITTING류",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 142,
+   "pdfPage": 153,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "RWB - 1",
+   "aliases": [
+    "RWB-1"
+   ],
+   "name": "목재반목 (4~6DOCK 용)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 143,
+   "pdfPage": 154,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "RWB - 2",
+   "aliases": [
+    "RWB-2"
+   ],
+   "name": "목재반목 (4~6DOCK 용)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 144,
+   "pdfPage": 155,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "RWB - 3",
+   "aliases": [
+    "RWB-3"
+   ],
+   "name": "목재반목 (4~6DOCK 용)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 145,
+   "pdfPage": 156,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "RAW",
+   "aliases": [
+    "RAW"
+   ],
+   "name": "목재반목 (4~6DOCK 용)",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 146,
+   "pdfPage": 157,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NPB - 1, -2, -3, -4, -5, -6",
+   "aliases": [
+    "NPB-1",
+    "NPB-2",
+    "NPB-3",
+    "NPB-4",
+    "NPB-5",
+    "NPB-6"
+   ],
+   "name": "플라스틱 반목",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 147,
+   "pdfPage": 158,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NSB-1",
+   "aliases": [
+    "NSB-1"
+   ],
+   "name": "STEEL 반목",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 148,
+   "pdfPage": 159,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NSB-2",
+   "aliases": [
+    "NSB-2"
+   ],
+   "name": "STEEL 반목",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 149,
+   "pdfPage": 160,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NSB-11~14",
+   "aliases": [
+    "NSB-11",
+    "NSB-12",
+    "NSB-13",
+    "NSB-14"
+   ],
+   "name": "플라스틱 반목",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 150,
+   "pdfPage": 161,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NSB-21~24",
+   "aliases": [
+    "NSB-21",
+    "NSB-22",
+    "NSB-23",
+    "NSB-24"
+   ],
+   "name": "플라스틱 반목",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 151,
+   "pdfPage": 162,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NPB-31~34",
+   "aliases": [
+    "NPB-31",
+    "NPB-32",
+    "NPB-33",
+    "NPB-34"
+   ],
+   "name": "플라스틱 반목",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 152,
+   "pdfPage": 163,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "NPB",
+   "aliases": [
+    "NPB"
+   ],
+   "name": "플라스틱 평반목",
+   "group": "dunnage",
+   "groupLabel": "반목(콘크리트·목재·플라스틱)",
+   "bookPage": 153,
+   "pdfPage": 164,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": false,
+   "note": null
+  },
+  {
+   "code": "EX-057 (1.7M)",
+   "aliases": [
+    "EX-057"
+   ],
+   "name": "LIFTING 하중조절 JIG",
+   "group": "rigging",
+   "groupLabel": "LIFTING 기자재",
+   "bookPage": 154,
+   "pdfPage": 165,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  },
+  {
+   "code": "EX-058 (2,5M)",
+   "aliases": [
+    "EX-058"
+   ],
+   "name": "LIFTING 하중조절 JIG",
+   "group": "rigging",
+   "groupLabel": "LIFTING 기자재",
+   "bookPage": 155,
+   "pdfPage": 166,
+   "family": null,
+   "usage": null,
+   "swl_t": null,
+   "analysable": true,
+   "note": null,
+   "convertible": false
+  }
+ ]
+}
