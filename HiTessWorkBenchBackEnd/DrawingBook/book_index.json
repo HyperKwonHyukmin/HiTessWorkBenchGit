@@ -7,7 +7,7 @@
   "pdfPages": 166,
   "pageOffset": 11
  },
- "generated": "2026-11-11",
+ "generated": "2026-11-12",
  "engineChecked": true,
  "groups": [
   {
@@ -150,7 +150,12 @@
    "swl_t": 25.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": true,
+   "engine": {
+    "template": "d_type_lug",
+    "review": 9,
+    "mismatch": []
+   }
   },
   {
    "code": "D-35",
@@ -167,7 +172,12 @@
    "swl_t": 35.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": true,
+   "engine": {
+    "template": "d_type_lug",
+    "review": 10,
+    "mismatch": []
+   }
   },
   {
    "code": "D-50",

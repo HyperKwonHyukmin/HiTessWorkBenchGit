@@ -792,6 +792,23 @@ CalcVerify 끝에 `Sn_Top,Sn_Bottom` 이 붙었다. 이 칸이 없는 옛 결과
 - 도움말: `data/helpContent.js`(MF 내용) + MU `components/help/*` 사본, `utils/theme.js` 는 MU 색 이름표 → MF CSS 변수 연결뿐. 테스트가 설명 없는 data-help 를 잡는다. Studio 테스트 `npm test`(38건).
 - 화면은 Chrome 헤드리스 + 실제 viewer-zip 자료로 탭·도크·편집·찾기·도움말을 눌러 확인. WorkBench 앱 안 실행·실제 해석 실패 F06 으로 위치 안내·OP2 실제 저장은 확인 안 함. 헤드리스에서는 개편 전 코드도 첫 화면 3D 가 조작 전까지 비어 보인다(환경 특성으로 판단, 앱에서 확인 필요).
 
+### DrawingToAnalysis — 새 러그 엔진(LugShell) 연결 (2026-11-10~, WorkBench `5af8bfd`·`32e316f`)
+
+엔진 저장소 `WorkBenchSubModule\DrawingToAnalysis`(로컬 git, 원격 없음)에 LugShell 을 `lugshell/` 로 병합했다(git subtree) — 상세는 그 저장소 CLAUDE.md '★LugShell 병합'.
+사내 치공구표준집 L형(lap) 러그 실도면을 읽는다: 선 글자 인식 → 치수 연결 → 설계 JSON(`review[]`) → gmsh 메시·BDF(하중 케이스 3개 + lap 구역 고정) → 수계산.
+- exe: `DrawingToAnalysis.exe lugshell --pdf … --out-dir … --page N --src-name <원래 이름>` (gmsh DLL 포함, 123 MB). 결과 = `lug_design.json`·`lug_trace.json`·`lug_model.bdf`·`mesh_preview.png`·`lug_report.json`·`lug_handcalc.json`, 종료 코드 2 = 지원 안 하는 형식, 3 = 모델 검증 실패.
+- 백엔드 `drawing_to_analysis_service.py`: Lug 모드에서 `engine_supports_lugshell(exe)`(`--help`, exe 수정 시각 캐시)가 참이면 새 명령, 아니면 옛 `all` — **서버 반영 순서가 바뀌어도 안 깨진다**. `result_info.engine='lugshell'` + `lugshell` 요약(review·핵심 치수·수계산 최대 UC). 변환 요청에 `page`.
+  해석 `use_model_loads=true` = BDF 하중·경계 그대로, 출력 요청만 F06 인쇄(`with_print_outputs`, CORNER 응력 요청은 빠짐). 시험 `tests/test_drawing_lugshell.py`.
+- 화면 `DrawingToAnalysis.jsx`: 쪽 번호 칸 · 새 엔진 결과면 `components/analysis/LugshellReviewPanel.jsx`(확인 항목) + [모델 하중으로 해석], 옛 파라미터·하중/경계 탭 숨김, Y↔Z 표시 교환 안 함(모델이 처음부터 X-Z).
+- 확인(70): 백엔드 작업 함수를 실제 exe·Nastran 으로 끝까지(L-25: 변환 성공 → 해석 3케이스, 최대 VM 220.7/225.2/275.8) · 프론트 빌드·유틸 시험 437 · lugshell 회귀 17. **WorkBench 앱 안 화면은 눈으로 확인 안 함.**
+- InHouse 70 교체: `InHouseProgram\DrawingToAnalysis\DrawingToAnalysis.exe`(백업 `.bak_20261110_before_lugshell`). **145 반영**: exe 교체(git 미추적) + `git pull`·재시작(백엔드) + 다음 WorkBench exe(화면). 서버 실도면 PDF 는 업로드 경로로 평문이 된다.
+- 판정 기준(D4)·lap 구역 경계(D6)·DAF/하중 각도/핀 지름은 아직 임시값 — 화면 '확인 항목'에 그대로 보인다.
+- **D형 러그 (2026-11-12, 엔진 `b04908e`)** — 템플릿 `d_type_lug` 로 치공구표준집 D-25·D-35 가 '바로 변환'(색인 7종). 엔진 `lugshell --template` 기본값이 `auto`(L형 → D형 순으로 시도)라 **백엔드 수정 없음**.
+  D형 모델 = 본판 + 덧판 2 + 브래킷 4, 갑판 없이 바닥 고정. 하중 4케이스(수직·면내 45°·90°·면외 10°)·DAF 1·용접 없음은 '확인 항목'. 수계산 하단 단면은 브래킷 밑변 합성(D-25 최대 UC 0.48, 예전 식이면 1.70 NG).
+  확인(70): exe 로 D-25·D-35·L-25(UC 0.77 그대로)·D-16(종료 2), 백엔드 `lugshell_summary`·`with_print_outputs` → Nastran FATAL 0. 앱 안 화면은 눈으로 확인 안 함.
+  70 InHouse exe 교체 sha256 14e53f0a…(백업 `.bak_20261112_before_dtype`, 리뷰 반영 뒤 다시 빌드). **145**: exe 교체 + `git pull`(색인 `DrawingBook/book_index.json`, 재시작 불필요).
+  같은 날: Nastran 은 한글·작은따옴표가 든 폴더 이름에서 FATAL 1019(파일 못 엶) — 백엔드 작업 폴더는 영문이라 무관, 손으로 돌릴 때만 주의.
+
 ### 이중관 연료배관 PSA — 엔진은 외부 연구원 소유, WorkBench 개조는 어댑터로 분리 ★엔진 수정 금지
 
 이중관 연료배관 응력해석(PSA) 엔진(`InHouseProgram/DoublePipe/Piping Stress Analysis for all load cases/`)은
