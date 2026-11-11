@@ -6,7 +6,8 @@
 
 규칙
 - 내용(sha256)이 같은 파일은 한 번만 저장한다. 같은 CSV 로 여러 번 실행하는 일이 많다(70 실측 81개 중 9개).
-- 이름이 같고 내용이 다르면 '<이름>_<해시 8자리>.csv' 로 둘 다 남긴다.
+- 같은 호선 폴더에 같은 파일명이 이미 있으면 내용이 달라도 저장하지 않는다(먼저 본 것 하나만, 사용자 결정 2026-11-12).
+  수집 스크립트는 폴더 이름(=실행 시각) 순으로 훑으므로 가장 오래된 실행의 파일이 남는다.
 - 같은 원래 경로·같은 해시는 manifest 에 다시 적지 않는다 → 수집 스크립트를 여러 번 돌려도 안전하다.
 - 회사 DRM 암호문(HHIDRMC 머리)은 저장하지 않는다(암호문은 쓸모가 없다).
 - 원본은 읽기만 한다.
@@ -103,16 +104,6 @@ def _append_manifest(root: str, row: Dict[str, str]) -> None:
         writer.writerow(row)
 
 
-def _pick_target(root: str, hull: str, name: str, sha: str) -> str:
-    """저장 경로(root 기준 상대)를 고른다. 같은 이름·다른 내용이면 해시를 붙인다."""
-    rel = os.path.join(hull, name)
-    full = os.path.join(root, rel)
-    if not os.path.exists(full):
-        return rel
-    stem, ext = os.path.splitext(name)
-    return os.path.join(hull, f"{stem}_{sha[:8]}{ext}")
-
-
 def archive_csv(
     src_path: Optional[str],
     *,
@@ -122,10 +113,11 @@ def archive_csv(
     run_at: str = "",
     root: Optional[str] = None,
 ) -> str:
-    """CSV 하나를 보관한다. 결과: 'stored' | 'duplicate' | 'seen' | 'drm' | 'missing'.
+    """CSV 하나를 보관한다. 결과: 'stored' | 'duplicate' | 'same_name' | 'seen' | 'drm' | 'missing'.
 
     stored    = 새 내용이라 복사함
     duplicate = 같은 내용이 이미 있음(manifest 에 이번 자리만 적음)
+    same_name = 같은 파일명이 이미 있어 저장하지 않음(내용은 다름, manifest 에 stored_path 빈 줄)
     seen      = 같은 원래 폴더·같은 내용이 이미 manifest 에 있음(아무것도 안 함)
     """
     if not src_path or not os.path.isfile(src_path):
@@ -150,8 +142,12 @@ def archive_csv(
                         None)
         if existing:
             stored_rel, result = existing, "duplicate"
+        elif os.path.exists(os.path.join(root, hull, name)):
+            # 같은 파일명이 이미 있으면 내용이 달라도 저장하지 않는다(사용자 결정 2026-11-12, 먼저 본 것 하나만).
+            # manifest 에는 stored_path 를 비워 '어느 실행이 다른 내용을 썼는지' 만 남긴다.
+            stored_rel, result = "", "same_name"
         else:
-            stored_rel = _pick_target(root, hull, name, sha)
+            stored_rel = os.path.join(hull, name)
             target = os.path.join(root, stored_rel)
             os.makedirs(os.path.dirname(target), exist_ok=True)
             tmp = target + ".tmp"
@@ -163,7 +159,7 @@ def archive_csv(
             _write_row(root, stored_rel, sha, kind, hull, name, source_folder, employee_id, run_at, len(data))
         except OSError:
             # manifest 가 잠겨 있으면(예: Excel 로 열어 둠) 방금 저장한 본문을 지운다 —
-            # 기록 없는 파일이 남으면 다음 실행이 같은 내용을 '_<해시8>' 로 또 저장한다.
+            # 기록 없는 파일이 남으면 다음 실행이 그 파일을 '같은 파일명' 으로 보고 기록 없이 건너뛴다.
             if result == "stored":
                 try:
                     os.remove(os.path.join(root, stored_rel))

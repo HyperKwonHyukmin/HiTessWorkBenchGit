@@ -48,13 +48,18 @@ def test_rerun_is_safe(dirs):
     assert len(_manifest(root)) == 1
 
 
-def test_same_name_different_content_keeps_both(dirs):
+def test_same_name_different_content_keeps_first_only(dirs):
     uc, root = dirs
     a = _write(uc / "f1" / "3454-equpData.csv", "name,pos\nA,1\n")
     b = _write(uc / "f2" / "3454-equpData.csv", "name,pos\nB,2\n")
     arc.archive_csv(a, source_folder="f1", root=str(root))
-    assert arc.archive_csv(b, source_folder="f2", root=str(root)) == "stored"
-    assert len(list((root / "3454").glob("*.csv"))) == 2
+    assert arc.archive_csv(b, source_folder="f2", root=str(root)) == "same_name"
+    stored = list((root / "3454").glob("*.csv"))
+    assert len(stored) == 1 and stored[0].read_text() == "name,pos\nA,1\n"
+    rows = _manifest(root)
+    assert rows[1]["source_folder"] == "f2" and rows[1]["stored_path"] == ""
+    # 다시 돌려도 같은 자리를 또 적지 않는다
+    assert arc.archive_csv(b, source_folder="f2", root=str(root)) == "seen"
 
 
 def test_no_hull_goes_to_unknown_and_drm_is_skipped(dirs):

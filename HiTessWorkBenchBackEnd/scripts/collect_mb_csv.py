@@ -24,6 +24,7 @@ from app.services import mb_csv_archive as arc  # noqa: E402
 LABELS = {
     "stored": "새로 저장",
     "duplicate": "같은 내용 있음(기록만)",
+    "same_name": "같은 파일명 있음 — 건너뜀(기록만)",
     "seen": "이미 수집함",
     "drm": "DRM 암호문 — 건너뜀",
     "missing": "파일 없음",
