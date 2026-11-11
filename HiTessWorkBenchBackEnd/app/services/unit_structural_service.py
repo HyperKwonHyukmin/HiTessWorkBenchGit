@@ -25,7 +25,7 @@ from typing import Any, Dict, Optional
 
 from .f06_location import describe_problem_nodes
 from .. import database, models
-from .exit_codes import abnormal_exit_message, is_abnormal_exit
+from .exit_codes import abnormal_exit_message, is_abnormal_exit, outputs_complete_after_crash
 from .analysis_runner import (
     CANCELLED_MESSAGE,
     JobCancelledError,
@@ -179,12 +179,17 @@ def build_lifting_bdf(
         # 사용자가 이미 취소를 요청했으면 다음 단계를 시작하지 않는다.
         if job_id and is_cancel_requested(job_id):
             raise JobCancelledError(CANCELLED_MESSAGE)
+        apply_started = time.time()
         apply_proc = subprocess.run(
             apply_args, cwd=bdf_dir, env=bridge_env(),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
         )
         engine_output += "\n[apply-edit]\n" + _decode_completed(apply_proc)
-        if apply_proc.returncode != 0:
+        # 종료 순간 DRM 에 끊겨도 편집 BDF 를 이번에 끝까지 썼으면 그대로 쓴다(exit_codes.outputs_complete_after_crash).
+        if apply_proc.returncode != 0 and outputs_complete_after_crash(
+                apply_proc.returncode, [os.path.join(bdf_dir, edited_bdf)], apply_started):
+            engine_output += _crash_tolerated_note(apply_proc.returncode, "편집 BDF 생성")
+        elif apply_proc.returncode != 0:
             # Windows 예외로 죽었으면(예: DRM 이 파이썬을 끊음) 편집 내용 탓이 아니다 — 원인을 바꿔 말한다.
             if is_abnormal_exit(apply_proc.returncode):
                 raise RuntimeError(
@@ -217,19 +222,36 @@ def build_lifting_bdf(
     # subprocess.run 은 블로킹이라 중도 중단이 불가능해 '띄우기 전'이 유일한 차단점이다.
     if job_id and is_cancel_requested(job_id):
         raise JobCancelledError(CANCELLED_MESSAGE)
+    prepare_started = time.time()
     prepare = subprocess.run(
         prepare_args, cwd=bdf_dir, env=bridge_env(),
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300,
     )
     prepare_log = _decode_completed(prepare)
     engine_output += prepare_log
-    if prepare.returncode != 0:
+    if prepare.returncode != 0 and outputs_complete_after_crash(
+            prepare.returncode, [os.path.join(bdf_dir, lifting_bdf), os.path.join(bdf_dir, lifting_meta)], prepare_started):
+        engine_output += _crash_tolerated_note(prepare.returncode, "Wire 포함 BDF 생성")
+    elif prepare.returncode != 0:
+        if is_abnormal_exit(prepare.returncode):
+            raise RuntimeError(
+                f"Wire 포함 BDF 생성 실패 (exit={prepare.returncode}). "
+                + abnormal_exit_message(prepare.returncode, "Wire 포함 BDF 를 만드는 프로그램")
+            )
         raise RuntimeError(
             f"lift-run prepare exit code {prepare.returncode}. 로그:\n{prepare_log.strip()[-4000:]}"
         )
     if not os.path.exists(lifting_bdf) or not os.path.exists(lifting_meta):
         raise RuntimeError("lifting BDF/meta 가 생성되지 않았습니다.")
     return engine_output
+
+
+def _crash_tolerated_note(returncode: int, what: str) -> str:
+    """비정상 종료를 넘긴 사실을 엔진 로그에 남긴다(조용히 넘기지 않는다)."""
+    code = int(returncode) & 0xFFFFFFFF
+    note = f"{what} 프로그램이 종료 순간 비정상 종료(0x{code:08X})했지만 결과 파일이 끝까지 써져 있어 계속 진행합니다."
+    logger.warning("[UnitStructural] %s", note)
+    return f"\n[경고] {note}\n"
 
 
 def find_lifting_op2(lifting_bdf: Optional[str]) -> Optional[str]:

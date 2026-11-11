@@ -104,10 +104,67 @@ def bailout_param_lines(lines: List[str]) -> List[int]:
     return [i for i, line in enumerate(lines) if param_name(line) == "BAILOUT"]
 
 
+# nastran_bridge.build_lifting_bdf 가 Wire 포함 권상 BDF 에 쓰는 표식(TITLE · SPC/GRAV SID). 바꾸면 함께 고칠 것.
+_LIFTING_TITLE = re.compile(r"^\s*TITLE\s*=\s*HITESSWORKBENCH\s+LIFTING\s+ANALYSIS", re.IGNORECASE)
+_LIFTING_SPC_SID = "990001"
+_LIFTING_GRAV_SID = "990002"
+
+
+def _card_sid(line: str) -> str:
+    """카드의 두 번째 필드(SID). 자유 필드·고정 필드 모두."""
+    body = line.split("$", 1)[0].rstrip(_EOL_STRIP)
+    if "," in body:
+        parts = body.split(",")
+        return parts[1].strip() if len(parts) > 1 else ""
+    return body[8:16].strip() if len(body) > 8 else ""
+
+
+def lifting_output_marks(lines: List[str]) -> List[int]:
+    """이 BDF 가 WorkBench 가 만든 Wire 포함 권상 BDF 인지 — 표식 줄 인덱스(0부터). 없으면 빈 목록.
+
+    TITLE 줄 하나로 충분하고, TITLE 을 지운 경우를 위해 SPC1 990001 + GRAV 990002 가 함께 있어도 본다.
+    """
+    title, spc, grav = [], [], []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("$"):
+            continue
+        if _LIFTING_TITLE.match(stripped):
+            title.append(i)
+            continue
+        token = _first_token(stripped)
+        if token == "SPC1" and _card_sid(line) == _LIFTING_SPC_SID:
+            spc.append(i)
+        elif token == "GRAV" and _card_sid(line) == _LIFTING_GRAV_SID:
+            grav.append(i)
+    if title:
+        return title + spc + grav
+    if spc and grav:
+        return spc + grav
+    return []
+
+
 def inspect_deck_lines(lines: List[str]) -> List[Dict[str, Any]]:
     """구간 경계 문제 목록. 각 항목은 자동 수정 가능(fixable) 여부와 무엇을 고치는지(fix)를 함께 준다."""
     issues: List[Dict[str, Any]] = []
     sec = _sections(lines)
+
+    # 예전에 받은 Wire 포함 권상 BDF(_lifting.bdf)를 입력으로 다시 올린 경우 — 이전 Wire(CROD)·훅 절점이
+    # 모델에 남아 새 Wire 와 두 벌이 되고, 편집 BDF 에서 CROD 가 CBEAM 으로 바뀌어 FATAL 2010 이 났다
+    # (2026-11-11, 3469 M02_edited_lifting.bdf). 결과를 믿을 수 없으므로 고칠 수 없는 오류로 막는다.
+    marks = lifting_output_marks(lines)
+    if marks:
+        issues.append({
+            "code": "lifting_output_input",
+            "severity": "error",
+            "title": "이미 Wire 가 들어간 권상 해석 BDF 입니다 — 원본 모델 BDF 를 올리세요",
+            "detail": (f"이 파일은 WorkBench 가 만든 Wire 포함 권상 BDF 입니다({_line_numbers_text(marks)}번째 줄). "
+                       "이전 해석의 Wire(CROD)·훅 절점이 모델에 남아 새 Wire 와 두 벌로 걸리므로 해석 결과를 믿을 수 없습니다. "
+                       "Wire 가 없는 원본 모델 BDF 로 다시 검증하세요."),
+            "lines": [i + 1 for i in marks],
+            "fixable": False,
+            "fix": "",
+        })
 
     if sec["begin"] is None and sec["cend"] is not None and sec["bulkStart"] is not None:
         line_no = sec["bulkStart"] + 1

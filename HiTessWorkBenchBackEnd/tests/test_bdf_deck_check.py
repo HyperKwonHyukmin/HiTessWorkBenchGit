@@ -133,3 +133,40 @@ def test_bailout_param_is_reported_wherever_and_however_written():
 
 def test_no_bailout_no_issue():
     assert not [i for i in inspect_deck_lines(NO_BEGIN_BULK) if i["code"] == "bailout_param"]
+
+
+# 회귀(2026-11-11, 3469 M02_edited_lifting.bdf): 예전에 받은 Wire 포함 권상 BDF 를 입력으로 다시 올려
+# 이전 Wire 가 모델에 남았고, 편집 BDF 에서 CBEAM → PROD 참조로 FATAL 2010 이 났다. 검증에서 막는다.
+LIFTING_OUTPUT = [
+    "SOL 101\r\n",
+    "CEND\r\n",
+    "TITLE = HiTessWorkBench Lifting Analysis\r\n",
+    "SUBCASE 1\r\n",
+    "  SPC = 990001\r\n",
+    "BEGIN BULK\r\n",
+    "CROD        6349     132    2975    3675\r\n",
+    "PROD         132      28  1257.0251327.0\r\n",
+    "SPC1      990001  123456    3675    3676\r\n",
+    "GRAV      990002       0  9800.0     0.0     0.0    -1.0\r\n",
+    "ENDDATA\r\n",
+]
+
+
+def test_lifting_output_bdf_is_blocked():
+    issues = inspect_deck_lines(LIFTING_OUTPUT)
+    issue = next(i for i in issues if i["code"] == "lifting_output_input")
+    assert issue["severity"] == "error" and issue["fixable"] is False
+    assert 3 in issue["lines"]
+
+
+def test_lifting_output_without_title_is_found_by_spc_and_grav():
+    lines = [l for l in LIFTING_OUTPUT if not l.startswith("TITLE")]
+    assert "lifting_output_input" in codes(inspect_deck_lines(lines))
+
+
+def test_lifting_marks_need_both_spc_and_grav_or_title():
+    only_spc = ["BEGIN BULK\n", "SPC1,990001,123456,1\n", "ENDDATA\n"]
+    other_title = ["SOL 101\n", "CEND\n", "TITLE = My Lifting Analysis\n", "BEGIN BULK\n", "ENDDATA\n"]
+    assert "lifting_output_input" not in codes(inspect_deck_lines(only_spc))
+    assert "lifting_output_input" not in codes(inspect_deck_lines(other_title))
+    assert "lifting_output_input" not in codes(inspect_deck_lines(CASE_IN_BULK))
