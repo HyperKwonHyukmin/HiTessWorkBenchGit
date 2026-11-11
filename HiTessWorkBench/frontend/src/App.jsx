@@ -70,6 +70,7 @@ const IndependentTankAssessment = lazy(() => import('./pages/analysis/Independen
 const SectionPropertyCalculator = lazy(() => import('./pages/analysis/SectionPropertyCalculator'));
 const PlateStructureAnalysis = lazy(() => import('./pages/analysis/PlateStructureAnalysis'));
 const ApiApps = lazy(() => import('./pages/Administration/ApiApps'));
+const AdminTabHub = lazy(() => import('./components/admin/AdminTabHub'));
 const HiTessModelBuilder = lazy(() => import('./pages/analysis/HiTessModelBuilder'));
 const GroupModuleUnitLiftingAnalysis = lazy(() => import('./pages/analysis/GroupModuleUnitLiftingAnalysis'));
 const SidePassageAssessment = lazy(() => import('./pages/analysis/SidePassageAssessment'));
@@ -181,7 +182,7 @@ function AppInner() {
       'Notice & Updates', 'User Guide',
       // 관리자 메뉴는 위에서 걸러졌음
       'User Management', 'Analysis Management', 'All Projects', 'System Management', 'Usage Reports',
-      'App Community', 'App Settings', 'API Apps', 'Update History', 'Development History',
+      'App Settings', 'App Community', 'API Apps', 'History', 'Update History', 'Development History',
     ]);
     if (KNOWN.has(landing)) resetNavigation(landing);
   }, [
@@ -616,9 +617,16 @@ function AppInner() {
       case 'Independent Tank Assessment': return <IndependentTankAssessment />;
       case 'Section Property Calculator': return <SectionPropertyCalculator />;
       case 'Plate Structure Analysis': return <PlateStructureAnalysis />;
-      case 'API Apps': return <ApiApps />;
-      case 'Update History': return <UpdateHistory />;
-      case 'Development History': return <DevelopmentHistory />;
+      // 관리자 이력 — Update History · Development History 를 한 메뉴의 탭으로(constants/adminMenus.js).
+      case 'History':
+      case 'Update History':
+      case 'Development History':
+        return (
+          <AdminTabHub
+            group="History"
+            renderTab={(tab) => (tab === 'Development History' ? <DevelopmentHistory /> : <UpdateHistory />)}
+          />
+        );
       case 'Component Wizard':
       case 'Simple Beam Assessment':
       case 'Simple Beam Analyzer': return <SimpleBeamAssessmentPage />;
@@ -633,9 +641,20 @@ function AppInner() {
       case 'Analysis Management': return <AnalysisManagement />;
       case 'All Projects': return <AllProjects />;
       case 'Usage Reports': return <UsageReports />;
-      case 'App Community': return <AppCommunityManagement />;
-      case 'App Settings': return <AppSettings />;
-      case 'System Settings':
+      // App Settings · App Community · API Apps 를 한 메뉴의 탭으로(constants/adminMenus.js).
+      case 'App Settings':
+      case 'App Community':
+      case 'API Apps':
+        return (
+          <AdminTabHub
+            group="App Settings"
+            renderTab={(tab) => {
+              if (tab === 'App Community') return <AppCommunityManagement />;
+              if (tab === 'API Apps') return <ApiApps />;
+              return <AppSettings />;
+            }}
+          />
+        );
       case 'System Management': return <SystemSettings />;
       case 'BDF Scanner': return <BdfScanner />;
       case 'F06 Parser': return <F06ParserPage />;

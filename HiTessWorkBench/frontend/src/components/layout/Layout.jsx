@@ -114,9 +114,12 @@ export default function Layout({
       { label: 'All Projects', menu: 'All Projects', keywords: '전체 프로젝트 모든 사용자 결과 파일 LogBook 보내기' },
       { label: 'System Management', menu: 'System Management' },
       { label: 'Usage Reports', menu: 'Usage Reports' },
-      { label: 'API Apps', menu: 'API Apps' },
-      { label: 'Update History', menu: 'Update History', keywords: '업데이트 이력 변경 내역 릴리스 새 기능' },
-      { label: 'Development History', menu: 'Development History', keywords: '개발 연대기 히스토리 역사 타임라인 앱 등장' },
+      // 탭으로 옮긴 화면도 이름으로 바로 찾게 남긴다(constants/adminMenus.js ADMIN_TAB_GROUPS).
+      { label: 'App Settings', menu: 'App Settings', keywords: '앱 설정 서비스 상태 점검 외부 App' },
+      { label: 'App Community', menu: 'App Community', keywords: 'App Settings 탭 커뮤니티 공지 게시판' },
+      { label: 'API Apps', menu: 'API Apps', keywords: 'App Settings 탭 API 목록 설명' },
+      { label: 'Update History', menu: 'Update History', keywords: 'History 탭 업데이트 이력 변경 내역 릴리스 새 기능' },
+      { label: 'Development History', menu: 'Development History', keywords: 'History 탭 개발 연대기 히스토리 역사 타임라인 앱 등장' },
     ] : []),
   ], [userInfo.is_admin]);
 

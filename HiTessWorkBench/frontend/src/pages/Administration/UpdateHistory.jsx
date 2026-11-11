@@ -16,7 +16,8 @@ import {
 } from '../../utils/updateHistory';
 
 const SEEN_KEY = 'wb_admin_updates_seen';
-const MENU = 'Update History';
+// History 메뉴의 첫 탭이라 'History' 로 들어와도 이 화면이다(constants/adminMenus.js).
+const MENUS = new Set(['Update History', 'History']);
 
 /** 기간 단추 — 건수가 0 이면 눌러도 빈 화면이라 막는다(지금 고른 것은 풀 수 있게 둔다). */
 function PeriodButton({ label, count, active, onClick }) {
@@ -130,7 +131,7 @@ export default function UpdateHistory() {
   // '/' 로 찾기 칸(Ctrl+K 는 전역 명령 팔레트). 관리자 페이지도 keep-alive 일 수 있어 이 화면일 때만 반응한다.
   useEffect(() => {
     const onKey = (e) => {
-      if (currentMenu !== MENU || !inputRef.current) return;
+      if (!MENUS.has(currentMenu) || !inputRef.current) return;
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
         || e.target?.isContentEditable;
       if (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {

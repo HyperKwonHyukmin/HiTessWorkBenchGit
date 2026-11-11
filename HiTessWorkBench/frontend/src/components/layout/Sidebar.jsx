@@ -17,13 +17,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldAlert,
-  Webhook,
   Download,
-  MessagesSquare,
   History,
-  Milestone,
 } from 'lucide-react';
 import { findCatalogueAppByMenu } from '../../contexts/DashboardContext';
+import { adminTabGroupOf } from '../../constants/adminMenus';
 
 const GROUP_MENU_BY_MODE = {
   File: 'File-Based Apps',
@@ -76,11 +74,9 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate,
           { icon: FolderSearch, label: "All Projects" },
           { icon: Settings, label: "System Management" },
           { icon: LineChart, label: "Usage Reports" },
-          { icon: MessagesSquare, label: "App Community" },
+          // App Community·API Apps 는 App Settings 탭, Update·Development History 는 History 탭(constants/adminMenus.js).
           { icon: SlidersHorizontal, label: "App Settings" },
-          { icon: Webhook, label: "API Apps" },
-          { icon: History, label: "Update History" },
-          { icon: Milestone, label: "Development History" },
+          { icon: History, label: "History" },
         ]
       });
     }
@@ -90,7 +86,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate,
 
   const activeGroupMenu = useMemo(() => {
     const app = findCatalogueAppByMenu(currentMenu);
-    return app ? GROUP_MENU_BY_MODE[app.mode] : currentMenu;
+    return app ? GROUP_MENU_BY_MODE[app.mode] : adminTabGroupOf(currentMenu);
   }, [currentMenu]);
 
   return (

@@ -32,13 +32,10 @@ const ADMIN_MENU_ITEMS = [
   { menu: 'User Management',     label: 'User Management' },
   { menu: 'Analysis Management', label: 'Analysis Management' },
   { menu: 'All Projects',        label: 'All Projects' },
-  { menu: 'System Management',   label: 'System Settings' },
+  { menu: 'System Management',   label: 'System Management' },
   { menu: 'Usage Reports',       label: 'Usage Reports' },
-  { menu: 'App Community',       label: 'App Community' },
   { menu: 'App Settings',        label: 'App Settings' },
-  { menu: 'API Apps',            label: 'API Apps' },
-  { menu: 'Update History',      label: 'Update History' },
-  { menu: 'Development History', label: 'Development History' },
+  { menu: 'History',             label: 'History' },
 ];
 
 /** 서버 동기화 상태 배지 — PreferencesContext.status(idle|loading|ready|offline). */
