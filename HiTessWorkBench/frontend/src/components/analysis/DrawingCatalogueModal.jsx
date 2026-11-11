@@ -39,21 +39,9 @@ const formatCategoryName = (raw) => {
     .trim();
 };
 
-// 카테고리별 색상 팔레트 (이름 해시 기반 — 결정적이고 일관됨)
-const CATEGORY_PALETTE = [
-  { from: 'from-violet-500',  to: 'to-purple-600',  text: 'text-violet-700',  ring: 'ring-violet-200',  bg: 'bg-violet-50',  border: 'border-violet-200' },
-  { from: 'from-blue-500',    to: 'to-cyan-600',    text: 'text-blue-700',    ring: 'ring-blue-200',    bg: 'bg-blue-50',    border: 'border-blue-200' },
-  { from: 'from-emerald-500', to: 'to-teal-600',    text: 'text-emerald-700', ring: 'ring-emerald-200', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-  { from: 'from-amber-500',   to: 'to-orange-600',  text: 'text-amber-700',   ring: 'ring-amber-200',   bg: 'bg-amber-50',   border: 'border-amber-200' },
-  { from: 'from-rose-500',    to: 'to-pink-600',    text: 'text-rose-700',    ring: 'ring-rose-200',    bg: 'bg-rose-50',    border: 'border-rose-200' },
-  { from: 'from-indigo-500',  to: 'to-blue-600',    text: 'text-indigo-700',  ring: 'ring-indigo-200',  bg: 'bg-indigo-50',  border: 'border-indigo-200' },
-];
-
-const paletteOf = (name) => {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return CATEGORY_PALETTE[h % CATEGORY_PALETTE.length];
-};
+// 묶음 표시 — 묶음마다 다른 무지개색은 뜻이 없어 한 가지(Trust Blue)로 둔다(2026-11-11, 보라·청록 그라데이션 제거)
+const CATEGORY_STYLE = { text: 'text-[#002554]', bg: 'bg-slate-50', border: 'border-slate-200' };
+const paletteOf = () => CATEGORY_STYLE;
 
 export default function DrawingCatalogueModal({ isOpen, onClose, onSelect, onSelectBookPage, running = false }) {
   // 탭: 'book' = 치공구표준집 찾기(기본, 2026-11-11) · 'files' = 예전 업로드 카탈로그(PdfCatalogue 폴더)
@@ -295,7 +283,7 @@ export default function DrawingCatalogueModal({ isOpen, onClose, onSelect, onSel
                 value={searchQuery}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={`${selectedCat} 카테고리에서 라벨 검색 (예: L-25)`}
-                className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-violet-400"
+                className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#002554]/20 focus:border-[#002554]"
                 autoFocus
               />
             </div>
@@ -406,13 +394,13 @@ function CategoriesView({ categories, onPick }) {
               key={cat.name}
               type="button"
               onClick={() => onPick(cat.name)}
-              className={`group relative rounded-2xl border-2 ${p.border} ${p.bg} hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-pointer overflow-hidden text-left`}
+              className={`group relative rounded-xl border ${p.border} bg-white hover:border-[#002554] hover:shadow-md transition-colors duration-150 cursor-pointer overflow-hidden text-left`}
             >
-              <div className={`bg-gradient-to-br ${p.from} ${p.to} px-5 py-6 text-white`}>
-                <Folder size={28} className="opacity-90 mb-3" />
-                <div className="text-xl font-bold tracking-tight">{formatCategoryName(cat.name)}</div>
+              <div className="px-5 pt-5 pb-3">
+                <Folder size={24} className={`${p.text} mb-2`} />
+                <div className="text-lg font-bold text-slate-900">{formatCategoryName(cat.name)}</div>
               </div>
-              <div className="px-5 py-3 flex items-center justify-between">
+              <div className={`px-5 py-2.5 border-t ${p.border} ${p.bg} flex items-center justify-between`}>
                 <span className={`text-xs font-semibold ${p.text}`}>
                   {cat.count} 개 도면
                 </span>
@@ -537,7 +525,7 @@ function PdfActionFooter({ current, onSelect }) {
       <button
         type="button"
         onClick={onSelect}
-        className="flex items-center gap-2 px-5 py-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold shadow-md transition-colors cursor-pointer shrink-0"
+        className="flex items-center gap-2 px-5 py-3 rounded-xl bg-[#002554] hover:bg-[#003a80] text-white text-sm font-bold shadow-md transition-colors cursor-pointer shrink-0"
       >
         <Play size={14} /> 이 도면으로 변환 시작
       </button>

@@ -5,15 +5,17 @@
 
 /** 러그 고르기 도우미 — 계열과 화면 설명. 용도 글자는 도면집 7쪽 표(색인 lugUsage)를 쓰고, 표에 없는 계열만 여기서 이름을 붙인다. */
 export const LUG_FAMILIES = [
-  { id: 'L', label: 'L형', hint: 'LAPPING 취부' },
-  { id: 'D', label: 'D형', hint: '수직 LIFTING · T/O 보조' },
-  { id: 'D-R', label: 'D형 곡가공', hint: '곡부 D형' },
-  { id: 'T', label: 'T형', hint: 'T/O 전용' },
-  { id: 'TD', label: 'TD형', hint: 'T/O' },
-  { id: 'A', label: 'A형', hint: 'T/O 전용(곡부)' },
-  { id: 'B', label: 'B형', hint: 'STIFF SIDE 취부' },
-  { id: 'E', label: 'E형', hint: '' },
-  { id: 'BKT', label: '보강 BKT · D/PLATE', hint: '러그 보강 부재' },
+  // figure = 도우미 그림: 대표 도면(기호) + 정면도 둘레 상자. 상자는 목록 썸네일(small = 쪽 높이 2~54%) 기준 비율 [x0, y0, x1, y1].
+  // 2026-11-11 쪽을 눈으로 보고 정함 — 색인을 다시 만들어 쪽이 바뀌어도 기호로 찾으므로 그대로 맞는다.
+  { id: 'L', label: 'L형', hint: 'LAPPING 취부', figure: { code: 'L-30', box: [0.07, 0.36, 0.58, 0.82] } },
+  { id: 'D', label: 'D형', hint: '수직 LIFTING · T/O 보조', figure: { code: 'D-25', box: [0.12, 0.38, 0.46, 0.86] } },
+  { id: 'D-R', label: 'D형 곡가공', hint: '곡부 D형', figure: { code: 'D-35-55R', box: [0.28, 0.40, 0.70, 0.80] } },
+  { id: 'T', label: 'T형', hint: 'T/O 전용', figure: { code: 'T-20', box: [0.12, 0.27, 0.52, 0.63] } },
+  { id: 'TD', label: 'TD형', hint: 'T/O', figure: { code: 'TD-40', box: [0.10, 0.22, 0.48, 0.56] } },
+  { id: 'A', label: 'A형', hint: 'T/O 전용(곡부)', figure: { code: 'A-30', box: [0.12, 0.27, 0.48, 0.58] } },
+  { id: 'B', label: 'B형', hint: 'STIFF SIDE 취부', figure: { code: 'B-15', box: [0.36, 0.34, 0.64, 0.66] } },
+  { id: 'E', label: 'E형', hint: '', figure: { code: 'E-5', box: [0.36, 0.28, 0.62, 0.60] } },
+  { id: 'BKT', label: '보강 BKT · D/PLATE', hint: '러그 보강 부재', figure: { code: 'RB1', box: [0.30, 0.25, 0.58, 0.53] } },
 ];
 
 // 한글로 찾는 사람을 위한 낱말 → 색인 글자
@@ -87,4 +89,39 @@ export function bookItemState(item) {
   if (!item?.analysable) return { id: 'excluded', label: '해석 대상 아님', canRun: false };
   if (item.convertible) return { id: 'ready', label: '바로 변환', canRun: true };
   return { id: 'drawing', label: '도면만', canRun: true };
+}
+
+/**
+ * 계열 대표 쪽 — 러그 고르기 도우미의 작은 그림. 실물을 보고 모양으로 계열을 맞추게 한다.
+ * 그 계열에서 하중이 가운데쯤인 쪽(같으면 앞 쪽). 하중이 없는 계열(BKT)은 맨 앞 쪽.
+ */
+export function familyRepresentative(items, family) {
+  const fam = (items || []).filter((i) => i.family === family).sort((a, b) => a.bookPage - b.bookPage);
+  if (!fam.length) return null;
+  const loads = fam.map((i) => i.swl_t).filter((v) => v != null).sort((a, b) => a - b);
+  if (!loads.length) return fam[0];
+  const mid = loads[Math.floor((loads.length - 1) / 2)];
+  return fam.reduce((best, i) => {
+    if (i.swl_t == null) return best;
+    if (!best || Math.abs(i.swl_t - mid) < Math.abs(best.swl_t - mid)) return i;
+    return best;
+  }, null);
+}
+
+/** 도우미 그림의 쪽 — figure.code 로 찾고, 없으면(색인 변경) 하중 가운데 쪽(상자 없이 전체 그림) */
+export function familyFigure(items, fam) {
+  const code = fam?.figure?.code;
+  const hit = code && (items || []).find((i) => i.family === fam.id && (i.aliases || []).includes(code));
+  if (hit) return { item: hit, box: fam.figure.box };
+  const rep = familyRepresentative(items, fam?.id);
+  return rep ? { item: rep, box: null } : null;
+}
+
+/** small 썸네일 비율 상자 → 큰 그림(쪽 전체, 595×842 pt) 의 SVG viewBox. small 은 쪽 높이 2~54% 를 자른 것이다(drawing_book.render_thumb). */
+export function figureViewBox(box) {
+  const W = 595;
+  const H = 842;
+  const [x0, y0, x1, y1] = box;
+  const top = (y) => (0.02 + y * 0.52) * H;
+  return [x0 * W, top(y0), (x1 - x0) * W, top(y1) - top(y0)].map((v) => Math.round(v * 10) / 10).join(' ');
 }

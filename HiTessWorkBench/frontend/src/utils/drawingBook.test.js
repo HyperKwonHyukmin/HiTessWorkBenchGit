@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { bookItemState, codeKey, filterBookItems, groupCounts, matchesQuery, swlOptions } from './drawingBook.js';
+import { LUG_FAMILIES, bookItemState, codeKey, familyFigure, familyRepresentative, figureViewBox, filterBookItems, groupCounts, matchesQuery, swlOptions } from './drawingBook.js';
 
 const items = [
   { code: 'D-50', aliases: ['D-50'], name: 'LIFTING LUG', group: 'lug', groupLabel: 'LIFTING LUG', bookPage: 7, family: 'D', swl_t: 50, analysable: true },
@@ -46,4 +46,39 @@ test('상태 글자와 변환 가능 여부', () => {
   assert.deepEqual(bookItemState(items[1]), { id: 'ready', label: '바로 변환', canRun: true });
   assert.equal(bookItemState(items[0]).id, 'drawing');
   assert.equal(bookItemState(items[5]).canRun, false);
+});
+
+test('계열 대표 쪽 = 하중이 가운데쯤인 쪽, 하중 없으면 맨 앞, 없으면 null', () => {
+  // L: 16·25 → 가운데(아래쪽) 16 / D: 2·50 → 2
+  assert.equal(familyRepresentative(items, 'L').code, 'L-16');
+  assert.equal(familyRepresentative(items, 'D').code, 'D-2, D-2A, D-2P');
+  const more = [
+    { code: 'T-5', family: 'T', swl_t: 5, bookPage: 30 },
+    { code: 'T-20', family: 'T', swl_t: 20, bookPage: 33 },
+    { code: 'T-50', family: 'T', swl_t: 50, bookPage: 36 },
+    { code: 'RB-35', family: 'BKT', swl_t: null, bookPage: 77 },
+    { code: 'RB1', family: 'BKT', swl_t: null, bookPage: 76 },
+  ];
+  assert.equal(familyRepresentative(more, 'T').code, 'T-20');
+  assert.equal(familyRepresentative(more, 'BKT').code, 'RB1');
+  assert.equal(familyRepresentative(more, 'X'), null);
+});
+
+test('도우미 그림 = 정해 둔 기호의 쪽 + 상자, 없으면 하중 가운데 쪽(상자 없음)', () => {
+  const L = LUG_FAMILIES.find((f) => f.id === 'L');
+  const withL30 = [...items, { code: 'L-30', aliases: ['L-30'], family: 'L', swl_t: 30, bookPage: 23, pdfPage: 34 }];
+  assert.deepEqual(familyFigure(withL30, L), { item: withL30.at(-1), box: L.figure.box });
+  assert.equal(familyFigure(items, L).item.code, 'L-16');      // L-30 이 없으면 대신
+  assert.equal(familyFigure(items, L).box, null);
+  assert.equal(familyFigure([], L), null);
+  // 모든 계열 상자는 0~1 안의 바른 사각형
+  for (const f of LUG_FAMILIES) {
+    const [x0, y0, x1, y1] = f.figure.box;
+    assert.ok(0 <= x0 && x0 < x1 && x1 <= 1 && 0 <= y0 && y0 < y1 && y1 <= 1, f.id);
+  }
+});
+
+test('상자 → 큰 그림 viewBox (small 은 쪽 높이 2~54%)', () => {
+  assert.equal(figureViewBox([0, 0, 1, 1]), '0 16.8 595 437.8');
+  assert.equal(figureViewBox([0.5, 0.5, 1, 1]), '297.5 235.8 297.5 218.9');
 });

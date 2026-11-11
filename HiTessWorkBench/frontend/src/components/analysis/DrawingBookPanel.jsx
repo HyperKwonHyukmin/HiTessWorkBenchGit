@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Search, AlertCircle, Play, RotateCcw } from 'lucide-react';
 import { getDrawingBook, drawingBookThumbUrl } from '../../api/analysis';
 import { getAuthHeaders } from '../../utils/auth';
-import { LUG_FAMILIES, bookItemState, filterBookItems, groupCounts, swlOptions } from '../../utils/drawingBook';
+import { LUG_FAMILIES, bookItemState, familyFigure, figureViewBox, filterBookItems, groupCounts, swlOptions } from '../../utils/drawingBook';
 
 // 받은 썸네일(object URL)은 창을 닫아도 남겨 둔다 — 다시 열 때 서버에 또 묻지 않게
 const imageCache = new Map();
@@ -43,6 +43,39 @@ const STATE_TEXT = {
   drawing: 'text-slate-500',
   excluded: 'text-slate-400',
 };
+
+/** 러그 계열 단추 — 대표 도면의 정면도만 잘라 보인다. 실물을 보고 모양으로 계열을 고르게 한다(사진 인식 대신, 계획 3단계).
+ *  상자가 있으면 큰 그림(쪽 전체)을 SVG viewBox 로 잘라 선명하게, 없으면 목록 썸네일 전체. */
+function FamilyTile({ fam, figure, count, active, onToggle, imagesOn }) {
+  const rep = figure?.item;
+  const size = figure?.box ? 'large' : 'small';
+  const { src, failed } = useAuthedImage(rep ? drawingBookThumbUrl(rep.pdfPage, size) : '', Boolean(rep) && imagesOn);
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={active}
+      title={rep ? `${fam.label} — 그림은 ${rep.aliases?.[0] || rep.code} (${rep.bookPage}쪽)` : fam.label}
+      className={`text-left rounded-md border p-1 transition-colors cursor-pointer
+        ${active ? 'border-[#002554] bg-[#002554] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}
+    >
+      <div className="aspect-[4/3] w-full bg-white rounded-sm overflow-hidden flex items-center justify-center">
+        {src ? (figure.box
+          ? <svg viewBox={figureViewBox(figure.box)} preserveAspectRatio="xMidYMid meet" className="w-full h-full" role="img" aria-label={`${fam.label} 대표 도면`}>
+              <image href={src} x="0" y="0" width="595" height="842" />
+            </svg>
+          : <img src={src} alt={`${fam.label} 대표 도면`} className="w-full h-full object-contain" />)
+          : (failed || !imagesOn || !rep) ? <span className="text-[10px] text-slate-400">그림 없음</span>
+            : <Loader2 size={12} className="animate-spin text-slate-300" />}
+      </div>
+      <div className="mt-1 px-0.5 flex items-baseline justify-between gap-1">
+        <span className="text-[12px] font-semibold truncate">{fam.label}</span>
+        <span className={`text-[11px] shrink-0 ${active ? 'text-white/75' : 'text-slate-400'}`}>{count}</span>
+      </div>
+      {fam.hint && <div className={`px-0.5 text-[11px] leading-tight truncate ${active ? 'text-white/75' : 'text-slate-500'}`}>{fam.hint}</div>}
+    </button>
+  );
+}
 
 function BookCard({ item, selected, onPick, imagesOn }) {
   const ref = useRef(null);
@@ -169,6 +202,15 @@ export default function DrawingBookPanel({ onRun, running = false }) {
   );
   const counts = useMemo(() => groupCounts(items), [items]);
   const swls = useMemo(() => (family ? swlOptions(items, family) : []), [items, family]);
+  const familyFigures = useMemo(
+    () => Object.fromEntries(LUG_FAMILIES.map((f) => [f.id, familyFigure(items, f)])),
+    [items],
+  );
+  const familyCounts = useMemo(() => {
+    const m = {};
+    for (const i of items) if (i.family) m[i.family] = (m[i.family] || 0) + 1;
+    return m;
+  }, [items]);
   const anyFilter = query || group || family || swl != null || convertibleOnly;
   const resetFilters = () => { setQuery(''); setGroup(''); setFamily(''); setSwl(null); setConvertibleOnly(false); };
 
@@ -201,7 +243,7 @@ export default function DrawingBookPanel({ onRun, running = false }) {
       )}
       <div className="flex-1 min-h-0 flex">
         {/* 왼쪽 — 찾기 */}
-        <aside className="w-60 shrink-0 border-r border-slate-200 bg-white overflow-y-auto p-3 space-y-4">
+        <aside className="w-64 shrink-0 border-r border-slate-200 bg-white overflow-y-auto p-3 space-y-4">
           <div className="relative">
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -240,19 +282,18 @@ export default function DrawingBookPanel({ onRun, running = false }) {
 
           <section>
             <h3 className="text-[12px] font-bold text-slate-800">러그 고르기</h3>
-            <p className="text-[11px] text-slate-500 mb-1.5">기호를 모르면 형식과 하중으로 좁힙니다.</p>
-            <div className="space-y-0.5">
+            <p className="text-[11px] text-slate-500 mb-1.5">기호를 모르면 실물과 모양이 닮은 형식을 고르고 하중으로 좁힙니다.</p>
+            <div className="grid grid-cols-2 gap-1.5">
               {LUG_FAMILIES.map((f) => (
-                <button
+                <FamilyTile
                   key={f.id}
-                  type="button"
-                  onClick={() => { const on = family !== f.id; setFamily(on ? f.id : ''); setSwl(null); if (on) setGroup('lug'); }}
-                  aria-pressed={family === f.id}
-                  className={`w-full text-left px-2 py-1 rounded text-[12px]
-                    ${family === f.id ? 'bg-[#002554] text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-                >
-                  {f.label}{f.hint && <span className={family === f.id ? 'text-white/75' : 'text-slate-400'}> · {f.hint}</span>}
-                </button>
+                  fam={f}
+                  figure={familyFigures[f.id]}
+                  count={familyCounts[f.id] || 0}
+                  active={family === f.id}
+                  imagesOn={status.available}
+                  onToggle={() => { const on = family !== f.id; setFamily(on ? f.id : ''); setSwl(null); if (on) setGroup('lug'); }}
+                />
               ))}
             </div>
             {swls.length > 0 && (
