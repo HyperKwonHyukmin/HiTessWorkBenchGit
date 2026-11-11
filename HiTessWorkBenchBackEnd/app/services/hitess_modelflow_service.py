@@ -33,6 +33,7 @@ from .analysis_runner import (
 )
 from .hull_no import engine_supports_hull_no, normalize_hull_no, suggest_hull_no_from_filename
 from .job_manager import job_status_store  # task_execute_apply_edit 가 여전히 직접 사용
+from .mb_csv_archive import archive_run_inputs
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +139,11 @@ def task_execute_modelflow(
     같은 빌드를 두 번 세지 않도록 AM 접수는 이 기록 하나만 남긴다.
     """
     mark_running(job_id, "Model Builder 실행 준비...", progress=10)
+
+    # 입력 CSV 보관 — 작업 폴더는 30일 뒤 지워진다. 실패해도 모델 생성은 계속한다(함수가 예외를 삼킴).
+    # 샘플 실행(source=WorkbenchSample, routers/analysis.py SAMPLE_SOURCE_TAG)은 같은 표준 CSV 라 기록하지 않는다.
+    if source != "WorkbenchSample":
+        archive_run_inputs({"stru": stru_path, "pipe": pipe_path, "equip": equip_path}, work_dir, employee_id)
 
     # 호선 — 사용자가 적은 값이 우선, 없으면 CSV 파일명 앞 4자리. 둘 다 없으면 BDF 에 남기지 않는다(필수 아님).
     resolved_hull_no = normalize_hull_no(hull_no)
