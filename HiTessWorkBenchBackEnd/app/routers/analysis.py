@@ -50,6 +50,7 @@ from ..services.unit_lifting_report_service import generate_result_report, gener
 from ..services.xlsx_to_pdf import PdfConversionError, convert_xlsx_to_pdf
 from ..services.module_stability_service import task_execute_module_stability, task_optimize_module_hoist_positions
 from ..services.lifting_artifacts import scan_lifting_artifacts
+from ..services.unit_structural_result_set import choose_result_set_files, parse_json_bytes
 from ..services.hitess_modelflow_service import (
     task_execute_modelflow,
     task_execute_apply_edit,
@@ -3660,6 +3661,69 @@ def download_unit_structural_op2(
     bdf_name = os.path.basename(info.get("liftingBdf") or op2_path)
     return _attachment_response(data, os.path.splitext(bdf_name)[0] + ".op2", "application/octet-stream")
 
+
+@router.get("/analysis/unit-structural/{analysis_id}/result-set")
+def get_unit_structural_result_set(
+        analysis_id: int,
+        db: Session = Depends(database.get_db),
+        current_user: str = Depends(require_auth),
+):
+    """지난 Unit 구조 해석을 Studio 로 다시 볼 자료 — 해석에 쓴 모델 JSON + 결과 JSON (읽기 전용 보기용).
+
+    계획: docs/plans/2026-11-11-mu-past-structural-result-view.md. 모델 고르는 규칙은
+    `unit_structural_result_set.choose_result_set_files`.
+    """
+    record = _load_unit_structural_record(analysis_id, db, current_user)
+    info = record.result_info or {}
+    chosen = choose_result_set_files(info)
+    if not chosen["model"]:
+        raise HTTPException(status_code=404, detail="이 해석에 쓴 모델 파일을 찾을 수 없습니다(보관 기간이 지났을 수 있습니다).")
+    if not chosen["result"]:
+        raise HTTPException(status_code=404, detail="이 해석의 결과 파일을 찾을 수 없습니다(보관 기간이 지났을 수 있습니다).")
+    try:
+        model = parse_json_bytes(_read_userconnection_file(chosen["model"], current_user, db, "모델 JSON"), "모델 JSON")
+        result = parse_json_bytes(_read_userconnection_file(chosen["result"], current_user, db, "결과 JSON"), "결과 JSON")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if not isinstance(model, dict) or not isinstance(result, dict):
+        raise HTTPException(status_code=422, detail="모델·결과 파일 형식이 올바르지 않습니다.")
+    # Wire·훅 위치(자세안정성 결과)는 없어도 연다 — 그때는 부재 응력만 보이고 Wire 는 빠진다고 알린다.
+    stability = None
+    warnings = list(chosen["warnings"])
+    if chosen["stability"]:
+        try:
+            stability = parse_json_bytes(
+                _read_userconnection_file(chosen["stability"], current_user, db, "자세안정성 JSON"), "자세안정성 JSON")
+        except (ValueError, HTTPException):
+            stability = None
+    if not isinstance(stability, dict):
+        stability = None
+        warnings.append("이 해석의 자세안정성 결과가 없어 Wire·훅 위치 없이 부재 응력만 보입니다.")
+
+    hull_no = None
+    parent_id = info.get("parentAnalysisId")
+    if parent_id:
+        parent = db.query(models.Analysis).filter(models.Analysis.id == parent_id).first()
+        hull_no = ((parent.input_info or {}) if parent else {}).get("hull_no")
+    created = getattr(record, "finished_at", None) or record.created_at
+    return {
+        "analysisId": record.id,
+        "parentAnalysisId": parent_id,
+        "name": os.path.basename(info.get("liftingBdf") or info.get("bdf") or "") or None,
+        "hullNo": hull_no,
+        "createdAt": created.isoformat() if created else None,
+        "modelSource": chosen["modelSource"],
+        "warnings": warnings,
+        "files": {
+            # Studio 실적 패널이 쓰는 모양({name}) 그대로 — 실행별 사본은 '00_' 같은 순번 머리를 뗀다.
+            "model": {"name": re.sub(r"^\d{2}_", "", os.path.basename(chosen["model"])) if chosen["modelSource"] == "archive-edited" else os.path.basename(chosen["model"])},
+            "result": {"name": re.sub(r"^\d{2}_", "", os.path.basename(chosen["result"]))},
+            "f06": {"name": re.sub(r"^\d{2}_", "", os.path.basename(chosen["f06"]))} if chosen["f06"] else None,
+        },
+        "model": model,
+        "result": result,
+        "stability": stability,
+    }
 
 @router.post("/analysis/unit-structural/request")
 async def request_unit_structural(

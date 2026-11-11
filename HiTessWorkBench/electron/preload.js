@@ -79,6 +79,8 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:openLiftingRefResult',
   'viewer:getLiftingRefResult',
   'viewer:getReferenceContext',
+  // 지난 Unit 구조 해석 결과를 읽기 전용 Studio 창으로(본창 산출물 카드, 2026-11-11)
+  'viewer:openPastStructuralResult',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
   'viewer:checkPathAccess',
   'viewer:fetchResultDir',

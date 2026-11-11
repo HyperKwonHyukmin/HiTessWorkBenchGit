@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Download, Loader2, RefreshCw, FileText, FileCog,
-  FileBarChart2, AlertCircle, PackageOpen,
+  FileBarChart2, AlertCircle, PackageOpen, Eye,
 } from 'lucide-react';
-import { getGroupModuleUnitArtifacts, downloadFileBlob, downloadUnitLiftingReport } from '../../api/analysis';
+import {
+  getGroupModuleUnitArtifacts, downloadFileBlob, downloadUnitLiftingReport, getUnitStructuralResultSet,
+} from '../../api/analysis';
+import { API_BASE_URL } from '../../config';
+import { openPastStructuralResult } from '../../utils/pastStructuralResult';
 import { downloadBlob, filenameFromDisposition } from '../../utils/fileHelper';
 import { useToast } from '../../contexts/ToastContext';
 import UnitLiftingReportDialog from './UnitLiftingReportDialog';
@@ -46,6 +50,7 @@ export default function ResultArtifactsCard({ parentAnalysisId, onDownloaded }) 
   const [unitAnalysisId, setUnitAnalysisId] = useState(null);
   const [reportKind, setReportKind] = useState(null);   // 'result' | 'detail' | null(닫힘)
   const [reportBusy, setReportBusy] = useState(false);
+  const [viewBusy, setViewBusy] = useState(false);
 
   const fetchArtifacts = useCallback(async () => {
     if (!parentAnalysisId) { setState('idle'); return; }
@@ -114,6 +119,22 @@ export default function ResultArtifactsCard({ parentAnalysisId, onDownloaded }) 
     }
   };
 
+  // 지난 구조 해석 결과를 읽기 전용 Studio 창으로 — 응력·변위 다시 보기(2026-11-11)
+  const handleOpenResult = async () => {
+    setViewBusy(true);
+    try {
+      const out = await openPastStructuralResult(unitAnalysisId, {
+        fetchSet: getUnitStructuralResultSet,
+        invoke: window.electron?.invoke,
+        serverUrl: API_BASE_URL,
+      });
+      if (!out.ok) showToast(out.error, 'error');
+      else if (out.warnings.length) showToast(out.warnings[0], 'warning');
+    } finally {
+      setViewBusy(false);
+    }
+  };
+
   const byKind = Object.fromEntries(artifacts.map(a => [a.kind, a]));
 
   return (
@@ -127,6 +148,17 @@ export default function ResultArtifactsCard({ parentAnalysisId, onDownloaded }) 
         <div className="flex items-center gap-1.5">
         {state === 'loaded' && (
           <>
+            <button
+              type="button"
+              onClick={handleOpenResult}
+              disabled={!unitAnalysisId || viewBusy}
+              title={unitAnalysisId
+                ? '이 구조 해석의 응력·변위를 Studio 창에서 다시 봅니다(읽기 전용)'
+                : 'Studio 에서 단위 구조 해석을 완료하면 활성화됩니다'}
+              className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg border border-[#002554]/30 text-[#002554] hover:bg-[#002554]/5 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {viewBusy ? <Loader2 size={10} className="animate-spin" /> : <Eye size={10} />} Studio 에서 결과 보기
+            </button>
             <button
               type="button"
               onClick={() => setReportKind('result')}

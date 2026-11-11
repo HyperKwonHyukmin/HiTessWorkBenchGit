@@ -332,6 +332,12 @@ export const fixGroupModuleUnitDeck = (analysisId, { employeeId, codes = null, u
     employee_id: employeeId, codes, use_nastran: useNastran,
   }, { headers: getAuthHeaders() });
 
+/** 지난 Unit 구조 해석을 Studio 로 다시 볼 자료(해석에 쓴 모델 JSON + 결과 JSON) */
+export const getUnitStructuralResultSet = (analysisId) =>
+  axios.get(`${API_BASE_URL}/api/analysis/unit-structural/${analysisId}/result-set`, {
+    headers: getAuthHeaders()
+  });
+
 export const getGroupModuleUnitArtifacts = (parentId) =>
   axios.get(`${API_BASE_URL}/api/analysis/groupmoduleunit/${parentId}/artifacts`, {
     headers: getAuthHeaders()

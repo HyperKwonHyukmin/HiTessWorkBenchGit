@@ -2993,6 +2993,53 @@ ipcMain.handle("viewer:openLiftingRefResult", async (event, payload) => {
 
 ipcMain.handle("viewer:getReferenceContext", (event) => sessionFromEvent(event)?.reference || null);
 
+// 지난 Unit 구조 해석 결과를 읽기 전용 Module Unit Studio 창으로 연다(2026-11-11, 응력·변위 다시 보기).
+// 계획: docs/plans/2026-11-11-mu-past-structural-result-view.md. 실적 보기와 같은 길 — 모델 JSON 은 임시 폴더 →
+// initialFolder, 결과 JSON 은 세션 reference(kind 'past'). 자료는 본창이 GET .../unit-structural/{id}/result-set 으로
+// 받아 넘긴다(본창이 로그인 토큰을 가진다). parentAnalysisId 가 없어 해석·업로드 IPC 는 거부된다.
+ipcMain.handle("viewer:openPastStructuralResult", async (event, payload) => {
+  try {
+    // 본창 산출물 카드만 부른다 — Studio 창이 임의 모델로 이 창을 열지 못하게.
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+      return { ok: false, error: "forbidden" };
+    }
+    const analysisId = Number(payload?.analysisId);
+    if (!Number.isInteger(analysisId) || analysisId <= 0) return { ok: false, error: "analysisId 가 올바르지 않습니다." };
+    const model = payload?.model;
+    const result = payload?.result;
+    if (!model || typeof model !== "object" || !result || typeof result !== "object") {
+      return { ok: false, error: "결과 자료 형식이 올바르지 않습니다." };
+    }
+    const dir = path.join(app.getPath("temp"), "hitess-past-structural", String(analysisId));
+    await fs.promises.rm(dir, { recursive: true, force: true });
+    await fs.promises.mkdir(dir, { recursive: true });
+    const rawName = path.basename(String(payload?.files?.model?.name || "model.json")).replace(/[^\w.\-]/g, "_");
+    await fs.promises.writeFile(path.join(dir, rawName.toLowerCase().endsWith(".json") ? rawName : `${rawName}.json`),
+      JSON.stringify(model), "utf8");
+    const name = typeof payload?.name === "string" ? payload.name.slice(0, 160) : null;
+    return await openViewerSession({
+      viewerId: "module-unit-studio",
+      initialFolder: dir,
+      serverUrl: typeof payload?.serverUrl === "string" ? payload.serverUrl : null,
+      // 지난 결과 창은 하나만 — 다른 기록을 열면 같은 창 내용이 바뀐다. 실적 창·내 작업 창과는 따로.
+      sourceKey: "unit-structural-past",
+      windowTitle: `[지난 해석 · 읽기 전용] ${name || `해석 #${analysisId}`}`,
+    }, {
+      reference: {
+        kind: "past", analysisId, name,
+        hullNos: payload?.hullNo ? [String(payload.hullNo).slice(0, 20)] : [],
+        createdAt: typeof payload?.createdAt === "string" ? payload.createdAt : null,
+        warnings: Array.isArray(payload?.warnings) ? payload.warnings.slice(0, 5).map(String) : [],
+        files: payload?.files || {}, result,
+        // 자세안정성 결과 — Studio 가 Wire·훅 위치를 그린다(없으면 null, 부재 응력만)
+        stability: payload?.stability && typeof payload.stability === "object" ? payload.stability : null,
+      },
+    });
+  } catch (e) {
+    return { ok: false, error: e?.message || "예외 발생" };
+  }
+});
+
 // 실적 결과를 지금 Studio 창 안(실적 '응력' 보기)에서 그리도록 결과·모델 JSON 을 넘긴다(2026-11-06, 새 창 없이).
 // 편집·해석 경로와 닿지 않는 보기 전용 자료다. 반환 = { ok, result, model, files } | { ok:false, error }
 ipcMain.handle("viewer:getLiftingRefResult", async (event, payload) => {
