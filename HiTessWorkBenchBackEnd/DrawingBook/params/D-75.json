@@ -1,0 +1,243 @@
+{
+ "schema": "lugparams/0.1",
+ "code": "D-75",
+ "pdfPage": 19,
+ "source": "auto",
+ "form": "d_type_lug",
+ "values": {
+  "base_width": 820.0,
+  "side_height": 115.0,
+  "pin_height": 190.0,
+  "arc_R": 175.0,
+  "flank_R": 175.0,
+  "hole_d": 76.0,
+  "doubler_R": 150.0,
+  "doubler_cut": 74.0,
+  "bracket_offset": 200.0,
+  "bracket_width": 135.0,
+  "bracket_outer_h": 105.0,
+  "bracket_inner_h": 190.0,
+  "bracket_top_flat": 20.0,
+  "arch_R": 50.0,
+  "arch_leg_h": 70.0,
+  "main_t": 25.0,
+  "bracket_t": 30.0,
+  "doubler_t": 25.0,
+  "material": "SWS400B",
+  "swl_t": 75.0,
+  "daf": 1.0
+ },
+ "review": [
+  {
+   "path": "/meta/source/scale",
+   "status": "mismatch",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "scale_nts: 도면이 축척대로 그려지지 않음 (치수 20개 중 2개만 1:8.374 의 3% 안) — 값은 글자를 쓰고, 글자 없는 값은 기하라 확인 필요"
+  },
+  {
+   "path": "/plates/0/outline",
+   "status": "mismatch",
+   "from_text": 820.0,
+   "from_geometry": 737.004,
+   "note": "base_width: 글자 820 ≠ 기하 737.00 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates/0/outline",
+   "status": "mismatch",
+   "from_text": 115.0,
+   "from_geometry": 90.929,
+   "note": "side_height: 글자 115 ≠ 기하 90.93 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/pin/center/2",
+   "status": "mismatch",
+   "from_text": 190.0,
+   "from_geometry": 158.604,
+   "note": "pin_height: 글자 190 ≠ 기하 158.60 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates/0/outline",
+   "status": "mismatch",
+   "from_text": 175.0,
+   "from_geometry": 158.178,
+   "note": "arc_R: 글자 175 ≠ 기하 158.18 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates/0/outline",
+   "status": "mismatch",
+   "from_text": 175.0,
+   "from_geometry": 160.591,
+   "note": "flank_R: 글자 175 ≠ 기하 160.59 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates/0/outline",
+   "status": "mismatch",
+   "from_text": 365.0,
+   "from_geometry": 316.782,
+   "note": "total_height: 글자 365 ≠ 기하 316.78 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/pin/hole_d",
+   "status": "mismatch",
+   "from_text": 76.0,
+   "from_geometry": 68.031,
+   "note": "hole_d: 글자 76 ≠ 기하 68.03 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/pin/center/0",
+   "status": "mismatch",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "pin_center_u: 핀 중심이 본판 가운데가 아님 (1.1 mm) — 가운데로 봄"
+  },
+  {
+   "path": "/plates/1/outline",
+   "status": "mismatch",
+   "from_text": 150.0,
+   "from_geometry": 134.958,
+   "note": "doubler_R: 글자 150 ≠ 기하 134.96 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates/1/outline",
+   "status": "mismatch",
+   "from_text": 74.0,
+   "from_geometry": 81.323,
+   "note": "doubler_cut: 글자 74 ≠ 기하 81.32 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates",
+   "status": "mismatch",
+   "from_text": 200.0,
+   "from_geometry": 180.395,
+   "note": "bracket_offset: 글자 200 ≠ 기하 180.39 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates",
+   "status": "mismatch",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "bracket_offset_lr: 브래킷 좌우 간격이 다름 (181.0 / 179.8) — 대칭으로 봄"
+  },
+  {
+   "path": "/plates",
+   "status": "mismatch",
+   "from_text": 105.0,
+   "from_geometry": 90.929,
+   "note": "bracket_outer_h: 글자 105 ≠ 기하 90.93 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates",
+   "status": "mismatch",
+   "from_text": 190.0,
+   "from_geometry": 158.638,
+   "note": "bracket_inner_h: 글자 190 ≠ 기하 158.64 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates",
+   "status": "mismatch",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "bracket_inner_h_front: 정면도 브래킷 끝면 높이 158.6 ≠ 옆모습 안쪽 높이 190"
+  },
+  {
+   "path": "/plates",
+   "status": "mismatch",
+   "from_text": 20.0,
+   "from_geometry": 17.372,
+   "note": "bracket_top_flat: 글자 20 ≠ 기하 17.37 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates",
+   "status": "mismatch",
+   "from_text": 50.0,
+   "from_geometry": 44.491,
+   "note": "arch_R: 글자 50 ≠ 기하 44.49 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates",
+   "status": "mismatch",
+   "from_text": 70.0,
+   "from_geometry": 26.942,
+   "note": "arch_leg_h: 글자 70 ≠ 기하 26.94 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates/0/t",
+   "status": "mismatch",
+   "from_text": 25.0,
+   "from_geometry": 23.221,
+   "note": "main_t: 글자 25 ≠ 기하 23.22 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates",
+   "status": "mismatch",
+   "from_text": 30.0,
+   "from_geometry": 23.221,
+   "note": "bracket_t: 글자 30 ≠ 기하 23.22 (축척 밖 수정 의심)"
+  },
+  {
+   "path": "/plates/1/t",
+   "status": "single_source",
+   "from_text": 25.0,
+   "from_geometry": null,
+   "note": "doubler_t: 치수만"
+  },
+  {
+   "path": "/materials/0",
+   "status": "single_source",
+   "from_text": "SWS400B",
+   "from_geometry": null,
+   "note": "material: 재료표 SWS400B → 라이브러리 값 (fy 235)"
+  },
+  {
+   "path": "/load_cases",
+   "status": "single_source",
+   "from_text": 75.0,
+   "from_geometry": null,
+   "note": "swl_t: 주석만"
+  },
+  {
+   "path": "/load_cases",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "daf: 도면에 DAF 없음 — 1 임시 (안전하중에 이미 들어 있는지 확인)"
+  },
+  {
+   "path": "/load_cases",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "load_angles: 하중 각도: 도면 LOADING 범위 0~180°(판 면 안)·옆 기울기 표 θmax 를 템플릿 기본값으로 — LC1_vertical(α0,β0), LC2_inplane_45(α45,β0), LC3_inplane_90(α90,β0), LC4_outplane_10(α0,β10)"
+  },
+  {
+   "path": "/boundary",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "boundary: 본판·브래킷 바닥(v = 0) 절점 고정 — 받침(갑판) 강성 무시, 미정 결정 D6"
+  },
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "variant: 같은 쪽 변형(A·B 형 — 브래킷 수·옆 기울기 다름)은 넣지 않음, 기본형만"
+  },
+  {
+   "path": "/welds",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "welds: 용접(본판 바닥·브래킷·덧판 둘레)은 넣지 않음 — 도면 용접 기호 숫자를 글자로 못 읽고 각장/목두께 구분도 없음. 바닥 용접 수계산 검토 없음, 사람 확인"
+  },
+  {
+   "path": "/pin/pin_d",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "pin_d: 도면에 핀(샤클 핀) 지름 없음 — 구멍 Ø76 − 1 = 75 임시"
+  }
+ ],
+ "mass_kg": 72.58
+}

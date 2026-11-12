@@ -3,12 +3,13 @@
  *
  * 왼쪽: 검색 · 묶음 · 러그 고르기 도우미(계열 → 하중) · 바로 변환만
  * 가운데: 썸네일 격자(보이는 카드만 불러옴)
- * 오른쪽: 고른 쪽 큰 미리보기 + 정보 + [이 도면 변환]
+ * 오른쪽: 고른 쪽 큰 미리보기 + 정보 + [이 도면 변환] 또는 [형상 보고 치수 고치기]
+ *   치수 편집은 창을 닫고 본창에서 한다(2026-11-12 통합, components/analysis/LugParamWork.jsx).
  *
  * 계획: docs/plans/2026-11-11-drawing-catalogue-search.md (2단계). 규칙(검색·거르기·상태)은 utils/drawingBook.js.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Search, AlertCircle, Play, RotateCcw } from 'lucide-react';
+import { Loader2, Search, AlertCircle, Play, RotateCcw, Box } from 'lucide-react';
 import { getDrawingBook, drawingBookThumbUrl } from '../../api/analysis';
 import { getAuthHeaders } from '../../utils/auth';
 import { LUG_FAMILIES, bookItemState, familyFigure, figureViewBox, filterBookItems, groupCounts, swlOptions } from '../../utils/drawingBook';
@@ -118,7 +119,7 @@ function BookCard({ item, selected, onPick, imagesOn }) {
   );
 }
 
-function DetailPanel({ item, onRun, running, bookAvailable }) {
+function DetailPanel({ item, onRun, onEdit, running, bookAvailable }) {
   const { src, failed } = useAuthedImage(item ? drawingBookThumbUrl(item.pdfPage, 'large') : '', Boolean(item) && bookAvailable);
   if (!item) {
     return (
@@ -128,8 +129,11 @@ function DetailPanel({ item, onRun, running, bookAvailable }) {
     );
   }
   const st = bookItemState(item);
+  const hasParams = Boolean(item.params) && Boolean(onEdit);
   const note = {
-    ready: '새 엔진이 이 도면의 치수를 읽어 해석 모델과 하중 케이스까지 만듭니다.',
+    ready: hasParams
+      ? '미리 변환해 둔 치수로 형상을 보고, 필요하면 치수를 고친 뒤 해석합니다. 메시는 해석 실행 때 만듭니다.'
+      : '새 엔진이 이 도면의 치수를 읽어 해석 모델과 하중 케이스까지 만듭니다.',
     drawing: '이 계열은 아직 자동 변환 템플릿이 없습니다. 변환하면 "지원하지 않는 형식" 으로 끝날 수 있습니다.',
     excluded: '구매품·반목처럼 구조 해석 대상이 아닌 부재입니다.',
   }[st.id];
@@ -154,21 +158,42 @@ function DetailPanel({ item, onRun, running, bookAvailable }) {
         <p className={`text-[12px] leading-snug ${st.id === 'ready' ? 'text-emerald-800' : 'text-slate-600'}`}>
           <span className={STATE_TEXT[st.id]}>{st.label}</span> · {note}
         </p>
-        <button
-          type="button"
-          onClick={() => onRun(item)}
-          disabled={!st.canRun || running || !bookAvailable}
-          className="w-full h-10 rounded-lg bg-[#002554] text-white text-[13px] font-bold hover:bg-[#003366] disabled:bg-slate-200 disabled:text-slate-500 inline-flex items-center justify-center gap-2"
-        >
-          {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-          이 도면 변환
-        </button>
+        {hasParams ? (
+          <>
+            <button
+              type="button"
+              onClick={() => onEdit(item)}
+              disabled={running}
+              className="w-full h-10 rounded-lg bg-[#002554] text-white text-[13px] font-bold hover:bg-[#003366] disabled:bg-slate-200 disabled:text-slate-500 inline-flex items-center justify-center gap-2"
+            >
+              <Box size={14} /> 형상 보고 치수 고치기
+            </button>
+            <button
+              type="button"
+              onClick={() => onRun(item)}
+              disabled={running || !bookAvailable}
+              className="w-full text-[12px] text-slate-600 hover:text-[#002554] disabled:text-slate-400"
+            >
+              도면에서 다시 읽어 바로 변환
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onRun(item)}
+            disabled={!st.canRun || running || !bookAvailable}
+            className="w-full h-10 rounded-lg bg-[#002554] text-white text-[13px] font-bold hover:bg-[#003366] disabled:bg-slate-200 disabled:text-slate-500 inline-flex items-center justify-center gap-2"
+          >
+            {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+            이 도면 변환
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
-export default function DrawingBookPanel({ onRun, running = false }) {
+export default function DrawingBookPanel({ onRun, onEditParams, running = false }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -351,7 +376,7 @@ export default function DrawingBookPanel({ onRun, running = false }) {
 
         {/* 오른쪽 — 고른 도면 */}
         <aside className="w-80 shrink-0 border-l border-slate-200 bg-white">
-          <DetailPanel item={picked} onRun={onRun} running={running} bookAvailable={status.available} />
+          <DetailPanel item={picked} onRun={onRun} onEdit={onEditParams || null} running={running} bookAvailable={status.available} />
         </aside>
       </div>
     </div>

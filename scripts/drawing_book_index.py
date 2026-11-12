@@ -24,6 +24,9 @@ import pymupdf
 
 REPO = Path(__file__).resolve().parent.parent
 OUT = REPO / "HiTessWorkBenchBackEnd" / "DrawingBook" / "book_index.json"
+# 표준집 러그 치수 파일(미리 변환본) — 화면이 이 치수로 형상을 보여 주고, 고친 치수로 해석한다
+# (계획 docs/plans/2026-11-12-lug-param-catalogue-plan.md). source: hand 인 파일(사람이 채운 것)은 덮어쓰지 않는다.
+PARAMS_DIR = REPO / "HiTessWorkBenchBackEnd" / "DrawingBook" / "params"
 
 TOC_PAGES = (3, 4, 5, 6)      # PDF 쪽(1부터)
 PAGE_OFFSET = 11              # 도면 쪽 번호 = PDF 쪽 - 11
@@ -167,9 +170,25 @@ def run_engine(engine_root: Path, book: str, pdf_page: int) -> dict:
         with contextlib.redirect_stdout(io.StringIO()):
             ok = check_lug.main(str(tmp)) == 0
         if ok:
+            from lugshell import params as lug_params  # noqa: E402
+
+            vals = lug_params.values_from_trace(name, trace["trace"])
+            vals["material"] = d["materials"][0]["id"]
+            _, info = lug_params.build(name, vals)  # 치수 파일만으로 같은 형상이 나오는지(질량)도 여기서 잰다
             return {"template": name, "review": len(d.get("review", [])),
-                    "mismatch": sorted({x["name"] for x in trace["trace"] if x["status"] == "mismatch"})}
+                    "mismatch": sorted({x["name"] for x in trace["trace"] if x["status"] == "mismatch"}),
+                    "_params": {"form": name, "values": vals, "review": d.get("review", []),
+                                "mass_kg": round(info["mass_kg"], 2)}}
     return {}
+
+
+def write_params(code: str, pdf_page: int, pf: dict) -> None:
+    PARAMS_DIR.mkdir(parents=True, exist_ok=True)
+    path = PARAMS_DIR / f"{code}.json"
+    if path.exists() and json.loads(path.read_text(encoding="utf-8")).get("source") == "hand":
+        return
+    doc = {"schema": "lugparams/0.1", "code": code, "pdfPage": pdf_page, "source": "auto", **pf}
+    path.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def main() -> int:
@@ -215,7 +234,10 @@ def main() -> int:
             conv = run_engine(Path(a.engine).resolve(), a.book, item["pdfPage"])
             item["convertible"] = bool(conv)
             if conv:
+                pf = conv.pop("_params")
+                write_params(first, item["pdfPage"], pf)
                 item["engine"] = conv
+                item["params"] = f"params/{first}.json"
         items.append(item)
         print(f"b{bp:3d} {first:12s} {gid:16s} {fam or '':4s} {'변환' if item.get('convertible') else ''}", flush=True)
 

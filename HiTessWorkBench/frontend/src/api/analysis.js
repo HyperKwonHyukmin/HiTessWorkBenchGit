@@ -132,6 +132,22 @@ export const runDrawingBookPage = (pdfPage, { employeeId, meshSize = 10.0 }) => 
   );
 };
 
+/** DrawingToAnalysis — 표준집 러그의 미리 변환한 치수 + 칸 목록 + 형상(설계 JSON). 없으면 404 (2026-11-12) */
+export const getDrawingBookParams = (pdfPage) =>
+  axios.get(`${API_BASE_URL}/api/analysis/drawing-to-analysis/book/${encodeURIComponent(pdfPage)}/params`,
+    { headers: getAuthHeaders() });
+
+/** DrawingToAnalysis — 고친 치수로 형상만 다시 만들기(메시 없음). 치수가 모순이면 422 + 이유 */
+export const buildLugGeometry = (form, values, code = 'lug') =>
+  axios.post(`${API_BASE_URL}/api/analysis/drawing-to-analysis/lug-geometry`, { form, values, code },
+    { headers: getAuthHeaders() });
+
+/** DrawingToAnalysis — 고친 치수로 해석 실행(서버: 치수 → 설계 JSON → 메시·BDF·수계산) */
+export const runDrawingBookParams = (pdfPage, { employeeId, values, meshSize = 10.0, cases = null }) =>
+  axios.post(`${API_BASE_URL}/api/analysis/drawing-to-analysis/book/${encodeURIComponent(pdfPage)}/run-params`,
+    { employee_id: employeeId, values, mesh_size: meshSize, source: 'Workbench-BookParams', ...(cases ? { cases } : {}) },
+    { headers: getAuthHeaders() });
+
 /** DrawingToAnalysis — 카탈로그 PDF 목록 조회 */
 export const listDrawingCatalogue = () =>
   axios.get(`${API_BASE_URL}/api/analysis/drawing-to-analysis/catalogue`, {

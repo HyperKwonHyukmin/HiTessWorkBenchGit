@@ -43,7 +43,7 @@ const formatCategoryName = (raw) => {
 const CATEGORY_STYLE = { text: 'text-[#002554]', bg: 'bg-slate-50', border: 'border-slate-200' };
 const paletteOf = () => CATEGORY_STYLE;
 
-export default function DrawingCatalogueModal({ isOpen, onClose, onSelect, onSelectBookPage, running = false }) {
+export default function DrawingCatalogueModal({ isOpen, onClose, onSelect, onSelectBookPage, onEditBookParams, running = false }) {
   // 탭: 'book' = 치공구표준집 찾기(기본, 2026-11-11) · 'files' = 예전 업로드 카탈로그(PdfCatalogue 폴더)
   const [tab, setTab] = useState('book');
   // 데이터
@@ -269,6 +269,7 @@ export default function DrawingCatalogueModal({ isOpen, onClose, onSelect, onSel
             <DrawingBookPanel
               running={running}
               onRun={(item) => { onSelectBookPage?.(item); onClose?.(); }}
+              onEditParams={onEditBookParams ? (item) => { onEditBookParams(item); onClose?.(); } : undefined}
             />
           </div>
         ) : (<>

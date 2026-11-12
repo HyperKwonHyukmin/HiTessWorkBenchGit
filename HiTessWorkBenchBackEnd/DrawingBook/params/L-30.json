@@ -1,0 +1,63 @@
+{
+ "schema": "lugparams/0.1",
+ "code": "L-30",
+ "pdfPage": 34,
+ "source": "auto",
+ "form": "lapping_lug",
+ "values": {
+  "height": 300.0,
+  "lap_length": 250.0,
+  "lap_to_pin": 80.0,
+  "arc_R": 130.0,
+  "hole_d": 61.0,
+  "main_t": 33.0,
+  "material": "SWS400B",
+  "swl_t": 30.0,
+  "daf": 1.0
+ },
+ "review": [
+  {
+   "path": "/materials/0",
+   "status": "single_source",
+   "from_text": "SWS400B",
+   "from_geometry": null,
+   "note": "material: 재료표 SWS400B → 라이브러리 값 (fy 235)"
+  },
+  {
+   "path": "/load_cases",
+   "status": "single_source",
+   "from_text": 30.0,
+   "from_geometry": null,
+   "note": "swl_t: 주석만"
+  },
+  {
+   "path": "/load_cases",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "daf: 도면에 DAF 없음 — 1 임시 (안전하중에 이미 들어 있는지 확인)"
+  },
+  {
+   "path": "/load_cases",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "load_angles: 도면에 하중 각도 없음 — 템플릿 기본값 LC1_axial(α0,β0), LC2_inplane_30(α30,β0), LC3_outplane_5(α0,β5)"
+  },
+  {
+   "path": "/boundary/0",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "boundary: lap 구역(v ≤ 0) 전부 고정 — 미정 결정 D6 (lap 용접 표현)"
+  },
+  {
+   "path": "/pin/pin_d",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "pin_d: 도면에 핀(샤클 핀) 지름 없음 — 구멍 Ø61 − 1 = 60 임시"
+  }
+ ],
+ "mass_kg": 32.0
+}

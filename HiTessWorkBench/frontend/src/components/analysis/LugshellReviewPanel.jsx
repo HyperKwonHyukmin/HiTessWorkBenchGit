@@ -13,6 +13,10 @@
  *   - 상태는 알약 배지 대신 값 옆의 짧은 글자. 색은 임시값(주황)·도면과 다름(빨강)에만.
  *   - 주 버튼은 하나: 고친 값이 있으면 [고친 값으로 다시 만들기], 없으면 [이 하중으로 해석].
  *     고친 값이 반영되기 전에는 해석을 막는다(옛 하중으로 해석하는 실수 방지).
+ *
+ * paramsMode(2026-11-12 통합): 표준집 치수 작업의 '결과' 단계. 하중은 '하중 및 경계' 단계 한 곳에서만 고치므로
+ *   여기서는 읽기 전용 요약 + [하중 고치기](onEditLoads), '도면에서 읽은 형상'은 뺀다(치수로 만든 모델이라 사실과 다름).
+ * '그 밖에 확인할 것'은 도면과 다른 값만 펼치고 나머지는 개수만 보이고 접는다.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { diffLugshellEdits, initialLugshellForm, validateLugshellForm } from '../../utils/lugshellEdits';
@@ -82,7 +86,7 @@ function NumInput({ value, onChange, err, label, edited, className = 'w-16' }) {
   );
 }
 
-export default function LugshellReviewPanel({ summary, resultInfo, onDownload, onRedo, onSolve, onFormChange, busy = false }) {
+export default function LugshellReviewPanel({ summary, resultInfo, onDownload, onRedo, onSolve, onFormChange, busy = false, paramsMode = false, onEditLoads }) {
   const s = summary || {};
   const review = Array.isArray(s.review) ? s.review : [];
   const byKey = useMemo(() => {
@@ -102,7 +106,7 @@ export default function LugshellReviewPanel({ summary, resultInfo, onDownload, o
   useEffect(() => { setForm(base); }, [base]);
   // 입력 중인 값을 3D 하중 화살표에 바로 보이게 페이지로 올린다 (다시 만들기 전 미리 보기)
   useEffect(() => { onFormChange?.(form); }, [form]); // eslint-disable-line react-hooks/exhaustive-deps
-  const editable = base.cases.length > 0; // 옛 서버 요약(케이스 값 없음)이면 읽기만
+  const editable = !paramsMode && base.cases.length > 0; // 옛 서버 요약(케이스 값 없음)·치수 작업이면 읽기만
   const errs = editable ? validateLugshellForm(form, Number(s.hole_d)) : {};
   const edits = editable ? diffLugshellEdits(s, form) : null;
   const hasErr = Object.keys(errs).length > 0;
@@ -146,8 +150,24 @@ export default function LugshellReviewPanel({ summary, resultInfo, onDownload, o
   const anglesEdited = !!edits?.cases?.length;
   const caseErrs = Object.entries(errs).filter(([k]) => k.includes('.'));
 
+  const g = Number(s.g) || 9.81;
+  const caseKN = (c) => {
+    const p = Number(c.swl_t ?? s.swl_t) * g * Number(c.daf ?? 1);
+    return Number.isFinite(p) ? p : null;
+  };
+  const kNText = (p) => (p == null ? '—' : `${p.toLocaleString(undefined, { maximumFractionDigits: p >= 100 ? 0 : 1 })} kN`);
+  const mismatches = others.filter((r) => r.state === 'mismatch');
+  const restOthers = others.filter((r) => r.state !== 'mismatch');
+  const otherItem = (r, i) => (
+    <li key={i} className="flex items-start justify-between gap-2 text-[12px] leading-snug">
+      <span><span className="text-slate-800">{NAME[r.key] || r.key}</span><span className="text-slate-500"> — {r.why}</span></span>
+      <StateTag state={r.state} />
+    </li>
+  );
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
+      {!paramsMode && (
       <Section
         title="도면에서 읽은 형상"
         aside={`${s.template === 'lapping_lug' ? 'lap 러그' : s.template || ''} · 축척 ${fmt(s.scale)}`}
@@ -162,7 +182,30 @@ export default function LugshellReviewPanel({ summary, resultInfo, onDownload, o
           </dd>
         </dl>
       </Section>
+      )}
 
+      {paramsMode && (
+        <Section title="해석한 하중" aside={onEditLoads ? (
+          <button type="button" onClick={onEditLoads} className="text-[12px] font-semibold text-[#002554] hover:underline underline-offset-2">하중 고치기</button>
+        ) : null}>
+          <p className="text-[12px] text-slate-600">
+            안전하중 {fmt(s.swl_t, ' t')}, DAF {fmt(base.daf || s.cases?.[0]?.daf)}, 핀 Ø{fmt(s.pin_d)}
+          </p>
+          <ul className="mt-1.5 space-y-0.5 text-[12px]">
+            {(s.cases || []).map((c, i) => (
+              <li key={c.id} className="grid grid-cols-[1fr_auto] gap-2">
+                <span className="text-slate-700 truncate" title={c.id}>
+                  LC{i + 1}
+                  <span className="text-slate-500">{Number(c.alpha_deg) ? ` 면내 ${c.alpha_deg}°` : ''}{Number(c.beta_deg) ? ` 면외 ${c.beta_deg}°` : ''}</span>
+                </span>
+                <span className="font-mono tabular-nums text-slate-900">{kNText(caseKN(c))}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {!paramsMode && (
       <Section title="해석 하중" aside={editable ? (editCount ? `${editCount}곳 고침` : '값을 눌러 고칠 수 있습니다') : null}>
         {editable ? (
           <div className="divide-y divide-slate-100">
@@ -210,9 +253,10 @@ export default function LugshellReviewPanel({ summary, resultInfo, onDownload, o
             </div>
           </div>
         ) : (
-          <p className="text-[12px] text-slate-600">안전하중 {fmt(s.swl_t, ' t')} · 하중 케이스 {s.load_cases?.length || 0}개 (이 서버에서는 고칠 수 없습니다)</p>
+          <p className="text-[12px] text-slate-600">안전하중 {fmt(s.swl_t, ' t')}, 하중 케이스 {s.load_cases?.length || 0}개 (이 서버에서는 고칠 수 없습니다)</p>
         )}
       </Section>
+      )}
 
       {byKey.boundary && (
         <Section title="경계조건">
@@ -225,14 +269,15 @@ export default function LugshellReviewPanel({ summary, resultInfo, onDownload, o
 
       {others.length > 0 && (
         <Section title="그 밖에 확인할 것">
-          <ul className="space-y-1">
-            {others.map((r, i) => (
-              <li key={i} className="flex items-start justify-between gap-2 text-[12px] leading-snug">
-                <span><span className="text-slate-800">{NAME[r.key] || r.key}</span><span className="text-slate-500"> — {r.why}</span></span>
-                <StateTag state={r.state} />
-              </li>
-            ))}
-          </ul>
+          {mismatches.length > 0 && <ul className="space-y-1 mb-1.5">{mismatches.map(otherItem)}</ul>}
+          {restOthers.length > 0 && (
+            <details>
+              <summary className="cursor-pointer text-[12px] text-slate-600">
+                {mismatches.length ? '나머지' : '임시값과 출처 1곳'} {restOthers.length}개
+              </summary>
+              <ul className="mt-1 space-y-1">{restOthers.map(otherItem)}</ul>
+            </details>
+          )}
         </Section>
       )}
 

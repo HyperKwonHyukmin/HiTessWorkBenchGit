@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, date as _date
 from typing import Any, Optional
 from sqlalchemy import func, or_
 from fastapi import APIRouter, Body, Depends, HTTPException, File, UploadFile, Form, Query, Request
-from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
@@ -1491,6 +1491,132 @@ async def run_drawing_book_page(
         owned_work_dir=work_dir,
     )
     return {"job_id": job_id, "mode": mode, "item": item}
+
+
+# -------------------- 표준집 러그: 미리 변환한 치수 → 형상 → (해석 때) 메시 (2026-11-12) --------------------
+# 계획 docs/plans/2026-11-12-lug-param-catalogue-plan.md. 치수 → 형상은 services/lug_params.py(엔진 모듈 import, 수십 ms),
+# 해석 실행은 기존 '설계 JSON 으로 다시 만들기'(exe lugshell --design)와 같은 작업.
+
+class LugGeometryRequest(BaseModel):
+    form: str
+    values: dict
+    code: str = "lug"
+
+
+class LugParamsRunRequest(BaseModel):
+    employee_id: str
+    values: dict
+    mesh_size: float = Field(10.0, ge=2.0, le=50.0)
+    # 하중 및 경계 단계에서 정한 케이스 목록 전체 [{id, alpha_deg, beta_deg}] — 없으면 형식 기본 케이스
+    cases: Optional[list[dict]] = None
+    source: str = "Workbench-BookParams"
+
+
+def _book_params_or_404(pdf_page: int):
+    from ..services import drawing_book, lug_params
+    item = drawing_book.find_item(pdf_page)
+    if item is None or not item.get("params"):
+        raise HTTPException(status_code=404, detail="이 도면은 미리 변환한 치수가 없습니다.")
+    code = os.path.splitext(os.path.basename(item["params"]))[0]
+    try:
+        pf = lug_params.load_params(code)
+    except lug_params.LugParamsUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    if pf is None:
+        raise HTTPException(status_code=404, detail=f"치수 파일이 서버에 없습니다: {item['params']}")
+    return item, code, pf
+
+
+def _same_param_value(a, b) -> bool:
+    """표준집 값과 화면 값이 같은가. 숫자는 값으로(파일의 270.0 과 화면의 270 은 같다), 글자는 대소문자 무시."""
+    try:
+        return abs(float(a) - float(b)) <= 1e-9
+    except (TypeError, ValueError):
+        return str(a if a is not None else "").strip().upper() == str(b if b is not None else "").strip().upper()
+
+
+def _lug_build_or_422(form: str, values: dict, code: str, review=None):
+    from ..services import lug_params
+    try:
+        return lug_params.build(form, values, code, review)
+    except lug_params.LugParamsUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except (KeyError, TypeError, ValueError) as e:
+        raise HTTPException(status_code=422, detail=f"치수로 형상을 만들 수 없습니다: {e}")
+
+
+@router.get("/analysis/drawing-to-analysis/book/{pdf_page}/params")
+async def get_drawing_book_params(pdf_page: int, current_user: str = Depends(require_auth)):
+    """미리 변환한 치수 + 칸 목록 + 그 치수로 만든 형상(설계 JSON). 메시는 없다."""
+    from ..services import lug_params
+    item, code, pf = _book_params_or_404(pdf_page)
+    design, info = _lug_build_or_422(pf["form"], pf.get("values") or {}, code, pf.get("review"))
+    return {"item": item, "code": code, "form": pf["form"], "values": pf.get("values") or {},
+            "source": pf.get("source"), "review": pf.get("review") or [],
+            "fields": lug_params.fields(pf["form"]), "design": design, "mass_kg": info["mass_kg"],
+            "marks": info["marks"], "version": lug_params.version()}
+
+
+@router.post("/analysis/drawing-to-analysis/lug-geometry")
+async def build_lug_geometry(payload: LugGeometryRequest, current_user: str = Depends(require_auth)):
+    """고친 치수로 형상만 다시 만든다(메시 없음). 치수가 모순이면 422 + 이유."""
+    design, info = _lug_build_or_422(payload.form, payload.values, payload.code)
+    return {"design": design, "mass_kg": info["mass_kg"], "marks": info["marks"]}
+
+
+@router.post("/analysis/drawing-to-analysis/book/{pdf_page}/run-params")
+async def run_drawing_book_params(pdf_page: int, payload: LugParamsRunRequest,
+                                  current_user: str = Depends(require_auth)):
+    """고친 치수로 해석 실행 — 치수 → 설계 JSON(여기서) → exe lugshell --design(메시·BDF·수계산).
+
+    바뀐 치수는 결과 화면 '확인 항목'에 '사용자가 치수 수정' 으로 남긴다(미리 변환한 값과 다름을 숨기지 않음).
+    """
+    from ..services import drawing_book
+    _verify_employee_self(payload.employee_id, current_user)
+    item, code, pf = _book_params_or_404(pdf_page)
+    base = pf.get("values") or {}
+    review = list(pf.get("review") or [])
+    for k, v in payload.values.items():
+        if k in base and not _same_param_value(base[k], v):
+            review.append({"path": "/plates", "status": "single_source", "from_text": None, "from_geometry": None,
+                           "note": f"{k}: 사용자가 치수 수정 {base[k]} → {v} (표준집 값과 다름)"})
+    design, info = _lug_build_or_422(pf["form"], payload.values, code, review)
+    if payload.cases is not None:
+        try:
+            design, _ = apply_lugshell_edits(design, {"cases": payload.cases, "replace_cases": True})
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=f"하중 케이스를 쓸 수 없습니다: {e}")
+    design.setdefault("analysis", {})["mesh_size"] = float(payload.mesh_size)
+
+    exe_path = os.path.abspath(os.path.join(
+        _BACKEND_DIR, "InHouseProgram", "DrawingToAnalysis", "DrawingToAnalysis.exe"
+    ))
+    # 옛 엔진(--design 모름)이면 작업을 띄우기 전에 알린다 — 화면은 실행 때 직전 결과를 비운다('다시 만들기'와 같은 검사)
+    from ..services.drawing_to_analysis_service import (
+        FAIL_LUGSHELL_DESIGN_UNSUPPORTED, engine_supports_lugshell_design,
+    )
+    if not await run_in_threadpool(engine_supports_lugshell_design, exe_path):
+        raise HTTPException(status_code=409, detail=FAIL_LUGSHELL_DESIGN_UNSUPPORTED)
+
+    work_dir, timestamp = make_work_dir(payload.employee_id, "DrawingToAnalysis")
+    pdf_path = os.path.join(work_dir, drawing_book.safe_stem(item) + ".pdf")
+    try:  # 기록용 원래 도면 — 도면집이 없어도 해석은 진행
+        await run_in_threadpool(drawing_book.extract_page_pdf, pdf_page, pdf_path)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("표준집 쪽 PDF 를 꺼내지 못함(기록용): %s", e)
+        pdf_path = ""
+    design_path = os.path.join(work_dir, "lug_design.json")
+    with open(design_path, "w", encoding="utf-8") as fh:
+        json.dump(design, fh, ensure_ascii=False, indent=2)
+
+    job_id = submit_analysis_job(
+        task_execute_drawing_to_analysis,
+        pdf_path, work_dir, exe_path, payload.employee_id, timestamp, payload.source, payload.mesh_size, "lug",
+        None, design_path,
+        queue_message="해석 모델 만드는 대기 중...",
+        owned_work_dir=work_dir,
+    )
+    return {"job_id": job_id, "mode": "lug", "item": item, "mass_kg": info["mass_kg"]}
 
 
 # -------------------- 도면 → 모델 재구축 (파라미터 편집) --------------------

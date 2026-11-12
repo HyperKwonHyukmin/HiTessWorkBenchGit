@@ -9,6 +9,7 @@ export const LUGSHELL_EDIT_LIMITS = {
   daf: [1, 5],
   alpha_deg: [-90, 90],
   beta_deg: [-90, 90],
+  p_kn: [0.1, 100000],   // 케이스별 핀 하중 크기(kN) — 표준집 치수 편집 '하중 및 경계'. 비우면 안전하중 × g × DAF
 };
 
 const str = (v) => (v === null || v === undefined ? '' : String(v));
@@ -49,13 +50,14 @@ export function validateLugshellForm(form, holeD) {
   for (const c of form?.cases || []) {
     range('alpha_deg', c.alpha_deg, `${c.id}.alpha_deg`);
     range('beta_deg', c.beta_deg, `${c.id}.beta_deg`);
+    if (String(c.p_kn ?? '').trim() !== '') range('p_kn', c.p_kn, `${c.id}.p_kn`);
   }
   return errs;
 }
 
 /**
  * 3D 하중 화살표 — 케이스마다 방향(단위벡터)·크기(N)·라벨. 엔진 lugshell/loads.py 와 같은 식:
- *   F̂ = (sinα·cosβ, sinβ, cosα·cosβ),  P = SWL × 1000 × g × DAF
+ *   F̂ = (sinα·cosβ, sinβ, cosα·cosβ),  P = SWL × 1000 × g × DAF (케이스에 p_kn 이 있으면 그 값 × 1000)
  * form 을 주면 입력 중인 값(다시 만들기 전)으로 계산한다 — 각도를 넣자마자 화살표가 움직이게.
  * 숫자가 아닌 칸이 있으면 그 케이스는 뺀다. 핀 중심이 없으면(옛 서버 요약) 빈 목록.
  */
@@ -71,19 +73,24 @@ export function lugshellLoadArrows(summary, form = null) {
   (f.cases || []).forEach((c, i) => {
     const al = parse(c.alpha_deg);
     const be = parse(c.beta_deg);
-    if ([al, be, swl, daf].some(Number.isNaN)) return;
+    const own = String(c.p_kn ?? '').trim() !== '' ? parse(c.p_kn) : null;
+    if ([al, be].some(Number.isNaN) || Number.isNaN(own)) return;
+    const pKN = own ?? swl * g * daf;
+    if (Number.isNaN(pKN)) return;
+    const kN = `${pKN.toLocaleString(undefined, { maximumFractionDigits: pKN >= 100 ? 0 : 1 })} kN`;
     const a = (al * Math.PI) / 180;
     const b = (be * Math.PI) / 180;
     const b0 = base.cases.find((x) => x.id === c.id);
     const edited = !b0 || !same(b0.alpha_deg, c.alpha_deg) || !same(b0.beta_deg, c.beta_deg)
-      || !same(base.swl_t, f.swl_t) || !same(base.daf, f.daf);
+      || !same(base.swl_t, f.swl_t) || !same(base.daf, f.daf) || own != null;
     out.push({
       id: c.id,
       index: i,
       dir: [Math.sin(a) * Math.cos(b), Math.sin(b), Math.cos(a) * Math.cos(b)],
-      magN: swl * 1000 * g * daf,
-      label: `LC${i + 1} · ${Math.round((swl * g * daf)).toLocaleString()} kN${al ? ` · 면내 ${al}°` : ''}${be ? ` · 면외 ${be}°` : ''}`,
-      // 3D 라벨용 짧은 글 — 크기는 케이스마다 같아 왼쪽 칸(SWL)에만 둔다
+      magN: pKN * 1000,
+      kN,
+      ownForce: own != null,
+      label: `LC${i + 1} · ${kN}${al ? ` · 면내 ${al}°` : ''}${be ? ` · 면외 ${be}°` : ''}`,
       tag: `LC${i + 1}${al ? ` 면내 ${al}°` : ''}${be ? ` 면외 ${be}°` : ''}`,
       edited,
     });

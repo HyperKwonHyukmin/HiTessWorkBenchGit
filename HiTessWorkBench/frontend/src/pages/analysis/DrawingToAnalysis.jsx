@@ -2,19 +2,20 @@
 /// DrawingToAnalysis — 설계 도면(PDF) → 구조 해석 모델 변환.
 /// </summary>
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Upload, Play, FileText, Info, Construction, CheckCircle2, RefreshCw, Download, RotateCcw, AlertCircle, Lightbulb, FileSearch, Sliders, MousePointerClick, Cpu, FileCheck2, XCircle, Image, Ruler, ScanLine } from 'lucide-react';
+import { Upload, Play, FileText, Info, Construction, CheckCircle2, RefreshCw, Download, RotateCcw, AlertCircle, Lightbulb, FileSearch, Sliders, MousePointerClick, Cpu, FileCheck2, XCircle, Image, Ruler, ScanLine, ArrowRight, Maximize2, Minimize2, Loader2 } from 'lucide-react';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAnalysisJob } from '../../hooks/useAnalysisJob';
-import { requestDrawingToAnalysis, requestDrawingImageToAnalysis, downloadFileBlob, downloadFileText, runDrawingCatalogue, solveDrawingModel, redoLugshellWithEdits, runDrawingBookPage } from '../../api/analysis';
+import { requestDrawingToAnalysis, requestDrawingImageToAnalysis, downloadFileBlob, downloadFileText, runDrawingCatalogue, solveDrawingModel, redoLugshellWithEdits, runDrawingBookPage, runDrawingBookParams } from '../../api/analysis';
 import ShellModelViewer from '../../components/analysis/ShellModelViewer';
 import DrawingCatalogueModal from '../../components/analysis/DrawingCatalogueModal';
 import DrawingParamsPanel from '../../components/analysis/DrawingParamsPanel';
 import DrawingLoadBcPanel from '../../components/analysis/DrawingLoadBcPanel';
 import SolveResultsPanel from '../../components/analysis/SolveResultsPanel';
 import LugshellReviewPanel from '../../components/analysis/LugshellReviewPanel';
+import { useLugParamWork, LugShapeFields, LugLoadsForm, LugWorkView } from '../../components/analysis/LugParamWork';
 import { lugshellLoadArrows } from '../../utils/lugshellEdits';
 import lugExampleImageDataUrl from '../../assets/images/drawing-to-analysis-lug-example.png?inline';
 import { useDashboardFileHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
@@ -189,6 +190,22 @@ export default function DrawingToAnalysis() {
   const [resultSubcaseIdx, setResultSubcaseIdx] = useState(savedPageState.resultSubcaseIdx ?? 0);
   const [resultField, setResultField]     = useState(savedPageState.resultField ?? 'disp');   // 'disp' | 'vm' 컨투어 필드
   const currentJobKind = useRef('convert'); // 'convert' | 'rebuild' | 'solve'
+  // 표준집 러그 치수 작업 (2026-11-12 통합): 도면 찾기 창은 고르기만, 치수 → 하중 및 경계 → 결과는 이 본창에서.
+  //   bookItem = 고른 표준집 항목, bookStep = 왼쪽 단계, centerView = 가운데 [형상 | 해석 결과],
+  //   bookRunSig = 마지막으로 해석한 값의 지문(지금 값과 다르면 결과가 낡음), autoSolveRef = 변환이 끝나면 Nastran 까지 이어서.
+  const [bookItem, setBookItem] = useState(savedPageState.bookItem ?? null);
+  const [bookStep, setBookStep] = useState(savedPageState.bookStep ?? 'shape'); // 'shape' | 'loads' | 'result'
+  const [centerView, setCenterView] = useState(savedPageState.centerView ?? 'shape'); // 'shape' | 'result'
+  const [bookRunSig, setBookRunSig] = useState(savedPageState.bookRunSig ?? null);
+  const [inputOpen, setInputOpen] = useState(false); // 결과가 있을 때 접어 둔 입력 상자를 펼침
+  const autoSolveRef = useRef(false);
+  const bodyRef = useRef(null);
+  const [bodyFull, setBodyFull] = useState(false);
+  const work = useLugParamWork({
+    item: bookItem,
+    initial: savedPageState.bookWorkState ?? null,
+    onPersist: (st) => dashboardCtx?.setAnalysisPageState?.(PAGE_KEY, { bookWorkState: st }),
+  });
   const redoRestoreRef = useRef(null);       // 고친 값으로 다시 만들기 직전 결과 — 실패하면 화면을 이것으로 되돌린다
 
   const clearLoadBc = () => {
@@ -319,6 +336,7 @@ export default function DrawingToAnalysis() {
       paramsJson, modelMode, highlightedParam, activeTab, selectionMode, selection,
       loadSets, bcSets, holeRbe, rbe3Sets, loadCases, solveResult, solveError,
       solveResultsJson, resultSubcaseIdx, resultField,
+      bookItem, bookStep, centerView, bookRunSig,
     });
   }, [
     inputMode, pdfFile, imageFile, imageReferenceLength, pdfPage,
@@ -326,6 +344,7 @@ export default function DrawingToAnalysis() {
     paramsJson, modelMode, highlightedParam, activeTab, selectionMode, selection,
     loadSets, bcSets, holeRbe, rbe3Sets, loadCases, solveResult, solveError,
     solveResultsJson, resultSubcaseIdx, resultField,
+    bookItem, bookStep, centerView, bookRunSig,
   ]);
 
   useEffect(() => {
@@ -362,6 +381,10 @@ export default function DrawingToAnalysis() {
 
   const resetDrawingPage = () => {
     reset();
+    setBookItem(null);
+    setBookRunSig(null);
+    setInputOpen(false);
+    autoSolveRef.current = false;
     // 이 App 의 기록만 지운다 — 무인자 호출은 Job Center 전체를 비운다.
     clearGlobalJobForMenu?.(PAGE_KEY);
     dashboardCtx?.clearAnalysisPageState?.(PAGE_KEY);
@@ -390,6 +413,7 @@ export default function DrawingToAnalysis() {
       return;
     }
     const mode = resolveDrawingMode(file.name);
+    setBookItem(null);
     setPdfFile(file);
     setPdfPage(1);   // 앞 PDF 의 쪽 번호가 남으면 1쪽짜리 새 파일이 '쪽 범위 밖' 으로 실패한다
     setResultInfo(null);
@@ -414,6 +438,7 @@ export default function DrawingToAnalysis() {
       showToast('PNG 또는 JPG 파일만 업로드 가능합니다.', 'error');
       return;
     }
+    setBookItem(null);
     setImageFile(file);
     setResultInfo(null);
     setAnalysisDbId(null);
@@ -555,6 +580,7 @@ export default function DrawingToAnalysis() {
     if (!filename || isRunning) return;
     const mode = resolveDrawingMode(filename);   // 전체 이름으로 — SU-145 여부는 카테고리(첫 토큰)에 없다
     const meshSize = defaultMeshSize(mode);
+    setBookItem(null);
     setPdfFile(null);
     setResultInfo(null);
     setAnalysisDbId(null);
@@ -595,6 +621,7 @@ export default function DrawingToAnalysis() {
     // 미리 보는 값 — 실제 모드는 서버 응답(res.data.mode, drawing_book.engine_mode_for: SU-145 만 support)
     const mode = item.aliases?.[0] === 'SU-145' ? 'support' : 'lug';
     const meshSize = defaultMeshSize(mode);
+    setBookItem(null);
     setPdfFile(null);
     setResultInfo(null);
     setAnalysisDbId(null);
@@ -627,6 +654,92 @@ export default function DrawingToAnalysis() {
       addLog(`서버 요청 실패: ${msg}`, 'error');
       showToast(`치공구표준집 변환 요청 실패: ${msg}`, 'error');
     }
+  };
+
+  /** 표준집 러그 — 미리 변환한(또는 고친) 치수로 해석 실행. 서버가 치수 → 형상 → 메시·BDF·수계산 (2026-11-12) */
+  const handleBookParamsRun = async (item, values, extra = {}) => {
+    if (!item || isRunning) return;
+    // 하중 및 경계 단계에서 정한 메시 크기와 케이스 목록(바꾸지 않았으면 cases 는 null → 서버가 형식 기본 케이스)
+    const meshSize = Number.isFinite(extra.meshSize) ? extra.meshSize : defaultMeshSize('lug');
+    const cases = extra.cases || null;
+    setPdfFile(null);
+    setResultInfo(null);
+    setAnalysisDbId(null);
+    setModelData(null);
+    setModelLoadError('');
+    setFailureReason('');
+    setParamsJson(null);
+    setModelMode('lug');
+    clearLoadBc();
+    setLogs([{
+      time: new Date().toLocaleTimeString(),
+      message: `[치공구표준집] ${item.code} (${item.name}) 치수로 해석 실행 — 도면을 다시 읽지 않고 저장된 치수로 형상과 메시를 만듭니다.`,
+      type: 'info',
+    }]);
+    setIsRunning(true);
+    setProgress(0);
+    setStatusMessage('서버 요청 중...');
+    try {
+      currentJobKind.current = 'convert';
+      const res = await runDrawingBookParams(item.pdfPage, { employeeId, values, meshSize, cases });
+      addLog(`[JOB] 작업 큐 등록 완료. (Job ID: ${res.data.job_id}, 모델 질량 ${res.data.mass_kg} kg)`, 'success');
+      startJob(res.data.job_id, 'DrawingToAnalysis');
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : (err?.message || '요청 실패');
+      setIsRunning(false);
+      autoSolveRef.current = false;
+      addLog(`서버 요청 실패: ${msg}`, 'error');
+      showToast(`치수 해석 요청 실패: ${msg}`, 'error');
+    }
+  };
+
+  /** 표준집 러그 치수 작업 시작 — 도면 찾기 창의 [형상 보고 치수 고치기] (창은 닫히고 본창에서 이어 간다) */
+  const handleBookEdit = (item) => {
+    if (!item || isRunning) return;
+    setInputMode('pdf');
+    setPdfFile(null);
+    setImageFile(null);
+    setResultInfo(null);
+    setAnalysisDbId(null);
+    setModelData(null);
+    setModelLoadError('');
+    setFailureReason('');
+    setParamsJson(null);
+    setModelMode('lug');
+    clearLoadBc();
+    setBookItem(item);
+    setBookStep('shape');
+    setCenterView('shape');
+    setBookRunSig(null);
+    setInputOpen(false);
+    autoSolveRef.current = false;
+  };
+
+  const goBookStep = (k) => {
+    setBookStep(k);
+    setCenterView(k === 'result' ? 'result' : 'shape');
+  };
+
+  /** 지금 치수와 하중으로 해석 — 메시, BDF, 수계산을 만들고(변환) 끝나면 Nastran 까지 이어서 돈다 */
+  const runBookWork = () => {
+    if (!bookItem || !work.ready || !work.loadsOk || isRunning) return;
+    setBookRunSig(work.signature);
+    setBookStep('result');
+    setCenterView('result');
+    autoSolveRef.current = true;
+    handleBookParamsRun(bookItem, work.payload.values, { meshSize: work.payload.meshSize, cases: work.payload.cases });
+  };
+
+  // 전체 화면 = 왼쪽 단계와 가운데 3D 를 함께(치수를 고치면서 보게). Esc 로 나오면 상태를 따라간다.
+  useEffect(() => {
+    const onChange = () => setBodyFull(document.fullscreenElement === bodyRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleBodyFull = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else bodyRef.current?.requestFullscreen?.().catch(() => {});
   };
 
   const downloadResult = async (path) => {
@@ -1061,6 +1174,18 @@ export default function DrawingToAnalysis() {
   const isImageResult = Boolean(resultInfo?.input_image || resultInfo?.detected_geometry_json || resultInfo?.source_kind === 'image');
   // 새 러그 엔진(LugShell) 결과: 설계 파라미터 편집·하중/경계 입력 대신 '확인 항목'과 '모델 하중으로 해석'
   const isLugshell = resultInfo?.engine === 'lugshell';
+  const bookStale = Boolean(bookItem && bookRunSig && work.base && bookRunSig !== work.signature);
+  // 치수 작업의 [해석 실행]: 변환(메시, BDF, 수계산)이 끝나면 같은 하중으로 Nastran 을 이어서 부른다
+  useEffect(() => {
+    if (!autoSolveRef.current || isRunning) return;
+    if (!bookItem) { autoSolveRef.current = false; return; }
+    if (failureReason) { autoSolveRef.current = false; return; }
+    if (resultInfo?.engine !== 'lugshell' || !resultInfo?.bdf || !solveWorkDir) return;
+    autoSolveRef.current = false;
+    if (!solveResult && !solveError) handleSolveModelLoads();
+  }, [isRunning, resultInfo, solveWorkDir, failureReason, solveResult, solveError, bookItem]); // eslint-disable-line react-hooks/exhaustive-deps
+  const showInput = !(bookItem || resultInfo) || inputOpen;
+  const primaryBtn = 'w-full h-10 rounded-lg bg-[#002554] text-white text-[13px] font-bold hover:bg-[#003366] disabled:bg-slate-200 disabled:text-slate-500 inline-flex items-center justify-center gap-2';
   const referenceImageUrl = imagePreviewUrl || resultImageUrl;
 
   return (
@@ -1097,7 +1222,8 @@ export default function DrawingToAnalysis() {
         )}
       />
 
-      {/* 지원 범위 안내 */}
+      {/* 지원 범위 안내 — 아무것도 고르지 않은 첫 화면에만 */}
+      {!bookItem && !resultInfo && (
       <div className="flex items-start gap-2.5 mb-4 px-3.5 py-2.5 bg-blue-50 border border-blue-200 rounded-xl shrink-0">
         <Info size={14} className="text-blue-500 shrink-0 mt-0.5" />
         <p className="text-[11px] text-blue-700 leading-relaxed">
@@ -1106,13 +1232,41 @@ export default function DrawingToAnalysis() {
           파일 이름에 'support'와 'SU-145'가 함께 들어간 PDF만 Block Support(SU-145 전용)로, JPG/PNG는 반자동 LUG 이미지로 처리합니다. DRM 적용 PDF는 지원하지 않습니다.
         </p>
       </div>
+      )}
 
       {/* 본문: 좌우 분할 */}
-      <div className="flex gap-5 flex-1 min-h-0">
+      <div ref={bodyRef} className={`flex gap-5 flex-1 min-h-0 ${bodyFull ? 'bg-slate-100 p-4' : ''}`}>
         {/* 왼쪽 사이드바 — 자식들이 flex 로 압축돼 overflow-hidden 카드에 잘리지 않도록
             [&>*]:shrink-0 로 자연 높이를 유지하고, 넘치면 사이드바가 스크롤되게 한다. */}
         <div className="w-[340px] shrink-0 flex flex-col gap-3 overflow-y-auto custom-scrollbar pr-1 [&>*]:shrink-0">
 
+          {/* 결과나 치수 작업이 있으면 입력 상자를 한 줄로 접는다 */}
+          {!showInput && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3">
+              <div className="text-[11px] text-slate-500">{bookItem ? `치공구표준집 · 도면 ${bookItem.bookPage}쪽` : '입력 도면'}</div>
+              <div className="text-[13px] font-bold text-slate-900 truncate">
+                {bookItem
+                  ? <><span className="font-mono">{bookItem.code}</span> <span className="font-normal text-slate-600">{bookItem.name}</span></>
+                  : (pdfFile?.name || imageFile?.name || '변환한 도면')}
+              </div>
+              <div className="mt-2 flex gap-4 text-[12px]">
+                <button type="button" onClick={() => setCatalogueOpen(true)} disabled={isRunning}
+                  className="inline-flex items-center gap-1 font-semibold text-[#002554] hover:underline underline-offset-2 disabled:opacity-50">
+                  <FileSearch size={12} /> 다른 도면
+                </button>
+                <button type="button" onClick={() => setInputOpen(true)} disabled={isRunning}
+                  className="inline-flex items-center gap-1 text-slate-600 hover:text-[#002554] disabled:opacity-50">
+                  <Upload size={12} /> 파일 올리기
+                </button>
+              </div>
+            </div>
+          )}
+          {showInput && (<>
+          {inputOpen && (bookItem || resultInfo) && (
+            <button type="button" onClick={() => setInputOpen(false)} className="self-end text-[12px] text-slate-600 hover:text-[#002554]">
+              입력 접기
+            </button>
+          )}
           {/* 입력 소스 선택 + 업로드 */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-1 bg-slate-100 border-b border-slate-200 flex gap-1">
@@ -1381,6 +1535,7 @@ export default function DrawingToAnalysis() {
               {isRunning ? '변환 중...' : inputMode === 'image' ? '이미지 모델 변환' : '해석 모델 변환'}
             </button>
           </div>
+          </>)}
 
           {/* 진행률 표시 — 실행 중일 때만 (사이드바 흰 카드와 톤 통일) */}
           {isRunning && (
@@ -1400,8 +1555,76 @@ export default function DrawingToAnalysis() {
             </div>
           )}
 
+          {/* 표준집 러그 치수 작업: 치수 → 하중 및 경계 → 결과 */}
+          {bookItem && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <nav className="flex border-b border-slate-200 text-[12px]" aria-label="작업 단계">
+                {[['shape', '치수'], ['loads', '하중 및 경계'], ['result', '결과']].map(([k, label]) => (
+                  <button key={k} type="button" onClick={() => goBookStep(k)}
+                    disabled={k === 'result' && !resultInfo && !isRunning && !failureReason}
+                    aria-current={bookStep === k ? 'step' : undefined}
+                    className={`flex-1 h-9 font-semibold border-b-2 transition-colors ${bookStep === k
+                      ? 'border-[#002554] text-[#002554]'
+                      : 'border-transparent text-slate-500 hover:text-slate-800 disabled:text-slate-300 disabled:hover:text-slate-300'}`}>
+                    {label}
+                  </button>
+                ))}
+              </nav>
+              {bookStep === 'shape' && <div className="px-4 py-3"><LugShapeFields work={work} /></div>}
+              {bookStep === 'loads' && <div className="px-4 py-3"><LugLoadsForm work={work} /></div>}
+              {bookStep !== 'result' && (
+                <div className="px-4 py-3 border-t border-slate-100">
+                  {bookStep === 'shape' ? (
+                    <button type="button" onClick={() => goBookStep('loads')} disabled={!work.ready} className={primaryBtn}>
+                      다음: 하중 및 경계 <ArrowRight size={14} />
+                    </button>
+                  ) : (
+                    <>
+                      <button type="button" onClick={runBookWork} disabled={!work.ready || !work.loadsOk || isRunning}
+                        title={!work.loadsOk ? '빨간 칸을 먼저 고쳐 주세요' : undefined} className={primaryBtn}>
+                        {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                        {bookRunSig ? '바꾼 값으로 다시 해석' : '해석 실행'}
+                      </button>
+                      <p className="mt-1.5 text-[11px] leading-snug text-slate-500">메시, BDF, 수계산을 만든 뒤 Nastran 해석까지 이어서 합니다.</p>
+                    </>
+                  )}
+                </div>
+              )}
+              {bookStep === 'result' && !resultInfo && !isRunning && !failureReason && (
+                <p className="px-4 py-3 text-[12px] text-slate-500">아직 해석하지 않았습니다. 하중 및 경계에서 [해석 실행]을 누르세요.</p>
+              )}
+              {bookStep === 'result' && failureReason && (
+                <p className="px-4 py-3 text-[12px] text-rose-700">모델을 만들지 못했습니다. 가운데 안내를 보고 치수나 하중을 고쳐 다시 해석하세요.</p>
+              )}
+            </div>
+          )}
+          {bookItem && bookStep === 'result' && bookStale && !isRunning && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] text-amber-900 space-y-2">
+              <p><span className="font-semibold">결과가 지금 값과 다릅니다.</span> 치수나 하중을 바꾼 뒤 아직 다시 해석하지 않았습니다. 보이는 결과는 바꾸기 전 값입니다.</p>
+              <button type="button" onClick={runBookWork} disabled={!work.ready || !work.loadsOk} className={primaryBtn}>
+                <Play size={14} /> 바꾼 값으로 다시 해석
+              </button>
+            </div>
+          )}
+          {bookItem && bookStep === 'result' && modelData && isLugshell && (
+            <>
+              <LugshellReviewPanel
+                summary={resultInfo?.lugshell}
+                resultInfo={resultInfo}
+                onDownload={downloadResult}
+                onSolve={handleSolveModelLoads}
+                busy={isRunning || bookStale}
+                paramsMode
+                onEditLoads={() => goBookStep('loads')}
+              />
+              {(solveResult || solveError) && (
+                <SolveResultStrip result={solveResult} error={solveError} onDownload={downloadResult} />
+              )}
+            </>
+          )}
+
           {/* 새 러그 엔진 결과: 확인 항목 + 모델 하중으로 해석 (파라미터 편집·하중 입력 탭 없음) */}
-          {modelData && isLugshell && (
+          {!bookItem && modelData && isLugshell && (
             <>
               <LugshellReviewPanel
                 summary={resultInfo?.lugshell}
@@ -1528,8 +1751,39 @@ export default function DrawingToAnalysis() {
         </div>
 
         {/* 오른쪽 본문 영역 */}
-        <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center overflow-hidden">
-          {failureReason ? (
+        <div className={`flex-1 min-w-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex ${bookItem ? 'flex-col' : 'items-center justify-center'}`}>
+          {bookItem && (
+            <div className="px-4 h-11 shrink-0 border-b border-slate-200 flex items-center gap-3">
+              <div role="tablist" aria-label="가운데 보기" className="inline-flex p-0.5 rounded-lg bg-slate-100 text-[12px] font-semibold">
+                {[['shape', '형상'], ['result', '해석 결과']].map(([k, label]) => (
+                  <button key={k} type="button" role="tab" aria-selected={centerView === k} onClick={() => setCenterView(k)}
+                    disabled={k === 'result' && !resultInfo && !failureReason && !isRunning}
+                    className={`px-3 h-7 rounded-md transition-colors ${centerView === k
+                      ? 'bg-white text-[#002554] shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 disabled:text-slate-400'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <span className={`text-[12px] truncate ${centerView === 'result' && bookStale ? 'text-amber-800 font-semibold' : 'text-slate-500'}`}>
+                {centerView === 'shape'
+                  ? (bookStep === 'loads' ? '화살표 = 핀에 걸리는 하중, 빨간 빗금 = 고정' : '형상만 표시합니다. 메시는 해석 때 만듭니다')
+                  : (bookStale ? '바꾸기 전 값의 결과입니다' : '')}
+              </span>
+              <button type="button" onClick={toggleBodyFull} title={bodyFull ? '전체 화면 끝내기 (Esc)' : '전체 화면'}
+                className="ml-auto shrink-0 inline-flex items-center gap-1 rounded border border-slate-300 px-2 h-7 text-[12px] text-slate-700 hover:bg-slate-50">
+                {bodyFull ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                {bodyFull ? '전체 화면 끝내기' : '전체 화면'}
+              </button>
+            </div>
+          )}
+          {bookItem && centerView === 'shape' ? (
+            <div className="flex-1 min-h-0 w-full bg-slate-50"><LugWorkView work={work} showLoads={bookStep === 'loads'} /></div>
+          ) : bookItem && !resultInfo && !failureReason ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[13px] text-slate-500">
+              {isRunning ? <><Loader2 size={18} className="animate-spin text-slate-400" />{statusMessage || '해석 중...'}</> : '아직 해석 결과가 없습니다.'}
+            </div>
+          ) : failureReason ? (
             <FailurePanel
               reason={failureReason}
               resultEntries={resultEntries}
@@ -1538,7 +1792,7 @@ export default function DrawingToAnalysis() {
               onReset={resetDrawingPage}
             />
           ) : resultInfo ? (
-            <div className="w-full h-full flex flex-col min-h-0">
+            <div className={`w-full flex flex-col min-h-0 ${bookItem ? 'flex-1' : 'h-full'}`}>
               {/* 변환 완료 헤더 — 정보 밀도 개선 */}
               <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-white flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
@@ -1695,6 +1949,7 @@ export default function DrawingToAnalysis() {
         onClose={() => setCatalogueOpen(false)}
         onSelect={handleCatalogueSelect}
         onSelectBookPage={handleBookPageSelect}
+        onEditBookParams={handleBookEdit}
         running={isRunning}
       />
     </div>

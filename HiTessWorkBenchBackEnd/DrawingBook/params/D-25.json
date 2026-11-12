@@ -1,0 +1,95 @@
+{
+ "schema": "lugparams/0.1",
+ "code": "D-25",
+ "pdfPage": 16,
+ "source": "auto",
+ "form": "d_type_lug",
+ "values": {
+  "base_width": 420.0,
+  "side_height": 105.0,
+  "pin_height": 165.0,
+  "arc_R": 100.0,
+  "hole_d": 61.0,
+  "doubler_R": 85.0,
+  "doubler_cut": 49.0,
+  "bracket_offset": 125.0,
+  "bracket_width": 110.0,
+  "bracket_outer_h": 95.0,
+  "bracket_inner_h": 145.0,
+  "bracket_top_flat": 20.0,
+  "arch_R": 40.0,
+  "arch_leg_h": 70.0,
+  "main_t": 20.0,
+  "bracket_t": 20.0,
+  "doubler_t": 12.0,
+  "material": "SWS400B",
+  "swl_t": 25.0,
+  "daf": 1.0
+ },
+ "review": [
+  {
+   "path": "/plates/1/t",
+   "status": "single_source",
+   "from_text": 12.0,
+   "from_geometry": null,
+   "note": "doubler_t: 치수만"
+  },
+  {
+   "path": "/materials/0",
+   "status": "single_source",
+   "from_text": "SWS400B",
+   "from_geometry": null,
+   "note": "material: 재료표 SWS400B → 라이브러리 값 (fy 235)"
+  },
+  {
+   "path": "/load_cases",
+   "status": "single_source",
+   "from_text": 25.0,
+   "from_geometry": null,
+   "note": "swl_t: 주석만"
+  },
+  {
+   "path": "/load_cases",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "daf: 도면에 DAF 없음 — 1 임시 (안전하중에 이미 들어 있는지 확인)"
+  },
+  {
+   "path": "/load_cases",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "load_angles: 하중 각도: 도면 LOADING 범위 0~180°(판 면 안)·옆 기울기 표 θmax 를 템플릿 기본값으로 — LC1_vertical(α0,β0), LC2_inplane_45(α45,β0), LC3_inplane_90(α90,β0), LC4_outplane_10(α0,β10)"
+  },
+  {
+   "path": "/boundary",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "boundary: 본판·브래킷 바닥(v = 0) 절점 고정 — 받침(갑판) 강성 무시, 미정 결정 D6"
+  },
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "variant: 같은 쪽 변형(A·B 형 — 브래킷 수·옆 기울기 다름)은 넣지 않음, 기본형만"
+  },
+  {
+   "path": "/welds",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "welds: 용접(본판 바닥·브래킷·덧판 둘레)은 넣지 않음 — 도면 용접 기호 숫자를 글자로 못 읽고 각장/목두께 구분도 없음. 바닥 용접 수계산 검토 없음, 사람 확인"
+  },
+  {
+   "path": "/pin/pin_d",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "pin_d: 도면에 핀(샤클 핀) 지름 없음 — 구멍 Ø61 − 1 = 60 임시"
+  }
+ ],
+ "mass_kg": 21.8
+}

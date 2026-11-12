@@ -315,13 +315,21 @@ LUGSHELL_EDIT_LIMITS = {
     "daf": (1.0, 5.0),
     "alpha_deg": (-90.0, 90.0),
     "beta_deg": (-90.0, 90.0),
+    "p_kn": (0.1, 100000.0),   # 케이스별 핀 하중 크기(kN) — 표준집 치수 편집 '하중 및 경계' (2026-11-12)
 }
+
+
+MAX_LOAD_CASES = 8
 
 
 def apply_lugshell_edits(design: dict, edits: dict) -> tuple[dict, list[dict]]:
     """도면에서 읽은 설계 JSON 에 사용자가 고친 하중 값을 넣은 (새 dict, 고친 목록) 을 돌려준다 (원본 불변).
 
-    edits = {swl_t?, daf?, pin_d?, cases?: [{id, alpha_deg?, beta_deg?}]}. 범위 밖이면 ValueError.
+    edits = {swl_t?, daf?, pin_d?, cases?: [{id, alpha_deg?, beta_deg?, p_kn?}], replace_cases?}. 범위 밖이면 ValueError.
+    p_kn 은 그 케이스의 핀 하중 크기(kN)다. 엔진은 P = swl_t × 1000 × g × daf 로 하중을 내므로 그 케이스의 swl_t 를
+    p_kn / (g × daf) 로 바꿔 넣는다(DAF 는 그대로, 안전하중 칸보다 나중에 적용).
+    replace_cases=True 면 cases 가 케이스 목록 전체다(표준집 치수 편집의 '하중 및 경계' 단계, 2026-11-12) —
+    없는 id 는 새 케이스(SWL·DAF 는 첫 케이스 값), 목록에 없는 기존 케이스는 뺀다. 1~8개.
     고친 항목은 review[] 의 그 줄을 status='user_fixed'(엔진 스키마 값) 로 바꾸고 원래 값을 note 에 남긴다 — 결과가 도면값인지
     사용자가 고친 값인지 구분하려는 것이다. 엔진 스키마가 meta 에 다른 칸을 받지 않으므로 고친 목록은 따로 돌려준다
     (라우트가 lug_user_edits.json 에 남김).
@@ -346,6 +354,18 @@ def apply_lugshell_edits(design: dict, edits: dict) -> tuple[dict, list[dict]]:
     def fmt(v):
         return f"{v:g}" if isinstance(v, (int, float)) else str(v)
 
+    g = float((d.get("analysis") or {}).get("g") or 9.81)
+    force_changed: list[str] = []
+
+    def set_force(lc, value):
+        """케이스 하중 크기(kN) → 그 케이스 swl_t. 바뀌었으면 기록."""
+        p = num("p_kn", value)
+        daf = float(lc.get("daf") or 1.0)
+        old_p = float(lc.get("swl_t") or 0) * g * daf
+        if abs(old_p - p) > 1e-6:
+            lc["swl_t"] = p / (g * daf)
+            force_changed.append(f"{lc['id']} {old_p:.4g}→{p:g} kN")
+
     for key in ("swl_t", "daf"):
         if edits.get(key) is None:
             continue
@@ -368,6 +388,43 @@ def apply_lugshell_edits(design: dict, edits: dict) -> tuple[dict, list[dict]]:
             changed.append({"item": "pin_d", "old": pin.get("pin_d"), "new": v})
             pin["pin_d"] = v
 
+    if edits.get("replace_cases"):
+        rows = list(edits.get("cases") or [])
+        if not 1 <= len(rows) <= MAX_LOAD_CASES:
+            raise ValueError(f"하중 케이스는 1~{MAX_LOAD_CASES}개여야 합니다 ({len(rows)}개)")
+        if not lcs:
+            raise ValueError("설계에 하중 케이스가 없어 새 케이스의 SWL, DAF 를 정할 수 없습니다")
+        old_by_id = {lc.get("id"): lc for lc in lcs}
+        tmpl = lcs[0]
+        new_lcs, added, kept = [], [], set()
+        for i, c in enumerate(rows):
+            cid = c.get("id")
+            if cid in old_by_id and cid not in kept:
+                kept.add(cid)
+                new_lcs.append(old_by_id[cid])
+                continue
+            a = num("alpha_deg", c.get("alpha_deg", 0))
+            b = num("beta_deg", c.get("beta_deg", 0))
+            nid = f"LC{i + 1}_user"
+            while nid in old_by_id or any(x["id"] == nid for x in new_lcs):
+                nid += "_"
+            new_lc = {"id": nid, "swl_t": tmpl.get("swl_t"), "daf": tmpl.get("daf"),
+                      "alpha_deg": a, "beta_deg": b}
+            if c.get("p_kn") is not None:
+                p = num("p_kn", c["p_kn"])
+                new_lc["swl_t"] = p / (g * float(new_lc.get("daf") or 1.0))
+            new_lcs.append(new_lc)
+            p_txt = f" {float(new_lc['swl_t']) * g * float(new_lc.get('daf') or 1.0):.4g} kN"
+            added.append(f"{nid} α {fmt(a)} β {fmt(b)}{p_txt}")
+        removed = [lc["id"] for lc in lcs if lc["id"] not in kept]
+        if added or removed:
+            parts = ([f"추가 {', '.join(added)}"] if added else []) + ([f"뺌 {', '.join(removed)}"] if removed else [])
+            changed.append({"item": "load_angles", "old": None, "new": " / ".join(parts)})
+        lcs[:] = new_lcs
+        d["load_cases"] = lcs
+        rows = [c for c in rows if c.get("id") in kept]  # 남은 기존 케이스의 각도 수정은 아래에서
+        edits = {**edits, "cases": rows}
+
     by_id = {lc.get("id"): lc for lc in lcs}
     angle_changed = []
     for c in edits.get("cases") or []:
@@ -381,8 +438,18 @@ def apply_lugshell_edits(design: dict, edits: dict) -> tuple[dict, list[dict]]:
             if abs(float(lc.get(key) or 0) - v) > 1e-9:
                 angle_changed.append(f"{lc['id']} {'α' if key == 'alpha_deg' else 'β'} {fmt(lc.get(key))}→{fmt(v)}")
                 lc[key] = v
+        if c.get("p_kn") is not None:
+            set_force(lc, c["p_kn"])
+    angle_changed += force_changed
     if angle_changed:
-        changed.append({"item": "load_angles", "old": None, "new": ", ".join(angle_changed)})
+        prev = next((c for c in changed if c["item"] == "load_angles"), None)
+        if prev:
+            prev["new"] += " / " + ", ".join(angle_changed)
+        else:
+            changed.append({"item": "load_angles", "old": None, "new": ", ".join(angle_changed)})
+    for lc in lcs:  # 엔진은 핀 면내 하중이 0 이면 지압 분포를 못 만든다 (loads.py)
+        if abs(float(lc.get("beta_deg") or 0)) >= 90 - 1e-9:
+            raise ValueError(f"{lc.get('id')}: 면외 각도 β 는 ±90° 보다 작아야 합니다 (핀 면내 하중이 0)")
 
     if changed:
         notes = {

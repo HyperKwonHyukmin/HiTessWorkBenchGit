@@ -813,6 +813,11 @@ CalcVerify 끝에 `Sn_Top,Sn_Bottom` 이 붙었다. 이 칸이 없는 옛 결과
   **D-16 은 지원 안 함으로 막았다**(브래킷 2장이 앞뒤로 엇갈린 형식 — 4장 모델로 잘못 만들던 것을 숨은선·자중 10% 검사로 차단).
   확인(70): 새 exe 로 D-16(종료 2)·D-25·D-50~D-100·L-25 끝까지, 수계산 최대 UC 0.53/0.62/0.53/0.56, Nastran FATAL 0, 엔진 회귀·백엔드 시험 26건. 앱 안 화면은 눈으로 확인 안 함.
   70 InHouse exe 교체 sha256 b0fc0b5b…(백업 `.bak_20261112_before_dtype_flank` = 14e53f0a…). **145**: exe 교체(b0fc0b5b…) **먼저** → `git pull`(색인).
+- **치수 기반 재작도 (2026-11-12, 미커밋)** — 표준집 러그를 치수 파일(`DrawingBook/params/<기호>.json`, 11종)로 두고, 화면에서 3D 형상만 보며 치수를 고친 뒤 [해석 실행] 때만 메시와 해석.
+  계획과 화면 흐름 = `docs/plans/2026-11-12-lug-param-catalogue-plan.md`. **도면 찾기 창은 고르기만**, 본창 왼쪽 단계 [치수 | 하중 및 경계 | 결과] + 가운데 [형상 | 해석 결과](`components/analysis/LugParamWork.jsx`),
+  [해석 실행] = 변환 뒤 Nastran 자동 이어서, 케이스별 하중 크기 kN(`p_kn` → 그 케이스 swl_t). 사용자가 70 앱에서 끝까지 확인(2026-11-12).
+  치수 → 형상은 엔진 `lugshell/lugshell/params/` 를 InHouse `DrawingToAnalysis/lugparams/`(git 미추적, `tools/export_lugparams.py`)로 복사해 백엔드가 import(`services/lug_params.py`). 엔진 params 를 고치면 다시 내보낼 것.
+  **145 순서**: InHouse `lugparams/` 폴더 복사 → `git pull` → 백엔드 재시작(새 라우트) → 다음 WorkBench exe. 커밋 전 `hitess-code-reviewer` 미실행, 편집 화면 추가분(강조, 전체 화면, ② 단계)은 눈으로 확인 안 함.
 
 ### 이중관 연료배관 PSA — 엔진은 외부 연구원 소유, WorkBench 개조는 어댑터로 분리 ★엔진 수정 금지
 
