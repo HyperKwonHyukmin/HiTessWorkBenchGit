@@ -1331,6 +1331,16 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
   사용자 눈높이로 쓴다(내부 파일명, 버전 경과 금지). **사용 방법이 바뀌는 기능만** 안내하고, 작은 수정은 `changelog.json` 에만.
   Studio 기능의 App 분류 = 그 Studio 를 여는 App(MU Studio = `GroupModuleUnit`).
 - `test: true` 안내는 개발 화면의 대시보드 줄에만 나오지만 공개 페이지 목록에는 보인다 — 시험 안내는 커밋 전에 지운다.
+- 페이지 왼쪽 'App 별로 보기'(전체 + App 별 안내 수, 고르면 목록과 이전·다음이 그 App 안에서만). 고른 App 은 주소에 남지 않는다.
+  통계 표와 앱 안 창에 주소 [복사]·[열기] — 복사 주소는 사내 브라우저용 `http://…:9091/updates/<id>`(`api/updates.js` `updateShareUrl`).
+- 상태(2026-11-12): 커밋 `fdd3cef`·`57057db`·`16663fd`, **WorkBench 1.7.20**(`fad582a`)에 포함. 145 ⟳ Update + **재시작**(새 라우터와 표) → exe 배포는 사용자 몫.
+  ⚠ **145 확인용 시험 안내 3건**(`2026-11-12-test-*`, `test: true`, 제목 [시험])이 아직 `updates.json` 에 있다 — 145 확인이 끝나면 지운다
+  (공개 페이지 맨 앞에 보이고, 통계의 '안 본 사람 메일 복사'에 실제 사용자가 잡힌다).
+  확인 안 함: 대시보드 줄, 앱 안 창, 통계 명단, 복사·열기 단추를 눈으로 본 적 없음(개발 앱에서 통계 표가 나오는 것만 사용자 확인). 앱 안 창을 닫는 순간의 머문 시간 기록은 전달되지 않을 수 있다(화면에서 안 씀).
+- **릴리스를 커밋된 상태로 빌드한 방법(2026-11-12, 1.7.20)** — 작업 폴더에 다른 세션의 미커밋 변경(진행 중 DrawingToAnalysis)이 있으면 exe 에 섞인다.
+  `git worktree add --detach C:\Coding\WorkBench-release HEAD` → `node_modules` 3곳과 `WorkBenchEnv` 를 junction 으로 연결 → 그 폴더에서 `release.ps1 -Bump -BuildOnly -Yes`
+  → 본 폴더는 `check-versions.ps1` 로 같은 버전을 올려 4파일만 커밋 → exe 복사 → **junction 을 먼저 끊고**(`[IO.Directory]::Delete(p,$false)`) `git worktree remove --force`
+  (그대로 지우면 원본 node_modules 까지 지울 수 있다).
 
 ### All Projects → Hi-TESS LogBook 보내기 (2026-10-13)
 
