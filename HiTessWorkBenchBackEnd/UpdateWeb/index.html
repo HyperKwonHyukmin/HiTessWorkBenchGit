@@ -35,6 +35,13 @@ a{color:var(--navy-2);text-underline-offset:3px}
 .shell{max-width:1184px;margin:0 auto;display:grid;grid-template-columns:300px minmax(0,1fr);gap:0;align-items:start}
 .list{position:sticky;top:0;max-height:100vh;overflow:auto;padding:28px 0 28px 24px}
 .list h2{font-size:13px;font-weight:800;color:var(--ink-muted);letter-spacing:0;padding:0 12px 10px}
+.apps{list-style:none;margin:0 0 6px;padding:0 0 12px;border-bottom:1px solid var(--line)}
+.app-btn{display:flex;width:100%;justify-content:space-between;align-items:center;gap:8px;font:inherit;font-size:13.5px;color:var(--ink-body);
+  background:none;border:0;border-radius:6px;padding:5px 12px;cursor:pointer;text-align:left}
+.app-btn:hover{background:#e6ebf3}
+.app-btn[aria-pressed="true"]{background:var(--navy);color:#fff;font-weight:700}
+.app-btn .n{font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink-muted)}
+.app-btn[aria-pressed="true"] .n{color:var(--navy-dim)}
 .month{font-size:12.5px;font-weight:700;color:var(--ink-muted);padding:16px 12px 6px}
 .list ol{list-style:none;margin:0;padding:0}
 .item{display:block;width:100%;text-align:left;font:inherit;color:inherit;background:none;border:0;border-radius:8px;
@@ -84,6 +91,7 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
   .list{display:none}
   .picker{display:block;padding:12px 16px;background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
   .picker label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-muted);margin-bottom:4px}
+  .picker .row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:8px}
   .picker select{width:100%;font:inherit;font-size:15px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}
   .doc{border:0}
   .doc-in{padding:28px 16px 56px}
@@ -100,17 +108,59 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
   <img src="img/logo.png" alt="Hi-TESS WorkBench" width="783" height="147">
   <span><b>업데이트 안내</b></span>
 </div></header>
-<div class="picker"><label for="pick">안내 고르기</label><select id="pick"></select></div>
+<div class="picker"><div class="row">
+  <div><label for="pick-app">App</label><select id="pick-app"></select></div>
+  <div><label for="pick">안내 고르기</label><select id="pick"></select></div>
+</div></div>
 <div class="shell">
-  <nav class="list" aria-label="업데이트 안내 목록"><h2>업데이트 안내</h2><div id="list"></div></nav>
+  <nav class="list" aria-label="업데이트 안내 목록"><h2>App 별로 보기</h2><ul class="apps" id="apps"></ul><div id="list"></div></nav>
   <main class="doc" id="doc" tabindex="-1"><div class="empty">불러오는 중입니다.</div></main>
 </div>
 <script>
 (function(){
   var embed = /[?&]embed=1\b/.test(location.search);
   if (embed) document.documentElement.classList.add('embed');
-  var entries = [], current = null;
+  var entries = [], current = null, appFilter = '';   // appFilter '' = 전체
   var listEl = document.getElementById('list'), docEl = document.getElementById('doc'), pick = document.getElementById('pick');
+  var appsEl = document.getElementById('apps'), pickApp = document.getElementById('pick-app');
+  var OTHER = '기타';
+  function appOf(e){ return e.app || OTHER; }
+  function shown(){ return appFilter ? entries.filter(function(e){ return appOf(e) === appFilter; }) : entries; }
+
+  // 왼쪽 'App 별로 보기' — 안내가 많은 App 부터. 고르면 그 App 안내만 목록과 이전·다음에 남는다.
+  function renderApps(){
+    var counts = {};
+    entries.forEach(function(e){ counts[appOf(e)] = (counts[appOf(e)] || 0) + 1; });
+    var names = Object.keys(counts).sort(function(a, b){ return counts[b] - counts[a] || a.localeCompare(b, 'ko'); });
+    appsEl.textContent = ''; pickApp.textContent = '';
+    [['', '전체', entries.length]].concat(names.map(function(n){ return [n, n, counts[n]]; })).forEach(function(row){
+      var li = el('li'), b = el('button', 'app-btn');
+      b.type = 'button'; b.dataset.app = row[0]; b.setAttribute('aria-pressed', row[0] === appFilter ? 'true' : 'false');
+      b.appendChild(el('span', null, row[1])); b.appendChild(el('span', 'n', String(row[2])));
+      b.addEventListener('click', function(){ setApp(row[0]); });
+      li.appendChild(b); appsEl.appendChild(li);
+      var o = el('option', null, row[1] + ' (' + row[2] + ')'); o.value = row[0]; pickApp.appendChild(o);
+    });
+    pickApp.value = appFilter;
+  }
+  function setApp(name){
+    appFilter = name;
+    var hadFocus = document.activeElement && document.activeElement.classList.contains('app-btn');
+    renderApps(); renderList();
+    // 단추를 새로 그려도 키보드 초점은 방금 누른 App 에 남긴다
+    if (hadFocus) appsEl.querySelectorAll('.app-btn').forEach(function(b){ if (b.dataset.app === name) b.focus(); });
+    var list = shown();
+    if (current && list.indexOf(current) < 0 && list.length) { current = null; go(list[0].id, true); }
+    else if (current) {
+      // 같은 안내를 다시 그린다(이전·다음 단추가 고른 App 기준으로 바뀜) — 조회는 새로 세지 않고 측정만 새 구획에 다시 건다
+      mark(current); renderEntry(current);
+      if (m && m.io) docEl.querySelectorAll('[data-section]').forEach(function(sec){ m.io.observe(sec); });
+    }
+  }
+  function mark(e){
+    listEl.querySelectorAll('.item').forEach(function(b){ b.setAttribute('aria-current', b.dataset.id === e.id ? 'true' : 'false'); });
+    pick.value = e.id;
+  }
 
   function el(tag, cls, text){ var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
   function fmtDay(d){ var p = d.split('-'); return p[0] + '. ' + Number(p[1]) + '. ' + Number(p[2]) + '.'; }
@@ -156,7 +206,7 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
   function renderList(){
     listEl.textContent = ''; pick.textContent = '';
     var lastMonth = null, ol = null;
-    entries.forEach(function(e){
+    shown().forEach(function(e){
       var mo = monthOf(e.date);
       if (mo !== lastMonth) { listEl.appendChild(el('div', 'month', mo)); ol = el('ol'); listEl.appendChild(ol); lastMonth = mo; }
       var li = el('li'), b = el('button', 'item');
@@ -183,7 +233,8 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
     return sec;
   }
   function renderEntry(e){
-    var idx = entries.indexOf(e);
+    var list = shown().indexOf(e) >= 0 ? shown() : entries;   // 이전·다음은 지금 고른 App 안에서
+    var idx = list.indexOf(e);
     var wrap = el('div', 'doc-in'), meta = el('div', 'meta');
     if (e.app) meta.appendChild(el('span', 'tag', e.app));
     if (e.test) meta.appendChild(el('span', 'tag test', '시험용 안내'));
@@ -206,8 +257,8 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
     function pbtn(target, label, cls){ var b = el('button', cls); b.type = 'button';
       b.appendChild(el('small', null, label)); b.appendChild(document.createTextNode(target.title));
       b.addEventListener('click', function(){ go(target.id, true); }); return b; }
-    if (entries[idx + 1]) pager.appendChild(pbtn(entries[idx + 1], '이전 안내', 'prev'));
-    if (entries[idx - 1]) pager.appendChild(pbtn(entries[idx - 1], '다음 안내', 'next'));
+    if (list[idx + 1]) pager.appendChild(pbtn(list[idx + 1], '이전 안내', 'prev'));
+    if (list[idx - 1]) pager.appendChild(pbtn(list[idx - 1], '다음 안내', 'next'));
     if (pager.childNodes.length) wrap.appendChild(pager);
     docEl.textContent = ''; docEl.appendChild(wrap);
     return secs.map(function(s){ return s.id; });
@@ -215,10 +266,11 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
   function go(id, user){
     var e = entries.filter(function(x){ return x.id === id; })[0] || entries[0];
     if (!e || (current && current.id === e.id)) return;
+    // 고른 App 밖의 안내로 오면(뒤로 가기, 공유 주소) 필터를 풀어 목록과 표시를 맞춘다
+    if (appFilter && shown().indexOf(e) < 0) { appFilter = ''; renderApps(); renderList(); }
     current = e;
     document.title = e.title + ' | Workbench 업데이트 안내';
-    listEl.querySelectorAll('.item').forEach(function(b){ b.setAttribute('aria-current', b.dataset.id === e.id ? 'true' : 'false'); });
-    pick.value = e.id;
+    mark(e);
     var ids = renderEntry(e);
     // 주소 = /updates/<안내 id>. 목록을 눌러 바꾸면 기록을 남겨 브라우저 뒤로 가기가 이전 안내로 간다.
     var url = '/updates/' + e.id + location.search;
@@ -236,6 +288,7 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
   if (embed && 'ResizeObserver' in window) new ResizeObserver(postHeight).observe(document.body);
 
   pick.addEventListener('change', function(){ go(pick.value, true); });
+  pickApp.addEventListener('change', function(){ setApp(pickApp.value); });
   // 처음 보일 안내 = 주소 끝(/updates/<id>) → 옛 방식 #<id> → 최신
   function idFromUrl(){
     var seg = location.pathname.replace(/\/+$/, '').split('/').pop();
@@ -248,7 +301,7 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
   fetch('updates.json', { cache: 'no-cache' }).then(function(r){ return r.json(); }).then(function(data){
     entries = (data && data.entries) || [];
     if (!entries.length) { docEl.innerHTML = '<div class="empty">아직 안내가 없습니다.</div>'; return; }
-    renderList();
+    renderApps(); renderList();
     go(idFromUrl(), false);
   }).catch(function(){ docEl.innerHTML = '<div class="empty">안내를 불러오지 못했습니다. 잠시 뒤 새로고침해 주세요.</div>'; });
 })();
