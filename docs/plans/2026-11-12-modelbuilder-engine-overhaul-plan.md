@@ -268,6 +268,8 @@ P2 의 기본을 "그대로 두고 보고"로 둔 이유: 받칠 구조가 1 m �
 > 다음 = 3단계 결정 기록 틀(`00_Decisions.json`, `00_Verdict.json`, `--policy` 지금 동작값만, BDF 불변). 추천: D10 의 꺾인 U-bolt 는 아직 0 이 아니라 통과 기준에서 뺀다.
 > **→ 3단계 끝(2026-11-12, 엔진 `6b7f94c` 로컬 커밋, 푸시 안 함, InHouse 미교체)** — 아래 '3단계 진행 기록'. 새 기준 회귀 = `s3_decisions`(BDF 는 `s2_b2c` 와 62/62 동일).
 > 다음(결정 없이 할 수 있는 4단계 사전 확인): ① 최종 질량이 기준보다 느는 원인(최대 +2.6%, 연장 단계 추정) ② 자동 RBE '찾지 못함' 2,282 를 지우는 단계(RbeBeamDeduplicate, RedundantBridgeRbeRemove)에서도 기록해 가르기. 그 뒤 4단계는 D 항목 결정이 먼저.
+> **→ 4단계 사전 확인 끝(2026-11-12, 엔진 미커밋, InHouse 미교체)** — 아래 '4단계 사전 확인 기록'. 새 기준 회귀 = `s4_removals`(Nastran 포함, 통과 17). 질량 증가 = 연장(정상) + BOX U-bolt 결함 B14(고침). 자동 RBE 찾지 못함 2,282 → 1.
+> 다음 = 4단계, D 항목 결정이 먼저(D1 에 질량 기준 허용폭 추가).
 > 2단계 남은 것 B5·B12b·B13 은 계획대로 뒤로. 사용자 확인 대기 결정: D1~D11(특히 D1, D7 Private 전환, D9, D10, D11), B10 처리 방법.
 
 **B11 + B12a (2026-11-12, 엔진 미커밋, 70 InHouse 미교체)** — 회귀 이름 `b11_noise_off`(B11 만), `b12a_fragment`(둘 다).
@@ -405,6 +407,34 @@ RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점
   질량: 3395 = 부착 못 한 장비 228 t(D9 의 141 t, 88 t 행) → 78.9%, 3469-dfdabc91 27.1%(장비 2.7 t), 3476-22e90e96 13.8%, 3503 6.8%, 3596 4.8%, 3380-d1aa276d 1.5%.
   **최종 질량이 기준보다 늘어난 묶음이 있다**(3380-8580336a +2.6%, 3395 +1.65 t) — 원인 미확인(연장 단계가 부재를 늘린 것으로 추정). 4단계 전에 확인할 것.
 - 남은 것: 자동 RBE 의 '찾지 못함' 2,282 가 실제로 지워진 것(RbeBeamDeduplicate, RedundantBridgeRbeRemove)인지 노드가 옮겨진 것인지 가르지 못한다 — 4단계에서 과연결 지표로 쓰려면 지우는 단계에서도 기록을 남긴다.
+  → 4단계 사전 확인에서 해결(아래).
+
+#### 4단계 사전 확인 기록 (2026-11-12, 엔진 미커밋, 70 InHouse 미교체, 회귀 `s4_b14`, `s4_removals`, `s4_final`)
+
+**① 최종 질량이 기준보다 느는 원인 — 둘로 갈린다.** phase JSON 마다 엔진과 같은 식으로 질량을 다시 계산해 단계별로 나눴다.
+- 정상 몫: 연장 단계(ConnectivityConvergence 안의 ExtendToIntersect)가 부재 자유단을 이웃 부재 중심선까지 늘리고, 노드 병합(NodeMerge 묶음)이 길이를 조금 바꾼다. 대부분 묶음 ±0.6% 안.
+  3380-8580336a 의 +2.6% 는 38 kg 짜리 작은 모델에서 CSV 470 mm 앵글(`=22045/128470`)을 틀 부재 중심선까지 600 mm 로 늘린 것(+1.0 kg)이다. 모델링 이상화라 고칠 것 없음 — 판정 기준 쪽 문제(D1 에 추가, 아래).
+- **결함 B14(고침)**: `BoxUboltConnectionStage` 가 BOX U-bolt 받침 후보를 반경 2,000 mm 안에서 찾되 배관 축 방향 거리에 한도가 없어, 3395 에서 축 방향 1,104 mm 떨어진 부재 하나를 상자 받침으로 잡았다.
+  받침이 하나라 '축 방향 평균 맞춤 이동'이 곧 1,104 mm 가 되어 U-bolt 노드 4개를 배관 끝 너머로 끌고 갔고(trace 도 없음), 배관이 접혀 같은 자리에 두 겹(배관 접힘 13곳, 질량 +1.42 t).
+  수정 = 받침 후보의 축 방향 거리 한도 '배관 반경 + ExtendExtraMarginMm(100)'(옆 방향 한도와 같은 값). 정상 후보 461개는 모두 75 mm 이하라 빠지는 것이 없다.
+  같이: 받침을 못 찾은 BOX U-bolt 노드에도 일반 U-bolt 처럼 `UboltUnsupported` 표시(예전엔 빈 BOX RBE 가 뒤에서 지워져 건전성 수, 판정, 00_Decisions 어디에도 안 남았다).
+  회귀 `s4_b14`: 모델이 바뀐 묶음은 3395 하나(RBE 212 → 208, 질량 60.63 → 59.20 t, 배관 접힘 0, 최대 변위 14,805 → 15,051 mm — 받침 4곳이 없어진 만큼). 3454, 3496, 3515 는 BOX 받침 노드 번호만 바뀌고 좌표, 부재, RBE 는 같다(좌표 기준 비교). 통과 17 그대로.
+  받칠 구조 없는 U-bolt 보고 369 → 374(3395 BOX 5곳). 모델을 바꾸지 않는 표시라 BDF 는 `s4_b14` 와 62/62 같다.
+- 참고: 8286-4a68c907 에는 처음부터 '같은 두 노드를 잇는 배관 185쌍'이 있다 — 42.2 mm 내관과 114.3 mm 외관이 같은 중심선인 이중관이라 노드를 함께 쓴다(질량 정상). 매 노드에서 안팎 관이 강체로 묶이는 모델링이라 4d(배관끼리) 검토 때 볼 것.
+
+**② 자동 RBE '찾지 못함' 2,282 를 가름.** 지우는 단계 대부분이 trace 를 남기지 않아(trace 로는 428개만 설명) 단계마다 고치지 않고 한 곳에서 잰다.
+- `Cmb.Pipeline.Core.RigidRemovalLog` — 단계 실행 전후 RBE 번호를 비교해 사라진 RBE 를 `FeModel.RigidRemovals`(단계 이름, 직전 모양, 사유)에 남긴다. 모델은 안 바꾼다.
+  감싼 곳 = `PipelineRunner`, `ConnectivityConvergence` 안쪽 호출 5개, `RigidElementNormalizer.MergeSharedDependentNodes`(이름 `<단계>.MergeSharedDependentNodes`). 안쪽에서 적은 번호는 바깥이 다시 적지 않는다.
+  사유: collapsed(끝 노드가 하나만 남음), absorbed(이번 단계에서 새로 생기거나 멤버가 는 RBE 가 노드 둘 이상을 가짐), deleted.
+- `00_Decisions.json` 자동 RBE `finalStatus` 에 `collapsed`, `removed` 가 늘고 `removedBy`(단계) 필드가 붙었다. 흡수 사슬이 남은 RBE 에 닿으면 merged. 읽는 곳은 아직 없다(6단계).
+- 결과(`s4_final`, 9,096개): 남음 5,480, 합쳐짐 1,476, **한 점이 됨 890**(NodeEquivalence 690, CollinearNodeMerge 143, FinalTopologyHealing 45, GroupConnect 12), **지워짐 1,249**, 찾지 못함 **1**(3556-89c25445).
+  지워짐 내역: GroupConnect.MergeSharedDependentNodes 587, PreservedFreeEndCleanup 213, GroupConnect 198, RigidProximityMerge 159, RbeBeamDeduplicate 75, RigidSharedNodeMerge 14, RedundantBridgeRbeRemove 3.
+- 읽을 것(4a 과연결 지표 준비): 한 점이 됨 890 은 부재가 직접 이어져 RBE 가 필요 없어진 무해한 경우. **GroupConnect 가 수렴 반복마다 같은 자유단을 다시 잇는다** — 3454 N1105 는 같은 실행 안에서 주 구조 연결 RBE 3개, 짝 보존 RBE 3개를 만들고 모두 공유 종속 병합으로 사라진 뒤 결국 76 mm 병진 이동됐다.
+  지워짐 587 + 198 의 대부분이 이 되풀이다. 모델 결과는 같아 보이지만 4a 에서 '추정 연결 수'를 셀 때 만든 수가 아니라 남은 수(kept + merged)를 써야 한다.
+- 시험: 엔진 664 통과, 1 건너뜀(B13). 새 시험 `BoxUbolt_StructureFarAlongPipeAxis_IsNotItsBox_AndAnchorStays`(고치기 전 실패 확인), `BoxUbolt_BoxSlightlyOffsetAlongAxis_StillConnectsAndAligns`, `RigidRemovalLogTests` 4개, `AutoRbe_RemovalLog_GivesCollapsedRemovedAndMergedThroughChain`.
+  커밋 전 독립 리뷰: 막아야 함 0, 고치면 좋음 2건 반영(AutoDecision 주석 자리, 원래 노드를 갖던 RBE 옆 중복 삭제를 흡수로 오판). 리뷰 참고: BOX 받침을 잃은 모델은 WorkBench 판정이 '검토 필요'로 바뀐다(의도).
+
+**D1 에 더할 것(사용자 결정)** — 질량 판정 1% 가 연장으로 생긴 정상 증가까지 잡는다(3380-8580336a). 추천: '1% 또는 20 kg 중 큰 쪽'. 장비 질량이 빠진 3395 같은 경우는 그대로 잡는다.
 
 ### 4단계 — 원인별 처방 (1단계 분류표대로, 하나씩)
 - 4a 구조 조립품 추정 연결(P1): `stru` 조립품 단위로, 등급을 매겨.
