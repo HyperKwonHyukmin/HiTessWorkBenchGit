@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pct, fmtDelta, fmtReach, unseenMailList, hasTargetList } from './newsletterStats.js';
+import { pct, fmtDelta, fmtReach, unseenMailList, hasTargetList, personMeta, reachPct } from './newsletterStats.js';
 
 test('pct — 0 으로 나누지 않는다', () => {
   assert.equal(pct(1, 4), 25);
@@ -36,4 +36,16 @@ test('fmtDelta — 전이 0 이면 % 없음', () => {
   assert.equal(fmtDelta(5, 2), '−3 (−60%)');
   assert.equal(fmtDelta(0, 3), '+3');
   assert.equal(fmtDelta(2, 2), '변화 없음');
+});
+
+test('personMeta — 빈 값(-)과 이름과 같은 값은 뺀다', () => {
+  assert.equal(personMeta({ name: '구조시스템연구실', position: '-', department: '구조시스템연구실' }), '');
+  assert.equal(personMeta({ name: '가', position: '책임', department: '선장설계부' }), '책임, 선장설계부');
+  assert.equal(personMeta({ name: '나', position: null, department: '기장설계부' }), '기장설계부');
+});
+
+test('reachPct — 대상이 없거나 옛 응답이면 null', () => {
+  assert.equal(reachPct({ targetUsers: 26, viewedTargets: 13 }), 50);
+  assert.equal(reachPct({ targetUsers: 0, viewedTargets: 0 }), null);
+  assert.equal(reachPct({ recentUsers: 3 }), null);
 });

@@ -48,3 +48,19 @@ export function unseenMailList(targets) {
 export function hasTargetList(effect) {
   return Array.isArray(effect?.targets);
 }
+
+/** 명단 한 줄의 덧붙임(직급, 부서) — '-' 같은 빈 값과 이름과 같은 값은 뺀다(이름 칸에 부서명이 든 계정이 있다). */
+export function personMeta(t) {
+  const blank = v => !v || /^[-\s.]*$/.test(String(v));
+  const name = String(t?.name || '').trim();
+  return [t?.position, t?.department]
+    .map(v => String(v ?? '').trim())
+    .filter(v => !blank(v) && v !== name)
+    .join(', ');
+}
+
+/** 대상 App 사용자 가운데 본 비율(0~100 정수). 대상이 없거나 옛 응답이면 null. */
+export function reachPct(effect) {
+  if (!effect || typeof effect.targetUsers !== 'number' || !effect.targetUsers) return null;
+  return pct(effect.viewedTargets, effect.targetUsers);
+}
