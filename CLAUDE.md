@@ -1454,3 +1454,5 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
 | `'System Settings'` | `Administration/SystemSettings.jsx` | 관리자: 시스템 모니터링 |
 | `'App Settings'` | `Administration/AppSettings.jsx` | 관리자: App별 서비스 상태·점검 모드·표시 정보 |
 | `'API Apps'` | `Administration/ApiApps.jsx` | 관리자: API 연동 앱 관리 |
+  통계 표 = App 마다 최신 안내 한 줄, 이전 안내는 '이 App 의 이전 안내 N건' 으로 펼침(`groupEntriesByApp`, `7c64518` · 1.7.22 `da9f892`).
+  **미커밋(같은 날 끝)**: 표 맨 앞 'App' 칸(굵은 App 이름 + 이전 안내 단추), '안내' 칸은 제목과 날짜만, 상세 제목 앞 App 이름표 — `UpdateStatsPanel.jsx` 한 파일, 빌드와 임시 캡처만 확인, 커밋 전 리뷰와 exe(1.7.23) 남음.
