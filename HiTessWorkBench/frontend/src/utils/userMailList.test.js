@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildActiveMailList, describeMissing, isValidEmail, needsManualEmail, planBulkEmail, missingRosterText, buildProgramUserSets,
+  buildProgramRunStats,
 } from './userMailList.js';
 
 test('planBulkEmail 은 빈 칸을 건너뛰고 틀린 값을 따로 모은다', () => {
@@ -79,4 +80,22 @@ test('buildProgramUserSets 는 App 한 줄의 여러 내부 키 사용자를 합
   assert.deepEqual([...sets.get('app:MB')].sort(), ['A476854', 'B100001']);
   assert.deepEqual([...sets.get('Truss')], ['C200002']);
   assert.equal(sets.get('None').size, 0);
+});
+
+test('buildProgramRunStats 는 App 한 줄의 내부 키 실행 수를 사번별로 더하고 마지막 시각은 늦은 쪽', () => {
+  const rows = [
+    { program_name: 'HiTessModelBuilder', employee_id: 'a476854', runs: 3, last_at: '2026-11-01T10:00:00' },
+    { program_name: 'AmToModelBuilder', employee_id: 'A476854', runs: 2, last_at: '2026-11-05T09:00:00' },
+    { program_name: 'AmToModelBuilder', employee_id: 'B100001', runs: 1, last_at: null },
+    { program_name: 'Truss', employee_id: 'A476854', runs: 7, last_at: '2026-11-10T00:00:00' },
+  ];
+  const options = [
+    { value: 'app:MB', keys: ['AmToModelBuilder', 'HiTessModelBuilder'] },
+    { value: 'Truss', keys: ['Truss'] },
+  ];
+  const stats = buildProgramRunStats(rows, options);
+  assert.deepEqual(stats.get('app:MB').get('A476854'), { runs: 5, lastAt: '2026-11-05T09:00:00' });
+  assert.deepEqual(stats.get('app:MB').get('B100001'), { runs: 1, lastAt: null });
+  assert.equal(stats.get('Truss').get('A476854').runs, 7);
+  assert.equal(stats.get('Truss').has('B100001'), false);
 });

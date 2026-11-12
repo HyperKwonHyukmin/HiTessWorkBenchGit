@@ -17,7 +17,7 @@ import { getOnlineUsers, forceLogoutUser } from '../../api/presence';
 import { getLogbookLevels } from '../../api/logbook';
 import { logbookLevelOf, logbookErrorMessage } from '../../utils/logbookLink';
 import { getEmployeeId } from '../../utils/auth';
-import { buildActiveMailList, buildProgramUserSets, describeMissing, isValidEmail, needsManualEmail } from '../../utils/userMailList';
+import { buildActiveMailList, buildProgramRunStats, buildProgramUserSets, describeMissing, isValidEmail, needsManualEmail } from '../../utils/userMailList';
 import { getProgramUsers } from '../../api/adminProjects';
 import { findAppByProgramName } from '../../contexts/DashboardContext';
 import { buildProgramFilterOptions } from '../../utils/programFilterOptions';
@@ -748,14 +748,21 @@ export default function UserManagement() {
     const keys = [...new Set(rows.map(r => r.program_name).filter(Boolean))];
     const opts = buildProgramFilterOptions(keys, findAppByProgramName);
     const sets = buildProgramUserSets(rows, opts);
+    const runs = buildProgramRunStats(rows, opts);
     return {
       list: [
         { value: 'All', label: '모든 App 사용자', keys: [] },
         ...opts.map(o => ({ ...o, name: o.label, label: `${o.label} · ${sets.get(o.value)?.size || 0}명` })),
       ],
       sets,
+      runs,
     };
   }, [programUserRows]);
+  // App 을 고르면 목록의 해석 수·마지막 해석을 그 App 기준으로 바꿔 보인다(전체 해석 수는 total_analysis_count 로 남김).
+  const programRunStats = useMemo(
+    () => (programFilter === 'All' ? null : programOptions.runs.get(programFilter) || new Map()),
+    [programFilter, programOptions]
+  );
   const programUserSet = useMemo(
     () => (programFilter === 'All' ? null : programOptions.sets.get(programFilter) || new Set()),
     [programFilter, programOptions]
@@ -781,9 +788,22 @@ export default function UserManagement() {
     return true; // 'all'
   }), [users, searchTerm, filterMode, programUserSet]);
 
+  const viewUsers = useMemo(() => {
+    if (!programRunStats) return filteredUsers;
+    return filteredUsers.map(user => {
+      const stat = programRunStats.get(textValue(user.employee_id).toUpperCase());
+      return {
+        ...user,
+        total_analysis_count: user.analysis_count ?? 0,
+        analysis_count: stat?.runs ?? 0,
+        last_analysis_at: stat?.lastAt ?? null,
+      };
+    });
+  }, [filteredUsers, programRunStats]);
+
   const sortedUsers = useMemo(
-    () => [...filteredUsers].sort((a, b) => compareUsers(a, b, sortMode)),
-    [filteredUsers, sortMode]
+    () => [...viewUsers].sort((a, b) => compareUsers(a, b, sortMode)),
+    [viewUsers, sortMode]
   );
 
   // 검색/필터/정렬이 바뀌면 첫 페이지로 되돌리고, 화면 밖 대상 혼동을 막도록 선택을 해제한다.
@@ -830,7 +850,8 @@ export default function UserManagement() {
   const handleExportRoster = () => {
     const rows = sortedUsers;
     if (rows.length === 0) { showToast('내보낼 사용자가 없습니다.', 'warning'); return; }
-    const header = ['사번', '이름', '회사', '부서', '직급', '상태', '권한', '개발자', '로그인수', '해석수', '마지막 로그인', '가입일'];
+    const header = ['사번', '이름', '회사', '부서', '직급', '상태', '권한', '개발자', '로그인수',
+      programFilterLabel ? `해석수(${programFilterLabel})` : '해석수', '마지막 로그인', '가입일'];
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [header.map(esc).join(',')];
     rows.forEach(u => {
@@ -1514,14 +1535,21 @@ export default function UserManagement() {
                         <span className="text-[9px] text-slate-400 uppercase tracking-wider">logins</span>
                       </div>
                       <div className="flex items-center gap-3 text-[11px] text-slate-500">
-                        <span className="inline-flex items-center gap-1" title="총 해석 수행 건수">
+                        <span
+                          className="inline-flex items-center gap-1"
+                          title={programFilterLabel
+                            ? `${programFilterLabel} 해석 수행 건수 (전체 ${user.total_analysis_count ?? 0}건, 샘플과 권상 세부 검토 포함)`
+                            : '총 해석 수행 건수'}
+                        >
                           <Activity size={11} className="text-emerald-500"/>
                           <span className="font-bold text-slate-700">{user.analysis_count ?? 0}</span>
-                          <span>해석</span>
+                          <span>{programFilterLabel ? 'App 해석' : '해석'}</span>
                         </span>
                         <span className="text-slate-300">·</span>
                         <span className="text-slate-400" title={user.last_analysis_at || '해석 없음'}>
-                          {user.last_analysis_at ? `해석 ${relativeTime(user.last_analysis_at)}` : '해석 없음'}
+                          {user.last_analysis_at
+                            ? `${programFilterLabel ? 'App 해석' : '해석'} ${relativeTime(user.last_analysis_at)}`
+                            : '해석 없음'}
                         </span>
                       </div>
                       <div className="flex items-center gap-3 text-[11px] text-slate-500">

@@ -92,3 +92,36 @@ export function buildProgramUserSets(rows, options) {
   }
   return out;
 }
+
+// 'App 사용자' 필터를 골랐을 때 목록의 해석 수를 그 App 의 실행 수로 — App 한 줄별 Map<사번, {runs, lastAt}>.
+// 묶음·사번 규칙은 buildProgramUserSets 와 같다. 내부 키가 여러 개면 실행 수를 더하고 마지막 실행 시각은 늦은 쪽.
+export function buildProgramRunStats(rows, options) {
+  const byKey = new Map();
+  for (const r of rows || []) {
+    const key = r && r.program_name;
+    const eid = String((r && r.employee_id) || '').trim().toUpperCase();
+    if (!key || !eid) continue;
+    if (!byKey.has(key)) byKey.set(key, new Map());
+    const m = byKey.get(key);
+    const prev = m.get(eid) || { runs: 0, lastAt: null };
+    m.set(eid, { runs: prev.runs + (Number(r.runs) || 0), lastAt: laterIso(prev.lastAt, r.last_at) });
+  }
+  const out = new Map();
+  for (const opt of options || []) {
+    const merged = new Map();
+    for (const k of opt.keys || []) {
+      for (const [eid, s] of byKey.get(k) || []) {
+        const prev = merged.get(eid) || { runs: 0, lastAt: null };
+        merged.set(eid, { runs: prev.runs + s.runs, lastAt: laterIso(prev.lastAt, s.lastAt) });
+      }
+    }
+    out.set(opt.value, merged);
+  }
+  return out;
+}
+
+function laterIso(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  return new Date(b).getTime() > new Date(a).getTime() ? b : a;
+}
