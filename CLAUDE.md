@@ -1136,6 +1136,7 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   `.env` `TEST_LOGIN_ACCOUNTS=A888888,A878787` + `TEST_LOGIN_PASSWORD_SHA256=<sha256>`(원문은 어디에도 두지 않음) 이면 그 사번만 서버가 비밀번호를 직접 확인한다(`ad_auth.verify_test_password`, AD 에 안 물음).
   실패 횟수 제한·관리자 승인은 그대로, 성공 기록은 `method: test_account`. 둘 중 하나라도 비면 꺼짐. `/api/login/options` 의 `password_login_ids` 로 화면이 그 사번이면 등록한 PC 화면에서도 비밀번호 칸을 연다(새 exe 부터, 도메인 PC 는 옛 exe 도 Windows 불일치 뒤 비밀번호 칸이 떠서 됨).
   ⚠ 사번 목록이 로그인 없이 보이고 비밀번호가 단순하다 — 시험이 끝나면 `.env` 두 줄을 지울 것. 시험 `tests/test_ad_login.py`.
+  상태(2026-11-12): 커밋 `127ec88` · **WorkBench 1.7.23**(`cc1e4cb`) 빌드·푸시. 70 `.env` 켜짐(70 DB 에는 두 계정이 없음). 145 는 코드는 받았으나 `/api/login/options` 목록이 비어 있음 = `.env` 두 줄 미반영 → 넣고 **서버 관리자 창을 닫았다 다시 열기**(⟳ Update 는 `.env` 를 다시 읽지 않음). 그 뒤 145 에서 두 계정 승인 상태 확인 · 실제 로그인 확인은 아직.
 - **회사 PC 계정 자동 로그인 (2026-11-05, `ca3e1c4`, WorkBench 1.7.2 에 포함)** — 계획·0단계 시험 = `RecordMD/2026-11-05-https-certificate-pinning-plan.md`.
   `POST /api/login/windows`(Windows 통합 인증 Negotiate, `services/windows_auth.py`): 비밀번호·사번을 받지 않고 Windows 가 만든 토큰을 SSPI(pywin32 `sspi`)로 확인해
   `HHI\<사번>` 에서 사번을 얻는다 → 기존 세션 발급(`auth._complete_login`). NTLM 은 같은 연결에서 두 번 오가서 연결(IP+포트)별 상태를 30초 든다.
