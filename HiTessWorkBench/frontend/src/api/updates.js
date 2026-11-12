@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 import { getAuthHeaders } from '../utils/auth';
+import { publicPageUrl } from '../utils/publicPageUrl';
 
 /** 안내 목록(최신이 앞). 옛 서버(404)·네트워크 오류는 빈 목록 — fetch 로 묻는다(axios 404 가 앱의 네트워크 진단 경고로 쌓이지 않게). */
 export async function fetchUpdateEntries({ signal } = {}) {
@@ -23,4 +24,27 @@ export function sendUpdateBeacon(payload) {
 /** 앱 안 iframe 주소. ?embed=1 이면 페이지가 머리 띠를 빼고 기록을 postMessage 로 넘긴다. */
 export function updatePageUrl(entryId) {
   return `${API_BASE_URL}/updates/${entryId ? encodeURIComponent(entryId) : ''}?embed=1`;
+}
+
+/** 남에게 줄 안내 주소(메일, 메신저) — 앱의 https 대신 사내 브라우저가 경고 없이 여는 http://…:9091 (utils/publicPageUrl). */
+export function updateShareUrl(entryId) {
+  return publicPageUrl(API_BASE_URL, `/updates/${entryId ? encodeURIComponent(entryId) : ''}`);
+}
+
+/** 안내 주소를 시스템 브라우저로 — 앱(Electron) 본창의 window.open 은 앱 창을 하나 더 띄울 뿐이다. */
+export function openUpdateInBrowser(entryId) {
+  const url = updateShareUrl(entryId);
+  if (window.electron?.send) window.electron.send('open-external', url);
+  else window.open(url, '_blank', 'noopener');
+}
+
+/** 안내 주소를 클립보드로. 성공하면 주소, 실패하면 null. */
+export async function copyUpdateLink(entryId) {
+  const url = updateShareUrl(entryId);
+  try {
+    await navigator.clipboard.writeText(url);
+    return url;
+  } catch {
+    return null;
+  }
 }

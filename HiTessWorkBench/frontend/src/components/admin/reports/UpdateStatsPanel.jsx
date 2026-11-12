@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
-import { Megaphone } from 'lucide-react';
+import { Copy, ExternalLink, Megaphone } from 'lucide-react';
+import { copyUpdateLink, openUpdateInBrowser } from '../../../api/updates';
 import { getUpdateStats } from '../../../api/reports';
 import { fmtReach, unseenMailList, hasTargetList } from '../../../utils/newsletterStats';
 import { DailyBars } from './StatBits';
@@ -49,6 +50,7 @@ export default function UpdateStatsPanel() {
               <thead className="bg-slate-50 text-xs text-slate-500">
                 <tr>
                   <th className="px-3 py-2 text-left font-bold">안내</th>
+                  <th className="px-3 py-2 text-left font-bold">페이지</th>
                   <th className="px-3 py-2 text-right font-bold">조회</th>
                   <th className="px-3 py-2 text-right font-bold" title="WorkBench 앱 안에서 연 사람(사번 기준)">앱 안 (명)</th>
                   <th className="px-3 py-2 text-right font-bold" title="메일 링크 등 브라우저로 연 PC(IP 기준)">브라우저 (PC)</th>
@@ -67,6 +69,9 @@ export default function UpdateStatsPanel() {
                           <span className="block font-medium text-slate-800">{e.title}</span>
                           <span className="block text-[11px] text-slate-500">{e.date}{e.app ? `  ${e.app}` : ''}</span>
                         </button>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap" onClick={(ev) => ev.stopPropagation()}>
+                        <PageLinkButtons entryId={e.entry} />
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{e.views}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{e.people}</td>
@@ -94,6 +99,27 @@ export default function UpdateStatsPanel() {
         </div>
       )}
     </section>
+  );
+}
+
+/** 안내 페이지 주소 복사와 열기(시스템 브라우저 — 메일 받은 사람이 보는 그 페이지). */
+function PageLinkButtons({ entryId }) {
+  const { showToast } = useToast();
+  const copy = async () => {
+    const url = await copyUpdateLink(entryId);
+    if (url) showToast(`안내 주소를 복사했습니다: ${url}`, 'success');
+    else showToast('복사하지 못했습니다.', 'error');
+  };
+  const btn = 'inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50';
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button type="button" onClick={copy} className={btn} title="안내 주소 복사(메일, 메신저용)">
+        <Copy size={12} aria-hidden="true" /> 복사
+      </button>
+      <button type="button" onClick={() => openUpdateInBrowser(entryId)} className={btn} title="브라우저로 안내 페이지 열기">
+        <ExternalLink size={12} aria-hidden="true" /> 열기
+      </button>
+    </span>
   );
 }
 

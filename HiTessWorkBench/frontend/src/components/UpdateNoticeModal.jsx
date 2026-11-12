@@ -1,10 +1,10 @@
 import React, { Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { ExternalLink, Megaphone, X } from 'lucide-react';
+import { Copy, ExternalLink, Megaphone, X } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
 import { API_BASE_URL } from '../config';
-import { sendUpdateBeacon, updatePageUrl } from '../api/updates';
+import { copyUpdateLink, openUpdateInBrowser, sendUpdateBeacon, updatePageUrl } from '../api/updates';
 import { readBeaconMessage } from '../utils/updateNotices';
-import { publicPageUrl } from '../utils/publicPageUrl';
 
 /**
  * 업데이트 안내 창(2026-11-12) — 서버 공개 페이지 /updates 를 앱 안에 그대로 넣어 보여 준다(내용은 서버 updates.json).
@@ -28,12 +28,11 @@ function installBeaconRelay() {
 
 export default function UpdateNoticeModal({ isOpen, entryId, onClose }) {
   installBeaconRelay();
-  const shareUrl = publicPageUrl(API_BASE_URL, `/updates/${entryId || ''}`);
-
-  // 앱(Electron)에서는 시스템 브라우저로 — 본창의 window.open 은 앱 창을 하나 더 띄울 뿐이다.
-  const openInBrowser = () => {
-    if (window.electron?.send) window.electron.send('open-external', shareUrl);
-    else window.open(shareUrl, '_blank', 'noopener');
+  const { showToast } = useToast();
+  const copyLink = async () => {
+    const url = await copyUpdateLink(entryId);
+    if (url) showToast(`안내 주소를 복사했습니다: ${url}`, 'success');
+    else showToast('복사하지 못했습니다.', 'error');
   };
 
   return (
@@ -52,7 +51,11 @@ export default function UpdateNoticeModal({ isOpen, entryId, onClose }) {
                   <Megaphone size={16} aria-hidden="true" /> 업데이트 안내
                 </Dialog.Title>
                 <div className="flex items-center gap-1">
-                  <button type="button" onClick={openInBrowser}
+                  <button type="button" onClick={copyLink}
+                    className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-white/90 hover:bg-white/10">
+                    <Copy size={14} aria-hidden="true" /> 주소 복사
+                  </button>
+                  <button type="button" onClick={() => openUpdateInBrowser(entryId)}
                     className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-white/90 hover:bg-white/10">
                     <ExternalLink size={14} aria-hidden="true" /> 브라우저로 열기
                   </button>
