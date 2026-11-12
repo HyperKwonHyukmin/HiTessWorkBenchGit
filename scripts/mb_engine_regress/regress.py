@@ -360,7 +360,23 @@ def model_metrics(outdir):
 
 # ───────────────────────── Nastran ─────────────────────────
 
-def run_nastran(bdf, timeout=1500):
+def run_nastran(bdf, timeout=1500, retries=1):
+    """Nastran 을 돌려 F06 글을 돌려준다. F06 이 끝나지 않았으면(END OF JOB 도 FATAL 도 없음) 한 번 더 돌린다.
+    동시 실행 중 가끔 F06 이 빈 채로 끝나는 일이 있었다(2026-11-12, 3468 자유-자유 해석)."""
+    f06 = os.path.splitext(bdf)[0] + ".f06"
+    txt = None
+    for attempt in range(retries + 1):
+        if os.path.isfile(f06):
+            os.remove(f06)          # 앞 시도의 끝나지 않은 F06 을 다시 읽지 않게
+        txt = _run_nastran_once(bdf, timeout)
+        if txt is None:             # 시간 초과는 다시 돌리지 않는다(한 묶음이 최악 50분 걸림)
+            return None
+        if "END OF JOB" in txt or "FATAL" in txt:
+            return txt
+    return txt
+
+
+def _run_nastran_once(bdf, timeout):
     d, name = os.path.dirname(bdf), os.path.basename(bdf)
     exe = NASTRAN if os.path.isfile(NASTRAN) else "nastran"
     f06 = os.path.splitext(bdf)[0] + ".f06"
@@ -407,8 +423,8 @@ def static_check(bdf, workdir):
     shutil.copyfile(bdf, dst)
     txt = run_nastran(dst)
     clean_nastran_dir(workdir)
-    if txt is None:
-        return {"ran": False}
+    if not txt or ("END OF JOB" not in txt and "FATAL" not in txt):
+        return {"ran": False, "incomplete": True}
     return {"ran": True, "fatal": sorted(set(FATAL_RE.findall(txt))), "autospc": len(AUTOSPC_RE.findall(txt)),
             "maxDispMm": max_disp_from_f06(txt), "finished": "END OF JOB" in txt}
 
@@ -434,8 +450,8 @@ def freefree_check(bdf, workdir):
     open(dst, "w", encoding="latin-1").write("\n".join(out) + "\n")
     txt = run_nastran(dst)
     clean_nastran_dir(workdir)
-    if txt is None:
-        return {"ran": False}
+    if not txt or ("END OF JOB" not in txt and "FATAL" not in txt):
+        return {"ran": False, "incomplete": True}
     hz = []
     k = txt.find("R E A L   E I G E N V A L U E S")
     if k >= 0:
@@ -465,6 +481,9 @@ def judge(m):
             why.append("자중 해석 FATAL " + ",".join(st["fatal"]))
         if st.get("autospc"):
             why.append(f"자동 구속 {st['autospc']}개")
+    for key, label in (("static", "자중 해석"), ("freefree", "자유-자유 해석")):
+        if (m.get(key) or {}).get("incomplete"):
+            why.append(f"측정 실패: {label} F06 미완료(다시 돌릴 것)")
     ff = m.get("freefree") or {}
     if ff.get("ran") and (ff.get("fatal") or ff.get("zeroModes") != 6):
         why.append(f"자유-자유 0 Hz 모드 {ff.get('zeroModes')}개" + (" FATAL " + ",".join(ff["fatal"]) if ff.get("fatal") else ""))
@@ -586,6 +605,20 @@ def cmd_run(a):
         want = set(a.only.split(","))
         sets = [s for s in sets if s["id"] in want]
     out = os.path.join(a.out, a.label)
+    if a.merge:
+        old = json.load(open(os.path.join(out, "result.json"), encoding="utf-8"))
+        sha = hashlib.sha256(open(a.exe, "rb").read()).hexdigest()
+        if sha != old.get("exeSha"):
+            sys.exit(f"--merge 는 같은 엔진으로만 — '{a.label}' 은 sha {old.get('exeSha', '')[:16]}, 지금 exe 는 {sha[:16]}.")
+        unknown = sorted({s["id"] for s in sets} - {r["id"] for r in old["sets"]})
+        if unknown:
+            sys.exit(f"--merge: 기존 결과에 없는 묶음 {unknown} — 새 이름으로 run 하라.")
+        with ThreadPoolExecutor(max_workers=a.workers) as ex:
+            new = {r["id"]: r for r in ex.map(lambda s: run_one(s, a.exe, out, not a.no_nastran), sets)}
+        old["sets"] = [new.get(r["id"], r) for r in old["sets"]]
+        md = write_result(out, old)
+        print(f"{len(new)}개 묶음을 다시 돌려 '{a.label}' 에 끼워 넣음")
+        return
     if os.path.isfile(os.path.join(out, "result.json")) and not a.force:
         sys.exit(f"'{a.label}' 결과가 이미 있다({out}). 기준 결과를 덮어쓰지 않으려고 멈춘다 — 새 이름을 쓰거나 --force.")
     os.makedirs(out, exist_ok=True)
@@ -724,6 +757,7 @@ def main():
     r.add_argument("--no-nastran", action="store_true")
     r.add_argument("--only", default="")
     r.add_argument("--force", action="store_true", help="같은 이름의 결과가 있어도 덮어쓴다")
+    r.add_argument("--merge", action="store_true", help="--only 묶음만 다시 돌려 기존 결과에 끼워 넣는다(같은 --exe 로)")
     r.set_defaults(fn=cmd_run)
     rm = sub.add_parser("remeasure")
     rm.add_argument("--out", default=DEFAULT_OUT)
