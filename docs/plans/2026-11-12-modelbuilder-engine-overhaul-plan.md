@@ -263,6 +263,12 @@ P2 의 기본을 "그대로 두고 보고"로 둔 이유: 받칠 구조가 1 m �
 
 #### 2단계 진행 기록
 
+> **현재 상태 (2026-11-12 세션 끝)** — 기준 회귀 = `s2_b2c`(통과 17/62, 꺾인 U-bolt 368, 자동 구속 24, 미해결 U-bolt 403, 떠 있는 그룹 647).
+> 엔진 커밋 `e523995`·`acc5530`·`f16b227`·`d501439`·`1b3dfbd`(로컬, 푸시 안 함), InHouse exe 미교체. WorkBench 프론트 `eff5ec2`(편집 뒤 판정 issues 숫자) 는 다음 exe 에 실림.
+> 다음 = 3단계 결정 기록 틀(`00_Decisions.json`, `00_Verdict.json`, `--policy` 지금 동작값만, BDF 불변). 추천: D10 의 꺾인 U-bolt 는 아직 0 이 아니라 통과 기준에서 뺀다.
+> **→ 3단계 구현됨(같은 날, 엔진 미커밋)** — 아래 '3단계 진행 기록'. 새 기준 회귀 = `s3_decisions`(BDF 는 `s2_b2c` 와 62/62 동일).
+> 2단계 남은 것 B5·B12b·B13 은 계획대로 뒤로. 사용자 확인 대기 결정: D1~D11(특히 D1, D7 Private 전환, D9, D10, D11), B10 처리 방법.
+
 **B11 + B12a (2026-11-12, 엔진 미커밋, 70 InHouse 미교체)** — 회귀 이름 `b11_noise_off`(B11 만), `b12a_fragment`(둘 다).
 - B11: `RunOptions.GroupConnectNoiseLengthMm` 500 → **0**(노이즈 제거 끔). 시험 `NoiseFragment_SingleSmallElement_KeptByDefault` 로 바꿈.
   B11 만 넣으면 나빠진다(떠 있는 그룹 638 → 705) — 노이즈 제거가 '이어지지 못하는 조각을 지워서 숨기는' 역할도 하고 있었다. 3469-490dbc9c 는 100 mm ANG_65 클립 8개(ANG_130 과 나란히 140 mm)를 지워서 한 덩어리로 보였던 것.
@@ -376,6 +382,28 @@ B11 로 남긴 작은 구조 조각이 가장 가까운 배관에 FREE_END_RBE �
 ### 3단계 — 결정 기록 틀 (처방보다 먼저)
 RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점엔 지금 동작과 같은 값만). 최종 BDF 는 2단계 결과와 같아야 한다.
 먼저 넣는 이유: 4단계의 새 연결이 처음부터 기록에 남아야 과연결을 볼 수 있다.
+
+#### 3단계 진행 기록 (2026-11-12, 엔진 미커밋, 70 InHouse 미교체, 회귀 `s3_decisions`)
+
+- **RBE 근거 = 만드는 순간 기록.** 최종 모델만 보고 되짚으면 안 된다 — 뒤 단계 병합(RigidProximityMerge, RigidSharedNodeMerge)이 remark 를 master 것으로 덮어 자동 RBE 가 UBOLT 등으로 바뀐다.
+  `FeModel.AutoDecisions`(BDF, phase JSON 에는 안 씀) + `Cmb.Pipeline.Core.AutoDecisionLog` 를 RBE 를 만드는 6곳(FreeEndRbe, GroupConnect 의 RBE 와 PRESERVED_FREE_END, LoopClose, FragmentProximity, FinalMeshProximity)과 그룹 병진 이동, 질량점 옮김(PointMassReattach)에서 부른다.
+  기록 = 단계, 규칙(remark), 간극 mm, 만든 순간의 두 자리 좌표, 대상 부재.
+- **`00_Decisions.json`** — 머리 `policy`(정책 이름과 P1~P5 값), `summary`(종류.처리 별 건수), `decisions[]`.
+  종류: `auto_rbe`(P1, 최종 상태 kept / merged / not_found — 만든 자리 두 곳을 좌표 1 mm 로 다시 찾음), `group_translate`(P1), `point_mass_moved`, `point_mass_unattached`, `equipment_mass_dropped`(P3),
+  `ubolt_unsupported`(P2, 남긴 노드 / 지운 GRID), `spc_added_for_group`(P2, `--run-nastran` 때만), `floating_group`(P4, 지금은 모두 keep), `ubolt_dof_forced`(P5).
+- **`00_Verdict.json`** — 4절 기준 중 엔진이 잴 수 있는 것만 판정하고 `overall` 은 그것들로만 낸다(Nastran 두 기준은 `not_run`, 회귀 장치 몫).
+  `rows_explained`, `mass_balance`(기준 = **중복 정리(SanityPreprocess) 직후 모델 질량 + 부착 못 한 장비 질량**, 차이 1% — 입력 감사에 행별 질량이 없어 '파이프라인이 잃은 질량과 붙이지 못한 장비'를 재는 정의로 정함),
+  `single_group`(그룹 1개, P4 예외는 4단계 기준이 정해지면), `rbe_invariants`(종속 겹침, 노드 하나에 RBE 둘 이상, 종속 없는 RBE, 없는 노드 참조).
+  `notIncluded` 에 D10 두 항목(꺾인 U-bolt 368 남음, 과대 변위 기준값 없음)을 적었다. **D1 확정 전 판정 초안이다.**
+- **`--policy standard | <JSON 파일>`** — `BuildPolicy`(Cmb.Pipeline.Core, `RunOptions.Policy`). 지금 동작값만 받고(P1 connect, P2 report, P3 interpos, P4 keep, P5 csv 또는 full) 다른 값과 `strict` 는 '4단계' 오류로 종료 코드 1. P5 = full 은 `--ubolt-full-fix` 와 같다. 백엔드는 아직 넘기지 않는다.
+- 두 파일은 백엔드(`_PHASE_FILE_RE` 로 최종 산출물 후보에서 빠짐)와 Studio(`nodes`/`elements` 없으면 건너뜀, 불러오기 요약 '제외' 수만 2 늘어남)가 phase 로 잘못 읽지 않음을 코드로 확인. 시험이 최상위 `nodes`/`elements` 없음을 지킨다.
+- 시험: 엔진 657 통과, 1 건너뜀(B13). 새 시험 `BuildPolicyTests`, `CreatedRbe_IsRecordedAsAutoDecision_WithGapAndPositions`, `DecisionsOutputTests`(파일 모양, 정책 오류, 최종 상태 판별, 불변식). 커밋 전 독립 리뷰: 막아야 함 0, 고치면 좋음 3건 반영(정책 파일 입출력 예외, 두 자리가 한 노드일 때 merged 오판, removed → not_found).
+- **회귀(62묶음, `s2_b2c` 대비)**: BDF 바뀐 묶음 **0/62**, 통과 17 그대로.
+  엔진 판정 pass 20 / fail 42(회귀 통과 17 보다 많은 것은 Nastran 기준을 안 보기 때문). 미달 사유: 그룹 2개 이상 39묶음, 질량 8묶음, 행 설명과 RBE 불변식은 62 모두 통과.
+  자동 결정 합계: 자동 RBE 9,096(남음 5,480, 합쳐짐 1,334, 찾지 못함 2,282 — 회귀는 고치기 전 exe 라 'removed' 로 찍혔다), 그룹 병진 386, 질량점 옮김 539, 질량점 부착 못 함 36, 장비 질량 빠짐 192, 받칠 구조 없는 U-bolt 403(노드 369 + 지운 GRID 34), 떠 있는 그룹 651. 자동 RBE 간극 중앙 59.7 mm, 최대 336.9 mm.
+  질량: 3395 = 부착 못 한 장비 228 t(D9 의 141 t, 88 t 행) → 78.9%, 3469-dfdabc91 27.1%(장비 2.7 t), 3476-22e90e96 13.8%, 3503 6.8%, 3596 4.8%, 3380-d1aa276d 1.5%.
+  **최종 질량이 기준보다 늘어난 묶음이 있다**(3380-8580336a +2.6%, 3395 +1.65 t) — 원인 미확인(연장 단계가 부재를 늘린 것으로 추정). 4단계 전에 확인할 것.
+- 남은 것: 자동 RBE 의 '찾지 못함' 2,282 가 실제로 지워진 것(RbeBeamDeduplicate, RedundantBridgeRbeRemove)인지 노드가 옮겨진 것인지 가르지 못한다 — 4단계에서 과연결 지표로 쓰려면 지우는 단계에서도 기록을 남긴다.
 
 ### 4단계 — 원인별 처방 (1단계 분류표대로, 하나씩)
 - 4a 구조 조립품 추정 연결(P1): `stru` 조립품 단위로, 등급을 매겨.
