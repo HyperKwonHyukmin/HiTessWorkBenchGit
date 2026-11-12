@@ -1316,6 +1316,22 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
 - 배포(2026-10-22): v1.6.25(`a16a216` 기준으로 **같은 버전 exe 재빌드** — '확인 남음' 필터 제거분 포함). 이력 json 은 `74fe2e9`(큰 범주 15건).
   145 ⟳ Update·exe 배포는 사용자. Update History 화면·솔버별 개발 이력 모달은 **눈으로 확인 안 함**. 솔버별 이력 내용(`constants/changelog.js`)은 4월에서 멈춰 있다.
 
+### 사용자 업데이트 안내 페이지 `/updates` (2026-11-12)
+
+기능 업데이트를 사용자에게 알리는 공개 페이지 **한 장**(로그인 없음). 안내는 누적되고 왼쪽 목록으로 이전 안내를 본다.
+주소 `/updates/<안내 id>` 로 들어오면 그 안내가 첫 화면(없는 id 면 최신). 계획과 결정 = `docs/plans/2026-11-12-update-notice-pages-plan.md`.
+- 내용 = `HiTessWorkBenchBackEnd/UpdateWeb/updates.json`(git 추적, 145 는 `git pull` 만, 재시작 불필요) + `img/`. 페이지 틀 `UpdateWeb/index.html` 은 고치지 않아도 된다.
+- 서버 `routers/updates_web.py` + `services/update_page_stats.py`, 표 `update_page_views`. 앱 대시보드 '새 기능 안내' 줄(`components/UpdateNoticeStrip.jsx`) → 앱 안 창(`UpdateNoticeModal.jsx`, iframe `?embed=1`)에서 본 기록은 사번으로 남는다(브라우저는 IP 해시라 PC 수만).
+- 통계 = Usage Reports '업데이트 안내'(뉴스레터 통계와 같은 사람만): 안내별 조회, 앱 안 본 사람, 브라우저 PC, **App 사용자 가운데 본 사람**과 명단(안 본 사람 메일 복사).
+  '얼마나 읽었는지'(깊이, 머문 시간, 구획)와 전후 실행 비교는 화면에 넣지 않는다(사용자 결정).
+- ★ **"업데이트 안내 써줘" = Claude 가 쓴다**: `git log`와 `changelog.json` 으로 바뀐 것을 확인 → `updates.json` 맨 앞에 한 항목
+  (`id` = `YYYY-MM-DD-영문주제`, `date`, `app` = 화면에 보일 App 이름, **`programs` = App 분류** = User Management 'App 사용자' 필터와 같은 `Analysis.program_name` 키(빠지면 명단을 못 셈), `version`, `title`, `summary`,
+  `sections[{id, heading, body|steps|points|image|note}]`) → 필요하면 헤드리스 Chrome 캡처를 `img/` 에 → 페이지 캡처로 모양 확인 → 보여 주고 확인받은 뒤 커밋.
+  그 기능의 `changelog.json` 항목에 `"page": "<안내 id>"` 를 달면 Update History 에 '사용자 안내 페이지' 단추가 생긴다(`test_changelog_pages_point_to_real_entries`).
+  사용자 눈높이로 쓴다(내부 파일명, 버전 경과 금지). **사용 방법이 바뀌는 기능만** 안내하고, 작은 수정은 `changelog.json` 에만.
+  Studio 기능의 App 분류 = 그 Studio 를 여는 App(MU Studio = `GroupModuleUnit`).
+- `test: true` 안내는 개발 화면의 대시보드 줄에만 나오지만 공개 페이지 목록에는 보인다 — 시험 안내는 커밋 전에 지운다.
+
 ### All Projects → Hi-TESS LogBook 보내기 (2026-10-13)
 
 관리자가 `ADMINISTRATION > All Projects` 에서 **모든 사용자의 해석 기록**(My Projects 와 같은 기준 — 샘플·권상 세부 검토 제외)을 보고,

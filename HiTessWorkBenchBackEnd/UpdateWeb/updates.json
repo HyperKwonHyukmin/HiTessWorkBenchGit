@@ -1,0 +1,63 @@
+{
+  "_comment": "기능 업데이트 안내(/updates) 내용. 새 안내는 entries 맨 앞에. id = YYYY-MM-DD-주제(영문 소문자·숫자·-), 주소 /updates/#<id>. app = 화면에 보일 앱 이름, programs = App 분류(그 App 의 Analysis.program_name 목록, User Management 'App 사용자' 필터와 같은 키) — 통계가 그 App 을 한 번이라도 실행한 사람 가운데 누가 봤는지를 센다, 없으면 생략. sections[].id = 측정 구획(영문 소문자로 시작). 구획 글은 body(문단 목록)·steps(순서)·points(점 목록)·image{src,alt,caption}·note(주의 한 줄) 중 필요한 것만. test=true 면 '시험용 안내' 표시. 사용 방법이 바뀌는 기능만 안내한다(작은 수정은 changelog.json 에만).",
+  "entries": [
+    {
+      "id": "2026-11-12-mu-support-remove",
+      "date": "2026-11-12",
+      "app": "Module Unit Studio",
+      "programs": [
+        "GroupModuleUnit"
+      ],
+      "version": "Studio 0.0.223",
+      "title": "설치한 가서포트 제거",
+      "summary": "Edit 도구 막대 가서포트 › 제거 에서 설치한 가서포트를 하나씩 또는 한 번에 지웁니다. 가서포트는 3D 에서 클릭으로 고를 수 없어 목록에서 고릅니다.",
+      "sections": [
+        {
+          "id": "how",
+          "heading": "이렇게 씁니다",
+          "steps": [
+            "Edit 탭 왼쪽 도구 막대에서 가서포트 › 제거 를 엽니다.",
+            "목록 줄의 [보기] 로 그 가서포트가 보이게 화면을 옮깁니다.",
+            "[제거] 로 하나만 지우거나, [모두 제거] 로 한 번에 지웁니다(확인 창을 거칩니다)."
+          ]
+        },
+        {
+          "id": "points",
+          "heading": "알아 두면 좋은 점",
+          "points": [
+            "제거하면 구조 해석 결과만 비워지고 자세안정성 결과는 그대로입니다.",
+            "제거는 Ctrl+Z 로 되살아나지 않습니다. 필요하면 다시 설치합니다."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2026-11-11-mu-mass-info",
+      "date": "2026-11-11",
+      "app": "Module Unit Studio",
+      "programs": [
+        "GroupModuleUnit"
+      ],
+      "version": "Studio 0.0.222",
+      "title": "넣은 질량 바로 보기, 노드를 만들어도 화면 그대로",
+      "summary": "질량을 넣거나 질량이 있는 노드를 고르면 오른쪽 '정보' 탭이 저절로 열려 그 질량이 보입니다. 노드를 만들거나 옮겨도 보던 화면이 무게중심으로 돌아가지 않습니다.",
+      "sections": [
+        {
+          "id": "mass",
+          "heading": "질량은 '정보' 탭에서",
+          "body": [
+            "질량 추가나 값 수정 직후 그 질량이 골라진 채 '정보' 탭이 열리고, 완료 줄에 어디서 보는지 적힙니다.",
+            "질량점이나 질량이 걸린 노드를 고르면 '표시' 탭을 보던 중이어도 '정보' 탭으로 넘어갑니다."
+          ]
+        },
+        {
+          "id": "camera",
+          "heading": "화면이 튀지 않습니다",
+          "body": [
+            "Edit 의 노드 만들기(기준 노드에서 변위 등)와 옮기기 뒤에도 카메라와 직접 정한 회전 중심이 그대로입니다."
+          ]
+        }
+      ]
+    }
+  ]
+}

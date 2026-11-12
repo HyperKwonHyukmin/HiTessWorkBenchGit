@@ -83,3 +83,11 @@ export async function downloadAnalysisReport({ analysisId, programName }) {
 export function getNewsletterStats({ signal } = {}) {
   return axios.get(`${API_BASE_URL}/api/admin/newsletter-stats`, { headers: getAuthHeaders(), signal });
 }
+
+/**
+ * 업데이트 안내(/updates) 조회 통계 — 뉴스레터 통계와 같은 사람만 {allowed:true}, 나머지는 {allowed:false}.
+ * @param {{ signal?: AbortSignal }} [opts]
+ */
+export function getUpdateStats({ signal } = {}) {
+  return axios.get(`${API_BASE_URL}/api/admin/update-stats`, { headers: getAuthHeaders(), signal });
+}

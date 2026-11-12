@@ -1,15 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pct, fmtDuration, fmtDelta } from './newsletterStats.js';
+import { pct, fmtDelta, fmtReach, unseenMailList, hasTargetList } from './newsletterStats.js';
 
 test('pct — 0 으로 나누지 않는다', () => {
   assert.equal(pct(1, 4), 25);
   assert.equal(pct(3, 0), 0);
 });
 
-test('fmtDuration', () => {
-  assert.equal(fmtDuration(42), '42초');
-  assert.equal(fmtDuration(65), '1분 05초');
+test('fmtReach — 대상 0 이면 App 사용자 없음, 분류 없으면 빈 글', () => {
+  assert.equal(fmtReach({ targetUsers: 12, viewedTargets: 3 }), '3 / 12명 (25%)');
+  assert.equal(fmtReach({ targetUsers: 0, viewedTargets: 0 }), 'App 사용자 없음');
+  assert.equal(fmtReach(null), '');
+  // 옛 서버(명단 없는 응답 모양)를 만나도 죽지 않고 '-'
+  assert.equal(fmtReach({ recentUsers: 3, reachedUsers: 1 }), '-');
+});
+
+test('hasTargetList — 명단이 배열일 때만(옛 서버 응답이면 명단 칸을 그리지 않는다)', () => {
+  assert.equal(hasTargetList({ targets: [] }), true);
+  assert.equal(hasTargetList({ recentUsers: 3 }), false);
+  assert.equal(hasTargetList(null), false);
+});
+
+test('unseenMailList — 안 본 사람만, 주소 없는 사람은 따로', () => {
+  const r = unseenMailList([
+    { name: '가', email: 'a@x.com', seenDay: '2026-11-12' },
+    { name: '나', email: ' b@x.com ', seenDay: null },
+    { name: '다', email: null, seenDay: null },
+    { name: '라', email: 'bad', seenDay: null },
+  ]);
+  assert.deepEqual(r, { text: 'b@x.com', count: 1, missing: ['다', '라'] });
 });
 
 test('fmtDelta — 전이 0 이면 % 없음', () => {

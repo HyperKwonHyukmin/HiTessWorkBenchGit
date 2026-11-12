@@ -473,3 +473,25 @@ class NewsletterView(Base):
   sections = Column(JSON, nullable=True)            # 화면에 들어온 구획 id 목록
   first_at = Column(DateTime, default=datetime.now)
   last_at = Column(DateTime, default=datetime.now)
+
+
+class UpdatePageView(Base):
+  """기능 업데이트 안내 페이지(/updates) 조회 기록(2026-11-12). 한 페이지에 안내가 쌓이고 왼쪽 목록으로 고른다.
+
+  한 행 = 한 안내(entry) × 한 방문자 × 하루. 브라우저로 연 경우 방문자 = IP 해시(employee_id 없음),
+  앱 안에서 연 경우 앱이 로그인 API 로 대신 보내 employee_id 가 남는다(사용자 결정 — 그 앱 사용자에게 닿았는지 보려고).
+  뉴스레터 표와 따로 둔다 — 그쪽 고유 키·통계를 건드리지 않으려고.
+  """
+  __tablename__ = "update_page_views"
+  __table_args__ = (UniqueConstraint("entry", "visitor", "day", name="uq_update_page_view"),)
+  id = Column(Integer, primary_key=True, index=True)
+  entry = Column(String(64), index=True, nullable=False)
+  visitor = Column(String(32), nullable=False)      # 'ip:'/'emp:' 를 붙인 해시 앞 16자
+  employee_id = Column(String(50), index=True, nullable=True)
+  day = Column(String(10), index=True, nullable=False)
+  views = Column(Integer, default=1, nullable=False)
+  max_depth = Column(Integer, default=0, nullable=False)
+  dwell_seconds = Column(Integer, default=0, nullable=False)
+  sections = Column(JSON, nullable=True)
+  first_at = Column(DateTime, default=datetime.now)
+  last_at = Column(DateTime, default=datetime.now)

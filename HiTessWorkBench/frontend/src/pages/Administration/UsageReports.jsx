@@ -13,6 +13,7 @@ import ExportPngButton from '../../components/admin/reports/ExportPngButton';
 import ReportPrintView from '../../components/admin/reports/ReportPrintView';
 import PageHeader from '../../components/ui/PageHeader';
 import NewsletterStatsPanel from '../../components/admin/reports/NewsletterStatsPanel';
+import UpdateStatsPanel from '../../components/admin/reports/UpdateStatsPanel';
 
 function defaultDateFor(period) {
   const d = new Date();
@@ -141,8 +142,11 @@ export default function UsageReports() {
         </div>
       )}
 
-      {/* 웹 뉴스레터 조회 — 지정한 사번에게만 보인다(아니면 컴포넌트가 아무것도 그리지 않음) */}
-      <NewsletterStatsPanel />
+      {/* 공지 조회 — 웹 뉴스레터·업데이트 안내. 지정한 사번에게만 보인다(아니면 각 컴포넌트가 아무것도 그리지 않음) */}
+      <div className="mt-6 space-y-6">
+        <UpdateStatsPanel />
+        <NewsletterStatsPanel />
+      </div>
 
       {/* PNG 캡처 전용 off-screen print view */}
       {data && !isEmpty && !error && (

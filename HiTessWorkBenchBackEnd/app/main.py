@@ -41,6 +41,7 @@ from .routers import (
     newsletters,
     newsletter_web,
     history_web,
+    updates_web,
     notifications,
     diagnostics,
     preferences,
@@ -246,6 +247,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(newsletters.router)
     application.include_router(newsletter_web.router)
     application.include_router(history_web.router)
+    application.include_router(updates_web.router)
     application.include_router(presentations.router)
     application.include_router(presence.router)
     application.include_router(chat.router)

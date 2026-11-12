@@ -13,6 +13,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
+import UpdateNoticeStrip from '../../components/UpdateNoticeStrip';
 import { EASE_OUT } from '../../components/ui/motion';
 import {
   Activity, AlertTriangle, BarChart3, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Compass, HelpCircle,
@@ -1342,6 +1343,8 @@ export default function Dashboard() {
         onOpenDetail={(n) => setNotice(n)}
         onOpenList={() => setCurrentMenu('Notice & Updates')}
       />
+      {/* 새 기능 안내 — 최근 30일 업데이트 안내(서버 /updates). 없으면 그리지 않는다 */}
+      <UpdateNoticeStrip />
 
       {showGuide && <DashboardGuide onClose={closeGuide} onUserGuide={() => setCurrentMenu('User Guide')} />}
 

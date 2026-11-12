@@ -4,7 +4,8 @@
 /// '새 항목' = 이 PC 에서 지난번에 이 화면을 연 뒤 더해진 것(utils/updateHistory).
 /// </summary>
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { History, RefreshCw, Search, SearchX } from 'lucide-react';
+import { History, Megaphone, RefreshCw, Search, SearchX } from 'lucide-react';
+import UpdateNoticeModal from '../../components/UpdateNoticeModal';
 import PageHeader from '../../components/ui/PageHeader';
 import Badge from '../../components/ui/Badge';
 import FeedbackState from '../../components/ui/FeedbackState';
@@ -55,7 +56,7 @@ function railClass(isFirst, isLast) {
   return 'top-0 bottom-0';
 }
 
-function UpdateItem({ it, isNew, showDate, isFirst, isLast, q }) {
+function UpdateItem({ it, isNew, showDate, isFirst, isLast, q, onOpenPage }) {
   return (
     <li className="grid grid-cols-[5.5rem_1.25rem_minmax(0,1fr)]">
       <span className="pt-3.5 font-mono text-xs text-slate-500">{showDate ? it.date : ''}</span>
@@ -78,6 +79,12 @@ function UpdateItem({ it, isNew, showDate, isFirst, isLast, q }) {
             {it.points.map((p) => <li key={p}><Hits text={p} q={q} /></li>)}
           </ul>
         )}
+        {it.page && (
+          <button type="button" onClick={() => onOpenPage(it.page)}
+            className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-0.5 text-xs font-medium text-brand-blue hover:bg-blue-50">
+            <Megaphone size={12} aria-hidden="true" /> 사용자 안내 페이지
+          </button>
+        )}
         {(it.version || it.screen || it.requester) && (
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
             {it.version && <span className="font-mono">{it.studio ? 'Studio ' : ''}v{it.version}</span>}
@@ -95,6 +102,7 @@ export default function UpdateHistory() {
   const [items, setItems] = useState([]);
   const [fresh, setFresh] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
+  const [noticeId, setNoticeId] = useState(null);   // 사용자 안내 페이지(/updates/<id>) 창
   const [error, setError] = useState(null);
   const [kind, setKind] = useState('');
   const [targetPick, setTargetPick] = useState('');   // '' 전체 · 'workbench' 본체만 · Studio viewer id
@@ -349,6 +357,7 @@ export default function UpdateHistory() {
                   <UpdateItem
                     key={`${itemKey(it)}#${index}`}
                     it={it}
+                    onOpenPage={setNoticeId}
                     isNew={fresh.has(index)}
                     showDate={i === 0 || g.rows[i - 1].it.date !== it.date}
                     isFirst={i === 0}
@@ -366,6 +375,7 @@ export default function UpdateHistory() {
           </p>
         </div>
       )}
+      <UpdateNoticeModal isOpen={!!noticeId} entryId={noticeId} onClose={() => setNoticeId(null)} />
     </div>
   );
 }

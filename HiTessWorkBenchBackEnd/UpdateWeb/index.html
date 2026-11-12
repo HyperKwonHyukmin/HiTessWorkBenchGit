@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workbench 업데이트 안내</title>
+<meta name="description" content="Hi-TESS Workbench 기능 업데이트 안내. 새로 생긴 기능과 바뀐 사용 방법을 기능별로 정리합니다.">
+<style>
+@font-face{font-family:"SUIT";src:url("fonts/SUIT-Variable.woff2") format("woff2");font-weight:100 900;font-display:swap}
+:root{
+  --navy:#002554; --navy-2:#0a3470; --navy-dim:#9fb2cf; --green:#008233;
+  --paper:#ffffff; --page:#f2f4f8; --line:#dde3ec; --line-soft:#e9edf3;
+  --ink:#16213a; --ink-body:#334155; --ink-muted:#5b6880;
+  --tag-bg:#eaf0f8; --tag-ink:#0a3470; --test-bg:#fff1d6; --test-ink:#6d4300;
+  --focus:#2563eb; --measure:68ch; --ease:cubic-bezier(.16,1,.3,1);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--page);color:var(--ink-body);
+  font-family:"SUIT","Pretendard","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  font-size:16px;line-height:1.7;word-break:keep-all;overflow-wrap:break-word}
+h1,h2,h3{color:var(--ink);margin:0;text-wrap:balance;letter-spacing:-0.02em}
+p{margin:0}
+img{display:block;max-width:100%;height:auto}
+a{color:var(--navy-2);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.strip{background:var(--navy);color:var(--navy-dim);font-size:13.5px}
+.strip-in{max-width:1184px;margin:0 auto;padding:0 24px;min-height:52px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.strip img{height:22px;width:auto}
+.strip b{color:#fff;font-weight:700}
+
+.shell{max-width:1184px;margin:0 auto;display:grid;grid-template-columns:300px minmax(0,1fr);gap:0;align-items:start}
+.list{position:sticky;top:0;max-height:100vh;overflow:auto;padding:28px 0 28px 24px}
+.list h2{font-size:13px;font-weight:800;color:var(--ink-muted);letter-spacing:0;padding:0 12px 10px}
+.month{font-size:12.5px;font-weight:700;color:var(--ink-muted);padding:16px 12px 6px}
+.list ol{list-style:none;margin:0;padding:0}
+.item{display:block;width:100%;text-align:left;font:inherit;color:inherit;background:none;border:0;border-radius:8px;
+  padding:10px 12px;cursor:pointer;transition:background .15s var(--ease)}
+.item:hover{background:#e6ebf3}
+.item[aria-current="true"]{background:var(--paper);box-shadow:0 0 0 1px var(--line),0 6px 16px -12px rgba(15,23,42,.35)}
+.item .d{font-size:12.5px;color:var(--ink-muted);font-variant-numeric:tabular-nums}
+.item .t{display:block;font-size:15px;font-weight:700;color:var(--ink);line-height:1.45;margin-top:2px}
+.item .a{display:block;font-size:12.5px;color:var(--ink-muted);margin-top:2px}
+.item[aria-current="true"] .t{color:var(--navy)}
+
+.doc{background:var(--paper);min-height:100vh;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.doc-in{padding:44px 48px 72px;max-width:calc(var(--measure) + 96px)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;font-size:14px;color:var(--ink-muted)}
+.tag{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:999px;background:var(--tag-bg);color:var(--tag-ink);font-size:13px;font-weight:700}
+.tag.test{background:var(--test-bg);color:var(--test-ink)}
+.doc h1{margin-top:14px;font-size:clamp(1.75rem,3.2vw,2.4rem);line-height:1.25;font-weight:800;letter-spacing:-0.03em}
+.lead{margin-top:16px;font-size:18px;line-height:1.65;color:var(--ink);font-weight:500;max-width:var(--measure)}
+.toc{margin-top:22px;display:flex;flex-wrap:wrap;gap:8px}
+.toc a{font-size:14px;font-weight:600;text-decoration:none;color:var(--navy-2);border:1px solid var(--line);border-radius:999px;padding:4px 12px}
+.toc a:hover{border-color:var(--navy-2)}
+.sec{margin-top:40px;padding-top:28px;border-top:1px solid var(--line);scroll-margin-top:16px}
+.sec h2{font-size:1.35rem;line-height:1.35;font-weight:800}
+.sec p{margin-top:12px;max-width:var(--measure)}
+.sec ol,.sec ul{margin:14px 0 0;padding:0;max-width:var(--measure)}
+.sec ol{list-style:none;counter-reset:s}
+.sec ol li{counter-increment:s;position:relative;padding:0 0 12px 40px}
+.sec ol li::before{content:counter(s);position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:50%;
+  background:var(--navy);color:#fff;font-size:13px;font-weight:800;display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.sec ul{padding-left:20px}
+.sec ul li{padding:0 0 8px}
+.sec ul li::marker{color:var(--green)}
+figure{margin:20px 0 0;max-width:var(--measure)}
+figure img{border:1px solid var(--line);border-radius:8px}
+figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
+.note{margin-top:16px;max-width:var(--measure);padding:12px 14px;border-radius:8px;background:var(--test-bg);color:var(--test-ink);font-size:14.5px}
+.pager{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:16px}
+.pager button{font:inherit;background:none;border:1px solid var(--line);border-radius:8px;padding:10px 14px;cursor:pointer;text-align:left;color:var(--ink);max-width:48%}
+.pager button:hover{border-color:var(--navy-2)}
+.pager small{display:block;font-size:12.5px;color:var(--ink-muted)}
+.pager .next{margin-left:auto;text-align:right}
+.empty{padding:64px 48px;color:var(--ink-muted)}
+
+.picker{display:none}
+@media (max-width:860px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .list{display:none}
+  .picker{display:block;padding:12px 16px;background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+  .picker label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-muted);margin-bottom:4px}
+  .picker select{width:100%;font:inherit;font-size:15px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}
+  .doc{border:0}
+  .doc-in{padding:28px 16px 56px}
+  .strip-in{padding:0 16px}
+  .pager button{max-width:none;width:100%}
+  .pager{flex-direction:column}
+}
+/* 앱 안 안내 창에 끼워 볼 때(?embed=1) — 창 머리가 제목을 대신하니 머리 띠를 뺀다. 창 안에서 페이지가 스스로 스크롤한다 */
+.embed .strip{display:none}
+</style>
+</head>
+<body>
+<header class="strip"><div class="strip-in">
+  <img src="img/logo.png" alt="Hi-TESS WorkBench" width="783" height="147">
+  <span><b>업데이트 안내</b></span>
+</div></header>
+<div class="picker"><label for="pick">안내 고르기</label><select id="pick"></select></div>
+<div class="shell">
+  <nav class="list" aria-label="업데이트 안내 목록"><h2>업데이트 안내</h2><div id="list"></div></nav>
+  <main class="doc" id="doc" tabindex="-1"><div class="empty">불러오는 중입니다.</div></main>
+</div>
+<script>
+(function(){
+  var embed = /[?&]embed=1\b/.test(location.search);
+  if (embed) document.documentElement.classList.add('embed');
+  var entries = [], current = null;
+  var listEl = document.getElementById('list'), docEl = document.getElementById('doc'), pick = document.getElementById('pick');
+
+  function el(tag, cls, text){ var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+  function fmtDay(d){ var p = d.split('-'); return p[0] + '. ' + Number(p[1]) + '. ' + Number(p[2]) + '.'; }
+  function monthOf(d){ var p = d.split('-'); return p[0] + '년 ' + Number(p[1]) + '월'; }
+
+  // ── 조회 측정: 안내를 보여 줄 때 view, 다른 안내로 넘어가거나 화면을 떠날 때 measure ──
+  var m = null;   // { entry, shown:{}, order:[], since, pending, io }
+  function send(payload){
+    if (embed && window.parent !== window) {
+      // 앱 안: 앱이 로그인과 함께 대신 보낸다(사번 기록). 출처는 앱 쪽에서 확인한다.
+      try { window.parent.postMessage({ type: 'hitess-update-beacon', payload: payload }, '*'); } catch (e) {}
+      return;
+    }
+    try { navigator.sendBeacon('beacon', new Blob([JSON.stringify(payload)], { type: 'application/json' })); } catch (e) {}
+  }
+  function flush(){
+    if (!m) return;
+    if (m.since) { m.pending += (Date.now() - m.since) / 1000; m.since = 0; }
+    var ids = Object.keys(m.shown), reached = 0;
+    m.order.forEach(function(id, i){ if (m.shown[id]) reached = i + 1; });
+    var depth = m.shown.__end ? 100 : (m.order.length ? Math.round(100 * reached / (m.order.length + 1)) : 0);
+    send({ entry: m.entry, type: 'measure', depth: depth, dwell: Math.round(m.pending),
+           sections: ids.filter(function(s){ return s !== '__end'; }) });
+    m.pending = 0;
+  }
+  function startMeasure(entry, sectionIds){
+    if (m) { flush(); if (m.io) m.io.disconnect(); }
+    m = { entry: entry.id, shown: {}, order: sectionIds, since: document.visibilityState === 'hidden' ? 0 : Date.now(), pending: 0, io: null };
+    send({ entry: entry.id, type: 'view' });
+    if ('IntersectionObserver' in window) {
+      var mine = m;
+      m.io = new IntersectionObserver(function(es){ es.forEach(function(e){ if (e.isIntersecting) mine.shown[e.target.getAttribute('data-section')] = 1; }); }, { threshold: 0.2 });
+      docEl.querySelectorAll('[data-section]').forEach(function(s){ m.io.observe(s); });
+    }
+  }
+  document.addEventListener('visibilitychange', function(){
+    if (!m) return;
+    if (document.visibilityState === 'hidden') flush(); else m.since = Date.now();
+  });
+  window.addEventListener('pagehide', flush);
+
+  // ── 그리기 ──
+  function renderList(){
+    listEl.textContent = ''; pick.textContent = '';
+    var lastMonth = null, ol = null;
+    entries.forEach(function(e){
+      var mo = monthOf(e.date);
+      if (mo !== lastMonth) { listEl.appendChild(el('div', 'month', mo)); ol = el('ol'); listEl.appendChild(ol); lastMonth = mo; }
+      var li = el('li'), b = el('button', 'item');
+      b.type = 'button'; b.dataset.id = e.id;
+      b.appendChild(el('span', 'd', fmtDay(e.date) + (e.test ? '  시험용' : '')));
+      b.appendChild(el('span', 't', e.title));
+      if (e.app) b.appendChild(el('span', 'a', e.app));
+      b.addEventListener('click', function(){ go(e.id, true); });
+      li.appendChild(b); ol.appendChild(li);
+      var o = el('option', null, fmtDay(e.date) + '  ' + e.title); o.value = e.id; pick.appendChild(o);
+    });
+  }
+  function renderSection(s){
+    var sec = el('section', 'sec'); sec.id = 's-' + s.id; sec.setAttribute('data-section', s.id);
+    sec.appendChild(el('h2', null, s.heading || ''));
+    (s.body || []).forEach(function(t){ sec.appendChild(el('p', null, t)); });
+    if (s.steps && s.steps.length) { var ol = el('ol'); s.steps.forEach(function(t){ ol.appendChild(el('li', null, t)); }); sec.appendChild(ol); }
+    if (s.points && s.points.length) { var ul = el('ul'); s.points.forEach(function(t){ ul.appendChild(el('li', null, t)); }); sec.appendChild(ul); }
+    if (s.image && /^img\/[A-Za-z0-9._-]+$/.test(s.image.src || '')) {
+      var f = el('figure'), img = el('img'); img.src = s.image.src; img.alt = s.image.alt || ''; img.loading = 'lazy';
+      f.appendChild(img); if (s.image.caption) f.appendChild(el('figcaption', null, s.image.caption)); sec.appendChild(f);
+    }
+    if (s.note) sec.appendChild(el('p', 'note', s.note));
+    return sec;
+  }
+  function renderEntry(e){
+    var idx = entries.indexOf(e);
+    var wrap = el('div', 'doc-in'), meta = el('div', 'meta');
+    if (e.app) meta.appendChild(el('span', 'tag', e.app));
+    if (e.test) meta.appendChild(el('span', 'tag test', '시험용 안내'));
+    meta.appendChild(el('span', 'num', fmtDay(e.date)));
+    if (e.version) meta.appendChild(el('span', null, e.version));
+    wrap.appendChild(meta);
+    wrap.appendChild(el('h1', null, e.title));
+    if (e.summary) wrap.appendChild(el('p', 'lead', e.summary));
+    var secs = e.sections || [];
+    if (secs.length > 2) {
+      var toc = el('nav', 'toc'); toc.setAttribute('aria-label', '이 안내의 구획');
+      secs.forEach(function(s){ var a = el('a', null, s.heading || s.id); a.href = '/updates/' + e.id;
+        a.addEventListener('click', function(ev){ ev.preventDefault(); var t = document.getElementById('s-' + s.id); if (t) t.scrollIntoView({ behavior: 'smooth' }); });
+        toc.appendChild(a); });
+      wrap.appendChild(toc);
+    }
+    secs.forEach(function(s){ wrap.appendChild(renderSection(s)); });
+    var end = el('div'); end.setAttribute('data-section', '__end'); end.style.height = '1px'; wrap.appendChild(end);
+    var pager = el('nav', 'pager'); pager.setAttribute('aria-label', '이전 다음 안내');
+    function pbtn(target, label, cls){ var b = el('button', cls); b.type = 'button';
+      b.appendChild(el('small', null, label)); b.appendChild(document.createTextNode(target.title));
+      b.addEventListener('click', function(){ go(target.id, true); }); return b; }
+    if (entries[idx + 1]) pager.appendChild(pbtn(entries[idx + 1], '이전 안내', 'prev'));
+    if (entries[idx - 1]) pager.appendChild(pbtn(entries[idx - 1], '다음 안내', 'next'));
+    if (pager.childNodes.length) wrap.appendChild(pager);
+    docEl.textContent = ''; docEl.appendChild(wrap);
+    return secs.map(function(s){ return s.id; });
+  }
+  function go(id, user){
+    var e = entries.filter(function(x){ return x.id === id; })[0] || entries[0];
+    if (!e || (current && current.id === e.id)) return;
+    current = e;
+    document.title = e.title + ' | Workbench 업데이트 안내';
+    listEl.querySelectorAll('.item').forEach(function(b){ b.setAttribute('aria-current', b.dataset.id === e.id ? 'true' : 'false'); });
+    pick.value = e.id;
+    var ids = renderEntry(e);
+    // 주소 = /updates/<안내 id>. 목록을 눌러 바꾸면 기록을 남겨 브라우저 뒤로 가기가 이전 안내로 간다.
+    var url = '/updates/' + e.id + location.search;
+    if (location.pathname + location.search !== url || location.hash) {
+      if (user === true) history.pushState(null, '', url); else history.replaceState(null, '', url);
+    }
+    if (user) { window.scrollTo(0, 0); docEl.focus({ preventScroll: true }); }
+    startMeasure(e, ids);
+    postHeight();
+  }
+  function postHeight(){
+    if (!embed || window.parent === window) return;
+    try { window.parent.postMessage({ type: 'hitess-update-height', height: document.documentElement.scrollHeight }, '*'); } catch (e) {}
+  }
+  if (embed && 'ResizeObserver' in window) new ResizeObserver(postHeight).observe(document.body);
+
+  pick.addEventListener('change', function(){ go(pick.value, true); });
+  // 처음 보일 안내 = 주소 끝(/updates/<id>) → 옛 방식 #<id> → 최신
+  function idFromUrl(){
+    var seg = location.pathname.replace(/\/+$/, '').split('/').pop();
+    if (seg && seg !== 'updates') return decodeURIComponent(seg);
+    return location.hash.slice(1);
+  }
+  window.addEventListener('popstate', function(){ go(idFromUrl(), 'nav'); });
+  window.addEventListener('hashchange', function(){ go(location.hash.slice(1), true); });
+
+  fetch('updates.json', { cache: 'no-cache' }).then(function(r){ return r.json(); }).then(function(data){
+    entries = (data && data.entries) || [];
+    if (!entries.length) { docEl.innerHTML = '<div class="empty">아직 안내가 없습니다.</div>'; return; }
+    renderList();
+    go(idFromUrl(), false);
+  }).catch(function(){ docEl.innerHTML = '<div class="empty">안내를 불러오지 못했습니다. 잠시 뒤 새로고침해 주세요.</div>'; });
+})();
+</script>
+</body>
+</html>
