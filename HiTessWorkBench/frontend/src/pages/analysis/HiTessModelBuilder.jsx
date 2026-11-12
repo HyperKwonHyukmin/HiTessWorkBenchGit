@@ -31,6 +31,7 @@ import { readCsvFileRows } from '../../utils/csvPreview';
 import { notifyStudioSourceUpdated } from '../../utils/studioSourceNotice';
 import { describeDiagnostic, downloadDiagnostics, enrichDiagnostic, parseEquipmentCogFar } from '../../utils/modelValidation';
 import { peekDashboardFiles, useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
+import { issueCount } from '../../utils/healthIssueCount';
 import {
   MAX_MODEL_BUILDER_WORKSPACES, canAddWorkspace, closeWorkspace, findWorkspaceByOutputDir,
   isWorkspaceIdle, isWorkspaceRunning, modelBuilderWorkspaceKit, normalizePath,
@@ -176,13 +177,13 @@ function buildEditedModelCheckStage(editedSummary) {
   const e = editedSummary;
   const connectivity = e.connectivity ?? e.Connectivity ?? null;
   const issues = e.healthMetrics?.issues ?? e.health?.issues ?? e.issues ?? {};
+  // 엔진 issues 값은 숫자다 — `.length` 로 읽으면 늘 0 이 됐다(issueCount 주석 참고).
   const health = e.health ?? {
-    freeEndCount: issues.freeEndNodes?.length ?? issues.freeEndNodeCount ?? issues.freeEndCount ?? 0,
-    orphanNodeCount: issues.orphanNodes?.length ?? issues.orphanNodeCount ?? issues.orphanCount ?? 0,
-    shortElementCount: issues.shortElements?.length ?? issues.shortElementCount ?? 0,
-    unresolvedUboltCount: issues.unresolvedUbolts?.length ?? issues.unresolvedUboltCount ?? 0,
-    disconnectedGroupCount: issues.disconnectedGroups?.length
-      ?? issues.disconnectedGroupCount
+    freeEndCount: issueCount(issues.freeEndNodes, issues.freeEndNodeCount, issues.freeEndCount) ?? 0,
+    orphanNodeCount: issueCount(issues.orphanNodes, issues.orphanNodeCount, issues.orphanCount) ?? 0,
+    shortElementCount: issueCount(issues.shortElements, issues.shortElementCount) ?? 0,
+    unresolvedUboltCount: issueCount(issues.unresolvedUbolts, issues.unresolvedUboltCount) ?? 0,
+    disconnectedGroupCount: issueCount(issues.disconnectedGroups, issues.disconnectedGroupCount)
       ?? Math.max((connectivity?.groupCount ?? 1) - 1, 0),
   };
   const diagnostics = e.healthMetrics?.diagnosticCounts ?? e.diagnosticCounts ?? {};

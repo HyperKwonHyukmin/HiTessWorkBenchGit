@@ -223,7 +223,9 @@ def model_metrics(outdir):
     prop = {p["id"]: p for p in f["properties"]}
     m["nodes"], m["elements"], m["rigids"] = len(P), len(el), len(f["rigids"])
     m["pointMasses"] = len(f.get("pointMasses") or [])
-    m["boundaryNodes"] = sum(1 for n in f["nodes"] if "Boundary" in (n.get("tags") or []))
+    # 받침 없는 U-bolt 노드: 엔진 2026-11-12(B2)부터 'UboltUnsupported', 그 전엔 'Boundary' 표시
+    m["boundaryNodes"] = sum(1 for n in f["nodes"] if {"Boundary", "UboltUnsupported"} & set(n.get("tags") or []))
+    m["unresolvedUbolts"] = ((f.get("healthMetrics") or {}).get("issues") or {}).get("unresolvedUbolts")
     m["orphanNodes"] = sum(1 for n in f["nodes"] if "Orphan" in (n.get("tags") or []))
     dc = collections.Counter(f"{d['severity']}:{d['code']}" for d in f["diagnostics"])
     m["diag"] = dict(dc)

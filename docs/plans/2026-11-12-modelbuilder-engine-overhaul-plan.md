@@ -304,6 +304,24 @@ B11 로 남긴 작은 구조 조각이 가장 가까운 배관에 FREE_END_RBE �
 **B1 장비 wvol = 경계 상자 (2026-11-12, 회귀 `s2_b1_check`)** — `CsvParsing.ParseBoundingBox`(숫자 6개를 '+' 로 이음, 음수 '+-'), `RawEquipRow.Box`, 원시 JSON `box`.
 숫자 하나면 예전 해석(운전 질량에 더함)을 유지 — 엔진 첫 설계는 wvol 을 내용물 질량으로 봤고 시험도 그렇게 돼 있다. 수집 CSV 장비 498행은 모두 상자 형식이라 지금까지 늘 0 이 더해졌다(질량 오류는 없었음).
 결과: BDF 0/62 변화(의도대로), 3395 원시 JSON 장비 41개 모두 상자. 이 상자로 4단계 P3(장비 질량을 상자 받침 노드에 RBE3) 를 한다. 엔진 시험 629 통과(1 건너뜀).
+커밋: 엔진 `acc5530` · WorkBench `e74ab12`(장치 보강: F06 미완료 재시도, `--merge` 같은 엔진만).
+
+**B2 받침 없는 U-bolt 를 사실대로 (2026-11-12, 회귀 `s2_b2`)**
+- 문제: U-bolt 가 구조를 못 찾으면 노드에 `Boundary` 를 붙이고 'SPC1 로 내보낸다' 고 진단했지만, SPC 선정과 BdfWriter 어디도 Boundary 를 읽지 않아 SPC 는 없었다.
+  게다가 ① MB Studio 가 Boundary 를 초록 '경계조건' 다이아몬드로 그려 받침 없는 자리를 받침처럼 보였고(`three/BoundaryMarkers.js`, 주석 'Boundary ⊂ Spc' 는 틀림)
+  ② 건전성 지표 `unresolvedUbolts` 가 늘 0 이라 WorkBench 판정 '연결 대상을 찾지 못한 U-bolt'(검토 필요, 사용자 결정)가 한 번도 걸리지 않았고
+  ③ 엔진 실행 요약 '경계조건 노드 N개' 가 받침 없는 U-bolt 수를 경계조건으로 거꾸로 셌고 ④ 고립 노드 정리가 Boundary 노드를 남겨 강성 없는 GRID 가 BDF 에 남았다.
+- 수정: 새 표시 `NodeTags.UboltUnsupported`(32)를 붙이고 Boundary 는 더 붙이지 않음(옛 JSON 읽기용으로 enum 유지). 진단 문구 사실대로(받침 없음, SPC 안 걸림).
+  `unresolvedUbolts` 에 이 노드 수를 더함. 실행 요약은 '경계조건(SPC)은 BDF 출력 때 정함, 받침 없는 U-bolt N개'(요약은 SPC 를 정하기 전에 만들어져 SPC 수를 셀 수 없다),
+  체크리스트 `boundaryCondition` → `uboltSupported`(읽는 화면 없음 확인).
+- 결과(`s2_frag2` 대비): 미해결 U-bolt 0 → **369개(10묶음)** — 이 묶음들은 WorkBench 에서 '검토 필요' 로 바뀐다(기존 규칙이 처음 동작). 통과 16 → 17.
+  BDF 7묶음 변화 = Boundary 때문에 남던 고립 GRID 가 지워짐 → 자동 구속 222 → 24. 이렇게 지워진 U-bolt(배관 위에도 없음)는 최종 '미해결 U-bolt' 수에서 빠지고 단계 진단 `UBOLT_FALLBACK` 에만 남는다.
+- MB Studio 영향: 그 자리에 경계조건 표식이 안 그려지고 정보 패널 '미해결 U-bolt' 칸이 처음으로 0 이 아니게 된다. Studio 코드 수정은 없음(받침 없는 U-bolt 를 따로 표시하는 것은 후속 후보).
+- **커밋 전 리뷰 '막아야 함' 2건 반영(같은 날)**:
+  ① 위 'BDF 7묶음 변화 · 자동 구속 222 → 24' 는 개선이 아니었다 — 고립 노드 정리가 받침 없는 U-bolt 노드까지 지워 미해결 수에서 빠졌다(369 는 403 중 일부).
+  예전 Boundary 예외(고립 정리에서 남김, 자유단·고립으로 안 셈)를 새 표시에도 똑같이 적용(`NodeTagsExtensions.IsUnsupportedUboltSite`, 5곳). 결과: BDF 0/62 변화(B2 이전과 같음), 미해결 U-bolt **403개 = 받침 없는 노드 403개**(10묶음). 시험 `OrphanNodeRemoveStageTests`.
+  고립 GRID 를 지우면서 기록을 남기는 것은 후속(Final JSON 에 진단을 이어 붙이는 EQUIPMENT_COG_FAR 방식과 함께 — 사용자가 어느 U-bolt 인지 찾게).
+  ② WorkBench `HiTessModelBuilder.jsx` 가 편집 뒤 판정에서 엔진 `issues` 값(숫자)을 `.length` 로 읽어 자유단·고립·짧은 요소·미해결 U-bolt 가 늘 0 이었다(예전부터 있던 결함, 미해결 U-bolt 가 실제 수가 되면서 드러남) → `utils/healthIssueCount.js`(+시험).
 ⚠ B5 는 모든 탐색 반경을 바꾸므로 결과가 크게 흔들린다. 따로 떼어 맨 뒤에, 바뀐 묶음을 전부 확인한다.
 
 ### 3단계 — 결정 기록 틀 (처방보다 먼저)
