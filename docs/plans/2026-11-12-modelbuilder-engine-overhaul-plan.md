@@ -270,6 +270,9 @@ P2 의 기본을 "그대로 두고 보고"로 둔 이유: 받칠 구조가 1 m �
 > 다음(결정 없이 할 수 있는 4단계 사전 확인): ① 최종 질량이 기준보다 느는 원인(최대 +2.6%, 연장 단계 추정) ② 자동 RBE '찾지 못함' 2,282 를 지우는 단계(RbeBeamDeduplicate, RedundantBridgeRbeRemove)에서도 기록해 가르기. 그 뒤 4단계는 D 항목 결정이 먼저.
 > **→ 4단계 사전 확인 끝(2026-11-12, 엔진 미커밋, InHouse 미교체)** — 아래 '4단계 사전 확인 기록'. 새 기준 회귀 = `s4_removals`(Nastran 포함, 통과 17). 질량 증가 = 연장(정상) + BOX U-bolt 결함 B14(고침). 자동 RBE 찾지 못함 2,282 → 1.
 > 다음 = 4단계, D 항목 결정이 먼저(D1 에 질량 기준 허용폭 추가).
+> **→ (2026-11-12 세션 끝) D1~D11, B10 추천대로 결정. 4a 끝(엔진 `85d8ead` 로컬). 6단계 1번 엔진 검증 표시 구현 — 엔진 미커밋**(시험 670 통과, 리뷰 막아야 함 0, 회귀 `s6_review` BDF '$' 주석 말고 62/62 같음).
+> 다음 = ① 엔진 검증 표시 커밋 ② 6단계 3번 WorkBench 판정 '검증 필요 N건' + BDF 를 받는 곳(GMU 권상, Side Passage, 해상 운송, LogBook 보내기) 경고(막지 않음) ③ Studio 검토 창(종류별 모두 승인 필수). 아래 6단계 '검토 흐름과 검증 표시'.
+> 70, 145 InHouse `Cmb.Cli.exe` 는 아직 교체 안 함(B2 ~ 검증 표시까지 묶어서).
 > 2단계 남은 것 B5·B12b·B13 은 계획대로 뒤로. 사용자 확인 대기 결정: D1~D11(특히 D1, D7 Private 전환, D9, D10, D11), B10 처리 방법.
 
 **B11 + B12a (2026-11-12, 엔진 미커밋, 70 InHouse 미교체)** — 회귀 이름 `b11_noise_off`(B11 만), `b12a_fragment`(둘 다).
@@ -469,20 +472,30 @@ RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점
 1. **엔진(가장 먼저, 작음)**
    - `00_Decisions.json` 항목마다 `review`: `required`(사람이 봐야 함) | `info`(기록만). required 초안 = 추정 연결 중 등급 B, C(4a 등급), 받칠 구조 없는 U-bolt, 장비 질량 빠짐과 옮김, 떠 있는 그룹, 질량 판정 미달. 자동 RBE 의 collapsed, removed 와 등급 A 연결은 info.
    - 최종 BDF 머리에 주석 한 줄(호선 주석 `$ HiTessModelBuilder: HullNo=` 과 같은 방식이라 BDF 를 따로 옮겨도 따라간다):
-     `$ HiTessModelBuilder: Review=REQUIRED Items=<필수 수> Decisions=<00_Decisions sha 앞 8자>`, 필수가 0 이면 `Review=NONE`.
+     `$ HiTessModelBuilder: Review=REQUIRED Items=<필수 수>`, 필수가 0 이면 `Review=NONE`.
    - BDF 옆에 `<설계명>.review.json`(필수 항목 목록, 상태 required, 결정 파일 sha) — 사용자가 말한 '검증 필요 표시 파일'. 결과 폴더 전체 없이 BDF 만 받을 때 함께 준다.
 2. **Studio(MB)**
    - 열자마자 필수 항목이 있으면 '검토' 창: 한 번에 하나, 3D 가 그 자리로 가고 엔진이 한 일과 이유 한 줄, [승인] [거절] [나중에].
      거절 = 그 결정을 되돌리는 편집 intent(자동 RBE → `deleteRigid`, 옮긴 질량점 → `moveMass`류 필요 여부 조사). 되돌릴 intent 가 없는 항목(받칠 구조 없는 U-bolt 등)의 거절 = '수동 수정 필요'로 표시만 남기고 사용자가 편집 도구로 고친다.
    - **같은 종류가 많으면 묶는다** — 3454 만 해도 남은 자동 RBE 가 440개라 하나씩은 불가능하다. [이 종류 N건 모두 승인] + 간극 큰 순 몇 개 보기. 그래서 필수 수를 줄이는 4a 등급이 먼저다.
-   - 모두 결정하면 기존 편집 적용(`apply-edit-intent`)으로 편집 BDF 를 만들고 머리를 `Review=DONE By=<사번> At=<시각> Decisions=<sha8> Approved=<n> Rejected=<m>` 로. '수동 수정 필요'가 남으면 `Review=MANUAL Items=<k>`.
+   - 모두 결정하면 기존 편집 적용(`apply-edit-intent`)으로 편집 BDF 를 만들고 머리를 `Review=DONE Items=<n>`(누가, 언제, 무엇을 승인했는지는 `00_Review.json` 에) 로. '수동 수정 필요'가 남으면 `Review=MANUAL Items=<k>`.
      결정 내역은 결과 폴더 `00_ReviewResult.json`(phase 정규식에 걸려 백엔드, Studio 가 최종 산출물로 오인하지 않음 — 3단계에서 확인한 규칙).
 3. **엔진만 쓴 경우(Studio 를 안 연 BDF)**
    - BDF 머리가 `Review=REQUIRED` 로 남는다. WorkBench MB 화면은 판정에 '검증 필요 N건'과 [Studio 에서 검토] 를 보이고, BDF 받기는 막지 않되 경고.
    - BDF 를 입력으로 받는 곳(GMU 권상 검증, Side Passage, 해상 운송, LogBook 보내기)은 머리 주석을 읽어 '검증 안 된 MB 모델' 경고(막지 않음). 읽는 코드는 호선 주석 읽기(`hull_no.resolve_bdf_hull_no`) 옆에.
    - 다시 열어 검토 = WorkBench '결과 다시 열기'로 그 결과 폴더를 Studio 로. ⚠ 작업 폴더는 30일 뒤 지워진다 — 그 뒤에는 보관 CSV 로 다시 만들어야 한다.
 4. **결정(2026-11-12, 사용자)**: 검증 전 BDF 받기는 허용(경고만), 받는 곳도 경고만 하고 막지 않는다 — 검토를 강제하면 Studio 를 못 쓰는 경우(AM 단독 등)에 일이 멈춘다.
-5. 한계: 주석은 글자라 손으로 고칠 수 있다(보안 장치가 아니라 작업 흐름 표시). `Decisions=<sha8>` 로 어느 결정 기록에 대한 검토인지만 묶는다.
+**엔진 표시 진행 기록 (2026-11-12, 엔진 미커밋, 회귀 `s6_review` Nastran 없이 — BDF 는 `s4a_grade3` 과 '$' 주석 말고 62/62 같음)**
+- 파일 이름을 `<설계명>.review.json` 이 아니라 **`00_Review.json`** 으로 바꿨다 — 백엔드 `_pick_final_artifact` 는 phase 규칙에 안 맞는 가장 새 `.json` 을 최종 산출물로 고르므로, 그 이름이면 최종 모델 JSON 자리를 빼앗는다. phase 규칙 이름은 백엔드와 Studio 가 건너뛴다.
+- `00_Decisions.json` 항목마다 `review`(required | info). required = 남은 B 연결, 그룹 통째 이동, 질량점 옮김과 부착 실패, 빠진 장비 질량, 받칠 구조 없는 U-bolt, 주 구조 밖 그룹.
+- `00_Review.json` = status(required | none), run(결과 폴더 이름), units(검토 단위: B 는 떨어진 조립품마다, 나머지는 결정마다, 각 단위 state = pending). Studio 가 approved | rejected | manual 로 바꾸고 status 를 done | manual 로.
+- 최종 BDF 머리(호선 주석 바로 뒤) `$ HiTessModelBuilder: Review=REQUIRED Items=<단위 수>`, 없으면 `Review=NONE` (`Cmb.Io.Nastran.BdfReviewMarker`). 결정 기록이 BDF 보다 뒤에 만들어져 다 쓴 BDF 를 다시 열어 넣는다 — 임시 파일에 쓴 뒤 바꿔 넣어 실패해도 원본이 잘리지 않는다.
+  **실행 시각(Run)은 BDF 에 넣지 않는다**(리뷰 반영) — 같은 입력이면 BDF 가 바이트까지 같아야 회귀 비교와 LogBook '같은 BDF 막기'가 된다(두 번 빌드 바이트 동일 확인). 어느 실행의 검토인지는 `00_Review.json` run.
+  리뷰 참고: 권상 Wire 포함 BDF(bridge `build_lifting_bdf`)는 JSON 으로 새로 써서 표시가 빠진다 — '받는 곳 경고' 단계에서 GMU 쪽은 입력 BDF 기준으로 본다.
+- 편집 적용(`apply-edit-intent`)은 기준 BDF 의 표시 줄을 그대로 이어받는다 — 편집만으로 '검증 필요'가 사라지지 않게.
+- 62묶음: 검증 필요 합 2,661(모델당 중앙 16, 없음 3, 큰 것 3476-4b652283 512). 종류: 떨어진 그룹 651, 질량점 옮김 539, 받칠 구조 없는 U-bolt 408, 그룹 이동 386, 빠진 장비 질량 192, 추정 연결 449(조립품 묶음 432 + 이름 없음 17), 부착 실패 36.
+  → **Studio 검토 창은 '종류별 모두 승인'이 꼭 있어야 한다**(한 모델 수백 건). 질량점 옮김, 떨어진 그룹은 종류 묶음 단위를 엔진에서 더 줄일지 Studio 단계에서 다시 본다.
+5. 한계: 주석은 글자라 손으로 고칠 수 있다(보안 장치가 아니라 작업 흐름 표시). 어느 실행의 검토인지는 결과 폴더의 `00_Review.json` run 으로 묶는다.
 6. 순서: 4a(추정 연결 등급) → 엔진 표시(1) → WorkBench 판정과 받는 곳 경고(3) → Studio 검토 창(2). MB Studio 를 고치면 짝 Studio 싱크 대장에 적는다(MU 는 BDF 입력이라 '받는 곳 경고' 쪽).
 
 ### 7단계 — 구조 정리
