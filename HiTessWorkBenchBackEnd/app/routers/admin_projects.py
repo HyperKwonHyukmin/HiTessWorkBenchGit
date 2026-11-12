@@ -152,6 +152,36 @@ def _export_rows(db: Session, analysis_id: int) -> list[dict]:
     } for r in rows]
 
 
+@router.get("/program-users")
+def program_users(
+    db: Session = Depends(database.get_db),
+    _admin: str = Depends(require_admin),
+):
+    """App(내부 키)별로 한 번이라도 실행한 사번 — User Management 'App 사용자' 필터(업데이트 안내 메일용).
+
+    기준은 목록과 같다(샘플·권상 세부 검토 제외, 성공·실패 모두 '사용'). 사번은 대문자로 합친다.
+    반환 rows = [{program_name, employee_id, runs, last_at}]
+    """
+    eid = func.upper(func.trim(models.Analysis.employee_id))
+    rows = (_base_query(db)
+            .with_entities(models.Analysis.program_name, eid,
+                           func.count(models.Analysis.id), func.max(models.Analysis.created_at))
+            .filter(models.Analysis.program_name.isnot(None), models.Analysis.employee_id.isnot(None))
+            .group_by(models.Analysis.program_name, eid)
+            .all())
+    out = []
+    for program, emp, runs, last_at in rows:
+        if not program or not emp:
+            continue
+        out.append({
+            "program_name": program,
+            "employee_id": emp,
+            "runs": int(runs or 0),
+            "last_at": last_at.isoformat() if last_at else None,
+        })
+    return {"rows": out}
+
+
 @router.get("/{analysis_id}/files")
 def project_files(
     analysis_id: int,

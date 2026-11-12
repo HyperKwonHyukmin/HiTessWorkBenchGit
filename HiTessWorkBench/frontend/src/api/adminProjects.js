@@ -14,6 +14,10 @@ export const getAdminProjects = (skip = 0, limit = 20, filters = {}) =>
     headers: getAuthHeaders(),
   });
 
+/** App(내부 키)별 실행한 사번 — User Management 'App 사용자' 필터. data = { rows: [{program_name, employee_id, runs, last_at}] } */
+export const getProgramUsers = () =>
+  axios.get(`${API_BASE_URL}/api/admin/projects/program-users`, { headers: getAuthHeaders() });
+
 /** 해석 1건의 작업 폴더 전체 파일 + LogBook 보낸 이력. data = { folders, files, truncated, exports } */
 export const getAdminProjectFiles = (analysisId) =>
   axios.get(`${API_BASE_URL}/api/admin/projects/${analysisId}/files`, { headers: getAuthHeaders() });

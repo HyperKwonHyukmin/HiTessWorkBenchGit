@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildActiveMailList, describeMissing, isValidEmail, needsManualEmail, planBulkEmail, missingRosterText,
+  buildActiveMailList, describeMissing, isValidEmail, needsManualEmail, planBulkEmail, missingRosterText, buildProgramUserSets,
 } from './userMailList.js';
 
 test('planBulkEmail 은 빈 칸을 건너뛰고 틀린 값을 따로 모은다', () => {
@@ -60,4 +60,23 @@ test('describeMissing 은 앞 몇 명만 보인다', () => {
   const list = ['가', '나', '다'].map((name) => ({ name }));
   assert.equal(describeMissing(list, 5), '가, 나, 다');
   assert.equal(describeMissing(list, 2), '가, 나 외 1명');
+});
+
+test('buildProgramUserSets 는 App 한 줄의 여러 내부 키 사용자를 합치고 사번 대소문자를 합친다', () => {
+  const rows = [
+    { program_name: 'HiTessModelBuilder', employee_id: 'a476854' },
+    { program_name: 'AmToModelBuilder', employee_id: 'A476854' },
+    { program_name: 'AmToModelBuilder', employee_id: 'B100001' },
+    { program_name: 'Truss', employee_id: 'C200002' },
+    { program_name: 'Truss', employee_id: '' },
+  ];
+  const options = [
+    { value: 'app:MB', keys: ['AmToModelBuilder', 'HiTessModelBuilder'] },
+    { value: 'Truss', keys: ['Truss'] },
+    { value: 'None', keys: ['Nothing'] },
+  ];
+  const sets = buildProgramUserSets(rows, options);
+  assert.deepEqual([...sets.get('app:MB')].sort(), ['A476854', 'B100001']);
+  assert.deepEqual([...sets.get('Truss')], ['C200002']);
+  assert.equal(sets.get('None').size, 0);
 });

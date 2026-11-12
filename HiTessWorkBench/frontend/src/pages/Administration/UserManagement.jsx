@@ -9,7 +9,7 @@ import {
   UserCheck, Edit2, X, Building, Briefcase, Tag, CheckCircle2, ClipboardList,
   Download, BarChart3, ChevronRight, Code2, ArrowUpDown, Radio, MapPin, Globe, Timer,
   LogOut, Layers, MessageCircle, ChevronDown, UserX, FileDown, ArrowUp, ArrowDown,
-  Mail, Loader2, BookOpen, Laptop
+  Mail, Loader2, BookOpen, Laptop, LayoutGrid
 } from 'lucide-react';
 import { getUsers, updateUser, deleteUser, syncUserPlm, syncAllUsersPlm, getTrustedDevices } from '../../api/admin';
 import { getActivityLogs, getActivityLogsExportUrl } from '../../api/activity';
@@ -17,7 +17,11 @@ import { getOnlineUsers, forceLogoutUser } from '../../api/presence';
 import { getLogbookLevels } from '../../api/logbook';
 import { logbookLevelOf, logbookErrorMessage } from '../../utils/logbookLink';
 import { getEmployeeId } from '../../utils/auth';
-import { buildActiveMailList, describeMissing, isValidEmail, needsManualEmail } from '../../utils/userMailList';
+import { buildActiveMailList, buildProgramUserSets, describeMissing, isValidEmail, needsManualEmail } from '../../utils/userMailList';
+import { getProgramUsers } from '../../api/adminProjects';
+import { findAppByProgramName } from '../../contexts/DashboardContext';
+import { buildProgramFilterOptions } from '../../utils/programFilterOptions';
+import FilterListbox from '../../components/ui/FilterListbox';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import AccessHistoryPanel from '../../components/admin/AccessHistoryPanel';
@@ -174,6 +178,9 @@ export default function UserManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'active' | 'admin'
   const [sortMode, setSortMode] = useState('created_desc');
+  // 'App 사용자' 필터 — 그 App 을 한 번이라도 실행한 사람만(업데이트 안내 메일용). rows = 서버 program-users
+  const [programFilter, setProgramFilter] = useState('All');
+  const [programUserRows, setProgramUserRows] = useState(null);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -226,6 +233,16 @@ export default function UserManagement() {
     }
   };
 
+  const fetchProgramUsers = async () => {
+    try {
+      const res = await getProgramUsers();
+      setProgramUserRows(res.data?.rows || []);
+    } catch {
+      // 옛 서버(404)·일시 실패 — 필터만 비활성으로 두고 나머지 화면은 그대로
+      setProgramUserRows(prev => prev ?? []);
+    }
+  };
+
   const fetchOnline = async () => {
     try {
       const res = await getOnlineUsers();
@@ -257,6 +274,7 @@ export default function UserManagement() {
 
   useEffect(() => {
     fetchUsers();
+    fetchProgramUsers();
     fetchLogbookLevels();
     fetchDevicePending();
   }, []);
@@ -451,7 +469,12 @@ export default function UserManagement() {
       showToast('클립보드에 복사하지 못했습니다.', 'error');
       return;
     }
-    const base = `${narrowed ? '지금 목록의 ' : ''}승인 사용자 ${count}명의 메일 주소를 복사했습니다. Outlook 숨은 참조(BCC)에 붙여 넣으세요.`;
+    // App 필터에 검색·상태 필터까지 겹치면 'App 을 쓴 사람 전원' 으로 오해하지 않게 '지금 목록의' 를 붙인다
+    const otherNarrowing = Boolean(searchTerm.trim()) || filterMode !== 'all';
+    const scope = programFilterLabel
+      ? `${otherNarrowing ? '지금 목록에서 ' : ''}${programFilterLabel} 을(를) 쓴 `
+      : narrowed ? '지금 목록의 ' : '';
+    const base = `${scope}승인 사용자 ${count}명의 메일 주소를 복사했습니다. Outlook 숨은 참조(BCC)에 붙여 넣으세요.`;
     if (missing.length) {
       showToast(`${base} 메일 없음 ${missing.length}명: ${describeMissing(missing)} — '메일 없는 ${narrowed ? '' : `${missing.length}명 `}넣기'에서 한 번에 넣을 수 있습니다.`, 'warning', 9000);
     } else {
@@ -719,8 +742,30 @@ export default function UserManagement() {
     position:   { icon: 'text-emerald-500', bar: 'bg-emerald-400' },
   };
 
+  // 'App 사용자' 필터 목록 — All Projects 의 App 필터와 같은 묶음(한 App = 내부 키 여러 개 합침), 사용자 수 표시
+  const programOptions = useMemo(() => {
+    const rows = programUserRows || [];
+    const keys = [...new Set(rows.map(r => r.program_name).filter(Boolean))];
+    const opts = buildProgramFilterOptions(keys, findAppByProgramName);
+    const sets = buildProgramUserSets(rows, opts);
+    return {
+      list: [
+        { value: 'All', label: '모든 App 사용자', keys: [] },
+        ...opts.map(o => ({ ...o, name: o.label, label: `${o.label} · ${sets.get(o.value)?.size || 0}명` })),
+      ],
+      sets,
+    };
+  }, [programUserRows]);
+  const programUserSet = useMemo(
+    () => (programFilter === 'All' ? null : programOptions.sets.get(programFilter) || new Set()),
+    [programFilter, programOptions]
+  );
+  const programFilterLabel = programFilter === 'All'
+    ? '' : (programOptions.list.find(o => o.value === programFilter)?.name || '');
+
   // 필터 + 검색 + 정렬 — Pending 은 별도 영역에 있으므로 모드에 따라 분기
   const filteredUsers = useMemo(() => users.filter(user => {
+    if (programUserSet && !programUserSet.has(textValue(user.employee_id).trim().toUpperCase())) return false;
     const term = searchTerm.toLowerCase();
     const matchesSearch =
       !term ||
@@ -734,7 +779,7 @@ export default function UserManagement() {
     if (filterMode === 'admin')  return user.is_admin;
     if (filterMode === 'noMail') return needsManualEmail(user);
     return true; // 'all'
-  }), [users, searchTerm, filterMode]);
+  }), [users, searchTerm, filterMode, programUserSet]);
 
   const sortedUsers = useMemo(
     () => [...filteredUsers].sort((a, b) => compareUsers(a, b, sortMode)),
@@ -742,7 +787,7 @@ export default function UserManagement() {
   );
 
   // 검색/필터/정렬이 바뀌면 첫 페이지로 되돌리고, 화면 밖 대상 혼동을 막도록 선택을 해제한다.
-  useEffect(() => { setUserPage(0); setSelectedUserIds(new Set()); }, [searchTerm, filterMode, sortMode]);
+  useEffect(() => { setUserPage(0); setSelectedUserIds(new Set()); }, [searchTerm, filterMode, sortMode, programFilter]);
 
   // 삭제 등으로 사라진 사용자는 테이블 선택 집합에서도 제거한다.
   useEffect(() => {
@@ -1209,6 +1254,15 @@ export default function UserManagement() {
           ))}
         </div>
 
+        <FilterListbox
+          label="App 사용자"
+          icon={LayoutGrid}
+          value={programFilter}
+          onChange={setProgramFilter}
+          options={programOptions.list}
+          widthClass="w-[17rem]"
+        />
+
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"/>
           <input
@@ -1287,7 +1341,7 @@ export default function UserManagement() {
             {syncingAllPlm ? '전체 PLM 갱신 중…' : '전체 PLM 정보 갱신'}
           </button>
           <button
-            onClick={fetchUsers}
+            onClick={() => { fetchUsers(); fetchProgramUsers(); }}
             className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-200 transition-colors shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1"
           >
             <RefreshCw size={14}/> 새로고침

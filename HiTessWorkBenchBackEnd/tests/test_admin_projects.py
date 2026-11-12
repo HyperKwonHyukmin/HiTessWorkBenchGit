@@ -585,3 +585,19 @@ def test_bulk_plan_sends_model_without_wire_and_keeps_wire_run(switchable_client
     assert [f["path"].replace("\\", "/").rsplit("/", 1)[-1] for f in b["files"]] == ["3600_m01.bdf"]
     assert b["olderRunOf"] == wire.id and "olderRunOf" not in items[wire.id]
     assert items[wire.id]["hasWire"] is True
+
+
+def test_program_users_distinct_per_program(switchable_client, db_session, user_conn):
+    _analysis(db_session, eid="emp001", program="TrussAssessment")
+    _analysis(db_session, eid="EMP001", program="TrussAssessment")
+    _analysis(db_session, eid="EMP002", program="TrussAssessment")
+    _analysis(db_session, eid="EMP003", program="GroupModuleUnit")
+    rows = switchable_client.get("/api/admin/projects/program-users").json()["rows"]
+    truss = {r["employee_id"]: r["runs"] for r in rows if r["program_name"] == "TrussAssessment"}
+    assert truss == {"EMP001": 2, "EMP002": 1}
+    assert {r["employee_id"] for r in rows if r["program_name"] == "GroupModuleUnit"} == {"EMP003"}
+
+
+def test_program_users_requires_admin(switchable_client):
+    switchable_client.as_user()
+    assert switchable_client.get("/api/admin/projects/program-users").status_code == 403

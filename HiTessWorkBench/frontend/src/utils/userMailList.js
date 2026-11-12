@@ -72,3 +72,23 @@ export function describeMissing(missing, limit = 5) {
   if (names.length <= limit) return names.join(', ');
   return `${names.slice(0, limit).join(', ')} 외 ${names.length - limit}명`;
 }
+
+// 'App 사용자' 필터 — 서버 rows([{program_name, employee_id}])를 App 한 줄(options 의 keys)별 사번 집합으로 묶는다.
+// 한 App 이 내부 키를 여러 개 쓰면(예: HiTESS Model Builder) 그 키들의 사용자를 합친다. 사번은 대문자로 비교한다.
+export function buildProgramUserSets(rows, options) {
+  const byKey = new Map();
+  for (const r of rows || []) {
+    const key = r && r.program_name;
+    const eid = String((r && r.employee_id) || '').trim().toUpperCase();
+    if (!key || !eid) continue;
+    if (!byKey.has(key)) byKey.set(key, new Set());
+    byKey.get(key).add(eid);
+  }
+  const out = new Map();
+  for (const opt of options || []) {
+    const set = new Set();
+    for (const k of opt.keys || []) for (const eid of byKey.get(k) || []) set.add(eid);
+    out.set(opt.value, set);
+  }
+  return out;
+}
