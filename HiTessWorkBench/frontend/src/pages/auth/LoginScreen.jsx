@@ -48,13 +48,16 @@ export default function LoginScreen({ onLoginSuccess }) {
   const [deviceInfo, setDeviceInfo] = useState(null);
   const [deviceState, setDeviceState] = useState(null); // { state, code, verify, emailHint }
   const [emailCode, setEmailCode] = useState('');           // 회사 메일로 받은 6자리
-  const deviceMode = isDeviceMode({ authMode, serverDeviceLogin, deviceInfo });
+  // AD 에 없는 테스트 사번(서버 .env TEST_LOGIN_ACCOUNTS) — 이 사번은 어느 PC 에서나 비밀번호로 들어온다
+  const [passwordLoginIds, setPasswordLoginIds] = useState([]);
+  const isPasswordLoginId = passwordLoginIds.includes(employeeId.trim().toUpperCase());
+  const deviceMode = isDeviceMode({ authMode, serverDeviceLogin, deviceInfo }) && !isPasswordLoginId;
   const autoDeviceTried = useRef(false);
   // 메일 코드 방식 대기 중인가 · 지금 보일 안내 문구
   const emailPending = deviceState?.state === 'pending' && deviceState?.verify === 'email';
   const deviceText = deviceState ? DEVICE_STATE_TEXT[emailPending ? 'pendingEmail' : deviceState.state] : null;
   const deviceBusy = useRef(false); // 등록한 PC 로그인 한 번에 하나만(수동 시도와 15초 재확인이 겹치지 않게)
-  const showPassword = authMode === 'ad' && !deviceMode && (!windowsLoginAvailable || needPassword);
+  const showPassword = authMode === 'ad' && !deviceMode && (!windowsLoginAvailable || needPassword || isPasswordLoginId);
   const autoWindowsTried = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -96,6 +99,7 @@ export default function LoginScreen({ onLoginSuccess }) {
       const onDevicePc = isDeviceMode({ authMode: options.authMode, serverDeviceLogin: options.deviceLogin, deviceInfo: info });
       setAuthMode(options.authMode);
       setServerDeviceLogin(options.deviceLogin);
+      setPasswordLoginIds(options.passwordLoginIds);
       setDeviceInfo(info);
       // 도메인에 없는 PC 는 Windows 자동 로그인이 될 수 없다 — 시도하지 않는다(서버에 실패 기록만 쌓인다)
       setWindowsLoginAvailable(options.windowsLogin && !!window.electron?.invoke && !onDevicePc);
@@ -179,7 +183,7 @@ export default function LoginScreen({ onLoginSuccess }) {
     }
 
     // 비밀번호 칸이 아직 없으면 먼저 Windows 계정으로 확인한다 — 안 되면 그때 비밀번호 칸을 연다.
-    if (windowsLoginAvailable && !needPassword) {
+    if (windowsLoginAvailable && !needPassword && !isPasswordLoginId) {
       await handleWindowsLogin({ expectedId: employeeId });
       return;
     }

@@ -18,6 +18,8 @@
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import os
 import re
@@ -61,6 +63,31 @@ class AdResult(Enum):
 def auth_mode() -> str:
     """'ad' 또는 'employee_id'(기본). 요청마다 읽어 .env 수정 후 재시작만으로 바뀐다."""
     return "ad" if (os.getenv("AUTH_MODE") or "").strip().lower() == "ad" else "employee_id"
+
+
+# 테스트 계정(2026-11-12) — AD 에 없는 계열사 시험용 사번(중형선 A888888 · 삼호 A878787).
+# AD 로그인으로 바뀐 뒤 들어올 길이 없어 .env 에 적은 사번만 서버가 비밀번호를 직접 확인한다.
+#   TEST_LOGIN_ACCOUNTS=A888888,A878787
+#   TEST_LOGIN_PASSWORD_SHA256=<비밀번호의 sha256 16진수>  (비밀번호 원문은 어디에도 두지 않는다)
+# 둘 중 하나라도 비면 꺼진다. 실패 횟수 제한·관리자 승인은 다른 계정과 같다.
+def test_login_accounts() -> frozenset[str]:
+    if not (os.getenv("TEST_LOGIN_PASSWORD_SHA256") or "").strip():
+        return frozenset()
+    raw = os.getenv("TEST_LOGIN_ACCOUNTS") or ""
+    return frozenset(x.strip().upper() for x in raw.split(",") if x.strip())
+
+
+def is_test_login_account(employee_id: str) -> bool:
+    return (employee_id or "").strip().upper() in test_login_accounts()
+
+
+def verify_test_password(employee_id: str, password: str | None) -> AdResult:
+    """테스트 계정의 비밀번호를 .env 의 sha256 과 비교한다(AD 에 묻지 않음)."""
+    expected = (os.getenv("TEST_LOGIN_PASSWORD_SHA256") or "").strip().lower()
+    if not expected or not is_test_login_account(employee_id) or not password:
+        return AdResult.INVALID
+    actual = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return AdResult.OK if hmac.compare_digest(actual, expected) else AdResult.INVALID
 
 
 @dataclass(frozen=True)

@@ -1132,6 +1132,10 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   같은 시험에서 기존 결함 2건이 드러나 고쳤다 — 작은따옴표 경로(cmd)에서 .NET `NotSupportedException` 으로 로그 없이 종료 → 인자 오류(종료 코드 2),
   실행기 폴더 이름 바꾸기가 방금 푼 파일을 보안 검사가 잡아 '액세스 거부' → 최대 9회·약 21초 재시도(재시도 경로는 실제로 타 보지 못함, 빌드만 확인).
   상세: 각 README. ⚠ 배포 순서 = 145 `StudioProgram\mb-launcher-0.1.2.zip`(UNC 경로로 `AmLauncher\build.ps1 -OutDir` — 70 로컬 zip 은 DRM 암호문) → 새 `HiTessMB.exe` 배포 → 스위치.
+- **테스트 계정 비밀번호 로그인 (2026-11-12)** — 중형선 `A888888`·삼호 `A878787` 시험 사번은 AD 에 없어 AD 모드 뒤 못 들어왔다.
+  `.env` `TEST_LOGIN_ACCOUNTS=A888888,A878787` + `TEST_LOGIN_PASSWORD_SHA256=<sha256>`(원문은 어디에도 두지 않음) 이면 그 사번만 서버가 비밀번호를 직접 확인한다(`ad_auth.verify_test_password`, AD 에 안 물음).
+  실패 횟수 제한·관리자 승인은 그대로, 성공 기록은 `method: test_account`. 둘 중 하나라도 비면 꺼짐. `/api/login/options` 의 `password_login_ids` 로 화면이 그 사번이면 등록한 PC 화면에서도 비밀번호 칸을 연다(새 exe 부터, 도메인 PC 는 옛 exe 도 Windows 불일치 뒤 비밀번호 칸이 떠서 됨).
+  ⚠ 사번 목록이 로그인 없이 보이고 비밀번호가 단순하다 — 시험이 끝나면 `.env` 두 줄을 지울 것. 시험 `tests/test_ad_login.py`.
 - **회사 PC 계정 자동 로그인 (2026-11-05, `ca3e1c4`, WorkBench 1.7.2 에 포함)** — 계획·0단계 시험 = `RecordMD/2026-11-05-https-certificate-pinning-plan.md`.
   `POST /api/login/windows`(Windows 통합 인증 Negotiate, `services/windows_auth.py`): 비밀번호·사번을 받지 않고 Windows 가 만든 토큰을 SSPI(pywin32 `sspi`)로 확인해
   `HHI\<사번>` 에서 사번을 얻는다 → 기존 세션 발급(`auth._complete_login`). NTLM 은 같은 연결에서 두 번 오가서 연결(IP+포트)별 상태를 30초 든다.

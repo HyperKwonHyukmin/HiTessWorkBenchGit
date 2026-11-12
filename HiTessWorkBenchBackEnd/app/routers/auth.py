@@ -12,7 +12,10 @@ from ..sessions import session_store
 from ..dependencies import require_auth
 from ..services import access_session_service
 from ..services.activity_service import log_activity
-from ..services.ad_auth import AdResult, auth_mode, login_attempt_limiter, verify_ad_password
+from ..services.ad_auth import (
+  AdResult, auth_mode, is_test_login_account, login_attempt_limiter, test_login_accounts,
+  verify_ad_password, verify_test_password,
+)
 from ..services.external_app_access import external_app_access_store
 from ..services.logbook_integration import notify_logbook_logout
 from ..services.plm_user_directory import fetch_plm_email
@@ -71,7 +74,9 @@ def login_options():
   """로그인 화면이 비밀번호 칸을 보일지 정한다. 인증 없음·DB 안 씀(서버 주소 확인 직후 부른다)."""
   return {"auth_mode": auth_mode(), "windows_login": windows_login_enabled(),
           # 회사 도메인에 없는 PC(계열사)의 등록한 PC 로그인 — routers/device_login.py
-          "device_login": device_login_enabled()}
+          "device_login": device_login_enabled(),
+          # AD 에 없는 테스트 사번 — 등록한 PC 화면에서도 이 사번은 비밀번호 칸을 연다
+          "password_login_ids": sorted(test_login_accounts()) if auth_mode() == "ad" else []}
 
 
 def _verify_ad_login(db: Session, employee_id: str, password, ip: Optional[str]) -> None:
@@ -88,7 +93,10 @@ def _verify_ad_login(db: Session, employee_id: str, password, ip: Optional[str])
     log_activity(db, "LOGIN", employee_id=employee_id, action_detail={"reason": "too_many_attempts"}, status="failure", ip_address=ip)
     raise HTTPException(status_code=429, detail="too_many_attempts")
 
-  result = verify_ad_password(employee_id, secret)
+  if is_test_login_account(employee_id):
+    result = verify_test_password(employee_id, secret)
+  else:
+    result = verify_ad_password(employee_id, secret)
   if result is AdResult.OK:
     login_attempt_limiter.reset(employee_id)
     return
@@ -105,10 +113,13 @@ def login(request: schemas.LoginRequest, req: Request, db: Session = Depends(dat
   employee_id = request.employee_id.strip().upper()
   ip = req.client.host if req.client else None
 
+  method = "password"
   if auth_mode() == "ad":
     _verify_ad_login(db, employee_id, request.password, ip)
+    if is_test_login_account(employee_id):
+      method = "test_account"  # AD 를 거치지 않은 로그인 — 활동 기록에서 따로 보이게
 
-  return _complete_login(db, employee_id, ip)
+  return _complete_login(db, employee_id, ip, method=method)
 
 
 def _windows_unknown_key(ip: Optional[str]) -> str:

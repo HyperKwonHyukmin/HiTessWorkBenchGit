@@ -38,9 +38,12 @@ export const getLoginOptions = async () => {
       windowsLogin: authMode === 'ad' && data?.windows_login === true,
       // 회사 도메인에 없는 PC(계열사)의 등록한 PC 로그인 — 2026-11-10 이후 서버만 true
       deviceLogin: authMode === 'ad' && data?.device_login === true,
+      // AD 에 없는 테스트 사번(2026-11-12) — 이 사번은 등록한 PC 화면에서도 비밀번호 칸을 연다
+      passwordLoginIds: authMode === 'ad' && Array.isArray(data?.password_login_ids)
+        ? data.password_login_ids.map((id) => String(id).toUpperCase()) : [],
     };
   } catch {
-    return { authMode: 'employee_id', windowsLogin: false, deviceLogin: false };
+    return { authMode: 'employee_id', windowsLogin: false, deviceLogin: false, passwordLoginIds: [] };
   }
 };
 

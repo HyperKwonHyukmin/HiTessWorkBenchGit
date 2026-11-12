@@ -71,9 +71,10 @@ def _login(client, password=None, employee_id="A123456"):
 def test_options_reports_mode(client, monkeypatch):
     from app.services import windows_auth
     monkeypatch.setattr(windows_auth, "_sspi_available", lambda: True)
-    assert client.get("/api/login/options").json() == {"auth_mode": "ad", "windows_login": True, "device_login": True}
+    monkeypatch.delenv("TEST_LOGIN_PASSWORD_SHA256", raising=False)
+    assert client.get("/api/login/options").json() == {"auth_mode": "ad", "windows_login": True, "device_login": True, "password_login_ids": []}
     monkeypatch.delenv("AUTH_MODE")
-    assert client.get("/api/login/options").json() == {"auth_mode": "employee_id", "windows_login": False, "device_login": False}
+    assert client.get("/api/login/options").json() == {"auth_mode": "employee_id", "windows_login": False, "device_login": False, "password_login_ids": []}
 
 
 def test_employee_id_only_login_is_refused(client, db_session, fake_ad):
@@ -226,3 +227,57 @@ def test_limiter_blocks_spray_from_one_ip():
     for emp in ("A1", "A2", "A3"):
         limiter.record_failure(emp, "9.9.9.9")
     assert limiter.is_blocked("A4", "9.9.9.9")              # 여러 사번을 돌려 시도하는 것도 끊는다
+
+
+# ── 테스트 계정(AD 에 없는 사번, .env 로 지정) ─────────────────────────────
+import hashlib as _hashlib
+
+_TEST_PW = "Test-Pw-9"
+
+
+@pytest.fixture()
+def test_accounts(monkeypatch):
+    monkeypatch.setenv("TEST_LOGIN_ACCOUNTS", "A888888, a878787")
+    monkeypatch.setenv("TEST_LOGIN_PASSWORD_SHA256", _hashlib.sha256(_TEST_PW.encode()).hexdigest())
+
+
+def test_test_account_logs_in_without_ad(client, db_session, fake_ad, test_accounts):
+    _user(db_session, "A888888")
+    _user(db_session, "A878787")
+    assert _login(client, _TEST_PW, "A888888").status_code == 200
+    assert _login(client, _TEST_PW, "a878787").status_code == 200
+    assert fake_ad == []  # AD 에 묻지 않는다
+
+
+def test_test_account_wrong_password_and_limit(client, db_session, fake_ad, test_accounts):
+    _user(db_session, "A888888")
+    for _ in range(4):
+        assert _login(client, "wrong", "A888888").status_code == 401
+    assert _login(client, _TEST_PW, "A888888").status_code == 429
+    assert fake_ad == []
+
+
+def test_test_password_does_not_open_other_accounts(client, db_session, fake_ad, test_accounts):
+    _user(db_session)
+    assert _login(client, _TEST_PW).status_code == 401
+    assert fake_ad == ["A123456"]  # 일반 사번은 그대로 AD
+
+
+def test_test_accounts_off_without_hash(client, db_session, fake_ad, monkeypatch):
+    monkeypatch.setenv("TEST_LOGIN_ACCOUNTS", "A888888")
+    monkeypatch.delenv("TEST_LOGIN_PASSWORD_SHA256", raising=False)
+    _user(db_session, "A888888")
+    assert _login(client, _TEST_PW, "A888888").status_code == 401
+    assert fake_ad == ["A888888"]
+    assert client.get("/api/login/options").json()["password_login_ids"] == []
+
+
+def test_options_lists_test_accounts(client, test_accounts):
+    assert client.get("/api/login/options").json()["password_login_ids"] == ["A878787", "A888888"]
+
+
+def test_test_account_login_is_marked_in_activity(client, db_session, fake_ad, test_accounts):
+    _user(db_session, "A888888")
+    assert _login(client, _TEST_PW, "A888888").status_code == 200
+    rows = db_session.query(models.ActivityLog).filter_by(employee_id="A888888", status="success").all()
+    assert any((r.action_detail or {}).get("method") == "test_account" for r in rows)
