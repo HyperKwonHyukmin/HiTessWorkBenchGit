@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pct, fmtDelta, fmtReach, unseenMailList, hasTargetList, personMeta, reachPct } from './newsletterStats.js';
+import { pct, fmtDelta, fmtReach, unseenMailList, hasTargetList, personMeta, reachPct, groupEntriesByApp } from './newsletterStats.js';
 
 test('pct — 0 으로 나누지 않는다', () => {
   assert.equal(pct(1, 4), 25);
@@ -48,4 +48,19 @@ test('reachPct — 대상이 없거나 옛 응답이면 null', () => {
   assert.equal(reachPct({ targetUsers: 26, viewedTargets: 13 }), 50);
   assert.equal(reachPct({ targetUsers: 0, viewedTargets: 0 }), null);
   assert.equal(reachPct({ recentUsers: 3 }), null);
+});
+
+test('groupEntriesByApp — App 마다 최신 한 줄, 나머지는 older(받은 순서 유지)', () => {
+  const E = [
+    { entry: 'mb2', app: 'MB', date: '2026-11-20' },
+    { entry: 'mu2', app: 'MU', date: '2026-11-12' },
+    { entry: 'mu1', app: 'MU', date: '2026-11-11' },
+    { entry: 'x', date: '2026-11-10' },
+    { entry: 'mb1', app: 'MB', date: '2026-11-01' },
+  ];
+  const g = groupEntriesByApp(E);
+  assert.deepEqual(g.map(x => [x.app, x.latest.entry, x.older.map(o => o.entry)]), [
+    ['MB', 'mb2', ['mb1']], ['MU', 'mu2', ['mu1']], ['기타', 'x', []],
+  ]);
+  assert.deepEqual(groupEntriesByApp(null), []);
 });

@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
-import { Copy, ExternalLink, Megaphone } from 'lucide-react';
+import { ChevronRight, Copy, ExternalLink, Megaphone } from 'lucide-react';
 import { copyUpdateLink, openUpdateInBrowser } from '../../../api/updates';
 import { getUpdateStats } from '../../../api/reports';
-import { fmtReach, unseenMailList, hasTargetList, personMeta, reachPct } from '../../../utils/newsletterStats';
+import { fmtReach, unseenMailList, hasTargetList, personMeta, reachPct, groupEntriesByApp } from '../../../utils/newsletterStats';
 import { DailyBars } from './StatBits';
 
 /**
  * 업데이트 안내(/updates) 조회 통계(2026-11-12) — 뉴스레터 통계와 같은 사람만(서버가 {allowed:false} 면 숨김).
+ * 표는 App 마다 최신 안내 한 줄(이전 안내는 그 줄 아래 펼쳐 보기 — 안내가 늘어도 표가 App 수로 묶인다, 2026-11-12 사용자 결정).
  * 핵심만: 안내마다 조회수, 앱 안에서 본 사람, 브라우저로 본 PC, 그 App 사용자 가운데 본 사람.
  * 줄을 고르면 그 App 사용자 명단(본 사람, 안 본 사람 — 안 본 사람 메일 복사)과 날짜별 조회. 안내 전후 실행 비교는 빼기로 함(사용자 결정 2026-11-12).
  * App 분류 = updates.json 의 programs(Analysis.program_name). 사람은 앱 안에서 연 기록으로만 안다(브라우저는 PC 만).
@@ -15,6 +16,7 @@ import { DailyBars } from './StatBits';
 export default function UpdateStatsPanel() {
   const [data, setData] = useState(null);
   const [entryId, setEntryId] = useState(null);
+  const [expanded, setExpanded] = useState(() => new Set());   // 이전 안내를 펼친 App
 
   useEffect(() => {
     const controller = new AbortController();
@@ -32,6 +34,61 @@ export default function UpdateStatsPanel() {
   const entries = data.entries || [];
   const selected = entries.find(e => e.entry === entryId);
   const effect = selected?.appEffect;
+  const groups = groupEntriesByApp(entries);
+  const toggleApp = (app) => {
+    const closing = expanded.has(app);
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (closing) next.delete(app); else next.add(app);
+      return next;
+    });
+    // 접을 때 그 App 의 이전 안내를 보고 있었으면 최신 줄로 옮긴다 — 숨은 줄의 상세가 아래에 남지 않게(리뷰 반영)
+    const g = groups.find(x => x.app === app);
+    if (closing && g?.older.some(o => o.entry === entryId)) setEntryId(g.latest.entry);
+  };
+
+  // 한 줄 — 최신 안내 줄에는 '이 App 의 이전 안내 N건' 펼치기, 이전 안내(nested)는 들여쓰고 바탕을 옅게
+  const renderRow = (e, { nested = false, olderCount = 0, open = false } = {}) => {
+    const active = e.entry === entryId;
+    const rp = reachPct(e.appEffect);
+    return (
+                    <tr key={e.entry} onClick={() => setEntryId(e.entry)}
+                      className={`border-t border-slate-100 cursor-pointer ${active ? 'bg-blue-50' : nested ? 'bg-slate-50/60 hover:bg-slate-50' : 'hover:bg-slate-50'}`}>
+                      <td className={`py-2 pr-3 ${nested ? 'pl-8' : 'pl-3'}`}>
+                        <button type="button" onClick={() => setEntryId(e.entry)} aria-pressed={active}
+                          className="block rounded text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                          <span className="block font-medium text-slate-800">{e.title}</span>
+                          <span className="block text-[11px] text-slate-500">{e.date}{e.app ? `  ${e.app}` : ''}</span>
+                        </button>
+                        {olderCount > 0 && (
+                          <button type="button" aria-expanded={open}
+                            onClick={(ev) => { ev.stopPropagation(); toggleApp(e.app || '기타'); }}
+                            className="mt-1 inline-flex items-center gap-0.5 rounded text-[11px] font-medium text-blue-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                            <ChevronRight size={12} className={open ? 'rotate-90' : ''} aria-hidden="true" />
+                            이 App 의 이전 안내 {olderCount}건
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {e.appEffect ? (
+                          <div className="flex items-center gap-2">
+                            <span className="h-2 w-24 shrink-0 rounded bg-slate-200" aria-hidden="true">
+                              <span className="block h-full rounded bg-blue-600" style={{ width: `${rp ?? 0}%` }} />
+                            </span>
+                            <span className="tabular-nums text-sm font-bold text-slate-800">{rp == null ? '-' : `${rp}%`}</span>
+                            <span className="tabular-nums text-xs text-slate-500">{rp == null ? fmtReach(e.appEffect) : `${e.appEffect.viewedTargets} / ${e.appEffect.targetUsers}명`}</span>
+                          </div>
+                        ) : <span className="text-xs text-slate-400">App 분류 없음</span>}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs tabular-nums text-slate-600">
+                        {e.views}회 <span className="text-slate-400">(앱 안 {e.people}명, 브라우저 {e.browserVisitors}곳)</span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-right" onClick={(ev) => ev.stopPropagation()}>
+                        <PageLinkButtons entryId={e.entry} />
+                      </td>
+                    </tr>
+    );
+  };
 
   return (
     <section className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
@@ -56,37 +113,13 @@ export default function UpdateStatsPanel() {
                 </tr>
               </thead>
               <tbody>
-                {entries.map(e => {
-                  const active = e.entry === entryId;
-                  const rp = reachPct(e.appEffect);
+                {groups.map(g => {
+                  const open = expanded.has(g.app);
                   return (
-                    <tr key={e.entry} onClick={() => setEntryId(e.entry)}
-                      className={`border-t border-slate-100 cursor-pointer ${active ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
-                      <td className="px-3 py-2">
-                        <button type="button" onClick={() => setEntryId(e.entry)} aria-pressed={active}
-                          className="rounded text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-                          <span className="block font-medium text-slate-800">{e.title}</span>
-                          <span className="block text-[11px] text-slate-500">{e.date}{e.app ? `  ${e.app}` : ''}</span>
-                        </button>
-                      </td>
-                      <td className="px-3 py-2">
-                        {e.appEffect ? (
-                          <div className="flex items-center gap-2">
-                            <span className="h-2 w-24 shrink-0 rounded bg-slate-200" aria-hidden="true">
-                              <span className="block h-full rounded bg-blue-600" style={{ width: `${rp ?? 0}%` }} />
-                            </span>
-                            <span className="tabular-nums text-sm font-bold text-slate-800">{rp == null ? '-' : `${rp}%`}</span>
-                            <span className="tabular-nums text-xs text-slate-500">{rp == null ? fmtReach(e.appEffect) : `${e.appEffect.viewedTargets} / ${e.appEffect.targetUsers}명`}</span>
-                          </div>
-                        ) : <span className="text-xs text-slate-400">App 분류 없음</span>}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs tabular-nums text-slate-600">
-                        {e.views}회 <span className="text-slate-400">(앱 안 {e.people}명, 브라우저 {e.browserVisitors}곳)</span>
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-right" onClick={(ev) => ev.stopPropagation()}>
-                        <PageLinkButtons entryId={e.entry} />
-                      </td>
-                    </tr>
+                    <React.Fragment key={g.app}>
+                      {renderRow(g.latest, { olderCount: g.older.length, open })}
+                      {open && g.older.map(o => renderRow(o, { nested: true }))}
+                    </React.Fragment>
                   );
                 })}
               </tbody>

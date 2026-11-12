@@ -64,3 +64,18 @@ export function reachPct(effect) {
   if (!effect || typeof effect.targetUsers !== 'number' || !effect.targetUsers) return null;
   return pct(effect.viewedTargets, effect.targetUsers);
 }
+
+/**
+ * 업데이트 안내 통계 표의 줄 묶음 — App 마다 최신 안내 한 줄, 이전 안내는 그 줄 아래 펼쳐 보기(2026-11-12 사용자 결정).
+ * 안내는 서버가 최신이 앞으로 준다. App 이 없으면 '기타'. 묶음 순서 = 최신 안내 날짜순(같은 날이면 받은 순서).
+ * @returns {{ app: string, latest: object, older: object[] }[]}
+ */
+export function groupEntriesByApp(entries) {
+  const groups = new Map();
+  for (const e of entries || []) {
+    const app = e?.app || '기타';
+    if (!groups.has(app)) groups.set(app, { app, latest: e, older: [] });
+    else groups.get(app).older.push(e);
+  }
+  return [...groups.values()];
+}
