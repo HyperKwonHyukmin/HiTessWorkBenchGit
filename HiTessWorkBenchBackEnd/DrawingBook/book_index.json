@@ -175,7 +175,7 @@
    "convertible": true,
    "engine": {
     "template": "d_type_lug",
-    "review": 10,
+    "review": 9,
     "mismatch": []
    }
   },
@@ -194,7 +194,15 @@
    "swl_t": 50.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": true,
+   "engine": {
+    "template": "d_type_lug",
+    "review": 11,
+    "mismatch": [
+     "bracket_t",
+     "bracket_top_flat"
+    ]
+   }
   },
   {
    "code": "D-75",
@@ -211,7 +219,34 @@
    "swl_t": 75.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": true,
+   "engine": {
+    "template": "d_type_lug",
+    "review": 30,
+    "mismatch": [
+     "arc_R",
+     "arch_R",
+     "arch_leg_h",
+     "base_width",
+     "bracket_inner_h",
+     "bracket_inner_h_front",
+     "bracket_offset",
+     "bracket_offset_lr",
+     "bracket_outer_h",
+     "bracket_t",
+     "bracket_top_flat",
+     "doubler_R",
+     "doubler_cut",
+     "flank_R",
+     "hole_d",
+     "main_t",
+     "pin_center_u",
+     "pin_height",
+     "scale_nts",
+     "side_height",
+     "total_height"
+    ]
+   }
   },
   {
    "code": "D-85",
@@ -228,7 +263,31 @@
    "swl_t": 85.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": true,
+   "engine": {
+    "template": "d_type_lug",
+    "review": 27,
+    "mismatch": [
+     "arc_R",
+     "arch_R",
+     "arch_leg_h",
+     "base_width",
+     "bracket_inner_h",
+     "bracket_inner_h_front",
+     "bracket_offset",
+     "bracket_outer_h",
+     "bracket_t",
+     "doubler_R",
+     "doubler_cut",
+     "flank_R",
+     "hole_d",
+     "main_t",
+     "pin_height",
+     "scale_nts",
+     "side_height",
+     "total_height"
+    ]
+   }
   },
   {
    "code": "D-100",
@@ -245,7 +304,19 @@
    "swl_t": 100.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": true,
+   "engine": {
+    "template": "d_type_lug",
+    "review": 16,
+    "mismatch": [
+     "arch_leg_h",
+     "base_width",
+     "bracket_t",
+     "flank_R",
+     "main_t",
+     "side_width"
+    ]
+   }
   },
   {
    "code": "T-5, T-5A",

@@ -48,6 +48,7 @@ def test_convertible_matches_engine_check():
     conv = sorted(i["aliases"][0] for i in d["items"] if i.get("convertible"))
     # 2026-11-11 새 러그 엔진 lapping_lug 템플릿 기준. 템플릿이 늘면 색인을 다시 만들고 이 목록을 고친다.
     # L-16 은 원을 짧은 직선으로 그린 쪽이라 엔진이 직선 사슬을 원으로 읽게 된 뒤(같은 날) 들어왔다.
-    # 2026-11-12 D형 템플릿(d_type_lug) — D-25·D-35. 다른 D형(D-16·D-50~)은 글꼴·배치가 달라 아직 못 읽는다.
-    assert conv == ["D-25", "D-35", "L-16", "L-25", "L-30", "L-40", "L-50"]
+    # 2026-11-12 D형 템플릿(d_type_lug) — D-25·D-35, 같은 날 옆이 오목 원호인 D-50~D-100 추가.
+    # D-16 은 브래킷 2장이 앞뒤로 엇갈린 다른 형식이라 아직 '지원 안 함'.
+    assert conv == ["D-100", "D-25", "D-35", "D-50", "D-75", "D-85", "L-16", "L-25", "L-30", "L-40", "L-50"]
     assert all(i.get("engine", {}).get("template") for i in d["items"] if i.get("convertible"))
