@@ -273,6 +273,8 @@ P2 의 기본을 "그대로 두고 보고"로 둔 이유: 받칠 구조가 1 m �
 > **→ (2026-11-12 세션 끝) D1~D11, B10 추천대로 결정. 4a 끝(엔진 `85d8ead` 로컬). 6단계 1번 엔진 검증 표시 구현 — 엔진 미커밋**(시험 670 통과, 리뷰 막아야 함 0, 회귀 `s6_review` BDF '$' 주석 말고 62/62 같음).
 > 다음 = ① 엔진 검증 표시 커밋 ② 6단계 3번 WorkBench 판정 '검증 필요 N건' + BDF 를 받는 곳(GMU 권상, Side Passage, 해상 운송, LogBook 보내기) 경고(막지 않음) ③ Studio 검토 창(종류별 모두 승인 필수). 아래 6단계 '검토 흐름과 검증 표시'.
 > 70, 145 InHouse `Cmb.Cli.exe` 는 아직 교체 안 함(B2 ~ 검증 표시까지 묶어서).
+> **→ (2026-11-13) ① 엔진 검증 표시 커밋 `c5bfd46`(로컬) ② WorkBench 판정과 받는 곳 경고 커밋 `50ff9db`(미푸시)** — 아래 6단계 'WorkBench 진행 기록'.
+> 다음 = ③ Studio 검토 창(종류별 모두 승인 필수). 그 뒤 InHouse `Cmb.Cli.exe` 묶음 교체(70 → 145) — 교체 전에는 경고가 뜰 BDF 가 없다.
 > 2단계 남은 것 B5·B12b·B13 은 계획대로 뒤로. 사용자 확인 대기 결정: D1~D11(특히 D1, D7 Private 전환, D9, D10, D11), B10 처리 방법.
 
 **B11 + B12a (2026-11-12, 엔진 미커밋, 70 InHouse 미교체)** — 회귀 이름 `b11_noise_off`(B11 만), `b12a_fragment`(둘 다).
@@ -465,7 +467,7 @@ RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점
 백엔드가 `00_Verdict.json`, `00_Decisions.json` 을 읽어 WorkBench 판정에 '추정 연결 N곳', '받칠 구조 없는 배관 N곳' 을 보이고, 옵션에 정책 선택 하나. Studio 는 결정 기록의 자리를 짚는다(MB 를 고치면 짝 Studio 싱크 대장에 적는다).
 엔진 교체 전후 순서가 바뀌어도 안 깨지게 `engine_supports_*` 확인 방식을 쓴다.
 
-#### 검토 흐름과 검증 표시 (2026-11-12 사용자 지시, 설계안 — 미착수)
+#### 검토 흐름과 검증 표시 (2026-11-12 사용자 지시 — 엔진 표시와 WorkBench 경고 끝, Studio 검토 창 남음)
 
 목표: 엔진이 사용자 대신 정한 것을 사용자가 승인해야 모델이 '검증 완료'가 된다. Studio 를 거치든 엔진만 쓰든, **BDF 만 보고도 검증 상태를 안다.**
 
@@ -495,6 +497,17 @@ RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점
 - 편집 적용(`apply-edit-intent`)은 기준 BDF 의 표시 줄을 그대로 이어받는다 — 편집만으로 '검증 필요'가 사라지지 않게.
 - 62묶음: 검증 필요 합 2,661(모델당 중앙 16, 없음 3, 큰 것 3476-4b652283 512). 종류: 떨어진 그룹 651, 질량점 옮김 539, 받칠 구조 없는 U-bolt 408, 그룹 이동 386, 빠진 장비 질량 192, 추정 연결 449(조립품 묶음 432 + 이름 없음 17), 부착 실패 36.
   → **Studio 검토 창은 '종류별 모두 승인'이 꼭 있어야 한다**(한 모델 수백 건). 질량점 옮김, 떨어진 그룹은 종류 묶음 단위를 엔진에서 더 줄일지 Studio 단계에서 다시 본다.
+  엔진 커밋 `c5bfd46`(로컬, 푸시 안 함, 시험 Core 185, Io 75, Pipeline 329, Integration 81 통과).
+
+**WorkBench 진행 기록 (2026-11-13, 커밋 `50ff9db` 미푸시, 독립 리뷰 막아야 함 0)** — 위 3번 '엔진만 쓴 경우'.
+- 받는 곳: 덱 검사 `bdf_deck_check` 가 BDF 머리 `$` 구간(첫 카드에서 멈춤, 엔진 `BdfReviewMarker.Read` 와 같은 규칙)의 `Review=REQUIRED|MANUAL` 을 읽어 경고 `mb_review_required`(fixable 아님).
+  GMU 권상, Side Passage, 해상 운송 검증이 모두 이 검사를 거쳐 세 곳에 함께 뜨고, GMU 판정은 '검토 필요'(경고 등급 덱 문제의 기존 규칙), 단계 힌트 '통과 · 검증 안 된 MB 모델'. 읽는 자리는 계획의 '호선 주석 읽기 옆' 대신 덱 검사(이미 세 곳 공용이라).
+- All Projects: 파일 목록 BDF 에 `mbReview`, 상세 창 '검증 필요' 칩과 LogBook 보내기 칸 경고, 여러 건 보내기 계획 경고 한 줄(`admin_projects.mb_review_warning`).
+- MB 화면: 결과 폴더 `00_Review.json` 을 읽어 판정 사유 `review-required`(검토 필요) + BDF 받기 칸 위 안내. 남은 수는 units 의 state(required = pending, manual = manual)로 센다. 규칙과 문구 = `utils/mbReview.js`.
+- 리뷰 '고치면 좋음'(③ 때 함께): MB 화면은 `00_Review.json` 을 결과 폴더가 바뀔 때만 다시 읽는다 — Studio 승인 뒤 같은 탭에서 다시 읽게(편집 적용 완료 때) 해야 한다.
+  수 기준도 갈린다: 받는 곳은 BDF 머리 `Items`(빌드 때 단위 수), MB 화면은 남은 pending 수 — 부분 승인이 생기면 Studio 가 BDF 머리 Items 를 남은 수로 고쳐 써야 같아진다.
+- 확인: 새 시험(덱 6, All Projects 1, mbReview 6, 판정 1), 프론트 유틸 490, 빌드. 화면 4곳(MB 판정, BDF 받기 안내, GMU 힌트, All Projects 칩)은 눈으로 확인 안 함 — 새 엔진 BDF 가 있어야 뜬다.
+- 백엔드 전체 시험은 16건 실패(2220 통과) — 모두 이번 변경과 무관한 이 PC 환경 문제: sqlalchemy 를 import 한 프로세스에서 방금 쓴 zip, pdf, xlsx 를 다시 열면 `Errno 22`(DRM 추정, 2026-11-13 확인, 원인 미해결).
 5. 한계: 주석은 글자라 손으로 고칠 수 있다(보안 장치가 아니라 작업 흐름 표시). 어느 실행의 검토인지는 결과 폴더의 `00_Review.json` run 으로 묶는다.
 6. 순서: 4a(추정 연결 등급) → 엔진 표시(1) → WorkBench 판정과 받는 곳 경고(3) → Studio 검토 창(2). MB Studio 를 고치면 짝 Studio 싱크 대장에 적는다(MU 는 BDF 입력이라 '받는 곳 경고' 쪽).
 
