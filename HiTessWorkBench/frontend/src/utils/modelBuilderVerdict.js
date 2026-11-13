@@ -8,9 +8,11 @@
 //   검토 필요 — ① 질량이 있는 입력 행이 변환에서 제외됨(총중량 과소 위험)
 //               ② 최종 모델에 분리된 그룹이 남음
 //               ③ 미해결 U-bolt 가 남음
+//               ④ 엔진 검증 표시(00_Review.json)에 사람이 확인할 것이 남음(2026-11-12)
 //   통과      — 그 밖. 자유단·경고 수는 정상 모델에서도 많이 나와 판정에 쓰지 않는다
 //               (경고 대부분은 동일 이름 중복이다).
 
+import { pendingReview, reviewReasonText } from './mbReview.js';
 import { parseEquipmentCogFar } from './modelValidation.js';
 
 // 제외되어도 총중량이 줄지 않는 사유 — 질량이 원래 0 이거나 길이가 0 인 행.
@@ -65,12 +67,13 @@ function lastStage(summary) {
  * @param {string}  [args.jobStatus]   'Success' | 'Failed' | 'Cancelled' | 'Running' ...
  * @param {object}  [args.summary]     00_StageSummary.json
  * @param {object}  [args.audit]       00_InputAudit.json
+ * @param {object}  [args.review]      00_Review.json(엔진 검증 표시). 사람이 볼 것이 남았으면 '검토 필요' — 옛 엔진이면 없음
  * @param {object}  [args.editedStage] 편집 적용 모델 점검 결과({health, diagnostics}). 있으면 연결성은 이 값으로 본다
  *                                     — 후속 해석에 넘어가는 모델이 편집본이기 때문이다.
  * @returns {{level: 'pass'|'review'|'fail'|null, title: string, reasons: {code: string, text: string}[], basis: 'original'|'edited'}}
  *   level=null 은 아직 판단할 자료가 없음(실행 전·로딩 중).
  */
-export function computeModelBuilderVerdict({ jobStatus, summary, audit, editedStage } = {}) {
+export function computeModelBuilderVerdict({ jobStatus, summary, audit, review, editedStage } = {}) {
   const basis = editedStage ? 'edited' : 'original';
 
   if (jobStatus === 'Failed' || jobStatus === 'Cancelled') {
@@ -139,6 +142,11 @@ export function computeModelBuilderVerdict({ jobStatus, summary, audit, editedSt
       text: `연결 대상을 찾지 못한 U-bolt ${ubolts.toLocaleString()}개가 있습니다. 배관이 지지되지 않을 수 있습니다.`,
     });
   }
+
+  // 엔진이 사용자 대신 정한 것(추정 연결, 옮긴 질량 등)을 사람이 아직 승인하지 않았다 — 막지 않고 알린다(MB 계획서 6단계).
+  // 편집 적용은 검토가 아니라서 편집 BDF 도 같은 표시를 이어받는다(엔진 apply-edit-intent).
+  const pending = pendingReview(review);
+  if (pending) reasons.push({ code: 'review-required', text: reviewReasonText(pending) });
 
   if (reasons.length > 0) return { level: 'review', title: '검토 필요', reasons, basis };
   return { level: 'pass', title: '통과', reasons: [], basis };

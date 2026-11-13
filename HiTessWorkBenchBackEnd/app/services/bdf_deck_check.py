@@ -29,6 +29,43 @@ _CASE_STATEMENT = re.compile(r"^\s*[A-Za-z][A-Za-z0-9]*\s*(\([^)]*\))?\s*=")
 
 _EOL_STRIP = "\r\n"
 
+# Model Builder 검증 표시(엔진 `Cmb.Io.Nastran.BdfReviewMarker`, 2026-11-12) — 최종 BDF 머리 '$' 주석 구간에
+# `$ HiTessModelBuilder: Review=REQUIRED Items=12`. 엔진이 사용자 대신 정한 것(추정 연결, 옮긴 질량 등)을
+# 사람이 아직 승인하지 않았다는 뜻이다. 받는 곳은 경고만 하고 막지 않는다(사용자 결정, MB 계획서 6단계).
+_MB_REVIEW_RE = re.compile(r"^\s*\$\s*HiTessModelBuilder:\s*Review\s*=\s*([A-Za-z]+)(?:\s+Items\s*=\s*(\d+))?",
+                           re.IGNORECASE)
+# 사람이 볼 것이 남은 상태. NONE(없음)·DONE(검토 끝)은 경고하지 않는다.
+MB_REVIEW_PENDING = {"REQUIRED", "MANUAL"}
+
+
+def read_mb_review_marker(lines: List[str]) -> Dict[str, Any] | None:
+    """BDF 머리 '$' 주석 구간의 Model Builder 검증 표시를 읽는다. 없으면 None.
+    엔진 `BdfReviewMarker.Read` 와 같은 규칙 — 첫 카드 줄을 만나면 멈춘다(본문 주석은 표시가 아니다)."""
+    for raw in lines:
+        line = raw.rstrip(_EOL_STRIP).strip()
+        if not line:
+            continue
+        if not line.startswith("$"):
+            return None
+        match = _MB_REVIEW_RE.match(line)
+        if match:
+            return {"status": match.group(1).upper(), "items": int(match.group(2) or 0)}
+    return None
+
+
+def read_mb_review_marker_file(path: str) -> Dict[str, Any] | None:
+    """파일 머리만 읽는다(큰 BDF 를 다 읽지 않게). 못 읽으면 None."""
+    head: List[str] = []
+    try:
+        with open(path, "r", encoding="latin-1", newline="") as f:
+            for line in f:
+                head.append(line)
+                if line.strip() and not line.lstrip().startswith("$"):
+                    break
+    except OSError:
+        return None
+    return read_mb_review_marker(head)
+
 
 def _first_token(stripped: str) -> str:
     return re.split(r"[\s,(]", stripped, maxsplit=1)[0].rstrip("*").upper()
@@ -211,6 +248,29 @@ def inspect_deck_lines(lines: List[str]) -> List[Dict[str, Any]]:
             "lines": [i + 1 for i in bailout],
             "fixable": False,
             "fix": "",
+        })
+
+    # Model Builder 가 만든 BDF 인데 사람이 아직 검토하지 않은 경우 — 해석은 되지만 결과가 엔진의 추정 위에 서 있다.
+    review = read_mb_review_marker(lines)
+    if review and review["status"] in MB_REVIEW_PENDING:
+        n = review["items"]
+        if review["status"] == "MANUAL":
+            title = f"Model Builder 검토에서 손으로 고칠 것 {n}건이 남은 모델입니다"
+            what = "Studio 검토에서 '수동 수정 필요'로 남긴 항목이 아직 고쳐지지 않았습니다."
+        else:
+            title = f"검증 안 된 Model Builder 모델입니다 — 엔진이 대신 정한 것 {n}건을 아직 사람이 확인하지 않았습니다"
+            what = ("Model Builder 엔진이 추정으로 이은 연결, 옮긴 질량점, 받칠 구조가 없는 U-bolt 같은 결정을 "
+                    "사람이 아직 승인하지 않았습니다.")
+        issues.append({
+            "code": "mb_review_required",
+            "severity": "warning",
+            "title": title,
+            "detail": (f"{what} 해석은 진행할 수 있지만 결과가 그 결정 위에 서 있습니다. "
+                       "HiTESS Model Builder 결과 화면에서 Studio 로 열어 확인하세요."),
+            "lines": [],
+            "fixable": False,
+            "fix": "",
+            "mbReview": review,
         })
     return issues
 

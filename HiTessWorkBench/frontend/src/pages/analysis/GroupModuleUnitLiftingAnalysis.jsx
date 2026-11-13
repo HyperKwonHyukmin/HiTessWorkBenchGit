@@ -901,6 +901,7 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
         const hint = deckFixes.length > 0 ? '통과 · BDF 형식 수정 가능'
           : codes.has('disconnected') ? '통과 · 분리 그룹 있음'
           : codes.has('deck-bailout_param') ? '통과 · PARAM BAILOUT 제외'
+          : codes.has('deck-mb_review_required') ? '통과 · 검증 안 된 MB 모델'
           : '통과 · 확인할 항목 있음';
         return { ...def, status: 'review', hint };
       }

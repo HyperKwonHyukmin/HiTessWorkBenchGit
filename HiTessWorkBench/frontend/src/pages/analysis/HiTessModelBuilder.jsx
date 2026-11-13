@@ -13,6 +13,7 @@ import {
   RunStartPanel, WorkspaceTabBar, WorkspaceFrame, useWorkspaceStore,
 } from '../../components/analysis/runFrame';
 import { computeModelBuilderVerdict } from '../../utils/modelBuilderVerdict';
+import { pendingReview, reviewDownloadNote } from '../../utils/mbReview';
 import { HULL_NO_MAX_LENGTH, needsHullPrompt, sanitizeHullInput, suggestHullNo } from '../../utils/hullNo';
 import HullPromptDialog from '../../components/analysis/HullPromptDialog';
 import { peekResultReentry, useResultReentry } from '../../utils/resultReentry';
@@ -1670,7 +1671,7 @@ function SummaryMetric({ label, value, variant }) {
 
 function DeliverPanel({
   bdfResult, hasResult, editStatus, onSendToGmu, onSendToSidePassage, gmuLocked,
-  onResolveHandoffBdf, onDelivered, massLine, verdict,
+  onResolveHandoffBdf, onDelivered, massLine, verdict, reviewNote,
 }) {
   // 후속 해석으로 넘길 BDF 를 확정하는 동안(edit-status 재조회) 버튼 잠금.
   // 훅은 아래 early return 보다 위에 있어야 한다(rules of hooks).
@@ -1726,6 +1727,13 @@ function DeliverPanel({
     <div className="space-y-4">
       <section aria-label="BDF 받기" className="space-y-2">
         <h3 className="text-sm font-bold text-slate-800">BDF 받기</h3>
+        {/* 엔진 검증 표시가 남은 BDF — 받기는 막지 않고 받는 곳에서 경고가 뜬다는 것만 미리 알린다(2026-11-12 사용자 결정). */}
+        {reviewNote && (
+          <p role="note" className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>{reviewNote}</span>
+          </p>
+        )}
         <FileDownloadRow
           label="원본 최종 BDF"
           filename={fileBaseName(bdfResult.bdfPath)}
@@ -2054,6 +2062,8 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError,   setAuditError]   = useState(null);
   const [summaryData,    setSummaryData]    = useState(null);
+  // 엔진 검증 표시(00_Review.json) — 옛 엔진 결과에는 없다(그때는 null 로 두고 판정에 넣지 않는다).
+  const [reviewData,     setReviewData]     = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError,   setSummaryError]   = useState(null);
 
@@ -2223,6 +2233,17 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
       })
       .catch(e => { if (!cancelled) setSummaryError(`StageSummary 로드 실패: ${e.message}`); })
       .finally(() => { if (!cancelled) setSummaryLoading(false); });
+    return () => { cancelled = true; };
+  }, [bdfResult?.summaryPath]);
+
+  // 검증 표시는 요약과 같은 결과 폴더에 있다. 못 읽으면(옛 엔진, 지운 폴더) 조용히 없음으로 둔다.
+  useEffect(() => {
+    if (!bdfResult?.summaryPath) { setReviewData(null); return; }
+    let cancelled = false;
+    const folder = bdfResult.summaryPath.replace(/[^\\/]+$/, '');
+    fetchJson(folder + '00_Review.json')
+      .then(d => { if (!cancelled) setReviewData(d); })
+      .catch(() => { if (!cancelled) setReviewData(null); });
     return () => { cancelled = true; };
   }, [bdfResult?.summaryPath]);
 
@@ -3199,9 +3220,10 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
           jobStatus: jobStatus?.status,
           summary: summaryData,
           audit: auditData,
+          review: reviewData,
           editedStage: editStatus?.has_edited ? editedStage : null,
         })
-  ), [isRunning, jobStatus?.status, summaryData, auditData, editStatus?.has_edited, editedStage]);
+  ), [isRunning, jobStatus?.status, summaryData, auditData, reviewData, editStatus?.has_edited, editedStage]);
 
   // 2단계 상태는 저장값(편집 적용 시 완료)에 판정을 겹쳐 그린다 — 판정이 바뀌면 자동으로 따라간다.
   const displaySteps = steps.map((st, i) => {
@@ -3543,6 +3565,7 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
                   onDelivered={markDelivered}
                   massLine={massLine}
                   verdict={verdict}
+                  reviewNote={reviewDownloadNote(pendingReview(reviewData))}
                   /* 전달 직전 edit-status 를 다시 읽어 '지금 디스크에 있는' 최종 편집본을 확정한다.
                      Studio 편집 적용 직후처럼 페이지의 editStatus 가 아직 낡은 순간에도
                      원본이 아니라 편집본이 넘어가도록 보장한다. */

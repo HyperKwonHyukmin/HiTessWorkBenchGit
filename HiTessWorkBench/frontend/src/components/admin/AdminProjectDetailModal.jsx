@@ -19,6 +19,7 @@ import {
   defaultExportTitle, describeExportResult, describeLiftingSet, formatBytes, formatShortDateTime, groupFilesByRole,
   isPreviewableBdf, liftingSetPaths, summarizeSelection,
 } from '../../utils/adminProjectFiles';
+import { mbReviewFileText } from '../../utils/mbReview';
 import BdfPreviewDialog from '../bdfPreview/BdfPreviewDialog';
 import { useLogbookLauncher } from '../analysis/runFrame/LogbookImportButton';
 
@@ -69,6 +70,12 @@ function FileGroup({ group, selected, onToggle, onToggleAll, onDownload, onPrevi
               <span className="inline-flex shrink-0 items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700"
                 title="회사 DRM 으로 암호화된 파일 — LogBook 이 받지 않습니다">
                 <FileWarning size={11} aria-hidden="true" /> DRM
+              </span>
+            )}
+            {f.mbReview && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700"
+                title={mbReviewFileText(f.mbReview)}>
+                <FileWarning size={11} aria-hidden="true" /> 검증 필요
               </span>
             )}
             <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-slate-500">{formatBytes(f.size)}</span>
@@ -154,6 +161,7 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
   const bdfFiles = useMemo(() => groups.flatMap(g => g.files).filter(isPreviewableBdf), [groups]);
   // 미리보기에서 오갈 목록 — 체크한 BDF 가 있으면 그것만, 없으면 전체 BDF(행의 3D 버튼으로 연 경우 그 파일 포함)
   const checkedBdf = useMemo(() => bdfFiles.filter(f => selected.has(f.path)), [bdfFiles, selected]);
+  const checkedUnreviewed = useMemo(() => files.filter(f => f.mbReview && selected.has(f.path)), [files, selected]);
   const previewFiles = useMemo(() => {
     if (!previewPath) return [];
     const base = checkedBdf.length ? checkedBdf : bdfFiles;
@@ -328,6 +336,14 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
               체크한 파일이 내 이름의 LogBook <b>정리 대기</b> 묶음으로 들어가고, 보내면 LogBook 창이 바로 열립니다. 제목·호선 정리와 확정은 LogBook 에서 합니다.
               LogBook 에 이미 있는 것과 똑같은 BDF 와 회사 DRM 으로 암호화된 파일은 받지 않습니다.
             </p>
+            {/* Model Builder 가 만들고 사람이 아직 검토하지 않은 BDF — 막지 않고 알린다(MB 계획서 6단계) */}
+            {checkedUnreviewed.length > 0 && (
+              <p role="note" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+                고른 BDF 중 {checkedUnreviewed.length}개는 <b>검증 안 된 Model Builder 모델</b>입니다
+                ({checkedUnreviewed.map(f => f.rel).slice(0, 2).join(', ')}{checkedUnreviewed.length > 2 ? ' 외' : ''}).
+                엔진이 대신 정한 것을 사람이 아직 확인하지 않았습니다. 보내기는 그대로 됩니다.
+              </p>
+            )}
             {liftingSetNote && (
               <div className={`mb-3 rounded-lg border px-3 py-2 text-xs leading-relaxed ${
                 liftingSet.result?.length ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-amber-200 bg-amber-50 text-amber-800'

@@ -103,3 +103,16 @@ test('엔진이 부착 노드를 못 찾아 뺀 장비 질량은 검토 필요 (
   assert.equal(v.reasons[0].code, 'mass-excluded');
   assert.match(v.reasons[0].text, /장비 1건/);
 });
+
+test('엔진 검증 표시에 사람이 볼 것이 남으면 검토 필요, 옛 엔진(파일 없음)·none 은 그대로 통과', () => {
+  const summary = summaryOf(stage());
+  const review = { status: 'required', unitCount: 2, units: [
+    { id: 1, kind: 'floating_group', state: 'pending' }, { id: 2, kind: 'auto_rbe_assembly', state: 'pending' }] };
+  const v = computeModelBuilderVerdict({ jobStatus: 'Success', summary, review });
+  assert.equal(v.level, 'review');
+  assert.equal(v.reasons.at(-1).code, 'review-required');
+  assert.match(v.reasons.at(-1).text, /검증 필요 2건/);
+  assert.equal(computeModelBuilderVerdict({ jobStatus: 'Success', summary }).level, 'pass');
+  assert.equal(computeModelBuilderVerdict({ jobStatus: 'Success', summary,
+    review: { status: 'none', unitCount: 0, units: [] } }).level, 'pass');
+});

@@ -18,6 +18,7 @@ import httpx
 
 from .. import models
 from . import logbook_integration as lb
+from .bdf_deck_check import MB_REVIEW_PENDING, read_mb_review_marker_file
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +193,11 @@ def list_files(resolved: dict) -> dict:
                     "role": role,
                     "drm": _is_drm(path),
                 })
+                # Model Builder 가 만들고 사람이 아직 검토하지 않은 BDF — 보내기는 막지 않고 화면이 알린다(MB 계획서 6단계)
+                if fn.lower().endswith(_BDF_EXTS) and not files[-1]["drm"]:
+                    review = read_mb_review_marker_file(path)
+                    if review and review["status"] in MB_REVIEW_PENDING:
+                        files[-1]["mbReview"] = review
                 count += 1
             if count >= MAX_LIST_FILES:
                 break
@@ -306,6 +312,13 @@ def bulk_title(record, model_path: str | None, *, has_wire: bool = True) -> str:
     return f"{label} {kind} · WB #{record.id}"[:200]
 
 
+def mb_review_warning(review: dict) -> str:
+    """검증 안 된 Model Builder 모델 경고 한 줄(화면 utils/mbReview.js 문구와 같은 뜻)."""
+    if review.get("status") == "MANUAL":
+        return f"Model Builder 검토에서 손으로 고칠 것 {review.get('items', 0)}건이 남은 모델입니다"
+    return f"검증 안 된 Model Builder 모델입니다 — 엔진이 대신 정한 것 {review.get('items', 0)}건을 사람이 아직 확인하지 않았습니다"
+
+
 def bulk_plan_item(record, resolved: dict, files_available: bool) -> dict:
     """기록 1건의 보내기 계획 → {id, ok, reason, title, model, files:[{path,size}], totalBytes, hasWire, hasResult, warnings}.
     Wire 모델이 없는(구조 해석 전) 기록도 원본 모델만 보낸다 — LogBook 에서 Wire 유무를 보고 정리한다(2026-11-06 사용자 요청)."""
@@ -327,6 +340,9 @@ def bulk_plan_item(record, resolved: dict, files_available: bool) -> dict:
     if not has_wire and not model:
         return {**base, "reason": "보낼 모델이 없습니다(Wire 모델·원본 BDF 모두 없음)"}
     warnings = list(rec["missing"]) if has_wire else ["Wire 모델 없음 — 구조 해석 전 원본 모델만 보냅니다", *rec["missing"]]
+    review = next((f.get("mbReview") for f in listing["files"] if f["path"] == model), None) if model else None
+    if review:
+        warnings.append(mb_review_warning(review))
     paths = list(dict.fromkeys(([model] if model else []) + rec["wire"] + rec["result"]))
     total = sum(sizes.get(p, 0) for p in paths)
     # 1건 보내기 API 의 한도를 미리 본다 — 넘으면 보낼 때 422/413 으로 실패한다

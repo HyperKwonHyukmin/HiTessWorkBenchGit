@@ -601,3 +601,18 @@ def test_program_users_distinct_per_program(switchable_client, db_session, user_
 def test_program_users_requires_admin(switchable_client):
     switchable_client.as_user()
     assert switchable_client.get("/api/admin/projects/program-users").status_code == 403
+
+
+def test_files_and_bulk_plan_flag_unreviewed_model_builder_bdf(switchable_client, db_session, user_conn):
+    """MB 계획서 6단계 — 검토 안 된 Model Builder BDF 는 파일 목록에 mbReview, 여러 건 계획에 경고(막지 않음)."""
+    root = _work(user_conn, "20261008_090000_EMP001_GroupModuleUnit", {
+        "3700_m01.bdf": b"$ HiTessModelBuilder: HullNo=3700\n$ HiTessModelBuilder: Review=REQUIRED Items=7\nSOL 101\nCEND\n",
+        "other.bdf": b"$ HiTessModelBuilder: Review=NONE Items=0\nSOL 101\n",
+    })
+    a = _analysis(db_session, input_info={"bdf_model": str(root / "3700_m01.bdf")}, created_at=datetime(2026, 10, 8))
+    files = {f["rel"]: f for f in switchable_client.get(f"/api/admin/projects/{a.id}/files").json()["files"]}
+    assert files["3700_m01.bdf"]["mbReview"] == {"status": "REQUIRED", "items": 7}
+    assert "mbReview" not in files["other.bdf"]
+    item = switchable_client.post("/api/admin/projects/logbook/plan", json={"ids": [a.id]}).json()["items"][0]
+    assert item["ok"]
+    assert any("검증 안 된 Model Builder 모델" in w and "7건" in w for w in item["warnings"])
