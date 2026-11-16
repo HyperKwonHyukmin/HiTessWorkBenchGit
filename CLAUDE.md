@@ -781,6 +781,52 @@ CalcVerify 끝에 `Sn_Top,Sn_Bottom` 이 붙었다. 이 칸이 없는 옛 결과
   사용 설명서 = `outputs/MF-manual/MooringFitting_사용설명서_문서버전04.pdf`(2026-11-04, 문장 다듬기·내부 동작 설명 정리). 같은 폴더의 문서버전03 은 DRM 잠금으로 못 옮겨 `이전본\` 에 복사만 했다.
 - **남은 일 (2026-11-04 갱신)** — ① 커밋: 엔진(MooringFitting, 로컬 git·원격 없음)·Studio(MooringFittingStudio, 로컬 git, 스냅숏 `6b323e9` 이후 0.1.74~0.1.87 전부) 미커밋. WorkBench 는 `79eff65` 로 대부분 커밋됐고, **해석 뒤 WorkBench 판정**(백엔드 `solve-summary` API·`mooring_solve.summary.json`, 프론트 `MooringFittingAssessment.jsx`·`mooringVerdict.js`, 테스트)만 미커밋 — 커밋 전 `hitess-code-reviewer` 1회, 반영은 145 재시작 + exe 릴리스(설명서 03·04 에 이미 적힌 동작). ② 145: 엔진 exe(sha256 f9105a0b…) 교체 확인. OP2 받기는 1.7.0 exe 부터. ③ 실제 ton 단위 Winch 가 든 CSV 로 3445·3496 계산서와 다시 비교(이번 비교는 테스트 CSV Winch 가 kN 값이라 무효) — ±15% 안에 들어오기 전에는 공식 판정 발행 금지. ④ 보고서 'ASSESSMENT ON HOLD' 경로·chock 새 문구가 든 보고서는 실제로 열어 보지 않음. ⑤ 결과 JSON propertyId ≠ BDF PID(잠재, 미수정).
 - **기존 제출 계산서 비교 (같은 날, 에이전트)** — 3445 AFT(SeaTrust-Frame3D) = C04, 3496 FORE(Nauticus 3D-Beam) = C02. 하중 크기는 Bollard·Roller 1.00(3496 은 SF 1.15 라 1.087). **응력은 대부분 1.4~4.5배 높게 나와 ±15% 재현 못 함.** 주원인 후보: PLATE below 면재 90×10 고정(실제 150×16 등) · 갑판 두께 10 mm 고정(CSV 12.5) · 등급을 보강재·부착판 중 낮은 쪽(계산서는 보강재 HT32 315) · SF 1.25 고정(3496 은 1.15) · Chock 두 가닥 합력·수직+수평 동시(계산서) vs P 하나 따로(도구) · Roller 각도 해석 차(F08 0.38배, S04 방향 반대). Towing·ETS 케이스·fairlead 행 없음. 원문 추출 `scratchpad/bench`(세션 한정).
+- **부식 마진 반영 (2026-11-12, 엔진·백엔드·Studio 0.1.88, 70 만·미커밋)** — 구조 CSV 2번째 줄 `corrosion,값`(mm, 양면 합계 tc)을 엔진이 모든 판 두께(웹, 면재, 부착 갑판, PLATE 판)에서 한 번 뺀다(높이와 폭 그대로, 강성과 응력 모두 순두께). 예전에는 이 줄을 버려 총두께 판정이었다.
+  값은 CSV 그대로, IACS UR A2.4 최소 2.0 mm 미만이면 경고만(사용자 결정). 공제 원본 = `MODEL_EVIDENCE caseFacts.corrosionMm/corrosionSource`(없으면 옛 결과 = 총두께).
+  ⚠ 백엔드 `mooring_row_edit._new_dims` 와 Studio `rowDims` 도 같은 tc 를 빼야 한다 — 빠지면 '이 행 단면' 검사가 모두 거짓이 되어 크기 편집이 조용히 건너뛰어진다. Studio 는 상단 칩과 Model 탭에 지정 값을 보인다.
+- **구조도 표기 단면 이름 (2026-11-12, 현업 신고 3번, 엔진·Studio 0.1.90, 70 만·미커밋)** — 보고서 6장 표와 Studio 정보 패널의 단면 이름을 CSV 값으로 되짚어 쓴다:
+  ANGLE `150x90x12 UA`(두께가 다르면 `13/17`, 사용자 결정) · TBAR `200x12+100x10 (T)` · FLATBAR, PLATE `600x11 FB`. 갑판은 빼고 두께는 부식 마진을 더한 총두께.
+  예전 `FB 613x25`·`I 163x90x12/12` 는 갑판 두께가 높이에 더해져 어떤 부재인지 몰랐다. 원본 = 엔진 `ProfileInfo.ShortLabel`(행 종류 = 출신 기록 rawKind), 사본 = Studio `utils/shipLabel.js`(한쪽을 고치면 양쪽 다).
+  보고서 표의 'Section'·'Size' 칸은 줄을 접지 않는다(`ReportSheet.NoWrap` — 접으면 `250x90x10/1` 처럼 숫자 가운데서 끊겼다).
+  같은 신고의 2번(면재 누락)은 CSV `PLATE below` 행에 면재 칸이 없어서 생긴 입력 문제로 회신, 5번(부재 나누기, 새 부재)은 미착수.
+- **부재 분할 · 부재 추가 (2026-11-12, 같은 신고 5번, bridge·백엔드·엔진 보고서·Studio 0.1.91, 70 만·미커밋)** — 11-03 '노드 편집은 MF 에 넣지 않는다' 결정을 이 두 가지에 한해 바꿨다(BDF 전용 수정).
+  bridge intent `splitElement { elementId, newNodeId, newElementId, ratio | x,y,z }` · `addElement { elementId, startNode, endNode, refElementId, propertyId?, grades? }`(MB·MU 와 같은 이름).
+  ⚠ 70 백엔드는 `WorkBenchSubModule/Nastran_bridge` 사본을 import 하고 145 는 InHouse 사본을 쓴다 — bridge 를 고치면 두 사본을 같게 둘 것.
+  ⚠ 해석 BDF(`_build_solvable_edited_bdf`)는 출처(reinforceOf / splitOf / addedFrom) 없는 새 요소를 만나면 멈춘다(예전엔 조용히 건너뛰어 화면의 부재가 해석에서 빠질 수 있었다).
+  계획과 상태 = `docs/plans/2026-11-12-mf-split-add-member-plan.md`.
+- **해석할 하중 범위 (2026-11-12, 같은 신고 4번, 엔진·백엔드·WorkBench 프론트, 70 만·미커밋)** — `build-full --loads=all|mf|winch`(엔진 `Commands/LoadScope.cs`).
+  winch = 구조 CSV 의 MF 행을 쓰지 않음(MF 받침 RBE 도 안 만듦, MF 행을 지운 것과 같다) · mf = Winch 하중 케이스를 비움. 고른 범위에 하중이 없으면 exit 2.
+  백엔드: 요청 `load_scope` Form, Load CSV 는 mf 일 때만 생략 가능(주석 한 줄 빈 파일을 대신 둔다), `input_info.load_scope`(재실행 이어받음).
+  ⚠ 옛 엔진은 `--loads` 를 조용히 무시해 전체로 풀리므로 `engine_supports_load_scope`(사용법 출력에 `--loads=`)가 거짓이면 실행하지 않고 '엔진 교체 필요' 로 실패한다.
+  진단 `LOAD_SCOPE`(범위로 뺀 하중을 '입력 없음' 으로 말하지 않음), 보고서 1.2 에 범위 문장, `caseFacts.loadScope`. 화면 = 왼쪽 레일 '해석할 하중' [전체 | MF 만 | Winch 만](`utils/mooringLoadScope.js`).
+  확인: NewCase_04 all 58 = mf 18 + winch 40 하중, 백엔드 작업 함수로 실제 exe 실행. WorkBench 화면은 눈으로 확인 안 함(빌드만). 사용 설명서(MF-manual)의 '별도 해석 불가' 문장은 아직 옛 내용.
+- **MB·MU 뷰어 규칙 들여오기와 전반 검토 (2026-11-12~13, Studio 0.1.93~0.1.97, 70 만·미커밋)** — 판정과 근거 = 싱크 대장 24~46번(`docs/standards/studio-pair-sync.md`).
+  0.1.93~0.1.94: 노드 = 화면 고정 구(Edit 탭은 늘 켬, 다른 탭 기본 끔) · 편집으로 카메라가 돌아가지 않음 · 새 노드와 나눈 조각 표시(`three/MemberEditOverlay.js`) · 작업 패널 결과 줄 · 선택 = 흰색 · 알림 칩.
+  0.1.95(헤드리스 1600, 1280 캡처로 전 탭 검토): 작업 패널 = 왼쪽 아래, 범례 = 아래 오른쪽 · **Edit 에 들어오면 아래 도크의 하중 표는 접고 Loads 에서 다시 폄**(구조 CSV, 결과 표는 그대로) ·
+  노드 크기 자동 맞춤(`NodeMesh.fitNodePx`)과 하중 화살표 머리 30px 상한(`three/arrowFit.js`) · 작업 패널 중 오른쪽 클릭 = 빼기 · 되돌리기로 없어진 노드를 고르던 칸에서 자동으로 뺌(`store/pruneOnEdit.js`) ·
+  RBE 연결 이름표(독립, 종속, 빠짐, 새 독립 노드) · 앱 안 확인 창(`ConfirmDialog`·`useConfirmStore` 는 MB·MU 와 `same`).
+  0.1.96: **누른 대상의 말풍선이 그 대상 옆에 고정**(`three/pinnedTip.js` — 3D 점에 묶여 화면을 돌려도 따라옴, 부재는 정응력과 전단, 판정 줄 추가, Esc 나 다른 곳 클릭으로 거둠). 마우스를 올리는 말풍선은 그대로.
+  0.1.97(2026-11-13, 사용자 요청 'RBE 추가와 제거, 다른 Edit 패널도 MU 컨셉으로'): **Edit 작업 패널을 MU 방식으로** — RBE 연결은 고른 노드를 줄로 보이고(좌표, 경계조건, 다른 RBE 꼬리표, [보기], [×]),
+  3개 이상이면 [중심에 새 독립 노드 | 고른 노드를 독립으로], 독립은 줄 클릭이나 3D Alt+클릭(규칙 `utils/rigidCheck.js` `connectShape`, 서버 변경 없음 — bridge 가 `independentNode + dependentNodes[…]` 를 이미 받음).
+  RBE 수정과 삭제는 진행 단계, 번호로 고르기, 번호 칩, [처음 상태로]. 3D 색 = 독립 주황, 종속 파랑, 넣을 노드 초록, 뺄 노드 빨강(`data/rigidEditColors.js` 는 MB, MU 와 `same`).
+  **부재 추가의 단면을 목록에서 찾기**([참조 부재 누르기 | 단면 목록에서 찾기] — 고르면 새 부재 자리에 가장 가까운 같은 단면 부재가 참조, `utils/propertyChoices.js`, 서버 규칙 그대로).
+  Edit 탭에서 노드가 보이는데 눌러 고를 수 없던 결함(0.1.94~0.1.96, 노드 레이어 기본 끔의 부작용)도 고침.
+  확인: Studio 시험 79, lint, 빌드, 헤드리스 동작 검사(말풍선, Alt+클릭, 오른쪽 클릭은 실제 마우스로), 1600과 1280 캡처. WorkBench 앱 안 화면은 확인 안 함. 0.1.97 zip 은 70 로컬에 저장하고 직접 열어 확인(그때 9091 이 꺼져 있어 manifest 주소는 확인 안 함).
+  0.1.98(2026-11-16): 분할 조각과 새 부재가 3D 단면에서 하늘색으로 따로 그려지던 결함 — 화면용 모델(`data/editedStage.js`)이 새 노드·조각·새 부재를 연결 그룹에 넣지 않아 그룹 0(기본색, 그룹 숨기기 무시)이었다. 조각·새 노드 = 나눈 부재의 그룹, 새 부재 = 시작 노드 → 끝 노드 → 참조 부재의 그룹. 시험 `data/editedStage.test.js`, 사용자가 70 앱에서 노란색 확인.
+  **145 공개 준비 (2026-11-16)**: 릴리스 표 0.1.87 → **0.1.98**(`32929e3`, UNC 업로드 검증 MATCH — dist 를 메모리에서 묶어 UNC 에 직접 씀, 출처 release 폴더는 0.1.94 에서 멈춤) ·
+  MF 백엔드와 화면 커밋 `19cda8b`(커밋 전 리뷰 반영: 참조 복사 클론 등급은 grades.json 에 넣지 않고 엔진 reinforceOf 상속에 맡김 — 행 등급 편집을 따라가게) · **WorkBench 1.7.25**(`424f4f9`, '해석할 하중' 화면) ·
+  업데이트 안내 `/updates/2026-11-16-mf-field-requests` · 현업 회신 메일은 Outlook 초안만(발송은 사용자, 145 반영과 exe 배포 뒤).
+  145 순서 = ⟳ Update + 백엔드 재시작 → InHouse `MooringFitting.exe`(sha256 7cfb7d9a…)·`NastranBridge/nastran_bridge.py`(9d442686…) 수동 교체 → exe 1.7.25 배포. 전부 사용자 몫, 아직 안 함.
+  ⚠ 안내와 메일의 부재 추가 그림은 0.1.98 이전 캡처를 잘라 하늘색 결함 부분을 뺐다. MF 엔진(`MooringFitting`)과 Studio 저장소의 0.1.98 이후 커밋은 아직 없음(로컬 스냅숏 `93b6ee5`·`0174b89` 이후 미커밋).
+  남은 결정: 노드 자동 맞춤을 MB·MU 로 옮길지.
+  **설명서 패널 (2026-11-16, MF 0.1.99 · 릴리스 표 0.1.99 `362889a` · Studio 로컬 커밋 `82b693b` · 설명서와 배너 `947f2aa`)** — MB, MU 와 같은 방식. 업데이트 안내에 6번 구획 추가.
+  설명서 **문서버전 05**(기준 0.1.98): 부식 마진, 구조도 표기, 해석할 하중, 부재 분할과 추가 쪽 신설(`split`), RBE 연결과 수정 새 패널, 고정 말풍선, 문제 해결 4줄. 샘플은 지금 엔진으로 다시 만들어(`solve_mf.py` 는 **절대 경로**로 — 스크립트가 먼저 chdir 한다, 뷰어 자료에 corrosion 추가) Studio 화면 전부 다시 찍음. 옛 그림·자료 = `MF-manual/source/hi_bak_0187`·`data_bak_0187`.
+  WorkBench 캡처는 입력 화면만 새로(`CLIPS` 환경 변수로 자를 범위 — 값이 파일에 없다, 입력 화면 = `{"x":284,"y":176,"width":1274,"height":566}`), 나머지는 옛 그림 그대로.
+  `publish.py MF` → 백엔드 `Manuals/mooring-fitting/`(git 추적) + Studio `public/manual/`. Studio: `components/help/ManualDock.jsx`(MU 사본, 도크 폭 상수만 MF) · `data/manualSections.js`(+시험, 탭 → 쪽 id) · `useHelpStore`(MU 판, 키 `mf.manualDock.v1`) · 상단 탭 줄 뒤 [설명서](`.ribbon-manual`) · 도움말 창 '사용 설명서' · 3D 가 640px 미만이면 도구줄 아이콘만(container query).
+  WorkBench MF 배너 `StudioManualButton manualId="mooring-fitting"`(다음 exe) · `test_manuals` 에 MF 추가. 헤드리스로 패널 열기와 탭 따라가기(`#loads`) 확인, WorkBench 앱 안은 확인 안 함.
+  145 반영 = ⟳ Update(설명서, 안내, 릴리스 표 — 사용자 몫) → 다음 exe(배너 버튼). 설명서 기준 버전은 0.1.99 로 맞춤(커밋 전 리뷰).
+
+  계획, 비교 결과, 남은 일 = `docs/plans/2026-11-12-mf-corrosion-margin-plan.md`. 70 InHouse exe 백업 `.bak_20261112_before_corrosion`. 145 순서 = 백엔드 pull+재시작 → exe 교체 → `/studio-release mooring-fitting-studio`.
 - **구조 CSV 탭 (Studio 0.1.82, 0.1.83 원문 시트로)** — 아래 도크 '구조 CSV': CSV 원문을 줄·칸 그대로(행 = 파일 줄 = 엑셀 행 번호, 열 = A, B, C…, 머리글·corrosion·MF 줄 포함, 편집 예정 칸은 새 값 강조) + 오른쪽 고정 '모델 대응'(조각 수·상태·고치기). 원문은 백엔드가 `csv_rows.json` 의 `lines`(`mooring_row_edit.read_csv_lines`)로 싣는다 — 옛 백엔드면 부재 행만 보이고 안내가 뜬다. MF 줄 클릭 = 그 좌표에 가장 가까운 절점으로. 행 클릭 = 그 행 조각 전부 선택 + 행 양 끝으로 카메라, 3D 부재 클릭 = 그 행 강조, [고치기] = Edit 단면·재질로. 상태 = 정상/편집됨/다른 행 단면/모델에 없음(샘플 5행 — 같은 좌표의 다른 행과 합쳐짐 등). MB CSV 탭의 제외 행 상자·끊김 표시는 MF 에 쓸 일이 없어 넣지 않았다. 규칙 `utils/csvTable.js`+테스트. PLATE below 칸 대응(Width = POS1–POS2 길이라 미사용, Height = 웹 높이, THK = 웹 두께, 면재 90×10·갑판 유효폭은 엔진 가정)은 사용자 정의와 일치 확인 ② 해석 중 전체 화면 안내(`SolveProgressOverlay`, Esc = 뒤에서 계속 → 창 맨 위 진행 막대, 상단 '해석 중' 누르면 다시 펼침) ③ 단면·재질 작업 패널에 단면 그림 — 입력칸 번호 ↔ 그림 부위, 바꾸면 점선(지금)/채움(바뀔 단면) 비교 + PBEAML 치수 변화 ④ 결과 색이 안 보이던 것 — 빨간 절점 1,900개가 1px 부재 색을 덮었다(MU 와 같은 교훈) → 결과 표시 중 절점 회색·반투명, 해석 완료 시 07 단계·색 표시를 켠다. 탭에 따라 색이 안 입혀지는 현상은 재현 못 함(어느 탭이든 색은 입혀짐을 확인). 개발 모드에서 3D 첫 화면이 비던 원인 = StrictMode 재마운트 때 정리 코드가 예약 번호를 비우지 않아 다시 그리기가 막힘(배포본 무관, 수정).
 - 사용자 결정: **다크 전용**(라이트 토글 삭제, MB·MU 와 같음) · MF 전용 탭 이름 `Loads` 유지. 셸 CSS `zoom`(useUiScale)은 배율이 두 번 곱해지는 문제(MU 0.0.148 기록)로 걷고 미디어쿼리로 바꿨다.
 - 3D: 직교(기본)/원근 · 노드 = 화면 고정 4px 점(고르기는 `three/screenPick.js` 화면 거리) · 호버 말풍선 · Shift+드래그 사각형 · 선택 필터 · 선택만 보기 · 잘라 보기 · X-ray · 찾기(Ctrl+F, `data/findEntity.js` 는 MB 원본 무수정 사본 — 한쪽 고치면 세 곳) · Model Check 진단 표식.
@@ -1336,7 +1382,7 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
   '얼마나 읽었는지'(깊이, 머문 시간, 구획)와 전후 실행 비교는 화면에 넣지 않는다(사용자 결정).
 - ★ **"업데이트 안내 써줘" = Claude 가 쓴다**: `git log`와 `changelog.json` 으로 바뀐 것을 확인 → `updates.json` 맨 앞에 한 항목
   (`id` = `YYYY-MM-DD-영문주제`, `date`, `app` = 화면에 보일 App 이름, **`programs` = App 분류** = User Management 'App 사용자' 필터와 같은 `Analysis.program_name` 키(빠지면 명단을 못 셈), `version`, `title`, `summary`,
-  `sections[{id, heading, body|steps|points|image|note}]`) → 필요하면 헤드리스 Chrome 캡처를 `img/` 에 → 페이지 캡처로 모양 확인 → 보여 주고 확인받은 뒤 커밋.
+  `sections[{id, heading, body|facts|steps|points|image|images|note}]`) → 필요하면 헤드리스 Chrome 캡처를 `img/` 에 → 페이지 캡처로 모양 확인 → 보여 주고 확인받은 뒤 커밋.
   그 기능의 `changelog.json` 항목에 `"page": "<안내 id>"` 를 달면 Update History 에 '사용자 안내 페이지' 단추가 생긴다(`test_changelog_pages_point_to_real_entries`).
   사용자 눈높이로 쓴다(내부 파일명, 버전 경과 금지). **사용 방법이 바뀌는 기능만** 안내하고, 작은 수정은 `changelog.json` 에만.
   Studio 기능의 App 분류 = 그 Studio 를 여는 App(MU Studio = `GroupModuleUnit`).
@@ -1344,8 +1390,12 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
 - 페이지 왼쪽 'App 별로 보기'(전체 + App 별 안내 수, 고르면 목록과 이전·다음이 그 App 안에서만). 고른 App 은 주소에 남지 않는다.
   통계 표와 앱 안 창에 주소 [복사]·[열기] — 복사 주소는 사내 브라우저용 `http://…:9091/updates/<id>`(`api/updates.js` `updateShareUrl`).
 - 상태(2026-11-12): 커밋 `fdd3cef`·`57057db`·`16663fd`, **WorkBench 1.7.20**(`fad582a`)에 포함. 145 ⟳ Update + **재시작**(새 라우터와 표) → exe 배포는 사용자 몫.
-  ⚠ **145 확인용 시험 안내 3건**(`2026-11-12-test-*`, `test: true`, 제목 [시험])이 아직 `updates.json` 에 있다 — 145 확인이 끝나면 지운다
-  (공개 페이지 맨 앞에 보이고, 통계의 '안 본 사람 메일 복사'에 실제 사용자가 잡힌다).
+  통계 표 = App 마다 최신 안내 한 줄, 이전 안내는 '이 App 의 이전 안내 N건' 으로 펼침(`groupEntriesByApp`, `7c64518` · 1.7.22 `da9f892`).
+  **미커밋(같은 날 끝)**: 표 맨 앞 'App' 칸(굵은 App 이름 + 이전 안내 단추), '안내' 칸은 제목과 날짜만, 상세 제목 앞 App 이름표 — `UpdateStatsPanel.jsx` 한 파일, 빌드와 임시 캡처만 확인, 커밋 전 리뷰와 exe(1.7.23) 남음.
+  **첫 실제 안내 = 2026-11-16 Mooring Fitting 현업 요청 5건**(`c03cc23`, 사용자 지시 '이거부터 시작') — 시험 안내 3건과 본격 작성 전 MU 안내 2건(11-11, 11-12)은 지웠다.
+  작성 기준(같은 날 사용자 지적): 항목마다 `facts` 표(무엇이 바뀌었나 / 어디서 보나 / 결과에 미치는 영향)를 두고, 화면 그림은 **위치를 상자, 번호로 표시**해 넣는다(원본 캡처 그대로 넣으면 칩 같은 작은 요소를 못 찾는다).
+  그림은 Pillow 로 원본(`HiTessWorkBenchBackEnd/UpdateNotice/`, 사용자가 둔 캡처)을 잘라 주황 상자와 번호를 얹는다. 회신 메일과 같은 번호를 제목에 붙인다.
+  ⚠ 390px 확인은 헤드리스 Chrome `--window-size=390` 으로 하지 말 것 — 창이 그보다 좁아지지 않아 글이 잘린 것처럼 찍힌다. 390px iframe 에 넣어 찍는다.
   확인 안 함: 대시보드 줄, 앱 안 창, 통계 명단, 복사·열기 단추를 눈으로 본 적 없음(개발 앱에서 통계 표가 나오는 것만 사용자 확인). 앱 안 창을 닫는 순간의 머문 시간 기록은 전달되지 않을 수 있다(화면에서 안 씀).
 - **릴리스를 커밋된 상태로 빌드한 방법(2026-11-12, 1.7.20)** — 작업 폴더에 다른 세션의 미커밋 변경(진행 중 DrawingToAnalysis)이 있으면 exe 에 섞인다.
   `git worktree add --detach C:\Coding\WorkBench-release HEAD` → `node_modules` 3곳과 `WorkBenchEnv` 를 junction 으로 연결 → 그 폴더에서 `release.ps1 -Bump -BuildOnly -Yes`
