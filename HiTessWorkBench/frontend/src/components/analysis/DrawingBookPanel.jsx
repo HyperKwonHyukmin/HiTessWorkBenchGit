@@ -41,6 +41,7 @@ function useAuthedImage(url, enabled) {
 
 const STATE_TEXT = {
   ready: 'text-emerald-700 font-semibold',
+  params: 'text-emerald-700 font-semibold',
   drawing: 'text-slate-500',
   excluded: 'text-slate-400',
 };
@@ -134,6 +135,7 @@ function DetailPanel({ item, onRun, onEdit, running, bookAvailable }) {
     ready: hasParams
       ? '미리 변환해 둔 치수로 형상을 보고, 필요하면 치수를 고친 뒤 해석합니다. 메시는 해석 실행 때 만듭니다.'
       : '새 엔진이 이 도면의 치수를 읽어 해석 모델과 하중 케이스까지 만듭니다.',
+    params: '도면에서 읽은 값이 아니라 사람이 도면을 보고 적어 둔 치수입니다(자중으로 대조). 형상을 보고 치수를 확인한 뒤 해석하세요.',
     drawing: '이 계열은 아직 자동 변환 템플릿이 없습니다. 변환하면 "지원하지 않는 형식" 으로 끝날 수 있습니다.',
     excluded: '구매품·반목처럼 구조 해석 대상이 아닌 부재입니다.',
   }[st.id];
@@ -168,14 +170,16 @@ function DetailPanel({ item, onRun, onEdit, running, bookAvailable }) {
             >
               <Box size={14} /> 형상 보고 치수 고치기
             </button>
-            <button
-              type="button"
-              onClick={() => onRun(item)}
-              disabled={running || !bookAvailable}
-              className="w-full text-[12px] text-slate-600 hover:text-[#002554] disabled:text-slate-400"
-            >
-              도면에서 다시 읽어 바로 변환
-            </button>
+            {item.convertible && (
+              <button
+                type="button"
+                onClick={() => onRun(item)}
+                disabled={running || !bookAvailable}
+                className="w-full text-[12px] text-slate-600 hover:text-[#002554] disabled:text-slate-400"
+              >
+                도면에서 다시 읽어 바로 변환
+              </button>
+            )}
           </>
         ) : (
           <button
@@ -344,7 +348,7 @@ export default function DrawingBookPanel({ onRun, onEditParams, running = false 
 
           <label className="flex items-center gap-2 text-[12px] text-slate-700 cursor-pointer">
             <input type="checkbox" checked={convertibleOnly} onChange={(e) => setConvertibleOnly(e.target.checked)} className="accent-[#002554]" />
-            바로 변환되는 것만
+            해석할 수 있는 것만
           </label>
         </aside>
 

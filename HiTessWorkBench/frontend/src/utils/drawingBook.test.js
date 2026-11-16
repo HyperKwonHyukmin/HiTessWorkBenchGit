@@ -82,3 +82,9 @@ test('상자 → 큰 그림 viewBox (small 은 쪽 높이 2~54%)', () => {
   assert.equal(figureViewBox([0, 0, 1, 1]), '0 16.8 595 437.8');
   assert.equal(figureViewBox([0.5, 0.5, 1, 1]), '297.5 235.8 297.5 218.9');
 });
+
+test('bookItemState: 자동 읽기는 안 되지만 손 치수 파일이 있으면 "치수로 해석", 거르기에도 들어간다', () => {
+  const t = { code: 'T-30', aliases: ['T-30'], analysable: true, convertible: false, params: 'params/T-30.json' };
+  assert.deepEqual(bookItemState(t), { id: 'params', label: '치수로 해석', canRun: false });
+  assert.deepEqual(filterBookItems([t], { convertibleOnly: true }).map((i) => i.code), ['T-30']);
+});

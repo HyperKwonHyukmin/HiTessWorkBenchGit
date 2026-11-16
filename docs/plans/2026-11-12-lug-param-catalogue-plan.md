@@ -46,7 +46,28 @@
 | 3 | 백엔드: 표준집 치수 조회, 치수 → 형상(모듈 import), 해석 실행(설계 JSON → `lugshell --design`) | 끝남(11-12): `services/lug_params.py`, 라우트 3개, 시험 `tests/test_lug_params.py` 11건 |
 | 4 | 화면: 표준집에서 고르면 3D 형상 + 치수 표, 고치면 다시 그림, [해석 실행] | 코드 끝남(11-12): `LugParamEditor`, `LugGeometryView`, `utils/lugGeometry.js`. 사용자가 70 앱에서 형상 표시 확인. 아래 '화면 흐름' 추가분은 눈으로 확인 안 함 |
 | 5 | 업로드 PDF 제목으로 표준집 항목 맞추기 | |
-| 6 | 남은 러그 형식(T, TD, A, B 형 등) '치수 → 형상' 추가, 치수는 손으로 채움 | |
+| 6 | 남은 러그 형식(T, TD, A, B 형 등) '치수 → 형상' 추가, 치수는 손으로 채움 | 진행 중(11-12 저녁): T-15~T-50 아래 'T형 진행' |
+
+### T형 진행 (11-12 저녁, 미커밋)
+
+- 엔진 `params/ttype.py`(form `t_type_lug`, VERSION lugparams/0.2), 스키마 면내 α ±90 → **±180**(T/O 러그는 아래까지), 서버, 화면 범위도 ±180.
+- 손 치수 `DrawingBook/params/T-15~T-50.json`(source hand, 자중 −0.3~−1.9%), 색인 붙이기 `scripts/drawing_book_index.py --attach-hand`, 표준집 상태 '치수로 해석'.
+- 메시와 BDF 검증 5종 모두 통과(소스 build_model). 백엔드 시험 50, 프론트 482 통과. InHouse lugparams 다시 내보냄.
+- 엔진 수계산 수정: 바닥까지만 고정한 구역을 lap 으로 보던 것(T 형에서 빈 단면 오류) + 하단 단면에 핀 가로 편심 굽힘 `|Fh·h − Fv·e|`, `|Fv|`.
+  수정 뒤 엔진 회귀 전부 통과(11-12 퇴근 직전 확인).
+- 70 InHouse exe 교체(11-16, sha256 b869e779…, 백업 `.bak_20261112_before_ttype` = b0fc0b5b…).
+- exe + Nastran 끝까지(11-16): T-15~T-50 5종 모두 FATAL 0, 수계산 최대 UC 0.41/0.38/0.45/0.42/0.44. 기존 D-25(0.48), L-25(0.77) 그대로.
+- 앱 첫 시험(11-16) '변환 실패' — 서버는 성공(#3481, 4분 14초)인데 화면 Job Center 조회(`GlobalJobPoller`)가 120회(3분) 제한으로
+  작업을 Failed 로 덮고, 그 실패가 페이지 저장 상태로 전해져 페이지 조회(400회)까지 멈췄다. D-100(3분 22초)도 아슬아슬했다.
+  고침: 전역 조회 최대 30분(`POLLING_POLICY.globalJobMaxRetries` 1200), 시간 초과면 `timeout` 표시와 실제 분을 싣는다(`utils/globalJobs.js` `globalPollErrorPatch` + 시험).
+  변환이 느렸던 원인 = 엔진 `tools/build_model.py` `preview` 가 요소마다 PyMuPDF Shape 를 commit(제곱 시간, T-30 183초 중 173초) → PID 마다 한 번. T-30 exe 178 → 23초, BDF 바이트 동일, 엔진 회귀 전부 통과.
+  70 InHouse exe 다시 교체(sha256 dfef832b…).
+- 결과 화면 정리(11-16, `/design`): 응력 먼저, 케이스 요약 표(`SolveCaseSummary`, `utils/solveResultSummary.js`), 값 표 늘 펼침, 행 클릭 = 3D 가 그 요소로(`ShellModelViewer` `focusRequest`, 이름표).
+- 3D 가 빈 채 결과만 나온 일(11-16 16:49, #3487): 서버 콘솔에 Ctrl+C 가 들어와 bridge 가 0xC000013A 로 죽어 `model_json` 이 빠졌는데 '성공'.
+  고침: 이 서비스의 자식 실행 8곳을 `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` 로(doublepipe_psa 와 같은 방식, 엔진 exe, bridge, Nastran 실제 실행 확인),
+  화면은 모델 JSON 이 없으면 '3D 모델을 만들지 못했습니다' 안내, 왼쪽 확인 패널은 모델 없이도 보임. 반영 = 백엔드 재시작.
+- 다음: 앱에서 T-30 다시 확인 → 리뷰, 커밋.
+  T-5, T-10 은 기울어진 판이라 다른 형식으로 따로.
 
 ## 화면 흐름 (11-12 오후, 사용자 결정)
 

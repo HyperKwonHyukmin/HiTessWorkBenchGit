@@ -375,7 +375,8 @@
    "swl_t": 15.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/T-15.json"
   },
   {
    "code": "T-20",
@@ -392,7 +393,8 @@
    "swl_t": 20.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/T-20.json"
   },
   {
    "code": "T-30",
@@ -409,7 +411,8 @@
    "swl_t": 30.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/T-30.json"
   },
   {
    "code": "T-40",
@@ -426,7 +429,8 @@
    "swl_t": 40.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/T-40.json"
   },
   {
    "code": "T-50",
@@ -443,7 +447,8 @@
    "swl_t": 50.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/T-50.json"
   },
   {
    "code": "TD-30",

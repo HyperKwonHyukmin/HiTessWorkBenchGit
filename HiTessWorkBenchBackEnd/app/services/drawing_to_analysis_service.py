@@ -313,7 +313,7 @@ def lugshell_failure_reason(base: str, stdout_text: str) -> str:
 LUGSHELL_EDIT_LIMITS = {
     "swl_t": (0.1, 2000.0),
     "daf": (1.0, 5.0),
-    "alpha_deg": (-90.0, 90.0),
+    "alpha_deg": (-180.0, 180.0),   # T형 뒤집기 러그는 아래(180)까지 (엔진 스키마도 ±180, 2026-11-12)
     "beta_deg": (-90.0, 90.0),
     "p_kn": (0.1, 100000.0),   # 케이스별 핀 하중 크기(kN) — 표준집 치수 편집 '하중 및 경계' (2026-11-12)
 }
@@ -471,6 +471,14 @@ def apply_lugshell_edits(design: dict, edits: dict) -> tuple[dict, list[dict]]:
                                "status": "user_fixed", "from_text": None, "from_geometry": None, "note": note})
         d["review"] = review
     return d, changed
+
+
+# 자식 프로세스(엔진 exe, nastran_bridge, Nastran)를 서버 콘솔에서 떼어 띄운다 (2026-11-16).
+# 서버 콘솔 창에 Ctrl+C 가 들어오면 서버는 diagnostics 의 guard 가 버티지만, 같은 콘솔의 자식은 함께 죽는다
+# (실례: bridge 가 0xC000013A 로 끝나 모델 JSON 이 빠지고 화면 3D 가 빈 채 '성공'). doublepipe_psa_service 와 같은 방식.
+_SUBPROC_FLAGS = 0
+if os.name == "nt":
+    _SUBPROC_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 
 
 def bridge_model_json_usable(returncode, json_path: str) -> bool:
@@ -778,7 +786,7 @@ def task_execute_drawing_to_analysis(
                 cwd=work_dir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=600,
+                timeout=600, creationflags=_SUBPROC_FLAGS,
             )
         except subprocess.TimeoutExpired:
             status_msg = "Failed"
@@ -877,7 +885,7 @@ def task_execute_drawing_to_analysis(
                         cwd=work_dir,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
-                        timeout=180,
+                        timeout=180, creationflags=_SUBPROC_FLAGS,
                     )
                     bridge_stdout = (bridge_result.stdout or b"").decode("utf-8", errors="replace")
                     bridge_stderr = (bridge_result.stderr or b"").decode("utf-8", errors="replace")
@@ -1087,7 +1095,7 @@ def task_execute_drawing_rebuild(
             try:
                 result = subprocess.run(
                     cmd_args, cwd=work_dir,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600, creationflags=_SUBPROC_FLAGS,
                 )
             except subprocess.TimeoutExpired:
                 status_msg = "Failed"
@@ -1148,7 +1156,7 @@ def task_execute_drawing_rebuild(
             try:
                 result = subprocess.run(
                     cmd_args, cwd=work_dir,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600, creationflags=_SUBPROC_FLAGS,
                 )
             except subprocess.TimeoutExpired:
                 status_msg = "Failed"
@@ -1205,7 +1213,7 @@ def task_execute_drawing_rebuild(
                     bridge_result = subprocess.run(
                         build_nastran_bridge_command(bdf_p, "-o", bridge_json_path),
                         cwd=work_dir,
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180,
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180, creationflags=_SUBPROC_FLAGS,
                     )
                     step("bridge_done", returncode=bridge_result.returncode)
                     if bridge_model_json_usable(bridge_result.returncode, bridge_json_path):
@@ -1772,7 +1780,7 @@ def task_execute_drawing_image_to_analysis(
                         cwd=work_dir,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
-                        timeout=180,
+                        timeout=180, creationflags=_SUBPROC_FLAGS,
                     )
                     step("bridge_done", returncode=bridge_result.returncode)
                     if bridge_model_json_usable(bridge_result.returncode, bridge_json_path):
@@ -2713,7 +2721,7 @@ def _extract_f06_results(solve_dir: str, f06_path: str,
     try:
         r = subprocess.run(
             build_nastran_bridge_command(f06_path, "-o", out_path),
-            cwd=solve_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180,
+            cwd=solve_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180, creationflags=_SUBPROC_FLAGS,
         )
         out = (r.stdout or b"").decode("utf-8", errors="replace").strip()
         err = (r.stderr or b"").decode("utf-8", errors="replace").strip()
@@ -2875,7 +2883,7 @@ def task_execute_drawing_solve(
                 cwd=solve_dir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=900,
+                timeout=900, creationflags=_SUBPROC_FLAGS,
             )
             nas_stdout = (result.stdout or b"").decode("utf-8", errors="replace")
             nas_stderr = (result.stderr or b"").decode("utf-8", errors="replace")

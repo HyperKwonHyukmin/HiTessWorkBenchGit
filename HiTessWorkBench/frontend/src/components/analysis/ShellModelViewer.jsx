@@ -634,6 +634,10 @@ export default function ShellModelViewer({
   valueRange = null,               // [min, max]
   valueLabel = '',                 // 범례 제목 (예: 'von Mises (MPa)')
   valueUnit = '',                  // 값 단위 (예: 'MPa', 'mm')
+  // ── 요소로 가기 (선택적) ── { elementId, nonce } — 값 표 줄을 누르면 그 요소를 고르고 카메라를 옮긴다(2026-11-16).
+  //   같은 요소를 다시 눌러도 다시 가도록 nonce 를 바꿔 보낸다.
+  focusRequest = null,
+  onFocusDone = null,              // 요청을 처리하면 부른다 — 부모가 요청을 지워 뷰어가 다시 떠도 또 가지 않게
 }) {
   const outerRef       = useRef(null);
   const mountRef       = useRef(null);
@@ -1048,6 +1052,7 @@ export default function ShellModelViewer({
     while (highlight.children.length) {
       const cc = highlight.children.pop();
       cc.geometry?.dispose?.();
+      cc.material?.map?.dispose?.(); // 이름표 Sprite 의 글자 텍스처
       cc.material?.dispose?.();
     }
     if (!selectedInfo?.nodes) return;
@@ -1075,7 +1080,61 @@ export default function ShellModelViewer({
       sphere.renderOrder = 1000;
       highlight.add(sphere);
     });
-  }, [selectedInfo]);
+
+    // 이름표 'E3850  255.5 MPa' — 어느 요소인지 화면에서 바로 읽히게(결과가 있으면 값까지)
+    const c = pts.reduce((acc, n) => acc.add(new THREE.Vector3(n.x, n.y, n.z)), new THREE.Vector3()).divideScalar(pts.length);
+    const v = resultField !== 'none' ? elementValues?.[selectedInfo.id] : null;
+    const text = v != null && Number.isFinite(Number(v))
+      ? `E${selectedInfo.id}  ${fmtResultValue(Number(v))} ${valueUnit}`.trim()
+      : `E${selectedInfo.id}`;
+    const { sprite, aspect } = makeFitPillSprite(text, '#ffffff', 'rgba(194,65,12,0.92)');
+    const h = boundsRef.current.maxDim * 0.016;
+    sprite.scale.set(h * aspect, h, 1);
+    sprite.center.set(0.5, -0.4); // 요소 바로 위에 띄운다
+    sprite.position.copy(c);
+    highlight.add(sprite);
+  }, [selectedInfo, resultField, elementValues, valueUnit]);
+
+  /* ── 요소로 가기: 값 표 줄을 누르면 그 요소를 고르고 카메라를 옮긴다 ───────
+     시선 방향은 지금 그대로 두고, 모델 크기의 60% 거리까지 다가간다 — 주변 형상이 함께 보여 '어디인지' 알 수 있다. */
+  const focusAnimRef = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(focusAnimRef.current), []);
+  useEffect(() => {
+    const api = sceneApiRef.current;
+    const id = focusRequest?.elementId;
+    // 모델을 아직 읽는 중이면(장면 없음) 요청을 남겨 두고, 장면이 생기면(shellElements 바뀜) 다시 처리한다
+    if (!api || id == null || !elementMetaRef.current.length) return;
+    const meta = elementMetaRef.current.find((m) => Number(m.element.id) === Number(id));
+    onFocusDone?.();
+    if (!meta || !meta.nodes.length) return;
+    setSelectedInfo({ ...meta.element, nodes: meta.nodes });
+
+    const target = meta.nodes.reduce((acc, n) => acc.add(new THREE.Vector3(n.x, n.y, n.z)), new THREE.Vector3())
+      .divideScalar(meta.nodes.length);
+    const { maxDim } = boundsRef.current;
+    const fromPos = api.camera.position.clone();
+    const fromTarget = (api.controls.target || target).clone();
+    const dir = fromPos.clone().sub(fromTarget);
+    if (dir.lengthSq() < 1e-9) dir.set(1, -1, 1);
+    dir.normalize();
+    const toPos = target.clone().addScaledVector(dir, maxDim * 0.6);
+
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const dur = reduce ? 0 : 450;
+    const t0 = performance.now();
+    cancelAnimationFrame(focusAnimRef.current);
+    const step = (now) => {
+      const t = dur ? Math.min(1, (now - t0) / dur) : 1;
+      const e = 1 - (1 - t) ** 3; // ease-out
+      api.camera.position.lerpVectors(fromPos, toPos, e);
+      api.controls.target?.lerpVectors(fromTarget, target, e);
+      api.camera.lookAt(api.controls.target || target);
+      api.controls.update();
+      if (t < 1) focusAnimRef.current = requestAnimationFrame(step);
+    };
+    // 요청을 지워도(onFocusDone) 이동은 끝까지 간다 — 정리는 다음 요청이나 언마운트 때
+    focusAnimRef.current = requestAnimationFrame(step);
+  }, [focusRequest, shellElements]); // eslint-disable-line react-hooks/exhaustive-deps -- onFocusDone 은 부르기만
 
   /* ── 파라미터 하이라이트 (필드 클릭/포커스 시 굵은 선) ────────── */
   useEffect(() => {
@@ -1455,7 +1514,7 @@ export default function ShellModelViewer({
 
   /* ── 렌더 ─────────────────────────────────────────────────────── */
   return (
-    <div ref={outerRef} className="relative w-full h-full min-h-[520px] bg-[#0a0f1a] overflow-hidden">
+    <div ref={outerRef} className="relative w-full h-full min-h-[300px] bg-[#0a0f1a] overflow-hidden">
       <div ref={mountRef} className="absolute inset-0" />
 
       {/* ── 좌측 상단: 토글 + 통계 ──────────────────────────────── */}

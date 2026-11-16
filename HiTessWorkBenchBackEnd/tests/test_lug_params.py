@@ -161,7 +161,7 @@ def test_run_params_replaces_load_cases(db_session, tmp_path, monkeypatch):
 @pytest.mark.parametrize("cases, msg", [
     ([], "1~8"),
     ([{"id": "x", "alpha_deg": 0, "beta_deg": 90}], "±90"),
-    ([{"id": "x", "alpha_deg": 120, "beta_deg": 0}], "범위"),
+    ([{"id": "x", "alpha_deg": 200, "beta_deg": 0}], "범위"),   # 면내는 ±180 까지(T형 뒤집기 러그)
 ])
 def test_run_params_rejects_bad_cases(db_session, tmp_path, monkeypatch, cases, msg):
     r, _ = _run(db_session, tmp_path, monkeypatch, {"cases": cases})
@@ -223,3 +223,33 @@ def test_run_params_409_when_engine_lacks_design(db_session, tmp_path, monkeypat
     monkeypatch.setattr(svc, "engine_supports_lugshell_design", lambda exe: False)
     r, _ = _run(db_session, tmp_path, monkeypatch, {})
     assert r.status_code == 409
+
+
+def test_hand_params_items_build_and_match_drawing_mass():
+    """사람이 적은 치수(T형 등, source = hand): 색인에 붙어 있고, 형상이 만들어지며 자중이 도면과 3% 안."""
+    items = [i for i in drawing_book.load_index()["items"] if i.get("params") and not i.get("convertible")]
+    codes = sorted(i["aliases"][0] for i in items)
+    assert {"T-15", "T-20", "T-30", "T-40", "T-50"} <= set(codes)
+    for code in codes:
+        pf = lug_params.load_params(code)
+        assert pf["source"] == "hand", code
+        design, info = lug_params.build(pf["form"], pf["values"], code, pf.get("review"))
+        assert info["mass_kg"] == pytest.approx(pf["drawing_mass_kg"], rel=0.03), code
+        assert info["marks"], code
+
+
+def test_t_type_downward_case_allowed(db_session, tmp_path, monkeypatch):
+    """T형은 하중이 아래(α 180)까지 돈다 — 기본 케이스 그대로 해석 요청이 통과한다."""
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.setattr(analysis, "make_work_dir", lambda emp, prog: (str(work), "20261112_160000"))
+    monkeypatch.setattr(analysis, "submit_analysis_job", lambda *a, **k: "job-t")
+    monkeypatch.setattr(drawing_book, "extract_page_pdf", lambda page, dst: None)
+    pf = lug_params.load_params("T-30")
+    r = _client(db_session).post(f"/api/analysis/drawing-to-analysis/book/{_page('T-30')}/run-params",
+                                 json={"employee_id": "OWNER01", "values": pf["values"], "cases": [
+                                     {"id": "LC1_vertical", "alpha_deg": 0, "beta_deg": 0},
+                                     {"id": "LC_NEW1", "alpha_deg": 135, "beta_deg": 0}]})
+    assert r.status_code == 200, r.text
+    d = json.loads((work / "lug_design.json").read_text(encoding="utf-8"))
+    assert [c["alpha_deg"] for c in d["load_cases"]] == [0, 135]

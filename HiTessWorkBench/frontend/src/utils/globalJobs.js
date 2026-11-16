@@ -82,3 +82,25 @@ export function pruneExpiredJobs(jobs, now) {
   const next = jobs.filter((job) => !job.expiresAt || now < job.expiresAt);
   return next.length === jobs.length ? jobs : next;
 }
+
+/**
+ * Job Center 조회(GlobalJobPoller)가 멈출 때 작업에 덧씌울 값.
+ * - 서버가 준 종료 상태(status 있음) = 그대로.
+ * - 조회 시간 초과 = Failed + timeout 표시 + 실제 기다린 분. 페이지가 이 값을 errorData 로 받아
+ *   '변환 실패' 가 아니라 '시간 초과' 로 알리게 한다(2026-11-16 — 4분 걸린 변환이 3분 만에
+ *   근거 없는 'BDF 변환에 실패했습니다' 로 끝난 사고).
+ * - 통신 오류 = Failed + 통신 오류 문구.
+ */
+export function globalPollErrorPatch(err, maxRetries = 0, intervalMs = 0) {
+  if (err?.status) return { ...err, progress: 100 };
+  if (err?.timeout) {
+    const minutes = Math.max(1, Math.round((maxRetries * intervalMs) / 60000));
+    return {
+      status: 'Failed',
+      progress: 100,
+      timeout: true,
+      message: `${minutes}분 동안 끝나지 않아 상태 확인을 멈췄습니다. My Projects 에서 결과를 확인하세요.`,
+    };
+  }
+  return { status: 'Failed', progress: 100, message: '서버 통신 오류 발생' };
+}

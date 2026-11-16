@@ -191,11 +191,40 @@ def write_params(code: str, pdf_page: int, pf: dict) -> None:
     path.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
+def attach_hand_params(items: list) -> int:
+    """자동 읽기가 안 되는 항목에 사람이 적은 치수 파일(source = hand)을 붙인다 (T형 등, 2026-11-12). 붙인 수."""
+    n = 0
+    for it in items:
+        if it.get("params") or not it.get("aliases"):
+            continue
+        path = PARAMS_DIR / f"{it['aliases'][0]}.json"
+        if path.exists() and json.loads(path.read_text(encoding="utf-8")).get("source") == "hand":
+            it["params"] = f"params/{path.name}"
+            n += 1
+    return n
+
+
+def attach_only(out_path: str) -> int:
+    """색인을 다시 만들지 않고(도면집 PDF 없이) 손으로 적은 치수 파일만 붙인다."""
+    idx = json.loads(Path(out_path).read_text(encoding="utf-8"))
+    for it in idx["items"]:  # 지운 손 치수 파일은 떼어 낸다
+        if it.get("params") and not it.get("convertible") and not (PARAMS_DIR.parent / it["params"]).exists():
+            it.pop("params")
+    n = attach_hand_params(idx["items"])
+    Path(out_path).write_text(json.dumps(idx, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"손으로 적은 치수 {n}종을 붙임 → {out_path}")
+    return 0
+
+
 def main() -> int:
+    if "--attach-hand" in sys.argv:
+        return attach_only(str(OUT))
     ap = argparse.ArgumentParser()
     ap.add_argument("book", help="치공구표준집 PDF (평문 — UNC UnLock\\PDF 사본)")
     ap.add_argument("--engine", help="lugshell 폴더 — 주면 쪽마다 변환 가능 여부를 잰다")
     ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--attach-hand", action="store_true",
+                    help="(book 없이) 지금 색인에 손으로 적은 치수 파일만 붙인다: python scripts/drawing_book_index.py --attach-hand")
     a = ap.parse_args()
 
     raw = Path(a.book).read_bytes()
@@ -240,6 +269,8 @@ def main() -> int:
                 item["params"] = f"params/{first}.json"
         items.append(item)
         print(f"b{bp:3d} {first:12s} {gid:16s} {fam or '':4s} {'변환' if item.get('convertible') else ''}", flush=True)
+
+    attach_hand_params(items)
 
     # 검사 — 판이 바뀌거나 열 경계가 어긋나면 여기서 잡는다
     pages = [i["bookPage"] for i in items]

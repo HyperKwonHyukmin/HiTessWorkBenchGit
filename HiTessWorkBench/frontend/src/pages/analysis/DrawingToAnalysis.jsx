@@ -1,7 +1,7 @@
 /// <summary>
 /// DrawingToAnalysis — 설계 도면(PDF) → 구조 해석 모델 변환.
 /// </summary>
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Upload, Play, FileText, Info, Construction, CheckCircle2, RefreshCw, Download, RotateCcw, AlertCircle, Lightbulb, FileSearch, Sliders, MousePointerClick, Cpu, FileCheck2, XCircle, Image, Ruler, ScanLine, ArrowRight, Maximize2, Minimize2, Loader2 } from 'lucide-react';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import { useNavigation } from '../../contexts/NavigationContext';
@@ -14,6 +14,8 @@ import DrawingCatalogueModal from '../../components/analysis/DrawingCatalogueMod
 import DrawingParamsPanel from '../../components/analysis/DrawingParamsPanel';
 import DrawingLoadBcPanel from '../../components/analysis/DrawingLoadBcPanel';
 import SolveResultsPanel from '../../components/analysis/SolveResultsPanel';
+import SolveCaseSummary from '../../components/analysis/SolveCaseSummary';
+import { governingCase, lugCaseLabel, summarizeSubcases } from '../../utils/solveResultSummary';
 import LugshellReviewPanel from '../../components/analysis/LugshellReviewPanel';
 import { useLugParamWork, LugShapeFields, LugLoadsForm, LugWorkView } from '../../components/analysis/LugParamWork';
 import { lugshellLoadArrows } from '../../utils/lugshellEdits';
@@ -188,7 +190,15 @@ export default function DrawingToAnalysis() {
   const [solveError, setSolveError]       = useState(savedPageState.solveError ?? '');
   const [solveResultsJson, setSolveResultsJson] = useState(savedPageState.solveResultsJson ?? null); // 파싱된 F06 결과(변위/응력)
   const [resultSubcaseIdx, setResultSubcaseIdx] = useState(savedPageState.resultSubcaseIdx ?? 0);
-  const [resultField, setResultField]     = useState(savedPageState.resultField ?? 'disp');   // 'disp' | 'vm' 컨투어 필드
+  const [resultField, setResultField]     = useState(savedPageState.resultField ?? 'vm');   // 'disp' | 'vm' 컨투어 필드 — 응력이 먼저(2026-11-16 사용자 요청)
+  // 값 표 행이나 요약 표의 요소를 누르면 3D 가 그 요소로 간다 — { elementId, nonce }(같은 요소를 다시 눌러도 다시 감)
+  //   뷰어가 처리하면 요청은 지운다(뷰어가 다시 떠도 또 가지 않게). 표의 강조는 focusedElementId 가 따로 든다.
+  const [focusRequest, setFocusRequest] = useState(null);
+  const [focusedElementId, setFocusedElementId] = useState(null);
+  const focusElement = useCallback((elementId) => {
+    setFocusedElementId(elementId);
+    setFocusRequest({ elementId, nonce: Date.now() });
+  }, []);
   const currentJobKind = useRef('convert'); // 'convert' | 'rebuild' | 'solve'
   // 표준집 러그 치수 작업 (2026-11-12 통합): 도면 찾기 창은 고르기만, 치수 → 하중 및 경계 → 결과는 이 본창에서.
   //   bookItem = 고른 표준집 항목, bookStep = 왼쪽 단계, centerView = 가운데 [형상 | 해석 결과],
@@ -296,8 +306,9 @@ export default function DrawingToAnalysis() {
       }
 
       // 타임아웃은 useAnalysisJob 이 timeoutLogMessage 로 이미 처리
+      // (Job Center 조회가 먼저 멈춘 경우 그 문구(기다린 분)가 errData.message 로 온다)
       if (errData?.timeout) {
-        const msg = '처리 시간이 초과되었습니다 (10분). PDF 또는 서버 상태를 확인하세요.';
+        const msg = errData.message || '처리 시간이 초과되었습니다 (10분). PDF 또는 서버 상태를 확인하세요.';
         setFailureReason(msg);
         showToast(msg, 'error');
         return;
@@ -933,7 +944,14 @@ export default function DrawingToAnalysis() {
       try {
         const res = await downloadFileText(path);
         const json = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-        if (!cancelled) { setSolveResultsJson(json); setResultSubcaseIdx(0); }
+        // 새 결과는 응력부터, 가장 큰 응력이 난 케이스(지배)를 먼저 보인다
+        if (!cancelled) {
+          setSolveResultsJson(json);
+          setFocusRequest(null);
+          setFocusedElementId(null);
+          setResultSubcaseIdx(Math.max(0, governingCase(summarizeSubcases(json?.analysisResults?.subcases || []))));
+          setResultField('vm');
+        }
       } catch (e) {
         if (!cancelled) { setSolveResultsJson(null); addLog(`결과 JSON 로드 실패: ${e?.message || e}`, 'error'); }
       }
@@ -984,11 +1002,16 @@ export default function DrawingToAnalysis() {
 
     const elementValues = resultField === 'vm' ? elemValuesVm : elemValuesDisp;
     const valueRange = rangeOf(elementValues);
-    const valueLabel = resultField === 'vm' ? '응력' : '변위 |U|';
+    const valueLabel = resultField === 'vm' ? 'von Mises 응력' : '변위 |U|';
     const valueUnit = resultField === 'vm' ? 'MPa' : 'mm';
 
-    return { subcases, idx, dispRows, stressRows, elementValues, valueRange, valueLabel, valueUnit };
-  }, [solveResultsJson, resultSubcaseIdx, resultField, modelData]);
+    // 케이스 요약 표: 케이스마다 최대 응력과 변위. 러그 엔진이면 케이스 각도로 이름(순서 = BDF SUBCASE 순서)
+    const summaryRows = summarizeSubcases(subcases);
+    const lugCases = resultInfo?.lugshell?.cases;
+    const caseLabels = subcases.map((c, i) => lugCaseLabel(lugCases?.[i], i, c.subcaseId));
+
+    return { subcases, idx, dispRows, stressRows, elementValues, valueRange, valueLabel, valueUnit, summaryRows, caseLabels };
+  }, [solveResultsJson, resultSubcaseIdx, resultField, modelData, resultInfo?.lugshell]);
 
   const hasResults = !!resultView;
 
@@ -1606,7 +1629,7 @@ export default function DrawingToAnalysis() {
               </button>
             </div>
           )}
-          {bookItem && bookStep === 'result' && modelData && isLugshell && (
+          {bookItem && bookStep === 'result' && resultInfo && isLugshell && (
             <>
               <LugshellReviewPanel
                 summary={resultInfo?.lugshell}
@@ -1624,7 +1647,7 @@ export default function DrawingToAnalysis() {
           )}
 
           {/* 새 러그 엔진 결과: 확인 항목 + 모델 하중으로 해석 (파라미터 편집·하중 입력 탭 없음) */}
-          {!bookItem && modelData && isLugshell && (
+          {!bookItem && resultInfo && isLugshell && (
             <>
               <LugshellReviewPanel
                 summary={resultInfo?.lugshell}
@@ -1793,8 +1816,21 @@ export default function DrawingToAnalysis() {
             />
           ) : resultInfo ? (
             <div className={`w-full flex flex-col min-h-0 ${bookItem ? 'flex-1' : 'h-full'}`}>
-              {/* 변환 완료 헤더 — 정보 밀도 개선 */}
-              <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-white flex items-center justify-between shrink-0">
+              {/* 해석 결과가 있으면 결과 머리 + 케이스별 최대 응력 표(2026-11-16), 없으면 변환 완료 머리 */}
+              {hasResults ? (
+                <SolveCaseSummary
+                  rows={resultView.summaryRows}
+                  labels={resultView.caseLabels}
+                  selected={resultView.idx}
+                  onSelect={setResultSubcaseIdx}
+                  field={resultField}
+                  onField={setResultField}
+                  stale={!!bookItem && bookStale}
+                  downloads={resultEntries.filter(([key]) => key === 'bdf').map(([, path]) => ['BDF', () => downloadResult(path)])}
+                  onFocusElement={focusElement}
+                />
+              ) : (
+              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100">
                     <CheckCircle2 size={16} className="text-emerald-600" />
@@ -1820,9 +1856,9 @@ export default function DrawingToAnalysis() {
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {modelData
                         ? (isLugshell
-                          ? 'Shell 요소 모델 렌더링 완료 — 좌측 확인 항목을 본 뒤 모델 하중으로 해석'
+                          ? '모델을 만들었습니다. 왼쪽 확인 항목을 본 뒤 해석하세요.'
                           : 'Shell 요소 모델 렌더링 완료 — 좌측 파라미터 편집 후 재구축 가능')
-                        : '모델 JSON을 불러오는 중입니다...'}
+                        : resultInfo?.model_json ? '모델 JSON을 불러오는 중입니다...' : '3D 모델을 만들지 못했습니다.'}
                     </p>
                   </div>
                 </div>
@@ -1840,11 +1876,22 @@ export default function DrawingToAnalysis() {
                   ))}
                 </div>
               </div>
-              <div className="flex-1 min-h-0 relative">
+              )}
+              <div className="flex-1 min-h-0 relative overflow-hidden">
                 {modelLoadError ? (
                   <div className="h-full flex items-center justify-center text-sm text-rose-500 gap-2">
                     <AlertCircle size={16} />
                     {modelLoadError}
+                  </div>
+                ) : !resultInfo.model_json ? (
+                  // BDF → 3D 모델 JSON 변환(nastran_bridge)이 실패한 결과 — 빈 3D 대신 이유와 할 일을 알린다(2026-11-16 실례: 콘솔 Ctrl+C 로 bridge 종료)
+                  <div className="h-full flex flex-col items-center justify-center gap-2 px-6 text-center bg-slate-50">
+                    <AlertCircle size={18} className="text-amber-700" />
+                    <p className="text-[13px] font-semibold text-slate-800">3D 모델을 만들지 못했습니다</p>
+                    <p className="text-[12px] text-slate-600 max-w-md">
+                      BDF 는 만들었지만 화면용 모델 변환이 중간에 끊겼습니다.{hasResults ? ' 표의 값은 그대로 볼 수 있습니다.' : ''}
+                      3D 로 보려면 {bookItem ? '[하중 및 경계]에서 [해석 실행]' : '변환'}을 한 번 더 하세요.
+                    </p>
                   </div>
                 ) : (
                   <ShellModelViewer
@@ -1866,6 +1913,8 @@ export default function DrawingToAnalysis() {
                     valueRange={resultView?.valueRange || null}
                     valueLabel={resultView?.valueLabel || ''}
                     valueUnit={resultView?.valueUnit || ''}
+                    focusRequest={hasResults ? focusRequest : null}
+                    onFocusDone={() => setFocusRequest(null)}
                   />
                 )}
                 {isImageResult && referenceImageUrl && (
@@ -1891,13 +1940,12 @@ export default function DrawingToAnalysis() {
 
               {/* 해석 결과 테이블 (변위 + 쉘 von Mises) — 결과가 있을 때만 하단에 표시 */}
               {hasResults && (
-                <div className="h-72 shrink-0 border-t border-slate-200">
+                <div className="h-64 shrink-0 border-t border-slate-200">
                   <SolveResultsPanel
                     field={resultField}
-                    onField={setResultField}
-                    subcases={resultView.subcases}
-                    subcaseIdx={resultView.idx}
-                    onSubcase={setResultSubcaseIdx}
+                    caseLabel={resultView.caseLabels[resultView.idx]}
+                    focusedElementId={focusedElementId}
+                    onFocusElement={focusElement}
                     dispRows={resultView.dispRows}
                     stressRows={resultView.stressRows}
                   />
@@ -2059,7 +2107,7 @@ function SolveResultStrip({ result, error, onDownload }) {
       {error && <p className="text-[12px] text-rose-800 leading-snug">{error}</p>}
       {ok && (
         <p className="text-[11px] text-slate-600 leading-snug">
-          변위·응력은 오른쪽 3D 화면과 아래 결과 표에서 봅니다(SUBCASE = 하중 케이스).
+          케이스별 최대 응력은 오른쪽 위 표에서, 응력 분포는 3D 에서 봅니다.
         </p>
       )}
       {fileBtns.length > 0 && (

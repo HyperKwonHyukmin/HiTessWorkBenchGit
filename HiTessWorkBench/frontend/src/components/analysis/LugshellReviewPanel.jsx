@@ -246,7 +246,7 @@ export default function LugshellReviewPanel({ summary, resultInfo, onDownload, o
                   <span />
                 </div>
               ))}
-              {caseErrs.length > 0 && <p className="mt-1 text-[11px] text-rose-700">각도는 -90~90 사이로 넣으세요.</p>}
+              {caseErrs.length > 0 && <p className="mt-1 text-[11px] text-rose-700">면내 α 는 -180~180, 면외 β 는 -90~90 사이로 넣으세요.</p>}
               {!caseErrs.length && anglesInfo?.state === 'missing' && !anglesEdited && (
                 <p className="mt-1 text-[11px] leading-snug text-slate-500">도면에 하중 방향이 없어 기본 세 경우로 검토합니다. 실제 슬링 각도가 다르면 고치세요.</p>
               )}

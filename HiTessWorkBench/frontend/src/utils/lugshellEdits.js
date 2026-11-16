@@ -7,7 +7,7 @@
 export const LUGSHELL_EDIT_LIMITS = {
   swl_t: [0.1, 2000],
   daf: [1, 5],
-  alpha_deg: [-90, 90],
+  alpha_deg: [-180, 180],   // T형 뒤집기 러그는 아래(180)까지 (엔진 스키마 ±180)
   beta_deg: [-90, 90],
   p_kn: [0.1, 100000],   // 케이스별 핀 하중 크기(kN) — 표준집 치수 편집 '하중 및 경계'. 비우면 안전하중 × g × DAF
 };

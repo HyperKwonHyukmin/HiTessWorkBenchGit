@@ -1,0 +1,61 @@
+{
+ "schema": "lugparams/0.1",
+ "code": "T-30",
+ "pdfPage": 26,
+ "source": "hand",
+ "form": "t_type_lug",
+ "values": {
+  "pin_offset": 60,
+  "material": "SWS400B",
+  "scallop_R": 70,
+  "notch_R": 50,
+  "base_length": 470,
+  "height": 360,
+  "pin_height": 180,
+  "head_R": 110,
+  "hole_d": 61,
+  "doubler_R": 95,
+  "doubler_len": 155,
+  "doubler_t": 10,
+  "main_t": 32,
+  "swl_t": 30,
+  "bracket_gap": 50,
+  "bracket_t": 20,
+  "bracket_width": 250,
+  "bracket_low": 110,
+  "notch_foot": 65,
+  "notch_angle": 39
+ },
+ "review": [
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "source: 치수는 도면을 보고 사람이 적은 값 — 자중 대조 75.6 kg (도면 77 kg, -1.9%)"
+  },
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "neck_R: 목 오목 R 은 도면에 치수가 없어 30 으로 둠"
+  },
+  {
+   "path": "/load_cases",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "load_angles: 도면 LOADING 범위 약 180° 에서 위, 머리 쪽 수평, 아래 세 경우 + 옆 기울기 15° 로 검토합니다. 실제 슬링 각도가 다르면 고치세요."
+  },
+  {
+   "path": "/welds",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "welds: 본판-바닥, 브래킷 용접은 모델에 넣지 않음(바닥 고정)"
+  }
+ ],
+ "mass_kg": 75.57,
+ "drawing_mass_kg": 77
+}

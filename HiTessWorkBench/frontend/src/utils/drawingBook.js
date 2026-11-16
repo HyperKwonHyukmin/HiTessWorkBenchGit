@@ -61,7 +61,7 @@ export function filterBookItems(items, filters = {}) {
     .filter((i) => !group || i.group === group)
     .filter((i) => !family || i.family === family)
     .filter((i) => swl == null || i.swl_t === swl)
-    .filter((i) => !convertibleOnly || i.convertible)
+    .filter((i) => !convertibleOnly || i.convertible || i.params)
     .filter((i) => matchesQuery(i, query))
     .sort((a, b) => a.bookPage - b.bookPage);
 }
@@ -88,6 +88,8 @@ export function groupCounts(items) {
 export function bookItemState(item) {
   if (!item?.analysable) return { id: 'excluded', label: '해석 대상 아님', canRun: false };
   if (item.convertible) return { id: 'ready', label: '바로 변환', canRun: true };
+  // 도면 자동 읽기는 안 되지만 사람이 적어 둔 치수 파일이 있다(T형 등, 2026-11-12) — 치수 작업으로만 해석
+  if (item.params) return { id: 'params', label: '치수로 해석', canRun: false };
   return { id: 'drawing', label: '도면만', canRun: true };
 }
 

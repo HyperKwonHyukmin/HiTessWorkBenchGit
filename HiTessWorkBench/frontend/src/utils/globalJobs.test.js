@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   findJobForMenu,
+  globalPollErrorPatch,
   isTerminalJobStatus,
   pruneExpiredJobs,
   removeJobsForMenu,
@@ -158,4 +159,26 @@ test('removeJobsForMenu 는 slot 을 주면 그 작업 탭의 기록만 지운�
     removeJobsForMenu(jobs, 'HiTESS Model Builder', 'ws-a').map((j) => j.jobId),
     ['mb-b'],
   );
+});
+
+// ── globalPollErrorPatch ───────────────────────────────────────────────
+test('globalPollErrorPatch: 서버가 준 종료 상태는 그대로 싣는다', () => {
+  const patch = globalPollErrorPatch({ status: 'Failed', message: '엔진 실패', engine_log: 'x' });
+  assert.equal(patch.status, 'Failed');
+  assert.equal(patch.engine_log, 'x');
+  assert.equal(patch.progress, 100);
+});
+
+test('globalPollErrorPatch: 조회 시간 초과는 timeout 표시와 실제 분을 싣는다 (3분 고정 문구 금지)', () => {
+  const patch = globalPollErrorPatch({ timeout: true }, 1200, 1500);
+  assert.equal(patch.status, 'Failed');
+  assert.equal(patch.timeout, true);
+  assert.match(patch.message, /30분/);
+});
+
+test('globalPollErrorPatch: 통신 오류는 timeout 표시 없이 통신 오류', () => {
+  const patch = globalPollErrorPatch({ error: new Error('Network Error') });
+  assert.equal(patch.status, 'Failed');
+  assert.equal(patch.timeout, undefined);
+  assert.match(patch.message, /통신/);
 });

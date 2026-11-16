@@ -25,6 +25,7 @@ import {
   GLOBAL_JOB_HISTORY_LIMIT,
   GLOBAL_JOB_VISIBLE_MS,
   findJobForMenu,
+  globalPollErrorPatch,
   isTerminalJobStatus,
   pruneExpiredJobs,
   removeJobsForMenu,
@@ -966,19 +967,16 @@ function GlobalJobPoller({ job, onPatchJob }) {
   usePolling({
     jobId: isTerminal ? null : job.jobId,
     interval: POLLING_POLICY.analysisIntervalMs,
-    maxRetries: POLLING_POLICY.analysisMaxRetries,
+    maxRetries: POLLING_POLICY.globalJobMaxRetries,
     onProgress: (data) => onPatchJob(job.jobId, data),
     onComplete: (data) => onPatchJob(job.jobId, data),
     // usePolling 은 종료 상태(Failed/Interrupted/Cancelled)에서도 onError 를 부른다.
     // 서버 payload(err.status 가 있는 경우)는 그대로 반영해야 카드가 '사용자 중단'으로
     // 표시된다. 예전처럼 무조건 Failed 로 덮으면 취소·엔진 실패 메시지가 모두 사라진다.
-    onError: (err) => onPatchJob(job.jobId, err?.status
-      ? { ...err, progress: 100 }
-      : {
-        status: 'Failed',
-        progress: 100,
-        message: err?.timeout ? '해석 시간 초과 (3분)' : '서버 통신 오류 발생',
-      }),
+    // ⚠ 여기서 낸 Failed 는 patchGlobalJob 을 거쳐 페이지 errorData 가 된다 — 규칙은 utils/globalJobs.
+    onError: (err) => onPatchJob(job.jobId, globalPollErrorPatch(
+      err, POLLING_POLICY.globalJobMaxRetries, POLLING_POLICY.analysisIntervalMs,
+    )),
   });
 
   return null;
