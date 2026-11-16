@@ -229,7 +229,7 @@ def test_hand_params_items_build_and_match_drawing_mass():
     """사람이 적은 치수(T형 등, source = hand): 색인에 붙어 있고, 형상이 만들어지며 자중이 도면과 3% 안."""
     items = [i for i in drawing_book.load_index()["items"] if i.get("params") and not i.get("convertible")]
     codes = sorted(i["aliases"][0] for i in items)
-    assert {"T-15", "T-20", "T-30", "T-40", "T-50"} <= set(codes)
+    assert {"T-5", "T-10", "T-15", "T-20", "T-30", "T-40", "T-50"} <= set(codes)
     for code in codes:
         pf = lug_params.load_params(code)
         assert pf["source"] == "hand", code

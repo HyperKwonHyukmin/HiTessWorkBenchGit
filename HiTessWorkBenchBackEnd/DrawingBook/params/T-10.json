@@ -1,0 +1,78 @@
+{
+ "schema": "lugparams/0.1",
+ "code": "T-10",
+ "pdfPage": 23,
+ "source": "hand",
+ "form": "t_tilted_lug",
+ "values": {
+  "tail_width": 200,
+  "shoulder_x": 260,
+  "shoulder_half": 140,
+  "pin_offset": 60,
+  "head_R": 120,
+  "hole_d": 46,
+  "main_t": 20,
+  "bracket_pos": 120,
+  "bracket_height": 200,
+  "bracket_width": 200,
+  "bracket_top": 25,
+  "bracket_foot": 25,
+  "scallop_R": 50,
+  "bracket_t": 15,
+  "material": "SWS400B",
+  "swl_t": 10
+ },
+ "review": [
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "source: 치수는 도면을 보고 사람이 적은 값 — 자중 대조 21.1 kg (도면 21.5 kg, -2.1%)"
+  },
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "본판은 핀 축에 대해 위아래 대칭인 화살촉 모양이고, 바닥은 '아래 꼬리 끝 → 아래 어깨' 변입니다(그림에서 8.7° 기울게 그려짐). 브래킷 자국이 이 변에 수직이고 길이가 브래킷 높이와 같아 이렇게 읽었습니다."
+  },
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "bracket_t: 도면 '12t~15t' 중 자중이 도면과 맞는 15 로 둠. 12 면 자중 20.0 kg(-7.1%), 강도는 12 쪽이 보수적"
+  },
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "bracket: 브래킷 밑변, 위 평평한 폭, 바깥 높이는 본판 면에서 잰 값으로 읽음. 점선 브래킷('재생시 취부위치')은 넣지 않음"
+  },
+  {
+   "path": "/pin",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "T-10A 는 핀 구멍 Ø61, 핀 지름 57(섀클 핀) — 두 칸을 함께 바꾸세요(핀 지름을 비우면 구멍 − 1 = 60 이 들어가 지압이 덜 보수적)."
+  },
+  {
+   "path": "/load_cases",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "load_angles: 도면 '사용 용도' 그림(바닥이 수평)의 LOADING 범위 약 240° 에서 위, 머리 쪽 수평, 아래, 꼬리 쪽 60° 네 경우 + 옆 기울기 10° 로 검토합니다. 각도는 바닥 기준입니다. 실제 슬링 각도가 다르면 고치세요."
+  },
+  {
+   "path": "/welds",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "welds: 본판-바닥, 브래킷 용접은 모델에 넣지 않음(바닥 고정)"
+  }
+ ],
+ "mass_kg": 21.06,
+ "drawing_mass_kg": 21.5
+}

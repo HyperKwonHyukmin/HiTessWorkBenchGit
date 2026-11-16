@@ -340,7 +340,8 @@
    "swl_t": 5.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/T-5.json"
   },
   {
    "code": "T-10, T-10A",
@@ -358,7 +359,8 @@
    "swl_t": 10.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/T-10.json"
   },
   {
    "code": "T-15",
