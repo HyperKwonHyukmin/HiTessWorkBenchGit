@@ -864,6 +864,11 @@ CalcVerify 끝에 `Sn_Top,Sn_Bottom` 이 붙었다. 이 칸이 없는 옛 결과
   [해석 실행] = 변환 뒤 Nastran 자동 이어서, 케이스별 하중 크기 kN(`p_kn` → 그 케이스 swl_t). 사용자가 70 앱에서 끝까지 확인(2026-11-12).
   치수 → 형상은 엔진 `lugshell/lugshell/params/` 를 InHouse `DrawingToAnalysis/lugparams/`(git 미추적, `tools/export_lugparams.py`)로 복사해 백엔드가 import(`services/lug_params.py`). 엔진 params 를 고치면 다시 내보낼 것.
   **145 순서**: InHouse `lugparams/` 폴더 복사 → `git pull` → 백엔드 재시작(새 라우트) → 다음 WorkBench exe. 커밋 전 `hitess-code-reviewer` 미실행, 편집 화면 추가분(강조, 전체 화면, ② 단계)은 눈으로 확인 안 함.
+- **T형 5종 · 결과 화면 정리 (2026-11-16, WorkBench `43dee72` · 엔진 `e8ee7b6`, 145 미반영)** — T-15~T-50 손 치수(`params/T-*.json`, 도면 찾기 '치수로 해석'), 면내 α ±180.
+  결과 화면 = 응력 먼저, 케이스 요약 표(`SolveCaseSummary`), 늘 펼친 값 표, 행 클릭 = 3D 가 그 요소로(`ShellModelViewer` `focusRequest`/`onFocusDone`). 상세 = 계획 문서 'T형 진행'.
+  ⚠ Job Center 조회(`GlobalJobPoller`)는 이제 최대 30분(`POLLING_POLICY.globalJobMaxRetries`) — 예전 3분에서 포기하면 그 Failed 가 페이지 저장 상태로 전해져 페이지 조회까지 멈추고 근거 없는 실패가 떴다(모든 앱 공통).
+  ⚠ 이 서비스의 자식 실행(엔진 exe, bridge, Nastran)은 `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` — 서버 콘솔 창의 Ctrl+C 에 bridge 가 0xC000013A 로 죽어 모델 JSON 없이 '성공'한 일(11-16). 다른 서비스는 아직 그대로.
+  **145 순서**: InHouse `DrawingToAnalysis.exe`(sha256 dfef832b…) + `lugparams/`(0.2) 먼저 → `git pull` + 재시작 → 새 exe.
 
 ### 이중관 연료배관 PSA — 엔진은 외부 연구원 소유, WorkBench 개조는 어댑터로 분리 ★엔진 수정 금지
 
