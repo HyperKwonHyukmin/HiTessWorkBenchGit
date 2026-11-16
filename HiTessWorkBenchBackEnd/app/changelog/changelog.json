@@ -3,6 +3,20 @@
   "items": [
     {
       "date": "2026-11-16",
+      "version": "0.1.99",
+      "studio": "mooring-fitting-studio",
+      "kind": "기능",
+      "title": "Mooring Fitting Studio 안 사용 설명서",
+      "page": "2026-11-16-mf-field-requests",
+      "summary": "Studio 탭 줄 뒤 [설명서] 를 누르면 사용 설명서가 3D 옆에 열려, 읽으면서 따라 할 수 있습니다. 탭을 바꾸면 그 탭 설명으로 넘어갑니다.",
+      "points": [
+        "설명서 문서 버전 05: 부식 마진, 구조도 표기, 해석할 하중, 부재 분할과 추가, RBE 연결과 수정 새 패널 반영",
+        "도움말 창에서도 '사용 설명서' 로 엽니다. WorkBench Mooring Fitting 화면의 'Studio 사용 설명서' 버튼(설명서 보기, PDF 받기)은 다음 exe 부터",
+        "설명서를 열어 3D 가 좁아지면 위쪽 도구줄은 아이콘만 보입니다"
+      ]
+    },
+    {
+      "date": "2026-11-16",
       "version": "0.1.98",
       "studio": "mooring-fitting-studio",
       "kind": "기능",
