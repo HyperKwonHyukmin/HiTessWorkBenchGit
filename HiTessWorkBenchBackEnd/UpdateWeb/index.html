@@ -74,6 +74,10 @@ a{color:var(--navy-2);text-underline-offset:3px}
 .sec ul{padding-left:20px}
 .sec ul li{padding:0 0 8px}
 .sec ul li::marker{color:var(--green)}
+.facts{margin:14px 0 0;max-width:var(--measure);display:grid;grid-template-columns:9.5em 1fr;gap:10px 18px;padding:14px 16px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
+.facts dt{font-weight:700;color:var(--navy);font-size:14.5px;padding-top:1px}
+.facts dd{margin:0;color:var(--ink-body)}
+@media (max-width:560px){.facts{grid-template-columns:1fr;gap:2px}.facts dd{margin-bottom:10px}.facts dd:last-child{margin-bottom:0}}
 figure{margin:20px 0 0;max-width:var(--measure)}
 figure img{border:1px solid var(--line);border-radius:8px}
 figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
@@ -223,12 +227,17 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
     var sec = el('section', 'sec'); sec.id = 's-' + s.id; sec.setAttribute('data-section', s.id);
     sec.appendChild(el('h2', null, s.heading || ''));
     (s.body || []).forEach(function(t){ sec.appendChild(el('p', null, t)); });
+    // facts = [{label, text}] — '무엇이 바뀌었나 / 어디서 보나 / 결과에 미치는 영향' 처럼 같은 물음을 구획마다 같은 자리에
+    if (s.facts && s.facts.length) { var dl = el('dl', 'facts');
+      s.facts.forEach(function(x){ dl.appendChild(el('dt', null, x.label || '')); dl.appendChild(el('dd', null, x.text || '')); });
+      sec.appendChild(dl); }
     if (s.steps && s.steps.length) { var ol = el('ol'); s.steps.forEach(function(t){ ol.appendChild(el('li', null, t)); }); sec.appendChild(ol); }
     if (s.points && s.points.length) { var ul = el('ul'); s.points.forEach(function(t){ ul.appendChild(el('li', null, t)); }); sec.appendChild(ul); }
-    if (s.image && /^img\/[A-Za-z0-9._-]+$/.test(s.image.src || '')) {
-      var f = el('figure'), img = el('img'); img.src = s.image.src; img.alt = s.image.alt || ''; img.loading = 'lazy';
-      f.appendChild(img); if (s.image.caption) f.appendChild(el('figcaption', null, s.image.caption)); sec.appendChild(f);
-    }
+    (s.images || (s.image ? [s.image] : [])).forEach(function(im){
+      if (!im || !/^img\/[A-Za-z0-9._-]+$/.test(im.src || '')) return;
+      var f = el('figure'), img = el('img'); img.src = im.src; img.alt = im.alt || ''; img.loading = 'lazy';
+      f.appendChild(img); if (im.caption) f.appendChild(el('figcaption', null, im.caption)); sec.appendChild(f);
+    });
     if (s.note) sec.appendChild(el('p', 'note', s.note));
     return sec;
   }

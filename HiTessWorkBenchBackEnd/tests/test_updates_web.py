@@ -158,8 +158,8 @@ def test_repo_updates_json_is_valid():
     assert len(loaded) == len(raw)
     for e in loaded:
         for s in e["sections"]:
-            if s.get("image"):
-                assert (updates_web.UPDATE_WEB_DIR / s["image"]["src"]).is_file()
+            for im in s.get("images") or ([s["image"]] if s.get("image") else []):
+                assert (updates_web.UPDATE_WEB_DIR / im["src"]).is_file()
     assert (updates_web.UPDATE_WEB_DIR / "fonts" / "SUIT-Variable.woff2").read_bytes()[:4] == b"wOF2"
 
 
