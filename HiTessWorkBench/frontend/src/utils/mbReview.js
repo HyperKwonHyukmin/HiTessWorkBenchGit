@@ -10,8 +10,11 @@ const KIND_LABELS = {
   point_mass_moved: '질량점 옮김',
   point_mass_unattached: '질량점 부착 실패',
   equipment_mass_dropped: '빠진 장비 질량',
+  equipment_box_attached: '경계 상자로 붙인 장비',
+  point_mass_lost: '모델에서 빠진 질량점',
   ubolt_unsupported: '받칠 구조 없는 U-bolt',
   floating_group: '떨어진 그룹',
+  small_group_removed: '지운 작은 외딴 그룹',
 };
 
 export function reviewKindLabel(kind) {
