@@ -28,6 +28,7 @@ import { useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashb
 import { useResultReentry } from '../../utils/resultReentry';
 import { computeMooringVerdict, summarizeMooringRawAudit, extractEngineAlerts } from '../../utils/mooringVerdict';
 import { LOAD_SCOPES, loadScopeLabel, missingInputReason, normalizeLoadScope } from '../../utils/mooringLoadScope.js';
+import StudioManualButton from '../../components/ui/StudioManualButton';
 
 const MENU_NAME = 'Mooring Fitting Assessment';
 const PROGRAM_NAME = 'MooringFitting';
@@ -1409,6 +1410,7 @@ export default function MooringFittingAssessment() {
         subtitle="Structure CSV + Load CSV 입력 정합성 및 FE 변환 검증"
         icon={FileSpreadsheet}
         onBack={() => setCurrentMenu('File-Based Apps')}
+        actions={<StudioManualButton manualId="mooring-fitting" />}
       />
 
       <div className="flex flex-col items-stretch gap-5 px-1 xl:flex-row">

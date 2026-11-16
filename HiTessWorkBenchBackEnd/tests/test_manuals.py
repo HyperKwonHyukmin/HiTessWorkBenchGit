@@ -58,7 +58,7 @@ def test_drm_wrapped_pdf_is_refused(admin_client, manual_dir):
     assert res.status_code == 500 and "DRM" in res.json()["detail"]
 
 
-@pytest.mark.parametrize("manual_id", ["module-unit", "model-builder"])
+@pytest.mark.parametrize("manual_id", ["module-unit", "model-builder", "mooring-fitting"])
 def test_repo_manual_is_plain_pdf(manual_id):
     """git 에 실제로 들어가는 설명서가 평문 PDF 인지 — 암호문이 커밋되면 145 에서 깨진다."""
     folder = manuals.MANUALS_DIR / manual_id
