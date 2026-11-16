@@ -283,9 +283,12 @@ P2 의 기본을 "그대로 두고 보고"로 둔 이유: 받칠 구조가 1 m �
 > **→ 4e 끝(같은 날)** — 추정 B 루프 닫기 안 만듦(같은 조립품은 남김). 새 기준 회귀 = **`s4e2`**(Nastran, 통과 20). 다음 = B13 → 5단계 → 7단계.
 > **→ B13 세 번째 시도 되돌림(같은 날)** — 아래 B13 절. 기준 회귀는 그대로 `s4e2`. 다음 = 5단계(RBE 생성기 통합) 또는 B13 원인 조사(연쇄 갈림 지점 + 변위 상한).
 > **→ 2026-11-16 세션 끝** — D10 과대 변위(> 500 mm)를 회귀 판정에 넣음(통과 20 → 16) · 빠지던 질량 3.73 t 수정(엔진 `237a6a4`) · 과대 변위 4묶음은 입력 결함으로 확인.
-> **새 기준 회귀 = `s5_mass`**(Nastran, 통과 16/62). 엔진 HEAD `237a6a4`(로컬, 푸시 안 함) · WorkBench 계획서와 장치 `bd10ace` 까지(푸시 안 함).
+> **새 기준 회귀 = `s5_mass`**(Nastran, 통과 16/62). 엔진 HEAD `237a6a4`(로컬, 푸시 안 함) · WorkBench 계획서와 장치는 `3ba3228` 까지 푸시.
 > 다음 후보(사용자 판단 대기): ① 'U-bolt 없이 N m 넘는 배관' 결정 기록(기준 길이 결정 필요) ② 5단계 리팩터(BDF 불변, 급하지 않음) ③ B13 원인 조사 ④ 7단계.
-> 미반영: 70, 145 InHouse `Cmb.Cli.exe` 묶음 교체(이 계획의 모든 엔진 변경이 아직 서버에 없음) · 70 백엔드 zip Errno 22 조사(미룸).
+> 미반영: 145 InHouse `Cmb.Cli.exe` 묶음 교체(이 계획의 모든 엔진 변경이 아직 서버에 없음) · 70 백엔드 zip Errno 22 조사(미룸).
+> **→ 2026-11-17 70 InHouse 교체** — `237a6a4` 빌드(sha256 0ef1c8a6…, 해시는 s5_mass3 와 달라도 회귀 Nastran 없이 `rel_237a6a4` BDF 62/62 같음), 백업 `.bak_20261117_before_overhaul`.
+>   확인: 백엔드 MB 시험(편집 계약 포함) 통과 · `task_execute_modelflow` 로 3454, 3476 실제 실행 '모델 생성 완료', 최종 산출물 = 정상 BDF/JSON, BDF 머리 `Review=REQUIRED Items=…`, `00_Review.json` 종류 10가지 모두 `mbReview.js` 이름표 있음.
+>   그 실행이 70 개발 DB 에 샘플 표시(`WorkbenchSample`) 기록 3건을 남김. WorkBench 앱 안 화면, Studio 는 눈으로 확인 안 함. 145 교체는 사용자 몫.
 
 **B11 + B12a (2026-11-12, 엔진 미커밋, 70 InHouse 미교체)** — 회귀 이름 `b11_noise_off`(B11 만), `b12a_fragment`(둘 다).
 - B11: `RunOptions.GroupConnectNoiseLengthMm` 500 → **0**(노이즈 제거 끔). 시험 `NoiseFragment_SingleSmallElement_KeptByDefault` 로 바꿈.
