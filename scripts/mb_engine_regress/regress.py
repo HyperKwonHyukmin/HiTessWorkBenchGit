@@ -40,7 +40,9 @@ KINDS = ("stru", "pipe", "equip")
 # 화면 기본값과 같은 엔진 옵션. --run-nastran 은 쓰지 않는다: 그 옵션은 떨어진 그룹마다 SPC 를 덧붙여
 # 떨어진 모델도 해석이 되게 만든다. 여기서는 사용자가 받는 BDF 를 그대로 푼다.
 ENGINE_OPTS = ["--mesh-size", "500", "--ubolt-full-fix"]
-OVER_DISP_MM = 500      # 자중 최대 변위가 이보다 크면 '과대 변위'(사람 검토에서 U-bolt 누락 모델이 2,574~7,800 mm)
+OVER_DISP_MM = 500      # 자중 최대 변위가 이보다 크면 '과대 변위' = 미달(D10). 사람 검토에서 U-bolt 누락 모델이 2,574~7,800 mm,
+                        # s4e2 의 정상 묶음은 27 mm 이하. FATAL 없는 엉터리 해(B13 시도 3 의 1e27 mm)를 잡는 안전망이다.
+LARGE_DISP_MM = 100     # 이보다 크면 '변위 큼'(참고, 판정 미반영)
 ZERO_HZ = 1e-3          # 이보다 낮으면 강체(또는 기구) 모드로 센다
 FREEFREE_MODES = 12     # 6개가 정상. 12개를 다 채우면 '12개 이상'
 GAP_BUCKETS = ((50, "≤50"), (100, "≤100"), (300, "≤300"), (1000, "≤1000"))
@@ -483,6 +485,8 @@ def judge(m):
             why.append("자중 해석 FATAL " + ",".join(st["fatal"]))
         if st.get("autospc"):
             why.append(f"자동 구속 {st['autospc']}개")
+        if (st.get("maxDispMm") or 0) > OVER_DISP_MM:
+            why.append(f"과대 변위 {st['maxDispMm']:.0f} mm")
     for key, label in (("static", "자중 해석"), ("freefree", "자유-자유 해석")):
         if (m.get(key) or {}).get("incomplete"):
             why.append(f"측정 실패: {label} F06 미완료(다시 돌릴 것)")
@@ -493,11 +497,11 @@ def judge(m):
 
 
 def warnings(m):
-    """판정에는 넣지 않고 보고만 하는 항목(사람 검토 지적에서 옴). 판정 편입은 사용자 결정(D10)."""
+    """판정에는 넣지 않고 보고만 하는 항목(사람 검토 지적에서 옴). 과대 변위는 D10 으로 판정에 들어갔다."""
     w = []
     st = m.get("static") or {}
-    if (st.get("maxDispMm") or 0) > OVER_DISP_MM:
-        w.append(f"과대 변위 {st['maxDispMm']:.0f} mm")
+    if LARGE_DISP_MM < (st.get("maxDispMm") or 0) <= OVER_DISP_MM:
+        w.append(f"변위 큼 {st['maxDispMm']:.0f} mm")
     if m.get("vanishedStructureRows"):
         w.append(f"사라진 구조 행 {m['vanishedStructureRows']}")
     if m.get("coincidentNodePairs"):
@@ -695,6 +699,8 @@ def cmd_compare(a):
     A = json.load(open(os.path.join(a.base, "result.json"), encoding="utf-8"))
     B = json.load(open(os.path.join(a.new, "result.json"), encoding="utf-8"))
     ra, rb = {r["id"]: r for r in A["sets"]}, {r["id"]: r for r in B["sets"]}
+    for r in (*ra.values(), *rb.values()):     # 판정 기준이 바뀐 옛 결과도 지금 기준으로 맞대어 본다(저장된 지표로 다시 판정)
+        r["pass"], r["why"] = judge(r)
     common = [k for k in ra if k in rb]
     L = [f"# 비교: {A['label']} → {B['label']}", "",
          f"- 기준 엔진 sha {A['exeSha'][:16]}, 새 엔진 sha {B['exeSha'][:16]}",
