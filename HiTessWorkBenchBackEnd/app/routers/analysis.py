@@ -38,7 +38,8 @@ from ..services.hpscr_service import task_execute_hpscr
 from ..services.groupmoduleunit_service import task_execute_groupmoduleunit
 from ..services.bdf_deck_check import apply_deck_fixes_lines, read_deck_lines
 from ..services.mooring_row_edit import (
-    EVIDENCE_FILE, annotate_row_sections, apply_row_edits, is_row_edit, read_csv_lines, read_csv_rows,
+    EVIDENCE_FILE, annotate_row_sections, apply_row_edits, corrosion_info, is_row_edit, new_member_grade_overrides,
+    read_csv_lines, read_csv_rows,
     write_grade_overrides,
 )
 from ..services.unit_structural_service import (
@@ -62,6 +63,7 @@ from ..services.f06parser_service import task_execute_f06parser
 from ..services.hull_acceleration_service import task_execute_hull_acceleration
 from ..services.plate_structure_service import task_execute_plate_structure
 from ..services.mooring_fitting_service import (
+    LOAD_SCOPES,
     REPORT_FILE_NAME,
     ReportEngineError,
     build_report,
@@ -2673,6 +2675,7 @@ def rerun_analysis(
             task_execute_mooring_fitting,
             structure_path, load_path, work_dir, exe_path,
             current_user, timestamp, source, float(info.get("mf_safety_factor") or 1.25),
+            info.get("load_scope") if info.get("load_scope") in LOAD_SCOPES else "all",
             owned_work_dir=work_dir,
         )
 
@@ -4337,10 +4340,11 @@ async def run_mooring_fitting_sample(
 @router.post("/analysis/mooring-fitting/request")
 async def request_mooring_fitting(
         structure_file: UploadFile = File(...),
-        load_file: UploadFile = File(...),
+        load_file: UploadFile | None = File(None),
         employee_id: str = Form(...),
         source: str = Form("Workbench"),
         mf_safety_factor: str = Form("1.25"),
+        load_scope: str = Form("all"),
         current_user: str = Depends(require_auth)
 ):
     """
@@ -4351,8 +4355,15 @@ async def request_mooring_fitting(
 
     mf_safety_factor: MF(Mooring Fitting) 하중 전용 안전계수(기본 1.25). Winch 하중에는 미적용.
     엔진이 P = SWL × 1000 × SF 로 곱한다. 비정상/≤0 값은 1.25로 폴백(엔진도 2중 검증).
+    load_scope: 해석할 하중 범위 all / mf / winch (2026-11-12). mf 이면 Load CSV 가 없어도 된다 —
+    엔진이 두 파일을 찾으므로 주석 한 줄짜리 빈 Load CSV 를 대신 둔다.
     """
     _verify_employee_self(employee_id, current_user)
+    load_scope = (load_scope or "all").strip().lower()
+    if load_scope not in LOAD_SCOPES:
+        raise HTTPException(status_code=422, detail="load_scope 는 all, mf, winch 중 하나여야 합니다.")
+    if load_file is None and load_scope != "mf":
+        raise HTTPException(status_code=422, detail="Winch 하중이 들어 있는 Load CSV 가 필요합니다(MF 만 해석할 때만 생략 가능).")
     try:
         mf_sf = float(mf_safety_factor)
         if mf_sf <= 1e-9:
@@ -4365,11 +4376,16 @@ async def request_mooring_fitting(
         error_prefix="Structure CSV 저장 오류",
         dest_name="MooringFittingData.csv",
     )
-    load_path = await save_upload(
-        load_file, work_dir,
-        error_prefix="Load CSV 저장 오류",
-        dest_name="MooringFittingDataLoad.csv",
-    )
+    if load_file is not None:
+        load_path = await save_upload(
+            load_file, work_dir,
+            error_prefix="Load CSV 저장 오류",
+            dest_name="MooringFittingDataLoad.csv",
+        )
+    else:
+        load_path = os.path.join(work_dir, "MooringFittingDataLoad.csv")
+        with open(load_path, "w", encoding="utf-8") as fh:
+            fh.write("//Load CSV 없음 - MF 하중만 해석" + chr(10))
 
     exe_path = os.path.abspath(os.path.join(
         _BACKEND_DIR, "InHouseProgram", "MooringFitting", "MooringFitting.exe"
@@ -4378,7 +4394,7 @@ async def request_mooring_fitting(
     job_id = submit_analysis_job(
         task_execute_mooring_fitting,
         structure_path, load_path, work_dir, exe_path,
-        employee_id, timestamp, source, mf_sf,
+        employee_id, timestamp, source, mf_sf, load_scope,
         owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
@@ -4423,6 +4439,8 @@ def _build_mooring_element_names(out_dir: str, stage07_data: dict) -> dict:
                     "grade": m.get("grade"),
                     "yieldMPa": m.get("yieldMPa"),
                     "gradeKnown": m.get("known"),
+                    # 부착판(갑판) 등급 — Studio '부재 추가' 가 참조 부재의 두 등급을 기본값으로 쓴다(2026-11-12).
+                    "plateGrade": m.get("plateGrade") or m.get("grade"),
                 })
         except Exception as exc:
             logger.warning("[mooring viewer-zip] MEMBER_MATERIAL.json 파싱 실패: %s", exc)
@@ -4682,8 +4700,10 @@ def get_mooring_fitting_viewer_zip(
                 rows = read_csv_rows(case_dir)
                 annotate_row_sections(rows, abs_dir, stage07_data)
                 # lines = 원문 전체(머리글·MF 줄 포함) — '구조 CSV' 표가 엑셀과 같은 행 번호로 보인다.
+                # corrosion = 엔진이 단면 두께에서 뺀 부식 마진 — Studio 가 표시하고 rowDims 에 같은 값을 쓴다.
                 zf.writestr("csv_rows.json", _json.dumps(
-                    {"rows": rows, "lines": read_csv_lines(case_dir)}, ensure_ascii=False))
+                    {"rows": rows, "lines": read_csv_lines(case_dir),
+                     "corrosion": corrosion_info(abs_dir)}, ensure_ascii=False))
         except OSError as exc:
             logger.warning("[mooring viewer-zip] 구조 CSV 읽기 실패(스킵): %s", exc)
 
@@ -5046,6 +5066,25 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
         """8-col 고정필드 head 라인의 PID 필드(index 2, cols 16:24)를 new_pid 로 교체."""
         return head[:16] + str(new_pid).ljust(8)[:8] + head[24:]
 
+    def _patch_field(head: str, index: int, text: str) -> str:
+        """8-col 고정필드 head 라인의 index 번째 칸(cols 8*index : 8*index+8)을 오른쪽 정렬 text 로 교체."""
+        head = head.ljust(8 * (index + 1))
+        return head[:8 * index] + text[-8:].rjust(8) + head[8 * index + 8:]
+
+    def _patch_beam(head: str, elem: dict, *, orientation: bool = False) -> str:
+        """beam 카드 head 의 PID·GA·GB(와 방향 벡터)를 편집 모델 값으로 맞춘다(부재 나누기·새 부재, 2026-11-12)."""
+        for index, key in ((2, "propertyId"), (3, "startNode"), (4, "endNode")):
+            value = as_int(elem.get(key))
+            current = as_int(field(head, index))
+            # 칸을 못 읽으면(쉼표·큰 필드 형식) 고치지 않는다 — 8칸 덮어쓰기로 카드를 깨뜨리지 않게(커밋 전 리뷰).
+            if value is not None and current is not None and current != value:
+                head = _patch_field(head, index, str(value))
+        vec = elem.get("orientation")
+        if orientation and isinstance(vec, (list, tuple)) and len(vec) == 3:
+            for k, v in enumerate(vec):
+                head = _patch_field(head, 5 + k, _nb.fixed_real(_nb.as_float(v, 0.0)))
+        return head
+
     i = 0
     while i < len(bulk):
         line = bulk[i]
@@ -5070,13 +5109,12 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
             if eid is not None:
                 orig_elem_blocks[eid] = block
             if eid in surv_elems:
-                # 생존 element 의 단면(PID) 변경분을 deck 에 반영(changeElementProperty).
+                # 생존 element 의 단면(PID) 변경분과 부재 나누기로 바뀐 끝 노드(GA·GB)를 deck 에 반영.
                 ej = edited_elems_by_id.get(eid)
                 if name in _PID_AT_FIELD2 and ej is not None:
-                    orig_pid = as_int(field(line, 2))
-                    new_pid = as_int(ej.get("propertyId"))
-                    if orig_pid is not None and new_pid is not None and new_pid != orig_pid:
-                        out.append(_patch_pid(block[0], new_pid))
+                    patched = _patch_beam(block[0], ej)
+                    if patched != block[0]:
+                        out.append(patched)
                         out.extend(block[1:])
                         continue
                 out.extend(block)
@@ -5125,9 +5163,35 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
                                       _nb.property_kind_to_bdf(prop.get("kind"))))
         out.append(_nb.bdf_line_fixed("", *[_nb.as_float(v, 0.0) for v in prop.get("dims") or []], 0.0))
 
-    # 편집으로 추가된 보강 element(원본 BDF 라인 없음) — reinforceOf 원본 블록을 새 EID 로 복제 출력.
-    # 원본 블록을 통째로 복사하므로 PID/방향/offset/pin 등 모든 필드가 원본과 동일(=참된 이중부재).
+    # 편집으로 추가된 element(원본 BDF 라인 없음) — 출처 원본 블록을 새 EID 로 복제 출력.
+    #   reinforceOf = 보강 복제(같은 노드·방향, 참된 이중부재) · splitOf = 부재 나누기 조각 · addedFrom = 노드끼리 새 부재.
+    # 출처가 다시 편집으로 생긴 요소면 사슬을 따라 원본 블록까지 간다. 노드·PID(·새 부재는 방향)는 편집 모델 값으로 맞춘다.
     orig_elem_ids = set(orig_elem_blocks.keys())
+
+    def _source_block(elem: dict) -> tuple[list | None, bool]:
+        # 원래 부재 번호가 있으면 그 블록 — 중간 조각이 지워져도 찾는다. 방향 벡터는 늘 편집 모델 값으로 맞춘다.
+        origin = as_int(elem.get("originElementId"))
+        if origin in orig_elem_blocks:
+            return orig_elem_blocks[origin], True
+        seen: set[int] = set()
+        cur = elem
+        added = False
+        while cur is not None:
+            for key in ("reinforceOf", "splitOf", "addedFrom"):
+                src_id = as_int(cur.get(key))
+                if src_id is not None:
+                    added = added or key == "addedFrom"
+                    break
+            else:
+                return None, added
+            if src_id in orig_elem_blocks:
+                return orig_elem_blocks[src_id], added
+            if src_id in seen:
+                return None, added
+            seen.add(src_id)
+            cur = edited_elems_by_id.get(src_id)
+        return None, added
+
     for elem in (edited.get("elements") or []):
         eid = as_int(elem.get("id"))
         if eid is None or eid in orig_elem_ids:
@@ -5136,18 +5200,16 @@ def _build_solvable_edited_bdf(original_bdf_text: str, edited: dict) -> str:
         gb = as_int(elem.get("endNode"))
         if ga not in surv_nodes or gb not in surv_nodes:
             continue                         # 끊긴 노드 참조 방지
-        src_block = orig_elem_blocks.get(as_int(elem.get("reinforceOf")))
+        src_block, is_added = _source_block(elem)
         if not src_block:
-            continue                         # 복제 출처 불명(현재 범위는 duplicateElement 만)
+            # 출처 없는 새 요소를 조용히 빼면 화면에 있는 부재가 해석에서 빠진다 — 멈춘다.
+            raise ValueError(f"편집으로 추가된 요소 {eid} 의 출처 부재를 찾지 못해 해석 BDF 에 넣을 수 없습니다.")
         head = src_block[0]
         head = head[:8] + str(eid).ljust(8)[:8] + head[16:]        # 카드명 유지 + EID 필드 교체
-        # 참조 단면 복사 등으로 clone 의 PID 가 source 와 다르면 PID 필드도 패치(beam 계열만).
+        # 노드·단면(새 부재는 방향 벡터까지)을 편집 모델 값으로 맞춘다(beam 계열만).
         name = src_block[0][0:8].strip().upper().rstrip("*")
         if name in _PID_AT_FIELD2:
-            clone_pid = as_int(elem.get("propertyId"))
-            src_pid = as_int(field(src_block[0], 2))
-            if clone_pid is not None and src_pid is not None and clone_pid != src_pid:
-                head = _patch_pid(head, clone_pid)
+            head = _patch_beam(head, elem, orientation=is_added)
         out.append(head)
         out.extend(src_block[1:])                                   # 연속행(offset/pin 등) 그대로
 
@@ -5178,13 +5240,21 @@ def _apply_mooring_edits(base_data: dict, intents: list, out_dir: str) -> tuple[
     row_edits = [i for i in intents if is_row_edit(i)]
     model_edits = [i for i in intents if not is_row_edit(i)]
 
+    # 옛 bridge 는 모르는 kind 를 건너뛰고 '성공' 한다 — 화면의 부재가 해석에서 빠지므로 멈춘다(커밋 전 리뷰).
+    if any(i.get("kind") in ("splitElement", "addElement") for i in model_edits) \
+            and not hasattr(_nb, "split_element_from_params"):
+        raise ValueError("부재 분할·부재 추가는 새 nastran_bridge.py 가 필요합니다. 서버 InHouse 파일을 교체해야 합니다(bridge 교체 필요).")
+
     edited, summary = base_data, {"applied": 0}
+    base_ids = {e.get("id") for e in base_data.get("elements") or []}
     if model_edits:
         edited, summary = _nb.apply_edit_json(
             _copy.deepcopy(base_data), {"schemaVersion": "1.0", "intents": model_edits}
         )
+    # 부재 나누기 조각·새 부재의 등급(엔진 재질표에 없는 번호) — 행 편집 등급이 있으면 그쪽이 이긴다.
+    overrides = new_member_grade_overrides(edited, base_ids, model_edits, out_dir)
     if not row_edits:
-        return edited, summary, {}
+        return edited, summary, overrides
 
     if edited is base_data:
         edited = _copy.deepcopy(base_data)
@@ -5192,7 +5262,7 @@ def _apply_mooring_edits(base_data: dict, intents: list, out_dir: str) -> tuple[
     summary["applied"] = summary.get("applied", 0) + row_summary["rows"]
     summary["csvRows"] = row_summary["rows"]
     summary["csvRowSkippedElements"] = row_summary["skippedElements"]
-    return edited, summary, row_summary["gradeOverrides"]
+    return edited, summary, {**overrides, **row_summary["gradeOverrides"]}
 
 
 @router.post("/analysis/mooring-fitting/solve")

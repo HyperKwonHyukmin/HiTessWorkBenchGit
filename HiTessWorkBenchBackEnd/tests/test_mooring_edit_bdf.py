@@ -270,3 +270,103 @@ def test_connect_keeps_one_rbe_per_node(tmp_path):
     )
     owners = [r for r in again["rigids"] if 1 in (r.get("dependentNodes") or []) or r.get("independentNode") == 1]
     assert len(owners) == 1
+
+
+# ── 부재 나누기 · 새 부재 (2026-11-12, 현업 요청 5번) ──────────────────────────────
+def _beam(lines, eid):
+    found = [ln for ln in lines if ln[:8].strip().upper() == "CBEAM" and _eid(ln) == str(eid)]
+    assert len(found) == 1, f"CBEAM {eid}: {found}"
+    return found[0]
+
+
+def test_split_and_add_reach_solvable_deck(tmp_path):
+    """나눈 원래 부재는 끝 노드(GB)가 새 노드로 바뀌고, 조각과 새 부재가 deck 에 실제로 나온다(예전엔 새 요소를 건너뜀)."""
+    bdf_path = tmp_path / "STAGE_07_FinalValidation.bdf"
+    _write_minimal_bdf(bdf_path)
+    base = _nb.convert_bdf(bdf_path)
+    e1 = [e for e in base["elements"] if e.get("type") == "CBEAM"][0]
+    base["nodes"].append({"id": 3, "x": 500.0, "y": 0.0, "z": 400.0})   # 새 부재가 닿을 노드(원래 deck 에 없음)
+    intents = [
+        {"kind": "splitElement", "params": {"elementId": e1["id"], "newNodeId": 50, "newElementId": 60, "ratio": 0.5}},
+        {"kind": "addElement", "params": {"elementId": 61, "startNode": 50, "endNode": 3, "refElementId": e1["id"]}},
+    ]
+    edited, _ = _nb.apply_edit_json(base, {"schemaVersion": "1.0", "intents": intents})
+    lines = _an._build_solvable_edited_bdf(bdf_path.read_text(encoding="utf-8"), edited).splitlines()
+
+    orig = _beam(lines, e1["id"])
+    assert orig[24:32].strip() == "1" and orig[32:40].strip() == "50"          # GA 1, GB = 새 노드
+    piece = _beam(lines, 60)
+    assert piece[24:32].strip() == "50" and piece[32:40].strip() == "2" and _pid(piece) == "10"
+    added = _beam(lines, 61)
+    assert added[24:32].strip() == "50" and added[32:40].strip() == "3"
+    # 새 부재(500,0,0)→(500,0,400) 는 수직이라 참조 방향 (0,0,1) 을 쓸 수 없다 → (1,0,0)
+    assert [float(added[40 + 8 * k:48 + 8 * k]) for k in range(3)] == [1.0, 0.0, 0.0]
+    assert any(ln.startswith("GRID") and ln[8:16].strip() == "50" for ln in lines)
+
+
+def test_new_element_without_source_stops_instead_of_dropping(tmp_path):
+    """출처를 모르는 새 요소를 조용히 빼면 화면의 부재가 해석에서 빠진다 — 멈춰야 한다."""
+    bdf_path = tmp_path / "STAGE_07_FinalValidation.bdf"
+    _write_minimal_bdf(bdf_path)
+    base = _nb.convert_bdf(bdf_path)
+    base["elements"].append({"id": 77, "type": "CBEAM", "startNode": 1, "endNode": 2, "propertyId": 10})
+    # ValueError — SystemExit 는 서버 미들웨어를 지나 이유 없는 500 이 된다(커밋 전 리뷰)
+    with pytest.raises(ValueError, match="출처"):
+        _an._build_solvable_edited_bdf(bdf_path.read_text(encoding="utf-8"), base)
+
+
+def test_new_member_grades_follow_source_or_choice(tmp_path):
+    import json
+    from app.services.mooring_row_edit import new_member_grade_overrides
+    (tmp_path / "MEMBER_MATERIAL.json").write_text(json.dumps({"elements": {
+        "1": {"grade": "AH", "plateGrade": "A"}}}), encoding="utf-8")
+    edited = {"elements": [
+        {"id": 1}, {"id": 60, "splitOf": 1}, {"id": 70, "splitOf": 60},     # 나눈 조각을 또 나눔
+        {"id": 61, "addedFrom": 1}, {"id": 62, "addedFrom": 1},
+    ]}
+    intents = [{"kind": "addElement", "params": {"elementId": 62, "grades": ["DH", "DH"]}}]
+    got = new_member_grade_overrides(edited, {1}, intents, str(tmp_path))
+    assert got == {"60": ["AH", "A"], "70": ["AH", "A"], "61": ["AH", "A"], "62": ["DH", "DH"]}
+
+
+def test_reinforce_clones_are_left_to_engine(tmp_path):
+    """참조 복사 클론은 grades.json 에 넣지 않는다 — 엔진이 원본의 '지금' 등급(행 편집 뒤)을 물려준다.
+    편집 전 등급을 박으면 행 등급을 A 로 바꿔도 클론만 AH 로 판정됐다(커밋 전 리뷰 '막아야 함')."""
+    import json
+    from app.services.mooring_row_edit import new_member_grade_overrides
+    (tmp_path / "MEMBER_MATERIAL.json").write_text(json.dumps({"elements": {
+        "1": {"grade": "AH", "plateGrade": "A"}}}), encoding="utf-8")
+    edited = {"elements": [
+        {"id": 1}, {"id": 80, "reinforceOf": 1, "propertyId": 99},
+        {"id": 62, "addedFrom": 1}, {"id": 81, "reinforceOf": 62, "addedFrom": 1},   # 새 부재를 다시 복사
+    ]}
+    intents = [{"kind": "addElement", "params": {"elementId": 62, "grades": ["EH", "EH"]}}]
+    got = new_member_grade_overrides(edited, {1}, intents, str(tmp_path))
+    assert got == {"62": ["EH", "EH"]}
+
+
+def test_old_bridge_refuses_split_instead_of_dropping(monkeypatch, tmp_path):
+    """옛 bridge 는 splitElement 를 건너뛰고 '성공' 한다 — 해석 전에 멈춰야 한다(커밋 전 리뷰 '막아야 함')."""
+    monkeypatch.delattr(_nb, "split_element_from_params")
+    with pytest.raises(ValueError, match="bridge 교체 필요"):
+        _an._apply_mooring_edits({"elements": [], "nodes": []},
+                                 [{"kind": "splitElement", "params": {"elementId": 1}}], str(tmp_path))
+
+
+def test_new_member_survives_deleted_intermediate_piece(tmp_path):
+    """조각을 참조로 새 부재를 넣은 뒤 그 조각이 지워져도(그룹 삭제) 원래 부재 번호로 BDF 블록을 찾는다."""
+    bdf_path = tmp_path / "STAGE_07_FinalValidation.bdf"
+    _write_minimal_bdf(bdf_path)
+    base = _nb.convert_bdf(bdf_path)
+    e1 = [e for e in base["elements"] if e.get("type") == "CBEAM"][0]
+    base["nodes"].append({"id": 3, "x": 500.0, "y": 300.0, "z": 0.0})
+    intents = [
+        {"kind": "splitElement", "params": {"elementId": e1["id"], "newNodeId": 50, "newElementId": 60, "ratio": 0.5}},
+        {"kind": "addElement", "params": {"elementId": 61, "startNode": 50, "endNode": 3, "refElementId": 60}},
+    ]
+    edited, _ = _nb.apply_edit_json(base, {"schemaVersion": "1.0", "intents": intents})
+    assert next(e for e in edited["elements"] if e["id"] == 61)["originElementId"] == e1["id"]
+    edited["elements"] = [e for e in edited["elements"] if e["id"] != 60]      # 중간 조각이 사라진 경우
+    lines = _an._build_solvable_edited_bdf(bdf_path.read_text(encoding="utf-8"), edited).splitlines()
+    added = _beam(lines, 61)
+    assert added[24:32].strip() == "50" and added[32:40].strip() == "3"

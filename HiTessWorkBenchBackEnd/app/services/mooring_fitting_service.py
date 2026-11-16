@@ -35,6 +35,40 @@ SOLVE_SUMMARY_FILE = "mooring_solve.summary.json"
 # 라우터가 값을 주지 않았을 때 1.0(미적용)으로 떨어지지 않게 하는 두 번째 방어선이다.
 MF_SAFETY_FACTOR_CODE = 1.25
 
+# 해석할 하중 범위(build-full --loads, 2026-11-12 현업 요청) — all = MF + Winch, mf = MF 만, winch = Winch 만.
+LOAD_SCOPES = ("all", "mf", "winch")
+LOAD_SCOPE_LABELS = {"all": "MF + Winch", "mf": "MF 만", "winch": "Winch 만"}
+
+class EngineUpgradeRequired(RuntimeError):
+    """고른 기능을 지금 InHouse 엔진이 몰라 실행하지 않았다(옛 엔진은 모르는 옵션을 무시해 조용히 다른 해석을 한다)."""
+
+
+# exe 경로·수정 시각별로 '--loads 지원 여부'를 기억한다(exe 를 교체하면 다시 확인).
+_LOAD_SCOPE_CACHE: dict[tuple[str, float], bool] = {}
+
+
+def engine_supports_load_scope(exe_path: str) -> bool:
+    """MooringFitting.exe 가 build-full --loads 를 아는지 사용법 출력으로 확인한다.
+
+    옛 엔진은 모르는 옵션을 조용히 무시해 'Winch 만' 을 골라도 전체 하중으로 풀린다.
+    그래서 지원하지 않으면 실행하지 않고 '엔진 교체 필요' 로 실패시킨다(서버는 백엔드와 exe 가 따로 반영된다).
+    """
+    try:
+        key = (os.path.abspath(exe_path), os.path.getmtime(exe_path))
+    except OSError:
+        return False
+    cached = _LOAD_SCOPE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        proc = subprocess.run([exe_path], capture_output=True, timeout=30)
+        supported = b"--loads=" in (proc.stdout or b"") + (proc.stderr or b"")
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("[MooringFitting] 엔진 옵션 확인 실패 %s: %s", exe_path, exc)
+        return False
+    _LOAD_SCOPE_CACHE[key] = supported
+    return supported
+
 REPORT_FILE_NAME = "MooringFitting_Report.xlsx"
 REPORT_PLAN_FILE_NAME = "REPORT_PLAN.json"
 
@@ -291,9 +325,12 @@ def task_execute_mooring_fitting(
     timestamp: str,
     source: str,
     mf_safety_factor: float = MF_SAFETY_FACTOR_CODE,
+    load_scope: str = "all",
 ):
     """
-    MooringFitting.exe build-full <work_dir> --mf-sf=<sf> 를 호출한다.
+    MooringFitting.exe build-full <work_dir> --mf-sf=<sf> [--loads=mf|winch] 를 호출한다.
+
+    load_scope: 해석할 하중 범위(all / mf / winch). all 이 아니면 엔진이 --loads 를 알아야 한다.
 
     mf_safety_factor: MF 하중 전용 안전계수(라우터에서 검증된 양수). Winch 미적용.
 
@@ -314,10 +351,19 @@ def task_execute_mooring_fitting(
             raise FileNotFoundError(f"실행 파일을 찾을 수 없습니다: {exe_path}")
 
         update_progress(job_id, 30, "MooringFitting 파이프라인 실행 중...")
-        logger.info("[MooringFitting] exe=%s, work_dir=%s, mf_sf=%s", exe_path, work_dir, mf_safety_factor)
+        logger.info("[MooringFitting] exe=%s, work_dir=%s, mf_sf=%s, loads=%s",
+                    exe_path, work_dir, mf_safety_factor, load_scope)
+
+        cmd = [exe_path, "build-full", work_dir, f"--mf-sf={mf_safety_factor}"]
+        if load_scope != "all":
+            if not engine_supports_load_scope(exe_path):
+                raise EngineUpgradeRequired(
+                    f"'{LOAD_SCOPE_LABELS.get(load_scope, load_scope)}' 해석은 새 엔진이 필요합니다. "
+                    "서버의 MooringFitting.exe 를 교체해야 합니다(엔진 교체 필요).")
+            cmd.append(f"--loads={load_scope}")
 
         returncode, stdout_b, stderr_b = _run_capture(
-            [exe_path, "build-full", work_dir, f"--mf-sf={mf_safety_factor}"],
+            cmd,
             cwd=work_dir,
             timeout=TIMEOUT_SECONDS,
             job_id=job_id,
@@ -349,6 +395,10 @@ def task_execute_mooring_fitting(
         status_msg = "Failed"
         logger.error("[MooringFitting] exe not found: %s", str(e))
         engine_output = str(e)
+    except EngineUpgradeRequired as e:
+        status_msg = "Failed"
+        logger.error("[MooringFitting] %s", str(e))
+        engine_output = str(e)
     except Exception as e:
         status_msg = "Failed"
         logger.error("MooringFitting unexpected error: %s", str(e), exc_info=True)
@@ -365,6 +415,7 @@ def task_execute_mooring_fitting(
             "structure_csv": structure_path,
             "load_csv": load_path,
             "mf_safety_factor": mf_safety_factor,
+            "load_scope": load_scope,
         },
         result_info=result_data if result_data else None,
         source=source,

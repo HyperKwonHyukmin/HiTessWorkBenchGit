@@ -27,6 +27,9 @@ CONFIDENCE_CONFIRMED = "확정"
 CONFIDENCE_LIKELY = "유력"
 CONFIDENCE_REFERENCE = "참고"
 
+# IACS UR A2.4 — CSR 이 아닌 배의 계류 의장품 지지 구조 부식 마진 최소값(mm, 양면 합계). 엔진 FinalValidationInspector 와 같다.
+UR_A2_MIN_CORROSION_MM = 2.0
+
 # ── 부재 단위 규칙 임계값 (자주 바뀌는 값이므로 모듈 상단 한 곳에 모은다) ──
 LOAD_PROXIMITY_HOPS = 2          # 이 이하면 "직결"로 본다
 SECTION_WEAK_RATIO = 1.0 / 3.0   # 같은 단면 타입 중앙값 대비
@@ -66,22 +69,61 @@ def _case_findings(evidence: dict, equilibrium: dict | None, f06: dict | None) -
             hint="CAD 출력에서 같은 부재가 두 번 나온 것인지 확인하세요. 구조 CSV 표에서 '중복 행'으로 보입니다.",
         ))
 
+    # 부식 마진 — 엔진이 CSV corrosion 값을 모든 판 두께에서 뺐다(2026-11-12). 값은 CSV 그대로 쓰고
+    # IACS UR A2.4 최소 2.0 mm 보다 작으면 알리기만 한다(사용자 결정). 옛 결과(corrosionSource 없음)는 말하지 않는다.
+    corrosion_source = case_facts.get("corrosionSource")
+    corrosion = case_facts.get("corrosionMm") or 0
+    if corrosion_source == "missing":
+        findings.append(_finding(
+            "CORROSION_MISSING", CONFIDENCE_CONFIRMED,
+            "구조 CSV 의 corrosion 값이 없거나 읽을 수 없어 부식 마진을 빼지 않고 총두께로 해석했습니다.",
+            hint=f"IACS UR A2.4 는 지지 구조에 부식 마진 {UR_A2_MIN_CORROSION_MM:g} mm 를 요구합니다. CSV 2번째 줄에 'corrosion,값' 을 넣으세요.",
+        ))
+    elif corrosion_source == "csv" and corrosion < UR_A2_MIN_CORROSION_MM:
+        findings.append(_finding(
+            "CORROSION_BELOW_UR_A2", CONFIDENCE_REFERENCE,
+            f"부식 마진 {corrosion:g} mm 를 모든 판 두께에서 빼고 해석했습니다. "
+            f"IACS UR A2.4 의 최소값 {UR_A2_MIN_CORROSION_MM:g} mm 보다 작습니다.",
+            hint="CSR 선이 아니면 CSV 의 corrosion 값을 확인하세요.",
+        ))
+
     mf_input = case_facts.get("mfInputCount") or 0
     force_load = case_facts.get("forceLoadCount") or 0
-    if mf_input > 0 and force_load == 0:
+    winch_input = case_facts.get("winchInputCount") or 0
+    # 하중 범위(build-full --loads, 2026-11-12) — 범위로 뺀 하중은 '입력 없음' 으로 알리지 않고 범위를 알린다.
+    load_scope = case_facts.get("loadScope") or "all"
+    if load_scope == "mf":
+        findings.append(_finding(
+            "LOAD_SCOPE", CONFIDENCE_REFERENCE,
+            "MF 하중만 해석했습니다. Winch 하중"
+            + (f" {winch_input}건은" if winch_input else "은") + " 이번 해석에 넣지 않았습니다.",
+            hint="Winch Seat 는 'Winch 만' 으로 따로 해석하세요.",
+        ))
+    elif load_scope == "winch":
+        findings.append(_finding(
+            "LOAD_SCOPE", CONFIDENCE_REFERENCE,
+            "Winch 하중만 해석했습니다. MF 하중"
+            + (f" {mf_input}건과 계류 의장품 받침 RBE 는" if mf_input else "은") + " 이번 해석에 넣지 않았습니다.",
+            hint="계류 의장품은 'MF 만' 또는 '전체' 로 따로 해석하세요.",
+        ))
+    if load_scope == "winch" and force_load == 0:
+        findings.append(_finding(
+            "LOAD_NOT_APPLIED", CONFIDENCE_CONFIRMED,
+            "Winch 하중만 해석하도록 골랐지만 모델에 실린 하중이 0건입니다. Winch 하중 케이스의 값이 모두 0 인지 확인하세요.",
+        ))
+    if mf_input > 0 and force_load == 0 and load_scope != "winch":
         findings.append(_finding(
             "LOAD_NOT_APPLIED", CONFIDENCE_CONFIRMED,
             f"MF 입력이 {mf_input}건인데 모델에 실린 하중은 0건입니다. "
             "하중이 구조에 연결되지 못했습니다.",
         ))
-    if mf_input == 0:
+    if mf_input == 0 and load_scope != "winch":
         findings.append(_finding(
             "LOAD_NONE", CONFIDENCE_CONFIRMED,
             "MF 하중 입력이 0건입니다. 입력 CSV 에 MF 행이 없습니다.",
         ))
 
-    winch_input = case_facts.get("winchInputCount") or 0
-    if winch_input == 0:
+    if winch_input == 0 and load_scope != "mf":
         findings.append(_finding(
             "LOAD_NONE", CONFIDENCE_REFERENCE,
             "Winch 하중 입력이 0건입니다. 의도한 것이 아니라면 입력 CSV 의 LOADCASE 행을 확인하세요.",

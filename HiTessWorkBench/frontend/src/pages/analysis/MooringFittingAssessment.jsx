@@ -27,6 +27,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useDashboardFilesHandoff, useDashboardAutoRun } from '../../utils/dashboardFileHandoff';
 import { useResultReentry } from '../../utils/resultReentry';
 import { computeMooringVerdict, summarizeMooringRawAudit, extractEngineAlerts } from '../../utils/mooringVerdict';
+import { LOAD_SCOPES, loadScopeLabel, missingInputReason, normalizeLoadScope } from '../../utils/mooringLoadScope.js';
 
 const MENU_NAME = 'Mooring Fitting Assessment';
 const PROGRAM_NAME = 'MooringFitting';
@@ -719,6 +720,8 @@ export default function MooringFittingAssessment() {
   const [structureFile, setStructureFile] = useState(savedPageState.structureFile ?? null);
   const [loadFile,      setLoadFile]      = useState(savedPageState.loadFile ?? null);
   const [mfSafetyFactor, setMfSafetyFactor] = useState(savedPageState.mfSafetyFactor ?? DEFAULT_MF_SF);
+  // 해석할 하중 범위(전체 / MF 만 / Winch 만) — utils/mooringLoadScope.js
+  const [loadScope,     setLoadScope]     = useState(normalizeLoadScope(savedPageState.loadScope));
   const [activeIdx,     setActiveIdx]     = useState(Math.min(savedPageState.activeIdx ?? 0, STEP_DEFS.length - 1));
   const [hasRunOnce,    setHasRunOnce]    = useState(savedPageState.hasRunOnce ?? false);
   const [jobId,         setJobId]         = useState(savedPageState.jobId ?? null);
@@ -746,10 +749,10 @@ export default function MooringFittingAssessment() {
 
   useEffect(() => {
     dashboardCtx?.setAnalysisPageState?.(MENU_NAME, {
-      structureFile, loadFile, mfSafetyFactor, activeIdx, hasRunOnce, jobId, jobStatus,
+      structureFile, loadFile, mfSafetyFactor, loadScope, activeIdx, hasRunOnce, jobId, jobStatus,
       elapsedSecs, engineLog, artifactJson, studioOpened, delivered,
     });
-  }, [structureFile, loadFile, mfSafetyFactor, activeIdx, hasRunOnce, jobId, jobStatus, elapsedSecs, engineLog, artifactJson, studioOpened, delivered]);
+  }, [structureFile, loadFile, mfSafetyFactor, loadScope, activeIdx, hasRunOnce, jobId, jobStatus, elapsedSecs, engineLog, artifactJson, studioOpened, delivered]);
 
   /* ── 결과 지우기(입력이 바뀌면 옛 결과는 의미가 없다) ─────────────── */
   const stopTimers = () => {
@@ -834,8 +837,9 @@ export default function MooringFittingAssessment() {
   };
 
   const handleRun = async () => {
-    if (!structureFile || !loadFile) {
-      showToast('Structure CSV와 Load CSV를 모두 선택하세요', 'error');
+    const missing = missingInputReason({ structureFile, loadFile, scope: loadScope });
+    if (missing) {
+      showToast(missing.replace(' 열립니다.', ' 실행할 수 있습니다.'), 'error');
       return;
     }
     const sfNum = Number(mfSafetyFactor);
@@ -850,7 +854,8 @@ export default function MooringFittingAssessment() {
 
     const fd = new FormData();
     fd.append('structure_file',   structureFile);
-    fd.append('load_file',        loadFile);
+    if (loadFile) fd.append('load_file', loadFile);
+    fd.append('load_scope',       loadScope);
     fd.append('employee_id',      employeeId);
     fd.append('source',           'Workbench');
     fd.append('mf_safety_factor', String(sfNum));
@@ -1019,7 +1024,8 @@ export default function MooringFittingAssessment() {
   const projectInput = project ? asObject(project.input_info) : {};
   const outDir     = result?.out_dir || null;
   const artifactsMissing = !!result?._artifacts_missing;
-  const canRun     = !!structureFile && !!loadFile && !isRunning;
+  const missingInput = missingInputReason({ structureFile, loadFile, scope: loadScope });
+  const canRun     = !missingInput && !isRunning;
   const sfNum      = Number(mfSafetyFactor);
   const sfValid    = Number.isFinite(sfNum) && sfNum > 0;
   // 입력 이름 — 입력 요약·Studio 창 제목에 쓴다(다시 연 결과에서 CSV 를 못 받았으면 기록의 경로 이름)
@@ -1108,6 +1114,7 @@ export default function MooringFittingAssessment() {
     setStructureFile(null);
     setLoadFile(null);
     setMfSafetyFactor(DEFAULT_MF_SF);
+    setLoadScope('all');
     setStudioError(null);
     setStudioProgress(null);
     if (studioStatus === 'error') setStudioStatus('idle');
@@ -1133,8 +1140,10 @@ export default function MooringFittingAssessment() {
 
       handleReset();
       if (structRes.status === 'fulfilled') setStructureFile(structRes.value);
-      if (loadRes.status === 'fulfilled') setLoadFile(loadRes.value);
+      // MF 만 해석한 기록의 Load CSV 는 서버가 둔 빈 자리표시라 불러오지 않는다(커밋 전 리뷰).
+      if (loadRes.status === 'fulfilled' && normalizeLoadScope(input.load_scope) !== 'mf') setLoadFile(loadRes.value);
       if (input.mf_safety_factor != null) setMfSafetyFactor(input.mf_safety_factor);
+      setLoadScope(normalizeLoadScope(input.load_scope));
       setHasRunOnce(true);
       setJobStatus({
         status: rec.status || 'Success', progress: 100, message: '',
@@ -1157,9 +1166,10 @@ export default function MooringFittingAssessment() {
       const [s, l] = await Promise.all([downloadAsFile(input.structure_csv), downloadAsFile(input.load_csv)]);
       handleReset();
       setStructureFile(s);
-      setLoadFile(l);
+      setLoadFile(normalizeLoadScope(input.load_scope) === 'mf' ? null : l);
       if (input.mf_safety_factor != null) setMfSafetyFactor(input.mf_safety_factor);
-      showToast('최근 실행의 CSV 2개와 MF 안전계수를 불러왔습니다.', 'success');
+      setLoadScope(normalizeLoadScope(input.load_scope));
+      showToast('최근 실행의 CSV 2개와 MF 안전계수, 해석할 하중을 불러왔습니다.', 'success');
     } catch (e) {
       showToast(`입력을 불러오지 못했습니다: ${e.message}`, 'error');
     }
@@ -1283,7 +1293,11 @@ export default function MooringFittingAssessment() {
 
   const inputItems = [
     { key: 'structure', label: 'Structure', fileName: inputName, state: buildVerdict.level === 'fail' ? 'error' : buildVerdict.level === 'review' ? 'warn' : 'ok' },
-    { key: 'load', label: 'Load', fileName: loadFile?.name || fileBaseName(projectInput.load_csv) || null, state: 'ok' },
+    // MF 만 해석한 기록의 load_csv 는 서버가 둔 빈 자리표시라 이름을 보이지 않는다(커밋 전 리뷰).
+    { key: 'load', label: 'Load', fileName: loadFile?.name
+        || (normalizeLoadScope(projectInput.load_scope) === 'mf' ? null : fileBaseName(projectInput.load_csv))
+        || (loadScope === 'mf' || normalizeLoadScope(projectInput.load_scope) === 'mf' ? '없음 (MF 만)' : null), state: 'ok' },
+    { key: 'scope', label: '하중', fileName: loadScopeLabel(hasRunOnce && projectInput.load_scope ? projectInput.load_scope : loadScope), state: 'ok' },
   ];
 
   /* ── 실행 버튼 — 하나만. 단축키도 같은 객체를 쓴다 ───────────────── */
@@ -1412,6 +1426,27 @@ export default function MooringFittingAssessment() {
 
           <div className="h-px bg-slate-100" />
           <div>
+            <span id="mf-load-scope" className="block text-sm font-semibold text-slate-800">해석할 하중</span>
+            <div role="radiogroup" aria-labelledby="mf-load-scope" className="mt-1.5 grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1">
+              {LOAD_SCOPES.map(sc => (
+                <button
+                  key={sc.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={loadScope === sc.id}
+                  disabled={isRunning}
+                  onClick={() => setLoadScope(sc.id)}
+                  className={`rounded-md px-2 py-1.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-60 ${loadScope === sc.id ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'}`}
+                >
+                  {sc.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-slate-600">{LOAD_SCOPES.find(sc => sc.id === loadScope)?.detail}</p>
+          </div>
+
+          <div className="h-px bg-slate-100" />
+          <div>
             <label htmlFor="mf-safety-factor" className="flex items-center justify-between gap-3">
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-slate-800">MF 안전계수 (SF)</span>
@@ -1445,8 +1480,8 @@ export default function MooringFittingAssessment() {
                 ? <><Loader2 size={15} className="animate-spin" aria-hidden="true" /> 실행 중…</>
                 : <><runAction.icon size={15} aria-hidden="true" /> {runAction.label}</>}
             </button>
-            {!(structureFile && loadFile) ? (
-              <p className="text-center text-xs text-slate-600">Structure CSV 와 Load CSV 를 올리면 열립니다.</p>
+            {missingInput ? (
+              <p className="text-center text-xs text-slate-600">{missingInput}</p>
             ) : (
               <p className="text-center text-[11px] text-slate-600">
                 <kbd className="rounded border border-slate-300 bg-slate-50 px-1 font-mono text-[11px]">Ctrl</kbd>

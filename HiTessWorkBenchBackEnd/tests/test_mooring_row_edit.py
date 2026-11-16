@@ -304,12 +304,14 @@ def test_viewer_zip_carries_rows_and_engine_origin(api):
     res = client.get("/api/analysis/mooring-fitting/viewer-zip", params={"output_dir": str(out)})
     assert res.status_code == 200, res.text
     with zipfile.ZipFile(io.BytesIO(res.content)) as zf:
-        rows = json.loads(zf.read("csv_rows.json"))["rows"]
+        payload = json.loads(zf.read("csv_rows.json"))
+        rows, corrosion = payload["rows"], payload["corrosion"]
         names = json.loads(zf.read("element_names.json"))["names"]
     assert rows["3"]["name"] == "A1"
     assert rows["3"]["ownElements"] == 1
+    assert corrosion == {"mm": 0.0, "source": "unknown"}     # 옛 엔진 결과 = 총두께
     assert names["1"] == {"name": "A1", "line": 3, "kind": "Angle",
-                          "grade": "A", "yieldMPa": 235, "gradeKnown": True}
+                          "grade": "A", "yieldMPa": 235, "gradeKnown": True, "plateGrade": "A"}
 
 
 @pytest.mark.skipif(not _NB, reason="nastran_bridge 모듈 미가용")
@@ -391,3 +393,84 @@ def test_plate_below_t_section_new_engine(case):
     prop = {"id": 50, "card": "PBEAML", "kind": "T", "materialId": 1, "dims": [850.0, 210.0, 10.0, 12.0]}
     cells = list(rows[5]["cells"]); cells[4] = "250"; cells[5] = "14"
     assert _new_dims(rows[5], prop, cells) == [850.0, 260.0, 10.0, 14.0]
+
+
+# ── 부식 마진 (2026-11-12) ──────────────────────────────────────────────
+# 엔진이 CSV corrosion 값(tc)을 모든 판 두께에서 빼고 단면을 만든다. 행 편집도 같은 tc 를 빼야
+# '이 행의 단면인가' 검사가 맞고, 빼지 않으면 크기 편집이 모든 행에서 조용히 건너뛰어진다.
+
+def _set_corrosion(out, mm, source="csv"):
+    path = out / "MODEL_EVIDENCE.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["caseFacts"] = {"corrosionMm": mm, "corrosionSource": source}
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _net_model():
+    """tc = 1 mm 로 엔진이 만든 모델 — 두께 칸이 CSV 값보다 1 mm 작다(갑판 12.5 → 11.5)."""
+    m = _model()
+    _prop(m, 1)["dims"] = [261.5, 90.0, 750.0, 9.0, 14.0, 11.5]     # ANGLE 250/10/90/15
+    _prop(m, 3)["dims"] = [750.0, 161.5, 11.5, 11.0]                # FLATBAR 150/12
+    return m
+
+
+def test_corrosion_info_sources(case):
+    from app.services.mooring_row_edit import corrosion_info
+    assert corrosion_info(str(case)) == {"mm": 0.0, "source": "unknown"}      # 옛 결과
+    _set_corrosion(case, 1.5)
+    assert corrosion_info(str(case)) == {"mm": 1.5, "source": "csv"}
+    _set_corrosion(case, 0, "missing")
+    assert corrosion_info(str(case)) == {"mm": 0.0, "source": "missing"}
+
+
+def test_net_section_is_recognised_as_own_row(case):
+    _set_corrosion(case, 1)
+    rows = read_csv_rows(str(case.parent))
+    annotate_row_sections(rows, str(case), _net_model())
+    assert rows[3]["ownElements"] == 2 and rows[3]["foreignElements"] == 0
+    assert rows[4]["ownElements"] == 1
+
+
+def test_size_edit_deducts_corrosion_from_thickness_only(case):
+    _set_corrosion(case, 1)
+    m = _net_model()
+    apply_row_edits(m, [_edit(3, c2="300", c3="12", c4="100", c5="18")], str(case))
+    # 높이·폭은 CSV 그대로, 웹·면재 두께는 -1, 갑판은 엔진 순두께 그대로
+    assert _prop(m, 1)["dims"] == [311.5, 100.0, 750.0, 11.0, 17.0, 11.5]
+
+
+def test_size_edit_to_thickness_not_above_corrosion_is_rejected(case):
+    _set_corrosion(case, 1)
+    m = _net_model()
+    with pytest.raises(ValueError, match="부식 마진"):
+        apply_row_edits(m, [_edit(4, c3="1")], str(case))
+
+
+def test_corrosion_findings():
+    from app.services.mooring_diagnosis import _case_findings
+    base = {"mfInputCount": 1, "forceLoadCount": 2, "winchInputCount": 1}
+    codes = lambda facts: {f["code"] for f in _case_findings({"caseFacts": {**base, **facts}}, None, None)}  # noqa: E731
+    assert "CORROSION_BELOW_UR_A2" in codes({"corrosionMm": 1, "corrosionSource": "csv"})
+    assert not {"CORROSION_BELOW_UR_A2", "CORROSION_MISSING"} & codes({"corrosionMm": 2, "corrosionSource": "csv"})
+    assert "CORROSION_MISSING" in codes({"corrosionMm": 0, "corrosionSource": "missing"})
+    assert not {"CORROSION_BELOW_UR_A2", "CORROSION_MISSING"} & codes({})            # 옛 결과는 말하지 않음
+
+
+def test_load_scope_findings():
+    from app.services.mooring_diagnosis import _case_findings
+    def codes(**facts):
+        return {f["code"] for f in _case_findings({"caseFacts": facts}, None, None)}
+    winch = codes(loadScope="winch", mfInputCount=7, winchInputCount=20, forceLoadCount=40)
+    assert "LOAD_SCOPE" in winch and "LOAD_NONE" not in winch
+    mf = codes(loadScope="mf", mfInputCount=7, winchInputCount=0, forceLoadCount=18)
+    assert "LOAD_SCOPE" in mf and "LOAD_NONE" not in mf      # Winch 0건을 '입력 없음' 으로 말하지 않는다
+    assert "LOAD_NONE" in codes(mfInputCount=7, winchInputCount=0, forceLoadCount=18)   # 범위 없으면 예전대로
+
+
+def test_split_piece_follows_row_edit(case):
+    """부재 나누기 조각(splitOf)은 원래 부재의 CSV 행 편집을 따라간다(조각만 옛 단면으로 남지 않게)."""
+    m = _model()
+    m["elements"].append({"id": 7, "propertyId": 10, "splitOf": 1})
+    m["elements"].append({"id": 8, "propertyId": 10, "splitOf": 7})     # 조각을 또 나눔
+    apply_row_edits(m, [_edit(3, c2="300")], str(case))
+    assert _prop(m, 7)["id"] == _prop(m, 1)["id"] == _prop(m, 8)["id"] != 10

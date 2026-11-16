@@ -179,3 +179,69 @@ def test_run_sample_returns_404_when_relative_sample_files_are_missing(
 
     assert res.status_code == 404
     assert "SampleFile/MooringFitting" in res.json()["detail"]
+
+
+# ── 하중 범위 (2026-11-12, build-full --loads) ───────────────────────────
+def _capture_submit(monkeypatch):
+    captured = {}
+    monkeypatch.setattr("app.services.job_manager.analysis_executor.submit",
+                        lambda task_fn, *args, **kwargs: captured.setdefault("args", args))
+    return captured
+
+
+def test_mf_scope_without_load_csv_writes_placeholder(auth_client, monkeypatch):
+    captured = _capture_submit(monkeypatch)
+    files = {"structure_file": ("s.csv", b"MF,F1\n", "text/csv")}
+    res = auth_client.post("/api/analysis/mooring-fitting/request", files=files,
+                           data={"employee_id": "HHI123", "load_scope": "mf"})
+    assert res.status_code == 200, res.text
+    load_path = captured["args"][2]
+    assert os.path.basename(load_path) == "MooringFittingDataLoad.csv"
+    assert open(load_path, encoding="utf-8").read().startswith("//")   # 엔진이 찾는 두 번째 파일, 하중 없음
+    assert captured["args"][-1] == "mf"                                 # load_scope 가 작업으로 넘어간다
+
+
+@pytest.mark.parametrize("scope", ["all", "winch"])
+def test_load_csv_required_unless_mf(auth_client, monkeypatch, scope):
+    _capture_submit(monkeypatch)
+    files = {"structure_file": ("s.csv", b"MF,F1\n", "text/csv")}
+    res = auth_client.post("/api/analysis/mooring-fitting/request", files=files,
+                           data={"employee_id": "HHI123", "load_scope": scope})
+    assert res.status_code == 422
+
+
+def test_bad_scope_rejected(auth_client, monkeypatch):
+    _capture_submit(monkeypatch)
+    files = {"structure_file": ("s.csv", b"x\n", "text/csv"), "load_file": ("l.csv", b"y\n", "text/csv")}
+    res = auth_client.post("/api/analysis/mooring-fitting/request", files=files,
+                           data={"employee_id": "HHI123", "load_scope": "both"})
+    assert res.status_code == 422
+
+
+def test_default_scope_is_all(auth_client, monkeypatch):
+    captured = _capture_submit(monkeypatch)
+    files = {"structure_file": ("s.csv", b"x\n", "text/csv"), "load_file": ("l.csv", b"y\n", "text/csv")}
+    res = auth_client.post("/api/analysis/mooring-fitting/request", files=files, data={"employee_id": "HHI123"})
+    assert res.status_code == 200, res.text
+    assert captured["args"][-1] == "all"
+
+
+def test_old_engine_refuses_scope_instead_of_running_all(tmp_path, monkeypatch):
+    """옛 엔진은 --loads 를 무시해 전체 하중으로 풀린다 — 실행하지 않고 '엔진 교체 필요' 로 실패해야 한다."""
+    from app.services import mooring_fitting_service as svc
+    exe = tmp_path / "MooringFitting.exe"
+    exe.write_bytes(b"x")
+    ran = []
+    monkeypatch.setattr(svc, "engine_supports_load_scope", lambda p: False)
+    monkeypatch.setattr(svc, "_run_capture", lambda *a, **k: ran.append(a) or (0, b"", b""))
+    recorded = {}
+    monkeypatch.setattr(svc, "record_analysis", lambda **kw: recorded.update(kw) or ({}, None))
+    monkeypatch.setattr(svc, "mark_complete", lambda job_id, status, output, *a, **k: recorded.update(status=status, output=output))
+    monkeypatch.setattr(svc, "mark_running", lambda *a, **k: None)
+    monkeypatch.setattr(svc, "update_progress", lambda *a, **k: None)
+    svc.task_execute_mooring_fitting("j1", "s.csv", "l.csv", str(tmp_path), str(exe), "HHI123", "ts", "Workbench",
+                                     1.25, "winch")
+    assert not ran
+    assert recorded["status"] == "Failed"
+    assert "엔진 교체 필요" in recorded["output"]
+    assert recorded["input_info"]["load_scope"] == "winch"
