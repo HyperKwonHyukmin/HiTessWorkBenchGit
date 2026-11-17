@@ -869,6 +869,10 @@ CalcVerify 끝에 `Sn_Top,Sn_Bottom` 이 붙었다. 이 칸이 없는 옛 결과
   ⚠ Job Center 조회(`GlobalJobPoller`)는 이제 최대 30분(`POLLING_POLICY.globalJobMaxRetries`) — 예전 3분에서 포기하면 그 Failed 가 페이지 저장 상태로 전해져 페이지 조회까지 멈추고 근거 없는 실패가 떴다(모든 앱 공통).
   ⚠ 이 서비스의 자식 실행(엔진 exe, bridge, Nastran)은 `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` — 서버 콘솔 창의 Ctrl+C 에 bridge 가 0xC000013A 로 죽어 모델 JSON 없이 '성공'한 일(11-16). 다른 서비스는 아직 그대로.
   **145 순서**: InHouse `DrawingToAnalysis.exe`(sha256 dfef832b…) + `lugparams/`(0.2) 먼저 → `git pull` + 재시작 → 새 exe.
+- **T-5, T-10 과 A-15~A-50 (2026-11-17)** — 새 형식 `t_tilted_lug`(엔진 `254aacf`, WorkBench `d6e6f32`), `a_type_lug`(**미커밋**). 상세 = 계획 문서 'T-5 · T-10', 'A형' 절.
+  치수 파일만 늘고 exe 는 그대로다(설계 JSON 은 서버가 만들어 `lugshell --design` 에 넘김) — 145 는 T형 exe 뒤 `lugparams/` 만 다시 복사(0.4).
+  손 치수 자중 3% 규칙의 첫 예외: A-20(−6.4%), A-40(+8.0%)은 형상이 PDF 벡터와 맞아 도면 자중 표기 오차로 보고 `drawing_mass_note` 에 이유를 적는다(시험이 그때만 10%).
+  치수가 없는 기하(기울기, 따낸 자리)는 PDF 벡터(`page.get_drawings()`)로 잰다 — 이 세션의 방법.
 
 ### 이중관 연료배관 PSA — 엔진은 외부 연구원 소유, WorkBench 개조는 어댑터로 분리 ★엔진 수정 금지
 
