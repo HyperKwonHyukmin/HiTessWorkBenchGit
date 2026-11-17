@@ -289,6 +289,9 @@ P2 의 기본을 "그대로 두고 보고"로 둔 이유: 받칠 구조가 1 m �
 > **→ 2026-11-17 70 InHouse 교체** — `237a6a4` 빌드(sha256 0ef1c8a6…, 해시는 s5_mass3 와 달라도 회귀 Nastran 없이 `rel_237a6a4` BDF 62/62 같음), 백업 `.bak_20261117_before_overhaul`.
 >   확인: 백엔드 MB 시험(편집 계약 포함) 통과 · `task_execute_modelflow` 로 3454, 3476 실제 실행 '모델 생성 완료', 최종 산출물 = 정상 BDF/JSON, BDF 머리 `Review=REQUIRED Items=…`, `00_Review.json` 종류 10가지 모두 `mbReview.js` 이름표 있음.
 >   그 실행이 70 개발 DB 에 샘플 표시(`WorkbenchSample`) 기록 3건을 남김. WorkBench 앱 안 화면, Studio 는 눈으로 확인 안 함. 145 교체는 사용자 몫.
+> **→ 2026-11-17 세션 끝** — Studio 검토 창 1차 완료(아래 6단계 'Studio 검토 창 1차'): 엔진 `a517b8a`(70 InHouse 교체, sha256 6f928955…, 백업 `.bak_20261117_before_review`) · MB Studio `db966df`(0.1.13, 70 로컬 zip, 그 앞에 0.1.9~0.1.12 스냅숏 `bd1d08a`) · WorkBench `4b247a3`. 셋 다 푸시 안 함(엔진은 Public 저장소라 D8 Private 전환 뒤).
+> 다음: ① 사용자가 70 앱에서 Review 탭 → Save → 판정 갱신 흐름 확인(앱 안 흐름은 아직 아무도 안 봄) ② 'U-bolt 없이 N m 넘는 배관' 결정 기록(기준 길이 결정 필요) ③ RBE3(D4)는 사용자 검토 중 — 건드리지 않음.
+> 145(사용자가 마지막에 한꺼번에): InHouse `Cmb.Cli.exe` 교체 **먼저** → `/studio-release model-studio` 0.1.13 → 다음 WorkBench exe.
 
 **B11 + B12a (2026-11-12, 엔진 미커밋, 70 InHouse 미교체)** — 회귀 이름 `b11_noise_off`(B11 만), `b12a_fragment`(둘 다).
 - B11: `RunOptions.GroupConnectNoiseLengthMm` 500 → **0**(노이즈 제거 끔). 시험 `NoiseFragment_SingleSmallElement_KeptByDefault` 로 바꿈.
