@@ -3,8 +3,11 @@ import * as THREE from 'three';
 import { createThreeScene } from '../../hooks/useThreeScene';
 import {
   Layers, PlayCircle, PauseCircle, RotateCcw,
-  Maximize2, Minimize2, Grid3x3,
+  Maximize2, Minimize2, Grid3x3, Search, X, Loader2,
 } from 'lucide-react';
+import {
+  parseFindQuery, computeGroupOffsets, resolveFind, groupLabel,
+} from '../../utils/doublePipeFind';
 
 /* ── 배관 뷰어 전용 세로 그라디언트 배경 ── */
 function makeGradientBackground() {
@@ -40,6 +43,46 @@ function makeAxisLabel(text, color) {
   sp.scale.set(0.45, 0.45, 1);
   return sp;
 }
+
+/* ── 찾기 강조 이름표(화면 크기 고정) ── */
+function makeFindLabel(text, color) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = 'bold 34px ui-monospace, Menlo, Consolas, monospace';
+  const w = Math.min(248, ctx.measureText(text).width + 24);
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.rect((256 - w) / 2, 8, w, 48);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 33);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthTest: false, sizeAttenuation: false,
+  }));
+  sp.scale.set(0.16, 0.04, 1);
+  sp.center.set(0.5, -0.15);
+  sp.renderOrder = 30;
+  return sp;
+}
+
+function disposeObject(obj) {
+  obj.traverse(o => {
+    o.geometry?.dispose();
+    const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+    mats.forEach(m => { m.map?.dispose(); m.dispose(); });
+  });
+}
+
+const FIND_ELEMENT_COLOR = 0xff2d6f;
+const FIND_NODE_COLOR = 0x22d3ee;
+const FIND_LABEL_MAX = 40;
 
 /* ── CSV 좌표 문자열("X 34866mm Y -3600mm Z 19384mm") → [x,y,z] ── */
 function parseXYZ(str) {
@@ -237,7 +280,9 @@ function ViewBtn({ onClick, label }) {
   );
 }
 
-export default function DoublePipeViewer({ columns, rows }) {
+// find = 해석 모델(inp) 번호 찾기. 없으면 찾기 칸을 그리지 않는다(Natural Frequency 화면 등).
+//   { status: 'idle' | 'loading' | 'ready' | 'error', model, message }
+export default function DoublePipeViewer({ columns, rows, find }) {
   const mountRef = useRef(null);
   const containerRef = useRef(null);
   const controlsRef = useRef(null);
@@ -246,6 +291,8 @@ export default function DoublePipeViewer({ columns, rows }) {
   const innerGroupRef = useRef(null);
   const supportGroupRef = useRef(null);
   const gridRef = useRef(null);
+  const sceneRef = useRef(null);
+  const findGroupRef = useRef(null);
 
   const gizmoCanvasRef = useRef(null);
   const gizmoRendererRef = useRef(null);
@@ -260,6 +307,9 @@ export default function DoublePipeViewer({ columns, rows }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   // WebGL 초기화 실패/컨텍스트 손실 시 앱이 멈추지 않도록 폴백 상태로 전환.
   const [glError, setGlError] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findKind, setFindKind] = useState('element');
+  const [findResult, setFindResult] = useState(null);   // { nodes, elements, missing, invalid }
 
   const model = useMemo(() => buildPipeModel(columns, rows), [columns, rows]);
 
@@ -288,6 +338,7 @@ export default function DoublePipeViewer({ columns, rows }) {
     const scene3 = createThreeScene(el, { zUp: true });
     const { scene, camera, renderer, controls } = scene3;
     cleanup = scene3.cleanup;
+    sceneRef.current = scene;
     controlsRef.current = controls;
     cameraRef.current = camera;
     // WebGL 컨텍스트 손실(드라이버 리셋 등) 시 프리즈 대신 폴백 UI 로 전환.
@@ -425,6 +476,8 @@ export default function DoublePipeViewer({ columns, rows }) {
       supportGroupRef.current = null;
       gridRef.current = null;
       cameraRef.current = null;
+      if (findGroupRef.current) { disposeObject(findGroupRef.current); findGroupRef.current = null; }
+      sceneRef.current = null;
       cleanup();
     };
     } catch (err) {
@@ -522,6 +575,112 @@ export default function DoublePipeViewer({ columns, rows }) {
     applyView(d.lengthSq() > 1e-9 ? [d.x, d.y, d.z] : VIEW_DIRS.iso);
   };
 
+  /* ── 번호 찾기(해석 모델 inp) ── */
+  const findModel = find?.status === 'ready' ? find.model : null;
+  const findOffsets = useMemo(() => {
+    if (!findModel || !model) return null;
+    const pts = (segs) => segs.flatMap(sg => [sg.a, sg.b]);
+    return computeGroupOffsets(findModel, { outer: pts(model.outerSegs), inner: pts(model.innerSegs) });
+  }, [findModel, model]);
+
+  const clearFindHighlight = () => {
+    const g = findGroupRef.current;
+    if (g) { g.parent?.remove(g); disposeObject(g); findGroupRef.current = null; }
+  };
+
+  // 모델이나 해석 모델이 바뀌면 이전 강조는 다른 모델의 것이라 지운다.
+  useEffect(() => { clearFindHighlight(); setFindResult(null); }, [model, findModel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const focusPoints = (points) => {
+    const cam = cameraRef.current;
+    const ctrl = controlsRef.current;
+    if (!cam || !ctrl || !model || points.length === 0) return;
+    const box = new THREE.Box3();
+    points.forEach(p => box.expandByPoint(new THREE.Vector3(...p)));
+    const c = new THREE.Vector3(); box.getCenter(c);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const r = Math.max(size.length() * 0.6, model.maxDim * 0.05);
+    const d = cam.position.clone().sub(ctrl.target);
+    frameCameraTo(cam, ctrl, c, r, d.lengthSq() > 1e-9 ? [d.x, d.y, d.z] : VIEW_DIRS.iso);
+  };
+
+  const drawFindHighlight = (res) => {
+    clearFindHighlight();
+    const scene = sceneRef.current;
+    if (!scene || !model) return;
+    const group = new THREE.Group();
+    // 요소는 수백 mm 로 짧아 굵게 그리면 구가 요소를 덮는다 — 배관보다 조금만 굵게.
+    const tubeR = model.outerR * 1.15;
+    const ballR = model.outerR * 1.7;
+    // depthTest 끔 — 내관은 외관 안에 있어 가려지므로 강조는 늘 위에 보이게 한다.
+    const elMat = new THREE.MeshBasicMaterial({ color: FIND_ELEMENT_COLOR, depthTest: false, transparent: true, opacity: 0.95 });
+    const ndMat = new THREE.MeshBasicMaterial({ color: FIND_NODE_COLOR, depthTest: false, transparent: true, opacity: 0.95 });
+    const tubeGeo = new THREE.CylinderGeometry(tubeR, tubeR, 1, 14);
+    const jointGeo = new THREE.SphereGeometry(tubeR, 12, 10);
+    const ballGeo = new THREE.SphereGeometry(ballR, 16, 12);
+    const lift = new THREE.Vector3(0, 0, model.outerR * 2.6);
+    let labels = 0;
+    const addLabel = (text, pos, color) => {
+      if (labels >= FIND_LABEL_MAX) return;
+      labels += 1;
+      const sp = makeFindLabel(text, color);
+      sp.position.copy(new THREE.Vector3(...pos).add(lift));
+      group.add(sp);
+    };
+    for (const el of res.elements) {
+      const pts = el.path.map(p => new THREE.Vector3(...p));
+      let drew = false;
+      for (let i = 0; i + 1 < pts.length; i += 1) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const len = a.distanceTo(b);
+        if (len < 1e-3) continue;
+        const m = new THREE.Mesh(tubeGeo, elMat);
+        m.position.copy(a).lerp(b, 0.5);
+        m.quaternion.setFromUnitVectors(UP, b.clone().sub(a).normalize());
+        m.scale.set(1, len, 1);
+        m.renderOrder = 20;
+        group.add(m);
+        drew = true;
+      }
+      // 길이 0 인 연결 요소(U-bolt)는 선 대신 구로 보인다.
+      (drew ? [pts[0], pts[pts.length - 1]] : pts).forEach(p => {
+        const j = new THREE.Mesh(drew ? jointGeo : ballGeo, elMat);
+        j.position.copy(p);
+        j.renderOrder = 20;
+        group.add(j);
+      });
+      const lo = pts[Math.floor((pts.length - 1) / 2)];
+      const hi = pts[Math.ceil((pts.length - 1) / 2)];
+      const mid = lo.clone().lerp(hi, 0.5);
+      addLabel(el.label, [mid.x, mid.y, mid.z], '#ff2d6f');
+    }
+    for (const nd of res.nodes) {
+      const m = new THREE.Mesh(ballGeo, ndMat);
+      m.position.set(...nd.pos);
+      m.renderOrder = 21;
+      group.add(m);
+      addLabel(nd.label, nd.pos, '#22d3ee');
+    }
+    scene.add(group);
+    findGroupRef.current = group;
+  };
+
+  const runFind = () => {
+    if (!findModel || !findOffsets) return;
+    const { items, invalid } = parseFindQuery(findQuery, findKind);
+    const res = { ...resolveFind(items, findModel, findOffsets), invalid };
+    setFindResult(res);
+    drawFindHighlight(res);
+    focusPoints([...res.elements.flatMap(e => e.path), ...res.nodes.map(n => n.pos)]);
+  };
+
+  const clearFind = () => {
+    clearFindHighlight();
+    setFindResult(null);
+    setFindQuery('');
+  };
+
   if (!model) {
     return (
       <div className="flex h-full items-center justify-center bg-slate-900 text-center text-slate-400">
@@ -566,8 +725,9 @@ export default function DoublePipeViewer({ columns, rows }) {
         {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
       </button>
 
+      <div className="absolute left-3 top-3 z-10 flex w-[260px] max-w-[calc(100%-24px)] flex-col gap-2">
       {/* 레전드 — 항목 클릭으로 해당 요소 표시/숨김 토글 */}
-      <div className="absolute left-3 top-3 z-10 max-w-[260px] rounded-xl border border-slate-700 bg-slate-900/85 px-2.5 py-2.5 shadow-lg backdrop-blur">
+      <div className="rounded-xl border border-slate-700 bg-slate-900/85 px-2.5 py-2.5 shadow-lg backdrop-blur">
         <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">이중관 배관 모델</p>
         <div className="flex flex-col gap-0.5">
           {legend.map(({ color, label, on, toggle }) => (
@@ -583,6 +743,21 @@ export default function DoublePipeViewer({ columns, rows }) {
             </button>
           ))}
         </div>
+      </div>
+
+      {find && (
+        <FindPanel
+          find={find}
+          query={findQuery}
+          setQuery={setFindQuery}
+          kind={findKind}
+          setKind={setFindKind}
+          result={findResult}
+          onFind={runFind}
+          onClear={clearFind}
+          onFocus={focusPoints}
+        />
+      )}
       </div>
 
       {/* 통계 */}
@@ -620,6 +795,118 @@ export default function DoublePipeViewer({ columns, rows }) {
         <ToolBtn active={false} onClick={() => controlsRef.current?.reset()} icon={RotateCcw} label="Reset" />
       </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// 번호 찾기 상자 — 범례 바로 아래. 해석이 끝나 해석 모델(inp)을 받은 뒤에만 쓸 수 있다.
+function FindPanel({ find, query, setQuery, kind, setKind, result, onFind, onClear, onFocus }) {
+  const ready = find.status === 'ready';
+  const foundCount = result ? result.elements.length + result.nodes.length : 0;
+  const notFound = result ? [...result.missing, ...result.invalid] : [];
+  const kindBtn = (value, label) => (
+    <button
+      type="button"
+      onClick={() => setKind(value)}
+      aria-pressed={kind === value}
+      className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+        kind === value ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-slate-200'
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="rounded-xl border border-slate-700 bg-slate-900/90 px-2.5 py-2.5 shadow-lg backdrop-blur">
+      <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
+        <p className="text-[11px] font-bold text-slate-300">번호 찾기</p>
+        <div className="flex rounded-lg bg-slate-800 p-0.5" title="번호만 쓴 항목의 종류">
+          {kindBtn('element', 'Element')}
+          {kindBtn('node', 'Node')}
+        </div>
+      </div>
+      <div className="flex gap-1.5">
+        <input
+          type="text"
+          value={query}
+          disabled={!ready}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+            if (e.key === 'Enter') onFind();
+            if (e.key === 'Escape') onClear();
+          }}
+          placeholder={ready ? '예: 46, 47, N12' : '해석 후 사용'}
+          aria-label="찾을 Node 또는 Element 번호"
+          className="min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 font-mono text-xs text-slate-100 placeholder:text-slate-500 focus:border-sky-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        />
+        <button
+          type="button"
+          onClick={onFind}
+          disabled={!ready || !query.trim()}
+          title="찾기 (Enter)"
+          aria-label="찾기"
+          className="flex items-center justify-center rounded-lg bg-sky-600 px-2.5 text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-500"
+        >
+          <Search size={14} />
+        </button>
+      </div>
+      {find.status === 'loading' && (
+        <p className="mt-1.5 flex items-center gap-1 px-1 text-[11px] text-slate-400">
+          <Loader2 size={12} className="animate-spin" /> 해석 모델을 불러오는 중
+        </p>
+      )}
+      {find.status === 'idle' && (
+        <p className="mt-1.5 px-1 text-[11px] leading-snug text-slate-400">해석이 끝나면 해석 모델의 Node, Element 번호로 찾을 수 있습니다.</p>
+      )}
+      {find.status === 'error' && (
+        <p className="mt-1.5 px-1 text-[11px] leading-snug text-rose-300">{find.message || '해석 모델을 불러오지 못했습니다.'}</p>
+      )}
+      {ready && !result && (
+        <p className="mt-1.5 px-1 text-[11px] leading-snug text-slate-400">쉼표로 여러 개. N12 = Node, E46 = Element.</p>
+      )}
+      {result && (
+        <div className="mt-2 px-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] text-slate-300">
+              찾음 <span className="font-bold text-white">{foundCount}</span>
+              {notFound.length > 0 && <> · 없음 <span className="font-bold text-rose-300">{notFound.length}</span></>}
+            </p>
+            <button type="button" onClick={onClear} className="flex items-center gap-0.5 text-[11px] text-slate-400 hover:text-white">
+              <X size={12} /> 지우기
+            </button>
+          </div>
+          {foundCount > 0 && (
+            <div className="mt-1.5 flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+              {result.elements.map(el => (
+                <button
+                  key={el.label}
+                  type="button"
+                  onClick={() => onFocus(el.path)}
+                  title={`${el.type}${groupLabel(el.group) ? ` · ${groupLabel(el.group)}` : ''} — 눌러서 가기`}
+                  className="rounded-md border border-rose-400/40 bg-rose-500/15 px-1.5 py-0.5 font-mono text-[11px] text-rose-200 hover:bg-rose-500/30"
+                >
+                  {el.label}
+                </button>
+              ))}
+              {result.nodes.map(nd => (
+                <button
+                  key={nd.label}
+                  type="button"
+                  onClick={() => onFocus([nd.pos])}
+                  title={`${groupLabel(nd.group) || 'Node'} — 눌러서 가기`}
+                  className="rounded-md border border-cyan-400/40 bg-cyan-500/15 px-1.5 py-0.5 font-mono text-[11px] text-cyan-200 hover:bg-cyan-500/30"
+                >
+                  {nd.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {notFound.length > 0 && (
+            <p className="mt-1.5 break-all font-mono text-[11px] leading-snug text-rose-300">없음: {notFound.join(', ')}</p>
+          )}
+        </div>
       )}
     </div>
   );

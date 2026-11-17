@@ -13,6 +13,7 @@ from ..services.doublepipe_modeshape_service import (
     get_status as get_modeshape_status,
     start_viewer as start_modeshape_viewer,
 )
+from ..services.doublepipe_inp_model import load_job_inp_model
 from ..services.doublepipe_service import generate_inner_pipe_pdf, run_inner_pipe_preview
 from ..services.doublepipe_psa_service import (
     get_active_status,
@@ -47,6 +48,71 @@ async def _read_csv_upload(upload: UploadFile) -> bytes:
     if not content:
         raise HTTPException(status_code=400, detail="업로드된 CSV 파일이 비어 있습니다.")
     return content
+
+
+_SAMPLE_DIR = os.path.join(_BACKEND_DIR, "SampleFile", "DoublePipe")
+
+
+def _find_sample_csv():
+    """1단계(Design Inner Support) 시험용 외관 배관 CSV. 폴더의 첫 .csv(이름순)."""
+    if not os.path.isdir(_SAMPLE_DIR):
+        return None
+    for name in sorted(os.listdir(_SAMPLE_DIR)):
+        path = os.path.join(_SAMPLE_DIR, name)
+        if name.lower().endswith(".csv") and os.path.isfile(path):
+            return path
+    return None
+
+
+@router.get("/sample-csv")
+def download_sample_csv(current_user: str = Depends(require_auth)):
+    """화면의 '샘플로 바로 시험' 버튼이 받아 1단계 입력 칸에 넣는 샘플 CSV."""
+    path = _find_sample_csv()
+    if not path:
+        raise HTTPException(
+            status_code=404,
+            detail="샘플 CSV 를 찾을 수 없습니다. 서버의 SampleFile/DoublePipe/ 폴더를 확인하세요.",
+        )
+    with open(path, "rb") as handle:
+        content = handle.read()
+    name = os.path.basename(path)
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
+@router.get("/psa-model")
+def get_psa_model(
+    path: str,
+    current_user: str = Depends(require_auth),
+    db: Session = Depends(database.get_db),
+):
+    """PSA 작업의 Abaqus 모델(Node 좌표, Element 연결) — 화면의 Node/Element 번호 찾기용.
+
+    path = 그 작업 폴더 안의 파일(보고서 경로 등). 그 폴더의 <입력 CSV>.inp 를 읽는다.
+    """
+    base = os.path.abspath(_USER_CONNECTION_DIR)
+    target = os.path.abspath(path or "")
+    if not target.startswith(base + os.sep):
+        raise HTTPException(status_code=400, detail="작업 폴더 밖의 경로입니다.")
+    assert_current_user_can_access_path(target, current_user, db, _USER_CONNECTION_DIR)
+    job_dir = target if os.path.isdir(target) else os.path.dirname(target)
+    try:
+        model = load_job_inp_model(job_dir)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if model is None:
+        raise HTTPException(status_code=404, detail="이 작업의 해석 모델 파일(inp)을 찾을 수 없습니다.")
+    return {
+        "file": model["file"],
+        "nodes": {str(k): v for k, v in model["nodes"].items()},
+        "elements": {str(k): v for k, v in model["elements"].items()},
+    }
 
 
 @router.post("/inner-pipe-preview")

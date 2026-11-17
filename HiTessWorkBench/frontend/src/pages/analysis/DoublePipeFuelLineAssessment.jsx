@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import {
   Activity, ArrowRight, Ban, Box, Check, CheckCircle2, ChevronRight, Clock, Download, Filter, Info, Loader2, Lock, ListChecks,
-  Pipette, Play, RotateCcw, Ruler, Send, ShieldAlert, Sliders, Table2, Terminal, Upload, X, Zap,
+  Pipette, Play, RotateCcw, Ruler, Send, ShieldAlert, Sliders, Sparkles, Table2, Terminal, Upload, X, Zap,
 } from 'lucide-react';
 import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import DoublePipeViewer from '../../components/analysis/DoublePipeViewer';
@@ -484,10 +484,10 @@ class ViewerErrorBoundary extends React.Component {
 
 // Tab1/Tab2 결과 CSV(내관 포함) → 이중관 전용 3D 배관 뷰어(외관/내관 구분 + U-볼트 클램프 표현).
 // CSV 파싱·그룹핑은 DoublePipeViewer 내부에서 PipeEditiorCSV(해석 파이프라인)와 동일 규칙으로 처리한다.
-function Model3DViewer({ columns, rows }) {
+function Model3DViewer({ columns, rows, find }) {
   return (
     <ViewerErrorBoundary>
-      <DoublePipeViewer columns={columns} rows={rows} />
+      <DoublePipeViewer columns={columns} rows={rows} find={find} />
     </ViewerErrorBoundary>
   );
 }
@@ -1426,6 +1426,9 @@ export default function DoublePipeFuelLineAssessment() {
       }
       const jobId = res.data.jobId;
       addLog('배관응력 해석을 시작했습니다.', 'info');
+      // 번호 찾기: 이 입력으로 만든 해석 모델이다. 객체가 아니라 행 배열로 기억한다 —
+      // 업로드 경로는 곧이어 workDir 를 붙인 새 객체로 바꾸지만 행 배열은 그대로라서.
+      psaRunInputRef.current = tab2Input.rows;
       setPsaJobId(jobId);
       setPsaAnchor(Date.now() / 1000);       // 방금 시작 → 경과 0 부터
       psaLastIdxRef.current = 0;
@@ -1446,6 +1449,74 @@ export default function DoublePipeFuelLineAssessment() {
       showToast(message, 'error');
     }
   };
+
+  // '샘플로 바로 시험' — 서버의 SampleFile/DoublePipe 샘플 CSV 를 1단계 입력 칸에 넣고 실행까지 이어간다.
+  // 실행은 csvFile 이 바뀐 다음 렌더에서 한다(handleRunInnerSupport 가 그 렌더의 csvFile 을 읽어야 해서).
+  const [sampleLoading, setSampleLoading] = useState(false);
+  const sampleRunPendingRef = useRef(null);
+  const handleLoadSample = async () => {
+    if (sampleLoading || isRunning) return;
+    setSampleLoading(true);
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/doublepipe/sample-csv`, {
+        responseType: 'blob',
+        headers: getAuthHeaders(),
+      });
+      const disposition = res.headers?.['content-disposition'] || '';
+      const match = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+      const name = match ? decodeURIComponent(match[1]) : 'DoublePipe_sample.csv';
+      const file = new File([res.data], name, { type: 'text/csv' });
+      addLog(`[SAMPLE] 샘플 CSV(${name})로 시험합니다.`, 'info');
+      sampleRunPendingRef.current = file;   // 이 샘플 파일이 입력 칸에 들어갔을 때만 실행한다
+      handleCsvFile(file);
+    } catch (err) {
+      let detail = err?.response?.data;
+      if (detail instanceof Blob) {
+        try { detail = JSON.parse(await detail.text())?.detail; } catch { detail = null; }
+      } else {
+        detail = detail?.detail;
+      }
+      const message = typeof detail === 'string' ? detail : '샘플 CSV 를 불러오지 못했습니다. 서버 연결을 확인하세요.';
+      addLog(message, 'error');
+      showToast(message, 'error');
+    } finally {
+      setSampleLoading(false);
+    }
+  };
+  useEffect(() => {
+    const pending = sampleRunPendingRef.current;
+    if (!pending) return;
+    sampleRunPendingRef.current = null;   // 한 번만 — 남아 있으면 나중에 고른 다른 CSV 가 바로 실행된다
+    if (csvFile !== pending || isRunning) return;
+    handleRunInnerSupport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [csvFile]);
+
+  // Stress Analysis 3D 의 '번호 찾기' — 해석이 끝나면 그 작업의 해석 모델(inp)에서 Node 좌표와 Element 연결을 받는다.
+  // 해석을 시작한 입력(tab2Input)과 지금 3D 의 입력이 다르면 번호가 맞지 않으므로 찾기를 막는다.
+  const [psaModel, setPsaModel] = useState({ status: 'idle', model: null, message: '' });
+  const psaRunInputRef = useRef(null);
+  useEffect(() => {
+    if (!psaReportPath) { setPsaModel({ status: 'idle', model: null, message: '' }); return undefined; }
+    let cancelled = false;
+    setPsaModel({ status: 'loading', model: null, message: '' });
+    axios.get(`${API_BASE_URL}/api/doublepipe/psa-model`, { params: { path: psaReportPath }, headers: getAuthHeaders() })
+      .then(({ data }) => {
+        if (!cancelled) setPsaModel({ status: 'ready', model: data, message: '' });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const detail = err?.response?.data?.detail;
+        const message = err?.response?.status === 404 && typeof detail !== 'string'
+          ? '서버가 아직 이 기능을 모릅니다(서버 업데이트 필요).'
+          : (typeof detail === 'string' ? detail : '해석 모델을 불러오지 못했습니다.');
+        setPsaModel({ status: 'error', model: null, message });
+      });
+    return () => { cancelled = true; };
+  }, [psaReportPath]);
+  const psaFind = (psaRunInputRef.current && tab2Input?.rows !== psaRunInputRef.current && psaModel.status === 'ready')
+    ? { status: 'error', model: null, message: '지금 3D 모델은 해석한 입력과 달라 번호로 찾을 수 없습니다.' }
+    : psaModel;
 
   // 대시보드에서 넘겨받은 CSV 로 입력이 갖춰지면 실행까지 바로 이어간다 — 전달 시 고른 탭의 실행 버튼.
   useDashboardAutoRun(PAGE_KEY, (activeTab === 'inner-support' && !isRunning && csvFile) || null, handleRunInnerSupport);
@@ -1849,7 +1920,7 @@ export default function DoublePipeFuelLineAssessment() {
 
     return (
       <>
-        <CsvUpload file={csvFile} onFile={handleCsvFile} />
+        <CsvUpload file={csvFile} onFile={handleCsvFile} onSample={handleLoadSample} sampleLoading={sampleLoading} sampleDisabled={isRunning} />
         <FieldGroup
           title="Inner Pipe"
           icon={Sliders}
@@ -2105,7 +2176,7 @@ export default function DoublePipeFuelLineAssessment() {
                 </div>
               </div>
             ) : tab2View === '3d' ? (
-              <Model3DViewer columns={tab2Input.columns} rows={tab2Input.rows} />
+              <Model3DViewer columns={tab2Input.columns} rows={tab2Input.rows} find={psaFind} />
             ) : (
               <ResultTable columns={tab2Input.columns} rows={tab2Input.rows} />
             )}
@@ -2672,7 +2743,7 @@ function Tab2Dropzone({ onFile, hasInput }) {
 }
 
 // 외관 배관 CSV 업로드 드롭존 — 클릭/드래그.
-function CsvUpload({ file, onFile }) {
+function CsvUpload({ file, onFile, onSample, sampleLoading = false, sampleDisabled = false }) {
   const inputRef = useRef(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -2727,6 +2798,17 @@ function CsvUpload({ file, onFile }) {
             event.target.value = '';
           }}
         />
+        {onSample && (
+          <button
+            type="button"
+            onClick={onSample}
+            disabled={sampleLoading || sampleDisabled}
+            className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+          >
+            {sampleLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+            샘플 CSV로 바로 시험
+          </button>
+        )}
       </div>
     </div>
   );
