@@ -661,6 +661,21 @@ RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점
 5. 한계: 주석은 글자라 손으로 고칠 수 있다(보안 장치가 아니라 작업 흐름 표시). 어느 실행의 검토인지는 결과 폴더의 `00_Review.json` run 으로 묶는다.
 6. 순서: 4a(추정 연결 등급) → 엔진 표시(1) → WorkBench 판정과 받는 곳 경고(3) → Studio 검토 창(2). MB Studio 를 고치면 짝 Studio 싱크 대장에 적는다(MU 는 BDF 입력이라 '받는 곳 경고' 쪽).
 
+**Studio 검토 창 1차 (2026-11-17, 엔진·MB Studio·WorkBench 미커밋)** — 사용자 결정(추천대로): ① 상단 새 탭 `Review`(검토 자료가 있는 결과에서만, 남은 수 배지), 열 때 남은 것이 있고 결정이 하나도 없으면 이 탭으로 시작
+② 거절 = 자기 번호로 남은 엔진 RBE(`finalStatus: kept`)만 `deleteRigid` 편집, 다른 RBE 와 합쳐진 것(merged)·장비 상자 받침·질량·조각 등은 '수동 수정 필요'(지우면 원래 연결이나 질량까지 빠짐)
+③ 결과는 편집 파일 `review` 칸 `{run, decisions:[{unit, decision}], by, at}` → 엔진이 00_Review.json 과 대조해 직접 세고(run 다르면 무시) 편집 BDF 머리를 바꾼다
+④ 나중에(목록에 없는 단위 포함)가 남으면 `REQUIRED Items=<남은 수>`, 아니면 수동 수정이 있으면 `MANUAL Items=<그 수>`, 아니면 `DONE Items=<전체>`.
+- 엔진: `EditIntentDocument.Review` · `ReviewOutcome`(대조, 머리 줄, `edited/00_Review.json` 에 단위 state 를 갱신한 사본, apply-trace `REVIEW_APPLIED/IGNORED`) · 편집 0개여도 review 가 있으면 편집 BDF 를 만든다(전부 승인 = DONE). 시험 709(새 4).
+- Studio: `data/reviewData.js`(+시험, 종류 이름은 WorkBench `utils/mbReview.js` KIND_LABELS 사본) · `store/useReviewStore.js`(결정, 거절 편집 `origin.reviewUnit`, 결정 바꾸면 편집 빼기, `00_ReviewResult.json` 진행 기록, 다시 열면 '거절' 편집 다시 넣기) ·
+  `hooks/useReviewSync.js` · `components/panels/ReviewPanel.jsx`(카드 [승인] [거절] [나중에], 종류 묶음 [남은 N건 모두 승인], [다음 남은 항목]) · Save 탭이 review 를 실어 편집 파일을 쓴다 · 도움말 8항목. 시험 682, 빌드, lint 오류 0.
+- WorkBench: 편집을 적용했고 최신이면 판정이 `edited/00_Review.json` 을 먼저 읽는다(`pendingReview` 그대로 — done 이면 검토 필요 없음, manual 이면 수동 수정 N건).
+- 확인: 헤드리스(3454, 56건) 열자마자 Review 탭, 고르기 → 3D(±150 mm 표시 + 반경 3 m), 승인 → 다음, 거절 2종, 결정 바꾸면 편집 빠짐, 종류 모두 승인, payload. 엔진 실행(편집 0 + review) REQUIRED 26 / MANUAL 12 / DONE 56, BDF 본문은 원본과 같음.
+  안 한 것: WorkBench 앱 안 흐름(Studio 저장 → 편집 적용 → 판정 갱신), 다시 열 때 로컬 추출 폴더의 `00_ReviewResult.json` 이 남는지, 3476(465건) 화면 속도.
+- 커밋 전 독립 리뷰: 막아야 함 1 — 거절의 삭제 편집이 Ctrl+Z, 수정 내역 삭제, [처음부터] 로 사라져도 결정은 '거절' 이라 엔진이 DONE 을 쓰는데 RBE 는 남음. 반영:
+  엔진 `ReviewOutcome` 이 편집 결과 모델에 그 단위의 엔진 RBE(00_Decisions.json finalRigidId)가 남았거나 RBE 가 없는 단위의 '거절' 을 수동 수정으로 센다(최종 방어선) ·
+  Studio 는 편집 내역이 바뀔 때 삭제 편집이 하나라도 빠진 거절을 '남음' 으로 되돌리고 남은 삭제 편집도 거둔다 · [처음부터] 는 검토 결정도 비우고 다시 읽을 때 진행 기록을 쓰지 않는다. 헤드리스로 셋 다 확인, 엔진 시험 710.
+  고치면 좋음: 서버 결과를 임시 폴더로 받아 연 경우(145) 진행 기록이 남지 않음 → 도움말을 사실대로 고침(Save 해야 남음) · 옛 엔진은 review 만 있는 문서에 exit 2 → **InHouse exe 교체가 Studio 공개보다 먼저** · Studio 버전 0.1.13 으로 올려 배포.
+
 ### 7단계 — 구조 정리
 단계 목록 선언화, 상수를 `RunOptions` 로, 중복 판별 함수, 문서의 단계 수. 결과 BDF 불변.
 

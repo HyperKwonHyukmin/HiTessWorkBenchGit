@@ -48,7 +48,7 @@ import {
 const VIEWER_ID = 'model-studio';
 // 2. Model Builder Studio 카드가 설치본과 비교할 Workbench 기준 버전.
 // Studio 패키지 배포 시 model-studio package.json/manifest 버전과 함께 갱신한다.
-const MODEL_BUILDER_STUDIO_VERSION = '0.1.9';
+const MODEL_BUILDER_STUDIO_VERSION = '0.1.13';
 
 // 단계 이름은 '도구'가 아니라 엔지니어가 할 일로 쓴다(Studio 는 2단계에서 쓰는 도구).
 // 상태는 실제 사건으로만 바뀐다 — 1: 실행 성공, 2: 판정 통과·검토 확인·편집 적용, 3: BDF 받기·후속 해석 전달.
@@ -2237,15 +2237,19 @@ const ModelBuilderWorkspace = memo(function ModelBuilderWorkspace({
   }, [bdfResult?.summaryPath]);
 
   // 검증 표시는 요약과 같은 결과 폴더에 있다. 못 읽으면(옛 엔진, 지운 폴더) 조용히 없음으로 둔다.
+  // Studio Review 탭에서 결정하고 편집을 적용했으면 엔진이 edited/00_Review.json 에 단위 상태를 갱신한 사본을 쓴다(2026-11-17)
+  // — 최신 편집본이 있으면 그것을 먼저 본다. 옛 엔진의 편집 폴더에는 없으므로 원래 파일로 돌아간다.
+  const reviewFromEdited = !!(editStatus?.has_edited && !editStatus?.needs_apply);
   useEffect(() => {
     if (!bdfResult?.summaryPath) { setReviewData(null); return; }
     let cancelled = false;
     const folder = bdfResult.summaryPath.replace(/[^\\/]+$/, '');
-    fetchJson(folder + '00_Review.json')
+    const original = () => fetchJson(folder + '00_Review.json');
+    (reviewFromEdited ? fetchJson(folder + 'edited/00_Review.json').catch(original) : original())
       .then(d => { if (!cancelled) setReviewData(d); })
       .catch(() => { if (!cancelled) setReviewData(null); });
     return () => { cancelled = true; };
-  }, [bdfResult?.summaryPath]);
+  }, [bdfResult?.summaryPath, reviewFromEdited, editStatus?.edited_bdf_mtime]);
 
   /* ── 업로드 CSV 미리보기 파싱 ──────────────────────────────────────
      파일이 바뀔 때마다 브라우저에서 직접 읽는다(서버 왕복 없음). 사내 CSV 는
