@@ -69,6 +69,38 @@ v1.5.8 에서 결함 6건이 새어 나갔고 3건을 사용자가 먼저 찾았
 7. 코드 변경 커밋 직전 `hitess-code-reviewer` 에이전트를 diff 범위로 1회 돌린다(작업 의도는 넘기지 않는다 — 독립 리뷰가 목적). '막아야 함'이 나오면 고친 뒤 커밋하고, 문서만 바뀐 커밋은 건너뛴다.
 상세 계획: `docs/operations/regression-prevention-master-plan.md`.
 
+### 사본 동기화 표 — 한쪽을 고치면 같이 고칠 곳 (2026-11-13 모음)
+
+같은 규칙이 저장소나 언어가 달라 두 벌 이상 있는 곳이다. 이 프로젝트에서 운영까지 새어 나간 결함의 단골 유형이라 고치기 전에 여기부터 본다. 상세는 각 절에 있다.
+**원본**이 있는 줄은 원본을 먼저 고치고 사본에 옮긴다. 새 사본을 만들면 이 표에 한 줄 더한다.
+
+| 무엇 | 원본 | 사본 (같이 고칠 곳) | 지키는 장치 |
+|---|---|---|---|
+| MB 와 MU Studio 공용 파일(44개, `findEntity.js` 는 MF 까지) | 어느 쪽이든 | 짝 Studio | `python scripts/studio_pair.py` (`same`) |
+| MB 편집 intent kind | Studio 미리보기 | C# 엔진, 계약 테스트 | `test_modelbuilder_edit_contract.py` |
+| 호선 정규화(대문자, 20자) | C# `FeModel.NormalizeHullNo` | bridge `normalize_hull_no`, 백엔드 `services/hull_no.py`, 프론트 `utils/hullNo.js` | 없음 |
+| 비정상 종료 판정과 문구 | 백엔드 `services/exit_codes.py` | 프론트 `utils/abnormalExit.js` | 프론트 테스트 |
+| 장비 COG 경고 메시지 키 | 엔진 `CheckEquipmentCogDistance` | `utils/modelValidation.js` `parseEquipmentCogFar` (WorkBench, Studio) | 없음 |
+| 입력 행 제외 사유 문구 | WorkBench `pages/analysis/HiTessModelBuilder.jsx` `REASON_LABELS` | MB Studio `data/excludedRowGhosts.js`, `data/csvRowMapping.js` | 없음 |
+| GMU 구조 해석 판정 | `utils/gmuLiftingVerdict.js` | Electron `viewer:runUnitStructural` status 계산 | 없음 |
+| Unit 권상 보고서 입력 폼 | 프론트 `utils/unitLiftingReport.js`, `UnitLiftingReportDialog` | Studio `unitLiftingReportForm.js`, `UnitStructuralReportDialog` | 없음 |
+| 해석 실패 위치 문구(`위치 후보 절점:`) | 백엔드 `services/f06_location.py` | MU `data/structuralFailure.js`, MF `utils/solveFailure.js` | 없음 |
+| MF 강재 등급과 판정 | 엔진 `SteelGrade` | 백엔드 `judge_member` | 없음 |
+| MF 새 단면 치수(부식 마진 포함) | 백엔드 `mooring_row_edit._new_dims` | MF Studio `rowDims`, `sectionSketch.aboveHeights` | 없음 |
+| MF 단면 이름표 | 엔진 `ProfileInfo.ShortLabel` | MF Studio `utils/shipLabel.js` | 없음 |
+| nastran_bridge | InHouse `NastranBridge/nastran_bridge.py` (145 실사용) | `WorkBenchSubModule/Nastran_bridge` (70 백엔드가 import) | 없음 |
+| Truss 허용응력 Property ID | C# `ElementStressChecker` | 백엔드 `assessment_diagnostics._ALLOWABLE_PROPERTY_IDS` | 없음 |
+| 서버 인증서 지문과 주소 | `electron/server-pins.js` | `AmLauncher/lib/server-pins.js`, HiTessMB `ServerPins.cs`, 프론트 `utils/secureServerUrl.js`, claude-control 스트림덱 `plugin.js` `WB_PINS`(지문만) | 없음 |
+| Windows 자동 로그인 | `electron/windows-login.js` | `AmLauncher/lib/windows-login.js` | 없음 |
+| AM 실행기 Electron 코드 | WorkBench `electron/` | `AmLauncher/` (원본 위치 주석) | 없음 |
+| 접속 이력 임계값(150, 180초) | `routers/presence.py` | `services/access_session_service.py` | `test_thresholds_match_presence_router` |
+| 가입 페이지 선택지 | `RegisterModal` | `app/static/signup/signup.html` | 테스트 있음 |
+| 수동 메일 주소 규칙 | 백엔드 `_MANUAL_EMAIL_PATTERN` | 프론트 `EMAIL_PATTERN` | 없음 |
+| BDF 3D 미리보기 변환기와 엔진 | **LogBook** (여기서 고치지 않음) | `app/services/bdf_preview/`, `components/bdfPreview/lb/` | 없음 |
+| PBAR 바깥 치수(가장 먼 응력 회복점 × 2, 없으면 √A) | 자세안정성 엔진 `PropertyDimensionHelper.PbarExtent` | Truss Lifting Studio `data/pbarSection.js` | 양쪽 시험(같은 3321 값 650) |
+| Truss 소모듈 판정(UC > 1 = 실패, 빠진 부재 있으면 검토 필요) | 프론트 `utils/trussLiftingVerdict.js` | Truss Lifting Studio `data/trussAssessmentView.js` | 양쪽 시험 |
+| 권상 부모 App 이름 | 백엔드 `services/lifting_programs.py` `LIFTING_PARENT_PROGRAMS` | `usage_rollup.ROLLUP_PARENTS` | `test_truss_module_lifting.py` |
+
 ## 아키텍처
 
 ```
@@ -90,7 +122,10 @@ v1.5.8 에서 결함 6건이 새어 나갔고 3건을 사용자가 먼저 찾았
 - **데이터베이스**: MySQL `localhost:3306/hitessworkbench`, 접속 정보는 `HiTessWorkBenchBackEnd/app/database.py`. SQLAlchemy로 서버 시작 시 테이블 자동 생성.
 - **Electron 환경 감지**: `electron/index.js`의 `app.isPackaged` 여부로 개발/프로덕션 로드 경로 분기.
   - ⚠ **배포 exe 의 Electron 버전 ≠ 개발 모드 (2026-10-19 확인)**: `package.json` 은 `electron ^36.3.2` 인데 루트 `node_modules/electron` 이 **26.0.0** 이라 exe 는 Electron 26(Chromium 116)으로 빌드된다(`dist_electron/builder-effective-config.yaml` `electronVersion`). 개발 모드(`electron/node_modules`)는 40. 화면·웹 기능 확인은 exe 기준으로 하고, 버전을 맞출 때는 루트에서 electron 을 다시 설치한다.
-  - **번들 보안 점검 (2026-10-27)**: `app.asar`(배포 번들)를 풀어 리버스 엔지니어링 노출을 점검한 결과 **비밀값·엔진 바이너리·DB 접속정보·원본 소스맵(.map)·dev 주소(70) 모두 미유출**이었다. 토큰은 전부 런타임 세션 토큰이고, 영상 티켓 서명키·해석 엔진·DB 는 서버(145)에만 있다 — "가치는 서버, 클라이언트는 열려 있다" 전략이 코드에서 지켜지는 것을 확인. 유일한 위생 문제는 `.test.js` 7개가 번들에 실리던 것 → `package.json` `build.files` 에 `!electron/**/*.test.js`·`!electron/**/*.spec.js` 제외 추가(**미커밋, 다음 exe 빌드부터 효력** — v1.6.29 번들에는 아직 테스트 파일이 있음).
+  - **중복 실행 막기 (2026-11-16, 미커밋 · 다음 exe)** — `electron/single-instance.js`(+테스트): 배포 exe 만 `requestSingleInstanceLock`, 두 번째 실행은 끝나고 기존 창을 앞으로.
+    이유: 이동식 exe 를 두 번 띄웠다 하나를 닫으면 `%TEMP%` 공유 폴더의 `resources.pak` 이 지워져 Studio 화면에 제목·CSS 글자가 찍히고 모델이 안 뜬다(11-04 MF, 11-16 MU 다른 사용자 PC, 추정 원인). 당장은 WorkBench 완전 종료 후 재실행으로 풀린다.
+    개발 실행은 잠그지 않는다(배포 exe 와 userData 가 같아 같이 못 띄우게 됨). 단위 시험만 했고 Electron 26 으로 두 번 띄워 보는 시험은 안 했다 — 릴리스 전에 확인.
+  - **번들 보안 점검 (2026-10-27)**: `app.asar`(배포 번들)를 풀어 리버스 엔지니어링 노출을 점검한 결과 **비밀값·엔진 바이너리·DB 접속정보·원본 소스맵(.map)·dev 주소(70) 모두 미유출**이었다. 토큰은 전부 런타임 세션 토큰이고, 영상 티켓 서명키·해석 엔진·DB 는 서버(145)에만 있다 — "가치는 서버, 클라이언트는 열려 있다" 전략이 코드에서 지켜지는 것을 확인. 유일한 위생 문제는 `.test.js` 7개가 번들에 실리던 것 → `package.json` `build.files` 에 `!electron/**/*.test.js`·`!electron/**/*.spec.js` 제외 추가.
 - ⚠️ **InHouse 프로그램 배포 규칙 (개발 위치 ≠ 실사용 위치)**: 해석 실행 파일·스크립트의 **코드 작업은 `C:\Coding\WorkBenchSubModule\<Program>\`**(예: `Nastran_bridge`, `MooringFitting`)에서 하더라도, **WorkBench 백엔드가 실제로 실행·import 하는 최종본은 반드시 `HiTessWorkBenchBackEnd/InHouseProgram/<Program>/`로 복사**해야 한다.
   - 운영 서버(145)에는 `WorkBenchSubModule/`이 없고 `InHouseProgram/`은 git 미추적이라, SubModule만 고치면 **dev에서는 되고 서버에서 깨진다**(실례: `rbe2_fixed_lines` 누락 → mooring solve HTTP 500). InHouse 관련 작업 보고에는 **"`git pull`만으로 끝나는지 / 서버 수동 교체 파일 목록 + 재시작 필요"를 항상 구분해 명시**한다.
   - 폴더명: `InHouseProgram`은 camelCase(`NastranBridge`), SubModule은 underscore 혼용(`Nastran_bridge`). `analysis.py`의 nastran_bridge 탐색은 `InHouseProgram/Nastran_bridge` → `WorkBenchSubModule/Nastran_bridge` → `InHouseProgram/NastranBridge` 순 + `NASTRAN_BRIDGE_DIR` override.
@@ -104,6 +139,27 @@ v1.5.8 에서 결함 6건이 새어 나갔고 3건을 사용자가 먼저 찾았
     `/wb-release` 가 모든 Studio 를 UNC 최신으로, `/studio-release <id> [버전]` 이 WorkBench 버전과 무관하게 한 Studio 만(롤백 포함). 반영 = 커밋·푸시 + 145 ⟳ Update(재시작 불필요).
     표의 버전 zip 이 어느 후보 폴더에도 없으면 최고 버전으로 넘어가지 않고 404. 프론트 핀(`MODEL_BUILDER_STUDIO_VERSION` 등)은 이제 표시용 기본값일 뿐 받는 버전을 정하지 않는다.
     테스트 `tests/test_viewers_release.py`.
+
+### 짝 Studio 싱크 — MB·MU 는 한 쌍, 한쪽을 고치면 다른 쪽도 맞춘다 (2026-11-10)
+
+사용자 지시: Model Builder Studio 와 Module Unit Studio 는 한 쌍이라, 한쪽이 개선·수정되면 다른 쪽이 들여올 수 있는 부분은 함께 맞춘다.
+절차·싱크 대장·짝을 늘리는 법 = **`docs/standards/studio-pair-sync.md`**. Studio 소스를 고치기 전후로 이 문서를 본다.
+- 검사 `python scripts/studio_pair.py`(규칙 `scripts/studio_pair.json`, 지문 `scripts/studio_pair.lock.json`, 시험 `tests/test_studio_pair.py`).
+  `same`(내용이 같아야 함, 어긋나면 종료 코드 1 — MB·MU 20개, `data/findEntity.js` 는 MF 까지 세 곳) · `watch`(달라도 되는 짝 87개, 한쪽이 바뀌면 알림 → 판정 후 `--ack <경로>`).
+- 전역 훅 `workbench_guard.js` 가 Studio 소스를 Write/Edit 한 직후 그 파일의 짝을 알린다(세션·파일당 한 번). `/deploy` `studio.md` 절차 0번이 빌드 전에 검사를 돌린다. 훅·`/deploy` 는 70 PC 에만 있다.
+- 판정(도입함 / 해당 없음 / 보류)은 문서의 싱크 대장에 한 줄(번호가 붙는다). 보류는 `--ack` 하지 않는다. `--ack --all` 은 기준선을 잡을 때만.
+- **옮기는 시점(사용자 결정)**: 개발 중에는 대장에 보류로만 적고, 그 Studio 를 145 에 공개한 뒤 묶어서 옮긴다 — **`/studio-sync`**(`.claude/commands/studio-sync.md`:
+  인자 없음 = 보류를 추천과 함께 보여 주고 한 번 물음 · 번호나 `all` = 묻지 않고 옮김 · 글 = 대장에 없는 변경). 옮긴 Studio 의 테스트·대장·`--ack`·70 로컬 배포까지, 145 공개·커밋은 안 함.
+  옮길 쪽 저장소에 진행 중인 변경이 있으면 멈춘다(두 세션이 한 Studio 를 동시에 고치지 않게). `/studio-release` 보고 끝에 '짝 Studio 싱크: 보류 N건' 안내 줄.
+  `same` 파일만은 미루지 않고 고친 자리에서 짝에도 복사한다.
+- 묶음은 MB·MU 하나(`mb-mu`)다. 다른 Studio 는 `--scan <id> <id>` 로 훑고 `groups` 에 묶음을 더한다(MU ↔ SP 가 내용 같은 파일 23개로 다음 후보, 미등록).
+- 상태(2026-11-10): 기준선 = MB 0.1.8 · MU 0.0.205. 기준선에서 찾은 차이 8건(MU 의 찾기 바 키 가로채기 방지·단면 고정이 MB 에 없음, MB 의 ErrorBoundary 가 MU 에 없음 등)은 대장 1~8번 '보류' 로 남겼고 Studio 코드는 고치지 않았다 —
+  MB 개선이 끝나 공개한 뒤 `/studio-sync` 첫 실행으로 처리하기로 함. `/studio-sync` 는 아직 한 번도 실행해 보지 않았다. 미커밋.
+  같은 날 다른 세션의 MB 개선(다크 전용 전환·작업 패널을 뷰포트 안에·뷰포트 알림 칩 등, MB 미커밋)이 훅 알림을 받아 대장 9번~ 을 스스로 적었다 — 훅이 실제 세션에서 도는 것은 이것으로 확인.
+  그때 검사는 'MB 쪽이 바뀜' 15개(`WATCH_CHANGED`)였다. ⚠ MB 가 다크 전용이 되면 대장 6번(테마 줄만 다른 5파일)은 양쪽을 같은 내용으로 맞출 수 있게 된다 — `/studio-sync` 때 다시 볼 것.
+  **`/studio-sync` 첫 실행(2026-11-11)** — 보류 13건 중 12건 처리(도입 11 · 해당 없음 1). 그룹 색은 사용자 결정으로 **MB 방식**(모든 그룹 따로 칠하고 따로 지움, MU 의 '기타' 묶음 폐지).
+  `same` 이 33 → 44개(textEntry·useSectionPick·orthoPan·ErrorBoundary·main·도움말 5·groupPalette). 일부러 다른 파일은 `ignore` 에 이유와 함께(`three/rigidClassification.js` — U-bolt 판별 규칙이 다름, `hooks/useFullReset.js` — 지우는 스토어가 다름).
+  남은 보류 = 22번(MU 질량 정보 탭 → MB). 남은 일: 장치 파일·대장 커밋 · MU ↔ SP 묶음을 등록할지 사용자 결정.
 
 ### Model Builder Studio — 2개 구성요소(엔진 / 스튜디오)와 배포 흐름 ★작업 전 필독
 
@@ -228,6 +284,16 @@ Load Case 단계 없음(스토어 `effectiveLoadCases`: 기본 '모두 한 번�
   '입력 모델 문제가 아니라 실행 환경 문제' 로 안내한다. 판정·문구 원본 = 백엔드 `app/services/exit_codes.py` ↔ 프론트 `utils/abnormalExit.js`(사본, +테스트).
   적용 = 권상 BDF 검증(`groupmoduleunit_service`, 결과에 `abnormalExit`) · 구조 해석 편집 적용(`unit_structural_service`) · GMU 판정 카드(`gmuLiftingVerdict` `jobLog`)·알림. 다른 앱의 실패 경로는 아직 예전 문구.
   반영 = 145 `git pull + 재시작`(백엔드) · 판정 카드·알림은 다음 exe. 프론트 lint 는 `@eslint/js` 미설치로 못 돌림.
+  **결과를 다 쓴 뒤 죽으면 계속 간다 (2026-11-11, `697b6cd` · WorkBench 1.7.19)** — 권상 구조 해석의 편집 BDF 생성·Wire BDF 생성(`unit_structural_service.build_lifting_bdf`)은 Windows 예외 종료여도
+  `exit_codes.outputs_complete_after_crash`(이번 실행에 새로 썼고 · BDF 끝 = ENDDATA · JSON 이 끝까지 읽힘)가 참이면 엔진 로그에 '[경고] … 계속 진행' 을 남기고 진행한다.
+  실례 `20261111_105028_A476854_GroupModuleUnit`(Dev_Server_70.bat 로 띄운 백엔드에서 DRM 이 종료 순간 끊음). 시험 `tests/test_exit_codes_crash_tolerance.py`.
+  **BDF 검증(GMU·Side Passage·해상 운송 공용 `task_execute_groupmoduleunit`)도 같은 규칙 (2026-11-12, 미커밋)** — 모델 파싱(`<stem>.json`)·validate-run 준비(`_validation.json`+`_validation.bdf`) 두 bridge 호출.
+  실례 `20261112_101950_A476854_GroupModuleUnit`(JSON 1.3 MB 를 다 쓴 1초 뒤 HIDRMH.DLL 0xC0000005 → '프로그램 비정상 종료'). 경고 문구는 공용 `exit_codes.crash_tolerated_note`. 시험 `tests/test_gmu_validation_crash_tolerance.py`.
+  끊긴 뒤 넘어가는 경로는 시험으로만 확인(실제 5회 재실행에서 재현 안 됨). 반영 = 70 백엔드 재시작 · 145 `git pull + 재시작`.
+
+**엔진 전면 개선 (2026-11-12~, 진행 중)** — 수집 CSV(`E:\HiTESS\ModelBuilderCsv`, 62묶음)로 회귀를 재며 엔진 결함을 하나씩 고친다.
+계획과 진행 기록·결정표(D1~D11) = `docs/plans/2026-11-12-modelbuilder-engine-overhaul-plan.md`, 회귀 장치 = `scripts/mb_engine_regress/`(`regress.py run|compare`, 결과 `outputs/mb-engine-regress/<label>/`, git 미추적).
+엔진 수정은 회귀로 이전 결과와 비교한 뒤에만 커밋(엔진 `HiTessModelBuilder` 로컬 커밋, 푸시 안 함). **70 InHouse `Cmb.Cli.exe` 교체 (2026-11-17)** = 엔진 `237a6a4`(sha256 0ef1c8a6…, 백업 `.bak_20261117_before_overhaul` = 10-29 판 8055258d…) — 회귀 `s5_mass` 와 BDF 62/62 같음, 백엔드 MB 시험(편집 계약 포함) 통과, 작업 함수로 실제 CSV 2묶음 '모델 생성 완료'. WorkBench 앱 안 화면과 Studio 는 눈으로 확인 안 함. **145 는 아직 옛 exe** — InHouse `HiTessModeBuilder\Cmb.Cli.exe` 수동 교체(재시작 불필요)는 사용자 몫. 바뀐 동작(장비 상자 받침, 외딴 조각 삭제, 질량 옮김 등)은 계획서 4~5단계.
 
 **장비 COG 위치 오류 `EQUIPMENT_COG_FAR` (2026-10-27)** — 장비 CSV 의 `cog` 가 잘못 나오면(실례 3529_m04 `=30137/754429` 715 kg, X 만 50 m 어긋남)
 엔진이 그 좌표에 COG 노드를 만들고 부착점과 RBE2 로 묶어, Studio 에 모델 밖으로 길게 뻗은 RBE 가 생긴다. 같은 오류가 `3592_m10`(`=21945/1855177` 153 m)에도 있다.
@@ -277,10 +343,6 @@ Load Case 단계 없음(스토어 `effectiveLoadCases`: 기본 '모두 한 번�
   가 그 행(같은 name 의 첫 converted 장비 행)을 error 로 바꾸고, 판정 `massBearingExclusions` 가 그대로 '검토 필요' 로 잡는다. 사유 문구는
   WorkBench `REASON_LABELS`·Studio `excludedRowGhosts.REASON_LABELS` 사본('장비 부착 노드 없음 — 질량 누락'). 테스트 `EquipmentMassDroppedAuditTests`.
 - 남은 후보: 3D 부재 클릭 → 정보 패널에 CSV 줄 표시·표 해당 행으로 이동(CSV 탭에서는 이미 됨, 다른 탭에서도 할지).
-- **배포·커밋 상태 (2026-10-27 세션 끝)** — 로컬(70)만 반영: InHouse `Cmb.Cli.exe`(sha256 04ae662a…, 백업 `.bak_20261027_before_cogfar`)·
-  `NastranBridge/nastran_bridge.py`(백업 동일 접미사)·StudioProgram `model-studio-0.0.105`(로컬·UNC)·핀 0.0.105. **145 미반영**
-  (zip 0.0.105 → exe·bridge 수동 교체 → WorkBench 프론트 재배포, 백엔드 재시작 불필요). **3개 저장소 미커밋** — WorkBench·ModelBuilderStudio·
-  HiTessModelBuilder(→ 2026-10-29 커밋·푸시, 위 'git' 줄). `WorkBenchSubModule/Nastran_bridge` 는 git 저장소가 아니다(InHouse 사본이 실사용본, 같은 날 BAILOUT 제외까지 반영). 커밋 전 `hitess-code-reviewer` 미실행. Studio 화면은 사용자가 일부 확인(COG 말풍선·CSV 탭), 나머지는 눈으로 확인 안 함.
 
 **RBE 노드 공유 규칙 — 추적 결과와 다음 작업 (2026-10-27)** — 사용자 고민: 간격 메움 RBE(엔진 FREE_END·GROUP_CONNECT·LOOP_CLOSE, 대부분 ≤170 mm)가 촘촘해
 COG 노드 + 질량을 두고 주변 부재에 RBE 로 묶기가 어렵다(3529_m04 구조 노드 677 중 370개(55%)가 이미 RBE 에 걸림, 그중 cm=123456 274개 · U-bolt 부분 cm 96개).
@@ -345,8 +407,7 @@ GMU 검증 라우트 2개가 `hull_no` Form 을 받아 `input_info.hull_no_sourc
 - ⚠ 옛 `Cmb.Cli.exe` 는 `--hull-no` 를 모르면 인자 오류로 실패한다 → 백엔드는 `engine_supports_hull_no()`(`--help` 확인, exe mtime 캐시)로
   지원할 때만 넘긴다. 그래서 서버에서 백엔드·엔진 반영 순서가 바뀌어도 깨지지 않는다(엔진 교체 전에는 경고만 로그에 남음).
 - 계약 테스트 `test_engine_keeps_hull_no` 가 편집 BDF 첫 줄 주석을 확인한다(호선 이전 엔진이면 skip).
-- 배포 상태(2026-10-20): 백엔드·프론트는 v1.6.20 으로 릴리스됨. **엔진 `Cmb.Cli.exe`·`nastran_bridge.py` 는 아직 InHouseProgram(70·145) 미교체** —
-  소스는 `WorkBenchSubModule\HiTessModelBuilder`(미커밋)·`WorkBenchSubModule\Nastran_bridge\nastran_bridge.py`. 교체 전까지 BDF 에 주석이 안 남는다.
+- 배포 상태: 백엔드와 프론트는 v1.6.20 부터. 70 InHouse `Cmb.Cli.exe`(2026-10-29 판)는 `build-full --hull-no` 를 알고 `nastran_bridge.py` 에도 `normalize_hull_no` 가 있다(2026-11-13 확인). 145 는 10-29 에 같은 판으로 교체했다는 기록만 있고 직접 확인은 안 함.
   권상 Wire 포함 BDF(lift-run)의 호선 주석은 단위 테스트만 했고 실제 권상 해석으로는 확인 안 함.
 
 **⚠️ 교정/함정 (이번 재검토에서 발견)**
@@ -393,11 +454,72 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
 - **원본 RBE 수정·삭제 (0.0.202, 2026-11-10, 릴리스 표 `cbe3180`)** — 도구 막대 RBE › 수정 · 삭제. intent `deleteRigid`(MB 와 같은 kind)·`editRigidDependents`(Mooring 과 같은 kind).
   ⚠ 두 편집은 **파생 모델(`nodeEdits.applyNodeEdits`)의 `rigids`** 에 들어간다 — 편집과 함께 RBE 를 읽는 새 코드는 원본 `stage.rigids` 가 아니라 `mask.stage`·`applyNodeEdits` 를 볼 것.
   수정 내역 중간 삭제로 종속이 겹치면 뒤쪽 RBE 편집을 함께 취소한다. 상세·결정 = MU 계획 문서 '원본 RBE 수정·삭제'.
+- **RBE 묶기 — 노드 위치·독립 노드 고르기 (0.0.210~0.0.211, 2026-11-11, 70 로컬만·미커밋)** — 사용자 지적: 패널이 `Node #1302` 번호만 보여 어느 노드인지 모름, 독립·종속을 자유롭게 바꾸기 어려움.
+  3D 는 RBE 수정과 같은 그림(`three/RigidEditHighlight.js`, 아직 없는 중심점은 `hubPos`) — 독립 주황 + '독립 N… · 질량' 이름표, 종속 파랑 번호(점 아래), RBE 에 걸려 빠지는 노드 빨강.
+  목록 줄 = 새 노드·질량·RBE 걸림 태그·좌표·[보기]·[×]. 독립 = store `rigidIndependent`(줄 클릭 · 3D Alt+클릭 · [3D 에서 독립 노드 고르기] 뒤 클릭 — 안 고른 노드면 넣으면서),
+  기본값 = 질량 노드 → 새 노드 → 첫 노드(`data/rigidAddCandidates.js`), 질량 노드가 독립이면 Remark MASS. 실패 안내 [RBE 로 잇기]는 `openRigidDialog({ independentNode })`.
+  **작업 패널이 열린 동안 3D 오른쪽 클릭(끌지 않음) = 빼기**(모든 패널, 오른쪽 끌기는 화면 이동 그대로). 수정 내역이 바뀌면 모델에 없어진 노드·질량을 선택에서 자동으로 뺀다(`useEditStore` 끝 subscribe — '종속 노드 2898 이 StageData 에 존재하지 않습니다' 의 원인).
+  [보기]·찾기 화면 이동은 떠 있는 작업 패널을 비켜 대상을 놓는다(`ThreeViewport` `shiftClearOfWorkPanel`). 이름표 크기가 0.0.204 부터 두 배였던 결함도 고침(px 30·27).
+  0.0.211 은 다른 세션 변경(실적 보기 Wire·Node 끄기)과 합친 판.
+- **추가한 질량 다시 보기·고치기 (0.0.212, 2026-11-11, 70 로컬만·미커밋)** — 사용자 지적: 노드에 질량을 넣은 뒤 확인할 곳이 없음.
+  '지금 살아 있는 질량' = `data/applyEditIntents.js` `collectLiveMasses`(원본 + addMasses, changeMasses·deleteMasses 반영) — 정보 패널 '이 노드의 질량'(`InspectorPanel`)·말풍선(`PickTooltip`)·값 수정 패널·선택·검증이 함께 쓴다.
+  추가 질량도 changeMasses·deleteMasses 대상이고 `computeDeleteMask.addedMasses` 에 반영돼 `_edited.json`·질량 요약·자세안정성이 같은 값을 쓴다. 3D 는 질량 상자에 추가 질량을 함께 그려 클릭된다(`three/MassMarkers.js` `syncMassMarkers` — 장면 재빌드 없이 바꿈, '질량' 레이어가 꺼져 있어도 분홍 점은 남김).
+  ⚠ 뷰포트 모델(`applyViewEdits`)의 `pointMasses` 에는 넣지 않았다 — 파생 모델로 질량을 내는 곳이 있으면 두 번 더해진다. `three/MassMarkers.js` 는 MB 와 `same` 이라 MB 에도 복사(인자 기본값, MB 동작 불변).
+  확인: MU 시험 1023 · 헤드리스로 추가→3D 클릭 선택→값 수정→정보 패널·말풍선·질량 요약. WorkBench 앱 안 화면은 눈으로 확인 안 함. 145 공개(`/studio-release`)·커밋은 사용자 몫. 짝 싱크 대장 16·17번 보류.
+
+#### 평가 모드 3단계 · 그룹 일괄 삭제 (MU 0.0.224, 2026-11-18, 70 로컬만 — 미커밋, 145 미공개)
+계획과 진행 기록 = `docs/plans/2026-11-18-mu-evaluation-mode-rbe-swap-group-bulk.md`. 남은 일 = ② U-bolt 종속 노드를 체결 위치로 고를 때 독립/종속 전환(145 F06 로 FATAL 원인부터).
+- **평가 모드 = Strict / Standard(기본, 옛 Strict OFF) / Advisory** — 'Strict 평가' 토글을 대신한다. 규칙 원본 = MU `data/evaluationMode.js`(`stabilityGate`).
+  **엔진 판정은 바꾸지 않는다** — Advisory 는 엔진에 Standard 와 같은 값(`strictEvaluation:false`)을 보내고 진행 조건만 푼다(엔진 exe 교체 없음). Wire 꼭짓점(Stage 3)이 없으면 Advisory 도 막는다.
+  고른 모드는 계속 유지(사용자 결정) — `<userData>/viewer-settings/<viewerId>.json`(Electron `studio-settings.js`, IPC `viewer:getStudioSettings/setStudioSettings`, **설치 폴더 밖** — 설치 폴더는 Studio 업데이트 때 지워진다). 옛 exe 는 localStorage.
+  서버가 구조 해석 결과에 `result_info.stabilityGate`(`services/stability_gate.py`, 모드는 옆 posture JSON 에서) → WorkBench `gmuLiftingVerdict` 와 Electron status 사본이 unmet 이면 최소 '검토 필요' → 보고서(상세 '먼저 확인할 사항' 첫 줄, 결과 레포트 주의 사항 5행 — 사용자 입력 줄은 그때 빠지고 경고).
+- **그룹 일괄 삭제** — Edit › 그룹 체크박스, [전체 선택](본 구조 제외), 같은 batchId(Ctrl+Z 한 번), 고를 그룹이 2개 미만이면 체크박스 숨김. 싱크 대장 48(보류)·49(해당 없음).
+- 반영 = 145 `git pull + 재시작`(stabilityGate) · 새 exe(설정 파일 IPC, Electron 판정) · `/studio-release module-unit-studio`. 확인 안 함: 실제 Electron 설정 파일, Advisory 실제 Nastran, 결과 레포트 PDF 모양.
+
+#### 가서포트 제거 (MU 0.0.223, 2026-11-12, 릴리스 표 `e955792` — 145 ⟳ Update 는 사용자 몫, MU 저장소 미커밋)
+도구 막대 가서포트 › 제거 = `components/SupportRemovePanel.jsx`(줄마다 [보기]·[제거], [모두 제거] 확인 창). 가서포트는 3D 선택 대상이 아니라 목록에서 고른다. 제거 = 설치 intent 를 지움(Ctrl+Z 로 안 되살아남), 구조 해석 결과만 비움.
+MB 에는 가서포트가 없어 싱크 대장 23번 '해당 없음'. 헤드리스 E2E 통과, WorkBench 앱 안 화면은 눈으로 확인 안 함.
+⚠ 이 빌드의 `.sha256` 이 출처·70 로컬·UNC 세 곳 모두 97바이트 전부 NUL 이었다(zip 은 정상, 원인 미상 — 11-09 소스 NUL 사건과 같은 모양). `verify-studio-zips.ps1` 가 MISMATCH 로 잡았고 zip 해시로 다시 썼다. 빌드 뒤 `.sha256` 내용을 확인할 것.
+
+#### 카메라 유지 · 질량 정보 탭 (MU 0.0.219~0.0.222 · MB 0.1.11~0.1.12, 2026-11-11, 릴리스 표 `cb0813e` — 145 ⟳ Update 는 사용자 몫, 두 Studio 저장소 미커밋)
+- **편집으로 모델만 바뀌면 카메라를 옮기지 않는다** (MU `ThreeViewport`) — 노드 만들기(기준 노드에서 변위 등) 때마다 화면이 무게중심으로 튀었다(사용자 지적).
+  원인: 편집이 파생 StageData 객체를 새로 만들 때마다 회전 중심 = 무게중심 효과가 다시 돌아 카메라를 끌어왔고, 더블클릭으로 정한 회전 중심도 풀렸다.
+  이제 원본(`baseStage`)·해석 결과·유체 비움·회전이 바뀔 때만 카메라를 맞춘다. 화면 고정(fitCamera)은 이미 같은 규칙이었다. 헤드리스로 수정 전 37% → 수정 후 0% 화면 변화 확인. MB 에는 이 효과가 없다.
+- **질량은 '정보' 탭에 바로 보인다** (MU `RightDock`·`MassEditPanel`·`data/infoDockFocus.js`) — 사용자 지적: 정보 탭에 질량이 있는지 어떻게 아나.
+  질량 추가·값 수정 직후 첫 질량을 골라 '정보' 탭을 연다. 질량점·질량 걸린 노드를 고르면 '표시' 를 보던 중이어도 '정보' 로 넘긴다 — **셸 규칙 6('표시' 중엔 점만)의 예외는 질량뿐**, 다른 대상은 그대로 점만. MB 로는 아직 안 옮김(대장 22번).
+- MB 는 같은 날 짝 싱크로 MU 기능을 받았다: RBE 묶기 노드 정보·독립 고르기(Alt+클릭·줄·3D 주황 이름표, 3개 이상이면 방식 단추) · [처음부터] · 정보 패널 '이 노드의 질량' · 작업 패널 중 오른쪽 클릭 = 빼기. 상세 = 싱크 대장 1~18번.
+  MB 에 아직 없는 것: [보기] 화면 이동이 아래 작업 패널을 비켜 놓기(MU `shiftClearOfWorkPanel` — MB 는 패널이 노드를 가림).
+- 확인: MU 시험 1035 · MB 시험 676 · 둘 다 빌드 · 헤드리스(MB 샘플 3454: [처음부터]·정보 패널 질량·RBE 묶기 패널). **WorkBench 앱 안 화면은 눈으로 확인 안 함**, Alt+클릭·오른쪽 클릭은 실제 마우스로 안 눌러 봄, 그룹 11개 넘는 MU 모델로 그룹 목록 안 봄.
+
+#### 처음부터 · 권상점 옮기기 (0.0.213~0.0.218, 2026-11-11, 릴리스 표 `f0b721f`·Studio 저장소 미커밋)
+
+- **전체 초기화 = 상단 탭 줄 Save 바로 오른쪽 [처음부터]**(0.0.216 사용자 지시 — 오른쪽 끝은 잘 안 보였다. 어느 탭에서나, 실적 보기 창은 숨김). 로직 `hooks/useFullReset.js`(+시험). Model 탭 머리의 작은 초기화 단추는 없앴다 — 되살리지 말 것(찾지 못했다). Hoist 패널의 '초기화'(권상점만)는 그대로.
+- **권상점 옮기기** — 자동 추천 뒤 권상점 번호(N…)를 누르고 3D 에서 Shift+노드 클릭하면 그 자리만 바뀐다(순서 유지·다른 그룹 권상점 거부·Esc 취소, 칩 × = 빼기). 옮기면 자세안정성·구조 해석 결과를 비운다.
+  0.0.214(사용자 결정): **권상점을 바꾸는 모든 동작**(Shift+클릭 더하기·빼기, × 빼기, 그룹 비우기, 권상점 있는 그룹 삭제, 옮기기)이 결과를 비운다 — `useEditStore` `invalidateHoistResults`.
+  빈 그룹 삭제·바뀐 것이 없는 호출은 결과를 그대로 둔다(빈 그룹 삭제는 예전처럼 wire 재정렬만). 권상 방식 바꾸기(`setHoistMode`)는 이번에 손대지 않았다.
+- **Hoist 3D 안내 = 오른쪽 위 여러 줄**(0.0.215, 사용자 요청 '조작 설명이 뷰어에 적혀 있어야') — `shell/ViewportHintBar.jsx` + 문구 `shell/hoistHint.js`(+시험):
+  Shift+노드 = 추가 · 다시 Shift+클릭 = 해제 · 번호 클릭 → Shift+노드 = 옮기기, 옮기는 중엔 옮김·Esc 취소, 평가 결과가 있으면 '바꾸면 결과가 지워짐' 주의 줄.
+  같은 자리에 겹치던 `HoistInstructionOverlay.jsx` 는 지웠다. 가운데 두면 왼쪽 위 보기 도구줄·배치 안내를 덮어 오른쪽 위로 옮김 — 좁은 창(≤1280)에서 도구줄과 닿는지는 확인 안 함.
+- 확인: MU 시험 1031 · 빌드 · 헤드리스 Chrome 에서 번호 클릭 → Shift+클릭 → 옮김, Esc 취소, [처음부터] 확인 창 → Model 탭·모델 재로드, 탭 줄 1600·1280·1024 넘침 없음. WorkBench 앱 안 화면은 사용자 확인 중. 싱크 대장 18(보류)·19(해당 없음).
+- **네이티브 확인 창 금지 (0.0.217)** — WorkBench(Electron, Windows) 에서 `window.confirm`·`alert` 를 닫으면 그 뒤 입력칸에 글자가 안 들어가는 경우가 있다
+  (사용자 신고: [처음부터] 확인 → 노드 '기준 노드에서 변위' 칸 먹통. 헤드리스 Chrome 에서는 재현 안 됨 — Electron 의 알려진 포커스 문제로 판단, Electron 안 재현은 안 함).
+  MU 의 9곳을 앱 안 확인 창으로 바꿨다 — `store/useConfirmStore.js`(`confirmAction`·`notify`, 열린 동안 키를 먼저 받아 작업 패널 Enter·Esc 로 새지 않게) + `components/ConfirmDialog.jsx`(SidePassage 판 이식).
+  새 코드도 쓰지 말 것 — `store/nativeDialogs.test.js` 가 잡는다. **MB 도 같은 날 옮김(0.1.10, 9곳 + 뷰 프리셋 이름 `askText`)** — 세 파일은 짝 Studio `same`(싱크 대장 20).
+  **WorkBench 프론트 10곳은 다음 exe 릴리스 때 같은 방식으로 바꾼다**(사용자 결정 2026-11-11 — exe 재빌드가 필요해서). MB 점검 = `outputs/MB-manual/source/smoke_confirm.mjs`.
+- 화면 점검 스크립트(2026-11-11, git 미추적) — `outputs/MU-manual/source/smoke_inputs.mjs`(편집 도구 10개 패널 입력칸 47개에 글자 넣기) · `smoke_flow.mjs`(권상점 → 평가 → 옮기기 → 재평가 → 구조 해석 → 보고서 창 입력 → [처음부터] → 한 번 더).
+  둘 다 처음 상태와 [처음부터] 뒤를 돌고 화면 오류·네이티브 창을 실패로 센다. 실행 = MU 폴더에서 `npx vite --port 5198 --strictPort --host 127.0.0.1` 후 `node smoke_*.mjs`(lib.mjs = 헤드리스 Chrome + 샘플 결과 대역).
+  처음 돌렸을 때 찾은 것: 고르기 칸 테두리 `border`/`borderColor` 섞어 쓰기 React 경고(`edit/nodePick.jsx`) · 평가 뒤 ② 가 접혀 3D 안내의 '왼쪽 번호' 가 안 보임(안내에 ② 단계 이름 추가).
+- 배포: 70 로컬 zip MU 0.0.218 · MB 0.1.10 · 핀 둘 다 동기화. 다른 세션의 미커밋 변경(0.0.209~0.0.212)도 이 zip 에 함께 들어 있다.
+  **릴리스 표 MU 0.0.208 → 0.0.218 · MB 0.1.9 → 0.1.10**(`f0b721f`, 2026-11-11, UNC 업로드·검증 MATCH, Update History 2건) — 145 ⟳ Update 는 사용자 몫. 같은 푸시에 다른 세션의 `5af8bfd`(Drawing to Analysis)가 함께 나갔다(그 세션이 사용자 허락을 전달).
+- 남은 일: 70 개발 앱에서 [처음부터] → 노드 변위 입력이 되는지 사용자 확인(Electron 안 재현 안 함) · MU·MB 저장소·WorkBench 핀·짝 장치 파일 커밋(커밋 전 독립 리뷰, MB 에는 다른 세션의 0.1.9 미커밋 변경도 있음) ·
+  사용 설명서(`outputs/MU-manual/source/content.mjs` 104행 Model 탭 초기화 단추, 371·377행 '칩을 누르면 해제', 단축키 표, `hp_pick` 그림)가 아직 옛 동작 — 고친 뒤 `make.mjs MU --bump`·`publish.py MU`·Studio 재배포.
 
 #### 다른 Unit 권상 Wire 참조 (Hoist 탭, 0.0.183, 2026-11-04)
 
 Hoist 탭 STEP 2 아래 '다른 Unit 권상 참조' — LogBook 에 확정된 Wire 모델(`_lifting.bdf`)의 훅·lug·Wire 길이·슬링각을 평면 그림 카드로 본다(**보기 전용**, 노드 번호를 지금 모델에 적용하지 않는다).
 경로 = Studio `host.searchLiftingReferences`·`getLiftingReference` → Electron `viewer:searchLiftingRefs`·`viewer:getLiftingRef` → 백엔드 `GET /api/logbook/lifting-refs[/{id}]`(`logbook_link.py`, as = 로그인 사번) → LogBook `/api/integration/lifting-refs*`(LogBook 계획 50).
+⚠ LogBook 은 `as` 사번이 LogBook 활성 사용자가 아니면 목록부터 404 → Studio 에 'LogBook 에서 찾을 수 없거나 볼 권한이 없습니다'(2026-11-16 LogBook 에 한 번도 안 들어간 사용자).
+LogBook `integration.py` `_reference_user` 가 권상 참조 세 경로에서 **행이 없을 때만** LV1 로 등록하도록 고쳤다(사용 중지 사용자는 그대로 막음, 시험 2건, 미커밋 → 145 LogBook pull+재시작). 반영 전 우회 = 그 사람이 LogBook 을 한 번 열기.
 요약은 LogBook 이 BDF 구조로 만든다(apex = 병진 123 구속 + CROD 에만 쓰임) — JSON(`_lifting_meta.json`)에 기대지 않아 옛 자료도 찾는다. 계획·상태: `docs/plans/2026-11-04-mu-studio-logbook-wire-reference.md`.
 상태(2026-11-04): 커밋 LogBook `43f0540` · WorkBench `63c2165` · MU `6311d7a` · 릴리스 표 0.0.183 `8460c44`(**미푸시, 사용자가 WorkBench 와 함께 푸시**). UNC 업로드·검증됨.
 동작하려면 145 LogBook `git pull`+재시작(먼저) → WorkBench 백엔드 ⟳ Update+재시작 → **새 exe**(Electron IPC). 옛 exe 는 '업데이트 안내'만. WorkBench 앱 안 실행·실제 LogBook 연결은 확인 안 함.
@@ -418,6 +540,18 @@ Hoist 탭 STEP 2 아래 '다른 Unit 권상 참조' — LogBook 에 확정된 Wi
     같은 창에서 내 모델과 바꿔치기하는 안은 버렸다(Studio 저장소가 창마다 하나라 사용자 편집·결과를 덮는다).
   - ⚠ 굵은 선(LineMaterial) 꼭짓점 색은 **선형**으로 넣는다(`utils/srgbToLinear.js`) — sRGB 그대로면 두 번 밝아져 초과 빨강이 분홍이 된다(실측).
   - 상태: Studio 0.0.197 · WorkBench 1.7.10 · LogBook `9d5a669` 커밋·푸시, 릴리스 표 0.0.197(`1dd61aa`). 145 반영(LogBook pull+재시작 → ⟳ Update+재시작 → 1.7.10 exe)은 사용자 몫. 실제 Studio 화면 안 버튼은 눈으로 확인 안 함.
+
+**지난 구조 해석 결과 다시 보기 (2026-11-11, MU 0.0.211~ · `30bc8b6` · WorkBench 1.7.19, 사용자 결정: 읽기 전용)**
+  커밋 전 독립 리뷰 '고치면 좋음'(미반영): Side Passage 기록의 [결과 보기]도 MU Studio 로 열림 · Studio 미설치·구버전 PC 안내가 '미설치' 한 줄뿐 · IPC 거절 때 안내 없음(`ResultArtifactsCard` catch 없음) · 실행별 사본 없는 옛 기록은 결과 JSON 도 작업 폴더본. — 산출물 카드(`ResultArtifactsCard`, GMU 3단계·My Projects 상세 공용)의
+[Studio 에서 결과 보기] → `GET /api/analysis/unit-structural/{id}/result-set`(모델 JSON + 결과 JSON) → Electron `viewer:openPastStructuralResult`(본창만, 창 하나 `sourceKey unit-structural-past`)
+→ 실적 보기와 같은 읽기 전용 창(`reference.kind = 'past'`, 띠 '지난 해석 보기 · … · 해석 #id'). 계획 `docs/plans/2026-11-11-mu-past-structural-result-view.md`.
+- 모델은 **그 실행이 쓴 사본**(`lifting_reviews` manifest `editedModel`) → 편집 없음이면 원본 `<stem>.json` → manifest 없는 옛 기록만 작업 폴더 파일 + 경고(`unit_structural_result_set.py`). 작업 폴더 `_edited.json` 은 다음 해석에 덮어써져 쓰지 않는다.
+- **Wire·훅은 자세안정성 결과로 그린다** — 응답에 그 실행의 `_stability.json` 사본(`stability`)을 싣고 Studio `App.jsx` 가 `useStabilityStore.setReport` 한다. 없으면 부재 응력만 + 경고.
+  결과 창은 Node 레이어를 끈 채 연다(빨간 절점이 응력 색을 덮어 초과 부재처럼 보임 — 실적 보기 창도 같이).
+  배포: 70 로컬 **0.0.211**(핀 0.0.211) = 이 기능 + 같은 날 다른 세션의 RBE 묶기 개선(싱크 대장 16번)을 합친 판. 0.0.209·0.0.210 은 Wire 가 빠진 판이라 쓰지 말 것. 이어서 0.0.212(다른 세션, 추가 질량 3D 표시)가 그 위에 올라갔다.
+- 대상은 그 GMU 기록의 최근 성공 1건(artifacts `unitStructuralAnalysisId`). 30일 정리로 폴더가 지워진 기록은 404.
+- 확인: 70 실제 기록 3건(3312·3164·3020) 라우트 200, 결과 부재 3,236 중 3,235 가 모델 요소와 맞음 · 헤드리스 Chrome + 대역으로 띠·판정 패널·결과 도크(응력·변위·Wire) 표시. 사용자가 70 개발 앱에서 버튼 → Wire 포함 응력 화면 확인(2026-11-11). ⚠ 서버·Electron 은 수정 뒤 재시작해야 한다(9091 `--reload` 가 다시 읽지 않아 Wire 가 빠진 채 보였던 일).
+- 반영 = 145 `git pull + 재시작`(라우트) · 새 exe(IPC·버튼) · `/studio-release module-unit-studio`(Wire·문구, 70 로컬에만 0.0.211). 옛 exe 는 '앱 업데이트' 안내, 옛 서버는 '서버 업데이트' 안내.
 
 #### 화면 배율 대응 — 셸을 `transform: scale()` 로 키우지 말 것 (0.0.148, 2026-09-09)
 
@@ -874,6 +1008,17 @@ CalcVerify 끝에 `Sn_Top,Sn_Bottom` 이 붙었다. 이 칸이 없는 옛 결과
   손 치수 자중 3% 규칙의 첫 예외: A-20(−6.4%), A-40(+8.0%)은 형상이 PDF 벡터와 맞아 도면 자중 표기 오차로 보고 `drawing_mass_note` 에 이유를 적는다(시험이 그때만 10%).
   치수가 없는 기하(기울기, 따낸 자리)는 PDF 벡터(`page.get_drawings()`)로 잰다 — 이 세션의 방법.
 
+### 선급 Rule 기반 선체 가속도 — 샘플 PDF 는 UNC 평문 (2026-11-16, 미커밋)
+
+145 에서 샘플 실행이 모두 실패했다('PDF 파일을 열 수 없습니다. 회사 DRM…'). 원인은 코드가 아니라 **145 백엔드가 DRM 복호화를 못 받게 된 것**이다.
+11-10 16:35 이 마지막 성공이고, 11-12 10:40 재부팅 뒤부터로 추정한다. 그때 성공했던 작업 폴더 PDF 도 지금은 백엔드로 읽으면 `HHIDRMC` 다(70 은 `%PDF`).
+145 DRM 복구는 사용자가 진행 중이다. 복구 전에는 DRM PDF **업로드**도 실패할 것으로 본다(시험 안 함). 원격 확인법은 메모리 `reference_145_drm_decrypt_check`.
+- 샘플 = `app/routers/analysis.py` `_hull_accel_sample_pdf()`: `.env HULL_ACCEL_SAMPLE_PDF` → 기본 UNC `[개인 자료]\권혁민 책임연구원\UnLock\TS_PDF\3252_TS_7G7000010_FINAL TRIM_STABILITY BOOKLET.pdf` → 없으면 옛 `SampleFile/TS`.
+- ⚠ 샘플은 **작업 폴더로 복사하지 않고** 원본 경로를 엔진에 넘긴다. 백엔드가 `userConnection` 에 `.pdf` 로 쓰면 평문이어도 DRM 이 다시 감싼다(70 실측). 재실행도 샘플이면 UNC 를 그대로 쓴다(`_is_hull_accel_sample_pdf`).
+- 미리보기 제원 쪽 = 세 낱말이 한 쪽에 있으면 그 쪽, 없으면 치수 쪽과 Lightship·Deadweight 쪽을 따로(3252 는 7·8쪽). UnLock 폴더 TS 7개 중 H3592s, H3606 은 제원 쪽을 못 찾는다(예전과 같음).
+- 시험 `tests/test_hull_acceleration_sample_pdf.py`. 엔진 직접 실행(UNC, 6초, Condition 31개)과 미리보기 함수 직접 호출까지 확인. 70 서버가 코드를 다시 읽지 않아 API 를 거친 실행은 안 봄.
+- 반영 = 145 `git pull + 재시작`, InHouse·exe 변경 없음.
+
 ### 이중관 연료배관 PSA — 엔진은 외부 연구원 소유, WorkBench 개조는 어댑터로 분리 ★엔진 수정 금지
 
 이중관 연료배관 응력해석(PSA) 엔진(`InHouseProgram/DoublePipe/Piping Stress Analysis for all load cases/`)은
@@ -918,6 +1063,25 @@ CalcVerify 끝에 `Sn_Top,Sn_Bottom` 이 붙었다. 이 칸이 없는 옛 결과
   (잠긴 파일 409 · 폴더 404 · 기록은 열린 뒤). **145 반영(⟳ Update) 후 실제로 풀리는지 확인 안 함.**
   exe 모드 때도 보고서가 감싸졌는지(= 소스 모드 전환 탓인지)는 미확정 — 오늘 이전 145 이중관 작업 폴더의 xlsx 머리가 `PK` 면 소스 모드(python.exe 저장) 탓이다.
 
+### Truss 소모듈 권상 구조해석 (2026-11-17~, 1단계 코드 있음, 전부 미커밋, 145 미반영)
+
+글로벌 Truss BDF 를 LV(도면 plan 높이)와 평면 영역으로 잘라 소모듈마다 권상(Wire), 적치(받침점) 해석과 보고서를 내는 새 앱. 결정 22개와 단계 = `docs/plans/2026-11-17-truss-module-lifting-plan.md`.
+요점: MU Studio 를 복사한 새 Studio(`truss-lifting-studio`). 기존 CONM2 는 지우고 LV 평면의 닫힌 칸 면적 × 단위 면적당 질량으로 재구성(재질 밀도는 유지). 자르는 선 위 pair 는 single PID 로(짝 없는 Girder, BG 는 절반 PID).
+평가는 기존 TrussAssessment 와 같은 기준이되 **소모듈 전용 exe**(판정 파일 링크 공유)로 — 글로벌 평가와 기존 exe 는 건드리지 않는다. 보류: 체인벨트, 핀 조인트 평가.
+진행(2026-11-17): 1단계 1~7번 완료(7번 = WorkBench 연결: 메뉴 `Truss Module Lifting`, 페이지 `pages/analysis/TrussModuleLifting.jsx`, 백엔드 `/api/analysis/trusslifting/request` + 기록 `TrussModuleLifting`, 권상 부모 목록 상수화, 구조 해석 뒤 평가 exe — 미커밋) — Studio `WorkBenchSubModule\TrussLiftingStudio\`(git 아님), InHouse 변경 = `NastranBridge/nastran_bridge.py`(PBAR 읽기와 쓰기, PBAR 참조 = CBAR), `GroupModuleAnalysis/ModuleAnalysis.Core.dll`(PBAR 단면 치수), 새 폴더 `TrussModuleAssessment/` — 모두 MU 시료로 전후 결과 같음 확인, 145 미반영. 상세 = 계획서 진행 기록.
+같은 날 사용자 첫 사용 뒤 Studio 0.0.2~0.0.3(70 로컬): 분할 화면 개편(세 걸음 패널, 도면과 3D 미리보기 나란히, 규칙 = Studio README '분할 탭 화면 규칙'), 고르기 = HyperMesh 손동작(Shift+끌기 넣기, Shift+오른쪽 끌기 빼기, Esc, A/S/D — 도면마다 영역 다각형 방식은 사용자가 헷갈린다고 해 없앰), 3D 미리보기는 보기 전용, LV 는 Leg 맨 아래 제외, 3D 단면 PBAR = 봉 모양, Model Builder 전용 항목 걷기, WorkBench 입력 페이지를 TrussAssessment 틀로(공용 `runFrame/BdfDropZone`).
+Studio 0.0.4(70 로컬, 사용자가 실제 모델 174k_2tk_rev5 로 써 본 뒤): **Truss 는 Y–Z 면이 정면도**(S = Y–Z, D = X–Z, 분할 도면과 3D 표준 뷰 둘 다 — MU 와 반대), 도면에서 겹친 부재를 모두 골랐으면 실선, 일부만 골랐으면 긴 점선(예전에는 한 도면에서 뺀 것이 다른 도면에서 다 고른 것처럼 보였다), 부재 색 `#A0B6D2`.
+샘플 실행(2026-11-18, 사용자 지시 '고정'): 페이지 '샘플로 실행' → `/api/analysis/trusslifting/run-sample` 이 **`SampleFile/TrussLifting/174k_2tk_rev5_DesignNo.6.bdf` 하나만** 쓴다(`TRUSS_LIFTING_SAMPLE_BDF`, 폴더의 다른 BDF 로 넘어가지 않음, 없으면 404). ⚠ `SampleFile/**/*.bdf` 는 git 제외라 145 에는 이 파일을 손으로 복사해야 한다.
+Studio 0.0.5(2026-11-18, 70 로컬): **pair → single 은 사용자가 고른다**(사용자 결정 — 도면 Alt + 누르기, 자동 판정은 하늘색 점선 후보로만, 계획서 진행 기록).
+Studio 0.0.6(2026-11-18, 70 로컬): **분할 범위 = 범위 상자 하나**(사용자 지시 '직관적이지 않다, 현재 절차는 무시하고 다시') — 평면도와 입면도를 함께 보이고 끌어서 그리고 테두리를 끌어 고친다, 테두리는 격자선과 LV 에 붙는다, 보조 키 없음. HyperMesh 손동작(Shift + 끌기 넣고 빼기, A/S/D 로 도면 바꾸기)과 높이 거르개는 없앴다 — 되살리지 말 것(Studio README '분할 탭 화면 규칙').
+Studio 0.0.7~0.0.9(2026-11-18, 70 로컬): 분할 탭에서 **키를 받는 칸 = 마지막으로 누른 칸**(미리보기를 누르면 A / S / D 가 3D 를 움직임, 도면이면 S / D = 입면도 방향, `useSplitStore.splitKeyTarget`). **집중질량 = Plywood 0.63 t/m²(기본, 바닥 면적당) + Square Tube(소모듈 전체 총중량 t 를 넣음 — 사용자 '일단, 차후 변경 가능성 있음', 바꿀 곳 = `useSplitStore.splitMassInputs`)**(예전 kg/m² 한 칸 아님). 
+Studio 0.0.10(2026-11-18, 70 로컬) + 백엔드 + WorkBench 화면: **소모듈 여러 개를 Case 로 두고 [전체 해석] 으로 하나씩 권상**(사용자 결정 '순차 대기열'). 소모듈마다 권상 지정과 결과를 보관하고(Studio `data/moduleCases.js`, `data/moduleBatch.js`), 서버는 stability 파일 이름 `<bdfStem>__<caseId>_stability.json` 에서 Case 를 읽어 산출물을 `<bdfStem>__<caseId>_lifting.*` 으로 쓴다(`unit_structural_service.resolve_work_stem` — Case 표식 없는 MU, Side Passage 는 예전 그대로, Electron 과 InHouse 변경 없음). ⚠ 옛 서버는 Case 를 몰라 글로벌 BDF 전체로 조용히 푼다 → Studio 가 결과 JSON 의 `case.id` 로 걸러 버린다(이 확인을 빼지 말 것). 그래서 **145 는 백엔드 `git pull + 재시작` 을 Studio 공개보다 먼저**. 실제 엔진과 Nastran 으로 소모듈 2개 끝까지 확인(Electron 자리는 대역). 상세와 남은 것 = 계획서 진행 기록, Studio README '소모듈 여러 개와 전체 해석'.
+남은 일(2026-11-18 세션 끝, Studio 0.0.12): **① 다음 세션 첫 일 = 구조 해석 변위가 수십 m(3321 35 m, 174k 66 m)인 원인 조사**(매커니즘, 하중 크기 — 계획서 진행 기록 '훅을 무게중심 위에' 남은 문제), 이어서 훅 하나 4가닥에서 압축 가닥 처리 ② 70 백엔드 재시작 뒤 앱 안에서 분할 패널, [전체 해석], 슬링 길이 표 확인 ③ 커밋(Studio 는 git 저장소 없음, 엔진 `ModuleUnitAnalysis` 는 10-01 다른 미커밋 변경과 섞여 있음, WorkBench 쪽은 커밋 전 `hitess-code-reviewer`) ④ 145 반영: InHouse `NastranBridge/nastran_bridge.py`(PBAR, PBARL), `GroupModuleAnalysis` dll 4개(overCog), `TrussModuleAssessment\`, 샘플 BDF 손 복사, 백엔드 `git pull + 재시작`(Case 이름 규칙) → `/studio-release truss-lifting-studio`, 새 exe. 점검 스크립트는 세션 스크래치패드에만 있었다(다시 만들 때: 헤드리스 Chrome + `workbenchAPI` 대역, 배포용 빌드에는 `__stageStore` 가 없어 화면 글자로 기다린다).
+**훅을 무게중심 위에**(2026-11-18, Studio 0.0.12) — 훅 하나면 posture `apexPlacement: "overCog"` 로 엔진이 정점을 무게중심 위에 두고 슬링 길이를 낸다(MU 는 안 보내 불변). InHouse `GroupModuleAnalysis` dll 교체(145 수동). ⚠ Truss 소모듈 구조 해석 변위가 수십 m 로 비정상 — 원인 조사 전 결과 숫자를 믿지 말 것(계획서 진행 기록).
+InHouse `NastranBridge/nastran_bridge.py` 에 **PBARL 읽고 쓰기**(2026-11-18) — 174k 의 ROD 단면 부재가 단면 없이 들어오던 것. 145 수동 교체 대상(같은 파일의 11-17 PBAR 변경과 함께).
+⚠ 이 PC 는 WorkBench 프론트 eslint 가 돌지 않는다(`@eslint/js` 없음) — 화면 코드를 고치면 임시 설정으로 `no-undef` 만이라도 돌린다(2026-11-17 정의 빠진 함수로 페이지가 죽음, 빌드는 통과).
+⚠ `TrussModuleAssessment` 는 TrussAssessment 의 판정 파일을 링크로 쓴다 — `ElementStressChecker` 허용값 표를 고치면 두 exe 가 함께 바뀐다(아래 절의 `_ALLOWABLE_PROPERTY_IDS` 동기화도 같다).
+
 ### Truss Structural Assessment — 허용응력 Property ID 테이블은 두 곳에서 참조된다 ★수정 시 동기화 필수
 
 엔진(`WorkBenchSubModule/TrussAssessment`, C#)의 허용응력 테이블은 **Property ID 1~18만** 하드코딩돼 있고(`ElementStressChecker.cs:28-48`, `AllowableInfo.propertiesInfo`), 테이블 밖 ID 는 `catch (KeyNotFoundException) { continue; }` 로 **아무 흔적 없이 스킵**된다.
@@ -940,7 +1104,7 @@ CalcVerify 끝에 `Sn_Top,Sn_Bottom` 이 붙었다. 이 칸이 없는 옛 결과
 - 상태: 커밋 `d1aab40` · 릴리스 1.6.32(`a436e0a`) 푸시·exe 빌드. **145 ⟳ Update + 재시작**(라우터 스키마) · exe 배포는 사용자. 화면은 눈으로 확인 안 함.
   남은 후보: 입력 프리셋(`PresetPicker`)·배치 실행(2026-09-18 계획의 후속) 미부착.
 
-### 외부 웹 App 프록시 — 사용자 신원 전달 (2026-11-03, 계획만)
+### 외부 웹 App 프록시 — 사용자 신원 전달 (2026-11-03 구현, 1.7.0 포함)
 
 Block Weld·Independent Tank·Heavy Block Lifting·App Settings 등록 App 은 백엔드 `routers/external_apps.py` 가 `/external-apps/<key>` 로 프록시한다
 (grant 45초 → HttpOnly 쿠키 세션 8시간, `services/external_app_access.py`). 이 세션은 브라우저↔게이트웨이 사이에만 있고 `Authorization`·`wb_ext_*` 쿠키는 업스트림에 안 간다.
@@ -1049,6 +1213,11 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
   **새 작업 폴더에 같은 파일명의 수정본**을 만들고 검증 작업을 띄운다(원본 불변, 고치지 않은 줄은 latin-1 로 바이트 그대로). 이후 '다시 검증' 입력은 수정본(`handoffBdfPath`)이다.
   실례: `3542_m09.bdf` 는 BEGIN BULK 가 없어 검증은 통과했는데 Wire 포함 구조 해석에서 Nastran FATAL 9994/300 — nastran_bridge `bulk_start_index` 도 함께 고쳐 이제는 그대로 둬도 해석된다.
   새 검사 규칙은 이 모듈에 추가하고, 오탐 확인은 `userConnection/**/*.bdf` 전수 스캔으로 할 것(도입 시 925개 중 오탐 0).
+  **Wire 포함 권상 BDF 를 입력으로 다시 올리면 검증이 막는다 (2026-11-11, `697b6cd` · WorkBench 1.7.19 — GMU·Side Passage·해상 운송 검증 공용)** — 덱 검사 `lifting_output_input`(오류·자동 수정 없음):
+  `TITLE = HiTessWorkBench Lifting Analysis` 또는 `SPC1 990001` + `GRAV 990002`(bridge `build_lifting_bdf` 표식 — 바꾸면 `bdf_deck_check.py` 도).
+  실례 3469 M02(A508701): `_lifting.bdf` 를 다시 올려 이전 Wire CROD 8개·훅 절점이 남았고, 편집 BDF 에서 CBEAM → PROD 132 로 FATAL 2010.
+  함께 bridge `convert_json_to_bdf` 가 **PROD 를 참조하는 요소는 type 과 무관하게 CROD** 로 쓴다(MU Studio 는 선 요소 type 을 'BEAM' 으로 통일, 원래 카드는 `cardType`).
+  70 userConnection BDF 322개 중 오탐 0. 반영 = 백엔드 `git pull + 재시작` + **InHouse `NastranBridge/nastran_bridge.py` 145 수동 교체**. 확인 = 변환 결과 CROD 8개 · 그 8줄을 CROD 로 바꾼 Wire BDF 실제 Nastran FATAL 0 · 백엔드 전체 시험 통과(`AUTH_MODE=` 로 덮어써서 — 70 `.env` 의 AD 모드가 `test_auth_contract` 를 깨뜨림). Studio 안 편집 → 재해석 흐름은 안 함, 커밋 전 독립 리뷰 미실행.
   **PARAM BAILOUT 은 사용자에게 주는 권상 BDF 에 넣지 않는다 (2026-10-27, 사용자 요청)** — BAILOUT 은 mechanism(연결이 끊긴 부분)이 남아도 계속 풀게 한다.
   실측: 3454-35020 권상 BDF 가 BAILOUT 으로 '정상 종료'했지만 최대 변위 1.27e13 mm(검증 BDF 6.3e12 mm), 빼면 FATAL 9050.
   정상 모델 3496·3542 는 있든 없든 결과가 같았다(검증·Wire 해석 모두 백엔드 실제 경로로 확인). 그래서:
@@ -1116,7 +1285,6 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
   **목록 화면은 category 별 묶음**(2026-10-26 오후, 분류 = HiTESS 소개 · 구조 해석 · 생산 지원 자동화) — 묶음 제목에 편수·전체 길이, 행마다 제목·설명·재생 시간.
   재생 시간은 서버가 mp4 `moov/mvhd` 에서 읽는다(`_mp4_duration`, 못 읽으면 표시 안 함). 묶기·시간 표기 = `utils/videoCatalog.js`(+테스트).
   `videos.json` 이 없으면 파일명에서 `HiTESS-`·`_` 를 걷은 제목 + '기타 영상' 한 묶음이 된다 — 145 에서 파일명 제목이 보이면 `videos.json` 이 안 들어간 것이다.
-  ⚠ 이 목록 개편(백엔드 `videos.py`·프론트 `dashboardShared.jsx`·`videoCatalog.js`)은 **미커밋**이고 v1.6.29 exe 에는 없다.
 - Electron `electron/video-window.js`: 영상 전용 창에만 `setContentProtection(true)`(캡처·녹화·화면 공유에 검게 나감), 메모리 세션에서 다운로드 취소,
   새 창·이동 금지, 패키징본 개발자 도구 끔, 영상 위 떠다니는 워터마크, 전체 화면은 영상+워터마크 무대째로. ⚠ 본체 창에는 걸지 않는다(Teams 원격 지원 화면이 검게 나감).
   휴대폰 촬영·가상머신·캡처보드는 못 막는다 — 워터마크는 그때 누구 화면인지 남기려는 것이다.
@@ -1167,8 +1335,8 @@ F06 은 **작업 시작~끝 사이**만(권상 계열은 부모 GMU 폴더를 �
 
 ### 인증
 
-- 사번(employee_id)만으로 로그인 (별도 비밀번호 없음). 신규 사용자는 기본 비활성 상태이며 관리자 승인 후 사용 가능.
-- 세션은 `localStorage`의 `'user'` 키에 저장되고 props/context로 전달. JWT 없음.
+- 로그인 방식은 `.env` `AUTH_MODE` 로 갈린다. 비우면 사번만, `ad` 면 사번 + 회사 PC(AD) 비밀번호(145 는 2026-11-04 부터 `ad`). 회사 PC 자동 로그인, 등록한 PC 로그인은 아래 단락. 신규 사용자는 기본 비활성이며 관리자 승인 후 사용 가능.
+- 로그인하면 서버가 세션 토큰을 준다. 화면은 `AuthContext` 가 `localStorage` 의 `'user'`(사용자 정보)와 `'session_token'` 에 두고, API 요청에 `Authorization: Bearer` 로 싣는다(JWT 아님).
 - `User` 모델의 `is_admin` 플래그로 관리자 페이지 접근 제어.
 
 **사내 AD 로그인 (2026-11-04 — ★145 운영 켜짐: `.env` `AUTH_MODE=ad`, WorkBench 1.7.1 · mb-launcher 0.1.2 반영)**
@@ -1334,6 +1502,14 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
 - 반영 = 145 `git pull + 재시작`(새 라우터) → 공개 주소 동작 · 관리자 메뉴는 다음 exe. 테스트 `tests/test_history_web.py`.
   ⚠ 70 서버가 꺼져 있어 **실제 서버 호출·앱 안 iframe 화면은 확인 안 함**(TestClient·빌드·헤드리스 캡처까지).
   앱 안에서 볼 것: 끼워 넣은 화면의 '월별 기록' 이동·시기 띠 클릭이 바깥 스크롤을 움직이는지(exe = Electron 26).
+
+### 관리자 메뉴 정리 (2026-11-11, `3681d63` · WorkBench 1.7.19)
+
+145 화면 체류 기록(`access_sessions.page_seconds`, 10-20~11-11)을 근거로 사이드바 ADMINISTRATION 을 10칸 → 7칸으로 줄였다.
+거의 안 쓰던 App Community(0분)·API Apps(5회 1분 미만)는 **App Settings 의 탭**, Update History·Development History 는 **History 메뉴의 탭**.
+탭도 옛 메뉴 이름으로 이동한다(`constants/adminMenus.js` `ADMIN_TAB_GROUPS` + `components/admin/AdminTabHub.jsx`) — 저장된 시작 화면·체류 기록·뒤로 가기가 탭 단위로 그대로다.
+옛 별칭 `System Settings` 는 지웠다. 관리자 화면을 새로 묶을 때는 `ADMIN_TAB_GROUPS` 에 더하고 이름을 `ADMIN_MENUS` 에도 넣을 것(빠지면 비관리자 가드 우회, 시험이 잡음).
+**사용자 결정(같은 날): 이 7칸 구성으로 유지** — Analysis Management 통합(이력 표 → All Projects, 통계 → Usage Reports)은 하지 않기로 했다. 다시 꺼낼 때는 주 사용자인 김한별 책임에게 쓰는 용도부터 확인. 조회 스크립트는 UNC `UnLock\admin_menu_usage.py`(145 백엔드 폴더에서 실행).
 
 ### 관리자 웹 콘솔 `/admin/` + 스트림덱 가입 대기 키 (2026-11-18, `35f9b95` · 145 반영 · 동작 확인)
 
@@ -1529,8 +1705,6 @@ exe 없이 회사 PC 크롬에서 관리자 화면을 쓴다(사용자 본인 �
 | `'Analysis Management'` | `Administration/AnalysisManagement.jsx` | 관리자: 전체 해석 이력 |
 | `'All Projects'` | `Administration/AllProjects.jsx` | 관리자: 모든 사용자의 My Projects — 작업 폴더 파일 받기·LogBook 보내기 |
 | `'Usage Reports'` | `Administration/UsageReports.jsx` | 관리자: 일/주/월 사용량 정형 리포트, Excel 내보내기 |
-| `'System Settings'` | `Administration/SystemSettings.jsx` | 관리자: 시스템 모니터링 |
-| `'App Settings'` | `Administration/AppSettings.jsx` | 관리자: App별 서비스 상태·점검 모드·표시 정보 |
-| `'API Apps'` | `Administration/ApiApps.jsx` | 관리자: API 연동 앱 관리 |
-  통계 표 = App 마다 최신 안내 한 줄, 이전 안내는 '이 App 의 이전 안내 N건' 으로 펼침(`groupEntriesByApp`, `7c64518` · 1.7.22 `da9f892`).
-  **미커밋(같은 날 끝)**: 표 맨 앞 'App' 칸(굵은 App 이름 + 이전 안내 단추), '안내' 칸은 제목과 날짜만, 상세 제목 앞 App 이름표 — `UpdateStatsPanel.jsx` 한 파일, 빌드와 임시 캡처만 확인, 커밋 전 리뷰와 exe(1.7.23) 남음.
+| `'System Management'` | `Administration/SystemSettings.jsx` | 관리자: 시스템 모니터링 |
+| `'App Settings'` (탭 `'App Community'`, `'API Apps'`) | `Administration/AppSettings.jsx` 외 | 관리자: App별 서비스 상태, 점검 모드, 표시 정보. 탭 묶음은 `constants/adminMenus.js` `ADMIN_TAB_GROUPS` |
+| `'History'` (탭 `'Update History'`, `'Development History'`) | `Administration/UpdateHistory.jsx`, `DevelopmentHistory.jsx` | 관리자: 업데이트 이력, 개발 연대기 |
