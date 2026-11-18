@@ -1335,9 +1335,10 @@ Outlook **숨은 참조(BCC)** 에 붙여 보낸다(주소 노출·전체 회신
   ⚠ 70 서버가 꺼져 있어 **실제 서버 호출·앱 안 iframe 화면은 확인 안 함**(TestClient·빌드·헤드리스 캡처까지).
   앱 안에서 볼 것: 끼워 넣은 화면의 '월별 기록' 이동·시기 띠 클릭이 바깥 스크롤을 움직이는지(exe = Electron 26).
 
-### 관리자 웹 콘솔 `/admin/` + 스트림덱 가입 대기 키 (2026-11-18, 미커밋)
+### 관리자 웹 콘솔 `/admin/` + 스트림덱 가입 대기 키 (2026-11-18, `35f9b95` · 145 반영 · 동작 확인)
 
 exe 없이 회사 PC 크롬에서 관리자 화면을 쓴다(사용자 본인 전용). 결정·진행 = `docs/plans/2026-11-18-admin-web-console-plan.md`.
+145 에서 크롬 Windows 계정 자동 로그인이 인트라넷 등록 없이 된다(사용자 확인). 이 PC 는 145 인증서를 내 계정 신뢰 루트에 넣었다(`certutil -user -addstore Root`). LogBook 관리는 콘솔에 넣지 않는다(사용자 결정 — LogBook 에 들어가서 한다).
 - 같은 React 페이지를 진입점만 따로(`frontend/admin.html` + `src/admin/`), 빌드본 = `HiTessWorkBenchBackEnd/AdminWeb/`(**git 추적, 생성물** — 손으로 고치지 말고 `pwsh scripts/build-admin-web.ps1`). `/wb-release` 가 다시 빌드하고 같은 커밋에 넣는다.
 - 서버 `routers/admin_web.py`: 페이지·자원은 로그인 없이(화면 코드는 exe 와 같아 비밀 없음), 입구 `GET /api/admin-console/access` 와 `GET /api/admin-console/pending-count` 만 `is_admin` + `.env ADMIN_CONSOLE_VIEWERS`(기본 A476854). 관리 API 는 exe 와 같아 `is_admin` 만 — 사번 검사를 덧대지 말 것(다른 관리자가 exe 에서 막힘).
 - 스트림덱 열쇠 = `.env ADMIN_CONSOLE_STREAMDECK_KEY_SHA256`(해시만, 헤더 `X-Admin-Console-Key`, 숫자 하나만 읽힘). 플러그인 = claude-control `deck/streamdeck-plugin` `WB Sign-ups`.
