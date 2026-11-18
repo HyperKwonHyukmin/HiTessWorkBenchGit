@@ -53,7 +53,9 @@ Co-Authored-By: (이 세션의 attribution 줄)
 ## 4. 커밋·푸시
 - `git add` 는 **버전 4파일 + `HiTessWorkBenchBackEnd/app/studio_release.json`(2-1 에서 바뀌었으면)만**. `config.js`·`Darkmode.js`·다른 세션 파일은 넣지 않는다(커밋 훅도 막는다).
   ⚠ 훅은 Bash 명령 문자열에 `config.js` 가 들어 있기만 해도 막는다 — config.js 확인은 Grep 도구로 따로 하고 `git add` 명령에 섞지 않는다.
-- 커밋 전 `git diff --cached --stat` 이 4파일·각 1줄(+ 릴리스 표)인지 확인 → 커밋 → `git push`.
+- **관리자 웹 콘솔 `HiTessWorkBenchBackEnd/AdminWeb/` 도 함께 `git add -A HiTessWorkBenchBackEnd/AdminWeb`**(release.ps1 4단계가 다시 빌드한다 — 옛 해시 파일 삭제까지 담으려고 `-A`).
+  worktree 에서 빌드했으면 그 폴더의 `AdminWeb/` 을 본 폴더로 통째로 복사한 뒤 넣는다. 확인 `pwsh scripts/build-admin-web.ps1 -Check`.
+- 커밋 전 `git diff --cached --stat` 이 4파일·각 1줄(+ 릴리스 표 + AdminWeb)인지 확인 → 커밋 → `git push`.
 - 145 보고: 릴리스 표가 바뀌었으면 **Server Manager ⟳ Update(git pull)만으로 Studio 가 바뀐다**(재시작 불필요).
 
 ## 5. 보고 (짧게)

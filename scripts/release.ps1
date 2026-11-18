@@ -189,6 +189,13 @@ if ($SkipBuild) {
         $buildOk = ($LASTEXITCODE -eq 0)
         Set-Location $prevLoc
 
+        # 관리자 웹 콘솔(145 /admin/)도 같은 config 상태로 다시 빌드해 HiTessWorkBenchBackEnd/AdminWeb 을 갈아 끼운다.
+        # 버전 커밋에 AdminWeb 을 함께 넣는다(.claude/commands/wb-release.md). 계획 docs/plans/2026-11-18-admin-web-console-plan.md
+        if ($buildOk) {
+            & pwsh -NoProfile -File (Join-Path $ROOT "scripts\build-admin-web.ps1")
+            if ($LASTEXITCODE -ne 0) { $buildOk = $false; ERR "관리자 웹 콘솔 빌드 실패" }
+        }
+
         # 빌드 성공/실패 무관하게 config.js 원래 상태로 복원
         if ($configModified) {
             [System.IO.File]::WriteAllText($configPath, $configOriginal, [System.Text.UTF8Encoding]::new($false))

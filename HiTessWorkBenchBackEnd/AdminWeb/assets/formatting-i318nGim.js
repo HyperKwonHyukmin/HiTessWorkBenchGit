@@ -1,0 +1,1 @@
+function e(e,t=`ko-KR`){return e?new Date(e).toLocaleString(t):``}export{e as t};

@@ -1,0 +1,1 @@
+var e=()=>{try{return JSON.parse(localStorage.getItem(`user`)||`null`)}catch{return null}},t=()=>e()?.employee_id??null,n=()=>localStorage.getItem(`session_token`)??``,r=()=>({Authorization:`Bearer ${n()}`});export{t as n,n as r,r as t};

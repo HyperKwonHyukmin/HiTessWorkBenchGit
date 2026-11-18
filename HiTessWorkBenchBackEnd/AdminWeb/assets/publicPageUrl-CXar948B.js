@@ -1,0 +1,1 @@
+function e(e,t){let n=String(e||``).trim().replace(/\/+$/,``),r=`/${String(t||``).replace(/^\/+/,``)}`,i=/^https:\/\/([^/:]+):(9091|9443)$/i.exec(n);return(i?`http://${i[1]}:9091`:n)+r}export{e as t};
