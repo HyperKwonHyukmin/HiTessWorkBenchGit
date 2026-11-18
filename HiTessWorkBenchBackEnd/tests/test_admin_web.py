@@ -124,3 +124,64 @@ def test_pending_count_with_streamdeck_key(people, monkeypatch):
     assert bad.status_code == 401
     # 열쇠로는 다른 관리 API 를 못 쓴다
     assert client.get("/api/users", headers=header).status_code == 401
+
+
+# ── LogBook 새 자료 수 ──
+
+def _logbook_mock(monkeypatch, handler):
+    import httpx
+    monkeypatch.setenv("LOGBOOK_INTEGRATION_SECRET", "lb-secret")
+    monkeypatch.setattr(admin_web, "_logbook_transport", httpx.MockTransport(handler))
+
+
+def test_logbook_new_passes_since_and_exclude(people, monkeypatch):
+    import httpx
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["secret"] = request.headers.get("X-HiTESS-Integration")
+        return httpx.Response(200, json={"count": 4, "latest_at": "2026-11-18T10:00:00", "names": ["a.zip", "b.zip"],
+                                         "uploading_since": "2026-11-18T08:30:00.123456"})
+
+    _logbook_mock(monkeypatch, handler)
+    client = TestClient(app)
+    res = client.get("/api/admin-console/logbook-new", params={"since": "2026-11-18T09:00:00"},
+                     headers=_bearer(people["A111111"]))
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["count"] == 4 and body["names"] == ["a.zip", "b.zip"]
+    assert body["uploading_since"] == "2026-11-18T08:30:00.123456"
+    assert body["open_url"].endswith(":9095/")
+    assert "exclude=A111111" in seen["url"] and "since=2026-11-18T09%3A00%3A00" in seen["url"]
+    assert seen["secret"] == "lb-secret"
+
+
+def test_logbook_new_with_streamdeck_key_excludes_first_viewer(people, monkeypatch):
+    import httpx
+    seen = {}
+    key = "streamdeck-key-0123456789"
+    monkeypatch.setenv("ADMIN_CONSOLE_STREAMDECK_KEY_SHA256", hashlib.sha256(key.encode()).hexdigest())
+    _logbook_mock(monkeypatch, lambda r: (seen.setdefault("url", str(r.url)),
+                                          httpx.Response(200, json={"count": 0, "names": ["H3496 FORE.zip"],
+                                                                    "uploading_since": "엉뚱한 값"}))[1])
+    res = TestClient(app).get("/api/admin-console/logbook-new", params={"since": "2026-11-18T09:00:00+09:00"},
+                              headers={admin_web.STREAMDECK_KEY_HEADER: key})
+    assert res.status_code == 200 and res.json()["count"] == 0
+    assert res.json()["names"] == []            # 열쇠로는 묶음 이름을 주지 않는다
+    assert res.json()["uploading_since"] is None  # 시각 모양이 아니면 버린다
+    assert "exclude=A111111" in seen["url"]
+
+
+def test_logbook_new_errors(people, monkeypatch):
+    import httpx
+    client = TestClient(app)
+    h = _bearer(people["A111111"])
+    assert client.get("/api/admin-console/logbook-new", params={"since": "어제"}, headers=h).status_code == 422
+    assert client.get("/api/admin-console/logbook-new", params={"since": "2026-11-18T09:00:00"},
+                      headers=_bearer(people["A222222"])).status_code == 403
+    monkeypatch.delenv("LOGBOOK_INTEGRATION_SECRET", raising=False)
+    assert client.get("/api/admin-console/logbook-new", params={"since": "2026-11-18T09:00:00"}, headers=h).status_code == 503
+    _logbook_mock(monkeypatch, lambda r: httpx.Response(404, json={"detail": "not_found"}))
+    res = client.get("/api/admin-console/logbook-new", params={"since": "2026-11-18T09:00:00"}, headers=h)
+    assert res.status_code == 502 and res.json()["detail"] == "logbook_old_server"

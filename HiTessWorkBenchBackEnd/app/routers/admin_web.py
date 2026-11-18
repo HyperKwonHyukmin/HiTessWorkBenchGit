@@ -27,12 +27,14 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import database, models
+from app.services import logbook_integration as lb
 from app.sessions import session_store
 
 router = APIRouter(tags=["admin-web"])
@@ -152,6 +154,22 @@ def console_logout(authorization: str | None = Header(default=None)):
     return {"ok": True}
 
 
+def _authorize_console_reader(authorization, admin_console_key, db) -> str | None:
+    """콘솔 숫자 API 공통 입구. 스트림덱 열쇠면 None, 콘솔 사용자 Bearer 면 그 사번을 돌려준다. 아니면 401/403."""
+    if admin_console_key:
+        expected = _streamdeck_key_hash()
+        given = hashlib.sha256(admin_console_key.strip().encode("utf-8")).hexdigest()
+        if not (bool(expected) and hmac.compare_digest(given, expected)):
+            raise HTTPException(status_code=401, detail="스트림덱 열쇠가 맞지 않습니다.")
+        return None
+    employee_id = _bearer_employee_id(authorization)
+    if not employee_id:
+        raise HTTPException(status_code=401, detail="인증이 필요합니다.")
+    if not _is_console_user(db, employee_id):
+        raise HTTPException(status_code=403, detail="관리자 콘솔 사용자가 아닙니다.")
+    return employee_id
+
+
 @router.get("/api/admin-console/pending-count")
 def pending_count(
     authorization: str | None = Header(default=None),
@@ -159,23 +177,62 @@ def pending_count(
     db: Session = Depends(database.get_db),
 ):
     """가입 승인 대기(is_active = false) 수. 기존 화면(App.jsx 배지)과 같은 기준이다."""
-    allowed = False
-    if admin_console_key:
-        expected = _streamdeck_key_hash()
-        given = hashlib.sha256(admin_console_key.strip().encode("utf-8")).hexdigest()
-        allowed = bool(expected) and hmac.compare_digest(given, expected)
-        if not allowed:
-            raise HTTPException(status_code=401, detail="스트림덱 열쇠가 맞지 않습니다.")
-    else:
-        employee_id = _bearer_employee_id(authorization)
-        if not employee_id:
-            raise HTTPException(status_code=401, detail="인증이 필요합니다.")
-        allowed = _is_console_user(db, employee_id)
-        if not allowed:
-            raise HTTPException(status_code=403, detail="관리자 콘솔 사용자가 아닙니다.")
-
+    _authorize_console_reader(authorization, admin_console_key, db)
     # 화면은 `!u.is_active` 로 세므로 NULL 도 대기로 친다.
     count = db.query(models.User).filter(
         or_(models.User.is_active.is_(False), models.User.is_active.is_(None))
     ).count()
     return {"pending": count, "checked_at": datetime.now().isoformat(timespec="seconds")}
+
+
+# ── LogBook 새 자료 수 (스트림덱 'LB 새 자료' 키, 2026-11-18) ───────────────────────
+# 관리자가 마지막으로 확인한 시각(since, 스트림덱 키가 기억) 뒤에 다른 사람이 LogBook 에 올린 묶음 수.
+# 스트림덱 → 여기(HTTPS·지문 확인) → LogBook /api/integration/new-uploads(서버끼리 연동 비밀키).
+# LogBook 은 평문 HTTP 라 스트림덱이 열쇠를 들고 직접 가지 않게 했다. 빼는 사번 = 콘솔 사용자(열쇠면 ADMIN_CONSOLE_VIEWERS 첫 사번).
+
+LOGBOOK_NEW_TIMEOUT_SECONDS = 8.0
+_SINCE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$")
+# 테스트가 httpx.MockTransport 를 끼워 넣는 자리(운영에서는 None).
+_logbook_transport: httpx.BaseTransport | None = None
+
+
+@router.get("/api/admin-console/logbook-new")
+def logbook_new(
+    request: Request,
+    since: str = Query(..., max_length=40),
+    authorization: str | None = Header(default=None),
+    admin_console_key: str | None = Header(default=None, alias=STREAMDECK_KEY_HEADER),
+    db: Session = Depends(database.get_db),
+):
+    employee_id = _authorize_console_reader(authorization, admin_console_key, db)
+    if not _SINCE_RE.match(since.strip()):
+        raise HTTPException(status_code=422, detail="since 형식이 맞지 않습니다(ISO 시각).")
+    secret = lb.integration_secret()
+    if not secret:
+        raise HTTPException(status_code=503, detail="logbook_integration_disabled")
+    exclude = employee_id or next(iter(sorted(console_viewers())), "")
+    try:
+        with httpx.Client(timeout=LOGBOOK_NEW_TIMEOUT_SECONDS, transport=_logbook_transport) as client:
+            resp = client.get(f"{lb.internal_url()}/api/integration/new-uploads",
+                              params={"since": since.strip(), "exclude": exclude},
+                              headers={lb.INTEGRATION_HEADER: secret})
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="logbook_unreachable")
+    if resp.status_code == 404:
+        raise HTTPException(status_code=502, detail="logbook_old_server")   # 옛 LogBook — 이 경로가 없다
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="logbook_unreachable")
+    try:
+        body = resp.json()
+        count = int(body.get("count") or 0)
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(status_code=502, detail="logbook_unreachable")
+    # 스트림덱 열쇠(평문으로 프로필에 남음)로는 숫자만 — 묶음 이름(호선, 과제명)은 로그인한 콘솔 사용자에게만
+    names = ([str(n)[:80] for n in (body.get("names") or [])[:3] if isinstance(n, str)]
+             if employee_id else [])
+    up = body.get("uploading_since")
+    uploading_since = up if isinstance(up, str) and _SINCE_RE.match(up) else None
+    return {"count": max(0, count), "latest_at": body.get("latest_at"), "names": names,
+            "uploading_since": uploading_since,
+            "open_url": lb.public_base_url(request.url.hostname) + "/",
+            "checked_at": datetime.now().isoformat(timespec="seconds")}

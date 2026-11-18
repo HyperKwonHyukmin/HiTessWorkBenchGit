@@ -1342,6 +1342,7 @@ exe 없이 회사 PC 크롬에서 관리자 화면을 쓴다(사용자 본인 �
 - 같은 React 페이지를 진입점만 따로(`frontend/admin.html` + `src/admin/`), 빌드본 = `HiTessWorkBenchBackEnd/AdminWeb/`(**git 추적, 생성물** — 손으로 고치지 말고 `pwsh scripts/build-admin-web.ps1`). `/wb-release` 가 다시 빌드하고 같은 커밋에 넣는다.
 - 서버 `routers/admin_web.py`: 페이지·자원은 로그인 없이(화면 코드는 exe 와 같아 비밀 없음), 입구 `GET /api/admin-console/access` 와 `GET /api/admin-console/pending-count` 만 `is_admin` + `.env ADMIN_CONSOLE_VIEWERS`(기본 A476854). 관리 API 는 exe 와 같아 `is_admin` 만 — 사번 검사를 덧대지 말 것(다른 관리자가 exe 에서 막힘).
 - 스트림덱 열쇠 = `.env ADMIN_CONSOLE_STREAMDECK_KEY_SHA256`(해시만, 헤더 `X-Admin-Console-Key`, 숫자 하나만 읽힘). 플러그인 = claude-control `deck/streamdeck-plugin` `WB Sign-ups`.
+- **LB New 키 (2026-11-18)** — 내가 마지막으로 확인한 뒤 다른 사람이 LogBook 에 올린 묶음 수. 스트림덱 → `GET /api/admin-console/logbook-new?since=`(같은 열쇠, 열쇠 요청엔 묶음 이름 안 줌) → LogBook `GET /api/integration/new-uploads`(서버끼리, LogBook 은 평문이라 스트림덱이 직접 안 감). 두 번 누름 = LogBook 열기 + 확인 시각 저장. LogBook `received_at` 은 올리기 시작 시각이라 확인 시각을 올리는 중인 묶음의 시작(`uploading_since`)까지 당긴다. 상세 = 계획 문서 'LB New'. 반영 = LogBook 먼저 → WorkBench 재시작 → Stream Deck 재시작.
 
 ### App Settings — App별 서비스 상태·접근 통제 ★API가 403이면 여기부터 확인
 
