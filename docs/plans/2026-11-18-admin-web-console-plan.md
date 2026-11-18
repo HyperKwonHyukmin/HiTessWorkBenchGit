@@ -62,3 +62,10 @@ WorkBench.exe 를 켜지 않고 **회사 PC 크롬**에서 관리 업무를 하�
   - ⚠ 커밋할 때 `app/main.py` 는 admin_web 두 줄만(`git add -p`) — 다른 세션의 `psa_report` import 가 같이 들어 있고 그 라우터 파일은 미추적이라, 통째로 넣으면 145 가 시작하지 못한다.
   - ⚠ 지금 `AdminWeb/` 번들에는 다른 세션의 미커밋 화면 코드(DashboardContext 의 Truss Module Lifting·PSA 등)가 섞여 있다 — 첫 커밋 전에 그 변경이 커밋된 뒤 다시 빌드하거나 worktree 에서 빌드한다.
   - 다시 확인: 서버 시험 8, 백엔드 전체 통과(실패 0), 프론트 유틸 566, 임시 서버 + 헤드리스로 Windows 로그인 → 토큰이 sessionStorage 에만 → 로그아웃 뒤 그 토큰 401 → 9개 메뉴.
+- 2026-11-18 반영: WorkBench `35f9b95` 푸시 → 145 ⟳ Update + 재시작 → 사용자가 크롬에서 `/admin/` User Management 확인.
+  145 `.env` `ADMIN_CONSOLE_STREAMDECK_KEY_SHA256` 넣음(열쇠는 세 번째로 만든 것 — 앞의 두 개는 클립보드에서 사라져 버림).
+  스트림덱 키 초록 0 확인. claude-control `770df5e`(미푸시).
+  - 실제로 겪은 결함 두 개(플러그인에서 고침): ① 열쇠 칸에 다른 클립보드 내용이 들어가 헤더 불가 글자 → 플러그인이 `ERR_INVALID_CHAR` 로 죽고 10초마다 재시작 → 형식 검사 후 `bad key`.
+    ② 두 번째 연결부터 `bad cert` — TLS 세션 재사용(`isSessionReused`)이면 서버가 인증서를 보내지 않아 지문을 못 잰다 → 이 키 전용 `https.Agent({ keepAlive:false, maxCachedSessions:0 })`.
+  - 사용자 요청으로 한 번 = 새로 고침, 0.35초 안에 두 번 = 콘솔 열기(대기 있으면 User Management, 없으면 마지막 화면).
+  - 아직 모름: 145 주소에서 크롬 Windows 자동 로그인이 되는지(사용자가 어떤 방법으로 들어갔는지 답 없음), 인증서 경고('주의 요함') 처리, 크롬 '앱으로 설치'.
