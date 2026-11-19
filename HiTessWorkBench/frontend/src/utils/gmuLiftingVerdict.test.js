@@ -86,3 +86,28 @@ test('검증 프로그램이 Windows 예외로 죽으면 BDF 형식 탓으로 �
   // 보통 실패는 예전 문구 그대로
   assert.equal(computeGmuVerdict({ jobFailed: true, jobLog: '[Exit code: 1]' }).reasons[0].code, 'job-failed');
 });
+
+test('자세안정성 미충족(Advisory)이면 구조 PASS 도 검토 필요, 사유 맨 앞에 미충족 줄', () => {
+  const gate = { overall: 'fail', evaluationMode: 'advisory', failingStages: ['전도 안정성'], tippingFail: true, unmet: true };
+  const s = buildStructuralResult({ summary: { memberElementCount: 10 }, warnings: [], stabilityGate: gate });
+  assert.equal(s.status, 'WARN');
+  const v = computeGmuVerdict({ structural: s });
+  assert.equal(v.level, 'review');
+  assert.equal(v.title, '검토 필요 · 자세안정성 미충족');
+  assert.equal(v.reasons[0].code, 'stability-unmet');
+  assert.match(v.reasons[0].text, /전도 안정성/);
+  assert.match(v.reasons[0].text, /앵커/);
+});
+
+test('자세안정성 미충족이어도 구조 FAIL 은 FAIL, 미충족 줄을 함께 보인다', () => {
+  const gate = { overall: 'fail', failingStages: [], tippingFail: false, unmet: true };
+  const s = buildStructuralResult({ summary: { memberExceedCount: 2, memberMaxStressMPa: 300 }, stabilityGate: gate });
+  const v = computeGmuVerdict({ structural: s });
+  assert.equal(v.level, 'fail');
+  assert.equal(v.reasons[0].code, 'stability-unmet');
+});
+
+test('stabilityGate 가 없거나 충족이면 예전 판정 그대로', () => {
+  assert.equal(buildStructuralResult({ summary: {} }).status, 'PASS');
+  assert.equal(buildStructuralResult({ summary: {}, stabilityGate: { unmet: false } }).status, 'PASS');
+});

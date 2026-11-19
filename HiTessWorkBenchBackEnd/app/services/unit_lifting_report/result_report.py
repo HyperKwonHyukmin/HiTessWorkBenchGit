@@ -49,6 +49,8 @@ WIRES_PER_BLOCK = 4
 NOTICE_ADDED_ROW = 10
 NOTICE_EXTRA_ROW = 11
 NOTICE_ADDED_LINE = "- 200mm(현장 기준 확인) 현장 권상 및 안전성 확인 후 최종 체결 위치 선정"
+# Advisory 모드로 자세안정성 FAIL 인 채 해석했을 때 5행에 넣는 줄(36자 이내 — 박스 폭, 2026-11-18).
+NOTICE_ADVISORY_LINE = "- 자세안정성 평가 미충족 상태의 해석 결과임(Advisory)"
 
 
 def generate_result_report(result_info: dict[str, Any], options: dict[str, Any] | None = None, *,
@@ -78,7 +80,7 @@ def generate_result_report(result_info: dict[str, Any], options: dict[str, Any] 
     ws.print_title_rows = None
     has_support = bool(data.edits and data.edits.support_beams)
     _fill_titles(ws, data, has_support)
-    _fill_notice(ws, opts)
+    _fill_notice(ws, opts, data.stability.advisory_unmet, warnings)
     _fill_summary(ws, data)
     _fill_hook_table(ws, data, warnings)
     _replace_images(ws, figs, has_support, warnings)
@@ -143,14 +145,21 @@ def _fill_titles(ws, d, has_support: bool):
         ws[f"F{row}"] = footer
 
 
-def _fill_notice(ws, opts):
+def _fill_notice(ws, opts, advisory_unmet: bool = False, warnings: list | None = None):
     """주의 사항 4행(고정 문구)·5행(사용자가 모달에 적은 한 줄)을 채운다.
 
     5행이 비면 그 줄을 **감추고** 박스 아랫변을 4행으로 올린다(사용자 결정 2026-09-17) —
     빈 줄이 남으면 서식에 빈 칸이 한 줄 뚫린 것처럼 보인다.
+    Advisory 모드로 자세안정성 FAIL 인 채 해석했으면 5행은 그 사실을 적는다(서식 1페이지 높이 여유가 없어 줄을 늘리지 않는다).
+    사용자가 적은 한 줄은 그때 보고서에 싣지 못하므로 경고로 알린다.
     """
     ws[f"F{NOTICE_ADDED_ROW}"] = NOTICE_ADDED_LINE
     extra = (opts.extra_notice or "").strip()
+    if advisory_unmet:
+        ws[f"F{NOTICE_EXTRA_ROW}"] = NOTICE_ADVISORY_LINE
+        if extra and warnings is not None:
+            warnings.append(f"자세안정성 미충족 안내가 주의 사항 5번째 줄을 차지해 입력한 문구('{extra}')는 싣지 못했습니다.")
+        return
     if extra:
         # 다른 줄과 같은 글머리표를 붙인다. `_fit_form_text` 도 '-' 로 시작하는 F열 병합 칸만
         # '셀에 맞춤' 대상으로 잡으므로, 이 접두사가 있어야 긴 문구가 잘리지 않고 줄어든다.

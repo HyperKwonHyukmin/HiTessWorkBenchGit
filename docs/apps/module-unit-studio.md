@@ -57,13 +57,19 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   확인: MU 시험 1023 · 헤드리스로 추가→3D 클릭 선택→값 수정→정보 패널·말풍선·질량 요약. WorkBench 앱 안 화면은 눈으로 확인 안 함. 145 공개(`/studio-release`)·커밋은 사용자 몫. 짝 싱크 대장 16·17번 보류.
 
 #### 평가 모드 3단계 · 그룹 일괄 삭제 (MU 0.0.224, 2026-11-18, 70 로컬만 — 미커밋, 145 미공개)
-계획과 진행 기록 = `docs/plans/2026-11-18-mu-evaluation-mode-rbe-swap-group-bulk.md`. 남은 일 = ② U-bolt 종속 노드를 체결 위치로 고를 때 독립/종속 전환(145 F06 로 FATAL 원인부터).
+계획과 진행 기록 = `docs/plans/2026-11-18-mu-evaluation-mode-rbe-swap-group-bulk.md`. ② 는 아래 'RBE 독립 · 종속 바꾸기' 로 바꿔 구현했다.
 - **평가 모드 = Strict / Standard(기본, 옛 Strict OFF) / Advisory** — 'Strict 평가' 토글을 대신한다. 규칙 원본 = MU `data/evaluationMode.js`(`stabilityGate`).
   **엔진 판정은 바꾸지 않는다** — Advisory 는 엔진에 Standard 와 같은 값(`strictEvaluation:false`)을 보내고 진행 조건만 푼다(엔진 exe 교체 없음). Wire 꼭짓점(Stage 3)이 없으면 Advisory 도 막는다.
   고른 모드는 계속 유지(사용자 결정) — `<userData>/viewer-settings/<viewerId>.json`(Electron `studio-settings.js`, IPC `viewer:getStudioSettings/setStudioSettings`, **설치 폴더 밖** — 설치 폴더는 Studio 업데이트 때 지워진다). 옛 exe 는 localStorage.
   서버가 구조 해석 결과에 `result_info.stabilityGate`(`services/stability_gate.py`, 모드는 옆 posture JSON 에서) → WorkBench `gmuLiftingVerdict` 와 Electron status 사본이 unmet 이면 최소 '검토 필요' → 보고서(상세 '먼저 확인할 사항' 첫 줄, 결과 레포트 주의 사항 5행 — 사용자 입력 줄은 그때 빠지고 경고).
 - **그룹 일괄 삭제** — Edit › 그룹 체크박스, [전체 선택](본 구조 제외), 같은 batchId(Ctrl+Z 한 번), 고를 그룹이 2개 미만이면 체크박스 숨김. 싱크 대장 48(보류)·49(해당 없음).
 - 반영 = 145 `git pull + 재시작`(stabilityGate) · 새 exe(설정 파일 IPC, Electron 판정) · `/studio-release module-unit-studio`. 확인 안 함: 실제 Electron 설정 파일, Advisory 실제 Nastran, 결과 레포트 PDF 모양.
+- **RBE 독립 · 종속 바꾸기 (2026-11-19, 미커밋 · 0.0.224 위에 올림, 버전 아직 안 올림)** — 도구 막대 RBE › '독립 · 종속 바꾸기'(고르기 도구 `rbeSwap`, `components/RigidSwapPanel.jsx`).
+  독립 1 · 종속 1 인 원본 RBE 를 3D 파랑으로 보이고, 클릭(오른쪽 클릭 = 빼기)이나 목록 체크로 고른 뒤 [바꾸기 적용](Enter) = intent `swapRigidNodes { rigidIds }` 하나(Ctrl+Z 한 번).
+  규칙 원본 = `data/rigidSwap.js`: 지금 독립이 다른 RBE 의 **종속**이면 막음(FATAL 5289), 다른 RBE 의 **독립**이면 사슬 경고만(RBE 수정 패널과 같은 정책), 부분 cm + 떨어진 두 노드면 결과가 조금 달라질 수 있다는 경고.
+  같은 노드를 쓰는 두 RBE 를 함께 바꾸면 오류 — [모두 고르기] 는 그런 RBE 를 건너뛴다(`pickNonOverlapping`). 반영 = `applyNodeEdits` 가 RBE 편집을 **기록 순서대로**(삭제·종속 교체·바꾸기).
+  배경: 사용자 요청은 'U-bolt 종속 노드를 체결 위치로 고르면 경계조건 중복 FATAL' 이었으나, Wire 를 CROD 요소로 붙이는 지금 방식에서는 FATAL 이 나지 않는다(3469 M02 실측 — 종속 노드 권상점, cm=123, 독립·종속 바꿈 세 경우 모두 정상 종료, 바꿔도 Wire 축력·변위 같음. 시험 파일 `outputs/ubolt-dep-node-test/`). 사용자가 확인하고 대신 수동 바꾸기 도구를 요청했다.
+  확인: 시험 1065(새 12) · 빌드 · 헤드리스(`smoke_rbe_swap.mjs`, 3469 M02 = 바꿀 수 있는 RBE 312개). 3D 실제 마우스 클릭과 WorkBench 앱 안은 확인 안 함. 짝 싱크 대장 50(보류).
 
 #### 가서포트 제거 (MU 0.0.223, 2026-11-12, 릴리스 표 `e955792` — 145 ⟳ Update 는 사용자 몫, MU 저장소 미커밋)
 도구 막대 가서포트 › 제거 = `components/SupportRemovePanel.jsx`(줄마다 [보기]·[제거], [모두 제거] 확인 창). 가서포트는 3D 선택 대상이 아니라 목록에서 고른다. 제거 = 설치 intent 를 지움(Ctrl+Z 로 안 되살아남), 구조 해석 결과만 비움.

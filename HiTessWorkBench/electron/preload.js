@@ -79,6 +79,9 @@ const VALID_INVOKE_CHANNELS  = [
   'viewer:openLiftingRefResult',
   'viewer:getLiftingRefResult',
   'viewer:getReferenceContext',
+  // Studio 사용자 설정 파일(2026-11-18)
+  'viewer:getStudioSettings',
+  'viewer:setStudioSettings',
   // 지난 Unit 구조 해석 결과를 읽기 전용 Studio 창으로(본창 산출물 카드, 2026-11-11)
   'viewer:openPastStructuralResult',
   // 결과 폴더 다운로드/추출 (백엔드↔사용자PC 분리 환경)
@@ -231,6 +234,9 @@ contextBridge.exposeInMainWorld("workbenchAPI", {
     ipcRenderer.invoke('viewer:getLiftingRefResult', opts),
   // 이 창이 실적 보기 창이면 { fileId, name, title, hullNos, files, result }, 아니면 null
   getReferenceContext: () => ipcRenderer.invoke('viewer:getReferenceContext'),
+  // Studio 사용자 설정 파일 — <userData>/viewer-settings/<viewerId>.json (설치 폴더 밖, 업데이트에도 남음)
+  getStudioSettings: () => ipcRenderer.invoke('viewer:getStudioSettings'),
+  setStudioSettings: (patch) => ipcRenderer.invoke('viewer:setStudioSettings', patch),
   onMooringStructuralProgress: (callback) => {
     const listener = (_, data) => callback(data);
     ipcRenderer.on('viewer:mooring-structural-progress', listener);

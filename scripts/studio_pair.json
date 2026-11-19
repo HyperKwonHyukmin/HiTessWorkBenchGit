@@ -15,7 +15,10 @@
       "members": ["model-studio", "module-unit-studio"],
       "same": [
         "components/FindBar.jsx",
+        { "path": "components/ConfirmDialog.jsx", "also": ["mooring-fitting-studio"] },
         "components/edit/SectionPicker.jsx",
+        "data/infoDockFocus.js",
+        "data/infoDockFocus.test.js",
         "data/InputAuditData.js",
         "data/InputAuditData.test.js",
         "data/applyFinalGroupMapping.js",
@@ -23,9 +26,12 @@
         "data/findEntity.test.js",
         "data/groupAutoConnect.js",
         "data/groupAutoConnect.test.js",
+        { "path": "data/rigidEditColors.js", "also": ["mooring-fitting-studio"] },
         "data/stageDiff.js",
         "data/stageDiff.test.js",
         "hooks/useCameraSync.js",
+        "store/nativeDialogs.test.js",
+        { "path": "store/useConfirmStore.js", "also": ["mooring-fitting-studio"] },
         "three/BeamMesh.test.js",
         "three/BoundaryMarkers.js",
         "three/BrokenRbeHighlight.js",
@@ -33,7 +39,18 @@
         "three/GroupConnectPreview.js",
         "three/MassMarkers.js",
         "three/WeldMarkers.js",
-        "three/WorldAxes.js"
+        "three/WorldAxes.js",
+        "components/ErrorBoundary.jsx",
+        "main.jsx",
+        "components/edit/textEntry.js",
+        "components/edit/useSectionPick.js",
+        "three/orthoPan.js",
+        "components/dock/MessagesTab.jsx",
+        "components/help/HelpCenter.jsx",
+        "components/help/HelpModeLayer.jsx",
+        "components/help/HelpTopicBody.jsx",
+        "components/help/GuideRunner.jsx",
+        "utils/groupPalette.js"
       ],
       "watch": "auto",
       "watch_also": [
@@ -41,7 +58,10 @@
         { "paths": { "model-studio": "components/panels/ModelTransformSection.jsx", "module-unit-studio": "components/ModelTransformSection.jsx" } }
       ],
       "ignore": {
-        "data/helpContent.js": "Studio 마다 내용이 다른 도움말 글(구조는 data/helpContent.test.js 가 지킨다)"
+        "data/helpContent.js": "Studio 마다 내용이 다른 도움말 글(구조는 data/helpContent.test.js 가 지킨다)",
+        "three/rigidClassification.js": "U-bolt 판별 규칙이 다르다 — MB 는 엔진이 이름에 UBOLT 를 남기고, MU 는 BDF 입력이라 remark·cm 으로 가른다(싱크 대장 5번)",
+        "hooks/useFullReset.js": "지우는 스토어가 다르다 — MU 는 권상·자세안정성·구조 해석, MB 는 Analysis 입력·결과(싱크 대장 18번). 확인 창 모양은 같게 유지",
+        "hooks/useFullReset.test.js": "hooks/useFullReset.js 와 같은 이유"
       }
     }
   ]

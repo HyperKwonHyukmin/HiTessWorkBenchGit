@@ -9,17 +9,22 @@ import { abnormalExitText } from './abnormalExit.js';
  * 구조 해석 판정 규칙은 Electron main(viewer:runUnitStructural)의 status 계산과 같다:
  *   응력 초과 부재·Wire 압축·Wire 결과 누락 중 하나라도 있으면 FAIL, 경고만 있으면 WARN, 아니면 PASS.
  * 지난 결과를 다시 열 때(DB result_info)도 같은 규칙으로 다시 계산하려고 여기 둔다 — 두 곳을 같이 고칠 것.
+ *
+ * 자세안정성 미충족(2026-11-18, MU Studio Advisory 모드): 서버가 result_info.stabilityGate 에
+ * { overall, evaluationMode, failingStages, tippingFail, unmet } 를 남긴다. unmet 이면 구조 판정이 PASS 여도 WARN 으로
+ * 올리고(최소 '검토 필요'), 판정 사유 맨 앞에 미충족 줄을 둔다. FAIL 은 그대로 FAIL.
  */
 
 const num = (v) => Number(v || 0);
 
 /** 구조 해석 요약(summary)·경고·허용응력으로 결과 객체를 만든다(Electron 완료 이벤트와 같은 모양). */
-export function buildStructuralResult({ summary = {}, warnings = [], allowableMPa = null, analysisId = null } = {}) {
+export function buildStructuralResult({ summary = {}, warnings = [], allowableMPa = null, analysisId = null, stabilityGate = null } = {}) {
   const exceed = num(summary.memberExceedCount);
   const compression = num(summary.wireCompressionCount);
   const missing = num(summary.wireMissingResultCount);
   const warnList = Array.isArray(warnings) ? warnings : [];
-  const status = exceed > 0 || compression > 0 || missing > 0 ? 'FAIL' : warnList.length > 0 ? 'WARN' : 'PASS';
+  const unmet = stabilityGate?.unmet === true;
+  const status = exceed > 0 || compression > 0 || missing > 0 ? 'FAIL' : (warnList.length > 0 || unmet) ? 'WARN' : 'PASS';
   const allowable = allowableMPa != null && Number.isFinite(Number(allowableMPa)) ? Number(allowableMPa) : null;
   return {
     ok: true,
@@ -27,6 +32,7 @@ export function buildStructuralResult({ summary = {}, warnings = [], allowableMP
     analysisId,
     summary,
     warnings: warnList,
+    stabilityGate: stabilityGate ?? null,
     items: [
       { label: '최대 부재 응력', value: `${num(summary.memberMaxStressMPa).toFixed(2)} MPa`, allowable: allowable != null ? `${allowable.toFixed(2)} MPa` : '—', ok: exceed === 0 },
       { label: '응력 초과 부재', value: `${exceed} / ${num(summary.memberElementCount)}`, allowable: '0', ok: exceed === 0 },
@@ -47,8 +53,17 @@ const warningText = (w) => (typeof w === 'string' ? w : w?.message ?? w?.text ??
  * @param {object}  [p.structural]  구조 해석 결과(buildStructuralResult 모양, 또는 { status:'ERROR', error })
  * @returns {{ level: 'pass'|'review'|'fail'|null, title: string, reasons: {code,text}[], basis: 'validation'|'structural'|null }}
  */
+/** 자세안정성 미충족 판정 사유 한 줄 — stabilityGate.unmet 일 때만. */
+export function stabilityUnmetReason(gate) {
+  if (gate?.unmet !== true) return null;
+  const stages = Array.isArray(gate.failingStages) && gate.failingStages.length ? ` — ${gate.failingStages.join(', ')}` : '';
+  const tip = gate.tippingFail ? ' 전도 판정이 실패라 앵커 주변 응력은 실제와 다를 수 있습니다.' : '';
+  return { code: 'stability-unmet', text: `자세안정성 평가를 만족하지 못한 상태로 해석했습니다(Advisory 모드)${stages}.${tip}` };
+}
+
 export function computeGmuVerdict({ jobFailed = false, jobLog = null, step1Data = null, step2Data = null, structural = null } = {}) {
   if (structural) {
+    const unmet = stabilityUnmetReason(structural.stabilityGate);
     if (structural.status === 'ERROR') {
       return { level: 'fail', title: '구조 해석 실패', basis: 'structural',
         reasons: [{ code: 'structural-error', text: structural.error || 'Studio 에서 오류 내용을 확인한 뒤 다시 실행하세요.' }] };
@@ -59,13 +74,15 @@ export function computeGmuVerdict({ jobFailed = false, jobLog = null, step1Data 
       if (num(s.memberExceedCount) > 0) reasons.push({ code: 'member-exceed', text: `허용 응력을 넘는 부재 ${num(s.memberExceedCount)}개 (최대 ${num(s.memberMaxStressMPa).toFixed(1)} MPa)` });
       if (num(s.wireCompressionCount) > 0) reasons.push({ code: 'wire-compression', text: `압축을 받는 Wire ${num(s.wireCompressionCount)}개 — 권상 위치를 다시 잡아야 합니다` });
       if (num(s.wireMissingResultCount) > 0) reasons.push({ code: 'wire-missing', text: `해석 결과가 없는 Wire ${num(s.wireMissingResultCount)}개` });
+      if (unmet) reasons.unshift(unmet);
       return { level: 'fail', title: '구조 판정 불합격', basis: 'structural', reasons };
     }
-    if (structural.status === 'WARN') {
+    if (structural.status === 'WARN' || unmet) {
       const warns = structural.warnings ?? [];
       const reasons = warns.slice(0, 3).map((w, i) => ({ code: `warn-${i}`, text: warningText(w) }));
       if (warns.length > 3) reasons.push({ code: 'warn-more', text: `외 경고 ${warns.length - 3}건 — Studio 결과 도크에서 확인` });
-      return { level: 'review', title: '검토 필요', basis: 'structural', reasons };
+      if (unmet) reasons.unshift(unmet);
+      return { level: 'review', title: unmet ? '검토 필요 · 자세안정성 미충족' : '검토 필요', basis: 'structural', reasons };
     }
     return { level: 'pass', title: '구조 판정 통과', basis: 'structural', reasons: [] };
   }

@@ -165,6 +165,13 @@ class StabilityInfo:
     min_sling_angle_deg: Optional[float]; interference_count: int; min_clearance_mm: Optional[float]
     tipping: Optional[Tipping]; strict_evaluation: bool; shape_gate_relaxed: bool
     warnings: list; critical: list
+    # 평가 모드(strict|standard|advisory, 2026-11-18). posture 에 없으면 strictEvaluation 으로 짐작한다.
+    evaluation_mode: str = "standard"
+
+    @property
+    def advisory_unmet(self) -> bool:
+        """자세안정성 FAIL 인 채 구조 해석까지 진행했다(보고서는 구조 해석 결과로만 만든다 — stability_gate.unmet 과 같은 규칙)."""
+        return self.overall_status == "fail"
 
 
 @dataclass
@@ -488,7 +495,7 @@ def _stability(st: dict, posture) -> StabilityInfo:
         if n == 5 and s.get("conflictCount"):
             note = "경로 확인 필요"
         if n in (1, 2) and s.get("shapeGateRelaxed"):
-            note = "Strict OFF 로 완화 판정"
+            note = "형상 완화 판정(Standard)"
         # 표 열 폭에 맞는 짧은 표준 이름을 쓴다(엔진 displayLabel 은 "5단계 · 와이어-구조물 간섭 검사" 로 길다).
         rows.append(StageRow(n, STAGE_LABELS.get(n) or str(stg.get("displayLabel") or ""),
                              str(stg.get("status") or "-"), _stage_metric(n, s), note))
@@ -513,7 +520,19 @@ def _stability(st: dict, posture) -> StabilityInfo:
         min_clearance_mm=_num(s5.get("minClearanceMm")), tipping=tipping,
         strict_evaluation=bool((posture or {}).get("strictEvaluation", False)), shape_gate_relaxed=relaxed,
         warnings=list(us.get("warnings") or []), critical=list(us.get("criticalIssues") or []),
+        evaluation_mode=_evaluation_mode(posture, str(ov.get("status") or "")),
     )
+
+
+def _evaluation_mode(posture, overall: str = "") -> str:
+    # 자세안정성 FAIL 인데 구조 해석까지 갔다면 Advisory 로 진행한 것이다(Strict, Standard 는 FAIL 이면 진행을 막는다).
+    # Standard 에서 평가하고 Advisory 로 바꿔 바로 해석하면 posture 파일에는 'standard' 가 남는다(2026-11-19 리뷰).
+    if overall == "fail":
+        return "advisory"
+    mode = (posture or {}).get("evaluationMode")
+    if mode in ("strict", "standard", "advisory"):
+        return mode
+    return "strict" if (posture or {}).get("strictEvaluation") is True else "standard"
 
 
 def _loads(meta, result, stability, folder, stem) -> LoadInfo:
@@ -626,7 +645,10 @@ def _verdicts(r: ResultInfo, s: StabilityInfo, o: ReportOptions) -> Verdicts:
         actions.append(f"와이어 장력이 지그 기준 {o.jig_limit_ton:g} ton 을 초과하는 러그가 있습니다 — 국부 변형 방지 지그를 설치하십시오.")
     if r.wire_compression_count or any(w.is_slack for w in r.wires):
         actions.append("압축 또는 슬랙 상태의 와이어가 있습니다 — 권상 자세와 와이어 길이를 재검토하십시오.")
-    if s.overall_status == "fail":
+    if s.advisory_unmet:
+        # 맨 앞에 둔다 — 요약 '먼저 확인할 사항' 은 앞 3줄만 보인다.
+        actions.insert(0, "자세안정성 FAIL 인 채 Advisory 모드로 진행한 해석입니다 — 권상 위치를 바꿔 자세안정성을 만족하기 전에는 권상할 수 없습니다.")
+    elif s.overall_status == "fail":
         actions.append("자세안정성 FAIL — 권상 위치를 변경하기 전에는 권상할 수 없습니다.")
     for w in s.warnings[:5]:
         actions.append(f"[{w.get('target', '')}] {w.get('headline', '')}")

@@ -12,6 +12,7 @@ from .sheet import FONT, LIGHT, ReportSheet
 
 LOGO_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "templates", "hd_logo.png"))
 STATUS_KO = {"pass": "PASS", "warn": "WARN", "fail": "FAIL", "skip": "SKIP"}
+EVAL_MODE_KO = {"strict": "Strict", "standard": "Standard", "advisory": "Advisory"}
 
 
 def toc_entries(d: ReportData) -> list[tuple[str, int]]:
@@ -124,7 +125,7 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
             [["부재 응력", f"σmax ≤ σ허용 = σy × 0.8 = {r.allowable_mpa:g} MPa", f"σy = {r.yield_mpa:g} MPa"],
              ["와이어 장력", f"장력 > {d.options.jig_limit_ton:g} ton 이면 국부 변형 방지 지그 필요", "장력 = |축력| / 9,800 N/ton"],
              ["와이어 건전성", "압축·슬랙 와이어 없어야 함", "CROD 축력 부호"],
-             ["자세 안정성", "엔진 7단계 종합 판정 (FAIL 이면 권상 불가)", "Strict 평가 " + ("ON" if st.strict_evaluation else "OFF")],
+             ["자세 안정성", "엔진 7단계 종합 판정 (FAIL 이면 권상 불가)", "평가 모드 " + EVAL_MODE_KO.get(st.evaluation_mode, st.evaluation_mode)],
              ["변위", "참고치 (판정 없음)", "최대 변위 절점·성분 기록"]], widths=[3, 6, 3], title="판정 기준")
 
     # ── 2. 해석 모델 ─────────────────────────────────────────────────────────
@@ -205,8 +206,14 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
         none_note("권상 위치 최적화(_hoist_optimization.json)")
     sec("3.3 자세 안정성 단계별 판정")
     s.para(f"종합 판정: {STATUS_KO.get(st.overall_status, st.overall_status)} — {st.primary_message}")
+    if st.advisory_unmet:
+        s.note("Advisory 모드: 자세 안정성 종합 판정이 FAIL 이지만 구조 해석을 진행했다. "
+               "아래 구조 해석 결과는 이 권상 자세가 성립한다고 가정한 값이며, 자세 안정성을 만족하기 전에는 권상할 수 없다.")
+        if st.tipping is not None and not st.tipping.is_stable:
+            s.note("6단계 전도 판정이 실패라 해석의 앵커 구속(무게중심 근처 절점 X·Y)이 기울어지려는 힘을 받는다. "
+                   "앵커 주변 응력은 실제와 다를 수 있다.")
     if st.shape_gate_relaxed:
-        s.note("Strict 평가 OFF: 1·2단계 형상 판정이 FAIL 대신 WARN 으로 완화되어 평가되었다"
+        s.note("Standard 평가: 1·2단계 형상 판정이 FAIL 대신 WARN 으로 완화되어 평가되었다"
                "(3단계 wire≤0, 6단계 전도는 완화 없음).")
     s.table(["단계", "항목", "판정", "핵심 수치"],
             [[x.stage, x.label, STATUS_KO.get(x.status, x.status),

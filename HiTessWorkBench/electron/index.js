@@ -17,6 +17,7 @@ const clientTelemetry = require("./client-telemetry");
 const { registerVideoWindow } = require("./video-window");
 const { requestWindowsLogin } = require("./windows-login");
 const deviceLogin = require("./device-login");
+const studioSettings = require("./studio-settings");
 const { installCertificatePinning, serverFetch, secureServerUrl, DEV_PINS } = require("./server-pins");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
@@ -1360,6 +1361,26 @@ ipcMain.handle("viewer:getInitialFolder", async (event) => {
   if (!fs.existsSync(folder)) return null;
   return await readJsonFolderRecursive(folder);
 });
+// Studio 사용자 설정 파일(2026-11-18, MU 평가 모드 유지) — <userData>/viewer-settings/<viewerId>.json.
+// viewerId 는 호출한 Studio 창의 세션에서 정한다(창이 다른 Studio 의 설정을 읽거나 쓰지 못하게).
+ipcMain.handle("viewer:getStudioSettings", (event) => {
+  const session = sessionFromEvent(event);
+  if (!session?.viewerId) return { ok: false, error: "Studio 창이 아닙니다." };
+  const file = studioSettings.settingsPath(app.getPath("userData"), session.viewerId);
+  return { ok: true, settings: studioSettings.readSettings(file) };
+});
+
+ipcMain.handle("viewer:setStudioSettings", (event, patch) => {
+  const session = sessionFromEvent(event);
+  if (!session?.viewerId) return { ok: false, error: "Studio 창이 아닙니다." };
+  try {
+    const file = studioSettings.settingsPath(app.getPath("userData"), session.viewerId);
+    return studioSettings.writeSettings(file, patch);
+  } catch (e) {
+    return { ok: false, error: e?.message ?? String(e) };
+  }
+});
+
 
 // ── Studio "최종 모델 출력" → workbench 자동 처리 ────────────────────
 // Studio 가 _edit.json 을 folderPath 에 쓴 직후 호출.
@@ -1964,10 +1985,13 @@ ipcMain.handle("viewer:runUnitStructural", async (event, payload) => {
         const failed = Number(summary.memberExceedCount || 0) > 0
           || Number(summary.wireCompressionCount || 0) > 0
           || Number(summary.wireMissingResultCount || 0) > 0;
-        const status = failed ? "FAIL" : warnings.length > 0 ? "WARN" : "PASS";
+        // 자세안정성 미충족(Advisory 모드)으로 진행했으면 최소 WARN — 프론트 utils/gmuLiftingVerdict.js 와 같은 규칙(사본).
+        const stabilityGate = resultInfo.stabilityGate ?? null;
+        const status = failed ? "FAIL" : (warnings.length > 0 || stabilityGate?.unmet === true) ? "WARN" : "PASS";
         notifyUnitStructuralCompleted(session, {
           ok: true,
           status,
+          stabilityGate,
           analysisId: job.project?.id ?? null,
           summary,
           warnings,

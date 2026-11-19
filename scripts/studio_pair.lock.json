@@ -3,48 +3,48 @@
   "watch": {
     "mb-mu": {
       "App.jsx": {
-        "model-studio": "8c15564aed78fd56",
-        "module-unit-studio": "ca7838e910672051"
+        "model-studio": "45fa672ea94125ad",
+        "module-unit-studio": "e7750eb6364ff75b"
       },
       "components/AddRigidDialog.jsx": {
-        "model-studio": "6cb52f550a86fa82",
-        "module-unit-studio": "2b1606f93c398c14"
+        "model-studio": "99d4eb549564d233",
+        "module-unit-studio": "c6e40d31ad51a002"
       },
       "components/ConflictSummary.jsx": {
         "model-studio": "af5296906f742f53",
         "module-unit-studio": "9f709fd34dcd1fed"
       },
       "components/DeleteSelectionDialog.jsx": {
-        "model-studio": "e7bd3fefaf93122b",
+        "model-studio": "8bc5ebdf77834239",
         "module-unit-studio": "8b7ac3e9a2f0f68a"
       },
       "components/EditPanel.jsx": {
-        "model-studio": "fbce31a14d737eec",
-        "module-unit-studio": "78ed3dd33ad0cfb9"
+        "model-studio": "66f5659e3f227ae2",
+        "module-unit-studio": "41a2eac5d7d1a294"
       },
       "components/EditToolPalette.jsx": {
         "model-studio": "ca5332742867f044",
-        "module-unit-studio": "ff2fbff2943e9a98"
+        "module-unit-studio": "2394c8797f2752d0"
       },
       "components/InputAuditPanel.jsx": {
         "model-studio": "8a252b8174c5d677",
         "module-unit-studio": "a1750623aa84e99c"
       },
       "components/InspectorPanel.jsx": {
-        "model-studio": "bdff4d120e0c93a9",
-        "module-unit-studio": "b4d0f60b10623d81"
+        "model-studio": "5138c56f3084386b",
+        "module-unit-studio": "26a6c0c44a41c2f4"
       },
       "components/LayerPanel.jsx": {
         "model-studio": "499ce4dcee012a51",
         "module-unit-studio": "c493106847532746"
       },
       "components/LeftDock.jsx": {
-        "model-studio": "45f1f56b68677f43",
+        "model-studio": "7c2e9cde5f9a7a93",
         "module-unit-studio": "fa739e15caabfa22"
       },
       "components/MassEditPanel.jsx": {
-        "model-studio": "6c9a977bf230b649",
-        "module-unit-studio": "29f2a217d038a187"
+        "model-studio": "47fcef37538e8a22",
+        "module-unit-studio": "0cfb3eaab6b60480"
       },
       "components/MassSummaryOverlay.jsx": {
         "model-studio": "0041968a83ce2409",
@@ -52,31 +52,31 @@
       },
       "components/PickTooltip.jsx": {
         "model-studio": "37e318b894ad9658",
-        "module-unit-studio": "a020a9706d808316"
+        "module-unit-studio": "062684e698d1ec99"
       },
       "components/RotateModelDialog.jsx": {
-        "model-studio": "66859af4da0c313e",
+        "model-studio": "b0f29f9c1319bc1e",
         "module-unit-studio": "3c3116212c00f4e1"
       },
       "components/SectionChangePanel.jsx": {
-        "model-studio": "ceadc5bdb652eabf",
+        "model-studio": "0195094d9c84c862",
         "module-unit-studio": "c871be4db772a0be"
       },
       "components/Sidebar.jsx": {
-        "model-studio": "e4683b6d14ebe94a",
-        "module-unit-studio": "74259f4b2d94a921"
+        "model-studio": "204da5c24748481e",
+        "module-unit-studio": "e856e40b92ab0b83"
       },
       "components/ThreeViewport.jsx": {
         "model-studio": "4b194584ca84511f",
         "module-unit-studio": "2c80678e69b2aef0"
       },
       "components/TopMenuBar.jsx": {
-        "model-studio": "787e2c6c531a38a5",
-        "module-unit-studio": "7336e98f32b56b2b"
+        "model-studio": "affa22841446221f",
+        "module-unit-studio": "594be673a0bb6eff"
       },
       "components/ViewportContainer.jsx": {
         "model-studio": "84d8c6dc154734fc",
-        "module-unit-studio": "9c93b7c4659a63bb"
+        "module-unit-studio": "e51af2e1c1c20f91"
       },
       "components/ViewportNotices.jsx": {
         "model-studio": "5f4ff0d78b96d1c4",
@@ -92,7 +92,7 @@
       },
       "components/edit/WorkPanelFrame.jsx": {
         "model-studio": "3a30193aadff5440",
-        "module-unit-studio": "9432808ac719183a"
+        "module-unit-studio": "bfbd63796d213ca5"
       },
       "components/edit/textEntry.js": {
         "model-studio": "5643c3d19678a1b1",
@@ -127,7 +127,7 @@
         "module-unit-studio": "e6b40ee32c1e1872"
       },
       "components/panels/EditPanelDock.jsx": {
-        "model-studio": "072383855c9b5e4e",
+        "model-studio": "308807e91edac0ff",
         "module-unit-studio": "fe1ddf3fc7b6e70a"
       },
       "components/panels/GroupAutoConnectSection.jsx": {
@@ -139,11 +139,11 @@
         "module-unit-studio": "9eee79e4d779fe67"
       },
       "components/panels/ModelTransformSection.jsx": {
-        "model-studio": "defa1f03083d2b00",
-        "module-unit-studio": "706937a0adce3837"
+        "model-studio": "f3a2cf441938ee4d",
+        "module-unit-studio": "72a422a895d96f11"
       },
       "components/panels/SavePanel.jsx": {
-        "model-studio": "4a6cfc7c7c5ae3b8",
+        "model-studio": "59f7c60ff449e697",
         "module-unit-studio": "71e8a454ff79cf0b"
       },
       "components/shell/BottomDock.jsx": {
@@ -155,8 +155,8 @@
         "module-unit-studio": "ae0907719322a0e4"
       },
       "components/shell/RightDock.jsx": {
-        "model-studio": "08ce6097a553e24b",
-        "module-unit-studio": "179e214f8403afda"
+        "model-studio": "0e9788101829b542",
+        "module-unit-studio": "f213e4cef8d297b1"
       },
       "components/shell/TabPanel.jsx": {
         "model-studio": "70254bac6723d643",
@@ -164,7 +164,7 @@
       },
       "components/shell/ViewportHintBar.jsx": {
         "model-studio": "ef527d836bdb2ed2",
-        "module-unit-studio": "5cf7ef7607347327"
+        "module-unit-studio": "ffd5b7094bea3f00"
       },
       "data/EditIntent.js": {
         "model-studio": "9025d86c780da8cd",
@@ -195,19 +195,27 @@
         "module-unit-studio": "e9d93501247ca7b2"
       },
       "data/fileLoader.js": {
-        "model-studio": "4b700cfde7d7ef27",
+        "model-studio": "9946761aa2a729a6",
         "module-unit-studio": "1a47dff3fe938871"
       },
       "data/fileLoader.test.js": {
         "model-studio": "d9c26e27c558f4c7",
         "module-unit-studio": "262551eee134b95a"
       },
+      "data/groupBulkDelete.js": {
+        "model-studio": "1ccc0c88f34552a8",
+        "module-unit-studio": "0b589af73f4fe8dd"
+      },
+      "data/groupBulkDelete.test.js": {
+        "model-studio": "8de7273635883436",
+        "module-unit-studio": "cc23ec4b2ff8fd66"
+      },
       "data/helpContent.test.js": {
-        "model-studio": "72834f9c5f9d0b72",
+        "model-studio": "bb73cd4cbe9efb76",
         "module-unit-studio": "46c4409732577405"
       },
       "data/manualSections.js": {
-        "model-studio": "4756c16a4113b959",
+        "model-studio": "87b3ba76e4434841",
         "module-unit-studio": "35d00366d8eea06e"
       },
       "data/manualSections.test.js": {
@@ -226,6 +234,14 @@
         "model-studio": "8d78e0ffc2a1b070",
         "module-unit-studio": "ae42677c81a5e254"
       },
+      "data/rigidAddCandidates.js": {
+        "model-studio": "860dbdfc46ed577c",
+        "module-unit-studio": "72461bd0c7a06121"
+      },
+      "data/rigidAddCandidates.test.js": {
+        "model-studio": "40b668d0675ea5cf",
+        "module-unit-studio": "75e7b2e07f425d29"
+      },
       "data/sectionChoices.js": {
         "model-studio": "1a876cdf31818ed0",
         "module-unit-studio": "df904fccf7dabf79"
@@ -236,7 +252,7 @@
       },
       "host/host.js": {
         "model-studio": "bbed22f2122a6f08",
-        "module-unit-studio": "b8d0c475bb62c5bd"
+        "module-unit-studio": "b7fe5925ef3ed196"
       },
       "host/host.test.js": {
         "model-studio": "e16747be9f146aea",
@@ -256,7 +272,7 @@
       },
       "store/useEditStore.test.js": {
         "model-studio": "7e9e38e2843be0af",
-        "module-unit-studio": "9e98bb96fdd4a54d"
+        "module-unit-studio": "a32790c8ced07eb6"
       },
       "store/useErrorLogStore.js": {
         "model-studio": "9589a650316f6433",
@@ -267,7 +283,7 @@
         "module-unit-studio": "657cad5b7695732b"
       },
       "store/useStageStore.js": {
-        "model-studio": "2658d532d04ffcea",
+        "model-studio": "a1a831b2b194746c",
         "module-unit-studio": "5c573cb8593e027f"
       },
       "store/useStageStore.test.js": {
@@ -307,23 +323,23 @@
         "module-unit-studio": "0647209be8bdc7aa"
       },
       "three/RigidMesh.js": {
-        "model-studio": "de22ebf4708b6621",
+        "model-studio": "b8ff1ae8cccc16f4",
         "module-unit-studio": "29494cd95eac4ca6"
       },
       "three/SceneBuilder.js": {
         "model-studio": "3ca47c2a299f12e3",
-        "module-unit-studio": "f2b563a6c6807ec4"
+        "module-unit-studio": "1c7122cc9d18c911"
       },
       "three/SelectionHighlight.js": {
         "model-studio": "8fda3e6e7fe323fb",
         "module-unit-studio": "78734a566ee507bd"
       },
       "three/UboltDofLabels.js": {
-        "model-studio": "2bf45c5594e65c1d",
+        "model-studio": "6d3606057700d66c",
         "module-unit-studio": "fda3e789b581b1ed"
       },
       "three/UboltMarkers.js": {
-        "model-studio": "c96713132cb36bd0",
+        "model-studio": "a152008adff2adf2",
         "module-unit-studio": "9e252a733b6c3e96"
       },
       "three/applyDeleteMask.js": {
@@ -333,6 +349,10 @@
       "three/orthoPan.js": {
         "model-studio": "fbb5f6c2a38c758f",
         "module-unit-studio": "dbc2f82d619a6955"
+      },
+      "three/screenMarker.js": {
+        "model-studio": "33e7ae5ae8d16e61",
+        "module-unit-studio": "da76e334459845a4"
       },
       "three/screenSpaceMaterial.js": {
         "model-studio": "33bf789e051fb20d",

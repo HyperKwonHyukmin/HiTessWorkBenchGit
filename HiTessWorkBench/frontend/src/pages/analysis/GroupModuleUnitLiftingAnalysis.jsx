@@ -39,7 +39,7 @@ import {
 } from '../../utils/logbookLink';
 
 const MODULE_STUDIO_VIEWER_ID = 'module-unit-studio';
-const MODULE_STUDIO_VERSION = '0.0.208';
+const MODULE_STUDIO_VERSION = '0.0.225';
 // 다른 App 이 넘긴 BDF 는 fresh-entry 재마운트가 끝난 뒤 살아남은 인스턴스에만 적용한다.
 const HANDOFF_APPLY_DELAY_MS = 60;
 const GMU_MENU_NAME = 'Group & Module Unit 권상 구조 해석';
@@ -843,6 +843,7 @@ const GmuLiftingWorkspace = memo(function GmuLiftingWorkspace({
           if (unit.status === 'Success' && ui.summary) {
             structural = buildStructuralResult({
               summary: ui.summary, warnings: ui.warnings, allowableMPa: ui.allowableMPa, analysisId: unit.id,
+              stabilityGate: ui.stabilityGate ?? null,
             });
           }
         }

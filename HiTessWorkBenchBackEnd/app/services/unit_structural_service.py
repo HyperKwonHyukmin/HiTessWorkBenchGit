@@ -438,6 +438,11 @@ def task_execute_unit_structural(
             "summary":           result_summary,
             "warnings":          result_payload.get("warnings", []),
         }
+        # 자세안정성 판정과 평가 모드 — Advisory 모드로 fail 인 채 진행했으면 WorkBench 판정·보고서가 알린다(2026-11-18).
+        from .stability_gate import read_stability_gate
+        stability_gate = read_stability_gate(stability_json_path)
+        if stability_gate is not None:
+            result_data["stabilityGate"] = stability_gate
         try:
             result_data["reviewManifestJson"] = archive_lifting_review(bdf_dir, job_id, {
                 "sourceBdf": bdf_path, "editedModel": edited_json,
