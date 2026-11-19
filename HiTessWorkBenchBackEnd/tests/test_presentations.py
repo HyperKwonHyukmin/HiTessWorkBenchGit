@@ -91,6 +91,42 @@ def test_invalid_utf8_returns_safe_500(tmp_path, monkeypatch):
     assert str(configured_dir) not in response.text
 
 
+INSIGHT = "/api/presentations/hitess-insight"
+
+
+def test_insight_ignores_runtime_override_and_serves_repository_copy(tmp_path, monkeypatch):
+    fallback_dir = tmp_path / "fallback"
+    fallback_dir.mkdir()
+    expected = "<!DOCTYPE html><title>통찰</title>"
+    (fallback_dir / presentations._INSIGHT_FILENAME).write_text(expected, encoding="utf-8")
+    monkeypatch.setattr(presentations, "_FALLBACK_PRESENTATION_DIR", fallback_dir)
+    monkeypatch.setenv("INTRO_PRESENTATION_DIR", str(tmp_path / "runtime"))
+
+    response = _client().get(INSIGHT)
+
+    assert response.status_code == 200
+    assert response.text == expected
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_insight_missing_returns_404(tmp_path, monkeypatch):
+    monkeypatch.setattr(presentations, "_FALLBACK_PRESENTATION_DIR", tmp_path / "missing")
+
+    response = _client().get(INSIGHT)
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "HiTESS 구조 통찰 자료를 찾을 수 없습니다."}
+
+
+def test_repository_insight_is_present_and_offline():
+    html = presentations._insight_path().read_text(encoding="utf-8")
+
+    assert '<script type="application/json" id="presentation-data">' in html
+    assert "fetch(" not in html
+    assert "WebSocket" not in html
+    assert "<script src=" not in html
+
+
 def test_repository_canonical_deck_is_present_and_self_contained(monkeypatch):
     monkeypatch.delenv("INTRO_PRESENTATION_DIR", raising=False)
     canonical_path = presentations._presentation_path()
