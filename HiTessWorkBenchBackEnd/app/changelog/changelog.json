@@ -2,6 +2,21 @@
   "_comment": "관리자 '업데이트 이력'(Administration > Update History)의 내용. 2026년 10월부터 기록. 새 항목은 items 맨 앞에. 큰 범주로 쓴다: 항목 하나 = 주간 보고 한 줄 수준의 기능·문제 영역, 작은 수정·기본값·문구는 관련 항목의 points 에 합친다. 같은 기능이 나중에 보강되면 처음 항목의 points 에 (버전)과 함께 더한다. kind = 기능|개선|수정|정리|운영. version = 처음 실린 릴리스. requester = 그 기능을 요청한 사람 '이름 직급'(있을 때만, 예: 김도현 선임). 화면 문구에 em dash 를 쓰지 않는다. 고치면 백엔드 재시작 없이 다음 조회부터 반영된다(145 는 Server Manager Update 로 git pull). page = 사용자 안내 페이지(UpdateWeb/updates.json 의 안내 id, /updates/<id>)가 있으면 그 id — 화면에 '사용자 안내 페이지' 단추가 생긴다. Studio 항목은 studio = viewer id(studio_release.json 의 키), version = 그 Studio 버전으로 적고 /studio-release 로 145 에 공개할 때 쓴다(70 로컬 빌드마다 쓰지 않는다). 공개한 버전 사이에 바뀐 것을 한 항목으로 묶는다.",
   "items": [
     {
+      "date": "2026-11-19",
+      "version": "0.0.225",
+      "studio": "module-unit-studio",
+      "kind": "기능",
+      "title": "Module Unit Studio 평가 모드 3단계와 RBE 독립 종속 바꾸기",
+      "summary": "자세안정성 평가를 Strict, Standard, Advisory 세 모드로 고르고, Advisory 에서는 자세안정성을 만족하지 못해도 구조 해석과 보고서까지 진행하며 미충족을 표시합니다. 독립 노드와 종속 노드가 하나씩인 RBE 를 골라 두 노드를 서로 바꿀 수 있고, 연결 그룹을 체크해 한 번에 지울 수 있습니다.",
+      "points": [
+        "평가 모드: 기본은 Standard(예전 Strict OFF)이고, 고른 모드는 다음 실행에도 유지됩니다. Advisory 라도 Wire 꼭짓점을 만들지 못한 경우는 진행하지 않습니다.",
+        "Advisory 로 진행하면 Analysis 탭에 미충족 안내가 뜨고, 전도 판정이 실패면 앵커 주변 응력이 실제와 다를 수 있다고 알립니다.",
+        "RBE 독립 종속 바꾸기: Edit 탭 도구 막대 RBE 에서 열고, 3D 의 파란 RBE 를 클릭하거나 목록에서 골라 한 번에 바꿉니다. 한 노드가 두 RBE 의 종속이 되는 경우는 막습니다. Ctrl+Z 한 번으로 되돌립니다.",
+        "그룹 일괄 삭제: Edit 탭 그룹 목록에 체크박스와 전체 선택(본 구조 제외), 선택한 그룹 삭제가 생겼습니다. Ctrl+Z 한 번으로 모두 되돌립니다.",
+        "WorkBench 판정과 보고서의 자세안정성 미충족 표시는 서버 업데이트 뒤부터, 평가 모드 설정 파일 저장은 새 WorkBench 앱부터 동작합니다(그 전에는 이 PC 브라우저 저장소에 기억)."
+      ]
+    },
+    {
       "date": "2026-11-16",
       "version": "0.1.99",
       "studio": "mooring-fitting-studio",
