@@ -56,15 +56,19 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   ⚠ 뷰포트 모델(`applyViewEdits`)의 `pointMasses` 에는 넣지 않았다 — 파생 모델로 질량을 내는 곳이 있으면 두 번 더해진다. `three/MassMarkers.js` 는 MB 와 `same` 이라 MB 에도 복사(인자 기본값, MB 동작 불변).
   확인: MU 시험 1023 · 헤드리스로 추가→3D 클릭 선택→값 수정→정보 패널·말풍선·질량 요약. WorkBench 앱 안 화면은 눈으로 확인 안 함. 145 공개(`/studio-release`)·커밋은 사용자 몫. 짝 싱크 대장 16·17번 보류.
 
-#### 평가 모드 3단계 · 그룹 일괄 삭제 (MU 0.0.224, 2026-11-18, 70 로컬만 — 미커밋, 145 미공개)
+#### 평가 모드 3단계 · 그룹 일괄 삭제 · RBE 독립 종속 바꾸기 (MU 0.0.225, 2026-11-18~19, 릴리스 표 0.0.225 `9a84c3d`)
 계획과 진행 기록 = `docs/plans/2026-11-18-mu-evaluation-mode-rbe-swap-group-bulk.md`. ② 는 아래 'RBE 독립 · 종속 바꾸기' 로 바꿔 구현했다.
 - **평가 모드 = Strict / Standard(기본, 옛 Strict OFF) / Advisory** — 'Strict 평가' 토글을 대신한다. 규칙 원본 = MU `data/evaluationMode.js`(`stabilityGate`).
   **엔진 판정은 바꾸지 않는다** — Advisory 는 엔진에 Standard 와 같은 값(`strictEvaluation:false`)을 보내고 진행 조건만 푼다(엔진 exe 교체 없음). Wire 꼭짓점(Stage 3)이 없으면 Advisory 도 막는다.
   고른 모드는 계속 유지(사용자 결정) — `<userData>/viewer-settings/<viewerId>.json`(Electron `studio-settings.js`, IPC `viewer:getStudioSettings/setStudioSettings`, **설치 폴더 밖** — 설치 폴더는 Studio 업데이트 때 지워진다). 옛 exe 는 localStorage.
   서버가 구조 해석 결과에 `result_info.stabilityGate`(`services/stability_gate.py`, 모드는 옆 posture JSON 에서) → WorkBench `gmuLiftingVerdict` 와 Electron status 사본이 unmet 이면 최소 '검토 필요' → 보고서(상세 '먼저 확인할 사항' 첫 줄, 결과 레포트 주의 사항 5행 — 사용자 입력 줄은 그때 빠지고 경고).
 - **그룹 일괄 삭제** — Edit › 그룹 체크박스, [전체 선택](본 구조 제외), 같은 batchId(Ctrl+Z 한 번), 고를 그룹이 2개 미만이면 체크박스 숨김. 싱크 대장 48(보류)·49(해당 없음).
-- 반영 = 145 `git pull + 재시작`(stabilityGate) · 새 exe(설정 파일 IPC, Electron 판정) · `/studio-release module-unit-studio`. 확인 안 함: 실제 Electron 설정 파일, Advisory 실제 Nastran, 결과 레포트 PDF 모양.
-- **RBE 독립 · 종속 바꾸기 (2026-11-19, 미커밋 · 0.0.224 위에 올림, 버전 아직 안 올림)** — 도구 막대 RBE › '독립 · 종속 바꾸기'(고르기 도구 `rbeSwap`, `components/RigidSwapPanel.jsx`).
+- **상태(2026-11-19)**: 커밋 MU `cacb90a` · WorkBench `aaac783`(서버 stabilityGate, 보고서, 판정, Electron 설정 IPC, 핀) · 업데이트 안내 `/updates/2026-11-19-mu-eval-mode-rbe-swap`(`43fab3e`) · 요청자 회신 메일은 Outlook 초안만(발송은 사용자).
+  커밋 전 독립 리뷰 '막아야 함' 1 반영: Standard 로 평가한 FAIL 을 Advisory 로 바꿔 바로 해석하면 posture 에 'standard' 가 남는다 → 서버 기록과 보고서는 **FAIL 인데 구조 해석까지 왔으면 Advisory** 로 본다(`stability_gate`, collector `_evaluation_mode`).
+  **145 남은 일**: ⟳ Update + **재시작**(stabilityGate, 보고서) → 새 exe(설정 파일 IPC, Electron 판정 사본 — 1.7.27 은 빌드하지 않음, 사용자 결정 2026-11-19: 작업 폴더에 다른 세션 미커밋 변경 27개). 그 전에는 Advisory 해석이 WorkBench 판정 카드에 '통과'로 보일 수 있다.
+  **확인 안 함**: 실제 Electron 설정 파일 쓰기와 읽기, Advisory 로 전도 FAIL 모델 실제 Nastran, 결과 레포트 PDF 모양, WorkBench 앱 안 화면.
+  **다음 MU 수정 때 함께**: 그룹 체크 가능 수가 1개로 줄었는데 체크가 남으면 '선택한 1개 그룹 삭제' 만 보이고 해제 단추가 없음(`GroupManager`) · MU 도움말 `edit.groups` 에 체크박스 설명 없음.
+- **RBE 독립 · 종속 바꾸기 (2026-11-19, MU 0.0.225)** — 도구 막대 RBE › '독립 · 종속 바꾸기'(고르기 도구 `rbeSwap`, `components/RigidSwapPanel.jsx`).
   독립 1 · 종속 1 인 원본 RBE 를 3D 파랑으로 보이고, 클릭(오른쪽 클릭 = 빼기)이나 목록 체크로 고른 뒤 [바꾸기 적용](Enter) = intent `swapRigidNodes { rigidIds }` 하나(Ctrl+Z 한 번).
   규칙 원본 = `data/rigidSwap.js`: 지금 독립이 다른 RBE 의 **종속**이면 막음(FATAL 5289), 다른 RBE 의 **독립**이면 사슬 경고만(RBE 수정 패널과 같은 정책), 부분 cm + 떨어진 두 노드면 결과가 조금 달라질 수 있다는 경고.
   같은 노드를 쓰는 두 RBE 를 함께 바꾸면 오류 — [모두 고르기] 는 그런 RBE 를 건너뛴다(`pickNonOverlapping`). 반영 = `applyNodeEdits` 가 RBE 편집을 **기록 순서대로**(삭제·종속 교체·바꾸기).
