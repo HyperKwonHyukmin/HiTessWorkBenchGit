@@ -2,6 +2,91 @@
   "_comment": "기능 업데이트 안내(/updates) 내용. 새 안내는 entries 맨 앞에. id = YYYY-MM-DD-주제(영문 소문자·숫자·-), 주소 /updates/#<id>. app = 화면에 보일 앱 이름, programs = App 분류(그 App 의 Analysis.program_name 목록, User Management 'App 사용자' 필터와 같은 키) — 통계가 그 App 을 한 번이라도 실행한 사람 가운데 누가 봤는지를 센다, 없으면 생략. sections[].id = 측정 구획(영문 소문자로 시작). 구획 글은 body(문단 목록)·facts([{label,text}] — 무엇이 바뀌었나/어디서 보나/영향을 같은 자리에)·steps(순서)·points(점 목록)·image{src,alt,caption} 또는 images[…]·note(주의 한 줄) 중 필요한 것만. test=true 면 '시험용 안내' 표시. 사용 방법이 바뀌는 기능만 안내한다(작은 수정은 changelog.json 에만).",
   "entries": [
     {
+      "id": "2026-11-19-mf-rigid-range-overlap",
+      "date": "2026-11-19",
+      "app": "Mooring Fitting Assessment",
+      "programs": [
+        "MooringFitting",
+        "MooringFittingSolve",
+        "Mooring Fitting Assessment"
+      ],
+      "version": "해석 엔진 업데이트",
+      "title": "고정 범위가 맞닿은 계류 장비도 멈추지 않고 해석합니다",
+      "summary": "두 장비의 고정 범위가 붙어 있으면 모델 생성 단계에서 해석이 멈추던 문제를 고쳤습니다. 이제 함께 걸린 절점은 한 장비에만 연결하고 해석을 계속하며, 그 내용을 Studio 진단 목록에 알려 드립니다.",
+      "sections": [
+        {
+          "id": "overlap",
+          "heading": "1. 어떤 경우에 멈췄나",
+          "facts": [
+            {
+              "label": "증상",
+              "text": "해석을 시작하면 모델 생성 단계에서 'double dependency errors. MF의 RigidRange가 겹치지 않는지 확인하세요' 오류로 멈췄습니다. 메시지에 어느 장비인지 나오지 않아 원인을 찾기 어려웠습니다."
+            },
+            {
+              "label": "원인",
+              "text": "프로그램은 각 장비의 고정 범위 안쪽과 경계에서 50 mm 이내의 갑판 구조 절점을 그 장비에 연결합니다. 두 장비의 고정 범위가 맞닿아 있으면(틈이 50 mm 보다 좁으면) 경계의 절점 하나가 두 장비에 동시에 연결되어 해석이 성립하지 않았습니다."
+            },
+            {
+              "label": "실제 사례",
+              "text": "구조 CSV 3행과 4행이 모두 MF-S07 인 자료입니다. 두 줄은 MF-S07A, MF-S07B 두 장비로 나뉘는데, 꼭짓점 하나가 완전히 같고 다른 꼭짓점 사이 틈도 13 mm 여서 절점 79 가 두 장비에 함께 걸렸습니다(아래 그림 ①, ②)."
+            },
+            {
+              "label": "입력 CSV 문제인가",
+              "text": "아닙니다. 맞닿아 있는 두 장비는 정상적인 배치입니다. 프로그램이 이 경우를 처리하지 못한 것이 문제였습니다."
+            }
+          ],
+          "images": [
+            {
+              "src": "img/mf-rigid-overlap-1-location.png",
+              "alt": "갑판 구조와 계류 장비 12개의 고정 범위 평면도. MF-S07 두 장비 위치를 빨간 상자로 표시",
+              "caption": "① 전체 위치: 빨간 상자가 MF-S07(CSV 3행, 4행) 두 장비가 맞닿은 곳입니다."
+            },
+            {
+              "src": "img/mf-rigid-overlap-2-before.png",
+              "alt": "수정 전 확대 그림. 두 고정 범위가 맞닿아 빨간 띠 안의 절점 79 가 MF-S07A 와 MF-S07B 두 장비에 동시에 연결됨",
+              "caption": "② 수정 전: 빨간 띠는 두 장비가 함께 붙잡는 구역(경계 50 mm 이내)입니다. 그 안의 절점 79 가 두 장비에 동시에 연결되어 해석이 멈췄습니다."
+            }
+          ]
+        },
+        {
+          "id": "change",
+          "heading": "2. 무엇이 바뀌었나",
+          "facts": [
+            {
+              "label": "해석",
+              "text": "두 장비에 함께 걸린 절점은 장비 위치(CSV 의 장비 좌표)가 더 가까운 쪽 한 곳에만 연결하고, 해석을 멈추지 않고 계속 진행합니다."
+            },
+            {
+              "label": "어디서 보나",
+              "text": "Studio 진단 목록에 '절점 번호, 좌표, 두 장비 이름과 CSV 행 번호' 가 표시됩니다. 함께 걸린 절점이 없으면 나오지 않습니다."
+            },
+            {
+              "label": "결과에 미치는 영향",
+              "text": "경계의 절점 한두 개가 어느 장비에 연결되느냐만 달라집니다. 고정 범위가 맞닿지 않은 자료는 해석 모델이 이전과 똑같습니다."
+            },
+            {
+              "label": "그래도 멈추면",
+              "text": "오류 메시지에 겹친 장비 이름, CSV 행 번호, 절점 좌표가 함께 나옵니다. 그 행의 고정 범위 꼭짓점을 확인하세요."
+            }
+          ],
+          "image": {
+            "src": "img/mf-rigid-overlap-3-after.png",
+            "alt": "수정 후 확대 그림. 절점 79 가 장비 위치가 더 가까운 MF-S07A 한 곳에만 연결됨",
+            "caption": "③ 수정 후: 절점 79 를 장비 위치가 더 가까운 MF-S07A 에만 연결하고 해석을 계속합니다."
+          }
+        },
+        {
+          "id": "adjust",
+          "heading": "3. 연결을 바꾸고 싶을 때",
+          "steps": [
+            "Studio 진단 목록에서 표시된 절점과 두 장비를 확인합니다.",
+            "다른 장비에 연결해야 한다면 Studio Edit 탭의 'RBE 수정' 으로 그 절점을 옮깁니다.",
+            "장비 하나를 두 줄로 그린 것이라면 구조 CSV 에서 두 줄을 한 줄로 합치고, 서로 다른 장비라면 맞닿은 쪽 꼭짓점을 50 mm 넘게 떼어 다시 실행해도 됩니다."
+          ]
+        }
+      ]
+    },
+    {
       "id": "2026-11-16-mf-field-requests",
       "date": "2026-11-16",
       "app": "Mooring Fitting Assessment",
