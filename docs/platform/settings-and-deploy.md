@@ -32,3 +32,8 @@
     `/wb-release` 가 모든 Studio 를 UNC 최신으로, `/studio-release <id> [버전]` 이 WorkBench 버전과 무관하게 한 Studio 만(롤백 포함). 반영 = 커밋·푸시 + 145 ⟳ Update(재시작 불필요).
     표의 버전 zip 이 어느 후보 폴더에도 없으면 최고 버전으로 넘어가지 않고 404. 프론트 핀(`MODEL_BUILDER_STUDIO_VERSION` 등)은 이제 표시용 기본값일 뿐 받는 버전을 정하지 않는다.
     테스트 `tests/test_viewers_release.py`.
+- **발표 페이지 경로 (`app/routers/presentations.py`)**
+  - `/api/presentations/hitess-launch-deck` = 런칭 덱(대시보드 소개 모달). 145 는 `INTRO_PRESENTATION_DIR` 폴더를 먼저 본다.
+  - `/api/presentations/hitess-insight` = 구조 통찰 도면집(2026-11-19 `ff61a7b`, 일곱 장 선박 구조 모션 페이지, 5.4 MB). **저장소 사본 `app/static/presentations/hitess-insight.html` 만 읽는다** → 145 반영 = git pull + 재시작.
+  - 원본 빌드 소스는 `E:\D_Drive\02_Structure_department\08_2026\35_HouseByLine\src`(70 PC, git 밖)이고, 고친 뒤 결과 html 을 이 경로로 복사해 커밋한다.
+  - 남은 일(2026-11-19): 145 에서 `git pull` 과 재시작, 200 확인. 화면 진입 버튼은 없고 주소로만 연다.
