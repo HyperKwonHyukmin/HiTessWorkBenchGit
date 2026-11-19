@@ -484,3 +484,16 @@ class TestNoResultYet:
         assert report["elementFindings"] == []
         # 케이스 단위 규칙은 그대로 평가된다.
         assert isinstance(report["findings"], list)
+
+
+def test_rigid_shared_nodes_become_a_finding():
+    """맞닿은 MF 의 공유 절점(엔진 MODEL_EVIDENCE caseFacts.rigidSharedNodes)을 알린다. 없으면 말하지 않는다."""
+    from app.services.mooring_diagnosis import _case_findings
+    base = {"mfInputCount": 1, "forceLoadCount": 2}
+    msg = "절점 79 (2400.0, 12616.7, 18716.2) 이 MF-S07B (CSV 4행) 와 MF-S07A (CSV 3행) 의 고정 범위에 함께 걸려 MF-S07B 에만 연결했습니다."
+    found = _case_findings({"caseFacts": {**base, "rigidSharedNodes": [{"nodeId": 79, "message": msg}]}}, None, None)
+    hit = [f for f in found if f["code"] == "MF_RIGID_SHARED_NODE"]
+    assert len(hit) == 1 and "절점 1개" in hit[0]["message"] and "CSV 4행" in hit[0]["message"]
+    assert not any(f["code"] == "MF_RIGID_SHARED_NODE" for f in _case_findings({"caseFacts": base}, None, None))
+    assert not any(f["code"] == "MF_RIGID_SHARED_NODE"
+                   for f in _case_findings({"caseFacts": {**base, "rigidSharedNodes": []}}, None, None))

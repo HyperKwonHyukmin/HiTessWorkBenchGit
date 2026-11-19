@@ -69,6 +69,18 @@ def _case_findings(evidence: dict, equilibrium: dict | None, f06: dict | None) -
             hint="CAD 출력에서 같은 부재가 두 번 나온 것인지 확인하세요. 구조 CSV 표에서 '중복 행'으로 보입니다.",
         ))
 
+    # 맞닿은 MF — 두 고정 범위에 함께 걸린 절점을 엔진이 한쪽 RBE2 에만 붙였다(2026-11-19, 예전엔 06_LoadGen 에서 멈춤).
+    # 메시지는 엔진이 만든 문장(절점 번호, 좌표, 두 MF 와 CSV 행)을 그대로 쓴다.
+    shared = [s for s in (case_facts.get("rigidSharedNodes") or []) if isinstance(s, dict)]
+    if shared:
+        details = " / ".join(str(s.get("message") or f"절점 {s.get('nodeId')}") for s in shared[:5])
+        more = f" 외 {len(shared) - 5}개" if len(shared) > 5 else ""
+        findings.append(_finding(
+            "MF_RIGID_SHARED_NODE", CONFIDENCE_CONFIRMED,
+            f"MF 고정 범위가 서로 맞닿아, 여러 MF 에 함께 걸린 절점 {len(shared)}개를 한 MF 에만 연결했습니다. {details}{more}",
+            hint="연결이 맞지 않으면 Edit 탭의 RBE 수정으로 그 절점을 옮기거나, 구조 CSV 의 MF 고정 범위를 50 mm 넘게 떼어 다시 실행하세요.",
+        ))
+
     # 부식 마진 — 엔진이 CSV corrosion 값을 모든 판 두께에서 뺐다(2026-11-12). 값은 CSV 그대로 쓰고
     # IACS UR A2.4 최소 2.0 mm 보다 작으면 알리기만 한다(사용자 결정). 옛 결과(corrosionSource 없음)는 말하지 않는다.
     corrosion_source = case_facts.get("corrosionSource")
