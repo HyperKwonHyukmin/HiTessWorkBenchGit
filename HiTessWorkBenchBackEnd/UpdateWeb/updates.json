@@ -2,6 +2,178 @@
   "_comment": "기능 업데이트 안내(/updates) 내용. 새 안내는 entries 맨 앞에. id = YYYY-MM-DD-주제(영문 소문자·숫자·-), 주소 /updates/#<id>. app = 화면에 보일 앱 이름, programs = App 분류(그 App 의 Analysis.program_name 목록, User Management 'App 사용자' 필터와 같은 키) — 통계가 그 App 을 한 번이라도 실행한 사람 가운데 누가 봤는지를 센다, 없으면 생략. sections[].id = 측정 구획(영문 소문자로 시작). 구획 글은 body(문단 목록)·facts([{label,text}] — 무엇이 바뀌었나/어디서 보나/영향을 같은 자리에)·steps(순서)·points(점 목록)·image{src,alt,caption} 또는 images[…]·note(주의 한 줄) 중 필요한 것만. test=true 면 '시험용 안내' 표시. 사용 방법이 바뀌는 기능만 안내한다(작은 수정은 changelog.json 에만).",
   "entries": [
     {
+      "id": "2026-11-19-mu-eval-mode-rbe-swap",
+      "date": "2026-11-19",
+      "app": "Group & Module Unit 권상 구조 해석",
+      "programs": [
+        "GroupModuleUnit",
+        "Group & Module Unit 권상 구조 해석"
+      ],
+      "version": "Module Unit Studio 0.0.225",
+      "title": "Module Unit Studio 평가 모드 3단계와 RBE 독립 종속 바꾸기",
+      "summary": "자세안정성 평가 방식을 Strict, Standard, Advisory 세 가지 중에서 고릅니다. 독립 노드와 종속 노드가 하나씩인 RBE 는 두 노드를 서로 바꿀 수 있고, 연결 그룹은 체크해서 한 번에 지울 수 있습니다.",
+      "sections": [
+        {
+          "id": "evalmode",
+          "heading": "1. 자세안정성 평가 모드 3단계",
+          "facts": [
+            {
+              "label": "무엇이 바뀌었나",
+              "text": "예전 'Strict 평가' 켜기, 끄기 대신 세 모드 중 하나를 고름. Strict 는 형상 기준 위반도 FAIL, Standard(기본, 예전 끄기와 같음)는 형상 기준 위반을 경고로만 표시, Advisory 는 자세안정성이 FAIL 이어도 구조 해석과 보고서까지 진행."
+            },
+            {
+              "label": "어디서 보나",
+              "text": "Hoist 탭 왼쪽 패널, 중량 조건 아래 세 단추(그림 ①). 단추에 마우스를 올리면 모드별 설명(그림 ②)."
+            },
+            {
+              "label": "결과에 미치는 영향",
+              "text": "Strict 와 Standard 는 예전과 같은 판정. Advisory 로 진행하면 Analysis 탭에 '자세안정성 미충족' 안내가 뜨고, 전도 판정이 실패면 앵커 주변 응력이 실제와 다를 수 있다고 알림. Wire 꼭짓점을 만들지 못한 경우는 Advisory 라도 진행하지 않음."
+            },
+            {
+              "label": "모드 유지",
+              "text": "한 번 고른 모드는 다음에 Studio 를 열어도 그대로 유지. Advisory 일 때는 패널에 안내 줄이 늘 보임."
+            }
+          ],
+          "image": {
+            "src": "img/mu-eval-mode.png",
+            "alt": "Hoist 탭의 평가 모드 단추 세 개(Strict, Standard, Advisory)와 모드 설명 말풍선",
+            "caption": "① 평가 모드 단추 ② 마우스를 올리면 나오는 모드별 설명"
+          },
+          "note": "Advisory 결과를 WorkBench 판정과 보고서에 '자세안정성 미충족' 으로 표시하는 기능은 다음 서버 업데이트에 함께 적용됩니다."
+        },
+        {
+          "id": "rbeswap",
+          "heading": "2. RBE 독립 종속 바꾸기",
+          "facts": [
+            {
+              "label": "무엇이 바뀌었나",
+              "text": "독립 노드 하나와 종속 노드 하나로 된 RBE 의 두 노드를 서로 바꾸는 도구 추가. 여러 RBE 를 골라 한 번에 바꿈."
+            },
+            {
+              "label": "어디서 보나",
+              "text": "Edit 탭 3D 왼쪽 도구 막대, RBE 메뉴의 '독립 · 종속 바꾸기'."
+            },
+            {
+              "label": "결과에 미치는 영향",
+              "text": "6자유도(cm 123456) RBE 는 바꿔도 해석 결과가 같음. 일부 자유도만 묶는 RBE 는 두 노드가 떨어져 있으면 결과가 조금 달라질 수 있어 목록에 노란 삼각형 주의 표시. 한 노드가 두 RBE 의 종속이 되는 경우는 바꿀 수 없게 막음."
+            }
+          ],
+          "steps": [
+            "Edit 탭 도구 막대 RBE 에서 '독립 · 종속 바꾸기' 를 누름. 바꿀 수 있는 RBE 가 3D 에서 파랑으로 보임.",
+            "3D 의 파란 RBE 를 클릭하거나 목록에서 체크(그림 ①). 여러 개는 '모두 고르기'(그림 ②). 오른쪽 클릭은 고르기에서 빼기.",
+            "고른 RBE 는 초록으로 바뀌고, 바뀐 뒤 독립이 될 노드에 주황 점과 '새 독립' 이름표가 붙음(그림 ③).",
+            "'바꾸기 적용'(Enter)(그림 ④). 되돌리기는 Ctrl+Z 한 번."
+          ],
+          "images": [
+            {
+              "src": "img/mu-rbe-swap-panel.png",
+              "alt": "RBE 독립 종속 바꾸기 작업 패널. 바꿀 수 있는 RBE 목록과 모두 고르기, 바꾸기 적용 단추",
+              "caption": "① RBE 목록 체크 ② 모두 고르기 ④ 바꾸기 적용"
+            },
+            {
+              "src": "img/mu-rbe-swap-3d.png",
+              "alt": "3D 에서 고른 RBE 가 초록 선으로, 바뀐 뒤 독립이 될 노드가 주황 점과 새 독립 이름표로 보이는 화면",
+              "caption": "③ 고른 RBE 의 바뀐 뒤 모습(초록 선, 주황 점이 새 독립 노드)"
+            }
+          ]
+        },
+        {
+          "id": "groupbulk",
+          "heading": "3. 연결 그룹 한 번에 지우기",
+          "facts": [
+            {
+              "label": "무엇이 바뀌었나",
+              "text": "그룹을 하나씩 휴지통으로 지우던 것에 더해, 여러 그룹을 체크해 한 번에 지움."
+            },
+            {
+              "label": "어디서 보나",
+              "text": "Edit 탭 왼쪽 패널 '그룹'. 줄 왼쪽 체크박스(그림 ①), '전체 선택'과 '선택 해제'(그림 ②), '선택한 N개 그룹 삭제'(그림 ③)."
+            },
+            {
+              "label": "결과에 미치는 영향",
+              "text": "'전체 선택' 은 그룹 1(본 구조)을 빼고 고름. 지우기 전에 확인 창이 지울 요소와 노드 수를 보여 주고, Ctrl+Z 한 번으로 모두 되돌림."
+            }
+          ],
+          "image": {
+            "src": "img/studio-group-bulk-delete.png",
+            "alt": "Edit 탭 그룹 목록의 체크박스와 전체 선택, 선택 해제, 선택한 그룹 삭제 단추",
+            "caption": "① 그룹 체크박스 ② 전체 선택, 선택 해제 ③ 선택한 그룹 삭제 (그림은 Model Builder Studio 화면, Module Unit Studio 도 같은 자리)"
+          }
+        }
+      ]
+    },
+    {
+      "id": "2026-11-19-mb-group-bulk-mass-info",
+      "date": "2026-11-19",
+      "app": "HiTESS Model Builder",
+      "programs": [
+        "HiTessModelBuilder",
+        "ModelBuilderAnalysis",
+        "AmToModelBuilder",
+        "HiTESS Model Builder"
+      ],
+      "version": "Model Builder Studio 0.1.15",
+      "title": "Model Builder Studio 그룹 한 번에 지우기와 질량 정보 바로 보기",
+      "summary": "Edit 탭에서 여러 연결 그룹을 체크해 한 번에 지웁니다. 질량을 고르면 오른쪽 '정보' 탭에 바로 보이고, 화면을 옮길 때 대상이 작업 패널에 가리지 않습니다. Module Unit Studio 와 같은 사용법입니다.",
+      "sections": [
+        {
+          "id": "groupbulk",
+          "heading": "1. 연결 그룹 한 번에 지우기",
+          "facts": [
+            {
+              "label": "무엇이 바뀌었나",
+              "text": "그룹을 하나씩 휴지통으로 지우던 것에 더해, 여러 그룹을 체크해 한 번에 지움."
+            },
+            {
+              "label": "어디서 보나",
+              "text": "Edit 탭 왼쪽 패널 '그룹'. 줄 왼쪽 체크박스(그림 ①), '전체 선택'과 '선택 해제'(그림 ②), '선택한 N개 그룹 삭제'(그림 ③)."
+            },
+            {
+              "label": "결과에 미치는 영향",
+              "text": "'전체 선택' 은 그룹 1(본 구조)을 빼고 고름. 확인 창을 거치고, 그 그룹 노드를 쓰던 추가 RBE 와 부재도 예전처럼 함께 지워짐. Ctrl+Z 한 번으로 모두 되돌림."
+            }
+          ],
+          "image": {
+            "src": "img/studio-group-bulk-delete.png",
+            "alt": "Edit 탭 그룹 목록의 체크박스와 전체 선택, 선택 해제, 선택한 그룹 삭제 단추",
+            "caption": "① 그룹 체크박스 ② 전체 선택, 선택 해제 ③ 선택한 그룹 삭제"
+          }
+        },
+        {
+          "id": "massinfo",
+          "heading": "2. 질량을 '정보' 탭에서 바로 보기",
+          "facts": [
+            {
+              "label": "무엇이 바뀌었나",
+              "text": "질량점이나 질량이 걸린 노드를 고르면, 오른쪽 '표시' 탭을 보고 있어도 '정보' 탭으로 넘어가 질량 값이 바로 보임. 질량을 추가하거나 값을 고친 뒤에도 방금 바꾼 질량을 '정보' 탭에 띄움."
+            },
+            {
+              "label": "어디서 보나",
+              "text": "3D 오른쪽 도크의 '정보' 탭."
+            },
+            {
+              "label": "결과에 미치는 영향",
+              "text": "화면 표시만 바뀜. 질량이 없는 노드나 부재를 고를 때는 예전처럼 '표시' 탭을 그대로 두고 '정보' 단추에 점만 띄움."
+            }
+          ]
+        },
+        {
+          "id": "panelclear",
+          "heading": "3. 화면을 옮길 때 작업 패널을 비켜 놓기",
+          "facts": [
+            {
+              "label": "무엇이 바뀌었나",
+              "text": "[보기]나 찾기로 화면을 옮길 때, 아래쪽 작업 패널이 열려 있으면 대상을 패널 오른쪽(또는 위) 빈 곳에 놓음. 예전에는 대상이 패널 뒤에 가려지기도 했음."
+            },
+            {
+              "label": "어디서 보나",
+              "text": "Edit 탭의 작업 패널(부재 삭제, RBE 묶기 등)을 연 채로 [보기]를 누르거나 찾기(Ctrl+F)로 이동할 때."
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "2026-11-19-mf-rigid-range-overlap",
       "date": "2026-11-19",
       "app": "Mooring Fitting Assessment",

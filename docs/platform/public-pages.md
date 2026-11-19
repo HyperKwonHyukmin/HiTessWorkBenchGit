@@ -57,6 +57,7 @@
 - 서버 `routers/updates_web.py` + `services/update_page_stats.py`, 표 `update_page_views`. 앱 대시보드 '새 기능 안내' 줄(`components/UpdateNoticeStrip.jsx`) → 앱 안 창(`UpdateNoticeModal.jsx`, iframe `?embed=1`)에서 본 기록은 사번으로 남는다(브라우저는 IP 해시라 PC 수만).
 - 통계 = Usage Reports '업데이트 안내'(뉴스레터 통계와 같은 사람만): 안내별 조회, 앱 안 본 사람, 브라우저 PC, **App 사용자 가운데 본 사람**과 명단(안 본 사람 메일 복사).
   '얼마나 읽었는지'(깊이, 머문 시간, 구획)와 전후 실행 비교는 화면에 넣지 않는다(사용자 결정).
+- **명령어 `/update-notice` (2026-11-19)** — 아래 절차를 한 번에 한다(`.claude/commands/update-notice.md`). 그림은 `scripts/update_notice_annotate.py`(자르기, 주황 상자, 번호) + `outputs/update-notice/spec-<날짜>.json`.
 - ★ **"업데이트 안내 써줘" = Claude 가 쓴다**: `git log`와 `changelog.json` 으로 바뀐 것을 확인 → `updates.json` 맨 앞에 한 항목
   (`id` = `YYYY-MM-DD-영문주제`, `date`, `app` = 화면에 보일 App 이름, **`programs` = App 분류** = User Management 'App 사용자' 필터와 같은 `Analysis.program_name` 키(빠지면 명단을 못 셈), `version`, `title`, `summary`,
   `sections[{id, heading, body|facts|steps|points|image|images|note}]`) → 필요하면 헤드리스 Chrome 캡처를 `img/` 에 → 페이지 캡처로 모양 확인 → 보여 주고 확인받은 뒤 커밋.
