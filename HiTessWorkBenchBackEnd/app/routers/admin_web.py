@@ -8,6 +8,8 @@
   GET /admin/{파일}                   → 빌드 자원(assets/*.js·css·글꼴·그림)
   GET /api/admin-console/access       → 이 사람이 콘솔을 써도 되는지(입구 검사). 안 되면 200 {allowed:false}
   GET /api/admin-console/pending-count→ 가입 승인 대기 수. Bearer(콘솔 사용자) 또는 스트림덱 열쇠 헤더
+  GET /api/admin-console/logbook-new  → LogBook 새 자료 수(같은 입구)
+  GET /api/admin-console/remote-sessions → 이 서버의 활성 원격 접속자 이름과 접속 IP(같은 입구)
 
 폴더 = `AdminWeb/` (git 추적 — 70 에서 scripts/build-admin-web.ps1 로 만들고 커밋, 145 는 git pull)
 페이지와 자원은 로그인 없이 내준다 — exe 에 실리는 것과 같은 화면 코드라 비밀이 없고, 데이터는 API 가 지킨다.
@@ -16,7 +18,7 @@
 관리 API 자체는 exe 와 같아 `is_admin` 만 본다 — 여기에 사번 검사를 덧대면 exe 를 쓰는 다른 관리자가 막힌다.
 
 스트림덱 열쇠: `.env ADMIN_CONSOLE_STREAMDECK_KEY_SHA256`(원문의 sha256 hex). 원문은 스트림덱 설정 칸에만 있다.
-비면 열쇠 경로는 꺼진다. 이 열쇠로는 가입 대기 숫자 말고 아무것도 못 한다.
+비면 열쇠 경로는 꺼진다. 이 열쇠로는 위 숫자 API 세 개(가입 대기, LogBook 새 자료, 원격 접속자) 말고 아무것도 못 한다.
 
 ⚠ 파일은 read() 바이트로 보내고 Content-Length 를 약속하지 않는다(회사 DRM 이 감싼 파일의 크기 불일치 함정).
 """
@@ -236,3 +238,32 @@ def logbook_new(
             "uploading_since": uploading_since,
             "open_url": lb.public_base_url(request.url.hostname) + "/",
             "checked_at": datetime.now().isoformat(timespec="seconds")}
+
+
+# ── 원격 접속자 (스트림덱 'RDP 145' 키, 2026-11-20) ─────────────────────────────────
+# 145 는 다른 PC 의 `quser /server:` 조회를 막는다(로컬 계정 원격 UAC 제한) → 스트림덱이 직접 못 본다.
+# 서버가 자기 PC 에서 quser 를 돌리는 기존 /api/system/remote-sessions(exe '원격 확인', 관리자 토큰)와 같은 서비스를 쓰되,
+# 열쇠로도 부를 수 있게 활성 원격 세션의 이름과 접속 IP 만 돌려준다. IP 는 스트림덱이 '나'(자기 PC IP)인지 가르는 데 쓴다.
+# 145 는 한 명씩만 접속하므로 이름(사번 또는 IP 주인 이름)은 열쇠로도 준다 — 키의 목적이 '누가 쓰는가'다(사용자 결정 2026-11-20).
+
+@router.get("/api/admin-console/remote-sessions")
+def remote_sessions(
+    authorization: str | None = Header(default=None),
+    admin_console_key: str | None = Header(default=None, alias=STREAMDECK_KEY_HEADER),
+    db: Session = Depends(database.get_db),
+):
+    """조회 실패는 200 + error(빈 목록을 '아무도 없음'으로 오해하지 않게 ok=false)."""
+    from app.services.remote_session_service import get_remote_session_status
+
+    _authorize_console_reader(authorization, admin_console_key, db)
+    status = get_remote_session_status(include_ip=True, force_refresh=False)
+    error = status.get("error")
+    sessions = status.get("remote_sessions") or []
+    active = [{"name": str(s.get("display_name") or s.get("username") or "")[:40],
+               "ip": s.get("ip_address") or None}
+              for s in sessions if s.get("is_active")]
+    return {"ok": bool(status.get("supported")) and not error,
+            "error": error,
+            "active": active,
+            "disconnected": sum(1 for s in sessions if not s.get("is_active")),
+            "checked_at": status.get("checked_at") or datetime.now().isoformat(timespec="seconds")}

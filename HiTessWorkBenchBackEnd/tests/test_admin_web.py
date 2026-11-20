@@ -185,3 +185,40 @@ def test_logbook_new_errors(people, monkeypatch):
     _logbook_mock(monkeypatch, lambda r: httpx.Response(404, json={"detail": "not_found"}))
     res = client.get("/api/admin-console/logbook-new", params={"since": "2026-11-18T09:00:00"}, headers=h)
     assert res.status_code == 502 and res.json()["detail"] == "logbook_old_server"
+
+
+# ── 원격 접속자 ──
+
+def _remote_status(monkeypatch, status):
+    from app.services import remote_session_service
+    monkeypatch.setattr(remote_session_service, "get_remote_session_status", lambda **kw: status)
+
+
+def test_remote_sessions_with_streamdeck_key(people, monkeypatch):
+    key = "streamdeck-key-0123456789"
+    monkeypatch.setenv("ADMIN_CONSOLE_STREAMDECK_KEY_SHA256", hashlib.sha256(key.encode()).hexdigest())
+    _remote_status(monkeypatch, {
+        "supported": True, "checked_at": "2026-11-20T14:30:00",
+        "remote_sessions": [
+            {"username": "cf40_admin", "display_name": "홍길동", "ip_address": "10.14.40.7", "is_active": True},
+            {"username": "kimcs", "display_name": "kimcs", "ip_address": None, "is_active": False},
+        ],
+    })
+    client = TestClient(app)
+    res = client.get("/api/admin-console/remote-sessions", headers={admin_web.STREAMDECK_KEY_HEADER: key})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["ok"] is True and body["error"] is None
+    assert body["active"] == [{"name": "홍길동", "ip": "10.14.40.7"}]
+    assert body["disconnected"] == 1
+    assert client.get("/api/admin-console/remote-sessions",
+                      headers={admin_web.STREAMDECK_KEY_HEADER: "wrong"}).status_code == 401
+    assert client.get("/api/admin-console/remote-sessions").status_code == 401
+    assert client.get("/api/admin-console/remote-sessions", headers=_bearer(people["A222222"])).status_code == 403
+
+
+def test_remote_sessions_lookup_failure_is_not_empty(people, monkeypatch):
+    # quser 가 실패하면 빈 목록이지만 ok=false — 스트림덱이 'free' 로 그리면 안 된다
+    _remote_status(monkeypatch, {"supported": True, "remote_sessions": [], "error": "Remote session lookup failed: x"})
+    body = TestClient(app).get("/api/admin-console/remote-sessions", headers=_bearer(people["A111111"])).json()
+    assert body["ok"] is False and body["active"] == [] and "failed" in body["error"]
