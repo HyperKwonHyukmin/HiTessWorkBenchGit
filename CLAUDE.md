@@ -61,6 +61,7 @@ npm run dist
 v1.5.8 에서 결함 6건이 새어 나갔고 3건을 사용자가 먼저 찾았다(MySQL 정렬 버퍼 500 · lucide `Map` 아이콘이 전역 `Map` 을 가린 크래시 · 재시작 안 한 라우터 404).
 백엔드 테스트는 **SQLite** 라 MySQL 고유 실패를 못 잡고, 프론트는 컴포넌트 테스트가 없다. 그래서 커밋 직전에:
 1. 백엔드 테스트 + `npm run build` + `node --test src/utils/*.test.js`. 그 위에 **변경이 닿는 화면을 나열하고 그 화면이 부르는 API 를 실제로 1회씩 호출**한다.
+   ⚠ 70 `.env` 가 `AUTH_MODE=ad` 면 `test_auth_contract.py` 9건이 실패한다(테스트가 인증 모드를 고정하지 않음) — 백엔드 테스트는 `AUTH_MODE=employee_id` 를 앞에 붙여 돌린다(2026-11-20).
 2. DB 모델 변경 시 — `schema_bootstrap` 멱등 보강, 그 테이블을 `ORDER BY` 하는 목록 쿼리에 JSON/TEXT 가 끼는지, 목록 API 를 작은·큰 limit 로 두 번 호출.
 3. 새 라우터 — `main.py` 등록 + 실제 재시작 후 200, 필요하면 `GUARDED_ROUTES` 등록.
 4. 프론트 — 아이콘 이름이 JS 내장(`Map`/`Set`/`Image`)과 겹치지 않는지, 서버 실패 때 로컬 값을 덮어쓰지 않는지.

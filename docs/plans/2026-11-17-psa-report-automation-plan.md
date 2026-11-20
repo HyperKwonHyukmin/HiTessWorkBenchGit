@@ -184,7 +184,7 @@ Productivity Apps 에 새 App `PSA 평가보고서 자동화 프로그램`(categ
 - **70 백엔드 재시작(먼저)** — 사용자가 13:15 에 앱으로 만든 3441 보고서까지는 엑셀 단위 Line, Legacy 응력, 그림 제목 이름이 반영됐다. 그 뒤 고친
   Compressor Room 자리 빼기, 목차 다시 쓰기, 숫자 자릿수 고정은 재시작해야 앱에 반영된다. 재생성 확인본 = UNC `UnLock\PSA_Report\3441TD_1315\재생성_*.docx`(Word 로 열어 [예] 갱신 후 목차, 쪽 번호 확인 안 함).
 - **3441 제출 전 사용자 몫**: 보고서 정보 빈칸 14개(표지, Hull No., 가속도 기준 선급과 규정, P&ID 도면 번호)와 개정 이력 내용. 지금은 '[Not provided]' 와 호선 없는 파일 이름.
-- **커밋 전**: PSA 보고서 자동화 전체(백엔드 라우터, 생성기, 서식 .bin, 화면 컴포넌트) 미커밋 — `hitess-code-reviewer` 1회 → 커밋 → 145 `pip install python-docx` + `git pull` + 재시작 + 새 exe.
+- **커밋과 릴리스 (2026-11-20)**: 전체 커밋 `23a2457`(리뷰 뒤 기록 이름 `PsaReport` 를 카탈로그 `programNames` 에 연결), WorkBench 1.7.27 릴리스 `aa8b96b` 에 포함. **145 미반영** — 순서 = `pip install python-docx==1.2.0` → ⟳ Update(git pull) + 재시작 → 새 exe 1.7.27. 반영 뒤 DRM 엑셀 하나로 145 복호화 확인(아래 'DRM 원본 그대로 올리기').
 - 목차 쪽 번호는 Word 갱신에 맡긴다(서버에 LibreOffice, Word 없음). 사용자가 '갱신 없이' 를 원하면 앱(Electron, 사용자 PC 의 Word)으로 받은 뒤 갱신하는 방법을 따로 검토.
 - 서식 그대로인 자리(재질 표, 허용응력 115.14 / 153.13, 마찰계수, 보온 두께, Load cases 표 5.1~5.3)는 호선이 달라도 안 바뀐다 — 입력으로 받을지 사용자 결정.
 - 부록 B(Isometric Drawings, Input Echo)는 제목만 — 고른 PDF 를 쪽 그림으로 넣을지 사용자 결정. 7장 노즐 표는 그림으로만 받는다.
@@ -196,4 +196,4 @@ Productivity Apps 에 새 App `PSA 평가보고서 자동화 프로그램`(categ
 - **화면 연결 (2026-11-18)**: [보고서 만들기] 승인 → `reportExclusions` 를 넣어 `savePsaInput` 즉시 저장(자동 저장 1.2초를 기다리지 않음) → `generatePsaReport`(`api/psaReport.js`, blob, 오류 본문 Blob 에서 detail 추출) → a 태그로 내려받기. 진행 중 버튼 잠금, 끝나면 받은 파일 이름과 서버 경고(`X-Report-Warnings`)를 레일에 보인다. 70 서버에 화면과 같은 순서(작업 폴더 → 고른 xlsx 올리기 → 입력 저장 → POST /report)를 실제 3441 데이터로 돌려 200·10.6초·2.5 MB, 6장 절 7개, Node 표 10개 채움, Code Compliance 는 TD03 만 값(나머지 '자료 없음'), 파일 이름 헤더와 Expose 헤더 확인. 앱 안에서 버튼을 눌러 Electron 저장 대화상자가 뜨는지는 확인 안 함.
 - **눈으로 확인 안 함**: 생성 docx 를 Word 로 열어 본 적 없음. Word COM 의 PDF 내보내기가 멈춰(회사 DRM 확인 창으로 추정) 화면 대조를 못 했다. 시험본 = UNC `UnLock\PSA_Report\_generated_test.docx`(갱신 표시 없이 만든 판 — 열고 F9).
 - TD05 의 빈 `Sheet1.xlsx` 를 후보에서 뺄지(물었으나 답 없음), COMP.RM ISO 하나 또는 여럿(미정).
-- 70 백엔드 재시작 + `pip install python-docx`(145 도) 해야 라우트가 뜬다. 전부 미커밋.
+- 70 백엔드 재시작 + `pip install python-docx`(145 도) 해야 라우트가 뜬다.
