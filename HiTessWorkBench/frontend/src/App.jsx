@@ -77,6 +77,7 @@ const SidePassageAssessment = lazy(() => import('./pages/analysis/SidePassageAss
 const ModuleUnitOceanTransportAnalysis = lazy(() => import('./pages/analysis/ModuleUnitOceanTransportAnalysis'));
 const F06ParserPage = lazy(() => import('./pages/analysis/F06ParserPage'));
 const HullAccelerationPage = lazy(() => import('./pages/analysis/HullAccelerationPage'));
+const PsaReportAutomation = lazy(() => import('./pages/analysis/PsaReportAutomation'));
 const AnalysisReportGenerator = lazy(() => import('./pages/analysis/AnalysisReportGenerator'));
 const HpScrAssessment = lazy(() => import('./pages/analysis/HpScrAssessment'));
 const DoublePipeFuelLineAssessment = lazy(() => import('./pages/analysis/DoublePipeFuelLineAssessment'));
@@ -660,6 +661,7 @@ function AppInner() {
       case 'F06 Parser': return <F06ParserPage />;
       case '선급 Rule 기반 선체 가속도 Calculation': return <HullAccelerationPage />;
       case 'Analysis Report Generator': return <AnalysisReportGenerator />;
+      case 'PSA 평가보고서 자동화 프로그램': return <PsaReportAutomation />;
       case 'Productivity Apps': return <ProductivityApps />;
       case 'HiTESS Model Builder': return <HiTessModelBuilder />;
       case 'Group & Module Unit 권상 구조 해석': return <GroupModuleUnitLiftingAnalysis />;

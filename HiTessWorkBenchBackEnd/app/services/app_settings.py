@@ -70,6 +70,7 @@ GUARDED_ROUTES: tuple[tuple[str, str], ...] = (
     ("/api/analysis/bdfscanner/", "BDF Scanner"),
     ("/api/analysis/f06parser/", "F06 Parser"),
     ("/api/analysis/hullacceleration/", "선급 Rule 기반 선체 가속도 Calculation"),
+    ("/api/analysis/psa-report/", "PSA 평가보고서 자동화 프로그램"),
     ("/api/analysis/beam/request", "Simple Beam Assessment"),
     ("/api/section-property/calculate", "Section Property Calculator"),
     ("/api/davit/mast-post", "Mast Post Assessment"),

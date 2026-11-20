@@ -49,6 +49,7 @@ from .routers import (
     preferences,
     presentations,
     presence,
+    psa_report,
     reports,
     section_property,
     support,
@@ -269,6 +270,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(manuals.router)
     application.include_router(am_intake.router)
     application.include_router(am_intake.page_router)
+    application.include_router(psa_report.router)
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     application.mount(

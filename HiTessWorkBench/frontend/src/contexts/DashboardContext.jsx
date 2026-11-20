@@ -76,6 +76,7 @@ const RAW_ANALYSIS_DATA = [
   { mode: "Productivity", category: "BDF Tools", title: "BDF Scanner", description: "BDF 모델 파일의 유효성을 검증하고, 선택적으로 Nastran 해석 후 F06 결과를 요약합니다.", icon: Wrench, color: "bg-amber-500", tags: ["BDF", "유효성검증", "Nastran"], devStatus: "Active", contributor: "권혁민", relatedApps: ["F06 Parser", "HiTESS Model Builder"], transferOutputs: [{ key: 'f06', label: 'F06 파일', targetApp: 'F06 Parser' }] },
   { mode: "Productivity", category: "F06 Tools", title: "F06 Parser", description: "Nastran SOL 101 F06 파일에서 Displacement, SPC Force, CBAR/CBEAM/CROD 내력·응력을 추출하고 Subcase별 테이블로 조회합니다.", icon: Wrench, color: "bg-amber-500", tags: ["F06", "Nastran", "결과추출", "1D"], devStatus: "Active", contributor: "권혁민", relatedApps: ["BDF Scanner"], acceptsTransferFrom: ['BDF Scanner'] },
   { mode: "Productivity", category: "Hull Accel", title: "선급 Rule 기반 선체 가속도 Calculation", description: "Trim & Stability Booklet PDF를 업로드하여 선박 제원과 Loading Conditions를 추출하고 선급 Rule 기반 선체 가속도를 계산합니다.", icon: Wrench, color: "bg-amber-500", tags: ["선급", "가속도", "PDF", "Loading Conditions"], devStatus: "Active", contributor: "정병훈" },
+  { mode: "Productivity", category: "Report", title: "PSA 평가보고서 자동화 프로그램", description: "LNG 연료배관 PSA 평가보고서에 들어갈 Line 목록, Process Condition, Displacement, Acceleration, Manifold Load 를 입력하고 Line 별 해석 결과 폴더를 정리합니다.", icon: Wrench, color: "bg-amber-500", tags: ["PSA", "배관응력", "보고서", "LNG"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "Productivity", category: "Report", title: "Analysis Report Generator", description: "완료된 해석 이력을 선택하여 표준 계산서(XLSX)를 생성합니다.", icon: Wrench, color: "bg-amber-500", tags: ["계산서", "리포트", "XLSX"], devStatus: "Developing", contributor: "권혁민" },
 ];
 
@@ -244,6 +245,11 @@ const APP_REGISTRY_OVERRIDES = {
     apiEndpoint: "/api/analysis/hullacceleration/request",
     supportsRerun: true,
   },
+  "PSA 평가보고서 자동화 프로그램": {
+    menuName: "PSA 평가보고서 자동화 프로그램",
+    // 백엔드 기록 program_name = PsaReport(routers/psa_report.py PROGRAM_NAME)
+    programNames: ["PsaReport", "PSA 평가보고서 자동화 프로그램"],
+  },
   "Analysis Report Generator": {
     menuName: "Analysis Report Generator",
     programNames: ["Analysis Report Generator"],
@@ -280,6 +286,7 @@ const APP_CAPABILITY_METADATA = {
   "BDF Scanner": { inputFormats: ["BDF"], outputFormats: ["Validation", "F06"], workflow: "File" },
   "F06 Parser": { inputFormats: ["F06"], outputFormats: ["Table", "CSV"], workflow: "File" },
   "선급 Rule 기반 선체 가속도 Calculation": { inputFormats: ["PDF"], outputFormats: ["JSON", "CSV", "TXT"], workflow: "Pipeline" },
+  "PSA 평가보고서 자동화 프로그램": { inputFormats: ["Direct input", "Folder"], outputFormats: ["JSON"], workflow: "Productivity" },
   "Analysis Report Generator": { inputFormats: ["해석 이력"], outputFormats: ["XLSX"], workflow: "Productivity" },
 };
 
