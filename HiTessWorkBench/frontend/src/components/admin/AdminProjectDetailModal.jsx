@@ -2,6 +2,9 @@
 /// 관리자 All Projects — 해석 1건의 작업 폴더 파일(입력·결과·기타)을 보고 받고,
 /// 고른 파일을 Hi-TESS LogBook '정리 대기'로 보낸다(서버끼리 전송).
 /// BDF 는 보내기 전에 3D 로 확인할 수 있다(BdfPreviewDialog — LogBook 뷰어 사본).
+/// My Projects '내 해석 LogBook 으로 보내기'(LogBook 65)도 이 화면을 쓴다 — loadFiles, sendToLogbook 을
+/// 내 해석용 API 로 바꾸고 allowPreview=false(3D 미리보기 API 는 관리자 전용). 서버가 canSend=false 를 주면
+/// blockedReason 을 보이고 보내기 버튼을 막는다.
 /// </summary>
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -34,7 +37,7 @@ function MetaItem({ label, children, wrap = false }) {
   );
 }
 
-function FileGroup({ group, selected, onToggle, onToggleAll, onDownload, onPreview, showFolder, downloading }) {
+function FileGroup({ group, selected, onToggle, onToggleAll, onDownload, onPreview, showFolder, downloading, allowPreview }) {
   const sendable = group.files.filter(f => !f.drm);
   const allChecked = sendable.length > 0 && sendable.every(f => selected.has(f.path));
   return (
@@ -82,7 +85,7 @@ function FileGroup({ group, selected, onToggle, onToggleAll, onDownload, onPrevi
             <span className="hidden w-28 shrink-0 text-right text-[11px] tabular-nums text-slate-500 md:inline">
               {formatShortDateTime(f.modified)}
             </span>
-            {isPreviewableBdf(f) ? (
+            {allowPreview && isPreviewableBdf(f) ? (
               <button
                 type="button"
                 onClick={() => onPreview(f)}
@@ -112,7 +115,10 @@ function FileGroup({ group, selected, onToggle, onToggleAll, onDownload, onPrevi
   );
 }
 
-export default function AdminProjectDetailModal({ project, onClose, onExported }) {
+export default function AdminProjectDetailModal({
+  project, onClose, onExported,
+  loadFiles = getAdminProjectFiles, sendToLogbook = exportProjectToLogbook, allowPreview = true,
+}) {
   const { showToast } = useToast();
   const [listing, setListing] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -133,7 +139,7 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
     setLoading(true);
     setError(null);
     try {
-      const { data } = await getAdminProjectFiles(project.id);
+      const { data } = await loadFiles(project.id);
       setListing(data);
       // 처음에는 아무것도 체크하지 않는다 — 보낼 파일은 관리자가 직접 고른다.
       // 단 권상 해석은 Wire 모델 + 구조 해석 결과 세트를 미리 체크한다(권장, 관리자가 뺄 수 있다 — 2026-11-06).
@@ -143,7 +149,7 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
     } finally {
       setLoading(false);
     }
-  }, [project?.id]);
+  }, [project?.id, loadFiles]);
 
   useEffect(() => {
     setListing(null);
@@ -158,7 +164,10 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
   const groups = useMemo(() => groupFilesByRole(files), [files]);
   const summary = useMemo(() => summarizeSelection(files, selected), [files, selected]);
   const showFolder = (listing?.folders?.length || 0) > 1;
-  const bdfFiles = useMemo(() => groups.flatMap(g => g.files).filter(isPreviewableBdf), [groups]);
+  const bdfFiles = useMemo(
+    () => (allowPreview ? groups.flatMap(g => g.files).filter(isPreviewableBdf) : []), [groups, allowPreview]);
+  // 내 해석 보내기 — 서버가 못 보낸다고 하면(실패한 해석, 기능 꺼짐 등) 이유를 보이고 버튼을 막는다. 관리자 목록에는 이 칸이 없다
+  const blockedReason = listing?.canSend === false ? (listing.blockedReason || 'LogBook 으로 보낼 수 없는 해석입니다.') : null;
   // 미리보기에서 오갈 목록 — 체크한 BDF 가 있으면 그것만, 없으면 전체 BDF(행의 3D 버튼으로 연 경우 그 파일 포함)
   const checkedBdf = useMemo(() => bdfFiles.filter(f => selected.has(f.path)), [bdfFiles, selected]);
   const checkedUnreviewed = useMemo(() => files.filter(f => f.mbReview && selected.has(f.path)), [files, selected]);
@@ -195,11 +204,11 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
   };
 
   const send = async () => {
-    if (!summary.count || sending) return;
+    if (!summary.count || sending || blockedReason) return;
     setSending(true);
     setResult(null);
     try {
-      const { data } = await exportProjectToLogbook(project.id, {
+      const { data } = await sendToLogbook(project.id, {
         paths: files.filter(f => selected.has(f.path)).map(f => f.path),
         title: title.trim(),
         note: note.trim(),
@@ -249,7 +258,7 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
               variant="primary"
               size="md"
               isLoading={sending}
-              disabled={!summary.count || sending}
+              disabled={!summary.count || sending || !!blockedReason}
               onClick={send}
             >
               {!sending && <Send size={15} aria-hidden="true" />}
@@ -262,10 +271,14 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
       {project && (
         <div className="space-y-5 p-6">
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-4">
-            <MetaItem label="사용자">
-              {project.userName} <span className="font-mono text-xs font-normal text-slate-500">({project.employee_id})</span>
-            </MetaItem>
-            <MetaItem label="부서">{project.department}</MetaItem>
+            {project.userName !== undefined && (
+              <>
+                <MetaItem label="사용자">
+                  {project.userName} <span className="font-mono text-xs font-normal text-slate-500">({project.employee_id})</span>
+                </MetaItem>
+                <MetaItem label="부서">{project.department}</MetaItem>
+              </>
+            )}
             <MetaItem label="App" wrap>{getDisplayProgramName(project.program_name)}</MetaItem>
             <MetaItem label="상태"><StatusBadge status={project.status} size="sm" /></MetaItem>
             <MetaItem label="실행 시각">{formatShortDateTime(project.created_at)}</MetaItem>
@@ -318,6 +331,7 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
                     onPreview={(f) => setPreviewPath(f.path)}
                     showFolder={showFolder}
                     downloading={downloading}
+                    allowPreview={allowPreview}
                   />
                 ))}
                 {listing?.truncated && (
@@ -336,6 +350,11 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
               체크한 파일이 내 이름의 LogBook <b>정리 대기</b> 묶음으로 들어가고, 보내면 LogBook 창이 바로 열립니다. 제목·호선 정리와 확정은 LogBook 에서 합니다.
               LogBook 에 이미 있는 것과 똑같은 BDF 와 회사 DRM 으로 암호화된 파일은 받지 않습니다.
             </p>
+            {blockedReason && (
+              <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                {blockedReason}
+              </p>
+            )}
             {/* Model Builder 가 만들고 사람이 아직 검토하지 않은 BDF — 막지 않고 알린다(MB 계획서 6단계) */}
             {checkedUnreviewed.length > 0 && (
               <p role="note" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
@@ -439,14 +458,16 @@ export default function AdminProjectDetailModal({ project, onClose, onExported }
           </section>
         </div>
       )}
-      <BdfPreviewDialog
-        analysisId={project?.id}
-        files={previewFiles}
-        initialPath={previewPath}
-        selected={selected}
-        onToggleSelected={toggle}
-        onClose={() => setPreviewPath(null)}
-      />
+      {allowPreview && (
+        <BdfPreviewDialog
+          analysisId={project?.id}
+          files={previewFiles}
+          initialPath={previewPath}
+          selected={selected}
+          onToggleSelected={toggle}
+          onClose={() => setPreviewPath(null)}
+        />
+      )}
     </Modal>
   );
 }

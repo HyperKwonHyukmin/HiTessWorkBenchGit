@@ -169,8 +169,11 @@ def test_files_ignores_paths_outside_user_connection(switchable_client, db_sessi
 # ── LogBook 보내기 ────────────────────────────────────────────────────────────
 
 class FakeLogbook:
-    def __init__(self, drm_paths=(), finish_status=200, begin_status=201, blocked=None):
+    def __init__(self, drm_paths=(), finish_status=200, begin_status=201, blocked=None, sender="ADMIN001",
+                 begin_detail="sender_not_admin"):
         self.calls = []
+        self.sender = sender
+        self.begin_detail = begin_detail
         self.chunks: dict[str, bytes] = {}
         self.drm_paths = set(drm_paths)
         self.finish_status = finish_status
@@ -183,10 +186,10 @@ class FakeLogbook:
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         self.calls.append((request.method, url.path, q))
         assert request.headers.get("X-HiTESS-Integration") == SECRET
-        assert q.get("as") == "ADMIN001"
+        assert q.get("as") == self.sender
         if request.method == "POST" and url.path == "/api/integration/uploads":
             if self.begin_status != 201:
-                return httpx.Response(self.begin_status, json={"detail": "sender_not_admin"})
+                return httpx.Response(self.begin_status, json={"detail": self.begin_detail})
             self.begin_body = json.loads(request.content)
             return httpx.Response(201, json={"key": "20261013-1-abcd", "state": "uploading"})
         if request.method == "PUT" and url.path.endswith("/chunk"):
@@ -235,6 +238,7 @@ def test_export_sends_files_and_records(switchable_client, db_session, user_conn
     assert fake.chunks[f"{folder}/sub/extra.f06"] == b"F06"
     assert fake.begin_body["name"] == f"WB #{a.id} · GroupModuleUnit · EMP001"
     assert fake.begin_body["origin"]["owner"] == "EMP001" and fake.begin_body["origin"]["note"] == "좋은 권상 모델"
+    assert fake.begin_body["via"] == "all_projects"
     assert {f["rel_path"]: f["size"] for f in fake.finish_body["files"]}[f"{folder}/step1.json"] == 2
 
     row = db_session.query(models.LogbookExport).one()
@@ -616,3 +620,69 @@ def test_files_and_bulk_plan_flag_unreviewed_model_builder_bdf(switchable_client
     item = switchable_client.post("/api/admin/projects/logbook/plan", json={"ids": [a.id]}).json()["items"][0]
     assert item["ok"]
     assert any("검증 안 된 Model Builder 모델" in w and "7건" in w for w in item["warnings"])
+
+
+# ── My Projects 내 해석 보내기(LogBook 65, `/api/analysis/{id}/logbook*`) ─────────────────
+
+def _my_paths(client, aid):
+    return [f["path"] for f in client.get(f"/api/analysis/{aid}/logbook/files").json()["files"]]
+
+
+def test_owner_lists_and_sends_own_analysis(switchable_client, db_session, user_conn, enabled, fake_lb):
+    fake = fake_lb(sender="EMP001")
+    a = _gmu(db_session, user_conn)                       # 주인 EMP001
+    switchable_client.as_user()
+    listing = switchable_client.get(f"/api/analysis/{a.id}/logbook/files").json()
+    assert listing["canSend"] is True and listing["blockedReason"] is None and len(listing["files"]) == 3
+    r = switchable_client.post(f"/api/analysis/{a.id}/logbook", json={"paths": _my_paths(switchable_client, a.id)})
+    assert r.status_code == 200, r.text
+    assert fake.begin_body["origin"]["owner"] == "EMP001" and fake.begin_body["via"] == "my_projects"
+    row = db_session.query(models.LogbookExport).one()
+    assert row.sent_by == "EMP001" and row.state == "staged"
+    # 관리자 All Projects 에도 같은 이력으로 보인다
+    switchable_client.as_admin()
+    assert switchable_client.get(f"/api/admin/projects/{a.id}/files").json()["exports"][0]["sent_by"] == "EMP001"
+
+
+def test_owner_cannot_touch_others_analysis(switchable_client, db_session, user_conn, enabled, fake_lb):
+    fake_lb(sender="EMP001")
+    other = _analysis(db_session, eid="EMP002")
+    switchable_client.as_user()
+    assert switchable_client.get(f"/api/analysis/{other.id}/logbook/files").status_code == 403
+    assert switchable_client.post(f"/api/analysis/{other.id}/logbook", json={"paths": ["x"]}).status_code == 403
+    # 관리자도 이 경로로는 남의 해석을 보내지 않는다(All Projects 에서)
+    switchable_client.as_admin()
+    assert switchable_client.post(f"/api/analysis/{other.id}/logbook", json={"paths": ["x"]}).status_code == 403
+    assert db_session.query(models.LogbookExport).count() == 0
+
+
+def test_owner_send_success_only(switchable_client, db_session, user_conn, enabled, fake_lb):
+    fake_lb(sender="EMP001")
+    root = _work(user_conn, "20261001_090000_EMP001_TrussAssessment", {"m.bdf": b"x"})
+    a = _analysis(db_session, program="TrussAssessment", status="Failed", input_info={"bdf": str(root / "m.bdf")})
+    switchable_client.as_user()
+    listing = switchable_client.get(f"/api/analysis/{a.id}/logbook/files").json()
+    assert listing["canSend"] is False and "성공한 해석만" in listing["blockedReason"]
+    r = switchable_client.post(f"/api/analysis/{a.id}/logbook", json={"paths": [str(root / "m.bdf")]})
+    assert r.status_code == 422 and "성공한 해석만" in r.json()["detail"]
+    assert db_session.query(models.LogbookExport).count() == 0
+
+
+def test_owner_send_switch_off(switchable_client, db_session, user_conn, enabled, fake_lb, monkeypatch):
+    monkeypatch.setenv("LOGBOOK_OWNER_SEND", "0")
+    fake_lb(sender="EMP001")
+    a = _gmu(db_session, user_conn)
+    switchable_client.as_user()
+    assert switchable_client.get(f"/api/analysis/{a.id}/logbook/files").json()["canSend"] is False
+    r = switchable_client.post(f"/api/analysis/{a.id}/logbook", json={"paths": _my_paths(switchable_client, a.id)})
+    assert r.status_code == 503
+
+
+def test_owner_send_old_logbook_message(switchable_client, db_session, user_conn, enabled, fake_lb):
+    """옛 LogBook(65 이전)은 비관리자에게 sender_not_admin — '아직 지원하지 않음'으로 알린다."""
+    fake_lb(sender="EMP001", begin_status=403)
+    a = _gmu(db_session, user_conn)
+    switchable_client.as_user()
+    r = switchable_client.post(f"/api/analysis/{a.id}/logbook", json={"paths": _my_paths(switchable_client, a.id)})
+    assert r.status_code == 502 and "아직 이 기능" in r.json()["detail"]
+    assert db_session.query(models.LogbookExport).one().state == "failed"

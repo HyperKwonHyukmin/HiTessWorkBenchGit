@@ -44,6 +44,12 @@ def send_passport_enabled() -> bool:
     return os.environ.get("LOGBOOK_SEND_PASSPORT", "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def owner_send_enabled() -> bool:
+    """My Projects '내 해석 LogBook 으로 보내기'(LogBook 65). 기본 켜짐 — 문제가 생기면 `.env` 에
+    `LOGBOOK_OWNER_SEND=0` 을 넣고 재시작해 끈다(App Settings 화면은 앱 카탈로그만 다뤄 여기에 쓸 수 없다)."""
+    return os.environ.get("LOGBOOK_OWNER_SEND", "").strip().lower() not in ("0", "false", "no", "off")
+
+
 def integration_secret() -> str:
     return os.environ.get("LOGBOOK_INTEGRATION_SECRET", "").strip()
 

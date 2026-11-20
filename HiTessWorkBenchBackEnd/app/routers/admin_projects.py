@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 from datetime import date as _date
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -24,9 +23,7 @@ from sqlalchemy.orm import Session
 from .. import database, models
 from ..dependencies import require_admin
 from ..services import admin_projects as svc
-from ..services import logbook_integration as lb
 from ..services.bdf_preview import service as preview
-from ..services.activity_service import log_activity
 from . import analysis as analysis_router
 
 router = APIRouter(prefix="/api/admin/projects", tags=["admin-projects"])
@@ -273,53 +270,11 @@ def export_to_logbook(
     admin_id: str = Depends(require_admin),
 ):
     record = _record_or_404(db, analysis_id)
-    resolved = _resolved(db, record)
-    # LogBook 49 — 권상 해석은 Wire 모델(_lifting.bdf)·권상 위치 JSON 을 고르지 않았어도 함께 보낸다(한 자료로 묶인다)
-    paths, auto_added = svc.with_lifting(record.program_name, resolved, payload.paths)
-    if len(paths) > svc.MAX_EXPORT_FILES:
-        raise HTTPException(status_code=422, detail=f"한 번에 보낼 수 있는 파일 수({svc.MAX_EXPORT_FILES}개)를 넘었습니다.")
     try:
-        picked = svc.select_paths(resolved, paths)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    total = sum(os.path.getsize(p) for p, _f, _r in picked)
-    if total > svc.MAX_EXPORT_BYTES:
-        raise HTTPException(status_code=413, detail=f"한 번에 보낼 수 있는 크기({svc.MAX_EXPORT_BYTES // 1024 ** 3}GB)를 넘었습니다.")
-
-    owner = analysis_router._norm_eid(record.employee_id)
-    title = (payload.title or "").strip() or f"WB #{record.id} · {record.program_name} · {owner}"
-    note = (payload.note or "").strip() or None
-    origin = {"analysis_id": record.id, "owner": owner, "program": record.program_name,
-              "project": record.project_name, "created_at": record.created_at.isoformat() if record.created_at else None,
-              "note": note}
-    # Hi-TESS Core 1단계 — 해석 여권(산출물 sha256)을 함께 보낸다. LOGBOOK_SEND_PASSPORT 가 비면 지금과 같다
-    if lb.send_passport_enabled():
-        passport = svc.passport_summary(record, analysis_router._USER_CONNECTION_DIR)
-        if passport:
-            origin["passport"] = passport
-    row = models.LogbookExport(analysis_id=record.id, sent_by=admin_id, title=title, note=note,
-                               created_at=datetime.now())
-    ip = request.client.host if request.client else None
-    try:
-        result = svc.send_to_logbook(sender=admin_id, name=title, origin=origin, picked=picked)
+        return svc.export_analysis(
+            db, record, _resolved(db, record), sender=admin_id, owner=analysis_router._norm_eid(record.employee_id),
+            requested=payload.paths, title=payload.title, note=payload.note,
+            ip=request.client.host if request.client else None,
+            user_connection_dir=analysis_router._USER_CONNECTION_DIR)
     except svc.ExportError as exc:
-        row.state = "failed"
-        row.error = exc.message
-        db.add(row)
-        db.commit()
-        log_activity(db, "LOGBOOK_EXPORT", employee_id=admin_id, status="failed", ip_address=ip,
-                     action_detail={"analysis_id": record.id, "error": exc.message})
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
-
-    row.batch_key = result["key"]
-    row.state = result["state"]
-    row.file_count = result["file_count"]
-    row.total_bytes = result["total_bytes"]
-    row.blocked = result["blocked"]
-    row.rejected = result["rejected"]
-    db.add(row)
-    db.commit()
-    log_activity(db, "LOGBOOK_EXPORT", employee_id=admin_id, ip_address=ip,
-                 action_detail={"analysis_id": record.id, "batch_key": result["key"], "state": result["state"],
-                                "files": result["file_count"], "auto_added": auto_added})
-    return {**result, "export_id": row.id, "title": title, "auto_added": auto_added}

@@ -410,6 +410,7 @@ class ExportError(Exception):
 
 _LB_MESSAGES = {
     "sender_not_admin": "LogBook 이 이 계정을 WorkBench 관리자로 확인하지 못했습니다.",
+    "sender_unknown": "LogBook 이 이 계정을 WorkBench 활성 사용자로 확인하지 못했습니다. 잠시 뒤 다시 시도하세요.",
     "sender_inactive": "LogBook 에서 이 계정이 비활성 상태입니다. LogBook 관리자에게 문의하세요.",
     "wb_unavailable": "LogBook 이 WorkBench 사용자 정보를 읽지 못했습니다. 잠시 뒤 다시 시도하세요.",
     "storage_unreachable": "LogBook 저장소(공유 폴더)에 연결할 수 없습니다. 잠시 뒤 다시 시도하세요.",
@@ -426,18 +427,28 @@ def _lb_detail(resp: httpx.Response):
     return body.get("detail") if isinstance(body, dict) else None
 
 
-def _raise_for(resp: httpx.Response, what: str) -> None:
+# My Projects 본인 보내기(LogBook 65)에서만 다르게 읽히는 코드. 옛 LogBook(65 이전)은 관리자가 아니면
+# 무조건 sender_not_admin 을 돌려주므로, 그때는 '서버가 아직 지원하지 않음'으로 알린다(배포 순서가 어긋난 경우).
+_LB_OWNER_MESSAGES = {
+    "sender_not_admin": "LogBook 서버가 아직 이 기능(내 해석 보내기)을 지원하지 않습니다. 관리자에게 LogBook 업데이트를 요청하세요.",
+    "sender_not_owner": "LogBook 이 이 해석의 주인을 확인하지 못했습니다. 자기 해석만 보낼 수 있습니다.",
+}
+
+
+def _raise_for(resp: httpx.Response, what: str, *, by_owner: bool = False) -> None:
     if resp.status_code < 400:
         return
     detail = _lb_detail(resp)
     code = detail if isinstance(detail, str) else (detail or {}).get("code") if isinstance(detail, dict) else None
-    message = _LB_MESSAGES.get(code or "") or f"LogBook {what} 실패 (HTTP {resp.status_code}{', ' + code if code else ''})"
+    message = ((_LB_OWNER_MESSAGES.get(code or "") if by_owner else None) or _LB_MESSAGES.get(code or "")
+               or f"LogBook {what} 실패 (HTTP {resp.status_code}{', ' + code if code else ''})")
     raise ExportError(502, message)
 
 
 def send_to_logbook(*, sender: str, name: str, origin: dict,
-                    picked: list[tuple[str, str, str]]) -> dict:
+                    picked: list[tuple[str, str, str]], by_owner: bool = False) -> dict:
     """선택한 파일을 LogBook 정리 대기로 보낸다. DRM 으로 암호화된 파일은 LogBook 이 받지 않아 rejected 로 넘긴다.
+    by_owner = My Projects 에서 해석 주인이 직접 보냄(오류 문구만 다르다).
     돌려주는 것: {key, state, blocked, rejected, file_count, total_bytes}."""
     secret = lb.integration_secret()
     if not secret:
@@ -450,8 +461,10 @@ def send_to_logbook(*, sender: str, name: str, origin: dict,
     try:
         with httpx.Client(timeout=EXPORT_TIMEOUT, transport=_http_transport) as client:
             r = client.post(f"{base}/api/integration/uploads", params=params, headers=headers,
-                            json={"name": name[:255], "origin": origin})
-            _raise_for(r, "묶음 시작")
+                            json={"name": name[:255], "origin": origin,
+                                  # LogBook 65 — 감사 기록의 by(owner/admin)를 가른다. 옛 LogBook 은 모르는 칸이라 버린다
+                                  "via": "my_projects" if by_owner else "all_projects"})
+            _raise_for(r, "묶음 시작", by_owner=by_owner)
             key = r.json()["key"]
             try:
                 for real, folder, rel in picked:
@@ -471,7 +484,7 @@ def send_to_logbook(*, sender: str, name: str, origin: dict,
                                 rejected.append({"rel_path": lb_rel, "reason": "drm"})
                                 sent = -1
                                 break
-                            _raise_for(r, f"파일 전송({rel})")
+                            _raise_for(r, f"파일 전송({rel})", by_owner=by_owner)
                             sent += len(data)
                             first = False
                             if not data:
@@ -483,7 +496,7 @@ def send_to_logbook(*, sender: str, name: str, origin: dict,
                     raise ExportError(422, "보낼 수 있는 파일이 없습니다(모두 회사 DRM 으로 암호화됨).")
                 r = client.post(f"{base}/api/integration/uploads/{key}/finish", params=params, headers=headers,
                                 json={"files": declared, "rejected": rejected})
-                _raise_for(r, "묶음 마치기")
+                _raise_for(r, "묶음 마치기", by_owner=by_owner)
                 body = r.json()
             except Exception:
                 # 반쯤 올라간 묶음을 지운다(실패해도 LogBook 이 24시간 뒤 스스로 정리한다)
@@ -503,3 +516,64 @@ def send_to_logbook(*, sender: str, name: str, origin: dict,
         "file_count": len(declared),
         "total_bytes": total,
     }
+
+
+# ── 해석 1건 보내기(관리자 All Projects 와 My Projects 공용) ─────────────────────────
+
+def export_analysis(db, record: models.Analysis, resolved: dict, *, sender: str, owner: str,
+                    requested: list[str], title: Optional[str], note: Optional[str], ip: Optional[str],
+                    user_connection_dir: str, by_owner: bool = False) -> dict:
+    """고른 파일(+ 권상 Wire 세트 자동 첨부)을 LogBook 으로 보내고 LogbookExport 행과 활동 기록을 남긴다.
+
+    관리자(`POST /api/admin/projects/{id}/logbook`)와 해석 주인(`POST /api/analysis/{id}/logbook`, LogBook 65)이
+    같이 쓴다 — 첨부 규칙, 여권, 기록이 두 길에서 달라지지 않게 한 곳에 둔다.
+    입력 오류는 ExportError(422, 413), LogBook 실패는 ExportError(502, 503) — 호출한 라우터가 HTTPException 으로 바꾼다."""
+    from .activity_service import log_activity
+
+    # LogBook 49 — 권상 해석은 Wire 모델(_lifting.bdf)·권상 위치 JSON 을 고르지 않았어도 함께 보낸다(한 자료로 묶인다)
+    paths, auto_added = with_lifting(record.program_name, resolved, requested)
+    if len(paths) > MAX_EXPORT_FILES:
+        raise ExportError(422, f"한 번에 보낼 수 있는 파일 수({MAX_EXPORT_FILES}개)를 넘었습니다.")
+    try:
+        picked = select_paths(resolved, paths)
+    except ValueError as exc:
+        raise ExportError(422, str(exc))
+    total = sum(os.path.getsize(p) for p, _f, _r in picked)
+    if total > MAX_EXPORT_BYTES:
+        raise ExportError(413, f"한 번에 보낼 수 있는 크기({MAX_EXPORT_BYTES // 1024 ** 3}GB)를 넘었습니다.")
+
+    title = (title or "").strip() or f"WB #{record.id} · {record.program_name} · {owner}"
+    note = (note or "").strip() or None
+    origin = {"analysis_id": record.id, "owner": owner, "program": record.program_name,
+              "project": record.project_name, "created_at": record.created_at.isoformat() if record.created_at else None,
+              "note": note}
+    # Hi-TESS Core 1단계 — 해석 여권(산출물 sha256)을 함께 보낸다. LOGBOOK_SEND_PASSPORT 가 비면 지금과 같다
+    if lb.send_passport_enabled():
+        passport = passport_summary(record, user_connection_dir)
+        if passport:
+            origin["passport"] = passport
+    row = models.LogbookExport(analysis_id=record.id, sent_by=sender, title=title, note=note,
+                               created_at=datetime.now())
+    try:
+        result = send_to_logbook(sender=sender, name=title, origin=origin, picked=picked, by_owner=by_owner)
+    except ExportError as exc:
+        row.state = "failed"
+        row.error = exc.message
+        db.add(row)
+        db.commit()
+        log_activity(db, "LOGBOOK_EXPORT", employee_id=sender, status="failed", ip_address=ip,
+                     action_detail={"analysis_id": record.id, "error": exc.message, "by_owner": by_owner})
+        raise
+
+    row.batch_key = result["key"]
+    row.state = result["state"]
+    row.file_count = result["file_count"]
+    row.total_bytes = result["total_bytes"]
+    row.blocked = result["blocked"]
+    row.rejected = result["rejected"]
+    db.add(row)
+    db.commit()
+    log_activity(db, "LOGBOOK_EXPORT", employee_id=sender, ip_address=ip,
+                 action_detail={"analysis_id": record.id, "batch_key": result["key"], "state": result["state"],
+                                "files": result["file_count"], "auto_added": auto_added, "by_owner": by_owner})
+    return {**result, "export_id": row.id, "title": title, "auto_added": auto_added}

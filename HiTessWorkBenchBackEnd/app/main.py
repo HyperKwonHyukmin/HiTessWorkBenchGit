@@ -38,6 +38,7 @@ from .routers import (
     logbook_link,
     manuals,
     module_ocean_transport,
+    my_projects_logbook,
     newsletters,
     newsletter_web,
     history_web,
@@ -262,6 +263,7 @@ def create_app(*, lifespan_handler=lifespan) -> FastAPI:
     application.include_router(preferences.router)
     application.include_router(logbook_link.router)
     application.include_router(admin_projects.router)
+    application.include_router(my_projects_logbook.router)
     application.include_router(updates.router)
     application.include_router(videos.router)
     application.include_router(manuals.router)

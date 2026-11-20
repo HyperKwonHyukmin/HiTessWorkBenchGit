@@ -12,7 +12,7 @@ import {
   FileCode, Database, FileOutput, Eye, FileX,
   TrendingUp, CalendarClock, CalendarPlus, Pin, Award, BarChart3, Minus,
   GitCompare, Play, Square, CheckSquare, Fingerprint,
-  Clock3, ListChecks, Pipette, Terminal, Ban
+  Clock3, ListChecks, Pipette, Terminal, Ban, BookOpen
 } from 'lucide-react';
 
 import BdfViewerModal from '../../components/modals/BdfViewerModal';
@@ -27,6 +27,8 @@ import AssessmentProjectModal from '../../components/analysis/AssessmentProjectM
 import ResultArtifactsCard from '../../components/analysis/ResultArtifactsCard';
 import RetentionExtendDialog from '../../components/analysis/RetentionExtendDialog';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import AdminProjectDetailModal from '../../components/admin/AdminProjectDetailModal';
+import { exportMyProjectToLogbook, getMyProjectLogbookFiles } from '../../api/myProjectsLogbook';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { findAppByProgramName, getDisplayProgramName, useGlobalJobs } from '../../contexts/DashboardContext';
@@ -288,7 +290,7 @@ const DoublePipeProjectDetails = ({ project, filesMissing, onDownload }) => {
 // ==========================================
 // 3. 프로젝트 상세 모달 (공유 Modal 컴포넌트 사용)
 // ==========================================
-const ProjectDetailModal = ({ project, onClose, onOpen3D, onOpenResult }) => {
+const ProjectDetailModal = ({ project, onClose, onOpen3D, onOpenResult, onSendToLogbook }) => {
   const { showToast } = useToast();
   const [xlsxDownloading, setXlsxDownloading] = useState({});
   const [filesMissing, setFilesMissing] = useState(false);
@@ -397,7 +399,13 @@ const ProjectDetailModal = ({ project, onClose, onOpen3D, onOpenResult }) => {
       title={project?.project_name || 'Unnamed Project'}
       size="xl"
       footer={
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          {onSendToLogbook && project?.status === 'Success' && !filesMissing && (
+            <Button variant="secondary" size="md" onClick={() => onSendToLogbook(project)}>
+              <BookOpen size={15} aria-hidden="true" />
+              LogBook 으로 보내기
+            </Button>
+          )}
           <Button variant="secondary" size="md" onClick={onClose}>닫기</Button>
         </div>
       }
@@ -728,6 +736,12 @@ export default function MyProjects() {
   const [summary, setSummary] = useState(null);
   const [compareProjects, setCompareProjects] = useState([]);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
+  // 내 해석 LogBook 보내기 창 — 상세 창을 닫고 연다(창 두 개를 겹치지 않는다)
+  const [logbookProject, setLogbookProject] = useState(null);
+  const openLogbookSend = useCallback((p) => {
+    setSelectedProject(null);
+    setLogbookProject(p);
+  }, []);
   const [rerunningIds, setRerunningIds] = useState(() => new Set());
   // 보관 연장/핀 다이얼로그 대상 (null 이면 닫힘)
   const [retentionDialogProject, setRetentionDialogProject] = useState(null);
@@ -1421,6 +1435,7 @@ export default function MyProjects() {
           project={selectedProject}
           onClose={() => setSelectedProject(null)}
           onViewResultModel={() => setIsResultViewerOpen(true)}
+          onSendToLogbook={openLogbookSend}
           onOpenResult={canOpenResult(selectedProject) ? () => {
             const menu = reentryMenuForProgram(selectedProject.program_name);
             offerResultReentry(menu, selectedProject.id);
@@ -1433,6 +1448,7 @@ export default function MyProjects() {
           project={selectedProject}
           onClose={() => setSelectedProject(null)}
           onOpen3D={() => setIs3DViewerOpen(true)}
+          onSendToLogbook={openLogbookSend}
           onOpenResult={(p) => {
             const menu = reentryMenuForProgram(p.program_name);
             if (!menu) return;
@@ -1442,6 +1458,15 @@ export default function MyProjects() {
           }}
         />
       )}
+
+      {/* 내 해석 LogBook 으로 보내기(LogBook 65) — 관리자 All Projects 와 같은 화면을 내 해석 API 로 연다 */}
+      <AdminProjectDetailModal
+        project={logbookProject}
+        onClose={() => setLogbookProject(null)}
+        loadFiles={getMyProjectLogbookFiles}
+        sendToLogbook={exportMyProjectToLogbook}
+        allowPreview={false}
+      />
 
       {/* 3D BDF Viewer Modal (모델 형상만) — 비-Truss Assessment / 비-HP-SCR 프로젝트용 */}
       <BdfViewerModal

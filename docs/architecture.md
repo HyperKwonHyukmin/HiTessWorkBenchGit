@@ -73,7 +73,7 @@ React Router 대신 **NavigationContext** (`src/contexts/NavigationContext.jsx`)
 | 메뉴 이름 | 컴포넌트 | 설명 |
 |-----------|----------|------|
 | `'Dashboard'` | `dashboard/Dashboard.jsx` | 메인 대시보드 — 새 해석 시작(파일 전달)·내 작업·월별 실행 |
-| `'My Project'` / `'My Projects'` | `analysis/MyProjects.jsx` | 내 해석 이력 및 프로젝트 관리 |
+| `'My Project'` / `'My Projects'` | `analysis/MyProjects.jsx` | 내 해석 이력 및 프로젝트 관리, 내 해석 LogBook 보내기(성공한 해석만) |
 | `'New Analysis'` / `'File-Based Apps'` | `analysis/NewAnalysis.jsx` | 파일 업로드 기반 해석 선택 |
 | `'Truss Analysis'` | `analysis/TrussAnalysis.jsx` | CSV 업로드 + 3D 모델 뷰어 |
 | `'Truss Structural Assessment'` | `analysis/TrussAssessment.jsx` | BDF 업로드 + 구조 안정성 평가 |

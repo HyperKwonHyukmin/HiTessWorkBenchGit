@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, RefreshCw, FileOutput, Download, FileText, FileCode, FileX, Eye } from 'lucide-react';
+import { CheckCircle2, RefreshCw, FileOutput, Download, FileText, FileCode, FileX, Eye, BookOpen } from 'lucide-react';
 import { exportAssessmentXlsx, downloadFileBlob } from '../../api/analysis';
 import { extractFilename } from '../../utils/fileHelper';
 import Modal from '../ui/Modal';
@@ -13,10 +13,11 @@ import { useToast } from '../../contexts/ToastContext';
  * @param {() => void} [props.onViewResultModel] - 제공 시 상단에 "결과 모델 보기" 버튼 노출
  *   (MyProjects 등 과거 프로젝트 이력에서만 사용; TrussAssessment 즉시 결과 모달에서는 미전달)
  * @param {() => void} [props.onOpenResult] - 제공 시 '결과 화면에서 열기' 버튼 노출(My Projects → Truss Assessment 페이지)
+ * @param {(project: object) => void} [props.onSendToLogbook] - 제공 시 '내 해석 LogBook 으로 보내기' 버튼(성공한 해석만, LogBook 65)
  * @param {(kind: string) => void} [props.onDownloaded] - 파일을 실제로 받았을 때(Excel·원본) 호출.
  *   TrussAssessment 의 '보고서 저장' 단계 완료 표시에 쓴다(단계는 실제 사건으로만 완료).
  */
-export default function AssessmentProjectModal({ project, onClose, onViewResultModel, onDownloaded, onOpenResult }) {
+export default function AssessmentProjectModal({ project, onClose, onViewResultModel, onDownloaded, onOpenResult, onSendToLogbook }) {
   const { showToast } = useToast();
   const [downloading, setDownloading] = useState({});
   const [filesMissing, setFilesMissing] = useState(project?.files_available === false);
@@ -98,7 +99,13 @@ export default function AssessmentProjectModal({ project, onClose, onViewResultM
       title="해석 완료 및 파일 다운로드"
       size="lg"
       footer={
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          {onSendToLogbook && project?.status === 'Success' && !filesMissing && (
+            <Button variant="secondary" size="md" onClick={() => onSendToLogbook(project)}>
+              <BookOpen size={15} aria-hidden="true" />
+              LogBook 으로 보내기
+            </Button>
+          )}
           <Button variant="primary" size="md" onClick={onClose}>닫기</Button>
         </div>
       }
