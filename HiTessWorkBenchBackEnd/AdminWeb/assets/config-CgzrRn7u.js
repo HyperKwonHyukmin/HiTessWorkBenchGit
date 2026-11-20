@@ -1,1 +1,0 @@
-function e(){try{let e=localStorage.getItem(`server_url`);if(e&&e.trim())return e.trim().replace(/\/$/,``)}catch{}return``}var t=e();function n(e){let n=e.trim().replace(/\/$/,``);localStorage.setItem(`server_url`,n),t=n}export{n,t};
