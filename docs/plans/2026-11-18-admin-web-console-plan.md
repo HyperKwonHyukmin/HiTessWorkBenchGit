@@ -73,10 +73,11 @@ WorkBench.exe 를 켜지 않고 **회사 PC 크롬**에서 관리 업무를 하�
   145 인증서(SPKI `y5rO…` = 앱 고정값, SAN 에 IP 포함, 만료 2031-11-04)를 이 PC 내 계정 신뢰 루트에 넣음 — 크롬 재시작 뒤 '주의 요함'이 사라지는지는 아직 안 봄. 다른 PC 는 같은 방법(`certutil -user -addstore Root <crt>`, 넣기 전 지문 대조).
   '앱으로 설치'는 하지 않기로(사용자). **LogBook 관리 기능은 콘솔에 넣지 않는다**(사용자 결정 — LogBook 에 들어가서 한다).
   남은 일 없음(쓰다가 생기는 것만).
-- 2026-11-18 추가 — **스트림덱 'LB New' 키(LogBook 새 자료, 미커밋)**. 사용자 요청: 관리자라 내가 확인하지 않은 새 자료는 다 알려 달라.
+- 2026-11-18 추가 — **스트림덱 'LB New' 키(LogBook 새 자료, WorkBench `1b7cc89` · LogBook `2b64181`)**. 사용자 요청: 관리자라 내가 확인하지 않은 새 자료는 다 알려 달라.
   - 결정(사용자): 셀 것 = **마지막으로 확인한 뒤 다른 사람이 올린 묶음 전부**(상태 무관, 올리는 중·실패와 내가 올린 것 제외). '확인' = 키를 두 번 눌러 LogBook 을 연 순간(키 설정 `seenAt`). 브라우저로 따로 연 것은 치지 않는다(LogBook 에 관리자별 방문 기록을 새로 두는 것은 과하다고 판단).
   - 경로: 스트림덱 → WorkBench `GET /api/admin-console/logbook-new?since=`(HTTPS·지문, 같은 스트림덱 열쇠) → LogBook `GET /api/integration/new-uploads?since=&exclude=`(서버끼리 연동 비밀키). LogBook 은 평문 HTTP 라 스트림덱이 직접 가지 않는다. 빼는 사번 = 콘솔 사용자(열쇠면 `ADMIN_CONSOLE_VIEWERS` 첫 사번).
   - LogBook 시각은 서버 지역 시각(naive) — 스트림덱이 지역 시각으로 보내고, 시간대가 붙어 오면 LogBook 이 지역 시각으로 바꾼다.
   - 커밋 전 리뷰 반영: LogBook 의 받은 시각(`received_at`)은 올리기 **시작** 시각이라, 올리는 중에 확인하면 그 묶음을 영영 놓친다. LogBook 이 다른 사람이 올리는 중인 묶음의 가장 이른 시작 시각(`uploading_since`)을 함께 주고, 두 번 누르면 새로 조회해 확인 시각을 지금과 그 값 중 이른 쪽으로 잡는다(이미 본 묶음이 다시 셀 수 있음 — 놓치는 것보다 낫다고 판단). 열쇠로 온 요청에는 묶음 이름을 주지 않는다(열쇠는 프로필에 평문).
   - 두 번 누르면 WorkBench 가 알려 준 LogBook 주소(`public_base_url`, 기본 `http://<서버>:9095/`)를 연다.
   - 반영 순서: LogBook ⟳ Update + 재시작(새 경로) → WorkBench ⟳ Update + 재시작 → 이 PC Stream Deck 재시작. `.env` 변경 없음(연동 비밀키는 이미 있음). LogBook 이 옛 판이면 키에 `old LB`.
+  - 상태(2026-11-19): 145 두 곳 ⟳ Update 확인 — 키와 같은 열쇠로 `logbook-new` 호출이 200(`count: 0`, 1일과 7일 모두)이라 WorkBench → LogBook 경로는 돈다. **이 PC 스트림덱 프로필에 LB New 키가 아직 없다**(저장된 프로필에는 `WB Sign-ups` 만) — 키를 놓고 주소와 열쇠를 넣은 뒤 숫자와 두 번 누름(LogBook 열기, 0 으로)을 확인할 것. 7일 0건이 LogBook 실제 목록과 맞는지는 대조 안 함.

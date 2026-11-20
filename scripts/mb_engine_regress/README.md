@@ -36,6 +36,8 @@ python -X utf8 regress.py remeasure --label base_v0
 
 ⚠ 2026-11-12 블루스크린(ZsFw)으로 그 전 약 25분 동안 쓴 `regress.py` 와 `metrics.json` 26개가 NUL 로 손상됐다. 결과가 이상하면 `tr -cd '\000' < 파일 | wc -c` 로 먼저 본다. `remeasure` 로 `metrics.json` 은 다시 만들 수 있다.
 
+**결과 폴더 정리(2026-11-19)**: 실행 1회 약 1GB(엔진 단계 덤프 `0[1-9]_*`, `in_stru.*`, `00_InputAudit.json`, `nas_*` 폴더)라 46GB 까지 쌓였다. 비교 기준 `base_v0`, `rel_237a6a4` 만 통째로 두고, 나머지 실행은 판정 파일(`result.json`, `summary.md`, `compare_*.md`, `metrics.json`, `engine_stdout.txt`, `00_Verdict`, `00_StageSummary`, `00_Decisions`)만 남겼다. `compare` 는 `result.json`, `metrics.json` 만 읽어 그대로 되지만, 정리한 실행에는 `remeasure` 를 못 쓴다(BDF 필요). 그 실행들의 엔진 빌드는 `outputs/mb-engine-exe/<label>` 에 남겨 두었다. 새 실행도 비교가 끝나면 같은 방식으로 정리한다.
+
 ## 사람 검토 자료와의 대응
 
 | 출처 | 지적 | 지표 |

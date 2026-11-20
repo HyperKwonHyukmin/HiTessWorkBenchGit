@@ -637,7 +637,8 @@
    "swl_t": 15.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/A-15.json"
   },
   {
    "code": "A-20",
@@ -654,7 +655,8 @@
    "swl_t": 20.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/A-20.json"
   },
   {
    "code": "A-30, 30E, 30F",
@@ -673,7 +675,8 @@
    "swl_t": 30.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/A-30.json"
   },
   {
    "code": "A-40, 40E, 40F",
@@ -692,7 +695,8 @@
    "swl_t": 40.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/A-40.json"
   },
   {
    "code": "A-50, 50E, 50F",
@@ -711,7 +715,8 @@
    "swl_t": 50.0,
    "analysable": true,
    "note": null,
-   "convertible": false
+   "convertible": false,
+   "params": "params/A-50.json"
   },
   {
    "code": "B-5, B-5A",

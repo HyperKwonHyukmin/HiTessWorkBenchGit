@@ -1,0 +1,73 @@
+{
+ "schema": "lugparams/0.1",
+ "code": "A-40",
+ "pdfPage": 40,
+ "source": "hand",
+ "form": "a_type_lug",
+ "values": {
+  "base_length": 520,
+  "tail_height": 130,
+  "pin_height": 195,
+  "pin_back": 80,
+  "head_R": 165,
+  "hole_d": 76,
+  "main_t": 40,
+  "bracket_pos": 190,
+  "bracket_height": 270,
+  "bracket_width": 270,
+  "bracket_top": 20,
+  "bracket_foot": 60,
+  "scallop_R": 40,
+  "scallop_foot": 30,
+  "bracket_t": 28,
+  "material": "SWS400B",
+  "swl_t": 40
+ },
+ "review": [
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "source: 치수는 도면을 보고 사람이 적은 값 — 자중 대조 68.1 kg (도면 63.1 kg, +8.0%)"
+  },
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "mass: 그린 형상과 치수는 PDF 벡터와 0.5% 안에서 맞는데 도면 자중만 +8.0% 어긋남(같은 구조의 A-15, A-30, A-50 은 0.2% 안) — 도면 자중 표기 쪽 오차로 봄"
+  },
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "bracket: 따낸 자리는 바닥에서 본판 면 + R40 자리에 세로 30 곧게, 그 위 (본판 면, 높이 30) 중심 R40 원호로 읽음(도면 치수 R40, 30 + PDF 벡터). 괄호 치수(재생 최소 촌법)는 쓰지 않음"
+  },
+  {
+   "path": "/load_cases",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "load_angles: 도면 '사용 용도' 그림은 곡부 아래쪽 면에 붙은 모습입니다. 와이어가 수직이면 본판 기준 머리 쪽 약 125°, LOADING 범위 약 225° 는 본판 기준 약 −100° ~ +125° 로 읽어 위 0, 머리 쪽 90, 125, 꼬리 쪽 −100 네 경우 + 옆 기울기 15° 로 검토합니다. 실제 슬링 각도가 다르면 고치세요."
+  },
+  {
+   "path": "/welds",
+   "status": "missing",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "welds: 본판-바닥, 브래킷 용접은 모델에 넣지 않음(바닥 고정, 곡부 면은 평면으로 봄)"
+  },
+  {
+   "path": "/plates",
+   "status": "single_source",
+   "from_text": null,
+   "from_geometry": null,
+   "note": "A-40E, A-40F(NO BKT)는 브래킷 밑변 칸을 비우면 됩니다(개선 모양은 모델에 없음)"
+  }
+ ],
+ "mass_kg": 68.15,
+ "drawing_mass_kg": 63.1,
+ "drawing_mass_note": "그린 형상과 치수는 PDF 벡터와 0.5% 안에서 맞는데 도면 자중만 +8.0% 어긋남(같은 구조의 A-15, A-30, A-50 은 0.2% 안) — 도면 자중 표기 쪽 오차로 봄"
+}

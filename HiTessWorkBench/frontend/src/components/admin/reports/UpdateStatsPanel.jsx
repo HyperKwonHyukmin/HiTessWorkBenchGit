@@ -54,20 +54,27 @@ export default function UpdateStatsPanel() {
     return (
                     <tr key={e.entry} onClick={() => setEntryId(e.entry)}
                       className={`border-t border-slate-100 cursor-pointer ${active ? 'bg-blue-50' : nested ? 'bg-slate-50/60 hover:bg-slate-50' : 'hover:bg-slate-50'}`}>
-                      <td className={`py-2 pr-3 ${nested ? 'pl-8' : 'pl-3'}`}>
+                      <td className="px-3 py-2 align-top w-56">
+                        {!nested && (
+                          <>
+                            <span className="block text-sm font-bold text-slate-800">{e.app || '기타'}</span>
+                            {olderCount > 0 && (
+                              <button type="button" aria-expanded={open}
+                                onClick={(ev) => { ev.stopPropagation(); toggleApp(e.app || '기타'); }}
+                                className="mt-0.5 inline-flex items-center gap-0.5 rounded text-[11px] font-medium text-blue-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                                <ChevronRight size={12} className={open ? 'rotate-90' : ''} aria-hidden="true" />
+                                이전 안내 {olderCount}건
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </td>
+                      <td className={`py-2 pr-3 ${nested ? 'pl-6' : 'pl-3'}`}>
                         <button type="button" onClick={() => setEntryId(e.entry)} aria-pressed={active}
                           className="block rounded text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
                           <span className="block font-medium text-slate-800">{e.title}</span>
-                          <span className="block text-[11px] text-slate-500">{e.date}{e.app ? `  ${e.app}` : ''}</span>
+                          <span className="block text-[11px] text-slate-500 tabular-nums">{e.date}</span>
                         </button>
-                        {olderCount > 0 && (
-                          <button type="button" aria-expanded={open}
-                            onClick={(ev) => { ev.stopPropagation(); toggleApp(e.app || '기타'); }}
-                            className="mt-1 inline-flex items-center gap-0.5 rounded text-[11px] font-medium text-blue-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-                            <ChevronRight size={12} className={open ? 'rotate-90' : ''} aria-hidden="true" />
-                            이 App 의 이전 안내 {olderCount}건
-                          </button>
-                        )}
                       </td>
                       <td className="px-3 py-2">
                         {e.appEffect ? (
@@ -106,6 +113,7 @@ export default function UpdateStatsPanel() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs text-slate-500">
                 <tr>
+                  <th className="px-3 py-2 text-left font-bold">App</th>
                   <th className="px-3 py-2 text-left font-bold">안내</th>
                   <th className="px-3 py-2 text-left font-bold w-64" title="그 App 을 한 번이라도 실행한 사람(User Management 'App 사용자' 필터와 같은 사람들) 가운데 앱 안에서 안내를 연 사람">App 사용자 중 본 사람</th>
                   <th className="px-3 py-2 text-left font-bold" title="조회 = 열람 수(새로고침 포함), 앱 안 = 앱에서 연 사람, 브라우저 = 메일 링크 등으로 연 PC">조회</th>
@@ -129,7 +137,7 @@ export default function UpdateStatsPanel() {
           {selected && (
             <div className="border-t border-slate-100 pt-5 space-y-3">
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h4 className="text-sm font-bold text-slate-800">{selected.title}</h4>
+                <h4 className="text-sm font-bold text-slate-800">{selected.app ? <span className="mr-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-bold text-slate-700">{selected.app}</span> : null}{selected.title}</h4>
                 <span className="text-xs text-slate-500">
                   {selected.daily?.length
                     ? `조회 ${selected.views}회, 마지막 ${selected.daily[selected.daily.length - 1].day.slice(5)}`
