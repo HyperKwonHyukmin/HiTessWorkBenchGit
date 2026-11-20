@@ -26,16 +26,18 @@ ARTIFACT_SPECS = [
 ]
 
 
-def _find_artifact(folder: str, suffix: str, stem: Optional[str]) -> Optional[str]:
+def _find_artifact(folder: str, suffix: str, stem: Optional[str], exact: bool = False) -> Optional[str]:
     """folder 안에서 suffix 로 끝나는 산출물 경로를 찾는다.
 
     1) stem 이 주어지면 정확히 '<stem><suffix>' 를 우선 사용.
     2) 없으면 '*<suffix>' 글롭의 첫 매치(정렬)로 폴백 — stem 이 달라도 파일이 있으면 찾는다.
     """
     if stem:
-        exact = os.path.join(folder, f"{stem}{suffix}")
-        if os.path.isfile(exact):
-            return exact
+        exact_path = os.path.join(folder, f"{stem}{suffix}")
+        if os.path.isfile(exact_path):
+            return exact_path
+    if exact:
+        return None   # 소모듈 Case — 다른 Case 의 파일로 넘어가지 않는다
     matches = sorted(
         p for p in glob.glob(os.path.join(glob.escape(folder), f"*{suffix}"))
         if os.path.isfile(p)
@@ -64,12 +66,14 @@ def scan_lifting_artifacts(
     folder: str,
     stem: Optional[str] = None,
     source_bdf: Optional[str] = None,
+    exact: bool = False,
 ) -> list[dict]:
     """folder 안에서 알려진 lifting 산출물을 존재하는 것만 메타와 함께 반환.
 
     Args:
         folder:     산출물이 위치한 폴더(절대경로).
         stem:       원본 BDF 파일명 stem (예: 'model'). 정확 매칭 우선용. 없으면 글롭만 사용.
+        exact:      True 면 '<stem><suffix>' 만 본다(소모듈 Case 용 — 글롭 폴백으로 다른 Case 파일을 집지 않게).
         source_bdf: 원본(부모) 모델 BDF 경로. Wire 포함 구조 해석을 아직 안 했으면(`_lifting.bdf`
                     없음) 이 BDF 를 kind='sourceBdf' 로 대신 노출한다 — 결과 확인 화면·My Projects 에서
                     "받을 BDF 가 하나도 없는" 상태를 없애기 위함. Wire 해석본이 있으면 그것만 준다.
@@ -80,7 +84,7 @@ def scan_lifting_artifacts(
     """
     out: list[dict] = []
     for kind, suffix, label in ARTIFACT_SPECS:
-        path = _find_artifact(folder, suffix, stem)
+        path = _find_artifact(folder, suffix, stem, exact)
         if path:
             out.append(_entry(kind, label, path))
     has_lifting = any(a["kind"] == "liftingBdf" for a in out)

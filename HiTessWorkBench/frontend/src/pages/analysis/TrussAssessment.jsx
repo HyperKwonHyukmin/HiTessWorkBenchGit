@@ -18,7 +18,7 @@ import FileBasedPageBanner from '../../components/analysis/FileBasedPageBanner';
 import SolverCredit from '../../components/ui/SolverCredit';
 import { useToast } from '../../contexts/ToastContext';
 import {
-  Upload, Database, Layers, Box, CheckCircle2, AlertCircle, Eye, FileText, FileOutput, Download,
+  Database, Layers, Box, CheckCircle2, AlertCircle, Eye, FileText, FileOutput, Download,
   Maximize2, Minimize2, ChevronsRight, RefreshCw, FilePlus2, FileCheck2, Loader2, X,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -29,7 +29,7 @@ import { useResultReentry } from '../../utils/resultReentry';
 import { computeTrussAssessmentVerdict, SIDE_SUPPORT_ALLOWABLE } from '../../utils/trussVerdict';
 import {
   StepRail, InputSummary, VerdictHeader, KeyFigures, NextActionBar, JobProgressCard,
-  RunStartPanel, RunLogPanel, LogbookImportButton, useLogbookLauncher,
+  RunStartPanel, RunLogPanel, LogbookImportButton, useLogbookLauncher, BdfDropZone,
 } from '../../components/analysis/runFrame';
 import { importFromLogbook } from '../../api/logbook';
 import {
@@ -1029,50 +1029,6 @@ export default function TrussAssessment() {
           onDownloaded={() => updateState({ delivered: true })}
         />
       )}
-    </div>
-  );
-}
-
-/** BDF 입력 칸 — 클릭·끌어 놓기. 올린 뒤에는 파일명과 '다른 BDF' 를 보여 준다. */
-function BdfDropZone({ file, inputRef, disabled, onFile }) {
-  const [over, setOver] = useState(false);
-  const pick = () => { if (!disabled) inputRef.current?.click(); };
-  return (
-    <div className="overflow-hidden rounded-lg border border-slate-200">
-      <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <FileText size={13} className="text-slate-600" aria-hidden="true" />
-        <span className="text-xs font-bold text-slate-800">모델 BDF</span>
-        <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-semibold text-blue-800">필수</span>
-        <span className="text-[11px] text-slate-600">.bdf / .dat</span>
-        {file && !disabled && (
-          <button type="button" onClick={pick} className="ml-auto rounded text-xs font-semibold text-blue-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 cursor-pointer">
-            다른 BDF
-          </button>
-        )}
-      </div>
-      <input type="file" accept=".bdf,.dat" className="hidden" ref={inputRef} onChange={(e) => { onFile(e.target.files[0]); e.target.value = ''; }} />
-      <button
-        type="button"
-        onClick={pick}
-        disabled={disabled}
-        onDragOver={(e) => { e.preventDefault(); setOver(true); }}
-        onDragLeave={() => setOver(false)}
-        onDrop={(e) => { e.preventDefault(); setOver(false); if (!disabled) onFile(e.dataTransfer.files[0]); }}
-        className={`flex w-full flex-col items-center justify-center gap-1 px-4 py-6 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/50 disabled:cursor-not-allowed cursor-pointer ${over ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
-      >
-        {file ? (
-          <>
-            <CheckCircle2 size={18} className="text-emerald-600" aria-hidden="true" />
-            <span className="max-w-full truncate text-sm font-semibold text-slate-800">{file.name}</span>
-            <span className="text-xs text-slate-600">{file.sample ? '서버 모델(샘플·지난 결과)' : '눌러서 다른 파일로 바꾸기'}</span>
-          </>
-        ) : (
-          <>
-            <Upload size={16} className="text-slate-500" aria-hidden="true" />
-            <span className="text-xs text-slate-600">.bdf 파일을 놓거나 <span className="font-semibold text-blue-700">눌러서 선택</span></span>
-          </>
-        )}
-      </button>
     </div>
   );
 }

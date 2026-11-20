@@ -51,6 +51,7 @@ const RAW_ANALYSIS_DATA = [
   // ── File-Based Apps (signature: blue) ─────────── Developing ──
   { mode: "File", category: "배관", title: "이중관 구조 연료배관 해석", description: "이중관 연료배관의 Inner Support 설계와 전체/선택 Load Case 배관응력 해석을 준비합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["이중관", "연료배관", "PSA"], devStatus: "Developing", contributor: "김윤환" },
   { mode: "File", category: "권상·의장", title: "Group & Module Unit 권상 구조 해석", description: "Group 및 Module Unit 권상 작업 시 발생하는 구조적 안전성을 사전에 검토합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["유닛", "블록", "국부강도"], devStatus: "Developing", contributor: "권혁민" },
+  { mode: "File", category: "권상·의장", title: "Truss Module Lifting", description: "Truss 글로벌 모델을 LV와 평면 영역으로 잘라 소모듈 권상 구조 해석을 진행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Truss", "소모듈", "권상", "Studio"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "File", category: "권상·의장", title: "Side Passage Assessment", description: "Side Passage BDF 모델을 검증하고 Studio 기반 권상 조건·Nastran 해석·결과 판정을 진행합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Side Passage", "Studio", "권상"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "File", category: "권상·의장", title: "DrawingToAnalysis", art: "doc", description: "설계 도면(PDF)을 업로드하여 LUG 구조 해석 BDF 모델로 변환합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["도면", "LUG"], devStatus: "Developing", contributor: "권혁민" },
   { mode: "File", category: "권상·의장", title: "Mooring Fitting Assessment", art: "weld", description: "Mooring Fitting / Winch 보강 구조의 CSV 2종을 입력받아 8단계 BDF 파이프라인을 자동 생성합니다.", icon: UploadCloud, color: "bg-blue-600", tags: ["Mooring", "Winch", "파이프라인"], devStatus: "Developing", contributor: "권혁민" },
@@ -124,6 +125,15 @@ const APP_REGISTRY_OVERRIDES = {
     apiEndpoint: "/api/analysis/groupmodule/request",
     supportsRerun: true,
     relatedApps: ["HiTESS Model Builder", "BDF Scanner"],
+  },
+  "Truss Module Lifting": {
+    menuName: "Truss Module Lifting",
+    // 입력 검증 = 이 앱 전용 접수(/trusslifting/request), 기록 program_name = TrussModuleLifting(2026-11-17).
+    // Studio 의 자세안정성, 구조 해석은 GMU 와 같은 경로를 쓰고 부모 기록으로 이 앱을 구분한다.
+    programNames: ["TrussModuleLifting", "Truss Module Lifting"],
+    apiEndpoint: "/api/analysis/trusslifting/request",
+    supportsRerun: false,
+    relatedApps: ["Truss Structural Assessment", "Group & Module Unit 권상 구조 해석"],
   },
   "Module Unit 해상 운송 구조 해석": {
     menuName: "Module Unit 해상 운송 구조 해석",

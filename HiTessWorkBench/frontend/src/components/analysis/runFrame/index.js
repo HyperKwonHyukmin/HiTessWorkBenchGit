@@ -13,6 +13,7 @@ export { default as JobProgressCard } from './JobProgressCard';
 export { default as EngineLogPanel } from './EngineLogPanel';
 export { default as StudioLauncherCard } from './StudioLauncherCard';
 export { default as RunStartPanel } from './RunStartPanel';
+export { default as BdfDropZone } from './BdfDropZone';
 export { default as RunLogPanel } from './RunLogPanel';
 export { WorkspaceTabBar, WorkspaceFrame, useWorkspaceStore, WORKSPACE_STATUS_META } from './WorkspaceTabs';
 export { default as LogbookImportButton, useLogbookLauncher } from './LogbookImportButton';

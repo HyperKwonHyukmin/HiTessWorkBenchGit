@@ -19,13 +19,17 @@ import glob
 import json
 import logging
 import os
+import re
 import subprocess
 import time
 from typing import Any, Dict, Optional
 
 from .f06_location import describe_problem_nodes
+from .lifting_programs import LIFTING_PARENT_PROGRAMS, TRUSS_LIFTING_PROGRAM
 from .. import database, models
-from .exit_codes import abnormal_exit_message, is_abnormal_exit, outputs_complete_after_crash
+from .exit_codes import (
+    abnormal_exit_message, crash_tolerated_note, is_abnormal_exit, outputs_complete_after_crash,
+)
 from .analysis_runner import (
     CANCELLED_MESSAGE,
     JobCancelledError,
@@ -44,6 +48,41 @@ from .lifting_review_archive import archive_lifting_review
 
 # 사내 표준 Nastran 경로 (없으면 환경변수 NASTRAN_EXE 로 override)
 _DEFAULT_NASTRAN_EXE = r"C:\MSC.Software\MSC_Nastran\20131\bin\nastran.exe"
+
+
+# 소모듈 Case (Truss Lifting Studio, 2026-11-18) — 한 부모 BDF 아래 소모듈 여러 개를 따로 해석한다.
+# Studio 가 Case 마다 `<bdfStem>__<caseId>_edited.json / _posture.json` 을 올리고, 자세안정성이
+# `<bdfStem>__<caseId>_stability.json` 을 만든다. 해석 산출물도 그 이름(`<bdfStem>__<caseId>_lifting.*`)으로 써서
+# Case 끼리 덮어쓰거나 지우지 않게 한다. Case 표식이 없는 이름(MU, Side Passage, 옛 Truss Studio)은 예전 그대로다.
+_CASE_ID_RE = re.compile(r"^[A-Za-z0-9]{1,40}$")
+_STABILITY_SUFFIX = "_stability.json"
+
+
+def resolve_work_stem(bdf_path: str, stability_json_path: Optional[str]) -> tuple[str, Optional[str]]:
+    """해석 산출물 이름의 머리(stem)와 Case id → (stem, caseId | None).
+
+    stability 파일 이름이 `<bdfStem>__<caseId>_stability.json` 이면 (`<bdfStem>__<caseId>`, caseId),
+    그 밖에는 (`<bdfStem>`, None).
+    """
+    bdf_stem = os.path.splitext(os.path.basename(bdf_path))[0]
+    name = os.path.basename(stability_json_path or "")
+    if name.lower().endswith(_STABILITY_SUFFIX):
+        base = name[: -len(_STABILITY_SUFFIX)]
+        prefix = f"{bdf_stem}__"
+        if base.startswith(prefix) and _CASE_ID_RE.match(base[len(prefix):]):
+            return base, base[len(prefix):]
+    return bdf_stem, None
+
+
+def read_case_name(edited_json: str) -> Optional[str]:
+    """Case 편집 모델 JSON 의 소모듈 이름(meta.trussModule.name). 읽지 못하면 None."""
+    try:
+        with open(edited_json, "r", encoding="utf-8") as fh:
+            meta = (json.load(fh) or {}).get("meta") or {}
+        name = (meta.get("trussModule") or {}).get("name")
+        return str(name)[:80] if name else None
+    except (OSError, ValueError, AttributeError):
+        return None
 
 
 def _resolve_nastran_exe() -> Optional[str]:
@@ -150,6 +189,7 @@ def build_lifting_bdf(
     lifting_meta: str,
     edited_bdf: str,
     job_id: Optional[str] = None,
+    work_stem: Optional[str] = None,
 ) -> str:
     """Studio 편집(_edited.json) 적용 → lift-run --prepare-only 로 Wire 포함 BDF 를 만든다.
 
@@ -157,10 +197,14 @@ def build_lifting_bdf(
     **이 함수 하나를 공유한다** — 다운로드한 BDF 가 해석에 들어가는 BDF 와 같은 입력·같은
     라이터로 만들어지게 하려는 것이다. 출력 경로(lifting_bdf/meta/edited_bdf)만 호출자가 정한다.
 
+    work_stem = 소모듈 Case 의 이름 머리(resolve_work_stem). 주면 그 Case 의 편집 모델(`<work_stem>_edited.json`)을 쓰고,
+    없으면 원본 BDF 로 넘어가지 않고 실패한다(Case 는 늘 소모듈 모델이 있어야 한다 — 글로벌 전체로 조용히 풀지 않게).
+
     반환: 엔진 로그 문자열. 실패하면 RuntimeError/FileNotFoundError.
     """
     bdf_dir = os.path.dirname(os.path.abspath(bdf_path))
-    bdf_stem = os.path.splitext(os.path.basename(bdf_path))[0]
+    base_stem = os.path.splitext(os.path.basename(bdf_path))[0]
+    bdf_stem = work_stem or base_stem
     engine_output = ""
 
     # Studio 가 업로드한 편집 적용 결과 (이미 편집이 반영된 완전한 모델 JSON).
@@ -168,6 +212,10 @@ def build_lifting_bdf(
     edited_json = os.path.join(bdf_dir, f"{bdf_stem}_edited.json")
     # 입력 BDF 는 cwd(=bdf_dir) 기준 상대경로로 넘긴다(기존 실행과 같은 인자 모양).
     lift_input_bdf = os.path.relpath(os.path.abspath(bdf_path), bdf_dir)
+    if bdf_stem != base_stem and not os.path.exists(edited_json):
+        raise FileNotFoundError(
+            f"소모듈 모델을 찾을 수 없습니다: {os.path.basename(edited_json)} — Studio 에서 자세안정성 평가를 다시 실행하세요."
+        )
     if os.path.exists(edited_json):
         if job_id:
             update_progress(job_id, 10, "Studio 편집 적용 BDF 생성 중...")
@@ -248,8 +296,7 @@ def build_lifting_bdf(
 
 def _crash_tolerated_note(returncode: int, what: str) -> str:
     """비정상 종료를 넘긴 사실을 엔진 로그에 남긴다(조용히 넘기지 않는다)."""
-    code = int(returncode) & 0xFFFFFFFF
-    note = f"{what} 프로그램이 종료 순간 비정상 종료(0x{code:08X})했지만 결과 파일이 끝까지 써져 있어 계속 진행합니다."
+    note = crash_tolerated_note(returncode, what)
     logger.warning("[UnitStructural] %s", note)
     return f"\n[경고] {note}\n"
 
@@ -309,7 +356,7 @@ def task_execute_unit_structural(
             ).first()
             if parent is None:
                 raise RuntimeError(f"Parent Analysis (id={parent_analysis_id}) 를 찾을 수 없습니다.")
-            if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
+            if parent.program_name not in LIFTING_PARENT_PROGRAMS:
                 raise RuntimeError(
                     f"Parent program_name 이 지원 대상이 아닙니다 (got '{parent.program_name}')."
                 )
@@ -328,8 +375,8 @@ def task_execute_unit_structural(
             raise FileNotFoundError(f"stability JSON 을 찾을 수 없습니다: {stability_json_path}")
 
         bdf_dir      = os.path.dirname(os.path.abspath(bdf_path))
-        bdf_filename = os.path.basename(bdf_path)
-        bdf_stem     = os.path.splitext(bdf_filename)[0]
+        # 소모듈 Case 면 산출물 이름 머리가 `<bdfStem>__<caseId>` 다(resolve_work_stem) — Case 끼리 덮어쓰지 않는다.
+        bdf_stem, case_id = resolve_work_stem(bdf_path, stability_json_path)
 
         lifting_bdf  = os.path.join(bdf_dir, f"{bdf_stem}_lifting.bdf")
         lifting_meta = os.path.join(bdf_dir, f"{bdf_stem}_lifting_meta.json")
@@ -358,6 +405,7 @@ def task_execute_unit_structural(
         engine_output += build_lifting_bdf(
             bdf_path, stability_json_path, safety_factor,
             lifting_bdf, lifting_meta, edited_bdf, job_id=job_id,
+            **({"work_stem": bdf_stem} if case_id else {}),
         )
 
         # 3. Nastran SOL 101 실행
@@ -416,10 +464,36 @@ def task_execute_unit_structural(
         if result_note:
             engine_output += "\n" + result_note
 
+        # 소모듈 Case 표식 — Studio 와 WorkBench 가 '어느 소모듈의 결과인가' 를 결과 JSON 에서 읽는다.
+        # Studio 는 이 표식이 없으면(옛 서버) 결과를 버린다: 옛 서버는 Case 이름을 모르고 글로벌 모델로 풀기 때문이다.
+        case_block = None
+        if case_id:
+            case_block = {"id": case_id, "name": read_case_name(edited_json)}
+            result_payload["case"] = case_block
+            try:
+                with open(result_json, "w", encoding="utf-8") as fh:
+                    json.dump(result_payload, fh, ensure_ascii=False)
+            except OSError as case_error:
+                raise RuntimeError(f"결과 JSON 에 소모듈 표식을 쓰지 못했습니다: {case_error}")
+
         if result_payload.get("meta", {}).get("hasFatal"):
             failure_reason = describe_f06_fatal(result_payload) + describe_problem_nodes(lifting_f06)
             engine_output += f"\n[Error] {failure_reason}"
             status_msg = "Failed"
+
+        # Truss 소모듈 권상 — 같은 F06 으로 소모듈 평가 exe 를 돌려 결과 JSON 에 trussAssessment 로 싣는다(2026-11-17).
+        # 평가가 실패해도 구조 해석은 그대로 두고 경고로 알린다(평가가 빠진 채 '완료' 로 보이지 않게).
+        truss_block = None
+        if project_kind == TRUSS_LIFTING_PROGRAM and status_msg != "Failed":
+            update_progress(job_id, 90, "Truss 소모듈 평가 중...")
+            from .truss_module_assessment import run_truss_module_assessment, attach_to_result
+            assessment = run_truss_module_assessment(lifting_bdf, lifting_f06, "lifting")
+            truss_block = attach_to_result(result_json, result_payload, assessment)
+            if assessment.get("ok"):
+                engine_output += "\n[Truss 평가] 완료 — " + str(assessment.get("summaryJson"))
+            else:
+                engine_output += "\n[Warning] Truss 평가 실패: " + str(assessment.get("error"))
+                result_payload.setdefault("warnings", []).append(f"Truss 소모듈 평가를 하지 못했습니다: {assessment.get('error')}")
 
         result_summary = result_payload.get("summary") or {}
         result_data = {
@@ -438,11 +512,16 @@ def task_execute_unit_structural(
             "summary":           result_summary,
             "warnings":          result_payload.get("warnings", []),
         }
+        if case_block is not None:
+            result_data["caseId"] = case_block["id"]
+            result_data["caseName"] = case_block["name"]
         # 자세안정성 판정과 평가 모드 — Advisory 모드로 fail 인 채 진행했으면 WorkBench 판정·보고서가 알린다(2026-11-18).
         from .stability_gate import read_stability_gate
         stability_gate = read_stability_gate(stability_json_path)
         if stability_gate is not None:
             result_data["stabilityGate"] = stability_gate
+        if truss_block is not None:
+            result_data["trussAssessment"] = {k: truss_block.get(k) for k in ("ok", "error", "summary")}
         try:
             result_data["reviewManifestJson"] = archive_lifting_review(bdf_dir, job_id, {
                 "sourceBdf": bdf_path, "editedModel": edited_json,
@@ -498,6 +577,7 @@ def task_execute_unit_structural(
             "parent_analysis_id": parent_analysis_id,
             "safety_factor": safety_factor,
             "allowable_mpa": allowable_mpa,
+            **({"case_id": result_data["caseId"], "case_name": result_data.get("caseName")} if result_data.get("caseId") else {}),
         },
         # F06 fatal 등으로 status=Failed 라도 result_data 가 채워졌으면 그대로 기록 (기존 동작 보존)
         result_info=result_data if result_data else None,

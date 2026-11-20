@@ -73,6 +73,7 @@ const ApiApps = lazy(() => import('./pages/Administration/ApiApps'));
 const AdminTabHub = lazy(() => import('./components/admin/AdminTabHub'));
 const HiTessModelBuilder = lazy(() => import('./pages/analysis/HiTessModelBuilder'));
 const GroupModuleUnitLiftingAnalysis = lazy(() => import('./pages/analysis/GroupModuleUnitLiftingAnalysis'));
+const TrussModuleLifting = lazy(() => import('./pages/analysis/TrussModuleLifting'));
 const SidePassageAssessment = lazy(() => import('./pages/analysis/SidePassageAssessment'));
 const ModuleUnitOceanTransportAnalysis = lazy(() => import('./pages/analysis/ModuleUnitOceanTransportAnalysis'));
 const F06ParserPage = lazy(() => import('./pages/analysis/F06ParserPage'));
@@ -665,6 +666,7 @@ function AppInner() {
       case 'Productivity Apps': return <ProductivityApps />;
       case 'HiTESS Model Builder': return <HiTessModelBuilder />;
       case 'Group & Module Unit 권상 구조 해석': return <GroupModuleUnitLiftingAnalysis />;
+      case 'Truss Module Lifting': return <TrussModuleLifting />;
       case 'Side Passage Assessment': return <SidePassageAssessment />;
       case 'Module Unit 해상 운송 구조 해석': return <ModuleUnitOceanTransportAnalysis />;
       case 'HP-SCR 배관응력 해석': return <HpScrAssessment />;

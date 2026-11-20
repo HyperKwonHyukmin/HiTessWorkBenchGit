@@ -23,7 +23,7 @@ import re
 from typing import Iterable, Mapping, Optional
 
 # 합산 대상 부모 App (program_name 원문)
-ROLLUP_PARENTS: tuple[str, ...] = ("GroupModuleUnit", "SidePassage")
+ROLLUP_PARENTS: tuple[str, ...] = ("GroupModuleUnit", "SidePassage", "TrussModuleLifting")
 
 # 세부 검토 program_name → 화면 표기
 SUBSTEP_LABELS: Mapping[str, str] = {

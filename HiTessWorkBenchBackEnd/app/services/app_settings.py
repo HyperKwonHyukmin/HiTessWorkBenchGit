@@ -61,6 +61,8 @@ GUARDED_ROUTES: tuple[tuple[str, str], ...] = (
     ("/api/analysis/module-unit/export-bdf", "Group & Module Unit 권상 구조 해석"),
     ("/api/analysis/groupmodule/cog", "Group & Module Unit 권상 구조 해석"),
     ("/api/analysis/sidepassage/", "Side Passage Assessment"),
+    # Truss 소모듈 권상(2026-11-17) — 입력 검증만 전용 경로. Studio 의 자세안정성, 구조 해석은 GMU 경로를 함께 써서 GMU 게이트에 걸린다.
+    ("/api/analysis/trusslifting/", "Truss Module Lifting"),
     # 이 앱의 1단계 검증은 /api/analysis/groupmoduleunit/request 를 재사용하므로 GMU 게이트에 함께 걸린다.
     # 여기 등록분은 이 앱 전용 엔드포인트(샘플 실행, 3단계 structural-run)를 막는다.
     ("/api/analysis/module-ocean-transport/", "Module Unit 해상 운송 구조 해석"),

@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -34,7 +35,9 @@ from .analysis_runner import (
     update_progress,
 )
 from .bdf_deck_check import inspect_deck, merge_into_step1
-from .exit_codes import abnormal_exit_message, is_abnormal_exit
+from .exit_codes import (
+    abnormal_exit_message, crash_tolerated_note, is_abnormal_exit, outputs_complete_after_crash,
+)
 from .hull_no import resolve_bdf_hull_no
 
 logger = logging.getLogger(__name__)
@@ -635,6 +638,7 @@ def _run_nastran_validate(
         # 사용자가 이미 취소를 요청했으면 해석기를 띄우지 않는다(job_id 는 worker 컨텍스트에서 해석).
         if is_cancel_requested():
             raise JobCancelledError(CANCELLED_MESSAGE)
+        prepare_started = time.time()
         prepare = subprocess.run(
             prepare_args, cwd=bdf_dir,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -644,14 +648,20 @@ def _run_nastran_validate(
         out = safe_decode(prepare.stdout)
         err = safe_decode(prepare.stderr)
         log = out + (("\n[stderr] " + err.strip()) if err.strip() else "")
-        if prepare.returncode != 0:
-            log += f"\n[validate-run prepare exit code: {prepare.returncode}]"
-            return False, log, None
 
         # validate-run 의 기본 출력 JSON 은 입력파일과 같은 디렉터리의 <stem>_validation.json
         bdf_stem = os.path.splitext(bdf_filename)[0]
         json_path = os.path.join(bdf_dir, f"{bdf_stem}_validation.json")
         validation_bdf = os.path.join(bdf_dir, f"{bdf_stem}_validation.bdf")
+        if prepare.returncode != 0:
+            # 종료 순간 DRM 에 끊겨도 두 파일을 이번에 끝까지 썼으면 그대로 쓴다(exit_codes.outputs_complete_after_crash).
+            if outputs_complete_after_crash(prepare.returncode, [json_path, validation_bdf], prepare_started):
+                note = crash_tolerated_note(prepare.returncode, "검증용 BDF 준비")
+                logger.warning("[GroupModuleUnit] %s", note)
+                log += f"\n[경고] {note}"
+            else:
+                log += f"\n[validate-run prepare exit code: {prepare.returncode}]"
+                return False, log, None
         if not os.path.exists(json_path):
             return False, log + "\n[Error] validate-run 결과 JSON 미생성", None
         if not os.path.exists(validation_bdf):
@@ -757,6 +767,7 @@ def task_execute_groupmoduleunit(
         # 사용자가 이미 취소를 요청했으면 해석기를 띄우지 않는다.
         if is_cancel_requested(job_id):
             raise JobCancelledError(CANCELLED_MESSAGE)
+        parse_started = time.time()
         result = subprocess.run(
             cmd_args,
             cwd=bdf_dir,
@@ -770,7 +781,13 @@ def task_execute_groupmoduleunit(
 
         if stderr_text.strip():
             engine_output += f"\n[stderr] {stderr_text.strip()}"
-        if result.returncode != 0:
+        if result.returncode != 0 and outputs_complete_after_crash(
+                result.returncode, [model_json_path], parse_started):
+            # 모델 JSON 을 끝까지 쓴 뒤 종료 순간 DRM(HIDRMH.DLL)에 끊긴 경우 — 2026-11-12 실례. 결과를 그대로 쓴다.
+            note = crash_tolerated_note(result.returncode, "BDF 검증")
+            logger.warning("[GroupModuleUnit] %s", note)
+            engine_output += f"\n[경고] {note}"
+        elif result.returncode != 0:
             engine_output += f"\n[Exit code: {result.returncode}]"
             if is_abnormal_exit(result.returncode):
                 # 모델 JSON 까지 써 놓고 종료 순간 죽은 경우가 있었다(DRM, 2026-11-10) — BDF 탓으로 말하지 않는다.

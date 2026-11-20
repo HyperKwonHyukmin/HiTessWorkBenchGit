@@ -31,6 +31,7 @@ from ..services import job_cancel_service
 from ..dependencies import require_auth, require_admin
 from ..services.activity_service import log_activity
 from ..services.truss_service import task_execute_truss
+from ..services.lifting_programs import LIFTING_PARENT_PROGRAMS, TRUSS_LIFTING_PROGRAM
 from ..services.assessment_service import task_execute_assessment, _json_to_xlsx_bytes
 from ..services.beam_service import task_execute_beam
 from ..services.bdfscanner_service import task_execute_bdfscanner
@@ -45,6 +46,7 @@ from ..services.mooring_row_edit import (
 from ..services.unit_structural_service import (
     build_lifting_bdf,
     find_lifting_op2,
+    resolve_work_stem,
     task_execute_unit_structural,
 )
 from ..services.unit_lifting_report_service import generate_result_report, generate_unit_lifting_report
@@ -2734,7 +2736,11 @@ def rerun_analysis(
 
     elif rerun_adapter == "hull-acceleration":
         work_dir, timestamp = make_work_dir(current_user, "HullAcceleration")
-        pdf_path = copy_input(info.get("pdf_file"), work_dir)
+        # 샘플로 돌린 기록은 작업 폴더 밖(UNC) 샘플을 그대로 다시 쓴다(복사하면 DRM 이 감쌈).
+        if _is_hull_accel_sample_pdf(info.get("pdf_file")):
+            pdf_path = info.get("pdf_file")
+        else:
+            pdf_path = copy_input(info.get("pdf_file"), work_dir)
         constants_path = copy_input(
             info.get("constants"), work_dir, dest_name="constants.json", required=False,
         )
@@ -3194,7 +3200,7 @@ async def upload_module_stability_artifact(
     if parent is None:
         raise HTTPException(status_code=404, detail=f"Parent Analysis (id={parent_analysis_id}) not found")
     assert_current_user_can_access_owner(parent.employee_id, current_user, db)
-    if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
+    if parent.program_name not in LIFTING_PARENT_PROGRAMS:
         raise HTTPException(
             status_code=400,
             detail=f"Parent program_name '{parent.program_name}' is not supported",
@@ -3361,6 +3367,79 @@ async def request_groupmoduleunit(
         owned_work_dir=work_dir,
     )
     return {"job_id": job_id}
+
+
+@router.post("/analysis/trusslifting/request")
+async def request_trusslifting(
+        bdf_file: UploadFile = File(...),
+        employee_id: str = Form(...),
+        source: str = Form("Workbench"),
+        current_user: str = Depends(require_auth)
+):
+    """
+    Truss Module Lifting — 글로벌 Truss BDF 입력 검증(2026-11-17).
+    GroupModuleUnit 검증 작업(bridge 로 <stem>.json 생성)을 그대로 쓰고, 폴더명과 DB program_name 만
+    TrussModuleLifting 으로 남긴다. 이 레코드가 Studio 권상 흐름(업로드, 자세안정성, Unit 구조 해석)의 부모가 된다.
+    """
+    _verify_employee_self(employee_id, current_user)
+    work_dir, timestamp = make_work_dir(employee_id, TRUSS_LIFTING_PROGRAM)
+    bdf_path = await save_upload(bdf_file, work_dir, error_prefix="파일 저장 오류")
+    job_id = submit_analysis_job(
+        task_execute_groupmoduleunit,
+        bdf_path, work_dir, employee_id, timestamp, source, False, TRUSS_LIFTING_PROGRAM,
+        owned_work_dir=work_dir,
+    )
+    return {"job_id": job_id}
+
+
+# Truss Module Lifting 샘플 = 이 파일 하나로 고정(2026-11-18 사용자 지시). 폴더의 다른 BDF 로 넘어가지 않는다.
+# SampleFile/**/*.bdf 는 git 제외라 145 에는 손으로 복사해야 한다.
+TRUSS_LIFTING_SAMPLE_BDF = "174k_2tk_rev5_DesignNo.6.bdf"
+
+
+def _truss_lifting_sample_path() -> str:
+    return os.path.abspath(os.path.join(_BACKEND_DIR, "SampleFile", "TrussLifting", TRUSS_LIFTING_SAMPLE_BDF))
+
+
+@router.get("/analysis/trusslifting/sample-status")
+def get_trusslifting_sample_status(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    quota = _check_sample_quota("trusslifting", employee_id, db)
+    return {"remaining": quota["remaining"], "limit": SAMPLE_DAILY_LIMIT, "is_admin": quota["is_admin"]}
+
+
+@router.post("/analysis/trusslifting/run-sample")
+async def run_trusslifting_sample(
+        employee_id: str = Depends(require_auth),
+        db: Session = Depends(database.get_db),
+):
+    """Truss Module Lifting — 고정 샘플 BDF(174k)로 글로벌 BDF 검증을 바로 실행한다."""
+    quota = _check_sample_quota("trusslifting", employee_id, db)
+    if not quota["allowed"]:
+        raise HTTPException(status_code=429, detail=quota["reason"])
+
+    bdf_src = _truss_lifting_sample_path()
+    if not os.path.isfile(bdf_src):
+        raise HTTPException(status_code=404, detail=f"샘플 BDF 가 서버에 없습니다: SampleFile/TrussLifting/{TRUSS_LIFTING_SAMPLE_BDF}")
+
+    work_dir, timestamp = make_work_dir(employee_id, TRUSS_LIFTING_PROGRAM)
+    bdf_path = os.path.join(work_dir, TRUSS_LIFTING_SAMPLE_BDF)
+    shutil.copyfile(bdf_src, bdf_path)
+
+    job_id = submit_analysis_job(
+        task_execute_groupmoduleunit,
+        bdf_path, work_dir, employee_id, timestamp, SAMPLE_SOURCE_TAG, False, TRUSS_LIFTING_PROGRAM,
+        owned_work_dir=work_dir,
+    )
+    if not quota["is_admin"]:
+        _consume_sample_quota("trusslifting", employee_id)
+    return {
+        "job_id": job_id, "source": SAMPLE_SOURCE_TAG,
+        "remaining": SAMPLE_DAILY_LIMIT if quota["is_admin"] else 0,
+        "is_admin": quota["is_admin"],
+    }
 
 
 @router.post("/analysis/sidepassage/request")
@@ -3541,7 +3620,7 @@ def fix_groupmoduleunit_deck(
     """
     _verify_employee_self(payload.employee_id, current_user)
     record = db.query(models.Analysis).filter(models.Analysis.id == analysis_id).first()
-    if record is None or record.program_name not in ("GroupModuleUnit", "SidePassage"):
+    if record is None or record.program_name not in LIFTING_PARENT_PROGRAMS:
         raise HTTPException(status_code=404, detail="BDF 검증 기록을 찾을 수 없습니다.")
     assert_current_user_can_access_owner(record.employee_id, current_user, db)
     src = (record.input_info or {}).get("bdf_model")
@@ -3591,7 +3670,7 @@ def get_groupmoduleunit_artifacts(
     ).first()
     if parent is None:
         raise HTTPException(status_code=404, detail=f"Parent Analysis (id={parent_id}) not found")
-    if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
+    if parent.program_name not in LIFTING_PARENT_PROGRAMS:
         raise HTTPException(
             status_code=400,
             detail=f"Parent program_name '{parent.program_name}' is not supported",
@@ -3621,11 +3700,26 @@ def get_groupmoduleunit_artifacts(
         ),
         limit=200,
     )
+    # 소모듈 Case (Truss) — Case 마다 가장 최근 성공 1건과 그 Case 의 산출물. Case 없는 실행은 예전처럼 위 두 값으로 나간다.
+    cases: list[dict] = []
+    seen_cases: set[str] = set()
     for cand in candidates:
-        if (cand.input_info or {}).get("parent_analysis_id") == parent_id:
+        info = cand.input_info or {}
+        if info.get("parent_analysis_id") != parent_id:
+            continue
+        if unit_id is None:
             unit_id = cand.id
-            break
-    return {"folder": folder, "artifacts": artifacts, "unitStructuralAnalysisId": unit_id}
+        case_id = info.get("case_id")
+        if not isinstance(case_id, str) or not case_id or case_id in seen_cases:
+            continue
+        seen_cases.add(case_id)
+        cases.append({
+            "caseId": case_id,
+            "caseName": info.get("case_name"),
+            "unitStructuralAnalysisId": cand.id,
+            "artifacts": scan_lifting_artifacts(folder, f"{stem}__{case_id}", exact=True),
+        })
+    return {"folder": folder, "artifacts": artifacts, "unitStructuralAnalysisId": unit_id, "cases": cases}
 
 
 # ==================== Unit Structural Analysis (Lifting + Nastran) ===========
@@ -3664,7 +3758,7 @@ def _load_unit_parent_bdf(parent_analysis_id: Any, db: Session, current_user: st
     if parent is None:
         raise HTTPException(status_code=404, detail=f"Parent Analysis (id={parent_analysis_id}) not found")
     assert_current_user_can_access_owner(parent.employee_id, current_user, db)
-    if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
+    if parent.program_name not in LIFTING_PARENT_PROGRAMS:
         raise HTTPException(status_code=400,
                             detail=f"Parent program_name '{parent.program_name}' is not supported")
     if parent.status != "Success":
@@ -3748,7 +3842,8 @@ def download_unit_lifting_bdf(
         raise HTTPException(status_code=400, detail="safetyFactor: 하중계수는 0보다 큰 유한한 숫자여야 합니다.")
 
     bdf_dir = os.path.dirname(os.path.abspath(bdf_path))
-    stem = os.path.splitext(os.path.basename(bdf_path))[0]
+    # 소모듈 Case 면 그 Case 의 이름 머리(`<bdfStem>__<caseId>`)로 만든다 — 해석과 같은 소모듈 모델을 쓴다.
+    stem, case_id = resolve_work_stem(bdf_path, stab_abs)
     # 해석 산출물과 같은 파일명을 하위 임시 폴더에 쓴다 — 이름까지 같게 만들어야 BDF 본문이
     # 해석본과 달라지지 않고, 폴더가 달라 진행 중인 해석의 파일과도 섞이지 않는다.
     work = tempfile.mkdtemp(prefix="_lifting_bdf_export_", dir=bdf_dir)
@@ -3760,6 +3855,7 @@ def download_unit_lifting_bdf(
                 lifting_bdf,
                 os.path.join(work, f"{stem}_lifting_meta.json"),
                 os.path.join(work, f"{stem}_edited.bdf"),
+                **({"work_stem": stem} if case_id else {}),
             )
         except subprocess.TimeoutExpired as e:
             raise HTTPException(status_code=504, detail=f"Wire 포함 BDF 생성 시간 초과: {e}")
@@ -3885,7 +3981,7 @@ async def request_unit_structural(
         raise HTTPException(status_code=404,
                             detail=f"Parent Analysis (id={parent_analysis_id}) not found")
     assert_current_user_can_access_owner(parent.employee_id, current_user, db)
-    if parent.program_name not in ("GroupModuleUnit", "SidePassage"):
+    if parent.program_name not in LIFTING_PARENT_PROGRAMS:
         raise HTTPException(status_code=400,
                             detail=f"Parent program_name '{parent.program_name}' is not supported")
     if parent.status != "Success":
@@ -4077,6 +4173,38 @@ async def request_hull_acceleration(
     return {"job_id": job_id}
 
 
+# 선체 가속도 샘플 PDF — 네트워크 공유 폴더의 평문 PDF 를 쓴다(2026-11-16).
+# 로컬 디스크(SampleFile/TS)의 PDF 는 회사 DRM 에 감싸져, 서버의 DRM 복호화가 끊기면
+# (2026-11-12 재부팅 뒤 145 실제 발생) 샘플이 열리지 않았다. UNC 는 DRM 이 감싸지 않는다.
+# 바꾸려면 .env HULL_ACCEL_SAMPLE_PDF. UNC 에 접근할 수 없으면 예전 로컬 폴더로 돌아간다.
+_HULL_ACCEL_SAMPLE_PDF_DEFAULT = (
+    r"\\storage.hpc.hd.com\a476854\00_PROJECT\AA_300_CF44\[개인 자료]\권혁민 책임연구원"
+    r"\UnLock\TS_PDF\3252_TS_7G7000010_FINAL TRIM_STABILITY BOOKLET.pdf"
+)
+
+
+def _hull_accel_sample_pdf() -> Optional[str]:
+    """샘플 PDF 경로. 설정(UNC) → 로컬 SampleFile/TS 의 첫 PDF 순. 없으면 None."""
+    configured = (os.getenv("HULL_ACCEL_SAMPLE_PDF") or "").strip() or _HULL_ACCEL_SAMPLE_PDF_DEFAULT
+    if os.path.isfile(configured):
+        return configured
+    sample_dir = os.path.join(get_backend_dir(), "SampleFile", "TS")
+    if os.path.isdir(sample_dir):
+        for name in sorted(os.listdir(sample_dir)):
+            path = os.path.join(sample_dir, name)
+            if name.lower().endswith(".pdf") and os.path.isfile(path):
+                return path
+    return None
+
+
+def _is_hull_accel_sample_pdf(value) -> bool:
+    """재실행 입력이 샘플 PDF 자체인지(작업 폴더 밖이라도 그대로 다시 쓴다)."""
+    if not isinstance(value, str) or not value:
+        return False
+    sample = _hull_accel_sample_pdf()
+    return bool(sample) and os.path.normcase(os.path.abspath(value)) == os.path.normcase(os.path.abspath(sample))
+
+
 @router.post("/analysis/hullacceleration/sample-request")
 async def request_hull_acceleration_sample(
         employee_id: str = Form(...),
@@ -4087,34 +4215,24 @@ async def request_hull_acceleration_sample(
 ):
     """선급 Rule 기반 선체 가속도 — 내장 샘플 PDF 로 즉시 실행.
 
-    업로드 없이 백엔드 `SampleFile/TS/` 의 샘플 PDF 를 work_dir 로 복사한 뒤
+    업로드 없이 서버가 아는 샘플 PDF(`_hull_accel_sample_pdf`)로
     일반 업로드와 동일한 task_execute_hull_acceleration 파이프라인을 실행한다.
-    (샘플 PDF 가 수십 MB 라 클라이언트 왕복 전송을 피해 서버 로컬에서 바로 처리한다.)
+    (샘플 PDF 가 수십 MB 라 클라이언트 왕복 전송을 피해 서버에서 바로 처리한다.)
+    ⚠ 작업 폴더로 복사하지 않고 원본 경로를 엔진에 넘긴다 — 백엔드가 userConnection 에
+    `.pdf` 로 쓰면 DRM 이 다시 감싸(70 실측) 복호화가 안 되는 서버에서는 엔진이 못 연다.
     """
     _verify_employee_self(employee_id, current_user)
 
-    sample_dir = os.path.join(get_backend_dir(), "SampleFile", "TS")
-    sample_pdf = None
-    if os.path.isdir(sample_dir):
-        for name in sorted(os.listdir(sample_dir)):
-            if name.lower().endswith(".pdf"):
-                sample_pdf = os.path.join(sample_dir, name)
-                break
-    if not sample_pdf or not os.path.isfile(sample_pdf):
+    sample_pdf = _hull_accel_sample_pdf()
+    if not sample_pdf:
         raise HTTPException(
             status_code=404,
-            detail="샘플 PDF 를 찾을 수 없습니다. 서버 SampleFile/TS/ 에 PDF 를 배치하세요.",
+            detail="샘플 PDF 를 찾을 수 없습니다. 서버 설정 HULL_ACCEL_SAMPLE_PDF 또는 SampleFile/TS/ 를 확인하세요.",
         )
 
     work_dir, timestamp = make_work_dir(employee_id, "HullAcceleration")
     sample_name = os.path.basename(sample_pdf)
-    pdf_path = os.path.join(work_dir, sample_name)
-    # 회사 DRM 은 '읽기' 시점에 복호화하므로 read()->write()(copyfileobj) 로 복호화본을 work_dir 에 둔다.
-    try:
-        with open(sample_pdf, "rb") as src, open(pdf_path, "wb") as dst:
-            shutil.copyfileobj(src, dst)
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"샘플 PDF 복사 실패: {exc}") from exc
+    pdf_path = sample_pdf
 
     constants_path = os.path.join(work_dir, "constants.json")
     overrides_path = os.path.join(work_dir, "condition_overrides.json")
@@ -4148,17 +4266,11 @@ def preview_hull_acceleration_sample(current_user: str = Depends(require_auth)):
     """
     import base64
 
-    sample_dir = os.path.join(get_backend_dir(), "SampleFile", "TS")
-    sample_pdf = None
-    if os.path.isdir(sample_dir):
-        for name in sorted(os.listdir(sample_dir)):
-            if name.lower().endswith(".pdf"):
-                sample_pdf = os.path.join(sample_dir, name)
-                break
-    if not sample_pdf or not os.path.isfile(sample_pdf):
+    sample_pdf = _hull_accel_sample_pdf()
+    if not sample_pdf:
         raise HTTPException(
             status_code=404,
-            detail="샘플 PDF 를 찾을 수 없습니다. 서버 SampleFile/TS/ 에 PDF 를 배치하세요.",
+            detail="샘플 PDF 를 찾을 수 없습니다. 서버 설정 HULL_ACCEL_SAMPLE_PDF 또는 SampleFile/TS/ 를 확인하세요.",
         )
 
     # mtime 기반 메모리 캐시 (반복 열람 시 재렌더 없이 즉시 응답)
@@ -4196,6 +4308,8 @@ def preview_hull_acceleration_sample(current_user: str = Depends(require_auth)):
 
             summary_pages: list[int] = []
             particulars_page: int | None = None
+            lightship_page: int | None = None
+            combined_page: int | None = None
             # 키워드 스캔 — 필요한 페이지를 다 찾으면 조기 종료(전체 806p 스캔 방지)
             for i in range(min(page_count, SCAN_LIMIT)):
                 norm = " ".join(doc.load_page(i).get_text().lower().split())
@@ -4205,23 +4319,47 @@ def preview_hull_acceleration_sample(current_user: str = Depends(require_auth)):
                 # Summary: 목차에도 제목이 있으므로 점선 리더(TOC) 페이지는 제외하고 본문 표만 선택.
                 if SUMMARY_KW in norm and not is_toc and len(summary_pages) < 2:
                     summary_pages.append(i)
-                # 제원: "principal dimensions"+"lightship weight"+"deadweight" 가 모두 있는 본문 표 페이지.
-                #   "deadweight" 까지 요구하면 목차(제목만 나열)와 확실히 구분되고, 제원 표 자체에
-                #   점선 리더가 있어도(예: "L.B.P. ...... 281.3") is_toc 로 막지 않아 놓치지 않는다.
+                # 제원은 booklet 마다 한 쪽(3314 등: principal dimensions+lightship weight+deadweight)이거나
+                #   두 쪽(3252: 치수 쪽 + Lightship/Deadweight 쪽)이다. 한 쪽을 먼저 쓰고, 없을 때만 두 쪽.
+                #   목차는 제목만 나열하므로 본문 낱말(breadth, depth / deadweight)까지 요구해 걸러낸다.
+                #   제원 표 자체에 점선 리더가 있어(예: "L.B.P. ...... 281.3") is_toc 로는 막지 않는다.
                 if (
-                    particulars_page is None
-                    and "principal dimensions" in norm
+                    combined_page is None
+                    and "principal dimension" in norm
                     and "lightship weight" in norm
                     and "deadweight" in norm
                 ):
+                    combined_page = i
+                if (
+                    particulars_page is None
+                    and "principal dimension" in norm
+                    and "breadth" in norm
+                    and "depth" in norm
+                    and "table of contents" not in norm
+                ):
                     particulars_page = i
-                if len(summary_pages) >= 2 and particulars_page is not None:
+                if (
+                    lightship_page is None
+                    and "lightship weight" in norm
+                    and "deadweight" in norm
+                    and "table of contents" not in norm
+                ):
+                    lightship_page = i
+                if len(summary_pages) >= 2 and (
+                    combined_page is not None
+                    or (particulars_page is not None and lightship_page is not None)
+                ):
                     break
 
-            # 표시 페이지 구성: 표지 + 제원 + Summary (중복 제거 후 페이지 순)
+            # 표시 페이지 구성: 표지 + 제원(한 쪽 우선, 없으면 두 쪽) + Summary (중복 제거 후 페이지 순)
             targets: list[tuple[int, str]] = [(0, "표지")]
-            if particulars_page is not None:
-                targets.append((particulars_page, "Principal Dimensions / Lightship"))
+            if combined_page is not None:
+                targets.append((combined_page, "Principal Dimensions / Lightship"))
+            else:
+                if particulars_page is not None:
+                    targets.append((particulars_page, "Principal Dimensions"))
+                if lightship_page is not None:
+                    targets.append((lightship_page, "Lightship / Deadweight"))
             for idx, p in enumerate(summary_pages):
                 suffix = f" ({idx + 1})" if len(summary_pages) > 1 else ""
                 targets.append((p, "Summary of Loading Conditions" + suffix))

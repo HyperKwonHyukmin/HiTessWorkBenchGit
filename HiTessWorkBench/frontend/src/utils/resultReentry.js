@@ -25,6 +25,7 @@ export const RESULT_REENTRY_MENUS = {
   'Truss Analysis': 'TrussModelBuilder',              // Truss Model Builder (메뉴명은 옛 이름 그대로)
   'Truss Structural Assessment': 'Truss Assessment',
   'Mooring Fitting Assessment': 'MooringFitting',     // build-full 기록(Studio 구조해석 MooringFittingSolve 는 대상 아님)
+  'Truss Module Lifting': 'TrussModuleLifting',       // 글로벌 BDF 검증 기록 — 다시 열면 그 검증으로 Studio 를 연다
 };
 
 // 앱마다 '복원할 결과가 있다'의 기준이 되는 result_info 키가 다르다(Model Builder = 산출 폴더, 권상 = 검증한 BDF).
@@ -33,6 +34,7 @@ const RESULT_KEYS = {
   GroupModuleUnit: 'bdf',
   TrussModelBuilder: 'bdf',
   'Truss Assessment': 'bdf',
+  TrussModuleLifting: 'bdf',
   MooringFitting: 'out_dir',   // mooring_fitting_service.collect_artifacts — Studio 열기·보고서가 쓰는 out/ 폴더
 };
 

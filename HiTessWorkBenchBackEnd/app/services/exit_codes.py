@@ -45,6 +45,12 @@ def abnormal_exit_message(returncode: int, what: str) -> str:
     )
 
 
+def crash_tolerated_note(returncode: int, what: str) -> str:
+    """비정상 종료를 넘긴 사실을 엔진 로그에 남길 한 줄(조용히 넘기지 않는다). what = 예 '편집 BDF 생성'."""
+    code = int(returncode) & 0xFFFFFFFF
+    return f"{what} 프로그램이 종료 순간 비정상 종료(0x{code:08X})했지만 결과 파일이 끝까지 써져 있어 계속 진행합니다."
+
+
 def outputs_complete_after_crash(returncode: int | None, paths: list[str], started_at: float) -> bool:
     """비정상 종료(Windows 예외)였지만 결과 파일이 이번 실행에서 끝까지 써졌는가.
 

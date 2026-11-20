@@ -225,6 +225,10 @@ export const solveDrawingModel = ({ employeeId, workDir, bdfPath, mode, loads = 
 export const requestHpscrAssessment = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/hpscr/request`, formData, 'HpScr');
 
+/** Truss Module Lifting — 글로벌 Truss BDF 입력 검증(2026-11-17, 기록 program_name = TrussModuleLifting) */
+export const requestTrussLifting = (formData) =>
+  postAnalysisRequest(`${API_BASE_URL}/api/analysis/trusslifting/request`, formData, 'TrussModuleLifting');
+
 /** Group & Module Unit 권상 구조 해석 — BDF 검증 (NastranBridge) */
 export const requestGroupModuleUnit = (formData) =>
   postAnalysisRequest(`${API_BASE_URL}/api/analysis/groupmoduleunit/request`, formData, 'GroupModuleUnit');
