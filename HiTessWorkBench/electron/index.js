@@ -17,8 +17,9 @@ const clientTelemetry = require("./client-telemetry");
 const { registerVideoWindow } = require("./video-window");
 const { requestWindowsLogin } = require("./windows-login");
 const deviceLogin = require("./device-login");
-const studioSettings = require("./studio-settings");
 const { installCertificatePinning, serverFetch, secureServerUrl, DEV_PINS } = require("./server-pins");
+const { installSingleInstance } = require("./single-instance");
+const studioSettings = require("./studio-settings");
 
 // 앱 이름 — Studio 등 자식 BrowserWindow 가 window.alert()/confirm() 호출 시
 // 다이얼로그 제목으로 사용됨. 미설정 시 개발 모드 기본값 'electron-app' 이 노출되므로,
@@ -27,6 +28,15 @@ const { installCertificatePinning, serverFetch, secureServerUrl, DEV_PINS } = re
 app.setName("HiTESS WorkBench");
 
 let mainWindow;
+
+// 중복 실행 막기 — 잠금 기준이 userData 폴더라 setName 뒤에 건다(설명은 single-instance.js).
+// createWindow 는 함수 선언이라 여기서 넘겨도 된다(두 번째 실행 신호는 ready 뒤에만 온다).
+const hasSingleInstanceLock = installSingleInstance({
+  app,
+  getMainWindow: () => mainWindow,
+  getAllWindows: () => BrowserWindow.getAllWindows(),
+  createWindow: () => createWindow(),
+});
 
 // ── Studio(viewer) 세션 레지스트리 ────────────────────────────────────────
 // 과거엔 창 1개(viewerWindow) + 전역 컨텍스트 1벌이었다. 그래서 다른 Studio 를 열면
@@ -1361,6 +1371,7 @@ ipcMain.handle("viewer:getInitialFolder", async (event) => {
   if (!fs.existsSync(folder)) return null;
   return await readJsonFolderRecursive(folder);
 });
+
 // Studio 사용자 설정 파일(2026-11-18, MU 평가 모드 유지) — <userData>/viewer-settings/<viewerId>.json.
 // viewerId 는 호출한 Studio 창의 세션에서 정한다(창이 다른 Studio 의 설정을 읽거나 쓰지 못하게).
 ipcMain.handle("viewer:getStudioSettings", (event) => {
@@ -1380,7 +1391,6 @@ ipcMain.handle("viewer:setStudioSettings", (event, patch) => {
     return { ok: false, error: e?.message ?? String(e) };
   }
 });
-
 
 // ── Studio "최종 모델 출력" → workbench 자동 처리 ────────────────────
 // Studio 가 _edit.json 을 folderPath 에 쓴 직후 호출.
@@ -3147,6 +3157,9 @@ ipcMain.handle("viewer:downloadUnitOp2", async (event, payload) => {
 });
 
 app.whenReady().then(() => {
+  // 이미 다른 실행이 떠 있어 끝내는 중이면 창을 만들지 않는다.
+  if (!hasSingleInstanceLock) return;
+
   // 서버 인증서 고정 — 첫 요청보다 먼저 건다(Chromium 이 세션별로 검사 결과를 기억한다).
   // 개발 실행(npm run dev)만 개발 PC 시험용 인증서도 받는다.
   installCertificatePinning({
