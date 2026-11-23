@@ -292,6 +292,23 @@ P2 의 기본을 "그대로 두고 보고"로 둔 이유: 받칠 구조가 1 m �
 > **→ 2026-11-17 세션 끝** — Studio 검토 창 1차 완료(아래 6단계 'Studio 검토 창 1차'): 엔진 `a517b8a`(70 InHouse 교체, sha256 6f928955…, 백업 `.bak_20261117_before_review`) · MB Studio `db966df`(0.1.13, 70 로컬 zip, 그 앞에 0.1.9~0.1.12 스냅숏 `bd1d08a`) · WorkBench `4b247a3`. 셋 다 푸시 안 함(엔진은 Public 저장소라 D8 Private 전환 뒤).
 > 다음: ① 사용자가 70 앱에서 Review 탭 → Save → 판정 갱신 흐름 확인(앱 안 흐름은 아직 아무도 안 봄) ② 'U-bolt 없이 N m 넘는 배관' 결정 기록(기준 길이 결정 필요) ③ RBE3(D4)는 사용자 검토 중 — 건드리지 않음.
 > 145(사용자가 마지막에 한꺼번에): InHouse `Cmb.Cli.exe` 교체 **먼저** → `/studio-release model-studio` 0.1.13 → 다음 WorkBench exe.
+> **→ 2026-11-20 D6 재수집** — 145 `userConnection` 의 MB, AM 작업 폴더 307개의 맨 위 CSV 790개를 실행 폴더째 복사(`DataStorage\ModelBuilderCsv_raw`, 사용자 실행) → 70 `E:\HiTESS\ModelBuilderCsv_raw`. DRM 0, 내용 다른 CSV 367개, 가장 이른 폴더 10-21 17:11(그날 자정 정리 직전).
+>   수집 스크립트로 다시 모으지 않은 이유: `same_name`(같은 이름이면 먼저 본 것만)과 manifest `seen` 때문에 고쳐 다시 올린 판이 또 빠진다. ⚠ 자동 보관도 같은 규칙이라 11-12 이후 같은 이름으로 고쳐 올린 판은 계속 빠지고 있다(규칙 변경은 사용자 결정 대기).
+>   회귀 장치는 `--corpus` 에 `;` 로 여러 폴더를 받고 manifest 없는 폴더는 실행 폴더 사본으로 읽는다(`load_sets_raw`, 묶음 ID 식은 같음). 기본값 = raw;예전 수집 → **168묶음**(기존 62 모두 같은 ID + 새 106: 3596 77, 3615 23 등, 10-20 이전 9묶음은 예전 수집에만 있음). 회귀 `s7_raw168`(엔진 `a517b8a`, Nastran).
+> **→ 2026-11-23 `s7_raw168` 끝** — 통과 **30/168**, 연결 그룹 2개 이상 129, 떠 있는 그룹 1,722, 자중 FATAL 114(11-20, 11-23 두 번 세션 끊김에 같이 죽어 `regress.py run --resume` 을 넣고 이어 돌림, 같은 exe 확인용 `run_meta.json`, `metrics.json` 은 임시 파일 뒤 바꿔치기).
+>   새 묶음 대부분인 **3596(77묶음), 3615 가 미달의 거의 전부**이고 원인은 'U-bolt 없는 배관 그룹'(3596 떠 있는 1,256 중 963). 그중 **3596 의 893(92%)은 그 branch 에 입력부터 UBOLT 행이 0개**(이름 불일치 아님 — 위치로도 200 mm 안에 U-bolt 없음, 예 3596-E32P0 은 branch 14개에 U-bolt 5개).
+>   3596 은 배관 질량의 56%가 U-bolt 없는 branch(다른 호선 5~19%). 떠 있는 배관 그룹이 가장 가까이 닿는 대상: 구조 부재가 배관 반경 안 306(3615 51), 반경+100 mm 안 67, 다른 배관 300 mm 안 294, 더 멂 307.
+>   즉 엔진 결함이 아니라 **받침(SUPP 앵글 등)은 구조로 들어왔는데 U-bolt 가 아직 안 그려진 설계 진행 중 입력**으로 보인다. 처방은 정책 결정(P2, D3) — 아래 '6. 정할 것' D12.
+> **→ 2026-11-23 D12 구현(사용자 결정 A안, 엔진 미커밋, InHouse 미교체)** — 새 단계 `PipeRestConnectStage`(PipeGap 다음, LoopClose 앞, RBE remark `PIPE_REST`).
+>   대상 = 주 구조 밖, 요소가 모두 배관, U-bolt 가 하나도 없는 그룹(남은 UBOLT RBE, `UboltUnsupported` 표시 노드, 고립돼 지워진 U-bolt 자리가 배관에 닿음 — 셋 다 있으면 P2 보고로 남김).
+>   닿음 = 두 축선 거리 ≤ 두 단면 중 큰 치수 + 25 mm(FragmentProximity, MemberProximity 와 같은 기준). 나란한 부재(|cos| ≥ 0.9)는 제외, 그룹마다 구조 부재 하나에 한 곳, 받침점끼리 500 mm 안이면 하나. 등급은 늘 추정 B.
+>   PipeGap 투영 노드(분할 전)는 축선 위 부재와 같은 그룹으로 보고 판정(리뷰 지적). 검토는 배관 그룹마다 단위 하나 — 새 종류 `pipe_rest`(결정 기록 `group` 칸 = 그룹 대표 배관 CSV 이름, 겹치면 `#2`), 이름표는 WorkBench `utils/mbReview.js`, MB Studio `data/reviewData.js` 두 벌.
+>   회귀: `s8_rest`(첫 판) → 리뷰 반영 `s8c_fix` → 최종 **`s8d_final`**(exe `outputs/mb-engine-exe/s8d_final/`). s7_raw168 대비 BDF 바뀐 묶음 55, 통과 30 → 32, 떠 있는 그룹 1,722 → 952, 연결 그룹 2개 이상 129 → 125, 받침 RBE 약 2,050, 검토 단위 5,967(받침을 낱개로 셀 때) → 4,573(pipe_rest 686).
+>   남은 떠 있는 배관은 대부분 다른 배관 옆 100~300 mm 를 지나는 부재 중간(닿지도 받침도 없음) — 입력만으로 받칠 근거가 없어 P2 보고 유지. 3596 이 여전히 FATAL 9050 인 이유가 이것이다(설계자가 U-bolt 를 그려야 풀림).
+>   독립 리뷰: hitess-code-reviewer '막아야 함' 1(미지지 U-bolt 배관 오판) + Codex 3(같은 것, 재사용 노드 허용치 1 → 0.5 mm, PipeGap 투영 노드 그룹) 모두 반영, 시험 추가. 엔진 시험 721 통과(건너뜀 1), WorkBench 프론트 567, Studio reviewData 6 통과.
+>   **→ 커밋과 70 교체(같은 날)** — 엔진 `ac490a5`(로컬, 푸시 안 함 — D8 Private 전환 뒤) · 커밋본 exe `outputs/mb-engine-exe/rel_ac490a5/`(sha256 ecc6b48c…, 회귀 `rel_ac490a5` Nastran 없이 BDF 168/168 `s8d_final` 과 같음)
+>   → 70 InHouse `Cmb.Cli.exe` 교체, 백업 `.bak_20261123_before_pipe_rest`(이전 a517b8a, 6f928955…). 교체본으로 3596 묶음 실행 exit 0, 최종 BDF 와 `00_Review.json`(pipe_rest 27) 확인, 백엔드 MB 시험 41 통과. WorkBench 앱 화면, Studio 는 눈으로 확인 안 함.
+>   남은 것: MB Studio 이름표(`reviewData.js`)는 커밋만, 다음 `/studio-release model-studio` 에 실림 · 145 는 사용자가 InHouse exe 먼저 교체(이 계획의 모든 엔진 변경이 아직 145 에 없음).
 
 **B11 + B12a (2026-11-12, 엔진 미커밋, 70 InHouse 미교체)** — 회귀 이름 `b11_noise_off`(B11 만), `b12a_fragment`(둘 다).
 - B11: `RunOptions.GroupConnectNoiseLengthMm` 500 → **0**(노이즈 제거 끔). 시험 `NoiseFragment_SingleSmallElement_KeptByDefault` 로 바꿈.
@@ -699,6 +716,7 @@ RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점
 | D9 | 3395 의 141 t, 88 t 장비 행 | 사용자 확인 | 실제 장비인지 CSV 오류인지 모름 |
 | D10 | 과대 변위, 꺾인 U-bolt RBE 를 완성 기준에 넣나 | 과대 변위는 넣음(기준값은 1단계 뒤), 꺾인 RBE 는 2단계 수정 뒤 0 이 되면 넣음 | 사람 검토가 실제로 결함으로 본 항목 |
 | D11 | Stru, Pipe, RBE 번호 대역 구분(PPT 지적, HyperMesh 권상 해석용) | 3단계 결정 기록과 함께 번호 규칙 도입 검토 | 편집 intent, Studio 가 번호를 쓰므로 영향 조사 먼저 |
+| D12 | U-bolt 가 하나도 없는 떠 있는 배관 그룹(3596 의 대부분) | **닿은 구조 부재에 추정 받침 RBE, 배관 그룹마다 검토 1건**(2026-11-23 사용자 결정 A안) | 받침 구조는 있고 U-bolt 만 안 그린 입력이 대부분. 그룹 통째 빼기(C안)는 강성이 빠져 다른 용도에서 틀림 |
 
 **결정(2026-11-12, 사용자 "추천대로 진행")** — D1~D11 과 B10 모두 위 추천대로.
 - D1 은 질량 허용폭을 **'1% 또는 20 kg 중 큰 쪽'** 으로 고쳐 채택(4단계 사전 확인에서 연장으로 생긴 정상 증가가 작은 모델에서 1% 를 넘음).

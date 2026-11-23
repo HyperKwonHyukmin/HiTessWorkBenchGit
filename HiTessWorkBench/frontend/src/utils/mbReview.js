@@ -15,6 +15,7 @@ const KIND_LABELS = {
   ubolt_unsupported: '받칠 구조 없는 U-bolt',
   floating_group: '떨어진 그룹',
   small_group_removed: '지운 작은 외딴 그룹',
+  pipe_rest: 'U-bolt 없는 배관 받침',
 };
 
 export function reviewKindLabel(kind) {

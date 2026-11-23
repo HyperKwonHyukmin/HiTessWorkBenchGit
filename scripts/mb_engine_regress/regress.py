@@ -31,7 +31,8 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-DEFAULT_CORPUS = os.environ.get("MB_CSV_CORPUS", r"E:\HiTESS\ModelBuilderCsv")
+# 145 userConnection 통째 사본(2026-11-20, 고쳐 다시 올린 판 포함) + 그 전에 지워진 실행이 남은 예전 수집
+DEFAULT_CORPUS = os.environ.get("MB_CSV_CORPUS", r"E:\HiTESS\ModelBuilderCsv_raw;E:\HiTESS\ModelBuilderCsv")
 DEFAULT_EXE = os.path.join(REPO, "HiTessWorkBenchBackEnd", "InHouseProgram", "HiTessModeBuilder", "Cmb.Cli.exe")
 DEFAULT_OUT = os.path.join(REPO, "outputs", "mb-engine-regress")
 NASTRAN = r"C:\MSC.Software\MSC_Nastran\20131\bin\nastran.exe"
@@ -52,14 +53,66 @@ COORD = re.compile(r"X\s*(-?[\d.]+)mm\s*Y\s*(-?[\d.]+)mm\s*Z\s*(-?[\d.]+)mm")
 
 # ───────────────────────── 시험 자료 ─────────────────────────
 
+HULL_FROM_NAME = re.compile(r"^(\d{4})(?=[-_ .]|$)")   # 백엔드 hull_no.FILENAME_HULL_RE 와 같게(묶음 ID 가 기존과 같아야 한다)
+
+
+def _guess_kind(name):
+    """백엔드 mb_csv_archive.guess_kind 와 같은 규칙."""
+    low = name.lower()
+    return "stru" if "stru" in low else "pipe" if "pipe" in low else "equip" if "equ" in low else ""
+
+
+def load_sets_raw(corpus):
+    """manifest 없이 실행 폴더(<ts>_<사번>_<프로그램>)마다 맨 위 CSV 를 묶는다(145 userConnection 통째 사본, 2026-11-20).
+
+    묶음 ID 는 load_sets 와 같은 식(호선 + 종류별 sha) — 예전 수집분과 같은 묶음은 같은 ID 가 된다.
+    """
+    sets, skipped, seen = {}, [], []
+    for folder in sorted(os.listdir(corpus)):
+        fdir = os.path.join(corpus, folder)
+        if not os.path.isdir(fdir):
+            continue
+        files, ok = {}, True
+        for name in sorted(os.listdir(fdir)):
+            p = os.path.join(fdir, name)
+            if not (name.lower().endswith(".csv") and os.path.isfile(p)):
+                continue
+            kind = _guess_kind(name)
+            if kind not in KINDS:
+                continue
+            if kind in files:            # 같은 종류가 둘이면 어느 것을 넣었는지 모른다 — 묶음에서 뺀다
+                ok = False
+                break
+            data = open(p, "rb").read()
+            if data.startswith(b"HHIDRMC"):
+                ok = False
+                break
+            files[kind] = {"path": p, "name": name, "sha": hashlib.sha256(data).hexdigest()}
+        seen.append(folder)
+        if not ok:
+            skipped.append(folder)
+            continue
+        if "stru" not in files and "pipe" not in files:
+            continue
+        m = next((HULL_FROM_NAME.match(f["name"].strip()) for f in files.values() if HULL_FROM_NAME.match(f["name"].strip())), None)
+        hull = m.group(1) if m else "nohull"
+        sig = "|".join(f"{k}:{files[k]['sha']}" for k in sorted(files))
+        sid = f"{hull}-{hashlib.sha256(sig.encode()).hexdigest()[:8]}"
+        sets.setdefault(sid, {"id": sid, "hull": hull, "files": files, "firstRun": folder})
+    return list(sets.values()), skipped, seen
+
+
 def load_sets(corpus):
-    """manifest.csv 의 실행(source_folder)마다 파일 묶음을 만들고 내용이 같은 묶음은 하나로 줄인다."""
+    """manifest.csv 의 실행(source_folder)마다 파일 묶음을 만들고 내용이 같은 묶음은 하나로 줄인다.
+    manifest 가 없으면 실행 폴더 사본으로 보고 load_sets_raw 로 읽는다."""
+    if not os.path.isfile(os.path.join(corpus, "manifest.csv")):
+        return load_sets_raw(corpus)
     rows = list(csv.DictReader(open(os.path.join(corpus, "manifest.csv"), encoding="utf-8-sig")))
     stored = {r["sha256"]: os.path.join(corpus, r["stored_path"]) for r in rows if r["stored_path"]}
     runs = collections.defaultdict(list)
     for r in rows:
         runs[r["source_folder"]].append(r)
-    sets, skipped = {}, 0
+    sets, skipped = {}, []
     for folder, rs in sorted(runs.items()):
         files, ok = {}, True
         for r in rs:
@@ -71,7 +124,7 @@ def load_sets(corpus):
                 break
             files[r["kind"]] = {"path": p, "name": r["original_name"], "sha": r["sha256"]}
         if not ok:
-            skipped += 1
+            skipped.append(folder)
             continue
         if "stru" not in files and "pipe" not in files:
             continue
@@ -79,7 +132,20 @@ def load_sets(corpus):
         sig = "|".join(f"{k}:{files[k]['sha']}" for k in sorted(files))
         sid = f"{hull}-{hashlib.sha256(sig.encode()).hexdigest()[:8]}"
         sets.setdefault(sid, {"id": sid, "hull": hull, "files": files, "firstRun": folder})
-    return list(sets.values()), skipped
+    return list(sets.values()), skipped, list(runs)
+
+
+def load_corpus(spec):
+    """';' 로 여러 폴더를 합친다(예: raw 사본;예전 수집). 같은 ID 는 앞 폴더 것을 쓴다.
+    뺀 실행 수는 다른 폴더에서도 못 찾은 실행만 센다(예전 수집의 same_name 은 raw 사본에 원본이 있다)."""
+    sets, skipped, seen = {}, set(), set()
+    for corpus in [c.strip() for c in spec.split(";") if c.strip()]:
+        ss, sk, sn = load_sets(corpus)
+        for s in ss:
+            sets.setdefault(s["id"], s)
+        skipped |= set(sk)
+        seen |= set(sn) - set(sk)
+    return list(sets.values()), len(skipped - seen)
 
 
 # ───────────────────────── 기하 ─────────────────────────
@@ -552,7 +618,10 @@ def run_one(s, exe, out, nastran):
     m.pop("finalBdf", None)
     m["pass"], m["why"] = judge(m)
     m["warn"] = warnings(m)
-    json.dump({"metrics": m, **detail}, open(os.path.join(d, "metrics.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    tmp = os.path.join(d, "metrics.json.tmp")        # 끊겨도 반쪽 metrics.json 이 남지 않게(--resume 이 끝난 묶음으로 읽음)
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({"metrics": m, **detail}, fh, ensure_ascii=False, indent=1)
+    os.replace(tmp, os.path.join(d, "metrics.json"))
     print(f"[{s['id']}] {'통과' if m['pass'] else '미달'} 그룹={m.get('groups')} {'; '.join(m['why'])[:90]}", flush=True)
     return m
 
@@ -606,7 +675,7 @@ def write_result(out, res):
 
 
 def cmd_run(a):
-    sets, skipped = load_sets(a.corpus)
+    sets, skipped = load_corpus(a.corpus)
     if a.only:
         want = set(a.only.split(","))
         sets = [s for s in sets if s["id"] in want]
@@ -627,11 +696,25 @@ def cmd_run(a):
         return
     if os.path.isfile(os.path.join(out, "result.json")) and not a.force:
         sys.exit(f"'{a.label}' 결과가 이미 있다({out}). 기준 결과를 덮어쓰지 않으려고 멈춘다 — 새 이름을 쓰거나 --force.")
+    sha = hashlib.sha256(open(a.exe, "rb").read()).hexdigest()
+    meta_path = os.path.join(out, "run_meta.json")       # 끊긴 run 을 이어 할 때 같은 엔진인지 확인하는 표
+    done = {}
+    if a.resume:
+        meta = json.load(open(meta_path, encoding="utf-8")) if os.path.isfile(meta_path) else {}
+        if meta.get("exeSha") != sha or meta.get("nastran") != (not a.no_nastran):
+            sys.exit(f"--resume: '{a.label}' 의 run_meta.json 이 없거나 엔진/Nastran 설정이 다르다 — 새로 run 하라.")
+        for s in sets:
+            mp = os.path.join(out, s["id"], "metrics.json")
+            try:                                          # 끊길 때 쓰다 만 파일은 '안 끝남'으로 보고 다시 돌린다
+                done[s["id"]] = json.load(open(mp, encoding="utf-8"))["metrics"]
+            except (OSError, ValueError, KeyError):
+                pass
     os.makedirs(out, exist_ok=True)
-    print(f"묶음 {len(sets)} → {out}", flush=True)
+    json.dump({"exeSha": sha, "nastran": not a.no_nastran}, open(meta_path, "w", encoding="utf-8"))
+    print(f"묶음 {len(sets)} → {out}" + (f" (이어 하기: 끝난 {len(done)} 건너뜀)" if a.resume else ""), flush=True)
     with ThreadPoolExecutor(max_workers=a.workers) as ex:
-        rows = list(ex.map(lambda s: run_one(s, a.exe, out, not a.no_nastran), sets))
-    res = {"label": a.label, "exe": a.exe, "exeSha": hashlib.sha256(open(a.exe, "rb").read()).hexdigest(),
+        rows = list(ex.map(lambda s: done.get(s["id"]) or run_one(s, a.exe, out, not a.no_nastran), sets))
+    res = {"label": a.label, "exe": a.exe, "exeSha": sha,
            "engineOpts": ENGINE_OPTS, "nastran": not a.no_nastran, "corpus": a.corpus, "skippedRuns": skipped,
            "when": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), "sets": rows}
     md = write_result(out, res)
@@ -663,7 +746,10 @@ def cmd_remeasure(a):
         m.pop("finalBdf", None)
         m["pass"], m["why"] = judge(m)
         m["warn"] = warnings(m)
-        json.dump({"metrics": m, **detail}, open(os.path.join(d, "metrics.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        tmp = os.path.join(d, "metrics.json.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"metrics": m, **detail}, fh, ensure_ascii=False, indent=1)
+        os.replace(tmp, os.path.join(d, "metrics.json"))
         rows.append(m)
     res["sets"] = rows
     md = write_result(out, res)
@@ -766,6 +852,7 @@ def main():
     r.add_argument("--only", default="")
     r.add_argument("--force", action="store_true", help="같은 이름의 결과가 있어도 덮어쓴다")
     r.add_argument("--merge", action="store_true", help="--only 묶음만 다시 돌려 기존 결과에 끼워 넣는다(같은 --exe 로)")
+    r.add_argument("--resume", action="store_true", help="끊긴 run 이어 하기 — metrics.json 이 이미 있는 묶음은 다시 돌리지 않는다(같은 --exe 로)")
     r.set_defaults(fn=cmd_run)
     rm = sub.add_parser("remeasure")
     rm.add_argument("--out", default=DEFAULT_OUT)
