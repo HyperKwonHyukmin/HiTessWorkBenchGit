@@ -709,7 +709,17 @@ RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점
 - 받는 곳: 백엔드 `bdf_deck_check` 가 Defects 를 읽어 경고 `mb_model_defects`(막지 않음), All Projects 파일 칸 `mbDefects`, LogBook 계획 경고. WorkBench 판정은 `review.defects` 중 다른 사유가 못 잡는 빠진 질량점만 '검토 필요'(`mass-defects`). Studio Review 패널 = 승인 묶음 + '해석 전 고칠 것' + '기록만 한 것' 한 줄 + 알림. 화면은 다시 분류하지 않는다(옛 1.0 용 대체 이름표만).
 - 168묶음(`s9c_review_class`, Nastran 없이): 모델당 승인 단위 중앙 16 → **2**, 90% 56 → 24, 최대 465 → 155, 0건 모델 7 → 42, 알림 21모델. 승인 종류: 추정 연결 412, 받침 686, U-bolt 129(결정 532), 질량점 67, 그룹 이동 74. BDF 본문 168/168 `s8d_final` 과 같음(머리만 바뀜). 샘플 3454-35020: 56 → 15 + 결함 2줄.
 - 독립 리뷰: hitess-code-reviewer 막아야 함 3(U-bolt 묶음이 모델 전체 성분, 결정 없이 편집하면 Defects 안 바뀜, WorkBench 가 빠진 질량점을 통과로) + Codex 5(같은 둘, 새 떨어진 그룹 줄 없음, 같은 이름 성분 합쳐짐, 질량점 이중 셈) 모두 반영, 시험 추가. 엔진 시험 728, 백엔드 관련 60, 프론트 유틸 569, Studio reviewData 8 통과.
-- ⚠ 이상(원인 미조사): group_translate 433건 중 74건이 10 mm 를 넘는다(최대 100 mm). GroupConnectTranslateMaxMm = 10 인데 큰 기록이 있다 — 누적 이동이거나 기록 거리 정의 문제로 보임. 지금은 승인 대상으로 올려 사람이 본다.
+- ~~⚠ 이상: group_translate 74건이 10 mm 초과~~ → **원인 찾아 고침(2026-11-23, 엔진 미커밋)**: 아래 'GroupConnect 10 mm 넘는 이동'.
+
+**GroupConnect 10 mm 넘는 이동 74건(2026-11-23, 엔진 미커밋, InHouse 미교체)** — 형상을 움직이지 않는다는 원칙 2 를 어기던 결함.
+- 원인(계측 exe 로 168묶음 전수 확인): 74건 모두 '그룹이 이미 RBE 로 주 구조와 이어져 있었다'. GroupConnect 는 자기 표식(GROUP_CONNECT_RBE)만 연결로 보는데, 같은 단계 끝의 공유 종속 병합(MergeSharedDependentNodes)이 그 RBE 를 합치며 표식을 MERGED_SHARED_DEP 로 바꾼다 → 다음 수렴 반복에서 연결을 잊고 반대 방향 RBE(순환)를 만듦 → 그다음엔 자유단과 대상점이 둘 다 종속이라 RBE 를 못 만들어 '병진 이동' 으로 빠져 최대 100 mm 옮김.
+- 고침(`GroupConnectStage`): ① 모든 요소(배관 제외)와 RBE 로 본 연결 표(linkUf)로, CAD 오차보다 먼 그룹 중 이미 이어진 부분은 다시 잇지도 옮기지도 않음(섞인 meta-group 은 안 이어진 부분만 다시 계산) ② RBE 를 못 만들면 10 mm 넘게는 옮기지 않고 뒤 단계에 넘김(`GROUP_CONNECT_RBE_DEFERRED`) ③ 연결 표 기준은 주 구조의 구조 요소 노드, 옮겨 합쳐진 노드도 반영, 단계 안에서 새로 생긴 노드는 먼저 등록(`UnionFind.Add`).
+  배관을 연결 표에서 빼는 이유: 처음엔 넣었더니 U-bolt, 배관으로만 이어진 구조 그룹을 '이어짐' 으로 봐 3469-82e9712b 자중 변위 349 → 1,251 mm. 등록 누락은 3476 두 묶음에서 KeyNotFound 로 엔진이 멈춰 회귀에서 잡음.
+- 회귀 `s10d_grouplink`(Nastran, exe `outputs/mb-engine-exe/s10d_grouplink/`) vs `s8d_final`: 168 모두 실행, BDF 바뀐 묶음 17, 통과 32 → 32(나빠진 묶음 0), 그룹과 떠 있는 그룹 그대로(1,124, 952), 10 mm 넘는 이동 74 → **0**, 사라진 구조 행 1,368 → 1,156, 최대 변위 차이 3454-98e6df58 0.07 mm 뿐. 최종 BDF 순환 RBE, 중복 종속 0(전과 같음), 수렴 중간(04) 순환 11 → 4묶음.
+- 시험 5개 추가(이미 이어짐, RBE 불가, 배관 경유, 섞인 묶음, 새 노드 합침 예외) — 고치기 전 코드에서 4개 실패, 예외 시험은 그 예외 그대로 재현. 엔진 시험 732 통과.
+- 독립 리뷰: hitess-code-reviewer 막아야 함 0(확인 2: 기준 노드가 배관일 수 있음 → 고침, 넘긴 그룹을 뒤 단계가 받는지 → 168묶음 떠 있는 그룹 수 그대로로 확인), Codex 4(섞인 묶음 순환, 병합 미반영 → 고침, 배관을 연결 대상으로 고르는 것은 이전부터의 동작이라 따로, 다른 쌍 미시도 → 위와 같음).
+- 남은 것(이번에 안 함): 주 구조 묶음 안의 배관 요소를 GroupConnect 연결 대상으로 고르는 이전부터의 동작 · 수렴 중간 순환 4묶음(최종에선 0).
+- **커밋과 70 반영(같은 날)**: 엔진 `ba11adc`(로컬, 푸시 안 함) · 커밋본 exe `outputs/mb-engine-exe/rel_ba11adc/`(sha256 eed9c762…, 회귀 `rel_ba11adc` BDF 168/168 `s10d_grouplink` 와 같음) → 70 InHouse 교체, 백업 `.bak_20261123_before_grouplink`(이전 6beba71). 145 는 InHouse exe 수동 교체(ac490a5, 6beba71, ba11adc 모두 아직 없음).
 - **커밋과 70 반영(같은 날)**: 엔진 `6beba71`(로컬, 푸시 안 함) · 커밋본 exe `outputs/mb-engine-exe/rel_6beba71/`(sha256 de9d4d53…, 회귀 `rel_6beba71` BDF 168/168 `s9c_review_class` 와 같음) → 70 InHouse 교체, 백업 `.bak_20261123_before_review_class`(이전 ac490a5). 교체본으로 샘플 3454-35020 `Review=REQUIRED Items=15 Defects=3`.
   MB Studio 0.1.17 70 로컬 배포(sha256 76c4ca21…, 백엔드 manifest 확인), WorkBench 핀 0.1.17. 70 앱 화면은 눈으로 확인 안 함(그때 9091 이 꺼져 있었음).
 - 145(사용자): InHouse `Cmb.Cli.exe` 먼저(ac490a5 와 6beba71 모두 아직 145 에 없음) → 백엔드 `git pull` + 재시작(bdf_deck_check, admin_projects, mb_csv_archive) → `/studio-release model-studio` 0.1.17 → 다음 WorkBench exe.
