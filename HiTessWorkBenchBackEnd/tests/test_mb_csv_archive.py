@@ -48,17 +48,39 @@ def test_rerun_is_safe(dirs):
     assert len(_manifest(root)) == 1
 
 
-def test_same_name_different_content_keeps_first_only(dirs):
+def test_same_name_different_content_is_kept_with_hash_suffix(dirs):
+    # 2026-11-23: 사용자가 고쳐 다시 올린 판(같은 이름, 다른 내용)도 보관한다 — 이름 뒤에 해시 8자리.
     uc, root = dirs
     a = _write(uc / "f1" / "3454-equpData.csv", "name,pos\nA,1\n")
     b = _write(uc / "f2" / "3454-equpData.csv", "name,pos\nB,2\n")
-    arc.archive_csv(a, source_folder="f1", root=str(root))
-    assert arc.archive_csv(b, source_folder="f2", root=str(root)) == "same_name"
-    stored = list((root / "3454").glob("*.csv"))
-    assert len(stored) == 1 and stored[0].read_text() == "name,pos\nA,1\n"
+    assert arc.archive_csv(a, source_folder="f1", root=str(root)) == "stored"
+    assert arc.archive_csv(b, source_folder="f2", root=str(root)) == "variant"
     rows = _manifest(root)
-    assert rows[1]["source_folder"] == "f2" and rows[1]["stored_path"] == ""
-    # 다시 돌려도 같은 자리를 또 적지 않는다
+    sha_b = rows[1]["sha256"]
+    assert rows[1]["stored_path"] == f"3454/3454-equpData__{sha_b[:8]}.csv"
+    assert rows[1]["original_name"] == "3454-equpData.csv" and rows[1]["kind"] == "equip"
+    assert (root / rows[1]["stored_path"]).read_text() == "name,pos\nB,2\n"
+    assert (root / "3454" / "3454-equpData.csv").read_text() == "name,pos\nA,1\n"
+    # 다시 돌려도 같은 자리를 또 적지 않고, 같은 내용의 다른 실행은 그 변형 파일을 가리킨다
+    assert arc.archive_csv(b, source_folder="f2", root=str(root)) == "seen"
+    c = _write(uc / "f3" / "3454-equpData.csv", "name,pos\nB,2\n")
+    assert arc.archive_csv(c, source_folder="f3", root=str(root)) == "duplicate"
+    assert _manifest(root)[2]["stored_path"] == rows[1]["stored_path"]
+
+
+def test_old_same_name_row_is_recovered_on_recollect(dirs):
+    # 예전 규칙(2026-11-12~11-23)으로 저장하지 않은 자리(stored_path 빈 줄)는 다시 수집하면 담긴다.
+    uc, root = dirs
+    a = _write(uc / "f1" / "3454-pipeData.csv", "name,pos\nA,1\n")
+    b = _write(uc / "f2" / "3454-pipeData.csv", "name,pos\nB,2\n")
+    assert arc.archive_csv(a, source_folder="f1", root=str(root)) == "stored"
+    import hashlib
+    sha_b = hashlib.sha256(b"name,pos\nB,2\n").hexdigest()
+    arc._write_row(str(root), "", sha_b, "pipe", "3454", "3454-pipeData.csv", "f2", "", "", 14)   # 옛 same_name 줄
+
+    assert arc.archive_csv(b, source_folder="f2", root=str(root)) == "variant"
+    rows = [r for r in _manifest(root) if r["source_folder"] == "f2"]
+    assert [r["stored_path"] for r in rows] == ["", f"3454/3454-pipeData__{sha_b[:8]}.csv"]
     assert arc.archive_csv(b, source_folder="f2", root=str(root)) == "seen"
 
 

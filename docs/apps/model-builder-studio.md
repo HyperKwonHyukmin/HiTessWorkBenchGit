@@ -227,7 +227,7 @@ AM 개발팀 전달본 = UNC `[개인 자료]\권혁민 책임연구원\UnLock\H
 Studio 는 `window.workbenchAPI` 만 보므로 클라이언트가 같은 API 를 주면 Studio 무수정 — 단 `finalizeEditedModel` 은 지금 `HiTessModelBuilder.jsx` 에 묶여 있어 이식 필요.
 
 **입력 CSV 보관 (2026-11-12, `7b7c3db`)** — 작업 폴더는 30일 뒤 지워지므로 MB 입력 CSV 를 `HiTessWorkBenchBackEnd/DataStorage/ModelBuilderCsv/<호선>/` 에 모은다(git·30일 정리 대상 아님, `MB_CSV_ARCHIVE_DIR` 로 변경).
-`app/services/mb_csv_archive.py` — 내용(sha256)이 같으면 한 번만 저장, 같은 이름·다른 내용은 저장하지 않음(먼저 본 것 하나만 — 사용자 결정 2026-11-12, manifest 에 `stored_path` 빈 줄), `manifest.csv` 에 본 자리마다 한 줄(원래 폴더·사번·실행 시각·종류), DRM 암호문은 건너뜀.
+`app/services/mb_csv_archive.py` — 내용(sha256)이 같으면 한 번만 저장, 같은 이름·다른 내용은 `<이름>__<sha256 앞 8자리>.csv` 로 따로 저장(2026-11-23 사용자 결정 — 11-12 의 '먼저 본 것 하나만'은 고쳐 다시 올린 판을 버렸다. 그 시기 manifest 의 `stored_path` 빈 줄은 수집 스크립트를 다시 돌리면 원본이 남아 있는 것만 되살아남), `manifest.csv` 에 본 자리마다 한 줄(원래 폴더·사번·실행 시각·종류), DRM 암호문은 건너뜀.
 새 실행 = `task_execute_modelflow` 첫머리(MB·AM 연동 공통, 실패해도 모델 생성 계속) · 이미 쌓인 것 = `scripts/collect_mb_csv.py [--dry-run]`(다시 돌려도 안전). 끄기 `MB_CSV_ARCHIVE=0`(테스트 conftest 가 끔). 시험 `tests/test_mb_csv_archive.py`.
 70 실측: 작업 폴더 30개 CSV 81개 → 내용 9개. 같은 파일명 규칙 = `a21574f`.
 145 반영·첫 수집 완료(2026-11-12, dry-run 683개 → 실제 실행 사용자 확인). 이후는 자동 보관이라 스크립트는 1회용(재시작 안 한 동안 빠진 것·보관 폴더 재구성 때만 다시).

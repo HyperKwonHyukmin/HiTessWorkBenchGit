@@ -6,9 +6,12 @@
 
 규칙
 - 내용(sha256)이 같은 파일은 한 번만 저장한다. 같은 CSV 로 여러 번 실행하는 일이 많다(70 실측 81개 중 9개).
-- 같은 호선 폴더에 같은 파일명이 이미 있으면 내용이 달라도 저장하지 않는다(먼저 본 것 하나만, 사용자 결정 2026-11-12).
-  수집 스크립트는 폴더 이름(=실행 시각) 순으로 훑으므로 가장 오래된 실행의 파일이 남는다.
-- 같은 원래 경로·같은 해시는 manifest 에 다시 적지 않는다 → 수집 스크립트를 여러 번 돌려도 안전하다.
+- 같은 호선 폴더에 같은 파일명이 이미 있고 내용이 다르면 '<이름>__<sha256 앞 8자리>.csv' 로 따로 저장한다
+  (2026-11-23 사용자 결정 — 예전 '먼저 본 것 하나만'(2026-11-12)은 사용자가 고쳐 다시 올린 판을 계속 버렸다).
+  manifest 의 original_name 은 원래 파일명 그대로라 회귀 장치는 해시로 찾는다.
+- 같은 원래 폴더·같은 해시는 manifest 에 다시 적지 않는다 → 수집 스크립트를 여러 번 돌려도 안전하다.
+  다만 예전 규칙으로 버린 자리(stored_path 빈 줄, 그 내용이 어디에도 저장 안 됨)는 다시 담는다 —
+  145 작업 폴더에 아직 남아 있으면(30일 안) 수집 스크립트로 되살린다.
 - 회사 DRM 암호문(HHIDRMC 머리)은 저장하지 않는다(암호문은 쓸모가 없다).
 - 원본은 읽기만 한다.
 
@@ -113,12 +116,13 @@ def archive_csv(
     run_at: str = "",
     root: Optional[str] = None,
 ) -> str:
-    """CSV 하나를 보관한다. 결과: 'stored' | 'duplicate' | 'same_name' | 'seen' | 'drm' | 'missing'.
+    """CSV 하나를 보관한다. 결과: 'stored' | 'variant' | 'duplicate' | 'seen' | 'drm' | 'missing'.
 
-    stored    = 새 내용이라 복사함
+    stored    = 새 내용이라 원래 파일명으로 복사함
+    variant   = 같은 파일명에 다른 내용이 이미 있어 '<이름>__<해시 8자리>' 로 복사함
     duplicate = 같은 내용이 이미 있음(manifest 에 이번 자리만 적음)
-    same_name = 같은 파일명이 이미 있어 저장하지 않음(내용은 다름, manifest 에 stored_path 빈 줄)
-    seen      = 같은 원래 폴더·같은 내용이 이미 manifest 에 있음(아무것도 안 함)
+    seen      = 같은 원래 폴더·같은 내용을 이미 적었고 그 내용이 저장돼 있음(아무것도 안 함)
+    (옛 결과 same_name = 2026-11-12~11-23 규칙에서 저장하지 않은 자리, manifest 에 stored_path 빈 줄로 남아 있음)
     """
     if not src_path or not os.path.isfile(src_path):
         return "missing"
@@ -135,32 +139,34 @@ def archive_csv(
     with _lock:
         os.makedirs(root, exist_ok=True)
         rows = _read_manifest(root)
-        if any(r.get("sha256") == sha and r.get("source_folder") == source_folder for r in rows):
-            return "seen"
         existing = next((r["stored_path"] for r in rows
-                         if r.get("sha256") == sha and os.path.isfile(os.path.join(root, r.get("stored_path", "")))),
+                         if r.get("sha256") == sha and r.get("stored_path")
+                         and os.path.isfile(os.path.join(root, r["stored_path"]))),
                         None)
+        if existing and any(r.get("sha256") == sha and r.get("source_folder") == source_folder for r in rows):
+            return "seen"
         if existing:
             stored_rel, result = existing, "duplicate"
-        elif os.path.exists(os.path.join(root, hull, name)):
-            # 같은 파일명이 이미 있으면 내용이 달라도 저장하지 않는다(사용자 결정 2026-11-12, 먼저 본 것 하나만).
-            # manifest 에는 stored_path 를 비워 '어느 실행이 다른 내용을 썼는지' 만 남긴다.
-            stored_rel, result = "", "same_name"
         else:
-            stored_rel = os.path.join(hull, name)
+            stored_rel, result = os.path.join(hull, name), "stored"
+            if os.path.exists(os.path.join(root, stored_rel)):
+                # 같은 파일명에 다른 내용 — 사용자가 고쳐 다시 올린 판. 해시를 붙여 따로 둔다(2026-11-23).
+                stem, ext = os.path.splitext(name)
+                stored_rel, result = os.path.join(hull, f"{stem}__{sha[:8]}{ext}"), "variant"
+                if os.path.exists(os.path.join(root, stored_rel)):   # 해시 앞 8자리까지 겹치면 전체 해시
+                    stored_rel = os.path.join(hull, f"{stem}__{sha}{ext}")
             target = os.path.join(root, stored_rel)
             os.makedirs(os.path.dirname(target), exist_ok=True)
             tmp = target + ".tmp"
             with open(tmp, "wb") as out:
                 out.write(data)
             os.replace(tmp, target)
-            result = "stored"
         try:
             _write_row(root, stored_rel, sha, kind, hull, name, source_folder, employee_id, run_at, len(data))
         except OSError:
             # manifest 가 잠겨 있으면(예: Excel 로 열어 둠) 방금 저장한 본문을 지운다 —
             # 기록 없는 파일이 남으면 다음 실행이 그 파일을 '같은 파일명' 으로 보고 기록 없이 건너뛴다.
-            if result == "stored":
+            if result in ("stored", "variant"):
                 try:
                     os.remove(os.path.join(root, stored_rel))
                 except OSError:
