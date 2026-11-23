@@ -719,6 +719,11 @@ RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점
 - 시험 5개 추가(이미 이어짐, RBE 불가, 배관 경유, 섞인 묶음, 새 노드 합침 예외) — 고치기 전 코드에서 4개 실패, 예외 시험은 그 예외 그대로 재현. 엔진 시험 732 통과.
 - 독립 리뷰: hitess-code-reviewer 막아야 함 0(확인 2: 기준 노드가 배관일 수 있음 → 고침, 넘긴 그룹을 뒤 단계가 받는지 → 168묶음 떠 있는 그룹 수 그대로로 확인), Codex 4(섞인 묶음 순환, 병합 미반영 → 고침, 배관을 연결 대상으로 고르는 것은 이전부터의 동작이라 따로, 다른 쌍 미시도 → 위와 같음).
 - 남은 것(이번에 안 함): 주 구조 묶음 안의 배관 요소를 GroupConnect 연결 대상으로 고르는 이전부터의 동작 · 수렴 중간 순환 4묶음(최종에선 0).
+- **GroupConnect 연결 대상(같은 날, 엔진 미커밋)**: 주 구조 묶음 안의 배관 요소도 연결 대상으로 골라 구조 그룹을 배관에 RBE 로 잇던 동작(계측: 168묶음 중 4묶음). 배관을 아예 빼면 3596-2a7a92d4 의 RBAR_10 묶음(배관을 따라 굽은 환봉 8개, 배관과 섞인 그룹)이 떨어진 그룹으로 남아 — 배관에 붙는 것이 실제일 수 있음 — 다음으로 바꿈:
+  구조 부재를 먼저 찾고, 한도 안에 구조가 없을 때만 배관에 RBE 로 잇되 늘 추정 B(승인 대상), 배관 위로 옮겨 붙이지 않음(`GROUP_CONNECT_PIPE_FALLBACK`). 회귀 `s11b_pipe_fallback`(Nastran): BDF 168/168 `s10d_grouplink` 와 같음(실제 자료에선 모두 '구조가 한도 밖' 경우), 승인 항목 +1 이 2묶음(3476-22e90e96, 3596-2a7a92d4 — 예전 A 기록). 시험 2개(구조 우선은 고치기 전 실패).
+  독립 리뷰(hitess-code-reviewer 막아야 함 0, 확인 2) 반영: ① 배관을 포함한 연결로 이미 이어진 그룹은 배관 대체를 다시 하지 않음(표식이 바뀌어도 반대 방향 RBE 방지) ② 대체 연결 rule = `GROUP_CONNECT_RBE/PIPE`, 같은 조립품이어도 A 로 올리지 않음. 시험 2개(보호를 빼면 둘 다 실패 확인).
+  최종 회귀 `s11c_pipe_fallback`(Nastran, exe `outputs/mb-engine-exe/s11c_pipe_fallback/`): s11b 대비 BDF 1묶음(3476-22e90e96 RBE 2개 바뀜, 나빠진 지표 없음), 통과 32, 최종 순환 RBE 0. 엔진 시험 735 통과.
+  → 커밋 `96914e6`(로컬, 푸시 안 함), 커밋본 exe `outputs/mb-engine-exe/rel_96914e6/`(회귀 `rel_96914e6` BDF 168/168 s11c 와 같음) → 70 InHouse 교체, 백업 `.bak_20261123_before_pipe_fallback`(이전 ba11adc).
 - **커밋과 70 반영(같은 날)**: 엔진 `ba11adc`(로컬, 푸시 안 함) · 커밋본 exe `outputs/mb-engine-exe/rel_ba11adc/`(sha256 eed9c762…, 회귀 `rel_ba11adc` BDF 168/168 `s10d_grouplink` 와 같음) → 70 InHouse 교체, 백업 `.bak_20261123_before_grouplink`(이전 6beba71). 145 는 InHouse exe 수동 교체(ac490a5, 6beba71, ba11adc 모두 아직 없음).
 - **커밋과 70 반영(같은 날)**: 엔진 `6beba71`(로컬, 푸시 안 함) · 커밋본 exe `outputs/mb-engine-exe/rel_6beba71/`(sha256 de9d4d53…, 회귀 `rel_6beba71` BDF 168/168 `s9c_review_class` 와 같음) → 70 InHouse 교체, 백업 `.bak_20261123_before_review_class`(이전 ac490a5). 교체본으로 샘플 3454-35020 `Review=REQUIRED Items=15 Defects=3`.
   MB Studio 0.1.17 70 로컬 배포(sha256 76c4ca21…, 백엔드 manifest 확인), WorkBench 핀 0.1.17. 70 앱 화면은 눈으로 확인 안 함(그때 9091 이 꺼져 있었음).
