@@ -279,9 +279,9 @@ def inspect_deck_lines(lines: List[str]) -> List[Dict[str, Any]]:
         issues.append({
             "code": "mb_model_defects",
             "severity": "warning",
-            "title": f"Model Builder 모델에 결함 {n}건이 남아 있습니다 — 이어지지 않은 그룹이나 빠진 질량",
-            "detail": ("주 구조와 이어지지 않은 그룹이나 모델에 들어가지 않은 질량이 있습니다. 승인할 항목이 아니라 해석 전에 고칠 문제입니다. "
-                       "HiTESS Model Builder 결과를 Studio 로 열어 Edit 에서 잇거나 지우세요."),
+            "title": f"Model Builder 모델에 결함 {n}건이 남아 있습니다 — 이어지지 않은 그룹, 빠진 질량, 받침 없이 긴 배관",
+            "detail": ("주 구조와 이어지지 않은 그룹, 모델에 들어가지 않은 질량, 받침에서 5 m 넘게 떨어진 배관 중 하나 이상이 있습니다. "
+                       "승인할 항목이 아니라 해석 전에 고칠 문제입니다. HiTESS Model Builder 결과를 Studio 로 열어 Review 의 '해석 전 고칠 것'을 확인하세요."),
             "lines": [],
             "fixable": False,
             "fix": "",

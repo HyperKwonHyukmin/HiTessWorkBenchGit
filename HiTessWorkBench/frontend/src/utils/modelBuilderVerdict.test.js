@@ -132,3 +132,12 @@ test('엔진 결함 중 빠진 질량점은 검토 필요, 떨어진 그룹·빠
   // 결함이 없으면 그대로 통과
   assert.equal(computeModelBuilderVerdict({ jobStatus: 'Success', summary, review: { ...review, defects: [] } }).level, 'pass');
 });
+
+test('엔진 결함 받침 없이 긴 배관은 검토 필요(2026-11-23)', () => {
+  const summary = summaryOf(stage());
+  const review = { schemaVersion: '2.0', status: 'none', unitCount: 0, units: [], defectCount: 2, defects: [
+    { kind: 'pipe_long_unsupported', label: '받침 없이 긴 배관', title: '받침 없이 긴 배관 2곳(받침에서 가장 먼 곳 13.1 m)', count: 2 }] };
+  const v = computeModelBuilderVerdict({ jobStatus: 'Success', summary, review });
+  assert.equal(v.level, 'review');
+  assert.match(v.reasons.find(x => x.code === 'long-unsupported-pipe').text, /13.1 m/);
+});

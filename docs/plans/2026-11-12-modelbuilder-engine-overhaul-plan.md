@@ -724,7 +724,17 @@ RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점
   독립 리뷰(hitess-code-reviewer 막아야 함 0, 확인 2) 반영: ① 배관을 포함한 연결로 이미 이어진 그룹은 배관 대체를 다시 하지 않음(표식이 바뀌어도 반대 방향 RBE 방지) ② 대체 연결 rule = `GROUP_CONNECT_RBE/PIPE`, 같은 조립품이어도 A 로 올리지 않음. 시험 2개(보호를 빼면 둘 다 실패 확인).
   최종 회귀 `s11c_pipe_fallback`(Nastran, exe `outputs/mb-engine-exe/s11c_pipe_fallback/`): s11b 대비 BDF 1묶음(3476-22e90e96 RBE 2개 바뀜, 나빠진 지표 없음), 통과 32, 최종 순환 RBE 0. 엔진 시험 735 통과.
   → 커밋 `96914e6`(로컬, 푸시 안 함), 커밋본 exe `outputs/mb-engine-exe/rel_96914e6/`(회귀 `rel_96914e6` BDF 168/168 s11c 와 같음) → 70 InHouse 교체, 백업 `.bak_20261123_before_pipe_fallback`(이전 ba11adc).
-- **커밋과 70 반영(같은 날)**: 엔진 `ba11adc`(로컬, 푸시 안 함) · 커밋본 exe `outputs/mb-engine-exe/rel_ba11adc/`(sha256 eed9c762…, 회귀 `rel_ba11adc` BDF 168/168 `s10d_grouplink` 와 같음) → 70 InHouse 교체, 백업 `.bak_20261123_before_grouplink`(이전 6beba71). 145 는 InHouse exe 수동 교체(ac490a5, 6beba71, ba11adc 모두 아직 없음).
+
+**받침 없이 긴 배관(결함, 2026-11-23, 엔진 미커밋)** — 계획서의 'U-bolt 없이 N m 넘는 배관' 후보. 기준 길이는 사용자가 Claude 에게 맡김 → 실측으로 정함.
+- 정의: 배관을 받침(구조와 같은 RBE 에 걸린 배관 노드, SPC 노드)에서 끊은 조각마다 **받침에서 배관을 따라 가장 먼 거리**(받침 사이 경간이면 절반, 튀어나온 끝이면 그 길이, 배관끼리만 잇는 RBE 는 거리 0)가 **5 m** 를 넘으면 결함 `pipe_long_unsupported`('받침 없이 긴 배관', 해석 전 고칠 것). 받침에 닿지 않은 조각은 '이어지지 않은 그룹' 몫.
+- 실측(s11c 168묶음): 자중 변위 500 mm 이하 모델 41개의 최대값 4.84 m(중앙 1.34 m) → 5 m 에서 잘못 잡는 것 0. 과대 변위 모델 중 받침 빠짐이 원인인 4개(3468 12.9 m, 3395 6.0 m, 8286 36 m 두 개)를 잡음, 나머지 과대 변위는 기구, 떨어진 그룹 등 다른 원인.
+  처음 쓴 '조각 길이 합 8 m' 는 TEE 가지가 많은 정상 모델 4개(변위 13~451 mm, 앱 샘플 3454 포함 22 m)를 잡아 버림.
+- 코드: `Cmb.Pipeline/Analysis/UnsupportedPipeSpans`(공용), 결정 기록 + 결함, BDF 머리 Defects 에 포함, 편집 적용 때 '이어지지 않은 그룹' 과 함께 다시 셈(`ReviewOutcome.Recount`, 결함 재계산 일반화), WorkBench 판정 사유 `long-unsupported-pipe`(검토 필요). 기준값 `ReviewCatalog.LongUnsupportedPipeMm`.
+- 회귀 `s12b_long_pipe`: BDF 168/168 그대로, 결함 잡힌 29묶음 모두 과대 변위 또는 FATAL 모델. 엔진 시험 743, 프론트 유틸 570 통과.
+- 독립 리뷰(hitess-code-reviewer) 막아야 함 1 반영: 구조 요소와 노드를 같이 쓰는 배관 노드도 받침(Edit 부재 추가로 그린 받침 보가 결함을 풀어야 함, 시험은 고치기 전 실패 확인). 확인 1 반영: 받는 곳 경고 문구(`bdf_deck_check`, `admin_projects`)에 '받침 없이 긴 배관'. 확인 3(편집 뒤 결함 줄 위치는 빌드 때 값)은 떨어진 그룹 줄과 같은 동작이라 둠.
+  최종 회귀 `s12c_long_pipe`(exe `outputs/mb-engine-exe/s12c_long_pipe/`): BDF 168/168 그대로, 잡힌 묶음 29(같음).
+  → 커밋 `a6188b0`(로컬, 푸시 안 함), 커밋본 exe `outputs/mb-engine-exe/rel_a6188b0/`(회귀 BDF 168/168 s12c 와 같음) → 70 InHouse 교체, 백업 `.bak_20261123_before_long_pipe`(이전 96914e6).
+  145(사용자): InHouse `Cmb.Cli.exe` 하나에 오늘 엔진 커밋 5개(ac490a5, 6beba71, ba11adc, 96914e6, a6188b0) → 백엔드 `git pull` + 재시작 → `/studio-release model-studio` 0.1.17 → 다음 WorkBench exe.- **커밋과 70 반영(같은 날)**: 엔진 `ba11adc`(로컬, 푸시 안 함) · 커밋본 exe `outputs/mb-engine-exe/rel_ba11adc/`(sha256 eed9c762…, 회귀 `rel_ba11adc` BDF 168/168 `s10d_grouplink` 와 같음) → 70 InHouse 교체, 백업 `.bak_20261123_before_grouplink`(이전 6beba71). 145 는 InHouse exe 수동 교체(ac490a5, 6beba71, ba11adc 모두 아직 없음).
 - **커밋과 70 반영(같은 날)**: 엔진 `6beba71`(로컬, 푸시 안 함) · 커밋본 exe `outputs/mb-engine-exe/rel_6beba71/`(sha256 de9d4d53…, 회귀 `rel_6beba71` BDF 168/168 `s9c_review_class` 와 같음) → 70 InHouse 교체, 백업 `.bak_20261123_before_review_class`(이전 ac490a5). 교체본으로 샘플 3454-35020 `Review=REQUIRED Items=15 Defects=3`.
   MB Studio 0.1.17 70 로컬 배포(sha256 76c4ca21…, 백엔드 manifest 확인), WorkBench 핀 0.1.17. 70 앱 화면은 눈으로 확인 안 함(그때 9091 이 꺼져 있었음).
 - 145(사용자): InHouse `Cmb.Cli.exe` 먼저(ac490a5 와 6beba71 모두 아직 145 에 없음) → 백엔드 `git pull` + 재시작(bdf_deck_check, admin_projects, mb_csv_archive) → `/studio-release model-studio` 0.1.17 → 다음 WorkBench exe.

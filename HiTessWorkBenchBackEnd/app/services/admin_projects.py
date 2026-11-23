@@ -348,7 +348,7 @@ def bulk_plan_item(record, resolved: dict, files_available: bool) -> dict:
     if review:
         warnings.append(mb_review_warning(review))
     if model_file and model_file.get("mbDefects"):
-        warnings.append(f"Model Builder 모델에 결함 {model_file['mbDefects']}건(이어지지 않은 그룹, 빠진 질량)이 남아 있습니다")
+        warnings.append(f"Model Builder 모델에 결함 {model_file['mbDefects']}건(이어지지 않은 그룹, 빠진 질량, 받침 없이 긴 배관)이 남아 있습니다")
     paths = list(dict.fromkeys(([model] if model else []) + rec["wire"] + rec["result"]))
     total = sum(sizes.get(p, 0) for p in paths)
     # 1건 보내기 API 의 한도를 미리 본다 — 넘으면 보낼 때 422/413 으로 실패한다

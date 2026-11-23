@@ -10,6 +10,7 @@
 //               ③ 미해결 U-bolt 가 남음
 //               ④ 엔진 검증 표시(00_Review.json)에 사람이 확인할 것이 남음(2026-11-12)
 //               ⑤ 엔진 결함 중 위에서 못 잡는 빠진 질량점(2026-11-23 D13 — 승인 대상에서 결함으로 옮겨 ④ 로는 안 잡힘)
+//               ⑥ 엔진 결함 '받침 없이 긴 배관'(받침에서 배관을 따라 5 m 초과, 2026-11-23 — 자중 변위 과대의 주 원인)
 //   통과      — 그 밖. 자유단·경고 수는 정상 모델에서도 많이 나와 판정에 쓰지 않는다
 //               (경고 대부분은 동일 이름 중복이다).
 
@@ -32,6 +33,7 @@ const EXCLUDED_STATUSES = new Set(['ignored', 'error', 'parseFailed']);
 
 // 엔진 결함 중 판정이 다른 곳에서 못 잡는 질량 종류. 빠진 장비 질량은 엔진이 입력 행을 error 로 바꿔 ① 에서 잡힌다.
 const MASS_DEFECTS_NOT_IN_AUDIT = new Set(['point_mass_lost', 'point_mass_unattached']);
+const LONG_PIPE_DEFECTS = new Set(['pipe_long_unsupported']);
 
 const KIND_LABELS = { Structure: '구조', Pipe: '배관', Equipment: '장비' };
 
@@ -152,6 +154,13 @@ export function computeModelBuilderVerdict({ jobStatus, summary, audit, review, 
   const pending = pendingReview(review);
   if (pending) reasons.push({ code: 'review-required', text: reviewReasonText(pending) });
   // 빠진 질량점 — 입력 감사에는 'converted' 로 남아 ① 로 안 잡히고, 결함이라 ④ 에도 안 들어간다(리뷰 2026-11-23).
+  const longPipes = reviewDefects(review, LONG_PIPE_DEFECTS);
+  if (longPipes.length > 0) {
+    reasons.push({
+      code: 'long-unsupported-pipe',
+      text: `${longPipes.map(d => d.title).join(', ')}. 받침(U-bolt)이 빠졌는지 확인하세요 — 자중 변위가 크게 나오는 주 원인입니다.`,
+    });
+  }
   const lostMass = reviewDefects(review, MASS_DEFECTS_NOT_IN_AUDIT);
   if (lostMass.length > 0) {
     reasons.push({
