@@ -9,10 +9,11 @@
 //               ② 최종 모델에 분리된 그룹이 남음
 //               ③ 미해결 U-bolt 가 남음
 //               ④ 엔진 검증 표시(00_Review.json)에 사람이 확인할 것이 남음(2026-11-12)
+//               ⑤ 엔진 결함 중 위에서 못 잡는 빠진 질량점(2026-11-23 D13 — 승인 대상에서 결함으로 옮겨 ④ 로는 안 잡힘)
 //   통과      — 그 밖. 자유단·경고 수는 정상 모델에서도 많이 나와 판정에 쓰지 않는다
 //               (경고 대부분은 동일 이름 중복이다).
 
-import { pendingReview, reviewReasonText } from './mbReview.js';
+import { pendingReview, reviewDefects, reviewReasonText } from './mbReview.js';
 import { parseEquipmentCogFar } from './modelValidation.js';
 
 // 제외되어도 총중량이 줄지 않는 사유 — 질량이 원래 0 이거나 길이가 0 인 행.
@@ -28,6 +29,9 @@ const MASSLESS_REASONS = new Set([
 ]);
 
 const EXCLUDED_STATUSES = new Set(['ignored', 'error', 'parseFailed']);
+
+// 엔진 결함 중 판정이 다른 곳에서 못 잡는 질량 종류. 빠진 장비 질량은 엔진이 입력 행을 error 로 바꿔 ① 에서 잡힌다.
+const MASS_DEFECTS_NOT_IN_AUDIT = new Set(['point_mass_lost', 'point_mass_unattached']);
 
 const KIND_LABELS = { Structure: '구조', Pipe: '배관', Equipment: '장비' };
 
@@ -147,6 +151,14 @@ export function computeModelBuilderVerdict({ jobStatus, summary, audit, review, 
   // 편집 적용은 검토가 아니라서 편집 BDF 도 같은 표시를 이어받는다(엔진 apply-edit-intent).
   const pending = pendingReview(review);
   if (pending) reasons.push({ code: 'review-required', text: reviewReasonText(pending) });
+  // 빠진 질량점 — 입력 감사에는 'converted' 로 남아 ① 로 안 잡히고, 결함이라 ④ 에도 안 들어간다(리뷰 2026-11-23).
+  const lostMass = reviewDefects(review, MASS_DEFECTS_NOT_IN_AUDIT);
+  if (lostMass.length > 0) {
+    reasons.push({
+      code: 'mass-defects',
+      text: `모델에 들어가지 않은 질량이 있습니다: ${lostMass.map(d => d.title).join(', ')}. Studio Review › 해석 전 고칠 것에서 확인하세요.`,
+    });
+  }
 
   if (reasons.length > 0) return { level: 'review', title: '검토 필요', reasons, basis };
   return { level: 'pass', title: '통과', reasons: [], basis };

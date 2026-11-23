@@ -32,8 +32,9 @@ _EOL_STRIP = "\r\n"
 # Model Builder 검증 표시(엔진 `Cmb.Io.Nastran.BdfReviewMarker`, 2026-11-12) — 최종 BDF 머리 '$' 주석 구간에
 # `$ HiTessModelBuilder: Review=REQUIRED Items=12`. 엔진이 사용자 대신 정한 것(추정 연결, 옮긴 질량 등)을
 # 사람이 아직 승인하지 않았다는 뜻이다. 받는 곳은 경고만 하고 막지 않는다(사용자 결정, MB 계획서 6단계).
-_MB_REVIEW_RE = re.compile(r"^\s*\$\s*HiTessModelBuilder:\s*Review\s*=\s*([A-Za-z]+)(?:\s+Items\s*=\s*(\d+))?",
-                           re.IGNORECASE)
+# 2026-11-23(MB 계획서 D13): 승인 대상(Items)과 따로 모델 결함 수(Defects — 이어지지 않은 그룹, 빠진 질량)를 덧붙인다. 0 이면 없다.
+_MB_REVIEW_RE = re.compile(r"^\s*\$\s*HiTessModelBuilder:\s*Review\s*=\s*([A-Za-z]+)(?:\s+Items\s*=\s*(\d+))?"
+                           r"(?:\s+Defects\s*=\s*(\d+))?", re.IGNORECASE)
 # 사람이 볼 것이 남은 상태. NONE(없음)·DONE(검토 끝)은 경고하지 않는다.
 MB_REVIEW_PENDING = {"REQUIRED", "MANUAL"}
 
@@ -49,7 +50,8 @@ def read_mb_review_marker(lines: List[str]) -> Dict[str, Any] | None:
             return None
         match = _MB_REVIEW_RE.match(line)
         if match:
-            return {"status": match.group(1).upper(), "items": int(match.group(2) or 0)}
+            return {"status": match.group(1).upper(), "items": int(match.group(2) or 0),
+                    "defects": int(match.group(3) or 0)}
     return None
 
 
@@ -259,7 +261,7 @@ def inspect_deck_lines(lines: List[str]) -> List[Dict[str, Any]]:
             what = "Studio 검토에서 '수동 수정 필요'로 남긴 항목이 아직 고쳐지지 않았습니다."
         else:
             title = f"검증 안 된 Model Builder 모델입니다 — 엔진이 대신 정한 것 {n}건을 아직 사람이 확인하지 않았습니다"
-            what = ("Model Builder 엔진이 추정으로 이은 연결, 옮긴 질량점, 받칠 구조가 없는 U-bolt 같은 결정을 "
+            what = ("Model Builder 엔진이 규칙 밖에서 추정한 것(추정으로 이은 연결, U-bolt 없는 배관 받침, 받칠 구조가 없는 U-bolt 등)을 "
                     "사람이 아직 승인하지 않았습니다.")
         issues.append({
             "code": "mb_review_required",
@@ -267,6 +269,19 @@ def inspect_deck_lines(lines: List[str]) -> List[Dict[str, Any]]:
             "title": title,
             "detail": (f"{what} 해석은 진행할 수 있지만 결과가 그 결정 위에 서 있습니다. "
                        "HiTESS Model Builder 결과 화면에서 Studio 로 열어 확인하세요."),
+            "lines": [],
+            "fixable": False,
+            "fix": "",
+            "mbReview": review,
+        })
+    if review and review.get("defects", 0) > 0:
+        n = review["defects"]
+        issues.append({
+            "code": "mb_model_defects",
+            "severity": "warning",
+            "title": f"Model Builder 모델에 결함 {n}건이 남아 있습니다 — 이어지지 않은 그룹이나 빠진 질량",
+            "detail": ("주 구조와 이어지지 않은 그룹이나 모델에 들어가지 않은 질량이 있습니다. 승인할 항목이 아니라 해석 전에 고칠 문제입니다. "
+                       "HiTESS Model Builder 결과를 Studio 로 열어 Edit 에서 잇거나 지우세요."),
             "lines": [],
             "fixable": False,
             "fix": "",

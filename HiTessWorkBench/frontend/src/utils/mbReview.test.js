@@ -10,8 +10,8 @@ test('엔진이 쓴 required 는 남은 단위를 종류별로 센다', () => {
   assert.equal(p.status, 'required');
   assert.equal(p.count, 4);
   assert.deepEqual(p.byKind, [{ label: '떨어진 그룹', count: 2 }, { label: '추정 연결', count: 2 }]);
-  assert.match(reviewReasonText(p), /^검증 필요 4건/);
-  assert.match(reviewDownloadNote(p), /검증 필요 4건/);
+  assert.match(reviewReasonText(p), /^승인 필요 4건/);
+  assert.match(reviewDownloadNote(p), /승인 필요 4건/);
 });
 
 test('none, done, 파일 없음(옛 엔진)은 null', () => {
@@ -45,4 +45,13 @@ test('BDF 머리 표시 설명', async () => {
   assert.match(mbReviewFileText({ status: 'REQUIRED', items: 7 }), /7건/);
   assert.match(mbReviewFileText({ status: 'MANUAL', items: 2 }), /손으로 고칠 것 2건/);
   assert.equal(mbReviewFileText(null), '');
+});
+
+test('2.0 결과는 엔진이 실은 이름표를 쓴다(분류는 엔진 ReviewCatalog 한 곳)', () => {
+  const p = pendingReview({ status: 'required', unitCount: 2, units: [
+    { id: 1, kind: 'pipe_rest', label: 'U-bolt 없는 배관 받침', state: 'pending' },
+    { id: 2, kind: 'new_kind_from_engine', label: '엔진 새 종류', state: 'pending' },
+  ] });
+  assert.deepEqual(p.byKind.map(k => k.label).sort(), ['U-bolt 없는 배관 받침', '엔진 새 종류'].sort());
+  assert.match(reviewReasonText(p), /승인 필요 2건/);
 });

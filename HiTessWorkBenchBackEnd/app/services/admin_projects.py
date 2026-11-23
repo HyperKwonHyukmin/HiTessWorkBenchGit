@@ -198,6 +198,9 @@ def list_files(resolved: dict) -> dict:
                     review = read_mb_review_marker_file(path)
                     if review and review["status"] in MB_REVIEW_PENDING:
                         files[-1]["mbReview"] = review
+                    # 승인과 별개인 모델 결함(이어지지 않은 그룹, 빠진 질량 — MB 계획서 D13). 0 이면 칸 없음
+                    if review and review.get("defects", 0) > 0:
+                        files[-1]["mbDefects"] = review["defects"]
                 count += 1
             if count >= MAX_LIST_FILES:
                 break
@@ -340,9 +343,12 @@ def bulk_plan_item(record, resolved: dict, files_available: bool) -> dict:
     if not has_wire and not model:
         return {**base, "reason": "보낼 모델이 없습니다(Wire 모델·원본 BDF 모두 없음)"}
     warnings = list(rec["missing"]) if has_wire else ["Wire 모델 없음 — 구조 해석 전 원본 모델만 보냅니다", *rec["missing"]]
-    review = next((f.get("mbReview") for f in listing["files"] if f["path"] == model), None) if model else None
+    model_file = next((f for f in listing["files"] if f["path"] == model), None) if model else None
+    review = model_file.get("mbReview") if model_file else None
     if review:
         warnings.append(mb_review_warning(review))
+    if model_file and model_file.get("mbDefects"):
+        warnings.append(f"Model Builder 모델에 결함 {model_file['mbDefects']}건(이어지지 않은 그룹, 빠진 질량)이 남아 있습니다")
     paths = list(dict.fromkeys(([model] if model else []) + rec["wire"] + rec["result"]))
     total = sum(sizes.get(p, 0) for p in paths)
     # 1건 보내기 API 의 한도를 미리 본다 — 넘으면 보낼 때 422/413 으로 실패한다

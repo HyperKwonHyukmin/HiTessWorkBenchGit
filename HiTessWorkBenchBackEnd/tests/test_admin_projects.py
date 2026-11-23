@@ -612,11 +612,14 @@ def test_files_and_bulk_plan_flag_unreviewed_model_builder_bdf(switchable_client
     root = _work(user_conn, "20261008_090000_EMP001_GroupModuleUnit", {
         "3700_m01.bdf": b"$ HiTessModelBuilder: HullNo=3700\n$ HiTessModelBuilder: Review=REQUIRED Items=7\nSOL 101\nCEND\n",
         "other.bdf": b"$ HiTessModelBuilder: Review=NONE Items=0\nSOL 101\n",
+        "broken.bdf": b"$ HiTessModelBuilder: Review=NONE Items=0 Defects=3\nSOL 101\n",
     })
     a = _analysis(db_session, input_info={"bdf_model": str(root / "3700_m01.bdf")}, created_at=datetime(2026, 10, 8))
     files = {f["rel"]: f for f in switchable_client.get(f"/api/admin/projects/{a.id}/files").json()["files"]}
-    assert files["3700_m01.bdf"]["mbReview"] == {"status": "REQUIRED", "items": 7}
-    assert "mbReview" not in files["other.bdf"]
+    assert files["3700_m01.bdf"]["mbReview"] == {"status": "REQUIRED", "items": 7, "defects": 0}
+    assert "mbReview" not in files["other.bdf"] and "mbDefects" not in files["other.bdf"]
+    # 승인할 것은 없고 결함만 있는 모델(D13) — 결함 칸만
+    assert "mbReview" not in files["broken.bdf"] and files["broken.bdf"]["mbDefects"] == 3
     item = switchable_client.post("/api/admin/projects/logbook/plan", json={"ids": [a.id]}).json()["items"][0]
     assert item["ok"]
     assert any("검증 안 된 Model Builder 모델" in w and "7건" in w for w in item["warnings"])

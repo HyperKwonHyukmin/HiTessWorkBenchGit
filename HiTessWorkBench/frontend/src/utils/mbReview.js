@@ -1,4 +1,6 @@
-// Model Builder 검증 표시(엔진 00_Review.json, 2026-11-12) — 엔진이 사용자 대신 정한 것 중 사람이 승인할 것.
+// Model Builder 검증 표시(엔진 00_Review.json, 2026-11-12) — 엔진이 규칙 밖에서 추정해 사람이 승인할 것.
+// 2026-11-23(D13): 무엇이 승인 대상인지는 엔진 ReviewCatalog 한 곳이 정하고, 00_Review.json(2.0) 단위마다 label 을 싣는다.
+// 아래 표는 label 이 없는 옛 1.0 결과용 대체값이다(여기서 분류하지 않는다).
 // 같은 상태가 최종 BDF 머리 주석 `$ HiTessModelBuilder: Review=REQUIRED Items=N` 에도 있어,
 // 받는 곳(권상 검증, LogBook 보내기)은 백엔드 bdf_deck_check 가 그 주석을 읽어 경고한다(문구 뜻을 같게 둘 것).
 // 계획: docs/plans/2026-11-12-modelbuilder-engine-overhaul-plan.md 6단계 '검토 흐름과 검증 표시'.
@@ -37,13 +39,24 @@ export function pendingReview(review) {
   if (count <= 0) return null;
   const tally = new Map();
   for (const u of units ?? []) {
-    const label = reviewKindLabel(u?.kind);
+    const label = u?.label || reviewKindLabel(u?.kind);
     tally.set(label, (tally.get(label) ?? 0) + 1);
   }
   const byKind = [...tally.entries()]
     .map(([label, n]) => ({ label, count: n }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   return { status, count, byKind };
+}
+
+/**
+ * 엔진이 낸 모델 결함(00_Review.json 2.0 defects, 승인 대상 아님) 중 주어진 종류만 → [{kind,label,title,count}].
+ * 판정은 떨어진 그룹(health)과 빠진 장비 질량(입력 감사 오류 행)을 이미 따로 잡으므로, 거기서 못 잡는 종류만 골라 쓴다.
+ */
+export function reviewDefects(review, kinds) {
+  const list = Array.isArray(review?.defects) ? review.defects : [];
+  return list
+    .filter(d => (!kinds || kinds.has(d?.kind)) && Number(d?.count) > 0)
+    .map(d => ({ kind: d.kind, label: d.label || reviewKindLabel(d.kind), title: d.title || d.label || d.kind, count: Number(d.count) }));
 }
 
 /** 판정 사유 한 줄. 종류는 많은 순 3개까지. */
@@ -55,14 +68,14 @@ export function reviewReasonText(pending) {
   if (pending.status === 'manual') {
     return `Studio 검토에서 손으로 고칠 것 ${pending.count.toLocaleString()}건이 남았습니다${what}.`;
   }
-  return `검증 필요 ${pending.count.toLocaleString()}건 — 엔진이 대신 정한 것을 아직 사람이 확인하지 않았습니다${what}. `
+  return `승인 필요 ${pending.count.toLocaleString()}건 — 엔진이 규칙 밖에서 추정한 것을 아직 사람이 승인하지 않았습니다${what}. `
     + 'Studio 에서 확인하세요.';
 }
 
 /** BDF 받기 칸 위 안내. 받기는 막지 않는다(사용자 결정 2026-11-12). */
 export function reviewDownloadNote(pending) {
   if (!pending) return '';
-  return `이 BDF 머리에 '검증 필요 ${pending.count.toLocaleString()}건' 표시가 남아 있어, 권상 검증과 LogBook 보내기에서 `
+  return `이 BDF 머리에 '승인 필요 ${pending.count.toLocaleString()}건' 표시가 남아 있어, 권상 검증과 LogBook 보내기에서 `
     + '검증 안 된 모델로 경고가 뜹니다. 받기와 전달은 그대로 됩니다.';
 }
 
@@ -73,5 +86,5 @@ export function mbReviewFileText(marker) {
   if (String(marker.status).toUpperCase() === 'MANUAL') {
     return `Model Builder 검토에서 손으로 고칠 것 ${n}건이 남은 모델입니다`;
   }
-  return `검증 안 된 Model Builder 모델 — 엔진이 대신 정한 것 ${n}건을 사람이 아직 확인하지 않았습니다`;
+  return `검증 안 된 Model Builder 모델 — 엔진이 규칙 밖에서 추정한 것 ${n}건을 사람이 아직 승인하지 않았습니다`;
 }

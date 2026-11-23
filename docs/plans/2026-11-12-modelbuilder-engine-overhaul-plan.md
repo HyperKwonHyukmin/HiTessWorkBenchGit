@@ -293,7 +293,7 @@ P2 의 기본을 "그대로 두고 보고"로 둔 이유: 받칠 구조가 1 m �
 > 다음: ① 사용자가 70 앱에서 Review 탭 → Save → 판정 갱신 흐름 확인(앱 안 흐름은 아직 아무도 안 봄) ② 'U-bolt 없이 N m 넘는 배관' 결정 기록(기준 길이 결정 필요) ③ RBE3(D4)는 사용자 검토 중 — 건드리지 않음.
 > 145(사용자가 마지막에 한꺼번에): InHouse `Cmb.Cli.exe` 교체 **먼저** → `/studio-release model-studio` 0.1.13 → 다음 WorkBench exe.
 > **→ 2026-11-20 D6 재수집** — 145 `userConnection` 의 MB, AM 작업 폴더 307개의 맨 위 CSV 790개를 실행 폴더째 복사(`DataStorage\ModelBuilderCsv_raw`, 사용자 실행) → 70 `E:\HiTESS\ModelBuilderCsv_raw`. DRM 0, 내용 다른 CSV 367개, 가장 이른 폴더 10-21 17:11(그날 자정 정리 직전).
->   수집 스크립트로 다시 모으지 않은 이유: `same_name`(같은 이름이면 먼저 본 것만)과 manifest `seen` 때문에 고쳐 다시 올린 판이 또 빠진다. ⚠ 자동 보관도 같은 규칙이라 11-12 이후 같은 이름으로 고쳐 올린 판은 계속 빠지고 있다(규칙 변경은 사용자 결정 대기).
+>   수집 스크립트로 다시 모으지 않은 이유: `same_name`(같은 이름이면 먼저 본 것만)과 manifest `seen` 때문에 고쳐 다시 올린 판이 또 빠진다. ⚠ 자동 보관도 같은 규칙이라 11-12 이후 같은 이름으로 고쳐 올린 판은 계속 빠지고 있다 → **2026-11-23 고침**: 같은 이름, 다른 내용은 `<이름>__<해시 8자리>.csv` 로 저장, 옛 빈 줄은 재수집 때 되살림(raw 사본 790개로 모의 수집: 내용 367개 모두 저장, 옛 규칙이면 153, 회귀 묶음 159 가 raw 사본과 같음). 145 는 백엔드 반영 뒤 `collect_mb_csv.py` 한 번 — 11-20 이후 빠진 판 회수.
 >   회귀 장치는 `--corpus` 에 `;` 로 여러 폴더를 받고 manifest 없는 폴더는 실행 폴더 사본으로 읽는다(`load_sets_raw`, 묶음 ID 식은 같음). 기본값 = raw;예전 수집 → **168묶음**(기존 62 모두 같은 ID + 새 106: 3596 77, 3615 23 등, 10-20 이전 9묶음은 예전 수집에만 있음). 회귀 `s7_raw168`(엔진 `a517b8a`, Nastran).
 > **→ 2026-11-23 `s7_raw168` 끝** — 통과 **30/168**, 연결 그룹 2개 이상 129, 떠 있는 그룹 1,722, 자중 FATAL 114(11-20, 11-23 두 번 세션 끊김에 같이 죽어 `regress.py run --resume` 을 넣고 이어 돌림, 같은 exe 확인용 `run_meta.json`, `metrics.json` 은 임시 파일 뒤 바꿔치기).
 >   새 묶음 대부분인 **3596(77묶음), 3615 가 미달의 거의 전부**이고 원인은 'U-bolt 없는 배관 그룹'(3596 떠 있는 1,256 중 963). 그중 **3596 의 893(92%)은 그 branch 에 입력부터 UBOLT 행이 0개**(이름 불일치 아님 — 위치로도 200 mm 안에 U-bolt 없음, 예 3596-E32P0 은 branch 14개에 U-bolt 5개).
@@ -695,6 +695,24 @@ RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점
   엔진 `ReviewOutcome` 이 편집 결과 모델에 그 단위의 엔진 RBE(00_Decisions.json finalRigidId)가 남았거나 RBE 가 없는 단위의 '거절' 을 수동 수정으로 센다(최종 방어선) ·
   Studio 는 편집 내역이 바뀔 때 삭제 편집이 하나라도 빠진 거절을 '남음' 으로 되돌리고 남은 삭제 편집도 거둔다 · [처음부터] 는 검토 결정도 비우고 다시 읽을 때 진행 기록을 쓰지 않는다. 헤드리스로 셋 다 확인, 엔진 시험 710.
   고치면 좋음: 서버 결과를 임시 폴더로 받아 연 경우(145) 진행 기록이 남지 않음 → 도움말을 사실대로 고침(Save 해야 남음) · 옛 엔진은 review 만 있는 문서에 exit 2 → **InHouse exe 교체가 Studio 공개보다 먼저** · Studio 버전 0.1.13 으로 올려 배포.
+**검토 흐름 전체 확인 (2026-11-23, MB Studio 0.1.16 70 로컬 배포 — pipe_rest 이름표)** — 11-17 '안 한 것' 중 앱 안 흐름을 Electron 창 전달만 빼고 실제 코드로 밟음.
+- 백엔드 실제 라우터(별도 프로세스 TestClient, 인증만 본인 사번 고정, 세션 생성 없음): 3596-E32P0 입력 `modelflow/request` → 모델 생성 완료, BDF 머리 `Review=REQUIRED Items=54`, WorkBench `pendingReview` = 검토 필요 54(받침 27, 떨어진 그룹 13, 질량점 옮김 12, 추정 연결 2).
+- Studio 0.1.16 헤드리스(`outputs/MB-manual/source/review_e2e_3596.mjs`, 10항목 PASS): 열자마자 Review 탭, 받침 27 단위 모두 되돌릴 수 있음, 받침 카드 3D 짚기(6곳), 화면 단추 승인, 받침 거절 = deleteRigid, 떨어진 그룹 거절 = 수동, 54건 결정 → 편집 파일.
+- `upload-edit` → `apply-edit`(편집 적용 + Nastran + F06 완료) → `edit-status` needs_apply false → 편집 BDF 머리 `Review=MANUAL Items=1`, 거절한 RBE 3115 는 편집 BDF 에서 빠짐(RBE2 122 → 121), `edited/00_Review.json` 으로 WorkBench 판정 = 수동 수정 1(떨어진 그룹).
+- 큰 모델 3476(465건): 항목 이동 0.3~0.6 s, 묶음 모두 승인(118건) 0.4 s. 캡처 `outputs/MB-manual/source/e2e_0[1-4]_*.png`.
+- 안 한 것: Electron 창에서 [Studio 에서 검토] → Studio 창 → Save → WorkBench 로 돌아오는 IPC 전달(사용자 확인 몫), 145 임시 폴더 진행 기록.
+**승인 대상 분류 구조(D13, 2026-11-23, 엔진 미커밋)** — 사용자 지시 '승인이 필요한 일을 엄밀히 구분, 구조적으로'. 70 앱 샘플(3454-35020)에서 검토 56건 중 대부분이 10 mm 이하 그룹 이동, 가까운 질량점 이동이었던 것이 계기.
+- **분류는 엔진 `src/Cmb.Cli/Dto/ReviewCatalog.cs` 한 곳.** 결정 종류마다 승인(Approval) / 결함(Defect) / 기록(Record)과 근거, 이름표, 안내문, 기록만일 때 이름표. 기준값도 여기만: 질량점 500 mm(`FarMassMoveMm`), 그룹 이동 10 mm(`GroupMoveToleranceMm`, CAD 오차), 알림 20건(`ManyApprovalsNotice`).
+  승인 = auto_rbe B(남은 것), pipe_rest, ubolt_unsupported, 500 mm 넘는 point_mass_moved, 10 mm 넘는 group_translate. 결함 = floating_group, equipment_mass_dropped, point_mass_lost, point_mass_unattached(같은 노드가 lost 면 기록만). 기록 = 나머지(경계 상자 장비, 작은 그룹 지움, A 연결 등).
+- `00_Review.json` 2.0: units = 승인 단위만(label, hint 를 엔진이 실음), notice(20건 넘으면 '입력 먼저 확인'), defects(종류별 건수, 제목), defectCount, recorded(종류별 건수와 근거). 받칠 구조 없는 U-bolt 는 **배관끼리만 이은 성분** 단위로 묶음(`PipeComponentNames`, 이름 겹치면 #2).
+- BDF 머리 `$ HiTessModelBuilder: Review=<상태> Items=<승인 단위> Defects=<결함 수>`(결함 0 이면 생략). 편집 적용은 결정이 있든 없든 결함을 편집 모델로 다시 센다(떨어진 그룹 수), 새로 생긴 떨어진 그룹은 결함 목록에 줄을 만든다. 옛 1.0 파일은 결함을 몰라 그대로.
+- 받는 곳: 백엔드 `bdf_deck_check` 가 Defects 를 읽어 경고 `mb_model_defects`(막지 않음), All Projects 파일 칸 `mbDefects`, LogBook 계획 경고. WorkBench 판정은 `review.defects` 중 다른 사유가 못 잡는 빠진 질량점만 '검토 필요'(`mass-defects`). Studio Review 패널 = 승인 묶음 + '해석 전 고칠 것' + '기록만 한 것' 한 줄 + 알림. 화면은 다시 분류하지 않는다(옛 1.0 용 대체 이름표만).
+- 168묶음(`s9c_review_class`, Nastran 없이): 모델당 승인 단위 중앙 16 → **2**, 90% 56 → 24, 최대 465 → 155, 0건 모델 7 → 42, 알림 21모델. 승인 종류: 추정 연결 412, 받침 686, U-bolt 129(결정 532), 질량점 67, 그룹 이동 74. BDF 본문 168/168 `s8d_final` 과 같음(머리만 바뀜). 샘플 3454-35020: 56 → 15 + 결함 2줄.
+- 독립 리뷰: hitess-code-reviewer 막아야 함 3(U-bolt 묶음이 모델 전체 성분, 결정 없이 편집하면 Defects 안 바뀜, WorkBench 가 빠진 질량점을 통과로) + Codex 5(같은 둘, 새 떨어진 그룹 줄 없음, 같은 이름 성분 합쳐짐, 질량점 이중 셈) 모두 반영, 시험 추가. 엔진 시험 728, 백엔드 관련 60, 프론트 유틸 569, Studio reviewData 8 통과.
+- ⚠ 이상(원인 미조사): group_translate 433건 중 74건이 10 mm 를 넘는다(최대 100 mm). GroupConnectTranslateMaxMm = 10 인데 큰 기록이 있다 — 누적 이동이거나 기록 거리 정의 문제로 보임. 지금은 승인 대상으로 올려 사람이 본다.
+- **커밋과 70 반영(같은 날)**: 엔진 `6beba71`(로컬, 푸시 안 함) · 커밋본 exe `outputs/mb-engine-exe/rel_6beba71/`(sha256 de9d4d53…, 회귀 `rel_6beba71` BDF 168/168 `s9c_review_class` 와 같음) → 70 InHouse 교체, 백업 `.bak_20261123_before_review_class`(이전 ac490a5). 교체본으로 샘플 3454-35020 `Review=REQUIRED Items=15 Defects=3`.
+  MB Studio 0.1.17 70 로컬 배포(sha256 76c4ca21…, 백엔드 manifest 확인), WorkBench 핀 0.1.17. 70 앱 화면은 눈으로 확인 안 함(그때 9091 이 꺼져 있었음).
+- 145(사용자): InHouse `Cmb.Cli.exe` 먼저(ac490a5 와 6beba71 모두 아직 145 에 없음) → 백엔드 `git pull` + 재시작(bdf_deck_check, admin_projects, mb_csv_archive) → `/studio-release model-studio` 0.1.17 → 다음 WorkBench exe.
 
 ### 7단계 — 구조 정리
 단계 목록 선언화, 상수를 `RunOptions` 로, 중복 판별 함수, 문서의 단계 수. 결과 BDF 불변.
@@ -717,6 +735,7 @@ RBE 근거 필드, `00_Decisions.json`, `00_Verdict.json`, `--policy`(이 시점
 | D10 | 과대 변위, 꺾인 U-bolt RBE 를 완성 기준에 넣나 | 과대 변위는 넣음(기준값은 1단계 뒤), 꺾인 RBE 는 2단계 수정 뒤 0 이 되면 넣음 | 사람 검토가 실제로 결함으로 본 항목 |
 | D11 | Stru, Pipe, RBE 번호 대역 구분(PPT 지적, HyperMesh 권상 해석용) | 3단계 결정 기록과 함께 번호 규칙 도입 검토 | 편집 intent, Studio 가 번호를 쓰므로 영향 조사 먼저 |
 | D12 | U-bolt 가 하나도 없는 떠 있는 배관 그룹(3596 의 대부분) | **닿은 구조 부재에 추정 받침 RBE, 배관 그룹마다 검토 1건**(2026-11-23 사용자 결정 A안) | 받침 구조는 있고 U-bolt 만 안 그린 입력이 대부분. 그룹 통째 빼기(C안)는 강성이 빠져 다른 용도에서 틀림 |
+| D13 | 사람에게 승인받을 것 | **규칙 밖 추정만 승인 대상**(추정 연결 B, U-bolt 없는 배관 받침, 받칠 구조 없는 U-bolt, 500 mm 넘는 질량점 이동, 10 mm 넘는 그룹 이동). 떨어진 그룹, 빠진 질량은 결함(해석 전 고칠 것), 나머지는 기록만(2026-11-23 사용자 지시) | 근거 있는 처리까지 승인받으면 모델마다 수십 건이라 아무도 읽지 않는다 |
 
 **결정(2026-11-12, 사용자 "추천대로 진행")** — D1~D11 과 B10 모두 위 추천대로.
 - D1 은 질량 허용폭을 **'1% 또는 20 kg 중 큰 쪽'** 으로 고쳐 채택(4단계 사전 확인에서 연장으로 생긴 정상 증가가 작은 모델에서 1% 를 넘음).

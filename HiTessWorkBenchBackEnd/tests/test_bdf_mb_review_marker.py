@@ -21,7 +21,7 @@ def test_required_marker_is_a_warning_not_an_error():
     assert issue["severity"] == "warning"
     assert issue["fixable"] is False
     assert "12건" in issue["title"]
-    assert issue["mbReview"] == {"status": "REQUIRED", "items": 12}
+    assert issue["mbReview"] == {"status": "REQUIRED", "items": 12, "defects": 0}
 
 
 def test_manual_marker_warns_with_its_own_wording():
@@ -54,5 +54,17 @@ def test_warning_lands_in_step1_without_failing_validation():
 def test_file_reader_stops_at_first_card(tmp_path):
     path = tmp_path / "m.bdf"
     path.write_text("".join(HEAD + ["$ HiTessModelBuilder: Review=required Items=5\n"] + BODY), encoding="latin-1")
-    assert read_mb_review_marker_file(str(path)) == {"status": "REQUIRED", "items": 5}
+    assert read_mb_review_marker_file(str(path)) == {"status": "REQUIRED", "items": 5, "defects": 0}
     assert read_mb_review_marker_file(str(tmp_path / "없음.bdf")) is None
+
+
+def test_defects_are_a_separate_warning_even_when_nothing_to_approve():
+    # MB 계획서 D13(2026-11-23): 결함(이어지지 않은 그룹, 빠진 질량)은 승인 대상이 아니라 머리에 Defects= 로 따로 온다.
+    lines = HEAD + ["$ HiTessModelBuilder: Review=NONE Items=0 Defects=4\n"] + BODY
+    assert read_mb_review_marker(lines) == {"status": "NONE", "items": 0, "defects": 4}
+    codes = _codes(lines)
+    assert "mb_review_required" not in codes
+    issue = next(i for i in inspect_deck_lines(lines) if i["code"] == "mb_model_defects")
+    assert issue["severity"] == "warning" and "4건" in issue["title"]
+    both = _codes(HEAD + ["$ HiTessModelBuilder: Review=REQUIRED Items=2 Defects=1\n"] + BODY)
+    assert "mb_review_required" in both and "mb_model_defects" in both

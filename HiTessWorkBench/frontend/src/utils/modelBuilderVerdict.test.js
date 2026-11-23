@@ -111,8 +111,24 @@ test('엔진 검증 표시에 사람이 볼 것이 남으면 검토 필요, 옛 
   const v = computeModelBuilderVerdict({ jobStatus: 'Success', summary, review });
   assert.equal(v.level, 'review');
   assert.equal(v.reasons.at(-1).code, 'review-required');
-  assert.match(v.reasons.at(-1).text, /검증 필요 2건/);
+  assert.match(v.reasons.at(-1).text, /승인 필요 2건/);
   assert.equal(computeModelBuilderVerdict({ jobStatus: 'Success', summary }).level, 'pass');
   assert.equal(computeModelBuilderVerdict({ jobStatus: 'Success', summary,
     review: { status: 'none', unitCount: 0, units: [] } }).level, 'pass');
+});
+
+test('엔진 결함 중 빠진 질량점은 검토 필요, 떨어진 그룹·빠진 장비 질량 결함은 다른 사유가 맡으니 겹쳐 넣지 않는다(D13)', () => {
+  const summary = summaryOf(stage());
+  const review = { schemaVersion: '2.0', status: 'none', unitCount: 0, units: [], defectCount: 4, defects: [
+    { kind: 'point_mass_lost', label: '빠진 질량점', title: '빠진 질량점 1건(12.5 kg)', count: 1 },
+    { kind: 'floating_group', label: '이어지지 않은 그룹', title: '이어지지 않은 그룹 2개', count: 2 },
+    { kind: 'equipment_mass_dropped', label: '빠진 장비 질량', title: '빠진 장비 질량 1건', count: 1 }] };
+  const v = computeModelBuilderVerdict({ jobStatus: 'Success', summary, review });
+  assert.equal(v.level, 'review');
+  const r = v.reasons.filter(x => x.code === 'mass-defects');
+  assert.equal(r.length, 1);
+  assert.match(r[0].text, /빠진 질량점 1건\(12.5 kg\)/);
+  assert.doesNotMatch(r[0].text, /이어지지 않은 그룹|빠진 장비 질량/);
+  // 결함이 없으면 그대로 통과
+  assert.equal(computeModelBuilderVerdict({ jobStatus: 'Success', summary, review: { ...review, defects: [] } }).level, 'pass');
 });
