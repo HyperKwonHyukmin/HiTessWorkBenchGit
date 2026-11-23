@@ -132,9 +132,16 @@ Load Case 단계 없음(스토어 `effectiveLoadCases`: 기본 '모두 한 번�
   실례 `20261112_101950_A476854_GroupModuleUnit`(JSON 1.3 MB 를 다 쓴 1초 뒤 HIDRMH.DLL 0xC0000005 → '프로그램 비정상 종료'). 경고 문구는 공용 `exit_codes.crash_tolerated_note`. 시험 `tests/test_gmu_validation_crash_tolerance.py`.
   끊긴 뒤 넘어가는 경로는 시험으로만 확인(실제 5회 재실행에서 재현 안 됨). 반영 = 70 백엔드 재시작 · 145 `git pull + 재시작`.
 
-**엔진 전면 개선 (2026-11-12~, 진행 중)** — 수집 CSV(`E:\HiTESS\ModelBuilderCsv`, 62묶음)로 회귀를 재며 엔진 결함을 하나씩 고친다.
-계획과 진행 기록·결정표(D1~D11) = `docs/plans/2026-11-12-modelbuilder-engine-overhaul-plan.md`, 회귀 장치 = `scripts/mb_engine_regress/`(`regress.py run|compare`, 결과 `outputs/mb-engine-regress/<label>/`, git 미추적).
-엔진 수정은 회귀로 이전 결과와 비교한 뒤에만 커밋(엔진 `HiTessModelBuilder` 로컬 커밋, 푸시 안 함). **70 InHouse `Cmb.Cli.exe` 교체 (2026-11-17)** = 엔진 `237a6a4`(sha256 0ef1c8a6…, 백업 `.bak_20261117_before_overhaul` = 10-29 판 8055258d…) — 회귀 `s5_mass` 와 BDF 62/62 같음, 백엔드 MB 시험(편집 계약 포함) 통과, 작업 함수로 실제 CSV 2묶음 '모델 생성 완료'. WorkBench 앱 안 화면과 Studio 는 눈으로 확인 안 함. **145 는 아직 옛 exe** — InHouse `HiTessModeBuilder\Cmb.Cli.exe` 수동 교체(재시작 불필요)는 사용자 몫. 바뀐 동작(장비 상자 받침, 외딴 조각 삭제, 질량 옮김 등)은 계획서 4~5단계.
+**엔진 전면 개선 (2026-11-12~, 진행 중)** — 수집 CSV 로 회귀를 재며 엔진 결함을 하나씩 고친다. 코퍼스 = `E:\HiTESS\ModelBuilderCsv_raw`(145 작업 폴더 사본, 11-20) + `E:\HiTESS\ModelBuilderCsv` → **168묶음**.
+계획과 진행 기록·결정표(D1~D13) = `docs/plans/2026-11-12-modelbuilder-engine-overhaul-plan.md`, 회귀 장치 = `scripts/mb_engine_regress/`(`regress.py run|compare`, 끊기면 `run --force --resume`, 결과 `outputs/mb-engine-regress/<label>/`, git 미추적).
+엔진 수정은 회귀로 이전 결과와 비교한 뒤에만 커밋(엔진 `HiTessModelBuilder` 로컬 커밋, 푸시 안 함 — Public 저장소라 Private 전환 뒤). **70 InHouse = 엔진 `a6188b0`(2026-11-23)**, 백업 사슬 `.bak_20261123_before_*`. **145 는 아직 11-17 이전 exe** — InHouse `Cmb.Cli.exe` 수동 교체가 백엔드 `git pull`, `/studio-release model-studio` 0.1.17 보다 먼저(사용자 몫).
+
+**검토 분류 규칙 (D13, 2026-11-23 사용자 지시 '승인이 필요한 일을 엄밀히 구분')** — 고치기 전 꼭 알 것.
+- 결정마다 승인 / 결함 / 기록을 정하는 곳은 엔진 `src/Cmb.Cli/Dto/ReviewCatalog.cs` **한 곳뿐**. 기준값(질량점 이동 500 mm, 그룹 이동 10 mm, 승인 알림 20건, 받침 없이 긴 배관 5 m)도 여기만.
+  `00_Review.json` 2.0 이 단위마다 label, hint 를 싣고 Studio, WorkBench 는 그대로 보여 준다 — 화면에서 다시 분류하지 말 것. WorkBench `utils/mbReview.js`, Studio `data/reviewData.js` 의 이름표 표는 옛 1.0 결과용 대체값(새 종류를 더할 때 같이 맞춘다).
+- 승인 = 규칙 밖 추정만(B 연결, U-bolt 없는 배관 받침 `pipe_rest`, 받칠 구조 없는 U-bolt(배관끼리만 이은 성분 단위), 먼 질량점 이동, 큰 그룹 이동, 구조를 배관에 잇는 `GROUP_CONNECT_RBE/PIPE`). 결함 = 이어지지 않은 그룹, 빠진 질량, 받침 없이 긴 배관(BDF 머리 `Defects=`, 편집 뒤 다시 셈 — `ReviewOutcome.Recount`).
+- '받침 없이 긴 배관' 은 받침에서 배관을 따라 **가장 먼 거리**로 잰다(조각 길이 합은 TEE 가지 때문에 정상 모델을 잡는다). 받침 = 구조와 같은 RBE 의 배관 노드, 구조와 노드를 같이 쓰는 배관 노드, SPC.
+- GroupConnect: 이미 RBE 로 이어진 그룹은 다시 잇지도 옮기지도 않는다(정리 단계가 표식을 MERGED_SHARED_DEP 로 바꿔도). 연결 판정에서 배관은 뺀다(배관에만 매달린 구조를 '이어짐' 으로 보면 변위 349 → 1,251 mm). 10 mm 넘게는 옮기지 않는다.
 
 **장비 COG 위치 오류 `EQUIPMENT_COG_FAR` (2026-10-27)** — 장비 CSV 의 `cog` 가 잘못 나오면(실례 3529_m04 `=30137/754429` 715 kg, X 만 50 m 어긋남)
 엔진이 그 좌표에 COG 노드를 만들고 부착점과 RBE2 로 묶어, Studio 에 모델 밖으로 길게 뻗은 RBE 가 생긴다. 같은 오류가 `3592_m10`(`=21945/1855177` 153 m)에도 있다.
