@@ -3,20 +3,28 @@
 
 export const STATUS_ORDER = ['reviewing', 'developing', 'piloting', 'done', 'hold'];
 
-/** 상태 이름표와 색. 색은 상태에만 쓴다(빨강은 지연, 황토는 중요와 멈춤에만). */
+/**
+ * 과제 상태의 이름과 모양. 표시는 어디서나 '점 + 글자' 하나다(components/admin/council/councilUi StatusBadge).
+ * 움직이는 상태(개발 중, 시험 운영)만 옅은 배경을 받고, 나머지는 점과 글자만 — 목록 대부분이 같은 상태일 때 화면이 알약으로 덮이지 않게.
+ */
 export const STATUS_META = {
-  reviewing: { label: '검토 중', pill: 'bg-slate-100 text-slate-700 ring-slate-300' },
-  developing: { label: '개발 중', pill: 'bg-blue-50 text-blue-800 ring-blue-200' },
-  piloting: { label: '시험 운영', pill: 'bg-teal-50 text-teal-800 ring-teal-200' },
-  done: { label: '완료', pill: 'bg-emerald-50 text-emerald-800 ring-emerald-200' },
-  hold: { label: '보류', pill: 'bg-stone-100 text-stone-600 ring-stone-300' },
+  reviewing: { label: '검토 중', dot: '#94a3b8', text: 'text-slate-700', badge: '' },
+  developing: { label: '개발 중', dot: '#2563eb', text: 'text-blue-800', badge: 'bg-blue-50 border-blue-200' },
+  piloting: { label: '시험 운영', dot: '#0d9488', text: 'text-teal-800', badge: 'bg-teal-50 border-teal-200' },
+  done: { label: '완료', dot: '#059669', text: 'text-slate-600', badge: '' },
+  hold: { label: '보류', dot: '#a8a29e', text: 'text-slate-600', badge: '' },
 };
 
+/** 기록 종류. 옛 판의 '상태 변경' 기록은 서버가 내보내지 않는다(2026-11-25 사용자 결정 — 로그를 남기지 않는다). */
 export const NOTE_KIND_META = {
   comment: { label: '의견', badge: 'bg-blue-50 text-blue-800' },
   progress: { label: '진행 기록', badge: 'bg-emerald-50 text-emerald-800' },
-  status: { label: '상태 변경', badge: 'bg-slate-100 text-slate-600' },
 };
+
+/** 날짜 표시는 한 가지: '11/27'. */
+export const mdDate = (d) => (d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : '');
+export const NO_ASSIGNEE = '담당 미정';
+export const assigneeOf = (item) => (item?.assignee || '').trim() || NO_ASSIGNEE;
 
 /** 항목(과제 아래 할 일) 상태 — Team Planner 의 Task 와 같다. 상태 원을 누르면 NEXT 순서로 바뀐다. */
 export const ITEM_STATUS = { todo: '예정', doing: '진행', done: '완료' };
@@ -70,7 +78,7 @@ export function lastActivity(task) {
 export function itemDueInfo(item, now = new Date()) {
   const due = dayNumber(item?.due_date);
   if (due === null) return { text: '', late: false, soon: false };
-  if (item.status === 'done') return { text: item.due_date.slice(5), late: false, soon: false };
+  if (item.status === 'done') return { text: mdDate(item.due_date), late: false, soon: false };
   const diff = due - dayNumber(localDay(now));
   if (diff < 0) return { text: `${-diff}일 지남`, late: true, soon: false };
   if (diff === 0) return { text: '오늘', late: false, soon: true };
@@ -124,7 +132,7 @@ export function isStale(task, now = new Date()) {
 }
 
 export function noteCounts(task) {
-  const counts = { comment: 0, progress: 0, status: 0 };
+  const counts = { comment: 0, progress: 0 };
   for (const n of task?.notes || []) if (n.kind in counts) counts[n.kind] += 1;
   return counts;
 }
@@ -266,6 +274,58 @@ export function formFromItem(item) {
     if (item?.[key] !== undefined && item?.[key] !== null) form[key] = item[key];
   }
   return form;
+}
+
+/** 보드에서 끝난 항목을 보여 주는 기간(Team Planner 와 같은 최근 2주). */
+export const BOARD_DONE_DAYS = 14;
+
+/**
+ * 보드에 올릴 카드: 모든 과제의 항목을 펼쳐 { item, task } 로. 끝난 지 2주 넘은 완료 항목은 뺀다.
+ * assignee 를 주면 그 담당 것만('담당 미정'도 이름처럼 쓴다).
+ */
+export function boardEntries(tasks, now = new Date(), assignee = '') {
+  const cutoff = localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - BOARD_DONE_DAYS));
+  const out = [];
+  for (const task of tasks || []) {
+    for (const item of task.items || []) {
+      if (assignee && assigneeOf(item) !== assignee) continue;
+      if (item.status === 'done' && (item.done_at || item.due_date || '').slice(0, 10) < cutoff) continue;
+      out.push({ item, task });
+    }
+  }
+  return out;
+}
+
+/** 보드 한 칸의 카드 순서: 예정과 진행은 중요, 마감 빠른 순. 완료는 최근에 끝난 순. */
+export function boardColumn(entries, status, assignee = '') {
+  const list = entries.filter((e) => e.item.status === status && (!assignee || assigneeOf(e.item) === assignee));
+  if (status === 'done') {
+    return list.sort((a, b) => (b.item.done_at || '').localeCompare(a.item.done_at || '') || b.item.id - a.item.id);
+  }
+  return list.sort((a, b) => Number(!!b.item.important) - Number(!!a.item.important)
+    || (a.item.due_date || '').localeCompare(b.item.due_date || '') || a.item.id - b.item.id);
+}
+
+/** 담당 이름 목록(가나다순, '담당 미정'은 맨 뒤). 보드의 담당별 줄과 타임라인의 담당 보기에 쓴다. */
+export function assigneeLanes(tasks) {
+  const names = new Set();
+  let none = false;
+  for (const t of tasks || []) for (const i of t.items || []) {
+    const n = assigneeOf(i);
+    if (n === NO_ASSIGNEE) none = true; else names.add(n);
+  }
+  const out = [...names].sort((a, b) => a.localeCompare(b, 'ko'));
+  if (none) out.push(NO_ASSIGNEE);
+  return out;
+}
+
+/** 끌어 옮긴 뒤 '되돌리기'에 쓸 값: patch 가 바꾼 칸의 이전 값(없던 값은 빈 문자열로 보내 서버가 지우게). */
+export function undoPatch(item, patch) {
+  const out = {};
+  for (const key of Object.keys(patch)) out[key] = item[key] ?? '';
+  // 끝난 항목으로 되돌릴 때는 원래 끝난 시각도 함께(안 보내면 서버가 지금 시각을 써서 '최근 완료' 맨 위로 올라온다).
+  if ('status' in patch && item.status === 'done' && item.done_at) out.done_at = item.done_at;
+  return out;
 }
 
 /** 빠른 추가의 기본 마감: 이번 주 금요일(이미 지났으면 다음 주 금요일). */

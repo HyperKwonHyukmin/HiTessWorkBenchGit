@@ -27,14 +27,8 @@ def test_create_list_and_update_task(admin_client):
     assert res.status_code == 200
     updated = res.json()
     assert updated["status"] == "developing" and updated["next_step"] == "시제품"
-    # 상태가 바뀌면 서버가 기록을 남긴다
-    assert updated["notes"][0]["kind"] == "status"
-    assert updated["notes"][0]["body"] == "검토 중 → 개발 중"
-    assert updated["notes"][0]["author_name"] == "관리자"
-
-    # 같은 상태로 다시 보내면 기록이 늘지 않는다
-    again = admin_client.patch(f"/api/council/tasks/{task['id']}", json={"status": "developing"}).json()
-    assert len(again["notes"]) == 1
+    # 상태를 바꿔도 기록(로그)을 남기지 않는다(사용자 결정 2026-11-25)
+    assert updated["notes"] == []
 
 
 def test_validation(admin_client):
@@ -63,9 +57,19 @@ def test_notes_crud_and_status_note_is_locked(admin_client):
     res = admin_client.delete(f"/api/council/notes/{note['id']}")
     assert res.status_code == 200 and res.json()["notes"] == []
 
-    status_task = admin_client.patch(f"/api/council/tasks/{task['id']}", json={"status": "done"}).json()
-    status_note = status_task["notes"][0]
-    assert admin_client.delete(f"/api/council/notes/{status_note['id']}").status_code == 422
+    assert admin_client.patch(f"/api/council/tasks/{task['id']}", json={"status": "done"}).json()["notes"] == []
+
+
+def test_old_status_notes_are_hidden(admin_client, db_session):
+    """옛 판이 남긴 상태 변경 기록은 화면에 내보내지 않고, 고치거나 지울 수도 없다."""
+    task = _make_task(admin_client)
+    old = models.CouncilNote(task_id=task["id"], kind="status", body="검토 중 → 개발 중", author_id="ADMIN001")
+    db_session.add(old)
+    db_session.commit()
+    admin_client.post(f"/api/council/tasks/{task['id']}/notes", json={"kind": "comment", "body": "의견"})
+    board = admin_client.get("/api/council/board").json()
+    assert [n["kind"] for n in board["tasks"][0]["notes"]] == ["comment"]
+    assert admin_client.delete(f"/api/council/notes/{old.id}").status_code == 422
 
 
 def test_delete_is_soft_and_hidden(admin_client, db_session):
@@ -172,6 +176,21 @@ def test_items_crud_and_order(admin_client):
     board = admin_client.get("/api/council/board").json()
     assert board["tasks"][0]["items"][0]["title"] == "시제품"
     assert "items" in board["features"]
+
+
+def test_undo_restores_done_time(admin_client):
+    """잘못 누른 상태 원을 되돌리면 완료 시각도 원래대로(보드의 '최근 2주 완료'에 다시 뜨지 않게)."""
+    tid = _make_task(admin_client)["id"]
+    item = admin_client.post(f"/api/council/tasks/{tid}/items", json={"title": "a", "due_date": "2026-10-01"}).json()["items"][0]
+    old = "2026-10-02T09:30:00"
+    done = admin_client.patch(f"/api/council/items/{item['id']}", json={"status": "done", "done_at": old}).json()["items"][0]
+    assert done["done_at"] == old
+    admin_client.patch(f"/api/council/items/{item['id']}", json={"status": "todo"})
+    again = admin_client.patch(f"/api/council/items/{item['id']}", json={"status": "done", "done_at": "엉뚱한 값"}).json()["items"][0]
+    assert again["done_at"] is not None and again["done_at"] != old          # 틀린 값은 버리고 지금 시각
+    future = admin_client.patch(f"/api/council/items/{item['id']}", json={"status": "todo"}).json()
+    future = admin_client.patch(f"/api/council/items/{item['id']}", json={"status": "done", "done_at": "2099-01-01T00:00:00"}).json()["items"][0]
+    assert future["done_at"] < "2099"
 
 
 def test_item_validation(admin_client):

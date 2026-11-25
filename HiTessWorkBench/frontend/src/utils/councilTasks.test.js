@@ -4,6 +4,7 @@ import {
   dueInfo, isStale, summarize, departmentCounts, filterTasks, groupTasks, compareTasks,
   latestUpdate, authorLabel, taskPayload, formFromTask, noteCounts, localDay, changedFields,
   itemDueInfo, itemStats, isTaskLate, sortItems, knownAssignees, itemPayload, formFromItem, defaultItemDue,
+  boardEntries, boardColumn, assigneeLanes, undoPatch, mdDate, STATUS_META, NO_ASSIGNEE,
 } from './councilTasks.js';
 
 const NOW = new Date(2026, 10, 25, 9, 0);   // 2026-11-25 09:00 지역 시간
@@ -82,7 +83,7 @@ test('마지막 갱신, 쓴 사람, 기록 건수', () => {
   assert.equal(latestUpdate([]), null);
   const t = task({ notes: [{ kind: 'comment', created_at: '2026-11-25T08:30:00' }, { kind: 'status', created_at: '2026-11-24T11:00:00' }] });
   assert.equal(localDay(latestUpdate([t])), '2026-11-25');
-  assert.deepEqual(noteCounts(t), { comment: 1, progress: 0, status: 1 });
+  assert.deepEqual(noteCounts(t), { comment: 1, progress: 0 });
   assert.equal(authorLabel({ author_name: '조혜민', author_position: '책임', author_department: '선장설계' }), '조혜민 책임 (선장설계)');
   assert.equal(authorLabel({ author_id: 'A1' }), 'A1');
 });
@@ -110,7 +111,7 @@ test('항목 마감 표시와 집계', () => {
   assert.deepEqual(itemDueInfo({ due_date: '2026-11-20', status: 'todo' }, NOW), { text: '5일 지남', late: true, soon: false });
   assert.equal(itemDueInfo({ due_date: '2026-11-25', status: 'doing' }, NOW).text, '오늘');
   assert.equal(itemDueInfo({ due_date: '2026-12-10', status: 'todo' }, NOW).text, 'D-15');
-  assert.deepEqual(itemDueInfo({ due_date: '2026-11-20', status: 'done' }, NOW), { text: '11-20', late: false, soon: false });
+  assert.deepEqual(itemDueInfo({ due_date: '2026-11-20', status: 'done' }, NOW), { text: '11/20', late: false, soon: false });
   const t = task({ items: [
     { id: 1, status: 'todo', due_date: '2026-12-10' },
     { id: 2, status: 'doing', due_date: '2026-11-20' },
@@ -157,4 +158,36 @@ test('항목 순서, 담당 추천, 항목 본문, 기본 마감', () => {
   assert.equal(defaultItemDue(new Date(2026, 10, 28, 9, 0)), '2026-12-04');  // 토요일 → 다음 주 금요일
   assert.equal(defaultItemDue(new Date(2026, 10, 27, 9, 0)), '2026-11-27');  // 금요일은 오늘
   assert.equal(taskPayload(formFromTask(task({ start_date: '2026-11-25' }))).start_date, '2026-11-25');
+});
+
+test('보드: 카드 펼치기, 끝난 지 2주 넘은 것은 빼기, 칸 순서, 담당별 줄', () => {
+  const tasks = [
+    task({ id: 1, items: [
+      { id: 1, title: 'a', status: 'todo', due_date: '2026-12-10', assignee: '김한별 책임' },
+      { id: 2, title: 'b', status: 'todo', due_date: '2026-12-20', important: true, assignee: '권혁민 책임' },
+      { id: 3, title: 'c', status: 'done', due_date: '2026-11-01', done_at: '2026-11-02T09:00:00' },   // 3주 전 완료
+      { id: 4, title: 'd', status: 'done', due_date: '2026-11-20', done_at: '2026-11-20T09:00:00', assignee: '김한별 책임' },
+    ] }),
+    task({ id: 2, items: [{ id: 5, title: 'e', status: 'doing', due_date: '2026-11-30' }, { id: 6, title: 'f', status: 'done', due_date: '2026-11-24', done_at: '2026-11-24T09:00:00' }] }),
+  ];
+  const all = boardEntries(tasks, NOW);
+  assert.deepEqual(all.map((e) => e.item.id), [1, 2, 4, 5, 6]);
+  assert.equal(all[0].task.id, 1);
+  assert.deepEqual(boardColumn(all, 'todo').map((e) => e.item.id), [2, 1]);        // 중요 먼저
+  assert.deepEqual(boardColumn(all, 'done').map((e) => e.item.id), [6, 4]);        // 최근에 끝난 순
+  assert.deepEqual(boardColumn(all, 'todo', '김한별 책임').map((e) => e.item.id), [1]);
+  assert.deepEqual(boardEntries(tasks, NOW, NO_ASSIGNEE).map((e) => e.item.id), [5, 6]);
+  assert.deepEqual(assigneeLanes(tasks), ['권혁민 책임', '김한별 책임', NO_ASSIGNEE]);
+});
+
+test('되돌리기 값, 날짜 표기, 상태 모양', () => {
+  const item = { id: 1, status: 'todo', assignee: null, start_date: null, due_date: '2026-12-01' };
+  assert.deepEqual(undoPatch(item, { status: 'doing', assignee: '김한별 책임' }), { status: 'todo', assignee: '' });
+  assert.deepEqual(undoPatch(item, { start_date: '2026-11-28', due_date: '2026-12-03' }), { start_date: '', due_date: '2026-12-01' });
+  assert.deepEqual(undoPatch({ ...item, status: 'done', done_at: '2026-11-01T09:00:00' }, { status: 'todo' }), { status: 'done', done_at: '2026-11-01T09:00:00' });
+  assert.equal(mdDate('2026-11-07'), '11/7');
+  assert.equal(mdDate('2026-11-07T10:00:00'), '11/7');
+  for (const key of ['reviewing', 'developing', 'piloting', 'done', 'hold']) {
+    assert.ok(STATUS_META[key].label && STATUS_META[key].dot && STATUS_META[key].text, key);
+  }
 });

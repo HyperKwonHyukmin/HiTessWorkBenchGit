@@ -33,7 +33,7 @@ STATUS_LABELS = {
     "done": "완료",
     "hold": "보류",
 }
-NOTE_KINDS_WRITABLE = ("progress", "comment")   # status 는 서버만 남긴다
+NOTE_KINDS_WRITABLE = ("progress", "comment")   # status(옛 판의 상태 변경 기록)는 더 만들지 않고 내보내지도 않는다
 ITEM_STATUSES = ("todo", "doing", "done")       # 항목: 예정, 진행, 완료(Team Planner 의 Task 상태)
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _MAX_BODY = 5000
@@ -110,6 +110,8 @@ class ItemPatch(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     assignee: str | None = Field(default=None, max_length=100)
     status: str | None = None
+    # 되돌리기 전용: 완료로 되돌릴 때 원래 끝난 시각을 함께 보낸다(안 보내면 지금 시각).
+    done_at: str | None = Field(default=None, max_length=40)
     start_date: str | None = None
     due_date: str | None = None
     note: str | None = Field(default=None, max_length=2000)
@@ -270,8 +272,13 @@ def _add_note(db: Session, task_id: int, kind: str, body: str, user: models.User
     return note
 
 
+def _visible_notes(notes: list[models.CouncilNote]) -> list[models.CouncilNote]:
+    """옛 판이 남긴 '상태 변경' 기록(kind=status)은 내보내지 않는다. DB 행은 그대로 둔다."""
+    return [n for n in notes if n.kind != "status"]
+
+
 def _task_with_notes(db: Session, task: models.CouncilTask) -> dict:
-    notes = db.query(models.CouncilNote).filter(models.CouncilNote.task_id == task.id).all()
+    notes = _visible_notes(db.query(models.CouncilNote).filter(models.CouncilNote.task_id == task.id).all())
     notes.sort(key=lambda n: (n.created_at or datetime.min, n.id), reverse=True)
     items = db.query(models.CouncilItem).filter(models.CouncilItem.task_id == task.id).all()
     milestones = db.query(models.CouncilMilestone).filter(models.CouncilMilestone.task_id == task.id).all()
@@ -332,7 +339,7 @@ def council_board(
             ms_by_task.setdefault(ms.task_id, []).append(ms)
     rows = []
     for task in tasks:
-        notes = notes_by_task.get(task.id, [])
+        notes = _visible_notes(notes_by_task.get(task.id, []))
         notes.sort(key=lambda n: (n.created_at or datetime.min, n.id), reverse=True)
         rows.append(_task_row(task, [_note_row(n) for n in notes],
                               _sorted_items(items_by_task.get(task.id, [])),
@@ -391,7 +398,6 @@ def update_task(
 ):
     task = _live_task(db, task_id)
     fields = payload.model_dump(exclude_unset=True)
-    old_status = task.status
     if "title" in fields:
         task.title = _required(fields["title"], "과제 이름")
     if "department" in fields:
@@ -410,9 +416,7 @@ def update_task(
         task.status = _check_status(fields["status"])
     task.updated_by = employee_id
     task.updated_at = datetime.now()
-    if task.status != old_status:
-        body = f"{STATUS_LABELS.get(old_status, old_status)} → {STATUS_LABELS[task.status]}"
-        _add_note(db, task.id, "status", body, _user(db, employee_id), employee_id)
+    # 상태 변경을 기록으로 남기지 않는다(사용자 결정 2026-11-25 — 바꿀 때마다 로그가 쌓여 의견을 가린다).
     db.commit()
     db.refresh(task)
     return _task_with_notes(db, task)
@@ -451,6 +455,20 @@ def add_note(
 
 
 # ── 항목(과제 아래 할 일) ───────────────────────────────────────────────────
+
+def _parse_done_at(value: str | None) -> datetime | None:
+    """되돌리기가 보낸 완료 시각. 모양이 틀리거나 미래면 버린다(그때는 지금 시각을 쓴다)."""
+    text = _clean(value)
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.replace(tzinfo=None)
+    return parsed if parsed <= datetime.now() else None
+
 
 def _check_item_status(status: str) -> str:
     if status not in ITEM_STATUSES:
@@ -528,7 +546,7 @@ def update_item(
     if fields.get("status") is not None:
         new_status = _check_item_status(fields["status"])
         if new_status != item.status:
-            item.done_at = datetime.now() if new_status == "done" else None
+            item.done_at = (_parse_done_at(fields.get("done_at")) or datetime.now()) if new_status == "done" else None
         item.status = new_status
     item.updated_at = datetime.now()
     item.updated_by = employee_id
