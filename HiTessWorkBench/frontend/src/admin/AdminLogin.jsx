@@ -29,7 +29,7 @@ const errorText = (status, detail) => {
   return `로그인 오류: ${status}`;
 };
 
-export default function AdminLogin({ onSuccess }) {
+export default function AdminLogin({ onSuccess, title = 'Hi-TESS 관리', subtitle = 'WorkBench 관리자 전용 페이지입니다.' }) {
   const [employeeId, setEmployeeId] = useState(() => readLocal(SAVED_EMPLOYEE_ID_KEY));
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState('');       // '' | 'windows' | 'password'
@@ -96,9 +96,9 @@ export default function AdminLogin({ onSuccess }) {
       <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
         <div className="flex items-center gap-2 text-brand-blue">
           <ShieldCheck size={22} />
-          <h1 className="text-lg font-extrabold">Hi-TESS 관리</h1>
+          <h1 className="text-lg font-extrabold">{title}</h1>
         </div>
-        <p className="mt-1 text-sm text-slate-500">WorkBench 관리자 전용 페이지입니다.</p>
+        <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
 
         <button
           type="button"

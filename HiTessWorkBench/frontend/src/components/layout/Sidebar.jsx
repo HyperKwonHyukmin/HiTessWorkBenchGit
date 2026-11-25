@@ -19,6 +19,7 @@ import {
   ShieldAlert,
   Download,
   History,
+  ClipboardList,
 } from 'lucide-react';
 import { findCatalogueAppByMenu } from '../../contexts/DashboardContext';
 import { adminTabGroupOf } from '../../constants/adminMenus';
@@ -77,6 +78,7 @@ function Sidebar({ isCollapsed, toggleSidebar, isAdmin, currentMenu, onNavigate,
           // App Community·API Apps 는 App Settings 탭, Update·Development History 는 History 탭(constants/adminMenus.js).
           { icon: SlidersHorizontal, label: "App Settings" },
           { icon: History, label: "History" },
+          { icon: ClipboardList, label: "Automation Council" },
         ]
       });
     }

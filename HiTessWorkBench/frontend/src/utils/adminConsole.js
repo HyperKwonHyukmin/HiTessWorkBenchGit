@@ -7,7 +7,7 @@ export const CONSOLE_SECTIONS = [
     category: '관리',
     items: [
       'User Management', 'Analysis Management', 'All Projects', 'Usage Reports',
-      'System Management', 'App Settings', 'History',
+      'System Management', 'App Settings', 'History', 'Automation Council',
     ],
   },
   { category: '소통', items: ['Notice & Updates', 'User Requests'] },

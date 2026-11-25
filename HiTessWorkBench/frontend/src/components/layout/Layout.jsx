@@ -120,6 +120,7 @@ export default function Layout({
       { label: 'API Apps', menu: 'API Apps', keywords: 'App Settings 탭 API 목록 설명' },
       { label: 'Update History', menu: 'Update History', keywords: 'History 탭 업데이트 이력 변경 내역 릴리스 새 기능' },
       { label: 'Development History', menu: 'Development History', keywords: 'History 탭 개발 연대기 히스토리 역사 타임라인 앱 등장' },
+      { label: 'Automation Council', menu: 'Automation Council', keywords: '구조해석 자동화 협의체 과제 현황 부서 요청 의견 팀장 실장' },
     ] : []),
   ], [userInfo.is_admin]);
 

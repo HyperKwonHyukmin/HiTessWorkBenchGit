@@ -36,6 +36,7 @@ const ADMIN_MENU_ITEMS = [
   { menu: 'Usage Reports',       label: 'Usage Reports' },
   { menu: 'App Settings',        label: 'App Settings' },
   { menu: 'History',             label: 'History' },
+  { menu: 'Automation Council',  label: 'Automation Council' },
 ];
 
 /** 서버 동기화 상태 배지 — PreferencesContext.status(idle|loading|ready|offline). */

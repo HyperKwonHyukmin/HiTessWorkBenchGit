@@ -53,6 +53,7 @@ const AnalysisManagement = lazy(() => import('./pages/Administration/AnalysisMan
 const AllProjects = lazy(() => import('./pages/Administration/AllProjects'));
 const UpdateHistory = lazy(() => import('./pages/Administration/UpdateHistory'));
 const DevelopmentHistory = lazy(() => import('./pages/Administration/DevelopmentHistory'));
+const AutomationCouncil = lazy(() => import('./pages/Administration/AutomationCouncil'));
 const UsageReports = lazy(() => import('./pages/Administration/UsageReports'));
 const AppCommunityManagement = lazy(() => import('./pages/Administration/AppCommunityManagement'));
 const AppSettings = lazy(() => import('./pages/Administration/AppSettings'));
@@ -185,6 +186,7 @@ function AppInner() {
       // 관리자 메뉴는 위에서 걸러졌음
       'User Management', 'Analysis Management', 'All Projects', 'System Management', 'Usage Reports',
       'App Settings', 'App Community', 'API Apps', 'History', 'Update History', 'Development History',
+      'Automation Council',
     ]);
     if (KNOWN.has(landing)) resetNavigation(landing);
   }, [
@@ -643,6 +645,7 @@ function AppInner() {
       case 'Analysis Management': return <AnalysisManagement />;
       case 'All Projects': return <AllProjects />;
       case 'Usage Reports': return <UsageReports />;
+      case 'Automation Council': return <AutomationCouncil />;
       // App Settings · App Community · API Apps 를 한 메뉴의 탭으로(constants/adminMenus.js).
       case 'App Settings':
       case 'App Community':

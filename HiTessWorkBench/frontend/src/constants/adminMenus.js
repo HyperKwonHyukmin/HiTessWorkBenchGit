@@ -21,6 +21,7 @@ export const ADMIN_MENUS = new Set([
   'History',
   'Update History',
   'Development History',
+  'Automation Council',
 ]);
 
 export const isAdminMenu = (menu) => ADMIN_MENUS.has(menu);

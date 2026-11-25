@@ -1,0 +1,143 @@
+"""구조해석 자동화 협의체 과제 현황 API(routers/council.py)와 /council/ 페이지 경로."""
+from fastapi.testclient import TestClient
+
+from app import models
+from app.main import app
+from app.routers import admin_web
+
+
+def _make_task(client, **over):
+    body = {"title": "권상 시뮬레이션 속도 개선", "department": "선장설계"}
+    body.update(over)
+    res = client.post("/api/council/tasks", json=body)
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_create_list_and_update_task(admin_client):
+    task = _make_task(admin_client, important=True, due_date="2026-12-15", owner="권혁민 책임")
+    assert task["status"] == "reviewing" and task["important"] is True and task["notes"] == []
+
+    board = admin_client.get("/api/council/board").json()
+    assert [t["id"] for t in board["tasks"]] == [task["id"]]
+    assert {s["key"] for s in board["statuses"]} == {"reviewing", "developing", "piloting", "done", "hold"}
+    assert board["me"]["employee_id"] == "ADMIN001"
+
+    res = admin_client.patch(f"/api/council/tasks/{task['id']}", json={"status": "developing", "next_step": "  시제품  "})
+    assert res.status_code == 200
+    updated = res.json()
+    assert updated["status"] == "developing" and updated["next_step"] == "시제품"
+    # 상태가 바뀌면 서버가 기록을 남긴다
+    assert updated["notes"][0]["kind"] == "status"
+    assert updated["notes"][0]["body"] == "검토 중 → 개발 중"
+    assert updated["notes"][0]["author_name"] == "관리자"
+
+    # 같은 상태로 다시 보내면 기록이 늘지 않는다
+    again = admin_client.patch(f"/api/council/tasks/{task['id']}", json={"status": "developing"}).json()
+    assert len(again["notes"]) == 1
+
+
+def test_validation(admin_client):
+    assert admin_client.post("/api/council/tasks", json={"title": " ", "department": "선장설계"}).status_code == 422
+    assert admin_client.post("/api/council/tasks", json={"title": "a", "department": "b", "status": "x"}).status_code == 422
+    assert admin_client.post("/api/council/tasks", json={"title": "a", "department": "b", "due_date": "2026-13-01"}).status_code == 422
+    task = _make_task(admin_client)
+    # 목표일 지우기(빈 문자열 → 미정)
+    res = admin_client.patch(f"/api/council/tasks/{task['id']}", json={"due_date": ""})
+    assert res.status_code == 200 and res.json()["due_date"] is None
+
+
+def test_notes_crud_and_status_note_is_locked(admin_client):
+    task = _make_task(admin_client)
+    res = admin_client.post(f"/api/council/tasks/{task['id']}/notes", json={"kind": "comment", "body": "우선순위를 올려 주세요."})
+    assert res.status_code == 200
+    note = res.json()["notes"][0]
+    assert note["kind"] == "comment" and note["author_id"] == "ADMIN001"
+
+    assert admin_client.post(f"/api/council/tasks/{task['id']}/notes", json={"kind": "status", "body": "x"}).status_code == 422
+
+    res = admin_client.patch(f"/api/council/notes/{note['id']}", json={"body": "고친 의견"})
+    assert res.status_code == 200 and res.json()["notes"][0]["body"] == "고친 의견"
+    assert res.json()["notes"][0]["updated_at"] is not None
+
+    res = admin_client.delete(f"/api/council/notes/{note['id']}")
+    assert res.status_code == 200 and res.json()["notes"] == []
+
+    status_task = admin_client.patch(f"/api/council/tasks/{task['id']}", json={"status": "done"}).json()
+    status_note = status_task["notes"][0]
+    assert admin_client.delete(f"/api/council/notes/{status_note['id']}").status_code == 422
+
+
+def test_delete_is_soft_and_hidden(admin_client, db_session):
+    task = _make_task(admin_client)
+    assert admin_client.delete(f"/api/council/tasks/{task['id']}").status_code == 200
+    assert admin_client.get("/api/council/board").json()["tasks"] == []
+    row = db_session.query(models.CouncilTask).filter_by(id=task["id"]).first()
+    assert row is not None and row.deleted_at is not None
+    assert admin_client.patch(f"/api/council/tasks/{task['id']}", json={"title": "x"}).status_code == 404
+    assert admin_client.post(f"/api/council/tasks/{task['id']}/notes", json={"body": "x"}).status_code == 404
+
+
+def test_seed_first_meeting_only_once(admin_client):
+    res = admin_client.post("/api/council/seed-first-meeting")
+    assert res.status_code == 200 and res.json()["count"] == 10
+    tasks = admin_client.get("/api/council/board").json()["tasks"]
+    assert len(tasks) == 10
+    assert {t["department"] for t in tasks} >= {"선장설계", "기장설계", "미래기술개발부"}
+    # 가운뎃점을 쓰지 않는다(사용자 표기 규칙)
+    assert all("\u00b7" not in (t["title"] + (t["summary"] or "")) for t in tasks)
+    assert admin_client.post("/api/council/seed-first-meeting").status_code == 409
+    assert admin_client.get("/api/council/board").json()["has_any"] is True
+
+
+def test_has_any_counts_deleted_tasks(admin_client):
+    assert admin_client.get("/api/council/board").json()["has_any"] is False
+    task = _make_task(admin_client)
+    admin_client.delete(f"/api/council/tasks/{task['id']}")
+    board = admin_client.get("/api/council/board").json()
+    assert board["tasks"] == [] and board["has_any"] is True
+    assert admin_client.post("/api/council/seed-first-meeting").status_code == 409
+
+
+def test_non_admin_is_blocked(switchable_client):
+    client = switchable_client
+    client.as_user()
+    assert client.get("/api/council/board").status_code == 403
+    assert client.post("/api/council/tasks", json={"title": "a", "department": "b"}).status_code == 403
+    assert client.post("/api/council/seed-first-meeting").status_code == 403
+
+
+def test_access_endpoint(db_session, monkeypatch):
+    from app import database
+    from app.routers import council
+
+    db_session.add_all([
+        models.User(employee_id="ADM", name="관리자", is_active=True, is_admin=True),
+        models.User(employee_id="USR", name="사용자", is_active=True, is_admin=False),
+    ])
+    db_session.commit()
+    tokens = {"t-adm": "ADM", "t-usr": "USR"}
+    monkeypatch.setattr(council.session_store, "get_employee_id", lambda tok: tokens.get(tok))
+    app.dependency_overrides[database.get_db] = lambda: db_session
+    try:
+        client = TestClient(app)
+        assert client.get("/api/council/access").status_code == 401
+        assert client.get("/api/council/access", headers={"Authorization": "Bearer t-adm"}).json()["allowed"] is True
+        res = client.get("/api/council/access", headers={"Authorization": "Bearer t-usr"})
+        assert res.status_code == 200 and res.json()["allowed"] is False
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_council_page_routes(tmp_path, monkeypatch):
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "council.html").write_text("<html>council</html>", encoding="utf-8")
+    (tmp_path / "assets" / "c.js").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(admin_web, "ADMIN_WEB_DIR", tmp_path)
+    client = TestClient(app)
+    res = client.get("/council", follow_redirects=False)
+    assert res.status_code == 307 and res.headers["location"] == "/council/"
+    assert "council" in client.get("/council/").text
+    assert client.get("/council/assets/c.js").status_code == 200
+    assert client.get("/council/..%2F..%2Fsecret.txt").status_code == 404
+    assert client.get("/council//host/share/x.js").status_code == 404

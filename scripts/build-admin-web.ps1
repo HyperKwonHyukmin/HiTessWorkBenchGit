@@ -19,6 +19,7 @@ $drmMagic = [Text.Encoding]::ASCII.GetBytes('HHIDRMC')
 
 function Test-AdminWeb([string]$dir) {
     if (-not (Test-Path (Join-Path $dir 'admin.html'))) { throw "admin.html 이 없습니다: $dir" }
+    if (-not (Test-Path (Join-Path $dir 'council.html'))) { throw "council.html 이 없습니다(협의체 과제 현황 /council/): $dir" }
     if (-not (Get-ChildItem (Join-Path $dir 'assets') -Filter *.js -ErrorAction SilentlyContinue)) { throw "assets/*.js 가 없습니다: $dir" }
     $wrapped = foreach ($f in Get-ChildItem $dir -Recurse -File) {
         $head = [byte[]]::new(7)
@@ -35,7 +36,7 @@ function Test-AdminWeb([string]$dir) {
 # 작업 폴더의 커밋 안 된 화면 코드도 번들에 들어간다 — 다른 세션의 진행 중 변경이 145 에 나가지 않게 알린다.
 function Show-UncommittedFrontend {
     $dirty = git -C $root status --porcelain -- 'HiTessWorkBench/frontend/src' 2>$null |
-        Where-Object { $_ -notmatch 'frontend/src/(admin/|utils/adminConsole|utils/loginMessages)' }
+        Where-Object { $_ -notmatch 'frontend/src/(admin/|council/|utils/adminConsole|utils/loginMessages)' }
     if ($dirty) {
         Write-Warning "커밋 안 된 화면 코드 $(@($dirty).Count)개가 번들에 함께 들어갑니다(관리 화면이 import 하는 것만 실제로 실림). 깨끗한 상태로 만들려면 worktree 에서 빌드하세요:"
         $dirty | Select-Object -First 15 | ForEach-Object { Write-Warning "  $_" }

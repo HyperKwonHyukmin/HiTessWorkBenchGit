@@ -128,6 +128,7 @@ v1.5.8 에서 결함 6건이 새어 나갔고 3건을 사용자가 먼저 찾았
 | Truss 소모듈 권상 | `docs/apps/truss-module-lifting.md` |
 | D Type Lug | `docs/apps/d-type-lug.md` |
 | PSA 평가보고서 자동화 (엑셀 하나 = Line 하나, 그림 이름 = 보고서 제목) | `docs/plans/2026-11-17-psa-report-automation-plan.md` |
+| 자동화 협의체 과제 현황 (관리자만, 앱 메뉴 + 브라우저 `/council/`) | `docs/plans/2026-11-25-automation-council-tasks-plan.md` |
 
 ## 아키텍처
 

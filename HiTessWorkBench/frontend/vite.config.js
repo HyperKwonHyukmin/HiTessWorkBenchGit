@@ -27,7 +27,8 @@ export default defineConfig(({ mode }) => ({
   build: {
     ...(mode === 'admin' ? { outDir: 'dist-admin', emptyOutDir: true } : {}),
     rollupOptions: {
-      ...(mode === 'admin' ? { input: { admin: 'admin.html' } } : {}),
+      // 협의체 과제 현황(council.html, /council/)도 같은 빌드에 넣는다 — 서버 폴더 AdminWeb 을 같이 쓴다.
+      ...(mode === 'admin' ? { input: { admin: 'admin.html', council: 'council.html' } } : {}),
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return;

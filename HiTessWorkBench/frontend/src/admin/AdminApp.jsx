@@ -5,7 +5,7 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import {
-  BarChart3, FolderSearch, History, Lightbulb, LineChart, LogOut, Megaphone,
+  BarChart3, ClipboardList, FolderSearch, History, Lightbulb, LineChart, LogOut, Megaphone,
   RefreshCw, Settings, ShieldAlert, ShieldX, SlidersHorizontal,
 } from 'lucide-react';
 import { API_BASE_URL } from '../config';
@@ -35,6 +35,7 @@ const AppCommunityManagement = lazy(() => import('../pages/Administration/AppCom
 const ApiApps = lazy(() => import('../pages/Administration/ApiApps'));
 const UpdateHistory = lazy(() => import('../pages/Administration/UpdateHistory'));
 const DevelopmentHistory = lazy(() => import('../pages/Administration/DevelopmentHistory'));
+const AutomationCouncil = lazy(() => import('../pages/Administration/AutomationCouncil'));
 const AdminTabHub = lazy(() => import('../components/admin/AdminTabHub'));
 const NoticeBoard = lazy(() => import('../pages/Support/NoticeBoard'));
 const UserRequests = lazy(() => import('../pages/Support/UserRequests'));
@@ -47,6 +48,7 @@ const ICONS = {
   'System Management': Settings,
   'App Settings': SlidersHorizontal,
   History,
+  'Automation Council': ClipboardList,
   'Notice & Updates': Megaphone,
   'User Requests': Lightbulb,
 };
@@ -62,6 +64,7 @@ function renderPage(menu) {
     case 'Analysis Management': return <AnalysisManagement />;
     case 'All Projects': return <AllProjects />;
     case 'Usage Reports': return <UsageReports />;
+    case 'Automation Council': return <AutomationCouncil />;
     case 'System Management': return <SystemSettings />;
     case 'App Settings':
     case 'App Community':

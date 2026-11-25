@@ -6,6 +6,7 @@
   GET /admin                          → /admin/ 로 이동(307). 자원 경로가 상대 경로(vite base './')라 끝에 / 가 있어야 한다.
   GET /admin/                         → AdminWeb/admin.html
   GET /admin/{파일}                   → 빌드 자원(assets/*.js·css·글꼴·그림)
+  GET /council, /council/, /council/{파일} → 협의체 과제 현황(AdminWeb/council.html, 데이터는 routers/council.py)
   GET /api/admin-console/access       → 이 사람이 콘솔을 써도 되는지(입구 검사). 안 되면 200 {allowed:false}
   GET /api/admin-console/pending-count→ 가입 승인 대기 수. Bearer(콘솔 사용자) 또는 스트림덱 열쇠 헤더
   GET /api/admin-console/logbook-new  → LogBook 새 자료 수(같은 입구)
@@ -109,6 +110,30 @@ def admin_asset(asset_path: str):
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
     headers = _LONG_CACHE if target.parent.name == "assets" else _NO_CACHE
     return Response(_read(target), media_type=media_type, headers=headers)
+
+
+# ── 협의체 과제 현황 /council/ (2026-11-25) ───────────────────────────────
+# 같은 빌드 폴더(AdminWeb)의 council.html. 자원은 상대 경로라 /council/assets/… 로 들어오고 같은 폴더에서 내준다.
+# 입구 검사와 데이터는 routers/council.py(is_admin 만, ADMIN_CONSOLE_VIEWERS 는 보지 않는다).
+COUNCIL_PAGE_NAME = "council.html"
+
+
+@router.api_route("/council", methods=["GET", "HEAD"], include_in_schema=False)
+def council_without_slash():
+    return RedirectResponse("/council/", status_code=307, headers=_NO_CACHE)
+
+
+@router.api_route("/council/", methods=["GET", "HEAD"], include_in_schema=False)
+def council_page():
+    page = ADMIN_WEB_DIR / COUNCIL_PAGE_NAME
+    if not page.is_file():
+        raise HTTPException(status_code=404, detail="협의체 과제 현황 페이지가 아직 서버에 없습니다.")
+    return HTMLResponse(_read(page), headers=_NO_CACHE)
+
+
+@router.api_route("/council/{asset_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+def council_asset(asset_path: str):
+    return admin_asset(asset_path)
 
 
 # ── API ────────────────────────────────────────────────────────────────

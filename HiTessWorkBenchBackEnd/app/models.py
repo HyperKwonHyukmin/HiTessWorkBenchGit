@@ -495,3 +495,46 @@ class UpdatePageView(Base):
   sections = Column(JSON, nullable=True)
   first_at = Column(DateTime, default=datetime.now)
   last_at = Column(DateTime, default=datetime.now)
+
+
+class CouncilTask(Base):
+  """구조해석 자동화 협의체 과제(2026-11-25). 부서가 요청한 자동화 수요 하나 = 한 행.
+
+  관리자(is_admin)만 보고 고친다. 지우면 deleted_at 만 채운다(여러 관리자가 같이 쓰므로 실수로 지운 것을 DB 에서 되살릴 수 있게).
+  목록은 파이썬에서 정렬한다 — TEXT 칸이 낀 표를 ORDER BY 하면 MySQL 정렬 버퍼 오류가 날 수 있다(v1.5.8 사고).
+  """
+  __tablename__ = "council_tasks"
+  id = Column(Integer, primary_key=True, index=True)
+  title = Column(String(200), nullable=False)
+  department = Column(String(100), nullable=False, index=True)   # 의뢰 부서
+  requester = Column(String(100), nullable=True)                 # 요청자 '이름 직급'
+  owner = Column(String(100), nullable=True)                     # 담당(Hi-TESS 개발진)
+  status = Column(String(20), nullable=False, default="reviewing")
+  important = Column(Boolean, nullable=False, default=False)
+  summary = Column(Text, nullable=True)                          # 요청 내용
+  next_step = Column(String(300), nullable=True)                 # 다음 단계
+  due_date = Column(String(10), nullable=True)                   # 목표일 YYYY-MM-DD, 비면 미정
+  source = Column(String(100), nullable=True)                    # 발굴 경로(예: 1차 회의 2026-11-24)
+  created_by = Column(String(50), nullable=True)
+  updated_by = Column(String(50), nullable=True)
+  created_at = Column(DateTime, default=datetime.now)
+  updated_at = Column(DateTime, default=datetime.now)
+  deleted_at = Column(DateTime, nullable=True, index=True)
+
+
+class CouncilNote(Base):
+  """협의체 과제의 기록 한 줄. kind = progress(진행 기록) / comment(의견) / status(상태 변경, 서버가 자동으로 남김).
+
+  쓴 사람의 이름, 직급, 부서는 쓴 순간의 값을 남긴다(나중에 사용자 정보가 바뀌어도 기록은 그대로).
+  """
+  __tablename__ = "council_notes"
+  id = Column(Integer, primary_key=True, index=True)
+  task_id = Column(Integer, ForeignKey("council_tasks.id"), nullable=False, index=True)
+  kind = Column(String(20), nullable=False, default="comment")
+  body = Column(Text, nullable=False)
+  author_id = Column(String(50), nullable=True)
+  author_name = Column(String(50), nullable=True)
+  author_position = Column(String(50), nullable=True)
+  author_department = Column(String(100), nullable=True)
+  created_at = Column(DateTime, default=datetime.now)
+  updated_at = Column(DateTime, nullable=True)

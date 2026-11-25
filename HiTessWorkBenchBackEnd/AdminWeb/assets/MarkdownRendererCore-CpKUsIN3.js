@@ -1,0 +1,2 @@
+import"./rolldown-runtime-wfL8844V.js";import{Mn as e}from"./vendor-DTFD6s1f.js";import{n as t,r as n,t as r}from"./vendor-markdown-BO9FmELE.js";e();var i=n();function a({content:e,className:n=``}){if(!e)return null;let a=e.replace(/([^\n])\n(?!\n|#| |-|\*|>|`|\||[0-9]+\.)([^\n])/g,`$1  
+$2`);return(0,i.jsx)(`div`,{className:`markdown-body ${n}`,children:(0,i.jsx)(t,{remarkPlugins:[r],children:a})})}export{a as default};
