@@ -513,6 +513,7 @@ class CouncilTask(Base):
   important = Column(Boolean, nullable=False, default=False)
   summary = Column(Text, nullable=True)                          # 요청 내용
   next_step = Column(String(300), nullable=True)                 # 다음 단계
+  start_date = Column(String(10), nullable=True)                 # 시작일 YYYY-MM-DD(선택) — 타임라인의 과제 기간 띠
   due_date = Column(String(10), nullable=True)                   # 목표일 YYYY-MM-DD, 비면 미정
   source = Column(String(100), nullable=True)                    # 발굴 경로(예: 1차 회의 2026-11-24)
   created_by = Column(String(50), nullable=True)
@@ -538,3 +539,36 @@ class CouncilNote(Base):
   author_department = Column(String(100), nullable=True)
   created_at = Column(DateTime, default=datetime.now)
   updated_at = Column(DateTime, nullable=True)
+
+
+class CouncilItem(Base):
+  """협의체 과제 아래의 항목(할 일) 한 줄(2026-11-25). Team Planner 의 Task 를 옮긴 것.
+
+  상태 = todo(예정) / doing(진행) / done(완료). 마감일은 필수, 시작일이 있으면 타임라인에 기간 막대로 그린다.
+  """
+  __tablename__ = "council_items"
+  id = Column(Integer, primary_key=True, index=True)
+  task_id = Column(Integer, ForeignKey("council_tasks.id"), nullable=False, index=True)
+  title = Column(String(200), nullable=False)
+  assignee = Column(String(100), nullable=True)      # 담당 '이름 직급'
+  status = Column(String(10), nullable=False, default="todo")
+  start_date = Column(String(10), nullable=True)
+  due_date = Column(String(10), nullable=False)
+  note = Column(String(2000), nullable=True)
+  important = Column(Boolean, nullable=False, default=False)
+  done_at = Column(DateTime, nullable=True)          # 완료로 바뀐 시각(서버가 기록)
+  created_by = Column(String(50), nullable=True)
+  updated_by = Column(String(50), nullable=True)
+  created_at = Column(DateTime, default=datetime.now)
+  updated_at = Column(DateTime, default=datetime.now)
+
+
+class CouncilMilestone(Base):
+  """협의체 과제의 마일스톤(착수, 중간 점검, 시연, 완료 보고 등). 타임라인에 마름모로 찍힌다."""
+  __tablename__ = "council_milestones"
+  id = Column(Integer, primary_key=True, index=True)
+  task_id = Column(Integer, ForeignKey("council_tasks.id"), nullable=False, index=True)
+  date = Column(String(10), nullable=False)
+  title = Column(String(100), nullable=False)
+  created_by = Column(String(50), nullable=True)
+  created_at = Column(DateTime, default=datetime.now)

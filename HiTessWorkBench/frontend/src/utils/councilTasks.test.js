@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   dueInfo, isStale, summarize, departmentCounts, filterTasks, groupTasks, compareTasks,
   latestUpdate, authorLabel, taskPayload, formFromTask, noteCounts, localDay, changedFields,
+  itemDueInfo, itemStats, isTaskLate, sortItems, knownAssignees, itemPayload, formFromItem, defaultItemDue,
 } from './councilTasks.js';
 
 const NOW = new Date(2026, 10, 25, 9, 0);   // 2026-11-25 09:00 지역 시간
@@ -103,4 +104,57 @@ test('수정 폼은 바뀐 칸만 보낸다(다른 관리자의 수정을 덮지
   assert.deepEqual(changedFields(before, after), { summary: '새 요청 내용' });
   assert.deepEqual(changedFields(before, before), {});
   assert.deepEqual(changedFields(before, { ...before, owner: '' }), { owner: '' });
+});
+
+test('항목 마감 표시와 집계', () => {
+  assert.deepEqual(itemDueInfo({ due_date: '2026-11-20', status: 'todo' }, NOW), { text: '5일 지남', late: true, soon: false });
+  assert.equal(itemDueInfo({ due_date: '2026-11-25', status: 'doing' }, NOW).text, '오늘');
+  assert.equal(itemDueInfo({ due_date: '2026-12-10', status: 'todo' }, NOW).text, 'D-15');
+  assert.deepEqual(itemDueInfo({ due_date: '2026-11-20', status: 'done' }, NOW), { text: '11-20', late: false, soon: false });
+  const t = task({ items: [
+    { id: 1, status: 'todo', due_date: '2026-12-10' },
+    { id: 2, status: 'doing', due_date: '2026-11-20' },
+    { id: 3, status: 'done', due_date: '2026-11-10' },
+    { id: 4, status: 'todo', due_date: '2026-11-28' },
+  ] });
+  const s = itemStats(t, NOW);
+  assert.deepEqual([s.total, s.todo, s.doing, s.done, s.late], [4, 2, 1, 1, 1]);
+  assert.equal(s.next.id, 2);
+  assert.equal(itemStats(task(), NOW).next, null);
+});
+
+test('과제 지연: 목표일이 지났거나 지연 항목이 있을 때, 끝난 과제는 아님', () => {
+  const lateItem = { id: 1, status: 'todo', due_date: '2026-11-20' };
+  assert.equal(isTaskLate(task({ items: [lateItem] }), NOW), true);
+  assert.equal(isTaskLate(task({ due_date: '2026-11-01' }), NOW), true);
+  assert.equal(isTaskLate(task({ items: [lateItem], status: 'hold' }), NOW), false);
+  assert.equal(isTaskLate(task({ items: [{ ...lateItem, status: 'done' }] }), NOW), false);
+  assert.equal(summarize([task({ items: [lateItem] }), task({ id: 2 })], NOW).late, 1);
+  assert.deepEqual(filterTasks([task({ items: [lateItem] }), task({ id: 2 })], { status: 'late' }, NOW).map((x) => x.id), [1]);
+});
+
+test('항목이 바뀌면 멈춤이 풀린다, 항목 이름으로도 찾는다', () => {
+  const old = task({ updated_at: '2026-11-01T09:00:00', created_at: '2026-11-01T09:00:00' });
+  assert.equal(isStale(old, NOW), true);
+  assert.equal(isStale({ ...old, items: [{ id: 1, status: 'todo', due_date: '2026-12-01', updated_at: '2026-11-24T09:00:00' }] }, NOW), false);
+  const tasks = [task({ items: [{ id: 1, title: '입력 양식 정리', assignee: '임우람 책임', status: 'todo', due_date: '2026-12-01' }] }), task({ id: 2 })];
+  assert.deepEqual(filterTasks(tasks, { query: '양식' }, NOW).map((x) => x.id), [1]);
+  assert.deepEqual(filterTasks(tasks, { query: '임우람' }, NOW).map((x) => x.id), [1]);
+});
+
+test('항목 순서, 담당 추천, 항목 본문, 기본 마감', () => {
+  const sorted = sortItems([
+    { id: 1, status: 'done', due_date: '2026-11-01', done_at: '2026-11-02T10:00:00' },
+    { id: 2, status: 'todo', due_date: '2026-12-10' },
+    { id: 3, status: 'doing', due_date: '2026-11-28' },
+    { id: 4, status: 'done', due_date: '2026-11-05', done_at: '2026-11-20T10:00:00' },
+  ]).map((i) => i.id);
+  assert.deepEqual(sorted, [3, 2, 4, 1]);
+  assert.deepEqual(knownAssignees([task({ owner: '권혁민 책임', items: [{ assignee: '김한별 책임' }, { assignee: ' 권혁민 책임 ' }] })]), ['권혁민 책임', '김한별 책임']);
+  const body = itemPayload({ ...formFromItem({ title: ' a ', status: 'x', start_date: null, due_date: '2026-12-01' }) });
+  assert.deepEqual(body, { title: 'a', assignee: '', status: 'todo', start_date: '', due_date: '2026-12-01', note: '', important: false });
+  assert.equal(defaultItemDue(NOW), '2026-11-27');                       // 수요일 → 그 주 금요일
+  assert.equal(defaultItemDue(new Date(2026, 10, 28, 9, 0)), '2026-12-04');  // 토요일 → 다음 주 금요일
+  assert.equal(defaultItemDue(new Date(2026, 10, 27, 9, 0)), '2026-11-27');  // 금요일은 오늘
+  assert.equal(taskPayload(formFromTask(task({ start_date: '2026-11-25' }))).start_date, '2026-11-25');
 });

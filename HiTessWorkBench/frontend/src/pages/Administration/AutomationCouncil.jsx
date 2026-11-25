@@ -7,30 +7,27 @@
 /// </summary>
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, ClipboardList, Clock, Copy, ExternalLink, MessageSquare, Pencil, Plus,
+  AlertTriangle, CalendarRange, ClipboardList, Clock, Copy, ExternalLink, ListChecks, MessageSquare, Pencil, Plus,
   RefreshCw, Search, Send, Star, Trash2, X,
 } from 'lucide-react';
 import PageHeader from '../../components/ui/PageHeader';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { ItemEditor, ItemList, MilestoneList } from '../../components/admin/council/CouncilItems';
+import CouncilTimeline from '../../components/admin/council/CouncilTimeline';
+import { BTN, BTN_PRIMARY, ICON_BTN, INPUT, LABEL, SEG_WRAP, isComposing, segBtn } from '../../components/admin/council/councilUi';
 import {
-  addCouncilNote, councilErrorText, councilPageUrl, createCouncilTask, deleteCouncilNote, deleteCouncilTask,
-  fetchCouncilBoard, seedFirstMeeting, updateCouncilNote, updateCouncilTask,
+  addCouncilItem, addCouncilMilestone, addCouncilNote, councilErrorText, councilPageUrl, createCouncilTask,
+  deleteCouncilItem, deleteCouncilMilestone, deleteCouncilNote, deleteCouncilTask, fetchCouncilBoard, seedFirstMeeting,
+  updateCouncilItem, updateCouncilNote, updateCouncilTask,
 } from '../../api/council';
 import {
-  EMPTY_TASK_FORM, NOTE_KIND_META, STATUS_META, STATUS_ORDER, STALE_DAYS, authorLabel, changedFields, departmentCounts,
-  dueInfo, filterTasks, formFromTask, formatDateTime, groupTasks, isStale, lastActivity, latestUpdate,
-  noteCounts, summarize, taskPayload,
+  EMPTY_TASK_FORM, ITEM_STATUS, NEXT_ITEM_STATUS, NOTE_KIND_META, STATUS_META, STATUS_ORDER, STALE_DAYS, authorLabel,
+  changedFields, departmentCounts, dueInfo, filterTasks, formFromTask, formatDateTime, groupTasks, isStale, itemStats,
+  knownAssignees, lastActivity, latestUpdate, noteCounts, summarize, taskPayload,
 } from '../../utils/councilTasks';
 
 const HEADER_BUTTON =
   'flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20 cursor-pointer';
-const BTN = 'inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 h-8 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50 cursor-pointer';
-const BTN_PRIMARY = 'inline-flex items-center gap-1.5 rounded-md bg-brand-blue px-3 h-8 text-sm font-bold text-white transition-colors hover:bg-brand-blue-light disabled:opacity-50 cursor-pointer';
-const ICON_BTN = 'inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 cursor-pointer';
-const INPUT = 'w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/15';
-const LABEL = 'block text-xs font-semibold text-slate-600';
-
-const isComposing = (e) => e.nativeEvent?.isComposing || e.keyCode === 229;
 
 function StatusPill({ status }) {
   const meta = STATUS_META[status] || STATUS_META.reviewing;
@@ -53,7 +50,7 @@ function DueText({ task, now }) {
 }
 
 // ── 과제 입력 폼(새 과제, 수정 같이 씀) ─────────────────────────────────────
-function TaskForm({ initial, departments, busy, onSubmit, onCancel, submitLabel }) {
+function TaskForm({ initial, departments, assignees, busy, onSubmit, onCancel, submitLabel }) {
   const [form, setForm] = useState(initial);
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
   const titleRef = useRef(null);
@@ -88,11 +85,8 @@ function TaskForm({ initial, departments, busy, onSubmit, onCancel, submitLabel 
         </label>
         <label className={LABEL}>
           담당
-          <input value={form.owner} onChange={(e) => set('owner', e.target.value)} maxLength={100} placeholder="Hi-TESS 개발 담당" className={INPUT + ' mt-1'} />
-        </label>
-        <label className={LABEL}>
-          목표일
-          <input type="date" value={form.due_date} onChange={(e) => set('due_date', e.target.value)} className={INPUT + ' mt-1'} />
+          <input value={form.owner} onChange={(e) => set('owner', e.target.value)} maxLength={100} list="council-assignees-form" placeholder="Hi-TESS 개발 담당" className={INPUT + ' mt-1'} />
+          <datalist id="council-assignees-form">{(assignees || []).map((a) => <option key={a} value={a} />)}</datalist>
         </label>
         <label className={LABEL}>
           상태
@@ -101,6 +95,14 @@ function TaskForm({ initial, departments, busy, onSubmit, onCancel, submitLabel 
           </select>
         </label>
         <label className={LABEL}>
+          시작일(선택)
+          <input type="date" value={form.start_date} max={form.due_date || undefined} onChange={(e) => set('start_date', e.target.value)} className={INPUT + ' mt-1'} />
+        </label>
+        <label className={LABEL}>
+          목표일
+          <input type="date" value={form.due_date} onChange={(e) => set('due_date', e.target.value)} className={INPUT + ' mt-1'} />
+        </label>
+        <label className={LABEL + ' col-span-2'}>
           발굴 경로
           <input value={form.source} onChange={(e) => set('source', e.target.value)} maxLength={100} placeholder="예: 2차 회의 (2026-12)" className={INPUT + ' mt-1'} />
         </label>
@@ -183,7 +185,10 @@ function NoteItem({ note, onSave, onDelete, busy }) {
 }
 
 // ── 오른쪽 상세 ──────────────────────────────────────────────────────────
-function TaskDetail({ task, now, busy, departments, onPatch, onDelete, onAddNote, onSaveNote, onDeleteNote }) {
+function TaskDetail({
+  task, now, busy, departments, assignees, canItems, onPatch, onDelete, onAddNote, onSaveNote, onDeleteNote,
+  onAddItem, onCycleItem, onOpenItem, onNewItem, onAddMilestone, onDeleteMilestone,
+}) {
   const [editing, setEditing] = useState(false);
   const [kind, setKind] = useState('comment');
   const [draft, setDraft] = useState('');
@@ -210,6 +215,7 @@ function TaskDetail({ task, now, busy, departments, onPatch, onDelete, onAddNote
         <TaskForm
           initial={formFromTask(task)}
           departments={departments}
+          assignees={assignees}
           busy={busy}
           submitLabel="저장"
           onCancel={() => setEditing(false)}
@@ -273,9 +279,9 @@ function TaskDetail({ task, now, busy, departments, onPatch, onDelete, onAddNote
       <dl className="mt-4 grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
         <dt className="text-slate-500">담당</dt>
         <dd className="text-slate-800">{task.owner || <span className="text-slate-400">정하지 않음</span>}</dd>
-        <dt className="text-slate-500">목표일</dt>
+        <dt className="text-slate-500">{task.start_date ? '기간' : '목표일'}</dt>
         <dd className="flex items-center gap-2 text-slate-800">
-          <span className="tabular-nums">{task.due_date || '미정'}</span>
+          <span className="tabular-nums">{task.start_date ? task.start_date + ' ~ ' : ''}{task.due_date || '미정'}</span>
           {task.due_date && <DueText task={task} now={now} />}
         </dd>
         <dt className="text-slate-500">발굴 경로</dt>
@@ -297,6 +303,17 @@ function TaskDetail({ task, now, busy, departments, onPatch, onDelete, onAddNote
         <h3 className="text-xs font-bold text-slate-500">다음 단계</h3>
         <p className="mt-0.5 break-words text-sm text-slate-800">{task.next_step || <span className="text-slate-400">정하지 않음</span>}</p>
       </section>
+
+      {canItems ? (
+        <>
+          <ItemList task={task} now={now} busy={busy} onAdd={onAddItem} onCycle={onCycleItem} onOpen={(item) => onOpenItem(task, item)} onNew={onNewItem} />
+          <MilestoneList task={task} now={now} busy={busy} onAdd={onAddMilestone} onDelete={onDeleteMilestone} />
+        </>
+      ) : (
+        <p className="mt-5 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          항목과 타임라인은 서버를 다시 시작한 뒤부터 쓸 수 있습니다(서버가 아직 이전 버전입니다).
+        </p>
+      )}
 
       <section className="mt-5 border-t border-slate-200 pt-4">
         <div className="flex items-baseline justify-between">
@@ -362,7 +379,9 @@ export default function AutomationCouncil({ browser = false }) {
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState({ status: '', department: '', query: '' });
   const [groupBy, setGroupBy] = useState('department');
-  const [confirm, setConfirm] = useState(null);     // { type: 'task'|'note', target }
+  const [view, setView] = useState('list');          // list(과제 목록) | timeline(타임라인)
+  const [itemEdit, setItemEdit] = useState(null);    // { task, item? , draft? } — 항목 편집 창
+  const [confirm, setConfirm] = useState(null);     // { type: 'task'|'note'|'item'|'milestone', target }
   const [now, setNow] = useState(() => new Date());
   const detailRef = useRef(null);
   // 좁은 화면(lg 미만)에서는 상세가 목록 아래로 내려가므로, 고르면 상세로 내려 준다.
@@ -381,6 +400,8 @@ export default function AutomationCouncil({ browser = false }) {
   const mutationSeq = useRef(0);
   const loadSeq = useRef(0);
   const [hasAny, setHasAny] = useState(true);
+  // 서버가 항목과 마일스톤을 아는가(재시작 전의 옛 서버는 모른다 — 그때는 그 기능을 감춘다).
+  const [canItems, setCanItems] = useState(true);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setPhase('loading');
@@ -391,6 +412,7 @@ export default function AutomationCouncil({ browser = false }) {
       if (mySeq !== loadSeq.current || startMut !== mutationSeq.current) return;
       setTasks(Array.isArray(data?.tasks) ? data.tasks : []);
       setHasAny(data?.has_any !== false);
+      setCanItems(Array.isArray(data?.features) && data.features.includes('items'));
       setNow(new Date());
       setPhase('ready');
     } catch (err) {
@@ -433,6 +455,7 @@ export default function AutomationCouncil({ browser = false }) {
   };
 
   const departments = useMemo(() => departmentCounts(tasks), [tasks]);
+  const assignees = useMemo(() => knownAssignees(tasks), [tasks]);
   const summary = useMemo(() => summarize(tasks, now), [tasks, now]);
   const visible = useMemo(() => filterTasks(tasks, filter, now), [tasks, filter, now]);
   const groups = useMemo(() => groupTasks(visible, groupBy, now), [visible, groupBy, now]);
@@ -464,6 +487,23 @@ export default function AutomationCouncil({ browser = false }) {
       NOTE_KIND_META[kind].label + '을 남겼습니다.'),
     onSaveNote: (note, body) => run(async () => { replaceTask(await updateCouncilNote(note.id, body.trim())); return true; }),
     onDeleteNote: (note) => setConfirm({ type: 'note', target: note }),
+    onAddItem: (task, body) => run(async () => { replaceTask(await addCouncilItem(task.id, body)); return true; }),
+    // 상태 원: 예정 → 진행 → 완료 → 예정
+    onCycleItem: (item) => run(async () => { replaceTask(await updateCouncilItem(item.id, { status: NEXT_ITEM_STATUS[item.status] })); return true; },
+      '항목 상태: ' + ITEM_STATUS[NEXT_ITEM_STATUS[item.status]]),
+    onOpenItem: (task, item) => setItemEdit({ task, item }),
+    onNewItem: (task, dueDate) => setItemEdit({ task, draft: dueDate ? { due_date: dueDate } : {} }),
+    onAddMilestone: (task, body) => run(async () => { replaceTask(await addCouncilMilestone(task.id, body)); return true; }),
+    onDeleteMilestone: (ms) => setConfirm({ type: 'milestone', target: ms }),
+  };
+
+  const saveItem = async (task, item, body) => {
+    const opened = itemEdit;   // 응답이 늦게 와도 그 사이 새로 연 다른 편집 창은 닫지 않는다
+    const ok = await run(async () => {
+      replaceTask(item ? await updateCouncilItem(item.id, body) : await addCouncilItem(task.id, body));
+      return true;
+    }, item ? '항목을 고쳤습니다.' : '항목을 추가했습니다.');
+    if (ok) setItemEdit((cur) => (cur === opened ? null : cur));
   };
 
   const doConfirm = async () => {
@@ -477,6 +517,11 @@ export default function AutomationCouncil({ browser = false }) {
         setSelectedId(null);
         return true;
       }, '과제를 지웠습니다.');
+    } else if (c.type === 'item') {
+      const ok = await run(async () => { replaceTask(await deleteCouncilItem(c.target.id)); return true; }, '항목을 지웠습니다.');
+      if (ok) setItemEdit((cur) => (cur?.item?.id === c.target.id ? null : cur));
+    } else if (c.type === 'milestone') {
+      await run(async () => { replaceTask(await deleteCouncilMilestone(c.target.id)); return true; }, '마일스톤을 지웠습니다.');
     } else {
       await run(async () => { replaceTask(await deleteCouncilNote(c.target.id)); return true; }, '기록을 지웠습니다.');
     }
@@ -505,18 +550,7 @@ export default function AutomationCouncil({ browser = false }) {
 
   return (
     <div className={browser ? '' : 'pb-16'}>
-      {browser ? (
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">{title}</h1>
-            <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => load({ quiet: true })} className={BTN}><RefreshCw size={14} /> 새로 고침</button>
-            <button type="button" onClick={() => { setCreating(true); setSelectedId(null); revealDetail(); }} className={BTN_PRIMARY}><Plus size={15} /> 새 과제</button>
-          </div>
-        </div>
-      ) : (
+      {!browser && (
         <PageHeader
           title="Automation Council"
           icon={ClipboardList}
@@ -532,7 +566,19 @@ export default function AutomationCouncil({ browser = false }) {
         />
       )}
 
-      <div className="mx-auto max-w-7xl">
+      <div className={'mx-auto ' + (view === 'timeline' ? 'max-w-[1760px]' : 'max-w-7xl')}>
+        {browser && (
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-slate-900">{title}</h1>
+              <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => load({ quiet: true })} className={BTN}><RefreshCw size={14} /> 새로 고침</button>
+              <button type="button" onClick={() => { setCreating(true); setSelectedId(null); revealDetail(); }} className={BTN_PRIMARY}><Plus size={15} /> 새 과제</button>
+            </div>
+          </div>
+        )}
         {!browser && (
           <p className="mb-3 text-xs text-slate-500">
             브라우저 주소: <span className="select-all font-mono text-slate-700">{shareUrl}</span>
@@ -574,6 +620,17 @@ export default function AutomationCouncil({ browser = false }) {
 
             {/* 의뢰 부서, 찾기, 묶어 보기 */}
             <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div className={SEG_WRAP} role="group" aria-label="보기">
+                <button type="button" onClick={() => setView('list')} aria-pressed={view === 'list'} className={segBtn(view === 'list') + ' inline-flex items-center gap-1 h-8 px-3 text-sm'}>
+                  <ListChecks size={15} /> 과제 목록
+                </button>
+                <button type="button" disabled={!canItems} title={canItems ? undefined : '서버를 다시 시작한 뒤부터 쓸 수 있습니다'}
+                  onClick={() => { setView('timeline'); setCreating(false); }} aria-pressed={view === 'timeline'}
+                  className={segBtn(view === 'timeline') + ' inline-flex items-center gap-1 h-8 px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50'}>
+                  <CalendarRange size={15} /> 타임라인
+                </button>
+              </div>
+              <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden="true" />
               <span className="text-xs font-semibold text-slate-500">의뢰 부서</span>
               <button type="button" className={chip(!filter.department)} onClick={() => setFilter((f) => ({ ...f, department: '' }))}>전체</button>
               {departments.map((d) => (
@@ -593,14 +650,15 @@ export default function AutomationCouncil({ browser = false }) {
                     className="h-8 w-56 rounded-md border border-slate-300 bg-white pl-8 pr-2 text-sm focus:border-brand-blue focus:outline-none"
                   />
                 </label>
-                <div className="flex rounded-md border border-slate-200 bg-white p-0.5" role="group" aria-label="묶어 보기">
-                  {[['department', '부서별'], ['status', '상태별']].map(([key, label]) => (
-                    <button key={key} type="button" onClick={() => setGroupBy(key)} aria-pressed={groupBy === key}
-                      className={'h-7 rounded px-2.5 text-xs font-semibold cursor-pointer ' + (groupBy === key ? 'bg-blue-50 text-brand-blue' : 'text-slate-600 hover:bg-slate-50')}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                {view === 'list' && (
+                  <div className={SEG_WRAP} role="group" aria-label="묶어 보기">
+                    {[['department', '부서별'], ['status', '상태별']].map(([key, label]) => (
+                      <button key={key} type="button" onClick={() => setGroupBy(key)} aria-pressed={groupBy === key} className={segBtn(groupBy === key)}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -615,6 +673,16 @@ export default function AutomationCouncil({ browser = false }) {
                   {!hasAny && <button type="button" onClick={seed} disabled={busy} className={BTN}>1차 회의 수요 10건 넣기</button>}
                   <button type="button" onClick={() => setCreating(true)} className={BTN_PRIMARY}><Plus size={15} /> 새 과제</button>
                 </div>
+              </div>
+            ) : view === 'timeline' && !creating && canItems ? (
+              <div className="mt-4">
+                <CouncilTimeline
+                  tasks={visible}
+                  now={now}
+                  onOpenItem={handlers.onOpenItem}
+                  onNewItem={handlers.onNewItem}
+                  onSelectTask={(t) => { setSelectedId(t.id); setView('list'); revealDetail(); }}
+                />
               </div>
             ) : (
               <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]">
@@ -631,6 +699,7 @@ export default function AutomationCouncil({ browser = false }) {
                           const on = t.id === selectedId && !creating;
                           const c = noteCounts(t);
                           const stale = isStale(t, now);
+                          const it = itemStats(t, now);
                           return (
                             <li key={t.id}>
                               <button
@@ -652,8 +721,16 @@ export default function AutomationCouncil({ browser = false }) {
                                   {(c.comment > 0 || c.progress > 0) && (
                                     <span className="inline-flex shrink-0 items-center gap-1"><MessageSquare size={12} /> {c.comment + c.progress}</span>
                                   )}
+                                  {it.total > 0 && (
+                                    <span className="shrink-0 tabular-nums" title={'항목 예정 ' + it.todo + ', 진행 ' + it.doing + ', 완료 ' + it.done}>
+                                      항목 {it.done}/{it.total}
+                                      {it.late > 0 && <b className="ml-1 text-red-700">지연 {it.late}</b>}
+                                    </span>
+                                  )}
                                   {stale && <span className="shrink-0 rounded bg-amber-50 px-1.5 font-semibold text-amber-800">멈춤</span>}
-                                  {t.next_step && <span className="min-w-0 truncate">다음: {t.next_step}</span>}
+                                  {it.next
+                                    ? <span className="min-w-0 truncate">다음 마감 {it.next.due_date.slice(5)} {it.next.title}</span>
+                                    : t.next_step && <span className="min-w-0 truncate">다음: {t.next_step}</span>}
                                 </div>
                               </button>
                             </li>
@@ -675,6 +752,7 @@ export default function AutomationCouncil({ browser = false }) {
                       <TaskForm
                         initial={{ ...EMPTY_TASK_FORM, department: filter.department || '' }}
                         departments={departments}
+                        assignees={assignees}
                         busy={busy}
                         submitLabel="만들기"
                         onCancel={() => setCreating(false)}
@@ -682,7 +760,7 @@ export default function AutomationCouncil({ browser = false }) {
                       />
                     </div>
                   ) : selected ? (
-                    <TaskDetail key={selected.id} task={selected} now={now} busy={busy} departments={departments} {...handlers} />
+                    <TaskDetail key={selected.id} task={selected} now={now} busy={busy} departments={departments} assignees={assignees} canItems={canItems} {...handlers} />
                   ) : (
                     <p className="py-10 text-center text-sm text-slate-500">왼쪽에서 과제를 고르세요.</p>
                   )}
@@ -704,11 +782,22 @@ export default function AutomationCouncil({ browser = false }) {
         isOpen={!!confirm}
         onCancel={() => setConfirm(null)}
         onConfirm={doConfirm}
-        title={confirm?.type === 'task' ? '과제 지우기' : '기록 지우기'}
+        title={{ task: '과제 지우기', item: '항목 지우기', milestone: '마일스톤 지우기' }[confirm?.type] || '기록 지우기'}
         message={confirm?.type === 'task'
           ? '"' + (confirm?.target?.title || '') + '" 과제를 지웁니다. 목록에서 사라지고 다른 관리자에게도 보이지 않습니다.'
-          : '이 기록을 지웁니다. 되돌릴 수 없습니다.'}
+          : confirm?.type === 'item' || confirm?.type === 'milestone'
+            ? '"' + (confirm?.target?.title || '') + '"을(를) 지웁니다. 되돌릴 수 없습니다.'
+            : '이 기록을 지웁니다. 되돌릴 수 없습니다.'}
         confirmLabel="지우기"
+      />
+
+      <ItemEditor
+        state={itemEdit}
+        assignees={assignees}
+        busy={busy}
+        onSave={saveItem}
+        onDelete={(item) => setConfirm({ type: 'item', target: item })}
+        onClose={() => setItemEdit(null)}
       />
     </div>
   );

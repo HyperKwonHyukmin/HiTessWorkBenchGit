@@ -112,7 +112,7 @@ function CouncilInner() {
           <LogOut size={14} /> 로그아웃
         </button>
       </header>
-      <main className="mx-auto max-w-7xl px-5 py-6">
+      <main className="mx-auto max-w-[1800px] px-5 py-6">
         <AutomationCouncil browser />
       </main>
     </div>

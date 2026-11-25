@@ -18,6 +18,12 @@ export const NOTE_KIND_META = {
   status: { label: '상태 변경', badge: 'bg-slate-100 text-slate-600' },
 };
 
+/** 항목(과제 아래 할 일) 상태 — Team Planner 의 Task 와 같다. 상태 원을 누르면 NEXT 순서로 바뀐다. */
+export const ITEM_STATUS = { todo: '예정', doing: '진행', done: '완료' };
+export const ITEM_STATUS_ORDER = ['todo', 'doing', 'done'];
+export const NEXT_ITEM_STATUS = { todo: 'doing', doing: 'done', done: 'todo' };
+export const MILESTONE_PRESETS = ['착수', '요구 확인', '시제품 시연', '시험 운영 시작', '회의 보고', '완료 보고'];
+
 /** 이 기간 동안 과제도 기록도 바뀌지 않으면 '멈춤'(Team Planner 와 같은 14일). */
 export const STALE_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -53,10 +59,62 @@ const toTime = (iso) => {
   return Number.isFinite(t) ? t : 0;
 };
 
-/** 마지막으로 무언가 바뀐 시각(과제 수정, 기록 추가 중 늦은 것). */
+/** 마지막으로 무언가 바뀐 시각(과제 수정, 기록 추가, 항목 변경 중 늦은 것). */
 export function lastActivity(task) {
   const noteTimes = (task?.notes || []).map((n) => toTime(n.updated_at || n.created_at));
-  return Math.max(toTime(task?.updated_at), toTime(task?.created_at), ...noteTimes, 0);
+  const itemTimes = (task?.items || []).map((i) => toTime(i.updated_at || i.created_at));
+  return Math.max(toTime(task?.updated_at), toTime(task?.created_at), ...noteTimes, ...itemTimes, 0);
+}
+
+/** 항목의 마감 표시: 완료는 날짜만, 나머지는 D-n, 오늘, n일 지남. */
+export function itemDueInfo(item, now = new Date()) {
+  const due = dayNumber(item?.due_date);
+  if (due === null) return { text: '', late: false, soon: false };
+  if (item.status === 'done') return { text: item.due_date.slice(5), late: false, soon: false };
+  const diff = due - dayNumber(localDay(now));
+  if (diff < 0) return { text: `${-diff}일 지남`, late: true, soon: false };
+  if (diff === 0) return { text: '오늘', late: false, soon: true };
+  return { text: `D-${diff}`, late: false, soon: diff <= 7 };
+}
+
+/** 과제의 항목 집계: 상태별 수, 지연 수, 다음 마감(안 끝난 것 중 가장 빠른 것). */
+export function itemStats(task, now = new Date()) {
+  const items = task?.items || [];
+  const open = items.filter((i) => i.status !== 'done')
+    .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || '') || (a.id || 0) - (b.id || 0));
+  return {
+    total: items.length,
+    todo: items.filter((i) => i.status === 'todo').length,
+    doing: items.filter((i) => i.status === 'doing').length,
+    done: items.filter((i) => i.status === 'done').length,
+    late: open.filter((i) => itemDueInfo(i, now).late).length,
+    next: open[0] || null,
+  };
+}
+
+/** 과제가 늦었는가: 과제 목표일이 지났거나, 마감 지난 항목이 있다. 끝난(완료, 보류) 과제는 아니다. */
+export function isTaskLate(task, now = new Date()) {
+  if (!task || isClosed(task.status)) return false;
+  return dueInfo(task.due_date, task.status, now).late || itemStats(task, now).late > 0;
+}
+
+/** 항목 목록 순서: 안 끝난 것 먼저(마감 빠른 순), 끝난 것은 아래(최근에 끝난 순). */
+export function sortItems(items) {
+  const open = (items || []).filter((i) => i.status !== 'done')
+    .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || '') || (a.id || 0) - (b.id || 0));
+  const done = (items || []).filter((i) => i.status === 'done')
+    .sort((a, b) => (b.done_at || '').localeCompare(a.done_at || '') || (b.id || 0) - (a.id || 0));
+  return [...open, ...done];
+}
+
+/** 담당 입력칸의 추천 목록: 과제 담당과 항목 담당으로 이미 쓴 이름. */
+export function knownAssignees(tasks) {
+  const names = new Set();
+  for (const t of tasks || []) {
+    if (t.owner) names.add(t.owner.trim());
+    for (const i of t.items || []) if (i.assignee) names.add(i.assignee.trim());
+  }
+  return [...names].filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko'));
 }
 
 export function isStale(task, now = new Date()) {
@@ -78,7 +136,7 @@ export function summarize(tasks, now = new Date()) {
   let stale = 0;
   for (const t of tasks || []) {
     if (t.status in byStatus) byStatus[t.status] += 1;
-    if (dueInfo(t.due_date, t.status, now).late) late += 1;
+    if (isTaskLate(t, now)) late += 1;
     if (isStale(t, now)) stale += 1;
   }
   return { total: (tasks || []).length, byStatus, late, stale };
@@ -104,12 +162,14 @@ export function filterTasks(tasks, filter = {}, now = new Date()) {
   const q = (filter.query || '').trim().toLowerCase();
   return (tasks || []).filter((t) => {
     if (filter.department && ((t.department || '').trim() || '부서 미정') !== filter.department) return false;
-    if (filter.status === 'late') { if (!dueInfo(t.due_date, t.status, now).late) return false; }
+    if (filter.status === 'late') { if (!isTaskLate(t, now)) return false; }
     else if (filter.status === 'stale') { if (!isStale(t, now)) return false; }
     else if (filter.status && t.status !== filter.status) return false;
     if (!q) return true;
     const hay = [t.title, t.department, t.requester, t.owner, t.summary, t.next_step, t.source,
-      ...(t.notes || []).map((n) => n.body)].join('\n').toLowerCase();
+      ...(t.notes || []).map((n) => n.body),
+      ...(t.items || []).flatMap((i) => [i.title, i.assignee]),
+      ...(t.milestones || []).map((m) => m.title)].join('\n').toLowerCase();
     return hay.includes(q);
   });
 }
@@ -120,7 +180,7 @@ export function compareTasks(a, b, now = new Date()) {
   if (closed) return closed;
   const imp = Number(!!b.important) - Number(!!a.important);
   if (imp) return imp;
-  const late = Number(dueInfo(b.due_date, b.status, now).late) - Number(dueInfo(a.due_date, a.status, now).late);
+  const late = Number(isTaskLate(b, now)) - Number(isTaskLate(a, now));
   if (late) return late;
   const da = dayNumber(a.due_date);
   const db = dayNumber(b.due_date);
@@ -178,9 +238,42 @@ export function taskPayload(form) {
     important: !!form.important,
     summary: text(form.summary),
     next_step: text(form.next_step),
+    start_date: text(form.start_date),
     due_date: text(form.due_date),
     source: text(form.source),
   };
+}
+
+/** 서버로 보낼 항목 본문. */
+export function itemPayload(form) {
+  const text = (v) => (typeof v === 'string' ? v.trim() : '');
+  return {
+    title: text(form.title),
+    assignee: text(form.assignee),
+    status: ITEM_STATUS_ORDER.includes(form.status) ? form.status : 'todo',
+    start_date: text(form.start_date),
+    due_date: text(form.due_date),
+    note: text(form.note),
+    important: !!form.important,
+  };
+}
+
+export const EMPTY_ITEM_FORM = { title: '', assignee: '', status: 'todo', start_date: '', due_date: '', note: '', important: false };
+
+export function formFromItem(item) {
+  const form = { ...EMPTY_ITEM_FORM };
+  for (const key of Object.keys(form)) {
+    if (item?.[key] !== undefined && item?.[key] !== null) form[key] = item[key];
+  }
+  return form;
+}
+
+/** 빠른 추가의 기본 마감: 이번 주 금요일(이미 지났으면 다음 주 금요일). */
+export function defaultItemDue(now = new Date()) {
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const add = (5 - d.getDay() + 7) % 7;      // 금요일 = 5, 오늘이 금요일이면 오늘
+  d.setDate(d.getDate() + add);
+  return localDay(d);
 }
 
 /**
@@ -197,7 +290,7 @@ export function changedFields(before, after) {
 
 export const EMPTY_TASK_FORM = {
   title: '', department: '', requester: '', owner: '', status: 'reviewing',
-  important: false, summary: '', next_step: '', due_date: '', source: '',
+  important: false, summary: '', next_step: '', start_date: '', due_date: '', source: '',
 };
 
 export function formFromTask(task) {

@@ -15,6 +15,12 @@ export const addCouncilNote = (taskId, kind, body) =>
   axios.post(`${base()}/tasks/${taskId}/notes`, { kind, body }, opts()).then((r) => r.data);
 export const updateCouncilNote = (noteId, body) => axios.patch(`${base()}/notes/${noteId}`, { body }, opts()).then((r) => r.data);
 export const deleteCouncilNote = (noteId) => axios.delete(`${base()}/notes/${noteId}`, opts()).then((r) => r.data);
+// 항목(과제 아래 할 일)과 마일스톤 — 모두 바뀐 뒤의 과제 한 건을 돌려준다.
+export const addCouncilItem = (taskId, body) => axios.post(`${base()}/tasks/${taskId}/items`, body, opts()).then((r) => r.data);
+export const updateCouncilItem = (itemId, body) => axios.patch(`${base()}/items/${itemId}`, body, opts()).then((r) => r.data);
+export const deleteCouncilItem = (itemId) => axios.delete(`${base()}/items/${itemId}`, opts()).then((r) => r.data);
+export const addCouncilMilestone = (taskId, body) => axios.post(`${base()}/tasks/${taskId}/milestones`, body, opts()).then((r) => r.data);
+export const deleteCouncilMilestone = (msId) => axios.delete(`${base()}/milestones/${msId}`, opts()).then((r) => r.data);
 export const seedFirstMeeting = () => axios.post(`${base()}/seed-first-meeting`, null, opts()).then((r) => r.data);
 
 /**
@@ -26,6 +32,8 @@ export const councilPageUrl = () => publicPageUrl(API_BASE_URL, '/council/');
 /** 서버가 준 오류 문구(422 의 detail 등). 없으면 기본 문구. */
 export function councilErrorText(err, fallback = '저장하지 못했습니다.') {
   const detail = err?.response?.data?.detail;
+  // FastAPI 의 기본 404('Not Found')는 서버에 그 경로가 아직 없다는 뜻이다(pull 뒤 재시작 전).
+  if (err?.response?.status === 404 && (!detail || detail === 'Not Found')) return '서버가 아직 이 기능이 들어가기 전 버전입니다. 서버를 다시 시작한 뒤 새로 고침해 주세요.';
   if (typeof detail === 'string' && detail) return detail;
   if (err?.response?.status === 403) return '관리자 권한이 필요합니다.';
   if (err?.response?.status === 404) return '이미 지워졌거나 서버에 이 기능이 아직 없습니다.';

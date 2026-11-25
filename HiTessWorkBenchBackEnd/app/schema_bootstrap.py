@@ -225,8 +225,16 @@ def ensure_app_settings_columns(*, engine=None) -> None:
     }, engine=engine)
 
 
+def ensure_council_columns(*, engine=None) -> None:
+    """협의체 과제 표에 뒤에 늘어난 칸을 보강합니다(145 에는 start_date 없이 먼저 만들어졌다, 2026-11-25)."""
+    _add_missing_columns("council_tasks", {
+        "start_date": "ALTER TABLE council_tasks ADD COLUMN start_date VARCHAR(10) NULL",
+    }, engine=engine)
+
+
 def run_schema_bootstrap(*, engine=None) -> None:
     """기존 호출은 production engine을, 테스트는 주입된 engine을 사용합니다."""
+    ensure_council_columns(engine=engine)
     ensure_app_settings_columns(engine=engine)
     ensure_notice_columns(engine=engine)
     ensure_user_columns(engine=engine)

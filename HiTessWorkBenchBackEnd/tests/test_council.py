@@ -141,3 +141,97 @@ def test_council_page_routes(tmp_path, monkeypatch):
     assert client.get("/council/assets/c.js").status_code == 200
     assert client.get("/council/..%2F..%2Fsecret.txt").status_code == 404
     assert client.get("/council//host/share/x.js").status_code == 404
+
+
+# ── 항목, 마일스톤, 과제 기간(2026-11-25 Team Planner 과제 관리 기능) ─────────────────
+
+def test_items_crud_and_order(admin_client):
+    task = _make_task(admin_client)
+    tid = task["id"]
+    assert task["items"] == [] and task["milestones"] == []
+
+    res = admin_client.post(f"/api/council/tasks/{tid}/items", json={"title": "시제품", "due_date": "2026-12-20", "assignee": "김한별 책임"})
+    assert res.status_code == 200, res.text
+    res = admin_client.post(f"/api/council/tasks/{tid}/items", json={"title": "요구 정리", "start_date": "2026-11-26", "due_date": "2026-12-05"})
+    items = res.json()["items"]
+    # 마감 빠른 순
+    assert [i["title"] for i in items] == ["요구 정리", "시제품"]
+    assert items[0]["status"] == "todo" and items[0]["done_at"] is None
+
+    first = items[0]["id"]
+    done = admin_client.patch(f"/api/council/items/{first}", json={"status": "done"}).json()
+    row = next(i for i in done["items"] if i["id"] == first)
+    assert row["status"] == "done" and row["done_at"] is not None
+    back = admin_client.patch(f"/api/council/items/{first}", json={"status": "doing", "assignee": ""}).json()
+    row = next(i for i in back["items"] if i["id"] == first)
+    assert row["status"] == "doing" and row["done_at"] is None and row["assignee"] is None
+
+    after = admin_client.delete(f"/api/council/items/{first}").json()
+    assert [i["title"] for i in after["items"]] == ["시제품"]
+    # 목록에도 실린다
+    board = admin_client.get("/api/council/board").json()
+    assert board["tasks"][0]["items"][0]["title"] == "시제품"
+    assert "items" in board["features"]
+
+
+def test_item_validation(admin_client):
+    tid = _make_task(admin_client)["id"]
+    post = lambda body: admin_client.post(f"/api/council/tasks/{tid}/items", json=body).status_code
+    assert post({"title": "a"}) == 422                                   # 마감일 필수
+    assert post({"title": " ", "due_date": "2026-12-01"}) == 422
+    assert post({"title": "a", "due_date": "2026-12-01", "status": "x"}) == 422
+    assert post({"title": "a", "due_date": "2026-12-01", "start_date": "2026-12-02"}) == 422
+    assert post({"title": "a", "due_date": "2026-12-01", "start_date": "2026-12-01"}) == 200
+    item = admin_client.get("/api/council/board").json()["tasks"][0]["items"][0]
+    assert admin_client.patch(f"/api/council/items/{item['id']}", json={"due_date": ""}).status_code == 422
+    assert admin_client.patch(f"/api/council/items/{item['id']}", json={"due_date": "2026-11-30"}).status_code == 422   # 시작보다 앞
+    assert admin_client.patch(f"/api/council/items/{item['id']}", json={"start_date": "", "due_date": "2026-11-30"}).status_code == 200
+    assert admin_client.patch("/api/council/items/99999", json={"title": "x"}).status_code == 404
+
+
+def test_milestones_and_task_period(admin_client):
+    task = _make_task(admin_client, start_date="2026-11-25", due_date="2026-12-31")
+    assert task["start_date"] == "2026-11-25"
+    tid = task["id"]
+    assert admin_client.patch(f"/api/council/tasks/{tid}", json={"start_date": "2027-01-05"}).status_code == 422
+    admin_client.post(f"/api/council/tasks/{tid}/milestones", json={"date": "2026-12-22", "title": "2차 회의 시연"})
+    res = admin_client.post(f"/api/council/tasks/{tid}/milestones", json={"date": "2026-12-01", "title": "착수"})
+    ms = res.json()["milestones"]
+    assert [m["title"] for m in ms] == ["착수", "2차 회의 시연"]
+    assert admin_client.post(f"/api/council/tasks/{tid}/milestones", json={"date": "x", "title": "a"}).status_code == 422
+    moved = admin_client.patch(f"/api/council/milestones/{ms[0]['id']}", json={"date": "2026-12-25"}).json()
+    assert [m["title"] for m in moved["milestones"]] == ["2차 회의 시연", "착수"]
+    gone = admin_client.delete(f"/api/council/milestones/{ms[0]['id']}").json()
+    assert [m["title"] for m in gone["milestones"]] == ["2차 회의 시연"]
+
+
+def test_items_of_deleted_task_are_locked(admin_client):
+    tid = _make_task(admin_client)["id"]
+    item = admin_client.post(f"/api/council/tasks/{tid}/items", json={"title": "a", "due_date": "2026-12-01"}).json()["items"][0]
+    admin_client.delete(f"/api/council/tasks/{tid}")
+    assert admin_client.patch(f"/api/council/items/{item['id']}", json={"status": "done"}).status_code == 404
+    assert admin_client.post(f"/api/council/tasks/{tid}/milestones", json={"date": "2026-12-01", "title": "a"}).status_code == 404
+
+
+def test_non_admin_cannot_touch_items(switchable_client):
+    client = switchable_client
+    tid = client.post("/api/council/tasks", json={"title": "a", "department": "b"}).json()["id"]
+    item = client.post(f"/api/council/tasks/{tid}/items", json={"title": "a", "due_date": "2026-12-01"}).json()["items"][0]
+    client.as_user()
+    assert client.post(f"/api/council/tasks/{tid}/items", json={"title": "a", "due_date": "2026-12-01"}).status_code == 403
+    assert client.patch(f"/api/council/items/{item['id']}", json={"status": "done"}).status_code == 403
+    assert client.delete(f"/api/council/items/{item['id']}").status_code == 403
+    assert client.post(f"/api/council/tasks/{tid}/milestones", json={"date": "2026-12-01", "title": "a"}).status_code == 403
+
+
+def test_bootstrap_adds_start_date_to_old_table():
+    """145 에는 start_date 없는 council_tasks 가 먼저 만들어졌다 — 시작 때 칸이 보강돼야 한다(두 번 돌려도 그대로)."""
+    from sqlalchemy import create_engine, inspect, text
+    from app.schema_bootstrap import ensure_council_columns
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE council_tasks (id INTEGER PRIMARY KEY, title VARCHAR(200), due_date VARCHAR(10))"))
+    ensure_council_columns(engine=engine)
+    ensure_council_columns(engine=engine)
+    assert "start_date" in {c["name"] for c in inspect(engine).get_columns("council_tasks")}

@@ -34,6 +34,7 @@ STATUS_LABELS = {
     "hold": "보류",
 }
 NOTE_KINDS_WRITABLE = ("progress", "comment")   # status 는 서버만 남긴다
+ITEM_STATUSES = ("todo", "doing", "done")       # 항목: 예정, 진행, 완료(Team Planner 의 Task 상태)
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _MAX_BODY = 5000
 # 넣기를 두 관리자가 동시에 눌러도 한 번만(uvicorn 워커 1개 전제 — 인증의 틀린 시도 제한과 같은 전제).
@@ -76,6 +77,7 @@ class TaskIn(BaseModel):
     important: bool = False
     summary: str | None = Field(default=None, max_length=_MAX_BODY)
     next_step: str | None = Field(default=None, max_length=300)
+    start_date: str | None = None
     due_date: str | None = None
     source: str | None = Field(default=None, max_length=100)
 
@@ -89,8 +91,39 @@ class TaskPatch(BaseModel):
     important: bool | None = None
     summary: str | None = Field(default=None, max_length=_MAX_BODY)
     next_step: str | None = Field(default=None, max_length=300)
+    start_date: str | None = None
     due_date: str | None = None
     source: str | None = Field(default=None, max_length=100)
+
+
+class ItemIn(BaseModel):
+    title: str = Field(..., max_length=200)
+    assignee: str | None = Field(default=None, max_length=100)
+    status: str = "todo"
+    start_date: str | None = None
+    due_date: str
+    note: str | None = Field(default=None, max_length=2000)
+    important: bool = False
+
+
+class ItemPatch(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    assignee: str | None = Field(default=None, max_length=100)
+    status: str | None = None
+    start_date: str | None = None
+    due_date: str | None = None
+    note: str | None = Field(default=None, max_length=2000)
+    important: bool | None = None
+
+
+class MilestoneIn(BaseModel):
+    date: str
+    title: str = Field(..., max_length=100)
+
+
+class MilestonePatch(BaseModel):
+    date: str | None = None
+    title: str | None = Field(default=None, max_length=100)
 
 
 class NoteIn(BaseModel):
@@ -124,12 +157,12 @@ def _check_status(status: str) -> str:
     return status
 
 
-def _check_date(value: str | None) -> str | None:
+def _check_date(value: str | None, label: str = "목표일") -> str | None:
     text = _clean(value)
     if text is None:
         return None
     if not _DATE_RE.match(text):
-        raise HTTPException(status_code=422, detail="목표일은 YYYY-MM-DD 형식이어야 합니다.")
+        raise HTTPException(status_code=422, detail=f"{label} 형식이 맞지 않습니다(YYYY-MM-DD).")
     try:
         datetime.strptime(text, "%Y-%m-%d")
     except ValueError:
@@ -167,7 +200,38 @@ def _note_row(note: models.CouncilNote) -> dict:
     }
 
 
-def _task_row(task: models.CouncilTask, notes: list[dict]) -> dict:
+def _item_row(item: models.CouncilItem) -> dict:
+    return {
+        "id": item.id,
+        "task_id": item.task_id,
+        "title": item.title,
+        "assignee": item.assignee,
+        "status": item.status,
+        "start_date": item.start_date,
+        "due_date": item.due_date,
+        "note": item.note,
+        "important": bool(item.important),
+        "done_at": _iso(item.done_at),
+        "created_at": _iso(item.created_at),
+        "updated_at": _iso(item.updated_at),
+    }
+
+
+def _milestone_row(ms: models.CouncilMilestone) -> dict:
+    return {"id": ms.id, "task_id": ms.task_id, "date": ms.date, "title": ms.title}
+
+
+def _sorted_items(items: list[models.CouncilItem]) -> list[dict]:
+    """마감 빠른 순, 같으면 먼저 만든 순(파이썬 정렬 — ORDER BY 를 쓰지 않는다)."""
+    return [_item_row(i) for i in sorted(items, key=lambda i: (i.due_date or "", i.id))]
+
+
+def _sorted_milestones(rows: list[models.CouncilMilestone]) -> list[dict]:
+    return [_milestone_row(m) for m in sorted(rows, key=lambda m: (m.date or "", m.id))]
+
+
+def _task_row(task: models.CouncilTask, notes: list[dict], items: list[dict] | None = None,
+              milestones: list[dict] | None = None) -> dict:
     return {
         "id": task.id,
         "title": task.title,
@@ -178,6 +242,7 @@ def _task_row(task: models.CouncilTask, notes: list[dict]) -> dict:
         "important": bool(task.important),
         "summary": task.summary,
         "next_step": task.next_step,
+        "start_date": task.start_date,
         "due_date": task.due_date,
         "source": task.source,
         "created_by": task.created_by,
@@ -185,6 +250,8 @@ def _task_row(task: models.CouncilTask, notes: list[dict]) -> dict:
         "created_at": _iso(task.created_at),
         "updated_at": _iso(task.updated_at),
         "notes": notes,
+        "items": items or [],
+        "milestones": milestones or [],
     }
 
 
@@ -206,7 +273,20 @@ def _add_note(db: Session, task_id: int, kind: str, body: str, user: models.User
 def _task_with_notes(db: Session, task: models.CouncilTask) -> dict:
     notes = db.query(models.CouncilNote).filter(models.CouncilNote.task_id == task.id).all()
     notes.sort(key=lambda n: (n.created_at or datetime.min, n.id), reverse=True)
-    return _task_row(task, [_note_row(n) for n in notes])
+    items = db.query(models.CouncilItem).filter(models.CouncilItem.task_id == task.id).all()
+    milestones = db.query(models.CouncilMilestone).filter(models.CouncilMilestone.task_id == task.id).all()
+    return _task_row(task, [_note_row(n) for n in notes], _sorted_items(items), _sorted_milestones(milestones))
+
+
+def _check_period(start: str | None, due: str | None) -> None:
+    if start and due and start > due:
+        raise HTTPException(status_code=422, detail="시작일이 마감일보다 늦습니다.")
+
+
+def _touch(task: models.CouncilTask, employee_id: str) -> None:
+    """항목이나 마일스톤이 바뀌면 과제의 마지막 갱신도 함께 올린다(멈춤 표시 기준)."""
+    task.updated_at = datetime.now()
+    task.updated_by = employee_id
 
 
 # ── 경로 ─────────────────────────────────────────────────────────────────
@@ -241,19 +321,29 @@ def council_board(
     tasks = db.query(models.CouncilTask).filter(models.CouncilTask.deleted_at.is_(None)).all()
     ids = [t.id for t in tasks]
     notes_by_task: dict[int, list[models.CouncilNote]] = {i: [] for i in ids}
+    items_by_task: dict[int, list[models.CouncilItem]] = {i: [] for i in ids}
+    ms_by_task: dict[int, list[models.CouncilMilestone]] = {i: [] for i in ids}
     if ids:
         for note in db.query(models.CouncilNote).filter(models.CouncilNote.task_id.in_(ids)).all():
             notes_by_task.setdefault(note.task_id, []).append(note)
+        for item in db.query(models.CouncilItem).filter(models.CouncilItem.task_id.in_(ids)).all():
+            items_by_task.setdefault(item.task_id, []).append(item)
+        for ms in db.query(models.CouncilMilestone).filter(models.CouncilMilestone.task_id.in_(ids)).all():
+            ms_by_task.setdefault(ms.task_id, []).append(ms)
     rows = []
     for task in tasks:
         notes = notes_by_task.get(task.id, [])
         notes.sort(key=lambda n: (n.created_at or datetime.min, n.id), reverse=True)
-        rows.append(_task_row(task, [_note_row(n) for n in notes]))
+        rows.append(_task_row(task, [_note_row(n) for n in notes],
+                              _sorted_items(items_by_task.get(task.id, [])),
+                              _sorted_milestones(ms_by_task.get(task.id, []))))
     rows.sort(key=lambda r: r["id"])
     me = _user(db, employee_id)
     return {
         "tasks": rows,
         "statuses": [{"key": k, "label": STATUS_LABELS[k]} for k in STATUSES],
+        # 항목과 타임라인을 아는 서버인지 — 없으면(재시작 전의 옛 서버) 화면이 항목, 마일스톤, 타임라인을 감춘다.
+        "features": ["items", "milestones"],
         "me": {"employee_id": employee_id, "name": me.name if me else None},
         # 지운 과제까지 하나라도 있었는가 — 화면이 '1차 회의 수요 넣기'(그때는 409)를 보여 줄지 정한다.
         "has_any": db.query(models.CouncilTask.id).first() is not None,
@@ -277,6 +367,7 @@ def create_task(
         important=bool(payload.important),
         summary=_clean(payload.summary),
         next_step=_clean(payload.next_step),
+        start_date=_check_date(payload.start_date, "시작일"),
         due_date=_check_date(payload.due_date),
         source=_clean(payload.source),
         created_by=employee_id,
@@ -284,6 +375,7 @@ def create_task(
         created_at=now,
         updated_at=now,
     )
+    _check_period(task.start_date, task.due_date)
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -307,8 +399,11 @@ def update_task(
     for key in ("requester", "owner", "summary", "next_step", "source"):
         if key in fields:
             setattr(task, key, _clean(fields[key]))
+    if "start_date" in fields:
+        task.start_date = _check_date(fields["start_date"], "시작일")
     if "due_date" in fields:
         task.due_date = _check_date(fields["due_date"])
+    _check_period(task.start_date, task.due_date)
     if fields.get("important") is not None:
         task.important = bool(fields["important"])
     if fields.get("status") is not None:
@@ -350,6 +445,174 @@ def add_note(
     _add_note(db, task.id, payload.kind, body, _user(db, employee_id), employee_id)
     task.updated_at = datetime.now()
     task.updated_by = employee_id
+    db.commit()
+    db.refresh(task)
+    return _task_with_notes(db, task)
+
+
+# ── 항목(과제 아래 할 일) ───────────────────────────────────────────────────
+
+def _check_item_status(status: str) -> str:
+    if status not in ITEM_STATUSES:
+        raise HTTPException(status_code=422, detail="항목 상태는 예정, 진행, 완료 중 하나여야 합니다.")
+    return status
+
+
+def _live_item(db: Session, item_id: int) -> tuple[models.CouncilItem, models.CouncilTask]:
+    item = db.query(models.CouncilItem).filter(models.CouncilItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="항목을 찾을 수 없습니다.")
+    return item, _live_task(db, item.task_id)
+
+
+@router.post("/tasks/{task_id}/items")
+def add_item(
+    task_id: int,
+    payload: ItemIn,
+    employee_id: str = Depends(require_admin),
+    db: Session = Depends(database.get_db),
+):
+    task = _live_task(db, task_id)
+    now = datetime.now()
+    status = _check_item_status(payload.status)
+    start = _check_date(payload.start_date, "시작일")
+    due = _check_date(payload.due_date, "마감일")
+    if not due:
+        raise HTTPException(status_code=422, detail="마감일을 입력하세요.")
+    _check_period(start, due)
+    db.add(models.CouncilItem(
+        task_id=task.id,
+        title=_required(payload.title, "항목 이름"),
+        assignee=_clean(payload.assignee),
+        status=status,
+        start_date=start,
+        due_date=due,
+        note=_clean(payload.note),
+        important=bool(payload.important),
+        done_at=now if status == "done" else None,
+        created_by=employee_id,
+        updated_by=employee_id,
+        created_at=now,
+        updated_at=now,
+    ))
+    _touch(task, employee_id)
+    db.commit()
+    db.refresh(task)
+    return _task_with_notes(db, task)
+
+
+@router.patch("/items/{item_id}")
+def update_item(
+    item_id: int,
+    payload: ItemPatch,
+    employee_id: str = Depends(require_admin),
+    db: Session = Depends(database.get_db),
+):
+    item, task = _live_item(db, item_id)
+    fields = payload.model_dump(exclude_unset=True)
+    if "title" in fields:
+        item.title = _required(fields["title"], "항목 이름")
+    for key in ("assignee", "note"):
+        if key in fields:
+            setattr(item, key, _clean(fields[key]))
+    if "start_date" in fields:
+        item.start_date = _check_date(fields["start_date"], "시작일")
+    if "due_date" in fields:
+        due = _check_date(fields["due_date"], "마감일")
+        if not due:
+            raise HTTPException(status_code=422, detail="마감일을 입력하세요.")
+        item.due_date = due
+    _check_period(item.start_date, item.due_date)
+    if fields.get("important") is not None:
+        item.important = bool(fields["important"])
+    if fields.get("status") is not None:
+        new_status = _check_item_status(fields["status"])
+        if new_status != item.status:
+            item.done_at = datetime.now() if new_status == "done" else None
+        item.status = new_status
+    item.updated_at = datetime.now()
+    item.updated_by = employee_id
+    _touch(task, employee_id)
+    db.commit()
+    db.refresh(task)
+    return _task_with_notes(db, task)
+
+
+@router.delete("/items/{item_id}")
+def delete_item(
+    item_id: int,
+    employee_id: str = Depends(require_admin),
+    db: Session = Depends(database.get_db),
+):
+    item, task = _live_item(db, item_id)
+    db.delete(item)
+    _touch(task, employee_id)
+    db.commit()
+    db.refresh(task)
+    return _task_with_notes(db, task)
+
+
+# ── 마일스톤 ───────────────────────────────────────────────────────────────
+
+def _live_milestone(db: Session, ms_id: int) -> tuple[models.CouncilMilestone, models.CouncilTask]:
+    ms = db.query(models.CouncilMilestone).filter(models.CouncilMilestone.id == ms_id).first()
+    if not ms:
+        raise HTTPException(status_code=404, detail="마일스톤을 찾을 수 없습니다.")
+    return ms, _live_task(db, ms.task_id)
+
+
+@router.post("/tasks/{task_id}/milestones")
+def add_milestone(
+    task_id: int,
+    payload: MilestoneIn,
+    employee_id: str = Depends(require_admin),
+    db: Session = Depends(database.get_db),
+):
+    task = _live_task(db, task_id)
+    date = _check_date(payload.date, "날짜")
+    if not date:
+        raise HTTPException(status_code=422, detail="날짜를 입력하세요.")
+    db.add(models.CouncilMilestone(
+        task_id=task.id, date=date, title=_required(payload.title, "마일스톤 이름"),
+        created_by=employee_id, created_at=datetime.now(),
+    ))
+    _touch(task, employee_id)
+    db.commit()
+    db.refresh(task)
+    return _task_with_notes(db, task)
+
+
+@router.patch("/milestones/{ms_id}")
+def update_milestone(
+    ms_id: int,
+    payload: MilestonePatch,
+    employee_id: str = Depends(require_admin),
+    db: Session = Depends(database.get_db),
+):
+    ms, task = _live_milestone(db, ms_id)
+    fields = payload.model_dump(exclude_unset=True)
+    if "date" in fields:
+        date = _check_date(fields["date"], "날짜")
+        if not date:
+            raise HTTPException(status_code=422, detail="날짜를 입력하세요.")
+        ms.date = date
+    if "title" in fields:
+        ms.title = _required(fields["title"], "마일스톤 이름")
+    _touch(task, employee_id)
+    db.commit()
+    db.refresh(task)
+    return _task_with_notes(db, task)
+
+
+@router.delete("/milestones/{ms_id}")
+def delete_milestone(
+    ms_id: int,
+    employee_id: str = Depends(require_admin),
+    db: Session = Depends(database.get_db),
+):
+    ms, task = _live_milestone(db, ms_id)
+    db.delete(ms)
+    _touch(task, employee_id)
     db.commit()
     db.refresh(task)
     return _task_with_notes(db, task)
