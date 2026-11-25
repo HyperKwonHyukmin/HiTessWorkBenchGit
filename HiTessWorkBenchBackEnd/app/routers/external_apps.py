@@ -4,7 +4,9 @@ from dataclasses import dataclass, replace
 from html import escape as html_escape
 import json
 import logging
+from pathlib import Path
 import re
+import ssl
 import time
 from typing import Callable
 from urllib.parse import quote, unquote, urlencode, urlparse
@@ -34,7 +36,14 @@ jwks_router = APIRouter(prefix="/api/external-apps", tags=["external-apps"])
 
 BLOCK_WELD_UPSTREAM = "http://10.14.42.145:31880/"
 BLOCK_WELD_PROXY_PATH = "/external-apps/block-weld"
-INDEPENDENT_TANK_UPSTREAM = "http://10.14.42.145:31870/"
+# Independent Tank 는 2026-11 부터 HTTPS 로만 받는다(자체 서명 인증서, 31870).
+# 기본은 같은 145 의 loopback. 앱이 다른 PC 에 임시로 떠 있으면 관리자 App Settings 에서
+# 주소(IP)만 바꾼다 — 프로토콜(https)은 이 기본값을 따른다. loopback 은 App Settings 로 넣을 수 없다(SSRF 차단).
+INDEPENDENT_TANK_UPSTREAM = "https://127.0.0.1:31870/"
+# 앱 인증서를 그대로 믿는 대상으로 고정한다(회사 PC 가 믿는 인증서 목록에 없음).
+# 인증서 주소 목록에 임시 PC IP 가 없어 주소 이름 검사는 끈다. 인증서 자체가 맞아야만 연결된다.
+# 앱 담당자가 인증서를 새로 만들면 이 파일을 바꿔야 한다(현재 것은 2027-11-24 까지).
+INDEPENDENT_TANK_CERT_PATH = Path(__file__).resolve().parents[1] / "certs" / "independent_tank.pem"
 INDEPENDENT_TANK_PROXY_PATH = "/external-apps/independent-tank"
 HEAVY_BLOCK_LIFTING_UPSTREAM = "http://10.14.42.145:31860/"
 HEAVY_BLOCK_LIFTING_PROXY_PATH = "/external-apps/heavy-block-lifting"
@@ -83,10 +92,18 @@ async def close_block_weld_client() -> None:
     _block_weld_client = None
 
 
+def independent_tank_ssl_context() -> ssl.SSLContext:
+    """Independent Tank 인증서 하나만 믿는 TLS 설정(자체 서명 인증서 고정)."""
+    context = ssl.create_default_context(cadata=INDEPENDENT_TANK_CERT_PATH.read_text(encoding="ascii"))
+    context.check_hostname = False
+    return context
+
+
 def get_independent_tank_client() -> httpx.AsyncClient:
     global _independent_tank_client
     if _independent_tank_client is None or _independent_tank_client.is_closed:
         _independent_tank_client = httpx.AsyncClient(
+            verify=independent_tank_ssl_context(),
             follow_redirects=False,
             timeout=httpx.Timeout(UPSTREAM_READ_TIMEOUT_SECONDS, connect=5.0),
             limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),

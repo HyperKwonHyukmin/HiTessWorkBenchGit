@@ -7,6 +7,7 @@
 Block Weld·Independent Tank·Heavy Block Lifting·App Settings 등록 App 은 백엔드 `routers/external_apps.py` 가 `/external-apps/<key>` 로 프록시한다
 (grant 45초 → HttpOnly 쿠키 세션 8시간, `services/external_app_access.py`). 이 세션은 브라우저↔게이트웨이 사이에만 있고 `Authorization`·`wb_ext_*` 쿠키는 업스트림에 안 간다.
 ⚠ 외부 App 은 **주소 첫 칸(`/A123456`)으로 사용자를 정한다** — 업스트림 포트(145:31860/31870/31880)로 직접 들어오면 사번을 바꿔 들어갈 수 있다(방화벽 의존, 실제 열림 여부 미확인).
+- **Independent Tank 는 HTTPS 로만 받는다**(2026-11-25, 자체 서명 인증서 `CN=Independent Tank HTTPS`, 2027-11-24 까지). 프록시 기본 주소 = `https://127.0.0.1:31870/`, 앱 인증서 하나만 믿도록 고정(`app/certs/independent_tank.pem`, 주소 이름 검사는 끔). 앱이 다른 PC 에 임시로 뜨면 관리자 App Settings 에서 IP 만 바꾼다(https 는 기본값을 따름). 앱 담당자가 인증서를 새로 만들면 이 파일을 바꿔야 한다. 앱은 145 에서 온 요청만 받는다(70 에서 직접 부르면 403) — 시험은 145 에서 한다. 11-24 장애: 145 의 R_261124 가 HTTP 로 `127.0.0.1` 에만 떠 있었고 프록시는 `http://10.14.42.145:31870` 을 불러 연결 거부.
 결정(사용자, 2026-11-03): **A안 = 게이트웨이가 요청마다 `X-HiTESS-Assertion`(RS256 JWT, aud = App 키/slug, exp 60초)을 붙이고 공개키를 JWKS 로 공개**, 외부 App 이 검증.
 계획서·외부 개발자 전달본 = `RecordMD/2026-11-03-external-app-signed-identity-plan.md`(부록 = WorkBench 내부 작업, 전달 시 뺌).
 **WorkBench 쪽 구현됨(2026-11-03, 미커밋)** — `services/external_app_identity.py`(RS256 서명·JWKS, 키 = `.env` `EXTERNAL_APP_SIGNING_KEY_PATH` 기본 `<백엔드>/.secrets/`, git 제외) ·
