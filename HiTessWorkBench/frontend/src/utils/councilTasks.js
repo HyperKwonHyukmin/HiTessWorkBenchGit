@@ -306,10 +306,57 @@ export function boardColumn(entries, status, assignee = '') {
     || (a.item.due_date || '').localeCompare(b.item.due_date || '') || a.item.id - b.item.id);
 }
 
-/** 담당 이름 목록(가나다순, '담당 미정'은 맨 뒤). 보드의 담당별 줄과 타임라인의 담당 보기에 쓴다. */
-export function assigneeLanes(tasks) {
+/**
+ * 보드의 열과 과제 상태의 대응(사용자 결정 2026-11-25: 검토 중인 과제도 보드의 '예정'에 올린다).
+ * 항목이 하나도 없는 과제는 과제 자체가 카드가 된다. 항목이 있는 과제는 항목 카드로 나오므로 과제 카드는 올리지 않는다.
+ */
+export const TASK_BOARD_COLUMN = { reviewing: 'todo', hold: 'todo', developing: 'doing', piloting: 'doing', done: 'done' };
+/** 과제 카드를 그 열로 끌어 놓았을 때 바뀌는 과제 상태. */
+export const COLUMN_TASK_STATUS = { todo: 'reviewing', doing: 'developing', done: 'done' };
+export const ownerOf = (task) => (task?.owner || '').trim() || NO_ASSIGNEE;
+
+const boardCutoff = (now) => localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - BOARD_DONE_DAYS));
+/** 이 과제에 보드에 보이는 항목 카드가 있는가(끝난 지 2주 넘은 완료 항목은 보드에 안 나온다). */
+const hasBoardItems = (task, cutoff) => (task.items || [])
+  .some((i) => !(i.status === 'done' && (i.done_at || i.due_date || '').slice(0, 10) < cutoff));
+
+/**
+ * 보드에 과제 자체로 올릴 카드: 보드에 보이는 항목 카드가 하나도 없는 과제(항목이 없거나, 모두 오래전에 끝남).
+ * 완료 과제는 마지막으로 바뀐 지(updated_at) 2주가 넘으면 뺀다 — 과제에는 완료 시각 칸이 없어 바뀐 시각을 쓴다.
+ * owner 를 주면 그 담당 것만.
+ */
+export function boardTaskCards(tasks, now = new Date(), owner = '') {
+  const cutoff = boardCutoff(now);
+  return (tasks || []).filter((t) => {
+    if (hasBoardItems(t, cutoff)) return false;
+    if (owner && ownerOf(t) !== owner) return false;
+    if (t.status === 'done' && (t.updated_at || '').slice(0, 10) < cutoff) return false;
+    return true;
+  });
+}
+
+/** 보드 한 칸의 과제 카드 순서: 중요, 목표일 빠른 순(미정은 뒤), 먼저 만든 순. 완료 칸은 최근에 바뀐 순. */
+export function boardTaskColumn(cards, column, owner = '') {
+  const list = cards.filter((t) => (TASK_BOARD_COLUMN[t.status] || 'todo') === column && (!owner || ownerOf(t) === owner));
+  if (column === 'done') return list.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '') || b.id - a.id);
+  return list.sort((a, b) => Number(!!b.important) - Number(!!a.important)
+    || (a.due_date || '9999').localeCompare(b.due_date || '9999') || a.id - b.id);
+}
+
+/**
+ * 담당 이름 목록(가나다순, '담당 미정'은 맨 뒤). 보드의 담당별 줄과 타임라인의 담당 보기에 쓴다.
+ * withTaskOwners 를 켜면 과제 카드로 올라오는 과제(boardTaskCards 와 같은 기준)의 담당도 넣는다.
+ */
+export function assigneeLanes(tasks, withTaskOwners = false, now = new Date()) {
   const names = new Set();
   let none = false;
+  const cutoff = boardCutoff(now);
+  for (const t of tasks || []) {
+    if (withTaskOwners && !hasBoardItems(t, cutoff)) {
+      const o = ownerOf(t);
+      if (o === NO_ASSIGNEE) none = true; else names.add(o);
+    }
+  }
   for (const t of tasks || []) for (const i of t.items || []) {
     const n = assigneeOf(i);
     if (n === NO_ASSIGNEE) none = true; else names.add(n);

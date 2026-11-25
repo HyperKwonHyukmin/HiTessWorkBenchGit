@@ -1,7 +1,7 @@
 // 협의체 과제 현황 화면이 같이 쓰는 모양(단추, 입력칸)과 상태 표시. 화면 = pages/Administration/AutomationCouncil.jsx
 // 상태는 어디서나 '점 + 글자' 하나로 보인다(DESIGN.md 배지 규칙: 둥근 알약, 점, 글자. 색에만 기대지 않는다).
 import { AlertTriangle } from 'lucide-react';
-import { STATUS_META, STATUS_ORDER, itemDueInfo, mdDate } from '../../../utils/councilTasks';
+import { STATUS_META, STATUS_ORDER, dueInfo, itemDueInfo, mdDate } from '../../../utils/councilTasks';
 
 export const BTN = 'inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 h-9 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50 cursor-pointer';
 export const BTN_PRIMARY = 'inline-flex items-center gap-1.5 rounded-lg bg-brand-blue px-3.5 h-9 text-sm font-semibold text-white transition-colors hover:bg-brand-blue-dark disabled:opacity-50 cursor-pointer';
@@ -76,6 +76,21 @@ export function ItemDue({ item, now, withDate = true }) {
         {due.text}
       </span>
       {withDate && <span className="text-slate-500">{mdDate(item.due_date)}</span>}
+    </span>
+  );
+}
+
+/** 과제 목표일: 정해졌을 때만 보인다(미정은 쓰지 않는다). */
+export function TaskDue({ task, now }) {
+  if (!task.due_date) return null;
+  const info = dueInfo(task.due_date, task.status, now);
+  return (
+    <span className="inline-flex shrink-0 items-baseline gap-1.5 text-[13px] tabular-nums" title={'목표일 ' + task.due_date}>
+      <span className={info.late ? 'font-bold text-red-700' : info.soon ? 'font-bold text-slate-900' : 'font-medium text-slate-600'}>
+        {info.late && <AlertTriangle size={12} className="mr-0.5 inline -mt-0.5" aria-hidden="true" />}
+        {info.text === task.due_date ? mdDate(task.due_date) : info.text}
+      </span>
+      {info.text !== task.due_date && <span className="text-slate-500">{mdDate(task.due_date)}</span>}
     </span>
   );
 }

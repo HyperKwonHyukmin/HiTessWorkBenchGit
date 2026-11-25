@@ -16,7 +16,7 @@ import CouncilBoard from '../../components/admin/council/CouncilBoard';
 import { ItemEditor, ItemList, MilestoneList } from '../../components/admin/council/CouncilItems';
 import CouncilTimeline from '../../components/admin/council/CouncilTimeline';
 import {
-  BTN, BTN_PRIMARY, ICON_BTN, INPUT, LABEL, SEG_WRAP, SELECT, StatusBadge, StatusSelect, isComposing, segBtn,
+  BTN, BTN_PRIMARY, ICON_BTN, INPUT, LABEL, SEG_WRAP, SELECT, StatusBadge, StatusSelect, TaskDue, isComposing, segBtn,
 } from '../../components/admin/council/councilUi';
 import {
   addCouncilItem, addCouncilMilestone, addCouncilNote, councilErrorText, councilPageUrl, createCouncilTask,
@@ -25,28 +25,13 @@ import {
 } from '../../api/council';
 import {
   EMPTY_TASK_FORM, ITEM_STATUS, NEXT_ITEM_STATUS, NOTE_KIND_META, STATUS_META, STATUS_ORDER, STALE_DAYS, authorLabel,
-  changedFields, departmentCounts, dueInfo, filterTasks, formFromTask, formatDateTime, groupTasks, isStale, itemStats,
+  changedFields, departmentCounts, filterTasks, formFromTask, formatDateTime, groupTasks, isStale, itemStats,
   knownAssignees, lastActivity, latestUpdate, mdDate, noteCounts, summarize, taskPayload, undoPatch,
 } from '../../utils/councilTasks';
 
 const HEADER_BUTTON =
   'flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20 cursor-pointer';
 const VIEWS = [['list', '과제', ListChecks], ['board', '보드', Kanban], ['timeline', '타임라인', CalendarRange]];
-
-/** 과제 목표일: 정해졌을 때만 보인다(미정은 쓰지 않는다). */
-function TaskDue({ task, now }) {
-  if (!task.due_date) return null;
-  const info = dueInfo(task.due_date, task.status, now);
-  return (
-    <span className="inline-flex shrink-0 items-baseline gap-1.5 text-[13px] tabular-nums" title={'목표일 ' + task.due_date}>
-      <span className={info.late ? 'font-bold text-red-700' : info.soon ? 'font-bold text-slate-900' : 'font-medium text-slate-600'}>
-        {info.late && <AlertTriangle size={12} className="mr-0.5 inline -mt-0.5" aria-hidden="true" />}
-        {info.text === task.due_date ? mdDate(task.due_date) : info.text}
-      </span>
-      {info.text !== task.due_date && <span className="text-slate-500">{mdDate(task.due_date)}</span>}
-    </span>
-  );
-}
 
 // ── 과제 입력 폼(새 과제, 수정 같이 씀) ─────────────────────────────────────
 function TaskForm({ initial, departments, assignees, busy, onSubmit, onCancel, submitLabel }) {
@@ -440,6 +425,16 @@ export default function AutomationCouncil({ browser = false }) {
     // 상태 원: 예정 → 진행 → 완료 → 예정
     onCycleItem: (item) => moveItem(item, { status: NEXT_ITEM_STATUS[item.status] }, '항목 상태: ' + ITEM_STATUS[NEXT_ITEM_STATUS[item.status]]),
     onMoveItem: (item, patch) => moveItem(item, patch, moveText(patch)),
+    // 보드의 과제 카드(항목 없는 과제)를 끌어 과제 상태나 담당을 바꾼다. 되돌리기가 붙는다.
+    onMoveTask: (task, patch) => {
+      const back = {};
+      for (const key of Object.keys(patch)) back[key] = task[key] ?? '';
+      const parts = [];
+      if (patch.status) parts.push('과제 상태 ' + STATUS_META[patch.status].label);
+      if ('owner' in patch) parts.push('담당 ' + (patch.owner || '없음'));
+      return run(async () => { replaceTask(await updateCouncilTask(task.id, patch)); return true; }, '바꿨습니다: ' + parts.join(', '),
+        () => run(async () => { replaceTask(await updateCouncilTask(task.id, back)); return true; }, '되돌렸습니다.'));
+    },
     onOpenItem: (task, item) => setItemEdit({ task, item }),
     onNewItem: (task, draft) => setItemEdit({ task: task || null, draft: draft || {} }),
     onAddMilestone: (task, body) => run(async () => { replaceTask(await addCouncilMilestone(task.id, body)); return true; }),
@@ -626,8 +621,9 @@ export default function AutomationCouncil({ browser = false }) {
               </div>
             ) : view === 'board' && canItems ? (
               <div className="mt-4">
-                <CouncilBoard tasks={visible} now={now} busy={busy} onMoveItem={handlers.onMoveItem} onCycleItem={handlers.onCycleItem}
-                  onOpenItem={handlers.onOpenItem} onNewItem={handlers.onNewItem} />
+                <CouncilBoard tasks={visible} now={now} busy={busy} onMoveItem={handlers.onMoveItem} onMoveTask={handlers.onMoveTask} onCycleItem={handlers.onCycleItem}
+                  onOpenItem={handlers.onOpenItem} onNewItem={handlers.onNewItem}
+                  onSelectTask={(t) => { setSelectedId(t.id); setView('list'); revealDetail(); }} />
               </div>
             ) : view === 'timeline' && canItems ? (
               <div className="mt-4">

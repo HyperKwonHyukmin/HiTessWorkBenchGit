@@ -5,6 +5,7 @@ import {
   latestUpdate, authorLabel, taskPayload, formFromTask, noteCounts, localDay, changedFields,
   itemDueInfo, itemStats, isTaskLate, sortItems, knownAssignees, itemPayload, formFromItem, defaultItemDue,
   boardEntries, boardColumn, assigneeLanes, undoPatch, mdDate, STATUS_META, NO_ASSIGNEE,
+  boardTaskCards, boardTaskColumn, TASK_BOARD_COLUMN, COLUMN_TASK_STATUS,
 } from './councilTasks.js';
 
 const NOW = new Date(2026, 10, 25, 9, 0);   // 2026-11-25 09:00 지역 시간
@@ -190,4 +191,34 @@ test('되돌리기 값, 날짜 표기, 상태 모양', () => {
   for (const key of ['reviewing', 'developing', 'piloting', 'done', 'hold']) {
     assert.ok(STATUS_META[key].label && STATUS_META[key].dot && STATUS_META[key].text, key);
   }
+});
+
+test('보드: 항목 없는 과제는 과제 카드로(검토 중은 예정 열), 항목 있는 과제는 빼기', () => {
+  const tasks = [
+    task({ id: 1, status: 'reviewing' }),
+    task({ id: 2, status: 'developing', owner: '김한별 책임', due_date: '2026-12-10' }),
+    task({ id: 3, status: 'piloting', important: true }),
+    task({ id: 4, status: 'hold' }),
+    task({ id: 5, status: 'done', updated_at: '2026-11-20T09:00:00' }),
+    task({ id: 6, status: 'done', updated_at: '2026-10-01T09:00:00' }),                      // 끝난 지 오래 → 뺌
+    task({ id: 7, status: 'reviewing', items: [{ id: 1, status: 'todo', due_date: '2026-12-01' }] }),   // 항목이 있으면 항목 카드로
+  ];
+  const cards = boardTaskCards(tasks, NOW);
+  assert.deepEqual(cards.map((t) => t.id), [1, 2, 3, 4, 5]);
+  assert.deepEqual(boardTaskColumn(cards, 'todo').map((t) => t.id), [1, 4]);
+  assert.deepEqual(boardTaskColumn(cards, 'doing').map((t) => t.id), [3, 2]);                 // 중요 먼저
+  assert.deepEqual(boardTaskColumn(cards, 'done').map((t) => t.id), [5]);
+  assert.deepEqual(boardTaskColumn(cards, 'doing', '김한별 책임').map((t) => t.id), [2]);
+  assert.deepEqual(boardTaskCards(tasks, NOW, NO_ASSIGNEE).map((t) => t.id), [1, 3, 4, 5]);
+  assert.deepEqual(assigneeLanes(tasks, true, NOW), ['김한별 책임', NO_ASSIGNEE]);
+  // 항목이 모두 오래전에 끝난 진행 과제는 항목 카드가 없으므로 과제 카드로 올라와야 한다(어느 열에도 없으면 안 됨)
+  const oldDone = task({ id: 8, status: 'developing', owner: '임우람 책임', items: [{ id: 9, status: 'done', due_date: '2026-10-01', done_at: '2026-10-02T09:00:00', assignee: '임우람 책임' }] });
+  assert.deepEqual(boardEntries([oldDone], NOW), []);
+  assert.deepEqual(boardTaskCards([oldDone], NOW).map((t) => t.id), [8]);
+  assert.deepEqual(assigneeLanes([oldDone], true, NOW), ['임우람 책임']);
+  assert.deepEqual(assigneeLanes(tasks), [NO_ASSIGNEE]);                                      // 타임라인은 항목 담당만
+  // 끌어 놓은 열 → 과제 상태. 같은 열 안의 상태(시험 운영, 보류)는 바꾸지 않게 열 대응으로 판단한다
+  assert.equal(COLUMN_TASK_STATUS.doing, 'developing');
+  assert.equal(TASK_BOARD_COLUMN.piloting, 'doing');
+  assert.equal(TASK_BOARD_COLUMN.hold, 'todo');
 });
