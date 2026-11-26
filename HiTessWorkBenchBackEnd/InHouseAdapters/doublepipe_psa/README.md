@@ -66,7 +66,7 @@ pyNastran 1.3.4, Python 3.8.8).
 `--load-cases` 는 Main 이 쓰는 `HeadClass_01` 을 `selected_head_class` 로 바꿔 끼워 처리한다.
 엔진 개발자가 Main.py 흐름을 바꿔도 145 엔진 폴더에 파일만 넣으면 반영된다. 계약은 `run_pipeline(csv_path)`,
 `HeadClass_01`, 그 인스턴스의 `LC_name`, `LC_name_iter01`, `LC_name_iter02`, `filename`, `datname`.
-`patches.py` 는 2026-11-26 비웠다(7건 모두 엔진 원본에 반영됨). Main.py 가 없는 옛 엔진은 `run_adapter_pipeline` 으로 돈다.
+새 엔진(`Main.py` 에 `run_pipeline` 과 `make_report_pro`)은 엔진 폴더 그대로 실행하고 패치와 서식 shim 을 거치지 않는다. `patches.py` 7건은 옛 엔진 보호용으로 남긴다. Main.py 가 없는 옛 엔진은 `run_adapter_pipeline` 으로 돈다.
 
 ## 소스 직접 실행 모드 (2026-10-26)
 
