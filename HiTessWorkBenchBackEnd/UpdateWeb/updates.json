@@ -228,17 +228,17 @@
           ],
           "images": [
             {
-              "src": "img/mu-report-stress.png",
+              "src": "img/mu-report-stress-v2.png",
               "alt": "보고서 부재 응력 그림. 응력 MPa 컬러바와 응력 라벨",
               "caption": "① 응력(MPa) 기준 색과 컬러바"
             },
             {
-              "src": "img/mu-report-displacement.png",
+              "src": "img/mu-report-displacement-v2.png",
               "alt": "보고서 변형 형상 그림. 최대 변위 절점 표시",
               "caption": "② 최대 변위 절점 표시"
             },
             {
-              "src": "img/mu-report-layout.png",
+              "src": "img/mu-report-layout-v2.png",
               "alt": "보고서 권상 배치 그림. COG 표시",
               "caption": "③ COG 표시"
             }
