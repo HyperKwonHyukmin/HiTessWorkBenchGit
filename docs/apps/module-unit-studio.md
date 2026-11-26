@@ -56,6 +56,34 @@ viewer id=`module-unit-studio`, 연결 메뉴 = "Group & Module Unit 권상 구�
   ⚠ 뷰포트 모델(`applyViewEdits`)의 `pointMasses` 에는 넣지 않았다 — 파생 모델로 질량을 내는 곳이 있으면 두 번 더해진다. `three/MassMarkers.js` 는 MB 와 `same` 이라 MB 에도 복사(인자 기본값, MB 동작 불변).
   확인: MU 시험 1023 · 헤드리스로 추가→3D 클릭 선택→값 수정→정보 패널·말풍선·질량 요약. WorkBench 앱 안 화면은 눈으로 확인 안 함. 145 공개(`/studio-release`)·커밋은 사용자 몫. 짝 싱크 대장 16·17번 보류.
 
+#### 부재 위 권상점: 노드 만들기의 부재 나누기, 연결 없는 권상점 경고, Wire 결과 누락 (MU 0.0.227, 2026-11-26, 145 릴리스 표 `2d1ede6`, 소스 미커밋)
+사용자 보고: '두 노드의 중점'으로 부재 위에 노드를 만들어 권상점으로 지정했더니 그 Wire 장력이 '누락'으로 나왔다(같은 그룹의 다른 Wire 도 누락).
+원인 두 가지(3496 모델로 Nastran 재현):
+1. 노드 만들기는 연결 없는 GRID 만 만들었다(부재를 나누는 기능이 없었다). 그 노드에 건 슬링은 0 N 이고 나머지 슬링만으로 들려 결과가 틀어진다(재현: 다른 슬링 2~5배, 압축 슬링 발생).
+2. bridge `parse_crod_force` 가 줄 첫 값이 지수 표기일 때만 그 줄을 읽었다. 힘이 정확히 0 이면 Nastran 이 `0.0` 으로 찍어 줄이 통째로 버려지고, 같은 줄 오른쪽 칸의 정상 Wire 까지 '누락'이 됐다.
+고친 것:
+- **bridge 결과 읽기**: 데이터 줄 판정을 `NUM_PAT`(지수 없는 숫자 포함)로. 시험 `Nastran_bridge/tests/test_crod_force_zero.py`(고치기 전 코드로 실패 확인). SubModule 과 InHouse 사본 같게 복사(InHouse 백업 `.bak_20261126_before_crodzero`).
+- **부재 나누기** (`data/nodeEdits.js` `collectSplitElements`·`applySplits`, `data/memberSplit.js`): `addNode` params 에 `splitElementId`·`splitNewElementId` 를 더했다(새 kind 아님, 한 번에 Ctrl+Z). 파생 모델에서 원래 부재 = (시작, 새 노드), 새 부재 = (새 노드, 끝)이고 단면, 방향, 종류를 그대로 갖고 `splitOf` 를 남긴다(bridge `split_element_from_params` 와 같은 규칙). 연결 그룹에도 넣는다. `applyViewEdits` 는 이제 노드 편집 모델의 요소를 이어받는다(전에는 원본 요소로 다시 시작). `suggestNextElementId` 가 조각 번호를 건너뛴다.
+  노드 만들기 패널은 새 위치가 부재 선 위(1 mm 안, 끝에서 1 mm 넘게)면 "부재 E… 를 이 노드에서 나누기" 를 보이고 기본으로 켠다(절대좌표, 변위, 중점 모두).
+- **연결 없는 권상점 경고** (`components/UnboundHoistWarning.jsx`, `findUnboundHoistNodes`): 부재와 RBE 어디에도 안 이어진 권상점을 Hoist STEP 4 와 Analysis 탭 구조 해석 칸에 빨간 상자로 알린다. 막지는 않는다(나중에 RBE 로 이을 수 있어서). 기존 '현장 배치 안내' 상자 안에도 비슷한 한 줄이 있었지만 접힌 상자라 눈에 띄지 않았다.
+검증: MU vitest 1078 통과(새 `memberSplit.test.js` 7건), bridge 시험 145 통과. 실제 경로: Studio 코드로 `_edited.json`(E828 을 중점에서 나눔) → bridge JSON→BDF → lift-run → Nastran: 중점 노드 Wire 53,553 N, 같은 모델에서 원래 끝 노드(74 mm 옆)에 건 Wire 53,409 N, FATAL 0. 헤드리스 Chrome 으로 노드 패널의 나누기 상자와 Hoist 경고를 눈으로 확인. WorkBench 앱 안 화면은 확인 안 함.
+남은 것: 나눈 조각을 다시 지우거나 단면을 바꿀 때 질량 증감 계산(`collectRemovedMasses` 등)은 원본 요소만 본다(조각의 질량 변화는 빠짐, 드문 경우라 두었다). MB Studio 노드 만들기에도 같은 공백이 있다(대장 53번 보류).
+상태(2026-11-26): `/studio-release` 로 145 릴리스 표 0.0.225 → 0.0.227(`2d1ede6`, UNC 업로드 SHA-256 일치, 0.0.226 포함). 업데이트 안내 = `/updates/2026-11-26-mu-member-split`, `-mu-unbound-hoist`, `-mu-hoist-candidate`, `-mu-report`(요청자 메일 발송, WorkLog 15:04·15:14).
+  **145 에 남은 일(사용자)**: ⟳ Update, InHouse `NastranBridge/nastran_bridge.py` 수동 교체(Wire 결과 누락 고침 — 없으면 0 N Wire 옆 번호가 계속 누락), 0.0.226 보고서 백엔드 코드 커밋 뒤 `git pull` + 재시작(그 전에는 보고서 그림과 파일 이름이 옛것).
+  **미커밋**: ModuleUnitStudio 저장소 소스(0.0.226~0.0.227), WorkBench 핀 `MODULE_STUDIO_VERSION`(대체값이라 exe 없이도 0.0.227 이 열린다), 백엔드 `unit_lifting_report/`, SubModule `Nastran_bridge`.
+
+#### 사용자 피드백 반영: 후보 표시, 권상 방식 기억, 보고서 (MU 0.0.226, 2026-11-26, 145 는 0.0.227 로 공개, 소스와 백엔드 미커밋)
+- **권상 후보 구 = 화면 고정 크기** (`three/HoistCandidateNodes.js`) — 고리 14px(`SHELL_PX`), 코어 5px(`CORE_PX`), `screenSpaceMaterial`. 전에는 월드 반지름 76mm 라 작은 모델을 확대하면 화면을 덮어 옆 노드를 못 골랐다. Circle Guide 도 같은 함수.
+- **'다음 후보 N점 · 권장 …' 글은 기본으로 3D 에 띄우지 않는다** — 권상 패널 STEP 2 범례 아래 줄(`data-help="hoist.candidateLabel"`)에 늘 보이고, [3D 글] 단추로 3D 에도 켤 수 있다(localStorage `mu.hoist.candidateLabel3d.v1`, 기본 끔). 요약 글은 ThreeViewport 가 `hoistCandidateSummary` 에 채운다.
+- **권상 방식 기억** — 평가 모드와 같은 설정 파일(`viewer-settings/module-unit-studio.json`)의 `hoistMode` + localStorage `mu.hoist.mode.v1`. 저장은 패널에서 고를 때만(`chooseHoistMode`, `setHoistMode` 는 저장 안 함). 시작 상태와 `reset()` 이 기억값을 쓰고, 시작 때 설정 파일 값은 권상점이 비어 있을 때만 적용한다.
+- **보고서 호선·유닛 자동 입력** — 규칙이 `1234-56789`(유닛 숫자 5자리)뿐이라 `3615-324L0-1` 을 못 뽑았다. 새 규칙 = 호선 4자리 + 유닛 영숫자 3자 이상(숫자 포함) + 선택 `-1` 짧은 번호(백엔드 `collector._parse_ids`, WorkBench `utils/unitLiftingReport.js`, Studio `utils/unitLiftingReportForm.js` 세 벌). Studio 는 단계 파일명에 호선이 없으면 `meta.sourceFile`(원본 BDF 경로)에서 뽑는다(`pickIdSource`).
+- **보고서 파일명은 영문과 숫자만** — `…_Lifting_Structural_Analysis_Report_날짜.pdf`(결과), `…_Lifting_Structural_Review_Report_…`(상세). 저장 창에서 한글이 `ê¶_ì__` 처럼 깨진 사례가 있었으나 재현 못 함(Electron 26 blob 다운로드, data: 와 file:// 페이지 모두 정상). 깨질 글자를 없애는 쪽으로 막았다. 보고서 안의 제목과 표는 그대로 한글.
+- **보고서 3D 그림** (`solid3d.render`, `figures3d`) — 범례 폭을 재서 정보 띠를 넓힘(글자 잘림), 라벨을 투영된 부재 위가 아닌 빈 곳에 놓고(`_model_boxes`, `_place_clear`) 그림 밖으로 나가면 밀어 넣음(`_keep_inside`). COG 와 최대 변위 절점은 솔리드가 아니라 2D 마커로 맨 위에(부재에 가려 안 보였다), 최대 변위 절점은 뷰 범위에도 넣는다.
+- **'부재 응력 활용도' → '부재 응력'** — 색 = 0 ~ 최대 응력(MPa), 초과 부재가 있으면 0 ~ 허용응력이고 넘으면 빨강, 허용응력은 컬러바 기준선(`figures.stress_norm`, `STRESS_CMAP`). 상세 레포트 2D 그림과 그림 제목도 같게. Studio 화면의 '응력 활용도' 색은 그대로.
+- 확인: 백엔드 보고서 시험 전부, WorkBench node 시험, MU vitest 1070+, eslint, 두 빌드, 헤드리스 화면(후보 14px 고정·패널 요약 줄·3D 글 단추). fixture 로 그림 4장 눈으로 확인. **확인 안 함**: 실제 Ceiling Crane 모델 보고서 PDF, WorkBench 앱 안 화면, 3D 글을 켠 실제 화면(시험 모델에서는 후보가 화면 밖이라 단위 시험으로만 확인).
+- 남은 제안(사용자 메모 '간섭 위치 심볼'): 고른 권상점이 부재와 간섭하는 위치를 보고서에도 기호로 — 이번에 하지 않음.
+- 짝 싱크: 바뀐 곳이 모두 권상(Hoist) 전용이라 MB 해당 없음.
+
 #### 평가 모드 3단계 · 그룹 일괄 삭제 · RBE 독립 종속 바꾸기 (MU 0.0.225, 2026-11-18~19, 릴리스 표 0.0.225 `9a84c3d`)
 계획과 진행 기록 = `docs/plans/2026-11-18-mu-evaluation-mode-rbe-swap-group-bulk.md`. ② 는 아래 'RBE 독립 · 종속 바꾸기' 로 바꿔 구현했다.
 - **평가 모드 = Strict / Standard(기본, 옛 Strict OFF) / Advisory** — 'Strict 평가' 토글을 대신한다. 규칙 원본 = MU `data/evaluationMode.js`(`stabilityGate`).
