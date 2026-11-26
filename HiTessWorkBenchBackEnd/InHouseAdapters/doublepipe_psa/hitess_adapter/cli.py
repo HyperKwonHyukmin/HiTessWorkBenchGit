@@ -108,18 +108,83 @@ def _build_friction_iter02(sym, datnames, filenames):
 
 
 # ----------------------------------------------------------------------------
-# 파이프라인
+# 파이프라인 — 엔진 Main.run_pipeline 위임 (2026-11-26)
 # ----------------------------------------------------------------------------
+# 엔진 개발자가 Main.py 의 흐름(보고서 함수 교체 등)을 바꾸면 145 에 파일만 바꿔 넣어도
+# 그대로 반영되게, 어댑터는 해석 흐름을 따로 갖지 않고 엔진의 Main.run_pipeline(csv) 을 부른다.
+# 어댑터가 더하는 것은 Load Case 선택 하나뿐이다: Main 이 쓰는 HeadClass_01 을 '선택한 LC 만
+# 남기는' 하위 클래스로 바꿔 끼운다. Main 은 INP_1st.LC_name / LC_name_iter01 / LC_name_iter02 /
+# datname / filename 만 돌므로 목록을 줄이면 해석, 마찰 반복, ASME 검토가 모두 그 LC 만 돈다.
+# 엔진 계약: Main.py 에 run_pipeline(csv_path) 와 HeadClass_01 이름이 있을 것.
+_SELECTABLE_ATTRS = ("LC_name", "LC_name_iter01", "LC_name_iter02", "filename", "datname")
+
+
+def load_engine_main():
+    """엔진 Main 모듈. Main.py 가 없거나(옛 엔진, exe 번들) run_pipeline 이 없으면 None.
+
+    Main.py 가 있는데 import 가 실패하면(새 코드 오류, 패키지 없음) 예외를 그대로 올린다 —
+    옛 흐름으로 조용히 돌면 개발자가 바꾼 내용이 빠진 보고서가 나온다.
+    """
+    engine_dir = engine.ensure_engine_on_path()
+    if engine_dir is None or not os.path.isfile(os.path.join(engine_dir, "Main.py")):
+        return None
+    import importlib
+    engine_main = importlib.import_module("Main")
+    if not callable(getattr(engine_main, "run_pipeline", None)) or not hasattr(engine_main, "HeadClass_01"):
+        print("[어댑터] 엔진 Main.py 에 run_pipeline 또는 HeadClass_01 이 없어 어댑터 흐름으로 실행합니다.")
+        return None
+    return engine_main
+
+
+def selected_head_class(base, requested):
+    """base(HeadClass_01) 를 상속해 생성 직후 LC 목록을 requested 만 남기는 클래스."""
+
+    class SelectedHead(base):
+        created = 0
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            SelectedHead.created += 1
+            engine.verify_head_instance(self)
+            selected = select_indices(self.LC_name, requested)
+            for attr in _SELECTABLE_ATTRS:
+                values = getattr(self, attr)
+                setattr(self, attr, [values[i] for i in selected])
+            print(f"해석 대상 ({len(selected)}개): {self.LC_name}")
+
+    SelectedHead.__name__ = base.__name__
+    return SelectedHead
+
+
 def run_pipeline(csv_path, requested=None):
     """requested=None 이면 전체 29개, set 이면 그 LoadCase(+L17)만 해석한다."""
+    if requested is not None:
+        ordered = sorted(requested, key=lambda s: int(s[1:]))
+        print(f"요청 LoadCase(+L17 자동): {', '.join(ordered)}")
+    engine_main = load_engine_main()
+    if engine_main is None:
+        run_adapter_pipeline(csv_path, requested)
+        return
+    print("[어댑터] 엔진 Main.run_pipeline 으로 실행합니다.")
+    selected = None
+    if requested is not None:
+        selected = selected_head_class(engine_main.HeadClass_01, requested)
+        engine_main.HeadClass_01 = selected
+    engine_main.run_pipeline(csv_path)
+    if selected is not None and selected.created == 0:
+        # 고른 Load Case 대신 전체를 해석해 놓고 '완료'로 보이면 안 되므로 실패로 끝낸다.
+        raise RuntimeError("[어댑터] Load Case 선택이 적용되지 않았습니다 — 엔진 Main.run_pipeline 이 모듈의 "
+                           "HeadClass_01 을 쓰지 않아 전체 Load Case 를 해석했을 수 있습니다. hitess_adapter/cli.py 를 확인하세요.")
+    print("\n완료: 'Report for PSA.xlsx', 'Inforget_f06.f06' 생성")
+
+
+def run_adapter_pipeline(csv_path, requested=None):
+    """옛 엔진용(Main.run_pipeline 이 없을 때) 어댑터 자체 흐름. 보고서는 make_report()."""
     sym = engine.load()
 
     inp_file = csv_path.replace(".csv", ".inp")
     bdf_file = csv_path.replace(".csv", ".bdf")
     print(f"INP 파일: {inp_file}")
-    if requested is not None:
-        ordered = sorted(requested, key=lambda s: int(s[1:]))
-        print(f"요청 LoadCase(+L17 자동): {', '.join(ordered)}")
 
     # 1. FEM 모델 생성 — 29개 LoadCase inp 가 '전체' 생성된다.
     creator = sym["AbaqusModelCreator"](csv_path, inp_file, bdf_file, is_OLET=False)

@@ -348,3 +348,150 @@ def test_backend_returns_none_when_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(service, "_PSA_DIR", str(tmp_path / "nope"))
     monkeypatch.setattr(service, "_PSA_LEGACY_DIR", str(tmp_path / "also-nope"))
     assert service._resolve_psa_exe() is None
+
+
+# ---------------------------------------------------------------------------
+# 서식 템플릿 출처 — 소스 모드는 엔진 폴더 xlsx 우선 (2026-11-26)
+# ---------------------------------------------------------------------------
+def _template_dirs(monkeypatch, tmp_path):
+    from app.services import doublepipe_psa_service as service
+
+    adapter_dir = tmp_path / "HiTessAdapter"
+    engine_dir = tmp_path / "engine"
+    adapter_dir.mkdir()
+    engine_dir.mkdir()
+    monkeypatch.setattr(service, "_PSA_DIR", str(adapter_dir))
+    monkeypatch.setattr(service, "_PSA_LEGACY_DIR", str(engine_dir))
+    logs = []
+    monkeypatch.setattr(service, "_append_log", lambda _job, line: logs.append(line))
+    return service, adapter_dir, engine_dir, logs
+
+
+def test_source_mode_uses_engine_xlsx_and_refreshes_bin(monkeypatch, tmp_path):
+    service, adapter_dir, engine_dir, _ = _template_dirs(monkeypatch, tmp_path)
+    new = b"PK\x03\x04new-template"
+    (engine_dir / service._REPORT_NAME).write_bytes(new)
+    (adapter_dir / service._REPORT_TEMPLATE_BIN_NAME).write_bytes(b"PK\x03\x04old-template")
+
+    assert service._read_template_bytes("job", source_mode=True) == new
+    # 나중에 xlsx 가 DRM 에 감싸져도 새 서식이 남도록 소스용 .bin 을 갱신하고, exe 짝 .bin 은 그대로 둔다.
+    assert (adapter_dir / service._REPORT_TEMPLATE_SOURCE_BIN_NAME).read_bytes() == new
+    assert (adapter_dir / service._REPORT_TEMPLATE_BIN_NAME).read_bytes() == b"PK\x03\x04old-template"
+
+
+def test_source_mode_falls_back_to_bin_when_engine_xlsx_drm(monkeypatch, tmp_path):
+    service, adapter_dir, engine_dir, logs = _template_dirs(monkeypatch, tmp_path)
+    (engine_dir / service._REPORT_NAME).write_bytes(b"HHIDRMC-encrypted")
+    saved = b"PK\x03\x04saved-template"
+    (adapter_dir / service._REPORT_TEMPLATE_BIN_NAME).write_bytes(saved)
+
+    assert service._read_template_bytes("job", source_mode=True) == saved
+    assert (adapter_dir / service._REPORT_TEMPLATE_BIN_NAME).read_bytes() == saved
+    assert any("반영되지 않습니다" in line for line in logs)
+
+
+def test_exe_mode_keeps_bin_first(monkeypatch, tmp_path):
+    service, adapter_dir, engine_dir, _ = _template_dirs(monkeypatch, tmp_path)
+    (engine_dir / service._REPORT_NAME).write_bytes(b"PK\x03\x04engine-xlsx")
+    bundled = b"PK\x03\x04exe-bin"
+    (adapter_dir / service._REPORT_TEMPLATE_BIN_NAME).write_bytes(bundled)
+
+    assert service._read_template_bytes("job", source_mode=False) == bundled
+
+
+# ---------------------------------------------------------------------------
+# 엔진 Main.run_pipeline 위임 (2026-11-26) — 145 에 엔진 파일만 바꿔 넣어도 반영
+# ---------------------------------------------------------------------------
+class _FakeHead:
+    def __init__(self, inp_file):
+        names = [f"L{i}_X" for i in range(1, 30)]
+        self.LC_name = list(names)
+        self.LC_name_iter01 = [n + "_iter01" for n in names]
+        self.LC_name_iter02 = [n + "_iter02" for n in names]
+        self.filename = [n + ".inp" for n in names]
+        self.datname = [n + ".dat" for n in names]
+
+    def Abaqus_Run(self, names, message=""):
+        return None
+
+
+def test_selected_head_keeps_only_requested_cases():
+    head = cli.selected_head_class(_FakeHead, {"L17", "L20"})("model.inp")
+    assert head.LC_name == ["L17_X", "L20_X"]
+    assert head.datname == ["L17_X.dat", "L20_X.dat"]
+    assert head.LC_name_iter02 == ["L17_X_iter02", "L20_X_iter02"]
+
+
+def test_run_pipeline_delegates_to_engine_main(monkeypatch):
+    import types
+
+    seen = {}
+    fake_main = types.SimpleNamespace(HeadClass_01=_FakeHead)
+
+    def run(csv_path):
+        seen["csv"] = csv_path
+        seen["head"] = fake_main.HeadClass_01("m.inp")
+
+    fake_main.run_pipeline = run
+    monkeypatch.setattr(cli, "load_engine_main", lambda: fake_main)
+    monkeypatch.setattr(cli, "run_adapter_pipeline", lambda *a: pytest.fail("옛 흐름으로 가면 안 됨"))
+
+    cli.run_pipeline("C:/jobs/x.csv", {"L17", "L18"})
+    assert seen["csv"] == "C:/jobs/x.csv"
+    assert seen["head"].LC_name == ["L17_X", "L18_X"]
+
+
+def test_run_pipeline_all_cases_leaves_engine_head_untouched(monkeypatch):
+    import types
+
+    fake_main = types.SimpleNamespace(HeadClass_01=_FakeHead, run_pipeline=lambda csv: None)
+    monkeypatch.setattr(cli, "load_engine_main", lambda: fake_main)
+    cli.run_pipeline("C:/jobs/x.csv", None)
+    assert fake_main.HeadClass_01 is _FakeHead
+
+
+def test_current_engine_main_satisfies_contract():
+    """지금 엔진 폴더의 Main.py 가 위임 계약(run_pipeline, HeadClass_01)을 지키는지 — 소스만 본다."""
+    main_py = os.path.join(engine.default_engine_dir(), "Main.py")
+    if not os.path.isfile(main_py):
+        pytest.skip("엔진 소스 없음")
+    text = open(main_py, encoding="utf-8").read()
+    assert "def run_pipeline(csv_path" in text
+    assert "HeadClass_01(" in text
+
+
+def test_source_mode_skips_template_when_engine_has_none(monkeypatch, tmp_path):
+    """새 엔진(make_report_pro)은 서식이 필요 없다 — 옛 서식을 넣어 두면 실패해도 '보고서 있음'이 된다."""
+    service, adapter_dir, engine_dir, _ = _template_dirs(monkeypatch, tmp_path)
+    (engine_dir / "Main.py").write_text("from FuelLine_PSA_Report_Pro import make_report_pro\n", encoding="utf-8")
+    (engine_dir / service._REPORT_NAME).write_bytes(b"PK\x03\x04stale-xlsx")   # 옛 xlsx 가 남아 있어도
+    (adapter_dir / service._REPORT_TEMPLATE_BIN_NAME).write_bytes(b"PK\x03\x04old-template")
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+
+    service._stage_report_template(str(job_dir), "job", source_mode=True)
+    assert not (job_dir / service._REPORT_NAME).exists()
+
+    service._stage_report_template(str(job_dir), "job", source_mode=False)   # exe 모드는 그대로
+    assert (job_dir / service._REPORT_NAME).read_bytes() == b"PK\x03\x04old-template"
+
+
+def test_source_mode_stages_template_for_old_report_engine(monkeypatch, tmp_path):
+    """Main.py 가 아직 make_report() 를 쓰는 엔진이면 서식을 준비한다."""
+    service, _adapter_dir, engine_dir, _ = _template_dirs(monkeypatch, tmp_path)
+    (engine_dir / "Main.py").write_text("make_report()\n", encoding="utf-8")
+    (engine_dir / service._REPORT_NAME).write_bytes(b"PK\x03\x04engine-xlsx")
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    service._stage_report_template(str(job_dir), "job", source_mode=True)
+    assert (job_dir / service._REPORT_NAME).read_bytes() == b"PK\x03\x04engine-xlsx"
+
+
+def test_run_pipeline_fails_when_selection_not_used(monkeypatch):
+    # 고른 Load Case 대신 전체를 해석하고 '완료'로 보이면 안 된다(2026-11-26 리뷰) — 실패로 끝낸다.
+    import types
+
+    fake_main = types.SimpleNamespace(HeadClass_01=_FakeHead, run_pipeline=lambda csv: None)
+    monkeypatch.setattr(cli, "load_engine_main", lambda: fake_main)
+    with pytest.raises(RuntimeError, match="Load Case 선택이 적용되지 않았습니다"):
+        cli.run_pipeline("C:/jobs/x.csv", {"L17"})

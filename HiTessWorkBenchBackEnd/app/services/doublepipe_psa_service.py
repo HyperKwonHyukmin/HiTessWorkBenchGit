@@ -79,6 +79,9 @@ _REPORT_NAME = "Report for PSA.xlsx"
 # 복사 → 빈 워크북(≈288KB) 보고서가 된다. 그래서 DRM 이 건드리지 않는 비-Office 확장자 .bin 으로
 # 템플릿을 보관하고(항상 PK 로 읽힘) 이걸 1순위 소스로 쓴다. .bin 이 없거나 PK 가 아니면 .xlsx 폴백.
 _REPORT_TEMPLATE_BIN_NAME = "report_template.bin"
+# 소스 모드가 엔진 폴더 xlsx 에서 갱신해 두는 사본. exe 와 짝인 report_template.bin 은 건드리지 않는다
+# (.env 줄을 지워 exe 로 되돌렸을 때 exe 가 맞지 않는 서식을 쓰지 않게).
+_REPORT_TEMPLATE_SOURCE_BIN_NAME = "report_template_source.bin"
 _ZIP_MAGIC = b"PK\x03\x04"
 
 
@@ -573,20 +576,60 @@ def _build_subprocess_env(job_id: str) -> dict:
     return env
 
 
-def _read_template_bytes(job_id: str):
-    """서식 템플릿을 PK(zip) 바이트로 읽어 반환한다. 실패 시 None.
+def _template_candidates(source_mode: bool) -> list:
+    """서식 템플릿 후보 (경로, 로그 이름표) 를 우선순위대로.
 
-    1순위: report_template.bin (DRM 비-대상 확장자 → 항상 PK 로 읽힘, 145 에서도 안 깨짐)
-    2순위: Report for PSA.xlsx (폴백 — 단 DRM 암호화 시 HHIDRMC 라 PK 검사에서 걸러짐)
-    각 후보를 read() 한 뒤 첫 4바이트가 PK 매직인지 확인해 '암호화된 소스'를 조기에 잡아낸다.
+    - exe 모드: 어댑터 폴더 → 구 배치 폴더, 각 폴더에서 .bin → .xlsx. exe 안의 엔진 코드와
+      같이 빌드된 .bin 이 짝이므로 그대로 둔다.
+    - 소스 모드(2026-11-26): 엔진 폴더의 'Report for PSA.xlsx' 가 1순위. 엔진 개발자가 .py 와
+      서식을 같이 바꿔 넣으면 다음 해석부터 그 서식을 쓰게 하려는 것이다(.bin 을 손으로 만들 필요 없음).
+      xlsx 가 DRM 에 감싸져 읽히지 않을 때만 마지막으로 확보한 .bin 으로 내려간다.
     """
-    # 어댑터 폴더 → 구 배치 폴더 순으로, 각 폴더에서 .bin(1순위) → .xlsx(폴백).
     candidates = []
+    if source_mode:
+        tag = os.path.basename(_PSA_LEGACY_DIR)
+        candidates.append((os.path.join(_PSA_LEGACY_DIR, _REPORT_NAME), f"{tag}/{_REPORT_NAME}"))
+        candidates.append((os.path.join(_PSA_DIR, _REPORT_TEMPLATE_SOURCE_BIN_NAME),
+                           f"{os.path.basename(_PSA_DIR)}/{_REPORT_TEMPLATE_SOURCE_BIN_NAME}"))
     for directory in _program_dirs():
         tag = os.path.basename(directory)
         for name in (_REPORT_TEMPLATE_BIN_NAME, _REPORT_NAME):
-            candidates.append((os.path.join(directory, name), f"{tag}/{name}"))
-    for path, label in candidates:
+            path = os.path.join(directory, name)
+            if all(path != seen for seen, _ in candidates):
+                candidates.append((path, f"{tag}/{name}"))
+    return candidates
+
+
+def _refresh_template_bin(job_id: str, data: bytes):
+    """엔진 폴더 xlsx 에서 읽은 새 서식을 HiTessAdapter/report_template_source.bin 에도 저장한다.
+
+    나중에 그 xlsx 가 DRM 에 감싸져도 .bin 에는 가장 최근 서식이 남게 하려는 것이다
+    (.bin 은 Office 확장자가 아니라 DRM 이 감싸지 않는다). 실패해도 해석은 계속한다.
+    """
+    target = os.path.join(_PSA_DIR, _REPORT_TEMPLATE_SOURCE_BIN_NAME)
+    try:
+        if os.path.isfile(target):
+            with open(target, "rb") as f:
+                if f.read() == data:
+                    return
+        os.makedirs(_PSA_DIR, exist_ok=True)
+        temp = f"{target}.tmp-{os.getpid()}-{job_id}"
+        with open(temp, "wb") as out:
+            out.write(data)
+        os.replace(temp, target)
+        _append_log(job_id, f"[서식] 엔진 폴더의 새 서식을 {_REPORT_TEMPLATE_SOURCE_BIN_NAME} 에도 저장했습니다.")
+    except Exception as exc:  # noqa: BLE001
+        _append_log(job_id, f"[서식경고] {_REPORT_TEMPLATE_SOURCE_BIN_NAME} 갱신 실패(해석은 계속): {exc}")
+
+
+def _read_template_bytes(job_id: str, source_mode: bool = False):
+    """서식 템플릿을 PK(zip) 바이트로 읽어 반환한다. 실패 시 None.
+
+    후보 순서는 _template_candidates. 각 후보를 read() 한 뒤 첫 4바이트가 PK 매직인지 확인해
+    'DRM 에 감싸진 소스'(HHIDRMC)를 걸러 낸다.
+    """
+    engine_xlsx = os.path.join(_PSA_LEGACY_DIR, _REPORT_NAME)
+    for path, label in _template_candidates(source_mode):
         if not os.path.exists(path):
             continue
         try:
@@ -600,6 +643,8 @@ def _read_template_bytes(job_id: str):
                 job_id,
                 f"[서식] 템플릿 소스 확보: {label} (PK 정상, {len(data):,} bytes)",
             )
+            if source_mode and path == engine_xlsx:
+                _refresh_template_bin(job_id, data)
             return data
         head = data[:7]
         drm = " — DRM 암호화(HHIDRMC)로 추정" if head == b"HHIDRMC" else ""
@@ -607,10 +652,26 @@ def _read_template_bytes(job_id: str):
             job_id,
             f"[서식경고] 템플릿 소스 {label} 가 PK(zip) 가 아님(첫바이트 {head.hex()}){drm}. 다음 후보로.",
         )
+        if source_mode and path == engine_xlsx:
+            _append_log(
+                job_id,
+                "[서식경고] 엔진 폴더의 서식을 읽지 못해 마지막으로 저장된 서식을 씁니다 — "
+                "새로 바꾼 서식이면 보고서에 반영되지 않습니다. "
+                "그 xlsx 를 DRM 이 감싸지 않은 사본으로 다시 넣어 주세요.",
+            )
     return None
 
 
-def _stage_report_template(cwd: str, job_id: str):
+def _engine_builds_own_report() -> bool:
+    """소스 모드 엔진의 Main.py 가 서식 없는 보고서 함수(make_report_pro)를 쓰는지."""
+    try:
+        with open(os.path.join(_PSA_LEGACY_DIR, "Main.py"), "r", encoding="utf-8", errors="replace") as f:
+            return "make_report_pro" in f.read()
+    except OSError:
+        return False
+
+
+def _stage_report_template(cwd: str, job_id: str, source_mode: bool = False):
     """서식 템플릿을 PK 바이트로 job 폴더(cwd)에 'Report for PSA.xlsx' 로 새로 쓴다.
 
     make_report() 는 이 파일을 cwd 상대경로("Report for PSA.xlsx")로 열어 결과 셀만 채우고
@@ -624,7 +685,12 @@ def _stage_report_template(cwd: str, job_id: str):
     복사가 실패해도 해석 자체는 진행하되, 보고서가 빈 서식일 수 있음을 로그로 분명히 남긴다.
     """
     dst = os.path.join(cwd, _REPORT_NAME)
-    data = _read_template_bytes(job_id)
+    if source_mode and _engine_builds_own_report():
+        # 2026-11-26 엔진부터 Main.py 가 make_report_pro 로 서식 없이 보고서를 직접 만든다.
+        # 이때 옛 서식을 미리 넣어 두면 해석이 실패해도 그 파일 때문에 '보고서 있음'으로 보인다.
+        _append_log(job_id, "[서식] 엔진이 보고서 서식을 직접 만들어(make_report_pro) 서식 준비를 건너뜁니다.")
+        return
+    data = _read_template_bytes(job_id, source_mode)
     if data is None:
         _append_log(
             job_id,
@@ -816,11 +882,11 @@ def _run_pipeline(job_id: str, command: list, cwd: str, kind: str = "psa"):
     # ⚠️ exe 가 파이프라인 끝에서 make_report() 로 이 템플릿을 cwd 상대경로로 읽으므로,
     # Abaqus 해석 시작 전에 미리 job 폴더로 복사해 둔다.
     # (고유진동 해석은 xlsx 보고서를 만들지 않으므로 스테이징이 필요 없다.)
-    if not is_modal:
-        _stage_report_template(cwd, job_id)
-    env = _build_subprocess_env(job_id)
     with _jobs_lock:
         source_mode = bool((_jobs.get(job_id) or {}).get("sourceMode"))
+    if not is_modal:
+        _stage_report_template(cwd, job_id, source_mode)
+    env = _build_subprocess_env(job_id)
     if source_mode:
         # 백엔드 venv 의 PYTHONPATH/PYTHONHOME 이 엔진용 Python 에 섞이지 않게 한다.
         env.pop("PYTHONPATH", None)

@@ -24,6 +24,8 @@ import sys
 
 ZIP_MAGIC = b"PK\x03\x04"
 BUNDLED_TEMPLATE_NAME = "report_template.bin"
+# 소스 모드에서 백엔드가 엔진 폴더 xlsx 로 갱신해 두는 사본(백엔드 _REPORT_TEMPLATE_SOURCE_BIN_NAME 과 같은 이름).
+SOURCE_TEMPLATE_NAME = "report_template_source.bin"
 
 # 폴백을 적용할 대상 파일명(소문자 비교). 엔진이 cwd 상대경로로 이 이름을 읽는다.
 TEMPLATE_BASENAMES = ("report for psa.xlsx",)
@@ -51,12 +53,18 @@ def _bundled_candidates():
 
 
 def _source_mode_candidates():
-    """소스 실행 모드(exe 아님)의 추가 후보: 빌드 산출물(build/) → 백엔드 배포 폴더(HiTessAdapter/)."""
+    """소스 실행 모드(exe 아님)의 추가 후보: 백엔드 배포 폴더(HiTessAdapter/) → 빌드 산출물(build/).
+
+    HiTessAdapter 가 먼저다(2026-11-26). 소스 모드에서 백엔드가 엔진 폴더의 새 서식을 읽으면
+    report_template_source.bin 을 최신으로 갱신하므로, job 폴더 사본이 DRM 에 감싸져도 새 서식이 쓰인다.
+    """
     adapter_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     backend_dir = os.path.dirname(os.path.dirname(adapter_root))
+    deploy_dir = os.path.join(backend_dir, "InHouseProgram", "DoublePipe", "HiTessAdapter")
     return [
+        os.path.join(deploy_dir, SOURCE_TEMPLATE_NAME),
+        os.path.join(deploy_dir, BUNDLED_TEMPLATE_NAME),
         os.path.join(adapter_root, "build", BUNDLED_TEMPLATE_NAME),
-        os.path.join(backend_dir, "InHouseProgram", "DoublePipe", "HiTessAdapter", BUNDLED_TEMPLATE_NAME),
     ]
 
 

@@ -44,17 +44,21 @@ def restore_engine_env():
         os.environ[engine.ENGINE_DIR_ENV] = saved
 
 
-def test_prepare_engine_applies_patches_and_points_loader(engine_copy, tmp_path, restore_engine_env):
+_SAMPLE_PATCH = patches.Patch(
+    file="Main.py", why="시험용", anchor="def run_pipeline(", replace="def run_pipeline(  ", expect=1)
+
+
+def test_prepare_engine_applies_patches_and_points_loader(engine_copy, tmp_path, restore_engine_env, monkeypatch):
+    # 실제 PATCHES 는 2026-11-26 부터 비어 있어 시험용 패치 하나로 적용 경로를 확인한다.
+    monkeypatch.setattr(patches, "PATCHES", (_SAMPLE_PATCH,))
     staged = runtime.prepare_engine(str(engine_copy), str(tmp_path / "runtime"))
 
     assert os.environ[engine.ENGINE_DIR_ENV] == staged
-    for patch in patches.PATCHES:
-        with open(os.path.join(staged, patch.file), encoding="utf-8") as handle:
-            assert patch.replace in handle.read()
+    with open(os.path.join(staged, "Main.py"), encoding="utf-8") as handle:
+        assert _SAMPLE_PATCH.replace in handle.read()
     # 원본 엔진은 무수정
-    for patch in patches.PATCHES:
-        with open(engine_copy / patch.file, encoding="utf-8") as handle:
-            assert patch.anchor in handle.read() or patch.replace in handle.read()
+    with open(engine_copy / "Main.py", encoding="utf-8") as handle:
+        assert _SAMPLE_PATCH.replace not in handle.read()
 
 
 def test_prepare_engine_reuses_cache_until_engine_changes(engine_copy, tmp_path, restore_engine_env):
@@ -72,12 +76,9 @@ def test_prepare_engine_reuses_cache_until_engine_changes(engine_copy, tmp_path,
     assert sorted(os.listdir(root)) == [os.path.basename(second)]  # 이전 사본 정리
 
 
-def test_prepare_engine_fails_loudly_on_patch_mismatch(engine_copy, tmp_path, restore_engine_env):
-    patch = patches.PATCHES[0]
-    target = engine_copy / patch.file
-    text = target.read_text(encoding="utf-8")
-    target.write_text(text.replace(patch.anchor, "# 연구원이 다르게 고침").replace(patch.replace, ""),
-                      encoding="utf-8")
+def test_prepare_engine_fails_loudly_on_patch_mismatch(engine_copy, tmp_path, restore_engine_env, monkeypatch):
+    missing = patches.Patch(file="Main.py", why="시험용", anchor="# 없는 문장 #", replace="# 바꿈 #", expect=1)
+    monkeypatch.setattr(patches, "PATCHES", (missing,))
 
     with pytest.raises(patches.PatchError):
         runtime.prepare_engine(str(engine_copy), str(tmp_path / "runtime"))
@@ -145,3 +146,39 @@ def test_source_mode_missing_python_is_503_not_silent_exe(monkeypatch, launch_en
         service._launch_job(str(launch_env), "E100")
     assert info.value.status_code == 503
     assert service._jobs == {}
+
+
+# ---------------------------------------------------------------------------
+# 2026-11-26: Main.run_pipeline 이 있는 엔진은 사본, 패치, 서식 shim 없이 엔진 폴더 그대로 실행
+# ---------------------------------------------------------------------------
+def test_engine_with_main_pipeline_runs_from_engine_folder(monkeypatch, restore_engine_env):
+    from hitess_adapter import cli, psa_main
+
+    if not psa_main._engine_has_main_pipeline():
+        pytest.skip("엔진 폴더(InHouseProgram, git 미추적)가 없거나 옛 엔진인 PC")
+    called = {}
+    monkeypatch.setattr(runtime, "prepare_engine",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("사본을 만들면 안 됨")))
+    monkeypatch.setattr(psa_main, "install_all",
+                        lambda: (_ for _ in ()).throw(AssertionError("서식 shim 을 걸면 안 됨")))
+    monkeypatch.setattr(cli, "main", lambda argv=None: called.setdefault("argv", argv) and 0)
+    monkeypatch.setattr(sys, "dont_write_bytecode", sys.dont_write_bytecode)
+
+    assert psa_main.main(["x.csv"]) == 0
+    assert called["argv"] == ["x.csv"]
+    assert os.environ.get(engine.ENGINE_DIR_ENV) is None  # 엔진 폴더 원본을 그대로 쓴다
+
+
+def test_old_engine_with_run_pipeline_keeps_shim_and_patch_path(tmp_path, monkeypatch):
+    # 옛 엔진(10월 판)도 run_pipeline 은 있다 — make_report_pro 가 없으면 옛 경로(shim + 패치 사본)로 가야 한다.
+    from hitess_adapter import psa_main
+
+    old = tmp_path / "old_engine"
+    old.mkdir()
+    (old / "Main.py").write_text("def run_pipeline(csv_path):\n    make_report()\n", encoding="utf-8")
+    monkeypatch.setattr(engine, "resolve_engine_dir", lambda: str(old))
+    assert psa_main._engine_has_main_pipeline() is False
+
+    (old / "Main.py").write_text(
+        "def run_pipeline(csv_path):\n    make_report_pro(work_dir='.')\n", encoding="utf-8")
+    assert psa_main._engine_has_main_pipeline() is True

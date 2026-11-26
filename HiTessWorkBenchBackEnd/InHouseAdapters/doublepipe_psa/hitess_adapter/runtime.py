@@ -76,7 +76,7 @@ def prepare_engine(engine_dir=None, runtime_root=None):
         temp = f"{target}.tmp-{os.getpid()}"
         shutil.rmtree(temp, ignore_errors=True)
         prep.stage_engine(engine_dir, temp)
-        prep.apply_patches(temp)
+        prep.apply_patches(temp, patches_mod.PATCHES)
         with open(os.path.join(temp, _READY_MARK), "w", encoding="utf-8") as handle:
             handle.write(engine_dir)
         shutil.rmtree(target, ignore_errors=True)
